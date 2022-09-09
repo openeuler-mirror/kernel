@@ -33,7 +33,7 @@ SECTIONS
 	} :text
 	_etext = .;	/* End of text section */
 
-	RO_DATA(4096)
+	RO_DATA(PAGE_SIZE)
 
 	/* Will be freed after init */
 	__init_begin = ALIGN(PAGE_SIZE);

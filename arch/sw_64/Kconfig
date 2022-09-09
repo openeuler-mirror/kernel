@@ -14,7 +14,6 @@ config SW64
 	select GENERIC_IRQ_SHOW
 	select ARCH_WANT_IPC_PARSE_VERSION
 	select ARCH_HAVE_NMI_SAFE_CMPXCHG
-	select ARCH_MIGHT_HAVE_PC_SERIO
 	select ARCH_NO_PREEMPT
 	select ARCH_USE_CMPXCHG_LOCKREF
 	select GENERIC_SMP_IDLE_THREAD
@@ -24,7 +23,6 @@ config SW64
 	select HAVE_ARCH_TRANSPARENT_HUGEPAGE
 	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_SECCOMP_FILTER
-	select OLD_SIGACTION
 	select OLD_SIGSUSPEND
 	select GENERIC_STRNCPY_FROM_USER
 	select GENERIC_STRNLEN_USER
@@ -92,11 +90,14 @@ config SW64
 	select ACPI_REDUCED_HARDWARE_ONLY
 	select GENERIC_TIME_VSYSCALL
 	select SET_FS
+	select HAVE_PCI
+	select GENERIC_PCI_IOMAP if PCI
 	select PCI_MSI_ARCH_FALLBACKS
 	select DMA_OPS if PCI
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select ARCH_HAS_PTE_SPECIAL
 	select HARDIRQS_SW_RESEND
+	select MEMORY_HOTPLUG_SPARSE if MEMORY_HOTPLUG
 
 config LOCKDEP_SUPPORT
 	def_bool y
@@ -140,6 +141,10 @@ config ARCH_HAS_ILOG2_U64
 
 config GENERIC_GPIO
 	bool
+
+config GENERIC_CALIBRATE_DELAY
+	bool
+	default y
 
 config ZONE_DMA32
 	bool
@@ -239,6 +244,11 @@ config PLATFORM_XUELANG
 	  Sunway chip3 board chipset
 
 endchoice
+
+config MIGHT_HAVE_PC_SERIO
+	bool "Use PC serio device i8042"
+	select ARCH_MIGHT_HAVE_PC_SERIO
+	default n
 
 endmenu
 
@@ -509,17 +519,6 @@ config ISA_DMA_API
 	bool
 	default y
 
-config PCI
-	bool "PCI Support"
-	depends on SW64
-	select GENERIC_PCI_IOMAP
-	default y
-	help
-	  Find out whether you have a PCI motherboard. PCI is the name of a
-	  bus system, i.e. the way the CPU talks to the other stuff inside
-	  your box. Other bus systems are ISA, EISA, MicroChannel (MCA) or
-	  VESA. If you have PCI, say Y, otherwise N.
-
 config PCI_DOMAINS
 	def_bool PCI
 
@@ -724,7 +723,6 @@ config HZ
 	int "HZ of the short timer"
 	default 500
 
-source "drivers/pci/Kconfig"
 source "drivers/eisa/Kconfig"
 
 source "drivers/pcmcia/Kconfig"

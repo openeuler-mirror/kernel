@@ -8,13 +8,26 @@
 #include <asm/pgalloc.h>
 #include <asm/hw_init.h>
 #include <asm/hmcall.h>
-
-extern void __load_new_mm_context(struct mm_struct *);
-
+#include <asm/mmu_context.h>
 
 static inline void flush_tlb_current(struct mm_struct *mm)
 {
-	__load_new_mm_context(mm);
+	unsigned long mmc, asn, ptbr, flags;
+
+	local_irq_save(flags);
+
+	mmc = __get_new_mm_context(mm, smp_processor_id());
+	mm->context.asid[smp_processor_id()] = mmc;
+
+	/*
+	 * Force a new ASN for a task. Note that there is no way to
+	 * write UPN only now, so call load_asn_ptbr here.
+	 */
+	asn = mmc & HARDWARE_ASN_MASK;
+	ptbr = virt_to_pfn(mm->pgd);
+	load_asn_ptbr(asn, ptbr);
+
+	local_irq_restore(flags);
 }
 
 /*
@@ -27,12 +40,10 @@ static inline void flush_tlb_current_page(struct mm_struct *mm,
 					  struct vm_area_struct *vma,
 					  unsigned long addr)
 {
-	if (vma->vm_flags & VM_EXEC) {
-		tbi(3, addr);
-		if (icache_is_vivt_no_ictag())
-			imb();
-	} else
-		tbi(2, addr);
+	if (vma->vm_flags & VM_EXEC)
+		tbis(addr);
+	else
+		tbisd(addr);
 }
 
 
@@ -65,7 +76,7 @@ static inline void flush_tlb_other(struct mm_struct *mm)
  */
 static inline void flush_tlb_all(void)
 {
-	tbia();
+	tbiv();
 }
 
 /* Flush a specified user mapping.  */

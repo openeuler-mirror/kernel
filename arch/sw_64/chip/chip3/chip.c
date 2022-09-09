@@ -393,7 +393,6 @@ static void chip3_set_rc_piu(unsigned long node, unsigned long index)
 	/* set DMA offset value PCITODMA_OFFSET */
 	write_piu_ior0(node, index, EPDMABAR, PCITODMA_OFFSET);
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
-		write_piu_ior0(node, index, PIUCONFIG0, 0x38076);
 		write_piu_ior0(node, index, MSIADDR, MSIX_MSG_ADDR);
 		for (i = 0; i < 256; i++)
 			write_piu_ior0(node, index, MSICONFIG0 + (i << 7), 0);
@@ -656,8 +655,8 @@ static void handle_dev_int(struct pt_regs *regs)
 	sw64_io_write(node, DEV_INT_CONFIG, config_val);
 }
 
-void handle_chip_irq(unsigned long type, unsigned long vector,
-		     unsigned long irq_arg, struct pt_regs *regs)
+asmlinkage void do_entInt(unsigned long type, unsigned long vector,
+			  unsigned long irq_arg, struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
 
@@ -738,6 +737,7 @@ void handle_chip_irq(unsigned long type, unsigned long vector,
 	}
 	pr_crit("PC = %016lx PS = %04lx\n", regs->pc, regs->ps);
 }
+EXPORT_SYMBOL(do_entInt);
 
 /*
  * Early fix up the chip3 Root Complex settings

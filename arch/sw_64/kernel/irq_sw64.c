@@ -9,15 +9,6 @@
 #include <asm/dma.h>
 #include <asm/irq_impl.h>
 
-asmlinkage void
-do_entInt(unsigned long type, unsigned long vector,
-	  unsigned long irq_arg, struct pt_regs *regs)
-{
-	local_irq_disable();
-	handle_chip_irq(type, vector, irq_arg, regs);
-}
-EXPORT_SYMBOL(do_entInt);
-
 void __init
 init_IRQ(void)
 {

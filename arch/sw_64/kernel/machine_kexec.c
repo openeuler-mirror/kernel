@@ -204,9 +204,6 @@ void machine_kexec(struct kimage *image)
 
 	pr_info("Will call new kernel at %08lx\n", image->start);
 	pr_info("Bye ...\n");
-	//flush_cache_all();
-	//sflush();
-	//tbia();
 	smp_wmb();
 	((noretfun_t) reboot_code_buffer)();
 }

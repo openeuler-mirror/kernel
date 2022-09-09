@@ -6,27 +6,39 @@
 
 extern void __fpstate_save(struct task_struct *save_to);
 extern void __fpstate_restore(struct task_struct *restore_from);
-extern struct task_struct *__switch_to(unsigned long pcb,
-		struct task_struct *prev, struct task_struct *next);
+extern struct task_struct *__switch_to(struct task_struct *prev,
+				       struct task_struct *next);
 extern void restore_da_match_after_sched(void);
 
-static inline void fpstate_save(struct task_struct *task)
+static inline void aux_save(struct task_struct *task)
 {
-	if (likely(!(task->flags & PF_KTHREAD)))
+	struct pcb_struct *pcb;
+
+	if (likely(!(task->flags & PF_KTHREAD))) {
+		pcb = &task_thread_info(task)->pcb;
+		pcb->usp = rdusp();
+		pcb->tp = rtid();
 		__fpstate_save(task);
+	}
 }
 
-static inline void fpstate_restore(struct task_struct *task)
+static inline void aux_restore(struct task_struct *task)
 {
-	if (likely(!(task->flags & PF_KTHREAD)))
+	struct pcb_struct *pcb;
+
+	if (likely(!(task->flags & PF_KTHREAD))) {
+		pcb = &task_thread_info(task)->pcb;
+		wrusp(pcb->usp);
+		wrtp(pcb->tp);
 		__fpstate_restore(task);
+	}
 }
 
 static inline void __switch_to_aux(struct task_struct *prev,
 				   struct task_struct *next)
 {
-	fpstate_save(prev);
-	fpstate_restore(next);
+	aux_save(prev);
+	aux_restore(next);
 }
 
 
@@ -34,10 +46,8 @@ static inline void __switch_to_aux(struct task_struct *prev,
 do {									\
 	struct task_struct *__prev = (prev);				\
 	struct task_struct *__next = (next);				\
-	__u64 __nextpcb = virt_to_phys(&task_thread_info(__next)->pcb);	\
 	__switch_to_aux(__prev, __next);				\
-	(last) = __switch_to(__nextpcb, __prev, __next);		\
-	check_mmu_context();						\
+	(last) = __switch_to(__prev, __next);				\
 } while (0)
 
 

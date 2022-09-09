@@ -17,6 +17,8 @@
 #include <linux/kallsyms.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/debug.h>
+#include <linux/spinlock.h>
+#include <linux/module.h>
 
 #include <asm/gentrap.h>
 #include <asm/mmu_context.h>
@@ -29,8 +31,18 @@
 
 #include "proto.h"
 
-void dik_show_regs(struct pt_regs *regs)
+enum SW64_IF_TYPES {
+	IF_BREAKPOINT = 0,
+	IF_RESERVED,
+	IF_GENTRAP,
+	IF_FEN,
+	IF_OPDEC,
+};
+
+void show_regs(struct pt_regs *regs)
 {
+	show_regs_print_info(KERN_DEFAULT);
+
 	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx    %s\n",
 	       regs->pc, regs->r26, regs->ps, print_tainted());
 	printk("pc is at %pSR\n", (void *)regs->pc);
@@ -60,8 +72,7 @@ void dik_show_regs(struct pt_regs *regs)
 	printk("gp = %016lx  sp = %p\n", regs->gp, regs+1);
 }
 
-static void
-dik_show_code(unsigned int *pc)
+static void show_code(unsigned int *pc)
 {
 	long i;
 	unsigned int insn;
@@ -75,33 +86,43 @@ dik_show_code(unsigned int *pc)
 	printk("\n");
 }
 
-void die_if_kernel(char *str, struct pt_regs *regs, long err)
-{
-	if (regs->ps & 8)
-		return;
-#ifdef CONFIG_SMP
-	printk("CPU %d ", hard_smp_processor_id());
-#endif
-	printk("%s(%d): %s %ld\n", current->comm, task_pid_nr(current), str, err);
-	dik_show_regs(regs);
-	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
-	show_stack(current, NULL, KERN_EMERG);
-	dik_show_code((unsigned int *)regs->pc);
+static DEFINE_SPINLOCK(die_lock);
 
-	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
-		printk("die_if_kernel recursion detected.\n");
-		local_irq_enable();
-		while (1)
-			asm("nop");
-	}
+void die(char *str, struct pt_regs *regs, long err)
+{
+	static int die_counter;
+	unsigned long flags;
+	int ret;
+
+	oops_enter();
+
+	spin_lock_irqsave(&die_lock, flags);
+	console_verbose();
+	bust_spinlocks(1);
+
+	pr_emerg("%s [#%d]\n", str, ++die_counter);
+
+	ret = notify_die(DIE_OOPS, str, regs, err, 0, SIGSEGV);
+
+	print_modules();
+	show_regs(regs);
+	show_code((unsigned int *)regs->pc);
+	show_stack(current, NULL, KERN_EMERG);
+
+	bust_spinlocks(0);
+	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
+	spin_unlock_irqrestore(&die_lock, flags);
+	oops_exit();
 
 	if (kexec_should_crash(current))
 		crash_kexec(regs);
-
+	if (in_interrupt())
+		panic("Fatal exception in interrupt");
 	if (panic_on_oops)
 		panic("Fatal exception");
 
-	do_exit(SIGSEGV);
+	if (ret != NOTIFY_STOP)
+		do_exit(SIGSEGV);
 }
 
 #ifndef CONFIG_MATHEMU
@@ -135,11 +156,17 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 		if (si_code == 0)
 			return;
 	}
-	die_if_kernel("Arithmetic fault", regs, 0);
+
+	if (!user_mode(regs))
+		die("Arithmetic fault", regs, 0);
 
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
 
+/*
+ * BPT/GENTRAP/OPDEC make regs->pc = exc_pc + 4. debugger should
+ * do something necessary to handle it correctly.
+ */
 asmlinkage void
 do_entIF(unsigned long inst_type, struct pt_regs *regs)
 {
@@ -149,35 +176,23 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 	type = inst_type & 0xffffffff;
 	inst = inst_type >> 32;
 
-	if ((regs->ps & ~IPL_MAX) == 0 && type != 4) {
-		if (type == 1) {
-			const unsigned int *data
-				= (const unsigned int *) regs->pc;
-			printk("Kernel bug at %s:%d\n",
-				(const char *)(data[1] | (long)data[2] << 32),
-				data[0]);
-		} else if (type == 0) {
+	if (!user_mode(regs) && type != IF_OPDEC) {
+		if (type == IF_BREAKPOINT) {
 			/* support kgdb */
 			notify_die(0, "kgdb trap", regs, 0, 0, SIGTRAP);
 			return;
 		}
-		die_if_kernel((type == 1 ? "Kernel Bug" : "Instruction fault"),
+		die((type == IF_RESERVED ? "Kernel Bug" : "Instruction fault"),
 				regs, type);
 	}
 
 	switch (type) {
-	case 0: /* breakpoint */
-		if (ptrace_cancel_bpt(current))
-			regs->pc -= 4;	/* make pc point to former bpt */
-
+	case IF_BREAKPOINT: /* gdb do pc-4 for sigtrap */
 		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0);
 		return;
 
-	case 1: /* bugcheck */
-		force_sig_fault(SIGTRAP, TRAP_UNK, (void __user *)regs->pc, 0);
-		return;
-
-	case 2: /* gentrap */
+	case IF_GENTRAP:
+		regs->pc -= 4;
 		switch ((long)regs->r16) {
 		case GEN_INTOVF:
 			signo = SIGFPE;
@@ -230,6 +245,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		case GEN_SUBRNG6:
 		case GEN_SUBRNG7:
 		default:
+			regs->pc += 4;
 			signo = SIGTRAP;
 			code = TRAP_UNK;
 			break;
@@ -238,7 +254,11 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		force_sig_fault(signo, code, (void __user *)regs->pc, regs->r16);
 		return;
 
-	case 4: /* opDEC */
+	case IF_FEN:
+		fpu_enable();
+		return;
+
+	case IF_OPDEC:
 		switch (inst) {
 		case BREAK_KPROBE:
 			if (notify_die(DIE_BREAK, "kprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
@@ -253,27 +273,15 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			if (notify_die(DIE_UPROBE_XOL, "uprobe_xol", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
 		}
-		if ((regs->ps & ~IPL_MAX) == 0)
-			die_if_kernel("Instruction fault", regs, type);
+
+		if (user_mode(regs))
+			regs->pc -= 4;
+		else
+			die("Instruction fault", regs, type);
 		break;
 
-	case 3: /* FEN fault */
-		/*
-		 * Irritating users can call HMC_clrfen to disable the
-		 * FPU for the process. The kernel will then trap to
-		 * save and restore the FP registers.
-
-		 * Given that GCC by default generates code that uses the
-		 * FP registers, HMC_clrfen is not useful except for DoS
-		 * attacks. So turn the bleeding FPU back on and be done
-		 * with it.
-		 */
-		current_thread_info()->pcb.flags |= 1;
-		__reload_thread(&current_thread_info()->pcb);
-		return;
-
-	case 5: /* illoc */
 	default: /* unexpected instruction-fault type */
+		regs->pc -= 4;
 		break;
 	}
 
@@ -490,21 +498,7 @@ got_exception:
 	 * Since the registers are in a weird format, dump them ourselves.
 	 */
 
-	printk("%s(%d): unhandled unaligned exception\n",
-	       current->comm, task_pid_nr(current));
-
-	dik_show_regs(regs);
-	dik_show_code((unsigned int *)pc);
-	show_stack(current, NULL, KERN_EMERG);
-
-	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
-		printk("die_if_kernel recursion detected.\n");
-		local_irq_enable();
-		while (1)
-			asm("nop");
-	}
-	do_exit(SIGSEGV);
-
+	die("Unhandled unaligned exception", regs, error);
 }
 
 /*

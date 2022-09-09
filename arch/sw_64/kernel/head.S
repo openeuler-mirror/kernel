@@ -24,7 +24,7 @@ __start:
 	/* We need to get current_task_info loaded up...  */
 	ldi	$8, init_thread_union
 	/* ... and find our stack ... */
-	ldi	$30, 0x4000 - PT_REGS_SIZE($8)
+	ldi	$30, ASM_THREAD_SIZE($8)
 	/* ... and then we can clear bss data.  */
 	ldi	$2, __bss_start
 	ldi	$3, __bss_stop
@@ -51,7 +51,7 @@ __start:
 	ldl	$29, 0($30)
 	addl	$29, $0, $29
 	/* Repoint the sp into the new kernel image */
-	ldi	$30, 0x4000 - PT_REGS_SIZE($8)
+	ldi	$30, ASM_THREAD_SIZE($8)
 #endif
 	/* ... and then we can start the kernel.  */
 	call	$26, sw64_start_kernel
@@ -71,24 +71,20 @@ __smp_callin:
 	br	$27, 2f		# we copy this from above "br $27 1f"
 2:	ldgp	$29, 0($27)	# First order of business, load the GP.
 
-	subl	$31, 2, $16
+	bis	$31, $31, $16	# invalidate all TLB with current VPN
 	sys_call HMC_tbi
 
 	sys_call HMC_whami	# Get hard cid
 
-	sll	$0, 2, $0
 	ldi	$1, __rcid_to_cpu
-	addl	$1, $0, $1
+	s4addl	$0, $1, $1
 	ldw	$0, 0($1)	# Get logical cpu number
 
-	sll	$0, 3, $0
-	ldi	$1, tidle_pcb
-	addl	$1, $0, $1
-	ldl	$16, 0($1)	# Get PCBB of idle thread
+	ldi	$2, tidle_ksp
+	s8addl	$0, $2, $2
+	ldl	$30, 0($2)	# Get ksp of idle thread
 
-	sys_call HMC_swpctx
-	ldi	$8, 0x3fff	# Find "current".
-	bic	$30, $8, $8
+	ldi	$8, -ASM_THREAD_SIZE($30) # Find "current"
 
 	call	$26, smp_callin
 	sys_call HMC_halt

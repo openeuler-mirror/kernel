@@ -38,6 +38,36 @@ SYSCALL_DEFINE2(odd_sigprocmask, int, how, unsigned long, newmask)
 	return res;
 }
 
+SYSCALL_DEFINE3(odd_sigaction, int, sig,
+		const struct odd_sigaction __user *, act,
+		struct odd_sigaction __user *, oact)
+{
+	struct k_sigaction new_ka, old_ka;
+	old_sigset_t mask;
+	int ret;
+
+	if (act) {
+		if (!access_ok(act, sizeof(*act)) ||
+		    __get_user(new_ka.sa.sa_handler, &act->sa_handler) ||
+		    __get_user(new_ka.sa.sa_flags, &act->sa_flags) ||
+		    __get_user(mask, &act->sa_mask))
+			return -EFAULT;
+		siginitset(&new_ka.sa.sa_mask, mask);
+	}
+
+	ret = do_sigaction(sig, act ? &new_ka : NULL, oact ? &old_ka : NULL);
+
+	if (!ret && oact) {
+		if (!access_ok(oact, sizeof(*oact)) ||
+		    __put_user(old_ka.sa.sa_handler, &oact->sa_handler) ||
+		    __put_user(old_ka.sa.sa_flags, &oact->sa_flags) ||
+		    __put_user(old_ka.sa.sa_mask.sig[0], &oact->sa_mask))
+			return -EFAULT;
+	}
+
+	return ret;
+}
+
 /*
  * Do a signal return; undo the signal stack.
  */
@@ -133,11 +163,6 @@ do_sigreturn(struct sigcontext __user *sc)
 	if (restore_sigcontext(sc, regs))
 		goto give_sigsegv;
 
-	/* Send SIGTRAP if we're single-stepping: */
-	if (ptrace_cancel_bpt(current)) {
-		force_sig_fault(SIGTRAP, TRAP_BRKPT,
-				(void __user *)regs->pc, 0);
-	}
 	return;
 
 give_sigsegv:
@@ -164,11 +189,6 @@ do_rt_sigreturn(struct rt_sigframe __user *frame)
 	if (restore_altstack(&frame->uc.uc_stack))
 		goto give_sigsegv;
 
-	/* Send SIGTRAP if we're single-stepping: */
-	if (ptrace_cancel_bpt(current)) {
-		force_sig_fault(SIGTRAP, TRAP_BRKPT,
-				(void __user *)regs->pc, 0);
-	}
 	return;
 
 give_sigsegv:
@@ -234,10 +254,6 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __copy_to_user(&sc->sc_fpregs, &current->thread.fpstate,
 				offsetof(struct user_fpsimd_state, fpcr));
 	err |= __put_user(current->thread.fpstate.fpcr, &sc->sc_fpcr);
-
-	err |= __put_user(regs->trap_a0, &sc->sc_traparg_a0);
-	err |= __put_user(regs->trap_a1, &sc->sc_traparg_a1);
-	err |= __put_user(regs->trap_a2, &sc->sc_traparg_a2);
 
 	return err;
 }
@@ -351,19 +367,15 @@ syscall_restart(unsigned long r0, unsigned long r19,
 static void
 do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 {
-	unsigned long single_stepping = ptrace_cancel_bpt(current);
 	struct ksignal ksig;
 
 	/* This lets the debugger run, ... */
 	if (get_signal(&ksig)) {
-		/* ... so re-check the single stepping. */
-		single_stepping |= ptrace_cancel_bpt(current);
 		/* Whee!  Actually deliver the signal.  */
 		if (r0)
 			syscall_restart(r0, r19, regs, &ksig.ka);
 		handle_signal(&ksig, regs);
 	} else {
-		single_stepping |= ptrace_cancel_bpt(current);
 		if (r0) {
 			switch (regs->r0) {
 			case ERESTARTNOHAND:
@@ -383,8 +395,6 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 		}
 		restore_saved_sigmask();
 	}
-	if (single_stepping)
-		ptrace_set_bpt(current);        /* re-set breakpoint */
 }
 
 void

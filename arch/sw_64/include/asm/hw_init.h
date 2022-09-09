@@ -18,16 +18,8 @@ struct cache_desc {
 };
 
 struct cpuinfo_sw64 {
-	unsigned long loops_per_jiffy;
 	unsigned long last_asn;
-	int need_new_asn;
-	int asn_lock;
 	unsigned long ipi_count;
-	unsigned long prof_multiplier;
-	unsigned long prof_counter;
-	unsigned char mcheck_expected;
-	unsigned char mcheck_taken;
-	unsigned char mcheck_extra;
 	struct cache_desc icache; /* Primary I-cache */
 	struct cache_desc dcache; /* Primary D or combined I/D cache */
 	struct cache_desc scache; /* Secondary cache */
@@ -45,7 +37,6 @@ struct cpu_desc_t {
 	char vendor_id[16];
 	char model_id[64];
 	unsigned long frequency;
-	__u8 run_mode;
 } __randomize_layout;
 
 #define MAX_NUMSOCKETS		8
@@ -74,6 +65,8 @@ struct memmap_entry {
 };
 
 extern struct cpuinfo_sw64 cpu_data[NR_CPUS];
+extern void store_cpu_data(int cpu);
+
 extern struct cpu_desc_t cpu_desc;
 extern struct socket_desc_t socket_desc[MAX_NUMSOCKETS];
 extern int memmap_nr;
@@ -89,12 +82,11 @@ static inline unsigned long get_cpu_freq(void)
 	return cpu_desc.frequency;
 }
 
-static inline bool icache_is_vivt_no_ictag(void)
+static inline void update_cpu_freq(unsigned long freq)
 {
-	/*
-	 * Icache of C3B is vivt with ICtag. C4 will be vipt.
-	 */
-	return (cpu_desc.arch_var == 0x3 && cpu_desc.arch_rev == 0x1);
+	freq = freq * 1000000;
+	if (cpu_desc.frequency != freq)
+		cpu_desc.frequency = freq;
 }
 
 #define EMUL_FLAG	(0x1UL << 63)

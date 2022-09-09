@@ -4,6 +4,9 @@
 #include <linux/delay.h>
 #include <linux/time.h>
 #include <linux/clk-provider.h>
+#ifndef CONFIG_SMP
+#include <linux/clocksource.h>
+#endif
 
 #include <asm/debug.h>
 
@@ -93,10 +96,6 @@ void setup_clocksource(void)
 }
 #endif /* !CONFIG_SMP */
 
-void __init common_init_rtc(void)
-{
-	setup_timer();
-}
 
 void __init
 time_init(void)
@@ -111,15 +110,9 @@ time_init(void)
 	setup_clocksource();
 	of_clk_init(NULL);
 	/* Startup the timer source. */
-	common_init_rtc();
-}
-
-void calibrate_delay(void)
-{
-	loops_per_jiffy = get_cpu_freq() / HZ;
-	pr_info("Clock rate yields %lu.%02lu BogoMIPS (lpj=%lu)\n",
-			loops_per_jiffy / (500000 / HZ),
-			(loops_per_jiffy / (5000 / HZ)) % 100, loops_per_jiffy);
+	setup_timer();
+	/* Calibrate the delay loop directly */
+	lpj_fine = cycle_freq / HZ;
 }
 
 static void __init calibrate_sched_clock(void)

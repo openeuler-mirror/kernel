@@ -95,7 +95,7 @@ struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 
 	{ "pc", 8, offsetof(struct pt_regs, pc)},
 	{ "", 8, -1 },
-	{ "unique", 8, -1},
+	{ "tp", 8, -1},
 };
 
 char *dbg_get_reg(int regno, void *mem, struct pt_regs *regs)

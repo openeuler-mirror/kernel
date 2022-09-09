@@ -21,7 +21,9 @@
 
 bool set_msi_flag;
 unsigned long sw64_kvm_last_vpn[NR_CPUS];
-__read_mostly bool bind_vcpu_enabled;
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
+extern bool bind_vcpu_enabled;
+#endif
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
 #ifdef CONFIG_SUBARCH_C3B
@@ -306,18 +308,18 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	if (change == KVM_MR_FLAGS_ONLY || change == KVM_MR_DELETE)
 		return 0;
 
+	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
+		return 0;
+
+	if (test_bit(IO_MARK_BIT + 1, &(mem->guest_phys_addr)))
+		return 0;
+
 #ifndef CONFIG_KVM_MEMHOTPLUG
 	if (mem->guest_phys_addr) {
 		pr_info("%s, No KVM MEMHOTPLUG support!\n", __func__);
 		return 0;
 	}
 #endif
-
-	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
-		return 0;
-
-	if (test_bit(IO_MARK_BIT + 1, &(mem->guest_phys_addr)))
-		return 0;
 
 	if (!sw64_kvm_pool)
 		return -ENOMEM;
@@ -409,6 +411,7 @@ int kvm_arch_vcpu_reset(struct kvm_vcpu *vcpu)
 {
 	unsigned long addr = vcpu->kvm->arch.host_phys_addr;
 
+	hrtimer_cancel(&vcpu->arch.hrt);
 	vcpu->arch.vcb.whami = vcpu->vcpu_id;
 	vcpu->arch.vcb.vcpu_irq_disabled = 1;
 	vcpu->arch.pcpu_id = -1; /* force flush tlb for the first time */
@@ -539,6 +542,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		vcpu->arch.vcb.vpcr
 			= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
 
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 		if (unlikely(bind_vcpu_enabled)) {
 			int nid;
 			unsigned long end;
@@ -548,11 +552,12 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			if (pfn_to_nid(PHYS_PFN(end)) == nid)
 				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
 		}
-#else
+#endif
+#else /* !CONFIG_KVM_MEMHOTPLUG */
 		unsigned long seg_base = virt_to_phys(vcpu->kvm->arch.seg_pgd);
 
 		vcpu->arch.vcb.vpcr = get_vpcr_memhp(seg_base, 0);
-#endif
+#endif /* CONFIG_KVM_MEMHOTPLUG */
 		vcpu->arch.vcb.upcr = 0x7;
 	}
 

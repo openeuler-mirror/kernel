@@ -33,6 +33,7 @@ void sw64_suspend_enter(void)
 	 */
 
 	disable_local_timer();
+	current_thread_info()->pcb.tp = rtid();
 
 #ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_BOOTCORE
 	sw64_suspend_deep_sleep(&suspend_state);
@@ -40,6 +41,7 @@ void sw64_suspend_enter(void)
 	mtinten();
 	asm("halt");
 #endif
+	wrtp(current_thread_info()->pcb.tp);
 
 	disable_local_timer();
 }

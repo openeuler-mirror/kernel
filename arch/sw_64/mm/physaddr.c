@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/mmdebug.h>
 #include <linux/module.h>
+#include <linux/mm.h>
 #include <asm/page.h>
 
 unsigned long __phys_addr(unsigned long x)

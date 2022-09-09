@@ -40,10 +40,8 @@ static int sw64_cpu_freq_notifier(struct notifier_block *nb,
 	unsigned long cpu;
 
 	for_each_online_cpu(cpu) {
-		if (val == CPUFREQ_POSTCHANGE) {
+		if (val == CPUFREQ_POSTCHANGE)
 			sw64_update_clockevents(cpu, freqs->new * 1000);
-			current_cpu_data.loops_per_jiffy = loops_per_jiffy;
-		}
 	}
 
 	return 0;
@@ -59,7 +57,7 @@ static unsigned int sw64_cpufreq_get(unsigned int cpu)
 		return 0;
 	}
 
-	return sw64_clk_get_rate(policy->clk);
+	return __sw64_cpufreq_get(policy) * 1000;
 }
 
 /*
@@ -70,12 +68,12 @@ static int sw64_cpufreq_target(struct cpufreq_policy *policy,
 {
 	unsigned long freq;
 
-	freq = (get_cpu_freq() / 1000) * index / 48;
+	freq = 50000 * index;
 
 	sw64_store_policy(policy);
 
 	/* setting the cpu frequency */
-	sw64_set_rate(-1, freq * 1000);
+	sw64_set_rate(freq * 1000);
 
 	return 0;
 }
@@ -100,7 +98,7 @@ static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 		if (sw64_clockmod_table[i].frequency == 0)
 			sw64_clockmod_table[i].frequency = (rate * i) / 48;
 
-	sw64_set_rate(-1, rate * 1000);
+	sw64_set_rate(rate * 1000);
 
 	policy->clk = cpuclk;
 

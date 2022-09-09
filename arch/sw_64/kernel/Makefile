@@ -17,7 +17,7 @@ obj-y    := entry.o fpu.o traps.o process.o sys_sw64.o irq.o \
 	    irq_sw64.o signal.o setup.o ptrace.o time.o \
 	    systbls.o dup_print.o tc.o timer.o \
 	    insn.o early_init.o topology.o cacheinfo.o \
-	    vdso.o vdso/
+	    vdso.o vdso/ hmcall.o
 
 obj-$(CONFIG_ACPI) += acpi.o
 obj-$(CONFIG_STACKTRACE) += stacktrace.o
@@ -31,8 +31,12 @@ obj-$(CONFIG_HIBERNATION) += hibernate_asm.o hibernate.o
 obj-$(CONFIG_AUDIT)     += audit.o
 obj-$(CONFIG_PCI) += pci_common.o
 obj-$(CONFIG_RELOCATABLE)   += relocate.o
-obj-$(CONFIG_DEBUG_FS)	+= segvdbg.o bindvcpu.o
+obj-$(CONFIG_DEBUG_FS)	+= segvdbg.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
+
+ifeq ($(CONFIG_DEBUG_FS)$(CONFIG_NUMA),yy)
+obj-y += bindvcpu.o
+endif
 
 ifndef CONFIG_PCI
 obj-y += pci-noop.o

@@ -17,16 +17,12 @@
 #define HMC_wrksp		0x0E
 #define HMC_mtinten		0x0F
 #define HMC_load_mm		0x11
-#define HMC_rdpcbb		0x12
-#define HMC_wrpcbb		0x13
 #define HMC_tbisasn		0x14
 #define HMC_tbivpn		0x19
 #define HMC_ret			0x1A
 #define HMC_wrvpcr		0x29
 #define HMC_wrfen		0x2B
-#define HMC_kvcpucb		0x2C
 #define HMC_sflush		0x2F
-#define HMC_swpctx		0x30
 #define HMC_entervm		0x31
 #define HMC_hcall		0x32
 #define HMC_tbi			0x33
@@ -45,22 +41,26 @@
 
 
 /* 0x80  - 0xBF : User Level HMC routine */
-#define HMC_bpt			0x80
-#define HMC_callsys		0x83
-#define HMC_imb			0x86
+#include <uapi/asm/hmcall.h>
+
+/* Following will be deprecated from user level invocation */
 #define HMC_rwreg		0x87
-#define HMC_rdunique		0x9E
-#define HMC_wrunique		0x9F
 #define HMC_sz_uflush		0xA8
-#define HMC_gentrap		0xAA
-#define HMC_wrperfmon		0xB0
 #define HMC_longtime		0xB1
 
 #ifdef __KERNEL__
 #ifndef __ASSEMBLY__
 
+#include <linux/init.h>
+extern void __init fixup_hmcall(void);
+
 extern void halt(void) __attribute__((noreturn));
 #define __halt() __asm__ __volatile__ ("sys_call %0 #halt" : : "i" (HMC_halt))
+
+#define fpu_enable()						\
+{								\
+	__asm__ __volatile__("sys_call %0" : : "i" (HMC_wrfen));\
+}
 
 #define imb() \
 	__asm__ __volatile__ ("sys_call %0 #imb" : : "i" (HMC_imb) : "memory")
@@ -156,8 +156,6 @@ __CALL_HMC_R0(rdksp, unsigned long);
 __CALL_HMC_W1(wrksp, unsigned long);
 
 __CALL_HMC_W2(load_mm, unsigned long, unsigned long);
-__CALL_HMC_R0(rdpcbb, unsigned long);
-__CALL_HMC_W1(wrpcbb, unsigned long);
 
 __CALL_HMC_R0(rdptbr, unsigned long);
 __CALL_HMC_W1(wrptbr, unsigned long);
@@ -166,7 +164,6 @@ __CALL_HMC_RW1(swpipl, unsigned long, unsigned long);
 __CALL_HMC_R0(whami, unsigned long);
 __CALL_HMC_RW1(rdio64, unsigned long, unsigned long);
 __CALL_HMC_RW1(rdio32, unsigned int, unsigned long);
-__CALL_HMC_R0(kvcpucb, unsigned long);
 __CALL_HMC_R0(sleepen, unsigned long);
 __CALL_HMC_R0(mtinten, unsigned long);
 __CALL_HMC_W2(wrent, void*, unsigned long);
@@ -178,6 +175,7 @@ __CALL_HMC_W1(wrtimer, unsigned long);
 __CALL_HMC_RW3(tbivpn, unsigned long, unsigned long, unsigned long, unsigned long);
 __CALL_HMC_RW2(cpuid, unsigned long, unsigned long, unsigned long);
 
+__CALL_HMC_W1(wrtp, unsigned long);
 /*
  * TB routines..
  */
@@ -193,11 +191,27 @@ __CALL_HMC_RW2(cpuid, unsigned long, unsigned long, unsigned long);
 })
 
 #define tbi(x, y)	__tbi(x, __r17 = (y), "1" (__r17))
-#define tbisi(x)	__tbi(1, __r17 = (x), "1" (__r17))
-#define tbisd(x)	__tbi(2, __r17 = (x), "1" (__r17))
-#define tbis(x)		__tbi(3, __r17 = (x), "1" (__r17))
-#define tbiap()		__tbi(-1, /* no second argument */)
+
+/* Invalidate all TLB, only used by hypervisor */
 #define tbia()		__tbi(-2, /* no second argument */)
+
+/* Invalidate TLB for all processes with currnet VPN */
+#define tbivp()		__tbi(-1, /* no second argument */)
+
+/* Invalidate all TLB with current VPN */
+#define tbiv()		__tbi(0, /* no second argument */)
+
+/* Invalidate ITLB of addr with current UPN and VPN */
+#define tbisi(addr)	__tbi(1, __r17 = (addr), "1" (__r17))
+
+/* Invalidate DTLB of addr with current UPN and VPN */
+#define tbisd(addr)	__tbi(2, __r17 = (addr), "1" (__r17))
+
+/* Invalidate TLB of addr with current UPN and VPN */
+#define tbis(addr)	__tbi(3, __r17 = (addr), "1" (__r17))
+
+/* Invalidate all user TLB with current UPN and VPN */
+#define tbiu()		__tbi(4, /* no second argument */)
 
 #endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */

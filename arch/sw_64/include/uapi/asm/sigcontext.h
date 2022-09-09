@@ -2,15 +2,13 @@
 #ifndef _UAPI_ASM_SW64_SIGCONTEXT_H
 #define _UAPI_ASM_SW64_SIGCONTEXT_H
 
+/*
+ * Signal context structure
+ *
+ * The context is saved before a signal handler is invoked, and it is
+ * restored by sys_sigreturn / sys_rt_sigreturn.
+ */
 struct sigcontext {
-	/*
-	 * What should we have here? I'd probably better use the same
-	 * stack layout as DEC Unix, just in case we ever want to try
-	 * running their binaries..
-	 *
-	 * This is the basic layout, but I don't know if we'll ever
-	 * actually fill in all the values..
-	 */
 	long		sc_onstack;
 	long		sc_mask;
 	long		sc_pc;
@@ -19,6 +17,7 @@ struct sigcontext {
 	long		sc_ownedfp;
 	long		sc_fpregs[128];	/* SIMD-FP */
 	unsigned long	sc_fpcr;
+	/* TODO: Following are unused, to be removed and synced with libc */
 	unsigned long	sc_fp_control;
 	unsigned long	sc_reserved1, sc_reserved2;
 	unsigned long	sc_ssize;

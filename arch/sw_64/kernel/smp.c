@@ -34,7 +34,7 @@ EXPORT_SYMBOL(__cpu_to_rcid);
 int __rcid_to_cpu[NR_CPUS];		/* Map physical to logical */
 EXPORT_SYMBOL(__rcid_to_cpu);
 
-unsigned long tidle_pcb[NR_CPUS];
+void *tidle_ksp[NR_CPUS];
 
 /* State of each CPU */
 DEFINE_PER_CPU(int, cpu_state) = { 0 };
@@ -59,29 +59,6 @@ EXPORT_SYMBOL(smp_num_cpus);
 #define send_sleep_interrupt(cpu)	send_ipi((cpu), II_SLEEP)
 #define send_wakeup_interrupt(cpu)	send_ipi((cpu), II_WAKE)
 
-/*
- * Called by both boot and secondaries to move global data into
- *  per-processor storage.
- */
-static inline void __init
-smp_store_cpu_info(int cpuid)
-{
-	cpu_data[cpuid].loops_per_jiffy = loops_per_jiffy;
-	cpu_data[cpuid].last_asn = ASN_FIRST_VERSION;
-	cpu_data[cpuid].need_new_asn = 0;
-	cpu_data[cpuid].asn_lock = 0;
-}
-
-/*
- * Ideally sets up per-cpu profiling hooks.  Doesn't do much now...
- */
-static inline void __init
-smp_setup_percpu_timer(int cpuid)
-{
-	setup_timer();
-	cpu_data[cpuid].prof_counter = 1;
-	cpu_data[cpuid].prof_multiplier = 1;
-}
 
 static void __init wait_boot_cpu_to_stop(int cpuid)
 {
@@ -128,11 +105,13 @@ void smp_callin(void)
 	wrent(entInt, 0);
 
 	/* Get our local ticker going. */
-	smp_setup_percpu_timer(cpuid);
+	setup_timer();
 
 	/* All kernel threads share the same mm context.  */
 	mmgrab(&init_mm);
 	current->active_mm = &init_mm;
+	/* update csr:ptbr */
+	wrptbr(virt_to_phys(init_mm.pgd));
 
 	/* inform the notifiers about the new cpu */
 	notify_cpu_starting(cpuid);
@@ -176,23 +155,11 @@ static inline void set_secondary_ready(int cpuid)
  */
 static int secondary_cpu_start(int cpuid, struct task_struct *idle)
 {
-	struct pcb_struct *ipcb;
 	unsigned long timeout;
-
-	ipcb = &task_thread_info(idle)->pcb;
-
 	/*
-	 * Initialize the idle's PCB to something just good enough for
-	 * us to get started.  Immediately after starting, we'll swpctx
-	 * to the target idle task's pcb.  Reuse the stack in the mean
-	 * time.  Precalculate the target PCBB.
+	 * Precalculate the target ksp.
 	 */
-	ipcb->ksp = (unsigned long)ipcb + sizeof(union thread_union) - 16;
-	ipcb->usp = 0;
-	ipcb->pcc = 0;
-	ipcb->asn = 0;
-	tidle_pcb[cpuid] = ipcb->unique = virt_to_phys(ipcb);
-	ipcb->dv_match = ipcb->dv_mask = 0;
+	tidle_ksp[cpuid] = idle->stack + THREAD_SIZE;
 
 	DBGS("Starting secondary cpu %d: state 0x%lx\n", cpuid, idle->state);
 
@@ -298,7 +265,7 @@ void __init setup_smp(void)
 			__cpu_to_rcid[num] = i;
 			__rcid_to_cpu[i] = num;
 			set_cpu_possible(num, true);
-			smp_store_cpu_info(num);
+			store_cpu_data(num);
 			if (!cpumask_test_cpu(i, &cpu_offline))
 				set_cpu_present(num, true);
 			num++;
@@ -407,18 +374,8 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 void __init native_smp_cpus_done(unsigned int max_cpus)
 {
-	int cpu;
-	unsigned long bogosum = 0;
-
-	for (cpu = 0; cpu < NR_CPUS; cpu++)
-		if (cpu_online(cpu))
-			bogosum += cpu_data[cpu].loops_per_jiffy;
-
 	smp_booted = 1;
-	pr_info("SMP: Total of %d processors activated (%lu.%02lu BogoMIPS).\n",
-		num_online_cpus(),
-		(bogosum + 2500) / (500000/HZ),
-		((bogosum + 2500) / (5000/HZ)) % 100);
+	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
 }
 
 int setup_profiling_timer(unsigned int multiplier)
@@ -519,22 +476,9 @@ void native_send_call_func_single_ipi(int cpu)
 	send_ipi_message(cpumask_of(cpu), IPI_CALL_FUNC);
 }
 
-static void
-ipi_imb(void *ignored)
-{
-	imb();
-}
-
-void smp_imb(void)
-{
-	/* Must wait other processors to flush their icache before continue. */
-	on_each_cpu(ipi_imb, NULL, 1);
-}
-EXPORT_SYMBOL(smp_imb);
-
 static void ipi_flush_tlb_all(void *ignored)
 {
-	tbia();
+	tbiv();
 }
 
 void flush_tlb_all(void)
@@ -544,8 +488,6 @@ void flush_tlb_all(void)
 	 */
 	on_each_cpu(ipi_flush_tlb_all, NULL, 1);
 }
-
-#define asn_locked() (cpu_data[smp_processor_id()].asn_lock)
 
 static void ipi_flush_tlb_mm(void *x)
 {
@@ -650,50 +592,6 @@ void flush_tlb_range(struct vm_area_struct *vma, unsigned long start, unsigned l
 	flush_tlb_mm(vma->vm_mm);
 }
 EXPORT_SYMBOL(flush_tlb_range);
-
-static void ipi_flush_icache_page(void *x)
-{
-	struct mm_struct *mm = (struct mm_struct *) x;
-
-	if (mm == current->mm)
-		__load_new_mm_context(mm);
-	else
-		flush_tlb_other(mm);
-}
-
-void flush_icache_user_page(struct vm_area_struct *vma, struct page *page,
-			unsigned long addr, int len)
-{
-	struct mm_struct *mm = vma->vm_mm;
-
-	if ((vma->vm_flags & VM_EXEC) == 0)
-		return;
-	if (!icache_is_vivt_no_ictag())
-		return;
-
-	preempt_disable();
-
-	if (mm == current->mm) {
-		__load_new_mm_context(mm);
-		if (atomic_read(&mm->mm_users) == 1) {
-			int cpu, this_cpu = smp_processor_id();
-
-			for (cpu = 0; cpu < NR_CPUS; cpu++) {
-				if (!cpu_online(cpu) || cpu == this_cpu)
-					continue;
-				if (mm->context.asid[cpu])
-					mm->context.asid[cpu] = 0;
-			}
-			preempt_enable();
-			return;
-		}
-	} else
-		flush_tlb_other(mm);
-
-	smp_call_function(ipi_flush_icache_page, mm, 1);
-
-	preempt_enable();
-}
 
 int native_cpu_disable(void)
 {

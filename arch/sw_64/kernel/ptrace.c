@@ -72,7 +72,7 @@ short regoffsets[32] = {
 
 static int pcboff[] = {
 	[USP] = PCB_OFF(usp),
-	[UNIQUE] = PCB_OFF(unique),
+	[TP] = PCB_OFF(tp),
 	[DA_MATCH] = PCB_OFF(da_match),
 	[DA_MASK] = PCB_OFF(da_mask),
 	[DV_MATCH] = PCB_OFF(dv_match),
@@ -154,119 +154,12 @@ put_reg(struct task_struct *task, unsigned long regno, unsigned long data)
 	return 0;
 }
 
-static inline int
-read_int(struct task_struct *task, unsigned long addr, int *data)
-{
-	int copied = access_process_vm(task, addr, data, sizeof(int), FOLL_FORCE);
-
-	return (copied == sizeof(int)) ? 0 : -EIO;
-}
-
-static inline int
-write_int(struct task_struct *task, unsigned long addr, int data)
-{
-	int copied = access_process_vm(task, addr, &data, sizeof(int),
-			FOLL_FORCE | FOLL_WRITE);
-	return (copied == sizeof(int)) ? 0 : -EIO;
-}
-
 /*
- * Set breakpoint.
- */
-int
-ptrace_set_bpt(struct task_struct *child)
-{
-	int displ, i, res, reg_b, nsaved = 0;
-	unsigned int insn, op_code;
-	unsigned long pc;
-
-	pc = get_reg(child, REG_PC);
-	res = read_int(child, pc, (int *)&insn);
-	if (res < 0)
-		return res;
-
-	op_code = insn >> 26;
-	/* br bsr beq bne blt ble bgt bge blbc blbs fbeq fbne fblt fble fbgt fbge */
-	if ((1UL << op_code) & 0x3fff000000000030UL) {
-		/*
-		 * It's a branch: instead of trying to figure out
-		 * whether the branch will be taken or not, we'll put
-		 * a breakpoint at either location.  This is simpler,
-		 * more reliable, and probably not a whole lot slower
-		 * than the alternative approach of emulating the
-		 * branch (emulation can be tricky for fp branches).
-		 */
-		displ = ((s32)(insn << 11)) >> 9;
-		task_thread_info(child)->bpt_addr[nsaved++] = pc + 4;
-		if (displ) /* guard against unoptimized code */
-			task_thread_info(child)->bpt_addr[nsaved++]
-				= pc + 4 + displ;
-		/*call ret jmp*/
-	} else if (op_code >= 0x1 && op_code <= 0x3) {
-		reg_b = (insn >> 16) & 0x1f;
-		task_thread_info(child)->bpt_addr[nsaved++] = get_reg(child, reg_b);
-	} else {
-		task_thread_info(child)->bpt_addr[nsaved++] = pc + 4;
-	}
-
-	/* install breakpoints: */
-	for (i = 0; i < nsaved; ++i) {
-		res = read_int(child, task_thread_info(child)->bpt_addr[i],
-				(int *)&insn);
-		if (res < 0)
-			return res;
-		task_thread_info(child)->bpt_insn[i] = insn;
-		res = write_int(child, task_thread_info(child)->bpt_addr[i],
-				BREAKINST);
-		if (res < 0)
-			return res;
-	}
-	task_thread_info(child)->bpt_nsaved = nsaved;
-	return 0;
-}
-
-/*
- * Ensure no single-step breakpoint is pending.  Returns non-zero
- * value if child was being single-stepped.
- */
-int
-ptrace_cancel_bpt(struct task_struct *child)
-{
-	int i, nsaved = task_thread_info(child)->bpt_nsaved;
-
-	task_thread_info(child)->bpt_nsaved = 0;
-
-	if (nsaved > 2) {
-		printk("%s: bogus nsaved: %d!\n", __func__, nsaved);
-		nsaved = 2;
-	}
-
-	for (i = 0; i < nsaved; ++i) {
-		write_int(child, task_thread_info(child)->bpt_addr[i],
-				task_thread_info(child)->bpt_insn[i]);
-	}
-	return (nsaved != 0);
-}
-
-void user_enable_single_step(struct task_struct *child)
-{
-	/* Mark single stepping.  */
-	task_thread_info(child)->bpt_nsaved = -1;
-}
-
-void user_disable_single_step(struct task_struct *child)
-{
-	ptrace_cancel_bpt(child);
-}
-
-/*
- * Called by kernel/ptrace.c when detaching..
- *
- * Make sure the single step bit is not set.
+ * Called by ptrace_detach
  */
 void ptrace_disable(struct task_struct *child)
 {
-	user_disable_single_step(child);
+	/**/
 }
 
 static int gpr_get(struct task_struct *target,
@@ -487,7 +380,7 @@ int do_match(unsigned long address, unsigned long mmcsr, long cause, struct pt_r
 	case MMCSR__DA_MATCH:
 	case MMCSR__DV_MATCH:
 	case MMCSR__DAV_MATCH:
-		dik_show_regs(regs);
+		show_regs(regs);
 
 		if (!(current->ptrace & PT_PTRACED)) {
 			printk(" pid %d %s not be ptraced, return\n", current->pid, current->comm);
@@ -611,10 +504,6 @@ static const struct pt_regs_offset regoffset_table[] = {
 	REG_OFFSET_NAME(r26),
 	REG_OFFSET_NAME(r27),
 	REG_OFFSET_NAME(r28),
-	REG_OFFSET_NAME(hae),
-	REG_OFFSET_NAME(trap_a0),
-	REG_OFFSET_NAME(trap_a1),
-	REG_OFFSET_NAME(trap_a2),
 	REG_OFFSET_NAME(ps),
 	REG_OFFSET_NAME(pc),
 	REG_OFFSET_NAME(gp),

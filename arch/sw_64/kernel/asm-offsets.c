@@ -33,9 +33,8 @@ void foo(void)
 	OFFSET(PSTATE_FPREGS, processor_state, fpregs);
 	OFFSET(PSTATE_FPCR, processor_state, fpcr);
 #ifdef CONFIG_HIBERNATION
-	OFFSET(PSTATE_PCB, processor_state, pcb);
+	OFFSET(PSTATE_SP, processor_state, sp);
 #endif
-	OFFSET(PCB_KSP, pcb_struct, ksp);
 	OFFSET(PBE_ADDR, pbe, address);
 	OFFSET(PBE_ORIG_ADDR, pbe, orig_address);
 	OFFSET(PBE_NEXT, pbe, next);
@@ -89,9 +88,6 @@ void foo(void)
 	DEFINE(PT_REGS_R26, offsetof(struct pt_regs, r26));
 	DEFINE(PT_REGS_R27, offsetof(struct pt_regs, r27));
 	DEFINE(PT_REGS_R28, offsetof(struct pt_regs, r28));
-	DEFINE(PT_REGS_TRAP_A0, offsetof(struct pt_regs, trap_a0));
-	DEFINE(PT_REGS_TRAP_A1, offsetof(struct pt_regs, trap_a1));
-	DEFINE(PT_REGS_TRAP_A2, offsetof(struct pt_regs, trap_a2));
 	DEFINE(PT_REGS_PS, offsetof(struct pt_regs, ps));
 	DEFINE(PT_REGS_PC, offsetof(struct pt_regs, pc));
 	DEFINE(PT_REGS_GP, offsetof(struct pt_regs, gp));
@@ -222,4 +218,5 @@ void foo(void)
 	OFFSET(TASK_THREAD_S5, task_struct, thread.s[5]);
 	OFFSET(TASK_THREAD_S6, task_struct, thread.s[6]);
 	BLANK();
+	DEFINE(ASM_THREAD_SIZE, THREAD_SIZE);
 }

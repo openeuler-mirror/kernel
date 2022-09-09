@@ -41,15 +41,12 @@ void __iowrite64_copy(void __iomem *to,
 		      const void *from,
 		      size_t count)
 {
-#ifdef CONFIG_64BIT
 	u64 __iomem *dst = to;
 	const u64 *src = from;
 	const u64 *end = src + count;
 
-	while (src < end)
+	while (src < end) {
 		__raw_writeq(*src++, dst++);
 		mb();
-#else
-	__iowrite32_copy(to, from, count * 2);
-#endif
+	}
 }

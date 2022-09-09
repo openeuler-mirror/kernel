@@ -14,11 +14,10 @@
 /*
  * This defines the normal kernel pt-regs layout.
  *
- * regs 9-15 preserved by C code
+ * regs 9-15 preserved by C code, saving to pt_regs will make
+ * them easier to be accessed in an unified way.
  * regs 16-18 saved by HMcode
  * regs 29-30 saved and set up by HMcode
- * JRP - Save regs 16-18 in a special area of the stack, so that
- * the hmcode-provided values are available to the signal handler.
  */
 
 	.macro SAVE_COMMON_REGS
@@ -42,9 +41,6 @@
 	stl	$25, PT_REGS_R25($sp)
 	stl	$26, PT_REGS_R26($sp)
 	stl	$27, PT_REGS_R27($sp)
-	stl	$16, PT_REGS_TRAP_A0($sp)
-	stl	$17, PT_REGS_TRAP_A1($sp)
-	stl	$18, PT_REGS_TRAP_A2($sp)
 	.endm
 
 	.macro RESTORE_COMMON_REGS
@@ -384,11 +380,10 @@ $syscall_trace_failed:
  * Integer register context switch
  * The callee-saved registers must be saved and restored.
  *
- *   a0: physical address of next task's pcb, used by hmcode
- *   a1: previous task_struct (must be preserved across the switch)
- *   a2: next task_struct
+ *   a0: previous task_struct (must be preserved across the switch)
+ *   a1: next task_struct
  *
- * The value of a1  must be preserved by this function, as that's how
+ * The value of a0  must be preserved by this function, as that's how
  * arguments are passed to schedule_tail.
  */
 	.align 4
@@ -397,33 +392,28 @@ $syscall_trace_failed:
 __switch_to:
 	.prologue 0
 	/* Save context into prev->thread */
-	stl	$26, TASK_THREAD_RA($17)
-	stl	$30, TASK_THREAD_SP($17)
-	stl	$9, TASK_THREAD_S0($17)
-	stl	$10, TASK_THREAD_S1($17)
-	stl	$11, TASK_THREAD_S2($17)
-	stl	$12, TASK_THREAD_S3($17)
-	stl	$13, TASK_THREAD_S4($17)
-	stl	$14, TASK_THREAD_S5($17)
-	stl	$15, TASK_THREAD_S6($17)
+	stl	$26, TASK_THREAD_RA($16)
+	stl	$30, TASK_THREAD_SP($16)
+	stl	$9, TASK_THREAD_S0($16)
+	stl	$10, TASK_THREAD_S1($16)
+	stl	$11, TASK_THREAD_S2($16)
+	stl	$12, TASK_THREAD_S3($16)
+	stl	$13, TASK_THREAD_S4($16)
+	stl	$14, TASK_THREAD_S5($16)
+	stl	$15, TASK_THREAD_S6($16)
 	/* Restore context from next->thread */
-	ldl	$26, TASK_THREAD_RA($18)
-	ldl	$9, TASK_THREAD_S0($18)
-	ldl	$10, TASK_THREAD_S1($18)
-	ldl	$11, TASK_THREAD_S2($18)
-	ldl	$12, TASK_THREAD_S3($18)
-	ldl	$13, TASK_THREAD_S4($18)
-	ldl	$14, TASK_THREAD_S5($18)
-	ldl	$15, TASK_THREAD_S6($18)
-	sys_call HMC_swpctx
-	/*
-	 * SP has been saved and restored by HMC_swpctx,
-	 * and restore it again here for future expansion.
-	 */
-	ldl     $30, TASK_THREAD_SP($18)
+	ldl	$26, TASK_THREAD_RA($17)
+	ldl     $30, TASK_THREAD_SP($17)
+	ldl	$9, TASK_THREAD_S0($17)
+	ldl	$10, TASK_THREAD_S1($17)
+	ldl	$11, TASK_THREAD_S2($17)
+	ldl	$12, TASK_THREAD_S3($17)
+	ldl	$13, TASK_THREAD_S4($17)
+	ldl	$14, TASK_THREAD_S5($17)
+	ldl	$15, TASK_THREAD_S6($17)
 	ldi	$8, 0x3fff
 	bic	$sp, $8, $8
-	mov	$17, $0
+	mov	$16, $0
 	ret
 	.end __switch_to
 
@@ -436,8 +426,7 @@ __switch_to:
 	.ent ret_from_fork
 ret_from_fork:
 	ldi	$26, ret_from_sys_call
-	mov	$17, $16
-	jmp	$31, schedule_tail
+	call	$31, schedule_tail
 	.end ret_from_fork
 
 /*
@@ -447,7 +436,6 @@ ret_from_fork:
 	.globl ret_from_kernel_thread
 	.ent ret_from_kernel_thread
 ret_from_kernel_thread:
-	mov	$17, $16
 	call	$26, schedule_tail
 	mov	$9, $27
 	mov	$10, $16
