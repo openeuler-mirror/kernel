@@ -89,7 +89,7 @@ void vmx_vcpu_pi_put(struct kvm_vcpu *vcpu)
 {
 	struct pi_desc *pi_desc = vcpu_to_pi_desc(vcpu);
 
-	if (!vmx_can_use_vtd_pi(vcpu->kvm))
+	if (!(vmx_can_use_ipiv(vcpu) || vmx_can_use_vtd_pi(vcpu->kvm)))
 		return;
 
 	/* Set SN when the vCPU is preempted */
@@ -147,7 +147,7 @@ int pi_pre_block(struct kvm_vcpu *vcpu)
 	struct pi_desc old, new;
 	struct pi_desc *pi_desc = vcpu_to_pi_desc(vcpu);
 
-	if (!vmx_can_use_vtd_pi(vcpu->kvm))
+	if (!(vmx_can_use_ipiv(vcpu) || vmx_can_use_vtd_pi(vcpu->kvm)))
 		return 0;
 
 	WARN_ON(irqs_disabled());
