@@ -46,16 +46,6 @@
  * zero have no stack-slot and need to be treated specially (see
  * get_reg/put_reg below).
  */
-enum {
-	REG_R0 = 0,
-	REG_F0 = 32,
-	REG_FPCR = 63,
-	REG_PC = 64,
-	REG_SP = 30,
-	REG_PS = 31,
-	REG_GP = 29
-};
-
 #define R(x)	((size_t) &((struct pt_regs *)0)->x)
 
 short regoffsets[32] = {
