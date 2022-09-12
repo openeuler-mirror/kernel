@@ -144,6 +144,7 @@ extern int cppc_set_auto_sel(int cpu, bool enable);
 extern int cppc_set_epp(int cpu, u64 epp_val);
 extern int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls);
 extern int cppc_get_perf_caps(int cpu, struct cppc_perf_caps *caps);
+extern bool cppc_perf_ctrs_in_pcc(void);
 extern bool acpi_cpc_valid(void);
 extern int acpi_get_psd_map(unsigned int cpu, struct cppc_cpudata *cpu_data);
 extern unsigned int cppc_get_transition_latency(int cpu);
@@ -166,6 +167,10 @@ static inline int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls)
 static inline int cppc_get_perf_caps(int cpu, struct cppc_perf_caps *caps)
 {
 	return -ENOTSUPP;
+}
+static inline bool cppc_perf_ctrs_in_pcc(void)
+{
+	return false;
 }
 static inline bool acpi_cpc_valid(void)
 {
