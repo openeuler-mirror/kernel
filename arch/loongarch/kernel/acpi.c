@@ -16,6 +16,7 @@
 #include <asm/io.h>
 #include <asm/numa.h>
 #include <asm/loongson.h>
+#include "legacy_boot.h"
 
 int acpi_disabled;
 EXPORT_SYMBOL(acpi_disabled);
@@ -74,7 +75,7 @@ void __init acpi_boot_table_init(void)
 }
 
 #ifdef CONFIG_SMP
-static int set_processor_mask(u32 id, u32 flags)
+int set_processor_mask(u32 id, u32 flags)
 {
 
 	int cpu, cpuid = id;
@@ -139,6 +140,7 @@ acpi_parse_eio_master(union acpi_subtable_headers *header, const unsigned long e
 
 static void __init acpi_process_madt(void)
 {
+	int error;
 #ifdef CONFIG_SMP
 	int i;
 
@@ -147,6 +149,16 @@ static void __init acpi_process_madt(void)
 		__cpu_logical_map[i] = -1;
 	}
 #endif
+
+	if (efi_bp && bpi_version <= BPI_VERSION_V1) {
+		error = legacy_madt_table_init();
+		if (error < 0) {
+			disable_acpi();
+			pr_err(PREFIX "Invalid BIOS MADT (legacy), ACPI disabled\n");
+		}
+		return;
+	}
+
 	acpi_table_parse_madt(ACPI_MADT_TYPE_CORE_PIC,
 			acpi_parse_processor, MAX_CORE_PIC);
 

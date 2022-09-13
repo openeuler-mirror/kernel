@@ -40,6 +40,7 @@ sw64-obj-$(CONFIG_EFI)			:= sunway-init.o sunway-runtime.o
 obj-$(CONFIG_SW64)			+= $(sw64-obj-y)
 riscv-obj-$(CONFIG_EFI)			:= efi-init.o riscv-runtime.o
 obj-$(CONFIG_RISCV)			+= $(riscv-obj-y)
+obj-$(CONFIG_LOONGARCH)			+= efi-init.o
 obj-$(CONFIG_EFI_CAPSULE_LOADER)	+= capsule-loader.o
 obj-$(CONFIG_EFI_EARLYCON)		+= earlycon.o
 obj-$(CONFIG_UEFI_CPER_ARM)		+= cper-arm.o

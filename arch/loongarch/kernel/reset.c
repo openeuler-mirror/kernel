@@ -42,9 +42,10 @@ void machine_power_off(void)
 	preempt_disable();
 	smp_send_stop();
 #endif
-
+	pm_power_off();
 #ifdef CONFIG_EFI
-	efi.reset_system(EFI_RESET_SHUTDOWN, EFI_SUCCESS, 0, NULL);
+	if (efi.reset_system)
+		efi.reset_system(EFI_RESET_SHUTDOWN, EFI_SUCCESS, 0, NULL);
 #endif
 	while (true) {
 		__arch_cpu_idle();

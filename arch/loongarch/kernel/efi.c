@@ -24,6 +24,7 @@
 #include <asm/efi.h>
 #include <asm/tlb.h>
 #include <asm/loongson.h>
+#include "legacy_boot.h"
 
 static unsigned long efi_nr_tables;
 static unsigned long efi_config_table;
@@ -89,6 +90,9 @@ static int __init set_virtual_map(void)
 	efi_set_virtual_address_map_t *svam;
 	efi_memory_desc_t *in, runtime_map[32];
 
+	if (efi_bp)
+		return EFI_SUCCESS;
+
 	size = sizeof(efi_memory_desc_t);
 
 	for_each_efi_memory_desc(in) {
@@ -146,15 +150,16 @@ void __init efi_runtime_init(void)
 	set_bit(EFI_RUNTIME_SERVICES, &efi.flags);
 }
 
-void __init efi_init(void)
+void __init loongson_efi_init(void)
 {
 	int size;
 	void *config_tables;
 
-	if (!efi_system_table)
-		return;
+	if (efi_system_table)
+		efi_systab = (efi_system_table_t *)early_memremap_ro(efi_system_table, sizeof(*efi_systab));
+	else
+		efi_systab = (efi_system_table_t *)efi_bp->systemtable;
 
-	efi_systab = (efi_system_table_t *)early_memremap_ro(efi_system_table, sizeof(*efi_systab));
 	if (!efi_systab) {
 		pr_err("Can't find EFI system table.\n");
 		return;
