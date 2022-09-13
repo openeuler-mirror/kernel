@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .9.0
-%global pkg_release         .62
+%global maintenance_release .11.0
+%global pkg_release         .63
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,54 @@ fi
 %endif
 
 %changelog
+* Fri Sep 09 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.11.0.63
+- !108 tools/bpftool: Add BTF_KIND_FLOAT support
+- !96 Intel SPR: IPI virtualization support for VM
+- !98 Add support for AMD EPYC Genoa platform
+- bpf: Document BTF_KIND_FLOAT in btf.rst
+- selftests/bpf: Add BTF_KIND_FLOAT to the existing deduplication tests
+- selftest/bpf: Add BTF_KIND_FLOAT tests
+- bpf: Add BTF_KIND_FLOAT support
+- selftests/bpf: Use the 25th bit in the "invalid BTF_INFO" test
+- tools/bpftool: Add BTF_KIND_FLOAT support
+- KVM: x86/mmu: Support shadowing NPT when 5-level paging is enabled in host
+- KVM: SVM: Allow AVIC support on system w/ physical APIC ID > 255
+- KVM: x86: SVM: move avic definitions from AMD's spec to svm.h
+- KVM: SVM: Add 5-level page table support for SVM
+- KVM: x86: Prevent KVM SVM from loading on kernels with 5-level paging
+- x86/MCE/AMD, EDAC/mce_amd: Support non-uniform MCA bank type enumeration
+- x86/MCE/AMD, EDAC/amd64: Move address translation to AMD64 EDAC
+- x86/MCE/AMD: Export smca_get_bank_type symbol
+- x86/MCE/AMD, EDAC/mce_amd: Add new SMCA bank types
+- x86/MCE/AMD, EDAC/mce_amd: Add new SMCA bank types
+- EDAC/amd64: Add new register offset support and related changes
+- EDAC/amd64: Set memory type per DIMM
+- EDAC/amd64: Add support for AMD Family 19h Models 10h-1Fh and A0h-AFh
+- EDAC: Add RDDR5 and LRDDR5 memory types
+- hwmon: (k10temp) Support up to 12 CCDs on AMD Family of processors
+- hwmon: (k10temp) Add support for AMD Family 19h Models 10h-1Fh and A0h-AFh
+- x86/amd_nb: Add AMD Family 19h Models (10h-1Fh) and (A0h-AFh) PCI IDs
+- hwmon: (k10temp) Remove unused definitions
+- hwmon: (k10temp) Remove residues of current and voltage
+- hwmon: (k10temp) Add support for yellow carp
+- hwmon: (k10temp) Rework the temperature offset calculation
+- hwmon: (k10temp) Don't show Tdie for all Zen/Zen2/Zen3 CPU/APU
+- hwmon: (k10temp) Add additional missing Zen2 and Zen3 APUs
+- hwmon: (k10temp) support Zen3 APUs
+- hwmon: (k10temp) Zen3 Ryzen Desktop CPUs support
+- x86/amd_nb: Add AMD family 19h model 50h PCI ids
+- crypto: ccp - Add support for new CCP/PSP device ID
+- KVM: VMX: enable IPI virtualization
+- kvm: selftests: Add KVM_CAP_MAX_VCPU_ID cap test
+- KVM: x86: Allow userspace to set maximum VCPU id for VM
+- KVM: Move kvm_arch_vcpu_precreate() under kvm->lock
+- KVM: VMX: Clean up vmx_refresh_apicv_exec_ctrl()
+- KVM: x86: Add support for vICR APIC-write VM-Exits in x2APIC mode
+- KVM: VMX: Report tertiary_exec_control field in dump_vmcs()
+- KVM: VMX: Detect Tertiary VM-Execution control when setup VMCS config
+- KVM: VMX: Extend BUILD_CONTROLS_SHADOW macro to support 64-bit variation
+- x86/cpu: Add new VMX feature, Tertiary VM-Execution control
+
 * Tue Sep 06 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.9.0.62
 - bpf, cgroup: Fix kernel BUG in purge_effective_progs
 - bpf: Don't use tnum_range on array range checking for poke descriptors
