@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .11.0
-%global pkg_release         .63
+%global maintenance_release .12.0
+%global pkg_release         .64
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,64 @@ fi
 %endif
 
 %changelog
+* Tue Sep 13 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.12.0.64
+- netfilter: nf_tables: do not allow RULE_ID to refer to another chain
+- netfilter: nf_tables: do not allow CHAIN_ID to refer to another table
+- netfilter: nf_tables: do not allow SET_ID to refer to another table
+- !46 config: enable CONFIG_SCHED_PRIO_LB for x86 and arm64
+- !99 update patches for sw64 architecture
+- sw64: bpf: add BPF_JMP32 and BPF_PROBE_MEM
+- sw64: kvm: turn off the clock timer of guest os
+- sw64: bpf: fix 32-bit bitwise operation
+- sw64: bpf: fix insn_offset
+- sw64: bpf: fix ebpf jit compiler
+- sw64: bpf: fix ebpf jit compiler
+- sw64: pcie: fix piu configuration to ensure data correctness
+- sw64: fix get_cpu_freq() bug
+- sw64: lib: fix __iowrite64_copy()
+- sw64: switch to generic calibrate_delay()
+- sw64: perf: fix perf_get_regs_user
+- sw64: kvm: fix wrong info print of KVM_MEMHOTPLUG
+- sw64: init sp with kernel stack top for idle thread
+- sw64: ensure IRQs are off when switch/load/activate mm context
+- sw64: optimize instruction usage in fork routine
+- efi: do some cleanups for efi_map
+- sw64: remove trap_a* and hae from pt_regs
+- sw64: make RO_DATA PAGE_SIZE aligned
+- sw64: clean up unused single step support in kernel
+- sw64: fix instruction fault handler
+- sw64: clean up unused hmcall definitions
+- sw64: fix CPUFreq bug
+- sw64: do not set devint_wken for guest and emulator
+- sw64: improve deep-copy_template.S
+- sw64: switch to inline _copy_{to,from}_user()
+- sw64: fix exception handling of deep-copy_user.S
+- sw64: adjust instructions order of deep-copy_template.S
+- sw64: fix head loop in deep-copy_template.S
+- sw64: fix sys_rt_sigaction
+- sw64: remove unused members from pcb_struct
+- sw64: remove hmcall swpctx from context switch
+- sw64: force context reload without hmcall swpctx
+- sw64: iommu: allow unlimited minimum value of iova in unmanaged domain
+- sw64: simplify icache flush interfaces
+- sw64: rename TLB invalidate helpers
+- sw64: rename dik_* methods
+- sw64: remove context check in csum_partial_copy_from_user()
+- sw64: fix deep-copy_user by deep-copy_template
+- sw64: kvm: expand the number of SWVM_IRQS
+- sw64: fix compile errors when CONFIG_KVM=m
+- sw64: simplify do_entInt()
+- sw64: always use cpu_data and simplify it
+- sw64: gpu: use memset_io and memcpy_toio/fromio for iomem
+- sw64: pci: consolidate PCI config entry in drivers/pci
+- sw64: add MIGHT_HAVE_PC_SERIO option to control selection of i8042
+- sw64: fix compile error and warning for CONFIG_SMP=n
+- sw64: delete run_mode in struct cpu_desc_t
+- sw64: adjust make rules to avoid compile error
+- sw64: reimplement die_if_kernel()
+- sw64: check processor state by user_mode(regs)
+- config: enable CONFIG_SCHED_PRIO_LB for x86 and arm64
+
 * Fri Sep 09 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.11.0.63
 - !108 tools/bpftool: Add BTF_KIND_FLOAT support
 - !96 Intel SPR: IPI virtualization support for VM
