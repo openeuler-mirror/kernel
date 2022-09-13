@@ -52,8 +52,5 @@ void __noreturn efi_enter_kernel(unsigned long entrypoint, unsigned long fdt, un
 	real_kernel_entry = (kernel_entry_t)
 		((unsigned long)&kernel_entry - entrypoint + VMLINUX_LOAD_ADDRESS);
 
-	if (!efi_novamap)
-		real_kernel_entry(true, fdt);
-	else
-		real_kernel_entry(false, fdt);
+	real_kernel_entry(true, fdt);
 }
