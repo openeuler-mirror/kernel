@@ -124,5 +124,6 @@ extern unsigned long vm_map_base;
 #define PCI_IOSIZE	SZ_32M
 #define ISA_IOSIZE	SZ_16K
 #define IO_SPACE_LIMIT	(PCI_IOSIZE - 1)
+#define ISA_PHY_IOBASE  LOONGSON_LIO_BASE
 
 #endif /* _ASM_ADDRSPACE_H */

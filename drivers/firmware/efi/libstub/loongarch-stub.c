@@ -9,7 +9,7 @@
 #include <asm/addrspace.h>
 #include "efistub.h"
 
-typedef void __noreturn (*kernel_entry_t)(bool efi, unsigned long fdt);
+typedef void __noreturn (*kernel_entry_t)(bool efi, unsigned long fdt, int flags);
 
 extern int kernel_asize;
 extern int kernel_fsize;
@@ -52,5 +52,5 @@ void __noreturn efi_enter_kernel(unsigned long entrypoint, unsigned long fdt, un
 	real_kernel_entry = (kernel_entry_t)
 		((unsigned long)&kernel_entry - entrypoint + VMLINUX_LOAD_ADDRESS);
 
-	real_kernel_entry(true, fdt);
+	real_kernel_entry(true, fdt, 0);
 }

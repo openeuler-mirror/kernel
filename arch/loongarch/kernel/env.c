@@ -12,6 +12,7 @@
 #include <asm/early_ioremap.h>
 #include <asm/bootinfo.h>
 #include <asm/loongson.h>
+#include "legacy_boot.h"
 
 u64 efi_system_table;
 struct loongson_system_configuration loongson_sysconf;
@@ -22,6 +23,9 @@ void __init init_environ(void)
 	int efi_boot = fw_arg0;
 	struct efi_memory_map_data data;
 	void *fdt_ptr = early_memremap_ro(fw_arg1, SZ_64K);
+
+	if (efi_bp)
+		return;
 
 	if (efi_boot)
 		set_bit(EFI_BOOT, &efi.flags);

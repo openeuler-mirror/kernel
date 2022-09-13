@@ -7,7 +7,7 @@
 
 #include <linux/efi.h>
 
-void __init efi_init(void);
+void __init loongson_efi_init(void);
 void __init efi_runtime_init(void);
 
 #define ARCH_EFI_IRQ_FLAGS_MASK  0x00000004  /* Bit 2: CSR.CRMD.IE */
@@ -40,5 +40,6 @@ static inline unsigned long efi_get_max_initrd_addr(unsigned long image_addr)
 {
 	return ULONG_MAX;
 }
+extern void *early_memremap_ro(resource_size_t phys_addr, unsigned long size);
 
 #endif /* _ASM_LOONGARCH_EFI_H */

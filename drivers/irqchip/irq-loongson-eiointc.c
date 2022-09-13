@@ -333,7 +333,7 @@ static struct syscore_ops eiointc_syscore_ops = {
 	.resume = eiointc_resume,
 };
 
-static int __init
+int __init
 pch_pic_parse_madt(union acpi_subtable_headers *header,
 		       const unsigned long end)
 {
@@ -347,7 +347,7 @@ pch_pic_parse_madt(union acpi_subtable_headers *header,
 	return -EINVAL;
 }
 
-static int __init
+int __init
 pch_msi_parse_madt(union acpi_subtable_headers *header,
 		       const unsigned long end)
 {
