@@ -10597,6 +10597,7 @@ static void vmx_handle_external_intr(struct kvm_vcpu *vcpu)
 			[cs]"i"(__KERNEL_CS)
 			);
 	}
+	vcpu->arch.at_instruction_boundary = true;
 }
 STACK_FRAME_NON_STANDARD(vmx_handle_external_intr);
 

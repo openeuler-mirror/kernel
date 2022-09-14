@@ -6205,6 +6205,9 @@ out:
 
 static void svm_handle_external_intr(struct kvm_vcpu *vcpu)
 {
+	if (to_svm(vcpu)->vmcb->control.exit_code == SVM_EXIT_INTR)
+		vcpu->arch.at_instruction_boundary = true;
+
 	local_irq_enable();
 	/*
 	 * We must have an instruction with interrupts enabled, so

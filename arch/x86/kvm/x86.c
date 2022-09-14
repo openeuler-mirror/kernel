@@ -186,6 +186,8 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ "halt_successful_poll", VCPU_STAT(halt_successful_poll) },
 	{ "halt_attempted_poll", VCPU_STAT(halt_attempted_poll) },
 	{ "halt_poll_invalid", VCPU_STAT(halt_poll_invalid) },
+	{ "preemption_reported", VCPU_STAT(preemption_reported) },
+	{ "preemption_other", VCPU_STAT(preemption_other) },
 	{ "halt_wakeup", VCPU_STAT(halt_wakeup) },
 	{ "hypercalls", VCPU_STAT(hypercalls) },
 	{ "request_irq", VCPU_STAT(request_irq_exits) },
@@ -231,6 +233,8 @@ struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
 	DFX_STAT("halt_exits", halt_exits),
 	DFX_STAT("halt_successful_poll", halt_successful_poll),
 	DFX_STAT("halt_attempted_poll", halt_attempted_poll),
+	DFX_STAT("preemption_reported", preemption_reported),
+	DFX_STAT("preemption_other", preemption_other),
 	DFX_STAT("halt_wakeup", halt_wakeup),
 	DFX_STAT("request_irq", request_irq_exits),
 	DFX_STAT("irq_exits", irq_exits),
@@ -3314,6 +3318,20 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 
 static void kvm_steal_time_set_preempted(struct kvm_vcpu *vcpu)
 {
+	/*
+	 * The vCPU can be marked preempted if and only if the VM-Exit was on
+	 * an instruction boundary and will not trigger guest emulation of any
+	 * kind (see vcpu_run).  Vendor specific code controls (conservatively)
+	 * when this is true, for example allowing the vCPU to be marked
+	 * preempted if and only if the VM-Exit was due to a host interrupt.
+	 */
+	if (!vcpu->arch.at_instruction_boundary) {
+		vcpu->stat.preemption_other++;
+		return;
+	}
+
+	vcpu->stat.preemption_reported++;
+
 	if (!(vcpu->arch.st.msr_val & KVM_MSR_ENABLED))
 		return;
 
@@ -7920,6 +7938,13 @@ static int vcpu_run(struct kvm_vcpu *vcpu)
 	vcpu->arch.l1tf_flush_l1d = true;
 
 	for (;;) {
+		/*
+		 * If another guest vCPU requests a PV TLB flush in the middle
+		 * of instruction emulation, the rest of the emulation could
+		 * use a stale page translation. Assume that any code after
+		 * this point can start executing an instruction.
+		 */
+		vcpu->arch.at_instruction_boundary = false;
 		if (kvm_vcpu_running(vcpu)) {
 			r = vcpu_enter_guest(vcpu);
 		} else {
