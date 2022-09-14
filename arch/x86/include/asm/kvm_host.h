@@ -554,6 +554,7 @@ struct kvm_vcpu_arch {
 	u64 ia32_misc_enable_msr;
 	u64 smbase;
 	u64 smi_count;
+	bool at_instruction_boundary;
 	bool tpr_access_reporting;
 	bool xsaves_enabled;
 	u64 ia32_xss;
@@ -1083,6 +1084,8 @@ struct kvm_vcpu_stat {
 	u64 utime;
 	u64 stime;
 	u64 gtime;
+	u64 preemption_reported;
+	u64 preemption_other;
 	u64 preemption_timer_exits;
 };
 
