@@ -1920,6 +1920,13 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+	{
+		.procname	= "detect_deadlocks",
+		.data		= &detect_deadlocks,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= detect_cycles_handler,
+	},
 #endif
 	{
 		.procname	= "panic",

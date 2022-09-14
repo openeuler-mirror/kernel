@@ -34,6 +34,9 @@ int check_reachability = 0;
 #endif
 module_param(check_reachability, int, 0644);
 
+int detect_deadlocks = 0;
+module_param(detect_deadlocks, int, 0644);
+
 /*
  * The hash-table for lite-lockdep classes:
  */
@@ -55,6 +58,30 @@ static DECLARE_BITMAP(lite_lock_classes_in_use, MAX_LITE_LOCKDEP_KEYS);
 unsigned long nr_lite_list_entries;
 static struct lite_lock_list lite_list_entries[MAX_LITE_LOCKDEP_ENTRIES];
 static DECLARE_BITMAP(lite_list_entries_in_use, MAX_LITE_LOCKDEP_ENTRIES);
+
+/* Temporarily saves the cycles to be printed. */
+unsigned long nr_ind_cycle_entries;
+static struct ind_cycle_list ind_cycle_entries[LITE_CLASSHASH_SIZE];
+static DECLARE_BITMAP(ind_cycle_entries_in_use, LITE_CLASSHASH_SIZE);
+
+/* Records entries of current path in dfs. */
+unsigned long nr_stack_entries;
+static struct stack_list stack_entries[LITE_CLASSHASH_SIZE];
+static DECLARE_BITMAP(stack_entries_in_use, LITE_CLASSHASH_SIZE);
+
+/* Indicate whether an item has been visited in dfs. */
+unsigned long nr_visit_entries;
+static struct visit_hlist visit_entries[LITE_CLASSHASH_SIZE];
+static DECLARE_BITMAP(visit_entries_in_use, LITE_CLASSHASH_SIZE);
+static DEFINE_HASHTABLE(visited, LITE_CLASSHASH_BITS);
+
+/* Indicate equivalent deadlocks. */
+unsigned long nr_detected_deadlocks;
+static struct deadlock_entry detected_deadlocks[LITE_CLASSHASH_SIZE];
+
+/* Indicate detected cycles. */
+unsigned long nr_checked_cycles;
+static struct ind_cycle_entry checked_cycles[LITE_CLASSHASH_SIZE];
 
 static LIST_HEAD(all_lite_lock_classes);
 static LIST_HEAD(free_lite_lock_classes);
@@ -303,12 +330,297 @@ void lite_debug_show_all_locks(void)
 EXPORT_SYMBOL_GPL(lite_debug_show_all_locks);
 #endif
 
+/* If the heads and the tails of two cycles are the same, 
+ * we consider they are identical deadlocks.
+ */
+static bool deadlock_checked(unsigned long head, unsigned long tail)
+{
+	struct deadlock_entry *deadlock;
+	int i;
+
+	for (i = 0; i < nr_detected_deadlocks; i++) {
+		deadlock = detected_deadlocks + i;
+		if (deadlock->chain_head == head && 
+		    deadlock->chain_tail == tail)
+			return true;
+	}
+
+	return false;
+}
+
+static int add_deadlock(unsigned long head, unsigned long tail)
+{
+	struct deadlock_entry *deadlock;
+
+	if (nr_detected_deadlocks >= LITE_CLASSHASH_SIZE) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: max detected_deadlocks size too small!");
+		dump_stack();
+		return 0;
+	}
+
+	deadlock = detected_deadlocks + nr_detected_deadlocks;
+	deadlock->chain_head = head;
+	deadlock->chain_tail = tail;
+	nr_detected_deadlocks++;
+	
+	return 1;
+}
+
+/**
+ * Returns 2 on deadlocks has already been checked.
+ * Returns 1 on OK.
+ */
+static int record_dir_deadlocks(struct lite_lock_class *first, 
+				struct lite_lock_class *next)
+{
+	unsigned long first_key = (unsigned long)first->key;
+	unsigned long next_key = (unsigned long)next->key;
+	unsigned long bigger = first_key > next_key ? first_key : next_key;
+	unsigned long smaller = first_key < next_key ? first_key : next_key;
+	int ret;
+
+	if (deadlock_checked(bigger, smaller))
+		return 2;
+
+	ret = add_deadlock(bigger, smaller);
+	if (!ret)
+		return 0;
+	
+	return 1;
+}
+
+static int record_ind_deadlocks(struct list_head *stack)
+{
+	struct stack_list *first, *entry;
+	struct lite_lock_class *class;
+	unsigned long bigger, smaller, curr_key;
+	int ret;
+
+	first = list_first_entry(stack, struct stack_list, stack_entry);
+	bigger = (unsigned long)first->lock_entry->class->key;
+	smaller = (unsigned long)first->lock_entry->class->key;
+
+	list_for_each_entry(entry, stack, stack_entry) {
+		class = entry->lock_entry->class;
+		curr_key = (unsigned long)class->key;
+		if (curr_key < smaller)
+			smaller = curr_key;
+		if (curr_key > bigger)
+			bigger = curr_key;
+	}
+
+	if (deadlock_checked(bigger, smaller))
+		return 2;
+
+	ret = add_deadlock(bigger, smaller);
+	if (!ret)
+		return 0;
+
+	return 1;
+}
+
+/* If the keys of two pair of locks are the same, 
+ * we consider they are identical cycles.
+ */
+static bool cycle_checked(struct lite_lock_class *lock, 
+			  struct lite_lock_class *dep)
+{
+	struct ind_cycle_entry ind_cycle;
+	bool found = false;
+	int i;
+
+	for (i = 0; i < nr_checked_cycles; i++) {
+		ind_cycle = checked_cycles[i];
+		if (ind_cycle.head == lock->key && 
+		    ind_cycle.dep == dep->key)
+			    found = true;
+	}
+
+	return found;
+}
+
+static int add_checked_cycle(struct lite_lock_class *lock, 
+			     struct lite_lock_class *dep)
+{
+	struct ind_cycle_entry *ind_cycle;
+
+	if (nr_checked_cycles >= LITE_CLASSHASH_SIZE) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: max checked_cycles size too small!");
+		dump_stack();
+		return 0;
+	}
+
+	ind_cycle = &checked_cycles[nr_checked_cycles];
+	ind_cycle->head = lock->key;
+	ind_cycle->dep = dep->key;
+
+	nr_checked_cycles++;
+
+	return 1;
+}
+
 static void print_lite_kernel_ident(void)
 {
 	printk("%s %.*s %s\n", init_utsname()->release,
 		(int)strcspn(init_utsname()->version, " "),
 		init_utsname()->version,
 		print_tainted());
+}
+
+static noinline void print_dir_deadlock_bug(struct lite_lock_class *prev, 
+				   	    struct lite_lock_list *next)
+{
+	struct task_struct *curr = current;
+	struct lite_lock_list *entry;
+	struct hlist_head *head = next->class->dir_from;
+	const struct lite_lock_class_sub_key *key = prev->key;
+	unsigned int from_read, to_read;
+	unsigned long from_ip, to_ip;
+	pid_t from_pid, to_pid;
+	char *from_comm, *to_comm;
+	bool found = false;
+
+	if (record_dir_deadlocks(prev, next->class) == 2)
+		return;
+
+	if (debug_locks) {
+		if (!lite_debug_locks_off_graph_unlock())
+			return;
+	}
+		
+	hlist_for_each_entry(entry, litedephashentry(head, key), hash_entry) {
+		if (entry->class->key == key) {
+			from_read = entry->read;
+			from_ip = entry->acquire_ip;
+			from_pid = entry->pid;
+			from_comm = entry->comm;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		WARN_ON(1);
+
+	/* If the entry of next is in DirectFrom(prev), then the entry of 
+	 * prev can be found in DirectTo(class of next).
+	 */
+	found = false;
+	head = next->class->dir_to;
+
+	hlist_for_each_entry(entry, litedephashentry(head, key), hash_entry) {
+		if (entry->class->key == key) {
+			to_read = entry->read;
+			to_ip = entry->acquire_ip;
+			to_pid = entry->pid;
+			to_comm = entry->comm;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		WARN_ON(1);
+
+	pr_warn("\n");
+	pr_warn("======================================================\n");
+	pr_warn("WARNING: possible circular locking dependency detected\n");
+	print_lite_kernel_ident();
+	pr_warn("------------------------------------------------------\n");
+	pr_warn("\nthe existing dependency chain is:\n");
+	
+	lite_print_lock_name(prev);
+	printk(KERN_CONT ", at: %pS", (void *)from_ip);
+	printk(KERN_CONT ", %lx", from_ip);
+	printk(KERN_CONT ", held by %s/%d\n", from_comm, from_pid);
+
+	printk("\n-- depends on -->\n\n");
+
+	lite_print_lock_name(next->class);
+	printk(KERN_CONT ", at: %pS", (void *)next->acquire_ip);
+	printk(KERN_CONT ", %lx", next->acquire_ip);
+	printk(KERN_CONT ", held by %s/%d\n", next->comm, next->pid);
+
+	printk("\n-- depends on -->\n\n");
+
+	lite_print_lock_name(prev);
+	printk(KERN_CONT ", at: %pS", (void *)to_ip);
+	printk(KERN_CONT ", %lx", to_ip);
+	printk(KERN_CONT ", held by %s/%d\n", to_comm, to_pid);
+	printk("\n");
+
+	lite_lockdep_print_held_locks(curr);
+}
+
+static void print_ind_deadlock_bug(struct list_head *stack)
+{
+	struct task_struct *curr = current;
+	struct stack_list *prev, *next, *last, *last_prev;
+	struct hlist_head *head;
+	struct lite_lock_list *entry;
+	struct lite_lock_class_sub_key *key;
+	bool found = false;
+
+	if (record_ind_deadlocks(stack) == 2)
+		return;
+
+	if (debug_locks) {
+		if (!lite_debug_locks_off_graph_unlock())
+			return;
+	}
+
+	/* The last entry is filled in dfs_head. */
+	last = list_last_entry(stack, struct stack_list, stack_entry);
+	last_prev = list_prev_entry(last, stack_entry);
+
+	head = last_prev->lock_entry->class->dir_to;
+	key = last->lock_entry->class->key;
+
+	hlist_for_each_entry(entry, litedephashentry(head, key), hash_entry) {
+		if (entry->class->key == key) {
+			last->lock_entry->read = entry->read;
+			last->lock_entry->acquire_ip = entry->acquire_ip;
+			last->lock_entry->pid = entry->pid;
+			strcpy(last->lock_entry->comm, entry->comm);
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		WARN_ON(1);
+
+	pr_warn("\n");
+	pr_warn("======================================================\n");
+	pr_warn("WARNING: possible circular locking dependency detected\n");
+	print_lite_kernel_ident();
+	pr_warn("------------------------------------------------------\n");
+	pr_warn("\nthe existing dependency chain is:\n");
+
+	list_for_each_entry(prev, stack, stack_entry) {
+		next = list_next_entry(prev, stack_entry);
+		
+		lite_print_lock_name(prev->lock_entry->class);
+		printk(KERN_CONT ", at: %pS", (void *)prev->lock_entry->acquire_ip);
+		printk(KERN_CONT ", %lx", prev->lock_entry->acquire_ip);
+		printk(KERN_CONT ", held by %s/%d\n", prev->lock_entry->comm, 
+						      prev->lock_entry->pid);
+						      
+		if (!list_entry_is_head(next, stack, stack_entry)) {
+			printk("\n-- depends on -->\n\n");
+			continue;
+		}
+
+		printk("\n");
+	}
+
+	lite_lockdep_print_held_locks(curr);
 }
 
 static void init_data_structures_once(void)
@@ -490,6 +802,185 @@ add_lite_lock_to_hlist(struct hlist_head *head, struct lite_lock_class *class,
 	return 1;
 }
 
+static struct ind_cycle_list *alloc_ind_cycle_entry(void)
+{
+	int idx = find_first_zero_bit(ind_cycle_entries_in_use,
+				      ARRAY_SIZE(ind_cycle_entries));
+
+	if (idx >= ARRAY_SIZE(ind_cycle_entries)) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: MAX_IND_CYCLE_ENTRIES too low!");
+		dump_stack();
+		return NULL;
+	}
+	nr_ind_cycle_entries++;
+	__set_bit(idx, ind_cycle_entries_in_use);
+	return ind_cycle_entries + idx;
+}
+
+static int
+add_cycle_to_list(struct list_head *head, struct lite_lock_class *class)
+{
+	struct ind_cycle_list *entry;
+
+	entry = alloc_ind_cycle_entry();
+	if (!entry)
+		return 0;
+
+	entry->class = class;
+
+	list_add_rcu(&entry->cycle_entry, head);
+
+	return 1;
+}
+
+static void init_cycle_list(void)
+{
+	unsigned long pos;
+	for_each_set_bit(pos, ind_cycle_entries_in_use, 
+			 ARRAY_SIZE(ind_cycle_entries)) {
+		__clear_bit(pos, ind_cycle_entries_in_use);
+	}
+	nr_ind_cycle_entries = 0;
+}
+
+static struct stack_list *alloc_stack_entry(void)
+{
+	int idx = find_first_zero_bit(stack_entries_in_use,
+				      ARRAY_SIZE(stack_entries));
+
+	if (idx >= ARRAY_SIZE(stack_entries)) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: MAX_STACK_ENTRIES too low!");
+		dump_stack();
+		return NULL;
+	}
+	nr_stack_entries++;
+	__set_bit(idx, stack_entries_in_use);
+	return stack_entries + idx;
+}
+
+static int add_stack_to_list(struct list_head *head, 
+			     struct lite_lock_list *lock_entry)
+{
+	struct stack_list *entry;
+
+	entry = alloc_stack_entry();
+	if (!entry)
+		return 0;
+
+	entry->lock_entry = lock_entry;
+
+	list_add_rcu(&entry->stack_entry, head);
+
+	return 1;
+}
+
+static void del_stack_in_list(struct list_head *node)
+{ 
+	struct stack_list *entry = list_entry(node, struct stack_list, stack_entry);
+	int idx = entry - stack_entries;
+
+	if (!test_bit(idx, stack_entries_in_use)) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: unbalanced MAX_LITE_LOCKDEP_STACK_ENTRIES del!");
+		dump_stack();
+	}
+
+	__clear_bit(idx, stack_entries_in_use);
+
+	list_del_init(&entry->stack_entry);
+	nr_stack_entries--;
+}
+
+static void init_stack_list(void)
+{
+	unsigned long pos;
+	for_each_set_bit(pos, stack_entries_in_use, 
+			 ARRAY_SIZE(stack_entries)) {
+		__clear_bit(pos, stack_entries_in_use);
+	}
+	nr_stack_entries = 0;
+}
+
+static struct visit_hlist *alloc_visit_entry(void)
+{
+	int idx = find_first_zero_bit(visit_entries_in_use,
+				      ARRAY_SIZE(visit_entries));
+
+	if (idx >= ARRAY_SIZE(visit_entries)) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: MAX_LITE_LOCKDEP_VISIT_ENTRIES too low!");
+		dump_stack();
+		return NULL;
+	}
+	nr_visit_entries++;
+	__set_bit(idx, visit_entries_in_use);
+	return visit_entries + idx;
+}
+
+static int add_visit_to_hlist(struct hlist_head *head, 
+			      struct lite_lock_class *class)
+{
+	struct visit_hlist *entry;
+
+	entry = alloc_visit_entry();
+	if (!entry)
+		return 0;
+
+	entry->class = class;
+
+	hlist_add_head_rcu(&entry->vis_entry, litedephashentry(head, class->key));
+
+	return 1;
+}
+
+static void init_visit_hlist(void)
+{
+	unsigned long pos;
+	for_each_set_bit(pos, visit_entries_in_use, 
+			 ARRAY_SIZE(visit_entries)) {
+		__clear_bit(pos, visit_entries_in_use);
+	}
+	nr_visit_entries = 0;
+}
+
+/* Find hlist_node and delete it */
+static void del_visit_in_hlist(struct hlist_head *head, 
+			       const struct lite_lock_class_sub_key *key)
+{
+	struct visit_hlist *entry;
+	int idx;
+
+	hlist_for_each_entry(entry, litedephashentry(head, key), vis_entry) {
+		if (entry->class->key == key) {
+			idx = entry - visit_entries;
+
+			if (!test_bit(idx, visit_entries_in_use)) {
+				debug_locks_off();
+				lite_lockdep_unlock();
+
+				printk(KERN_DEBUG "BUG: unbalanced MAX_LITE_LOCKDEP_VISIT_ENTRIES del!");
+				dump_stack();
+			}
+
+			__clear_bit(idx, visit_entries_in_use);
+			hash_del(&entry->vis_entry);
+			nr_visit_entries--;
+			
+			break;
+		}
+	}
+}
+
 /*
  * Update reachability graph dued to the direct edge: prev → next.
  * Then all indirect reachabilities are constructed.
@@ -638,6 +1129,137 @@ propagate_reachability(struct lite_held_lock *p, struct lite_held_lock *n)
 		add_lite_lock_to_hlist(next->ind_to, _prev, read, ip,
 				       pid, comm);
 	}
+}
+
+/**
+ * Search a complete cycle catched by detect_cycles.
+ */
+static void dfs(struct lite_lock_list *entry, struct list_head *stack, 
+		struct hlist_head *visited)
+{
+	struct lite_lock_class *lock = entry->class;
+	struct lite_lock_class *ind_lock;
+	struct lite_lock_list *ind_entry;
+	struct stack_list *st_entry;
+	int i;
+
+	if (entry->read == 2)
+		return;
+
+	add_stack_to_list(stack, entry);
+
+	hash_for_each(lock->ind_cycle_dir_from, i, ind_entry, hash_entry) {
+		ind_lock = ind_entry->class;
+		st_entry = list_entry(stack->prev, struct stack_list, stack_entry);
+		if (st_entry->lock_entry->class->key == ind_lock->key) {
+			add_stack_to_list(stack, ind_entry);
+			print_ind_deadlock_bug(stack);
+			del_stack_in_list(stack->next);
+			del_stack_in_list(stack->next);
+			return;
+		}
+
+		if(!in_lite_hlist_possible(visited, ind_lock->key)) {
+			add_visit_to_hlist(visited, ind_lock);
+			dfs(ind_entry, stack, visited);
+			del_visit_in_hlist(visited, ind_lock->key);
+		}
+	}
+
+	del_stack_in_list(stack->next);
+}
+
+/**
+ * Make a dummy entry for the @class and start searching.
+ */
+static void dfs_head(struct lite_lock_class *class, struct list_head *stack, 
+		     struct hlist_head *visited)
+{
+	struct lite_lock_list lock_entry;
+	INIT_HLIST_NODE(&lock_entry.hash_entry);
+	lock_entry.class = class;
+	lock_entry.read = 0;
+	lock_entry.acquire_ip = _RET_IP_;
+	lock_entry.pid = 0;
+	lock_entry.comm[0] = '\0';
+	dfs(&lock_entry, stack, visited);
+}
+
+/**
+ * First, check on simple cycles. DFS will be
+ * performed if only simple cycle exists.
+ * This function is called by detect_cycles_handler.
+ */
+static int detect_cycles(void)
+{
+	LIST_HEAD(ind_cycle_locks);
+	LIST_HEAD(stack);
+	struct lite_lock_class *class, *dep;
+	struct lite_lock_list *entry;
+	struct ind_cycle_list *ind_list;
+	struct lite_lock_class_sub_key *key;
+	int i, j ,ret = 1;
+	unsigned int read;
+	unsigned long ip;
+	pid_t pid;
+	char *comm;
+	unsigned long flags;
+
+	raw_local_irq_save(flags);
+
+	if (!lite_graph_lock()) {
+		return 0;
+	}
+	
+	init_visit_hlist();
+	init_cycle_list();
+	init_stack_list();
+
+	for_each_set_bit(i, lite_lock_classes_in_use, ARRAY_SIZE(stack_entries)) {
+		class = lite_lock_classes + i;
+		key = class->key;
+
+		hash_for_each(class->dir_from, j, entry, hash_entry) {
+			dep = entry->class;
+			read = entry->read;
+			ip = entry->acquire_ip;
+			comm = entry->comm;
+			pid = entry->pid;
+
+			if (in_lite_hlist_possible(dep->dir_from, key)) {
+				if (cycle_checked(class, dep))
+					continue;
+				
+				print_dir_deadlock_bug(class, entry);
+				add_checked_cycle(class, dep);
+				ret = 0;
+			}
+
+			if (in_lite_hlist_possible(dep->ind_from, key) &&
+			    dep->key != key) {
+				if (cycle_checked(class, dep))
+					continue;
+						
+				add_lite_lock_to_hlist(class->ind_cycle_dir_from, 
+						       dep, read, ip, pid, comm);
+				add_cycle_to_list(&ind_cycle_locks, class);
+				add_checked_cycle(class, dep);
+				ret = 0;
+			}
+		}
+	}
+
+	list_for_each_entry(ind_list, &ind_cycle_locks, cycle_entry) {
+		add_visit_to_hlist(visited, ind_list->class);
+		dfs_head(ind_list->class, &stack, visited);
+		del_visit_in_hlist(visited, ind_list->class->key);
+	}
+
+	lite_graph_unlock();
+
+	raw_local_irq_restore(flags);
+
+	return ret;
 }
 
 /*
@@ -1002,3 +1624,18 @@ void lite_lockdep_init_map_type(struct lite_lockdep_map *lock, const char *name,
 		return;
 }
 EXPORT_SYMBOL_GPL(lite_lockdep_init_map_type);
+
+int detect_cycles_handler(struct ctl_table *table, int write,
+		void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int old_value = detect_deadlocks;
+	int ret;
+
+	ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	if (ret == 0 && write && old_value != detect_deadlocks && 
+	    detect_deadlocks == 1) {
+		detect_deadlocks = 0;
+		detect_cycles();
+	}
+	return ret;
+}

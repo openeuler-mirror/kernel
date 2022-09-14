@@ -8,6 +8,7 @@ struct task_struct;
 /* sysctl */
 extern int lite_lockdep;
 extern int check_reachability;
+extern int detect_deadlocks;
 
 #ifdef CONFIG_LITE_LOCKDEP
 
@@ -58,6 +59,34 @@ struct lite_lock_list {
 	char				comm[TASK_COMM_LEN];
 	unsigned int			read:2;
 };
+
+struct ind_cycle_list {
+	struct list_head		cycle_entry;
+	struct lite_lock_class		*class;
+};
+
+struct stack_list {
+	struct list_head		stack_entry;
+	struct lite_lock_list		*lock_entry;
+};
+
+struct visit_hlist {
+	struct hlist_node		vis_entry;
+	struct lite_lock_class		*class;
+};
+
+struct deadlock_entry {
+	unsigned long 			chain_head;
+	unsigned long 			chain_tail;
+};
+
+struct ind_cycle_entry {
+	const struct lite_lock_class_sub_key *head;
+	const struct lite_lock_class_sub_key *dep;
+};
+
+extern int detect_cycles_handler(struct ctl_table *table, int write,
+		void *buffer, size_t *lenp, loff_t *ppos);
 
 extern void lite_lockdep_print_held_locks(struct task_struct *p);
 
