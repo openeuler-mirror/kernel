@@ -211,6 +211,7 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	s->s_user_ns = get_user_ns(user_ns);
 	init_rwsem(&s->s_umount);
 	lockdep_set_class(&s->s_umount, &type->s_umount_key);
+	lite_lockdep_set_class(&s->s_umount, &type->s_umount_key);
 	/*
 	 * sget() can have s_umount recursion.
 	 *
@@ -254,6 +255,7 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags,
 	atomic_set(&s->s_active, 1);
 	mutex_init(&s->s_vfs_rename_mutex);
 	lockdep_set_class(&s->s_vfs_rename_mutex, &type->s_vfs_rename_key);
+	lite_lockdep_set_class(&s->s_vfs_rename_mutex, &type->s_vfs_rename_key);
 	init_rwsem(&s->s_dquot.dqio_sem);
 	s->s_maxbytes = MAX_NON_LFS;
 	s->s_op = &default_op;

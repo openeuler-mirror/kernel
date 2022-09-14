@@ -139,6 +139,10 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 
 		if (sysctl_hung_task_all_cpu_backtrace)
 			hung_task_show_all_bt = true;
+
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_debug_show_all_locks();
+#endif
 	}
 
 	touch_nmi_watchdog();

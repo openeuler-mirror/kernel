@@ -51,6 +51,9 @@ struct rw_semaphore {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
 #endif
+#ifdef CONFIG_LITE_LOCKDEP
+	struct lite_lockdep_map lite_dep_map;
+#endif
 };
 
 /* In all implementations count != 0 means locked */
@@ -69,6 +72,11 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
 	.dep_map = {					\
 		.name = #lockname,			\
 		.wait_type_inner = LD_WAIT_SLEEP,	\
+	},
+#elif defined(CONFIG_LITE_LOCKDEP)
+# define __RWSEM_DEP_MAP_INIT(lockname)			\
+	.lite_dep_map = {				\
+		.name = #lockname,			\
 	},
 #else
 # define __RWSEM_DEP_MAP_INIT(lockname)
@@ -157,7 +165,7 @@ extern void up_write(struct rw_semaphore *sem);
  */
 extern void downgrade_write(struct rw_semaphore *sem);
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 /*
  * nested locking. NOTE: rwsems are not allowed to recurse
  * (which occurs if the same task tries to acquire the same
@@ -177,11 +185,21 @@ extern void down_write_nested(struct rw_semaphore *sem, int subclass);
 extern int down_write_killable_nested(struct rw_semaphore *sem, int subclass);
 extern void _down_write_nest_lock(struct rw_semaphore *sem, struct lockdep_map *nest_lock);
 
+#ifdef CONFIG_LITE_LOCKDEP
+# define down_write_nest_lock(sem, nest_lock)				\
+do {									\
+	typecheck(struct lite_lockdep_map *, &(nest_lock)->lite_dep_map); \
+	_down_write_nest_lock(sem, &(nest_lock)->lite_dep_map);		\
+} while (0);
+
+#else
 # define down_write_nest_lock(sem, nest_lock)			\
 do {								\
 	typecheck(struct lockdep_map *, &(nest_lock)->dep_map);	\
 	_down_write_nest_lock(sem, &(nest_lock)->dep_map);	\
 } while (0);
+
+#endif
 
 /*
  * Take/release a lock when not the owner will release it.

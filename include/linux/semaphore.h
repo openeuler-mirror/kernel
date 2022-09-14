@@ -32,7 +32,11 @@ static inline void sema_init(struct semaphore *sem, int val)
 {
 	static struct lock_class_key __key;
 	*sem = (struct semaphore) __SEMAPHORE_INITIALIZER(*sem, val);
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_lockdep_init_map(&sem->lock.lite_dep_map, "semaphore->lock", &__key, 0);
+#else
 	lockdep_init_map(&sem->lock.dep_map, "semaphore->lock", &__key, 0);
+#endif
 }
 
 extern void down(struct semaphore *sem);

@@ -1342,6 +1342,14 @@ config LOCKDEP
 	select KALLSYMS
 	select KALLSYMS_ALL
 
+config LITE_LOCKDEP
+	bool "Lightweight deadlock detection"
+	depends on DEBUG_KERNEL && LOCK_DEBUGGING_SUPPORT
+	select DEBUG_SPINLOCK
+	select DEBUG_MUTEXES
+	select DEBUG_RWSEMS
+	default n
+
 config LOCKDEP_SMALL
 	bool
 

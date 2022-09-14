@@ -353,13 +353,18 @@ void __lockfunc _raw_write_unlock_bh(rwlock_t *lock)
 EXPORT_SYMBOL(_raw_write_unlock_bh);
 #endif
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 
 void __lockfunc _raw_spin_lock_nested(raw_spinlock_t *lock, int subclass)
 {
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&lock->lite_dep_map, subclass, 0, _RET_IP_);
+	do_raw_spin_lock(lock);
+#else
 	spin_acquire(&lock->dep_map, subclass, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+#endif
 }
 EXPORT_SYMBOL(_raw_spin_lock_nested);
 
@@ -370,9 +375,14 @@ unsigned long __lockfunc _raw_spin_lock_irqsave_nested(raw_spinlock_t *lock,
 
 	local_irq_save(flags);
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&lock->lite_dep_map, subclass, 0, _RET_IP_);
+	do_raw_spin_lock(lock);
+#else
 	spin_acquire(&lock->dep_map, subclass, 0, _RET_IP_);
 	LOCK_CONTENDED_FLAGS(lock, do_raw_spin_trylock, do_raw_spin_lock,
 				do_raw_spin_lock_flags, &flags);
+#endif
 	return flags;
 }
 EXPORT_SYMBOL(_raw_spin_lock_irqsave_nested);
@@ -381,8 +391,13 @@ void __lockfunc _raw_spin_lock_nest_lock(raw_spinlock_t *lock,
 				     struct lockdep_map *nest_lock)
 {
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire_nest(&lock->lite_dep_map, 0, 0, nest_lock, _RET_IP_);
+	do_raw_spin_lock(lock);
+#else
 	spin_acquire_nest(&lock->dep_map, 0, 0, nest_lock, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+#endif
 }
 EXPORT_SYMBOL(_raw_spin_lock_nest_lock);
 

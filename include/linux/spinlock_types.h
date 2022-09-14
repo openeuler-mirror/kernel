@@ -16,6 +16,7 @@
 #endif
 
 #include <linux/lockdep_types.h>
+#include <linux/lite_lockdep_types.h>
 
 typedef struct raw_spinlock {
 	arch_spinlock_t raw_lock;
@@ -25,6 +26,9 @@ typedef struct raw_spinlock {
 #endif
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map dep_map;
+#endif
+#ifdef CONFIG_LITE_LOCKDEP
+	struct lite_lockdep_map lite_dep_map;
 #endif
 } raw_spinlock_t;
 
@@ -42,6 +46,15 @@ typedef struct raw_spinlock {
 	.dep_map = {					\
 		.name = #lockname,			\
 		.wait_type_inner = LD_WAIT_CONFIG,	\
+	}
+#elif defined(CONFIG_LITE_LOCKDEP)
+# define RAW_SPIN_DEP_MAP_INIT(lockname)		\
+	.lite_dep_map = {				\
+		.name = #lockname,			\
+	}
+# define SPIN_DEP_MAP_INIT(lockname)			\
+	.lite_dep_map = {				\
+		.name = #lockname,			\
 	}
 #else
 # define RAW_SPIN_DEP_MAP_INIT(lockname)
@@ -77,6 +90,14 @@ typedef struct spinlock {
 		struct {
 			u8 __padding[LOCK_PADSIZE];
 			struct lockdep_map dep_map;
+		};
+#endif
+
+#ifdef CONFIG_LITE_LOCKDEP
+# define LOCK_PADSIZE (offsetof(struct raw_spinlock, lite_dep_map))
+		struct {
+			u8 __padding[LOCK_PADSIZE];
+			struct lite_lockdep_map lite_dep_map;
 		};
 #endif
 	};

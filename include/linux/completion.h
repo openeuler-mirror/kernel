@@ -65,7 +65,7 @@ static inline void complete_release(struct completion *x) {}
  * This macro declares and initializes a completion structure on the kernel
  * stack.
  */
-#ifdef CONFIG_LOCKDEP
+#if defined(CONFIG_LOCKDEP) || defined(CONFIG_LITE_LOCKDEP)
 # define DECLARE_COMPLETION_ONSTACK(work) \
 	struct completion work = COMPLETION_INITIALIZER_ONSTACK(work)
 # define DECLARE_COMPLETION_ONSTACK_MAP(work, map) \

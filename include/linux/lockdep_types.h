@@ -189,6 +189,15 @@ struct lockdep_map {
 
 struct pin_cookie { unsigned int val; };
 
+#elif defined CONFIG_LITE_LOCKDEP
+#include <linux/lite_lockdep_types.h>
+
+#define lock_class_key	lite_lock_class_key
+
+#define lockdep_map 	lite_lockdep_map
+
+struct pin_cookie { };
+
 #else /* !CONFIG_LOCKDEP */
 
 /*

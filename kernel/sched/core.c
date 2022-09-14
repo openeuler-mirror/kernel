@@ -20,6 +20,10 @@
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
 
+#ifdef CONFIG_LITE_LOCKDEP
+#include <linux/lite_lockdep.h>
+#endif
+
 #include "../workqueue_internal.h"
 #include "../../fs/io-wq.h"
 #include "../smpboot.h"
@@ -3540,7 +3544,11 @@ prepare_lock_switch(struct rq *rq, struct task_struct *next, struct rq_flags *rf
 	 * do an early lockdep release here:
 	 */
 	rq_unpin_lock(rq, rf);
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_release(&rq->lock.lite_dep_map, _THIS_IP_);
+#else
 	spin_release(&rq->lock.dep_map, _THIS_IP_);
+#endif
 #ifdef CONFIG_DEBUG_SPINLOCK
 	/* this is a valid case when another task releases the spinlock */
 	rq->lock.owner = next;
@@ -3554,7 +3562,11 @@ static inline void finish_lock_switch(struct rq *rq)
 	 * fix up the runqueue lock - which gets 'carried over' from
 	 * prev into current:
 	 */
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&rq->lock.lite_dep_map, 0, 0, _THIS_IP_);
+#else
 	spin_acquire(&rq->lock.dep_map, 0, 0, _THIS_IP_);
+#endif
 	raw_spin_unlock_irq(&rq->lock);
 }
 

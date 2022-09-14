@@ -14,6 +14,7 @@
 #include <asm/current.h>
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
+#include <linux/lite_lockdep.h>
 #include <linux/lockdep.h>
 #include <linux/atomic.h>
 #include <asm/processor.h>
@@ -62,6 +63,9 @@ struct mutex {
 #endif
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
+#endif
+#ifdef CONFIG_LITE_LOCKDEP
+	struct lite_lockdep_map	lite_dep_map;
 #endif
 };
 
@@ -125,6 +129,11 @@ do {									\
 			.name = #lockname,			\
 			.wait_type_inner = LD_WAIT_SLEEP,	\
 		}
+#elif defined(CONFIG_LITE_LOCKDEP)
+# define __DEP_MAP_MUTEX_INITIALIZER(lockname)			\
+		, .lite_dep_map = {					\
+			.name = #lockname,			\
+		}
 #else
 # define __DEP_MAP_MUTEX_INITIALIZER(lockname)
 #endif
@@ -154,7 +163,7 @@ extern bool mutex_is_locked(struct mutex *lock);
  * See kernel/locking/mutex.c for detailed documentation of these APIs.
  * Also see Documentation/locking/mutex-design.rst.
  */
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 extern void mutex_lock_nested(struct mutex *lock, unsigned int subclass);
 extern void _mutex_lock_nest_lock(struct mutex *lock, struct lockdep_map *nest_lock);
 
@@ -169,11 +178,18 @@ extern void mutex_lock_io_nested(struct mutex *lock, unsigned int subclass);
 #define mutex_lock_killable(lock) mutex_lock_killable_nested(lock, 0)
 #define mutex_lock_io(lock) mutex_lock_io_nested(lock, 0)
 
+#ifdef CONFIG_LITE_LOCKDEP
+#define mutex_lock_nest_lock(lock, nest_lock)	\
+	_mutex_lock_nest_lock(lock, &(nest_lock)->lite_dep_map);
+
+#else
 #define mutex_lock_nest_lock(lock, nest_lock)				\
 do {									\
 	typecheck(struct lockdep_map *, &(nest_lock)->dep_map);	\
 	_mutex_lock_nest_lock(lock, &(nest_lock)->dep_map);		\
 } while (0)
+
+#endif
 
 #else
 extern void mutex_lock(struct mutex *lock);
