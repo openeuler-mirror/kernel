@@ -27,6 +27,13 @@ module_param(lite_lockdep, int, 0644);
 #define lite_lockdep 0
 #endif
 
+#ifdef CONFIG_LOCK_REACHABILITY
+int check_reachability = 1;
+#else
+int check_reachability = 0;
+#endif
+module_param(check_reachability, int, 0644);
+
 /*
  * The hash-table for lite-lockdep classes:
  */
@@ -44,6 +51,10 @@ static struct hlist_head lite_lock_keys_hash[LITE_KEYHASH_SIZE];
 unsigned long nr_lite_lock_classes;
 struct lite_lock_class lite_lock_classes[MAX_LITE_LOCKDEP_KEYS];
 static DECLARE_BITMAP(lite_lock_classes_in_use, MAX_LITE_LOCKDEP_KEYS);
+
+unsigned long nr_lite_list_entries;
+static struct lite_lock_list lite_list_entries[MAX_LITE_LOCKDEP_ENTRIES];
+static DECLARE_BITMAP(lite_list_entries_in_use, MAX_LITE_LOCKDEP_ENTRIES);
 
 static LIST_HEAD(all_lite_lock_classes);
 static LIST_HEAD(free_lite_lock_classes);
@@ -108,6 +119,15 @@ struct hlist_head *litekeyhashentry(const struct lock_class_key *key)
 	unsigned long hash = hash_long((uintptr_t)key, LITE_KEYHASH_BITS);
 
 	return lite_lock_keys_hash + hash;
+}
+
+static inline
+struct hlist_head *litedephashentry(struct hlist_head *head,
+				    const struct lite_lock_class_sub_key *key) 
+{
+	unsigned long hash = hash_long((unsigned long)key, LITE_CLASSDEP_HASH_BITS);
+
+	return head + hash;
 }
 
 /**
@@ -303,6 +323,11 @@ static void init_data_structures_once(void)
 
 	for (i = 0; i < ARRAY_SIZE(lite_lock_classes); i++) {
 		list_add_tail(&lite_lock_classes[i].lock_entry, &free_lite_lock_classes);
+		hash_init(lite_lock_classes[i].dir_from);
+		hash_init(lite_lock_classes[i].dir_to);
+		hash_init(lite_lock_classes[i].ind_from);
+		hash_init(lite_lock_classes[i].ind_to);
+		hash_init(lite_lock_classes[i].ind_cycle_dir_from);
 	}
 }
 
@@ -399,6 +424,306 @@ out_set_class:
 	return class;
 }
 
+/**
+ * Check whether the provided key is in a hash table.
+ */
+static bool in_lite_hlist_possible(struct hlist_head *head,
+				   const struct lite_lock_class_sub_key *key)
+{
+	struct lite_lock_list *entry;
+
+	hlist_for_each_entry(entry, litedephashentry(head, key), hash_entry) {
+		if (entry->class->key == key)
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * Allocate a dependency entry, assumes the graph_lock held.
+ */
+static struct lite_lock_list *alloc_lite_list_entry(void)
+{
+	int idx = find_first_zero_bit(lite_list_entries_in_use,
+				      ARRAY_SIZE(lite_list_entries));
+
+	if (idx >= ARRAY_SIZE(lite_list_entries)) {
+		debug_locks_off();
+		lite_lockdep_unlock();
+
+		printk(KERN_DEBUG "BUG: MAX_LITE_LOCKDEP_ENTRIES too low!");
+		dump_stack();
+		return NULL;
+	}
+	nr_lite_list_entries++;
+	__set_bit(idx, lite_list_entries_in_use);
+	return lite_list_entries + idx;
+}
+
+/**
+ * Add a new dependency to the head of the hash list.
+ */
+static int
+add_lite_lock_to_hlist(struct hlist_head *head, struct lite_lock_class *class, 
+		       unsigned int read, unsigned long acquire_ip,
+		       pid_t pid, char *comm)
+{
+	struct lite_lock_list *entry;
+	const struct lite_lock_class_sub_key *key = class->key;
+
+	if (in_lite_hlist_possible(head, key))
+		return 2;
+
+	entry = alloc_lite_list_entry();
+	if (!entry)
+		return 0;
+
+	entry->class = class;
+	entry->read = read;
+	entry->acquire_ip = acquire_ip;
+	entry->pid = pid;
+	strcpy(entry->comm, comm);
+
+	hlist_add_head_rcu(&entry->hash_entry, litedephashentry(head, key));
+
+	return 1;
+}
+
+/*
+ * Update reachability graph dued to the direct edge: prev → next.
+ * Then all indirect reachabilities are constructed.
+ */
+static void
+propagate_reachability(struct lite_held_lock *p, struct lite_held_lock *n)
+{
+	struct lite_lock_class *prev = lite_hlock_class(p);
+	struct lite_lock_class *next = lite_hlock_class(n);
+	struct lite_lock_class *_prev, *_next;
+	struct lite_lock_list *p_entry, *n_entry;
+	int i, j;
+	unsigned int read;
+	unsigned long ip;
+	pid_t pid;
+	char *comm;
+	
+	hash_for_each(prev->dir_to, i, p_entry, hash_entry) {
+		_prev = p_entry->class;
+		hash_for_each(next->dir_from, j, n_entry, hash_entry) {
+			_next = n_entry->class;
+			read = n_entry->read;
+			ip = n_entry->acquire_ip;
+			pid = n_entry->pid;
+			comm = n_entry->comm;
+			add_lite_lock_to_hlist(_prev->ind_from, _next, read, ip,
+					       pid, comm);
+		}
+		hash_for_each(next->ind_from, j, n_entry, hash_entry) {
+			_next = n_entry->class;
+			read = n_entry->read;
+			ip = n_entry->acquire_ip;
+			pid = n_entry->pid;
+			comm = n_entry->comm;
+			add_lite_lock_to_hlist(_prev->ind_from, _next, read, ip,
+					       pid, comm);
+		}
+		add_lite_lock_to_hlist(_prev->ind_from, next, n->read, n->acquire_ip,
+				       n->pid, n->comm);
+	}
+	hash_for_each(prev->ind_to, i, p_entry, hash_entry) {
+		_prev = p_entry->class;
+		hash_for_each(next->dir_from, j, n_entry, hash_entry) {
+			_next = n_entry->class;
+			read = n_entry->read;
+			ip = n_entry->acquire_ip;
+			pid = n_entry->pid;
+			comm = n_entry->comm;
+			add_lite_lock_to_hlist(_prev->ind_from, _next, read, ip,
+					       pid, comm);
+		}
+		hash_for_each(next->ind_from, j, n_entry, hash_entry) {
+			_next = n_entry->class;
+			read = n_entry->read;
+			ip = n_entry->acquire_ip;
+			pid = n_entry->pid;
+			comm = n_entry->comm;
+			add_lite_lock_to_hlist(_prev->ind_from, _next, read, ip,
+					       pid, comm);
+		}
+		add_lite_lock_to_hlist(_prev->ind_from, next, n->read, n->acquire_ip,
+				       n->pid, n->comm);
+	}
+
+	hash_for_each(next->dir_from, i, n_entry, hash_entry) {
+		_next = n_entry->class;
+		hash_for_each(prev->dir_to, j, p_entry, hash_entry) {
+			_prev = p_entry->class;
+			read = p_entry->read;
+			ip = p_entry->acquire_ip;
+			pid = p_entry->pid;
+			comm = p_entry->comm;
+			add_lite_lock_to_hlist(_next->ind_to, _prev, read, ip,
+					       pid, comm);
+		}
+		hash_for_each(prev->ind_to, j, p_entry, hash_entry) {
+			_prev = p_entry->class;
+			read = p_entry->read;
+			ip = p_entry->acquire_ip;
+			pid = p_entry->pid;
+			comm = p_entry->comm;
+			add_lite_lock_to_hlist(_next->ind_to, _prev, read, ip,
+					       pid, comm);
+		}
+		add_lite_lock_to_hlist(_next->ind_to, prev, p->read, p->acquire_ip,
+				       p->pid, p->comm);
+	}
+	hash_for_each(next->ind_from, i, n_entry, hash_entry) {
+		_next = n_entry->class;
+		hash_for_each(prev->dir_to, j, p_entry, hash_entry) {
+			_prev = p_entry->class;
+			read = p_entry->read;
+			ip = p_entry->acquire_ip;
+			pid = p_entry->pid;
+			comm = p_entry->comm;
+			add_lite_lock_to_hlist(_next->ind_to, _prev, read, ip,
+					       pid, comm);
+		}
+		hash_for_each(prev->ind_to, j, p_entry, hash_entry) {
+			_prev = p_entry->class;
+			read = p_entry->read;
+			ip = p_entry->acquire_ip;
+			pid = p_entry->pid;
+			comm = p_entry->comm;
+			add_lite_lock_to_hlist(_next->ind_to, _prev, read, ip,
+					       pid, comm);
+		}
+		add_lite_lock_to_hlist(_next->ind_to, prev, p->read, p->acquire_ip,
+				       p->pid, p->comm);
+	}
+
+	hash_for_each(next->dir_from, i, n_entry, hash_entry) {
+		_next = n_entry->class;
+		read = n_entry->read;
+		ip = n_entry->acquire_ip;
+		pid = n_entry->pid;
+		comm = n_entry->comm;
+		add_lite_lock_to_hlist(prev->ind_from, _next, read, ip,
+				       pid, comm);
+	}
+	hash_for_each(next->ind_from, i, n_entry, hash_entry) {
+		_next = n_entry->class;
+		read = n_entry->read;
+		ip = n_entry->acquire_ip;
+		pid = n_entry->pid;
+		comm = n_entry->comm;
+		add_lite_lock_to_hlist(prev->ind_from, _next, read, ip,
+				       pid, comm);
+	}
+
+	hash_for_each(prev->dir_to, i, p_entry, hash_entry) {
+		_prev = p_entry->class;
+		read = p_entry->read;
+		ip = p_entry->acquire_ip;
+		pid = p_entry->pid;
+		comm = p_entry->comm;
+		add_lite_lock_to_hlist(next->ind_to, _prev, read, ip,
+				       pid, comm);
+	}
+	hash_for_each(prev->ind_to, i, p_entry, hash_entry) {
+		_prev = p_entry->class;
+		read = p_entry->read;
+		ip = p_entry->acquire_ip;
+		pid = p_entry->pid;
+		comm = p_entry->comm;
+		add_lite_lock_to_hlist(next->ind_to, _prev, read, ip,
+				       pid, comm);
+	}
+}
+
+/*
+ * Construct the reachability graph (including direct 
+ * and indirect) due to the @next lock.
+ */
+static int
+check_lock_reachability(struct task_struct *curr, struct lite_held_lock *next,
+			int end)
+{
+	struct lite_held_lock *hlock;
+	struct lite_lock_class *prev_class;
+	struct lite_lock_class *next_class = lite_hlock_class(next);
+	int i, ret = 1;
+
+	if (next->read == 2)
+		return 1;
+
+	for (i = 0; i < end; i++) {
+		hlock = curr->held_locks + i;
+		prev_class = lite_hlock_class(hlock);
+
+		// record direct edges
+		if (in_lite_hlist_possible(prev_class->dir_from, next_class->key))
+			continue;
+
+		ret = add_lite_lock_to_hlist(prev_class->dir_from, next_class,
+					     next->read, next->acquire_ip,
+					     next->pid, next->comm);
+
+		if (!ret)
+			return 0;
+
+		ret = add_lite_lock_to_hlist(next_class->dir_to, prev_class,
+					     hlock->read, hlock->acquire_ip,
+					     next->pid, next->comm);
+
+		if (!ret)
+			return 0;
+
+		// propagate indirect dependencies
+		propagate_reachability(hlock, next);
+	}
+
+	return ret;
+}
+
+/**
+ * Since trylocks can be held in any order, we don't 
+ * construct their reachabilities until the next non-
+ * trylock comes. See check_prevs_add in lockdep.c.
+ */
+static int 
+check_prevs_reachability(struct task_struct *curr, struct lite_held_lock *next)
+{
+	int i, ret = 1;
+	int depth = curr->lite_lockdep_depth;
+	int start = depth;
+	struct lite_held_lock *hlock;
+
+	for (;;) {
+		if (!depth)
+			break;
+
+		hlock = curr->held_locks + depth - 1;
+		if (!hlock->trylock) {
+			start = depth;
+			break;
+		}
+
+		depth--;
+	}
+
+	depth = curr->lite_lockdep_depth;
+
+	for (i = start; i <= depth; i++) {
+		hlock = curr->held_locks + i;
+		
+		if (hlock->read != 2 && !hlock->nest_lock && !hlock->subclass &&
+		    hlock->check)
+			ret &= check_lock_reachability(curr, hlock, i);
+	}
+
+	return ret;
+}
+
 static int 
 __lite_lock_acquire(struct lite_lockdep_map *lock, unsigned int subclass, 
 		    int trylock, int read, int check, 
@@ -410,7 +735,7 @@ __lite_lock_acquire(struct lite_lockdep_map *lock, unsigned int subclass,
 	struct lite_held_lock *hlock;
 	unsigned int depth;
 	int class_idx;
-	int ret;
+	int ret = 1;
 
 	if (unlikely(!debug_locks))
 		return 0;
@@ -445,9 +770,20 @@ __lite_lock_acquire(struct lite_lockdep_map *lock, unsigned int subclass,
 	hlock->trylock = trylock;
 	hlock->read = read;
 	hlock->check = check;
+	hlock->pid = curr->pid;
+	strcpy(hlock->comm, curr->comm);
 
 	if (DEBUG_LOCKS_WARN_ON(!test_bit(class_idx, lite_lock_classes_in_use)))
 		return 0;
+
+	/* If the hlock is a recursive reader or nested lock, we don't
+	 * propagate its reachability.
+	 */
+	if (check_reachability &&hlock->read != 2 && !nest_lock && !subclass && 
+	    !reacquire && check && !trylock && lite_graph_lock()) {
+		ret = check_prevs_reachability(curr, hlock);
+		lite_graph_unlock();
+	}
 
 	curr->lite_lockdep_depth++;
 

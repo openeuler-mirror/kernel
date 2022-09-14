@@ -1350,6 +1350,14 @@ config LITE_LOCKDEP
 	select DEBUG_RWSEMS
 	default n
 
+if LITE_LOCKDEP
+
+config LOCK_REACHABILITY
+	bool "Lock reachability records for cycle detections"
+	default n
+
+endif # LITE_LOCKDEP
+
 config LOCKDEP_SMALL
 	bool
 

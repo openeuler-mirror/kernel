@@ -7,6 +7,7 @@ struct task_struct;
 
 /* sysctl */
 extern int lite_lockdep;
+extern int check_reachability;
 
 #ifdef CONFIG_LITE_LOCKDEP
 
@@ -40,10 +41,22 @@ struct lite_held_lock {
 	struct lite_lockdep_map		*instance;
 	struct lite_lockdep_map		*nest_lock;
 	unsigned int 			subclass;
+	pid_t				pid;
+	char				comm[TASK_COMM_LEN];
 	unsigned int			class_idx:MAX_LITE_LOCKDEP_KEYS_BITS;
 	unsigned int 			trylock:1;
 	unsigned int 			read:2;
 	unsigned int 			check:1;
+};
+
+
+struct lite_lock_list {
+	struct hlist_node		hash_entry;
+	struct lite_lock_class		*class;
+	unsigned long			acquire_ip;
+	pid_t				pid;
+	char				comm[TASK_COMM_LEN];
+	unsigned int			read:2;
 };
 
 extern void lite_lockdep_print_held_locks(struct task_struct *p);
@@ -52,15 +65,6 @@ extern void lite_debug_show_all_locks(void);
 
 extern void lite_lockdep_init_map_type(struct lite_lockdep_map *lock, const char *name,
 	struct lite_lock_class_key *key, int subclass);
-
-#define lite_lockdep_match_class(lock, key) \
-	lite_lockdep_match_key(&(lock)->lite_dep_map, key)
-
-static inline int lite_lockdep_match_key(struct lite_lockdep_map *lock,
-				    	 struct lite_lock_class_key *key)
-{
-	return lock->key == key;
-}
 
 static inline void
 lite_lockdep_init_map(struct lite_lockdep_map *lock, const char *name,
@@ -75,10 +79,23 @@ lite_lockdep_init_map(struct lite_lockdep_map *lock, const char *name,
 #define lite_lockdep_set_class_and_name(lock, key, name)			\
 	lite_lockdep_init_map(&(lock)->lite_dep_map, name, key, 0)
 
+#define lite_lockdep_set_novalidate_class(lock) \
+	lite_lockdep_set_class_and_name(lock, &__lite_lockdep_no_validate__, #lock)
+
+#define lite_lockdep_match_class(lock, key) \
+	lite_lockdep_match_key(&(lock)->lite_dep_map, key)
+
+static inline int lite_lockdep_match_key(struct lite_lockdep_map *lock,
+				    	 struct lite_lock_class_key *key)
+{
+	return lock->key == key;
+}
+
 #else /* !CONFIG_LITE_LOCKDEP */
 
 # define lite_lock_acquire(l, s, t, r, c, n, i)	do { } while (0)
 # define lite_lock_release(l, i)		do { } while (0)
+# define lite_lockdep_set_novalidate_class(l)   do { } while (0)
 # define lite_lockdep_set_class(l, m)		do { } while (0)
 
 #endif /* CONFIG_LITE_LOCKDEP */

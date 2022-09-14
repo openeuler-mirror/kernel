@@ -172,9 +172,11 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 		goto out;
 	spin_lock_init(&inode->i_lock);
 	lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
+	lite_lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
 
 	init_rwsem(&inode->i_rwsem);
 	lockdep_set_class(&inode->i_rwsem, &sb->s_type->i_mutex_key);
+	lite_lockdep_set_class(&inode->i_rwsem, &sb->s_type->i_mutex_key);
 
 	atomic_set(&inode->i_dio_count, 0);
 
