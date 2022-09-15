@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2209.1.0
+%global hulkrelease 2209.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0166
+Release: %{hulkrelease}.0167
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,99 @@ fi
 %endif
 
 %changelog
+
+* Wed Sep 14 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.3.0.0167
+- KVM: x86: do not report a vCPU as preempted outside instruction boundaries
+- KVM: arm64: Write arch.mdcr_el2 changes since last vcpu_load on VHE
+- netfilter: nf_conntrack_irc: Tighten matching on DCC message
+- ext4: avoid resizing to a partial cluster size
+- locking/atomic: Make test_and_*_bit() ordered on failure
+- geneve: do not use RT_TOS for IPv6 flowlabel
+- SUNRPC: Reinitialise the backchannel request buffers before reuse
+- NFSv4/pnfs: Fix a use-after-free bug in open
+- NFSv4.1: RECLAIM_COMPLETE must handle EACCES
+- tcp: fix over estimation in sk_forced_mem_schedule()
+- ext4: fix extent status tree race in writeback error recovery path
+- ext4: update s_overhead_clusters in the superblock during an on-line resize
+- ext4: make sure ext4_append() always allocates new block
+- kprobes: Forbid probing on trampoline and BPF code areas
+- kfifo: fix kfifo_to_user() return type
+- profiling: fix shift too large makes kernel panic
+- serial: 8250_dw: Store LSR into lsr_saved_flags in dw8250_tx_wait_empty()
+- mm/mmap.c: fix missing call to vm_unacct_memory in mmap_region
+- mtd: st_spi_fsm: Add a clk_disable_unprepare() in .probe()'s error path
+- mtd: sm_ftl: Fix deadlock caused by cancel_work_sync in sm_release
+- can: error: specify the values of data[5..7] of CAN error frames
+- fs: check FMODE_LSEEK to control internal pipe splicing
+- tcp: make retransmitted SKB fit into the send window
+- nohz/full, sched/rt: Fix missed tick-reenabling bug in dequeue_task_rt()
+- bus: hisi_lpc: fix missing platform_device_put() in hisi_lpc_acpi_probe()
+- x86/pmem: Fix platform-device leak in error path
+- selinux: Add boundary check in put_entry()
+- ACPI: LPSS: Fix missing check in register_device_clock()
+- fs: Add missing umask strip in vfs_tmpfile
+- vfs: Check the truncate maximum size in inode_newsize_ok()
+- tcp: Fix a data-race around sysctl_tcp_comp_sack_nr.
+- tcp: Fix a data-race around sysctl_tcp_comp_sack_delay_ns.
+- tcp: Fix a data-race around sysctl_tcp_invalid_ratelimit.
+- tcp: Fix a data-race around sysctl_tcp_autocorking.
+- tcp: Fix a data-race around sysctl_tcp_min_rtt_wlen.
+- tcp: Fix a data-race around sysctl_tcp_min_tso_segs.
+- igmp: Fix data-races around sysctl_igmp_qrv.
+- net: ping6: Fix memleak in ipv6_renew_options().
+- tcp: Fix a data-race around sysctl_tcp_challenge_ack_limit.
+- tcp: Fix a data-race around sysctl_tcp_nometrics_save.
+- tcp: Fix a data-race around sysctl_tcp_frto.
+- tcp: Fix a data-race around sysctl_tcp_adv_win_scale.
+- tcp: Fix a data-race around sysctl_tcp_app_win.
+- tcp: Fix data-races around sysctl_tcp_dsack.
+- mm/mempolicy: fix uninit-value in mpol_rebind_policy()
+- tcp: Fix data-races around sysctl_tcp_max_reordering.
+- tcp: Fix a data-race around sysctl_tcp_rfc1337.
+- tcp: Fix a data-race around sysctl_tcp_stdurg.
+- tcp: Fix a data-race around sysctl_tcp_retrans_collapse.
+- tcp: Fix data-races around sysctl_tcp_slow_start_after_idle.
+- tcp: Fix a data-race around sysctl_tcp_thin_linear_timeouts.
+- tcp: Fix data-races around sysctl_tcp_recovery.
+- tcp: Fix a data-race around sysctl_tcp_early_retrans.
+- tcp: Fix data-races around sysctl_tcp_fastopen.
+- tcp: Fix a data-race around sysctl_tcp_tw_reuse.
+- tcp: Fix a data-race around sysctl_tcp_notsent_lowat.
+- tcp: Fix data-races around some timeout sysctl knobs.
+- tcp: Fix data-races around sysctl_tcp_reordering.
+- igmp: Fix a data-race around sysctl_igmp_max_memberships.
+- igmp: Fix data-races around sysctl_igmp_llm_reports.
+- tcp: Fix a data-race around sysctl_tcp_probe_interval.
+- tcp: Fix a data-race around sysctl_tcp_probe_threshold.
+- tcp: Fix data-races around sysctl_tcp_mtu_probing.
+- tcp/dccp: Fix a data-race around sysctl_tcp_fwmark_accept.
+- ip: Fix a data-race around sysctl_fwmark_reflect.
+- ip: Fix data-races around sysctl_ip_nonlocal_bind.
+- ip: Fix data-races around sysctl_ip_fwd_use_pmtu.
+- block: fix the problem of io_ticks becoming smaller
+- blk-mq: Fix memory leak in blk_mq_init_allocated_queue error handling
+- block, bfq: save & resume weight on a queue merge/split
+- ACPICA: Disassembler: create buffer fields in ACPI_PARSE_LOAD_PASS1
+- acpi/nfit: improve bounds checking for 'func'
+- ACPICA: Do not increment operation_region reference counts for field units
+- ACPICA: Fix exception code class checks
+- ACPI: configfs: add missing check after configfs_register_default_group()
+- ACPI: custom_method: fix potential use-after-free issue
+- ACPI: custom_method: fix a possible memory leak
+- ACPI: APD: Check for NULL pointer after calling devm_ioremap()
+- ACPI/IORT: Fix PMCG node single ID mapping handling
+- ACPI/IORT: Check node revision for PMCG resources
+- kprobes: don't call disarm_kprobe() for disabled kprobes
+- x86/unwind/orc: Unwind ftrace trampolines with correct ORC entry
+- usb: gadget: function: printer: fix use-after-free in __lock_acquire
+- video: fbdev: i740fb: Error out if 'pixclock' equals zero
+- lightnvm: disable the subsystem
+- configfs: fix a race in configfs_lookup()
+- configfs: fold configfs_attach_attr into configfs_lookup
+- configfs: make configfs_create() return inode
+- configfs: factor dirent removal into helpers
+- configfs: simplify the configfs_dirent_is_ready
+- configfs: return -ENAMETOOLONG earlier in configfs_lookup
 
 * Mon Sep 05 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.1.0.0166
 - dm-thin: Resume failed in FAIL mode
