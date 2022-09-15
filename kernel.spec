@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2209.3.0
+%global hulkrelease 2209.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0167
+Release: %{hulkrelease}.0168
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,10 @@ fi
 %endif
 
 %changelog
+
+* Thu Sep 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.4.0.0168
+- mm: Force TLB flush for PFNMAP mappings before unlink_file_vma()
+- video: fbdev: pxa3xx-gcu: Fix integer overflow in pxa3xx_gcu_write
 
 * Wed Sep 14 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.3.0.0167
 - KVM: x86: do not report a vCPU as preempted outside instruction boundaries
