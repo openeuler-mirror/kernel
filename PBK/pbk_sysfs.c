@@ -19,17 +19,14 @@ static ssize_t pbk_create_domain_store(struct kobject *kobj,
     if (ret || !cpumask_subset(&request, pbk_cpuset))
         return -EINVAL;
 
-    pd = pbk_find_matched_domain(&request);
-    if (pd == NULL) {
-        ret = pbk_alloc_cpus(&request);
-        if (ret)
-            return ret;
-        
-        pd = pbk_alloc_domain(&request);
-        if (IS_ERR(pd)) {
-            pr_err("Failed to allocate pbk domain\n");
-            return PTR_ERR(pd);
-        }
+    ret = pbk_alloc_cpus(&request);
+    if (ret)
+        goto try_get_pd;
+
+    pd = pbk_alloc_domain(&request);
+    if (IS_ERR(pd)) {
+        pr_err("Failed to allocate pbk domain\n");
+        return PTR_ERR(pd);
     }
 
     current->pbkd = pd;
@@ -39,25 +36,12 @@ static ssize_t pbk_create_domain_store(struct kobject *kobj,
         return ret;
 
     return count;
-}
 
-static struct kobj_attribute pbk_create_domain_attr = __ATTR_WO(pbk_create_domain);
-
-static ssize_t pbk_join_domain_store(struct kobject *kobj,
-        struct kobj_attribute *attr, const char *buf, size_t count)
-{
-    pdid_t domain_id;
-    struct pbk_domain *pd;
-    int ret;
-
-    ret = kstrtoint(buf, 0, &domain_id);
-    if (ret)
-        return -EINVAL;
-    
-    pd = pbk_find_get_domain(domain_id);
+try_get_pd:
+    pd = pbk_find_get_domain_withcpu(&request);
     if (!pd)
         return -EINVAL;
-    
+
     pbk_attach_domain(current, pd);
     pbk_resched_threads(current, pbk_domain_cpu(pd));
     put_pbk_domain(pd);
@@ -65,7 +49,7 @@ static ssize_t pbk_join_domain_store(struct kobject *kobj,
     return count;
 }
 
-static struct kobj_attribute pbk_join_domain_attr = __ATTR_WO(pbk_join_domain);
+static struct kobj_attribute pbk_create_domain_attr = __ATTR_WO(pbk_create_domain);
 
 static ssize_t pbk_with_nr_cpu_store(struct kobject *kobj,
         struct kobj_attribute *attr, const char *buf, size_t count)
@@ -123,7 +107,6 @@ static struct kobj_attribute pbk_view_attr = __ATTR_WO(pbk_view);
 
 static struct attribute *pbk_attributes[] = {
     &pbk_create_domain_attr.attr,
-    &pbk_join_domain_attr.attr,
     &pbk_with_nr_cpu_attr.attr,
     &pbk_view_attr.attr,
     NULL
@@ -142,7 +125,6 @@ static int __init pbk_sysfs_init(void)
         return -ENOMEM;
     
     pbk_create_domain_attr.attr.mode |= S_IWGRP;
-    pbk_join_domain_attr.attr.mode |= S_IWGRP;
     pbk_with_nr_cpu_attr.attr.mode |= S_IWGRP;
     pbk_view_attr.attr.mode |= S_IWGRP;
 

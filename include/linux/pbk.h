@@ -35,7 +35,7 @@ struct pbk_domain {
 
 extern void pbk_create_root_domain(void);
 extern struct pbk_domain *pbk_find_get_domain(pdid_t domain_id);
-extern struct pbk_domain *pbk_find_matched_domain(cpumask_var_t request);
+extern struct pbk_domain *pbk_find_get_domain_withcpu(cpumask_var_t mask);
 extern struct pbk_domain *pbk_alloc_domain(cpumask_var_t request);
 extern void pbk_attach_domain(struct task_struct *p, struct pbk_domain *pd);
 extern void destroy_pbk_domain(struct pbk_domain *pd);
@@ -108,6 +108,9 @@ static inline bool is_pbk_cpu_state(enum cpuhp_state state)
 
 extern int do_cpu_up(unsigned int cpu, enum cpuhp_state target);
 extern int cpu_down(unsigned int cpu, enum cpuhp_state target);
+
+extern void sched_domains_numa_masks_set(unsigned int cpu);
+extern void sched_domains_numa_masks_clear(unsigned int cpu);
 
 #endif /* _LINUX_PBK_H */
 

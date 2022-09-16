@@ -4,6 +4,7 @@
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
+#include <linux/delay.h>
 
 #include "pbk_cpu.h"
 
@@ -49,8 +50,8 @@ struct pbk_domain *pbk_find_get_domain(pdid_t domain_id)
     spin_lock(&pbk_domains_lock);
     hash_for_each_possible(pbk_domains, pd, ht_node, domain_id) {
         if (pd->domain_id == domain_id) {
-            spin_unlock(&pbk_domains_lock);
             get_pbk_domain(pd);
+            spin_unlock(&pbk_domains_lock);
             return pd;
         }
     }
@@ -60,26 +61,25 @@ struct pbk_domain *pbk_find_get_domain(pdid_t domain_id)
     return NULL;
 }
 
-struct pbk_domain *pbk_find_matched_domain(cpumask_var_t request)
+struct pbk_domain *pbk_find_get_domain_withcpu(cpumask_var_t mask)
 {
-    struct pbk_domain *pd = NULL;
-    int bkt = 0;
+    struct pbk_domain *pd;
+    struct hlist_node *tmp;
+    unsigned long timeout;
+    int bkt;
 
-    // char buf[80];
-    // cpumap_print_to_pagebuf(1, buf, request);
-    // pr_err("X = request = %s hash_empty = %d\n", buf, hash_empty(pbk_domains));
-
-    spin_lock(&pbk_domains_lock);
-    hash_for_each(pbk_domains, bkt, pd, ht_node) {
-        if (cpumask_equal(pbk_domain_cpu(pd), request)) {
-            spin_unlock(&pbk_domains_lock);
-            get_pbk_domain(pd);
-            return pd;
+    timeout = USEC_PER_SEC;
+    while (timeout--) {
+        hash_for_each_safe(pbk_domains, bkt, tmp, pd, ht_node) {
+            if (cpumask_equal(mask, pbk_domain_cpu(pd))) {
+                get_pbk_domain(pd);
+                return pd;
+            }
         }
-    }
-    spin_unlock(&pbk_domains_lock);
+        udelay(1);
+    };
 
-    pr_err("PBK can not find matched domain\n");
+    pr_err("invalid cpulist request %*pbl\n", cpumask_pr_args(mask));
     return NULL;
 }
 
