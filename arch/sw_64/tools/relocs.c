@@ -487,6 +487,7 @@ static int do_reloc(struct section *sec, Elf_Rel *rel, Elf_Sym *sym,
 	case R_SW64_SREL32:
 	case R_SW64_GPRELHIGH:
 	case R_SW64_GPRELLOW:
+	case R_SW64_LITERAL_GOT:
 		/*
 		 * NONE can be ignored and PC relative relocations don't
 		 * need to be adjusted.

@@ -53,6 +53,7 @@
 #define R_SW64_TPRELHI		39
 #define R_SW64_TPRELLO		40
 #define R_SW64_TPREL16		41
+#define R_SW64_LITERAL_GOT	43	/* GP relative */
 
 void die(char *fmt, ...);
 
