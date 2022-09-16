@@ -18,6 +18,13 @@ struct resource;
 struct sunway_iommu;
 struct page;
 
+struct piu_saved {
+	unsigned long piuconfig0;
+	unsigned long piuconfig1;
+	unsigned long epdmabar;
+	unsigned long msiaddr;
+	unsigned long msiconfig[256];
+};
 
 /* A controller.  Used to manage multiple PCI busses.  */
 

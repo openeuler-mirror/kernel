@@ -32,7 +32,7 @@ struct sw64_chip_init_ops {
 struct sw64_chip_ops {
 	int (*get_cpu_num)(void);
 	void (*device_interrupt)(unsigned long irq_info);
-	void (*suspend)(int wake);
+	void (*suspend)(bool wake);
 	void (*fixup)(void);
 };
 
