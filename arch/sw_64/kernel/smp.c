@@ -616,6 +616,7 @@ void native_cpu_die(unsigned int cpu)
 		if (per_cpu(cpu_state, cpu) == CPU_DEAD) {
 			if (system_state == SYSTEM_RUNNING)
 				pr_info("CPU %u is now offline\n", cpu);
+			smp_rcb->ready = 0;
 			return;
 		}
 		msleep(100);
