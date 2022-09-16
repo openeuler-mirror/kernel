@@ -14,4 +14,16 @@
 #ifdef CONFIG_KVM_MEMHOTPLUG
 #define SW64_KVM_EXIT_MEMHOTPLUG	23
 #endif
+
+#define kvm_sw64_exception_type	\
+	{0, "HOST_INTR" },	\
+	{1, "IO" },		\
+	{10, "HALT" },		\
+	{12, "SHUTDOWN" },	\
+	{13, "TIMER" },		\
+	{14, "IPI" },		\
+	{17, "RESTART" },	\
+	{22, "FATAL_ERROR" },	\
+	{23, "MEMHOTPLUG" }
+
 #endif /* _ASM_SW64_KVM_ASM_H */
