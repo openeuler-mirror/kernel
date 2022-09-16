@@ -16,6 +16,9 @@
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 
+#define CREATE_TRACE_POINTS
+#include "trace.h"
+
 #include "../kernel/pci_impl.h"
 #include "vmem.c"
 
@@ -33,6 +36,13 @@ extern bool bind_vcpu_enabled;
 #define VPN_FIRST_VERSION	(1UL << WIDTH_HARDWARE_VPN)
 #define HARDWARE_VPN_MASK	((1UL << WIDTH_HARDWARE_VPN) - 1)
 #define VPN_SHIFT		(64 - WIDTH_HARDWARE_VPN)
+
+static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_running_vcpu);
+
+static void kvm_set_running_vcpu(struct kvm_vcpu *vcpu)
+{
+	__this_cpu_write(kvm_running_vcpu, vcpu);
+}
 
 int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
 {
@@ -462,6 +472,7 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	vcpu->cpu = cpu;
+	kvm_set_running_vcpu(vcpu);
 }
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
@@ -472,6 +483,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	 * optimized make_all_cpus_request path.
 	 */
 	vcpu->cpu = -1;
+	kvm_set_running_vcpu(NULL);
 }
 
 int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
@@ -561,6 +573,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		vcpu->arch.vcb.upcr = 0x7;
 	}
 
+#ifdef CONFIG_PERF_EVENTS
+	vcpu_load(vcpu);
+#endif
 	if (vcpu->sigset_active)
 		sigprocmask(SIG_SETMASK, &vcpu->sigset, &sigsaved);
 
@@ -601,6 +616,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		guest_enter_irqoff();
 
 		/* Enter the guest */
+		trace_kvm_sw64_entry(vcpu->vcpu_id, vcpu->arch.regs.pc);
 		vcpu->mode = IN_GUEST_MODE;
 
 		ret = __sw64_vcpu_run((struct vcpucb *)__phys_addr((unsigned long)vcb), &(vcpu->arch.regs), &hargs);
@@ -610,6 +626,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		local_irq_enable();
 		guest_exit_irqoff();
+
+		trace_kvm_sw64_exit(ret, vcpu->arch.regs.pc);
+
 		preempt_enable();
 
 		/* ret = 0 indicate interrupt in guest mode, ret > 0 indicate hcall */
@@ -619,6 +638,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	if (vcpu->sigset_active)
 		sigprocmask(SIG_SETMASK, &sigsaved, NULL);
 
+#ifdef CONFIG_PERF_EVENTS
+	vcpu_put(vcpu);
+#endif
 	return ret;
 }
 
@@ -667,11 +689,13 @@ long kvm_arch_vm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 
 int kvm_arch_init(void *opaque)
 {
+	kvm_sw64_perf_init();
 	return 0;
 }
 
 void kvm_arch_exit(void)
 {
+	kvm_sw64_perf_teardown();
 }
 
 void kvm_arch_sync_dirty_log(struct kvm *kvm, struct kvm_memory_slot *memslot)
