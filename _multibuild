@@ -2,4 +2,5 @@
   <flavor>raspberrypi-kernel</flavor>
   <flavor>kernel-rt</flavor>
   <flavor>raspberrypi-kernel-rt</flavor>
+  <flavor>kernel-hck</flavor>
 </multibuild>
