@@ -1,0 +1,1666 @@
+From 1f5a974a3f5a3cdeac249e7544dd1a7125d84c1c Mon Sep 17 00:00:00 2001
+From: yafen <yafen@iscas.ac.cn>
+Date: Sat, 17 Sep 2022 01:56:56 +0800
+Subject: [PATCH] revert "arm64: add machine checksafe support"
+
+This reverts commit f23c4f3e5945f4bb89d5f12ae6fa1257b8c498bd (#78).
+---
+ Documentation/admin-guide/sysctl/kernel.rst |  38 ++--
+ arch/arm64/Kconfig                          |  14 +-
+ arch/arm64/configs/openeuler_defconfig      |   1 +
+ arch/arm64/include/asm/asm-uaccess.h        |   5 -
+ arch/arm64/include/asm/assembler.h          |  26 +--
+ arch/arm64/include/asm/exception.h          |  13 ++
+ arch/arm64/include/asm/extable.h            |   1 -
+ arch/arm64/include/asm/mte.h                |   4 -
+ arch/arm64/include/asm/page.h               |  10 -
+ arch/arm64/include/asm/processor.h          |   2 -
+ arch/arm64/include/asm/string.h             |   5 -
+ arch/arm64/include/asm/uaccess.h            |  70 ++-----
+ arch/arm64/lib/Makefile                     |  10 +-
+ arch/arm64/lib/copy_from_user.S             |  19 +-
+ arch/arm64/lib/copy_page_mc.S               |  80 --------
+ arch/arm64/lib/copy_to_user.S               |  10 +-
+ arch/arm64/lib/memcpy_mc.S                  |  73 --------
+ arch/arm64/lib/mte.S                        |  19 --
+ arch/arm64/mm/Makefile                      |   2 +
+ arch/arm64/mm/copypage.c                    |  43 +----
+ arch/arm64/mm/extable.c                     |  12 --
+ arch/arm64/mm/fault.c                       |  36 +---
+ arch/arm64/mm/uce_kernel_recovery.c         | 198 ++++++++++++++++++++
+ arch/powerpc/include/asm/uaccess.h          |   1 -
+ arch/x86/include/asm/uaccess.h              |   1 -
+ fs/coredump.c                               |   2 -
+ include/asm-generic/vmlinux.lds.h           |  19 +-
+ include/linux/extable.h                     |  23 ---
+ include/linux/highmem.h                     |   8 -
+ include/linux/module.h                      |  11 --
+ include/linux/sched.h                       |   1 -
+ include/linux/uaccess.h                     |   9 -
+ kernel/extable.c                            |  29 ---
+ kernel/module.c                             |  38 ----
+ kernel/sysctl.c                             |  11 --
+ lib/iov_iter.c                              |  12 +-
+ mm/memory.c                                 |   2 +-
+ scripts/sorttable.h                         |  29 ---
+ 38 files changed, 298 insertions(+), 589 deletions(-)
+ delete mode 100644 arch/arm64/lib/copy_page_mc.S
+ delete mode 100644 arch/arm64/lib/memcpy_mc.S
+ create mode 100644 arch/arm64/mm/uce_kernel_recovery.c
+
+diff --git a/Documentation/admin-guide/sysctl/kernel.rst b/Documentation/admin-guide/sysctl/kernel.rst
+index 254517e538ae..773747c1b329 100644
+--- a/Documentation/admin-guide/sysctl/kernel.rst
++++ b/Documentation/admin-guide/sysctl/kernel.rst
+@@ -478,27 +478,6 @@ if leaking kernel pointer values to unprivileged users is a concern.
+ When ``kptr_restrict`` is set to 2, kernel pointers printed using
+ %pK will be replaced with 0s regardless of privileges.
+ 
+-machine_check_safe (arm64 only)
+-================================
+-
+-Controls the kernel's behaviour when an hardware memory error is
+-encountered in the following scenarios:
+-
+-=  ===================
+-1  cow
+-2  copy_mc_to_kernel
+-3  copy_from_user
+-4  copy_to_user
+-5  get_user
+-6  put_user
+-=  ===================
+-
+-Correspondence between sysctl value and behavior:
+-
+-= =======================
+-0 Kernel panic
+-1 Kill related processes
+-= =======================
+ 
+ modprobe
+ ========
+@@ -1548,3 +1527,20 @@ is 10 seconds.
+ 
+ The softlockup threshold is (``2 * watchdog_thresh``). Setting this
+ tunable to zero will disable lockup detection altogether.
++
++uce_kernel_recovery(ARM64 only)
++===============================
++
++This value can be used to control whether panic the kernel when UCE RAS
++errors occur in a specific scenario. Each bit controls a scene, 1 means
++avoid kernel panic when encountering UCE RAS error in this scenario, and
++0 means kernel panic.
++
++Current usage of each bit:
++
++============  ==============
++bit0          reserved
++bit1          reserved
++bit2          copy_from_user
++bit3 ~ bit31  reserved
++============  ==============
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index 9ae723498e59..bae27bbcb133 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -11,7 +11,6 @@ config ARM64
+ 	select ACPI_PPTT if ACPI
+ 	select ARCH_HAS_DEBUG_WX
+ 	select ARCH_BINFMT_ELF_STATE
+-	select ARCH_HAS_COPY_MC if ACPI_APEI_GHES
+ 	select ARCH_HAS_DEBUG_VIRTUAL
+ 	select ARCH_HAS_DEBUG_VM_PGTABLE
+ 	select ARCH_HAS_DEVMEM_IS_ALLOWED
+@@ -23,7 +22,6 @@ config ARM64
+ 	select ARCH_HAS_GIGANTIC_PAGE
+ 	select ARCH_HAS_KCOV
+ 	select ARCH_HAS_KEEPINITRD
+-	select ARCH_HAS_MC_EXTABLE if ARCH_HAS_COPY_MC
+ 	select ARCH_HAS_MEMBARRIER_SYNC_CORE
+ 	select ARCH_HAS_NON_OVERLAPPING_ADDRESS_SPACE
+ 	select ARCH_HAS_PTE_DEVMAP
+@@ -1172,9 +1170,6 @@ config ARCH_LLC_128_LINE_SIZE
+ config ARCH_HAS_FILTER_PGPROT
+ 	def_bool y
+ 
+-config ARCH_HAS_MC_EXTABLE
+-	bool
+-
+ config ARCH_ENABLE_SPLIT_PMD_PTLOCK
+ 	def_bool y if PGTABLE_LEVELS > 2
+ 
+@@ -1651,6 +1646,15 @@ config ARM64_CNP
+ 	  at runtime, and does not affect PEs that do not implement
+ 	  this feature.
+ 
++config ARM64_UCE_KERNEL_RECOVERY
++	bool "arm64 uce kernel recovery for special scenario"
++	depends on ACPI_APEI_SEA
++	help
++	  With ARM v8.2 RAS Extension, SEA are usually triggered when memory
++	  error are consumed. In some cases, if the error address is in a
++	  user page there is a chance to recover. we can isolate this page
++	  and killing process instead of die.
++
+ endmenu
+ 
+ menu "ARMv8.3 architectural features"
+diff --git a/arch/arm64/configs/openeuler_defconfig b/arch/arm64/configs/openeuler_defconfig
+index d26790e5cd32..b8d554996c57 100644
+--- a/arch/arm64/configs/openeuler_defconfig
++++ b/arch/arm64/configs/openeuler_defconfig
+@@ -466,6 +466,7 @@ CONFIG_ARM64_UAO=y
+ CONFIG_ARM64_PMEM=y
+ CONFIG_ARM64_RAS_EXTN=y
+ CONFIG_ARM64_CNP=y
++CONFIG_ARM64_UCE_KERNEL_RECOVERY=y
+ # end of ARMv8.2 architectural features
+ 
+ #
+diff --git a/arch/arm64/include/asm/asm-uaccess.h b/arch/arm64/include/asm/asm-uaccess.h
+index 46b8d2585980..9990059be106 100644
+--- a/arch/arm64/include/asm/asm-uaccess.h
++++ b/arch/arm64/include/asm/asm-uaccess.h
+@@ -70,9 +70,6 @@ alternative_else_nop_endif
+ 
+ 		_asm_extable	8888b,\l;
+ 		_asm_extable	8889b,\l;
+-
+-		_asm_mc_extable	8888b,\l;
+-		_asm_mc_extable	8889b,\l;
+ 	.endm
+ 
+ 	.macro user_stp l, reg1, reg2, addr, post_inc
+@@ -89,7 +86,5 @@ alternative_else_nop_endif
+ 		add		\addr, \addr, \post_inc;
+ 
+ 		_asm_extable	8888b,\l;
+-
+-		_asm_mc_extable	8888b,\l;
+ 	.endm
+ #endif
+diff --git a/arch/arm64/include/asm/assembler.h b/arch/arm64/include/asm/assembler.h
+index 5e6bacda05d8..ef5e60d6d577 100644
+--- a/arch/arm64/include/asm/assembler.h
++++ b/arch/arm64/include/asm/assembler.h
+@@ -145,33 +145,9 @@ alternative_endif
+ 	.popsection
+ 	.endm
+ 
+-/*
+- * Emit an entry into the machine check exception table
+- */
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-	.macro		_asm_mc_extable, from, to
+-	.pushsection	__mc_ex_table, "a"
+-	.align		3
+-	.long		(\from - .), (\to - .)
+-	.popsection
+-	.endm
+-#else
+-	.macro		_asm_mc_extable, from, to
+-	.endm
+-#endif
+-
+ #define USER(l, x...)				\
+ 9999:	x;					\
+-	_asm_extable	9999b, l;		\
+-	_asm_mc_extable	9999b, l
+-
+-#define USER_MC(l, x...)			\
+-9999:	x;					\
+-	_asm_mc_extable	9999b, l
+-
+-#define CPY_MC(l, x...)				\
+-9999:   x;					\
+-	_asm_mc_extable  9999b, l
++	_asm_extable	9999b, l
+ 
+ /*
+  * Register aliases.
+diff --git a/arch/arm64/include/asm/exception.h b/arch/arm64/include/asm/exception.h
+index cc9496e188d5..5a9fb95f5ff7 100644
+--- a/arch/arm64/include/asm/exception.h
++++ b/arch/arm64/include/asm/exception.h
+@@ -19,6 +19,19 @@
+ #define __exception_irq_entry	__kprobes
+ #endif
+ 
++#ifdef CONFIG_ARM64_UCE_KERNEL_RECOVERY
++bool arm64_process_kernel_sea(unsigned long addr, unsigned int esr,
++			      struct pt_regs *regs, int sig,
++			      int code, void __user *siaddr);
++#else
++static inline bool arm64_process_kernel_sea(unsigned long addr, unsigned int esr,
++					    struct pt_regs *regs, int sig,
++					    int code, void __user *siaddr)
++{
++	return false;
++}
++#endif
++
+ static inline u32 disr_to_esr(u64 disr)
+ {
+ 	unsigned int esr = ESR_ELx_EC_SERROR << ESR_ELx_EC_SHIFT;
+diff --git a/arch/arm64/include/asm/extable.h b/arch/arm64/include/asm/extable.h
+index 35c70cc4e9c5..b15eb4a3e6b2 100644
+--- a/arch/arm64/include/asm/extable.h
++++ b/arch/arm64/include/asm/extable.h
+@@ -44,5 +44,4 @@ int arm64_bpf_fixup_exception(const struct exception_table_entry *ex,
+ #endif /* !CONFIG_BPF_JIT */
+ 
+ extern int fixup_exception(struct pt_regs *regs);
+-extern int fixup_exception_mc(struct pt_regs *regs);
+ #endif
+diff --git a/arch/arm64/include/asm/mte.h b/arch/arm64/include/asm/mte.h
+index eeeb74fa2206..1c99fcadb58c 100644
+--- a/arch/arm64/include/asm/mte.h
++++ b/arch/arm64/include/asm/mte.h
+@@ -37,7 +37,6 @@ void mte_free_tag_storage(char *storage);
+ 
+ void mte_sync_tags(pte_t *ptep, pte_t pte);
+ void mte_copy_page_tags(void *kto, const void *kfrom);
+-void mte_copy_page_tags_mc(void *kto, const void *kfrom);
+ void flush_mte_state(void);
+ void mte_thread_switch(struct task_struct *next);
+ void mte_suspend_exit(void);
+@@ -57,9 +56,6 @@ static inline void mte_sync_tags(pte_t *ptep, pte_t pte)
+ static inline void mte_copy_page_tags(void *kto, const void *kfrom)
+ {
+ }
+-static inline void mte_copy_page_tags_mc(void *kto, const void *kfrom)
+-{
+-}
+ static inline void flush_mte_state(void)
+ {
+ }
+diff --git a/arch/arm64/include/asm/page.h b/arch/arm64/include/asm/page.h
+index 4d3ba27b96cb..012cffc574e8 100644
+--- a/arch/arm64/include/asm/page.h
++++ b/arch/arm64/include/asm/page.h
+@@ -28,16 +28,6 @@ void copy_user_highpage(struct page *to, struct page *from,
+ void copy_highpage(struct page *to, struct page *from);
+ #define __HAVE_ARCH_COPY_HIGHPAGE
+ 
+-#ifdef CONFIG_ARCH_HAS_COPY_MC
+-extern void copy_page_mc(void *to, const void *from);
+-void copy_highpage_mc(struct page *to, struct page *from);
+-#define __HAVE_ARCH_COPY_HIGHPAGE_MC
+-
+-void copy_user_highpage_mc(struct page *to, struct page *from,
+-		unsigned long vaddr, struct vm_area_struct *vma);
+-#define __HAVE_ARCH_COPY_USER_HIGHPAGE_MC
+-#endif
+-
+ #define __alloc_zeroed_user_highpage(movableflags, vma, vaddr) \
+ 	alloc_page_vma(GFP_HIGHUSER | __GFP_ZERO | movableflags, vma, vaddr)
+ #define __HAVE_ARCH_ALLOC_ZEROED_USER_HIGHPAGE
+diff --git a/arch/arm64/include/asm/processor.h b/arch/arm64/include/asm/processor.h
+index a48ec28b5bee..a29559483f26 100644
+--- a/arch/arm64/include/asm/processor.h
++++ b/arch/arm64/include/asm/processor.h
+@@ -88,8 +88,6 @@
+ #define STACK_TOP		STACK_TOP_MAX
+ #endif /* CONFIG_COMPAT */
+ 
+-extern int sysctl_machine_check_safe;
+-
+ #ifndef CONFIG_ARM64_FORCE_52BIT
+ #define arch_get_mmap_end(addr) ((addr > DEFAULT_MAP_WINDOW) ? TASK_SIZE :\
+ 				DEFAULT_MAP_WINDOW)
+diff --git a/arch/arm64/include/asm/string.h b/arch/arm64/include/asm/string.h
+index 08e0327a1719..b31e8e87a0db 100644
+--- a/arch/arm64/include/asm/string.h
++++ b/arch/arm64/include/asm/string.h
+@@ -35,10 +35,6 @@ extern void *memchr(const void *, int, __kernel_size_t);
+ extern void *memcpy(void *, const void *, __kernel_size_t);
+ extern void *__memcpy(void *, const void *, __kernel_size_t);
+ 
+-#define __HAVE_ARCH_MEMCPY_MC
+-extern unsigned long *memcpy_mcs(void *, const void *, __kernel_size_t);
+-extern unsigned long *__memcpy_mcs(void *, const void *, __kernel_size_t);
+-
+ #define __HAVE_ARCH_MEMMOVE
+ extern void *memmove(void *, const void *, __kernel_size_t);
+ extern void *__memmove(void *, const void *, __kernel_size_t);
+@@ -60,7 +56,6 @@ void memcpy_flushcache(void *dst, const void *src, size_t cnt);
+  */
+ 
+ #define memcpy(dst, src, len) __memcpy(dst, src, len)
+-#define memcpy_mcs(dst, src, len) __memcpy_mcs(dst, src, len)
+ #define memmove(dst, src, len) __memmove(dst, src, len)
+ #define memset(s, c, n) __memset(s, c, n)
+ 
+diff --git a/arch/arm64/include/asm/uaccess.h b/arch/arm64/include/asm/uaccess.h
+index 635436bd8712..abb31aa1f8ca 100644
+--- a/arch/arm64/include/asm/uaccess.h
++++ b/arch/arm64/include/asm/uaccess.h
+@@ -75,21 +75,6 @@ static inline unsigned long __range_ok(const void __user *addr, unsigned long si
+ 	"	.long		(" #from " - .), (" #to " - .)\n"	\
+ 	"	.popsection\n"
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-#define _ASM_MC_EXTABLE(from, to)					\
+-	"	.pushsection	__mc_ex_table, \"a\"\n"			\
+-	"	.align		3\n"					\
+-	"	.long		(" #from " - .), (" #to " - .)\n"	\
+-	"	.popsection\n"
+-#else
+-#define _ASM_MC_EXTABLE(from, to)
+-#endif
+-
+-#define _ASM_KACCESS_EXTABLE(from, to)	_ASM_EXTABLE(from, to)
+-#define _ASM_UACCESS_EXTABLE(from, to)		\
+-		_ASM_EXTABLE(from, to)		\
+-		_ASM_MC_EXTABLE(from, to)
+-
+ /*
+  * User access enabling/disabling.
+  */
+@@ -220,7 +205,7 @@ static inline void __user *__uaccess_mask_ptr(const void __user *ptr)
+  * The "__xxx_error" versions set the third argument to -EFAULT if an error
+  * occurs, and leave it unchanged on success.
+  */
+-#define __get_mem_asm(load, reg, x, addr, err, type)			\
++#define __get_mem_asm(load, reg, x, addr, err)				\
+ 	asm volatile(							\
+ 	"1:	" load "	" reg "1, [%2]\n"			\
+ 	"2:\n"								\
+@@ -230,25 +215,25 @@ static inline void __user *__uaccess_mask_ptr(const void __user *ptr)
+ 	"	mov	%1, #0\n"					\
+ 	"	b	2b\n"						\
+ 	"	.previous\n"						\
+-	_ASM_##type##ACCESS_EXTABLE(1b, 3b)				\
++	_ASM_EXTABLE(1b, 3b)						\
+ 	: "+r" (err), "=&r" (x)						\
+ 	: "r" (addr), "i" (-EFAULT))
+ 
+-#define __raw_get_mem(ldr, x, ptr, err, type)				\
++#define __raw_get_mem(ldr, x, ptr, err)					\
+ do {									\
+ 	unsigned long __gu_val;						\
+ 	switch (sizeof(*(ptr))) {					\
+ 	case 1:								\
+-		__get_mem_asm(ldr "b", "%w", __gu_val, (ptr), (err), type);	\
++		__get_mem_asm(ldr "b", "%w", __gu_val, (ptr), (err));	\
+ 		break;							\
+ 	case 2:								\
+-		__get_mem_asm(ldr "h", "%w", __gu_val, (ptr), (err), type);	\
++		__get_mem_asm(ldr "h", "%w", __gu_val, (ptr), (err));	\
+ 		break;							\
+ 	case 4:								\
+-		__get_mem_asm(ldr, "%w", __gu_val, (ptr), (err), type);	\
++		__get_mem_asm(ldr, "%w", __gu_val, (ptr), (err));	\
+ 		break;							\
+ 	case 8:								\
+-		__get_mem_asm(ldr, "%x",  __gu_val, (ptr), (err), type);	\
++		__get_mem_asm(ldr, "%x",  __gu_val, (ptr), (err));	\
+ 		break;							\
+ 	default:							\
+ 		BUILD_BUG();						\
+@@ -260,7 +245,7 @@ do {									\
+ do {									\
+ 	__chk_user_ptr(ptr);						\
+ 	uaccess_ttbr0_enable();						\
+-	__raw_get_mem("ldtr", x, ptr, err, U);				\
++	__raw_get_mem("ldtr", x, ptr, err);				\
+ 	uaccess_ttbr0_disable();					\
+ } while (0)
+ 
+@@ -290,12 +275,12 @@ do {									\
+ 	int __gkn_err = 0;						\
+ 									\
+ 	__raw_get_mem("ldr", *((type *)(dst)),				\
+-		      (__force type *)(src), __gkn_err, K);		\
++		      (__force type *)(src), __gkn_err);		\
+ 	if (unlikely(__gkn_err))					\
+ 		goto err_label;						\
+ } while (0)
+ 
+-#define __put_mem_asm(store, reg, x, addr, err, type)			\
++#define __put_mem_asm(store, reg, x, addr, err)				\
+ 	asm volatile(							\
+ 	"1:	" store "	" reg "1, [%2]\n"			\
+ 	"2:\n"								\
+@@ -304,25 +289,25 @@ do {									\
+ 	"3:	mov	%w0, %3\n"					\
+ 	"	b	2b\n"						\
+ 	"	.previous\n"						\
+-	_ASM_##type##ACCESS_EXTABLE(1b, 3b)				\
++	_ASM_EXTABLE(1b, 3b)						\
+ 	: "+r" (err)							\
+ 	: "r" (x), "r" (addr), "i" (-EFAULT))
+ 
+-#define __raw_put_mem(str, x, ptr, err, type)				\
++#define __raw_put_mem(str, x, ptr, err)					\
+ do {									\
+ 	__typeof__(*(ptr)) __pu_val = (x);				\
+ 	switch (sizeof(*(ptr))) {					\
+ 	case 1:								\
+-		__put_mem_asm(str "b", "%w", __pu_val, (ptr), (err), type);	\
++		__put_mem_asm(str "b", "%w", __pu_val, (ptr), (err));	\
+ 		break;							\
+ 	case 2:								\
+-		__put_mem_asm(str "h", "%w", __pu_val, (ptr), (err), type);	\
++		__put_mem_asm(str "h", "%w", __pu_val, (ptr), (err));	\
+ 		break;							\
+ 	case 4:								\
+-		__put_mem_asm(str, "%w", __pu_val, (ptr), (err), type);	\
++		__put_mem_asm(str, "%w", __pu_val, (ptr), (err));	\
+ 		break;							\
+ 	case 8:								\
+-		__put_mem_asm(str, "%x", __pu_val, (ptr), (err), type);	\
++		__put_mem_asm(str, "%x", __pu_val, (ptr), (err));	\
+ 		break;							\
+ 	default:							\
+ 		BUILD_BUG();						\
+@@ -333,7 +318,7 @@ do {									\
+ do {									\
+ 	__chk_user_ptr(ptr);						\
+ 	uaccess_ttbr0_enable();						\
+-	__raw_put_mem("sttr", x, ptr, err, U);				\
++	__raw_put_mem("sttr", x, ptr, err);				\
+ 	uaccess_ttbr0_disable();					\
+ } while (0)
+ 
+@@ -363,7 +348,7 @@ do {									\
+ 	int __pkn_err = 0;						\
+ 									\
+ 	__raw_put_mem("str", *((type *)(src)),				\
+-		      (__force type *)(dst), __pkn_err, K);		\
++		      (__force type *)(dst), __pkn_err);		\
+ 	if (unlikely(__pkn_err))					\
+ 		goto err_label;						\
+ } while(0)
+@@ -432,23 +417,4 @@ static inline int __copy_from_user_flushcache(void *dst, const void __user *src,
+ }
+ #endif
+ 
+-#ifdef CONFIG_ARCH_HAS_COPY_MC
+-/**
+- * copy_mc_to_kernel - memory copy that handles source exceptions
+- *
+- * @dst:	destination address
+- * @src:	source address
+- * @len:	number of bytes to copy
+- *
+- * Return 0 for success, or number of bytes not copied if there was an
+- * exception.
+- */
+-static inline unsigned long __must_check
+-copy_mc_to_kernel(void *to, const void *from, unsigned long size)
+-{
+-	return (unsigned long)memcpy_mcs(to, from, size);
+-}
+-#define copy_mc_to_kernel copy_mc_to_kernel
+-#endif
+-
+ #endif /* __ASM_UACCESS_H */
+diff --git a/arch/arm64/lib/Makefile b/arch/arm64/lib/Makefile
+index e2dbef587c9b..d31e1169d9b8 100644
+--- a/arch/arm64/lib/Makefile
++++ b/arch/arm64/lib/Makefile
+@@ -1,8 +1,8 @@
+ # SPDX-License-Identifier: GPL-2.0
+-lib-y		:= clear_user.o delay.o copy_from_user.o			\
+-		   copy_to_user.o copy_in_user.o copy_page.o			\
+-		   clear_page.o csum.o memchr.o memcpy.o memcpy_mc.o memmove.o	\
+-		   memset.o memcmp.o strcmp.o strncmp.o strlen.o		\
++lib-y		:= clear_user.o delay.o copy_from_user.o		\
++		   copy_to_user.o copy_in_user.o copy_page.o		\
++		   clear_page.o csum.o memchr.o memcpy.o memmove.o	\
++		   memset.o memcmp.o strcmp.o strncmp.o strlen.o	\
+ 		   strnlen.o strchr.o strrchr.o tishift.o
+ 
+ ifeq ($(CONFIG_KERNEL_MODE_NEON), y)
+@@ -13,8 +13,6 @@ endif
+ 
+ lib-$(CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE) += uaccess_flushcache.o
+ 
+-lib-$(CONFIG_ARCH_HAS_COPY_MC) += copy_page_mc.o
+-
+ obj-$(CONFIG_CRC32) += crc32.o
+ 
+ obj-$(CONFIG_FUNCTION_ERROR_INJECTION) += error-inject.o
+diff --git a/arch/arm64/lib/copy_from_user.S b/arch/arm64/lib/copy_from_user.S
+index dfc33ce09e72..100de4e2d9ee 100644
+--- a/arch/arm64/lib/copy_from_user.S
++++ b/arch/arm64/lib/copy_from_user.S
+@@ -25,7 +25,7 @@
+ 	.endm
+ 
+ 	.macro strb1 reg, ptr, val
+-	USER_MC(9998f, strb \reg, [\ptr], \val)
++	strb \reg, [\ptr], \val
+ 	.endm
+ 
+ 	.macro ldrh1 reg, ptr, val
+@@ -33,7 +33,7 @@
+ 	.endm
+ 
+ 	.macro strh1 reg, ptr, val
+-	USER_MC(9998f, strh \reg, [\ptr], \val)
++	strh \reg, [\ptr], \val
+ 	.endm
+ 
+ 	.macro ldr1 reg, ptr, val
+@@ -41,7 +41,7 @@
+ 	.endm
+ 
+ 	.macro str1 reg, ptr, val
+-	USER_MC(9998f, str \reg, [\ptr], \val)
++	str \reg, [\ptr], \val
+ 	.endm
+ 
+ 	.macro ldp1 reg1, reg2, ptr, val
+@@ -49,7 +49,7 @@
+ 	.endm
+ 
+ 	.macro stp1 reg1, reg2, ptr, val
+-	USER_MC(9998f, stp \reg1, \reg2, [\ptr], \val)
++	stp \reg1, \reg2, [\ptr], \val
+ 	.endm
+ 
+ end	.req	x5
+@@ -60,6 +60,17 @@ SYM_FUNC_START(__arch_copy_from_user)
+ #include "copy_template.S"
+ 	mov	x0, #0				// Nothing to copy
+ 	ret
++
++/*
++ * In feature CONFIG_ARM64_UCE_KERNEL_RECOVERY, if RAS error is triggered
++ * in copy_from_user(), RAS error is processed in do_sea() and
++ * copy_from_user_sea_fallback will be assigned to regs->pc, finally return
++ * here to continue processing.
++ */
++	.global copy_from_user_sea_fallback
++copy_from_user_sea_fallback:
++	sub	x0, end, dst			// bytes not copied
++	ret
+ SYM_FUNC_END(__arch_copy_from_user)
+ EXPORT_SYMBOL(__arch_copy_from_user)
+ 
+diff --git a/arch/arm64/lib/copy_page_mc.S b/arch/arm64/lib/copy_page_mc.S
+deleted file mode 100644
+index 8d4b9159fa8a..000000000000
+--- a/arch/arm64/lib/copy_page_mc.S
++++ /dev/null
+@@ -1,80 +0,0 @@
+-/* SPDX-License-Identifier: GPL-2.0-only */
+-/*
+- * Copyright (C) 2012 ARM Ltd.
+- */
+-
+-#include <linux/linkage.h>
+-#include <linux/const.h>
+-#include <asm/assembler.h>
+-#include <asm/page.h>
+-#include <asm/cpufeature.h>
+-#include <asm/alternative.h>
+-
+-/*
+- * Copy a page from src to dest (both are page aligned) with machine check
+- *
+- * Parameters:
+- *	x0 - dest
+- *	x1 - src
+- */
+-SYM_FUNC_START(copy_page_mc)
+-alternative_if ARM64_HAS_NO_HW_PREFETCH
+-	// Prefetch three cache lines ahead.
+-	prfm	pldl1strm, [x1, #128]
+-	prfm	pldl1strm, [x1, #256]
+-	prfm	pldl1strm, [x1, #384]
+-alternative_else_nop_endif
+-
+-CPY_MC(9998f, ldp	x2, x3, [x1])
+-CPY_MC(9998f, ldp	x4, x5, [x1, #16])
+-CPY_MC(9998f, ldp	x6, x7, [x1, #32])
+-CPY_MC(9998f, ldp	x8, x9, [x1, #48])
+-CPY_MC(9998f, ldp	x10, x11, [x1, #64])
+-CPY_MC(9998f, ldp	x12, x13, [x1, #80])
+-CPY_MC(9998f, ldp	x14, x15, [x1, #96])
+-CPY_MC(9998f, ldp	x16, x17, [x1, #112])
+-
+-	add	x0, x0, #256
+-	add	x1, x1, #128
+-1:
+-	tst	x0, #(PAGE_SIZE - 1)
+-
+-alternative_if ARM64_HAS_NO_HW_PREFETCH
+-	prfm	pldl1strm, [x1, #384]
+-alternative_else_nop_endif
+-
+-CPY_MC(9998f, stnp	x2, x3, [x0, #-256])
+-CPY_MC(9998f, ldp	x2, x3, [x1])
+-CPY_MC(9998f, stnp	x4, x5, [x0, #16 - 256])
+-CPY_MC(9998f, ldp	x4, x5, [x1, #16])
+-CPY_MC(9998f, stnp	x6, x7, [x0, #32 - 256])
+-CPY_MC(9998f, ldp	x6, x7, [x1, #32])
+-CPY_MC(9998f, stnp	x8, x9, [x0, #48 - 256])
+-CPY_MC(9998f, ldp	x8, x9, [x1, #48])
+-CPY_MC(9998f, stnp	x10, x11, [x0, #64 - 256])
+-CPY_MC(9998f, ldp	x10, x11, [x1, #64])
+-CPY_MC(9998f, stnp	x12, x13, [x0, #80 - 256])
+-CPY_MC(9998f, ldp	x12, x13, [x1, #80])
+-CPY_MC(9998f, stnp	x14, x15, [x0, #96 - 256])
+-CPY_MC(9998f, ldp	x14, x15, [x1, #96])
+-CPY_MC(9998f, stnp	x16, x17, [x0, #112 - 256])
+-CPY_MC(9998f, ldp	x16, x17, [x1, #112])
+-
+-	add	x0, x0, #128
+-	add	x1, x1, #128
+-
+-	b.ne	1b
+-
+-CPY_MC(9998f, stnp	x2, x3, [x0, #-256])
+-CPY_MC(9998f, stnp	x4, x5, [x0, #16 - 256])
+-CPY_MC(9998f, stnp	x6, x7, [x0, #32 - 256])
+-CPY_MC(9998f, stnp	x8, x9, [x0, #48 - 256])
+-CPY_MC(9998f, stnp	x10, x11, [x0, #64 - 256])
+-CPY_MC(9998f, stnp	x12, x13, [x0, #80 - 256])
+-CPY_MC(9998f, stnp	x14, x15, [x0, #96 - 256])
+-CPY_MC(9998f, stnp	x16, x17, [x0, #112 - 256])
+-
+-9998:	ret
+-
+-SYM_FUNC_END(copy_page_mc)
+-EXPORT_SYMBOL(copy_page_mc)
+diff --git a/arch/arm64/lib/copy_to_user.S b/arch/arm64/lib/copy_to_user.S
+index 34154e7c8577..9f380eecf653 100644
+--- a/arch/arm64/lib/copy_to_user.S
++++ b/arch/arm64/lib/copy_to_user.S
+@@ -20,7 +20,7 @@
+  *	x0 - bytes not copied
+  */
+ 	.macro ldrb1 reg, ptr, val
+-	USER_MC(9998f, ldrb  \reg, [\ptr], \val)
++	ldrb  \reg, [\ptr], \val
+ 	.endm
+ 
+ 	.macro strb1 reg, ptr, val
+@@ -28,7 +28,7 @@
+ 	.endm
+ 
+ 	.macro ldrh1 reg, ptr, val
+-	USER_MC(9998f, ldrh  \reg, [\ptr], \val)
++	ldrh  \reg, [\ptr], \val
+ 	.endm
+ 
+ 	.macro strh1 reg, ptr, val
+@@ -36,7 +36,7 @@
+ 	.endm
+ 
+ 	.macro ldr1 reg, ptr, val
+-	USER_MC(9998f, ldr \reg, [\ptr], \val)
++	ldr \reg, [\ptr], \val
+ 	.endm
+ 
+ 	.macro str1 reg, ptr, val
+@@ -44,7 +44,7 @@
+ 	.endm
+ 
+ 	.macro ldp1 reg1, reg2, ptr, val
+-	USER_MC(9998f, ldp \reg1, \reg2, [\ptr], \val)
++	ldp \reg1, \reg2, [\ptr], \val
+ 	.endm
+ 
+ 	.macro stp1 reg1, reg2, ptr, val
+@@ -67,7 +67,7 @@ EXPORT_SYMBOL(__arch_copy_to_user)
+ 9997:	cmp	dst, dstin
+ 	b.ne	9998f
+ 	// Before being absolutely sure we couldn't copy anything, try harder
+-USER_MC(9998f, ldrb tmp1w, [srcin])
++	ldrb	tmp1w, [srcin]
+ USER(9998f, sttrb tmp1w, [dst])
+ 	add	dst, dst, #1
+ 9998:	sub	x0, end, dst			// bytes not copied
+diff --git a/arch/arm64/lib/memcpy_mc.S b/arch/arm64/lib/memcpy_mc.S
+deleted file mode 100644
+index 1e76a0d1cc43..000000000000
+--- a/arch/arm64/lib/memcpy_mc.S
++++ /dev/null
+@@ -1,73 +0,0 @@
+-/* SPDX-License-Identifier: GPL-2.0-only */
+-/*
+- * Copyright (C) 2013 ARM Ltd.
+- * Copyright (C) 2013 Linaro.
+- *
+- * This code is based on glibc cortex strings work originally authored by Linaro
+- * be found @
+- *
+- * http://bazaar.launchpad.net/~linaro-toolchain-dev/cortex-strings/trunk/
+- * files/head:/src/aarch64/
+- */
+-
+-#include <linux/linkage.h>
+-#include <asm/assembler.h>
+-#include <asm/cache.h>
+-
+-/*
+- * Copy a buffer from src to dest (alignment handled by the hardware)
+- * with machine check safe.
+- *
+- * Parameters:
+- *	x0 - dest
+- *	x1 - src
+- *	x2 - n
+- * Returns:
+- *	x0 - bytes not copied
+- */
+-	.macro ldrb1 reg, ptr, val
+-	CPY_MC(9998f, ldrb  \reg, [\ptr], \val)
+-	.endm
+-
+-	.macro strb1 reg, ptr, val
+-	CPY_MC(9998f, strb \reg, [\ptr], \val)
+-	.endm
+-
+-	.macro ldrh1 reg, ptr, val
+-	CPY_MC(9998f, ldrh  \reg, [\ptr], \val)
+-	.endm
+-
+-	.macro strh1 reg, ptr, val
+-	CPY_MC(9998f, strh \reg, [\ptr], \val)
+-	.endm
+-
+-	.macro ldr1 reg, ptr, val
+-	CPY_MC(9998f, ldr \reg, [\ptr], \val)
+-	.endm
+-
+-	.macro str1 reg, ptr, val
+-	CPY_MC(9998f, str \reg, [\ptr], \val)
+-	.endm
+-
+-	.macro ldp1 reg1, reg2, ptr, val
+-	CPY_MC(9998f, ldp \reg1, \reg2, [\ptr], \val)
+-	.endm
+-
+-	.macro stp1 reg1, reg2, ptr, val
+-	CPY_MC(9998f, stp \reg1, \reg2, [\ptr], \val)
+-	.endm
+-
+-end	.req	x5
+-SYM_FUNC_START_ALIAS(__memcpy_mcs)
+-SYM_FUNC_START_WEAK_PI(memcpy_mcs)
+-	add end, x0, x2
+-#include "copy_template.S"
+-	mov x0, #0
+-	ret
+-
+-9998:	sub x0, end, dst
+-	ret
+-SYM_FUNC_END_PI(memcpy_mcs)
+-EXPORT_SYMBOL(memcpy_mcs)
+-SYM_FUNC_END_ALIAS(__memcpy_mcs)
+-EXPORT_SYMBOL(__memcpy_mcs)
+diff --git a/arch/arm64/lib/mte.S b/arch/arm64/lib/mte.S
+index d19fb07e1272..351537c12f36 100644
+--- a/arch/arm64/lib/mte.S
++++ b/arch/arm64/lib/mte.S
+@@ -54,25 +54,6 @@ SYM_FUNC_START(mte_copy_page_tags)
+ 	ret
+ SYM_FUNC_END(mte_copy_page_tags)
+ 
+-/*
+- * Copy the tags from the source page to the destination one wiht machine check safe
+- *   x0 - address of the destination page
+- *   x1 - address of the source page
+- */
+-SYM_FUNC_START(mte_copy_page_tags_mc)
+-	mov	x2, x0
+-	mov	x3, x1
+-	multitag_transfer_size x5, x6
+-1:
+-CPY_MC(2f, ldgm	x4, [x3])
+-	stgm	x4, [x2]
+-	add	x2, x2, x5
+-	add	x3, x3, x5
+-	tst	x2, #(PAGE_SIZE - 1)
+-	b.ne	1b
+-2:	ret
+-SYM_FUNC_END(mte_copy_page_tags_mc)
+-
+ /*
+  * Read tags from a user buffer (one tag per byte) and set the corresponding
+  * tags at the given kernel address. Used by PTRACE_POKEMTETAGS.
+diff --git a/arch/arm64/mm/Makefile b/arch/arm64/mm/Makefile
+index f60119034f20..68a32305cff9 100644
+--- a/arch/arm64/mm/Makefile
++++ b/arch/arm64/mm/Makefile
+@@ -11,6 +11,8 @@ obj-$(CONFIG_DEBUG_VIRTUAL)	+= physaddr.o
+ obj-$(CONFIG_ARM64_MTE)		+= mteswap.o
+ KASAN_SANITIZE_physaddr.o	+= n
+ 
++obj-$(CONFIG_ARM64_UCE_KERNEL_RECOVERY)	+= uce_kernel_recovery.o
++
+ obj-$(CONFIG_KASAN)		+= kasan_init.o
+ KASAN_SANITIZE_kasan_init.o	:= n
+ 
+diff --git a/arch/arm64/mm/copypage.c b/arch/arm64/mm/copypage.c
+index b91ba89afe25..70a71f38b6a9 100644
+--- a/arch/arm64/mm/copypage.c
++++ b/arch/arm64/mm/copypage.c
+@@ -14,29 +14,20 @@
+ #include <asm/cpufeature.h>
+ #include <asm/mte.h>
+ 
+-static void do_mte(struct page *to, struct page *from, void *kto, void *kfrom, bool mc)
+-{
+-	if (system_supports_mte() && test_bit(PG_mte_tagged, &from->flags)) {
+-		set_bit(PG_mte_tagged, &to->flags);
+-		if (mc)
+-			mte_copy_page_tags_mc(kto, kfrom);
+-		else
+-			mte_copy_page_tags(kto, kfrom);
+-	}
+-}
+-
+-
+ void copy_highpage(struct page *to, struct page *from)
+ {
+-	void *kto = page_address(to);
+-	void *kfrom = page_address(from);
++	struct page *kto = page_address(to);
++	struct page *kfrom = page_address(from);
+ 
+ 	copy_page(kto, kfrom);
+-	do_mte(to, from, kto, kfrom, false);
++
++	if (system_supports_mte() && test_bit(PG_mte_tagged, &from->flags)) {
++		set_bit(PG_mte_tagged, &to->flags);
++		mte_copy_page_tags(kto, kfrom);
++	}
+ }
+ EXPORT_SYMBOL(copy_highpage);
+ 
+-
+ void copy_user_highpage(struct page *to, struct page *from,
+ 			unsigned long vaddr, struct vm_area_struct *vma)
+ {
+@@ -44,23 +35,3 @@ void copy_user_highpage(struct page *to, struct page *from,
+ 	flush_dcache_page(to);
+ }
+ EXPORT_SYMBOL_GPL(copy_user_highpage);
+-
+-#ifdef CONFIG_ARCH_HAS_COPY_MC
+-void copy_highpage_mc(struct page *to, struct page *from)
+-{
+-	void *kto = page_address(to);
+-	void *kfrom = page_address(from);
+-
+-	copy_page_mc(kto, kfrom);
+-	do_mte(to, from, kto, kfrom, true);
+-}
+-EXPORT_SYMBOL(copy_highpage_mc);
+-
+-void copy_user_highpage_mc(struct page *to, struct page *from,
+-			unsigned long vaddr, struct vm_area_struct *vma)
+-{
+-	copy_highpage_mc(to, from);
+-	flush_dcache_page(to);
+-}
+-EXPORT_SYMBOL_GPL(copy_user_highpage_mc);
+-#endif
+diff --git a/arch/arm64/mm/extable.c b/arch/arm64/mm/extable.c
+index 9f07b8f13c63..aa0060178343 100644
+--- a/arch/arm64/mm/extable.c
++++ b/arch/arm64/mm/extable.c
+@@ -20,15 +20,3 @@ int fixup_exception(struct pt_regs *regs)
+ 	regs->pc = (unsigned long)&fixup->fixup + fixup->fixup;
+ 	return 1;
+ }
+-
+-int fixup_exception_mc(struct pt_regs *regs)
+-{
+-	const struct exception_table_entry *fixup;
+-
+-	fixup = search_mc_exception_tables(instruction_pointer(regs));
+-	if (!fixup)
+-		return 0;
+-
+-	regs->pc = (unsigned long)&fixup->fixup + fixup->fixup;
+-	return 1;
+-}
+diff --git a/arch/arm64/mm/fault.c b/arch/arm64/mm/fault.c
+index 53cdcbda7cb6..7da2f8118b35 100644
+--- a/arch/arm64/mm/fault.c
++++ b/arch/arm64/mm/fault.c
+@@ -40,8 +40,6 @@
+ #include <asm/tlbflush.h>
+ #include <asm/traps.h>
+ 
+-int sysctl_machine_check_safe = 1;
+-
+ struct fault_info {
+ 	int	(*fn)(unsigned long addr, unsigned int esr,
+ 		      struct pt_regs *regs);
+@@ -636,34 +634,6 @@ static int do_bad(unsigned long addr, unsigned int esr, struct pt_regs *regs)
+ 	return 1; /* "fault" */
+ }
+ 
+-static bool arm64_do_kernel_sea(void __user *addr, unsigned int esr,
+-				struct pt_regs *regs, int sig, int code)
+-{
+-	if (!IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC))
+-		return false;
+-
+-	if (!sysctl_machine_check_safe)
+-		return false;
+-
+-	if (user_mode(regs))
+-		return false;
+-
+-	if (apei_claim_sea(regs) < 0)
+-		return false;
+-
+-	if (!fixup_exception_mc(regs))
+-		return false;
+-
+-	if (current->flags & PF_KTHREAD)
+-		return true;
+-
+-	set_thread_esr(0, esr);
+-	arm64_force_sig_fault(sig, code, addr,
+-		"Uncorrected memory error on access to user memory\n");
+-
+-	return true;
+-}
+-
+ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
+ {
+ 	const struct fault_info *inf;
+@@ -684,8 +654,10 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
+ 	else
+ 		siaddr  = (void __user *)addr;
+ 
+-	if (!arm64_do_kernel_sea(siaddr, esr, regs, inf->sig, inf->code))
+-		arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
++	if (arm64_process_kernel_sea(addr, esr, regs, inf->sig, inf->code, siaddr))
++		return 0;
++
++	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+ 
+ 	return 0;
+ }
+diff --git a/arch/arm64/mm/uce_kernel_recovery.c b/arch/arm64/mm/uce_kernel_recovery.c
+new file mode 100644
+index 000000000000..c654dc6c4dfd
+--- /dev/null
++++ b/arch/arm64/mm/uce_kernel_recovery.c
+@@ -0,0 +1,198 @@
++// SPDX-License-Identifier: GPL-2.0-only
++
++#define pr_fmt(fmt) "ARM64 UCE: " fmt
++
++#include <linux/acpi.h>
++#include <linux/kallsyms.h>
++#include <linux/mm.h>
++#include <linux/kernel.h>
++#include <linux/sysctl.h>
++
++#include <asm/acpi.h>
++#include <asm/exception.h>
++#include <asm/system_misc.h>
++#include <asm/traps.h>
++#include <asm/esr.h>
++
++struct uce_kernel_recovery_info {
++	int (*fn)(void);
++	const char *name;
++	unsigned long addr;
++	unsigned long size;
++};
++
++int copy_from_user_sea_fallback(void);
++
++static int kernel_access_sea_recovery;
++static int kernel_uce_recovery_sysctl_max = 7;
++
++#define UCE_KER_REC_NUM   ARRAY_SIZE(reco_info)
++static struct uce_kernel_recovery_info reco_info[] = {
++	{NULL, NULL, 0, 0},  /* reserved */
++	{NULL, NULL, 0, 0},  /* reserved */
++	{copy_from_user_sea_fallback, "__arch_copy_from_user", (unsigned long)__arch_copy_from_user, 0},
++};
++
++static struct ctl_table uce_kernel_recovery_ctl_table[] = {
++	{
++		.procname	= "uce_kernel_recovery",
++		.data		= &kernel_access_sea_recovery,
++		.maxlen		= sizeof(kernel_access_sea_recovery),
++		.mode		= 0644,
++		.proc_handler	= proc_dointvec_minmax,
++		.extra1		= SYSCTL_ZERO,
++		.extra2		= &kernel_uce_recovery_sysctl_max,
++	},
++	{ }
++};
++
++static int __init kernel_access_sea_recovery_init(void)
++{
++	unsigned long addr, size, offset;
++	unsigned int i;
++
++	for (i = 0; i < UCE_KER_REC_NUM; i++) {
++		addr = reco_info[i].addr;
++
++		if (!addr)
++			continue;
++
++		if (!kallsyms_lookup_size_offset(addr, &size, &offset)) {
++			pr_info("symbol %s lookup addr fail.\n",
++				reco_info[i].name);
++			size = 0;
++		}
++
++		reco_info[i].size = size;
++	}
++
++	if (!register_sysctl("kernel", uce_kernel_recovery_ctl_table))
++		pr_err("register sysctl table fail.\n");
++
++	return 1;
++}
++fs_initcall(kernel_access_sea_recovery_init);
++
++static int __init enable_kernel_access_sea_recovery(char *str)
++{
++	int max = (1 << UCE_KER_REC_NUM) - 1;
++	int val;
++
++	if (kstrtoint(str, 0, &val))
++		return -EINVAL;
++
++	if (val < 0 || val > max) {
++		pr_info("invalid uce_kernel_recovery value %d", val);
++		return -EINVAL;
++	}
++
++	kernel_access_sea_recovery = val;
++
++	return 1;
++}
++__setup("uce_kernel_recovery=", enable_kernel_access_sea_recovery);
++
++/*
++ * what is kernel recovery?
++ * If the process's private data is accessed in the kernel mode to trigger
++ * special sea fault, it can controlled by killing the process and isolating
++ * the failure pages instead of die.
++ */
++static int is_in_kernel_recovery(unsigned int esr, struct pt_regs *regs)
++{
++	/*
++	 * target insn: ldp-pre, ldp-post, ldp-offset,
++	 * ldr-64bit-pre/pose, ldr-32bit-pre/post, ldrb-pre/post, ldrh-pre/post
++	 */
++	u32 target_insn[] = {0xa8c, 0xa9c, 0xa94, 0xf84, 0x784, 0x384, 0xb84};
++	void  *pc = (void  *)instruction_pointer(regs);
++	struct uce_kernel_recovery_info *info;
++	bool insn_match = false;
++	u32 insn;
++	int i;
++
++	pr_emerg("%s-%d, kernel recovery: 0x%x, esr: 0x%08x -- %s, %pS\n",
++		 current->comm, current->pid, kernel_access_sea_recovery, esr,
++		 esr_get_class_string(esr), pc);
++
++	if (aarch64_insn_read((void *)pc, &insn)) {
++		pr_emerg("insn read fail.\n");
++		return -EFAULT;
++	}
++
++	/*
++	 * We process special ESR:
++	 * EC : 0b100101   Data Abort taken without a change in Exception level.
++	 * DFSC : 0b010000 Synchronous External abort, not on translation table
++	 * walk or hardware update of translation table.
++	 * eg: 0x96000610
++	 */
++	if (ESR_ELx_EC(esr) != ESR_ELx_EC_DABT_CUR ||
++		(esr & ESR_ELx_FSC) != ESR_ELx_FSC_EXTABT) {
++		pr_emerg("esr not match.\n");
++		return -EINVAL;
++	}
++
++	insn = (insn >> 20) & 0xffc;
++	for (i = 0; i < ARRAY_SIZE(target_insn); i++) {
++		if (insn == target_insn[i]) {
++			insn_match = true;
++			break;
++		}
++	}
++
++	if (!insn_match) {
++		pr_emerg("insn 0x%x is not match.\n", insn);
++		return -EINVAL;
++	}
++
++	for (i = 0; i < UCE_KER_REC_NUM; i++) {
++		if (!((kernel_access_sea_recovery >> i) & 0x1))
++			continue;
++
++		info = &reco_info[i];
++		if (info->fn && regs->pc >= info->addr &&
++		    regs->pc < (info->addr + info->size)) {
++			pr_emerg("total match %s success.\n", info->name);
++			return i;
++		}
++	}
++
++	pr_emerg("scene is not match, kernel recovery %d.\n",
++		 kernel_access_sea_recovery);
++	return -EINVAL;
++}
++
++bool arm64_process_kernel_sea(unsigned long addr, unsigned int esr,
++			      struct pt_regs *regs, int sig,
++			      int code, void __user *siaddr)
++{
++	int idx;
++
++	if (user_mode(regs) || apei_claim_sea(regs) < 0)
++		return false;
++
++	if (!current->mm || !kernel_access_sea_recovery) {
++		pr_emerg("kernel recovery %d, %s-%d is %s-thread.\n",
++			 kernel_access_sea_recovery,
++			 current->comm, current->pid,
++			 (current->mm) ? "user" : "kernel");
++
++		return false;
++	}
++
++	idx = is_in_kernel_recovery(esr, regs);
++	if (idx < 0 || idx >= UCE_KER_REC_NUM) {
++		pr_emerg("Uncorrected hardware memory error (sence not match or sence switch is off) in kernel-access\n");
++		return false;
++	}
++
++	current->thread.fault_address = 0;
++	current->thread.fault_code = esr;
++	regs->pc = (unsigned long)reco_info[idx].fn;
++
++	arm64_force_sig_fault(sig, code, siaddr,
++		"Uncorrected hardware memory use with kernel recovery in kernel-access\n");
++
++	return true;
++}
+diff --git a/arch/powerpc/include/asm/uaccess.h b/arch/powerpc/include/asm/uaccess.h
+index 809e05ab4a14..6b808bcdecd5 100644
+--- a/arch/powerpc/include/asm/uaccess.h
++++ b/arch/powerpc/include/asm/uaccess.h
+@@ -388,7 +388,6 @@ copy_mc_to_user(void __user *to, const void *from, unsigned long n)
+ 
+ 	return n;
+ }
+-#define copy_mc_to_user copy_mc_to_user
+ #endif
+ 
+ #ifdef __powerpc64__
+diff --git a/arch/x86/include/asm/uaccess.h b/arch/x86/include/asm/uaccess.h
+index ba1439fc3b9a..bb1430283c72 100644
+--- a/arch/x86/include/asm/uaccess.h
++++ b/arch/x86/include/asm/uaccess.h
+@@ -447,7 +447,6 @@ copy_mc_to_kernel(void *to, const void *from, unsigned len);
+ 
+ unsigned long __must_check
+ copy_mc_to_user(void *to, const void *from, unsigned len);
+-#define copy_mc_to_user copy_mc_to_user
+ #endif
+ 
+ /*
+diff --git a/fs/coredump.c b/fs/coredump.c
+index eea9dbc1264a..42c9c3dde764 100644
+--- a/fs/coredump.c
++++ b/fs/coredump.c
+@@ -899,9 +899,7 @@ int dump_user_range(struct coredump_params *cprm, unsigned long start,
+ 		if (page) {
+ 			void *kaddr = kmap(page);
+ 
+-			current->flags |= PF_COREDUMP_MCS;
+ 			stop = !dump_emit(cprm, kaddr, PAGE_SIZE);
+-			current->flags &= ~PF_COREDUMP_MCS;
+ 			kunmap(page);
+ 			put_page(page);
+ 		} else {
+diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
+index 90c1884928e1..274692c8b105 100644
+--- a/include/asm-generic/vmlinux.lds.h
++++ b/include/asm-generic/vmlinux.lds.h
+@@ -76,9 +76,7 @@
+  * alignment.
+  */
+ #ifdef RO_EXCEPTION_TABLE_ALIGN
+-#define RO_EXCEPTION_TABLE					\
+-	EXCEPTION_TABLE(RO_EXCEPTION_TABLE_ALIGN)		\
+-	MC_EXCEPTION_TABLE(RO_EXCEPTION_TABLE_ALIGN)
++#define RO_EXCEPTION_TABLE	EXCEPTION_TABLE(RO_EXCEPTION_TABLE_ALIGN)
+ #else
+ #define RO_EXCEPTION_TABLE
+ #endif
+@@ -677,21 +675,6 @@
+ 		__stop___ex_table = .;					\
+ 	}
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-/*
+- * Machine Check Exception table
+- */
+-#define MC_EXCEPTION_TABLE(align)					\
+-	. = ALIGN(align);						\
+-	__mc_ex_table : AT(ADDR(__mc_ex_table) - LOAD_OFFSET) {		\
+-		__start___mc_ex_table = .;				\
+-		KEEP(*(__mc_ex_table))					\
+-		__stop___mc_ex_table = .;				\
+-	}
+-#else
+-#define MC_EXCEPTION_TABLE(align)
+-#endif
+-
+ /*
+  * .BTF
+  */
+diff --git a/include/linux/extable.h b/include/linux/extable.h
+index e608f8a8df4e..4ab9e78f313b 100644
+--- a/include/linux/extable.h
++++ b/include/linux/extable.h
+@@ -19,41 +19,18 @@ void trim_init_extable(struct module *m);
+ 
+ /* Given an address, look for it in the exception tables */
+ const struct exception_table_entry *search_exception_tables(unsigned long add);
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-const struct exception_table_entry *search_mc_exception_tables(unsigned long add);
+-#else
+-static inline const struct exception_table_entry *
+-search_mc_exception_tables(unsigned long add)
+-{
+-	return NULL;
+-}
+-#endif
+ const struct exception_table_entry *
+ search_kernel_exception_table(unsigned long addr);
+ 
+ #ifdef CONFIG_MODULES
+ /* For extable.c to search modules' exception tables. */
+ const struct exception_table_entry *search_module_extables(unsigned long addr);
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-const struct exception_table_entry *search_module_mc_extables(unsigned long addr);
+-#else
+-static inline const struct exception_table_entry *
+-search_module_mc_extables(unsigned long addr)
+-{
+-	return NULL;
+-}
+-#endif
+ #else
+ static inline const struct exception_table_entry *
+ search_module_extables(unsigned long addr)
+ {
+ 	return NULL;
+ }
+-static inline const struct exception_table_entry *
+-search_module_mc_extables(unsigned long addr)
+-{
+-	return NULL;
+-}
+ #endif /*CONFIG_MODULES*/
+ 
+ #ifdef CONFIG_BPF_JIT
+diff --git a/include/linux/highmem.h b/include/linux/highmem.h
+index c3b75b4a8fc1..6b27af8fe624 100644
+--- a/include/linux/highmem.h
++++ b/include/linux/highmem.h
+@@ -341,10 +341,6 @@ static inline void copy_user_highpage(struct page *to, struct page *from,
+ 
+ #endif
+ 
+-#ifndef __HAVE_ARCH_COPY_USER_HIGHPAGE_MC
+-#define copy_user_highpage_mc copy_user_highpage
+-#endif
+-
+ #ifndef __HAVE_ARCH_COPY_HIGHPAGE
+ 
+ static inline void copy_highpage(struct page *to, struct page *from)
+@@ -360,10 +356,6 @@ static inline void copy_highpage(struct page *to, struct page *from)
+ 
+ #endif
+ 
+-#ifndef __HAVE_ARCH_COPY_HIGHPAGE_MC
+-#define copy_highpage_mc copy_highpage
+-#endif
+-
+ #ifndef __HAVE_ARCH_COPY_HUGEPAGES
+ 
+ static inline void copy_highpages(struct page *to, struct page *from, int nr_pages)
+diff --git a/include/linux/module.h b/include/linux/module.h
+index b9784f3617db..c185767a7313 100644
+--- a/include/linux/module.h
++++ b/include/linux/module.h
+@@ -429,11 +429,6 @@ struct module {
+ 	/* Startup function. */
+ 	int (*init)(void);
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-	/* there is 8-byte hole on all platforms */
+-	KABI_FILL_HOLE(unsigned int num_mc_exentries)
+-#endif
+-
+ 	/* Core layout: rbtree is accessed frequently, so keep together. */
+ 	struct module_layout core_layout __module_layout_align;
+ 	struct module_layout init_layout;
+@@ -562,13 +557,7 @@ struct module {
+ 	struct error_injection_entry *ei_funcs;
+ 	unsigned int num_ei_funcs;
+ #endif
+-
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-	KABI_USE(1, struct exception_table_entry *mc_extable)
+-#else
+ 	KABI_RESERVE(1)
+-#endif
+-
+ 	KABI_RESERVE(2)
+ 	KABI_RESERVE(3)
+ 	KABI_RESERVE(4)
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 626cc23b11ec..41df850003fb 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1612,7 +1612,6 @@ extern struct pid *cad_pid;
+ #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
+ #define PF_RANDOMIZE		0x00400000	/* Randomize virtual address space */
+ #define PF_SWAPWRITE		0x00800000	/* Allowed to write to swap */
+-#define PF_COREDUMP_MCS		0x01000000      /* Task coredump support machine check safe */
+ #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_mask */
+ #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
+ #define PF_MEMALLOC_NOCMA	0x10000000	/* All allocation request will have _GFP_MOVABLE cleared */
+diff --git a/include/linux/uaccess.h b/include/linux/uaccess.h
+index 8e9f25c57230..c7c6e8b8344d 100644
+--- a/include/linux/uaccess.h
++++ b/include/linux/uaccess.h
+@@ -224,15 +224,6 @@ copy_mc_to_kernel(void *dst, const void *src, size_t cnt)
+ }
+ #endif
+ 
+-#ifndef copy_mc_to_user
+-static inline unsigned long __must_check
+-copy_mc_to_user(void *dst, const void *src, size_t cnt)
+-{
+-	check_object_size(src, cnt, true);
+-	return raw_copy_to_user(dst, src, cnt);
+-}
+-#endif
+-
+ static __always_inline void pagefault_disabled_inc(void)
+ {
+ 	current->pagefault_disabled++;
+diff --git a/kernel/extable.c b/kernel/extable.c
+index 0ebc05fd72fd..b0ea5eb0c3b4 100644
+--- a/kernel/extable.c
++++ b/kernel/extable.c
+@@ -28,11 +28,6 @@ DEFINE_MUTEX(text_mutex);
+ extern struct exception_table_entry __start___ex_table[];
+ extern struct exception_table_entry __stop___ex_table[];
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-extern struct exception_table_entry __start___mc_ex_table[];
+-extern struct exception_table_entry __stop___mc_ex_table[];
+-#endif
+-
+ /* Cleared by build time tools if the table is already sorted. */
+ u32 __initdata __visible main_extable_sort_needed = 1;
+ 
+@@ -44,14 +39,6 @@ void __init sort_main_extable(void)
+ 		pr_notice("Sorting __ex_table...\n");
+ 		sort_extable(__start___ex_table, __stop___ex_table);
+ 	}
+-
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-	if (main_extable_sort_needed &&
+-	    &__stop___mc_ex_table > &__start___mc_ex_table) {
+-		pr_notice("Sorting __mc_ex_table...\n");
+-		sort_extable(__start___mc_ex_table, __stop___mc_ex_table);
+-	}
+-#endif
+ }
+ 
+ /* Given an address, look for it in the kernel exception table */
+@@ -75,22 +62,6 @@ const struct exception_table_entry *search_exception_tables(unsigned long addr)
+ 	return e;
+ }
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-/* Given an address, look for it in the machine check exception table */
+-const
+-struct exception_table_entry *search_mc_exception_tables(unsigned long addr)
+-{
+-	const struct exception_table_entry *e;
+-
+-	e = search_extable(__start___mc_ex_table,
+-			   __stop___mc_ex_table - __start___mc_ex_table, addr);
+-	if (!e)
+-		e = search_module_mc_extables(addr);
+-
+-	return e;
+-}
+-#endif
+-
+ int init_kernel_text(unsigned long addr)
+ {
+ 	if (addr >= (unsigned long)_sinittext &&
+diff --git a/kernel/module.c b/kernel/module.c
+index 02b3aca8ef60..1a7adb5073aa 100644
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -3455,11 +3455,6 @@ static int find_module_sections(struct module *mod, struct load_info *info)
+ 	mod->extable = section_objs(info, "__ex_table",
+ 				    sizeof(*mod->extable), &mod->num_exentries);
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-	mod->mc_extable = section_objs(info, "__mc_ex_table",
+-				    sizeof(*mod->mc_extable), &mod->num_mc_exentries);
+-#endif
+-
+ 	if (section_addr(info, "__obsparm"))
+ 		pr_warn("%s: Ignoring obsolete parameters\n", mod->name);
+ 
+@@ -3697,10 +3692,6 @@ static int post_relocation(struct module *mod, const struct load_info *info)
+ 	/* Sort exception table now relocations are done. */
+ 	sort_extable(mod->extable, mod->extable + mod->num_exentries);
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-	sort_extable(mod->mc_extable, mod->mc_extable + mod->num_mc_exentries);
+-#endif
+-
+ 	/* Copy relocated percpu area over. */
+ 	percpu_modcopy(mod, (void *)info->sechdrs[info->index.pcpu].sh_addr,
+ 		       info->sechdrs[info->index.pcpu].sh_size);
+@@ -4676,35 +4667,6 @@ const struct exception_table_entry *search_module_extables(unsigned long addr)
+ 	return e;
+ }
+ 
+-#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+-/* Given an address, look for it in the module machine check safe exception tables. */
+-const struct exception_table_entry *search_module_mc_extables(unsigned long addr)
+-{
+-	const struct exception_table_entry *e = NULL;
+-	struct module *mod;
+-
+-	preempt_disable();
+-	mod = __module_address(addr);
+-	if (!mod)
+-		goto out;
+-
+-	if (!mod->num_mc_exentries)
+-		goto out;
+-
+-	e = search_extable(mod->mc_extable,
+-			   mod->num_mc_exentries,
+-			   addr);
+-out:
+-	preempt_enable();
+-
+-	/*
+-	 * Now, if we found one, we are running inside it now, hence
+-	 * we cannot unload the module, hence no refcnt needed.
+-	 */
+-	return e;
+-}
+-#endif
+-
+ /*
+  * is_module_address - is this address inside a module?
+  * @addr: the address to check.
+diff --git a/kernel/sysctl.c b/kernel/sysctl.c
+index 38866c11f8b6..c1eebbcd0a1c 100644
+--- a/kernel/sysctl.c
++++ b/kernel/sysctl.c
+@@ -2726,17 +2726,6 @@ static struct ctl_table kern_table[] = {
+ 		.extra1		= SYSCTL_ZERO,
+ 		.extra2		= SYSCTL_ONE,
+ 	},
+-#endif
+-#if defined(CONFIG_ARM64) && defined(CONFIG_ARCH_HAS_COPY_MC)
+-	{
+-		.procname       = "machine_check_safe",
+-		.data           = &sysctl_machine_check_safe,
+-		.maxlen         = sizeof(sysctl_machine_check_safe),
+-		.mode           = 0644,
+-		.proc_handler   = proc_dointvec_minmax,
+-		.extra1         = SYSCTL_ZERO,
+-		.extra2         = SYSCTL_ONE,
+-	},
+ #endif
+ 	{ }
+ };
+diff --git a/lib/iov_iter.c b/lib/iov_iter.c
+index 11069b5de2a9..1b0a349fbcd9 100644
+--- a/lib/iov_iter.c
++++ b/lib/iov_iter.c
+@@ -764,14 +764,6 @@ size_t _copy_mc_to_iter(const void *addr, size_t bytes, struct iov_iter *i)
+ EXPORT_SYMBOL_GPL(_copy_mc_to_iter);
+ #endif /* CONFIG_ARCH_HAS_COPY_MC */
+ 
+-static void *memcpy_iter(void *to, const void *from, __kernel_size_t size)
+-{
+-	if (IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) && current->flags & PF_COREDUMP_MCS)
+-		return (void *)copy_mc_to_kernel(to, from, size);
+-	else
+-		return memcpy(to, from, size);
+-}
+-
+ size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
+ {
+ 	char *to = addr;
+@@ -785,7 +777,7 @@ size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
+ 		copyin((to += v.iov_len) - v.iov_len, v.iov_base, v.iov_len),
+ 		memcpy_from_page((to += v.bv_len) - v.bv_len, v.bv_page,
+ 				 v.bv_offset, v.bv_len),
+-		memcpy_iter((to += v.iov_len) - v.iov_len, v.iov_base, v.iov_len)
++		memcpy((to += v.iov_len) - v.iov_len, v.iov_base, v.iov_len)
+ 	)
+ 
+ 	return bytes;
+@@ -1021,7 +1013,7 @@ size_t iov_iter_copy_from_user_atomic(struct page *page,
+ 		copyin((p += v.iov_len) - v.iov_len, v.iov_base, v.iov_len),
+ 		memcpy_from_page((p += v.bv_len) - v.bv_len, v.bv_page,
+ 				 v.bv_offset, v.bv_len),
+-		memcpy_iter((p += v.iov_len) - v.iov_len, v.iov_base, v.iov_len)
++		memcpy((p += v.iov_len) - v.iov_len, v.iov_base, v.iov_len)
+ 	)
+ 	kunmap_atomic(kaddr);
+ 	return bytes;
+diff --git a/mm/memory.c b/mm/memory.c
+index f1d28ad88944..e5ad19b8eb60 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -2657,7 +2657,7 @@ static inline bool cow_user_page(struct page *dst, struct page *src,
+ 	unsigned long addr = vmf->address;
+ 
+ 	if (likely(src)) {
+-		copy_user_highpage_mc(dst, src, addr, vma);
++		copy_user_highpage(dst, src, addr, vma);
+ 		return true;
+ 	}
+ 
+diff --git a/scripts/sorttable.h b/scripts/sorttable.h
+index 874cbd7046b0..a2baa2fefb13 100644
+--- a/scripts/sorttable.h
++++ b/scripts/sorttable.h
+@@ -223,12 +223,6 @@ static int do_sort(Elf_Ehdr *ehdr,
+ 	unsigned int orc_num_entries = 0;
+ #endif
+ 
+-	Elf_Shdr *mc_extab_sec = NULL;
+-	Elf_Rel *mc_relocs = NULL;
+-	int mc_relocs_size = 0;
+-	char *mc_extab_image = NULL;
+-	int mc_extab_index = 0;
+-
+ 	shstrndx = r2(&ehdr->e_shstrndx);
+ 	if (shstrndx == SHN_XINDEX)
+ 		shstrndx = r(&shdr[0].sh_link);
+@@ -244,12 +238,6 @@ static int do_sort(Elf_Ehdr *ehdr,
+ 			extab_sec = s;
+ 			extab_index = i;
+ 		}
+-
+-		if (!strcmp(secstrings + idx, "__mc_ex_table")) {
+-			mc_extab_sec = s;
+-			mc_extab_index = i;
+-		}
+-
+ 		if (!strcmp(secstrings + idx, ".symtab"))
+ 			symtab_sec = s;
+ 		if (!strcmp(secstrings + idx, ".strtab"))
+@@ -261,14 +249,6 @@ static int do_sort(Elf_Ehdr *ehdr,
+ 			relocs = (void *)ehdr + _r(&s->sh_offset);
+ 			relocs_size = _r(&s->sh_size);
+ 		}
+-
+-		if ((r(&s->sh_type) == SHT_REL ||
+-		     r(&s->sh_type) == SHT_RELA) &&
+-		    r(&s->sh_info) == mc_extab_index) {
+-			mc_relocs = (void *)ehdr + _r(&s->sh_offset);
+-			mc_relocs_size = _r(&s->sh_size);
+-		}
+-
+ 		if (r(&s->sh_type) == SHT_SYMTAB_SHNDX)
+ 			symtab_shndx = (Elf32_Word *)((const char *)ehdr +
+ 						      _r(&s->sh_offset));
+@@ -330,18 +310,12 @@ static int do_sort(Elf_Ehdr *ehdr,
+ 	}
+ 
+ 	extab_image = (void *)ehdr + _r(&extab_sec->sh_offset);
+-
+-	if (mc_extab_sec)
+-		mc_extab_image = (void *)ehdr + _r(&mc_extab_sec->sh_offset);
+-
+ 	strtab = (const char *)ehdr + _r(&strtab_sec->sh_offset);
+ 	symtab = (const Elf_Sym *)((const char *)ehdr +
+ 						  _r(&symtab_sec->sh_offset));
+ 
+ 	if (custom_sort) {
+ 		custom_sort(extab_image, _r(&extab_sec->sh_size));
+-		if (mc_extab_image)
+-			custom_sort(mc_extab_image, _r(&mc_extab_sec->sh_size));
+ 	} else {
+ 		int num_entries = _r(&extab_sec->sh_size) / extable_ent_size;
+ 		qsort(extab_image, num_entries,
+@@ -352,9 +326,6 @@ static int do_sort(Elf_Ehdr *ehdr,
+ 	if (relocs)
+ 		memset(relocs, 0, relocs_size);
+ 
+-	if (mc_relocs)
+-		memset(mc_relocs, 0, mc_relocs_size);
+-
+ 	/* find the flag main_extable_sort_needed */
+ 	for (sym = (void *)ehdr + _r(&symtab_sec->sh_offset);
+ 	     sym < sym + _r(&symtab_sec->sh_size) / sizeof(Elf_Sym);
+-- 
+2.27.0
+
