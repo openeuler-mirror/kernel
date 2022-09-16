@@ -614,7 +614,7 @@ static void __init pte_clear_tests(struct mm_struct *mm, pte_t *ptep,
 #endif
 	set_pte_at(mm, vaddr, ptep, pte);
 	barrier();
-	pte_clear(mm, vaddr, ptep);
+	ptep_clear(mm, vaddr, ptep);
 	pte = ptep_get(ptep);
 	WARN_ON(!pte_none(pte));
 }
