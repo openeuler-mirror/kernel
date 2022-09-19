@@ -115,7 +115,12 @@ static unsigned long __init get_loops_per_jiffy(void)
 	return lpj;
 }
 
-static long init_timeval;
+static long init_timeval __nosavedata;
+
+void save_counter(void)
+{
+	init_timeval = drdtime();
+}
 
 void sync_counter(void)
 {

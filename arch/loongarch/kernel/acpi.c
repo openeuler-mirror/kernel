@@ -74,6 +74,30 @@ void __init acpi_boot_table_init(void)
 	}
 }
 
+static int __init acpi_parse_fadt(struct acpi_table_header *table)
+{
+	u64 gpe0_ena;
+
+	if (acpi_gbl_reduced_hardware)
+		return 0;
+
+	if (acpi_gbl_FADT.xgpe0_block.space_id != ACPI_ADR_SPACE_SYSTEM_MEMORY)
+		goto err;
+	gpe0_ena = acpi_gbl_FADT.xgpe0_block.address +
+		acpi_gbl_FADT.gpe0_block_length / 2;
+	if (!gpe0_ena)
+		goto err;
+
+	loongson_sysconf.gpe0_ena_reg = TO_UNCACHE(gpe0_ena);
+
+	return 0;
+err:
+	pr_err(PREFIX "Invalid BIOS FADT, disabling ACPI\n");
+	disable_acpi();
+	return -1;
+}
+
+
 #ifdef CONFIG_SMP
 int set_processor_mask(u32 id, u32 flags)
 {
@@ -169,6 +193,12 @@ static void __init acpi_process_madt(void)
 	loongson_sysconf.nr_cpus = num_processors;
 }
 
+#ifdef CONFIG_ACPI_SLEEP
+int (*acpi_suspend_lowlevel)(void) = loongarch_acpi_suspend;
+#else
+int (*acpi_suspend_lowlevel)(void);
+#endif
+
 int __init acpi_boot_init(void)
 {
 	/*
@@ -178,6 +208,8 @@ int __init acpi_boot_init(void)
 		return -1;
 
 	loongson_sysconf.boot_cpu_id = read_csr_cpuid();
+
+	acpi_table_parse(ACPI_SIG_FADT, acpi_parse_fadt);
 
 	/*
 	 * Process the Multiple APIC Description Table (MADT), if present

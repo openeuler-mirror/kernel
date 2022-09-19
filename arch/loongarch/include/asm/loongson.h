@@ -70,8 +70,6 @@ static inline void xconf_writeq(u64 val64, volatile void __iomem *addr)
 #define LS7A_CHIPCFG_REG_BASE		(LS7A_PCH_REG_BASE + 0x00010000)
 /* MISC reg base */
 #define LS7A_MISC_REG_BASE		(LS7A_PCH_REG_BASE + 0x00080000)
-/* ACPI regs */
-#define LS7A_ACPI_REG_BASE		(LS7A_MISC_REG_BASE + 0x00050000)
 /* RTC regs */
 #define LS7A_RTC_REG_BASE		(LS7A_MISC_REG_BASE + 0x00050100)
 
@@ -92,36 +90,6 @@ static inline void xconf_writeq(u64 val64, volatile void __iomem *addr)
 #define LS7A_LPC_INT_STS		(volatile void *)TO_UNCACHE(LS7A_PCH_REG_BASE + 0x2008)
 #define LS7A_LPC_INT_CLR		(volatile void *)TO_UNCACHE(LS7A_PCH_REG_BASE + 0x200c)
 #define LS7A_LPC_INT_POL		(volatile void *)TO_UNCACHE(LS7A_PCH_REG_BASE + 0x2010)
-
-#define LS7A_PMCON_SOC_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x000)
-#define LS7A_PMCON_RESUME_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x004)
-#define LS7A_PMCON_RTC_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x008)
-#define LS7A_PM1_EVT_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x00c)
-#define LS7A_PM1_ENA_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x010)
-#define LS7A_PM1_CNT_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x014)
-#define LS7A_PM1_TMR_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x018)
-#define LS7A_P_CNT_REG			(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x01c)
-#define LS7A_GPE0_STS_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x028)
-#define LS7A_GPE0_ENA_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x02c)
-#define LS7A_RST_CNT_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x030)
-#define LS7A_WD_SET_REG			(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x034)
-#define LS7A_WD_TIMER_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x038)
-#define LS7A_THSENS_CNT_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x04c)
-#define LS7A_GEN_RTC_1_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x050)
-#define LS7A_GEN_RTC_2_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x054)
-#define LS7A_DPM_CFG_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x400)
-#define LS7A_DPM_STS_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x404)
-#define LS7A_DPM_CNT_REG		(volatile void *)TO_UNCACHE(LS7A_ACPI_REG_BASE + 0x408)
-
-typedef enum {
-	ACPI_PCI_HOTPLUG_STATUS	= 1 << 1,
-	ACPI_CPU_HOTPLUG_STATUS	= 1 << 2,
-	ACPI_MEM_HOTPLUG_STATUS	= 1 << 3,
-	ACPI_POWERBUTTON_STATUS	= 1 << 8,
-	ACPI_RTC_WAKE_STATUS	= 1 << 10,
-	ACPI_PCI_WAKE_STATUS	= 1 << 14,
-	ACPI_ANY_WAKE_STATUS	= 1 << 15,
-} AcpiEventStatusBits;
 
 #define HT1LO_OFFSET		0xe0000000000UL
 
