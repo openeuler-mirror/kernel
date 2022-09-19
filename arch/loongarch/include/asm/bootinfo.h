@@ -33,6 +33,10 @@ struct loongson_system_configuration {
 	int cores_per_package;
 	unsigned long cores_io_master;
 	const char *cpuname;
+	u64 suspend_addr;
+	u64 gpe0_ena_reg;
+	u8 pcie_wake_enabled;
+	u8 is_soc_cpu;
 };
 
 extern u64 efi_system_table;

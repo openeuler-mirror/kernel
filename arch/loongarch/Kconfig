@@ -510,6 +510,14 @@ config ARCH_MMAP_RND_BITS_MAX
 
 menu "Power management options"
 
+config ARCH_HIBERNATION_POSSIBLE
+	def_bool y
+
+config ARCH_SUSPEND_POSSIBLE
+	def_bool y
+
+source "kernel/power/Kconfig"
+
 source "drivers/acpi/Kconfig"
 
 endmenu
