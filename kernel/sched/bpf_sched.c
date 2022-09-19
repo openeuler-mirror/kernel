@@ -62,7 +62,7 @@ BPF_CALL_1(bpf_sched_entity_to_tgidpid, struct sched_entity *, se)
 BPF_CALL_1(bpf_sched_entity_to_cgrpid, struct sched_entity *, se)
 {
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	if (!entity_is_task(se))
+	if (!entity_is_task(se) && se->my_q->tg->css.cgroup)
 		return cgroup_id(se->my_q->tg->css.cgroup);
 #endif
 	return (u64) -1;
@@ -82,9 +82,11 @@ BPF_CALL_2(bpf_sched_entity_belongs_to_cgrp, struct sched_entity *, se,
 		cgrp = se->my_q->tg->css.cgroup;
 #endif
 
-	for (level = cgrp->level; level; level--)
-		if (cgrp->ancestor_ids[level] == cgrpid)
-			return 1;
+	if (cgrp) {
+		for (level = cgrp->level; level; level--)
+			if (cgrp->ancestor_ids[level] == cgrpid)
+				return 1;
+	}
 #endif
 	return 0;
 }
