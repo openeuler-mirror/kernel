@@ -81,8 +81,6 @@ extern unsigned long efi_fw_vendor, efi_config_table;
 	kernel_fpu_end();						\
 })
 
-#define arch_efi_call_virt(p, f, args...)	p->f(args)
-
 #else /* !CONFIG_X86_32 */
 
 #define EFI_LOADER_SIGNATURE	"EL64"
@@ -112,6 +110,7 @@ struct efi_scratch {
 	efi_switch_mm(&efi_mm);						\
 })
 
+#undef arch_efi_call_virt
 #define arch_efi_call_virt(p, f, args...)				\
 	efi_call((void *)p->f, args)					\
 
