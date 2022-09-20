@@ -765,6 +765,23 @@ static inline void list_splice_tail_init(struct list_head *list,
 	     pos = n, n = list_prev_entry(n, member))
 
 /**
+ * list_for_each_entry_safe_reverse_from - iterate backwards over list from
+ * current point safe against removal
+ * @pos:	the type * to use as a loop cursor.
+ * @n:		another type * to use as temporary storage
+ * @head:	the head for your list.
+ * @member:	the name of the list_head within the struct.
+ *
+ * Iterate backwards over list of given type from current point, safe against
+ * removal of list entry.
+ */
+#define list_for_each_entry_safe_reverse_from(pos, n, head, member)	\
+	for (n = list_prev_entry(pos, member);				\
+		 !list_entry_is_head(pos, head, member);		\
+		 pos = n, n = list_prev_entry(n, member))
+
+
+/**
  * list_safe_reset_next - reset a stale list_for_each_entry_safe loop
  * @pos:	the loop cursor used in the list_for_each_entry_safe loop
  * @n:		temporary storage used in list_for_each_entry_safe
