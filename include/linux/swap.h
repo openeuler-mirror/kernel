@@ -385,9 +385,40 @@ extern int remove_mapping(struct address_space *mapping, struct page *page);
 
 extern unsigned long reclaim_pages(struct list_head *page_list);
 #ifdef CONFIG_ETMEM
+enum etmem_swapcache_watermark_en {
+	ETMEM_SWAPCACHE_WMARK_LOW,
+	ETMEM_SWAPCACHE_WMARK_HIGH,
+	ETMEM_SWAPCACHE_NR_WMARK
+};
+
 extern int add_page_for_swap(struct page *page, struct list_head *pagelist);
 extern struct page *get_page_from_vaddr(struct mm_struct *mm,
 					unsigned long vaddr);
+extern int do_swapcache_reclaim(unsigned long *swapcache_watermark,
+				unsigned int watermark_nr);
+extern bool kernel_swap_enabled(void);
+#else
+static inline int add_page_for_swap(struct page *page, struct list_head *pagelist)
+{
+	return 0;
+}
+
+static inline struct page *get_page_from_vaddr(struct mm_struct *mm,
+						unsigned long vaddr)
+{
+	return NULL;
+}
+
+static inline int do_swapcache_reclaim(unsigned long *swapcache_watermark,
+				       unsigned int watermark_nr)
+{
+	return 0;
+}
+
+static inline bool kernel_swap_enabled(void)
+{
+	return true;
+}
 #endif
 #ifdef CONFIG_NUMA
 extern int node_reclaim_mode;
@@ -728,10 +759,6 @@ static inline bool mem_cgroup_swap_full(struct page *page)
 {
 	return vm_swap_full();
 }
-#endif
-
-#ifdef CONFIG_ETMEM
-extern bool kernel_swap_enabled(void);
 #endif
 
 #endif /* __KERNEL__*/
