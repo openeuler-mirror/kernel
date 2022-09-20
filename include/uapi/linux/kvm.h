@@ -251,6 +251,7 @@ struct kvm_hyperv_exit {
 #define KVM_EXIT_X86_RDMSR        29
 #define KVM_EXIT_X86_WRMSR        30
 #define KVM_EXIT_RISCV_SBI        31
+#define KVM_EXIT_X86_BUS_LOCK     33
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -1061,6 +1062,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_X86_USER_SPACE_MSR 188
 #define KVM_CAP_X86_MSR_FILTER 189
 #define KVM_CAP_ENFORCE_PV_FEATURE_CPUID 190
+#define KVM_CAP_X86_BUS_LOCK_EXIT 193
 #define KVM_CAP_SGX_ATTRIBUTE 196
 
 #define KVM_CAP_ARM_CPU_FEATURE 555
@@ -1736,5 +1738,8 @@ struct kvm_hyperv_eventfd {
 
 #define KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE    (1 << 0)
 #define KVM_DIRTY_LOG_INITIALLY_SET            (1 << 1)
+
+#define KVM_BUS_LOCK_DETECTION_OFF             (1 << 0)
+#define KVM_BUS_LOCK_DETECTION_EXIT            (1 << 1)
 
 #endif /* __LINUX_KVM_H */

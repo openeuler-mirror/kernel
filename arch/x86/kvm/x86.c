@@ -141,6 +141,8 @@ u64  __read_mostly kvm_max_tsc_scaling_ratio;
 EXPORT_SYMBOL_GPL(kvm_max_tsc_scaling_ratio);
 u64 __read_mostly kvm_default_tsc_scaling_ratio;
 EXPORT_SYMBOL_GPL(kvm_default_tsc_scaling_ratio);
+bool __read_mostly kvm_has_bus_lock_exit;
+EXPORT_SYMBOL_GPL(kvm_has_bus_lock_exit);
 
 /* tsc tolerance in parts per million - default to 1/2 of the NTP threshold */
 static u32 __read_mostly tsc_tolerance_ppm = 250;
@@ -3919,6 +3921,13 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_STEAL_TIME:
 		r = sched_info_on();
 		break;
+	case KVM_CAP_X86_BUS_LOCK_EXIT:
+		if (kvm_has_bus_lock_exit)
+			r = KVM_BUS_LOCK_DETECTION_OFF |
+			    KVM_BUS_LOCK_DETECTION_EXIT;
+		else
+			r = 0;
+		break;
 	default:
 		break;
 	}
@@ -5334,6 +5343,20 @@ split_irqchip_unlock:
 			r = 0;
 		}
 		mutex_unlock(&kvm->lock);
+		break;
+	case KVM_CAP_X86_BUS_LOCK_EXIT:
+		r = -EINVAL;
+		if (cap->args[0] & ~KVM_BUS_LOCK_DETECTION_VALID_MODE)
+			break;
+
+		if ((cap->args[0] & KVM_BUS_LOCK_DETECTION_OFF) &&
+		    (cap->args[0] & KVM_BUS_LOCK_DETECTION_EXIT))
+			break;
+
+		if (kvm_has_bus_lock_exit &&
+		    cap->args[0] & KVM_BUS_LOCK_DETECTION_EXIT)
+			kvm->arch.bus_lock_detection_enabled = true;
+		r = 0;
 		break;
 	default:
 		r = -EINVAL;
@@ -8280,12 +8303,15 @@ static void post_kvm_run_save(struct kvm_vcpu *vcpu)
 	struct kvm_run *kvm_run = vcpu->run;
 
 	kvm_run->if_flag = (kvm_get_rflags(vcpu) & X86_EFLAGS_IF) != 0;
-	kvm_run->flags = is_smm(vcpu) ? KVM_RUN_X86_SMM : 0;
+
 	kvm_run->cr8 = kvm_get_cr8(vcpu);
 	kvm_run->apic_base = kvm_get_apic_base(vcpu);
 	kvm_run->ready_for_interrupt_injection =
 		pic_in_kernel(vcpu->kvm) ||
 		kvm_vcpu_ready_for_interrupt_injection(vcpu);
+
+	if (is_smm(vcpu))
+		kvm_run->flags |= KVM_RUN_X86_SMM;
 }
 
 static void update_cr8_intercept(struct kvm_vcpu *vcpu)
@@ -9387,6 +9413,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 	vcpu_load(vcpu);
 	kvm_sigset_activate(vcpu);
+	kvm_run->flags = 0;
 	kvm_load_guest_fpu(vcpu);
 
 	if (unlikely(vcpu->arch.mp_state == KVM_MP_STATE_UNINITIALIZED)) {
