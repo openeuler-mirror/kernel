@@ -325,6 +325,10 @@ extern unsigned int kobjsize(const void *objp);
 
 #define VM_CHECKNODE	0x200000000
 
+#ifdef CONFIG_ETMEM
+#define VM_SWAPFLAG	0x400000000000000 /* memory swap out flag in vma */
+#endif
+
 #ifdef CONFIG_USERSWAP
 /* bit[32:36] is the protection key of intel, so use a large value for VM_USWAP */
 #define VM_USWAP      0x2000000000000000

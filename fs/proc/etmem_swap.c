@@ -63,6 +63,7 @@ static ssize_t swap_pages_write(struct file *file, const char __user *buf,
 		ret = kstrtoul(p, 16, &vaddr);
 		if (ret != 0)
 			continue;
+
 		/* If get page struct failed, ignore it, get next page */
 		page = get_page_from_vaddr(mm, vaddr);
 		if (!page)
