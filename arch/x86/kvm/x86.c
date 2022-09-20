@@ -143,6 +143,8 @@ u64 __read_mostly kvm_default_tsc_scaling_ratio;
 EXPORT_SYMBOL_GPL(kvm_default_tsc_scaling_ratio);
 bool __read_mostly kvm_has_bus_lock_exit;
 EXPORT_SYMBOL_GPL(kvm_has_bus_lock_exit);
+bool __read_mostly kvm_has_notify_vmexit;
+EXPORT_SYMBOL_GPL(kvm_has_notify_vmexit);
 
 /* tsc tolerance in parts per million - default to 1/2 of the NTP threshold */
 static u32 __read_mostly tsc_tolerance_ppm = 250;
@@ -240,6 +242,7 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT("halt_poll_fail_ns", halt_poll_fail_ns),
 	VCPU_STAT("preemption_reported", preemption_reported),
 	VCPU_STAT("preemption_other", preemption_other),
+	VCPU_STAT("notify_window_exits", notify_window_exits),
 	VM_STAT("mmu_shadow_zapped", mmu_shadow_zapped),
 	VM_STAT("mmu_pte_write", mmu_pte_write),
 	VM_STAT("mmu_pde_zapped", mmu_pde_zapped),
@@ -3845,6 +3848,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_GET_MSR_FEATURES:
 	case KVM_CAP_MSR_PLATFORM_INFO:
 	case KVM_CAP_EXCEPTION_PAYLOAD:
+	case KVM_CAP_X86_TRIPLE_FAULT_EVENT:
 	case KVM_CAP_SET_GUEST_DEBUG:
 	case KVM_CAP_LAST_CPU:
 	case KVM_CAP_X86_USER_SPACE_MSR:
@@ -3927,6 +3931,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 			    KVM_BUS_LOCK_DETECTION_EXIT;
 		else
 			r = 0;
+		break;
+	case KVM_CAP_X86_NOTIFY_VMEXIT:
+		r = kvm_has_notify_vmexit;
 		break;
 	default:
 		break;
@@ -4416,6 +4423,10 @@ static void kvm_vcpu_ioctl_x86_get_vcpu_events(struct kvm_vcpu *vcpu,
 			 | KVM_VCPUEVENT_VALID_SMM);
 	if (vcpu->kvm->arch.exception_payload_enabled)
 		events->flags |= KVM_VCPUEVENT_VALID_PAYLOAD;
+	if (vcpu->kvm->arch.triple_fault_event) {
+		events->triple_fault.pending = kvm_test_request(KVM_REQ_TRIPLE_FAULT, vcpu);
+		events->flags |= KVM_VCPUEVENT_VALID_TRIPLE_FAULT;
+	}
 
 	memset(&events->reserved, 0, sizeof(events->reserved));
 }
@@ -4429,7 +4440,8 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
 			      | KVM_VCPUEVENT_VALID_SIPI_VECTOR
 			      | KVM_VCPUEVENT_VALID_SHADOW
 			      | KVM_VCPUEVENT_VALID_SMM
-			      | KVM_VCPUEVENT_VALID_PAYLOAD))
+			      | KVM_VCPUEVENT_VALID_PAYLOAD
+			      | KVM_VCPUEVENT_VALID_TRIPLE_FAULT))
 		return -EINVAL;
 
 	if (events->flags & KVM_VCPUEVENT_VALID_PAYLOAD) {
@@ -4505,6 +4517,15 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
 			else
 				clear_bit(KVM_APIC_INIT, &vcpu->arch.apic->pending_events);
 		}
+	}
+
+	if (events->flags & KVM_VCPUEVENT_VALID_TRIPLE_FAULT) {
+		if (!vcpu->kvm->arch.triple_fault_event)
+			return -EINVAL;
+		if (events->triple_fault.pending)
+			kvm_make_request(KVM_REQ_TRIPLE_FAULT, vcpu);
+		else
+			kvm_clear_request(KVM_REQ_TRIPLE_FAULT, vcpu);
 	}
 
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
@@ -5309,6 +5330,10 @@ split_irqchip_unlock:
 		kvm->arch.exception_payload_enabled = cap->args[0];
 		r = 0;
 		break;
+	case KVM_CAP_X86_TRIPLE_FAULT_EVENT:
+		kvm->arch.triple_fault_event = cap->args[0];
+		r = 0;
+		break;
 	case KVM_CAP_X86_USER_SPACE_MSR:
 		kvm->arch.user_space_msr_mask = cap->args[0];
 		r = 0;
@@ -5357,6 +5382,22 @@ split_irqchip_unlock:
 		    cap->args[0] & KVM_BUS_LOCK_DETECTION_EXIT)
 			kvm->arch.bus_lock_detection_enabled = true;
 		r = 0;
+		break;
+	case KVM_CAP_X86_NOTIFY_VMEXIT:
+		r = -EINVAL;
+		if ((u32)cap->args[0] & ~KVM_X86_NOTIFY_VMEXIT_VALID_BITS)
+			break;
+		if (!kvm_has_notify_vmexit)
+			break;
+		if (!((u32)cap->args[0] & KVM_X86_NOTIFY_VMEXIT_ENABLED))
+			break;
+		mutex_lock(&kvm->lock);
+		if (!kvm->created_vcpus) {
+			kvm->arch.notify_window = cap->args[0] >> 32;
+			kvm->arch.notify_vmexit_flags = (u32)cap->args[0];
+			r = 0;
+		}
+		mutex_unlock(&kvm->lock);
 		break;
 	default:
 		r = -EINVAL;
