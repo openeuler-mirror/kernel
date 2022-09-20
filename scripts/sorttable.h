@@ -227,7 +227,6 @@ static int do_sort(Elf_Ehdr *ehdr,
 	Elf_Rel *mc_relocs = NULL;
 	int mc_relocs_size = 0;
 	char *mc_extab_image = NULL;
-	int mc_extab_index = 0;
 
 	shstrndx = r2(&ehdr->e_shstrndx);
 	if (shstrndx == SHN_XINDEX)
@@ -245,11 +244,6 @@ static int do_sort(Elf_Ehdr *ehdr,
 			extab_index = i;
 		}
 
-		if (!strcmp(secstrings + idx, "__mc_ex_table")) {
-			mc_extab_sec = s;
-			mc_extab_index = i;
-		}
-
 		if (!strcmp(secstrings + idx, ".symtab"))
 			symtab_sec = s;
 		if (!strcmp(secstrings + idx, ".strtab"))
@@ -262,11 +256,15 @@ static int do_sort(Elf_Ehdr *ehdr,
 			relocs_size = _r(&s->sh_size);
 		}
 
-		if ((r(&s->sh_type) == SHT_REL ||
-		     r(&s->sh_type) == SHT_RELA) &&
-		    r(&s->sh_info) == mc_extab_index) {
-			mc_relocs = (void *)ehdr + _r(&s->sh_offset);
-			mc_relocs_size = _r(&s->sh_size);
+		if (!strcmp(secstrings + idx, "__mc_ex_table")) {
+			mc_extab_sec = s;
+
+			if ((r(&s->sh_type) == SHT_REL ||
+				r(&s->sh_type) == SHT_RELA) &&
+				r(&s->sh_info) == i) {
+				mc_relocs = (void *)ehdr + _r(&s->sh_offset);
+				mc_relocs_size = _r(&s->sh_size);
+			}
 		}
 
 		if (r(&s->sh_type) == SHT_SYMTAB_SHNDX)
