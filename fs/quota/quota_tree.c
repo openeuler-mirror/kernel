@@ -80,6 +80,35 @@ static ssize_t write_blk(struct qtree_mem_dqinfo *info, uint blk, char *buf)
 	return ret;
 }
 
+static inline int do_check_range(struct super_block *sb, uint val, uint max_val)
+{
+	if (val >= max_val) {
+		quota_error(sb, "Getting block too big (%u >= %u)",
+			    val, max_val);
+		return -EUCLEAN;
+	}
+
+	return 0;
+}
+
+static int check_free_block(struct qtree_mem_dqinfo *info,
+			    struct qt_disk_dqdbheader *dh)
+{
+	int err = 0;
+	uint nextblk, prevblk;
+
+	nextblk = le32_to_cpu(dh->dqdh_next_free);
+	err = do_check_range(info->dqi_sb, nextblk, info->dqi_blocks);
+	if (err)
+		return err;
+	prevblk = le32_to_cpu(dh->dqdh_prev_free);
+	err = do_check_range(info->dqi_sb, prevblk, info->dqi_blocks);
+	if (err)
+		return err;
+
+	return err;
+}
+
 /* Remove empty block from list and return it */
 static int get_free_dqblk(struct qtree_mem_dqinfo *info)
 {
@@ -93,6 +122,9 @@ static int get_free_dqblk(struct qtree_mem_dqinfo *info)
 		blk = info->dqi_free_blk;
 		ret = read_blk(info, blk, buf);
 		if (ret < 0)
+			goto out_buf;
+		ret = check_free_block(info, dh);
+		if (ret)
 			goto out_buf;
 		info->dqi_free_blk = le32_to_cpu(dh->dqdh_next_free);
 	}
@@ -240,6 +272,9 @@ static uint find_free_dqentry(struct qtree_mem_dqinfo *info,
 		blk = info->dqi_free_entry;
 		*err = read_blk(info, blk, buf);
 		if (*err < 0)
+			goto out_buf;
+		*err = check_free_block(info, dh);
+		if (*err)
 			goto out_buf;
 	} else {
 		blk = get_free_dqblk(info);
@@ -433,6 +468,9 @@ static int free_dqentry(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 		goto out_buf;
 	}
 	dh = (struct qt_disk_dqdbheader *)buf;
+	ret = check_free_block(info, dh);
+	if (ret)
+		goto out_buf;
 	le16_add_cpu(&dh->dqdh_entries, -1);
 	if (!le16_to_cpu(dh->dqdh_entries)) {	/* Block got free? */
 		ret = remove_free_dqentry(info, buf, blk);
