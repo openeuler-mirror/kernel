@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .12.0
-%global pkg_release         .64
+%global maintenance_release .14.0
+%global pkg_release         .65
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,155 @@ fi
 %endif
 
 %changelog
+* Tue Sep 20 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.14.0.65
+- netfilter: nf_tables: disallow binding to already bound chain
+- netfilter: nf_conntrack_irc: Tighten matching on DCC message
+- video: fbdev: i740fb: Error out if 'pixclock' equals zero
+- KVM: x86: do not report a vCPU as preempted outside instruction boundaries
+- video: fbdev: pxa3xx-gcu: Fix integer overflow in pxa3xx_gcu_write
+- arm64/__mc_ex_table: fix __mc_ex_table do_sort() issue
+- !113 SPR: KVM: Add SPR new instructions for virtualization
+- !105 add support for LoongArch
+- LoongArch: defconfig: add openeuler default config
+- LoongArch: defconfig: use make defconfig to save a clean defconfig
+- tools perf: Fix compilation error with new binutils
+- tools include: add dis-asm-compat.h to handle version differences
+- tools build: Don't display disassembler-four-args feature test
+- tools build: Add feature test for init_disassemble_info API changes
+- LoongArch: Support R_LARCH_GOT_PC_{LO12,HI20} in modules
+- LoongArch: Support PC-relative relocations in modules
+- LoongArch: Define ELF relocation types added in v2.00 ABI
+- LoongArch: Adjust symbol addressing for AS_HAS_EXPLICIT_RELOCS
+- LoongArch: Add Kconfig option AS_HAS_EXPLICIT_RELOCS
+- irqchip/loongson-liointc: Fix an error handling path in liointc_init()
+- irqchip/loongarch: Fix irq_domain_alloc_fwnode() abuse
+- irqchip/loongson-eiointc: Fix a build warning
+- irqchip/loongson-eiointc: Fix irq affinity setting
+- irqchip: Adjust Kconfig for Loongson
+- PCI: Add quirk for LS7A to avoid reboot failure
+- PCI: loongson: Improve the MRRS quirk for LS7A
+- PCI: loongson: Work around LS7A incorrect Interrupt Pin registers
+- PCI: loongson: Don't access non-existent devices
+- PCI: loongson: Add ACPI init support
+- PCI: loongson: Use generic 8/16/32-bit config ops on LS2K/LS7A
+- irqchip / ACPI: Introduce ACPI_IRQ_MODEL_LPIC for LoongArch
+- ACPI: irq: Allow acpi_gsi_to_irq() to have an arch-specific fallback
+- APCI: irq: Add support for multiple GSI domains
+- KVM: Expose AVX_VNNI instruction to guset
+- KVM: x86: Expose AVX512_FP16 for supported CPUID
+- drm/radeon: Workaround radeon driver bug for Loongson
+- LoongArch: Add writecombine support for drm
+- Input: i8042 - Add PNP checking hook for Loongson
+- LoongArch: Add qspinlock support
+- LoongArch: Add perf events support
+- LoongArch: Add SysRq-x (TLB Dump) support
+- LoongArch: Use TLB for ioremap()
+- LoongArch: Enable ARCH_WANT_HUGETLB_PAGE_OPTIMIZE_VMEMMAP
+- LoongArch: Add sparse memory vmemmap support
+- MIPS&LoongArch&NIOS2: Adjust prototypes of p?d_init()
+- irqchip/loongson-pch-lpc: Add suspend/resume support
+- irqchip/loongson-pch-pic: Add suspend/resume support
+- irqchip/loongson-eiointc: Add suspend/resume support
+- irqchip/loongson-htvec: Add suspend/resume support
+- irqchip/loongson-htvec: Add ACPI init support
+- ACPI / table: Print CORE_PIC information when MADT is parsed
+- ACPICA: Events: Support fixed pcie wake event
+- ACPICA: MADT: Add LoongArch APICs support
+- ACPI: Add LoongArch support for ACPI_PROCESSOR/ACPI_NUMA
+- Revert "LoongArch: Provisionally add ACPICA data structures"
+- loongarch: efi: enable generic EFI compressed boot
+- efi/libstub: implement generic EFI zboot
+- efi/libstub: use EFI provided memcpy/memset routines
+- efi/libstub: add some missing EFI prototypes
+- efi/loongarch: Add efistub booting support
+- irqchip: Select downstream irqchip drivers for LoongArch CPU
+- LoongArch: Add subword xchg/cmpxchg emulation
+- LoongArch: Cleanup headers to avoid circular dependency
+- LoongArch: Cleanup reset routines with new API
+- LoongArch: Fix build warnings in VDSO
+- LoongArch: Select PCI_QUIRKS to avoid build error
+- LoongArch: Update Loongson-3 default config file
+- LoongArch: Add USER_STACKTRACE support
+- LoongArch: Add STACKTRACE support
+- LoongArch: Add prologue unwinder support
+- LoongArch: Add guess unwinder support
+- LoongArch: Add vDSO syscall __vdso_getcpu()
+- LoongArch: Add PCI controller support
+- LoongArch: Parse MADT to get multi-processor information
+- LoongArch: Jump to the link address before enable PG
+- LoongArch: Requires __force attributes for any casts
+- LoongArch: Fix unsigned comparison with less than zero
+- LoongArch: Adjust arch/loongarch/Kconfig
+- LoongArch: cpuinfo: Fix a warning for CONFIG_CPUMASK_OFFSTACK
+- irqchip/loongson-pch-pic: Move find_pch_pic() into CONFIG_ACPI
+- LoongArch: Fix wrong "ROM Size" of boardinfo
+- LoongArch: Fix missing fcsr in ptrace's fpr_set
+- LoongArch: Fix shared cache size calculation
+- LoongArch: Disable executable stack by default
+- LoongArch: Remove unused variables
+- LoongArch: Remove clock setting during cpu hotplug stage
+- LoongArch: Remove useless header compiler.h
+- LoongArch: Remove several syntactic sugar macros for branches
+- LoongArch: Re-tab the assembly files
+- LoongArch: Simplify "BGT foo, zero" with BGTZ
+- LoongArch: Simplify "BLT foo, zero" with BLTZ
+- LoongArch: Simplify "BEQ/BNE foo, zero" with BEQZ/BNEZ
+- LoongArch: Use the "move" pseudo-instruction where applicable
+- LoongArch: Use the "jr" pseudo-instruction where applicable
+- LoongArch: Use ABI names of registers where appropriate
+- irqchip: Add LoongArch CPU interrupt controller support
+- LoongArch: fix kabi change due to enum chuph_state
+- irqchip: Add Loongson Extended I/O interrupt controller support
+- irqchip/loongson-liointc: Add ACPI init support
+- irqchip/loongson-pch-msi: Add ACPI init support
+- irqchip/loongson-pch-pic: Add ACPI init support
+- irqchip: Add Loongson PCH LPC controller support
+- LoongArch: Prepare to support multiple pch-pic and pch-msi irqdomain
+- LoongArch: Use ACPI_GENERIC_GSI for gsi handling
+- LoongArch: Provisionally add ACPICA data structures
+- loongarch: drop definition of PGD_ORDER
+- loongarch: drop definition of PUD_ORDER
+- loongarch: drop definition of PMD_ORDER
+- loongarch: drop definition of PTE_ORDER
+- LoongArch: Fix section mismatch warning
+- LoongArch: Fix build errors for tinyconfig
+- LoongArch: Remove obsolete mentions of vcsr
+- LoongArch: Drop these obsolete selects in Kconfig
+- efi: Simplify arch_efi_call_virt() macro
+- LoongArch: Make compute_return_era() return void
+- LoongArch: Fix wrong fpu version
+- LoongArch: Fix EENTRY/MERRENTRY setting in setup_tlb_handler()
+- LoongArch: Fix sleeping in atomic context in setup_tlb_handler()
+- LoongArch: Fix the _stext symbol address
+- LoongArch: Fix the !THP build
+- LoongArch: vmlinux.lds.S: Add missing ELF_DETAILS
+- LoongArch: Remove MIPS comment about cycle counter
+- LoongArch: Fix the !CONFIG_SMP build
+- LoongArch: Add Loongson-3 default config file
+- LoongArch: Add Non-Uniform Memory Access (NUMA) support
+- LoongArch: Add multi-processor (SMP) support
+- LoongArch: Add VDSO and VSYSCALL support
+- LoongArch: Add some library functions
+- LoongArch: Add misc common routines
+- LoongArch: Add ELF and module support
+- LoongArch: Add signal handling support
+- LoongArch: Add system call support
+- LoongArch: Add memory management
+- LoongArch: Add process management
+- LoongArch: Add exception/interrupt handling
+- LoongArch: Add boot and setup routines
+- LoongArch: Add other common headers
+- LoongArch: Add atomic/locking headers
+- LoongArch: Add CPU definition headers
+- LoongArch: Add ELF-related definitions
+- LoongArch: Add build infrastructure
+- fbdev: Prevent probing generic drivers if a FB is already registered
+- serial: 8250_pnp: Support configurable clock frequency
+- genirq/generic_chip: Export irq_unmap_generic_chip
+- mm/swapops: make is_pmd_migration_entry more strict
+- initramfs: Provide a common initrd reserve function
+- initrd: Add the preprocessor guard in initrd.h
+
 * Tue Sep 13 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.12.0.64
 - netfilter: nf_tables: do not allow RULE_ID to refer to another chain
 - netfilter: nf_tables: do not allow CHAIN_ID to refer to another table
