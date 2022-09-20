@@ -2168,7 +2168,11 @@ static int iscsi_iter_destroy_conn_fn(struct device *dev, void *data)
 {
 	if (!iscsi_is_conn_dev(dev))
 		return 0;
-	return iscsi_destroy_conn(iscsi_dev_to_conn(dev));
+
+	iscsi_remove_conn(iscsi_dev_to_conn(dev));
+	iscsi_put_conn(iscsi_dev_to_conn(dev));
+
+	return 0;
 }
 
 void iscsi_remove_session(struct iscsi_cls_session *session)
