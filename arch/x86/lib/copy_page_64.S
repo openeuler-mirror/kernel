@@ -153,10 +153,10 @@ SYM_FUNC_START(copy_page_nocache)
 	movq	(%rsp), %rbx
 	movq	1*8(%rsp), %r12
 	addq	$2*8, %rsp
-	ret
+	RET
 SYM_FUNC_END(copy_page_nocache)
 
 SYM_FUNC_START(copy_page_nocache_barrir)
 	ALTERNATIVE "", "sfence", X86_FEATURE_XMM2
-	ret
+	RET
 SYM_FUNC_END(copy_page_nocache_barrir)
