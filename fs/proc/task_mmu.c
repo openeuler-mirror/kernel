@@ -1855,6 +1855,7 @@ const struct file_operations proc_pagemap_operations = {
 	.release	= pagemap_release,
 };
 
+#ifdef CONFIG_ETMEM
 static DEFINE_SPINLOCK(scan_lock);
 
 static int page_scan_lock(struct file *file, int is_lock, struct file_lock *flock)
@@ -2037,6 +2038,7 @@ const struct file_operations proc_mm_swap_operations = {
 	.open       = mm_swap_open,
 	.release    = mm_swap_release,
 };
+#endif
 #endif /* CONFIG_PROC_PAGE_MONITOR */
 
 #ifdef CONFIG_NUMA

@@ -4582,6 +4582,7 @@ void check_move_unevictable_pages(struct pagevec *pvec)
 }
 EXPORT_SYMBOL_GPL(check_move_unevictable_pages);
 
+#ifdef CONFIG_ETMEM
 int add_page_for_swap(struct page *page, struct list_head *pagelist)
 {
 	int err = -EBUSY;
@@ -4636,3 +4637,4 @@ struct page *get_page_from_vaddr(struct mm_struct *mm, unsigned long vaddr)
 	return page;
 }
 EXPORT_SYMBOL_GPL(get_page_from_vaddr);
+#endif
