@@ -3457,6 +3457,18 @@ out:
 	return false;
 }
 
+#ifdef CONFIG_ETMEM
+/*
+ * Check if original kernel swap is enabled
+ * turn off kernel swap,but leave page cache reclaim on
+ */
+static inline void kernel_swap_check(struct scan_control *sc)
+{
+	if (sc != NULL && !kernel_swap_enabled())
+		sc->may_swap = 0;
+}
+#endif
+
 unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 				gfp_t gfp_mask, nodemask_t *nodemask)
 {
@@ -3473,6 +3485,9 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_swap = 1,
 	};
 
+#ifdef CONFIG_ETMEM
+	kernel_swap_check(&sc);
+#endif
 	/*
 	 * scan_control uses s8 fields for order, priority, and reclaim_idx.
 	 * Confirm they are large enough for max values.
@@ -3869,6 +3884,10 @@ restart:
 		sc.may_writepage = !laptop_mode && !nr_boost_reclaim;
 		sc.may_swap = !nr_boost_reclaim;
 
+#ifdef CONFIG_ETMEM
+		kernel_swap_check(&sc);
+#endif
+
 		/*
 		 * Do some background aging of the anon list, to give
 		 * pages a chance to be referenced before reclaiming. All
@@ -4245,6 +4264,10 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 	noreclaim_flag = memalloc_noreclaim_save();
 	set_task_reclaim_state(current, &sc.reclaim_state);
 
+#ifdef CONFIG_ETMEM
+	kernel_swap_check(&sc);
+#endif
+
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
 
 	set_task_reclaim_state(current, NULL);
@@ -4409,6 +4432,10 @@ static int __node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned in
 	cond_resched();
 	psi_memstall_enter(&pflags);
 	fs_reclaim_acquire(sc.gfp_mask);
+
+#ifdef CONFIG_ETMEM
+	kernel_swap_check(&sc);
+#endif
 	/*
 	 * We need to be able to allocate from the reserves for RECLAIM_UNMAP
 	 * and we also need to be able to write out pages for RECLAIM_WRITE
