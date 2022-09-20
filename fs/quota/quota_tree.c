@@ -80,12 +80,12 @@ static ssize_t write_blk(struct qtree_mem_dqinfo *info, uint blk, char *buf)
 	return ret;
 }
 
-static inline int do_check_range(struct super_block *sb, uint val,
-				 uint min_val, uint max_val)
+static inline int do_check_range(struct super_block *sb, const char *val_name,
+				 uint val, uint min_val, uint max_val)
 {
 	if (val < min_val || val >= max_val) {
-		quota_error(sb, "Getting block %u out of range %u-%u",
-			    val, min_val, max_val);
+		quota_error(sb, "Getting %s %u out of range %u-%u",
+			    val_name, val, min_val, max_val);
 		return -EUCLEAN;
 	}
 
@@ -99,11 +99,13 @@ static int check_free_block(struct qtree_mem_dqinfo *info,
 	uint nextblk, prevblk;
 
 	nextblk = le32_to_cpu(dh->dqdh_next_free);
-	err = do_check_range(info->dqi_sb, nextblk, 0, info->dqi_blocks);
+	err = do_check_range(info->dqi_sb, "dqdh_next_free", nextblk, 0,
+			     info->dqi_blocks);
 	if (err)
 		return err;
 	prevblk = le32_to_cpu(dh->dqdh_prev_free);
-	err = do_check_range(info->dqi_sb, prevblk, 0, info->dqi_blocks);
+	err = do_check_range(info->dqi_sb, "dqdh_prev_free", prevblk, 0,
+			     info->dqi_blocks);
 	if (err)
 		return err;
 
@@ -277,6 +279,11 @@ static uint find_free_dqentry(struct qtree_mem_dqinfo *info,
 		*err = check_free_block(info, dh);
 		if (*err)
 			goto out_buf;
+		*err = do_check_range(info->dqi_sb, "dqdh_entries",
+				      le16_to_cpu(dh->dqdh_entries), 0,
+				      qtree_dqstr_in_blk(info));
+		if (*err)
+			goto out_buf;
 	} else {
 		blk = get_free_dqblk(info);
 		if ((int)blk < 0) {
@@ -358,6 +365,10 @@ static int do_insert_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 	}
 	ref = (__le32 *)buf;
 	newblk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
+	ret = do_check_range(dquot->dq_sb, "block", newblk, 0,
+			     info->dqi_blocks);
+	if (ret)
+		goto out_buf;
 	if (!newblk)
 		newson = 1;
 	if (depth == info->dqi_qtree_depth - 1) {
@@ -472,6 +483,11 @@ static int free_dqentry(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 	ret = check_free_block(info, dh);
 	if (ret)
 		goto out_buf;
+	ret = do_check_range(info->dqi_sb, "dqdh_entries",
+			     le16_to_cpu(dh->dqdh_entries), 1,
+			     qtree_dqstr_in_blk(info) + 1);
+	if (ret)
+		goto out_buf;
 	le16_add_cpu(&dh->dqdh_entries, -1);
 	if (!le16_to_cpu(dh->dqdh_entries)) {	/* Block got free? */
 		ret = remove_free_dqentry(info, buf, blk);
@@ -528,7 +544,7 @@ static int remove_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 		goto out_buf;
 	}
 	newblk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
-	ret = do_check_range(dquot->dq_sb, newblk, QT_TREEOFF,
+	ret = do_check_range(dquot->dq_sb, "block", newblk, QT_TREEOFF,
 			     info->dqi_blocks);
 	if (ret)
 		goto out_buf;
@@ -632,7 +648,8 @@ static loff_t find_tree_dqentry(struct qtree_mem_dqinfo *info,
 	blk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
 	if (!blk)	/* No reference? */
 		goto out_buf;
-	ret = do_check_range(dquot->dq_sb, blk, QT_TREEOFF, info->dqi_blocks);
+	ret = do_check_range(dquot->dq_sb, "block", blk, QT_TREEOFF,
+			     info->dqi_blocks);
 	if (ret)
 		goto out_buf;
 
@@ -748,7 +765,13 @@ static int find_next_id(struct qtree_mem_dqinfo *info, qid_t *id,
 		goto out_buf;
 	}
 	for (i = __get_index(info, *id, depth); i < epb; i++) {
-		if (ref[i] == cpu_to_le32(0)) {
+		uint blk_no = le32_to_cpu(ref[i]);
+
+		ret = do_check_range(info->dqi_sb, "block", blk_no, 0,
+				     info->dqi_blocks);
+		if (ret)
+			goto out_buf;
+		if (blk_no == 0) {
 			*id += level_inc;
 			continue;
 		}
@@ -756,7 +779,7 @@ static int find_next_id(struct qtree_mem_dqinfo *info, qid_t *id,
 			ret = 0;
 			goto out_buf;
 		}
-		ret = find_next_id(info, id, le32_to_cpu(ref[i]), depth + 1);
+		ret = find_next_id(info, id, blk_no, depth + 1);
 		if (ret != -ENOENT)
 			break;
 	}
