@@ -74,6 +74,9 @@
 #define MADV_COLD	20		/* deactivate these pages */
 #define MADV_PAGEOUT	21		/* reclaim these pages */
 
+#define MADV_SWAPFLAG   203		/* for memory to be swap out */
+#define MADV_SWAPFLAG_REMOVE 204
+
 /* compatibility flags */
 #define MAP_FILE	0
 

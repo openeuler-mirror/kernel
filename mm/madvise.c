@@ -126,6 +126,14 @@ static long madvise_behavior(struct vm_area_struct *vma,
 		if (error)
 			goto out_convert_errno;
 		break;
+#ifdef CONFIG_ETMEM
+	case MADV_SWAPFLAG:
+		new_flags |= VM_SWAPFLAG;
+		break;
+	case MADV_SWAPFLAG_REMOVE:
+		new_flags &= ~VM_SWAPFLAG;
+		break;
+#endif
 	}
 
 	if (new_flags == vma->vm_flags) {
@@ -970,8 +978,11 @@ madvise_behavior_valid(int behavior)
 	case MADV_SOFT_OFFLINE:
 	case MADV_HWPOISON:
 #endif
+#ifdef CONFIG_ETMEM
+	case MADV_SWAPFLAG:
+	case MADV_SWAPFLAG_REMOVE:
+#endif
 		return true;
-
 	default:
 		return false;
 	}
@@ -1041,6 +1052,10 @@ process_madvise_behavior_valid(int behavior)
  *		easily if memory pressure hanppens.
  *  MADV_PAGEOUT - the application is not expected to use this memory soon,
  *		page out the pages in this range immediately.
+ *  MADV_SWAPFLAG - Used in the etmem memory extension feature, the process
+ *		specifies the memory swap area by adding a flag to a specific
+ *		vma address.
+ *  MADV_SWAPFLAG_REMOVE - remove the specific vma flag
  *
  * return values:
  *  zero    - success
