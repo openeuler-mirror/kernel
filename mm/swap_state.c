@@ -39,6 +39,9 @@ static const struct address_space_operations swap_aops = {
 struct address_space *swapper_spaces[MAX_SWAPFILES] __read_mostly;
 static unsigned int nr_swapper_spaces[MAX_SWAPFILES] __read_mostly;
 static bool enable_vma_readahead __read_mostly = true;
+#ifdef CONFIG_ETMEM
+static bool enable_kernel_swap __read_mostly = true;
+#endif
 
 #define SWAP_RA_WIN_SHIFT	(PAGE_SHIFT / 2)
 #define SWAP_RA_HITS_MASK	((1UL << SWAP_RA_WIN_SHIFT) - 1)
@@ -348,6 +351,13 @@ static inline bool swap_use_vma_readahead(void)
 {
 	return READ_ONCE(enable_vma_readahead) && !atomic_read(&nr_rotate_swap);
 }
+
+#ifdef CONFIG_ETMEM
+bool kernel_swap_enabled(void)
+{
+	return READ_ONCE(enable_kernel_swap);
+}
+#endif
 
 /*
  * Lookup a swap entry in the swap cache. A found page will be returned
@@ -909,8 +919,35 @@ static struct kobj_attribute vma_ra_enabled_attr =
 	__ATTR(vma_ra_enabled, 0644, vma_ra_enabled_show,
 	       vma_ra_enabled_store);
 
+#ifdef CONFIG_ETMEM
+static ssize_t kernel_swap_enable_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", enable_kernel_swap ? "true" : "false");
+}
+static ssize_t kernel_swap_enable_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	if (!strncmp(buf, "true", 4) || !strncmp(buf, "1", 1))
+		WRITE_ONCE(enable_kernel_swap, true);
+	else if (!strncmp(buf, "false", 5) || !strncmp(buf, "0", 1))
+		WRITE_ONCE(enable_kernel_swap, false);
+	else
+		return -EINVAL;
+
+	return count;
+}
+static struct kobj_attribute kernel_swap_enable_attr =
+	__ATTR(kernel_swap_enable, 0644, kernel_swap_enable_show,
+		kernel_swap_enable_store);
+#endif
+
 static struct attribute *swap_attrs[] = {
 	&vma_ra_enabled_attr.attr,
+#ifdef CONFIG_ETMEM
+	&kernel_swap_enable_attr.attr,
+#endif
 	NULL,
 };
 
