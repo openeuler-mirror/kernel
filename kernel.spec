@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2209.4.0
+%global hulkrelease 2209.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0168
+Release: %{hulkrelease}.0169
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,10 @@ fi
 %endif
 
 %changelog
+
+* Tue Sep 20 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.5.0.0169
+- jfs: prevent NULL deref in diFree
+- jfs: fix GPF in diFree
 
 * Thu Sep 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.4.0.0168
 - mm: Force TLB flush for PFNMAP mappings before unlink_file_vma()
