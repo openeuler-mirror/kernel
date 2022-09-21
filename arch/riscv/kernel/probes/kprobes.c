@@ -6,6 +6,7 @@
 #include <linux/stop_machine.h>
 #include <asm/ptrace.h>
 #include <linux/uaccess.h>
+#include <linux/vmalloc.h>
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
 #include <asm/bug.h>
