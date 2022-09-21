@@ -273,6 +273,11 @@ static inline int kvm_mmu_do_page_fault(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
 		.goal_level = PG_LEVEL_4K,
 	};
 
+	if (vcpu->arch.mmu->root_role.direct) {
+		fault.gfn = fault.addr >> PAGE_SHIFT;
+		fault.slot = kvm_vcpu_gfn_to_memslot(vcpu, fault.gfn);
+	}
+
 	if (IS_ENABLED(CONFIG_RETPOLINE) && fault.is_tdp)
 		return kvm_tdp_page_fault(vcpu, &fault);
 
