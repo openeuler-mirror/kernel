@@ -80,11 +80,12 @@ static ssize_t write_blk(struct qtree_mem_dqinfo *info, uint blk, char *buf)
 	return ret;
 }
 
-static inline int do_check_range(struct super_block *sb, uint val, uint max_val)
+static inline int do_check_range(struct super_block *sb, uint val,
+				 uint min_val, uint max_val)
 {
-	if (val >= max_val) {
-		quota_error(sb, "Getting block too big (%u >= %u)",
-			    val, max_val);
+	if (val < min_val || val >= max_val) {
+		quota_error(sb, "Getting block %u out of range %u-%u",
+			    val, min_val, max_val);
 		return -EUCLEAN;
 	}
 
@@ -98,11 +99,11 @@ static int check_free_block(struct qtree_mem_dqinfo *info,
 	uint nextblk, prevblk;
 
 	nextblk = le32_to_cpu(dh->dqdh_next_free);
-	err = do_check_range(info->dqi_sb, nextblk, info->dqi_blocks);
+	err = do_check_range(info->dqi_sb, nextblk, 0, info->dqi_blocks);
 	if (err)
 		return err;
 	prevblk = le32_to_cpu(dh->dqdh_prev_free);
-	err = do_check_range(info->dqi_sb, prevblk, info->dqi_blocks);
+	err = do_check_range(info->dqi_sb, prevblk, 0, info->dqi_blocks);
 	if (err)
 		return err;
 
@@ -527,12 +528,10 @@ static int remove_tree(struct qtree_mem_dqinfo *info, struct dquot *dquot,
 		goto out_buf;
 	}
 	newblk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
-	if (newblk < QT_TREEOFF || newblk >= info->dqi_blocks) {
-		quota_error(dquot->dq_sb, "Getting block too big (%u >= %u)",
-			    newblk, info->dqi_blocks);
-		ret = -EUCLEAN;
+	ret = do_check_range(dquot->dq_sb, newblk, QT_TREEOFF,
+			     info->dqi_blocks);
+	if (ret)
 		goto out_buf;
-	}
 
 	if (depth == info->dqi_qtree_depth - 1) {
 		ret = free_dqentry(info, dquot, newblk);
@@ -633,12 +632,9 @@ static loff_t find_tree_dqentry(struct qtree_mem_dqinfo *info,
 	blk = le32_to_cpu(ref[get_index(info, dquot->dq_id, depth)]);
 	if (!blk)	/* No reference? */
 		goto out_buf;
-	if (blk < QT_TREEOFF || blk >= info->dqi_blocks) {
-		quota_error(dquot->dq_sb, "Getting block too big (%u >= %u)",
-			    blk, info->dqi_blocks);
-		ret = -EUCLEAN;
+	ret = do_check_range(dquot->dq_sb, blk, QT_TREEOFF, info->dqi_blocks);
+	if (ret)
 		goto out_buf;
-	}
 
 	if (depth < info->dqi_qtree_depth - 1)
 		ret = find_tree_dqentry(info, dquot, blk, depth+1);
