@@ -62,7 +62,7 @@ struct tag_info {
 
 struct tag_info tag_tbl[] = {
 	{TAG_NONE, ""},
-	{TAG_ID(1), "0-3"},
+	{TAG_ID(1), "0-1"},
 	{TAG_ID(2), "4-7"},
 	{TAG_MAX, ""},
 };
@@ -94,13 +94,17 @@ static struct cpumask *select_better_cpus(struct task_struct *p,
 	long min_util = INT_MIN;
 	struct task_group *tg;
 	long spare;
-	int cpu;
+	int cpu, i;
 
 	if (!prefer_cpus_valid(prefer_cpus, (void *)getVal(p->cpus_ptr)))
 		return (void *)getVal(p->cpus_ptr);
 
 	tg = p->sched_task_group;
-	libbpf_for_each_cpu(cpu, prefer_cpus) {
+	for (i = 0, cpu = -1; i < BPF_SCHED_LOOP_MAX; i++) {
+		cpu = libbpf_cpumask_next(cpu, (void *)getVal(prefer_cpus));
+		if (cpu >= libbpf_nr_cpus_ids())
+			break;
+
 		if (idlest_cpu && libbpf_available_idle_cpu(cpu)) {
 			*idlest_cpu = cpu;
 		} else if (idlest_cpu) {
@@ -159,8 +163,13 @@ int BPF_PROG(cfs_select_cpu_range, struct sched_migrate_ctx *h_ctx)
 SEC("sched/cfs_select_rq_exit")
 int BPF_PROG(cfs_select_cpu_range_exit, struct sched_migrate_ctx *h_ctx)
 {
+	struct task_struct *p = getVal(h_ctx->task);
+	long tag = getVal(p->tag);
 	int *idlest_cpu;
 	int key = 0;
+
+	if (tag <= TAG_NONE || tag >= TAG_MAX)
+		return SELECT_RQ_EXIT_CPU_VALID;
 
 	idlest_cpu = bpf_map_lookup_elem(&map_idlest_cpu, &key);
 	if (!idlest_cpu) {
@@ -186,7 +195,7 @@ static int find_idlest_cpu(struct task_struct *p, int parent)
 	int cpu;
 	int i;
 
-	for (i = 0, cpu = -1; i < NR_CPUS; i++) {
+	for (i = 0, cpu = -1; i < BPF_SCHED_LOOP_MAX; i++) {
 		cpu = libbpf_cpumask_next(cpu, (void *)getVal(p->cpus_ptr));
 		if (cpu >= libbpf_nr_cpus_ids())
 			break;
@@ -203,17 +212,26 @@ static int find_idlest_cpu(struct task_struct *p, int parent)
 
 static int select_idle_cpu(struct task_struct *p, int parent, int prev_cpu)
 {
-	int cpu;
+	int cpu, i;
 
 	if (libbpf_available_idle_cpu(prev_cpu))
 		return prev_cpu;
 
 	if (libbpf_available_idle_cpu(parent))
-		return prev_cpu;
+		return parent;
 
-	libbpf_for_each_cpu_wrap(cpu, (void *)getVal(p->cpus_ptr), prev_cpu) {
+	cpu = libbpf_cpumask_next_wrap(prev_cpu - 1,
+				       (void *)getVal(p->cpus_ptr),
+				       prev_cpu, false);
+	for (i = 0; i < BPF_SCHED_LOOP_MAX; i++) {
+		if (cpu >= libbpf_nr_cpumask_bits())
+			break;
+
 		if (libbpf_available_idle_cpu(cpu))
 			return cpu;
+
+		cpu = libbpf_cpumask_next_wrap(cpu, (void *)getVal(p->cpus_ptr),
+					       prev_cpu, true);
 	}
 
 	return prev_cpu;
