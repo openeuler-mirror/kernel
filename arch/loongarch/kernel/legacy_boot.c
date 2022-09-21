@@ -239,7 +239,11 @@ int setup_legacy_IRQ(void)
 		printk("CPU domain init eror!\n");
 		return -1;
 	}
-	cpu_domain = get_cpudomain();
+	cpu_domain = irq_find_matching_fwnode(cpuintc_handle, DOMAIN_BUS_ANY);
+	if (!cpu_domain) {
+		printk("CPU domain error!\n");
+		return -1;
+	}
 	ret = liointc_acpi_init(cpu_domain, acpi_liointc);
 	if (ret) {
 		printk("Liointc domain init eror!\n");
@@ -269,7 +273,11 @@ int setup_legacy_IRQ(void)
 		pch_msi_parse_madt((union acpi_subtable_headers *)acpi_pchmsi[0], 0);
 	}
 
-	pic_domain = get_pchpic_irq_domain();
+	pic_domain = irq_find_matching_fwnode(pch_pic_handle[0], DOMAIN_BUS_ANY);
+	if (!pic_domain) {
+		printk("Pic domain error!\n");
+		return -1;
+	}
 	if (pic_domain)
 		pch_lpc_acpi_init(pic_domain, acpi_pchlpc);
 
