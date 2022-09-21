@@ -70,10 +70,9 @@ const struct bpf_func_proto bpf_init_cpu_topology_proto = {
 	.arg2_type	= ARG_ANYTHING,
 };
 
-BPF_CALL_2(bpf_get_cpumask_info, struct bpf_cpumask_info *, cpus,
-	   int, len)
+BPF_CALL_2(bpf_get_cpumask_info, struct bpf_map *, map, struct bpf_cpumask_info *, cpus)
 {
-	if (len != sizeof(*cpus))
+	if (!cpus)
 		return -EINVAL;
 
 	cpumask_copy(&cpus->cpu_possible_cpumask, cpu_possible_mask);
@@ -92,6 +91,6 @@ const struct bpf_func_proto bpf_get_cpumask_info_proto = {
 	.func		= bpf_get_cpumask_info,
 	.gpl_only	= false,
 	.ret_type	= RET_INTEGER,
-	.arg1_type	= ARG_PTR_TO_UNINIT_MEM,
-	.arg2_type	= ARG_CONST_SIZE,
+	.arg1_type	= ARG_CONST_MAP_PTR,
+	.arg2_type	= ARG_PTR_TO_MAP_VALUE_OR_NULL,
 };

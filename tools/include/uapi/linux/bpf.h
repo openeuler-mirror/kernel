@@ -4613,7 +4613,7 @@ union bpf_attr {
  *	Return
  *		0 on success, or a negative error in case of failure.
  *
- * int bpf_get_cpumask_info(struct bpf_cpumask_info *cpus, int len)
+ * int bpf_get_cpumask_info(struct bpf_map *map, struct bpf_cpumask_info *cpus)
  *	Description
  *		Get system cpus returned in *cpus*.
  *	Return

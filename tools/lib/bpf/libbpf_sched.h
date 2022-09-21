@@ -21,6 +21,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+/* set bigger value may lead verifier failed */
+#define BPF_SCHED_LOOP_MAX	1024
 #define INVALID_PTR		((void *)(0UL))
 #define getVal(P)							\
 	({								\
@@ -68,6 +70,13 @@ static __always_inline int libbpf_nr_cpumask_bits(void);
 		(cpu) < libbpf_nr_cpus_ids() && __i < NR_CPUS; __i++)
 
 #endif
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__type(key, u32);
+	__type(value, struct bpf_cpumask_info);
+	__uint(max_entries, 1);
+} map_cpumask_info SEC(".maps");
 
 static __always_inline long libbpf_cpumask_copy(struct cpumask *dst,
 						struct cpumask *src)
@@ -228,58 +237,93 @@ static __always_inline long libbpf_cpumask_cpulist_parse(char *src1,
 
 static __always_inline int libbpf_num_active_cpus(void)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	return getVal(cpus.nums_active_cpus);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return -1;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	return getVal(cpus->nums_active_cpus);
 }
 
 static __always_inline int libbpf_num_possible_cpus(void)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	return getVal(cpus.nums_possible_cpus);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return -1;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	return getVal(cpus->nums_possible_cpus);
 }
 
 static __always_inline void libbpf_possible_cpus_mask(struct cpumask *mask)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	libbpf_cpumask_copy(mask, &cpus.cpu_possible_cpumask);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	libbpf_cpumask_copy(mask, &cpus->cpu_possible_cpumask);
 }
 
 static __always_inline void libbpf_active_cpus_mask(struct cpumask *mask)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	libbpf_cpumask_copy(mask, &cpus.cpu_active_cpumask);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	libbpf_cpumask_copy(mask, &cpus->cpu_active_cpumask);
 }
 
 static __always_inline void libbpf_isolate_cpus_mask(struct cpumask *mask)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	libbpf_cpumask_copy(mask, &cpus.cpu_isolate_cpumask);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	libbpf_cpumask_copy(mask, &cpus->cpu_isolate_cpumask);
 }
 
 static __always_inline int libbpf_nr_cpus_ids(void)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	return getVal(cpus.nr_cpu_ids);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return -1;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	return getVal(cpus->nr_cpu_ids);
 }
 
 static __always_inline int libbpf_nr_cpumask_bits(void)
 {
-	struct bpf_cpumask_info cpus;
+	struct bpf_cpumask_info *cpus;
+	int key = 0;
 
-	bpf_get_cpumask_info(&cpus, sizeof(cpus));
-	return getVal(cpus.bpf_nr_cpumask_bits);
+	cpus = bpf_map_lookup_elem(&map_cpumask_info, &key);
+	if (!cpus)
+		return -1;
+
+	bpf_get_cpumask_info(&map_cpumask_info, cpus);
+	return getVal(cpus->bpf_nr_cpumask_bits);
 }
 
 static __always_inline unsigned long libbpf_cfs_load_avg_of(int cpu)
