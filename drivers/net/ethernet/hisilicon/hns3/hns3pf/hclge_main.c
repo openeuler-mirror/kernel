@@ -7096,6 +7096,7 @@ int hclge_vport_start(struct hclge_vport *vport)
 	struct hclge_dev *hdev = vport->back;
 
 	vport->last_active_jiffies = jiffies;
+	set_bit(HCLGE_VPORT_STATE_START, &vport->state);
 	set_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
 
 	if (test_bit(vport->vport_id, hdev->vport_config_block)) {
@@ -7113,6 +7114,7 @@ int hclge_vport_start(struct hclge_vport *vport)
 
 void hclge_vport_stop(struct hclge_vport *vport)
 {
+	clear_bit(HCLGE_VPORT_STATE_START, &vport->state);
 	clear_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
 }
 

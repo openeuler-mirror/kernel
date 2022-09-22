@@ -644,7 +644,8 @@ static void hclge_vf_keep_alive(struct hclge_vport *vport)
 
 	vport->last_active_jiffies = jiffies;
 
-	if (!test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state)) {
+	if (test_bit(HCLGE_VPORT_STATE_START, &vport->state) &&
+	    !test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state)) {
 		set_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
 
 		dev_info(&hdev->pdev->dev, "VF %u keep alive resume!",
