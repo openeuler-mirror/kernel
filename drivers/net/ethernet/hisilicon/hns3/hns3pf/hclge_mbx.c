@@ -639,7 +639,29 @@ static int hclge_reset_vf(struct hclge_vport *vport)
 
 static void hclge_vf_keep_alive(struct hclge_vport *vport)
 {
+	struct hclge_dev *hdev = vport->back;
+	int ret;
+
 	vport->last_active_jiffies = jiffies;
+
+	if (!test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state)) {
+		set_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
+
+		dev_info(&hdev->pdev->dev, "VF %u keep alive resume!",
+			 vport->vport_id - HCLGE_VF_VPORT_START_NUM);
+
+		/* if vf support push link, need to push link status after keep
+		 * alive restore, because the vf will not fetch the link status
+		 * of it's own.
+		 */
+		ret = hclge_push_vf_link_status(vport);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"failed to push link status to vf%u, ret=%d\n",
+				vport->vport_id - HCLGE_VF_VPORT_START_NUM,
+				ret);
+		}
+	}
 }
 
 static int hclge_set_vf_mtu(struct hclge_vport *vport,

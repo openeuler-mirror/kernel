@@ -4046,7 +4046,12 @@ static void hclge_update_vport_alive(struct hclge_dev *hdev)
 		 * receive a vf's alive msg for 8s, regards the vf is offline
 		 */
 		if (time_after(jiffies, vport->last_active_jiffies + 8 * HZ))
-			clear_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
+			if (test_and_clear_bit(HCLGE_VPORT_STATE_ALIVE,
+					       &vport->state))
+				dev_info(&hdev->pdev->dev,
+					 "VF %u keep alive lost!",
+					 vport->vport_id -
+					 HCLGE_VF_VPORT_START_NUM);
 
 		/* If vf is not alive, set to default value */
 		if (!test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state))
@@ -7090,8 +7095,8 @@ int hclge_vport_start(struct hclge_vport *vport)
 {
 	struct hclge_dev *hdev = vport->back;
 
-	set_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
 	vport->last_active_jiffies = jiffies;
+	set_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
 
 	if (test_bit(vport->vport_id, hdev->vport_config_block)) {
 		if (vport->vport_id) {
