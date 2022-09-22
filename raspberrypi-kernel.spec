@@ -2,19 +2,18 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 106.12.0
+%global hulkrelease 106.14.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.11
+Release: %{hulkrelease}.12
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
 Source0: kernel.tar.gz
 Patch0000: 0000-raspberrypi-kernel.patch
-Patch0001: 0001-revert-arm64-add-machine-checksafe-support.patch
 
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
 BuildRequires: bzip2, xz, findutils, gzip, m4, perl, make >= 3.78, diffutils, gawk
@@ -49,7 +48,6 @@ mv kernel linux-%{version}
 cp -a linux-%{version} linux-%{KernelVer}
 
 cd linux-%{KernelVer}
-%patch0001 -p1
 %patch0000 -p1
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -168,6 +166,10 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Wed Sep 21 2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-106.14.0.12
+- update kernel version to openEuler 5.10.0-106.14.0
+- delete patch: revert "arm64: add machine checksafe support"
+
 * Sat Sep 17 2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-106.12.0.11
 - revert "arm64: add machine checksafe support"
 - update kernel version to openEuler 5.10.0-106.12.0
