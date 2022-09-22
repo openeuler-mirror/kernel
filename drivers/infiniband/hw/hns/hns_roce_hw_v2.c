@@ -2245,8 +2245,9 @@ static void apply_func_caps(struct hns_roce_dev *hr_dev)
 	caps->num_idx_segs = HNS_ROCE_V2_MAX_IDX_SEGS;
 
 	if (!caps->num_comp_vectors)
-		caps->num_comp_vectors = min_t(u32, caps->eqc_bt_num - 1,
-				  (u32)priv->handle->rinfo.num_vectors -
+		caps->num_comp_vectors =
+			min_t(u32, caps->eqc_bt_num - HNS_ROCE_V2_AEQE_VEC_NUM,
+				(u32)priv->handle->rinfo.num_vectors -
 		(HNS_ROCE_V2_AEQE_VEC_NUM + HNS_ROCE_V2_ABNORMAL_VEC_NUM));
 
 	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09) {
