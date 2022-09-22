@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .14.0
-%global pkg_release         .65
+%global maintenance_release .15.0
+%global pkg_release         .66
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,45 @@ fi
 %endif
 
 %changelog
+* Wed Sep 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.15.0.66
+- !120 Fix uprobes rbtree usage
+- !117 bugfix for sched-programmable feature
+- uprobes: (Re)add missing get_uprobe() in __find_uprobe()
+- bpf: sched: Fix NULL pointer dereference error
+- bpf:programmable: Fix build error of 'stack exceeds 512 bytes'
+- !114 Add page table check for openEuler-22.09
+- !115 SPR: KVM: Add Bus Lock Debug Exception
+- !109 SPR: KVM: Notify VM exit support
+- KVM: Fix references to non-existent KVM_CAP_TRIPLE_FAULT_EVENT
+- KVM: VMX: Enable Notify VM exit
+- KVM: selftests: Add a test to get/set triple fault event
+- KVM: x86: Extend KVM_{G,S}ET_VCPU_EVENTS to support pending triple fault
+- x86/bus_lock: Don't assume the init value of DEBUGCTLMSR.BUS_LOCK_DETECT to be zero
+- KVM: X86: Expose bus lock debug exception to guest
+- KVM: X86: Add support for the emulation of DR6_BUS_LOCK bit
+- !116 SPR: KVM: Add Bus Lock VM Exit
+- KVM: X86: Rename DR6_INIT to DR6_ACTIVE_LOW
+- KVM: VMX: Remove redundant handling of bus lock vmexit
+- KVM: nVMX: Fix nested bus lock VM exit
+- tools headers UAPI: Sync KVM's kvm.h and vmx.h headers with the kernel sources
+- KVM: X86: Add the Document for KVM_CAP_X86_BUS_LOCK_EXIT
+- KVM: VMX: Enable bus lock VM exit
+- KVM: X86: Reset the vcpu->run->flags at the beginning of vcpu_run
+- arm64/mm: fix page table check compile error for CONFIG_PGTABLE_LEVELS=2
+- arm64/mm: enable ARCH_SUPPORTS_PAGE_TABLE_CHECK
+- mm: remove __HAVE_ARCH_PTEP_CLEAR in pgtable.h
+- mm: page_table_check: add hooks to public helpers
+- mm: page_table_check: move pxx_user_accessible_page into x86
+- mm: page_table_check: using PxD_SIZE instead of PxD_PAGE_SIZE
+- mm/page_table_check: check entries at pmd levels
+- mm/khugepaged: unify collapse pmd clear, flush and free
+- mm/page_table_check: use unsigned long for page counters and cleanup
+- x86: mm: add x86_64 support for page table check
+- mm: page table check
+- mm: ptep_clear() page table helper
+- mm: change page type prior to adding page table entry
+- KVM: nSVM: set fixed bits by hand
+
 * Tue Sep 20 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.14.0.65
 - netfilter: nf_tables: disallow binding to already bound chain
 - netfilter: nf_conntrack_irc: Tighten matching on DCC message
