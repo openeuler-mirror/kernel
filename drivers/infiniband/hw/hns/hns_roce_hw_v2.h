@@ -39,7 +39,6 @@
 #define HNS_ROCE_V2_MTT_ENTRY_SZ		64
 #define HNS_ROCE_V2_AEQE_VEC_NUM		1
 #define HNS_ROCE_V2_ABNORMAL_VEC_NUM		1
-#define HNS_ROCE_V2_MAX_MTT_SEGS		0x1000000
 #define HNS_ROCE_V2_MAX_SRQWQE_SEGS		0x1000000
 #define HNS_ROCE_V2_MAX_IDX_SEGS		0x1000000
 
@@ -1153,7 +1152,7 @@ struct hns_roce_query_pf_caps_a {
 	__le16 max_sq_sg;
 	__le16 max_sq_inline;
 	__le16 max_rq_sg;
-	__le32 max_extend_sg;
+	__le32 rsv0;
 	__le16 num_qpc_timer;
 	__le16 num_cqc_timer;
 	__le16 max_srq_sges;
