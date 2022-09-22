@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       114
+%global devel_release       117
 %global maintenance_release .0.0
-%global pkg_release         .61
+%global pkg_release         .62
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,180 @@ fi
 %endif
 
 %changelog
+* Wed Sep 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-117.0.0.62
+- KVM: x86/pmu: Update AMD PMC sample period to fix guest NMI-watchdog
+- KVM: x86/pmu: Introduce pmc->is_paused to reduce the call time of perf interfaces
+- efi: capsule-loader: Fix use-after-free in efi_capsule_write
+- x86/speculation: Add LFENCE to RSB fill sequence
+- x86/speculation: Add RSB VM Exit protections
+- quota: Add more checking after reading from quota file
+- quota: Replace all block number checking with helper function
+- quota: Check next/prev free block number after reading from quota file
+- RDMA/hns: Fix gid idx issue caused by free mr
+- RDMA/hns: Use the reserved loopback QPs to free MR before destroying MPT
+- scsi: libiscsi: Teardown iscsi_cls_conn gracefully
+- scsi: libiscsi: Add iscsi_cls_conn to sysfs after initialization
+- scsi: iscsi: Add helper functions to manage iscsi_cls_conn
+- block: fix regression for dm
+- dm: switch to rq-based after queue is initialized
+- blk-mq: fix io hung due to missing commit_rqs
+- Re-add padlen to the structure alt_instr
+- tools headers: Remove broken definition of __LITTLE_ENDIAN
+- tools arch: Update arch/x86/lib/mem{cpy,set}_64.S copies used in 'perf bench mem memcpy' - again
+- objtool: Fix elf_create_undef_symbol() endianness
+- kvm: fix objtool relocation warning
+- um: Add missing apply_returns()
+- x86/bugs: Remove apostrophe typo
+- tools headers cpufeatures: Sync with the kernel sources
+- tools arch x86: Sync the msr-index.h copy with the kernel sources
+- x86/kvm: fix FASTOP_SIZE when return thunks are enabled
+- efi/x86: use naked RET on mixed mode call wrapper
+- x86/speculation: Use DECLARE_PER_CPU for x86_spec_ctrl_current
+- x86/ftrace: Add UNWIND_HINT_FUNC annotation for ftrace_stub
+- x86/xen: Fix initialisation in hypercall_page after rethunk
+- x86, kvm: use proper ASM macros for kvm_vcpu_is_preempted
+- tools/insn: Restore the relative include paths for cross building
+- x86/static_call: Serialize __static_call_fixup() properly
+- x86/speculation: Disable RRSBA behavior
+- x86/kexec: Disable RET on kexec
+- x86/bugs: Do not enable IBPB-on-entry when IBPB is not supported
+- x86/bugs: Add Cannon lake to RETBleed affected CPU list
+- x86/retbleed: Add fine grained Kconfig knobs
+- x86/cpu/amd: Enumerate BTC_NO
+- x86/common: Stamp out the stepping madness
+- x86/speculation: Fill RSB on vmexit for IBRS
+- KVM: VMX: Fix IBRS handling after vmexit
+- KVM: VMX: Prevent guest RSB poisoning attacks with eIBRS
+- KVM: VMX: Convert launched argument to flags
+- KVM: VMX: Flatten __vmx_vcpu_run()
+- objtool: Re-add UNWIND_HINT_{SAVE_RESTORE}
+- x86/speculation: Remove x86_spec_ctrl_mask
+- x86/speculation: Use cached host SPEC_CTRL value for guest entry/exit
+- x86/speculation: Fix SPEC_CTRL write on SMT state change
+- x86/speculation: Fix firmware entry SPEC_CTRL handling
+- x86/speculation: Fix RSB filling with CONFIG_RETPOLINE=n
+- x86/cpu/amd: Add Spectral Chicken
+- objtool: Add entry UNRET validation
+- x86/bugs: Do IBPB fallback check only once
+- x86/bugs: Add retbleed=ibpb
+- x86/xen: Rename SYS* entry points
+- objtool: Update Retpoline validation
+- intel_idle: Disable IBRS during long idle
+- x86/bugs: Report Intel retbleed vulnerability
+- x86/bugs: Split spectre_v2_select_mitigation() and spectre_v2_user_select_mitigation()
+- x86/speculation: Add spectre_v2=ibrs option to support Kernel IBRS
+- x86/bugs: Optimize SPEC_CTRL MSR writes
+- x86/entry: Add kernel IBRS implementation
+- x86/bugs: Keep a per-CPU IA32_SPEC_CTRL value
+- x86/bugs: Enable STIBP for JMP2RET
+- x86/bugs: Add AMD retbleed= boot parameter
+- x86/bugs: Report AMD retbleed vulnerability
+- x86: Add magic AMD return-thunk
+- objtool: Treat .text.__x86.* as noinstr
+- x86: Use return-thunk in asm code
+- x86/sev: Avoid using __x86_return_thunk
+- x86/vsyscall_emu/64: Don't use RET in vsyscall emulation
+- x86/kvm: Fix SETcc emulation for return thunks
+- x86/bpf: Use alternative RET encoding
+- x86/ftrace: Use alternative RET encoding
+- x86,static_call: Use alternative RET encoding
+- objtool: skip non-text sections when adding return-thunk sites
+- x86,objtool: Create .return_sites
+- x86: Undo return-thunk damage
+- x86/retpoline: Use -mfunction-return
+- Makefile: Set retpoline cflags based on CONFIG_CC_IS_{CLANG,GCC}
+- x86/retpoline: Swizzle retpoline thunk
+- x86/retpoline: Cleanup some #ifdefery
+- x86/cpufeatures: Move RETPOLINE flags to word 11
+- x86/kvm/vmx: Make noinstr clean
+- x86/realmode: build with -D__DISABLE_EXPORTS
+- x86/entry: Remove skip_r11rcx
+- objtool: Fix SLS validation for kcov tail-call replacement
+- crypto: x86/poly1305 - Fixup SLS
+- objtool: Default ignore INT3 for unreachable
+- kvm/emulate: Fix SETcc emulation function offsets with SLS
+- tools arch: Update arch/x86/lib/mem{cpy,set}_64.S copies used in 'perf bench mem memcpy'
+- x86: Add straight-line-speculation mitigation
+- objtool: Add straight-line-speculation validation
+- x86/alternative: Relax text_poke_bp() constraint
+- x86: Fix objtool build warning
+- x86: Prepare inline-asm for straight-line-speculation
+- x86: Prepare asm files for straight-line-speculation
+- x86/lib/atomic64_386_32: Rename things
+- bpf,x86: Respect X86_FEATURE_RETPOLINE*
+- bpf,x86: Simplify computing label offsets
+- x86/alternative: Implement .retpoline_sites support
+- x86/retpoline: Create a retpoline thunk array
+- x86/retpoline: Move the retpoline thunk declarations to nospec-branch.h
+- x86/asm: Fixup odd GEN-for-each-reg.h usage
+- x86/asm: Fix register order
+- x86/retpoline: Remove unused replacement symbols
+- objtool,x86: Replace alternatives with .retpoline_sites
+- objtool: Explicitly avoid self modifying code in .altinstr_replacement
+- objtool: Classify symbols
+- objtool: Handle __sanitize_cov*() tail calls
+- objtool: Introduce CFI hash
+- objtool: Make .altinstructions section entry size consistent
+- objtool: Remove reloc symbol type checks in get_alt_entry()
+- objtool: print out the symbol type when complaining about it
+- objtool: Teach get_alt_entry() about more relocation types
+- objtool: Don't make .altinstructions writable
+- objtool/x86: Ignore __x86_indirect_alt_* symbols
+- objtool: Only rewrite unconditional retpoline thunk calls
+- objtool: Fix .symtab_shndx handling for elf_create_undef_symbol()
+- x86/alternative: Optimize single-byte NOPs at an arbitrary position
+- objtool: Support asm jump tables
+- objtool/x86: Rewrite retpoline thunk calls
+- objtool: Skip magical retpoline .altinstr_replacement
+- objtool: Cache instruction relocs
+- objtool: Keep track of retpoline call sites
+- objtool: Add elf_create_undef_symbol()
+- objtool: Extract elf_symbol_add()
+- objtool: Extract elf_strtab_concat()
+- objtool: Create reloc sections implicitly
+- objtool: Add elf_create_reloc() helper
+- objtool: Rework the elf_rebuild_reloc_section() logic
+- objtool: Handle per arch retpoline naming
+- objtool: Correctly handle retpoline thunk calls
+- x86/retpoline: Simplify retpolines
+- x86/alternatives: Optimize optimize_nops()
+- x86: Add insn_decode_kernel()
+- x86/alternative: Use insn_decode()
+- x86/insn: Add an insn_decode() API
+- x86/insn: Add a __ignore_sync_check__ marker
+- x86/insn: Rename insn_decode() to insn_decode_from_regs()
+- x86/alternative: Use ALTERNATIVE_TERNARY() in _static_cpu_has()
+- x86/alternative: Support ALTERNATIVE_TERNARY
+- x86/alternative: Support not-feature
+- x86/alternative: Merge include files
+- x86/xen: Support objtool vmlinux.o validation in xen-head.S
+- x86/xen: Support objtool validation in xen-asm.S
+- objtool: Combine UNWIND_HINT_RET_OFFSET and UNWIND_HINT_FUNC
+- objtool: Assume only ELF functions do sibling calls
+- objtool: Support retpoline jump detection for vmlinux.o
+- objtool: Support stack layout changes in alternatives
+- objtool: Add 'alt_group' struct
+- objtool: Refactor ORC section generation
+- KVM/nVMX: Use __vmx_vcpu_run in nested_vmx_check_vmentry_hw
+- KVM/VMX: Use TEST %REG,%REG instead of CMP $0,%REG in vmenter.S
+- KVM: x86: do not report a vCPU as preempted outside instruction boundaries
+- arm64: kdump: Properly handle the 4G boundary
+- etmem: Add a scan flag to support specified page swap-out
+- etmem: add swapcache reclaim to etmem
+- etmem: add original kernel swap enabled options
+- etmem: add CONFIG_ETMEM macro definition for etmem feature
+- config: enable CONFIG_ETMEM by default
+- add ETMEM feature CONFIG to mm/Kconfig
+- netfilter: nf_tables: disallow binding to already bound chain
+- netfilter: nf_conntrack_irc: Tighten matching on DCC message
+- netfilter: nf_tables: do not allow RULE_ID to refer to another chain
+- netfilter: nf_tables: do not allow CHAIN_ID to refer to another table
+- netfilter: nf_tables: do not allow SET_ID to refer to another table
+- video: fbdev: i740fb: Error out if 'pixclock' equals zero
+- block: fix the problem of io_ticks becoming smaller
+- !104 arm64 config: turn on Amazon ENA ethernet driver
+- arm64: openeuler_defconfig: turn on Amazon ENA ethernet driver
+
 * Wed Sep 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-114.0.0.61
 - memcg: Fix the problem of cat memory.high_async_ratio
 - memcg: Modify memory.high_async_ratio changing scope
