@@ -1608,15 +1608,15 @@ diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
 index e253fdba1..7dc4e9079 100644
 --- a/arch/arm64/Kconfig
 +++ b/arch/arm64/Kconfig
-@@ -76,6 +76,7 @@ config ARM64
- 	select ARCH_SUPPORTS_ATOMIC_RMW
- 	select ARCH_SUPPORTS_INT128 if CC_HAS_INT128 && (GCC_VERSION >= 50000 || CC_IS_CLANG)
- 	select ARCH_SUPPORTS_NUMA_BALANCING
+@@ -69,6 +69,7 @@ config ARM64
+ 	select ARCH_INLINE_SPIN_UNLOCK_IRQRESTORE if !PREEMPTION
+ 	select ARCH_KEEP_MEMBLOCK
+ 	select ARCH_USE_CMPXCHG_LOCKREF
 +	select ARCH_SUPPORTS_RT if HAVE_POSIX_CPU_TIMERS_TASK_WORK
- 	select ARCH_WANT_COMPAT_IPC_PARSE_VERSION if COMPAT
- 	select ARCH_WANT_DEFAULT_BPF_JIT
- 	select ARCH_WANT_DEFAULT_TOPDOWN_MMAP_LAYOUT
-@@ -178,6 +179,7 @@ config ARM64
+ 	select ARCH_USE_GNU_PROPERTY
+ 	select ARCH_USE_QUEUED_RWLOCKS
+ 	select ARCH_USE_QUEUED_SPINLOCKS
+@@ -182,6 +183,7 @@ config ARM64
  	select HAVE_PERF_EVENTS
  	select HAVE_PERF_REGS
  	select HAVE_PERF_USER_STACK_DUMP
@@ -1624,7 +1624,7 @@ index e253fdba1..7dc4e9079 100644
  	select HAVE_REGS_AND_STACK_ACCESS_API
  	select HAVE_FUNCTION_ARG_ACCESS_API
  	select HAVE_FUTEX_CMPXCHG if FUTEX
-@@ -200,6 +202,7 @@ config ARM64
+@@ -206,6 +208,7 @@ config ARM64
  	select PCI_DOMAINS_GENERIC if PCI
  	select PCI_ECAM if (ACPI && PCI)
  	select PCI_SYSCALL if PCI
@@ -4331,15 +4331,15 @@ index 040fb7736..79c0da581 100644
  	select MODULES_USE_ELF_REL
  	select OLD_SIGACTION
  	select GENERIC_VDSO_32
-@@ -95,6 +96,7 @@ config X86
- 	select ARCH_SUPPORTS_ACPI
+@@ -96,6 +97,7 @@ config X86
  	select ARCH_SUPPORTS_ATOMIC_RMW
+ 	select ARCH_SUPPORTS_PAGE_TABLE_CHECK	if X86_64
  	select ARCH_SUPPORTS_NUMA_BALANCING	if X86_64
 +	select ARCH_SUPPORTS_RT
  	select ARCH_USE_BUILTIN_BSWAP
  	select ARCH_USE_QUEUED_RWLOCKS
  	select ARCH_USE_QUEUED_SPINLOCKS
-@@ -216,6 +218,7 @@ config X86
+@@ -219,6 +221,7 @@ config X86
  	select HAVE_PCI
  	select HAVE_PERF_REGS
  	select HAVE_PERF_USER_STACK_DUMP
@@ -24490,9 +24490,9 @@ index 04d75394e..233d356bd 100644
  #include <linux/sched/mm.h>
 +#include <linux/local_lock.h>
  #include <linux/page_owner.h>
+ #include <linux/page_table_check.h>
  #include <linux/kthread.h>
- #include <linux/memcontrol.h>
-@@ -389,6 +390,13 @@ EXPORT_SYMBOL(nr_node_ids);
+@@ -390,6 +391,13 @@ EXPORT_SYMBOL(nr_node_ids);
  EXPORT_SYMBOL(nr_online_nodes);
  #endif
  
