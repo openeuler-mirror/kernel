@@ -55,15 +55,13 @@
 extern void __init fixup_hmcall(void);
 
 extern void halt(void) __attribute__((noreturn));
-#define __halt() __asm__ __volatile__ ("sys_call %0 #halt" : : "i" (HMC_halt))
 
-#define fpu_enable()						\
+#define __CALL_HMC_VOID(NAME)					\
+static inline void NAME(void)					\
 {								\
-	__asm__ __volatile__("sys_call %0" : : "i" (HMC_wrfen));\
+	__asm__ __volatile__(					\
+		"sys_call %0 ": : "i" (HMC_ ## NAME));		\
 }
-
-#define imb() \
-	__asm__ __volatile__ ("sys_call %0 #imb" : : "i" (HMC_imb) : "memory")
 
 #define __CALL_HMC_R0(NAME, TYPE)				\
 static inline TYPE NAME(void)					\
@@ -142,10 +140,14 @@ static inline RTYPE NAME(TYPE0 arg0, TYPE1 arg1, TYPE2 arg2)		\
 	return __r0;							\
 }
 
-#define sflush()						\
-{								\
-	__asm__ __volatile__("sys_call 0x2f");			\
-}
+
+__CALL_HMC_VOID(imb);
+__CALL_HMC_VOID(sflush);
+__CALL_HMC_VOID(wrfen);
+#define fpu_enable()	wrfen()
+
+__CALL_HMC_VOID(sleepen);
+__CALL_HMC_VOID(mtinten);
 
 __CALL_HMC_R0(rdps, unsigned long);
 
@@ -164,8 +166,6 @@ __CALL_HMC_RW1(swpipl, unsigned long, unsigned long);
 __CALL_HMC_R0(whami, unsigned long);
 __CALL_HMC_RW1(rdio64, unsigned long, unsigned long);
 __CALL_HMC_RW1(rdio32, unsigned int, unsigned long);
-__CALL_HMC_R0(sleepen, unsigned long);
-__CALL_HMC_R0(mtinten, unsigned long);
 __CALL_HMC_W2(wrent, void*, unsigned long);
 __CALL_HMC_W2(tbisasn, unsigned long, unsigned long);
 __CALL_HMC_W1(wrkgp, unsigned long);

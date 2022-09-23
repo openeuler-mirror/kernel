@@ -19,6 +19,7 @@
 
 #include <linux/linkage.h>
 #include <asm/unistd.h>
+#include <uapi/asm/hmcall.h>
 
 #define RT_SIGFRAME_SIZE	1600
 #define RT_SIGFRAME_MCTX	176
@@ -64,6 +65,6 @@
 ENTRY(__vdso_rt_sigreturn)
 	mov		$sp, $16
 	ldi		$0, __NR_rt_sigreturn
-	sys_call	0x83
+	sys_call	HMC_callsys
 ENDPROC(__vdso_rt_sigreturn)
 	.cfi_endproc
