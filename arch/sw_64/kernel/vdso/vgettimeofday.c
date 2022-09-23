@@ -16,6 +16,7 @@
 
 #include <asm/unistd.h>
 #include <asm/vdso.h>
+#include <asm/hmcall.h>
 
 static __always_inline int syscall_fallback(clockid_t clkid, struct timespec64 *ts)
 {
@@ -25,8 +26,8 @@ static __always_inline int syscall_fallback(clockid_t clkid, struct timespec64 *
 	"	mov		%0, $16\n"
 	"	mov		%1, $17\n"
 	"	ldi		$0, %2\n"
-	"	sys_call	0x83\n"
-	:: "r"(clkid), "r"(ts), "i"(__NR_clock_gettime)
+	"	sys_call	%3\n"
+	:: "r"(clkid), "r"(ts), "i"(__NR_clock_gettime), "i"(HMC_callsys)
 	: "$0", "$16", "$17", "$19");
 	if (unlikely(r19))
 		return -r0;
@@ -78,9 +79,7 @@ static __always_inline u64 read_longtime(void)
 	register unsigned long __r0 __asm__("$0");
 
 	__asm__ __volatile__(
-		"sys_call 0xB1"
-		: "=r"(__r0)
-		::"memory");
+		"sys_call %1" : "=r"(__r0) : "i" (HMC_longtime));
 
 	return __r0;
 }
