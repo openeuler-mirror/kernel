@@ -225,10 +225,10 @@ index fb3ff76c3..3b2b1479f 100644
  		read-side critical sections.  It also permits
  		spinlocks blocking while in RCU read-side critical
 diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
-index 208d7b94a..7348f1846 100644
+index 72cc4a130..86cf32fd8 100644
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -4308,6 +4308,10 @@
+@@ -4312,6 +4312,10 @@
  			value, meaning that RCU_SOFTIRQ is used by default.
  			Specify rcutree.use_softirq=0 to use rcuc kthreads.
  
@@ -239,7 +239,7 @@ index 208d7b94a..7348f1846 100644
  	rcutree.rcu_fanout_exact= [KNL]
  			Disable autobalancing of the rcu_node combining
  			tree.  This is used by rcutorture, and might
-@@ -4686,6 +4690,13 @@
+@@ -4690,6 +4694,13 @@
  			only normal grace-period primitives.  No effect
  			on CONFIG_TINY_RCU kernels.
  
@@ -376,7 +376,7 @@ index a966239f0..a7830c594 100644
 -performs an IPI to inform all processors about the new mapping. This results
 -in a significant performance penalty.
 diff --git a/arch/Kconfig b/arch/Kconfig
-index 47c626138..2b48e9595 100644
+index a271278c6..b5c242040 100644
 --- a/arch/Kconfig
 +++ b/arch/Kconfig
 @@ -50,6 +50,7 @@ config OPROFILE
@@ -610,7 +610,7 @@ index 1b9f473c6..c79912a6b 100644
 +	alloc_kmap_pgtable(FIXMAP_BASE);
  }
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
-index 125ec3b81..ef45091f0 100644
+index d73a0d530..5e1dd264e 100644
 --- a/arch/arm/Kconfig
 +++ b/arch/arm/Kconfig
 @@ -31,6 +31,7 @@ config ARM
@@ -630,7 +630,7 @@ index 125ec3b81..ef45091f0 100644
  	select HAVE_ARCH_KFENCE if MMU
  	select HAVE_ARCH_KGDB if !CPU_ENDIAN_BE32 && MMU
  	select HAVE_ARCH_KASAN if MMU && !XIP_KERNEL
-@@ -108,6 +109,7 @@ config ARM
+@@ -109,6 +110,7 @@ config ARM
  	select HAVE_PERF_EVENTS
  	select HAVE_PERF_REGS
  	select HAVE_PERF_USER_STACK_DUMP
@@ -638,7 +638,7 @@ index 125ec3b81..ef45091f0 100644
  	select MMU_GATHER_RCU_TABLE_FREE if SMP && ARM_LPAE
  	select HAVE_REGS_AND_STACK_ACCESS_API
  	select HAVE_RSEQ
-@@ -124,6 +126,7 @@ config ARM
+@@ -125,6 +127,7 @@ config ARM
  	select OLD_SIGSUSPEND3
  	select PCI_SYSCALL if PCI
  	select PERF_USE_VMALLOC
@@ -646,7 +646,7 @@ index 125ec3b81..ef45091f0 100644
  	select RTC_LIB
  	select SET_FS
  	select SYS_SUPPORTS_APM_EMULATION
-@@ -1509,6 +1512,7 @@ config HAVE_ARCH_PFN_VALID
+@@ -1510,6 +1513,7 @@ config HAVE_ARCH_PFN_VALID
  config HIGHMEM
  	bool "High Memory Support"
  	depends on MMU
@@ -1151,18 +1151,18 @@ index 187fab227..000000000
 -	return (void *)vaddr;
 -}
 diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
-index bae27bbcb..91fa1414b 100644
+index 0e09962f6..07e9ceaa6 100644
 --- a/arch/arm64/Kconfig
 +++ b/arch/arm64/Kconfig
-@@ -76,6 +76,7 @@ config ARM64
+@@ -78,6 +78,7 @@ config ARM64
  	select ARCH_SUPPORTS_ATOMIC_RMW
  	select ARCH_SUPPORTS_INT128 if CC_HAS_INT128 && (GCC_VERSION >= 50000 || CC_IS_CLANG)
  	select ARCH_SUPPORTS_NUMA_BALANCING
 +	select ARCH_SUPPORTS_RT if HAVE_POSIX_CPU_TIMERS_TASK_WORK
+ 	select ARCH_SUPPORTS_PAGE_TABLE_CHECK
  	select ARCH_WANT_COMPAT_IPC_PARSE_VERSION if COMPAT
  	select ARCH_WANT_DEFAULT_BPF_JIT
- 	select ARCH_WANT_DEFAULT_TOPDOWN_MMAP_LAYOUT
-@@ -179,6 +180,7 @@ config ARM64
+@@ -182,6 +183,7 @@ config ARM64
  	select HAVE_PERF_EVENTS
  	select HAVE_PERF_REGS
  	select HAVE_PERF_USER_STACK_DUMP
@@ -1170,7 +1170,7 @@ index bae27bbcb..91fa1414b 100644
  	select HAVE_REGS_AND_STACK_ACCESS_API
  	select HAVE_FUNCTION_ARG_ACCESS_API
  	select HAVE_FUTEX_CMPXCHG if FUTEX
-@@ -202,6 +204,7 @@ config ARM64
+@@ -206,6 +208,7 @@ config ARM64
  	select PCI_DOMAINS_GENERIC if PCI
  	select PCI_ECAM if (ACPI && PCI)
  	select PCI_SYSCALL if PCI
@@ -1411,10 +1411,10 @@ index 3307896f1..6fe31a38a 100644
  			local_daif_restore(DAIF_PROCCTX_NOIRQ);
  
 diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
-index d7745ff2e..3c99b499e 100644
+index 384cc56a6..d5fd6e303 100644
 --- a/arch/arm64/kvm/arm.c
 +++ b/arch/arm64/kvm/arm.c
-@@ -779,7 +779,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
+@@ -821,7 +821,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
  		 * involves poking the GIC, which must be done in a
  		 * non-preemptible context.
  		 */
@@ -1423,7 +1423,7 @@ index d7745ff2e..3c99b499e 100644
  
  		kvm_pmu_flush_hwstate(vcpu);
  
-@@ -828,7 +828,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
+@@ -845,7 +845,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
  				kvm_timer_sync_user(vcpu);
  			kvm_vgic_sync_hwstate(vcpu);
  			local_irq_enable();
@@ -1432,7 +1432,7 @@ index d7745ff2e..3c99b499e 100644
  			continue;
  		}
  
-@@ -907,7 +907,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
+@@ -924,7 +924,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
  		/* Exit types that need handling before we can be preempted */
  		handle_exit_early(vcpu, ret);
  
@@ -3848,7 +3848,7 @@ index e4abac6c9..173999422 100644
  
  static struct kmsg_dumper kmsg_dumper = {
 diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
-index b5ca6f54b..da939b1f1 100644
+index ba48644da..9eeb56e57 100644
 --- a/arch/x86/Kconfig
 +++ b/arch/x86/Kconfig
 @@ -16,6 +16,7 @@ config X86_32
@@ -3859,15 +3859,15 @@ index b5ca6f54b..da939b1f1 100644
  	select MODULES_USE_ELF_REL
  	select OLD_SIGACTION
  	select GENERIC_VDSO_32
-@@ -95,6 +96,7 @@ config X86
- 	select ARCH_SUPPORTS_ACPI
+@@ -96,6 +97,7 @@ config X86
  	select ARCH_SUPPORTS_ATOMIC_RMW
+ 	select ARCH_SUPPORTS_PAGE_TABLE_CHECK	if X86_64
  	select ARCH_SUPPORTS_NUMA_BALANCING	if X86_64
 +	select ARCH_SUPPORTS_RT
  	select ARCH_USE_BUILTIN_BSWAP
  	select ARCH_USE_QUEUED_RWLOCKS
  	select ARCH_USE_QUEUED_SPINLOCKS
-@@ -218,6 +220,7 @@ config X86
+@@ -219,6 +221,7 @@ config X86
  	select HAVE_PCI
  	select HAVE_PERF_REGS
  	select HAVE_PERF_USER_STACK_DUMP
@@ -4657,10 +4657,10 @@ index 440eed558..7cfc4e6b7 100644
  }
 +#endif
 diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
-index 033fcb0e1..8f56d5e84 100644
+index b52b8f735..7e0c557ec 100644
 --- a/arch/x86/kvm/x86.c
 +++ b/arch/x86/kvm/x86.c
-@@ -7966,6 +7966,14 @@ int kvm_arch_init(void *opaque)
+@@ -8069,6 +8069,14 @@ int kvm_arch_init(void *opaque)
  		goto out;
  	}
  
@@ -6057,7 +6057,7 @@ index 07d23a1e6..add8e6044 100644
  	/* Decode into vertical and horizontal scanout position. */
  	*vpos = position & 0x1fff;
 diff --git a/drivers/gpu/drm/ttm/ttm_bo_util.c b/drivers/gpu/drm/ttm/ttm_bo_util.c
-index fb2a25f84..164b9a015 100644
+index 20a5434c6..17b2df35e 100644
 --- a/drivers/gpu/drm/ttm/ttm_bo_util.c
 +++ b/drivers/gpu/drm/ttm/ttm_bo_util.c
 @@ -181,13 +181,15 @@ static int ttm_copy_io_ttm_page(struct ttm_tt *ttm, void *src,
@@ -7652,7 +7652,7 @@ index 84e815808..342005ed5 100644
  
  static int __init
 diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
-index 713cfa72d..0fc473321 100644
+index a9823616d..c371ab595 100644
 --- a/drivers/tty/tty_buffer.c
 +++ b/drivers/tty/tty_buffer.c
 @@ -172,9 +172,7 @@ static struct tty_buffer *tty_buffer_alloc(struct tty_port *port, size_t size)
@@ -8299,10 +8299,10 @@ index bc2a749e6..027278792 100644
 +
  #endif /* _LINUX_CONSOLE_H */
 diff --git a/include/linux/cpuhotplug.h b/include/linux/cpuhotplug.h
-index 5571bfc2e..82a43ee0b 100644
+index a9d6652d4..a7de769a8 100644
 --- a/include/linux/cpuhotplug.h
 +++ b/include/linux/cpuhotplug.h
-@@ -155,6 +155,7 @@ enum cpuhp_state {
+@@ -158,6 +158,7 @@ enum cpuhp_state {
  	CPUHP_AP_ONLINE,
  	CPUHP_TEARDOWN_CPU,
  	CPUHP_AP_ONLINE_IDLE,
@@ -8727,7 +8727,7 @@ index 000000000..f9bc6acd3
 +
 +#endif
 diff --git a/include/linux/highmem.h b/include/linux/highmem.h
-index 6b27af8fe..ec1edaf12 100644
+index c3b75b4a8..d12f7a5fc 100644
 --- a/include/linux/highmem.h
 +++ b/include/linux/highmem.h
 @@ -11,217 +11,137 @@
@@ -9641,7 +9641,7 @@ index 3f02b8186..1b8ae0349 100644
 +
 +#endif
 diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
-index 9de02b116..46638bb92 100644
+index cf037e744..f9b6fcd8a 100644
 --- a/include/linux/mm_types.h
 +++ b/include/linux/mm_types.h
 @@ -13,6 +13,7 @@
@@ -10809,7 +10809,7 @@ index 4c715be48..9323af8a9 100644
   * lock for reading
   */
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 41df85000..dce489a06 100644
+index 626cc23b1..5d6bc9fc2 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
 @@ -36,6 +36,7 @@
@@ -10942,7 +10942,7 @@ index 41df85000..dce489a06 100644
  #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
  	unsigned long			task_state_change;
  #endif
-@@ -1818,6 +1849,7 @@ extern struct task_struct *find_get_task_by_vpid(pid_t nr);
+@@ -1819,6 +1850,7 @@ extern struct task_struct *find_get_task_by_vpid(pid_t nr);
  
  extern int wake_up_state(struct task_struct *tsk, unsigned int state);
  extern int wake_up_process(struct task_struct *tsk);
@@ -10950,7 +10950,7 @@ index 41df85000..dce489a06 100644
  extern void wake_up_new_task(struct task_struct *tsk);
  
  #ifdef CONFIG_SMP
-@@ -1915,6 +1947,89 @@ static inline int test_tsk_need_resched(struct task_struct *tsk)
+@@ -1916,6 +1948,89 @@ static inline int test_tsk_need_resched(struct task_struct *tsk)
  	return unlikely(test_tsk_thread_flag(tsk,TIF_NEED_RESCHED));
  }
  
@@ -23319,7 +23319,7 @@ index 78a630bbd..d27a80502 100644
  
  	if ((wait_state != TASK_RUNNING ||
 diff --git a/mm/Kconfig b/mm/Kconfig
-index 27c0b9de6..1404b1922 100644
+index 81974d00d..251fdf580 100644
 --- a/mm/Kconfig
 +++ b/mm/Kconfig
 @@ -404,7 +404,7 @@ config NOMMU_INITIAL_TRIM_EXCESS
@@ -23901,7 +23901,7 @@ index e15389aeb..aeb5d79b1 100644
  	css_put(&memcg->css);
  }
 diff --git a/mm/page_alloc.c b/mm/page_alloc.c
-index ff6fffec8..a8f583c04 100644
+index 60b2351ed..ede4722d8 100644
 --- a/mm/page_alloc.c
 +++ b/mm/page_alloc.c
 @@ -61,6 +61,7 @@
@@ -23910,9 +23910,9 @@ index ff6fffec8..a8f583c04 100644
  #include <linux/sched/mm.h>
 +#include <linux/local_lock.h>
  #include <linux/page_owner.h>
+ #include <linux/page_table_check.h>
  #include <linux/kthread.h>
- #include <linux/memcontrol.h>
-@@ -389,6 +390,13 @@ EXPORT_SYMBOL(nr_node_ids);
+@@ -390,6 +391,13 @@ EXPORT_SYMBOL(nr_node_ids);
  EXPORT_SYMBOL(nr_online_nodes);
  #endif
  
@@ -23926,7 +23926,7 @@ index ff6fffec8..a8f583c04 100644
  int page_group_by_mobility_disabled __read_mostly;
  
  #ifdef CONFIG_DEFERRED_STRUCT_PAGE_INIT
-@@ -1333,7 +1341,7 @@ static inline void prefetch_buddy(struct page *page)
+@@ -1336,7 +1344,7 @@ static inline void prefetch_buddy(struct page *page)
  }
  
  /*
@@ -23935,7 +23935,7 @@ index ff6fffec8..a8f583c04 100644
   * Assumes all pages on list are in same zone, and of same order.
   * count is the number of pages to free.
   *
-@@ -1343,15 +1351,56 @@ static inline void prefetch_buddy(struct page *page)
+@@ -1346,15 +1354,56 @@ static inline void prefetch_buddy(struct page *page)
   * And clear the zone's pages_scanned counter, to hold off the "all pages are
   * pinned" detection logic.
   */
@@ -23997,7 +23997,7 @@ index ff6fffec8..a8f583c04 100644
  
  	/*
  	 * Ensure proper count is passed which otherwise would stuck in the
-@@ -1388,7 +1437,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
+@@ -1391,7 +1440,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
  			if (bulkfree_pcp_prepare(page))
  				continue;
  
@@ -24006,7 +24006,7 @@ index ff6fffec8..a8f583c04 100644
  
  			/*
  			 * We are going to put the page back to the global
-@@ -1405,26 +1454,6 @@ static void free_pcppages_bulk(struct zone *zone, int count,
+@@ -1408,26 +1457,6 @@ static void free_pcppages_bulk(struct zone *zone, int count,
  			}
  		} while (--count && --batch_free && !list_empty(list));
  	}
@@ -24033,7 +24033,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  static void free_one_page(struct zone *zone,
-@@ -1526,11 +1555,11 @@ static void __free_pages_ok(struct page *page, unsigned int order,
+@@ -1529,11 +1558,11 @@ static void __free_pages_ok(struct page *page, unsigned int order,
  		return;
  
  	migratetype = get_pfnblock_migratetype(page, pfn);
@@ -24047,7 +24047,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  void __free_pages_core(struct page *page, unsigned int order)
-@@ -2941,13 +2970,18 @@ void drain_zone_pages(struct zone *zone, struct per_cpu_pages *pcp)
+@@ -2945,13 +2974,18 @@ void drain_zone_pages(struct zone *zone, struct per_cpu_pages *pcp)
  {
  	unsigned long flags;
  	int to_drain, batch;
@@ -24069,7 +24069,7 @@ index ff6fffec8..a8f583c04 100644
  }
  #endif
  
-@@ -2963,14 +2997,21 @@ static void drain_pages_zone(unsigned int cpu, struct zone *zone)
+@@ -2967,14 +3001,21 @@ static void drain_pages_zone(unsigned int cpu, struct zone *zone)
  	unsigned long flags;
  	struct per_cpu_pageset *pset;
  	struct per_cpu_pages *pcp;
@@ -24095,7 +24095,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  /*
-@@ -3018,9 +3059,9 @@ static void drain_local_pages_wq(struct work_struct *work)
+@@ -3022,9 +3063,9 @@ static void drain_local_pages_wq(struct work_struct *work)
  	 * cpu which is allright but we also have to make sure to not move to
  	 * a different one.
  	 */
@@ -24107,7 +24107,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  /*
-@@ -3190,7 +3231,8 @@ static bool free_unref_page_prepare(struct page *page, unsigned long pfn)
+@@ -3194,7 +3235,8 @@ static bool free_unref_page_prepare(struct page *page, unsigned long pfn)
  	return true;
  }
  
@@ -24117,7 +24117,7 @@ index ff6fffec8..a8f583c04 100644
  {
  	struct zone *zone = page_zone(page);
  	struct per_cpu_pages *pcp;
-@@ -3219,7 +3261,8 @@ static void free_unref_page_commit(struct page *page, unsigned long pfn)
+@@ -3223,7 +3265,8 @@ static void free_unref_page_commit(struct page *page, unsigned long pfn)
  	list_add(&page->lru, &pcp->lists[migratetype]);
  	pcp->count++;
  	if (pcp->count >= READ_ONCE(pcp->high))
@@ -24127,7 +24127,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  /*
-@@ -3229,6 +3272,8 @@ void free_unref_page(struct page *page)
+@@ -3233,6 +3276,8 @@ void free_unref_page(struct page *page)
  {
  	unsigned long flags;
  	unsigned long pfn = page_to_pfn(page);
@@ -24136,7 +24136,7 @@ index ff6fffec8..a8f583c04 100644
  
  	/* Free dynamic hugetlb page */
  	if (free_page_to_dhugetlb_pool(page))
-@@ -3237,9 +3282,11 @@ void free_unref_page(struct page *page)
+@@ -3241,9 +3286,11 @@ void free_unref_page(struct page *page)
  	if (!free_unref_page_prepare(page, pfn))
  		return;
  
@@ -24151,7 +24151,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  /*
-@@ -3250,6 +3297,11 @@ void free_unref_page_list(struct list_head *list)
+@@ -3254,6 +3301,11 @@ void free_unref_page_list(struct list_head *list)
  	struct page *page, *next;
  	unsigned long flags, pfn;
  	int batch_count = 0;
@@ -24163,7 +24163,7 @@ index ff6fffec8..a8f583c04 100644
  
  	/* Free dynamic hugetlb page list */
  	free_page_list_to_dhugetlb_pool(list);
-@@ -3262,25 +3314,42 @@ void free_unref_page_list(struct list_head *list)
+@@ -3266,25 +3318,42 @@ void free_unref_page_list(struct list_head *list)
  		set_page_private(page, pfn);
  	}
  
@@ -24211,7 +24211,7 @@ index ff6fffec8..a8f583c04 100644
  }
  
  /*
-@@ -3437,7 +3506,7 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
+@@ -3441,7 +3510,7 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
  	struct page *page;
  	unsigned long flags;
  
@@ -24220,7 +24220,7 @@ index ff6fffec8..a8f583c04 100644
  	pcp = &this_cpu_ptr(zone->pageset)->pcp;
  	list = &pcp->lists[migratetype];
  	page = __rmqueue_pcplist(zone,  migratetype, alloc_flags, pcp, list);
-@@ -3445,7 +3514,7 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
+@@ -3449,7 +3518,7 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
  		__count_zid_vm_events(PGALLOC, page_zonenum(page), 1);
  		zone_statistics(preferred_zone, zone);
  	}
@@ -24229,7 +24229,7 @@ index ff6fffec8..a8f583c04 100644
  	return page;
  }
  
-@@ -3479,7 +3548,8 @@ struct page *rmqueue(struct zone *preferred_zone,
+@@ -3483,7 +3552,8 @@ struct page *rmqueue(struct zone *preferred_zone,
  	 * allocate greater than order-1 page units with __GFP_NOFAIL.
  	 */
  	WARN_ON_ONCE((gfp_flags & __GFP_NOFAIL) && (order > 1));
@@ -24239,7 +24239,7 @@ index ff6fffec8..a8f583c04 100644
  
  	do {
  		page = NULL;
-@@ -3505,7 +3575,7 @@ struct page *rmqueue(struct zone *preferred_zone,
+@@ -3509,7 +3579,7 @@ struct page *rmqueue(struct zone *preferred_zone,
  
  	__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << order);
  	zone_statistics(preferred_zone, zone);
@@ -24248,7 +24248,7 @@ index ff6fffec8..a8f583c04 100644
  
  out:
  	/* Separate test+clear to avoid unnecessary atomics */
-@@ -3518,7 +3588,7 @@ struct page *rmqueue(struct zone *preferred_zone,
+@@ -3522,7 +3592,7 @@ struct page *rmqueue(struct zone *preferred_zone,
  	return page;
  
  failed:
@@ -24257,7 +24257,7 @@ index ff6fffec8..a8f583c04 100644
  	return NULL;
  }
  
-@@ -9087,7 +9157,7 @@ void zone_pcp_reset(struct zone *zone)
+@@ -9222,7 +9292,7 @@ void zone_pcp_reset(struct zone *zone)
  	struct per_cpu_pageset *pset;
  
  	/* avoid races with drain_pages()  */
@@ -24266,7 +24266,7 @@ index ff6fffec8..a8f583c04 100644
  	if (zone->pageset != &boot_pageset) {
  		for_each_online_cpu(cpu) {
  			pset = per_cpu_ptr(zone->pageset, cpu);
-@@ -9096,7 +9166,7 @@ void zone_pcp_reset(struct zone *zone)
+@@ -9231,7 +9301,7 @@ void zone_pcp_reset(struct zone *zone)
  		free_percpu(zone->pageset);
  		zone->pageset = &boot_pageset;
  	}
@@ -24276,7 +24276,7 @@ index ff6fffec8..a8f583c04 100644
  
  #ifdef CONFIG_MEMORY_HOTREMOVE
 diff --git a/mm/shmem.c b/mm/shmem.c
-index ad2d68150..389fe37ce 100644
+index e85ac8c21..be2b1ab7a 100644
 --- a/mm/shmem.c
 +++ b/mm/shmem.c
 @@ -307,10 +307,10 @@ static int shmem_reserve_inode(struct super_block *sb, ino_t *inop)
@@ -24330,7 +24330,7 @@ index ad2d68150..389fe37ce 100644
  	}
  }
  
-@@ -1469,10 +1470,10 @@ static struct mempolicy *shmem_get_sbmpol(struct shmem_sb_info *sbinfo)
+@@ -1471,10 +1472,10 @@ static struct mempolicy *shmem_get_sbmpol(struct shmem_sb_info *sbinfo)
  {
  	struct mempolicy *mpol = NULL;
  	if (sbinfo->mpol) {
@@ -24343,7 +24343,7 @@ index ad2d68150..389fe37ce 100644
  	}
  	return mpol;
  }
-@@ -3549,9 +3550,10 @@ static int shmem_reconfigure(struct fs_context *fc)
+@@ -3562,9 +3563,10 @@ static int shmem_reconfigure(struct fs_context *fc)
  	struct shmem_options *ctx = fc->fs_private;
  	struct shmem_sb_info *sbinfo = SHMEM_SB(fc->root->d_sb);
  	unsigned long inodes;
@@ -24355,7 +24355,7 @@ index ad2d68150..389fe37ce 100644
  	inodes = sbinfo->max_inodes - sbinfo->free_inodes;
  
  	if ((ctx->seen & SHMEM_SEEN_BLOCKS) && ctx->blocks) {
-@@ -3597,14 +3599,15 @@ static int shmem_reconfigure(struct fs_context *fc)
+@@ -3610,14 +3612,15 @@ static int shmem_reconfigure(struct fs_context *fc)
  	 * Preserve previous mempolicy unless mpol remount option was specified.
  	 */
  	if (ctx->mpol) {
@@ -24374,7 +24374,7 @@ index ad2d68150..389fe37ce 100644
  	return invalfc(fc, "%s", err);
  }
  
-@@ -3721,7 +3724,7 @@ static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
+@@ -3734,7 +3737,7 @@ static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
  	sbinfo->mpol = ctx->mpol;
  	ctx->mpol = NULL;
  

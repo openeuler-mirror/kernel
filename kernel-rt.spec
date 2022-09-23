@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .8.0
-%global pkg_release         .56
+%global maintenance_release .16.0
+%global pkg_release         .57
 %global rt_release          .rt62
 
 %define with_debuginfo 1
@@ -886,6 +886,9 @@ fi
 %endif
 
 %changelog
+* Sat Sep 22 2022 kylin-mayukun <mayukun@kylinos.cn> - 5.10.0-106.16.0.57
+- update preempt-rt kernel to 5.10.0-106.16.0
+
 * Sat Sep 3 2022 kylin-mayukun <mayukun@kylinos.cn> - 5.10.0-106.8.0.56
 - update preempt-rt kernel to 5.10.0-106.8.0
 
