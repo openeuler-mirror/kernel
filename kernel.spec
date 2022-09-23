@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .15.0
-%global pkg_release         .66
+%global maintenance_release .16.0
+%global pkg_release         .67
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,38 @@ fi
 %endif
 
 %changelog
+* Thu Sep 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.16.0.67
+- Revert "net: af_key: add check for pfkey_broadcast in function pfkey_process"
+- !125 Intel: Backport: Add Sapphire Rapids server intel-uncore-freq support
+- platform/x86/intel-uncore-freq: Add Sapphire Rapids server support
+- !118 add openeuler_defconfig file support for ppc64le compile
+- !119  Add new perf monitor features for amd epyc platforms
+- perf/amd/ibs: Advertise zen4_ibs_extensions as pmu capability attribute
+- perf/amd/ibs: Add support for L3 miss filtering
+- perf/amd/ibs: Use ->is_visible callback for dynamic attributes
+- perf/amd/ibs: Cascade pmu init functions' return value
+- perf/amd/ibs: Use interrupt regs ip for stack unwinding
+- perf/x86/amd/ibs: Add bitfield definitions in new <asm/amd-ibs.h> header
+- perf/x86/amd/core: Fix reloading events for SVM
+- perf/x86/amd/core: Add PerfMonV2 overflow handling
+- perf/x86/amd/core: Add PerfMonV2 counter control
+- perf/x86/amd/core: Detect available counters
+- perf/x86/amd/core: Detect PerfMonV2 support
+- x86/msr: Add PerfCntrGlobal* registers
+- x86/cpufeatures: Add PerfMonV2 feature bit
+- perf/x86/amd: Add idle hooks for branch sampling
+- ACPI: Add perf low power callback
+- perf/x86/amd: Make Zen3 branch sampling opt-in
+- perf/x86/amd: Add AMD branch sampling period adjustment
+- perf/x86/amd: Enable branch sampling priv level filtering
+- perf/x86/amd: Add branch-brs helper event for Fam19h BRS
+- perf/x86/amd: Add AMD Fam19h Branch Sampling support
+- x86/cpufeatures: Add AMD Fam19h Branch Sampling feature
+- perf/core: Add perf_clear_branch_entry_bitfields() helper
+- x86/cpufeatures: Assign dedicated feature word for CPUID_0x8000001F[EAX]
+- x86/cpu: Add VM page flush MSR availablility as a CPUID feature
+-  arch: powerpc: add openeuler_defconfig file support for ppc64le compile
+
 * Wed Sep 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.15.0.66
 - !120 Fix uprobes rbtree usage
 - !117 bugfix for sched-programmable feature
