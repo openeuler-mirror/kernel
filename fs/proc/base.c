@@ -1264,7 +1264,7 @@ static const struct file_operations proc_oom_score_adj_operations = {
 static inline int reliable_check(struct task_struct *task, struct pid *pid)
 {
 	if (!mem_reliable_is_enabled())
-		return -EINVAL;
+		return -EACCES;
 
 	if (is_global_init(task))
 		return -EINVAL;
