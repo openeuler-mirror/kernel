@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .16.0
-%global pkg_release         .67
+%global maintenance_release .18.0
+%global pkg_release         .68
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,8 @@ fi
 %endif
 
 %changelog
+* Sat Sep 24 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.18.0.68
+
 * Thu Sep 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.16.0.67
 - Revert "net: af_key: add check for pfkey_broadcast in function pfkey_process"
 - !125 Intel: Backport: Add Sapphire Rapids server intel-uncore-freq support
