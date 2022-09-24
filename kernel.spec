@@ -880,6 +880,8 @@ fi
 
 %changelog
 * Sat Sep 24 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.18.0.68
+- mm: reliable: Fix ret errno to EACCES
+- mm: reliable: Use EINVAL in reliable_check
 
 * Thu Sep 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.16.0.67
 - Revert "net: af_key: add check for pfkey_broadcast in function pfkey_process"
