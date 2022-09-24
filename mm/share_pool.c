@@ -4749,6 +4749,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 		/* match with refcount inc in sp_group_add_task */
 		if (atomic_dec_and_test(&spg->use_count))
 			free_sp_group_locked(spg);
+		list_del(&spg_node->group_node);
 		kfree(spg_node);
 	}
 	up_write(&sp_group_sem);
