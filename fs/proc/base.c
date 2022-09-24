@@ -1264,14 +1264,14 @@ static const struct file_operations proc_oom_score_adj_operations = {
 static inline int reliable_check(struct task_struct *task, struct pid *pid)
 {
 	if (!mem_reliable_is_enabled())
-		return -EPERM;
+		return -EINVAL;
 
 	if (is_global_init(task))
-		return -EPERM;
+		return -EINVAL;
 
 	if (!task->mm || (task->flags & PF_KTHREAD) ||
 	    (task->flags & PF_EXITING))
-		return -EPERM;
+		return -EINVAL;
 
 	return 0;
 }
