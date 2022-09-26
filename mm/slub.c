@@ -5560,7 +5560,10 @@ static ssize_t slab_attr_store(struct kobject *kobj,
 	if (slab_state >= FULL && err >= 0 && is_root_cache(s)) {
 		struct kmem_cache *c;
 
-		mutex_lock(&slab_mutex);
+		if (!mutex_trylock(&slab_mutex)) {
+			pr_warn("slab file is busy\n");
+			return -EBUSY;
+		}
 		if (s->max_attr_size < len)
 			s->max_attr_size = len;
 
