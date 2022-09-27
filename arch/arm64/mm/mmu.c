@@ -523,13 +523,13 @@ static void __init map_mem(pgd_t *pgdp)
 			break;
 
 #ifdef CONFIG_KEXEC_CORE
-		if (eflags && (end >= SZ_4G)) {
+		if (eflags && (end > SZ_4G)) {
 			/*
 			 * The memory block cross the 4G boundary.
 			 * Forcibly use page-level mappings for memory under 4G.
 			 */
 			if (start < SZ_4G) {
-				__map_memblock(pgdp, start, SZ_4G - 1,
+				__map_memblock(pgdp, start, SZ_4G,
 					       pgprot_tagged(PAGE_KERNEL), flags | eflags);
 				start  = SZ_4G;
 			}
