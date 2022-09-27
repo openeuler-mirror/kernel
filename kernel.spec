@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2209.5.0
+%global hulkrelease 2209.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0169
+Release: %{hulkrelease}.0170
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,27 @@ fi
 %endif
 
 %changelog
+
+* Tue Sep 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.6.0.0170
+- KVM: x86/pmu: Update AMD PMC sample period to fix guest NMI-watchdog
+- KVM: x86: Adjust counter sample period after a wrmsr
+- KVM: x86: Fix perfctr WRMSR for running counters
+- perf/core: Provide a kernel-internal interface to recalibrate event period
+- media: em28xx: initialize refcount before kref_get
+- mm: avoid potential deadlock tirgged by writing slab-attr-file
+- ext4: fix use-after-free in ext4_ext_shift_extents
+- quota: Add more checking after reading from quota file
+- quota: Replace all block number checking with helper function
+- quota: Check next/prev free block number after reading from quota file
+- efi: capsule-loader: Fix use-after-free in efi_capsule_write
+- ipvlan: Fix out-of-bound bugs caused by unset skb->mac_header
+- mm/sharepool: Fix UAF reported by KASAN
+- blk-mq: avoid extending delays of active hctx from blk_mq_delay_run_hw_queues
+- mm: mem_reliable: Start fallback if no suitable zone found
+- net: hns3: update hns3 version to 22.9.2
+- net: hns3: fix error resume keep alive when remove hclgevf
+- net: hns3: update hns3 version to 22.9.1
+- net: hns3: fix keep alive can not resume problem when system busy
 
 * Tue Sep 20 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.5.0.0169
 - jfs: prevent NULL deref in diFree
