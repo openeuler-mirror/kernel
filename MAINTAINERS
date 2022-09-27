@@ -7983,6 +7983,14 @@ F:	Documentation/admin-guide/perf/hisi-pcie-pmu.rst
 F:	Documentation/admin-guide/perf/hisi-pmu.rst
 F:	drivers/perf/hisilicon
 
+HISILICON PTT DRIVER
+M:      Yicong Yang <yangyicong@hisilicon.com>
+L:      linux-kernel@vger.kernel.org
+S:      Maintained
+F:      Documentation/ABI/testing/sysfs-devices-hisi_ptt
+F:      Documentation/trace/hisi-ptt.rst
+F:      drivers/hwtracing/ptt/
+
 HISILICON QM AND ZIP Controller DRIVER
 M:	Zhou Wang <wangzhou1@hisilicon.com>
 L:	linux-crypto@vger.kernel.org
