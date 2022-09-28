@@ -398,6 +398,8 @@
 #define CMPLT_HDR_CMPLT_MSK		(0x3 << CMPLT_HDR_CMPLT_OFF)
 #define CMPLT_HDR_ERROR_PHASE_OFF   2
 #define CMPLT_HDR_ERROR_PHASE_MSK   (0xff << CMPLT_HDR_ERROR_PHASE_OFF)
+/* bit[9:2] Error Phase */
+#define ERR_PHASE_RESPONSE_FRAME_REV_STAGE	BIT(8)
 #define CMPLT_HDR_RSPNS_XFRD_OFF	10
 #define CMPLT_HDR_RSPNS_XFRD_MSK	(0x1 << CMPLT_HDR_RSPNS_XFRD_OFF)
 #define CMPLT_HDR_RSPNS_GOOD_OFF	11
@@ -423,6 +425,10 @@
 #define CMPLT_HDR_SATA_DISK_ERR_MSK	(0x1 << COMLT_HDR_SATA_DISK_ERR_OFF)
 #define CMPLT_HDR_IO_IN_TARGET_OFF	17
 #define CMPLT_HDR_IO_IN_TARGET_MSK	(0x1 << CMPLT_HDR_IO_IN_TARGET_OFF)
+/* bit[23:18] ERR_FIS_ATA_STATUS */
+#define FIS_ATA_STATUS_ERR		BIT(18)
+/* bit[31:24] ERR_FIS_TYPE */
+#define FIS_TYPE_SDB			BIT(31)
 
 /* ITCT header */
 /* qw0 */
@@ -2247,6 +2253,18 @@ static void hisi_sas_set_sense_data(struct sas_task *task,
 	}
 }
 
+static bool is_ncq_err(struct hisi_sas_complete_v3_hdr *complete_hdr)
+{
+	u32 dw0, dw3;
+
+	dw0 = le32_to_cpu(complete_hdr->dw0);
+	dw3 = le32_to_cpu(complete_hdr->dw3);
+
+	return (dw0 & ERR_PHASE_RESPONSE_FRAME_REV_STAGE) &&
+		(dw3 & FIS_TYPE_SDB) &&
+		(dw3 & FIS_ATA_STATUS_ERR);
+}
+
 static void
 slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 	       struct hisi_sas_slot *slot)
@@ -2582,6 +2600,10 @@ static void cq_tasklet_v3_hw(unsigned long val)
 			dev_err(dev, "erroneous completion disk err dev id=%d sas_addr=0x%llx CQ hdr: 0x%x 0x%x 0x%x 0x%x\n",
 				device_id, itct->sas_addr, dw0, dw1,
 				complete_hdr->act, dw3);
+
+			if (is_ncq_err(complete_hdr))
+				sas_dev->dev_status = HISI_SAS_DEV_NCQ_ERR;
+
 			link->eh_info.err_mask |= AC_ERR_DEV;
 			link->eh_info.action |= ATA_EH_RESET;
 			ata_link_abort(link);

@@ -1673,7 +1673,7 @@ static int hisi_sas_abort_task(struct sas_task *task)
 	task->task_state_flags |= SAS_TASK_STATE_ABORTED;
 	spin_unlock_irqrestore(&task->task_state_lock, flags);
 
-	if (task->lldd_task && task->task_proto & SAS_PROTOCOL_SSP) {
+	if (slot && task->task_proto & SAS_PROTOCOL_SSP) {
 		struct scsi_cmnd *cmnd = task->uldd_task;
 		u32 tag = slot->idx;
 		int rc2;
@@ -1706,8 +1706,7 @@ static int hisi_sas_abort_task(struct sas_task *task)
 	} else if (task->task_proto & SAS_PROTOCOL_SATA ||
 		task->task_proto & SAS_PROTOCOL_STP) {
 		if (task->dev->dev_type == SAS_SATA_DEV) {
-			struct ata_port *ap = device->sata_dev.ap;
-			struct ata_link *link = &ap->link;
+			struct ata_queued_cmd *qc = task->uldd_task;
 
 			rc = hisi_sas_internal_task_abort(hisi_hba, device,
 						HISI_SAS_INT_ABT_DEV, 0);
@@ -1717,14 +1716,19 @@ static int hisi_sas_abort_task(struct sas_task *task)
 			}
 			hisi_sas_dereg_device(hisi_hba, device);
 
-			if (link->eh_info.action & ATA_EH_RESET) {
-				slot->task = NULL;
+			/*
+			 * If an ATA internal command times out in ATA EH, it
+			 * need to execute soft reset, so check the scsicmd
+			 */
+			if ((sas_dev->dev_status == HISI_SAS_DEV_NCQ_ERR) &&
+			    qc && qc->scsicmd) {
+				hisi_sas_do_release_task(hisi_hba, task, slot);
 				rc = TMF_RESP_FUNC_COMPLETE;
 			} else {
 				rc = hisi_sas_softreset_ata_disk(device);
 			}
 		}
-	} else if (task->lldd_task && task->task_proto & SAS_PROTOCOL_SMP) {
+	} else if (slot && task->task_proto & SAS_PROTOCOL_SMP) {
 		/* SMP */
 		u32 tag = slot->idx;
 		struct hisi_sas_cq *cq = &hisi_hba->cq[slot->dlvry_queue];
@@ -1843,7 +1847,11 @@ static int hisi_sas_I_T_nexus_reset(struct domain_device *device)
 {
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct device *dev = hisi_hba->dev;
+	struct hisi_sas_device *sas_dev = device->lldd_dev;
 	int rc;
+
+	if (sas_dev->dev_status == HISI_SAS_DEV_NCQ_ERR)
+		sas_dev->dev_status = HISI_SAS_DEV_NORMAL;
 
 	rc = hisi_sas_internal_task_abort(hisi_hba, device,
 					HISI_SAS_INT_ABT_DEV, 0);
