@@ -893,6 +893,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	tsk->prefer_cpus = NULL;
+	tsk->se.dyn_affi_stats = NULL;
 #endif
 
 	setup_thread_stack(tsk, orig);
