@@ -2517,10 +2517,16 @@ static void prep_ata_v2_hw(struct hisi_hba *hisi_hba,
 	/* create header */
 	/* dw0 */
 	hdr->dw0 = cpu_to_le32(port->id << CMD_HDR_PORT_OFF);
-	if (parent_dev && DEV_IS_EXPANDER(parent_dev->dev_type))
+	if (parent_dev && DEV_IS_EXPANDER(parent_dev->dev_type)) {
 		hdr->dw0 |= cpu_to_le32(3 << CMD_HDR_CMD_OFF);
-	else
+	} else {
+		int phy_id = device->phy->identify.phy_identifier;
+
+		hdr->dw0 |= cpu_to_le32((1 << phy_id)
+				<< CMD_HDR_PHY_ID_OFF);
+		hdr->dw0 |= CMD_HDR_FORCE_PHY_MSK;
 		hdr->dw0 |= cpu_to_le32(4 << CMD_HDR_CMD_OFF);
+	}
 
 	if (tmf && tmf->force_phy) {
 		hdr->dw0 |= CMD_HDR_FORCE_PHY_MSK;
