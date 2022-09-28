@@ -195,7 +195,9 @@ static int __init ffh_cstate_init(void)
 	struct cpuinfo_x86 *c = &boot_cpu_data;
 
 	if (c->x86_vendor != X86_VENDOR_INTEL &&
-	    c->x86_vendor != X86_VENDOR_AMD)
+		c->x86_vendor != X86_VENDOR_AMD &&
+		c->x86_vendor != X86_VENDOR_CENTAUR &&
+		c->x86_vendor != X86_VENDOR_ZHAOXIN)
 		return -1;
 
 	cpu_cstate_entry = alloc_percpu(struct cstate_entry);
