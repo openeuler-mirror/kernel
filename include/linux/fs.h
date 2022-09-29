@@ -2316,7 +2316,11 @@ struct file_system_type {
 	struct lock_class_key i_mutex_key;
 	struct lock_class_key i_mutex_dir_key;
 
+#ifndef __GENKSYMS__
+	int (*mount_end) (struct fs_context *, struct path *);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

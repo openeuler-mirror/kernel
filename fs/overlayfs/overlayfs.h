@@ -546,3 +546,10 @@ int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 
 /* export.c */
 extern const struct export_operations ovl_export_operations;
+
+/* sysfs.c */
+int __init ovl_init_sysfs(void);
+void ovl_exit_sysfs(void);
+int ovl_register_sysfs(struct super_block *sb);
+void ovl_unregister_sysfs(struct super_block *sb);
+int ovl_mergedir_backup(struct super_block *sb, const char *str);
