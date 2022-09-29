@@ -3097,6 +3097,11 @@ static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 
 	trace_sp_k2u_begin(kc);
 
+	if (!size) {
+		pr_err_ratelimited("k2u input size is 0.\n");
+		return -EINVAL;
+	}
+
 	if (sp_flags & ~SP_FLAG_MASK) {
 		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
 		return -EINVAL;
