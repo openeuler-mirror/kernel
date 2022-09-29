@@ -4,6 +4,8 @@
 //!
 //! C header: [`include/linux/pci.h`](../../../../include/linux/pci.h)
 
+#![allow(dead_code)]
+
 use crate::{
     bindings, c_types, device, driver,
     error::{from_kernel_result, Result},
@@ -29,7 +31,7 @@ impl<T: Driver> driver::DriverOps for Adapter<T> {
         pdrv.name = name.as_char_ptr();
         pdrv.probe = Some(Self::probe_callback);
         pdrv.remove = Some(Self::remove_callback);
-        pdrv.id_table = T::PCI_ID_TABLE.as_ptr();
+        pdrv.id_table = T::PCI_ID_TABLE.as_ref();
         to_result(|| unsafe { bindings::__pci_register_driver(reg, module.0, name.as_char_ptr()) })
     }
 
@@ -41,11 +43,20 @@ impl<T: Driver> driver::DriverOps for Adapter<T> {
 impl<T: Driver> Adapter<T> {
     extern "C" fn probe_callback(
         pdev: *mut bindings::pci_dev,
-        _id: *const bindings::pci_device_id,
+        id: *const bindings::pci_device_id,
     ) -> c_types::c_int {
         from_kernel_result! {
             let mut dev = unsafe { Device::from_ptr(pdev) };
-            let data = T::probe(&mut dev)?;
+
+            // SAFETY: `id` is a pointer within the static table, so it's always valid.
+            let offset = unsafe {(*id).driver_data};
+            // SAFETY: The offset comes from a previous call to `offset_from` in `IdArray::new`, which
+            // guarantees that the resulting pointer is within the table.
+            let info = {
+                let ptr = unsafe {id.cast::<u8>().offset(offset as _).cast::<Option<T::IdInfo>>()};
+                unsafe {(&*ptr).as_ref()}
+            };
+            let data = T::probe(&mut dev, info)?;
             unsafe { bindings::pci_set_drvdata(pdev, data.into_pointer() as _) };
             Ok(0)
         }
@@ -59,6 +70,108 @@ impl<T: Driver> Adapter<T> {
     }
 }
 
+/// Abstraction for bindings::pci_device_id.
+#[derive(Clone, Copy)]
+pub struct DeviceId {
+    /// Vendor ID
+    pub vendor: u32,
+    /// Device ID
+    pub device: u32,
+    /// Subsystem vendor ID
+    pub subvendor: u32,
+    /// Subsystem device ID
+    pub subdevice: u32,
+    /// Device class and subclass
+    pub class: u32,
+    /// Limit which sub-fields of the class
+    pub class_mask: u32,
+}
+
+impl DeviceId {
+    const PCI_ANY_ID: u32 = !0;
+
+    /// PCI_DEVICE macro.
+    pub const fn new(vendor: u32, device: u32) -> Self {
+        Self {
+            vendor,
+            device,
+            subvendor: DeviceId::PCI_ANY_ID,
+            subdevice: DeviceId::PCI_ANY_ID,
+            class: 0,
+            class_mask: 0,
+        }
+    }
+
+    /// PCI_DEVICE_CLASS macro.
+    pub const fn with_class(class: u32, class_mask: u32) -> Self {
+        Self {
+            vendor: DeviceId::PCI_ANY_ID,
+            device: DeviceId::PCI_ANY_ID,
+            subvendor: DeviceId::PCI_ANY_ID,
+            subdevice: DeviceId::PCI_ANY_ID,
+            class,
+            class_mask,
+        }
+    }
+}
+
+// SAFETY: `ZERO` is all zeroed-out and `to_rawid` stores `offset` in `pci_device_id::driver_data`.
+unsafe impl const driver::RawDeviceId for DeviceId {
+    type RawType = bindings::pci_device_id;
+
+    const ZERO: Self::RawType = bindings::pci_device_id {
+        vendor: 0,
+        device: 0,
+        subvendor: 0,
+        subdevice: 0,
+        class: 0,
+        class_mask: 0,
+        driver_data: 0,
+    };
+
+    fn to_rawid(&self, offset: isize) -> Self::RawType {
+        bindings::pci_device_id {
+            vendor: self.vendor,
+            device: self.device,
+            subvendor: self.subvendor,
+            subdevice: self.subdevice,
+            class: self.class,
+            class_mask: self.class_mask,
+            driver_data: offset as _,
+        }
+    }
+}
+
+/// Define a const pci device id table
+///
+/// # Examples
+///
+/// ```ignore
+/// # use kernel::{pci, define_pci_id_table};
+/// #
+/// struct MyDriver;
+/// impl pci::Driver for MyDriver {
+///     // [...]
+/// #   fn probe(_dev: &mut pci::Device, _id_info: Option<&Self::IdInfo>) -> Result {
+/// #       Ok(())
+/// #   }
+/// #   define_pci_id_table! {u32, [
+/// #       (pci::DeviceId::new(0x010800, 0xffffff), None),
+/// #       (pci::DeviceId::with_class(0x010802, 0xfffff), Some(0x10)),
+/// #   ]}
+/// }
+/// ```
+#[macro_export]
+macro_rules! define_pci_id_table {
+    ($data_type:ty, $($t:tt)*) => {
+        type IdInfo = $data_type;
+        const ID_TABLE: $crate::driver::IdTable<'static, $crate::pci::DeviceId, $data_type> = {
+            $crate::define_id_array!(ARRAY, $crate::pci::DeviceId, $data_type, $($t)* );
+            ARRAY.as_table()
+        };
+    };
+}
+
 /// A PCI driver
 pub trait Driver {
     /// Data stored on device by driver.
@@ -70,14 +183,17 @@ pub trait Driver {
     /// never move the underlying wrapped data structure. This allows
     type Data: PointerWrapper + Send + Sync + driver::DeviceRemoval = ();
 
+    /// The type holding information about each device id supported by the driver.
+    type IdInfo: 'static = ();
+
     /// The table of device ids supported by the driver.
-    const PCI_ID_TABLE: &'static [bindings::pci_device_id];
+    const PCI_ID_TABLE: driver::IdTable<'static, DeviceId, Self::IdInfo>;
 
     /// PCI driver probe.
     ///
     /// Called when a new platform device is added or discovered.
     /// Implementers should attempt to initialize the device here.
-    fn probe(dev: &mut Device) -> Result<Self::Data>;
+    fn probe(dev: &mut Device, id: Option<&Self::IdInfo>) -> Result<Self::Data>;
 
     /// PCI driver remove.
     ///
