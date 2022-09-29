@@ -946,6 +946,14 @@ static void free_sp_group(struct sp_group *spg)
 	up_write(&sp_group_sem);
 }
 
+static void sp_group_drop_locked(struct sp_group *spg)
+{
+	lockdep_assert_held_exclusive(&sp_group_sem);
+
+	if (atomic_dec_and_test(&spg->use_count))
+		free_sp_group_locked(spg);
+}
+
 static void sp_group_drop(struct sp_group *spg)
 {
 	if (atomic_dec_and_test(&spg->use_count))
@@ -1234,7 +1242,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
 			up_read(&spg->rw_lock);
-			sp_group_drop(spg);
+			sp_group_drop_locked(spg);
 			return ERR_PTR(-ENODEV);
 		}
 		up_read(&spg->rw_lock);
