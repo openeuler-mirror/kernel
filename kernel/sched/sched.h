@@ -553,11 +553,6 @@ struct cfs_rq {
 
 	u64			exec_clock;
 	u64			min_vruntime;
-#ifdef CONFIG_SCHED_CORE
-	unsigned int		forceidle_seq;
-	u64			min_vruntime_fi;
-#endif
-
 #ifndef CONFIG_64BIT
 	u64			min_vruntime_copy;
 #endif
@@ -644,8 +639,14 @@ struct cfs_rq {
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 #endif
+#if defined CONFIG_SCHED_CORE && !defined(__GENKSYMS__)
+	unsigned int		forceidle_seq;
+	KABI_FILL_HOLE(unsigned int kabi_hole)
+	u64			min_vruntime_fi;
+#else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -942,7 +943,7 @@ DECLARE_STATIC_KEY_FALSE(sched_uclamp_used);
  */
 struct rq {
 	/* runqueue lock: */
-	raw_spinlock_t		__lock;
+	raw_spinlock_t		KABI_RENAME(lock, __lock);
 
 	/*
 	 * nr_running and cpu_load should be in the same cacheline because
@@ -1112,7 +1113,7 @@ struct rq {
 	struct cpuidle_state	*idle_state;
 #endif
 
-#ifdef CONFIG_SCHED_CORE
+#if defined(CONFIG_SCHED_CORE) && !defined(__GENKSYMS__)
 	/* per rq */
 	struct rq		*core;
 	struct task_struct	*core_pick;
@@ -2135,9 +2136,6 @@ struct sched_class {
 #ifdef CONFIG_SMP
 	int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf);
 	int  (*select_task_rq)(struct task_struct *p, int task_cpu, int sd_flag, int flags);
-
-	struct task_struct * (*pick_task)(struct rq *rq);
-
 	void (*migrate_task_rq)(struct task_struct *p, int new_cpu);
 
 	void (*task_woken)(struct rq *this_rq, struct task_struct *task);
@@ -2175,7 +2173,11 @@ struct sched_class {
 	void (*task_change_group)(struct task_struct *p, int type);
 #endif
 
+#if !defined(__GENKSYMS__) && defined(CONFIG_SMP)
+	struct task_struct * (*pick_task)(struct rq *rq);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 } __aligned(STRUCT_ALIGNMENT); /* STRUCT_ALIGN(), vmlinux.lds.h */
 
