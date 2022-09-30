@@ -2173,6 +2173,12 @@ int sched_trace_rq_nr_running(struct rq *rq);
 
 const struct cpumask *sched_trace_rd_span(struct root_domain *rd);
 
+#ifdef CONFIG_SCHED_CORE
+extern void sched_core_free(struct task_struct *tsk);
+#else
+static inline void sched_core_free(struct task_struct *tsk) { }
+#endif
+
 #ifdef CONFIG_QOS_SCHED
 void sched_move_offline_task(struct task_struct *p);
 void sched_qos_offline_wait(void);
