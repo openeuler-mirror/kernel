@@ -22,7 +22,7 @@
 #elif defined(CONFIG_MACH_LOONGSON64)
 #include "i8042-loongsonio.h"
 #elif defined(CONFIG_X86) || defined(CONFIG_IA64)
-#include "i8042-x86ia64io.h"
+#include "i8042-acpipnpio.h"
 #else
 #include "i8042-io.h"
 #endif
