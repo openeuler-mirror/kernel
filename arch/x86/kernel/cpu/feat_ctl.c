@@ -15,16 +15,30 @@ enum vmx_feature_leafs {
 	MISC_FEATURES = 0,
 	PRIMARY_CTLS,
 	SECONDARY_CTLS,
-	TERTIARY_CTLS_LOW,
-	TERTIARY_CTLS_HIGH,
 	NR_VMX_FEATURE_WORDS,
+};
+
+enum vmx_tertiary_feature_leafs {
+	TERTIARY_CTLS_LOW = 0,
+	TERTIARY_CTLS_HIGH,
 };
 
 #define VMX_F(x) BIT(VMX_FEATURE_##x & 0x1f)
 
+static void init_vmx_tertiary_capabilities(u16 cpu_index)
+{
+	struct extra_cpuinfo_x86 *e = &extra_cpu_data(cpu_index);
+	u32 low, high;
+
+	/* All 64 bits of tertiary controls MSR are allowed-1 settings. */
+	rdmsr_safe(MSR_IA32_VMX_PROCBASED_CTLS3, &low, &high);
+	e->vmx_tertiary_capability[TERTIARY_CTLS_LOW] = low;
+	e->vmx_tertiary_capability[TERTIARY_CTLS_HIGH] = high;
+}
+
 static void init_vmx_capabilities(struct cpuinfo_x86 *c)
 {
-	u32 supported, funcs, ept, vpid, ign, low, high;
+	u32 supported, funcs, ept, vpid, ign;
 
 	BUILD_BUG_ON(NVMXINTS != NR_VMX_FEATURE_WORDS);
 
@@ -44,10 +58,7 @@ static void init_vmx_capabilities(struct cpuinfo_x86 *c)
 	rdmsr_safe(MSR_IA32_VMX_PROCBASED_CTLS2, &ign, &supported);
 	c->vmx_capability[SECONDARY_CTLS] = supported;
 
-	/* All 64 bits of tertiary controls MSR are allowed-1 settings. */
-	rdmsr_safe(MSR_IA32_VMX_PROCBASED_CTLS3, &low, &high);
-	c->vmx_capability[TERTIARY_CTLS_LOW] = low;
-	c->vmx_capability[TERTIARY_CTLS_HIGH] = high;
+	init_vmx_tertiary_capabilities(c->cpu_index);
 
 	rdmsr(MSR_IA32_VMX_PINBASED_CTLS, ign, supported);
 	rdmsr_safe(MSR_IA32_VMX_VMFUNC, &ign, &funcs);

@@ -5,7 +5,8 @@
 /*
  * Defines VMX CPU feature bits
  */
-#define NVMXINTS			5 /* N 32-bit words worth of info */
+#define NVMXINTS			3 /* N 32-bit words worth of info */
+#define NVMX_TERTIARY_INTS		2 /* N 32-bit words worth of info */
 
 /*
  * Note: If the comment begins with a quoted string, that string is used
@@ -86,5 +87,5 @@
 #define VMX_FEATURE_ENCLV_EXITING	( 2*32+ 28) /* "" VM-Exit on ENCLV (leaf dependent) */
 
 /* Tertiary Processor-Based VM-Execution Controls, word 3 */
-#define VMX_FEATURE_IPI_VIRT		( 3*32+  4) /* Enable IPI virtualization */
+#define VMX_TERTIARY_FEATURE_IPI_VIRT		( 3*32+  4) /* Enable IPI virtualization */
 #endif /* _ASM_X86_VMXFEATURES_H */
