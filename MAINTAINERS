@@ -8065,6 +8065,11 @@ S:	Maintained
 W:	http://www.hisilicon.com
 F:	drivers/spi/spi-hisi-sfc-v3xx.c
 
+HISILICON HNS3 PTP SYNC DRIVER
+M:	Yonglong Liu <liuyonglong@huawei.com>
+S:	Supported
+F:	drivers/ptp/ptp_hisi.c
+
 HMM - Heterogeneous Memory Management
 M:	Jérôme Glisse <jglisse@redhat.com>
 L:	linux-mm@kvack.org

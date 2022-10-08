@@ -154,4 +154,15 @@ config PTP_1588_CLOCK_VMW
 	  To compile this driver as a module, choose M here: the module
 	  will be called ptp_vmw.
 
+config PTP_HISI
+	tristate "HiSilicon PTP sync platform driver"
+	help
+	  PTP sync driver work on multichip system, eliminates the bus latency
+	  between multichip, and provide a higher precision clock source. But
+	  the clock source of PTP sync device is from the RTC of HNS3 ethernet
+	  device, so, if you want the PTP sync device works, you must enable
+	  HNS3 driver also.
+
+	  If unsure, say N.
+
 endmenu
