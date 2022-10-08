@@ -1344,19 +1344,20 @@ config LOCKDEP
 
 config LITE_LOCKDEP
 	bool "Lightweight deadlock detection"
-	depends on DEBUG_KERNEL && LOCK_DEBUGGING_SUPPORT
+	depends on DEBUG_KERNEL && LOCK_DEBUGGING_SUPPORT && !LOCKDEP
 	select DEBUG_SPINLOCK
 	select DEBUG_MUTEXES
 	select DEBUG_RWSEMS
 	default n
 
-if LITE_LOCKDEP
-
 config LOCK_REACHABILITY
 	bool "Lock reachability records for cycle detections"
+	depends on LITE_LOCKDEP
 	default n
-
-endif # LITE_LOCKDEP
+	help
+	  Say Y here if you want to record lock dependencies during
+	  bootup. If you say N, you can record dependencies later
+	  by turning on the sysctl variable "check_reachability".
 
 config LOCKDEP_SMALL
 	bool

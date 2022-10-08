@@ -20,12 +20,8 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/lite_lock.h>
 
-#ifdef CONFIG_LITE_LOCKDEP
-int lite_lockdep = 1;
+int lite_lockdep = CONFIG_LITE_LOCKDEP;
 module_param(lite_lockdep, int, 0644);
-#else
-#define lite_lockdep 0
-#endif
 
 #ifdef CONFIG_LOCK_REACHABILITY
 int check_reachability = 1;
