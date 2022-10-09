@@ -17,10 +17,9 @@ obj-y    := entry.o fpu.o traps.o process.o sys_sw64.o irq.o \
 	    irq_sw64.o signal.o setup.o ptrace.o time.o \
 	    systbls.o dup_print.o tc.o timer.o \
 	    insn.o early_init.o topology.o cacheinfo.o \
-	    vdso.o vdso/ hmcall.o
+	    vdso.o vdso/ hmcall.o stacktrace.o
 
 obj-$(CONFIG_ACPI) += acpi.o
-obj-$(CONFIG_STACKTRACE) += stacktrace.o
 obj-$(CONFIG_SMP)	+= smp.o
 obj-$(CONFIG_PCI)	+= pci.o pci-sysfs.o
 obj-$(CONFIG_MODULES)	+= module.o
