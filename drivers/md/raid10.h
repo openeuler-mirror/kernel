@@ -77,7 +77,7 @@ struct r10conf {
 	struct bio_list		pending_bio_list;
 	int			pending_count;
 
-	spinlock_t		resync_lock;
+	seqlock_t		resync_lock;
 	atomic_t		nr_pending;
 	int			nr_waiting;
 	int			nr_queued;
