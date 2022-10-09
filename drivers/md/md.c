@@ -66,6 +66,7 @@
 #include <linux/raid/md_u.h>
 #include <linux/slab.h>
 #include <linux/percpu-refcount.h>
+#include <linux/arch_topology.h>
 
 #include <trace/events/block.h>
 #include "md.h"
@@ -5543,6 +5544,16 @@ static void md_safemode_timeout(struct timer_list *t)
 
 static int start_dirty_degraded;
 
+#define MIN_DISPATCH_ASYNC_CPUS 16
+static void queue_init_dispatch_async_cpus(struct request_queue *q, int node)
+{
+	arch_get_preferred_sibling_cpumask(node, &q->dispatch_async_cpus);
+	if (cpumask_weight(&q->dispatch_async_cpus) >= MIN_DISPATCH_ASYNC_CPUS)
+		blk_queue_flag_set(QUEUE_FLAG_DISPATCH_ASYNC, q);
+	else
+		cpumask_setall(&q->dispatch_async_cpus);
+}
+
 int md_run(struct mddev *mddev)
 {
 	int err;
@@ -5786,6 +5797,8 @@ int md_run(struct mddev *mddev)
 	if (mddev->sb_flags)
 		md_update_sb(mddev, 0);
 
+	if (mddev->queue && pers->level == 10)
+		queue_init_dispatch_async_cpus(mddev->queue, 1);
 	md_new_event(mddev);
 	return 0;
 
