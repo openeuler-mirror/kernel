@@ -696,6 +696,42 @@ static struct queue_sysfs_entry queue_wb_lat_entry = {
 	.store = queue_wb_lat_store,
 };
 
+static ssize_t queue_dispatch_async_cpus_show(struct request_queue *q,
+					      char *page)
+{
+	int cpu;
+	ssize_t ret = 0;
+
+	if (!test_bit(QUEUE_FLAG_DISPATCH_ASYNC, &q->queue_flags))
+		return -EOPNOTSUPP;
+
+	for_each_cpu(cpu, &q->dispatch_async_cpus) {
+		ret += sprintf(page + ret, "%d ", cpu);
+	}
+
+	ret += sprintf(page + ret, "\n");
+	return ret;
+}
+
+static struct queue_sysfs_entry queue_dispatch_async_cpus_entry = {
+	.attr = {.name = "dispatch_async_cpus", .mode = 0444 },
+	.show = queue_dispatch_async_cpus_show,
+};
+
+static ssize_t queue_show_dispatch_async(struct request_queue *q,
+					 char *page)
+{
+	if (test_bit(QUEUE_FLAG_DISPATCH_ASYNC, &q->queue_flags))
+		return sprintf(page, "1\n");
+	else
+		return sprintf(page, "0\n");
+}
+
+static struct queue_sysfs_entry queue_dispatch_async_entry = {
+	.attr = {.name = "dispatch_async", .mode = 0444 },
+	.show = queue_show_dispatch_async,
+};
+
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 static struct queue_sysfs_entry throtl_sample_time_entry = {
 	.attr = {.name = "throttle_sample_time", .mode = 0644 },
@@ -738,6 +774,8 @@ static struct attribute *default_attrs[] = {
 	&queue_dax_entry.attr,
 	&queue_wb_lat_entry.attr,
 	&queue_poll_delay_entry.attr,
+	&queue_dispatch_async_cpus_entry.attr,
+	&queue_dispatch_async_entry.attr,
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 	&throtl_sample_time_entry.attr,
 #endif
@@ -819,6 +857,7 @@ static void __blk_release_queue(struct work_struct *work)
 	if (test_bit(QUEUE_FLAG_POLL_STATS, &q->queue_flags))
 		blk_stat_remove_callback(q, q->poll_cb);
 	blk_stat_free_callback(q->poll_cb);
+	blk_free_queue_dispatch_async(q);
 
 	if (!blk_queue_dead(q)) {
 		/*

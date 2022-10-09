@@ -85,6 +85,27 @@ struct kmem_cache *blk_requestq_cachep;
  */
 static struct workqueue_struct *kblockd_workqueue;
 
+static int blk_alloc_queue_dispatch_async(struct request_queue *q)
+{
+	int cpu;
+
+	q->last_dispatch_cpu = alloc_percpu(int);
+	if (!q->last_dispatch_cpu)
+		return -ENOMEM;
+
+	cpumask_setall(&q->dispatch_async_cpus);
+	for_each_possible_cpu(cpu) {
+		*per_cpu_ptr(q->last_dispatch_cpu, cpu) = cpu;
+	}
+
+	return 0;
+}
+
+void blk_free_queue_dispatch_async(struct request_queue *q)
+{
+	free_percpu(q->last_dispatch_cpu);
+}
+
 /**
  * blk_queue_flag_set - atomically set a queue flag
  * @flag: flag to be set
@@ -1049,9 +1070,12 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id,
 	q->end_sector = 0;
 	q->boundary_rq = NULL;
 
+	if (blk_alloc_queue_dispatch_async(q))
+		goto fail_q;
+
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, gfp_mask);
 	if (q->id < 0)
-		goto fail_q;
+		goto fail_dispatch_async;
 
 	ret = bioset_init(&q->bio_split, BIO_POOL_SIZE, 0, BIOSET_NEED_BVECS);
 	if (ret)
@@ -1130,6 +1154,8 @@ fail_split:
 	bioset_exit(&q->bio_split);
 fail_id:
 	ida_simple_remove(&blk_queue_ida, q->id);
+fail_dispatch_async:
+	blk_free_queue_dispatch_async(q);
 fail_q:
 	kmem_cache_free(blk_requestq_cachep, q_wrapper);
 	return NULL;

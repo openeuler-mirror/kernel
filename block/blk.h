@@ -460,4 +460,6 @@ extern int blk_iolatency_init(struct request_queue *q);
 static inline int blk_iolatency_init(struct request_queue *q) { return 0; }
 #endif
 
+extern void blk_free_queue_dispatch_async(struct request_queue *q);
+
 #endif /* BLK_INTERNAL_H */

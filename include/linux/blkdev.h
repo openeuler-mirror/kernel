@@ -701,6 +701,10 @@ struct request_queue {
 
 	struct work_struct	release_work;
 
+	/* used when QUEUE_FLAG_DISPATCH_ASYNC is set */
+	struct cpumask		dispatch_async_cpus;
+	int __percpu		*last_dispatch_cpu;
+
 #define BLK_MAX_WRITE_HINTS	5
 	u64			write_hints[BLK_MAX_WRITE_HINTS];
 };
@@ -739,6 +743,8 @@ struct request_queue {
 #define QUEUE_FLAG_FORECE_QUIESCE 29 /* force quiesce when cleanup queue */
 /* queue has bee quiesced, used in block layer */
 #define QUEUE_FLAG_QUIESCED_INTERNAL 30
+/* bio will be dispatched asynchronous */
+#define QUEUE_FLAG_DISPATCH_ASYNC 31
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_SAME_COMP)	|	\
