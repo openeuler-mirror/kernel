@@ -32,4 +32,16 @@ unsigned long topology_get_freq_scale(int cpu)
 	return per_cpu(freq_scale, cpu);
 }
 
+#ifdef CONFIG_ARCH_GET_PREFERRED_SIBLING_CPUMASK
+void arch_get_preferred_sibling_cpumask(unsigned int sibling,
+					cpumask_var_t dstp);
+#else
+static inline void
+arch_get_preferred_sibling_cpumask(unsigned int sibling, cpumask_var_t dstp)
+{
+	if (dstp)
+		cpumask_clear(dstp);
+}
+#endif
+
 #endif /* _LINUX_ARCH_TOPOLOGY_H_ */

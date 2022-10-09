@@ -348,6 +348,58 @@ void remove_cpu_topology(unsigned int cpu)
 	clear_cpu_topology(cpu);
 }
 
+#ifdef CONFIG_ARCH_GET_PREFERRED_SIBLING_CPUMASK
+#define MAX_MPIDR_SIBLINGS 100
+static struct cpumask mpidr_siblings_cpumask_map[MAX_MPIDR_SIBLINGS];
+
+static void
+__update_mpidr_siblings_masks(unsigned int cpu, int sibling, bool remove)
+{
+	if (WARN_ON_ONCE(sibling < 0 || sibling >= MAX_MPIDR_SIBLINGS))
+		return;
+
+	if (remove)
+		cpumask_clear_cpu(cpu, &mpidr_siblings_cpumask_map[sibling]);
+	else
+		cpumask_set_cpu(cpu, &mpidr_siblings_cpumask_map[sibling]);
+}
+
+void update_mpidr_siblings_masks(unsigned int cpu, bool remove)
+{
+	int sibling, affinity;
+	u32 midr_impl = MIDR_IMPLEMENTOR(read_cpuid_id());
+	u64 mpidr = read_cpuid_mpidr();
+	bool mt = mpidr & MPIDR_MT_BITMASK;
+
+	switch (midr_impl) {
+	case ARM_CPU_IMP_HISI:
+		if (mt && read_cpuid_part_number() == HISI_CPU_PART_TSV110) {
+			affinity = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+			sibling = ((affinity >> 3) - 1) / 2;
+			__update_mpidr_siblings_masks(cpu, sibling, remove);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+void arch_get_preferred_sibling_cpumask(unsigned int sibling,
+					cpumask_var_t dstp)
+{
+	if (!dstp)
+		return;
+
+	if (sibling >= MAX_MPIDR_SIBLINGS) {
+		cpumask_clear(dstp);
+		return;
+	}
+
+	cpumask_copy(dstp, &mpidr_siblings_cpumask_map[sibling]);
+}
+EXPORT_SYMBOL(arch_get_preferred_sibling_cpumask);
+#endif
+
 #ifdef CONFIG_ACPI
 static bool __init acpi_cpu_is_threaded(int cpu)
 {

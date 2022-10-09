@@ -1389,6 +1389,21 @@ config RANDOMIZE_MODULE_REGION_FULL
 	  a limited range that contains the [_stext, _etext] interval of the
 	  core kernel, so branch relocations are always in range.
 
+config ARCH_GET_PREFERRED_SIBLING_CPUMASK
+	bool "Get preferred sibling cpumask from mpidr"
+	depends on ARM64
+	default n
+	help
+	  For some architectures, masking the underlying processor topology
+	  differences can make software unable to identify the cpu distance,
+	  which results in performance fluctuations.
+
+	  So we provide additional interface for getting preferred sibling's
+	  cpumask supported by platform, this siblings' cpumask indicates those
+	  CPUs which are clustered with relatively short distances, NOTE this
+	  hardly depends on the specific implementation of the specific platform.
+
+
 menuconfig ASCEND_FEATURES
 	bool "Support Ascend Features"
 	depends on ARM64

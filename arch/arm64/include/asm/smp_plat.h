@@ -56,4 +56,18 @@ static inline int get_logical_index(u64 mpidr)
 	return -EINVAL;
 }
 
+#ifdef CONFIG_ARCH_GET_PREFERRED_SIBLING_CPUMASK
+void update_mpidr_siblings_masks(unsigned int cpu, bool remove);
+
+static inline void mpidr_siblings_add_cpu(unsigned int cpu)
+{
+	update_mpidr_siblings_masks(cpu, false);
+}
+
+static inline void mpidr_siblings_remove_cpu(unsigned int cpu)
+{
+	update_mpidr_siblings_masks(cpu, true);
+}
+#endif
+
 #endif /* __ASM_SMP_PLAT_H */

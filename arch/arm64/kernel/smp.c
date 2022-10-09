@@ -426,6 +426,9 @@ asmlinkage notrace void secondary_start_kernel(void)
 
 	store_cpu_topology(cpu);
 	numa_add_cpu(cpu);
+#ifdef CONFIG_ARCH_GET_PREFERRED_SIBLING_CPUMASK
+	mpidr_siblings_add_cpu(cpu);
+#endif
 
 	/*
 	 * OK, now it's safe to let the boot CPU continue.  Wait for
@@ -481,6 +484,9 @@ int __cpu_disable(void)
 
 	remove_cpu_topology(cpu);
 	numa_remove_cpu(cpu);
+#ifdef CONFIG_ARCH_GET_PREFERRED_SIBLING_CPUMASK
+	mpidr_siblings_remove_cpu(cpu);
+#endif
 
 	/*
 	 * Take this CPU offline.  Once we clear this, we can't return,
@@ -945,6 +951,9 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	store_cpu_topology(this_cpu);
 	numa_store_cpu_info(this_cpu);
 	numa_add_cpu(this_cpu);
+#ifdef CONFIG_ARCH_GET_PREFERRED_SIBLING_CPUMASK
+	mpidr_siblings_add_cpu(this_cpu);
+#endif
 
 	/*
 	 * If UP is mandated by "nosmp" (which implies "maxcpus=0"), don't set
