@@ -85,6 +85,31 @@ struct kmem_cache *blk_requestq_cachep;
  */
 static struct workqueue_struct *kblockd_workqueue;
 
+#define BIO_DISPATCH_MAX_LOOP 16
+
+/* prevent false sharing */
+#define BIO_ASYNC_LIST_SHIFT 2
+#define BIO_ASYNC_LOCK_SHIFT 4
+#define bio_async_list(ctl, i) (&(ctl)->list[(i) << BIO_ASYNC_LIST_SHIFT])
+#define bio_async_lock(ctl, i) (&(ctl)->lock[(i) << BIO_ASYNC_LOCK_SHIFT])
+
+struct bio_dispatch_async_ctl {
+	/*
+	 * Vector size is nr_cpu_ids, list stores bio dispatched from other cpu,
+	 * such bio will be dispatched asynchronously to the cpu this structure
+	 * is serviced.
+	 */
+	struct bio_list		*list;
+	/* list is protected by lock */
+	spinlock_t		*lock;
+	/* kthread to dispatch bio asynchronously */
+	struct task_struct	*thread;
+	/* thread will wait here if there are no bios in list */
+	wait_queue_head_t	wait;
+};
+
+static struct bio_dispatch_async_ctl __percpu **bio_dispatch_async_ctl;
+
 static int blk_alloc_queue_dispatch_async(struct request_queue *q)
 {
 	int cpu;
@@ -104,6 +129,165 @@ static int blk_alloc_queue_dispatch_async(struct request_queue *q)
 void blk_free_queue_dispatch_async(struct request_queue *q)
 {
 	free_percpu(q->last_dispatch_cpu);
+}
+
+static int collect_bio(struct bio_dispatch_async_ctl *ctl,
+		       struct bio_list *list)
+{
+	int count = 0;
+	int cpu;
+	struct bio *bio;
+
+	for_each_possible_cpu(cpu) {
+		spin_lock_irq(bio_async_lock(ctl, cpu));
+		while ((bio = bio_list_pop(bio_async_list(ctl, cpu)))) {
+			bio_list_add(list, bio);
+			count++;
+		}
+		spin_unlock_irq(bio_async_lock(ctl, cpu));
+	}
+
+	return count;
+}
+
+static int bio_dispatch_work(void *data)
+{
+	int loop_count = 0;
+	int cpu = smp_processor_id();
+	struct bio_dispatch_async_ctl *ctl =
+		*per_cpu_ptr(bio_dispatch_async_ctl, cpu);
+
+	for (;; loop_count++) {
+		struct bio_list bio_list_on_stack;
+		struct blk_plug plug;
+		struct bio *bio;
+		int count;
+
+		bio_list_init(&bio_list_on_stack);
+		count = collect_bio(ctl, &bio_list_on_stack);
+
+		if (!count) {
+			DEFINE_WAIT(wait);
+
+			for (;;) {
+				prepare_to_wait(&ctl->wait, &wait,
+						TASK_INTERRUPTIBLE);
+				count = collect_bio(ctl, &bio_list_on_stack);
+				if (count)
+					break;
+				schedule();
+				loop_count = 0;
+			}
+			finish_wait(&ctl->wait, &wait);
+
+		}
+
+		blk_start_plug(&plug);
+		while ((bio = bio_list_pop(&bio_list_on_stack))) {
+			struct request_queue *q = bio->bi_disk->queue;
+
+			q->make_request_fn(q, bio);
+		}
+		blk_finish_plug(&plug);
+
+		/* prevent soft lockup */
+		if (loop_count >= BIO_DISPATCH_MAX_LOOP) {
+			loop_count = 0;
+			cond_resched();
+		}
+	}
+
+	return 0;
+}
+
+static int get_dispatch_cpu(struct request_queue *q, int cpu)
+{
+	int *last_dispatch_cpu = per_cpu_ptr(q->last_dispatch_cpu, cpu);
+
+	cpu = cpumask_next(*last_dispatch_cpu, &q->dispatch_async_cpus);
+	if (cpu >= nr_cpu_ids)
+		cpu = cpumask_first(&q->dispatch_async_cpus);
+
+	*last_dispatch_cpu = cpu;
+
+	return cpu;
+}
+
+static void blk_queue_make_request_async(struct bio *bio)
+{
+	struct request_queue *q = bio->bi_disk->queue;
+	int cpu = smp_processor_id();
+	int dispatch_cpu = get_dispatch_cpu(q, cpu);
+	struct bio_dispatch_async_ctl *ctl =
+		*per_cpu_ptr(bio_dispatch_async_ctl, dispatch_cpu);
+
+	spin_lock_irq(bio_async_lock(ctl, cpu));
+	bio_list_add(bio_async_list(ctl, cpu), bio);
+	spin_unlock_irq(bio_async_lock(ctl, cpu));
+
+	if (wq_has_sleeper(&ctl->wait))
+		wake_up(&ctl->wait);
+}
+
+static blk_qc_t blk_queue_do_make_request(struct bio *bio)
+{
+	struct request_queue *q = bio->bi_disk->queue;
+	int cpu = smp_processor_id();
+
+	/*
+	 * Don't dispatch bio asynchronously in following cases:
+	 *
+	 * 1) QUEUE_FLAG_DISPATCH_ASYNC is not set;
+	 * 2) current cpu is the target cpu;
+	 * 3) bio is flagged no wait;
+	 * 4) TODO: return value of submit_bio() will be used in io polling.
+	 */
+	if (!test_bit(QUEUE_FLAG_DISPATCH_ASYNC, &q->queue_flags) ||
+	    cpumask_test_cpu(cpu, &q->dispatch_async_cpus) ||
+	    bio->bi_opf & REQ_NOWAIT)
+		return q->make_request_fn(q, bio);
+
+	/* return value is not concerned */
+	blk_queue_make_request_async(bio);
+	return BLK_QC_T_NONE;
+}
+
+static void init_blk_queue_async_dispatch(void)
+{
+	int cpu;
+
+	bio_dispatch_async_ctl = alloc_percpu(struct bio_dispatch_async_ctl *);
+	if (!bio_dispatch_async_ctl)
+		panic("Failed to alloc bio_dispatch_async_ctl\n");
+
+	for_each_possible_cpu(cpu) {
+		int i;
+		struct bio_dispatch_async_ctl *ctl =
+			kmalloc(sizeof(struct bio_dispatch_async_ctl),
+				GFP_KERNEL | __GFP_NOFAIL);
+
+		*per_cpu_ptr(bio_dispatch_async_ctl, cpu) = ctl;
+
+		ctl->thread =
+			kthread_create_on_cpu(bio_dispatch_work, NULL, cpu,
+					      "bio_dispatch_work_%u");
+		if (IS_ERR_OR_NULL(ctl->thread))
+			panic("Failed to create bio dispatch thread\n");
+
+		ctl->list = kmalloc_array(nr_cpu_ids,
+				sizeof(struct bio_list) << BIO_ASYNC_LIST_SHIFT,
+				GFP_KERNEL | __GFP_NOFAIL);
+		ctl->lock = kmalloc_array(nr_cpu_ids,
+				sizeof(spinlock_t) << BIO_ASYNC_LOCK_SHIFT,
+				GFP_KERNEL | __GFP_NOFAIL);
+		for (i = 0; i < nr_cpu_ids; ++i) {
+			bio_list_init(bio_async_list(ctl, i));
+			spin_lock_init(bio_async_lock(ctl, i));
+		}
+
+		wake_up_process(ctl->thread);
+		init_waitqueue_head(&ctl->wait);
+	}
 }
 
 /**
@@ -2514,7 +2698,7 @@ blk_qc_t generic_make_request(struct bio *bio)
 			/* Create a fresh bio_list for all subordinate requests */
 			bio_list_on_stack[1] = bio_list_on_stack[0];
 			bio_list_init(&bio_list_on_stack[0]);
-			ret = q->make_request_fn(q, bio);
+			ret = blk_queue_do_make_request(bio);
 
 			/* sort new bios into those for a lower level
 			 * and those for the same level
@@ -4053,6 +4237,8 @@ int __init blk_dev_init(void)
 	blk_requestq_cachep = kmem_cache_create("request_queue",
 			sizeof(struct request_queue_wrapper), 0, SLAB_PANIC,
 			NULL);
+
+	init_blk_queue_async_dispatch();
 
 #ifdef CONFIG_DEBUG_FS
 	blk_debugfs_root = debugfs_create_dir("block", NULL);
