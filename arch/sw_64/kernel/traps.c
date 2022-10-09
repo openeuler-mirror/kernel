@@ -69,7 +69,8 @@ void show_regs(struct pt_regs *regs)
 	       regs->r22, regs->r23, regs->r24);
 	printk("t11= %016lx  pv = %016lx  at = %016lx\n",
 	       regs->r25, regs->r27, regs->r28);
-	printk("gp = %016lx  sp = %p\n", regs->gp, regs+1);
+	printk("gp = %016lx  sp = %px\n", regs->gp,
+	       user_mode(regs) ? (void *)rdusp() : (regs + 1));
 }
 
 static void show_code(unsigned int *pc)
