@@ -696,6 +696,7 @@ static struct queue_sysfs_entry queue_wb_lat_entry = {
 	.store = queue_wb_lat_store,
 };
 
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
 static ssize_t queue_dispatch_async_cpus_show(struct request_queue *q,
 					      char *page)
 {
@@ -731,6 +732,7 @@ static struct queue_sysfs_entry queue_dispatch_async_entry = {
 	.attr = {.name = "dispatch_async", .mode = 0444 },
 	.show = queue_show_dispatch_async,
 };
+#endif
 
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 static struct queue_sysfs_entry throtl_sample_time_entry = {
@@ -774,8 +776,10 @@ static struct attribute *default_attrs[] = {
 	&queue_dax_entry.attr,
 	&queue_wb_lat_entry.attr,
 	&queue_poll_delay_entry.attr,
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
 	&queue_dispatch_async_cpus_entry.attr,
 	&queue_dispatch_async_entry.attr,
+#endif
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 	&throtl_sample_time_entry.attr,
 #endif

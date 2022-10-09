@@ -49,9 +49,11 @@ struct request_queue_wrapper {
 	struct mutex            mq_freeze_lock;
 	int			mq_freeze_depth;
 
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
 	/* used when QUEUE_FLAG_DISPATCH_ASYNC is set */
 	struct cpumask		dispatch_async_cpus;
 	int __percpu		*last_dispatch_cpu;
+#endif
 };
 
 #define queue_to_wrapper(q) \
@@ -464,6 +466,12 @@ extern int blk_iolatency_init(struct request_queue *q);
 static inline int blk_iolatency_init(struct request_queue *q) { return 0; }
 #endif
 
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
 extern void blk_free_queue_dispatch_async(struct request_queue *q);
+#else
+static inline void blk_free_queue_dispatch_async(struct request_queue *q)
+{
+}
+#endif
 
 #endif /* BLK_INTERNAL_H */

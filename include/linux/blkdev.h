@@ -785,7 +785,14 @@ bool blk_queue_flag_test_and_clear(unsigned int flag, struct request_queue *q);
 
 extern void blk_set_pm_only(struct request_queue *q);
 extern void blk_clear_pm_only(struct request_queue *q);
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
 extern void queue_init_dispatch_async_cpus(struct request_queue *q, int node);
+#else
+static inline void queue_init_dispatch_async_cpus(struct request_queue *q,
+						  int node)
+{
+}
+#endif
 
 static inline int queue_in_flight(struct request_queue *q)
 {

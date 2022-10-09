@@ -200,6 +200,19 @@ config BLK_SED_OPAL
 	Enabling this option enables users to setup/unlock/lock
 	Locking ranges for SED devices using the Opal protocol.
 
+config BLK_BIO_DISPATCH_ASYNC
+	bool "Dispatch bios asynchronously on specific cpus"
+	default n
+	depends on BLOCK=y
+	help
+	If there are multiple nodes, memory access across nodes is rather bad
+	compare to local node. And if some drivers are using internal spin
+	locks, io performance will be bad if bios are issued concurrently from
+	different nodes. This feature will dispatch bio asynchronously to the
+	specific CPUs to avoid across nodes memory access in driver, noted this
+	feature will require special care in the driver to work. If unsure,
+	say N here.
+
 menu "Partition Types"
 
 source "block/partitions/Kconfig"

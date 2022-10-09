@@ -35,7 +35,6 @@
 #include <linux/blk-cgroup.h>
 #include <linux/debugfs.h>
 #include <linux/bpf.h>
-#include <linux/arch_topology.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
@@ -85,6 +84,9 @@ struct kmem_cache *blk_requestq_cachep;
  * Controlling structure to kblockd
  */
 static struct workqueue_struct *kblockd_workqueue;
+
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
+#include <linux/arch_topology.h>
 
 #define BIO_DISPATCH_MAX_LOOP 16
 /* the minimum of cpus that dispatch async can be enabled */
@@ -309,6 +311,23 @@ void queue_init_dispatch_async_cpus(struct request_queue *q, int node)
 		cpumask_setall(dispatch_async_cpus);
 }
 EXPORT_SYMBOL_GPL(queue_init_dispatch_async_cpus);
+#else
+static int blk_alloc_queue_dispatch_async(struct request_queue *q)
+{
+	return 0;
+}
+
+static blk_qc_t blk_queue_do_make_request(struct bio *bio)
+{
+	struct request_queue *q = bio->bi_disk->queue;
+
+	return q->make_request_fn(q, bio);
+}
+
+static void init_blk_queue_async_dispatch(void)
+{
+}
+#endif
 
 /**
  * blk_queue_flag_set - atomically set a queue flag
