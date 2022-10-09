@@ -48,6 +48,10 @@ struct request_queue_wrapper {
 	 */
 	struct mutex            mq_freeze_lock;
 	int			mq_freeze_depth;
+
+	/* used when QUEUE_FLAG_DISPATCH_ASYNC is set */
+	struct cpumask		dispatch_async_cpus;
+	int __percpu		*last_dispatch_cpu;
 };
 
 #define queue_to_wrapper(q) \

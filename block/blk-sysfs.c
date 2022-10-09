@@ -705,7 +705,7 @@ static ssize_t queue_dispatch_async_cpus_show(struct request_queue *q,
 	if (!test_bit(QUEUE_FLAG_DISPATCH_ASYNC, &q->queue_flags))
 		return -EOPNOTSUPP;
 
-	for_each_cpu(cpu, &q->dispatch_async_cpus) {
+	for_each_cpu(cpu, &queue_to_wrapper(q)->dispatch_async_cpus) {
 		ret += sprintf(page + ret, "%d ", cpu);
 	}
 

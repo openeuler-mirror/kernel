@@ -35,6 +35,7 @@
 #include <linux/blk-cgroup.h>
 #include <linux/debugfs.h>
 #include <linux/bpf.h>
+#include <linux/arch_topology.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
@@ -86,6 +87,8 @@ struct kmem_cache *blk_requestq_cachep;
 static struct workqueue_struct *kblockd_workqueue;
 
 #define BIO_DISPATCH_MAX_LOOP 16
+/* the minimum of cpus that dispatch async can be enabled */
+#define MIN_DISPATCH_ASYNC_CPUS 16
 
 /* prevent false sharing */
 #define BIO_ASYNC_LIST_SHIFT 2
@@ -112,15 +115,16 @@ static struct bio_dispatch_async_ctl __percpu **bio_dispatch_async_ctl;
 
 static int blk_alloc_queue_dispatch_async(struct request_queue *q)
 {
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(q);
 	int cpu;
 
-	q->last_dispatch_cpu = alloc_percpu(int);
-	if (!q->last_dispatch_cpu)
+	q_wrapper->last_dispatch_cpu = alloc_percpu(int);
+	if (!q_wrapper->last_dispatch_cpu)
 		return -ENOMEM;
 
-	cpumask_setall(&q->dispatch_async_cpus);
+	cpumask_setall(&q_wrapper->dispatch_async_cpus);
 	for_each_possible_cpu(cpu) {
-		*per_cpu_ptr(q->last_dispatch_cpu, cpu) = cpu;
+		*per_cpu_ptr(q_wrapper->last_dispatch_cpu, cpu) = cpu;
 	}
 
 	return 0;
@@ -128,7 +132,7 @@ static int blk_alloc_queue_dispatch_async(struct request_queue *q)
 
 void blk_free_queue_dispatch_async(struct request_queue *q)
 {
-	free_percpu(q->last_dispatch_cpu);
+	free_percpu(queue_to_wrapper(q)->last_dispatch_cpu);
 }
 
 static int collect_bio(struct bio_dispatch_async_ctl *ctl,
@@ -202,11 +206,14 @@ static int bio_dispatch_work(void *data)
 
 static int get_dispatch_cpu(struct request_queue *q, int cpu)
 {
-	int *last_dispatch_cpu = per_cpu_ptr(q->last_dispatch_cpu, cpu);
+	int *last_dispatch_cpu =
+		per_cpu_ptr(queue_to_wrapper(q)->last_dispatch_cpu, cpu);
+	struct cpumask *dispatch_async_cpus =
+		&queue_to_wrapper(q)->dispatch_async_cpus;
 
-	cpu = cpumask_next(*last_dispatch_cpu, &q->dispatch_async_cpus);
+	cpu = cpumask_next(*last_dispatch_cpu, dispatch_async_cpus);
 	if (cpu >= nr_cpu_ids)
-		cpu = cpumask_first(&q->dispatch_async_cpus);
+		cpu = cpumask_first(dispatch_async_cpus);
 
 	*last_dispatch_cpu = cpu;
 
@@ -243,7 +250,7 @@ static blk_qc_t blk_queue_do_make_request(struct bio *bio)
 	 * 4) TODO: return value of submit_bio() will be used in io polling.
 	 */
 	if (!test_bit(QUEUE_FLAG_DISPATCH_ASYNC, &q->queue_flags) ||
-	    cpumask_test_cpu(cpu, &q->dispatch_async_cpus) ||
+	    cpumask_test_cpu(cpu, &queue_to_wrapper(q)->dispatch_async_cpus) ||
 	    bio->bi_opf & REQ_NOWAIT)
 		return q->make_request_fn(q, bio);
 
@@ -289,6 +296,19 @@ static void init_blk_queue_async_dispatch(void)
 		init_waitqueue_head(&ctl->wait);
 	}
 }
+
+void queue_init_dispatch_async_cpus(struct request_queue *q, int node)
+{
+	struct cpumask *dispatch_async_cpus =
+		&queue_to_wrapper(q)->dispatch_async_cpus;
+
+	arch_get_preferred_sibling_cpumask(node, dispatch_async_cpus);
+	if (cpumask_weight(dispatch_async_cpus) >= MIN_DISPATCH_ASYNC_CPUS)
+		blk_queue_flag_set(QUEUE_FLAG_DISPATCH_ASYNC, q);
+	else
+		cpumask_setall(dispatch_async_cpus);
+}
+EXPORT_SYMBOL_GPL(queue_init_dispatch_async_cpus);
 
 /**
  * blk_queue_flag_set - atomically set a queue flag

@@ -701,10 +701,6 @@ struct request_queue {
 
 	struct work_struct	release_work;
 
-	/* used when QUEUE_FLAG_DISPATCH_ASYNC is set */
-	struct cpumask		dispatch_async_cpus;
-	int __percpu		*last_dispatch_cpu;
-
 #define BLK_MAX_WRITE_HINTS	5
 	u64			write_hints[BLK_MAX_WRITE_HINTS];
 };
@@ -789,6 +785,7 @@ bool blk_queue_flag_test_and_clear(unsigned int flag, struct request_queue *q);
 
 extern void blk_set_pm_only(struct request_queue *q);
 extern void blk_clear_pm_only(struct request_queue *q);
+extern void queue_init_dispatch_async_cpus(struct request_queue *q, int node);
 
 static inline int queue_in_flight(struct request_queue *q)
 {
