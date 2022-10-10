@@ -172,9 +172,11 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 		goto out;
 	spin_lock_init(&inode->i_lock);
 	lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
+	lite_lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
 
 	init_rwsem(&inode->i_rwsem);
 	lockdep_set_class(&inode->i_rwsem, &sb->s_type->i_mutex_key);
+	lite_lockdep_set_class(&inode->i_rwsem, &sb->s_type->i_mutex_key);
 
 	atomic_set(&inode->i_dio_count, 0);
 
@@ -985,6 +987,27 @@ void lockdep_annotate_inode_mutex_key(struct inode *inode)
 			init_rwsem(&inode->i_rwsem);
 			lockdep_set_class(&inode->i_rwsem,
 					  &type->i_mutex_dir_key);
+		}
+	}
+}
+EXPORT_SYMBOL(lockdep_annotate_inode_mutex_key);
+#endif
+
+#ifdef CONFIG_LITE_LOCKDEP
+void lockdep_annotate_inode_mutex_key(struct inode *inode)
+{
+	if (S_ISDIR(inode->i_mode)) {
+		struct file_system_type *type = inode->i_sb->s_type;
+
+		/* Set new key only if filesystem hasn't already changed it */
+		if (lite_lockdep_match_class(&inode->i_rwsem, &type->i_mutex_key)) {
+			/*
+			 * ensure nobody is actually holding i_mutex
+			 */
+			// mutex_destroy(&inode->i_mutex);
+			init_rwsem(&inode->i_rwsem);
+			lite_lockdep_set_class(&inode->i_rwsem,
+					       &type->i_mutex_dir_key);
 		}
 	}
 }

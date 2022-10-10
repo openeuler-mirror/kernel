@@ -87,7 +87,11 @@ static inline int __raw_spin_trylock(raw_spinlock_t *lock)
 {
 	preempt_disable();
 	if (do_raw_spin_trylock(lock)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_spin_acquire(&lock->lite_dep_map, 0, 1, _RET_IP_);
+#else
 		spin_acquire(&lock->dep_map, 0, 1, _RET_IP_);
+#endif
 		return 1;
 	}
 	preempt_enable();
@@ -99,7 +103,8 @@ static inline int __raw_spin_trylock(raw_spinlock_t *lock)
  * even on CONFIG_PREEMPTION, because lockdep assumes that interrupts are
  * not re-enabled during lock-acquire (which the preempt-spin-ops do):
  */
-#if !defined(CONFIG_GENERIC_LOCKBREAK) || defined(CONFIG_DEBUG_LOCK_ALLOC)
+#if !defined(CONFIG_GENERIC_LOCKBREAK) || defined(CONFIG_DEBUG_LOCK_ALLOC) || \
+    defined(CONFIG_LITE_LOCKDEP)
 
 static inline unsigned long __raw_spin_lock_irqsave(raw_spinlock_t *lock)
 {
@@ -107,7 +112,11 @@ static inline unsigned long __raw_spin_lock_irqsave(raw_spinlock_t *lock)
 
 	local_irq_save(flags);
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&lock->lite_dep_map, 0, 0, _RET_IP_);
+#else
 	spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
+#endif
 	/*
 	 * On lockdep we dont want the hand-coded irq-enable of
 	 * do_raw_spin_lock_flags() code, because lockdep assumes
@@ -125,29 +134,48 @@ static inline void __raw_spin_lock_irq(raw_spinlock_t *lock)
 {
 	local_irq_disable();
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&lock->lite_dep_map, 0, 0, _RET_IP_);
+	do_raw_spin_lock(lock);
+#else
 	spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+#endif
 }
 
 static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)
 {
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&lock->lite_dep_map, 0, 0, _RET_IP_);
+	do_raw_spin_lock(lock);
+#else
 	spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+#endif
 }
 
 static inline void __raw_spin_lock(raw_spinlock_t *lock)
 {
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_acquire(&lock->lite_dep_map, 0, 0, _RET_IP_);
+	do_raw_spin_lock(lock);
+#else
 	spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+#endif
 }
 
-#endif /* !CONFIG_GENERIC_LOCKBREAK || CONFIG_DEBUG_LOCK_ALLOC */
+#endif /* !CONFIG_GENERIC_LOCKBREAK || CONFIG_DEBUG_LOCK_ALLOC || CONFIG_LITE_LOCKDEP */
 
 static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 {
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_release(&lock->lite_dep_map, _RET_IP_);
+#else
 	spin_release(&lock->dep_map, _RET_IP_);
+#endif
 	do_raw_spin_unlock(lock);
 	preempt_enable();
 }
@@ -155,7 +183,11 @@ static inline void __raw_spin_unlock(raw_spinlock_t *lock)
 static inline void __raw_spin_unlock_irqrestore(raw_spinlock_t *lock,
 					    unsigned long flags)
 {
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_release(&lock->lite_dep_map, _RET_IP_);
+#else
 	spin_release(&lock->dep_map, _RET_IP_);
+#endif
 	do_raw_spin_unlock(lock);
 	local_irq_restore(flags);
 	preempt_enable();
@@ -163,7 +195,11 @@ static inline void __raw_spin_unlock_irqrestore(raw_spinlock_t *lock,
 
 static inline void __raw_spin_unlock_irq(raw_spinlock_t *lock)
 {
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_release(&lock->lite_dep_map, _RET_IP_);
+#else
 	spin_release(&lock->dep_map, _RET_IP_);
+#endif
 	do_raw_spin_unlock(lock);
 	local_irq_enable();
 	preempt_enable();
@@ -171,7 +207,11 @@ static inline void __raw_spin_unlock_irq(raw_spinlock_t *lock)
 
 static inline void __raw_spin_unlock_bh(raw_spinlock_t *lock)
 {
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_spin_release(&lock->lite_dep_map, _RET_IP_);
+#else
 	spin_release(&lock->dep_map, _RET_IP_);
+#endif
 	do_raw_spin_unlock(lock);
 	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 }
@@ -180,7 +220,11 @@ static inline int __raw_spin_trylock_bh(raw_spinlock_t *lock)
 {
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 	if (do_raw_spin_trylock(lock)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_spin_acquire(&lock->lite_dep_map, 0, 1, _RET_IP_);
+#else
 		spin_acquire(&lock->dep_map, 0, 1, _RET_IP_);
+#endif
 		return 1;
 	}
 	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);

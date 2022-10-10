@@ -152,7 +152,7 @@ static inline bool __mutex_trylock(struct mutex *lock)
 	return !__mutex_trylock_or_owner(lock);
 }
 
-#ifndef CONFIG_DEBUG_LOCK_ALLOC
+#if !defined(CONFIG_DEBUG_LOCK_ALLOC) && !defined(CONFIG_LITE_LOCKDEP)
 /*
  * Lockdep annotations are contained to the slow paths for simplicity.
  * There is nothing that would stop spreading the lockdep annotations outwards
@@ -256,7 +256,7 @@ static void __mutex_handoff(struct mutex *lock, struct task_struct *task)
 	}
 }
 
-#ifndef CONFIG_DEBUG_LOCK_ALLOC
+#if !defined(CONFIG_DEBUG_LOCK_ALLOC) && !defined(CONFIG_LITE_LOCKDEP)
 /*
  * We split the mutex lock/unlock logic into separate fastpath and
  * slowpath functions, to reduce the register pressure on the fastpath.
@@ -743,7 +743,7 @@ static noinline void __sched __mutex_unlock_slowpath(struct mutex *lock, unsigne
  */
 void __sched mutex_unlock(struct mutex *lock)
 {
-#ifndef CONFIG_DEBUG_LOCK_ALLOC
+#if !defined(CONFIG_DEBUG_LOCK_ALLOC) && !defined(CONFIG_LITE_LOCKDEP)
 	if (__mutex_unlock_fast(lock))
 		return;
 #endif
@@ -965,7 +965,11 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	}
 
 	preempt_disable();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_mutex_acquire_nest(&lock->lite_dep_map, subclass, 0, nest_lock, ip);
+#else
 	mutex_acquire_nest(&lock->dep_map, subclass, 0, nest_lock, ip);
+#endif
 
 	if (__mutex_trylock(lock) ||
 	    mutex_optimistic_spin(lock, ww_ctx, NULL)) {
@@ -1097,7 +1101,11 @@ err:
 err_early_kill:
 	spin_unlock(&lock->wait_lock);
 	debug_mutex_free_waiter(&waiter);
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_mutex_release(&lock->lite_dep_map, ip);
+#else
 	mutex_release(&lock->dep_map, ip);
+#endif
 	preempt_enable();
 	return ret;
 }
@@ -1117,7 +1125,8 @@ __ww_mutex_lock(struct mutex *lock, long state, unsigned int subclass,
 	return __mutex_lock_common(lock, state, subclass, nest_lock, ip, ww_ctx, true);
 }
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
+
 void __sched
 mutex_lock_nested(struct mutex *lock, unsigned int subclass)
 {
@@ -1231,7 +1240,11 @@ static noinline void __sched __mutex_unlock_slowpath(struct mutex *lock, unsigne
 	DEFINE_WAKE_Q(wake_q);
 	unsigned long owner;
 
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_mutex_release(&lock->lite_dep_map, ip);
+#else
 	mutex_release(&lock->dep_map, ip);
+#endif
 
 	/*
 	 * Release the lock before (potentially) taking the spinlock such that
@@ -1286,7 +1299,7 @@ static noinline void __sched __mutex_unlock_slowpath(struct mutex *lock, unsigne
 	wake_up_q(&wake_q);
 }
 
-#ifndef CONFIG_DEBUG_LOCK_ALLOC
+#if !defined(CONFIG_DEBUG_LOCK_ALLOC) && !defined(CONFIG_LITE_LOCKDEP)
 /*
  * Here come the less common (and hence less performance-critical) APIs:
  * mutex_lock_interruptible() and mutex_trylock().
@@ -1422,14 +1435,19 @@ int __sched mutex_trylock(struct mutex *lock)
 #endif
 
 	locked = __mutex_trylock(lock);
+#ifdef CONFIG_LITE_LOCKDEP
+	if (locked)
+		lite_mutex_acquire(&lock->lite_dep_map, 0, 1, _RET_IP_);
+#else
 	if (locked)
 		mutex_acquire(&lock->dep_map, 0, 1, _RET_IP_);
+#endif
 
 	return locked;
 }
 EXPORT_SYMBOL(mutex_trylock);
 
-#ifndef CONFIG_DEBUG_LOCK_ALLOC
+#if !defined(CONFIG_DEBUG_LOCK_ALLOC) && !defined(CONFIG_LITE_LOCKDEP)
 int __sched
 ww_mutex_lock(struct ww_mutex *lock, struct ww_acquire_ctx *ctx)
 {

@@ -39,7 +39,7 @@ struct ww_acquire_ctx {
 	struct ww_class *ww_class;
 	struct ww_mutex *contending_lock;
 #endif
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 	struct lockdep_map dep_map;
 #endif
 #ifdef CONFIG_DEBUG_WW_MUTEX_SLOWPATH

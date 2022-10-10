@@ -95,6 +95,9 @@
 #if defined(CONFIG_PROVE_LOCKING) || defined(CONFIG_LOCK_STAT)
 #include <linux/lockdep.h>
 #endif
+#ifdef CONFIG_LITE_LOCKDEP
+#include <linux/lite_lockdep.h>
+#endif
 #ifdef CONFIG_CHR_DEV_SG
 #include <scsi/sg.h>
 #endif
@@ -1904,6 +1907,29 @@ static struct ctl_table kern_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_LITE_LOCKDEP
+	{
+		.procname	= "lite_lockdep",
+		.data		= &lite_lockdep,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "check_reachability",
+		.data		= &check_reachability,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "detect_deadlocks",
+		.data		= &detect_deadlocks,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= detect_cycles_handler,
 	},
 #endif
 	{

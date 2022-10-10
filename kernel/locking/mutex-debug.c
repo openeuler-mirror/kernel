@@ -87,6 +87,9 @@ void debug_mutex_init(struct mutex *lock, const char *name,
 	debug_check_no_locks_freed((void *)lock, sizeof(*lock));
 	lockdep_init_map_wait(&lock->dep_map, name, key, 0, LD_WAIT_SLEEP);
 #endif
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_lockdep_init_map(&lock->lite_dep_map, name, key, 0);
+#endif
 	lock->magic = lock;
 }
 

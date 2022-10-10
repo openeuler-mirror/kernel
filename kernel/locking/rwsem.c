@@ -330,6 +330,9 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 	debug_check_no_locks_freed((void *)sem, sizeof(*sem));
 	lockdep_init_map_wait(&sem->dep_map, name, key, 0, LD_WAIT_SLEEP);
 #endif
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_lockdep_init_map(&sem->lite_dep_map, name, key, 0);
+#endif
 #ifdef CONFIG_DEBUG_RWSEMS
 	sem->magic = sem;
 #endif
@@ -1501,7 +1504,11 @@ static inline void __downgrade_write(struct rw_semaphore *sem)
 void __sched down_read(struct rw_semaphore *sem)
 {
 	might_sleep();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire_read(&sem->lite_dep_map, 0, 0, _RET_IP_);
+#else
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
+#endif
 
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
 }
@@ -1510,10 +1517,18 @@ EXPORT_SYMBOL(down_read);
 int __sched down_read_interruptible(struct rw_semaphore *sem)
 {
 	might_sleep();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire_read(&sem->lite_dep_map, 0, 0, _RET_IP_);
+#else
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
+#endif
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_interruptible)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 		rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 		return -EINTR;
 	}
 
@@ -1524,10 +1539,18 @@ EXPORT_SYMBOL(down_read_interruptible);
 int __sched down_read_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire_read(&sem->lite_dep_map, 0, 0, _RET_IP_);
+#else
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
+#endif
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_killable)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 		rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 		return -EINTR;
 	}
 
@@ -1543,7 +1566,11 @@ int down_read_trylock(struct rw_semaphore *sem)
 	int ret = __down_read_trylock(sem);
 
 	if (ret == 1)
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_acquire_read(&sem->lite_dep_map, 0, 1, _RET_IP_);
+#else
 		rwsem_acquire_read(&sem->dep_map, 0, 1, _RET_IP_);
+#endif
 	return ret;
 }
 EXPORT_SYMBOL(down_read_trylock);
@@ -1554,7 +1581,11 @@ EXPORT_SYMBOL(down_read_trylock);
 void __sched down_write(struct rw_semaphore *sem)
 {
 	might_sleep();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire(&sem->lite_dep_map, 0, 0, _RET_IP_);
+#else
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
+#endif
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
 }
 EXPORT_SYMBOL(down_write);
@@ -1565,11 +1596,19 @@ EXPORT_SYMBOL(down_write);
 int __sched down_write_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire(&sem->lite_dep_map, 0, 0, _RET_IP_);
+#else
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
+#endif
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_write_trylock,
 				  __down_write_killable)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 		rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 		return -EINTR;
 	}
 
@@ -1585,7 +1624,11 @@ int down_write_trylock(struct rw_semaphore *sem)
 	int ret = __down_write_trylock(sem);
 
 	if (ret == 1)
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_acquire(&sem->lite_dep_map, 0, 1, _RET_IP_);
+#else
 		rwsem_acquire(&sem->dep_map, 0, 1, _RET_IP_);
+#endif
 
 	return ret;
 }
@@ -1596,7 +1639,11 @@ EXPORT_SYMBOL(down_write_trylock);
  */
 void up_read(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 	rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 	__up_read(sem);
 }
 EXPORT_SYMBOL(up_read);
@@ -1606,7 +1653,11 @@ EXPORT_SYMBOL(up_read);
  */
 void up_write(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 	rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 	__up_write(sem);
 }
 EXPORT_SYMBOL(up_write);
@@ -1621,12 +1672,17 @@ void downgrade_write(struct rw_semaphore *sem)
 }
 EXPORT_SYMBOL(downgrade_write);
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 
 void down_read_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire_read(&sem->lite_dep_map, subclass, 0, _RET_IP_);
+#else
 	rwsem_acquire_read(&sem->dep_map, subclass, 0, _RET_IP_);
+#endif
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
 }
 EXPORT_SYMBOL(down_read_nested);
@@ -1634,10 +1690,19 @@ EXPORT_SYMBOL(down_read_nested);
 int down_read_killable_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire_read(&sem->lite_dep_map, subclass, 0, _RET_IP_);
+#else
 	rwsem_acquire_read(&sem->dep_map, subclass, 0, _RET_IP_);
+#endif
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_killable)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 		rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 		return -EINTR;
 	}
 
@@ -1648,7 +1713,12 @@ EXPORT_SYMBOL(down_read_killable_nested);
 void _down_write_nest_lock(struct rw_semaphore *sem, struct lockdep_map *nest)
 {
 	might_sleep();
+
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire_nest(&sem->lite_dep_map, 0, 0, nest, _RET_IP_);
+#else
 	rwsem_acquire_nest(&sem->dep_map, 0, 0, nest, _RET_IP_);
+#endif
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
 }
 EXPORT_SYMBOL(_down_write_nest_lock);
@@ -1664,7 +1734,12 @@ EXPORT_SYMBOL(down_read_non_owner);
 void down_write_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire(&sem->lite_dep_map, subclass, 0, _RET_IP_);
+#else
 	rwsem_acquire(&sem->dep_map, subclass, 0, _RET_IP_);
+#endif
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
 }
 EXPORT_SYMBOL(down_write_nested);
@@ -1672,11 +1747,20 @@ EXPORT_SYMBOL(down_write_nested);
 int __sched down_write_killable_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+
+#ifdef CONFIG_LITE_LOCKDEP
+	lite_rwsem_acquire(&sem->lite_dep_map, subclass, 0, _RET_IP_);
+#else
 	rwsem_acquire(&sem->dep_map, subclass, 0, _RET_IP_);
+#endif
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_write_trylock,
 				  __down_write_killable)) {
+#ifdef CONFIG_LITE_LOCKDEP
+		lite_rwsem_release(&sem->lite_dep_map, _RET_IP_);
+#else
 		rwsem_release(&sem->dep_map, _RET_IP_);
+#endif
 		return -EINTR;
 	}
 

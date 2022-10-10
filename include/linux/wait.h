@@ -69,7 +69,7 @@ extern void __init_waitqueue_head(struct wait_queue_head *wq_head, const char *n
 		__init_waitqueue_head((wq_head), #wq_head, &__key);		\
 	} while (0)
 
-#ifdef CONFIG_LOCKDEP
+#if defined(CONFIG_LOCKDEP) || defined(CONFIG_LITE_LOCKDEP)
 # define __WAIT_QUEUE_HEAD_INIT_ONSTACK(name) \
 	({ init_waitqueue_head(&name); name; })
 # define DECLARE_WAIT_QUEUE_HEAD_ONSTACK(name) \

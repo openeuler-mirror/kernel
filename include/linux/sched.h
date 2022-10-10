@@ -1073,6 +1073,12 @@ struct task_struct {
 	struct held_lock		held_locks[MAX_LOCK_DEPTH];
 #endif
 
+#ifdef CONFIG_LITE_LOCKDEP
+# define MAX_LITE_LOCK_DEPTH		48UL
+	int				lite_lockdep_depth;
+	struct lite_held_lock		held_locks[MAX_LITE_LOCK_DEPTH];
+#endif
+
 #if defined(CONFIG_UBSAN) && !defined(CONFIG_UBSAN_TRAP)
 	unsigned int			in_ubsan;
 #endif

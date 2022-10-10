@@ -56,6 +56,7 @@
 #include <linux/kernel.h>
 #include <linux/stringify.h>
 #include <linux/bottom_half.h>
+#include <linux/lite_lockdep.h>
 #include <linux/lockdep.h>
 #include <asm/barrier.h>
 #include <asm/mmiowb.h>
@@ -230,7 +231,7 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 
 #define raw_spin_lock(lock)	_raw_spin_lock(lock)
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 # define raw_spin_lock_nested(lock, subclass) \
 	_raw_spin_lock_nested(lock, subclass)
 
@@ -258,7 +259,7 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
 		flags = _raw_spin_lock_irqsave(lock);	\
 	} while (0)
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
+#if defined(CONFIG_DEBUG_LOCK_ALLOC) || defined(CONFIG_LITE_LOCKDEP)
 #define raw_spin_lock_irqsave_nested(lock, flags, subclass)		\
 	do {								\
 		typecheck(unsigned long, flags);			\
