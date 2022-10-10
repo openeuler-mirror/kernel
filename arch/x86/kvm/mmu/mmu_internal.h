@@ -165,8 +165,16 @@ void kvm_mmu_gfn_allow_lpage(struct kvm_memory_slot *slot, gfn_t gfn);
 bool kvm_mmu_slot_gfn_write_protect(struct kvm *kvm,
 				    struct kvm_memory_slot *slot, u64 gfn,
 				    int min_level);
+
 void kvm_flush_remote_tlbs_with_address(struct kvm *kvm,
 					u64 start_gfn, u64 pages);
+
+/* Flush the given page (huge or not) of guest memory. */
+static inline void kvm_flush_remote_tlbs_gfn(struct kvm *kvm, gfn_t gfn, int level)
+{
+	kvm_flush_remote_tlbs_with_address(kvm, gfn_round_for_level(gfn, level),
+					   KVM_PAGES_PER_HPAGE(level));
+}
 
 extern int nx_huge_pages;
 static inline bool is_nx_huge_page_enabled(void)
