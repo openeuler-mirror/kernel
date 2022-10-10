@@ -151,3 +151,41 @@ bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
 {
 	return 0;
 }
+
+/*
+ * struct xol_area and get_trampoline_vaddr() are copied from
+ * kernel/events/uprobes.c to avoid modifying arch-independent
+ * code.
+ */
+struct xol_area {
+	wait_queue_head_t		wq;
+	atomic_t			slot_count;
+	unsigned long			*bitmap;
+	struct vm_special_mapping	xol_mapping;
+	struct page			*pages[2];
+	unsigned long			vaddr;
+};
+
+static unsigned long get_trampoline_vaddr(void)
+{
+	struct xol_area *area;
+	unsigned long trampoline_vaddr = -1;
+
+	area = READ_ONCE(current->mm->uprobes_state.xol_area);
+	if (area)
+		trampoline_vaddr = area->vaddr;
+
+	return trampoline_vaddr;
+}
+
+void sw64_fix_uretprobe(struct pt_regs *regs)
+{
+	unsigned long bp_vaddr;
+
+	bp_vaddr = uprobe_get_swbp_addr(regs);
+	/*
+	 * regs->pc has been changed to orig_ret_vaddr in handle_trampoline().
+	 */
+	if (bp_vaddr == get_trampoline_vaddr())
+		regs->r26 = regs->pc;
+}
