@@ -27,6 +27,38 @@
 	.ent __clear_user
 	.frame $30, 0, $26
 	.prologue 0
+__clear_user:
+	and	$17, $17, $0
+	and	$16, 7, $4
+	beq	$0, $zerolength
+	addl	$0, $4, $1
+	and	$1, 7, $2
+	srl	$1, 3, $1
+	beq	$4, $loop
+
+	subl	$4, 8, $4
+	addl	$0, $4, $0
+	beq	$1, $oneword
+
+$head:
+	EX(stb $31, 0($16))
+	addl	$16, 1, $16
+	addl	$4, 1, $4
+	bne	$4, $head
+	subl	$1, 1, $1
+	br	$loop
+	unop
+
+$oneword:
+	EX(stb $31, 0($16))
+	addl	$16, 1, $16
+	addl	$4, 1, $4
+	bne	$4, $oneword
+	clr	$0
+
+$zerolength:
+$exception:
+	ret	$31, ($26), 1
 
 $loop:
 	and	$1, 3, $4
@@ -66,37 +98,5 @@ $tail:
 	clr	$0
 	ret	$31, ($26), 1
 
-__clear_user:
-	and	$17, $17, $0
-	and	$16, 7, $4
-	beq	$0, $zerolength
-	addl	$0, $4, $1
-	and	$1, 7, $2
-	srl	$1, 3, $1
-	beq	$4, $loop
-
-	subl	$4, 8, $4
-	addl	$0, $4, $0
-	beq	$1, $oneword
-
-$head:
-	EX(stb $31, 0($16))
-	addl	$16, 1, $16
-	addl	$4, 1, $4
-	bne	$4, $head
-	subl	$1, 1, $1
-	br	$loop
-	unop
-
-$oneword:
-	EX(stb $31, 0($16))
-	addl	$16, 1, $16
-	addl	$4, 1, $4
-	bne	$4, $oneword
-	clr	$0
-
-$zerolength:
-$exception:
-	ret	$31, ($26), 1
 	.end __clear_user
 	EXPORT_SYMBOL(__clear_user)
