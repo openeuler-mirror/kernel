@@ -8,6 +8,13 @@ config DEEP_CLEAR_PAGE
 	  This option enables the use of SIMD version of clear page routine.
 	  Say N if you want to use the generic version.
 
+config DEEP_CLEAR_USER
+	bool "Clear User with SIMD optimization"
+	default y
+	help
+	  This option enables the use of SIMD version of clear user routine.
+	  Say N if you want to use the generic version.
+
 config DEEP_COPY_PAGE
 	bool "Copy Page with SIMD optimization"
 	default y
