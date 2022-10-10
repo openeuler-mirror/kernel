@@ -35,4 +35,6 @@ struct arch_uprobe_task {
 	unsigned long saved_trap_nr;
 };
 
+extern void sw64_fix_uretprobe(struct pt_regs *regs);
+
 #endif /* _ASM_SW64_UPROBES_H */
