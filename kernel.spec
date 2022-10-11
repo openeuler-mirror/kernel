@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       118
+%global devel_release       119
 %global maintenance_release .0.0
-%global pkg_release         .63
+%global pkg_release         .64
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,80 @@ fi
 %endif
 
 %changelog
+* Tue Oct 11 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-119.0.0.64
+- crypto: hisilicon/zip - Use the bitmap API to allocate bitmaps
+- crypto: hisilicon/sec - fix auth key size error
+- crypto: hisilicon/hpre - don't use GFP_KERNEL to alloc mem during softirq
+- crypto: hisilicon - Kunpeng916 crypto driver don't sleep when in softirq
+- crypto: hisilicon/sec - fix inconsistent argument
+- crypto: hisilicon/sec - only HW V2 needs to change the BD err detection
+- crypto: hisilicon/qm - modify event irq processing
+- crypto: hisilicon/qm - move alloc qm->wq to qm.c
+- crypto: hisilicon/qm - add functions for releasing resources
+- crypto: hisilicon/trng - fix local variable type
+- crypto: hisilicon/sec - fix typos in comment
+- net: hns3: add judge fd ability for sync and clear process of flow director
+- net: hns3: refactor function hclge_mbx_handler()
+- net: hns3: optimize converting dscp to priority process of hns3_nic_select_queue()
+- net: hns3: add support for external loopback test
+- net/af_packet: add VLAN support for AF_PACKET SOCK_RAW GSO
+- net: hns3: debugfs add dump dscp map info
+- net: hns3: support ndo_select_queue()
+- net: hns3: add support config dscp map to tc
+- net: hns3: net: hns3: add querying and setting fec off mode from firmware
+- net: hns3: add querying and setting fec llrs mode from firmware
+- net: hns3: add querying fec ability from firmware
+- net: hns3: add getting capabilities of gro offload and fd from firmware
+- RDMA/hns: Support MR's restrack raw ops for hns driver
+- RDMA/hns: Support MR's restrack ops for hns driver
+- RDMA/hns: Support QP's restrack raw ops for hns driver
+- RDMA/hns: Support QP's restrack ops for hns driver
+- RDMA/hns: Support CQ's restrack raw ops for hns driver
+- RDMA/hns: Add or remove CQ's restrack attributes
+- RDMA/hns: Remove redundant DFX file and DFX ops structure
+- !129 [OLK-5.10] update pmu for Zhaoxin CPUs
+- !156 Enable NVMe over TCP for arm64
+- arm64: openeuler_defconfig: enable nvmf tcp
+- sched: fix kabi for core scheduling
+- sched/core: Change depends of SCHED_CORE
+- sched/core: Fix the bug that task won't enqueue into core tree when update cookie
+- sched/core: Avoid obvious double update_rq_clock warning
+- arch/arm64: Fix topology initialization for core scheduling
+- sched: Teach the forced-newidle balancer about CPU affinity limitation.
+- sched/core: Fix forceidle balancing
+- sched: Make cookie functions static
+- kselftests/sched: cleanup the child processes
+- uapi/linux/prctl: provide macro definitions for the PR_SCHED_CORE type argument
+- sched/core: Simplify core-wide task selection
+- sched: Fix Core-wide rq->lock for uninitialized CPUs
+- admin-guide/hw-vuln: Rephrase a section of core-scheduling.rst
+- sched/core: Disable CONFIG_SCHED_CORE by default
+- Documentation: Add usecases, design and interface for core scheduling
+- sched: Add CONFIG_SCHED_CORE help text
+- sched: Fix leftover comment typos
+- tools headers UAPI: Sync linux/prctl.h with the kernel sources
+- kselftest: Add test for core sched prctl interface
+- sched: prctl() core-scheduling interface
+- sched: Inherit task cookie on fork()
+- sched: Trivial core scheduling cookie management
+- sched: Migration changes for core scheduling
+- sched: Trivial forced-newidle balancer
+- sched/fair: Snapshot the min_vruntime of CPUs on force idle
+- sched: Fix priority inversion of cookied task with sibling
+- sched/fair: Fix forced idle sibling starvation corner case
+- sched: Add core wide task selection and scheduling
+- sched: Basic tracking of matching tasks
+- sched: Introduce sched_class::pick_task()
+- sched: Allow sched_core_put() from atomic context
+- sched: Optimize rq_lockp() usage
+- sched: Core-wide rq->lock
+- sched: Prepare for Core-wide rq->lock
+- sched: Wrap rq::lock access
+- sched: Provide raw_spin_rq_*lock*() helpers
+- sched/fair: Add a few assertions
+- rbtree: Add generic add and find helpers
+- update pmu for Zhaoxin CPUs
+
 * Fri Sep 30 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-118.0.0.63
 - KVM: arm64: Try stage2 block mapping for host device MMIO
 - KVM: arm64: Remove the creation time's mapping of MMIO regions
