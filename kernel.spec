@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2209.6.0
+%global hulkrelease 2210.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0170
+Release: %{hulkrelease}.0171
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,45 @@ fi
 %endif
 
 %changelog
+
+* Tue Oct 11 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.1.0.0171
+- netfilter: nf_conntrack_irc: Fix forged IP logic
+- ext4: fix check for block being out of directory size
+- ext4: check if directory block is within i_size
+- block: Fix UAF in bd_link_disk_holder()
+- ALSA: pcm: oss: Fix race at SNDCTL_DSP_SYNC
+- block: add a new config to control dispatching bios asynchronously
+- block: fix kabi broken in request_queue
+- md: enable dispatching bio asynchronously for raid10 by default
+- arm64/topology: getting preferred sibling's cpumask supported by platform
+- block: support to dispatch bio asynchronously
+- block: add new fields in request_queue
+- md/raid10: convert resync_lock to use seqlock
+- md/raid10: prevent unnecessary calls to wake_up() in fast path
+- !122 【kernel-openEuler-1.0-LTS】kernel：fix some issues with 4.19 kernel on openEuler 22.03 system
+- mm: sharepool: fix potential AA deadlock
+- mm: sharepool: check size=0 in mg_sp_make_share_k2u()
+- mm: sharepool: delete redundant check in __sp_remap_get_pfn
+- Revert "cifs: fix double free race when mount fails in cifs_get_root()"
+- scsi: hisi_sas: Release resource directly in hisi_sas_abort_task() when NCQ error
+- scsi: hisi_sas: Enable force phy when SATA disk directly connected
+- scsi: hisi_sas: Modify v3 HW ATA completion process when SATA disk is in error status
+- sched: Fix invalid free for tsk->se.dyn_affi_stats
+- scsi: target: tcmu: Fix warning: 'page' may be used uninitialized
+- scsi: target: tcmu: Fix crash on ARM during cmd completion
+- scsi: target: tcmu: Optimize use of flush_dcache_page
+- scsi: target: tcmu: Fix size in calls to tcmu_flush_dcache_range
+- signal: fix deadlock caused by calling printk() under sighand->siglock
+- mm: fix missing handler for __GFP_NOWARN
+- perf bench futex-wake: Restore thread count default to online CPU count
+- selftests/bpf: Enlarge select() timeout for test_maps
+- xfs: preserve default grace interval during quotacheck
+- i40e: Fix kernel crash during module removal
+- i40e: Fix use-after-free in i40e_client_subtask()
+- EDAC: skx_common: downgrade message importance on missing PCI device
+- x86/entry/64: Don't compile ignore_sysret if 32-bit emulation is enabled
+- x86: Fix early boot crash on gcc-10, third try
+- objtool: Don't fail on missing symbol table
 
 * Tue Sep 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.6.0.0170
 - KVM: x86/pmu: Update AMD PMC sample period to fix guest NMI-watchdog
