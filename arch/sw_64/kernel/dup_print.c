@@ -52,6 +52,8 @@ int sw64_printk(const char *fmt, va_list args)
 #endif
 
 #ifdef CONFIG_SW64_RRU
+#include<linux/uaccess.h>
+
 static DEFINE_SPINLOCK(printf_lock);
 #define USER_PRINT_BUFF_BASE            (0x600000UL + __START_KERNEL_map)
 #define USER_PRINT_BUFF_LEN             0x100000UL
