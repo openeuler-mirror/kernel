@@ -2341,10 +2341,6 @@ static void ioc_timer_fn(struct timer_list *timer)
 		u64 vrate = ioc->vtime_base_rate;
 		u64 vrate_min = ioc->vrate_min, vrate_max = ioc->vrate_max;
 
-		/* rq_wait signal is always reliable, ignore user vrate_min */
-		if (rq_wait_pct > RQ_WAIT_BUSY_PCT)
-			vrate_min = VRATE_MIN;
-
 		/*
 		 * If vrate is out of bounds, apply clamp gradually as the
 		 * bounds can change abruptly.  Otherwise, apply busy_level
