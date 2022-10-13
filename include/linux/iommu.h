@@ -1031,9 +1031,7 @@ static inline int iommu_clear_dirty_log(struct iommu_domain *domain,
 	return -EINVAL;
 }
 
-static inline int iommu_device_register(struct iommu_device *iommu,
-					const struct iommu_ops *ops,
-					struct device *hwdev)
+static inline int iommu_device_register(struct iommu_device *iommu)
 {
 	return -ENODEV;
 }
