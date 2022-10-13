@@ -261,12 +261,14 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 
 	case IF_OPDEC:
 		switch (inst) {
+#ifdef CONFIG_KPROBES
 		case BREAK_KPROBE:
 			if (notify_die(DIE_BREAK, "kprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
 		case BREAK_KPROBE_SS:
 			if (notify_die(DIE_SSTEPBP, "single_step", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
+#endif
 #ifdef CONFIG_UPROBES
 		case UPROBE_BRK_UPROBE:
 			if (notify_die(DIE_UPROBE, "uprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
