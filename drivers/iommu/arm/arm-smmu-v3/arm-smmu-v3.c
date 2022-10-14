@@ -5003,12 +5003,16 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool resume)
 		ecmdq = *per_cpu_ptr(smmu->ecmdq, i);
 		q = &ecmdq->cmdq.q;
 
+		if (WARN_ON(q->llq.prod != q->llq.cons)) {
+			q->llq.prod = 0;
+			q->llq.cons = 0;
+		}
 		writeq_relaxed(q->q_base, ecmdq->base + ARM_SMMU_ECMDQ_BASE);
 		writel_relaxed(q->llq.prod, ecmdq->base + ARM_SMMU_ECMDQ_PROD);
 		writel_relaxed(q->llq.cons, ecmdq->base + ARM_SMMU_ECMDQ_CONS);
 
 		/* enable ecmdq */
-		writel(ECMDQ_PROD_EN, q->prod_reg);
+		writel(ECMDQ_PROD_EN | q->llq.prod, q->prod_reg);
 		ret = readl_relaxed_poll_timeout(q->cons_reg, reg, reg & ECMDQ_CONS_ENACK,
 					  1, ARM_SMMU_POLL_TIMEOUT_US);
 		if (ret) {
@@ -5707,8 +5711,64 @@ static void __iomem *arm_smmu_ioremap(struct device *dev, resource_size_t start,
 }
 
 #ifdef CONFIG_PM_SLEEP
+
+static int arm_smmu_ecmdq_disable(struct device *dev)
+{
+	int i, j;
+	int ret, nr_fail = 0, n = 100;
+	u32 reg, prod, cons;
+	struct arm_smmu_ecmdq *ecmdq;
+	struct arm_smmu_queue *q;
+	struct arm_smmu_device *smmu = dev_get_drvdata(dev);
+
+	for (i = 0; i < smmu->nr_ecmdq; i++) {
+		ecmdq = *per_cpu_ptr(smmu->ecmdq, i);
+		q = &ecmdq->cmdq.q;
+
+		prod = readl_relaxed(q->prod_reg);
+		cons = readl_relaxed(q->cons_reg);
+		if ((prod & ECMDQ_PROD_EN) == 0)
+			continue;
+
+		for (j = 0; j < n; j++) {
+			if (Q_IDX(&q->llq, prod) == Q_IDX(&q->llq, cons) &&
+			    Q_WRP(&q->llq, prod) == Q_WRP(&q->llq, cons))
+				break;
+
+			/* Wait a moment, so ECMDQ has a chance to finish */
+			udelay(1);
+			cons = readl_relaxed(q->cons_reg);
+		}
+		WARN_ON(prod != readl_relaxed(q->prod_reg));
+		if (j >= n)
+			dev_warn(smmu->dev,
+				 "Forcibly disabling ecmdq[%d]: prod=%08x, cons=%08x\n",
+				 i, prod, cons);
+
+		/* disable ecmdq */
+		prod &= ~ECMDQ_PROD_EN;
+		writel(prod, q->prod_reg);
+		ret = readl_relaxed_poll_timeout(q->cons_reg, reg, !(reg & ECMDQ_CONS_ENACK),
+					  1, ARM_SMMU_POLL_TIMEOUT_US);
+		if (ret) {
+			nr_fail++;
+			dev_err(smmu->dev, "ecmdq[%d] disable failed\n", i);
+		}
+	}
+
+	if (nr_fail) {
+		smmu->ecmdq_enabled = 0;
+		pr_warn("Suppress ecmdq feature, switch to normal cmdq\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+
 static int arm_smmu_suspend(struct device *dev)
 {
+	arm_smmu_ecmdq_disable(dev);
+
 	/*
 	 * The smmu is powered off and related registers are automatically
 	 * cleared when suspend. No need to do anything.
