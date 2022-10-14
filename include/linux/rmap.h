@@ -38,16 +38,12 @@ struct anon_vma {
 	 */
 	atomic_t refcount;
 
-	/*
-	 * Count of child anon_vmas. Equals to the count of all anon_vmas that
-	 * have ->parent pointing to this one, including itself.
-	 *
-	 * This counter is used for making decision about reusing anon_vma
-	 * instead of forking new one. See comments in function anon_vma_clone.
-	 */
-	unsigned long num_children;
-	/* Count of VMAs whose ->anon_vma pointer points to this object. */
-	unsigned long num_active_vmas;
+#ifndef __GENKSYMS__
+	unsigned __unused_degree;
+#else
+	/* Add degree back for KABI compatibility */
+	unsigned degree;
+#endif
 
 	struct anon_vma *parent;	/* Parent of this anon_vma */
 
@@ -62,6 +58,18 @@ struct anon_vma {
 
 	/* Interval tree of private "related" vmas */
 	struct rb_root_cached rb_root;
+#ifndef __GENKSYMS__
+	/*
+	 * Count of child anon_vmas. Equals to the count of all anon_vmas that
+	 * have ->parent pointing to this one, including itself.
+	 *
+	 * This counter is used for making decision about reusing anon_vma
+	 * instead of forking new one. See comments in function anon_vma_clone.
+	 */
+	unsigned long num_children;
+	/* Count of VMAs whose ->anon_vma pointer points to this object. */
+	unsigned long num_active_vmas;
+#endif
 };
 
 /*
