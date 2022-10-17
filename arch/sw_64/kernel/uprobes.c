@@ -4,8 +4,6 @@
 #include <linux/uprobes.h>
 #include <linux/ptrace.h>
 
-#define UPROBE_TRAP_NR	ULONG_MAX
-
 /**
  * arch_uprobe_analyze_insn - instruction analysis including validity and fixups.
  * @mm: the probed address space.
@@ -54,8 +52,6 @@ int arch_uprobe_pre_xol(struct arch_uprobe *aup, struct pt_regs *regs)
 	/* Instruction points to execute ol */
 	instruction_pointer_set(regs, utask->xol_vaddr);
 
-	user_enable_single_step(current);
-
 	return 0;
 }
 
@@ -65,8 +61,6 @@ int arch_uprobe_post_xol(struct arch_uprobe *aup, struct pt_regs *regs)
 
 	/* Instruction points to execute next to breakpoint address */
 	instruction_pointer_set(regs, utask->vaddr + 4);
-
-	user_disable_single_step(current);
 
 	return 0;
 }
