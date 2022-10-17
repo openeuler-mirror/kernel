@@ -17,6 +17,7 @@
 
 static int set_migratetype_isolate(struct page *page, int migratetype, int isol_flags)
 {
+	struct page *unmovable = NULL;
 	struct zone *zone;
 	unsigned long flags, pfn;
 	struct memory_isolate_notify arg;
@@ -59,8 +60,9 @@ static int set_migratetype_isolate(struct page *page, int migratetype, int isol_
 	 * FIXME: Now, memory hotplug doesn't call shrink_slab() by itself.
 	 * We just check MOVABLE pages.
 	 */
-	if (!has_unmovable_pages(zone, page, arg.pages_found, migratetype,
-				 isol_flags))
+	unmovable = has_unmovable_pages(zone, page, arg.pages_found,
+					migratetype, isol_flags);
+	if (!unmovable)
 		ret = 0;
 
 	/*
@@ -84,6 +86,13 @@ out:
 	spin_unlock_irqrestore(&zone->lock, flags);
 	if (!ret)
 		drain_all_pages(zone);
+	else if ((isol_flags & REPORT_FAILURE) && unmovable)
+		/*
+		 * printk() with zone->lock held will guarantee to trigger a
+		 * lockdep splat, so defer it here.
+		 */
+		dump_page(unmovable, "unmovable page");
+
 	return ret;
 }
 

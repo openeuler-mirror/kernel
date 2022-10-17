@@ -44,6 +44,13 @@ const struct trace_print_flags vmaflag_names[] = {
 void __dump_page(struct page *page, const char *reason)
 {
 	bool page_poisoned = PagePoisoned(page);
+	/*
+	 * Accessing the pageblock without the zone lock. It could change to
+	 * "isolate" again in the meantime, but since we are just dumping the
+	 * state for debugging, it should be fine to accept a bit of
+	 * inaccuracy here due to racing.
+	 */
+	bool page_cma = is_migrate_cma_page(page);
 	int mapcount;
 
 	/*
@@ -71,7 +78,8 @@ void __dump_page(struct page *page, const char *reason)
 	pr_cont("\n");
 	BUILD_BUG_ON(ARRAY_SIZE(pageflag_names) != __NR_PAGEFLAGS + 1);
 
-	pr_emerg("flags: %#lx(%pGp)\n", page->flags, &page->flags);
+	pr_emerg("flags: %#lx(%pGp)%s\n", page->flags, &page->flags,
+		page_cma ? " CMA" : "");
 
 hex_only:
 	print_hex_dump(KERN_ALERT, "raw: ", DUMP_PREFIX_NONE, 32,
