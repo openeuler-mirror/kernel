@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2210.1.0
+%global hulkrelease 2210.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0171
+Release: %{hulkrelease}.0172
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,52 @@ fi
 %endif
 
 %changelog
+
+* Tue Oct 18 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.3.0.0172
+- binder: fix UAF of ref->proc caused by race condition
+- arm64: fix oops in concurrently setting insn_emulation sysctls
+- mm/hotplug: silence a lockdep splat with printk()
+- init/Kconfig: Add SMP to the dependencies of QOS_SCHED
+- mm/rmap: Fix kabi broken in anon_vma
+- mm/rmap: Fix anon_vma->degree ambiguity leading to double-reuse
+- HID: roccat: Fix use-after-free in roccat_read()
+- ext4: fix dir corruption when ext4_dx_add_entry() fails
+- quota: Add more checking after reading from quota file
+- quota: Replace all block number checking with helper function
+- quota: Check next/prev free block number after reading from quota file
+- Revert "quota: Check next/prev free block number after reading from quota file"
+- Revert "quota: Replace all block number checking with helper function"
+- Revert "quota: Add more checking after reading from quota file"
+- tracefs: Only clobber mode/uid/gid on remount if asked
+- netfilter: ebtables: fix memory leak when blob is malformed
+- netfilter: ebtables: reject blobs that don't provide all entry points
+- mm: Fix TLB flush for not-first PFNMAP mappings in unmap_region()
+- SUNRPC: use _bh spinlocking on ->transport_lock
+- tcp: fix early ETIMEDOUT after spurious non-SACK RTO
+- netfilter: br_netfilter: Drop dst references before setting.
+- debugfs: add debugfs_lookup_and_remove()
+- tcp: annotate data-race around challenge_timestamp
+- Revert "mm: kmemleak: take a full lowmem check in kmemleak_*_phys()"
+- net: neigh: don't call kfree_skb() under spin_lock_irqsave()
+- neigh: fix possible DoS due to net iface start/stop loop
+- mm/hugetlb: fix hugetlb not supporting softdirty tracking
+- asm-generic: sections: refactor memory_intersects
+- loop: Check for overflow while configuring loop
+- net: Fix a data-race around sysctl_somaxconn.
+- net: Fix a data-race around netdev_budget_usecs.
+- net: Fix a data-race around netdev_budget.
+- net: Fix a data-race around sysctl_net_busy_read.
+- net: Fix a data-race around sysctl_net_busy_poll.
+- net: Fix a data-race around sysctl_tstamp_allow_data.
+- ratelimit: Fix data-races in ___ratelimit().
+- net: Fix data-races around netdev_tstamp_prequeue.
+- net: Fix data-races around weight_p and dev_weight_[rt]x_bias.
+- net: ipvtap - add __init/__exit annotations to module init/exit funcs
+- bonding: 802.3ad: fix no transmission of LACPDUs
+- xfrm: fix refcount leak in __xfrm_policy_check()
+- audit: fix potential double free on error path from fsnotify_add_inode_mark
+- dm: return early from dm_pr_call() if DM device is suspended
+- NFSv4: Fix races in the legacy idmapper upcall
 
 * Tue Oct 11 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.1.0.0171
 - netfilter: nf_conntrack_irc: Fix forged IP logic
