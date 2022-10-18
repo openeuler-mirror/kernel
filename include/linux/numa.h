@@ -70,4 +70,8 @@ static inline enum node_type get_node_type(int nid)
 static inline void set_node_type(int nid, enum node_type type) {}
 #endif
 
+#ifdef CONFIG_HAVE_ARCH_NODE_DEV_GROUP
+extern const struct attribute_group arch_node_dev_group;
+#endif
+
 #endif /* _LINUX_NUMA_H */
