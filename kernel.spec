@@ -3,14 +3,14 @@
 
 %define modsign_cmd %{SOURCE10}
 
-%global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
+%global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/ -e s/loongarch64/loongarch/)
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 %global debuginfodir /usr/lib/debug
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       60
+%global devel_release       106
 %global maintenance_release .18.0
 %global pkg_release         .50
 
@@ -41,6 +41,28 @@
 #default is enabled. You can disable it with --without option
 %define with_perf    %{?_without_perf: 0} %{?!_without_perf: 1}
 
+%define update_boot_cfg() \
+if [ `uname -i` == "loongarch64" ] ;then \
+	pushd /boot >/dev/null \
+	grub_cfg_files=`find . -name grub.cfg` \
+	for grub_cfg_f in ${grub_cfg_files} ; do \
+		grub_cfg_dir=$(dirname $grub_cfg_f) \
+		pushd ${grub_cfg_dir} > /dev/null \
+			tmp_grub_cfg="/tmp/tmp-grub.cfg" \
+			grub2-mkconfig -o ${tmp_grub_cfg} \
+			if [ $? -eq 0 ]; then \
+				cp -f grub.cfg grub.${NEW_KERN_VERSION}.cfg.bak \
+				cat ${tmp_grub_cfg} > grub.cfg \
+			fi \
+\
+			rm -rf ${tmp_grub_cfg} \
+		popd > /dev/null \
+	done \
+	popd > /dev/null \
+\
+fi \
+%{nil}
+
 Name:	 kernel%{?package64kb}
 Version: %{upstream_version}.%{upstream_sublevel}
 Release: %{devel_release}%{?maintenance_release}%{?pkg_release}%{?extra_release}
@@ -57,6 +79,7 @@ Source13: pubring.gpg
 Source18: check-kabi
 Source20: Module.kabi_aarch64
 Source21: Module.kabi_x86_64
+Source22: Module.kabi_loongarch64
 %endif
 
 Source200: mkgrub-menu-aarch64.sh
@@ -109,7 +132,7 @@ Provides: kernel-uname-r = %{KernelVer} kernel=%{KernelVer}
 
 Requires: dracut >= 001-7 grubby >= 8.28-2 initscripts >= 8.11.1-1 linux-firmware >= 20100806-2 module-init-tools >= 3.16-2
 
-ExclusiveArch: noarch aarch64 i686 x86_64
+ExclusiveArch: noarch aarch64 i686 x86_64 loongarch64
 ExclusiveOS: Linux
 
 %if %{with_perf}
@@ -724,6 +747,7 @@ fi
 if [ -d /lib/modules/%{KernelVer} ] && [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
     rm -rf /lib/modules/%{KernelVer}
 fi
+%{expand:%%update_boot_cfg}
 
 %posttrans
 %{_sbindir}/new-kernel-pkg --package kernel --mkinitrd --dracut --depmod --update %{KernelVer} || exit $?
@@ -732,6 +756,9 @@ if [ `uname -i` == "aarch64" ] &&
         [ -f /boot/EFI/grub2/grub.cfg ]; then
 	/usr/bin/sh %{_sbindir}/mkgrub-menu-%{devel_release}.sh %{version}-%{devel_release}.aarch64  /boot/EFI/grub2/grub.cfg  update
 fi
+
+%{expand:%%update_boot_cfg}
+
 if [ -x %{_sbindir}/weak-modules ]
 then
     %{_sbindir}/weak-modules --add-kernel %{KernelVer} || exit $?
@@ -882,6 +909,253 @@ fi
 %endif
 
 %changelog
+* Sat Sep 24 2022 Hongchen Zhang <zhanghongchen@loongson.cn> - 5.10.0-106.18.0.50
+- mm: reliable: Fix ret errno to EACCES
+- mm: reliable: Use EINVAL in reliable_check
+- Revert "net: af_key: add check for pfkey_broadcast in function pfkey_process"
+- !125 Intel: Backport: Add Sapphire Rapids server intel-uncore-freq support
+- platform/x86/intel-uncore-freq: Add Sapphire Rapids server support
+- !118 add openeuler_defconfig file support for ppc64le compile
+- !119  Add new perf monitor features for amd epyc platforms
+- !120 Fix uprobes rbtree usage
+- !117 bugfix for sched-programmable feature
+- uprobes: (Re)add missing get_uprobe() in __find_uprobe()
+- bpf: sched: Fix NULL pointer dereference error
+- bpf:programmable: Fix build error of 'stack exceeds 512 bytes'
+- !114 Add page table check for openEuler-22.09
+- !115 SPR: KVM: Add Bus Lock Debug Exception
+- !109 SPR: KVM: Notify VM exit support
+- KVM: Fix references to non-existent KVM_CAP_TRIPLE_FAULT_EVENT
+- KVM: VMX: Enable Notify VM exit
+- perf/amd/ibs: Advertise zen4_ibs_extensions as pmu capability attribute
+- perf/amd/ibs: Add support for L3 miss filtering
+- perf/amd/ibs: Use ->is_visible callback for dynamic attributes
+- perf/amd/ibs: Cascade pmu init functions' return value
+- perf/amd/ibs: Use interrupt regs ip for stack unwinding
+- perf/x86/amd/ibs: Add bitfield definitions in new <asm/amd-ibs.h> header
+- perf/x86/amd/core: Fix reloading events for SVM
+- perf/x86/amd/core: Add PerfMonV2 overflow handling
+- perf/x86/amd/core: Add PerfMonV2 counter control
+- perf/x86/amd/core: Detect available counters
+- perf/x86/amd/core: Detect PerfMonV2 support
+- x86/msr: Add PerfCntrGlobal* registers
+- x86/cpufeatures: Add PerfMonV2 feature bit
+- perf/x86/amd: Add idle hooks for branch sampling
+- ACPI: Add perf low power callback
+- perf/x86/amd: Make Zen3 branch sampling opt-in
+- perf/x86/amd: Add AMD branch sampling period adjustment
+- perf/x86/amd: Enable branch sampling priv level filtering
+- perf/x86/amd: Add branch-brs helper event for Fam19h BRS
+- perf/x86/amd: Add AMD Fam19h Branch Sampling support
+- x86/cpufeatures: Add AMD Fam19h Branch Sampling feature
+- perf/core: Add perf_clear_branch_entry_bitfields() helper
+- x86/cpufeatures: Assign dedicated feature word for CPUID_0x8000001F[EAX]
+- x86/cpu: Add VM page flush MSR availablility as a CPUID feature
+- KVM: selftests: Add a test to get/set triple fault event
+- KVM: x86: Extend KVM_{G,S}ET_VCPU_EVENTS to support pending triple fault
+- x86/bus_lock: Don't assume the init value of DEBUGCTLMSR.BUS_LOCK_DETECT to be zero
+- KVM: X86: Expose bus lock debug exception to guest
+- KVM: X86: Add support for the emulation of DR6_BUS_LOCK bit
+-  arch: powerpc: add openeuler_defconfig file support for ppc64le compile
+- !116 SPR: KVM: Add Bus Lock VM Exit
+- netfilter: nf_tables: disallow binding to already bound chain
+- netfilter: nf_conntrack_irc: Tighten matching on DCC message
+- video: fbdev: i740fb: Error out if 'pixclock' equals zero
+- KVM: x86: do not report a vCPU as preempted outside instruction boundaries
+- video: fbdev: pxa3xx-gcu: Fix integer overflow in pxa3xx_gcu_write
+- arm64/__mc_ex_table: fix __mc_ex_table do_sort() issue
+- !113 SPR: KVM: Add SPR new instructions for virtualization
+- !105 add support for LoongArch
+- KVM: X86: Rename DR6_INIT to DR6_ACTIVE_LOW
+- KVM: VMX: Remove redundant handling of bus lock vmexit
+- KVM: nVMX: Fix nested bus lock VM exit
+- tools headers UAPI: Sync KVM's kvm.h and vmx.h headers with the kernel sources
+- KVM: X86: Add the Document for KVM_CAP_X86_BUS_LOCK_EXIT
+- KVM: VMX: Enable bus lock VM exit
+- KVM: X86: Reset the vcpu->run->flags at the beginning of vcpu_run
+- LoongArch: defconfig: add openeuler default config
+- LoongArch: defconfig: use make defconfig to save a clean defconfig
+- tools perf: Fix compilation error with new binutils
+- tools include: add dis-asm-compat.h to handle version differences
+- tools build: Don't display disassembler-four-args feature test
+- tools build: Add feature test for init_disassemble_info API changes
+- LoongArch: Support R_LARCH_GOT_PC_{LO12,HI20} in modules
+- LoongArch: Support PC-relative relocations in modules
+- LoongArch: Define ELF relocation types added in v2.00 ABI
+- LoongArch: Adjust symbol addressing for AS_HAS_EXPLICIT_RELOCS
+- LoongArch: Add Kconfig option AS_HAS_EXPLICIT_RELOCS
+- irqchip/loongson-liointc: Fix an error handling path in liointc_init()
+- irqchip/loongarch: Fix irq_domain_alloc_fwnode() abuse
+- irqchip/loongson-eiointc: Fix a build warning
+- irqchip/loongson-eiointc: Fix irq affinity setting
+- irqchip: Adjust Kconfig for Loongson
+- PCI: Add quirk for LS7A to avoid reboot failure
+- PCI: loongson: Improve the MRRS quirk for LS7A
+- PCI: loongson: Work around LS7A incorrect Interrupt Pin registers
+- PCI: loongson: Don't access non-existent devices
+- PCI: loongson: Add ACPI init support
+- PCI: loongson: Use generic 8/16/32-bit config ops on LS2K/LS7A
+- irqchip / ACPI: Introduce ACPI_IRQ_MODEL_LPIC for LoongArch
+- ACPI: irq: Allow acpi_gsi_to_irq() to have an arch-specific fallback
+- APCI: irq: Add support for multiple GSI domains
+- arm64/mm: fix page table check compile error for CONFIG_PGTABLE_LEVELS=2
+- arm64/mm: enable ARCH_SUPPORTS_PAGE_TABLE_CHECK
+- mm: remove __HAVE_ARCH_PTEP_CLEAR in pgtable.h
+- mm: page_table_check: add hooks to public helpers
+- mm: page_table_check: move pxx_user_accessible_page into x86
+- mm: page_table_check: using PxD_SIZE instead of PxD_PAGE_SIZE
+- mm/page_table_check: check entries at pmd levels
+- mm/khugepaged: unify collapse pmd clear, flush and free
+- mm/page_table_check: use unsigned long for page counters and cleanup
+- x86: mm: add x86_64 support for page table check
+- mm: page table check
+- mm: ptep_clear() page table helper
+- mm: change page type prior to adding page table entry
+- KVM: nSVM: set fixed bits by hand
+- KVM: Expose AVX_VNNI instruction to guset
+- KVM: x86: Expose AVX512_FP16 for supported CPUID
+- drm/radeon: Workaround radeon driver bug for Loongson
+- LoongArch: Add writecombine support for drm
+- Input: i8042 - Add PNP checking hook for Loongson
+- LoongArch: Add qspinlock support
+- LoongArch: Add perf events support
+- LoongArch: Add SysRq-x (TLB Dump) support
+- LoongArch: Use TLB for ioremap()
+- LoongArch: Enable ARCH_WANT_HUGETLB_PAGE_OPTIMIZE_VMEMMAP
+- LoongArch: Add sparse memory vmemmap support
+- MIPS&LoongArch&NIOS2: Adjust prototypes of p?d_init()
+- irqchip/loongson-pch-lpc: Add suspend/resume support
+- irqchip/loongson-pch-pic: Add suspend/resume support
+- irqchip/loongson-eiointc: Add suspend/resume support
+- irqchip/loongson-htvec: Add suspend/resume support
+- irqchip/loongson-htvec: Add ACPI init support
+- ACPI / table: Print CORE_PIC information when MADT is parsed
+- ACPICA: Events: Support fixed pcie wake event
+- ACPICA: MADT: Add LoongArch APICs support
+- ACPI: Add LoongArch support for ACPI_PROCESSOR/ACPI_NUMA
+- Revert "LoongArch: Provisionally add ACPICA data structures"
+- loongarch: efi: enable generic EFI compressed boot
+- efi/libstub: implement generic EFI zboot
+- efi/libstub: use EFI provided memcpy/memset routines
+- efi/libstub: add some missing EFI prototypes
+- efi/loongarch: Add efistub booting support
+- irqchip: Select downstream irqchip drivers for LoongArch CPU
+- LoongArch: Add subword xchg/cmpxchg emulation
+- LoongArch: Cleanup headers to avoid circular dependency
+- LoongArch: Cleanup reset routines with new API
+- LoongArch: Fix build warnings in VDSO
+- LoongArch: Select PCI_QUIRKS to avoid build error
+- LoongArch: Update Loongson-3 default config file
+- LoongArch: Add USER_STACKTRACE support
+- LoongArch: Add STACKTRACE support
+- LoongArch: Add prologue unwinder support
+- LoongArch: Add guess unwinder support
+- LoongArch: Add vDSO syscall __vdso_getcpu()
+- LoongArch: Add PCI controller support
+- LoongArch: Parse MADT to get multi-processor information
+- LoongArch: Jump to the link address before enable PG
+- LoongArch: Requires __force attributes for any casts
+- LoongArch: Fix unsigned comparison with less than zero
+- LoongArch: Adjust arch/loongarch/Kconfig
+- LoongArch: cpuinfo: Fix a warning for CONFIG_CPUMASK_OFFSTACK
+- irqchip/loongson-pch-pic: Move find_pch_pic() into CONFIG_ACPI
+- LoongArch: Fix wrong "ROM Size" of boardinfo
+- LoongArch: Fix missing fcsr in ptrace's fpr_set
+- LoongArch: Fix shared cache size calculation
+- LoongArch: Disable executable stack by default
+- LoongArch: Remove unused variables
+- LoongArch: Remove clock setting during cpu hotplug stage
+- LoongArch: Remove useless header compiler.h
+- LoongArch: Remove several syntactic sugar macros for branches
+- LoongArch: Re-tab the assembly files
+- LoongArch: Simplify "BGT foo, zero" with BGTZ
+- LoongArch: Simplify "BLT foo, zero" with BLTZ
+- LoongArch: Simplify "BEQ/BNE foo, zero" with BEQZ/BNEZ
+- LoongArch: Use the "move" pseudo-instruction where applicable
+- LoongArch: Use the "jr" pseudo-instruction where applicable
+- LoongArch: Use ABI names of registers where appropriate
+- irqchip: Add LoongArch CPU interrupt controller support
+- LoongArch: fix kabi change due to enum chuph_state
+- irqchip: Add Loongson Extended I/O interrupt controller support
+- irqchip/loongson-liointc: Add ACPI init support
+- irqchip/loongson-pch-msi: Add ACPI init support
+- irqchip/loongson-pch-pic: Add ACPI init support
+- irqchip: Add Loongson PCH LPC controller support
+- LoongArch: Prepare to support multiple pch-pic and pch-msi irqdomain
+- LoongArch: Use ACPI_GENERIC_GSI for gsi handling
+- LoongArch: Provisionally add ACPICA data structures
+- loongarch: drop definition of PGD_ORDER
+- loongarch: drop definition of PUD_ORDER
+- loongarch: drop definition of PMD_ORDER
+- loongarch: drop definition of PTE_ORDER
+- LoongArch: Fix section mismatch warning
+- LoongArch: Fix build errors for tinyconfig
+- LoongArch: Remove obsolete mentions of vcsr
+- LoongArch: Drop these obsolete selects in Kconfig
+- efi: Simplify arch_efi_call_virt() macro
+- LoongArch: Make compute_return_era() return void
+- LoongArch: Fix wrong fpu version
+- LoongArch: Fix EENTRY/MERRENTRY setting in setup_tlb_handler()
+- LoongArch: Fix sleeping in atomic context in setup_tlb_handler()
+- LoongArch: Fix the _stext symbol address
+- LoongArch: Fix the !THP build
+- LoongArch: vmlinux.lds.S: Add missing ELF_DETAILS
+- LoongArch: Remove MIPS comment about cycle counter
+- LoongArch: Fix the !CONFIG_SMP build
+- LoongArch: Add Loongson-3 default config file
+- LoongArch: Add Non-Uniform Memory Access (NUMA) support
+- LoongArch: Add multi-processor (SMP) support
+- LoongArch: Add VDSO and VSYSCALL support
+- LoongArch: Add some library functions
+- LoongArch: Add misc common routines
+- LoongArch: Add ELF and module support
+- LoongArch: Add signal handling support
+- LoongArch: Add system call support
+- LoongArch: Add memory management
+- LoongArch: Add process management
+- LoongArch: Add exception/interrupt handling
+- LoongArch: Add boot and setup routines
+- LoongArch: Add other common headers
+- LoongArch: Add atomic/locking headers
+- LoongArch: Add CPU definition headers
+- LoongArch: Add ELF-related definitions
+- LoongArch: Add build infrastructure
+- fbdev: Prevent probing generic drivers if a FB is already registered
+- serial: 8250_pnp: Support configurable clock frequency
+- genirq/generic_chip: Export irq_unmap_generic_chip
+- mm/swapops: make is_pmd_migration_entry more strict
+- initramfs: Provide a common initrd reserve function
+- initrd: Add the preprocessor guard in initrd.h
+- netfilter: nf_tables: do not allow RULE_ID to refer to another chain
+- netfilter: nf_tables: do not allow CHAIN_ID to refer to another table
+- netfilter: nf_tables: do not allow SET_ID to refer to another table
+- !46 config: enable CONFIG_SCHED_PRIO_LB for x86 and arm64
+- !99 update patches for sw64 architecture
+- !108 tools/bpftool: Add BTF_KIND_FLOAT support
+- !96 Intel SPR: IPI virtualization support for VM
+- !98 Add support for AMD EPYC Genoa platform
+- LoongArch: Add VDSO and VSYSCALL support
+- LoongArch: Add some library functions
+- LoongArch: Add misc common routines
+- LoongArch: Add ELF and module support
+- LoongArch: Add signal handling support
+- LoongArch: Add system call support
+- LoongArch: Add memory management
+- LoongArch: Add process management
+- LoongArch: Add exception/interrupt handling
+- LoongArch: Add boot and setup routines
+- LoongArch: Add other common headers
+- LoongArch: Add atomic/locking headers
+- LoongArch: Add CPU definition headers
+- LoongArch: Add ELF-related definitions
+- LoongArch: Add build infrastructure
+- fbdev: Prevent probing generic drivers if a FB is already registered
+- serial: 8250_pnp: Support configurable clock frequency
+- genirq/generic_chip: Export irq_unmap_generic_chip
+- mm/swapops: make is_pmd_migration_entry more strict
+- initramfs: Provide a common initrd reserve function
+- initrd: Add the preprocessor guard in initrd.h
+
 * Sun Mar 27 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.18.0.50
 - net/spnic: Remove spnic driver.
 - SCSI: spfc: remove SPFC driver
