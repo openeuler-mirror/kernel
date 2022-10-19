@@ -379,6 +379,10 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 			resp.config = HNS_ROCE_UCONTEXT_EXSGE_CALC_MODE;
 			resp.max_inline_data = hr_dev->caps.max_sq_inline;
 		}
+
+		context->config |= ucmd.config & HNS_ROCE_ALLOC_UCTX_RQ_INLINE_FLAGS;
+		if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE)
+			resp.config |= HNS_ROCE_ALLOC_UCTX_RQ_INLINE_FLAGS;
 	}
 
 	ret = hns_roce_uar_alloc(hr_dev, &context->uar);

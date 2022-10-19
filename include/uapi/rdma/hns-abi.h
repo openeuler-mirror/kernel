@@ -87,6 +87,7 @@ struct hns_roce_ib_create_qp_resp {
 
 enum {
 	HNS_ROCE_UCONTEXT_EXSGE_CALC_MODE = 1 << 0,
+	HNS_ROCE_ALLOC_UCTX_RQ_INLINE_FLAGS = 1 << 1,
 };
 
 struct hns_roce_ib_alloc_ucontext_resp {
