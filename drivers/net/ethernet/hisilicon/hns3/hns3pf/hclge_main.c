@@ -3427,13 +3427,14 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 
 static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 {
-	u32 cmdq_src_reg, msix_src_reg, hw_err_src_reg;
+	u32 cmdq_src_reg, msix_src_reg, hw_err_src_reg, udma_err_src_reg;
 
 	/* fetch the events from their corresponding regs */
 	cmdq_src_reg = hclge_read_dev(&hdev->hw, HCLGE_VECTOR0_CMDQ_SRC_REG);
 	msix_src_reg = hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS);
 	hw_err_src_reg = hclge_read_dev(&hdev->hw,
 					HCLGE_RAS_PF_OTHER_INT_STS_REG);
+	udma_err_src_reg = hclge_get_udma_error_reg(hdev);
 
 	/* Assumption: If by any chance reset and mailbox events are reported
 	 * together then we will only process reset event in this go and will
@@ -3463,7 +3464,8 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 
 	/* check for vector0 msix event and hardware error event source */
 	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK ||
-	    hw_err_src_reg & HCLGE_RAS_REG_ERR_MASK)
+	    hw_err_src_reg & HCLGE_RAS_REG_ERR_MASK ||
+	    udma_err_src_reg & HCLGE_RAS_REG_ERR_MASK_UB)
 		return HCLGE_VECTOR0_EVENT_ERR;
 
 	/* check for vector0 ptp event source */
@@ -3481,8 +3483,9 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 
 	/* print other vector0 event source */
 	dev_info(&hdev->pdev->dev,
-		 "INT status: CMDQ(%#x) HW errors(%#x) other(%#x)\n",
-		 cmdq_src_reg, hw_err_src_reg, msix_src_reg);
+		 "INT status: CMDQ(%#x) HW errors(%#x, %#x) other(%#x)\n",
+		 cmdq_src_reg, hw_err_src_reg, udma_err_src_reg,
+		 msix_src_reg);
 
 	return HCLGE_VECTOR0_EVENT_OTHER;
 }

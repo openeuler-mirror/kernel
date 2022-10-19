@@ -141,6 +141,8 @@ enum hclge_mod_name_list {
 	MODULE_TXDMA		= 13,
 	MODULE_MASTER		= 14,
 	MODULE_HIMAC		= 15,
+	MODULE_PFA		= 16,
+	MODULE_TXPM		= 17,
 	/* add new MODULE NAME for NIC here in order */
 	MODULE_ROCEE_TOP	= 40,
 	MODULE_ROCEE_TIMER	= 41,

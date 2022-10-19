@@ -8,6 +8,7 @@
 #include "hclge_main.h"
 #include "hclge_regs.h"
 #include "hclge_tm.h"
+#include "hclge_udma.h"
 #include "hnae3.h"
 
 static const char * const state_str[] = { "off", "on" };
@@ -1813,6 +1814,8 @@ int hclge_dbg_dump_rst_info(struct hclge_dev *hdev, char *buf, int len)
 				 hclge_dbg_rst_info[i].message,
 				 hclge_read_dev(&hdev->hw, offset));
 	}
+
+	hclge_dbg_dump_udma_rst_info(hdev, buf, len, &pos);
 
 	pos += scnprintf(buf + pos, len - pos, "hdev state: 0x%lx\n",
 			 hdev->state);

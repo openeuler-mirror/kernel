@@ -16,6 +16,11 @@
 #include "hclge_main.h"
 #include "hclge_udma.h"
 #include "hclge_err.h"
+#include "hclge_debugfs.h"
+
+static const struct hclge_dbg_status_dfx_info hclge_dbg_rst_info_ub[] = {
+	{HCLGE_RAS_PF_OTHER_INT_STS_REG_UB, "UB RAS interrupt status"}
+};
 
 static int hclge_init_udma_base_info(struct hclge_vport *vport)
 {
@@ -103,4 +108,32 @@ init_udma_err:
 	hdev->udma_client->ops->uninit_instance(&vport->udma, 0);
 
 	return ret;
+}
+
+u32 hclge_get_udma_error_reg(struct hclge_dev *hdev)
+{
+	u32 hw_err_src_reg = 0;
+
+	if (hnae3_dev_ubl_supported(hdev->ae_dev) ||
+	    hnae3_dev_udma_supported(hdev->ae_dev))
+		hw_err_src_reg = hclge_read_dev(&hdev->hw,
+						HCLGE_RAS_PF_OTHER_INT_STS_REG_UB);
+
+	return hw_err_src_reg;
+}
+
+void hclge_dbg_dump_udma_rst_info(struct hclge_dev *hdev, char *buf, int len,
+				  int *pos)
+{
+	u32 i, offset;
+
+	if (hnae3_dev_ubl_supported(hdev->ae_dev) ||
+	    hnae3_dev_udma_supported(hdev->ae_dev)) {
+		for (i = 0; i < ARRAY_SIZE(hclge_dbg_rst_info_ub); i++) {
+			offset = hclge_dbg_rst_info_ub[i].offset;
+			*pos += scnprintf(buf + *pos, len - *pos, "%s: 0x%x\n",
+					  hclge_dbg_rst_info_ub[i].message,
+					  hclge_read_dev(&hdev->hw, offset));
+		}
+	}
 }
