@@ -202,6 +202,13 @@ config BLK_INLINE_ENCRYPTION_FALLBACK
 	  by falling back to the kernel crypto API when inline
 	  encryption hardware is not present.
 
+config BLK_DEV_DUMPINFO
+	bool "Enable detecting conflict of opening block device"
+	default n
+	help
+	  Dump info when open an write opened block device exclusively
+	  or open an exclusive opened device for write
+
 menu "Partition Types"
 
 source "block/partitions/Kconfig"

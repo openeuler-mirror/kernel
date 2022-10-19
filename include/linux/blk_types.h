@@ -48,7 +48,7 @@ struct block_device {
 	int			bd_fsfreeze_count;
 	/* Mutex for freeze */
 	struct mutex		bd_fsfreeze_mutex;
-#ifndef __GENKSYMS__
+#if defined(CONFIG_BLK_DEV_DUMPINFO) && !defined(__GENKSYMS__)
 	KABI_USE2(1, int bd_write_openers, int bd_part_write_openers);
 #else
 	KABI_RESERVE(1)

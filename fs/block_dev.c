@@ -1479,6 +1479,7 @@ out:
  */
 EXPORT_SYMBOL_GPL(bdev_disk_changed);
 
+#ifdef CONFIG_BLK_DEV_DUMPINFO
 static void blkdev_dump_conflict_opener(struct block_device *bdev, char *msg)
 {
 	char name[BDEVNAME_SIZE];
@@ -1512,6 +1513,7 @@ static bool is_conflict_excl_open(struct block_device *bdev, struct block_device
 
 	return !!whole->bd_write_openers;
 }
+#endif
 /*
  * bd_mutex locking:
  *
@@ -1631,6 +1633,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 	if (for_part)
 		bdev->bd_part_count++;
 
+#ifdef CONFIG_BLK_DEV_DUMPINFO
 	if (!for_part && (mode & FMODE_WRITE)) {
 		spin_lock(&bdev_lock);
 		bdev->bd_write_openers++;
@@ -1638,9 +1641,11 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 			bdev->bd_contains->bd_part_write_openers++;
 		spin_unlock(&bdev_lock);
 	}
+#endif
 
 	if (claiming) {
 		spin_lock(&bdev_lock);
+#ifdef CONFIG_BLK_DEV_DUMPINFO
 		/*
 		 * Open an write opened block device exclusively, the
 		 * writing process may probability corrupt the device,
@@ -1649,8 +1654,10 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 		if (is_conflict_excl_open(bdev, claiming, mode))
 			blkdev_dump_conflict_opener(bdev, "VFS: Open an write opened "
 				"block device exclusively");
+#endif
 		bd_finish_claiming(bdev, claiming, holder);
 		spin_unlock(&bdev_lock);
+#ifdef CONFIG_BLK_DEV_DUMPINFO
 	} else if (!for_part && (mode & FMODE_WRITE)) {
 		spin_lock(&bdev_lock);
 		/*
@@ -1663,6 +1670,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 			blkdev_dump_conflict_opener(bdev, "VFS: Open an exclusive opened "
 				"block device for write");
 		spin_unlock(&bdev_lock);
+#endif
 	}
 
 	/*
@@ -1881,6 +1889,7 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 	if (for_part)
 		bdev->bd_part_count--;
 
+#ifdef CONFIG_BLK_DEV_DUMPINFO
 	if (!for_part && (mode & FMODE_WRITE)) {
 		spin_lock(&bdev_lock);
 		bdev->bd_write_openers--;
@@ -1888,6 +1897,7 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 			bdev->bd_contains->bd_part_write_openers--;
 		spin_unlock(&bdev_lock);
 	}
+#endif
 
 	if (!--bdev->bd_openers) {
 		WARN_ON_ONCE(bdev->bd_holders);
