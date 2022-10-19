@@ -36,15 +36,6 @@ config TXGBE_HWMON
 
 	  If unsure, say N.
 
-config TXGBE_PROCFS
-	bool "Netswift PCI-Express 10Gigabit adapters procfs support"
-	default n
-	depends on TXGBE && !TXGBE_SYSFS
-	help
-	  Say Y if you want to setup procfs for these devices.
-
-	  If unsure, say N.
-
 config TXGBE_DEBUG_FS
 	bool "Netswift PCI-Express 10Gigabit adapters debugfs support"
 	default n

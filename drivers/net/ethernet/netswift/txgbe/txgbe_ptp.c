@@ -670,8 +670,8 @@ static void txgbe_ptp_link_speed_adjust(struct txgbe_adapter *adapter,
 		*incval = TXGBE_INCVAL_100;
 		break;
 	case TXGBE_LINK_SPEED_1GB_FULL:
-		*shift = TXGBE_INCVAL_SHIFT_FPGA;
-		*incval = TXGBE_INCVAL_FPGA;
+		*shift = TXGBE_INCVAL_SHIFT_1GB;
+		*incval = TXGBE_INCVAL_1GB;
 		break;
 	case TXGBE_LINK_SPEED_10GB_FULL:
 	default: /* TXGBE_LINK_SPEED_10GB_FULL */

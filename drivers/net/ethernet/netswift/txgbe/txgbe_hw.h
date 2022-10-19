@@ -27,6 +27,43 @@
 #define TXGBE_EMC_DIODE3_DATA           0x2A
 #define TXGBE_EMC_DIODE3_THERM_LIMIT    0x30
 
+#define SPI_CLK_DIV                        2
+
+#define SPI_CMD_ERASE_CHIP                 4  // SPI erase chip command
+#define SPI_CMD_ERASE_SECTOR               3  // SPI erase sector command
+#define SPI_CMD_WRITE_DWORD                0  // SPI write a dword command
+#define SPI_CMD_READ_DWORD                 1  // SPI read a dword command
+#define SPI_CMD_USER_CMD                   5  // SPI user command
+
+#define SPI_CLK_CMD_OFFSET                28  // SPI command field offset in Command register
+#define SPI_CLK_DIV_OFFSET                25  // SPI clock divide field offset in Command register
+
+#define SPI_TIME_OUT_VALUE             10000
+#define SPI_SECTOR_SIZE          (4 * 1024)  // FLASH sector size is 64KB
+#define SPI_H_CMD_REG_ADDR           0x10104  // SPI Command register address
+#define SPI_H_DAT_REG_ADDR           0x10108  // SPI Data register address
+#define SPI_H_STA_REG_ADDR           0x1010c  // SPI Status register address
+#define SPI_H_USR_CMD_REG_ADDR       0x10110  // SPI User Command register address
+#define SPI_CMD_CFG1_ADDR            0x10118  // Flash command configuration register 1
+#define MISC_RST_REG_ADDR            0x1000c  // Misc reset register address
+#define MGR_FLASH_RELOAD_REG_ADDR    0x101a0  // MGR reload flash read
+
+#define MAC_ADDR0_WORD0_OFFSET_1G    0x006000c  // MAC Address for LAN0, stored in external FLASH
+#define MAC_ADDR0_WORD1_OFFSET_1G    0x0060014
+#define MAC_ADDR1_WORD0_OFFSET_1G    0x007000c  // MAC Address for LAN1, stored in external FLASH
+#define MAC_ADDR1_WORD1_OFFSET_1G    0x0070014
+/* Product Serial Number, stored in external FLASH last sector */
+#define PRODUCT_SERIAL_NUM_OFFSET_1G    0x00f0000
+
+struct txgbe_hic_read_cab {
+	union txgbe_hic_hdr2 hdr;
+	union {
+		u8 d8[252];
+		u16 d16[126];
+		u32 d32[63];
+	} dbuf;
+};
+
 /**
  * Packet Type decoding
  **/
@@ -238,6 +275,9 @@ s32 txgbe_calc_eeprom_checksum(struct txgbe_hw *hw);
 s32 txgbe_validate_eeprom_checksum(struct txgbe_hw *hw,
 					    u16 *checksum_val);
 s32 txgbe_update_flash(struct txgbe_hw *hw);
+int txgbe_upgrade_flash(struct txgbe_hw *hw, u32 region,
+								const u8 *data, u32 size);
+
 s32 txgbe_write_ee_hostif_buffer(struct txgbe_hw *hw,
 				u16 offset, u16 words, u16 *data);
 s32 txgbe_write_ee_hostif(struct txgbe_hw *hw, u16 offset,
@@ -250,8 +290,12 @@ void txgbe_wr32_epcs(struct txgbe_hw *hw, u32 addr, u32 data);
 void txgbe_wr32_ephy(struct txgbe_hw *hw, u32 addr, u32 data);
 u32 rd32_ephy(struct txgbe_hw *hw, u32 addr);
 
+u32 txgbe_flash_read_dword(struct txgbe_hw *hw, u32 addr);
 s32 txgbe_upgrade_flash_hostif(struct txgbe_hw *hw,  u32 region,
 				const u8 *data, u32 size);
+
+s32 txgbe_close_notify(struct txgbe_hw *hw);
+s32 txgbe_open_notify(struct txgbe_hw *hw);
 
 s32 txgbe_set_link_to_kr(struct txgbe_hw *hw, bool autoneg);
 s32 txgbe_set_link_to_kx4(struct txgbe_hw *hw, bool autoneg);

@@ -212,6 +212,7 @@ int txgbe_get_link_ksettings(struct net_device *netdev,
 
 	/* set the advertised speeds */
 	if (hw->phy.autoneg_advertised) {
+		advertising = 0;
 		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_100_FULL)
 			advertising |= ADVERTISED_100baseT_Full;
 		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10GB_FULL)
@@ -2194,6 +2195,7 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct txgbe_hw *hw = &adapter->hw;
+	u16 value = 0;
 
 	switch (state) {
 	case ETHTOOL_ID_ACTIVE:
@@ -2201,17 +2203,58 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 		return 2;
 
 	case ETHTOOL_ID_ON:
-		TCALL(hw, mac.ops.led_on, TXGBE_LED_LINK_UP);
+		if (hw->oem_ssid == 0x0075 && hw->oem_svid == 0x1bd4) {
+			if (adapter->link_up) {
+				switch (adapter->link_speed) {
+				case TXGBE_LINK_SPEED_10GB_FULL:
+					TCALL(hw, mac.ops.led_on, TXGBE_LED_LINK_10G);
+					break;
+				case TXGBE_LINK_SPEED_1GB_FULL:
+					TCALL(hw, mac.ops.led_on, TXGBE_LED_LINK_1G);
+					break;
+				case TXGBE_LINK_SPEED_100_FULL:
+					TCALL(hw, mac.ops.led_on, TXGBE_LED_LINK_100M);
+					break;
+				default:
+					break;
+				}
+			} else 
+				TCALL(hw, mac.ops.led_on, TXGBE_LED_LINK_10G);
+		} else
+			TCALL(hw, mac.ops.led_on, TXGBE_LED_LINK_UP);
 		break;
 
 	case ETHTOOL_ID_OFF:
-		TCALL(hw, mac.ops.led_off, TXGBE_LED_LINK_UP);
+		if (hw->oem_ssid == 0x0075 && hw->oem_svid == 0x1bd4) {
+			if (adapter->link_up) {
+				switch (adapter->link_speed) {
+				case TXGBE_LINK_SPEED_10GB_FULL:
+					TCALL(hw, mac.ops.led_off, TXGBE_LED_LINK_10G);
+					break;
+				case TXGBE_LINK_SPEED_1GB_FULL:
+					TCALL(hw, mac.ops.led_off, TXGBE_LED_LINK_1G);
+					break;
+				case TXGBE_LINK_SPEED_100_FULL:
+					TCALL(hw, mac.ops.led_off, TXGBE_LED_LINK_100M);
+					break;
+				default:
+					break;
+				}
+			} else 
+				TCALL(hw, mac.ops.led_off, TXGBE_LED_LINK_10G);
+		} else
+			TCALL(hw, mac.ops.led_off, TXGBE_LED_LINK_UP);
 		break;
 
 	case ETHTOOL_ID_INACTIVE:
 		/* Restore LED settings */
 		wr32(&adapter->hw, TXGBE_CFG_LED_CTL,
 				adapter->led_reg);
+		if ((hw->subsystem_device_id & 0xF0) == TXGBE_ID_XAUI) {
+			txgbe_read_mdio(&hw->phy_dev, hw->phy.addr, 31, 0xF021, &value);
+			txgbe_write_mdio(&hw->phy_dev, hw->phy.addr, 31, 0xF021,
+							(value & 0xFFFC) | 0x0);
+		}
 		break;
 	}
 
@@ -3319,16 +3362,21 @@ static int txgbe_set_flash(struct net_device *netdev, struct ethtool_flash *ef)
 	if (ret < 0)
 		return ret;
 
-	if (txgbe_mng_present(&adapter->hw)) {
+	if (ef->region == 0) {
+		ret = txgbe_upgrade_flash(&adapter->hw, ef->region,
+							fw->data, fw->size);
+	} else {
+		if (txgbe_mng_present(&adapter->hw)) {
 		ret = txgbe_upgrade_flash_hostif(&adapter->hw, ef->region,
 						fw->data, fw->size);
-	} else
-		ret = -EOPNOTSUPP;
+		} else
+			ret = -EOPNOTSUPP;
+	}
 
 	release_firmware(fw);
 	if (!ret)
 		dev_info(&netdev->dev,
-			 "loaded firmware %s, reload txgbe driver\n", ef->data);
+			 "loaded firmware %s, reboot to make firmware work\n", ef->data);
 	return ret;
 }
 

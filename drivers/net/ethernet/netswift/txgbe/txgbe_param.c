@@ -46,6 +46,9 @@
 	module_param_array(X, int, &num_##X, 0); \
 	MODULE_PARM_DESC(X, desc);
 
+TXGBE_PARAM(an73_train_mode, "an73_train_mode to different switch(0 to centc, 1 to other)");
+#define TXGBE_DEFAULT_FFE_AN73_TRAIN_MODE   0
+
 /* ffe_main (KR/KX4/KX/SFI)
  *
  * Valid Range: 0-60
@@ -213,7 +216,9 @@ TXGBE_PARAM(VMDQ,
  *
  * Default Value: 1
  */
-#define DEFAULT_ITR             1
+#define DEFAULT_ITR             (TXGBE_STATIC_ITR == 0) || \
+		(TXGBE_STATIC_ITR == 1) ? TXGBE_STATIC_ITR : (u16)((1000000/TXGBE_STATIC_ITR) << 2)
+
 TXGBE_PARAM(InterruptThrottleRate,
 		 "Maximum interrupts per second, per vector, "
 	    "(0,1,980-500000), default 1");
@@ -477,6 +482,30 @@ void txgbe_check_options(struct txgbe_adapter *adapter)
 		       "Warning: no configuration for board #%d\n", bd);
 		txgbe_notice("Using defaults for all values\n");
 	}
+
+		{ /* an73_mode */
+			u32 an73_mode;
+			static struct txgbe_option opt = {
+				.type = range_option,
+				.name = "an73_train_mode",
+				.err =
+				  "using default of "__MODULE_STRING(TXGBE_DEFAULT_FFE_AN73_TRAIN_MODE),
+				.def = TXGBE_DEFAULT_FFE_AN73_TRAIN_MODE,
+				.arg = { .r = { .min = 0,
+						.max = 1} }
+			};
+
+			if (num_an73_train_mode > bd ) {
+				an73_mode = an73_train_mode[bd];
+				if (an73_mode == OPTION_UNSET)
+					an73_mode = an73_train_mode[bd];
+				txgbe_validate_option(&an73_mode, &opt);
+				adapter->an73_mode = an73_mode;
+			} else {
+				adapter->an73_mode = 0;
+			}
+		}
+
 		{ /* MAIN */
 			u32 ffe_main;
 			static struct txgbe_option opt = {
@@ -760,6 +789,7 @@ void txgbe_check_options(struct txgbe_adapter *adapter)
 		} else if (opt.def == 0) {
 			rss = min_t(int, txgbe_max_rss_indices(adapter),
 				    num_online_cpus());
+			feature[RING_F_FDIR].limit = (u16)rss;
 			feature[RING_F_RSS].limit = rss;
 		}
 		/* Check Interoperability */

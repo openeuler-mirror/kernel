@@ -9,3 +9,7 @@ obj-$(CONFIG_TXGBE) += txgbe.o
 txgbe-objs := txgbe_main.o txgbe_ethtool.o \
               txgbe_hw.o txgbe_phy.o txgbe_bp.o \
               txgbe_mbx.o txgbe_mtd.o txgbe_param.o txgbe_lib.o txgbe_ptp.o
+
+txgbe-$(CONFIG_TXGBE_HWMON) += txgbe_sysfs.o
+txgbe-$(CONFIG_TXGBE_DEBUG_FS) += txgbe_debugfs.o
+txgbe-$(CONFIG_TXGBE_SYSFS) += txgbe_sysfs.o
