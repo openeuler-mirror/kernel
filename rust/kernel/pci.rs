@@ -9,6 +9,7 @@
 use crate::{
     bindings, c_types, device, driver,
     error::{from_kernel_result, Result},
+    io_mem::Resource,
     str::CStr,
     to_result,
     types::PointerWrapper,
@@ -165,7 +166,7 @@ unsafe impl const driver::RawDeviceId for DeviceId {
 macro_rules! define_pci_id_table {
     ($data_type:ty, $($t:tt)*) => {
         type IdInfo = $data_type;
-        const ID_TABLE: $crate::driver::IdTable<'static, $crate::pci::DeviceId, $data_type> = {
+        const PCI_ID_TABLE: $crate::driver::IdTable<'static, $crate::pci::DeviceId, $data_type> = {
             $crate::define_id_array!(ARRAY, $crate::pci::DeviceId, $data_type, $($t)* );
             ARRAY.as_table()
         };
@@ -199,7 +200,7 @@ pub trait Driver {
     ///
     /// Called when a platform device is removed.
     /// Implementers should prepare the device for complete removal here.
-    fn remove(_data: &Self::Data);
+    fn remove(_data: &Self::Data) {}
 }
 
 /// A PCI device.
@@ -209,11 +210,43 @@ pub trait Driver {
 /// The field `ptr` is non-null and valid for the lifetime of the object.
 pub struct Device {
     ptr: *mut bindings::pci_dev,
+    res: Option<Resource>,
 }
 
 impl Device {
+    /// Creates a new device from the given pointer.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be non-null and valid. It must remain valid for the lifetime of the returned
+    /// instance.
     unsafe fn from_ptr(ptr: *mut bindings::pci_dev) -> Self {
-        Self { ptr }
+        // SAFETY: The safety requirements of the function ensure that `ptr` is valid.
+        let dev = unsafe { &mut *ptr };
+        // INVARIANT: The safety requirements of the function ensure the lifetime invariant.
+        Self {
+            ptr,
+            res: Resource::new(dev.resource[0].start, dev.resource[0].end),
+        }
+    }
+
+    /// Returns the io mem resource associated with the device, if there is one.
+    ///
+    /// Ownership of the resource is transferred to the caller, so subsequent calls to this
+    /// function will return [`None`].
+    pub fn take_resource(&mut self) -> Option<Resource> {
+        self.res.take()
+    }
+
+    pub fn pci_enable_sriov(&self, nr_virtfn: i32) -> Result {
+        to_result(||
+            // SAFETY: The existence of the shared references mean `self.0`is valid.
+            unsafe{bindings::pci_enable_sriov(self.ptr, nr_virtfn)})
+    }
+
+    fn pci_disable_sriov(&self) {
+        // SAFETY: The existence of the shared references mean `self.0`is valid.
+        unsafe { bindings::pci_disable_sriov(self.ptr) }
     }
 }
 
@@ -222,4 +255,36 @@ unsafe impl device::RawDevice for Device {
         // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
         unsafe { &mut (*self.ptr).dev }
     }
+}
+
+/// Declares a kernel module that exposes a single pci driver.
+///
+/// # Examples
+///
+/// ```ignore
+/// # use kernel::{pci, define_pci_id_table, module_pci_driver};
+/// #
+/// struct MyDriver;
+/// impl pci::Driver for MyDriver {
+///     // [...]
+/// #   fn probe(_dev: &mut pci::Device, _id_info: Option<&Self::IdInfo>) -> Result {
+/// #       Ok(())
+/// #   }
+/// #   define_pci_id_table! {u32, [
+/// #       (pci::DeviceId::new(0x177d, 0xa018), None),
+/// #   ]}
+/// }
+///
+/// module_pci_driver! {
+///     type: MyDriver,
+///     name: b"module_name",
+///     author: b"Author name",
+///     license: b"GPL",
+/// }
+/// ```
+#[macro_export]
+macro_rules! module_pci_driver {
+    ($($f:tt)*) => {
+        $crate::module_driver!(<T>, $crate::pci::Adapter<T>, { $($f)* });
+    };
 }

@@ -107,11 +107,7 @@ unsafe impl AlwaysRefCounted for SkBuff {
 
     unsafe fn dec_ref(obj: core::ptr::NonNull<Self>) {
         // SAFETY: The safety requirements guarantee that the refcount is nonzero.
-        unsafe {
-            bindings::__kfree_skb(
-                obj.cast().as_ptr()
-            )
-        };
+        unsafe { bindings::__kfree_skb(obj.cast().as_ptr()) };
     }
 }
 

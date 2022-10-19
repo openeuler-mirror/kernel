@@ -438,6 +438,18 @@ config HW_RANDOM_CAVIUM
 
 	  If unsure, say Y.
 
+config HW_RANDOM_CAVIUM_RUST
+	tristate "Rust implementation of Cavium ThunderX Random Number Generator"
+	depends on RUST && HW_RANDOM && PCI && ARCH_THUNDER
+	help
+	  This driver provides alternative Rust-based kernel-side support 
+	  for the Random Number Generator hardware found on Cavium SoCs.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cavium_rng_rust.
+
+	  If unsure, say N.
+
 config HW_RANDOM_MTK
 	tristate "Mediatek Random Number Generator support"
 	depends on HW_RANDOM
