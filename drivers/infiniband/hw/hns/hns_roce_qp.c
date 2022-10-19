@@ -482,38 +482,118 @@ static int set_rq_size(struct hns_roce_dev *hr_dev, struct ib_qp_cap *cap,
 	return 0;
 }
 
-static u32 get_wqe_ext_sge_cnt(struct hns_roce_qp *qp)
+static u32 get_max_inline_data(struct hns_roce_dev *hr_dev,
+			       struct ib_qp_cap *cap)
 {
-	/* GSI/UD QP only has extended sge */
-	if (qp->ibqp.qp_type == IB_QPT_GSI || qp->ibqp.qp_type == IB_QPT_UD)
-		return qp->sq.max_gs;
+	if (cap->max_inline_data) {
+		cap->max_inline_data = roundup_pow_of_two(
+					cap->max_inline_data);
+		return min(cap->max_inline_data,
+			   hr_dev->caps.max_sq_inline);
+	}
 
-	if (qp->sq.max_gs > HNS_ROCE_SGE_IN_WQE)
-		return qp->sq.max_gs - HNS_ROCE_SGE_IN_WQE;
+	return cap->max_inline_data;
+}
 
-	return 0;
+static void update_inline_data(struct hns_roce_qp *hr_qp,
+			       struct ib_qp_cap *cap, u32 config)
+{
+	bool is_ud_or_gsi_type = (hr_qp->ibqp.qp_type == IB_QPT_GSI ||
+				  hr_qp->ibqp.qp_type == IB_QPT_UD);
+	u32 sge_num = hr_qp->sq.ext_sge_cnt;
+
+	if (config & HNS_ROCE_UCONTEXT_EXSGE_CALC_MODE) {
+		if (!is_ud_or_gsi_type)
+			sge_num = max((u32)HNS_ROCE_SGE_IN_WQE, sge_num);
+
+		cap->max_inline_data = max(cap->max_inline_data,
+					sge_num * HNS_ROCE_SGE_SIZE);
+	}
+
+	hr_qp->max_inline_data = cap->max_inline_data;
+}
+
+/**
+ *  Calculated sge num according to attr's max_send_sge
+ */
+static u32 get_sge_num_from_max_send_sge(bool is_ud_or_gsi_type,
+					 u32 max_send_sge)
+{
+	unsigned int std_sge_num;
+	unsigned int min_sge;
+
+	std_sge_num = is_ud_or_gsi_type ? 0 : HNS_ROCE_SGE_IN_WQE;
+	min_sge = is_ud_or_gsi_type ? 1 : 0;
+	return max_send_sge > std_sge_num ? max(min_sge,
+			      (max_send_sge - std_sge_num)) : min_sge;
+}
+
+/**
+ *  Calculated sge num according to attr's max_inline_data
+ */
+static unsigned int get_sge_num_from_max_inl_data(bool is_ud_or_gsi_type,
+						  u32 max_inline_data)
+{
+	unsigned int inline_sge = 0;
+
+	inline_sge = roundup_pow_of_two(max_inline_data) / HNS_ROCE_SGE_SIZE;
+
+	/*
+	 * if max_inline_data less than
+	 * HNS_ROCE_SGE_IN_WQE * HNS_ROCE_SGE_SIZE,
+	 * In addition to ud's mode, no need to extend sge.
+	 */
+	if ((!is_ud_or_gsi_type) && (inline_sge <= HNS_ROCE_SGE_IN_WQE))
+		inline_sge = 0;
+
+	return inline_sge;
 }
 
 static void set_ext_sge_param(struct hns_roce_dev *hr_dev, u32 sq_wqe_cnt,
-			      struct hns_roce_qp *hr_qp, struct ib_qp_cap *cap)
+			      struct hns_roce_qp *hr_qp, struct ib_qp_cap *cap,
+			      u32 config)
 {
+	bool is_ud_or_gsi_type = (hr_qp->ibqp.qp_type == IB_QPT_GSI ||
+				  hr_qp->ibqp.qp_type == IB_QPT_UD);
+	unsigned int std_sge_num;
+	u32 inline_ext_sge = 0;
+	u32 ext_wqe_sge_cnt;
 	u32 total_sge_cnt;
-	u32 wqe_sge_cnt;
+
+	cap->max_inline_data = get_max_inline_data(hr_dev, cap);
 
 	hr_qp->sge.sge_shift = HNS_ROCE_SGE_SHIFT;
+	std_sge_num = is_ud_or_gsi_type ? 0 : HNS_ROCE_SGE_IN_WQE;
+	ext_wqe_sge_cnt = get_sge_num_from_max_send_sge(is_ud_or_gsi_type,
+							cap->max_send_sge);
 
-	hr_qp->sq.max_gs = max(1U, cap->max_send_sge);
+	if (config & HNS_ROCE_UCONTEXT_EXSGE_CALC_MODE) {
+		inline_ext_sge = max(ext_wqe_sge_cnt,
+				 get_sge_num_from_max_inl_data(
+				 is_ud_or_gsi_type, cap->max_inline_data));
+		hr_qp->sq.ext_sge_cnt = !!(inline_ext_sge) ?
+					roundup_pow_of_two(inline_ext_sge) : 0;
 
-	wqe_sge_cnt = get_wqe_ext_sge_cnt(hr_qp);
+		hr_qp->sq.max_gs = max(1U, (hr_qp->sq.ext_sge_cnt + std_sge_num));
+		hr_qp->sq.max_gs = min(hr_qp->sq.max_gs, hr_dev->caps.max_sq_sg);
+
+		ext_wqe_sge_cnt = hr_qp->sq.ext_sge_cnt;
+	} else {
+		hr_qp->sq.max_gs = max(1U, cap->max_send_sge);
+		hr_qp->sq.max_gs = min(hr_qp->sq.max_gs, hr_dev->caps.max_sq_sg);
+		hr_qp->sq.ext_sge_cnt = hr_qp->sq.max_gs;
+	}
 
 	/* If the number of extended sge is not zero, they MUST use the
 	 * space of HNS_HW_PAGE_SIZE at least.
 	 */
-	if (wqe_sge_cnt) {
-		total_sge_cnt = roundup_pow_of_two(sq_wqe_cnt * wqe_sge_cnt);
+	if (ext_wqe_sge_cnt) {
+		total_sge_cnt = roundup_pow_of_two(sq_wqe_cnt * ext_wqe_sge_cnt);
 		hr_qp->sge.sge_cnt = max(total_sge_cnt,
 				(u32)HNS_HW_PAGE_SIZE / HNS_ROCE_SGE_SIZE);
 	}
+
+	update_inline_data(hr_qp, cap, config);
 }
 
 static int check_sq_size_with_integrity(struct hns_roce_dev *hr_dev,
@@ -541,7 +621,7 @@ static int check_sq_size_with_integrity(struct hns_roce_dev *hr_dev,
 
 static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 			    struct ib_qp_cap *cap, struct hns_roce_qp *hr_qp,
-			    struct hns_roce_ib_create_qp *ucmd)
+			    struct hns_roce_ib_create_qp *ucmd, u32 config)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	u32 cnt = 0;
@@ -558,10 +638,11 @@ static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 		return ret;
 	}
 
-	set_ext_sge_param(hr_dev, cnt, hr_qp, cap);
+	set_ext_sge_param(hr_dev, cnt, hr_qp, cap, config);
 
 	hr_qp->sq.wqe_shift = ucmd->log_sq_stride;
 	hr_qp->sq.wqe_cnt = cnt;
+	cap->max_send_sge = hr_qp->sq.max_gs;
 
 	return 0;
 }
@@ -618,7 +699,8 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 }
 
 static int set_kernel_sq_size(struct hns_roce_dev *hr_dev,
-			      struct ib_qp_cap *cap, struct hns_roce_qp *hr_qp)
+			      struct ib_qp_cap *cap, struct hns_roce_qp *hr_qp,
+			      u32 config)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	u32 cnt;
@@ -639,7 +721,7 @@ static int set_kernel_sq_size(struct hns_roce_dev *hr_dev,
 	hr_qp->sq.wqe_shift = ilog2(hr_dev->caps.max_sq_desc_sz);
 	hr_qp->sq.wqe_cnt = cnt;
 
-	set_ext_sge_param(hr_dev, cnt, hr_qp, cap);
+	set_ext_sge_param(hr_dev, cnt, hr_qp, cap, config);
 
 	/* sync the parameters of kernel QP to user's configuration */
 	cap->max_send_wr = cnt;
@@ -991,14 +1073,11 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct hns_roce_ib_create_qp *ucmd)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_ucontext *uctx;
+	u32 config = 0;
 	int ret;
 
 	hr_qp->ibqp.qp_type = init_attr->qp_type;
-
-	if (init_attr->cap.max_inline_data > hr_dev->caps.max_sq_inline)
-		init_attr->cap.max_inline_data = hr_dev->caps.max_sq_inline;
-
-	hr_qp->max_inline_data = init_attr->cap.max_inline_data;
 
 	if (init_attr->sq_sig_type == IB_SIGNAL_ALL_WR)
 		hr_qp->sq_signal_bits = IB_SIGNAL_ALL_WR;
@@ -1022,7 +1101,12 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			return ret;
 		}
 
-		ret = set_user_sq_size(hr_dev, &init_attr->cap, hr_qp, ucmd);
+		uctx = rdma_udata_to_drv_context(udata, struct hns_roce_ucontext,
+						ibucontext);
+		config = uctx->config;
+		ret = set_user_sq_size(hr_dev, &init_attr->cap, hr_qp, ucmd,
+					config);
+
 		if (ret)
 			ibdev_err(ibdev, "Failed to set user SQ size, ret = %d\n",
 				  ret);
@@ -1038,7 +1122,9 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			return -EINVAL;
 		}
 
-		ret = set_kernel_sq_size(hr_dev, &init_attr->cap, hr_qp);
+		if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+			config = HNS_ROCE_UCONTEXT_EXSGE_CALC_MODE;
+		ret = set_kernel_sq_size(hr_dev, &init_attr->cap, hr_qp, config);
 		if (ret)
 			ibdev_err(ibdev, "Failed to set kernel SQ size, ret = %d\n",
 				  ret);

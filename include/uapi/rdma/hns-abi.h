@@ -85,11 +85,22 @@ struct hns_roce_ib_create_qp_resp {
 	__aligned_u64 dwqe_mmap_key;
 };
 
+enum {
+	HNS_ROCE_UCONTEXT_EXSGE_CALC_MODE = 1 << 0,
+};
+
 struct hns_roce_ib_alloc_ucontext_resp {
 	__u32	qp_tab_size;
 	__u32	cqe_size;
 	__u32   srq_tab_size;
+	__u32	max_inline_data;
+	__u32	config;
 	__u32   reserved;
+};
+
+struct hns_roce_ib_alloc_ucontext {
+	__u32 config;
+	__u32 reserved;
 };
 
 struct hns_roce_ib_alloc_pd_resp {
