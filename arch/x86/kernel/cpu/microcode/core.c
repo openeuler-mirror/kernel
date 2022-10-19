@@ -585,6 +585,8 @@ static int mc_cpu_starting(unsigned int cpu)
 {
 	enum ucode_state err = microcode_ops->apply_microcode(cpu);
 
+	pr_debug("%s: CPU%d, err: %d\n", __func__, cpu, err);
+
 	return err == UCODE_ERROR;
 }
 
@@ -607,7 +609,7 @@ static int mc_cpu_down_prep(unsigned int cpu)
 
 	/* Suspend is in progress, only remove the interface */
 	sysfs_remove_group(&dev->kobj, &mc_attr_group);
-	pr_debug("CPU%d removed\n", cpu);
+	pr_debug("%s: CPU%d\n", __func__, cpu);
 
 	return 0;
 }
@@ -656,14 +658,11 @@ int __init microcode_init(void)
 	if (!microcode_ops)
 		return -ENODEV;
 
-	microcode_pdev = platform_device_register_simple("microcode", -1,
-							 NULL, 0);
+	microcode_pdev = platform_device_register_simple("microcode", -1, NULL, 0);
 	if (IS_ERR(microcode_pdev))
 		return PTR_ERR(microcode_pdev);
 
-	error = sysfs_create_group(&cpu_subsys.dev_root->kobj,
-				   &cpu_root_microcode_group);
-
+	error = sysfs_create_group(&cpu_subsys.dev_root->kobj, &cpu_root_microcode_group);
 	if (error) {
 		pr_err("Error creating microcode group!\n");
 		goto out_pdev;
