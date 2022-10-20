@@ -133,7 +133,7 @@ unsafe extern "C" fn probe_callback<T: Driver>(
     }
 }
 
-unsafe extern "C" fn remove_callback<T: Driver>(adev: *mut bindings::amba_device) -> i32 {
+unsafe extern "C" fn remove_callback<T: Driver>(adev: *mut bindings::amba_device) {
     // SAFETY: `adev` is valid by the contract with the C code.
     let ptr = unsafe { bindings::amba_get_drvdata(adev) };
     // SAFETY: The value returned by `amba_get_drvdata` was stored by a previous call to
@@ -142,7 +142,6 @@ unsafe extern "C" fn remove_callback<T: Driver>(adev: *mut bindings::amba_device
     let data = unsafe { T::Data::from_pointer(ptr) };
     T::remove(&data);
     <T::Data as driver::DeviceRemoval>::device_remove(&data);
-    0
 }
 
 /// An Amba device.
