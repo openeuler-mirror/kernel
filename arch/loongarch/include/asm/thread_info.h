@@ -44,14 +44,19 @@ struct thread_info {
 }
 
 /* How to get the thread information struct from C. */
-register struct thread_info *__current_thread_info __asm__("$tp");
-
 static inline struct thread_info *current_thread_info(void)
 {
+	register struct thread_info *__current_thread_info __asm__("$tp");
+
 	return __current_thread_info;
 }
 
-register unsigned long current_stack_pointer __asm__("$sp");
+static inline unsigned long current_stack_pointer(void)
+{
+	register unsigned long __current_stack_pointer __asm__("$sp");
+
+	return __current_stack_pointer;
+}
 
 #endif /* !__ASSEMBLY__ */
 
