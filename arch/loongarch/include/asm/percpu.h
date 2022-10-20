@@ -18,14 +18,19 @@
 #endif
 
 /* Use r21 for fast access */
-register unsigned long __my_cpu_offset __asm__("$r21");
+static inline unsigned long __kern_my_cpu_offset(void)
+{
+	register unsigned long off __asm__("$r21");
+
+	return off;
+}
+#define __my_cpu_offset __kern_my_cpu_offset()
 
 static inline void set_my_cpu_offset(unsigned long off)
 {
-	__my_cpu_offset = off;
+	asm volatile("move $r21, %0"::"r"(off));
 	csr_write64(off, PERCPU_BASE_KS);
 }
-#define __my_cpu_offset __my_cpu_offset
 
 #define PERCPU_OP(op, asm_op, c_op)					\
 static inline unsigned long __percpu_##op(void *ptr,			\
