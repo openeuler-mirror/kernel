@@ -46,5 +46,10 @@
 			clock-frequency = <24000000>;
 			status = "okay";
 		};
+		fw_cfg: fw_cfg@8049 {
+			dma-coherent;
+			reg = <0x8049 0x20000000 0x0 0x18>;
+			compatible = "qemu,fw-cfg-mmio";
+		};
 	};
 };
