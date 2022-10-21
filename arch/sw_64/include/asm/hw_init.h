@@ -24,7 +24,7 @@ struct cpuinfo_sw64 {
 	struct cache_desc dcache; /* Primary D or combined I/D cache */
 	struct cache_desc scache; /* Secondary cache */
 	struct cache_desc tcache; /* Tertiary/split secondary cache */
-} __attribute__((aligned(64)));
+} __aligned(SMP_CACHE_BYTES);
 
 struct cpu_desc_t {
 	__u8 model;
