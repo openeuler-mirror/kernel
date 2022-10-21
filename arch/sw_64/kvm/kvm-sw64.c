@@ -23,11 +23,10 @@
 #include "vmem.c"
 
 bool set_msi_flag;
-unsigned long sw64_kvm_last_vpn[NR_CPUS];
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 extern bool bind_vcpu_enabled;
 #endif
-#define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
+#define last_vpn(cpu)	(cpu_data[cpu].last_vpn)
 
 #ifdef CONFIG_SUBARCH_C3B
 #define WIDTH_HARDWARE_VPN	8
@@ -84,14 +83,14 @@ static u64 get_vpcr(u64 hpa_base, u64 mem_size, u64 vpn)
 
 static unsigned long __get_new_vpn_context(struct kvm_vcpu *vcpu, long cpu)
 {
-	unsigned long vpn = cpu_last_vpn(cpu);
+	unsigned long vpn = last_vpn(cpu);
 	unsigned long next = vpn + 1;
 
 	if ((vpn & HARDWARE_VPN_MASK) >= HARDWARE_VPN_MASK) {
 		tbia();
 		next = (vpn & ~HARDWARE_VPN_MASK) + VPN_FIRST_VERSION + 1; /* bypass 0 */
 	}
-	cpu_last_vpn(cpu) = next;
+	last_vpn(cpu) = next;
 	return next;
 }
 
@@ -101,7 +100,7 @@ static void sw64_kvm_switch_vpn(struct kvm_vcpu *vcpu)
 	unsigned long vpnc;
 	long cpu = smp_processor_id();
 
-	vpn = cpu_last_vpn(cpu);
+	vpn = last_vpn(cpu);
 	vpnc = vcpu->arch.vpnc[cpu];
 
 	if ((vpnc ^ vpn) & ~HARDWARE_VPN_MASK) {
@@ -897,7 +896,7 @@ static int __init kvm_sw64_init(void)
 		return ret;
 
 	for (i = 0; i < NR_CPUS; i++)
-		sw64_kvm_last_vpn[i] = VPN_FIRST_VERSION;
+		last_vpn(i) = VPN_FIRST_VERSION;
 
 	ret = kvm_init(NULL, sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 	if (ret) {

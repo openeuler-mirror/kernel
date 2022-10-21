@@ -19,6 +19,7 @@ struct cache_desc {
 
 struct cpuinfo_sw64 {
 	unsigned long last_asid;
+	unsigned long last_vpn;
 	unsigned long ipi_count;
 	struct cache_desc icache; /* Primary I-cache */
 	struct cache_desc dcache; /* Primary D or combined I/D cache */
