@@ -435,9 +435,6 @@ void restore_da_match_after_sched(void)
 	unsigned long dc_ctl;
 	struct pcb_struct *pcb = &task_thread_info(current)->pcb;
 
-	if (!(pcb->da_match || pcb->da_mask || pcb->dv_match || pcb->dv_mask || pcb->dc_ctl))
-		return;
-	printk("Restroe MATCH status, pid: %d\n", current->pid);
 	rwcsr(WCSR, CSR_DA_MATCH, 0);
 	rwcsr(WCSR, CSR_DA_MASK, pcb->da_mask);
 	rwcsr(WCSR, CSR_DA_MATCH, pcb->da_match);
