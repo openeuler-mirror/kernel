@@ -614,7 +614,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			end = vcpu->kvm->arch.host_phys_addr + vcpu->kvm->arch.size;
 			nid = pfn_to_nid(PHYS_PFN(vcpu->kvm->arch.host_phys_addr));
 			if (pfn_to_nid(PHYS_PFN(end)) == nid)
-				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
+				set_cpus_allowed_ptr(vcpu->arch.tsk, cpumask_of_node(nid));
 		}
 #endif
 #else /* !CONFIG_KVM_MEMHOTPLUG */
