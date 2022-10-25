@@ -15,6 +15,7 @@
 #include <linux/seq_file.h>
 #include <linux/posix_acl_xattr.h>
 #include <linux/exportfs.h>
+#include <linux/fs_context.h>
 #include "overlayfs.h"
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
@@ -244,15 +245,22 @@ static void ovl_free_fs(struct ovl_fs *ofs)
 	kfree(ofs->config.lowerdir);
 	kfree(ofs->config.upperdir);
 	kfree(ofs->config.workdir);
+	kfree(ofs->config.mergedir);
 	kfree(ofs->config.redirect_mode);
 	if (ofs->creator_cred)
 		put_cred(ofs->creator_cred);
+
+	kobject_put(&ofs->kobj);
+	wait_for_completion(&ofs->kobj_unregister);
+	
 	kfree(ofs);
 }
 
 static void ovl_put_super(struct super_block *sb)
 {
 	struct ovl_fs *ofs = sb->s_fs_info;
+
+	ovl_unregister_sysfs(sb);
 
 	ovl_free_fs(ofs);
 }
@@ -2054,11 +2062,32 @@ static struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
 	return mount_nodev(fs_type, flags, raw_data, ovl_fill_super);
 }
 
+static int ovl_mount_end(struct fs_context *fc, struct path *path)
+{
+	char buffer[PATH_MAX];
+	const char *tmp;
+	int err;
+
+	err = ovl_register_sysfs(fc->root->d_sb);
+	if (err) 
+		return err;
+
+	tmp = dentry_path_raw(path->dentry, buffer, PATH_MAX);
+	if (IS_ERR_OR_NULL(tmp))
+		tmp = path->dentry->d_name.name;
+	err = ovl_mergedir_backup(fc->root->d_sb, tmp);
+	if (err)
+		return err;
+
+	return err;
+}
+
 static struct file_system_type ovl_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "overlay",
 	.mount		= ovl_mount,
 	.kill_sb	= kill_anon_super,
+	.mount_end	= ovl_mount_end, 
 };
 MODULE_ALIAS_FS("overlay");
 
@@ -2081,6 +2110,12 @@ static int __init ovl_init(void)
 	if (ovl_inode_cachep == NULL)
 		return -ENOMEM;
 
+	err = ovl_init_sysfs();
+	if (err) {
+		kmem_cache_destroy(ovl_inode_cachep);
+		return err;
+	}
+
 	err = ovl_aio_request_cache_init();
 	if (!err) {
 		err = register_filesystem(&ovl_fs_type);
@@ -2089,6 +2124,7 @@ static int __init ovl_init(void)
 
 		ovl_aio_request_cache_destroy();
 	}
+	ovl_exit_sysfs();
 	kmem_cache_destroy(ovl_inode_cachep);
 
 	return err;
@@ -2105,6 +2141,8 @@ static void __exit ovl_exit(void)
 	rcu_barrier();
 	kmem_cache_destroy(ovl_inode_cachep);
 	ovl_aio_request_cache_destroy();
+
+	ovl_exit_sysfs();
 }
 
 module_init(ovl_init);

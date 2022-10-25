@@ -2900,6 +2900,8 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 		err = vfs_get_tree(fc);
 	if (!err)
 		err = do_new_mount_fc(fc, path, mnt_flags);
+	if (!err && type->mount_end)
+		err = type->mount_end(fc, path);
 
 	put_fs_context(fc);
 	return err;

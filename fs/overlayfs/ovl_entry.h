@@ -5,10 +5,13 @@
  * Copyright (C) 2016 Red Hat, Inc.
  */
 
+#include <linux/kobject.h>
+
 struct ovl_config {
 	char *lowerdir;
 	char *upperdir;
 	char *workdir;
+	char *mergedir;
 	bool default_permissions;
 	bool redirect_dir;
 	bool redirect_follow;
@@ -81,6 +84,8 @@ struct ovl_fs {
 	struct dentry *whiteout;
 	/* r/o snapshot of upperdir sb's only taken on volatile mounts */
 	errseq_t errseq;
+	struct kobject kobj;
+	struct completion kobj_unregister;
 };
 
 static inline struct vfsmount *ovl_upper_mnt(struct ovl_fs *ofs)
