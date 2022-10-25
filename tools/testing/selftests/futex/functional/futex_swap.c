@@ -13,11 +13,11 @@
 
 /* The futex the main thread waits on. */
 futex_t futex_main = FUTEX_INITIALIZER;
-/* The futex the other thread wats on. */
+/* The futex the other thread waits on. */
 futex_t futex_other = FUTEX_INITIALIZER;
 
 /* The number of iterations to run (>1 => run benchmarks. */
-static int cfg_iterations = 1;
+static int cfg_iterations = 5;
 
 /* If != 0, print diagnostic messages. */
 static int cfg_verbose;
@@ -28,10 +28,13 @@ static int cfg_validate = 1;
 /* How to swap threads. */
 #define SWAP_WAKE_WAIT 1
 #define SWAP_SWAP 2
+#define SWAP_SWAP_DTS 4
 
 /* Futex values. */
 #define FUTEX_WAITING 0
 #define FUTEX_WAKEUP 1
+
+#define FUTEX_FLAGS_DTS_MODE	512
 
 /* An atomic counter used to validate proper swapping. */
 static atomic_t validation_counter;
@@ -39,6 +42,7 @@ static atomic_t validation_counter;
 void futex_swap_op(int mode, futex_t *futex_this, futex_t *futex_that)
 {
 	int ret;
+	int flags = 0;
 
 	switch (mode) {
 	case SWAP_WAKE_WAIT:
@@ -52,11 +56,14 @@ void futex_swap_op(int mode, futex_t *futex_this, futex_t *futex_that)
 		}
 		break;
 
+	case SWAP_SWAP_DTS:
+		flags |= FUTEX_FLAGS_DTS_MODE;
 	case SWAP_SWAP:
+		flags |= FUTEX_PRIVATE_FLAG;
 		futex_set(futex_this, FUTEX_WAITING);
 		futex_set(futex_that, FUTEX_WAKEUP);
 		ret = futex_swap(futex_this, FUTEX_WAITING, NULL,
-				 futex_that, FUTEX_PRIVATE_FLAG);
+				 futex_that, flags);
 		if (ret < 0 && errno == ENOSYS) {
 			/* futex_swap not implemented */
 			perror("futex_swap");
@@ -171,13 +178,14 @@ void usage(char *prog)
 	printf("  -i N  Use N iterations to benchmark\n");
 	printf("  -n    Do not validate swapping correctness\n");
 	printf("  -v    Print diagnostic messages\n");
+	printf("  -d    Benchmark with the direct-thread-switch(DTS) mechanism\n");
 }
 
 int main(int argc, char *argv[])
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "hi:nv")) != -1) {
+	while ((c = getopt(argc, argv, "hi:nvd")) != -1) {
 		switch (c) {
 		case 'h':
 			usage(basename(argv[0]));
@@ -191,6 +199,9 @@ int main(int argc, char *argv[])
 		case 'v':
 			cfg_verbose = 1;
 			break;
+		case 'd':
+			goto dts_test;
+			break;
 		default:
 			usage(basename(argv[0]));
 			exit(1);
@@ -203,6 +214,11 @@ int main(int argc, char *argv[])
 
 	printf("\n\n------- running SWAP_SWAP -----------\n\n");
 	run_test(SWAP_SWAP);
+	printf("PASS\n");
+
+dts_test:
+	printf("\n\n---- running SWAP_SWAP with the direct-thread-switch(DTS) mechanism ----\n\n");
+	run_test(SWAP_SWAP_DTS);
 	printf("PASS\n");
 
 	return 0;

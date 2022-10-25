@@ -1261,6 +1261,13 @@ config SCHED_STEAL
 
 	  If unsure, say N here.
 
+config DTS
+	bool "Direct Thread Switch"
+	default y
+	depends on SCHED_STEAL
+	help
+	  enable the direct thread switch mechanism in the futex_swap operation
+
 config CHECKPOINT_RESTORE
 	bool "Checkpoint/restore support"
 	select PROC_CHILDREN
