@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2210.3.0
+%global hulkrelease 2210.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0172
+Release: %{hulkrelease}.0173
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,30 @@ fi
 %endif
 
 %changelog
+
+* Tue Oct 25 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.4.0.0173
+- nfp: fix use-after-free in area_cache_get()
+- mISDN: fix use-after-free bugs in l1oip timer handlers
+- tcp: Fix data races around icsk->icsk_af_ops.
+- Bluetooth: L2CAP: Fix use-after-free caused by l2cap_reassemble_sdu
+- !134 scsi: megaraid_sas: Add support for MegaRAID Aero controllers
+- !138 vfio-pci: Mask cap zero
+- bnx2x: fix potential memory leak in bnx2x_tpa_stop()
+- r8152: Rate limit overflow messages
+- scsi: megaraid_sas: Add support for MegaRAID Aero controllers
+- vfio-pci: Mask cap zero
+- tcp/udp: Fix memory leak in ipv6_renew_options().
+- net: mvpp2: fix mvpp2 debugfs leak
+- !159 PCI: Add ACS quirk for Broadcom NICs
+- !137 net: bonding: Add support for IPV6 ns/na to balance-alb/balance-tlb mode
+- kcm: avoid potential race in kcm_tx_work
+- net: bonding: Add support for IPV6 ns/na to balance-alb/balance-tlb mode
+- !139 nvme: Assign subsys instance from first ctrl
+- fbdev: smscufx: Fix use-after-free in ufx_ops_open()
+- nvme: fix controller instance leak
+- nvme: Assign subsys instance from first ctrl
+- PCI: Add ACS quirk for Broadcom BCM5750x NICs
+- PCI: Add ACS quirk for Broadcom BCM57414 NIC
 
 * Tue Oct 18 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.3.0.0172
 - binder: fix UAF of ref->proc caused by race condition
