@@ -43,6 +43,7 @@ enum {
 #define SW64_INSN_SYS_CALL	0x02000000
 #define SW64_INSN_BR		0x10000000
 
+#define SW64_NOP		(0x43ff075f)
 #define SW64_BIS(a, b, c)	(SW64_INSN_BIS | ___SW64_RA(a)	| ___SW64_RB(b) | ___SW64_SIMP_RC(c))
 #define SW64_CALL(a, b, disp)	(SW64_INSN_CALL | ___SW64_RA(a)	| ___SW64_RB(b) | ___SW64_ST_DISP(disp))
 #define SW64_SYS_CALL(func)	(SW64_INSN_SYS_CALL | ___SW64_SYSCALL_FUNC(func))

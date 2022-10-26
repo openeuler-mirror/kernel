@@ -10,13 +10,14 @@
  */
 #ifndef _ASM_SW64_FTRACE_H
 #define _ASM_SW64_FTRACE_H
-#include <asm/insn.h>
 
 #define MCOUNT_ADDR		((unsigned long)_mcount)
-#define MCOUNT_INSN_SIZE	SW64_INSN_SIZE
+#define MCOUNT_INSN_SIZE	20	/* 5 * SW64_INSN_SIZE */
+#define MCOUNT_LDGP_SIZE	8	/* 2 * SW64_INSN_SIZE */
 
 #ifndef __ASSEMBLY__
 #include <linux/compat.h>
+#include <asm/insn.h>
 
 extern void _mcount(unsigned long);
 

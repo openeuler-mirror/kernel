@@ -19,17 +19,9 @@ EXPORT_SYMBOL(_mcount);
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 
-unsigned long current_tracer = (unsigned long)ftrace_stub;
+#define TI_FTRACE_ADDR	(offsetof(struct thread_info, dyn_ftrace_addr))
 
-/*
- * Replace two instruction, which may be a branch or NOP.
- */
-static int ftrace_modify_double_code(unsigned long pc, u64 new)
-{
-	if (sw64_insn_double_write((void *)pc, new))
-		return -EPERM;
-	return 0;
-}
+unsigned long current_tracer = (unsigned long)ftrace_stub;
 
 /*
  * Replace a single instruction, which may be a branch or NOP.
@@ -47,17 +39,13 @@ static int ftrace_modify_code(unsigned long pc, u32 new)
 int ftrace_update_ftrace_func(ftrace_func_t func)
 {
 	unsigned long pc;
-	int ret;
 	u32 new;
 
 	current_tracer = (unsigned long)func;
-
 	pc = (unsigned long)&ftrace_call;
+	new = SW64_CALL(R26, R27, 1);
 
-	new = sw64_insn_call(R26, R27);
-	if (ftrace_modify_code(pc, new))
-		return ret;
-	return 0;
+	return ftrace_modify_code(pc, new);
 }
 
 /*
@@ -65,19 +53,16 @@ int ftrace_update_ftrace_func(ftrace_func_t func)
  */
 int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 {
-	unsigned long pc = rec->ip;
-	u32 new;
-	int ret;
+	unsigned int insn[3];
+	unsigned long pc = rec->ip + MCOUNT_LDGP_SIZE;
 
+	insn[0] = SW64_NOP;
 	/* ldl r28,(ftrace_addr_offset)(r8) */
-	new = (0x23U << 26) | (28U << 21) | (8U << 16) | offsetof(struct thread_info, dyn_ftrace_addr);
-	if (ftrace_modify_code(pc, new))
-		return ret;
-	pc = pc + 4;
-	new = sw64_insn_call(R28, R28);
-	if (ftrace_modify_code(pc, new))
-		return ret;
-	return 0;
+	insn[1] = (0x23U << 26) | (28U << 21) | (8U << 16) | TI_FTRACE_ADDR;
+	insn[2] = SW64_CALL(R28, R28, 1);
+
+	/* replace the 3 mcount instructions at once */
+	return copy_to_kernel_nofault((void *)pc, insn, 3 * SW64_INSN_SIZE);
 }
 
 /*
@@ -86,15 +71,10 @@ int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 int ftrace_make_nop(struct module *mod, struct dyn_ftrace *rec,
 		    unsigned long addr)
 {
-	unsigned long pc = rec->ip;
-	unsigned long insn;
-	int ret;
+	unsigned long pc = rec->ip + MCOUNT_LDGP_SIZE;
+	unsigned int insn[3] = {SW64_NOP, SW64_NOP, SW64_NOP};
 
-	insn = sw64_insn_nop();
-	insn = (insn << 32) | insn;
-	ret = ftrace_modify_double_code(pc, insn);
-	return ret;
-
+	return copy_to_kernel_nofault((void *)pc, insn, 3 * SW64_INSN_SIZE);
 }
 
 void arch_ftrace_update_code(int command)

@@ -10,6 +10,7 @@
  *
  */
 #include <linux/linkage.h>
+#include <asm/ftrace.h>
 
 	.text
 	.set noat
@@ -60,8 +61,7 @@ ftrace_caller:
 	br	$27, 2f
 2:	ldgp	$29, 0($27)
 
-	bis	$28, $31, $16
-	subl	$16, 8,	$16
+	subl	$28, MCOUNT_INSN_SIZE, $16
 	bis	$26, $31, $17
 
 	ldi	$4, current_tracer
@@ -97,8 +97,7 @@ _mcount:
 	cmpeq	$4, $5, $6
 	bne	$6, skip_ftrace
 
-	bis	$28, $31, $16
-	subl	$16, 8,	$16
+	subl	$28, MCOUNT_INSN_SIZE, $16
 	bis	$26, $31, $17
 	call	$26, ($27), 1
 
@@ -164,8 +163,7 @@ ftrace_graph_caller:
 	memb			/* need memb, otherwise it'll  go wrong */
 	RESTORE_GRAPH_ARGS
 	addl	$sp, 0x18, $16
-	bis	$28, $31, $17
-	subl	$17, 8,	$17
+	subl	$28, MCOUNT_INSN_SIZE, $17
 	bis	$15, $31, $18	/* parent's fp */
 
 	call	$26, ($27)	/* prepare_ftrace_return() */
