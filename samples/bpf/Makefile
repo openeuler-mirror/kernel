@@ -153,6 +153,7 @@ always-y += tcp_bufs_kern.o
 always-y += tcp_cong_kern.o
 always-y += tcp_iw_kern.o
 always-y += tcp_clamp_kern.o
+always-y += tcp_comp_option_kern.o
 always-y += tcp_basertt_kern.o
 always-y += tcp_tos_reflect_kern.o
 always-y += tcp_dumpstats_kern.o
