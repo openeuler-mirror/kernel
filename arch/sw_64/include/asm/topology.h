@@ -8,9 +8,9 @@
 #include <asm/core.h>
 #include <asm/smp.h>
 
-#define THREAD_ID_SHIFT	5
-#define THREAD_ID_MASK	1
-#define CORE_ID_MASK ((1 << THREAD_ID_SHIFT) - 1)
+#define THREAD_ID_SHIFT	5	/* thread_id is removed from rcid */
+#define THREAD_ID_MASK	0	/* set mask to 0 */
+#define CORE_ID_MASK	((1 << THREAD_ID_SHIFT) - 1)
 
 extern struct cpu_topology cpu_topology[NR_CPUS];
 

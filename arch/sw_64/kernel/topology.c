@@ -18,67 +18,53 @@ EXPORT_SYMBOL_GPL(cpu_topology);
 
 const struct cpumask *cpu_coregroup_mask(int cpu)
 {
-	const cpumask_t *core_mask = cpumask_of_node(cpu_to_node(cpu));
-
-	/* Find the smaller of NUMA, core or LLC siblings */
-	if (cpumask_subset(&cpu_topology[cpu].core_sibling, core_mask)) {
-		/* not numa in package, lets use the package siblings */
-		core_mask = &cpu_topology[cpu].core_sibling;
-	}
-	if (cpu_topology[cpu].llc_id != -1) {
-		if (cpumask_subset(&cpu_topology[cpu].llc_sibling, core_mask))
-			core_mask = &cpu_topology[cpu].llc_sibling;
-	}
-
-	return core_mask;
+	return topology_llc_cpumask(cpu);
 }
 
-static void update_siblings_masks(int cpuid)
+static void update_siblings_masks(int cpu)
 {
-	struct cpu_topology *cpu_topo, *cpuid_topo = &cpu_topology[cpuid];
-	int cpu;
+	struct cpu_topology *cpu_topo = &cpu_topology[cpu];
+	int sib;
 
 	/* update core and thread sibling masks */
-	for_each_online_cpu(cpu) {
-		cpu_topo = &cpu_topology[cpu];
+	for_each_online_cpu(sib) {
+		struct cpu_topology *sib_topo = &cpu_topology[sib];
 
-		if (cpuid_topo->llc_id == cpu_topo->llc_id) {
-			cpumask_set_cpu(cpu, &cpuid_topo->llc_sibling);
-			cpumask_set_cpu(cpuid, &cpu_topo->llc_sibling);
+		if (cpu_topo->llc_id == sib_topo->llc_id) {
+			cpumask_set_cpu(cpu, &sib_topo->llc_sibling);
+			cpumask_set_cpu(sib, &cpu_topo->llc_sibling);
 		}
 
-		if (cpuid_topo->package_id != cpu_topo->package_id)
-			continue;
+		if (cpu_topo->package_id == sib_topo->package_id) {
+			cpumask_set_cpu(cpu, &sib_topo->core_sibling);
+			cpumask_set_cpu(sib, &cpu_topo->core_sibling);
+		}
 
-		cpumask_set_cpu(cpuid, &cpu_topo->core_sibling);
-		cpumask_set_cpu(cpu, &cpuid_topo->core_sibling);
-
-		if (cpuid_topo->core_id != cpu_topo->core_id)
-			continue;
-
-		cpumask_set_cpu(cpuid, &cpu_topo->thread_sibling);
-		cpumask_set_cpu(cpu, &cpuid_topo->thread_sibling);
+		if (cpu_topo->core_id == sib_topo->core_id) {
+			cpumask_set_cpu(cpu, &sib_topo->thread_sibling);
+			cpumask_set_cpu(sib, &cpu_topo->thread_sibling);
+		}
 	}
 }
 
-void store_cpu_topology(int cpuid)
+void store_cpu_topology(int cpu)
 {
-	struct cpu_topology *cpuid_topo = &cpu_topology[cpuid];
+	struct cpu_topology *cpu_topo = &cpu_topology[cpu];
 
-	if (cpuid_topo->package_id != -1)
+	if (cpu_topo->package_id != -1)
 		goto topology_populated;
 
-	cpuid_topo->core_id = cpu_to_rcid(cpuid) & CORE_ID_MASK;
-	cpuid_topo->package_id = rcid_to_package(cpu_to_rcid(cpuid));
-	cpuid_topo->llc_id = rcid_to_package(cpuid);
-	cpuid_topo->thread_id = (cpu_to_rcid(cpuid) >> THREAD_ID_SHIFT) & THREAD_ID_MASK;
+	cpu_topo->package_id = rcid_to_package(cpu_to_rcid(cpu));
+	cpu_topo->core_id = cpu_to_rcid(cpu) & CORE_ID_MASK;
+	cpu_topo->thread_id = (cpu_to_rcid(cpu) >> THREAD_ID_SHIFT) & THREAD_ID_MASK;
+	cpu_topo->llc_id = rcid_to_package(cpu_to_rcid(cpu));
 
-	pr_debug("CPU%u: socket %d core %d thread %d\n",
-		 cpuid, cpuid_topo->package_id, cpuid_topo->core_id,
-		 cpuid_topo->thread_id);
+	pr_debug("CPU%u: socket %d core %d thread %d llc %d\n",
+		 cpu, cpu_topo->package_id, cpu_topo->core_id,
+		 cpu_topo->thread_id, cpu_topo->llc_id);
 
 topology_populated:
-	update_siblings_masks(cpuid);
+	update_siblings_masks(cpu);
 }
 
 static void clear_cpu_topology(int cpu)
