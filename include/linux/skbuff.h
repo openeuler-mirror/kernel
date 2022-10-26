@@ -867,7 +867,6 @@ struct sk_buff {
 #ifdef CONFIG_TLS_DEVICE
 	__u8			decrypted:1;
 #endif
-	__u8			scm_io_uring:1;
 
 #ifdef CONFIG_NET_SCHED
 	__u16			tc_index;	/* traffic control index */
@@ -918,7 +917,7 @@ struct sk_buff {
 	__u32			headers_end[0];
 	/* public: */
 
-	KABI_RESERVE(1)
+	KABI_USE(1, __u8 scm_io_uring:1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
