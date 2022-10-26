@@ -23,6 +23,8 @@
 #include "vmem.c"
 
 bool set_msi_flag;
+static unsigned long longtime_offset;
+
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 extern bool bind_vcpu_enabled;
 #endif
@@ -726,10 +728,13 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 			vcpu->arch.vcb.vpcr
 				= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
 
-			result = sw64_io_read(0, LONG_TIME);
-
 			/* synchronize the longtime of source and destination */
-			vcpu->arch.vcb.guest_longtime_offset = vcpu->arch.vcb.guest_longtime - result;
+			if (vcpu->arch.vcb.whami == 0) {
+				result = sw64_io_read(0, LONG_TIME);
+				vcpu->arch.vcb.guest_longtime_offset = vcpu->arch.vcb.guest_longtime - result;
+				longtime_offset = vcpu->arch.vcb.guest_longtime_offset;
+			} else
+				vcpu->arch.vcb.guest_longtime_offset = longtime_offset;
 
 			set_timer(vcpu, 200000000);
 			vcpu->arch.vcb.migration_mark = 0;
