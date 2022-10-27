@@ -1446,7 +1446,7 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		goto out;
 
 	ret = hr_dev->hw->modify_qp(ibqp, attr, attr_mask, cur_state,
-				    new_state, udata);
+				    new_state);
 
 out:
 	mutex_unlock(&hr_qp->mutex);
