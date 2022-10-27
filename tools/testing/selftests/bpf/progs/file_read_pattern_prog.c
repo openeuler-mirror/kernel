@@ -11,17 +11,17 @@
 #endif
 
 /* Need to keep consistent with definitions in include/linux/fs.h */
-#define FMODE_CTL_RANDOM 0x1
-#define FMODE_CTL_WILLNEED 0x2
+#define FMODE_CTL_RANDOM 0x1000
+#define FMODE_CTL_WILLNEED 0x400000
 
 struct fs_file_read_ctx {
 	const unsigned char *name;
-	unsigned int f_ctl_mode;
+	unsigned int f_mode;
 	unsigned int rsvd;
 	/* clear from f_ctl_mode */
-	unsigned int clr_f_ctl_mode;
+	unsigned int clr_f_mode;
 	/* set into f_ctl_mode */
-	unsigned int set_f_ctl_mode;
+	unsigned int set_f_mode;
 	unsigned long key;
 	/* file size */
 	long long i_size;
@@ -80,7 +80,7 @@ int fs_file_read(struct fs_file_read_args *args)
 		return 0;
 
 	if (rd_ctx->i_size <= (4 << 20)) {
-		rd_ctx->set_f_ctl_mode = FMODE_CTL_WILLNEED;
+		rd_ctx->set_f_mode = FMODE_CTL_WILLNEED;
 		return 0;
 	}
 
@@ -112,9 +112,9 @@ int fs_file_read(struct fs_file_read_args *args)
 	if (now - hist->last_nsec >= 500000000ULL || hist->tot_nr >= 10) {
 		if (hist->tot_nr >= 10) {
 			if (hist->seq_nr <= hist->tot_nr * 3 / 10)
-				rd_ctx->set_f_ctl_mode = FMODE_CTL_RANDOM;
+				rd_ctx->set_f_mode = FMODE_CTL_RANDOM;
 			else if (hist->seq_nr >= hist->tot_nr * 7 / 10)
-				rd_ctx->clr_f_ctl_mode = FMODE_CTL_RANDOM;
+				rd_ctx->clr_f_mode = FMODE_CTL_RANDOM;
 		}
 
 		hist->last_nsec = now;
