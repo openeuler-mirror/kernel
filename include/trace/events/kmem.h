@@ -190,6 +190,26 @@ TRACE_EVENT(mm_page_free_batched,
 			__entry->pfn)
 );
 
+TRACE_EVENT(mm_page_alloc_enter,
+	TP_PROTO(unsigned int order, gfp_t gfp_flags),
+
+	TP_ARGS(order, gfp_flags),
+
+	TP_STRUCT__entry(
+		__field(	unsigned int,	order	)
+		__field(	gfp_t,		gfp_flags	)
+	),
+
+	TP_fast_assign(
+		__entry->order		= order;
+		__entry->gfp_flags	= gfp_flags;
+	),
+
+	TP_printk("order=%d gfp_flags=%s",
+		__entry->order,
+		show_gfp_flags(__entry->gfp_flags))
+);
+
 TRACE_EVENT(mm_page_alloc,
 
 	TP_PROTO(struct page *page, unsigned int order,

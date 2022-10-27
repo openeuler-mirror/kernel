@@ -47,13 +47,15 @@ but the call_site can usually be used to extrapolate that information.
 ::
 
   mm_page_alloc		  page=%p pfn=%lu order=%d migratetype=%d gfp_flags=%s
+  mm_page_alloc_enter		  order=%d gfp_flags=%s
   mm_page_alloc_zone_locked page=%p pfn=%lu order=%u migratetype=%d cpu=%d percpu_refill=%d
   mm_page_free		  page=%p pfn=%lu order=%d
   mm_page_free_batched	  page=%p pfn=%lu order=%d cold=%d
 
-These four events deal with page allocation and freeing. mm_page_alloc is
-a simple indicator of page allocator activity. Pages may be allocated from
-the per-CPU allocator (high performance) or the buddy allocator.
+These five events deal with page allocation and freeing. mm_page_alloc_enter
+is the entry point of page allocation and can be used to analyze the time cost
+of page allocation. mm_page_alloc is a simple indicator of page allocator activity.
+Pages may be allocated from the per-CPU allocator (high performance) or the buddy allocator.
 
 If pages are allocated directly from the buddy allocator, the
 mm_page_alloc_zone_locked event is triggered. This event is important as high
