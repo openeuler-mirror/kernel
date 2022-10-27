@@ -202,7 +202,6 @@ struct hns_roce_ucontext {
 	struct list_head	page_list;
 	struct mutex		page_mutex;
 	struct hns_user_mmap_entry *db_mmap_entry;
-	u32                     config;
 };
 
 struct hns_roce_pd {
@@ -330,7 +329,6 @@ struct hns_roce_wq {
 	spinlock_t	lock;
 	u32		wqe_cnt;  /* WQE num */
 	u32		max_gs;
-	u32             ext_sge_cnt;
 	u32		rsv_sge;
 	u32		offset;
 	u32		wqe_shift; /* WQE size */
