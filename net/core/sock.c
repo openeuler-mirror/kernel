@@ -3067,7 +3067,8 @@ int sock_common_getsockopt(struct socket *sock, int level, int optname,
 {
 	struct sock *sk = sock->sk;
 
-	return sk->sk_prot->getsockopt(sk, level, optname, optval, optlen);
+	/* IPV6_ADDRFORM can change sk->sk_prot under us. */
+	return READ_ONCE(sk->sk_prot)->getsockopt(sk, level, optname, optval, optlen);
 }
 EXPORT_SYMBOL(sock_common_getsockopt);
 
@@ -3076,11 +3077,13 @@ int compat_sock_common_getsockopt(struct socket *sock, int level, int optname,
 				  char __user *optval, int __user *optlen)
 {
 	struct sock *sk = sock->sk;
+	const struct proto *prot;
 
-	if (sk->sk_prot->compat_getsockopt != NULL)
-		return sk->sk_prot->compat_getsockopt(sk, level, optname,
-						      optval, optlen);
-	return sk->sk_prot->getsockopt(sk, level, optname, optval, optlen);
+	prot = READ_ONCE(sk->sk_prot);
+	if (prot->compat_getsockopt != NULL)
+		return prot->compat_getsockopt(sk, level, optname,
+					       optval, optlen);
+	return prot->getsockopt(sk, level, optname, optval, optlen);
 }
 EXPORT_SYMBOL(compat_sock_common_getsockopt);
 #endif
@@ -3108,7 +3111,8 @@ int sock_common_setsockopt(struct socket *sock, int level, int optname,
 {
 	struct sock *sk = sock->sk;
 
-	return sk->sk_prot->setsockopt(sk, level, optname, optval, optlen);
+	/* IPV6_ADDRFORM can change sk->sk_prot under us. */
+	return READ_ONCE(sk->sk_prot)->setsockopt(sk, level, optname, optval, optlen);
 }
 EXPORT_SYMBOL(sock_common_setsockopt);
 
@@ -3117,11 +3121,13 @@ int compat_sock_common_setsockopt(struct socket *sock, int level, int optname,
 				  char __user *optval, unsigned int optlen)
 {
 	struct sock *sk = sock->sk;
+	const struct proto *prot;
 
-	if (sk->sk_prot->compat_setsockopt != NULL)
-		return sk->sk_prot->compat_setsockopt(sk, level, optname,
-						      optval, optlen);
-	return sk->sk_prot->setsockopt(sk, level, optname, optval, optlen);
+	prot = READ_ONCE(sk->sk_prot);
+	if (prot->compat_setsockopt != NULL)
+		return prot->compat_setsockopt(sk, level, optname,
+					       optval, optlen);
+	return prot->setsockopt(sk, level, optname, optval, optlen);
 }
 EXPORT_SYMBOL(compat_sock_common_setsockopt);
 #endif
