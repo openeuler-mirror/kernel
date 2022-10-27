@@ -825,22 +825,10 @@ static void fill_recv_sge_to_wqe(const struct ib_recv_wr *wr, void *wqe,
 static void fill_rq_wqe(struct hns_roce_qp *hr_qp, const struct ib_recv_wr *wr,
 			u32 wqe_idx, u32 max_sge)
 {
-	struct hns_roce_rinl_sge *sge_list;
 	void *wqe = NULL;
-	u32 i;
 
 	wqe = hns_roce_get_recv_wqe(hr_qp, wqe_idx);
 	fill_recv_sge_to_wqe(wr, wqe, max_sge, hr_qp->rq.rsv_sge);
-
-	/* rq support inline data */
-	if (hr_qp->rq_inl_buf.wqe_cnt) {
-		sge_list = hr_qp->rq_inl_buf.wqe_list[wqe_idx].sg_list;
-		hr_qp->rq_inl_buf.wqe_list[wqe_idx].sge_cnt = (u32)wr->num_sge;
-		for (i = 0; i < wr->num_sge; i++) {
-			sge_list[i].addr = (void *)(u64)wr->sg_list[i].addr;
-			sge_list[i].len = wr->sg_list[i].length;
-		}
-	}
 }
 
 static int hns_roce_v2_post_recv(struct ib_qp *ibqp,
@@ -3684,39 +3672,6 @@ static int hns_roce_v2_req_notify_cq(struct ib_cq *ibcq,
 	return 0;
 }
 
-static int hns_roce_handle_recv_inl_wqe(struct hns_roce_v2_cqe *cqe,
-					struct hns_roce_qp *qp,
-					struct ib_wc *wc)
-{
-	struct hns_roce_rinl_sge *sge_list;
-	u32 wr_num, wr_cnt, sge_num;
-	u32 sge_cnt, data_len, size;
-	void *wqe_buf;
-
-	wr_num = hr_reg_read(cqe, CQE_WQE_IDX);
-	wr_cnt = wr_num & (qp->rq.wqe_cnt - 1);
-
-	sge_list = qp->rq_inl_buf.wqe_list[wr_cnt].sg_list;
-	sge_num = qp->rq_inl_buf.wqe_list[wr_cnt].sge_cnt;
-	wqe_buf = hns_roce_get_recv_wqe(qp, wr_cnt);
-	data_len = wc->byte_len;
-
-	for (sge_cnt = 0; (sge_cnt < sge_num) && (data_len); sge_cnt++) {
-		size = min(sge_list[sge_cnt].len, data_len);
-		memcpy((void *)sge_list[sge_cnt].addr, wqe_buf, size);
-
-		data_len -= size;
-		wqe_buf += size;
-	}
-
-	if (unlikely(data_len)) {
-		wc->status = IB_WC_LOC_LEN_ERR;
-		return -EAGAIN;
-	}
-
-	return 0;
-}
-
 static int sw_comp(struct hns_roce_qp *hr_qp, struct hns_roce_wq *wq,
 		   int num_entries, struct ib_wc *wc)
 {
@@ -3944,10 +3899,8 @@ static inline bool is_rq_inl_enabled(struct ib_wc *wc, u32 hr_opcode,
 
 static int fill_recv_wc(struct ib_wc *wc, struct hns_roce_v2_cqe *cqe)
 {
-	struct hns_roce_qp *qp = to_hr_qp(wc->qp);
 	u32 hr_opcode;
 	int ib_opcode;
-	int ret;
 
 	wc->byte_len = le32_to_cpu(cqe->byte_cnt);
 
@@ -3971,12 +3924,6 @@ static int fill_recv_wc(struct ib_wc *wc, struct hns_roce_v2_cqe *cqe)
 		wc->status = IB_WC_GENERAL_ERR;
 	else
 		wc->opcode = ib_opcode;
-
-	if (is_rq_inl_enabled(wc, hr_opcode, cqe)) {
-		ret = hns_roce_handle_recv_inl_wqe(cqe, qp, wc);
-		if (unlikely(ret))
-			return ret;
-	}
 
 	wc->sl = hr_reg_read(cqe, CQE_SL);
 	wc->src_qp = hr_reg_read(cqe, CQE_RMT_QPN);
