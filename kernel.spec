@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2210.4.0
+%global hulkrelease 2210.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0173
+Release: %{hulkrelease}.0174
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,15 @@ fi
 %endif
 
 %changelog
+
+* Thu Oct 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.5.0.0174
+- sch_sfb: Also store skb len before calling child enqueue
+- sch_sfb: Don't assume the skb is still around after enqueueing to child
+- ipv6: Fix data races around sk->sk_prot.
+- ipv6: annotate some data-races around sk->sk_prot
+- ipv6: provide and use ipv6 specific version for {recv, send}msg
+- inet: factor out inet_send_prepare()
+- nilfs2: fix use-after-free bug of struct nilfs_root
 
 * Tue Oct 25 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.4.0.0173
 - nfp: fix use-after-free in area_cache_get()
