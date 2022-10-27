@@ -24,6 +24,8 @@ unsigned long *sysctl_tcp_compression_ports = tcp_compression_ports;
 int sysctl_tcp_compression_local __read_mostly;
 
 static struct proto tcp_prot_override;
+static struct proto tcp_prot_override_send;
+static struct proto tcp_prot_override_recv;
 
 struct tcp_comp_context_tx {
 	ZSTD_CStream *cstream;
@@ -824,13 +826,22 @@ void tcp_init_compression(struct sock *sk)
 
 	ctx->sk_write_space = sk->sk_write_space;
 	ctx->sk_proto = sk->sk_prot;
-	WRITE_ONCE(sk->sk_prot, &tcp_prot_override);
-	sk->sk_write_space = tcp_comp_write_space;
+
+	if (!tp->no_comp_tx && !tp->no_comp_rx)
+		WRITE_ONCE(sk->sk_prot, &tcp_prot_override);
+	else if (!tp->no_comp_tx)
+		WRITE_ONCE(sk->sk_prot, &tcp_prot_override_send);
+	else if (!tp->no_comp_rx)
+		WRITE_ONCE(sk->sk_prot, &tcp_prot_override_recv);
+	
+	if (!tp->no_comp_tx)
+		sk->sk_write_space = tcp_comp_write_space;
 
 	rcu_assign_pointer(icsk->icsk_ulp_data, ctx);
 
 	sock_set_flag(sk, SOCK_COMP);
-	comp_setup_strp(sk, ctx);
+	if (!tp->no_comp_rx)
+		comp_setup_strp(sk, ctx);
 }
 
 static void tcp_comp_context_tx_free(struct tcp_comp_context *ctx)
@@ -895,6 +906,13 @@ int tcp_comp_init(void)
 	tcp_prot_override.sendmsg = tcp_comp_sendmsg;
 	tcp_prot_override.recvmsg = tcp_comp_recvmsg;
 	tcp_prot_override.stream_memory_read = comp_stream_read;
+
+	tcp_prot_override_send = tcp_prot;
+	tcp_prot_override_send.sendmsg = tcp_comp_sendmsg;
+
+	tcp_prot_override_recv = tcp_prot;
+	tcp_prot_override_recv.recvmsg = tcp_comp_recvmsg;
+	tcp_prot_override_recv.stream_memory_read = comp_stream_read;
 
 	return 0;
 }

@@ -4908,6 +4908,20 @@ static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 				tp->notsent_lowat = val;
 				sk->sk_write_space(sk);
 				break;
+#if IS_ENABLED(CONFIG_TCP_COMP)
+			case TCP_NO_COMP_TX:
+				if (val > 1 || val < 0)
+					ret = -EINVAL;
+				else
+					tp->no_comp_tx = val;
+				break;
+			case TCP_NO_COMP_RX:
+				if (val > 1 || val < 0)
+					ret = -EINVAL;
+				else
+					tp->no_comp_rx = val;
+				break;
+#endif
 			default:
 				ret = -EINVAL;
 			}
