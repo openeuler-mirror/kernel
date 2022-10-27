@@ -132,7 +132,8 @@ enum hns_roce_event {
 enum {
 	HNS_ROCE_CAP_FLAG_REREG_MR		= BIT(0),
 	HNS_ROCE_CAP_FLAG_ROCE_V1_V2		= BIT(1),
-	HNS_ROCE_CAP_FLAG_RQ_INLINE		= BIT(2),
+	/* discard this bit, reserved for compatibility */
+	HNS_ROCE_CAP_FLAG_DISCARD		= BIT(2),
 	HNS_ROCE_CAP_FLAG_CQ_RECORD_DB		= BIT(3),
 	HNS_ROCE_CAP_FLAG_QP_RECORD_DB		= BIT(4),
 	HNS_ROCE_CAP_FLAG_SRQ			= BIT(5),
@@ -144,6 +145,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_DIRECT_WQE		= BIT(12),
 	HNS_ROCE_CAP_FLAG_SDI_MODE		= BIT(14),
 	HNS_ROCE_CAP_FLAG_STASH			= BIT(17),
+	HNS_ROCE_CAP_FLAG_RQ_INLINE		= BIT(20),
 };
 
 #define HNS_ROCE_DB_TYPE_COUNT			2
@@ -890,7 +892,7 @@ struct hns_roce_hw {
 			 u32 step_idx);
 	int (*modify_qp)(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 			 int attr_mask, enum ib_qp_state cur_state,
-			 enum ib_qp_state new_state);
+			 enum ib_qp_state new_state, struct ib_udata *udata);
 	int (*qp_flow_control_init)(struct hns_roce_dev *hr_dev,
 			 struct hns_roce_qp *hr_qp);
 	void (*dereg_mr)(struct hns_roce_dev *hr_dev);
