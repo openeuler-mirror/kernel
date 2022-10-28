@@ -4,6 +4,8 @@ PATCHLEVEL = 10
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Kleptomaniac Octopus
+OPENEULER_MAJOR = 2203
+OPENEULER_MINOR = 1
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -1276,7 +1278,12 @@ define filechk_version.h
 		expr $(VERSION) \* 65536 + $(PATCHLEVEL) \* 256 + $(SUBLEVEL)); \
 	fi;                                                              \
 	echo '#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) +  \
-	((c) > 255 ? 255 : (c)))'
+	((c) > 255 ? 255 : (c)))';                                       \
+	echo '#define OPENEULER_MAJOR $(OPENEULER_MAJOR)';               \
+	echo '#define OPENEULER_MINOR $(OPENEULER_MINOR)';               \
+	echo '#define OPENEULER_VERSION(a,b) (((a) << 8) + (b))';        \
+	echo '#define OPENEULER_VERSION_CODE                             \
+	$(shell expr $(OPENEULER_MAJOR) \* 256 + $(OPENEULER_MINOR))'
 endef
 
 $(version_h): PATCHLEVEL := $(if $(PATCHLEVEL), $(PATCHLEVEL), 0)
