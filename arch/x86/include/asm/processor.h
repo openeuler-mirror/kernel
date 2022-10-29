@@ -35,6 +35,7 @@ struct vm86;
 #include <linux/err.h>
 #include <linux/irqflags.h>
 #include <linux/mem_encrypt.h>
+#include <linux/kabi.h>
 
 /*
  * We handle most unaligned accesses in hardware.  On the other hand
@@ -550,6 +551,7 @@ struct thread_struct {
 	unsigned int		iopl_warn:1;
 	unsigned int		sig_on_uaccess_err:1;
 
+#ifdef CONFIG_X86_64
 	/*
 	 * Protection Keys Register for Userspace.  Loaded immediately on
 	 * context switch. Store it in thread_struct to avoid a lookup in
@@ -557,7 +559,8 @@ struct thread_struct {
 	 * task is scheduled out. For 'current' the authoritative source of
 	 * PKRU is the hardware itself.
 	 */
-	u32                     pkru;
+	KABI_BROKEN_INSERT(u32 pkru)
+#endif
 
 	/* Floating point and extended processor state */
 	struct fpu		fpu;
