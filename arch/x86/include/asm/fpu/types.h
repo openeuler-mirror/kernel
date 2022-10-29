@@ -5,6 +5,8 @@
 #ifndef _ASM_X86_FPU_H
 #define _ASM_X86_FPU_H
 
+#include <linux/kabi.h>
+
 /*
  * The legacy x87 FPU state format, as saved by FSAVE and
  * restored by the FRSTOR instructions:
@@ -459,7 +461,7 @@ struct fpu {
 	 * Pointer to the active struct fpstate. Initialized to
 	 * point at @__fpstate below.
 	 */
-	struct fpstate			*fpstate;
+	KABI_EXTEND(struct fpstate *fpstate)
 
 	/*
 	 * @__task_fpstate:
@@ -467,14 +469,14 @@ struct fpu {
 	 * Pointer to an inactive struct fpstate. Initialized to NULL. Is
 	 * used only for KVM support to swap out the regular task fpstate.
 	 */
-	struct fpstate			*__task_fpstate;
+	KABI_EXTEND(struct fpstate *__task_fpstate)
 
 	/*
 	 * @perm:
 	 *
 	 * Permission related information
 	 */
-	struct fpu_state_perm		perm;
+	KABI_EXTEND(struct fpu_state_perm perm)
 
 	/*
 	 * @__fpstate:
@@ -484,7 +486,8 @@ struct fpu {
 	 * are restored from this storage on return to user space if they
 	 * are not longer containing the tasks FPU register state.
 	 */
-	struct fpstate			__fpstate;
+	KABI_DEPRECATE(union fpregs_state, state)
+	KABI_EXTEND(struct fpstate __fpstate)
 	/*
 	 * WARNING: '__fpstate' is dynamically-sized.  Do not put
 	 * anything after it here.
