@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/export.h>
 #include <linux/io.h>
+#include <asm/pgalloc.h>
 #include <linux/kobject.h>
 #include <linux/memblock.h>
 #include <linux/reboot.h>
@@ -31,45 +32,109 @@ static unsigned long efi_config_table;
 
 static efi_system_table_t *efi_systab;
 static efi_config_table_type_t arch_tables[] __initdata = {{},};
+static __initdata pgd_t *pgd_efi;
 
-static void __init create_tlb(u32 index, u64 vppn, u32 ps, u32 mat)
+static int __init efimap_populate_hugepages(
+		unsigned long start, unsigned long end,
+		pgprot_t prot)
 {
-	unsigned long tlblo0, tlblo1;
+	unsigned long addr;
+	unsigned long next;
+	pmd_t entry;
+	pud_t *pud;
+	pmd_t *pmd;
 
-	write_csr_pagesize(ps);
-
-	tlblo0 = vppn | CSR_TLBLO0_V | CSR_TLBLO0_WE |
-		CSR_TLBLO0_GLOBAL | (mat << CSR_TLBLO0_CCA_SHIFT);
-	tlblo1 = tlblo0 + (1 << ps);
-
-	csr_write64(vppn, LOONGARCH_CSR_TLBEHI);
-	csr_write64(tlblo0, LOONGARCH_CSR_TLBELO0);
-	csr_write64(tlblo1, LOONGARCH_CSR_TLBELO1);
-	csr_xchg32(0, CSR_TLBIDX_EHINV, LOONGARCH_CSR_TLBIDX);
-	csr_xchg32(index, CSR_TLBIDX_IDX, LOONGARCH_CSR_TLBIDX);
-
-	tlb_write_indexed();
+	for (addr = start; addr < end; addr = next) {
+		next = pmd_addr_end(addr, end);
+		pud = pud_offset((p4d_t *)pgd_efi + pgd_index(addr), addr);
+		if (pud_none(*pud)) {
+			void *p = memblock_alloc_low(PAGE_SIZE, PAGE_SIZE);
+			if (!p)
+				return -1;
+			pmd_init(p);
+			pud_populate(&init_mm, pud, p);
+		}
+		pmd = pmd_offset(pud, addr);
+		if (pmd_none(*pmd)) {
+			entry = pfn_pmd((addr >> PAGE_SHIFT), prot);
+			entry = pmd_mkhuge(entry);
+			set_pmd_at(&init_mm, addr, pmd, entry);
+		}
+	}
+	return 0;
 }
 
-#define MTLB_ENTRY_INDEX	0x800
-
-/* Create VA == PA mapping as UEFI */
-static void __init fix_efi_mapping(void)
+static void __init efi_map_pgt(void)
 {
-	unsigned int index = MTLB_ENTRY_INDEX;
-	unsigned int tlbnr = boot_cpu_data.tlbsizemtlb - 2;
-	unsigned long i, vppn;
+	unsigned long node;
+	unsigned long start, end;
+	unsigned long start_pfn, end_pfn;
+
+	pgd_efi = memblock_alloc_low(PAGE_SIZE, PAGE_SIZE);
+	if (!pgd_efi) {
+		pr_err("alloc efi pgd failed!\n");
+		return;
+	}
+	pgd_init(pgd_efi);
+	csr_write64((long)pgd_efi, LOONGARCH_CSR_PGDL);
 
 	/* Low Memory, Cached */
-	create_tlb(index++, 0x00000000, PS_128M, 1);
-	/* MMIO Registers, Uncached */
-	create_tlb(index++, 0x10000000, PS_128M, 0);
+	efimap_populate_hugepages(0, SZ_256M, PAGE_KERNEL);
 
-	/* High Memory, Cached */
-	for (i = 0; i < tlbnr; i++) {
-		vppn = 0x80000000ULL + (i * SZ_2G);
-		create_tlb(index++, vppn, PS_1G, 1);
+	for_each_node_mask(node, node_possible_map) {
+		/* MMIO Registers, Uncached */
+		efimap_populate_hugepages(SZ_256M | (node << 44),
+				SZ_512M | (node << 44), PAGE_KERNEL_SUC);
+
+		get_pfn_range_for_nid(node, &start_pfn, &end_pfn);
+		start = ALIGN_DOWN(start_pfn << PAGE_SHIFT, PMD_SIZE);
+		end = ALIGN(end_pfn << PAGE_SHIFT, PMD_SIZE);
+
+		/* System memory, Cached */
+		efimap_populate_hugepages(node ? start : SZ_512M, end, PAGE_KERNEL);
 	}
+}
+
+static int __init efimap_free_pgt(unsigned long start, unsigned long end)
+{
+	unsigned long addr;
+	unsigned long next;
+	pud_t *pud;
+	pmd_t *pmd;
+
+	for (addr = start; addr < end; addr = next) {
+		next = pmd_addr_end(addr, end);
+
+		pud = pud_offset((p4d_t *)pgd_efi + pgd_index(addr), addr);
+		if (!pud_present(*pud))
+			continue;
+		pmd = pmd_offset(pud, addr);
+		memblock_free_early(virt_to_phys((void *)pmd), PAGE_SIZE);
+		pud_clear(pud);
+	}
+	return 0;
+}
+
+static void __init efi_unmap_pgt(void)
+{
+	unsigned long node;
+	unsigned long start, end;
+	unsigned long start_pfn, end_pfn;
+
+	for_each_node_mask(node, node_possible_map) {
+		get_pfn_range_for_nid(node, &start_pfn, &end_pfn);
+		start = ALIGN_DOWN(start_pfn << PAGE_SHIFT, PMD_SIZE);
+		end = ALIGN(end_pfn << PAGE_SHIFT, PMD_SIZE);
+
+		/* Free pagetable memory */
+		efimap_free_pgt(start, end);
+	}
+
+	memblock_free_early(virt_to_phys((void *)pgd_efi), PAGE_SIZE);
+	csr_write64((long)invalid_pg_dir, LOONGARCH_CSR_PGDL);
+	local_flush_tlb_all();
+
+	return;
 }
 
 /*
@@ -113,14 +178,12 @@ static int __init set_virtual_map(void)
 	/* Install the new virtual address map */
 	svam = rt->set_virtual_address_map;
 
-	fix_efi_mapping();
+	efi_map_pgt();
 
 	status = svam(size * count, size, efi.memmap.desc_version,
 			(efi_memory_desc_t *)TO_PHYS((unsigned long)runtime_map));
 
-	local_flush_tlb_all();
-	write_csr_pagesize(PS_DEFAULT_SIZE);
-
+	efi_unmap_pgt();
 	return 0;
 }
 
