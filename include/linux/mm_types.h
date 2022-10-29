@@ -24,6 +24,21 @@
 #endif
 #define AT_VECTOR_SIZE (2*(AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))
 
+#define _MM_STRUCT_SIZE (sizeof(struct mm_struct) + cpumask_size())
+
+#if defined(CONFIG_X86_64)
+	#define ORIG_AT_VECTOR_SIZE (2*(ORIG_AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))
+	#define MM_SAVED_AUXV(mm) mm->mm_extend->saved_auxv
+	#define MM_STRUCT_SIZE (_MM_STRUCT_SIZE + sizeof(struct mm_struct_extend))
+	#define OFFSET_OF_MM_SAVED_AUXV (_MM_STRUCT_SIZE + offsetof(struct mm_struct_extend, saved_auxv))
+	#define SIZE_OF_MM_SAVED_AUXV sizeof_field(struct mm_struct_extend, saved_auxv)
+#else
+	#define MM_SAVED_AUXV(mm) mm->saved_auxv
+	#define MM_STRUCT_SIZE _MM_STRUCT_SIZE
+	#define OFFSET_OF_MM_SAVED_AUXV offsetof(struct mm_struct, saved_auxv)
+	#define SIZE_OF_MM_SAVED_AUXV sizeof_field(struct mm_struct, saved_auxv)
+#endif
+
 #define INIT_PASID	0
 
 struct address_space;
@@ -394,6 +409,13 @@ struct core_state {
 };
 
 struct kioctx_table;
+
+#if defined(CONFIG_X86_64)
+struct mm_struct_extend {
+	unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
+};
+#endif
+
 struct mm_struct {
 	struct {
 		struct vm_area_struct *mmap;		/* list of VMAs */
@@ -508,7 +530,11 @@ struct mm_struct {
 		unsigned long start_brk, brk, start_stack;
 		unsigned long arg_start, arg_end, env_start, env_end;
 
+#if defined(CONFIG_X86_64)
+		KABI_DEPRECATE(unsigned long, saved_auxv[ORIG_AT_VECTOR_SIZE])
+#else
 		unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
+#endif
 
 		/*
 		 * Special counters, in some configurations protected by the
@@ -592,7 +618,11 @@ struct mm_struct {
 #endif
 	} __randomize_layout;
 
+#if defined(CONFIG_X86_64)
+	KABI_USE(1, struct mm_struct_extend *mm_extend)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

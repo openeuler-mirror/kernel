@@ -236,7 +236,7 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
 		return -EFAULT;
 
 	/* Create the ELF interpreter info */
-	elf_info = (elf_addr_t *)mm->saved_auxv;
+	elf_info = (elf_addr_t *)MM_SAVED_AUXV(mm);
 	/* update AT_VECTOR_SIZE_BASE if the number of NEW_AUX_ENT() changes */
 #define NEW_AUX_ENT(id, val) \
 	do { \
@@ -285,13 +285,13 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
 	}
 #undef NEW_AUX_ENT
 	/* AT_NULL is zero; clear the rest too */
-	memset(elf_info, 0, (char *)mm->saved_auxv +
-			sizeof(mm->saved_auxv) - (char *)elf_info);
+	memset(elf_info, 0, (char *)MM_SAVED_AUXV(mm) +
+			sizeof(MM_SAVED_AUXV(mm)) - (char *)elf_info);
 
 	/* And advance past the AT_NULL entry.  */
 	elf_info += 2;
 
-	ei_index = elf_info - (elf_addr_t *)mm->saved_auxv;
+	ei_index = elf_info - (elf_addr_t *)MM_SAVED_AUXV(mm);
 	sp = STACK_ADD(p, ei_index);
 
 	items = (argc + 1) + (envc + 1) + 1;
@@ -352,7 +352,7 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
 	mm->env_end = p;
 
 	/* Put the elf_info on the stack in the right place.  */
-	if (copy_to_user(sp, mm->saved_auxv, ei_index * sizeof(elf_addr_t)))
+	if (copy_to_user(sp, MM_SAVED_AUXV(mm), ei_index * sizeof(elf_addr_t)))
 		return -EFAULT;
 	return 0;
 }
@@ -1586,7 +1586,7 @@ static int fill_psinfo(struct elf_prpsinfo *psinfo, struct task_struct *p,
 
 static void fill_auxv_note(struct memelfnote *note, struct mm_struct *mm)
 {
-	elf_addr_t *auxv = (elf_addr_t *) mm->saved_auxv;
+	elf_addr_t *auxv = (elf_addr_t *) MM_SAVED_AUXV(mm);
 	int i = 0;
 	do
 		i += 2;

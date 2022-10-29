@@ -1962,7 +1962,7 @@ static int prctl_set_mm_map(int opt, const void __user *addr, unsigned long data
 	struct mm_struct *mm = current->mm;
 	int error;
 
-	BUILD_BUG_ON(sizeof(user_auxv) != sizeof(mm->saved_auxv));
+	BUILD_BUG_ON(sizeof(user_auxv) != sizeof(MM_SAVED_AUXV(mm)));
 	BUILD_BUG_ON(sizeof(struct prctl_mm_map) > 256);
 
 	if (opt == PR_SET_MM_MAP_SIZE)
@@ -1984,7 +1984,7 @@ static int prctl_set_mm_map(int opt, const void __user *addr, unsigned long data
 		 * Someone is trying to cheat the auxv vector.
 		 */
 		if (!prctl_map.auxv ||
-				prctl_map.auxv_size > sizeof(mm->saved_auxv))
+				prctl_map.auxv_size > sizeof(MM_SAVED_AUXV(mm)))
 			return -EINVAL;
 
 		memset(user_auxv, 0, sizeof(user_auxv));
@@ -2056,7 +2056,7 @@ static int prctl_set_mm_map(int opt, const void __user *addr, unsigned long data
 	 * more complex.
 	 */
 	if (prctl_map.auxv_size)
-		memcpy(mm->saved_auxv, user_auxv, sizeof(user_auxv));
+		memcpy(MM_SAVED_AUXV(mm), user_auxv, sizeof(user_auxv));
 
 	mmap_read_unlock(mm);
 	return 0;
@@ -2084,10 +2084,10 @@ static int prctl_set_auxv(struct mm_struct *mm, unsigned long addr,
 	user_auxv[AT_VECTOR_SIZE - 2] = 0;
 	user_auxv[AT_VECTOR_SIZE - 1] = 0;
 
-	BUILD_BUG_ON(sizeof(user_auxv) != sizeof(mm->saved_auxv));
+	BUILD_BUG_ON(sizeof(user_auxv) != sizeof(MM_SAVED_AUXV(mm)));
 
 	task_lock(current);
-	memcpy(mm->saved_auxv, user_auxv, len);
+	memcpy(MM_SAVED_AUXV(mm), user_auxv, len);
 	task_unlock(current);
 
 	return 0;
