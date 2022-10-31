@@ -1623,6 +1623,30 @@ unlock:
 	}
 }
 
+/*
+ * check whether cluster blocks are contiguous, and add extent cache entry
+ * only if cluster blocks are logically and physically contiguous.
+ */
+unsigned int f2fs_cluster_blocks_are_contiguous(struct dnode_of_data *dn)
+{
+	bool compressed = f2fs_data_blkaddr(dn) == COMPRESS_ADDR;
+	int i = compressed ? 1 : 0;
+	block_t first_blkaddr = data_blkaddr(dn->inode, dn->node_page,
+						dn->ofs_in_node + i);
+
+	for (i += 1; i < F2FS_I(dn->inode)->i_cluster_size; i++) {
+		block_t blkaddr = data_blkaddr(dn->inode, dn->node_page,
+						dn->ofs_in_node + i);
+
+		if (!__is_valid_data_blkaddr(blkaddr))
+			break;
+		if (first_blkaddr + i - (compressed ? 1 : 0) != blkaddr)
+			return 0;
+	}
+
+	return compressed ? i - 1 : i;
+}
+
 int f2fs_init_page_array_cache(struct f2fs_sb_info *sbi)
 {
 	dev_t dev = sbi->sb->s_bdev->bd_dev;
