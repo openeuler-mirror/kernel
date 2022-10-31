@@ -534,6 +534,12 @@ extern void sched_offline_group(struct task_group *tg);
 
 extern void sched_move_task(struct task_struct *tsk);
 
+#ifdef CONFIG_DTS
+extern void replace_shared_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev_se, struct sched_entity *shared_se);
+#endif
+
+extern void set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se);
+
 #ifdef CONFIG_FAIR_GROUP_SCHED
 extern int sched_group_set_shares(struct task_group *tg, unsigned long shares);
 
@@ -1185,9 +1191,22 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 #define raw_rq()		raw_cpu_ptr(&runqueues)
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
+#ifdef CONFIG_DTS
+static inline struct task_struct *task_of_dts_shared_se(struct sched_entity *dts_shared_se)
+{
+	SCHED_WARN_ON(!entity_is_task(dts_shared_se));
+	return container_of(dts_shared_se, struct task_struct, dts_shared_se);
+}
+#endif
+
 static inline struct task_struct *task_of(struct sched_entity *se)
 {
 	SCHED_WARN_ON(!entity_is_task(se));
+#ifdef CONFIG_DTS
+	if (se->by_pass != NONE_BY_PASS)
+		return task_of_dts_shared_se(se);
+	else
+#endif
 	return container_of(se, struct task_struct, se);
 }
 
@@ -1210,8 +1229,28 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 
 #else
 
+#ifdef CONFIG_DTS
+static inline struct task_struct *task_of_dts_shared_se(struct sched_entity *dts_shared_se)
+{
+	return container_of(dts_shared_se, struct task_struct, dts_shared_se);
+}
+
+static inline struct cfs_rq *cfs_rq_of_dts_shared_se(struct sched_entity *se)
+{
+	struct task_struct *p = task_of_dts_shared_se(se);
+	struct rq *rq = task_rq(p);
+
+	return &rq->cfs;
+}
+#endif
+
 static inline struct task_struct *task_of(struct sched_entity *se)
 {
+#ifdef CONFIG_DTS
+	if (se->by_pass != NONE_BY_PASS)
+		return task_of_dts_shared_se(se);
+	else
+#endif
 	return container_of(se, struct task_struct, se);
 }
 
@@ -1220,12 +1259,23 @@ static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
 	return &task_rq(p)->cfs;
 }
 
-static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
+static inline struct cfs_rq *cfs_rq_of_se(struct sched_entity *se)
 {
 	struct task_struct *p = task_of(se);
 	struct rq *rq = task_rq(p);
 
 	return &rq->cfs;
+}
+
+static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
+{
+#ifdef CONFIG_DTS
+	if (se->by_pass != NONE_BY_PASS)
+		return cfs_rq_of_dts_shared_se(se);
+	else
+#endif
+	return cfs_rq_of_se(se);
+
 }
 
 /* runqueue "owned" by this group */
@@ -1862,6 +1912,7 @@ static inline int task_on_rq_migrating(struct task_struct *p)
 #define WF_FORK			0x02		/* Child wakeup after fork */
 #define WF_MIGRATED		0x04		/* Internal use, task got migrated */
 #define WF_ON_CPU		0x08		/* Wakee is on_cpu */
+#define WF_CURRENT_CPU         0x10            /* Prefer to move wakee to the current CPU */
 
 /*
  * To aid in avoiding the subversion of "niceness" due to uneven distribution
@@ -2403,6 +2454,7 @@ static inline void double_rq_unlock(struct rq *rq1, struct rq *rq2)
 
 extern struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq);
 extern struct sched_entity *__pick_last_entity(struct cfs_rq *cfs_rq);
+extern void traverse_cfs_rq(struct cfs_rq *cfs_rq);
 
 #ifdef	CONFIG_SCHED_DEBUG
 extern bool sched_debug_enabled;
@@ -2788,3 +2840,18 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 
 void swake_up_all_locked(struct swait_queue_head *q);
 void __prepare_to_swait(struct swait_queue_head *q, struct swait_queue *wait);
+
+#ifdef CONFIG_DTS
+extern void sched_submit_work(struct task_struct *tsk);
+extern void sched_update_worker(struct task_struct *tsk);
+extern struct rq *context_switch(struct rq *rq, struct task_struct *prev,
+	       struct task_struct *next, struct rq_flags *rf);
+extern void
+account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se);
+#ifdef CONFIG_SCHED_STEAL
+extern int steal_task(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
+			struct task_struct *tsk);
+extern void update_before_bypass(void);
+extern void balance_callback(struct rq *rq);
+#endif
+#endif

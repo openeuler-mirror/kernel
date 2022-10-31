@@ -39,11 +39,16 @@
 #include <linux/memblock.h>
 #include <linux/fault-inject.h>
 #include <linux/time_namespace.h>
+#include <linux/sched.h>
+#include <linux/sched/sysctl.h>
 
 #include <asm/futex.h>
 
 #include "locking/rtmutex_common.h"
 
+#ifdef CONFIG_DTS
+#include "sched/sched.h"
+#endif
 /*
  * READ this before attempting to hack on futexes!
  *
@@ -161,7 +166,7 @@ static int  __read_mostly futex_cmpxchg_enabled;
  * NOMMU does not have per process address space. Let the compiler optimize
  * code away.
  */
-# define FLAGS_SHARED		0x00
+#define FLAGS_SHARED		0x00
 #endif
 #define FLAGS_CLOCKRT		0x02
 #define FLAGS_HAS_TIMEOUT	0x04
@@ -1181,7 +1186,7 @@ static int handle_exit_race(u32 __user *uaddr, u32 uval,
 	 *  tsk->futex_state =               } else {
 	 *	FUTEX_STATE_DEAD;              if (tsk->futex_state !=
 	 *					  FUTEX_STATE_DEAD)
-	 *				         return -EAGAIN;
+	 *					 return -EAGAIN;
 	 *				       return -ESRCH; <--- FAIL
 	 *				     }
 	 *
@@ -1584,16 +1589,16 @@ double_unlock_hb(struct futex_hash_bucket *hb1, struct futex_hash_bucket *hb2)
 }
 
 /*
- * Wake up waiters matching bitset queued on this futex (uaddr).
+ * Prepare wake queue matching bitset queued on this futex (uaddr).
  */
 static int
-futex_wake(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset)
+prepare_wake_q(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset,
+	       struct wake_q_head *wake_q)
 {
 	struct futex_hash_bucket *hb;
 	struct futex_q *this, *next;
 	union futex_key key = FUTEX_KEY_INIT;
 	int ret;
-	DEFINE_WAKE_Q(wake_q);
 
 	if (!bitset)
 		return -EINVAL;
@@ -1621,14 +1626,28 @@ futex_wake(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset)
 			if (!(this->bitset & bitset))
 				continue;
 
-			mark_wake_futex(&wake_q, this);
+			mark_wake_futex(wake_q, this);
 			if (++ret >= nr_wake)
 				break;
 		}
 	}
 
 	spin_unlock(&hb->lock);
+	return ret;
+}
+
+/*
+ * Wake up waiters matching bitset queued on this futex (uaddr).
+ */
+static int
+futex_wake(u32 __user *uaddr, unsigned int flags, int nr_wake, u32 bitset)
+{
+	int ret;
+	DEFINE_WAKE_Q(wake_q);
+
+	ret = prepare_wake_q(uaddr, flags, nr_wake, bitset, &wake_q);
 	wake_up_q(&wake_q);
+
 	return ret;
 }
 
@@ -2571,14 +2590,230 @@ static int fixup_owner(u32 __user *uaddr, struct futex_q *q, int locked)
 	return 0;
 }
 
+#ifdef CONFIG_DTS
+static int __direct_thread_switch(struct task_struct *next)
+{
+	int cpu = smp_processor_id();
+	int success = 1;
+	struct rq_flags rf;
+	struct rq *rq = cpu_rq(cpu);
+	struct cfs_rq *cfs_rq = &rq->cfs;
+	struct task_struct *prev = rq->curr;
+	struct sched_entity *prev_se, *next_se;
+	unsigned long *switch_count = &prev->nvcsw;
+	unsigned long prev_state;
+	int next_state;
+	struct rq *src_rq_next;
+	bool locked;
+
+	preempt_disable();
+	local_irq_disable();
+
+	if (!prev->by_pass) {
+		prev_se = &prev->se;
+	} else {
+		prev_se = &prev->dts_shared_se;
+	}
+
+	next_se = &next->se;
+
+	prev->by_pass = NONE_BY_PASS;
+	next->by_pass = INIT_BY_PASS;
+	next->dts_shared_se = *prev_se;
+	prev_se->by_pass = NONE_BY_PASS;
+	next->dts_shared_se.by_pass = INIT_BY_PASS;
+
+	/* task_struct::state is volatile so far */
+	next_state = next->state;
+	src_rq_next = task_rq(next);
+	locked = true;
+	/* Deliver the execution to the callee. */
+	if (next_state == TASK_RUNNING) {
+		/* The next is running now. */
+		if (task_running(src_rq_next, next)) {
+			success = 0;
+			goto end;
+		}
+		/* The next task is runnable, and may stay in the current core's rq or other cores' rq. */
+		/* Dequeue the next task's se (rather than dts_shared_se) to keep fairness and consistence.
+		 * Enqueue the next task's se when the task expired.
+		 */
+		if (task_rq(next) != rq) {
+#ifdef CONFIG_SCHED_STEAL
+			/* migrate */
+			if (!steal_task(rq, &rf, &locked, next)) {
+				success = 0;
+				goto end;
+			}
+#else
+			success = 0;
+			goto end;
+#endif
+		}
+		replace_shared_entity(cfs_rq, next_se, &next->dts_shared_se);
+	} else if (next_state == TASK_INTERRUPTIBLE) {
+		/*
+		 *
+		 * The next task in the sleeping state caused by futex_swap, futex_wait,
+		 * can be woken up here so far, but signals, and other interruptible situations
+		 * need to be implemented here.
+		 * P.S. We pick up the next task from the wake list of the corresponding futex_t.
+		 */
+
+		/* Enqueue the shared_se and change the state without entering schedule() path. */
+		if (!wake_up_process_prefer_current_cpu(next)) {
+			success = 0;
+			goto end;
+		}
+
+		/* success to wakeup (set p->state = TASK_RUNNING) */
+		/* dequeue the shared_se and set rq->curr = &next->dts_shared_se; */
+		set_next_entity(cfs_rq, &next->dts_shared_se);
+
+	} else {
+		success = 0;
+		goto end;
+	}
+
+	/* increase rq->cfs.nr_running */
+	cfs_rq->nr_running++;
+
+	sched_submit_work(prev);
+
+	rcu_note_context_switch(false);
+
+	/*
+	 * Make sure that signal_pending_state()->signal_pending() below
+	 * can't be reordered with __set_current_state(TASK_INTERRUPTIBLE)
+	 * done by the caller(futex_wait_queue_me) to avoid the race with signal_wake_up():
+	 *
+	 * __set_current_state(@state)		signal_wake_up()
+	 * __direct_thread_switch()		set_tsk_thread_flag(p, TIF_SIGPENDING)
+	 *					  wake_up_state(p, state)
+	 *   LOCK rq->lock			    LOCK p->pi_state
+	 *   smp_mb__after_spinlock()		    smp_mb__after_spinlock()
+	 *     if (signal_pending_state())	    if (p->state & @state)
+	 *
+	 * Also, the membarrier system call requires a full memory barrier
+	 * after coming from user-space, before storing to rq->curr.
+	 */
+	rq_lock(rq, &rf);
+	smp_mb__after_spinlock();
+
+	/*
+	 * We may fail to switch, so do not deactivate the current task before
+	 * process the next.
+	 */
+
+	/*
+	 * We must load prev->state once (task_struct::state is volatile), such
+	 * that:
+	 *
+	 *  - we form a control dependency vs deactivate_task() below.
+	 *  - ptrace_{,un}freeze_traced() can change ->state underneath us.
+	 */
+	prev_state = prev->state;
+	if (prev_state) {
+		if (signal_pending_state(prev_state, prev)) {
+			prev->state = TASK_RUNNING;
+		} else {
+			prev->sched_contributes_to_load =
+				(prev_state & TASK_UNINTERRUPTIBLE) &&
+				!(prev_state & TASK_NOLOAD) &&
+				!(prev->flags & PF_FROZEN);
+
+			if (prev->sched_contributes_to_load)
+				rq->nr_uninterruptible++;
+
+			/*
+			 * __schedule()			ttwu()
+			 *   prev_state = prev->state;    if (p->on_rq && ...)
+			 *   if (prev_state)		    goto out;
+			 *     p->on_rq = 0;		  smp_acquire__after_ctrl_dep();
+			 *				  p->state = TASK_WAKING
+			 *
+			 * Where __schedule() and ttwu() have matching control dependencies.
+			 *
+			 * After this, schedule() must not care about p->state any more.
+			 */
+			deactivate_task(rq, prev, DEQUEUE_SLEEP | DEQUEUE_NOCLOCK);
+
+			if (prev->in_iowait) {
+				atomic_inc(&rq->nr_iowait);
+				delayacct_blkio_start();
+			}
+		}
+	}
+
+	rq->nr_switches++;
+	/*
+	* RCU users of rcu_dereference(rq->curr) may not see
+	* changes to task_struct made by pick_next_task().
+	*/
+	RCU_INIT_POINTER(rq->curr, next);
+	/*
+	* The membarrier system call requires each architecture
+	* to have a full memory barrier after updating
+	* rq->curr, before returning to user-space.
+	*
+	* Here are the schemes providing that barrier on the
+	* various architectures:
+	* - mm ? switch_mm() : mmdrop() for x86, s390, sparc, PowerPC.
+	*   switch_mm() rely on membarrier_arch_switch_mm() on PowerPC.
+	* - finish_lock_switch() for weakly-ordered
+	*   architectures where spin_unlock is a full barrier,
+	* - switch_to() for arm64 (weakly-ordered, spin_unlock
+	*   is a RELEASE barrier),
+	*/
+	++*switch_count;
+
+	psi_sched_switch(prev, next, !task_on_rq_queued(prev));
+
+	trace_sched_switch(false, prev, next);
+
+	/* do the get_task_struct() in the futex_wait_queue_me() before */
+	put_task_struct(next);
+
+	rq = context_switch(rq, prev, next, &rf);
+
+	balance_callback(rq);
+	sched_update_worker(next);
+end:
+	sched_preempt_enable_no_resched();
+	return success;
+}
+
+/*
+ * return
+ * 0 for fail
+ * 1 for succeed
+ */
+static int direct_thread_switch(struct task_struct *next)
+{
+	if (next->sched_class != &fair_sched_class ||
+				 current == next) {
+		return 0;
+	}
+
+	if (!check_task_left_time(current)) {
+		return 0;
+	}
+
+	return __direct_thread_switch(next);
+}
+#endif /* CONFIG_DTS */
+
 /**
  * futex_wait_queue_me() - queue_me() and wait for wakeup, timeout, or signal
  * @hb:		the futex hash bucket, must be locked by the caller
  * @q:		the futex_q to queue up on
  * @timeout:	the prepared hrtimer_sleeper, or null for no timeout
+ * @next:	if present, wake next and hint to the scheduler that we'd
+ *		prefer to execute it locally.
  */
 static void futex_wait_queue_me(struct futex_hash_bucket *hb, struct futex_q *q,
-				struct hrtimer_sleeper *timeout)
+				struct hrtimer_sleeper *timeout,
+				struct task_struct *next, int flags)
 {
 	/*
 	 * The task state is guaranteed to be set before another task can
@@ -2598,15 +2833,60 @@ static void futex_wait_queue_me(struct futex_hash_bucket *hb, struct futex_q *q,
 	 * has tried to wake us, and we can skip the call to schedule().
 	 */
 	if (likely(!plist_node_empty(&q->list))) {
+#ifdef CONFIG_DTS
+		int do_dts_switch = 0;
+#endif
 		/*
 		 * If the timer has already expired, current will already be
 		 * flagged for rescheduling. Only call schedule if there
 		 * is no timeout, or if it has yet to expire.
 		 */
-		if (!timeout || timeout->task)
-			freezable_schedule();
+		if (!timeout || timeout->task) {
+			if (next) {
+#ifdef CONFIG_DTS
+				/*
+				 * If we fail to switch to the next task directly, try to switch to
+				 * the next task in the traditional way.
+				 *
+				 */
+				if (flags & FUTEX_FLAGS_DTS_MODE)
+					do_dts_switch = direct_thread_switch(next);
+
+				if (!do_dts_switch)
+#endif
+				{
+#ifdef CONFIG_SMP
+					wake_up_process_prefer_current_cpu(next);
+#else
+					wake_up_process(next);
+#endif
+				}
+
+#ifdef CONFIG_DTS
+				if (!do_dts_switch)
+#endif
+					put_task_struct(next);
+
+				next = NULL;
+			}
+#ifdef CONFIG_DTS
+			if (!do_dts_switch)
+#endif
+				freezable_schedule();
+		}
 	}
 	__set_current_state(TASK_RUNNING);
+
+
+
+	if (next) {
+#ifdef CONFIG_DTS
+		direct_thread_switch(next);
+#else
+		wake_up_process(next);
+		put_task_struct(next);
+#endif
+	}
 }
 
 /**
@@ -2682,7 +2962,7 @@ retry_private:
 }
 
 static int futex_wait(u32 __user *uaddr, unsigned int flags, u32 val,
-		      ktime_t *abs_time, u32 bitset)
+		      ktime_t *abs_time, u32 bitset, struct task_struct *next)
 {
 	struct hrtimer_sleeper timeout, *to;
 	struct restart_block *restart;
@@ -2706,7 +2986,8 @@ retry:
 		goto out;
 
 	/* queue_me and wait for wakeup, timeout, or a signal. */
-	futex_wait_queue_me(hb, &q, to);
+	futex_wait_queue_me(hb, &q, to, next, flags);
+	next = NULL;
 
 	/* If we were woken (and unqueued), we succeeded, whatever. */
 	ret = 0;
@@ -2738,13 +3019,16 @@ retry:
 	ret = set_restart_fn(restart, futex_wait_restart);
 
 out:
+	if (next) {
+		wake_up_process(next);
+		put_task_struct(next);
+	}
 	if (to) {
 		hrtimer_cancel(&to->timer);
 		destroy_hrtimer_on_stack(&to->timer);
 	}
 	return ret;
 }
-
 
 static long futex_wait_restart(struct restart_block *restart)
 {
@@ -2757,10 +3041,38 @@ static long futex_wait_restart(struct restart_block *restart)
 	}
 	restart->fn = do_no_restart_syscall;
 
-	return (long)futex_wait(uaddr, restart->futex.flags,
-				restart->futex.val, tp, restart->futex.bitset);
+	return (long)futex_wait(uaddr, restart->futex.flags, restart->futex.val,
+				tp, restart->futex.bitset, NULL);
 }
 
+static int futex_swap(u32 __user *uaddr, unsigned int flags, u32 val,
+		      ktime_t *abs_time, u32 __user *uaddr2)
+{
+	u32 bitset = FUTEX_BITSET_MATCH_ANY;
+	struct task_struct *next = NULL;
+	DEFINE_WAKE_Q(wake_q);
+	int ret;
+
+	ret = prepare_wake_q(uaddr2, flags, 1, bitset, &wake_q);
+	if (ret < 0)
+		return ret;
+	if (!wake_q_empty(&wake_q)) {
+		/* At most one wakee can be present. Pull it out. */
+		next = container_of(wake_q.first, struct task_struct, wake_q);
+		next->wake_q.next = NULL;
+	}
+
+	/* Basic security test. (Are the two tasks in the same group?) */
+
+	/* Have any time slices to be used? */
+
+	/*
+	 * The old one will go to sleep and enqueue the rq, meanwhile, get
+	 * the new one to run.
+	 */
+
+	return futex_wait(uaddr, flags, val, abs_time, bitset, next);
+}
 
 /*
  * Userspace tried a 0 -> TID atomic transition of the futex value
@@ -3222,7 +3534,7 @@ static int futex_wait_requeue_pi(u32 __user *uaddr, unsigned int flags,
 	}
 
 	/* Queue the futex_q, drop the hb lock, wait for wakeup. */
-	futex_wait_queue_me(hb, &q, to);
+	futex_wait_queue_me(hb, &q, to, NULL, flags);
 
 	spin_lock(&hb->lock);
 	ret = handle_early_requeue_pi_wakeup(hb, &q, &key2, to);
@@ -3708,6 +4020,12 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 	int cmd = op & FUTEX_CMD_MASK;
 	unsigned int flags = 0;
 
+#ifdef CONFIG_DTS
+	if (op & FUTEX_FLAGS_DTS_MODE) {
+		flags |= FUTEX_FLAGS_DTS_MODE;
+	}
+#endif
+
 	if (!(op & FUTEX_PRIVATE_FLAG))
 		flags |= FLAGS_SHARED;
 
@@ -3732,7 +4050,7 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 		val3 = FUTEX_BITSET_MATCH_ANY;
 		fallthrough;
 	case FUTEX_WAIT_BITSET:
-		return futex_wait(uaddr, flags, val, timeout, val3);
+		return futex_wait(uaddr, flags, val, timeout, val3, NULL);
 	case FUTEX_WAKE:
 		val3 = FUTEX_BITSET_MATCH_ANY;
 		fallthrough;
@@ -3756,6 +4074,8 @@ long do_futex(u32 __user *uaddr, int op, u32 val, ktime_t *timeout,
 					     uaddr2);
 	case FUTEX_CMP_REQUEUE_PI:
 		return futex_requeue(uaddr, flags, uaddr2, val, val2, &val3, 1);
+	case FUTEX_SWAP:
+		return futex_swap(uaddr, flags, val, timeout, uaddr2);
 	}
 	return -ENOSYS;
 }
@@ -3772,7 +4092,7 @@ SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
 
 	if (utime && (cmd == FUTEX_WAIT || cmd == FUTEX_LOCK_PI ||
 		      cmd == FUTEX_WAIT_BITSET ||
-		      cmd == FUTEX_WAIT_REQUEUE_PI)) {
+		      cmd == FUTEX_WAIT_REQUEUE_PI || cmd == FUTEX_SWAP)) {
 		if (unlikely(should_fail_futex(!(op & FUTEX_PRIVATE_FLAG))))
 			return -EFAULT;
 		if (get_timespec64(&ts, utime))
@@ -3781,7 +4101,7 @@ SYSCALL_DEFINE6(futex, u32 __user *, uaddr, int, op, u32, val,
 			return -EINVAL;
 
 		t = timespec64_to_ktime(ts);
-		if (cmd == FUTEX_WAIT)
+		if (cmd == FUTEX_WAIT || cmd == FUTEX_SWAP)
 			t = ktime_add_safe(ktime_get(), t);
 		else if (cmd != FUTEX_LOCK_PI && !(op & FUTEX_CLOCK_REALTIME))
 			t = timens_ktime_to_host(CLOCK_MONOTONIC, t);
@@ -3968,14 +4288,14 @@ SYSCALL_DEFINE6(futex_time32, u32 __user *, uaddr, int, op, u32, val,
 
 	if (utime && (cmd == FUTEX_WAIT || cmd == FUTEX_LOCK_PI ||
 		      cmd == FUTEX_WAIT_BITSET ||
-		      cmd == FUTEX_WAIT_REQUEUE_PI)) {
+		      cmd == FUTEX_WAIT_REQUEUE_PI || cmd == FUTEX_SWAP)) {
 		if (get_old_timespec32(&ts, utime))
 			return -EFAULT;
 		if (!timespec64_valid(&ts))
 			return -EINVAL;
 
 		t = timespec64_to_ktime(ts);
-		if (cmd == FUTEX_WAIT)
+		if (cmd == FUTEX_WAIT || cmd == FUTEX_SWAP)
 			t = ktime_add_safe(ktime_get(), t);
 		else if (cmd != FUTEX_LOCK_PI && !(op & FUTEX_CLOCK_REALTIME))
 			t = timens_ktime_to_host(CLOCK_MONOTONIC, t);

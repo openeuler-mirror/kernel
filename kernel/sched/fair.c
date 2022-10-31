@@ -572,6 +572,28 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	rb_add_cached(&se->run_node, &cfs_rq->tasks_timeline, __entity_less);
 }
 
+static void __traverse_cfs_rq(struct cfs_rq *cfs_rq, struct rb_node **node)
+{
+	struct sched_entity *entry;
+
+	if (!*node) {
+		printk("TREE END\n");
+		return;
+	}
+
+	entry = rb_entry(*node, struct sched_entity, run_node);
+
+	__traverse_cfs_rq(cfs_rq, &(*node)->rb_left);
+	printk("%p\n", entry);
+	__traverse_cfs_rq(cfs_rq, &(*node)->rb_left);
+}
+
+void traverse_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	struct rb_node **link = &cfs_rq->tasks_timeline.rb_root.rb_node;
+	__traverse_cfs_rq(cfs_rq, link);
+}
+
 static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
@@ -2982,7 +3004,7 @@ adjust_rq_cfs_tasks(void (*list_op)(struct list_head *, struct list_head *),
 }
 #endif
 
-static void
+void
 account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	update_load_add(&cfs_rq->load, se->load.weight);
@@ -4340,7 +4362,11 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	update_stats_enqueue(cfs_rq, se, flags);
 	check_spread(cfs_rq, se);
 	if (!curr)
-		__enqueue_entity(cfs_rq, se);
+#ifdef CONFIG_DTS
+		if (se->by_pass != INIT_BY_PASS)
+#endif
+			__enqueue_entity(cfs_rq, se);
+
 	se->on_rq = 1;
 
 	/*
@@ -4463,6 +4489,12 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	unsigned long ideal_runtime, delta_exec;
 	struct sched_entity *se;
 	s64 delta;
+#ifdef CONFIG_DTS
+	struct task_struct *curr_task = NULL;
+
+	if (entity_is_task(curr) && curr->by_pass != NONE_BY_PASS)
+		curr_task = task_of_dts_shared_se(curr);
+#endif
 
 	ideal_runtime = sched_slice(cfs_rq, curr);
 	delta_exec = curr->sum_exec_runtime - curr->prev_sum_exec_runtime;
@@ -4488,7 +4520,7 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 		 * re-elected due to buddy favours.
 		 */
 		clear_buddies(cfs_rq, curr);
-		return;
+		goto end;
 	}
 
 	/*
@@ -4497,19 +4529,72 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	 * This also mitigates buddy induced latencies under load.
 	 */
 	if (delta_exec < sysctl_sched_min_granularity)
-		return;
+		goto end;
 
 	se = __pick_first_entity(cfs_rq);
 	delta = curr->vruntime - se->vruntime;
 
 	if (delta < 0)
-		return;
+		goto end;
 
-	if (delta > ideal_runtime)
+	if (delta > ideal_runtime) {
 		resched_curr(rq_of(cfs_rq));
+		goto end;
+	} else {
+		return;
+	}
+end:
+#ifdef CONFIG_DTS
+	if (curr_task) {
+		curr_task->by_pass = END_BY_PASS;
+		curr_task->se.by_pass = END_BY_PASS;
+		curr_task->dts_shared_se.by_pass = END_BY_PASS;
+	}
+#endif
 }
 
-static void
+#ifdef CONFIG_DTS
+/*
+ * We dequeue the task original se but we do NOT CHANGE any schedule infomation of se.
+ * Correspondingly, enqueue the task original se without any changes on se's information
+ * when the shared se expired. // TODO
+ * shared se's stats acquiring, etc NEEDs TO BE fixed when task execute in DTS mode. // TODO
+ */
+void
+replace_shared_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, struct sched_entity *shared_se)
+{
+	if (shared_se->on_rq) {
+		/*
+		 * Any task has to be enqueued before it get to execute on
+		 * a CPU. So account for the time it spent waiting on the
+		 * runqueue.
+		 */
+		// TODO
+		update_stats_wait_end(cfs_rq, shared_se);
+		__dequeue_entity(cfs_rq, se);	/* the se of next task should be dequeued */
+		update_load_avg(cfs_rq, shared_se, UPDATE_TG);
+	}
+
+	update_stats_curr_start(cfs_rq, shared_se);
+	cfs_rq->curr = shared_se;	// 后续update_curr是update cfs_rq->curr
+
+	/*
+	 * Track our maximum slice length, if the CPU's load is at
+	 * least twice that of our own weight (i.e. dont track it
+	 * when there are only lesser-weight tasks around):
+	 */
+	if (schedstat_enabled() &&
+	    rq_of(cfs_rq)->cfs.load.weight >= 2*shared_se->load.weight) {
+		schedstat_set(shared_se->statistics.slice_max,
+			max((u64)schedstat_val(shared_se->statistics.slice_max),
+			    shared_se->sum_exec_runtime - shared_se->prev_sum_exec_runtime));
+	}
+
+	shared_se->prev_sum_exec_runtime = shared_se->sum_exec_runtime;
+}
+#endif
+
+void
 set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	/* 'current' is not kept within the tree. */
@@ -4605,8 +4690,15 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 
 static bool check_cfs_rq_runtime(struct cfs_rq *cfs_rq);
 
+/* the prev's value is unique or shared for the dts mechanism */
 static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 {
+#ifdef CONFIG_DTS
+	struct task_struct *task = NULL;
+
+	if (entity_is_task(prev))
+		task = task_of(prev);
+#endif
 	/*
 	 * If still on the runqueue then deactivate_task()
 	 * was not called and update_curr() has to be done:
@@ -4627,6 +4719,13 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 		update_load_avg(cfs_rq, prev, 0);
 	}
 	cfs_rq->curr = NULL;
+#ifdef CONFIG_DTS
+	if (task && task->by_pass == END_BY_PASS) {
+		task->by_pass = NONE_BY_PASS;
+		task->se.by_pass = NONE_BY_PASS;
+		task->dts_shared_se.by_pass = NONE_BY_PASS;
+	}
+#endif
 }
 
 static void
@@ -5630,6 +5729,12 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 	unsigned int prev_nr = rq->cfs.h_nr_running;
 
+#ifdef CONFIG_DTS
+	if (p->by_pass != NONE_BY_PASS) {
+		se = &p->dts_shared_se;
+	}
+#endif
+
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -5737,11 +5842,17 @@ static void set_next_buddy(struct sched_entity *se);
 static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
-	struct sched_entity *se = &p->se;
+	struct sched_entity *se;
 	int task_sleep = flags & DEQUEUE_SLEEP;
 	int idle_h_nr_running = task_has_idle_policy(p);
 	unsigned int prev_nr = rq->cfs.h_nr_running;
 	bool was_sched_idle = sched_idle_rq(rq);
+#ifdef CONFIG_DTS
+	if (p->by_pass != NONE_BY_PASS)
+		se = &p->dts_shared_se;
+	else
+#endif
+		se = &p->se;
 
 	util_est_dequeue(&rq->cfs, p);
 
@@ -6899,6 +7010,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int ret;
 #endif
 
+        if ((wake_flags & WF_CURRENT_CPU) && cpumask_test_cpu(cpu, p->cpus_ptr))
+                return cpu;
+
+
 	time = schedstat_start_time();
 
 	if (sd_flag & SD_BALANCE_WAKE) {
@@ -7155,10 +7270,27 @@ static void set_skip_buddy(struct sched_entity *se)
 static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 {
 	struct task_struct *curr = rq->curr;
-	struct sched_entity *se = &curr->se, *pse = &p->se;
+	struct sched_entity *se, *pse;
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
 	int scale = cfs_rq->nr_running >= sched_nr_latency;
 	int next_buddy_marked = 0;
+
+#ifdef CONFIG_DTS
+	int curr_by_pass = curr->by_pass;
+	int p_by_pass = p->by_pass;
+
+	if (curr_by_pass != NONE_BY_PASS)
+		se = &curr->dts_shared_se;
+	else
+#endif
+		se = &curr->se;
+
+#ifdef CONFIG_DTS
+	if (p_by_pass != NONE_BY_PASS)
+		pse = &p->dts_shared_se;
+	else
+#endif
+		pse = &p->se;
 
 	if (unlikely(se == pse))
 		return;
@@ -7714,13 +7846,25 @@ again:
 
 	p = task_of(se);
 
+	if (se == NULL) {
+		printk("CFS_RQ Nr_running: %d\n", rq->cfs.nr_running);
+		printk("RQ Nr_running: %d\n", rq->nr_running);
+	}
+
 	/*
 	 * Since we haven't yet done put_prev_entity and if the selected task
 	 * is a different task than we started out with, try and touch the
 	 * least amount of cfs_rqs.
 	 */
 	if (prev != p) {
-		struct sched_entity *pse = &prev->se;
+		struct sched_entity *pse;
+#ifdef CONFIG_DTS
+		if (prev->by_pass != NONE_BY_PASS)
+			pse = &prev->dts_shared_se;
+		else
+#endif
+		pse = &prev->se;
+
 
 		while (!(cfs_rq = is_same_group(se, pse))) {
 			int se_depth = se->depth;
@@ -7873,8 +8017,15 @@ static struct task_struct *__pick_next_task_fair(struct rq *rq)
  */
 static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
 {
-	struct sched_entity *se = &prev->se;
+	struct sched_entity *se;
 	struct cfs_rq *cfs_rq;
+#ifdef CONFIG_DTS
+	if (prev->by_pass != NONE_BY_PASS)
+		se = &prev->dts_shared_se;
+	else
+#endif
+		se = &prev->se;
+
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
@@ -7891,7 +8042,13 @@ static void yield_task_fair(struct rq *rq)
 {
 	struct task_struct *curr = rq->curr;
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
-	struct sched_entity *se = &curr->se;
+	struct sched_entity *se;
+#ifdef CONFIG_DTS
+	if (curr->by_pass != NONE_BY_PASS)
+		se = &curr->dts_shared_se;
+	else
+#endif
+	se = &curr->se;
 
 	/*
 	 * Are we the only task in the tree?
@@ -7921,6 +8078,13 @@ static void yield_task_fair(struct rq *rq)
 static bool yield_to_task_fair(struct rq *rq, struct task_struct *p)
 {
 	struct sched_entity *se = &p->se;
+
+#ifdef CONFIG_DTS
+	/* DTS tasks DO NOT support being executed by yeild_to method.*/
+	if (p->by_pass != NONE_BY_PASS) {
+		return false;
+	}
+#endif
 
 	/* throttled hierarchies are not runnable */
 	if (!se->on_rq || throttled_hierarchy(cfs_rq_of(se)))
@@ -8359,7 +8523,7 @@ can_migrate_task_llc(struct task_struct *p, struct rq *rq, struct rq *dst_rq)
 /*
  * detach_task() -- detach the task for the migration from @src_rq to @dst_cpu.
  */
-static void detach_task(struct task_struct *p, struct rq *src_rq, int dst_cpu)
+void detach_task(struct task_struct *p, struct rq *src_rq, int dst_cpu)
 {
 	lockdep_assert_held(&src_rq->lock);
 
@@ -8569,6 +8733,10 @@ static void attach_task(struct rq *rq, struct task_struct *p)
 
 	BUG_ON(task_rq(p) != rq);
 	activate_task(rq, p, ENQUEUE_NOCLOCK);
+
+#ifdef CONFIG_DTS
+	if (p->by_pass != INIT_BY_PASS)
+#endif
 	check_preempt_curr(rq, p, 0);
 }
 
@@ -11540,6 +11708,53 @@ static int steal_from(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
 	return stolen;
 }
 
+int steal_task(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
+		      struct task_struct *tsk)
+{
+	struct rq_flags rf;
+	int stolen = 0;
+	int dst_cpu = dst_rq->cpu;
+	struct rq *src_rq = task_rq(tsk);
+	int src_cpu = task_cpu(tsk);
+
+	if (!steal_enabled())
+		return 0;
+
+	if (!cpu_active(dst_cpu))
+		return 0;
+
+	if (dst_cpu == src_cpu)
+		return 0;
+
+	if (*locked) {
+		rq_unpin_lock(dst_rq, dst_rf);
+		raw_spin_unlock(&dst_rq->lock);
+		*locked = false;
+	}
+	rq_lock_irqsave(src_rq, &rf);
+	update_rq_clock(src_rq);
+
+	if (!cpu_active(src_cpu))
+		tsk = NULL;
+	else
+		detach_task(tsk, src_rq, dst_cpu);
+
+	rq_unlock(src_rq, &rf);
+
+	if (tsk) {
+		raw_spin_lock(&dst_rq->lock);
+		rq_repin_lock(dst_rq, dst_rf);
+		*locked = true;
+		update_rq_clock(dst_rq);
+		attach_task(dst_rq, tsk);
+		stolen = 1;
+		schedstat_inc(dst_rq->steal);
+	}
+	local_irq_restore(rf.flags);
+
+	return stolen;
+}
+
 /*
  * Conservative upper bound on the max cost of a steal, in nsecs (the typical
  * cost is 1-2 microsec).  Do not steal if average idle time is less.
@@ -11648,6 +11863,12 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &curr->se;
+
+#ifdef CONFIG_DTS
+	if (curr->by_pass != NONE_BY_PASS) {
+		se = &curr->dts_shared_se;
+	}
+#endif
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
@@ -12142,6 +12363,81 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
 		rr_interval = NS_TO_JIFFIES(sched_slice(cfs_rq_of(se), se));
 
 	return rr_interval;
+}
+
+void update_before_bypass(void)
+{
+	int cpu = smp_processor_id();
+	struct rq *rq = cpu_rq(cpu);
+	struct rq_flags rf;
+	struct sched_entity *curr;
+	struct cfs_rq *cfs_rq;
+
+#ifdef CONFIG_DTS
+	if (current->by_pass != NONE_BY_PASS)
+		curr = &current->dts_shared_se;
+	else
+#endif
+		curr = &current->se;
+
+	cfs_rq = cfs_rq_of(curr);
+
+	rq_lock(rq, &rf);
+	update_rq_clock(rq);
+
+	/*
+	 * Ensure that runnable average is periodically updated.
+	 */
+	update_load_avg(cfs_rq, curr, UPDATE_TG);
+	update_cfs_group(curr);
+
+	/*
+	 * Update run-time statistics of the 'current'.
+	 */
+	update_curr(cfs_rq);
+
+	/*
+	 * Ensure that runnable average is periodically updated.
+	 */
+	update_load_avg(cfs_rq, curr, UPDATE_TG);
+	update_cfs_group(curr);
+
+	rq_unlock(rq, &rf);
+}
+
+/*
+ * return 1: left time Y
+ *
+ */
+int check_task_left_time(struct task_struct *task)
+{
+	unsigned long ideal_runtime, delta_exec;
+	struct sched_entity *se;
+	struct cfs_rq *cfs_rq;
+#ifdef CONFIG_DTS
+	if (task->by_pass != NONE_BY_PASS)
+		se = &task->dts_shared_se;
+	else
+#endif
+		se = &task->se;
+
+	cfs_rq = cfs_rq_of(se);
+
+	ideal_runtime = sched_slice(cfs_rq, se);
+	delta_exec = se->sum_exec_runtime - se->prev_sum_exec_runtime;
+	if (delta_exec > ideal_runtime) {
+		if (cfs_rq->nr_running > 1) {
+			resched_curr(rq_of(cfs_rq));
+			/*
+			* The current task ran long enough, ensure it doesn't get
+			* re-elected due to buddy favours.
+			*/
+			clear_buddies(cfs_rq, se);
+		}
+		return 0;
+	}
+
+	return 1;
 }
 
 /*

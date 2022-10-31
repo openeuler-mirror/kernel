@@ -68,6 +68,11 @@ struct task_delay_info;
 struct task_group;
 struct io_uring_task;
 
+#define NONE_BY_PASS			0x0000
+#define INIT_BY_PASS			0x0001
+#define IN_BY_PASS			0x0002
+#define END_BY_PASS			0x0004
+
 /*
  * Task state bitmask. NOTE! These bits are also
  * encoded in fs/proc/array.c: get_task_state().
@@ -500,6 +505,10 @@ struct sched_entity {
 	unsigned long			runnable_weight;
 #endif
 
+#ifdef CONFIG_DTS
+	int 				by_pass;
+#endif
+
 #ifdef CONFIG_SMP
 	/*
 	 * Per entity load average tracking.
@@ -725,6 +734,15 @@ struct task_struct {
 	int				static_prio;
 	int				normal_prio;
 	unsigned int			rt_priority;
+
+#ifdef CONFIG_DTS
+	/*
+	 * by_pass indicate that the task is launched by direct-thread-switch.
+	 * dts_shared_se is the schedule entity shared with DTS task.
+	 */
+	int				by_pass;
+	struct sched_entity		dts_shared_se;
+#endif
 
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
@@ -1829,6 +1847,7 @@ extern struct task_struct *find_get_task_by_vpid(pid_t nr);
 
 extern int wake_up_state(struct task_struct *tsk, unsigned int state);
 extern int wake_up_process(struct task_struct *tsk);
+extern int wake_up_process_prefer_current_cpu(struct task_struct *tsk);
 extern void wake_up_new_task(struct task_struct *tsk);
 
 #ifdef CONFIG_SMP
@@ -2191,6 +2210,10 @@ static inline int sched_qos_cpu_overload(void)
 {
 	return 0;
 }
+#endif
+
+#ifdef CONFIG_DTS
+extern int check_task_left_time(struct task_struct *task);
 #endif
 
 #ifdef CONFIG_BPF_SCHED
