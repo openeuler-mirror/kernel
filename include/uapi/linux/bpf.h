@@ -4070,6 +4070,24 @@ union bpf_attr {
  *             *offset*
  *     Return
  *             0 on success, or a negative error in case of failure.
+ * 
+ * long bpf_override_reg(struct pt_regs *regs, const char* regs_name, u64 value) 
+ * 	Description
+ *		Also used for error injection, unlike bpf_override_return, this helper 
+ * 		uses kprobes to overwrite the probed function's register and set it to 
+ * 		*rc*. Instead of just modifying the return value, the first argument 
+ * 		is the context *regs* where kprobe works,and the second parameter is 
+ * 		the offset of the register.
+ * 
+ * 		And the helper doesn't modify the PC (Program Counter). This means that
+ * 		the probed function will run and replace the function's register values.
+ * 
+ * 		On the other hand, to avoid security implications, it is likewise only
+ * 		available when compiling the kernel with the **CONFIG_BPF_KPROBE_OVERRIDE** 
+ * 		configuration option, and in this case it only applies to functions marked 
+ * 		with **ALLOW_ERROR_INJECTION** in the kernel code.
+ *     Return
+ *             0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4258,6 +4276,7 @@ union bpf_attr {
 	FN(update_tcp_seq),		\
 	FN(xdp_store_bytes),		\
 	FN(xdp_load_bytes),		\
+	FN(override_reg),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
