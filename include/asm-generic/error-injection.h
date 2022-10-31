@@ -32,6 +32,8 @@ static struct error_injection_entry __used				\
 	};
 
 void override_function_with_return(struct pt_regs *regs);
+int regs_set_register(struct pt_regs *regs, const char *regs_name,
+		      unsigned long value);
 #else
 #define ALLOW_ERROR_INJECTION(fname, _etype)
 

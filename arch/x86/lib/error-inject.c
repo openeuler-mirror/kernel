@@ -19,3 +19,16 @@ void override_function_with_return(struct pt_regs *regs)
 	regs->ip = (unsigned long)&just_return_func;
 }
 NOKPROBE_SYMBOL(override_function_with_return);
+
+int regs_set_register(struct pt_regs *regs, const char *regs_name,
+		      unsigned long value)
+{
+	int offset = 0;
+	offset = regs_query_register_offset(regs_name) >> 3;
+	if (offset >= 0) {
+		*((unsigned long *)((unsigned long *)regs + offset)) = value;
+		return 0;
+	}
+	return -1;
+}
+NOKPROBE_SYMBOL(regs_set_register);

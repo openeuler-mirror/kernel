@@ -144,6 +144,28 @@ static const struct bpf_func_proto bpf_override_return_proto = {
 	.arg1_type	= ARG_PTR_TO_CTX,
 	.arg2_type	= ARG_ANYTHING,
 };
+
+BPF_CALL_3(bpf_override_regs, struct pt_regs *, regs, const char *, regs_name,
+	   unsigned long, value)
+{
+	int ret = 0;
+
+	#ifdef CONFIG_X86_64
+	ret = regs_set_register(regs, regs_name, value);
+	if (unlikely(ret < 0))
+		return ret;
+	#endif
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_override_reg_proto = {
+	.func		= bpf_override_reg,
+	.gpl_only	= true,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
+	.arg3_type	= ARG_ANYTHING,
+};
 #endif
 
 static __always_inline int
@@ -1056,6 +1078,8 @@ kprobe_prog_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 #ifdef CONFIG_BPF_KPROBE_OVERRIDE
 	case BPF_FUNC_override_return:
 		return &bpf_override_return_proto;
+	case BPF_FUNC_override_reg:
+		return &bpf_override_reg_proto;
 #endif
 	default:
 		return bpf_tracing_func_proto(func_id, prog);
