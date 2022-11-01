@@ -34,6 +34,7 @@ static const struct irq_domain_ops sw64_intc_domain_ops = {
 	.map = sw64_intc_domain_map,
 };
 
+#ifdef CONFIG_ACPI
 static int __init
 intc_parse_madt(union acpi_subtable_headers *header,
 		       const unsigned long end)
@@ -91,7 +92,9 @@ static int __init intc_init(void)
 }
 
 subsys_initcall(intc_init);
+#endif
 
+#ifdef CONFIG_OF
 static struct irq_domain *root_domain;
 
 static int __init
@@ -143,3 +146,4 @@ init_onchip_vt_IRQ(struct device_node *intc, struct device_node *parent)
 }
 
 IRQCHIP_DECLARE(sw64_vt_intc, "sw64,sw6_irq_vt_controller", init_onchip_vt_IRQ);
+#endif
