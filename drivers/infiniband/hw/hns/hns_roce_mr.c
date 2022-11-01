@@ -110,10 +110,13 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	err = hns_roce_mtr_create(hr_dev, &mr->pbl_mtr, &buf_attr,
 				  hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT,
 				  udata, start);
-	if (err)
+	if (err) {
 		ibdev_err(ibdev, "failed to alloc pbl mtr, ret = %d.\n", err);
-	else
-		mr->npages = mr->pbl_mtr.hem_cfg.buf_pg_count;
+		return err;
+	}
+
+	mr->npages = mr->pbl_mtr.hem_cfg.buf_pg_count;
+	mr->pbl_hop_num = buf_attr.region[0].hopnum;
 
 	return err;
 }
@@ -943,6 +946,52 @@ static int get_best_page_shift(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+static int get_best_hop_num(struct hns_roce_dev *hr_dev,
+			    struct hns_roce_mtr *mtr,
+			    struct hns_roce_buf_attr *buf_attr,
+			    unsigned int ba_pg_shift)
+{
+#define INVALID_HOPNUM -1
+#define MIN_BA_CNT 1
+	size_t buf_pg_sz = 1 << buf_attr->page_shift;
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	size_t ba_pg_sz = 1 << ba_pg_shift;
+	int hop_num = INVALID_HOPNUM;
+	size_t unit = MIN_BA_CNT;
+	size_t ba_cnt;
+	int i;
+
+	if (!buf_attr->adaptive)
+		return 0;
+
+	hop_num = INVALID_HOPNUM;
+	unit = MIN_BA_CNT;
+	/* Caculating the number of buf pages, each buf page needs a BA */
+	if (mtr->umem)
+		ba_cnt = ib_umem_num_dma_blocks(mtr->umem, buf_pg_sz);
+	else
+		ba_cnt = DIV_ROUND_UP(buf_attr->region[0].size, buf_pg_sz);
+
+	for (i = 0; i <= HNS_ROCE_MAX_HOP_NUM; i++) {
+		if (ba_cnt <= unit) {
+			hop_num = i;
+			break;
+		}
+		/* Number of BAs can be represented at per hop */
+		unit *= ba_pg_sz / BA_BYTE_LEN;
+	}
+
+	if (hop_num < 0) {
+		ibdev_err(ibdev,
+			  "failed to calculate a valid hopnum.\n");
+		return -EINVAL;
+	}
+
+	buf_attr->region[0].hopnum = hop_num;
+
+	return 0;
+}
+
 static bool is_buf_attr_valid(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_buf_attr *attr)
 {
@@ -1066,6 +1115,10 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 		}
 
 		ret = get_best_page_shift(hr_dev, mtr, buf_attr);
+		if (ret)
+			goto err_init_buf;
+
+		ret = get_best_hop_num(hr_dev, mtr, buf_attr, ba_page_shift);
 		if (ret)
 			goto err_init_buf;
 	}

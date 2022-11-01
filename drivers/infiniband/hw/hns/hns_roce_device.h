@@ -178,6 +178,8 @@ enum {
 
 #define HNS_ROCE_CMD_SUCCESS			1
 
+#define HNS_ROCE_MAX_HOP_NUM			3
+
 /* The minimum page size is 4K for hardware */
 #define HNS_HW_PAGE_SHIFT			12
 #define HNS_HW_PAGE_SIZE			(1 << HNS_HW_PAGE_SHIFT)
