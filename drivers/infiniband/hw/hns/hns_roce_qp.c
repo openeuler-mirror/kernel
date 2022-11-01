@@ -1338,6 +1338,7 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
+	struct hns_roce_ib_modify_qp_resp resp = {};
 	enum ib_qp_state cur_state, new_state;
 	int ret = -EINVAL;
 
@@ -1378,6 +1379,18 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 
 	ret = hr_dev->hw->modify_qp(ibqp, attr, attr_mask, cur_state,
 				    new_state, udata);
+	if (ret)
+		goto out;
+
+	if (udata && udata->outlen) {
+		resp.tc_mode = hr_qp->tc_mode;
+		resp.priority = hr_qp->priority;
+		ret = ib_copy_to_udata(udata, &resp,
+				       min(udata->outlen, sizeof(resp)));
+		if (ret)
+			ibdev_err(&hr_dev->ib_dev,
+				  "failed to copy modify qp resp.\n");
+	}
 
 out:
 	mutex_unlock(&hr_qp->mutex);

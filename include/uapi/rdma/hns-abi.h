@@ -85,6 +85,18 @@ struct hns_roce_ib_create_qp_resp {
 	__aligned_u64 dwqe_mmap_key;
 };
 
+struct hns_roce_ib_create_ah_resp {
+	__u8    priority;
+	__u8    tc_mode;
+	__u8    reserved[6];
+};
+
+struct hns_roce_ib_modify_qp_resp {
+	__u8	tc_mode;
+	__u8	priority;
+	__u8	reserved[6];
+};
+
 enum {
 	HNS_ROCE_EXSGE_FLAGS = 1 << 0,
 	HNS_ROCE_RQ_INLINE_FLAGS = 1 << 1,
