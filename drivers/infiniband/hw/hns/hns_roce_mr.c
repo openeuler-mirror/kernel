@@ -712,6 +712,16 @@ static int cal_mtr_pg_cnt(struct hns_roce_mtr *mtr)
 	return page_cnt;
 }
 
+static bool need_split_huge_page(struct hns_roce_mtr *mtr)
+{
+	/* When HEM buffer uses 0-level addressing, the page size is
+	 * equal to the whole buffer size. If the current MTR has multiple
+	 * regions, we split the buffer into small pages(4k, required by hns
+	 * ROCEE). These pages will be used in multiple regions.
+	 */
+	return mtr->hem_cfg.is_direct && mtr->hem_cfg.region_count > 1;
+}
+
 static int mtr_map_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
@@ -721,14 +731,8 @@ static int mtr_map_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 	int npage;
 	int ret;
 
-	/* When HEM buffer uses 0-level addressing, the page size is
-	 * equal to the whole buffer size, and we split the buffer into
-	 * small pages which is used to check whether the adjacent
-	 * units are in the continuous space and its size is fixed to
-	 * 4K based on hns ROCEE's requirement.
-	 */
-	page_shift = mtr->hem_cfg.is_direct ? HNS_HW_PAGE_SHIFT :
-					      mtr->hem_cfg.buf_pg_shift;
+	page_shift = need_split_huge_page(mtr) ? HNS_HW_PAGE_SHIFT :
+						 mtr->hem_cfg.buf_pg_shift;
 	/* alloc a tmp array to store buffer's dma address */
 	pages = kvcalloc(page_count, sizeof(dma_addr_t), GFP_KERNEL);
 	if (!pages)
@@ -748,7 +752,7 @@ static int mtr_map_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 		goto err_alloc_list;
 	}
 
-	if (mtr->hem_cfg.is_direct && npage > 1) {
+	if (need_split_huge_page(mtr) && npage > 1) {
 		ret = mtr_check_direct_pages(pages, npage, page_shift);
 		if (ret) {
 			ibdev_err(ibdev, "failed to check %s page: %d / %d.\n",
@@ -1026,7 +1030,7 @@ static int mtr_init_buf_cfg(struct hns_roce_dev *hr_dev,
 	cfg->is_direct = !mtr_has_mtt(attr);
 	cfg->region_count = attr->region_count;
 	buf_size = mtr_bufs_size(attr);
-	if (cfg->is_direct) {
+	if (need_split_huge_page(mtr)) {
 		buf_pg_sz = HNS_HW_PAGE_SIZE;
 		cfg->buf_pg_count = 1;
 		/* The ROCEE requires the page size to be 4K * 2 ^ N. */
