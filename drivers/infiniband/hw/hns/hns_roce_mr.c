@@ -691,14 +691,37 @@ static int mtr_alloc_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 	return 0;
 }
 
-static int mtr_map_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
-			int page_count, unsigned int page_shift)
+static int cal_mtr_pg_cnt(struct hns_roce_mtr *mtr)
+{
+	struct hns_roce_buf_region *region;
+	int page_cnt = 0;
+	int i;
+
+	for (i = 0; i < mtr->hem_cfg.region_count; i++) {
+		region = &mtr->hem_cfg.region[i];
+		page_cnt += region->count;
+	}
+
+	return page_cnt;
+}
+
+static int mtr_map_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	int page_count = cal_mtr_pg_cnt(mtr);
+	unsigned int page_shift;
 	dma_addr_t *pages;
 	int npage;
 	int ret;
 
+	/* When HEM buffer uses 0-level addressing, the page size is
+	 * equal to the whole buffer size, and we split the buffer into
+	 * small pages which is used to check whether the adjacent
+	 * units are in the continuous space and its size is fixed to
+	 * 4K based on hns ROCEE's requirement.
+	 */
+	page_shift = mtr->hem_cfg.is_direct ? HNS_HW_PAGE_SHIFT :
+					      mtr->hem_cfg.buf_pg_shift;
 	/* alloc a tmp array to store buffer's dma address */
 	pages = kvcalloc(page_count, sizeof(dma_addr_t), GFP_KERNEL);
 	if (!pages)
@@ -848,62 +871,68 @@ done:
 	return total;
 }
 
+static bool is_buf_attr_valid(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_buf_attr *attr)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+
+	if (attr->region_count > ARRAY_SIZE(attr->region) ||
+	    attr->region_count < 1 || attr->page_shift < HNS_HW_PAGE_SHIFT) {
+		ibdev_err(ibdev,
+			  "invalid buf attr, region count %d page shift %u.\n",
+			  attr->region_count, attr->page_shift);
+		return false;
+	}
+
+	return true;
+}
+
 static int mtr_init_buf_cfg(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_buf_attr *attr,
-			    struct hns_roce_hem_cfg *cfg,
-			    unsigned int *buf_page_shift, u64 unalinged_size)
+			    struct hns_roce_hem_cfg *cfg, u64 unalinged_size)
 {
 	struct hns_roce_buf_region *r;
-	u64 first_region_padding;
-	int page_cnt, region_cnt;
-	unsigned int page_shift;
+	size_t buf_pg_sz;
 	size_t buf_size;
+	int page_cnt, i;
+	u64 pgoff = 0;
+
+	if (!is_buf_attr_valid(hr_dev, attr))
+		return -EINVAL;
 
 	/* If mtt is disabled, all pages must be within a continuous range */
 	cfg->is_direct = !mtr_has_mtt(attr);
+	cfg->region_count = attr->region_count;
 	buf_size = mtr_bufs_size(attr);
 	if (cfg->is_direct) {
-		/* When HEM buffer uses 0-level addressing, the page size is
-		 * equal to the whole buffer size, and we split the buffer into
-		 * small pages which is used to check whether the adjacent
-		 * units are in the continuous space and its size is fixed to
-		 * 4K based on hns ROCEE's requirement.
-		 */
-		page_shift = HNS_HW_PAGE_SHIFT;
-
-		/* The ROCEE requires the page size to be 4K * 2 ^ N. */
+		buf_pg_sz = HNS_HW_PAGE_SIZE;
 		cfg->buf_pg_count = 1;
+		/* The ROCEE requires the page size to be 4K * 2 ^ N. */
 		cfg->buf_pg_shift = HNS_HW_PAGE_SHIFT +
 			order_base_2(DIV_ROUND_UP(buf_size, HNS_HW_PAGE_SIZE));
-		first_region_padding = 0;
 	} else {
-		page_shift = attr->page_shift;
 		cfg->buf_pg_count = DIV_ROUND_UP(buf_size + unalinged_size,
-						 1 << page_shift);
-		cfg->buf_pg_shift = page_shift;
-		first_region_padding = unalinged_size;
+						 1 << attr->page_shift);
+		cfg->buf_pg_shift = attr->page_shift;
+		buf_pg_sz = 1 << cfg->buf_pg_shift;
+		pgoff = unalinged_size;
 	}
 
 	/* Convert buffer size to page index and page count for each region and
 	 * the buffer's offset needs to be appended to the first region.
 	 */
-	for (page_cnt = 0, region_cnt = 0; region_cnt < attr->region_count &&
-	     region_cnt < ARRAY_SIZE(cfg->region); region_cnt++) {
-		r = &cfg->region[region_cnt];
+	for (page_cnt = 0, i = 0; i < attr->region_count; i++) {
+		r = &cfg->region[i];
 		r->offset = page_cnt;
-		buf_size = hr_hw_page_align(attr->region[region_cnt].size +
-					    first_region_padding);
-		r->count = DIV_ROUND_UP(buf_size, 1 << page_shift);
-		first_region_padding = 0;
+		buf_size = hr_hw_page_align(attr->region[i].size +
+					    pgoff);
+		r->count = DIV_ROUND_UP(buf_size, buf_pg_sz);
+		pgoff = 0;
 		page_cnt += r->count;
-		r->hopnum = to_hr_hem_hopnum(attr->region[region_cnt].hopnum,
-					     r->count);
+		r->hopnum = to_hr_hem_hopnum(attr->region[i].hopnum, r->count);
 	}
 
-	cfg->region_count = region_cnt;
-	*buf_page_shift = page_shift;
-
-	return page_cnt;
+	return 0;
 }
 
 static int mtr_alloc_mtt(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
@@ -949,18 +978,12 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 			unsigned long user_addr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	unsigned int buf_page_shift = 0;
-	int buf_page_cnt;
 	int ret;
 
-	buf_page_cnt = mtr_init_buf_cfg(hr_dev, buf_attr, &mtr->hem_cfg,
-					&buf_page_shift,
-					udata ? user_addr & ~PAGE_MASK : 0);
-	if (buf_page_cnt < 1 || buf_page_shift < HNS_HW_PAGE_SHIFT) {
-		ibdev_err(ibdev, "failed to init mtr cfg, count %d shift %u.\n",
-			  buf_page_cnt, buf_page_shift);
-		return -EINVAL;
-	}
+	ret = mtr_init_buf_cfg(hr_dev, buf_attr, &mtr->hem_cfg,
+			       udata ? user_addr & ~PAGE_MASK : 0);
+	if (ret)
+		return ret;
 
 	ret = mtr_alloc_mtt(hr_dev, mtr, ba_page_shift);
 	if (ret) {
@@ -984,7 +1007,7 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 	}
 
 	/* Write buffer's dma address to MTT */
-	ret = mtr_map_bufs(hr_dev, mtr, buf_page_cnt, buf_page_shift);
+	ret = mtr_map_bufs(hr_dev, mtr);
 	if (ret)
 		ibdev_err(ibdev, "failed to map mtr bufs, ret = %d.\n", ret);
 	else
