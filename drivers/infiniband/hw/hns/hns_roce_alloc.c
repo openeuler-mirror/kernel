@@ -137,12 +137,6 @@ int hns_roce_get_kmem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 	int total = 0;
 	int i;
 
-	if (page_shift > buf->trunk_shift) {
-		dev_err(hr_dev->dev, "failed to check kmem buf shift %u > %u\n",
-			page_shift, buf->trunk_shift);
-		return -EINVAL;
-	}
-
 	offset = 0;
 	max_size = buf->ntrunks << buf->trunk_shift;
 	for (i = 0; i < buf_cnt && offset < max_size; i++) {

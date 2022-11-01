@@ -32,6 +32,7 @@
  */
 
 #include <linux/vmalloc.h>
+#include <linux/count_zeros.h>
 #include <rdma/ib_umem.h>
 #include "hns_roce_device.h"
 #include "hns_roce_cmd.h"
@@ -102,6 +103,9 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	buf_attr.user_access = mr->access;
 	/* fast MR's buffer is alloced before mapping, not at creation */
 	buf_attr.mtt_only = is_fast;
+	buf_attr.iova = mr->iova;
+	/* pagesize and hopnum is fixed for fast MR */
+	buf_attr.adaptive = !is_fast;
 
 	err = hns_roce_mtr_create(hr_dev, &mr->pbl_mtr, &buf_attr,
 				  hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT,
@@ -871,6 +875,74 @@ done:
 	return total;
 }
 
+/**
+ * hns_roce_find_buf_best_pgsz - Find best page size of the kmem.
+ *
+ * @hr_dev: hns_roce_dev struct
+ * @buf: kmem
+ *
+ * This function helps DMA regions using multi-level addressing to
+ * find the best page size in kmem.
+ *
+ * Returns 0 if the best pagesize is not found.
+ */
+static unsigned long hns_roce_find_buf_best_pgsz(struct hns_roce_dev *hr_dev,
+						 struct hns_roce_buf *buf)
+{
+	unsigned long pgsz_bitmap = hr_dev->caps.page_size_cap;
+	u64 trunk_size = 1 << buf->trunk_shift;
+	u64 buf_size = trunk_size * buf->ntrunks;
+	dma_addr_t dma_addr = 0;
+	dma_addr_t mask;
+	int i;
+
+	/* trunk_shift determines the size of each buf not PAGE_SIZE. */
+	pgsz_bitmap &= GENMASK(BITS_PER_LONG - 1, buf->trunk_shift);
+	/* Best page size should smaller than the actual size of the block. */
+	mask = pgsz_bitmap &
+	       GENMASK(BITS_PER_LONG - 1,
+		       bits_per((buf_size + dma_addr) ^ dma_addr));
+
+	for (i = 0; i < buf->ntrunks; i++) {
+		/* Walk kmem bufs to make sure that the start address of the
+		 * current DMA block and the end address of the previous DMA
+		 * block have the same offset, otherwise the page will be
+		 * reduced.
+		 */
+		mask |= dma_addr ^ buf->trunk_list[i].map;
+		dma_addr = buf->trunk_list[i].map + trunk_size;
+	}
+
+	if (mask)
+		pgsz_bitmap &= GENMASK(count_trailing_zeros(mask), 0);
+
+	return pgsz_bitmap ? rounddown_pow_of_two(pgsz_bitmap) : 0;
+}
+
+static int get_best_page_shift(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_mtr *mtr,
+			       struct hns_roce_buf_attr *buf_attr)
+{
+	unsigned long page_sz;
+
+	if (!buf_attr->adaptive)
+		return 0;
+
+	if (mtr->umem)
+		page_sz = ib_umem_find_best_pgsz(mtr->umem,
+						 hr_dev->caps.page_size_cap,
+						 buf_attr->iova);
+	else
+		page_sz = hns_roce_find_buf_best_pgsz(hr_dev, mtr->kmem);
+
+	if (!page_sz)
+		return -EINVAL;
+
+	buf_attr->page_shift = order_base_2(page_sz);
+
+	return 0;
+}
+
 static bool is_buf_attr_valid(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_buf_attr *attr)
 {
@@ -888,9 +960,10 @@ static bool is_buf_attr_valid(struct hns_roce_dev *hr_dev,
 }
 
 static int mtr_init_buf_cfg(struct hns_roce_dev *hr_dev,
-			    struct hns_roce_buf_attr *attr,
-			    struct hns_roce_hem_cfg *cfg, u64 unalinged_size)
+			    struct hns_roce_mtr *mtr,
+			    struct hns_roce_buf_attr *attr)
 {
+	struct hns_roce_hem_cfg *cfg = &mtr->hem_cfg;
 	struct hns_roce_buf_region *r;
 	size_t buf_pg_sz;
 	size_t buf_size;
@@ -911,11 +984,12 @@ static int mtr_init_buf_cfg(struct hns_roce_dev *hr_dev,
 		cfg->buf_pg_shift = HNS_HW_PAGE_SHIFT +
 			order_base_2(DIV_ROUND_UP(buf_size, HNS_HW_PAGE_SIZE));
 	} else {
-		cfg->buf_pg_count = DIV_ROUND_UP(buf_size + unalinged_size,
-						 1 << attr->page_shift);
+		buf_pg_sz = 1 << attr->page_shift;
+		cfg->buf_pg_count = mtr->umem ?
+			ib_umem_num_dma_blocks(mtr->umem, buf_pg_sz) :
+			DIV_ROUND_UP(buf_size, buf_pg_sz);
 		cfg->buf_pg_shift = attr->page_shift;
-		buf_pg_sz = 1 << cfg->buf_pg_shift;
-		pgoff = unalinged_size;
+		pgoff = mtr->umem ? mtr->umem->address & ~PAGE_MASK : 0;
 	}
 
 	/* Convert buffer size to page index and page count for each region and
@@ -924,9 +998,12 @@ static int mtr_init_buf_cfg(struct hns_roce_dev *hr_dev,
 	for (page_cnt = 0, i = 0; i < attr->region_count; i++) {
 		r = &cfg->region[i];
 		r->offset = page_cnt;
-		buf_size = hr_hw_page_align(attr->region[i].size +
-					    pgoff);
-		r->count = DIV_ROUND_UP(buf_size, buf_pg_sz);
+		buf_size = hr_hw_page_align(attr->region[i].size + pgoff);
+		if (attr->adaptive && mtr->umem)
+			r->count = ib_umem_num_dma_blocks(mtr->umem, buf_pg_sz);
+		else
+			r->count = DIV_ROUND_UP(buf_size, buf_pg_sz);
+
 		pgoff = 0;
 		page_cnt += r->count;
 		r->hopnum = to_hr_hem_hopnum(attr->region[i].hopnum, r->count);
@@ -977,7 +1054,6 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 			unsigned int ba_page_shift, struct ib_udata *udata,
 			unsigned long user_addr)
 {
-	u64 pgoff = udata ? user_addr & ~PAGE_MASK : 0;
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	int ret;
 
@@ -988,9 +1064,13 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 				  "failed to alloc mtr bufs, ret = %d.\n", ret);
 			return ret;
 		}
+
+		ret = get_best_page_shift(hr_dev, mtr, buf_attr);
+		if (ret)
+			goto err_init_buf;
 	}
 
-	ret = mtr_init_buf_cfg(hr_dev, buf_attr, &mtr->hem_cfg, pgoff);
+	ret = mtr_init_buf_cfg(hr_dev, mtr, buf_attr);
 	if (ret)
 		goto err_init_buf;
 

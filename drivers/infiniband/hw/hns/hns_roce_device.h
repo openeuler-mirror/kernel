@@ -277,7 +277,9 @@ struct hns_roce_buf_attr {
 	unsigned int region_count; /* valid region count */
 	unsigned int page_shift;  /* buffer page shift */
 	unsigned int user_access; /* umem access flag */
+	u64 iova;
 	bool mtt_only; /* only alloc buffer-required MTT memory */
+	bool adaptive; /* adaptive for page_shift and hopnum */
 };
 
 struct hns_roce_hem_cfg {
