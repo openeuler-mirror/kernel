@@ -20,6 +20,8 @@ EXPORT_SYMBOL(_mcount);
 #ifdef CONFIG_DYNAMIC_FTRACE
 
 #define TI_FTRACE_ADDR	(offsetof(struct thread_info, dyn_ftrace_addr))
+#define TI_FTRACE_REGS_ADDR \
+			(offsetof(struct thread_info, dyn_ftrace_regs_addr))
 
 unsigned long current_tracer = (unsigned long)ftrace_stub;
 
@@ -40,12 +42,20 @@ int ftrace_update_ftrace_func(ftrace_func_t func)
 {
 	unsigned long pc;
 	u32 new;
+	int ret;
 
 	current_tracer = (unsigned long)func;
 	pc = (unsigned long)&ftrace_call;
 	new = SW64_CALL(R26, R27, 1);
+	ret = ftrace_modify_code(pc, new);
 
-	return ftrace_modify_code(pc, new);
+	if (!ret) {
+		pc = (unsigned long)&ftrace_regs_call;
+		new = SW64_CALL(R26, R27, 1);
+		ret = ftrace_modify_code(pc, new);
+	}
+
+	return ret;
 }
 
 /*
@@ -55,10 +65,16 @@ int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 {
 	unsigned int insn[3];
 	unsigned long pc = rec->ip + MCOUNT_LDGP_SIZE;
+	unsigned long offset;
+
+	if (addr == FTRACE_ADDR)
+		offset = TI_FTRACE_ADDR;
+	else
+		offset = TI_FTRACE_REGS_ADDR;
 
 	insn[0] = SW64_NOP;
 	/* ldl r28,(ftrace_addr_offset)(r8) */
-	insn[1] = (0x23U << 26) | (28U << 21) | (8U << 16) | TI_FTRACE_ADDR;
+	insn[1] = (0x23U << 26) | (28U << 21) | (8U << 16) | offset;
 	insn[2] = SW64_CALL(R28, R28, 1);
 
 	/* replace the 3 mcount instructions at once */
@@ -82,13 +98,24 @@ void arch_ftrace_update_code(int command)
 	ftrace_modify_all_code(command);
 }
 
-/*tracer_addr must be same with syscall_ftrace*/
 int __init ftrace_dyn_arch_init(void)
 {
 	init_thread_info.dyn_ftrace_addr = FTRACE_ADDR;
+
+#ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
+	init_thread_info.dyn_ftrace_regs_addr = FTRACE_REGS_ADDR;
+#endif
 	return 0;
 }
 #endif /* CONFIG_DYNAMIC_FTRACE */
+
+#ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
+int ftrace_modify_call(struct dyn_ftrace *rec, unsigned long old_addr,
+		       unsigned long addr)
+{
+	return 0;
+}
+#endif
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 /*

@@ -39,6 +39,9 @@ struct thread_info {
 	unsigned int bpt_insn[2];
 #ifdef CONFIG_DYNAMIC_FTRACE
 	unsigned long		dyn_ftrace_addr;
+#ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
+	unsigned long		dyn_ftrace_regs_addr;
+#endif
 #endif
 };
 
@@ -84,6 +87,7 @@ register struct thread_info *__current_thread_info __asm__("$8");
 #define TIF_NEED_RESCHED	3	/* rescheduling necessary */
 #define TIF_SYSCALL_AUDIT	4       /* syscall audit active */
 #define TIF_UPROBE		5       /* uprobe breakpoint or singlestep */
+#define TIF_PATCH_PENDING       6       /* pending live patching update */
 #define TIF_DIE_IF_KERNEL	9	/* dik recursion lock */
 #define TIF_SYSCALL_TRACEPOINT	10
 #define TIF_SECCOMP		11	/* secure computing */

@@ -15,6 +15,8 @@
 #define MCOUNT_INSN_SIZE	20	/* 5 * SW64_INSN_SIZE */
 #define MCOUNT_LDGP_SIZE	8	/* 2 * SW64_INSN_SIZE */
 
+#define ARCH_SUPPORTS_FTRACE_OPS 1
+
 #ifndef __ASSEMBLY__
 #include <linux/compat.h>
 #include <asm/insn.h>

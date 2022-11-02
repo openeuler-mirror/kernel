@@ -222,3 +222,11 @@ unsigned long get_wchan(struct task_struct *tsk)
 
 	return pc;
 }
+
+#ifdef CONFIG_HAVE_RELIABLE_STACKTRACE
+int save_stack_trace_tsk_reliable(struct task_struct *tsk,
+				  struct stack_trace *trace)
+{
+	return 0;
+}
+#endif
