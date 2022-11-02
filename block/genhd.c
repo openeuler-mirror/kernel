@@ -112,7 +112,7 @@ static void part_stat_read_all(struct hd_struct *part, struct disk_stats *stat)
 	}
 }
 
-static unsigned int part_in_flight(struct hd_struct *part)
+unsigned int part_in_flight(struct hd_struct *part)
 {
 	unsigned int inflight = 0;
 	int cpu;

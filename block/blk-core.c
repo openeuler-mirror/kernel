@@ -62,6 +62,21 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
 
+bool precise_iostat;
+
+static int __init precise_iostat_setup(char *str)
+{
+	bool precise;
+
+	if (!strtobool(str, &precise)) {
+		precise_iostat = precise;
+		pr_info("precise iostat %d\n", precise_iostat);
+	}
+
+	return 1;
+}
+__setup("precise_iostat=", precise_iostat_setup);
+
 /*
  * For queue allocation
  */
@@ -1258,9 +1273,14 @@ void update_io_ticks(struct hd_struct *part, unsigned long now, bool end)
 	unsigned long stamp;
 again:
 	stamp = READ_ONCE(part->stamp);
-	if (unlikely(time_after(now, stamp))) {
-		if (likely(cmpxchg(&part->stamp, stamp, now) == stamp))
+	if (unlikely(time_after(now, stamp)) &&
+		likely(cmpxchg(&part->stamp, stamp, now) == stamp)) {
+		if (precise_iostat) {
+			if (end || part_in_flight(part))
+				__part_stat_add(part, io_ticks, now - stamp);
+		} else {
 			__part_stat_add(part, io_ticks, end ? now - stamp : 1);
+		}
 	}
 	if (part->partno) {
 		part = &part_to_disk(part)->part0;
@@ -1318,6 +1338,8 @@ void blk_account_io_done(struct request *req, u64 now)
 #else
 		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
 #endif
+		if (precise_iostat)
+			part_stat_local_dec(part, in_flight[rq_data_dir(req)]);
 		part_stat_unlock();
 
 		hd_struct_put(part);
@@ -1333,6 +1355,8 @@ void blk_account_io_start(struct request *rq)
 
 	part_stat_lock();
 	update_io_ticks(rq->part, jiffies, false);
+	if (precise_iostat)
+		part_stat_local_inc(rq->part, in_flight[rq_data_dir(rq)]);
 	part_stat_unlock();
 }
 

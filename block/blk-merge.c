@@ -696,6 +696,8 @@ static void blk_account_io_merge_request(struct request *req)
 	if (blk_do_io_stat(req)) {
 		part_stat_lock();
 		part_stat_inc(req->part, merges[op_stat_group(req_op(req))]);
+		if (precise_iostat)
+			part_stat_local_dec(req->part, in_flight[rq_data_dir(req)]);
 		part_stat_unlock();
 
 		hd_struct_put(req->part);
