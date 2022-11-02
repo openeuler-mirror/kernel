@@ -229,10 +229,8 @@ static void uacce_free_dma_buffers(struct uacce_queue *q)
 		return;
 	while (i < qfr->dma_list[0].total_num) {
 		WARN_ON(!qfr->dma_list[i].size || !qfr->dma_list[i].dma);
-		dev_dbg(uacce->pdev, "free dma qfr %s (kaddr=%lx, dma=%llx)\n",
-			uacce_qfrt_str(qfr),
-			(unsigned long)qfr->dma_list[i].kaddr,
-			qfr->dma_list[i].dma);
+		dev_dbg(uacce->pdev, "free dma qfr %s (index = %d)\n",
+			uacce_qfrt_str(qfr), i);
 		dma_free_coherent(uacce->pdev, qfr->dma_list[i].size,
 				  qfr->dma_list[i].kaddr,
 				  qfr->dma_list[i].dma);
@@ -383,8 +381,8 @@ static int uacce_mmap_dma_buffers(struct uacce_queue *q,
 					slice[i].size);
 		if (ret) {
 			dev_err(uacce->pdev,
-				"mmap dma buf fail(dma=0x%llx,size=0x%x)!\n",
-				slice[i].dma, slice[i].size);
+				"mmap dma buf fail(dma index=%d,size=0x%x)!\n",
+				i, slice[i].size);
 			goto DMA_MMAP_FAIL;
 		}
 
@@ -736,6 +734,12 @@ static void uacce_put_queue(struct uacce_queue *q)
 	q->state = UACCE_Q_ZOMBIE;
 	q->filep->private_data = NULL;
 	uacce_queue_drain(q);
+
+	if (!uacce->pdev->driver) {
+		dev_warn(uacce->pdev, "the parent device is hot plugged!\n");
+		return;
+	}
+
 	if (module_refcount(uacce->pdev->driver->owner) > 0)
 		module_put(uacce->pdev->driver->owner);
 }
