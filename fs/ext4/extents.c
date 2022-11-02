@@ -4703,6 +4703,11 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 		return -EOPNOTSUPP;
 
 	ext4_fc_start_update(inode);
+	inode_lock(inode);
+	ret = ext4_convert_inline_data(inode);
+	inode_unlock(inode);
+	if (ret)
+		goto exit;
 
 	inode_lock(inode);
 	ret = ext4_convert_inline_data(inode);
