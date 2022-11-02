@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2210.5.0
+%global hulkrelease 2211.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0174
+Release: %{hulkrelease}.0175
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,35 @@ fi
 %endif
 
 %changelog
+
+* Wed Nov 02 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.1.0.0175
+- uacce: add the reference counter protection
+- nilfs2: fix NULL pointer dereference at nilfs_bmap_lookup_at_level()
+- usb: mon: make mmapped memory read only
+- !185 [openEuler-1.0-LTS] Add support sata lpm for Zhaoxin CPUs
+- ext4: fix bug_on in __es_tree_search caused by bad boot loader inode
+- ext4: add EXT4_IGET_BAD flag to prevent unexpected bad inode
+- ext4: add helper to check quota inums
+- ext4: fix bug_on in __es_tree_search caused by bad quota inode
+- atm: idt77252: fix use-after-free bugs caused by tst_timer
+- ext4: ext4_read_bh_lock() should submit IO if the buffer isn't uptodate
+- !94 [openEuler-1.0-LTS] rtc: Fix set RTC time delay 500ms on some Zhaoxin SOCs
+- !88 [openEuler-1.0-LTS] XHCI:Fix some device identify fail when enable xHCI runtime suspend
+- !92 [openEuler-1.0-LTS] x86/tsc: Make cur->adjusted values in package#1 to be the same
+- !93 [openEuler-1.0-LTS] Driver for Zhaoxin CPU core temperature monitoring
+- !89 [openEuler-1.0-LTS] EHCI: Clear wakeup signal locked in S0  state when device plug in
+- scsi: stex: Properly zero out the passthrough command structure
+- !192 x86/apic/vector: Fix ordering in vector assignment
+- nilfs2: fix leak of nilfs_root in case of writer thread creation failure
+- vsock: Fix memory leak in vsock_connect()
+- x86/apic/vector: Fix ordering in vector assignment
+- Add support for PxSCT.LPM set based on actual LPM circumstances
+- Add support for disabling PhyRdy Change Interrupt based on actual LPM capability
+- Driver for Zhaoxin CPU core temperature monitoring
+- rtc: Fix set RTC time delay 500ms on some Zhaoxin SOCs
+- x86/tsc: Make cur->adjusted values in package#1 to be the same
+- EHCI: Clear wakeup signal locked in S0 state when device plug in
+- XHCI:Fix some device identify fail when enable xHCI runtime suspend
 
 * Thu Oct 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2210.5.0.0174
 - sch_sfb: Also store skb len before calling child enqueue
