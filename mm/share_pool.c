@@ -151,6 +151,7 @@ enum sp_mapping_type {
 	SP_MAPPING_START,
 	SP_MAPPING_DVPP		= SP_MAPPING_START,
 	SP_MAPPING_NORMAL,
+	SP_MAPPING_RO,
 	SP_MAPPING_END,
 };
 
@@ -278,6 +279,7 @@ static void sp_mapping_set_type(struct sp_mapping *spm, unsigned long type)
 }
 
 static struct sp_mapping *sp_mapping_normal;
+static struct sp_mapping *sp_mapping_ro;
 
 static void sp_mapping_add_to_list(struct sp_mapping *spm)
 {
@@ -301,6 +303,10 @@ static void sp_mapping_range_init(struct sp_mapping *spm)
 
 	for (i = 0; i < MAX_DEVID; i++) {
 		switch (sp_mapping_type(spm)) {
+		case SP_MAPPING_RO:
+			spm->start[i] = MMAP_SHARE_POOL_RO_START;
+			spm->end[i]   = MMAP_SHARE_POOL_RO_END;
+			break;
 		case SP_MAPPING_NORMAL:
 			spm->start[i] = MMAP_SHARE_POOL_NORMAL_START;
 			spm->end[i]   = MMAP_SHARE_POOL_NORMAL_END;
@@ -443,6 +449,8 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 			sp_mapping_attach(spg, local_dvpp_mapping);
 		if (!spg->mapping[SP_MAPPING_NORMAL])
 			sp_mapping_attach(spg, sp_mapping_normal);
+		if (!spg->mapping[SP_MAPPING_RO])
+			sp_mapping_attach(spg, sp_mapping_ro);
 	}
 
 	return 0;
@@ -453,6 +461,9 @@ static inline struct sp_mapping *sp_mapping_find(struct sp_group *spg,
 {
 	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
 		return spg->mapping[SP_MAPPING_NORMAL];
+
+	if (addr >= MMAP_SHARE_POOL_RO_START && addr < MMAP_SHARE_POOL_RO_END)
+		return spg->mapping[SP_MAPPING_RO];
 
 	return spg->mapping[SP_MAPPING_DVPP];
 }
@@ -489,6 +500,7 @@ static int init_local_group(struct mm_struct *mm)
 	}
 	sp_mapping_attach(master->local, spm);
 	sp_mapping_attach(master->local, sp_mapping_normal);
+	sp_mapping_attach(master->local, sp_mapping_ro);
 
 	ret = local_group_add_task(mm, spg);
 	if (ret < 0)
@@ -1483,6 +1495,10 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		unsigned long populate = 0;
 		struct file *file = spa_file(spa);
 		unsigned long addr;
+		unsigned long __prot = prot;
+
+		if ((spa->flags & (SP_PROT_RO | SP_PROT_FOCUS)) == (SP_PROT_RO | SP_PROT_FOCUS))
+			__prot &= ~PROT_WRITE;
 
 		__sp_area_drop_locked(prev);
 		prev = spa;
@@ -1495,7 +1511,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		spin_unlock(&sp_area_lock);
 
 		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
-			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, prot, NULL);
+			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, __prot, NULL);
 			if (IS_ERR_VALUE(addr))
 				pr_warn("add group remap k2u failed %ld\n", addr);
 
@@ -1513,7 +1529,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 			break;
 		}
 
-		addr = sp_mmap(mm, file, spa, &populate, prot, NULL);
+		addr = sp_mmap(mm, file, spa, &populate, __prot, NULL);
 		if (IS_ERR_VALUE(addr)) {
 			sp_munmap_task_areas(mm, spg, &spa->link);
 			up_write(&mm->mmap_lock);
@@ -1761,7 +1777,13 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (flags & SP_DVPP)
+	if (flags & SP_PROT_FOCUS) {
+		if ((flags & (SP_DVPP | SP_PROT_RO)) != SP_PROT_RO) {
+			pr_err("invalid sp_flags [%lx]\n", flags);
+			return ERR_PTR(-EINVAL);
+		}
+		mapping = spg->mapping[SP_MAPPING_RO];
+	} else if (flags & SP_DVPP)
 		mapping = spg->mapping[SP_MAPPING_DVPP];
 	else
 		mapping = spg->mapping[SP_MAPPING_NORMAL];
@@ -3893,6 +3915,11 @@ static void spa_stat_of_mapping_show(struct seq_file *seq, struct sp_mapping *sp
 	spin_unlock(&sp_area_lock);
 }
 
+static void spa_ro_stat_show(struct seq_file *seq)
+{
+	spa_stat_of_mapping_show(seq, sp_mapping_ro);
+}
+
 static void spa_normal_stat_show(struct seq_file *seq)
 {
 	spa_stat_of_mapping_show(seq, sp_mapping_normal);
@@ -4023,6 +4050,7 @@ static int spa_stat_show(struct seq_file *seq, void *offset)
 	/* print the file header */
 	seq_printf(seq, "%-10s %-16s %-16s %-10s %-7s %-5s %-8s %-8s\n",
 			"Group ID", "va_start", "va_end", "Size(KB)", "Type", "Huge", "PID", "Ref");
+	spa_ro_stat_show(seq);
 	spa_normal_stat_show(seq);
 	spa_dvpp_stat_show(seq);
 	return 0;
@@ -4402,9 +4430,17 @@ static int __init share_pool_init(void)
 		goto fail;
 	atomic_inc(&sp_mapping_normal->user);
 
+	sp_mapping_ro = sp_mapping_create(SP_MAPPING_RO);
+	if (IS_ERR(sp_mapping_ro))
+		goto free_normal;
+	atomic_inc(&sp_mapping_ro->user);
+
 	proc_sharepool_init();
 
 	return 0;
+
+free_normal:
+	kfree(sp_mapping_normal);
 fail:
 	pr_err("Ascend share pool initialization failed\n");
 	static_branch_disable(&share_pool_enabled_key);

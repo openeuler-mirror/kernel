@@ -17,6 +17,11 @@
 #define SP_DVPP			(1 << 2)
 #define SP_SPEC_NODE_ID		(1 << 3)
 #define SP_PROT_RO		(1 << 16)
+/*
+ * SP_PROT_FOCUS should used with SP_PROT_RO,
+ * to alloc a memory within sharepool ro memory.
+ */
+#define SP_PROT_FOCUS		(1 << 17)
 
 #define DEVICE_ID_BITS		4UL
 #define DEVICE_ID_MASK		((1UL << DEVICE_ID_BITS) - 1UL)
@@ -26,7 +31,7 @@
 #define NODE_ID_SHIFT		(DEVICE_ID_SHIFT + DEVICE_ID_BITS)
 
 #define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
-				 SP_SPEC_NODE_ID | SP_PROT_RO | \
+				 SP_SPEC_NODE_ID | SP_PROT_RO | SP_PROT_FOCUS | \
 				(DEVICE_ID_MASK << DEVICE_ID_SHIFT) | \
 				(NODE_ID_MASK << NODE_ID_SHIFT))
 
@@ -113,19 +118,22 @@ struct sp_mapping {
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
- * |-------------------- 8T -------------------|---|------ 8T ------------|
- * |		Device 0	   |  Device 1 |...|                      |
- * |----------------------------------------------------------------------|
- * |------------- 16G -------------|    16G    |   |                      |
- * | DVPP GROUP0   | DVPP GROUP1   | ... | ... |...|  sp normal memory    |
- * |     sp        |    sp         |     |     |   |                      |
- * |----------------------------------------------------------------------|
+ * |-------------------- 8T -------------------|---|---64G---|----- 8T-64G -----|
+ * |		Device 0	   |  Device 1 |...|         |                  |
+ * |-----------------------------------------------|---------|------------------|
+ * |------------- 16G -------------|    16G    |   |         |                  |
+ * | DVPP GROUP0   | DVPP GROUP1   | ... | ... |...|  sp ro  | sp normal memory |
+ * |     sp        |    sp         |     |     |   |         |                  |
+ * |----------------------------------------------------------------------------|
  *
  * The host SVM feature reserves 8T virtual memory by mmap, and due to the
  * restriction of DVPP, while SVM and share pool will both allocate memory
  * for DVPP, the memory have to be in the same 32G range.
  *
- * Share pool reserves 16T memory, with 8T for normal uses and 8T for DVPP.
+ * Share pool reserves 16T memory, 8T-64G for normal uses, 64G for ro memory
+ * and 8T for DVPP.
+ * Within this 64G ro memory, user application will never have write permission
+ * to this memory address.
  * Within this 8T DVPP memory, SVM will call sp_config_dvpp_range() to
  * tell us which 16G memory range is reserved for share pool .
  *
@@ -207,8 +215,10 @@ struct sp_walk_data {
 
 #define MMAP_TOP_4G_SIZE		0x100000000UL
 
-/* 8T size */
-#define MMAP_SHARE_POOL_NORMAL_SIZE	0x80000000000UL
+/* 8T - 64G size */
+#define MMAP_SHARE_POOL_NORMAL_SIZE	0x7F000000000UL
+/* 64G */
+#define MMAP_SHARE_POOL_RO_SIZE		0x1000000000UL
 /* 8T size*/
 #define MMAP_SHARE_POOL_DVPP_SIZE	0x80000000000UL
 /* 16G size */
@@ -219,7 +229,9 @@ struct sp_walk_data {
 #define MMAP_SHARE_POLL_DVPP_END	(MMAP_SHARE_POOL_END)
 /* MMAP_SHARE_POOL_DVPP_START should be align to 16G */
 #define MMAP_SHARE_POOL_DVPP_START	(MMAP_SHARE_POLL_DVPP_END - MMAP_SHARE_POOL_DVPP_SIZE)
-#define MMAP_SHARE_POOL_NORMAL_END	(MMAP_SHARE_POOL_DVPP_START)
+#define MMAP_SHARE_POOL_RO_END		(MMAP_SHARE_POOL_DVPP_START)
+#define MMAP_SHARE_POOL_RO_START	(MMAP_SHARE_POOL_RO_END - MMAP_SHARE_POOL_RO_SIZE)
+#define MMAP_SHARE_POOL_NORMAL_END	(MMAP_SHARE_POOL_RO_START)
 #define MMAP_SHARE_POOL_NORMAL_START	(MMAP_SHARE_POOL_NORMAL_END - MMAP_SHARE_POOL_NORMAL_SIZE)
 #define MMAP_SHARE_POOL_START		(MMAP_SHARE_POOL_NORMAL_START)
 
