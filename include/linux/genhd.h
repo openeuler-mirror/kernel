@@ -304,6 +304,7 @@ extern void disk_part_iter_exit(struct disk_part_iter *piter);
 extern bool disk_has_partitions(struct gendisk *disk);
 
 /* block/genhd.c */
+extern unsigned int part_in_flight(struct hd_struct *part);
 extern void device_add_disk(struct device *parent, struct gendisk *disk,
 			    const struct attribute_group **groups);
 static inline void add_disk(struct gendisk *disk)

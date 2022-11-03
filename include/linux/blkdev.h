@@ -29,6 +29,7 @@
 #include <linux/pm.h>
 #include <linux/sbitmap.h>
 
+extern bool precise_iostat;
 struct module;
 struct scsi_ioctl_command;
 
