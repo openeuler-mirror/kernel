@@ -1489,10 +1489,12 @@ static int __init klp_init(void)
 
 	klp_root_kobj = kobject_create_and_add("livepatch", kernel_kobj);
 	if (!klp_root_kobj)
-		goto error_remove;
+		goto error_remove_state;
 
 	return 0;
 
+error_remove_state:
+	remove_proc_entry("livepatch/state", NULL);
 error_remove:
 	remove_proc_entry("livepatch", NULL);
 error_out:
