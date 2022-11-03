@@ -1016,7 +1016,7 @@ int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 
 	check_interrupt_context();
 
-	if (!spg_ids || num <= 0)
+	if (!spg_ids || !num || *num <= 0)
 		return -EINVAL;
 
 	ret = get_task(pid, &tsk);
@@ -2179,7 +2179,6 @@ int mg_sp_free(unsigned long addr, int id)
 
 	sp_free_unmap_fallocate(fc.spa);
 
-	/* current->mm == NULL: allow kthread */
 	if (current->mm == NULL)
 		atomic64_sub(fc.spa->real_size, &kthread_stat.alloc_size);
 	else
