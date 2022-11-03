@@ -1621,11 +1621,7 @@ int mg_sp_group_del_task(int pid, int spg_id)
 	list_del(&spg_node->group_node);
 	mm->sp_group_master->count--;
 	kfree(spg_node);
-	if (atomic_sub_and_test(1, &mm->mm_users)) {
-		up_write(&sp_group_sem);
-		WARN(1, "Invalid user counting\n");
-		return -EINVAL;
-	}
+	atomic_dec(&mm->mm_users);
 
 	up_write(&sp_group_sem);
 
