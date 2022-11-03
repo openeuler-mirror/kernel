@@ -44,17 +44,12 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/rmap.h>
-#include <linux/compaction.h>
 #include <linux/preempt.h>
 #include <linux/swapops.h>
 #include <linux/mmzone.h>
 #include <linux/timekeeping.h>
 #include <linux/time64.h>
 #include <linux/pagewalk.h>
-
-/* access control mode macros  */
-#define AC_NONE			0
-#define AC_SINGLE_OWNER		1
 
 #define spg_valid(spg)		((spg)->is_alive == true)
 
@@ -81,19 +76,6 @@
 /* mdc scene hack */
 static int __read_mostly enable_mdc_default_group;
 static const int mdc_default_group_id = 1;
-
-/* share the uva to the whole group */
-static int __read_mostly enable_share_k2u_spg = 1;
-
-/* access control mode */
-int sysctl_ac_mode = AC_NONE;
-/* debug mode */
-int sysctl_sp_debug_mode;
-
-int sysctl_share_pool_map_lock_enable;
-
-int sysctl_sp_perf_k2u;
-int sysctl_sp_perf_alloc;
 
 static int system_group_count;
 
@@ -232,8 +214,6 @@ struct sp_group {
 	struct list_head spa_list;
 	/* group statistics */
 	struct sp_spg_stat instat;
-	/* we define the creator process of a sp_group as owner */
-	struct task_struct *owner;
 	/* is_alive == false means it's being destroyed */
 	bool		 is_alive;
 	atomic_t	 use_count;
@@ -835,7 +815,6 @@ static void update_mem_usage(unsigned long size, bool inc, bool is_hugepage,
 	struct sp_group_node *spg_node, enum spa_type type)
 {
 	if (unlikely(!spg_node)) {
-		sp_dump_stack();
 		WARN(1, "null sp group node\n");
 		return;
 	}
@@ -910,8 +889,6 @@ struct sp_k2u_context {
 	int state;
 	int spg_id;
 	bool to_task;
-	struct timespec64 start;
-	struct timespec64 end;
 };
 
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
@@ -1156,7 +1133,6 @@ static struct sp_group *create_spg(int spg_id, unsigned long flag)
 	spg->flag = flag;
 	spg->is_alive = true;
 	spg->proc_num = 0;
-	spg->owner = current->group_leader;
 	atomic_set(&spg->use_count, 1);
 	INIT_LIST_HEAD(&spg->procs);
 	INIT_LIST_HEAD(&spg->spa_list);
@@ -1441,7 +1417,6 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		up_write(&sp_group_sem);
 		ret = -EACCES;
 		free_new_spg_id(id_newly_generated, spg_id);
-		sp_dump_stack();
 		goto out_put_task;
 	}
 
@@ -1471,14 +1446,6 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		ret = PTR_ERR(spg);
 		free_new_spg_id(id_newly_generated, spg_id);
 		goto out_put_mm;
-	}
-
-	/* access control permission check */
-	if (sysctl_ac_mode == AC_SINGLE_OWNER) {
-		if (spg->owner != current->group_leader) {
-			ret = -EPERM;
-			goto out_drop_group;
-		}
 	}
 
 	down_write(&spg->rw_lock);
@@ -2064,63 +2031,6 @@ void sp_area_drop(struct vm_area_struct *vma)
 	spin_unlock(&sp_area_lock);
 }
 
-int sysctl_sp_compact_enable;
-unsigned long sysctl_sp_compact_interval = 30UL;
-unsigned long sysctl_sp_compact_interval_max = 1000UL;
-static unsigned long compact_last_jiffies;
-static unsigned long compact_daemon_status;
-#define COMPACT_START	1
-#define COMPACT_STOP	0
-
-static void sp_compact_nodes(struct work_struct *work)
-{
-	sysctl_compaction_handler(NULL, 1, NULL, NULL, NULL);
-
-	kfree(work);
-
-	compact_last_jiffies = jiffies;
-	cmpxchg(&compact_daemon_status, COMPACT_START, COMPACT_STOP);
-}
-
-static void sp_add_work_compact(void)
-{
-	struct work_struct *compact_work;
-
-	if (!sysctl_sp_compact_enable)
-		return;
-
-	/* experimental compaction time: 4GB->1.7s, 8GB->3.4s */
-	if (!time_after(jiffies,
-		compact_last_jiffies + sysctl_sp_compact_interval * HZ))
-		return;
-
-	if (cmpxchg(&compact_daemon_status, COMPACT_STOP, COMPACT_START) ==
-		    COMPACT_START)
-		return;
-
-	compact_work = kzalloc(sizeof(*compact_work), GFP_KERNEL);
-	if (!compact_work)
-		return;
-
-	INIT_WORK(compact_work, sp_compact_nodes);
-	schedule_work(compact_work);
-}
-
-static void sp_try_to_compact(void)
-{
-	unsigned long totalram;
-	unsigned long freeram;
-
-	totalram = totalram_pages();
-	freeram = global_zone_page_state(NR_FREE_PAGES);
-
-	/* free < total / 3 */
-	if ((freeram + (freeram << 1)) > totalram)
-		return;
-
-	sp_add_work_compact();
-}
-
 /*
  * The function calls of do_munmap() won't change any non-atomic member
  * of struct sp_group. Please review the following chain:
@@ -2311,8 +2221,6 @@ int mg_sp_free(unsigned long addr, int id)
 
 	__sp_area_drop(fc.spa);  /* match __find_sp_area in sp_free_get_spa */
 out:
-	sp_dump_stack();
-	sp_try_to_compact();
 	return ret;
 }
 EXPORT_SYMBOL_GPL(mg_sp_free);
@@ -2330,12 +2238,6 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 	unsigned long pgoff = addr_offset(spa) >> PAGE_SHIFT;
 	struct vm_area_struct *vma;
 
-	/* Mark the mapped region to be locked. After the MAP_LOCKED is enable,
-	 * multiple tasks will preempt resources, causing performance loss.
-	 */
-	if (sysctl_share_pool_map_lock_enable)
-		flags |= MAP_LOCKED;
-
 	atomic_inc(&spa->use_count);
 	addr = __do_mmap_mm(mm, file, addr, size, prot, flags, vm_flags, pgoff,
 			 populate, NULL);
@@ -2349,7 +2251,6 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 		if (pvma)
 			*pvma = vma;
 	}
-
 
 	return addr;
 }
@@ -2368,38 +2269,9 @@ struct sp_alloc_context {
 	unsigned long populate;
 	int state;
 	bool need_fallocate;
-	struct timespec64 start;
-	struct timespec64 end;
 	bool have_mbind;
 	enum spa_type type;
 };
-
-static void trace_sp_alloc_begin(struct sp_alloc_context *ac)
-{
-	if (!sysctl_sp_perf_alloc)
-		return;
-
-	ktime_get_ts64(&ac->start);
-}
-
-static void trace_sp_alloc_finish(struct sp_alloc_context *ac, unsigned long va)
-{
-	unsigned long cost;
-
-	if (!sysctl_sp_perf_alloc)
-		return;
-
-	ktime_get_ts64(&ac->end);
-
-	cost = SEC2US(ac->end.tv_sec - ac->start.tv_sec) +
-		NS2US(ac->end.tv_nsec - ac->start.tv_nsec);
-	if (cost >= (unsigned long)sysctl_sp_perf_alloc) {
-		pr_err("Task %s(%d/%d) sp_alloc returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, sp_flags is %lx, pass through is %d\n",
-		       current->comm, current->tgid, current->pid,
-		       va, cost, byte2kb(ac->size), byte2kb(ac->size_aligned), ac->sp_flags,
-		       is_local_group(ac->spg->id));
-	}
-}
 
 static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	int spg_id, struct sp_alloc_context *ac)
@@ -2407,8 +2279,6 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	struct sp_group *spg;
 
 	check_interrupt_context();
-
-	trace_sp_alloc_begin(ac);
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -2594,11 +2464,8 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
 	ret = do_mm_populate(mm, sp_addr, ac->populate, 0);
-	if (spa->is_hugepage) {
+	if (spa->is_hugepage)
 		memalloc_noreclaim_restore(noreclaim_flag);
-		if (ret)
-			sp_add_work_compact();
-	}
 
 	return ret;
 }
@@ -2702,14 +2569,10 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 		sp_update_process_stat(current, true, spa);
 
 	/* this will free spa if mmap failed */
-	if (spa && !IS_ERR(spa)) {
+	if (spa && !IS_ERR(spa))
 		__sp_area_drop(spa);
-		trace_sp_alloc_finish(ac, spa->va_start);
-	}
 
 	sp_group_drop(spg);
-	sp_dump_stack();
-	sp_try_to_compact();
 }
 
 /**
@@ -2994,41 +2857,12 @@ static bool vmalloc_area_set_flag(unsigned long kva, unsigned long flags)
 	return false;
 }
 
-static void trace_sp_k2u_begin(struct sp_k2u_context *kc)
-{
-	if (!sysctl_sp_perf_k2u)
-		return;
-
-	ktime_get_ts64(&kc->start);
-}
-
-static void trace_sp_k2u_finish(struct sp_k2u_context *kc, void *uva)
-{
-	unsigned long cost;
-
-	if (!sysctl_sp_perf_k2u)
-		return;
-
-	ktime_get_ts64(&kc->end);
-
-	cost = SEC2US(kc->end.tv_sec - kc->start.tv_sec) +
-		NS2US(kc->end.tv_nsec - kc->start.tv_nsec);
-	if (cost >= (unsigned long)sysctl_sp_perf_k2u) {
-		pr_err("Task %s(%d/%d) sp_k2u returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, sp_flags is %lx, to_task is %d\n",
-		       current->comm, current->tgid, current->pid,
-		       (unsigned long)uva, cost, byte2kb(kc->size), byte2kb(kc->size_aligned),
-		       kc->sp_flags, kc->to_task);
-	}
-}
-
 static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 	unsigned long sp_flags, int spg_id, struct sp_k2u_context *kc)
 {
 	int is_hugepage;
 	unsigned int page_size = PAGE_SIZE;
 	unsigned long kva_aligned, size_aligned;
-
-	trace_sp_k2u_begin(kc);
 
 	if (sp_flags & ~SP_FLAG_MASK) {
 		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
@@ -3082,8 +2916,6 @@ static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
 	else
 		uva = uva + (kc->kva - kc->kva_aligned);
 
-	trace_sp_k2u_finish(kc, uva);
-	sp_dump_stack();
 	return uva;
 }
 
@@ -3607,8 +3439,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 		WARN(1, "unshare uva invalid spa type");
 	}
 
-	sp_dump_stack();
-
 out_clr_flag:
 	if (!vmalloc_area_clr_flag(spa->kva, VM_SHAREPOOL))
 		pr_debug("clear spa->kva %ld is not valid\n", spa->kva);
@@ -3892,13 +3722,6 @@ static int __init mdc_default_group(char *s)
 	return 1;
 }
 __setup("enable_mdc_default_group", mdc_default_group);
-
-static int __init enable_share_k2u_to_group(char *s)
-{
-	enable_share_k2u_spg = 1;
-	return 1;
-}
-__setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
 
 /*** Statistical and maintenance functions ***/
 
@@ -4341,20 +4164,18 @@ static void __init proc_sharepool_init(void)
 bool sp_check_addr(unsigned long addr)
 {
 	if (sp_is_enabled() && mg_is_sharepool_addr(addr) &&
-	    !check_aoscore_process(current)) {
-		sp_dump_stack();
+	    !check_aoscore_process(current))
 		return true;
-	} else
+	else
 		return false;
 }
 
 bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
 {
 	if (sp_is_enabled() && mg_is_sharepool_addr(addr) &&
-	    !check_aoscore_process(current) && !(flags & MAP_SHARE_POOL)) {
-		sp_dump_stack();
+	    !check_aoscore_process(current) && !(flags & MAP_SHARE_POOL))
 		return true;
-	} else
+	else
 		return false;
 }
 

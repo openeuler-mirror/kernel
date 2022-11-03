@@ -71,7 +71,6 @@
 #include <linux/coredump.h>
 #include <linux/latencytop.h>
 #include <linux/pid.h>
-#include <linux/share_pool.h>
 
 #include "../lib/kstrtox.h"
 
@@ -3198,72 +3197,6 @@ static struct ctl_table vm_table[] = {
 		.data		= &sysctl_unprivileged_userfaultfd,
 		.maxlen		= sizeof(sysctl_unprivileged_userfaultfd),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-#endif
-#ifdef CONFIG_ASCEND_SHARE_POOL
-	{
-		.procname	= "sharepool_debug_mode",
-		.data		= &sysctl_sp_debug_mode,
-		.maxlen		= sizeof(sysctl_sp_debug_mode),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{
-		.procname	= "sharepool_compact_enable",
-		.data		= &sysctl_sp_compact_enable,
-		.maxlen		= sizeof(sysctl_sp_compact_enable),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{
-		.procname	= "sharepool_compact_interval",
-		.data		= &sysctl_sp_compact_interval,
-		.maxlen		= sizeof(sysctl_sp_compact_interval),
-		.mode		= 0600,
-		.proc_handler	= proc_doulongvec_minmax,
-		.extra1		= &zero_ul,
-		.extra2		= &sysctl_sp_compact_interval_max,
-	},
-	{
-		/* 0: map_unlock, 1: map_lock */
-		.procname	= "share_pool_map_lock_enable",
-		.data		= &sysctl_share_pool_map_lock_enable,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{
-		.procname	= "sharepool_perf_k2u",
-		.data		= &sysctl_sp_perf_k2u,
-		.maxlen		= sizeof(sysctl_sp_perf_k2u),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= &ten_thousand,
-	},
-	{
-		.procname	= "sharepool_perf_alloc",
-		.data		= &sysctl_sp_perf_alloc,
-		.maxlen		= sizeof(sysctl_sp_perf_alloc),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= &ten_thousand,
-	},
-	{
-		.procname	= "sharepool_ac_mode",
-		.data		= &sysctl_ac_mode,
-		.maxlen		= sizeof(sysctl_ac_mode),
-		.mode		= 0600,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,

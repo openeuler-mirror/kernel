@@ -48,22 +48,7 @@
 
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
-extern int sysctl_share_pool_hugepage_enable;
-
-extern int sysctl_ac_mode;
-
-extern int sysctl_sp_debug_mode;
-
 extern struct static_key_false share_pool_enabled_key;
-
-extern int sysctl_share_pool_map_lock_enable;
-
-extern int sysctl_sp_compact_enable;
-extern unsigned long sysctl_sp_compact_interval;
-extern unsigned long sysctl_sp_compact_interval_max;
-extern int sysctl_sp_perf_alloc;
-
-extern int sysctl_sp_perf_k2u;
 
 #ifdef __GENKSYMS__
 /* we estimate an sp-group ususally contains at most 64 sp-group */
@@ -305,12 +290,6 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 		return true;
 
 	return false;
-}
-
-static inline void sp_dump_stack(void)
-{
-	if (sysctl_sp_debug_mode)
-		dump_stack();
 }
 
 static inline bool is_vmalloc_sharepool(unsigned long vm_flags)
