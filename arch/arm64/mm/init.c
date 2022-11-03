@@ -297,10 +297,8 @@ static void __init fdt_enforce_memory_region(void)
 		memblock_add(usable_rgns[1].base, usable_rgns[1].size);
 }
 
-#define MAX_RES_REGIONS 32
-
-static struct memblock_region mbk_memmap_regions[MAX_RES_REGIONS] __initdata_memblock;
-static int mbk_memmap_cnt __initdata;
+struct memblock_region mbk_memmap_regions[MAX_RES_REGIONS] __initdata_memblock;
+int mbk_memmap_cnt __initdata;
 
 static void __init setup_mbk_memmap_regions(phys_addr_t base, phys_addr_t size)
 {
@@ -317,6 +315,7 @@ static void __init setup_mbk_memmap_regions(phys_addr_t base, phys_addr_t size)
 static void __init reserve_memmap_regions(void)
 {
 	phys_addr_t base, size;
+	const char *str;
 	int i;
 
 	for (i = 0; i < mbk_memmap_cnt; i++) {
@@ -324,26 +323,27 @@ static void __init reserve_memmap_regions(void)
 		size = mbk_memmap_regions[i].size;
 
 		if (!memblock_is_region_memory(base, size)) {
-			pr_warn("memmap reserve: 0x%08llx - 0x%08llx is not a memory region - ignore\n",
-				base, base + size);
-			continue;
+			str = "is not a memory region - ignore";
+			goto err;
 		}
 
 		if (memblock_is_region_reserved(base, size)) {
-			pr_warn("memmap reserve: 0x%08llx - 0x%08llx overlaps in-use memory region - ignore\n",
-				base, base + size);
-			continue;
+			str = "overlaps in-use memory region - ignore";
+			goto err;
 		}
 
 		if (memblock_reserve(base, size)) {
-			pr_warn("memmap reserve: 0x%08llx - 0x%08llx failed\n",
-				base, base + size);
-			continue;
+			str = "failed";
+			goto err;
 		}
 
 		pr_info("memmap reserved: 0x%08llx - 0x%08llx (%lld MB)",
-			base, base + size, size >> 20);
-		memblock_mark_memmap(base, size);
+			base, base + size - 1, size >> 20);
+		continue;
+err:
+		mbk_memmap_regions[i].size = 0;
+		pr_warn("memmap reserve: 0x%08llx - 0x%08llx %s\n",
+			base, base + size - 1, str);
 	}
 }
 

@@ -22,4 +22,8 @@ static inline void __init reserve_quick_kexec(void) {}
 static inline void __init request_quick_kexec_res(struct resource *res) {}
 #endif
 
+#define MAX_RES_REGIONS 32
+extern struct memblock_region mbk_memmap_regions[MAX_RES_REGIONS];
+extern int mbk_memmap_cnt;
+
 #endif /* ifndef _ARM64_MM_INTERNAL_H */

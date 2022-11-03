@@ -219,17 +219,34 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 static void __init request_memmap_resources(struct resource *res)
 {
 	struct resource *memmap_res;
+	phys_addr_t base, size;
+	int i;
 
-	memmap_res = memblock_alloc(sizeof(*memmap_res), SMP_CACHE_BYTES);
-	if (!memmap_res)
-		panic("%s: Failed to allocate memmap_res\n", __func__);
+	for (i = 0; i < MAX_RES_REGIONS; i++) {
+		base = mbk_memmap_regions[i].base;
+		size = mbk_memmap_regions[i].size;
+		if (!size)
+			continue;
 
-	memmap_res->name = "memmap reserved";
-	memmap_res->flags = IORESOURCE_MEM;
-	memmap_res->start = res->start;
-	memmap_res->end = res->end;
+		if ((base < res->start) || (base + size - 1 > res->end))
+			continue;
 
-	request_resource(res, memmap_res);
+		memmap_res = memblock_alloc(sizeof(*memmap_res), SMP_CACHE_BYTES);
+		if (!memmap_res)
+			panic("%s: Failed to allocate memmap_res\n", __func__);
+
+		memmap_res->name = "memmap reserved";
+		memmap_res->flags = IORESOURCE_MEM;
+		memmap_res->start = base;
+		memmap_res->end = base + size - 1;
+
+		if (request_resource(res, memmap_res)) {
+			pr_warn("memmap reserve: [%llx, %llx] request resource fail\n",
+				memmap_res->start, memmap_res->end);
+			memblock_free_early(virt_to_phys(memmap_res),
+					    sizeof(*memmap_res));
+		}
+	}
 }
 
 static void __init request_standard_resources(void)
@@ -270,8 +287,8 @@ static void __init request_standard_resources(void)
 		if (kernel_data.start >= res->start &&
 		    kernel_data.end <= res->end)
 			request_resource(res, &kernel_data);
-		if (memblock_is_memmap(region))
-			request_memmap_resources(res);
+
+		request_memmap_resources(res);
 
 #ifdef CONFIG_KEXEC_CORE
 		/* Userspace will find "Crash kernel" region in /proc/iomem. */
