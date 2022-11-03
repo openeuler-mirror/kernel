@@ -216,23 +216,6 @@ static int queue_tag_set_show(void *data, struct seq_file *m)
 	seq_printf(m, "numa_node=%d\n", set->numa_node);
 	seq_printf(m, "timeout=%u\n", set->timeout);
 	seq_printf(m, "flags=%u\n", set->flags);
-	seq_printf(m, "active_queues_shared_sbitmap=%d\n",
-		   atomic_read(&set->active_queues_shared_sbitmap));
-	seq_printf(m, "pending_queues_shared_sbitmap=%d\n",
-		   atomic_read(&set->pending_queues_shared_sbitmap));
-
-	return 0;
-}
-
-static int queue_dtag_wait_time_show(void *data, struct seq_file *m)
-{
-	struct request_queue *q = data;
-	unsigned int time = 0;
-
-	if (test_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags))
-		time = jiffies_to_msecs(jiffies - READ_ONCE(q->dtag_wait_time));
-
-	seq_printf(m, "%u\n", time);
 
 	return 0;
 }
@@ -245,7 +228,6 @@ static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "write_hints", 0600, queue_write_hint_show, queue_write_hint_store },
 	{ "zone_wlock", 0400, queue_zone_wlock_show, NULL },
 	{ "tag_set", 0400, queue_tag_set_show, NULL },
-	{ "dtag_wait_time_ms", 0400, queue_dtag_wait_time_show, NULL },
 	{ },
 };
 

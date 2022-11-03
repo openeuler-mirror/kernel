@@ -499,8 +499,7 @@ struct request_queue {
 
 	atomic_t		nr_active_requests_shared_sbitmap;
 
-	struct sbitmap_queue	sched_bitmap_tags;
-	struct sbitmap_queue	sched_breserved_tags;
+	struct blk_mq_tags	*shared_sbitmap_tags;
 
 	struct list_head	icq_list;
 #ifdef CONFIG_BLK_CGROUP
@@ -605,7 +604,6 @@ struct request_queue {
 #define BLK_MAX_WRITE_HINTS	5
 	u64			write_hints[BLK_MAX_WRITE_HINTS];
 
-	unsigned long		dtag_wait_time;
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
