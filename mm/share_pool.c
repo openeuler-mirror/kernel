@@ -3188,6 +3188,9 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 		sp_walk_data->pages = NULL;
 	}
 
+	if (sp_walk_data->is_hugepage)
+		sp_walk_data->uva_aligned = ALIGN_DOWN(uva, PMD_SIZE);
+
 	return ret;
 }
 
