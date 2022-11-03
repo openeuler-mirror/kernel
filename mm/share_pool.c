@@ -151,7 +151,7 @@ struct spg_proc_stat {
  * address space management
  */
 struct sp_mapping {
-	unsigned long flag;
+	unsigned long type;
 	atomic_t user;
 	unsigned long start[MAX_DEVID];
 	unsigned long end[MAX_DEVID];
@@ -263,12 +263,23 @@ static void sp_init_group_master_stat(int tgid, struct mm_struct *mm,
 
 #define SP_MAPPING_DVPP		0x1
 #define SP_MAPPING_NORMAL	0x2
+
+static unsigned long sp_mapping_type(struct sp_mapping *spm)
+{
+	return spm->type;
+}
+
+static void sp_mapping_set_type(struct sp_mapping *spm, unsigned long type)
+{
+	spm->type = type;
+}
+
 static struct sp_mapping *sp_mapping_normal;
 
 static void sp_mapping_add_to_list(struct sp_mapping *spm)
 {
 	mutex_lock(&spm_list_lock);
-	if (spm->flag & SP_MAPPING_DVPP)
+	if (sp_mapping_type(spm) == SP_MAPPING_DVPP)
 		list_add_tail(&spm->spm_node, &spm_dvpp_list);
 	mutex_unlock(&spm_list_lock);
 }
@@ -276,7 +287,7 @@ static void sp_mapping_add_to_list(struct sp_mapping *spm)
 static void sp_mapping_remove_from_list(struct sp_mapping *spm)
 {
 	mutex_lock(&spm_list_lock);
-	if (spm->flag & SP_MAPPING_DVPP)
+	if (sp_mapping_type(spm) == SP_MAPPING_DVPP)
 		list_del(&spm->spm_node);
 	mutex_unlock(&spm_list_lock);
 }
@@ -286,19 +297,23 @@ static void sp_mapping_range_init(struct sp_mapping *spm)
 	int i;
 
 	for (i = 0; i < MAX_DEVID; i++) {
-		if (spm->flag & SP_MAPPING_NORMAL) {
+		switch (sp_mapping_type(spm)) {
+		case SP_MAPPING_NORMAL:
 			spm->start[i] = MMAP_SHARE_POOL_NORMAL_START;
-			spm->end[i] = MMAP_SHARE_POOL_NORMAL_END;
-			continue;
+			spm->end[i]   = MMAP_SHARE_POOL_NORMAL_END;
+			break;
+		case SP_MAPPING_DVPP:
+			spm->start[i] = MMAP_SHARE_POOL_DVPP_START + i * MMAP_SHARE_POOL_16G_SIZE;
+			spm->end[i]   = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
+			break;
+		default:
+			pr_err("Invalid sp_mapping type [%lu]\n", sp_mapping_type(spm));
+			break;
 		}
-
-		spm->start[i] = MMAP_SHARE_POOL_DVPP_START +
-			i * MMAP_SHARE_POOL_16G_SIZE;
-		spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
 	}
 }
 
-static struct sp_mapping *sp_mapping_create(unsigned long flag)
+static struct sp_mapping *sp_mapping_create(unsigned long type)
 {
 	struct sp_mapping *spm;
 
@@ -306,7 +321,7 @@ static struct sp_mapping *sp_mapping_create(unsigned long flag)
 	if (!spm)
 		return ERR_PTR(-ENOMEM);
 
-	spm->flag = flag;
+	sp_mapping_set_type(spm, type);
 	sp_mapping_range_init(spm);
 	atomic_set(&spm->user, 0);
 	spm->area_root = RB_ROOT;
@@ -325,18 +340,26 @@ static void sp_mapping_destroy(struct sp_mapping *spm)
 static void sp_mapping_attach(struct sp_group *spg, struct sp_mapping *spm)
 {
 	atomic_inc(&spm->user);
-	if (spm->flag & SP_MAPPING_DVPP) {
+
+	switch (sp_mapping_type(spm)) {
+	case SP_MAPPING_DVPP:
 		spg->dvpp = spm;
 		list_add_tail(&spg->mnode, &spm->group_head);
-	} else if (spm->flag & SP_MAPPING_NORMAL)
+		break;
+	case SP_MAPPING_NORMAL:
 		spg->normal = spm;
+		break;
+	default:
+		break;
+	}
 }
 
 static void sp_mapping_detach(struct sp_group *spg, struct sp_mapping *spm)
 {
 	if (!spm)
 		return;
-	if (spm->flag & SP_MAPPING_DVPP)
+
+	if (sp_mapping_type(spm) == SP_MAPPING_DVPP)
 		list_del(&spg->mnode);
 	if (atomic_dec_and_test(&spm->user))
 		sp_mapping_destroy(spm);
