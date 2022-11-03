@@ -73,10 +73,6 @@
 
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
-/* mdc scene hack */
-static int __read_mostly enable_mdc_default_group;
-static const int mdc_default_group_id = 1;
-
 static int system_group_count;
 
 /* idr of all sp_groups */
@@ -944,16 +940,16 @@ static int get_task(int pid, struct task_struct **task)
  * 1. hold spg->rw_lock
  * 2. ensure no concurrency problem for mm_struct
  */
-static struct sp_group_node *is_process_in_group(struct sp_group *spg,
+static bool is_process_in_group(struct sp_group *spg,
 						 struct mm_struct *mm)
 {
 	struct sp_group_node *spg_node;
 
 	list_for_each_entry(spg_node, &spg->procs, proc_node)
 		if (spg_node->master->mm == mm)
-			return spg_node;
+			return true;
 
-	return NULL;
+	return false;
 }
 
 /* user must call sp_group_drop() after use */
@@ -1339,10 +1335,6 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		return -EINVAL;
 	}
 
-	/* mdc scene hack */
-	if (enable_mdc_default_group)
-		spg_id = mdc_default_group_id;
-
 	if (spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO) {
 		pr_err_ratelimited("add group failed, invalid group id %d\n", spg_id);
 		return -EINVAL;
@@ -1614,7 +1606,7 @@ int mg_sp_group_del_task(int pid, int spg_id)
 		goto out_put_task;
 	}
 
-	spg_node = is_process_in_group(spg, mm);
+	spg_node = find_spg_node_by_spg(mm, spg);
 	if (!spg_node) {
 		up_write(&sp_group_sem);
 		pr_err_ratelimited("process not in group");
@@ -2253,10 +2245,6 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	struct sp_group *spg;
 
 	check_interrupt_context();
-
-	/* mdc scene hack */
-	if (enable_mdc_default_group)
-		spg_id = mdc_default_group_id;
 
 	if (current->flags & PF_KTHREAD) {
 		pr_err_ratelimited("allocation failed, task is kthread\n");
@@ -3719,13 +3707,6 @@ int sp_node_id(struct vm_area_struct *vma)
 
 	return node_id;
 }
-
-static int __init mdc_default_group(char *s)
-{
-	enable_mdc_default_group = 1;
-	return 1;
-}
-__setup("enable_mdc_default_group", mdc_default_group);
 
 /*** Statistical and maintenance functions ***/
 
