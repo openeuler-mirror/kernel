@@ -2657,12 +2657,11 @@ static int is_vmap_hugepage(unsigned long addr)
 
 static unsigned long __sp_remap_get_pfn(unsigned long kva)
 {
-	unsigned long pfn;
+	unsigned long pfn = -EINVAL;
 
+	/* sp_make_share_k2u only support vmalloc address */
 	if (is_vmalloc_addr((void *)kva))
 		pfn = vmalloc_to_pfn((void *)kva);
-	else
-		pfn = virt_to_pfn(kva);
 
 	return pfn;
 }
@@ -4073,11 +4072,6 @@ static int proc_usage_by_group(int id, void *p, void *data)
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
 
 		master = spg_node->master;
-		if (!master) {
-			pr_info("master is NULL! process %d, group %d\n",
-					spg_node->instat.tgid, id);
-			continue;
-		}
 		mm = master->mm;
 		tgid = master->instat.tgid;
 
