@@ -799,11 +799,6 @@ static void spa_dec_usage(struct sp_area *spa)
 static void update_mem_usage(unsigned long size, bool inc, bool is_hugepage,
 	struct sp_group_node *spg_node, enum spa_type type)
 {
-	if (unlikely(!spg_node)) {
-		WARN(1, "null sp group node\n");
-		return;
-	}
-
 	switch (type) {
 	case SPA_TYPE_ALLOC:
 		update_mem_usage_alloc(size, inc, is_hugepage, spg_node);
@@ -837,10 +832,7 @@ static void sp_update_process_stat(struct task_struct *tsk, bool inc,
 	enum spa_type type = spa->type;
 
 	spg_node = find_spg_node_by_spg(tsk->mm, spa->spg);
-	if (!spg_node)
-		pr_err("share pool: spg node not found!\n");
-	else
-		update_mem_usage(size, inc, spa->is_hugepage, spg_node, type);
+	update_mem_usage(size, inc, spa->is_hugepage, spg_node, type);
 }
 
 static inline void check_interrupt_context(void)
@@ -1084,11 +1076,6 @@ static struct sp_group *create_spg(int spg_id, unsigned long flag)
 		     !is_local_group(spg_id))) {
 		pr_err_ratelimited("reach system max group num\n");
 		return ERR_PTR(-ENOSPC);
-	}
-
-	if (flag & ~SPG_FLAG_MASK) {
-		pr_err_ratelimited("invalid flag:%#lx\n", flag);
-		return ERR_PTR(-EINVAL);
 	}
 
 	spg = kzalloc(sizeof(*spg), GFP_KERNEL);
@@ -2743,10 +2730,7 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 		pr_err("remap k2u to task failed %ld\n", PTR_ERR(uva));
 	else {
 		spg_node = find_spg_node_by_spg(current->mm, spa->spg);
-		if (!spg_node)
-			pr_err("spg_node is null\n");
-		else
-			update_mem_usage(size, true, spa->is_hugepage, spg_node, SPA_TYPE_K2TASK);
+		update_mem_usage(size, true, spa->is_hugepage, spg_node, SPA_TYPE_K2TASK);
 		spa->mm = current->mm;
 	}
 
@@ -3317,12 +3301,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 			goto out_drop_area;
 		}
 
-		if (!spa->mm) {
-			pr_err_ratelimited("unshare uva(to task) failed, none spa owner\n");
-			ret = -EINVAL;
-			goto out_drop_area;
-		}
-
 		/*
 		 * current thread may be exiting in a multithread process
 		 *
@@ -3334,13 +3312,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 		if (!mm) {
 			pr_info_ratelimited("no need to unshare uva(to task), target process mm is exiting\n");
 			goto out_clr_flag;
-		}
-
-		if (spa->mm != mm) {
-			pr_err_ratelimited("unshare uva(to task) failed, spa not belong to the task\n");
-			ret = -EINVAL;
-			mmput(mm);
-			goto out_drop_area;
 		}
 
 		down_write(&mm->mmap_lock);
@@ -3980,10 +3951,7 @@ static int spg_info_show(int id, void *p, void *data)
 		return 0;
 
 	if (seq != NULL) {
-		if (id == 0)
-			seq_puts(seq, "Non Group ");
-		else
-			seq_printf(seq, "Group %6d ", id);
+		seq_printf(seq, "Group %6d ", id);
 
 		down_read(&spg->rw_lock);
 		seq_printf(seq, "size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
@@ -3994,10 +3962,7 @@ static int spg_info_show(int id, void *p, void *data)
 				byte2kb(atomic64_read(&spg->instat.alloc_hsize)));
 		up_read(&spg->rw_lock);
 	} else {
-		if (id == 0)
-			pr_info("Non Group ");
-		else
-			pr_info("Group %6d ", id);
+		pr_info("Group %6d ", id);
 
 		down_read(&spg->rw_lock);
 		pr_info("size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",

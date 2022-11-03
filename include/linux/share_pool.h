@@ -44,7 +44,6 @@
 #define SPG_ID_LOCAL_MAX	299999
 
 #define SPG_FLAG_NON_DVPP	(1 << 0)
-#define SPG_FLAG_MASK		(SPG_FLAG_NON_DVPP)
 
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
