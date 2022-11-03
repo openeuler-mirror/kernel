@@ -1010,38 +1010,6 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
 }
 
 /**
- * sp_group_id_by_pid() - Get the sp_group ID of a process.
- * @pid: pid of target process.
- *
- * Return:
- * 0		 the sp_group ID.
- * -ENODEV	 target process doesn't belong to any sp_group.
- */
-int sp_group_id_by_pid(int pid)
-{
-	struct sp_group *spg;
-	int spg_id = -ENODEV;
-
-	if (!sp_is_enabled())
-		return -EOPNOTSUPP;
-
-	check_interrupt_context();
-
-	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
-	if (!spg)
-		return -ENODEV;
-
-	down_read(&spg->rw_lock);
-	if (spg_valid(spg))
-		spg_id = spg->id;
-	up_read(&spg->rw_lock);
-
-	sp_group_drop(spg);
-	return spg_id;
-}
-EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
-
-/**
  * mp_sp_group_id_by_pid() - Get the sp_group ID array of a process.
  * @pid: pid of target process.
  * @spg_ids: point to an array to save the group ids the process belongs to
@@ -1617,12 +1585,6 @@ out:
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_add_task);
 
-int sp_group_add_task(int pid, int spg_id)
-{
-	return mg_sp_group_add_task(pid, PROT_READ | PROT_WRITE, spg_id);
-}
-EXPORT_SYMBOL_GPL(sp_group_add_task);
-
 /**
  * mg_sp_group_del_task() - delete a process from a sp group.
  * @pid: the pid of the task to be deleted
@@ -1726,13 +1688,7 @@ out:
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_del_task);
 
-int sp_group_del_task(int pid, int spg_id)
-{
-	return mg_sp_group_del_task(pid, spg_id);
-}
-EXPORT_SYMBOL_GPL(sp_group_del_task);
-
-int sp_id_of_current(void)
+int mg_sp_id_of_current(void)
 {
 	int ret, spg_id;
 	struct sp_group_master *master;
@@ -1763,12 +1719,6 @@ int sp_id_of_current(void)
 	up_write(&sp_group_sem);
 
 	return spg_id;
-}
-EXPORT_SYMBOL_GPL(sp_id_of_current);
-
-int mg_sp_id_of_current(void)
-{
-	return sp_id_of_current();
 }
 EXPORT_SYMBOL_GPL(mg_sp_id_of_current);
 
@@ -2298,7 +2248,7 @@ drop_spa:
 }
 
 /**
- * sp_free() - Free the memory allocated by sp_alloc().
+ * mg_sp_free() - Free the memory allocated by mg_sp_alloc().
  * @addr: the starting VA of the memory.
  * @id: Address space identifier, which is used to distinguish the addr.
  *
@@ -2307,7 +2257,7 @@ drop_spa:
  * * -EINVAL	- the memory can't be found or was not allocted by share pool.
  * * -EPERM	- the caller has no permision to free the memory.
  */
-int sp_free(unsigned long addr, int id)
+int mg_sp_free(unsigned long addr, int id)
 {
 	int ret = 0;
 	struct sp_free_context fc = {
@@ -2340,12 +2290,6 @@ out:
 	sp_dump_stack();
 	sp_try_to_compact();
 	return ret;
-}
-EXPORT_SYMBOL_GPL(sp_free);
-
-int mg_sp_free(unsigned long addr, int id)
-{
-	return sp_free(addr, id);
 }
 EXPORT_SYMBOL_GPL(mg_sp_free);
 
@@ -2745,7 +2689,7 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 }
 
 /**
- * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
+ * mg_sp_alloc() - Allocate shared memory for all the processes in a sp_group.
  * @size: the size of memory to allocate.
  * @sp_flags: how to allocate the memory.
  * @spg_id: the share group that the memory is allocated to.
@@ -2756,7 +2700,7 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
  * * if succeed, return the starting address of the shared memory.
  * * if fail, return the pointer of -errno.
  */
-void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
 	struct sp_area *spa = NULL;
 	int ret = 0;
@@ -2789,12 +2733,6 @@ out:
 		return ERR_PTR(ret);
 	else
 		return (void *)(spa->va_start);
-}
-EXPORT_SYMBOL_GPL(sp_alloc);
-
-void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
-{
-	return sp_alloc(size, sp_flags, spg_id);
 }
 EXPORT_SYMBOL_GPL(mg_sp_alloc);
 
@@ -3126,7 +3064,7 @@ static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
 }
 
 /**
- * sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
+ * mg_sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
  * @kva: the VA of shared kernel memory.
  * @size: the size of shared kernel memory.
  * @sp_flags: how to allocate the memory. We only support SP_DVPP.
@@ -3142,7 +3080,7 @@ static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
  * * if succeed, return the shared user address to start at.
  * * if fail, return the pointer of -errno.
  */
-void *sp_make_share_k2u(unsigned long kva, unsigned long size,
+void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id)
 {
 	void *uva;
@@ -3179,13 +3117,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 
 out:
 	return sp_k2u_finish(uva, &kc);
-}
-EXPORT_SYMBOL_GPL(sp_make_share_k2u);
-
-void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
-	unsigned long sp_flags, int pid, int spg_id)
-{
-	return sp_make_share_k2u(kva, size, sp_flags, pid, spg_id);
 }
 EXPORT_SYMBOL_GPL(mg_sp_make_share_k2u);
 
@@ -3422,7 +3353,7 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
 }
 
 /**
- * sp_make_share_u2k() - Share user memory of a specified process to kernel.
+ * mg_sp_make_share_u2k() - Share user memory of a specified process to kernel.
  * @uva: the VA of shared user memory
  * @size: the size of shared user memory
  * @pid: the pid of the specified process(Not currently in use)
@@ -3431,7 +3362,7 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
  * * if success, return the starting kernel address of the shared memory.
  * * if failed, return the pointer of -errno.
  */
-void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
+void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 {
 	int ret = 0;
 	struct mm_struct *mm = current->mm;
@@ -3489,12 +3420,6 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 
 	kvfree(sp_walk_data.pages);
 	return p;
-}
-EXPORT_SYMBOL_GPL(sp_make_share_u2k);
-
-void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
-{
-	return sp_make_share_u2k(uva, size, pid);
 }
 EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
 
@@ -3717,7 +3642,7 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 }
 
 /**
- * sp_unshare() - Unshare the kernel or user memory which shared by calling
+ * mg_sp_unshare() - Unshare the kernel or user memory which shared by calling
  *                sp_make_share_{k2u,u2k}().
  * @va: the specified virtual address of memory
  * @size: the size of unshared memory
@@ -3726,7 +3651,7 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
  *
  * Return: 0 for success, -errno on failure.
  */
-int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
+int mg_sp_unshare(unsigned long va, unsigned long size, int spg_id)
 {
 	int ret = 0;
 
@@ -3752,16 +3677,10 @@ int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(sp_unshare);
-
-int mg_sp_unshare(unsigned long va, unsigned long size, int id)
-{
-	return sp_unshare(va, size, 0, id);
-}
 EXPORT_SYMBOL_GPL(mg_sp_unshare);
 
 /**
- * sp_walk_page_range() - Walk page table with caller specific callbacks.
+ * mg_sp_walk_page_range() - Walk page table with caller specific callbacks.
  * @uva: the start VA of user memory.
  * @size: the size of user memory.
  * @tsk: task struct of the target task.
@@ -3772,7 +3691,7 @@ EXPORT_SYMBOL_GPL(mg_sp_unshare);
  * When return 0, sp_walk_data describing [uva, uva+size) can be used.
  * When return -errno, information in sp_walk_data is useless.
  */
-int sp_walk_page_range(unsigned long uva, unsigned long size,
+int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
 	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
 {
 	struct mm_struct *mm;
@@ -3811,20 +3730,13 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(sp_walk_page_range);
-
-int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
-	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
-{
-	return sp_walk_page_range(uva, size, tsk, sp_walk_data);
-}
 EXPORT_SYMBOL_GPL(mg_sp_walk_page_range);
 
 /**
- * sp_walk_page_free() - Free the sp_walk_data structure.
+ * mg_sp_walk_page_free() - Free the sp_walk_data structure.
  * @sp_walk_data: a structure of a page pointer array to be freed.
  */
-void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
+void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
 	if (!sp_is_enabled())
 		return;
@@ -3835,12 +3747,6 @@ void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 		return;
 
 	__sp_walk_page_free(sp_walk_data);
-}
-EXPORT_SYMBOL_GPL(sp_walk_page_free);
-
-void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data)
-{
-	sp_walk_page_free(sp_walk_data);
 }
 EXPORT_SYMBOL_GPL(mg_sp_walk_page_free);
 
@@ -3857,7 +3763,7 @@ int sp_unregister_notifier(struct notifier_block *nb)
 EXPORT_SYMBOL_GPL(sp_unregister_notifier);
 
 /**
- * sp_config_dvpp_range() - User can config the share pool start address
+ * mg_sp_config_dvpp_range() - User can config the share pool start address
  *                          of each Da-vinci device.
  * @start: the value of share pool start
  * @size: the value of share pool
@@ -3868,7 +3774,7 @@ EXPORT_SYMBOL_GPL(sp_unregister_notifier);
  * Return false if parameter invalid or has been set up.
  * This functuon has no concurrent problem.
  */
-bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
+bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
 	int ret;
 	bool err = false;
@@ -3918,12 +3824,6 @@ put_task:
 
 	return err;
 }
-EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
-
-bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
-{
-	return sp_config_dvpp_range(start, size, device_id, pid);
-}
 EXPORT_SYMBOL_GPL(mg_sp_config_dvpp_range);
 
 static bool is_sp_normal_addr(unsigned long addr)
@@ -3934,21 +3834,15 @@ static bool is_sp_normal_addr(unsigned long addr)
 }
 
 /**
- * is_sharepool_addr() - Check if a user memory address belongs to share pool.
+ * mg_is_sharepool_addr() - Check if a user memory address belongs to share pool.
  * @addr: the userspace address to be checked.
  *
  * Return true if addr belongs to share pool, or false vice versa.
  */
-bool is_sharepool_addr(unsigned long addr)
+bool mg_is_sharepool_addr(unsigned long addr)
 {
 	return sp_is_enabled() &&
 		(is_sp_normal_addr(addr) || is_device_addr(addr));
-}
-EXPORT_SYMBOL_GPL(is_sharepool_addr);
-
-bool mg_is_sharepool_addr(unsigned long addr)
-{
-	return is_sharepool_addr(addr);
 }
 EXPORT_SYMBOL_GPL(mg_is_sharepool_addr);
 
@@ -4430,7 +4324,7 @@ static void __init proc_sharepool_init(void)
 
 bool sp_check_addr(unsigned long addr)
 {
-	if (sp_is_enabled() && is_sharepool_addr(addr) &&
+	if (sp_is_enabled() && mg_is_sharepool_addr(addr) &&
 	    !check_aoscore_process(current)) {
 		sp_dump_stack();
 		return true;
@@ -4440,7 +4334,7 @@ bool sp_check_addr(unsigned long addr)
 
 bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
 {
-	if (sp_is_enabled() && is_sharepool_addr(addr) &&
+	if (sp_is_enabled() && mg_is_sharepool_addr(addr) &&
 	    !check_aoscore_process(current) && !(flags & MAP_SHARE_POOL)) {
 		sp_dump_stack();
 		return true;
