@@ -270,14 +270,17 @@ struct blk_mq_tag_set {
 	unsigned int		flags;
 	void			*driver_data;
 
-	struct blk_mq_tags	**tags;
+	KABI_DEPRECATE(atomic_t, active_queues_shared_sbitmap)
+	KABI_DEPRECATE(atomic_t, pending_queues_shared_sbitmap)
+	KABI_DEPRECATE(struct sbitmap_queue, __bitmap_tags)
+	KABI_DEPRECATE(struct sbitmap_queue, __breserved_tags)
 
-	struct blk_mq_tags	*shared_sbitmap_tags;
+	struct blk_mq_tags	**tags;
 
 	struct mutex		tag_list_lock;
 	struct list_head	tag_list;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct blk_mq_tags *shared_sbitmap_tags)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
