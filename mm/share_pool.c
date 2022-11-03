@@ -3755,7 +3755,7 @@ static void print_process_prot(struct seq_file *seq, unsigned long prot)
 int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
-	struct mm_struct *mm = task->mm;
+	struct mm_struct *mm;
 	struct sp_group_master *master;
 	struct sp_proc_stat *proc_stat;
 	struct sp_group_node *spg_node;
@@ -3765,17 +3765,15 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	if (!sp_is_enabled())
 		return 0;
 
+	mm = get_task_mm(task);
 	if (!mm)
 		return 0;
 
 	down_read(&sp_group_sem);
 	down_read(&mm->mmap_lock);
 	master = mm->sp_group_master;
-	if (!master) {
-		up_read(&mm->mmap_lock);
-		up_read(&sp_group_sem);
-		return 0;
-	}
+	if (!master)
+		goto out;
 
 	get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
 	proc_stat = &master->instat;
@@ -3807,8 +3805,11 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		print_process_prot(m, spg_node->prot);
 		seq_putc(m, '\n');
 	}
+
+out:
 	up_read(&mm->mmap_lock);
 	up_read(&sp_group_sem);
+	mmput(mm);
 	return 0;
 }
 
