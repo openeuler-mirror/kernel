@@ -147,6 +147,13 @@ struct spg_proc_stat {
 	atomic64_t k2u_size;
 };
 
+enum sp_mapping_type {
+	SP_MAPPING_START,
+	SP_MAPPING_DVPP		= SP_MAPPING_START,
+	SP_MAPPING_NORMAL,
+	SP_MAPPING_END,
+};
+
 /*
  * address space management
  */
@@ -208,8 +215,7 @@ struct sp_group {
 	struct rw_semaphore	rw_lock;
 	/* list node for dvpp mapping */
 	struct list_head	mnode;
-	struct sp_mapping	*dvpp;
-	struct sp_mapping	*normal;
+	struct sp_mapping	*mapping[SP_MAPPING_END];
 };
 
 /* a per-process(per mm) struct which manages a sp_group_node list */
@@ -260,9 +266,6 @@ static void sp_init_group_master_stat(int tgid, struct mm_struct *mm,
 	stat->tgid = tgid;
 	get_task_comm(stat->comm, current);
 }
-
-#define SP_MAPPING_DVPP		0x1
-#define SP_MAPPING_NORMAL	0x2
 
 static unsigned long sp_mapping_type(struct sp_mapping *spm)
 {
@@ -339,30 +342,29 @@ static void sp_mapping_destroy(struct sp_mapping *spm)
 
 static void sp_mapping_attach(struct sp_group *spg, struct sp_mapping *spm)
 {
+	unsigned long type = sp_mapping_type(spm);
 	atomic_inc(&spm->user);
 
-	switch (sp_mapping_type(spm)) {
-	case SP_MAPPING_DVPP:
-		spg->dvpp = spm;
+	spg->mapping[type] = spm;
+	if (type == SP_MAPPING_DVPP)
 		list_add_tail(&spg->mnode, &spm->group_head);
-		break;
-	case SP_MAPPING_NORMAL:
-		spg->normal = spm;
-		break;
-	default:
-		break;
-	}
 }
 
 static void sp_mapping_detach(struct sp_group *spg, struct sp_mapping *spm)
 {
+	unsigned long type;
+
 	if (!spm)
 		return;
 
-	if (sp_mapping_type(spm) == SP_MAPPING_DVPP)
+	type = sp_mapping_type(spm);
+
+	if (type == SP_MAPPING_DVPP)
 		list_del(&spg->mnode);
 	if (atomic_dec_and_test(&spm->user))
 		sp_mapping_destroy(spm);
+
+	spg->mapping[type] = NULL;
 }
 
 /* merge old mapping to new, and the old mapping would be destroyed */
@@ -375,7 +377,7 @@ static void sp_mapping_merge(struct sp_mapping *new, struct sp_mapping *old)
 
 	list_for_each_entry_safe(spg, tmp, &old->group_head, mnode) {
 		list_move_tail(&spg->mnode, &new->group_head);
-		spg->dvpp = new;
+		spg->mapping[SP_MAPPING_DVPP] = new;
 	}
 
 	atomic_add(atomic_read(&old->user), &new->user);
@@ -409,8 +411,10 @@ static bool can_mappings_merge(struct sp_mapping *m1, struct sp_mapping *m2)
  */
 static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 {
-	struct sp_group_master *master = mm->sp_group_master;
-	struct sp_group *local = master->local;
+	struct sp_mapping *local_dvpp_mapping, *spg_dvpp_mapping;
+
+	local_dvpp_mapping = mm->sp_group_master->local->mapping[SP_MAPPING_DVPP];
+	spg_dvpp_mapping = spg->mapping[SP_MAPPING_DVPP];
 
 	if (!list_empty(&spg->procs) && !(spg->flag & SPG_FLAG_NON_DVPP)) {
 		/*
@@ -419,14 +423,14 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 		 * This may change the address range for the task or group implicitly,
 		 * give a warn for it.
 		 */
-		bool is_conflict = !can_mappings_merge(local->dvpp, spg->dvpp);
+		bool is_conflict = !can_mappings_merge(local_dvpp_mapping, spg_dvpp_mapping);
 
-		if (is_mapping_empty(local->dvpp)) {
-			sp_mapping_merge(spg->dvpp, local->dvpp);
+		if (is_mapping_empty(local_dvpp_mapping)) {
+			sp_mapping_merge(spg_dvpp_mapping, local_dvpp_mapping);
 			if (is_conflict)
 				pr_warn_ratelimited("task address space conflict, spg_id=%d\n", spg->id);
-		} else if (is_mapping_empty(spg->dvpp)) {
-			sp_mapping_merge(local->dvpp, spg->dvpp);
+		} else if (is_mapping_empty(spg_dvpp_mapping)) {
+			sp_mapping_merge(local_dvpp_mapping, spg_dvpp_mapping);
 			if (is_conflict)
 				pr_warn_ratelimited("group address space conflict, spg_id=%d\n", spg->id);
 		} else {
@@ -436,8 +440,8 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	} else {
 		if (!(spg->flag & SPG_FLAG_NON_DVPP))
 			/* the mapping of local group is always set */
-			sp_mapping_attach(spg, local->dvpp);
-		if (!spg->normal)
+			sp_mapping_attach(spg, local_dvpp_mapping);
+		if (!spg->mapping[SP_MAPPING_NORMAL])
 			sp_mapping_attach(spg, sp_mapping_normal);
 	}
 
@@ -912,14 +916,19 @@ static void free_new_spg_id(bool new, int spg_id)
 
 static void free_sp_group_locked(struct sp_group *spg)
 {
+	int type;
+
 	fput(spg->file);
 	fput(spg->file_hugetlb);
 	idr_remove(&sp_group_idr, spg->id);
 	free_sp_group_id((unsigned int)spg->id);
-	sp_mapping_detach(spg, spg->dvpp);
-	sp_mapping_detach(spg, spg->normal);
+
+	for (type = SP_MAPPING_START; type < SP_MAPPING_END; type++)
+		sp_mapping_detach(spg, spg->mapping[type]);
+
 	if (!is_local_group(spg->id))
 		system_group_count--;
+
 	kfree(spg);
 	WARN(system_group_count < 0, "unexpected group count\n");
 }
@@ -1744,9 +1753,9 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	}
 
 	if (flags & SP_DVPP)
-		mapping = spg->dvpp;
+		mapping = spg->mapping[SP_MAPPING_DVPP];
 	else
-		mapping = spg->normal;
+		mapping = spg->mapping[SP_MAPPING_NORMAL];
 
 	if (!mapping) {
 		pr_err_ratelimited("non DVPP spg, id %d\n", spg->id);
@@ -1875,9 +1884,9 @@ static struct sp_area *__find_sp_area_locked(struct sp_group *spg,
 	struct rb_node *n;
 
 	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
-		n = spg->normal->area_root.rb_node;
+		n = spg->mapping[SP_MAPPING_NORMAL]->area_root.rb_node;
 	else
-		n = spg->dvpp->area_root.rb_node;
+		n = spg->mapping[SP_MAPPING_DVPP]->area_root.rb_node;
 
 	while (n) {
 		struct sp_area *spa;
@@ -1931,9 +1940,9 @@ static void sp_free_area(struct sp_area *spa)
 	lockdep_assert_held(&sp_area_lock);
 
 	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
-		spm = spa->spg->normal;
+		spm = spa->spg->mapping[SP_MAPPING_NORMAL];
 	else
-		spm = spa->spg->dvpp;
+		spm = spa->spg->mapping[SP_MAPPING_DVPP];
 
 	if (spm->free_area_cache) {
 		struct sp_area *cache;
@@ -3615,7 +3624,7 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	if (IS_ERR(spg))
 		goto put_mm;
 
-	spm = spg->dvpp;
+	spm = spg->mapping[SP_MAPPING_DVPP];
 	default_start = MMAP_SHARE_POOL_DVPP_START + device_id * MMAP_SHARE_POOL_16G_SIZE;
 	/* The dvpp range of each group can be configured only once */
 	if (spm->start[device_id] != default_start)
