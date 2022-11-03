@@ -2726,7 +2726,6 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 	spa->kva = kva;
 	kc.sp_flags = sp_flags;
 	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot, &kc);
-	__sp_area_drop(spa);
 	if (IS_ERR(uva))
 		pr_err("remap k2u to task failed %ld\n", PTR_ERR(uva));
 	else {
@@ -2734,6 +2733,7 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 		update_mem_usage(size, true, spa->is_hugepage, spg_node, SPA_TYPE_K2TASK);
 		spa->mm = current->mm;
 	}
+	__sp_area_drop(spa);
 
 	return uva;
 }
@@ -2785,9 +2785,9 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, unsigned long size,
 
 out:
 	up_read(&spg->rw_lock);
-	__sp_area_drop(spa);
 	if (!IS_ERR(uva))
 		sp_update_process_stat(current, true, spa);
+	__sp_area_drop(spa);
 
 	return uva;
 }
