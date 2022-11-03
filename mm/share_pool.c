@@ -216,7 +216,7 @@ struct sp_group {
 	struct rw_semaphore	rw_lock;
 	/* list node for dvpp mapping */
 	struct list_head	mnode;
-	struct sp_mapping	*mapping[SP_MAPPING_END];
+	struct sp_mapping       *mapping[SP_MAPPING_END];
 };
 
 /* a per-process(per mm) struct which manages a sp_group_node list */
@@ -364,7 +364,6 @@ static void sp_mapping_detach(struct sp_group *spg, struct sp_mapping *spm)
 		return;
 
 	type = sp_mapping_type(spm);
-
 	if (type == SP_MAPPING_DVPP)
 		list_del(&spg->mnode);
 	if (atomic_dec_and_test(&spm->user))
@@ -456,7 +455,7 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	return 0;
 }
 
-static inline struct sp_mapping *sp_mapping_find(struct sp_group *spg,
+static struct sp_mapping *sp_mapping_find(struct sp_group *spg,
 						 unsigned long addr)
 {
 	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
@@ -504,7 +503,7 @@ static int init_local_group(struct mm_struct *mm)
 
 	ret = local_group_add_task(mm, spg);
 	if (ret < 0)
-		/* The spm would be released while destroying the spg*/
+		/* The spm would be released while destroying the spg */
 		goto free_spg;
 
 	return 0;
@@ -1503,10 +1502,10 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		unsigned long populate = 0;
 		struct file *file = spa_file(spa);
 		unsigned long addr;
-		unsigned long __prot = prot;
+		unsigned long prot_spa = prot;
 
 		if ((spa->flags & (SP_PROT_RO | SP_PROT_FOCUS)) == (SP_PROT_RO | SP_PROT_FOCUS))
-			__prot &= ~PROT_WRITE;
+			prot_spa &= ~PROT_WRITE;
 
 		__sp_area_drop_locked(prev);
 		prev = spa;
@@ -1519,7 +1518,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		spin_unlock(&sp_area_lock);
 
 		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
-			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, __prot, NULL);
+			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, prot_spa, NULL);
 			if (IS_ERR_VALUE(addr))
 				pr_warn("add group remap k2u failed %ld\n", addr);
 
@@ -1537,7 +1536,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 			break;
 		}
 
-		addr = sp_mmap(mm, file, spa, &populate, __prot, NULL);
+		addr = sp_mmap(mm, file, spa, &populate, prot_spa, NULL);
 		if (IS_ERR_VALUE(addr)) {
 			sp_munmap_task_areas(mm, spg, &spa->link);
 			up_write(&mm->mmap_lock);
@@ -1705,7 +1704,7 @@ int mg_sp_id_of_current(void)
 	if (!sp_is_enabled())
 		return -EOPNOTSUPP;
 
-	if (current->flags & PF_KTHREAD || !current->mm)
+	if ((current->flags & PF_KTHREAD) || !current->mm)
 		return -EINVAL;
 
 	down_read(&sp_group_sem);
@@ -1791,10 +1790,11 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 			return ERR_PTR(-EINVAL);
 		}
 		mapping = spg->mapping[SP_MAPPING_RO];
-	} else if (flags & SP_DVPP)
+	} else if (flags & SP_DVPP) {
 		mapping = spg->mapping[SP_MAPPING_DVPP];
-	else
+	} else {
 		mapping = spg->mapping[SP_MAPPING_NORMAL];
+	}
 
 	if (!mapping) {
 		pr_err_ratelimited("non DVPP spg, id %d\n", spg->id);
@@ -1938,7 +1938,7 @@ static struct sp_area *__find_sp_area_locked(struct sp_group *spg,
 	return NULL;
 }
 
-static struct sp_area *__find_sp_area(struct sp_group *spg, unsigned long addr)
+static struct sp_area *get_sp_area(struct sp_group *spg, unsigned long addr)
 {
 	struct sp_area *n;
 
@@ -2144,7 +2144,7 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 
 	fc->state = FREE_CONT;
 
-	spa = __find_sp_area(spg, addr);
+	spa = get_sp_area(spg, addr);
 	sp_group_drop(spg);
 	if (!spa) {
 		pr_debug("sp free invalid input addr %lx\n", addr);
@@ -2233,7 +2233,7 @@ int mg_sp_free(unsigned long addr, int id)
 	else
 		sp_update_process_stat(current, false, fc.spa);
 
-	__sp_area_drop(fc.spa);  /* match __find_sp_area in sp_free_get_spa */
+	__sp_area_drop(fc.spa);  /* match get_sp_area in sp_free_get_spa */
 out:
 	return ret;
 }
@@ -2518,8 +2518,9 @@ err:
 		else
 			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
 					ret);
-	} else
+	} else {
 		ac->need_fallocate = true;
+	}
 	return ret;
 }
 
@@ -2693,7 +2694,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		goto put_mm;
 	}
 
-	if (kc && kc->sp_flags & SP_PROT_RO)
+	if (kc && (kc->sp_flags & SP_PROT_RO))
 		prot = PROT_READ;
 
 	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot, &vma);
@@ -2963,9 +2964,9 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 	if (ret)
 		return ERR_PTR(ret);
 
-	if (kc.to_task)
+	if (kc.to_task) {
 		uva = sp_make_share_kva_to_task(kc.kva_aligned, kc.size_aligned, kc.sp_flags);
-	else {
+	} else {
 		struct sp_group *spg;
 
 		spg = __sp_find_spg(current->pid, kc.spg_id);
@@ -2978,8 +2979,9 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 			}
 			uva = sp_make_share_kva_to_spg(kc.kva_aligned, kc.size_aligned, kc.sp_flags, spg);
 			sp_group_drop(spg);
-		} else
+		} else {
 			uva = ERR_PTR(-ENODEV);
+		}
 	}
 
 out:
@@ -3003,8 +3005,9 @@ static int sp_pmd_entry(pmd_t *pmd, unsigned long addr,
 		if (!sp_walk_data->is_page_type_set) {
 			sp_walk_data->is_page_type_set = true;
 			sp_walk_data->is_hugepage = true;
-		} else if (!sp_walk_data->is_hugepage)
+		} else if (!sp_walk_data->is_hugepage) {
 			return -EFAULT;
+		}
 
 		/* To skip pte level walk */
 		walk->action = ACTION_CONTINUE;
@@ -3330,9 +3333,9 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 	 * at first we guess it's a hugepage addr
 	 * we can tolerate at most PMD_SIZE or PAGE_SIZE which is matched in k2u
 	 */
-	spa = __find_sp_area(spg, ALIGN_DOWN(uva, PMD_SIZE));
+	spa = get_sp_area(spg, ALIGN_DOWN(uva, PMD_SIZE));
 	if (!spa) {
-		spa = __find_sp_area(spg, ALIGN_DOWN(uva, PAGE_SIZE));
+		spa = get_sp_area(spg, ALIGN_DOWN(uva, PAGE_SIZE));
 		if (!spa) {
 			ret = -EINVAL;
 			pr_debug("invalid input uva %lx in unshare uva\n", (unsigned long)uva);
@@ -3572,9 +3575,9 @@ int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
 	}
 
 	down_write(&mm->mmap_lock);
-	if (likely(!mm->core_state))
+	if (likely(!mm->core_state)) {
 		ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);
-	else {
+	} else {
 		pr_err("walk page range: encoutered coredump\n");
 		ret = -ESRCH;
 	}
@@ -3724,7 +3727,7 @@ int sp_node_id(struct vm_area_struct *vma)
 	if (!sp_is_enabled())
 		return node_id;
 
-	if (vma && vma->vm_flags & VM_SHARE_POOL && vma->vm_private_data) {
+	if (vma && (vma->vm_flags & VM_SHARE_POOL) && vma->vm_private_data) {
 		spa = vma->vm_private_data;
 		node_id = spa->node_id;
 	}
@@ -4083,7 +4086,6 @@ static int proc_usage_by_group(int id, void *p, void *data)
 
 	down_read(&spg->rw_lock);
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
-
 		master = spg_node->master;
 		mm = master->mm;
 		tgid = master->instat.tgid;
