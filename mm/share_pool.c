@@ -3993,7 +3993,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	seq_printf(m, "%-8s %-9s %-9s %-9s %-4s\n",
 			"Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES", "PROT");
 
-	list_for_each_entry(spg_node, &master->node_list, proc_node) {
+	list_for_each_entry(spg_node, &master->node_list, group_node) {
 		seq_printf(m, "%-8d %-9ld %-9ld %-9ld ",
 				spg_node->spg->id,
 				get_spg_proc_alloc(spg_node),
