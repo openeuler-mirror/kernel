@@ -3337,8 +3337,13 @@ static int ext4_split_extent_at(handle_t *handle,
 		ext4_ext_mark_unwritten(ex2);
 
 	err = ext4_ext_insert_extent(handle, inode, ppath, &newex, flags);
-	if (err != -ENOSPC && err != -EDQUOT)
+	if (err != -ENOSPC && err != -EDQUOT) {
+		if (err)
+			EXT4_ERROR_INODE_ERR(inode, -err,
+			"insert extent failed block = %d len = %d",
+			ex2->ee_block, ex2->ee_len);
 		goto out;
+	}
 
 	if (EXT4_EXT_MAY_ZEROOUT & split_flag) {
 		if (split_flag & (EXT4_EXT_DATA_VALID1|EXT4_EXT_DATA_VALID2)) {
