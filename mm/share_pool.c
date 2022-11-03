@@ -80,13 +80,6 @@ static const int mdc_default_group_id = 1;
 static int system_group_count;
 
 static unsigned int sp_device_number;
-static unsigned long sp_dev_va_start[MAX_DEVID];
-static unsigned long sp_dev_va_size[MAX_DEVID];
-
-static bool is_sp_dev_addr_enabled(int device_id)
-{
-	return sp_dev_va_size[device_id];
-}
 
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
@@ -303,14 +296,9 @@ static void sp_mapping_range_init(struct sp_mapping *spm)
 			continue;
 		}
 
-		if (!is_sp_dev_addr_enabled(i)) {
-			spm->start[i] = MMAP_SHARE_POOL_16G_START +
-				i * MMAP_SHARE_POOL_16G_SIZE;
-			spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
-		} else {
-			spm->start[i] = sp_dev_va_start[i];
-			spm->end[i] = spm->start[i] + sp_dev_va_size[i];
-		}
+		spm->start[i] = MMAP_SHARE_POOL_16G_START +
+			i * MMAP_SHARE_POOL_16G_SIZE;
+		spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
 	}
 }
 
@@ -1085,18 +1073,6 @@ EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
 static bool is_online_node_id(int node_id)
 {
 	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
-}
-
-static bool is_device_addr(unsigned long addr)
-{
-	int i;
-
-	for (i = 0; i < sp_device_number; i++) {
-		if (addr >= sp_dev_va_start[i] &&
-		    addr < sp_dev_va_start[i] + sp_dev_va_size[i])
-			return true;
-	}
-	return false;
 }
 
 static struct sp_group *create_spg(int spg_id, unsigned long flag)
@@ -3687,6 +3663,36 @@ static bool is_sp_normal_addr(unsigned long addr)
 			sp_device_number * MMAP_SHARE_POOL_16G_SIZE;
 }
 
+static bool is_sp_dvpp_addr(unsigned long addr)
+{
+	int i;
+	struct mm_struct *mm;
+	struct sp_group_master *master;
+	struct sp_mapping *spm_dvpp;
+
+	mm = current->mm;
+	if (!mm)
+		return false;
+
+	down_read(&sp_group_sem);
+	master = mm->sp_group_master;
+	if (!master) {
+		up_read(&sp_group_sem);
+		return false;
+	}
+
+	/* master->local and master->local->dvpp won't be NULL*/
+	spm_dvpp = master->local->dvpp;
+	for (i = 0; i < MAX_DEVID; i++) {
+		if (addr >= spm_dvpp->start[i] && addr < spm_dvpp->end[i]) {
+			up_read(&sp_group_sem);
+			return true;
+		}
+	}
+	up_read(&sp_group_sem);
+	return false;
+}
+
 /**
  * mg_is_sharepool_addr() - Check if a user memory address belongs to share pool.
  * @addr: the userspace address to be checked.
@@ -3696,7 +3702,7 @@ static bool is_sp_normal_addr(unsigned long addr)
 bool mg_is_sharepool_addr(unsigned long addr)
 {
 	return sp_is_enabled() &&
-		(is_sp_normal_addr(addr) || is_device_addr(addr));
+		((is_sp_normal_addr(addr) || is_sp_dvpp_addr(addr)));
 }
 EXPORT_SYMBOL_GPL(mg_is_sharepool_addr);
 
