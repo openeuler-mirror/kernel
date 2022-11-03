@@ -122,6 +122,11 @@ static LIST_HEAD(master_list);
 /* mutex to protect insert/delete ops from master_list */
 static DEFINE_MUTEX(master_list_lock);
 
+/* list of all spm-dvpp */
+static LIST_HEAD(spm_dvpp_list);
+/* mutex to protect insert/delete ops from master_list */
+static DEFINE_MUTEX(spm_list_lock);
+
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat;
 
@@ -189,6 +194,7 @@ struct sp_mapping {
 
 	/* list head for all groups attached to this mapping, dvpp mapping only */
 	struct list_head group_head;
+	struct list_head spm_node;
 };
 
 /* Processes in the same sp_group can share memory.
@@ -290,6 +296,22 @@ static void sp_init_group_master_stat(struct mm_struct *mm, struct sp_proc_stat 
 #define SP_MAPPING_NORMAL	0x2
 static struct sp_mapping *sp_mapping_normal;
 
+static void sp_mapping_add_to_list(struct sp_mapping *spm)
+{
+	mutex_lock(&spm_list_lock);
+	if (spm->flag & SP_MAPPING_DVPP)
+		list_add_tail(&spm->spm_node, &spm_dvpp_list);
+	mutex_unlock(&spm_list_lock);
+}
+
+static void sp_mapping_remove_from_list(struct sp_mapping *spm)
+{
+	mutex_lock(&spm_list_lock);
+	if (spm->flag & SP_MAPPING_DVPP)
+		list_del(&spm->spm_node);
+	mutex_unlock(&spm_list_lock);
+}
+
 static void sp_mapping_range_init(struct sp_mapping *spm)
 {
 	int i;
@@ -325,12 +347,14 @@ static struct sp_mapping *sp_mapping_create(unsigned long flag)
 	atomic_set(&spm->user, 0);
 	spm->area_root = RB_ROOT;
 	INIT_LIST_HEAD(&spm->group_head);
+	sp_mapping_add_to_list(spm);
 
 	return spm;
 }
 
 static void sp_mapping_destroy(struct sp_mapping *spm)
 {
+	sp_mapping_remove_from_list(spm);
 	kfree(spm);
 }
 
@@ -4066,22 +4090,14 @@ static void spa_normal_stat_show(struct seq_file *seq)
 	spa_stat_of_mapping_show(seq, sp_mapping_normal);
 }
 
-static int idr_spg_dvpp_stat_show_cb(int id, void *p, void *data)
-{
-	struct sp_group *spg = p;
-	struct seq_file *seq = data;
-
-	if (!is_local_group(spg->id) || atomic_read(&spg->dvpp->user) == 1)
-		spa_stat_of_mapping_show(seq, spg->dvpp);
-
-	return 0;
-}
-
 static void spa_dvpp_stat_show(struct seq_file *seq)
 {
-	down_read(&sp_group_sem);
-	idr_for_each(&sp_group_idr, idr_spg_dvpp_stat_show_cb, seq);
-	up_read(&sp_group_sem);
+	struct sp_mapping *spm;
+
+	mutex_lock(&spm_list_lock);
+	list_for_each_entry(spm, &spm_dvpp_list, spm_node)
+		spa_stat_of_mapping_show(seq, spm);
+	mutex_unlock(&spm_list_lock);
 }
 
 
