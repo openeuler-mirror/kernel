@@ -1731,7 +1731,7 @@ int mg_sp_id_of_current(void)
 EXPORT_SYMBOL_GPL(mg_sp_id_of_current);
 
 /* the caller must hold sp_area_lock */
-static void __insert_sp_area(struct sp_mapping *spm, struct sp_area *spa)
+static void insert_sp_area(struct sp_mapping *spm, struct sp_area *spa)
 {
 	struct rb_node **p = &spm->area_root.rb_node;
 	struct rb_node *parent = NULL;
@@ -1902,7 +1902,7 @@ found:
 	spa->device_id = device_id;
 
 	spa_inc_usage(spa);
-	__insert_sp_area(mapping, spa);
+	insert_sp_area(mapping, spa);
 	mapping->free_area_cache = &spa->rb_node;
 	list_add_tail(&spa->link, &spg->spa_list);
 
@@ -1917,7 +1917,7 @@ error:
 }
 
 /* the caller should hold sp_area_lock */
-static struct sp_area *__find_sp_area_locked(struct sp_group *spg,
+static struct sp_area *find_sp_area_locked(struct sp_group *spg,
 		unsigned long addr)
 {
 	struct sp_mapping *spm = sp_mapping_find(spg, addr);
@@ -1943,7 +1943,7 @@ static struct sp_area *get_sp_area(struct sp_group *spg, unsigned long addr)
 	struct sp_area *n;
 
 	spin_lock(&sp_area_lock);
-	n = __find_sp_area_locked(spg, addr);
+	n = find_sp_area_locked(spg, addr);
 	if (n)
 		atomic_inc(&n->use_count);
 	spin_unlock(&sp_area_lock);
@@ -2038,7 +2038,7 @@ void sp_area_drop(struct vm_area_struct *vma)
 	 * Considering a situation where task A and B are in the same spg.
 	 * A is exiting and calling remove_vma() -> ... -> sp_area_drop().
 	 * Concurrently, B is calling sp_free() to free the same spa.
-	 * __find_sp_area_locked() and __sp_area_drop_locked() should be
+	 * find_sp_area_locked() and __sp_area_drop_locked() should be
 	 * an atomic operation.
 	 */
 	spin_lock(&sp_area_lock);
