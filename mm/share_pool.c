@@ -4224,8 +4224,7 @@ retry:
 
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
-			page = alloc_huge_page_nodemask(hstate_file(vma->vm_file),
-						    node_id, NULL, GFP_KERNEL);
+			page = hugetlb_alloc_hugepage(node_id, HUGETLB_ALLOC_BUDDY);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
 		}

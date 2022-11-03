@@ -597,11 +597,17 @@ static void remove_inode_hugepages(struct inode *inode, loff_t lstart,
 			 */
 			VM_BUG_ON(HPageRestoreReserve(page));
 			remove_huge_page(page);
-			freed++;
-			if (!truncate_op) {
-				if (unlikely(hugetlb_unreserve_pages(inode,
-							index, index + 1, 1)))
-					hugetlb_fix_reserve_counts(inode);
+			/*
+			 * if the page is from buddy system, do not add to freed.
+			 * because freed is used for hugetlbfs reservation accounting.
+			 */
+			if (!HPageTemporary(page)) {
+				freed++;
+				if (!truncate_op) {
+					if (unlikely(hugetlb_unreserve_pages(inode,
+									index, index + 1, 1)))
+						hugetlb_fix_reserve_counts(inode);
+				}
 			}
 
 			unlock_page(page);
@@ -1054,7 +1060,8 @@ static int hugetlbfs_error_remove_page(struct address_space *mapping,
 	pgoff_t index = page->index;
 
 	remove_huge_page(page);
-	if (unlikely(hugetlb_unreserve_pages(inode, index, index + 1, 1)))
+	if (!HPageTemporary(page) &&
+			unlikely(hugetlb_unreserve_pages(inode, index, index + 1, 1)))
 		hugetlb_fix_reserve_counts(inode);
 
 	return 0;
