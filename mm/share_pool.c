@@ -448,6 +448,15 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	return 0;
 }
 
+static inline struct sp_mapping *sp_mapping_find(struct sp_group *spg,
+						 unsigned long addr)
+{
+	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
+		return spg->mapping[SP_MAPPING_NORMAL];
+
+	return spg->mapping[SP_MAPPING_DVPP];
+}
+
 static struct sp_group *create_spg(int spg_id, unsigned long flag);
 static void free_new_spg_id(bool new, int spg_id);
 static void free_sp_group_locked(struct sp_group *spg);
@@ -1881,13 +1890,8 @@ error:
 static struct sp_area *__find_sp_area_locked(struct sp_group *spg,
 		unsigned long addr)
 {
-	struct rb_node *n;
-
-	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
-		n = spg->mapping[SP_MAPPING_NORMAL]->area_root.rb_node;
-	else
-		n = spg->mapping[SP_MAPPING_DVPP]->area_root.rb_node;
-
+	struct sp_mapping *spm = sp_mapping_find(spg, addr);
+	struct rb_node *n = spm->area_root.rb_node;
 	while (n) {
 		struct sp_area *spa;
 
@@ -1939,11 +1943,7 @@ static void sp_free_area(struct sp_area *spa)
 
 	lockdep_assert_held(&sp_area_lock);
 
-	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
-		spm = spa->spg->mapping[SP_MAPPING_NORMAL];
-	else
-		spm = spa->spg->mapping[SP_MAPPING_DVPP];
-
+	spm = sp_mapping_find(spa->spg, addr);
 	if (spm->free_area_cache) {
 		struct sp_area *cache;
 
