@@ -73,6 +73,9 @@
 
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
+#define MMAP_SHARE_POOL_DVPP_BASE	0x100000000000ULL
+#define MMAP_SHARE_POOL_DVPP_END	(MMAP_SHARE_POOL_DVPP_BASE + MMAP_SHARE_POOL_16G_SIZE * 64)
+
 static int system_group_count;
 
 /* idr of all sp_groups */
@@ -500,7 +503,9 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	return 0;
 
 free_master:
+	mutex_lock(&master_list_lock);
 	list_del(&master->list_node);
+	mutex_unlock(&master_list_lock);
 	mm->sp_group_master = NULL;
 	kfree(master);
 
@@ -3550,6 +3555,7 @@ int sp_unregister_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(sp_unregister_notifier);
 
+static bool is_sp_dvpp_addr(unsigned long addr);
 /**
  * mg_sp_config_dvpp_range() - User can config the share pool start address
  *                          of each Da-vinci device.
@@ -3577,7 +3583,8 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 
 	/* NOTE: check the start address */
 	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
-	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id))
+	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id)
+		|| !is_sp_dvpp_addr(start) || !is_sp_dvpp_addr(start + size))
 		return false;
 
 	ret = get_task(pid, &tsk);
@@ -3621,34 +3628,19 @@ static bool is_sp_normal_addr(unsigned long addr)
 			MAX_DEVID * MMAP_SHARE_POOL_16G_SIZE;
 }
 
+/*
+ *	| 16G host | 16G device | ... |     |
+ *	^
+ *	|
+ *	MMAP_SHARE_POOL_DVPP_BASE + 16G * 64
+ *	We only check the device regions.
+ */
 static bool is_sp_dvpp_addr(unsigned long addr)
 {
-	int i;
-	struct mm_struct *mm;
-	struct sp_group_master *master;
-	struct sp_mapping *spm_dvpp;
-
-	mm = current->mm;
-	if (!mm)
+	if (addr < MMAP_SHARE_POOL_DVPP_BASE || addr >= MMAP_SHARE_POOL_DVPP_END)
 		return false;
 
-	down_read(&sp_group_sem);
-	master = mm->sp_group_master;
-	if (!master) {
-		up_read(&sp_group_sem);
-		return false;
-	}
-
-	/* master->local and master->local->dvpp won't be NULL*/
-	spm_dvpp = master->local->dvpp;
-	for (i = 0; i < MAX_DEVID; i++) {
-		if (addr >= spm_dvpp->start[i] && addr < spm_dvpp->end[i]) {
-			up_read(&sp_group_sem);
-			return true;
-		}
-	}
-	up_read(&sp_group_sem);
-	return false;
+	return (addr - MMAP_SHARE_POOL_DVPP_BASE) & MMAP_SHARE_POOL_16G_SIZE;
 }
 
 /**
