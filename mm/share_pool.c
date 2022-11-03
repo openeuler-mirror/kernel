@@ -73,9 +73,6 @@
 
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
-#define MMAP_SHARE_POOL_DVPP_BASE	0x100000000000ULL
-#define MMAP_SHARE_POOL_DVPP_END	(MMAP_SHARE_POOL_DVPP_BASE + MMAP_SHARE_POOL_16G_SIZE * 64)
-
 static int system_group_count;
 
 /* idr of all sp_groups */
@@ -290,12 +287,12 @@ static void sp_mapping_range_init(struct sp_mapping *spm)
 
 	for (i = 0; i < MAX_DEVID; i++) {
 		if (spm->flag & SP_MAPPING_NORMAL) {
-			spm->start[i] = MMAP_SHARE_POOL_START;
-			spm->end[i] = MMAP_SHARE_POOL_16G_START;
+			spm->start[i] = MMAP_SHARE_POOL_NORMAL_START;
+			spm->end[i] = MMAP_SHARE_POOL_NORMAL_END;
 			continue;
 		}
 
-		spm->start[i] = MMAP_SHARE_POOL_16G_START +
+		spm->start[i] = MMAP_SHARE_POOL_DVPP_START +
 			i * MMAP_SHARE_POOL_16G_SIZE;
 		spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
 	}
@@ -1854,7 +1851,7 @@ static struct sp_area *__find_sp_area_locked(struct sp_group *spg,
 {
 	struct rb_node *n;
 
-	if (addr >= MMAP_SHARE_POOL_START && addr < MMAP_SHARE_POOL_16G_START)
+	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
 		n = spg->normal->area_root.rb_node;
 	else
 		n = spg->dvpp->area_root.rb_node;
@@ -1910,7 +1907,7 @@ static void sp_free_area(struct sp_area *spa)
 
 	lockdep_assert_held(&sp_area_lock);
 
-	if (addr >= MMAP_SHARE_POOL_START && addr < MMAP_SHARE_POOL_16G_START)
+	if (addr >= MMAP_SHARE_POOL_NORMAL_START && addr < MMAP_SHARE_POOL_NORMAL_END)
 		spm = spa->spg->normal;
 	else
 		spm = spa->spg->dvpp;
@@ -3551,7 +3548,7 @@ int sp_unregister_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(sp_unregister_notifier);
 
-static bool is_sp_dvpp_addr(unsigned long addr);
+static bool is_sp_dynamic_dvpp_addr(unsigned long addr);
 /**
  * mg_sp_config_dvpp_range() - User can config the share pool start address
  *                          of each Da-vinci device.
@@ -3580,7 +3577,7 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	/* NOTE: check the start address */
 	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
 	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id)
-		|| !is_sp_dvpp_addr(start) || !is_sp_dvpp_addr(start + size))
+		|| !is_sp_dynamic_dvpp_addr(start) || !is_sp_dynamic_dvpp_addr(start + size))
 		return false;
 
 	ret = get_task(pid, &tsk);
@@ -3596,7 +3593,7 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 		goto put_mm;
 
 	spm = spg->dvpp;
-	default_start = MMAP_SHARE_POOL_16G_START + device_id * MMAP_SHARE_POOL_16G_SIZE;
+	default_start = MMAP_SHARE_POOL_DVPP_START + device_id * MMAP_SHARE_POOL_16G_SIZE;
 	/* The dvpp range of each group can be configured only once */
 	if (spm->start[device_id] != default_start)
 		goto put_spg;
@@ -3617,11 +3614,9 @@ put_task:
 }
 EXPORT_SYMBOL_GPL(mg_sp_config_dvpp_range);
 
-static bool is_sp_normal_addr(unsigned long addr)
+static bool is_sp_reserve_addr(unsigned long addr)
 {
-	return addr >= MMAP_SHARE_POOL_START &&
-		addr < MMAP_SHARE_POOL_16G_START +
-			MAX_DEVID * MMAP_SHARE_POOL_16G_SIZE;
+	return addr >= MMAP_SHARE_POOL_START && addr < MMAP_SHARE_POOL_END;
 }
 
 /*
@@ -3631,12 +3626,12 @@ static bool is_sp_normal_addr(unsigned long addr)
  *	MMAP_SHARE_POOL_DVPP_BASE + 16G * 64
  *	We only check the device regions.
  */
-static bool is_sp_dvpp_addr(unsigned long addr)
+static bool is_sp_dynamic_dvpp_addr(unsigned long addr)
 {
-	if (addr < MMAP_SHARE_POOL_DVPP_BASE || addr >= MMAP_SHARE_POOL_DVPP_END)
+	if (addr < MMAP_SHARE_POOL_DYNAMIC_DVPP_BASE || addr >= MMAP_SHARE_POOL_DYNAMIC_DVPP_END)
 		return false;
 
-	return (addr - MMAP_SHARE_POOL_DVPP_BASE) & MMAP_SHARE_POOL_16G_SIZE;
+	return (addr - MMAP_SHARE_POOL_DYNAMIC_DVPP_BASE) & MMAP_SHARE_POOL_16G_SIZE;
 }
 
 /**
@@ -3648,7 +3643,7 @@ static bool is_sp_dvpp_addr(unsigned long addr)
 bool mg_is_sharepool_addr(unsigned long addr)
 {
 	return sp_is_enabled() &&
-		((is_sp_normal_addr(addr) || is_sp_dvpp_addr(addr)));
+		((is_sp_reserve_addr(addr) || is_sp_dynamic_dvpp_addr(addr)));
 }
 EXPORT_SYMBOL_GPL(mg_is_sharepool_addr);
 
