@@ -4023,7 +4023,6 @@ static int proc_usage_by_group(int id, void *p, void *data)
 	struct sp_group_master *master;
 	int tgid;
 	unsigned long anon, file, shmem, total_rss;
-	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
 	down_read(&spg->rw_lock);
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
@@ -4038,26 +4037,20 @@ static int proc_usage_by_group(int id, void *p, void *data)
 		tgid = master->instat.tgid;
 
 		get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
-		get_process_sp_res(master, &sp_res, &sp_res_nsize);
-		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
-				&non_sp_res, &non_sp_shm);
 
 		seq_printf(seq, "%-8d ", tgid);
-		if (id == 0)
-			seq_printf(seq, "%-8c ", '-');
-		else
-			seq_printf(seq, "%-8d ", id);
-		seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-10ld %-8ld %-7ld %-7ld %-10ld ",
+		seq_printf(seq, "%-8d ", id);
+		seq_printf(seq, "%-9ld %-9ld %-9ld %-8ld %-7ld %-7ld ",
 				get_spg_proc_alloc(spg_node),
 				get_spg_proc_k2u(spg_node),
 				get_sp_res_by_spg_proc(spg_node),
-				sp_res, non_sp_res,
 				page2kb(mm->total_vm), page2kb(total_rss),
-				page2kb(shmem), non_sp_shm);
+				page2kb(shmem));
 		print_process_prot(seq, spg_node->prot);
 		seq_putc(seq, '\n');
 	}
 	up_read(&spg->rw_lock);
+	cond_resched();
 
 	return 0;
 }
@@ -4068,9 +4061,9 @@ static int proc_group_usage_show(struct seq_file *seq, void *offset)
 	spa_overview_show(seq);
 
 	/* print the file header */
-	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-10s %-10s %-8s %-7s %-7s %-10s %-4s\n",
-			"PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES", "SP_RES_T",
-			"Non-SP_RES", "VIRT", "RES", "Shm", "Non-SP_Shm", "PROT");
+	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-8s %-7s %-7s %-4s\n",
+			"PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES",
+			"VIRT", "RES", "Shm", "PROT");
 	/* print kthread buff_module_guard_work */
 	seq_printf(seq, "%-8s %-8s %-9lld %-9lld\n",
 			"guard", "-",
