@@ -2245,7 +2245,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 		return -EINVAL;
 	}
 
-	if (spg_id != SPG_ID_DEFAULT && spg_id < SPG_ID_MIN) {
+	if (spg_id != SPG_ID_DEFAULT && (spg_id < SPG_ID_MIN || spg_id >= SPG_ID_AUTO)) {
 		pr_err_ratelimited("allocation failed, invalid group id %d\n", spg_id);
 		return -EINVAL;
 	}
