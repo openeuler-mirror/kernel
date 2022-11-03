@@ -2622,8 +2622,15 @@ try_again:
 	}
 
 	ret = sp_alloc_mmap_populate(spa, &ac);
-	if (ret && ac.state == ALLOC_RETRY)
+	if (ret && ac.state == ALLOC_RETRY) {
+		/*
+		 * The mempolicy for shared memory is located at backend file, which varies
+		 * between normal pages and huge pages. So we should set the mbind policy again
+		 * when we retry using normal pages.
+		 */
+		ac.have_mbind = false;
 		goto try_again;
+	}
 
 out:
 	sp_alloc_finish(ret, spa, &ac);
