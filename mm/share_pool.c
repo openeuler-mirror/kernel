@@ -500,6 +500,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	return 0;
 
 free_master:
+	list_del(&master->list_node);
 	mm->sp_group_master = NULL;
 	kfree(master);
 
@@ -3810,8 +3811,10 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 
 	down_read(&mm->mmap_lock);
 	master = mm->sp_group_master;
-	if (!master)
+	if (!master) {
+		up_read(&mm->mmap_lock);
 		return 0;
+	}
 
 	get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
 	proc_stat = &master->instat;
