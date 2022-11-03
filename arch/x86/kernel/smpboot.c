@@ -99,6 +99,8 @@ DEFINE_PER_CPU_READ_MOSTLY(cpumask_var_t, cpu_llc_shared_map);
 /* Per CPU bogomips and other parameters */
 DEFINE_PER_CPU_READ_MOSTLY(struct cpuinfo_x86, cpu_info);
 EXPORT_PER_CPU_SYMBOL(cpu_info);
+DEFINE_PER_CPU_READ_MOSTLY(struct extra_cpuinfo_x86, extra_cpu_info);
+EXPORT_PER_CPU_SYMBOL(extra_cpu_info);
 
 /* Logical package management. We might want to allocate that dynamically */
 unsigned int __max_logical_packages __read_mostly;
