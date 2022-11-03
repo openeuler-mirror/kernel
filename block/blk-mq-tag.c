@@ -624,7 +624,7 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int total_tags,
 	tags->nr_reserved_tags = reserved_tags;
 	spin_lock_init(&tags->lock);
 
-	if (flags & BLK_MQ_F_TAG_HCTX_SHARED)
+	if (blk_mq_is_sbitmap_shared(flags))
 		return tags;
 
 	if (blk_mq_init_bitmap_tags(tags, node, alloc_policy) < 0) {
@@ -636,7 +636,7 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int total_tags,
 
 void blk_mq_free_tags(struct blk_mq_tags *tags, unsigned int flags)
 {
-	if (!(flags & BLK_MQ_F_TAG_HCTX_SHARED)) {
+	if (!blk_mq_is_sbitmap_shared(flags)) {
 		sbitmap_queue_free(tags->bitmap_tags);
 		sbitmap_queue_free(tags->breserved_tags);
 	}
