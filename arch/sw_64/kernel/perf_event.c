@@ -385,7 +385,6 @@ static int sw64_pmu_add(struct perf_event *event, int flags)
 	int err = 0;
 	unsigned long irq_flags;
 
-	perf_pmu_disable(event->pmu);
 	local_irq_save(irq_flags);
 
 	if (cpuc->pmcs[hwc->idx] == PMC_IN_USE) {
@@ -408,7 +407,6 @@ static int sw64_pmu_add(struct perf_event *event, int flags)
 
 out:
 	local_irq_restore(irq_flags);
-	perf_pmu_enable(event->pmu);
 
 	return err;
 }
@@ -422,24 +420,17 @@ static void sw64_pmu_del(struct perf_event *event, int flags)
 	struct hw_perf_event *hwc = &event->hw;
 	unsigned long irq_flags;
 
-	perf_pmu_disable(event->pmu);
 	local_irq_save(irq_flags);
 
-	if (cpuc->event[hwc->idx] != event)
-		goto out;
-
+	sw64_pmu_stop(event, PERF_EF_UPDATE);
 	cpuc->event[hwc->idx] = NULL;
 	cpuc->pmcs[hwc->idx] = PMC_NOT_USE;
 	cpuc->n_events--;
 
-	sw64_pmu_stop(event, PERF_EF_UPDATE);
-
 	/* Absorb the final count and turn off the event. */
 	perf_event_update_userpage(event);
 
-out:
 	local_irq_restore(irq_flags);
-	perf_pmu_enable(event->pmu);
 }
 
 /*
@@ -478,6 +469,9 @@ static void sw64_pmu_stop(struct perf_event *event, int flags)
 	struct hw_perf_event *hwc = &event->hw;
 
 	if (!(hwc->state & PERF_HES_STOPPED)) {
+		wrperfmon(PERFMON_CMD_DISABLE, hwc->idx == 0 ?
+				PERFMON_DISABLE_ARGS_PC0 :
+				PERFMON_DISABLE_ARGS_PC1);
 		hwc->state |= PERF_HES_STOPPED;
 		barrier();
 	}
@@ -486,12 +480,6 @@ static void sw64_pmu_stop(struct perf_event *event, int flags)
 		sw64_perf_event_update(event, hwc, hwc->idx, 0);
 		hwc->state |= PERF_HES_UPTODATE;
 	}
-
-	if (hwc->idx == 0)
-		wrperfmon(PERFMON_CMD_DISABLE, PERFMON_DISABLE_ARGS_PC0);
-	else
-		wrperfmon(PERFMON_CMD_DISABLE, PERFMON_DISABLE_ARGS_PC1);
-
 }
 
 /*
@@ -659,10 +647,7 @@ static void sw64_perf_event_irq_handler(unsigned long perfmon_num,
 	event = cpuc->event[idx];
 
 	if (unlikely(!event)) {
-		/* This should never occur! */
 		irq_err_count++;
-		pr_warn("PMI: No event at index %d!\n", idx);
-		wrperfmon(PERFMON_CMD_ENABLE, idx == 0 ? PERFMON_DISABLE_ARGS_PC0 : PERFMON_DISABLE_ARGS_PC1);
 		return;
 	}
 
@@ -773,6 +758,38 @@ void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 			   struct pt_regs *regs)
 {
 	walk_stackframe(NULL, regs, callchain_trace, entry);
+}
+
+/*
+ * Gets the perf_instruction_pointer and perf_misc_flags for guest os.
+ */
+#undef is_in_guest
+
+unsigned long perf_instruction_pointer(struct pt_regs *regs)
+{
+	if (perf_guest_cbs && perf_guest_cbs->is_in_guest())
+		return perf_guest_cbs->get_guest_ip();
+
+	return instruction_pointer(regs);
+}
+
+unsigned long perf_misc_flags(struct pt_regs *regs)
+{
+	int misc = 0;
+
+	if (perf_guest_cbs && perf_guest_cbs->is_in_guest()) {
+		if (perf_guest_cbs->is_user_mode())
+			misc |= PERF_RECORD_MISC_GUEST_USER;
+		else
+			misc |= PERF_RECORD_MISC_GUEST_KERNEL;
+	} else {
+		if (user_mode(regs))
+			misc |= PERF_RECORD_MISC_USER;
+		else
+			misc |= PERF_RECORD_MISC_KERNEL;
+	}
+
+	return misc;
 }
 
 /*

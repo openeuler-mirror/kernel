@@ -8,112 +8,86 @@
 #include <asm/pgalloc.h>
 #include <asm/hw_init.h>
 #include <asm/hmcall.h>
+#include <asm/mmu_context.h>
 
-extern void __load_new_mm_context(struct mm_struct *);
-
-
-static inline void flush_tlb_current(struct mm_struct *mm)
+static inline void local_flush_tlb_all(void)
 {
-	__load_new_mm_context(mm);
+	tbiv();
 }
 
-/*
- * Flush just one page in the current TLB set.  We need to be very
- * careful about the icache here, there is no way to invalidate a
- * specific icache page.
- */
-
-static inline void flush_tlb_current_page(struct mm_struct *mm,
-					  struct vm_area_struct *vma,
-					  unsigned long addr)
+static inline void local_flush_tlb_mm(struct mm_struct *mm)
 {
-	if (vma->vm_flags & VM_EXEC) {
-		tbi(3, addr);
-		if (icache_is_vivt_no_ictag())
-			imb();
-	} else
-		tbi(2, addr);
-}
+	int cpu;
+	unsigned long flags;
 
+	local_irq_save(flags);
 
-/* Flush current user mapping.  */
-static inline void flush_tlb(void)
-{
-	flush_tlb_current(current->active_mm);
-}
-
-/* Flush someone else's user mapping.  */
-static inline void flush_tlb_other(struct mm_struct *mm)
-{
-	unsigned long *mmc;
-
-	if (mm) {
-		mmc = &mm->context.asid[smp_processor_id()];
-	/*
-	 * Check it's not zero first to avoid cacheline ping pong
-	 * when possible.
-	 */
-		if (*mmc)
-			*mmc = 0;
+	cpu = smp_processor_id();
+	if (!asid_valid(mm, cpu)) {
+		cpumask_clear_cpu(cpu, mm_cpumask(mm));
+		goto out;
 	}
+
+	if (current->mm == mm) {
+		__get_new_mm_context(mm, cpu);
+		wrasid(cpu_asid(cpu, mm));
+	} else {
+		mm->context.asid[cpu] = 0;
+		cpumask_clear_cpu(cpu, mm_cpumask(mm));
+	}
+out:
+	local_irq_restore(flags);
 }
 
-#ifndef CONFIG_SMP
-/*
- * Flush everything (kernel mapping may also have changed
- * due to vmalloc/vfree).
- */
-static inline void flush_tlb_all(void)
-{
-	tbia();
-}
-
-/* Flush a specified user mapping.  */
 static inline void
-flush_tlb_mm(struct mm_struct *mm)
+local_flush_tlb_page(struct vm_area_struct *vma, unsigned long addr)
 {
-	if (mm == current->mm)
-		flush_tlb_current(mm);
-	else
-		flush_tlb_other(mm);
-}
+	int cpu;
+	struct mm_struct *mm;
 
-/* Page-granular tlb flush.  */
-static inline void flush_tlb_page(struct vm_area_struct *vma,
-				  unsigned long addr)
-{
-	struct mm_struct *mm = vma->vm_mm;
+	cpu = smp_processor_id();
+	mm = vma->vm_mm;
 
-	if (mm == current->mm)
-		flush_tlb_current_page(mm, vma, addr);
+	if (asid_valid(mm, cpu))
+		tbisasid(cpu_asid(cpu, mm), addr);
 	else
-		flush_tlb_other(mm);
+		cpumask_clear_cpu(cpu, mm_cpumask(mm));
 }
 
 /*
- * Flush a specified range of user mapping.  On the sw64 we flush
- * the whole user tlb.
+ * It flushes the whole user tlb now.
  */
-static inline void flush_tlb_range(struct vm_area_struct *vma,
-				   unsigned long start, unsigned long end)
+static inline void
+local_flush_tlb_range(struct vm_area_struct *vma,
+		unsigned long start, unsigned long end)
 {
-	flush_tlb_mm(vma->vm_mm);
+	local_flush_tlb_mm(vma->vm_mm);
 }
 
-#else /* CONFIG_SMP */
+/*
+ * There is no way to invalidate kernel pages only, so it has to
+ * inlvalidate all mapping.
+ */
+static inline void
+local_flush_tlb_kernel_range(unsigned long start, unsigned long end)
+{
+	local_flush_tlb_all();
+}
 
+#ifdef CONFIG_SMP
 extern void flush_tlb_all(void);
 extern void flush_tlb_mm(struct mm_struct *);
 extern void flush_tlb_page(struct vm_area_struct *, unsigned long);
 extern void flush_tlb_range(struct vm_area_struct *, unsigned long,
 			    unsigned long);
+extern void flush_tlb_kernel_range(unsigned long, unsigned long);
+#else
+#define flush_tlb_all()				local_flush_tlb_all()
+#define flush_tlb_mm(mm)			local_flush_tlb_mm(mm)
+#define flush_tlb_page(vma, addr)		local_flush_tlb_page(vma, addr)
+#define flush_tlb_range(vma, start, end)	local_flush_tlb_range(vma, start, end)
+#define flush_tlb_kernel_range(start, end)	local_flush_tlb_kernel_range(start, end)
 
 #endif /* CONFIG_SMP */
-
-static inline void flush_tlb_kernel_range(unsigned long start,
-					  unsigned long end)
-{
-	flush_tlb_all();
-}
 
 #endif /* _ASM_SW64_TLBFLUSH_H */

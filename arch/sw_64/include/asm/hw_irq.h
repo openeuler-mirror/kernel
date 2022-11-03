@@ -13,4 +13,4 @@ DECLARE_PER_CPU(unsigned long, irq_pmi_count);
 typedef unsigned int vector_irq_t[PERCPU_MSI_IRQS];
 DECLARE_PER_CPU(vector_irq_t, vector_irq);
 #endif
-#endif
+#endif /* _ASM_SW64_HW_IRQ_H */

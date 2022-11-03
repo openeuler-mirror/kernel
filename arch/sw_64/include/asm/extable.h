@@ -56,4 +56,4 @@ struct exception_table_entry {
 extern short regoffsets[];
 #define map_regs(r) (*(unsigned long *)((char *)regs + regoffsets[r]))
 
-#endif
+#endif /* _ASM_SW64_EXTABLE_H */

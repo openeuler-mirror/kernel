@@ -34,7 +34,7 @@
 
 static inline void arch_kgdb_breakpoint(void)
 {
-	asm __volatile__ ("sys_call/b 0x80");
+	asm __volatile__ ("sys_call %0" : : "i"(HMC_bpt) );
 }
 
 void sw64_task_to_gdb_regs(struct task_struct *task, unsigned long *regs);

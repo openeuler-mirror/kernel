@@ -28,12 +28,6 @@ void __delay(unsigned long loops)
 }
 EXPORT_SYMBOL(__delay);
 
-#ifdef CONFIG_SMP
-#define LPJ	 cpu_data[smp_processor_id()].loops_per_jiffy
-#else
-#define LPJ	 loops_per_jiffy
-#endif
-
 void udelay(unsigned long usecs)
 {
 	unsigned long loops = usecs * get_cpu_freq() / 1000000;

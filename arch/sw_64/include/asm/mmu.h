@@ -7,4 +7,4 @@ typedef struct {
 	unsigned long asid[NR_CPUS];
 	void *vdso;
 } mm_context_t;
-#endif
+#endif /* _ASM_SW64_MMU_H */

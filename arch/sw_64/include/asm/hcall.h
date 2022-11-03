@@ -39,4 +39,4 @@ static inline unsigned long hcall(unsigned long hcall, unsigned long arg0,
 	return __r0;
 }
 
-#endif  /* _ASM_SW64_HCALL_H */
+#endif /* _ASM_SW64_HCALL_H */

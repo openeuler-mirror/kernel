@@ -10,4 +10,4 @@ struct dev_archdata {
 
 struct pdev_archdata {
 };
-#endif
+#endif /* _ASM_SW64_DEVICE_H */

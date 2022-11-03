@@ -21,4 +21,4 @@
 
 #include <asm-generic/barrier.h>
 
-#endif		/* _ASM_SW64_BARRIER_H */
+#endif /* _ASM_SW64_BARRIER_H */

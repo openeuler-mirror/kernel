@@ -55,4 +55,4 @@
 
 #include <asm-generic/fcntl.h>
 
-#endif
+#endif /* _UAPI_ASM_SW64_FCNTL_H */

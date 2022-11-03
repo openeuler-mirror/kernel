@@ -284,6 +284,7 @@ static int __kprobes trampoline_probe_handler(struct kprobe *p,
 
 	orig_ret_address = __kretprobe_trampoline_handler(regs, kretprobe_trampoline, NULL);
 	instruction_pointer(regs) = orig_ret_address;
+	regs->r26 = orig_ret_address;
 
 	/*
 	 * By returning a non-zero value, we are telling

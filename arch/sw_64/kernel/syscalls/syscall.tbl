@@ -163,7 +163,7 @@
 #153 is unused
 #154 is unused
 #155 is unused
-156	common	sigaction			sys_sigaction
+156	common	sigaction			sys_odd_sigaction
 #157 is unused
 #158 is unused
 #159 is unused

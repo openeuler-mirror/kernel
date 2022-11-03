@@ -39,6 +39,7 @@
 #endif
 #undef ____xchg
 #undef ____cmpxchg
+#undef _ASM_SW64_XCHG_H
 #define ____xchg(type, args...)		__xchg ##type(args)
 #define ____cmpxchg(type, args...)	__cmpxchg ##type(args)
 #include <asm/xchg.h>

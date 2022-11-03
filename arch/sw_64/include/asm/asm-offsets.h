@@ -4,4 +4,4 @@
 
 #include <generated/asm-offsets.h>
 
-#endif
+#endif /* _ASM_SW64_ASM_OFFSETS_H */

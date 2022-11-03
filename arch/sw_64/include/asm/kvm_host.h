@@ -124,4 +124,7 @@ static inline void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu) {}
 static inline void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu) {}
 static inline void kvm_arch_vcpu_block_finish(struct kvm_vcpu *vcpu) {}
 
-#endif  /* _ASM_SW64_KVM_HOST_H */
+int kvm_sw64_perf_init(void);
+int kvm_sw64_perf_teardown(void);
+
+#endif /* _ASM_SW64_KVM_HOST_H */

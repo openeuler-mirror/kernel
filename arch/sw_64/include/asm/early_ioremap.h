@@ -27,4 +27,4 @@ static inline void early_iounmap(volatile void __iomem *addr, unsigned long size
 }
 #define early_memunmap(addr, size)		early_iounmap(addr, size)
 
-#endif
+#endif /* _ASM_SW64_EARLY_IOREMAP_H */

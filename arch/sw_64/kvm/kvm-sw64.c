@@ -16,12 +16,17 @@
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 
+#define CREATE_TRACE_POINTS
+#include "trace.h"
+
 #include "../kernel/pci_impl.h"
 #include "vmem.c"
 
 bool set_msi_flag;
 unsigned long sw64_kvm_last_vpn[NR_CPUS];
-__read_mostly bool bind_vcpu_enabled;
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
+extern bool bind_vcpu_enabled;
+#endif
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
 #ifdef CONFIG_SUBARCH_C3B
@@ -31,6 +36,13 @@ __read_mostly bool bind_vcpu_enabled;
 #define VPN_FIRST_VERSION	(1UL << WIDTH_HARDWARE_VPN)
 #define HARDWARE_VPN_MASK	((1UL << WIDTH_HARDWARE_VPN) - 1)
 #define VPN_SHIFT		(64 - WIDTH_HARDWARE_VPN)
+
+static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_running_vcpu);
+
+static void kvm_set_running_vcpu(struct kvm_vcpu *vcpu)
+{
+	__this_cpu_write(kvm_running_vcpu, vcpu);
+}
 
 int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
 {
@@ -121,6 +133,19 @@ static void sw64_kvm_switch_vpn(struct kvm_vcpu *vcpu)
 	}
 }
 
+static void check_vcpu_requests(struct kvm_vcpu *vcpu)
+{
+	unsigned long vpn;
+	long cpu = smp_processor_id();
+
+	if (kvm_request_pending(vcpu)) {
+		if (kvm_check_request(KVM_REQ_TLB_FLUSH, vcpu)) {
+			vpn = vcpu->arch.vpnc[cpu] & HARDWARE_VPN_MASK;
+			tbivpn(0, 0, vpn);
+		}
+	}
+}
+
 struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ NULL }
 };
@@ -165,12 +190,47 @@ int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
 	return kvm_vcpu_exiting_guest_mode(vcpu) == IN_GUEST_MODE;
 }
 
+/*
+ * kvm_mark_migration write the mark on every vcpucbs of the kvm, which tells
+ * the system to do migration while the mark is on, and flush all vcpu's tlbs
+ * at the beginning of the migration.
+ */
+void kvm_mark_migration(struct kvm *kvm, int mark)
+{
+	struct kvm_vcpu *vcpu;
+	int cpu;
+
+	kvm_for_each_vcpu(cpu, vcpu, kvm)
+		vcpu->arch.vcb.migration_mark = mark << 2;
+
+	kvm_flush_remote_tlbs(kvm);
+}
+
 void kvm_arch_commit_memory_region(struct kvm *kvm,
 		const struct kvm_userspace_memory_region *mem,
 		struct kvm_memory_slot *old,
 		const struct kvm_memory_slot *new,
 		enum kvm_mr_change change)
 {
+	/*
+	 * At this point memslot has been committed and there is an
+	 * allocated dirty_bitmap[], dirty pages will be be tracked while the
+	 * memory slot is write protected.
+	 */
+
+	/* If dirty logging has been stopped, do nothing for now. */
+	if ((change != KVM_MR_DELETE)
+			&& (old->flags & KVM_MEM_LOG_DIRTY_PAGES)
+			&& (!(new->flags & KVM_MEM_LOG_DIRTY_PAGES))) {
+		kvm_mark_migration(kvm, 0);
+		return;
+	}
+
+	/* If it's the first time dirty logging, flush all vcpu tlbs. */
+	if ((change == KVM_MR_FLAGS_ONLY)
+			&& (!(old->flags & KVM_MEM_LOG_DIRTY_PAGES))
+			&& (new->flags & KVM_MEM_LOG_DIRTY_PAGES))
+		kvm_mark_migration(kvm, 1);
 }
 
 int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
@@ -181,6 +241,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_IRQCHIP:
 	case KVM_CAP_IOEVENTFD:
 	case KVM_CAP_SYNC_MMU:
+	case KVM_CAP_IMMEDIATE_EXIT:
 		r = 1;
 		break;
 	case KVM_CAP_NR_VCPUS:
@@ -194,9 +255,10 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	return r;
 }
 
-int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm, struct kvm_dirty_log *log)
+void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
+		struct kvm_memory_slot *slot, gfn_t gfn_offset,
+		unsigned long mask)
 {
-	return 0;
 }
 
 int kvm_sw64_pending_timer(struct kvm_vcpu *vcpu)
@@ -306,18 +368,18 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	if (change == KVM_MR_FLAGS_ONLY || change == KVM_MR_DELETE)
 		return 0;
 
+	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
+		return 0;
+
+	if (test_bit(IO_MARK_BIT + 1, &(mem->guest_phys_addr)))
+		return 0;
+
 #ifndef CONFIG_KVM_MEMHOTPLUG
 	if (mem->guest_phys_addr) {
 		pr_info("%s, No KVM MEMHOTPLUG support!\n", __func__);
 		return 0;
 	}
 #endif
-
-	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
-		return 0;
-
-	if (test_bit(IO_MARK_BIT + 1, &(mem->guest_phys_addr)))
-		return 0;
 
 	if (!sw64_kvm_pool)
 		return -ENOMEM;
@@ -409,6 +471,7 @@ int kvm_arch_vcpu_reset(struct kvm_vcpu *vcpu)
 {
 	unsigned long addr = vcpu->kvm->arch.host_phys_addr;
 
+	hrtimer_cancel(&vcpu->arch.hrt);
 	vcpu->arch.vcb.whami = vcpu->vcpu_id;
 	vcpu->arch.vcb.vcpu_irq_disabled = 1;
 	vcpu->arch.pcpu_id = -1; /* force flush tlb for the first time */
@@ -459,6 +522,7 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	vcpu->cpu = cpu;
+	kvm_set_running_vcpu(vcpu);
 }
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
@@ -469,6 +533,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	 * optimized make_all_cpus_request path.
 	 */
 	vcpu->cpu = -1;
+	kvm_set_running_vcpu(NULL);
 }
 
 int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
@@ -532,6 +597,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	bool more;
 	sigset_t sigsaved;
 
+	if (run->immediate_exit)
+		return -EINTR;
+
 	/* Set guest vcb */
 	/* vpn will update later when vcpu is running */
 	if (vcpu->arch.vcb.vpcr == 0) {
@@ -539,6 +607,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		vcpu->arch.vcb.vpcr
 			= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
 
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 		if (unlikely(bind_vcpu_enabled)) {
 			int nid;
 			unsigned long end;
@@ -548,14 +617,18 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			if (pfn_to_nid(PHYS_PFN(end)) == nid)
 				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
 		}
-#else
+#endif
+#else /* !CONFIG_KVM_MEMHOTPLUG */
 		unsigned long seg_base = virt_to_phys(vcpu->kvm->arch.seg_pgd);
 
 		vcpu->arch.vcb.vpcr = get_vpcr_memhp(seg_base, 0);
-#endif
+#endif /* CONFIG_KVM_MEMHOTPLUG */
 		vcpu->arch.vcb.upcr = 0x7;
 	}
 
+#ifdef CONFIG_PERF_EVENTS
+	vcpu_load(vcpu);
+#endif
 	if (vcpu->sigset_active)
 		sigprocmask(SIG_SETMASK, &vcpu->sigset, &sigsaved);
 
@@ -593,9 +666,11 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		vcpu->arch.halted = 0;
 
 		sw64_kvm_switch_vpn(vcpu);
+		check_vcpu_requests(vcpu);
 		guest_enter_irqoff();
 
 		/* Enter the guest */
+		trace_kvm_sw64_entry(vcpu->vcpu_id, vcpu->arch.regs.pc);
 		vcpu->mode = IN_GUEST_MODE;
 
 		ret = __sw64_vcpu_run((struct vcpucb *)__phys_addr((unsigned long)vcb), &(vcpu->arch.regs), &hargs);
@@ -605,6 +680,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		local_irq_enable();
 		guest_exit_irqoff();
+
+		trace_kvm_sw64_exit(ret, vcpu->arch.regs.pc);
+
 		preempt_enable();
 
 		/* ret = 0 indicate interrupt in guest mode, ret > 0 indicate hcall */
@@ -614,12 +692,16 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	if (vcpu->sigset_active)
 		sigprocmask(SIG_SETMASK, &sigsaved, NULL);
 
+#ifdef CONFIG_PERF_EVENTS
+	vcpu_put(vcpu);
+#endif
 	return ret;
 }
 
 long kvm_arch_vcpu_ioctl(struct file *filp,
 		unsigned int ioctl, unsigned long arg)
 {
+	unsigned long result;
 	struct kvm_vcpu *vcpu = filp->private_data;
 	struct vcpucb *kvm_vcb;
 
@@ -627,12 +709,32 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 	case KVM_SW64_VCPU_INIT:
 		return kvm_arch_vcpu_reset(vcpu);
 	case KVM_SW64_GET_VCB:
+		if (vcpu->arch.vcb.migration_mark) {
+			result = sw64_io_read(0, LONG_TIME);
+			vcpu->arch.vcb.guest_longtime = result;
+			vcpu->arch.vcb.guest_irqs_pending = vcpu->arch.irqs_pending[0];
+		}
+
 		if (copy_to_user((void __user *)arg, &(vcpu->arch.vcb), sizeof(struct vcpucb)))
 			return -EINVAL;
 		break;
 	case KVM_SW64_SET_VCB:
 		kvm_vcb = memdup_user((void __user *)arg, sizeof(*kvm_vcb));
 		memcpy(&(vcpu->arch.vcb), kvm_vcb, sizeof(struct vcpucb));
+
+		if (vcpu->arch.vcb.migration_mark) {
+			/* updated vpcr needed by destination vm */
+			vcpu->arch.vcb.vpcr
+				= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
+
+			result = sw64_io_read(0, LONG_TIME);
+
+			/* synchronize the longtime of source and destination */
+			vcpu->arch.vcb.guest_longtime_offset = vcpu->arch.vcb.guest_longtime - result;
+
+			set_timer(vcpu, 200000000);
+			vcpu->arch.vcb.migration_mark = 0;
+		}
 		break;
 	default:
 		return -EINVAL;
@@ -662,15 +764,23 @@ long kvm_arch_vm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 
 int kvm_arch_init(void *opaque)
 {
+	kvm_sw64_perf_init();
 	return 0;
 }
 
 void kvm_arch_exit(void)
 {
+	kvm_sw64_perf_teardown();
 }
 
 void kvm_arch_sync_dirty_log(struct kvm *kvm, struct kvm_memory_slot *memslot)
 {
+}
+
+void kvm_arch_flush_remote_tlbs_memslot(struct kvm *kvm,
+					struct kvm_memory_slot *memslot)
+{
+	kvm_flush_remote_tlbs(kvm);
 }
 
 int kvm_arch_vcpu_precreate(struct kvm *kvm, unsigned int id)

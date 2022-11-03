@@ -11,7 +11,8 @@
 #include <linux/uaccess.h>
 #include <asm/debug.h>
 
-extern bool bind_vcpu_enabled;
+__read_mostly bool bind_vcpu_enabled;
+EXPORT_SYMBOL(bind_vcpu_enabled);
 
 static int __init bind_vcpu_init(void)
 {

@@ -23,6 +23,7 @@ static void __init sw64_setup_platform_ops(void)
 
 asmlinkage __visible void __init sw64_start_kernel(void)
 {
+	fixup_hmcall();
 	sw64_setup_chip_ops();
 	sw64_setup_platform_ops();
 	sw64_platform->ops_fixup();

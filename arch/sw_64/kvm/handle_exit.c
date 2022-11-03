@@ -13,9 +13,18 @@
 int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		int exception_index, struct hcall_args *hargs)
 {
+	gfn_t gfn;
+
 	switch (exception_index) {
 	case SW64_KVM_EXIT_IO:
 		return io_mem_abort(vcpu, run, hargs);
+	case SW64_KVM_MIGRATION_SET_DIRTY_HM:
+	case SW64_KVM_MIGRATION_SET_DIRTY:
+		gfn = hargs->arg2 >> 24;
+		mutex_lock(&vcpu->kvm->slots_lock);
+		kvm_vcpu_mark_page_dirty(vcpu, gfn);
+		mutex_unlock(&vcpu->kvm->slots_lock);
+		return 1;
 	case SW64_KVM_EXIT_HALT:
 		vcpu->arch.halted = 1;
 		kvm_vcpu_block(vcpu);

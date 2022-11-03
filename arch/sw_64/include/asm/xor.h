@@ -844,4 +844,4 @@ static struct xor_block_template xor_block_sw64_prefetch = {
  */
 #define XOR_SELECT_TEMPLATE(FASTEST)   (&xor_block_sw64_prefetch)
 
-#endif
+#endif /* _ASM_SW64_XOR_H */

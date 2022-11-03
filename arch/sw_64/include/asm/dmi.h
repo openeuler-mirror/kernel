@@ -27,4 +27,4 @@
 #define dmi_unmap(x)			early_iounmap(x, 0)
 #define dmi_alloc(l)			kzalloc(l, GFP_KERNEL)
 
-#endif
+#endif /* _ASM_SW64_DMI_H */

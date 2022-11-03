@@ -165,6 +165,9 @@ enum {
 	MC_CAP_CFG =		MCU_BASE | 0x1180UL,
 	IO_START =		MCU_BASE | 0x1300UL,
 	UART_ONLINE =		MCU_BASE | 0x1780UL,
+	I2C0_SRST_L =		MCU_BASE | 0x1900UL,
+	I2C1_SRST_L =		MCU_BASE | 0x1980UL,
+	I2C2_SRST_L =		MCU_BASE | 0x1a00UL,
 	MCU_DVC_INT =		MCU_BASE | 0x3000UL,
 	MCU_DVC_INT_EN =	MCU_BASE | 0x3080UL,
 	SI_FAULT_STAT =		MCU_BASE | 0x3100UL,
@@ -314,4 +317,4 @@ enum {
 	GPIO_SWPORTA_DDR =	GPIO_BASE | 0x200UL,
 };
 /*--------------------------------------------------------------------------*/
-#endif
+#endif /* _ASM_SW64_CHIP3_IO_H */

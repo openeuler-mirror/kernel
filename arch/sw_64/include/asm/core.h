@@ -45,4 +45,4 @@ extern void entSys(void);
 extern void entUna(void);
 /* head.S */
 extern void __smp_callin(unsigned long);
-#endif
+#endif /* _ASM_SW64_CORE_H */

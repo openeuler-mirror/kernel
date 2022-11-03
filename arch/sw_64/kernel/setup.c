@@ -28,9 +28,10 @@
 #include <linux/genalloc.h>
 #include <linux/acpi.h>
 
-#include <asm/sw64_init.h>
 #include <asm/efi.h>
 #include <asm/kvm_cma.h>
+#include <asm/mmu_context.h>
+#include <asm/sw64_init.h>
 
 #include "proto.h"
 #include "pci_impl.h"
@@ -136,6 +137,14 @@ struct screen_info screen_info = {
 	.orig_video_points = 16
 };
 EXPORT_SYMBOL(screen_info);
+
+/*
+ * Move global data into per-processor storage.
+ */
+void store_cpu_data(int cpu)
+{
+	cpu_data[cpu].last_asid = ASID_FIRST_VERSION;
+}
 
 #ifdef CONFIG_KEXEC
 
@@ -776,7 +785,7 @@ setup_arch(char **cmdline_p)
 		strlcat(boot_command_line, " ", COMMAND_LINE_SIZE);
 		strlcat(boot_command_line, builtin_cmdline, COMMAND_LINE_SIZE);
 	}
-#endif	/* CMDLINE_EXTEND */
+#endif /* CMDLINE_EXTEND */
 #endif
 	if (IS_ENABLED(CONFIG_SW64_CHIP3_ASIC_DEBUG) &&
 			IS_ENABLED(CONFIG_SW64_CHIP3)) {
@@ -859,13 +868,12 @@ setup_arch(char **cmdline_p)
 	/* Default root filesystem to sda2.  */
 	ROOT_DEV = Root_SDA2;
 
-	/*
-	 * Identify the flock of penguins.
-	 */
-
 #ifdef CONFIG_SMP
 	setup_smp();
+#else
+	store_cpu_data(0);
 #endif
+
 #ifdef CONFIG_NUMA
 	cpu_set_node();
 #endif

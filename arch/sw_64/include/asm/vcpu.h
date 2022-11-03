@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_SW64_VCPU_H
-#define  _ASM_SW64_VCPU_H
+#define _ASM_SW64_VCPU_H
 
 #ifndef __ASSEMBLY__
 
@@ -32,7 +32,7 @@ struct vcpucb {
 	unsigned long vcpu_irq_disabled;
 	unsigned long vcpu_irq;
 	unsigned long ptbr;
-	unsigned long int_stat0;
+	unsigned long tid;
 	unsigned long int_stat1;
 	unsigned long int_stat2;
 	unsigned long int_stat3;
@@ -41,7 +41,17 @@ struct vcpucb {
 	unsigned long exit_reason;
 	unsigned long ipaddr;
 	unsigned long vcpu_irq_vector;
+	unsigned long pri_base;
+	unsigned long stack_pc_dfault;
+	unsigned long guest_p20;
+	unsigned long guest_dfault_double;
+	unsigned long guest_irqs_pending;
+	unsigned long guest_hm_r30;
+	unsigned long migration_mark;
+	unsigned long guest_longtime;
+	unsigned long guest_longtime_offset;
+	unsigned long reserved[3];
 };
 
-#endif  /* __ASSEMBLY__ */
-#endif  /* _ASM_SW64_VCPU_H */
+#endif /* __ASSEMBLY__ */
+#endif /* _ASM_SW64_VCPU_H */

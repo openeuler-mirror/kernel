@@ -27,7 +27,8 @@
 
 #include <asm/export.h>
 
-#define NC_STORE_THRESHOLD	2048
+#define FIXUP_LDST(x, y)	\
+	x, y
 
 	.set noat
 	.set noreorder
@@ -53,94 +54,9 @@ ___memset:
 	bis	$17, $4, $17
 
 __constant_c_memset:
-	bis	$31, $16, $0	# set return value
-	beq	$18, $out	# return if size is 0
-	cmplt	$18, 8, $5	# size less than 8, do 1-byte loop
-	bne	$5, $tail_loop
-
-/* loop until SRC is 8 bytes aligned */
-	.align 5
-$head_loop:
-	and	$16, 0x7, $1
-	beq	$1, $mod8_aligned
-	stb	$17, 0($16)
-	subl	$18, 1, $18
-	beq	$18, $out
-	addl	$16, 1, $16
-	br	$31, $head_loop
-
-$mod8_aligned:
-
-/* set 8 bytes each time */
-	.align 5
-$mod8_loop:
-	and	$16, 0x1f, $1
-	beq	$1, $mod32_aligned
-	subl	$18, 8, $18
-	blt	$18, $tail
-	stl	$17, 0($16)
-	addl	$16, 8, $16
-	br	$31, $mod8_loop
-
-/* expand data to 32 bytes */
-$mod32_aligned:
-	subl	$sp, 64, $sp
-	addl	$sp, 31, $4
-	bic	$4, 0x1f, $4
-	vstd	$f10, 0($4)
-	ifmovd	$17, $f10
-	vcpyf	$f10, $f10
-
-	ldi	$1, NC_STORE_THRESHOLD($31)
-	cmple	$18, $1, $1
-	bne	$1, $mod32_loop
-
-/* set 64 bytes each time */
-	.align 5
-$mod32_loop_nc:
-	subl	$18, 64, $18
-	blt	$18, $mod32_tail_memb
-	vstd_nc	$f10, 0($16)
-	vstd_nc	$f10, 32($16)
-	addl	$16, 64, $16
-	br	$31, $mod32_loop_nc
-
-	.align 5
-$mod32_loop:
-	subl	$18, 64, $18
-	blt	$18, $mod32_tail
-	vstd	$f10, 0($16)
-	vstd	$f10, 32($16)
-	addl	$16, 64, $16
-	br	$31, $mod32_loop
-
-$mod32_tail_memb:
-	memb			# required for _nc store instructions
-$mod32_tail:
-	vldd	$f10, 0($4)
-	addl	$sp, 64, $sp
-	addl	$18, 64, $18
-	.align 5
-$mod32_tail_loop:
-	subl	$18, 8, $18
-	blt	$18, $tail
-	stl	$17, 0($16)
-	addl	$16, 8, $16
-	br	$31, $mod32_tail_loop
-
-$tail:
-	addl	$18, 8, $18
-
-/* set one byte each time */
-	.align 5
-$tail_loop:
-	beq	$18, $out
-	stb	$17, 0($16)
-	subl	$18, 1, $18
-	addl	$16, 1, $16
-	br	$31, $tail_loop
-
-/* done, return */
+	bis	$31, $31, $7
+	bis	$31, $16, $0
+#include "deep-set_template.S"
 $out:
 	ret
 

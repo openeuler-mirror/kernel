@@ -79,7 +79,7 @@ ftrace_graph_call:				/* ftrace_graph_caller(); */
 						/* "br ftrace_graph_caller" */
 #endif
 	mcount_end
-	ret $31, ($28), 1
+	ret	$31, ($28), 1
 	.end ftrace_caller
 #else /* !CONFIG_DYNAMIC_FTRACE */
 

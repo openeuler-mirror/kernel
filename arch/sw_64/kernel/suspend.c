@@ -23,6 +23,8 @@ void disable_local_timer(void)
 	wrtimer(0);
 }
 
+extern struct pci_controller *hose_head;
+
 /*
  * Boot Core will enter suspend stat here.
  */
@@ -32,13 +34,25 @@ void sw64_suspend_enter(void)
 	 * After wake up  boot processor, pc will go here
 	 */
 
+#ifdef CONFIG_SW64_SUPPORT_S3_SLEEPING_STATE
+	if (sw64_chip->suspend)
+		sw64_chip->suspend(false);
+#endif
+
 	disable_local_timer();
+	current_thread_info()->pcb.tp = rtid();
 
 #ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_BOOTCORE
 	sw64_suspend_deep_sleep(&suspend_state);
 #else
 	mtinten();
 	asm("halt");
+#endif
+	wrtp(current_thread_info()->pcb.tp);
+
+#ifdef CONFIG_SW64_SUPPORT_S3_SLEEPING_STATE
+	if (sw64_chip->suspend)
+		sw64_chip->suspend(true);
 #endif
 
 	disable_local_timer();
@@ -55,6 +69,7 @@ static const struct platform_suspend_ops native_suspend_ops = {
 	.valid = native_suspend_state_valid,
 	.enter = native_suspend_enter,
 };
+
 static int __init sw64_pm_init(void)
 {
 	suspend_set_ops(&native_suspend_ops);

@@ -97,7 +97,7 @@ int acpi_unmap_lsapic(int cpu)
 	return 0;
 }
 EXPORT_SYMBOL(acpi_unmap_lsapic);
-#endif				/* CONFIG_ACPI_HOTPLUG_CPU */
+#endif /* CONFIG_ACPI_HOTPLUG_CPU */
 
 u8 acpi_checksum(u8 *table, u32 length)
 {
@@ -361,7 +361,7 @@ int acpi_unmap_cpu(int cpu)
 	return 0;
 }
 EXPORT_SYMBOL(acpi_unmap_cpu);
-#endif				/* CONFIG_ACPI_HOTPLUG_CPU */
+#endif /* CONFIG_ACPI_HOTPLUG_CPU */
 
 void __init acpi_boot_table_init(void)
 

@@ -11,7 +11,6 @@ lib-y =	__divlu.o __remlu.o __divwu.o __remwu.o \
         memmove.o \
         checksum.o \
         csum_partial_copy.o \
-        clear_user.o \
         fpreg.o \
         strcpy.o \
         strncpy.o \
@@ -20,6 +19,9 @@ lib-y =	__divlu.o __remlu.o __divwu.o __remwu.o \
 
 lib-clear_page-y := clear_page.o
 lib-clear_page-$(CONFIG_DEEP_CLEAR_PAGE) := deep-clear_page.o
+
+lib-clear_user-y := clear_user.o
+lib-clear_user-$(CONFIG_DEEP_CLEAR_USER) := deep-clear_user.o
 
 lib-copy_page-y := copy_page.o
 lib-copy_page-$(CONFIG_DEEP_COPY_PAGE) := deep-copy_page.o
@@ -33,7 +35,7 @@ lib-memcpy-$(CONFIG_DEEP_MEMCPY) := deep-memcpy.o
 lib-memset-y := memset.o
 lib-memset-$(CONFIG_DEEP_MEMSET) := deep-memset.o
 
-lib-y += $(lib-clear_page-y) $(lib-copy_page-y) $(lib-copy_user-y) $(lib-memcpy-y) $(lib-memset-y)
+lib-y += $(lib-clear_page-y) $(lib-clear_user-y) $(lib-copy_page-y) $(lib-copy_user-y) $(lib-memcpy-y) $(lib-memset-y)
 
 obj-y = iomap.o
 obj-y += iomap_copy.o

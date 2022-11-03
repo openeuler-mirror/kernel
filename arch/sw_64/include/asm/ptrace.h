@@ -40,12 +40,7 @@ struct pt_regs {
 	unsigned long r26;
 	unsigned long r27;
 	unsigned long r28;
-	unsigned long hae;
-/* JRP - These are the values provided to a0-a2 by HMcode */
-	unsigned long trap_a0;
-	unsigned long trap_a1;
-	unsigned long trap_a2;
-/* These are saved by HMcode: */
+	/* These are saved by HMcode: */
 	unsigned long ps;
 	unsigned long pc;
 	unsigned long gp;
@@ -54,7 +49,6 @@ struct pt_regs {
 	unsigned long r18;
 };
 
-#define arch_has_single_step()		(1)
 #define user_mode(regs) (((regs)->ps & 8) != 0)
 #define instruction_pointer(regs) ((regs)->pc)
 #define profile_pc(regs) instruction_pointer(regs)
@@ -98,4 +92,4 @@ static inline unsigned long regs_return_value(struct pt_regs *regs)
 {
 	return regs->r0;
 }
-#endif
+#endif /* _ASM_SW64_PTRACE_H */

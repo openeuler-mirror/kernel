@@ -25,8 +25,6 @@
 
 #include <asm/efi.h>
 
-extern bool __virt_addr_valid(unsigned long x);
-
 static int __init is_memory(efi_memory_desc_t *md)
 {
 	if (md->attribute & (EFI_MEMORY_WB|EFI_MEMORY_WT|EFI_MEMORY_WC))
@@ -128,23 +126,7 @@ static __init int is_usable_memory(efi_memory_desc_t *md)
 	}
 	return false;
 }
-static __initdata char memory_type_name1[][20] = {
-	"Reserved",
-	"Loader Code",
-	"Loader Data",
-	"Boot Code",
-	"Boot Data",
-	"Runtime Code",
-	"Runtime Data",
-	"Conventional Memory",
-	"Unusable Memory",
-	"ACPI Reclaim Memory",
-	"ACPI Memory NVS",
-	"Memory Mapped I/O",
-	"MMIO Port Space",
-	"PAL Code",
-	"Persistent Memory",
-};
+
 static __init void reserve_regions(void)
 {
 	efi_memory_desc_t *md;
@@ -156,22 +138,6 @@ static __init void reserve_regions(void)
 	for_each_efi_memory_desc(md) {
 		paddr = md->phys_addr;
 		npages = md->num_pages;
-
-		if (!__virt_addr_valid(paddr))
-			continue;
-
-		if (md->type >= ARRAY_SIZE(memory_type_name1))
-			continue;
-
-		if (md->attribute & ~(EFI_MEMORY_UC | EFI_MEMORY_WC | EFI_MEMORY_WT |
-					EFI_MEMORY_WB | EFI_MEMORY_UCE | EFI_MEMORY_RO |
-					EFI_MEMORY_WP | EFI_MEMORY_RP | EFI_MEMORY_XP |
-					EFI_MEMORY_NV |
-					EFI_MEMORY_RUNTIME | EFI_MEMORY_MORE_RELIABLE))
-			continue;
-
-		if (strncmp(memory_type_name1[md->type], "Reserved", 8) == 0)
-			continue;
 
 		if (efi_enabled(EFI_DBG)) {
 			char buf[64];

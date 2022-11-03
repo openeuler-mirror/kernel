@@ -188,14 +188,14 @@ void write_fp_reg_s(unsigned long reg, unsigned long val_p0,
 		unsigned long p1, unsigned long p2, unsigned long p3);
 void write_fp_reg_d(unsigned long reg, unsigned long val_p0,
 		unsigned long p1, unsigned long p2, unsigned long p3);
-#define	LOW_64_WORKING	1
+#define LOW_64_WORKING	1
 #define HIGH_64_WORKING	2
 
 /*
  * End for sw64
  */
 
-#define	OPC_HMC		0x00
+#define OPC_HMC		0x00
 #define OPC_INTA	0x10
 #define OPC_INTL	0x11
 #define OPC_INTS	0x12
@@ -205,7 +205,7 @@ void write_fp_reg_d(unsigned long reg, unsigned long val_p0,
 #define OPC_FLTI	0x16
 #define OPC_FLTL	0x17
 #define OPC_MISC	0x18
-#define	OPC_JSR		0x1a
+#define OPC_JSR		0x1a
 
 #define FOP_SRC_S	0
 #define FOP_SRC_T	2
@@ -295,9 +295,9 @@ void cleanup_module(void)
 	sw64_fp_emul = save_emul;
 }
 
-#undef  sw64_fp_emul_imprecise
+#undef sw64_fp_emul_imprecise
 #define sw64_fp_emul_imprecise		do_sw_fp_emul_imprecise
-#undef  sw64_fp_emul
+#undef sw64_fp_emul
 #define sw64_fp_emul			do_sw_fp_emul
 
 #endif /* MODULE */

@@ -4,7 +4,7 @@
  * with the PCI initialization routines.
  */
 #ifndef _SW64_KERNEL_PCI_IMPL_H
-#define	_SW64_KERNEL_PCI_IMPL_H
+#define _SW64_KERNEL_PCI_IMPL_H
 
 #include <asm/sw64io.h>
 
@@ -25,4 +25,4 @@ extern const struct dma_map_ops sw64_dma_direct_ops;
 
 extern struct cma *sw64_kvm_cma;
 extern struct gen_pool *sw64_kvm_pool;
-#endif
+#endif /* _SW64_KERNEL_PCI_IMPL_H */

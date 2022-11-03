@@ -48,4 +48,4 @@ struct stat64 {
 	long		__unused[3];
 };
 
-#endif
+#endif /* _UAPI_ASM_SW64_STAT_H */

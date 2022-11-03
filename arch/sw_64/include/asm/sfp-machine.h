@@ -66,4 +66,4 @@ do {								\
 /* We write the results always */
 #define FP_INHIBIT_RESULTS 0
 
-#endif
+#endif /* _ASM_SW64_SFP_MACHINE_H */

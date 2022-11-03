@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * This file is subject to the terms and conditions of the GNU General Public
- * License.  See the file "COPYING" in the main directory of this archive
- * for more details.
+ * Support for kernel relocation at boot time.
  *
- * Support for Kernel relocation at boot time
+ * Based on arch/mips/kernel/relocate.c
  *
  * Copyright (C) 2019 He Sheng
  * Authors: He Sheng (hesheng05@gmail.com)
@@ -15,7 +13,6 @@
 
 #include <asm/sections.h>
 
-#define INITRD_ADDR  0x3000000UL
 #define KTEXT_MAX    0xffffffffa0000000UL
 #define RELOCATED(x) ((void *)((unsigned long)x + offset))
 
@@ -30,8 +27,6 @@ extern unsigned long __start___ex_table;	/* Start exception table */
 extern unsigned long __stop___ex_table;	/* End exception table */
 extern union thread_union init_thread_union;
 
-extern void __weak plat_fdt_relocated(void *new_location);
-
 /*
  * This function may be defined for a platform to perform any post-relocation
  * fixup necessary.
@@ -40,13 +35,6 @@ extern void __weak plat_fdt_relocated(void *new_location);
 int __weak plat_post_relocation(long offset)
 {
 	return 0;
-}
-
-
-static void __init sync_icache(void)
-{
-	// IC_FLUSH
-	imb();
 }
 
 static int __init apply_r_sw64_refquad(unsigned long *loc_orig, unsigned long *loc_new, unsigned int offset)
@@ -166,12 +154,13 @@ static unsigned long __init determine_relocation_offset(void)
 	if (offset < kernel_length)
 		offset += ALIGN(kernel_length, 0x10000);
 
-	/* TODO: 119MB is for test */
-	offset = (119 << 20);
+	/*
+	 * TODO:new location should not overlaps initrd, dtb, acpi
+	 * tables, etc.
+	 */
+
 	if ((KTEXT_MAX - (unsigned long)_end) < offset)
 		offset = 0;
-
-	// TODO:new location should not overlaps initrd
 
 	return offset;
 }
@@ -216,9 +205,7 @@ unsigned int __init relocate_kernel(void)
 	bss_length = (unsigned long)&__bss_stop - (long)&__bss_start;
 
 	offset = determine_relocation_offset();
-
 	/* Reset the command line now so we don't end up with a duplicate */
-	//arcs_cmdline[0] = '\0';
 
 	/* Sanity check relocation address */
 	if (offset && relocation_offset_valid(offset)) {
@@ -231,9 +218,6 @@ unsigned int __init relocate_kernel(void)
 		res = do_relocations(&_text, loc_new, offset);
 		if (res < 0)
 			goto out;
-
-		/* Sync the caches ready for execution of new kernel */
-		sync_icache();
 
 		res = relocate_got(offset);
 		if (res < 0)
@@ -259,7 +243,6 @@ unsigned int __init relocate_kernel(void)
 		__current_thread_info = RELOCATED(&init_thread_union);
 
 		/* Return the new kernel's offset */
-		//printk("loc_new:%p, start_kernel: %p, gp:%p\n", loc_new, kernel_entry, kgp);
 		return offset;
 	}
 out:
