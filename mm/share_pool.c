@@ -79,8 +79,6 @@ static const int mdc_default_group_id = 1;
 
 static int system_group_count;
 
-static unsigned int sp_device_number;
-
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
 /* rw semaphore for sp_group_idr and mm->sp_group_master */
@@ -372,7 +370,7 @@ static bool can_mappings_merge(struct sp_mapping *m1, struct sp_mapping *m2)
 {
 	int i;
 
-	for (i = 0; i < sp_device_number; i++)
+	for (i = 0; i < MAX_DEVID; i++)
 		if (m1->start[i] != m2->start[i] || m1->end[i] != m2->end[i])
 			return false;
 
@@ -3619,7 +3617,7 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 
 	/* NOTE: check the start address */
 	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
-	    device_id < 0 || device_id >= sp_device_number || !is_online_node_id(device_id))
+	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id))
 		return false;
 
 	ret = get_task(pid, &tsk);
@@ -3660,7 +3658,7 @@ static bool is_sp_normal_addr(unsigned long addr)
 {
 	return addr >= MMAP_SHARE_POOL_START &&
 		addr < MMAP_SHARE_POOL_16G_START +
-			sp_device_number * MMAP_SHARE_POOL_16G_SIZE;
+			MAX_DEVID * MMAP_SHARE_POOL_16G_SIZE;
 }
 
 static bool is_sp_dvpp_addr(unsigned long addr)
@@ -4423,18 +4421,6 @@ static int __init enable_share_pool(char *s)
 }
 __setup("enable_ascend_share_pool", enable_share_pool);
 
-static void __init sp_device_number_detect(void)
-{
-	/* NOTE: TO BE COMPLETED */
-	sp_device_number = 4;
-
-	if (sp_device_number > MAX_DEVID) {
-		pr_warn("sp_device_number %d exceed, truncate it to %d\n",
-				sp_device_number, MAX_DEVID);
-		sp_device_number = MAX_DEVID;
-	}
-}
-
 static int __init share_pool_init(void)
 {
 	if (!sp_is_enabled())
@@ -4445,7 +4431,6 @@ static int __init share_pool_init(void)
 		goto fail;
 	atomic_inc(&sp_mapping_normal->user);
 
-	sp_device_number_detect();
 	proc_sharepool_init();
 
 	return 0;
