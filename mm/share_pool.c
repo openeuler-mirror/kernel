@@ -2449,35 +2449,13 @@ static void sp_alloc_fallback(struct sp_area *spa, struct sp_alloc_context *ac)
 static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 			     struct sp_alloc_context *ac)
 {
-	int ret = 0;
-	unsigned long sp_addr = spa->va_start;
-	unsigned int noreclaim_flag = 0;
-
-	/*
-	 * The direct reclaim and compact may take a long
-	 * time. As a result, sp mutex will be hold for too
-	 * long time to casue the hung task problem. In this
-	 * case, set the PF_MEMALLOC flag to prevent the
-	 * direct reclaim and compact from being executed.
-	 * Since direct reclaim and compact are not performed
-	 * when the fragmentation is severe or the memory is
-	 * insufficient, 2MB continuous physical pages fail
-	 * to be allocated. This situation is allowed.
-	 */
-	if (spa->is_hugepage)
-		noreclaim_flag = memalloc_noreclaim_save();
-
 	/*
 	 * We are not ignoring errors, so if we fail to allocate
 	 * physical memory we just return failure, so we won't encounter
 	 * page fault later on, and more importantly sp_make_share_u2k()
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
-	ret = do_mm_populate(mm, sp_addr, ac->populate, 0);
-	if (spa->is_hugepage)
-		memalloc_noreclaim_restore(noreclaim_flag);
-
-	return ret;
+	return do_mm_populate(mm, spa->va_start, ac->populate, 0);
 }
 
 static long sp_mbind(struct mm_struct *mm, unsigned long start, unsigned long len,
@@ -4233,7 +4211,8 @@ retry:
 
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
-			page = hugetlb_alloc_hugepage(node_id, HUGETLB_ALLOC_BUDDY);
+			page = hugetlb_alloc_hugepage(node_id,
+					HUGETLB_ALLOC_BUDDY | HUGETLB_ALLOC_NORECLAIM);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
 		}
