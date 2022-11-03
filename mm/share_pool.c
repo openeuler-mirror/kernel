@@ -3838,12 +3838,10 @@ static void spa_stat_of_mapping_show(struct seq_file *seq, struct sp_mapping *sp
 		atomic_inc(&spa->use_count);
 		spin_unlock(&sp_area_lock);
 
-		down_read(&spa->spg->rw_lock);
 		if (spg_valid(spa->spg))  /* k2u to group */
 			seq_printf(seq, "%-10d ", spa->spg->id);
 		else  /* spg is dead */
 			seq_printf(seq, "%-10s ", "Dead");
-		up_read(&spa->spg->rw_lock);
 
 		seq_printf(seq, "%2s%-14lx %2s%-14lx %-10ld ",
 			   "0x", spa->va_start,
