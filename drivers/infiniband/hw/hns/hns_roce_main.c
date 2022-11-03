@@ -654,7 +654,12 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		(1ULL << IB_USER_VERBS_CMD_CREATE_AH) |
 		(1ULL << IB_USER_VERBS_CMD_DESTROY_AH);
 
-	ib_dev->uverbs_ex_cmd_mask |= (1ULL << IB_USER_VERBS_EX_CMD_MODIFY_CQ);
+	ib_dev->uverbs_ex_cmd_mask |=
+				(1ULL << IB_USER_VERBS_EX_CMD_QUERY_DEVICE) |
+				(1ULL << IB_USER_VERBS_EX_CMD_MODIFY_CQ) |
+				(1ULL << IB_USER_VERBS_EX_CMD_CREATE_CQ) |
+				(1ULL << IB_USER_VERBS_EX_CMD_MODIFY_QP) |
+				(1ULL << IB_USER_VERBS_EX_CMD_CREATE_QP);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_REREG_MR) {
 		ib_dev->uverbs_cmd_mask |= (1ULL << IB_USER_VERBS_CMD_REREG_MR);
