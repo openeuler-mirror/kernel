@@ -3634,7 +3634,7 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	/* NOTE: check the start address */
 	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
 	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id)
-		|| !is_sp_dynamic_dvpp_addr(start) || !is_sp_dynamic_dvpp_addr(start + size))
+		|| !is_sp_dynamic_dvpp_addr(start) || !is_sp_dynamic_dvpp_addr(start + size - 1))
 		return false;
 
 	ret = get_task(pid, &tsk);
