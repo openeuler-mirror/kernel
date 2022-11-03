@@ -250,12 +250,14 @@ struct sp_group_node {
 #endif
 
 /* The caller should hold mmap_sem to protect master (TBD) */
-static void sp_init_group_master_stat(struct mm_struct *mm, struct sp_proc_stat *stat)
+static void sp_init_group_master_stat(int tgid, struct mm_struct *mm,
+		struct sp_proc_stat *stat)
 {
 	atomic64_set(&stat->alloc_nsize, 0);
 	atomic64_set(&stat->alloc_hsize, 0);
 	atomic64_set(&stat->k2u_size, 0);
 	stat->mm = mm;
+	stat->tgid = tgid;
 	get_task_comm(stat->comm, current);
 }
 
@@ -484,7 +486,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	INIT_LIST_HEAD(&master->node_list);
 	master->count = 0;
 	master->mm = mm;
-	sp_init_group_master_stat(mm, &master->instat);
+	sp_init_group_master_stat(tsk->tgid, mm, &master->instat);
 	mm->sp_group_master = master;
 
 	mutex_lock(&master_list_lock);
@@ -1420,7 +1422,6 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		up_write(&spg->rw_lock);
 		goto out_drop_group;
 	}
-	mm->sp_group_master->instat.tgid = tsk->tgid;
 
 	ret = sp_mapping_group_setup(mm, spg);
 	if (ret) {
@@ -3729,18 +3730,27 @@ static long get_proc_alloc(struct sp_proc_stat *stat)
 			atomic64_read(&stat->alloc_hsize));
 }
 
-static void get_process_sp_res(struct sp_proc_stat *stat,
+static void get_process_sp_res(struct sp_group_master *master,
 		long *sp_res_out, long *sp_res_nsize_out)
 {
-	*sp_res_out = byte2kb(atomic64_read(&stat->alloc_nsize) +
-			atomic64_read(&stat->alloc_hsize));
-	*sp_res_nsize_out = byte2kb(atomic64_read(&stat->alloc_nsize));
+	struct sp_group *spg;
+	struct sp_group_node *spg_node;
+
+	*sp_res_out = 0;
+	*sp_res_nsize_out = 0;
+
+	list_for_each_entry(spg_node, &master->node_list, group_node) {
+		spg = spg_node->spg;
+		*sp_res_out += byte2kb(atomic64_read(&spg->instat.alloc_nsize));
+		*sp_res_out += byte2kb(atomic64_read(&spg->instat.alloc_hsize));
+		*sp_res_nsize_out += byte2kb(atomic64_read(&spg->instat.alloc_nsize));
+	}
 }
 
 static long get_sp_res_by_spg_proc(struct sp_group_node *spg_node)
 {
-	return byte2kb(atomic64_read(&spg_node->instat.alloc_nsize) +
-			atomic64_read(&spg_node->instat.alloc_hsize));
+	return byte2kb(atomic64_read(&spg_node->spg->instat.alloc_nsize) +
+			atomic64_read(&spg_node->spg->instat.alloc_hsize));
 }
 
 /*
@@ -3805,7 +3815,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 
 	get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
 	proc_stat = &master->instat;
-	get_process_sp_res(proc_stat, &sp_res, &sp_res_nsize);
+	get_process_sp_res(master, &sp_res, &sp_res_nsize);
 	get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 			       &non_sp_res, &non_sp_shm);
 
@@ -4057,7 +4067,7 @@ static int proc_usage_by_group(int id, void *p, void *data)
 		tgid = master->instat.tgid;
 
 		get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
-		get_process_sp_res(&master->instat, &sp_res, &sp_res_nsize);
+		get_process_sp_res(master, &sp_res, &sp_res_nsize);
 		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 				&non_sp_res, &non_sp_shm);
 
@@ -4118,7 +4128,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 	list_for_each_entry(master, &master_list, list_node) {
 		proc_stat = &master->instat;
 		get_mm_rss_info(master->mm, &anon, &file, &shmem, &total_rss);
-		get_process_sp_res(&master->instat, &sp_res, &sp_res_nsize);
+		get_process_sp_res(master, &sp_res, &sp_res_nsize);
 		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 				&non_sp_res, &non_sp_shm);
 		seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
