@@ -35,6 +35,7 @@
 
 #include <rdma/ib_verbs.h>
 #include <rdma/hns-abi.h>
+#include "hns_roce_bond.h"
 
 #define PCI_REVISION_ID_HIP08			0x21
 #define PCI_REVISION_ID_HIP09			0x30
@@ -147,6 +148,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_STASH			= BIT(17),
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
 	HNS_ROCE_CAP_FLAG_RQ_INLINE		= BIT(20),
+	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
 };
 
 #define HNS_ROCE_DB_TYPE_COUNT			2
@@ -898,6 +900,9 @@ struct hns_roce_hw {
 			u8 *tc_mode, u8 *priority);
 	const struct ib_device_ops *hns_roce_dev_ops;
 	const struct ib_device_ops *hns_roce_dev_srq_ops;
+	int (*bond_init)(struct hns_roce_dev *hr_dev);
+	bool (*bond_is_active)(struct hns_roce_dev *hr_dev);
+	struct net_device *(*get_bond_netdev)(struct hns_roce_dev *hr_dev);
 };
 
 struct hns_roce_dev {
@@ -961,6 +966,11 @@ struct hns_roce_dev {
 	u32 is_vf;
 	u32 cong_algo_tmpl_id;
 	u64 dwqe_page;
+
+	struct notifier_block bond_nb;
+	struct delayed_work bond_work;
+	struct hns_roce_bond_group *bond_grp;
+	struct netdev_lag_lower_state_info slave_state;
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
