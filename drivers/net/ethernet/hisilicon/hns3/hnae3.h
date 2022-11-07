@@ -913,6 +913,7 @@ struct hnae3_roh_private_info {
 	struct net_device *netdev;
 	void __iomem *roh_io_base;
 	int base_vector;
+	unsigned long reset_state;
 };
 
 #define HNAE3_SUPPORT_APP_LOOPBACK    BIT(0)
