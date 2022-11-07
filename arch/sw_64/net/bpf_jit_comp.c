@@ -1182,9 +1182,9 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 
 	case BPF_JMP | BPF_CALL:
 		func = (u64)__bpf_call_base + imm;
-		if ((func & 0xffffffffe0000000UL) != 0xffffffff80000000UL)
+		if ((func & ~(KERNEL_IMAGE_SIZE - 1)) != __START_KERNEL_map)
 			/* calling bpf program, switch to vmalloc addr */
-			func = (func & 0xffffffff) | 0xfffff00000000000UL;
+			func = (func & U32_MAX) | VMALLOC_START;
 		emit_sw64_ldu64(SW64_BPF_REG_PV, func, ctx);
 		emit(SW64_BPF_CALL(SW64_BPF_REG_RA, SW64_BPF_REG_PV), ctx);
 		break;
