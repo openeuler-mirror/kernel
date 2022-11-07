@@ -7,5 +7,6 @@ ccflags-y :=  -I $(srctree)/drivers/net/ethernet/hisilicon/hns3
 ccflags-y +=  -I $(srctree)/drivers/roh/core
 ccflags-y +=  -I $(srctree)/drivers/roh/hw/hns3
 
-hns-roh-v1-objs := hns3_main.o
+hns-roh-v1-objs := hns3_cmdq.o	\
+		   hns3_main.o
 obj-$(CONFIG_ROH_HNS) += hns-roh-v1.o

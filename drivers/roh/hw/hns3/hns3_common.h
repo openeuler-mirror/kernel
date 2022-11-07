@@ -10,8 +10,44 @@
 
 #define HNS3_ROH_NAME "roh"
 
+#define HNS3_ROH_DESC_DATA_LEN 6
+
+struct hns3_roh_desc {
+	__le16 opcode;
+
+#define HNS3_ROH_CMDQ_RX_INVLD_B 0
+#define HNS3_ROH_CMDQ_RX_OUTVLD_B 1
+
+	__le16 flag;
+	__le16 retval;
+	__le16 rsv;
+	__le32 data[HNS3_ROH_DESC_DATA_LEN];
+};
+
+struct hns3_roh_cmdq_ring {
+	dma_addr_t desc_dma_addr;
+	struct hns3_roh_desc *desc;
+	u32 head;
+	u32 tail;
+
+	u16 buf_size;
+	u16 desc_num;
+	int next_to_use;
+	int next_to_clean;
+	u8 flag;
+	spinlock_t lock; /* CMDq lock */
+};
+
+struct hns3_roh_cmdq {
+	struct hns3_roh_cmdq_ring csq;
+	struct hns3_roh_cmdq_ring crq;
+	u16 tx_timeout;
+	u16 last_status;
+};
+
 struct hns3_roh_priv {
 	struct hnae3_handle *handle;
+	struct hns3_roh_cmdq cmdq;
 	unsigned long state;
 };
 
@@ -23,7 +59,13 @@ struct hns3_roh_device {
 	struct net_device *netdev;
 
 	u8 __iomem *reg_base;
+	const struct hns3_roh_hw *hw;
 	struct hns3_roh_priv *priv;
+};
+
+struct hns3_roh_hw {
+	int (*cmdq_init)(struct hns3_roh_device *hroh_dev);
+	void (*cmdq_exit)(struct hns3_roh_device *hroh_dev);
 };
 
 static inline struct hns3_roh_device *to_hroh_dev(struct roh_device *rohdev)
