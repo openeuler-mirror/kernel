@@ -4,3 +4,4 @@
 #
 
 obj-$(CONFIG_ROH)		+= core/
+obj-$(CONFIG_ROH)		+= hw/
