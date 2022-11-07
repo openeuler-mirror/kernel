@@ -1849,6 +1849,8 @@ static int hclge_dbg_dump_interrupt(struct hclge_dev *hdev, char *buf, int len)
 			 hdev->num_nic_msi);
 	pos += scnprintf(buf + pos, len - pos, "num_roce_msi: %u\n",
 			 hdev->num_roce_msi);
+	pos += scnprintf(buf + pos, len - pos, "num_roh_msi: %u\n",
+			 hdev->num_roh_msi);
 	pos += scnprintf(buf + pos, len - pos, "num_msi_used: %u\n",
 			 hdev->num_msi_used);
 	pos += scnprintf(buf + pos, len - pos, "num_msi_left: %u\n",
