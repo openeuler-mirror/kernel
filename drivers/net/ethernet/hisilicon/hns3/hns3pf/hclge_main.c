@@ -3714,6 +3714,28 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 	return ret;
 }
 
+static int hclge_notify_roh_client(struct hclge_dev *hdev,
+				   enum hnae3_reset_notify_type type)
+{
+	struct hnae3_handle *handle = &hdev->vport[0].roh;
+	struct hnae3_client *client = hdev->roh_client;
+	int ret;
+
+	if (!test_bit(HCLGE_STATE_ROH_REGISTERED, &hdev->state) || !client)
+		return 0;
+
+	if (!client->ops->reset_notify)
+		return -EOPNOTSUPP;
+
+	ret = client->ops->reset_notify(handle, type);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"failed to notify roh client type %d, ret = %d\n",
+			type, ret);
+
+	return ret;
+}
+
 static int hclge_reset_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_WATI_MS	100
@@ -4234,6 +4256,10 @@ static int hclge_reset_prepare(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_roh_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 	rtnl_unlock();
@@ -4253,6 +4279,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_roh_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_reset_stack(hdev);
 	rtnl_unlock();
@@ -4263,6 +4293,14 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
 	/* ignore RoCE notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
+	 * times
+	 */
+	if (ret &&
+	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
+		return ret;
+
+	ret = hclge_notify_roh_client(hdev, HNAE3_INIT_CLIENT);
+	/* ignore ROH notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
 	 * times
 	 */
 	if (ret &&
@@ -4280,6 +4318,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 		return ret;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclge_notify_roh_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
 
