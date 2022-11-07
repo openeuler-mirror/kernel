@@ -12,7 +12,7 @@ static int __init roh_init(void)
 
 	ret = roh_core_init();
 	if (ret) {
-		pr_err("roh_core: roh core init failed.\n");
+		pr_err("roh_core: roh core init failed, ret = %d\n", ret);
 		return ret;
 	}
 

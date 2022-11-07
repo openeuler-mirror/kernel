@@ -6144,6 +6144,8 @@ CONFIG_TEE=m
 # CONFIG_INTERCONNECT is not set
 # CONFIG_COUNTER is not set
 # CONFIG_MOST is not set
+CONFIG_ROH=m
+CONFIG_ROH_HNS=m
 # end of Device Drivers
 
 #

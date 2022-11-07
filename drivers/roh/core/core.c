@@ -464,7 +464,7 @@ int roh_core_init(void)
 
 	ret = class_register(&roh_class);
 	if (ret) {
-		pr_err("roh_core: couldn't create roh device class.\n");
+		pr_err("roh_core: couldn't create roh device class, ret = %d\n", ret);
 		return ret;
 	}
 
