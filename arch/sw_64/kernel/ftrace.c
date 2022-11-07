@@ -154,15 +154,11 @@ void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
 static int ftrace_modify_graph_caller(bool enable)
 {
 	unsigned long pc = (unsigned long)&ftrace_graph_call;
-	u32 branch, nop;
-
-	branch = sw64_insn_br(R31, pc, (unsigned long)ftrace_graph_caller);
-	nop = sw64_insn_nop();
+	u32 new = SW64_NOP;
 
 	if (enable)
-		return ftrace_modify_code(pc, branch);
-	else
-		return ftrace_modify_code(pc, nop);
+		new = SW64_CALL(R26, R27, 0);
+	return ftrace_modify_code(pc, new);
 }
 
 int ftrace_enable_ftrace_graph_caller(void)
