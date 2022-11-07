@@ -180,7 +180,8 @@ struct hclge_pf_res_cmd {
 	__le16 tx_buf_size;
 	__le16 dv_buf_size;
 	__le16 ext_tqp_num;
-	u8 rsv[6];
+	__le16 pf_intr_vector_number_roh;
+	u8 rsv[4];
 };
 
 #define HCLGE_CFG_OFFSET_S	0

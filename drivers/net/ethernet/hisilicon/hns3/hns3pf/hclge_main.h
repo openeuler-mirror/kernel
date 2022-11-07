@@ -202,6 +202,7 @@ enum HCLGE_DEV_STATE {
 	HCLGE_STATE_REMOVING,
 	HCLGE_STATE_NIC_REGISTERED,
 	HCLGE_STATE_ROCE_REGISTERED,
+	HCLGE_STATE_ROH_REGISTERED,
 	HCLGE_STATE_SERVICE_INITED,
 	HCLGE_STATE_RST_SERVICE_SCHED,
 	HCLGE_STATE_RST_HANDLING,
@@ -874,6 +875,7 @@ struct hclge_dev {
 	int *vector_irq;
 	u16 num_nic_msi;	/* Num of nic vectors for this PF */
 	u16 num_roce_msi;	/* Num of roce vectors for this PF */
+	u16 num_roh_msi;	/* Num of roh vectors for this PF */
 
 	unsigned long service_timer_period;
 	unsigned long service_timer_previous;
@@ -890,6 +892,7 @@ struct hclge_dev {
 
 	struct hnae3_client *nic_client;
 	struct hnae3_client *roce_client;
+	struct hnae3_client *roh_client;
 
 #define HCLGE_FLAG_MAIN			BIT(0)
 #define HCLGE_FLAG_DCB_CAPABLE		BIT(1)
@@ -1019,6 +1022,7 @@ struct hclge_vport {
 	struct hclge_dev *back;  /* Back reference to associated dev */
 	struct hnae3_handle nic;
 	struct hnae3_handle roce;
+	struct hnae3_handle roh;
 
 	unsigned long state;
 	unsigned long last_active_jiffies;
