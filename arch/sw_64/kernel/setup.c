@@ -336,12 +336,15 @@ static void * __init move_initrd(unsigned long mem_limit)
 }
 #endif
 
-static int __init memmap_range_valid(phys_addr_t base, phys_addr_t size)
+static bool __init memmap_range_valid(phys_addr_t base, phys_addr_t *size)
 {
-	if ((base + size) <= memblock_end_of_DRAM())
-		return true;
-	else
+	if (base > memblock_end_of_DRAM())
 		return false;
+
+	if ((base + *size) > memblock_end_of_DRAM())
+		*size = memblock_end_of_DRAM() - base;
+
+	return true;
 }
 
 void __init process_memmap(void)
@@ -359,8 +362,8 @@ void __init process_memmap(void)
 		size = memmap_map[i].size;
 		switch (memmap_map[i].type) {
 		case memmap_reserved:
-			if (!memmap_range_valid(base, size)) {
-				pr_err("reserved memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
+			if (!memmap_range_valid(base, &size)) {
+				pr_err("reserved memmap region [mem %#018llx-%#018llx] beyond end of memory (%#018llx)\n",
 						base, base + size - 1, memblock_end_of_DRAM());
 			} else {
 				pr_info("reserved memmap region [mem %#018llx-%#018llx]\n",
@@ -375,8 +378,8 @@ void __init process_memmap(void)
 			}
 			break;
 		case memmap_pci:
-			if (!memmap_range_valid(base, size)) {
-				pr_info("pci memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
+			if (!memmap_range_valid(base, &size)) {
+				pr_err("pci memmap region [mem %#018llx-%#018llx] beyond end of memory (%#018llx)\n",
 						base, base + size - 1, memblock_end_of_DRAM());
 			} else {
 				pr_info("pci memmap region [mem %#018llx-%#018llx]\n",
@@ -388,29 +391,23 @@ void __init process_memmap(void)
 			}
 			break;
 		case memmap_initrd:
-			if (!memmap_range_valid(base, size)) {
+			if ((base + size) > memblock_end_of_DRAM()) {
 				phys_addr_t old_base = base;
 
 				base = (unsigned long) move_initrd(memblock_end_of_DRAM());
 				if (!base) {
 					pr_err("initrd memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
 							old_base, old_base + size - 1, memblock_end_of_DRAM());
+					break;
 				} else {
 					memmap_map[i].addr = base;
-					pr_info("initrd memmap region [mem %#018llx-%#018llx]\n",
-							base, base + size - 1);
-					ret = memblock_reserve(base, size);
-					if (ret)
-						pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
-								base, base + size - 1);
 				}
-			} else {
-				pr_info("initrd memmap region [mem %#018llx-%#018llx]\n", base, base + size - 1);
-				ret = memblock_reserve(base, size);
-				if (ret)
-					pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
-							base, base + size - 1);
 			}
+			pr_info("initrd memmap region [mem %#018llx-%#018llx]\n", base, base + size - 1);
+			ret = memblock_reserve(base, size);
+			if (ret)
+				pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
+						base, base + size - 1);
 			break;
 		case memmap_kvm:
 		case memmap_crashkernel:
