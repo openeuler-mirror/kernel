@@ -1522,6 +1522,20 @@ static int hclge_query_dev_specs(struct hclge_dev *hdev)
 	return 0;
 }
 
+static void hclge_mac_type_init(struct hclge_dev *hdev)
+{
+	struct hclge_vport *vport = &hdev->vport[0];
+	struct hnae3_handle *handle = &vport->nic;
+	u32 dev_id = hdev->pdev->device;
+
+	if (dev_id == HNAE3_DEV_ID_100G_ROH ||
+	    dev_id == HNAE3_DEV_ID_200G_ROH ||
+	    dev_id == HNAE3_DEV_ID_400G_ROH)
+		handle->mac_type = HNAE3_MAC_ROH;
+	else
+		handle->mac_type = HNAE3_MAC_ETH;
+}
+
 static int hclge_get_cap(struct hclge_dev *hdev)
 {
 	int ret;
@@ -2848,11 +2862,12 @@ static void hclge_get_fec(struct hnae3_handle *handle, u8 *fec_ability,
 	if (fec_mode)
 		*fec_mode = mac->fec_mode;
 }
-
 static int hclge_mac_init(struct hclge_dev *hdev)
 {
 	struct hclge_mac *mac = &hdev->hw.mac;
 	int ret;
+
+	hclge_mac_type_init(hdev);
 
 	hdev->support_sfp_query = true;
 	hdev->hw.mac.duplex = HCLGE_MAC_FULL;
