@@ -131,7 +131,7 @@ static int pgp_generate_fingerprint(struct pgp_key_data_parse_context *ctx,
 	ret = -ENOMEM;
 	tfm = crypto_alloc_shash(pgp->version < PGP_KEY_VERSION_4 ?
 				 "md5" : "sha1", 0, 0);
-	if (!tfm)
+	if (IS_ERR(tfm))
 		goto cleanup;
 
 	digest = kmalloc(sizeof(*digest) + crypto_shash_descsize(tfm),
