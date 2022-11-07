@@ -334,6 +334,37 @@ static void put_probe_ref(void)
 	mutex_unlock(&blk_probe_mutex);
 }
 
+static int blk_trace_start(struct blk_trace *bt)
+{
+	if (bt->trace_state != Blktrace_setup &&
+	    bt->trace_state != Blktrace_stopped)
+		return -EINVAL;
+
+	blktrace_seq++;
+	smp_mb();
+	bt->trace_state = Blktrace_running;
+	spin_lock_irq(&running_trace_lock);
+	list_add(&bt->running_list, &running_trace_list);
+	spin_unlock_irq(&running_trace_lock);
+	trace_note_time(bt);
+
+	return 0;
+}
+
+static int blk_trace_stop(struct blk_trace *bt)
+{
+	if (bt->trace_state != Blktrace_running)
+		return -EINVAL;
+
+	bt->trace_state = Blktrace_stopped;
+	spin_lock_irq(&running_trace_lock);
+	list_del_init(&bt->running_list);
+	spin_unlock_irq(&running_trace_lock);
+	relay_flush(bt->rchan);
+
+	return 0;
+}
+
 static void blk_trace_cleanup(struct blk_trace *bt)
 {
 	synchronize_rcu();
@@ -652,7 +683,6 @@ static int compat_blk_trace_setup(struct request_queue *q, char *name,
 
 static int __blk_trace_startstop(struct request_queue *q, int start)
 {
-	int ret;
 	struct blk_trace *bt;
 
 	bt = rcu_dereference_protected(q->blk_trace,
@@ -660,36 +690,10 @@ static int __blk_trace_startstop(struct request_queue *q, int start)
 	if (bt == NULL)
 		return -EINVAL;
 
-	/*
-	 * For starting a trace, we can transition from a setup or stopped
-	 * trace. For stopping a trace, the state must be running
-	 */
-	ret = -EINVAL;
-	if (start) {
-		if (bt->trace_state == Blktrace_setup ||
-		    bt->trace_state == Blktrace_stopped) {
-			blktrace_seq++;
-			smp_mb();
-			bt->trace_state = Blktrace_running;
-			spin_lock_irq(&running_trace_lock);
-			list_add(&bt->running_list, &running_trace_list);
-			spin_unlock_irq(&running_trace_lock);
-
-			trace_note_time(bt);
-			ret = 0;
-		}
-	} else {
-		if (bt->trace_state == Blktrace_running) {
-			bt->trace_state = Blktrace_stopped;
-			spin_lock_irq(&running_trace_lock);
-			list_del_init(&bt->running_list);
-			spin_unlock_irq(&running_trace_lock);
-			relay_flush(bt->rchan);
-			ret = 0;
-		}
-	}
-
-	return ret;
+	if (start)
+		return blk_trace_start(bt);
+	else
+		return blk_trace_stop(bt);
 }
 
 int blk_trace_startstop(struct request_queue *q, int start)
@@ -1657,13 +1661,7 @@ static int blk_trace_remove_queue(struct request_queue *q)
 	if (bt == NULL)
 		return -EINVAL;
 
-	if (bt->trace_state == Blktrace_running) {
-		bt->trace_state = Blktrace_stopped;
-		spin_lock_irq(&running_trace_lock);
-		list_del_init(&bt->running_list);
-		spin_unlock_irq(&running_trace_lock);
-		relay_flush(bt->rchan);
-	}
+	blk_trace_stop(bt);
 
 	put_probe_ref();
 	synchronize_rcu();
