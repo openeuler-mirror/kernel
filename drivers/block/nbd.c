@@ -298,41 +298,35 @@ static void nbd_size_clear(struct nbd_device *nbd)
 	}
 }
 
-static void nbd_size_update(struct nbd_device *nbd)
+static void nbd_set_size(struct nbd_device *nbd, loff_t bytesize,
+		loff_t blksize)
 {
-	struct nbd_config *config = nbd->config;
 	struct block_device *bdev;
+
+	nbd->config->bytesize = bytesize;
+	nbd->config->blksize = blksize;
 
 	if (!nbd->pid)
 		return;
 
-	if (config->flags & NBD_FLAG_SEND_TRIM) {
-		nbd->disk->queue->limits.discard_granularity = config->blksize;
-		nbd->disk->queue->limits.discard_alignment = config->blksize;
+	if (nbd->config->flags & NBD_FLAG_SEND_TRIM) {
+		nbd->disk->queue->limits.discard_granularity = blksize;
+		nbd->disk->queue->limits.discard_alignment = blksize;
 		blk_queue_max_discard_sectors(nbd->disk->queue, UINT_MAX);
 	}
-	blk_queue_logical_block_size(nbd->disk->queue, config->blksize);
-	blk_queue_physical_block_size(nbd->disk->queue, config->blksize);
+	blk_queue_logical_block_size(nbd->disk->queue, blksize);
+	blk_queue_physical_block_size(nbd->disk->queue, blksize);
 
-	set_capacity(nbd->disk, config->bytesize >> 9);
+	set_capacity(nbd->disk, bytesize >> 9);
 	bdev = bdget_disk(nbd->disk, 0);
 	if (bdev) {
 		if (bdev->bd_disk)
-			bd_set_size(bdev, config->bytesize);
+			bd_set_size(bdev, bytesize);
 		else
 			bdev->bd_invalidated = 1;
 		bdput(bdev);
 	}
 	kobject_uevent(&nbd_to_dev(nbd)->kobj, KOBJ_CHANGE);
-}
-
-static void nbd_size_set(struct nbd_device *nbd, loff_t blocksize,
-			 loff_t nr_blocks)
-{
-	struct nbd_config *config = nbd->config;
-	config->blksize = blocksize;
-	config->bytesize = blocksize * nr_blocks;
-	nbd_size_update(nbd);
 }
 
 static void nbd_complete_rq(struct request *req)
@@ -1335,7 +1329,7 @@ static int nbd_start_device(struct nbd_device *nbd)
 		args->index = i;
 		queue_work(nbd->recv_workq, &args->work);
 	}
-	nbd_size_update(nbd);
+	nbd_set_size(nbd, config->bytesize, config->blksize);
 	return error;
 }
 
@@ -1406,17 +1400,15 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 			arg = NBD_DEF_BLKSIZE;
 		if (!nbd_is_valid_blksize(arg))
 			return -EINVAL;
-		nbd_size_set(nbd, arg,
-			     div_s64(config->bytesize, arg));
+		nbd_set_size(nbd, config->bytesize, arg);
 		return 0;
 	case NBD_SET_SIZE:
-		nbd_size_set(nbd, config->blksize,
-			     div_s64(arg, config->blksize));
+		nbd_set_size(nbd, arg, config->blksize);
 		return 0;
 	case NBD_SET_SIZE_BLOCKS:
 		if (check_mul_overflow((loff_t)arg, config->blksize, &bytesize))
 			return -EINVAL;
-		nbd_size_set(nbd, config->blksize, arg);
+		nbd_set_size(nbd, bytesize, config->blksize);
 		return 0;
 	case NBD_SET_TIMEOUT:
 		if (arg) {
@@ -1950,8 +1942,7 @@ again:
 
 	if (info->attrs[NBD_ATTR_SIZE_BYTES]) {
 		u64 bytes = nla_get_u64(info->attrs[NBD_ATTR_SIZE_BYTES]);
-		nbd_size_set(nbd, config->blksize,
-			     div64_u64(bytes, config->blksize));
+		nbd_set_size(nbd, bytes, config->blksize);
 	}
 	if (info->attrs[NBD_ATTR_BLOCK_SIZE_BYTES]) {
 		u64 bsize =
@@ -1962,7 +1953,7 @@ again:
 			ret = -EINVAL;
 			goto out;
 		}
-		nbd_size_set(nbd, bsize, div64_u64(config->bytesize, bsize));
+		nbd_set_size(nbd, config->bytesize, bsize);
 	}
 	if (info->attrs[NBD_ATTR_TIMEOUT]) {
 		u64 timeout = nla_get_u64(info->attrs[NBD_ATTR_TIMEOUT]);
