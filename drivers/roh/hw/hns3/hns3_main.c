@@ -8,6 +8,7 @@
 #include "core.h"
 #include "hnae3.h"
 #include "hns3_common.h"
+#include "hns3_cmdq.h"
 
 static const struct pci_device_id hns3_roh_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0 },
@@ -49,29 +50,65 @@ static int hns3_roh_register_device(struct hns3_roh_device *hroh_dev)
 	return 0;
 }
 
+static int hns3_roh_init_hw(struct hns3_roh_device *hroh_dev)
+{
+	struct device *dev = hroh_dev->dev;
+	int ret;
+
+	ret = hroh_dev->hw->cmdq_init(hroh_dev);
+	if (ret) {
+		dev_err(dev, "failed to init cmdq, ret = %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void hns3_roh_uninit_hw(struct hns3_roh_device *hroh_dev)
+{
+	hroh_dev->hw->cmdq_exit(hroh_dev);
+}
+
 static int hns3_roh_init(struct hns3_roh_device *hroh_dev)
 {
 	struct device *dev = hroh_dev->dev;
 	int ret;
 
+	ret = hns3_roh_init_hw(hroh_dev);
+	if (ret) {
+		dev_err(dev, "failed to init hw resources, ret = %d\n", ret);
+		return ret;
+	}
+
 	ret = hns3_roh_register_device(hroh_dev);
 	if (ret) {
 		dev_err(dev, "failed to register roh device, ret = %d\n", ret);
-		return ret;
+		goto err_uninit_hw;
 	}
 
 	dev_info(dev, "%s driver init success.\n", HNS3_ROH_NAME);
 
 	return 0;
+
+err_uninit_hw:
+	hns3_roh_uninit_hw(hroh_dev);
+	return ret;
 }
 
 static void hns3_roh_exit(struct hns3_roh_device *hroh_dev)
 {
 	hns3_roh_unregister_device(hroh_dev);
 
+	hns3_roh_uninit_hw(hroh_dev);
+
 	dev_info(&hroh_dev->pdev->dev,
 		 "%s driver uninit success.\n", HNS3_ROH_NAME);
 }
+
+static const struct hns3_roh_hw hns3_roh_hw = {
+	.cmdq_init = hns3_roh_cmdq_init,
+	.cmdq_exit = hns3_roh_cmdq_exit,
+};
 
 static void hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
 					struct hnae3_handle *handle)
@@ -81,6 +118,8 @@ static void hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
 
 	hroh_dev->netdev = handle->rohinfo.netdev;
 	hroh_dev->reg_base = handle->rohinfo.roh_io_base;
+
+	hroh_dev->hw = &hns3_roh_hw;
 
 	hroh_dev->priv->handle = handle;
 }
