@@ -231,6 +231,11 @@ enum hnae3_client_type {
 	HNAE3_CLIENT_ROCE,
 };
 
+enum hnae3_mac_type {
+	HNAE3_MAC_ETH,
+	HNAE3_MAC_ROH,
+};
+
 /* mac media type */
 enum hnae3_media_type {
 	HNAE3_MEDIA_TYPE_UNKNOWN,
@@ -939,6 +944,10 @@ struct hnae3_handle {
 
 	unsigned long supported_pflags;
 	unsigned long priv_flags;
+
+	enum hnae3_mac_type mac_type;
+
+	unsigned long link_change_assert_time;
 };
 
 #define hnae3_set_field(origin, mask, shift, val) \
@@ -952,6 +961,11 @@ struct hnae3_handle {
 	hnae3_set_field(origin, 0x1 << (shift), shift, val)
 #define hnae3_get_bit(origin, shift) \
 	hnae3_get_field(origin, 0x1 << (shift), shift)
+
+static inline bool hnae3_check_roh_mac_type(struct hnae3_handle *handle)
+{
+	return handle->mac_type == HNAE3_MAC_ROH;
+}
 
 #define HNAE3_FORMAT_MAC_ADDR_LEN	18
 #define HNAE3_FORMAT_MAC_ADDR_OFFSET_0	0
