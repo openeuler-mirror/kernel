@@ -773,6 +773,98 @@ MTD_STATUS mtdGetAutonegSpeedDuplexResolution(
 	return MTD_OK;
 }
 
+/****************************************************************************/
+MTD_STATUS mtdIsBaseTUp(
+	IN MTD_DEV_PTR devPtr,
+	IN MTD_U16 port,
+	OUT MTD_U16 *speed,
+	OUT MTD_BOOL *linkUp)
+{
+	MTD_BOOL speedIsForced;
+	MTD_U16 forcedSpeed, cuSpeed, cuLinkStatus;
+
+	*linkUp = MTD_FALSE;
+	*speed = MTD_ADV_NONE;
+
+	/* first check if speed is forced to one of the speeds not requiring AN to train */
+	ATTEMPT(mtdGetForcedSpeed(devPtr, port, &speedIsForced, &forcedSpeed));
+
+	if (speedIsForced) {
+		/* check if the link is up at the speed it's forced to */
+		ATTEMPT(mtdHwGetPhyRegField(devPtr, port, 3, 0x8008, 14, 2, &cuSpeed));
+		ATTEMPT(mtdHwGetPhyRegField(devPtr, port, 3, 0x8008, 10, 1, &cuLinkStatus));
+
+		switch (forcedSpeed) {
+		case MTD_SPEED_10M_HD_AN_DIS:
+		case MTD_SPEED_10M_FD_AN_DIS:
+		/* might want to add checking the duplex to make sure there
+		 * is no duplex mismatch */
+			if (cuSpeed == MTD_CU_SPEED_10_MBPS) {
+				*speed = forcedSpeed;
+			} else {
+				*speed = MTD_SPEED_MISMATCH;
+			}
+			if (cuLinkStatus) {
+				*linkUp = MTD_TRUE;
+			}
+			break;
+
+		case MTD_SPEED_100M_HD_AN_DIS:
+		case MTD_SPEED_100M_FD_AN_DIS:
+		/* might want to add checking the duplex to make sure there
+		 * is no duplex mismatch */
+			if (cuSpeed == MTD_CU_SPEED_100_MBPS) {
+				*speed = forcedSpeed;
+			} else {
+				*speed = MTD_SPEED_MISMATCH;
+			}
+			if (cuLinkStatus) {
+				*linkUp = MTD_TRUE;
+			}
+			break;
+
+		default:
+			return MTD_FAIL;
+			break;
+		}
+	} else {
+		/* must be going through AN */
+		ATTEMPT(mtdGetAutonegSpeedDuplexResolution(devPtr, port, speed));
+
+		if (*speed != MTD_ADV_NONE) {
+			/* check if the link is up at the speed it's AN to */
+			ATTEMPT(mtdHwGetPhyRegField(devPtr, port, 3, 0x8008, 10, 1, &cuLinkStatus));
+
+			switch (*speed) {
+			case MTD_SPEED_10M_HD:
+			case MTD_SPEED_10M_FD:
+			case MTD_SPEED_100M_HD:
+			case MTD_SPEED_100M_FD:
+			case MTD_SPEED_1GIG_HD:
+			case MTD_SPEED_1GIG_FD:
+			case MTD_SPEED_10GIG_FD:
+			case MTD_SPEED_2P5GIG_FD:
+			case MTD_SPEED_5GIG_FD:
+				if (cuLinkStatus) {
+					*linkUp = MTD_TRUE;
+				}
+				break;
+			default:
+				return MTD_FAIL;
+				break;
+			}
+
+		}
+		/* else link is down, and AN is in progress, */
+	}
+
+	if (*speed == MTD_SPEED_MISMATCH) {
+		return MTD_FAIL;
+	} else {
+		return MTD_OK;
+	}
+}
+
 MTD_STATUS mtdSetPauseAdvertisement(
 	IN MTD_DEV_PTR devPtr,
 	IN MTD_U16 port,

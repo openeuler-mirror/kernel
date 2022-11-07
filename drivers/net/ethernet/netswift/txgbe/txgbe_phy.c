@@ -37,8 +37,6 @@ s32 txgbe_check_reset_blocked(struct txgbe_hw *hw)
 {
 	u32 mmngc;
 
-	DEBUGFUNC("\n");
-
 	mmngc = rd32(hw, TXGBE_MIS_ST);
 	if (mmngc & TXGBE_MIS_ST_MNG_VETO) {
 		ERROR_REPORT1(TXGBE_ERROR_SOFTWARE,
@@ -61,7 +59,6 @@ s32 txgbe_get_phy_id(struct txgbe_hw *hw)
 	u16 phy_id_high = 0;
 	u16 phy_id_low = 0;
 	u8 numport, thisport;
-	DEBUGFUNC("\n");
 
 	status = mtdHwXmdioRead(&hw->phy_dev, hw->phy.addr,
 				TXGBE_MDIO_PMA_PMD_DEV_TYPE,
@@ -95,8 +92,6 @@ enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw)
 {
 	enum txgbe_phy_type phy_type;
 	u16 ext_ability = 0;
-
-	DEBUGFUNC("\n");
 
 	switch (hw->phy.id) {
 	case TN1010_PHY_ID:
@@ -133,9 +128,6 @@ enum txgbe_phy_type txgbe_get_phy_type_from_id(struct txgbe_hw *hw)
 s32 txgbe_reset_phy(struct txgbe_hw *hw)
 {
 	s32 status = 0;
-
-	DEBUGFUNC("\n");
-
 
 	if (status != 0 || hw->phy.type == txgbe_phy_none)
 		goto out;
@@ -208,8 +200,6 @@ s32 txgbe_read_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
 	s32 status;
 	u32 gssr = hw->phy.phy_semaphore_mask;
 
-	DEBUGFUNC("\n");
-
 	if (0 == TCALL(hw, mac.ops.acquire_swfw_sync, gssr)) {
 		status = txgbe_read_phy_reg_mdi(hw, reg_addr, device_type,
 						phy_data);
@@ -272,8 +262,6 @@ s32 txgbe_write_phy_reg(struct txgbe_hw *hw, u32 reg_addr,
 	s32 status;
 	u32 gssr = hw->phy.phy_semaphore_mask;
 
-	DEBUGFUNC("\n");
-
 	if (TCALL(hw, mac.ops.acquire_swfw_sync, gssr) == 0) {
 		status = txgbe_write_phy_reg_mdi(hw, reg_addr, device_type,
 						 phy_data);
@@ -325,31 +313,41 @@ u32 txgbe_setup_phy_link(struct txgbe_hw *hw, u32 __maybe_unused speed_set,
 {
 	u16 speed = MTD_ADV_NONE;
 	MTD_DEV_PTR devptr = &hw->phy_dev;
-	MTD_BOOL anDone = MTD_FALSE;
 	u16 port = hw->phy.addr;
+	int i = 0;
+	MTD_BOOL linkUp = MTD_FALSE;
+	u16 linkSpeed = MTD_ADV_NONE;
 
-	DEBUGFUNC("\n");
-
+	if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10GB_FULL)
+		speed |= MTD_SPEED_10GIG_FD;
+	if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_1GB_FULL)
+		speed |= MTD_SPEED_1GIG_FD;
+	if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_100_FULL)
+		speed |= MTD_SPEED_100M_FD;
+	if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10_FULL)
+		speed |= MTD_SPEED_10M_FD;
 	if (!autoneg_wait_to_complete) {
-		mtdAutonegIsSpeedDuplexResolutionDone(devptr, port, &anDone);
-		if (anDone) {
-			mtdGetAutonegSpeedDuplexResolution(devptr, port, &speed);
+		mtdGetAutonegSpeedDuplexResolution(devptr, port, &linkSpeed);
+		if (linkSpeed & speed) {
+			speed = linkSpeed;
+			goto out;
 		}
-	} else {
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10GB_FULL)
-			speed |= MTD_SPEED_10GIG_FD;
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_1GB_FULL)
-			speed |= MTD_SPEED_1GIG_FD;
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_100_FULL)
-			speed |= MTD_SPEED_100M_FD;
-		if (hw->phy.autoneg_advertised & TXGBE_LINK_SPEED_10_FULL)
-			speed |= MTD_SPEED_10M_FD;
-		mtdEnableSpeeds(devptr, port, speed, MTD_TRUE);
-
-		/* wait autoneg to be done */
-		speed = MTD_ADV_NONE;
 	}
 
+	mtdEnableSpeeds(devptr, port, speed, MTD_TRUE);
+	msleep(10);
+
+	/* wait autoneg to be done */
+	speed = MTD_ADV_NONE;
+	for (i = 0; i < 300; i++) {
+		mtdIsBaseTUp(devptr, port ,&speed, &linkUp);
+		if (linkUp) {
+			break;
+		}
+		msleep(10);
+	}
+
+out:
 	switch (speed) {
 	case MTD_SPEED_10GIG_FD:
 		return TXGBE_LINK_SPEED_10GB_FULL;
@@ -374,9 +372,6 @@ u32 txgbe_setup_phy_link_speed(struct txgbe_hw *hw,
 				       u32 speed,
 				       bool autoneg_wait_to_complete)
 {
-
-	DEBUGFUNC("\n");
-
 	/*
 	 * Clear autoneg_advertised and set new values based on input link
 	 * speed.
@@ -414,9 +409,6 @@ s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 {
 	s32 status;
 	u16 speed_ability;
-
-	DEBUGFUNC("\n");
-
 	*speed = 0;
 	*autoneg = true;
 
@@ -439,6 +431,24 @@ s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 }
 
 /**
+ *  txgbe_get_phy_firmware_version - Gets the PHY Firmware Version
+ *  @hw: pointer to hardware structure
+ *  @firmware_version: pointer to the PHY Firmware Version
+ **/
+s32 txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
+					  u16 *firmware_version)
+{
+	s32 status;
+	u8 major, minor, inc, test;
+
+	status = mtdGetFirmwareVersion(&hw->phy_dev, hw->phy.addr,
+		&major, &minor, &inc, &test);
+	if (status == 0)
+		*firmware_version = (major << 8) | minor;
+	return status;
+}
+
+/**
  *  txgbe_identify_module - Identifies module type
  *  @hw: pointer to hardware structure
  *
@@ -447,8 +457,6 @@ s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 s32 txgbe_identify_module(struct txgbe_hw *hw)
 {
 	s32 status = TXGBE_ERR_SFP_NOT_PRESENT;
-
-	DEBUGFUNC("\n");
 
 	switch (TCALL(hw, mac.ops.get_media_type)) {
 	case txgbe_media_type_fiber:
@@ -481,8 +489,6 @@ s32 txgbe_identify_sfp_module(struct txgbe_hw *hw)
 	u8 oui_bytes[3] = {0, 0, 0};
 	u8 cable_tech = 0;
 	u8 cable_spec = 0;
-
-	DEBUGFUNC("\n");
 
 	if (TCALL(hw, mac.ops.get_media_type) != txgbe_media_type_fiber) {
 		hw->phy.sfp_type = txgbe_sfp_type_not_present;
@@ -754,8 +760,6 @@ out:
 s32 txgbe_read_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 				  u8 *eeprom_data)
 {
-	DEBUGFUNC("\n");
-
 	return TCALL(hw, phy.ops.read_i2c_byte, byte_offset,
 					 TXGBE_I2C_EEPROM_DEV_ADDR,
 					 eeprom_data);
@@ -788,8 +792,6 @@ s32 txgbe_read_i2c_sff8472(struct txgbe_hw *hw, u8 byte_offset,
 s32 txgbe_write_i2c_eeprom(struct txgbe_hw *hw, u8 byte_offset,
 				   u8 eeprom_data)
 {
-	DEBUGFUNC("\n");
-
 	return TCALL(hw, phy.ops.write_i2c_byte, byte_offset,
 					  TXGBE_I2C_EEPROM_DEV_ADDR,
 					  eeprom_data);
@@ -943,8 +945,6 @@ s32 txgbe_tn_check_overtemp(struct txgbe_hw *hw)
 {
 	s32 status = 0;
 	u32 ts_state;
-
-	DEBUGFUNC("\n");
 
 	/* Check that the LASI temp alarm status was triggered */
 	ts_state = rd32(hw, TXGBE_TS_ALARM_ST);

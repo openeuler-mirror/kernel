@@ -128,6 +128,8 @@
 #define TXGBE_WOL_SUP  0x4000
 #define TXGBE_WOL_MASK  0x4000
 
+#define TXGBE_DEV_MASK                          0xf0
+
 /* Combined interface*/
 #define TXGBE_ID_SFI_XAUI						0x50
 
@@ -355,6 +357,7 @@
 #define TXGBE_MIS_PWR                   0x10000
 #define TXGBE_MIS_CTL                   0x10004
 #define TXGBE_MIS_PF_SM                 0x10008
+#define TXGBE_MIS_PRB_CTL               0x10010
 #define TXGBE_MIS_ST                    0x10028
 #define TXGBE_MIS_SWSM                  0x1002C
 #define TXGBE_MIS_RST_ST                0x10030
@@ -392,6 +395,8 @@
 #define TXGBE_MIS_RST_ST_RST_INI_SHIFT  8
 #define TXGBE_MIS_RST_ST_RST_TIM        0x000000FFU
 #define TXGBE_MIS_PF_SM_SM              1
+#define TXGBE_MIS_PRB_CTL_LAN0_UP                0x2
+#define TXGBE_MIS_PRB_CTL_LAN1_UP                0x1
 
 /* Sensors for PVT(Process Voltage Temperature) */
 #define TXGBE_TS_CTL                    0x10300
@@ -2262,6 +2267,12 @@ union txgbe_atr_hash_dword {
 #define FW_FLASH_UPGRADE_WRITE_CMD      0xE4
 #define FW_FLASH_UPGRADE_VERIFY_CMD     0xE5
 #define FW_FLASH_UPGRADE_VERIFY_LEN     0x4
+#define FW_DW_OPEN_NOTIFY               0xE9
+#define FW_DW_CLOSE_NOTIFY              0xEA
+
+#define TXGBE_CHECKSUM_CAP_ST_PASS      0x80658383
+#define TXGBE_CHECKSUM_CAP_ST_FAIL      0x70657376
+
 
 /* Host Interface Command Structures */
 struct txgbe_hic_hdr {
@@ -3028,8 +3039,9 @@ struct txgbe_hw {
 #endif
 	MTD_DEV phy_dev;
 	enum txgbe_link_status link_status;
-	u16 subsystem_id;
-	u16 tpid[8];
+	u16 tpid[8];	
+	u16 oem_ssid;
+	u16 oem_svid;
 };
 
 #define TCALL(hw, func, args...) (((hw)->func != NULL) \

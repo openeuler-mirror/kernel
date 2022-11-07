@@ -67,6 +67,10 @@
 #define CL72_KRTR_PRBS_MODE_EN 0x2fff			/*deepinsw : 512	default to 256*/
 #endif
 
+#ifndef TXGBE_STATIC_ITR
+#define TXGBE_STATIC_ITR 1		/* static itr configure */
+#endif
+
 #ifndef SFI_SET
 #define SFI_SET 0
 #define SFI_MAIN 24
@@ -95,7 +99,6 @@
 #define KX_POST 16
 #endif
 
-
 #ifndef KX4_TXRX_PIN
 #define KX4_TXRX_PIN 0			/*rx : 0xf  tx : 0xf0 */
 #endif
@@ -118,8 +121,8 @@
 #define KR_CL72_TRAINING 1
 #endif
 
-#ifndef KR_REINITED
-#define KR_REINITED 1
+#ifndef KR_NOREINITED
+#define KR_NOREINITED 0
 #endif
 
 #ifndef KR_AN73_PRESET
@@ -140,17 +143,17 @@
 #define TXGBE_DEFAULT_TX_WORK           DEFAULT_TX_WORK
 #else
 #define TXGBE_DEFAULT_TXD               512
-#define TXGBE_DEFAULT_TX_WORK   256
+#define TXGBE_DEFAULT_TX_WORK           256
 #endif
 #define TXGBE_MAX_TXD                   8192
 #define TXGBE_MIN_TXD                   128
 
 #if (PAGE_SIZE < 8192)
 #define TXGBE_DEFAULT_RXD               512
-#define TXGBE_DEFAULT_RX_WORK   256
+#define TXGBE_DEFAULT_RX_WORK           256
 #else
 #define TXGBE_DEFAULT_RXD               256
-#define TXGBE_DEFAULT_RX_WORK   128
+#define TXGBE_DEFAULT_RX_WORK           128
 #endif
 
 #define TXGBE_MAX_RXD                   8192
@@ -474,6 +477,7 @@ enum txgbe_ring_f_enum {
 
 #define MAX_RX_QUEUES   (TXGBE_MAX_FDIR_INDICES + 1)
 #define MAX_TX_QUEUES   (TXGBE_MAX_FDIR_INDICES + 1)
+#define MAX_XDP_QUEUES  (TXGBE_MAX_FDIR_INDICES + 1)
 
 #define TXGBE_MAX_L2A_QUEUES    4
 #define TXGBE_BAD_L2A_QUEUE     3
@@ -552,6 +556,26 @@ struct txgbe_q_vector {
 	struct txgbe_ring ring[0] ____cacheline_internodealigned_in_smp;
 };
 
+#ifdef CONFIG_TXGBE_HWMON
+
+#define TXGBE_HWMON_TYPE_TEMP           0
+#define TXGBE_HWMON_TYPE_ALARMTHRESH    1
+#define TXGBE_HWMON_TYPE_DALARMTHRESH   2
+
+struct hwmon_attr {
+	struct device_attribute dev_attr;
+	struct txgbe_hw *hw;
+	struct txgbe_thermal_diode_data *sensor;
+	char name[19];
+};
+
+struct hwmon_buff {
+	struct device *device;
+	struct hwmon_attr *hwmon_list;
+	unsigned int n_hwmon;
+};
+#endif /* CONFIG_TXGBE_HWMON */
+
 /*
  * microsecond values for various ITR rates shifted by 2 to fit itr register
  * with the first 3 bits reserved 0
@@ -602,6 +626,13 @@ struct txgbe_mac_addr {
 #define TXGBE_MAC_STATE_DEFAULT         0x1
 #define TXGBE_MAC_STATE_MODIFIED        0x2
 #define TXGBE_MAC_STATE_IN_USE          0x4
+
+#ifdef CONFIG_TXGBE_PROCFS
+struct txgbe_therm_proc_data {
+	struct txgbe_hw *hw;
+	struct txgbe_thermal_diode_data *sensor_data;
+};
+#endif
 
 /*
  * Only for array allocations in our adapter struct.
@@ -718,16 +749,17 @@ struct txgbe_adapter {
 	 */
 	u32 flags;
 	u32 flags2;
-	u32 vf_mode;
-	u32 backplane_an;
-	u32 an73;
-	u32 an37;
-	u32 ffe_main;
-	u32 ffe_pre;
-	u32 ffe_post;
-	u32 ffe_set;
-	u32 backplane_mode;
-	u32 backplane_auto;
+	u8  an73_mode;
+	u8  vf_mode;
+	u8  backplane_an;
+	u8  an73;
+	u8  an37;
+	u16 ffe_main;
+	u16 ffe_pre;
+	u16 ffe_post;
+	u8  ffe_set;
+	u8  backplane_mode;
+	u8  backplane_auto;
 
 	bool cloud_mode;
 
@@ -743,6 +775,10 @@ struct txgbe_adapter {
 
 	unsigned int num_vmdqs; /* does not include pools assigned to VFs */
 	unsigned int queues_per_pool;
+
+	/* XDP */
+	int num_xdp_queues;
+	struct txgbe_ring *xdp_ring[MAX_XDP_QUEUES];
 
 	/* TX */
 	struct txgbe_ring *tx_ring[MAX_TX_QUEUES] ____cacheline_aligned_in_smp;
@@ -798,6 +834,9 @@ struct txgbe_adapter {
 
 	struct timer_list service_timer;
 	struct work_struct service_task;
+#ifdef CONFIG_TXGBE_POLL_LINK_STATUS
+	struct timer_list link_check_timer;
+#endif
 	struct hlist_head fdir_filter_list;
 	unsigned long fdir_overflow; /* number of times ATR was backed off */
 	union txgbe_atr_input fdir_mask;
@@ -845,6 +884,23 @@ struct txgbe_adapter {
 	__le16 vxlan_port;
 	__le16 geneve_port;
 
+#ifdef CONFIG_TXGBE_SYSFS
+#ifdef CONFIG_TXGBE_HWMON
+	struct hwmon_buff txgbe_hwmon_buff;
+#endif /* CONFIG_TXGBE_HWMON */
+#else /* CONFIG_TXGBE_SYSFS */
+#ifdef CONFIG_TXGBE_PROCFS
+	struct proc_dir_entry *eth_dir;
+	struct proc_dir_entry *info_dir;
+	u64 old_lsc;
+	struct proc_dir_entry *therm_dir;
+	struct txgbe_therm_proc_data therm_data;
+#endif /* CONFIG_TXGBE_PROCFS */
+#endif /* CONFIG_TXGBE_SYSFS */
+
+#ifdef CONFIG_TXGBE_DEBUG_FS
+	struct dentry *txgbe_dbg_adapter;
+#endif /*CONFIG_TXGBE_DEBUG_FS*/
 	u8 default_up;
 
 	unsigned long fwd_bitmask; /* bitmask indicating in use pools */
@@ -914,6 +970,17 @@ struct txgbe_cb {
 
 /* ESX txgbe CIM IOCTL definition */
 
+#ifdef CONFIG_TXGBE_SYSFS
+void txgbe_sysfs_exit(struct txgbe_adapter *adapter);
+int txgbe_sysfs_init(struct txgbe_adapter *adapter);
+#endif /* CONFIG_TXGBE_SYSFS */
+#ifdef CONFIG_TXGBE_PROCFS
+void txgbe_procfs_exit(struct txgbe_adapter *adapter);
+int txgbe_procfs_init(struct txgbe_adapter *adapter);
+int txgbe_procfs_topdir_init(void);
+void txgbe_procfs_topdir_exit(void);
+#endif /* CONFIG_TXGBE_PROCFS */
+
 extern struct dcbnl_rtnl_ops dcbnl_ops;
 int txgbe_copy_dcb_cfg(struct txgbe_adapter *adapter, int tc_max);
 
@@ -974,6 +1041,37 @@ void txgbe_disable_rx_queue(struct txgbe_adapter *adapter,
 void txgbe_vlan_strip_enable(struct txgbe_adapter *adapter);
 void txgbe_vlan_strip_disable(struct txgbe_adapter *adapter);
 
+#if IS_ENABLED(CONFIG_FCOE)
+void txgbe_configure_fcoe(struct txgbe_adapter *adapter);
+int txgbe_fso(struct txgbe_ring *tx_ring,
+		     struct txgbe_tx_buffer *first,
+		     u8 *hdr_len);
+int txgbe_fcoe_ddp(struct txgbe_adapter *adapter,
+			  union txgbe_rx_desc *rx_desc,
+			  struct sk_buff *skb);
+int txgbe_fcoe_ddp_get(struct net_device *netdev, u16 xid,
+			      struct scatterlist *sgl, unsigned int sgc);
+int txgbe_fcoe_ddp_target(struct net_device *netdev, u16 xid,
+				 struct scatterlist *sgl, unsigned int sgc);
+int txgbe_fcoe_ddp_put(struct net_device *netdev, u16 xid);
+int txgbe_setup_fcoe_ddp_resources(struct txgbe_adapter *adapter);
+void txgbe_free_fcoe_ddp_resources(struct txgbe_adapter *adapter);
+int txgbe_fcoe_enable(struct net_device *netdev);
+int txgbe_fcoe_disable(struct net_device *netdev);
+#if IS_ENABLED(CONFIG_DCB)
+u8 txgbe_fcoe_getapp(struct net_device *netdev);
+u8 txgbe_fcoe_setapp(struct txgbe_adapter *adapter, u8 up);
+#endif /* CONFIG_DCB */
+u8 txgbe_fcoe_get_tc(struct txgbe_adapter *adapter);
+int txgbe_fcoe_get_wwn(struct net_device *netdev, u64 *wwn, int type);
+#endif /* CONFIG_FCOE */
+
+#ifdef CONFIG_TXGBE_DEBUG_FS
+void txgbe_dbg_adapter_init(struct txgbe_adapter *adapter);
+void txgbe_dbg_adapter_exit(struct txgbe_adapter *adapter);
+void txgbe_dbg_init(void);
+void txgbe_dbg_exit(void);
+#endif /* CONFIG_TXGBE_DEBUG_FS */
 void txgbe_dump(struct txgbe_adapter *adapter);
 
 static inline struct netdev_queue *txring_txq(const struct txgbe_ring *ring)

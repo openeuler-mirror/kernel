@@ -150,6 +150,9 @@ s32 txgbe_get_copper_link_capabilities(struct txgbe_hw *hw,
 					       bool *autoneg);
 s32 txgbe_check_reset_blocked(struct txgbe_hw *hw);
 
+s32 txgbe_get_phy_firmware_version(struct txgbe_hw *hw,
+					   u16 *firmware_version);
+
 s32 txgbe_identify_module(struct txgbe_hw *hw);
 s32 txgbe_identify_sfp_module(struct txgbe_hw *hw);
 s32 txgbe_tn_check_overtemp(struct txgbe_hw *hw);

@@ -1109,6 +1109,14 @@ MTD_STATUS mtdGetAutonegSpeedDuplexResolution
 	OUT MTD_U16 *speedResolution
 );
 
+MTD_STATUS mtdIsBaseTUp
+(
+	IN MTD_DEV_PTR devPtr,
+	IN MTD_U16 port,
+	OUT MTD_U16 *speed,
+	OUT MTD_BOOL *linkUp
+);
+
 MTD_STATUS mtdAutonegIsSpeedDuplexResolutionDone
 (
 	IN MTD_DEV_PTR devPtr,
