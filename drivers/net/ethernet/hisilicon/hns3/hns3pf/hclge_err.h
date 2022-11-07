@@ -16,8 +16,10 @@
 #define HCLGE_RAS_PF_OTHER_INT_STS_REG   0x20B00
 #define HCLGE_RAS_REG_NFE_MASK   0xFF00
 #define HCLGE_RAS_REG_ROCEE_ERR_MASK   0x3000000
+#define HCLGE_RAS_REG_ROH_ERR_MASK   0x18000000
 #define HCLGE_RAS_REG_ERR_MASK \
-	(HCLGE_RAS_REG_NFE_MASK | HCLGE_RAS_REG_ROCEE_ERR_MASK)
+	(HCLGE_RAS_REG_NFE_MASK | HCLGE_RAS_REG_ROCEE_ERR_MASK | \
+	 HCLGE_RAS_REG_ROH_ERR_MASK)
 
 #define HCLGE_VECTOR0_REG_MSIX_MASK   0x1FF00
 
@@ -164,6 +166,10 @@ enum hclge_mod_name_list {
 	MODULE_ROCEE_QMM	= 48,
 	MODULE_ROCEE_LSAN	= 49,
 	/* add new MODULE NAME for RoCEE here in order */
+	MODULE_ROH_MAC_IF	= 80,
+	MODULE_ROH_HDLC		= 81,
+	MODULE_ROH_HPCS		= 82,
+	/* add new MODULE NAME for ROH here in order */
 };
 
 enum hclge_err_type_list {
@@ -187,6 +193,8 @@ enum hclge_err_type_list {
 	ROCEE_OVF_ERR		= 41,
 	ROCEE_BUS_ERR		= 42,
 	/* add new ERROR TYPE for ROCEE here in order */
+	ROH_ERR			= 80,
+	/* add new ERROR TYPE for ROH here in order */
 };
 
 struct hclge_hw_blk {

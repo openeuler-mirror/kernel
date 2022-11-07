@@ -1699,6 +1699,15 @@ static const struct hclge_hw_module_id hclge_hw_module_id_st[] = {
 	}, {
 		.module_id = MODULE_ROCEE_LSAN,
 		.msg = "MODULE_ROCEE_LSAN"
+	}, {
+		.module_id = MODULE_ROH_MAC_IF,
+		.msg = "MODULE_ROH_MAC_IF"
+	}, {
+		.module_id = MODULE_ROH_HDLC,
+		.msg = "MODULE_ROH_HDLC"
+	}, {
+		.module_id = MODULE_ROH_HPCS,
+		.msg = "MODULE_ROH_HPCS"
 	}
 };
 
@@ -1759,7 +1768,10 @@ static const struct hclge_hw_type_id hclge_hw_type_id_st[] = {
 	}, {
 		.type_id = ROCEE_BUS_ERR,
 		.msg = "rocee_bus_error"
-	},
+	}, {
+		.type_id = ROH_ERR,
+		.msg = "roh_error"
+	}
 };
 
 static void hclge_log_error(struct device *dev, char *reg,
