@@ -46,12 +46,12 @@ int ftrace_update_ftrace_func(ftrace_func_t func)
 
 	current_tracer = (unsigned long)func;
 	pc = (unsigned long)&ftrace_call;
-	new = SW64_CALL(R26, R27, 1);
+	new = SW64_CALL(R26, R27, 0);
 	ret = ftrace_modify_code(pc, new);
 
 	if (!ret) {
 		pc = (unsigned long)&ftrace_regs_call;
-		new = SW64_CALL(R26, R27, 1);
+		new = SW64_CALL(R26, R27, 0);
 		ret = ftrace_modify_code(pc, new);
 	}
 
@@ -75,7 +75,7 @@ int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 	insn[0] = SW64_NOP;
 	/* ldl r28,(ftrace_addr_offset)(r8) */
 	insn[1] = (0x23U << 26) | (28U << 21) | (8U << 16) | offset;
-	insn[2] = SW64_CALL(R28, R28, 1);
+	insn[2] = SW64_CALL(R28, R28, 0);
 
 	/* replace the 3 mcount instructions at once */
 	return copy_to_kernel_nofault((void *)pc, insn, 3 * SW64_INSN_SIZE);
