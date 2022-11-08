@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2211.1.0
+%global hulkrelease 2211.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0175
+Release: %{hulkrelease}.0176
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,28 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 08 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.2.0.0176
+- net: tun: fix bugs for oversize packet when napi frags enabled
+- tcp: fix a signed-integer-overflow bug in tcp_add_backlog()
+- tcp: prohibit TCP_REPAIR_OPTIONS if data was already sent
+- ext4: fix bad checksum after online resize
+- blktrace: remove unnessary stop block trace in 'blk_trace_shutdown'
+- blktrace: fix possible memleak in '__blk_trace_remove'
+- blktrace: introduce 'blk_trace_{start,stop}' helper
+- kabi: net: fix kabi broken in sk_buff
+- io_uring/af_unix: defer registered files gc to io_uring release
+- nbd: refactor size updates
+- nbd: move the task_recv check into nbd_size_update
+- nbd: remove the call to set_blocksize
+- wifi: Fix potential buffer overflow in 'brcmf_fweh_event_worker'
+- fs: fix UAF/GPF bug in nilfs_mdt_destroy
+- dm: Fix UAF in run_timer_softirq()
+- Bluetooth: sco: Fix lock_sock() blockage by memcpy_from_msg()
+- ext4: record error information when insert extent failed in 'ext4_split_extent_at'
+- livepatch/core: Fix livepatch/state leak on error path
+- !130 [openEuler-1.0-LTS] update pmu for Zhaoxin CPUs
+- update pmu for Zhaoxin CPUs
 
 * Wed Nov 02 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.1.0.0175
 - uacce: add the reference counter protection
