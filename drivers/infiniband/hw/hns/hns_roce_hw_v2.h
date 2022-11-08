@@ -252,6 +252,9 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_EXT_CFG				= 0x8512,
 	HNS_ROCE_QUERY_RAM_ECC				= 0x8513,
 	HNS_SWITCH_PARAMETER_CFG			= 0x1033,
+	HNS_ROCE_OPC_SET_BOND_INFO			= 0x8601,
+	HNS_ROCE_OPC_CLEAR_BOND_INFO			= 0x8602,
+	HNS_ROCE_OPC_CHANGE_ACTIVE_PORT			= 0x8603,
 };
 
 enum {
@@ -1464,11 +1467,25 @@ struct hns_roce_sccc_clr_done {
 	__le32 rsv[5];
 };
 
+struct hns_roce_bond_info {
+	__le32 bond_id;
+	__le32 bond_mode;
+	__le32 active_slave_cnt;
+	__le32 active_slave_mask;
+	__le32 slave_mask;
+	__le32 hash_policy;
+};
+
+int hns_roce_hw_v2_init_instance(struct hnae3_handle *handle);
+void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle, bool reset);
+
 int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata);
 
 int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 				  struct hns_roce_qp *hr_qp,
 				  struct ib_udata *udata);
+int hns_roce_cmd_bond(struct hns_roce_dev *hr_dev,
+		      enum hns_roce_bond_cmd_type bond_type);
 
 static inline void hns_roce_write64(struct hns_roce_dev *hr_dev, __le32 val[2],
 				    void __iomem *dest)

@@ -37,9 +37,12 @@
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_cache.h>
+
+#include "hnae3.h"
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hem.h"
+#include "hns_roce_hw_v2.h"
 
 static int hns_roce_set_mac(struct hns_roce_dev *hr_dev, u32 port,
 			    const u8 *addr)
@@ -259,7 +262,9 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
-	net_dev = hr_dev->iboe.netdevs[port];
+	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
+	if (!net_dev)
+		net_dev = hr_dev->iboe.netdevs[port];
 	if (!net_dev) {
 		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 		dev_err(dev, "Find netdev %u failed!\n", port);
@@ -534,6 +539,9 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND)
+		hns_roce_cleanup_bond(hr_dev);
+
 	hr_dev->active = false;
 	unregister_netdevice_notifier(&iboe->nb);
 	ib_unregister_device(&hr_dev->ib_dev);
@@ -711,7 +719,12 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 			return ret;
 	}
 	dma_set_max_seg_size(dev, UINT_MAX);
-	ret = ib_register_device(ib_dev, "hns_%d", dev);
+
+	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) &&
+	    (hr_dev->hw->bond_is_active(hr_dev)))
+		ret = ib_register_device(ib_dev, "hns_bond_%d", dev);
+	else
+		ret = ib_register_device(ib_dev, "hns_%d", dev);
 	if (ret) {
 		dev_err(dev, "ib_register_device failed!\n");
 		return ret;
@@ -730,8 +743,15 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		goto error_failed_setup_mtu_mac;
 	}
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
+		ret = hr_dev->hw->bond_init(hr_dev);
+		if (ret)
+			dev_err(dev, "roce bond init failed, ret = %d\n", ret);
+	}
+
 	hr_dev->active = true;
-	return 0;
+
+	return ret;
 
 error_failed_setup_mtu_mac:
 	ib_unregister_device(ib_dev);
