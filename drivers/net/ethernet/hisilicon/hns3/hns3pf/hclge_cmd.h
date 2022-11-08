@@ -180,7 +180,8 @@ struct hclge_pf_res_cmd {
 	__le16 tx_buf_size;
 	__le16 dv_buf_size;
 	__le16 ext_tqp_num;
-	u8 rsv[6];
+	__le16 pf_intr_vector_number_roh;
+	u8 rsv[4];
 };
 
 #define HCLGE_CFG_OFFSET_S	0
@@ -407,6 +408,13 @@ struct hclge_mac_vlan_tbl_entry_cmd {
 	__le16  egress_port;
 	__le16  egress_queue;
 	u8      rsv2[6];
+};
+
+struct hclge_check_mac_addr_cmd {
+	u8	response;
+	u8	mac_addr[ETH_ALEN];
+	u8	vf_id;
+	u8	rsv[16];
 };
 
 #define HCLGE_UMV_SPC_ALC_B	0

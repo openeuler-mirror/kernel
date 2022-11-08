@@ -368,6 +368,16 @@ static int hclge_dbg_dump_mac_speed_duplex(struct hclge_dev *hdev, char *buf,
 	return 0;
 }
 
+static void hclge_dbg_dump_mac_type(struct hclge_dev *hdev, char *buf, int len,
+				    int *pos)
+{
+	struct hclge_vport *vport = &hdev->vport[0];
+	struct hnae3_handle *handle = &vport->nic;
+
+	*pos += scnprintf(buf + *pos, len - *pos, "type: %s\n",
+			  handle->mac_type ? "ROH" : "Ethernet");
+}
+
 static int hclge_dbg_dump_mac(struct hclge_dev *hdev, char *buf, int len)
 {
 	int pos = 0;
@@ -381,7 +391,13 @@ static int hclge_dbg_dump_mac(struct hclge_dev *hdev, char *buf, int len)
 	if (ret)
 		return ret;
 
-	return hclge_dbg_dump_mac_speed_duplex(hdev, buf, len, &pos);
+	ret = hclge_dbg_dump_mac_speed_duplex(hdev, buf, len, &pos);
+	if (ret)
+		return ret;
+
+	hclge_dbg_dump_mac_type(hdev, buf, len, &pos);
+
+	return 0;
 }
 
 static int hclge_dbg_dump_dcb_qset(struct hclge_dev *hdev, char *buf, int len,
@@ -1740,6 +1756,8 @@ static int hclge_dbg_dump_interrupt(struct hclge_dev *hdev, char *buf, int len)
 			 hdev->num_nic_msi);
 	pos += scnprintf(buf + pos, len - pos, "num_roce_msi: %u\n",
 			 hdev->num_roce_msi);
+	pos += scnprintf(buf + pos, len - pos, "num_roh_msi: %u\n",
+			 hdev->num_roh_msi);
 	pos += scnprintf(buf + pos, len - pos, "num_msi_used: %u\n",
 			 hdev->num_msi_used);
 	pos += scnprintf(buf + pos, len - pos, "num_msi_left: %u\n",

@@ -84,7 +84,10 @@ static const struct pci_device_id ae_algo_pci_tbl[] = {
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_50GE_RDMA), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_50GE_RDMA_MACSEC), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_RDMA_MACSEC), 0},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_RDMA), 0},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_ROH), 0},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_400G_ROH), 0},
 	/* required last entry */
 	{0, }
 };
@@ -920,11 +923,14 @@ static int hclge_query_pf_resource(struct hclge_dev *hdev)
 	if (hnae3_dev_roce_supported(hdev)) {
 		hdev->num_roce_msi =
 			le16_to_cpu(req->pf_intr_vector_number_roce);
+		hdev->num_roh_msi =
+			le16_to_cpu(req->pf_intr_vector_number_roh);
 
 		/* PF should have NIC vectors and Roce vectors,
 		 * NIC vectors are queued before Roce vectors.
 		 */
-		hdev->num_msi = hdev->num_nic_msi + hdev->num_roce_msi;
+		hdev->num_msi = hdev->num_nic_msi + hdev->num_roce_msi +
+				hdev->num_roh_msi;
 	} else {
 		hdev->num_msi = hdev->num_nic_msi;
 	}
@@ -1514,6 +1520,20 @@ static int hclge_query_dev_specs(struct hclge_dev *hdev)
 	hclge_check_dev_specs(hdev);
 
 	return 0;
+}
+
+static void hclge_mac_type_init(struct hclge_dev *hdev)
+{
+	struct hclge_vport *vport = &hdev->vport[0];
+	struct hnae3_handle *handle = &vport->nic;
+	u32 dev_id = hdev->pdev->device;
+
+	if (dev_id == HNAE3_DEV_ID_100G_ROH ||
+	    dev_id == HNAE3_DEV_ID_200G_ROH ||
+	    dev_id == HNAE3_DEV_ID_400G_ROH)
+		handle->mac_type = HNAE3_MAC_ROH;
+	else
+		handle->mac_type = HNAE3_MAC_ETH;
 }
 
 static int hclge_get_cap(struct hclge_dev *hdev)
@@ -2544,6 +2564,25 @@ static int hclge_init_roce_base_info(struct hclge_vport *vport)
 	return 0;
 }
 
+static int hclge_init_roh_base_info(struct hclge_vport *vport)
+{
+	struct hnae3_handle *roh = &vport->roh;
+	struct hnae3_handle *nic = &vport->nic;
+	struct hclge_dev *hdev = vport->back;
+
+	if (hdev->num_msi < hdev->num_nic_msi + hdev->num_roce_msi +
+		hdev->num_roh_msi)
+		return -EINVAL;
+
+	roh->rohinfo.netdev = nic->kinfo.netdev;
+	roh->rohinfo.roh_io_base = hdev->hw.hw.io_base;
+
+	roh->pdev = nic->pdev;
+	roh->ae_algo = nic->ae_algo;
+
+	return 0;
+}
+
 static int hclge_init_msi(struct hclge_dev *hdev)
 {
 	struct pci_dev *pdev = hdev->pdev;
@@ -2823,11 +2862,12 @@ static void hclge_get_fec(struct hnae3_handle *handle, u8 *fec_ability,
 	if (fec_mode)
 		*fec_mode = mac->fec_mode;
 }
-
 static int hclge_mac_init(struct hclge_dev *hdev)
 {
 	struct hclge_mac *mac = &hdev->hw.mac;
 	int ret;
+
+	hclge_mac_type_init(hdev);
 
 	hdev->support_sfp_query = true;
 	hdev->hw.mac.duplex = HCLGE_MAC_FULL;
@@ -3674,6 +3714,28 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 	return ret;
 }
 
+static int hclge_notify_roh_client(struct hclge_dev *hdev,
+				   enum hnae3_reset_notify_type type)
+{
+	struct hnae3_handle *handle = &hdev->vport[0].roh;
+	struct hnae3_client *client = hdev->roh_client;
+	int ret;
+
+	if (!test_bit(HCLGE_STATE_ROH_REGISTERED, &hdev->state) || !client)
+		return 0;
+
+	if (!client->ops->reset_notify)
+		return -EOPNOTSUPP;
+
+	ret = client->ops->reset_notify(handle, type);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"failed to notify roh client type %d, ret = %d\n",
+			type, ret);
+
+	return ret;
+}
+
 static int hclge_reset_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_WATI_MS	100
@@ -4194,6 +4256,10 @@ static int hclge_reset_prepare(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_roh_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 	rtnl_unlock();
@@ -4213,6 +4279,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_roh_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_reset_stack(hdev);
 	rtnl_unlock();
@@ -4223,6 +4293,14 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
 	/* ignore RoCE notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
+	 * times
+	 */
+	if (ret &&
+	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
+		return ret;
+
+	ret = hclge_notify_roh_client(hdev, HNAE3_INIT_CLIENT);
+	/* ignore ROH notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
 	 * times
 	 */
 	if (ret &&
@@ -4240,6 +4318,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 		return ret;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclge_notify_roh_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
 
@@ -4560,6 +4642,8 @@ struct hclge_vport *hclge_get_vport(struct hnae3_handle *handle)
 		return container_of(handle, struct hclge_vport, nic);
 	else if (handle->client->type == HNAE3_CLIENT_ROCE)
 		return container_of(handle, struct hclge_vport, roce);
+	else if (handle->client->type == HNAE3_CLIENT_ROH)
+		return container_of(handle, struct hclge_vport, roh);
 	else
 		return container_of(handle, struct hclge_vport, nic);
 }
@@ -9017,6 +9101,35 @@ static int hclge_get_mac_ethertype_cmd_status(struct hclge_dev *hdev,
 	return return_status;
 }
 
+int hclge_check_mac_addr_valid(struct hclge_dev *hdev, u8 vf,
+			       const u8 *mac_addr)
+{
+	char format_mac_addr[HNAE3_FORMAT_MAC_ADDR_LEN];
+	struct hclge_check_mac_addr_cmd *req;
+	struct hclge_desc desc;
+	int ret;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MAC_ADDR_CHECK, false);
+	req = (struct hclge_check_mac_addr_cmd *)desc.data;
+	ether_addr_copy(req->mac_addr, mac_addr);
+	req->vf_id = vf;
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "failed to check function %u mac addr valid, ret = %d\n",
+			vf, ret);
+		return ret;
+	}
+
+	if (req->response) {
+		hnae3_format_mac_addr(format_mac_addr, mac_addr);
+		dev_err(&hdev->pdev->dev, "invalid function %u mac addr: %s\n",
+			vf, format_mac_addr);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int hclge_set_vf_mac(struct hnae3_handle *handle, int vf,
 			    u8 *mac_addr)
 {
@@ -9169,6 +9282,12 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 			"change uc mac err! invalid mac: %s.\n",
 			 format_mac_addr);
 		return -EINVAL;
+	}
+
+	if (hnae3_check_roh_mac_type(handle)) {
+		ret = hclge_check_mac_addr_valid(hdev, 0, new_addr);
+		if (ret)
+			return ret;
 	}
 
 	ret = hclge_pause_addr_cfg(hdev, new_addr);
@@ -11050,6 +11169,47 @@ init_roce_err:
 	return ret;
 }
 
+static int hclge_init_roh_client_instance(struct hnae3_ae_dev *ae_dev,
+					  struct hclge_vport *vport)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	struct hnae3_client *client;
+	int rst_cnt;
+	int ret;
+
+	if (!hdev->roh_client || !hdev->nic_client)
+		return 0;
+
+	client = hdev->roh_client;
+	ret = hclge_init_roh_base_info(vport);
+	if (ret)
+		return ret;
+
+	rst_cnt = hdev->rst_stats.reset_cnt;
+	ret = client->ops->init_instance(&vport->roh);
+	if (ret)
+		return ret;
+
+	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
+	    rst_cnt != hdev->rst_stats.reset_cnt) {
+		ret = -EBUSY;
+		goto init_roh_err;
+	}
+
+	set_bit(HCLGE_STATE_ROH_REGISTERED, &hdev->state);
+	hnae3_set_client_init_flag(client, ae_dev, 1);
+
+	return 0;
+
+init_roh_err:
+	while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		msleep(HCLGE_WAIT_RESET_DONE);
+
+	hdev->roh_client->ops->uninit_instance(&vport->roh, 0);
+
+	return ret;
+}
+
 static int hclge_init_client_instance(struct hnae3_client *client,
 				      struct hnae3_ae_dev *ae_dev)
 {
@@ -11064,6 +11224,14 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 		ret = hclge_init_nic_client_instance(ae_dev, vport);
 		if (ret)
 			goto clear_nic;
+
+		ret = hclge_init_roh_client_instance(ae_dev, vport);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"failed to init roh client, ret = %d\n", ret);
+			hdev->roh_client = NULL;
+			vport->roh.client = NULL;
+		}
 
 		ret = hclge_init_roce_client_instance(ae_dev, vport);
 		if (ret)
@@ -11081,6 +11249,15 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 			goto clear_roce;
 
 		break;
+	case HNAE3_CLIENT_ROH:
+		hdev->roh_client = client;
+		vport->roh.client = client;
+
+		ret = hclge_init_roh_client_instance(ae_dev, vport);
+		if (ret)
+			goto clear_roh;
+
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -11095,6 +11272,10 @@ clear_roce:
 	hdev->roce_client = NULL;
 	vport->roce.client = NULL;
 	return ret;
+clear_roh:
+	hdev->roh_client = NULL;
+	vport->roh.client = NULL;
+	return ret;
 }
 
 static void hclge_uninit_client_instance(struct hnae3_client *client,
@@ -11102,6 +11283,19 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 {
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_vport *vport = &hdev->vport[0];
+
+	if (hdev->roh_client && (client->type == HNAE3_CLIENT_ROH ||
+				 client->type == HNAE3_CLIENT_KNIC)) {
+		clear_bit(HCLGE_STATE_ROH_REGISTERED, &hdev->state);
+		while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+			msleep(HCLGE_WAIT_RESET_DONE);
+
+		hdev->roh_client->ops->uninit_instance(&vport->roh, 0);
+		hdev->roh_client = NULL;
+		vport->roh.client = NULL;
+	}
+	if (client->type == HNAE3_CLIENT_ROH)
+		return;
 
 	if (hdev->roce_client) {
 		clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);

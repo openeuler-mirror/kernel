@@ -51,7 +51,10 @@
 #define HNAE3_DEV_ID_50GE_RDMA			0xA224
 #define HNAE3_DEV_ID_50GE_RDMA_MACSEC		0xA225
 #define HNAE3_DEV_ID_100G_RDMA_MACSEC		0xA226
+#define HNAE3_DEV_ID_100G_ROH			0xA227
 #define HNAE3_DEV_ID_200G_RDMA			0xA228
+#define HNAE3_DEV_ID_200G_ROH			0xA22C
+#define HNAE3_DEV_ID_400G_ROH			0xA22D
 #define HNAE3_DEV_ID_VF				0xA22E
 #define HNAE3_DEV_ID_RDMA_DCB_PFC_VF		0xA22F
 
@@ -63,6 +66,7 @@
 #define HNAE3_KNIC_CLIENT_INITED_B		0x3
 #define HNAE3_UNIC_CLIENT_INITED_B		0x4
 #define HNAE3_ROCE_CLIENT_INITED_B		0x5
+#define HNAE3_ROH_CLIENT_INITED_B		0x6
 
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) | \
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
@@ -197,6 +201,12 @@ enum hnae3_loop {
 enum hnae3_client_type {
 	HNAE3_CLIENT_KNIC,
 	HNAE3_CLIENT_ROCE,
+	HNAE3_CLIENT_ROH,
+};
+
+enum hnae3_mac_type {
+	HNAE3_MAC_ETH,
+	HNAE3_MAC_ROH,
 };
 
 /* mac media type */
@@ -827,6 +837,13 @@ struct hnae3_roce_private_info {
 	unsigned long state;
 };
 
+struct hnae3_roh_private_info {
+	struct net_device *netdev;
+	void __iomem *roh_io_base;
+	int base_vector;
+	unsigned long reset_state;
+};
+
 #define HNAE3_SUPPORT_APP_LOOPBACK    BIT(0)
 #define HNAE3_SUPPORT_PHY_LOOPBACK    BIT(1)
 #define HNAE3_SUPPORT_SERDES_SERIAL_LOOPBACK	BIT(2)
@@ -859,6 +876,7 @@ struct hnae3_handle {
 		struct net_device *netdev; /* first member */
 		struct hnae3_knic_private_info kinfo;
 		struct hnae3_roce_private_info rinfo;
+		struct hnae3_roh_private_info rohinfo;
 	};
 
 	u32 numa_node_mask;	/* for multi-chip support */
@@ -876,6 +894,8 @@ struct hnae3_handle {
 
 	unsigned long supported_pflags;
 	unsigned long priv_flags;
+
+	enum hnae3_mac_type mac_type;
 };
 
 #define hnae3_set_field(origin, mask, shift, val) \
@@ -889,6 +909,11 @@ struct hnae3_handle {
 	hnae3_set_field(origin, 0x1 << (shift), shift, val)
 #define hnae3_get_bit(origin, shift) \
 	hnae3_get_field(origin, 0x1 << (shift), shift)
+
+static inline bool hnae3_check_roh_mac_type(struct hnae3_handle *handle)
+{
+	return handle->mac_type == HNAE3_MAC_ROH;
+}
 
 #define HNAE3_FORMAT_MAC_ADDR_LEN	18
 #define HNAE3_FORMAT_MAC_ADDR_OFFSET_0	0
