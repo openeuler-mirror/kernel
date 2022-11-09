@@ -8,6 +8,7 @@
 #include <linux/delay.h>
 
 #include "core.h"
+#include "hns3_device.h"
 #include "hns3_common.h"
 #include "hns3_cmdq.h"
 #include "hns3_reg.h"
@@ -314,4 +315,138 @@ int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *d
 	spin_unlock_bh(&csq->lock);
 
 	return ret;
+}
+
+int hns3_roh_get_link_status(struct hns3_roh_device *hroh_dev, u32 *link_status)
+{
+	struct hns3_roh_query_link_status_info *req;
+	struct hns3_roh_desc desc;
+	u32 link_val;
+	int ret;
+
+	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_QUERY_PORT_LINK_STATUS, true);
+	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
+	if (ret) {
+		dev_err(hroh_dev->dev, "failed to query link status, ret = %d\n", ret);
+		return ret;
+	}
+
+	req = (struct hns3_roh_query_link_status_info *)desc.data;
+	link_val = le32_to_cpu(req->query_link_status);
+
+	*link_status = link_val ? HNS3_ROH_LINK_STATUS_UP : HNS3_ROH_LINK_STATUS_DOWN;
+
+	return 0;
+}
+
+static void hns3_roh_dispatch_event(struct hns3_roh_device *hroh_dev, enum roh_event_type type)
+{
+	struct roh_event event = {0};
+
+	event.device = &hroh_dev->roh_dev;
+	event.type = type;
+	roh_event_notify(&event);
+}
+
+void hns3_roh_update_link_status(struct hns3_roh_device *hroh_dev)
+{
+	u32 state = HNS3_ROH_LINK_STATUS_DOWN;
+	enum roh_event_type type;
+	int ret;
+
+	if (test_and_set_bit(HNS3_ROH_SW_STATE_LINK_UPDATING, &hroh_dev->state))
+		return;
+
+	ret = hns3_roh_get_link_status(hroh_dev, &state);
+	if (ret) {
+		state = HNS3_ROH_LINK_STATUS_DOWN;
+		clear_bit(HNS3_ROH_SW_STATE_LINK_UPDATING, &hroh_dev->state);
+		return;
+	}
+
+	type = (state == HNS3_ROH_LINK_STATUS_DOWN) ? ROH_EVENT_LINK_DOWN : ROH_EVENT_LINK_UP;
+	hns3_roh_dispatch_event(hroh_dev, type);
+
+	clear_bit(HNS3_ROH_SW_STATE_LINK_UPDATING, &hroh_dev->state);
+}
+
+static void hns3_roh_link_fail_parse(struct hns3_roh_device *hroh_dev,
+				     u8 link_fail_code)
+{
+	switch (link_fail_code) {
+	case HNS3_ROH_LF_REF_CLOCK_LOST:
+		dev_warn(hroh_dev->dev, "reference clock lost!\n");
+		break;
+	case HNS3_ROH_LF_XSFP_TX_DISABLE:
+		dev_warn(hroh_dev->dev, "SFP tx is disabled!\n");
+		break;
+	case HNS3_ROH_LF_XSFP_ABSENT:
+		dev_warn(hroh_dev->dev, "SFP is absent!\n");
+		break;
+	default:
+		break;
+	}
+}
+
+static void hns3_roh_handle_link_change_event(struct hns3_roh_device *hroh_dev,
+					      struct hns3_roh_mbx_vf_to_pf_cmd *req)
+{
+	int link_status = req->msg.subcode;
+
+	hns3_roh_task_schedule(hroh_dev, 0);
+
+	if (link_status == HNS3_ROH_LINK_STATUS_DOWN)
+		hns3_roh_link_fail_parse(hroh_dev, req->msg.data[0]);
+}
+
+static bool hns3_roh_cmd_crq_empty(struct hns3_roh_device *hroh_dev)
+{
+	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
+	u32 tail = hns3_roh_read(hroh_dev, HNS3_ROH_RX_CMDQ_TAIL_REG);
+
+	return tail == priv->cmdq.crq.next_to_use;
+}
+
+void hns3_roh_mbx_handler(struct hns3_roh_device *hroh_dev)
+{
+	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
+	struct hns3_roh_cmdq_ring *crq = &priv->cmdq.crq;
+	struct hns3_roh_mbx_vf_to_pf_cmd *req;
+	struct hns3_roh_desc *desc;
+	unsigned int flag;
+
+	/* handle all the mailbox requests in the queue */
+	while (!hns3_roh_cmd_crq_empty(hroh_dev)) {
+		desc = &crq->desc[crq->next_to_use];
+		req = (struct hns3_roh_mbx_vf_to_pf_cmd *)desc->data;
+
+		flag = le16_to_cpu(crq->desc[crq->next_to_use].flag);
+		if (unlikely(!hns3_roh_get_bit(flag, HNS3_ROH_CMDQ_RX_OUTVLD_B))) {
+			dev_warn(hroh_dev->dev,
+				 "dropped invalid mbx message, code = %u\n",
+				 req->msg.code);
+
+			/* dropping/not processing this invalid message */
+			crq->desc[crq->next_to_use].flag = 0;
+			hns3_roh_mbx_ring_ptr_move_crq(crq);
+			continue;
+		}
+
+		switch (req->msg.code) {
+		case HNS3_ROH_MBX_PUSH_LINK_STATUS:
+			hns3_roh_handle_link_change_event(hroh_dev, req);
+			break;
+		default:
+			dev_err(hroh_dev->dev,
+				"un-supported mbx message, code = %u\n",
+				req->msg.code);
+			break;
+		}
+
+		crq->desc[crq->next_to_use].flag = 0;
+		hns3_roh_mbx_ring_ptr_move_crq(crq);
+	}
+
+	/* write back CMDQ_RQ header ptr, M7 need this ptr */
+	hns3_roh_write(hroh_dev, HNS3_ROH_RX_CMDQ_HEAD_REG, crq->next_to_use);
 }

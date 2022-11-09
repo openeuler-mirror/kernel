@@ -574,6 +574,29 @@ enum roh_link_status roh_device_query_link_status(struct roh_device *device)
 	return device->link_status;
 }
 
+static void roh_update_link_status(struct roh_device *device, u32 ls)
+{
+	device->link_status = ls;
+}
+
+void roh_event_notify(struct roh_event *event)
+{
+	struct roh_device *device = event->device;
+
+	switch (event->type) {
+	case ROH_EVENT_LINK_UP:
+		roh_update_link_status(device, ROH_LINK_UP);
+		break;
+	case ROH_EVENT_LINK_DOWN:
+		roh_update_link_status(device, ROH_LINK_DOWN);
+		break;
+	default:
+		pr_err("roh_core: not support event type(%d).\n", event->type);
+		break;
+	}
+}
+EXPORT_SYMBOL(roh_event_notify);
+
 int roh_core_init(void)
 {
 	int ret;
