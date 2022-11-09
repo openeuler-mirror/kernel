@@ -4,6 +4,7 @@
 #include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/debugfs.h>
 #include "core.h"
 #include "hnae3.h"
 #include "hns3_device.h"
@@ -13,6 +14,7 @@
 #include "hns3_intr.h"
 
 static struct workqueue_struct *hns3_roh_wq;
+static struct dentry *hns3_roh_dfx_root;
 
 static const struct pci_device_id hns3_roh_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0 },
@@ -258,6 +260,7 @@ static void hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
 	hroh_dev->priv->handle = handle;
 }
 
+static void hns3_roh_dfx_init(struct hns3_roh_device *hroh_dev);
 static int __hns3_roh_init_instance(struct hnae3_handle *handle)
 {
 	struct hns3_roh_device *hroh_dev;
@@ -287,6 +290,8 @@ static int __hns3_roh_init_instance(struct hnae3_handle *handle)
 
 	set_bit(HNS3_ROH_STATE_INITED, &handle->rohinfo.reset_state);
 
+	hns3_roh_dfx_init(hroh_dev);
+
 	return 0;
 
 err_kzalloc:
@@ -296,12 +301,15 @@ err_roh_alloc_device:
 	return ret;
 }
 
+static void hns3_roh_dfx_uninit(struct hns3_roh_device *hroh_dev);
 static void __hns3_roh_uninit_instance(struct hnae3_handle *handle)
 {
 	struct hns3_roh_device *hroh_dev = (struct hns3_roh_device *)handle->priv;
 
 	if (!hroh_dev)
 		return;
+
+	hns3_roh_dfx_uninit(hroh_dev);
 
 	if (!test_and_clear_bit(HNS3_ROH_STATE_INITED, &handle->rohinfo.reset_state))
 		netdev_warn(hroh_dev->netdev, "already uninitialized\n");
@@ -402,6 +410,192 @@ static struct hnae3_client hns3_roh_client = {
 	.ops = &hns3_roh_ops,
 };
 
+static ssize_t hns3_roh_dfx_cmd_read(struct file *filp, char __user *buffer,
+				     size_t count, loff_t *pos)
+{
+#define HNS3_ROH_DFX_READ_LEN 256
+	int uncopy_bytes;
+	char *buf;
+	int len;
+
+	if (*pos != 0)
+		return 0;
+
+	if (count < HNS3_ROH_DFX_READ_LEN)
+		return -ENOSPC;
+
+	buf = kzalloc(HNS3_ROH_DFX_READ_LEN, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len = scnprintf(buf, HNS3_ROH_DFX_READ_LEN, "%s\n", "echo help to cmd to get help info");
+	uncopy_bytes = copy_to_user(buffer, buf, len);
+
+	kfree(buf);
+
+	if (uncopy_bytes)
+		return -EFAULT;
+
+	return (*pos = len);
+}
+
+static void hns3_roh_dfx_help(struct hns3_roh_device *hroh_dev)
+{
+	dev_info(hroh_dev->dev, "dev info\n");
+}
+
+static void hns3_roh_dfx_get_vector_cap(struct hns3_roh_device *hroh_dev)
+{
+	u16 roce_vector_num, nic_vector_num, roh_vector_num;
+	struct hns3_roh_get_intr_info *resp;
+	struct device *dev = hroh_dev->dev;
+	struct hns3_roh_desc desc;
+	int ret;
+
+	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_GET_INTR_INFO, true);
+
+	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
+	if (ret)
+		dev_warn(hroh_dev->dev, "failed to get intr info, ret = %d\n", ret);
+
+	resp = (struct hns3_roh_get_intr_info *)desc.data;
+
+	nic_vector_num = le16_to_cpu(resp->msixcap_localid_number_nic);
+	roce_vector_num = le16_to_cpu(resp->pf_intr_vector_number_roce);
+	roh_vector_num = le16_to_cpu(resp->pf_intr_vector_number_roh);
+
+	dev_info(dev, "NIC vector num: %d\n", nic_vector_num);
+	dev_info(dev, "RoCE vector num: %d\n", roce_vector_num);
+	dev_info(dev, "ROH vector num: %d\n", roh_vector_num);
+	dev_info(dev, "ROH vector offset: %d\n", hroh_dev->intr_info.vector_offset);
+}
+
+static void hns3_roh_dfx_dump_dev_info(struct hns3_roh_device *hroh_dev)
+{
+	struct device *dev = hroh_dev->dev;
+
+	dev_info(dev, "PCIe device id: 0x%x\n", hroh_dev->pdev->device);
+	dev_info(dev, "PCIe device name: %s\n", pci_name(hroh_dev->pdev));
+	dev_info(dev, "Network device name: %s\n", netdev_name(hroh_dev->netdev));
+	dev_info(dev, "BAR2~3 base addr: 0x%llx\n", (u64)hroh_dev->reg_base);
+
+	dev_info(dev, "Base vector: %d\n", hroh_dev->intr_info.base_vecotr);
+	hns3_roh_dfx_get_vector_cap(hroh_dev);
+
+	dev_info(dev, "ABN vector0 irq: %d\n", hroh_dev->abn_vector.vector_irq);
+	dev_info(dev, "ABN vector0 addr: 0x%llx\n", (u64)hroh_dev->abn_vector.addr);
+	dev_info(dev, "ABN vector0 name: %s\n", hroh_dev->abn_vector.name);
+}
+
+static int hns3_roh_dfx_check_cmd(struct hns3_roh_device *hroh_dev, char *cmd_buf)
+{
+	int ret = 0;
+
+	if (strncmp(cmd_buf, "help", strlen("help")) == 0)
+		hns3_roh_dfx_help(hroh_dev);
+	else if (strncmp(cmd_buf, "dev info", strlen("dev info")) == 0)
+		hns3_roh_dfx_dump_dev_info(hroh_dev);
+	else
+		ret = -EOPNOTSUPP;
+	return ret;
+}
+
+static ssize_t hns3_roh_dfx_cmd_write(struct file *filp, const char __user *buffer,
+				      size_t count, loff_t *pos)
+{
+#define HNS3_ROH_DFX_WRITE_LEN 1024
+	struct hns3_roh_device *hroh_dev = filp->private_data;
+	char *cmd_buf, *cmd_buf_tmp;
+	int uncopied_bytes;
+	int ret;
+
+	if (*pos != 0)
+		return 0;
+
+	if (count > HNS3_ROH_DFX_WRITE_LEN)
+		return -ENOSPC;
+
+	cmd_buf = kzalloc(count + 1, GFP_KERNEL);
+	if (!cmd_buf)
+		return count;
+
+	uncopied_bytes = copy_from_user(cmd_buf, buffer, count);
+	if (uncopied_bytes) {
+		kfree(cmd_buf);
+		return -EFAULT;
+	}
+
+	cmd_buf[count] = '\0';
+
+	cmd_buf_tmp = strchr(cmd_buf, '\n');
+	if (cmd_buf_tmp) {
+		*cmd_buf_tmp = '\0';
+		count = cmd_buf_tmp - cmd_buf + 1;
+	}
+
+	ret = hns3_roh_dfx_check_cmd(hroh_dev, cmd_buf);
+	if (ret)
+		hns3_roh_dfx_help(hroh_dev);
+
+	kfree(cmd_buf);
+	cmd_buf = NULL;
+
+	return count;
+}
+
+static const struct file_operations hns3_roh_dfx_cmd_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = hns3_roh_dfx_cmd_read,
+	.write = hns3_roh_dfx_cmd_write,
+};
+
+static void hns3_roh_dfx_init(struct hns3_roh_device *hroh_dev)
+{
+	const char *name = pci_name(hroh_dev->pdev);
+	struct dentry *entry;
+
+	if (IS_ERR_OR_NULL(hns3_roh_dfx_root))
+		return;
+
+	hroh_dev->dfx_debugfs = debugfs_create_dir(name, hns3_roh_dfx_root);
+	if (IS_ERR_OR_NULL(hroh_dev->dfx_debugfs))
+		return;
+
+	entry = debugfs_create_file("hns3_roh_dfx", 0600, hroh_dev->dfx_debugfs,
+				    hroh_dev, &hns3_roh_dfx_cmd_fops);
+	if (IS_ERR_OR_NULL(entry)) {
+		debugfs_remove_recursive(hroh_dev->dfx_debugfs);
+		hroh_dev->dfx_debugfs = NULL;
+		return;
+	}
+}
+
+static void hns3_roh_dfx_uninit(struct hns3_roh_device *hroh_dev)
+{
+	if (IS_ERR_OR_NULL(hroh_dev->dfx_debugfs))
+		return;
+
+	debugfs_remove_recursive(hroh_dev->dfx_debugfs);
+	hroh_dev->dfx_debugfs = NULL;
+}
+
+static void hns3_roh_dfx_register_debugfs(const char *dir_name)
+{
+	hns3_roh_dfx_root = debugfs_create_dir(dir_name, NULL);
+	if (IS_ERR_OR_NULL(hns3_roh_dfx_root))
+		return;
+}
+
+static void hns3_roh_dfx_unregister_debugfs(void)
+{
+	if (IS_ERR_OR_NULL(hns3_roh_dfx_root))
+		return;
+
+	debugfs_remove_recursive(hns3_roh_dfx_root);
+	hns3_roh_dfx_root = NULL;
+}
+
 static int __init hns3_roh_module_init(void)
 {
 	int ret;
@@ -412,6 +606,8 @@ static int __init hns3_roh_module_init(void)
 		return -ENOMEM;
 	}
 
+	hns3_roh_dfx_register_debugfs(HNS3_ROH_NAME);
+
 	ret = hnae3_register_client(&hns3_roh_client);
 	if (ret)
 		goto out;
@@ -419,6 +615,7 @@ static int __init hns3_roh_module_init(void)
 	return 0;
 
 out:
+	hns3_roh_dfx_unregister_debugfs();
 	destroy_workqueue(hns3_roh_wq);
 	return ret;
 }
@@ -426,6 +623,8 @@ out:
 static void __exit hns3_roh_module_cleanup(void)
 {
 	hnae3_unregister_client(&hns3_roh_client);
+
+	hns3_roh_dfx_unregister_debugfs();
 
 	destroy_workqueue(hns3_roh_wq);
 }

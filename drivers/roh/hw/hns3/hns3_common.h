@@ -87,6 +87,7 @@ struct hns3_roh_device {
 	unsigned long last_processed;
 	unsigned long state;
 	struct delayed_work srv_task;
+	struct dentry *dfx_debugfs;
 };
 
 struct hns3_roh_hw {
