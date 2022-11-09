@@ -9,6 +9,7 @@
 #include "hnae3.h"
 #include "hns3_common.h"
 #include "hns3_cmdq.h"
+#include "hns3_verbs.h"
 
 static const struct pci_device_id hns3_roh_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0 },
@@ -38,6 +39,11 @@ static int hns3_roh_register_device(struct hns3_roh_device *hroh_dev)
 	rohdev->owner = THIS_MODULE;
 	rohdev->dev.parent = dev;
 	rohdev->netdev = hroh_dev->netdev;
+
+	rohdev->ops.set_eid = hns3_roh_set_eid;
+	rohdev->ops.query_guid = hns3_roh_query_guid;
+	rohdev->ops.alloc_hw_stats = hns3_roh_alloc_hw_stats;
+	rohdev->ops.get_hw_stats = hns3_roh_get_hw_stats;
 
 	ret = roh_register_device(rohdev);
 	if (ret) {
