@@ -4,7 +4,6 @@
 #include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-
 #include "core.h"
 #include "hnae3.h"
 #include "hns3_device.h"
@@ -283,7 +282,10 @@ static int __hns3_roh_init_instance(struct hnae3_handle *handle)
 		dev_err(hroh_dev->dev, "failed to init roh, ret = %d\n", ret);
 		goto err_kzalloc;
 	}
+
 	handle->priv = hroh_dev;
+
+	set_bit(HNS3_ROH_STATE_INITED, &handle->rohinfo.reset_state);
 
 	return 0;
 
@@ -300,6 +302,9 @@ static void __hns3_roh_uninit_instance(struct hnae3_handle *handle)
 
 	if (!hroh_dev)
 		return;
+
+	if (!test_and_clear_bit(HNS3_ROH_STATE_INITED, &handle->rohinfo.reset_state))
+		netdev_warn(hroh_dev->netdev, "already uninitialized\n");
 
 	hns3_roh_enable_vector(&hroh_dev->abn_vector, false);
 
@@ -343,9 +348,52 @@ static void hns3_roh_uninit_instance(struct hnae3_handle *handle, bool reset)
 	__hns3_roh_uninit_instance(handle);
 }
 
+static int hns3_roh_reset_notify_init(struct hnae3_handle *handle)
+{
+	struct device *dev = &handle->pdev->dev;
+	int ret;
+
+	ret = __hns3_roh_init_instance(handle);
+	if (ret) {
+		dev_err(dev, "failed to reinit in roh reset process, ret = %d\n", ret);
+		handle->priv = NULL;
+		clear_bit(HNS3_ROH_STATE_INITED, &handle->rohinfo.reset_state);
+	}
+
+	return 0;
+}
+
+static int hns3_roh_reset_notify_uninit(struct hnae3_handle *handle)
+{
+	msleep(HNS3_ROH_HW_RST_UNINT_DELAY);
+	__hns3_roh_uninit_instance(handle);
+
+	return 0;
+}
+
+static int hns3_roh_reset_notify(struct hnae3_handle *handle,
+				 enum hnae3_reset_notify_type type)
+{
+	int ret = 0;
+
+	switch (type) {
+	case HNAE3_INIT_CLIENT:
+		ret = hns3_roh_reset_notify_init(handle);
+		break;
+	case HNAE3_UNINIT_CLIENT:
+		ret = hns3_roh_reset_notify_uninit(handle);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
 static const struct hnae3_client_ops hns3_roh_ops = {
 	.init_instance = hns3_roh_init_instance,
 	.uninit_instance = hns3_roh_uninit_instance,
+	.reset_notify = hns3_roh_reset_notify,
 };
 
 static struct hnae3_client hns3_roh_client = {

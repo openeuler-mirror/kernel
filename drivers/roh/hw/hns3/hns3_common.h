@@ -18,6 +18,8 @@
 #define HNS3_ROH_RD_FIRST_STATS_NUM 3
 #define HNS3_ROH_RD_OTHER_STATS_NUM 4
 
+#define HNS3_ROH_HW_RST_UNINT_DELAY 100
+
 struct hns3_roh_desc {
 	__le16 opcode;
 
