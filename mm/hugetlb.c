@@ -6255,6 +6255,9 @@ struct page *hugetlb_alloc_hugepage(int nid, int flag)
 	if (enable_charge_mighp)
 		gfp_mask |= __GFP_ACCOUNT;
 
+	if (flag & HUGETLB_ALLOC_NORECLAIM)
+		gfp_mask &= ~__GFP_RECLAIM;
+
 	if (flag & HUGETLB_ALLOC_NORMAL)
 		page = hugetlb_alloc_hugepage_normal(h, gfp_mask, nid);
 	else if (flag & HUGETLB_ALLOC_BUDDY)

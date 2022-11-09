@@ -621,9 +621,11 @@ int huge_add_to_page_cache(struct page *page, struct address_space *mapping,
 #define HUGETLB_ALLOC_NONE             0x00
 #define HUGETLB_ALLOC_NORMAL           0x01    /* normal hugepage */
 #define HUGETLB_ALLOC_BUDDY            0x02    /* buddy hugepage */
-#define HUGETLB_ALLOC_MASK             (HUGETLB_ALLOC_NONE | \
+#define HUGETLB_ALLOC_NORECLAIM        0x04    /* no reclaim */
+#define HUGETLB_ALLOC_MASK             (HUGETLB_ALLOC_NONE   | \
 					HUGETLB_ALLOC_NORMAL | \
-					HUGETLB_ALLOC_BUDDY)
+					HUGETLB_ALLOC_BUDDY  | \
+					HUGETLB_ALLOC_NORECLAIM)
 
 const struct hstate *hugetlb_get_hstate(void);
 struct page *hugetlb_alloc_hugepage(int nid, int flag);
