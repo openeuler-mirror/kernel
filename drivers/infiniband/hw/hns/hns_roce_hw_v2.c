@@ -543,6 +543,7 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 			     void *wqe, unsigned int *sge_idx,
 			     unsigned int owner_bit)
 {
+	struct hns_roce_dev *hr_dev = to_hr_dev(qp->ibqp.device);
 	struct hns_roce_ah *ah = to_hr_ah(ud_wr(wr)->ah);
 	struct hns_roce_v2_ud_send_wqe *ud_sq_wqe = wqe;
 	unsigned int curr_idx = *sge_idx;
@@ -575,6 +576,9 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 	ret = fill_ud_av(ud_sq_wqe, ah);
 	if (ret)
 		return ret;
+
+	if (hr_dev->mac_type == HNAE3_MAC_ROH && qp->ibqp.qp_type == IB_QPT_GSI)
+		ud_sq_wqe->dmac[0] = 0xF0;
 
 	qp->sl = to_hr_ah(ud_wr(wr)->ah)->av.sl;
 
