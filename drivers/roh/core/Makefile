@@ -3,5 +3,5 @@
 # Makefile for the Linux kernel ROH Core drivers.
 #
 
-roh_core-objs := main.o core.o
+roh_core-objs := main.o core.o sysfs.o
 obj-$(CONFIG_ROH) += roh_core.o

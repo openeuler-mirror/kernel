@@ -12,6 +12,9 @@
 
 #define HNS3_ROH_DESC_DATA_LEN 6
 
+#define HNS3_ROH_RD_FIRST_STATS_NUM 3
+#define HNS3_ROH_RD_OTHER_STATS_NUM 4
+
 struct hns3_roh_desc {
 	__le16 opcode;
 

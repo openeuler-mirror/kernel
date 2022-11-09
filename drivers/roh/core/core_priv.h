@@ -18,4 +18,13 @@ void roh_unregister_client(struct roh_client *client);
 void roh_set_client_data(struct roh_device *device,
 			 struct roh_client *client, void *data);
 
+int roh_device_register_sysfs(struct roh_device *device);
+void roh_device_unregister_sysfs(struct roh_device *device);
+
+int roh_device_set_eid(struct roh_device *device, struct roh_eid_attr *attr);
+void roh_device_get_eid(struct roh_device *device, struct roh_eid_attr *attr);
+
+void roh_device_query_guid(struct roh_device *device, struct roh_guid_attr *attr);
+enum roh_link_status roh_device_query_link_status(struct roh_device *device);
+
 #endif /* __CORE_PRIV_H__ */
