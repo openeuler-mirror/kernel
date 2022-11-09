@@ -472,6 +472,7 @@ static void txgbe_set_num_queues(struct txgbe_adapter *adapter)
 	adapter->num_rx_queues = 1;
 	adapter->num_tx_queues = 1;
 	adapter->queues_per_pool = 1;
+	adapter->num_xdp_queues = 0;
 
 	if (txgbe_set_dcb_vmdq_queues(adapter))
 		return;
