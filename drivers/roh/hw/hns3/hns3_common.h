@@ -8,7 +8,10 @@
 
 #define HNS3_ROH_VERSION "1.0"
 
+#define HNS3_ROH_MIN_VECTOR_NUM 2
+
 #define HNS3_ROH_NAME "roh"
+#define HNS3_ROH_INT_NAME_LEN 32
 
 #define HNS3_ROH_DESC_DATA_LEN 6
 
@@ -54,6 +57,18 @@ struct hns3_roh_priv {
 	unsigned long state;
 };
 
+struct hns3_roh_intr_info {
+	u16 base_vecotr;
+	u16 vector_offset;
+	u16 vector_num;
+};
+
+struct hns3_roh_abn_vector {
+	u8 __iomem *addr;
+	int vector_irq;
+	char name[HNS3_ROH_INT_NAME_LEN];
+};
+
 struct hns3_roh_device {
 	struct roh_device roh_dev;
 	struct pci_dev *pdev;
@@ -64,11 +79,18 @@ struct hns3_roh_device {
 	u8 __iomem *reg_base;
 	const struct hns3_roh_hw *hw;
 	struct hns3_roh_priv *priv;
+
+	struct hns3_roh_intr_info intr_info;
+	struct hns3_roh_abn_vector abn_vector;
+	unsigned long last_processed;
+	unsigned long state;
+	struct delayed_work srv_task;
 };
 
 struct hns3_roh_hw {
 	int (*cmdq_init)(struct hns3_roh_device *hroh_dev);
 	void (*cmdq_exit)(struct hns3_roh_device *hroh_dev);
+	int (*get_intr_cap)(struct hns3_roh_device *hroh_dev);
 };
 
 static inline struct hns3_roh_device *to_hroh_dev(struct roh_device *rohdev)
@@ -88,4 +110,8 @@ static inline struct hns3_roh_device *to_hroh_dev(struct roh_device *rohdev)
 #define hns3_roh_get_bit(origin, shift) \
 	hns3_roh_get_field(origin, 0x1 << (shift), shift)
 
+void hns3_roh_task_schedule(struct hns3_roh_device *hroh_dev,
+			    unsigned long delay_time);
+void hns3_roh_mbx_handler(struct hns3_roh_device *hroh_dev);
+void hns3_roh_mbx_task_schedule(struct hns3_roh_device *hroh_dev);
 #endif

@@ -7,9 +7,13 @@
 
 #include "core.h"
 #include "hnae3.h"
+#include "hns3_device.h"
 #include "hns3_common.h"
 #include "hns3_cmdq.h"
 #include "hns3_verbs.h"
+#include "hns3_intr.h"
+
+static struct workqueue_struct *hns3_roh_wq;
 
 static const struct pci_device_id hns3_roh_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0 },
@@ -20,6 +24,37 @@ static const struct pci_device_id hns3_roh_pci_tbl[] = {
 	}
 };
 MODULE_DEVICE_TABLE(pci, hns3_roh_pci_tbl);
+
+static int hns3_roh_get_intr_cap(struct hns3_roh_device *hroh_dev)
+{
+	struct hns3_roh_get_intr_info *resp;
+	struct hns3_roh_desc desc;
+	int ret;
+
+	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_GET_INTR_INFO, true);
+
+	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
+	if (ret) {
+		dev_err(hroh_dev->dev, "failed to get intr info, ret = %d\n", ret);
+		return ret;
+	}
+
+	resp = (struct hns3_roh_get_intr_info *)desc.data;
+
+	hroh_dev->intr_info.vector_offset =
+		le16_to_cpu(resp->msixcap_localid_number_nic) +
+		le16_to_cpu(resp->pf_intr_vector_number_roce);
+	hroh_dev->intr_info.vector_num =
+		le16_to_cpu(resp->pf_intr_vector_number_roh);
+	if (hroh_dev->intr_info.vector_num < HNS3_ROH_MIN_VECTOR_NUM) {
+		dev_err(hroh_dev->dev,
+			"just %d intr resources, not enough(min: %d).\n",
+			hroh_dev->intr_info.vector_num, HNS3_ROH_MIN_VECTOR_NUM);
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 static void hns3_roh_unregister_device(struct hns3_roh_device *hroh_dev)
 {
@@ -45,6 +80,12 @@ static int hns3_roh_register_device(struct hns3_roh_device *hroh_dev)
 	rohdev->ops.alloc_hw_stats = hns3_roh_alloc_hw_stats;
 	rohdev->ops.get_hw_stats = hns3_roh_get_hw_stats;
 
+	ret = hns3_roh_get_link_status(hroh_dev, &rohdev->link_status);
+	if (ret) {
+		dev_err(dev, "failed to get link status, ret = %d\n", ret);
+		return ret;
+	}
+
 	ret = roh_register_device(rohdev);
 	if (ret) {
 		dev_err(dev, "failed to register roh device, ret = %d\n", ret);
@@ -54,6 +95,65 @@ static int hns3_roh_register_device(struct hns3_roh_device *hroh_dev)
 	hroh_dev->active = true;
 
 	return 0;
+}
+
+void hns3_roh_mbx_task_schedule(struct hns3_roh_device *hroh_dev)
+{
+	if (!test_and_set_bit(HNS3_ROH_SW_STATE_MBX_SERVICE_SCHED, &hroh_dev->state))
+		mod_delayed_work(hns3_roh_wq, &hroh_dev->srv_task, 0);
+}
+
+void hns3_roh_task_schedule(struct hns3_roh_device *hroh_dev, unsigned long delay_time)
+{
+	mod_delayed_work(hns3_roh_wq, &hroh_dev->srv_task, delay_time);
+}
+
+static void hns3_roh_mbx_service_task(struct hns3_roh_device *hroh_dev)
+{
+	if (!test_and_clear_bit(HNS3_ROH_SW_STATE_MBX_SERVICE_SCHED,
+				&hroh_dev->state) ||
+		test_and_set_bit(HNS3_ROH_SW_STATE_MBX_HANDLING, &hroh_dev->state))
+		return;
+
+	hns3_roh_mbx_handler(hroh_dev);
+
+	clear_bit(HNS3_ROH_SW_STATE_MBX_HANDLING, &hroh_dev->state);
+}
+
+static void hns3_roh_poll_service_task(struct hns3_roh_device *hroh_dev)
+{
+	unsigned long delta = round_jiffies_relative(HZ);
+
+	hns3_roh_update_link_status(hroh_dev);
+
+	if (time_is_after_jiffies(hroh_dev->last_processed + HZ)) {
+		delta = jiffies - hroh_dev->last_processed;
+		if (delta < round_jiffies_relative(HZ)) {
+			delta = round_jiffies_relative(HZ) - delta;
+			goto out;
+		}
+	}
+
+	hroh_dev->last_processed = jiffies;
+
+out:
+	hns3_roh_task_schedule(hroh_dev, delta);
+}
+
+static void hns3_roh_service_task(struct work_struct *work)
+{
+	struct hns3_roh_device *hroh_dev =
+		container_of(work, struct hns3_roh_device, srv_task.work);
+
+	hns3_roh_mbx_service_task(hroh_dev);
+
+	hns3_roh_poll_service_task(hroh_dev);
+}
+
+static void hns3_roh_dev_sw_state_init(struct hns3_roh_device *hroh_dev)
+{
+	clear_bit(HNS3_ROH_SW_STATE_MBX_SERVICE_SCHED, &hroh_dev->state);
+	clear_bit(HNS3_ROH_SW_STATE_MBX_HANDLING, &hroh_dev->state);
 }
 
 static int hns3_roh_init_hw(struct hns3_roh_device *hroh_dev)
@@ -67,11 +167,29 @@ static int hns3_roh_init_hw(struct hns3_roh_device *hroh_dev)
 		return ret;
 	}
 
+	ret = hroh_dev->hw->get_intr_cap(hroh_dev);
+	if (ret) {
+		dev_err(dev, "failed to get intr cap, ret = %d\n", ret);
+		goto err_free_cmdq;
+	}
+
+	ret = hns3_roh_init_irq(hroh_dev);
+	if (ret) {
+		dev_err(dev, "failed to init irq, ret = %d\n", ret);
+		goto err_free_cmdq;
+	}
+
 	return 0;
+
+err_free_cmdq:
+	hroh_dev->hw->cmdq_exit(hroh_dev);
+	return ret;
 }
 
 static void hns3_roh_uninit_hw(struct hns3_roh_device *hroh_dev)
 {
+	hns3_roh_uninit_irq(hroh_dev);
+
 	hroh_dev->hw->cmdq_exit(hroh_dev);
 }
 
@@ -92,6 +210,14 @@ static int hns3_roh_init(struct hns3_roh_device *hroh_dev)
 		goto err_uninit_hw;
 	}
 
+	INIT_DELAYED_WORK(&hroh_dev->srv_task, hns3_roh_service_task);
+
+	hns3_roh_enable_vector(&hroh_dev->abn_vector, true);
+
+	hns3_roh_dev_sw_state_init(hroh_dev);
+
+	hns3_roh_task_schedule(hroh_dev, round_jiffies_relative(HZ));
+
 	dev_info(dev, "%s driver init success.\n", HNS3_ROH_NAME);
 
 	return 0;
@@ -103,6 +229,8 @@ err_uninit_hw:
 
 static void hns3_roh_exit(struct hns3_roh_device *hroh_dev)
 {
+	cancel_delayed_work_sync(&hroh_dev->srv_task);
+
 	hns3_roh_unregister_device(hroh_dev);
 
 	hns3_roh_uninit_hw(hroh_dev);
@@ -114,6 +242,7 @@ static void hns3_roh_exit(struct hns3_roh_device *hroh_dev)
 static const struct hns3_roh_hw hns3_roh_hw = {
 	.cmdq_init = hns3_roh_cmdq_init,
 	.cmdq_exit = hns3_roh_cmdq_exit,
+	.get_intr_cap = hns3_roh_get_intr_cap,
 };
 
 static void hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
@@ -172,6 +301,8 @@ static void __hns3_roh_uninit_instance(struct hnae3_handle *handle)
 	if (!hroh_dev)
 		return;
 
+	hns3_roh_enable_vector(&hroh_dev->abn_vector, false);
+
 	handle->priv = NULL;
 
 	hns3_roh_exit(hroh_dev);
@@ -225,12 +356,30 @@ static struct hnae3_client hns3_roh_client = {
 
 static int __init hns3_roh_module_init(void)
 {
-	return hnae3_register_client(&hns3_roh_client);
+	int ret;
+
+	hns3_roh_wq = alloc_workqueue("%s", 0, 0, HNS3_ROH_NAME);
+	if (!hns3_roh_wq) {
+		pr_err("%s: failed to create wq.\n", HNS3_ROH_NAME);
+		return -ENOMEM;
+	}
+
+	ret = hnae3_register_client(&hns3_roh_client);
+	if (ret)
+		goto out;
+
+	return 0;
+
+out:
+	destroy_workqueue(hns3_roh_wq);
+	return ret;
 }
 
 static void __exit hns3_roh_module_cleanup(void)
 {
 	hnae3_unregister_client(&hns3_roh_client);
+
+	destroy_workqueue(hns3_roh_wq);
 }
 
 module_init(hns3_roh_module_init);

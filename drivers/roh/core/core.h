@@ -95,6 +95,16 @@ struct roh_device {
 	struct roh_mib_stats *hw_private_stats;
 };
 
+enum roh_event_type {
+	ROH_EVENT_LINK_DOWN = 0,
+	ROH_EVENT_LINK_UP
+};
+
+struct roh_event {
+	struct roh_device *device;
+	enum roh_event_type type;
+};
+
 static inline bool roh_device_try_get(struct roh_device *device)
 {
 	return refcount_inc_not_zero(&device->refcount);
@@ -107,6 +117,8 @@ void roh_dealloc_device(struct roh_device *device);
 
 int roh_register_device(struct roh_device *device);
 void roh_unregister_device(struct roh_device *device);
+
+void roh_event_notify(struct roh_event *event);
 
 int roh_core_init(void);
 void roh_core_cleanup(void);
