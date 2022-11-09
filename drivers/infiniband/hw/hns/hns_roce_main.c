@@ -425,6 +425,7 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	}
 
 	resp.cqe_size = hr_dev->caps.cqe_sz;
+	resp.mac_type = hr_dev->mac_type;
 
 	ret = ib_copy_to_udata(udata, &resp,
 			       min(udata->outlen, sizeof(resp)));
