@@ -41,7 +41,7 @@ static void roh_device_release(struct device *device)
 	kfree(dev);
 }
 
-static int roh_device_uevent(struct device *device, struct kobj_uevent_env *env)
+static int roh_device_uevent(const struct device *device, struct kobj_uevent_env *env)
 {
 	struct roh_device *dev = container_of(device, struct roh_device, dev);
 
@@ -253,6 +253,61 @@ static int enable_device_and_get(struct roh_device *device)
 	return ret;
 }
 
+static int roh_ipv4_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	struct roh_eid_attr eid_attr;
+	struct in_ifaddr *ifa = ptr;
+	struct roh_device *device;
+	struct net_device *ndev;
+	struct sockaddr_in in;
+	int ret;
+
+	device = container_of(this, struct roh_device, nb);
+	ndev = ifa->ifa_dev->dev;
+	if (device->netdev != ndev) {
+		pr_warn("netdev mismatch.\n");
+		return NOTIFY_DONE;
+	}
+
+	in.sin_addr.s_addr = ifa->ifa_address;
+
+	eid_attr.base = be32_to_cpu(in.sin_addr.s_addr) & 0xffffff; /* lower 3B as src eid */
+	eid_attr.num = 1;
+	ret = roh_device_set_eid(device, &eid_attr);
+	if (ret) {
+		pr_err("failed to set eid by IP, ret = %d\n", ret);
+		return ret;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static int roh_register_inetaddr_event(struct roh_device *device)
+{
+	int ret;
+
+	device->nb.notifier_call = roh_ipv4_event;
+	ret = register_inetaddr_notifier(&device->nb);
+	if (ret) {
+		pr_err("roh_core: failed to register inetaddr notifier, ret = %d\n", ret);
+		device->nb.notifier_call = NULL;
+	}
+
+	return ret;
+}
+
+static void roh_unregister_inetaddr_event(struct roh_device *device)
+{
+	int ret;
+
+	if (device->nb.notifier_call) {
+		ret = unregister_inetaddr_notifier(&device->nb);
+		if (ret)
+			pr_err("roh_core: failed to unregister inetaddr notifier, ret = %d\n", ret);
+		device->nb.notifier_call = NULL;
+	}
+}
+
 int roh_register_device(struct roh_device *device)
 {
 	int ret;
@@ -280,6 +335,12 @@ int roh_register_device(struct roh_device *device)
 	if (ret)
 		goto err_dev_cleanup;
 
+	ret = roh_register_inetaddr_event(device);
+	if (ret) {
+		pr_err("roh_core: failed to register inetaddr event, ret = %d\n", ret);
+		goto err_unregister_sysfs;
+	}
+
 	ret = enable_device_and_get(device);
 	dev_set_uevent_suppress(&device->dev, false);
 	kobject_uevent(&device->dev.kobj, KOBJ_ADD);
@@ -293,6 +354,8 @@ int roh_register_device(struct roh_device *device)
 
 	return 0;
 
+err_unregister_sysfs:
+	roh_device_unregister_sysfs(device);
 err_dev_cleanup:
 	device_del(&device->dev);
 out:
@@ -308,6 +371,7 @@ static void __roh_unregister_device(struct roh_device *device)
 		goto out;
 
 	disable_device(device);
+	roh_unregister_inetaddr_event(device);
 	roh_device_unregister_sysfs(device);
 	device_del(&device->dev);
 

@@ -89,6 +89,7 @@ struct roh_device {
 	struct roh_eid_attr eid;
 	struct mutex eid_mutex; /* operate eid needs to be mutexed */
 	u32 link_status;
+	struct notifier_block nb;
 
 	struct attribute_group *hw_stats_ag;
 	struct roh_mib_stats *hw_public_stats;
