@@ -130,6 +130,7 @@ ftrace_caller:
 
 	subl	$28, MCOUNT_INSN_SIZE, $16
 	bis	$26, $31, $17
+	ldl	$18, function_trace_op
 
 	ldi	$4, current_tracer
 	ldl	$27, 0($4)
