@@ -261,6 +261,11 @@ static inline bool is_file_lru(enum lru_list lru)
 	return (lru == LRU_INACTIVE_FILE || lru == LRU_ACTIVE_FILE);
 }
 
+static inline int is_anon_lru(enum lru_list lru)
+{
+	return (lru == LRU_INACTIVE_ANON || lru == LRU_ACTIVE_ANON);
+}
+
 static inline bool is_active_lru(enum lru_list lru)
 {
 	return (lru == LRU_ACTIVE_ANON || lru == LRU_ACTIVE_FILE);

@@ -17,12 +17,51 @@ EXPORT_SYMBOL_GPL(mem_reliable);
 bool reliable_enabled;
 bool shmem_reliable __read_mostly = true;
 bool pagecache_use_reliable_mem __read_mostly = true;
+struct percpu_counter pagecache_reliable_pages;
+struct percpu_counter anon_reliable_pages;
+
+bool mem_reliable_counter_initialized(void)
+{
+	return likely(percpu_counter_initialized(&pagecache_reliable_pages)) &&
+		likely((percpu_counter_initialized(&anon_reliable_pages)));
+}
 
 bool mem_reliable_status(void)
 {
 	return mem_reliable_is_enabled();
 }
 EXPORT_SYMBOL_GPL(mem_reliable_status);
+
+void reliable_lru_add_batch(int zid, enum lru_list lru,
+				       int val)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (zid < ZONE_MOVABLE) {
+		if (is_file_lru(lru))
+			percpu_counter_add(&pagecache_reliable_pages, val);
+		else if (is_anon_lru(lru))
+			percpu_counter_add(&anon_reliable_pages, val);
+	}
+}
+
+void reliable_lru_add(enum lru_list lru, struct page *page, int val)
+{
+	if (!page_reliable(page))
+		return;
+
+	if (is_file_lru(lru))
+		percpu_counter_add(&pagecache_reliable_pages, val);
+	else if (is_anon_lru(lru))
+		percpu_counter_add(&anon_reliable_pages, val);
+	else if (lru == LRU_UNEVICTABLE) {
+		if (PageAnon(page))
+			percpu_counter_add(&anon_reliable_pages, val);
+		else
+			percpu_counter_add(&pagecache_reliable_pages, val);
+	}
+}
 
 void page_cache_prepare_alloc(gfp_t *gfp)
 {
@@ -118,13 +157,31 @@ void reliable_report_meminfo(struct seq_file *m)
 	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
 
 	if (pagecache_reliable_is_enabled()) {
+		s64 nr_pagecache_pages = 0;
 		unsigned long num = 0;
 
 		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
 		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
 		show_val_kb(m, "FileCache:        ", num);
+
+		nr_pagecache_pages =
+			percpu_counter_sum_positive(&pagecache_reliable_pages);
+		seq_printf(m, "ReliableFileCache: %8llu kB\n",
+			   nr_pagecache_pages << (PAGE_SHIFT - 10));
 	}
 }
+
+static int __init reliable_sysctl_init(void)
+{
+	if (!mem_reliable_is_enabled())
+		return 0;
+
+	percpu_counter_init(&pagecache_reliable_pages, 0, GFP_KERNEL);
+	percpu_counter_init(&anon_reliable_pages, 0, GFP_KERNEL);
+
+	return 0;
+}
+arch_initcall(reliable_sysctl_init);
 
 static int __init setup_reliable_debug(char *str)
 {
