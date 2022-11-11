@@ -16,6 +16,7 @@ DECLARE_STATIC_KEY_FALSE(mem_reliable);
 
 extern bool reliable_enabled;
 extern bool shmem_reliable;
+extern bool reliable_allow_fallback;
 extern bool pagecache_use_reliable_mem;
 extern struct percpu_counter pagecache_reliable_pages;
 extern struct percpu_counter anon_reliable_pages;
@@ -104,6 +105,11 @@ static inline bool mem_reliable_should_reclaim(void)
 
 	return false;
 }
+
+static inline bool reliable_allow_fb_enabled(void)
+{
+	return reliable_allow_fallback;
+}
 #else
 #define reliable_enabled 0
 #define pagecache_use_reliable_mem 0
@@ -138,6 +144,7 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      unsigned int order,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
+static inline bool reliable_allow_fb_enabled(void) { return false; }
 #endif
 
 #endif
