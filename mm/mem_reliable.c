@@ -9,6 +9,7 @@
 #include <linux/mmzone.h>
 
 DEFINE_STATIC_KEY_FALSE(mem_reliable);
+EXPORT_SYMBOL_GPL(mem_reliable);
 
 bool reliable_enabled;
 
