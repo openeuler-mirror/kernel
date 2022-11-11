@@ -16,9 +16,6 @@
  */
 	.align	5
 SYM_FUNC_START(__switch_to)
-	csrrd	t1, LOONGARCH_CSR_PRMD
-	stptr.d	t1, a0, THREAD_CSRPRMD
-
 	cpu_save_nonscratch a0
 	stptr.d	ra, a0, THREAD_REG01
 	stptr.d a3, a0, THREAD_SCHED_RA
@@ -29,9 +26,6 @@ SYM_FUNC_START(__switch_to)
 	li.w		t0, _THREAD_SIZE - 32
 	PTR_ADD		t0, t0, tp
 	set_saved_sp	t0, t1, t2
-
-	ldptr.d	t1, a1, THREAD_CSRPRMD
-	csrwr	t1, LOONGARCH_CSR_PRMD
 
 	jr	ra
 SYM_FUNC_END(__switch_to)
