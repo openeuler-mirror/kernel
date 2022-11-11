@@ -116,6 +116,14 @@ void reliable_report_meminfo(struct seq_file *m)
 	show_val_kb(m, "ReliableTotal:    ", total_reliable_pages());
 	show_val_kb(m, "ReliableUsed:     ", used_reliable_pages());
 	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
+
+	if (pagecache_reliable_is_enabled()) {
+		unsigned long num = 0;
+
+		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
+		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
+		show_val_kb(m, "FileCache:        ", num);
+	}
 }
 
 static int __init setup_reliable_debug(char *str)
