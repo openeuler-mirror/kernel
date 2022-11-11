@@ -8,12 +8,12 @@
 #include <linux/seq_file.h>
 #include <linux/mmzone.h>
 
+#define PAGES_TO_B(n_pages)	((n_pages) << PAGE_SHIFT)
+
 DEFINE_STATIC_KEY_FALSE(mem_reliable);
 EXPORT_SYMBOL_GPL(mem_reliable);
 
 bool reliable_enabled;
-
-static atomic_long_t total_reliable_mem;
 bool shmem_reliable __read_mostly = true;
 
 bool mem_reliable_status(void)
@@ -28,62 +28,42 @@ void page_cache_prepare_alloc(gfp_t *gfp)
 		*gfp |= GFP_RELIABLE;
 }
 
-void add_reliable_mem_size(long sz)
+static unsigned long total_reliable_pages(void)
 {
-	atomic_long_add(sz, &total_reliable_mem);
-}
-
-static unsigned long total_reliable_mem_sz(void)
-{
-	return atomic_long_read(&total_reliable_mem);
-}
-
-static unsigned long used_reliable_mem_sz(void)
-{
-	unsigned long nr_page = 0;
+	unsigned long total_reliable_pages = 0;
 	struct zone *z;
 
 	for_each_populated_zone(z)
 		if (zone_idx(z) < ZONE_MOVABLE)
-			nr_page += zone_page_state(z, NR_FREE_PAGES);
+			total_reliable_pages += zone_managed_pages(z);
 
-	return total_reliable_mem_sz() - nr_page * PAGE_SIZE;
+	return total_reliable_pages;
 }
 
-static int reliable_mem_notifier(struct notifier_block *nb,
-				 unsigned long action, void *arg)
+static unsigned long free_reliable_pages(void)
 {
-	struct memory_notify *m_arg = arg;
 	struct zone *zone;
+	unsigned long cnt = 0;
 
-	switch (action) {
-	case MEM_ONLINE:
-		zone = page_zone(pfn_to_page(m_arg->start_pfn));
-		if (zone_reliable(zone))
-			add_reliable_mem_size(m_arg->nr_pages * PAGE_SIZE);
-		break;
-	case MEM_OFFLINE:
-		zone = page_zone(pfn_to_page(m_arg->start_pfn));
-		if (zone_reliable(zone))
-			add_reliable_mem_size(-m_arg->nr_pages * PAGE_SIZE);
-		break;
-	default:
-		break;
-	}
+	for_each_populated_zone(zone)
+		if (zone_idx(zone) < ZONE_MOVABLE)
+			cnt += zone_page_state(zone, NR_FREE_PAGES);
 
-	return NOTIFY_OK;
+	return cnt;
 }
 
-static struct notifier_block reliable_notifier_block = {
-	.notifier_call = reliable_mem_notifier,
-};
+static unsigned long used_reliable_pages(void)
+{
+	return total_reliable_pages() - free_reliable_pages();
+}
 
-void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
+void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn,
+		       unsigned long mirrored_sz)
 {
 	if (!reliable_enabled)
 		return;
 
-	if (atomic_long_read(&total_reliable_mem) == 0) {
+	if (!mirrored_sz) {
 		memset(zone_movable_pfn, 0,
 		       sizeof(unsigned long) * MAX_NUMNODES);
 		pr_err("init failed, mirrored memory size is zero.\n");
@@ -95,15 +75,9 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
 		return;
 	}
 
-	if (register_hotmemory_notifier(&reliable_notifier_block)) {
-		pr_err("init failed, register memory notifier failed.\n");
-		return;
-	}
-
 	static_branch_enable(&mem_reliable);
 
-	pr_info("init succeed, mirrored memory size(%lu)\n",
-		total_reliable_mem_sz());
+	pr_info("init succeed, mirrored memory size(%lu)\n", mirrored_sz);
 }
 
 void shmem_reliable_init(void)
@@ -123,8 +97,7 @@ void reliable_report_meminfo(struct seq_file *m)
 	if (!mem_reliable_is_enabled())
 		return;
 
-	show_val_kb(m, "ReliableTotal:    ",
-			total_reliable_mem_sz() >> PAGE_SHIFT);
-	show_val_kb(m, "ReliableUsed:     ",
-			used_reliable_mem_sz() >> PAGE_SHIFT);
+	show_val_kb(m, "ReliableTotal:    ", total_reliable_pages());
+	show_val_kb(m, "ReliableUsed:     ", used_reliable_pages());
+	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
 }
