@@ -116,6 +116,8 @@ struct hns_roce_ib_alloc_ucontext_resp {
 	__u32   reserved;
 	__u32	config;
 	__u32	max_inline_data;
+	__u8	mac_type;
+	__u8	rsv1[7];
 };
 
 struct hns_roce_ib_alloc_ucontext {

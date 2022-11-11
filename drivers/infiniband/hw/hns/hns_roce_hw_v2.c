@@ -476,6 +476,7 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 			     void *wqe, unsigned int *sge_idx,
 			     unsigned int owner_bit)
 {
+	struct hns_roce_dev *hr_dev = to_hr_dev(qp->ibqp.device);
 	struct hns_roce_ah *ah = to_hr_ah(ud_wr(wr)->ah);
 	struct hns_roce_v2_ud_send_wqe *ud_sq_wqe = wqe;
 	unsigned int curr_idx = *sge_idx;
@@ -508,6 +509,9 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 	ret = fill_ud_av(ud_sq_wqe, ah);
 	if (ret)
 		return ret;
+
+	if (hr_dev->mac_type == HNAE3_MAC_ROH && qp->ibqp.qp_type == IB_QPT_GSI)
+		ud_sq_wqe->dmac[0] = 0xFF;
 
 	qp->sl = to_hr_ah(ud_wr(wr)->ah)->av.sl;
 
@@ -2397,6 +2401,28 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	return 0;
 }
 
+static void hns_roce_set_mac_type(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
+		return;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_QUERY_MAC_TYPE, true);
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret == CMD_NOT_EXIST)
+		return;
+
+	if (ret) {
+		dev_err(hr_dev->dev, "failed to get mac mod, ret = %d.\n", ret);
+		return;
+	}
+
+	if (le32_to_cpu(desc.data[0]))
+		hr_dev->mac_type = HNAE3_MAC_ROH;
+}
+
 static int config_hem_entry_size(struct hns_roce_dev *hr_dev, u32 type, u32 val)
 {
 	struct hns_roce_cmq_desc desc;
@@ -3044,6 +3070,8 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 	if (ret)
 		return ret;
 
+	hns_roce_set_mac_type(hr_dev);
+
 	ret = get_hem_table(hr_dev);
 	if (ret)
 		return ret;
@@ -3276,6 +3304,8 @@ static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, int gid_index,
 			else
 				sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV6;
 		} else if (attr->gid_type == IB_GID_TYPE_ROCE) {
+			if (hr_dev->mac_type == HNAE3_MAC_ROH)
+				return -EPERM;
 			sgid_type = GID_TYPE_FLAG_ROCE_V1;
 		}
 	}
@@ -6850,6 +6880,11 @@ static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_RDMA), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_DCB_PFC_VF),
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
+
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0 },
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_ROH), 0 },
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_400G_ROH), 0 },
+
 	/* required last entry */
 	{0, }
 };

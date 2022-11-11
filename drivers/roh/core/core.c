@@ -77,6 +77,8 @@ struct roh_device *roh_alloc_device(size_t size)
 
 	mutex_init(&device->unregistration_lock);
 
+	mutex_init(&device->eid_mutex);
+
 	xa_init_flags(&device->client_data, XA_FLAGS_ALLOC);
 	init_rwsem(&device->client_data_rwsem);
 	init_completion(&device->unreg_completion);
@@ -191,6 +193,20 @@ out:
 	return ret;
 }
 
+static int setup_device(struct roh_device *device)
+{
+	int ret;
+
+	/* Query GUID */
+	ret = device->ops.query_guid(device, &device->node_guid);
+	if (ret) {
+		pr_err("failed to query guid, ret = %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 static void disable_device(struct roh_device *device)
 {
 	u32 cid;
@@ -237,6 +253,61 @@ static int enable_device_and_get(struct roh_device *device)
 	return ret;
 }
 
+static int roh_ipv4_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	struct roh_eid_attr eid_attr;
+	struct in_ifaddr *ifa = ptr;
+	struct roh_device *device;
+	struct net_device *ndev;
+	struct sockaddr_in in;
+	int ret;
+
+	device = container_of(this, struct roh_device, nb);
+	ndev = ifa->ifa_dev->dev;
+	if (device->netdev != ndev) {
+		pr_warn("netdev mismatch.\n");
+		return NOTIFY_DONE;
+	}
+
+	in.sin_addr.s_addr = ifa->ifa_address;
+
+	eid_attr.base = be32_to_cpu(in.sin_addr.s_addr) & 0xffffff; /* lower 3B as src eid */
+	eid_attr.num = 1;
+	ret = roh_device_set_eid(device, &eid_attr);
+	if (ret) {
+		pr_err("failed to set eid by IP, ret = %d\n", ret);
+		return ret;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static int roh_register_inetaddr_event(struct roh_device *device)
+{
+	int ret;
+
+	device->nb.notifier_call = roh_ipv4_event;
+	ret = register_inetaddr_notifier(&device->nb);
+	if (ret) {
+		pr_err("roh_core: failed to register inetaddr notifier, ret = %d\n", ret);
+		device->nb.notifier_call = NULL;
+	}
+
+	return ret;
+}
+
+static void roh_unregister_inetaddr_event(struct roh_device *device)
+{
+	int ret;
+
+	if (device->nb.notifier_call) {
+		ret = unregister_inetaddr_notifier(&device->nb);
+		if (ret)
+			pr_err("roh_core: failed to unregister inetaddr notifier, ret = %d\n", ret);
+		device->nb.notifier_call = NULL;
+	}
+}
+
 int roh_register_device(struct roh_device *device)
 {
 	int ret;
@@ -247,11 +318,27 @@ int roh_register_device(struct roh_device *device)
 		return ret;
 	}
 
+	ret = setup_device(device);
+	if (ret) {
+		pr_err("roh_core: failed to setup device, ret = %d\n", ret);
+		return ret;
+	}
+
 	dev_set_uevent_suppress(&device->dev, true);
 	ret = device_add(&device->dev);
 	if (ret) {
 		pr_err("roh_core: failed to add device, ret = %d\n", ret);
 		goto out;
+	}
+
+	ret = roh_device_register_sysfs(device);
+	if (ret)
+		goto err_dev_cleanup;
+
+	ret = roh_register_inetaddr_event(device);
+	if (ret) {
+		pr_err("roh_core: failed to register inetaddr event, ret = %d\n", ret);
+		goto err_unregister_sysfs;
 	}
 
 	ret = enable_device_and_get(device);
@@ -266,6 +353,11 @@ int roh_register_device(struct roh_device *device)
 	roh_device_put(device);
 
 	return 0;
+
+err_unregister_sysfs:
+	roh_device_unregister_sysfs(device);
+err_dev_cleanup:
+	device_del(&device->dev);
 out:
 	dev_set_uevent_suppress(&device->dev, false);
 	return ret;
@@ -279,6 +371,8 @@ static void __roh_unregister_device(struct roh_device *device)
 		goto out;
 
 	disable_device(device);
+	roh_unregister_inetaddr_event(device);
+	roh_device_unregister_sysfs(device);
 	device_del(&device->dev);
 
 out:
@@ -457,6 +551,115 @@ void roh_unregister_client(struct roh_client *client)
 	wait_for_completion(&client->uses_zero);
 	remove_client_id(client);
 }
+
+static int roh_set_pf_mac_by_eid(struct roh_device *device,
+				 struct roh_eid_attr *eid_attr)
+{
+	const struct net_device_ops *ndev_ops;
+	u32 eid = eid_attr->base;
+	struct net_device *ndev;
+	struct sockaddr s_addr;
+	u8 mac[ETH_ALEN];
+	int ret;
+
+	ndev = device->netdev;
+	if (!ndev)
+		return -EINVAL;
+
+	ndev_ops = ndev->netdev_ops;
+	if (!ndev_ops->ndo_set_mac_address)
+		return -EOPNOTSUPP;
+
+	convert_eid_to_mac(mac, eid);
+
+	s_addr.sa_family = ndev->type;
+	memcpy(s_addr.sa_data, mac, ndev->addr_len);
+
+	ret = dev_set_mac_address(ndev, &s_addr, NULL);
+	if (ret) {
+		netdev_err(ndev, "failed to set dev %s mac, ret = %d\n",
+			   ndev->name, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int roh_set_mac_by_eid(struct roh_device *device,
+			      struct roh_eid_attr *eid_attr)
+{
+	int ret;
+
+	ret = roh_set_pf_mac_by_eid(device, eid_attr);
+	if (ret) {
+		pr_err("failed to set pf mac, ret = %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int roh_device_set_eid(struct roh_device *device, struct roh_eid_attr *attr)
+{
+	int ret;
+
+	if (!device->ops.set_eid)
+		return -EPROTONOSUPPORT;
+
+	mutex_lock(&device->eid_mutex);
+	/* Update current EID */
+	ret = device->ops.set_eid(device, attr);
+	if (ret) {
+		mutex_unlock(&device->eid_mutex);
+		return ret;
+	}
+
+	device->eid = *attr;
+	ret = roh_set_mac_by_eid(device, attr);
+	mutex_unlock(&device->eid_mutex);
+
+	return ret;
+}
+
+void roh_device_get_eid(struct roh_device *device, struct roh_eid_attr *attr)
+{
+	mutex_lock(&device->eid_mutex);
+	memcpy(attr, &device->eid, sizeof(*attr));
+	mutex_unlock(&device->eid_mutex);
+}
+
+void roh_device_query_guid(struct roh_device *device, struct roh_guid_attr *attr)
+{
+	memcpy(attr, &device->node_guid, sizeof(*attr));
+}
+
+enum roh_link_status roh_device_query_link_status(struct roh_device *device)
+{
+	return device->link_status;
+}
+
+static void roh_update_link_status(struct roh_device *device, u32 ls)
+{
+	device->link_status = ls;
+}
+
+void roh_event_notify(struct roh_event *event)
+{
+	struct roh_device *device = event->device;
+
+	switch (event->type) {
+	case ROH_EVENT_LINK_UP:
+		roh_update_link_status(device, ROH_LINK_UP);
+		break;
+	case ROH_EVENT_LINK_DOWN:
+		roh_update_link_status(device, ROH_LINK_DOWN);
+		break;
+	default:
+		pr_err("roh_core: not support event type(%d).\n", event->type);
+		break;
+	}
+}
+EXPORT_SYMBOL(roh_event_notify);
 
 int roh_core_init(void)
 {

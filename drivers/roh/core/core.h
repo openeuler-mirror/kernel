@@ -19,6 +19,8 @@ enum roh_dev_tx {
 	ROHDEV_TX_LOCKED = 0x20 /* driver tx lock was already taken */
 };
 
+enum roh_link_status { ROH_LINK_DOWN = 0, ROH_LINK_UP };
+
 enum roh_mib_type { ROH_MIB_PUBLIC = 0, ROH_MIB_PRIVATE };
 
 static inline void convert_eid_to_mac(u8 mac[6], u32 eid)
@@ -82,6 +84,26 @@ struct roh_device {
 	refcount_t refcount;
 	struct completion unreg_completion;
 	struct mutex unregistration_lock; /* lock for unregiste */
+
+	struct roh_guid_attr node_guid;
+	struct roh_eid_attr eid;
+	struct mutex eid_mutex; /* operate eid needs to be mutexed */
+	u32 link_status;
+	struct notifier_block nb;
+
+	struct attribute_group *hw_stats_ag;
+	struct roh_mib_stats *hw_public_stats;
+	struct roh_mib_stats *hw_private_stats;
+};
+
+enum roh_event_type {
+	ROH_EVENT_LINK_DOWN = 0,
+	ROH_EVENT_LINK_UP
+};
+
+struct roh_event {
+	struct roh_device *device;
+	enum roh_event_type type;
 };
 
 static inline bool roh_device_try_get(struct roh_device *device)
@@ -96,6 +118,8 @@ void roh_dealloc_device(struct roh_device *device);
 
 int roh_register_device(struct roh_device *device);
 void roh_unregister_device(struct roh_device *device);
+
+void roh_event_notify(struct roh_event *event);
 
 int roh_core_init(void);
 void roh_core_cleanup(void);
