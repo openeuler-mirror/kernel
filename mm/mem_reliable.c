@@ -101,13 +101,8 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
 
 void shmem_reliable_init(void)
 {
-	if (!shmem_reliable_is_enabled())
-		return;
-
-	if (!mem_reliable_is_enabled()) {
+	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled())
 		shmem_reliable = false;
-		pr_info("shmem reliable disabled.\n");
-	}
 }
 
 void reliable_report_meminfo(struct seq_file *m)
