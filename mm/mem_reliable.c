@@ -16,6 +16,7 @@ EXPORT_SYMBOL_GPL(mem_reliable);
 
 bool reliable_enabled;
 bool shmem_reliable __read_mostly = true;
+struct percpu_counter reliable_shmem_used_nr_page;
 bool reliable_allow_fallback __read_mostly = true;
 bool pagecache_use_reliable_mem __read_mostly = true;
 struct percpu_counter pagecache_reliable_pages;
@@ -147,8 +148,12 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn,
 
 void shmem_reliable_init(void)
 {
-	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled())
+	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled()) {
 		shmem_reliable = false;
+		return;
+	}
+
+	percpu_counter_init(&reliable_shmem_used_nr_page, 0, GFP_KERNEL);
 }
 
 static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
@@ -165,6 +170,12 @@ void reliable_report_meminfo(struct seq_file *m)
 	show_val_kb(m, "ReliableTotal:    ", total_reliable_pages());
 	show_val_kb(m, "ReliableUsed:     ", used_reliable_pages());
 	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
+
+	if (shmem_reliable_is_enabled()) {
+		unsigned long shmem_pages = (unsigned long)percpu_counter_sum(
+			&reliable_shmem_used_nr_page);
+		show_val_kb(m, "ReliableShmem:    ", shmem_pages);
+	}
 
 	if (pagecache_reliable_is_enabled()) {
 		s64 nr_pagecache_pages = 0;

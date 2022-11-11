@@ -972,6 +972,7 @@ varies by architecture and compile options.  The following is from a
     ReliableTotal: 7340032 kB
     ReliableUsed:   418824 kB
     ReliableBuddyMem: 418824 kB
+    ReliableShmem:        96 kB
 
 MemTotal
               Total usable RAM (i.e. physical RAM minus a few reserved
@@ -1107,6 +1108,8 @@ ReliableUsed
               The used amount of reliable memory
 ReliableBuddyMem
               Size of unused mirrored memory in buddy system
+ReliableShmem
+              Total reliable memory used by share memory
 
 vmallocinfo
 ~~~~~~~~~~~

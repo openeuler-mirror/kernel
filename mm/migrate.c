@@ -481,6 +481,11 @@ int migrate_page_move_mapping(struct address_space *mapping,
 	xas_unlock(&xas);
 	/* Leave irq disabled to prevent preemption while updating stats */
 
+	if (PageSwapBacked(page) && !PageSwapCache(page)) {
+		shmem_reliable_page_counter(page, -nr);
+		shmem_reliable_page_counter(newpage, nr);
+	}
+
 	/*
 	 * If moved to a different zone then also account
 	 * the page for that zone. Other VM counters will be
