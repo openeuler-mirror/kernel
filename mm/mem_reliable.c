@@ -112,13 +112,19 @@ void shmem_reliable_init(void)
 		shmem_reliable = false;
 }
 
+static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
+{
+	seq_put_decimal_ull_width(m, s, num << (PAGE_SHIFT - 10), 8);
+	seq_write(m, " kB\n", 4);
+}
+
 void reliable_report_meminfo(struct seq_file *m)
 {
 	if (!mem_reliable_is_enabled())
 		return;
 
-	seq_printf(m, "ReliableTotal:    %8lu kB\n",
-		   total_reliable_mem_sz() >> 10);
-	seq_printf(m, "ReliableUsed:     %8lu kB\n",
-		   used_reliable_mem_sz() >> 10);
+	show_val_kb(m, "ReliableTotal:    ",
+			total_reliable_mem_sz() >> PAGE_SHIFT);
+	show_val_kb(m, "ReliableUsed:     ",
+			used_reliable_mem_sz() >> PAGE_SHIFT);
 }
