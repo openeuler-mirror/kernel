@@ -31,14 +31,6 @@ SYM_FUNC_START(handle_syscall)
 	st.d	zero, sp, PT_R0
 	csrrd	t2, LOONGARCH_CSR_PRMD
 	st.d	t2, sp, PT_PRMD
-	csrrd	t2, LOONGARCH_CSR_CRMD
-	st.d	t2, sp, PT_CRMD
-	csrrd	t2, LOONGARCH_CSR_EUEN
-	st.d	t2, sp, PT_EUEN
-	csrrd	t2, LOONGARCH_CSR_ECFG
-	st.d	t2, sp, PT_ECFG
-	csrrd	t2, LOONGARCH_CSR_ESTAT
-	st.d	t2, sp, PT_ESTAT
 	cfi_st	ra, PT_R1
 	cfi_st	a0, PT_R4
 	cfi_st	a1, PT_R5

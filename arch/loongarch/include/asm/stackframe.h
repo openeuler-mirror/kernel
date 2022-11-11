@@ -114,14 +114,6 @@
 	LONG_S	zero, sp, PT_R0
 	csrrd	t0, LOONGARCH_CSR_PRMD
 	LONG_S	t0, sp, PT_PRMD
-	csrrd	t0, LOONGARCH_CSR_CRMD
-	LONG_S	t0, sp, PT_CRMD
-	csrrd	t0, LOONGARCH_CSR_EUEN
-	LONG_S  t0, sp, PT_EUEN
-	csrrd	t0, LOONGARCH_CSR_ECFG
-	LONG_S	t0, sp, PT_ECFG
-	csrrd	t0, LOONGARCH_CSR_ESTAT
-	PTR_S	t0, sp, PT_ESTAT
 	cfi_st	ra, PT_R1, \docfi
 	cfi_st	a0, PT_R4, \docfi
 	cfi_st	a1, PT_R5, \docfi
@@ -140,7 +132,6 @@
 	cfi_st	fp, PT_R22, \docfi
 
 	/* Set thread_info if we're coming from user mode */
-	csrrd	t0, LOONGARCH_CSR_PRMD
 	andi	t0, t0, 0x3	/* extract pplv bit */
 	beqz	t0, 9f
 
