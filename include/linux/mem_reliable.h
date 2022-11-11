@@ -23,6 +23,7 @@ extern bool pagecache_use_reliable_mem;
 extern struct percpu_counter pagecache_reliable_pages;
 extern struct percpu_counter anon_reliable_pages;
 extern unsigned long task_reliable_limit __read_mostly;
+extern atomic_long_t reliable_user_used_nr_page;
 
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn,
@@ -39,6 +40,8 @@ extern bool mem_reliable_counter_initialized(void);
 extern void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				       int preferred_nid, nodemask_t *nodemask);
 extern void reliable_show_mem_info(void);
+extern void reliable_report_usage(struct seq_file *m,
+		struct mm_struct *mm);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -125,6 +128,13 @@ static inline bool reliable_allow_fb_enabled(void)
 {
 	return reliable_allow_fallback;
 }
+
+static inline void reliable_page_counter(struct page *page,
+		struct mm_struct *mm, int val)
+{
+	if (page_reliable(page))
+		atomic_long_add(val, &mm->reliable_nr_page);
+}
 #else
 #define reliable_enabled 0
 #define pagecache_use_reliable_mem 0
@@ -164,6 +174,10 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      nodemask_t *nodemask) {}
 static inline bool reliable_allow_fb_enabled(void) { return false; }
 static inline void reliable_show_mem_info(void) {}
+static inline void reliable_page_counter(struct page *page,
+		struct mm_struct *mm, int val) {}
+static inline void reliable_report_usage(struct seq_file *m,
+		struct mm_struct *mm) {}
 #endif
 
 #endif

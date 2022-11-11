@@ -2467,6 +2467,7 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	spin_unlock_irq(&info->lock);
 
 	inc_mm_counter(dst_mm, mm_counter_file(page));
+	reliable_page_counter(page, dst_mm, 1);
 	page_add_file_rmap(page, false);
 	set_pte_at(dst_mm, dst_addr, dst_pte, _dst_pte);
 
