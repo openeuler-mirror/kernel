@@ -16,6 +16,12 @@ bool reliable_enabled;
 static atomic_long_t total_reliable_mem;
 bool shmem_reliable __read_mostly = true;
 
+bool mem_reliable_status(void)
+{
+	return mem_reliable_is_enabled();
+}
+EXPORT_SYMBOL_GPL(mem_reliable_status);
+
 void page_cache_prepare_alloc(gfp_t *gfp)
 {
 	if (mem_reliable_is_enabled())
