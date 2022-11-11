@@ -8630,6 +8630,13 @@ next:
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
 	if (sysctl_sched_prio_load_balance_enabled && env->imbalance > 0) {
+		/*
+		 * Avoid offline tasks starve to death if env->loop exceed
+		 * env->loop_max, so we should set env->loop to 0 and detach
+		 * offline tasks again.
+		*/
+		if (env->loop > env->loop_max)
+			env->loop = 0;
 		loop++;
 		if (loop == 1) {
 			tasks = &env->src_rq->cfs_offline_tasks;
