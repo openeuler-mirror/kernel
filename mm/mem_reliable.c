@@ -7,6 +7,7 @@
 #include <linux/memory_hotplug.h>
 #include <linux/seq_file.h>
 #include <linux/mmzone.h>
+#include <linux/crash_dump.h>
 
 #define PAGES_TO_B(n_pages)	((n_pages) << PAGE_SHIFT)
 
@@ -62,6 +63,11 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn,
 {
 	if (!reliable_enabled)
 		return;
+
+	if (is_kdump_kernel()) {
+		pr_info("ignoring memory reliable due to in crashkernel\n");
+		return;
+	}
 
 	if (!mirrored_sz) {
 		memset(zone_movable_pfn, 0,
