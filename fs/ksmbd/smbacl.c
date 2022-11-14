@@ -368,7 +368,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 {
 	int i, ret;
 	int num_aces = 0;
-	int acl_size;
+	unsigned int acl_size;
 	char *acl_base;
 	struct smb_ace **ppace;
 	struct posix_acl_entry *cf_pace, *cf_pdace;
@@ -380,7 +380,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 		return;
 
 	/* validate that we do not go past end of acl */
-	if (end_of_acl <= (char *)pdacl ||
+	if (end_of_acl < (char *)pdacl + sizeof(struct smb_acl) ||
 	    end_of_acl < (char *)pdacl + le16_to_cpu(pdacl->size)) {
 		pr_err("ACL too small to parse DACL\n");
 		return;
@@ -419,8 +419,22 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 	 * user/group/other have no permissions
 	 */
 	for (i = 0; i < num_aces; ++i) {
+		if (end_of_acl - acl_base < acl_size)
+			break;
+
 		ppace[i] = (struct smb_ace *)(acl_base + acl_size);
 		acl_base = (char *)ppace[i];
+		acl_size = offsetof(struct smb_ace, sid) +
+			offsetof(struct smb_sid, sub_auth);
+
+		if (end_of_acl - acl_base < acl_size ||
+		    ppace[i]->sid.num_subauth > SID_MAX_SUB_AUTHORITIES ||
+		    (end_of_acl - acl_base <
+		     acl_size + sizeof(__le32) * ppace[i]->sid.num_subauth) ||
+		    (le16_to_cpu(ppace[i]->size) <
+		     acl_size + sizeof(__le32) * ppace[i]->sid.num_subauth))
+			break;
+
 		acl_size = le16_to_cpu(ppace[i]->size);
 		ppace[i]->access_req =
 			smb_map_generic_desired_access(ppace[i]->access_req);
@@ -781,6 +795,9 @@ int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 
 	if (!pntsd)
 		return -EIO;
+
+	if (acl_len < sizeof(struct smb_ntsd))
+		return -EINVAL;
 
 	owner_sid_ptr = (struct smb_sid *)((char *)pntsd +
 			le32_to_cpu(pntsd->osidoffset));
