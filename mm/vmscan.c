@@ -1813,6 +1813,7 @@ static __always_inline void update_lru_sizes(struct lruvec *lruvec,
 			continue;
 
 		update_lru_size(lruvec, lru, zid, -nr_zone_taken[zid]);
+		reliable_lru_add_batch(zid, lru, -nr_zone_taken[zid]);
 	}
 
 }
@@ -2082,6 +2083,7 @@ static unsigned noinline_for_stack move_pages_to_lru(struct lruvec *lruvec,
 
 		update_lru_size(lruvec, lru, page_zonenum(page), nr_pages);
 		list_add(&page->lru, &lruvec->lists[lru]);
+		reliable_lru_add(lru, page, nr_pages);
 		nr_moved += nr_pages;
 		if (PageActive(page))
 			workingset_age_nonresident(lruvec, nr_pages);

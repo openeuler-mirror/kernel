@@ -752,6 +752,7 @@ next:
 		mapping->nrpages += nr;
 		__mod_lruvec_page_state(page, NR_FILE_PAGES, nr);
 		__mod_lruvec_page_state(page, NR_SHMEM, nr);
+		shmem_reliable_page_counter(page, nr);
 unlock:
 		xas_unlock_irq(&xas);
 	} while (xas_nomem(&xas, gfp));
@@ -784,6 +785,7 @@ static void shmem_delete_from_page_cache(struct page *page, void *radswap)
 	mapping->nrpages--;
 	__dec_lruvec_page_state(page, NR_FILE_PAGES);
 	__dec_lruvec_page_state(page, NR_SHMEM);
+	shmem_reliable_page_counter(page, -1);
 	xa_unlock_irq(&mapping->i_pages);
 	put_page(page);
 	BUG_ON(error);
@@ -1559,12 +1561,20 @@ static struct page *shmem_alloc_page(gfp_t gfp,
 	return page;
 }
 
-static inline void shmem_prepare_alloc(gfp_t *gfp_mask)
+static inline bool shmem_prepare_alloc(gfp_t *gfp_mask)
 {
 	if (!shmem_reliable_is_enabled())
-		return;
+		return true;
 
-	*gfp_mask |= GFP_RELIABLE;
+	if (mem_reliable_shmem_limit_check()) {
+		*gfp_mask |= GFP_RELIABLE;
+		return true;
+	}
+
+	if (reliable_allow_fb_enabled())
+		return true;
+
+	return false;
 }
 
 static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
@@ -1583,7 +1593,8 @@ static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 	if (!shmem_inode_acct_block(inode, nr))
 		goto failed;
 
-	shmem_prepare_alloc(&gfp);
+	if (!shmem_prepare_alloc(&gfp))
+		goto no_mem;
 
 	if (huge)
 		page = shmem_alloc_hugepage(gfp, info, index, node_id);
@@ -1595,6 +1606,7 @@ static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 		return page;
 	}
 
+no_mem:
 	err = -ENOMEM;
 	shmem_inode_unacct_blocks(inode, nr);
 failed:
@@ -2455,6 +2467,7 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	spin_unlock_irq(&info->lock);
 
 	inc_mm_counter(dst_mm, mm_counter_file(page));
+	reliable_page_counter(page, dst_mm, 1);
 	page_add_file_rmap(page, false);
 	set_pte_at(dst_mm, dst_addr, dst_pte, _dst_pte);
 

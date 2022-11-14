@@ -1155,6 +1155,7 @@ static int replace_page(struct vm_area_struct *vma, struct page *page,
 	 */
 	if (!is_zero_pfn(page_to_pfn(kpage))) {
 		get_page(kpage);
+		reliable_page_counter(kpage, mm, 1);
 		page_add_anon_rmap(kpage, vma, addr, false);
 		newpte = mk_pte(kpage, vma->vm_page_prot);
 	} else {
@@ -1179,6 +1180,7 @@ static int replace_page(struct vm_area_struct *vma, struct page *page,
 	ptep_clear_flush(vma, addr, ptep);
 	set_pte_at_notify(mm, addr, ptep, newpte);
 
+	reliable_page_counter(page, mm, -1);
 	page_remove_rmap(page, false);
 	if (!page_mapped(page))
 		try_to_free_swap(page);
