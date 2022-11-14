@@ -5395,7 +5395,7 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 {
 	struct smb2_file_all_info *file_info;
 	struct iattr attrs;
-	struct iattr temp_attrs;
+	struct timespec64 ctime;
 	struct file *filp;
 	struct inode *inode;
 	int rc;
@@ -5417,11 +5417,11 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 	}
 
 	if (file_info->ChangeTime) {
-		temp_attrs.ia_ctime = ksmbd_NTtimeToUnix(file_info->ChangeTime);
-		attrs.ia_ctime = temp_attrs.ia_ctime;
+		attrs.ia_ctime = ksmbd_NTtimeToUnix(file_info->ChangeTime);
+		ctime = attrs.ia_ctime;
 		attrs.ia_valid |= ATTR_CTIME;
 	} else {
-		temp_attrs.ia_ctime = inode->i_ctime;
+		ctime = inode->i_ctime;
 	}
 
 	if (file_info->LastWriteTime) {
@@ -5459,13 +5459,6 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 		rc = 0;
 	}
 
-	/*
-	 * HACK : set ctime here to avoid ctime changed
-	 * when file_info->ChangeTime is zero.
-	 */
-	attrs.ia_ctime = temp_attrs.ia_ctime;
-	attrs.ia_valid |= ATTR_CTIME;
-
 	if (attrs.ia_valid) {
 		struct dentry *dentry = filp->f_path.dentry;
 		struct inode *inode = d_inode(dentry);
@@ -5473,14 +5466,12 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EACCES;
 
-		rc = setattr_prepare(dentry, &attrs);
-		if (rc)
-			return -EINVAL;
-
 		inode_lock(inode);
-		setattr_copy(inode, &attrs);
-		attrs.ia_valid &= ~ATTR_CTIME;
 		rc = notify_change(dentry, &attrs, NULL);
+		if (!rc) {
+			inode->i_ctime = ctime;
+			mark_inode_dirty(inode);
+		}
 		inode_unlock(inode);
 	}
 	return rc;
