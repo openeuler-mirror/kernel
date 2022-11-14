@@ -3867,7 +3867,8 @@ retry:
 			(alloc_flags & ALLOC_CPUSET) &&
 			!__cpuset_zone_allowed(zone, gfp_mask)
 #ifdef CONFIG_COHERENT_DEVICE
-			&& !(alloc_flags & ALLOC_CDM)
+			&& (!is_cdm_node(zone->zone_pgdat->node_id) ||
+			    !(alloc_flags & ALLOC_CDM))
 #endif
 		)
 				continue;
