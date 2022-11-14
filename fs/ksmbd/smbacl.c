@@ -716,7 +716,6 @@ static void set_mode_dacl(struct smb_acl *pndacl, struct smb_fattr *fattr)
 	ace_size = fill_ace_for_sid(pace, sid, ACCESS_ALLOWED, 0,
 				    fattr->cf_mode, 0700);
 	pace->sid.sub_auth[pace->sid.num_subauth++] = cpu_to_le32(uid);
-	pace->access_req |= FILE_DELETE_LE | FILE_DELETE_CHILD_LE;
 	pace->size = cpu_to_le16(ace_size + 4);
 	size += le16_to_cpu(pace->size);
 	pace = (struct smb_ace *)((char *)pndace + size);
@@ -737,7 +736,6 @@ static void set_mode_dacl(struct smb_acl *pndacl, struct smb_fattr *fattr)
 		/* creator owner */
 		size += fill_ace_for_sid(pace, &creator_owner, ACCESS_ALLOWED,
 					 0x0b, fattr->cf_mode, 0700);
-		pace->access_req |= FILE_DELETE_LE | FILE_DELETE_CHILD_LE;
 		pace = (struct smb_ace *)((char *)pndace + size);
 
 		/* creator group */
