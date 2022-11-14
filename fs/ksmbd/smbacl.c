@@ -1271,6 +1271,7 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	int rc;
 	struct smb_fattr fattr = {{0}};
 	struct inode *inode = d_inode(path->dentry);
+	struct iattr newattrs;
 
 	fattr.cf_uid = INVALID_UID;
 	fattr.cf_gid = INVALID_GID;
@@ -1280,12 +1281,23 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	if (rc)
 		goto out;
 
-	inode->i_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
-	if (!uid_eq(fattr.cf_uid, INVALID_UID))
-		inode->i_uid = fattr.cf_uid;
-	if (!gid_eq(fattr.cf_gid, INVALID_GID))
-		inode->i_gid = fattr.cf_gid;
-	mark_inode_dirty(inode);
+	newattrs.ia_valid = ATTR_CTIME;
+	if (!uid_eq(fattr.cf_uid, INVALID_UID)) {
+		newattrs.ia_valid |= ATTR_UID;
+		newattrs.ia_uid = fattr.cf_uid;
+	}
+	if (!gid_eq(fattr.cf_gid, INVALID_GID)) {
+		newattrs.ia_valid |= ATTR_GID;
+		newattrs.ia_gid = fattr.cf_gid;
+	}
+	newattrs.ia_valid |= ATTR_MODE;
+	newattrs.ia_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
+
+	inode_lock(inode);
+	rc = notify_change(path->dentry, &newattrs, NULL);
+	inode_unlock(inode);
+	if (rc)
+		goto out;
 
 	ksmbd_vfs_remove_acl_xattrs(path->dentry);
 	/* Update posix acls */
