@@ -278,7 +278,7 @@ extern bool mg_is_sharepool_addr(unsigned long addr);
 extern int mg_sp_id_of_current(void);
 
 extern void sp_area_drop(struct vm_area_struct *vma);
-extern int sp_group_exit(struct mm_struct *mm);
+extern int sp_group_exit(void);
 extern void sp_group_post_exit(struct mm_struct *mm);
 vm_fault_t sharepool_no_page(struct mm_struct *mm,
 			     struct vm_area_struct *vma,
@@ -331,7 +331,7 @@ static inline int mg_sp_group_del_task(int tgid, int spg_id)
 	return -EPERM;
 }
 
-static inline int sp_group_exit(struct mm_struct *mm)
+static inline int sp_group_exit(void)
 {
 	return 0;
 }

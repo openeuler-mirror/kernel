@@ -4276,34 +4276,13 @@ backout:
 	goto out;
 }
 
-#define MM_WOULD_FREE	1
-
 /*
- * Recall we add mm->users by 1 deliberately in sp_group_add_task().
- * If the mm_users == sp_group_master->count + 1, it means that the mm is ready
- * to be freed because the last owner of this mm is in exiting procedure:
- * do_exit() -> exit_mm() -> mmput() -> sp_group_exit -> THIS function.
+ * The caller must ensure that this function is called
+ * when the last thread in the thread group exits.
  */
-static bool need_free_sp_group(struct mm_struct *mm,
-			      struct sp_group_master *master)
+int sp_group_exit(void)
 {
-	/* thread exits but process is still alive */
-	if ((unsigned int)atomic_read(&mm->mm_users) != master->count + MM_WOULD_FREE) {
-		if (atomic_dec_and_test(&mm->mm_users))
-			WARN(1, "Invalid user counting\n");
-		return false;
-	}
-
-	return true;
-}
-
-/*
- * Return:
- * 1	- let mmput() return immediately
- * 0	- let mmput() decrease mm_users and try __mmput()
- */
-int sp_group_exit(struct mm_struct *mm)
-{
+	struct mm_struct *mm;
 	struct sp_group *spg;
 	struct sp_group_master *master;
 	struct sp_group_node *spg_node, *tmp;
@@ -4312,17 +4291,16 @@ int sp_group_exit(struct mm_struct *mm)
 	if (!sp_is_enabled())
 		return 0;
 
+	if (current->flags & PF_KTHREAD)
+		return 0;
+
+	mm = current->mm;
 	down_write(&sp_group_sem);
 
 	master = mm->sp_group_master;
 	if (!master) {
 		up_write(&sp_group_sem);
 		return 0;
-	}
-
-	if (!need_free_sp_group(mm, master)) {
-		up_write(&sp_group_sem);
-		return 1;
 	}
 
 	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
