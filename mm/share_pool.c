@@ -2284,7 +2284,6 @@ struct sp_alloc_context {
 	unsigned long sp_flags;
 	unsigned long populate;
 	int state;
-	bool need_fallocate;
 	bool have_mbind;
 	enum spa_type type;
 };
@@ -2362,7 +2361,6 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	ac->size = size;
 	ac->sp_flags = sp_flags;
 	ac->state = ALLOC_NORMAL;
-	ac->need_fallocate = false;
 	ac->have_mbind = false;
 	return 0;
 }
@@ -2457,6 +2455,7 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	 * page fault later on, and more importantly sp_make_share_u2k()
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
+
 	return do_mm_populate(mm, spa->va_start, ac->populate, 0);
 }
 
@@ -2477,6 +2476,7 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	int ret;
 
 	ret = sp_alloc_mmap(mm, spa, spg_node, ac);
+
 	if (ret < 0)
 		return ret;
 
@@ -2485,21 +2485,18 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 		if (ret < 0) {
 			pr_err("cannot bind the memory range to specified node:%d, err:%d\n",
 				spa->node_id, ret);
-			goto err;
+			return ret;
 		}
 		ac->have_mbind = true;
 	}
 
 	ret = sp_alloc_populate(mm, spa, ac);
 	if (ret) {
-err:
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn_ratelimited("allocation failed, current thread is killed\n");
 		else
 			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
 					ret);
-	} else {
-		ac->need_fallocate = true;
 	}
 	return ret;
 }
@@ -2517,8 +2514,16 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 		mm = spg_node->master->mm;
 		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
 		if (mmap_ret) {
+
+			/*
+			 * Goto fallback procedure upon ERR_VALUE,
+			 * but skip the coredump situation,
+			 * because we don't want one misbehaving process to affect others.
+			 */
 			if (ac->state != ALLOC_COREDUMP)
 				goto unmap;
+
+			/* Reset state and discard the coredump error. */
 			ac->state = ALLOC_NORMAL;
 			continue;
 		}
@@ -2533,11 +2538,16 @@ unmap:
 		end_mm = list_next_entry(spg_node, proc_node)->master->mm;
 	sp_alloc_unmap(end_mm, spa, spg_node);
 
-	/* only fallocate spa if physical memory had been allocated */
-	if (ac->need_fallocate) {
-		sp_fallocate(spa);
-		ac->need_fallocate = false;
-	}
+	/*
+	 * Sometimes do_mm_populate() allocates some memory and then failed to
+	 * allocate more. (e.g. memory use reaches cgroup limit.)
+	 * In this case, it will return enomem, but will not free the
+	 * memory which has already been allocated.
+	 *
+	 * So if __sp_alloc_mmap_populate fails, always call sp_fallocate()
+	 * to make sure backup physical memory of the shared file is freed.
+	 */
+	sp_fallocate(spa);
 
 	/* if hugepage allocation fails, this will transfer to normal page
 	 * and try again. (only if SP_HUGEPAGE_ONLY is not flagged
