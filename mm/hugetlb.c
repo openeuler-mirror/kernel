@@ -6226,7 +6226,7 @@ void __init hugetlb_cma_check(void)
 #endif /* CONFIG_CMA */
 
 #ifdef CONFIG_ASCEND_FEATURES
-static int enable_charge_mighp __read_mostly;
+int enable_charge_mighp __read_mostly;
 
 const struct hstate *hugetlb_get_hstate(void)
 {
