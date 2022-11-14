@@ -2693,7 +2693,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	if (prot & PROT_WRITE)
 		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
 
-	if (kc && kc->sp_flags & SP_PROT_RO)
+	if (kc && (kc->sp_flags & SP_PROT_RO))
 		vma->vm_flags &= ~VM_MAYWRITE;
 
 	if (is_vm_hugetlb_page(vma)) {
