@@ -5398,7 +5398,7 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 	struct timespec64 ctime;
 	struct file *filp;
 	struct inode *inode;
-	int rc;
+	int rc = 0;
 
 	if (!(fp->daccess & FILE_WRITE_ATTRIBUTES_LE))
 		return -EACCES;
