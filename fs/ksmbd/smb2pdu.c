@@ -1509,7 +1509,9 @@ static int ntlm_authenticate(struct ksmbd_work *work)
 
 binding_session:
 	if (conn->dialect >= SMB30_PROT_ID) {
+		read_lock(&sess->chann_lock);
 		chann = lookup_chann_list(sess, conn);
+		read_unlock(&sess->chann_lock);
 		if (!chann) {
 			chann = kmalloc(sizeof(struct channel), GFP_KERNEL);
 			if (!chann)
@@ -1517,7 +1519,9 @@ binding_session:
 
 			chann->conn = conn;
 			INIT_LIST_HEAD(&chann->chann_list);
+			write_lock(&sess->chann_lock);
 			list_add(&chann->chann_list, &sess->ksmbd_chann_list);
+			write_unlock(&sess->chann_lock);
 		}
 	}
 
@@ -1591,7 +1595,9 @@ static int krb5_authenticate(struct ksmbd_work *work)
 	}
 
 	if (conn->dialect >= SMB30_PROT_ID) {
+		read_lock(&sess->chann_lock);
 		chann = lookup_chann_list(sess, conn);
+		read_unlock(&sess->chann_lock);
 		if (!chann) {
 			chann = kmalloc(sizeof(struct channel), GFP_KERNEL);
 			if (!chann)
@@ -1599,7 +1605,9 @@ static int krb5_authenticate(struct ksmbd_work *work)
 
 			chann->conn = conn;
 			INIT_LIST_HEAD(&chann->chann_list);
+			write_lock(&sess->chann_lock);
 			list_add(&chann->chann_list, &sess->ksmbd_chann_list);
+			write_unlock(&sess->chann_lock);
 		}
 	}
 
@@ -8303,10 +8311,14 @@ int smb3_check_sign_req(struct ksmbd_work *work)
 	if (le16_to_cpu(hdr->Command) == SMB2_SESSION_SETUP_HE) {
 		signing_key = work->sess->smb3signingkey;
 	} else {
+		read_lock(&work->sess->chann_lock);
 		chann = lookup_chann_list(work->sess, conn);
-		if (!chann)
+		if (!chann) {
+			read_unlock(&work->sess->chann_lock);
 			return 0;
+		}
 		signing_key = chann->smb3signingkey;
+		read_unlock(&work->sess->chann_lock);
 	}
 
 	if (!signing_key) {
@@ -8366,10 +8378,14 @@ void smb3_set_sign_rsp(struct ksmbd_work *work)
 	    le16_to_cpu(hdr->Command) == SMB2_SESSION_SETUP_HE) {
 		signing_key = work->sess->smb3signingkey;
 	} else {
+		read_lock(&work->sess->chann_lock);
 		chann = lookup_chann_list(work->sess, work->conn);
-		if (!chann)
+		if (!chann) {
+			read_unlock(&work->sess->chann_lock);
 			return;
+		}
 		signing_key = chann->smb3signingkey;
+		read_unlock(&work->sess->chann_lock);
 	}
 
 	if (!signing_key)
