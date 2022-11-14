@@ -1287,10 +1287,10 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	ksmbd_vfs_remove_acl_xattrs(path->dentry);
 	/* Update posix acls */
 	if (fattr.cf_dacls) {
-		rc = set_posix_acl(&init_user_ns, inode, ACL_TYPE_ACCESS,
+		rc = set_posix_acl(inode, ACL_TYPE_ACCESS,
 				   fattr.cf_acls);
 		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls)
-			rc = set_posix_acl(&init_user_ns, inode,
+			rc = set_posix_acl(inode,
 					   ACL_TYPE_DEFAULT, fattr.cf_dacls);
 	}
 

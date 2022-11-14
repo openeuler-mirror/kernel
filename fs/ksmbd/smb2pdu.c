@@ -2634,7 +2634,7 @@ int smb2_open(struct ksmbd_work *work)
 		rc = 0;
 	} else {
 		file_present = true;
-		generic_fillattr(&init_user_ns, d_inode(path.dentry), &stat);
+		generic_fillattr(d_inode(path.dentry), &stat);
 	}
 	if (stream_name) {
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
@@ -2738,8 +2738,7 @@ int smb2_open(struct ksmbd_work *work)
 		 * is already granted.
 		 */
 		if (daccess & ~(FILE_READ_ATTRIBUTES_LE | FILE_READ_CONTROL_LE)) {
-			rc = inode_permission(&init_user_ns,
-					      d_inode(path.dentry),
+			rc = inode_permission(d_inode(path.dentry),
 					      may_flags);
 			if (rc)
 				goto err_out;
@@ -2895,7 +2894,7 @@ int smb2_open(struct ksmbd_work *work)
 
 	rc = ksmbd_vfs_getattr(&path, &stat);
 	if (rc) {
-		generic_fillattr(&init_user_ns, d_inode(path.dentry), &stat);
+		generic_fillattr(d_inode(path.dentry), &stat);
 		rc = 0;
 	}
 
@@ -2996,7 +2995,7 @@ int smb2_open(struct ksmbd_work *work)
 
 	memcpy(fp->client_guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE);
 
-	generic_fillattr(&init_user_ns, file_inode(fp->filp), &stat);
+	generic_fillattr(file_inode(fp->filp), &stat);
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rcu_read_lock();
@@ -3710,7 +3709,7 @@ int smb2_query_dir(struct ksmbd_work *work)
 	}
 
 	if (!(dir_fp->daccess & FILE_LIST_DIRECTORY_LE) ||
-	    inode_permission(&init_user_ns, file_inode(dir_fp->filp),
+	    inode_permission(file_inode(dir_fp->filp),
 			     MAY_READ | MAY_EXEC)) {
 		pr_err("no right to enumerate directory (%pd)\n",
 		       dir_fp->filp->f_path.dentry);
@@ -4124,7 +4123,7 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 	}
 
 	basic_info = (struct smb2_file_all_info *)rsp->Buffer;
-	generic_fillattr(&init_user_ns, file_inode(fp->filp), &stat);
+	generic_fillattr(file_inode(fp->filp), &stat);
 	basic_info->CreationTime = cpu_to_le64(fp->create_time);
 	time = ksmbd_UnixTimeToNT(stat.atime);
 	basic_info->LastAccessTime = cpu_to_le64(time);
@@ -4165,7 +4164,7 @@ static void get_file_standard_info(struct smb2_query_info_rsp *rsp,
 	struct kstat stat;
 
 	inode = file_inode(fp->filp);
-	generic_fillattr(&init_user_ns, inode, &stat);
+	generic_fillattr(inode, &stat);
 
 	sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 	delete_pending = ksmbd_inode_pending_delete(fp);
@@ -4220,7 +4219,7 @@ static int get_file_all_info(struct ksmbd_work *work,
 		return -ENOMEM;
 
 	inode = file_inode(fp->filp);
-	generic_fillattr(&init_user_ns, inode, &stat);
+	generic_fillattr(inode, &stat);
 
 	ksmbd_debug(SMB, "filename = %s\n", filename);
 	delete_pending = ksmbd_inode_pending_delete(fp);
@@ -4295,7 +4294,7 @@ static void get_file_stream_info(struct ksmbd_work *work,
 	ssize_t xattr_list_len;
 	int nbytes = 0, streamlen, stream_name_len, next, idx = 0;
 
-	generic_fillattr(&init_user_ns, file_inode(fp->filp), &stat);
+	generic_fillattr(file_inode(fp->filp), &stat);
 	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
 	xattr_list_len = ksmbd_vfs_listxattr(path->dentry, &xattr_list);
@@ -4374,7 +4373,7 @@ static void get_file_internal_info(struct smb2_query_info_rsp *rsp,
 	struct smb2_file_internal_info *file_info;
 	struct kstat stat;
 
-	generic_fillattr(&init_user_ns, file_inode(fp->filp), &stat);
+	generic_fillattr(file_inode(fp->filp), &stat);
 	file_info = (struct smb2_file_internal_info *)rsp->Buffer;
 	file_info->IndexNumber = cpu_to_le64(stat.ino);
 	rsp->OutputBufferLength =
@@ -4399,7 +4398,7 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 	file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
 
 	inode = file_inode(fp->filp);
-	generic_fillattr(&init_user_ns, inode, &stat);
+	generic_fillattr(inode, &stat);
 
 	file_info->CreationTime = cpu_to_le64(fp->create_time);
 	time = ksmbd_UnixTimeToNT(stat.atime);
@@ -4460,7 +4459,7 @@ static void get_file_compression_info(struct smb2_query_info_rsp *rsp,
 	struct smb2_file_comp_info *file_info;
 	struct kstat stat;
 
-	generic_fillattr(&init_user_ns, file_inode(fp->filp), &stat);
+	generic_fillattr(file_inode(fp->filp), &stat);
 
 	file_info = (struct smb2_file_comp_info *)rsp->Buffer;
 	file_info->CompressedFileSize = cpu_to_le64(stat.blocks << 9);
@@ -5433,14 +5432,14 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EACCES;
 
-		rc = setattr_prepare(&init_user_ns, dentry, &attrs);
+		rc = setattr_prepare(dentry, &attrs);
 		if (rc)
 			return -EINVAL;
 
 		inode_lock(inode);
-		setattr_copy(&init_user_ns, inode, &attrs);
+		setattr_copy(inode, &attrs);
 		attrs.ia_valid &= ~ATTR_CTIME;
-		rc = notify_change(&init_user_ns, dentry, &attrs, NULL);
+		rc = notify_change(dentry, &attrs, NULL);
 		inode_unlock(inode);
 	}
 	return 0;
