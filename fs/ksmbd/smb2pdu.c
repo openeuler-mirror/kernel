@@ -6656,7 +6656,7 @@ int smb2_lock(struct ksmbd_work *work)
 			    cmp_lock->start < smb_lock->end) {
 				pr_err("previous lock conflict with zero byte lock range\n");
 				rsp->hdr.Status = STATUS_LOCK_NOT_GRANTED;
-					goto out;
+				goto out;
 			}
 
 			if (smb_lock->zero_len && !cmp_lock->zero_len &&
@@ -6664,7 +6664,7 @@ int smb2_lock(struct ksmbd_work *work)
 			    smb_lock->start < cmp_lock->end) {
 				pr_err("current lock conflict with zero byte lock range\n");
 				rsp->hdr.Status = STATUS_LOCK_NOT_GRANTED;
-					goto out;
+				goto out;
 			}
 
 			if (((cmp_lock->start <= smb_lock->start &&
