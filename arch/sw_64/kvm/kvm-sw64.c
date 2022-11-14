@@ -68,7 +68,8 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm, int irq
 	return vcpu_interrupt_line(vcpu, irq, true);
 }
 
-extern int __sw64_vcpu_run(struct vcpucb *vcb, struct kvm_regs *regs, struct hcall_args *args);
+extern int __sw64_vcpu_run(unsigned long vcb_pa,
+			   struct kvm_regs *regs, struct hcall_args *args);
 
 #ifdef CONFIG_KVM_MEMHOTPLUG
 static u64 get_vpcr_memhp(u64 seg_base, u64 vpn)
@@ -674,7 +675,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		trace_kvm_sw64_entry(vcpu->vcpu_id, vcpu->arch.regs.pc);
 		vcpu->mode = IN_GUEST_MODE;
 
-		ret = __sw64_vcpu_run((struct vcpucb *)__phys_addr((unsigned long)vcb), &(vcpu->arch.regs), &hargs);
+		ret = __sw64_vcpu_run(__pa(vcb), &(vcpu->arch.regs), &hargs);
 
 		/* Back from guest */
 		vcpu->mode = OUTSIDE_GUEST_MODE;
