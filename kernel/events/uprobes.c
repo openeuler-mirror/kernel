@@ -2068,10 +2068,17 @@ static struct uprobe *find_active_uprobe(unsigned long bp_vaddr, int *is_swbp)
 	return uprobe;
 }
 
+#ifdef CONFIG_UPROBES_SUPPORT_PC_ALTER
+static bool handler_chain(struct uprobe *uprobe, struct pt_regs *regs)
+#else
 static void handler_chain(struct uprobe *uprobe, struct pt_regs *regs)
+#endif
 {
 	struct uprobe_consumer *uc;
 	int remove = UPROBE_HANDLER_REMOVE;
+#ifdef CONFIG_UPROBES_SUPPORT_PC_ALTER
+	bool need_skip = false;
+#endif
 	bool need_prep = false; /* prepare return uprobe, when needed */
 
 	down_read(&uprobe->register_rwsem);
@@ -2088,6 +2095,10 @@ static void handler_chain(struct uprobe *uprobe, struct pt_regs *regs)
 			need_prep = true;
 
 		remove &= rc;
+#ifdef CONFIG_UPROBES_SUPPORT_PC_ALTER
+		if (rc & UPROBE_ALTER_PC)
+			need_skip = true;
+#endif
 	}
 
 	if (need_prep && !remove)
@@ -2098,6 +2109,9 @@ static void handler_chain(struct uprobe *uprobe, struct pt_regs *regs)
 		unapply_uprobe(uprobe, current->mm);
 	}
 	up_read(&uprobe->register_rwsem);
+#ifdef CONFIG_UPROBES_SUPPORT_PC_ALTER
+	return need_skip;
+#endif
 }
 
 static void
@@ -2239,7 +2253,12 @@ static void handle_swbp(struct pt_regs *regs)
 	if (arch_uprobe_ignore(&uprobe->arch, regs))
 		goto out;
 
+#ifdef CONFIG_UPROBES_SUPPORT_PC_ALTER
+	if (handler_chain(uprobe, regs))
+		goto out;
+#else
 	handler_chain(uprobe, regs);
+#endif
 
 	if (arch_uprobe_skip_sstep(&uprobe->arch, regs))
 		goto out;
