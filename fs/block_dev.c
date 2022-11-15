@@ -1264,16 +1264,31 @@ int bd_link_disk_holder(struct block_device *bdev, struct gendisk *disk)
 	struct bd_holder_disk *holder;
 	int ret = 0;
 
-	mutex_lock(&bdev->bd_mutex);
+	/*
+	 * bdev could be deleted beneath us which would implicitly destroy
+	 * the holder directory.  Hold on to it.
+	 */
+	down_read(&bdev->bd_disk->lookup_sem);
+	if (!(disk->flags & GENHD_FL_UP)) {
+		up_read(&bdev->bd_disk->lookup_sem);
+		return -ENODEV;
+	}
 
+	kobject_get(bdev->bd_part->holder_dir);
+	up_read(&bdev->bd_disk->lookup_sem);
+
+	mutex_lock(&bdev->bd_mutex);
 	WARN_ON_ONCE(!bdev->bd_holder);
 
 	/* FIXME: remove the following once add_disk() handles errors */
-	if (WARN_ON(!disk->slave_dir || !bdev->bd_part->holder_dir))
+	if (WARN_ON(!disk->slave_dir || !bdev->bd_part->holder_dir)) {
+		kobject_put(bdev->bd_part->holder_dir);
 		goto out_unlock;
+	}
 
 	holder = bd_find_holder_disk(bdev, disk);
 	if (holder) {
+		kobject_put(bdev->bd_part->holder_dir);
 		holder->refcnt++;
 		goto out_unlock;
 	}
@@ -1295,11 +1310,6 @@ int bd_link_disk_holder(struct block_device *bdev, struct gendisk *disk)
 	ret = add_symlink(bdev->bd_part->holder_dir, &disk_to_dev(disk)->kobj);
 	if (ret)
 		goto out_del;
-	/*
-	 * bdev could be deleted beneath us which would implicitly destroy
-	 * the holder directory.  Hold on to it.
-	 */
-	kobject_get(bdev->bd_part->holder_dir);
 
 	list_add(&holder->list, &bdev->bd_holder_disks);
 	goto out_unlock;
@@ -1310,6 +1320,8 @@ out_free:
 	kfree(holder);
 out_unlock:
 	mutex_unlock(&bdev->bd_mutex);
+	if (ret)
+		kobject_put(bdev->bd_part->holder_dir);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(bd_link_disk_holder);
