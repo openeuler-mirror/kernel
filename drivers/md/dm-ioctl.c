@@ -2033,6 +2033,8 @@ int dm_copy_name_and_uuid(struct mapped_device *md, char *name, char *uuid)
 	mutex_lock(&dm_hash_cells_mutex);
 	hc = dm_get_mdptr(md);
 	if (!hc || hc->md != md) {
+		if (hc)
+			DMERR("hash cell and mapped device do not match!");
 		r = -ENXIO;
 		goto out;
 	}
