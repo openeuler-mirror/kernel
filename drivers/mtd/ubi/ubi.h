@@ -1109,18 +1109,6 @@ static inline int ubi_io_read_data(const struct ubi_device *ubi, void *buf,
 	return ubi_io_read(ubi, buf, pnum, offset + ubi->leb_start, len);
 }
 
-/*
- * This function is equivalent to 'ubi_io_write()', but @offset is relative to
- * the beginning of the logical eraseblock, not to the beginning of the
- * physical eraseblock.
- */
-static inline int ubi_io_write_data(struct ubi_device *ubi, const void *buf,
-				    int pnum, int offset, int len)
-{
-	ubi_assert(offset >= 0);
-	return ubi_io_write(ubi, buf, pnum, offset + ubi->leb_start, len);
-}
-
 /**
  * ubi_ro_mode - switch to read-only mode.
  * @ubi: UBI device description object
@@ -1132,6 +1120,25 @@ static inline void ubi_ro_mode(struct ubi_device *ubi)
 		ubi_warn(ubi, "switch to read-only mode");
 		dump_stack();
 	}
+}
+
+/*
+ * This function is equivalent to 'ubi_io_write()', but @offset is relative to
+ * the beginning of the logical eraseblock, not to the beginning of the
+ * physical eraseblock.
+ */
+static inline int ubi_io_write_data(struct ubi_device *ubi, const void *buf,
+				    int pnum, int offset, int len)
+{
+	ubi_assert(offset >= 0);
+
+	if (ubi_dbg_power_cut(ubi, MASK_POWER_CUT_DATA)) {
+		ubi_warn(ubi, "XXXXX emulating a power cut when writing data XXXXX");
+		ubi_ro_mode(ubi);
+		return -EROFS;
+	}
+
+	return ubi_io_write(ubi, buf, pnum, offset + ubi->leb_start, len);
 }
 
 /**
