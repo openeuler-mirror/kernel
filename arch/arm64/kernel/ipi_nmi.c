@@ -40,9 +40,25 @@ static void ipi_cpu_backtrace(void *info)
 	printk_safe_exit();
 }
 
+static DEFINE_PER_CPU(call_single_data_t, cpu_backtrace_csd) =
+	CSD_INIT(ipi_cpu_backtrace, NULL);
+
 static void arm64_send_ipi(cpumask_t *mask)
 {
-	smp_call_function_many(mask, ipi_cpu_backtrace, NULL, false);
+	call_single_data_t *csd;
+	int this_cpu = raw_smp_processor_id();
+	int cpu;
+	int ret;
+
+	for_each_online_cpu(cpu) {
+		if (cpu == this_cpu)
+			continue;
+
+		csd = &per_cpu(cpu_backtrace_csd, cpu);
+		ret = smp_call_function_single_async(cpu, csd);
+		if (ret)
+			pr_info("Sending IPI failed to CPU %d\n", cpu);
+	}
 }
 
 bool arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)
