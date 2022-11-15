@@ -142,17 +142,6 @@ enum {
 	UBI_BAD_FASTMAP,
 };
 
-/*
- * Flags for emulate_power_cut in ubi_debug_info
- *
- * POWER_CUT_EC_WRITE: Emulate a power cut when writing an EC header
- * POWER_CUT_VID_WRITE: Emulate a power cut when writing a VID header
- */
-enum {
-	POWER_CUT_EC_WRITE = 0x01,
-	POWER_CUT_VID_WRITE = 0x02,
-};
-
 /**
  * struct ubi_vid_io_buf - VID buffer used to read/write VID info to/from the
  *			   flash.
@@ -397,46 +386,28 @@ struct ubi_wl_entry;
  * @chk_io: if UBI I/O extra checks are enabled
  * @chk_fastmap: if UBI fastmap extra checks are enabled
  * @disable_bgt: disable the background task for testing purposes
- * @emulate_bitflips: emulate bit-flips for testing purposes
- * @emulate_io_failures: emulate write/erase failures for testing purposes
- * @emulate_power_cut: emulate power cut for testing purposes
- * @power_cut_counter: count down for writes left until emulated power cut
- * @power_cut_min: minimum number of writes before emulating a power cut
- * @power_cut_max: maximum number of writes until emulating a power cut
+ * @emulate_failures: emulate failures for testing purposes
  * @dfs_dir_name: name of debugfs directory containing files of this UBI device
  * @dfs_dir: direntry object of the UBI device debugfs directory
  * @dfs_chk_gen: debugfs knob to enable UBI general extra checks
  * @dfs_chk_io: debugfs knob to enable UBI I/O extra checks
  * @dfs_chk_fastmap: debugfs knob to enable UBI fastmap extra checks
  * @dfs_disable_bgt: debugfs knob to disable the background task
- * @dfs_emulate_bitflips: debugfs knob to emulate bit-flips
- * @dfs_emulate_io_failures: debugfs knob to emulate write/erase failures
- * @dfs_emulate_power_cut: debugfs knob to emulate power cuts
- * @dfs_power_cut_min: debugfs knob for minimum writes before power cut
- * @dfs_power_cut_max: debugfs knob for maximum writes until power cut
+ * @dfs_emulate_failures: debugfs entry to control the fault injection type
  */
 struct ubi_debug_info {
 	unsigned int chk_gen:1;
 	unsigned int chk_io:1;
 	unsigned int chk_fastmap:1;
 	unsigned int disable_bgt:1;
-	unsigned int emulate_bitflips:1;
-	unsigned int emulate_io_failures:1;
-	unsigned int emulate_power_cut:2;
-	unsigned int power_cut_counter;
-	unsigned int power_cut_min;
-	unsigned int power_cut_max;
+	unsigned int emulate_failures;
 	char dfs_dir_name[UBI_DFS_DIR_LEN + 1];
 	struct dentry *dfs_dir;
 	struct dentry *dfs_chk_gen;
 	struct dentry *dfs_chk_io;
 	struct dentry *dfs_chk_fastmap;
 	struct dentry *dfs_disable_bgt;
-	struct dentry *dfs_emulate_bitflips;
-	struct dentry *dfs_emulate_io_failures;
-	struct dentry *dfs_emulate_power_cut;
-	struct dentry *dfs_power_cut_min;
-	struct dentry *dfs_power_cut_max;
+	struct dentry *dfs_emulate_failures;
 };
 
 /**

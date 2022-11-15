@@ -8,6 +8,18 @@
 #ifndef __UBI_DEBUG_H__
 #define __UBI_DEBUG_H__
 
+/**
+ * MASK_XXX: Mask for emulate_failures in ubi_debug_info.The mask is used to
+ * precisely control the type and process of fault injection.
+ */
+/* Emulate bit-flips */
+#define MASK_BITFLIPS		(1 << 0)
+/* Emulates -EIO during write/erase */
+#define MASK_IO_FAILURE		(1 << 1)
+/* Emulate a power cut when writing EC/VID header */
+#define MASK_POWER_CUT_EC	(1 << 2)
+#define MASK_POWER_CUT_VID	(1 << 3)
+
 void ubi_dump_flash(struct ubi_device *ubi, int pnum, int offset, int len);
 void ubi_dump_ec_hdr(const struct ubi_ec_hdr *ec_hdr);
 void ubi_dump_vid_hdr(const struct ubi_vid_hdr *vid_hdr);
@@ -64,47 +76,91 @@ static inline int ubi_dbg_is_bgt_disabled(const struct ubi_device *ubi)
 	return ubi->dbg.disable_bgt;
 }
 
+#ifdef CONFIG_MTD_UBI_FAULT_INJECTION
+
+extern bool should_fail_bitflips(void);
+extern bool should_fail_io_failures(void);
+extern bool should_fail_power_cut(void);
+
 /**
  * ubi_dbg_is_bitflip - if it is time to emulate a bit-flip.
  * @ubi: UBI device description object
  *
- * Returns non-zero if a bit-flip should be emulated, otherwise returns zero.
+ * Returns true if a bit-flip should be emulated, otherwise returns false.
  */
-static inline int ubi_dbg_is_bitflip(const struct ubi_device *ubi)
+static inline bool ubi_dbg_is_bitflip(const struct ubi_device *ubi)
 {
-	if (ubi->dbg.emulate_bitflips)
-		return !(prandom_u32() % 200);
-	return 0;
+	if (ubi->dbg.emulate_failures & MASK_BITFLIPS)
+		return should_fail_bitflips();
+	return false;
 }
 
 /**
  * ubi_dbg_is_write_failure - if it is time to emulate a write failure.
  * @ubi: UBI device description object
  *
- * Returns non-zero if a write failure should be emulated, otherwise returns
- * zero.
+ * Returns true if a write failure should be emulated, otherwise returns
+ * false.
  */
-static inline int ubi_dbg_is_write_failure(const struct ubi_device *ubi)
+static inline bool ubi_dbg_is_write_failure(const struct ubi_device *ubi)
 {
-	if (ubi->dbg.emulate_io_failures)
-		return !(prandom_u32() % 500);
-	return 0;
+	if (ubi->dbg.emulate_failures & MASK_IO_FAILURE)
+		return should_fail_io_failures();
+	return false;
 }
 
 /**
  * ubi_dbg_is_erase_failure - if its time to emulate an erase failure.
  * @ubi: UBI device description object
  *
- * Returns non-zero if an erase failure should be emulated, otherwise returns
- * zero.
+ * Returns true if an erase failure should be emulated, otherwise returns
+ * false.
  */
-static inline int ubi_dbg_is_erase_failure(const struct ubi_device *ubi)
+static inline bool ubi_dbg_is_erase_failure(const struct ubi_device *ubi)
 {
-	if (ubi->dbg.emulate_io_failures)
-		return !(prandom_u32() % 400);
-	return 0;
+	if (ubi->dbg.emulate_failures & MASK_IO_FAILURE)
+		return should_fail_io_failures();
+	return false;
 }
 
+/**
+ * ubi_dbg_power_cut - if it is time to emulate power cut.
+ * @ubi: UBI device description object
+ *
+ * Returns true if power cut should be emulated, otherwise returns false.
+ */
+static inline bool ubi_dbg_power_cut(const struct ubi_device *ubi,
+				     unsigned int caller)
+{
+	if (ubi->dbg.emulate_failures & caller)
+		return should_fail_power_cut();
+	return false;
+}
+
+#else /* CONFIG_MTD_UBI_FAULT_INJECTION */
+
+static inline bool ubi_dbg_is_bitflip(const struct ubi_device *ubi)
+{
+	return false;
+}
+
+static inline bool ubi_dbg_is_write_failure(const struct ubi_device *ubi)
+{
+	return false;
+}
+
+static inline bool ubi_dbg_is_erase_failure(const struct ubi_device *ubi)
+{
+	return false;
+}
+
+static inline bool ubi_dbg_power_cut(const struct ubi_device *ubi,
+				     unsigned int caller)
+{
+	return false;
+}
+
+#endif
 static inline int ubi_dbg_chk_io(const struct ubi_device *ubi)
 {
 	return ubi->dbg.chk_io;
@@ -125,5 +181,4 @@ static inline void ubi_enable_dbg_chk_fastmap(struct ubi_device *ubi)
 	ubi->dbg.chk_fastmap = 1;
 }
 
-int ubi_dbg_power_cut(struct ubi_device *ubi, int caller);
 #endif /* !__UBI_DEBUG_H__ */

@@ -103,5 +103,12 @@ config MTD_UBI_BLOCK
 	   When selected, this feature will be built in the UBI driver.
 
 	   If in doubt, say "N".
+config MTD_UBI_FAULT_INJECTION
+	bool "Fault injection capability of UBI device"
+	default n
+	depends on FAULT_INJECTION_DEBUG_FS
+	help
+	   this option enable fault-injection support for UBI devices for
+	   testing purposes.
 
 endif # MTD_UBI
