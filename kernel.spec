@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2211.2.0
+%global hulkrelease 2211.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0176
+Release: %{hulkrelease}.0177
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,36 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.4.0.0177
+- block: fix use after free for bd_holder_dir
+- Revert "block: Fix UAF in bd_link_disk_holder()"
+- init/main.c: return 1 from handled __setup() functions
+- x86/pm: Save the MSR validity status at context setup
+- x86/speculation: Restore speculation related MSRs during S3 resume
+- x86/cpu: Load microcode during restore_processor_state()
+- genirq: Synchronize interrupt thread startup
+- nvme: Fix IOC_PR_CLEAR and IOC_PR_RELEASE ioctls for nvme devices
+- once: add DO_ONCE_SLOW() for sleepable contexts
+- inet: fully convert sk->sk_rx_dst to RCU rules
+- ext4: continue to expand file system when the target size doesn't reach
+- nvme: copy firmware_rev on each init
+- net: If sock is dead don't access sock's sk_wq in sk_stream_wait_memory
+- can: bcm: check the result of can_send() in bcm_can_tx()
+- xfrm: Update ipcomp_scratches with NULL when freed
+- tcp: annotate data-race around tcp_md5sig_pool_populated
+- tcp: fix tcp_cwnd_validate() to not forget is_cwnd_limited
+- ext4: fix null-ptr-deref in ext4_write_info
+- Revert "fs: check FMODE_LSEEK to control internal pipe splicing"
+- ima: Free the entire rule if it fails to parse
+- ima: Free the entire rule when deleting a list of rules
+- ima: Have the LSM free its audit rule
+- mm/migrate_device.c: flush TLB while holding PTL
+- mm: prevent page_frag_alloc() from corrupting the memory
+- mm/page_alloc: fix race condition between build_all_zonelists and page allocation
+- net: team: Unsync device addresses on ndo_stop
+- mm/slub: fix to return errno if kmalloc() fails
+- of: fdt: fix off-by-one error in unflatten_dt_nodes()
 
 * Tue Nov 08 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.2.0.0176
 - net: tun: fix bugs for oversize packet when napi frags enabled
