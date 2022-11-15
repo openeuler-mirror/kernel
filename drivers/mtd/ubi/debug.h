@@ -15,10 +15,11 @@
 /* Emulate bit-flips */
 #define MASK_BITFLIPS		(1 << 0)
 /* Emulates -EIO during write/erase */
-#define MASK_IO_FAILURE		(1 << 1)
+#define MASK_WRITE_FAILURE	(1 << 1)
+#define MASK_ERASE_FAILURE	(1 << 2)
 /* Emulate a power cut when writing EC/VID header */
-#define MASK_POWER_CUT_EC	(1 << 2)
-#define MASK_POWER_CUT_VID	(1 << 3)
+#define MASK_POWER_CUT_EC	(1 << 3)
+#define MASK_POWER_CUT_VID	(1 << 4)
 
 void ubi_dump_flash(struct ubi_device *ubi, int pnum, int offset, int len);
 void ubi_dump_ec_hdr(const struct ubi_ec_hdr *ec_hdr);
@@ -79,7 +80,8 @@ static inline int ubi_dbg_is_bgt_disabled(const struct ubi_device *ubi)
 #ifdef CONFIG_MTD_UBI_FAULT_INJECTION
 
 extern bool should_fail_bitflips(void);
-extern bool should_fail_io_failures(void);
+extern bool should_fail_write_failure(void);
+extern bool should_fail_erase_failure(void);
 extern bool should_fail_power_cut(void);
 
 /**
@@ -104,8 +106,8 @@ static inline bool ubi_dbg_is_bitflip(const struct ubi_device *ubi)
  */
 static inline bool ubi_dbg_is_write_failure(const struct ubi_device *ubi)
 {
-	if (ubi->dbg.emulate_failures & MASK_IO_FAILURE)
-		return should_fail_io_failures();
+	if (ubi->dbg.emulate_failures & MASK_WRITE_FAILURE)
+		return should_fail_write_failure();
 	return false;
 }
 
@@ -118,8 +120,8 @@ static inline bool ubi_dbg_is_write_failure(const struct ubi_device *ubi)
  */
 static inline bool ubi_dbg_is_erase_failure(const struct ubi_device *ubi)
 {
-	if (ubi->dbg.emulate_failures & MASK_IO_FAILURE)
-		return should_fail_io_failures();
+	if (ubi->dbg.emulate_failures & MASK_ERASE_FAILURE)
+		return should_fail_erase_failure();
 	return false;
 }
 
