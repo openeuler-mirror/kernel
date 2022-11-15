@@ -1201,6 +1201,31 @@ out:
 }
 EXPORT_SYMBOL(IO_APIC_get_PCI_irq_vector);
 
+/*
+ * The function is only provided for Drivers to keep the data value in
+ * memory consistent with the value of the register, and these drivers
+ * must use it carefully.
+ *
+ * The correct step should be:
+ * Change register ---> ioapic_sync_hardware_data ---> request_irq
+ */
+void ioapic_sync_hardware_data(int irq)
+{
+	struct IO_APIC_route_entry entry;
+	struct mp_chip_data *data;
+	struct irq_pin_list *pin_list;
+
+	data = irq_get_chip_data(irq);
+	for_each_irq_pin(pin_list, data->irq_2_pin) {
+		entry = ioapic_read_entry(pin_list->apic, pin_list->pin);
+		data->entry.trigger = entry.trigger;
+		data->entry.polarity = entry.polarity;
+		pr_debug("irq[%d] update trigger[%d] polarity[%d]\n",
+			irq, entry.trigger, entry.polarity);
+	}
+}
+EXPORT_SYMBOL(ioapic_sync_hardware_data);
+
 static struct irq_chip ioapic_chip, ioapic_ir_chip;
 
 static void __init setup_IO_APIC_irqs(void)

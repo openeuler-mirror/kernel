@@ -195,6 +195,7 @@ extern void clear_IO_APIC(void);
 extern void restore_boot_irq_mode(void);
 extern int IO_APIC_get_PCI_irq_vector(int bus, int devfn, int pin);
 extern void print_IO_APICs(void);
+extern void ioapic_sync_hardware_data(int irq);
 #else  /* !CONFIG_X86_IO_APIC */
 
 #define IO_APIC_IRQ(x)		0
