@@ -9,9 +9,10 @@
 #include <linux/zstd.h>
 
 #define TCP_COMP_MAX_PADDING	64
-#define TCP_COMP_SCRATCH_SIZE	65535
+#define TCP_COMP_DATA_SIZE	65536
+#define TCP_COMP_SCRATCH_SIZE	(TCP_COMP_DATA_SIZE - 1)
 #define TCP_COMP_MAX_CSIZE	(TCP_COMP_SCRATCH_SIZE + TCP_COMP_MAX_PADDING)
-#define TCP_COMP_ALLOC_ORDER   get_order(65536)
+#define TCP_COMP_ALLOC_ORDER   get_order(TCP_COMP_DATA_SIZE)
 #define TCP_COMP_MAX_WINDOWLOG 17
 #define TCP_COMP_MAX_INPUT (1 << TCP_COMP_MAX_WINDOWLOG)
 
@@ -589,6 +590,9 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb, int flags)
 		return -ENOMEM;
 
 	while (compressed_len < (skb->len - rxm->offset)) {
+		if (skb_shinfo(nskb)->nr_frags >= MAX_SKB_FRAGS)
+			break;
+
 		len = 0;
 		plen = skb->len - rxm->offset - compressed_len;
 		if (plen > TCP_COMP_MAX_CSIZE)
@@ -600,7 +604,8 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb, int flags)
 
 		outbuf.dst = ctx->rx.plaintext_data;
 		outbuf.pos = 0;
-		outbuf.size = TCP_COMP_MAX_CSIZE * 32;
+		outbuf.size = MAX_SKB_FRAGS * TCP_COMP_DATA_SIZE;
+		outbuf.size -= skb_shinfo(nskb)->nr_frags * TCP_COMP_DATA_SIZE;
 
 		ret = ZSTD_decompressStream(ctx->rx.dstream, &outbuf, &inbuf);
 		if (ZSTD_isError(ret)) {
