@@ -1310,7 +1310,7 @@ int bd_link_disk_holder(struct block_device *bdev, struct gendisk *disk)
 	 * the holder directory.  Hold on to it.
 	 */
 	down_read(&bdev->bd_disk->lookup_sem);
-	if (!(disk->flags & GENHD_FL_UP)) {
+	if (!(bdev->bd_disk->flags & GENHD_FL_UP)) {
 		up_read(&bdev->bd_disk->lookup_sem);
 		return -ENODEV;
 	}
