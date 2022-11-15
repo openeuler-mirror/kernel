@@ -49,6 +49,7 @@ menuconfig KVM
 if KVM
 
 source "virt/kvm/Kconfig"
+source "arch/arm64/kvm/hisilicon/Kconfig"
 
 config KVM_ARM_PMU
 	bool "Virtual Performance Monitoring Unit (PMU) support"
