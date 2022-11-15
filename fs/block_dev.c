@@ -1630,7 +1630,6 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 		}
 	}
 	bdev->bd_openers++;
-	kobject_get(bdev->bd_part->holder_dir);
 	if (for_part)
 		bdev->bd_part_count++;
 
@@ -1900,7 +1899,6 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 	}
 #endif
 
-	kobject_put(bdev->bd_part->holder_dir);
 	if (!--bdev->bd_openers) {
 		WARN_ON_ONCE(bdev->bd_holders);
 		sync_blockdev(bdev);
