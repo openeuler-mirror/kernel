@@ -3217,10 +3217,10 @@ s32 txgbe_get_thermal_sensor_data(struct txgbe_hw *hw)
 
 	tsv = tsv < 1200 ? tsv : 1200;
 	tsv = -(48380 << 8) / 1000
-		+ tsv * (31020 << 8) / 100000
-		- tsv * tsv * (18201 << 8) / 100000000
-		+ tsv * tsv * tsv * (81542 << 8) / 1000000000000
-		- tsv * tsv * tsv * tsv * (16743 << 8) / 1000000000000000;
+		  + div64_s64(tsv * (31020 << 8), 100000)
+		  - div64_s64(tsv * tsv * (18201 << 8), 100000000)
+		  + div64_s64(tsv * tsv * tsv * (81542 << 8), 1000000000000)
+		  - div64_s64(tsv * tsv * tsv * tsv * (16743 << 8), 1000000000000000);
 	tsv >>= 8;
 
 	data->sensor.temp = (s16)tsv;
@@ -3231,10 +3231,10 @@ s32 txgbe_get_thermal_sensor_data(struct txgbe_hw *hw)
 			tsv = tsv & TXGBE_TS_ST_DATA_OUT_MASK;
 			tsv = tsv < 1200 ? tsv : 1200;
 			tsv = -(48380 << 8) / 1000
-					+ tsv * (31020 << 8) / 100000
-					- tsv * tsv * (18201 << 8) / 100000000
-					+ tsv * tsv * tsv * (81542 << 8) / 1000000000000
-					- tsv * tsv * tsv * tsv * (16743 << 8) / 1000000000000000;
+				  + div64_s64(tsv * (31020 << 8), 100000)
+				  - div64_s64(tsv * tsv * (18201 << 8), 100000000)
+				  + div64_s64(tsv * tsv * tsv * (81542 << 8), 1000000000000)
+				  - div64_s64(tsv * tsv * tsv * tsv * (16743 << 8), 1000000000000000);
 			tsv >>= 8;
 
 			data->sensor.temp = (s16)tsv;
