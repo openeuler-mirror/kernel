@@ -1424,10 +1424,11 @@ struct task_struct {
 	KABI_USE(7, void *pf_io_worker)
 #if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY) && !defined(__GENKSYMS__)
 	KABI_USE(8, cpumask_t *prefer_cpus)
+	KABI_USE(9, const cpumask_t *select_cpus)
 #else
 	KABI_RESERVE(8)
-#endif
 	KABI_RESERVE(9)
+#endif
 	KABI_RESERVE(10)
 	KABI_RESERVE(11)
 	KABI_RESERVE(12)
