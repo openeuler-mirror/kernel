@@ -55,7 +55,7 @@ struct pt_regs {
 #define profile_pc(regs) instruction_pointer(regs)
 #define current_user_stack_pointer() rdusp()
 #define user_stack_pointer(regs) rdusp()
-#define kernel_stack_pointer(regs) (((regs->ps) >> 4) & (TASK_SIZE - 1))
+#define kernel_stack_pointer(regs) ((unsigned long)((regs) + 1))
 #define instruction_pointer_set(regs, val) ((regs)->pc = val)
 
 
