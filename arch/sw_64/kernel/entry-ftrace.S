@@ -89,6 +89,7 @@
 	stl	$26, PT_REGS_R26($sp)
 	stl	$27, PT_REGS_R27($sp)
 	stl	$28, PT_REGS_R28($sp)
+	stl	$29, PT_REGS_GP($sp)
 	.endm
 
 	.macro RESTORE_PT_REGS
@@ -121,6 +122,7 @@
 	ldl	$26, PT_REGS_R26($sp)
 	ldl	$27, PT_REGS_R27($sp)
 	ldl	$28, PT_REGS_R28($sp)
+	ldl	$29, PT_REGS_GP($sp)
 	ldi	$sp, PT_REGS_SIZE($sp)
 	.endm
 
