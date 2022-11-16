@@ -977,6 +977,10 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 		P_SCHEDSTAT(se.statistics.nr_qos_smt_expelled);
 #endif
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		P_SCHEDSTAT(se.statistics.nr_wakeups_preferred_cpus);
+		P_SCHEDSTAT(se.statistics.nr_wakeups_force_preferred_cpus);
+#endif
 		avg_atom = p->se.sum_exec_runtime;
 		if (nr_switches)
 			avg_atom = div64_ul(avg_atom, nr_switches);

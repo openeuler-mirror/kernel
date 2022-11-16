@@ -468,8 +468,14 @@ struct sched_statistics {
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 #endif
+
+#if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY) && !defined(__GENKSYMS__)
+	u64				nr_wakeups_preferred_cpus;
+	u64				nr_wakeups_force_preferred_cpus;
+#else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 #endif
 };
 
