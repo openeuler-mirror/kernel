@@ -162,8 +162,12 @@ alternative_endif
 
 #define USER(l, x...)				\
 9999:	x;					\
-	_asm_extable	9999b, l
+	_asm_extable	9999b, l;		\
+	_asm_mc_extable	9999b, l
 
+#define USER_MC(l, x...)			\
+9999:	x;					\
+	_asm_mc_extable	9999b, l
 /*
  * Register aliases.
  */

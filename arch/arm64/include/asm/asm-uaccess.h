@@ -70,6 +70,9 @@ alternative_else_nop_endif
 
 		_asm_extable	8888b,\l;
 		_asm_extable	8889b,\l;
+
+		_asm_mc_extable	8888b,\l;
+		_asm_mc_extable	8889b,\l;
 	.endm
 
 	.macro user_stp l, reg1, reg2, addr, post_inc
@@ -86,5 +89,7 @@ alternative_else_nop_endif
 		add		\addr, \addr, \post_inc;
 
 		_asm_extable	8888b,\l;
+
+		_asm_mc_extable	8888b,\l;
 	.endm
 #endif
