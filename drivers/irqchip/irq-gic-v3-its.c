@@ -1543,6 +1543,11 @@ static __maybe_unused u32 its_read_lpi_count(struct irq_data *d, int cpu)
 
 static void its_inc_lpi_count(struct irq_data *d, int cpu)
 {
+#ifdef CONFIG_ASCEND_INIT_ALL_GICR
+	if (cpu >= nr_cpu_ids)
+		return;
+#endif
+
 	if (irqd_affinity_is_managed(d))
 		atomic_inc(&per_cpu_ptr(&cpu_lpi_count, cpu)->managed);
 	else
@@ -1551,6 +1556,11 @@ static void its_inc_lpi_count(struct irq_data *d, int cpu)
 
 static void its_dec_lpi_count(struct irq_data *d, int cpu)
 {
+#ifdef CONFIG_ASCEND_INIT_ALL_GICR
+	if (cpu >= nr_cpu_ids)
+		return;
+#endif
+
 	if (irqd_affinity_is_managed(d))
 		atomic_dec(&per_cpu_ptr(&cpu_lpi_count, cpu)->managed);
 	else

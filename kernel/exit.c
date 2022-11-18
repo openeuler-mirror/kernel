@@ -64,6 +64,7 @@
 #include <linux/rcuwait.h>
 #include <linux/compat.h>
 #include <linux/io_uring.h>
+#include <linux/share_pool.h>
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -794,6 +795,13 @@ void __noreturn do_exit(long code)
 
 	tsk->exit_code = code;
 	taskstats_exit(tsk, group_dead);
+
+	/*
+	 * sp_group_exit must be executed before exit_mm,
+	 * otherwise it will cause mm leakage.
+	 */
+	if (group_dead)
+		sp_group_exit();
 
 	exit_mm();
 

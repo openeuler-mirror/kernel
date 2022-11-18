@@ -113,6 +113,7 @@ int pm_autosleep_set_state(suspend_state_t state)
 	mutex_unlock(&autosleep_lock);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(pm_autosleep_set_state);
 
 int __init pm_autosleep_init(void)
 {

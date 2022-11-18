@@ -643,6 +643,7 @@ int map_kernel_range(unsigned long start, unsigned long size, pgprot_t prot,
 	flush_cache_vmap(start, start + size);
 	return ret;
 }
+EXPORT_SYMBOL(map_kernel_range);
 
 int is_vmalloc_or_module_addr(const void *x)
 {
@@ -2460,6 +2461,7 @@ struct vm_struct *__get_vm_area_caller(unsigned long size, unsigned long flags,
 	return __get_vm_area_node(size, 1, PAGE_SHIFT, flags, start, end,
 				  NUMA_NO_NODE, GFP_KERNEL, caller);
 }
+EXPORT_SYMBOL(__get_vm_area_caller);
 
 /**
  * get_vm_area - reserve a contiguous kernel virtual area
@@ -3058,6 +3060,7 @@ fail:
 
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(__vmalloc_node_range);
 
 /**
  * __vmalloc_node - allocate virtually contiguous memory

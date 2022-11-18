@@ -96,7 +96,6 @@
 #include <linux/kasan.h>
 #include <linux/scs.h>
 #include <linux/io_uring.h>
-#include <linux/share_pool.h>
 
 #include <linux/share_pool.h>
 #include <asm/pgalloc.h>
@@ -1115,9 +1114,6 @@ static inline void __mmput(struct mm_struct *mm)
 void mmput(struct mm_struct *mm)
 {
 	might_sleep();
-
-	if (sp_group_exit(mm))
-		return;
 
 	if (atomic_dec_and_test(&mm->mm_users))
 		__mmput(mm);

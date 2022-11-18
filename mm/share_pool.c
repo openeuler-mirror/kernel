@@ -975,12 +975,14 @@ static void sp_group_drop(struct sp_group *spg)
 }
 
 /* use with put_task_struct(task) */
-static int get_task(int pid, struct task_struct **task)
+static int get_task(int tgid, struct task_struct **task)
 {
 	struct task_struct *tsk;
+	struct pid *p;
 
 	rcu_read_lock();
-	tsk = find_task_by_vpid(pid);
+	p = find_pid_ns(tgid, &init_pid_ns);
+	tsk = pid_task(p, PIDTYPE_TGID);
 	if (!tsk || (tsk->flags & PF_EXITING)) {
 		rcu_read_unlock();
 		return -ESRCH;
@@ -1010,14 +1012,14 @@ static bool is_process_in_group(struct sp_group *spg,
 }
 
 /* user must call sp_group_drop() after use */
-static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
+static struct sp_group *__sp_find_spg_locked(int tgid, int spg_id)
 {
 	struct sp_group *spg = NULL;
 	struct task_struct *tsk = NULL;
 	int ret = 0;
 
 	if (spg_id == SPG_ID_DEFAULT) {
-		ret = get_task(pid, &tsk);
+		ret = get_task(tgid, &tsk);
 		if (ret)
 			return NULL;
 
@@ -1039,19 +1041,19 @@ static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 	return spg;
 }
 
-static struct sp_group *__sp_find_spg(int pid, int spg_id)
+static struct sp_group *__sp_find_spg(int tgid, int spg_id)
 {
 	struct sp_group *spg;
 
 	down_read(&sp_group_sem);
-	spg = __sp_find_spg_locked(pid, spg_id);
+	spg = __sp_find_spg_locked(tgid, spg_id);
 	up_read(&sp_group_sem);
 	return spg;
 }
 
 /**
  * mp_sp_group_id_by_pid() - Get the sp_group ID array of a process.
- * @pid: pid of target process.
+ * @tgid: tgid of target process.
  * @spg_ids: point to an array to save the group ids the process belongs to
  * @num: input the spg_ids array size; output the spg number of the process
  *
@@ -1061,7 +1063,7 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
  * -EINVAL	- spg_ids or num is NULL.
  * -E2BIG	- the num of groups process belongs to is larger than *num
  */
-int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
+int mg_sp_group_id_by_pid(int tgid, int *spg_ids, int *num)
 {
 	int ret = 0, real_count;
 	struct sp_group_node *node;
@@ -1076,7 +1078,7 @@ int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 	if (!spg_ids || !num || *num <= 0)
 		return -EINVAL;
 
-	ret = get_task(pid, &tsk);
+	ret = get_task(tgid, &tsk);
 	if (ret)
 		return ret;
 
@@ -1198,7 +1200,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
 {
 	struct sp_group *spg;
 
-	spg = __sp_find_spg_locked(current->pid, spg_id);
+	spg = __sp_find_spg_locked(current->tgid, spg_id);
 
 	if (!spg) {
 		spg = create_spg(spg_id, flag);
@@ -1350,7 +1352,7 @@ static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
 
 /**
  * mg_sp_group_add_task() - Add a process to an share group (sp_group).
- * @pid: the pid of the task to be added.
+ * @tgid: the tgid of the task to be added.
  * @prot: the prot of task for this spg.
  * @spg_id: the ID of the sp_group.
  * @flag: to give some special message.
@@ -1364,7 +1366,7 @@ static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
  * The automatically allocated ID is between [SPG_ID_AUTO_MIN, SPG_ID_AUTO_MAX].
  * When negative, the return value is -errno.
  */
-int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
+int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 {
 	unsigned long flag = 0;
 	struct task_struct *tsk;
@@ -1393,7 +1395,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	}
 
 	if (spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX) {
-		spg = __sp_find_spg(pid, spg_id);
+		spg = __sp_find_spg(tgid, spg_id);
 
 		if (!spg) {
 			pr_err_ratelimited("spg %d hasn't been created\n", spg_id);
@@ -1424,7 +1426,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 
 	down_write(&sp_group_sem);
 
-	ret = get_task(pid, &tsk);
+	ret = get_task(tgid, &tsk);
 	if (ret) {
 		up_write(&sp_group_sem);
 		free_new_spg_id(id_newly_generated, spg_id);
@@ -1599,7 +1601,7 @@ EXPORT_SYMBOL_GPL(mg_sp_group_add_task);
 
 /**
  * mg_sp_group_del_task() - delete a process from a sp group.
- * @pid: the pid of the task to be deleted
+ * @tgid: the tgid of the task to be deleted
  * @spg_id: sharepool group id
  *
  * the group's spa list must be empty, or deletion will fail.
@@ -1607,9 +1609,9 @@ EXPORT_SYMBOL_GPL(mg_sp_group_add_task);
  * Return:
  * * if success, return 0.
  * * -EINVAL, spg_id invalid or spa_lsit not emtpy or spg dead
- * * -ESRCH, the task group of pid is not in group / process dead
+ * * -ESRCH, the task group of tgid is not in group / process dead
  */
-int mg_sp_group_del_task(int pid, int spg_id)
+int mg_sp_group_del_task(int tgid, int spg_id)
 {
 	int ret = 0;
 	struct sp_group *spg;
@@ -1626,7 +1628,7 @@ int mg_sp_group_del_task(int pid, int spg_id)
 		return -EINVAL;
 	}
 
-	spg = __sp_find_spg(pid, spg_id);
+	spg = __sp_find_spg(tgid, spg_id);
 	if (!spg) {
 		pr_err_ratelimited("spg not found or get task failed.");
 		return -EINVAL;
@@ -1647,7 +1649,7 @@ int mg_sp_group_del_task(int pid, int spg_id)
 		goto out;
 	}
 
-	ret = get_task(pid, &tsk);
+	ret = get_task(tgid, &tsk);
 	if (ret) {
 		up_write(&sp_group_sem);
 		pr_err_ratelimited("task is not found");
@@ -1759,7 +1761,7 @@ static void insert_sp_area(struct sp_mapping *spm, struct sp_area *spa)
  * @flags: how to allocate the memory.
  * @spg: the share group that the memory is allocated to.
  * @type: the type of the region.
- * @applier: the pid of the task which allocates the region.
+ * @applier: the tgid of the task which allocates the region.
  *
  * Return: a valid pointer for success, NULL on failure.
  */
@@ -2282,7 +2284,6 @@ struct sp_alloc_context {
 	unsigned long sp_flags;
 	unsigned long populate;
 	int state;
-	bool need_fallocate;
 	bool have_mbind;
 	enum spa_type type;
 };
@@ -2318,7 +2319,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 		sp_flags |= SP_HUGEPAGE;
 
 	if (spg_id != SPG_ID_DEFAULT) {
-		spg = __sp_find_spg(current->pid, spg_id);
+		spg = __sp_find_spg(current->tgid, spg_id);
 		if (!spg) {
 			pr_err_ratelimited("allocation failed, can't find group\n");
 			return -ENODEV;
@@ -2360,7 +2361,6 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	ac->size = size;
 	ac->sp_flags = sp_flags;
 	ac->state = ALLOC_NORMAL;
-	ac->need_fallocate = false;
 	ac->have_mbind = false;
 	return 0;
 }
@@ -2455,6 +2455,7 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	 * page fault later on, and more importantly sp_make_share_u2k()
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
+
 	return do_mm_populate(mm, spa->va_start, ac->populate, 0);
 }
 
@@ -2475,6 +2476,7 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	int ret;
 
 	ret = sp_alloc_mmap(mm, spa, spg_node, ac);
+
 	if (ret < 0)
 		return ret;
 
@@ -2483,21 +2485,18 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 		if (ret < 0) {
 			pr_err("cannot bind the memory range to specified node:%d, err:%d\n",
 				spa->node_id, ret);
-			goto err;
+			return ret;
 		}
 		ac->have_mbind = true;
 	}
 
 	ret = sp_alloc_populate(mm, spa, ac);
 	if (ret) {
-err:
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn_ratelimited("allocation failed, current thread is killed\n");
 		else
 			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
 					ret);
-	} else {
-		ac->need_fallocate = true;
 	}
 	return ret;
 }
@@ -2515,8 +2514,16 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 		mm = spg_node->master->mm;
 		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
 		if (mmap_ret) {
+
+			/*
+			 * Goto fallback procedure upon ERR_VALUE,
+			 * but skip the coredump situation,
+			 * because we don't want one misbehaving process to affect others.
+			 */
 			if (ac->state != ALLOC_COREDUMP)
 				goto unmap;
+
+			/* Reset state and discard the coredump error. */
 			ac->state = ALLOC_NORMAL;
 			continue;
 		}
@@ -2531,11 +2538,16 @@ unmap:
 		end_mm = list_next_entry(spg_node, proc_node)->master->mm;
 	sp_alloc_unmap(end_mm, spa, spg_node);
 
-	/* only fallocate spa if physical memory had been allocated */
-	if (ac->need_fallocate) {
-		sp_fallocate(spa);
-		ac->need_fallocate = false;
-	}
+	/*
+	 * Sometimes do_mm_populate() allocates some memory and then failed to
+	 * allocate more. (e.g. memory use reaches cgroup limit.)
+	 * In this case, it will return enomem, but will not free the
+	 * memory which has already been allocated.
+	 *
+	 * So if __sp_alloc_mmap_populate fails, always call sp_fallocate()
+	 * to make sure backup physical memory of the shared file is freed.
+	 */
+	sp_fallocate(spa);
 
 	/* if hugepage allocation fails, this will transfer to normal page
 	 * and try again. (only if SP_HUGEPAGE_ONLY is not flagged
@@ -2691,7 +2703,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	if (prot & PROT_WRITE)
 		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
 
-	if (kc && kc->sp_flags & SP_PROT_RO)
+	if (kc && (kc->sp_flags & SP_PROT_RO))
 		vma->vm_flags &= ~VM_MAYWRITE;
 
 	if (is_vm_hugetlb_page(vma)) {
@@ -2921,7 +2933,7 @@ static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
  * @kva: the VA of shared kernel memory.
  * @size: the size of shared kernel memory.
  * @sp_flags: how to allocate the memory. We only support SP_DVPP.
- * @pid:  the pid of the specified process (Not currently in use).
+ * @tgid:  the tgid of the specified process (Not currently in use).
  * @spg_id: the share group that the memory is shared to.
  *
  * Return: the shared target user address to start at
@@ -2934,7 +2946,7 @@ static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
  * * if fail, return the pointer of -errno.
  */
 void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
-			unsigned long sp_flags, int pid, int spg_id)
+			unsigned long sp_flags, int tgid, int spg_id)
 {
 	void *uva;
 	int ret;
@@ -2954,7 +2966,7 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 	} else {
 		struct sp_group *spg;
 
-		spg = __sp_find_spg(current->pid, kc.spg_id);
+		spg = __sp_find_spg(current->tgid, kc.spg_id);
 		if (spg) {
 			ret = sp_check_caller_permission(spg, current->mm);
 			if (ret < 0) {
@@ -3214,13 +3226,13 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
  * mg_sp_make_share_u2k() - Share user memory of a specified process to kernel.
  * @uva: the VA of shared user memory
  * @size: the size of shared user memory
- * @pid: the pid of the specified process(Not currently in use)
+ * @tgid: the tgid of the specified process(Not currently in use)
  *
  * Return:
  * * if success, return the starting kernel address of the shared memory.
  * * if failed, return the pointer of -errno.
  */
-void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
+void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int tgid)
 {
 	int ret = 0;
 	struct mm_struct *mm = current->mm;
@@ -3282,7 +3294,7 @@ void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
 
 /*
- * Input parameters uva, pid and spg_id are now useless. spg_id will be useful
+ * Input parameters uva, tgid and spg_id are now useless. spg_id will be useful
  * when supporting a process in multiple sp groups.
  *
  * Procedure of unshare uva must be compatible with:
@@ -3612,13 +3624,13 @@ static bool is_sp_dynamic_dvpp_addr(unsigned long addr);
  * @start: the value of share pool start
  * @size: the value of share pool
  * @device_id: the num of Da-vinci device
- * @pid: the pid of device process
+ * @tgid: the tgid of device process
  *
  * Return true for success.
  * Return false if parameter invalid or has been set up.
  * This functuon has no concurrent problem.
  */
-bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
+bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int tgid)
 {
 	int ret;
 	bool err = false;
@@ -3632,12 +3644,12 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 		return false;
 
 	/* NOTE: check the start address */
-	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
+	if (tgid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
 	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id)
 		|| !is_sp_dynamic_dvpp_addr(start) || !is_sp_dynamic_dvpp_addr(start + size - 1))
 		return false;
 
-	ret = get_task(pid, &tsk);
+	ret = get_task(tgid, &tsk);
 	if (ret)
 		return false;
 
@@ -4274,34 +4286,13 @@ backout:
 	goto out;
 }
 
-#define MM_WOULD_FREE	1
-
 /*
- * Recall we add mm->users by 1 deliberately in sp_group_add_task().
- * If the mm_users == sp_group_master->count + 1, it means that the mm is ready
- * to be freed because the last owner of this mm is in exiting procedure:
- * do_exit() -> exit_mm() -> mmput() -> sp_group_exit -> THIS function.
+ * The caller must ensure that this function is called
+ * when the last thread in the thread group exits.
  */
-static bool need_free_sp_group(struct mm_struct *mm,
-			      struct sp_group_master *master)
+int sp_group_exit(void)
 {
-	/* thread exits but process is still alive */
-	if ((unsigned int)atomic_read(&mm->mm_users) != master->count + MM_WOULD_FREE) {
-		if (atomic_dec_and_test(&mm->mm_users))
-			WARN(1, "Invalid user counting\n");
-		return false;
-	}
-
-	return true;
-}
-
-/*
- * Return:
- * 1	- let mmput() return immediately
- * 0	- let mmput() decrease mm_users and try __mmput()
- */
-int sp_group_exit(struct mm_struct *mm)
-{
+	struct mm_struct *mm;
 	struct sp_group *spg;
 	struct sp_group_master *master;
 	struct sp_group_node *spg_node, *tmp;
@@ -4310,17 +4301,16 @@ int sp_group_exit(struct mm_struct *mm)
 	if (!sp_is_enabled())
 		return 0;
 
+	if (current->flags & PF_KTHREAD)
+		return 0;
+
+	mm = current->mm;
 	down_write(&sp_group_sem);
 
 	master = mm->sp_group_master;
 	if (!master) {
 		up_write(&sp_group_sem);
 		return 0;
-	}
-
-	if (!need_free_sp_group(mm, master)) {
-		up_write(&sp_group_sem);
-		return 1;
 	}
 
 	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {

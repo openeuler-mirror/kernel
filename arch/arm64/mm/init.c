@@ -31,6 +31,8 @@
 #include <linux/hugetlb.h>
 #include <linux/acpi_iort.h>
 #include <linux/pin_mem.h>
+#include <linux/suspend.h>
+#include <linux/nmi.h>
 
 #include <asm/boot.h>
 #include <asm/fixmap.h>
@@ -724,3 +726,37 @@ void dump_mem_limit(void)
 		pr_emerg("Memory Limit: none\n");
 	}
 }
+
+void ascend_enable_all_features(void)
+{
+	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
+		enable_mmap_dvpp = 1;
+
+#ifdef CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES
+	extern int enable_charge_mighp;
+
+	enable_charge_mighp = 1;
+#endif
+
+#ifdef CONFIG_SUSPEND
+	mem_sleep_current = PM_SUSPEND_ON;
+#endif
+
+#ifdef CONFIG_ARM64_PSEUDO_NMI
+	extern bool enable_pseudo_nmi;
+
+	enable_pseudo_nmi = true;
+#endif
+
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	enable_corelockup_detector = true;
+#endif
+}
+
+static int __init ascend_enable_setup(char *__unused)
+{
+	ascend_enable_all_features();
+
+	return 0;
+}
+early_param("ascend_enable_all", ascend_enable_setup);
