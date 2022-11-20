@@ -170,7 +170,7 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
-* Mon Jun 27 2022 zhangyuanhang <zhangyuanhang@kylinos.cn> - 5.10.0-126.0.0.9
+* Mon Nov 20 2022 zhangyu <zhangyu4@kylinos.cn> - 5.10.0-126.0.0.9
 - - update preempt-RT to openEuler 5.10.0-126.0.0
 
 * Mon Jun 27 2022 zhangyuanhang <zhangyuanhang@kylinos.cn> - 5.10.0-99.0.0.8
