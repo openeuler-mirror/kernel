@@ -543,20 +543,10 @@ int rtc_alarm_irq_enable(struct rtc_device *rtc, unsigned int enabled)
 }
 EXPORT_SYMBOL_GPL(rtc_alarm_irq_enable);
 
-int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
+int __rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
 {
-	int rc = 0, err;
+	int rc = 0, err = 0;
 
-	err = mutex_lock_interruptible(&rtc->ops_lock);
-	if (err)
-		return err;
-
-#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
-	if (enabled == 0 && rtc->uie_irq_active) {
-		mutex_unlock(&rtc->ops_lock);
-		return rtc_dev_update_irq_enable_emul(rtc, 0);
-	}
-#endif
 	/* make sure we're changing state */
 	if (rtc->uie_rtctimer.enabled == enabled)
 		goto out;
@@ -583,8 +573,6 @@ int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
 	}
 
 out:
-	mutex_unlock(&rtc->ops_lock);
-
 	/*
 	 * __rtc_read_time() failed, this probably means that the RTC time has
 	 * never been set or less probably there is a transient error on the
@@ -593,6 +581,24 @@ out:
 	 */
 	if (rc)
 		return rc;
+
+	return err;
+}
+
+int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
+{
+	int err;
+
+#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
+	if (enabled == 0 && rtc->uie_irq_active)
+		return rtc_dev_update_irq_enable_emul(rtc, 0);
+#endif
+
+	err = mutex_lock_interruptible(&rtc->ops_lock);
+	if (err)
+		return err;
+	err = __rtc_update_irq_enable(rtc, enabled);
+	mutex_unlock(&rtc->ops_lock);
 
 #ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
 	/*

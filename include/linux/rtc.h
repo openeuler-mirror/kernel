@@ -182,6 +182,7 @@ extern void rtc_class_close(struct rtc_device *rtc);
 extern int rtc_irq_set_state(struct rtc_device *rtc, int enabled);
 extern int rtc_irq_set_freq(struct rtc_device *rtc, int freq);
 extern int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled);
+extern int __rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled);
 extern int rtc_alarm_irq_enable(struct rtc_device *rtc, unsigned int enabled);
 extern int rtc_dev_update_irq_enable_emul(struct rtc_device *rtc,
 						unsigned int enabled);
