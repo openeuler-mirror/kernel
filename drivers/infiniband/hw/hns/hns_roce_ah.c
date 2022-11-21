@@ -61,8 +61,8 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibah->device);
 	struct hns_roce_ib_create_ah_resp resp = {};
 	struct hns_roce_ah *ah = to_hr_ah(ibah);
-	u8 priority;
-	u8 tc_mode;
+	u8 priority = 0;
+	u8 tc_mode = 0;
 	int ret;
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08 && udata)
@@ -81,7 +81,10 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 
 	ret = hr_dev->hw->get_dscp(hr_dev, get_tclass(grh), &tc_mode,
 				   &priority);
-	if (ret && ret != -EOPNOTSUPP)
+	if (ret == -EOPNOTSUPP)
+		ret = 0;
+
+	if (ret && grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
 		return ret;
 
 	if (tc_mode == HNAE3_TC_MAP_MODE_DSCP &&

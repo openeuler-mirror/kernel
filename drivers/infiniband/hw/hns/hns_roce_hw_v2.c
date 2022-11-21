@@ -5038,7 +5038,8 @@ static int hns_roce_set_sl(struct ib_qp *ibqp,
 
 	ret = hns_roce_hw_v2_get_dscp(hr_dev, get_tclass(&attr->ah_attr.grh),
 				      &hr_qp->tc_mode, &hr_qp->priority);
-	if (ret && ret != -EOPNOTSUPP) {
+	if (ret && ret != -EOPNOTSUPP &&
+	    grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP) {
 		ibdev_err(ibdev, "failed to get dscp, ret = %d.\n", ret);
 		return ret;
 	}
