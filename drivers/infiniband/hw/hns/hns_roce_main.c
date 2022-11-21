@@ -708,7 +708,8 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		ib_dev->uverbs_cmd_mask |=
 				(1ULL << IB_USER_VERBS_CMD_OPEN_XRCD) |
 				(1ULL << IB_USER_VERBS_CMD_CLOSE_XRCD) |
-				(1ULL << IB_USER_VERBS_CMD_CREATE_XSRQ);
+				(1ULL << IB_USER_VERBS_CMD_CREATE_XSRQ) |
+				(1ULL << IB_USER_VERBS_CMD_OPEN_QP);
 		ib_set_device_ops(ib_dev, &hns_roce_dev_xrcd_ops);
 	}
 
