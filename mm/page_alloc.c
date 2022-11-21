@@ -4674,6 +4674,25 @@ check_retry_cpuset(int cpuset_mems_cookie, struct alloc_context *ac)
 }
 
 #ifdef CONFIG_MEMORY_RELIABLE
+/*
+ * if fallback is enabled, fallback to movable zone if no dma/normal zone
+ * found
+ */
+static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
+						      struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return NULL;
+
+	if (!(gfp_mask & GFP_RELIABLE))
+		return NULL;
+
+	ac->highest_zoneidx = gfp_zone(gfp_mask & ~GFP_RELIABLE);
+	ac->preferred_zoneref = first_zones_zonelist(
+		ac->zonelist, ac->highest_zoneidx, ac->nodemask);
+	return ac->preferred_zoneref->zone;
+}
+
 static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 						  struct alloc_context *ac)
 {
@@ -4691,6 +4710,11 @@ static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 	}
 }
 #else
+static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
+						      struct alloc_context *ac)
+{
+	return NULL;
+}
 static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 						  struct alloc_context *ac) {}
 #endif
@@ -4740,8 +4764,10 @@ retry_cpuset:
 	 */
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->highest_zoneidx, ac->nodemask);
-	if (!ac->preferred_zoneref->zone)
-		goto nopage;
+	if (!ac->preferred_zoneref->zone) {
+		if (!mem_reliable_fallback_zone(gfp_mask, ac))
+			goto nopage;
+	}
 
 	if (alloc_flags & ALLOC_KSWAPD)
 		wake_all_kswapds(order, gfp_mask, ac);
