@@ -19,6 +19,9 @@
 #include <linux/pci.h>
 #include <linux/perf_event.h>
 
+/* Dynamic CPU hotplug state used by PCIe PMU */
+static enum cpuhp_state hisi_pcie_pmu_online;
+
 #define DRV_NAME "hisi_pcie_pmu"
 /* Define registers */
 #define HISI_PCIE_GLOBAL_CTRL		0x00
@@ -830,7 +833,7 @@ static int hisi_pcie_init_pmu(struct pci_dev *pdev, struct hisi_pcie_pmu *pcie_p
 	if (ret)
 		goto err_iounmap;
 
-	ret = cpuhp_state_add_instance(CPUHP_AP_PERF_ARM_HISI_PCIE_PMU_ONLINE, &pcie_pmu->node);
+	ret = cpuhp_state_add_instance(hisi_pcie_pmu_online, &pcie_pmu->node);
 	if (ret) {
 		pci_err(pdev, "Failed to register hotplug: %d\n", ret);
 		goto err_irq_unregister;
@@ -845,8 +848,7 @@ static int hisi_pcie_init_pmu(struct pci_dev *pdev, struct hisi_pcie_pmu *pcie_p
 	return ret;
 
 err_hotplug_unregister:
-	cpuhp_state_remove_instance_nocalls(
-		CPUHP_AP_PERF_ARM_HISI_PCIE_PMU_ONLINE, &pcie_pmu->node);
+	cpuhp_state_remove_instance_nocalls(hisi_pcie_pmu_online, &pcie_pmu->node);
 
 err_irq_unregister:
 	hisi_pcie_pmu_irq_unregister(pdev, pcie_pmu);
@@ -862,8 +864,7 @@ static void hisi_pcie_uninit_pmu(struct pci_dev *pdev)
 	struct hisi_pcie_pmu *pcie_pmu = pci_get_drvdata(pdev);
 
 	perf_pmu_unregister(&pcie_pmu->pmu);
-	cpuhp_state_remove_instance_nocalls(
-		CPUHP_AP_PERF_ARM_HISI_PCIE_PMU_ONLINE, &pcie_pmu->node);
+	cpuhp_state_remove_instance_nocalls(hisi_pcie_pmu_online, &pcie_pmu->node);
 	hisi_pcie_pmu_irq_unregister(pdev, pcie_pmu);
 	iounmap(pcie_pmu->base);
 }
@@ -934,18 +935,19 @@ static int __init hisi_pcie_module_init(void)
 {
 	int ret;
 
-	ret = cpuhp_setup_state_multi(CPUHP_AP_PERF_ARM_HISI_PCIE_PMU_ONLINE,
-				      "AP_PERF_ARM_HISI_PCIE_PMU_ONLINE",
+	ret = cpuhp_setup_state_multi(CPUHP_AP_ONLINE_DYN,
+				      "perf/hisi/pcie:online",
 				      hisi_pcie_pmu_online_cpu,
 				      hisi_pcie_pmu_offline_cpu);
-	if (ret) {
+	if (ret < 0) {
 		pr_err("Failed to setup PCIe PMU hotplug: %d\n", ret);
 		return ret;
 	}
+	hisi_pcie_pmu_online = ret;
 
 	ret = pci_register_driver(&hisi_pcie_pmu_driver);
 	if (ret)
-		cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_HISI_PCIE_PMU_ONLINE);
+		cpuhp_remove_multi_state(hisi_pcie_pmu_online);
 
 	return ret;
 }
@@ -954,7 +956,7 @@ module_init(hisi_pcie_module_init);
 static void __exit hisi_pcie_module_exit(void)
 {
 	pci_unregister_driver(&hisi_pcie_pmu_driver);
-	cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_HISI_PCIE_PMU_ONLINE);
+	cpuhp_remove_multi_state(hisi_pcie_pmu_online);
 }
 module_exit(hisi_pcie_module_exit);
 
