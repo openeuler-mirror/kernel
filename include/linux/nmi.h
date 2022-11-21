@@ -152,6 +152,8 @@ struct watchdog_operations {
 extern struct watchdog_operations nmi_watchdog_ops;
 void watchdog_ops_init(void);
 
+void lockup_detector_reconfigure(void);
+
 /**
  * touch_nmi_watchdog - restart NMI watchdog timeout.
  *
