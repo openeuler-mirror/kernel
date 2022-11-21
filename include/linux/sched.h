@@ -873,7 +873,7 @@ struct task_struct {
 	unsigned			in_memstall:1;
 #endif
 #ifdef CONFIG_IOMMU_SVA
-	unsigned			pasid_activated:1;
+	KABI_FILL_HOLE(unsigned		pasid_activated:1)
 #endif
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
