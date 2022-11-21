@@ -545,6 +545,10 @@ xfs_iomap_write_unwritten(
 		if (error)
 			return error;
 
+		error = xfs_iext_count_may_overflow(ip, XFS_DATA_FORK,
+				XFS_IEXT_WRITE_UNWRITTEN_CNT);
+		if (error)
+			goto error_on_bmapi_transaction;
 
 		/*
 		 * Modify the unwritten extent state of the buffer.
