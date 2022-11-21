@@ -677,6 +677,8 @@ struct wake_q_node {
 * struct task_struct_resvd - KABI extension struct
 */
 struct task_struct_resvd {
+	/* pointer back to the main task_struct */
+	struct task_struct	*task;
 };
 
 struct task_struct {
