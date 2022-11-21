@@ -1384,7 +1384,7 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 
 	if (udata && udata->outlen) {
 		resp.tc_mode = hr_qp->tc_mode;
-		resp.priority = hr_qp->priority;
+		resp.priority = hr_qp->sl;
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
 		if (ret)
