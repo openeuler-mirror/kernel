@@ -1695,15 +1695,6 @@ void bfq_del_bfqq_busy(struct bfq_data *bfqd, struct bfq_queue *bfqq,
  */
 void bfq_add_bfqq_busy(struct bfq_data *bfqd, struct bfq_queue *bfqq)
 {
-#ifdef CONFIG_BFQ_GROUP_IOSCHED
-	/* If parent group is offlined, move the bfqq to root group */
-	if (bfqq->entity.parent) {
-		struct bfq_group *bfqg = bfq_bfqq_to_bfqg(bfqq);
-
-		if (bfqg->pd.plid >= BLKCG_MAX_POLS)
-			bfq_bfqq_move(bfqd, bfqq, bfqd->root_group);
-	}
-#endif
 	bfq_log_bfqq(bfqd, bfqq, "add to busy");
 
 	bfq_activate_bfqq(bfqd, bfqq);

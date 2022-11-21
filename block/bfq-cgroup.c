@@ -643,7 +643,6 @@ void bfq_bfqq_move(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 		   struct bfq_group *bfqg)
 {
 	struct bfq_entity *entity = &bfqq->entity;
-	struct bfq_group *old_parent = bfqq_group(bfqq);
 
 	if (bfqq == &bfqd->oom_bfqq)
 		return;
@@ -667,22 +666,18 @@ void bfq_bfqq_move(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 		bfq_deactivate_bfqq(bfqd, bfqq, false, false);
 	else if (entity->on_st_or_in_serv)
 		bfq_put_idle_entity(bfq_entity_service_tree(entity), entity);
+	bfqg_and_blkg_put(bfqq_group(bfqq));
 
 	entity->parent = bfqg->my_entity;
 	entity->sched_data = &bfqg->sched_data;
 	/* pin down bfqg and its associated blkg  */
 	bfqg_and_blkg_get(bfqg);
 
-	/*
-	 * Don't leave the bfqq->pos_root to old bfqg, since the ref to old
-	 * bfqg will be released and the bfqg might be freed.
-	 */
-	if (unlikely(!bfqd->nonrot_with_queueing))
-		bfq_pos_tree_add_move(bfqd, bfqq);
-	bfqg_and_blkg_put(old_parent);
-
-	if (bfq_bfqq_busy(bfqq))
+	if (bfq_bfqq_busy(bfqq)) {
+		if (unlikely(!bfqd->nonrot_with_queueing))
+			bfq_pos_tree_add_move(bfqd, bfqq);
 		bfq_activate_bfqq(bfqd, bfqq);
+	}
 
 	if (!bfqd->in_service_queue && !bfqd->rq_in_driver)
 		bfq_schedule_dispatch(bfqd);
@@ -964,7 +959,6 @@ static void bfq_pd_offline(struct blkg_policy_data *pd)
 
 put_async_queues:
 	bfq_put_async_queues(bfqd, bfqg);
-	pd->plid = BLKCG_MAX_POLS;
 
 	spin_unlock_irqrestore(&bfqd->lock, flags);
 	/*
