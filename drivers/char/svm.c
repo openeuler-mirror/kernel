@@ -1085,188 +1085,6 @@ static int svm_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int svm_set_rc(unsigned long __user *arg)
-{
-	unsigned long addr, size, rc;
-	unsigned long end, page_size, offset;
-	pte_t *pte = NULL;
-	struct mm_struct *mm = current->mm;
-
-	if (acpi_disabled)
-		return -EPERM;
-
-	if (arg == NULL)
-		return -EINVAL;
-
-	if (get_user(addr, arg))
-		return -EFAULT;
-
-	if (get_user(size, arg + 1))
-		return -EFAULT;
-
-	if (get_user(rc, arg + 2))
-		return -EFAULT;
-
-	end = addr + size;
-	if (addr >= end)
-		return -EINVAL;
-
-	down_read(&mm->mmap_lock);
-	while (addr < end) {
-		pte = svm_walk_pt(addr, &page_size, &offset);
-		if (!pte) {
-			up_read(&mm->mmap_lock);
-			return -ESRCH;
-		}
-		pte->pte |= (rc & (u64)0x0f) << 59;
-		addr += page_size - offset;
-	}
-	up_read(&mm->mmap_lock);
-
-	return 0;
-}
-
-static long svm_remap_get_phys(struct mm_struct *mm, struct vm_area_struct *vma,
-			       unsigned long addr, unsigned long *phys,
-			       unsigned long *page_size, unsigned long *offset)
-{
-	long err = -EINVAL;
-	pgd_t *pgd = NULL;
-	p4d_t *p4d = NULL;
-	pud_t *pud = NULL;
-	pte_t *pte = NULL;
-
-	if (mm == NULL || vma == NULL || phys == NULL ||
-	    page_size == NULL || offset == NULL)
-		return err;
-
-	pgd = pgd_offset(mm, addr);
-	if (pgd_none(*pgd))
-		return err;
-
-	p4d = p4d_offset(pgd, addr);
-	if (p4d_none(*p4d))
-		return err;
-
-	pud = pud_offset(p4d, addr);
-	if (pud_none(*pud))
-		return err;
-
-	pte = svm_get_pte(vma, pud, addr, page_size, offset);
-	if (pte && pte_present(*pte)) {
-		*phys = PFN_PHYS(pte_pfn(*pte));
-		return 0;
-	}
-
-	return err;
-}
-
-static long svm_remap_proc(unsigned long __user *arg)
-{
-	long ret = -EINVAL;
-	struct svm_proc_mem pmem;
-	struct task_struct *ptask = NULL;
-	struct mm_struct *pmm = NULL, *mm = current->mm;
-	struct vm_area_struct *pvma = NULL, *vma = NULL;
-	unsigned long end, vaddr, phys, buf, offset, pagesize;
-
-	if (!acpi_disabled)
-		return -EPERM;
-
-	if (arg == NULL) {
-		pr_err("arg is invalid.\n");
-		return ret;
-	}
-
-	ret = copy_from_user(&pmem, (void __user *)arg, sizeof(pmem));
-	if (ret) {
-		pr_err("failed to copy args from user space.\n");
-		return -EFAULT;
-	}
-
-	if (pmem.buf & (PAGE_SIZE - 1)) {
-		pr_err("address is not aligned with page size, addr:%pK.\n",
-		       (void *)pmem.buf);
-		return -EINVAL;
-	}
-
-	if (pmem.pid) {
-		ptask = find_get_task_by_vpid(pmem.pid);
-		if (!ptask) {
-			pr_err("No task for this pid\n");
-			return -EINVAL;
-		}
-	} else {
-		ptask = current;
-	}
-
-	pmm = ptask->mm;
-
-	down_read(&mm->mmap_lock);
-	down_read(&pmm->mmap_lock);
-
-	pvma = find_vma(pmm, pmem.vaddr);
-	if (pvma == NULL) {
-		ret = -ESRCH;
-		goto err;
-	}
-
-	vma = find_vma(mm, pmem.buf);
-	if (vma == NULL) {
-		ret = -ESRCH;
-		goto err;
-	}
-
-	if (pmem.len > SVM_REMAP_MEM_LEN_MAX) {
-		ret = -EINVAL;
-		pr_err("too large length of memory.\n");
-		goto err;
-	}
-	vaddr = pmem.vaddr;
-	end = vaddr + pmem.len;
-	buf = pmem.buf;
-	vma->vm_flags |= VM_SHARED;
-	if (end > pvma->vm_end || end < vaddr) {
-		ret = -EINVAL;
-		pr_err("memory length is out of range, vaddr:%pK, len:%u.\n",
-		       (void *)vaddr, pmem.len);
-		goto err;
-	}
-
-	do {
-		ret = svm_remap_get_phys(pmm, pvma, vaddr,
-					 &phys, &pagesize, &offset);
-		if (ret) {
-			ret = -EINVAL;
-			goto err;
-		}
-
-		vaddr += pagesize - offset;
-
-		do {
-			if (remap_pfn_range(vma, buf, phys >> PAGE_SHIFT,
-				PAGE_SIZE,
-				__pgprot(vma->vm_page_prot.pgprot |
-					 PTE_DIRTY))) {
-
-				ret = -ESRCH;
-				goto err;
-			}
-
-			offset += PAGE_SIZE;
-			buf += PAGE_SIZE;
-			phys += PAGE_SIZE;
-		} while (offset < pagesize);
-
-	} while (vaddr < end);
-
-err:
-	up_read(&pmm->mmap_lock);
-	up_read(&mm->mmap_lock);
-	put_task_struct(ptask);
-	return ret;
-}
-
 static int svm_proc_load_flag(int __user *arg)
 {
 	static atomic_t l2buf_load_flag = ATOMIC_INIT(0);
@@ -1432,17 +1250,11 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_GET_PHYS:
 		err = svm_get_phys((unsigned long __user *)arg);
 		break;
-	case SVM_IOCTL_SET_RC:
-		err = svm_set_rc((unsigned long __user *)arg);
-		break;
 	case SVM_IOCTL_PIN_MEMORY:
 		err = svm_pin_memory((unsigned long __user *)arg);
 		break;
 	case SVM_IOCTL_UNPIN_MEMORY:
 		err = svm_unpin_memory((unsigned long __user *)arg);
-		break;
-	case SVM_IOCTL_REMAP_PROC:
-		err = svm_remap_proc((unsigned long __user *)arg);
 		break;
 	case SVM_IOCTL_LOAD_FLAG:
 		err = svm_proc_load_flag((int __user *)arg);
@@ -1451,8 +1263,8 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		err = svm_release_phys32((unsigned long __user *)arg);
 		break;
 	default:
-			err = -EINVAL;
-		}
+		err = -EINVAL;
+	}
 
 		if (err)
 			dev_err(sdev->dev, "%s: %s failed err = %d\n", __func__,
