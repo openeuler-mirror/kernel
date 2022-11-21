@@ -706,8 +706,9 @@ static int oom_reaper(void *unused)
 
 static void wake_oom_reaper(struct timer_list *timer)
 {
-	struct task_struct *tsk = container_of(timer, struct task_struct,
-			oom_reaper_timer);
+	struct task_struct_resvd *tsk_resvd = container_of(timer,
+			struct task_struct_resvd, oom_reaper_timer);
+	struct task_struct *tsk = tsk_resvd->task;
 	struct mm_struct *mm = tsk->signal->oom_mm;
 	unsigned long flags;
 
@@ -741,9 +742,9 @@ static void queue_oom_reaper(struct task_struct *tsk)
 		return;
 
 	get_task_struct(tsk);
-	timer_setup(&tsk->oom_reaper_timer, wake_oom_reaper, 0);
-	tsk->oom_reaper_timer.expires = jiffies + OOM_REAPER_DELAY;
-	add_timer(&tsk->oom_reaper_timer);
+	timer_setup(&tsk->_resvd->oom_reaper_timer, wake_oom_reaper, 0);
+	tsk->_resvd->oom_reaper_timer.expires = jiffies + OOM_REAPER_DELAY;
+	add_timer(&tsk->_resvd->oom_reaper_timer);
 }
 
 static int __init oom_init(void)
