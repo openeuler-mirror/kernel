@@ -151,7 +151,8 @@ unsigned int blk_mq_in_flight_with_stat(struct request_queue *q,
 {
 	struct mq_inflight mi = { .part = part };
 
-	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight_with_stat, &mi);
+	if (blk_queue_registered(q))
+		blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight_with_stat, &mi);
 
 	return mi.inflight[0] + mi.inflight[1];
 }
@@ -174,7 +175,8 @@ unsigned int blk_mq_in_flight(struct request_queue *q, struct hd_struct *part)
 {
 	struct mq_inflight mi = { .part = part };
 
-	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight, &mi);
+	if (blk_queue_registered(q))
+		blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight, &mi);
 
 	return mi.inflight[0] + mi.inflight[1];
 }
@@ -184,7 +186,8 @@ void blk_mq_in_flight_rw(struct request_queue *q, struct hd_struct *part,
 {
 	struct mq_inflight mi = { .part = part };
 
-	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight, &mi);
+	if (blk_queue_registered(q))
+		blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight, &mi);
 	inflight[0] = mi.inflight[0];
 	inflight[1] = mi.inflight[1];
 }
@@ -974,7 +977,8 @@ bool blk_mq_queue_inflight(struct request_queue *q)
 {
 	bool busy = false;
 
-	blk_mq_queue_tag_busy_iter(q, blk_mq_rq_inflight, &busy);
+	if (blk_queue_registered(q))
+		blk_mq_queue_tag_busy_iter(q, blk_mq_rq_inflight, &busy);
 	return busy;
 }
 EXPORT_SYMBOL_GPL(blk_mq_queue_inflight);
