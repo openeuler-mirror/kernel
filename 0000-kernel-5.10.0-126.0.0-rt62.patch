@@ -1,7 +1,7 @@
-From 6982834c08696ca48a6c4dd3e04c59d037c651ce Mon Sep 17 00:00:00 2001
-From: ryan <ryan@ex.com>
-Date: Wed, 2 Nov 2022 21:50:44 +0800
-Subject: [PATCH] test
+From bdf14ca0e870b8240e2fd05dc00c18fba1fcfc8d Mon Sep 17 00:00:00 2001
+From: kylin-mayukun <mayukun@kylinos.cn>
+Date: Mon, 21 Nov 2022 21:51:29 +0800
+Subject: [PATCH 1/2] add rt62 to kernel-5.10.0-126.0.0
 
 ---
  .../Expedited-Grace-Periods.rst               |    4 +-
@@ -448,7 +448,7 @@ Subject: [PATCH] test
  create mode 100644 kernel/locking/rwsem-rt.c
 
 diff --git a/Documentation/RCU/Design/Expedited-Grace-Periods/Expedited-Grace-Periods.rst b/Documentation/RCU/Design/Expedited-Grace-Periods/Expedited-Grace-Periods.rst
-index 72f0f6fbd53c..6f89cf1e567d 100644
+index 72f0f6fbd..6f89cf1e5 100644
 --- a/Documentation/RCU/Design/Expedited-Grace-Periods/Expedited-Grace-Periods.rst
 +++ b/Documentation/RCU/Design/Expedited-Grace-Periods/Expedited-Grace-Periods.rst
 @@ -38,7 +38,7 @@ sections.
@@ -470,7 +470,7 @@ index 72f0f6fbd53c..6f89cf1e567d 100644
  shown in the following diagram:
  
 diff --git a/Documentation/RCU/Design/Requirements/Requirements.rst b/Documentation/RCU/Design/Requirements/Requirements.rst
-index 1ae79a10a8de..17d38480ef5c 100644
+index 1ae79a10a..17d38480e 100644
 --- a/Documentation/RCU/Design/Requirements/Requirements.rst
 +++ b/Documentation/RCU/Design/Requirements/Requirements.rst
 @@ -78,7 +78,7 @@ RCU treats a nested set as one big RCU read-side critical section.
@@ -569,7 +569,7 @@ index 1ae79a10a8de..17d38480ef5c 100644
  for voluntary context switches.
  
 diff --git a/Documentation/RCU/checklist.rst b/Documentation/RCU/checklist.rst
-index 2efed9926c3f..7ed4956043bd 100644
+index 2efed9926..7ed495604 100644
 --- a/Documentation/RCU/checklist.rst
 +++ b/Documentation/RCU/checklist.rst
 @@ -214,7 +214,7 @@ over a rather long period of time, but improvements are always welcome!
@@ -582,7 +582,7 @@ index 2efed9926c3f..7ed4956043bd 100644
  	then the corresponding readers my use rcu_read_lock() and
  	rcu_read_unlock(), rcu_read_lock_bh() and rcu_read_unlock_bh(),
 diff --git a/Documentation/RCU/rcubarrier.rst b/Documentation/RCU/rcubarrier.rst
-index f64f4413a47c..3b4a24877496 100644
+index f64f4413a..3b4a24877 100644
 --- a/Documentation/RCU/rcubarrier.rst
 +++ b/Documentation/RCU/rcubarrier.rst
 @@ -9,7 +9,7 @@ RCU (read-copy update) is a synchronization mechanism that can be thought
@@ -608,7 +608,7 @@ index f64f4413a47c..3b4a24877496 100644
  	Therefore, on_each_cpu() disables preemption across its call
  	to smp_call_function() and also across the local call to
 diff --git a/Documentation/RCU/stallwarn.rst b/Documentation/RCU/stallwarn.rst
-index c9ab6af4d3be..e97d1b4876ef 100644
+index c9ab6af4d..e97d1b487 100644
 --- a/Documentation/RCU/stallwarn.rst
 +++ b/Documentation/RCU/stallwarn.rst
 @@ -25,7 +25,7 @@ warnings:
@@ -630,7 +630,7 @@ index c9ab6af4d3be..e97d1b4876ef 100644
  	read-side critical section.   This is especially damaging if
  	that low-priority task is not permitted to run on any other CPU,
 diff --git a/Documentation/RCU/whatisRCU.rst b/Documentation/RCU/whatisRCU.rst
-index fb3ff76c3e73..3b2b1479fd0f 100644
+index fb3ff76c3..3b2b1479f 100644
 --- a/Documentation/RCU/whatisRCU.rst
 +++ b/Documentation/RCU/whatisRCU.rst
 @@ -684,7 +684,7 @@ Quick Quiz #1:
@@ -674,7 +674,7 @@ index fb3ff76c3e73..3b2b1479fd0f 100644
  		read-side critical sections.  It also permits
  		spinlocks blocking while in RCU read-side critical
 diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
-index 216b28514abe..0954357bbe51 100644
+index 1d7650717..130306c51 100644
 --- a/Documentation/admin-guide/kernel-parameters.txt
 +++ b/Documentation/admin-guide/kernel-parameters.txt
 @@ -4314,6 +4314,10 @@
@@ -703,7 +703,7 @@ index 216b28514abe..0954357bbe51 100644
  			Set time in jiffies during which RCU tasks will
  			avoid sending IPIs, starting with the beginning
 diff --git a/Documentation/driver-api/io-mapping.rst b/Documentation/driver-api/io-mapping.rst
-index a966239f04e4..a7830c59481f 100644
+index a966239f0..a7830c594 100644
 --- a/Documentation/driver-api/io-mapping.rst
 +++ b/Documentation/driver-api/io-mapping.rst
 @@ -20,78 +20,64 @@ A mapping object is created during driver initialization using::
@@ -825,7 +825,7 @@ index a966239f04e4..a7830c59481f 100644
 -performs an IPI to inform all processors about the new mapping. This results
 -in a significant performance penalty.
 diff --git a/arch/Kconfig b/arch/Kconfig
-index 7800502d9b6e..5fd528b87932 100644
+index 7800502d9..5fd528b87 100644
 --- a/arch/Kconfig
 +++ b/arch/Kconfig
 @@ -50,6 +50,7 @@ config OPROFILE
@@ -859,7 +859,7 @@ index 7800502d9b6e..5fd528b87932 100644
  	help
 diff --git a/arch/alpha/include/asm/kmap_types.h b/arch/alpha/include/asm/kmap_types.h
 deleted file mode 100644
-index 651714b45729..000000000000
+index 651714b45..000000000
 --- a/arch/alpha/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,15 +0,0 @@
@@ -879,7 +879,7 @@ index 651714b45729..000000000000
 -
 -#endif
 diff --git a/arch/alpha/include/asm/spinlock_types.h b/arch/alpha/include/asm/spinlock_types.h
-index 1d5716bc060b..6883bc952d22 100644
+index 1d5716bc0..6883bc952 100644
 --- a/arch/alpha/include/asm/spinlock_types.h
 +++ b/arch/alpha/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -894,7 +894,7 @@ index 1d5716bc060b..6883bc952d22 100644
  	volatile unsigned int lock;
  } arch_spinlock_t;
 diff --git a/arch/arc/Kconfig b/arch/arc/Kconfig
-index 0a89cc9def65..d8804001d550 100644
+index 0a89cc9de..d8804001d 100644
 --- a/arch/arc/Kconfig
 +++ b/arch/arc/Kconfig
 @@ -507,6 +507,7 @@ config LINUX_RAM_BASE
@@ -906,7 +906,7 @@ index 0a89cc9def65..d8804001d550 100644
  	  With ARC 2G:2G address split, only upper 2G is directly addressable by
  	  kernel. Enable this to potentially allow access to rest of 2G and PAE
 diff --git a/arch/arc/include/asm/highmem.h b/arch/arc/include/asm/highmem.h
-index 6e5eafb3afdd..a6b8e2c352c4 100644
+index 6e5eafb3a..a6b8e2c35 100644
 --- a/arch/arc/include/asm/highmem.h
 +++ b/arch/arc/include/asm/highmem.h
 @@ -9,17 +9,29 @@
@@ -961,7 +961,7 @@ index 6e5eafb3afdd..a6b8e2c352c4 100644
  #endif
 diff --git a/arch/arc/include/asm/kmap_types.h b/arch/arc/include/asm/kmap_types.h
 deleted file mode 100644
-index fecf7851ec32..000000000000
+index fecf7851e..000000000
 --- a/arch/arc/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,14 +0,0 @@
@@ -980,7 +980,7 @@ index fecf7851ec32..000000000000
 - */
 -#endif
 diff --git a/arch/arc/mm/highmem.c b/arch/arc/mm/highmem.c
-index 1b9f473c6369..c79912a6b196 100644
+index 1b9f473c6..c79912a6b 100644
 --- a/arch/arc/mm/highmem.c
 +++ b/arch/arc/mm/highmem.c
 @@ -36,9 +36,8 @@
@@ -1059,7 +1059,7 @@ index 1b9f473c6369..c79912a6b196 100644
 +	alloc_kmap_pgtable(FIXMAP_BASE);
  }
 diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
-index 9096aa34e482..9457b01b63ef 100644
+index 9096aa34e..9457b01b6 100644
 --- a/arch/arm/Kconfig
 +++ b/arch/arm/Kconfig
 @@ -31,6 +31,7 @@ config ARM
@@ -1104,7 +1104,7 @@ index 9096aa34e482..9457b01b63ef 100644
  	  The address space of ARM processors is only 4 Gigabytes large
  	  and it has to accommodate user address space, kernel address
 diff --git a/arch/arm/include/asm/fixmap.h b/arch/arm/include/asm/fixmap.h
-index 9575b404019c..707068f852c2 100644
+index 9575b4040..707068f85 100644
 --- a/arch/arm/include/asm/fixmap.h
 +++ b/arch/arm/include/asm/fixmap.h
 @@ -7,14 +7,14 @@
@@ -1125,7 +1125,7 @@ index 9575b404019c..707068f852c2 100644
  	/* Support writing RO kernel text via kprobes, jump labels, etc. */
  	FIX_TEXT_POKE0,
 diff --git a/arch/arm/include/asm/hardirq.h b/arch/arm/include/asm/hardirq.h
-index b95848ed2bc7..706efafbf972 100644
+index b95848ed2..706efafbf 100644
 --- a/arch/arm/include/asm/hardirq.h
 +++ b/arch/arm/include/asm/hardirq.h
 @@ -2,16 +2,11 @@
@@ -1149,7 +1149,7 @@ index b95848ed2bc7..706efafbf972 100644
  
  #endif /* __ASM_HARDIRQ_H */
 diff --git a/arch/arm/include/asm/highmem.h b/arch/arm/include/asm/highmem.h
-index 31811be38d78..b22dffa8c7eb 100644
+index 31811be38..b22dffa8c 100644
 --- a/arch/arm/include/asm/highmem.h
 +++ b/arch/arm/include/asm/highmem.h
 @@ -2,7 +2,8 @@
@@ -1205,7 +1205,7 @@ index 31811be38d78..b22dffa8c7eb 100644
  
  #endif
 diff --git a/arch/arm/include/asm/irq.h b/arch/arm/include/asm/irq.h
-index 54b0180c8aeb..36d040c68163 100644
+index 54b0180c8..36d040c68 100644
 --- a/arch/arm/include/asm/irq.h
 +++ b/arch/arm/include/asm/irq.h
 @@ -31,6 +31,8 @@ void handle_IRQ(unsigned int, struct pt_regs *);
@@ -1219,7 +1219,7 @@ index 54b0180c8aeb..36d040c68163 100644
  #define arch_trigger_cpumask_backtrace arch_trigger_cpumask_backtrace
 diff --git a/arch/arm/include/asm/kmap_types.h b/arch/arm/include/asm/kmap_types.h
 deleted file mode 100644
-index 5590940ee43d..000000000000
+index 5590940ee..000000000
 --- a/arch/arm/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,10 +0,0 @@
@@ -1234,7 +1234,7 @@ index 5590940ee43d..000000000000
 -
 -#endif
 diff --git a/arch/arm/include/asm/spinlock_types.h b/arch/arm/include/asm/spinlock_types.h
-index 5976958647fe..a37c0803954b 100644
+index 597695864..a37c08039 100644
 --- a/arch/arm/include/asm/spinlock_types.h
 +++ b/arch/arm/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -1249,7 +1249,7 @@ index 5976958647fe..a37c0803954b 100644
  
  typedef struct {
 diff --git a/arch/arm/include/asm/thread_info.h b/arch/arm/include/asm/thread_info.h
-index 9f7ca79cc76a..9f31470f695a 100644
+index 9f7ca79cc..9f31470f6 100644
 --- a/arch/arm/include/asm/thread_info.h
 +++ b/arch/arm/include/asm/thread_info.h
 @@ -55,6 +55,7 @@ struct cpu_context_save {
@@ -1291,7 +1291,7 @@ index 9f7ca79cc76a..9f31470f695a 100644
  #endif /* __KERNEL__ */
  #endif /* __ASM_ARM_THREAD_INFO_H */
 diff --git a/arch/arm/kernel/asm-offsets.c b/arch/arm/kernel/asm-offsets.c
-index 70993af22d80..024c65c3a0f2 100644
+index 70993af22..024c65c3a 100644
 --- a/arch/arm/kernel/asm-offsets.c
 +++ b/arch/arm/kernel/asm-offsets.c
 @@ -43,6 +43,7 @@ int main(void)
@@ -1303,7 +1303,7 @@ index 70993af22d80..024c65c3a0f2 100644
    DEFINE(TI_TASK,		offsetof(struct thread_info, task));
    DEFINE(TI_CPU,		offsetof(struct thread_info, cpu));
 diff --git a/arch/arm/kernel/entry-armv.S b/arch/arm/kernel/entry-armv.S
-index 4332e5950042..efb2d0755ce7 100644
+index 4332e5950..efb2d0755 100644
 --- a/arch/arm/kernel/entry-armv.S
 +++ b/arch/arm/kernel/entry-armv.S
 @@ -207,11 +207,18 @@ __irq_svc:
@@ -1344,7 +1344,7 @@ index 4332e5950042..efb2d0755ce7 100644
  
  __und_fault:
 diff --git a/arch/arm/kernel/entry-common.S b/arch/arm/kernel/entry-common.S
-index 7a2e63dfb4d9..37c91a55027e 100644
+index 7a2e63dfb..37c91a550 100644
 --- a/arch/arm/kernel/entry-common.S
 +++ b/arch/arm/kernel/entry-common.S
 @@ -54,7 +54,9 @@ __ret_fast_syscall:
@@ -1372,7 +1372,7 @@ index 7a2e63dfb4d9..37c91a55027e 100644
  ENDPROC(ret_fast_syscall)
  
 diff --git a/arch/arm/kernel/signal.c b/arch/arm/kernel/signal.c
-index 2f81d3af5f9a..6e69f7b3d581 100644
+index 2f81d3af5..6e69f7b3d 100644
 --- a/arch/arm/kernel/signal.c
 +++ b/arch/arm/kernel/signal.c
 @@ -649,7 +649,8 @@ do_work_pending(struct pt_regs *regs, unsigned int thread_flags, int syscall)
@@ -1386,7 +1386,7 @@ index 2f81d3af5f9a..6e69f7b3d581 100644
  		} else {
  			if (unlikely(!user_mode(regs)))
 diff --git a/arch/arm/kernel/smp.c b/arch/arm/kernel/smp.c
-index d94e39a21698..44383bfbf98b 100644
+index d94e39a21..44383bfbf 100644
 --- a/arch/arm/kernel/smp.c
 +++ b/arch/arm/kernel/smp.c
 @@ -671,9 +671,7 @@ static void do_handle_IPI(int ipinr)
@@ -1400,7 +1400,7 @@ index d94e39a21698..44383bfbf98b 100644
  
  	default:
 diff --git a/arch/arm/mm/Makefile b/arch/arm/mm/Makefile
-index 4536159bc8fa..3510503bc5e6 100644
+index 4536159bc..3510503bc 100644
 --- a/arch/arm/mm/Makefile
 +++ b/arch/arm/mm/Makefile
 @@ -21,7 +21,6 @@ KASAN_SANITIZE_physaddr.o	:= n
@@ -1412,7 +1412,7 @@ index 4536159bc8fa..3510503bc5e6 100644
  obj-$(CONFIG_ARM_PV_FIXUP)	+= pv-fixup-asm.o
  
 diff --git a/arch/arm/mm/cache-feroceon-l2.c b/arch/arm/mm/cache-feroceon-l2.c
-index 10f909744d5e..fd9e3e740b3d 100644
+index 10f909744..fd9e3e740 100644
 --- a/arch/arm/mm/cache-feroceon-l2.c
 +++ b/arch/arm/mm/cache-feroceon-l2.c
 @@ -49,9 +49,9 @@ static inline unsigned long l2_get_va(unsigned long paddr)
@@ -1437,7 +1437,7 @@ index 10f909744d5e..fd9e3e740b3d 100644
  }
  
 diff --git a/arch/arm/mm/cache-xsc3l2.c b/arch/arm/mm/cache-xsc3l2.c
-index 5814731653d9..f34845da3522 100644
+index 581473165..f34845da3 100644
 --- a/arch/arm/mm/cache-xsc3l2.c
 +++ b/arch/arm/mm/cache-xsc3l2.c
 @@ -59,7 +59,7 @@ static inline void l2_unmap_va(unsigned long va)
@@ -1459,7 +1459,7 @@ index 5814731653d9..f34845da3522 100644
  	return va + (pa_offset >> (32 - PAGE_SHIFT));
  #else
 diff --git a/arch/arm/mm/fault.c b/arch/arm/mm/fault.c
-index 91965fb043de..d34166682b7f 100644
+index 91965fb04..d34166682 100644
 --- a/arch/arm/mm/fault.c
 +++ b/arch/arm/mm/fault.c
 @@ -430,6 +430,9 @@ do_translation_fault(unsigned long addr, unsigned int fsr,
@@ -1474,7 +1474,7 @@ index 91965fb043de..d34166682b7f 100644
  
 diff --git a/arch/arm/mm/highmem.c b/arch/arm/mm/highmem.c
 deleted file mode 100644
-index 187fab227b50..000000000000
+index 187fab227..000000000
 --- a/arch/arm/mm/highmem.c
 +++ /dev/null
 @@ -1,121 +0,0 @@
@@ -1600,7 +1600,7 @@ index 187fab227b50..000000000000
 -	return (void *)vaddr;
 -}
 diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
-index df28741e49c9..3ff788c8b040 100644
+index df28741e4..3ff788c8b 100644
 --- a/arch/arm64/Kconfig
 +++ b/arch/arm64/Kconfig
 @@ -76,6 +76,7 @@ config ARM64
@@ -1628,7 +1628,7 @@ index df28741e49c9..3ff788c8b040 100644
  	select POWER_SUPPLY
  	select SPARSE_IRQ
 diff --git a/arch/arm64/include/asm/hardirq.h b/arch/arm64/include/asm/hardirq.h
-index 5ffa4bacdad3..cbfa7b6f2e09 100644
+index 5ffa4bacd..cbfa7b6f2 100644
 --- a/arch/arm64/include/asm/hardirq.h
 +++ b/arch/arm64/include/asm/hardirq.h
 @@ -13,11 +13,8 @@
@@ -1646,7 +1646,7 @@ index 5ffa4bacdad3..cbfa7b6f2e09 100644
  #define __ARCH_IRQ_EXIT_IRQS_DISABLED	1
  
 diff --git a/arch/arm64/include/asm/preempt.h b/arch/arm64/include/asm/preempt.h
-index e83f0982b99c..7a5770d825b9 100644
+index e83f0982b..7a5770d82 100644
 --- a/arch/arm64/include/asm/preempt.h
 +++ b/arch/arm64/include/asm/preempt.h
 @@ -70,17 +70,43 @@ static inline bool __preempt_count_dec_and_test(void)
@@ -1695,7 +1695,7 @@ index e83f0982b99c..7a5770d825b9 100644
  void preempt_schedule_notrace(void);
  #define __preempt_schedule_notrace() preempt_schedule_notrace()
 diff --git a/arch/arm64/include/asm/spinlock_types.h b/arch/arm64/include/asm/spinlock_types.h
-index 18782f0c4721..6672b05350b4 100644
+index 18782f0c4..6672b0535 100644
 --- a/arch/arm64/include/asm/spinlock_types.h
 +++ b/arch/arm64/include/asm/spinlock_types.h
 @@ -5,10 +5,6 @@
@@ -1710,7 +1710,7 @@ index 18782f0c4721..6672b05350b4 100644
  #include <asm-generic/qrwlock_types.h>
  
 diff --git a/arch/arm64/include/asm/thread_info.h b/arch/arm64/include/asm/thread_info.h
-index af49b6190aee..0ad7b958c566 100644
+index af49b6190..0ad7b958c 100644
 --- a/arch/arm64/include/asm/thread_info.h
 +++ b/arch/arm64/include/asm/thread_info.h
 @@ -27,6 +27,7 @@ struct thread_info {
@@ -1749,7 +1749,7 @@ index af49b6190aee..0ad7b958c566 100644
  				 _TIF_SYSCALL_TRACEPOINT | _TIF_SECCOMP | \
  				 _TIF_SYSCALL_EMU)
 diff --git a/arch/arm64/kernel/asm-offsets.c b/arch/arm64/kernel/asm-offsets.c
-index 5f59e24c95d3..4f522206c47a 100644
+index 5f59e24c9..4f522206c 100644
 --- a/arch/arm64/kernel/asm-offsets.c
 +++ b/arch/arm64/kernel/asm-offsets.c
 @@ -31,6 +31,7 @@ int main(void)
@@ -1761,7 +1761,7 @@ index 5f59e24c95d3..4f522206c47a 100644
    DEFINE(TSK_TI_TTBR0,		offsetof(struct task_struct, thread_info.ttbr0));
  #endif
 diff --git a/arch/arm64/kernel/entry.S b/arch/arm64/kernel/entry.S
-index 64145bfab48f..4cdbba7202af 100644
+index 64145bfab..4cdbba720 100644
 --- a/arch/arm64/kernel/entry.S
 +++ b/arch/arm64/kernel/entry.S
 @@ -521,9 +521,18 @@ alternative_if ARM64_HAS_IRQ_PRIO_MASKING
@@ -1786,7 +1786,7 @@ index 64145bfab48f..4cdbba7202af 100644
  
  	mov	x0, sp
 diff --git a/arch/arm64/kernel/fpsimd.c b/arch/arm64/kernel/fpsimd.c
-index 5335a6bd1a0d..84520f11667d 100644
+index 5335a6bd1..84520f116 100644
 --- a/arch/arm64/kernel/fpsimd.c
 +++ b/arch/arm64/kernel/fpsimd.c
 @@ -226,6 +226,16 @@ static void sve_free(struct task_struct *task)
@@ -1832,7 +1832,7 @@ index 5335a6bd1a0d..84520f11667d 100644
  
  /*
 diff --git a/arch/arm64/kernel/ipi_nmi.c b/arch/arm64/kernel/ipi_nmi.c
-index 2cf28e511b23..fc58fada5aca 100644
+index 2cf28e511..fc58fada5 100644
 --- a/arch/arm64/kernel/ipi_nmi.c
 +++ b/arch/arm64/kernel/ipi_nmi.c
 @@ -35,9 +35,7 @@ void arm64_send_nmi(cpumask_t *mask)
@@ -1846,7 +1846,7 @@ index 2cf28e511b23..fc58fada5aca 100644
  
  static void arm64_send_ipi(cpumask_t *mask)
 diff --git a/arch/arm64/kernel/signal.c b/arch/arm64/kernel/signal.c
-index e5e2f1e888a2..c5fd06d5285b 100644
+index e5e2f1e88..c5fd06d52 100644
 --- a/arch/arm64/kernel/signal.c
 +++ b/arch/arm64/kernel/signal.c
 @@ -694,7 +694,7 @@ asmlinkage void do_notify_resume(struct pt_regs *regs,
@@ -1859,7 +1859,7 @@ index e5e2f1e888a2..c5fd06d5285b 100644
  			local_daif_restore(DAIF_PROCCTX_NOIRQ);
  
 diff --git a/arch/arm64/kvm/arm.c b/arch/arm64/kvm/arm.c
-index 384cc56a6549..d5fd6e3038d5 100644
+index 384cc56a6..d5fd6e303 100644
 --- a/arch/arm64/kvm/arm.c
 +++ b/arch/arm64/kvm/arm.c
 @@ -821,7 +821,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
@@ -1890,7 +1890,7 @@ index 384cc56a6549..d5fd6e3038d5 100644
  		/*
  		 * The ARMv8 architecture doesn't give the hypervisor
 diff --git a/arch/csky/Kconfig b/arch/csky/Kconfig
-index 7bf0a617e94c..c9f2533cc53d 100644
+index 7bf0a617e..c9f2533cc 100644
 --- a/arch/csky/Kconfig
 +++ b/arch/csky/Kconfig
 @@ -286,6 +286,7 @@ config NR_CPUS
@@ -1902,7 +1902,7 @@ index 7bf0a617e94c..c9f2533cc53d 100644
  
  config FORCE_MAX_ZONEORDER
 diff --git a/arch/csky/include/asm/fixmap.h b/arch/csky/include/asm/fixmap.h
-index 81f9477d5330..4b589cc20900 100644
+index 81f9477d5..4b589cc20 100644
 --- a/arch/csky/include/asm/fixmap.h
 +++ b/arch/csky/include/asm/fixmap.h
 @@ -8,7 +8,7 @@
@@ -1924,7 +1924,7 @@ index 81f9477d5330..4b589cc20900 100644
  	__end_of_fixed_addresses
  };
 diff --git a/arch/csky/include/asm/highmem.h b/arch/csky/include/asm/highmem.h
-index 14645e3d5cd5..1f4ed3f4c0d9 100644
+index 14645e3d5..1f4ed3f4c 100644
 --- a/arch/csky/include/asm/highmem.h
 +++ b/arch/csky/include/asm/highmem.h
 @@ -9,7 +9,7 @@
@@ -1951,7 +1951,7 @@ index 14645e3d5cd5..1f4ed3f4c0d9 100644
  
  #endif /* __KERNEL__ */
 diff --git a/arch/csky/mm/highmem.c b/arch/csky/mm/highmem.c
-index 89c10800a002..4161df3c6c15 100644
+index 89c10800a..4161df3c6 100644
 --- a/arch/csky/mm/highmem.c
 +++ b/arch/csky/mm/highmem.c
 @@ -9,8 +9,6 @@
@@ -2048,7 +2048,7 @@ index 89c10800a002..4161df3c6c15 100644
 -	kmap_pte = pte_offset_kernel((pmd_t *)pgd_offset_k(vaddr), vaddr);
 -}
 diff --git a/arch/hexagon/include/asm/spinlock_types.h b/arch/hexagon/include/asm/spinlock_types.h
-index 19d233497ba5..de72fb23016d 100644
+index 19d233497..de72fb230 100644
 --- a/arch/hexagon/include/asm/spinlock_types.h
 +++ b/arch/hexagon/include/asm/spinlock_types.h
 @@ -8,10 +8,6 @@
@@ -2064,7 +2064,7 @@ index 19d233497ba5..de72fb23016d 100644
  } arch_spinlock_t;
 diff --git a/arch/ia64/include/asm/kmap_types.h b/arch/ia64/include/asm/kmap_types.h
 deleted file mode 100644
-index 5c268cf7c2bd..000000000000
+index 5c268cf7c..000000000
 --- a/arch/ia64/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -2082,7 +2082,7 @@ index 5c268cf7c2bd..000000000000
 -
 -#endif /* _ASM_IA64_KMAP_TYPES_H */
 diff --git a/arch/ia64/include/asm/spinlock_types.h b/arch/ia64/include/asm/spinlock_types.h
-index 6e345fefcdca..681408d6816f 100644
+index 6e345fefc..681408d68 100644
 --- a/arch/ia64/include/asm/spinlock_types.h
 +++ b/arch/ia64/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -2097,7 +2097,7 @@ index 6e345fefcdca..681408d6816f 100644
  	volatile unsigned int lock;
  } arch_spinlock_t;
 diff --git a/arch/ia64/kernel/time.c b/arch/ia64/kernel/time.c
-index 7abc5f37bfaf..733e0e3324b8 100644
+index 7abc5f37b..733e0e332 100644
 --- a/arch/ia64/kernel/time.c
 +++ b/arch/ia64/kernel/time.c
 @@ -138,12 +138,8 @@ void vtime_account_kernel(struct task_struct *tsk)
@@ -2136,7 +2136,7 @@ index 7abc5f37bfaf..733e0e3324b8 100644
  
  static irqreturn_t
 diff --git a/arch/microblaze/Kconfig b/arch/microblaze/Kconfig
-index 33925ffed68f..7f6ca0ab4f81 100644
+index 33925ffed..7f6ca0ab4 100644
 --- a/arch/microblaze/Kconfig
 +++ b/arch/microblaze/Kconfig
 @@ -155,6 +155,7 @@ config XILINX_UNCACHED_SHADOW
@@ -2148,7 +2148,7 @@ index 33925ffed68f..7f6ca0ab4f81 100644
  	  The address space of Microblaze processors is only 4 Gigabytes large
  	  and it has to accommodate user address space, kernel address
 diff --git a/arch/microblaze/include/asm/fixmap.h b/arch/microblaze/include/asm/fixmap.h
-index 0379ce5229e3..e6e9288bff76 100644
+index 0379ce522..e6e9288bf 100644
 --- a/arch/microblaze/include/asm/fixmap.h
 +++ b/arch/microblaze/include/asm/fixmap.h
 @@ -20,7 +20,7 @@
@@ -2170,7 +2170,7 @@ index 0379ce5229e3..e6e9288bff76 100644
  	__end_of_fixed_addresses
  };
 diff --git a/arch/microblaze/include/asm/highmem.h b/arch/microblaze/include/asm/highmem.h
-index 284ca8fb54c1..4418633fb163 100644
+index 284ca8fb5..4418633fb 100644
 --- a/arch/microblaze/include/asm/highmem.h
 +++ b/arch/microblaze/include/asm/highmem.h
 @@ -25,7 +25,6 @@
@@ -2194,7 +2194,7 @@ index 284ca8fb54c1..4418633fb163 100644
  
  #endif /* _ASM_HIGHMEM_H */
 diff --git a/arch/microblaze/mm/Makefile b/arch/microblaze/mm/Makefile
-index 1b16875cea70..8ced71100047 100644
+index 1b16875ce..8ced71100 100644
 --- a/arch/microblaze/mm/Makefile
 +++ b/arch/microblaze/mm/Makefile
 @@ -6,4 +6,3 @@
@@ -2204,7 +2204,7 @@ index 1b16875cea70..8ced71100047 100644
 -obj-$(CONFIG_HIGHMEM) += highmem.o
 diff --git a/arch/microblaze/mm/highmem.c b/arch/microblaze/mm/highmem.c
 deleted file mode 100644
-index 92e0890416c9..000000000000
+index 92e089041..000000000
 --- a/arch/microblaze/mm/highmem.c
 +++ /dev/null
 @@ -1,78 +0,0 @@
@@ -2287,7 +2287,7 @@ index 92e0890416c9..000000000000
 -}
 -EXPORT_SYMBOL(kunmap_atomic_high);
 diff --git a/arch/microblaze/mm/init.c b/arch/microblaze/mm/init.c
-index 4a0c30ced72b..498eaa4d3978 100644
+index 4a0c30ced..498eaa4d3 100644
 --- a/arch/microblaze/mm/init.c
 +++ b/arch/microblaze/mm/init.c
 @@ -49,17 +49,11 @@ unsigned long lowmem_size;
@@ -2309,7 +2309,7 @@ index 4a0c30ced72b..498eaa4d3978 100644
  
  static void highmem_setup(void)
 diff --git a/arch/mips/Kconfig b/arch/mips/Kconfig
-index 896a29df1a6d..1b3593d53978 100644
+index 896a29df1..1b3593d53 100644
 --- a/arch/mips/Kconfig
 +++ b/arch/mips/Kconfig
 @@ -2727,6 +2727,7 @@ config WAR_MIPS34K_MISSED_ITLB
@@ -2321,7 +2321,7 @@ index 896a29df1a6d..1b3593d53978 100644
  config CPU_SUPPORTS_HIGHMEM
  	bool
 diff --git a/arch/mips/include/asm/fixmap.h b/arch/mips/include/asm/fixmap.h
-index 743535be7528..beea14761cef 100644
+index 743535be7..beea14761 100644
 --- a/arch/mips/include/asm/fixmap.h
 +++ b/arch/mips/include/asm/fixmap.h
 @@ -17,7 +17,7 @@
@@ -2343,7 +2343,7 @@ index 743535be7528..beea14761cef 100644
  	__end_of_fixed_addresses
  };
 diff --git a/arch/mips/include/asm/highmem.h b/arch/mips/include/asm/highmem.h
-index 9f021cf51aa7..1716181ea66d 100644
+index 9f021cf51..1716181ea 100644
 --- a/arch/mips/include/asm/highmem.h
 +++ b/arch/mips/include/asm/highmem.h
 @@ -24,7 +24,7 @@
@@ -2371,7 +2371,7 @@ index 9f021cf51aa7..1716181ea66d 100644
  
 diff --git a/arch/mips/include/asm/kmap_types.h b/arch/mips/include/asm/kmap_types.h
 deleted file mode 100644
-index 16665dc2431b..000000000000
+index 16665dc24..000000000
 --- a/arch/mips/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -2389,7 +2389,7 @@ index 16665dc2431b..000000000000
 -
 -#endif
 diff --git a/arch/mips/kernel/crash_dump.c b/arch/mips/kernel/crash_dump.c
-index 01b2bd95ba1f..9aba83e1eeb4 100644
+index 01b2bd95b..9aba83e1e 100644
 --- a/arch/mips/kernel/crash_dump.c
 +++ b/arch/mips/kernel/crash_dump.c
 @@ -5,8 +5,6 @@
@@ -2461,7 +2461,7 @@ index 01b2bd95ba1f..9aba83e1eeb4 100644
 -}
 -arch_initcall(kdump_buf_page_init);
 diff --git a/arch/mips/mm/highmem.c b/arch/mips/mm/highmem.c
-index 5fec7f45d79a..57e2f08f00d0 100644
+index 5fec7f45d..57e2f08f0 100644
 --- a/arch/mips/mm/highmem.c
 +++ b/arch/mips/mm/highmem.c
 @@ -8,8 +8,6 @@
@@ -2553,7 +2553,7 @@ index 5fec7f45d79a..57e2f08f00d0 100644
 -	kmap_pte = virt_to_kpte(kmap_vstart);
 -}
 diff --git a/arch/mips/mm/init.c b/arch/mips/mm/init.c
-index 07e84a774938..bc80893e5c0f 100644
+index 07e84a774..bc80893e5 100644
 --- a/arch/mips/mm/init.c
 +++ b/arch/mips/mm/init.c
 @@ -36,7 +36,6 @@
@@ -2575,7 +2575,7 @@ index 07e84a774938..bc80893e5c0f 100644
  	max_zone_pfns[ZONE_DMA] = MAX_DMA_PFN;
  #endif
 diff --git a/arch/nds32/Kconfig.cpu b/arch/nds32/Kconfig.cpu
-index f88a12fdf0f3..c10759952485 100644
+index f88a12fdf..c10759952 100644
 --- a/arch/nds32/Kconfig.cpu
 +++ b/arch/nds32/Kconfig.cpu
 @@ -157,6 +157,7 @@ config HW_SUPPORT_UNALIGNMENT_ACCESS
@@ -2587,7 +2587,7 @@ index f88a12fdf0f3..c10759952485 100644
  	  The address space of Andes processors is only 4 Gigabytes large
  	  and it has to accommodate user address space, kernel address
 diff --git a/arch/nds32/include/asm/fixmap.h b/arch/nds32/include/asm/fixmap.h
-index 5a4bf11e5800..2fa09a2de428 100644
+index 5a4bf11e5..2fa09a2de 100644
 --- a/arch/nds32/include/asm/fixmap.h
 +++ b/arch/nds32/include/asm/fixmap.h
 @@ -6,7 +6,7 @@
@@ -2609,7 +2609,7 @@ index 5a4bf11e5800..2fa09a2de428 100644
  	FIX_EARLYCON_MEM_BASE,
  	__end_of_fixed_addresses
 diff --git a/arch/nds32/include/asm/highmem.h b/arch/nds32/include/asm/highmem.h
-index fe986d0e6e3f..16159a8716f2 100644
+index fe986d0e6..16159a871 100644
 --- a/arch/nds32/include/asm/highmem.h
 +++ b/arch/nds32/include/asm/highmem.h
 @@ -5,7 +5,6 @@
@@ -2649,7 +2649,7 @@ index fe986d0e6e3f..16159a8716f2 100644
  
  #endif
 diff --git a/arch/nds32/mm/Makefile b/arch/nds32/mm/Makefile
-index 897ecaf5cf54..14fb2e8eb036 100644
+index 897ecaf5c..14fb2e8eb 100644
 --- a/arch/nds32/mm/Makefile
 +++ b/arch/nds32/mm/Makefile
 @@ -3,7 +3,6 @@ obj-y				:= extable.o tlb.o fault.o init.o mmap.o \
@@ -2662,7 +2662,7 @@ index 897ecaf5cf54..14fb2e8eb036 100644
  CFLAGS_REMOVE_proc.o     = $(CC_FLAGS_FTRACE)
 diff --git a/arch/nds32/mm/highmem.c b/arch/nds32/mm/highmem.c
 deleted file mode 100644
-index 4284cd59e21a..000000000000
+index 4284cd59e..000000000
 --- a/arch/nds32/mm/highmem.c
 +++ /dev/null
 @@ -1,48 +0,0 @@
@@ -2715,7 +2715,7 @@ index 4284cd59e21a..000000000000
 -}
 -EXPORT_SYMBOL(kunmap_atomic_high);
 diff --git a/arch/openrisc/mm/init.c b/arch/openrisc/mm/init.c
-index 5e88c351e6a4..f3fa02b8838a 100644
+index 5e88c351e..f3fa02b88 100644
 --- a/arch/openrisc/mm/init.c
 +++ b/arch/openrisc/mm/init.c
 @@ -33,7 +33,6 @@
@@ -2727,7 +2727,7 @@ index 5e88c351e6a4..f3fa02b8838a 100644
  #include <asm/tlbflush.h>
  #include <asm/sections.h>
 diff --git a/arch/openrisc/mm/ioremap.c b/arch/openrisc/mm/ioremap.c
-index a978590d802d..5aed97a18bac 100644
+index a978590d8..5aed97a18 100644
 --- a/arch/openrisc/mm/ioremap.c
 +++ b/arch/openrisc/mm/ioremap.c
 @@ -15,7 +15,6 @@
@@ -2739,7 +2739,7 @@ index a978590d802d..5aed97a18bac 100644
  #include <asm/bug.h>
  #include <linux/sched.h>
 diff --git a/arch/parisc/include/asm/hardirq.h b/arch/parisc/include/asm/hardirq.h
-index 7f7039516e53..fad29aa6f45f 100644
+index 7f7039516..fad29aa6f 100644
 --- a/arch/parisc/include/asm/hardirq.h
 +++ b/arch/parisc/include/asm/hardirq.h
 @@ -32,7 +32,6 @@ typedef struct {
@@ -2752,7 +2752,7 @@ index 7f7039516e53..fad29aa6f45f 100644
  #define ack_bad_irq(irq) WARN(1, "unexpected IRQ trap at vector %02x\n", irq)
 diff --git a/arch/parisc/include/asm/kmap_types.h b/arch/parisc/include/asm/kmap_types.h
 deleted file mode 100644
-index 3e70b5cd1123..000000000000
+index 3e70b5cd1..000000000
 --- a/arch/parisc/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -2770,7 +2770,7 @@ index 3e70b5cd1123..000000000000
 -
 -#endif
 diff --git a/arch/powerpc/Kconfig b/arch/powerpc/Kconfig
-index ed06e0c32727..a0cf63581f24 100644
+index ed06e0c32..a0cf63581 100644
 --- a/arch/powerpc/Kconfig
 +++ b/arch/powerpc/Kconfig
 @@ -146,6 +146,7 @@ config PPC
@@ -2806,7 +2806,7 @@ index ed06e0c32727..a0cf63581f24 100644
  source "kernel/Kconfig.hz"
  
 diff --git a/arch/powerpc/include/asm/cmpxchg.h b/arch/powerpc/include/asm/cmpxchg.h
-index cf091c4c22e5..7371f7e23c35 100644
+index cf091c4c2..7371f7e23 100644
 --- a/arch/powerpc/include/asm/cmpxchg.h
 +++ b/arch/powerpc/include/asm/cmpxchg.h
 @@ -5,7 +5,7 @@
@@ -2819,7 +2819,7 @@ index cf091c4c22e5..7371f7e23c35 100644
  #ifdef __BIG_ENDIAN
  #define BITOFF_CAL(size, off)	((sizeof(u32) - size - off) * BITS_PER_BYTE)
 diff --git a/arch/powerpc/include/asm/fixmap.h b/arch/powerpc/include/asm/fixmap.h
-index 897cc68758d4..a832aeafe560 100644
+index 897cc6875..a832aeafe 100644
 --- a/arch/powerpc/include/asm/fixmap.h
 +++ b/arch/powerpc/include/asm/fixmap.h
 @@ -20,7 +20,7 @@
@@ -2841,7 +2841,7 @@ index 897cc68758d4..a832aeafe560 100644
  #ifdef CONFIG_PPC_8xx
  	/* For IMMR we need an aligned 512K area */
 diff --git a/arch/powerpc/include/asm/highmem.h b/arch/powerpc/include/asm/highmem.h
-index 104026f7d6bc..80a5ae771c65 100644
+index 104026f7d..80a5ae771 100644
 --- a/arch/powerpc/include/asm/highmem.h
 +++ b/arch/powerpc/include/asm/highmem.h
 @@ -24,12 +24,10 @@
@@ -2871,7 +2871,7 @@ index 104026f7d6bc..80a5ae771c65 100644
  #endif /* _ASM_HIGHMEM_H */
 diff --git a/arch/powerpc/include/asm/kmap_types.h b/arch/powerpc/include/asm/kmap_types.h
 deleted file mode 100644
-index c8fa182d48c8..000000000000
+index c8fa182d4..000000000
 --- a/arch/powerpc/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -2889,7 +2889,7 @@ index c8fa182d48c8..000000000000
 -#endif	/* __KERNEL__ */
 -#endif	/* _ASM_POWERPC_KMAP_TYPES_H */
 diff --git a/arch/powerpc/include/asm/simple_spinlock_types.h b/arch/powerpc/include/asm/simple_spinlock_types.h
-index 0f3cdd8faa95..d45561e9e6ba 100644
+index 0f3cdd8fa..d45561e9e 100644
 --- a/arch/powerpc/include/asm/simple_spinlock_types.h
 +++ b/arch/powerpc/include/asm/simple_spinlock_types.h
 @@ -2,7 +2,7 @@
@@ -2902,7 +2902,7 @@ index 0f3cdd8faa95..d45561e9e6ba 100644
  #endif
  
 diff --git a/arch/powerpc/include/asm/spinlock_types.h b/arch/powerpc/include/asm/spinlock_types.h
-index c5d742f18021..cc6922a011ba 100644
+index c5d742f18..cc6922a01 100644
 --- a/arch/powerpc/include/asm/spinlock_types.h
 +++ b/arch/powerpc/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -2917,7 +2917,7 @@ index c5d742f18021..cc6922a011ba 100644
  #include <asm-generic/qspinlock_types.h>
  #include <asm-generic/qrwlock_types.h>
 diff --git a/arch/powerpc/include/asm/stackprotector.h b/arch/powerpc/include/asm/stackprotector.h
-index 1c8460e23583..b1653c160bab 100644
+index 1c8460e23..b1653c160 100644
 --- a/arch/powerpc/include/asm/stackprotector.h
 +++ b/arch/powerpc/include/asm/stackprotector.h
 @@ -24,7 +24,11 @@ static __always_inline void boot_init_stack_canary(void)
@@ -2933,7 +2933,7 @@ index 1c8460e23583..b1653c160bab 100644
  	canary ^= LINUX_VERSION_CODE;
  	canary &= CANARY_MASK;
 diff --git a/arch/powerpc/include/asm/thread_info.h b/arch/powerpc/include/asm/thread_info.h
-index 7480fbc4d79d..0f7ccf38a014 100644
+index 7480fbc4d..0f7ccf38a 100644
 --- a/arch/powerpc/include/asm/thread_info.h
 +++ b/arch/powerpc/include/asm/thread_info.h
 @@ -54,6 +54,8 @@
@@ -2992,7 +2992,7 @@ index 7480fbc4d79d..0f7ccf38a014 100644
  /* Bits in local_flags */
  /* Don't move TLF_NAPPING without adjusting the code in entry_32.S */
 diff --git a/arch/powerpc/kernel/asm-offsets.c b/arch/powerpc/kernel/asm-offsets.c
-index 760f656efcf6..0a351a99d090 100644
+index 760f656ef..0a351a99d 100644
 --- a/arch/powerpc/kernel/asm-offsets.c
 +++ b/arch/powerpc/kernel/asm-offsets.c
 @@ -187,6 +187,7 @@ int main(void)
@@ -3004,7 +3004,7 @@ index 760f656efcf6..0a351a99d090 100644
  #ifdef CONFIG_PPC64
  	OFFSET(DCACHEL1BLOCKSIZE, ppc64_caches, l1d.block_size);
 diff --git a/arch/powerpc/kernel/entry_32.S b/arch/powerpc/kernel/entry_32.S
-index 459f5d00b990..fc9517a97640 100644
+index 459f5d00b..fc9517a97 100644
 --- a/arch/powerpc/kernel/entry_32.S
 +++ b/arch/powerpc/kernel/entry_32.S
 @@ -414,7 +414,9 @@ ret_from_syscall:
@@ -3083,7 +3083,7 @@ index 459f5d00b990..fc9517a97640 100644
  	andi.	r0,r9,_TIF_USER_WORK_MASK
  	beq	restore_user
 diff --git a/arch/powerpc/kernel/exceptions-64e.S b/arch/powerpc/kernel/exceptions-64e.S
-index e91d3ba1e208..5ce64cfe69d4 100644
+index e91d3ba1e..5ce64cfe6 100644
 --- a/arch/powerpc/kernel/exceptions-64e.S
 +++ b/arch/powerpc/kernel/exceptions-64e.S
 @@ -1080,7 +1080,7 @@ _GLOBAL(ret_from_except_lite)
@@ -3128,7 +3128,7 @@ index e91d3ba1e208..5ce64cfe69d4 100644
  restore:
  	/*
 diff --git a/arch/powerpc/kernel/irq.c b/arch/powerpc/kernel/irq.c
-index e8a548447dd6..5ad4f27cba10 100644
+index e8a548447..5ad4f27cb 100644
 --- a/arch/powerpc/kernel/irq.c
 +++ b/arch/powerpc/kernel/irq.c
 @@ -753,10 +753,12 @@ void *mcheckirq_ctx[NR_CPUS] __read_mostly;
@@ -3145,7 +3145,7 @@ index e8a548447dd6..5ad4f27cba10 100644
  irq_hw_number_t virq_to_hw(unsigned int virq)
  {
 diff --git a/arch/powerpc/kernel/misc_32.S b/arch/powerpc/kernel/misc_32.S
-index 717e658b90fd..08ee95ad6593 100644
+index 717e658b9..08ee95ad6 100644
 --- a/arch/powerpc/kernel/misc_32.S
 +++ b/arch/powerpc/kernel/misc_32.S
 @@ -31,6 +31,7 @@
@@ -3165,7 +3165,7 @@ index 717e658b90fd..08ee95ad6593 100644
  /*
   * void call_do_irq(struct pt_regs *regs, void *sp);
 diff --git a/arch/powerpc/kernel/misc_64.S b/arch/powerpc/kernel/misc_64.S
-index 070465825c21..a6b33f7b3264 100644
+index 070465825..a6b33f7b3 100644
 --- a/arch/powerpc/kernel/misc_64.S
 +++ b/arch/powerpc/kernel/misc_64.S
 @@ -27,6 +27,7 @@
@@ -3185,7 +3185,7 @@ index 070465825c21..a6b33f7b3264 100644
  _GLOBAL(call_do_irq)
  	mflr	r0
 diff --git a/arch/powerpc/kernel/nvram_64.c b/arch/powerpc/kernel/nvram_64.c
-index 532f22637783..1ef55f4b389a 100644
+index 532f22637..1ef55f4b3 100644
 --- a/arch/powerpc/kernel/nvram_64.c
 +++ b/arch/powerpc/kernel/nvram_64.c
 @@ -73,7 +73,8 @@ static const char *nvram_os_partitions[] = {
@@ -3226,7 +3226,7 @@ index 532f22637783..1ef55f4b389a 100644
  		err_type = ERR_TYPE_KERNEL_PANIC;
  		oops_hdr->version = cpu_to_be16(OOPS_HDR_VERSION);
 diff --git a/arch/powerpc/kernel/syscall_64.c b/arch/powerpc/kernel/syscall_64.c
-index 310bcd768cd5..ae3212dcf562 100644
+index 310bcd768..ae3212dcf 100644
 --- a/arch/powerpc/kernel/syscall_64.c
 +++ b/arch/powerpc/kernel/syscall_64.c
 @@ -193,7 +193,7 @@ notrace unsigned long syscall_exit_prepare(unsigned long r3,
@@ -3265,7 +3265,7 @@ index 310bcd768cd5..ae3212dcf562 100644
  		}
  
 diff --git a/arch/powerpc/kernel/time.c b/arch/powerpc/kernel/time.c
-index 1d20f0f77a92..7e0a497a36ee 100644
+index 1d20f0f77..7e0a497a3 100644
 --- a/arch/powerpc/kernel/time.c
 +++ b/arch/powerpc/kernel/time.c
 @@ -312,12 +312,11 @@ static unsigned long vtime_delta_scaled(struct cpu_accounting_data *acct,
@@ -3363,7 +3363,7 @@ index 1d20f0f77a92..7e0a497a36ee 100644
  			       struct cpu_accounting_data *acct)
  {
 diff --git a/arch/powerpc/kernel/traps.c b/arch/powerpc/kernel/traps.c
-index d2f6b2e30b6a..6a028453f587 100644
+index d2f6b2e30..6a028453f 100644
 --- a/arch/powerpc/kernel/traps.c
 +++ b/arch/powerpc/kernel/traps.c
 @@ -173,7 +173,6 @@ extern void panic_flush_kmsg_start(void)
@@ -3394,7 +3394,7 @@ index d2f6b2e30b6a..6a028453f587 100644
  	       IS_ENABLED(CONFIG_SMP) ? (" NR_CPUS=" __stringify(NR_CPUS)) : "",
  	       debug_pagealloc_enabled() ? " DEBUG_PAGEALLOC" : "",
 diff --git a/arch/powerpc/kernel/watchdog.c b/arch/powerpc/kernel/watchdog.c
-index 75b2a6c4db5a..db40e20d0c54 100644
+index 75b2a6c4d..db40e20d0 100644
 --- a/arch/powerpc/kernel/watchdog.c
 +++ b/arch/powerpc/kernel/watchdog.c
 @@ -185,11 +185,6 @@ static void watchdog_smp_panic(int cpu, u64 tb)
@@ -3410,7 +3410,7 @@ index 75b2a6c4db5a..db40e20d0c54 100644
  		trigger_allbutself_cpu_backtrace();
  
 diff --git a/arch/powerpc/kexec/crash.c b/arch/powerpc/kexec/crash.c
-index c9a889880214..d488311efab1 100644
+index c9a889880..d488311ef 100644
 --- a/arch/powerpc/kexec/crash.c
 +++ b/arch/powerpc/kexec/crash.c
 @@ -311,9 +311,6 @@ void default_machine_crash_shutdown(struct pt_regs *regs)
@@ -3424,7 +3424,7 @@ index c9a889880214..d488311efab1 100644
  	 * This function is only called after the system
  	 * has panicked or is otherwise in a critical state.
 diff --git a/arch/powerpc/kvm/Kconfig b/arch/powerpc/kvm/Kconfig
-index 549591d9aaa2..efb5bfe93f70 100644
+index 549591d9a..efb5bfe93 100644
 --- a/arch/powerpc/kvm/Kconfig
 +++ b/arch/powerpc/kvm/Kconfig
 @@ -178,6 +178,7 @@ config KVM_E500MC
@@ -3436,7 +3436,7 @@ index 549591d9aaa2..efb5bfe93f70 100644
  	select HAVE_KVM_IRQFD
  	select HAVE_KVM_IRQ_ROUTING
 diff --git a/arch/powerpc/mm/Makefile b/arch/powerpc/mm/Makefile
-index 55b4a8bd408a..3b4e9e4e25ea 100644
+index 55b4a8bd4..3b4e9e4e2 100644
 --- a/arch/powerpc/mm/Makefile
 +++ b/arch/powerpc/mm/Makefile
 @@ -16,7 +16,6 @@ obj-$(CONFIG_NEED_MULTIPLE_NODES) += numa.o
@@ -3449,7 +3449,7 @@ index 55b4a8bd408a..3b4e9e4e25ea 100644
  obj-$(CONFIG_KASAN)		+= kasan/
 diff --git a/arch/powerpc/mm/highmem.c b/arch/powerpc/mm/highmem.c
 deleted file mode 100644
-index 624b4438aff9..000000000000
+index 624b4438a..000000000
 --- a/arch/powerpc/mm/highmem.c
 +++ /dev/null
 @@ -1,67 +0,0 @@
@@ -3521,10 +3521,10 @@ index 624b4438aff9..000000000000
 -}
 -EXPORT_SYMBOL(kunmap_atomic_high);
 diff --git a/arch/powerpc/mm/mem.c b/arch/powerpc/mm/mem.c
-index 22eb1c718e62..1b74565b3e16 100644
+index 1ed276d23..ae7c136ed 100644
 --- a/arch/powerpc/mm/mem.c
 +++ b/arch/powerpc/mm/mem.c
-@@ -62,11 +62,6 @@
+@@ -63,11 +63,6 @@
  unsigned long long memory_limit;
  bool init_mem_is_free;
  
@@ -3536,7 +3536,7 @@ index 22eb1c718e62..1b74565b3e16 100644
  pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
  			      unsigned long size, pgprot_t vma_prot)
  {
-@@ -236,8 +231,6 @@ void __init paging_init(void)
+@@ -237,8 +232,6 @@ void __init paging_init(void)
  
  	map_kernel_page(PKMAP_BASE, 0, __pgprot(0));	/* XXX gross */
  	pkmap_page_table = virt_to_kpte(PKMAP_BASE);
@@ -3546,7 +3546,7 @@ index 22eb1c718e62..1b74565b3e16 100644
  
  	printk(KERN_DEBUG "Top of RAM: 0x%llx, Total RAM: 0x%llx\n",
 diff --git a/arch/powerpc/platforms/powernv/opal-kmsg.c b/arch/powerpc/platforms/powernv/opal-kmsg.c
-index 6c3bc4b4da98..ec862846bc82 100644
+index 6c3bc4b4d..ec862846b 100644
 --- a/arch/powerpc/platforms/powernv/opal-kmsg.c
 +++ b/arch/powerpc/platforms/powernv/opal-kmsg.c
 @@ -20,7 +20,8 @@
@@ -3560,7 +3560,7 @@ index 6c3bc4b4da98..ec862846bc82 100644
  	/*
  	 * Outside of a panic context the pollers will continue to run,
 diff --git a/arch/powerpc/platforms/pseries/iommu.c b/arch/powerpc/platforms/pseries/iommu.c
-index 245f1f8df656..f05555dde8e7 100644
+index 245f1f8df..f05555dde 100644
 --- a/arch/powerpc/platforms/pseries/iommu.c
 +++ b/arch/powerpc/platforms/pseries/iommu.c
 @@ -24,6 +24,7 @@
@@ -3655,7 +3655,7 @@ index 245f1f8df656..f05555dde8e7 100644
  }
  
 diff --git a/arch/powerpc/xmon/xmon.c b/arch/powerpc/xmon/xmon.c
-index 5559edf36756..d62b8e053d4c 100644
+index 5559edf36..d62b8e053 100644
 --- a/arch/powerpc/xmon/xmon.c
 +++ b/arch/powerpc/xmon/xmon.c
 @@ -3005,7 +3005,7 @@ print_address(unsigned long addr)
@@ -3680,7 +3680,7 @@ index 5559edf36756..d62b8e053d4c 100644
  		printf("%s", buf);
  	}
 diff --git a/arch/s390/Kconfig b/arch/s390/Kconfig
-index a7e38600096d..d3ed5b2aedc2 100644
+index 7461318e1..517cbf603 100644
 --- a/arch/s390/Kconfig
 +++ b/arch/s390/Kconfig
 @@ -183,6 +183,7 @@ config S390
@@ -3692,7 +3692,7 @@ index a7e38600096d..d3ed5b2aedc2 100644
  	select IOMMU_SUPPORT		if PCI
  	select MODULES_USE_ELF_RELA
 diff --git a/arch/s390/include/asm/spinlock_types.h b/arch/s390/include/asm/spinlock_types.h
-index cfed272e4fd5..8e28e8176ec8 100644
+index cfed272e4..8e28e8176 100644
 --- a/arch/s390/include/asm/spinlock_types.h
 +++ b/arch/s390/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -3707,7 +3707,7 @@ index cfed272e4fd5..8e28e8176ec8 100644
  	int lock;
  } __attribute__ ((aligned (4))) arch_spinlock_t;
 diff --git a/arch/s390/include/asm/vtime.h b/arch/s390/include/asm/vtime.h
-index 3622d4ebc73a..fac6a67988eb 100644
+index 3622d4ebc..fac6a6798 100644
 --- a/arch/s390/include/asm/vtime.h
 +++ b/arch/s390/include/asm/vtime.h
 @@ -2,7 +2,6 @@
@@ -3719,7 +3719,7 @@ index 3622d4ebc73a..fac6a67988eb 100644
  
  #endif /* _S390_VTIME_H */
 diff --git a/arch/s390/kernel/vtime.c b/arch/s390/kernel/vtime.c
-index 579ec3a8c816..9b3c5978b668 100644
+index 579ec3a8c..9b3c5978b 100644
 --- a/arch/s390/kernel/vtime.c
 +++ b/arch/s390/kernel/vtime.c
 @@ -223,35 +223,50 @@ void vtime_flush(struct task_struct *tsk)
@@ -3792,7 +3792,7 @@ index 579ec3a8c816..9b3c5978b668 100644
   * Sorted add to a list. List is linear searched until first bigger
   * element is found.
 diff --git a/arch/sh/include/asm/fixmap.h b/arch/sh/include/asm/fixmap.h
-index f38adc189b83..b07fbc7f7bc6 100644
+index f38adc189..b07fbc7f7 100644
 --- a/arch/sh/include/asm/fixmap.h
 +++ b/arch/sh/include/asm/fixmap.h
 @@ -13,9 +13,6 @@
@@ -3818,7 +3818,7 @@ index f38adc189b83..b07fbc7f7bc6 100644
  	/*
  	 * FIX_IOREMAP entries are useful for mapping physical address
 diff --git a/arch/sh/include/asm/hardirq.h b/arch/sh/include/asm/hardirq.h
-index edaea3559a23..9fe4495a8e90 100644
+index edaea3559..9fe4495a8 100644
 --- a/arch/sh/include/asm/hardirq.h
 +++ b/arch/sh/include/asm/hardirq.h
 @@ -2,16 +2,10 @@
@@ -3844,7 +3844,7 @@ index edaea3559a23..9fe4495a8e90 100644
  #endif /* __ASM_SH_HARDIRQ_H */
 diff --git a/arch/sh/include/asm/kmap_types.h b/arch/sh/include/asm/kmap_types.h
 deleted file mode 100644
-index b78107f923dd..000000000000
+index b78107f92..000000000
 --- a/arch/sh/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,15 +0,0 @@
@@ -3864,7 +3864,7 @@ index b78107f923dd..000000000000
 -
 -#endif
 diff --git a/arch/sh/include/asm/spinlock_types.h b/arch/sh/include/asm/spinlock_types.h
-index e82369f286a2..22ca9a98bbb8 100644
+index e82369f28..22ca9a98b 100644
 --- a/arch/sh/include/asm/spinlock_types.h
 +++ b/arch/sh/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -3879,7 +3879,7 @@ index e82369f286a2..22ca9a98bbb8 100644
  	volatile unsigned int lock;
  } arch_spinlock_t;
 diff --git a/arch/sh/kernel/irq.c b/arch/sh/kernel/irq.c
-index 5717c7cbdd97..5db7af565dec 100644
+index 5717c7cbd..5db7af565 100644
 --- a/arch/sh/kernel/irq.c
 +++ b/arch/sh/kernel/irq.c
 @@ -44,7 +44,7 @@ int arch_show_interrupts(struct seq_file *p, int prec)
@@ -3908,7 +3908,7 @@ index 5717c7cbdd97..5db7af565dec 100644
  static inline void handle_one_irq(unsigned int irq)
  {
 diff --git a/arch/sh/kernel/traps.c b/arch/sh/kernel/traps.c
-index 9c3d32b80038..f5beecdac693 100644
+index 9c3d32b80..f5beecdac 100644
 --- a/arch/sh/kernel/traps.c
 +++ b/arch/sh/kernel/traps.c
 @@ -186,7 +186,7 @@ BUILD_TRAP_HANDLER(nmi)
@@ -3921,7 +3921,7 @@ index 9c3d32b80038..f5beecdac693 100644
  	switch (notify_die(DIE_NMI, "NMI", regs, 0, vec & 0xff, SIGINT)) {
  	case NOTIFY_OK:
 diff --git a/arch/sh/mm/init.c b/arch/sh/mm/init.c
-index 3348e0c4d769..0db6919af8d3 100644
+index 3348e0c4d..0db6919af 100644
 --- a/arch/sh/mm/init.c
 +++ b/arch/sh/mm/init.c
 @@ -362,9 +362,6 @@ void __init mem_init(void)
@@ -3947,7 +3947,7 @@ index 3348e0c4d769..0db6919af8d3 100644
  		(VMALLOC_END - VMALLOC_START) >> 20,
  
 diff --git a/arch/sparc/Kconfig b/arch/sparc/Kconfig
-index 530b7ec5d3ca..a38d00d8b783 100644
+index 530b7ec5d..a38d00d8b 100644
 --- a/arch/sparc/Kconfig
 +++ b/arch/sparc/Kconfig
 @@ -139,6 +139,7 @@ config MMU
@@ -3959,7 +3959,7 @@ index 530b7ec5d3ca..a38d00d8b783 100644
  config ZONE_DMA
  	bool
 diff --git a/arch/sparc/include/asm/highmem.h b/arch/sparc/include/asm/highmem.h
-index 6c35f0d27ee1..875116209ec1 100644
+index 6c35f0d27..875116209 100644
 --- a/arch/sparc/include/asm/highmem.h
 +++ b/arch/sparc/include/asm/highmem.h
 @@ -24,7 +24,6 @@
@@ -3993,7 +3993,7 @@ index 6c35f0d27ee1..875116209ec1 100644
  #endif /* _ASM_HIGHMEM_H */
 diff --git a/arch/sparc/include/asm/kmap_types.h b/arch/sparc/include/asm/kmap_types.h
 deleted file mode 100644
-index 55a99b6bd91e..000000000000
+index 55a99b6bd..000000000
 --- a/arch/sparc/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,11 +0,0 @@
@@ -4009,7 +4009,7 @@ index 55a99b6bd91e..000000000000
 -
 -#endif
 diff --git a/arch/sparc/include/asm/vaddrs.h b/arch/sparc/include/asm/vaddrs.h
-index 84d054b07a6f..4fec0341e2a8 100644
+index 84d054b07..4fec0341e 100644
 --- a/arch/sparc/include/asm/vaddrs.h
 +++ b/arch/sparc/include/asm/vaddrs.h
 @@ -32,13 +32,13 @@
@@ -4029,7 +4029,7 @@ index 84d054b07a6f..4fec0341e2a8 100644
  	__end_of_fixed_addresses
  };
 diff --git a/arch/sparc/kernel/irq_64.c b/arch/sparc/kernel/irq_64.c
-index 3ec9f1402aad..eb21682abfcb 100644
+index 3ec9f1402..eb21682ab 100644
 --- a/arch/sparc/kernel/irq_64.c
 +++ b/arch/sparc/kernel/irq_64.c
 @@ -854,6 +854,7 @@ void __irq_entry handler_irq(int pil, struct pt_regs *regs)
@@ -4049,7 +4049,7 @@ index 3ec9f1402aad..eb21682abfcb 100644
  #ifdef CONFIG_HOTPLUG_CPU
  void fixup_irqs(void)
 diff --git a/arch/sparc/mm/Makefile b/arch/sparc/mm/Makefile
-index b078205b70e0..68db1f859b02 100644
+index b078205b7..68db1f859 100644
 --- a/arch/sparc/mm/Makefile
 +++ b/arch/sparc/mm/Makefile
 @@ -15,6 +15,3 @@ obj-$(CONFIG_SPARC32)   += leon_mm.o
@@ -4061,7 +4061,7 @@ index b078205b70e0..68db1f859b02 100644
 -obj-$(CONFIG_HIGHMEM)   += highmem.o
 diff --git a/arch/sparc/mm/highmem.c b/arch/sparc/mm/highmem.c
 deleted file mode 100644
-index 8f2a2afb048a..000000000000
+index 8f2a2afb0..000000000
 --- a/arch/sparc/mm/highmem.c
 +++ /dev/null
 @@ -1,115 +0,0 @@
@@ -4181,7 +4181,7 @@ index 8f2a2afb048a..000000000000
 -}
 -EXPORT_SYMBOL(kunmap_atomic_high);
 diff --git a/arch/sparc/mm/srmmu.c b/arch/sparc/mm/srmmu.c
-index 0070f8b9a753..a03caa5f6628 100644
+index 0070f8b9a..a03caa5f6 100644
 --- a/arch/sparc/mm/srmmu.c
 +++ b/arch/sparc/mm/srmmu.c
 @@ -971,8 +971,6 @@ void __init srmmu_paging_init(void)
@@ -4194,7 +4194,7 @@ index 0070f8b9a753..a03caa5f6628 100644
  		unsigned long max_zone_pfn[MAX_NR_ZONES] = { 0 };
  
 diff --git a/arch/um/include/asm/fixmap.h b/arch/um/include/asm/fixmap.h
-index 2c697a145ac1..2efac5827188 100644
+index 2c697a145..2efac5827 100644
 --- a/arch/um/include/asm/fixmap.h
 +++ b/arch/um/include/asm/fixmap.h
 @@ -3,7 +3,6 @@
@@ -4206,7 +4206,7 @@ index 2c697a145ac1..2efac5827188 100644
  #include <asm/page.h>
  #include <linux/threads.h>
 diff --git a/arch/um/include/asm/hardirq.h b/arch/um/include/asm/hardirq.h
-index b426796d26fd..52e2c36267a9 100644
+index b426796d2..52e2c3626 100644
 --- a/arch/um/include/asm/hardirq.h
 +++ b/arch/um/include/asm/hardirq.h
 @@ -2,22 +2,7 @@
@@ -4235,7 +4235,7 @@ index b426796d26fd..52e2c36267a9 100644
  
 diff --git a/arch/um/include/asm/kmap_types.h b/arch/um/include/asm/kmap_types.h
 deleted file mode 100644
-index b0bd12de1d23..000000000000
+index b0bd12de1..000000000
 --- a/arch/um/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -4253,7 +4253,7 @@ index b0bd12de1d23..000000000000
 -
 -#endif
 diff --git a/arch/um/kernel/kmsg_dump.c b/arch/um/kernel/kmsg_dump.c
-index e4abac6c9727..173999422ed8 100644
+index e4abac6c9..173999422 100644
 --- a/arch/um/kernel/kmsg_dump.c
 +++ b/arch/um/kernel/kmsg_dump.c
 @@ -1,15 +1,19 @@
@@ -4296,7 +4296,7 @@ index e4abac6c9727..173999422ed8 100644
  
  static struct kmsg_dumper kmsg_dumper = {
 diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
-index c5fda7ab3b08..649c5bdc96ee 100644
+index c5fda7ab3..649c5bdc9 100644
 --- a/arch/x86/Kconfig
 +++ b/arch/x86/Kconfig
 @@ -16,6 +16,7 @@ config X86_32
@@ -4324,7 +4324,7 @@ index c5fda7ab3b08..649c5bdc96ee 100644
  	select HAVE_POSIX_CPU_TIMERS_TASK_WORK
  	select HAVE_REGS_AND_STACK_ACCESS_API
 diff --git a/arch/x86/crypto/aesni-intel_glue.c b/arch/x86/crypto/aesni-intel_glue.c
-index be891fdf8d17..29c716ed103f 100644
+index be891fdf8..29c716ed1 100644
 --- a/arch/x86/crypto/aesni-intel_glue.c
 +++ b/arch/x86/crypto/aesni-intel_glue.c
 @@ -379,14 +379,14 @@ static int ecb_encrypt(struct skcipher_request *req)
@@ -4419,7 +4419,7 @@ index be891fdf8d17..29c716ed103f 100644
  	return err;
  }
 diff --git a/arch/x86/crypto/cast5_avx_glue.c b/arch/x86/crypto/cast5_avx_glue.c
-index 384ccb00f9e1..2f8df8ef8644 100644
+index 384ccb00f..2f8df8ef8 100644
 --- a/arch/x86/crypto/cast5_avx_glue.c
 +++ b/arch/x86/crypto/cast5_avx_glue.c
 @@ -46,7 +46,7 @@ static inline void cast5_fpu_end(bool fpu_enabled)
@@ -4502,7 +4502,7 @@ index 384ccb00f9e1..2f8df8ef8644 100644
  		ctr_crypt_final(&walk, ctx);
  		err = skcipher_walk_done(&walk, 0);
 diff --git a/arch/x86/crypto/glue_helper.c b/arch/x86/crypto/glue_helper.c
-index d3d91a0abf88..6d0774721514 100644
+index d3d91a0ab..6d0774721 100644
 --- a/arch/x86/crypto/glue_helper.c
 +++ b/arch/x86/crypto/glue_helper.c
 @@ -24,7 +24,7 @@ int glue_ecb_req_128bit(const struct common_glue_ctx *gctx,
@@ -4612,7 +4612,7 @@ index d3d91a0abf88..6d0774721514 100644
  		nbytes = walk.nbytes;
  	}
 diff --git a/arch/x86/include/asm/fixmap.h b/arch/x86/include/asm/fixmap.h
-index 77217bd292bd..8eba66a33e39 100644
+index 77217bd29..8eba66a33 100644
 --- a/arch/x86/include/asm/fixmap.h
 +++ b/arch/x86/include/asm/fixmap.h
 @@ -31,7 +31,7 @@
@@ -4642,7 +4642,7 @@ index 77217bd292bd..8eba66a33e39 100644
  
  void __native_set_fixmap(enum fixed_addresses idx, pte_t pte);
 diff --git a/arch/x86/include/asm/fpu/api.h b/arch/x86/include/asm/fpu/api.h
-index 8b9bfaad6e66..d31b0886592a 100644
+index 8b9bfaad6..d31b08865 100644
 --- a/arch/x86/include/asm/fpu/api.h
 +++ b/arch/x86/include/asm/fpu/api.h
 @@ -28,6 +28,7 @@ extern void kernel_fpu_begin_mask(unsigned int kfpu_mask);
@@ -4691,7 +4691,7 @@ index 8b9bfaad6e66..d31b0886592a 100644
  
  #ifdef CONFIG_X86_DEBUG_FPU
 diff --git a/arch/x86/include/asm/highmem.h b/arch/x86/include/asm/highmem.h
-index 0f420b24e0fc..032e020853aa 100644
+index 0f420b24e..032e02085 100644
 --- a/arch/x86/include/asm/highmem.h
 +++ b/arch/x86/include/asm/highmem.h
 @@ -23,7 +23,6 @@
@@ -4724,7 +4724,7 @@ index 0f420b24e0fc..032e020853aa 100644
  					unsigned long end_pfn);
  
 diff --git a/arch/x86/include/asm/iomap.h b/arch/x86/include/asm/iomap.h
-index bacf68c4d70e..e2de092fc38c 100644
+index bacf68c4d..e2de092fc 100644
 --- a/arch/x86/include/asm/iomap.h
 +++ b/arch/x86/include/asm/iomap.h
 @@ -9,19 +9,14 @@
@@ -4753,7 +4753,7 @@ index bacf68c4d70e..e2de092fc38c 100644
  #endif /* _ASM_X86_IOMAP_H */
 diff --git a/arch/x86/include/asm/kmap_types.h b/arch/x86/include/asm/kmap_types.h
 deleted file mode 100644
-index 04ab8266e347..000000000000
+index 04ab8266e..000000000
 --- a/arch/x86/include/asm/kmap_types.h
 +++ /dev/null
 @@ -1,13 +0,0 @@
@@ -4771,7 +4771,7 @@ index 04ab8266e347..000000000000
 -
 -#endif /* _ASM_X86_KMAP_TYPES_H */
 diff --git a/arch/x86/include/asm/paravirt_types.h b/arch/x86/include/asm/paravirt_types.h
-index b30b56d47619..9632218bfd41 100644
+index b30b56d47..9632218bf 100644
 --- a/arch/x86/include/asm/paravirt_types.h
 +++ b/arch/x86/include/asm/paravirt_types.h
 @@ -43,7 +43,6 @@
@@ -4783,7 +4783,7 @@ index b30b56d47619..9632218bfd41 100644
  #include <asm/nospec-branch.h>
  
 diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
-index 2380df419a82..a3b73de276c3 100644
+index 2380df419..a3b73de27 100644
 --- a/arch/x86/include/asm/preempt.h
 +++ b/arch/x86/include/asm/preempt.h
 @@ -90,21 +90,54 @@ static __always_inline void __preempt_count_sub(int val)
@@ -4844,7 +4844,7 @@ index 2380df419a82..a3b73de276c3 100644
  extern asmlinkage void preempt_schedule_thunk(void);
  
 diff --git a/arch/x86/include/asm/signal.h b/arch/x86/include/asm/signal.h
-index 6fd8410a3910..f3bf2f515edb 100644
+index 6fd8410a3..f3bf2f515 100644
 --- a/arch/x86/include/asm/signal.h
 +++ b/arch/x86/include/asm/signal.h
 @@ -28,6 +28,19 @@ typedef struct {
@@ -4868,7 +4868,7 @@ index 6fd8410a3910..f3bf2f515edb 100644
  typedef sigset_t compat_sigset_t;
  #endif
 diff --git a/arch/x86/include/asm/stackprotector.h b/arch/x86/include/asm/stackprotector.h
-index 7fb482f0f25b..3df0a95c9e13 100644
+index 7fb482f0f..3df0a95c9 100644
 --- a/arch/x86/include/asm/stackprotector.h
 +++ b/arch/x86/include/asm/stackprotector.h
 @@ -65,7 +65,7 @@
@@ -4896,7 +4896,7 @@ index 7fb482f0f25b..3df0a95c9e13 100644
  	canary += tsc + (tsc << 32UL);
  	canary &= CANARY_MASK;
 diff --git a/arch/x86/include/asm/thread_info.h b/arch/x86/include/asm/thread_info.h
-index a225c6e2ca6d..414c90f04bc3 100644
+index a225c6e2c..414c90f04 100644
 --- a/arch/x86/include/asm/thread_info.h
 +++ b/arch/x86/include/asm/thread_info.h
 @@ -60,6 +60,8 @@ struct thread_info {
@@ -4952,7 +4952,7 @@ index a225c6e2ca6d..414c90f04bc3 100644
  
  /*
 diff --git a/arch/x86/kernel/crash_dump_32.c b/arch/x86/kernel/crash_dump_32.c
-index 33ee47670b99..5fcac46aaf6b 100644
+index 33ee47670..5fcac46aa 100644
 --- a/arch/x86/kernel/crash_dump_32.c
 +++ b/arch/x86/kernel/crash_dump_32.c
 @@ -13,8 +13,6 @@
@@ -5030,7 +5030,7 @@ index 33ee47670b99..5fcac46aaf6b 100644
  }
 -arch_initcall(kdump_buf_page_init);
 diff --git a/arch/x86/kernel/fpu/core.c b/arch/x86/kernel/fpu/core.c
-index 571220ac8bea..d315d45b64fa 100644
+index 571220ac8..d315d45b6 100644
 --- a/arch/x86/kernel/fpu/core.c
 +++ b/arch/x86/kernel/fpu/core.c
 @@ -159,6 +159,18 @@ void kernel_fpu_end(void)
@@ -5053,7 +5053,7 @@ index 571220ac8bea..d315d45b64fa 100644
   * Save the FPU state (mark it for reload if necessary):
   *
 diff --git a/arch/x86/kernel/irq_32.c b/arch/x86/kernel/irq_32.c
-index 0b79efc87be5..93c6b88b382a 100644
+index 0b79efc87..93c6b88b3 100644
 --- a/arch/x86/kernel/irq_32.c
 +++ b/arch/x86/kernel/irq_32.c
 @@ -131,6 +131,7 @@ int irq_init_percpu_irqstack(unsigned int cpu)
@@ -5073,7 +5073,7 @@ index 0b79efc87be5..93c6b88b382a 100644
  void __handle_irq(struct irq_desc *desc, struct pt_regs *regs)
  {
 diff --git a/arch/x86/kernel/irq_64.c b/arch/x86/kernel/irq_64.c
-index 440eed558558..7cfc4e6b7c94 100644
+index 440eed558..7cfc4e6b7 100644
 --- a/arch/x86/kernel/irq_64.c
 +++ b/arch/x86/kernel/irq_64.c
 @@ -72,7 +72,9 @@ int irq_init_percpu_irqstack(unsigned int cpu)
@@ -5087,10 +5087,10 @@ index 440eed558558..7cfc4e6b7c94 100644
  }
 +#endif
 diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
-index 3ca342670e64..1b3e789ec42f 100644
+index 757891cd8..6904aca58 100644
 --- a/arch/x86/kvm/x86.c
 +++ b/arch/x86/kvm/x86.c
-@@ -8094,6 +8094,14 @@ int kvm_arch_init(void *opaque)
+@@ -8180,6 +8180,14 @@ int kvm_arch_init(void *opaque)
  		goto out;
  	}
  
@@ -5106,7 +5106,7 @@ index 3ca342670e64..1b3e789ec42f 100644
  	x86_fpu_cache = kmem_cache_create("x86_fpu", sizeof(struct fpu),
  					  __alignof__(struct fpu), SLAB_ACCOUNT,
 diff --git a/arch/x86/mm/highmem_32.c b/arch/x86/mm/highmem_32.c
-index 075fe51317b0..2c54b76d8f84 100644
+index 075fe5131..2c54b76d8 100644
 --- a/arch/x86/mm/highmem_32.c
 +++ b/arch/x86/mm/highmem_32.c
 @@ -4,65 +4,6 @@
@@ -5176,7 +5176,7 @@ index 075fe51317b0..2c54b76d8f84 100644
  {
  	struct zone *zone;
 diff --git a/arch/x86/mm/init_32.c b/arch/x86/mm/init_32.c
-index 7c055259de3a..da31c2635ee4 100644
+index 7c055259d..da31c2635 100644
 --- a/arch/x86/mm/init_32.c
 +++ b/arch/x86/mm/init_32.c
 @@ -394,19 +394,6 @@ kernel_physical_mapping_init(unsigned long start,
@@ -5209,7 +5209,7 @@ index 7c055259de3a..da31c2635ee4 100644
  	 * NOTE: at this point the bootmem allocator is fully available.
  	 */
 diff --git a/arch/x86/mm/iomap_32.c b/arch/x86/mm/iomap_32.c
-index f60398aeb644..9aaa756ddf21 100644
+index f60398aeb..9aaa756dd 100644
 --- a/arch/x86/mm/iomap_32.c
 +++ b/arch/x86/mm/iomap_32.c
 @@ -44,28 +44,7 @@ void iomap_free(resource_size_t base, unsigned long size)
@@ -5282,7 +5282,7 @@ index f60398aeb644..9aaa756ddf21 100644
 -EXPORT_SYMBOL_GPL(iounmap_atomic);
 +EXPORT_SYMBOL_GPL(__iomap_local_pfn_prot);
 diff --git a/arch/xtensa/Kconfig b/arch/xtensa/Kconfig
-index 87e08ad38ea7..03cbf6b53622 100644
+index 87e08ad38..03cbf6b53 100644
 --- a/arch/xtensa/Kconfig
 +++ b/arch/xtensa/Kconfig
 @@ -666,6 +666,7 @@ endchoice
@@ -5294,7 +5294,7 @@ index 87e08ad38ea7..03cbf6b53622 100644
  	  Linux can use the full amount of RAM in the system by
  	  default. However, the default MMUv2 setup only maps the
 diff --git a/arch/xtensa/include/asm/fixmap.h b/arch/xtensa/include/asm/fixmap.h
-index a06ffb0c61c7..92049b61c351 100644
+index a06ffb0c6..92049b61c 100644
 --- a/arch/xtensa/include/asm/fixmap.h
 +++ b/arch/xtensa/include/asm/fixmap.h
 @@ -16,7 +16,7 @@
@@ -5316,7 +5316,7 @@ index a06ffb0c61c7..92049b61c351 100644
  	__end_of_fixed_addresses
  };
 diff --git a/arch/xtensa/include/asm/highmem.h b/arch/xtensa/include/asm/highmem.h
-index eac503215f17..0fc3b1cebc56 100644
+index eac503215..0fc3b1ceb 100644
 --- a/arch/xtensa/include/asm/highmem.h
 +++ b/arch/xtensa/include/asm/highmem.h
 @@ -16,9 +16,8 @@
@@ -5347,7 +5347,7 @@ index eac503215f17..0fc3b1cebc56 100644
  
  #endif
 diff --git a/arch/xtensa/include/asm/spinlock_types.h b/arch/xtensa/include/asm/spinlock_types.h
-index 64c9389254f1..dc846323b1cd 100644
+index 64c938925..dc846323b 100644
 --- a/arch/xtensa/include/asm/spinlock_types.h
 +++ b/arch/xtensa/include/asm/spinlock_types.h
 @@ -2,10 +2,6 @@
@@ -5362,7 +5362,7 @@ index 64c9389254f1..dc846323b1cd 100644
  #include <asm-generic/qrwlock_types.h>
  
 diff --git a/arch/xtensa/mm/highmem.c b/arch/xtensa/mm/highmem.c
-index 673196fe862e..0735ca5e8f86 100644
+index 673196fe8..0735ca5e8 100644
 --- a/arch/xtensa/mm/highmem.c
 +++ b/arch/xtensa/mm/highmem.c
 @@ -12,8 +12,6 @@
@@ -5440,7 +5440,7 @@ index 673196fe862e..0735ca5e8f86 100644
  	kmap_waitqueues_init();
  }
 diff --git a/block/blk-mq.c b/block/blk-mq.c
-index b9827b3d3f63..f87ec8c465f6 100644
+index 484f65d0b..4e6f1184b 100644
 --- a/block/blk-mq.c
 +++ b/block/blk-mq.c
 @@ -44,7 +44,7 @@
@@ -5452,7 +5452,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  
  static void blk_mq_poll_stats_start(struct request_queue *q);
  static void blk_mq_poll_stats_fn(struct blk_stat_callback *cb);
-@@ -646,80 +646,29 @@ void blk_mq_end_request(struct request *rq, blk_status_t error)
+@@ -655,80 +655,29 @@ void blk_mq_end_request(struct request *rq, blk_status_t error)
  }
  EXPORT_SYMBOL(blk_mq_end_request);
  
@@ -5541,7 +5541,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  }
  
  static inline bool blk_mq_complete_need_ipi(struct request *rq)
-@@ -729,6 +678,14 @@ static inline bool blk_mq_complete_need_ipi(struct request *rq)
+@@ -738,6 +687,14 @@ static inline bool blk_mq_complete_need_ipi(struct request *rq)
  	if (!IS_ENABLED(CONFIG_SMP) ||
  	    !test_bit(QUEUE_FLAG_SAME_COMP, &rq->q->queue_flags))
  		return false;
@@ -5556,7 +5556,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  
  	/* same CPU or cache domain?  Complete locally */
  	if (cpu == rq->mq_ctx->cpu ||
-@@ -740,6 +697,31 @@ static inline bool blk_mq_complete_need_ipi(struct request *rq)
+@@ -749,6 +706,31 @@ static inline bool blk_mq_complete_need_ipi(struct request *rq)
  	return cpu_online(rq->mq_ctx->cpu);
  }
  
@@ -5588,7 +5588,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  bool blk_mq_complete_request_remote(struct request *rq)
  {
  	WRITE_ONCE(rq->state, MQ_RQ_COMPLETE);
-@@ -752,15 +734,15 @@ bool blk_mq_complete_request_remote(struct request *rq)
+@@ -761,15 +743,15 @@ bool blk_mq_complete_request_remote(struct request *rq)
  		return false;
  
  	if (blk_mq_complete_need_ipi(rq)) {
@@ -5611,7 +5611,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  }
  EXPORT_SYMBOL_GPL(blk_mq_complete_request_remote);
  
-@@ -1674,14 +1656,14 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
+@@ -1683,14 +1665,14 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
  		return;
  
  	if (!async && !(hctx->flags & BLK_MQ_F_BLOCKING)) {
@@ -5629,7 +5629,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  	}
  
  	/*
-@@ -4172,7 +4154,7 @@ static int __init blk_mq_init(void)
+@@ -4215,7 +4197,7 @@ static int __init blk_mq_init(void)
  	int i;
  
  	for_each_possible_cpu(i)
@@ -5639,7 +5639,7 @@ index b9827b3d3f63..f87ec8c465f6 100644
  
  	cpuhp_setup_state_nocalls(CPUHP_BLOCK_SOFTIRQ_DEAD,
 diff --git a/crypto/cryptd.c b/crypto/cryptd.c
-index 668095eca0fa..02ea3d0fe51d 100644
+index 668095eca..02ea3d0fe 100644
 --- a/crypto/cryptd.c
 +++ b/crypto/cryptd.c
 @@ -36,6 +36,7 @@ static struct workqueue_struct *cryptd_wq;
@@ -5695,7 +5695,7 @@ index 668095eca0fa..02ea3d0fe51d 100644
  	if (!req)
  		return;
 diff --git a/drivers/atm/eni.c b/drivers/atm/eni.c
-index 9fcc49be499f..a31ffe16e626 100644
+index 9fcc49be4..a31ffe16e 100644
 --- a/drivers/atm/eni.c
 +++ b/drivers/atm/eni.c
 @@ -2056,7 +2056,7 @@ static int eni_send(struct atm_vcc *vcc,struct sk_buff *skb)
@@ -5708,7 +5708,7 @@ index 9fcc49be499f..a31ffe16e626 100644
  	tasklet_enable(&ENI_DEV(vcc->dev)->task);
  	if (res == enq_ok) return 0;
 diff --git a/drivers/block/zram/zram_drv.c b/drivers/block/zram/zram_drv.c
-index 0636df6b67db..1a7523cefbe9 100644
+index 0636df6b6..1a7523cef 100644
 --- a/drivers/block/zram/zram_drv.c
 +++ b/drivers/block/zram/zram_drv.c
 @@ -59,6 +59,40 @@ static void zram_free_page(struct zram *zram, size_t index);
@@ -5769,7 +5769,7 @@ index 0636df6b67db..1a7523cefbe9 100644
  }
  
 diff --git a/drivers/block/zram/zram_drv.h b/drivers/block/zram/zram_drv.h
-index f2fd46daa760..7e4dd447e1dd 100644
+index f2fd46daa..7e4dd447e 100644
 --- a/drivers/block/zram/zram_drv.h
 +++ b/drivers/block/zram/zram_drv.h
 @@ -63,6 +63,7 @@ struct zram_table_entry {
@@ -5781,7 +5781,7 @@ index f2fd46daa760..7e4dd447e1dd 100644
  	ktime_t ac_time;
  #endif
 diff --git a/drivers/char/tpm/tpm-dev-common.c b/drivers/char/tpm/tpm-dev-common.c
-index b99e1941c52c..dc4c0a0a5129 100644
+index b99e1941c..dc4c0a0a5 100644
 --- a/drivers/char/tpm/tpm-dev-common.c
 +++ b/drivers/char/tpm/tpm-dev-common.c
 @@ -20,7 +20,6 @@
@@ -5793,7 +5793,7 @@ index b99e1941c52c..dc4c0a0a5129 100644
  static ssize_t tpm_dev_transmit(struct tpm_chip *chip, struct tpm_space *space,
  				u8 *buf, size_t bufsiz)
 diff --git a/drivers/char/tpm/tpm_tis.c b/drivers/char/tpm/tpm_tis.c
-index 4ed6e660273a..c2bd0d40b5fc 100644
+index 4ed6e6602..c2bd0d40b 100644
 --- a/drivers/char/tpm/tpm_tis.c
 +++ b/drivers/char/tpm/tpm_tis.c
 @@ -50,6 +50,31 @@ static inline struct tpm_tis_tcg_phy *to_tpm_tis_tcg_phy(struct tpm_tis_data *da
@@ -5847,7 +5847,7 @@ index 4ed6e660273a..c2bd0d40b5fc 100644
  	return 0;
  }
 diff --git a/drivers/firewire/ohci.c b/drivers/firewire/ohci.c
-index 9811c40956e5..17c9d825188b 100644
+index 9811c4095..17c9d8251 100644
 --- a/drivers/firewire/ohci.c
 +++ b/drivers/firewire/ohci.c
 @@ -2545,7 +2545,7 @@ static int ohci_cancel_packet(struct fw_card *card, struct fw_packet *packet)
@@ -5869,7 +5869,7 @@ index 9811c40956e5..17c9d825188b 100644
  	if (!test_and_set_bit_lock(0, &ctx->flushing_completions)) {
  		context_tasklet((unsigned long)&ctx->context);
 diff --git a/drivers/firmware/efi/efi.c b/drivers/firmware/efi/efi.c
-index c406de00883a..7792bca9ee76 100644
+index c406de008..7792bca9e 100644
 --- a/drivers/firmware/efi/efi.c
 +++ b/drivers/firmware/efi/efi.c
 @@ -66,7 +66,7 @@ struct mm_struct efi_mm = {
@@ -5892,7 +5892,7 @@ index c406de00883a..7792bca9ee76 100644
  		set_bit(EFI_MEM_NO_SOFT_RESERVE, &efi.flags);
  
 diff --git a/drivers/gpu/drm/i915/display/intel_sprite.c b/drivers/gpu/drm/i915/display/intel_sprite.c
-index 12f7128b777f..a65061e3e1d3 100644
+index 12f7128b7..a65061e3e 100644
 --- a/drivers/gpu/drm/i915/display/intel_sprite.c
 +++ b/drivers/gpu/drm/i915/display/intel_sprite.c
 @@ -118,7 +118,8 @@ void intel_pipe_update_start(const struct intel_crtc_state *new_crtc_state)
@@ -5942,7 +5942,7 @@ index 12f7128b777f..a65061e3e1d3 100644
  	if (intel_vgpu_active(dev_priv))
  		return;
 diff --git a/drivers/gpu/drm/i915/gem/i915_gem_execbuffer.c b/drivers/gpu/drm/i915/gem/i915_gem_execbuffer.c
-index 0c083af5a59d..2abf043d3d9d 100644
+index 0c083af5a..2abf043d3 100644
 --- a/drivers/gpu/drm/i915/gem/i915_gem_execbuffer.c
 +++ b/drivers/gpu/drm/i915/gem/i915_gem_execbuffer.c
 @@ -1080,7 +1080,7 @@ static void reloc_cache_reset(struct reloc_cache *cache, struct i915_execbuffer
@@ -5974,7 +5974,7 @@ index 0c083af5a59d..2abf043d3d9d 100644
  	cache->vaddr = (unsigned long)vaddr;
  
 diff --git a/drivers/gpu/drm/i915/gt/intel_breadcrumbs.c b/drivers/gpu/drm/i915/gt/intel_breadcrumbs.c
-index 0040b4765a54..3f4f854786f2 100644
+index 0040b4765..3f4f85478 100644
 --- a/drivers/gpu/drm/i915/gt/intel_breadcrumbs.c
 +++ b/drivers/gpu/drm/i915/gt/intel_breadcrumbs.c
 @@ -342,10 +342,9 @@ void intel_breadcrumbs_park(struct intel_breadcrumbs *b)
@@ -5991,7 +5991,7 @@ index 0040b4765a54..3f4f854786f2 100644
  	GEM_BUG_ON(!list_empty(&b->signalers));
  }
 diff --git a/drivers/gpu/drm/i915/gt/intel_engine_pm.c b/drivers/gpu/drm/i915/gt/intel_engine_pm.c
-index f7b2e07e2229..313d8a28e776 100644
+index f7b2e07e2..313d8a28e 100644
 --- a/drivers/gpu/drm/i915/gt/intel_engine_pm.c
 +++ b/drivers/gpu/drm/i915/gt/intel_engine_pm.c
 @@ -60,9 +60,10 @@ static int __engine_unpark(struct intel_wakeref *wf)
@@ -6018,7 +6018,7 @@ index f7b2e07e2229..313d8a28e776 100644
  
  #else
 diff --git a/drivers/gpu/drm/i915/i915_gem.c b/drivers/gpu/drm/i915/i915_gem.c
-index 58276694c848..88944c3b1bc8 100644
+index 58276694c..88944c3b1 100644
 --- a/drivers/gpu/drm/i915/i915_gem.c
 +++ b/drivers/gpu/drm/i915/i915_gem.c
 @@ -355,22 +355,15 @@ gtt_user_read(struct io_mapping *mapping,
@@ -6080,7 +6080,7 @@ index 58276694c848..88944c3b1bc8 100644
  
  /**
 diff --git a/drivers/gpu/drm/i915/i915_irq.c b/drivers/gpu/drm/i915/i915_irq.c
-index 759f523c6a6b..7339a42ab2b8 100644
+index 759f523c6..7339a42ab 100644
 --- a/drivers/gpu/drm/i915/i915_irq.c
 +++ b/drivers/gpu/drm/i915/i915_irq.c
 @@ -847,6 +847,7 @@ static bool i915_get_crtc_scanoutpos(struct drm_crtc *_crtc,
@@ -6100,7 +6100,7 @@ index 759f523c6a6b..7339a42ab2b8 100644
  	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
  
 diff --git a/drivers/gpu/drm/i915/i915_trace.h b/drivers/gpu/drm/i915/i915_trace.h
-index a4addcc64978..396b6598694d 100644
+index a4addcc64..396b65986 100644
 --- a/drivers/gpu/drm/i915/i915_trace.h
 +++ b/drivers/gpu/drm/i915/i915_trace.h
 @@ -2,6 +2,10 @@
@@ -6124,7 +6124,7 @@ index a4addcc64978..396b6598694d 100644
  	     TP_PROTO(struct i915_request *rq),
  	     TP_ARGS(rq)
 diff --git a/drivers/gpu/drm/i915/selftests/i915_gem.c b/drivers/gpu/drm/i915/selftests/i915_gem.c
-index 412e21604a05..432493183d20 100644
+index 412e21604..432493183 100644
 --- a/drivers/gpu/drm/i915/selftests/i915_gem.c
 +++ b/drivers/gpu/drm/i915/selftests/i915_gem.c
 @@ -57,12 +57,12 @@ static void trash_stolen(struct drm_i915_private *i915)
@@ -6143,7 +6143,7 @@ index 412e21604a05..432493183d20 100644
  
  	ggtt->vm.clear_range(&ggtt->vm, slot, PAGE_SIZE);
 diff --git a/drivers/gpu/drm/i915/selftests/i915_gem_gtt.c b/drivers/gpu/drm/i915/selftests/i915_gem_gtt.c
-index 65e28c4cd4ce..ca483285f267 100644
+index 65e28c4cd..ca483285f 100644
 --- a/drivers/gpu/drm/i915/selftests/i915_gem_gtt.c
 +++ b/drivers/gpu/drm/i915/selftests/i915_gem_gtt.c
 @@ -1201,9 +1201,9 @@ static int igt_ggtt_page(void *arg)
@@ -6171,7 +6171,7 @@ index 65e28c4cd4ce..ca483285f267 100644
  		if (val != n) {
  			pr_err("insert page failed: found %d, expected %d\n",
 diff --git a/drivers/gpu/drm/nouveau/nvkm/subdev/devinit/fbmem.h b/drivers/gpu/drm/nouveau/nvkm/subdev/devinit/fbmem.h
-index 6c5bbff12eb4..411f91ee20fa 100644
+index 6c5bbff12..411f91ee2 100644
 --- a/drivers/gpu/drm/nouveau/nvkm/subdev/devinit/fbmem.h
 +++ b/drivers/gpu/drm/nouveau/nvkm/subdev/devinit/fbmem.h
 @@ -60,19 +60,19 @@ fbmem_fini(struct io_mapping *fb)
@@ -6199,7 +6199,7 @@ index 6c5bbff12eb4..411f91ee20fa 100644
  
  static inline bool
 diff --git a/drivers/gpu/drm/qxl/qxl_image.c b/drivers/gpu/drm/qxl/qxl_image.c
-index 60ab7151b84d..93f92ccd42e5 100644
+index 60ab7151b..93f92ccd4 100644
 --- a/drivers/gpu/drm/qxl/qxl_image.c
 +++ b/drivers/gpu/drm/qxl/qxl_image.c
 @@ -124,12 +124,12 @@ qxl_image_init_helper(struct qxl_device *qdev,
@@ -6276,7 +6276,7 @@ index 60ab7151b84d..93f92ccd42e5 100644
  	return 0;
  }
 diff --git a/drivers/gpu/drm/qxl/qxl_ioctl.c b/drivers/gpu/drm/qxl/qxl_ioctl.c
-index 5cea6eea72ab..785023081b79 100644
+index 5cea6eea7..785023081 100644
 --- a/drivers/gpu/drm/qxl/qxl_ioctl.c
 +++ b/drivers/gpu/drm/qxl/qxl_ioctl.c
 @@ -89,11 +89,11 @@ apply_reloc(struct qxl_device *qdev, struct qxl_reloc_info *info)
@@ -6345,7 +6345,7 @@ index 5cea6eea72ab..785023081b79 100644
  	}
  
 diff --git a/drivers/gpu/drm/qxl/qxl_object.c b/drivers/gpu/drm/qxl/qxl_object.c
-index 544a9e4df2a8..5ee5171d46ef 100644
+index 544a9e4df..5ee5171d4 100644
 --- a/drivers/gpu/drm/qxl/qxl_object.c
 +++ b/drivers/gpu/drm/qxl/qxl_object.c
 @@ -173,8 +173,8 @@ int qxl_bo_kmap(struct qxl_bo *bo, void **ptr)
@@ -6387,7 +6387,7 @@ index 544a9e4df2a8..5ee5171d46ef 100644
   fallback:
  	qxl_bo_kunmap(bo);
 diff --git a/drivers/gpu/drm/qxl/qxl_object.h b/drivers/gpu/drm/qxl/qxl_object.h
-index 5762ea40d047..6ae89b1b36f4 100644
+index 5762ea40d..6ae89b1b3 100644
 --- a/drivers/gpu/drm/qxl/qxl_object.h
 +++ b/drivers/gpu/drm/qxl/qxl_object.h
 @@ -89,8 +89,8 @@ extern int qxl_bo_create(struct qxl_device *qdev,
@@ -6402,7 +6402,7 @@ index 5762ea40d047..6ae89b1b36f4 100644
  extern void qxl_bo_unref(struct qxl_bo **bo);
  extern int qxl_bo_pin(struct qxl_bo *bo);
 diff --git a/drivers/gpu/drm/qxl/qxl_release.c b/drivers/gpu/drm/qxl/qxl_release.c
-index b2a475a0ca4a..b665a33b449b 100644
+index b2a475a0c..b665a33b4 100644
 --- a/drivers/gpu/drm/qxl/qxl_release.c
 +++ b/drivers/gpu/drm/qxl/qxl_release.c
 @@ -414,7 +414,7 @@ union qxl_release_info *qxl_release_map(struct qxl_device *qdev,
@@ -6424,7 +6424,7 @@ index b2a475a0ca4a..b665a33b449b 100644
  
  void qxl_release_fence_buffer_objects(struct qxl_release *release)
 diff --git a/drivers/gpu/drm/radeon/radeon_display.c b/drivers/gpu/drm/radeon/radeon_display.c
-index 07d23a1e62a0..add8e60440b2 100644
+index 07d23a1e6..add8e6044 100644
 --- a/drivers/gpu/drm/radeon/radeon_display.c
 +++ b/drivers/gpu/drm/radeon/radeon_display.c
 @@ -1828,6 +1828,7 @@ int radeon_get_crtc_scanoutpos(struct drm_device *dev, unsigned int pipe,
@@ -6444,7 +6444,7 @@ index 07d23a1e62a0..add8e60440b2 100644
  	/* Decode into vertical and horizontal scanout position. */
  	*vpos = position & 0x1fff;
 diff --git a/drivers/gpu/drm/ttm/ttm_bo_util.c b/drivers/gpu/drm/ttm/ttm_bo_util.c
-index fb2a25f8408f..164b9a015d32 100644
+index fb2a25f84..164b9a015 100644
 --- a/drivers/gpu/drm/ttm/ttm_bo_util.c
 +++ b/drivers/gpu/drm/ttm/ttm_bo_util.c
 @@ -181,13 +181,15 @@ static int ttm_copy_io_ttm_page(struct ttm_tt *ttm, void *src,
@@ -6488,7 +6488,7 @@ index fb2a25f8408f..164b9a015d32 100644
  	return 0;
  }
 diff --git a/drivers/gpu/drm/vmwgfx/vmwgfx_blit.c b/drivers/gpu/drm/vmwgfx/vmwgfx_blit.c
-index e8d66182cd7b..71dba228f68e 100644
+index e8d66182c..71dba228f 100644
 --- a/drivers/gpu/drm/vmwgfx/vmwgfx_blit.c
 +++ b/drivers/gpu/drm/vmwgfx/vmwgfx_blit.c
 @@ -375,12 +375,12 @@ static int vmw_bo_cpu_blit_line(struct vmw_bo_blit_line_data *d,
@@ -6562,7 +6562,7 @@ index e8d66182cd7b..71dba228f68e 100644
  	return ret;
  }
 diff --git a/drivers/hv/hyperv_vmbus.h b/drivers/hv/hyperv_vmbus.h
-index 7845fa5de79e..043e058bb27c 100644
+index 7845fa5de..043e058bb 100644
 --- a/drivers/hv/hyperv_vmbus.h
 +++ b/drivers/hv/hyperv_vmbus.h
 @@ -19,6 +19,7 @@
@@ -6574,7 +6574,7 @@ index 7845fa5de79e..043e058bb27c 100644
  #include "hv_trace.h"
  
 diff --git a/drivers/hv/vmbus_drv.c b/drivers/hv/vmbus_drv.c
-index 5d820037e291..ef5e12364119 100644
+index 5d820037e..ef5e12364 100644
 --- a/drivers/hv/vmbus_drv.c
 +++ b/drivers/hv/vmbus_drv.c
 @@ -22,6 +22,7 @@
@@ -6614,7 +6614,7 @@ index 5d820037e291..ef5e12364119 100644
  	if (bytes_written)
  		hyperv_report_panic_msg(panic_pa, bytes_written);
 diff --git a/drivers/leds/trigger/Kconfig b/drivers/leds/trigger/Kconfig
-index ce9429ca6dde..29ccbd6acf43 100644
+index ce9429ca6..29ccbd6ac 100644
 --- a/drivers/leds/trigger/Kconfig
 +++ b/drivers/leds/trigger/Kconfig
 @@ -64,6 +64,7 @@ config LEDS_TRIGGER_BACKLIGHT
@@ -6626,7 +6626,7 @@ index ce9429ca6dde..29ccbd6acf43 100644
  	  This allows LEDs to be controlled by active CPUs. This shows
  	  the active CPUs across an array of LEDs so you can see which
 diff --git a/drivers/md/raid5.c b/drivers/md/raid5.c
-index ce1adb6a53b1..1d5d03b8fbc5 100644
+index 758da34fb..d7bf991d9 100644
 --- a/drivers/md/raid5.c
 +++ b/drivers/md/raid5.c
 @@ -2217,8 +2217,9 @@ static void raid_run_ops(struct stripe_head *sh, unsigned long ops_request)
@@ -6659,7 +6659,7 @@ index ce1adb6a53b1..1d5d03b8fbc5 100644
  }
  
 diff --git a/drivers/md/raid5.h b/drivers/md/raid5.h
-index 5c05acf20e1f..665fe138ab4f 100644
+index 5c05acf20..665fe138a 100644
 --- a/drivers/md/raid5.h
 +++ b/drivers/md/raid5.h
 @@ -635,6 +635,7 @@ struct r5conf {
@@ -6671,7 +6671,7 @@ index 5c05acf20e1f..665fe138ab4f 100644
  		void		*scribble;  /* space for constructing buffer
  					     * lists and performing address
 diff --git a/drivers/mtd/mtdoops.c b/drivers/mtd/mtdoops.c
-index 774970bfcf85..6bc2c728adb7 100644
+index 774970bfc..6bc2c728a 100644
 --- a/drivers/mtd/mtdoops.c
 +++ b/drivers/mtd/mtdoops.c
 @@ -267,7 +267,8 @@ static void find_next_position(struct mtdoops_context *cxt)
@@ -6694,7 +6694,7 @@ index 774970bfcf85..6bc2c728adb7 100644
  
  	if (reason != KMSG_DUMP_OOPS) {
 diff --git a/drivers/net/arcnet/arc-rimi.c b/drivers/net/arcnet/arc-rimi.c
-index 98df38fe553c..12d085405bd0 100644
+index 98df38fe5..12d085405 100644
 --- a/drivers/net/arcnet/arc-rimi.c
 +++ b/drivers/net/arcnet/arc-rimi.c
 @@ -332,7 +332,7 @@ static int __init arc_rimi_init(void)
@@ -6716,7 +6716,7 @@ index 98df38fe553c..12d085405bd0 100644
  
  #ifndef MODULE
 diff --git a/drivers/net/arcnet/arcdevice.h b/drivers/net/arcnet/arcdevice.h
-index 22a49c6d7ae6..5d4a4c7efbbf 100644
+index 22a49c6d7..5d4a4c7ef 100644
 --- a/drivers/net/arcnet/arcdevice.h
 +++ b/drivers/net/arcnet/arcdevice.h
 @@ -298,6 +298,10 @@ struct arcnet_local {
@@ -6741,7 +6741,7 @@ index 22a49c6d7ae6..5d4a4c7efbbf 100644
  int arcnet_open(struct net_device *dev);
  int arcnet_close(struct net_device *dev);
 diff --git a/drivers/net/arcnet/arcnet.c b/drivers/net/arcnet/arcnet.c
-index e04efc0a5c97..d76dd7d14299 100644
+index e04efc0a5..d76dd7d14 100644
 --- a/drivers/net/arcnet/arcnet.c
 +++ b/drivers/net/arcnet/arcnet.c
 @@ -387,10 +387,44 @@ static void arcnet_timer(struct timer_list *t)
@@ -6864,7 +6864,7 @@ index e04efc0a5c97..d76dd7d14299 100644
  	return retval;
  }
 diff --git a/drivers/net/arcnet/com20020-isa.c b/drivers/net/arcnet/com20020-isa.c
-index f983c4ce6b07..be618e4b9ed5 100644
+index f983c4ce6..be618e4b9 100644
 --- a/drivers/net/arcnet/com20020-isa.c
 +++ b/drivers/net/arcnet/com20020-isa.c
 @@ -169,7 +169,7 @@ static int __init com20020_init(void)
@@ -6886,7 +6886,7 @@ index f983c4ce6b07..be618e4b9ed5 100644
  
  #ifndef MODULE
 diff --git a/drivers/net/arcnet/com20020-pci.c b/drivers/net/arcnet/com20020-pci.c
-index 9f44e2e458df..b4f8798d8c50 100644
+index 9f44e2e45..b4f8798d8 100644
 --- a/drivers/net/arcnet/com20020-pci.c
 +++ b/drivers/net/arcnet/com20020-pci.c
 @@ -294,7 +294,7 @@ static void com20020pci_remove(struct pci_dev *pdev)
@@ -6899,7 +6899,7 @@ index 9f44e2e458df..b4f8798d8c50 100644
  }
  
 diff --git a/drivers/net/arcnet/com20020_cs.c b/drivers/net/arcnet/com20020_cs.c
-index cf607ffcf358..9cc5eb6a8e90 100644
+index cf607ffcf..9cc5eb6a8 100644
 --- a/drivers/net/arcnet/com20020_cs.c
 +++ b/drivers/net/arcnet/com20020_cs.c
 @@ -177,7 +177,7 @@ static void com20020_detach(struct pcmcia_device *link)
@@ -6912,7 +6912,7 @@ index cf607ffcf358..9cc5eb6a8e90 100644
  		dev_dbg(&link->dev, "kfree2...\n");
  		kfree(info);
 diff --git a/drivers/net/arcnet/com90io.c b/drivers/net/arcnet/com90io.c
-index cf214b730671..3856b447d38e 100644
+index cf214b730..3856b447d 100644
 --- a/drivers/net/arcnet/com90io.c
 +++ b/drivers/net/arcnet/com90io.c
 @@ -396,7 +396,7 @@ static int __init com90io_init(void)
@@ -6934,7 +6934,7 @@ index cf214b730671..3856b447d38e 100644
  
  module_init(com90io_init)
 diff --git a/drivers/net/arcnet/com90xx.c b/drivers/net/arcnet/com90xx.c
-index 3dc3d533cb19..d8dfb9ea0de8 100644
+index 3dc3d533c..d8dfb9ea0 100644
 --- a/drivers/net/arcnet/com90xx.c
 +++ b/drivers/net/arcnet/com90xx.c
 @@ -554,7 +554,7 @@ static int __init com90xx_found(int ioaddr, int airq, u_long shmem,
@@ -6956,7 +6956,7 @@ index 3dc3d533cb19..d8dfb9ea0de8 100644
  }
  
 diff --git a/drivers/net/ethernet/chelsio/cxgb/common.h b/drivers/net/ethernet/chelsio/cxgb/common.h
-index 6475060649e9..0321be77366c 100644
+index 647506064..0321be773 100644
 --- a/drivers/net/ethernet/chelsio/cxgb/common.h
 +++ b/drivers/net/ethernet/chelsio/cxgb/common.h
 @@ -238,7 +238,6 @@ struct adapter {
@@ -6994,7 +6994,7 @@ index 6475060649e9..0321be77366c 100644
  void t1_link_negotiated(adapter_t *adapter, int port_id, int link_stat,
  			    int speed, int duplex, int pause);
 diff --git a/drivers/net/ethernet/chelsio/cxgb/cxgb2.c b/drivers/net/ethernet/chelsio/cxgb/cxgb2.c
-index 1311eac9eef2..c827273c4bd7 100644
+index 1311eac9e..c827273c4 100644
 --- a/drivers/net/ethernet/chelsio/cxgb/cxgb2.c
 +++ b/drivers/net/ethernet/chelsio/cxgb/cxgb2.c
 @@ -211,9 +211,10 @@ static int cxgb_up(struct adapter *adapter)
@@ -7073,7 +7073,7 @@ index 1311eac9eef2..c827273c4bd7 100644
  					  mac_stats_task);
  
 diff --git a/drivers/net/ethernet/chelsio/cxgb/sge.c b/drivers/net/ethernet/chelsio/cxgb/sge.c
-index 2d9c2b5a690a..cda01f22c71c 100644
+index 2d9c2b5a6..cda01f22c 100644
 --- a/drivers/net/ethernet/chelsio/cxgb/sge.c
 +++ b/drivers/net/ethernet/chelsio/cxgb/sge.c
 @@ -940,10 +940,11 @@ void t1_sge_intr_clear(struct sge *sge)
@@ -7169,7 +7169,7 @@ index 2d9c2b5a690a..cda01f22c71c 100644
  
  /*
 diff --git a/drivers/net/ethernet/chelsio/cxgb/sge.h b/drivers/net/ethernet/chelsio/cxgb/sge.h
-index a1ba591b3431..716705b96f26 100644
+index a1ba591b3..716705b96 100644
 --- a/drivers/net/ethernet/chelsio/cxgb/sge.h
 +++ b/drivers/net/ethernet/chelsio/cxgb/sge.h
 @@ -74,6 +74,7 @@ struct sge *t1_sge_create(struct adapter *, struct sge_params *);
@@ -7190,7 +7190,7 @@ index a1ba591b3431..716705b96f26 100644
  void t1_sge_intr_disable(struct sge *);
  void t1_sge_intr_clear(struct sge *);
 diff --git a/drivers/net/ethernet/chelsio/cxgb/subr.c b/drivers/net/ethernet/chelsio/cxgb/subr.c
-index ea0f8741d7cf..310add28fcf5 100644
+index ea0f8741d..310add28f 100644
 --- a/drivers/net/ethernet/chelsio/cxgb/subr.c
 +++ b/drivers/net/ethernet/chelsio/cxgb/subr.c
 @@ -170,7 +170,7 @@ void t1_link_changed(adapter_t *adapter, int port_id)
@@ -7318,7 +7318,7 @@ index ea0f8741d7cf..310add28fcf5 100644
  #ifdef CONFIG_CHELSIO_T1_1G
  	if (!t1_is_asic(adapter))
 diff --git a/drivers/net/ethernet/dlink/sundance.c b/drivers/net/ethernet/dlink/sundance.c
-index e3a8858915b3..df0eab479d51 100644
+index e3a885891..df0eab479 100644
 --- a/drivers/net/ethernet/dlink/sundance.c
 +++ b/drivers/net/ethernet/dlink/sundance.c
 @@ -963,7 +963,7 @@ static void tx_timeout(struct net_device *dev, unsigned int txqueue)
@@ -7331,7 +7331,7 @@ index e3a8858915b3..df0eab479d51 100644
  	printk(KERN_WARNING "%s: Transmit timed out, TxStatus %2.2x "
  		   "TxFrameId %2.2x,"
 diff --git a/drivers/net/ethernet/jme.c b/drivers/net/ethernet/jme.c
-index 4185ca3dd575..cf5c33d0fbdb 100644
+index 4185ca3dd..cf5c33d0f 100644
 --- a/drivers/net/ethernet/jme.c
 +++ b/drivers/net/ethernet/jme.c
 @@ -1265,9 +1265,9 @@ jme_stop_shutdown_timer(struct jme_adapter *jme)
@@ -7381,7 +7381,7 @@ index 4185ca3dd575..cf5c33d0fbdb 100644
  
  	jme->reg_ghc = 0;
 diff --git a/drivers/net/ethernet/jme.h b/drivers/net/ethernet/jme.h
-index a2c3b00d939d..2af76329b4a2 100644
+index a2c3b00d9..2af76329b 100644
 --- a/drivers/net/ethernet/jme.h
 +++ b/drivers/net/ethernet/jme.h
 @@ -411,7 +411,7 @@ struct jme_adapter {
@@ -7394,7 +7394,7 @@ index a2c3b00d939d..2af76329b4a2 100644
  	unsigned long		flags;
  	u32			reg_txcs;
 diff --git a/drivers/net/wireless/ath/ath9k/beacon.c b/drivers/net/wireless/ath/ath9k/beacon.c
-index 71e2ada86793..72e2e71aac0e 100644
+index 71e2ada86..72e2e71aa 100644
 --- a/drivers/net/wireless/ath/ath9k/beacon.c
 +++ b/drivers/net/wireless/ath/ath9k/beacon.c
 @@ -251,7 +251,7 @@ void ath9k_beacon_ensure_primary_slot(struct ath_softc *sc)
@@ -7407,7 +7407,7 @@ index 71e2ada86793..72e2e71aac0e 100644
  	/* Find first taken slot. */
  	for (slot = 0; slot < ATH_BCBUF; slot++) {
 diff --git a/drivers/pci/controller/pci-hyperv.c b/drivers/pci/controller/pci-hyperv.c
-index a070e69bb49c..1fea850af7c9 100644
+index a070e69bb..1fea850af 100644
 --- a/drivers/pci/controller/pci-hyperv.c
 +++ b/drivers/pci/controller/pci-hyperv.c
 @@ -1457,7 +1457,7 @@ static void hv_compose_msi_msg(struct irq_data *data, struct msi_msg *msg)
@@ -7420,7 +7420,7 @@ index a070e69bb49c..1fea850af7c9 100644
  	/*
  	 * Since this function is called with IRQ locks held, can't
 diff --git a/drivers/scsi/fcoe/fcoe.c b/drivers/scsi/fcoe/fcoe.c
-index 0f9274960dc6..dc97e4f1f4ad 100644
+index 0f9274960..dc97e4f1f 100644
 --- a/drivers/scsi/fcoe/fcoe.c
 +++ b/drivers/scsi/fcoe/fcoe.c
 @@ -1452,11 +1452,11 @@ static int fcoe_rcv(struct sk_buff *skb, struct net_device *netdev,
@@ -7478,7 +7478,7 @@ index 0f9274960dc6..dc97e4f1f4ad 100644
  }
  
 diff --git a/drivers/scsi/fcoe/fcoe_ctlr.c b/drivers/scsi/fcoe/fcoe_ctlr.c
-index 5ea426effa60..0d6b9acc7cf8 100644
+index 5ea426eff..0d6b9acc7 100644
 --- a/drivers/scsi/fcoe/fcoe_ctlr.c
 +++ b/drivers/scsi/fcoe/fcoe_ctlr.c
 @@ -828,7 +828,7 @@ static unsigned long fcoe_ctlr_age_fcfs(struct fcoe_ctlr *fip)
@@ -7500,7 +7500,7 @@ index 5ea426effa60..0d6b9acc7cf8 100644
  	list_for_each_entry_safe(fcf, next, &del_list, list) {
  		/* Removes fcf from current list */
 diff --git a/drivers/scsi/libfc/fc_exch.c b/drivers/scsi/libfc/fc_exch.c
-index 4261380af97b..65160eaaa929 100644
+index 4261380af..65160eaaa 100644
 --- a/drivers/scsi/libfc/fc_exch.c
 +++ b/drivers/scsi/libfc/fc_exch.c
 @@ -826,10 +826,10 @@ static struct fc_exch *fc_exch_em_alloc(struct fc_lport *lport,
@@ -7517,7 +7517,7 @@ index 4261380af97b..65160eaaa929 100644
  	/* peek cache of free slot */
  	if (pool->left != FC_XID_UNKNOWN) {
 diff --git a/drivers/tty/serial/8250/8250.h b/drivers/tty/serial/8250/8250.h
-index 34aa2714f3c9..42cd2baa7663 100644
+index 34aa2714f..42cd2baa7 100644
 --- a/drivers/tty/serial/8250/8250.h
 +++ b/drivers/tty/serial/8250/8250.h
 @@ -131,12 +131,55 @@ static inline void serial_dl_write(struct uart_8250_port *up, int value)
@@ -7587,10 +7587,10 @@ index 34aa2714f3c9..42cd2baa7663 100644
  }
  
 diff --git a/drivers/tty/serial/8250/8250_core.c b/drivers/tty/serial/8250/8250_core.c
-index cae61d1ebec5..47dd23056271 100644
+index 98ce484f1..ceba24927 100644
 --- a/drivers/tty/serial/8250/8250_core.c
 +++ b/drivers/tty/serial/8250/8250_core.c
-@@ -274,10 +274,8 @@ static void serial8250_backup_timeout(struct timer_list *t)
+@@ -275,10 +275,8 @@ static void serial8250_backup_timeout(struct timer_list *t)
  	 * Must disable interrupts or else we risk racing with the interrupt
  	 * based handler.
  	 */
@@ -7603,7 +7603,7 @@ index cae61d1ebec5..47dd23056271 100644
  
  	iir = serial_in(up, UART_IIR);
  
-@@ -300,7 +298,7 @@ static void serial8250_backup_timeout(struct timer_list *t)
+@@ -301,7 +299,7 @@ static void serial8250_backup_timeout(struct timer_list *t)
  		serial8250_tx_chars(up);
  
  	if (up->port.irq)
@@ -7612,7 +7612,7 @@ index cae61d1ebec5..47dd23056271 100644
  
  	spin_unlock_irqrestore(&up->port.lock, flags);
  
-@@ -578,6 +576,14 @@ serial8250_register_ports(struct uart_driver *drv, struct device *dev)
+@@ -582,6 +580,14 @@ serial8250_register_ports(struct uart_driver *drv, struct device *dev)
  
  #ifdef CONFIG_SERIAL_8250_CONSOLE
  
@@ -7627,7 +7627,7 @@ index cae61d1ebec5..47dd23056271 100644
  static void univ8250_console_write(struct console *co, const char *s,
  				   unsigned int count)
  {
-@@ -671,6 +677,7 @@ static int univ8250_console_match(struct console *co, char *name, int idx,
+@@ -675,6 +681,7 @@ static int univ8250_console_match(struct console *co, char *name, int idx,
  
  static struct console univ8250_console = {
  	.name		= "ttyS",
@@ -7636,7 +7636,7 @@ index cae61d1ebec5..47dd23056271 100644
  	.device		= uart_console_device,
  	.setup		= univ8250_console_setup,
 diff --git a/drivers/tty/serial/8250/8250_fsl.c b/drivers/tty/serial/8250/8250_fsl.c
-index fbcc90c31ca1..b33cb454ce03 100644
+index fbcc90c31..b33cb454c 100644
 --- a/drivers/tty/serial/8250/8250_fsl.c
 +++ b/drivers/tty/serial/8250/8250_fsl.c
 @@ -60,9 +60,18 @@ int fsl8250_handle_irq(struct uart_port *port)
@@ -7659,7 +7659,7 @@ index fbcc90c31ca1..b33cb454ce03 100644
  			port->ops->stop_rx(port);
  		} else {
 diff --git a/drivers/tty/serial/8250/8250_ingenic.c b/drivers/tty/serial/8250/8250_ingenic.c
-index 988bf6bcce42..bcd26d672539 100644
+index 988bf6bcc..bcd26d672 100644
 --- a/drivers/tty/serial/8250/8250_ingenic.c
 +++ b/drivers/tty/serial/8250/8250_ingenic.c
 @@ -146,6 +146,8 @@ OF_EARLYCON_DECLARE(x1000_uart, "ingenic,x1000-uart",
@@ -7685,7 +7685,7 @@ index 988bf6bcce42..bcd26d672539 100644
  		if (ier & UART_IER_MSI)
  			value |= UART_MCR_MDCE | UART_MCR_FCM;
 diff --git a/drivers/tty/serial/8250/8250_mtk.c b/drivers/tty/serial/8250/8250_mtk.c
-index de48a58460f4..d246f2755fed 100644
+index de48a5846..d246f2755 100644
 --- a/drivers/tty/serial/8250/8250_mtk.c
 +++ b/drivers/tty/serial/8250/8250_mtk.c
 @@ -222,12 +222,37 @@ static void mtk8250_shutdown(struct uart_port *port)
@@ -7729,7 +7729,7 @@ index de48a58460f4..d246f2755fed 100644
  
  static void mtk8250_set_flow_ctrl(struct uart_8250_port *up, int mode)
 diff --git a/drivers/tty/serial/8250/8250_port.c b/drivers/tty/serial/8250/8250_port.c
-index e0fa24f0f732..34ae1c3a0351 100644
+index 43884e8b5..74ce9ef73 100644
 --- a/drivers/tty/serial/8250/8250_port.c
 +++ b/drivers/tty/serial/8250/8250_port.c
 @@ -762,7 +762,7 @@ static void serial8250_set_sleep(struct uart_8250_port *p, int sleep)
@@ -7759,7 +7759,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  	}
  }
  EXPORT_SYMBOL_GPL(serial8250_em485_stop_tx);
-@@ -1706,7 +1706,7 @@ static void serial8250_disable_ms(struct uart_port *port)
+@@ -1708,7 +1708,7 @@ static void serial8250_disable_ms(struct uart_port *port)
  	mctrl_gpio_disable_ms(up->gpios);
  
  	up->ier &= ~UART_IER_MSI;
@@ -7768,7 +7768,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  }
  
  static void serial8250_enable_ms(struct uart_port *port)
-@@ -1722,7 +1722,7 @@ static void serial8250_enable_ms(struct uart_port *port)
+@@ -1724,7 +1724,7 @@ static void serial8250_enable_ms(struct uart_port *port)
  	up->ier |= UART_IER_MSI;
  
  	serial8250_rpm_get(up);
@@ -7777,7 +7777,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  	serial8250_rpm_put(up);
  }
  
-@@ -2140,14 +2140,7 @@ static void serial8250_put_poll_char(struct uart_port *port,
+@@ -2142,14 +2142,7 @@ static void serial8250_put_poll_char(struct uart_port *port,
  	struct uart_8250_port *up = up_to_u8250p(port);
  
  	serial8250_rpm_get(up);
@@ -7793,7 +7793,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  
  	wait_for_xmitr(up, BOTH_EMPTY);
  	/*
-@@ -2160,7 +2153,7 @@ static void serial8250_put_poll_char(struct uart_port *port,
+@@ -2162,7 +2155,7 @@ static void serial8250_put_poll_char(struct uart_port *port,
  	 *	and restore the IER
  	 */
  	wait_for_xmitr(up, BOTH_EMPTY);
@@ -7802,7 +7802,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  	serial8250_rpm_put(up);
  }
  
-@@ -2463,7 +2456,7 @@ void serial8250_do_shutdown(struct uart_port *port)
+@@ -2465,7 +2458,7 @@ void serial8250_do_shutdown(struct uart_port *port)
  	 */
  	spin_lock_irqsave(&port->lock, flags);
  	up->ier = 0;
@@ -7811,7 +7811,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  	spin_unlock_irqrestore(&port->lock, flags);
  
  	synchronize_irq(port->irq);
-@@ -2819,7 +2812,7 @@ serial8250_do_set_termios(struct uart_port *port, struct ktermios *termios,
+@@ -2821,7 +2814,7 @@ serial8250_do_set_termios(struct uart_port *port, struct ktermios *termios,
  	if (up->capabilities & UART_CAP_RTOIE)
  		up->ier |= UART_IER_RTOIE;
  
@@ -7820,7 +7820,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  
  	if (up->capabilities & UART_CAP_EFR) {
  		unsigned char efr = 0;
-@@ -3285,7 +3278,7 @@ EXPORT_SYMBOL_GPL(serial8250_set_defaults);
+@@ -3289,7 +3282,7 @@ EXPORT_SYMBOL_GPL(serial8250_set_defaults);
  
  #ifdef CONFIG_SERIAL_8250_CONSOLE
  
@@ -7829,7 +7829,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  {
  	struct uart_8250_port *up = up_to_u8250p(port);
  
-@@ -3293,6 +3286,18 @@ static void serial8250_console_putchar(struct uart_port *port, int ch)
+@@ -3297,6 +3290,18 @@ static void serial8250_console_putchar(struct uart_port *port, int ch)
  	serial_port_out(port, UART_TX, ch);
  }
  
@@ -7848,7 +7848,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  /*
   *	Restore serial console when h/w power-off detected
   */
-@@ -3314,6 +3319,32 @@ static void serial8250_console_restore(struct uart_8250_port *up)
+@@ -3318,6 +3323,32 @@ static void serial8250_console_restore(struct uart_8250_port *up)
  	serial8250_out_MCR(up, up->mcr | UART_MCR_DTR | UART_MCR_RTS);
  }
  
@@ -7881,7 +7881,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  /*
   *	Print a string to the serial port trying not to disturb
   *	any possible real use of the port...
-@@ -3330,24 +3361,12 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
+@@ -3334,24 +3365,12 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
  	struct uart_port *port = &up->port;
  	unsigned long flags;
  	unsigned int ier;
@@ -7908,7 +7908,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  
  	/* check scratch reg to see if port powered off during system sleep */
  	if (up->canary && (up->canary != serial_port_in(port, UART_SCR))) {
-@@ -3361,7 +3380,9 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
+@@ -3365,7 +3384,9 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
  		mdelay(port->rs485.delay_rts_before_send);
  	}
  
@@ -7918,7 +7918,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  
  	/*
  	 *	Finally, wait for transmitter to become empty
-@@ -3374,8 +3395,7 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
+@@ -3378,8 +3399,7 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
  		if (em485->tx_stopped)
  			up->rs485_stop_tx(up);
  	}
@@ -7928,7 +7928,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  
  	/*
  	 *	The receive handling will happen properly because the
-@@ -3387,8 +3407,7 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
+@@ -3391,8 +3411,7 @@ void serial8250_console_write(struct uart_8250_port *up, const char *s,
  	if (up->msr_saved_flags)
  		serial8250_modem_status(up);
  
@@ -7938,7 +7938,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  }
  
  static unsigned int probe_baud(struct uart_port *port)
-@@ -3408,6 +3427,7 @@ static unsigned int probe_baud(struct uart_port *port)
+@@ -3412,6 +3431,7 @@ static unsigned int probe_baud(struct uart_port *port)
  
  int serial8250_console_setup(struct uart_port *port, char *options, bool probe)
  {
@@ -7946,7 +7946,7 @@ index e0fa24f0f732..34ae1c3a0351 100644
  	int baud = 9600;
  	int bits = 8;
  	int parity = 'n';
-@@ -3417,6 +3437,8 @@ int serial8250_console_setup(struct uart_port *port, char *options, bool probe)
+@@ -3421,6 +3441,8 @@ int serial8250_console_setup(struct uart_port *port, char *options, bool probe)
  	if (!port->iobase && !port->membase)
  		return -ENODEV;
  
@@ -7956,10 +7956,10 @@ index e0fa24f0f732..34ae1c3a0351 100644
  		uart_parse_options(options, &baud, &parity, &bits, &flow);
  	else if (probe)
 diff --git a/drivers/tty/serial/amba-pl011.c b/drivers/tty/serial/amba-pl011.c
-index 90b370ee9a34..99c0d1f29aac 100644
+index d80e8064b..4c24c5197 100644
 --- a/drivers/tty/serial/amba-pl011.c
 +++ b/drivers/tty/serial/amba-pl011.c
-@@ -2249,18 +2249,24 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
+@@ -2268,18 +2268,24 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
  {
  	struct uart_amba_port *uap = amba_ports[co->index];
  	unsigned int old_cr = 0, new_cr;
@@ -7988,7 +7988,7 @@ index 90b370ee9a34..99c0d1f29aac 100644
  
  	/*
  	 *	First save the CR then disable the interrupts
-@@ -2286,8 +2292,7 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
+@@ -2305,8 +2311,7 @@ pl011_console_write(struct console *co, const char *s, unsigned int count)
  		pl011_write(old_cr, uap, REG_CR);
  
  	if (locked)
@@ -7999,7 +7999,7 @@ index 90b370ee9a34..99c0d1f29aac 100644
  	clk_disable(uap->clk);
  }
 diff --git a/drivers/tty/serial/omap-serial.c b/drivers/tty/serial/omap-serial.c
-index 84e8158088cd..342005ed5ebf 100644
+index 84e815808..342005ed5 100644
 --- a/drivers/tty/serial/omap-serial.c
 +++ b/drivers/tty/serial/omap-serial.c
 @@ -1311,13 +1311,10 @@ serial_omap_console_write(struct console *co, const char *s,
@@ -8030,7 +8030,7 @@ index 84e8158088cd..342005ed5ebf 100644
  
  static int __init
 diff --git a/drivers/tty/tty_buffer.c b/drivers/tty/tty_buffer.c
-index c3abcd0439f9..2479ea4c843b 100644
+index c3abcd043..2479ea4c8 100644
 --- a/drivers/tty/tty_buffer.c
 +++ b/drivers/tty/tty_buffer.c
 @@ -172,10 +172,10 @@ static struct tty_buffer *tty_buffer_alloc(struct tty_port *port, size_t size)
@@ -8047,7 +8047,7 @@ index c3abcd0439f9..2479ea4c843b 100644
  		return NULL;
  
 diff --git a/fs/afs/dir_silly.c b/fs/afs/dir_silly.c
-index dae9a57d7ec0..9a6a0ec4d1fb 100644
+index dae9a57d7..9a6a0ec4d 100644
 --- a/fs/afs/dir_silly.c
 +++ b/fs/afs/dir_silly.c
 @@ -239,7 +239,7 @@ int afs_silly_iput(struct dentry *dentry, struct inode *inode)
@@ -8060,7 +8060,7 @@ index dae9a57d7ec0..9a6a0ec4d1fb 100644
  	_enter("%p{%pd},%llx", dentry, dentry, vnode->fid.vnode);
  
 diff --git a/fs/aio.c b/fs/aio.c
-index 5e5333d72c69..cc16ac777f0d 100644
+index 5e5333d72..cc16ac777 100644
 --- a/fs/aio.c
 +++ b/fs/aio.c
 @@ -43,7 +43,6 @@
@@ -8081,7 +8081,7 @@ index 5e5333d72c69..cc16ac777f0d 100644
  			INIT_WORK(&req->work, aio_poll_put_work);
  			schedule_work(&req->work);
 diff --git a/fs/btrfs/ctree.h b/fs/btrfs/ctree.h
-index bcc6848bb6d6..fabbf6cc45bf 100644
+index bcc6848bb..fabbf6cc4 100644
 --- a/fs/btrfs/ctree.h
 +++ b/fs/btrfs/ctree.h
 @@ -17,7 +17,6 @@
@@ -8093,7 +8093,7 @@ index bcc6848bb6d6..fabbf6cc45bf 100644
  #include <linux/pagemap.h>
  #include <linux/btrfs.h>
 diff --git a/fs/cifs/readdir.c b/fs/cifs/readdir.c
-index 799be3a5d25e..d5165a7da071 100644
+index 799be3a5d..d5165a7da 100644
 --- a/fs/cifs/readdir.c
 +++ b/fs/cifs/readdir.c
 @@ -81,7 +81,7 @@ cifs_prime_dcache(struct dentry *parent, struct qstr *name,
@@ -8106,7 +8106,7 @@ index 799be3a5d25e..d5165a7da071 100644
  	cifs_dbg(FYI, "%s: for %s\n", __func__, name->name);
  
 diff --git a/fs/dcache.c b/fs/dcache.c
-index f5b78cc80a00..b2e0d1a07644 100644
+index f5b78cc80..b2e0d1a07 100644
 --- a/fs/dcache.c
 +++ b/fs/dcache.c
 @@ -2566,9 +2566,10 @@ EXPORT_SYMBOL(d_rehash);
@@ -8193,7 +8193,7 @@ index f5b78cc80a00..b2e0d1a07644 100644
  	hlist_bl_unlock(b);
  	INIT_HLIST_NODE(&dentry->d_u.d_alias);
 diff --git a/fs/eventfd.c b/fs/eventfd.c
-index df466ef81ddd..9035ca60bfcf 100644
+index df466ef81..9035ca60b 100644
 --- a/fs/eventfd.c
 +++ b/fs/eventfd.c
 @@ -25,8 +25,6 @@
@@ -8233,7 +8233,7 @@ index df466ef81ddd..9035ca60bfcf 100644
  
  	return n;
 diff --git a/fs/fscache/internal.h b/fs/fscache/internal.h
-index 64aa552b296d..7dae569dafb9 100644
+index 64aa552b2..7dae569da 100644
 --- a/fs/fscache/internal.h
 +++ b/fs/fscache/internal.h
 @@ -95,7 +95,6 @@ extern unsigned fscache_debug;
@@ -8245,7 +8245,7 @@ index 64aa552b296d..7dae569dafb9 100644
  extern unsigned int fscache_hash(unsigned int salt, unsigned int *data, unsigned int n);
  
 diff --git a/fs/fscache/main.c b/fs/fscache/main.c
-index 4207f98e405f..85f8cf3a323d 100644
+index 4207f98e4..85f8cf3a3 100644
 --- a/fs/fscache/main.c
 +++ b/fs/fscache/main.c
 @@ -41,8 +41,6 @@ struct kobject *fscache_root;
@@ -8276,7 +8276,7 @@ index 4207f98e405f..85f8cf3a323d 100644
  	if (ret < 0)
  		goto error_proc;
 diff --git a/fs/fscache/object.c b/fs/fscache/object.c
-index cb2146e02cd5..fb9794dce721 100644
+index cb2146e02..fb9794dce 100644
 --- a/fs/fscache/object.c
 +++ b/fs/fscache/object.c
 @@ -807,6 +807,8 @@ void fscache_object_destroy(struct fscache_object *object)
@@ -8326,7 +8326,7 @@ index cb2146e02cd5..fb9794dce721 100644
  	return fscache_object_congested();
  }
 diff --git a/fs/fuse/readdir.c b/fs/fuse/readdir.c
-index bc267832310c..3176913fae6c 100644
+index bc2678323..3176913fa 100644
 --- a/fs/fuse/readdir.c
 +++ b/fs/fuse/readdir.c
 @@ -158,7 +158,7 @@ static int fuse_direntplus_link(struct file *file,
@@ -8339,7 +8339,7 @@ index bc267832310c..3176913fae6c 100644
  	if (!o->nodeid) {
  		/*
 diff --git a/fs/inode.c b/fs/inode.c
-index 82090bfadb07..96ddef6c63dd 100644
+index 7436a17a2..45a821a8c 100644
 --- a/fs/inode.c
 +++ b/fs/inode.c
 @@ -158,7 +158,7 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
@@ -8352,7 +8352,7 @@ index 82090bfadb07..96ddef6c63dd 100644
  	inode->dirtied_when = 0;
  
 diff --git a/fs/namei.c b/fs/namei.c
-index 4b55e176cbfc..2c2684aa9a0c 100644
+index 4b55e176c..2c2684aa9 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -1526,7 +1526,7 @@ static struct dentry *__lookup_slow(const struct qstr *name,
@@ -8374,7 +8374,7 @@ index 4b55e176cbfc..2c2684aa9a0c 100644
  	if (unlikely(IS_DEADDIR(dir_inode)))
  		return ERR_PTR(-ENOENT);
 diff --git a/fs/namespace.c b/fs/namespace.c
-index 6e76f2a72cfc..dbd1119a539f 100644
+index 6e76f2a72..dbd1119a5 100644
 --- a/fs/namespace.c
 +++ b/fs/namespace.c
 @@ -14,6 +14,7 @@
@@ -8400,7 +8400,7 @@ index 6e76f2a72cfc..dbd1119a539f 100644
  	 * After the slowpath clears MNT_WRITE_HOLD, mnt_is_readonly will
  	 * be set to match its requirements. So we must not load that until
 diff --git a/fs/nfs/dir.c b/fs/nfs/dir.c
-index 9f88ca7b2001..bc8a78ecfe1c 100644
+index 9f88ca7b2..bc8a78ecf 100644
 --- a/fs/nfs/dir.c
 +++ b/fs/nfs/dir.c
 @@ -484,7 +484,7 @@ void nfs_prime_dcache(struct dentry *parent, struct nfs_entry *entry,
@@ -8422,7 +8422,7 @@ index 9f88ca7b2001..bc8a78ecfe1c 100644
  	struct dentry *res;
  	struct iattr attr = { .ia_valid = ATTR_OPEN };
 diff --git a/fs/nfs/unlink.c b/fs/nfs/unlink.c
-index b27ebdccef70..f86c98a7ed04 100644
+index b27ebdcce..f86c98a7e 100644
 --- a/fs/nfs/unlink.c
 +++ b/fs/nfs/unlink.c
 @@ -13,7 +13,7 @@
@@ -8444,7 +8444,7 @@ index b27ebdccef70..f86c98a7ed04 100644
  	status = -EBUSY;
  	spin_lock(&dentry->d_lock);
 diff --git a/fs/proc/array.c b/fs/proc/array.c
-index 18a4588c35be..decaa7768044 100644
+index 18a4588c3..decaa7768 100644
 --- a/fs/proc/array.c
 +++ b/fs/proc/array.c
 @@ -384,9 +384,9 @@ static inline void task_context_switch_counts(struct seq_file *m,
@@ -8460,7 +8460,7 @@ index 18a4588c35be..decaa7768044 100644
  
  static inline void task_core_dumping(struct seq_file *m, struct mm_struct *mm)
 diff --git a/fs/proc/base.c b/fs/proc/base.c
-index 9b4666e757f0..9c4ef7650198 100644
+index 9b4666e75..9c4ef7650 100644
 --- a/fs/proc/base.c
 +++ b/fs/proc/base.c
 @@ -97,6 +97,7 @@
@@ -8481,7 +8481,7 @@ index 9b4666e757f0..9c4ef7650198 100644
  		if (IS_ERR(child))
  			goto end_instantiate;
 diff --git a/fs/proc/proc_sysctl.c b/fs/proc/proc_sysctl.c
-index df435cd91a5b..eb19a342909c 100644
+index df435cd91..eb19a3429 100644
 --- a/fs/proc/proc_sysctl.c
 +++ b/fs/proc/proc_sysctl.c
 @@ -684,7 +684,7 @@ static bool proc_sys_fill_cache(struct file *file,
@@ -8494,7 +8494,7 @@ index df435cd91a5b..eb19a342909c 100644
  		if (IS_ERR(child))
  			return false;
 diff --git a/fs/pstore/platform.c b/fs/pstore/platform.c
-index ce03c3dbb5c3..5c2c14d5f6fc 100644
+index ce03c3dbb..5c2c14d5f 100644
 --- a/fs/pstore/platform.c
 +++ b/fs/pstore/platform.c
 @@ -384,7 +384,8 @@ void pstore_record_init(struct pstore_record *record,
@@ -8517,7 +8517,7 @@ index ce03c3dbb5c3..5c2c14d5f6fc 100644
  			break;
  
 diff --git a/include/asm-generic/Kbuild b/include/asm-generic/Kbuild
-index d1300c6e0a47..267f6dfb8960 100644
+index d1300c6e0..267f6dfb8 100644
 --- a/include/asm-generic/Kbuild
 +++ b/include/asm-generic/Kbuild
 @@ -30,7 +30,7 @@ mandatory-y += irq.h
@@ -8530,7 +8530,7 @@ index d1300c6e0a47..267f6dfb8960 100644
  mandatory-y += linkage.h
  mandatory-y += local.h
 diff --git a/include/asm-generic/hardirq.h b/include/asm-generic/hardirq.h
-index d14214dfc10b..7317e8258b48 100644
+index d14214dfc..7317e8258 100644
 --- a/include/asm-generic/hardirq.h
 +++ b/include/asm-generic/hardirq.h
 @@ -7,9 +7,13 @@
@@ -8550,7 +8550,7 @@ index d14214dfc10b..7317e8258b48 100644
  #ifndef ack_bad_irq
 diff --git a/include/asm-generic/kmap_size.h b/include/asm-generic/kmap_size.h
 new file mode 100644
-index 000000000000..9d6c7786a645
+index 000000000..9d6c7786a
 --- /dev/null
 +++ b/include/asm-generic/kmap_size.h
 @@ -0,0 +1,12 @@
@@ -8568,7 +8568,7 @@ index 000000000000..9d6c7786a645
 +#endif
 diff --git a/include/asm-generic/kmap_types.h b/include/asm-generic/kmap_types.h
 deleted file mode 100644
-index 9f95b7b63d19..000000000000
+index 9f95b7b63..000000000
 --- a/include/asm-generic/kmap_types.h
 +++ /dev/null
 @@ -1,11 +0,0 @@
@@ -8584,7 +8584,7 @@ index 9f95b7b63d19..000000000000
 -
 -#endif
 diff --git a/include/asm-generic/preempt.h b/include/asm-generic/preempt.h
-index b4d43a4af5f7..ac255e889462 100644
+index b4d43a4af..ac255e889 100644
 --- a/include/asm-generic/preempt.h
 +++ b/include/asm-generic/preempt.h
 @@ -79,6 +79,9 @@ static __always_inline bool should_resched(int preempt_offset)
@@ -8598,10 +8598,10 @@ index b4d43a4af5f7..ac255e889462 100644
  #define __preempt_schedule() preempt_schedule()
  extern asmlinkage void preempt_schedule_notrace(void);
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
-index 49540ce9e325..d5d10207c08c 100644
+index e4bcb11d6..669d276e4 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
-@@ -163,7 +163,7 @@ struct request {
+@@ -164,7 +164,7 @@ struct request {
  	 */
  	union {
  		struct hlist_node hash;	/* merge hash */
@@ -8611,7 +8611,7 @@ index 49540ce9e325..d5d10207c08c 100644
  
  	/*
 diff --git a/include/linux/bottom_half.h b/include/linux/bottom_half.h
-index a19519f4241d..eed86eb0a1de 100644
+index a19519f42..eed86eb0a 100644
 --- a/include/linux/bottom_half.h
 +++ b/include/linux/bottom_half.h
 @@ -4,7 +4,7 @@
@@ -8635,7 +8635,7 @@ index a19519f4241d..eed86eb0a1de 100644
 +
  #endif /* _LINUX_BH_H */
 diff --git a/include/linux/console.h b/include/linux/console.h
-index bc2a749e6f0d..027278792eea 100644
+index bc2a749e6..027278792 100644
 --- a/include/linux/console.h
 +++ b/include/linux/console.h
 @@ -16,6 +16,7 @@
@@ -8680,7 +8680,7 @@ index bc2a749e6f0d..027278792eea 100644
 +
  #endif /* _LINUX_CONSOLE_H */
 diff --git a/include/linux/cpuhotplug.h b/include/linux/cpuhotplug.h
-index 5571bfc2ec6e..82a43ee0b1f7 100644
+index 5571bfc2e..82a43ee0b 100644
 --- a/include/linux/cpuhotplug.h
 +++ b/include/linux/cpuhotplug.h
 @@ -155,6 +155,7 @@ enum cpuhp_state {
@@ -8692,7 +8692,7 @@ index 5571bfc2ec6e..82a43ee0b1f7 100644
  	CPUHP_AP_X86_VDSO_VMA_ONLINE,
  	CPUHP_AP_IRQ_AFFINITY_ONLINE,
 diff --git a/include/linux/cpumask.h b/include/linux/cpumask.h
-index 0159986ac9ce..c53364c4296d 100644
+index 0159986ac..c53364c42 100644
 --- a/include/linux/cpumask.h
 +++ b/include/linux/cpumask.h
 @@ -199,6 +199,11 @@ static inline int cpumask_any_and_distribute(const struct cpumask *src1p,
@@ -8716,7 +8716,7 @@ index 0159986ac9ce..c53364c4296d 100644
  /**
   * for_each_cpu - iterate over every cpu in a mask
 diff --git a/include/linux/dcache.h b/include/linux/dcache.h
-index 4bb8b1759438..c5821c04ab88 100644
+index 4bb8b1759..c5821c04a 100644
 --- a/include/linux/dcache.h
 +++ b/include/linux/dcache.h
 @@ -108,7 +108,7 @@ struct dentry {
@@ -8738,7 +8738,7 @@ index 4bb8b1759438..c5821c04ab88 100644
  extern struct dentry * d_add_ci(struct dentry *, struct inode *, struct qstr *);
  extern struct dentry * d_exact_alias(struct dentry *, struct inode *);
 diff --git a/include/linux/debug_locks.h b/include/linux/debug_locks.h
-index edb5c186b0b7..3f49e65169c6 100644
+index edb5c186b..3f49e6516 100644
 --- a/include/linux/debug_locks.h
 +++ b/include/linux/debug_locks.h
 @@ -3,8 +3,7 @@
@@ -8752,7 +8752,7 @@ index edb5c186b0b7..3f49e65169c6 100644
  struct task_struct;
  
 diff --git a/include/linux/delay.h b/include/linux/delay.h
-index e8607992c68a..cd24f34b4ad0 100644
+index e8607992c..cd24f34b4 100644
 --- a/include/linux/delay.h
 +++ b/include/linux/delay.h
 @@ -88,4 +88,10 @@ static inline void fsleep(unsigned long usecs)
@@ -8767,7 +8767,7 @@ index e8607992c68a..cd24f34b4ad0 100644
 +
  #endif /* defined(_LINUX_DELAY_H) */
 diff --git a/include/linux/entry-common.h b/include/linux/entry-common.h
-index d8e1c798dc9d..d2aca09f7027 100644
+index d8e1c798d..d2aca09f7 100644
 --- a/include/linux/entry-common.h
 +++ b/include/linux/entry-common.h
 @@ -70,7 +70,7 @@
@@ -8780,7 +8780,7 @@ index d8e1c798dc9d..d2aca09f7027 100644
  
  /**
 diff --git a/include/linux/eventfd.h b/include/linux/eventfd.h
-index dc4fd8a6644d..836b4c021a0a 100644
+index dc4fd8a66..836b4c021 100644
 --- a/include/linux/eventfd.h
 +++ b/include/linux/eventfd.h
 @@ -14,6 +14,7 @@
@@ -8818,7 +8818,7 @@ index dc4fd8a6644d..836b4c021a0a 100644
  
  #endif
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index fa9d89379da1..7208089cb30a 100644
+index 45ea12431..3fb43df18 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
 @@ -719,7 +719,7 @@ struct inode {
@@ -8831,7 +8831,7 @@ index fa9d89379da1..7208089cb30a 100644
  
  	__u32			i_generation;
 diff --git a/include/linux/hardirq.h b/include/linux/hardirq.h
-index 754f67ac4326..76878b357ffa 100644
+index 754f67ac4..76878b357 100644
 --- a/include/linux/hardirq.h
 +++ b/include/linux/hardirq.h
 @@ -6,6 +6,7 @@
@@ -8881,7 +8881,7 @@ index 754f67ac4326..76878b357ffa 100644
  	} while (0)
 diff --git a/include/linux/highmem-internal.h b/include/linux/highmem-internal.h
 new file mode 100644
-index 000000000000..f9bc6acd3679
+index 000000000..f9bc6acd3
 --- /dev/null
 +++ b/include/linux/highmem-internal.h
 @@ -0,0 +1,222 @@
@@ -9108,7 +9108,7 @@ index 000000000000..f9bc6acd3679
 +
 +#endif
 diff --git a/include/linux/highmem.h b/include/linux/highmem.h
-index 6b27af8fe624..ec1edaf12485 100644
+index 6b27af8fe..ec1edaf12 100644
 --- a/include/linux/highmem.h
 +++ b/include/linux/highmem.h
 @@ -11,217 +11,137 @@
@@ -9437,7 +9437,7 @@ index 6b27af8fe624..ec1edaf12485 100644
  #ifndef clear_user_highpage
  static inline void clear_user_highpage(struct page *page, unsigned long vaddr)
 diff --git a/include/linux/interrupt.h b/include/linux/interrupt.h
-index 22240a8c3a1e..fc162c2525ea 100644
+index 22240a8c3..fc162c252 100644
 --- a/include/linux/interrupt.h
 +++ b/include/linux/interrupt.h
 @@ -542,7 +542,7 @@ struct softirq_action
@@ -9503,7 +9503,7 @@ index 22240a8c3a1e..fc162c2525ea 100644
  {
  	tasklet_disable_nosync(t);
 diff --git a/include/linux/io-mapping.h b/include/linux/io-mapping.h
-index c75e4d3d8833..4bb8223f2f82 100644
+index c75e4d3d8..4bb8223f2 100644
 --- a/include/linux/io-mapping.h
 +++ b/include/linux/io-mapping.h
 @@ -60,22 +60,20 @@ io_mapping_fini(struct io_mapping *mapping)
@@ -9575,7 +9575,7 @@ index c75e4d3d8833..4bb8223f2f82 100644
  io_mapping_create_wc(resource_size_t base,
 diff --git a/include/linux/irq_cpustat.h b/include/linux/irq_cpustat.h
 deleted file mode 100644
-index 6e8895cd4d92..000000000000
+index 6e8895cd4..000000000
 --- a/include/linux/irq_cpustat.h
 +++ /dev/null
 @@ -1,28 +0,0 @@
@@ -9608,7 +9608,7 @@ index 6e8895cd4d92..000000000000
 -
 -#endif	/* __irq_cpustat_h */
 diff --git a/include/linux/irq_work.h b/include/linux/irq_work.h
-index ec2a47a81e42..9448e2bfc602 100644
+index ec2a47a81..9448e2bfc 100644
 --- a/include/linux/irq_work.h
 +++ b/include/linux/irq_work.h
 @@ -3,6 +3,7 @@
@@ -9646,7 +9646,7 @@ index ec2a47a81e42..9448e2bfc602 100644
  bool irq_work_queue_on(struct irq_work *work, int cpu);
  
 diff --git a/include/linux/irqdesc.h b/include/linux/irqdesc.h
-index dc1b213ae941..9bbcd8cbac50 100644
+index dc1b213ae..9bbcd8cba 100644
 --- a/include/linux/irqdesc.h
 +++ b/include/linux/irqdesc.h
 @@ -68,6 +68,7 @@ struct irq_desc {
@@ -9658,7 +9658,7 @@ index dc1b213ae941..9bbcd8cbac50 100644
  	struct cpumask		*percpu_enabled;
  	const struct cpumask	*percpu_affinity;
 diff --git a/include/linux/irqflags.h b/include/linux/irqflags.h
-index fef2d43a7a1d..741aa2008a34 100644
+index fef2d43a7..741aa2008 100644
 --- a/include/linux/irqflags.h
 +++ b/include/linux/irqflags.h
 @@ -71,14 +71,6 @@ do {						\
@@ -9699,7 +9699,7 @@ index fef2d43a7a1d..741aa2008a34 100644
  	defined(CONFIG_PREEMPT_TRACER)
   extern void stop_critical_timings(void);
 diff --git a/include/linux/kernel.h b/include/linux/kernel.h
-index 78a0907f0b04..e6270bfa6105 100644
+index 78a0907f0..e6270bfa6 100644
 --- a/include/linux/kernel.h
 +++ b/include/linux/kernel.h
 @@ -220,6 +220,7 @@ static __always_inline void might_resched(void)
@@ -9765,7 +9765,7 @@ index 78a0907f0b04..e6270bfa6105 100644
   * abs - return absolute value of an argument
   * @x: the value.  If it is unsigned type, it is converted to signed type first.
 diff --git a/include/linux/kmsg_dump.h b/include/linux/kmsg_dump.h
-index 3378bcbe585e..86673930c8ea 100644
+index 3378bcbe5..86673930c 100644
 --- a/include/linux/kmsg_dump.h
 +++ b/include/linux/kmsg_dump.h
 @@ -29,6 +29,18 @@ enum kmsg_dump_reason {
@@ -9862,7 +9862,7 @@ index 3378bcbe585e..86673930c8ea 100644
  }
  
 diff --git a/include/linux/local_lock_internal.h b/include/linux/local_lock_internal.h
-index 3f02b818625e..1b8ae034946f 100644
+index 3f02b8186..1b8ae0349 100644
 --- a/include/linux/local_lock_internal.h
 +++ b/include/linux/local_lock_internal.h
 @@ -7,13 +7,39 @@
@@ -10022,7 +10022,7 @@ index 3f02b818625e..1b8ae034946f 100644
 +
 +#endif
 diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
-index 1c22e294f083..41aed4e91fe1 100644
+index 1c22e294f..41aed4e91 100644
 --- a/include/linux/mm_types.h
 +++ b/include/linux/mm_types.h
 @@ -13,6 +13,7 @@
@@ -10044,7 +10044,7 @@ index 1c22e294f083..41aed4e91fe1 100644
  		atomic_long_t hugetlb_usage;
  #endif
 diff --git a/include/linux/mutex.h b/include/linux/mutex.h
-index 4d671fba3cab..90923d3008fc 100644
+index 4d671fba3..90923d300 100644
 --- a/include/linux/mutex.h
 +++ b/include/linux/mutex.h
 @@ -22,6 +22,20 @@
@@ -10109,7 +10109,7 @@ index 4d671fba3cab..90923d3008fc 100644
  #endif /* __LINUX_MUTEX_H */
 diff --git a/include/linux/mutex_rt.h b/include/linux/mutex_rt.h
 new file mode 100644
-index 000000000000..f0b2e07cd5c5
+index 000000000..f0b2e07cd
 --- /dev/null
 +++ b/include/linux/mutex_rt.h
 @@ -0,0 +1,130 @@
@@ -10244,7 +10244,7 @@ index 000000000000..f0b2e07cd5c5
 +
 +#endif
 diff --git a/include/linux/nfs_xdr.h b/include/linux/nfs_xdr.h
-index 5491ad5f48a9..cd9e5b3f1831 100644
+index 5491ad5f4..cd9e5b3f1 100644
 --- a/include/linux/nfs_xdr.h
 +++ b/include/linux/nfs_xdr.h
 @@ -1675,7 +1675,7 @@ struct nfs_unlinkdata {
@@ -10257,7 +10257,7 @@ index 5491ad5f48a9..cd9e5b3f1831 100644
  	struct nfs_fattr dir_attr;
  	long timeout;
 diff --git a/include/linux/notifier.h b/include/linux/notifier.h
-index 2fb373a5c1ed..723bc2df6388 100644
+index 2fb373a5c..723bc2df6 100644
 --- a/include/linux/notifier.h
 +++ b/include/linux/notifier.h
 @@ -58,7 +58,7 @@ struct notifier_block {
@@ -10288,7 +10288,7 @@ index 2fb373a5c1ed..723bc2df6388 100644
  #define BLOCKING_NOTIFIER_INIT(name) {				\
  		.rwsem = __RWSEM_INITIALIZER((name).rwsem),	\
 diff --git a/include/linux/pid.h b/include/linux/pid.h
-index 34afff2dc888..514dd026c6b8 100644
+index 34afff2dc..514dd026c 100644
 --- a/include/linux/pid.h
 +++ b/include/linux/pid.h
 @@ -3,6 +3,7 @@
@@ -10300,7 +10300,7 @@ index 34afff2dc888..514dd026c6b8 100644
  #include <linux/refcount.h>
  
 diff --git a/include/linux/preempt.h b/include/linux/preempt.h
-index 7d9c1c0e149c..7b5b2ed55531 100644
+index 7d9c1c0e1..7b5b2ed55 100644
 --- a/include/linux/preempt.h
 +++ b/include/linux/preempt.h
 @@ -77,31 +77,37 @@
@@ -10586,7 +10586,7 @@ index 7d9c1c0e149c..7b5b2ed55531 100644
 +
  #endif /* __LINUX_PREEMPT_H */
 diff --git a/include/linux/printk.h b/include/linux/printk.h
-index 7d787f91db92..9331b131ba25 100644
+index 7d787f91d..9331b131b 100644
 --- a/include/linux/printk.h
 +++ b/include/linux/printk.h
 @@ -46,6 +46,12 @@ static inline const char *printk_skip_headers(const char *buffer)
@@ -10656,7 +10656,7 @@ index 7d787f91db92..9331b131ba25 100644
   * no local ratelimit_state used in the !PRINTK case
 diff --git a/include/linux/random.h.rej b/include/linux/random.h.rej
 new file mode 100644
-index 000000000000..a7b7c57cf369
+index 000000000..a7b7c57cf
 --- /dev/null
 +++ b/include/linux/random.h.rej
 @@ -0,0 +1,11 @@
@@ -10672,7 +10672,7 @@ index 000000000000..a7b7c57cf369
 + extern void get_random_bytes(void *buf, int nbytes);
 + extern int wait_for_random_bytes(void);
 diff --git a/include/linux/rbtree.h b/include/linux/rbtree.h
-index e0b300de8f3f..fa6b6baddd9a 100644
+index e0b300de8..fa6b6badd 100644
 --- a/include/linux/rbtree.h
 +++ b/include/linux/rbtree.h
 @@ -19,19 +19,9 @@
@@ -10720,7 +10720,7 @@ index e0b300de8f3f..fa6b6baddd9a 100644
  /* Same as rb_first(), but O(1) */
 diff --git a/include/linux/rbtree_type.h b/include/linux/rbtree_type.h
 new file mode 100644
-index 000000000000..77a89dd2c7c6
+index 000000000..77a89dd2c
 --- /dev/null
 +++ b/include/linux/rbtree_type.h
 @@ -0,0 +1,31 @@
@@ -10756,7 +10756,7 @@ index 000000000000..77a89dd2c7c6
 +
 +#endif
 diff --git a/include/linux/rcupdate.h b/include/linux/rcupdate.h
-index 095b3b39bd03..1effcae06ea1 100644
+index 095b3b39b..1effcae06 100644
 --- a/include/linux/rcupdate.h
 +++ b/include/linux/rcupdate.h
 @@ -54,6 +54,11 @@ void __rcu_read_unlock(void);
@@ -10791,7 +10791,7 @@ index 095b3b39bd03..1effcae06ea1 100644
  		RCU_LOCKDEP_WARN(lock_is_held(&rcu_sched_lock_map),	\
  				 "Illegal context switch in RCU-sched read-side critical section"); \
 diff --git a/include/linux/rtmutex.h b/include/linux/rtmutex.h
-index 6fd615a0eea9..b02009f53026 100644
+index 6fd615a0e..b02009f53 100644
 --- a/include/linux/rtmutex.h
 +++ b/include/linux/rtmutex.h
 @@ -14,11 +14,15 @@
@@ -10897,7 +10897,7 @@ index 6fd615a0eea9..b02009f53026 100644
  extern void rt_mutex_unlock(struct rt_mutex *lock);
 diff --git a/include/linux/rwlock_rt.h b/include/linux/rwlock_rt.h
 new file mode 100644
-index 000000000000..aafdb0a685d5
+index 000000000..aafdb0a68
 --- /dev/null
 +++ b/include/linux/rwlock_rt.h
 @@ -0,0 +1,109 @@
@@ -11011,7 +11011,7 @@ index 000000000000..aafdb0a685d5
 +
 +#endif
 diff --git a/include/linux/rwlock_types.h b/include/linux/rwlock_types.h
-index 3bd03e18061c..0ad226b5d8fd 100644
+index 3bd03e180..0ad226b5d 100644
 --- a/include/linux/rwlock_types.h
 +++ b/include/linux/rwlock_types.h
 @@ -1,6 +1,10 @@
@@ -11027,7 +11027,7 @@ index 3bd03e18061c..0ad226b5d8fd 100644
   *				  and initializers
 diff --git a/include/linux/rwlock_types_rt.h b/include/linux/rwlock_types_rt.h
 new file mode 100644
-index 000000000000..4762391d659b
+index 000000000..4762391d6
 --- /dev/null
 +++ b/include/linux/rwlock_types_rt.h
 @@ -0,0 +1,56 @@
@@ -11089,7 +11089,7 @@ index 000000000000..4762391d659b
 +#endif
 diff --git a/include/linux/rwsem-rt.h b/include/linux/rwsem-rt.h
 new file mode 100644
-index 000000000000..0ba8aae9a198
+index 000000000..0ba8aae9a
 --- /dev/null
 +++ b/include/linux/rwsem-rt.h
 @@ -0,0 +1,70 @@
@@ -11164,7 +11164,7 @@ index 000000000000..0ba8aae9a198
 +
 +#endif
 diff --git a/include/linux/rwsem.h b/include/linux/rwsem.h
-index 4c715be48717..9323af8a9244 100644
+index 4c715be48..9323af8a9 100644
 --- a/include/linux/rwsem.h
 +++ b/include/linux/rwsem.h
 @@ -16,6 +16,11 @@
@@ -11194,7 +11194,7 @@ index 4c715be48717..9323af8a9244 100644
   * lock for reading
   */
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index d8c974338ce2..279a18dac9c3 100644
+index d8c974338..279a18dac 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
 @@ -36,6 +36,7 @@
@@ -11426,7 +11426,7 @@ index d8c974338ce2..279a18dac9c3 100644
   * cond_resched() and cond_resched_lock(): latency reduction via
   * explicit rescheduling in places that are safe. The return
 diff --git a/include/linux/sched/hotplug.h b/include/linux/sched/hotplug.h
-index 9a62ffdd296f..412cdaba33eb 100644
+index 9a62ffdd2..412cdaba3 100644
 --- a/include/linux/sched/hotplug.h
 +++ b/include/linux/sched/hotplug.h
 @@ -11,8 +11,10 @@ extern int sched_cpu_activate(unsigned int cpu);
@@ -11441,7 +11441,7 @@ index 9a62ffdd296f..412cdaba33eb 100644
  #endif
  
 diff --git a/include/linux/sched/mm.h b/include/linux/sched/mm.h
-index e3e5e149b00e..6d39ad0f55bb 100644
+index e3e5e149b..6d39ad0f5 100644
 --- a/include/linux/sched/mm.h
 +++ b/include/linux/sched/mm.h
 @@ -49,6 +49,17 @@ static inline void mmdrop(struct mm_struct *mm)
@@ -11463,7 +11463,7 @@ index e3e5e149b00e..6d39ad0f55bb 100644
   * mmget() - Pin the address space associated with a &struct mm_struct.
   * @mm: The address space to pin.
 diff --git a/include/linux/sched/rt.h b/include/linux/sched/rt.h
-index e5af028c08b4..994c25640e15 100644
+index e5af028c0..994c25640 100644
 --- a/include/linux/sched/rt.h
 +++ b/include/linux/sched/rt.h
 @@ -39,20 +39,12 @@ static inline struct task_struct *rt_mutex_get_top_task(struct task_struct *p)
@@ -11488,7 +11488,7 @@ index e5af028c08b4..994c25640e15 100644
  
  extern void normalize_rt_tasks(void);
 diff --git a/include/linux/sched/wake_q.h b/include/linux/sched/wake_q.h
-index 26a2013ac39c..6e2dff721547 100644
+index 26a2013ac..6e2dff721 100644
 --- a/include/linux/sched/wake_q.h
 +++ b/include/linux/sched/wake_q.h
 @@ -58,6 +58,17 @@ static inline bool wake_q_empty(struct wake_q_head *head)
@@ -11511,7 +11511,7 @@ index 26a2013ac39c..6e2dff721547 100644
  
  #endif /* _LINUX_SCHED_WAKE_Q_H */
 diff --git a/include/linux/serial_8250.h b/include/linux/serial_8250.h
-index 9e655055112d..ffef674deda7 100644
+index 9e6550551..ffef674de 100644
 --- a/include/linux/serial_8250.h
 +++ b/include/linux/serial_8250.h
 @@ -7,6 +7,7 @@
@@ -11541,7 +11541,7 @@ index 9e655055112d..ffef674deda7 100644
  int serial8250_console_exit(struct uart_port *port);
  
 diff --git a/include/linux/shmem_fs.h b/include/linux/shmem_fs.h
-index 93240799a404..df2871ed82dc 100644
+index 93240799a..df2871ed8 100644
 --- a/include/linux/shmem_fs.h
 +++ b/include/linux/shmem_fs.h
 @@ -32,7 +32,7 @@ struct shmem_sb_info {
@@ -11554,7 +11554,7 @@ index 93240799a404..df2871ed82dc 100644
  	unsigned char huge;	    /* Whether to try for hugepages */
  	kuid_t uid;		    /* Mount uid for root directory */
 diff --git a/include/linux/signal.h b/include/linux/signal.h
-index b256f9c65661..ebf6c515a7b2 100644
+index b256f9c65..ebf6c515a 100644
 --- a/include/linux/signal.h
 +++ b/include/linux/signal.h
 @@ -265,6 +265,7 @@ static inline void init_sigpending(struct sigpending *sig)
@@ -11566,7 +11566,7 @@ index b256f9c65661..ebf6c515a7b2 100644
  /* Test if 'sig' is valid signal. Use this instead of testing _NSIG directly */
  static inline int valid_signal(unsigned long sig)
 diff --git a/include/linux/skbuff.h b/include/linux/skbuff.h
-index 72cfb047fd2c..ab2cb5a0345d 100644
+index 4739ce5f0..b8815001f 100644
 --- a/include/linux/skbuff.h
 +++ b/include/linux/skbuff.h
 @@ -298,6 +298,7 @@ struct sk_buff_head {
@@ -11577,7 +11577,7 @@ index 72cfb047fd2c..ab2cb5a0345d 100644
  };
  
  struct sk_buff;
-@@ -1913,6 +1914,12 @@ static inline void skb_queue_head_init(struct sk_buff_head *list)
+@@ -1914,6 +1915,12 @@ static inline void skb_queue_head_init(struct sk_buff_head *list)
  	__skb_queue_head_init(list);
  }
  
@@ -11591,7 +11591,7 @@ index 72cfb047fd2c..ab2cb5a0345d 100644
  		struct lock_class_key *class)
  {
 diff --git a/include/linux/smp.h b/include/linux/smp.h
-index 84a0b4828f66..8348fa4127a0 100644
+index 84a0b4828..8348fa412 100644
 --- a/include/linux/smp.h
 +++ b/include/linux/smp.h
 @@ -260,6 +260,9 @@ static inline int get_boot_cpu_id(void)
@@ -11605,7 +11605,7 @@ index 84a0b4828f66..8348fa4127a0 100644
   * Callback to arch code if there's nosmp or maxcpus=0 on the
   * boot command line:
 diff --git a/include/linux/spinlock.h b/include/linux/spinlock.h
-index 79897841a2cc..c3c70291b46c 100644
+index 79897841a..c3c70291b 100644
 --- a/include/linux/spinlock.h
 +++ b/include/linux/spinlock.h
 @@ -309,7 +309,11 @@ static inline void do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
@@ -11642,7 +11642,7 @@ index 79897841a2cc..c3c70291b46c 100644
   * Pull the atomic_t declaration:
   * (asm-mips/atomic.h needs above definitions)
 diff --git a/include/linux/spinlock_api_smp.h b/include/linux/spinlock_api_smp.h
-index 19a9be9d97ee..da38149f2843 100644
+index 19a9be9d9..da38149f2 100644
 --- a/include/linux/spinlock_api_smp.h
 +++ b/include/linux/spinlock_api_smp.h
 @@ -187,6 +187,8 @@ static inline int __raw_spin_trylock_bh(raw_spinlock_t *lock)
@@ -11657,7 +11657,7 @@ index 19a9be9d97ee..da38149f2843 100644
  #endif /* __LINUX_SPINLOCK_API_SMP_H */
 diff --git a/include/linux/spinlock_rt.h b/include/linux/spinlock_rt.h
 new file mode 100644
-index 000000000000..3085132eae38
+index 000000000..3085132ea
 --- /dev/null
 +++ b/include/linux/spinlock_rt.h
 @@ -0,0 +1,155 @@
@@ -11817,7 +11817,7 @@ index 000000000000..3085132eae38
 +
 +#endif
 diff --git a/include/linux/spinlock_types.h b/include/linux/spinlock_types.h
-index b981caafe8bf..8d896d3e1a01 100644
+index b981caafe..8d896d3e1 100644
 --- a/include/linux/spinlock_types.h
 +++ b/include/linux/spinlock_types.h
 @@ -9,93 +9,15 @@
@@ -11923,7 +11923,7 @@ index b981caafe8bf..8d896d3e1a01 100644
  #endif /* __LINUX_SPINLOCK_TYPES_H */
 diff --git a/include/linux/spinlock_types_nort.h b/include/linux/spinlock_types_nort.h
 new file mode 100644
-index 000000000000..e4549f0dd197
+index 000000000..e4549f0dd
 --- /dev/null
 +++ b/include/linux/spinlock_types_nort.h
 @@ -0,0 +1,39 @@
@@ -11968,7 +11968,7 @@ index 000000000000..e4549f0dd197
 +#endif
 diff --git a/include/linux/spinlock_types_raw.h b/include/linux/spinlock_types_raw.h
 new file mode 100644
-index 000000000000..1d4a180e983d
+index 000000000..1d4a180e9
 --- /dev/null
 +++ b/include/linux/spinlock_types_raw.h
 @@ -0,0 +1,65 @@
@@ -12039,7 +12039,7 @@ index 000000000000..1d4a180e983d
 +#endif
 diff --git a/include/linux/spinlock_types_rt.h b/include/linux/spinlock_types_rt.h
 new file mode 100644
-index 000000000000..446da786e5d5
+index 000000000..446da786e
 --- /dev/null
 +++ b/include/linux/spinlock_types_rt.h
 @@ -0,0 +1,38 @@
@@ -12082,7 +12082,7 @@ index 000000000000..446da786e5d5
 +
 +#endif
 diff --git a/include/linux/spinlock_types_up.h b/include/linux/spinlock_types_up.h
-index c09b6407ae1b..d9b371fa13e0 100644
+index c09b6407a..d9b371fa1 100644
 --- a/include/linux/spinlock_types_up.h
 +++ b/include/linux/spinlock_types_up.h
 @@ -1,7 +1,7 @@
@@ -12095,7 +12095,7 @@ index c09b6407ae1b..d9b371fa13e0 100644
  #endif
  
 diff --git a/include/linux/stop_machine.h b/include/linux/stop_machine.h
-index 08ec8e2fd9b2..06ad3ae7b27c 100644
+index 08ec8e2fd..06ad3ae7b 100644
 --- a/include/linux/stop_machine.h
 +++ b/include/linux/stop_machine.h
 @@ -25,6 +25,7 @@ typedef int (*cpu_stop_fn_t)(void *arg);
@@ -12125,7 +12125,7 @@ index 08ec8e2fd9b2..06ad3ae7b27c 100644
  
  /*
 diff --git a/include/linux/thread_info.h b/include/linux/thread_info.h
-index 19f76d87f20f..7c841bf0a250 100644
+index 19f76d87f..7c841bf0a 100644
 --- a/include/linux/thread_info.h
 +++ b/include/linux/thread_info.h
 @@ -36,7 +36,17 @@ static inline long set_restart_fn(struct restart_block *restart,
@@ -12148,7 +12148,7 @@ index 19f76d87f20f..7c841bf0a250 100644
  #ifndef CONFIG_HAVE_ARCH_WITHIN_STACK_FRAMES
  static inline int arch_within_stack_frames(const void * const stack,
 diff --git a/include/linux/trace_events.h b/include/linux/trace_events.h
-index 409385b25ecb..3b3c9de8247b 100644
+index 409385b25..3b3c9de82 100644
 --- a/include/linux/trace_events.h
 +++ b/include/linux/trace_events.h
 @@ -67,6 +67,8 @@ struct trace_entry {
@@ -12235,7 +12235,7 @@ index 409385b25ecb..3b3c9de8247b 100644
  struct trace_event_file;
  
 diff --git a/include/linux/u64_stats_sync.h b/include/linux/u64_stats_sync.h
-index e81856c0ba13..66eb968a09d4 100644
+index e81856c0b..66eb968a0 100644
 --- a/include/linux/u64_stats_sync.h
 +++ b/include/linux/u64_stats_sync.h
 @@ -66,7 +66,7 @@
@@ -12364,7 +12364,7 @@ index e81856c0ba13..66eb968a09d4 100644
  #endif
  	return __u64_stats_fetch_retry(syncp, start);
 diff --git a/include/linux/vmstat.h b/include/linux/vmstat.h
-index 322dcbfcc933..9a3a10ea3e3c 100644
+index 322dcbfcc..9a3a10ea3 100644
 --- a/include/linux/vmstat.h
 +++ b/include/linux/vmstat.h
 @@ -63,7 +63,9 @@ DECLARE_PER_CPU(struct vm_event_state, vm_event_states);
@@ -12388,7 +12388,7 @@ index 322dcbfcc933..9a3a10ea3e3c 100644
  
  static inline void count_vm_events(enum vm_event_item item, long delta)
 diff --git a/include/linux/vtime.h b/include/linux/vtime.h
-index 2cdeca062db3..041d6524d144 100644
+index 2cdeca062..041d6524d 100644
 --- a/include/linux/vtime.h
 +++ b/include/linux/vtime.h
 @@ -83,36 +83,46 @@ static inline void vtime_init_idle(struct task_struct *tsk, int cpu) { }
@@ -12455,7 +12455,7 @@ index 2cdeca062db3..041d6524d144 100644
  
  #endif /* _LINUX_KERNEL_VTIME_H */
 diff --git a/include/linux/wait.h b/include/linux/wait.h
-index 9b8b0833100a..33001b534a84 100644
+index 9b8b08331..33001b534 100644
 --- a/include/linux/wait.h
 +++ b/include/linux/wait.h
 @@ -10,6 +10,7 @@
@@ -12467,7 +12467,7 @@ index 9b8b0833100a..33001b534a84 100644
  typedef struct wait_queue_entry wait_queue_entry_t;
  
 diff --git a/include/linux/ww_mutex.h b/include/linux/ww_mutex.h
-index 6ecf2a0220db..3145de598645 100644
+index 6ecf2a022..3145de598 100644
 --- a/include/linux/ww_mutex.h
 +++ b/include/linux/ww_mutex.h
 @@ -28,6 +28,14 @@ struct ww_class {
@@ -12486,7 +12486,7 @@ index 6ecf2a0220db..3145de598645 100644
  	struct task_struct *task;
  	unsigned long stamp;
 diff --git a/include/net/gen_stats.h b/include/net/gen_stats.h
-index 1424e02cef90..163f8415e5db 100644
+index 1424e02ce..163f8415e 100644
 --- a/include/net/gen_stats.h
 +++ b/include/net/gen_stats.h
 @@ -6,6 +6,7 @@
@@ -12534,7 +12534,7 @@ index 1424e02cef90..163f8415e5db 100644
  			struct gnet_stats_rate_est64 *sample);
 diff --git a/include/net/net_seq_lock.h b/include/net/net_seq_lock.h
 new file mode 100644
-index 000000000000..67710bace741
+index 000000000..67710bace
 --- /dev/null
 +++ b/include/net/net_seq_lock.h
 @@ -0,0 +1,15 @@
@@ -12554,7 +12554,7 @@ index 000000000000..67710bace741
 +
 +#endif
 diff --git a/include/net/netns/xfrm.h b/include/net/netns/xfrm.h
-index 9144e0f09a30..464d14b2aca3 100644
+index 9144e0f09..464d14b2a 100644
 --- a/include/net/netns/xfrm.h
 +++ b/include/net/netns/xfrm.h
 @@ -74,7 +74,7 @@ struct netns_xfrm {
@@ -12567,7 +12567,7 @@ index 9144e0f09a30..464d14b2aca3 100644
  
  	spinlock_t xfrm_policy_lock;
 diff --git a/include/net/sch_generic.h b/include/net/sch_generic.h
-index 250569d8df65..c8b8dba10d9a 100644
+index 250569d8d..c8b8dba10 100644
 --- a/include/net/sch_generic.h
 +++ b/include/net/sch_generic.h
 @@ -10,6 +10,7 @@
@@ -12645,7 +12645,7 @@ index 250569d8df65..c8b8dba10d9a 100644
  	struct Qdisc *root = qdisc_root_sleeping(qdisc);
  
 diff --git a/include/trace/events/sched.h b/include/trace/events/sched.h
-index eb5ec1fb66b4..122d96db9d26 100644
+index eb5ec1fb6..122d96db9 100644
 --- a/include/trace/events/sched.h
 +++ b/include/trace/events/sched.h
 @@ -732,6 +732,18 @@ DEFINE_EVENT(psi_memstall_template, psi_memstall_leave,
@@ -12668,7 +12668,7 @@ index eb5ec1fb66b4..122d96db9d26 100644
  
  /* This part must be outside protection */
 diff --git a/init/Kconfig b/init/Kconfig
-index beb4a6d1cbcb..51b3bfe343ab 100644
+index beb4a6d1c..51b3bfe34 100644
 --- a/init/Kconfig
 +++ b/init/Kconfig
 @@ -866,7 +866,7 @@ config NUMA_BALANCING
@@ -12714,7 +12714,7 @@ index beb4a6d1cbcb..51b3bfe343ab 100644
  	help
  	  Per cpu partial caches accelerate objects allocation and freeing
 diff --git a/kernel/Kconfig.locks b/kernel/Kconfig.locks
-index 3de8fd11873b..4198f0273ecd 100644
+index 3de8fd118..4198f0273 100644
 --- a/kernel/Kconfig.locks
 +++ b/kernel/Kconfig.locks
 @@ -251,7 +251,7 @@ config ARCH_USE_QUEUED_RWLOCKS
@@ -12727,7 +12727,7 @@ index 3de8fd11873b..4198f0273ecd 100644
  config ARCH_HAS_MMIOWB
  	bool
 diff --git a/kernel/Kconfig.preempt b/kernel/Kconfig.preempt
-index e62a623031ea..b95f8784c4e4 100644
+index e62a62303..b95f8784c 100644
 --- a/kernel/Kconfig.preempt
 +++ b/kernel/Kconfig.preempt
 @@ -1,5 +1,11 @@
@@ -12751,7 +12751,7 @@ index e62a623031ea..b95f8784c4e4 100644
  	  This option turns the kernel into a real-time kernel by replacing
  	  various locking primitives (spinlocks, rwlocks, etc.) with
 diff --git a/kernel/cgroup/cpuset.c b/kernel/cgroup/cpuset.c
-index ad09f3fd3382..43ed0a0dda4b 100644
+index ad09f3fd3..43ed0a0dd 100644
 --- a/kernel/cgroup/cpuset.c
 +++ b/kernel/cgroup/cpuset.c
 @@ -351,7 +351,7 @@ void cpuset_read_unlock(void)
@@ -13062,7 +13062,7 @@ index ad09f3fd3382..43ed0a0dda4b 100644
  }
  
 diff --git a/kernel/cgroup/rstat.c b/kernel/cgroup/rstat.c
-index d2ae14d0b9e5..7b3bea56d593 100644
+index d2ae14d0b..7b3bea56d 100644
 --- a/kernel/cgroup/rstat.c
 +++ b/kernel/cgroup/rstat.c
 @@ -156,8 +156,9 @@ static void cgroup_rstat_flush_locked(struct cgroup *cgrp, bool may_sleep)
@@ -13086,7 +13086,7 @@ index d2ae14d0b9e5..7b3bea56d593 100644
  		/* if @may_sleep, play nice and yield if necessary */
  		if (may_sleep && (need_resched() ||
 diff --git a/kernel/cpu.c b/kernel/cpu.c
-index c06ced18f78a..10b6287afe97 100644
+index c06ced18f..10b6287af 100644
 --- a/kernel/cpu.c
 +++ b/kernel/cpu.c
 @@ -1662,7 +1662,7 @@ static struct cpuhp_step cpuhp_hp_states[] = {
@@ -13113,7 +13113,7 @@ index c06ced18f78a..10b6287afe97 100644
  	[CPUHP_AP_SMPBOOT_THREADS] = {
  		.name			= "smpboot/threads:online",
 diff --git a/kernel/debug/kdb/kdb_main.c b/kernel/debug/kdb/kdb_main.c
-index 4e09fab52faf..1f5c577b926e 100644
+index 4e09fab52..1f5c577b9 100644
 --- a/kernel/debug/kdb/kdb_main.c
 +++ b/kernel/debug/kdb/kdb_main.c
 @@ -2157,7 +2157,7 @@ static int kdb_dmesg(int argc, const char **argv)
@@ -13148,7 +13148,7 @@ index 4e09fab52faf..1f5c577b926e 100644
  			skip--;
  			continue;
 diff --git a/kernel/entry/common.c b/kernel/entry/common.c
-index cea3957ebdbc..790b0992ef77 100644
+index cea3957eb..790b0992e 100644
 --- a/kernel/entry/common.c
 +++ b/kernel/entry/common.c
 @@ -2,6 +2,7 @@
@@ -13196,7 +13196,7 @@ index cea3957ebdbc..790b0992ef77 100644
  	}
  }
 diff --git a/kernel/exit.c b/kernel/exit.c
-index d13d67fc5f4e..f5933bd07932 100644
+index ab900b661..2449246d3 100644
 --- a/kernel/exit.c
 +++ b/kernel/exit.c
 @@ -152,7 +152,7 @@ static void __exit_signal(struct task_struct *tsk)
@@ -13209,7 +13209,7 @@ index d13d67fc5f4e..f5933bd07932 100644
  	spin_unlock(&sighand->siglock);
  
 diff --git a/kernel/fork.c b/kernel/fork.c
-index 8a2e827815b6..e70cd01fc69c 100644
+index 8a2e82781..e70cd01fc 100644
 --- a/kernel/fork.c
 +++ b/kernel/fork.c
 @@ -42,6 +42,7 @@
@@ -13287,7 +13287,7 @@ index 8a2e827815b6..e70cd01fc69c 100644
  	p->utime = p->stime = p->gtime = 0;
  #ifdef CONFIG_ARCH_HAS_SCALED_CPUTIME
 diff --git a/kernel/futex.c b/kernel/futex.c
-index 98a6e1b80bfe..b2b275bc1958 100644
+index 98a6e1b80..b2b275bc1 100644
 --- a/kernel/futex.c
 +++ b/kernel/futex.c
 @@ -1498,6 +1498,7 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
@@ -13456,7 +13456,7 @@ index 98a6e1b80bfe..b2b275bc1958 100644
  			ret = 0;
  
 diff --git a/kernel/irq/handle.c b/kernel/irq/handle.c
-index 8806444a6855..acbce92f99b8 100644
+index 8806444a6..acbce92f9 100644
 --- a/kernel/irq/handle.c
 +++ b/kernel/irq/handle.c
 @@ -193,9 +193,17 @@ irqreturn_t handle_irq_event_percpu(struct irq_desc *desc)
@@ -13478,7 +13478,7 @@ index 8806444a6855..acbce92f99b8 100644
  	if (!noirqdebug)
  		note_interrupt(desc, retval);
 diff --git a/kernel/irq/manage.c b/kernel/irq/manage.c
-index 239f5084bfb2..bc59cb61fbe9 100644
+index 239f5084b..bc59cb61f 100644
 --- a/kernel/irq/manage.c
 +++ b/kernel/irq/manage.c
 @@ -1302,6 +1302,8 @@ static int irq_thread(void *data)
@@ -13526,7 +13526,7 @@ index 239f5084bfb2..bc59cb61fbe9 100644
   */
  int irq_set_irqchip_state(unsigned int irq, enum irqchip_irq_state which,
 diff --git a/kernel/irq/spurious.c b/kernel/irq/spurious.c
-index f865e5f4d382..dc7311dd74b1 100644
+index f865e5f4d..dc7311dd7 100644
 --- a/kernel/irq/spurious.c
 +++ b/kernel/irq/spurious.c
 @@ -443,6 +443,10 @@ MODULE_PARM_DESC(noirqdebug, "Disable irq lockup detection when true");
@@ -13552,7 +13552,7 @@ index f865e5f4d382..dc7311dd74b1 100644
  	printk(KERN_WARNING "Misrouted IRQ fixup and polling support "
  				"enabled\n");
 diff --git a/kernel/irq_work.c b/kernel/irq_work.c
-index fbff25adb574..d3466e3bacc1 100644
+index fbff25adb..d3466e3ba 100644
 --- a/kernel/irq_work.c
 +++ b/kernel/irq_work.c
 @@ -18,11 +18,36 @@
@@ -13755,7 +13755,7 @@ index fbff25adb574..d3466e3bacc1 100644
 +}
 +early_initcall(irq_work_init_threads);
 diff --git a/kernel/kexec_core.c b/kernel/kexec_core.c
-index b9a6f4658f89..c26219f34445 100644
+index b9a6f4658..c26219f34 100644
 --- a/kernel/kexec_core.c
 +++ b/kernel/kexec_core.c
 @@ -984,7 +984,6 @@ void crash_kexec(struct pt_regs *regs)
@@ -13767,7 +13767,7 @@ index b9a6f4658f89..c26219f34445 100644
  
  		/*
 diff --git a/kernel/ksysfs.c b/kernel/ksysfs.c
-index 35859da8bd4f..dfff31ed644a 100644
+index 35859da8b..dfff31ed6 100644
 --- a/kernel/ksysfs.c
 +++ b/kernel/ksysfs.c
 @@ -138,6 +138,15 @@ KERNEL_ATTR_RO(vmcoreinfo);
@@ -13797,7 +13797,7 @@ index 35859da8bd4f..dfff31ed644a 100644
  	NULL
  };
 diff --git a/kernel/kthread.c b/kernel/kthread.c
-index 508fe5278285..3ce6a31db7b4 100644
+index 508fe5278..3ce6a31db 100644
 --- a/kernel/kthread.c
 +++ b/kernel/kthread.c
 @@ -264,6 +264,7 @@ EXPORT_SYMBOL_GPL(kthread_parkme);
@@ -13845,7 +13845,7 @@ index 508fe5278285..3ce6a31db7b4 100644
  	kfree(create);
  	return task;
 diff --git a/kernel/locking/Makefile b/kernel/locking/Makefile
-index 6d11cfb9b41f..c7fbf737e16e 100644
+index 6d11cfb9b..c7fbf737e 100644
 --- a/kernel/locking/Makefile
 +++ b/kernel/locking/Makefile
 @@ -3,7 +3,7 @@
@@ -13884,7 +13884,7 @@ index 6d11cfb9b41f..c7fbf737e16e 100644
  obj-$(CONFIG_LOCK_TORTURE_TEST) += locktorture.o
  obj-$(CONFIG_WW_MUTEX_SELFTEST) += test-ww_mutex.o
 diff --git a/kernel/locking/lockdep.c b/kernel/locking/lockdep.c
-index b6683cefe19a..4be12aad9527 100644
+index b6683cefe..4be12aad9 100644
 --- a/kernel/locking/lockdep.c
 +++ b/kernel/locking/lockdep.c
 @@ -5412,6 +5412,7 @@ static noinstr void check_flags(unsigned long flags)
@@ -13905,7 +13905,7 @@ index b6683cefe19a..4be12aad9527 100644
  		print_irqtrace_events(current);
 diff --git a/kernel/locking/mutex-rt.c b/kernel/locking/mutex-rt.c
 new file mode 100644
-index 000000000000..2b849e6b9b4a
+index 000000000..2b849e6b9
 --- /dev/null
 +++ b/kernel/locking/mutex-rt.c
 @@ -0,0 +1,224 @@
@@ -14134,7 +14134,7 @@ index 000000000000..2b849e6b9b4a
 +}
 +EXPORT_SYMBOL(atomic_dec_and_mutex_lock);
 diff --git a/kernel/locking/rtmutex-debug.c b/kernel/locking/rtmutex-debug.c
-index 36e69100e8e0..fb150100335f 100644
+index 36e69100e..fb1501003 100644
 --- a/kernel/locking/rtmutex-debug.c
 +++ b/kernel/locking/rtmutex-debug.c
 @@ -32,110 +32,12 @@
@@ -14273,7 +14273,7 @@ index 36e69100e8e0..fb150100335f 100644
  }
 -
 diff --git a/kernel/locking/rtmutex-debug.h b/kernel/locking/rtmutex-debug.h
-index fc549713bba3..659e93e256c6 100644
+index fc549713b..659e93e25 100644
 --- a/kernel/locking/rtmutex-debug.h
 +++ b/kernel/locking/rtmutex-debug.h
 @@ -18,20 +18,9 @@ extern void debug_rt_mutex_unlock(struct rt_mutex *lock);
@@ -14298,7 +14298,7 @@ index fc549713bba3..659e93e256c6 100644
 -	debug_rt_mutex_print_deadlock(w);
 -}
 diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
-index f00dd928fc71..d64d961d048c 100644
+index f00dd928f..d64d961d0 100644
 --- a/kernel/locking/rtmutex.c
 +++ b/kernel/locking/rtmutex.c
 @@ -8,6 +8,11 @@
@@ -15650,7 +15650,7 @@ index f00dd928fc71..d64d961d048c 100644
 +EXPORT_SYMBOL(__rt_mutex_owner_current);
 +#endif
 diff --git a/kernel/locking/rtmutex.h b/kernel/locking/rtmutex.h
-index 732f96abf462..338ccd29119a 100644
+index 732f96abf..338ccd291 100644
 --- a/kernel/locking/rtmutex.h
 +++ b/kernel/locking/rtmutex.h
 @@ -19,15 +19,8 @@
@@ -15670,7 +15670,7 @@ index 732f96abf462..338ccd29119a 100644
  						  enum rtmutex_chainwalk walk)
  {
 diff --git a/kernel/locking/rtmutex_common.h b/kernel/locking/rtmutex_common.h
-index ca6fb489007b..248a7d91583b 100644
+index ca6fb4890..248a7d915 100644
 --- a/kernel/locking/rtmutex_common.h
 +++ b/kernel/locking/rtmutex_common.h
 @@ -15,6 +15,7 @@
@@ -15744,7 +15744,7 @@ index ca6fb489007b..248a7d91583b 100644
  # include "rtmutex-debug.h"
 diff --git a/kernel/locking/rwlock-rt.c b/kernel/locking/rwlock-rt.c
 new file mode 100644
-index 000000000000..3d2d1f14b513
+index 000000000..3d2d1f14b
 --- /dev/null
 +++ b/kernel/locking/rwlock-rt.c
 @@ -0,0 +1,334 @@
@@ -16084,7 +16084,7 @@ index 000000000000..3d2d1f14b513
 +EXPORT_SYMBOL(__rt_rwlock_init);
 diff --git a/kernel/locking/rwsem-rt.c b/kernel/locking/rwsem-rt.c
 new file mode 100644
-index 000000000000..b61edc4dcb73
+index 000000000..b61edc4dc
 --- /dev/null
 +++ b/kernel/locking/rwsem-rt.c
 @@ -0,0 +1,317 @@
@@ -16406,7 +16406,7 @@ index 000000000000..b61edc4dcb73
 +	__up_write_unlock(sem, WRITER_BIAS - 1, flags);
 +}
 diff --git a/kernel/locking/rwsem.c b/kernel/locking/rwsem.c
-index cc5cc889b5b7..f7c909ef1261 100644
+index cc5cc889b..f7c909ef1 100644
 --- a/kernel/locking/rwsem.c
 +++ b/kernel/locking/rwsem.c
 @@ -28,6 +28,7 @@
@@ -16446,7 +16446,7 @@ index cc5cc889b5b7..f7c909ef1261 100644
  }
  EXPORT_SYMBOL(up_read_non_owner);
 diff --git a/kernel/locking/spinlock.c b/kernel/locking/spinlock.c
-index 0ff08380f531..45445a2f1799 100644
+index 0ff08380f..45445a2f1 100644
 --- a/kernel/locking/spinlock.c
 +++ b/kernel/locking/spinlock.c
 @@ -124,8 +124,11 @@ void __lockfunc __raw_##op##_lock_bh(locktype##_t *lock)		\
@@ -16480,7 +16480,7 @@ index 0ff08380f531..45445a2f1799 100644
  
  void __lockfunc _raw_spin_lock_nested(raw_spinlock_t *lock, int subclass)
 diff --git a/kernel/locking/spinlock_debug.c b/kernel/locking/spinlock_debug.c
-index b9d93087ee66..72e306e0e8a3 100644
+index b9d93087e..72e306e0e 100644
 --- a/kernel/locking/spinlock_debug.c
 +++ b/kernel/locking/spinlock_debug.c
 @@ -31,6 +31,7 @@ void __raw_spin_lock_init(raw_spinlock_t *lock, const char *name,
@@ -16514,7 +16514,7 @@ index b9d93087ee66..72e306e0e8a3 100644
 +
 +#endif
 diff --git a/kernel/notifier.c b/kernel/notifier.c
-index 1b019cbca594..c20782f07643 100644
+index 1b019cbca..c20782f07 100644
 --- a/kernel/notifier.c
 +++ b/kernel/notifier.c
 @@ -142,9 +142,9 @@ int atomic_notifier_chain_register(struct atomic_notifier_head *nh,
@@ -16554,7 +16554,7 @@ index 1b019cbca594..c20782f07643 100644
  	return ret;
  }
 diff --git a/kernel/panic.c b/kernel/panic.c
-index d991c3b1b559..fa3025e0c601 100644
+index d991c3b1b..fa3025e0c 100644
 --- a/kernel/panic.c
 +++ b/kernel/panic.c
 @@ -177,12 +177,28 @@ static void panic_print_sys_info(void)
@@ -16649,7 +16649,7 @@ index d991c3b1b559..fa3025e0c601 100644
  
  /*
 diff --git a/kernel/printk/Makefile b/kernel/printk/Makefile
-index eee3dc9b60a9..59cb24e25f00 100644
+index eee3dc9b6..59cb24e25 100644
 --- a/kernel/printk/Makefile
 +++ b/kernel/printk/Makefile
 @@ -1,5 +1,4 @@
@@ -16659,7 +16659,7 @@ index eee3dc9b60a9..59cb24e25f00 100644
  obj-$(CONFIG_A11Y_BRAILLE_CONSOLE)	+= braille.o
  obj-$(CONFIG_PRINTK)	+= printk_ringbuffer.o
 diff --git a/kernel/printk/internal.h b/kernel/printk/internal.h
-index b1c155328b04..059c3d876e33 100644
+index b1c155328..059c3d876 100644
 --- a/kernel/printk/internal.h
 +++ b/kernel/printk/internal.h
 @@ -12,8 +12,6 @@
@@ -16687,7 +16687,7 @@ index b1c155328b04..059c3d876e33 100644
  static inline bool printk_percpu_data_ready(void) { return false; }
  #endif /* CONFIG_PRINTK */
 diff --git a/kernel/printk/printk.c b/kernel/printk/printk.c
-index ecd28d4fa20e..7859f42a60cf 100644
+index ecd28d4fa..7859f42a6 100644
 --- a/kernel/printk/printk.c
 +++ b/kernel/printk/printk.c
 @@ -44,6 +44,9 @@
@@ -18983,7 +18983,7 @@ index ecd28d4fa20e..7859f42a60cf 100644
 +}
 +EXPORT_SYMBOL(pr_flush);
 diff --git a/kernel/printk/printk_safe.c b/kernel/printk/printk_safe.c
-index b774685ccf80..218e42566550 100644
+index b774685cc..218e42566 100644
 --- a/kernel/printk/printk_safe.c
 +++ b/kernel/printk/printk_safe.c
 @@ -15,295 +15,9 @@
@@ -19378,7 +19378,7 @@ index b774685ccf80..218e42566550 100644
 -	printk_safe_flush();
 -}
 diff --git a/kernel/ptrace.c b/kernel/ptrace.c
-index 6d82fba43c97..8a65ec16c512 100644
+index 6d82fba43..8a65ec16c 100644
 --- a/kernel/ptrace.c
 +++ b/kernel/ptrace.c
 @@ -197,7 +197,14 @@ static bool ptrace_freeze_traced(struct task_struct *task)
@@ -19435,7 +19435,7 @@ index 6d82fba43c97..8a65ec16c512 100644
  }
  
 diff --git a/kernel/rcu/Kconfig b/kernel/rcu/Kconfig
-index b1d7aef10e6a..5e11e30f45eb 100644
+index b1d7aef10..5e11e30f4 100644
 --- a/kernel/rcu/Kconfig
 +++ b/kernel/rcu/Kconfig
 @@ -190,8 +190,8 @@ config RCU_FAST_NO_HZ
@@ -19450,7 +19450,7 @@ index b1d7aef10e6a..5e11e30f45eb 100644
  	  This option boosts the priority of preempted RCU readers that
  	  block the current preemptible RCU grace period for too long.
 diff --git a/kernel/rcu/tree.c b/kernel/rcu/tree.c
-index 4e6a44683248..8937a7a2b33f 100644
+index 4e6a44683..8937a7a2b 100644
 --- a/kernel/rcu/tree.c
 +++ b/kernel/rcu/tree.c
 @@ -100,8 +100,10 @@ static struct rcu_state rcu_state = {
@@ -19466,7 +19466,7 @@ index 4e6a44683248..8937a7a2b33f 100644
  static bool rcu_fanout_exact;
  module_param(rcu_fanout_exact, bool, 0444);
 diff --git a/kernel/rcu/update.c b/kernel/rcu/update.c
-index 849f0aa99333..dd94a602a6d2 100644
+index 849f0aa99..dd94a602a 100644
 --- a/kernel/rcu/update.c
 +++ b/kernel/rcu/update.c
 @@ -56,8 +56,10 @@
@@ -19482,7 +19482,7 @@ index 849f0aa99333..dd94a602a6d2 100644
  
  #ifdef CONFIG_DEBUG_LOCK_ALLOC
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index c936c042297b..dc00c714a849 100644
+index c936c0422..dc00c714a 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
 @@ -65,7 +65,11 @@ const_debug unsigned int sysctl_sched_features =
@@ -21390,7 +21390,7 @@ index c936c042297b..dc00c714a849 100644
  
  #ifdef CONFIG_MAGIC_SYSRQ
 diff --git a/kernel/sched/cpudeadline.c b/kernel/sched/cpudeadline.c
-index 8cb06c8c7eb1..ceb03d76c0cc 100644
+index 8cb06c8c7..ceb03d76c 100644
 --- a/kernel/sched/cpudeadline.c
 +++ b/kernel/sched/cpudeadline.c
 @@ -120,7 +120,7 @@ int cpudl_find(struct cpudl *cp, struct task_struct *p,
@@ -21412,7 +21412,7 @@ index 8cb06c8c7eb1..ceb03d76c0cc 100644
  			if (later_mask)
  				cpumask_set_cpu(best_cpu, later_mask);
 diff --git a/kernel/sched/cpupri.c b/kernel/sched/cpupri.c
-index 0033731a0797..11c4df2010de 100644
+index 0033731a0..11c4df201 100644
 --- a/kernel/sched/cpupri.c
 +++ b/kernel/sched/cpupri.c
 @@ -73,11 +73,11 @@ static inline int __cpupri_find(struct cpupri *cp, struct task_struct *p,
@@ -21430,7 +21430,7 @@ index 0033731a0797..11c4df2010de 100644
  		/*
  		 * We have to ensure that we have at least one bit
 diff --git a/kernel/sched/cputime.c b/kernel/sched/cputime.c
-index ca0eef7d3852..02a5aa60fe7e 100644
+index ca0eef7d3..02a5aa60f 100644
 --- a/kernel/sched/cputime.c
 +++ b/kernel/sched/cputime.c
 @@ -44,12 +44,13 @@ static void irqtime_account_delta(struct irqtime *irqtime, u64 delta,
@@ -21509,7 +21509,7 @@ index ca0eef7d3852..02a5aa60fe7e 100644
  void cputime_adjust(struct task_cputime *curr, struct prev_cputime *prev,
  		    u64 *ut, u64 *st)
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index cb487d7d33e1..6aa18aa2db18 100644
+index cb487d7d3..6aa18aa2d 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
 @@ -565,7 +565,7 @@ static int push_dl_task(struct rq *rq);
@@ -21649,7 +21649,7 @@ index cb487d7d33e1..6aa18aa2db18 100644
  
  	.task_tick		= task_tick_dl,
 diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
-index 20b482688e3a..bbc3b1e7f72e 100644
+index 20b482688..bbc3b1e7f 100644
 --- a/kernel/sched/fair.c
 +++ b/kernel/sched/fair.c
 @@ -4453,7 +4453,7 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
@@ -21725,7 +21725,7 @@ index 20b482688e3a..bbc3b1e7f72e 100644
  		check_preempt_curr(rq, p, 0);
  }
 diff --git a/kernel/sched/features.h b/kernel/sched/features.h
-index 97ed11bd25e7..0dade2e7422e 100644
+index 97ed11bd2..0dade2e74 100644
 --- a/kernel/sched/features.h
 +++ b/kernel/sched/features.h
 @@ -45,11 +45,19 @@ SCHED_FEAT(DOUBLE_TICK, false)
@@ -21749,7 +21749,7 @@ index 97ed11bd25e7..0dade2e7422e 100644
  /*
   * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 5dbf51ebdaed..7cb737a3d90e 100644
+index 5dbf51ebd..7cb737a3d 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -270,7 +270,7 @@ static void pull_rt_task(struct rq *this_rq);
@@ -21944,7 +21944,7 @@ index 5dbf51ebdaed..7cb737a3d90e 100644
  
  	.task_tick		= task_tick_rt,
 diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
-index 3bd6c988652a..287f7bc85ad0 100644
+index 3bd6c9886..287f7bc85 100644
 --- a/kernel/sched/sched.h
 +++ b/kernel/sched/sched.h
 @@ -1025,6 +1025,7 @@ struct rq {
@@ -22112,7 +22112,7 @@ index 3bd6c988652a..287f7bc85ad0 100644
  extern void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime);
  
 diff --git a/kernel/sched/swait.c b/kernel/sched/swait.c
-index e1c655f928c7..f230b1ac7f91 100644
+index e1c655f92..f230b1ac7 100644
 --- a/kernel/sched/swait.c
 +++ b/kernel/sched/swait.c
 @@ -64,6 +64,7 @@ void swake_up_all(struct swait_queue_head *q)
@@ -22124,7 +22124,7 @@ index e1c655f928c7..f230b1ac7f91 100644
  	list_splice_init(&q->task_list, &tmp);
  	while (!list_empty(&tmp)) {
 diff --git a/kernel/signal.c b/kernel/signal.c
-index 54f86e0b97f3..28d34857e912 100644
+index 6d374d02a..d944e9100 100644
 --- a/kernel/signal.c
 +++ b/kernel/signal.c
 @@ -20,6 +20,7 @@
@@ -22318,7 +22318,7 @@ index 54f86e0b97f3..28d34857e912 100644
  		cgroup_leave_frozen(true);
  	} else {
 diff --git a/kernel/smp.c b/kernel/smp.c
-index 114776d0d11e..6d35929a1990 100644
+index 114776d0d..6d35929a1 100644
 --- a/kernel/smp.c
 +++ b/kernel/smp.c
 @@ -480,8 +480,18 @@ void flush_smp_call_function_from_idle(void)
@@ -22343,7 +22343,7 @@ index 114776d0d11e..6d35929a1990 100644
  	local_irq_restore(flags);
  }
 diff --git a/kernel/softirq.c b/kernel/softirq.c
-index 09229ad82209..c9adc5c46248 100644
+index 09229ad82..c9adc5c46 100644
 --- a/kernel/softirq.c
 +++ b/kernel/softirq.c
 @@ -13,6 +13,7 @@
@@ -22914,7 +22914,7 @@ index 09229ad82209..c9adc5c46248 100644
  
  #ifdef CONFIG_HOTPLUG_CPU
 diff --git a/kernel/stop_machine.c b/kernel/stop_machine.c
-index dd5aeddbed5d..8bf1fb832cb8 100644
+index dd5aeddbe..8bf1fb832 100644
 --- a/kernel/stop_machine.c
 +++ b/kernel/stop_machine.c
 @@ -47,11 +47,27 @@ struct cpu_stopper {
@@ -22992,7 +22992,7 @@ index dd5aeddbed5d..8bf1fb832cb8 100644
  			  "cpu_stop: %ps(%p) leaked preempt count\n", fn, arg);
  		goto repeat;
 diff --git a/kernel/time/hrtimer.c b/kernel/time/hrtimer.c
-index 4ef90718c114..6eb4432347ad 100644
+index 4ef90718c..6eb443234 100644
 --- a/kernel/time/hrtimer.c
 +++ b/kernel/time/hrtimer.c
 @@ -2052,6 +2052,36 @@ SYSCALL_DEFINE2(nanosleep_time32, struct old_timespec32 __user *, rqtp,
@@ -23033,10 +23033,10 @@ index 4ef90718c114..6eb4432347ad 100644
   * Functions related to boot-time initialization:
   */
 diff --git a/kernel/time/tick-sched.c b/kernel/time/tick-sched.c
-index d0440f5d5b45..f0c435f83700 100644
+index 33750db5b..90f3c8ad5 100644
 --- a/kernel/time/tick-sched.c
 +++ b/kernel/time/tick-sched.c
-@@ -990,7 +990,7 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
+@@ -989,7 +989,7 @@ static bool can_stop_idle_tick(int cpu, struct tick_sched *ts)
  	if (unlikely(local_softirq_pending())) {
  		static int ratelimit;
  
@@ -23046,7 +23046,7 @@ index d0440f5d5b45..f0c435f83700 100644
  			pr_warn("NOHZ tick-stop error: Non-RCU local softirq work is pending, handler #%02x!!!\n",
  				(unsigned int) local_softirq_pending());
 diff --git a/kernel/time/timer.c b/kernel/time/timer.c
-index f7d3a108e27c..f24e6fed6633 100644
+index f7d3a108e..f24e6fed6 100644
 --- a/kernel/time/timer.c
 +++ b/kernel/time/timer.c
 @@ -1287,7 +1287,7 @@ static void del_timer_wait_running(struct timer_list *timer)
@@ -23073,7 +23073,7 @@ index f7d3a108e27c..f24e6fed6633 100644
  		ret = try_to_del_timer_sync(timer);
  
 diff --git a/kernel/trace/trace.c b/kernel/trace/trace.c
-index 4e130e2bb566..50a2db7a791d 100644
+index 4e130e2bb..50a2db7a7 100644
 --- a/kernel/trace/trace.c
 +++ b/kernel/trace/trace.c
 @@ -2592,60 +2592,43 @@ enum print_line_t trace_handle_return(struct trace_seq *s)
@@ -23223,7 +23223,7 @@ index 4e130e2bb566..50a2db7a791d 100644
  }
  EXPORT_SYMBOL_GPL(ftrace_dump);
 diff --git a/kernel/trace/trace.h b/kernel/trace/trace.h
-index c0596e250c2a..44943a9be317 100644
+index c0596e250..44943a9be 100644
 --- a/kernel/trace/trace.h
 +++ b/kernel/trace/trace.h
 @@ -141,25 +141,6 @@ struct kretprobe_trace_entry_head {
@@ -23253,7 +23253,7 @@ index c0596e250c2a..44943a9be317 100644
  
  struct trace_array;
 diff --git a/kernel/trace/trace_events.c b/kernel/trace/trace_events.c
-index f4b11f6098ae..a2abc0b40456 100644
+index f4b11f609..a2abc0b40 100644
 --- a/kernel/trace/trace_events.c
 +++ b/kernel/trace/trace_events.c
 @@ -183,6 +183,8 @@ static int trace_define_common_fields(void)
@@ -23266,7 +23266,7 @@ index f4b11f6098ae..a2abc0b40456 100644
  	return ret;
  }
 diff --git a/kernel/trace/trace_output.c b/kernel/trace/trace_output.c
-index 7042544c5bde..c711eb334811 100644
+index 7042544c5..c711eb334 100644
 --- a/kernel/trace/trace_output.c
 +++ b/kernel/trace/trace_output.c
 @@ -441,6 +441,7 @@ int trace_print_lat_fmt(struct trace_seq *s, struct trace_entry *entry)
@@ -23316,7 +23316,7 @@ index 7042544c5bde..c711eb334811 100644
  }
  
 diff --git a/kernel/workqueue.c b/kernel/workqueue.c
-index 14d4c072c79b..9fefb9f05a03 100644
+index 14d4c072c..9fefb9f05 100644
 --- a/kernel/workqueue.c
 +++ b/kernel/workqueue.c
 @@ -4934,6 +4934,10 @@ static void unbind_workers(int cpu)
@@ -23331,7 +23331,7 @@ index 14d4c072c79b..9fefb9f05a03 100644
  
  		/*
 diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
-index ec28c65075e8..e49ab3b66e44 100644
+index ec28c6507..e49ab3b66 100644
 --- a/lib/Kconfig.debug
 +++ b/lib/Kconfig.debug
 @@ -1366,7 +1366,7 @@ config DEBUG_ATOMIC_SLEEP
@@ -23344,7 +23344,7 @@ index ec28c65075e8..e49ab3b66e44 100644
  	  Say Y here if you want the kernel to run a short self-test during
  	  bootup. The self-test checks whether common types of locking bugs
 diff --git a/lib/bug.c b/lib/bug.c
-index 4ab398a2de93..9c681f29e61e 100644
+index 4ab398a2d..9c681f29e 100644
 --- a/lib/bug.c
 +++ b/lib/bug.c
 @@ -202,6 +202,7 @@ enum bug_trap_type report_bug(unsigned long bugaddr, struct pt_regs *regs)
@@ -23356,7 +23356,7 @@ index 4ab398a2de93..9c681f29e61e 100644
  	return BUG_TRAP_TYPE_BUG;
  }
 diff --git a/lib/cpumask.c b/lib/cpumask.c
-index fb22fb266f93..c3c76b833384 100644
+index fb22fb266..c3c76b833 100644
 --- a/lib/cpumask.c
 +++ b/lib/cpumask.c
 @@ -261,3 +261,21 @@ int cpumask_any_and_distribute(const struct cpumask *src1p,
@@ -23382,7 +23382,7 @@ index fb22fb266f93..c3c76b833384 100644
 +}
 +EXPORT_SYMBOL(cpumask_any_distribute);
 diff --git a/lib/debugobjects.c b/lib/debugobjects.c
-index 9e14ae02306b..083882a3cf2f 100644
+index 9e14ae023..083882a3c 100644
 --- a/lib/debugobjects.c
 +++ b/lib/debugobjects.c
 @@ -557,7 +557,10 @@ __debug_object_init(void *addr, const struct debug_obj_descr *descr, int onstack
@@ -23398,7 +23398,7 @@ index 9e14ae02306b..083882a3cf2f 100644
  	db = get_bucket((unsigned long) addr);
  
 diff --git a/lib/dump_stack.c b/lib/dump_stack.c
-index a00ee6eedc7c..f5a33b6f773f 100644
+index a00ee6eed..f5a33b6f7 100644
 --- a/lib/dump_stack.c
 +++ b/lib/dump_stack.c
 @@ -12,6 +12,7 @@
@@ -23418,7 +23418,7 @@ index a00ee6eedc7c..f5a33b6f773f 100644
  
  /**
 diff --git a/lib/irq_poll.c b/lib/irq_poll.c
-index 2f17b488d58e..7557bf7ecf1f 100644
+index 2f17b488d..7557bf7ec 100644
 --- a/lib/irq_poll.c
 +++ b/lib/irq_poll.c
 @@ -37,6 +37,7 @@ void irq_poll_sched(struct irq_poll *iop)
@@ -23462,7 +23462,7 @@ index 2f17b488d58e..7557bf7ecf1f 100644
  	return 0;
  }
 diff --git a/lib/locking-selftest.c b/lib/locking-selftest.c
-index 76c52b0b76d3..98c376b02dff 100644
+index 76c52b0b7..98c376b02 100644
 --- a/lib/locking-selftest.c
 +++ b/lib/locking-selftest.c
 @@ -787,6 +787,8 @@ GENERATE_TESTCASE(init_held_rtmutex);
@@ -23615,7 +23615,7 @@ index 76c52b0b76d3..98c376b02dff 100644
  
  	force_read_lock_recursive = 0;
 diff --git a/lib/nmi_backtrace.c b/lib/nmi_backtrace.c
-index 8abe1870dba4..b09a490f5f70 100644
+index 8abe1870d..b09a490f5 100644
 --- a/lib/nmi_backtrace.c
 +++ b/lib/nmi_backtrace.c
 @@ -75,12 +75,6 @@ void nmi_trigger_cpumask_backtrace(const cpumask_t *mask,
@@ -23632,7 +23632,7 @@ index 8abe1870dba4..b09a490f5f70 100644
  	put_cpu();
  }
 diff --git a/lib/scatterlist.c b/lib/scatterlist.c
-index a59778946404..907f59045998 100644
+index a59778946..907f59045 100644
 --- a/lib/scatterlist.c
 +++ b/lib/scatterlist.c
 @@ -892,7 +892,7 @@ void sg_miter_stop(struct sg_mapping_iter *miter)
@@ -23645,7 +23645,7 @@ index a59778946404..907f59045998 100644
  		} else
  			kunmap(miter->page);
 diff --git a/lib/smp_processor_id.c b/lib/smp_processor_id.c
-index 525222e4f409..1c1dbd300325 100644
+index 525222e4f..1c1dbd300 100644
 --- a/lib/smp_processor_id.c
 +++ b/lib/smp_processor_id.c
 @@ -26,6 +26,11 @@ unsigned int check_preemption_disabled(const char *what1, const char *what2)
@@ -23661,7 +23661,7 @@ index 525222e4f409..1c1dbd300325 100644
  	 * It is valid to assume CPU-locality during early bootup:
  	 */
 diff --git a/lib/test_lockup.c b/lib/test_lockup.c
-index 78a630bbd03d..d27a80502204 100644
+index 78a630bbd..d27a80502 100644
 --- a/lib/test_lockup.c
 +++ b/lib/test_lockup.c
 @@ -485,6 +485,21 @@ static int __init test_lockup_init(void)
@@ -23695,7 +23695,7 @@ index 78a630bbd03d..d27a80502204 100644
  
  	if ((wait_state != TASK_RUNNING ||
 diff --git a/mm/Kconfig b/mm/Kconfig
-index 5e1175da720e..9220eec06ba7 100644
+index 5e1175da7..9220eec06 100644
 --- a/mm/Kconfig
 +++ b/mm/Kconfig
 @@ -404,7 +404,7 @@ config NOMMU_INITIAL_TRIM_EXCESS
@@ -23718,7 +23718,7 @@ index 5e1175da720e..9220eec06ba7 100644
  	bool "Support for pin memory"
  	depends on MMU && ARM64
 diff --git a/mm/highmem.c b/mm/highmem.c
-index efe38ab479b5..ad72e587ce54 100644
+index efe38ab47..ad72e587c 100644
 --- a/mm/highmem.c
 +++ b/mm/highmem.c
 @@ -31,10 +31,6 @@
@@ -24026,7 +24026,7 @@ index efe38ab479b5..ad72e587ce54 100644
  #if defined(HASHED_PAGE_VIRTUAL)
  
 diff --git a/mm/memcontrol.c b/mm/memcontrol.c
-index ac07a0ffbe20..47e3d110ae7a 100644
+index ac07a0ffb..47e3d110a 100644
 --- a/mm/memcontrol.c
 +++ b/mm/memcontrol.c
 @@ -67,6 +67,7 @@
@@ -24278,7 +24278,7 @@ index ac07a0ffbe20..47e3d110ae7a 100644
  	css_put(&memcg->css);
  }
 diff --git a/mm/page_alloc.c b/mm/page_alloc.c
-index ff6fffec8770..a8f583c0442b 100644
+index ff6fffec8..a8f583c04 100644
 --- a/mm/page_alloc.c
 +++ b/mm/page_alloc.c
 @@ -61,6 +61,7 @@
@@ -24653,7 +24653,7 @@ index ff6fffec8770..a8f583c0442b 100644
  
  #ifdef CONFIG_MEMORY_HOTREMOVE
 diff --git a/mm/shmem.c b/mm/shmem.c
-index ad2d68150ed2..02427f52af0a 100644
+index ad2d68150..02427f52a 100644
 --- a/mm/shmem.c
 +++ b/mm/shmem.c
 @@ -307,10 +307,10 @@ static int shmem_reserve_inode(struct super_block *sb, ino_t *inop)
@@ -24761,7 +24761,7 @@ index ad2d68150ed2..02427f52af0a 100644
  		goto failed;
  	spin_lock_init(&sbinfo->shrinklist_lock);
 diff --git a/mm/slab.c b/mm/slab.c
-index ae84578f3fde..a65a5f169fd5 100644
+index ae84578f3..a65a5f169 100644
 --- a/mm/slab.c
 +++ b/mm/slab.c
 @@ -234,7 +234,7 @@ static void kmem_cache_node_init(struct kmem_cache_node *parent)
@@ -25112,7 +25112,7 @@ index ae84578f3fde..a65a5f169fd5 100644
  	num_objs = total_slabs * cachep->num;
  	active_slabs = total_slabs - free_slabs;
 diff --git a/mm/slab.h b/mm/slab.h
-index 8414c345127b..d937f8673193 100644
+index 8414c3451..d937f8673 100644
 --- a/mm/slab.h
 +++ b/mm/slab.h
 @@ -523,7 +523,7 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s,
@@ -25125,7 +25125,7 @@ index 8414c345127b..d937f8673193 100644
  #ifdef CONFIG_SLAB
  	struct list_head slabs_partial;	/* partial list first, better asm code */
 diff --git a/mm/slub.c b/mm/slub.c
-index ad44734dbf72..84a55c8bb3d6 100644
+index ad44734db..84a55c8bb 100644
 --- a/mm/slub.c
 +++ b/mm/slub.c
 @@ -458,7 +458,7 @@ static inline bool cmpxchg_double_slab(struct kmem_cache *s, struct page *page,
@@ -25618,7 +25618,7 @@ index ad44734dbf72..84a55c8bb3d6 100644
  
  	for (i = 0; i < t.count; i++) {
 diff --git a/mm/vmalloc.c b/mm/vmalloc.c
-index dadbea29241d..dd7da773bfe5 100644
+index dadbea292..dd7da773b 100644
 --- a/mm/vmalloc.c
 +++ b/mm/vmalloc.c
 @@ -1886,7 +1886,7 @@ static void *new_vmap_block(unsigned int order, gfp_t gfp_mask)
@@ -25673,7 +25673,7 @@ index dadbea29241d..dd7da773bfe5 100644
  
  	/* Allocate new block if nothing was found */
 diff --git a/mm/vmstat.c b/mm/vmstat.c
-index 05433f66376b..afb32defb498 100644
+index 05433f663..afb32defb 100644
 --- a/mm/vmstat.c
 +++ b/mm/vmstat.c
 @@ -321,6 +321,7 @@ void __mod_zone_page_state(struct zone *zone, enum zone_stat_item item,
@@ -25773,7 +25773,7 @@ index 05433f66376b..afb32defb498 100644
  
  void __dec_zone_page_state(struct page *page, enum zone_stat_item item)
 diff --git a/mm/workingset.c b/mm/workingset.c
-index 4a30e4a813a5..4c92584ca34d 100644
+index 4a30e4a81..4c92584ca 100644
 --- a/mm/workingset.c
 +++ b/mm/workingset.c
 @@ -431,6 +431,8 @@ static struct list_lru shadow_nodes;
@@ -25796,7 +25796,7 @@ index 4a30e4a813a5..4c92584ca34d 100644
  	if (node->count && node->count == node->nr_values) {
  		if (list_empty(&node->private_list)) {
 diff --git a/mm/z3fold.c b/mm/z3fold.c
-index f75c638c69db..6fdf4774fdbe 100644
+index f75c638c6..6fdf4774f 100644
 --- a/mm/z3fold.c
 +++ b/mm/z3fold.c
 @@ -623,14 +623,16 @@ static inline void add_to_unbuddied(struct z3fold_pool *pool,
@@ -25858,7 +25858,7 @@ index f75c638c69db..6fdf4774fdbe 100644
  	if (!zhdr) {
  		int cpu;
 diff --git a/mm/zsmalloc.c b/mm/zsmalloc.c
-index c18dc8e61d35..16ce2b05df90 100644
+index c18dc8e61..16ce2b05d 100644
 --- a/mm/zsmalloc.c
 +++ b/mm/zsmalloc.c
 @@ -57,6 +57,7 @@
@@ -26049,7 +26049,7 @@ index c18dc8e61d35..16ce2b05df90 100644
  	migrate_read_unlock(zspage);
  	unpin_tag(handle);
 diff --git a/net/Kconfig b/net/Kconfig
-index d6567162c1cf..05b0f041f039 100644
+index d6567162c..05b0f041f 100644
 --- a/net/Kconfig
 +++ b/net/Kconfig
 @@ -282,7 +282,7 @@ config CGROUP_NET_CLASSID
@@ -26062,7 +26062,7 @@ index d6567162c1cf..05b0f041f039 100644
  config BQL
  	bool
 diff --git a/net/core/dev.c b/net/core/dev.c
-index ee0b405681db..2ca7feed0df5 100644
+index ee0b40568..2ca7feed0 100644
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
 @@ -221,14 +221,14 @@ static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
@@ -26209,7 +26209,7 @@ index ee0b405681db..2ca7feed0df5 100644
  #ifdef CONFIG_XFRM_OFFLOAD
  		skb_queue_head_init(&sd->xfrm_backlog);
 diff --git a/net/core/gen_estimator.c b/net/core/gen_estimator.c
-index 8e582e29a41e..e51f4854d8b2 100644
+index 8e582e29a..e51f4854d 100644
 --- a/net/core/gen_estimator.c
 +++ b/net/core/gen_estimator.c
 @@ -42,7 +42,7 @@
@@ -26240,7 +26240,7 @@ index 8e582e29a41e..e51f4854d8b2 100644
  	return gen_new_estimator(bstats, cpu_bstats, rate_est,
  				 lock, running, opt);
 diff --git a/net/core/gen_stats.c b/net/core/gen_stats.c
-index e491b083b348..ef432cea2e10 100644
+index e491b083b..ef432cea2 100644
 --- a/net/core/gen_stats.c
 +++ b/net/core/gen_stats.c
 @@ -137,7 +137,7 @@ __gnet_stats_copy_basic_cpu(struct gnet_stats_basic_packed *bstats,
@@ -26290,7 +26290,7 @@ index e491b083b348..ef432cea2e10 100644
  			 struct gnet_stats_basic_cpu __percpu *cpu,
  			 struct gnet_stats_basic_packed *b)
 diff --git a/net/core/sock.c b/net/core/sock.c
-index 2fa8863caee0..e96d3695bce2 100644
+index 3f49f1117..3ad09374f 100644
 --- a/net/core/sock.c
 +++ b/net/core/sock.c
 @@ -3057,12 +3057,11 @@ void lock_sock_nested(struct sock *sk, int subclass)
@@ -26322,7 +26322,7 @@ index 2fa8863caee0..e96d3695bce2 100644
  }
  EXPORT_SYMBOL(lock_sock_fast);
 diff --git a/net/sched/sch_api.c b/net/sched/sch_api.c
-index 6e18aa417782..2d538f14edf8 100644
+index 6e18aa417..2d538f14e 100644
 --- a/net/sched/sch_api.c
 +++ b/net/sched/sch_api.c
 @@ -1264,7 +1264,7 @@ static struct Qdisc *qdisc_create(struct net_device *dev,
@@ -26335,7 +26335,7 @@ index 6e18aa417782..2d538f14edf8 100644
  		err = -EOPNOTSUPP;
  		if (sch->flags & TCQ_F_MQROOT) {
 diff --git a/net/sched/sch_generic.c b/net/sched/sch_generic.c
-index 5d5391adb667..8fe206c7b688 100644
+index 5d5391adb..8fe206c7b 100644
 --- a/net/sched/sch_generic.c
 +++ b/net/sched/sch_generic.c
 @@ -578,7 +578,11 @@ struct Qdisc noop_qdisc = {
@@ -26367,7 +26367,7 @@ index 5d5391adb667..8fe206c7b688 100644
  	sch->ops = ops;
  	sch->flags = ops->static_flags;
 diff --git a/net/sunrpc/svc_xprt.c b/net/sunrpc/svc_xprt.c
-index 362487f3a6de..5c6c31fc7890 100644
+index 362487f3a..5c6c31fc7 100644
 --- a/net/sunrpc/svc_xprt.c
 +++ b/net/sunrpc/svc_xprt.c
 @@ -422,7 +422,7 @@ void svc_xprt_do_enqueue(struct svc_xprt *xprt)
@@ -26389,7 +26389,7 @@ index 362487f3a6de..5c6c31fc7890 100644
  }
  EXPORT_SYMBOL_GPL(svc_xprt_do_enqueue);
 diff --git a/net/xfrm/xfrm_state.c b/net/xfrm/xfrm_state.c
-index a6a4838d6254..7893ec004292 100644
+index a6a4838d6..7893ec004 100644
 --- a/net/xfrm/xfrm_state.c
 +++ b/net/xfrm/xfrm_state.c
 @@ -2672,7 +2672,8 @@ int __net_init xfrm_state_init(struct net *net)
@@ -26403,5 +26403,5 @@ index a6a4838d6254..7893ec004292 100644
  
  out_byspi:
 -- 
-2.25.1
+2.36.1
 
