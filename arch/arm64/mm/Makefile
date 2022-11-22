@@ -11,8 +11,6 @@ obj-$(CONFIG_DEBUG_VIRTUAL)	+= physaddr.o
 obj-$(CONFIG_ARM64_MTE)		+= mteswap.o
 KASAN_SANITIZE_physaddr.o	+= n
 
-obj-$(CONFIG_ARM64_UCE_KERNEL_RECOVERY)	+= uce_kernel_recovery.o
-
 obj-$(CONFIG_KASAN)		+= kasan_init.o
 KASAN_SANITIZE_kasan_init.o	:= n
 
