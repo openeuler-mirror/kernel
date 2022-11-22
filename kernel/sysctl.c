@@ -2994,6 +2994,14 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 	},
 	{
+		.procname	= "percpu_max_batchsize",
+		.data		= &percpu_max_batchsize,
+		.maxlen		= sizeof(percpu_max_batchsize),
+		.mode		= 0644,
+		.proc_handler	= percpu_max_batchsize_sysctl_handler,
+		.extra1		= SYSCTL_ZERO,
+	},
+	{
 		.procname	= "page_lock_unfairness",
 		.data		= &sysctl_page_lock_unfairness,
 		.maxlen		= sizeof(sysctl_page_lock_unfairness),

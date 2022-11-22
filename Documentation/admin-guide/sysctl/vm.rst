@@ -65,6 +65,7 @@ Currently, these files are in /proc/sys/vm:
 - page-cluster
 - panic_on_oom
 - percpu_pagelist_fraction
+- percpu_max_batchsize
 - stat_interval
 - stat_refresh
 - numa_stat
@@ -854,6 +855,15 @@ set to pcp->high/4.  The upper limit of batch is (PAGE_SHIFT * 8)
 The initial value is zero.  Kernel does not use this value at boot time to set
 the high water marks for each per cpu page list.  If the user writes '0' to this
 sysctl, it will revert to this default behavior.
+
+
+percpu_max_batchsize
+========================
+
+This is used to setup the max batch and high size of percpu in each zone.
+The default value is set to (256 * 1024) / PAGE_SIZE.
+The max value is limited to (512 * 1024) / PAGE_SIZE.
+The min value is limited to (64 * 1024) / PAGE_SIZE.
 
 
 stat_interval
