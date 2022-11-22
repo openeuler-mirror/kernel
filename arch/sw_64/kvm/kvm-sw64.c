@@ -562,9 +562,10 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	return 0;
 }
 
-int kvm_arch_vcpu_ioctl_set_guest_debug(struct kvm_vcpu *vcpu, struct kvm_guest_debug *dbg)
+int kvm_arch_vcpu_ioctl_set_guest_debug(struct kvm_vcpu *vcpu,
+						struct kvm_guest_debug *dbg)
 {
-	return -ENOIOCTLCMD;
+	return 0;
 }
 
 void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
