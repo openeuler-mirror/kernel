@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2211.4.0
+%global hulkrelease 2211.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0177
+Release: %{hulkrelease}.0178
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,14 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.5.0.0178
+- svm: Delete unused ioctl command
+- Revert "posix-cpu-timers: Make timespec to nsec conversion safe"
+- block: limit request dispatch loop duration
+- Bluetooth: L2CAP: Fix accepting connection request for invalid SPSM
+- Bluetooth: L2CAP: Fix attempting to access uninitialized memory
+- block: check flags of claimed slave bdev to fix uaf for bd_holder_dir
 
 * Tue Nov 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.4.0.0177
 - block: fix use after free for bd_holder_dir
