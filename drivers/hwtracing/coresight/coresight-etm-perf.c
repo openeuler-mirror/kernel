@@ -24,7 +24,26 @@
 static struct pmu etm_pmu;
 static bool etm_perf_up;
 
-static DEFINE_PER_CPU(struct perf_output_handle, ctx_handle);
+/*
+ * An ETM context for a running event includes the perf aux handle
+ * and aux_data. For ETM, the aux_data (etm_event_data), consists of
+ * the trace path and the sink configuration. The event data is accessible
+ * via perf_get_aux(handle). However, a sink could "end" a perf output
+ * handle via the IRQ handler. And if the "sink" encounters a failure
+ * to "begin" another session (e.g due to lack of space in the buffer),
+ * the handle will be cleared. Thus, the event_data may not be accessible
+ * from the handle when we get to the etm_event_stop(), which is required
+ * for stopping the trace path. The event_data is guaranteed to stay alive
+ * until "free_aux()", which cannot happen as long as the event is active on
+ * the ETM. Thus the event_data for the session must be part of the ETM context
+ * to make sure we can disable the trace path.
+ */
+struct etm_ctxt {
+	struct perf_output_handle handle;
+	struct etm_event_data *event_data;
+};
+
+static DEFINE_PER_CPU(struct etm_ctxt, etm_ctxt);
 static DEFINE_PER_CPU(struct coresight_device *, csdev_src);
 
 /* ETMv3.5/PTM's ETMCR is 'config' */
@@ -304,11 +323,16 @@ static void etm_event_start(struct perf_event *event, int flags)
 {
 	int cpu = smp_processor_id();
 	struct etm_event_data *event_data;
-	struct perf_output_handle *handle = this_cpu_ptr(&ctx_handle);
+	struct etm_ctxt *ctxt = this_cpu_ptr(&etm_ctxt);
+	struct perf_output_handle *handle = &ctxt->handle;
 	struct coresight_device *sink, *csdev = per_cpu(csdev_src, cpu);
 	struct list_head *path;
 
 	if (!csdev)
+		goto fail;
+
+	/* Have we messed up our tracking ? */
+	if (WARN_ON(ctxt->event_data))
 		goto fail;
 
 	/*
@@ -325,9 +349,14 @@ static void etm_event_start(struct perf_event *event, int flags)
 	 * sink from this ETM. We can't do much in this case if
 	 * the sink was specified or hinted to the driver. For
 	 * now, simply don't record anything on this ETM.
+	 *
+	 * As such we pretend that everything is fine, and let
+	 * it continue without actually tracing. The event could
+	 * continue tracing when it moves to a CPU where it is
+	 * reachable to a sink.
 	 */
 	if (!cpumask_test_cpu(cpu, &event_data->mask))
-		goto fail_end_stop;
+		goto out;
 
 	path = etm_event_cpu_path(event_data, cpu);
 	/* We need a sink, no need to continue without one */
@@ -339,24 +368,32 @@ static void etm_event_start(struct perf_event *event, int flags)
 	if (coresight_enable_path(path, CS_MODE_PERF, handle))
 		goto fail_end_stop;
 
-	/* Tell the perf core the event is alive */
-	event->hw.state = 0;
-
 	/* Finally enable the tracer */
 	if (source_ops(csdev)->enable(csdev, event, CS_MODE_PERF))
 		goto fail_disable_path;
 
 out:
+	/* Tell the perf core the event is alive */
+	event->hw.state = 0;
+	/* Save the event_data for this ETM */
+	ctxt->event_data = event_data;
 	return;
 
 fail_disable_path:
 	coresight_disable_path(path);
 fail_end_stop:
-	perf_aux_output_flag(handle, PERF_AUX_FLAG_TRUNCATED);
-	perf_aux_output_end(handle, 0);
+	/*
+	 * Check if the handle is still associated with the event,
+	 * to handle cases where if the sink failed to start the
+	 * trace and TRUNCATED the handle already.
+	 */
+	if (READ_ONCE(handle->event)) {
+		perf_aux_output_flag(handle, PERF_AUX_FLAG_TRUNCATED);
+		perf_aux_output_end(handle, 0);
+	}
 fail:
 	event->hw.state = PERF_HES_STOPPED;
-	goto out;
+	return;
 }
 
 static void etm_event_stop(struct perf_event *event, int mode)
@@ -364,12 +401,42 @@ static void etm_event_stop(struct perf_event *event, int mode)
 	int cpu = smp_processor_id();
 	unsigned long size;
 	struct coresight_device *sink, *csdev = per_cpu(csdev_src, cpu);
-	struct perf_output_handle *handle = this_cpu_ptr(&ctx_handle);
-	struct etm_event_data *event_data = perf_get_aux(handle);
+	struct etm_ctxt *ctxt = this_cpu_ptr(&etm_ctxt);
+	struct perf_output_handle *handle = &ctxt->handle;
+	struct etm_event_data *event_data;
 	struct list_head *path;
+
+	/*
+	 * If we still have access to the event_data via handle,
+	 * confirm that we haven't messed up the tracking.
+	 */
+	if (handle->event &&
+	    WARN_ON(perf_get_aux(handle) != ctxt->event_data))
+		return;
+
+	event_data = ctxt->event_data;
+	/* Clear the event_data as this ETM is stopping the trace. */
+	ctxt->event_data = NULL;
 
 	if (event->hw.state == PERF_HES_STOPPED)
 		return;
+
+	/* We must have a valid event_data for a running event */
+	if (WARN_ON(!event_data))
+		return;
+
+	/*
+	 * Check if this ETM was allowed to trace, as decided at
+	 * etm_setup_aux(). If it wasn't allowed to trace, then
+	 * nothing needs to be torn down other than outputting a
+	 * zero sized record.
+	 */
+	if (handle->event && (mode & PERF_EF_UPDATE) &&
+	    !cpumask_test_cpu(cpu, &event_data->mask)) {
+		event->hw.state = PERF_HES_STOPPED;
+		perf_aux_output_end(handle, 0);
+		return;
+	}
 
 	if (!csdev)
 		return;
@@ -388,7 +455,13 @@ static void etm_event_stop(struct perf_event *event, int mode)
 	/* tell the core */
 	event->hw.state = PERF_HES_STOPPED;
 
-	if (mode & PERF_EF_UPDATE) {
+	/*
+	 * If the handle is not bound to an event anymore
+	 * (e.g, the sink driver was unable to restart the
+	 * handle due to lack of buffer space), we don't
+	 * have to do anything here.
+	 */
+	if (handle->event && (mode & PERF_EF_UPDATE)) {
 		if (WARN_ON_ONCE(handle->event != event))
 			return;
 
@@ -398,7 +471,21 @@ static void etm_event_stop(struct perf_event *event, int mode)
 
 		size = sink_ops(sink)->update_buffer(sink, handle,
 					      event_data->snk_config);
-		perf_aux_output_end(handle, size);
+		/*
+		 * Make sure the handle is still valid as the
+		 * sink could have closed it from an IRQ.
+		 * The sink driver must handle the race with
+		 * update_buffer() and IRQ. Thus either we
+		 * should get a valid handle and valid size
+		 * (which may be 0).
+		 *
+		 * But we should never get a non-zero size with
+		 * an invalid handle.
+		 */
+		if (READ_ONCE(handle->event))
+			perf_aux_output_end(handle, size);
+		else
+			WARN_ON(size);
 	}
 
 	/* Disabling the path make its elements available to other sessions */
