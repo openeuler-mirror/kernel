@@ -81,6 +81,8 @@ static int tpiu_enable(struct coresight_device *csdev, u32 mode, void *__unused)
 
 static void tpiu_disable_hw(struct tpiu_drvdata *drvdata)
 {
+	struct csdev_access *csa = &drvdata->csdev->access;
+
 	CS_UNLOCK(drvdata->base);
 
 	/* Clear formatter and stop on flush */
@@ -88,9 +90,9 @@ static void tpiu_disable_hw(struct tpiu_drvdata *drvdata)
 	/* Generate manual flush */
 	writel_relaxed(FFCR_STOP_FI | FFCR_FON_MAN, drvdata->base + TPIU_FFCR);
 	/* Wait for flush to complete */
-	coresight_timeout(drvdata->base, TPIU_FFCR, FFCR_FON_MAN_BIT, 0);
+	coresight_timeout(csa, TPIU_FFCR, FFCR_FON_MAN_BIT, 0);
 	/* Wait for formatter to stop */
-	coresight_timeout(drvdata->base, TPIU_FFSR, FFSR_FT_STOPPED_BIT, 1);
+	coresight_timeout(csa, TPIU_FFSR, FFSR_FT_STOPPED_BIT, 1);
 
 	CS_LOCK(drvdata->base);
 }
@@ -149,6 +151,7 @@ static int tpiu_probe(struct amba_device *adev, const struct amba_id *id)
 		return PTR_ERR(base);
 
 	drvdata->base = base;
+	desc.access = CSDEV_ACCESS_IOMEM(base);
 
 	/* Disable tpiu to support older devices */
 	tpiu_disable_hw(drvdata);
