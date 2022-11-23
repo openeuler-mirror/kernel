@@ -530,10 +530,6 @@ got_exception:
 			 1L << 0x21 | 1L << 0x29 | /* ldhu sth */	\
 			 1L << 0x20 | 1L << 0x28)  /* ldbu stb */
 
-#define OP_WRITE_MASK	(1L << 0x26 | 1L << 0x27 | /* fsts fstd */	\
-			 1L << 0x2c | 1L << 0x2d | /* stw stl */	\
-			 1L << 0x0d | 1L << 0x0e)  /* sth stb */
-
 asmlinkage void
 do_entUnaUser(void __user *va, unsigned long opcode,
 	      unsigned long reg, struct pt_regs *regs)
