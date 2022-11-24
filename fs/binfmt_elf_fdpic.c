@@ -1550,7 +1550,7 @@ static int elf_fdpic_core_dump(struct coredump_params *cprm)
 	fill_note(&psinfo_note, "CORE", NT_PRPSINFO, sizeof(*psinfo), psinfo);
 	thread_status_size += notesize(&psinfo_note);
 
-	auxv = (elf_addr_t *) current->mm->saved_auxv;
+	auxv = (elf_addr_t *) current->MM_SAVED_AUXV(mm);
 	i = 0;
 	do
 		i += 2;

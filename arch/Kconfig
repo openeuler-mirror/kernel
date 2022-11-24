@@ -1159,6 +1159,9 @@ config ARCH_SPLIT_ARG64
 config HAVE_ARCH_NODE_DEV_GROUP
 	bool
 
+config DYNAMIC_SIGFRAME
+	bool
+
 source "kernel/gcov/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"

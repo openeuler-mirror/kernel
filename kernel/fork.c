@@ -1088,6 +1088,20 @@ fail_nopgd:
 	return NULL;
 }
 
+static inline void mm_struct_clear(struct mm_struct *mm) {
+	memset(mm, 0, sizeof(*mm));
+
+#if (defined(CONFIG_X86_64))
+	/*
+	 * init the mm_struct_extend extra area at the bottom of
+	 * the allocated mm struct and reset mm->mm_extend accordingly.
+	 */
+	memset((void *)((unsigned long) mm + _MM_STRUCT_SIZE),
+		0, sizeof(struct mm_struct_extend));
+	mm->mm_extend = (struct mm_struct_extend *)((unsigned long) mm + _MM_STRUCT_SIZE);
+#endif
+}
+
 /*
  * Allocate and initialize an mm_struct.
  */
@@ -1099,7 +1113,8 @@ struct mm_struct *mm_alloc(void)
 	if (!mm)
 		return NULL;
 
-	memset(mm, 0, sizeof(*mm));
+	mm_struct_clear(mm);
+
 	return mm_init(mm, current, current_user_ns());
 }
 
@@ -1382,6 +1397,24 @@ void exec_mm_release(struct task_struct *tsk, struct mm_struct *mm)
 	mm_release(tsk, mm);
 }
 
+static inline void mm_struct_copy(struct mm_struct *mm, struct mm_struct *oldmm)
+{
+	memcpy(mm, oldmm, sizeof(*mm));
+
+#if defined(CONFIG_X86_64)
+	/*
+	 * copy the mm_struct_extend extra area at the bottom of
+	 * the oldmm slab object over to the newly allocated mm struct,
+	 * and reset mm->mm_extend accordingly.
+	 */
+	memcpy((void *)((unsigned long) mm + _MM_STRUCT_SIZE),
+		(void *)((unsigned long) oldmm + _MM_STRUCT_SIZE),
+		sizeof(struct mm_struct_extend));
+
+	mm->mm_extend = (struct mm_struct_extend *)((unsigned long) mm + _MM_STRUCT_SIZE);
+#endif
+}
+
 /**
  * dup_mm() - duplicates an existing mm structure
  * @tsk: the task_struct with which the new mm will be associated.
@@ -1402,7 +1435,7 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
 	if (!mm)
 		goto fail_nomem;
 
-	memcpy(mm, oldmm, sizeof(*mm));
+	mm_struct_copy(mm, oldmm);
 
 	if (!mm_init(mm, tsk, mm->user_ns))
 		goto fail_nomem;
@@ -2872,13 +2905,13 @@ void __init proc_caches_init(void)
 	 * dynamically sized based on the maximum CPU number this system
 	 * can have, taking hotplug into account (nr_cpu_ids).
 	 */
-	mm_size = sizeof(struct mm_struct) + cpumask_size();
+	mm_size = MM_STRUCT_SIZE;
 
 	mm_cachep = kmem_cache_create_usercopy("mm_struct",
 			mm_size, ARCH_MIN_MMSTRUCT_ALIGN,
 			SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT,
-			offsetof(struct mm_struct, saved_auxv),
-			sizeof_field(struct mm_struct, saved_auxv),
+			OFFSET_OF_MM_SAVED_AUXV,
+			SIZE_OF_MM_SAVED_AUXV,
 			NULL);
 	vm_area_cachep = KMEM_CACHE(vm_area_struct, SLAB_PANIC|SLAB_ACCOUNT);
 	mmap_init();
