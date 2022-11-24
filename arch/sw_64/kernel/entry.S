@@ -20,7 +20,7 @@
  * regs 29-30 saved and set up by HMcode
  */
 
-	.macro SAVE_COMMON_REGS
+	.macro SAVE_ALL
 	ldi	$sp, -PT_REGS_PS($sp)
 	stl	$0, PT_REGS_R0($sp)
 	stl	$1, PT_REGS_R1($sp)
@@ -32,6 +32,13 @@
 	stl	$6, PT_REGS_R6($sp)
 	stl	$7, PT_REGS_R7($sp)
 	stl	$8, PT_REGS_R8($sp)
+	stl	$9, PT_REGS_R9($sp)
+	stl	$10, PT_REGS_R10($sp)
+	stl	$11, PT_REGS_R11($sp)
+	stl	$12, PT_REGS_R12($sp)
+	stl	$13, PT_REGS_R13($sp)
+	stl	$14, PT_REGS_R14($sp)
+	stl	$15, PT_REGS_R15($sp)
 	stl	$19, PT_REGS_R19($sp)
 	stl	$20, PT_REGS_R20($sp)
 	stl	$21, PT_REGS_R21($sp)
@@ -43,7 +50,7 @@
 	stl	$27, PT_REGS_R27($sp)
 	.endm
 
-	.macro RESTORE_COMMON_REGS
+	.macro RESTORE_ALL
 	ldl	$0, PT_REGS_R0($sp)
 	ldl	$1, PT_REGS_R1($sp)
 	ldl	$2, PT_REGS_R2($sp)
@@ -53,6 +60,13 @@
 	ldl	$6, PT_REGS_R6($sp)
 	ldl	$7, PT_REGS_R7($sp)
 	ldl	$8, PT_REGS_R8($sp)
+	ldl	$9, PT_REGS_R9($sp)
+	ldl	$10, PT_REGS_R10($sp)
+	ldl	$11, PT_REGS_R11($sp)
+	ldl	$12, PT_REGS_R12($sp)
+	ldl	$13, PT_REGS_R13($sp)
+	ldl	$14, PT_REGS_R14($sp)
+	ldl	$15, PT_REGS_R15($sp)
 	ldl	$19, PT_REGS_R19($sp)
 	ldl	$20, PT_REGS_R20($sp)
 	ldl	$21, PT_REGS_R21($sp)
@@ -64,36 +78,6 @@
 	ldl	$27, PT_REGS_R27($sp)
 	ldl	$28, PT_REGS_R28($sp)
 	ldi	$sp, PT_REGS_PS($sp)
-	.endm
-
-	.macro SAVE_CALLEE_REGS
-	stl	$9, PT_REGS_R9($sp)
-	stl	$10, PT_REGS_R10($sp)
-	stl	$11, PT_REGS_R11($sp)
-	stl	$12, PT_REGS_R12($sp)
-	stl	$13, PT_REGS_R13($sp)
-	stl	$14, PT_REGS_R14($sp)
-	stl	$15, PT_REGS_R15($sp)
-	.endm
-
-	.macro RESTORE_CALLEE_REGS
-	ldl	$9, PT_REGS_R9($sp)
-	ldl	$10, PT_REGS_R10($sp)
-	ldl	$11, PT_REGS_R11($sp)
-	ldl	$12, PT_REGS_R12($sp)
-	ldl	$13, PT_REGS_R13($sp)
-	ldl	$14, PT_REGS_R14($sp)
-	ldl	$15, PT_REGS_R15($sp)
-	.endm
-
-	.macro SAVE_ALL
-	SAVE_COMMON_REGS
-	SAVE_CALLEE_REGS
-	.endm
-
-	.macro RESTORE_ALL
-	RESTORE_CALLEE_REGS
-	RESTORE_COMMON_REGS
 	.endm
 
 /*
