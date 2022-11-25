@@ -2239,6 +2239,11 @@ struct bpf_sched_cpu_stats {
 	/* capacity */
 	unsigned long capacity;
 	unsigned long capacity_orig;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 struct cpumask_op_args {
@@ -2264,5 +2269,33 @@ enum cpumask_op_type {
 	CPUMASK_CPULIST_PARSE
 };
 
+struct sched_migrate_ctx {
+	struct task_struct *task;
+	struct cpumask *select_idle_mask;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+	int want_affine;
+	int wake_flags;
+	int sd_flag;
+	int new_cpu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
+
+struct sched_affine_ctx {
+	struct task_struct *task;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
 #endif
 #endif
