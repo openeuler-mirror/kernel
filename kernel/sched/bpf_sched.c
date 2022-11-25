@@ -85,3 +85,20 @@ const struct bpf_func_proto bpf_sched_tg_tag_of_proto = {
 	.arg1_type	= PTR_MAYBE_NULL | ARG_PTR_TO_BTF_ID,
 	.arg1_btf_id	= &btf_sched_tg_ids[0],
 };
+
+BPF_CALL_1(bpf_sched_task_tag_of, struct task_struct *, tsk)
+{
+	if (tsk == NULL)
+		return -EINVAL;
+	return tsk->tag;
+}
+
+BTF_ID_LIST_SINGLE(btf_sched_task_ids, struct, task_struct)
+
+const struct bpf_func_proto bpf_sched_task_tag_of_proto = {
+	.func		= bpf_sched_task_tag_of,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= PTR_MAYBE_NULL | ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_task_ids[0],
+};
