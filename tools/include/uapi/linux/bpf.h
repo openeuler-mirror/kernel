@@ -3802,6 +3802,24 @@ union bpf_attr {
  *		Get system cpus returned in *cpus*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * long bpf_sched_entity_is_task(struct sched_entity *se)
+ *	Description
+ *		Checks whether the sched entity is a task.
+ *	Return
+ *		1 if true, 0 otherwise.
+ *
+ * struct task_struct *bpf_sched_entity_to_task(struct sched_entity *se)
+ *	Description
+ *		Return task struct of *se* if se is a task.
+ *	Return
+ *		Task struct if se is a task, NULL otherwise.
+ *
+ * struct task_group *bpf_sched_entity_to_tg(struct sched_entity *se)
+ *	Description
+ *		Return task group of *se* if se is a task group.
+ *	Return
+ *		Task struct if se is a task group, NULL otherwise.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3969,6 +3987,9 @@ union bpf_attr {
 	FN(sched_cpu_stats_of),		\
 	FN(init_cpu_topology),		\
 	FN(get_cpumask_info),		\
+	FN(sched_entity_is_task),	\
+	FN(sched_entity_to_task),	\
+	FN(sched_entity_to_tg),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

@@ -439,6 +439,7 @@ class PrinterHelpers(Printer):
             'struct bpf_sched_cpu_stats',
             'struct bpf_cpu_topology',
             'struct bpf_cpumask_info',
+            'struct sched_entity',
     ]
     known_types = {
             '...',
@@ -486,6 +487,7 @@ class PrinterHelpers(Printer):
             'struct bpf_sched_cpu_stats',
             'struct bpf_cpu_topology',
             'struct bpf_cpumask_info',
+            'struct sched_entity',
     }
     mapped_types = {
             'u8': '__u8',
