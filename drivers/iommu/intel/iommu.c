@@ -5471,7 +5471,7 @@ attach_failed:
 link_failed:
 	spin_unlock_irqrestore(&device_domain_lock, flags);
 	if (list_empty(&domain->subdevices) && domain->default_pasid > 0)
-		ioasid_put(domain->default_pasid);
+		ioasid_free(domain->default_pasid);
 
 	return ret;
 }
@@ -5501,7 +5501,7 @@ static void aux_domain_remove_dev(struct dmar_domain *domain,
 	spin_unlock_irqrestore(&device_domain_lock, flags);
 
 	if (list_empty(&domain->subdevices) && domain->default_pasid > 0)
-		ioasid_put(domain->default_pasid);
+		ioasid_free(domain->default_pasid);
 }
 
 static int prepare_domain_attach_device(struct iommu_domain *domain,
@@ -6216,6 +6216,12 @@ intel_iommu_dev_enable_feat(struct device *dev, enum iommu_dev_features feat)
 		struct device_domain_info *info = get_domain_info(dev);
 
 		if (!info)
+			return -EINVAL;
+
+		if (intel_iommu_enable_pasid(info->iommu, dev))
+			return -ENODEV;
+
+		if (!info->pasid_enabled || !info->pri_enabled || !info->ats_enabled)
 			return -EINVAL;
 
 		if (info->iommu->flags & VTD_FLAG_SVM_CAPABLE)

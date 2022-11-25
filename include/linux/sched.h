@@ -872,6 +872,9 @@ struct task_struct {
 	/* Stalled due to lack of memory */
 	unsigned			in_memstall:1;
 #endif
+#ifdef CONFIG_IOMMU_SVA
+	KABI_FILL_HOLE(unsigned		pasid_activated:1)
+#endif
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 

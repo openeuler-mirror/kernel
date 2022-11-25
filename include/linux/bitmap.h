@@ -122,6 +122,8 @@ struct device;
  */
 extern unsigned long *bitmap_alloc(unsigned int nbits, gfp_t flags);
 extern unsigned long *bitmap_zalloc(unsigned int nbits, gfp_t flags);
+extern unsigned long *bitmap_alloc_node(unsigned int nbits, gfp_t flags, int node);
+extern unsigned long *bitmap_zalloc_node(unsigned int nbits, gfp_t flags, int node);
 extern void bitmap_free(const unsigned long *bitmap);
 
 /* Managed variants of the above. */

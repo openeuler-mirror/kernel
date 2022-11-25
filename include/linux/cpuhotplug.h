@@ -3,6 +3,7 @@
 #define __CPUHOTPLUG_H
 
 #include <linux/types.h>
+#include <linux/kabi.h>
 
 /*
  * CPU-up			CPU-down
@@ -169,6 +170,7 @@ enum cpuhp_state {
 	CPUHP_AP_PERF_X86_RAPL_ONLINE,
 	CPUHP_AP_PERF_X86_CQM_ONLINE,
 	CPUHP_AP_PERF_X86_CSTATE_ONLINE,
+	/* kABI: CPUHP_AP_PERF_X86_IDXD_ONLINE, */
 	CPUHP_AP_PERF_S390_CF_ONLINE,
 	CPUHP_AP_PERF_S390_SF_ONLINE,
 	CPUHP_AP_PERF_ARM_CCI_ONLINE,
@@ -200,6 +202,9 @@ enum cpuhp_state {
 	CPUHP_AP_ACTIVE,
 	CPUHP_ONLINE,
 };
+
+/* Reuse another arch's entry to avoid kABI breakage */
+#define CPUHP_AP_PERF_X86_IDXD_ONLINE CPUHP_AP_PERF_ARM_L2X0_ONLINE
 
 int __cpuhp_setup_state(enum cpuhp_state state,	const char *name, bool invoke,
 			int (*startup)(unsigned int cpu),

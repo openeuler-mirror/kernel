@@ -21,20 +21,27 @@ static inline struct idxd_wq *to_idxd_wq(struct dma_chan *c)
 }
 
 void idxd_dma_complete_txd(struct idxd_desc *desc,
-			   enum idxd_complete_type comp_type)
+			   enum idxd_complete_type comp_type,
+			   bool free_desc)
 {
+	struct idxd_device *idxd = desc->wq->idxd;
 	struct dma_async_tx_descriptor *tx;
 	struct dmaengine_result res;
 	int complete = 1;
 
-	if (desc->completion->status == DSA_COMP_SUCCESS)
+	if (desc->completion->status == DSA_COMP_SUCCESS) {
 		res.result = DMA_TRANS_NOERROR;
-	else if (desc->completion->status)
+	} else if (desc->completion->status) {
+		if (idxd->request_int_handles && comp_type != IDXD_COMPLETE_ABORT &&
+		    desc->completion->status == DSA_COMP_INT_HANDLE_INVAL &&
+		    idxd_queue_int_handle_resubmit(desc))
+			return;
 		res.result = DMA_TRANS_WRITE_FAILED;
-	else if (comp_type == IDXD_COMPLETE_ABORT)
+	} else if (comp_type == IDXD_COMPLETE_ABORT) {
 		res.result = DMA_TRANS_ABORTED;
-	else
+	} else {
 		complete = 0;
+	}
 
 	tx = &desc->txd;
 	if (complete && tx->cookie) {
@@ -44,6 +51,9 @@ void idxd_dma_complete_txd(struct idxd_desc *desc,
 		tx->callback = NULL;
 		tx->callback_result = NULL;
 	}
+
+	if (free_desc)
+		idxd_free_desc(desc->wq, desc);
 }
 
 static void op_flag_setup(unsigned long flags, u32 *desc_flags)
@@ -64,22 +74,17 @@ static inline void idxd_prep_desc_common(struct idxd_wq *wq,
 					 u64 addr_f1, u64 addr_f2, u64 len,
 					 u64 compl, u32 flags)
 {
-	struct idxd_device *idxd = wq->idxd;
-
 	hw->flags = flags;
 	hw->opcode = opcode;
 	hw->src_addr = addr_f1;
 	hw->dst_addr = addr_f2;
 	hw->xfer_size = len;
-	hw->priv = !!(wq->type == IDXD_WQT_KERNEL);
-	hw->completion_addr = compl;
-
 	/*
-	 * Descriptor completion vectors are 1-8 for MSIX. We will round
-	 * robin through the 8 vectors.
+	 * For dedicated WQ, this field is ignored and HW will use the WQCFG.priv
+	 * field instead. This field should be set to 1 for kernel descriptors.
 	 */
-	wq->vec_ptr = (wq->vec_ptr % idxd->num_wq_irqs) + 1;
-	hw->int_handle =  wq->vec_ptr;
+	hw->priv = 1;
+	hw->completion_addr = compl;
 }
 
 static struct dma_async_tx_descriptor *
@@ -245,7 +250,7 @@ void idxd_unregister_dma_device(struct idxd_device *idxd)
 	dma_async_device_unregister(&idxd->idxd_dma->dma);
 }
 
-int idxd_register_dma_channel(struct idxd_wq *wq)
+static int idxd_register_dma_channel(struct idxd_wq *wq)
 {
 	struct idxd_device *idxd = wq->idxd;
 	struct dma_device *dma = &idxd->idxd_dma->dma;
@@ -277,12 +282,12 @@ int idxd_register_dma_channel(struct idxd_wq *wq)
 
 	wq->idxd_chan = idxd_chan;
 	idxd_chan->wq = wq;
-	get_device(&wq->conf_dev);
+	get_device(wq_confdev(wq));
 
 	return 0;
 }
 
-void idxd_unregister_dma_channel(struct idxd_wq *wq)
+static void idxd_unregister_dma_channel(struct idxd_wq *wq)
 {
 	struct idxd_dma_chan *idxd_chan = wq->idxd_chan;
 	struct dma_chan *chan = &idxd_chan->chan;
@@ -292,5 +297,68 @@ void idxd_unregister_dma_channel(struct idxd_wq *wq)
 	list_del(&chan->device_node);
 	kfree(wq->idxd_chan);
 	wq->idxd_chan = NULL;
-	put_device(&wq->conf_dev);
+	put_device(wq_confdev(wq));
 }
+
+static int idxd_dmaengine_drv_probe(struct idxd_dev *idxd_dev)
+{
+	struct device *dev = &idxd_dev->conf_dev;
+	struct idxd_wq *wq = idxd_dev_to_wq(idxd_dev);
+	struct idxd_device *idxd = wq->idxd;
+	int rc;
+
+	if (idxd->state != IDXD_DEV_ENABLED)
+		return -ENXIO;
+
+	mutex_lock(&wq->wq_lock);
+	wq->type = IDXD_WQT_KERNEL;
+
+	rc = drv_enable_wq(wq);
+	if (rc < 0) {
+		dev_dbg(dev, "Enable wq %d failed: %d\n", wq->id, rc);
+		rc = -ENXIO;
+		goto err;
+	}
+
+	rc = idxd_register_dma_channel(wq);
+	if (rc < 0) {
+		idxd->cmd_status = IDXD_SCMD_DMA_CHAN_ERR;
+		dev_dbg(dev, "Failed to register dma channel\n");
+		goto err_dma;
+	}
+
+	idxd->cmd_status = 0;
+	mutex_unlock(&wq->wq_lock);
+	return 0;
+
+err_dma:
+	drv_disable_wq(wq);
+err:
+	wq->type = IDXD_WQT_NONE;
+	mutex_unlock(&wq->wq_lock);
+	return rc;
+}
+
+static void idxd_dmaengine_drv_remove(struct idxd_dev *idxd_dev)
+{
+	struct idxd_wq *wq = idxd_dev_to_wq(idxd_dev);
+
+	mutex_lock(&wq->wq_lock);
+	__idxd_wq_quiesce(wq);
+	idxd_unregister_dma_channel(wq);
+	drv_disable_wq(wq);
+	mutex_unlock(&wq->wq_lock);
+}
+
+static enum idxd_dev_type dev_types[] = {
+	IDXD_DEV_WQ,
+	IDXD_DEV_NONE,
+};
+
+struct idxd_device_driver idxd_dmaengine_drv = {
+	.probe = idxd_dmaengine_drv_probe,
+	.remove = idxd_dmaengine_drv_remove,
+	.name = "dmaengine",
+	.type = dev_types,
+};
+EXPORT_SYMBOL_GPL(idxd_dmaengine_drv);

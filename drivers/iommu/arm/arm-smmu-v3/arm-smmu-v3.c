@@ -2506,7 +2506,7 @@ static void arm_smmu_domain_free(struct iommu_domain *domain)
 		arm_smmu_free_asid(&s1_cfg->cd);
 		mutex_unlock(&arm_smmu_asid_lock);
 		if (smmu_domain->ssid)
-			ioasid_put(smmu_domain->ssid);
+			ioasid_free(smmu_domain->ssid);
 	}
 	if (s2_cfg->set) {
 		if (s2_cfg->vmid)
@@ -3980,7 +3980,7 @@ static int arm_smmu_aux_attach_dev(struct iommu_domain *domain, struct device *d
 			smmu_domain->smmu = NULL;
 			smmu_domain->ssid = 0;
 			smmu_domain->parent = NULL;
-			ioasid_put(ssid);
+			ioasid_free(ssid);
 			goto out_unlock;
 		}
 	} else if (smmu_domain->parent != parent_smmu_domain) {
