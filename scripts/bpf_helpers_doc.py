@@ -440,6 +440,8 @@ class PrinterHelpers(Printer):
             'struct bpf_cpu_topology',
             'struct bpf_cpumask_info',
             'struct sched_entity',
+            'struct cpumask',
+            'struct cpumask_op_args',
     ]
     known_types = {
             '...',
@@ -488,6 +490,8 @@ class PrinterHelpers(Printer):
             'struct bpf_cpu_topology',
             'struct bpf_cpumask_info',
             'struct sched_entity',
+            'struct cpumask',
+            'struct cpumask_op_args',
     }
     mapped_types = {
             'u8': '__u8',
