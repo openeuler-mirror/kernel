@@ -1416,7 +1416,12 @@ struct task_struct {
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 #endif
+#ifdef CONFIG_BPF_SCHED
+	/* Used to pad the tag of a task */
+	KABI_USE(6, long tag)
+#else
 	KABI_RESERVE(6)
+#endif
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
 	KABI_RESERVE(9)
