@@ -90,6 +90,7 @@ enum itrace_period_type {
  * @tlb: whether to synthesize TLB events
  * @remote_access: whether to synthesize remote access events
  * @mem: whether to synthesize memory events
+ * @timeless_decoding: prefer "timeless" decoding i.e. ignore timestamps
  * @callchain_sz: maximum callchain size
  * @last_branch_sz: branch context size
  * @period: 'instructions' events period
@@ -129,6 +130,7 @@ struct itrace_synth_opts {
 	bool			tlb;
 	bool			remote_access;
 	bool			mem;
+	bool			timeless_decoding;
 	unsigned int		callchain_sz;
 	unsigned int		last_branch_sz;
 	unsigned long long	period;
