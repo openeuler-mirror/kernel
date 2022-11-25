@@ -3772,6 +3772,18 @@ union bpf_attr {
  *		different workloads.
  *	Return
  *		Task tag, if used, 0 as default tag, or a negative error in case of failure.
+ *
+ * int bpf_sched_set_tg_tag(struct task_group *tg, s64 tag)
+ *	Description
+ *		Set tag to *tg* and its descendants.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_set_task_tag(struct task_struct *tsk, s64 tag)
+ *	Description
+ *		Set tag to *tsk*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3934,6 +3946,8 @@ union bpf_attr {
 	FN(sk_original_addr),		\
 	FN(sched_tg_tag_of),		\
 	FN(sched_task_tag_of),		\
+	FN(sched_set_tg_tag),		\
+	FN(sched_set_task_tag),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
