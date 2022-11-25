@@ -36,12 +36,9 @@ const char ngbe_driver_version[32] = DRV_VERSION;
 static const char ngbe_copyright[] =
 		"Copyright (c) 2018 -2019 Beijing WangXun Technology Co., Ltd";
 static const char ngbe_overheat_msg[] =
-		"Network adapter has been stopped because it has over heated. "
-		"If the problem persists, restart the computer, or "
-		"power off the system and replace the adapter";
+		"Network adapter has been stopped because it has over heated. If the problem persists, restart the computer, or power off the system and replace the adapter";
 static const char ngbe_underheat_msg[] =
-		"Network adapter has been started again since the temperature "
-		"has been back to normal state";
+		"Network adapter has been started again since the temperature has been back to normal state";
 
 /* ngbe_pci_tbl - PCI Device ID Table
  *
@@ -83,19 +80,6 @@ static struct workqueue_struct *ngbe_wq;
 static bool ngbe_check_cfg_remove(struct ngbe_hw *hw, struct pci_dev *pdev);
 static void ngbe_clean_rx_ring(struct ngbe_ring *rx_ring);
 static void ngbe_clean_tx_ring(struct ngbe_ring *tx_ring);
-
-extern ngbe_dptype ngbe_ptype_lookup[256];
-
-static inline ngbe_dptype ngbe_decode_ptype(const u8 ptype)
-{
-	return ngbe_ptype_lookup[ptype];
-}
-
-static inline ngbe_dptype
-decode_rx_desc_ptype(const union ngbe_rx_desc *rx_desc)
-{
-	return ngbe_decode_ptype(NGBE_RXD_PKTTYPE(rx_desc));
-}
 
 static void ngbe_check_minimum_link(struct ngbe_adapter *adapter,
 									int expected_gts)
@@ -690,7 +674,7 @@ static inline void ngbe_rx_checksum(struct ngbe_ring *ring,
 				     union ngbe_rx_desc *rx_desc,
 				     struct sk_buff *skb)
 {
-	ngbe_dptype dptype = decode_rx_desc_ptype(rx_desc);
+	struct ngbe_dec_ptype dptype = decode_rx_desc_ptype(rx_desc);
 
 	skb->ip_summed = CHECKSUM_NONE;
 
@@ -3117,9 +3101,7 @@ static int ngbe_hpbthresh(struct ngbe_adapter *adapter)
 	 * to user and a do the best we can.
 	 */
 	if (marker < 0) {
-		e_warn(drv, "Packet Buffer can not provide enough"
-			    "headroom to support flow control."
-			    "Decrease MTU or number of traffic classes\n");
+		e_warn(drv, "Packet Buffer can not provide enough headroom to support flow control. Decrease MTU or number of traffic classes\n");
 		marker = tc + 1;
 	}
 
@@ -3127,7 +3109,7 @@ static int ngbe_hpbthresh(struct ngbe_adapter *adapter)
 }
 
 /**
- * ngbe_lpbthresh - calculate low water mark for for flow control
+ * ngbe_lpbthresh - calculate low water mark for flow control
  *
  * @adapter: board private structure to calculate for
  * @pb - packet buffer to calculate
@@ -3393,12 +3375,7 @@ void ngbe_reset(struct ngbe_adapter *adapter)
 		break;
 	case NGBE_ERR_EEPROM_VERSION:
 		/* We are running on a pre-production device, log a warning */
-		e_dev_warn("This device is a pre-production adapter/LOM. "
-			   "Please be aware there may be issues associated "
-			   "with your hardware.  If you are experiencing "
-			   "problems please contact your hardware "
-			   "representative who provided you with this "
-			   "hardware.\n");
+		e_dev_warn("This device is a pre-production adapter/LOM.\n");
 		break;
 	default:
 		e_dev_err("Hardware Error: %d\n", err);
@@ -5196,7 +5173,7 @@ union network_header {
 	void *raw;
 };
 
-static ngbe_dptype encode_tx_desc_ptype(const struct ngbe_tx_buffer *first)
+static struct ngbe_dec_ptype encode_tx_desc_ptype(const struct ngbe_tx_buffer *first)
 {
 	struct sk_buff *skb = first->skb;
 	u8 tun_prot = 0;
@@ -5318,7 +5295,7 @@ exit:
 
 static int ngbe_tso(struct ngbe_ring *tx_ring,
 					struct ngbe_tx_buffer *first,
-					u8 *hdr_len,  ngbe_dptype dptype)
+					u8 *hdr_len, struct ngbe_dec_ptype dptype)
 {
 	struct sk_buff *skb = first->skb;
 	u32 vlan_macip_lens, type_tucmd;
@@ -5441,7 +5418,7 @@ static int ngbe_tso(struct ngbe_ring *tx_ring,
 }
 
 static void ngbe_tx_csum(struct ngbe_ring *tx_ring,
-			  struct ngbe_tx_buffer *first, ngbe_dptype dptype)
+			  struct ngbe_tx_buffer *first, struct ngbe_dec_ptype dptype)
 {
 	struct sk_buff *skb = first->skb;
 	u32 vlan_macip_lens = 0;
@@ -5851,7 +5828,7 @@ netdev_tx_t ngbe_xmit_frame_ring(struct sk_buff *skb,
 	u16 count = TXD_USE_COUNT(skb_headlen(skb));
 	__be16 protocol = skb->protocol;
 	u8 hdr_len = 0;
-	ngbe_dptype dptype;
+	struct ngbe_dec_ptype dptype;
 
 	/* need: 1 descriptor per page * PAGE_SIZE/NGBE_MAX_DATA_PER_TXD,
 	 *       + 1 desc for skb_headlen/NGBE_MAX_DATA_PER_TXD,
@@ -6597,12 +6574,7 @@ static int ngbe_probe(struct pci_dev *pdev,
 	err = TCALL(hw, mac.ops.start_hw);
 	if (err == NGBE_ERR_EEPROM_VERSION) {
 		/* We are running on a pre-production device, log a warning */
-		e_dev_warn("This device is a pre-production adapter/LOM. "
-					"Please be aware there may be issues associated "
-					"with your hardware.  If you are experiencing "
-					"problems please contact your hardware "
-					"representative who provided you with this "
-					"hardware.\n");
+		e_dev_warn("This device is a pre-production adapter/LOM.\n");
 	} else if (err) {
 		e_dev_err("HW init failed, err = %d\n", err);
 		goto err_register;

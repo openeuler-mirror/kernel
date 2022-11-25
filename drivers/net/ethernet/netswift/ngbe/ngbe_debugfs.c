@@ -526,7 +526,7 @@ ngbe_regdump(struct ngbe_hw *hw, struct ngbe_reg_info *reg_info)
 	default:
 		for (i = 0; i < reg_info->length; i++) {
 			buffer[n++] = rd32(hw,
-				reg_info->offset + i << 2);
+				reg_info->offset + (i << 2));
 		}
 		break;
 	}

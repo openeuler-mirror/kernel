@@ -13,11 +13,11 @@
 #define NGBE_SP_VFT_TBL_SIZE   128
 #define NGBE_SP_RX_PB_SIZE     42
 
-STATIC s32 ngbe_get_eeprom_semaphore(struct ngbe_hw *hw);
-STATIC void ngbe_release_eeprom_semaphore(struct ngbe_hw *hw);
-STATIC s32 ngbe_mta_vector(struct ngbe_hw *hw, u8 *mc_addr);
+static s32 ngbe_get_eeprom_semaphore(struct ngbe_hw *hw);
+static void ngbe_release_eeprom_semaphore(struct ngbe_hw *hw);
+static s32 ngbe_mta_vector(struct ngbe_hw *hw, u8 *mc_addr);
 
-STATIC s32 ngbe_setup_copper_link(struct ngbe_hw *hw,
+static s32 ngbe_setup_copper_link(struct ngbe_hw *hw,
 					 u32 speed,
 					 bool need_restart_AN);
 s32 ngbe_check_mac_link(struct ngbe_hw *hw, u32 *speed,
@@ -469,7 +469,7 @@ s32 ngbe_led_off(struct ngbe_hw *hw, u32 index)
  *
  *  Sets the hardware semaphores so EEPROM access can occur for bit-bang method
  **/
-STATIC s32 ngbe_get_eeprom_semaphore(struct ngbe_hw *hw)
+static s32 ngbe_get_eeprom_semaphore(struct ngbe_hw *hw)
 {
 	s32 status = NGBE_ERR_EEPROM;
 	u32 timeout = 2000;
@@ -549,7 +549,7 @@ STATIC s32 ngbe_get_eeprom_semaphore(struct ngbe_hw *hw)
  *
  *  This function clears hardware semaphore bits.
  **/
-STATIC void ngbe_release_eeprom_semaphore(struct ngbe_hw *hw)
+static void ngbe_release_eeprom_semaphore(struct ngbe_hw *hw)
 {
 	if (ngbe_check_mng_access(hw)) {
 		wr32m(hw, NGBE_MNG_SW_SM,
@@ -847,7 +847,7 @@ s32 ngbe_update_uc_addr_list(struct ngbe_hw *hw, u8 *addr_list,
  *  by the MO field of the MCSTCTRL. The MO field is set during initialization
  *  to mc_filter_type.
  **/
-STATIC s32 ngbe_mta_vector(struct ngbe_hw *hw, u8 *mc_addr)
+static s32 ngbe_mta_vector(struct ngbe_hw *hw, u8 *mc_addr)
 {
 	u32 vector = 0;
 
@@ -1133,13 +1133,12 @@ out:
  *  Find the intersection between advertised settings and link partner's
  *  advertised settings
  **/
-STATIC s32 ngbe_negotiate_fc(struct ngbe_hw *hw, u32 adv_reg, u32 lp_reg,
+static s32 ngbe_negotiate_fc(struct ngbe_hw *hw, u32 adv_reg, u32 lp_reg,
 						u32 adv_sym, u32 adv_asm, u32 lp_sym, u32 lp_asm)
 {
 	if ((!(adv_reg)) ||  (!(lp_reg))) {
 		ERROR_REPORT3(NGBE_ERROR_UNSUPPORTED,
-			"Local or link partner's advertised flow control "
-				"settings are NULL. Local: %x, link partner: %x\n",
+			"Local or link partner's advertised flow control settings are NULL. Local: %x, link partner: %x\n",
 					adv_reg, lp_reg);
 		return NGBE_ERR_FC_NOT_NEGOTIATED;
 	}
@@ -1179,7 +1178,7 @@ STATIC s32 ngbe_negotiate_fc(struct ngbe_hw *hw, u32 adv_reg, u32 lp_reg,
  *
  *  Enable flow control according to IEEE clause 37.
  **/
-STATIC s32 ngbe_fc_autoneg_copper(struct ngbe_hw *hw)
+static s32 ngbe_fc_autoneg_copper(struct ngbe_hw *hw)
 {
 	u8 technology_ability_reg = 0;
 	u8 lp_technology_ability_reg = 0;
@@ -1310,15 +1309,16 @@ s32 ngbe_acquire_swfw_sync(struct ngbe_hw *hw, u32 mask)
 
 		if (ngbe_check_mng_access(hw)) {
 			gssr = rd32(hw, NGBE_MNG_SWFW_SYNC);
-			if (!(gssr & (fwmask | swmask))) {
-				gssr |= swmask;
-				wr32(hw, NGBE_MNG_SWFW_SYNC, gssr);
-				ngbe_release_eeprom_semaphore(hw);
-				return 0;
-			} else {
+			if (gssr & (fwmask | swmask)) {
 				/* Resource is currently in use by FW or SW */
 				ngbe_release_eeprom_semaphore(hw);
-				msec_delay(5);
+				mdelay(5);
+			} else {
+				gssr |= swmask;
+				wr32(hw, NGBE_MNG_SWFW_SYNC, gssr);
+
+				ngbe_release_eeprom_semaphore(hw);
+				return 0;
 			}
 		}
 	}
@@ -1371,9 +1371,8 @@ s32 ngbe_disable_sec_rx_path(struct ngbe_hw *hw)
 		secrxreg = rd32(hw, NGBE_RSEC_ST);
 		if (secrxreg & NGBE_RSEC_ST_RSEC_RDY)
 			break;
-		else
 			/* Use interrupt-safe sleep just in case */
-			usec_delay(1000);
+		usec_delay(1000);
 	}
 
 	/* For informational purposes only */
@@ -2680,14 +2679,14 @@ void ngbe_set_rxpba(struct ngbe_hw *hw, int num_pb, u32 headroom,
 	wr32(hw, NGBE_TDM_PB_THRE, txpbthresh);
 }
 
-STATIC const u8 ngbe_emc_temp_data[4] = {
+static const u8 ngbe_emc_temp_data[4] = {
 	NGBE_EMC_INTERNAL_DATA,
 	NGBE_EMC_DIODE1_DATA,
 	NGBE_EMC_DIODE2_DATA,
 	NGBE_EMC_DIODE3_DATA
 };
 
-STATIC const u8 ngbe_emc_therm_limit[4] = {
+static const u8 ngbe_emc_therm_limit[4] = {
 	NGBE_EMC_INTERNAL_THERM_LIMIT,
 	NGBE_EMC_DIODE1_THERM_LIMIT,
 	NGBE_EMC_DIODE2_THERM_LIMIT,
@@ -2895,7 +2894,7 @@ int ngbe_check_flash_load(struct ngbe_hw *hw, u32 check_bit)
 
 /* Lookup table mapping the HW PTYPE to the bit field for decoding */
 /* for ((pt=0;pt<256;pt++)); do printf "macro(0x%02X),\n" $pt; done */
-ngbe_dptype ngbe_ptype_lookup[256] = {
+struct ngbe_dec_ptype ngbe_ptype_lookup[256] = {
 	NGBE_UKN(0x00),
 	NGBE_UKN(0x01),
 	NGBE_UKN(0x02),
@@ -3179,6 +3178,16 @@ ngbe_dptype ngbe_ptype_lookup[256] = {
 	NGBE_UKN(0xFF),
 };
 
+struct ngbe_dec_ptype ngbe_decode_ptype(const u8 ptype)
+{
+	return ngbe_ptype_lookup[ptype];
+}
+
+struct ngbe_dec_ptype decode_rx_desc_ptype(const union ngbe_rx_desc *rx_desc)
+{
+	return ngbe_decode_ptype(NGBE_RXD_PKTTYPE(rx_desc));
+}
+
 void ngbe_init_mac_link_ops(struct ngbe_hw *hw)
 {
 	struct ngbe_mac_info *mac = &hw->mac;
@@ -3353,7 +3362,7 @@ enum ngbe_media_type ngbe_get_media_type(struct ngbe_hw *hw)
  **/
 void ngbe_stop_mac_link_on_d3(struct ngbe_hw __always_unused *hw)
 {
-	return;
+
 }
 
 /**
@@ -3417,7 +3426,6 @@ s32 ngbe_setup_mac_link(struct ngbe_hw *hw,
 out:
 	return status;
 }
-
 
 /**
  *  ngbe_setup_copper_link - Set the PHY autoneg advertised field
@@ -3986,7 +3994,6 @@ s32 ngbe_phy_led_oem_chk(struct ngbe_hw *hw, u32 *data)
 	/* one word */
 	buffer.length = 0;
 
-
 	status = ngbe_host_interface_command(hw, (u32 *)&buffer,
 						sizeof(buffer),
 						NGBE_HI_COMMAND_TIMEOUT, false);
@@ -4529,12 +4536,13 @@ s32 ngbe_check_mac_link(struct ngbe_hw *hw,
 	if (link_up_wait_to_complete) {
 		for (i = 0; i < NGBE_LINK_UP_TIME; i++) {
 			status = TCALL(hw, phy.ops.read_reg, 0x1A, 0xA43, &value);
-			if (!status && (value & 0x4)) {
+			if (!status && (value & 0x4))
 				*link_up = true;
-				break;
-			} else {
+			else
 				*link_up = false;
-			}
+
+			if (*link_up == true)
+				break;
 			msleep(100);
 		}
 	} else {
@@ -4580,12 +4588,13 @@ s32 ngbe_check_mac_link_mdi(struct ngbe_hw *hw,
 	if (link_up_wait_to_complete) {
 		for (i = 0; i < NGBE_LINK_UP_TIME; i++) {
 			status = TCALL(hw, phy.ops.read_reg_mdi, 17, 0, &value);
-			if (value & 0x400) {
+			if (value & 0x400)
 				*link_up = true;
-				break;
-			} else {
+			else
 				*link_up = false;
-			}
+
+			if (*link_up == true)
+				break;
 			msleep(100);
 		}
 	} else {
@@ -4623,12 +4632,13 @@ s32 ngbe_check_mac_link_yt8521s(struct ngbe_hw *hw,
 	if (link_up_wait_to_complete) {
 		for (i = 0; i < NGBE_LINK_UP_TIME; i++) {
 			status = ngbe_phy_read_reg_sds_mii_yt8521s(hw, 0x11, 0, &value);
-			if (value & 0x400) {
+			if (value & 0x400)
 				*link_up = true;
-				break;
-			} else {
+			else
 				*link_up = false;
-			}
+
+			if (*link_up == true)
+				break;
 			msleep(100);
 		}
 	} else {

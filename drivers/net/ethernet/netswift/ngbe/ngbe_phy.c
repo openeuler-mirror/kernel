@@ -84,13 +84,15 @@ s32 ngbe_check_internal_phy_id(struct ngbe_hw *hw)
 	ngbe_phy_read_reg(hw, NGBE_MDI_PHY_ID2_OFFSET, 0, &phy_id_low);
 	phy_id |= (phy_id_low & NGBE_MDI_PHY_ID_MASK) >> 10;
 
-	if (phy_id != NGBE_INTERNAL_PHY_ID) {
+	if (phy_id == NGBE_INTERNAL_PHY_ID) {
+		hw->phy.id = (u32)phy_id;
+	} else {
 		ERROR_REPORT1(NGBE_ERROR_UNSUPPORTED,
 					"internal phy id 0x%x not supported.\n", phy_id);
+
 		return NGBE_ERR_DEVICE_NOT_SUPPORTED;
-	} else {
-		hw->phy.id = (u32)phy_id;
 	}
+
 
 	return NGBE_OK;
 }
@@ -259,6 +261,7 @@ s32 ngbe_phy_write_reg_sds_mii_yt8521s(struct ngbe_hw *hw,
 							u16 phy_data)
 {
 	s32 status = 0;
+
 	status = ngbe_phy_write_reg_ext_yt8521s(hw, 0xa000, device_type, 0x02);
 
 	if (!status)
@@ -288,12 +291,13 @@ s32 ngbe_check_mdi_phy_id(struct ngbe_hw *hw)
 	ngbe_phy_read_reg_mdi(hw, NGBE_MDI_PHY_ID2_OFFSET, 0, &phy_id_low);
 	phy_id |= (phy_id_low & NGBE_MDI_PHY_ID_MASK) >> 10;
 
-	if (phy_id != NGBE_M88E1512_PHY_ID) {
+	if (phy_id == NGBE_M88E1512_PHY_ID) {
+		hw->phy.id = phy_id;
+	} else {
 		ERROR_REPORT1(NGBE_ERROR_UNSUPPORTED,
 					"MDI phy id 0x%x not supported.\n", phy_id);
+
 		return NGBE_ERR_DEVICE_NOT_SUPPORTED;
-	} else {
-		hw->phy.id = phy_id;
 	}
 
 	if (hw->phy.type == ngbe_phy_m88e1512_unknown) {
@@ -363,13 +367,13 @@ s32 ngbe_check_yt_phy_id(struct ngbe_hw *hw)
 		return NGBE_ERR_DEVICE_NOT_SUPPORTED;
 
 	ngbe_phy_read_reg_sds_mii_yt8521s(hw, 0x3, 0, &phy_id);
-	if ((phy_id != NGBE_YT8521S_PHY_ID) && (phy_id != NGBE_YT8531S_PHY_ID)) {
+	if (phy_id == NGBE_YT8521S_PHY_ID || phy_id == NGBE_YT8531S_PHY_ID) {
+		hw->phy.id = phy_id;
+	} else {
 		ERROR_REPORT1(NGBE_ERROR_UNSUPPORTED,
-						"MDI phy id 0x%x not supported.\n", phy_id);
+				"MDI phy id 0x%x not supported.\n", phy_id);
 
 		return NGBE_ERR_DEVICE_NOT_SUPPORTED;
-	} else {
-		hw->phy.id = phy_id;
 	}
 
 	return NGBE_OK;
