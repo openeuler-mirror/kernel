@@ -3757,6 +3757,14 @@ union bpf_attr {
  *             Get Ipv4 origdst or replysrc. Works with IPv4.
  *     Return
  *             0 on success, or a negative error in case of failure.
+ *
+ * long bpf_sched_tg_tag_of(struct task_group *tg)
+ *	Description
+ *		Return task group tag of *tg* if CONFIG_CGROUP_SCHED enabled.
+ *		The bpf prog obtains the tags to detect different workloads.
+ *	Return
+ *		Task group tag, if CONFIG_CGROUP_SCHED enabled, 0 as default tag, or
+ *		a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3917,6 +3925,7 @@ union bpf_attr {
 	FN(redirect_peer),		\
 	FN(get_sockops_uid_gid),	\
 	FN(sk_original_addr),		\
+	FN(sched_tg_tag_of),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
