@@ -504,7 +504,7 @@ void kvm_set_cpu_caps(void)
 
 	kvm_cpu_cap_mask(CPUID_7_1_EAX,
 		F(AVX_VNNI) | F(AVX512_BF16) | F(CMPCCXADD) | F(AMX_FP16) |
-		F(FZRM) | F(FSRS) | F(FSRC)
+		F(AVX_IFMA) | F(FZRM) | F(FSRS) | F(FSRC)
 	);
 
 	kvm_cpu_cap_mask(CPUID_D_1_EAX,
