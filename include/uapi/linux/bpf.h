@@ -3784,6 +3784,12 @@ union bpf_attr {
  *		Set tag to *tsk*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_stats_of(int cpu, struct bpf_sched_cpu_stats *ctx, int len)
+ *	Description
+ *		Get multiple types of *cpu* statistics and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3948,6 +3954,7 @@ union bpf_attr {
 	FN(sched_task_tag_of),		\
 	FN(sched_set_tg_tag),		\
 	FN(sched_set_task_tag),		\
+	FN(sched_cpu_stats_of),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
