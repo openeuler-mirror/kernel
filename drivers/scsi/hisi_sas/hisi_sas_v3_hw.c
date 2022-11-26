@@ -2265,6 +2265,23 @@ static bool is_ncq_err(struct hisi_sas_complete_v3_hdr *complete_hdr)
 		(dw3 & FIS_ATA_STATUS_ERR);
 }
 
+static void set_aborted_iptt(struct hisi_hba *hisi_hba,
+			     struct hisi_sas_slot *slot)
+{
+	u32 cfg_abt_set_query_iptt = hisi_sas_read32(hisi_hba,
+			CFG_ABT_SET_QUERY_IPTT);
+	cfg_abt_set_query_iptt &= ~CFG_SET_ABORTED_IPTT_MSK;
+	cfg_abt_set_query_iptt |= (1 << CFG_SET_ABORTED_EN_OFF) |
+			(slot->idx << CFG_SET_ABORTED_IPTT_OFF);
+	hisi_sas_write32(hisi_hba, CFG_ABT_SET_QUERY_IPTT,
+			cfg_abt_set_query_iptt);
+	cfg_abt_set_query_iptt &= ~(1 << CFG_SET_ABORTED_EN_OFF);
+	hisi_sas_write32(hisi_hba, CFG_ABT_SET_QUERY_IPTT,
+			cfg_abt_set_query_iptt);
+	hisi_sas_write32(hisi_hba, CFG_ABT_SET_IPTT_DONE,
+			1 << CFG_ABT_SET_IPTT_DONE_OFF);
+}
+
 static void
 slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 	       struct hisi_sas_slot *slot)
@@ -2420,6 +2437,7 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 		u32 device_id = (complete_hdr->dw1 & 0xffff0000) >> 16;
 		struct hisi_sas_itct *itct = &hisi_hba->itct[device_id];
 
+		set_aborted_iptt(hisi_hba, slot);
 		slot_err_v3_hw(hisi_hba, task, slot);
 		dev_info(dev, "erroneous completion iptt=%d task=%pK dev id=%d sas_addr=0x%llx "
 			"CQ hdr: 0x%x 0x%x 0x%x 0x%x "
