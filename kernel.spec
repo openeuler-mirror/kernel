@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       128
+%global devel_release       129
 %global maintenance_release .0.0
-%global pkg_release         .68
+%global pkg_release         .69
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,830 @@ fi
 %endif
 
 %changelog
+* Sat Nov 26 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-129.0.0.69
+- !275 Intel Advanced Matrix Extensions (AMX) - KVM support
+- !227 Intel SPR: Enable Intel SPR features in default kernel config for OLK-5.10
+- !223 SPR: IDXD driver (on top of OLK-5.10) - DSA/IAA incremental backporting patches until upstream 6.1
+- openeuler_defconfig: Enable configs for Intel IDXD driver
+- sched: Fix kABI for task->pasid_activated
+- x86/fpu: Fix KABI broken caused by introducing of guest permissions in struct fpu
+- KVM: x86: Use ERR_PTR_USR() to return -EFAULT as a __user pointer
+- selftests: kvm: check dynamic bits against KVM_X86_XCOMP_GUEST_SUPP
+- KVM: x86: add system attribute to retrieve full set of supported xsave states
+- KVM: x86: Add a helper to retrieve userspace address from kvm_device_attr
+- KVM: x86/cpuid: Exclude unpermitted xfeatures sizes at KVM_GET_SUPPORTED_CPUID
+- tools headers UAPI: Sync x86 arch prctl headers with the kernel sources
+- tools headers UAPI: Sync arch prctl headers with the kernel sources
+- tools arch x86: Sync the msr-index.h copy with the kernel sources
+- tools: Move x86 syscall number fallbacks to .../uapi/
+- selftests: kvm: move vm_xsave_req_perm call to amx_test
+- KVM: x86/cpuid: Clear XFD for component i if the base feature is missing
+- selftest: kvm: Add amx selftest
+- selftest: kvm: Move struct kvm_x86_state to header
+- selftest: kvm: Reorder vcpu_load_state steps for AMX
+- x86/fpu: Fix inline prefix warnings
+- kvm: x86: Disable interception for IA32_XFD on demand
+- x86/fpu: Provide fpu_sync_guest_vmexit_xfd_state()
+- kvm: selftests: Add support for KVM_CAP_XSAVE2
+- kvm: x86: Add support for getting/setting expanded xstate buffer
+- x86/fpu: Add uabi_size to guest_fpu
+- kvm: x86: Add CPUID support for Intel AMX
+- kvm: x86: Add XCR0 support for Intel AMX
+- kvm: x86: Disable RDMSR interception of IA32_XFD_ERR
+- kvm: x86: Emulate IA32_XFD_ERR for guest
+- kvm: x86: Intercept #NM for saving IA32_XFD_ERR
+- x86/fpu: Prepare xfd_err in struct fpu_guest
+- kvm: x86: Add emulation for IA32_XFD
+- x86/fpu: Provide fpu_update_guest_xfd() for IA32_XFD emulation
+- kvm: x86: Enable dynamic xfeatures at KVM_SET_CPUID2
+- x86/fpu: Provide fpu_enable_guest_xfd_features() for KVM
+- x86/fpu: Add guest support to xfd_enable_feature()
+- x86/fpu: Make XFD initialization in __fpstate_reset() a function argument
+- kvm: x86: Exclude unpermitted xfeatures at KVM_GET_SUPPORTED_CPUID
+- kvm: x86: Fix xstate_required_size() to follow XSTATE alignment rule
+- x86/fpu: Prepare guest FPU for dynamically enabled FPU features
+- x86/fpu: Extend fpu_xstate_prctl() with guest permissions
+- dmaengine: idxd: Fix kABI for IDXD perfmon cpu hot plug state
+- dmaengine: idxd: Remove linux/msi.h include
+- dmaengine: idxd: Fix crc_val field for completion record
+- dmaengine: idxd: Make read buffer sysfs attributes invisible for Intel IAA
+- dmaengine: idxd: Make max batch size attributes in sysfs invisible for Intel IAA
+- dmaengine: idxd: fix RO device state error after been disabled/reset
+- dmaengine: idxd: Fix max batch size for Intel IAA
+- dmaengine: idxd: Do not enable user type Work Queue without Shared Virtual Addressing
+- dmaengine: idxd: add configuration for concurrent batch descriptor processing
+- dmaengine: idxd: add configuration for concurrent work descriptor processing
+- dmaengine: idxd: add WQ operation cap restriction support
+- dmanegine: idxd: reformat opcap output to match bitmap_parse() input
+- dmaengine: idxd: convert ats_dis to a wq flag
+- dmaengine: idxd: Remove unused struct idxd_fault
+- dmaengine: idxd: track enabled workqueues in bitmap
+- lib: bitmap: Introduce node-aware alloc API
+- dmaengine: idxd: Set wq state to disabled in idxd_wq_disable_cleanup()
+- dmaengine: idxd: avoid deadlock in process_misc_interrupts()
+- dmaengine: idxd: Correct IAX operation code names
+- MAINTAINERS: idxd driver maintainer update
+- dmaengine: idxd: Only call idxd_enable_system_pasid() if succeeded in enabling SVA feature
+- dmaengine: idxd: force wq context cleanup on device disable path
+- dmaengine: idxd: make idxd_wq_enable() return 0 if wq is already enabled
+- dmaengine: idxd: Remove unnecessary synchronize_irq() before free_irq()
+- dmaengine: idxd: skip irq free when wq type is not kernel
+- dmaengine: idxd: make idxd_register/unregister_dma_channel() static
+- dmaengine: idxd: free irq before wq type is reset
+- dmaengine: idxd: fix lockdep warning on device driver removal
+- dmaengine: idxd: Separate user and kernel pasid enabling
+- dmaengine: idxd: refactor wq driver enable/disable operations
+- dmaengine: idxd: move wq irq enabling to after device enable
+- dmaengine: idxd: set max_xfer and max_batch for RO device
+- dmaengine: idxd: update IAA definitions for user header
+- dmaengine: idxd: remove trailing white space on input str for wq name
+- dmaengine: idxd: don't load pasid config until needed
+- dmaengine: idxd: skip clearing device context when device is read-only
+- dmaengine: idxd: fix retry value to be constant for duration of function call
+- dmaengine: idxd: match type for retries var in idxd_enqcmds()
+- dmaengine: idxd: fix device cleanup on disable
+- dmaengine: idxd: Remove useless DMA-32 fallback configuration
+- dmaengine: idxd: restore traffic class defaults after wq reset
+- Documentation/x86: Update documentation for SVA (Shared Virtual Addressing)
+- tools/objtool: Check for use of the ENQCMD instruction in the kernel
+- x86/cpufeatures: Re-enable ENQCMD
+- x86/traps: Demand-populate PASID MSR via #GP
+- sched: Define and initialize a flag to identify valid PASID in the task
+- x86/fpu: Clear PASID when copying fpstate
+- iommu/sva: Assign a PASID to mm on PASID allocation and free it on mm exit
+- kernel/fork: Initialize mm's PASID
+- iommu/ioasid: Introduce a helper to check for valid PASIDs
+- mm: Change CONFIG option for mm->pasid field
+- iommu/sva: Rename CONFIG_IOMMU_SVA_LIB to CONFIG_IOMMU_SVA
+- iommu/vt-d: Clean up unused PASID updating functions
+- iommu/vt-d: Fix PASID leak in intel_svm_unbind_mm()
+- iommu/vt-d: Fix PASID reference leak
+- iommu/vt-d: Use iommu_sva_alloc(free)_pasid() helpers
+- iommu/vt-d: Add pasid private data helpers
+- iommu/vt-d: Remove SVM_FLAG_PRIVATE_PASID
+- iommu/vt-d: Remove svm_dev_ops
+- iommu/vt-d: Disable SVM when ATS/PRI/PASID are not enabled in the device
+- dmaengine: idxd: deprecate token sysfs attributes for read buffers
+- dmaengine: idxd: change bandwidth token to read buffers
+- dmaengine: idxd: fix wq settings post wq disable
+- dmaengine: idxd: change MSIX allocation based on per wq activation
+- dmaengine: idxd: fix descriptor flushing locking
+- dmaengine: idxd: embed irq_entry in idxd_wq struct
+- dmaengine: idxd: add knob for enqcmds retries
+- dmaengine: idxd: set defaults for wq configs
+- dmaengine: idxd: handle interrupt handle revoked event
+- dmaengine: idxd: handle invalid interrupt handle descriptors
+- dmaengine: idxd: create locked version of idxd_quiesce() call
+- dmaengine: idxd: add helper for per interrupt handle drain
+- dmaengine: idxd: move interrupt handle assignment
+- dmaengine: idxd: int handle management refactoring
+- dmaengine: idxd: rework descriptor free path on failure
+- dmaengine: idxd: fix missed completion on abort path
+- dmaengine: idxd: fix calling wq quiesce inside spinlock
+- dmaengine: idxd: fix resource leak on dmaengine driver disable
+- dmaengine: idxd: cleanup completion record allocation
+- dmaengine: idxd: reconfig device after device reset command
+- dmaengine: idxd: add halt interrupt support
+- dmaengine: idxd: Use list_move_tail instead of list_del/list_add_tail
+- dmanegine: idxd: fix resource free ordering on driver removal
+- dmaengine: idxd: remove kernel wq type set when load configuration
+- dmaengine: idxd: remove gen cap field per spec 1.2 update
+- dmaengine: idxd: check GENCAP config support for gencfg register
+- dmaengine: idxd: move out percpu_ref_exit() to ensure it's outside submission
+- dmaengine: idxd: remove interrupt disable for dev_lock
+- dmaengine: idxd: remove interrupt disable for cmd_lock
+- dmaengine: idxd: fix setting up priv mode for dwq
+- dmaengine: idxd: set descriptor allocation size to threshold for swq
+- dmaengine: idxd: make submit failure path consistent on desc freeing
+- dmaengine: idxd: remove interrupt flag for completion list spinlock
+- dmaengine: idxd: make I/O interrupt handler one shot
+- dmaengine: idxd: clear block on fault flag when clear wq
+- dmaengine: idxd: add capability check for 'block on fault' attribute
+- dmaengine: idxd: Remove unused status variable in irq_process_work_list()
+- dmaengine: idxd: Fix a possible NULL pointer dereference
+- dmaengine: idxd: fix abort status check
+- dmanegine: idxd: add software command status
+- dmaengine: idxd: rotate portal address for better performance
+- dmaengine: idxd: fix uninit var for alt_drv
+- dmaengine: idxd: Set defaults for GRPCFG traffic class
+- dmaengine: idxd: remove fault processing code
+- dmaengine: idxd: move dsa_drv support to compatible mode
+- dmaengine: dsa: move dsa_bus_type out of idxd driver to standalone
+- dmaengine: idxd: create user driver for wq 'device'
+- dmaengine: idxd: create dmaengine driver for wq 'device'
+- dmaengine: idxd: create idxd_device sub-driver
+- dmaengine: idxd: add type to driver in order to allow device matching
+- dmanegine: idxd: open code the dsa_drv registration
+- dmaengine: idxd: idxd: move remove() bits for idxd 'struct device' to device.c
+- dmaengine: idxd: move probe() bits for idxd 'struct device' to device.c
+- dmaengine: idxd: fix bus_probe() and bus_remove() for dsa_bus
+- dmaengine: idxd: remove iax_bus_type prototype
+- dmaengine: idxd: remove bus shutdown
+- dmaengine: idxd: move wq_disable() to device.c
+- dmaengine: idxd: move wq_enable() to device.c
+- dmaengine: idxd: remove IDXD_DEV_CONF_READY
+- dmaengine: idxd: add 'struct idxd_dev' as wrapper for conf_dev
+- dmaengine: idxd: add driver name
+- dmaengine: idxd: add driver register helper
+- dmaengine: idxd: have command status always set
+- dmaengine: idxd: Add wq occupancy information to sysfs attribute
+- dmanegine: idxd: cleanup all device related bits after disabling device
+- dmaengine: idxd: Simplify code and axe the use of a deprecated API
+- dmaengine: idxd: fix submission race window
+- dmaengine: idxd: fix sequence for pci driver remove() and shutdown()
+- dmaengine: idxd: fix setup sequence for MSIXPERM table
+- dmaengine: idxd: assign MSIX vectors to each WQ rather than roundrobin
+- dmaengine: idxd: fix array index when int_handles are being used
+- dmaengine: idxd: fix desc->vector that isn't being updated
+- dmaengine: idxd: add missing percpu ref put on failure
+- dmaengine: idxd: Change license on idxd.h to LGPL
+- dmaengine: idxd: remove devm allocation for idxd->int_handles
+- dmaengine: idxd: Remove redundant variable cdev_ctx
+- dmaengine: idxd: Fix missing error code in idxd_cdev_open()
+- dmaengine: idxd: Add missing cleanup for early error out in probe call
+- dmaengine: idxd: add engine 'struct device' missing bus type assignment
+- dmaengine: idxd: Use cpu_feature_enabled()
+- dmaengine: idxd: Enable IDXD performance monitor support
+- dmaengine: idxd: Add IDXD performance monitor support
+- dmaengine: idxd: remove MSIX masking for interrupt handlers
+- dmaengine: idxd: device cmd should use dedicated lock
+- dmaengine: idxd: support reporting of halt interrupt
+- dmaengine: idxd: enable SVA feature for IOMMU
+- dmaengine: idxd: convert sprintf() to sysfs_emit() for all usages
+- dmaengine: idxd: add interrupt handle request and release support
+- dmaengine: idxd: add support for readonly config mode
+- dmaengine: idxd: add percpu_ref to descriptor submission path
+- dmaengine: idxd: remove detection of device type
+- dmaengine: idxd: iax bus removal
+- dmaengine: idxd: fix group conf_dev lifetime
+- dmaengine: idxd: fix engine conf_dev lifetime
+- dmaengine: idxd: fix wq conf_dev 'struct device' lifetime
+- dmaengine: idxd: fix idxd conf_dev 'struct device' lifetime
+- dmaengine: idxd: use ida for device instance enumeration
+- dmaengine: idxd: removal of pcim managed mmio mapping
+- dmaengine: idxd: cleanup pci interrupt vector allocation management
+- dmaengine: idxd: clear MSIX permission entry on shutdown
+- dmaengine: idxd: add module parameter to force disable of SVA
+- x86/asm: Annotate movdir64b()'s dst argument with __iomem
+- dma: idxd: use DEFINE_MUTEX() for mutex lock
+- dmaengine: idxd: Fix list corruption in description completion
+- dmaengine: idxd: add IAX configuration support in the IDXD driver
+- dmaengine: idxd: add ATS disable knob for work queues
+- dmaengine: idxd: define table offset multiplier
+- dmaengine: idxd: Update calculation of group offset to be more readable
+- dmaengine: idxd: Add ABI documentation for shared wq
+- dmaengine: idxd: Clean up descriptors with fault error
+- dmaengine: idxd: Add shared workqueue support
+- !220 Intel Advanced Matrix Extensions (AMX) support on SPR
+- mm: Fix kabi change caused by saved_auxv[] in mm_struct for x86_64
+- !270 Synchronize the coresight code of the Linux mainline to support HiSilicon tracing
+- openeuler_defconfig: Enable TRBE and TMC
+- drivers/ETM: fix error in invalid cs_id
+- coresight: etm4x: Expose trcdevarch via sysfs
+- perf cs-etm: Update ARM's CoreSight hardware tracing OpenCSD library to v1.0.0
+- coresight: etm4x: Add support for PE OS lock
+- coresight: etm4x: Convert all register accesses
+- coresight: etm4x: avoid build failure with unrolled loops
+- coresight: trbe: Make sure we have enough space
+- coresight: trbe: Allow driver to choose a different alignment
+- coresight: trbe: Decouple buffer base from the hardware base
+- coresight: trbe: Add a helper to pad a given buffer area
+- coresight: trbe: Add a helper to calculate the trace generated
+- coresight: trbe: Defer the probe on offline CPUs
+- coresight: trbe: Fix incorrect access of the sink specific data
+- coresight: trbe: Prohibit trace before disabling TRBE
+- coresight: trbe: End the AUX handle on truncation
+- coresight: trbe: Do not truncate buffer on IRQ
+- coresight: trbe: Fix handling of spurious interrupts
+- coresight: trbe: irq handler: Do not disable TRBE if no action is needed
+- coresight: trbe: Unify the enabling sequence
+- coresight: trbe: Drop duplicate TRUNCATE flags
+- coresight: trbe: Ensure the format flag is always set
+- coresight: etm-pmu: Ensure the AUX handle is valid
+- coresight: etm4x: Use Trace Filtering controls dynamically
+- coresight: etm4x: Save restore TRFCR_EL1
+- coresight: etm4x: Move ETM to prohibited region for disable
+- coresight: Don't immediately close events that are run on invalid CPU/sink combos
+- coresight: tmc-etr: Speed up for bounce buffer in flat mode
+- KVM: arm64: Handle access to TRFCR_EL1
+- coresight: sink: Add TRBE driver
+- perf: aux: Add flags for the buffer format
+- perf: aux: Add CoreSight PMU buffer formats
+- arm64: Add support for trace synchronization barrier
+- coresight: core: Add support for dedicated percpu sinks
+- coresight: etm-perf: Handle stale output handles
+- coresight: ete: Add support for ETE tracing
+- coresight: ete: Add support for ETE sysreg access
+- coresight: Add support for v8.4 SelfHosted tracing
+- arm64: Add TRBE definitions
+- arm64: Add TRFCR_ELx definitions
+- coresight: etm4x: Add support for sysreg only devices
+- coresight: etm4x: Refactor probing routine
+- coresight: etm4x: Use TRCDEVARCH for component discovery
+- coresight: etm4x: Add necessary synchronization for sysreg access
+- coresight: etm4x: Detect system instructions support
+- coresight: etm4x: Detect access early on the target CPU
+- coresight: etm4x: Handle ETM architecture version
+- coresight: etm4x: Check for Software Lock
+- coresight: etm4x: Define DEVARCH register fields
+- coresight: etm4x: Hide sysfs attributes for unavailable registers
+- coresight: etm4x: Add sysreg access helpers
+- coresight: etm4x: Make offset available for sysfs attributes
+- coresight: etm4x: Always read the registers on the host CPU
+- coresight: Convert claim/disclaim operations to use access wrappers
+- coresight: Convert coresight_timeout to use access abstraction
+- coresight: Introduce device access abstraction
+- !229 Intel SPR: Adding uncore PMU support and fix uprobes rbtree usage for OLK-5.10
+- !251 [OLK-5.10] arm64: add machine checksafe support
+- !54 configs: change the value of NLS_CODEPAGE_437 from m to y
+- !255 ksmbd-introduce-new-SMB3-kernel-server
+- !262 crypto: enable some SM configs
+- arm64: add machine check safe sysctl interface
+- arm64: add dump_user_range() to machine check safe
+- arm64: introduce copy_mc_to_kernel() implementation
+- arm64: add cow to machine check safe
+- arm64: get/put_user support machine check safe
+- arm64: copy_form/to_user support machine check safe
+- arm64: add support for machine check error safe
+- arm64: extable: add new extable type "__mc_ex_table"
+- uaccess: add generic fallback version of copy_mc_to_user()
+- Revert "arm64: config: enable CONFIG_ARM64_UCE_KERNEL_RECOVERY"
+- Revert "arm64: ras: copy_from_user scenario support uce kernel recovery"
+- x86/fpu: Avoid kabi change caused by struct fpu
+- x86: Avoid kabi change caused by adding pkru element in thread_struct
+- x86/fpu: Prevent FPU state corruption
+- selftests/x86/amx: Update the ARCH_REQ_XCOMP_PERM test
+- x86/fpu/xstate: Fix the ARCH_REQ_XCOMP_PERM implementation
+- x86/cpufeatures: Put the AMX macros in the word 18 block
+- x86/ptrace: Fix xfpregs_set()'s incorrect xmm clearing
+- signal: Skip the altstack update when not needed
+- x86/fpu/signal: Initialize sw_bytes in save_xstate_epilog()
+- x86/fpu: Optimize out sigframe xfeatures when in init state
+- Documentation/x86: Add documentation for using dynamic XSTATE features
+- selftests/x86/amx: Add context switch test
+- selftests/x86/amx: Add test cases for AMX state management
+- x86/fpu/amx: Enable the AMX feature in 64-bit mode
+- x86/fpu: Add XFD handling for dynamic states
+- x86/fpu: Calculate the default sizes independently
+- x86/fpu/amx: Define AMX state components and have it used for boot-time checks
+- x86/fpu/xstate: Prepare XSAVE feature table for gaps in state component numbers
+- x86/fpu/xstate: Add fpstate_realloc()/free()
+- x86/fpu/xstate: Add XFD #NM handler
+- x86/fpu: Update XFD state where required
+- x86/fpu: Add sanity checks for XFD
+- x86/fpu: Add XFD state to fpstate
+- x86/msr-index: Add MSRs for XFD
+- x86/cpufeatures: Add eXtended Feature Disabling (XFD) feature bit
+- x86/fpu: Reset permission and fpstate on exec()
+- x86/fpu: Prepare fpu_clone() for dynamically enabled features
+- x86/fpu/signal: Prepare for variable sigframe length
+- x86/signal: Use fpu::__state_user_size for sigalt stack validation
+- x86/fpu: Add basic helpers for dynamically enabled features
+- x86/arch_prctl: Add controls for dynamic XSTATE components
+- x86/fpu: Add fpu_state_config::legacy_features
+- x86/fpu: Add members to struct fpu to cache permission information
+- x86/fpu/xstate: Provide xstate_calculate_size()
+- x86/signal: Implement sigaltstack size validation
+- signal: Add an optional check for altstack size
+- x86/fpu: Remove old KVM FPU interface
+- x86/kvm: Convert FPU handling to a single swap buffer
+- x86/fpu: Provide infrastructure for KVM FPU cleanup
+- x86/fpu: Prepare for sanitizing KVM FPU code
+- x86/fpu/xstate: Move remaining xfeature helpers to core
+- x86/fpu: Rework restore_regs_from_fpstate()
+- x86/fpu: Mop up xfeatures_mask_uabi()
+- x86/fpu: Move xstate feature masks to fpu_*_cfg
+- x86/fpu: Move xstate size to fpu_*_cfg
+- x86/fpu/xstate: Cleanup size calculations
+- x86/fpu: Cleanup fpu__init_system_xstate_size_legacy()
+- x86/fpu: Provide struct fpu_config
+- x86/fpu/signal: Use fpstate for size and features
+- x86/fpu/xstate: Use fpstate for copy_uabi_to_xstate()
+- x86/fpu: Use fpstate in __copy_xstate_to_uabi_buf()
+- x86/fpu: Use fpstate in fpu_copy_kvm_uabi_to_fpstate()
+- x86/fpu/xstate: Use fpstate for xsave_to_user_sigframe()
+- x86/fpu/xstate: Use fpstate for os_xsave()
+- x86/fpu: Use fpstate::size
+- x86/fpu: Add size and mask information to fpstate
+- x86/process: Move arch_thread_struct_whitelist() out of line
+- x86/fpu: Do not leak fpstate pointer on fork
+- x86/fpu: Remove fpu::state
+- x86/math-emu: Convert to fpstate
+- x86/fpu/core: Convert to fpstate
+- x86/fpu/signal: Convert to fpstate
+- x86/fpu/regset: Convert to fpstate
+- x86/fpu: Convert tracing to fpstate
+- x86/KVM: Convert to fpstate
+- x86/fpu: Replace KVMs xstate component clearing
+- x86/fpu: Convert restore_fpregs_from_fpstate() to struct fpstate
+- x86/fpu: Convert fpstate_init() to struct fpstate
+- x86/fpu: Provide struct fpstate
+- x86/fpu: Replace KVMs home brewed FPU copy to user
+- x86/fpu: Provide a proper function for ex_handler_fprestore()
+- x86/fpu: Replace the includes of fpu/internal.h
+- x86/fpu: Mop up the internal.h leftovers
+- x86/sev: Include fpu/xcr.h
+- x86/fpu: Remove internal.h dependency from fpu/signal.h
+- x86/fpu: Move fpstate functions to api.h
+- x86/fpu: Move mxcsr related code to core
+- x86/fpu: Move fpregs_restore_userregs() to core
+- x86/fpu: Make WARN_ON_FPU() private
+- x86/fpu: Move legacy ASM wrappers to core
+- x86/fpu: Move os_xsave() and os_xrstor() to core
+- x86/fpu: Make os_xrstor_booting() private
+- x86/fpu: Clean up CPU feature tests
+- x86/fpu: Move context switch and exit to user inlines into sched.h
+- x86/fpu: Mark fpu__init_prepare_fx_sw_frame() as __init
+- x86/fpu: Rework copy_xstate_to_uabi_buf()
+- x86/fpu: Replace KVMs home brewed FPU copy from user
+- x86/fpu: Move KVMs FPU swapping to FPU core
+- x86/fpu/xstate: Mark all init only functions __init
+- x86/fpu/xstate: Provide and use for_each_xfeature()
+- x86/fpu: Cleanup xstate xcomp_bv initialization
+- x86/fpu: Do not inherit FPU context for kernel and IO worker threads
+- x86/process: Clone FPU in copy_thread()
+- x86/fpu: Remove pointless memset in fpu_clone()
+- x86/fpu: Cleanup the on_boot_cpu clutter
+- x86/fpu: Restrict xsaves()/xrstors() to independent states
+- x86/pkru: Remove useless include
+- x86/fpu: Update stale comments
+- x86/fpu: Remove pointless argument from switch_fpu_finish()
+- x86/fpu/signal: Fix missed conversion to correct boolean retval in save_xstate_epilog()
+- x86/fpu/signal: Change return code of restore_fpregs_from_user() to boolean
+- x86/fpu/signal: Change return code of check_xstate_in_sigframe() to boolean
+- x86/fpu/signal: Change return type of __fpu_restore_sig() to boolean
+- x86/fpu/signal: Change return type of fpu__restore_sig() to boolean
+- x86/signal: Change return type of restore_sigcontext() to boolean
+- x86/fpu/signal: Change return type of copy_fpregs_to_sigframe() helpers to boolean
+- x86/fpu/signal: Change return type of copy_fpstate_to_sigframe() to boolean
+- x86/fpu/signal: Move xstate clearing out of copy_fpregs_to_sigframe()
+- x86/fpu/signal: Move header zeroing out of xsave_to_user_sigframe()
+- x86/fpu/signal: Clarify exception handling in restore_fpregs_from_user()
+- x86/fpu: Mask out the invalid MXCSR bits properly
+- x86/fpu: Restore the masking out of reserved MXCSR bits
+- x86/fpu/xstate: Clear xstate header in copy_xstate_to_uabi_buf() again
+- x86/fpu/signal: Let xrstor handle the features to init
+- x86/fpu/signal: Handle #PF in the direct restore path
+- x86/fpu/signal: Split out the direct restore code
+- x86/fpu/signal: Sanitize copy_user_to_fpregs_zeroing()
+- x86/fpu/signal: Sanitize the xstate check on sigframe
+- x86/fpu/signal: Remove the legacy alignment check
+- x86/fpu/signal: Move initial checks into fpu__restore_sig()
+- x86/fpu: Mark init_fpstate __ro_after_init
+- x86/pkru: Remove xstate fiddling from write_pkru()
+- x86/fpu: Don't store PKRU in xstate in fpu_reset_fpstate()
+- x86/fpu: Remove PKRU handling from switch_fpu_finish()
+- x86/fpu: Mask PKRU from kernel XRSTOR[S] operations
+- x86/fpu: Hook up PKRU into ptrace()
+- x86/fpu: Add PKRU storage outside of task XSAVE buffer
+- x86/fpu: Dont restore PKRU in fpregs_restore_userspace()
+- x86/fpu: Rename xfeatures_mask_user() to xfeatures_mask_uabi()
+- x86/fpu: Move FXSAVE_LEAK quirk into __copy_kernel_to_fpregs()
+- x86/fpu: Rename __fpregs_load_activate() to fpregs_restore_userregs()
+- x86/fpu: Clean up the fpu__clear() variants
+- x86/fpu: Rename fpu__clear_all() to fpu_flush_thread()
+- x86/fpu: Use pkru_write_default() in copy_init_fpstate_to_fpregs()
+- x86/cpu: Write the default PKRU value when enabling PKE
+- x86/pkru: Provide pkru_write_default()
+- x86/pkru: Provide pkru_get_init_value()
+- x86/cpu: Sanitize X86_FEATURE_OSPKE
+- x86/fpu: Rename and sanitize fpu__save/copy()
+- x86/pkeys: Move read_pkru() and write_pkru()
+- x86/fpu/xstate: Sanitize handling of independent features
+- x86/fpu: Rename "dynamic" XSTATEs to "independent"
+- x86/fpu: Rename initstate copy functions
+- x86/fpu: Rename copy_kernel_to_fpregs() to restore_fpregs_from_fpstate()
+- x86/fpu: Get rid of the FNSAVE optimization
+- x86/fpu: Rename copy_fpregs_to_fpstate() to save_fpregs_to_fpstate()
+- x86/fpu: Deduplicate copy_uabi_from_user/kernel_to_xstate()
+- x86/fpu: Rename xstate copy functions which are related to UABI
+- x86/fpu: Rename fregs-related copy functions
+- x86/math-emu: Rename frstor()
+- x86/fpu: Rename fxregs-related copy functions
+- x86/fpu: Rename copy_user_to_xregs() and copy_xregs_to_user()
+- x86/fpu: Rename copy_xregs_to_kernel() and copy_kernel_to_xregs()
+- x86/fpu: Get rid of copy_supervisor_to_kernel()
+- x86/fpu: Cleanup arch_set_user_pkey_access()
+- x86/kvm: Avoid looking up PKRU in XSAVE buffer
+- x86/fpu: Get rid of using_compacted_format()
+- x86/fpu: Move fpu__write_begin() to regset
+- x86/fpu/regset: Move fpu__read_begin() into regset
+- x86/fpu: Remove fpstate_sanitize_xstate()
+- x86/fpu: Use copy_xstate_to_uabi_buf() in fpregs_get()
+- x86/fpu: Use copy_xstate_to_uabi_buf() in xfpregs_get()
+- x86/fpu: Make copy_xstate_to_kernel() usable for [x]fpregs_get()
+- x86/fpu: Clean up fpregs_set()
+- x86/fpu: Fail ptrace() requests that try to set invalid MXCSR values
+- x86/fpu: Rewrite xfpregs_set()
+- x86/fpu: Simplify PTRACE_GETREGS code
+- x86/fpu: Reject invalid MXCSR values in copy_kernel_to_xstate()
+- x86/fpu: Sanitize xstateregs_set()
+- x86/fpu: Move inlines where they belong
+- x86/fpu: Remove unused get_xsave_field_ptr()
+- x86/fpu: Get rid of fpu__get_supported_xfeatures_mask()
+- x86/fpu: Make xfeatures_mask_all __ro_after_init
+- x86/fpu: Mark various FPU state variables __ro_after_init
+- x86/pkeys: Revert a5eff7259790 ("x86/pkeys: Add PKRU value to init_fpstate")
+- Revert "x86/fpu: Correct pkru/xstate inconsistency"
+- selftest/x86/signal: Include test cases for validating sigaltstack
+- selftest/sigaltstack: Use the AT_MINSIGSTKSZ aux vector if available
+- x86/elf: Support a new ELF aux vector AT_MINSIGSTKSZ
+- x86/signal: Introduce helpers to get the maximum signal frame size
+- uapi/auxvec: Define the aux vector AT_MINSIGSTKSZ
+- Enable Intel AMX for default config
+- Enable default config for Intel NTB LTR vendor support for gen4 NTB
+- Enable Intel SPR HFI support for default config
+- Enable Intel PMT support for default config
+- Enable SGX virtualization in default config
+- vfs: Check the truncate maximum size in inode_newsize_ok()
+- ksmbd: add reserved room in ipc request/response
+- ksmbd: limits exceeding the maximum allowable outstanding requests
+- ksmbd: move credit charge deduction under processing request
+- ksmbd: add support for smb2 max credit parameter
+- ksmbd: set unique value to volume serial field in FS_VOLUME_INFORMATION
+- cifsd: add Kconfig and Makefile
+- ksmbd: Fix wrong return value and message length check in smb2_ioctl()
+- ksmbd: set NTLMSSP_NEGOTIATE_SEAL flag to challenge blob
+- ksmbd: fix encryption failure issue for session logoff response
+- ksmbd: fix endless loop when encryption for response fails
+- ksmbd: return STATUS_BAD_NETWORK_NAME error status if share is not configured
+- ksmbd: prevent out of bound read for SMB2_TREE_CONNNECT
+- ksmbd: Fix user namespace mapping
+- ksmbd: fix use-after-free bug in smb2_tree_disconect
+- ksmbd: fix memory leak in smb2_handle_negotiate
+- ksmbd: fix racy issue while destroying session on multichannel
+- ksmbd: use vfs_llseek instead of dereferencing NULL
+- ksmbd: remove unused ksmbd_share_configs_cleanup function
+- ksmbd: fix kernel oops from idr_remove()
+- ksmbd: replace sessions list in connection with xarray
+- ksmbd: use wait_event instead of schedule_timeout()
+- ksmbd: fix incorrect handling of iterate_dir
+- ksmbd: handle smb2 query dir request for OutputBufferLength that is too small
+- ksmbd: add channel rwlock
+- ksmbd: smbd: fix connection dropped issue
+- ksmbd: fix reference count leak in smb_check_perm_dacl()
+- ksmbd: reduce smb direct max read/write size
+- ksmbd: don't align last entry offset in smb2 query directory
+- ksmbd: fix same UniqueId for dot and dotdot entries
+- ksmbd: smbd: validate buffer descriptor structures
+- ksmbd: fix SMB 3.11 posix extension mount failure
+- ksmbd: fix guest connection failure with nautilus
+- ksmbd: uninitialized variable in create_socket()
+- ksmbd: smbd: fix missing client's memory region invalidation
+- ksmbd: add smb-direct shutdown
+- ksmbd: smbd: change the default maximum read/write, receive size
+- ksmbd: smbd: create MR pool
+- ksmbd: smbd: call rdma_accept() under CM handler
+- ksmbd: set 445 port to smbdirect port by default
+- ksmbd: register ksmbd ib client with ib_register_client()
+- ksmbd: Fix smb2_get_name() kernel-doc comment
+- ksmbd: Fix smb2_set_info_file() kernel-doc comment
+- ksmbd: Fix buffer_check_err() kernel-doc comment
+- ksmbd: fix multi session connection failure
+- ksmbd: set both ipv4 and ipv6 in FSCTL_QUERY_NETWORK_INTERFACE_INFO
+- ksmbd: set RSS capable in FSCTL_QUERY_NETWORK_INTERFACE_INFO
+- ksmbd: Remove unused fields from ksmbd_file struct definition
+- ksmbd: Remove unused parameter from smb2_get_name()
+- ksmbd: disable SMB2_GLOBAL_CAP_ENCRYPTION for SMB 3.1.1
+- ksmbd: fix uninitialized symbol 'pntsd_size'
+- ksmbd: remove select FS_POSIX_ACL in Kconfig
+- ksmbd: fix memleak in get_file_stream_info()
+- ksmbd: contain default data stream even if xattr is empty
+- ksmbd: downgrade addition info error msg to debug in smb2_get_info_sec()
+- ksmbd: Fix an error handling path in 'smb2_sess_setup()'
+- ksmbd: change LeaseKey data type to u8 array
+- ksmbd: remove smb2_buf_length in smb2_transform_hdr
+- ksmbd: remove smb2_buf_length in smb2_hdr
+- ksmbd: don't need 8byte alignment for request length in ksmbd_check_message
+- ksmbd: Fix buffer length check in fsctl_validate_negotiate_info()
+- ksmbd: Remove redundant 'flush_workqueue()' calls
+- ksmdb: use cmd helper variable in smb2_get_ksmbd_tcon()
+- ksmbd: use ksmbd_req_buf_next() in ksmbd_smb2_check_message()
+- ksmbd: use ksmbd_req_buf_next() in ksmbd_verify_smb_message()
+- ksmbd: add buffer validation in session setup
+- ksmbd: throttle session setup failures to avoid dictionary attacks
+- ksmbd: validate OutputBufferLength of QUERY_DIR, QUERY_INFO, IOCTL requests
+- ksmbd: validate credit charge after validating SMB2 PDU body size
+- ksmbd: add buffer validation for smb direct
+- ksmbd: limit read/write/trans buffer size not to exceed 8MB
+- ksmbd: validate compound response buffer
+- ksmbd: fix potencial 32bit overflow from data area check in smb2_write
+- ksmbd: improve credits management
+- ksmbd: add validation in smb2_ioctl
+- ksmbd: fix oops from fuse driver
+- ksmbd: fix version mismatch with out of tree
+- ksmbd: use buf_data_size instead of recalculation in smb3_decrypt_req()
+- ksmbd: remove the leftover of smb2.0 dialect support
+- ksmbd: check strictly data area in ksmbd_smb2_check_message()
+- ksmbd: add the check to vaildate if stream protocol length exceeds maximum value
+- ksmbd: missing check for NULL in convert_to_nt_pathname()
+- ksmbd: fix transform header validation
+- ksmbd: add buffer validation for SMB2_CREATE_CONTEXT
+- ksmbd: add validation in smb2 negotiate
+- ksmbd: add request buffer validation in smb2_set_info
+- ksmbd: use correct basic info level in set_file_basic_info()
+- ksmbd: remove NTLMv1 authentication
+- ksmbd: fix documentation for 2 functions
+- ksmbd: fix invalid request buffer access in compound
+- ksmbd: remove RFC1002 check in smb2 request
+- ksmbd: use LOOKUP_BENEATH to prevent the out of share access
+- ksmbd: remove follow symlinks support
+- ksmbd: check protocol id in ksmbd_verify_smb_message()
+- ksmbd: add default data stream name in FILE_STREAM_INFORMATION
+- ksmbd: log that server is experimental at module load
+- ksmbd: add validation for FILE_FULL_EA_INFORMATION of smb2_get_info
+- ksmbd: prevent out of share access
+- ksmbd: transport_rdma: Don't include rwlock.h directly
+- ksmbd: fix read of uninitialized variable ret in set_file_basic_info
+- ksmbd: remove unused ksmbd_file_table_flush function
+- ksmbd: smbd: fix dma mapping error in smb_direct_post_send_data
+- ksmbd: Reduce error log 'speed is unknown' to debug
+- ksmbd: remove setattr preparations in set_file_basic_info()
+- ksmbd: ensure error is surfaced in set_file_basic_info()
+- ksmbd: fix __write_overflow warning in ndr_read_string
+- ksmbd: fix permission check issue on chown and chmod
+- ksmbd: don't set FILE DELETE and FILE_DELETE_CHILD in access mask by default
+- ksmbd: smbd: fix kernel oops during server shutdown
+- ksmbd: use proper errno instead of -1 in smb2_get_ksmbd_tcon()
+- ksmbd: update the comment for smb2_get_ksmbd_tcon()
+- ksmbd: change int data type to boolean
+- ksmbd: Fix multi-protocol negotiation
+- ksmbd: fix an oops in error handling in smb2_open()
+- ksmbd: add ipv6_addr_v4mapped check to know if connection from client is ipv4
+- ksmbd: fix missing error code in smb2_lock
+- ksmbd: use channel signingkey for binding SMB2 session setup
+- ksmbd: don't set RSS capable in FSCTL_QUERY_NETWORK_INTERFACE_INFO
+- ksmbd: Return STATUS_OBJECT_PATH_NOT_FOUND if smb2_creat() returns ENOENT
+- ksmbd: fix -Wstringop-truncation warnings
+- ksmbd: Fix potential memory leak in tcp_destroy_socket()
+- ksmbd: add support for negotiating signing algorithm
+- ksmbd: add negotiate context verification
+- ksmbd: fix typo of MS-SMBD
+- ksmbd: move credit charge verification over smb2 request size verification
+- ksmbd: set STATUS_INVALID_PARAMETER error status if credit charge is invalid
+- ksmbd: fix wrong error status return on session setup
+- ksmbd: fix wrong compression context size
+- ksmbd: fix typo in comment
+- ksmbd: fix an error message in ksmbd_conn_trasnport_init
+- ksmbd: set RDMA capability for FSCTL_QUERY_NETWORK_INTERFACE_INFO
+- ksmbd: fix unused err value in smb2_lock
+- ksmbd: fix memory leak in ksmbd_vfs_get_sd_xattr()
+- ksmbd: remove unneeded check_context_err
+- ksmbd: handle error cases first in smb2_create_sd_buffers
+- ksmbd: make smb2_find_context_vals return NULL if not found
+- ksmbd: uninterruptible wait for a file being unlocked
+- ksmbd: free ksmbd_lock when file is closed
+- ksmbd: fix the running request count decrement
+- ksmbd: use kasprintf() in ksmbd_vfs_xattr_stream_name()
+- ksmbd: delete some stray tabs
+- ksmbd: change data type of volatile/persistent id to u64
+- ksmbd: fix memory leak in smb_inherit_dacl()
+- ksmbd: fix memory leak smb2_populate_readdir_entry()
+- ksmbd: fix read on the uninitialized send_ctx
+- ksmbd: remove unneeded NULL check in for_each_netdev
+- ksmbd: Fix read on the uninitialized pointer sess
+- ksmbd: fix kernel oops in ksmbd_rpc_ioctl/rap()
+- ksmbd: adapt vfs api to 5.10
+- ksmbd: replace struct dentry with struct path in some function's arguments
+- ksmbd: reorder and document on-disk and netlink structures in headers
+- ksmbd: change server config string index to enumeration
+- ksmbd: change server state type macro to enumeration
+- ksmbd: change sid types to enumeration
+- ksmbd: change ACE types to enumeration
+- ksmbd: remove SMB1 oplock level macros
+- ksmbd: opencode to remove ATTR_FP macro
+- ksmbd: use ksmbd_vfs_lock_parent to get stable parent dentry
+- ksmbd: opencode to remove FP_INODE macro
+- ksmbd: fix dentry racy with rename()
+- ksmbd: Relax credit_charge check in smb2_validate_credit_charge()
+- ksmbd: allow PROTECTED_DACL_SECINFO and UNPROTECTED_DACL_SECINFO addition information in smb2 set info security
+- ksmbd: replace request and respone buffer macro with inline functions
+- ksmbd: replace SMB_DIRECT_TRANS macro with inline function
+- ksmbd: remove and replace macros with inline functions in smb_common.h
+- ksmbd: remove getting worker state macros
+- ksmbd: replace PAYLOAD_HEAD with inline function
+- ksmbd: replace KSMBD_ALIGN with kernel ALIGN macro
+- ksmbd: replace BUFFER_NR_PAGES with inline function
+- ksmbd: remove macros in transport_ipc.c
+- ksmbd: set MAY_* flags together with open flags
+- ksmbd: factor out a ksmbd_vfs_lock_parent helper
+- ksmbd: move fs/cifsd to fs/ksmbd
+- cifsd: add index.rst in cifs documentation
+- cifsd: fix WARNING: document isn't included in any toctree
+- cifsd: add ksmbd/nfsd interoperability to feature table
+- doc: cifsd: change the reference to configuration.txt
+- cifsd: fix build warnings from cifsd.rst
+- cifsd: update cifsd.rst document
+- cifsd: fix WARNING: Title overline too short
+- ksmbd: use f_bsize in FS_SECTOR_SIZE_INFORMATION
+- ksmbd: remove unneeded NULL check in the list iterator
+- ksmbd: use f_bsize instead of q->limits.logical_block_size
+- ksmbd: change stream type macro to enumeration
+- ksmbd: opencode posix acl functions instead of wrappers
+- ksmbd: factor out a ksmbd_validate_entry_in_use helper from __ksmbd_vfs_rename
+- ksmbd: opencode to avoid trivial wrappers
+- ksmbd: remove ksmbd_err/info
+- ksmbd: replace KSMBD_SHARE_CONFIG_PATH with inline function
+- ksmbd: remove ____ksmbd_align in ksmbd_server.h
+- ksmbd: remove unneeded FIXME comment
+- ksmbd: fix overly long line
+- ksmbd: use goto instead of duplicating the resoure cleanup in ksmbd_open_fd
+- ksmbd: use list_for_each_entry instead of list_for_each
+- ksmbd: remove ksmbd_vfs_copy_file_range
+- ksmbd: initialize variables on the declaration
+- ksmbd: remove cache read/trans buffer support
+- ksmbd: add support for SMB3 multichannel
+- ksmbd: fix kfree of uninitialized pointer oid
+- cifsd: append ksmbd prefix into names for asn1 decoder
+- cifsd: remove duplicated argument
+- cifsd: set epoch in smb2_lease_break response
+- cifsd: fix list_add double add BUG_ON trap in setup_async_work()
+- cifsd: fix additional warnings from checkpatch.pl --strict
+- cifsd: fix potential read overflow in ksmbd_vfs_stream_read()
+- cifsd: check return value of ksmbd_vfs_getcasexattr() correctly
+- cifsd: fix memleak in ksmbd_vfs_stream_read()
+- cifsd: fix memleak in ksmbd_vfs_stream_write()
+- cifsd: make alignment match open parenthesis
+- cifsd: enclose macro variables in parenthesis
+- cifsd: fix Control flow issues in ksmbd_build_ntlmssp_challenge_blob()
+- cifsd: lookup a file with LOOKUP_FOLLOW only if 'follow symlinks = yes'
+- cifsd: Prefer kernel type 'u16' over 'uint16_t'
+- cifsd: remove unnecessary parentheses around
+- cifsd: Alignment should match open parenthesis
+- cifsd: Blank lines aren't necessary after an open brace '{'
+- cifsd: No space is necessary after a cast
+- cifsd: don't use multiple blank lines
+- cifsd: spaces preferred around that '/'
+- cifsd: braces {} should be used on all arms of this statement
+- cifsd: add the check to prevent potential overflow with smb_strtoUTF16() and UNICODE_LEN()
+- cifsd: alignment match open parenthesis
+- cifsd: return -ENOMEM about error from ksmbd_crypto_ctx_find_xxx calls
+- cifsd: simplify error handling in ksmbd_gen_preauth_integrity_hash()
+- cifsd: call kzalloc() directly instead of wrapper
+- cifsd: add default case in switch statment in alloc_shash_desc()
+- cifsd: change success handling to failure handling
+- cifsd: fix wrong return value in ksmbd_crypt_message()
+- cifsd: remove unneeded initialization of rc variable in ksmbd_crypt_message()
+- cifsd: len can never be negative in ksmbd_init_sg()
+- cifsd: add the check if nvec is zero
+- cifsd: never return 1 on failure
+- cifsd: return zero in always success case
+- cifsd: set error return value for memcmp() difference
+- cifsd: remove unneeded type casting
+- cifsd: simplify error handling in ksmbd_auth_ntlm()
+- cifsd: move ret check before the out label
+- cifsd: just return smbhash() instead of using rc return value
+- cifsd: move fips_enabled check before the str_to_key()
+- cifsd: add goto fail in neg_token_init_mech_type()
+- cifsd: use memcmp instead of for loop check in oid_eq()
+- cifsd: add goto fail in asn1_oid_decode()
+- cifsd: add support for FSCTL_DUPLICATE_EXTENTS_TO_FILE
+- cifsd: Do not use 0 or 0xFFFFFFFF for TreeID
+- cifsd: fix xfstests generic/504 test failure
+- cifsd: fix boolreturn.cocci warnings
+- cifsd: fix WARNING: Too many leading tabs
+- cifsd: fix WARNING: Possible unnecessary 'out of memory' message
+- cifsd: decoding gss token using lib/asn1_decoder.c
+- cifsd: fix invalid memory access in smb2_write()
+- cifsd: add support for AES256 encryption
+- cifsd: Fix potential null-ptr-deref in destroy_previous_session()
+- cifsd: Update out_buf_len in smb2_populate_readdir_entry()
+- cifsd: Handle ksmbd_session_rpc_open() failure in create_smb2_pipe()
+- cifsd: Call smb2_set_err_rsp() in smb2_read/smb2_write error path
+- cifsd: Fix regression in smb2_get_info
+- cifsd: Remove is_attributes_write_allowed() wrapper
+- cifsd: Update access check in set_file_allocation_info/set_end_of_file_info
+- cifsd: remove the dead code of unimplemented durable handle
+- cifsd: use d_inode()
+- cifsd: Fix potential null-ptr-deref in smb2_open()
+- cifsd: move nt time functions to misc.c
+- cifsd: remove unused nterr.c file
+- cifsd: remove unused smberr.h
+- cifsd: Remove smb2_put_name()
+- cifsd: fix reference count decrement of unclaimed file in __ksmbd_lookup_fd
+- cifsd: re-implement ksmbd_vfs_kern_path
+- cifsd: get parent dentry from child in ksmbd_vfs_remove_file()
+- cifsd: add the check if parent is stable by unexpected rename
+- cifsd: declare ida statically
+- cifsd: remove unused including <linux/version.h>
+- cifsd: prevent a integer overflow in wm_alloc()
+- cifsd: remove wrappers of kvmalloc/kvfree
+- cifsd: fix memdup.cocci warnings
+- cifsd: use kfree to free memory allocated by kmalloc or kzalloc
+- cifsd: fix memory leak when loop ends
+- cifsd: remove stale prototype and variables
+- cifsd: use xarray instead of linked list for tree connect list
+- cifsd: remove useless error handling in ksmbd_vfs_read
+- cifsd: use file_inode() instead of d_inode()
+- cifsd: handle unhashed dentry in ksmbd_vfs_mkdir
+- cifsd: remove calling d_path in error paths
+- cifsd: remove smack inherit leftovers
+- cifsd: fix wrong prototype in comment
+- cifsd: merge time_wrappers.h into smb_common.h
+- cifsd: clean-up codes using chechpatch.pl --strict
+- cifsd: fix error return code in ksmbd_vfs_remove_file()
+- cifsd: add the check to work file lock and rename behaviors like Windows unless POSIX extensions are negotiated
+- cifsd: use kmalloc() for small allocations
+- cifsd: fix wrong use of rw semaphore in __session_create()
+- cifsd: remove unneeded macros
+- cifsd: remove redundant assignment to variable err
+- cifsd: fix error handling in ksmbd_server_init()
+- cifsd: Fix an error code in smb2_read()
+- cifsd: Pass string length parameter to match_pattern()
+- cifsd: fix warning: variable 'total_ace_size' and 'posix_ccontext' set but not used
+- cifsd: fix incorrect comments
+- cifsd: remove unneeded FIXME comments
+- cifsd: fix static checker warning from smb_check_perm_dacl()
+- cifsd: fix static checker warning from smb_direct_post_send_data()
+- cifsd: Fix a use after free on error path
+- cifsd: fix a IS_ERR() vs NULL bug
+- cifsd: fix a precedence bug in parse_dacl()
+- cifsd: Fix a handful of spelling mistakes
+- cifsd: uniquify extract_sharename()
+- cifsd: add file operations
+- cifsd: add server-side procedures for SMB3
+- cifsd: add server handler for central processing and tranport layers
+- crypto: enable some SM configs
+- uprobes: (Re)add missing get_uprobe() in __find_uprobe()
+- perf/x86/intel/uncore: Fix Intel SPR M3UPI event constraints
+- perf/x86/intel/uncore: Fix Intel SPR M2PCIE event constraints
+- perf/x86/intel/uncore: Fix Intel SPR IIO event constraints
+- perf/x86/intel/uncore: Fix Intel SPR CHA event constraints
+- perf/x86/intel/uncore: Fix invalid unit check
+- perf/x86/intel/uncore: Fix a kernel WARNING triggered by maxcpus=1
+- perf/x86/intel/uncore: Support IMC free-running counters on Sapphire Rapids server
+- perf/x86/intel/uncore: Support IIO free-running counters on Sapphire Rapids server
+- perf/x86/intel/uncore: Factor out snr_uncore_mmio_map()
+- perf/x86/intel/uncore: Add alias PMU name
+- perf/x86/intel/uncore: Add Sapphire Rapids server MDF support
+- perf/x86/intel/uncore: Add Sapphire Rapids server M3UPI support
+- perf/x86/intel/uncore: Add Sapphire Rapids server UPI support
+- perf/x86/intel/uncore: Add Sapphire Rapids server M2M support
+- perf/x86/intel/uncore: Add Sapphire Rapids server IMC support
+- perf/x86/intel/uncore: Add Sapphire Rapids server PCU support
+- perf/x86/intel/uncore: Add Sapphire Rapids server M2PCIe support
+- perf/x86/intel/uncore: Add Sapphire Rapids server IRP support
+- perf/x86/intel/uncore: Add Sapphire Rapids server IIO support
+- perf/x86/intel/uncore: Add Sapphire Rapids server CHA support
+- perf/x86/intel/uncore: Add Sapphire Rapids server framework
+- x86/cpu: Fix core name for Sapphire Rapids
+- x86/cpu: Resort and comment Intel models
+- perf/x86/intel/uncore: Generic support for the MMIO type of uncore blocks
+- perf/x86/intel/uncore: Generic support for the PCI type of uncore blocks
+- perf/x86/intel/uncore: Rename uncore_notifier to uncore_pci_sub_notifier
+- perf/x86/intel/uncore: Generic support for the MSR type of uncore blocks
+- perf/x86/intel/uncore: Parse uncore discovery tables
+- perf/x86/intel/uncore: With > 8 nodes, get pci bus die id from NUMA info
+- perf/x86/intel/uncore: Store the logical die id instead of the physical die id.
+- rbtree, timerqueue: Use rb_add_cached()
+- rbtree, rtmutex: Use rb_add_cached()
+- rbtree, uprobes: Use rbtree helpers
+- rbtree, perf: Use new rbtree helpers
+- rbtree, sched/deadline: Use rb_add_cached()
+- rbtree, sched/fair: Use rb_add_cached()
+- rbtree: Add generic add and find helpers
+- configs: change the value of NLS_CODEPAGE_437 from m to y
+
 * Fri Nov 25 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-128.0.0.68
 - Bluetooth: L2CAP: Fix accepting connection request for invalid SPSM
 - RDMA/hns: Add support for open XRC QP
