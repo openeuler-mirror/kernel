@@ -580,6 +580,68 @@ static void vcpu_setup(struct kvm_vm *vm, int vcpuid, int pgd_memslot, int gdt_m
 	vcpu_sregs_set(vm, vcpuid, &sregs);
 }
 
+#define CPUID_XFD_BIT (1 << 4)
+static bool is_xfd_supported(void)
+{
+	int eax, ebx, ecx, edx;
+	const int leaf = 0xd, subleaf = 0x1;
+
+	__asm__ __volatile__(
+		"cpuid"
+		: /* output */ "=a"(eax), "=b"(ebx),
+		  "=c"(ecx), "=d"(edx)
+		: /* input */ "0"(leaf), "2"(subleaf));
+
+	return !!(eax & CPUID_XFD_BIT);
+}
+
+void vm_xsave_req_perm(int bit)
+{
+	int kvm_fd;
+	u64 bitmask;
+	long rc;
+	struct kvm_device_attr attr = {
+		.group = 0,
+		.attr = KVM_X86_XCOMP_GUEST_SUPP,
+		.addr = (unsigned long) &bitmask
+	};
+
+	kvm_fd = open(KVM_DEV_PATH, O_RDONLY);
+	if (kvm_fd < 0) {
+		print_skip("%s not available, is KVM loaded? (errno: %d)",
+			   KVM_DEV_PATH, errno);
+		exit(KSFT_SKIP);
+	}
+
+	rc = ioctl(kvm_fd, KVM_GET_DEVICE_ATTR, &attr);
+	close(kvm_fd);
+	if (rc == -1 && (errno == ENXIO || errno == EINVAL))
+		exit(KSFT_SKIP);
+
+	TEST_ASSERT(rc == 0, "KVM_GET_DEVICE_ATTR(0, KVM_X86_XCOMP_GUEST_SUPP) error: %ld", rc);
+
+	if (!(bitmask & (1ULL << bit)))
+		exit(KSFT_SKIP);
+
+	if (!is_xfd_supported())
+		exit(KSFT_SKIP);
+
+	rc = syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_GUEST_PERM, bit);
+
+	/*
+	 * The older kernel version(<5.15) can't support
+	 * ARCH_REQ_XCOMP_GUEST_PERM and directly return.
+	 */
+	if (rc)
+		return;
+
+	rc = syscall(SYS_arch_prctl, ARCH_GET_XCOMP_GUEST_PERM, &bitmask);
+	TEST_ASSERT(rc == 0, "prctl(ARCH_GET_XCOMP_GUEST_PERM) error: %ld", rc);
+	TEST_ASSERT(bitmask & (1ULL << bit),
+		    "prctl(ARCH_REQ_XCOMP_GUEST_PERM) failure bitmask=0x%lx",
+		    bitmask);
+}
+
 void vm_vcpu_add_default(struct kvm_vm *vm, uint32_t vcpuid, void *guest_code)
 {
 	struct kvm_mp_state mp_state;
@@ -903,21 +965,6 @@ void vcpu_dump(FILE *stream, struct kvm_vm *vm, uint32_t vcpuid, uint8_t indent)
 	sregs_dump(stream, &sregs, indent + 4);
 }
 
-struct kvm_x86_state {
-	struct kvm_vcpu_events events;
-	struct kvm_mp_state mp_state;
-	struct kvm_regs regs;
-	struct kvm_xsave xsave;
-	struct kvm_xcrs xcrs;
-	struct kvm_sregs sregs;
-	struct kvm_debugregs debugregs;
-	union {
-		struct kvm_nested_state nested;
-		char nested_[16384];
-	};
-	struct kvm_msrs msrs;
-};
-
 static int kvm_get_num_msrs_fd(int kvm_fd)
 {
 	struct kvm_msr_list nmsrs;
@@ -955,6 +1002,22 @@ struct kvm_msr_list *kvm_get_msr_index_list(void)
 		r);
 
 	return list;
+}
+
+static int vcpu_save_xsave_state(struct kvm_vm *vm, struct vcpu *vcpu,
+				 struct kvm_x86_state *state)
+{
+	int size;
+
+	size = vm_check_cap(vm, KVM_CAP_XSAVE2);
+	if (!size)
+		size = sizeof(struct kvm_xsave);
+
+	state->xsave = malloc(size);
+	if (size == sizeof(struct kvm_xsave))
+		return ioctl(vcpu->fd, KVM_GET_XSAVE, state->xsave);
+	else
+		return ioctl(vcpu->fd, KVM_GET_XSAVE2, state->xsave);
 }
 
 struct kvm_x86_state *vcpu_save_state(struct kvm_vm *vm, uint32_t vcpuid)
@@ -1000,7 +1063,7 @@ struct kvm_x86_state *vcpu_save_state(struct kvm_vm *vm, uint32_t vcpuid)
         TEST_ASSERT(r == 0, "Unexpected result from KVM_GET_REGS, r: %i",
                 r);
 
-	r = ioctl(vcpu->fd, KVM_GET_XSAVE, &state->xsave);
+	r = vcpu_save_xsave_state(vm, vcpu, state);
         TEST_ASSERT(r == 0, "Unexpected result from KVM_GET_XSAVE, r: %i",
                 r);
 
@@ -1045,9 +1108,14 @@ void vcpu_load_state(struct kvm_vm *vm, uint32_t vcpuid, struct kvm_x86_state *s
 	struct vcpu *vcpu = vcpu_find(vm, vcpuid);
 	int r;
 
-	r = ioctl(vcpu->fd, KVM_SET_XSAVE, &state->xsave);
-        TEST_ASSERT(r == 0, "Unexpected result from KVM_SET_XSAVE, r: %i",
+	r = ioctl(vcpu->fd, KVM_SET_SREGS, &state->sregs);
+	TEST_ASSERT(r == 0, "Unexpected result from KVM_SET_SREGS, r: %i",
                 r);
+
+	r = ioctl(vcpu->fd, KVM_SET_MSRS, &state->msrs);
+	TEST_ASSERT(r == state->msrs.nmsrs,
+		"Unexpected result from KVM_SET_MSRS, r: %i (failed at %x)",
+		r, r == state->msrs.nmsrs ? -1 : state->msrs.entries[r].index);
 
 	if (kvm_check_cap(KVM_CAP_XCRS)) {
 		r = ioctl(vcpu->fd, KVM_SET_XCRS, &state->xcrs);
@@ -1055,13 +1123,9 @@ void vcpu_load_state(struct kvm_vm *vm, uint32_t vcpuid, struct kvm_x86_state *s
 			    r);
 	}
 
-	r = ioctl(vcpu->fd, KVM_SET_SREGS, &state->sregs);
-        TEST_ASSERT(r == 0, "Unexpected result from KVM_SET_SREGS, r: %i",
+	r = ioctl(vcpu->fd, KVM_SET_XSAVE, state->xsave);
+	TEST_ASSERT(r == 0, "Unexpected result from KVM_SET_XSAVE, r: %i",
                 r);
-
-	r = ioctl(vcpu->fd, KVM_SET_MSRS, &state->msrs);
-        TEST_ASSERT(r == state->msrs.nmsrs, "Unexpected result from KVM_SET_MSRS, r: %i (failed at %x)",
-                r, r == state->msrs.nmsrs ? -1 : state->msrs.entries[r].index);
 
 	r = ioctl(vcpu->fd, KVM_SET_VCPU_EVENTS, &state->events);
         TEST_ASSERT(r == 0, "Unexpected result from KVM_SET_VCPU_EVENTS, r: %i",
@@ -1084,6 +1148,12 @@ void vcpu_load_state(struct kvm_vm *vm, uint32_t vcpuid, struct kvm_x86_state *s
 		TEST_ASSERT(r == 0, "Unexpected result from KVM_SET_NESTED_STATE, r: %i",
 			r);
 	}
+}
+
+void kvm_x86_state_cleanup(struct kvm_x86_state *state)
+{
+	free(state->xsave);
+	free(state);
 }
 
 bool is_intel_cpu(void)

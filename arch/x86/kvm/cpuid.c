@@ -32,7 +32,7 @@
 u32 kvm_cpu_caps[NR_KVM_CPU_CAPS] __read_mostly;
 EXPORT_SYMBOL_GPL(kvm_cpu_caps);
 
-static u32 xstate_required_size(u64 xstate_bv, bool compacted)
+u32 xstate_required_size(u64 xstate_bv, bool compacted)
 {
 	int feature_bit = 0;
 	u32 ret = XSAVE_HDR_SIZE + XSAVE_HDR_OFFSET;
@@ -42,7 +42,11 @@ static u32 xstate_required_size(u64 xstate_bv, bool compacted)
 		if (xstate_bv & 0x1) {
 		        u32 eax, ebx, ecx, edx, offset;
 		        cpuid_count(0xD, feature_bit, &eax, &ebx, &ecx, &edx);
-			offset = compacted ? ret : ebx;
+			/* ECX[1]: 64B alignment in compacted form */
+			if (compacted)
+				offset = (ecx & 0x2) ? ALIGN(ret, 64) : ret;
+			else
+				offset = ebx;
 			ret = max(ret, offset + eax);
 		}
 
@@ -73,9 +77,12 @@ static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
 	return NULL;
 }
 
-static int kvm_check_cpuid(struct kvm_cpuid_entry2 *entries, int nent)
+static int kvm_check_cpuid(struct kvm_vcpu *vcpu,
+			   struct kvm_cpuid_entry2 *entries,
+			   int nent)
 {
 	struct kvm_cpuid_entry2 *best;
+	u64 xfeatures;
 
 	/*
 	 * The existing code assumes virtual address is 48-bit or 57-bit in the
@@ -89,7 +96,20 @@ static int kvm_check_cpuid(struct kvm_cpuid_entry2 *entries, int nent)
 			return -EINVAL;
 	}
 
-	return 0;
+	/*
+	 * Exposing dynamic xfeatures to the guest requires additional
+	 * enabling in the FPU, e.g. to expand the guest XSAVE state size.
+	 */
+	best = cpuid_entry2_find(entries, nent, 0xd, 0);
+	if (!best)
+		return 0;
+
+	xfeatures = best->eax | ((u64)best->edx << 32);
+	xfeatures &= XFEATURE_MASK_USER_DYNAMIC;
+	if (!xfeatures)
+		return 0;
+
+	return fpu_enable_guest_xfd_features(&vcpu->arch.guest_fpu, xfeatures);
 }
 
 void kvm_update_pv_runtime(struct kvm_vcpu *vcpu)
@@ -275,7 +295,7 @@ int kvm_vcpu_ioctl_set_cpuid(struct kvm_vcpu *vcpu,
 		e2[i].padding[2] = 0;
 	}
 
-	r = kvm_check_cpuid(e2, cpuid->nent);
+	r = kvm_check_cpuid(vcpu, e2, cpuid->nent);
 	if (r) {
 		kvfree(e2);
 		goto out_free_cpuid;
@@ -311,7 +331,7 @@ int kvm_vcpu_ioctl_set_cpuid2(struct kvm_vcpu *vcpu,
 			return PTR_ERR(e2);
 	}
 
-	r = kvm_check_cpuid(e2, cpuid->nent);
+	r = kvm_check_cpuid(vcpu, e2, cpuid->nent);
 	if (r) {
 		kvfree(e2);
 		return r;
@@ -388,9 +408,11 @@ void kvm_set_cpu_caps(void)
 #ifdef CONFIG_X86_64
 	unsigned int f_gbpages = F(GBPAGES);
 	unsigned int f_lm = F(LM);
+	unsigned int f_xfd = F(XFD);
 #else
 	unsigned int f_gbpages = 0;
 	unsigned int f_lm = 0;
+	unsigned int f_xfd = 0;
 #endif
 	memset(kvm_cpu_caps, 0, sizeof(kvm_cpu_caps));
 
@@ -458,7 +480,8 @@ void kvm_set_cpu_caps(void)
 		F(AVX512_4VNNIW) | F(AVX512_4FMAPS) | F(SPEC_CTRL) |
 		F(SPEC_CTRL_SSBD) | F(ARCH_CAPABILITIES) | F(INTEL_STIBP) |
 		F(MD_CLEAR) | F(AVX512_VP2INTERSECT) | F(FSRM) |
-		F(SERIALIZE) | F(TSXLDTRK) | F(AVX512_FP16)
+		F(SERIALIZE) | F(TSXLDTRK) | F(AVX512_FP16) |
+		F(AMX_TILE) | F(AMX_INT8) | F(AMX_BF16)
 	);
 
 	/* TSC_ADJUST and ARCH_CAPABILITIES are emulated in software. */
@@ -477,7 +500,7 @@ void kvm_set_cpu_caps(void)
 	);
 
 	kvm_cpu_cap_mask(CPUID_D_1_EAX,
-		F(XSAVEOPT) | F(XSAVEC) | F(XGETBV1) | F(XSAVES)
+		F(XSAVEOPT) | F(XSAVEC) | F(XGETBV1) | F(XSAVES) | f_xfd
 	);
 
 	kvm_cpu_cap_init_scattered(CPUID_12_EAX,
@@ -583,6 +606,8 @@ static struct kvm_cpuid_entry2 *do_host_cpuid(struct kvm_cpuid_array *array,
 	case 0x14:
 	case 0x17:
 	case 0x18:
+	case 0x1d:
+	case 0x1e:
 	case 0x1f:
 	case 0x8000001d:
 		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
@@ -761,12 +786,15 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 				goto out;
 		}
 		break;
-	case 0xd:
-		entry->eax &= supported_xcr0;
-		entry->ebx = xstate_required_size(supported_xcr0, false);
+	case 0xd: {
+		u64 permitted_xcr0 = supported_xcr0 & xstate_get_guest_group_perm();
+		u64 permitted_xss = supported_xss;
+
+		entry->eax &= permitted_xcr0;
+		entry->ebx = xstate_required_size(permitted_xcr0, false);
 		entry->ecx = entry->ebx;
-		entry->edx &= supported_xcr0 >> 32;
-		if (!supported_xcr0)
+		entry->edx &= permitted_xcr0 >> 32;
+		if (!permitted_xcr0)
 			break;
 
 		entry = do_host_cpuid(array, function, 1);
@@ -775,20 +803,20 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 
 		cpuid_entry_override(entry, CPUID_D_1_EAX);
 		if (entry->eax & (F(XSAVES)|F(XSAVEC)))
-			entry->ebx = xstate_required_size(supported_xcr0 | supported_xss,
+			entry->ebx = xstate_required_size(permitted_xcr0 | permitted_xss,
 							  true);
 		else {
-			WARN_ON_ONCE(supported_xss != 0);
+			WARN_ON_ONCE(permitted_xss != 0);
 			entry->ebx = 0;
 		}
-		entry->ecx &= supported_xss;
-		entry->edx &= supported_xss >> 32;
+		entry->ecx &= permitted_xss;
+		entry->edx &= permitted_xss >> 32;
 
 		for (i = 2; i < 64; ++i) {
 			bool s_state;
-			if (supported_xcr0 & BIT_ULL(i))
+			if (permitted_xcr0 & BIT_ULL(i))
 				s_state = false;
-			else if (supported_xss & BIT_ULL(i))
+			else if (permitted_xss & BIT_ULL(i))
 				s_state = true;
 			else
 				continue;
@@ -802,16 +830,20 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 			 * invalid sub-leafs.  Only valid sub-leafs should
 			 * reach this point, and they should have a non-zero
 			 * save state size.  Furthermore, check whether the
-			 * processor agrees with supported_xcr0/supported_xss
+			 * processor agrees with permitted_xcr0/permitted_xss
 			 * on whether this is an XCR0- or IA32_XSS-managed area.
 			 */
 			if (WARN_ON_ONCE(!entry->eax || (entry->ecx & 0x1) != s_state)) {
 				--array->nent;
 				continue;
 			}
+
+			if (!kvm_cpu_cap_has(X86_FEATURE_XFD))
+				entry->ecx &= ~BIT_ULL(2);
 			entry->edx = 0;
 		}
 		break;
+	}
 	case 0x12:
 		/* Intel SGX */
 		if (!kvm_cpu_cap_has(X86_FEATURE_SGX)) {
@@ -854,6 +886,24 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		for (i = 1, max_idx = entry->eax; i <= max_idx; ++i) {
 			if (!do_host_cpuid(array, function, i))
 				goto out;
+		}
+		break;
+	/* Intel AMX TILE */
+	case 0x1d:
+		if (!kvm_cpu_cap_has(X86_FEATURE_AMX_TILE)) {
+			entry->eax = entry->ebx = entry->ecx = entry->edx = 0;
+			break;
+		}
+
+		for (i = 1, max_idx = entry->eax; i <= max_idx; ++i) {
+			if (!do_host_cpuid(array, function, i))
+				goto out;
+		}
+		break;
+	case 0x1e: /* TMUL information */
+		if (!kvm_cpu_cap_has(X86_FEATURE_AMX_TILE)) {
+			entry->eax = entry->ebx = entry->ecx = entry->edx = 0;
+			break;
 		}
 		break;
 	case KVM_CPUID_SIGNATURE: {
