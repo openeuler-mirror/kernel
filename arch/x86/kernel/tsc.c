@@ -1095,8 +1095,7 @@ static struct clocksource clocksource_tsc_early = {
 	.rating                 = 299,
 	.read                   = read_tsc,
 	.mask                   = CLOCKSOURCE_MASK(64),
-	.flags                  = CLOCK_SOURCE_IS_CONTINUOUS |
-				  CLOCK_SOURCE_MUST_VERIFY,
+	.flags                  = CLOCK_SOURCE_IS_CONTINUOUS,
 	.archdata               = { .vclock_mode = VCLOCK_TSC },
 	.resume			= tsc_resume,
 	.mark_unstable		= tsc_cs_mark_unstable,
@@ -1354,6 +1353,20 @@ static int __init init_tsc_clocksource(void)
 		clocksource_tsc.flags |= CLOCK_SOURCE_SUSPEND_NONSTOP;
 
 	/*
+	 * Disable the clocksource watchdog when the system has:
+	 *  - TSC running at constant frequency
+	 *  - TSC which does not stop in C-States
+	 *  - the TSC_ADJUST register which allows to detect even minimal
+	 *    modifications
+	 *  - not more than four sockets.
+	 */
+	if (boot_cpu_has(X86_FEATURE_CONSTANT_TSC) &&
+	    boot_cpu_has(X86_FEATURE_NONSTOP_TSC) &&
+	    boot_cpu_has(X86_FEATURE_TSC_ADJUST) &&
+	    topology_max_packages() <= 4)
+		clocksource_tsc.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
+
+	/*
 	 * When TSC frequency is known (retrieved via MSR or CPUID), we skip
 	 * the refined calibration and directly register it as a clocksource.
 	 */
@@ -1482,9 +1495,6 @@ void __init tsc_init(void)
 		mark_tsc_unstable("TSCs unsynchronized");
 		return;
 	}
-
-	if (tsc_clocksource_reliable)
-		clocksource_tsc_early.flags &= ~CLOCK_SOURCE_MUST_VERIFY;
 
 	clocksource_register_khz(&clocksource_tsc_early, tsc_khz);
 	detect_art();
