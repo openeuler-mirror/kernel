@@ -59,9 +59,12 @@ struct blkcg {
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct list_head		cgwb_list;
 #endif
-
+#if defined(CONFIG_CGROUP_V1_WRITEBACK) && !defined(__GENKSYMS__)
+	struct list_head		memcg_list;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };

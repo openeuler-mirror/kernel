@@ -381,9 +381,17 @@ struct mem_cgroup {
 #else
 	KABI_RESERVE(1)
 #endif
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+	KABI_USE(2, struct cgroup_subsys_state *wb_blk_css)
+#else
 	KABI_RESERVE(2)
+#endif
+#if defined(CONFIG_CGROUP_V1_WRITEBACK) && !defined(__GENKSYMS__)
+	struct list_head memcg_node;
+#else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
