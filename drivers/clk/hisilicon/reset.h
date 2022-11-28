@@ -11,6 +11,9 @@ struct hisi_reset_controller;
 
 #ifdef CONFIG_RESET_CONTROLLER
 struct hisi_reset_controller *hisi_reset_init(struct platform_device *pdev);
+#ifdef CONFIG_ARCH_HISI_BVT
+int __init hibvt_reset_init(struct device_node *np, int nr_rsts);
+#endif
 void hisi_reset_exit(struct hisi_reset_controller *rstc);
 #else
 static inline
