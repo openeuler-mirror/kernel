@@ -1,0 +1,258 @@
+config ARCH_HISI_BVT
+	bool "Hisilicon BVT SoC Support"
+	select ARM_AMBA
+	select ARM_GIC if ARCH_MULTI_V7
+	select ARM_VIC if ARCH_MULTI_V5
+	select ARM_TIMER_SP804
+	select POWER_RESET
+	select POWER_SUPPLY
+
+if ARCH_HISI_BVT
+
+menu "Hisilicon BVT platform type"
+
+config ARCH_HI3521DV200
+	bool "Hisilicon Hi3521DV200 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3521DV200 Soc family.
+
+config ARCH_HI3520DV500
+	bool "Hisilicon Hi3520DV500 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3520DV500 Soc family.
+
+config ARCH_HI3516A
+	bool "Hisilicon Hi3516A Cortex-A7(Single) family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARM_GIC
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	help
+		Support for Hisilicon Hi3516A Soc family.
+
+config ARCH_HI3516CV500
+	bool "Hisilicon Hi3516CV500 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3516CV500 Soc family.
+
+config ARCH_HI3516DV300
+	bool "Hisilicon Hi3516DV300 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3516DV300 Soc family.
+
+config ARCH_HI3516EV200
+	bool "Hisilicon Hi3516EV200 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3516EV200 Soc family.
+
+config ARCH_HI3516EV300
+	bool "Hisilicon Hi3516EV300 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3516EV300 Soc family.
+
+config ARCH_HI3518EV300
+	bool "Hisilicon Hi3518EV300 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3518EV300 Soc family.
+
+config ARCH_HI3516DV200
+	bool "Hisilicon Hi3516DV200 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3516DV200 Soc family.
+config ARCH_HI3556V200
+	bool "Hisilicon Hi3556V200 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3556V200 Soc family.
+
+config ARCH_HI3559V200
+	bool "Hisilicon Hi3559V200 Cortex-A7 family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	select POWER_RESET_HISI
+	help
+		Support for Hisilicon Hi3559V200 Soc family.
+
+config ARCH_HI3518EV20X
+	bool "Hisilicon Hi3518ev20x ARM926T(Single) family"
+	depends on ARCH_MULTI_V5
+	select PINCTRL
+	select PINCTRL_SINGLE
+	help
+		Support for Hisilicon Hi3518ev20x Soc family.
+
+config ARCH_HI3536DV100
+	bool "Hisilicon Hi3536DV100 Cortex-A7(Single) family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select PINCTRL
+	help
+		Support for Hisilicon Hi3536DV100 Soc family.
+
+config ARCH_HI3521A
+	bool "Hisilicon Hi3521A A7(Single) family"
+	depends on ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARM_GIC
+	select PINCTRL
+	select PINCTRL_SINGLE
+	help
+		Support for Hisilicon Hi3521a Soc family.
+
+config ARCH_HI3531A
+   bool "Hisilicon Hi3531A A9 family" if ARCH_MULTI_V7
+   select HAVE_ARM_ARCH_TIMER
+   select ARM_GIC
+   select CACHE_L2X0
+   select PINCTRL
+   select PINCTRL_SINGLE
+   select HAVE_ARM_SCU if SMP
+   select NEED_MACH_IO_H if PCI
+   help
+       Support for Hisilicon Hi3531a Soc family.
+
+config ARCH_HI3556AV100
+	bool "Hisilicon Hi3556AV100 Cortex-a53 family" if ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARM_CCI
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select PMC if SMP
+	help
+	  Support for Hisilicon Hi3556AV100 Soc family
+if ARCH_HI3556AV100
+
+config PMC
+	bool
+	depends on ARCH_HI3556AV100
+	help
+	  support power control for Hi3556AV100 Cortex-a53
+
+endif
+
+config ARCH_HI3519AV100
+	bool "Hisilicon Hi3519AV100 Cortex-a53 family" if ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARM_CCI
+	select ARM_GIC
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select NEED_MACH_IO_H if PCI
+	select PMC if SMP
+	help
+	  Support for Hisilicon Hi3519AV100 Soc family
+if ARCH_HI3519AV100
+
+config PMC
+	bool
+	depends on ARCH_HI3519AV100
+	help
+	  support power control for Hi3519AV100 Cortex-a53
+
+endif
+
+config ARCH_HI3568V100
+	bool "Hisilicon Hi3568V100 Cortex-a53 family" if ARCH_MULTI_V7
+	select HAVE_ARM_ARCH_TIMER
+	select ARM_CCI
+	select ARM_GIC
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select NEED_MACH_IO_H if PCI
+	select PMC if SMP
+	help
+	  Support for Hisilicon Hi3568V100 Soc family
+if ARCH_HI3568V100
+
+config PMC
+	bool
+	depends on ARCH_HI3568V100
+	help
+	  support power control for Hi3568V100 Cortex-a53
+
+endif
+
+config ARCH_HISI_BVT_AMP
+	bool "Hisilicon AMP solution support"
+      depends on ARCH_HI3556AV100 || ARCH_HI3519AV100 || ARCH_HI3516CV500 || ARCH_HI3516DV300 || ARCH_HI3556V200 || ARCH_HI3559V200 || ARCH_HI3562V100 || ARCH_HI3566V100 || ARCH_HI3568V100
+	help
+	  support for Hisilicon AMP solution
+
+config HISI_MC
+	bool "Hisilicon mc platform solution"
+	default n
+	help
+	  support for Hisilicon mc platform solution
+
+config AMP_ZRELADDR
+	hex 'amp zreladdr'
+	depends on ARCH_HISI_BVT_AMP
+	default "0x32008000" if ARCH_HI3556AV100 || ARCH_HI3519AV100 || ARCH_HI3568V100
+	default "0x82008000" if ARCH_HI3516CV500 || ARCH_HI3516DV300 || ARCH_HI3556V200 || ARCH_HI3559V200 || ARCH_HI3562V100 || ARCH_HI3566V100
+	default "0x42008000" if ARCH_HI3516EV200 || ARCH_HI3516EV300 || ARCH_HI3518EV300 || ARCH_HI3516DV200
+config HI_ZRELADDR
+       hex 'zreladdr'
+       default "0x40008000" if ARCH_HI3521DV200
+       default "0x40008000" if ARCH_HI3520DV500
+       default "0x80008000" if ARCH_HI3516CV500
+       default "0x80008000" if ARCH_HI3516DV300
+       default "0x80008000" if ARCH_HI3556V200
+       default "0x80008000" if ARCH_HI3559V200
+       default "0x80008000" if ARCH_HI3562V100
+       default "0x80008000" if ARCH_HI3566V100
+       default "0x80008000" if ARCH_HI3516A
+       default "0x80008000" if ARCH_HI3518EV20X
+       default "0x80008000" if ARCH_HI3536DV100
+       default "0x80008000" if ARCH_HI3521A
+       default "0x40008000" if ARCH_HI3531A
+       default "0x40008000" if ARCH_HI3516EV200 || ARCH_HI3516EV300 || ARCH_HI3518EV300 || ARCH_HI3516DV200
+       default "0x22008000" if ARCH_HI3556AV100 || ARCH_HI3519AV100 || ARCH_HI3568V100
+
+config HI_PARAMS_PHYS
+       hex 'params_phys'
+       default "0x00000100"
+
+config HI_INITRD_PHYS
+       hex 'initrd_phys'
+       default "0x00800000"
+
+endmenu
+
+endif

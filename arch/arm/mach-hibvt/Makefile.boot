@@ -1,0 +1,7 @@
+ifeq ($(CONFIG_ARCH_HISI_BVT_AMP), y)
+zreladdr-$(CONFIG_ARCH_HISI_BVT)      := $(CONFIG_AMP_ZRELADDR)
+else
+zreladdr-$(CONFIG_ARCH_HISI_BVT)      := $(CONFIG_HI_ZRELADDR)
+endif
+params_phys-$(CONFIG_ARCH_HISI_BVT)   := $(CONFIG_HI_PARAMS_PHYS)
+initrd_phys-$(CONFIG_ARCH_HISI_BVT)   := $(CONFIG_HI_INITRD_PHYS)
