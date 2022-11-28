@@ -10,6 +10,7 @@
 
 #include <linux/types.h>
 #include <linux/bpf_common.h>
+#include <linux/kabi.h>
 
 /* Extended instruction set based on top of classic BPF */
 
@@ -199,7 +200,7 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_EXT,
 	BPF_PROG_TYPE_LSM,
 	BPF_PROG_TYPE_SK_LOOKUP,
-	BPF_PROG_TYPE_SCHED,
+	KABI_EXTEND_ENUM(BPF_PROG_TYPE_SCHED)
 };
 
 enum bpf_attach_type {
@@ -241,7 +242,7 @@ enum bpf_attach_type {
 	BPF_XDP_CPUMAP,
 	BPF_SK_LOOKUP,
 	BPF_XDP,
-	BPF_SCHED,
+	KABI_BROKEN_INSERT_ENUM(BPF_SCHED)
 	__MAX_BPF_ATTACH_TYPE
 };
 
