@@ -38,3 +38,4 @@ obj-$(CONFIG_CPU_ISOLATION) += isolation.o
 obj-$(CONFIG_PSI) += psi.o
 obj-$(CONFIG_SCHED_CORE) += core_sched.o
 obj-$(CONFIG_BPF_SCHED) += bpf_sched.o
+obj-$(CONFIG_BPF_SCHED) += bpf_topology.o

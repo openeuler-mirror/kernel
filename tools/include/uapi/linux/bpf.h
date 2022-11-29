@@ -3790,6 +3790,18 @@ union bpf_attr {
  *		Get multiple types of *cpu* statistics and store in *ctx*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * long bpf_init_cpu_topology(struct bpf_map *map)
+ *	Description
+ *		Initializing the cpu topology which used for bpf prog.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_get_cpumask_info(struct bpf_map *map, struct bpf_cpumask_info *cpus)
+ *	Description
+ *		Get system cpus returned in *cpus*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3955,6 +3967,8 @@ union bpf_attr {
 	FN(sched_set_tg_tag),		\
 	FN(sched_set_task_tag),		\
 	FN(sched_cpu_stats_of),		\
+	FN(init_cpu_topology),		\
+	FN(get_cpumask_info),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
