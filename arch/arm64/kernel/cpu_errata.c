@@ -68,6 +68,7 @@ hisilicon_1980005_match(const struct arm64_cpu_capabilities *entry,
 	static const struct midr_range idc_support_list[] = {
 		MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
 		MIDR_REV(MIDR_HISI_TSV200, 1, 0),
+		MIDR_REV(MIDR_HISI_TSV200, 1, 2),
 		{ /* sentinel */ }
 	};
 
