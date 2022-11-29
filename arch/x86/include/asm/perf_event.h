@@ -2,7 +2,9 @@
 #ifndef _ASM_X86_PERF_EVENT_H
 #define _ASM_X86_PERF_EVENT_H
 
+#ifndef __GENKSYMS__
 #include <linux/static_call.h>
+#endif
 
 /*
  * Performance event hw details:
