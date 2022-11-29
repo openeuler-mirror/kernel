@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2211.5.0
+%global hulkrelease 2211.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0178
+Release: %{hulkrelease}.0179
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,11 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 29 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.6.0.0179
+- x86/tsc: use topology_max_packages() in tsc watchdog check
+- scsi: hisi_sas: Set iptt aborted flag when receiving an abnormal CQ
+- ext4: fix bug in extents parsing when eh_entries == 0 and eh_depth > 0
 
 * Tue Nov 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.5.0.0178
 - svm: Delete unused ioctl command
