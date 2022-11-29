@@ -3116,12 +3116,23 @@ void __memcg_kmem_uncharge_page(struct page *page, int order)
 {
 	struct obj_cgroup *objcg;
 	unsigned int nr_pages = 1 << order;
+#ifdef CONFIG_ASCEND_FEATURES
+	struct mem_cgroup *memcg;
+#endif
 
 	if (!PageMemcgKmem(page))
 		return;
 
 	objcg = __page_objcg(page);
 	obj_cgroup_uncharge_pages(objcg, nr_pages);
+
+#ifdef CONFIG_ASCEND_FEATURES
+	memcg = get_mem_cgroup_from_objcg(objcg);
+	if (!mem_cgroup_is_root(memcg))
+		memcg_oom_recover(memcg);
+	css_put(&memcg->css);
+#endif
+
 	page->memcg_data = 0;
 	obj_cgroup_put(objcg);
 }
