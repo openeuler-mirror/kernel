@@ -739,7 +739,7 @@ static bool perf_pmu__valid_suffix(const char *pmu_name, char *tok)
 
 	/* Ensure we end in a number */
 	while (1) {
-		if (!isdigit(*p))
+		if (!isdigit(*p) && (*p != '_'))
 			return false;
 		if (*(++p) == 0)
 			break;
