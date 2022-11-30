@@ -100,6 +100,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_VLAN_FLTR_MDF_B,
 	HNAE3_DEV_SUPPORT_MC_MAC_MNG_B,
 	HNAE3_DEV_SUPPORT_CQ_B,
+	HNAE3_DEV_SUPPORT_LANE_NUM_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -161,6 +162,9 @@ enum HNAE3_DEV_CAP_BITS {
 
 #define hnae3_ae_dev_cq_supported(ae_dev) \
 	test_bit(HNAE3_DEV_SUPPORT_CQ_B, (ae_dev)->caps)
+
+#define hnae3_ae_dev_lane_num_supported(ae_dev) \
+	test_bit(HNAE3_DEV_SUPPORT_LANE_NUM_B, (ae_dev)->caps)
 
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,

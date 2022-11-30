@@ -260,6 +260,7 @@ struct hclge_mac {
 	u8 duplex;
 	u8 support_autoneg;
 	u8 speed_type;	/* 0: sfp speed, 1: active speed */
+	u8 lane_num;
 	u32 speed;
 	u32 max_speed;
 	u32 speed_ability; /* speed ability supported by current media */
@@ -1143,4 +1144,8 @@ int hclge_check_mac_addr_valid(struct hclge_dev *hdev, u8 vf,
 int hclge_push_vf_link_status(struct hclge_vport *vport);
 int hclge_enable_vport_vlan_filter(struct hclge_vport *vport, bool request_en);
 int hclge_mac_update_stats(struct hclge_dev *hdev);
+int hclge_register_sysfs(struct hclge_dev *hdev);
+void hclge_unregister_sysfs(struct hclge_dev *hdev);
+int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,
+			       u8 lane_num);
 #endif

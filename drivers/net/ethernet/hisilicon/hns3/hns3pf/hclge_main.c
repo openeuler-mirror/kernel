@@ -2663,8 +2663,8 @@ static int hclge_convert_to_fw_speed(u32 speed_drv, u32 *speed_fw)
 	return -EINVAL;
 }
 
-static int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed,
-				      u8 duplex)
+int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed,
+			       u8 duplex, u8 lane_num)
 {
 	struct hclge_config_mac_speed_dup_cmd *req;
 	struct hclge_desc desc;
@@ -2688,6 +2688,7 @@ static int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed,
 			speed_fw);
 	hnae3_set_bit(req->mac_change_fec_en, HCLGE_CFG_MAC_SPEED_CHANGE_EN_B,
 		      1);
+	req->lane_num = lane_num;
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
@@ -2709,7 +2710,7 @@ int hclge_cfg_mac_speed_dup(struct hclge_dev *hdev, int speed, u8 duplex)
 	    mac->duplex == duplex)
 		return 0;
 
-	ret = hclge_cfg_mac_speed_dup_hw(hdev, speed, duplex);
+	ret = hclge_cfg_mac_speed_dup_hw(hdev, speed, duplex, 0);
 	if (ret)
 		return ret;
 
@@ -2875,7 +2876,8 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 	hdev->support_sfp_query = true;
 	hdev->hw.mac.duplex = HCLGE_MAC_FULL;
 	ret = hclge_cfg_mac_speed_dup_hw(hdev, hdev->hw.mac.speed,
-					 hdev->hw.mac.duplex);
+					 hdev->hw.mac.duplex,
+					 hdev->hw.mac.lane_num);
 	if (ret)
 		return ret;
 
@@ -3200,6 +3202,7 @@ static int hclge_get_sfp_info(struct hclge_dev *hdev, struct hclge_mac *mac)
 		mac->autoneg = resp->autoneg;
 		mac->support_autoneg = resp->autoneg_ability;
 		mac->speed_type = QUERY_ACTIVE_SPEED;
+		mac->lane_num = resp->lane_num;
 		if (!resp->active_fec)
 			mac->fec_mode = 0;
 		else
@@ -12173,13 +12176,19 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 		goto err_mdiobus_unreg;
 	}
 
+	ret = hclge_register_sysfs(hdev);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to register sysfs, ret = %d\n", ret);
+		goto err_mdiobus_unreg;
+	}
+
 	ret = hclge_ptp_init(hdev);
 	if (ret)
-		goto err_mdiobus_unreg;
+		goto err_sysfs_unregister;
 
 	ret = hclge_update_port_info(hdev);
 	if (ret)
-		goto err_mdiobus_unreg;
+		goto err_sysfs_unregister;
 
 	INIT_KFIFO(hdev->mac_tnl_log);
 
@@ -12224,6 +12233,8 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	return 0;
 
+err_sysfs_unregister:
+	hclge_unregister_sysfs(hdev);
 err_mdiobus_unreg:
 	if (hdev->hw.mac.phydev)
 		mdiobus_unregister(hdev->hw.mac.mdio_bus);
@@ -12605,6 +12616,7 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_mac *mac = &hdev->hw.mac;
 
+	hclge_unregister_sysfs(hdev);
 	hclge_reset_vf_rate(hdev);
 	hclge_clear_vf_vlan(hdev);
 	hclge_state_uninit(hdev);
