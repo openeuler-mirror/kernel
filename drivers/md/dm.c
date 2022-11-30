@@ -2253,6 +2253,19 @@ static void __dm_destroy(struct mapped_device *md, bool wait)
 	blk_set_queue_dying(md->queue);
 
 	/*
+	 * Rare, but there may be I/O requests still going to complete,
+	 * for example.  Wait for all references to disappear.
+	 * No one should increment the reference count of the mapped_device,
+	 * after the mapped_device state becomes DMF_FREEING.
+	 */
+	if (wait)
+		while (atomic_read(&md->holders))
+			msleep(1);
+	else if (atomic_read(&md->holders))
+		DMWARN("%s: Forcibly removing mapped_device still in use! (%d users)",
+		       dm_device_name(md), atomic_read(&md->holders));
+
+	/*
 	 * Take suspend_lock so that presuspend and postsuspend methods
 	 * do not race with internal suspend.
 	 */
@@ -2267,19 +2280,6 @@ static void __dm_destroy(struct mapped_device *md, bool wait)
 	/* dm_put_live_table must be before msleep, otherwise deadlock is possible */
 	dm_put_live_table(md, srcu_idx);
 	mutex_unlock(&md->suspend_lock);
-
-	/*
-	 * Rare, but there may be I/O requests still going to complete,
-	 * for example.  Wait for all references to disappear.
-	 * No one should increment the reference count of the mapped_device,
-	 * after the mapped_device state becomes DMF_FREEING.
-	 */
-	if (wait)
-		while (atomic_read(&md->holders))
-			msleep(1);
-	else if (atomic_read(&md->holders))
-		DMWARN("%s: Forcibly removing mapped_device still in use! (%d users)",
-		       dm_device_name(md), atomic_read(&md->holders));
 
 	dm_sysfs_exit(md);
 	dm_table_destroy(__unbind(md));
