@@ -42,7 +42,11 @@
 #define PGDIR_SIZE	(1UL << PGDIR_SHIFT)
 #define PGDIR_MASK	(~(PGDIR_SIZE-1))
 
+#ifdef CONFIG_VA_BITS_40
+#define VA_BITS		40
+#else
 #define VA_BITS		(PGDIR_SHIFT + (PAGE_SHIFT - 3))
+#endif
 
 #define PTRS_PER_PGD	(PAGE_SIZE >> 3)
 #if CONFIG_PGTABLE_LEVELS > 3
