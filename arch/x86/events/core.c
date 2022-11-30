@@ -1296,6 +1296,10 @@ static void x86_pmu_enable(struct pmu *pmu)
 			if (hwc->state & PERF_HES_ARCH)
 				continue;
 
+			/*
+			 * if cpuc->enabled = 0, then no wrmsr as
+			 * per x86_pmu_enable_event()
+			 */
 			x86_pmu_start(event, PERF_EF_RELOAD);
 		}
 		cpuc->n_added = 0;
@@ -1327,6 +1331,13 @@ int x86_perf_event_set_period(struct perf_event *event)
 	if (unlikely(is_topdown_count(event)) &&
 	    x86_pmu.set_topdown_event_period)
 		return x86_pmu.set_topdown_event_period(event);
+
+	/*
+	 * decrease period by the depth of the BRS feature to get
+	 * the last N taken branches and approximate the desired period
+	 */
+	if (has_branch_stack(event))
+		period = amd_brs_adjust_period(period);
 
 	/*
 	 * If we are way outside a reasonable range then just skip forward:
@@ -1659,10 +1670,14 @@ int x86_pmu_handle_irq(struct pt_regs *regs)
 		 * event overflow
 		 */
 		handled++;
-		perf_sample_data_init(&data, 0, event->hw.last_period);
 
 		if (!x86_perf_event_set_period(event))
 			continue;
+
+		perf_sample_data_init(&data, 0, event->hw.last_period);
+
+		if (has_branch_stack(event))
+			data.br_stack = &cpuc->lbr_stack;
 
 		if (perf_event_overflow(event, &data, regs))
 			x86_pmu_stop(event, 0);
