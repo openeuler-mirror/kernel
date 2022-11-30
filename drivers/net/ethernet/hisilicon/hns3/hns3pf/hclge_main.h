@@ -1158,4 +1158,5 @@ int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,
 			       u8 lane_num);
 int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported);
 int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode);
+struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
 #endif
