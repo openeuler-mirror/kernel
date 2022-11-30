@@ -12081,8 +12081,8 @@ static struct hclge_wol_info *hclge_get_wol_info(struct hnae3_handle *handle)
 	return &vport->back->hw.mac.wol;
 }
 
-static int hclge_get_wol_supported_mode(struct hclge_dev *hdev,
-					u32 *wol_supported)
+int hclge_get_wol_supported_mode(struct hclge_dev *hdev,
+				 u32 *wol_supported)
 {
 	struct hclge_query_wol_supported_cmd *wol_supported_cmd;
 	struct hclge_desc desc;
@@ -12100,6 +12100,26 @@ static int hclge_get_wol_supported_mode(struct hclge_dev *hdev,
 	}
 
 	*wol_supported = le32_to_cpu(wol_supported_cmd->supported_wake_mode);
+
+	return 0;
+}
+
+int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode)
+{
+	struct hclge_wol_cfg_cmd *wol_cfg_cmd;
+	struct hclge_desc desc;
+	int ret;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_WOL_CFG, true);
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to get wol config, ret = %d\n", ret);
+		return ret;
+	}
+
+	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)desc.data;
+	*mode = le32_to_cpu(wol_cfg_cmd->wake_on_lan_mode);
 
 	return 0;
 }
