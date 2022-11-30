@@ -293,16 +293,7 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 			 * backtrace is so similar
 			 */
 			stack = (unsigned long *)current_stack_pointer;
-		} else if (strncmp(t->comm, "migration/", 10) == 0) {
-			/*
-			 * current on other CPU
-			 * we call this in stop_machine, so the current
-			 * of each CPUs is mirgation, just compare the
-			 * task_comm here, because we can't get the
-			 * cpu_curr(task_cpu(t))). This assumes that no
-			 * other thread will pretend to be a stopper via
-			 * task_comm.
-			 */
+		} else if (klp_is_migration_thread(t->comm)) {
 			continue;
 		} else {
 			/*
@@ -440,7 +431,7 @@ static int do_patch(unsigned long pc, unsigned long new_addr)
 			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
 						ppc_inst(insns[i]));
 			if (ret) {
-				pr_err("patch instruction(%d) large range failed, ret=%d\n",
+				pr_err("patch instruction %d large range failed, ret=%d\n",
 				       i, ret);
 				return -EPERM;
 			}
@@ -478,7 +469,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
 						ppc_inst(func_node->arch_data.old_insns[i]));
 			if (ret) {
-				pr_err("restore instruction(%d) failed, ret=%d\n", i, ret);
+				pr_err("restore instruction %d failed, ret=%d\n", i, ret);
 				return;
 			}
 		}

@@ -274,16 +274,7 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 			/* current on this CPU */
 			frame.fp = (unsigned long)__builtin_frame_address(0);
 			frame.pc = (unsigned long)do_check_calltrace;
-		} else if (strncmp(t->comm, "migration/", 10) == 0) {
-			/*
-			 * current on other CPU
-			 * we call this in stop_machine, so the current
-			 * of each CPUs is mirgation, just compare the
-			 * task_comm here, because we can't get the
-			 * cpu_curr(task_cpu(t))). This assumes that no
-			 * other thread will pretend to be a stopper via
-			 * task_comm.
-			 */
+		} else if (klp_is_migration_thread(t->comm)) {
 			continue;
 		} else {
 			frame.fp = thread_saved_fp(t);
@@ -425,7 +416,7 @@ static int do_patch(unsigned long pc, unsigned long new_addr)
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			ret = aarch64_insn_patch_text_nosync(((u32 *)pc) + i, insns[i]);
 			if (ret) {
-				pr_err("patch instruction(%d) large range failed, ret=%d\n",
+				pr_err("patch instruction %d large range failed, ret=%d\n",
 				       i, ret);
 				return -EPERM;
 			}
@@ -471,7 +462,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 			ret = aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
 							     func_node->arch_data.old_insns[i]);
 			if (ret) {
-				pr_err("restore instruction(%d) failed, ret=%d\n", i, ret);
+				pr_err("restore instruction %d failed, ret=%d\n", i, ret);
 				return;
 			}
 		}

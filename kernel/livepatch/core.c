@@ -1054,10 +1054,9 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 		 * feature 'function descriptor'), otherwise size found by
 		 * 'kallsyms_lookup_size_offset' may be abnormal.
 		 */
-		if (func->old_name[0] !=  '.') {
+		if (func->old_name[0] !=  '.')
 			pr_warn("old_name '%s' may miss the prefix '.', old_size=%lu\n",
 				func->old_name, func->old_size);
-		}
 #endif
 
 		if (func->nop)
@@ -1565,7 +1564,6 @@ static int klp_mem_prepare(struct klp_patch *patch)
 
 static void remove_breakpoint(struct klp_func *func, bool restore)
 {
-
 	struct klp_func_node *func_node = klp_find_func_node(func->old_func);
 	struct arch_klp_data *arch_data = &func_node->arch_data;
 

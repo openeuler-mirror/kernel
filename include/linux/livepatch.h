@@ -316,6 +316,22 @@ static inline bool klp_have_reliable_stack(void) { return true; }
 #define klp_smp_isb()
 #endif
 
+#define KLP_MIGRATION_NAME_PREFIX	"migration/"
+static inline bool klp_is_migration_thread(const char *task_name)
+{
+	/*
+	 * current on other CPU
+	 * we call this in stop_machine, so the current
+	 * of each CPUs is migration, just compare the
+	 * task_comm here, because we can't get the
+	 * cpu_curr(task_cpu(t))). This assumes that no
+	 * other thread will pretend to be a stopper via
+	 * task_comm.
+	 */
+	return !strncmp(task_name, KLP_MIGRATION_NAME_PREFIX,
+			sizeof(KLP_MIGRATION_NAME_PREFIX) - 1);
+}
+
 #endif /* CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY */
 
 #else /* !CONFIG_LIVEPATCH */

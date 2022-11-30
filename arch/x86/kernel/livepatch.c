@@ -315,7 +315,7 @@ static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *da
 #endif
 
 	for_each_process_thread(g, t) {
-		if (!strncmp(t->comm, "migration/", 10))
+		if (klp_is_migration_thread(t->comm))
 			continue;
 
 #ifdef CONFIG_ARCH_STACKWALK
