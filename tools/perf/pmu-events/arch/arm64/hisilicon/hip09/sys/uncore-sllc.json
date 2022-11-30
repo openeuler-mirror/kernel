@@ -1,0 +1,134 @@
+[
+    {
+	"EventCode": "0x09",
+	"EventName": "sllc_cycles",
+	"BriefDescription": "Count of SLLC cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventName": "cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x20",
+	"EventName": "rx_req_sum",
+	"BriefDescription": "total cycles SLLC taken to receive requests",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x21",
+	"EventName": "rx_data_sum",
+	"BriefDescription": "total cycles SLLC taken to receive data",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x24",
+	"EventName": "tx_req_sum",
+	"BriefDescription": "total cycles SLLC taken to transmit requests",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x25",
+	"EventName": "tx_data_sum",
+	"BriefDescription": "total cycles SLLC taken to transmit data",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x30",
+	"EventName": "rx_req",
+	"BriefDescription": "Count of the requests received by SLLC",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x31",
+	"EventName": "rx_data",
+	"BriefDescription": "Count of the data received by SLLC",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x34",
+	"EventName": "tx_req",
+	"BriefDescription": "Count of the requests transmitted by SLLC",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"EventCode": "0x35",
+	"EventName": "tx_data",
+	"BriefDescription": "Count of the data transmitted by SLLC",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "rx_req_sum / rx_req",
+	"BriefDescription": "Average latency of SLLC receive requests(cycles)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	"MetricName": "sllc_rx_req_lat",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "rx_data_sum / rx_data",
+	"BriefDescription": "Average latency of SLLC receive data(cycles)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	"MetricName": "sllc_rx_data_lat",
+	"Unit": "hisi_sccl,sllc"
+   },
+   {
+	"MetricExpr": "tx_req_sum / tx_req",
+	"BriefDescription": "Average latency of SLLC transmit requests(cycles)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	"MetricName": "sllc_tx_req_lat",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "tx_data_sum / tx_data",
+	"BriefDescription": "Average latency of SLLC transmit data(cycles)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	"MetricName": "sllc_tx_data_lat",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "rx_req * 332 / duration_time",
+	"BriefDescription": "Average bandwidth of SLLC receive requests(bits/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	 "MetricName": "sllc_rx_req_bw",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "rx_data * 332 / duration_time",
+	"BriefDescription": "Average bandwidth of SLLC receive data(bits/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	 "MetricName": "sllc_rx_data_bw",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "tx_req * 332 / duration_time",
+	"BriefDescription": "Average bandwidth of SLLC transmit requests(bits/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	 "MetricName": "sllc_tx_req_bw",
+	"Unit": "hisi_sccl,sllc"
+    },
+    {
+	"MetricExpr": "tx_data * 332 / duration_time",
+	"BriefDescription": "Average bandwidth of SLLC transmit data(bits/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "SLLC",
+	 "MetricName": "sllc_tx_data_bw",
+	"Unit": "hisi_sccl,sllc"
+    }
+]
