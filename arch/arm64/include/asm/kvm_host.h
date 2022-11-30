@@ -47,6 +47,7 @@
 #define KVM_REQ_RECORD_STEAL	KVM_ARCH_REQ(3)
 #define KVM_REQ_RELOAD_GICv4	KVM_ARCH_REQ(4)
 #define KVM_REQ_RELOAD_PMU	KVM_ARCH_REQ(5)
+#define KVM_REQ_RELOAD_DVMBM	KVM_ARCH_REQ(6)
 
 #define KVM_DIRTY_LOG_MANUAL_CAPS   (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE | \
 				     KVM_DIRTY_LOG_INITIALLY_SET)
@@ -125,6 +126,7 @@ struct kvm_arch {
 #ifdef CONFIG_KVM_HISI_VIRT
 	spinlock_t dvm_lock;
 	cpumask_t *dvm_cpumask;	/* Union of all vcpu's cpus_ptr */
+	u64 lsudvmbm_el2;
 #endif
 };
 

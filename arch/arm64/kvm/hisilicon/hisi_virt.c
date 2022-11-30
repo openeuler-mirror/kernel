@@ -196,6 +196,97 @@ void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu)
 	kfree(vcpu->arch.pre_cpus_ptr);
 }
 
+static void __kvm_write_lsudvmbm(struct kvm *kvm)
+{
+	write_sysreg_s(kvm->arch.lsudvmbm_el2, SYS_LSUDVMBM_EL2);
+}
+
+static void kvm_write_lsudvmbm(struct kvm *kvm)
+{
+	/* Do we really need to hold the dvm_lock?? */
+	spin_lock(&kvm->arch.dvm_lock);
+	__kvm_write_lsudvmbm(kvm);
+	spin_unlock(&kvm->arch.dvm_lock);
+}
+
+static int kvm_dvmbm_get_dies_info(struct kvm *kvm, u64 *vm_aff3s, int size)
+{
+	int num = 0, cpu;
+
+	for_each_cpu(cpu, kvm->arch.dvm_cpumask) {
+		bool found = false;
+		u64 aff3;
+		int i;
+
+		if (num >= size)
+			break;
+
+		aff3 = MPIDR_AFFINITY_LEVEL(cpu_logical_map(cpu), 3);
+		for (i = 0; i < num; i++) {
+			if (vm_aff3s[i] == aff3) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
+			vm_aff3s[num++] = aff3;
+	}
+
+	return num;
+}
+
+static void kvm_update_vm_lsudvmbm(struct kvm *kvm)
+{
+	u64 mpidr, aff3, aff2, aff1;
+	u64 vm_aff3s[DVMBM_MAX_DIES];
+	u64 val;
+	int cpu, nr_dies;
+
+	nr_dies = kvm_dvmbm_get_dies_info(kvm, vm_aff3s, DVMBM_MAX_DIES);
+	if (nr_dies > 2) {
+		val = DVMBM_RANGE_ALL_DIES << DVMBM_RANGE_SHIFT;
+		goto out_update;
+	}
+
+	if (nr_dies == 1) {
+		val = DVMBM_RANGE_ONE_DIE << DVMBM_RANGE_SHIFT	|
+		      vm_aff3s[0] << DVMBM_DIE1_SHIFT;
+
+		/* fulfill bits [52:0] */
+		for_each_cpu(cpu, kvm->arch.dvm_cpumask) {
+			mpidr = cpu_logical_map(cpu);
+			aff2 = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+			aff1 = MPIDR_AFFINITY_LEVEL(mpidr, 1);
+
+			val |= 1ULL << (aff2 * 4 + aff1);
+		}
+
+		goto out_update;
+	}
+
+	/* nr_dies == 2 */
+	val = DVMBM_RANGE_TWO_DIES << DVMBM_RANGE_SHIFT	|
+	      DVMBM_GRAN_CLUSTER << DVMBM_GRAN_SHIFT	|
+	      vm_aff3s[0] << DVMBM_DIE1_SHIFT		|
+	      vm_aff3s[1] << DVMBM_DIE2_SHIFT;
+
+	/* and fulfill bits [43:0] */
+	for_each_cpu(cpu, kvm->arch.dvm_cpumask) {
+		mpidr = cpu_logical_map(cpu);
+		aff3 = MPIDR_AFFINITY_LEVEL(mpidr, 3);
+		aff2 = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+
+		if (aff3 == vm_aff3s[0])
+			val |= 1ULL << (aff2 + DVMBM_DIE1_CLUSTER_SHIFT);
+		else
+			val |= 1ULL << (aff2 + DVMBM_DIE2_CLUSTER_SHIFT);
+	}
+
+out_update:
+	kvm->arch.lsudvmbm_el2 = val;
+}
+
 void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -210,8 +301,10 @@ void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
 	cpumask_copy(vcpu->arch.cpus_ptr, current->cpus_ptr);
 
 	if (likely(cpumask_equal(vcpu->arch.cpus_ptr,
-				 vcpu->arch.pre_cpus_ptr)))
+				 vcpu->arch.pre_cpus_ptr))) {
+		kvm_write_lsudvmbm(kvm);
 		return;
+	}
 
 	/* Re-calculate dvm_cpumask for this VM */
 	spin_lock(&kvm->arch.dvm_lock);
@@ -232,7 +325,21 @@ void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
 
 	cpumask_copy(kvm->arch.dvm_cpumask, &mask);
 
+	/*
+	 * Perform a heavy invalidation for this VMID. Good place
+	 * to optimize, right?
+	 */
+	kvm_flush_remote_tlbs(kvm);
+
+	/*
+	 * Re-calculate LSUDVMBM_EL2 for this VM and kick all vcpus
+	 * out to reload the LSUDVMBM configuration.
+	 */
+	kvm_update_vm_lsudvmbm(kvm);
+	kvm_make_all_cpus_request(kvm, KVM_REQ_RELOAD_DVMBM);
+
 out_unlock:
+	__kvm_write_lsudvmbm(kvm);
 	spin_unlock(&kvm->arch.dvm_lock);
 }
 
@@ -242,6 +349,12 @@ void kvm_hisi_dvmbm_put(struct kvm_vcpu *vcpu)
 		return;
 
 	cpumask_copy(vcpu->arch.pre_cpus_ptr, vcpu->arch.cpus_ptr);
+
+	/*
+	 * We're pretty sure that host kernel runs at EL2 (as
+	 * DVMBM is disabled in case of nVHE) and can't be affected
+	 * by the configured SYS_LSUDVMBM_EL2.
+	 */
 }
 
 int kvm_hisi_init_dvmbm(struct kvm *kvm)
@@ -263,4 +376,14 @@ void kvm_hisi_destroy_dvmbm(struct kvm *kvm)
 		return;
 
 	kfree(kvm->arch.dvm_cpumask);
+}
+
+void kvm_hisi_reload_lsudvmbm(struct kvm *kvm)
+{
+	if (WARN_ON_ONCE(!kvm_dvmbm_support))
+		return;
+
+	preempt_disable();
+	kvm_write_lsudvmbm(kvm);
+	preempt_enable();
 }
