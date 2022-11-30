@@ -938,11 +938,6 @@ void klp_free_replaced_patches_async(struct klp_patch *new_patch)
 }
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
-int __weak arch_klp_func_can_patch(struct klp_func *func)
-{
-	return 0;
-}
-
 int __weak arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
 	return 0;
@@ -965,9 +960,6 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 	else
 		func->old_mod = NULL;
 #endif
-	ret = arch_klp_func_can_patch(func);
-	if (ret)
-		return ret;
 
 	ret = arch_klp_init_func(obj, func);
 	if (ret)
@@ -1043,10 +1035,15 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 
 		ret = kallsyms_lookup_size_offset((unsigned long)func->old_func,
 						  &func->old_size, NULL);
-		if (!ret) {
+		if (!ret || ((long)func->old_size < 0)) {
 			pr_err("kallsyms size lookup failed for '%s'\n",
 			       func->old_name);
 			return -ENOENT;
+		}
+		if (func->old_size < KLP_MAX_REPLACE_SIZE) {
+			pr_err("%s size less than limit (%lu < %zu)\n", func->old_name,
+			       func->old_size, KLP_MAX_REPLACE_SIZE);
+			return -EINVAL;
 		}
 
 #ifdef PPC64_ELF_ABI_v1

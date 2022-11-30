@@ -46,6 +46,8 @@ struct arch_klp_data {
 #endif
 };
 
+#define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
+
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 int arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func);

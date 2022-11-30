@@ -118,6 +118,8 @@ struct arch_klp_data {
 
 #endif	/* CONFIG_PPC64 */
 
+#define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
+
 struct stackframe {
 	unsigned long sp;
 	unsigned long pc;

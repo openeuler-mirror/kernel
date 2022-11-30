@@ -491,21 +491,6 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	}
 }
 
-/* return 0 if the func can be patched */
-int arch_klp_func_can_patch(struct klp_func *func)
-{
-	unsigned long old_size = func->old_size;
-
-	if (!old_size)
-		return -EINVAL;
-
-	if (old_size < LJMP_INSN_SIZE * sizeof(u32)) {
-		pr_err("func %s size less than limit\n", func->old_name);
-		return -EPERM;
-	}
-	return 0;
-}
-
 int arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
 #ifdef PPC64_ELF_ABI_v1

@@ -57,6 +57,8 @@ struct arch_klp_data {
 	u32 saved_opcode;
 };
 
+#define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
+
 int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);

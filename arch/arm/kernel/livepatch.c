@@ -496,28 +496,3 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		do_patch(pc, (unsigned long)next_func->new_func);
 	}
 }
-
-#ifdef CONFIG_ARM_MODULE_PLTS
-/* return 0 if the func can be patched */
-int arch_klp_func_can_patch(struct klp_func *func)
-{
-	unsigned long pc = (unsigned long)func->old_func;
-	unsigned long new_addr = (unsigned long)func->new_func;
-	unsigned long old_size = func->old_size;
-
-	if (!old_size)
-		return -EINVAL;
-
-	if (!offset_in_range(pc, new_addr, SZ_32M) &&
-	    (old_size < LJMP_INSN_SIZE * ARM_INSN_SIZE)) {
-		pr_err("func %s size less than limit\n", func->old_name);
-		return -EPERM;
-	}
-	return 0;
-}
-#else
-int arch_klp_func_can_patch(struct klp_func *func)
-{
-	return 0;
-}
-#endif /* #ifdef CONFIG_ARM_MODULE_PLTS */
