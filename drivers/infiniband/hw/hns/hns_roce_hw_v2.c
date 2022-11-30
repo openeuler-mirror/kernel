@@ -3049,6 +3049,16 @@ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 		free_dip_list(hr_dev);
 }
 
+static inline void mbox_desc_init(struct hns_roce_post_mbox *mb,
+				  struct hns_roce_mbox_msg *mbox_msg)
+{
+	mb->in_param_l = cpu_to_le32(mbox_msg->in_param);
+	mb->in_param_h = cpu_to_le32(mbox_msg->in_param >> 32);
+	mb->out_param_l = cpu_to_le32(mbox_msg->out_param);
+	mb->out_param_h = cpu_to_le32(mbox_msg->out_param >> 32);
+	mb->cmd_tag = cpu_to_le32(mbox_msg->tag << 8 | mbox_msg->cmd);
+}
+
 static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_mbox_msg *mbox_msg)
 {
@@ -3057,14 +3067,31 @@ static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev,
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_POST_MB, false);
 
-	mb->in_param_l = cpu_to_le32(mbox_msg->in_param);
-	mb->in_param_h = cpu_to_le32(mbox_msg->in_param >> 32);
-	mb->out_param_l = cpu_to_le32(mbox_msg->out_param);
-	mb->out_param_h = cpu_to_le32(mbox_msg->out_param >> 32);
-	mb->cmd_tag = cpu_to_le32(mbox_msg->tag << 8 | mbox_msg->cmd);
+	mbox_desc_init(mb, mbox_msg);
 	mb->token_event_en = cpu_to_le32(mbox_msg->event_en << 16 |
 					 mbox_msg->token);
 
+	return hns_roce_cmq_send(hr_dev, &desc, 1);
+}
+
+static int hns_roce_mbox_send(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_mbox_msg *mbox_msg)
+{
+	struct hns_roce_cmq_desc desc;
+	struct hns_roce_post_mbox *mb = (struct hns_roce_post_mbox *)desc.data;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_SYNC_MB, false);
+
+	mbox_desc_init(mb, mbox_msg);
+
+	/* The hardware doesn't care about the token fields when working in
+	 * sync mode.
+	 */
+	mb->token_event_en = 0;
+
+	/* The cmdq send returns 0 indicates that the hardware has already
+	 * finished the operation defined in this mbox.
+	 */
 	return hns_roce_cmq_send(hr_dev, &desc, 1);
 }
 
@@ -4430,15 +4457,16 @@ static void modify_qp_init_to_init(struct ib_qp *ibqp,
 static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp,
 			    struct hns_roce_v2_qp_context *context,
-			    struct hns_roce_v2_qp_context *qpc_mask)
+			    struct hns_roce_v2_qp_context *qpc_mask,
+			    struct hns_roce_dca_attr *dca_attr)
 {
 	u64 mtts[MTT_MIN_COUNT] = { 0 };
 	u64 wqe_sge_ba;
 	int ret;
 
 	/* Search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->rq.offset, mtts,
-				MTT_MIN_COUNT);
+	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, dca_attr->rq_offset, mtts,
+				ARRAY_SIZE(mtts));
 	if (hr_qp->rq.wqe_cnt && ret) {
 		ibdev_err(&hr_dev->ib_dev,
 			  "failed to find QP(0x%lx) RQ WQE buf, ret = %d.\n",
@@ -4507,7 +4535,8 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp,
 			    struct hns_roce_v2_qp_context *context,
-			    struct hns_roce_v2_qp_context *qpc_mask)
+			    struct hns_roce_v2_qp_context *qpc_mask,
+			    struct hns_roce_dca_attr *dca_attr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	u64 sge_cur_blk = 0;
@@ -4515,7 +4544,7 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->sq.offset,
+	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, dca_attr->sq_offset,
 				&sq_cur_blk, 1);
 	if (ret) {
 		ibdev_err(ibdev, "failed to find QP(0x%lx) SQ WQE buf, ret = %d.\n",
@@ -4524,7 +4553,7 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	}
 	if (hr_qp->sge.sge_cnt > 0) {
 		ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
-					hr_qp->sge.offset, &sge_cur_blk, 1);
+					dca_attr->sge_offset, &sge_cur_blk, 1);
 		if (ret) {
 			ibdev_err(ibdev, "failed to find QP(0x%lx) SGE buf, ret = %d.\n",
 				  hr_qp->qpn, ret);
@@ -4582,6 +4611,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_dca_attr dca_attr = {};
 	dma_addr_t trrl_ba;
 	dma_addr_t irrl_ba;
 	enum ib_mtu ib_mtu;
@@ -4593,7 +4623,8 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	int mtu;
 	int ret;
 
-	ret = config_qp_rq_buf(hr_dev, hr_qp, context, qpc_mask);
+	dca_attr.rq_offset = hr_qp->rq.offset;
+	ret = config_qp_rq_buf(hr_dev, hr_qp, context, qpc_mask, &dca_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config rq buf, ret = %d.\n", ret);
 		return ret;
@@ -4737,6 +4768,7 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_dca_attr dca_attr = {};
 	int ret;
 
 	/* Not support alternate path and path migration */
@@ -4745,7 +4777,9 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 		return -EINVAL;
 	}
 
-	ret = config_qp_sq_buf(hr_dev, hr_qp, context, qpc_mask);
+	dca_attr.sq_offset = hr_qp->sq.offset;
+	dca_attr.sge_offset = hr_qp->sge.offset;
+	ret = config_qp_sq_buf(hr_dev, hr_qp, context, qpc_mask, &dca_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config sq buf, ret = %d.\n", ret);
 		return ret;
@@ -5400,6 +5434,95 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 		clear_qp(hr_qp);
 
 out:
+	return ret;
+}
+
+static int init_dca_buf_attr(struct hns_roce_dev *hr_dev,
+			     struct hns_roce_qp *hr_qp,
+			     struct hns_roce_dca_attr *init_attr,
+			     struct hns_roce_dca_attr *dca_attr)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+
+	if (hr_qp->sq.wqe_cnt > 0) {
+		dca_attr->sq_offset = hr_qp->sq.offset + init_attr->sq_offset;
+		if (dca_attr->sq_offset >= hr_qp->sge.offset) {
+			ibdev_err(ibdev, "failed to check SQ offset = %u\n",
+				  init_attr->sq_offset);
+			return -EINVAL;
+		}
+	}
+
+	if (hr_qp->sge.sge_cnt > 0) {
+		dca_attr->sge_offset = hr_qp->sge.offset + init_attr->sge_offset;
+		if (dca_attr->sge_offset >= hr_qp->rq.offset) {
+			ibdev_err(ibdev, "failed to check exSGE offset = %u\n",
+				  init_attr->sge_offset);
+			return -EINVAL;
+		}
+	}
+
+	if (hr_qp->rq.wqe_cnt > 0) {
+		dca_attr->rq_offset = hr_qp->rq.offset + init_attr->rq_offset;
+		if (dca_attr->rq_offset >= hr_qp->buff_size) {
+			ibdev_err(ibdev, "failed to check RQ offset = %u\n",
+				  init_attr->rq_offset);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int hns_roce_v2_set_dca_buf(struct hns_roce_dev *hr_dev,
+				   struct hns_roce_qp *hr_qp,
+				   struct hns_roce_dca_attr *init_attr)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_v2_qp_context *qpc, *msk;
+	struct hns_roce_dca_attr dca_attr = {};
+	struct hns_roce_mbox_msg mbox_msg = {};
+	dma_addr_t dma_handle;
+	int qpc_sz;
+	int ret;
+
+	ret = init_dca_buf_attr(hr_dev, hr_qp, init_attr, &dca_attr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to init DCA attr, ret = %d.\n", ret);
+		return ret;
+	}
+
+	qpc_sz = hr_dev->caps.qpc_sz;
+	WARN_ON(2 * qpc_sz > HNS_ROCE_MAILBOX_SIZE);
+	qpc = dma_pool_alloc(hr_dev->cmd.pool, GFP_NOWAIT, &dma_handle);
+	if (!qpc)
+		return -ENOMEM;
+
+	msk = (struct hns_roce_v2_qp_context *)((void *)qpc + qpc_sz);
+	memset(msk, 0xff, qpc_sz);
+
+	ret = config_qp_rq_buf(hr_dev, hr_qp, qpc, msk, &dca_attr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to config rq qpc, ret = %d.\n", ret);
+		goto done;
+	}
+
+	ret = config_qp_sq_buf(hr_dev, hr_qp, qpc, msk, &dca_attr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to config sq qpc, ret = %d.\n", ret);
+		goto done;
+	}
+
+	mbox_msg.in_param = dma_handle;
+	mbox_msg.tag = hr_qp->qpn;
+	mbox_msg.cmd = HNS_ROCE_CMD_MODIFY_QPC;
+	ret = hns_roce_mbox_send(hr_dev, &mbox_msg);
+	if (ret)
+		ibdev_err(ibdev, "failed to modify DCA buf, ret = %d.\n", ret);
+
+done:
+	dma_pool_free(hr_dev->cmd.pool, qpc, dma_handle);
+
 	return ret;
 }
 
@@ -6932,6 +7055,7 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.write_cqc = hns_roce_v2_write_cqc,
 	.set_hem = hns_roce_v2_set_hem,
 	.clear_hem = hns_roce_v2_clear_hem,
+	.set_dca_buf = hns_roce_v2_set_dca_buf,
 	.modify_qp = hns_roce_v2_modify_qp,
 	.dereg_mr = hns_roce_v2_dereg_mr,
 	.qp_flow_control_init = hns_roce_v2_qp_flow_control_init,
