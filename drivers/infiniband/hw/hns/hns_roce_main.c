@@ -44,6 +44,7 @@
 #include "hns_roce_hem.h"
 #include "hns_roce_hw_v2.h"
 #include "hns_roce_dca.h"
+#include "hns_roce_debugfs.h"
 
 static int hns_roce_set_mac(struct hns_roce_dev *hr_dev, u32 port,
 			    const u8 *addr)
@@ -401,6 +402,9 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	if (!hr_dev->active)
 		return -EAGAIN;
 
+	context->pid = current->pid;
+	INIT_LIST_HEAD(&context->list);
+
 	ret = ib_copy_from_udata(&ucmd, udata,
 				 min(udata->inlen, sizeof(ucmd)));
 	if (ret)
@@ -450,6 +454,12 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	if (ret)
 		goto error_fail_copy_to_udata;
 
+	spin_lock(&hr_dev->uctx_list_lock);
+	list_add(&context->list, &hr_dev->uctx_list);
+	spin_unlock(&hr_dev->uctx_list_lock);
+
+	hns_roce_register_uctx_debugfs(hr_dev, context);
+
 	return 0;
 
 error_fail_copy_to_udata:
@@ -468,6 +478,12 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 {
 	struct hns_roce_ucontext *context = to_hr_ucontext(ibcontext);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
+
+	spin_lock(&hr_dev->uctx_list_lock);
+	list_del(&context->list);
+	spin_unlock(&hr_dev->uctx_list_lock);
+
+	hns_roce_unregister_uctx_debugfs(hr_dev, context);
 
 	hns_roce_unregister_udca(hr_dev, context);
 
@@ -1125,6 +1141,8 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	if (ret)
 		goto error_failed_register_device;
 
+	hns_roce_register_debugfs(hr_dev);
+
 	return 0;
 
 error_failed_register_device:
@@ -1155,6 +1173,7 @@ error_failed_cmd_init:
 void hns_roce_exit(struct hns_roce_dev *hr_dev)
 {
 	hns_roce_unregister_device(hr_dev);
+	hns_roce_unregister_debugfs(hr_dev);
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);

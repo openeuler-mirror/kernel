@@ -226,12 +226,15 @@ struct hns_roce_dca_ctx {
 
 struct hns_roce_ucontext {
 	struct ib_ucontext	ibucontext;
+	struct list_head list; /* link all uctx to uctx_list on hr_dev */
+	pid_t pid; /* process id to which the uctx belongs */
 	struct hns_roce_uar	uar;
 	struct list_head	page_list;
 	struct mutex		page_mutex;
 	struct hns_user_mmap_entry *db_mmap_entry;
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
+	void *dca_dbgfs;
 };
 
 struct hns_roce_pd {
