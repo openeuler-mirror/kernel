@@ -206,8 +206,24 @@ static const struct perf_pmu_test_event sys_ddr_pmu_write_cycles = {
 	.matching_pmu = "uncore_sys_ddr_pmu",
 };
 
+static const struct perf_pmu_test_event sys_hisi_ddrc_flux_rd = {
+	.event = {
+		.name = "sys_hisi_ddrc.flux_rd",
+		.event = "event=0x84",
+		.desc = "DDRC read commands. Unit: uncore_sys_hisi_ddrc ",
+		.topic = "uncore",
+		.long_desc = "DDRC read commands",
+		.pmu = "uncore_sys_hisi_ddrc",
+		.compat = "hip09",
+	},
+	.alias_str = "event=0x84",
+	.alias_long_desc = "DDRC read commands",
+	.matching_pmu = "uncore_sys_hisi_ddrc_0",
+};
+
 static const struct perf_pmu_test_event *sys_events[] = {
 	&sys_ddr_pmu_write_cycles,
+	&sys_hisi_ddrc_flux_rd,
 	NULL
 };
 
@@ -673,6 +689,16 @@ static struct perf_pmu_test_pmu test_pmus[] = {
 		},
 		.aliases = {
 			&sys_ddr_pmu_write_cycles,
+		},
+	},
+	{
+		.pmu = {
+			.name = (char *)"uncore_sys_hisi_ddrc_0",
+			.is_uncore = 1,
+			.id = (char *)"hip09",
+		},
+		.aliases = {
+			&sys_hisi_ddrc_flux_rd,
 		},
 	},
 };
