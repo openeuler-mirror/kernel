@@ -27,5 +27,7 @@ int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu);
 void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu);
 void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu);
 void kvm_hisi_dvmbm_put(struct kvm_vcpu *vcpu);
+int kvm_hisi_init_dvmbm(struct kvm *kvm);
+void kvm_hisi_destroy_dvmbm(struct kvm *kvm);
 
 #endif /* __HISI_VIRT_H__ */

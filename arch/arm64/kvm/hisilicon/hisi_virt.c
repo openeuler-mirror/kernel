@@ -198,10 +198,42 @@ void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu)
 
 void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
 {
+	struct kvm *kvm = vcpu->kvm;
+	struct kvm_vcpu *tmp;
+	cpumask_t mask;
+	int i;
+
+	/* Don't bother on old hardware */
 	if (!kvm_dvmbm_support)
 		return;
 
 	cpumask_copy(vcpu->arch.cpus_ptr, current->cpus_ptr);
+
+	if (likely(cpumask_equal(vcpu->arch.cpus_ptr,
+				 vcpu->arch.pre_cpus_ptr)))
+		return;
+
+	/* Re-calculate dvm_cpumask for this VM */
+	spin_lock(&kvm->arch.dvm_lock);
+
+	cpumask_clear(&mask);
+	kvm_for_each_vcpu(i, tmp, kvm) {
+		/*
+		 * We may get the stale cpus_ptr if another thread
+		 * is concurrently changing its affinity. It'll
+		 * eventually go through vcpu_load() and we rely on
+		 * the last dvm_lock holder to make things correct.
+		 */
+		cpumask_or(&mask, &mask, tmp->arch.cpus_ptr);
+	}
+
+	if (cpumask_equal(kvm->arch.dvm_cpumask, &mask))
+		goto out_unlock;
+
+	cpumask_copy(kvm->arch.dvm_cpumask, &mask);
+
+out_unlock:
+	spin_unlock(&kvm->arch.dvm_lock);
 }
 
 void kvm_hisi_dvmbm_put(struct kvm_vcpu *vcpu)
@@ -210,4 +242,25 @@ void kvm_hisi_dvmbm_put(struct kvm_vcpu *vcpu)
 		return;
 
 	cpumask_copy(vcpu->arch.pre_cpus_ptr, vcpu->arch.cpus_ptr);
+}
+
+int kvm_hisi_init_dvmbm(struct kvm *kvm)
+{
+	if (!kvm_dvmbm_support)
+		return 0;
+
+	spin_lock_init(&kvm->arch.dvm_lock);
+	kvm->arch.dvm_cpumask = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
+	if (!kvm->arch.dvm_cpumask)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void kvm_hisi_destroy_dvmbm(struct kvm *kvm)
+{
+	if (!kvm_dvmbm_support)
+		return;
+
+	kfree(kvm->arch.dvm_cpumask);
 }

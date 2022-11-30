@@ -121,6 +121,11 @@ struct kvm_arch {
 	unsigned int pmuver;
 
 	u8 pfr0_csv2;
+
+#ifdef CONFIG_KVM_HISI_VIRT
+	spinlock_t dvm_lock;
+	cpumask_t *dvm_cpumask;	/* Union of all vcpu's cpus_ptr */
+#endif
 };
 
 struct kvm_vcpu_fault_info {
