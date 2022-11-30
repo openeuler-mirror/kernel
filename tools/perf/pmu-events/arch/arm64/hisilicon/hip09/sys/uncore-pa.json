@@ -1,0 +1,86 @@
+[
+    {
+	"EventCode": "0x78",
+	"EventName": "pa_cycles",
+	"BriefDescription": "Count of PA cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventName": "cycle",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x40",
+	"EventName": "rx_req",
+	"BriefDescription": "Count of the requests received by PA link0",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x41",
+	"EventName": "rx_req_link1",
+	"BriefDescription": "Count of the requests received by PA link1",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x42",
+	"EventName": "rx_req_link2",
+	"BriefDescription": "Count of the requests received by PA link2",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x43",
+	"EventName": "rx_req_link3",
+	"BriefDescription": "Count of the requests received by PA link3",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x5c",
+	"EventName": "tx_req",
+	"BriefDescription": "Count of the requests transmitted by PA link0",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x5d",
+	"EventName": "tx_req_link1",
+	"BriefDescription": "Count of the requests transmitted by PA link1",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x5e",
+	"EventName": "tx_req_link2",
+	"BriefDescription": "Count of the requests transmitted by PA link2",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"EventCode": "0x5f",
+	"EventName": "tx_req_link3",
+	"BriefDescription": "Count of the requests transmitted by PA link3",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"MetricExpr": "(rx_req + rx_req_link1 + rx_req_link2 + rx_req_link3) / duration_time",
+	"BriefDescription": "Average bandwidth of PA receive requests",
+	"Compat": "0x00000030",
+	"MetricGroup": "PA",
+	"MetricName": "pa_rx_req_bw",
+	"Unit": "hisi_sicl,pa"
+    },
+    {
+	"MetricExpr": "(tx_req + tx_req_link1 + tx_req_link2 + tx_req_link3) / duration_time",
+	"BriefDescription": "Average bandwidth of PA transmitted requests",
+	"Compat": "0x00000030",
+	"MetricGroup": "PA",
+	"MetricName": "pa_tx_req_bw",
+	"Unit": "hisi_sicl,pa"
+    }
+]
