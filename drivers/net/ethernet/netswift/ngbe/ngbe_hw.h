@@ -112,8 +112,9 @@ struct ngbe_dec_ptype {
 	u32 prot:4; /* payload proto */
 	u32 layer:3; /* payload layer */
 };
-typedef struct ngbe_dec_ptype ngbe_dptype;
 
+struct ngbe_dec_ptype ngbe_decode_ptype(const u8 ptype);
+struct ngbe_dec_ptype decode_rx_desc_ptype(const union ngbe_rx_desc *rx_desc);
 u16 ngbe_get_pcie_msix_count(struct ngbe_hw *hw);
 s32 ngbe_init_hw(struct ngbe_hw *hw);
 s32 ngbe_start_hw(struct ngbe_hw *hw);

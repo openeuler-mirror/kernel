@@ -174,9 +174,7 @@ void ngbe_enable_sriov(struct ngbe_adapter *adapter)
 	if (pre_existing_vfs) {
 		adapter->num_vfs = pre_existing_vfs;
 		dev_warn(&adapter->pdev->dev,
-			 "Virtual Functions already enabled for this device -"
-			 "Please reload all VF drivers to avoid spoofed packet "
-			 "errors\n");
+			 "Virtual Functions already enabled for this device -Please reload all VF drivers to avoid spoofed packet errors\n");
 	} else {
 		int err;
 		/* The sapphire supports up to 64 VFs per physical function
@@ -732,8 +730,7 @@ static int ngbe_vf_reset_msg(struct ngbe_adapter *adapter, u16 vf)
 	} else {
 		msgbuf[0] |= NGBE_VT_MSGTYPE_NACK;
 		dev_warn(pci_dev_to_dev(adapter->pdev),
-			 "VF %d has no MAC address assigned, you may have to "
-			 "assign one manually\n", vf);
+			 "VF %d has no MAC address assigned, you may have to assign one manually\n", vf);
 	}
 
 	/*
@@ -759,15 +756,7 @@ static int ngbe_set_vf_mac_addr(struct ngbe_adapter *adapter,
 	if (adapter->vfinfo[vf].pf_set_mac &&
 	    memcmp(adapter->vfinfo[vf].vf_mac_addresses, new_mac,
 		   ETH_ALEN)) {
-		u8 *pm = adapter->vfinfo[vf].vf_mac_addresses;
-		e_warn(drv,
-				"VF %d attempted to set a new MAC address but it already "
-				"has an administratively set MAC address "
-				"%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X\n",
-				vf, pm[0], pm[1], pm[2], pm[3], pm[4], pm[5]);
-		e_warn(drv, "Check the VF driver and if it is not using the "
-				"correct MAC address you may need to reload the VF "
-				"driver\n");
+		e_warn(drv, "Check the VF driver and if it is not using the correct MAC address you may need to reload the VF driver\n");
 		return -1;
 	}
 	return ngbe_set_vf_mac(adapter, vf, new_mac) < 0;
@@ -809,11 +798,8 @@ static int ngbe_set_vf_vlan_msg(struct ngbe_adapter *adapter,
 	u8 tcs = netdev_get_num_tc(adapter->netdev);
 
 	if (adapter->vfinfo[vf].pf_vlan || tcs) {
-		e_warn(drv,
-		       "VF %d attempted to override administratively set VLAN "
-		       "configuration\n"
-		       "Reload the VF driver to resume operations\n",
-		       vf);
+		e_warn(drv, "VF %d attempted to override administratively set VLAN configuration\n", vf);
+		e_warn(drv, "Reload the VF driver to resume operations\n");
 		return -1;
 	}
 

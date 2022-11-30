@@ -39,10 +39,8 @@
  *
  * Default Value: 2
  */
-NGBE_PARAM(InterruptType, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), "
-	    "default IntMode (deprecated)");
-NGBE_PARAM(IntMode, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), "
-	    "default 2");
+NGBE_PARAM(InterruptType, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), default IntMode (deprecated)");
+NGBE_PARAM(IntMode, "Change Interrupt Mode (0=Legacy, 1=MSI, 2=MSI-X), default 2");
 #define NGBE_INT_LEGACY                0
 #define NGBE_INT_MSI                   1
 #define NGBE_INT_MSIX                  2
@@ -68,8 +66,7 @@ NGBE_PARAM(MQ, "Disable or enable Multiple Queues, default 1");
  * Default Value: 0
  */
 
-NGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
-	    "default 0=number of cpus");
+NGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, default 0=number of cpus");
 
 /* VMDQ - Virtual Machine Device Queues (VMDQ)
  *
@@ -82,8 +79,7 @@ NGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
 
 #define NGBE_DEFAULT_NUM_VMDQ 8
 
-NGBE_PARAM(VMDQ, "Number of Virtual Machine Device Queues: 0/1 = disable, "
-	    "2-16 enable (default=" XSTRINGIFY(NGBE_DEFAULT_NUM_VMDQ) ")");
+NGBE_PARAM(VMDQ, "Number of Virtual Machine Device Queues: 0/1 = disable, 2-16 enable (default=" XSTRINGIFY(NGBE_DEFAULT_NUM_VMDQ) ")");
 
 #ifdef CONFIG_PCI_IOV
 /* max_vfs - SR I/O Virtualization
@@ -97,9 +93,7 @@ NGBE_PARAM(VMDQ, "Number of Virtual Machine Device Queues: 0/1 = disable, "
 
 #define MAX_SRIOV_VFS 8
 
-NGBE_PARAM(max_vfs, "Number of Virtual Functions: 0 = disable (default), "
-	    "1-" XSTRINGIFY(MAX_SRIOV_VFS) " = enable "
-	    "this many VFs");
+NGBE_PARAM(max_vfs, "Number of Virtual Functions: 0 = disable (default), 1-" XSTRINGIFY(MAX_SRIOV_VFS) " = enable this many VFs");
 
 /* VEPA - Set internal bridge to VEPA mode
  *
@@ -217,8 +211,7 @@ NGBE_PARAM(dmac_watchdog,
  *
  * Default Value: 0
  */
-NGBE_PARAM(RxBufferMode, "0=(default)no header split\n"
-			  "\t\t\t1=hdr split for recognized packet\n");
+NGBE_PARAM(RxBufferMode, "0=(default)no header split\n\t\t\t1=hdr split for recognized packet\n");
 
 #define NGBE_RXBUFMODE_NO_HEADER_SPLIT                 0
 #define NGBE_RXBUFMODE_HEADER_SPLIT                    1
@@ -481,9 +474,7 @@ void ngbe_check_options(struct ngbe_adapter *adapter)
 		if (*aflags & NGBE_FLAG_VMDQ_ENABLED) {
 			if (!(*aflags & NGBE_FLAG_MQ_CAPABLE)) {
 				DPRINTK(PROBE, INFO,
-					"VMDQ is not supported while multiple "
-					"queues are disabled.  "
-					"Disabling VMDQ.\n");
+					"VMDQ is not supported while multiple queues are disabled. Disabling VMDQ.\n");
 				*aflags &= ~NGBE_FLAG_VMDQ_ENABLED;
 				feature[RING_F_VMDQ].limit = 0;
 			}

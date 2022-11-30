@@ -751,13 +751,13 @@ static long ngbe_ptp_create_clock(struct ngbe_adapter *adapter)
 
 	adapter->ptp_clock = ptp_clock_register(&adapter->ptp_caps,
 						pci_dev_to_dev(adapter->pdev));
-	if (IS_ERR(adapter->ptp_clock)) {
+	if (!IS_ERR(adapter->ptp_clock)) {
+		e_dev_info("registered PHC device on %s\n", netdev->name);
+	} else {
 		err = PTR_ERR(adapter->ptp_clock);
 		adapter->ptp_clock = NULL;
 		e_dev_err("ptp_clock_register failed\n");
 		return err;
-	} else {
-		e_dev_info("registered PHC device on %s\n", netdev->name);
 	}
 
 	/* Set the default timestamp mode to disabled here. We do this in
