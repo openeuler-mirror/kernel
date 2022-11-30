@@ -173,3 +173,41 @@ bool hisi_dvmbm_supported(void)
 	on_each_cpu(hardware_enable_dvmbm, NULL, 1);
 	return true;
 }
+
+int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_dvmbm_support)
+		return 0;
+
+	vcpu->arch.cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
+	vcpu->arch.pre_cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
+	if (!vcpu->arch.cpus_ptr || !vcpu->arch.pre_cpus_ptr)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_dvmbm_support)
+		return;
+
+	kfree(vcpu->arch.cpus_ptr);
+	kfree(vcpu->arch.pre_cpus_ptr);
+}
+
+void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_dvmbm_support)
+		return;
+
+	cpumask_copy(vcpu->arch.cpus_ptr, current->cpus_ptr);
+}
+
+void kvm_hisi_dvmbm_put(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_dvmbm_support)
+		return;
+
+	cpumask_copy(vcpu->arch.pre_cpus_ptr, vcpu->arch.cpus_ptr);
+}

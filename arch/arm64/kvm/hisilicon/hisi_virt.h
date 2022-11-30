@@ -23,4 +23,9 @@ void probe_hisi_cpu_type(void);
 bool hisi_ncsnp_supported(void);
 bool hisi_dvmbm_supported(void);
 
+int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu);
+void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu);
+void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu);
+void kvm_hisi_dvmbm_put(struct kvm_vcpu *vcpu);
+
 #endif /* __HISI_VIRT_H__ */

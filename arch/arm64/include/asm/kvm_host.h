@@ -390,6 +390,12 @@ struct kvm_vcpu_arch {
 	} pvsched;
 
 	struct id_registers idregs;
+
+#ifdef CONFIG_KVM_HISI_VIRT
+	/* Copy of current->cpus_ptr */
+	cpumask_t *cpus_ptr;
+	cpumask_t *pre_cpus_ptr;
+#endif
 };
 
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */
