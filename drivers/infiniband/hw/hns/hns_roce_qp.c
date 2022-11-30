@@ -787,7 +787,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			return ret;
 		}
 
-		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DCA;
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH;
 	} else {
 		/*
 		 * Because DCA and DWQE share the same fileds in RCWQE buffer,
@@ -814,7 +814,7 @@ static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 {
 	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
 
-	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA)
+	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
 		hns_roce_disable_dca(hr_dev, hr_qp, udata);
 }
 
@@ -1460,22 +1460,17 @@ static int hns_roce_check_qp_attr(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	return 0;
 }
 
-int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
-		       int attr_mask, struct ib_udata *udata)
+static int check_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
+			   int attr_mask, enum ib_qp_state cur_state,
+			   enum ib_qp_state new_state)
 {
-	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	struct hns_roce_ib_modify_qp_resp resp = {};
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
-	enum ib_qp_state cur_state, new_state;
-	int ret = -EINVAL;
+	int ret;
 
-	mutex_lock(&hr_qp->mutex);
-
-	if (attr_mask & IB_QP_CUR_STATE && attr->cur_qp_state != hr_qp->state)
-		goto out;
-
-	cur_state = hr_qp->state;
-	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
+	if (attr_mask & IB_QP_CUR_STATE && attr->cur_qp_state != hr_qp->state) {
+		ibdev_err(ibqp->device, "failed to check modify curr state\n");
+		return -EINVAL;
+	}
 
 	if (ibqp->uobject &&
 	    (attr_mask & IB_QP_STATE) && new_state == IB_QPS_ERR) {
@@ -1485,19 +1480,42 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 			if (hr_qp->en_flags & HNS_ROCE_QP_CAP_RQ_RECORD_DB)
 				hr_qp->rq.head = *(int *)(hr_qp->rdb.virt_addr);
 		} else {
-			ibdev_warn(&hr_dev->ib_dev,
+			ibdev_warn(ibqp->device,
 				  "flush cqe is not supported in userspace!\n");
-			goto out;
+			return -EINVAL;
 		}
 	}
 
 	if (!ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type,
 				attr_mask)) {
-		ibdev_err(&hr_dev->ib_dev, "ib_modify_qp_is_ok failed\n");
-		goto out;
+		ibdev_err(ibqp->device, "failed to check modify qp state\n");
+		return -EINVAL;
 	}
 
 	ret = hns_roce_check_qp_attr(ibqp, attr, attr_mask);
+	if (ret) {
+		ibdev_err(ibqp->device, "failed to check modify qp attr\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
+		       int attr_mask, struct ib_udata *udata)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
+	struct hns_roce_ib_modify_qp_resp resp = {};
+	enum ib_qp_state cur_state, new_state;
+	int ret;
+
+	mutex_lock(&hr_qp->mutex);
+
+	cur_state = hr_qp->state;
+	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
+
+	ret = check_modify_qp(ibqp, attr, attr_mask, cur_state, new_state);
 	if (ret)
 		goto out;
 
@@ -1512,6 +1530,7 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	if (udata && udata->outlen) {
 		resp.tc_mode = hr_qp->tc_mode;
 		resp.priority = hr_qp->sl;
+		resp.dcan = hr_qp->dca_cfg.dcan;
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
 		if (ret)
@@ -1584,7 +1603,7 @@ static inline void *dca_buf_offset(struct hns_roce_dca_cfg *dca_cfg, u32 offset)
 
 static inline void *get_wqe(struct hns_roce_qp *hr_qp, u32 offset)
 {
-	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA)
+	if (unlikely(hr_qp->dca_cfg.buf_list))
 		return dca_buf_offset(&hr_qp->dca_cfg, offset);
 	else
 		return hns_roce_buf_offset(hr_qp->mtr.kmem, offset);

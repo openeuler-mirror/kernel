@@ -264,7 +264,8 @@ static void dca_setup_qp_stats(struct hns_roce_qp *hr_qp,
 {
 	struct hns_roce_ucontext *uctx = NULL;
 
-	if (!(hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA) || !hr_qp->ibqp.pd)
+	if (!(hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH) ||
+	    !hr_qp->ibqp.pd)
 		return;
 
 	if (hr_qp->ibqp.pd->uobject)

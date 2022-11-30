@@ -208,7 +208,8 @@ struct hns_roce_uar {
 enum hns_roce_mmap_type {
 	HNS_ROCE_MMAP_TYPE_DB = 1,
 	HNS_ROCE_MMAP_TYPE_DWQE,
-	HNS_ROCE_MMAP_TYPE_RESET = 4,
+	HNS_ROCE_MMAP_TYPE_DCA,
+	HNS_ROCE_MMAP_TYPE_RESET,
 };
 
 struct hns_user_mmap_entry {
@@ -226,6 +227,21 @@ struct hns_roce_dca_ctx {
 	size_t max_size; /* max size the pool can expand to */
 	size_t min_size; /* shrink if @free_size > @min_size */
 	unsigned int unit_size; /* unit size per DCA mem */
+
+	unsigned int max_qps;
+	unsigned int status_npage;
+	struct ida ida;
+
+#define HNS_DCA_BITS_PER_STATUS 1
+	unsigned long *buf_status;
+	unsigned long *sync_status;
+
+	bool exit_aging;
+	struct list_head aging_proc_list;
+	struct list_head aging_new_list;
+	spinlock_t aging_lock;
+	struct delayed_work aging_dwork;
+	struct hns_user_mmap_entry *dca_mmap_entry;
 };
 
 struct hns_roce_ucontext {
@@ -342,12 +358,14 @@ struct hns_roce_mtr {
 /* DCA config */
 struct hns_roce_dca_cfg {
 	spinlock_t		lock;
-	u32			buf_id;
 	u16			attach_count;
+	u32			buf_id;
+	u32			dcan;
 	void			**buf_list;
 	u32			npages;
 	u32			sq_idx;
-	struct delayed_work	dwork;
+	bool			aging_enable;
+	struct list_head	aging_node;
 };
 
 struct hns_roce_mw {

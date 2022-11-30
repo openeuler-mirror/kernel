@@ -371,9 +371,9 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 	return 0;
 }
 
-static inline bool check_qp_dca_enable(struct hns_roce_qp *hr_qp)
+static bool check_dca_attach_enable(struct hns_roce_qp *hr_qp)
 {
-	return !!(hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA);
+	return hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH;
 }
 
 static int dca_attach_qp_buf(struct hns_roce_dev *hr_dev,
@@ -405,6 +405,11 @@ static int dca_attach_qp_buf(struct hns_roce_dev *hr_dev,
 	spin_unlock_irqrestore(&hr_qp->sq.lock, flags_sq);
 
 	return hns_roce_dca_attach(hr_dev, hr_qp, &attr);
+}
+
+static bool check_dca_detach_enable(struct hns_roce_qp *hr_qp)
+{
+	return hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_DETACH;
 }
 
 static void dca_detach_qp_buf(struct hns_roce_dev *hr_dev,
@@ -446,7 +451,7 @@ static int check_send_valid(struct hns_roce_dev *hr_dev,
 		return -EIO;
 	}
 
-	if (check_qp_dca_enable(hr_qp)) {
+	if (check_dca_attach_enable(hr_qp)) {
 		ret = dca_attach_qp_buf(hr_dev, hr_qp);
 		if (unlikely(ret)) {
 			ibdev_err(ibdev,
@@ -679,7 +684,7 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
 
-	if (qp->en_flags & HNS_ROCE_QP_CAP_DCA)
+	if (qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
 		fill_dca_fields(qp, rc_sq_wqe);
 
 	/*
@@ -858,7 +863,7 @@ static int check_recv_valid(struct hns_roce_dev *hr_dev,
 	if (hr_qp->state == IB_QPS_RESET)
 		return -EINVAL;
 
-	if (check_qp_dca_enable(hr_qp)) {
+	if (check_dca_attach_enable(hr_qp)) {
 		ret = dca_attach_qp_buf(hr_dev, hr_qp);
 		if (unlikely(ret)) {
 			ibdev_err(&hr_dev->ib_dev,
@@ -4191,7 +4196,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 
 	for (npolled = 0; npolled < num_entries; ++npolled) {
 		ret = hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled);
-		if (cur_qp && check_qp_dca_enable(cur_qp))
+		if (cur_qp && check_dca_detach_enable(cur_qp))
 			dca_detach_qp_buf(hr_dev, cur_qp);
 		if (ret)
 			break;
@@ -4757,7 +4762,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	hr_reg_clear(qpc_mask, QPC_TRRL_BA_H);
 
 	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09) {
-		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA) {
+		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH) {
 			hr_reg_enable(context, QPC_DCA_MODE);
 			hr_reg_clear(qpc_mask, QPC_DCA_MODE);
 		}
@@ -5529,9 +5534,8 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	if (new_state == IB_QPS_RESET && !ibqp->uobject)
 		clear_qp(hr_qp);
 
-	if (check_qp_dca_enable(hr_qp) &&
-	    (new_state == IB_QPS_RESET || new_state == IB_QPS_ERR))
-		hns_roce_dca_kick(hr_dev, hr_qp, udata);
+	if (check_dca_attach_enable(hr_qp))
+		hns_roce_modify_dca(hr_dev, hr_qp, udata);
 
 out:
 	return ret;
@@ -5801,12 +5805,6 @@ static bool hns_roce_v2_chk_dca_buf_inactive(struct hns_roce_dev *hr_dev,
 	state = hr_reg_read(&context, QPC_QP_ST);
 	if (state == HNS_ROCE_QP_ST_ERR || state == HNS_ROCE_QP_ST_RST)
 		return true;
-
-	/* If RQ is not empty, the buffer is always active until the QP stops
-	 * working.
-	 */
-	if (hr_qp->rq.wqe_cnt > 0)
-		return false;
 
 	if (hr_qp->sq.wqe_cnt > 0) {
 		tmp = (u32)hr_reg_read(&context, QPC_RETRY_MSG_MSN);
