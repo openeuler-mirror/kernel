@@ -148,6 +148,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_ATOMIC		= BIT(10),
 	HNS_ROCE_CAP_FLAG_DIRECT_WQE		= BIT(12),
 	HNS_ROCE_CAP_FLAG_SDI_MODE		= BIT(14),
+	HNS_ROCE_CAP_FLAG_DCA_MODE		= BIT(15),
 	HNS_ROCE_CAP_FLAG_STASH			= BIT(17),
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
@@ -207,6 +208,14 @@ struct hns_user_mmap_entry {
 	u64 address;
 };
 
+struct hns_roce_dca_ctx {
+	struct list_head pool; /* all DCA mems link to @pool */
+	spinlock_t pool_lock; /* protect @pool */
+	unsigned int free_mems; /* free mem num in pool */
+	size_t free_size; /* free mem size in pool */
+	size_t total_size; /* total size in pool */
+};
+
 struct hns_roce_ucontext {
 	struct ib_ucontext	ibucontext;
 	struct hns_roce_uar	uar;
@@ -215,6 +224,7 @@ struct hns_roce_ucontext {
 	struct hns_user_mmap_entry *db_mmap_entry;
 	struct hns_user_mmap_entry *reset_mmap_entry;
 	u32			config;
+	struct hns_roce_dca_ctx	dca_ctx;
 };
 
 struct hns_roce_pd {
