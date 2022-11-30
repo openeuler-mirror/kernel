@@ -36,7 +36,7 @@ int klp_check_calltrace(struct klp_patch *patch, int enable);
 
 #define JMP_E9_INSN_SIZE 5
 struct arch_klp_data {
-	unsigned char old_code[JMP_E9_INSN_SIZE];
+	unsigned char old_insns[JMP_E9_INSN_SIZE];
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	/*
 	 * Saved opcode at the entry of the old func (which maybe replaced

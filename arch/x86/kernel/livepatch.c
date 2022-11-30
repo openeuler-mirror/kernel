@@ -483,7 +483,7 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 
 	/* Prevent text modification */
 	mutex_lock(&text_mutex);
-	ret = copy_from_kernel_nofault(arch_data->old_code,
+	ret = copy_from_kernel_nofault(arch_data->old_insns,
 			old_func, JMP_E9_INSN_SIZE);
 	mutex_unlock(&text_mutex);
 
@@ -525,7 +525,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	ip = (unsigned long)func_node->old_func;
 	list_del_rcu(&func->stack_node);
 	if (list_empty(&func_node->func_stack)) {
-		new = func_node->arch_data.old_code;
+		new = func_node->arch_data.old_insns;
 	} else {
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 						struct klp_func, stack_node);
