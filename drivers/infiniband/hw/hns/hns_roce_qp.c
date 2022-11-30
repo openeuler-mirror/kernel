@@ -639,7 +639,9 @@ static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
-static bool check_dca_is_enable(struct hns_roce_dev *hr_dev, bool is_user,
+static bool check_dca_is_enable(struct hns_roce_dev *hr_dev,
+				struct hns_roce_qp *hr_qp,
+				struct ib_qp_init_attr *init_attr, bool is_user,
 				unsigned long addr)
 {
 	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE))
@@ -648,6 +650,12 @@ static bool check_dca_is_enable(struct hns_roce_dev *hr_dev, bool is_user,
 	/* If the user QP's buffer addr is 0, the DCA mode should be enabled */
 	if (is_user)
 		return !addr;
+
+	/* Only RC and XRC support DCA for kernel QP */
+	if (hr_dev->dca_ctx.max_size > 0 &&
+	    (init_attr->qp_type == IB_QPT_RC ||
+	     init_attr->qp_type == IB_QPT_XRC_INI))
+		return !!(init_attr->create_flags & HNS_ROCE_QP_CREATE_DCA_EN);
 
 	return false;
 }
@@ -772,8 +780,13 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	int ret;
 
 	if (dca_en) {
-		/* DCA must be enabled after the buffer size is configured. */
-		hns_roce_enable_dca(hr_dev, hr_qp);
+		/* DCA must be enabled after the buffer attr is configured. */
+		ret = hns_roce_enable_dca(hr_dev, hr_qp, udata);
+		if (ret) {
+			ibdev_err(ibdev, "failed to enable DCA, ret = %d.\n",
+				  ret);
+			return ret;
+		}
 
 		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DCA;
 	} else {
@@ -815,7 +828,7 @@ static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	bool dca_en;
 	int ret;
 
-	dca_en = check_dca_is_enable(hr_dev, !!udata, addr);
+	dca_en = check_dca_is_enable(hr_dev, hr_qp, init_attr, !!udata, addr);
 	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
@@ -1509,9 +1522,18 @@ void hns_roce_unlock_cqs(struct hns_roce_cq *send_cq,
 	}
 }
 
+static inline void *dca_buf_offset(struct hns_roce_dca_cfg *dca_cfg, u32 offset)
+{
+	return (char *)(dca_cfg->buf_list[offset >> HNS_HW_PAGE_SHIFT]) +
+			(offset & ((1 << HNS_HW_PAGE_SHIFT) - 1));
+}
+
 static inline void *get_wqe(struct hns_roce_qp *hr_qp, u32 offset)
 {
-	return hns_roce_buf_offset(hr_qp->mtr.kmem, offset);
+	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA)
+		return dca_buf_offset(&hr_qp->dca_cfg, offset);
+	else
+		return hns_roce_buf_offset(hr_qp->mtr.kmem, offset);
 }
 
 void *hns_roce_get_recv_wqe(struct hns_roce_qp *hr_qp, unsigned int n)

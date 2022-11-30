@@ -945,6 +945,14 @@ err_unmap_dmpt:
 	return ret;
 }
 
+static void hns_roce_teardown_hca(struct hns_roce_dev *hr_dev)
+{
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
+		hns_roce_cleanup_dca(hr_dev);
+
+	hns_roce_cleanup_bitmap(hr_dev);
+}
+
 /**
  * hns_roce_setup_hca - setup host channel adapter
  * @hr_dev: pointer to hns roce device
@@ -956,6 +964,14 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	int ret;
 
 	spin_lock_init(&hr_dev->sm_lock);
+
+	INIT_LIST_HEAD(&hr_dev->qp_list);
+	spin_lock_init(&hr_dev->qp_list_lock);
+	INIT_LIST_HEAD(&hr_dev->dip_list);
+	spin_lock_init(&hr_dev->dip_list_lock);
+
+	INIT_LIST_HEAD(&hr_dev->uctx_list);
+	spin_lock_init(&hr_dev->uctx_list_lock);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB) {
@@ -990,6 +1006,9 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 		hns_roce_init_srq_table(hr_dev);
 	}
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
+		hns_roce_init_dca(hr_dev);
+
 	return 0;
 
 err_uar_table_free:
@@ -1014,7 +1033,7 @@ static void check_and_get_armed_cq(struct list_head *cq_list, struct ib_cq *cq)
 
 void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_qp *hr_qp;
+	struct hns_roce_qp *hr_qp, *hr_qp_next;
 	struct hns_roce_cq *hr_cq;
 	struct list_head cq_list;
 	unsigned long flags_qp;
@@ -1023,7 +1042,7 @@ void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 	INIT_LIST_HEAD(&cq_list);
 
 	spin_lock_irqsave(&hr_dev->qp_list_lock, flags);
-	list_for_each_entry(hr_qp, &hr_dev->qp_list, node) {
+	list_for_each_entry_safe(hr_qp, hr_qp_next, &hr_dev->qp_list, node) {
 		spin_lock_irqsave(&hr_qp->sq.lock, flags_qp);
 		if (hr_qp->sq.tail != hr_qp->sq.head)
 			check_and_get_armed_cq(&cq_list, hr_qp->ibqp.send_cq);
@@ -1102,11 +1121,6 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		}
 	}
 
-	INIT_LIST_HEAD(&hr_dev->qp_list);
-	spin_lock_init(&hr_dev->qp_list_lock);
-	INIT_LIST_HEAD(&hr_dev->dip_list);
-	spin_lock_init(&hr_dev->dip_list_lock);
-
 	ret = hns_roce_register_device(hr_dev);
 	if (ret)
 		goto error_failed_register_device;
@@ -1118,7 +1132,7 @@ error_failed_register_device:
 		hr_dev->hw->hw_exit(hr_dev);
 
 error_failed_engine_init:
-	hns_roce_cleanup_bitmap(hr_dev);
+	hns_roce_teardown_hca(hr_dev);
 
 error_failed_setup_hca:
 	hns_roce_cleanup_hem(hr_dev);
@@ -1144,7 +1158,7 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev)
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
-	hns_roce_cleanup_bitmap(hr_dev);
+	hns_roce_teardown_hca(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
 	if (hr_dev->cmd_mod)
