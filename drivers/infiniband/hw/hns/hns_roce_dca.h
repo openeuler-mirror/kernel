@@ -18,6 +18,13 @@ struct hns_dca_page_state {
 
 extern const struct uapi_definition hns_roce_dca_uapi_defs[];
 
+struct hns_dca_shrink_resp {
+	u64 free_key; /* free buffer's key which registered by the user */
+	u32 free_mems; /* free buffer count which no any QP be using */
+};
+
+#define HNS_DCA_INVALID_BUF_ID 0UL
+
 void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_ucontext *uctx);
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
