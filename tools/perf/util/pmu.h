@@ -124,4 +124,6 @@ int perf_pmu__convert_scale(const char *scale, char **end, double *sval);
 
 int perf_pmu__caps_parse(struct perf_pmu *pmu);
 
+int perf_pmu__match(char *pattern, char *name, char *tok);
+
 #endif /* __PMU_H */
