@@ -1461,8 +1461,7 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 	 * 3. Update Config, sync
 	 */
 	u64 val = le64_to_cpu(dst[0]);
-	bool s1_live = false, s2_live = false, ste_live;
-	bool abort, translate = false;
+	bool ste_live = false;
 	struct arm_smmu_device *smmu = NULL;
 	struct arm_smmu_s1_cfg *s1_cfg;
 	struct arm_smmu_s2_cfg *s2_cfg;
@@ -1502,7 +1501,6 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 		default:
 			break;
 		}
-		translate = s1_cfg->set || s2_cfg->set;
 	}
 
 	if (val & STRTAB_STE_0_V) {
@@ -1510,36 +1508,23 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 		case STRTAB_STE_0_CFG_BYPASS:
 			break;
 		case STRTAB_STE_0_CFG_S1_TRANS:
-			s1_live = true;
-			break;
 		case STRTAB_STE_0_CFG_S2_TRANS:
-			s2_live = true;
-			break;
-		case STRTAB_STE_0_CFG_NESTED:
-			s1_live = true;
-			s2_live = true;
+			ste_live = true;
 			break;
 		case STRTAB_STE_0_CFG_ABORT:
+			BUG_ON(!disable_bypass);
 			break;
 		default:
 			BUG(); /* STE corruption */
 		}
 	}
 
-	ste_live = s1_live || s2_live;
-
 	/* Nuke the existing STE_0 value, as we're going to rewrite it */
 	val = STRTAB_STE_0_V;
 
 	/* Bypass/fault */
-
-	if (!smmu_domain)
-		abort = disable_bypass;
-	else
-		abort = smmu_domain->abort;
-
-	if (abort || !translate) {
-		if (abort)
+	if (!smmu_domain || !(s1_cfg->set || s2_cfg->set)) {
+		if (!smmu_domain && disable_bypass)
 			val |= FIELD_PREP(STRTAB_STE_0_CFG, STRTAB_STE_0_CFG_ABORT);
 		else
 			val |= FIELD_PREP(STRTAB_STE_0_CFG, STRTAB_STE_0_CFG_BYPASS);
@@ -1557,17 +1542,11 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 		return;
 	}
 
-	if (ste_live) {
-		/* First invalidate the live STE */
-		dst[0] = cpu_to_le64(STRTAB_STE_0_CFG_ABORT);
-		arm_smmu_sync_ste_for_sid(smmu, sid);
-	}
-
 	if (s1_cfg->set) {
 		u64 strw = smmu->features & ARM_SMMU_FEAT_E2H ?
 			STRTAB_STE_1_STRW_EL2 : STRTAB_STE_1_STRW_NSEL1;
 
-		BUG_ON(s1_live);
+		BUG_ON(ste_live);
 		dst[1] = cpu_to_le64(
 			 FIELD_PREP(STRTAB_STE_1_S1DSS, STRTAB_STE_1_S1DSS_SSID0) |
 			 FIELD_PREP(STRTAB_STE_1_S1CIR, STRTAB_STE_1_S1C_CACHE_WBRA) |
@@ -1589,14 +1568,7 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 	}
 
 	if (s2_cfg->set) {
-		u64 vttbr = s2_cfg->vttbr & STRTAB_STE_3_S2TTB_MASK;
-
-		if (s2_live) {
-			u64 s2ttb = le64_to_cpu(dst[3]) & STRTAB_STE_3_S2TTB_MASK;
-
-			BUG_ON(s2ttb != vttbr);
-		}
-
+		BUG_ON(ste_live);
 		dst[2] = cpu_to_le64(
 			 FIELD_PREP(STRTAB_STE_2_S2VMID, s2_cfg->vmid) |
 			 FIELD_PREP(STRTAB_STE_2_VTCR, s2_cfg->vtcr) |
@@ -1606,12 +1578,9 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 			 STRTAB_STE_2_S2PTW | STRTAB_STE_2_S2AA64 |
 			 STRTAB_STE_2_S2R);
 
-		dst[3] = cpu_to_le64(vttbr);
+		dst[3] = cpu_to_le64(s2_cfg->vttbr & STRTAB_STE_3_S2TTB_MASK);
 
 		val |= FIELD_PREP(STRTAB_STE_0_CFG, STRTAB_STE_0_CFG_S2_TRANS);
-	} else {
-		dst[2] = 0;
-		dst[3] = 0;
 	}
 
 	if (master->ats_enabled)
@@ -2553,14 +2522,6 @@ static int arm_smmu_domain_finalise(struct iommu_domain *domain,
 	if (domain->type == IOMMU_DOMAIN_IDENTITY) {
 		smmu_domain->stage = ARM_SMMU_DOMAIN_BYPASS;
 		return 0;
-	}
-
-	if (smmu_domain->stage == ARM_SMMU_DOMAIN_NESTED &&
-	    (!(smmu->features & ARM_SMMU_FEAT_TRANS_S1) ||
-	     !(smmu->features & ARM_SMMU_FEAT_TRANS_S2))) {
-		dev_info(smmu_domain->smmu->dev,
-			 "does not implement two stages\n");
-		return -EINVAL;
 	}
 
 	/* Restrict the stage to what we can actually support */
