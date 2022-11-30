@@ -35,6 +35,16 @@ struct dca_mem_attr {
 	u32 size;
 };
 
+static inline bool dca_page_is_free(struct hns_dca_page_state *state)
+{
+	return state->buf_id == HNS_DCA_INVALID_BUF_ID;
+}
+
+static inline bool dca_mem_is_available(struct dca_mem *mem)
+{
+	return mem->flags == (DCA_MEM_FLAGS_ALLOCED | DCA_MEM_FLAGS_REGISTERED);
+}
+
 static void *alloc_dca_pages(struct hns_roce_dev *hr_dev, struct dca_mem *mem,
 			     struct dca_mem_attr *attr)
 {
@@ -86,6 +96,41 @@ static struct hns_dca_page_state *alloc_dca_states(void *pages, int count)
 	init_dca_umem_states(states, count, pages);
 
 	return states;
+}
+
+#define DCA_MEM_STOP_ITERATE -1
+#define DCA_MEM_NEXT_ITERATE -2
+static void travel_dca_pages(struct hns_roce_dca_ctx *ctx, void *param,
+			     int (*cb)(struct dca_mem *, int, void *))
+{
+	struct dca_mem *mem, *tmp;
+	unsigned long flags;
+	bool avail;
+	int ret;
+	int i;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	list_for_each_entry_safe(mem, tmp, &ctx->pool, list) {
+		spin_unlock_irqrestore(&ctx->pool_lock, flags);
+
+		spin_lock(&mem->lock);
+		avail = dca_mem_is_available(mem);
+		ret = 0;
+		for (i = 0; avail && i < mem->page_count; i++) {
+			ret = cb(mem, i, param);
+			if (ret == DCA_MEM_STOP_ITERATE ||
+			    ret == DCA_MEM_NEXT_ITERATE)
+				break;
+		}
+		spin_unlock(&mem->lock);
+		spin_lock_irqsave(&ctx->pool_lock, flags);
+
+		if (ret == DCA_MEM_STOP_ITERATE)
+			goto done;
+	}
+
+done:
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 }
 
 /* user DCA is managed by ucontext */
@@ -155,6 +200,63 @@ static int register_dca_mem(struct hns_roce_dev *hr_dev,
 	ctx->free_size += attr->size;
 	ctx->total_size += attr->size;
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+
+	return 0;
+}
+
+struct dca_mem_shrink_attr {
+	u64 shrink_key;
+	u32 shrink_mems;
+};
+
+static int shrink_dca_page_proc(struct dca_mem *mem, int index, void *param)
+{
+	struct dca_mem_shrink_attr *attr = param;
+	struct hns_dca_page_state *state;
+	int i, free_pages;
+
+	free_pages = 0;
+	for (i = 0; i < mem->page_count; i++) {
+		state = &mem->states[i];
+		if (dca_page_is_free(state))
+			free_pages++;
+	}
+
+	/* No pages are in use */
+	if (free_pages == mem->page_count) {
+		/* unregister first empty DCA mem */
+		if (!attr->shrink_mems) {
+			mem->flags &= ~DCA_MEM_FLAGS_REGISTERED;
+			attr->shrink_key = mem->key;
+		}
+
+		attr->shrink_mems++;
+	}
+
+	if (attr->shrink_mems > 1)
+		return DCA_MEM_STOP_ITERATE;
+	else
+		return DCA_MEM_NEXT_ITERATE;
+}
+
+static int shrink_dca_mem(struct hns_roce_dev *hr_dev,
+			  struct hns_roce_ucontext *uctx, u64 reserved_size,
+			  struct hns_dca_shrink_resp *resp)
+{
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(uctx);
+	struct dca_mem_shrink_attr attr = {};
+	unsigned long flags;
+	bool need_shink;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	need_shink = ctx->free_mems > 0 && ctx->free_size > reserved_size;
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+	if (!need_shink)
+		return 0;
+
+	travel_dca_pages(ctx, &attr, shrink_dca_page_proc);
+	resp->free_mems = attr.shrink_mems;
+	resp->free_key = attr.shrink_key;
 
 	return 0;
 }
@@ -339,10 +441,52 @@ DECLARE_UVERBS_NAMED_METHOD_DESTROY(
 	UVERBS_ATTR_IDR(HNS_IB_ATTR_DCA_MEM_DEREG_HANDLE, HNS_IB_OBJECT_DCA_MEM,
 			UVERBS_ACCESS_DESTROY, UA_MANDATORY));
 
+static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_SHRINK)(
+	struct uverbs_attr_bundle *attrs)
+{
+	struct hns_roce_ucontext *uctx = uverbs_attr_to_hr_uctx(attrs);
+	struct hns_dca_shrink_resp resp = {};
+	u64 reserved_size = 0;
+	int ret;
+
+	ret = uverbs_copy_from(&reserved_size, attrs,
+			       HNS_IB_ATTR_DCA_MEM_SHRINK_RESERVED_SIZE);
+	if (ret)
+		return ret;
+
+	ret = shrink_dca_mem(to_hr_dev(uctx->ibucontext.device), uctx,
+			     reserved_size, &resp);
+	if (ret)
+		return ret;
+
+	ret = uverbs_copy_to(attrs, HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_KEY,
+			     &resp.free_key, sizeof(resp.free_key));
+	if (!ret)
+		ret = uverbs_copy_to(attrs,
+				     HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_MEMS,
+				     &resp.free_mems, sizeof(resp.free_mems));
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+DECLARE_UVERBS_NAMED_METHOD(
+	HNS_IB_METHOD_DCA_MEM_SHRINK,
+	UVERBS_ATTR_IDR(HNS_IB_ATTR_DCA_MEM_SHRINK_HANDLE,
+			HNS_IB_OBJECT_DCA_MEM, UVERBS_ACCESS_WRITE,
+			UA_MANDATORY),
+	UVERBS_ATTR_PTR_IN(HNS_IB_ATTR_DCA_MEM_SHRINK_RESERVED_SIZE,
+			   UVERBS_ATTR_TYPE(u64), UA_MANDATORY),
+	UVERBS_ATTR_PTR_OUT(HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_KEY,
+			    UVERBS_ATTR_TYPE(u64), UA_MANDATORY),
+	UVERBS_ATTR_PTR_OUT(HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_MEMS,
+			    UVERBS_ATTR_TYPE(u32), UA_MANDATORY));
 DECLARE_UVERBS_NAMED_OBJECT(HNS_IB_OBJECT_DCA_MEM,
 			    UVERBS_TYPE_ALLOC_IDR(dca_cleanup),
 			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_REG),
-			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_DEREG));
+			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_DEREG),
+			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_SHRINK));
 
 static bool dca_is_supported(struct ib_device *device)
 {
