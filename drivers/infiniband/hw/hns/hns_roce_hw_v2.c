@@ -4625,6 +4625,16 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	hr_reg_write(context, QPC_TRRL_BA_H, trrl_ba >> (32 + 16 + 4));
 	hr_reg_clear(qpc_mask, QPC_TRRL_BA_H);
 
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09) {
+		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA) {
+			hr_reg_enable(context, QPC_DCA_MODE);
+			hr_reg_clear(qpc_mask, QPC_DCA_MODE);
+		}
+	} else {
+		/* reset IRRL_HEAD */
+		hr_reg_clear(qpc_mask, QPC_V2_IRRL_HEAD);
+	}
+
 	context->irrl_ba = cpu_to_le32(irrl_ba >> 6);
 	qpc_mask->irrl_ba = 0;
 	hr_reg_write(context, QPC_IRRL_BA_H, irrl_ba >> (32 + 6));
@@ -4758,8 +4768,6 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	hr_reg_clear(qpc_mask, QPC_RNR_RETRY_FLAG);
 
 	hr_reg_clear(qpc_mask, QPC_CHECK_FLG);
-
-	hr_reg_clear(qpc_mask, QPC_V2_IRRL_HEAD);
 
 	return 0;
 }

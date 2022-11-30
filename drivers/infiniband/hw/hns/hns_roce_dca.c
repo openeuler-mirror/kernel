@@ -239,7 +239,7 @@ static int shrink_dca_page_proc(struct dca_mem *mem, int index, void *param)
 		return DCA_MEM_NEXT_ITERATE;
 }
 
-static int shrink_dca_mem(struct hns_roce_dev *hr_dev,
+static void shrink_dca_mem(struct hns_roce_dev *hr_dev,
 			  struct hns_roce_ucontext *uctx, u64 reserved_size,
 			  struct hns_dca_shrink_resp *resp)
 {
@@ -252,13 +252,11 @@ static int shrink_dca_mem(struct hns_roce_dev *hr_dev,
 	need_shink = ctx->free_mems > 0 && ctx->free_size > reserved_size;
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 	if (!need_shink)
-		return 0;
+		return;
 
 	travel_dca_pages(ctx, &attr, shrink_dca_page_proc);
 	resp->free_mems = attr.shrink_mems;
 	resp->free_key = attr.shrink_key;
-
-	return 0;
 }
 
 static void init_dca_context(struct hns_roce_dca_ctx *ctx)
@@ -354,6 +352,21 @@ static void free_dca_mem(struct dca_mem *mem)
 	spin_lock(&mem->lock);
 	mem->flags = 0;
 	spin_unlock(&mem->lock);
+}
+
+void hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
+{
+	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
+
+	cfg->buf_id = HNS_DCA_INVALID_BUF_ID;
+}
+
+void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
+			  struct hns_roce_qp *hr_qp)
+{
+	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
+
+	cfg->buf_id = HNS_DCA_INVALID_BUF_ID;
 }
 
 static inline struct hns_roce_ucontext *
@@ -454,10 +467,8 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_SHRINK)(
 	if (ret)
 		return ret;
 
-	ret = shrink_dca_mem(to_hr_dev(uctx->ibucontext.device), uctx,
-			     reserved_size, &resp);
-	if (ret)
-		return ret;
+	shrink_dca_mem(to_hr_dev(uctx->ibucontext.device), uctx,
+		       reserved_size, &resp);
 
 	ret = uverbs_copy_to(attrs, HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_KEY,
 			     &resp.free_key, sizeof(resp.free_key));

@@ -324,6 +324,10 @@ struct hns_roce_mtr {
 	struct hns_roce_hem_cfg  hem_cfg; /* config for hardware addressing */
 };
 
+struct hns_roce_dca_cfg {
+	u32 buf_id;
+};
+
 struct hns_roce_mw {
 	struct ib_mw		ibmw;
 	u32			pdn;
@@ -628,6 +632,7 @@ struct hns_roce_qp {
 	struct hns_roce_wq	sq;
 
 	struct hns_roce_mtr	mtr;
+	struct hns_roce_dca_cfg	dca_cfg;
 
 	u32			buff_size;
 	struct mutex		mutex;
