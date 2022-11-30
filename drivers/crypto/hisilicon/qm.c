@@ -4805,6 +4805,14 @@ void hisi_qm_debug_regs_clear(struct hisi_qm *qm)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_debug_regs_clear);
 
+static void hisi_qm_init_vf_qos(struct hisi_qm *qm, int total_func)
+{
+	int i;
+
+	for (i = 1; i <= total_func; i++)
+		qm->factor[i].func_qos = QM_QOS_MAX_VAL;
+}
+
 /**
  * hisi_qm_sriov_enable() - enable virtual functions
  * @pdev: the PCIe device
@@ -4838,6 +4846,10 @@ int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs)
 	}
 
 	num_vfs = max_vfs;
+
+	if (test_bit(QM_SUPPORT_FUNC_QOS, &qm->caps))
+		hisi_qm_init_vf_qos(qm, num_vfs);
+
 	ret = qm_vf_q_assign(qm, num_vfs);
 	if (ret) {
 		pci_err(pdev, "Can't assign queues for VF!\n");
@@ -4873,7 +4885,6 @@ EXPORT_SYMBOL_GPL(hisi_qm_sriov_enable);
 int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen)
 {
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
-	int total_vfs = pci_sriov_get_totalvfs(qm->pdev);
 	int ret;
 
 	if (pci_vfs_assigned(pdev)) {
@@ -4888,9 +4899,6 @@ int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen)
 	}
 
 	pci_disable_sriov(pdev);
-	/* clear vf function shaper configure array */
-	if (test_bit(QM_SUPPORT_FUNC_QOS, &qm->caps))
-		memset(qm->factor + 1, 0, sizeof(struct qm_shaper_factor) * total_vfs);
 
 	ret = qm_clear_vft_config(qm);
 	if (ret)
@@ -6303,7 +6311,7 @@ err_init_qp_mem:
 static int hisi_qm_memory_init(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
-	int ret, total_func, i;
+	int ret, total_func;
 	size_t off = 0;
 
 	if (test_bit(QM_SUPPORT_FUNC_QOS, &qm->caps)) {
@@ -6312,8 +6320,8 @@ static int hisi_qm_memory_init(struct hisi_qm *qm)
 		if (!qm->factor)
 			return -ENOMEM;
 
-		for (i = 0; i < total_func; i++)
-			qm->factor[i].func_qos = QM_QOS_MAX_VAL;
+		/* Only the PF value needs to be initialized */
+		qm->factor[0].func_qos = QM_QOS_MAX_VAL;
 	}
 
 #define QM_INIT_BUF(qm, type, num) do { \
