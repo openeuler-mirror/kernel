@@ -18,11 +18,6 @@ struct hns_dca_page_state {
 
 extern const struct uapi_definition hns_roce_dca_uapi_defs[];
 
-struct hns_dca_shrink_resp {
-	u64 free_key; /* free buffer's key which registered by the user */
-	u32 free_mems; /* free buffer count which no any QP be using */
-};
-
 #define HNS_DCA_INVALID_BUF_ID 0UL
 
 /*
@@ -46,6 +41,7 @@ struct hns_dca_attach_attr {
 };
 
 struct hns_dca_attach_resp {
+#define HNS_DCA_ATTACH_FLAGS_NEW_BUFFER BIT(0)
 	u32 alloc_flags;
 	u32 alloc_pages;
 };
@@ -54,14 +50,27 @@ struct hns_dca_detach_attr {
 	u32 sq_idx;
 };
 
+typedef int (*hns_dca_enum_callback)(struct hns_dca_page_state *, u32, void *);
+
+void hns_roce_init_dca(struct hns_roce_dev *hr_dev);
+void hns_roce_cleanup_dca(struct hns_roce_dev *hr_dev);
+
 void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_ucontext *uctx);
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_ucontext *uctx);
 
-void hns_roce_enable_dca(struct hns_roce_dev *hr_dev,
-			 struct hns_roce_qp *hr_qp);
+int hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct ib_udata *udata);
 void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
 			  struct hns_roce_qp *hr_qp, struct ib_udata *udata);
-void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp);
+
+int hns_roce_dca_attach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct hns_dca_attach_attr *attr);
+void hns_roce_dca_detach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 struct hns_dca_detach_attr *attr);
+
+void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+		       struct ib_udata *udata);
+
 #endif

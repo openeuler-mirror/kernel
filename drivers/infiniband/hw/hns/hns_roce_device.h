@@ -134,6 +134,15 @@ enum hns_roce_event {
 	HNS_ROCE_EVENT_TYPE_INVALID_XRCETH	      = 0x17,
 };
 
+/* Private QP creation flags to be passed in ib_qp_init_attr.create_flags.
+ *
+ * These flags are intended for internal use by the hns driver, and they
+ * rely on the range reserved for that use in the ib_qp_create_flags enum.
+ */
+enum hns_roce_qp_create_flags {
+	HNS_ROCE_QP_CREATE_DCA_EN = IB_QP_CREATE_RESERVED_START,
+};
+
 enum {
 	HNS_ROCE_CAP_FLAG_REREG_MR		= BIT(0),
 	HNS_ROCE_CAP_FLAG_ROCE_V1_V2		= BIT(1),
@@ -214,6 +223,9 @@ struct hns_roce_dca_ctx {
 	unsigned int free_mems; /* free mem num in pool */
 	size_t free_size; /* free mem size in pool */
 	size_t total_size; /* total size in pool */
+	size_t max_size; /* max size the pool can expand to */
+	size_t min_size; /* shrink if @free_size > @min_size */
+	unsigned int unit_size; /* unit size per DCA mem */
 };
 
 struct hns_roce_ucontext {
@@ -324,20 +336,15 @@ struct hns_roce_mtr {
 	struct hns_roce_hem_cfg  hem_cfg; /* config for hardware addressing */
 };
 
+/* DCA config */
 struct hns_roce_dca_cfg {
-	spinlock_t lock;
-	u32 buf_id;
-	u16 attach_count;
-	u32 npages;
-	u32 sq_idx;
-	struct delayed_work dwork;
-};
-
-/* DCA attr for setting WQE buffer */
-struct hns_roce_dca_attr {
-	u32 sq_offset;
-	u32 sge_offset;
-	u32 rq_offset;
+	spinlock_t		lock;
+	u32			buf_id;
+	u16			attach_count;
+	void			**buf_list;
+	u32			npages;
+	u32			sq_idx;
+	struct delayed_work	dwork;
 };
 
 struct hns_roce_mw {
@@ -377,6 +384,7 @@ struct hns_roce_wq {
 	u32		max_gs;
 	u32		rsv_sge;
 	u32		offset;
+	int		wqe_offset;
 	u32		wqe_shift; /* WQE size */
 	u32		head;
 	u32		tail;
@@ -388,6 +396,7 @@ struct hns_roce_sge {
 	unsigned int	sge_cnt; /* SGE num */
 	u32		offset;
 	u32		sge_shift; /* SGE size */
+	int		wqe_offset;
 };
 
 struct hns_roce_buf_list {
@@ -980,8 +989,7 @@ struct hns_roce_hw {
 			 struct hns_roce_hem_table *table, int obj,
 			 u32 step_idx);
 	int (*set_dca_buf)(struct hns_roce_dev *hr_dev,
-			   struct hns_roce_qp *hr_qp,
-			   struct hns_roce_dca_attr *attr);
+			   struct hns_roce_qp *hr_qp);
 	bool (*chk_dca_buf_inactive)(struct hns_roce_dev *hr_dev,
 				     struct hns_roce_qp *hr_qp);
 	int (*modify_qp)(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
@@ -1027,6 +1035,10 @@ struct hns_roce_dev {
 	struct ib_device	ib_dev;
 	struct pci_dev		*pci_dev;
 	struct device		*dev;
+
+	struct list_head	uctx_list; /* list of all uctx on this dev */
+	spinlock_t		uctx_list_lock; /* protect @uctx_list */
+
 	struct hns_roce_uar     priv_uar;
 	const char		*irq_names[HNS_ROCE_MAX_IRQ_NUM];
 	spinlock_t		sm_lock;
@@ -1048,6 +1060,8 @@ struct hns_roce_dev {
 	void __iomem		*mem_base;
 	struct hns_roce_caps	caps;
 	struct xarray		qp_table_xa;
+
+	struct hns_roce_dca_ctx	dca_ctx;
 
 	unsigned char	dev_addr[HNS_ROCE_MAX_PORTS][ETH_ALEN];
 	u64			sys_image_guid;

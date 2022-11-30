@@ -104,25 +104,71 @@ static inline bool dca_mem_is_available(struct dca_mem *mem)
 	return mem->flags == (DCA_MEM_FLAGS_ALLOCED | DCA_MEM_FLAGS_REGISTERED);
 }
 
-static void *alloc_dca_pages(struct hns_roce_dev *hr_dev, struct dca_mem *mem,
-			     struct dca_mem_attr *attr)
+static void free_dca_pages(struct hns_roce_dev *hr_dev, bool is_user,
+			   void *pages)
+{
+	if (is_user)
+		ib_umem_release(pages);
+	else
+		hns_roce_buf_free(hr_dev, pages);
+}
+
+static void *alloc_dca_pages(struct hns_roce_dev *hr_dev, bool is_user,
+			     struct dca_mem *mem, struct dca_mem_attr *attr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	struct ib_umem *umem;
+	struct hns_roce_buf *kmem;
 
-	umem = ib_umem_get(ibdev, attr->addr, attr->size, 0);
-	if (IS_ERR(umem)) {
-		ibdev_err(ibdev, "failed to get uDCA pages, ret = %ld.\n",
-			  PTR_ERR(umem));
+	if (is_user) {
+		struct ib_umem *umem;
+
+		umem = ib_umem_get(ibdev, attr->addr, attr->size, 0);
+		if (IS_ERR(umem)) {
+			ibdev_err(ibdev, "failed to get uDCA pages, ret = %ld.\n",
+				  PTR_ERR(umem));
+			return NULL;
+		}
+
+		mem->page_count = ib_umem_num_dma_blocks(umem,
+							 HNS_HW_PAGE_SIZE);
+		return umem;
+	}
+
+	kmem = hns_roce_buf_alloc(hr_dev, attr->size, HNS_HW_PAGE_SHIFT,
+				  HNS_ROCE_BUF_NOSLEEP | HNS_ROCE_BUF_NOFAIL);
+	if (IS_ERR(kmem)) {
+		ibdev_err(ibdev, "failed to alloc kDCA pages, ret = %ld.\n",
+			  PTR_ERR(kmem));
 		return NULL;
 	}
 
-	mem->page_count = ib_umem_num_dma_blocks(umem, HNS_HW_PAGE_SIZE);
+	mem->page_count = kmem->npages;
+	/* Override the attr->size by actually alloced size */
+	attr->size = kmem->ntrunks << kmem->trunk_shift;
+	return kmem;
 
-	return umem;
 }
 
-static void init_dca_umem_states(struct hns_dca_page_state *states, int count,
+static void init_dca_kmem_states(struct hns_roce_dev *hr_dev,
+				 struct hns_dca_page_state *states, int count,
+				 struct hns_roce_buf *kmem)
+{
+	dma_addr_t cur_addr;
+	dma_addr_t pre_addr;
+	int i;
+
+	pre_addr = 0;
+	for (i = 0; i < kmem->npages && i < count; i++) {
+		cur_addr = hns_roce_buf_page(kmem, i);
+		if (cur_addr - pre_addr != HNS_HW_PAGE_SIZE)
+			states[i].head = 1;
+
+		pre_addr = cur_addr;
+	}
+}
+
+static void init_dca_umem_states(struct hns_roce_dev *hr_dev,
+				 struct hns_dca_page_state *states, int count,
 				 struct ib_umem *umem)
 {
 	struct ib_block_iter biter;
@@ -144,7 +190,9 @@ static void init_dca_umem_states(struct hns_dca_page_state *states, int count,
 	}
 }
 
-static struct hns_dca_page_state *alloc_dca_states(void *pages, int count)
+static struct hns_dca_page_state *alloc_dca_states(struct hns_roce_dev *hr_dev,
+						   void *pages, int count,
+						   bool is_user)
 {
 	struct hns_dca_page_state *states;
 
@@ -152,7 +200,10 @@ static struct hns_dca_page_state *alloc_dca_states(void *pages, int count)
 	if (!states)
 		return NULL;
 
-	init_dca_umem_states(states, count, pages);
+	if (is_user)
+		init_dca_umem_states(hr_dev, states, count, pages);
+	else
+		init_dca_kmem_states(hr_dev, states, count, pages);
 
 	return states;
 }
@@ -192,17 +243,142 @@ done:
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 }
 
-/* user DCA is managed by ucontext */
-static inline struct hns_roce_dca_ctx *
-to_hr_dca_ctx(struct hns_roce_ucontext *uctx)
+struct dca_get_alloced_pages_attr {
+	u32 buf_id;
+	dma_addr_t *pages;
+	u32 total;
+	u32 max;
+};
+
+static int get_alloced_kmem_proc(struct dca_mem *mem, int index, void *param)
 {
-	return &uctx->dca_ctx;
+	struct dca_get_alloced_pages_attr *attr = param;
+	struct hns_dca_page_state *states = mem->states;
+	struct hns_roce_buf *kmem = mem->pages;
+	u32 i;
+
+	for (i = 0; i < kmem->npages; i++) {
+		if (dca_page_is_allocated(&states[i], attr->buf_id)) {
+			attr->pages[attr->total++] = hns_roce_buf_page(kmem, i);
+			if (attr->total >= attr->max)
+				return DCA_MEM_STOP_ITERATE;
+		}
+	}
+
+	return DCA_MEM_NEXT_ITERATE;
 }
 
-static void unregister_dca_mem(struct hns_roce_ucontext *uctx,
+static int get_alloced_umem_proc(struct dca_mem *mem, int index, void *param)
+
+{
+	struct dca_get_alloced_pages_attr *attr = param;
+	struct hns_dca_page_state *states = mem->states;
+	struct ib_umem *umem = mem->pages;
+	struct ib_block_iter biter;
+	u32 i = 0;
+
+	rdma_for_each_block(umem->sgt_append.sgt.sgl, &biter,
+			    umem->sgt_append.sgt.nents, HNS_HW_PAGE_SIZE) {
+		if (dca_page_is_allocated(&states[i], attr->buf_id)) {
+			attr->pages[attr->total++] =
+					rdma_block_iter_dma_address(&biter);
+			if (attr->total >= attr->max)
+				return DCA_MEM_STOP_ITERATE;
+		}
+		i++;
+	}
+
+	return DCA_MEM_NEXT_ITERATE;
+}
+
+/* user DCA is managed by ucontext, kernel DCA is managed by device */
+static inline struct hns_roce_dca_ctx *
+to_hr_dca_ctx(struct hns_roce_dev *hr_dev, struct hns_roce_ucontext *uctx)
+{
+	return uctx ? &uctx->dca_ctx : &hr_dev->dca_ctx;
+}
+
+static inline struct hns_roce_dca_ctx *
+hr_qp_to_dca_ctx(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
+{
+	struct hns_roce_ucontext *uctx = NULL;
+
+	if (hr_qp->ibqp.pd->uobject)
+		uctx = to_hr_ucontext(hr_qp->ibqp.pd->uobject->context);
+
+	return to_hr_dca_ctx(hr_dev, uctx);
+}
+
+static int config_dca_qpc(struct hns_roce_dev *hr_dev,
+			  struct hns_roce_qp *hr_qp, dma_addr_t *pages,
+			  int page_count)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_mtr *mtr = &hr_qp->mtr;
+	int ret;
+
+	ret = hns_roce_mtr_map(hr_dev, mtr, pages, page_count);
+	if (ret) {
+		ibdev_err(ibdev, "failed to map DCA pages, ret = %d.\n", ret);
+		return ret;
+	}
+
+	if (hr_dev->hw->set_dca_buf) {
+		ret = hr_dev->hw->set_dca_buf(hr_dev, hr_qp);
+		if (ret) {
+			ibdev_err(ibdev, "failed to set DCA to HW, ret = %d.\n",
+				  ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int setup_dca_buf_to_hw(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_qp *hr_qp,
+			       struct hns_roce_dca_ctx *ctx, u32 buf_id,
+			       u32 count)
+{
+	struct dca_get_alloced_pages_attr attr = {};
+	dma_addr_t *pages;
+	int ret;
+
+	/* alloc a tmp array to store buffer's dma address */
+	pages = kcalloc(count, sizeof(dma_addr_t), GFP_ATOMIC);
+	if (!pages)
+		return -ENOMEM;
+
+	attr.buf_id = buf_id;
+	attr.pages = pages;
+	attr.max = count;
+
+	if (hr_qp->ibqp.uobject)
+		travel_dca_pages(ctx, &attr, get_alloced_umem_proc);
+	else
+		travel_dca_pages(ctx, &attr, get_alloced_kmem_proc);
+
+	if (attr.total != count) {
+		ibdev_err(&hr_dev->ib_dev, "failed to get DCA page %u != %u.\n",
+			  attr.total, count);
+		ret = -ENOMEM;
+		goto err_get_pages;
+	}
+
+	ret = config_dca_qpc(hr_dev, hr_qp, pages, count);
+err_get_pages:
+	/* drop tmp array */
+	kfree(pages);
+
+	return ret;
+}
+
+static void unregister_dca_mem(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_ucontext *uctx,
 			       struct dca_mem *mem)
 {
-	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(uctx);
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(hr_dev, uctx);
+	bool is_user = !!uctx;
 	unsigned long flags;
 	void *states, *pages;
 
@@ -224,24 +400,25 @@ static void unregister_dca_mem(struct hns_roce_ucontext *uctx,
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 
 	kfree(states);
-	ib_umem_release(pages);
+	free_dca_pages(hr_dev, is_user, pages);
 }
 
 static int register_dca_mem(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_ucontext *uctx,
 			    struct dca_mem *mem, struct dca_mem_attr *attr)
 {
-	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(uctx);
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(hr_dev, uctx);
+	bool is_user = !!uctx;
 	void *states, *pages;
 	unsigned long flags;
 
-	pages = alloc_dca_pages(hr_dev, mem, attr);
+	pages = alloc_dca_pages(hr_dev, is_user, mem, attr);
 	if (!pages)
 		return -ENOMEM;
 
-	states = alloc_dca_states(pages, mem->page_count);
+	states = alloc_dca_states(hr_dev, pages, mem->page_count, is_user);
 	if (!states) {
-		ib_umem_release(pages);
+		free_dca_pages(hr_dev, is_user, pages);
 		return -ENOMEM;
 	}
 
@@ -261,161 +438,6 @@ static int register_dca_mem(struct hns_roce_dev *hr_dev,
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 
 	return 0;
-}
-
-struct dca_mem_shrink_attr {
-	u64 shrink_key;
-	u32 shrink_mems;
-};
-
-static int shrink_dca_page_proc(struct dca_mem *mem, int index, void *param)
-{
-	struct dca_mem_shrink_attr *attr = param;
-	struct hns_dca_page_state *state;
-	int i, free_pages;
-
-	free_pages = 0;
-	for (i = 0; i < mem->page_count; i++) {
-		state = &mem->states[i];
-		if (dca_page_is_free(state))
-			free_pages++;
-	}
-
-	/* No pages are in use */
-	if (free_pages == mem->page_count) {
-		/* unregister first empty DCA mem */
-		if (!attr->shrink_mems) {
-			mem->flags &= ~DCA_MEM_FLAGS_REGISTERED;
-			attr->shrink_key = mem->key;
-		}
-
-		attr->shrink_mems++;
-	}
-
-	if (attr->shrink_mems > 1)
-		return DCA_MEM_STOP_ITERATE;
-	else
-		return DCA_MEM_NEXT_ITERATE;
-}
-
-static void shrink_dca_mem(struct hns_roce_dev *hr_dev,
-			  struct hns_roce_ucontext *uctx, u64 reserved_size,
-			  struct hns_dca_shrink_resp *resp)
-{
-	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(uctx);
-	struct dca_mem_shrink_attr attr = {};
-	unsigned long flags;
-	bool need_shink;
-
-	spin_lock_irqsave(&ctx->pool_lock, flags);
-	need_shink = ctx->free_mems > 0 && ctx->free_size > reserved_size;
-	spin_unlock_irqrestore(&ctx->pool_lock, flags);
-	if (!need_shink)
-		return;
-
-	travel_dca_pages(ctx, &attr, shrink_dca_page_proc);
-	resp->free_mems = attr.shrink_mems;
-	resp->free_key = attr.shrink_key;
-}
-
-static void init_dca_context(struct hns_roce_dca_ctx *ctx)
-{
-	INIT_LIST_HEAD(&ctx->pool);
-	spin_lock_init(&ctx->pool_lock);
-	ctx->total_size = 0;
-}
-
-static void cleanup_dca_context(struct hns_roce_dev *hr_dev,
-				struct hns_roce_dca_ctx *ctx)
-{
-	struct dca_mem *mem, *tmp;
-	unsigned long flags;
-
-	spin_lock_irqsave(&ctx->pool_lock, flags);
-	list_for_each_entry_safe(mem, tmp, &ctx->pool, list) {
-		list_del(&mem->list);
-		mem->flags = 0;
-		spin_unlock_irqrestore(&ctx->pool_lock, flags);
-
-		kfree(mem->states);
-		ib_umem_release(mem->pages);
-		kfree(mem);
-
-		spin_lock_irqsave(&ctx->pool_lock, flags);
-	}
-	ctx->total_size = 0;
-	spin_unlock_irqrestore(&ctx->pool_lock, flags);
-}
-
-void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
-			    struct hns_roce_ucontext *uctx)
-{
-	if (!(uctx->config & HNS_ROCE_UCTX_CONFIG_DCA))
-		return;
-
-	init_dca_context(&uctx->dca_ctx);
-}
-
-void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
-			      struct hns_roce_ucontext *uctx)
-{
-	if (!(uctx->config & HNS_ROCE_UCTX_CONFIG_DCA))
-		return;
-
-	cleanup_dca_context(hr_dev, &uctx->dca_ctx);
-}
-
-static struct dca_mem *alloc_dca_mem(struct hns_roce_dca_ctx *ctx)
-{
-	struct dca_mem *mem, *tmp, *found = NULL;
-	unsigned long flags;
-
-	spin_lock_irqsave(&ctx->pool_lock, flags);
-	list_for_each_entry_safe(mem, tmp, &ctx->pool, list) {
-		spin_lock(&mem->lock);
-		if (!mem->flags) {
-			found = mem;
-			mem->flags |= DCA_MEM_FLAGS_ALLOCED;
-			spin_unlock(&mem->lock);
-			break;
-		}
-		spin_unlock(&mem->lock);
-	}
-	spin_unlock_irqrestore(&ctx->pool_lock, flags);
-
-	if (found)
-		return found;
-
-	mem = kzalloc(sizeof(*mem), GFP_NOWAIT);
-	if (!mem)
-		return NULL;
-
-	spin_lock_init(&mem->lock);
-	INIT_LIST_HEAD(&mem->list);
-
-	mem->flags |= DCA_MEM_FLAGS_ALLOCED;
-
-	spin_lock_irqsave(&ctx->pool_lock, flags);
-	list_add(&mem->list, &ctx->pool);
-	spin_unlock_irqrestore(&ctx->pool_lock, flags);
-
-	return mem;
-}
-
-static void free_dca_mem(struct dca_mem *mem)
-{
-	/* We cannot hold the whole pool's lock during the DCA is working
-	 * until cleanup the context in cleanup_dca_context(), so we just
-	 * set the DCA mem state as free when destroying DCA mem object.
-	 */
-	spin_lock(&mem->lock);
-	mem->flags = 0;
-	spin_unlock(&mem->lock);
-}
-
-static inline struct hns_roce_dca_ctx *hr_qp_to_dca_ctx(struct hns_roce_qp *qp)
-{
-	return to_hr_dca_ctx(to_hr_ucontext(qp->ibqp.pd->uobject->context));
 }
 
 struct dca_page_clear_attr {
@@ -573,95 +595,81 @@ static u32 active_dca_pages(struct hns_roce_dca_ctx *ctx, u32 buf_id, u32 count)
 	return attr.alloc_pages;
 }
 
-struct dca_get_alloced_pages_attr {
+struct dca_page_query_active_attr {
 	u32 buf_id;
-	dma_addr_t *pages;
-	u32 total;
-	u32 max;
+	u32 curr_index;
+	u32 start_index;
+	u32 page_index;
+	u32 page_count;
+	u64 mem_key;
 };
 
-static int get_alloced_umem_proc(struct dca_mem *mem, int index, void *param)
-
+static int query_dca_active_pages_proc(struct dca_mem *mem, int index,
+				       void *param)
 {
-	struct dca_get_alloced_pages_attr *attr = param;
-	struct hns_dca_page_state *states = mem->states;
-	struct ib_umem *umem = mem->pages;
-	struct ib_block_iter biter;
-	u32 i = 0;
+	struct hns_dca_page_state *state = &mem->states[index];
+	struct dca_page_query_active_attr *attr = param;
 
-	rdma_for_each_block(umem->sgt_append.sgt.sgl, &biter,
-			    umem->sgt_append.sgt.nents, HNS_HW_PAGE_SIZE) {
-		if (dca_page_is_allocated(&states[i], attr->buf_id)) {
-			attr->pages[attr->total++] =
-					rdma_block_iter_dma_address(&biter);
-			if (attr->total >= attr->max)
-				return DCA_MEM_STOP_ITERATE;
-		}
-		i++;
+	if (!dca_page_is_active(state, attr->buf_id))
+		return 0;
+
+	if (attr->curr_index < attr->start_index) {
+		attr->curr_index++;
+		return 0;
+	} else if (attr->curr_index > attr->start_index) {
+		return DCA_MEM_STOP_ITERATE;
 	}
 
-	return DCA_MEM_NEXT_ITERATE;
+	/* Search first page in DCA mem */
+	attr->page_index = index;
+	attr->mem_key = mem->key;
+	/* Search active pages in continuous addresses */
+	while (index < mem->page_count) {
+		state = &mem->states[index];
+		if (!dca_page_is_active(state, attr->buf_id))
+			break;
+
+		index++;
+		attr->page_count++;
+	}
+
+	return DCA_MEM_STOP_ITERATE;
 }
 
-static int apply_dca_cfg(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
-			 struct hns_dca_attach_attr *attach_attr)
+static int sync_dca_buf_offset(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_qp *hr_qp,
+			       struct hns_dca_attach_attr *attr)
 {
-	struct hns_roce_dca_attr attr;
+	struct ib_device *ibdev = &hr_dev->ib_dev;
 
-	if (hr_dev->hw->set_dca_buf) {
-		attr.sq_offset = attach_attr->sq_offset;
-		attr.sge_offset = attach_attr->sge_offset;
-		attr.rq_offset = attach_attr->rq_offset;
-		return hr_dev->hw->set_dca_buf(hr_dev, hr_qp, &attr);
+	if (hr_qp->sq.wqe_cnt > 0) {
+		if (attr->sq_offset >= hr_qp->sge.offset) {
+			ibdev_err(ibdev, "failed to check SQ offset = %u\n",
+				  attr->sq_offset);
+			return -EINVAL;
+		}
+		hr_qp->sq.wqe_offset = hr_qp->sq.offset + attr->sq_offset;
+	}
+
+	if (hr_qp->sge.sge_cnt > 0) {
+		if (attr->sge_offset >= hr_qp->rq.offset) {
+			ibdev_err(ibdev, "failed to check exSGE offset = %u\n",
+				  attr->sge_offset);
+			return -EINVAL;
+		}
+		hr_qp->sge.wqe_offset = hr_qp->sge.offset + attr->sge_offset;
+	}
+
+	if (hr_qp->rq.wqe_cnt > 0) {
+		if (attr->rq_offset >= hr_qp->buff_size) {
+			ibdev_err(ibdev, "failed to check RQ offset = %u\n",
+				  attr->rq_offset);
+			return -EINVAL;
+		}
+		hr_qp->rq.wqe_offset = hr_qp->rq.offset + attr->rq_offset;
 	}
 
 	return 0;
-}
-
-static int setup_dca_buf_to_hw(struct hns_roce_dca_ctx *ctx,
-			       struct hns_roce_qp *hr_qp, u32 buf_id,
-			       struct hns_dca_attach_attr *attach_attr)
-{
-	struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
-	struct dca_get_alloced_pages_attr attr = {};
-	struct ib_device *ibdev = &hr_dev->ib_dev;
-	u32 count = hr_qp->dca_cfg.npages;
-	dma_addr_t *pages;
-	int ret;
-
-	/* Alloc a tmp array to store buffer's dma address */
-	pages = kvcalloc(count, sizeof(dma_addr_t), GFP_NOWAIT);
-	if (!pages)
-		return -ENOMEM;
-
-	attr.buf_id = buf_id;
-	attr.pages = pages;
-	attr.max = count;
-
-	travel_dca_pages(ctx, &attr, get_alloced_umem_proc);
-	if (attr.total != count) {
-		ibdev_err(ibdev, "failed to get DCA page %u != %u.\n",
-			  attr.total, count);
-		ret = -ENOMEM;
-		goto done;
-	}
-
-	/* Update MTT for ROCEE addressing */
-	ret = hns_roce_mtr_map(hr_dev, &hr_qp->mtr, pages, count);
-	if (ret) {
-		ibdev_err(ibdev, "failed to map DCA pages, ret = %d.\n", ret);
-		goto done;
-	}
-
-	/* Apply the changes for WQE address */
-	ret = apply_dca_cfg(hr_dev, hr_qp, attach_attr);
-	if (ret)
-		ibdev_err(ibdev, "failed to apply DCA cfg, ret = %d.\n", ret);
-
-done:
-	/* Drop tmp array */
-	kvfree(pages);
-	return ret;
 }
 
 static u32 alloc_buf_from_dca_mem(struct hns_roce_qp *hr_qp,
@@ -682,7 +690,6 @@ static u32 alloc_buf_from_dca_mem(struct hns_roce_qp *hr_qp,
 			clear_dca_pages(ctx, buf_id, alloc_pages);
 		return HNS_DCA_INVALID_BUF_ID;
 	}
-
 	return buf_id;
 }
 
@@ -695,13 +702,19 @@ static int active_alloced_buf(struct hns_roce_qp *hr_qp,
 	u32 active_pages, alloc_pages;
 	int ret;
 
-	ret = setup_dca_buf_to_hw(ctx, hr_qp, buf_id, attr);
+	alloc_pages = hr_qp->dca_cfg.npages;
+	ret = sync_dca_buf_offset(hr_dev, hr_qp, attr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to sync DCA offset, ret = %d\n", ret);
+		goto active_fail;
+	}
+
+	ret = setup_dca_buf_to_hw(hr_dev, hr_qp, ctx, buf_id, alloc_pages);
 	if (ret) {
 		ibdev_err(ibdev, "failed to setup DCA buf, ret = %d.\n", ret);
 		goto active_fail;
 	}
 
-	alloc_pages = hr_qp->dca_cfg.npages;
 	active_pages = active_dca_pages(ctx, buf_id, alloc_pages);
 	if (active_pages != alloc_pages) {
 		ibdev_err(ibdev, "failed to active DCA pages, %u != %u.\n",
@@ -722,7 +735,7 @@ static int attach_dca_mem(struct hns_roce_dev *hr_dev,
 			  struct hns_dca_attach_attr *attr,
 			  struct hns_dca_attach_resp *resp)
 {
-	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_qp);
+	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
 	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
 	u32 buf_id;
 	int ret;
@@ -763,51 +776,10 @@ static int attach_dca_mem(struct hns_roce_dev *hr_dev,
 	cfg->attach_count++;
 	spin_unlock(&cfg->lock);
 
-	resp->alloc_flags |= HNS_IB_ATTACH_FLAGS_NEW_BUFFER;
+	resp->alloc_flags |= HNS_DCA_ATTACH_FLAGS_NEW_BUFFER;
 	resp->alloc_pages = cfg->npages;
 
 	return 0;
-}
-
-struct dca_page_query_active_attr {
-	u32 buf_id;
-	u32 curr_index;
-	u32 start_index;
-	u32 page_index;
-	u32 page_count;
-	u64 mem_key;
-};
-
-static int query_dca_active_pages_proc(struct dca_mem *mem, int index,
-				       void *param)
-{
-	struct hns_dca_page_state *state = &mem->states[index];
-	struct dca_page_query_active_attr *attr = param;
-
-	if (!dca_page_is_active(state, attr->buf_id))
-		return 0;
-
-	if (attr->curr_index < attr->start_index) {
-		attr->curr_index++;
-		return 0;
-	} else if (attr->curr_index > attr->start_index) {
-		return DCA_MEM_STOP_ITERATE;
-	}
-
-	/* Search first page in DCA mem */
-	attr->page_index = index;
-	attr->mem_key = mem->key;
-	/* Search active pages in continuous addresses */
-	while (index < mem->page_count) {
-		state = &mem->states[index];
-		if (!dca_page_is_active(state, attr->buf_id))
-			break;
-
-		index++;
-		attr->page_count++;
-	}
-
-	return DCA_MEM_STOP_ITERATE;
 }
 
 struct dca_page_free_buf_attr {
@@ -876,41 +848,6 @@ static void free_buf_from_dca_mem(struct hns_roce_dca_ctx *ctx,
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 }
 
-static void kick_dca_mem(struct hns_roce_dev *hr_dev,
-			 struct hns_roce_dca_cfg *cfg,
-			 struct hns_roce_ucontext *uctx)
-{
-	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(uctx);
-
-	/* Stop ageing worker and free DCA buffer from pool */
-	cancel_delayed_work_sync(&cfg->dwork);
-	free_buf_from_dca_mem(ctx, cfg);
-}
-
-static void dca_mem_ageing_work(struct work_struct *work)
-{
-	struct hns_roce_qp *hr_qp = container_of(work, struct hns_roce_qp,
-						 dca_cfg.dwork.work);
-	struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
-	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_qp);
-	bool hw_is_inactive;
-
-	hw_is_inactive = hr_dev->hw->chk_dca_buf_inactive &&
-			 hr_dev->hw->chk_dca_buf_inactive(hr_dev, hr_qp);
-	if (hw_is_inactive)
-		free_buf_from_dca_mem(ctx, &hr_qp->dca_cfg);
-}
-
-void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
-{
-	struct hns_roce_ucontext *uctx;
-
-	if (hr_qp->ibqp.uobject && hr_qp->ibqp.pd->uobject) {
-		uctx = to_hr_ucontext(hr_qp->ibqp.pd->uobject->context);
-		kick_dca_mem(hr_dev, &hr_qp->dca_cfg, uctx);
-	}
-}
-
 static void detach_dca_mem(struct hns_roce_dev *hr_dev,
 			   struct hns_roce_qp *hr_qp,
 			   struct hns_dca_detach_attr *attr)
@@ -926,7 +863,427 @@ static void detach_dca_mem(struct hns_roce_dev *hr_dev,
 	spin_unlock(&cfg->lock);
 }
 
-void hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
+struct dca_mem_shrink_attr {
+	u64 shrink_key;
+	u32 shrink_mems;
+};
+
+static int shrink_dca_page_proc(struct dca_mem *mem, int index, void *param)
+{
+	struct dca_mem_shrink_attr *attr = param;
+	struct hns_dca_page_state *state;
+	int i, free_pages;
+
+	free_pages = 0;
+	for (i = 0; i < mem->page_count; i++) {
+		state = &mem->states[i];
+		if (dca_page_is_free(state))
+			free_pages++;
+	}
+
+	/* No any page be used */
+	if (free_pages == mem->page_count) {
+		/* unregister first empty DCA mem */
+		if (!attr->shrink_mems) {
+			mem->flags &= ~DCA_MEM_FLAGS_REGISTERED;
+			attr->shrink_key = mem->key;
+		}
+
+		attr->shrink_mems++;
+	}
+
+	if (attr->shrink_mems > 1)
+		return DCA_MEM_STOP_ITERATE;
+	else
+		return DCA_MEM_NEXT_ITERATE;
+}
+
+struct hns_dca_shrink_resp {
+	u64 free_key;
+	u32 free_mems;
+};
+
+static void shrink_dca_mem(struct hns_roce_dev *hr_dev,
+			  struct hns_roce_ucontext *uctx, u64 reserved_size,
+			  struct hns_dca_shrink_resp *resp)
+{
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(hr_dev, uctx);
+	struct dca_mem_shrink_attr attr = {};
+	unsigned long flags;
+	bool need_shink;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	need_shink = ctx->free_mems > 0 && ctx->free_size > reserved_size;
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+	if (!need_shink)
+		return;
+
+	travel_dca_pages(ctx, &attr, shrink_dca_page_proc);
+	resp->free_mems = attr.shrink_mems;
+	resp->free_key = attr.shrink_key;
+}
+
+static void init_dca_context(struct hns_roce_dca_ctx *ctx)
+{
+	INIT_LIST_HEAD(&ctx->pool);
+	spin_lock_init(&ctx->pool_lock);
+	ctx->total_size = 0;
+}
+
+static void cleanup_dca_context(struct hns_roce_dev *hr_dev,
+				struct hns_roce_dca_ctx *ctx)
+{
+	struct dca_mem *mem, *tmp;
+	unsigned long flags;
+	bool is_user;
+
+	is_user = (ctx != &hr_dev->dca_ctx);
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	list_for_each_entry_safe(mem, tmp, &ctx->pool, list) {
+		list_del(&mem->list);
+		spin_lock(&mem->lock);
+		mem->flags = 0;
+		spin_unlock(&mem->lock);
+		spin_unlock_irqrestore(&ctx->pool_lock, flags);
+
+		kfree(mem->states);
+		free_dca_pages(hr_dev, is_user, mem->pages);
+		kfree(mem);
+
+		spin_lock_irqsave(&ctx->pool_lock, flags);
+	}
+	ctx->total_size = 0;
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+}
+
+#define DCA_MAX_MEM_SIZE	~0UL
+
+static uint dca_unit_size;
+static ulong dca_min_size = DCA_MAX_MEM_SIZE;
+static ulong dca_max_size = DCA_MAX_MEM_SIZE;
+
+static void config_kdca_context(struct hns_roce_dca_ctx *ctx)
+{
+	unsigned int unit_size;
+
+	unit_size = ALIGN(dca_unit_size, PAGE_SIZE);
+	ctx->unit_size = unit_size;
+	if (!unit_size)
+		return;
+
+	if (dca_max_size == DCA_MAX_MEM_SIZE || dca_max_size == 0)
+		ctx->max_size = DCA_MAX_MEM_SIZE;
+	else
+		ctx->max_size = roundup(dca_max_size, unit_size);
+
+	if (dca_min_size == DCA_MAX_MEM_SIZE)
+		ctx->min_size = ctx->max_size;
+	else
+		ctx->min_size = roundup(dca_min_size, unit_size);
+}
+
+void hns_roce_init_dca(struct hns_roce_dev *hr_dev)
+{
+	init_dca_context(&hr_dev->dca_ctx);
+
+	config_kdca_context(&hr_dev->dca_ctx);
+}
+
+void hns_roce_cleanup_dca(struct hns_roce_dev *hr_dev)
+{
+	cleanup_dca_context(hr_dev, &hr_dev->dca_ctx);
+}
+
+void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
+			    struct hns_roce_ucontext *uctx)
+{
+	if (!(uctx->config & HNS_ROCE_UCTX_CONFIG_DCA))
+		return;
+
+	init_dca_context(&uctx->dca_ctx);
+}
+
+void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_ucontext *uctx)
+{
+	if (!(uctx->config & HNS_ROCE_UCTX_CONFIG_DCA))
+		return;
+
+	cleanup_dca_context(hr_dev, &uctx->dca_ctx);
+}
+
+static struct dca_mem *key_to_dca_mem(struct list_head *head, u64 key)
+{
+	struct dca_mem *mem;
+
+	list_for_each_entry(mem, head, list)
+		if (mem->key == key)
+			return mem;
+
+	return NULL;
+}
+
+static bool add_dca_mem_enabled(struct hns_roce_dca_ctx *ctx, u32 alloc_size)
+{
+	unsigned long flags;
+	bool enable;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+
+	/* Pool size no limit */
+	if (ctx->max_size == DCA_MAX_MEM_SIZE)
+		enable = true;
+	else /* Pool size not exceed max size */
+		enable = (ctx->total_size + alloc_size) < ctx->max_size;
+
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+
+	return enable;
+}
+
+static bool shrink_dca_mem_enabled(struct hns_roce_dca_ctx *ctx)
+{
+	unsigned long flags;
+	bool enable;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	enable = ctx->total_size > 0 && ctx->min_size < ctx->max_size;
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+
+	return enable;
+}
+
+static struct dca_mem *alloc_dca_mem(struct hns_roce_dca_ctx *ctx)
+{
+	struct dca_mem *mem, *tmp, *found = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	list_for_each_entry_safe(mem, tmp, &ctx->pool, list) {
+		spin_lock(&mem->lock);
+		if (!mem->flags) {
+			found = mem;
+			mem->flags |= DCA_MEM_FLAGS_ALLOCED;
+			spin_unlock(&mem->lock);
+			break;
+		}
+		spin_unlock(&mem->lock);
+	}
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+
+	if (found)
+		return found;
+
+	mem = kzalloc(sizeof(*mem), GFP_ATOMIC);
+	if (!mem)
+		return NULL;
+
+	spin_lock_init(&mem->lock);
+	INIT_LIST_HEAD(&mem->list);
+
+	mem->flags |= DCA_MEM_FLAGS_ALLOCED;
+
+	spin_lock_irqsave(&ctx->pool_lock, flags);
+	list_add(&mem->list, &ctx->pool);
+	spin_unlock_irqrestore(&ctx->pool_lock, flags);
+	return mem;
+}
+
+static void free_dca_mem(struct dca_mem *mem)
+{
+	/* When iterate all DCA mems in travel_dca_pages(), we will NOT hold the
+	 * pool's lock and just set the DCA mem as free state during the DCA is
+	 * working until cleanup the DCA context in hns_roce_cleanup_dca().
+	 */
+	spin_lock(&mem->lock);
+	mem->flags = 0;
+	spin_unlock(&mem->lock);
+}
+
+static int add_dca_mem(struct hns_roce_dev *hr_dev, u32 new_size)
+{
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(hr_dev, NULL);
+	struct dca_mem_attr attr = {};
+	struct dca_mem *mem = NULL;
+	int ret;
+
+	if (!add_dca_mem_enabled(ctx, new_size))
+		return -ENOMEM;
+
+	/* Add new DCA mem */
+	mem = alloc_dca_mem(ctx);
+	if (!mem)
+		return -ENOMEM;
+
+	attr.key = (u64)mem;
+	attr.size = roundup(new_size, ctx->unit_size);
+	ret = register_dca_mem(hr_dev, NULL, mem, &attr);
+	if (ret) {
+		free_dca_mem(mem);
+		ibdev_err(&hr_dev->ib_dev,
+			  "failed to register DCA mem, ret = %d.\n", ret);
+	}
+
+	return ret;
+}
+
+struct dca_page_get_active_buf_attr {
+	u32 buf_id;
+	void **buf_list;
+	u32 total;
+	u32 max;
+};
+
+static int get_active_kbuf_proc(struct dca_mem *mem, int index, void *param)
+{
+	struct dca_page_get_active_buf_attr *attr = param;
+	struct hns_dca_page_state *states = mem->states;
+	struct hns_roce_buf *kmem = mem->pages;
+	void *buf;
+	u32 i;
+
+	for (i = 0; i < kmem->npages; i++) {
+		if (!dca_page_is_active(&states[i], attr->buf_id))
+			continue;
+
+		buf = hns_roce_buf_offset(kmem, i << HNS_HW_PAGE_SHIFT);
+		attr->buf_list[attr->total++] = buf;
+		if (attr->total >= attr->max)
+			return DCA_MEM_STOP_ITERATE;
+	}
+
+	return DCA_MEM_NEXT_ITERATE;
+}
+
+static int setup_dca_buf_list(struct hns_roce_dca_ctx *ctx,
+			      struct hns_roce_dca_cfg *cfg)
+{
+	struct dca_page_get_active_buf_attr attr = {};
+
+	attr.buf_id = cfg->buf_id;
+	attr.buf_list = cfg->buf_list;
+	attr.max = cfg->npages;
+	travel_dca_pages(ctx, &attr, get_active_kbuf_proc);
+
+	return attr.total == attr.max ? 0 : -ENOMEM;
+}
+
+#define DCA_EXPAND_MEM_TRY_TIMES	3
+int hns_roce_dca_attach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct hns_dca_attach_attr *attr)
+{
+	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
+	struct hns_dca_attach_resp resp = {};
+	bool is_new_buf = true;
+	int try_times = 0;
+	int ret;
+
+	do {
+		resp.alloc_flags = 0;
+		ret = attach_dca_mem(hr_dev, hr_qp, attr, &resp);
+		if (ret)
+			break;
+
+		if (resp.alloc_pages >= cfg->npages) {
+			is_new_buf = !!(resp.alloc_flags &
+					HNS_DCA_ATTACH_FLAGS_NEW_BUFFER);
+			break;
+		}
+
+		ret = add_dca_mem(hr_dev, hr_qp->buff_size);
+		if (ret)
+			break;
+	} while (try_times++ < DCA_EXPAND_MEM_TRY_TIMES);
+
+	if (ret || resp.alloc_pages < cfg->npages) {
+		ibdev_err(&hr_dev->ib_dev,
+			  "failed to attach buf %u != %u, try %d, ret = %d.\n",
+			   cfg->npages, resp.alloc_pages, try_times, ret);
+		return -ENOMEM;
+	}
+
+	/* DCA config not changed */
+	if (!is_new_buf && cfg->buf_list[0])
+		return 0;
+
+	return setup_dca_buf_list(hr_qp_to_dca_ctx(hr_dev, hr_qp), cfg);
+}
+
+static void remove_unused_dca_mem(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(hr_dev, NULL);
+	struct hns_dca_shrink_resp resp = {};
+	struct dca_mem *mem;
+	unsigned long flags;
+
+	while (shrink_dca_mem_enabled(ctx)) {
+		resp.free_mems = 0;
+		shrink_dca_mem(hr_dev, NULL, ctx->min_size, &resp);
+		if (resp.free_mems < 1)
+			break;
+		spin_lock_irqsave(&ctx->pool_lock, flags);
+		mem = key_to_dca_mem(&ctx->pool, resp.free_key);
+		spin_unlock_irqrestore(&ctx->pool_lock, flags);
+		if (!mem)
+			break;
+		unregister_dca_mem(hr_dev, NULL, mem);
+		free_dca_mem(mem);
+		/* No more free memory */
+		if (resp.free_mems <= 1)
+			break;
+	}
+}
+
+static void kick_dca_mem(struct hns_roce_dev *hr_dev,
+			 struct hns_roce_dca_cfg *cfg,
+			 struct hns_roce_ucontext *uctx)
+{
+	struct hns_roce_dca_ctx *ctx = to_hr_dca_ctx(hr_dev, uctx);
+
+	/* Stop ageing worker and free DCA buffer from pool */
+	cancel_delayed_work_sync(&cfg->dwork);
+	free_buf_from_dca_mem(ctx, cfg);
+
+	/* Shrink kenrel DCA mem */
+	if (!uctx)
+		remove_unused_dca_mem(hr_dev);
+}
+
+static void dca_mem_ageing_work(struct work_struct *work)
+{
+	struct hns_roce_qp *hr_qp = container_of(work, struct hns_roce_qp,
+						 dca_cfg.dwork.work);
+	struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
+	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
+	bool hw_is_inactive;
+
+	hw_is_inactive = hr_dev->hw->chk_dca_buf_inactive &&
+			 hr_dev->hw->chk_dca_buf_inactive(hr_dev, hr_qp);
+	if (hw_is_inactive)
+		free_buf_from_dca_mem(ctx, &hr_qp->dca_cfg);
+
+	/* Shrink kenrel DCA mem */
+	if (!hr_qp->ibqp.uobject)
+		remove_unused_dca_mem(hr_dev);
+}
+
+void hns_roce_dca_detach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 struct hns_dca_detach_attr *attr)
+{
+	detach_dca_mem(hr_dev, hr_qp, attr);
+}
+
+void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+		       struct ib_udata *udata)
+{
+	struct hns_roce_ucontext *uctx = rdma_udata_to_drv_context(udata,
+					 struct hns_roce_ucontext, ibucontext);
+
+	kick_dca_mem(hr_dev, &hr_qp->dca_cfg, uctx);
+}
+
+int hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct ib_udata *udata)
 {
 	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
 
@@ -934,6 +1291,16 @@ void hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	INIT_DELAYED_WORK(&cfg->dwork, dca_mem_ageing_work);
 	cfg->buf_id = HNS_DCA_INVALID_BUF_ID;
 	cfg->npages = hr_qp->buff_size >> HNS_HW_PAGE_SHIFT;
+
+	/* DCA page list for kernel QP */
+	if (!udata && cfg->npages) {
+		cfg->buf_list = kcalloc(cfg->npages, sizeof(void *),
+					GFP_KERNEL);
+		if (!cfg->buf_list)
+			return -ENOMEM;
+	}
+
+	return 0;
 }
 
 void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
@@ -944,7 +1311,12 @@ void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
 	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
 
 	kick_dca_mem(hr_dev, cfg, uctx);
-	cfg->buf_id = HNS_DCA_INVALID_BUF_ID;
+
+	/* Free kenrel DCA buffer list */
+	if (!udata && cfg->buf_list) {
+		kfree(cfg->buf_list);
+		cfg->buf_list = NULL;
+	}
 }
 
 static inline struct hns_roce_ucontext *
@@ -981,7 +1353,7 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_REG)(
 
 	init_attr.size = hr_hw_page_align(init_attr.size);
 
-	mem = alloc_dca_mem(to_hr_dca_ctx(uctx));
+	mem = alloc_dca_mem(to_hr_dca_ctx(hr_dev, uctx));
 	if (!mem)
 		return -ENOMEM;
 
@@ -1010,7 +1382,7 @@ static int dca_cleanup(struct ib_uobject *uobject, enum rdma_remove_reason why,
 		return 0;
 
 	mem = uobject->object;
-	unregister_dca_mem(uctx, mem);
+	unregister_dca_mem(to_hr_dev(uctx->ibucontext.device), uctx, mem);
 	free_dca_mem(mem);
 
 	return 0;
@@ -1073,27 +1445,27 @@ DECLARE_UVERBS_NAMED_METHOD(
 			    UVERBS_ATTR_TYPE(u32), UA_MANDATORY));
 
 static inline struct hns_roce_qp *
-uverbs_attr_to_hr_qp(struct uverbs_attr_bundle *attrs)
+uverbs_attr_to_hr_qp(struct uverbs_attr_bundle *attrs, u16 idx)
 {
-	struct ib_uobject *uobj =
-		uverbs_attr_get_uobject(attrs, 1U << UVERBS_ID_NS_SHIFT);
+	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs, idx);
 
-	if (uobj_get_object_id(uobj) == UVERBS_OBJECT_QP)
-		return to_hr_qp(uobj->object);
+	if (IS_ERR(uobj))
+		return ERR_CAST(uobj);
 
-	return NULL;
+	return to_hr_qp(uobj->object);
 }
 
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_ATTACH)(
 	struct uverbs_attr_bundle *attrs)
 {
-	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs,
+					HNS_IB_ATTR_DCA_MEM_ATTACH_HANDLE);
 	struct hns_dca_attach_attr attr = {};
 	struct hns_dca_attach_resp resp = {};
 	int ret;
 
-	if (!hr_qp)
-		return -EINVAL;
+	if (IS_ERR(hr_qp))
+		return PTR_ERR(hr_qp);
 
 	ret = uverbs_copy_from(&attr.sq_offset, attrs,
 			     HNS_IB_ATTR_DCA_MEM_ATTACH_SQ_OFFSET);
@@ -1140,12 +1512,13 @@ DECLARE_UVERBS_NAMED_METHOD(
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_DETACH)(
 	struct uverbs_attr_bundle *attrs)
 {
-	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs,
+					HNS_IB_ATTR_DCA_MEM_DETACH_HANDLE);
 	struct hns_dca_detach_attr attr = {};
 	int ret;
 
-	if (!hr_qp)
-		return -EINVAL;
+	if (IS_ERR(hr_qp))
+		return PTR_ERR(hr_qp);
 
 	ret = uverbs_copy_from(&attr.sq_idx, attrs,
 			       HNS_IB_ATTR_DCA_MEM_DETACH_SQ_INDEX);
@@ -1167,14 +1540,21 @@ DECLARE_UVERBS_NAMED_METHOD(
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_QUERY)(
 	struct uverbs_attr_bundle *attrs)
 {
-	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
-	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_qp);
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs,
+					HNS_IB_ATTR_DCA_MEM_QUERY_HANDLE);
 	struct dca_page_query_active_attr active_attr = {};
+	struct hns_roce_dca_ctx *ctx = NULL;
+	struct hns_roce_dev *hr_dev = NULL;
 	u32 page_idx, page_ofs;
 	int ret;
 
-	if (!hr_qp)
-		return -EINVAL;
+	if (IS_ERR(hr_qp))
+		return PTR_ERR(hr_qp);
+
+	hr_dev = to_hr_dev(hr_qp->ibqp.device);
+	ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
+	if (!ctx)
+		return -ENOENT;
 
 	ret = uverbs_copy_from(&page_idx, attrs,
 			       HNS_IB_ATTR_DCA_MEM_QUERY_PAGE_INDEX);
@@ -1239,3 +1619,7 @@ const struct uapi_definition hns_roce_dca_uapi_defs[] = {
 		UAPI_DEF_IS_OBJ_SUPPORTED(dca_is_supported)),
 	{}
 };
+
+module_param(dca_unit_size, uint, 0444);
+module_param(dca_max_size, ulong, 0444);
+module_param(dca_min_size, ulong, 0444);

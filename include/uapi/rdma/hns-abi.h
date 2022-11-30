@@ -179,6 +179,7 @@ enum hns_ib_dca_mem_methods {
 
 enum hns_ib_dca_mem_reg_attrs {
 	HNS_IB_ATTR_DCA_MEM_REG_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	HNS_IB_ATTR_DCA_MEM_REG_FLAGS,
 	HNS_IB_ATTR_DCA_MEM_REG_LEN,
 	HNS_IB_ATTR_DCA_MEM_REG_ADDR,
 	HNS_IB_ATTR_DCA_MEM_REG_KEY,
@@ -194,8 +195,6 @@ enum hns_ib_dca_mem_shrink_attrs {
 	HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_KEY,
 	HNS_IB_ATTR_DCA_MEM_SHRINK_OUT_FREE_MEMS,
 };
-
-#define HNS_IB_ATTACH_FLAGS_NEW_BUFFER 1U
 
 enum hns_ib_dca_mem_attach_attrs {
 	HNS_IB_ATTR_DCA_MEM_ATTACH_HANDLE = (1U << UVERBS_ID_NS_SHIFT),

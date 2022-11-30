@@ -376,10 +376,63 @@ static inline bool check_qp_dca_enable(struct hns_roce_qp *hr_qp)
 	return !!(hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA);
 }
 
+static int dca_attach_qp_buf(struct hns_roce_dev *hr_dev,
+			     struct hns_roce_qp *hr_qp)
+{
+	struct hns_dca_attach_attr attr = {};
+	unsigned long flags_sq, flags_rq;
+	u32 idx;
+
+	spin_lock_irqsave(&hr_qp->sq.lock, flags_sq);
+	spin_lock_irqsave(&hr_qp->rq.lock, flags_rq);
+
+	if (hr_qp->sq.wqe_cnt > 0) {
+		idx = hr_qp->sq.head & (hr_qp->sq.wqe_cnt - 1);
+		attr.sq_offset = idx << hr_qp->sq.wqe_shift;
+	}
+
+	if (hr_qp->sge.sge_cnt > 0) {
+		idx = hr_qp->next_sge & (hr_qp->sge.sge_cnt - 1);
+		attr.sge_offset = idx << hr_qp->sge.sge_shift;
+	}
+
+	if (hr_qp->rq.wqe_cnt > 0) {
+		idx = hr_qp->rq.head & (hr_qp->rq.wqe_cnt - 1);
+		attr.rq_offset = idx << hr_qp->rq.wqe_shift;
+	}
+
+	spin_unlock_irqrestore(&hr_qp->rq.lock, flags_rq);
+	spin_unlock_irqrestore(&hr_qp->sq.lock, flags_sq);
+
+	return hns_roce_dca_attach(hr_dev, hr_qp, &attr);
+}
+
+static void dca_detach_qp_buf(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_qp *hr_qp)
+{
+	struct hns_dca_detach_attr attr = {};
+	unsigned long flags_sq, flags_rq;
+	bool is_empty;
+
+	spin_lock_irqsave(&hr_qp->sq.lock, flags_sq);
+	spin_lock_irqsave(&hr_qp->rq.lock, flags_rq);
+	is_empty = hr_qp->sq.head == hr_qp->sq.tail &&
+		   hr_qp->rq.head == hr_qp->rq.tail;
+	if (is_empty && hr_qp->sq.wqe_cnt > 0)
+		attr.sq_idx = hr_qp->sq.head & (hr_qp->sq.wqe_cnt - 1);
+
+	spin_unlock_irqrestore(&hr_qp->rq.lock, flags_rq);
+	spin_unlock_irqrestore(&hr_qp->sq.lock, flags_sq);
+
+	if (is_empty)
+		hns_roce_dca_detach(hr_dev, hr_qp, &attr);
+}
+
 static int check_send_valid(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	int ret;
 
 	if (unlikely(hr_qp->state == IB_QPS_RESET ||
 		     hr_qp->state == IB_QPS_INIT ||
@@ -391,6 +444,16 @@ static int check_send_valid(struct hns_roce_dev *hr_dev,
 		ibdev_err(ibdev, "failed to post WQE, dev state %d!\n",
 			  hr_dev->state);
 		return -EIO;
+	}
+
+	if (check_qp_dca_enable(hr_qp)) {
+		ret = dca_attach_qp_buf(hr_dev, hr_qp);
+		if (unlikely(ret)) {
+			ibdev_err(ibdev,
+				  "failed to attach DCA for QP-%lu send!\n",
+				  hr_qp->qpn);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -572,6 +635,14 @@ static int set_rc_opcode(struct hns_roce_dev *hr_dev,
 	return ret;
 }
 
+static inline void fill_dca_fields(struct hns_roce_qp *hr_qp,
+				   struct hns_roce_v2_rc_send_wqe *wqe)
+{
+	hr_reg_write(wqe, RC_SEND_WQE_SQPN_L, hr_qp->qpn);
+	hr_reg_write(wqe, RC_SEND_WQE_SQPN_H,
+		     hr_qp->qpn >> V2_RC_SEND_WQE_BYTE_4_SQPN_L_W);
+}
+
 static inline int set_rc_wqe(struct hns_roce_qp *qp,
 			     const struct ib_send_wr *wr,
 			     void *wqe, unsigned int *sge_idx,
@@ -607,6 +678,9 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 	else if (wr->opcode != IB_WR_REG_MR)
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
+
+	if (qp->en_flags & HNS_ROCE_QP_CAP_DCA)
+		fill_dca_fields(qp, rc_sq_wqe);
 
 	/*
 	 * The pipeline can sequentially post all valid WQEs into WQ buffer,
@@ -692,12 +766,26 @@ static void write_dwqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 	hns_roce_write512(hr_dev, wqe, qp->sq.db_reg);
 }
 
+static int check_sq_enabled(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
+			    const struct ib_send_wr *wr, int nreq)
+{
+	if (hns_roce_wq_overflow(&qp->sq, nreq, qp->ibqp.send_cq))
+		return -ENOMEM;
+
+	if (unlikely(wr->num_sge > qp->sq.max_gs)) {
+		ibdev_err(&hr_dev->ib_dev, "num_sge=%d > qp->sq.max_gs=%u\n",
+			  wr->num_sge, qp->sq.max_gs);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int hns_roce_v2_post_send(struct ib_qp *ibqp,
 				 const struct ib_send_wr *wr,
 				 const struct ib_send_wr **bad_wr)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_qp *qp = to_hr_qp(ibqp);
 	unsigned long flags = 0;
 	unsigned int owner_bit;
@@ -707,33 +795,24 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp,
 	u32 nreq;
 	int ret;
 
-	spin_lock_irqsave(&qp->sq.lock, flags);
 
 	ret = check_send_valid(hr_dev, qp);
 	if (unlikely(ret)) {
 		*bad_wr = wr;
-		nreq = 0;
-		goto out;
+		return ret;
 	}
 
+	spin_lock_irqsave(&qp->sq.lock, flags);
 	sge_idx = qp->next_sge;
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		if (hns_roce_wq_overflow(&qp->sq, nreq, qp->ibqp.send_cq)) {
-			ret = -ENOMEM;
+		ret = check_sq_enabled(hr_dev, qp, wr, nreq);
+		if (unlikely(ret)) {
 			*bad_wr = wr;
 			goto out;
 		}
 
 		wqe_idx = (qp->sq.head + nreq) & (qp->sq.wqe_cnt - 1);
-
-		if (unlikely(wr->num_sge > qp->sq.max_gs)) {
-			ibdev_err(ibdev, "num_sge = %d > qp->sq.max_gs = %u.\n",
-				  wr->num_sge, qp->sq.max_gs);
-			ret = -EINVAL;
-			*bad_wr = wr;
-			goto out;
-		}
 
 		wqe = hns_roce_get_send_wqe(qp, wqe_idx);
 		qp->sq.wrid[wqe_idx] = wr->wr_id;
@@ -772,11 +851,22 @@ out:
 static int check_recv_valid(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp)
 {
+	int ret;
 	if (unlikely(hr_dev->state >= HNS_ROCE_DEVICE_STATE_RST_DOWN))
 		return -EIO;
 
 	if (hr_qp->state == IB_QPS_RESET)
 		return -EINVAL;
+
+	if (check_qp_dca_enable(hr_qp)) {
+		ret = dca_attach_qp_buf(hr_dev, hr_qp);
+		if (unlikely(ret)) {
+			ibdev_err(&hr_dev->ib_dev,
+				  "failed to attach DCA for QP-%lu recv!\n",
+				  hr_qp->qpn);
+			return ret;
+		}
+	}
 
 	return 0;
 }
@@ -828,14 +918,14 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp,
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&hr_qp->rq.lock, flags);
 
 	ret = check_recv_valid(hr_dev, hr_qp);
 	if (unlikely(ret)) {
 		*bad_wr = wr;
-		nreq = 0;
-		goto out;
+		return ret;
 	}
+
+	spin_lock_irqsave(&hr_qp->rq.lock, flags);
 
 	max_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
@@ -4083,6 +4173,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 	struct hns_roce_qp *cur_qp = NULL;
 	unsigned long flags;
 	int npolled;
+	int ret;
 
 	spin_lock_irqsave(&hr_cq->lock, flags);
 
@@ -4099,7 +4190,10 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 	}
 
 	for (npolled = 0; npolled < num_entries; ++npolled) {
-		if (hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled))
+		ret = hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled);
+		if (cur_qp && check_qp_dca_enable(cur_qp))
+			dca_detach_qp_buf(hr_dev, cur_qp);
+		if (ret)
 			break;
 	}
 
@@ -4463,15 +4557,14 @@ static void modify_qp_init_to_init(struct ib_qp *ibqp,
 static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp,
 			    struct hns_roce_v2_qp_context *context,
-			    struct hns_roce_v2_qp_context *qpc_mask,
-			    struct hns_roce_dca_attr *dca_attr)
+			    struct hns_roce_v2_qp_context *qpc_mask)
 {
 	u64 mtts[MTT_MIN_COUNT] = { 0 };
 	u64 wqe_sge_ba;
 	int ret;
 
 	/* Search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, dca_attr->rq_offset, mtts,
+	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->rq.wqe_offset, mtts,
 				ARRAY_SIZE(mtts));
 	if (hr_qp->rq.wqe_cnt && ret) {
 		ibdev_err(&hr_dev->ib_dev,
@@ -4541,8 +4634,7 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp,
 			    struct hns_roce_v2_qp_context *context,
-			    struct hns_roce_v2_qp_context *qpc_mask,
-			    struct hns_roce_dca_attr *dca_attr)
+			    struct hns_roce_v2_qp_context *qpc_mask)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	u64 sge_cur_blk = 0;
@@ -4550,7 +4642,7 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, dca_attr->sq_offset,
+	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->sq.wqe_offset,
 				&sq_cur_blk, 1);
 	if (ret) {
 		ibdev_err(ibdev, "failed to find QP(0x%lx) SQ WQE buf, ret = %d.\n",
@@ -4559,7 +4651,7 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	}
 	if (hr_qp->sge.sge_cnt > 0) {
 		ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
-					dca_attr->sge_offset, &sge_cur_blk, 1);
+					hr_qp->sge.wqe_offset, &sge_cur_blk, 1);
 		if (ret) {
 			ibdev_err(ibdev, "failed to find QP(0x%lx) SGE buf, ret = %d.\n",
 				  hr_qp->qpn, ret);
@@ -4617,7 +4709,6 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	struct hns_roce_dca_attr dca_attr = {};
 	dma_addr_t trrl_ba;
 	dma_addr_t irrl_ba;
 	enum ib_mtu ib_mtu;
@@ -4629,8 +4720,8 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	int mtu;
 	int ret;
 
-	dca_attr.rq_offset = hr_qp->rq.offset;
-	ret = config_qp_rq_buf(hr_dev, hr_qp, context, qpc_mask, &dca_attr);
+	hr_qp->rq.wqe_offset = hr_qp->rq.offset;
+	ret = config_qp_rq_buf(hr_dev, hr_qp, context, qpc_mask);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config rq buf, ret = %d.\n", ret);
 		return ret;
@@ -4774,7 +4865,6 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	struct hns_roce_dca_attr dca_attr = {};
 	int ret;
 
 	/* Not support alternate path and path migration */
@@ -4783,9 +4873,9 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 		return -EINVAL;
 	}
 
-	dca_attr.sq_offset = hr_qp->sq.offset;
-	dca_attr.sge_offset = hr_qp->sge.offset;
-	ret = config_qp_sq_buf(hr_dev, hr_qp, context, qpc_mask, &dca_attr);
+	hr_qp->sq.wqe_offset = hr_qp->sq.offset;
+	hr_qp->sge.wqe_offset = hr_qp->sge.offset;
+	ret = config_qp_sq_buf(hr_dev, hr_qp, context, qpc_mask);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config sq buf, ret = %d.\n", ret);
 		return ret;
@@ -5441,83 +5531,38 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 
 	if (check_qp_dca_enable(hr_qp) &&
 	    (new_state == IB_QPS_RESET || new_state == IB_QPS_ERR))
-		hns_roce_dca_kick(hr_dev, hr_qp);
+		hns_roce_dca_kick(hr_dev, hr_qp, udata);
 
 out:
 	return ret;
 }
 
-static int init_dca_buf_attr(struct hns_roce_dev *hr_dev,
-			     struct hns_roce_qp *hr_qp,
-			     struct hns_roce_dca_attr *init_attr,
-			     struct hns_roce_dca_attr *dca_attr)
-{
-	struct ib_device *ibdev = &hr_dev->ib_dev;
-
-	if (hr_qp->sq.wqe_cnt > 0) {
-		dca_attr->sq_offset = hr_qp->sq.offset + init_attr->sq_offset;
-		if (dca_attr->sq_offset >= hr_qp->sge.offset) {
-			ibdev_err(ibdev, "failed to check SQ offset = %u\n",
-				  init_attr->sq_offset);
-			return -EINVAL;
-		}
-	}
-
-	if (hr_qp->sge.sge_cnt > 0) {
-		dca_attr->sge_offset = hr_qp->sge.offset + init_attr->sge_offset;
-		if (dca_attr->sge_offset >= hr_qp->rq.offset) {
-			ibdev_err(ibdev, "failed to check exSGE offset = %u\n",
-				  init_attr->sge_offset);
-			return -EINVAL;
-		}
-	}
-
-	if (hr_qp->rq.wqe_cnt > 0) {
-		dca_attr->rq_offset = hr_qp->rq.offset + init_attr->rq_offset;
-		if (dca_attr->rq_offset >= hr_qp->buff_size) {
-			ibdev_err(ibdev, "failed to check RQ offset = %u\n",
-				  init_attr->rq_offset);
-			return -EINVAL;
-		}
-	}
-
-	return 0;
-}
-
 static int hns_roce_v2_set_dca_buf(struct hns_roce_dev *hr_dev,
-				   struct hns_roce_qp *hr_qp,
-				   struct hns_roce_dca_attr *init_attr)
+				   struct hns_roce_qp *hr_qp)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_v2_qp_context *qpc, *msk;
-	struct hns_roce_dca_attr dca_attr = {};
 	struct hns_roce_mbox_msg mbox_msg = {};
 	dma_addr_t dma_handle;
 	int qpc_sz;
 	int ret;
 
-	ret = init_dca_buf_attr(hr_dev, hr_qp, init_attr, &dca_attr);
-	if (ret) {
-		ibdev_err(ibdev, "failed to init DCA attr, ret = %d.\n", ret);
-		return ret;
-	}
-
 	qpc_sz = hr_dev->caps.qpc_sz;
 	WARN_ON(2 * qpc_sz > HNS_ROCE_MAILBOX_SIZE);
-	qpc = dma_pool_alloc(hr_dev->cmd.pool, GFP_NOWAIT, &dma_handle);
+	qpc = dma_pool_alloc(hr_dev->cmd.pool, GFP_ATOMIC, &dma_handle);
 	if (!qpc)
 		return -ENOMEM;
 
 	msk = (struct hns_roce_v2_qp_context *)((void *)qpc + qpc_sz);
 	memset(msk, 0xff, qpc_sz);
 
-	ret = config_qp_rq_buf(hr_dev, hr_qp, qpc, msk, &dca_attr);
+	ret = config_qp_rq_buf(hr_dev, hr_qp, qpc, msk);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config rq qpc, ret = %d.\n", ret);
 		goto done;
 	}
 
-	ret = config_qp_sq_buf(hr_dev, hr_qp, qpc, msk, &dca_attr);
+	ret = config_qp_sq_buf(hr_dev, hr_qp, qpc, msk);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config sq qpc, ret = %d.\n", ret);
 		goto done;

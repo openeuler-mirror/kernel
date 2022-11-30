@@ -669,16 +669,12 @@ static inline int mtr_check_direct_pages(dma_addr_t *pages, int page_count,
 static void mtr_free_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 {
 	/* release user buffers */
-	if (mtr->umem) {
-		ib_umem_release(mtr->umem);
-		mtr->umem = NULL;
-	}
+	ib_umem_release(mtr->umem);
+	mtr->umem = NULL;
 
 	/* release kernel buffers */
-	if (mtr->kmem) {
-		hns_roce_buf_free(hr_dev, mtr->kmem);
-		mtr->kmem = NULL;
-	}
+	hns_roce_buf_free(hr_dev, mtr->kmem);
+	mtr->kmem = NULL;
 }
 
 static int mtr_alloc_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
