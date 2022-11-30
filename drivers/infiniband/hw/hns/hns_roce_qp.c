@@ -789,7 +789,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	if (ret) {
 		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
 		if (dca_en)
-			hns_roce_disable_dca(hr_dev, hr_qp);
+			hns_roce_disable_dca(hr_dev, hr_qp, udata);
 	}
 
 	return ret;
@@ -801,7 +801,7 @@ static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
 
 	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA)
-		hns_roce_disable_dca(hr_dev, hr_qp);
+		hns_roce_disable_dca(hr_dev, hr_qp, udata);
 }
 
 static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,

@@ -48,6 +48,7 @@
 #include "hns_roce_device.h"
 #include "hns_roce_cmd.h"
 #include "hns_roce_hem.h"
+#include "hns_roce_dca.h"
 #include "hns_roce_hw_v2.h"
 
 enum {
@@ -368,6 +369,11 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 	hr_reg_write(rc_sq_wqe, RC_SEND_WQE_SGE_NUM, valid_num_sge);
 
 	return 0;
+}
+
+static inline bool check_qp_dca_enable(struct hns_roce_qp *hr_qp)
+{
+	return !!(hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA);
 }
 
 static int check_send_valid(struct hns_roce_dev *hr_dev,
@@ -5433,6 +5439,10 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	if (new_state == IB_QPS_RESET && !ibqp->uobject)
 		clear_qp(hr_qp);
 
+	if (check_qp_dca_enable(hr_qp) &&
+	    (new_state == IB_QPS_RESET || new_state == IB_QPS_ERR))
+		hns_roce_dca_kick(hr_dev, hr_qp);
+
 out:
 	return ret;
 }
@@ -5725,6 +5735,45 @@ done:
 out:
 	mutex_unlock(&hr_qp->mutex);
 	return ret;
+}
+
+static bool hns_roce_v2_chk_dca_buf_inactive(struct hns_roce_dev *hr_dev,
+					     struct hns_roce_qp *hr_qp)
+{
+	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
+	struct hns_roce_v2_qp_context context = {};
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	u32 tmp, sq_idx;
+	int state;
+	int ret;
+
+	ret = hns_roce_v2_query_qpc(hr_dev, hr_qp->qpn, &context);
+	if (ret) {
+		ibdev_err(ibdev, "failed to query DCA QPC, ret = %d.\n", ret);
+		return false;
+	}
+
+	state = hr_reg_read(&context, QPC_QP_ST);
+	if (state == HNS_ROCE_QP_ST_ERR || state == HNS_ROCE_QP_ST_RST)
+		return true;
+
+	/* If RQ is not empty, the buffer is always active until the QP stops
+	 * working.
+	 */
+	if (hr_qp->rq.wqe_cnt > 0)
+		return false;
+
+	if (hr_qp->sq.wqe_cnt > 0) {
+		tmp = (u32)hr_reg_read(&context, QPC_RETRY_MSG_MSN);
+		sq_idx = tmp & (hr_qp->sq.wqe_cnt - 1);
+		/* If SQ-PI equals to retry_msg_msn in QPC, the QP is
+		 * inactive.
+		 */
+		if (sq_idx != cfg->sq_idx)
+			return false;
+	}
+
+	return true;
 }
 
 static inline int modify_qp_is_ok(struct hns_roce_qp *hr_qp)
@@ -7056,6 +7105,7 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.set_hem = hns_roce_v2_set_hem,
 	.clear_hem = hns_roce_v2_clear_hem,
 	.set_dca_buf = hns_roce_v2_set_dca_buf,
+	.chk_dca_buf_inactive = hns_roce_v2_chk_dca_buf_inactive,
 	.modify_qp = hns_roce_v2_modify_qp,
 	.dereg_mr = hns_roce_v2_dereg_mr,
 	.qp_flow_control_init = hns_roce_v2_qp_flow_control_init,
