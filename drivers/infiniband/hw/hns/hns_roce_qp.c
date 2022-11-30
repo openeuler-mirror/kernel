@@ -38,6 +38,7 @@
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hem.h"
+#include "hns_roce_dca.h"
 
 static void flush_work_handle(struct work_struct *work)
 {
@@ -638,8 +639,21 @@ static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+static bool check_dca_is_enable(struct hns_roce_dev *hr_dev, bool is_user,
+				unsigned long addr)
+{
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE))
+		return false;
+
+	/* If the user QP's buffer addr is 0, the DCA mode should be enabled */
+	if (is_user)
+		return !addr;
+
+	return false;
+}
+
 static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
-			    struct hns_roce_qp *hr_qp,
+			    struct hns_roce_qp *hr_qp, bool dca_en,
 			    struct hns_roce_buf_attr *buf_attr)
 {
 	int buf_size;
@@ -683,8 +697,20 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 	if (hr_qp->buff_size < 1)
 		return -EINVAL;
 
-	buf_attr->page_shift = HNS_HW_PAGE_SHIFT + hr_dev->caps.mtt_buf_pg_sz;
 	buf_attr->region_count = idx;
+
+	if (dca_en) {
+		/*
+		 * When enable DCA, there's no need to alloc buffer now, and
+		 * the page shift should be fixed to 4K.
+		 */
+		buf_attr->mtt_only = true;
+		buf_attr->page_shift = HNS_HW_PAGE_SHIFT;
+	} else {
+		buf_attr->mtt_only = false;
+		buf_attr->page_shift = HNS_HW_PAGE_SHIFT +
+				       hr_dev->caps.mtt_buf_pg_sz;
+	}
 
 	return 0;
 }
@@ -738,39 +764,75 @@ static int hns_roce_qp_has_rq(struct ib_qp_init_attr *attr)
 	return 1;
 }
 
-static int alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 bool dca_en, struct hns_roce_buf_attr *buf_attr,
+			 struct ib_udata *udata, unsigned long addr)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	int ret;
+
+	if (dca_en) {
+		/* DCA must be enabled after the buffer size is configured. */
+		hns_roce_enable_dca(hr_dev, hr_qp);
+
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DCA;
+	} else {
+		/*
+		 * Because DCA and DWQE share the same fileds in RCWQE buffer,
+		 * so DWQE only supported when DCA is disable.
+		 */
+		if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DIRECT_WQE)
+			hr_qp->en_flags |= HNS_ROCE_QP_CAP_DIRECT_WQE;
+	}
+
+	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, buf_attr,
+				  PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
+				  udata, addr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
+		if (dca_en)
+			hns_roce_disable_dca(hr_dev, hr_qp);
+	}
+
+	return ret;
+}
+
+static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 struct ib_udata *udata)
+{
+	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
+
+	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DCA)
+		hns_roce_disable_dca(hr_dev, hr_qp);
+}
+
+static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
 			struct ib_udata *udata, unsigned long addr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
+	bool dca_en;
 	int ret;
 
-	ret = set_wqe_buf_attr(hr_dev, hr_qp, &buf_attr);
+	dca_en = check_dca_is_enable(hr_dev, !!udata, addr);
+	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
-		goto err_inline;
-	}
-	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, &buf_attr,
-				  PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
-				  udata, addr);
-	if (ret) {
-		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
-		goto err_inline;
+		return ret;
 	}
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DIRECT_WQE)
-		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DIRECT_WQE;
-
-	return 0;
-err_inline:
+	ret = alloc_wqe_buf(hr_dev, hr_qp, dca_en, &buf_attr, udata, addr);
+	if (ret)
+		ibdev_err(ibdev, "failed to alloc WQE buf, ret = %d.\n", ret);
 
 	return ret;
 }
 
-static void free_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
+static void free_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct ib_udata *udata)
 {
-	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
+	free_wqe_buf(hr_dev, hr_qp, udata);
 }
 
 static inline bool user_qp_has_sdb(struct hns_roce_dev *hr_dev,
@@ -1097,16 +1159,16 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		}
 	}
 
-	ret = alloc_qp_buf(hr_dev, hr_qp, init_attr, udata, ucmd.buf_addr);
-	if (ret) {
-		ibdev_err(ibdev, "failed to alloc QP buffer, ret = %d.\n", ret);
-		goto err_buf;
-	}
-
 	ret = alloc_qpn(hr_dev, hr_qp);
 	if (ret) {
 		ibdev_err(ibdev, "failed to alloc QPN, ret = %d.\n", ret);
 		goto err_qpn;
+	}
+
+	ret = alloc_qp_wqe(hr_dev, hr_qp, init_attr, udata, ucmd.buf_addr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to alloc QP buffer, ret = %d.\n", ret);
+		goto err_buf;
 	}
 
 	ret = alloc_qp_db(hr_dev, hr_qp, init_attr, udata, &ucmd, &resp);
@@ -1159,10 +1221,10 @@ err_store:
 err_qpc:
 	free_qp_db(hr_dev, hr_qp, udata);
 err_db:
+	free_qp_wqe(hr_dev, hr_qp, udata);
+err_buf:
 	free_qpn(hr_dev, hr_qp);
 err_qpn:
-	free_qp_buf(hr_dev, hr_qp);
-err_buf:
 	free_kernel_wrid(hr_qp);
 	return ret;
 }
@@ -1176,7 +1238,7 @@ void hns_roce_qp_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 	free_qpc(hr_dev, hr_qp);
 	free_qpn(hr_dev, hr_qp);
-	free_qp_buf(hr_dev, hr_qp);
+	free_qp_wqe(hr_dev, hr_qp, udata);
 	free_kernel_wrid(hr_qp);
 	free_qp_db(hr_dev, hr_qp, udata);
 

@@ -30,4 +30,8 @@ void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_ucontext *uctx);
 
+void hns_roce_enable_dca(struct hns_roce_dev *hr_dev,
+			 struct hns_roce_qp *hr_qp);
+void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
+			  struct hns_roce_qp *hr_qp);
 #endif
