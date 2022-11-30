@@ -1192,6 +1192,12 @@ static void klp_init_patch_early(struct klp_patch *patch)
 	}
 }
 
+#if defined(CONFIG_HAVE_STATIC_CALL_INLINE)
+extern int klp_static_call_register(struct module *mod);
+#else
+static inline int klp_static_call_register(struct module *mod) { return 0; }
+#endif
+
 static int klp_init_patch(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1221,6 +1227,19 @@ static int klp_init_patch(struct klp_patch *patch)
 	if (ret) {
 		module_enable_ro(patch->mod, true);
 		pr_err("register jump label failed, ret=%d\n", ret);
+		return ret;
+	}
+	ret = klp_static_call_register(patch->mod);
+	if (ret) {
+		/*
+		 * We no need to distinctly clean pre-registered jump_label
+		 * here because it will be clean at path:
+		 *   load_module
+		 *     do_init_module
+		 *       fail_free_freeinit:  <-- notify GOING here
+		 */
+		module_enable_ro(patch->mod, true);
+		pr_err("register static call failed, ret=%d\n", ret);
 		return ret;
 	}
 	module_enable_ro(patch->mod, true);
