@@ -237,6 +237,9 @@ struct hns_roce_ucontext {
 	struct hns_user_mmap_entry *reset_mmap_entry;
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
+	struct list_head list; /* link all uctx to uctx_list on hr_dev */
+	pid_t pid; /* process id to which the uctx belongs */
+	struct hns_dca_ctx_debugfs dca_dbgfs;
 };
 
 struct hns_roce_pd {
@@ -1037,7 +1040,7 @@ struct hns_roce_dev {
 	struct device		*dev;
 
 	struct list_head	uctx_list; /* list of all uctx on this dev */
-	spinlock_t		uctx_list_lock; /* protect @uctx_list */
+	struct mutex		uctx_list_mutex; /* protect @uctx_list */
 
 	struct hns_roce_uar     priv_uar;
 	const char		*irq_names[HNS_ROCE_MAX_IRQ_NUM];

@@ -1620,6 +1620,32 @@ const struct uapi_definition hns_roce_dca_uapi_defs[] = {
 	{}
 };
 
+/* enum DCA pool */
+struct dca_mem_enum_attr {
+	void *param;
+	hns_dca_enum_callback enum_fn;
+};
+
+static int enum_dca_pool_proc(struct dca_mem *mem, int index, void *param)
+{
+	struct dca_mem_enum_attr *attr = param;
+	int ret;
+
+	ret = attr->enum_fn(mem->states, mem->page_count, attr->param);
+
+	return ret ? DCA_MEM_STOP_ITERATE : DCA_MEM_NEXT_ITERATE;
+}
+
+void hns_roce_enum_dca_pool(struct hns_roce_dca_ctx *dca_ctx, void *param,
+			    hns_dca_enum_callback cb)
+{
+	struct dca_mem_enum_attr attr;
+
+	attr.enum_fn = cb;
+	attr.param = param;
+	travel_dca_pages(dca_ctx, &attr, enum_dca_pool_proc);
+}
+
 module_param(dca_unit_size, uint, 0444);
 module_param(dca_max_size, ulong, 0444);
 module_param(dca_min_size, ulong, 0444);

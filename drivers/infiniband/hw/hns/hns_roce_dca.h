@@ -73,4 +73,6 @@ void hns_roce_dca_detach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		       struct ib_udata *udata);
 
+void hns_roce_enum_dca_pool(struct hns_roce_dca_ctx *dca_ctx, void *param,
+			    hns_dca_enum_callback cb);
 #endif
