@@ -34,6 +34,7 @@
 #include <linux/delay.h>
 #include <linux/stop_machine.h>
 #endif
+#include <linux/static_call.h>
 
 /*
  * klp_mutex is a coarse lock which serializes access to klp data.  All
@@ -1195,6 +1196,43 @@ extern int klp_static_call_register(struct module *mod);
 static inline int klp_static_call_register(struct module *mod) { return 0; }
 #endif
 
+static int check_address_conflict(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+	int ret;
+	void *start;
+	void *end;
+
+	/*
+	 * Locks seem required as comment of jump_label_text_reserved() said:
+	 *   Caller must hold jump_label_mutex.
+	 * But looking into implementation of jump_label_text_reserved() and
+	 * static_call_text_reserved(), call sites of every jump_label or static_call
+	 * are checked, and they won't be changed after corresponding module inserted,
+	 * so no need to take jump_label_lock and static_call_lock here.
+	 */
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			start = func->old_func;
+			end = start + KLP_MAX_REPLACE_SIZE - 1;
+			ret = jump_label_text_reserved(start, end);
+			if (ret) {
+				pr_err("'%s' has static key in first %zu bytes, ret=%d\n",
+				       func->old_name, KLP_MAX_REPLACE_SIZE, ret);
+				return -EINVAL;
+			}
+			ret = static_call_text_reserved(start, end);
+			if (ret) {
+				pr_err("'%s' has static call in first %zu bytes, ret=%d\n",
+				       func->old_name, KLP_MAX_REPLACE_SIZE, ret);
+				return -EINVAL;
+			}
+		}
+	}
+	return 0;
+}
+
 static int klp_init_patch(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1240,6 +1278,10 @@ static int klp_init_patch(struct klp_patch *patch)
 		return ret;
 	}
 	module_enable_ro(patch->mod, true);
+
+	ret = check_address_conflict(patch);
+	if (ret)
+		return ret;
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	klp_for_each_object(patch, obj)
