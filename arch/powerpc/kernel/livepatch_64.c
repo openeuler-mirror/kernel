@@ -174,7 +174,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 				 * excution of instructions to be repalced is
 				 * complete.
 				 */
-				if (IS_ENABLED(CONFIG_PREEMTION) ||
+				if (IS_ENABLED(CONFIG_PREEMPTION) ||
 				    (func->force == KLP_NORMAL_FORCE) ||
 				    check_jump_insn(func_addr)) {
 					ret = add_func_to_list(check_funcs, &pcheck,
