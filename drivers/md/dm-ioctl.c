@@ -800,9 +800,13 @@ static int dev_create(struct file *filp, struct dm_ioctl *param, size_t param_si
 
 	__dev_status(md, param);
 
+	mutex_lock(&dm_hash_cells_mutex);
 	hc = dm_get_mdptr(md);
-	DMINFO("%s[%i]: %s (%s) is created successfully",
-		current->comm, current->pid, md->disk->disk_name, hc->name);
+	if (hc)
+		DMINFO("%s[%i]: %s (%s) is created successfully",
+			current->comm, current->pid, md->disk->disk_name, hc->name);
+
+	mutex_unlock(&dm_hash_cells_mutex);
 	dm_put(md);
 
 	return 0;
