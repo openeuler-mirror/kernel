@@ -25,6 +25,31 @@ struct hns_dca_shrink_resp {
 
 #define HNS_DCA_INVALID_BUF_ID 0UL
 
+/*
+ * buffer id(29b) = tag(7b) + owner(22b)
+ * [28:22] tag  : indicate the QP config update times.
+ * [21: 0] owner: indicate the QP to which the page belongs.
+ */
+#define HNS_DCA_ID_MASK GENMASK(28, 0)
+#define HNS_DCA_TAG_MASK GENMASK(28, 22)
+#define HNS_DCA_OWN_MASK GENMASK(21, 0)
+
+#define HNS_DCA_BUF_ID_TO_TAG(buf_id) (((buf_id) & HNS_DCA_TAG_MASK) >> 22)
+#define HNS_DCA_BUF_ID_TO_QPN(buf_id) ((buf_id) & HNS_DCA_OWN_MASK)
+#define HNS_DCA_TO_BUF_ID(qpn, tag) (((qpn) & HNS_DCA_OWN_MASK) | \
+					(((tag) << 22) & HNS_DCA_TAG_MASK))
+
+struct hns_dca_attach_attr {
+	u32 sq_offset;
+	u32 sge_offset;
+	u32 rq_offset;
+};
+
+struct hns_dca_attach_resp {
+	u32 alloc_flags;
+	u32 alloc_pages;
+};
+
 void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_ucontext *uctx);
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,

@@ -325,7 +325,17 @@ struct hns_roce_mtr {
 };
 
 struct hns_roce_dca_cfg {
+	spinlock_t lock;
 	u32 buf_id;
+	u16 attach_count;
+	u32 npages;
+};
+
+/* DCA attr for setting WQE buffer */
+struct hns_roce_dca_attr {
+	u32 sq_offset;
+	u32 sge_offset;
+	u32 rq_offset;
 };
 
 struct hns_roce_mw {
@@ -967,6 +977,9 @@ struct hns_roce_hw {
 	int (*clear_hem)(struct hns_roce_dev *hr_dev,
 			 struct hns_roce_hem_table *table, int obj,
 			 u32 step_idx);
+	int (*set_dca_buf)(struct hns_roce_dev *hr_dev,
+			   struct hns_roce_qp *hr_qp,
+			   struct hns_roce_dca_attr *attr);
 	int (*modify_qp)(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 			 int attr_mask, enum ib_qp_state cur_state,
 			 enum ib_qp_state new_state, struct ib_udata *udata);
