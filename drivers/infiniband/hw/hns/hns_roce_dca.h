@@ -19,6 +19,7 @@ struct hns_dca_page_state {
 extern const struct uapi_definition hns_roce_dca_uapi_defs[];
 
 #define HNS_DCA_INVALID_BUF_ID 0UL
+#define HNS_DCA_INVALID_DCA_NUM ~0U
 
 /*
  * buffer id(29b) = tag(7b) + owner(22b)
@@ -55,7 +56,7 @@ typedef int (*hns_dca_enum_callback)(struct hns_dca_page_state *, u32, void *);
 void hns_roce_init_dca(struct hns_roce_dev *hr_dev);
 void hns_roce_cleanup_dca(struct hns_roce_dev *hr_dev);
 
-void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
+void hns_roce_register_udca(struct hns_roce_dev *hr_dev, int max_qps,
 			    struct hns_roce_ucontext *uctx);
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_ucontext *uctx);
@@ -69,9 +70,8 @@ int hns_roce_dca_attach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct hns_dca_attach_attr *attr);
 void hns_roce_dca_detach(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			 struct hns_dca_detach_attr *attr);
-
-void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
-		       struct ib_udata *udata);
+void hns_roce_modify_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 struct ib_udata *udata);
 
 void hns_roce_enum_dca_pool(struct hns_roce_dca_ctx *dca_ctx, void *param,
 			    hns_dca_enum_callback cb);

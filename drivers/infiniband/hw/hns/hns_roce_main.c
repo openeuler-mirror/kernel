@@ -37,6 +37,7 @@
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_cache.h>
+#include <rdma/uverbs_ioctl.h>
 
 #include "hnae3.h"
 #include "hns_roce_common.h"
@@ -341,6 +342,7 @@ hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 				ucontext, &entry->rdma_entry, length, 0);
 		break;
 	case HNS_ROCE_MMAP_TYPE_DWQE:
+	case HNS_ROCE_MMAP_TYPE_DCA:
 		ret = rdma_user_mmap_entry_insert_range(
 				ucontext, &entry->rdma_entry, length, 1,
 				U32_MAX);
@@ -363,6 +365,9 @@ static void hns_roce_dealloc_uar_entry(struct hns_roce_ucontext *context)
 	if (context->db_mmap_entry)
 		rdma_user_mmap_entry_remove(
 			&context->db_mmap_entry->rdma_entry);
+	if (context->dca_ctx.dca_mmap_entry)
+		rdma_user_mmap_entry_remove(
+			&context->dca_ctx.dca_mmap_entry->rdma_entry);
 }
 
 static int hns_roce_alloc_uar_entry(struct ib_ucontext *uctx)
@@ -382,12 +387,36 @@ static int hns_roce_alloc_uar_entry(struct ib_ucontext *uctx)
 static void ucontext_set_resp(struct ib_ucontext *uctx,
 			      struct hns_roce_ib_alloc_ucontext_resp *resp)
 {
+	struct hns_roce_ucontext *context = to_hr_ucontext(uctx);
 	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
+	struct rdma_user_mmap_entry *rdma_entry;
 
 	resp->qp_tab_size = hr_dev->caps.num_qps;
 	resp->srq_tab_size = hr_dev->caps.num_srqs;
 	resp->cqe_size = hr_dev->caps.cqe_sz;
 	resp->mac_type = hr_dev->mac_type;
+	if (context->dca_ctx.dca_mmap_entry) {
+		resp->dca_qps = context->dca_ctx.max_qps;
+		resp->dca_mmap_size = PAGE_SIZE * context->dca_ctx.status_npage;
+		rdma_entry = &context->dca_ctx.dca_mmap_entry->rdma_entry;
+		resp->dca_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
+	}
+}
+
+static u32 get_udca_max_qps(struct hns_roce_dev *hr_dev,
+			    struct hns_roce_ib_alloc_ucontext *ucmd)
+{
+	u32 qp_num;
+
+	if (ucmd->comp & HNS_ROCE_ALLOC_UCTX_COMP_DCA_MAX_QPS) {
+		qp_num = ucmd->dca_max_qps;
+		if (!qp_num)
+			qp_num = hr_dev->caps.num_qps;
+	} else {
+		qp_num = 0;
+	}
+
+	return qp_num;
 }
 
 static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
@@ -447,7 +476,8 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 		mutex_init(&context->page_mutex);
 	}
 
-	hns_roce_register_udca(hr_dev, context);
+	hns_roce_register_udca(hr_dev, get_udca_max_qps(hr_dev, &ucmd),
+			       context);
 
 	ucontext_set_resp(uctx, &resp);
 	ret = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
@@ -492,6 +522,36 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	ida_free(&hr_dev->uar_ida.ida, (int)context->uar.logic_idx);
 }
 
+static int mmap_dca(struct ib_ucontext *context, struct vm_area_struct *vma)
+{
+	struct hns_roce_ucontext *uctx = to_hr_ucontext(context);
+	struct hns_roce_dca_ctx *ctx = &uctx->dca_ctx;
+	struct page **pages;
+	unsigned long num;
+	int ret;
+
+	if ((vma->vm_end - vma->vm_start != (ctx->status_npage * PAGE_SIZE) ||
+	     !(vma->vm_flags & VM_SHARED)))
+		return -EINVAL;
+
+	if (!(vma->vm_flags & VM_WRITE) || (vma->vm_flags & VM_EXEC))
+		return -EPERM;
+
+	if (!ctx->buf_status)
+		return -EOPNOTSUPP;
+
+	pages = kcalloc(ctx->status_npage, sizeof(struct page *), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	for (num = 0; num < ctx->status_npage; num++)
+		pages[num] = virt_to_page(ctx->buf_status + num * PAGE_SIZE);
+
+	ret = vm_insert_pages(vma, vma->vm_start, pages, &num);
+	kfree(pages);
+	return ret;
+}
+
 static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 {
 	struct rdma_user_mmap_entry *rdma_entry;
@@ -512,6 +572,9 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 	case HNS_ROCE_MMAP_TYPE_DWQE:
 		prot = pgprot_device(vma->vm_page_prot);
 		break;
+	case HNS_ROCE_MMAP_TYPE_DCA:
+		ret = mmap_dca(uctx, vma);
+		goto out;
 	default:
 		return -EINVAL;
 	}
@@ -519,6 +582,7 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 	ret = rdma_user_mmap_io(uctx, vma, pfn, rdma_entry->npages * PAGE_SIZE,
 				prot, rdma_entry);
 
+out:
 	rdma_user_mmap_entry_put(rdma_entry);
 
 	return ret;
