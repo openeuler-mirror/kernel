@@ -1463,8 +1463,8 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 	u64 val = le64_to_cpu(dst[0]);
 	bool ste_live = false;
 	struct arm_smmu_device *smmu = NULL;
-	struct arm_smmu_s1_cfg *s1_cfg;
-	struct arm_smmu_s2_cfg *s2_cfg;
+	struct arm_smmu_s1_cfg *s1_cfg = NULL;
+	struct arm_smmu_s2_cfg *s2_cfg = NULL;
 	struct arm_smmu_domain *smmu_domain = NULL;
 	struct arm_smmu_cmdq_ent prefetch_cmd = {
 		.opcode		= CMDQ_OP_PREFETCH_CFG,
@@ -1479,24 +1479,13 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 	}
 
 	if (smmu_domain) {
-		s1_cfg = &smmu_domain->s1_cfg;
-		s2_cfg = &smmu_domain->s2_cfg;
-
 		switch (smmu_domain->stage) {
 		case ARM_SMMU_DOMAIN_S1:
-			s1_cfg->set = true;
-			s2_cfg->set = false;
+			s1_cfg = &smmu_domain->s1_cfg;
 			break;
 		case ARM_SMMU_DOMAIN_S2:
-			s1_cfg->set = false;
-			s2_cfg->set = true;
-			break;
 		case ARM_SMMU_DOMAIN_NESTED:
-			/*
-			 * Actual usage of stage 1 depends on nested mode:
-			 * legacy (2d stage only) or true nested mode
-			 */
-			s2_cfg->set = true;
+			s2_cfg = &smmu_domain->s2_cfg;
 			break;
 		default:
 			break;
@@ -1523,7 +1512,7 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 	val = STRTAB_STE_0_V;
 
 	/* Bypass/fault */
-	if (!smmu_domain || !(s1_cfg->set || s2_cfg->set)) {
+	if (!smmu_domain || !(s1_cfg || s2_cfg)) {
 		if (!smmu_domain && disable_bypass)
 			val |= FIELD_PREP(STRTAB_STE_0_CFG, STRTAB_STE_0_CFG_ABORT);
 		else
@@ -1542,7 +1531,7 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 		return;
 	}
 
-	if (s1_cfg->set) {
+	if (s1_cfg) {
 		u64 strw = smmu->features & ARM_SMMU_FEAT_E2H ?
 			STRTAB_STE_1_STRW_EL2 : STRTAB_STE_1_STRW_NSEL1;
 
@@ -1567,7 +1556,7 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 			FIELD_PREP(STRTAB_STE_0_S1FMT, s1_cfg->s1fmt);
 	}
 
-	if (s2_cfg->set) {
+	if (s2_cfg) {
 		BUG_ON(ste_live);
 		dst[2] = cpu_to_le64(
 			 FIELD_PREP(STRTAB_STE_2_S2VMID, s2_cfg->vmid) |
@@ -2381,26 +2370,26 @@ static void arm_smmu_domain_free(struct iommu_domain *domain)
 {
 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
 	struct arm_smmu_device *smmu = smmu_domain->smmu;
-	struct arm_smmu_s1_cfg *s1_cfg = &smmu_domain->s1_cfg;
-	struct arm_smmu_s2_cfg *s2_cfg = &smmu_domain->s2_cfg;
 
 	iommu_put_dma_cookie(domain);
 	free_io_pgtable_ops(smmu_domain->pgtbl_ops);
 
 	/* Free the CD and ASID, if we allocated them */
-	if (s1_cfg->set) {
+	if (smmu_domain->stage == ARM_SMMU_DOMAIN_S1) {
+		struct arm_smmu_s1_cfg *cfg = &smmu_domain->s1_cfg;
+
 		/* Prevent SVA from touching the CD while we're freeing it */
 		mutex_lock(&arm_smmu_asid_lock);
-		if (s1_cfg->cdcfg.cdtab)
+		if (cfg->cdcfg.cdtab)
 			arm_smmu_free_cd_tables(smmu_domain);
-		arm_smmu_free_asid(&s1_cfg->cd);
+		arm_smmu_free_asid(&cfg->cd);
 		mutex_unlock(&arm_smmu_asid_lock);
 		if (smmu_domain->ssid)
 			ioasid_free(smmu_domain->ssid);
-	}
-	if (s2_cfg->set) {
-		if (s2_cfg->vmid)
-			arm_smmu_bitmap_free(smmu->vmid_map, s2_cfg->vmid);
+	} else {
+		struct arm_smmu_s2_cfg *cfg = &smmu_domain->s2_cfg;
+		if (cfg->vmid)
+			arm_smmu_bitmap_free(smmu->vmid_map, cfg->vmid);
 	}
 
 	kfree(smmu_domain);
@@ -3699,7 +3688,7 @@ static int arm_smmu_set_mpam(struct arm_smmu_device *smmu,
 
 	if (WARN_ON(!domain))
 		return -EINVAL;
-	if (WARN_ON(!domain->s1_cfg.set))
+	if (WARN_ON(domain->stage != ARM_SMMU_DOMAIN_S1))
 		return -EINVAL;
 	if (WARN_ON(ssid >= (1 << domain->s1_cfg.s1cdmax)))
 		return -E2BIG;
@@ -3822,7 +3811,7 @@ static int arm_smmu_get_mpam(struct arm_smmu_device *smmu,
 
 	if (WARN_ON(!domain))
 		return -EINVAL;
-	if (WARN_ON(!domain->s1_cfg.set))
+	if (WARN_ON(domain->stage != ARM_SMMU_DOMAIN_S1))
 		return -EINVAL;
 	if (WARN_ON(ssid >= (1 << domain->s1_cfg.s1cdmax)))
 		return -E2BIG;
