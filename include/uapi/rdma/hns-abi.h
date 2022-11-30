@@ -144,6 +144,7 @@ enum hns_ib_dca_mem_methods {
 	HNS_IB_METHOD_DCA_MEM_DEREG,
 	HNS_IB_METHOD_DCA_MEM_SHRINK,
 	HNS_IB_METHOD_DCA_MEM_ATTACH,
+	HNS_IB_METHOD_DCA_MEM_DETACH,
 };
 
 enum hns_ib_dca_mem_reg_attrs {
@@ -173,5 +174,10 @@ enum hns_ib_dca_mem_attach_attrs {
 	HNS_IB_ATTR_DCA_MEM_ATTACH_RQ_OFFSET,
 	HNS_IB_ATTR_DCA_MEM_ATTACH_OUT_ALLOC_FLAGS,
 	HNS_IB_ATTR_DCA_MEM_ATTACH_OUT_ALLOC_PAGES,
+};
+
+enum hns_ib_dca_mem_detach_attrs {
+	HNS_IB_ATTR_DCA_MEM_DETACH_HANDLE = (1U << UVERBS_ID_NS_SHIFT),
+	HNS_IB_ATTR_DCA_MEM_DETACH_SQ_INDEX,
 };
 #endif /* HNS_ABI_USER_H */

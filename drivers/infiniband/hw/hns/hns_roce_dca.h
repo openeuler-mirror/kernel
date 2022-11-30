@@ -50,6 +50,10 @@ struct hns_dca_attach_resp {
 	u32 alloc_pages;
 };
 
+struct hns_dca_detach_attr {
+	u32 sq_idx;
+};
+
 void hns_roce_register_udca(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_ucontext *uctx);
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
@@ -58,5 +62,6 @@ void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
 void hns_roce_enable_dca(struct hns_roce_dev *hr_dev,
 			 struct hns_roce_qp *hr_qp);
 void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
-			  struct hns_roce_qp *hr_qp);
+			  struct hns_roce_qp *hr_qp, struct ib_udata *udata);
+void hns_roce_dca_kick(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp);
 #endif
