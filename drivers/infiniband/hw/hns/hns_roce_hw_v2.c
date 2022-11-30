@@ -1130,7 +1130,7 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 					unsigned long reset_stage)
 {
 #define HW_RESET_TIMEOUT_US 1000000
-#define HW_RESET_SLEEP_US 1000
+#define HW_RESET_DELAY_US 1
 
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hnae3_handle *handle = priv->handle;
@@ -1149,8 +1149,8 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 	 */
 	hr_dev->dis_db = true;
 
-	ret = read_poll_timeout(ops->ae_dev_reset_cnt, val,
-				val > hr_dev->reset_cnt, HW_RESET_SLEEP_US,
+	ret = read_poll_timeout_atomic(ops->ae_dev_reset_cnt, val,
+				val > hr_dev->reset_cnt, HW_RESET_DELAY_US,
 				HW_RESET_TIMEOUT_US, false, handle);
 	if (!ret)
 		hr_dev->is_reset = true;
