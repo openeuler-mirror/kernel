@@ -1,0 +1,125 @@
+[
+   {
+	"EventCode": "0x00",
+	"EventName": "rd_cpipe",
+	"BriefDescription": "Total read accesses",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x02",
+	"EventName": "rd_hit_cpipe",
+	"BriefDescription": "Total read hits",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x20",
+	"EventName": "rd_spipe",
+	"BriefDescription": "Count of the number of read lines that come from this cluster of CPU core in spipe",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x22",
+	"EventName": "rd_hit_spipe",
+	"BriefDescription": "Count of the number of read lines that hits in spipe of this L3C",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x29",
+	"EventName": "back_invalid",
+	"BriefDescription": "Count of the number of L3C back invalid operations",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x40",
+	"EventName": "retry_cpu",
+	"BriefDescription": "Count of the number of retry that L3C suppresses the CPU operations",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x41",
+	"EventName": "retry_ring",
+	"BriefDescription": "Count of the number of retry that L3C suppresses the ring operations",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x48",
+	"EventName": "l3c_hit",
+	"BriefDescription": "Count of the total number of L3C hit",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x80",
+	"EventName": "read_sum",
+	"Filter": "tt_core=0xff",
+	"BriefDescription": "total time taken by CPU to read L3C",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0xb8",
+	"EventName": "l3c_ref",
+	"BriefDescription": "Count of the total number of CPU accessed L3C",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0xb9",
+	"EventName": "dat_access",
+	"BriefDescription": "Count of the total number of CPU accessed L3C",
+	"Filter": "tt_core=0xff",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0xc0",
+	"EventName": "read_alloc",
+	"Filter": "tt_core=0xff",
+	"BriefDescription": "Count of the requests issued by CPU received by L3C",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0xce",
+	"EventName": "retry_alloc",
+	"Filter": "tt_core=0xff",
+	"BriefDescription": "Count of the L3C retry CPU",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventCode": "0x7f",
+	"EventName": "l3c_cycles",
+	"BriefDescription": "Count of L3C cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"EventName": "cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"MetricExpr": "l3c_hit / l3c_ref",
+	"BriefDescription": "hit rate of L3C",
+	"Compat": "0x00000030",
+	"MetricGroup": "L3Cache",
+	"MetricName": "l3c_hit_rate",
+	"Unit": "hisi_sccl,l3c"
+   },
+   {
+	"MetricExpr": "read_sum / (l3c_ref - retry_alloc)",
+	"BriefDescription": "Average latency of CPU reading L3",
+	"Compat": "0x00000030",
+	"MetricGroup": "L3Cache",
+	"MetricName": "l3c_latency",
+	"Unit": "hisi_sccl,l3c"
+   }
+]
