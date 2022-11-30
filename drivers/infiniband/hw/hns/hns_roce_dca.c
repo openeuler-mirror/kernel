@@ -80,6 +80,14 @@ static inline bool dca_page_is_attached(struct hns_dca_page_state *state,
 			(HNS_DCA_OWN_MASK & state->buf_id);
 }
 
+static inline bool dca_page_is_active(struct hns_dca_page_state *state,
+				      u32 buf_id)
+{
+	/* all buf id bits must be matched */
+	return (HNS_DCA_ID_MASK & buf_id) == state->buf_id &&
+		!state->lock && state->active;
+}
+
 static inline bool dca_page_is_allocated(struct hns_dca_page_state *state,
 					 u32 buf_id)
 {
@@ -761,6 +769,47 @@ static int attach_dca_mem(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+struct dca_page_query_active_attr {
+	u32 buf_id;
+	u32 curr_index;
+	u32 start_index;
+	u32 page_index;
+	u32 page_count;
+	u64 mem_key;
+};
+
+static int query_dca_active_pages_proc(struct dca_mem *mem, int index,
+				       void *param)
+{
+	struct hns_dca_page_state *state = &mem->states[index];
+	struct dca_page_query_active_attr *attr = param;
+
+	if (!dca_page_is_active(state, attr->buf_id))
+		return 0;
+
+	if (attr->curr_index < attr->start_index) {
+		attr->curr_index++;
+		return 0;
+	} else if (attr->curr_index > attr->start_index) {
+		return DCA_MEM_STOP_ITERATE;
+	}
+
+	/* Search first page in DCA mem */
+	attr->page_index = index;
+	attr->mem_key = mem->key;
+	/* Search active pages in continuous addresses */
+	while (index < mem->page_count) {
+		state = &mem->states[index];
+		if (!dca_page_is_active(state, attr->buf_id))
+			break;
+
+		index++;
+		attr->page_count++;
+	}
+
+	return DCA_MEM_STOP_ITERATE;
+}
+
 struct dca_page_free_buf_attr {
 	u32 buf_id;
 	u32 max_pages;
@@ -1115,13 +1164,67 @@ DECLARE_UVERBS_NAMED_METHOD(
 	UVERBS_ATTR_PTR_IN(HNS_IB_ATTR_DCA_MEM_DETACH_SQ_INDEX,
 			   UVERBS_ATTR_TYPE(u32), UA_MANDATORY));
 
+static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_QUERY)(
+	struct uverbs_attr_bundle *attrs)
+{
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
+	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_qp);
+	struct dca_page_query_active_attr active_attr = {};
+	u32 page_idx, page_ofs;
+	int ret;
+
+	if (!hr_qp)
+		return -EINVAL;
+
+	ret = uverbs_copy_from(&page_idx, attrs,
+			       HNS_IB_ATTR_DCA_MEM_QUERY_PAGE_INDEX);
+	if (ret)
+		return ret;
+
+	active_attr.buf_id = hr_qp->dca_cfg.buf_id;
+	active_attr.start_index = page_idx;
+	travel_dca_pages(ctx, &active_attr, query_dca_active_pages_proc);
+	page_ofs = active_attr.page_index << HNS_HW_PAGE_SHIFT;
+
+	if (!active_attr.page_count)
+		return -ENOMEM;
+
+	ret = uverbs_copy_to(attrs, HNS_IB_ATTR_DCA_MEM_QUERY_OUT_KEY,
+			     &active_attr.mem_key, sizeof(active_attr.mem_key));
+	if (!ret)
+		ret = uverbs_copy_to(attrs,
+				     HNS_IB_ATTR_DCA_MEM_QUERY_OUT_OFFSET,
+				     &page_ofs, sizeof(page_ofs));
+	if (!ret)
+		ret = uverbs_copy_to(attrs,
+				     HNS_IB_ATTR_DCA_MEM_QUERY_OUT_PAGE_COUNT,
+				     &active_attr.page_count,
+				     sizeof(active_attr.page_count));
+
+	return ret;
+}
+
+DECLARE_UVERBS_NAMED_METHOD(
+	HNS_IB_METHOD_DCA_MEM_QUERY,
+	UVERBS_ATTR_IDR(HNS_IB_ATTR_DCA_MEM_QUERY_HANDLE, UVERBS_OBJECT_QP,
+			UVERBS_ACCESS_READ, UA_MANDATORY),
+	UVERBS_ATTR_PTR_IN(HNS_IB_ATTR_DCA_MEM_QUERY_PAGE_INDEX,
+			   UVERBS_ATTR_TYPE(u32), UA_MANDATORY),
+	UVERBS_ATTR_PTR_OUT(HNS_IB_ATTR_DCA_MEM_QUERY_OUT_KEY,
+			    UVERBS_ATTR_TYPE(u64), UA_MANDATORY),
+	UVERBS_ATTR_PTR_OUT(HNS_IB_ATTR_DCA_MEM_QUERY_OUT_OFFSET,
+			    UVERBS_ATTR_TYPE(u32), UA_MANDATORY),
+	UVERBS_ATTR_PTR_OUT(HNS_IB_ATTR_DCA_MEM_QUERY_OUT_PAGE_COUNT,
+			    UVERBS_ATTR_TYPE(u32), UA_MANDATORY));
+
 DECLARE_UVERBS_NAMED_OBJECT(HNS_IB_OBJECT_DCA_MEM,
 			    UVERBS_TYPE_ALLOC_IDR(dca_cleanup),
 			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_REG),
 			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_DEREG),
 			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_SHRINK),
 			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_ATTACH),
-			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_DETACH));
+			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_DETACH),
+			    &UVERBS_METHOD(HNS_IB_METHOD_DCA_MEM_QUERY));
 
 static bool dca_is_supported(struct ib_device *device)
 {
