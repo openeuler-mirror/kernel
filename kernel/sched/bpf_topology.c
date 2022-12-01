@@ -20,20 +20,20 @@
 #include <linux/bpf_topology.h>
 #include <linux/sched/isolation.h>
 
-static void bpf_update_cpu_topology(struct bpf_cpu_topology *cpu_topology, int cpu)
+static void bpf_update_cpu_topology(struct bpf_cpu_topology *bpf_cpu_topology, int cpu)
 {
-	cpu_topology->cpu = cpu;
-	cpu_topology->core_id = topology_core_id(cpu);
-	cpu_topology->cluster_id = topology_cluster_id(cpu);
-	cpu_topology->die_id = topology_die_id(cpu);
-	cpu_topology->physical_package_id = topology_physical_package_id(cpu);
-	cpu_topology->numa_node = cpu_to_node(cpu);
-	cpumask_copy(&cpu_topology->thread_siblings, topology_sibling_cpumask(cpu));
-	cpumask_copy(&cpu_topology->core_siblings, topology_core_cpumask(cpu));
-	cpumask_copy(&cpu_topology->cluster_cpus, topology_cluster_cpumask(cpu));
-	cpumask_copy(&cpu_topology->die_cpus, topology_die_cpumask(cpu));
-	cpumask_copy(&cpu_topology->package_cpus, topology_core_cpumask(cpu));
-	cpumask_copy(&cpu_topology->node_cpu_lists, cpumask_of_node(cpu_to_node(cpu)));
+	bpf_cpu_topology->cpu = cpu;
+	bpf_cpu_topology->core_id = topology_core_id(cpu);
+	bpf_cpu_topology->cluster_id = topology_cluster_id(cpu);
+	bpf_cpu_topology->die_id = topology_die_id(cpu);
+	bpf_cpu_topology->physical_package_id = topology_physical_package_id(cpu);
+	bpf_cpu_topology->numa_node = cpu_to_node(cpu);
+	cpumask_copy(&bpf_cpu_topology->thread_siblings, topology_sibling_cpumask(cpu));
+	cpumask_copy(&bpf_cpu_topology->core_siblings, topology_core_cpumask(cpu));
+	cpumask_copy(&bpf_cpu_topology->cluster_cpus, topology_cluster_cpumask(cpu));
+	cpumask_copy(&bpf_cpu_topology->die_cpus, topology_die_cpumask(cpu));
+	cpumask_copy(&bpf_cpu_topology->package_cpus, topology_core_cpumask(cpu));
+	cpumask_copy(&bpf_cpu_topology->node_cpu_lists, cpumask_of_node(cpu_to_node(cpu)));
 }
 
 BPF_CALL_1(bpf_init_cpu_topology, struct bpf_map *, map)
@@ -54,8 +54,6 @@ BPF_CALL_1(bpf_init_cpu_topology, struct bpf_map *, map)
 	return 0;
 }
 
-BTF_ID_LIST_SINGLE(bpf_cpu_topology_ids, struct, bpf_cpu_topology)
-
 const struct bpf_func_proto bpf_init_cpu_topology_proto = {
 	.func		= bpf_init_cpu_topology,
 	.gpl_only	= false,
@@ -74,7 +72,7 @@ BPF_CALL_2(bpf_get_cpumask_info, struct bpf_map *, map, struct bpf_cpumask_info 
 	cpus->nums_possible_cpus = num_possible_cpus();
 	cpus->nums_active_cpus = num_active_cpus();
 	cpus->nums_isolate_cpus = cpumask_weight(&cpus->cpu_isolate_cpumask);
-	cpus->nr_cpu_ids = nr_cpu_ids;
+	cpus->bpf_nr_cpu_ids = nr_cpu_ids;
 	cpus->bpf_nr_cpumask_bits = nr_cpumask_bits;
 
 	return 0;

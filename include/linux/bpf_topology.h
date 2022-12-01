@@ -36,7 +36,7 @@ struct bpf_cpumask_info {
 	unsigned int nums_possible_cpus;
 	unsigned int nums_active_cpus;
 	unsigned int nums_isolate_cpus;
-	unsigned int nr_cpu_ids;
+	unsigned int bpf_nr_cpu_ids;
 	unsigned int bpf_nr_cpumask_bits;
 	struct cpumask cpu_possible_cpumask;
 	struct cpumask cpu_active_cpumask;

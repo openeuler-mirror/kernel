@@ -310,7 +310,7 @@ static __always_inline int libbpf_nr_cpus_ids(void)
 		return -1;
 
 	bpf_get_cpumask_info(&map_cpumask_info, cpus);
-	return getVal(cpus->nr_cpu_ids);
+	return getVal(cpus->bpf_nr_cpu_ids);
 }
 
 static __always_inline int libbpf_nr_cpumask_bits(void)
