@@ -3059,6 +3059,9 @@ static struct iommu_device *arm_smmu_probe_device(struct device *dev)
 	struct arm_smmu_device *smmu;
 	struct arm_smmu_master *master;
 	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
+#ifdef CONFIG_ASCEND_FEATURES
+	u32 sid;
+#endif
 
 	if (!fwspec || fwspec->ops != &arm_smmu_ops)
 		return ERR_PTR(-ENODEV);
@@ -3105,6 +3108,15 @@ static struct iommu_device *arm_smmu_probe_device(struct device *dev)
 	    smmu->features & ARM_SMMU_FEAT_STALL_FORCE)
 		master->stall_enabled = true;
 
+#ifdef CONFIG_ASCEND_FEATURES
+	if (!acpi_dev_prop_read_single(ACPI_COMPANION(dev),
+			"streamid", DEV_PROP_U32, &sid)) {
+		if (iommu_fwspec_add_ids(dev, &sid, 1))
+			dev_info(dev, "failed to add ids\n");
+		master->stall_enabled = true;
+		master->ssid_bits = 0x10;
+	}
+#endif
 	arm_smmu_init_pri(master);
 
 	return &smmu->iommu;

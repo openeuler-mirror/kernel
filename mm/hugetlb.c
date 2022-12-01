@@ -6286,39 +6286,43 @@ struct page *hugetlb_alloc_hugepage(int nid, int flag)
 }
 EXPORT_SYMBOL_GPL(hugetlb_alloc_hugepage);
 
+static pte_t *hugetlb_huge_pte_alloc(struct mm_struct *mm, unsigned long addr,
+				     unsigned long size)
+{
+	pgd_t *pgdp;
+	p4d_t *p4dp;
+	pud_t *pudp;
+	pte_t *ptep = NULL;
+
+	pgdp = pgd_offset(mm, addr);
+	p4dp = p4d_offset(pgdp, addr);
+	pudp = pud_alloc(mm, p4dp, addr);
+	if (!pudp)
+		return NULL;
+
+	ptep = (pte_t *)pmd_alloc(mm, pudp, addr);
+
+	return ptep;
+}
+
 static int __hugetlb_insert_hugepage(struct mm_struct *mm, unsigned long addr,
-				     pgprot_t prot, unsigned long pfn, bool special)
+				     pgprot_t prot, unsigned long pfn)
 {
 	int ret = 0;
 	pte_t *ptep, entry;
 	struct hstate *h;
-	struct vm_area_struct *vma;
-	struct address_space *mapping;
 	spinlock_t *ptl;
 
 	h = size_to_hstate(PMD_SIZE);
 	if (!h)
 		return -EINVAL;
 
-	if (!IS_ALIGNED(addr, PMD_SIZE))
-		return -EINVAL;
+	ptep = hugetlb_huge_pte_alloc(mm, addr, huge_page_size(h));
+	if (!ptep)
+		return -ENXIO;
 
-	vma = find_vma(mm, addr);
-	if (!vma || !range_in_vma(vma, addr, addr + PMD_SIZE))
-		return -EINVAL;
-
-	mapping = vma->vm_file->f_mapping;
-	i_mmap_lock_read(mapping);
-	ptep = huge_pte_alloc(mm, addr, huge_page_size(h));
-	if (!ptep) {
-		ret = -ENXIO;
-		goto out_unlock;
-	}
-
-	if (WARN_ON(ptep && !pte_none(*ptep) && !pmd_huge(*(pmd_t *)ptep))) {
-		ret = -ENXIO;
-		goto out_unlock;
-	}
+	if (WARN_ON(ptep && !pte_none(*ptep) && !pmd_huge(*(pmd_t *)ptep)))
+		return -ENXIO;
 
 	entry = pfn_pte(pfn, prot);
 	entry = huge_pte_mkdirty(entry);
@@ -6326,16 +6330,12 @@ static int __hugetlb_insert_hugepage(struct mm_struct *mm, unsigned long addr,
 		entry = huge_pte_mkwrite(entry);
 	entry = pte_mkyoung(entry);
 	entry = pte_mkhuge(entry);
-	if (special)
-		entry = pte_mkspecial(entry);
+	entry = pte_mkspecial(entry);
 
 	ptl = huge_pte_lockptr(h, mm, ptep);
 	spin_lock(ptl);
 	set_huge_pte_at(mm, addr, ptep, entry);
 	spin_unlock(ptl);
-
-out_unlock:
-	i_mmap_unlock_read(mapping);
 
 	return ret;
 }
@@ -6343,14 +6343,14 @@ out_unlock:
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 				pgprot_t prot, struct page *hpage)
 {
-	return __hugetlb_insert_hugepage(mm, addr, prot, page_to_pfn(hpage), false);
+	return __hugetlb_insert_hugepage(mm, addr, prot, page_to_pfn(hpage));
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte);
 
 int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm, unsigned long addr,
 				      pgprot_t prot, unsigned long phy_addr)
 {
-	return __hugetlb_insert_hugepage(mm, addr, prot, phy_addr >> PAGE_SHIFT, true);
+	return __hugetlb_insert_hugepage(mm, addr, prot, phy_addr >> PAGE_SHIFT);
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
 

@@ -1091,6 +1091,7 @@ static void check_panic_on_oom(struct oom_control *oc)
 	if (is_sysrq_oom(oc))
 		return;
 	dump_header(oc, NULL);
+	oom_type_notifier_call(0, oc);
 	panic("Out of memory: %s panic_on_oom is enabled\n",
 		sysctl_panic_on_oom == 2 ? "compulsory" : "system-wide");
 }
