@@ -72,7 +72,7 @@ BPF_CALL_2(bpf_get_cpumask_info, struct bpf_map *, map, struct bpf_cpumask_info 
 	cpus->nums_possible_cpus = num_possible_cpus();
 	cpus->nums_active_cpus = num_active_cpus();
 	cpus->nums_isolate_cpus = cpumask_weight(&cpus->cpu_isolate_cpumask);
-	cpus->nr_cpu_ids = nr_cpu_ids;
+	cpus->bpf_nr_cpu_ids = nr_cpu_ids;
 	cpus->bpf_nr_cpumask_bits = nr_cpumask_bits;
 
 	return 0;
