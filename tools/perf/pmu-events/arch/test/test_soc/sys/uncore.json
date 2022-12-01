@@ -1,0 +1,17 @@
+[
+  {
+           "BriefDescription": "ddr write-cycles event",
+           "EventCode": "0x2b",
+           "EventName": "sys_ddr_pmu.write_cycles",
+           "Unit": "sys_ddr_pmu",
+           "Compat": "v8"
+   },
+   {
+            "EventCode": "0x84",
+            "EventName": "sys_hisi_ddrc.flux_rd",
+            "BriefDescription": "DDRC read commands",
+            "PublicDescription": "DDRC read commands",
+            "Unit": "sys_hisi_ddrc",
+            "Compat": "hip09"
+    }
+]

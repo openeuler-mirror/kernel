@@ -3,6 +3,7 @@
 #include <linux/compiler.h>
 #include <linux/string.h>
 #include <linux/zalloc.h>
+#include <linux/ctype.h>
 #include <subcmd/pager.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -17,6 +18,7 @@
 #include <locale.h>
 #include <regex.h>
 #include <perf/cpumap.h>
+#include <fnmatch.h>
 #include "debug.h"
 #include "evsel.h"
 #include "pmu.h"
@@ -283,6 +285,7 @@ void perf_pmu_free_alias(struct perf_pmu_alias *newalias)
 	zfree(&newalias->str);
 	zfree(&newalias->metric_expr);
 	zfree(&newalias->metric_name);
+	zfree(&newalias->pmu_name);
 	parse_events_terms__purge(&newalias->terms);
 	free(newalias);
 }
@@ -297,6 +300,10 @@ static bool perf_pmu_merge_alias(struct perf_pmu_alias *newalias,
 
 	list_for_each_entry(a, alist, list) {
 		if (!strcasecmp(newalias->name, a->name)) {
+			if (newalias->pmu_name && a->pmu_name &&
+			    !strcasecmp(newalias->pmu_name, a->pmu_name)) {
+				continue;
+			}
 			perf_pmu_update_alias(a, newalias);
 			perf_pmu_free_alias(newalias);
 			return true;
@@ -382,6 +389,7 @@ static int __perf_pmu__new_alias(struct list_head *list, char *dir, char *name,
 	}
 	alias->per_pkg = perpkg && sscanf(perpkg, "%d", &num) == 1 && num == 1;
 	alias->str = strdup(newval);
+	alias->pmu_name = metric_name ? strdup(metric_name) : NULL;
 
 	if (deprecated)
 		alias->deprecated = true;
@@ -597,6 +605,7 @@ static struct perf_cpu_map *__pmu_cpumask(const char *path)
  * Uncore PMUs have a "cpumask" file under sysfs. CPU PMUs (e.g. on arm/arm64)
  * may have a "cpus" file.
  */
+#define SYS_TEMPLATE_ID	"./bus/event_source/devices/%s/identifier"
 #define CPUS_TEMPLATE_UNCORE	"%s/bus/event_source/devices/%s/cpumask"
 #define CPUS_TEMPLATE_CPU	"%s/bus/event_source/devices/%s/cpus"
 
@@ -633,6 +642,21 @@ static bool pmu_is_uncore(const char *name)
 	sysfs = sysfs__mountpoint();
 	snprintf(path, PATH_MAX, CPUS_TEMPLATE_UNCORE, sysfs, name);
 	return file_available(path);
+}
+
+static char *pmu_id(const char *name)
+{
+	char path[PATH_MAX], *str;
+	size_t len;
+
+	snprintf(path, PATH_MAX, SYS_TEMPLATE_ID, name);
+
+	if (sysfs__read_str(path, &str, &len) < 0)
+		return NULL;
+
+	str[len - 1] = 0; /* remove line feed */
+
+	return str;
 }
 
 /*
@@ -701,6 +725,35 @@ struct pmu_events_map *perf_pmu__find_map(struct perf_pmu *pmu)
 	return map;
 }
 
+/*
+ * Suffix must be in form tok_{digits}, or tok{digits}, or same as pmu_name
+ * to be valid.
+ */
+static bool perf_pmu__valid_suffix(const char *pmu_name, char *tok)
+{
+	const char *p;
+
+	if (strncmp(pmu_name, tok, strlen(tok)))
+		return false;
+
+	p = pmu_name + strlen(tok);
+	if (*p == 0)
+		return true;
+
+	if (*p == '_')
+		++p;
+
+	/* Ensure we end in a number */
+	while (1) {
+		if (!isdigit(*p) && (*p != '_'))
+			return false;
+		if (*(++p) == 0)
+			break;
+	}
+
+	return true;
+}
+
 struct pmu_events_map *__weak pmu_events_map__find(void)
 {
 	return perf_pmu__find_map(NULL);
@@ -732,12 +785,19 @@ bool pmu_uncore_alias_match(const char *pmu_name, const char *name)
 	 *	    match "socket" in "socketX_pmunameY" and then "pmuname" in
 	 *	    "pmunameY".
 	 */
-	for (; tok; name += strlen(tok), tok = strtok_r(NULL, ",", &tmp)) {
+	while (1) {
+		char *next_tok = strtok_r(NULL, ",", &tmp);
+
 		name = strstr(name, tok);
-		if (!name) {
+		if (!name ||
+		    (!next_tok && !perf_pmu__valid_suffix(name, tok))) {
 			res = false;
 			goto out;
 		}
+		if (!next_tok)
+			break;
+		tok = next_tok;
+		name += strlen(tok);
 	}
 
 	res = true;
@@ -771,8 +831,7 @@ void pmu_add_cpu_aliases_map(struct list_head *head, struct perf_pmu *pmu,
 			break;
 		}
 
-		if (pmu_is_uncore(name) &&
-		    pmu_uncore_alias_match(pname, name))
+		if (pmu->is_uncore && pmu_uncore_alias_match(pname, name))
 			goto new_alias;
 
 		if (strcmp(pname, name))
@@ -799,6 +858,83 @@ static void pmu_add_cpu_aliases(struct list_head *head, struct perf_pmu *pmu)
 		return;
 
 	pmu_add_cpu_aliases_map(head, pmu, map);
+}
+
+void pmu_for_each_sys_event(pmu_sys_event_iter_fn fn, void *data)
+{
+	int i = 0;
+
+	while (1) {
+		struct pmu_sys_events *event_table;
+		int j = 0;
+
+		event_table = &pmu_sys_event_tables[i++];
+
+		if (!event_table->table)
+			break;
+
+		while (1) {
+			struct pmu_event *pe = &event_table->table[j++];
+			int ret;
+
+			if (!pe->name && !pe->metric_group && !pe->metric_name)
+				break;
+
+			ret = fn(pe, data);
+			if (ret)
+				break;
+		}
+	}
+}
+
+struct pmu_sys_event_iter_data {
+	struct list_head *head;
+	struct perf_pmu *pmu;
+};
+
+static int pmu_add_sys_aliases_iter_fn(struct pmu_event *pe, void *data)
+{
+	struct pmu_sys_event_iter_data *idata = data;
+	struct perf_pmu *pmu = idata->pmu;
+
+	if (!pe->name) {
+		if (pe->metric_group || pe->metric_name)
+			return 0;
+		return -EINVAL;
+	}
+
+	if (!pe->compat || !pe->pmu)
+		return 0;
+
+	if (!strcmp(pmu->id, pe->compat) &&
+	    pmu_uncore_alias_match(pe->pmu, pmu->name)) {
+		__perf_pmu__new_alias(idata->head, NULL,
+				      (char *)pe->name,
+				      (char *)pe->desc,
+				      (char *)pe->event,
+				      (char *)pe->long_desc,
+				      (char *)pe->topic,
+				      (char *)pe->unit,
+				      (char *)pe->perpkg,
+				      (char *)pe->metric_expr,
+				      (char *)pe->metric_name,
+				      (char *)pe->deprecated);
+	}
+
+	return 0;
+}
+
+void pmu_add_sys_aliases(struct list_head *head, struct perf_pmu *pmu)
+{
+	struct pmu_sys_event_iter_data idata = {
+		.head = head,
+		.pmu = pmu,
+	};
+
+	if (!pmu->id)
+		return;
+
+	pmu_for_each_sys_event(pmu_add_sys_aliases_iter_fn, &idata);
 }
 
 struct perf_event_attr * __weak
@@ -852,8 +988,11 @@ static struct perf_pmu *pmu_lookup(const char *name)
 	pmu->name = strdup(name);
 	pmu->type = type;
 	pmu->is_uncore = pmu_is_uncore(name);
+	if (pmu->is_uncore)
+		pmu->id = pmu_id(name);
 	pmu->max_precise = pmu_max_precise(name);
 	pmu_add_cpu_aliases(&aliases, pmu);
+	pmu_add_sys_aliases(&aliases, pmu);
 
 	INIT_LIST_HEAD(&pmu->format);
 	INIT_LIST_HEAD(&pmu->aliases);
@@ -1720,4 +1859,15 @@ int perf_pmu__caps_parse(struct perf_pmu *pmu)
 	closedir(caps_dir);
 
 	return nr_caps;
+}
+
+int perf_pmu__match(char *pattern, char *name, char *tok)
+{
+	if (fnmatch(pattern, name, 0))
+		return -1;
+
+	if (tok && !perf_pmu__valid_suffix(name, tok))
+		return -1;
+
+	return 0;
 }

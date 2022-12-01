@@ -1,0 +1,102 @@
+[
+   {
+	"EventCode": "0x00",
+	"EventName": "rx_ops_num",
+	"BriefDescription": "The number of all operations received by the HHA",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x01",
+	"EventName": "rx_outer",
+	"BriefDescription": "The number of all operations received by the HHA from another socket",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x02",
+	"EventName": "rx_sccl",
+	"BriefDescription": "The number of all operations received by the HHA from another SCCL in this socket",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x1c",
+	"EventName": "rd_ddr_64b",
+	"BriefDescription": "The number of read operations sent by HHA to DDRC which size is 64 bytes",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x1d",
+	"EventName": "wr_ddr_64b",
+	"BriefDescription": "The number of write operations sent by HHA to DDRC which size is 64 bytes",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x1e",
+	"EventName": "rd_ddr_128b",
+	"BriefDescription": "The number of read operations sent by HHA to DDRC which size is 128 bytes",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x1f",
+	"EventName": "wr_ddr_128b",
+	"BriefDescription": "The number of write operations sent by HHA to DDRC which size is 128 bytes",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x2e",
+	"EventName": "hha_retry",
+	"BriefDescription": "Count of the HHA retry",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventCode": "0x55",
+	"EventName": "hha_cycles",
+	"BriefDescription": "Count of the HHA cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"EventName": "cycles",
+	"Compat": "0x00000030",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"MetricExpr": "(rd_ddr_64b * 64 + rd_ddr_128b *128) / duration_time",
+	"BriefDescription": "Average bandwidth of reading DDRC(Byte/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "HHA",
+	"MetricName": "hha_read_ddrc_bw",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"MetricExpr": "(wr_ddr_64b * 64 + wr_ddr_128b *128) / duration_time",
+	"BriefDescription": "Average bandwidth of writing DDRC(Byte/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "HHA",
+	"MetricName": "hha_write_ddrc_bw",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"MetricExpr": "rx_outer / rx_ops_num",
+	"BriefDescription": "Rate of cross-chip operations received by HHA",
+	"Compat": "0x00000030",
+	"MetricGroup": "HHA",
+	"MetricName": "cross_chip_ops_rate",
+	"Unit": "hisi_sccl,hha"
+   },
+   {
+	"MetricExpr": "rx_sccl / rx_ops_num",
+	"BriefDescription": "Rate of cross-die operations received by HHA",
+	"Compat": "0x00000030",
+	"MetricGroup": "HHA",
+	"MetricName": "cross_die_ops_rate",
+	"Unit": "hisi_sccl,hha"
+   }
+]
