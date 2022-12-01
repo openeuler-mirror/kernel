@@ -22,6 +22,7 @@
 #include <linux/error-injection.h>
 #include <linux/bpf_lsm.h>
 #include <linux/btf_ids.h>
+#include <linux/bpf_sched.h>
 
 #include "disasm.h"
 
@@ -5018,10 +5019,10 @@ static bool check_btf_id_ok(const struct bpf_func_proto *fn)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(fn->arg_type); i++) {
-		if (fn->arg_type[i] == ARG_PTR_TO_BTF_ID && !fn->arg_btf_id[i])
+		if (base_type(fn->arg_type[i]) == ARG_PTR_TO_BTF_ID && !fn->arg_btf_id[i])
 			return false;
 
-		if (fn->arg_type[i] != ARG_PTR_TO_BTF_ID && fn->arg_btf_id[i])
+		if (base_type(fn->arg_type[i]) != ARG_PTR_TO_BTF_ID && fn->arg_btf_id[i])
 			return false;
 	}
 
@@ -12155,6 +12156,7 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 	case BPF_LSM_MAC:
 	case BPF_TRACE_FENTRY:
 	case BPF_TRACE_FEXIT:
+	case BPF_SCHED:
 		if (!btf_type_is_func(t)) {
 			bpf_log(log, "attach_btf_id %u is not a function\n",
 				btf_id);
@@ -12260,7 +12262,8 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 
 	if (prog->type != BPF_PROG_TYPE_TRACING &&
 	    prog->type != BPF_PROG_TYPE_LSM &&
-	    prog->type != BPF_PROG_TYPE_EXT)
+	    prog->type != BPF_PROG_TYPE_EXT &&
+	    prog->type != BPF_PROG_TYPE_SCHED)
 		return 0;
 
 	ret = bpf_check_attach_target(&env->log, prog, tgt_prog, btf_id, &tgt_info);
@@ -12296,6 +12299,12 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 
 	if (prog->type == BPF_PROG_TYPE_LSM) {
 		ret = bpf_lsm_verify_prog(&env->log, prog);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (prog->type == BPF_PROG_TYPE_SCHED) {
+		ret = bpf_sched_verify_prog(&env->log, prog);
 		if (ret < 0)
 			return ret;
 	}

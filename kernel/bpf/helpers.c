@@ -658,6 +658,10 @@ const struct bpf_func_proto bpf_probe_read_user_proto __weak;
 const struct bpf_func_proto bpf_probe_read_user_str_proto __weak;
 const struct bpf_func_proto bpf_probe_read_kernel_proto __weak;
 const struct bpf_func_proto bpf_probe_read_kernel_str_proto __weak;
+const struct bpf_func_proto bpf_sched_tg_tag_of_proto __weak;
+const struct bpf_func_proto bpf_sched_task_tag_of_proto __weak;
+const struct bpf_func_proto bpf_sched_set_tg_tag_proto __weak;
+const struct bpf_func_proto bpf_sched_set_task_tag_proto __weak;
 
 const struct bpf_func_proto *
 bpf_base_func_proto(enum bpf_func_id func_id)
@@ -697,6 +701,10 @@ bpf_base_func_proto(enum bpf_func_id func_id)
 		return &bpf_ringbuf_discard_proto;
 	case BPF_FUNC_ringbuf_query:
 		return &bpf_ringbuf_query_proto;
+	case BPF_FUNC_sched_tg_tag_of:
+		return &bpf_sched_tg_tag_of_proto;
+	case BPF_FUNC_sched_task_tag_of:
+		return &bpf_sched_task_tag_of_proto;
 	default:
 		break;
 	}
@@ -715,6 +723,10 @@ bpf_base_func_proto(enum bpf_func_id func_id)
 		return &bpf_per_cpu_ptr_proto;
 	case BPF_FUNC_this_cpu_ptr:
 		return &bpf_this_cpu_ptr_proto;
+	case BPF_FUNC_sched_set_tg_tag:
+		return &bpf_sched_set_tg_tag_proto;
+	case BPF_FUNC_sched_set_task_tag:
+		return &bpf_sched_set_task_tag_proto;
 	default:
 		break;
 	}

@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/tracehook.h>
 #endif
+#include <linux/bpf_sched.h>
 
 /*
  * Targeted preemption latency for CPU-bound tasks:
@@ -508,6 +509,15 @@ static inline u64 min_vruntime(u64 min_vruntime, u64 vruntime)
 static inline bool entity_before(struct sched_entity *a,
 				struct sched_entity *b)
 {
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_tag_pick_next_entity(a, b);
+
+		if (ret == 1)
+			return 1;
+	}
+#endif
+
 	return (s64)(a->vruntime - b->vruntime) < 0;
 }
 
@@ -4434,6 +4444,21 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 
 	ideal_runtime = sched_slice(cfs_rq, curr);
 	delta_exec = curr->sum_exec_runtime - curr->prev_sum_exec_runtime;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_check_preempt_tick(curr, delta_exec);
+
+		if (ret < 0)
+			return;
+		else if (ret > 0) {
+			resched_curr(rq_of(cfs_rq));
+			clear_buddies(cfs_rq, curr);
+			return;
+		}
+	}
+#endif
+
 	if (delta_exec > ideal_runtime) {
 		resched_curr(rq_of(cfs_rq));
 		/*
@@ -5678,6 +5703,11 @@ enqueue_throttle:
 	assert_list_leaf_cfs_rq(rq);
 
 	hrtick_update(rq);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled())
+		bpf_sched_cfs_enqueue_task(rq, p);
+#endif
 }
 
 static void set_next_buddy(struct sched_entity *se);
@@ -5752,6 +5782,11 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 dequeue_throttle:
 	util_est_update(&rq->cfs, p, task_sleep);
 	hrtick_update(rq);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled())
+		bpf_sched_cfs_dequeue_task(rq, p);
+#endif
 }
 
 #ifdef CONFIG_SMP
@@ -5966,6 +6001,22 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 		       int this_cpu, int prev_cpu, int sync)
 {
 	int target = nr_cpumask_bits;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		struct sched_affine_ctx ctx;
+		int ret;
+
+		ctx.task = p;
+		ctx.prev_cpu = prev_cpu;
+		ctx.curr_cpu = this_cpu;
+		ctx.is_sync = sync;
+
+		ret = bpf_sched_cfs_wake_affine(&ctx);
+		if (ret >= 0 && ret < nr_cpumask_bits)
+			return ret;
+	}
+#endif
 
 	if (sched_feat(WA_IDLE))
 		target = wake_affine_idle(this_cpu, prev_cpu, sync);
@@ -6851,6 +6902,12 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int new_cpu = prev_cpu;
 	int want_affine = 0;
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+#ifdef CONFIG_BPF_SCHED
+	struct sched_migrate_ctx ctx;
+	cpumask_t *cpus_prev = NULL;
+	cpumask_t *cpus;
+	int ret;
+#endif
 
 	time = schedstat_start_time();
 
@@ -6872,6 +6929,32 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	}
 
 	rcu_read_lock();
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		ctx.task = p;
+		ctx.prev_cpu = prev_cpu;
+		ctx.curr_cpu = cpu;
+		ctx.is_sync = sync;
+		ctx.wake_flags = wake_flags;
+		ctx.want_affine = want_affine;
+		ctx.sd_flag = sd_flag;
+		ctx.select_idle_mask = this_cpu_cpumask_var_ptr(select_idle_mask);
+
+		ret = bpf_sched_cfs_select_rq(&ctx);
+		if (ret >= 0) {
+			rcu_read_unlock();
+			return ret;
+		} else if (ret != -1) {
+			cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
+			if (cpumask_subset(cpus, p->cpus_ptr) &&
+			    !cpumask_empty(cpus)) {
+				cpus_prev = (void *)p->cpus_ptr;
+				p->cpus_ptr = cpus;
+			}
+		}
+	}
+#endif
+
 	for_each_domain(cpu, tmp) {
 		/*
 		 * If both 'cpu' and 'prev_cpu' are part of this domain,
@@ -6903,6 +6986,19 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		if (want_affine)
 			current->recent_used_cpu = cpu;
 	}
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		ctx.new_cpu = new_cpu;
+		ret = bpf_sched_cfs_select_rq_exit(&ctx);
+		if (ret >= 0)
+			new_cpu = ret;
+
+		if (cpus_prev)
+			p->cpus_ptr = cpus_prev;
+	}
+#endif
+
 	rcu_read_unlock();
 	schedstat_end_time(cpu_rq(cpu), time);
 
@@ -7027,6 +7123,15 @@ wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
 {
 	s64 gran, vdiff = curr->vruntime - se->vruntime;
 
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_wakeup_preempt_entity(curr, se);
+
+		if (ret)
+			return ret;
+	}
+#endif
+
 	if (vdiff <= 0)
 		return -1;
 
@@ -7112,6 +7217,17 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	if (unlikely(task_has_idle_policy(curr)) &&
 	    likely(!task_has_idle_policy(p)))
 		goto preempt;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_check_preempt_wakeup(current, p);
+
+		if (ret < 0)
+			return;
+		else if (ret > 0)
+			goto preempt;
+	}
+#endif
 
 	/*
 	 * Batch and idle tasks do not preempt non-idle tasks (their preemption

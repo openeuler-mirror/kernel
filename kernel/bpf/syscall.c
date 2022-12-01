@@ -31,6 +31,7 @@
 #include <linux/poll.h>
 #include <linux/bpf-netns.h>
 #include <linux/rcupdate_trace.h>
+#include <linux/bpf_sched.h>
 
 #define IS_FD_ARRAY(map) ((map)->map_type == BPF_MAP_TYPE_PERF_EVENT_ARRAY || \
 			  (map)->map_type == BPF_MAP_TYPE_CGROUP_ARRAY || \
@@ -1997,6 +1998,7 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		case BPF_PROG_TYPE_LSM:
 		case BPF_PROG_TYPE_STRUCT_OPS:
 		case BPF_PROG_TYPE_EXT:
+		case BPF_PROG_TYPE_SCHED:
 			break;
 		default:
 			return -EINVAL;
@@ -2108,6 +2110,7 @@ static bool is_perfmon_prog_type(enum bpf_prog_type prog_type)
 	case BPF_PROG_TYPE_LSM:
 	case BPF_PROG_TYPE_STRUCT_OPS: /* has access to struct sock */
 	case BPF_PROG_TYPE_EXT: /* extends any prog */
+	case BPF_PROG_TYPE_SCHED:
 		return true;
 	default:
 		return false;
@@ -2529,6 +2532,11 @@ static void bpf_tracing_link_release(struct bpf_link *link)
 	struct bpf_tracing_link *tr_link =
 		container_of(link, struct bpf_tracing_link, link);
 
+#ifdef CONFIG_BPF_SCHED
+	if (link->prog->type == BPF_PROG_TYPE_SCHED)
+		bpf_sched_dec();
+#endif
+
 	WARN_ON_ONCE(bpf_trampoline_unlink_prog(link->prog,
 						tr_link->trampoline));
 
@@ -2604,6 +2612,12 @@ static int bpf_tracing_prog_attach(struct bpf_prog *prog,
 		break;
 	case BPF_PROG_TYPE_LSM:
 		if (prog->expected_attach_type != BPF_LSM_MAC) {
+			err = -EINVAL;
+			goto out_put_prog;
+		}
+		break;
+	case BPF_PROG_TYPE_SCHED:
+		if (prog->expected_attach_type != BPF_SCHED) {
 			err = -EINVAL;
 			goto out_put_prog;
 		}
@@ -2709,6 +2723,11 @@ static int bpf_tracing_prog_attach(struct bpf_prog *prog,
 		link = NULL;
 		goto out_unlock;
 	}
+
+#ifdef CONFIG_BPF_SCHED
+	if (prog->type == BPF_PROG_TYPE_SCHED)
+		bpf_sched_inc();
+#endif
 
 	link->tgt_prog = tgt_prog;
 	link->trampoline = tr;
@@ -2838,6 +2857,7 @@ static int bpf_raw_tracepoint_open(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_TRACING:
 	case BPF_PROG_TYPE_EXT:
 	case BPF_PROG_TYPE_LSM:
+	case BPF_PROG_TYPE_SCHED:
 		if (attr->raw_tracepoint.name) {
 			/* The attach point for this category of programs
 			 * should be specified via btf_id during program load.
