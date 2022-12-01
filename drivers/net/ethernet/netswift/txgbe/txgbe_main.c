@@ -3705,7 +3705,11 @@ void txgbe_configure_isb(struct txgbe_adapter *adapter)
 
 	wr32(hw, TXGBE_PX_ISB_ADDR_L,
 			adapter->isb_dma & DMA_BIT_MASK(32));
+#ifdef CONFIG_64BIT
 	wr32(hw, TXGBE_PX_ISB_ADDR_H, adapter->isb_dma >> 32);
+#else
+	wr32(hw, TXGBE_PX_ISB_ADDR_H, 0);
+#endif
 }
 
 void txgbe_configure_port(struct txgbe_adapter *adapter)
