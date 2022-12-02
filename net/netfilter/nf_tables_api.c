@@ -4865,6 +4865,7 @@ static int nft_setelem_parse_data(struct nft_ctx *ctx, struct nft_set *set,
 	desc->type = dtype;
 	desc->size = NFT_DATA_VALUE_MAXLEN;
 	desc->len = set->dlen;
+	desc->flags = NFT_DATA_DESC_SETELEM;
 
 	return nft_data_init(ctx, data, desc, attr);
 }
@@ -8678,6 +8679,9 @@ static int nft_verdict_init(const struct nft_ctx *ctx, struct nft_data *data,
 		if (nft_is_base_chain(chain))
 			return -EOPNOTSUPP;
 		if (nft_chain_is_bound(chain))
+			return -EINVAL;
+		if (desc->flags & NFT_DATA_DESC_SETELEM &&
+		    chain->flags & NFT_CHAIN_BINDING)
 			return -EINVAL;
 
 		chain->use++;
