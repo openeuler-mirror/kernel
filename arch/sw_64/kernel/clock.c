@@ -147,7 +147,7 @@ void sw64_set_rate(unsigned long rate)
 	}
 
 	if (index < 0)
-		return -EINVAL;
+		return;
 
 	sw64_io_write(0, CLK_CTL, CORE_CLK2_R | CORE_CLK2_V | CLK_PRT);
 	sw64_io_write(1, CLK_CTL, CORE_CLK2_R | CORE_CLK2_V | CLK_PRT);
