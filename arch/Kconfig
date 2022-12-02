@@ -157,6 +157,7 @@ config UPROBES
 	    application. )
 
 config UPROBES_SUPPORT_PC_ALTER
+	bool "add support for UPROBE to modify the PC register"
 	def_bool n
 	depends on UPROBES
 	help
