@@ -13,6 +13,7 @@
  * in <asm/page.h> (currently 8192).
  */
 #include <linux/mmzone.h>
+#include <linux/mm_types.h>
 
 #include <asm/page.h>
 #include <asm/processor.h>	/* For TASK_SIZE */
@@ -103,6 +104,7 @@ static inline void set_pmd_at(struct mm_struct *mm, unsigned long addr,
 #define _PAGE_BIT_FOW		2		/* bit of _PAGE_FOW */
 #define _PAGE_SPLITTING		0x200000	/* For Transparent Huge Page */
 #define _PAGE_BIT_SPLITTING	21		/* bit of _PAGE_SPLITTING */
+#define _PAGE_BIT_DEVMAP	22		/* bit of _PAGE_DEVMAP */
 
 /*
  * NOTE! The "accessed" bit isn't necessarily exact:  it can be kept exactly
@@ -234,6 +236,7 @@ static inline unsigned long pmd_page_vaddr(pmd_t pmd)
  */
 #define page_to_pa(page)	(page_to_pfn(page) << PAGE_SHIFT)
 
+#define pud_pfn(pud)		(pud_val(pud) >> _PFN_SHIFT)
 #define pmd_pfn(pmd)		(pmd_val(pmd) >> _PFN_SHIFT)
 #define pte_pfn(pte)		(pte_val(pte) >> _PFN_SHIFT)
 
@@ -487,6 +490,12 @@ static inline pte_t pte_mkspecial(pte_t pte)
 	return pte;
 }
 
+static inline pte_t pte_mkdevmap(pte_t pte)
+{
+	pte_val(pte) |= _PAGE_SPECIAL;
+	return pte;
+}
+
 #ifdef CONFIG_NUMA_BALANCING
 /*
  * See the comment in include/asm-generic/pgtable.h
@@ -524,7 +533,43 @@ static inline int has_transparent_hugepage(void)
 {
 	return 1;
 }
+
+#ifdef CONFIG_ARCH_HAS_PTE_DEVMAP
+#define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
+static inline int pte_devmap(pte_t a)
+{
+	return (pte_val(a) & _PAGE_DEVMAP) == _PAGE_DEVMAP;
+}
+
+static inline int pmd_devmap(pmd_t pmd)
+{
+	return !!(pmd_val(pmd) & _PAGE_DEVMAP);
+}
+
+#ifdef CONFIG_HAVE_ARCH_TRANSPARENT_HUGEPAGE_PUD
+static inline int pud_devmap(pud_t pud)
+{
+	return !!(pud_val(pud) & _PAGE_DEVMAP);
+}
+#else
+static inline int pud_devmap(pud_t pud)
+{
+	return 0;
+}
+#endif
+
+static inline int pgd_devmap(pgd_t pgd)
+{
+	return 0;
+}
+#endif
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+
+static inline pmd_t pmd_mkdevmap(pmd_t pmd)
+{
+	pmd_val(pmd) |= _PAGE_DEVMAP;
+	return pmd;
+}
 
 #define __HAVE_ARCH_PMDP_GET_AND_CLEAR
 static inline pmd_t pmdp_get_and_clear(struct mm_struct *mm,

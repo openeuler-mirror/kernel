@@ -69,8 +69,18 @@ void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
 	struct stackframe frame;
 
 	if (regs) {
+		unsigned long offset;
 		pc = regs->pc;
 		fp = regs->r15;
+		if (kallsyms_lookup_size_offset(pc, NULL, &offset)
+				&& offset < 16) {
+			/* call stack has not been setup
+			 * store pc first then loop from ra
+			 */
+			if (fn(pc, data))
+				return;
+			pc = regs->r26;
+		}
 	} else if (tsk == current || tsk == NULL) {
 		fp = (unsigned long)__builtin_frame_address(0);
 		pc = (unsigned long)walk_stackframe;
@@ -212,3 +222,11 @@ unsigned long get_wchan(struct task_struct *tsk)
 
 	return pc;
 }
+
+#ifdef CONFIG_HAVE_RELIABLE_STACKTRACE
+int save_stack_trace_tsk_reliable(struct task_struct *tsk,
+				  struct stack_trace *trace)
+{
+	return 0;
+}
+#endif

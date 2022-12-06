@@ -11,6 +11,7 @@
 #include <linux/platform_device.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
+#include <linux/io.h>
 #include <linux/module.h>
 
 #define PVT_VSYS                      0

@@ -11,8 +11,12 @@
 
 	.set noat
 
+/*
+ * r16: physical address of guest kvm_vcpu.arch.vcb
+ * r17: pointer to guest kvm_vcpu.arch.kvm_regs
+ * r18: pointer to hcall args
+ */
 ENTRY(__sw64_vcpu_run)
-
 	/* save host fpregs */
 	ldl	$1, TI_TASK($8)
 	rfpcr	$f0
@@ -27,9 +31,6 @@ ENTRY(__sw64_vcpu_run)
 	vstd	$f9, TASK_THREAD_F9($1)
 
 	ldi	sp, -VCPU_RET_SIZE(sp)
-	/* r16 = guest kvm_vcpu_arch.vcb struct pointer */
-	/* r17 = guest kvm_vcpu_arch.kvm_regs struct pointer */
-	/* r18 = hcall args */
 	/* save host  pt_regs to current kernel  stack */
 	ldi	sp, -PT_REGS_SIZE(sp)
 	stl	$9, PT_REGS_R9(sp)

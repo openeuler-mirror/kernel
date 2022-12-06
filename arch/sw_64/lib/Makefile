@@ -35,6 +35,8 @@ lib-memcpy-$(CONFIG_DEEP_MEMCPY) := deep-memcpy.o
 lib-memset-y := memset.o
 lib-memset-$(CONFIG_DEEP_MEMSET) := deep-memset.o
 
+lib-$(CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE) += uaccess_flushcache.o
+
 lib-y += $(lib-clear_page-y) $(lib-clear_user-y) $(lib-copy_page-y) $(lib-copy_user-y) $(lib-memcpy-y) $(lib-memset-y)
 
 obj-y = iomap.o

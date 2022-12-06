@@ -45,6 +45,11 @@ extern void *__memsetw(void *dest, unsigned short c, size_t count);
 	? __constant_c_memset((s), 0x0001000100010001UL * (unsigned short)(c), (n)) \
 	: __memsetw((s), (c), (n)))
 
+#ifdef CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE
+#define __HAVE_ARCH_MEMCPY_FLUSHCACHE
+void memcpy_flushcache(void *dst, const void *src, size_t cnt);
+#endif
+
 #endif /* __KERNEL__ */
 
 #endif /* _ASM_SW64_STRING_H */

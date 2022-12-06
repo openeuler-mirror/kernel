@@ -507,44 +507,6 @@ got_exception:
 }
 
 /*
- * Convert an s-floating point value in memory format to the
- * corresponding value in register format. The exponent
- * needs to be remapped to preserve non-finite values
- * (infinities, not-a-numbers, denormals).
- */
-static inline unsigned long
-s_mem_to_reg(unsigned long s_mem)
-{
-	unsigned long frac = (s_mem >> 0) & 0x7fffff;
-	unsigned long sign = (s_mem >> 31) & 0x1;
-	unsigned long exp_msb = (s_mem >> 30) & 0x1;
-	unsigned long exp_low = (s_mem >> 23) & 0x7f;
-	unsigned long exp;
-
-	exp = (exp_msb << 10) | exp_low;	/* common case */
-	if (exp_msb) {
-		if (exp_low == 0x7f)
-			exp = 0x7ff;
-	} else {
-		if (exp_low == 0x00)
-			exp = 0x000;
-		else
-			exp |= (0x7 << 7);
-	}
-	return (sign << 63) | (exp << 52) | (frac << 29);
-}
-
-/*
- * Convert an s-floating point value in register format to the
- * corresponding value in memory format.
- */
-static inline unsigned long
-s_reg_to_mem(unsigned long s_reg)
-{
-	return ((s_reg >> 62) << 30) | ((s_reg << 5) >> 34);
-}
-
-/*
  * Handle user-level unaligned fault. Handling user-level unaligned
  * faults is *extremely* slow and produces nasty messages. A user
  * program *should* fix unaligned faults ASAP.
@@ -1271,7 +1233,7 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		: "r"(va), "0"(0));
 		if (error)
 			goto give_sigsegv;
-		sw64_write_fp_reg(reg, s_mem_to_reg((int)(tmp1 | tmp2)));
+		sw64_write_fp_reg_s(reg, tmp1 | tmp2);
 		return;
 
 	case 0x27: /* fldd */
@@ -1360,7 +1322,7 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		return;
 
 	case 0x2e: /* fsts*/
-		fake_reg = s_reg_to_mem(sw64_read_fp_reg(reg));
+		fake_reg = sw64_read_fp_reg_s(reg);
 		/* FALLTHRU */
 
 	case 0x2a: /* stw with stb*/

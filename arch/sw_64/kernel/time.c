@@ -143,7 +143,7 @@ void __init sw64_sched_clock_init(void)
 	sched_clock_register(sched_clock_read, BITS_PER_LONG, get_cpu_freq() >> sc_shift);
 }
 #else
-unsigned long long sched_clock(void)
+unsigned long long notrace sched_clock(void)
 {
 	if (static_branch_likely(&use_tc_as_sched_clock))
 		return ((rdtc() - sc_start + __this_cpu_read(tc_offset)) >> sc_shift) * sc_multi;

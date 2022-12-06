@@ -43,6 +43,10 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 	case SW64_KVM_EXIT_IPI:
 		vcpu_send_ipi(vcpu, hargs->arg0);
 		return 1;
+	case SW64_KVM_EXIT_DEBUG:
+		vcpu->run->exit_reason = KVM_EXIT_DEBUG;
+		vcpu->run->debug.arch.epc = vcpu->arch.regs.pc;
+		return 0;
 #ifdef CONFIG_KVM_MEMHOTPLUG
 	case SW64_KVM_EXIT_MEMHOTPLUG:
 		vcpu_mem_hotplug(vcpu, hargs->arg0);

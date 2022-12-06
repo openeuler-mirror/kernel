@@ -84,7 +84,7 @@ unsigned int __kprobes sw64_insn_nop(void)
 
 unsigned int __kprobes sw64_insn_call(unsigned int ra, unsigned int rb)
 {
-	return SW64_CALL(ra, rb, 1);
+	return SW64_CALL(ra, rb, 0);
 }
 
 unsigned int __kprobes sw64_insn_sys_call(unsigned int num)

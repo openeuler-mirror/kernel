@@ -23,11 +23,12 @@
 #include "vmem.c"
 
 bool set_msi_flag;
-unsigned long sw64_kvm_last_vpn[NR_CPUS];
+static unsigned long longtime_offset;
+
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 extern bool bind_vcpu_enabled;
 #endif
-#define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
+#define last_vpn(cpu)	(cpu_data[cpu].last_vpn)
 
 #ifdef CONFIG_SUBARCH_C3B
 #define WIDTH_HARDWARE_VPN	8
@@ -67,7 +68,8 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm, int irq
 	return vcpu_interrupt_line(vcpu, irq, true);
 }
 
-extern int __sw64_vcpu_run(struct vcpucb *vcb, struct kvm_regs *regs, struct hcall_args *args);
+extern int __sw64_vcpu_run(unsigned long vcb_pa,
+			   struct kvm_regs *regs, struct hcall_args *args);
 
 #ifdef CONFIG_KVM_MEMHOTPLUG
 static u64 get_vpcr_memhp(u64 seg_base, u64 vpn)
@@ -84,14 +86,14 @@ static u64 get_vpcr(u64 hpa_base, u64 mem_size, u64 vpn)
 
 static unsigned long __get_new_vpn_context(struct kvm_vcpu *vcpu, long cpu)
 {
-	unsigned long vpn = cpu_last_vpn(cpu);
+	unsigned long vpn = last_vpn(cpu);
 	unsigned long next = vpn + 1;
 
 	if ((vpn & HARDWARE_VPN_MASK) >= HARDWARE_VPN_MASK) {
 		tbia();
 		next = (vpn & ~HARDWARE_VPN_MASK) + VPN_FIRST_VERSION + 1; /* bypass 0 */
 	}
-	cpu_last_vpn(cpu) = next;
+	last_vpn(cpu) = next;
 	return next;
 }
 
@@ -101,7 +103,7 @@ static void sw64_kvm_switch_vpn(struct kvm_vcpu *vcpu)
 	unsigned long vpnc;
 	long cpu = smp_processor_id();
 
-	vpn = cpu_last_vpn(cpu);
+	vpn = last_vpn(cpu);
 	vpnc = vcpu->arch.vpnc[cpu];
 
 	if ((vpnc ^ vpn) & ~HARDWARE_VPN_MASK) {
@@ -560,9 +562,10 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	return 0;
 }
 
-int kvm_arch_vcpu_ioctl_set_guest_debug(struct kvm_vcpu *vcpu, struct kvm_guest_debug *dbg)
+int kvm_arch_vcpu_ioctl_set_guest_debug(struct kvm_vcpu *vcpu,
+						struct kvm_guest_debug *dbg)
 {
-	return -ENOIOCTLCMD;
+	return 0;
 }
 
 void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
@@ -615,7 +618,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			end = vcpu->kvm->arch.host_phys_addr + vcpu->kvm->arch.size;
 			nid = pfn_to_nid(PHYS_PFN(vcpu->kvm->arch.host_phys_addr));
 			if (pfn_to_nid(PHYS_PFN(end)) == nid)
-				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
+				set_cpus_allowed_ptr(vcpu->arch.tsk, cpumask_of_node(nid));
 		}
 #endif
 #else /* !CONFIG_KVM_MEMHOTPLUG */
@@ -673,7 +676,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		trace_kvm_sw64_entry(vcpu->vcpu_id, vcpu->arch.regs.pc);
 		vcpu->mode = IN_GUEST_MODE;
 
-		ret = __sw64_vcpu_run((struct vcpucb *)__phys_addr((unsigned long)vcb), &(vcpu->arch.regs), &hargs);
+		ret = __sw64_vcpu_run(__pa(vcb), &(vcpu->arch.regs), &hargs);
 
 		/* Back from guest */
 		vcpu->mode = OUTSIDE_GUEST_MODE;
@@ -727,10 +730,13 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 			vcpu->arch.vcb.vpcr
 				= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
 
-			result = sw64_io_read(0, LONG_TIME);
-
 			/* synchronize the longtime of source and destination */
-			vcpu->arch.vcb.guest_longtime_offset = vcpu->arch.vcb.guest_longtime - result;
+			if (vcpu->arch.vcb.whami == 0) {
+				result = sw64_io_read(0, LONG_TIME);
+				vcpu->arch.vcb.guest_longtime_offset = vcpu->arch.vcb.guest_longtime - result;
+				longtime_offset = vcpu->arch.vcb.guest_longtime_offset;
+			} else
+				vcpu->arch.vcb.guest_longtime_offset = longtime_offset;
 
 			set_timer(vcpu, 200000000);
 			vcpu->arch.vcb.migration_mark = 0;
@@ -897,7 +903,7 @@ static int __init kvm_sw64_init(void)
 		return ret;
 
 	for (i = 0; i < NR_CPUS; i++)
-		sw64_kvm_last_vpn[i] = VPN_FIRST_VERSION;
+		last_vpn(i) = VPN_FIRST_VERSION;
 
 	ret = kvm_init(NULL, sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 	if (ret) {
