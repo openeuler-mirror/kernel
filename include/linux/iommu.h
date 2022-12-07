@@ -345,6 +345,11 @@ struct iommu_ops {
 
 	int (*def_domain_type)(struct device *dev);
 
+	KABI_DEPRECATE_FN(int, bind_guest_msi, struct iommu_domain *domain,
+			  dma_addr_t giova, phys_addr_t gpa, size_t size)
+	KABI_DEPRECATE_FN(void, unbind_guest_msi, struct iommu_domain *domain,
+			  dma_addr_t giova)
+
 	int (*dev_get_config)(struct device *dev, int type, void *data);
 	int (*dev_set_config)(struct device *dev, int type, void *data);
 
