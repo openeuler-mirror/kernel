@@ -82,6 +82,9 @@ static int hclgevf_get_mbx_resp(struct hclgevf_dev *hdev, u16 code0, u16 code1,
 		i++;
 	}
 
+	/* ensure additional_info will be seen after received_resp */
+	smp_rmb();
+
 	if (i >= HCLGEVF_MAX_TRY_TIMES) {
 		dev_err(&hdev->pdev->dev,
 			"VF could not get mbx(%u,%u) resp(=%d) from PF in %d tries\n",
@@ -239,6 +242,11 @@ void hclgevf_mbx_handler(struct hclgevf_dev *hdev)
 				resp->additional_info[i] = *temp;
 				temp++;
 			}
+
+			/* ensure additional_info will be seen before setting
+			 * received_resp
+			 */
+			smp_wmb();
 
 			if (req->match_id) {
 				/* If match_id is not zero, it means PF support
