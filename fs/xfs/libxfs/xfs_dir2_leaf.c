@@ -815,6 +815,18 @@ xfs_dir2_leaf_addname(
 		 */
 		else
 			xfs_dir3_leaf_log_bests(args, lbp, use_block, use_block);
+		/*
+		 * An abnormal corner case, bestfree count less than data
+		 * blocks, add a condition to avoid UAF or slab-out-of bound.
+		 */
+		if ((char *)(&bestsp[use_block]) >= (char *)ltp) {
+			xfs_trans_brelse(tp, lbp);
+			if (tp->t_flags & XFS_TRANS_DIRTY)
+				xfs_force_shutdown(tp->t_mountp,
+						SHUTDOWN_CORRUPT_INCORE);
+			return -EFSCORRUPTED;
+		}
+
 		hdr = dbp->b_addr;
 		bf = xfs_dir2_data_bestfree_p(dp->i_mount, hdr);
 		bestsp[use_block] = bf[0].length;
