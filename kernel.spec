@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2211.6.0
+%global hulkrelease 2212.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0179
+Release: %{hulkrelease}.0180
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,18 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 06 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.1.0.0180
+- !272 [openEuler-1.0-LTS] Add MWAIT Cx support for Zhaoxin CPUs.
+- Bluetooth: L2CAP: Fix u8 overflow
+- l2tp: Don't sleep and disable BH under writer-side sk_callback_lock
+- l2tp: Serialize access to sk_user_data with sk_callback_lock
+- !288 Add support for ConnectX6 Lx and ConnectX6Dx with openEuler inbox driver
+- net/mlx5: Update the list of the PCI supported devices
+- net/mlx5: Update the list of the PCI supported devices
+- drivers: net: slip: fix NPD bug in sl_tx_timeout()
+- staging: rtl8712: fix use after free bugs
+- Add MWAIT Cx support for Zhaoxin CPUs.
 
 * Tue Nov 29 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2211.6.0.0179
 - x86/tsc: use topology_max_packages() in tsc watchdog check
