@@ -241,6 +241,11 @@ xfs_iomap_write_direct(
 	if (error)
 		return error;
 
+	error = xfs_iext_count_may_overflow(ip, XFS_DATA_FORK,
+			XFS_IEXT_ADD_NOSPLIT_CNT);
+	if (error)
+		goto out_trans_cancel;
+
 	/*
 	 * From this point onwards we overwrite the imap pointer that the
 	 * caller gave to us.
