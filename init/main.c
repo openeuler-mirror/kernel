@@ -99,6 +99,7 @@
 #include <linux/mem_encrypt.h>
 #include <linux/kcsan.h>
 #include <linux/init_syscalls.h>
+#include <linux/randomize_kstack.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
