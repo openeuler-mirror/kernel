@@ -2191,9 +2191,9 @@ int arm_smmu_atc_inv_domain(struct arm_smmu_domain *smmu_domain, int ssid,
 }
 
 /* IO_PGTABLE API */
-static void __arm_smmu_tlb_inv_context(struct arm_smmu_domain *smmu_domain,
-				       int ext_asid)
+static void arm_smmu_tlb_inv_context(void *cookie)
 {
+	struct arm_smmu_domain *smmu_domain = cookie;
 	struct arm_smmu_device *smmu = smmu_domain->smmu;
 	struct arm_smmu_cmdq_ent cmd;
 
@@ -2204,12 +2204,7 @@ static void __arm_smmu_tlb_inv_context(struct arm_smmu_domain *smmu_domain,
 	 * insertion to guarantee those are observed before the TLBI. Do be
 	 * careful, 007.
 	 */
-	if (ext_asid >= 0) { /* guest stage 1 invalidation */
-		cmd.opcode	= CMDQ_OP_TLBI_NH_ASID;
-		cmd.tlbi.asid	= ext_asid;
-		cmd.tlbi.vmid	= smmu_domain->s2_cfg.vmid;
-		arm_smmu_cmdq_issue_cmd_with_sync(smmu, &cmd);
-	} else if (smmu_domain->stage == ARM_SMMU_DOMAIN_S1) {
+	if (smmu_domain->stage == ARM_SMMU_DOMAIN_S1) {
 		arm_smmu_tlb_inv_asid(smmu, smmu_domain->s1_cfg.cd.asid);
 	} else {
 		cmd.opcode	= CMDQ_OP_TLBI_S12_VMALL;
@@ -2222,13 +2217,6 @@ static void __arm_smmu_tlb_inv_context(struct arm_smmu_domain *smmu_domain,
 	else
 		arm_smmu_atc_inv_domain(smmu_domain, 0, 0, 0);
 
-}
-
-static void arm_smmu_tlb_inv_context(void *cookie)
-{
-	struct arm_smmu_domain *smmu_domain = cookie;
-
-	__arm_smmu_tlb_inv_context(smmu_domain, -1);
 }
 
 static void __arm_smmu_tlb_inv_range(struct arm_smmu_cmdq_ent *cmd,
@@ -2292,10 +2280,9 @@ static void __arm_smmu_tlb_inv_range(struct arm_smmu_cmdq_ent *cmd,
 	arm_smmu_preempt_enable(smmu);
 }
 
-static void
-arm_smmu_tlb_inv_range_domain(unsigned long iova, size_t size,
-			      size_t granule, bool leaf, int ext_asid,
-			      struct arm_smmu_domain *smmu_domain)
+static void arm_smmu_tlb_inv_range_domain(unsigned long iova, size_t size,
+					  size_t granule, bool leaf,
+					  struct arm_smmu_domain *smmu_domain)
 {
 	struct arm_smmu_cmdq_ent cmd = {
 		.tlbi = {
@@ -2303,16 +2290,7 @@ arm_smmu_tlb_inv_range_domain(unsigned long iova, size_t size,
 		},
 	};
 
-	if (ext_asid >= 0) {  /* guest stage 1 invalidation */
-		/*
-		 * At the moment the guest only uses NS-EL1, to be
-		 * revisited when nested virt gets supported with E2H
-		 * exposed.
-		 */
-		cmd.opcode	= CMDQ_OP_TLBI_NH_VA;
-		cmd.tlbi.asid	= ext_asid;
-		cmd.tlbi.vmid	= smmu_domain->s2_cfg.vmid;
-	} else if (smmu_domain->stage == ARM_SMMU_DOMAIN_S1) {
+	if (smmu_domain->stage == ARM_SMMU_DOMAIN_S1) {
 		cmd.opcode	= smmu_domain->smmu->features & ARM_SMMU_FEAT_E2H ?
 				  CMDQ_OP_TLBI_EL2_VA : CMDQ_OP_TLBI_NH_VA;
 		cmd.tlbi.asid	= smmu_domain->s1_cfg.cd.asid;
@@ -2320,7 +2298,6 @@ arm_smmu_tlb_inv_range_domain(unsigned long iova, size_t size,
 		cmd.opcode	= CMDQ_OP_TLBI_S2_IPA;
 		cmd.tlbi.vmid	= smmu_domain->s2_cfg.vmid;
 	}
-
 	__arm_smmu_tlb_inv_range(&cmd, iova, size, granule, smmu_domain);
 
 	/*
@@ -2363,7 +2340,7 @@ static void arm_smmu_tlb_inv_page_nosync(struct iommu_iotlb_gather *gather,
 static void arm_smmu_tlb_inv_walk(unsigned long iova, size_t size,
 				  size_t granule, void *cookie)
 {
-	arm_smmu_tlb_inv_range_domain(iova, size, granule, false, -1, cookie);
+	arm_smmu_tlb_inv_range_domain(iova, size, granule, false, cookie);
 }
 
 static const struct iommu_flush_ops arm_smmu_flush_ops = {
@@ -2999,9 +2976,8 @@ static void arm_smmu_iotlb_sync(struct iommu_domain *domain,
 {
 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
 
-	arm_smmu_tlb_inv_range_domain(gather->start,
-				      gather->end - gather->start + 1,
-				      gather->pgsize, true, -1, smmu_domain);
+	arm_smmu_tlb_inv_range_domain(gather->start, gather->end - gather->start + 1,
+			       gather->pgsize, true, smmu_domain);
 }
 
 static phys_addr_t
