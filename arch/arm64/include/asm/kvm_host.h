@@ -26,7 +26,6 @@
 #include <asm/kvm.h>
 #include <asm/kvm_asm.h>
 #include <asm/thread_info.h>
-#include <asm/hisi_cpu_model.h>
 
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
 
@@ -714,5 +713,7 @@ extern unsigned int twedel;
 #else
 #define use_twed() (false)
 #endif
+
+extern bool kvm_ncsnp_support;
 
 #endif /* __ARM64_KVM_HOST_H__ */
