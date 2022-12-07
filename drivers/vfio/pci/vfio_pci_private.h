@@ -77,13 +77,6 @@ struct vfio_pci_region {
 	u32				flags;
 };
 
-struct vfio_ext_irq {
-	u32				type;
-	u32				subtype;
-	u32				flags;
-	struct eventfd_ctx		*trigger;
-};
-
 struct vfio_pci_dummy_resource {
 	struct resource		resource;
 	int			index;
@@ -123,8 +116,6 @@ struct vfio_pci_device {
 	struct vfio_pci_irq_ctx	*ctx;
 	int			num_ctx;
 	int			irq_type;
-	struct vfio_ext_irq	*ext_irqs;
-	int			num_ext_irqs;
 	int			num_regions;
 	int			num_vendor_regions;
 	int			num_vendor_irqs;
@@ -172,11 +163,6 @@ struct vfio_pci_device {
 
 extern void vfio_pci_intx_mask(struct vfio_pci_device *vdev);
 extern void vfio_pci_intx_unmask(struct vfio_pci_device *vdev);
-extern int vfio_pci_register_irq(struct vfio_pci_device *vdev,
-				 unsigned int type, unsigned int subtype,
-				 u32 flags);
-extern int vfio_pci_get_ext_irq_index(struct vfio_pci_device *vdev,
-				      unsigned int type, unsigned int subtype);
 
 extern int vfio_pci_set_irqs_ioctl(struct vfio_pci_device *vdev,
 				   uint32_t flags, unsigned index,
