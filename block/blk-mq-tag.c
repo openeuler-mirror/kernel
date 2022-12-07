@@ -516,6 +516,13 @@ void blk_mq_queue_tag_busy_iter(struct request_queue *q, busy_iter_fn *fn,
 		void *priv)
 {
 	/*
+	 * For dm, it can run here after register_disk, but the queue has not
+	 * been initialized yet. Check QUEUE_FLAG_REGISTERED prevent null point
+	 * access.
+	 */
+	if (!blk_queue_registered(q))
+		return;
+	/*
 	 * __blk_mq_update_nr_hw_queues() updates nr_hw_queues and queue_hw_ctx
 	 * while the queue is frozen. So we can use q_usage_counter to avoid
 	 * racing with it.
