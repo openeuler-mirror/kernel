@@ -7,7 +7,6 @@
 #include <linux/bio.h>
 #include <linux/blkdev.h>
 #include <linux/scatterlist.h>
-#include <linux/blk-cgroup.h>
 
 #include <trace/events/block.h>
 

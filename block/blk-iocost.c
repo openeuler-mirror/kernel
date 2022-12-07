@@ -184,6 +184,7 @@
 #include "blk-rq-qos.h"
 #include "blk-stat.h"
 #include "blk-wbt.h"
+#include "blk-mq.h"
 
 #ifdef CONFIG_TRACEPOINTS
 
