@@ -3662,29 +3662,6 @@ static int arm_smmu_aux_get_pasid(struct iommu_domain *domain, struct device *de
 	return smmu_domain->ssid ?: -EINVAL;
 }
 
-#ifdef CONFIG_SMMU_BYPASS_DEV
-static int arm_smmu_device_domain_type(struct device *dev)
-{
-	int i;
-	struct pci_dev *pdev;
-
-	if (!dev_is_pci(dev))
-		return 0;
-
-	pdev = to_pci_dev(dev);
-	for (i = 0; i < smmu_bypass_devices_num; i++) {
-		if ((smmu_bypass_devices[i].vendor == pdev->vendor)	&&
-			(smmu_bypass_devices[i].device == pdev->device)) {
-			dev_info(dev, "device 0x%hx:0x%hx uses identity mapping.",
-				pdev->vendor, pdev->device);
-			return IOMMU_DOMAIN_IDENTITY;
-		}
-	}
-
-	return 0;
-}
-#endif
-
 static int arm_smmu_set_mpam(struct arm_smmu_device *smmu,
 		int sid, int ssid, int partid, int pmg, int s1mpam)
 {
@@ -3933,16 +3910,40 @@ static int arm_smmu_device_set_config(struct device *dev, int type, void *data)
 #define IS_HISI_PTT_DEVICE(pdev)	((pdev)->vendor == PCI_VENDOR_ID_HUAWEI && \
 					 (pdev)->device == 0xa12e)
 
+#ifdef CONFIG_SMMU_BYPASS_DEV
+static int arm_smmu_bypass_dev_domain_type(struct device *dev)
+{
+	int i;
+	struct pci_dev *pdev = to_pci_dev(dev);
+
+	for (i = 0; i < smmu_bypass_devices_num; i++) {
+		if ((smmu_bypass_devices[i].vendor == pdev->vendor) &&
+		    (smmu_bypass_devices[i].device == pdev->device)) {
+			dev_info(dev, "device 0x%hx:0x%hx uses identity mapping.",
+				pdev->vendor, pdev->device);
+			return IOMMU_DOMAIN_IDENTITY;
+		}
+	}
+
+	return 0;
+}
+#endif
+
 static int arm_smmu_def_domain_type(struct device *dev)
 {
+	int ret = 0;
+
 	if (dev_is_pci(dev)) {
 		struct pci_dev *pdev = to_pci_dev(dev);
 
 		if (IS_HISI_PTT_DEVICE(pdev))
 			return IOMMU_DOMAIN_IDENTITY;
+		#ifdef CONFIG_SMMU_BYPASS_DEV
+			ret = arm_smmu_bypass_dev_domain_type(dev);
+		#endif
 	}
 
-	return 0;
+	return ret;
 }
 
 static struct iommu_ops arm_smmu_ops = {
@@ -3979,9 +3980,6 @@ static struct iommu_ops arm_smmu_ops = {
 	.aux_attach_dev		= arm_smmu_aux_attach_dev,
 	.aux_detach_dev		= arm_smmu_aux_detach_dev,
 	.aux_get_pasid		= arm_smmu_aux_get_pasid,
-#ifdef CONFIG_SMMU_BYPASS_DEV
-	.def_domain_type	= arm_smmu_device_domain_type,
-#endif
 	.dev_get_config		= arm_smmu_device_get_config,
 	.dev_set_config		= arm_smmu_device_set_config,
 	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
@@ -4167,7 +4165,7 @@ static int arm_smmu_prepare_init_l2_strtab(struct device *dev, void *data)
 	struct pci_dev *pdev;
 	struct arm_smmu_device *smmu = (struct arm_smmu_device *)data;
 
-	if (!arm_smmu_device_domain_type(dev))
+	if (!arm_smmu_def_domain_type(dev))
 		return 0;
 
 	pdev = to_pci_dev(dev);
