@@ -9121,6 +9121,12 @@ static int tg_set_cfs_bandwidth(struct task_group *tg, u64 period, u64 quota,
 		return -EINVAL;
 
 	/*
+	 * Ensure burst equals to zero when quota is -1.
+	 */
+	if (quota == RUNTIME_INF && burst)
+		return -EINVAL;
+
+	/*
 	 * Prevent race between setting of cfs_rq->runtime_enabled and
 	 * unthrottle_offline_cfs_rqs().
 	 */
@@ -9179,8 +9185,10 @@ static int tg_set_cfs_quota(struct task_group *tg, long cfs_quota_us)
 
 	period = ktime_to_ns(tg->cfs_bandwidth.period);
 	burst = tg->cfs_bandwidth.burst;
-	if (cfs_quota_us < 0)
+	if (cfs_quota_us < 0) {
 		quota = RUNTIME_INF;
+		burst = 0;
+	}
 	else if ((u64)cfs_quota_us <= U64_MAX / NSEC_PER_USEC)
 		quota = (u64)cfs_quota_us * NSEC_PER_USEC;
 	else
