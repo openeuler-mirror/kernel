@@ -39,7 +39,8 @@ bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
 	for_each_netdev_in_bond_rcu(upper_dev, net_dev) {
 		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
 		if (hr_dev && hr_dev->bond_grp &&
-		    hr_dev->bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED) {
+		    (hr_dev->bond_grp->bond_state == HNS_ROCE_BOND_REGISTERING ||
+		    hr_dev->bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED)) {
 			rcu_read_unlock();
 			return true;
 		}
@@ -154,7 +155,6 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 	int ret;
 	int i;
 
-	hns_roce_bond_get_active_slave(bond_grp);
 	/* bond_grp will be kfree during uninit_instance of main_hr_dev.
 	 * Thus the main_hr_dev is switched before the uninit_instance
 	 * of the previous main_hr_dev.
@@ -165,7 +165,7 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 			hns_roce_bond_uninit_client(bond_grp, i);
 	}
 
-	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
+	bond_grp->bond_state = HNS_ROCE_BOND_REGISTERING;
 
 	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
@@ -183,17 +183,18 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 			}
 		}
 	}
-
 	if (!hr_dev)
 		return;
 
 	hns_roce_bond_uninit_client(bond_grp, main_func_idx);
+	hns_roce_bond_get_active_slave(bond_grp);
 	ret = hns_roce_cmd_bond(hr_dev, HNS_ROCE_SET_BOND);
 	if (ret) {
 		ibdev_err(&hr_dev->ib_dev, "failed to set RoCE bond!\n");
 		return;
 	}
 
+	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	ibdev_info(&hr_dev->ib_dev, "RoCE set bond finished!\n");
 }
 
@@ -239,7 +240,6 @@ static void hns_roce_slave_changestate(struct hns_roce_bond_group *bond_grp)
 	int ret;
 
 	hns_roce_bond_get_active_slave(bond_grp);
-	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 
 	ret = hns_roce_cmd_bond(bond_grp->main_hr_dev, HNS_ROCE_CHANGE_BOND);
 	if (ret) {
@@ -248,6 +248,7 @@ static void hns_roce_slave_changestate(struct hns_roce_bond_group *bond_grp)
 		return;
 	}
 
+	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	ibdev_info(&bond_grp->main_hr_dev->ib_dev,
 		   "RoCE slave changestate finished!\n");
 }
@@ -258,8 +259,6 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 	u8 inc_func_idx = 0;
 	int ret;
 
-	hns_roce_bond_get_active_slave(bond_grp);
-
 	while (inc_slave_map > 0) {
 		if (inc_slave_map & 1)
 			hns_roce_bond_uninit_client(bond_grp, inc_func_idx);
@@ -267,8 +266,7 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 		inc_func_idx++;
 	}
 
-	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
-
+	hns_roce_bond_get_active_slave(bond_grp);
 	ret = hns_roce_cmd_bond(bond_grp->main_hr_dev, HNS_ROCE_CHANGE_BOND);
 	if (ret) {
 		ibdev_err(&bond_grp->main_hr_dev->ib_dev,
@@ -276,6 +274,7 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 		return;
 	}
 
+	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	ibdev_info(&bond_grp->main_hr_dev->ib_dev,
 		   "RoCE slave increase finished!\n");
 }
@@ -290,8 +289,6 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 	int ret;
 	int i;
 
-	hns_roce_bond_get_active_slave(bond_grp);
-
 	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 
 	main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
@@ -300,6 +297,7 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 			net_dev = bond_grp->bond_func_info[i].net_dev;
 			if (!(dec_slave_map & (1 << i)) && net_dev) {
+				bond_grp->bond_state = HNS_ROCE_BOND_REGISTERING;
 				hr_dev = hns_roce_bond_init_client(bond_grp, i);
 				if (hr_dev) {
 					bond_grp->main_hr_dev = hr_dev;
@@ -321,6 +319,7 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 		dec_func_idx++;
 	}
 
+	hns_roce_bond_get_active_slave(bond_grp);
 	if (bond_grp->slave_map_diff & (1 << main_func_idx))
 		ret = hns_roce_cmd_bond(hr_dev, HNS_ROCE_SET_BOND);
 	else
@@ -332,6 +331,7 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 		return;
 	}
 
+	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	ibdev_info(&bond_grp->main_hr_dev->ib_dev,
 		   "RoCE slave decrease finished!\n");
 }
@@ -608,27 +608,20 @@ int hns_roce_bond_event(struct notifier_block *self,
 	if (event == NETDEV_CHANGELOWERSTATE && !upper_dev &&
 	    hr_dev != hns_roce_get_hrdev_by_netdev(net_dev))
 		return NOTIFY_DONE;
-
 	if (upper_dev) {
 		if (!hns_roce_is_slave(upper_dev, hr_dev->iboe.netdevs[0]))
 			return NOTIFY_DONE;
-
-		mutex_lock(&roce_bond_mutex);
 		if (!hr_dev->bond_grp) {
-			if (hns_roce_is_bond_grp_exist(upper_dev)) {
-				mutex_unlock(&roce_bond_mutex);
+			if (hns_roce_is_bond_grp_exist(upper_dev))
 				return NOTIFY_DONE;
-			}
 			hr_dev->bond_grp = hns_roce_alloc_bond_grp(hr_dev,
 								   upper_dev);
 			if (!hr_dev->bond_grp) {
 				ibdev_err(&hr_dev->ib_dev,
 					  "failed to alloc RoCE bond_grp!\n");
-				mutex_unlock(&roce_bond_mutex);
 				return NOTIFY_DONE;
 			}
 		}
-		mutex_unlock(&roce_bond_mutex);
 	}
 
 	changed = (event == NETDEV_CHANGEUPPER) ?
