@@ -856,7 +856,7 @@ void set_task_stack_end_magic(struct task_struct *tsk)
 static bool dup_resvd_task_struct(struct task_struct *dst,
 				  struct task_struct *orig, int node)
 {
-	dst->_resvd = kmalloc_node(sizeof(struct task_struct_resvd),
+	dst->_resvd = kzalloc_node(sizeof(struct task_struct_resvd),
 					  GFP_KERNEL, node);
 	if (!dst->_resvd)
 		return false;
