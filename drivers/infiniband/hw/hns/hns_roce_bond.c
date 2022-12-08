@@ -26,26 +26,42 @@ static struct hns_roce_dev *hns_roce_get_hrdev_by_netdev(struct net_device *net_
 	return hr_dev;
 }
 
-bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
+static struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev)
 {
+	struct hns_roce_bond_group *bond_grp = NULL;
 	struct net_device *upper_dev;
 	struct net_device *net_dev;
+
+	rcu_read_lock();
+
+	upper_dev = netdev_master_upper_dev_get_rcu(hr_dev->iboe.netdevs[0]);
+
+	for_each_netdev_in_bond_rcu(upper_dev, net_dev) {
+		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
+		if (hr_dev && hr_dev->bond_grp) {
+			bond_grp = hr_dev->bond_grp;
+			break;
+		}
+	}
+
+	rcu_read_unlock();
+
+	return bond_grp;
+}
+
+bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_bond_group *bond_grp;
 
 	if (!netif_is_lag_port(hr_dev->iboe.netdevs[0]))
 		return false;
 
-	rcu_read_lock();
-	upper_dev = netdev_master_upper_dev_get_rcu(hr_dev->iboe.netdevs[0]);
-	for_each_netdev_in_bond_rcu(upper_dev, net_dev) {
-		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
-		if (hr_dev && hr_dev->bond_grp &&
-		    (hr_dev->bond_grp->bond_state == HNS_ROCE_BOND_REGISTERING ||
-		    hr_dev->bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED)) {
-			rcu_read_unlock();
-			return true;
-		}
-	}
-	rcu_read_unlock();
+	bond_grp = hns_roce_get_bond_grp(hr_dev);
+
+	if (bond_grp &&
+	    (bond_grp->bond_state == HNS_ROCE_BOND_REGISTERING ||
+	    bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED))
+		return true;
 
 	return false;
 }
@@ -62,12 +78,15 @@ struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev)
 	if (!netif_is_lag_port(hr_dev->iboe.netdevs[0]))
 		return NULL;
 
-	if (!bond_grp)
-		return NULL;
+	if (!bond_grp) {
+		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		if (!bond_grp)
+			return NULL;
+	}
 
 	mutex_lock(&bond_grp->bond_mutex);
 
-	if (bond_grp->bond_state != HNS_ROCE_BOND_IS_BONDED)
+	if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED)
 		goto out;
 
 	if (bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
@@ -155,7 +174,8 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 	int ret;
 	int i;
 
-	/* bond_grp will be kfree during uninit_instance of main_hr_dev.
+	/*
+	 * bond_grp will be kfree during uninit_instance of main_hr_dev.
 	 * Thus the main_hr_dev is switched before the uninit_instance
 	 * of the previous main_hr_dev.
 	 */

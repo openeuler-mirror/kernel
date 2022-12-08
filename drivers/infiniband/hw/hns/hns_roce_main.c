@@ -47,6 +47,30 @@
 #include "hns_roce_dca.h"
 #include "hns_roce_debugfs.h"
 
+static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
+					      u8 port_num)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+	struct net_device *ndev;
+
+	if (port_num < 1 || port_num > hr_dev->caps.num_ports)
+		return NULL;
+
+	ndev = hr_dev->hw->get_bond_netdev(hr_dev);
+
+	rcu_read_lock();
+
+	if (!ndev)
+		ndev = hr_dev->iboe.netdevs[port_num - 1];
+
+	if (ndev)
+		dev_hold(ndev);
+
+	rcu_read_unlock();
+
+	return ndev;
+}
+
 static int hns_roce_set_mac(struct hns_roce_dev *hr_dev, u32 port,
 			    const u8 *addr)
 {
@@ -677,6 +701,7 @@ static const struct ib_device_ops hns_roce_dev_ops = {
 	.disassociate_ucontext = hns_roce_disassociate_ucontext,
 	.get_dma_mr = hns_roce_get_dma_mr,
 	.get_link_layer = hns_roce_get_link_layer,
+	.get_netdev = hns_roce_get_netdev,
 	.get_port_immutable = hns_roce_port_immutable,
 	.mmap = hns_roce_mmap,
 	.mmap_free = hns_roce_free_mmap,
