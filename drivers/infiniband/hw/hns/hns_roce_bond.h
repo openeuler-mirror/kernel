@@ -17,6 +17,16 @@ enum {
 	BOND_MODE_2_4,
 };
 
+enum bond_support_type {
+	BOND_NOT_SUPPORT,
+	/*
+	 * bond_grp already exists, but in the current
+	 * conditions it's no longer supported
+	 */
+	BOND_EXISTING_NOT_SUPPORT,
+	BOND_SUPPORT,
+};
+
 enum hns_roce_bond_state {
 	HNS_ROCE_BOND_NOT_BONDED,
 	HNS_ROCE_BOND_IS_BONDED,
