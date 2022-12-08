@@ -2280,6 +2280,8 @@ mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
 	case QOS_MBA_MAX_EVENT_ID:
 		range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
 		mpam_cfg->mbw_max = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
+		/* correct mbw_max if remainder is too large */
+		mpam_cfg->mbw_max += ((resctrl_cfg * range) % (MAX_MBA_BW - 1)) / range;
 		mpam_cfg->mbw_max =
 			(mpam_cfg->mbw_max > range) ? range : mpam_cfg->mbw_max;
 		mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
@@ -2287,6 +2289,8 @@ mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
 	case QOS_MBA_MIN_EVENT_ID:
 		range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
 		mpam_cfg->mbw_min = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
+		/* correct mbw_min if remainder is too large */
+		mpam_cfg->mbw_min += ((resctrl_cfg * range) % (MAX_MBA_BW - 1)) / range;
 		mpam_cfg->mbw_min =
 			(mpam_cfg->mbw_min > range) ? range : mpam_cfg->mbw_min;
 		mpam_set_feature(mpam_feat_mbw_min, &mpam_cfg->valid);
