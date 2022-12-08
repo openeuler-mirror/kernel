@@ -16,6 +16,8 @@ menuconfig X86_PLATFORM_DEVICES
 
 if X86_PLATFORM_DEVICES
 
+source "drivers/platform/x86/intel/ifs/Kconfig"
+
 config ACPI_WMI
 	tristate "WMI"
 	depends on ACPI
