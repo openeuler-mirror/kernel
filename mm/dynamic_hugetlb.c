@@ -799,7 +799,8 @@ static int free_hugepage_to_hugetlb(struct dhugetlb_pool *hpool)
 			p->mapping = NULL;
 		}
 		set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
-
+		/* compound_nr and mapping are union in page, reset it. */
+		set_compound_order(page, PUD_SHIFT - PAGE_SHIFT);
 		nid = page_to_nid(page);
 		SetHPageFreed(page);
 		list_move(&page->lru, &h->hugepage_freelists[nid]);
