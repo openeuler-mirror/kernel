@@ -575,8 +575,7 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 	return bond_grp;
 }
 
-static bool hns_roce_is_slave(struct net_device *bond,
-			      struct net_device *net_dev)
+static struct net_device *get_upper_dev_from_ndev(struct net_device *net_dev)
 {
 	struct net_device *upper_dev;
 
@@ -584,7 +583,14 @@ static bool hns_roce_is_slave(struct net_device *bond,
 	upper_dev = netdev_master_upper_dev_get_rcu(net_dev);
 	rcu_read_unlock();
 
-	return bond == upper_dev;
+	return upper_dev;
+}
+
+static bool hns_roce_is_slave(struct net_device *upper_dev,
+			      struct hns_roce_dev *hr_dev)
+{
+	return (hr_dev->bond_grp && upper_dev == hr_dev->bond_grp->upper_dev) ||
+		upper_dev == get_upper_dev_from_ndev(hr_dev->iboe.netdevs[0]);
 }
 
 static bool hns_roce_is_bond_grp_exist(struct net_device *upper_dev)
@@ -607,17 +613,18 @@ static bool hns_roce_is_bond_grp_exist(struct net_device *upper_dev)
 
 static enum bond_support_type
 	check_bond_support(struct hns_roce_dev *hr_dev,
+			   struct net_device **upper_dev,
 			   struct netdev_notifier_changeupper_info *info)
 {
 	struct netdev_lag_upper_info *bond_upper_info = NULL;
-	struct net_device *upper_dev = info->upper_dev;
 	bool bond_grp_exist = false;
 	struct net_device *net_dev;
 	bool support = true;
 	u8 slave_num = 0;
 	int bus_num = -1;
 
-	if (hr_dev->bond_grp || hns_roce_is_bond_grp_exist(upper_dev))
+	*upper_dev = info->upper_dev;
+	if (hr_dev->bond_grp || hns_roce_is_bond_grp_exist(*upper_dev))
 		bond_grp_exist = true;
 
 	if (!info->linking && !bond_grp_exist)
@@ -631,7 +638,7 @@ static enum bond_support_type
 		return BOND_NOT_SUPPORT;
 
 	rcu_read_lock();
-	for_each_netdev_in_bond_rcu(upper_dev, net_dev) {
+	for_each_netdev_in_bond_rcu(*upper_dev, net_dev) {
 		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
 		if (hr_dev) {
 			slave_num++;
@@ -648,7 +655,6 @@ static enum bond_support_type
 
 	if (slave_num <= 1)
 		support = false;
-
 	if (support)
 		return BOND_SUPPORT;
 
@@ -661,7 +667,6 @@ int hns_roce_bond_event(struct notifier_block *self,
 	struct net_device *net_dev = netdev_notifier_info_to_dev(ptr);
 	struct hns_roce_dev *hr_dev =
 		container_of(self, struct hns_roce_dev, bond_nb);
-	struct netdev_notifier_changeupper_info *info;
 	enum bond_support_type support = BOND_SUPPORT;
 	struct net_device *upper_dev;
 	bool changed;
@@ -670,28 +675,22 @@ int hns_roce_bond_event(struct notifier_block *self,
 		return NOTIFY_DONE;
 
 	if (event == NETDEV_CHANGEUPPER) {
-		info = ptr;
-		support = check_bond_support(hr_dev, info);
+		support = check_bond_support(hr_dev, &upper_dev, ptr);
 		if (support == BOND_NOT_SUPPORT)
 			return NOTIFY_DONE;
-		upper_dev = info->upper_dev;
 	} else {
-		rcu_read_lock();
-		upper_dev = netdev_master_upper_dev_get_rcu(net_dev);
-		rcu_read_unlock();
-		if (!upper_dev &&
-		    hr_dev != hns_roce_get_hrdev_by_netdev(net_dev))
-			return NOTIFY_DONE;
+		upper_dev = get_upper_dev_from_ndev(net_dev);
 	}
 
-	if (event == NETDEV_CHANGEUPPER) {
-		if (!hns_roce_is_slave(upper_dev, hr_dev->iboe.netdevs[0]))
-			return NOTIFY_DONE;
+	if (upper_dev && !hns_roce_is_slave(upper_dev, hr_dev))
+		return NOTIFY_DONE;
+	else if (!upper_dev && hr_dev != hns_roce_get_hrdev_by_netdev(net_dev))
+		return NOTIFY_DONE;
 
+	if (event == NETDEV_CHANGEUPPER) {
 		if (!hr_dev->bond_grp) {
 			if (hns_roce_is_bond_grp_exist(upper_dev))
 				return NOTIFY_DONE;
-
 			hr_dev->bond_grp = hns_roce_alloc_bond_grp(hr_dev,
 								   upper_dev);
 			if (!hr_dev->bond_grp) {
@@ -700,16 +699,15 @@ int hns_roce_bond_event(struct notifier_block *self,
 				return NOTIFY_DONE;
 			}
 		}
-
 		if (support == BOND_EXISTING_NOT_SUPPORT) {
 			hr_dev->bond_grp->bond_ready = false;
 			hns_roce_queue_bond_work(hr_dev, HZ);
 			return NOTIFY_DONE;
 		}
+		changed = hns_roce_bond_upper_event(hr_dev, ptr);
+	} else {
+		changed = hns_roce_bond_lowerstate_event(hr_dev, ptr);
 	}
-	changed = (event == NETDEV_CHANGEUPPER) ?
-		  hns_roce_bond_upper_event(hr_dev, ptr) :
-		  hns_roce_bond_lowerstate_event(hr_dev, ptr);
 	if (changed)
 		hns_roce_queue_bond_work(hr_dev, HZ);
 
