@@ -35,4 +35,8 @@ extern void efi_init(void);
 
 #define efi_call_early(f, ...) sys_table_arg->boottime->f(__VA_ARGS__)
 
+extern unsigned long entSuspend;
+
+#define SLEEP_ENTRY_GUID	EFI_GUID(0x59cb76bb, 0x9c3a, 0x4c8f, 0xbd, 0x5c, 0xc0, 0x0f, 0x20, 0x61, 0x18, 0x4b)
+
 #endif /* _ASM_SW64_EFI_H */

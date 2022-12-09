@@ -28,6 +28,7 @@
 #include <asm/stacktrace.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
+#include <asm/efi.h>
 
 #include "proto.h"
 
@@ -1458,4 +1459,5 @@ trap_init(void)
 	wrent(entIF, 3);
 	wrent(entUna, 4);
 	wrent(entSys, 5);
+	wrent((void *)entSuspend, 6);
 }
