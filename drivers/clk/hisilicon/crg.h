@@ -13,7 +13,7 @@ struct hisi_reset_controller;
 
 struct hisi_crg_funcs {
 	struct hisi_clock_data*	(*register_clks)(struct platform_device *pdev);
-	void (*unregister_clks)(struct platform_device *pdev);
+	void (*unregister_clks)(const struct platform_device *pdev);
 };
 
 struct hisi_crg_dev {

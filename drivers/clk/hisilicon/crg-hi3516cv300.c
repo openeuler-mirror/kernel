@@ -170,7 +170,7 @@ unregister_fixed_rate:
 	return ERR_PTR(ret);
 }
 
-static void hi3516cv300_clk_unregister(struct platform_device *pdev)
+static void hi3516cv300_clk_unregister(const struct platform_device *pdev)
 {
 	struct hisi_crg_dev *crg = platform_get_drvdata(pdev);
 
@@ -229,7 +229,7 @@ unregister_mux:
 	return ERR_PTR(ret);
 }
 
-static void hi3516cv300_sysctrl_clk_unregister(struct platform_device *pdev)
+static void hi3516cv300_sysctrl_clk_unregister(const struct platform_device *pdev)
 {
 	struct hisi_crg_dev *crg = platform_get_drvdata(pdev);
 

@@ -82,6 +82,10 @@ struct hisi_clock_data *hisi_clk_init(struct device_node *np,
 	of_clk_add_provider(np, of_clk_src_onecell_get, &clk_data->clk_data);
 	return clk_data;
 err_data:
+	if (base) {
+		iounmap(base);
+		base = NULL;
+	}
 	kfree(clk_data);
 err:
 	return NULL;

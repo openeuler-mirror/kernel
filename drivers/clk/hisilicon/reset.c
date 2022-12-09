@@ -87,6 +87,36 @@ static const struct reset_control_ops hisi_reset_ops = {
 	.deassert	= hisi_reset_deassert,
 };
 
+#ifdef CONFIG_ARCH_HISI_BVT
+int __init hibvt_reset_init(struct device_node *np,
+		int nr_rsts)
+{
+	struct hisi_reset_controller *rstc;
+
+	rstc = kzalloc(sizeof(*rstc), GFP_KERNEL);
+	if (!rstc)
+		return -ENOMEM;
+
+	rstc->membase = of_iomap(np, 0);
+	if (!rstc->membase) {
+		kfree(rstc);
+		return -EINVAL;
+	}
+
+	spin_lock_init(&rstc->lock);
+
+	rstc->rcdev.owner = THIS_MODULE;
+	rstc->rcdev.nr_resets = nr_rsts;
+	rstc->rcdev.ops = &hisi_reset_ops;
+	rstc->rcdev.of_node = np;
+	rstc->rcdev.of_reset_n_cells = 2;
+	rstc->rcdev.of_xlate = hisi_reset_of_xlate;
+
+	return reset_controller_register(&rstc->rcdev);
+}
+EXPORT_SYMBOL_GPL(hibvt_reset_init);
+#endif
+
 struct hisi_reset_controller *hisi_reset_init(struct platform_device *pdev)
 {
 	struct hisi_reset_controller *rstc;
