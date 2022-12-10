@@ -7,6 +7,7 @@
 #include <asm/asmmacro.h>
 #include <asm/export.h>
 #include <asm/regdef.h>
+#include <asm/asm-extable.h>
 
 /*
  * long __strncpy_from_user(char *to, const char *from, long len)
@@ -39,10 +40,7 @@ SYM_FUNC_START(__strncpy_from_user)
 3:	li.w	a0, -EFAULT
 	jr	ra
 	.previous
-
-	.section __ex_table, "a"
-	PTR	1b, 3b
-	.previous
+	_asm_extable 1b, 3b
 SYM_FUNC_END(__strncpy_from_user)
 
 EXPORT_SYMBOL(__strncpy_from_user)
