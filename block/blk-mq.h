@@ -37,6 +37,19 @@ struct blk_mq_ctx {
 	struct kobject		kobj;
 } ____cacheline_aligned_in_smp;
 
+struct request_wrapper {
+	/* Time that I/O was counted in part_get_stat_info(). */
+	u64 stat_time_ns;
+};
+
+static inline struct request_wrapper *request_to_wrapper(struct request *rq)
+{
+	unsigned long addr = (unsigned long)rq;
+
+	addr += sizeof(*rq) + rq->q->tag_set->cmd_size;
+	return (struct request_wrapper *)addr;
+}
+
 void blk_mq_exit_queue(struct request_queue *q);
 int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr);
 void blk_mq_wake_waiters(struct request_queue *q);
