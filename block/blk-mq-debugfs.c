@@ -360,8 +360,9 @@ int __blk_mq_debugfs_rq_show(struct seq_file *m, struct request *rq)
 	blk_flags_show(m, rq->cmd_flags & ~REQ_OP_MASK, cmd_flag_name,
 		       ARRAY_SIZE(cmd_flag_name));
 	seq_puts(m, ", .rq_flags=");
-	blk_flags_show(m, (__force unsigned int)rq->rq_flags, rqf_name,
-		       ARRAY_SIZE(rqf_name));
+	blk_flags_show(m,
+		       (__force unsigned int)(rq->rq_flags & ~RQF_FROM_BLOCK),
+		       rqf_name, ARRAY_SIZE(rqf_name));
 	seq_printf(m, ", .state=%s", blk_mq_rq_state_name(blk_mq_rq_state(rq)));
 	seq_printf(m, ", .tag=%d, .internal_tag=%d", rq->tag,
 		   rq->internal_tag);
