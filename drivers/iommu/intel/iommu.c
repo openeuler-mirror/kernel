@@ -4995,8 +4995,10 @@ static int __init probe_acpi_namespace_devices(void)
 				}
 
 				iommu = device_to_iommu(dev, &bus, &devfn);
-				if (!iommu)
-					return -ENODEV;
+				if (!iommu) {
+					ret = -ENODEV;
+					goto unlock;
+				}
 				info = dmar_search_domain_by_dev_info(iommu->segment, bus, devfn);
 				if (!info) {
 					pn->dev->bus->iommu_ops = &intel_iommu_ops;
@@ -5011,8 +5013,10 @@ static int __init probe_acpi_namespace_devices(void)
 			}
 			if (!pn_dev) {
 				iommu = device_to_iommu(dev, &bus, &devfn);
-				if (!iommu)
-					return -ENODEV;
+				if (!iommu) {
+					ret = -ENODEV;
+					goto unlock;
+				}
 				info = dmar_search_domain_by_dev_info(iommu->segment, bus, devfn);
 				if (!info) {
 					dev->bus->iommu_ops = &intel_iommu_ops;
