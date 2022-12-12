@@ -216,7 +216,6 @@ static void __init set_pcie_wakeup(void)
 
 void __init platform_init(void)
 {
-	loongson_efi_init();
 #ifdef CONFIG_ACPI_TABLE_UPGRADE
 	acpi_table_upgrade();
 #endif
@@ -378,6 +377,7 @@ void __init setup_arch(char **cmdline_p)
 	legacy_boot_init(fw_arg0, fw_arg1, fw_arg2);
 
 	init_environ();
+	loongson_efi_init();
 	memblock_init();
 	pagetable_init();
 	parse_early_param();

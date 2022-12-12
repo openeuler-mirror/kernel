@@ -525,7 +525,7 @@ unsigned long legacy_boot_init(unsigned long argc, unsigned long cmdptr, unsigne
 {
 	int ret;
 
-	if (!bpi)
+	if (!bpi || (argc < 2))
 		return -1;
 	efi_bp = (struct boot_params *)bpi;
 	bpi_version = get_bpi_version(&efi_bp->signature);
