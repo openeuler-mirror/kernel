@@ -115,9 +115,8 @@ static bool blk_mq_check_inflight_with_stat(struct blk_mq_hw_ctx *hctx,
 		struct request_wrapper *rq_wrapper;
 
 		mi->inflight[rq_data_dir(rq)]++;
-		if (!rq->part)
+		if (!rq->part || !(rq->rq_flags & RQF_FROM_BLOCK))
 			return true;
-
 		/*
 		 * If the request is started after 'part->stat_time' is set,
 		 * don't update 'nsces' here.
@@ -375,7 +374,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->q = data->q;
 	rq->mq_ctx = data->ctx;
 	rq->mq_hctx = data->hctx;
-	rq->rq_flags = 0;
+	rq->rq_flags = RQF_FROM_BLOCK;
 	rq->cmd_flags = data->cmd_flags;
 	if (data->flags & BLK_MQ_REQ_PM)
 		rq->rq_flags |= RQF_PM;
