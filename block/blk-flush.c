@@ -333,7 +333,7 @@ static void blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq,
 
 	flush_rq->cmd_flags = REQ_OP_FLUSH | REQ_PREFLUSH;
 	flush_rq->cmd_flags |= (flags & REQ_DRV) | (flags & REQ_FAILFAST_MASK);
-	flush_rq->rq_flags |= RQF_FLUSH_SEQ;
+	flush_rq->rq_flags |= RQF_FLUSH_SEQ | RQF_FROM_BLOCK;
 	flush_rq->rq_disk = first_rq->rq_disk;
 	flush_rq->end_io = flush_end_io;
 	/*
