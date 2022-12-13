@@ -366,10 +366,7 @@ void handle_ipi(struct pt_regs *regs)
 
 			case IPI_CPU_STOP:
 				local_irq_disable();
-				pr_crit("other core panic, now halt...\n");
-				while (1)
-					asm("nop");
-				halt();
+				asm("halt");
 
 			default:
 				pr_crit("Unknown IPI on CPU %d: %lu\n", this_cpu, which);

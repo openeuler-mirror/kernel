@@ -254,6 +254,13 @@ config PLATFORM_XUELANG
 
 endchoice
 
+config LEGACY_XUELANG
+        bool "Xuelang Reset Interface"
+        depends on SW64_CHIP3
+        help
+          This enables the legacy reset driver for SW64 chip3 CRBs. This interface
+          as a temporary solution will be deprecated in the future.
+
 config MIGHT_HAVE_PC_SERIO
 	bool "Use PC serio device i8042"
 	select ARCH_MIGHT_HAVE_PC_SERIO
