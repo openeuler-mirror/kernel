@@ -1967,7 +1967,7 @@ static void virtcons_remove(struct virtio_device *vdev)
 		flush_work(&portdev->config_work);
 
 	/* Disable interrupts for vqs */
-	vdev->config->reset(vdev);
+	virtio_reset_device(vdev);
 	/* Finish up work that's lined up */
 	if (use_multiport(portdev))
 		cancel_work_sync(&portdev->control_work);
@@ -2149,7 +2149,7 @@ static int virtcons_freeze(struct virtio_device *vdev)
 
 	portdev = vdev->priv;
 
-	vdev->config->reset(vdev);
+	virtio_reset_device(vdev);
 
 	if (use_multiport(portdev))
 		virtqueue_disable_cb(portdev->c_ivq);

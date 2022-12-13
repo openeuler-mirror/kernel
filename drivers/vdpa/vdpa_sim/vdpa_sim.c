@@ -52,6 +52,17 @@ static struct vdpasim *dev_to_sim(struct device *dev)
 	return vdpa_to_sim(vdpa);
 }
 
+static void vdpasim_vq_notify(struct vringh *vring)
+{
+	struct vdpasim_virtqueue *vq =
+		container_of(vring, struct vdpasim_virtqueue, vring);
+
+	if (!vq->cb)
+		return;
+
+	vq->cb(vq->private);
+}
+
 static void vdpasim_queue_ready(struct vdpasim *vdpasim, unsigned int idx)
 {
 	struct vdpasim_virtqueue *vq = &vdpasim->vqs[idx];
@@ -63,6 +74,8 @@ static void vdpasim_queue_ready(struct vdpasim *vdpasim, unsigned int idx)
 			  (uintptr_t)vq->driver_addr,
 			  (struct vring_used *)
 			  (uintptr_t)vq->device_addr);
+
+	vq->vring.notify = vdpasim_vq_notify;
 }
 
 static void vdpasim_vq_reset(struct vdpasim *vdpasim,
@@ -76,6 +89,8 @@ static void vdpasim_vq_reset(struct vdpasim *vdpasim,
 	vq->private = NULL;
 	vringh_init_iotlb(&vq->vring, vdpasim->dev_attr.supported_features,
 			  VDPASIM_QUEUE_MAX, false, NULL, NULL, NULL);
+
+	vq->vring.notify = NULL;
 }
 
 static void vdpasim_do_reset(struct vdpasim *vdpasim)
@@ -221,8 +236,8 @@ struct vdpasim *vdpasim_create(struct vdpasim_dev_attr *dev_attr)
 	else
 		ops = &vdpasim_net_config_ops;
 
-	vdpasim = vdpa_alloc_device(struct vdpasim, vdpa, NULL, ops,
-				    dev_attr->name);
+	vdpasim = vdpa_alloc_device(struct vdpasim, vdpa, NULL, ops, 1,
+				    1, dev_attr->name, false);
 	if (!vdpasim)
 		goto err_alloc;
 
@@ -363,14 +378,19 @@ static u32 vdpasim_get_vq_align(struct vdpa_device *vdpa)
 	return VDPASIM_QUEUE_ALIGN;
 }
 
-static u64 vdpasim_get_features(struct vdpa_device *vdpa)
+static u32 vdpasim_get_vq_group(struct vdpa_device *vdpa, u16 idx)
+{
+	return 0;
+}
+
+static u64 vdpasim_get_device_features(struct vdpa_device *vdpa)
 {
 	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
 
 	return vdpasim->dev_attr.supported_features;
 }
 
-static int vdpasim_set_features(struct vdpa_device *vdpa, u64 features)
+static int vdpasim_set_driver_features(struct vdpa_device *vdpa, u64 features)
 {
 	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
 
@@ -381,6 +401,13 @@ static int vdpasim_set_features(struct vdpa_device *vdpa, u64 features)
 	vdpasim->features = features & vdpasim->dev_attr.supported_features;
 
 	return 0;
+}
+
+static u64 vdpasim_get_driver_features(struct vdpa_device *vdpa)
+{
+	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
+
+	return vdpasim->features;
 }
 
 static void vdpasim_set_config_cb(struct vdpa_device *vdpa,
@@ -491,7 +518,7 @@ static struct vdpa_iova_range vdpasim_get_iova_range(struct vdpa_device *vdpa)
 	return range;
 }
 
-static int vdpasim_set_map(struct vdpa_device *vdpa,
+static int vdpasim_set_map(struct vdpa_device *vdpa, unsigned int asid,
 			   struct vhost_iotlb *iotlb)
 {
 	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
@@ -518,21 +545,23 @@ err:
 	return ret;
 }
 
-static int vdpasim_dma_map(struct vdpa_device *vdpa, u64 iova, u64 size,
-			   u64 pa, u32 perm)
+static int vdpasim_dma_map(struct vdpa_device *vdpa, unsigned int asid,
+			   u64 iova, u64 size,
+			   u64 pa, u32 perm, void *opaque)
 {
 	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
 	int ret;
 
 	spin_lock(&vdpasim->iommu_lock);
-	ret = vhost_iotlb_add_range(vdpasim->iommu, iova, iova + size - 1, pa,
-				    perm);
+	ret = vhost_iotlb_add_range_ctx(vdpasim->iommu, iova, iova + size - 1,
+					pa, perm, opaque);
 	spin_unlock(&vdpasim->iommu_lock);
 
 	return ret;
 }
 
-static int vdpasim_dma_unmap(struct vdpa_device *vdpa, u64 iova, u64 size)
+static int vdpasim_dma_unmap(struct vdpa_device *vdpa, unsigned int asid,
+			     u64 iova, u64 size)
 {
 	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
 
@@ -565,8 +594,10 @@ static const struct vdpa_config_ops vdpasim_net_config_ops = {
 	.set_vq_state           = vdpasim_set_vq_state,
 	.get_vq_state           = vdpasim_get_vq_state,
 	.get_vq_align           = vdpasim_get_vq_align,
-	.get_features           = vdpasim_get_features,
-	.set_features           = vdpasim_set_features,
+	.get_vq_group           = vdpasim_get_vq_group,
+	.get_device_features    = vdpasim_get_device_features,
+	.set_driver_features    = vdpasim_set_driver_features,
+	.get_driver_features    = vdpasim_get_driver_features,
 	.set_config_cb          = vdpasim_set_config_cb,
 	.get_vq_num_max         = vdpasim_get_vq_num_max,
 	.get_device_id          = vdpasim_get_device_id,
@@ -594,8 +625,10 @@ static const struct vdpa_config_ops vdpasim_net_batch_config_ops = {
 	.set_vq_state           = vdpasim_set_vq_state,
 	.get_vq_state           = vdpasim_get_vq_state,
 	.get_vq_align           = vdpasim_get_vq_align,
-	.get_features           = vdpasim_get_features,
-	.set_features           = vdpasim_set_features,
+	.get_vq_group           = vdpasim_get_vq_group,
+	.get_device_features    = vdpasim_get_device_features,
+	.set_driver_features    = vdpasim_set_driver_features,
+	.get_driver_features    = vdpasim_get_driver_features,
 	.set_config_cb          = vdpasim_set_config_cb,
 	.get_vq_num_max         = vdpasim_get_vq_num_max,
 	.get_device_id          = vdpasim_get_device_id,

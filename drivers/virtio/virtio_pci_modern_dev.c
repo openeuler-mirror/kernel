@@ -3,6 +3,7 @@
 #include <linux/virtio_pci_modern.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/delay.h>
 
 /*
  * vp_modern_map_capability - map a part of virtio pci capability
@@ -17,11 +18,10 @@
  *
  * Returns the io address of for the part of the capability
  */
-void __iomem *vp_modern_map_capability(struct virtio_pci_modern_device *mdev, int off,
-				       size_t minlen,
-				       u32 align,
-				       u32 start, u32 size,
-				       size_t *len, resource_size_t *pa)
+static void __iomem*
+vp_modern_map_capability(struct virtio_pci_modern_device *mdev, int off,
+			 size_t minlen, u32 align, u32 start, u32 size,
+			 size_t *len, resource_size_t *pa)
 {
 	struct pci_dev *dev = mdev->pci_dev;
 	u8 bar;
@@ -95,7 +95,6 @@ void __iomem *vp_modern_map_capability(struct virtio_pci_modern_device *mdev, in
 
 	return p;
 }
-EXPORT_SYMBOL_GPL(vp_modern_map_capability);
 
 /**
  * virtio_pci_find_capability - walk capabilities to find device info.
@@ -467,6 +466,44 @@ void vp_modern_set_status(struct virtio_pci_modern_device *mdev,
 EXPORT_SYMBOL_GPL(vp_modern_set_status);
 
 /*
+ * vp_modern_get_queue_reset - get the queue reset status
+ * @mdev: the modern virtio-pci device
+ * @index: queue index
+ */
+int vp_modern_get_queue_reset(struct virtio_pci_modern_device *mdev, u16 index)
+{
+	struct virtio_pci_modern_common_cfg __iomem *cfg;
+
+	cfg = (struct virtio_pci_modern_common_cfg __iomem *)mdev->common;
+
+	vp_iowrite16(index, &cfg->cfg.queue_select);
+	return vp_ioread16(&cfg->queue_reset);
+}
+EXPORT_SYMBOL_GPL(vp_modern_get_queue_reset);
+
+/*
+ * vp_modern_set_queue_reset - reset the queue
+ * @mdev: the modern virtio-pci device
+ * @index: queue index
+ */
+void vp_modern_set_queue_reset(struct virtio_pci_modern_device *mdev, u16 index)
+{
+	struct virtio_pci_modern_common_cfg __iomem *cfg;
+
+	cfg = (struct virtio_pci_modern_common_cfg __iomem *)mdev->common;
+
+	vp_iowrite16(index, &cfg->cfg.queue_select);
+	vp_iowrite16(1, &cfg->queue_reset);
+
+	while (vp_ioread16(&cfg->queue_reset))
+		msleep(1);
+
+	while (vp_ioread16(&cfg->cfg.queue_enable))
+		msleep(1);
+}
+EXPORT_SYMBOL_GPL(vp_modern_set_queue_reset);
+
+/*
  * vp_modern_queue_vector - set the MSIX vector for a specific virtqueue
  * @mdev: the modern virtio-pci device
  * @index: queue index
@@ -612,14 +649,13 @@ EXPORT_SYMBOL_GPL(vp_modern_get_num_queues);
  *
  * Returns the notification offset for a virtqueue
  */
-u16 vp_modern_get_queue_notify_off(struct virtio_pci_modern_device *mdev,
-				   u16 index)
+static u16 vp_modern_get_queue_notify_off(struct virtio_pci_modern_device *mdev,
+					  u16 index)
 {
 	vp_iowrite16(index, &mdev->common->queue_select);
 
 	return vp_ioread16(&mdev->common->queue_notify_off);
 }
-EXPORT_SYMBOL_GPL(vp_modern_get_queue_notify_off);
 
 /*
  * vp_modern_map_vq_notify - map notification area for a

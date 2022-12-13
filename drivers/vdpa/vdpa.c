@@ -14,11 +14,20 @@
 #include <uapi/linux/vdpa.h>
 #include <net/genetlink.h>
 #include <linux/mod_devicetable.h>
+#include <linux/virtio_ids.h>
 
 static LIST_HEAD(mdev_head);
 /* A global mutex that protects vdpa management device and device level operations. */
-static DEFINE_MUTEX(vdpa_dev_mutex);
+static DECLARE_RWSEM(vdpa_dev_lock);
 static DEFINE_IDA(vdpa_index_ida);
+
+void vdpa_set_status(struct vdpa_device *vdev, u8 status)
+{
+	down_write(&vdev->cf_lock);
+	vdev->config->set_status(vdev, status);
+	up_write(&vdev->cf_lock);
+}
+EXPORT_SYMBOL(vdpa_set_status);
 
 static struct genl_family vdpa_nl_family;
 
@@ -26,7 +35,15 @@ static int vdpa_dev_probe(struct device *d)
 {
 	struct vdpa_device *vdev = dev_to_vdpa(d);
 	struct vdpa_driver *drv = drv_to_vdpa(vdev->dev.driver);
+	const struct vdpa_config_ops *ops = vdev->config;
+	u32 max_num, min_num = 1;
 	int ret = 0;
+
+	max_num = ops->get_vq_num_max(vdev);
+	if (ops->get_vq_num_min)
+		min_num = ops->get_vq_num_min(vdev);
+	if (max_num < min_num)
+		return -EINVAL;
 
 	if (drv && drv->probe)
 		ret = drv->probe(vdev);
@@ -47,14 +64,14 @@ static int vdpa_dev_remove(struct device *d)
 
 static int vdpa_dev_match(struct device *dev, struct device_driver *drv)
 {
-	   struct vdpa_device *vdev = dev_to_vdpa(dev);
+	struct vdpa_device *vdev = dev_to_vdpa(dev);
 
-	   /* Check override first, and if set, only use the named driver */
-	   if (vdev->driver_override)
-			   return strcmp(vdev->driver_override, drv->name) == 0;
+	/* Check override first, and if set, only use the named driver */
+	if (vdev->driver_override)
+		return strcmp(vdev->driver_override, drv->name) == 0;
 
-	   /* Currently devices must be supported by all vDPA bus drivers */
-	   return 1;
+	/* Currently devices must be supported by all vDPA bus drivers */
+	return 1;
 }
 
 static ssize_t driver_override_store(struct device *dev,
@@ -95,30 +112,30 @@ static ssize_t driver_override_store(struct device *dev,
 static ssize_t driver_override_show(struct device *dev,
 								   struct device_attribute *attr, char *buf)
 {
-	   struct vdpa_device *vdev = dev_to_vdpa(dev);
-	   ssize_t len;
+	struct vdpa_device *vdev = dev_to_vdpa(dev);
+	ssize_t len;
 
-	   device_lock(dev);
-	   len = snprintf(buf, PAGE_SIZE, "%s\n", vdev->driver_override);
-	   device_unlock(dev);
+	device_lock(dev);
+	len = snprintf(buf, PAGE_SIZE, "%s\n", vdev->driver_override);
+	device_unlock(dev);
 
-	   return len;
+	return len;
 }
 static DEVICE_ATTR_RW(driver_override);
 
 static struct attribute *vdpa_dev_attrs[] = {
-	   &dev_attr_driver_override.attr,
-	   NULL,
+	&dev_attr_driver_override.attr,
+	NULL,
 };
 
 static const struct attribute_group vdpa_dev_group = {
-	   .attrs  = vdpa_dev_attrs,
+	.attrs  = vdpa_dev_attrs,
 };
 __ATTRIBUTE_GROUPS(vdpa_dev);
 
 
 static struct bus_type vdpa_bus = {
-	.name  = "vdpa",
+	.name = "vdpa",
 	.dev_groups = vdpa_dev_groups,
 	.match = vdpa_dev_match,
 	.probe = vdpa_dev_probe,
@@ -144,18 +161,23 @@ static void vdpa_release_dev(struct device *d)
  * initialized but before registered.
  * @parent: the parent device
  * @config: the bus operations that is supported by this device
+ * @ngroups: number of groups supported by this device
+ * @nas: number of address spaces supported by this device
  * @size: size of the parent structure that contains private data
  * @name: name of the vdpa device; optional.
+ * @use_va: indicate whether virtual address must be used by this device
  *
  * Driver should use vdpa_alloc_device() wrapper macro instead of
  * using this directly.
  *
- * Returns an error when parent/config/dma_dev is not set or fail to get
- * ida.
+ * Return: Returns an error when parent/config/dma_dev is not set or fail to get
+ *	   ida.
  */
 struct vdpa_device *__vdpa_alloc_device(struct device *parent,
 					const struct vdpa_config_ops *config,
-					size_t size, const char *name)
+					unsigned int ngroups, unsigned int nas,
+					size_t size, const char *name,
+					bool use_va)
 {
 	struct vdpa_device *vdev;
 	int err = -EINVAL;
@@ -166,12 +188,16 @@ struct vdpa_device *__vdpa_alloc_device(struct device *parent,
 	if (!!config->dma_map != !!config->dma_unmap)
 		goto err;
 
+	/* It should only work for the device that use on-chip IOMMU */
+	if (use_va && !(config->dma_map || config->set_map))
+		goto err;
+
 	err = -ENOMEM;
 	vdev = kzalloc(size, GFP_KERNEL);
 	if (!vdev)
 		goto err;
 
-	err = ida_simple_get(&vdpa_index_ida, 0, 0, GFP_KERNEL);
+	err = ida_alloc(&vdpa_index_ida, GFP_KERNEL);
 	if (err < 0)
 		goto err_ida;
 
@@ -181,6 +207,9 @@ struct vdpa_device *__vdpa_alloc_device(struct device *parent,
 	vdev->index = err;
 	vdev->config = config;
 	vdev->features_valid = false;
+	vdev->use_va = use_va;
+	vdev->ngroups = ngroups;
+	vdev->nas = nas;
 
 	if (name)
 		err = dev_set_name(&vdev->dev, "%s", name);
@@ -189,6 +218,7 @@ struct vdpa_device *__vdpa_alloc_device(struct device *parent,
 	if (err)
 		goto err_name;
 
+	init_rwsem(&vdev->cf_lock);
 	device_initialize(&vdev->dev);
 
 	return vdev;
@@ -209,13 +239,13 @@ static int vdpa_name_match(struct device *dev, const void *data)
 	return (strcmp(dev_name(&vdev->dev), data) == 0);
 }
 
-static int __vdpa_register_device(struct vdpa_device *vdev, int nvqs)
+static int __vdpa_register_device(struct vdpa_device *vdev, u32 nvqs)
 {
 	struct device *dev;
 
 	vdev->nvqs = nvqs;
 
-	lockdep_assert_held(&vdpa_dev_mutex);
+	lockdep_assert_held(&vdpa_dev_lock);
 	dev = bus_find_device(&vdpa_bus, NULL, dev_name(&vdev->dev), vdpa_name_match);
 	if (dev) {
 		put_device(dev);
@@ -232,9 +262,9 @@ static int __vdpa_register_device(struct vdpa_device *vdev, int nvqs)
  * @vdev: the vdpa device to be registered to vDPA bus
  * @nvqs: number of virtqueues supported by this device
  *
- * Returns an error when fail to add device to vDPA bus
+ * Return: Returns an error when fail to add device to vDPA bus
  */
-int _vdpa_register_device(struct vdpa_device *vdev, int nvqs)
+int _vdpa_register_device(struct vdpa_device *vdev, u32 nvqs)
 {
 	if (!vdev->mdev)
 		return -EINVAL;
@@ -249,15 +279,15 @@ EXPORT_SYMBOL_GPL(_vdpa_register_device);
  * @vdev: the vdpa device to be registered to vDPA bus
  * @nvqs: number of virtqueues supported by this device
  *
- * Returns an error when fail to add to vDPA bus
+ * Return: Returns an error when fail to add to vDPA bus
  */
-int vdpa_register_device(struct vdpa_device *vdev, int nvqs)
+int vdpa_register_device(struct vdpa_device *vdev, u32 nvqs)
 {
 	int err;
 
-	mutex_lock(&vdpa_dev_mutex);
+	down_write(&vdpa_dev_lock);
 	err = __vdpa_register_device(vdev, nvqs);
-	mutex_unlock(&vdpa_dev_mutex);
+	up_write(&vdpa_dev_lock);
 	return err;
 }
 EXPORT_SYMBOL_GPL(vdpa_register_device);
@@ -270,7 +300,7 @@ EXPORT_SYMBOL_GPL(vdpa_register_device);
  */
 void _vdpa_unregister_device(struct vdpa_device *vdev)
 {
-	lockdep_assert_held(&vdpa_dev_mutex);
+	lockdep_assert_held(&vdpa_dev_lock);
 	WARN_ON(!vdev->mdev);
 	device_unregister(&vdev->dev);
 }
@@ -282,9 +312,9 @@ EXPORT_SYMBOL_GPL(_vdpa_unregister_device);
  */
 void vdpa_unregister_device(struct vdpa_device *vdev)
 {
-	mutex_lock(&vdpa_dev_mutex);
+	down_write(&vdpa_dev_lock);
 	device_unregister(&vdev->dev);
-	mutex_unlock(&vdpa_dev_mutex);
+	up_write(&vdpa_dev_lock);
 }
 EXPORT_SYMBOL_GPL(vdpa_unregister_device);
 
@@ -293,7 +323,7 @@ EXPORT_SYMBOL_GPL(vdpa_unregister_device);
  * @drv: the vdpa device driver to be registered
  * @owner: module owner of the driver
  *
- * Returns an err when fail to do the registration
+ * Return: Returns an err when fail to do the registration
  */
 int __vdpa_register_driver(struct vdpa_driver *drv, struct module *owner)
 {
@@ -320,6 +350,8 @@ EXPORT_SYMBOL_GPL(vdpa_unregister_driver);
  * @mdev: Pointer to vdpa management device
  * vdpa_mgmtdev_register() register a vdpa management device which supports
  * vdpa device management.
+ * Return: Returns 0 on success or failure when required callback ops are not
+ *         initialized.
  */
 int vdpa_mgmtdev_register(struct vdpa_mgmt_dev *mdev)
 {
@@ -327,9 +359,9 @@ int vdpa_mgmtdev_register(struct vdpa_mgmt_dev *mdev)
 		return -EINVAL;
 
 	INIT_LIST_HEAD(&mdev->list);
-	mutex_lock(&vdpa_dev_mutex);
+	down_write(&vdpa_dev_lock);
 	list_add_tail(&mdev->list, &mdev_head);
-	mutex_unlock(&vdpa_dev_mutex);
+	up_write(&vdpa_dev_lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(vdpa_mgmtdev_register);
@@ -346,16 +378,63 @@ static int vdpa_match_remove(struct device *dev, void *data)
 
 void vdpa_mgmtdev_unregister(struct vdpa_mgmt_dev *mdev)
 {
-	mutex_lock(&vdpa_dev_mutex);
+	down_write(&vdpa_dev_lock);
 
 	list_del(&mdev->list);
 
 	/* Filter out all the entries belong to this management device and delete it. */
 	bus_for_each_dev(&vdpa_bus, NULL, mdev, vdpa_match_remove);
 
-	mutex_unlock(&vdpa_dev_mutex);
+	up_write(&vdpa_dev_lock);
 }
 EXPORT_SYMBOL_GPL(vdpa_mgmtdev_unregister);
+
+static void vdpa_get_config_unlocked(struct vdpa_device *vdev,
+				     unsigned int offset,
+				     void *buf, unsigned int len)
+{
+	const struct vdpa_config_ops *ops = vdev->config;
+
+	/*
+	 * Config accesses aren't supposed to trigger before features are set.
+	 * If it does happen we assume a legacy guest.
+	 */
+	if (!vdev->features_valid)
+		vdpa_set_features_unlocked(vdev, 0);
+	ops->get_config(vdev, offset, buf, len);
+}
+
+/**
+ * vdpa_get_config - Get one or more device configuration fields.
+ * @vdev: vdpa device to operate on
+ * @offset: starting byte offset of the field
+ * @buf: buffer pointer to read to
+ * @len: length of the configuration fields in bytes
+ */
+void vdpa_get_config(struct vdpa_device *vdev, unsigned int offset,
+		     void *buf, unsigned int len)
+{
+	down_read(&vdev->cf_lock);
+	vdpa_get_config_unlocked(vdev, offset, buf, len);
+	up_read(&vdev->cf_lock);
+}
+EXPORT_SYMBOL_GPL(vdpa_get_config);
+
+/**
+ * vdpa_set_config - Set one or more device configuration fields.
+ * @vdev: vdpa device to operate on
+ * @offset: starting byte offset of the field
+ * @buf: buffer pointer to read from
+ * @length: length of the configuration fields in bytes
+ */
+void vdpa_set_config(struct vdpa_device *vdev, unsigned int offset,
+		     const void *buf, unsigned int length)
+{
+	down_write(&vdev->cf_lock);
+	vdev->config->set_config(vdev, offset, buf, length);
+	up_write(&vdev->cf_lock);
+}
+EXPORT_SYMBOL_GPL(vdpa_set_config);
 
 static bool mgmtdev_handle_match(const struct vdpa_mgmt_dev *mdev,
 				 const char *busname, const char *devname)
@@ -431,6 +510,16 @@ static int vdpa_mgmtdev_fill(const struct vdpa_mgmt_dev *mdev, struct sk_buff *m
 		err = -EMSGSIZE;
 		goto msg_err;
 	}
+	if (nla_put_u32(msg, VDPA_ATTR_DEV_MGMTDEV_MAX_VQS,
+			mdev->max_supported_vqs)) {
+		err = -EMSGSIZE;
+		goto msg_err;
+	}
+	if (nla_put_u64_64bit(msg, VDPA_ATTR_DEV_SUPPORTED_FEATURES,
+			      mdev->supported_features, VDPA_ATTR_PAD)) {
+		err = -EMSGSIZE;
+		goto msg_err;
+	}
 
 	genlmsg_end(msg, hdr);
 	return 0;
@@ -450,17 +539,17 @@ static int vdpa_nl_cmd_mgmtdev_get_doit(struct sk_buff *skb, struct genl_info *i
 	if (!msg)
 		return -ENOMEM;
 
-	mutex_lock(&vdpa_dev_mutex);
+	down_read(&vdpa_dev_lock);
 	mdev = vdpa_mgmtdev_get_from_attr(info->attrs);
 	if (IS_ERR(mdev)) {
-		mutex_unlock(&vdpa_dev_mutex);
+		up_read(&vdpa_dev_lock);
 		NL_SET_ERR_MSG_MOD(info->extack, "Fail to find the specified mgmt device");
 		err = PTR_ERR(mdev);
 		goto out;
 	}
 
 	err = vdpa_mgmtdev_fill(mdev, msg, info->snd_portid, info->snd_seq, 0);
-	mutex_unlock(&vdpa_dev_mutex);
+	up_read(&vdpa_dev_lock);
 	if (err)
 		goto out;
 	err = genlmsg_reply(msg, info);
@@ -479,7 +568,7 @@ vdpa_nl_cmd_mgmtdev_get_dumpit(struct sk_buff *msg, struct netlink_callback *cb)
 	int idx = 0;
 	int err;
 
-	mutex_lock(&vdpa_dev_mutex);
+	down_read(&vdpa_dev_lock);
 	list_for_each_entry(mdev, &mdev_head, list) {
 		if (idx < start) {
 			idx++;
@@ -492,14 +581,21 @@ vdpa_nl_cmd_mgmtdev_get_dumpit(struct sk_buff *msg, struct netlink_callback *cb)
 		idx++;
 	}
 out:
-	mutex_unlock(&vdpa_dev_mutex);
+	up_read(&vdpa_dev_lock);
 	cb->args[0] = idx;
 	return msg->len;
 }
 
+#define VDPA_DEV_NET_ATTRS_MASK (BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MACADDR) | \
+				 BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MTU)     | \
+				 BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MAX_VQP))
+
 static int vdpa_nl_cmd_dev_add_set_doit(struct sk_buff *skb, struct genl_info *info)
 {
+	struct vdpa_dev_set_config config = {};
+	struct nlattr **nl_attrs = info->attrs;
 	struct vdpa_mgmt_dev *mdev;
+	const u8 *macaddr;
 	const char *name;
 	int err = 0;
 
@@ -508,17 +604,53 @@ static int vdpa_nl_cmd_dev_add_set_doit(struct sk_buff *skb, struct genl_info *i
 
 	name = nla_data(info->attrs[VDPA_ATTR_DEV_NAME]);
 
-	mutex_lock(&vdpa_dev_mutex);
+	if (nl_attrs[VDPA_ATTR_DEV_NET_CFG_MACADDR]) {
+		macaddr = nla_data(nl_attrs[VDPA_ATTR_DEV_NET_CFG_MACADDR]);
+		memcpy(config.net.mac, macaddr, sizeof(config.net.mac));
+		config.mask |= BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MACADDR);
+	}
+	if (nl_attrs[VDPA_ATTR_DEV_NET_CFG_MTU]) {
+		config.net.mtu =
+			nla_get_u16(nl_attrs[VDPA_ATTR_DEV_NET_CFG_MTU]);
+		config.mask |= BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MTU);
+	}
+	if (nl_attrs[VDPA_ATTR_DEV_NET_CFG_MAX_VQP]) {
+		config.net.max_vq_pairs =
+			nla_get_u16(nl_attrs[VDPA_ATTR_DEV_NET_CFG_MAX_VQP]);
+		if (!config.net.max_vq_pairs) {
+			NL_SET_ERR_MSG_MOD(info->extack,
+					   "At least one pair of VQs is required");
+			return -EINVAL;
+		}
+		config.mask |= BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MAX_VQP);
+	}
+
+	/* Skip checking capability if user didn't prefer to configure any
+	 * device networking attributes. It is likely that user might have used
+	 * a device specific method to configure such attributes or using device
+	 * default attributes.
+	 */
+	if ((config.mask & VDPA_DEV_NET_ATTRS_MASK) &&
+	    !netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
+
+	down_write(&vdpa_dev_lock);
 	mdev = vdpa_mgmtdev_get_from_attr(info->attrs);
 	if (IS_ERR(mdev)) {
 		NL_SET_ERR_MSG_MOD(info->extack, "Fail to find the specified management device");
 		err = PTR_ERR(mdev);
 		goto err;
 	}
+	if ((config.mask & mdev->config_attr_mask) != config.mask) {
+		NL_SET_ERR_MSG_MOD(info->extack,
+				   "All provided attributes are not supported");
+		err = -EOPNOTSUPP;
+		goto err;
+	}
 
-	err = mdev->ops->dev_add(mdev, name);
+	err = mdev->ops->dev_add(mdev, name, &config);
 err:
-	mutex_unlock(&vdpa_dev_mutex);
+	up_write(&vdpa_dev_lock);
 	return err;
 }
 
@@ -534,7 +666,7 @@ static int vdpa_nl_cmd_dev_del_set_doit(struct sk_buff *skb, struct genl_info *i
 		return -EINVAL;
 	name = nla_data(info->attrs[VDPA_ATTR_DEV_NAME]);
 
-	mutex_lock(&vdpa_dev_mutex);
+	down_write(&vdpa_dev_lock);
 	dev = bus_find_device(&vdpa_bus, NULL, name, vdpa_name_match);
 	if (!dev) {
 		NL_SET_ERR_MSG_MOD(info->extack, "device not found");
@@ -552,7 +684,7 @@ static int vdpa_nl_cmd_dev_del_set_doit(struct sk_buff *skb, struct genl_info *i
 mdev_err:
 	put_device(dev);
 dev_err:
-	mutex_unlock(&vdpa_dev_mutex);
+	up_write(&vdpa_dev_lock);
 	return err;
 }
 
@@ -561,6 +693,7 @@ vdpa_dev_fill(struct vdpa_device *vdev, struct sk_buff *msg, u32 portid, u32 seq
 	      int flags, struct netlink_ext_ack *extack)
 {
 	u16 max_vq_size;
+	u16 min_vq_size = 1;
 	u32 device_id;
 	u32 vendor_id;
 	void *hdr;
@@ -577,6 +710,8 @@ vdpa_dev_fill(struct vdpa_device *vdev, struct sk_buff *msg, u32 portid, u32 seq
 	device_id = vdev->config->get_device_id(vdev);
 	vendor_id = vdev->config->get_vendor_id(vdev);
 	max_vq_size = vdev->config->get_vq_num_max(vdev);
+	if (vdev->config->get_vq_num_min)
+		min_vq_size = vdev->config->get_vq_num_min(vdev);
 
 	err = -EMSGSIZE;
 	if (nla_put_string(msg, VDPA_ATTR_DEV_NAME, dev_name(&vdev->dev)))
@@ -588,6 +723,8 @@ vdpa_dev_fill(struct vdpa_device *vdev, struct sk_buff *msg, u32 portid, u32 seq
 	if (nla_put_u32(msg, VDPA_ATTR_DEV_MAX_VQS, vdev->nvqs))
 		goto msg_err;
 	if (nla_put_u16(msg, VDPA_ATTR_DEV_MAX_VQ_SIZE, max_vq_size))
+		goto msg_err;
+	if (nla_put_u16(msg, VDPA_ATTR_DEV_MIN_VQ_SIZE, min_vq_size))
 		goto msg_err;
 
 	genlmsg_end(msg, hdr);
@@ -613,7 +750,7 @@ static int vdpa_nl_cmd_dev_get_doit(struct sk_buff *skb, struct genl_info *info)
 	if (!msg)
 		return -ENOMEM;
 
-	mutex_lock(&vdpa_dev_mutex);
+	down_read(&vdpa_dev_lock);
 	dev = bus_find_device(&vdpa_bus, NULL, devname, vdpa_name_match);
 	if (!dev) {
 		NL_SET_ERR_MSG_MOD(info->extack, "device not found");
@@ -626,14 +763,19 @@ static int vdpa_nl_cmd_dev_get_doit(struct sk_buff *skb, struct genl_info *info)
 		goto mdev_err;
 	}
 	err = vdpa_dev_fill(vdev, msg, info->snd_portid, info->snd_seq, 0, info->extack);
-	if (!err)
-		err = genlmsg_reply(msg, info);
+	if (err)
+		goto mdev_err;
+
+	err = genlmsg_reply(msg, info);
+	put_device(dev);
+	up_read(&vdpa_dev_lock);
+	return err;
+
 mdev_err:
 	put_device(dev);
 err:
-	mutex_unlock(&vdpa_dev_mutex);
-	if (err)
-		nlmsg_free(msg);
+	up_read(&vdpa_dev_lock);
+	nlmsg_free(msg);
 	return err;
 }
 
@@ -674,17 +816,347 @@ static int vdpa_nl_cmd_dev_get_dumpit(struct sk_buff *msg, struct netlink_callba
 	info.start_idx = cb->args[0];
 	info.idx = 0;
 
-	mutex_lock(&vdpa_dev_mutex);
+	down_read(&vdpa_dev_lock);
 	bus_for_each_dev(&vdpa_bus, NULL, &info, vdpa_dev_dump);
-	mutex_unlock(&vdpa_dev_mutex);
+	up_read(&vdpa_dev_lock);
 	cb->args[0] = info.idx;
 	return msg->len;
+}
+
+static int vdpa_dev_net_mq_config_fill(struct vdpa_device *vdev,
+				       struct sk_buff *msg, u64 features,
+				       const struct virtio_net_config *config)
+{
+	u16 val_u16;
+
+	if ((features & BIT_ULL(VIRTIO_NET_F_MQ)) == 0)
+		return 0;
+
+	val_u16 = le16_to_cpu(config->max_virtqueue_pairs);
+	return nla_put_u16(msg, VDPA_ATTR_DEV_NET_CFG_MAX_VQP, val_u16);
+}
+
+static int vdpa_dev_net_config_fill(struct vdpa_device *vdev, struct sk_buff *msg)
+{
+	struct virtio_net_config config = {};
+	u64 features;
+	u16 val_u16;
+
+	vdpa_get_config_unlocked(vdev, 0, &config, sizeof(config));
+
+	if (nla_put(msg, VDPA_ATTR_DEV_NET_CFG_MACADDR, sizeof(config.mac),
+		    config.mac))
+		return -EMSGSIZE;
+
+	val_u16 = __virtio16_to_cpu(true, config.status);
+	if (nla_put_u16(msg, VDPA_ATTR_DEV_NET_STATUS, val_u16))
+		return -EMSGSIZE;
+
+	val_u16 = __virtio16_to_cpu(true, config.mtu);
+	if (nla_put_u16(msg, VDPA_ATTR_DEV_NET_CFG_MTU, val_u16))
+		return -EMSGSIZE;
+
+	features = vdev->config->get_driver_features(vdev);
+	if (nla_put_u64_64bit(msg, VDPA_ATTR_DEV_NEGOTIATED_FEATURES, features,
+			      VDPA_ATTR_PAD))
+		return -EMSGSIZE;
+
+	return vdpa_dev_net_mq_config_fill(vdev, msg, features, &config);
+}
+
+static int
+vdpa_dev_config_fill(struct vdpa_device *vdev, struct sk_buff *msg, u32 portid, u32 seq,
+		     int flags, struct netlink_ext_ack *extack)
+{
+	u32 device_id;
+	void *hdr;
+	int err;
+
+	down_read(&vdev->cf_lock);
+	hdr = genlmsg_put(msg, portid, seq, &vdpa_nl_family, flags,
+			  VDPA_CMD_DEV_CONFIG_GET);
+	if (!hdr) {
+		err = -EMSGSIZE;
+		goto out;
+	}
+
+	if (nla_put_string(msg, VDPA_ATTR_DEV_NAME, dev_name(&vdev->dev))) {
+		err = -EMSGSIZE;
+		goto msg_err;
+	}
+
+	device_id = vdev->config->get_device_id(vdev);
+	if (nla_put_u32(msg, VDPA_ATTR_DEV_ID, device_id)) {
+		err = -EMSGSIZE;
+		goto msg_err;
+	}
+
+	switch (device_id) {
+	case VIRTIO_ID_NET:
+		err = vdpa_dev_net_config_fill(vdev, msg);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+	if (err)
+		goto msg_err;
+
+	up_read(&vdev->cf_lock);
+	genlmsg_end(msg, hdr);
+	return 0;
+
+msg_err:
+	genlmsg_cancel(msg, hdr);
+out:
+	up_read(&vdev->cf_lock);
+	return err;
+}
+
+static int vdpa_fill_stats_rec(struct vdpa_device *vdev, struct sk_buff *msg,
+			       struct genl_info *info, u32 index)
+{
+	struct virtio_net_config config = {};
+	u64 features;
+	u16 max_vqp;
+	u8 status;
+	int err;
+
+	status = vdev->config->get_status(vdev);
+	if (!(status & VIRTIO_CONFIG_S_FEATURES_OK)) {
+		NL_SET_ERR_MSG_MOD(info->extack, "feature negotiation not complete");
+		return -EAGAIN;
+	}
+	vdpa_get_config_unlocked(vdev, 0, &config, sizeof(config));
+
+	max_vqp = __virtio16_to_cpu(true, config.max_virtqueue_pairs);
+	if (nla_put_u16(msg, VDPA_ATTR_DEV_NET_CFG_MAX_VQP, max_vqp))
+		return -EMSGSIZE;
+
+	features = vdev->config->get_driver_features(vdev);
+	if (nla_put_u64_64bit(msg, VDPA_ATTR_DEV_NEGOTIATED_FEATURES,
+			      features, VDPA_ATTR_PAD))
+		return -EMSGSIZE;
+
+	if (nla_put_u32(msg, VDPA_ATTR_DEV_QUEUE_INDEX, index))
+		return -EMSGSIZE;
+
+	err = vdev->config->get_vendor_vq_stats(vdev, index, msg, info->extack);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+static int vendor_stats_fill(struct vdpa_device *vdev, struct sk_buff *msg,
+			     struct genl_info *info, u32 index)
+{
+	int err;
+
+	down_read(&vdev->cf_lock);
+	if (!vdev->config->get_vendor_vq_stats) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	err = vdpa_fill_stats_rec(vdev, msg, info, index);
+out:
+	up_read(&vdev->cf_lock);
+	return err;
+}
+
+static int vdpa_dev_vendor_stats_fill(struct vdpa_device *vdev,
+				      struct sk_buff *msg,
+				      struct genl_info *info, u32 index)
+{
+	u32 device_id;
+	void *hdr;
+	int err;
+	u32 portid = info->snd_portid;
+	u32 seq = info->snd_seq;
+	u32 flags = 0;
+
+	hdr = genlmsg_put(msg, portid, seq, &vdpa_nl_family, flags,
+			  VDPA_CMD_DEV_VSTATS_GET);
+	if (!hdr)
+		return -EMSGSIZE;
+
+	if (nla_put_string(msg, VDPA_ATTR_DEV_NAME, dev_name(&vdev->dev))) {
+		err = -EMSGSIZE;
+		goto undo_msg;
+	}
+
+	device_id = vdev->config->get_device_id(vdev);
+	if (nla_put_u32(msg, VDPA_ATTR_DEV_ID, device_id)) {
+		err = -EMSGSIZE;
+		goto undo_msg;
+	}
+
+	switch (device_id) {
+	case VIRTIO_ID_NET:
+		if (index > VIRTIO_NET_CTRL_MQ_VQ_PAIRS_MAX) {
+			NL_SET_ERR_MSG_MOD(info->extack, "queue index excceeds max value");
+			err = -ERANGE;
+			break;
+		}
+
+		err = vendor_stats_fill(vdev, msg, info, index);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+	genlmsg_end(msg, hdr);
+
+	return err;
+
+undo_msg:
+	genlmsg_cancel(msg, hdr);
+	return err;
+}
+
+static int vdpa_nl_cmd_dev_config_get_doit(struct sk_buff *skb, struct genl_info *info)
+{
+	struct vdpa_device *vdev;
+	struct sk_buff *msg;
+	const char *devname;
+	struct device *dev;
+	int err;
+
+	if (!info->attrs[VDPA_ATTR_DEV_NAME])
+		return -EINVAL;
+	devname = nla_data(info->attrs[VDPA_ATTR_DEV_NAME]);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	down_read(&vdpa_dev_lock);
+	dev = bus_find_device(&vdpa_bus, NULL, devname, vdpa_name_match);
+	if (!dev) {
+		NL_SET_ERR_MSG_MOD(info->extack, "device not found");
+		err = -ENODEV;
+		goto dev_err;
+	}
+	vdev = container_of(dev, struct vdpa_device, dev);
+	if (!vdev->mdev) {
+		NL_SET_ERR_MSG_MOD(info->extack, "unmanaged vdpa device");
+		err = -EINVAL;
+		goto mdev_err;
+	}
+	err = vdpa_dev_config_fill(vdev, msg, info->snd_portid, info->snd_seq,
+				   0, info->extack);
+	if (!err)
+		err = genlmsg_reply(msg, info);
+
+mdev_err:
+	put_device(dev);
+dev_err:
+	up_read(&vdpa_dev_lock);
+	if (err)
+		nlmsg_free(msg);
+	return err;
+}
+
+static int vdpa_dev_config_dump(struct device *dev, void *data)
+{
+	struct vdpa_device *vdev = container_of(dev, struct vdpa_device, dev);
+	struct vdpa_dev_dump_info *info = data;
+	int err;
+
+	if (!vdev->mdev)
+		return 0;
+	if (info->idx < info->start_idx) {
+		info->idx++;
+		return 0;
+	}
+	err = vdpa_dev_config_fill(vdev, info->msg, NETLINK_CB(info->cb->skb).portid,
+				   info->cb->nlh->nlmsg_seq, NLM_F_MULTI,
+				   info->cb->extack);
+	if (err)
+		return err;
+
+	info->idx++;
+	return 0;
+}
+
+static int
+vdpa_nl_cmd_dev_config_get_dumpit(struct sk_buff *msg, struct netlink_callback *cb)
+{
+	struct vdpa_dev_dump_info info;
+
+	info.msg = msg;
+	info.cb = cb;
+	info.start_idx = cb->args[0];
+	info.idx = 0;
+
+	down_read(&vdpa_dev_lock);
+	bus_for_each_dev(&vdpa_bus, NULL, &info, vdpa_dev_config_dump);
+	up_read(&vdpa_dev_lock);
+	cb->args[0] = info.idx;
+	return msg->len;
+}
+
+static int vdpa_nl_cmd_dev_stats_get_doit(struct sk_buff *skb,
+					  struct genl_info *info)
+{
+	struct vdpa_device *vdev;
+	struct sk_buff *msg;
+	const char *devname;
+	struct device *dev;
+	u32 index;
+	int err;
+
+	if (!info->attrs[VDPA_ATTR_DEV_NAME])
+		return -EINVAL;
+
+	if (!info->attrs[VDPA_ATTR_DEV_QUEUE_INDEX])
+		return -EINVAL;
+
+	devname = nla_data(info->attrs[VDPA_ATTR_DEV_NAME]);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	index = nla_get_u32(info->attrs[VDPA_ATTR_DEV_QUEUE_INDEX]);
+	down_read(&vdpa_dev_lock);
+	dev = bus_find_device(&vdpa_bus, NULL, devname, vdpa_name_match);
+	if (!dev) {
+		NL_SET_ERR_MSG_MOD(info->extack, "device not found");
+		err = -ENODEV;
+		goto dev_err;
+	}
+	vdev = container_of(dev, struct vdpa_device, dev);
+	if (!vdev->mdev) {
+		NL_SET_ERR_MSG_MOD(info->extack, "unmanaged vdpa device");
+		err = -EINVAL;
+		goto mdev_err;
+	}
+	err = vdpa_dev_vendor_stats_fill(vdev, msg, info, index);
+	if (err)
+		goto mdev_err;
+
+	err = genlmsg_reply(msg, info);
+
+	put_device(dev);
+	up_read(&vdpa_dev_lock);
+
+	return err;
+
+mdev_err:
+	put_device(dev);
+dev_err:
+	nlmsg_free(msg);
+	up_read(&vdpa_dev_lock);
+	return err;
 }
 
 static const struct nla_policy vdpa_nl_policy[VDPA_ATTR_MAX + 1] = {
 	[VDPA_ATTR_MGMTDEV_BUS_NAME] = { .type = NLA_NUL_STRING },
 	[VDPA_ATTR_MGMTDEV_DEV_NAME] = { .type = NLA_STRING },
 	[VDPA_ATTR_DEV_NAME] = { .type = NLA_STRING },
+	[VDPA_ATTR_DEV_NET_CFG_MACADDR] = NLA_POLICY_ETH_ADDR,
+	/* virtio spec 1.1 section 5.1.4.1 for valid MTU range */
+	[VDPA_ATTR_DEV_NET_CFG_MTU] = NLA_POLICY_MIN(NLA_U16, 68),
 };
 
 static const struct genl_ops vdpa_nl_ops[] = {
@@ -711,6 +1183,18 @@ static const struct genl_ops vdpa_nl_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = vdpa_nl_cmd_dev_get_doit,
 		.dumpit = vdpa_nl_cmd_dev_get_dumpit,
+	},
+	{
+		.cmd = VDPA_CMD_DEV_CONFIG_GET,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.doit = vdpa_nl_cmd_dev_config_get_doit,
+		.dumpit = vdpa_nl_cmd_dev_config_get_dumpit,
+	},
+	{
+		.cmd = VDPA_CMD_DEV_VSTATS_GET,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.doit = vdpa_nl_cmd_dev_stats_get_doit,
+		.flags = GENL_ADMIN_PERM,
 	},
 };
 

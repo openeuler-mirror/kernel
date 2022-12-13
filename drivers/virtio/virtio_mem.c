@@ -1889,7 +1889,7 @@ static void virtio_mem_remove(struct virtio_device *vdev)
 	vfree(vm->sb_bitmap);
 
 	/* reset the device and cleanup the queues */
-	vdev->config->reset(vdev);
+	virtio_reset_device(vdev);
 	vdev->config->del_vqs(vdev);
 
 	kfree(vm);
