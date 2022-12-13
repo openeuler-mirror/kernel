@@ -821,38 +821,6 @@ struct kobj_type blk_queue_ktype = {
 	.release	= blk_release_queue,
 };
 
-static void disk_scan_partitions(struct gendisk *disk)
-{
-	struct block_device *bdev;
-
-	if (!get_capacity(disk) || !disk_part_scan_enabled(disk))
-		return;
-
-	set_bit(GD_NEED_PART_SCAN, &disk->state);
-	bdev = blkdev_get_by_dev(disk_devt(disk), FMODE_READ, NULL);
-	if (!IS_ERR(bdev))
-		blkdev_put(bdev, FMODE_READ);
-}
-
-static void disk_init_partition(struct gendisk *disk)
-{
-	struct device *ddev = disk_to_dev(disk);
-	struct disk_part_iter piter;
-	struct hd_struct *part;
-
-	disk_scan_partitions(disk);
-
-	/* announce disk after possible partitions are created */
-	dev_set_uevent_suppress(ddev, 0);
-	kobject_uevent(&ddev->kobj, KOBJ_ADD);
-
-	/* announce possible partitions */
-	disk_part_iter_init(&piter, disk, 0);
-	while ((part = disk_part_iter_next(&piter)))
-		kobject_uevent(&part_to_dev(part)->kobj, KOBJ_ADD);
-	disk_part_iter_exit(&piter);
-}
-
 /**
  * blk_register_queue - register a block layer queue with sysfs
  * @disk: Disk of which the request queue should be registered with sysfs.
@@ -942,22 +910,9 @@ int blk_register_queue(struct gendisk *disk)
 		kobject_uevent(&q->elevator->kobj, KOBJ_ADD);
 	mutex_unlock(&q->sysfs_lock);
 
-
-	/*
-	 * Set the flag at last, so that block devcie can't be opened
-	 * before it's registration is done.
-	 */
-	disk->flags |= GENHD_FL_UP;
 	ret = 0;
 unlock:
 	mutex_unlock(&q->sysfs_dir_lock);
-	/*
-	 * Init partitions after releasing 'sysfs_dir_lock', otherwise lockdep
-	 * will be confused because it will treat 'bd_mutex' from different
-	 * devices as the same lock.
-	 */
-	if (!ret)
-		disk_init_partition(disk);
 
 	return ret;
 }
