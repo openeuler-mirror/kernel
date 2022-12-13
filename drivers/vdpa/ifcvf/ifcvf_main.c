@@ -167,7 +167,7 @@ static struct ifcvf_hw *vdpa_to_vf(struct vdpa_device *vdpa_dev)
 	return &adapter->vf;
 }
 
-static u64 ifcvf_vdpa_get_features(struct vdpa_device *vdpa_dev)
+static u64 ifcvf_vdpa_get_device_features(struct vdpa_device *vdpa_dev)
 {
 	struct ifcvf_hw *vf = vdpa_to_vf(vdpa_dev);
 	u64 features;
@@ -177,13 +177,20 @@ static u64 ifcvf_vdpa_get_features(struct vdpa_device *vdpa_dev)
 	return features;
 }
 
-static int ifcvf_vdpa_set_features(struct vdpa_device *vdpa_dev, u64 features)
+static int ifcvf_vdpa_set_driver_features(struct vdpa_device *vdpa_dev, u64 features)
 {
 	struct ifcvf_hw *vf = vdpa_to_vf(vdpa_dev);
 
 	vf->req_features = features;
 
 	return 0;
+}
+
+static u64 ifcvf_vdpa_get_driver_features(struct vdpa_device *vdpa_dev)
+{
+	struct ifcvf_hw *vf = vdpa_to_vf(vdpa_dev);
+
+	return vf->req_features;
 }
 
 static u8 ifcvf_vdpa_get_status(struct vdpa_device *vdpa_dev)
@@ -391,8 +398,9 @@ static int ifcvf_vdpa_get_vq_irq(struct vdpa_device *vdpa_dev,
  * implemented set_map()/dma_map()/dma_unmap()
  */
 static const struct vdpa_config_ops ifc_vdpa_ops = {
-	.get_features	= ifcvf_vdpa_get_features,
-	.set_features	= ifcvf_vdpa_set_features,
+	.get_device_features = ifcvf_vdpa_get_device_features,
+	.set_driver_features = ifcvf_vdpa_set_driver_features,
+	.get_driver_features = ifcvf_vdpa_get_driver_features,
 	.get_status	= ifcvf_vdpa_get_status,
 	.set_status	= ifcvf_vdpa_set_status,
 	.reset		= ifcvf_vdpa_reset,
@@ -457,7 +465,7 @@ static int ifcvf_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	adapter = vdpa_alloc_device(struct ifcvf_adapter, vdpa,
-				    dev, &ifc_vdpa_ops, NULL);
+				    dev, &ifc_vdpa_ops, 1, 1, NULL, false);
 	if (adapter == NULL) {
 		IFCVF_ERR(pdev, "Failed to allocate vDPA structure");
 		return -ENOMEM;
