@@ -419,6 +419,9 @@ static int mpam_resctrl_resource_init(struct mpam_resctrl_res *res)
 		 * of 1 would appear too fine to make percentage conversions.
 		 */
 		r->mbw.bw_gran = GRAN_MBA_BW;
+		/* do not allow mbw_max/min below mbw.bw_gran */
+		if (r->mbw.min_bw < r->mbw.bw_gran)
+			r->mbw.min_bw = r->mbw.bw_gran;
 
 		/* We will only pick a class that can monitor and control */
 		r->alloc_capable = true;
