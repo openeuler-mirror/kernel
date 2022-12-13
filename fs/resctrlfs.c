@@ -622,12 +622,11 @@ static int resctrl_parse_param(struct fs_context *fc, struct fs_parameter *param
 	case Opt_caPrio:
 		ctx->enable_caPrio = true;
 		return 0;
+	default:
+		break;
+	}
 
-	return 0;
-}
-
-return -EINVAL;
-
+	return -EINVAL;
 }
 
 static void resctrl_fs_context_free(struct fs_context *fc)
