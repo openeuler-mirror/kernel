@@ -6,7 +6,6 @@
 #include <linux/sched/debug.h>
 #include <linux/ptrace.h>
 #include <linux/elfcore.h>
-#include <linux/reboot.h>
 #include <linux/slab.h>
 #include <linux/random.h>
 
@@ -14,70 +13,6 @@
 #include <asm/switch_to.h>
 
 #include "proto.h"
-
-/*
- * Power off function, if any
- */
-void (*pm_power_off)(void) = machine_power_off;
-EXPORT_SYMBOL(pm_power_off);
-
-struct halt_info {
-	int mode;
-	char *restart_cmd;
-};
-
-static void common_shutdown_1(void *generic_ptr)
-{
-	struct halt_info *how = (struct halt_info *)generic_ptr;
-	int cpuid __maybe_unused = smp_processor_id();
-
-	/* No point in taking interrupts anymore. */
-	local_irq_disable();
-
-#ifdef CONFIG_SMP
-	/* Secondaries halt here. */
-	if (cpuid != 0) {
-		set_cpu_present(cpuid, false);
-		set_cpu_possible(cpuid, false);
-
-		if (is_in_guest()) {
-			hcall(HCALL_SET_CLOCKEVENT, 0, 0, 0);
-			while (1)
-				asm("nop");
-		} else
-			asm("halt");
-	}
-#endif
-	if (sw64_platform->kill_arch)
-		sw64_platform->kill_arch(how->mode);
-}
-
-static void common_shutdown(int mode, char *restart_cmd)
-{
-	struct halt_info args;
-
-	args.mode = mode;
-	args.restart_cmd = restart_cmd;
-	on_each_cpu(common_shutdown_1, &args, 0);
-}
-
-void machine_restart(char *restart_cmd)
-{
-	common_shutdown(LINUX_REBOOT_CMD_RESTART, restart_cmd);
-}
-
-
-void machine_halt(void)
-{
-	common_shutdown(LINUX_REBOOT_CMD_HALT, NULL);
-}
-
-
-void machine_power_off(void)
-{
-	common_shutdown(LINUX_REBOOT_CMD_POWER_OFF, NULL);
-}
-
 
 /*
  * Re-start a thread when doing execve()
