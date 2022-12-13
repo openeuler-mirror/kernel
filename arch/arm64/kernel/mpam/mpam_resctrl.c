@@ -310,11 +310,15 @@ parse_cache(char *buf, struct resctrl_resource *r,
 		return -EINVAL;
 	}
 
-	if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
+	if (kstrtoul(buf, rr->ctrl_features[type].base, &data)) {
+		rdt_last_cmd_printf("Non-hex character in the mask %s\n", buf);
 		return -EINVAL;
+	}
 
-	if (data >= rr->ctrl_features[type].max_wd)
+	if (data >= rr->ctrl_features[type].max_wd) {
+		rdt_last_cmd_puts("Mask out of range\n");
 		return -EINVAL;
+	}
 
 	cfg->new_ctrl[type] = data;
 	cfg->have_new_ctrl = true;
@@ -339,20 +343,30 @@ parse_bw(char *buf, struct resctrl_resource *r,
 	case QOS_MBA_MAX_EVENT_ID:
 	case QOS_MBA_PBM_EVENT_ID:
 	case QOS_MBA_MIN_EVENT_ID:
-		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
+		if (kstrtoul(buf, rr->ctrl_features[type].base, &data)) {
+			rdt_last_cmd_printf("Non-decimal digit in MB value %s\n", buf);
 			return -EINVAL;
-		if (data < r->mbw.min_bw)
+		}
+		if (data < r->mbw.min_bw) {
+			rdt_last_cmd_printf("MB value %ld out of range [%d,%d]\n", data,
+					r->mbw.min_bw, rr->ctrl_features[type].max_wd - 1);
 			return -EINVAL;
+		}
 		data = roundup(data, r->mbw.bw_gran);
 		break;
 	default:
-		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
+		if (kstrtoul(buf, rr->ctrl_features[type].base, &data)) {
+			rdt_last_cmd_printf("Non-decimal digit in MB value %s\n", buf);
 			return -EINVAL;
+		}
 		break;
 	}
 
-	if (data >= rr->ctrl_features[type].max_wd)
+	if (data >= rr->ctrl_features[type].max_wd) {
+		rdt_last_cmd_printf("MB value %ld out of range [%d,%d]\n", data,
+				r->mbw.min_bw, rr->ctrl_features[type].max_wd - 1);
 		return -EINVAL;
+	}
 
 	cfg->new_ctrl[type] = data;
 	cfg->have_new_ctrl = true;
