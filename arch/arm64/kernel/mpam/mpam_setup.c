@@ -172,6 +172,8 @@ int mpam_resctrl_cpu_offline(unsigned int cpu)
 		list_del(&d->list);
 		dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
 		kfree(dom);
+
+		res->resctrl_res.dom_num--;
 	}
 
 	mpam_resctrl_clear_default_cpu(cpu);
