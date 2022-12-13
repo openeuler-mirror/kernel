@@ -266,6 +266,7 @@ static void __init hi3516dv300_clk_init(struct device_node *np)
 			       ARRAY_SIZE(hi3516dv300_gate_clks), clk_data);
 }
 
+MODULE_LICENSE("GPL");
 CLK_OF_DECLARE(hi3516dv300_clk, "hisilicon,hi3516dv300-clock",
 	       hi3516dv300_clk_init);
 
