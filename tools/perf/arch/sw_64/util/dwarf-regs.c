@@ -23,41 +23,45 @@ struct pt_regs_dwarfnum {
 };
 
 #define REG_DWARFNUM_NAME(r, num) {.name = r, .dwarfnum = num}
+#define GPR_DWARFNUM_NAME(num) \
+	{.name = __stringify(%x##num), .dwarfnum = num}
 #define REG_DWARFNUM_END {.name = NULL, .dwarfnum = 0}
+#define DWARFNUM2OFFSET(index) \
+	(index * sizeof((struct user_pt_regs *)0)->regs[0])
 
 static const struct pt_regs_dwarfnum regdwarfnum_table[] = {
-	REG_DWARFNUM_NAME("%v0", 0),
-	REG_DWARFNUM_NAME("%t0", 1),
-	REG_DWARFNUM_NAME("%t1", 2),
-	REG_DWARFNUM_NAME("%t2", 3),
-	REG_DWARFNUM_NAME("%t3", 4),
-	REG_DWARFNUM_NAME("%t4", 5),
-	REG_DWARFNUM_NAME("%t5", 6),
-	REG_DWARFNUM_NAME("%t6", 7),
-	REG_DWARFNUM_NAME("%t7", 8),
-	REG_DWARFNUM_NAME("%s0", 9),
-	REG_DWARFNUM_NAME("%s1", 10),
-	REG_DWARFNUM_NAME("%s2", 11),
-	REG_DWARFNUM_NAME("%s3", 12),
-	REG_DWARFNUM_NAME("%s4", 13),
-	REG_DWARFNUM_NAME("%s5", 14),
-	REG_DWARFNUM_NAME("%s6", 15),
-	REG_DWARFNUM_NAME("%a0", 16),
-	REG_DWARFNUM_NAME("%a1", 17),
-	REG_DWARFNUM_NAME("%a2", 18),
-	REG_DWARFNUM_NAME("%a3", 19),
-	REG_DWARFNUM_NAME("%a4", 20),
-	REG_DWARFNUM_NAME("%a5", 21),
-	REG_DWARFNUM_NAME("%t8", 22),
-	REG_DWARFNUM_NAME("%t9", 23),
-	REG_DWARFNUM_NAME("%t10", 24),
-	REG_DWARFNUM_NAME("%t11", 25),
-	REG_DWARFNUM_NAME("%ra", 26),
-	REG_DWARFNUM_NAME("%pv", 27),
-	REG_DWARFNUM_NAME("%at", 28),
+	GPR_DWARFNUM_NAME(0),
+	GPR_DWARFNUM_NAME(1),
+	GPR_DWARFNUM_NAME(2),
+	GPR_DWARFNUM_NAME(3),
+	GPR_DWARFNUM_NAME(4),
+	GPR_DWARFNUM_NAME(5),
+	GPR_DWARFNUM_NAME(6),
+	GPR_DWARFNUM_NAME(7),
+	GPR_DWARFNUM_NAME(8),
+	GPR_DWARFNUM_NAME(9),
+	GPR_DWARFNUM_NAME(10),
+	GPR_DWARFNUM_NAME(11),
+	GPR_DWARFNUM_NAME(12),
+	GPR_DWARFNUM_NAME(13),
+	GPR_DWARFNUM_NAME(14),
+	GPR_DWARFNUM_NAME(15),
+	REG_DWARFNUM_NAME("%fp", 15),
+	GPR_DWARFNUM_NAME(16),
+	GPR_DWARFNUM_NAME(17),
+	GPR_DWARFNUM_NAME(18),
+	GPR_DWARFNUM_NAME(19),
+	GPR_DWARFNUM_NAME(20),
+	GPR_DWARFNUM_NAME(21),
+	GPR_DWARFNUM_NAME(22),
+	GPR_DWARFNUM_NAME(23),
+	GPR_DWARFNUM_NAME(24),
+	GPR_DWARFNUM_NAME(25),
+	GPR_DWARFNUM_NAME(26),
+	GPR_DWARFNUM_NAME(27),
+	GPR_DWARFNUM_NAME(28),
 	REG_DWARFNUM_NAME("%gp", 29),
 	REG_DWARFNUM_NAME("%sp", 30),
-	REG_DWARFNUM_NAME("%zero", 31),
 	REG_DWARFNUM_END,
 };
 
@@ -72,7 +76,6 @@ static const struct pt_regs_dwarfnum regdwarfnum_table[] = {
 const char *get_arch_regstr(unsigned int n)
 {
 	const struct pt_regs_dwarfnum *roff;
-
 	for (roff = regdwarfnum_table; roff->name != NULL; roff++)
 		if (roff->dwarfnum == n)
 			return roff->name;
@@ -85,6 +88,6 @@ int regs_query_register_offset(const char *name)
 
 	for (roff = regdwarfnum_table; roff->name != NULL; roff++)
 		if (!strcmp(roff->name, name))
-			return roff->dwarfnum;
+			return DWARFNUM2OFFSET(roff->dwarfnum);
 	return -EINVAL;
 }
