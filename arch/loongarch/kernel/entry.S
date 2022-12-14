@@ -14,13 +14,14 @@
 #include <asm/regdef.h>
 #include <asm/stackframe.h>
 #include <asm/thread_info.h>
+#include <asm/unistd.h>
 
 	.text
 	.cfi_sections	.debug_frame
 	.align	5
 SYM_FUNC_START(handle_syscall)
 	csrrd	t0, PERCPU_BASE_KS
-	la.abs	t1, kernelsp
+	la.pcrel t1, kernelsp
 	add.d	t1, t1, t0
 	move	t2, sp
 	ld.d	sp, t1, 0
@@ -28,11 +29,10 @@ SYM_FUNC_START(handle_syscall)
 	addi.d	sp, sp, -PT_SIZE
 	cfi_st	t2, PT_R3
 	cfi_rel_offset	sp, PT_R3
-	st.d	zero, sp, PT_R0
 	csrrd	t2, LOONGARCH_CSR_PRMD
 	st.d	t2, sp, PT_PRMD
 	cfi_st	ra, PT_R1
-	cfi_st	a0, PT_R4
+	cfi_st	a0, PT_ORIG_A0
 	cfi_st	a1, PT_R5
 	cfi_st	a2, PT_R6
 	cfi_st	a3, PT_R7
@@ -41,6 +41,7 @@ SYM_FUNC_START(handle_syscall)
 	cfi_st	a6, PT_R10
 	cfi_st	a7, PT_R11
 	csrrd	ra, LOONGARCH_CSR_ERA
+	addi.d	ra, ra, 4
 	st.d	ra, sp, PT_ERA
 	cfi_rel_offset	ra, PT_ERA
 
@@ -55,9 +56,17 @@ SYM_FUNC_START(handle_syscall)
 	and	tp, tp, sp
 
 	move	a0, sp
+	move	a1, a7
 	bl	do_syscall
 
-	RESTORE_ALL_AND_RET
+	addi.w	t0, zero, __NR_rt_sigreturn
+	bne	a0, t0, 1f
+
+	RESTORE_STATIC
+	RESTORE_TEMP
+1:
+	RESTORE_SOME
+	RESTORE_SP_AND_RET
 SYM_FUNC_END(handle_syscall)
 
 SYM_CODE_START(ret_from_fork)
