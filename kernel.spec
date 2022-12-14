@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2212.1.0
+%global hulkrelease 2212.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0180
+Release: %{hulkrelease}.0181
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,34 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 13 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.2.0.0181
+- mm/sharepool: Fix a double free problem caused by init_local_group
+- bpf, test_run: Fix alignment problem in bpf_prog_test_run_skb()
+- macvlan: enforce a consistent minimal mtu
+- net: macvlan: fix memory leaks of macvlan_common_newlink
+- ipv6: addrlabel: fix infoleak when sending struct ifaddrlblmsg to network
+- net: gso: fix panic on frag_list with mixed head alloc types
+- tcp/udp: Make early_demux back namespacified.
+- ipv6: fix WARNING in ip6_route_net_exit_late()
+- net, neigh: Fix null-ptr-deref in neigh_table_clear()
+- tcp: fix indefinite deferral of RTO with SACK reneging
+- net: fix UAF issue in nfqnl_nf_hook_drop() when ops_init() failed
+- serial: 8250: Flush DMA Rx on RLSI
+- serial: 8250: Fall back to non-DMA Rx if IIR_RDI occurs
+- capabilities: fix potential memleak on error path from vfs_getxattr_alloc()
+- security: commoncap: fix -Wstringop-overread warning
+- ring_buffer: Do not deactivate non-existant pages
+- ftrace: Fix null pointer dereference in ftrace_add_mod()
+- ftrace: Optimize the allocation for mcount entries
+- kprobe: reverse kp->flags when arm_kprobe failed
+- mm: fs: initialize fsdata passed to write_begin/write_end interface
+- nfs4: Fix kmemleak when allocate slot failed
+- kernfs: fix use-after-free in __kernfs_remove
+- mm,hugetlb: take hugetlb_lock before decrementing h->resv_huge_pages
+- mm: /proc/pid/smaps_rollup: fix no vma's null-deref
+- signal handling: don't use BUG_ON() for debugging
+- ida: don't use BUG_ON() for debugging
 
 * Tue Dec 06 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.1.0.0180
 - !272 [openEuler-1.0-LTS] Add MWAIT Cx support for Zhaoxin CPUs.
