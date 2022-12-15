@@ -139,6 +139,8 @@ struct hns_roce_ib_alloc_ucontext_resp {
 	__u32	max_inline_data;
 	__u8	congest_type;
 	__u8	reserved0[7];
+	__aligned_u64 rsv_for_dca[2];
+	__aligned_u64 reset_mmap_key;
 };
 
 struct hns_roce_ib_alloc_ucontext {

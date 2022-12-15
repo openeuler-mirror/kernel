@@ -2607,6 +2607,31 @@ static void free_dip_list(struct hns_roce_dev *hr_dev)
 	spin_unlock_irqrestore(&hr_dev->dip_list_lock, flags);
 }
 
+static int hns_roce_v2_get_reset_page(struct hns_roce_dev *hr_dev)
+{
+	hr_dev->reset_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+	if (!hr_dev->reset_page)
+		return -ENOMEM;
+
+	hr_dev->reset_kaddr = vmap(&hr_dev->reset_page, 1, VM_MAP, PAGE_KERNEL);
+	if (!hr_dev->reset_kaddr)
+		goto err_with_vmap;
+
+	return 0;
+
+err_with_vmap:
+	put_page(hr_dev->reset_page);
+	return -ENOMEM;
+}
+
+static void hns_roce_v2_put_reset_page(struct hns_roce_dev *hr_dev)
+{
+	vunmap(hr_dev->reset_kaddr);
+	hr_dev->reset_kaddr = NULL;
+	put_page(hr_dev->reset_page);
+	hr_dev->reset_page = NULL;
+}
+
 static struct ib_pd *free_mr_init_pd(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
@@ -2971,14 +2996,21 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 {
 	int ret;
 
+	ret = hns_roce_v2_get_reset_page(hr_dev);
+	if (ret) {
+		dev_err(hr_dev->dev,
+			"reset state init failed, ret = %d.\n", ret);
+		return ret;
+	}
+
 	/* The hns ROCEE requires the extdb info to be cleared before using */
 	ret = hns_roce_clear_extdb_list_info(hr_dev);
 	if (ret)
-		return ret;
+		goto err_clear_extdb_failed;
 
 	ret = get_hem_table(hr_dev);
 	if (ret)
-		return ret;
+		goto err_clear_extdb_failed;
 
 	if (hr_dev->is_vf)
 		return 0;
@@ -2993,6 +3025,8 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 
 err_llm_init_failed:
 	put_hem_table(hr_dev);
+err_clear_extdb_failed:
+	hns_roce_v2_put_reset_page(hr_dev);
 
 	return ret;
 }
@@ -3003,6 +3037,8 @@ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 
 	if (!hr_dev->is_vf)
 		hns_roce_free_link_table(hr_dev);
+
+	hns_roce_v2_put_reset_page(hr_dev);
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP09)
 		free_dip_list(hr_dev);
@@ -7165,6 +7201,18 @@ int hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
 
 	return 0;
 }
+
+static void hns_roce_v2_reset_notify_user(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_v2_reset_state *state;
+
+	state = (struct hns_roce_v2_reset_state *)hr_dev->reset_kaddr;
+
+	state->reset_state = HNS_ROCE_IS_RESETTING;
+	/* Ensure reset state was flushed in memory */
+	wmb();
+}
+
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 {
 	struct hns_roce_dev *hr_dev;
@@ -7183,6 +7231,9 @@ static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 
 	hr_dev->active = false;
 	hr_dev->dis_db = true;
+
+	hns_roce_v2_reset_notify_user(hr_dev);
+
 	hr_dev->state = HNS_ROCE_DEVICE_STATE_RST_DOWN;
 
 	return 0;
