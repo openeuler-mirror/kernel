@@ -59,6 +59,7 @@
 
 #define HNS_ROCE_CEQ				0
 #define HNS_ROCE_AEQ				1
+#define HNS_ROCE_IS_RESETTING			1
 
 #define HNS_ROCE_CEQE_SIZE 0x4
 #define HNS_ROCE_AEQE_SIZE 0x10
@@ -206,6 +207,7 @@ enum hns_roce_mmap_type {
 	HNS_ROCE_MMAP_TYPE_DB = 1,
 	HNS_ROCE_MMAP_TYPE_DWQE,
 	HNS_ROCE_MMAP_TYPE_DCA,
+	HNS_ROCE_MMAP_TYPE_RESET,
 };
 
 struct hns_user_mmap_entry {
@@ -248,6 +250,7 @@ struct hns_roce_ucontext {
 	struct list_head	page_list;
 	struct mutex		page_mutex;
 	struct hns_user_mmap_entry *db_mmap_entry;
+	struct hns_user_mmap_entry *reset_mmap_entry;
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
 	void *dca_dbgfs;
@@ -1027,6 +1030,8 @@ struct hns_roce_dev {
 	int			loop_idc;
 	u32			sdb_offset;
 	u32			odb_offset;
+	struct page		*reset_page; /* store reset state */
+	void			*reset_kaddr; /* addr of reset page */
 	const struct hns_roce_hw *hw;
 	void			*priv;
 	struct workqueue_struct *irq_workq;

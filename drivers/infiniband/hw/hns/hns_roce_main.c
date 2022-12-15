@@ -367,6 +367,7 @@ hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 		break;
 	case HNS_ROCE_MMAP_TYPE_DWQE:
 	case HNS_ROCE_MMAP_TYPE_DCA:
+	case HNS_ROCE_MMAP_TYPE_RESET:
 		ret = rdma_user_mmap_entry_insert_range(
 				ucontext, &entry->rdma_entry, length, 1,
 				U32_MAX);
@@ -408,6 +409,26 @@ static int hns_roce_alloc_uar_entry(struct ib_ucontext *uctx)
 	return 0;
 }
 
+static void hns_roce_dealloc_reset_entry(struct hns_roce_ucontext *context)
+{
+	if (context->reset_mmap_entry)
+		rdma_user_mmap_entry_remove(&context->reset_mmap_entry->rdma_entry);
+}
+
+static int hns_roce_alloc_reset_entry(struct ib_ucontext *uctx)
+{
+	struct hns_roce_ucontext *context = to_hr_ucontext(uctx);
+	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
+
+	context->reset_mmap_entry = hns_roce_user_mmap_entry_insert(uctx,
+		(u64)hr_dev->reset_kaddr, PAGE_SIZE, HNS_ROCE_MMAP_TYPE_RESET);
+
+	if (!context->reset_mmap_entry)
+		return -ENOMEM;
+
+	return 0;
+}
+
 static void ucontext_set_resp(struct ib_ucontext *uctx,
 			      struct hns_roce_ib_alloc_ucontext_resp *resp)
 {
@@ -424,6 +445,11 @@ static void ucontext_set_resp(struct ib_ucontext *uctx,
 		resp->dca_mmap_size = PAGE_SIZE * context->dca_ctx.status_npage;
 		rdma_entry = &context->dca_ctx.dca_mmap_entry->rdma_entry;
 		resp->dca_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
+	}
+
+	if (context->reset_mmap_entry) {
+		rdma_entry = &context->reset_mmap_entry->rdma_entry;
+		resp->reset_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
 	}
 }
 
@@ -503,6 +529,10 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	hns_roce_register_udca(hr_dev, get_udca_max_qps(hr_dev, &ucmd),
 			       context);
 
+	ret = hns_roce_alloc_reset_entry(uctx);
+	if (ret)
+		goto error_fail_reset_entry;
+
 	ucontext_set_resp(uctx, &resp);
 	ret = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
 	if (ret)
@@ -518,7 +548,9 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 
 error_fail_copy_to_udata:
 	hns_roce_unregister_udca(hr_dev, context);
+	hns_roce_dealloc_reset_entry(context);
 
+error_fail_reset_entry:
 	hns_roce_dealloc_uar_entry(context);
 
 error_fail_uar_entry:
@@ -542,6 +574,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	hns_roce_unregister_udca(hr_dev, context);
 
 	hns_roce_dealloc_uar_entry(context);
+	hns_roce_dealloc_reset_entry(context);
 
 	ida_free(&hr_dev->uar_ida.ida, (int)context->uar.logic_idx);
 }
@@ -578,6 +611,7 @@ static int mmap_dca(struct ib_ucontext *context, struct vm_area_struct *vma)
 
 static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 {
+	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
 	struct rdma_user_mmap_entry *rdma_entry;
 	struct hns_user_mmap_entry *entry;
 	phys_addr_t pfn;
@@ -599,8 +633,19 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 	case HNS_ROCE_MMAP_TYPE_DCA:
 		ret = mmap_dca(uctx, vma);
 		goto out;
+	case HNS_ROCE_MMAP_TYPE_RESET:
+		if (vma->vm_flags & (VM_WRITE | VM_EXEC)) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		ret = remap_pfn_range(vma, vma->vm_start,
+				      page_to_pfn(hr_dev->reset_page),
+				      PAGE_SIZE, vma->vm_page_prot);
+		goto out;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
 	ret = rdma_user_mmap_io(uctx, vma, pfn, rdma_entry->npages * PAGE_SIZE,
