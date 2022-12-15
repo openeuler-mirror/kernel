@@ -43,6 +43,7 @@
 #include <rdma/uverbs_ioctl.h>
 
 #include "hnae3.h"
+#include "hclge_main.h"
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_cmd.h"
@@ -7198,6 +7199,34 @@ static void hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 	priv->handle = handle;
 }
 
+static bool check_vf_support(struct pci_dev *vf)
+{
+	struct hns_roce_bond_group *bond_grp;
+	struct pci_dev *pf = pci_physfn(vf);
+	struct hnae3_ae_dev *ae_dev;
+	struct hnae3_handle *handle;
+	struct hns_roce_dev *hr_dev;
+	struct hclge_dev *hdev;
+
+	/* pf == vf means that the driver is running in VM. */
+	if (pf == vf)
+		return true;
+
+	ae_dev = pci_get_drvdata(pf);
+	hdev = ae_dev->priv;
+	handle = &hdev->vport[0].roce;
+	hr_dev = handle->priv;
+
+	if (!hr_dev)
+		return false;
+
+	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	if (bond_grp)
+		return false;
+
+	return true;
+}
+
 static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 {
 	struct hns_roce_dev *hr_dev;
@@ -7214,6 +7243,11 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 	}
 
 	hns_roce_hw_v2_get_cfg(hr_dev, handle);
+
+	if (hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
+		ret = -EOPNOTSUPP;
+		goto error_failed_kzalloc;
+	}
 
 	ret = hns_roce_init(hr_dev);
 	if (ret) {
@@ -7290,6 +7324,10 @@ int hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 	ret = __hns_roce_hw_v2_init_instance(handle);
 	if (ret) {
 		handle->rinfo.instance_state = HNS_ROCE_STATE_NON_INIT;
+
+		if (ret == -EOPNOTSUPP)
+			return ret;
+
 		dev_err(dev, "RoCE instance init failed! ret = %d\n", ret);
 		if (ops->ae_dev_resetting(handle) ||
 		    ops->get_hw_reset_stat(handle))
