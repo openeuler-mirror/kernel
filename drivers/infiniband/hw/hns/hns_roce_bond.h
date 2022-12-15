@@ -75,5 +75,6 @@ int hns_roce_bond_event(struct notifier_block *self,
 void hns_roce_cleanup_bond(struct hns_roce_dev *hr_dev);
 bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev);
 struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev);
+struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev);
 
 #endif
