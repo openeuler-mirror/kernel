@@ -127,6 +127,7 @@ struct hns_roce_ib_alloc_ucontext_resp {
 	__u32	dca_qps;
 	__u32	dca_mmap_size;
 	__aligned_u64 dca_mmap_key;
+	__aligned_u64 reset_mmap_key;
 };
 
 enum hns_roce_uctx_comp_mask {

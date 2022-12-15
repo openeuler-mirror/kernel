@@ -1340,6 +1340,10 @@ struct hns_roce_link_table {
 #define HNS_ROCE_EXT_LLM_ENTRY(addr, id) (((id) << (64 - 12)) | ((addr) >> 12))
 #define HNS_ROCE_EXT_LLM_MIN_PAGES(que_num) ((que_num) * 4 + 2)
 
+struct hns_roce_v2_reset_state {
+	u32 reset_state; /* stored to use in user space */
+};
+
 struct hns_roce_v2_free_mr {
 	struct hns_roce_qp *rsv_qp[HNS_ROCE_FREE_MR_USED_QP_NUM];
 	struct hns_roce_cq *rsv_cq;
