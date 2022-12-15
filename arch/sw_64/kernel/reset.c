@@ -15,7 +15,27 @@
 
 #include <acpi/reboot.h>
 #include <asm/idle.h>
+#include <asm/sw64io.h>
 
+void fix_jm585_reset(void)
+{
+	struct pci_dev *pdev;
+	struct pci_controller *hose;
+	int val;
+
+	pdev = pci_get_device(PCI_VENDOR_ID_JMICRON,
+				0x0585, NULL);
+	if (pdev) {
+		hose = (struct pci_controller *)pdev->sysdata;
+		val = read_rc_conf(hose->node, hose->index,
+				RC_PORT_LINK_CTL);
+		write_rc_conf(hose->node, hose->index,
+				RC_PORT_LINK_CTL, val | 0x8);
+		write_rc_conf(hose->node, hose->index,
+		RC_PORT_LINK_CTL, val);
+	}
+
+}
 static void default_halt(void)
 {
 	local_irq_disable();
@@ -42,6 +62,7 @@ static void default_restart(void)
 	/* No point in taking interrupts anymore. */
 	local_irq_disable();
 
+	fix_jm585_reset();
 #ifdef CONFIG_EFI
 	if (efi_capsule_pending(NULL))
 		efi_reboot(REBOOT_WARM, NULL);

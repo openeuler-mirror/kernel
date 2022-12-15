@@ -42,22 +42,8 @@ void sw64_poweroff(void)
 
 void sw64_restart(void)
 {
-	struct pci_dev *pdev;
-	struct pci_controller *hose;
-	int val;
-
 	if (is_in_host()) {
-		pdev = pci_get_device(PCI_VENDOR_ID_JMICRON,
-					0x0585, NULL);
-		if (pdev) {
-			hose = (struct pci_controller *)pdev->sysdata;
-			val = read_rc_conf(hose->node, hose->index,
-					RC_PORT_LINK_CTL);
-			write_rc_conf(hose->node, hose->index,
-					RC_PORT_LINK_CTL, val | 0x8);
-			write_rc_conf(hose->node, hose->index,
-					RC_PORT_LINK_CTL, val);
-		}
+		fix_jm585_reset();
 		cpld_write(0x64, 0x00, 0xc3);
 	} else
 		vt_mode_kill_arch(LINUX_REBOOT_CMD_RESTART);
