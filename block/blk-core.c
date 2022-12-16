@@ -1306,10 +1306,11 @@ static void blk_account_io_completion(struct request *req, unsigned int bytes)
 
 static void blk_account_io_latency(struct request *req, u64 now, const int sgrp)
 {
+#ifdef CONFIG_64BIT
 	u64 stat_time;
 	struct request_wrapper *rq_wrapper;
 
-	if (!IS_ENABLED(CONFIG_64BIT) || !(req->rq_flags & RQF_FROM_BLOCK)) {
+	if (!(req->rq_flags & RQF_FROM_BLOCK)) {
 		part_stat_add(req->part, nsecs[sgrp], now - req->start_time_ns);
 		return;
 	}
@@ -1328,6 +1329,10 @@ static void blk_account_io_latency(struct request *req, u64 now, const int sgrp)
 
 		part_stat_add(req->part, nsecs[sgrp], duration);
 	}
+#else
+	part_stat_add(req->part, nsecs[sgrp], now - req->start_time_ns);
+
+#endif
 }
 
 void blk_account_io_done(struct request *req, u64 now)
