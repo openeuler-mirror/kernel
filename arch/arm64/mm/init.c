@@ -727,14 +727,20 @@ void dump_mem_limit(void)
 	}
 }
 
+#ifdef CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES
+extern int enable_charge_mighp;
+#endif
+
+#ifdef CONFIG_ARM64_PSEUDO_NMI
+extern bool enable_pseudo_nmi;
+#endif
+
 void ascend_enable_all_features(void)
 {
 	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
 		enable_mmap_dvpp = 1;
 
 #ifdef CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES
-	extern int enable_charge_mighp;
-
 	enable_charge_mighp = 1;
 #endif
 
@@ -743,8 +749,6 @@ void ascend_enable_all_features(void)
 #endif
 
 #ifdef CONFIG_ARM64_PSEUDO_NMI
-	extern bool enable_pseudo_nmi;
-
 	enable_pseudo_nmi = true;
 #endif
 
