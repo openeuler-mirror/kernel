@@ -432,6 +432,7 @@ struct uhci_hcd {
 	unsigned int big_endian_mmio:1;		/* Big endian registers */
 	unsigned int big_endian_desc:1;		/* Big endian descriptors */
 	unsigned int is_aspeed:1;		/* Aspeed impl. workarounds */
+	unsigned int auto_suspend_delay:1;	/* delay root hub autosuspend*/
 
 	/* Support for port suspend/resume/reset */
 	unsigned long port_c_suspend;		/* Bit-arrays of ports */
