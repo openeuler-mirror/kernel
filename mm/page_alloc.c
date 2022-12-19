@@ -112,6 +112,8 @@ typedef int __bitwise fpi_t;
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
 #define MIN_PERCPU_PAGELIST_FRACTION	(8)
+#define MAX_PERCPU_MAX_BATCHSIZE	((512 * 1024) / PAGE_SIZE)
+#define MIN_PERCPU_MAX_BATCHSIZE	(MAX_PERCPU_MAX_BATCHSIZE / 8)
 
 #ifdef CONFIG_USE_PERCPU_NUMA_NODE_ID
 DEFINE_PER_CPU(int, numa_node);
@@ -167,6 +169,8 @@ unsigned long totalreserve_pages __read_mostly;
 unsigned long totalcma_pages __read_mostly;
 
 int percpu_pagelist_fraction;
+int percpu_max_batchsize = MAX_PERCPU_MAX_BATCHSIZE / 2;
+
 gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 #ifdef CONFIG_INIT_ON_ALLOC_DEFAULT_ON
 DEFINE_STATIC_KEY_TRUE(init_on_alloc);
@@ -6757,10 +6761,9 @@ static int zone_batchsize(struct zone *zone)
 	 * size of the zone.
 	 */
 	batch = zone_managed_pages(zone) / 1024;
-	/* But no more than a meg. */
-	if (batch * PAGE_SIZE > 1024 * 1024)
-		batch = (1024 * 1024) / PAGE_SIZE;
 	batch /= 4;		/* We effectively *= 4 below */
+	if (batch > percpu_max_batchsize)
+		batch = percpu_max_batchsize;
 	if (batch < 1)
 		batch = 1;
 
@@ -8606,6 +8609,39 @@ int percpu_pagelist_fraction_sysctl_handler(struct ctl_table *table, int write,
 
 	/* No change? */
 	if (percpu_pagelist_fraction == old_percpu_pagelist_fraction)
+		goto out;
+
+	for_each_populated_zone(zone)
+		zone_set_pageset_high_and_batch(zone);
+out:
+	mutex_unlock(&pcp_batch_high_lock);
+	return ret;
+}
+
+int percpu_max_batchsize_sysctl_handler(struct ctl_table *table, int write,
+		void *buffer, size_t *length, loff_t *ppos)
+{
+	struct zone *zone;
+	int old_percpu_max_batchsize;
+	int ret;
+
+	mutex_lock(&pcp_batch_high_lock);
+	old_percpu_max_batchsize = percpu_max_batchsize;
+
+	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
+	if (!write || ret < 0)
+		goto out;
+
+	/* Sanity checking to avoid pcp imbalance */
+	if (percpu_max_batchsize > MAX_PERCPU_MAX_BATCHSIZE ||
+	    percpu_max_batchsize < MIN_PERCPU_MAX_BATCHSIZE) {
+		percpu_max_batchsize = old_percpu_max_batchsize;
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* No change? */
+	if (percpu_max_batchsize == old_percpu_max_batchsize)
 		goto out;
 
 	for_each_populated_zone(zone)

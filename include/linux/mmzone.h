@@ -1009,6 +1009,8 @@ int lowmem_reserve_ratio_sysctl_handler(struct ctl_table *, int, void *,
 		size_t *, loff_t *);
 int percpu_pagelist_fraction_sysctl_handler(struct ctl_table *, int,
 		void *, size_t *, loff_t *);
+int percpu_max_batchsize_sysctl_handler(struct ctl_table *, int,
+		void *, size_t *, loff_t *);
 int sysctl_min_unmapped_ratio_sysctl_handler(struct ctl_table *, int,
 		void *, size_t *, loff_t *);
 int sysctl_min_slab_ratio_sysctl_handler(struct ctl_table *, int,
@@ -1016,6 +1018,7 @@ int sysctl_min_slab_ratio_sysctl_handler(struct ctl_table *, int,
 int numa_zonelist_order_handler(struct ctl_table *, int,
 		void *, size_t *, loff_t *);
 extern int percpu_pagelist_fraction;
+extern int percpu_max_batchsize;
 extern char numa_zonelist_order[];
 #define NUMA_ZONELIST_ORDER_LEN	16
 
