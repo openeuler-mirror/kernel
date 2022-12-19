@@ -40,14 +40,11 @@ struct blk_mq_ctx {
 struct request_wrapper {
 	/* Time that I/O was counted in part_get_stat_info(). */
 	u64 stat_time_ns;
-};
+} ____cacheline_aligned_in_smp;
 
-static inline struct request_wrapper *request_to_wrapper(struct request *rq)
+static inline struct request_wrapper *request_to_wrapper(void *rq)
 {
-	unsigned long addr = (unsigned long)rq;
-
-	addr += sizeof(*rq) + rq->q->tag_set->cmd_size;
-	return (struct request_wrapper *)addr;
+	return rq - sizeof(struct request_wrapper);
 }
 
 void blk_mq_exit_queue(struct request_queue *q);
