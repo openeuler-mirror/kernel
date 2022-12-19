@@ -18,9 +18,17 @@
 #include <linux/kvm_para.h>
 #include <linux/cpuidle_haltpoll.h>
 
-static bool force __read_mostly;
-module_param(force, bool, 0444);
-MODULE_PARM_DESC(force, "Load unconditionally");
+static bool force;
+MODULE_PARM_DESC(force, "bool, enable haltpoll driver");
+static int enable_haltpoll_driver(const char *val, const struct kernel_param *kp);
+static int register_haltpoll_driver(void);
+static void unregister_haltpoll_driver(void);
+
+static const struct kernel_param_ops enable_haltpoll_ops = {
+	.set = enable_haltpoll_driver,
+	.get = param_get_bool,
+};
+module_param_cb(force, &enable_haltpoll_ops, &force, 0644);
 
 static struct cpuidle_device __percpu *haltpoll_cpuidle_devices;
 static enum cpuhp_state haltpoll_hp_state;
@@ -34,6 +42,42 @@ static int default_enter_idle(struct cpuidle_device *dev,
 	}
 	arch_cpu_idle();
 	return index;
+}
+
+
+static int enable_haltpoll_driver(const char *val, const struct kernel_param *kp)
+{
+#ifdef CONFIG_ARM64
+	int ret;
+	bool do_enable;
+
+	if (!val)
+		return 0;
+
+	ret = strtobool(val, &do_enable);
+
+	if (ret || force == do_enable)
+		return ret;
+
+	if (do_enable) {
+		ret = register_haltpoll_driver();
+
+		if (!ret) {
+			pr_info("Enable haltpoll driver.\n");
+			force = 1;
+		} else {
+			pr_err("Fail to enable haltpoll driver.\n");
+		}
+	} else {
+		unregister_haltpoll_driver();
+		force = 0;
+		pr_info("Unregister haltpoll driver.\n");
+	}
+
+	return ret;
+#else
+	return -1;
+#endif
 }
 
 static struct cpuidle_driver haltpoll_driver = {
@@ -84,22 +128,18 @@ static int haltpoll_cpu_offline(unsigned int cpu)
 	return 0;
 }
 
-static void haltpoll_uninit(void)
-{
-	if (haltpoll_hp_state)
-		cpuhp_remove_state(haltpoll_hp_state);
-	cpuidle_unregister_driver(&haltpoll_driver);
-
-	free_percpu(haltpoll_cpuidle_devices);
-	haltpoll_cpuidle_devices = NULL;
-}
 
 static bool haltpoll_want(void)
 {
 	return kvm_para_has_hint(KVM_HINTS_REALTIME);
 }
 
-static int __init haltpoll_init(void)
+static void haltpoll_uninit(void)
+{
+	unregister_haltpoll_driver();
+}
+
+static int register_haltpoll_driver(void)
 {
 	int ret;
 	struct cpuidle_driver *drv = &haltpoll_driver;
@@ -111,9 +151,6 @@ static int __init haltpoll_init(void)
 #endif
 
 	cpuidle_poll_state_init(drv);
-
-	if (!force && (!kvm_para_available() || !haltpoll_want()))
-		return -ENODEV;
 
 	ret = cpuidle_register_driver(drv);
 	if (ret < 0)
@@ -137,9 +174,35 @@ static int __init haltpoll_init(void)
 	return ret;
 }
 
+static void unregister_haltpoll_driver(void)
+{
+	if (haltpoll_hp_state)
+		cpuhp_remove_state(haltpoll_hp_state);
+	cpuidle_unregister_driver(&haltpoll_driver);
+
+	free_percpu(haltpoll_cpuidle_devices);
+	haltpoll_cpuidle_devices = NULL;
+
+}
+
+static int __init haltpoll_init(void)
+{
+	int ret = 0;
+#ifdef CONFIG_X86
+	/* Do not load haltpoll if idle= is passed */
+	if (boot_option_idle_override != IDLE_NO_OVERRIDE)
+		return -ENODEV;
+#endif
+	if (force || (haltpoll_want() && kvm_para_available()))
+		ret = register_haltpoll_driver();
+
+	return ret;
+}
+
 static void __exit haltpoll_exit(void)
 {
-	haltpoll_uninit();
+	if (haltpoll_cpuidle_devices)
+		haltpoll_uninit();
 }
 
 module_init(haltpoll_init);
