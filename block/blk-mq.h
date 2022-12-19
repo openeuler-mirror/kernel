@@ -40,7 +40,7 @@ struct blk_mq_ctx {
 struct request_wrapper {
 	/* Time that I/O was counted in part_get_stat_info(). */
 	u64 stat_time_ns;
-} ____cacheline_aligned_in_smp;
+} ____cacheline_aligned;
 
 static inline struct request_wrapper *request_to_wrapper(void *rq)
 {
