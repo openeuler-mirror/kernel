@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2212.2.0
+%global hulkrelease 2212.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0181
+Release: %{hulkrelease}.0182
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,24 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 20 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.3.0.0182
+- Bluetooth: L2CAP: fix use-after-free in l2cap_conn_del()
+- Bluetooth: L2CAP: Fix build errors in some archs
+- Bluetooth: L2CAP: Fix l2cap_global_chan_by_psm regression
+- Bluetooth: L2CAP: Fix use-after-free caused by l2cap_chan_put
+- hv_netvsc: Add check for kvmalloc_array
+- xen/netback: don't call kfree_skb() with interrupts disabled
+- xen/netback: fix build warning
+- xen/netback: Ensure protocol headers don't fall in the non-linear area
+- !273 [openEuler-1.0-LTS] Fix mouse enumeration issue after wakeup from s4
+- arm64: fix a concurrency issue in emulation_proc_handler()
+- dm thin: Fix ABBA deadlock between shrink_slab and dm_pool_abort_metadata
+- sched/qos: Don't unthrottle cfs_rq when cfs_rq is throttled by qos
+- media: mceusb: Use new usb_control_msg_*() routines
+- media: mceusb: fix control-message timeouts
+- USB: add usb_control_msg_send() and usb_control_msg_recv()
+- Fix mouse enumeration issue after wakeup from s4
 
 * Tue Dec 13 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.2.0.0181
 - mm/sharepool: Fix a double free problem caused by init_local_group
