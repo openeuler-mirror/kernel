@@ -246,24 +246,20 @@ static struct scsi_host_template qla4xxx_driver_template = {
 	.vendor_id		= SCSI_NL_VID_TYPE_PCI | PCI_VENDOR_ID_QLOGIC,
 };
 
-static struct iscsi_transport_expand qla4xxx_iscsi_expand = {
-	.unbind_conn            = iscsi_conn_unbind,
-};
-
 static struct iscsi_transport qla4xxx_iscsi_transport = {
 	.owner			= THIS_MODULE,
 	.name			= DRIVER_NAME,
 	.caps			= CAP_TEXT_NEGO |
 				  CAP_DATA_PATH_OFFLOAD | CAP_HDRDGST |
 				  CAP_DATADGST | CAP_LOGIN_OFFLOAD |
-				  CAP_MULTI_R2T | CAP_OPS_EXPAND,
+				  CAP_MULTI_R2T,
 	.attr_is_visible	= qla4_attr_is_visible,
 	.create_session         = qla4xxx_session_create,
 	.destroy_session        = qla4xxx_session_destroy,
 	.start_conn             = qla4xxx_conn_start,
 	.create_conn            = qla4xxx_conn_create,
 	.bind_conn              = qla4xxx_conn_bind,
-	.ops_expand		= &qla4xxx_iscsi_expand,
+	.unbind_conn		= iscsi_conn_unbind,
 	.stop_conn              = iscsi_conn_stop,
 	.destroy_conn           = qla4xxx_conn_destroy,
 	.set_param              = iscsi_set_param,
