@@ -473,6 +473,8 @@ static void malidp_crtc_reset(struct drm_crtc *crtc)
 	if (state) {
 		crtc->state = &state->base;
 		crtc->state->crtc = crtc;
+	} else {
+		crtc->state = NULL;
 	}
 }
 
