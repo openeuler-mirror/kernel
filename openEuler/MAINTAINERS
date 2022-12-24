@@ -67,6 +67,24 @@ Maintainers List
           first. When adding to this list, please keep the entries in
           alphabetical order.
 
+KERNEL VIRTUAL MACHINE (KVM)
+M:	zhukeqian1@huawei.com
+M:	yuzenghui@huawei.com
+S:	Maintained
+F:	Documentation/virt/kvm/
+F:	include/asm-generic/kvm*
+F:	include/kvm/
+F:	include/linux/kvm*
+F:	include/trace/events/kvm.h
+F:	include/uapi/asm-generic/kvm*
+F:	include/uapi/linux/kvm*
+F:	tools/kvm/
+F:	tools/testing/selftests/kvm/
+F:	virt/kvm/
+F:	arch/*/include/asm/kvm*
+F:	arch/*/include/uapi/asm/kvm*
+F:	arch/*/kvm/
+
 SCHEDULER
 M:	zhengzucheng@huawei.com
 S:	Maintained
