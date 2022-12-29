@@ -54,6 +54,7 @@ LDFLAGS_vmlinux			+= -G0 -static -n -nostdlib
 # upgrade the compiler or downgrade the assembler.
 ifdef CONFIG_AS_HAS_EXPLICIT_RELOCS
 cflags-y			+= -mexplicit-relocs
+KBUILD_CFLAGS_KERNEL		+= -mdirect-extern-access
 else
 cflags-y			+= $(call cc-option,-mno-explicit-relocs)
 KBUILD_AFLAGS_KERNEL		+= -Wa,-mla-global-with-pcrel
