@@ -8,6 +8,8 @@
 #include <linux/printk.h>
 #include <linux/hashtable.h>
 #include <linux/numa.h>
+#include <linux/hugetlb.h>
+#include <linux/memcontrol.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
@@ -411,6 +413,26 @@ extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
 
 extern int sp_id_of_current(void);
 extern int mg_sp_id_of_current(void);
+
+static inline void sp_kmemcg_uncharge_hpage(struct page *page)
+{
+	if (!sp_is_enabled())
+		return;
+
+	if (memcg_kmem_enabled() && PageKmemcg(page)) {
+		int order = huge_page_order(page_hstate(page));
+
+		__memcg_kmem_uncharge(page, order);
+	}
+}
+
+static inline void sp_memcg_uncharge_hpage(struct page *page)
+{
+	if (!sp_is_enabled())
+		return;
+
+	mem_cgroup_uncharge(page);
+}
 #else
 
 static inline int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
@@ -682,6 +704,14 @@ static inline int sp_id_of_current(void)
 static inline int mg_sp_id_of_current(void)
 {
 	return -EPERM;
+}
+
+static inline void sp_kmemcg_uncharge_hpage(struct page *page)
+{
+}
+
+static inline void sp_memcg_uncharge_hpage(struct page *page)
+{
 }
 
 #endif

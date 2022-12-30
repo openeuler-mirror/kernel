@@ -38,6 +38,7 @@
 #include <linux/node.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/page_owner.h>
+#include <linux/share_pool.h>
 #include "internal.h"
 
 int hugetlb_max_hstate __read_mostly;
@@ -1311,6 +1312,7 @@ void free_huge_page(struct page *page)
 		(struct hugepage_subpool *)page_private(page);
 	bool restore_reserve;
 
+	sp_kmemcg_uncharge_hpage(page);
 	set_page_private(page, 0);
 	page->mapping = NULL;
 	VM_BUG_ON_PAGE(page_count(page), page);
@@ -1345,6 +1347,7 @@ void free_huge_page(struct page *page)
 		h->resv_huge_pages++;
 
 	if (PageHugeTemporary(page)) {
+		sp_memcg_uncharge_hpage(page);
 		list_del(&page->lru);
 		ClearPageHugeTemporary(page);
 		update_and_free_page(h, page);

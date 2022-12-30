@@ -4555,6 +4555,8 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 	int err;
 	int node_id;
 	struct sp_area *spa;
+	bool charge_hpage = false;
+	struct mem_cgroup *memcg;
 
 	spa = vma->vm_private_data;
 	if (!spa) {
@@ -4572,10 +4574,11 @@ retry:
 
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
-			page = alloc_huge_page_node(hstate_file(vma->vm_file),
-						    node_id);
+			page = hugetlb_alloc_hugepage(node_id, HUGETLB_ALLOC_BUDDY);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
+			else if (!PageKmemcg(page))
+				charge_hpage = true;
 		}
 		if (IS_ERR(page)) {
 			ptl = huge_pte_lock(h, mm, ptep);
@@ -4588,19 +4591,30 @@ retry:
 			ret = vmf_error(PTR_ERR(page));
 			goto out;
 		}
+
+		if (charge_hpage &&
+		    mem_cgroup_try_charge_delay(page, vma->vm_mm, GFP_KERNEL, &memcg, true)) {
+			put_page(page);
+			ret = vmf_error(-ENOMEM);
+			goto out;
+		}
+
 		__SetPageUptodate(page);
 		new_page = true;
 
 		/* sharepool pages are all shared */
 		err = huge_add_to_page_cache(page, mapping, idx);
 		if (err) {
+			if (charge_hpage) {
+				mem_cgroup_cancel_charge(page, memcg, true);
+				charge_hpage = false;
+			}
 			put_page(page);
 			if (err == -EEXIST)
 				goto retry;
 			goto out;
 		}
 	}
-
 
 	ptl = huge_pte_lock(h, mm, ptep);
 	size = i_size_read(mapping->host) >> huge_page_shift(h);
@@ -4618,11 +4632,13 @@ retry:
 
 	hugetlb_count_add(pages_per_huge_page(h), mm);
 
+	if (charge_hpage)
+		mem_cgroup_commit_charge(page, memcg, false, true);
+
 	spin_unlock(ptl);
 
-	if (new_page) {
+	if (new_page)
 		SetPagePrivate(&page[1]);
-	}
 
 	unlock_page(page);
 out:
@@ -4631,6 +4647,8 @@ out:
 backout:
 	spin_unlock(ptl);
 	unlock_page(page);
+	if (charge_hpage)
+		mem_cgroup_cancel_charge(page, memcg, true);
 	put_page(page);
 	goto out;
 }
