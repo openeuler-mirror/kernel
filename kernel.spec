@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2212.3.0
+%global hulkrelease 2212.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0182
+Release: %{hulkrelease}.0183
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,27 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.4.0.0183
+- dm thin: Use last transaction's pmd->root when commit failed
+- drm: mali-dp: potential dereference of null pointer
+- power: supply: wm8350-power: Add missing free in free_charger_irq
+- sched: Reinit task's vruntime if a task sleep over 200 days
+- media: dvb-core: Fix UAF due to refcount races at releasing
+- drm/amdkfd: Check for null pointer after calling kmemdup
+- !325 Support enabling dirty log gradually in small chunks
+- KVM: arm64: Support enabling dirty log gradually in small chunks
+- KVM: x86: enable dirty log gradually in small chunks
+- KVM: Introduce KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2
+- KVM: Fix kvm_clear_dirty_log_protect off-by-(minus-)one
+- KVM: Fix the bitmap range to copy during clear dirty
+- kvm_main: fix some comments
+- KVM: fix KVM_CLEAR_DIRTY_LOG for memory slots of unaligned size
+- Revert "KVM: Eliminate extra function calls in kvm_get_dirty_log_protect()"
+- KVM: validate userspace input in kvm_clear_dirty_log_protect()
+- kvm: introduce manual dirty log reprotect
+- kvm: rename last argument to kvm_get_dirty_log_protect
+- kvm: make KVM_CAP_ENABLE_CAP_VM architecture agnostic
 
 * Tue Dec 20 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.3.0.0182
 - Bluetooth: L2CAP: fix use-after-free in l2cap_conn_del()
