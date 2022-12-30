@@ -112,6 +112,7 @@ static inline unsigned long current_stack_pointer(void)
 #define _TIF_LASX_CTX_LIVE	(1<<TIF_LASX_CTX_LIVE)
 #define _TIF_SYSCALL_TRACE	(1<<TIF_SYSCALL_TRACE)
 #define _TIF_SYSCALL_AUDIT	(1<<TIF_SYSCALL_AUDIT)
+#define _TIF_SECCOMP		(1<<TIF_SECCOMP)
 
 #endif /* __KERNEL__ */
 #endif /* _ASM_THREAD_INFO_H */
