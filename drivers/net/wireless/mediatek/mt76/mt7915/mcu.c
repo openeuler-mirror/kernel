@@ -2898,11 +2898,12 @@ void mt7915_mcu_exit(struct mt7915_dev *dev)
 			    FIELD_PREP(MT_TOP_MISC_FW_STATE,
 				       FW_STATE_FW_DOWNLOAD), 1000)) {
 		dev_err(dev->mt76.dev, "Failed to exit mcu\n");
-		return;
+		goto out;
 	}
 
 	reg = mt7915_reg_map_l1(dev, MT_TOP_LPCR_HOST_BAND0);
 	mt76_wr(dev, reg, MT_TOP_LPCR_HOST_FW_OWN);
+out:
 	skb_queue_purge(&dev->mt76.mcu.res_q);
 }
 
