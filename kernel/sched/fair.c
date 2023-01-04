@@ -123,6 +123,13 @@ int __weak arch_asym_cpu_priority(int cpu)
 #endif
 
 #ifdef CONFIG_QOS_SCHED
+
+/*
+ * To distinguish cfs bw, use QOS_THROTTLED mark cfs_rq->throttled
+ * when qos throttled(and cfs bw throttle mark cfs_rq->throttled as 1).
+ */
+#define QOS_THROTTLED	2
+
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct list_head, qos_throttled_cfs_rq);
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
 static DEFINE_PER_CPU(int, qos_cpu_overload);
@@ -4959,6 +4966,14 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
 
+#ifdef CONFIG_QOS_SCHED
+	/*
+	 * if this cfs_rq throttled by qos, not need unthrottle it.
+	 */
+	if (cfs_rq->throttled == QOS_THROTTLED)
+		return;
+#endif
+
 	cfs_rq->throttled = 0;
 
 	update_rq_clock(rq);
@@ -7182,26 +7197,6 @@ preempt:
 
 static void start_qos_hrtimer(int cpu);
 
-static int qos_tg_unthrottle_up(struct task_group *tg, void *data)
-{
-	struct rq *rq = data;
-	struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
-
-	cfs_rq->throttle_count--;
-
-	return 0;
-}
-
-static int qos_tg_throttle_down(struct task_group *tg, void *data)
-{
-	struct rq *rq = data;
-	struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
-
-	cfs_rq->throttle_count++;
-
-	return 0;
-}
-
 static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
@@ -7213,7 +7208,7 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* freeze hierarchy runnable averages while throttled */
 	rcu_read_lock();
-	walk_tg_tree_from(cfs_rq->tg, qos_tg_throttle_down, tg_nop, (void *)rq);
+	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
 	rcu_read_unlock();
 
 	task_delta = cfs_rq->h_nr_running;
@@ -7224,8 +7219,13 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 		if (!se->on_rq)
 			break;
 
-		if (dequeue)
+		if (dequeue) {
 			dequeue_entity(qcfs_rq, se, DEQUEUE_SLEEP);
+		} else {
+			update_load_avg(qcfs_rq, se, 0);
+			se_update_runnable(se);
+		}
+
 		qcfs_rq->h_nr_running -= task_delta;
 		qcfs_rq->idle_h_nr_running -= idle_task_delta;
 
@@ -7243,7 +7243,7 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	if (list_empty(&per_cpu(qos_throttled_cfs_rq, cpu_of(rq))))
 		start_qos_hrtimer(cpu_of(rq));
 
-	cfs_rq->throttled = 1;
+	cfs_rq->throttled = QOS_THROTTLED;
 
 	list_add(&cfs_rq->qos_throttled_list,
 		 &per_cpu(qos_throttled_cfs_rq, cpu_of(rq)));
@@ -7253,11 +7253,13 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
-	int enqueue = 1;
 	unsigned int prev_nr = cfs_rq->h_nr_running;
 	long task_delta, idle_task_delta;
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
+
+	if (cfs_rq->throttled != QOS_THROTTLED)
+		return;
 
 	cfs_rq->throttled = 0;
 
@@ -7266,7 +7268,7 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* update hierarchical throttle state */
 	rcu_read_lock();
-	walk_tg_tree_from(cfs_rq->tg, tg_nop, qos_tg_unthrottle_up, (void *)rq);
+	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
 	rcu_read_unlock();
 
 	if (!cfs_rq->load.weight)
@@ -7276,25 +7278,57 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	idle_task_delta = cfs_rq->idle_h_nr_running;
 	for_each_sched_entity(se) {
 		if (se->on_rq)
-			enqueue = 0;
+			break;
 
 		cfs_rq = cfs_rq_of(se);
-		if (enqueue)
-			enqueue_entity(cfs_rq, se, ENQUEUE_WAKEUP);
+		enqueue_entity(cfs_rq, se, ENQUEUE_WAKEUP);
+
 		cfs_rq->h_nr_running += task_delta;
 		cfs_rq->idle_h_nr_running += idle_task_delta;
 
 		if (cfs_rq_throttled(cfs_rq))
+			goto unthrottle_throttle;
+	}
+
+	for_each_sched_entity(se) {
+		cfs_rq = cfs_rq_of(se);
+
+		update_load_avg(cfs_rq, se, UPDATE_TG);
+		se_update_runnable(se);
+
+		cfs_rq->h_nr_running += task_delta;
+		cfs_rq->idle_h_nr_running += idle_task_delta;
+
+		/* end evaluation on encountering a throttled cfs_rq */
+		if (cfs_rq_throttled(cfs_rq))
+			goto unthrottle_throttle;
+
+		/*
+		 * One parent has been throttled and cfs_rq removed from the
+		 * list. Add it back to not break the leaf list.
+		 */
+		if (throttled_hierarchy(cfs_rq))
+			list_add_leaf_cfs_rq(cfs_rq);
+	}
+
+	add_nr_running(rq, task_delta);
+	if (prev_nr < 2 && prev_nr + task_delta >= 2)
+		overload_set(rq);
+
+unthrottle_throttle:
+	/*
+	 * The cfs_rq_throttled() breaks in the above iteration can result in
+	 * incomplete leaf list maintenance, resulting in triggering the
+	 * assertion below.
+	 */
+	for_each_sched_entity(se) {
+		cfs_rq = cfs_rq_of(se);
+
+		if (list_add_leaf_cfs_rq(cfs_rq))
 			break;
 	}
 
 	assert_list_leaf_cfs_rq(rq);
-
-	if (!se) {
-		add_nr_running(rq, task_delta);
-		if (prev_nr < 2 && prev_nr + task_delta >= 2)
-			overload_set(rq);
-	}
 
 	/* Determine whether we need to wake up potentially idle CPU: */
 	if (rq->curr == rq->idle && rq->cfs.nr_running)
