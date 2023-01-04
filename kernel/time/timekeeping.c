@@ -52,6 +52,9 @@ static struct {
 	u64		padding[8];
 #endif
 	seqcount_raw_spinlock_t	seq;
+#ifdef CONFIG_ARCH_LLC_128_LINE_SIZE
+	u64		padding2[2];
+#endif
 	struct timekeeper	timekeeper;
 #ifdef CONFIG_ARCH_LLC_128_LINE_SIZE
 } tk_core ____cacheline_aligned_128 = {
