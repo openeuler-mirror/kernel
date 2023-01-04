@@ -40,6 +40,10 @@ struct blk_mq_ctx {
 struct request_wrapper {
 	/* Time that I/O was counted in part_get_stat_info(). */
 	u64 stat_time_ns;
+#ifdef CONFIG_BLK_RQ_ALLOC_TIME
+	/* Time that the first bio started allocating this request. */
+	u64 alloc_time_ns;
+#endif
 } ____cacheline_aligned;
 
 static inline struct request_wrapper *request_to_wrapper(void *rq)
