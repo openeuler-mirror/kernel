@@ -2775,6 +2775,15 @@ void bfq_release_process_ref(struct bfq_data *bfqd, struct bfq_queue *bfqq)
 	    bfqq != bfqd->in_service_queue)
 		bfq_del_bfqq_busy(bfqd, bfqq, false);
 
+	/*
+	 * __bfq_bic_change_cgroup() just reset bic->bfqq so that a new bfqq
+	 * will be created to handle new io, while old bfqq will stay around
+	 * until all the requests are completed. It's unsafe to keep bfqq->bic
+	 * since they are not related anymore.
+	 */
+	if (bfqq_process_refs(bfqq) == 1)
+		bfqq->bic = NULL;
+
 	bfq_put_queue(bfqq);
 }
 
