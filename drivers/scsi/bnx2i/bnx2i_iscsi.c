@@ -2274,23 +2274,18 @@ static struct scsi_host_template bnx2i_host_template = {
 	.track_queue_depth	= 1,
 };
 
-
-static struct iscsi_transport_expand bnx2i_iscsi_expand = {
-	.unbind_conn            = iscsi_conn_unbind,
-};
-
 struct iscsi_transport bnx2i_iscsi_transport = {
 	.owner			= THIS_MODULE,
 	.name			= "bnx2i",
 	.caps			= CAP_RECOVERY_L0 | CAP_HDRDGST |
 				  CAP_MULTI_R2T | CAP_DATADGST |
 				  CAP_DATA_PATH_OFFLOAD |
-				  CAP_TEXT_NEGO | CAP_OPS_EXPAND,
+				  CAP_TEXT_NEGO,
 	.create_session		= bnx2i_session_create,
 	.destroy_session	= bnx2i_session_destroy,
 	.create_conn		= bnx2i_conn_create,
 	.bind_conn		= bnx2i_conn_bind,
-	.ops_expand             = &bnx2i_iscsi_expand,
+	.unbind_conn		= iscsi_conn_unbind,
 	.destroy_conn		= bnx2i_conn_destroy,
 	.attr_is_visible	= bnx2i_attr_is_visible,
 	.set_param		= iscsi_set_param,
