@@ -2642,7 +2642,7 @@ static int blk_mq_alloc_rqs(struct blk_mq_tag_set *set,
 		to_do = min(entries_per_page, depth - i);
 		left -= to_do * rq_size;
 		for (j = 0; j < to_do; j++) {
-			struct request *rq = p;
+			struct request *rq = p + sizeof(struct request_wrapper);
 
 			tags->static_rqs[i] = rq;
 			if (blk_mq_init_request(set, rq, hctx_idx, node)) {
