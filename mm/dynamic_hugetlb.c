@@ -577,6 +577,10 @@ static void __free_page_to_dhugetlb_pool(struct page *page)
 	spin_lock_irqsave(&percpu_pool->lock, flags);
 
 	ClearPagePool(page);
+	if (!free_pages_prepare(page, 0, true)) {
+		SetPagePool(page);
+		goto out;
+	}
 	list_add(&page->lru, &percpu_pool->head_page);
 	percpu_pool->free_pages++;
 	percpu_pool->used_pages--;
@@ -585,7 +589,7 @@ static void __free_page_to_dhugetlb_pool(struct page *page)
 		reclaim_pages_from_percpu_pool(hpool, percpu_pool, PERCPU_POOL_PAGE_BATCH);
 		spin_unlock(&hpool->lock);
 	}
-
+out:
 	spin_unlock_irqrestore(&percpu_pool->lock, flags);
 	put_hpool(hpool);
 }
@@ -595,8 +599,7 @@ bool free_page_to_dhugetlb_pool(struct page *page)
 	if (!dhugetlb_enabled || !PagePool(page))
 		return false;
 
-	if (free_pages_prepare(page, 0, true))
-		__free_page_to_dhugetlb_pool(page);
+	__free_page_to_dhugetlb_pool(page);
 	return true;
 }
 
@@ -610,8 +613,7 @@ void free_page_list_to_dhugetlb_pool(struct list_head *list)
 	list_for_each_entry_safe(page, next, list, lru) {
 		if (PagePool(page)) {
 			list_del(&page->lru);
-			if (free_pages_prepare(page, 0, true))
-				__free_page_to_dhugetlb_pool(page);
+			__free_page_to_dhugetlb_pool(page);
 		}
 	}
 }
