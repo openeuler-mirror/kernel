@@ -239,9 +239,6 @@ struct bio {
 	 */
 	struct blkcg_gq		*bi_blkg;
 	struct bio_issue	bi_issue;
-#ifdef CONFIG_BLK_CGROUP_IOCOST
-	u64			bi_iocost_cost;
-#endif
 #endif
 
 #ifdef CONFIG_BLK_INLINE_ENCRYPTION
@@ -268,7 +265,11 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+#ifdef CONFIG_BLK_CGROUP_IOCOST
+	KABI_USE(1, u64 bi_iocost_cost)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
