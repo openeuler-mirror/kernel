@@ -182,25 +182,6 @@ static void reclaim_pages_from_percpu_pool(struct dhugetlb_pool *hpool,
 	}
 }
 
-static void clear_percpu_pools(struct dhugetlb_pool *hpool)
-{
-	struct percpu_pages_pool *percpu_pool;
-	int i;
-
-	lockdep_assert_held(&hpool->lock);
-
-	spin_unlock(&hpool->lock);
-	for (i = 0; i < NR_PERCPU_POOL; i++)
-		spin_lock(&hpool->percpu_pool[i].lock);
-	spin_lock(&hpool->lock);
-	for (i = 0; i < NR_PERCPU_POOL; i++) {
-		percpu_pool = &hpool->percpu_pool[i];
-		reclaim_pages_from_percpu_pool(hpool, percpu_pool, percpu_pool->free_pages);
-	}
-	for (i = 0; i < NR_PERCPU_POOL; i++)
-		spin_unlock(&hpool->percpu_pool[i].lock);
-}
-
 /* We only try 5 times to reclaim pages */
 #define	HPOOL_RECLAIM_RETRIES	5
 
@@ -210,6 +191,7 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 	struct split_hugepage *split_page, *split_next;
 	unsigned long nr_pages, block_size;
 	struct page *page, *next, *p;
+	struct percpu_pages_pool *percpu_pool;
 	bool need_migrate = false, need_initial = false;
 	int i, try;
 	LIST_HEAD(wait_page_list);
@@ -241,7 +223,22 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 		try = 0;
 
 merge:
-		clear_percpu_pools(hpool);
+		/*
+		 * If we are merging 4K page to 2M page, we need to get
+		 * lock of percpu pool sequentially and clear percpu pool.
+		 */
+		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
+			spin_unlock(&hpool->lock);
+			for (i = 0; i < NR_PERCPU_POOL; i++)
+				spin_lock(&hpool->percpu_pool[i].lock);
+			spin_lock(&hpool->lock);
+			for (i = 0; i < NR_PERCPU_POOL; i++) {
+				percpu_pool = &hpool->percpu_pool[i];
+				reclaim_pages_from_percpu_pool(hpool, percpu_pool,
+							       percpu_pool->free_pages);
+			}
+		}
+
 		page = pfn_to_page(split_page->start_pfn);
 		for (i = 0; i < nr_pages; i+= block_size) {
 			p = pfn_to_page(split_page->start_pfn + i);
@@ -251,6 +248,14 @@ merge:
 				else
 					goto migrate;
 			}
+		}
+		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
+			/*
+			 * All target 4K page are in src_hpages_pool, we
+			 * can unlock percpu pool.
+			 */
+			for (i = 0; i < NR_PERCPU_POOL; i++)
+				spin_unlock(&hpool->percpu_pool[i].lock);
 		}
 
 		list_del(&split_page->head_pages);
@@ -284,8 +289,14 @@ merge:
 		trace_dynamic_hugetlb_split_merge(hpool, page, DHUGETLB_MERGE, page_size(page));
 		return 0;
 next:
+		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
+			/* Unlock percpu pool before try next */
+			for (i = 0; i < NR_PERCPU_POOL; i++)
+				spin_unlock(&hpool->percpu_pool[i].lock);
+		}
 		continue;
 migrate:
+		/* page migration only used for HUGE_PAGES_POOL_2M */
 		if (try++ >= HPOOL_RECLAIM_RETRIES)
 			goto next;
 
@@ -300,7 +311,10 @@ migrate:
 		}
 
 		/* Unlock and try migration. */
+		for (i = 0; i < NR_PERCPU_POOL; i++)
+			spin_unlock(&hpool->percpu_pool[i].lock);
 		spin_unlock(&hpool->lock);
+
 		for (i = 0; i < nr_pages; i+= block_size) {
 			p = pfn_to_page(split_page->start_pfn + i);
 			if (PagePool(p))
@@ -312,6 +326,10 @@ migrate:
 		}
 		spin_lock(&hpool->lock);
 
+		/*
+		 * Move all isolate pages to src_hpages_pool and then try
+		 * merge again.
+		 */
 		list_for_each_entry_safe(page, next, &wait_page_list, lru) {
 			list_move_tail(&page->lru, &src_hpages_pool->hugepage_freelists);
 			src_hpages_pool->free_normal_pages++;
