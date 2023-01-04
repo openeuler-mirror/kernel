@@ -630,7 +630,8 @@ static struct elevator_type *elevator_get_default(struct request_queue *q)
 	if (q->tag_set && q->tag_set->flags & BLK_MQ_F_NO_SCHED_BY_DEFAULT)
 		return NULL;
 
-	if (q->nr_hw_queues != 1)
+	if (q->nr_hw_queues != 1 &&
+			!blk_mq_is_sbitmap_shared(q->tag_set->flags))
 		return NULL;
 
 	return elevator_get(q, "mq-deadline", false);
