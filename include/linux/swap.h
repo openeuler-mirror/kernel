@@ -246,6 +246,11 @@ struct swap_cluster_list {
 	struct swap_cluster_info tail;
 };
 
+struct swap_extend_info {
+	struct percpu_ref users;	/* indicate and keep swap device valid. */
+	struct completion comp;		/* seldom referenced */
+};
+
 /*
  * The in-memory structure used to track swap areas.
  */
@@ -293,10 +298,8 @@ struct swap_info_struct {
 					 */
 	struct work_struct discard_work; /* discard worker */
 	struct swap_cluster_list discard_clusters; /* discard clusters list */
-	KABI_RESERVE(1)
+	KABI_USE(1, struct swap_extend_info *sei)
 	KABI_RESERVE(2)
-	KABI_EXTEND(struct percpu_ref users)	/* indicate and keep swap device valid. */
-	KABI_EXTEND(struct completion comp)	/* seldom referenced */
 	struct plist_node avail_lists[]; /*
 					   * entries in swap_avail_heads, one
 					   * entry per node.
@@ -537,7 +540,7 @@ sector_t swap_page_sector(struct page *page);
 
 static inline void put_swap_device(struct swap_info_struct *si)
 {
-	percpu_ref_put(&si->users);
+	percpu_ref_put(&si->sei->users);
 }
 
 #else /* CONFIG_SWAP */

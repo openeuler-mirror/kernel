@@ -515,10 +515,10 @@ static void swap_discard_work(struct work_struct *work)
 
 static void swap_users_ref_free(struct percpu_ref *ref)
 {
-	struct swap_info_struct *si;
+	struct swap_extend_info *sei;
 
-	si = container_of(ref, struct swap_info_struct, users);
-	complete(&si->comp);
+	sei = container_of(ref, struct swap_extend_info, users);
+	complete(&sei->comp);
 }
 
 static void alloc_cluster(struct swap_info_struct *si, unsigned long idx)
@@ -1316,7 +1316,7 @@ struct swap_info_struct *get_swap_device(swp_entry_t entry)
 	si = swp_swap_info(entry);
 	if (!si)
 		goto bad_nofile;
-	if (!percpu_ref_tryget_live(&si->users))
+	if (!percpu_ref_tryget_live(&si->sei->users))
 		goto out;
 	/*
 	 * Guarantee the si->users are checked before accessing other
@@ -1336,7 +1336,7 @@ bad_nofile:
 out:
 	return NULL;
 put_out:
-	percpu_ref_put(&si->users);
+	percpu_ref_put(&si->sei->users);
 	return NULL;
 }
 
@@ -2542,7 +2542,7 @@ static void enable_swap_info(struct swap_info_struct *p, int prio,
 	/*
 	 * Finished initializing swap device, now it's safe to reference it.
 	 */
-	percpu_ref_resurrect(&p->users);
+	percpu_ref_resurrect(&p->sei->users);
 	spin_lock(&swap_lock);
 	spin_lock(&p->lock);
 	_enable_swap_info(p);
@@ -2665,9 +2665,9 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	 * We need synchronize_rcu() here to protect the accessing to
 	 * the swap cache data structure.
 	 */
-	percpu_ref_kill(&p->users);
+	percpu_ref_kill(&p->sei->users);
 	synchronize_rcu();
-	wait_for_completion(&p->comp);
+	wait_for_completion(&p->sei->comp);
 
 	flush_work(&p->discard_work);
 
@@ -2899,8 +2899,15 @@ static struct swap_info_struct *alloc_swap_info(void)
 	if (!p)
 		return ERR_PTR(-ENOMEM);
 
-	if (percpu_ref_init(&p->users, swap_users_ref_free,
+	p->sei = kvzalloc(sizeof(struct swap_extend_info), GFP_KERNEL);
+	if (!p->sei) {
+		kvfree(p);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	if (percpu_ref_init(&p->sei->users, swap_users_ref_free,
 			    PERCPU_REF_INIT_DEAD, GFP_KERNEL)) {
+		kvfree(p->sei);
 		kvfree(p);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -2912,7 +2919,8 @@ static struct swap_info_struct *alloc_swap_info(void)
 	}
 	if (type >= MAX_SWAPFILES) {
 		spin_unlock(&swap_lock);
-		percpu_ref_exit(&p->users);
+		percpu_ref_exit(&p->sei->users);
+		kvfree(p->sei);
 		kvfree(p);
 		return ERR_PTR(-EPERM);
 	}
@@ -2941,12 +2949,13 @@ static struct swap_info_struct *alloc_swap_info(void)
 	p->flags = SWP_USED;
 	spin_unlock(&swap_lock);
 	if (defer) {
-		percpu_ref_exit(&defer->users);
+		percpu_ref_exit(&defer->sei->users);
+		kvfree(defer->sei);
 		kvfree(defer);
 	}
 	spin_lock_init(&p->lock);
 	spin_lock_init(&p->cont_lock);
-	init_completion(&p->comp);
+	init_completion(&p->sei->comp);
 
 	return p;
 }
