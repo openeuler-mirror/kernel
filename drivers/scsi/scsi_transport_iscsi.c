@@ -2257,7 +2257,6 @@ static void iscsi_ep_disconnect(struct iscsi_cls_conn *conn, bool is_active)
 	ep = conn->ep;
 	conn->ep = NULL;
 
-	session->transport->unbind_conn(conn, is_active);
 	session->transport->ep_disconnect(ep);
 	ISCSI_DBG_TRANS_CONN(conn, "disconnect ep done.\n");
 }
@@ -4891,7 +4890,6 @@ iscsi_register_transport(struct iscsi_transport *tt)
 	int err;
 
 	BUG_ON(!tt);
-	WARN_ON(tt->ep_disconnect && !tt->unbind_conn);
 
 	priv = iscsi_if_transport_lookup(tt);
 	if (priv)
