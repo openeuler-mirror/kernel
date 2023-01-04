@@ -386,7 +386,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->rq_disk = NULL;
 	rq->part = NULL;
 #ifdef CONFIG_BLK_RQ_ALLOC_TIME
-	rq->alloc_time_ns = alloc_time_ns;
+	request_to_wrapper(rq)->alloc_time_ns = alloc_time_ns;
 #endif
 	request_to_wrapper(rq)->stat_time_ns = 0;
 	if (blk_mq_need_time_stamp(rq))

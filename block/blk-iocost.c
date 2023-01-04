@@ -2747,8 +2747,13 @@ static void ioc_rqos_done(struct rq_qos *rqos, struct request *rq)
 	struct ioc_pcpu_stat *ccs;
 	u64 on_q_ns, rq_wait_ns, size_nsec;
 	int pidx, rw;
+	struct request_wrapper *rq_wrapper;
 
-	if (!ioc->enabled || !rq->alloc_time_ns || !rq->start_time_ns)
+	if (WARN_ON_ONCE(!(rq->rq_flags & RQF_FROM_BLOCK)))
+		return;
+
+	rq_wrapper = request_to_wrapper(rq);
+	if (!ioc->enabled || !rq_wrapper->alloc_time_ns || !rq->start_time_ns)
 		return;
 
 	switch (req_op(rq) & REQ_OP_MASK) {
@@ -2764,8 +2769,8 @@ static void ioc_rqos_done(struct rq_qos *rqos, struct request *rq)
 		return;
 	}
 
-	on_q_ns = ktime_get_ns() - rq->alloc_time_ns;
-	rq_wait_ns = rq->start_time_ns - rq->alloc_time_ns;
+	on_q_ns = ktime_get_ns() - rq_wrapper->alloc_time_ns;
+	rq_wait_ns = rq->start_time_ns - rq_wrapper->alloc_time_ns;
 	size_nsec = div64_u64(calc_size_vtime_cost(rq, ioc), VTIME_PER_NSEC);
 
 	ccs = get_cpu_ptr(ioc->pcpu_stat);
