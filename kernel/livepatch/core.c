@@ -1041,11 +1041,13 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 			       func->old_name);
 			return -ENOENT;
 		}
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 		if (func->old_size < KLP_MAX_REPLACE_SIZE) {
 			pr_err("%s size less than limit (%lu < %zu)\n", func->old_name,
 			       func->old_size, KLP_MAX_REPLACE_SIZE);
 			return -EINVAL;
 		}
+#endif
 
 #ifdef PPC64_ELF_ABI_v1
 		/*
@@ -1195,6 +1197,7 @@ extern int klp_static_call_register(struct module *mod);
 static inline int klp_static_call_register(struct module *mod) { return 0; }
 #endif
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 static int check_address_conflict(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1231,6 +1234,7 @@ static int check_address_conflict(struct klp_patch *patch)
 	}
 	return 0;
 }
+#endif
 
 static int klp_init_patch(struct klp_patch *patch)
 {
@@ -1278,11 +1282,11 @@ static int klp_init_patch(struct klp_patch *patch)
 	}
 	module_enable_ro(patch->mod, true);
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	ret = check_address_conflict(patch);
 	if (ret)
 		return ret;
 
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	klp_for_each_object(patch, obj)
 		klp_load_hook(obj);
 #endif
