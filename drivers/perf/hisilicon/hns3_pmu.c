@@ -223,6 +223,8 @@ static enum cpuhp_state hns3_pmu_online;
 /* interrupt rate events */
 #define HNS3_PMU_EVT_PPS_MSIX_NIC_INTR_NUM		0x00300
 #define HNS3_PMU_EVT_PPS_MSIX_NIC_TIME			0x10300
+#define HNS3_PMU_EVT_PPS_MSIX_ROH_INTR_NUM		0x00301
+#define HNS3_PMU_EVT_PPS_MSIX_ROH_TIME			0x10301
 
 /* filter mode supported by each bandwidth event */
 #define HNS3_PMU_FILTER_BW_SSU_EGU		0x07
@@ -286,6 +288,7 @@ static enum cpuhp_state hns3_pmu_online;
 
 /* filter mode supported by each interrupt rate event */
 #define HNS3_PMU_FILTER_INTR_MSIX_NIC		0x01
+#define HNS3_PMU_FILTER_INTR_MSIX_ROH		0x01
 
 enum hns3_pmu_hw_filter_mode {
 	HNS3_PMU_HW_FILTER_GLOBAL,
@@ -580,6 +583,7 @@ static struct attribute *hns3_pmu_events_attr[] = {
 
 	/* interrupt rate events */
 	HNS3_PMU_INTR_EVT_PAIR(pps_intr_msix_nic, MSIX_NIC),
+	HNS3_PMU_INTR_EVT_PAIR(pps_intr_msix_roh, MSIX_ROH),
 
 	NULL
 };
@@ -647,6 +651,7 @@ static struct attribute *hns3_pmu_filter_mode_attr[] = {
 
 	/* interrupt rate events */
 	HNS3_PMU_INTR_FLT_MODE_PAIR(pps_intr_msix_nic, MSIX_NIC),
+	HNS3_PMU_INTR_FLT_MODE_PAIR(pps_intr_msix_roh, MSIX_ROH),
 
 	NULL
 };
