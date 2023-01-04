@@ -1617,7 +1617,7 @@ static struct perf_pmu_events_attr _var = {				    \
 	.event_str	= _str,						    \
 };
 
-#define PMU_FORMAT_ATTR(_name, _format)					\
+#define PMU_FORMAT_ATTR_SHOW(_name, _format)					\
 static ssize_t								\
 _name##_show(struct device *dev,					\
 			       struct device_attribute *attr,		\
@@ -1626,6 +1626,9 @@ _name##_show(struct device *dev,					\
 	BUILD_BUG_ON(sizeof(_format) >= PAGE_SIZE);			\
 	return sprintf(page, _format "\n");				\
 }									\
+
+#define PMU_FORMAT_ATTR(_name, _format)					\
+	PMU_FORMAT_ATTR_SHOW(_name, _format)				\
 									\
 static struct device_attribute format_attr_##_name = __ATTR_RO(_name)
 
