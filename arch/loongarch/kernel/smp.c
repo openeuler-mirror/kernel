@@ -151,6 +151,17 @@ void loongson3_send_ipi_mask(const struct cpumask *mask, unsigned int action)
 		ipi_write_action(cpu_logical_map(i), (u32)action);
 }
 
+/*
+ * This function sends a 'reschedule' IPI to another CPU.
+ * it goes straight through and wastes no time serializing
+ * anything. Worst case is that we lose a reschedule ...
+ */
+void smp_send_reschedule(int cpu)
+{
+	loongson3_send_ipi_single(cpu, SMP_RESCHEDULE);
+}
+EXPORT_SYMBOL_GPL(smp_send_reschedule);
+
 irqreturn_t loongson3_ipi_interrupt(int irq, void *dev)
 {
 	unsigned int action;
