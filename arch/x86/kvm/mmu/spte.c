@@ -125,9 +125,9 @@ bool make_spte(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
 	bool wrprot = false;
 
 	if (sp->role.ad_disabled)
-		spte |= SPTE_TDP_AD_DISABLED_MASK;
+		spte |= SPTE_TDP_AD_DISABLED;
 	else if (kvm_mmu_page_ad_need_write_protect(sp))
-		spte |= SPTE_TDP_AD_WRPROT_ONLY_MASK;
+		spte |= SPTE_TDP_AD_WRPROT_ONLY;
 
 	/*
 	 * For the EPT case, shadow_present_mask is 0 if hardware
@@ -295,7 +295,7 @@ u64 make_nonleaf_spte(u64 *child_pt, bool ad_disabled)
 		shadow_user_mask | shadow_x_mask | shadow_me_mask;
 
 	if (ad_disabled)
-		spte |= SPTE_TDP_AD_DISABLED_MASK;
+		spte |= SPTE_TDP_AD_DISABLED;
 	else
 		spte |= shadow_accessed_mask;
 
