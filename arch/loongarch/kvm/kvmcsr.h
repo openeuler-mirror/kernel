@@ -7,7 +7,6 @@
 #define __LOONGARCH_KVM_CSR_H__
 #include <asm/kvm_host.h>
 #include "kvmcpu.h"
-#include <asm/watch.h>
 #include <linux/uaccess.h>
 #include <linux/kvm_host.h>
 
@@ -92,17 +91,17 @@ int _kvm_init_iocsr(struct kvm *kvm);
 int _kvm_set_iocsr(struct kvm *kvm, struct kvm_iocsr_entry *__user argp);
 int _kvm_get_iocsr(struct kvm *kvm, struct kvm_iocsr_entry *__user argp);
 
-#define KVM_PMU_PLV_ENABLE      (CSR_PERFCTRL_PLV0 |            \
-					CSR_PERFCTRL_PLV1 |     \
-					CSR_PERFCTRL_PLV2 |     \
-					CSR_PERFCTRL_PLV3)
+#define KVM_PMU_PLV_ENABLE      (KVM_PERFCTRL_PLV0 |            \
+					KVM_PERFCTRL_PLV1 |     \
+					KVM_PERFCTRL_PLV2 |     \
+					KVM_PERFCTRL_PLV3)
 
 #define CASE_WRITE_HW_PMU(vcpu, csr, id, csrid, v)                                              \
 	do {                                                                                    \
 		if (csrid == id) {                                                              \
 			if (v & KVM_PMU_PLV_ENABLE) {                                           \
-				kvm_write_csr_gcfg(kvm_read_csr_gcfg() | CSR_GCFG_GPERF);       \
-				kvm_write_hw_gcsr(csr, csrid, v | CSR_PERFCTRL_GMOD);           \
+				kvm_write_csr_gcfg(kvm_read_csr_gcfg() | KVM_GCFG_GPERF);       \
+				kvm_write_hw_gcsr(csr, csrid, v | KVM_PERFCTRL_GMOD);           \
 				vcpu->arch.aux_inuse |= KVM_LARCH_PERF;                         \
 				return ;                                                        \
 			} else {                                                                \

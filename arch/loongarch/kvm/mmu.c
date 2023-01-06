@@ -32,6 +32,24 @@ static int kvm_tlb_flush_gpa(struct kvm_vcpu *vcpu, unsigned long gpa)
 	return 0;
 }
 
+static inline int kvm_pmd_huge(pmd_t pmd)
+{
+#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+	return (pmd_val(pmd) & _PAGE_HUGE) != 0;
+#else
+	return 0;
+#endif	
+}
+
+static inline int kvm_pud_huge(pud_t pud)
+{
+#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+	return (pud_val(pud) & _PAGE_HUGE) != 0;
+#else
+	return 0;
+#endif	
+}
+
 static inline pmd_t kvm_pmd_mkhuge(pmd_t pmd)
 {
 #ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
@@ -80,54 +98,6 @@ static inline pmd_t kvm_pmd_mkold(pmd_t pmd)
 	return pmd;
 }
 
-static int mmu_topup_memory_cache(struct kvm_mmu_memory_cache *cache,
-				  int min, int max)
-{
-	void *page;
-
-	BUG_ON(max > KVM_NR_MEM_OBJS);
-	if (cache->nobjs >= min)
-		return 0;
-	while (cache->nobjs < max) {
-		page = (void *)__get_free_page(GFP_KERNEL);
-		if (!page)
-			return -ENOMEM;
-		cache->objects[cache->nobjs++] = page;
-	}
-	return 0;
-}
-
-static void mmu_free_memory_cache(struct kvm_mmu_memory_cache *mc)
-{
-	while (mc->nobjs)
-		free_page((unsigned long)mc->objects[--mc->nobjs]);
-}
-
-static void *mmu_memory_cache_alloc(struct kvm_mmu_memory_cache *mc,
-				struct vm_area_struct *vma, unsigned long hva)
-{
-	void *p = NULL;
-	struct mempolicy *pol = __get_vma_policy(vma, hva);
-	struct page *page;
-
-
-	BUG_ON(!mc || !mc->nobjs);
-	if (pol) {
-		page = alloc_page_vma(GFP_KERNEL_ACCOUNT | GFP_ATOMIC, vma, hva);
-		if (page)
-			p = page_address(page);
-	}
-	if (!p)
-		p = mc->objects[--mc->nobjs];
-
-	return p;
-}
-
-void kvm_mmu_free_memory_caches(struct kvm_vcpu *vcpu)
-{
-	mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
-}
-
 /**
  * kvm_pgd_alloc() - Allocate and initialise a KVM GPA page directory.
  *
@@ -170,6 +140,7 @@ static pte_t *kvm_walk_pgd(pgd_t *pgd, struct kvm_mmu_memory_cache *cache,
 				struct vm_area_struct *vma, unsigned long hva,
 				unsigned long addr)
 {
+	p4d_t *p4d;
 	pud_t *pud;
 	pmd_t *pmd;
 
@@ -179,32 +150,31 @@ static pte_t *kvm_walk_pgd(pgd_t *pgd, struct kvm_mmu_memory_cache *cache,
 		BUG();
 		return NULL;
 	}
-	pud = pud_offset(pgd, addr);
+	p4d = p4d_offset(pgd, addr);
+	pud = pud_offset(p4d, addr);
 	if (pud_none(*pud)) {
 		pmd_t *new_pmd;
 
 		if (!cache)
 			return NULL;
-		new_pmd = mmu_memory_cache_alloc(cache, vma, hva);
+		new_pmd = kvm_mmu_memory_cache_alloc(cache);
 		pmd_init(new_pmd);
 		pud_populate(NULL, pud, new_pmd);
 	}
 	pmd = pmd_offset(pud, addr);
-#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
-	if (pmd_huge(*pmd)) {
+	if (kvm_pmd_huge(*pmd)) {
 		return (pte_t *)pmd;
 	}
-#endif
 	if (pmd_none(*pmd)) {
 		pte_t *new_pte;
 
 		if (!cache)
 			return NULL;
-		new_pte = mmu_memory_cache_alloc(cache, vma, hva);
+		new_pte = kvm_mmu_memory_cache_alloc(cache);
 		clear_page(new_pte);
 		pmd_populate_kernel(NULL, pmd, new_pte);
 	}
-	return pte_offset(pmd, addr);
+	return pte_offset_kernel(pmd, addr);
 }
 
 /* Caller must hold kvm->mm_lock */
@@ -225,8 +195,8 @@ static pte_t *kvm_pte_for_gpa(struct kvm *kvm,
 static bool kvm_flush_gpa_pte(pte_t *pte, unsigned long start_gpa,
 				   unsigned long end_gpa, unsigned long *data)
 {
-	int i_min = __pte_offset(start_gpa);
-	int i_max = __pte_offset(end_gpa);
+	int i_min = pte_index(start_gpa);
+	int i_max = pte_index(end_gpa);
 	bool safe_to_remove = (i_min == 0 && i_max == PTRS_PER_PTE - 1);
 	int i;
 
@@ -246,8 +216,8 @@ static bool kvm_flush_gpa_pmd(pmd_t *pmd, unsigned long start_gpa,
 {
 	pte_t *pte;
 	unsigned long end = ~0ul;
-	int i_min = __pmd_offset(start_gpa);
-	int i_max = __pmd_offset(end_gpa);
+	int i_min = pmd_index(start_gpa);
+	int i_max = pmd_index(end_gpa);
 	bool safe_to_remove = (i_min == 0 && i_max == PTRS_PER_PMD - 1);
 	int i;
 
@@ -255,14 +225,14 @@ static bool kvm_flush_gpa_pmd(pmd_t *pmd, unsigned long start_gpa,
 		if (!pmd_present(pmd[i]))
 			continue;
 
-		if (pmd_huge(pmd[i]) && pmd_present(pmd[i])) {
+		if (kvm_pmd_huge(pmd[i]) && pmd_present(pmd[i])) {
 			pmd_clear(pmd + i);
 			if (data)
 				*data += PTRS_PER_PMD;
 			continue;
 		}
 
-		pte = pte_offset(pmd + i, 0);
+		pte = pte_offset_kernel(pmd + i, 0);
 		if (i == i_max)
 			end = end_gpa;
 
@@ -281,8 +251,8 @@ static bool kvm_flush_gpa_pud(pud_t *pud, unsigned long start_gpa,
 {
 	pmd_t *pmd;
 	unsigned long end = ~0ul;
-	int i_min = __pud_offset(start_gpa);
-	int i_max = __pud_offset(end_gpa);
+	int i_min = pud_index(start_gpa);
+	int i_max = pud_index(end_gpa);
 	bool safe_to_remove = (i_min == 0 && i_max == PTRS_PER_PUD - 1);
 	int i;
 
@@ -307,6 +277,7 @@ static bool kvm_flush_gpa_pud(pud_t *pud, unsigned long start_gpa,
 static bool kvm_flush_gpa_pgd(pgd_t *pgd, unsigned long start_gpa,
 				unsigned long end_gpa, unsigned long *data)
 {
+	p4d_t *p4d;
 	pud_t *pud;
 	unsigned long end = ~0ul;
 	int i_min = pgd_index(start_gpa);
@@ -318,7 +289,8 @@ static bool kvm_flush_gpa_pgd(pgd_t *pgd, unsigned long start_gpa,
 		if (!pgd_present(pgd[i]))
 			continue;
 
-		pud = pud_offset(pgd + i, 0);
+		p4d = p4d_offset(pgd + i, 0);
+		pud = pud_offset(p4d, 0);
 		if (i == i_max)
 			end = end_gpa;
 
@@ -361,8 +333,8 @@ static bool kvm_flush_gpa_pt(struct kvm *kvm, gfn_t start_gfn, gfn_t end_gfn, vo
 static int kvm_mkclean_pte(pte_t *pte, unsigned long start, unsigned long end)
 {
 	int ret = 0;
-	int i_min = __pte_offset(start);
-	int i_max = __pte_offset(end);
+	int i_min = pte_index(start);
+	int i_max = pte_index(end);
 	int i;
 	pte_t val;
 
@@ -381,8 +353,8 @@ static int kvm_mkclean_pmd(pmd_t *pmd, unsigned long start, unsigned long end)
 	int ret = 0;
 	pte_t *pte;
 	unsigned long cur_end = ~0ul;
-	int i_min = __pmd_offset(start);
-	int i_max = __pmd_offset(end);
+	int i_min = pmd_index(start);
+	int i_max = pmd_index(end);
 	int i;
 	pmd_t old, new;
 
@@ -390,7 +362,7 @@ static int kvm_mkclean_pmd(pmd_t *pmd, unsigned long start, unsigned long end)
 		if (!pmd_present(pmd[i]))
 			continue;
 
-		if (pmd_huge(pmd[i])) {
+		if (kvm_pmd_huge(pmd[i])) {
 			old = pmd[i];
 			new = kvm_pmd_mkclean(old);
 			if (pmd_val(new) == pmd_val(old))
@@ -400,7 +372,7 @@ static int kvm_mkclean_pmd(pmd_t *pmd, unsigned long start, unsigned long end)
 			continue;
 		}
 
-		pte = pte_offset(pmd + i, 0);
+		pte = pte_offset_kernel(pmd + i, 0);
 		if (i == i_max)
 			cur_end = end;
 
@@ -415,8 +387,8 @@ static int kvm_mkclean_pud(pud_t *pud, unsigned long start, unsigned long end)
 	int ret = 0;
 	pmd_t *pmd;
 	unsigned long cur_end = ~0ul;
-	int i_min = __pud_offset(start);
-	int i_max = __pud_offset(end);
+	int i_min = pud_index(start);
+	int i_max = pud_index(end);
 	int i;
 
 	for (i = i_min; i <= i_max; ++i, start = 0) {
@@ -435,6 +407,7 @@ static int kvm_mkclean_pud(pud_t *pud, unsigned long start, unsigned long end)
 static int kvm_mkclean_pgd(pgd_t *pgd, unsigned long start, unsigned long end)
 {
 	int ret = 0;
+	p4d_t *p4d;
 	pud_t *pud;
 	unsigned long cur_end = ~0ul;
 	int i_min = pgd_index(start);
@@ -445,7 +418,8 @@ static int kvm_mkclean_pgd(pgd_t *pgd, unsigned long start, unsigned long end)
 		if (!pgd_present(pgd[i]))
 			continue;
 
-		pud = pud_offset(pgd + i, 0);
+		p4d = p4d_offset(pgd + i, 0);
+		pud = pud_offset(p4d, 0);
 		if (i == i_max)
 			cur_end = end;
 
@@ -495,19 +469,21 @@ void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 	gfn_t end = base_gfn + __fls(mask);
 
 	kvm_mkclean_gpa_pt(kvm, start, end);
+
+	/*
+	 * FIXME: disable THP to improve vm migration success ratio,
+	 * how to know migration failure to enable THP again
+	 */
+	slot->arch.flags |= KVM_MEMSLOT_DISABLE_THP;
 }
 
 void kvm_arch_commit_memory_region(struct kvm *kvm,
 		const struct kvm_userspace_memory_region *mem,
-		const struct kvm_memory_slot *old,
+		struct kvm_memory_slot *old,
 		const struct kvm_memory_slot *new,
 		enum kvm_mr_change change)
 {
 	int needs_flush;
-
-	kvm_debug("%s: kvm: %p slot: %d, GPA: %llx, size: %llx, QVA: %llx\n",
-			__func__, kvm, mem->slot, mem->guest_phys_addr,
-			mem->memory_size, mem->userspace_addr);
 
 	/*
 	 * If dirty page logging is enabled, write protect all pages in the slot
@@ -579,8 +555,8 @@ static int kvm_mkold_pte(pte_t *pte, unsigned long start,
 				 unsigned long end)
 {
 	int ret = 0;
-	int i_min = __pte_offset(start);
-	int i_max = __pte_offset(end);
+	int i_min = pte_index(start);
+	int i_max = pte_index(end);
 	int i;
 	pte_t old, new;
 
@@ -604,8 +580,8 @@ static int kvm_mkold_pmd(pmd_t *pmd, unsigned long start, unsigned long end)
 	int ret = 0;
 	pte_t *pte;
 	unsigned long cur_end = ~0ul;
-	int i_min = __pmd_offset(start);
-	int i_max = __pmd_offset(end);
+	int i_min = pmd_index(start);
+	int i_max = pmd_index(end);
 	int i;
 	pmd_t old, new;
 
@@ -613,7 +589,7 @@ static int kvm_mkold_pmd(pmd_t *pmd, unsigned long start, unsigned long end)
 		if (!pmd_present(pmd[i]))
 			continue;
 
-		if (pmd_huge(pmd[i])) {
+		if (kvm_pmd_huge(pmd[i])) {
 			old = pmd[i];
 			new = kvm_pmd_mkold(old);
 			if (pmd_val(new) == pmd_val(old))
@@ -623,7 +599,7 @@ static int kvm_mkold_pmd(pmd_t *pmd, unsigned long start, unsigned long end)
 			continue;
 		}
 
-		pte = pte_offset(pmd + i, 0);
+		pte = pte_offset_kernel(pmd + i, 0);
 		if (i == i_max)
 			cur_end = end;
 
@@ -638,8 +614,8 @@ static int kvm_mkold_pud(pud_t *pud, unsigned long start, unsigned long end)
 	int ret = 0;
 	pmd_t *pmd;
 	unsigned long cur_end = ~0ul;
-	int i_min = __pud_offset(start);
-	int i_max = __pud_offset(end);
+	int i_min = pud_index(start);
+	int i_max = pud_index(end);
 	int i;
 
 	for (i = i_min; i <= i_max; ++i, start = 0) {
@@ -659,6 +635,7 @@ static int kvm_mkold_pud(pud_t *pud, unsigned long start, unsigned long end)
 static int kvm_mkold_pgd(pgd_t *pgd, unsigned long start, unsigned long end)
 {
 	int ret = 0;
+	p4d_t *p4d;
 	pud_t *pud;
 	unsigned long cur_end = ~0ul;
 	int i_min = pgd_index(start);
@@ -669,7 +646,8 @@ static int kvm_mkold_pgd(pgd_t *pgd, unsigned long start, unsigned long end)
 		if (!pgd_present(pgd[i]))
 			continue;
 
-		pud = pud_offset(pgd + i, 0);
+		p4d = p4d_offset(pgd + i, 0);
+		pud = pud_offset(p4d, 0);
 		if (i == i_max)
 			cur_end = end;
 
@@ -813,6 +791,7 @@ static pud_t *kvm_get_pud(struct kvm *kvm,
 		 struct kvm_mmu_memory_cache *cache, phys_addr_t addr)
 {
 	pgd_t *pgd;
+	p4d_t *p4d;
 
 	pgd = kvm->arch.gpa_mm.pgd + pgd_index(addr);
 	if (pgd_none(*pgd)) {
@@ -821,7 +800,8 @@ static pud_t *kvm_get_pud(struct kvm *kvm,
 		return NULL;
 	}
 
-	return pud_offset(pgd, addr);
+	p4d = p4d_offset(pgd, addr);
+	return pud_offset(p4d, addr);
 }
 
 static pmd_t *kvm_get_pmd(struct kvm *kvm,
@@ -832,13 +812,13 @@ static pmd_t *kvm_get_pmd(struct kvm *kvm,
 	pmd_t *pmd;
 
 	pud = kvm_get_pud(kvm, cache, addr);
-	if (!pud || pud_huge(*pud))
+	if (!pud || kvm_pud_huge(*pud))
 		return NULL;
 
 	if (pud_none(*pud)) {
 		if (!cache)
 			return NULL;
-		pmd = mmu_memory_cache_alloc(cache, vma, hva);
+		pmd = kvm_mmu_memory_cache_alloc(cache);
 		pmd_init(pmd);
 		pud_populate(NULL, pud, pmd);
 	}
@@ -885,7 +865,7 @@ retry:
 		 * Normal THP split/merge follows mmu_notifier callbacks and do
 		 * get handled accordingly.
 		 */
-		if (!pmd_huge(old_pmd)) {
+		if (!kvm_pmd_huge(old_pmd)) {
 			++vcpu->stat.huge_merge_exits;
 			kvm_flush_gpa_pt(vcpu->kvm,
 				(addr & PMD_MASK) >> PAGE_SHIFT,
@@ -1077,7 +1057,7 @@ static int kvm_map_page_fast(struct kvm_vcpu *vcpu, unsigned long gpa,
 		/* Track dirtying of writeable pages */
 		set_pte(ptep, pte_mkdirty(*ptep));
 		pfn = pte_pfn(*ptep);
-		if (pmd_huge(*((pmd_t *)ptep))) {
+		if (kvm_pmd_huge(*((pmd_t *)ptep))) {
 			int i;
 			gfn_t base_gfn = (gpa & PMD_MASK) >> PAGE_SHIFT;
 
@@ -1149,7 +1129,7 @@ static int kvm_map_page(struct kvm_vcpu *vcpu, unsigned long gpa,
 
 	/* Try the fast path to handle old / clean pages */
 	srcu_idx = srcu_read_lock(&kvm->srcu);
-	if ((exccode != EXCCODE_TLBRI) && (exccode != EXCCODE_TLBXI)) {
+	if ((exccode != KVM_EXCCODE_TLBRI) && (exccode != KVM_EXCCODE_TLBXI)) {
 		err = kvm_map_page_fast(vcpu, gpa, write, out_entry,
 					      out_buddy);
 		if (!err)
@@ -1162,11 +1142,11 @@ static int kvm_map_page(struct kvm_vcpu *vcpu, unsigned long gpa,
 		goto out;
 
 	/* Let's check if we will get back a huge page backed by hugetlbfs */
-	down_read(&current->mm->mmap_sem);
+	mmap_read_lock(current->mm);
 	vma = find_vma_intersection(current->mm, hva, hva + 1);
 	if (unlikely(!vma)) {
 		kvm_err("Failed to find VMA for hva 0x%lx\n", hva);
-		up_read(&current->mm->mmap_sem);
+		mmap_read_unlock(current->mm);
 		err = -EFAULT;
 		goto out;
 	}
@@ -1182,12 +1162,10 @@ static int kvm_map_page(struct kvm_vcpu *vcpu, unsigned long gpa,
 	/* PMD is not folded, adjust gfn to new boundary */
 	if (vma_pagesize == PMD_SIZE)
 		gfn = (gpa & huge_page_mask(hstate_vma(vma))) >> PAGE_SHIFT;
-
-	up_read(&current->mm->mmap_sem);
+	mmap_read_unlock(current->mm);
 
 	/* We need a minimum of cached pages ready for page table creation */
-	err = mmu_topup_memory_cache(memcache, KVM_MMU_CACHE_MIN_PAGES,
-				     KVM_NR_MEM_OBJS);
+	err = kvm_mmu_topup_memory_cache(memcache, KVM_MMU_CACHE_MIN_PAGES);
 	if (err)
 		goto out;
 
@@ -1262,7 +1240,7 @@ retry:
 	if (writeable) {
 		prot_bits |= _PAGE_WRITE;
 		if (write) {
-			prot_bits |= __WRITEABLE;
+			prot_bits |= __WRITEABLE | _PAGE_MODIFIED;
 			mark_page_dirty(kvm, gfn);
 			kvm_set_pfn_dirty(pfn);
 		}

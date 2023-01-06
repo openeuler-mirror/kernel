@@ -9,15 +9,15 @@
 #include "kvmcpu.h"
 #include "intc/ls3a_ipi.h"
 #include "intc/ls3a_ext_irq.h"
-#include "ls_irq.h"
 #include "kvm_compat.h"
 #include "kvmcsr.h"
+#include "irq.h"
 
-#define CASE_READ_SW_GCSR(csr, regid, csrid) \
-	do {                                          \
-		if (regid == csrid) {                     \
-			return kvm_read_sw_gcsr(csr, csrid);  \
-		}                                         \
+#define CASE_READ_SW_GCSR(csr, regid, csrid)                    \
+	do {                                                    \
+		if (regid == csrid) {                           \
+			return kvm_read_sw_gcsr(csr, csrid);    \
+		}                                               \
 	} while (0)
 
 unsigned long _kvm_emu_read_csr(struct kvm_vcpu *vcpu, int csrid)
@@ -50,11 +50,11 @@ unsigned long _kvm_emu_read_csr(struct kvm_vcpu *vcpu, int csrid)
 	return val;
 }
 
-#define CASE_WRITE_SW_GCSR(csr, regid, csrid, val) \
-	do {                                                \
+#define CASE_WRITE_SW_GCSR(csr, regid, csrid, val)              \
+	do {                                                    \
 		if (regid == csrid) {                           \
-			kvm_write_sw_gcsr(csr, csrid, val);         \
-			return ;                                    \
+			kvm_write_sw_gcsr(csr, csrid, val);     \
+			return ;                                \
 		}                                               \
 	} while (0)
 
@@ -89,12 +89,12 @@ void _kvm_emu_write_csr(struct kvm_vcpu *vcpu, int csrid,
 				csrid, vcpu->arch.pc);
 }
 
-#define CASE_CHANGE_SW_GCSR(csr, regid, csrid, mask, val) \
-	do {                                                       \
-		if (regid == csrid) {                                  \
-			kvm_change_sw_gcsr(csr, csrid, mask, val);         \
-			return ;                                           \
-		}                                                      \
+#define CASE_CHANGE_SW_GCSR(csr, regid, csrid, mask, val)               \
+	do {                                                            \
+		if (regid == csrid) {                                   \
+			kvm_change_sw_gcsr(csr, csrid, mask, val);      \
+			return ;                                        \
+		}                                                       \
 	} while (0)
 
 void _kvm_emu_xchg_csr(struct kvm_vcpu *vcpu, int csrid,

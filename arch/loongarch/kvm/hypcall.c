@@ -7,8 +7,9 @@
 #include <linux/kvm_host.h>
 #include <linux/sched/stat.h>
 #include <asm/kvm_para.h>
-#include <asm/paravirt.h>
 #include "intc/ls3a_ipi.h"
+#include "kvm_compat.h"
+
 
 int kvm_virt_ipi(struct kvm_vcpu *vcpu)
 {
@@ -16,9 +17,9 @@ int kvm_virt_ipi(struct kvm_vcpu *vcpu)
 	u64 ipi_bitmap;
 	unsigned int min, action, cpu;
 
-	ipi_bitmap = vcpu->arch.gprs[REG_A1];
-	min = vcpu->arch.gprs[REG_A2];
-	action = vcpu->arch.gprs[REG_A3];
+	ipi_bitmap = vcpu->arch.gprs[KVM_REG_A1];
+	min = vcpu->arch.gprs[KVM_REG_A2];
+	action = vcpu->arch.gprs[KVM_REG_A3];
 
 	if (ipi_bitmap) {
 		cpu = find_first_bit((void *)&ipi_bitmap, BITS_PER_LONG);
@@ -37,9 +38,9 @@ int kvm_save_notify(struct kvm_vcpu *vcpu)
 
 	int ret = 0;
 
-	num = vcpu->arch.gprs[REG_A0];
-	id = vcpu->arch.gprs[REG_A1];
-	data = vcpu->arch.gprs[REG_A2];
+	num = vcpu->arch.gprs[KVM_REG_A0];
+	id = vcpu->arch.gprs[KVM_REG_A1];
+	data = vcpu->arch.gprs[KVM_REG_A2];
 
 	switch (id) {
 	case KVM_FEATURE_STEAL_TIME:
@@ -59,7 +60,7 @@ int kvm_save_notify(struct kvm_vcpu *vcpu)
 
 static int _kvm_pv_feature(struct kvm_vcpu *vcpu)
 {
-	int feature = vcpu->arch.gprs[REG_A1];
+	int feature = vcpu->arch.gprs[KVM_REG_A1];
 	int ret = KVM_RET_NOT_SUPPORTED;
 	switch (feature) {
 	case KVM_FEATURE_STEAL_TIME:
@@ -80,7 +81,7 @@ static int _kvm_pv_feature(struct kvm_vcpu *vcpu)
  */
 int _kvm_handle_pv_hcall(struct kvm_vcpu *vcpu)
 {
-	unsigned long func = vcpu->arch.gprs[REG_A0];
+	unsigned long func = vcpu->arch.gprs[KVM_REG_A0];
 	int hyp_ret = KVM_RET_NOT_SUPPORTED;
 
 	switch (func) {
@@ -98,7 +99,7 @@ int _kvm_handle_pv_hcall(struct kvm_vcpu *vcpu)
 		break;
 	};
 
-	vcpu->arch.gprs[REG_V0] = hyp_ret;
+	vcpu->arch.gprs[KVM_REG_A0] = hyp_ret;
 
 	return RESUME_GUEST;
 }
