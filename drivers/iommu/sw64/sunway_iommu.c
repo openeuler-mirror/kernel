@@ -167,7 +167,7 @@ flush_device_tlb(struct sunway_iommu_domain *sdomain,
 
 	switch (hflush_addr) {
 	case PCACHE_FLUSHPADDR:
-		flush_addr = __pa(flush_addr) & 0xffffffff80;
+		flush_addr = __pa(flush_addr);
 		/* Set memory bar here */
 		mb();
 		write_piu_ior0(hose->node, hose->index,
