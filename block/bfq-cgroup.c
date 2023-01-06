@@ -911,6 +911,9 @@ static void bfq_pd_offline(struct blkg_policy_data *pd)
 	unsigned long flags;
 	int i;
 
+	if (!bfqg->online)
+		return;
+
 	spin_lock_irqsave(&bfqd->lock, flags);
 
 	if (!entity) /* root group */
