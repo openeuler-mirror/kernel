@@ -221,7 +221,7 @@ SYM_FUNC_START(kvm_exit_entry)
 	or	a2, s1, zero
 	KVM_LONG_ADDI	a2, a2, KVM_VCPU_ARCH
 
-	andi	t0, v0, RESUME_HOST
+	andi	t0, a0, RESUME_HOST
 	bnez	t0, ret_to_host
 	INT_S	zero, a2, KVM_ARCH_ISHYPCALL
 
@@ -236,8 +236,8 @@ ret_to_guest:
 ret_to_host:
 	KVM_LONG_L  a2, a2, KVM_ARCH_HSTACK
 	addi.d  a2, a2, -PT_SIZE
-	srai.w  a3, v0, 2
-	or      v0, a3, zero
+	srai.w  a3, a0, 2
+	or      a0, a3, zero
 	kvm_restore_host_gpr    a2
 	jirl    zero, ra, 0
 SYM_FUNC_END(kvm_exit_entry)

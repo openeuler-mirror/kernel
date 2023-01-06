@@ -8,8 +8,61 @@
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 #include <loongson.h>
+#else
+#include <asm/loongarch.h>
 #endif
 #endif
+
+#define KVM_REG_A0		0x4
+#define KVM_REG_A1		0x5
+#define KVM_REG_A2		0x6
+#define KVM_REG_A3		0x7
+/*
+ * ExStatus.ExcCode
+ */
+#define KVM_EXCCODE_RSV		0	/* Reserved */
+#define KVM_EXCCODE_TLBL	1	/* TLB miss on a load */
+#define KVM_EXCCODE_TLBS	2	/* TLB miss on a store */
+#define KVM_EXCCODE_TLBI	3	/* TLB miss on a ifetch */
+#define KVM_EXCCODE_TLBM	4	/* TLB modified fault */
+#define KVM_EXCCODE_TLBRI	5	/* TLB Read-Inhibit exception */
+#define KVM_EXCCODE_TLBXI	6	/* TLB Execution-Inhibit exception */
+#define KVM_EXCCODE_TLBPE	7	/* TLB Privilege Error */
+#define KVM_EXCCODE_ADE		8	/* Address Error */
+#define KVM_EXCCODE_ALE		9	/* Unalign Access */
+#define KVM_EXCCODE_OOB		10	/* Out of bounds */
+#define KVM_EXCCODE_SYS		11	/* System call */
+#define KVM_EXCCODE_BP		12	/* Breakpoint */
+#define KVM_EXCCODE_INE		13	/* Inst. Not Exist */
+#define KVM_EXCCODE_IPE		14	/* Inst. Privileged Error */
+#define KVM_EXCCODE_FPDIS	15	/* FPU Disabled */
+#define KVM_EXCCODE_LSXDIS	16	/* LSX Disabled */
+#define KVM_EXCCODE_LASXDIS	17	/* LASX Disabled */
+#define KVM_EXCCODE_FPE		18	/* Floating Point Exception */
+#define KVM_EXCCODE_WATCH	19	/* Watch address reference */
+#define KVM_EXCCODE_BTDIS	20	/* Binary Trans. Disabled */
+#define KVM_EXCCODE_BTE		21	/* Binary Trans. Exception */
+#define KVM_EXCCODE_GSPR	22	/* Guest Privileged Error */
+#define KVM_EXCCODE_HYP		23	/* Hypercall */
+#define KVM_EXCCODE_GCM		24	/* Guest CSR modified */
+
+#define KVM_INT_START		64
+#define KVM_INT_SIP0		64
+#define KVM_INT_SIP1		65
+#define KVM_INT_IP0		66
+#define KVM_INT_IP1		67
+#define KVM_INT_IP2		68
+#define KVM_INT_IP3		69
+#define KVM_INT_IP4		70
+#define KVM_INT_IP5		71
+#define KVM_INT_IP6		72
+#define KVM_INT_IP7		73
+#define KVM_INT_PC		74 /* Performance Counter */
+#define KVM_INT_TIMER		75
+#define KVM_INT_IPI		76
+#define KVM_INT_NMI		77
+#define KVM_INT_END		78
+#define KVM_INT_NUM		(KVM_INT_END - KVM_INT_START)
 
 #define KVM_CSR_CRMD		0x0	/* Current mode info */
 #define KVM_CRMD_WE_SHIFT	9
@@ -223,6 +276,14 @@
 #define KVM_CSR_PERFCNTR2	0x205	/* 64 perf event 2 count value */
 #define KVM_CSR_PERFCTRL3	0x206	/* 32 perf event 3 config */
 #define KVM_CSR_PERFCNTR3	0x207	/* 64 perf event 3 count value */
+#define KVM_PERFCTRL_PLV0	(_ULCAST_(1) << 16)
+#define KVM_PERFCTRL_PLV1	(_ULCAST_(1) << 17)
+#define KVM_PERFCTRL_PLV2	(_ULCAST_(1) << 18)
+#define KVM_PERFCTRL_PLV3	(_ULCAST_(1) << 19)
+#define KVM_PERFCTRL_IE		(_ULCAST_(1) << 20)
+#define KVM_PERFCTRL_GMOD	(_ULCAST_(3) << 21)
+#define KVM_PERFCTRL_EVENT	0x3ff
+
 #define KVM_CSR_MWPC		0x300	/* data breakpoint config */
 #define KVM_CSR_MWPS		0x301	/* data breakpoint status */
 #define KVM_CSR_FWPC		0x380	/* instruction breakpoint config */
@@ -652,10 +713,10 @@ kvm_change_csr_gstat(unsigned long change, unsigned long val)
 {
 	unsigned long res, new;
 
-	res = read_csr_gstat();
+	res = kvm_read_csr_gstat();
 	new = res & ~change;
 	new |= (val & change);
-	write_csr_gstat(new);
+	kvm_write_csr_gstat(new);
 
 	return res;
 }
@@ -665,10 +726,10 @@ kvm_change_csr_gcfg(unsigned long change, unsigned long val)
 {
 	unsigned long res, new;
 
-	res = read_csr_gcfg();
+	res = kvm_read_csr_gcfg();
 	new = res & ~change;
 	new |= (val & change);
-	write_csr_gcfg(new);
+	kvm_write_csr_gcfg(new);
 
 	return res;
 }
@@ -681,6 +742,9 @@ kvm_change_csr_gcfg(unsigned long change, unsigned long val)
 
 #endif
 
+/* Device Control API on vcpu fd */
+#define KVM_LARCH_VCPU_PVTIME_CTRL  2
+#define KVM_LARCH_VCPU_PVTIME_IPA   0
 
 #if (_LOONGARCH_SZLONG == 32)
 #define KVM_LONG_ADD	add.w

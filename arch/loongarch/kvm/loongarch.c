@@ -19,7 +19,6 @@
 #include <linux/kvm_host.h>
 #include <linux/sched/stat.h>
 #include <asm/fpu.h>
-#include <asm/watch.h>
 #include <asm/page.h>
 #include <asm/cacheflush.h>
 #include <asm/mmu_context.h>
@@ -29,7 +28,6 @@
 #include "kvmcpu.h"
 #include <asm/setup.h>
 #include <asm/time.h>
-#include <asm/paravirt.h>
 
 #include "intc/ls3a_ipi.h"
 #include "intc/ls7a_irq.h"
@@ -44,59 +42,55 @@
 #define KVM_LOONGARCH_VERSION 1
 #define CREATE_TRACE_POINTS
 #include "trace.h"
-#define VCPU_STAT(x) offsetof(struct kvm_vcpu, stat.x)
-#define VM_STAT(x) offsetof(struct kvm, stat.x)
 struct kvm_stats_debugfs_item vcpu_debugfs_entries[] = {
-	{ "idle",	VCPU_STAT(idle_exits),			KVM_STAT_VCPU},
-	{ "signal",	VCPU_STAT(signal_exits),		KVM_STAT_VCPU},
-	{ "interrupt",	VCPU_STAT(int_exits),			KVM_STAT_VCPU},
-	{ "tlbmiss_ld",	VCPU_STAT(excep_exits[EXCCODE_TLBL]),	KVM_STAT_VCPU},
-	{ "tlbmiss_st",	VCPU_STAT(excep_exits[EXCCODE_TLBS]),	KVM_STAT_VCPU},
-	{ "tlb_ifetch",	VCPU_STAT(excep_exits[EXCCODE_TLBI]),	KVM_STAT_VCPU},
-	{ "tlbmod",	VCPU_STAT(excep_exits[EXCCODE_TLBM]),	KVM_STAT_VCPU},
-	{ "tlbri",	VCPU_STAT(excep_exits[EXCCODE_TLBRI]),	KVM_STAT_VCPU},
-	{ "tlbxi",	VCPU_STAT(excep_exits[EXCCODE_TLBXI]),	KVM_STAT_VCPU},
-	{ "fp_dis",	VCPU_STAT(excep_exits[EXCCODE_FPDIS]),  KVM_STAT_VCPU},
-	{ "lsx_dis",	VCPU_STAT(excep_exits[EXCCODE_LSXDIS]), KVM_STAT_VCPU},
-	{ "lasx_dis",	VCPU_STAT(excep_exits[EXCCODE_LASXDIS]), KVM_STAT_VCPU},
-	{ "fpe",	VCPU_STAT(excep_exits[EXCCODE_FPE]),	KVM_STAT_VCPU},
-	{ "watch",	VCPU_STAT(excep_exits[EXCCODE_WATCH]),	KVM_STAT_VCPU},
-	{ "gspr",	VCPU_STAT(excep_exits[EXCCODE_GSPR]),	KVM_STAT_VCPU},
-	{ "gcm",	VCPU_STAT(excep_exits[EXCCODE_GCM]),	KVM_STAT_VCPU},
-	{ "hc",		VCPU_STAT(excep_exits[EXCCODE_HYP]),	KVM_STAT_VCPU},
-
-	{ "rdcsr_cpu_feature",  VCPU_STAT(rdcsr_cpu_feature_exits),  KVM_STAT_VCPU },
-	{ "rdcsr_misc_func",  VCPU_STAT(rdcsr_misc_func_exits),  KVM_STAT_VCPU },
-	{ "rdcsr_ipi_access",  VCPU_STAT(rdcsr_ipi_access_exits),  KVM_STAT_VCPU },
-	{ "cpucfg",	VCPU_STAT(cpucfg_exits),  KVM_STAT_VCPU },
-	{ "huge_dec",	VCPU_STAT(huge_dec_exits),  KVM_STAT_VCPU },
-	{ "huge_thp",	VCPU_STAT(huge_thp_exits),  KVM_STAT_VCPU },
-	{ "huge_adj",	VCPU_STAT(huge_adjust_exits),  KVM_STAT_VCPU },
-	{ "huge_set",	VCPU_STAT(huge_set_exits),  KVM_STAT_VCPU },
-	{ "huge_merg",	VCPU_STAT(huge_merge_exits),  KVM_STAT_VCPU },
-
-	{ "halt_successful_poll", VCPU_STAT(halt_successful_poll), KVM_STAT_VCPU },
-	{ "halt_attempted_poll", VCPU_STAT(halt_attempted_poll), KVM_STAT_VCPU },
-	{ "halt_poll_invalid", VCPU_STAT(halt_poll_invalid), KVM_STAT_VCPU },
-	{ "halt_wakeup",  VCPU_STAT(halt_wakeup),	 KVM_STAT_VCPU },
+	VCPU_STAT("idle", idle_exits),
+	VCPU_STAT("signal", signal_exits),
+	VCPU_STAT("interrupt", int_exits),
+	VCPU_STAT("rdcsr_cpu_feature", rdcsr_cpu_feature_exits),
+	VCPU_STAT("rdcsr_misc_func", rdcsr_misc_func_exits),
+	VCPU_STAT("rdcsr_ipi_access", rdcsr_ipi_access_exits),
+	VCPU_STAT("cpucfg", cpucfg_exits),
+	VCPU_STAT("huge_dec", huge_dec_exits),
+	VCPU_STAT("huge_thp", huge_thp_exits),
+	VCPU_STAT("huge_adj", huge_adjust_exits),
+	VCPU_STAT("huge_set", huge_set_exits),
+	VCPU_STAT("huge_merg", huge_merge_exits),
+	VCPU_STAT("halt_successful_poll", halt_successful_poll),
+	VCPU_STAT("halt_attempted_poll", halt_attempted_poll),
+	VCPU_STAT("halt_poll_invalid", halt_poll_invalid),
+	VCPU_STAT("halt_wakeup", halt_wakeup),
+	VCPU_STAT("tlbmiss_ld", excep_exits[KVM_EXCCODE_TLBL]),
+	VCPU_STAT("tlbmiss_st", excep_exits[KVM_EXCCODE_TLBS]),
+       	VCPU_STAT("tlb_ifetch", excep_exits[KVM_EXCCODE_TLBI]),	
+	VCPU_STAT("tlbmod", excep_exits[KVM_EXCCODE_TLBM]),	
+	VCPU_STAT("tlbri", excep_exits[KVM_EXCCODE_TLBRI]),	
+	VCPU_STAT("tlbxi", excep_exits[KVM_EXCCODE_TLBXI]),	
+	VCPU_STAT("fp_dis", excep_exits[KVM_EXCCODE_FPDIS]),
+	VCPU_STAT("lsx_dis", excep_exits[KVM_EXCCODE_LSXDIS]),
+	VCPU_STAT("lasx_dis", excep_exits[KVM_EXCCODE_LASXDIS]),
+	VCPU_STAT("fpe", excep_exits[KVM_EXCCODE_FPE]),	
+	VCPU_STAT("watch", excep_exits[KVM_EXCCODE_WATCH]),	
+	VCPU_STAT("gspr", excep_exits[KVM_EXCCODE_GSPR]),	
+	VCPU_STAT("gcm", excep_exits[KVM_EXCCODE_GCM]),	
+	VCPU_STAT("hc", excep_exits[KVM_EXCCODE_HYP]),	
 	{NULL}
 };
 
 struct kvm_stats_debugfs_item debugfs_entries[] = {
-	{ "remote_tlb_flush", VM_STAT(remote_tlb_flush), KVM_STAT_VM },
-	{ "pip_read_exits", VM_STAT(pip_read_exits), KVM_STAT_VM },
-	{ "pip_write_exits", VM_STAT(pip_write_exits), KVM_STAT_VM },
-	{ "vm_ioctl_irq_line", VM_STAT(vm_ioctl_irq_line), KVM_STAT_VM },
-	{ "ls7a_ioapic_update", VM_STAT(ls7a_ioapic_update), KVM_STAT_VM },
-	{ "ls7a_ioapic_set_irq", VM_STAT(ls7a_ioapic_set_irq), KVM_STAT_VM },
-	{ "ls7a_msi_irq", VM_STAT(ls7a_msi_irq), KVM_STAT_VM },
-	{ "ioapic_reg_write", VM_STAT(ioapic_reg_write), KVM_STAT_VM },
-	{ "ioapic_reg_read", VM_STAT(ioapic_reg_read), KVM_STAT_VM },
-	{ "set_ls7a_ioapic", VM_STAT(set_ls7a_ioapic), KVM_STAT_VM },
-	{ "get_ls7a_ioapic", VM_STAT(get_ls7a_ioapic), KVM_STAT_VM },
-	{ "set_ls3a_ext_irq", VM_STAT(set_ls3a_ext_irq), KVM_STAT_VM },
-	{ "get_ls3a_ext_irq", VM_STAT(get_ls3a_ext_irq), KVM_STAT_VM },
-	{ "ls3a_ext_irq", VM_STAT(trigger_ls3a_ext_irq), KVM_STAT_VM },
+	VM_STAT("remote_tlb_flush", remote_tlb_flush),
+	VM_STAT("pip_read_exits", pip_read_exits),
+	VM_STAT("pip_write_exits", pip_write_exits),
+	VM_STAT("vm_ioctl_irq_line", vm_ioctl_irq_line),
+	VM_STAT("ls7a_ioapic_update", ls7a_ioapic_update),
+	VM_STAT("ls7a_ioapic_set_irq", ls7a_ioapic_set_irq),
+	VM_STAT("ls7a_msi_irq", ls7a_msi_irq),
+	VM_STAT("ioapic_reg_write", ioapic_reg_write),
+	VM_STAT("ioapic_reg_read", ioapic_reg_read),
+	VM_STAT("set_ls7a_ioapic", set_ls7a_ioapic),
+	VM_STAT("get_ls7a_ioapic", get_ls7a_ioapic),
+	VM_STAT("set_ls3a_ext_irq", set_ls3a_ext_irq),
+	VM_STAT("get_ls3a_ext_irq", get_ls3a_ext_irq),
+	VM_STAT("ls3a_ext_irq", trigger_ls3a_ext_irq),
 	{NULL}
 };
 
@@ -133,7 +127,7 @@ int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
 	return kvm_vcpu_exiting_guest_mode(vcpu) == IN_GUEST_MODE;
 }
 
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 void kvm_update_stolen_time(struct kvm_vcpu *vcpu)
 {
 	struct kvm_host_map map;
@@ -249,14 +243,10 @@ int kvm_arch_hardware_enable(void)
 	 * TOE=0:       Trap on Exception.
 	 * TIT=0:       Trap on Timer.
 	 */
-	if (cpu_has_gcip_all)
-		gcfg |= KVM_GCFG_GCI_SECURE;
-	if (cpu_has_matc_root)
-		gcfg |= KVM_GCFG_MATC_ROOT;
-
+	gcfg |= KVM_GCFG_GCI_SECURE;
+	gcfg |= KVM_GCFG_MATC_ROOT;
 	gcfg |= KVM_GCFG_TIT;
 	kvm_write_csr_gcfg(gcfg);
-
 	kvm_flush_tlb_all();
 
 	/* Enable using TGID  */
@@ -278,7 +268,7 @@ void kvm_arch_hardware_disable(void)
 	kvm_flush_tlb_all();
 }
 
-int kvm_arch_hardware_setup(void)
+int kvm_arch_hardware_setup(void *opaque)
 {
 	return 0;
 }
@@ -299,56 +289,17 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	return 0;
 }
 
-static int lvcpu_stat_get(void *address, u64 *val)
-{
-	*val = *(u64 *)address;
-	return 0;
-}
-DEFINE_SIMPLE_ATTRIBUTE(lvcpu_stat_fops, lvcpu_stat_get, NULL, "%llu\n");
-
-static int vcpu_pid_get(void *arg, u64 *val)
-{
-	struct kvm_vcpu *vcpu = (struct kvm_vcpu *)arg;
-	if (vcpu)
-		*val = pid_vnr(vcpu->pid);
-	return 0;
-}
-DEFINE_SIMPLE_ATTRIBUTE(vcpu_pid_fops, vcpu_pid_get, NULL, "%llu\n");
-
-bool kvm_arch_has_vcpu_debugfs(void)
-{
-	return true;
-}
-
-int kvm_arch_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
-{
-	struct kvm_stats_debugfs_item *p;
-	debugfs_create_file("pid", 0444, vcpu->debugfs_dentry, vcpu, &vcpu_pid_fops);
-	for (p = vcpu_debugfs_entries; p->name && p->kind == KVM_STAT_VCPU; ++p) {
-		debugfs_create_file(p->name, 0444, vcpu->debugfs_dentry,
-				(void *)vcpu + p->offset, &lvcpu_stat_fops);
-	}
-
-	return 0;
-}
-
 static void kvm_free_vcpus(struct kvm *kvm)
 {
 	unsigned int i;
 	struct kvm_vcpu *vcpu;
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
-		kvm_arch_vcpu_free(vcpu);
+		kvm_vcpu_destroy(vcpu);
+		kvm->vcpus[i] = NULL;
 	}
 
-	mutex_lock(&kvm->lock);
-
-	for (i = 0; i < atomic_read(&kvm->online_vcpus); i++)
-		kvm->vcpus[i] = NULL;
-
 	atomic_set(&kvm->online_vcpus, 0);
-
-	mutex_unlock(&kvm->lock);
 }
 
 void kvm_arch_destroy_vm(struct kvm *kvm)
@@ -496,7 +447,7 @@ static int _kvm_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 		ret = RESUME_GUEST;
 	}
 
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	if (kvm_check_request(KVM_REQ_RECORD_STEAL, vcpu))
 		kvm_update_stolen_time(vcpu);
 #endif
@@ -547,71 +498,82 @@ static int _kvm_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 	return ret;
 }
 
-struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
+/* low level hrtimer wake routine */
+static enum hrtimer_restart kvm_swtimer_wakeup(struct hrtimer *timer)
 {
-	int err;
-	struct kvm_vcpu *vcpu = kzalloc(sizeof(struct kvm_vcpu), GFP_KERNEL);
+	struct kvm_vcpu *vcpu;
 
-	if (!vcpu) {
-		err = -ENOMEM;
-		goto out;
-	}
+	vcpu = container_of(timer, struct kvm_vcpu, arch.swtimer);
+	_kvm_queue_irq(vcpu, LARCH_INT_TIMER);
+	kvm_vcpu_wake_up(vcpu);
+	return kvm_count_timeout(vcpu);
+}
 
-	err = kvm_vcpu_init(vcpu, kvm, id);
+static void _kvm_vcpu_init(struct kvm_vcpu *vcpu)
+{
+	int i;
 
-	if (err)
-		goto out_free_cpu;
+	for_each_possible_cpu(i)
+		vcpu->arch.vpid[i] = 0;
 
-	kvm->arch.online_vcpus = id + 1;
+	hrtimer_init(&vcpu->arch.swtimer, CLOCK_MONOTONIC,
+			HRTIMER_MODE_ABS_PINNED);
+	vcpu->arch.swtimer.function = kvm_swtimer_wakeup;
+	vcpu->arch.fpu_enabled = true;
+	vcpu->arch.lsx_enabled = true;
+}
 
+int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
+{
 	vcpu->arch.host_eentry = kvm_csr_readq(KVM_CSR_EENTRY);
 	vcpu->arch.guest_eentry = (unsigned long)kvm_exception_entry;
 	vcpu->arch.vcpu_run = kvm_enter_guest;
 	vcpu->arch.handle_exit = _kvm_handle_exit;
-	vcpu->arch.csr = kzalloc(sizeof(struct loongarch_csrs), GFP_KERNEL);
+	vcpu->arch.host_ecfg = (kvm_read_csr_ecfg() & KVM_ECFG_VS);
+
 	/*
 	 * kvm all exceptions share one exception entry, and host <-> guest switch
 	 * also switch excfg.VS field, keep host excfg.VS info here
 	 */
-	vcpu->arch.host_ecfg = (kvm_read_csr_ecfg() & KVM_ECFG_VS);
-
+	vcpu->arch.csr = kzalloc(sizeof(struct loongarch_csrs), GFP_KERNEL);
 	if (!vcpu->arch.csr) {
-		err = -ENOMEM;
-		goto out_uninit_cpu;
+		return -ENOMEM;
 	}
 
 	/* Init */
 	vcpu->arch.last_sched_cpu = -1;
 	vcpu->arch.last_exec_cpu = -1;
-
-	return vcpu;
-
-out_uninit_cpu:
-	kvm_vcpu_uninit(vcpu);
-
-out_free_cpu:
-	kfree(vcpu);
-
-out:
-	return ERR_PTR(err);
+	_kvm_vcpu_init(vcpu);
+	return 0;
 }
 
-void kvm_arch_vcpu_free(struct kvm_vcpu *vcpu)
+static void _kvm_vcpu_uninit(struct kvm_vcpu *vcpu)
 {
-	struct gfn_to_pfn_cache *cache = &vcpu->arch.st.cache;
+	int cpu;
+	struct kvm_context *context;
 
-	hrtimer_cancel(&vcpu->arch.swtimer);
-
-	kvm_vcpu_uninit(vcpu);
-	kvm_mmu_free_memory_caches(vcpu);
-	kvm_release_pfn(cache->pfn, cache->dirty, cache);
-	kfree(vcpu->arch.csr);
-	kfree(vcpu);
+	/*
+	 * If the VCPU is freed and reused as another VCPU, we don't want the
+	 * matching pointer wrongly hanging around in last_vcpu.
+	 */
+	for_each_possible_cpu(cpu) {
+		context = per_cpu_ptr(vcpu->kvm->arch.vmcs, cpu);
+		if (context->last_vcpu == vcpu)
+			context->last_vcpu = NULL;
+	}
 }
 
 void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 {
-	kvm_arch_vcpu_free(vcpu);
+	struct gfn_to_pfn_cache *cache = &vcpu->arch.st.cache;
+
+	_kvm_vcpu_uninit(vcpu);
+
+	hrtimer_cancel(&vcpu->arch.swtimer);
+	kvm_mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
+	if (vcpu->arch.st.guest_addr)
+		kvm_release_pfn(cache->pfn, cache->dirty, cache);
+	kfree(vcpu->arch.csr);
 }
 #define KVM_GUESTDBG_VALID_MASK (KVM_GUESTDBG_ENABLE | \
 		KVM_GUESTDBG_USE_SW_BP | KVM_GUESTDBG_SINGLESTEP)
@@ -634,10 +596,11 @@ out:
 	return ret;
 }
 
-int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
+int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 {
 	int r = -EINTR;
 	int cpu;
+	struct kvm_run *run = vcpu->run;
 
 	vcpu_load(vcpu);
 
@@ -649,7 +612,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		vcpu->mmio_needed = 0;
 	} else if (vcpu->arch.is_hypcall) {
 		/* set return value for hypercall v0 register */
-		vcpu->arch.gprs[REG_V0] = run->hypercall.ret;
+		vcpu->arch.gprs[KVM_REG_A0] = run->hypercall.ret;
 		vcpu->arch.is_hypcall = 0;
 	}
 
@@ -665,7 +628,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 
 	lose_fpu(1);
 
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	if (kvm_check_request(KVM_REQ_RECORD_STEAL, vcpu))
 		kvm_update_stolen_time(vcpu);
 #endif
@@ -775,7 +738,7 @@ static int _kvm_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	/* Restore hardware perf csr */
 	kvm_restore_hw_perf(vcpu);
 
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	kvm_make_request(KVM_REQ_RECORD_STEAL, vcpu);
 #endif
 	/* Don't bother restoring registers multiple times unless necessary */
@@ -1302,7 +1265,7 @@ static int _kvm_vcpu_set_attr(struct kvm_vcpu *vcpu,
 	int ret = -ENXIO;
 
 	switch (attr->group) {
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	case KVM_LARCH_VCPU_PVTIME_CTRL:
 		ret = _kvm_pvtime_set_attr(vcpu, attr);
 		break;
@@ -1321,7 +1284,7 @@ static int _kvm_vcpu_get_attr(struct kvm_vcpu *vcpu,
 	int ret = -ENXIO;
 
 	switch (attr->group) {
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	case KVM_LARCH_VCPU_PVTIME_CTRL:
 		ret = _kvm_pvtime_get_attr(vcpu, attr);
 		break;
@@ -1340,7 +1303,7 @@ static int _kvm_vcpu_has_attr(struct kvm_vcpu *vcpu,
 	int ret = -ENXIO;
 
 	switch (attr->group) {
-#ifdef CONFIG_PARAVIRT
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	case KVM_LARCH_VCPU_PVTIME_CTRL:
 		ret = _kvm_pvtime_has_attr(vcpu, attr);
 		break;
@@ -1476,54 +1439,6 @@ long kvm_arch_vcpu_ioctl(struct file *filp, unsigned int ioctl,
 	}
 
 	vcpu_put(vcpu);
-	return r;
-}
-
-/**
- * kvm_vm_ioctl_get_dirty_log - get and clear the log of dirty pages in a slot
- * @kvm: kvm instance
- * @log: slot id and address to which we copy the log
- *
- * Steps 1-4 below provide general overview of dirty page logging. See
- * kvm_get_dirty_log_protect() function description for additional details.
- *
- * We call kvm_get_dirty_log_protect() to handle steps 1-3, upon return we
- * always flush the TLB (step 4) even if previous step failed  and the dirty
- * bitmap may be corrupt. Regardless of previous outcome the KVM logging API
- * does not preclude user space subsequent dirty log read. Flushing TLB ensures
- * writes will be marked dirty for next log read.
- *
- *   1. Take a snapshot of the bit and clear it if needed.
- *   2. Write protect the corresponding page.
- *   3. Copy the snapshot to the userspace.
- *   4. Flush TLB's if needed.
- */
-int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm, struct kvm_dirty_log *log)
-{
-	struct kvm_memslots *slots;
-	struct kvm_memory_slot *memslot;
-	bool is_dirty = false;
-	int r;
-
-	mutex_lock(&kvm->slots_lock);
-
-	r = kvm_get_dirty_log_protect(kvm, log, &is_dirty);
-
-	if (is_dirty) {
-		slots = kvm_memslots(kvm);
-		memslot = id_to_memslot(slots, log->slot);
-
-		/*
-		 * FIXME: disable THP to improve vm migration success ratio,
-		 * how to know migration failure to enable THP again
-		 */
-		memslot->arch.flags |= KVM_MEMSLOT_DISABLE_THP;
-
-		/* Let implementation handle TLB/GVA invalidation */
-		kvm_flush_remote_tlbs(kvm);
-	}
-
-	mutex_unlock(&kvm->slots_lock);
 	return r;
 }
 
@@ -1792,7 +1707,7 @@ int kvm_cpu_has_pending_timer(struct kvm_vcpu *vcpu)
 {
 	return _kvm_pending_timer(vcpu) ||
 		kvm_read_hw_gcsr(KVM_CSR_ESTAT) &
-			(1 << (EXCCODE_TIMER - EXCCODE_INT_START));
+			(1 << (KVM_INT_TIMER - KVM_INT_START));
 }
 
 int kvm_arch_vcpu_dump_regs(struct kvm_vcpu *vcpu)
@@ -1852,56 +1767,6 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 
 	vcpu_put(vcpu);
 	return 0;
-}
-
-static void kvm_swtimer_func(unsigned long data)
-{
-	struct kvm_vcpu *vcpu = (struct kvm_vcpu *)data;
-
-	_kvm_queue_irq(vcpu, LARCH_INT_TIMER);
-	if (swq_has_sleeper(&vcpu->wq))
-		swake_up_one(&vcpu->wq);
-}
-
-/* low level hrtimer wake routine */
-static enum hrtimer_restart kvm_swtimer_wakeup(struct hrtimer *timer)
-{
-	struct kvm_vcpu *vcpu;
-
-	vcpu = container_of(timer, struct kvm_vcpu, arch.swtimer);
-	kvm_swtimer_func((unsigned long) vcpu);
-	return kvm_count_timeout(vcpu);
-}
-
-int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
-{
-	int i;
-
-	for_each_possible_cpu(i)
-		vcpu->arch.vpid[i] = 0;
-
-	hrtimer_init(&vcpu->arch.swtimer, CLOCK_MONOTONIC,
-			HRTIMER_MODE_ABS_PINNED);
-	vcpu->arch.swtimer.function = kvm_swtimer_wakeup;
-	vcpu->arch.fpu_enabled = true;
-	vcpu->arch.lsx_enabled = true;
-	return 0;
-}
-
-void kvm_arch_vcpu_uninit(struct kvm_vcpu *vcpu)
-{
-	int cpu;
-	struct kvm_context *context;
-
-	/*
-	 * If the VCPU is freed and reused as another VCPU, we don't want the
-	 * matching pointer wrongly hanging around in last_vcpu.
-	 */
-	for_each_possible_cpu(cpu) {
-		context = per_cpu_ptr(vcpu->kvm->arch.vmcs, cpu);
-		if (context->last_vcpu == vcpu)
-			context->last_vcpu = NULL;
-	}
 }
 
 int kvm_arch_vcpu_ioctl_translate(struct kvm_vcpu *vcpu,
@@ -2098,12 +1963,14 @@ void kvm_lose_fpu(struct kvm_vcpu *vcpu)
 	preempt_disable();
 	if (cpu_has_lasx && (vcpu->arch.aux_inuse & KVM_LARCH_LASX)) {
 
+#ifdef CONFIG_CPU_HAS_LASX
 		kvm_save_lasx(vcpu);
 		trace_kvm_aux(vcpu, KVM_TRACE_AUX_SAVE, KVM_TRACE_AUX_FPU_LSX_LASX);
 
 		/* Disable LASX & MAS & FPU */
 		disable_lasx();
 		disable_lsx();
+#endif
 
 		if (vcpu->arch.aux_inuse & KVM_LARCH_FPU) {
 			kvm_clear_csr_euen(KVM_EUEN_FPEN);
@@ -2112,11 +1979,14 @@ void kvm_lose_fpu(struct kvm_vcpu *vcpu)
 					 KVM_LARCH_LSX | KVM_LARCH_LASX);
 	} else if (cpu_has_lsx && vcpu->arch.aux_inuse & KVM_LARCH_LSX) {
 
+#ifdef CONFIG_CPU_HAS_LASX
 		kvm_save_lsx(vcpu);
 		trace_kvm_aux(vcpu, KVM_TRACE_AUX_SAVE, KVM_TRACE_AUX_FPU_LSX);
 
 		/* Disable LSX & FPU */
 		disable_lsx();
+#endif
+
 		if (vcpu->arch.aux_inuse & KVM_LARCH_FPU) {
 			kvm_clear_csr_euen(KVM_EUEN_FPEN);
 		}

@@ -76,6 +76,8 @@ struct kvm_vcpu_stat {
 	u64 huge_merge_exits;
 	u64 halt_successful_poll;
 	u64 halt_attempted_poll;
+	u64 halt_poll_success_ns;
+	u64 halt_poll_fail_ns;
 	u64 halt_poll_invalid;
 	u64 halt_wakeup;
 };
@@ -158,23 +160,6 @@ enum emulation_result {
 	EMULATE_DO_IOCSR,	/* handle IOCSR request */
 };
 
-#define KVM_NR_MEM_OBJS     4
-/*
- * We don't want allocation failures within the mmu code, so we preallocate
- * enough memory for a single page fault in a cache.
- */
-struct kvm_mmu_memory_cache {
-	int nobjs;
-	void *objects[KVM_NR_MEM_OBJS];
-};
-
-#if defined(CONFIG_CPU_HAS_LASX)
-#define FPU_ALIGN		__aligned(32)
-#elif defined(CONFIG_CPU_HAS_LSX)
-#define FPU_ALIGN		__aligned(16)
-#else
-#define FPU_ALIGN
-#endif
 #define KVM_LARCH_FPU		(0x1 << 0)
 #define KVM_LARCH_LSX		(0x1 << 1)
 #define KVM_LARCH_LASX		(0x1 << 2)
@@ -316,7 +301,7 @@ enum _kvm_fault_result {
 #define KVM_ARCH_WANT_MMU_NOTIFIER
 int kvm_unmap_hva_range(struct kvm *kvm,
 			unsigned long start, unsigned long end, bool blockable);
-void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
+int kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
 int kvm_age_hva(struct kvm *kvm, unsigned long start, unsigned long end);
 int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
 
@@ -344,7 +329,7 @@ static inline bool kvm_is_ifetch_fault(struct kvm_vcpu_arch *arch)
 static inline void kvm_arch_hardware_unsetup(void) {}
 static inline void kvm_arch_sync_events(struct kvm *kvm) {}
 static inline void kvm_arch_free_memslot(struct kvm *kvm,
-		struct kvm_memory_slot *free, struct kvm_memory_slot *dont) {}
+					struct kvm_memory_slot *slot) {}
 static inline void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen) {}
 static inline void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu) {}
 static inline void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu) {}

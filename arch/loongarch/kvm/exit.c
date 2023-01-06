@@ -18,11 +18,8 @@
 #include <asm/time.h>
 #include <asm/tlb.h>
 #include <asm/numa.h>
-#include <asm/watch.h>
 #include "kvmcpu.h"
 #include <linux/kvm_host.h>
-#include <mmzone.h>
-
 #include "trace.h"
 #include "kvm_compat.h"
 #include "kvmcsr.h"
@@ -337,7 +334,9 @@ static int _kvm_handle_lsx_disabled(struct kvm_vcpu *vcpu)
 		return RESUME_HOST;
 	}
 
+#ifdef CONFIG_CPU_HAS_LSX
 	kvm_own_lsx(vcpu);
+#endif
 	return RESUME_GUEST;
 }
 
@@ -373,8 +372,9 @@ static int _kvm_handle_lasx_disabled(struct kvm_vcpu *vcpu)
 		return RESUME_HOST;
 	}
 
+#ifdef CONFIG_CPU_HAS_LASX
 	kvm_own_lasx(vcpu);
-
+#endif
 	return RESUME_GUEST;
 }
 
@@ -459,27 +459,27 @@ static int _kvm_handle_debug(struct kvm_vcpu *vcpu)
 		kvm_csr_writeq(fwps, KVM_CSR_FWPS);
 	if (mwps & 0xff)
 		kvm_csr_writeq(mwps, KVM_CSR_MWPS);
-	vcpu->run->debug.arch.exception = EXCCODE_WATCH;
+	vcpu->run->debug.arch.exception = KVM_EXCCODE_WATCH;
 	vcpu->run->debug.arch.fwps = fwps;
 	vcpu->run->debug.arch.mwps = mwps;
 	vcpu->run->exit_reason = KVM_EXIT_DEBUG;
 	return RESUME_HOST;
 }
 
-static exit_handle_fn _kvm_fault_tables[EXCCODE_INT_START] = {
-	[EXCCODE_TLBL]		= _kvm_handle_read_fault,
-	[EXCCODE_TLBS]		= _kvm_handle_write_fault,
-	[EXCCODE_TLBI]		= _kvm_handle_read_fault,
-	[EXCCODE_TLBM]		= _kvm_handle_write_fault,
-	[EXCCODE_TLBRI]		= _kvm_handle_read_fault,
-	[EXCCODE_TLBXI]		= _kvm_handle_read_fault,
-	[EXCCODE_FPDIS]		= _kvm_handle_fpu_disabled,
-	[EXCCODE_LSXDIS]	= _kvm_handle_lsx_disabled,
-	[EXCCODE_LASXDIS]	= _kvm_handle_lasx_disabled,
-	[EXCCODE_WATCH]		= _kvm_handle_debug,
-	[EXCCODE_GSPR]		= _kvm_handle_gspr,
-	[EXCCODE_HYP]		= _kvm_handle_hypcall,
-	[EXCCODE_GCM]		= _kvm_handle_gcm,
+static exit_handle_fn _kvm_fault_tables[KVM_INT_START] = {
+	[KVM_EXCCODE_TLBL]		= _kvm_handle_read_fault,
+	[KVM_EXCCODE_TLBS]		= _kvm_handle_write_fault,
+	[KVM_EXCCODE_TLBI]		= _kvm_handle_read_fault,
+	[KVM_EXCCODE_TLBM]		= _kvm_handle_write_fault,
+	[KVM_EXCCODE_TLBRI]		= _kvm_handle_read_fault,
+	[KVM_EXCCODE_TLBXI]		= _kvm_handle_read_fault,
+	[KVM_EXCCODE_FPDIS]		= _kvm_handle_fpu_disabled,
+	[KVM_EXCCODE_LSXDIS]	= _kvm_handle_lsx_disabled,
+	[KVM_EXCCODE_LASXDIS]	= _kvm_handle_lasx_disabled,
+	[KVM_EXCCODE_WATCH]		= _kvm_handle_debug,
+	[KVM_EXCCODE_GSPR]		= _kvm_handle_gspr,
+	[KVM_EXCCODE_HYP]		= _kvm_handle_hypcall,
+	[KVM_EXCCODE_GCM]		= _kvm_handle_gcm,
 };
 
 int _kvm_handle_fault(struct kvm_vcpu *vcpu, int fault)
@@ -491,7 +491,7 @@ void _kvm_init_fault(void)
 {
 	int i;
 
-	for (i = 0; i < EXCCODE_INT_START; i++)
+	for (i = 0; i < KVM_INT_START; i++)
 		if (!_kvm_fault_tables[i])
 			_kvm_fault_tables[i] = _kvm_fault_ni;
 }

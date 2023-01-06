@@ -10,7 +10,6 @@
 #include <linux/hrtimer.h>
 #include <linux/kvm_host.h>
 #include <linux/spinlock.h>
-#include <loongson-pch.h>
 #include <linux/seq_file.h>
 #include "kvmcpu.h"
 
