@@ -1459,5 +1459,7 @@ trap_init(void)
 	wrent(entIF, 3);
 	wrent(entUna, 4);
 	wrent(entSys, 5);
+#ifdef CONFIG_EFI
 	wrent((void *)entSuspend, 6);
+#endif
 }
