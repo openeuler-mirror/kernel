@@ -25,9 +25,6 @@ struct cpu_hw_events {
 
 DEFINE_PER_CPU(struct cpu_hw_events, cpu_hw_events);
 
-static void sw64_pmu_start(struct perf_event *event, int flags);
-static void sw64_pmu_stop(struct perf_event *event, int flags);
-
 struct sw64_perf_event {
 	/* pmu index */
 	int counter;
@@ -376,6 +373,55 @@ again:
  */
 
 /*
+ * pmu->start: start the event.
+ */
+static void sw64_pmu_start(struct perf_event *event, int flags)
+{
+	struct hw_perf_event *hwc = &event->hw;
+
+	if (WARN_ON_ONCE(!(hwc->state & PERF_HES_STOPPED)))
+		return;
+
+	if (flags & PERF_EF_RELOAD) {
+		WARN_ON_ONCE(!(hwc->state & PERF_HES_UPTODATE));
+		sw64_perf_event_set_period(event, hwc, hwc->idx);
+	}
+
+	hwc->state = 0;
+
+	/* counting in selected modes, for both counters */
+	wrperfmon(PERFMON_CMD_PM, hwc->config_base);
+	if (hwc->idx == PERFMON_PC0) {
+		wrperfmon(PERFMON_CMD_EVENT_PC0, hwc->event_base);
+		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC0);
+	} else {
+		wrperfmon(PERFMON_CMD_EVENT_PC1, hwc->event_base);
+		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC1);
+	}
+}
+
+/*
+ * pmu->stop: stop the counter
+ */
+static void sw64_pmu_stop(struct perf_event *event, int flags)
+{
+	struct hw_perf_event *hwc = &event->hw;
+
+	if (!(hwc->state & PERF_HES_STOPPED)) {
+		wrperfmon(PERFMON_CMD_DISABLE, hwc->idx == 0 ?
+				PERFMON_DISABLE_ARGS_PC0 :
+				PERFMON_DISABLE_ARGS_PC1);
+		hwc->state |= PERF_HES_STOPPED;
+		barrier();
+	}
+
+	if ((flags & PERF_EF_UPDATE) && !(hwc->state & PERF_HES_UPTODATE)) {
+		sw64_perf_event_update(event, hwc, hwc->idx, 0);
+		hwc->state |= PERF_HES_UPTODATE;
+	}
+}
+
+/*
  * pmu->add: add the event to PMU.
  */
 static int sw64_pmu_add(struct perf_event *event, int flags)
@@ -431,55 +477,6 @@ static void sw64_pmu_del(struct perf_event *event, int flags)
 	perf_event_update_userpage(event);
 
 	local_irq_restore(irq_flags);
-}
-
-/*
- * pmu->start: start the event.
- */
-static void sw64_pmu_start(struct perf_event *event, int flags)
-{
-	struct hw_perf_event *hwc = &event->hw;
-
-	if (WARN_ON_ONCE(!(hwc->state & PERF_HES_STOPPED)))
-		return;
-
-	if (flags & PERF_EF_RELOAD) {
-		WARN_ON_ONCE(!(hwc->state & PERF_HES_UPTODATE));
-		sw64_perf_event_set_period(event, hwc, hwc->idx);
-	}
-
-	hwc->state = 0;
-
-	/* counting in selected modes, for both counters */
-	wrperfmon(PERFMON_CMD_PM, hwc->config_base);
-	if (hwc->idx == PERFMON_PC0) {
-		wrperfmon(PERFMON_CMD_EVENT_PC0, hwc->event_base);
-		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC0);
-	} else {
-		wrperfmon(PERFMON_CMD_EVENT_PC1, hwc->event_base);
-		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC1);
-	}
-}
-
-/*
- * pmu->stop: stop the counter
- */
-static void sw64_pmu_stop(struct perf_event *event, int flags)
-{
-	struct hw_perf_event *hwc = &event->hw;
-
-	if (!(hwc->state & PERF_HES_STOPPED)) {
-		wrperfmon(PERFMON_CMD_DISABLE, hwc->idx == 0 ?
-				PERFMON_DISABLE_ARGS_PC0 :
-				PERFMON_DISABLE_ARGS_PC1);
-		hwc->state |= PERF_HES_STOPPED;
-		barrier();
-	}
-
-	if ((flags & PERF_EF_UPDATE) && !(hwc->state & PERF_HES_UPTODATE)) {
-		sw64_perf_event_update(event, hwc, hwc->idx, 0);
-		hwc->state |= PERF_HES_UPTODATE;
-	}
 }
 
 /*
