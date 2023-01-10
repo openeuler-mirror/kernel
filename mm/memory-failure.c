@@ -1379,6 +1379,8 @@ try_again:
 		pr_err("Memory failure: %#lx: already hardware poisoned\n",
 			pfn);
 		res = -EHWPOISON;
+		if (flags & MF_COUNT_INCREASED)
+			put_page(p);
 		goto unlock_mutex;
 	}
 
