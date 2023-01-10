@@ -8,8 +8,11 @@
 #include <linux/printk.h>
 #include <linux/hashtable.h>
 #include <linux/numa.h>
+
+#if defined(CONFIG_ASCEND_SHARE_POOL) && !defined(__GENKSYMS__)
 #include <linux/hugetlb.h>
 #include <linux/memcontrol.h>
+#endif
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
