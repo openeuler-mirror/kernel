@@ -48,9 +48,16 @@ enum timekeeping_adv_mode {
  * cache line.
  */
 static struct {
+#ifdef CONFIG_ARCH_LLC_128_LINE_SIZE
+	u64		padding[8];
+#endif
 	seqcount_t		seq;
 	struct timekeeper	timekeeper;
+#ifdef CONFIG_ARCH_LLC_128_LINE_SIZE
+} tk_core ____cacheline_aligned_128 = {
+#else
 } tk_core ____cacheline_aligned = {
+#endif
 	.seq = SEQCNT_ZERO(tk_core.seq),
 };
 
