@@ -187,19 +187,19 @@ int call_blocking_lsm_notifier(enum lsm_event event, void *data)
 }
 EXPORT_SYMBOL(call_blocking_lsm_notifier);
 
-int register_blocking_lsm_notifier(struct notifier_block *nb)
+int register_lsm_notifier(struct notifier_block *nb)
 {
 	return blocking_notifier_chain_register(&blocking_lsm_notifier_chain,
 						nb);
 }
-EXPORT_SYMBOL(register_blocking_lsm_notifier);
+EXPORT_SYMBOL(register_lsm_notifier);
 
-int unregister_blocking_lsm_notifier(struct notifier_block *nb)
+int unregister_lsm_notifier(struct notifier_block *nb)
 {
 	return blocking_notifier_chain_unregister(&blocking_lsm_notifier_chain,
 						  nb);
 }
-EXPORT_SYMBOL(unregister_blocking_lsm_notifier);
+EXPORT_SYMBOL(unregister_lsm_notifier);
 
 /*
  * Hook list operation macros.

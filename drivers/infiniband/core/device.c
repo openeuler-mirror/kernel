@@ -1226,7 +1226,7 @@ static int __init ib_core_init(void)
 		goto err_mad;
 	}
 
-	ret = register_blocking_lsm_notifier(&ibdev_lsm_nb);
+	ret = register_lsm_notifier(&ibdev_lsm_nb);
 	if (ret) {
 		pr_warn("Couldn't register LSM notifier. ret %d\n", ret);
 		goto err_sa;
@@ -1262,7 +1262,7 @@ static void __exit ib_core_cleanup(void)
 	roce_gid_mgmt_cleanup();
 	nldev_exit();
 	rdma_nl_unregister(RDMA_NL_LS);
-	unregister_blocking_lsm_notifier(&ibdev_lsm_nb);
+	unregister_lsm_notifier(&ibdev_lsm_nb);
 	ib_sa_cleanup();
 	ib_mad_cleanup();
 	addr_cleanup();

@@ -714,7 +714,7 @@ int ib_mad_agent_security_setup(struct ib_mad_agent *agent,
 		goto free_security;
 
 	agent->lsm_nb.notifier_call = ib_mad_agent_security_change;
-	ret = register_blocking_lsm_notifier(&agent->lsm_nb);
+	ret = register_lsm_notifier(&agent->lsm_nb);
 	if (ret)
 		goto free_security;
 
@@ -733,7 +733,7 @@ void ib_mad_agent_security_cleanup(struct ib_mad_agent *agent)
 		return;
 
 	if (agent->lsm_nb_reg)
-		unregister_blocking_lsm_notifier(&agent->lsm_nb);
+		unregister_lsm_notifier(&agent->lsm_nb);
 
 	security_ib_free_security(agent->security);
 }
