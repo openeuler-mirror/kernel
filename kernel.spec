@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2212.4.0
+%global hulkrelease 2301.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0183
+Release: %{hulkrelease}.0184
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,19 @@ fi
 %endif
 
 %changelog
+
+* Wed Jan 11 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2301.3.0.0184
+- arm64: Kconfig: default unset ARCH_LLC_128_LINE_SIZE
+- mm/sharepool: clean up ABI breakage
+- timekeeping: Avoiding false sharing in field access of tk_core
+- mm/hwpoison: put page in already hwpoisoned case with MF_COUNT_INCREASED
+- mm/memory-failure.c: fix race with changing page more robustly
+- mm,memory_failure: always pin the page in madvise_inject_error
+- kobject: Fix slab-out-of-bounds in fill_kobj_path()
+- tracing: Fix infinite loop in tracing_read_pipe on overflowed print_trace_line
+- i2c: ismt: Fix an out-of-bounds bug in ismt_access()
+- misc: sgi-gru: fix use-after-free error in gru_set_context_option, gru_fault and gru_handle_user_call_os
+- mm/sharepool: Charge Buddy hugepage to memcg
 
 * Tue Dec 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2212.4.0.0183
 - dm thin: Use last transaction's pmd->root when commit failed
