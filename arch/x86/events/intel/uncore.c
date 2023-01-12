@@ -53,6 +53,21 @@ int uncore_pcibus_to_dieid(struct pci_bus *bus)
 	return die_id;
 }
 
+int uncore_device_to_die(struct pci_dev *dev)
+{
+	int node = pcibus_to_node(dev->bus);
+	int cpu;
+
+	for_each_cpu(cpu, cpumask_of_pcibus(dev->bus)) {
+		struct cpuinfo_x86 *c = &cpu_data(cpu);
+
+		if (c->initialized && cpu_to_node(cpu) == node)
+			return c->logical_die_id;
+	}
+
+	return -1;
+}
+
 static void uncore_free_pcibus_map(void)
 {
 	struct pci2phy_map *map, *tmp;
