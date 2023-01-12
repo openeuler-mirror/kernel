@@ -109,6 +109,18 @@ void *memcpy(void *dest, const void *src, size_t len)
 	return __memcpy(dest, src, len);
 }
 
+#ifdef __HAVE_ARCH_MEMCPY_MC
+#undef memcpy_mcs
+unsigned long memcpy_mcs(void *dest, const void *src, size_t len)
+{
+	if (!check_memory_region((unsigned long)src, len, false, _RET_IP_) ||
+	    !check_memory_region((unsigned long)dest, len, true, _RET_IP_))
+		return (unsigned long)len;
+
+	return __memcpy_mcs(dest, src, len);
+}
+#endif
+
 /*
  * Poisons the shadow memory for 'size' bytes starting from 'addr'.
  * Memory addresses should be aligned to KASAN_SHADOW_SCALE_SIZE.
