@@ -243,7 +243,6 @@ int update_domains(struct rdt_resource *r, int closid)
 	struct rdt_domain *d;
 	bool mba_sc;
 	u32 *dc;
-	int cpu;
 
 	if (!zalloc_cpumask_var(&cpu_mask, GFP_KERNEL))
 		return -ENOMEM;
@@ -267,13 +266,9 @@ int update_domains(struct rdt_resource *r, int closid)
 	 */
 	if (cpumask_empty(cpu_mask) || mba_sc)
 		goto done;
-	cpu = get_cpu();
-	/* Update resource control msr on this CPU if it's in cpu_mask. */
-	if (cpumask_test_cpu(cpu, cpu_mask))
-		rdt_ctrl_update(&msr_param);
-	/* Update resource control msr on other CPUs. */
-	smp_call_function_many(cpu_mask, rdt_ctrl_update, &msr_param, 1);
-	put_cpu();
+
+	/* Update resource control msr on all the CPUs. */
+	on_each_cpu_mask(cpu_mask, rdt_ctrl_update, &msr_param, 1);
 
 done:
 	free_cpumask_var(cpu_mask);
