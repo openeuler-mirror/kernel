@@ -1269,7 +1269,7 @@ static bool rdtgroup_mode_test_exclusive(struct rdtgroup *rdtgrp)
 	struct rdt_domain *d;
 
 	for_each_alloc_enabled_rdt_resource(r) {
-		if (r->rid == RDT_RESOURCE_MBA)
+		if (r->rid == RDT_RESOURCE_MBA || r->rid == RDT_RESOURCE_SMBA)
 			continue;
 		has_cache = true;
 		list_for_each_entry(d, &r->domains, list) {
@@ -1447,7 +1447,8 @@ static int rdtgroup_size_show(struct kernfs_open_file *of,
 				ctrl = (!is_mba_sc(r) ?
 						d->ctrl_val[rdtgrp->closid] :
 						d->mbps_val[rdtgrp->closid]);
-				if (r->rid == RDT_RESOURCE_MBA)
+				if (r->rid == RDT_RESOURCE_MBA ||
+				    r->rid == RDT_RESOURCE_SMBA)
 					size = ctrl;
 				else
 					size = rdtgroup_cbm_to_size(r, d, ctrl);
@@ -2757,7 +2758,8 @@ static int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 	int ret;
 
 	for_each_alloc_enabled_rdt_resource(r) {
-		if (r->rid == RDT_RESOURCE_MBA) {
+		if (r->rid == RDT_RESOURCE_MBA ||
+		    r->rid == RDT_RESOURCE_SMBA) {
 			rdtgroup_init_mba(r);
 		} else {
 			ret = rdtgroup_init_cat(r, rdtgrp->closid);
