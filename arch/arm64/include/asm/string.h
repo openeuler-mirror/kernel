@@ -36,8 +36,8 @@ extern void *memcpy(void *, const void *, __kernel_size_t);
 extern void *__memcpy(void *, const void *, __kernel_size_t);
 
 #define __HAVE_ARCH_MEMCPY_MC
-extern unsigned long *memcpy_mcs(void *, const void *, __kernel_size_t);
-extern unsigned long *__memcpy_mcs(void *, const void *, __kernel_size_t);
+extern unsigned long memcpy_mcs(void *, const void *, __kernel_size_t);
+extern unsigned long __memcpy_mcs(void *, const void *, __kernel_size_t);
 
 #define __HAVE_ARCH_MEMMOVE
 extern void *memmove(void *, const void *, __kernel_size_t);
