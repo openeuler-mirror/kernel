@@ -1,0 +1,85 @@
+From 5b6166bdb21db9d73a273138d9da74e20c63c560 Mon Sep 17 00:00:00 2001
+From: Liu Chao <liuchao173@huawei.com>
+Date: Wed, 4 Jan 2023 20:49:34 +0800
+Subject: [PATCH 1/3] kconfig: Add script to update openeuler_defconfig
+
+hulk inclusion
+bugzilla: https://gitee.com/openeuler/kernel/issues/I68D0O
+
+Reference: https://gitee.com/openeuler/kernel/pulls/286
+Reference: https://gitee.com/openeuler/kernel/commit/ca1af5899ef7c1e1617913ecee37d53972f701fb
+
+update_oedefconfig:run make openeuler_defconfig and copy .config to arch/$(SRCARCH)/configs/openeuler_defconfig
+save_oedefconfig:copy .config to arch/$(SRCARCH)/configs/openeuler_defconfig
+
+Signed-off-by: Liu Chao <liuchao173@huawei.com>
+[XQ: 1. update helper message
+     2. remove more auto generated CONFIG.]
+Signed-off-by: Xie XiuQi <xiexiuqi@huawei.com>
+---
+ scripts/kconfig/Makefile      | 10 ++++++++++
+ scripts/kconfig/makeconfig.sh | 24 ++++++++++++++++++++++++
+ 2 files changed, 34 insertions(+)
+ create mode 100644 scripts/kconfig/makeconfig.sh
+
+diff --git a/scripts/kconfig/Makefile b/scripts/kconfig/Makefile
+index b8ef0fb4bbef..9d0297ebf9c1 100644
+--- a/scripts/kconfig/Makefile
++++ b/scripts/kconfig/Makefile
+@@ -81,6 +81,14 @@ PHONY += savedefconfig defconfig
+ savedefconfig: $(obj)/conf
+ 	$(Q)$< $(silent) --$@=defconfig $(Kconfig)
+ 
++update_oedefconfig: $(obj)/conf
++	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/openeuler_defconfig $(Kconfig)
++	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/makeconfig.sh $(SRCARCH)
++
++save_oedefconfig: $(obj)/conf
++	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/makeconfig.sh $(SRCARCH)
++
++
+ defconfig: $(obj)/conf
+ ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG)),)
+ 	@$(kecho) "*** Default configuration is based on '$(KBUILD_DEFCONFIG)'"
+@@ -141,6 +149,8 @@ help:
+ 	@echo  '                    default value without prompting'
+ 	@echo  '  tinyconfig	  - Configure the tiniest possible kernel'
+ 	@echo  '  testconfig	  - Run Kconfig unit tests (requires python3 and pytest)'
++	@echo  '  update_oedefconfig  - Update arch/<ARCH>/configs/openeuler_defconfig base on current source code'
++	@echo  '  save_oedefconfig    - Save current .config to arch/<ARCH>/configs/openeuler_defconfig'
+ 
+ # ===========================================================================
+ # object files used by all kconfig flavours
+diff --git a/scripts/kconfig/makeconfig.sh b/scripts/kconfig/makeconfig.sh
+new file mode 100644
+index 000000000000..c54f4d84ae9b
+--- /dev/null
++++ b/scripts/kconfig/makeconfig.sh
+@@ -0,0 +1,24 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++
++if [ ! -f .config ]; then
++	echo ".config does not exist"
++	exit 1
++fi
++
++sed -e '/CONFIG_CC_VERSION_TEXT/d' \
++    -e '/CONFIG_CC_IS_GCC/d' \
++    -e '/CONFIG_GCC_VERSION/d' \
++    -e '/CONFIG_LD_VERSION/d' \
++    -e '/CONFIG_LD_IS/d' \
++    -e '/CONFIG_CLANG_VERSION/d' \
++    -e '/CONFIG_LLD_VERSION/d' \
++    -e '/CONFIG_CC_CAN/d' \
++    -e '/CONFIG_CC_HAS/d' \
++    -e '/CONFIG_AS_VERSION/d' \
++    -e '/CONFIG_AS_HAS/d' \
++    -e '/CONFIG_AS_IS/d' \
++    -e '/CONFIG_PAHOLE_VERSION/d' \
++    -i .config
++
++cp .config arch/$1/configs/openeuler_defconfig
+-- 
+2.25.1
+
