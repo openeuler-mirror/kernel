@@ -277,8 +277,7 @@ static const struct hisi_qm_hw_error qm_hw_error[] = {
 	{ .int_msk = BIT(9), .msg = "qm_sq_vf_invalid" },
 	{ .int_msk = BIT(10), .msg = "qm_db_timeout" },
 	{ .int_msk = BIT(11), .msg = "qm_of_fifo_of" },
-	{ .int_msk = BIT(12), .msg = "qm_db_random_invalid" },
-	{ /* sentinel */ }
+	{ .int_msk = BIT(12), .msg = "qm_db_random_invalid" }
 };
 
 static const char * const qm_db_timeout[] = {
@@ -774,10 +773,11 @@ static irqreturn_t qm_aeq_irq(int irq, void *data)
 
 static irqreturn_t qm_abnormal_irq(int irq, void *data)
 {
-	const struct hisi_qm_hw_error *err = qm_hw_error;
+	const struct hisi_qm_hw_error *err;
 	struct hisi_qm *qm = data;
 	struct device *dev = &qm->pdev->dev;
 	u32 error_status, tmp;
+	int i;
 
 	atomic64_inc(&qm->debug.dfx.abnormal_irq_cnt);
 	if (qm->abnormal_fix) {
@@ -789,12 +789,13 @@ static irqreturn_t qm_abnormal_irq(int irq, void *data)
 	tmp = readl(qm->io_base + QM_ABNORMAL_INT_STATUS);
 	error_status = qm->msi_mask & tmp;
 
-	while (err->msg) {
-		if (err->int_msk & error_status)
-			dev_err(dev, "%s [error status=0x%x] found\n",
-				 err->msg, err->int_msk);
+	for (i = 0; i < ARRAY_SIZE(qm_hw_error); i++) {
+		err = &qm_hw_error[i];
+		if (!(err->int_msk & error_status))
+			continue;
 
-		err++;
+		dev_err(dev, "%s [error status=0x%x] found\n",
+			err->msg, err->int_msk);
 	}
 
 	/* clear err sts */
@@ -2639,11 +2640,22 @@ err_destroy_idr:
 
 static int qm_clear_device(struct hisi_qm *qm)
 {
+	acpi_handle handle = ACPI_HANDLE(&qm->pdev->dev);
 	u32 val;
 	int ret;
 
 	if (qm->fun_type == QM_HW_VF)
 		return 0;
+
+	if (!handle) {
+		pci_warn(qm->pdev, "Device does not support reset, return.\n");
+		return 0;
+	}
+
+	if (!acpi_has_method(handle, qm->err_ini.err_info.acpi_rst)) {
+		pci_warn(qm->pdev, "BIOS has no reset method, return.\n");
+		return 0;
+	}
 
 	/* OOO register set and check */
 	writel(MASTER_GLOBAL_CTRL_SHUTDOWN, qm->io_base + MASTER_GLOBAL_CTRL);
