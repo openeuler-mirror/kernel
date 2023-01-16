@@ -268,7 +268,7 @@ MODULE_DEVICE_TABLE(pci, hisi_zip_dev_ids);
 
 int zip_create_qps(struct hisi_qp **qps, int ctx_num)
 {
-	int node = cpu_to_node(smp_processor_id());
+	int node = cpu_to_node(raw_smp_processor_id());
 
 	return hisi_qm_alloc_qps_node(node, &zip_devices,
 					qps, ctx_num, 0);

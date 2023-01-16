@@ -218,7 +218,7 @@ MODULE_DEVICE_TABLE(pci, hisi_rde_dev_ids);
 
 struct hisi_qp *rde_create_qp(void)
 {
-	int node = cpu_to_node(smp_processor_id());
+	int node = cpu_to_node(raw_smp_processor_id());
 	struct hisi_qp *qp;
 	int ret;
 
