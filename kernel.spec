@@ -9,10 +9,10 @@
 %global debuginfodir /usr/lib/debug
 
 %global upstream_version    6.1
-%global upstream_sublevel   5
+%global upstream_sublevel   6
 %global devel_release       1
 %global maintenance_release .0.0
-%global pkg_release         .2
+%global pkg_release         .3
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -882,8 +882,11 @@ fi
 %endif
 
 %changelog
-* Sat 14 Jan 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.5-1.0.0.2
+* Tue Jan 17 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.6-1.0.0.3
+- update to v6.1.6
+
+* Sat Jan 14 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.5-1.0.0.2
 - update to v6.1.5
 
-* Sat 14 Jan 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.0-1.0.0.1
+* Sat Jan 14 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.0-1.0.0.1
 - package init based on upstream v6.1
