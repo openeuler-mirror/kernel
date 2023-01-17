@@ -30,6 +30,7 @@ _head:
 pe_header:
 	__EFI_PE_HEADER
 
+SYM_DATA(kernel_entry_rel, .quad kernel_entry);
 SYM_DATA(kernel_asize, .long _end - _text);
 SYM_DATA(kernel_fsize, .long _edata - _text);
 SYM_DATA(kernel_offset, .long kernel_offset - _text);
