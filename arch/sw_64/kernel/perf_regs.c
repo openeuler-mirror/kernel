@@ -20,7 +20,7 @@ u64 perf_reg_value(struct pt_regs *regs, int idx)
 	case PERF_REG_SW64_GP:
 		return regs->gp;
 	case PERF_REG_SW64_SP:
-		return (u64)(user_mode(regs) ? rdusp() : (regs + 1));
+		return (user_mode(regs) ? rdusp() : (u64)(regs + 1));
 	case PERF_REG_SW64_PC:
 		return regs->pc;
 	default:
