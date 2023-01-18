@@ -1898,6 +1898,7 @@ struct file_operations {
 				   struct file *file_out, loff_t pos_out,
 				   loff_t len, unsigned int remap_flags);
 	int (*fadvise)(struct file *, loff_t, loff_t, int);
+	bool may_pollfree;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
