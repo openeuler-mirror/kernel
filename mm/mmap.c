@@ -1479,9 +1479,11 @@ unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file,
 			pkey = 0;
 	}
 
+#ifdef CONFIG_ASCEND_FEATURES
 	/* Physical address is within 4G */
 	if (flags & MAP_PA32BIT)
 		vm_flags |= VM_PA32BIT;
+#endif
 
 	/* Do simple checking here so the lower-level routines won't have
 	 * to. we assume access permissions have been handled by the open
