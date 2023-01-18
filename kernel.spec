@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2301.3.0
+%global hulkrelease 2301.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0184
+Release: %{hulkrelease}.0185
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,39 @@ fi
 %endif
 
 %changelog
+
+* Wed Jan 18 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 4.19.90-2301.5.0.0185
+- USB: Fix kABI for usb_device->reset_in_progress
+- rndis_wlan: Prevent buffer overflow in rndis_query_oid
+- mm: fix unexpected changes to {failslab|fail_page_alloc}.attr
+- ima: Directly assign the ima_default_policy pointer to ima_rules
+- driver core: Don't probe devices after bus_type.match() probe deferral
+- KEYS: trusted: Fix migratable=1 failing
+- certs: Fix blacklist flag type confusion
+- crypto: ecdh - avoid unaligned accesses in ecdh_set_secret()
+- ipc/sem: Fix dangling sem_array access in semtimedop race
+- ipv6: avoid use-after-free in ip6_fragment()
+- nvme initialize core quirks before calling nvme_init_subsystem
+- memcg: fix possible use-after-free in memcg_write_event_control()
+- x86/ioremap: Fix page aligned size calculation in __ioremap_caller()
+- nvme: restrict management ioctls to admin
+- arm64: errata: Fix KVM Spectre-v2 mitigation selection for Cortex-A57/A72
+- arm64: Fix panic() when Spectre-v2 causes Spectre-BHB to re-allocate KVM vectors
+- packet: do not set TP_STATUS_CSUM_VALID on CHECKSUM_COMPLETE
+- net: tun: Fix use-after-free in tun_detach()
+- of: property: decrement node refcount in of_fwnode_get_reference_args()
+- af_key: Fix send_acquire race with pfkey_register
+- audit: fix undefined behavior in bit shift for AUDIT_BIT
+- USB: core: Fix RST error in hub.c
+- USB: core: Prevent nested device-reset calls
+- ima: Do not print policy rule with inactive LSM labels
+- lsm: Resolve KABI changes on lsm_notifier
+- ima: Evaluate error in init_ima()
+- ima: ima/lsm policy rule loading logic bug fixes
+- ima: Handle -ESTALE returned by ima_filter_rule_match()
+- ima: use the lsm policy update notifier
+- LSM: switch to blocking policy update notifiers
+- mm/hwpoison: do not lock page again when me_huge_page() successfully recovers
 
 * Wed Jan 11 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2301.3.0.0184
 - arm64: Kconfig: default unset ARCH_LLC_128_LINE_SIZE
