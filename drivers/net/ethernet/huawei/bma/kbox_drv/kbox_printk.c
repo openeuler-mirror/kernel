@@ -304,7 +304,7 @@ int kbox_printk_init(int kbox_proc_exist)
 
 	g_printk_info_buf = kmalloc(SECTION_PRINTK_LEN,
 				    GFP_KERNEL);
-	if (IS_ERR(g_printk_info_buf) || !g_printk_info_buf) {
+	if (!g_printk_info_buf) {
 		KBOX_MSG("kmalloc g_printk_info_buf fail!\n");
 		ret = -ENOMEM;
 		goto fail;
@@ -314,7 +314,7 @@ int kbox_printk_init(int kbox_proc_exist)
 
 	g_printk_info_buf_tmp = kmalloc(SECTION_PRINTK_LEN,
 					GFP_KERNEL);
-	if (IS_ERR(g_printk_info_buf_tmp) || !g_printk_info_buf_tmp) {
+	if (!g_printk_info_buf_tmp) {
 		KBOX_MSG("kmalloc g_printk_info_buf_tmp fail!\n");
 		ret = -ENOMEM;
 		goto fail;

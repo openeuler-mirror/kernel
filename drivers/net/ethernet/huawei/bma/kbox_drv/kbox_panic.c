@@ -135,7 +135,7 @@ int kbox_panic_init(void)
 	int ret = KBOX_TRUE;
 
 	g_panic_info_buf = kmalloc(SLOT_LENGTH, GFP_KERNEL);
-	if (IS_ERR(g_panic_info_buf) || !g_panic_info_buf) {
+	if (!g_panic_info_buf) {
 		KBOX_MSG("kmalloc g_panic_info_buf fail!\n");
 		ret = -ENOMEM;
 		goto fail;
@@ -144,7 +144,7 @@ int kbox_panic_init(void)
 	memset(g_panic_info_buf, 0, SLOT_LENGTH);
 
 	g_panic_info_buf_tmp = kmalloc(SLOT_LENGTH, GFP_KERNEL);
-	if (IS_ERR(g_panic_info_buf_tmp) || !g_panic_info_buf_tmp) {
+	if (!g_panic_info_buf_tmp) {
 		KBOX_MSG("kmalloc g_panic_info_buf_tmp fail!\n");
 		ret = -ENOMEM;
 		goto fail;

@@ -432,7 +432,7 @@ int kbox_write_op(long long offset, unsigned int count,
 		return KBOX_FALSE;
 
 	temp_buf_char = kmalloc(TEMP_BUF_DATA_SIZE, GFP_KERNEL);
-	if (!temp_buf_char || IS_ERR(temp_buf_char)) {
+	if (!temp_buf_char) {
 		KBOX_MSG("kmalloc temp_buf_char fail!\n");
 		up(&user_sem);
 		return -ENOMEM;
