@@ -851,6 +851,10 @@ done:
 scan:
 	spin_unlock(&si->lock);
 	while (++offset <= READ_ONCE(si->highest_bit)) {
+		if (unlikely(--latency_ration < 0)) {
+			cond_resched();
+			latency_ration = LATENCY_LIMIT;
+		}
 		if (!si->swap_map[offset]) {
 			spin_lock(&si->lock);
 			goto checks;
@@ -859,14 +863,14 @@ scan:
 		    READ_ONCE(si->swap_map[offset]) == SWAP_HAS_CACHE) {
 			spin_lock(&si->lock);
 			goto checks;
-		}
-		if (unlikely(--latency_ration < 0)) {
-			cond_resched();
-			latency_ration = LATENCY_LIMIT;
 		}
 	}
 	offset = si->lowest_bit;
 	while (offset < scan_base) {
+		if (unlikely(--latency_ration < 0)) {
+			cond_resched();
+			latency_ration = LATENCY_LIMIT;
+		}
 		if (!si->swap_map[offset]) {
 			spin_lock(&si->lock);
 			goto checks;
@@ -875,10 +879,6 @@ scan:
 		    READ_ONCE(si->swap_map[offset]) == SWAP_HAS_CACHE) {
 			spin_lock(&si->lock);
 			goto checks;
-		}
-		if (unlikely(--latency_ration < 0)) {
-			cond_resched();
-			latency_ration = LATENCY_LIMIT;
 		}
 		offset++;
 	}
