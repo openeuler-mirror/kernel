@@ -18,22 +18,22 @@
  */
 ENTRY(__sw64_vcpu_run)
 	/* save host fpregs */
-	ldl	$1, TI_TASK($8)
 	rfpcr	$f0
-	fstd	$f0, TASK_THREAD_FPCR($1)
-	vstd	$f2, TASK_THREAD_F2($1)
-	vstd	$f3, TASK_THREAD_F3($1)
-	vstd	$f4, TASK_THREAD_F4($1)
-	vstd	$f5, TASK_THREAD_F5($1)
-	vstd	$f6, TASK_THREAD_F6($1)
-	vstd	$f7, TASK_THREAD_F7($1)
-	vstd	$f8, TASK_THREAD_F8($1)
-	vstd	$f9, TASK_THREAD_F9($1)
+	fstd	$f0, TASK_THREAD_FPCR($8)
+	vstd	$f2, TASK_THREAD_F2($8)
+	vstd	$f3, TASK_THREAD_F3($8)
+	vstd	$f4, TASK_THREAD_F4($8)
+	vstd	$f5, TASK_THREAD_F5($8)
+	vstd	$f6, TASK_THREAD_F6($8)
+	vstd	$f7, TASK_THREAD_F7($8)
+	vstd	$f8, TASK_THREAD_F8($8)
+	vstd	$f9, TASK_THREAD_F9($8)
 
 	ldi	sp, -VCPU_RET_SIZE(sp)
 	/* save host  pt_regs to current kernel  stack */
 	ldi	sp, -PT_REGS_SIZE(sp)
 	stl	$9, PT_REGS_R9(sp)
+	stl	$8, PT_REGS_R8(sp)
 	stl	$10, PT_REGS_R10(sp)
 	stl	$11, PT_REGS_R11(sp)
 	stl	$12, PT_REGS_R12(sp)
@@ -198,6 +198,7 @@ $g_setfpec_over:
 	stl	$28, KVM_REGS_R28($17)
 
 	/* restore host regs from host sp */
+	ldl	$8, PT_REGS_R8(sp)
 	ldl	$9, PT_REGS_R9(sp)
 	ldl	$10, PT_REGS_R10(sp)
 	ldl	$11, PT_REGS_R11(sp)
@@ -208,11 +209,8 @@ $g_setfpec_over:
 	ldl	$26, PT_REGS_R26(sp)
 	ldi	sp, PT_REGS_SIZE(sp)
 
-	ldi	$8, 0x3fff
-	bic	sp, $8, $8
 	/* restore host fpregs */
-	ldl	$1, TI_TASK($8)
-	fldd	$f0, TASK_THREAD_FPCR($1)
+	fldd	$f0, TASK_THREAD_FPCR($8)
 	wfpcr	$f0
 	fimovd	$f0, $2
 	and	$2, 0x3, $2
@@ -232,14 +230,14 @@ $setfpec_1:
 $setfpec_2:
 	setfpec2
 $setfpec_over:
-	vldd	$f2, TASK_THREAD_F2($1)
-	vldd	$f3, TASK_THREAD_F3($1)
-	vldd	$f4, TASK_THREAD_F4($1)
-	vldd	$f5, TASK_THREAD_F5($1)
-	vldd	$f6, TASK_THREAD_F6($1)
-	vldd	$f7, TASK_THREAD_F7($1)
-	vldd	$f8, TASK_THREAD_F8($1)
-	vldd	$f9, TASK_THREAD_F9($1)
+	vldd	$f2, TASK_THREAD_F2($8)
+	vldd	$f3, TASK_THREAD_F3($8)
+	vldd	$f4, TASK_THREAD_F4($8)
+	vldd	$f5, TASK_THREAD_F5($8)
+	vldd	$f6, TASK_THREAD_F6($8)
+	vldd	$f7, TASK_THREAD_F7($8)
+	vldd	$f8, TASK_THREAD_F8($8)
+	vldd	$f9, TASK_THREAD_F9($8)
 
 	/* if $0 > 0, handle hcall */
 	bgt	$0, $ret_to

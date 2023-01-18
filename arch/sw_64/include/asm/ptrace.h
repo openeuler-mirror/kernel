@@ -4,7 +4,6 @@
 
 #include <uapi/asm/ptrace.h>
 #include <asm/hmcall.h>
-#include <asm/thread_info.h>
 #include <asm/page.h>
 
 /*
@@ -57,11 +56,6 @@ struct pt_regs {
 #define user_stack_pointer(regs) rdusp()
 #define kernel_stack_pointer(regs) ((unsigned long)((regs) + 1))
 #define instruction_pointer_set(regs, val) ((regs)->pc = val)
-
-
-#define current_pt_regs() \
-	((struct pt_regs *) ((char *)current_thread_info() + 2 * PAGE_SIZE) - 1)
-#define signal_pt_regs current_pt_regs
 
 #define force_successful_syscall_return() (current_pt_regs()->r0 = 0)
 

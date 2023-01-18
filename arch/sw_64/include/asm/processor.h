@@ -12,7 +12,7 @@
 #include <asm/ptrace.h>
 
 #define task_pt_regs(task) \
-	((struct pt_regs *) (task_stack_page(task) + 2 * PAGE_SIZE) - 1)
+	((struct pt_regs *) (task->stack + THREAD_SIZE) - 1)
 
 /*
  * Returns current instruction pointer ("program counter").

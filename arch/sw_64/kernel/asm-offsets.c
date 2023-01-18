@@ -5,6 +5,7 @@
  * and format the required data.
  */
 
+#define GENERATING_ASM_OFFSETS  /* asm/smp.h */
 #include <linux/stddef.h>
 #include <linux/sched.h>
 #include <linux/kbuild.h>
@@ -15,11 +16,11 @@
 
 #include "traps.c"
 
+
 void foo(void)
 {
-	DEFINE(TI_TASK, offsetof(struct thread_info, task));
+	DEFINE(ASM_THREAD_SIZE, THREAD_SIZE);
 	DEFINE(TI_FLAGS, offsetof(struct thread_info, flags));
-	DEFINE(TI_CPU, offsetof(struct thread_info, cpu));
 	BLANK();
 
 	DEFINE(TASK_BLOCKED, offsetof(struct task_struct, blocked));
@@ -27,6 +28,10 @@ void foo(void)
 	DEFINE(TASK_REAL_PARENT, offsetof(struct task_struct, real_parent));
 	DEFINE(TASK_GROUP_LEADER, offsetof(struct task_struct, group_leader));
 	DEFINE(TASK_TGID, offsetof(struct task_struct, tgid));
+	DEFINE(TASK_STACK, offsetof(struct task_struct, stack));
+#ifdef CONFIG_SMP
+	DEFINE(TASK_CPU, offsetof(struct task_struct, thread_info.cpu));
+#endif
 	BLANK();
 
 	OFFSET(PSTATE_REGS, processor_state, regs);

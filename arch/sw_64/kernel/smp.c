@@ -34,7 +34,7 @@ EXPORT_SYMBOL(__cpu_to_rcid);
 int __rcid_to_cpu[NR_CPUS];		/* Map physical to logical */
 EXPORT_SYMBOL(__rcid_to_cpu);
 
-void *tidle_ksp[NR_CPUS];
+void *idle_task_pointer[NR_CPUS];
 
 /* State of each CPU */
 DEFINE_PER_CPU(int, cpu_state) = { 0 };
@@ -130,7 +130,7 @@ static int secondary_cpu_start(int cpuid, struct task_struct *idle)
 	/*
 	 * Precalculate the target ksp.
 	 */
-	tidle_ksp[cpuid] = idle->stack + THREAD_SIZE;
+	idle_task_pointer[cpuid] = idle;
 
 	DBGS("Starting secondary cpu %d: state 0x%lx\n", cpuid, idle->state);
 
@@ -237,7 +237,6 @@ void __init native_smp_prepare_cpus(unsigned int max_cpus)
 	memset(ipi_data, 0, sizeof(ipi_data));
 
 	init_cpu_topology();
-	current_thread_info()->cpu = 0;
 	store_cpu_topology(smp_processor_id());
 	numa_add_cpu(smp_processor_id());
 

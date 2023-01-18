@@ -22,9 +22,11 @@ __start:
 	br	$27, 1f
 1:	ldgp	$29, 0($27)
 	/* We need to get current_task_info loaded up...  */
-	ldi	$8, init_thread_union
+	ldi	$8, init_task
+	ldl	$30, TASK_STACK($8)
 	/* ... and find our stack ... */
-	ldi	$30, ASM_THREAD_SIZE($8)
+	ldi	$30, ASM_THREAD_SIZE($30)
+
 	/* ... and then we can clear bss data.  */
 	ldi	$16, __bss_start
 	ldi	$18, __bss_stop
@@ -68,11 +70,13 @@ __smp_callin:
 	s4addl	$0, $1, $1
 	ldw	$0, 0($1)	# Get logical cpu number
 
-	ldi	$2, tidle_ksp
+	ldi	$2, idle_task_pointer
 	s8addl	$0, $2, $2
-	ldl	$30, 0($2)	# Get ksp of idle thread
+	ldl	$8, 0($2)	# Get ksp of idle thread
+	sys_call HMC_wrktp
 
-	ldi	$8, -ASM_THREAD_SIZE($30) # Find "current"
+	ldl	$30, TASK_STACK($8)
+	ldi	$30, ASM_THREAD_SIZE($30)
 
 	call	$26, smp_callin
 	sys_call HMC_halt

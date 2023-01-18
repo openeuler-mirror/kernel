@@ -2,13 +2,15 @@
 #ifndef _ASM_SW64_SMP_H
 #define _ASM_SW64_SMP_H
 
-#include <linux/threads.h>
-#include <linux/cpumask.h>
-#include <linux/bitops.h>
-#include <asm/hmcall.h>
-#include <asm/hcall.h>
 #include <asm/core.h>
+#include <asm/current.h>
+#include <asm/hcall.h>
+#include <asm/hmcall.h>
 #include <asm/hw_init.h>
+
+#include <linux/bitops.h>
+#include <linux/cpumask.h>
+#include <linux/threads.h>
 
 /* HACK: Cabrio WHAMI return value is bogus if more than 8 bits used.. :-( */
 
@@ -55,7 +57,13 @@ struct smp_rcb_struct {
 #define INIT_SMP_RCB ((struct smp_rcb_struct *) __va(0x820000UL))
 
 #define hard_smp_processor_id()	__hard_smp_processor_id()
-#define raw_smp_processor_id()	(current_thread_info()->cpu)
+
+#ifdef GENERATING_ASM_OFFSETS
+#define raw_smp_processor_id() (0)
+#else
+#include <asm/asm-offsets.h>
+#define raw_smp_processor_id() (*((unsigned int *)((void *)current + TASK_CPU)))
+#endif
 
 /* The map from sequential logical cpu number to hard cid.  */
 extern int __cpu_to_rcid[NR_CPUS];
