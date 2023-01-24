@@ -586,6 +586,15 @@ void kvm_set_cpu_caps(void)
 	    !boot_cpu_has(X86_FEATURE_AMD_SSBD))
 		kvm_cpu_cap_set(X86_FEATURE_VIRT_SSBD);
 
+	if (boot_cpu_has(X86_FEATURE_NO_NESTED_DATA_BP))
+		kvm_cpu_cap_set(X86_FEATURE_NO_NESTED_DATA_BP);
+	if (boot_cpu_has(X86_FEATURE_LFENCE_RDTSC))
+		kvm_cpu_cap_set(X86_FEATURE_LFENCE_RDTSC);
+	if (boot_cpu_has(X86_FEATURE_NULL_SEL_CLR_BASE))
+		kvm_cpu_cap_set(X86_FEATURE_NULL_SEL_CLR_BASE);
+	if (boot_cpu_has(X86_FEATURE_AUTOIBRS))
+		kvm_cpu_cap_set(X86_FEATURE_AUTOIBRS);
+
 	if (cpu_feature_enabled(X86_FEATURE_SBPB))
 		kvm_cpu_cap_set(X86_FEATURE_SBPB);
 	if (cpu_feature_enabled(X86_FEATURE_IBPB_BRTYPE))
@@ -598,11 +607,6 @@ void kvm_set_cpu_caps(void)
 	 * features it emulates and/or exposes for L1.
 	 */
 	kvm_cpu_cap_mask(CPUID_8000_000A_EDX, 0);
-
-	kvm_cpu_cap_init_kvm_defined(CPUID_8000_0021_EAX,
-		F(NO_NESTED_DATA_BP) | F(LFENCE_RDTSC) | 0 /* SmmPgCfgLock */ |
-		F(NULL_SEL_CLR_BASE) | 0 /* PrefetchCtlMsr */
-	);
 
 	/*
 	 * Synthesize "LFENCE is serializing" into the AMD-defined entry in
