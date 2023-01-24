@@ -427,7 +427,8 @@
 #define X86_FEATURE_SUCCOR		(17*32+ 1) /* Uncorrectable error containment and recovery */
 #define X86_FEATURE_SMCA		(17*32+ 3) /* Scalable MCA */
 
-/* AMD-defined SRSO vulnerability features, CPUID level 0x80000021 (EAX), word 20 */
+/* AMD-defined SRSO vulnerability features, CPUID level 0x80000021 (EAX), word 17 */
+#define X86_FEATURE_AUTOIBRS		(17*32+18) /* "" Automatic IBRS */
 #define X86_FEATURE_SBPB		(17*32+24)
 #define X86_FEATURE_IBPB_BRTYPE		(17*32+25)
 #define X86_FEATURE_SRSO_NO		(17*32+26)
@@ -462,9 +463,6 @@
 #define X86_FEATURE_ARCH_CAPABILITIES	(18*32+29) /* IA32_ARCH_CAPABILITIES MSR (Intel) */
 #define X86_FEATURE_CORE_CAPABILITIES	(18*32+30) /* "" IA32_CORE_CAPABILITIES MSR */
 #define X86_FEATURE_SPEC_CTRL_SSBD	(18*32+31) /* "" Speculative Store Bypass Disable */
-
-/* AMD-defined Extended Feature 2 EAX, CPUID level 0x80000021 (EAX), word 20 */
-#define X86_FEATURE_AUTOIBRS		(20*32+ 8) /* "" Automatic IBRS */
 
 /*
  * BUG word(s)
