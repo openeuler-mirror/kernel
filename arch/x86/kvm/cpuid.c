@@ -600,7 +600,7 @@ void kvm_set_cpu_caps(void)
 	kvm_cpu_cap_mask(CPUID_8000_000A_EDX, 0);
 
 	kvm_cpu_cap_init_kvm_defined(CPUID_8000_0021_EAX,
-		BIT(0) /* NO_NESTED_DATA_BP */ |
+		F(NO_NESTED_DATA_BP) |
 		BIT(2) /* LFENCE Always serializing */ | 0 /* SmmPgCfgLock */ |
 		BIT(6) /* NULL_SEL_CLR_BASE */ | 0 /* PrefetchCtlMsr */
 	);

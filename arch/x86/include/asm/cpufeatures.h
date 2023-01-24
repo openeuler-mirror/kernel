@@ -427,6 +427,9 @@
 #define X86_FEATURE_SUCCOR		(17*32+ 1) /* Uncorrectable error containment and recovery */
 #define X86_FEATURE_SMCA		(17*32+ 3) /* Scalable MCA */
 
+/* AMD-defined Extended Feature 2 EAX, CPUID level 0x80000021 (EAX), word 17 */
+#define X86_FEATURE_NO_NESTED_DATA_BP	(17*32+10) /* "" No Nested Data Breakpoints */
+
 /* AMD-defined SRSO vulnerability features, CPUID level 0x80000021 (EAX), word 17 */
 #define X86_FEATURE_AUTOIBRS		(17*32+18) /* "" Automatic IBRS */
 #define X86_FEATURE_SBPB		(17*32+24)

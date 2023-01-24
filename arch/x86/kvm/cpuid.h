@@ -41,6 +41,7 @@ enum kvm_only_cpuid_leafs {
 #define KVM_X86_FEATURE_SGX_EDECCSSA	KVM_X86_FEATURE(CPUID_12_EAX, 11)
 
 /* AMD-defined SRSO vulnerability features, CPUID level 0x80000021 (EAX), word 20 */
+#define KVM_X86_FEATURE_NO_NESTED_DATA_BP      KVM_X86_FEATURE(CPUID_8000_0021_EAX, 0)
 #define KVM_X86_FEATURE_AUTOIBRS	KVM_X86_FEATURE(CPUID_8000_0021_EAX, 8)
 #define KVM_X86_FEATURE_SBPB		KVM_X86_FEATURE(CPUID_8000_0021_EAX, 27)
 #define KVM_X86_FEATURE_IBPB_BRTYPE	KVM_X86_FEATURE(CPUID_8000_0021_EAX, 28)
@@ -163,7 +164,9 @@ static __always_inline u32 __feature_translate(int x86_feature)
 	else if (x86_feature == X86_FEATURE_SGX_EDECCSSA)
 		return KVM_X86_FEATURE_SGX_EDECCSSA;
 
-	if (x86_feature == X86_FEATURE_AUTOIBRS)
+	if (x86_feature == X86_FEATURE_NO_NESTED_DATA_BP)
+		return KVM_X86_FEATURE_NO_NESTED_DATA_BP;
+	else if (x86_feature == X86_FEATURE_AUTOIBRS)
 		return KVM_X86_FEATURE_AUTOIBRS;
 	else if (x86_feature == X86_FEATURE_SBPB)
 		return KVM_X86_FEATURE_SBPB;
