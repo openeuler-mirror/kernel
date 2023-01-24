@@ -431,6 +431,7 @@
 #define X86_FEATURE_NO_NESTED_DATA_BP	(17*32+10) /* "" No Nested Data Breakpoints */
 #define X86_FEATURE_LFENCE_RDTSC	(17*32+12) /* "" LFENCE always serializing / synchronizes RDTSC */
 #define X86_FEATURE_NULL_SEL_CLR_BASE	(17*32+16) /* "" Null Selector Clears Base */
+#define X86_FEATURE_NO_SMM_CTL_MSR	(17*32+19) /* "" SMM_CTL MSR is not present */
 
 /* AMD-defined SRSO vulnerability features, CPUID level 0x80000021 (EAX), word 17 */
 #define X86_FEATURE_AUTOIBRS		(17*32+18) /* "" Automatic IBRS */
