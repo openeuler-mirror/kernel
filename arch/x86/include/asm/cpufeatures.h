@@ -95,7 +95,7 @@
 #define X86_FEATURE_SYSENTER32		( 3*32+15) /* "" sysenter in IA32 userspace */
 #define X86_FEATURE_REP_GOOD		( 3*32+16) /* REP microcode works well */
 /* FREE!                                ( 3*32+17) */
-#define X86_FEATURE_LFENCE_RDTSC	( 3*32+18) /* "" LFENCE synchronizes RDTSC */
+/* FREE, was #define X86_FEATURE_LFENCE_RDTSC		( 3*32+18) "" LFENCE synchronizes RDTSC */
 #define X86_FEATURE_ACC_POWER		( 3*32+19) /* AMD Accumulated Power Mechanism */
 #define X86_FEATURE_NOPL		( 3*32+20) /* The NOPL (0F 1F) instructions */
 #define X86_FEATURE_ALWAYS		( 3*32+21) /* "" Always-present feature */
@@ -429,6 +429,7 @@
 
 /* AMD-defined Extended Feature 2 EAX, CPUID level 0x80000021 (EAX), word 17 */
 #define X86_FEATURE_NO_NESTED_DATA_BP	(17*32+10) /* "" No Nested Data Breakpoints */
+#define X86_FEATURE_LFENCE_RDTSC	(17*32+12) /* "" LFENCE always serializing / synchronizes RDTSC */
 
 /* AMD-defined SRSO vulnerability features, CPUID level 0x80000021 (EAX), word 17 */
 #define X86_FEATURE_AUTOIBRS		(17*32+18) /* "" Automatic IBRS */
