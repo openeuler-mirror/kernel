@@ -199,7 +199,7 @@ EXPORT_SYMBOL_GPL(smca_banks);
 static char buf_mcatype[MAX_MCATYPE_NAME_LEN];
 
 static DEFINE_PER_CPU(struct threshold_bank **, threshold_banks);
-static DEFINE_PER_CPU(unsigned int, bank_map);	/* see which banks are on */
+static DEFINE_PER_CPU(u64, bank_map);	/* see which banks are on */
 
 static void amd_threshold_interrupt(void);
 static void amd_deferred_error_interrupt(void);
@@ -528,7 +528,7 @@ prepare_threshold_block(unsigned int bank, unsigned int block, u32 addr,
 	int new;
 
 	if (!block)
-		per_cpu(bank_map, cpu) |= (1 << bank);
+		per_cpu(bank_map, cpu) |= BIT_ULL(bank);
 
 	memset(&b, 0, sizeof(b));
 	b.cpu			= cpu;
@@ -993,7 +993,7 @@ static void amd_threshold_interrupt(void)
 	unsigned int bank, cpu = smp_processor_id();
 
 	for (bank = 0; bank < mca_cfg.banks; ++bank) {
-		if (!(per_cpu(bank_map, cpu) & (1 << bank)))
+		if (!(per_cpu(bank_map, cpu) & BIT_ULL(bank)))
 			continue;
 
 		first_block = per_cpu(threshold_banks, cpu)[bank]->blocks;
@@ -1414,7 +1414,7 @@ int mce_threshold_remove_device(unsigned int cpu)
 	unsigned int bank;
 
 	for (bank = 0; bank < mca_cfg.banks; ++bank) {
-		if (!(per_cpu(bank_map, cpu) & (1 << bank)))
+		if (!(per_cpu(bank_map, cpu) & BIT_ULL(bank)))
 			continue;
 		threshold_remove_bank(cpu, bank);
 	}
@@ -1442,7 +1442,7 @@ int mce_threshold_create_device(unsigned int cpu)
 	per_cpu(threshold_banks, cpu) = bp;
 
 	for (bank = 0; bank < mca_cfg.banks; ++bank) {
-		if (!(per_cpu(bank_map, cpu) & (1 << bank)))
+		if (!(per_cpu(bank_map, cpu) & BIT_ULL(bank)))
 			continue;
 		err = threshold_create_bank(cpu, bank);
 		if (err)
