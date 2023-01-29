@@ -12,7 +12,7 @@
 %global upstream_sublevel   6
 %global devel_release       1
 %global maintenance_release .0.0
-%global pkg_release         .3
+%global pkg_release         .4
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -589,7 +589,7 @@ fi
 %endif
 
 # copy objtool for kernel-devel (needed for building external modules)
-if grep -q CONFIG_STACK_VALIDATION=y .config; then
+if grep -q CONFIG_OBJTOOL=y .config; then
     mkdir -p $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/tools/objtool
     cp -a tools/objtool/objtool $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/tools/objtool
 fi
@@ -882,6 +882,9 @@ fi
 %endif
 
 %changelog
+* Sun Jan 29 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.6-1.0.0.4
+- fix missing objtool
+
 * Tue Jan 17 2023 Xie XiuQi <xiexiuqi@huawei.com> - 6.1.6-1.0.0.3
 - update to v6.1.6
 
