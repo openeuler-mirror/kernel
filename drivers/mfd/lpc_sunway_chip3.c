@@ -193,6 +193,7 @@ static int lpc_chip3_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	platform_set_drvdata(pdev, lpc_adapter);
 	/* Get basic io resource and map it */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!mem) {
@@ -251,10 +252,57 @@ static const struct of_device_id chip3_lpc_of_match[] = {
 
 MODULE_DEVICE_TABLE(of, chip3_lpc_of_match);
 
+#ifdef CONFIG_PM_SLEEP
+unsigned int lpc_irq_ctrl_value;
+unsigned int lpc_irq_irq_value;
+unsigned int lpc_irq_mask_value;
+
+/**
+ * chip3_lpc_platform_suspend - Suspend an chip3_lpc-platform device
+ * @dev: the platform device to suspend
+ *
+ * This function stores the lpc controller register values and
+ * restores them when the machine wakes up.
+ */
+int chip3_lpc_platform_suspend(struct device *dev)
+{
+	struct lpc_chip3_adapter *lpc_adapter = dev_get_drvdata(dev);
+
+	lpc_irq_ctrl_value = lpc_readl(lpc_adapter->hst_regs, LPC_CTL);
+	lpc_irq_irq_value = lpc_readl(lpc_adapter->hst_regs, LPC_IRQ);
+	lpc_irq_mask_value = lpc_readl(lpc_adapter->hst_regs, LPC_IRQ_MASK);
+
+	return 0;
+}
+
+/**
+ * chip3_lpc_platform_resume - Resume an chip3_lpc-platform device
+ * @dev: the platform device to resume
+ *
+ * This function restores the register value before the suspend.
+ */
+int chip3_lpc_platform_resume(struct device *dev)
+{
+	struct lpc_chip3_adapter *lpc_adapter = dev_get_drvdata(dev);
+
+	lpc_writel(lpc_adapter->hst_regs, LPC_CTL, lpc_irq_ctrl_value);
+	lpc_writel(lpc_adapter->hst_regs, LPC_IRQ, lpc_irq_irq_value);
+	lpc_writel(lpc_adapter->hst_regs, LPC_IRQ_MASK, lpc_irq_mask_value);
+
+	return 0;
+}
+static SIMPLE_DEV_PM_OPS(chip3_lpc_pm_ops, chip3_lpc_platform_suspend,
+			 chip3_lpc_platform_resume);
+#endif
+
+
 static struct platform_driver chip3_lpc_platform_driver = {
 	.driver = {
 		   .name = "chip3_lpc",
 		   .of_match_table = chip3_lpc_of_match,
+#ifdef CONFIG_PM_SLEEP
+		   .pm = &chip3_lpc_pm_ops,
+#endif
 		   },
 	.remove = lpc_chip3_remove,
 };
