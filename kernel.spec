@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2301.5.0
+%global hulkrelease 2301.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0185
+Release: %{hulkrelease}.0186
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,18 @@ fi
 %endif
 
 %changelog
+
+* Tue Jan 31 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2301.6.0.0186
+- bus: hisi_lpc: Fixup IO ports addresses to avoid use-after-free in host removal
+- of/fdt: Don't calculate initrd size from DT if start > end
+- lib/cmdline: avoid page fault in next_arg
+- genirq: Introduce warn log when irq be reentrant
+- net: sched: disallow noqueue for qdisc classes
+- net: sched: atm: dont intepret cls results when asked to drop
+- block: check 'bd_super' before rescanning partition
+- net: sched: cbq: dont intepret cls results when asked to drop
+- swapfile: fix soft lockup in scan_swap_map_slots
+- Huawei BMA: Fix iBMA driver bug
 
 * Wed Jan 18 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 4.19.90-2301.5.0.0185
 - USB: Fix kABI for usb_device->reset_in_progress
