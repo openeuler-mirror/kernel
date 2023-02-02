@@ -21,10 +21,39 @@
 
 #include <asm/hw_init.h>
 #include <asm/clock.h>
+#include <asm/sw64io.h>
+
+#define CRYSTAL_BIT	(1UL << 34)
 
 static uint nowait;
 
 static struct clk *cpuclk;
+
+/* Minimum CLK support */
+enum {
+	DC_0, DC_1, DC_2, DC_3, DC_4, DC_5, DC_6, DC_7, DC_8,
+	DC_9, DC_10, DC_11, DC_12, DC_13, DC_14, DC_15, DC_RESV
+};
+
+static struct cpufreq_frequency_table freq_table[] = {
+	{0, DC_0, CPUFREQ_ENTRY_INVALID},
+	{0, DC_1, 0},
+	{0, DC_2, 0},
+	{0, DC_3, 0},
+	{0, DC_4, 0},
+	{0, DC_5, 0},
+	{0, DC_6, 0},
+	{0, DC_7, 0},
+	{0, DC_8, 0},
+	{0, DC_9, 0},
+	{0, DC_10, 0},
+	{0, DC_11, 0},
+	{0, DC_12, 0},
+	{0, DC_13, 0},
+	{0, DC_14, 0},
+	{0, DC_15, 0},
+	{-1, DC_RESV, CPUFREQ_TABLE_END},
+};
 
 static int sw64_cpu_freq_notifier(struct notifier_block *nb,
 					unsigned long val, void *data);
@@ -37,12 +66,10 @@ static int sw64_cpu_freq_notifier(struct notifier_block *nb,
 					unsigned long val, void *data)
 {
 	struct cpufreq_freqs *freqs = (struct cpufreq_freqs *)data;
-	unsigned long cpu;
+	unsigned long cpu = freqs->policy->cpu;
 
-	for_each_online_cpu(cpu) {
-		if (val == CPUFREQ_POSTCHANGE)
-			sw64_update_clockevents(cpu, freqs->new * 1000);
-	}
+	if (val == CPUFREQ_POSTCHANGE)
+		sw64_update_clockevents(cpu, freqs->new * 1000000);
 
 	return 0;
 }
@@ -57,7 +84,7 @@ static unsigned int sw64_cpufreq_get(unsigned int cpu)
 		return 0;
 	}
 
-	return __sw64_cpufreq_get(policy) * 1000;
+	return __sw64_cpufreq_get(policy);
 }
 
 /*
@@ -66,22 +93,23 @@ static unsigned int sw64_cpufreq_get(unsigned int cpu)
 static int sw64_cpufreq_target(struct cpufreq_policy *policy,
 				     unsigned int index)
 {
-	unsigned long freq;
+	unsigned int cpu = policy->cpu;
 
-	freq = 50000 * index;
+	if (!cpu_online(cpu))
+		return -ENODEV;
 
 	sw64_store_policy(policy);
 
 	/* setting the cpu frequency */
-	sw64_set_rate(freq * 1000);
+	sw64_set_rate(index);
 
 	return 0;
 }
 
 static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 {
-	unsigned long rate;
 	int i;
+	unsigned long max_rate, freq_off;
 
 	cpuclk = sw64_clk_get(NULL, "cpu_clk");
 	if (IS_ERR(cpuclk)) {
@@ -89,27 +117,36 @@ static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 		return PTR_ERR(cpuclk);
 	}
 
-	rate = get_cpu_freq() / 1000;
+	max_rate = get_cpu_freq() / 1000000;
+
+	if (sw64_io_read(0, INIT_CTL) & CRYSTAL_BIT)
+		freq_off = 50;
+	else
+		freq_off = 60;
 
 	/* clock table init */
-	for (i = 0;
-	     (sw64_clockmod_table[i].frequency != CPUFREQ_TABLE_END);
-	     i++)
-		if (sw64_clockmod_table[i].frequency == 0)
-			sw64_clockmod_table[i].frequency = (rate * i) / 48;
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		if (i == 1)
+			freq_table[i].frequency = freq_off * 24;
+		if (i == 2)
+			freq_table[i].frequency = freq_off * 36;
+		if (i > 2)
+			freq_table[i].frequency = freq_off * 38 + ((i - 3) * freq_off);
 
-	sw64_set_rate(rate * 1000);
+		if (freq_table[i].frequency == max_rate)
+			freq_table[i + 1].frequency = CPUFREQ_TABLE_END;
+	}
 
 	policy->clk = cpuclk;
 
-	cpufreq_generic_init(policy, &sw64_clockmod_table[0], 0);
+	cpufreq_generic_init(policy, freq_table, 0);
 
 	return 0;
 }
 
 static int sw64_cpufreq_verify(struct cpufreq_policy_data *policy)
 {
-	return cpufreq_frequency_table_verify(policy, &sw64_clockmod_table[0]);
+	return cpufreq_frequency_table_verify(policy, freq_table);
 }
 
 static int sw64_cpufreq_exit(struct cpufreq_policy *policy)
