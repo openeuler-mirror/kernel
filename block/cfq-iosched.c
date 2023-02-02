@@ -3778,6 +3778,7 @@ static void check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
 	if (cfqq) {
 		cfq_log_cfqq(cfqd, cfqq, "changed cgroup");
 		cic_set_cfqq(cic, NULL, true);
+		cfq_put_cooperator(cfqq);
 		cfq_put_queue(cfqq);
 	}
 
