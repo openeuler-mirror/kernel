@@ -216,6 +216,7 @@ config DYNAMIC_HUGETLB
 	depends on HUGETLB_PAGE
 	depends on MEMCG
 	depends on CGROUP_HUGETLB
+	depends on X86_64 || (ARM64 && ARM64_4K_PAGES)
 	help
 	  Dynamic hugepage are used in memcg and can be splited into small pages
 	  automatically. The tasks in the memcg prefer to alloc dynamic hugepage.

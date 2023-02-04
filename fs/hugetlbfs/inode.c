@@ -1166,7 +1166,9 @@ static struct inode *hugetlbfs_alloc_inode(struct super_block *sb)
 	mpol_shared_policy_init(&p->policy, NULL);
 #ifdef CONFIG_DYNAMIC_HUGETLB
 	/* Initialize hpool here in case of a quick call to destroy */
-	p->hpool = get_dhugetlb_pool_from_task(current);
+	if (huge_page_size(sbinfo->hstate) == PMD_SIZE ||
+	    huge_page_size(sbinfo->hstate) == PUD_SIZE)
+		p->hpool = get_dhugetlb_pool_from_task(current);
 #endif
 
 	return &p->vfs_inode;
