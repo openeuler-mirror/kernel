@@ -289,6 +289,7 @@ struct hugetlbfs_inode_info {
 	struct shared_policy policy;
 	struct inode vfs_inode;
 	unsigned int seals;
+	struct dhugetlb_pool *hpool;
 };
 
 static inline struct hugetlbfs_inode_info *HUGETLBFS_I(struct inode *inode)
@@ -654,6 +655,102 @@ static inline void set_huge_swap_pte_at(struct mm_struct *mm, unsigned long addr
 }
 
 #endif	/* CONFIG_HUGETLB_PAGE */
+
+#ifdef CONFIG_DYNAMIC_HUGETLB
+/* The number of small_page_pool for a dhugetlb_pool */
+#define NR_SMPOOL		num_possible_cpus()
+/* The max page number in a small_page_pool */
+#define MAX_SMPOOL_PAGE		1024
+/* number to move between list */
+#define BATCH_SMPOOL_PAGE	(MAX_SMPOOL_PAGE >> 2)
+/* We don't need to try 5 times, or we can't migrate the pages. */
+#define HPOOL_RECLAIM_RETRIES	5
+
+extern struct static_key_false dhugetlb_enabled_key;
+#define dhugetlb_enabled (static_branch_unlikely(&dhugetlb_enabled_key))
+
+#define DEFAULT_PAGESIZE	4096
+extern rwlock_t dhugetlb_pagelist_rwlock;
+struct dhugetlb_pagelist {
+	unsigned long count;
+	struct dhugetlb_pool *hpool[0];
+};
+extern struct dhugetlb_pagelist *dhugetlb_pagelist_t;
+
+struct split_pages {
+	struct list_head list;
+	unsigned long start_pfn;
+	unsigned long free_pages;
+};
+
+struct small_page_pool {
+	spinlock_t lock;
+	unsigned long free_pages;
+	long used_pages;
+	struct list_head head_page;
+};
+
+struct dhugetlb_pool {
+	int nid;
+	spinlock_t lock;
+	spinlock_t reserved_lock;
+	atomic_t refcnt;
+
+	struct mem_cgroup *attach_memcg;
+
+	struct list_head dhugetlb_1G_freelists;
+	struct list_head dhugetlb_2M_freelists;
+	struct list_head dhugetlb_4K_freelists;
+
+	struct list_head split_1G_freelists;
+	struct list_head split_2M_freelists;
+
+	unsigned long total_nr_pages;
+
+	unsigned long total_reserved_1G;
+	unsigned long free_reserved_1G;
+	unsigned long mmap_reserved_1G;
+	unsigned long used_1G;
+	unsigned long free_unreserved_1G;
+	unsigned long nr_split_1G;
+
+	unsigned long total_reserved_2M;
+	unsigned long free_reserved_2M;
+	unsigned long mmap_reserved_2M;
+	unsigned long used_2M;
+	unsigned long free_unreserved_2M;
+	unsigned long nr_split_2M;
+
+	unsigned long free_pages;
+	struct small_page_pool smpool[0];
+};
+
+bool dhugetlb_pool_get(struct dhugetlb_pool *hpool);
+void dhugetlb_pool_put(struct dhugetlb_pool *hpool);
+struct dhugetlb_pool *hpool_alloc(unsigned long nid);
+int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
+				unsigned long nid, unsigned long size);
+bool free_dhugetlb_pool(struct dhugetlb_pool *hpool);
+int update_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_pool *hpool);
+struct dhugetlb_pool *get_dhugetlb_pool_from_dhugetlb_pagelist(
+							struct page *page);
+struct dhugetlb_pool *get_dhugetlb_pool_from_task(struct task_struct *tsk);
+bool move_pages_from_hpool_to_smpool(struct dhugetlb_pool *hpool,
+				     struct small_page_pool *smpool);
+void move_pages_from_smpool_to_hpool(struct dhugetlb_pool *hpool,
+				     struct small_page_pool *smpool);
+void dhugetlb_reserve_hugepages(struct dhugetlb_pool *hpool,
+				unsigned long count, bool gigantic);
+#else
+#define dhugetlb_enabled       0
+struct dhugetlb_pool {};
+static inline struct dhugetlb_pool *get_dhugetlb_pool_from_task(
+						struct task_struct *tsk)
+{
+	return NULL;
+}
+static inline void dhugetlb_pool_put(struct dhugetlb_pool *hpool) { return; }
+#endif /* CONFIG_DYNAMIC_HUGETLB */
 
 static inline spinlock_t *huge_pte_lock(struct hstate *h,
 					struct mm_struct *mm, pte_t *pte)

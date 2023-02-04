@@ -1052,7 +1052,7 @@ out:
 	return ret;
 }
 
-static __always_inline bool free_pages_prepare(struct page *page,
+__always_inline bool free_pages_prepare(struct page *page,
 					unsigned int order, bool check_free)
 {
 	int bad = 0;
@@ -2012,7 +2012,7 @@ static void check_new_page_bad(struct page *page)
 /*
  * This page is about to be returned from the page allocator
  */
-static inline int check_new_page(struct page *page)
+inline int check_new_page(struct page *page)
 {
 	if (likely(page_expected_state(page,
 				PAGE_FLAGS_CHECK_AT_PREP|__PG_HWPOISON)))
@@ -2075,8 +2075,8 @@ inline void post_alloc_hook(struct page *page, unsigned int order,
 	set_page_owner(page, order, gfp_flags);
 }
 
-static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
-							unsigned int alloc_flags)
+void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+						unsigned int alloc_flags)
 {
 	int i;
 
@@ -2955,6 +2955,12 @@ void free_unref_page(struct page *page)
 	unsigned long flags;
 	unsigned long pfn = page_to_pfn(page);
 
+	/* Free dynamic hugetlb page */
+	if (dhugetlb_enabled && PagePool(page)) {
+		free_page_to_dhugetlb_pool(page);
+		return;
+	}
+
 	if (!free_unref_page_prepare(page, pfn))
 		return;
 
@@ -2971,6 +2977,16 @@ void free_unref_page_list(struct list_head *list)
 	struct page *page, *next;
 	unsigned long flags, pfn;
 	int batch_count = 0;
+
+	/* Free dynamic hugetlb pages */
+	if (dhugetlb_enabled) {
+		list_for_each_entry_safe(page, next, list, lru) {
+			if (PagePool(page)) {
+				list_del(&page->lru);
+				free_page_to_dhugetlb_pool(page);
+			}
+		}
+	}
 
 	/* Prepare pages for freeing */
 	list_for_each_entry_safe(page, next, list, lru) {
@@ -4784,6 +4800,15 @@ retry:
 		return NULL;
 
 	finalise_ac(gfp_mask, &ac);
+
+	/* Dynamic hugetlb allocation attemp */
+	if (dhugetlb_enabled && likely(order == 0)) {
+		page = alloc_page_from_dhugetlb_pool(gfp_mask);
+		if (page) {
+			prep_new_page(page, order, gfp_mask, alloc_flags);
+			goto out;
+		}
+	}
 
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);

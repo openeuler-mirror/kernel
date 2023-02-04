@@ -326,6 +326,7 @@ struct mem_cgroup {
 };
 
 struct mem_cgroup_extension {
+	struct dhugetlb_pool *hpool;
 #ifdef CONFIG_MEMCG_QOS
 	/* Currently support 0 and -1.
 	 * in the future it can expand to other value.
@@ -1405,5 +1406,19 @@ static inline void memcg_put_cache_ids(void)
 }
 
 #endif /* CONFIG_MEMCG_KMEM */
+
+#ifdef CONFIG_DYNAMIC_HUGETLB
+struct dhugetlb_pool *get_dhugetlb_pool_from_memcg(struct mem_cgroup *memcg);
+struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp_mask);
+void free_page_to_dhugetlb_pool(struct page *page);
+int dhugetlb_pool_force_empty(struct mem_cgroup *memcg);
+bool dhugetlb_pool_is_free(struct cgroup_subsys_state *css);
+#else
+static inline struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp_mask)
+{
+	return NULL;
+}
+static inline void free_page_to_dhugetlb_pool(struct page *page) {}
+#endif
 
 #endif /* _LINUX_MEMCONTROL_H */

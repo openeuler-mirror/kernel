@@ -102,6 +102,7 @@ enum pageflags {
 	PG_idle,
 #endif
 	PG_percpu_ref,
+	PG_pool,
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -284,6 +285,7 @@ PAGEFLAG(Active, active, PF_HEAD) __CLEARPAGEFLAG(Active, active, PF_HEAD)
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
 __PAGEFLAG(SlobFree, slob_free, PF_NO_TAIL)
 PAGEFLAG(Checked, checked, PF_NO_COMPOUND)	   /* Used by some filesystems */
+PAGEFLAG(Pool, pool, PF_NO_TAIL)
 
 /* Xen */
 PAGEFLAG(Pinned, pinned, PF_NO_COMPOUND)
@@ -770,6 +772,7 @@ static inline void ClearPageSlabPfmemalloc(struct page *page)
 	 1UL << PG_private	| 1UL << PG_private_2	|	\
 	 1UL << PG_writeback	| 1UL << PG_reserved	|	\
 	 1UL << PG_slab		| 1UL << PG_active 	|	\
+	 1UL << PG_pool		|	\
 	 1UL << PG_unevictable	| __PG_MLOCKED)
 
 /*

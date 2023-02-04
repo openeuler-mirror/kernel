@@ -397,6 +397,20 @@ static int __init hugepage_init(void)
 	}
 
 	/*
+	 * When we alloc some pages(order = 0), system may help us to alloc
+	 * a page(order > 0) due to transparent hugepage. This result
+	 * dynamic hugetlb to be skipped. Actually, using dynamic hugetlb
+	 * means we have already optimized the program, so we should not
+	 * use transparent hugepage in addition.
+	 * (May result negative optimization)
+	 */
+	if (dhugetlb_enabled) {
+		transparent_hugepage_flags = 0;
+		pr_info("transparent hugepage is disabled due to confilct with dynamic hugetlb\n");
+		return -EINVAL;
+	}
+
+	/*
 	 * hugepages can't be allocated by the buddy allocator
 	 */
 	MAYBE_BUILD_BUG_ON(HPAGE_PMD_ORDER >= MAX_ORDER);
@@ -2946,9 +2960,9 @@ static unsigned long deferred_split_count(struct shrinker *shrink,
 {
 	struct pglist_data *pgdata = NODE_DATA(sc->nid);
 	unsigned long *split_queue_len = &pgdata->split_queue_len;
+#ifdef CONFIG_MEMCG
 	struct mem_cgroup_extension *memcg_ext;
 
-#ifdef CONFIG_MEMCG
 	if (sc->memcg) {
 		memcg_ext = container_of(sc->memcg, struct mem_cgroup_extension, memcg);
 		split_queue_len = &memcg_ext->split_queue_len;

@@ -997,6 +997,41 @@ static __always_inline struct mem_cgroup *get_mem_cgroup_from_current(void)
 	return get_mem_cgroup_from_mm(current->mm);
 }
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+void free_page_to_dhugetlb_pool(struct page *page)
+{
+	struct dhugetlb_pool *hpool;
+	struct small_page_pool *smpool;
+	unsigned long flags;
+
+	hpool = get_dhugetlb_pool_from_dhugetlb_pagelist(page);
+	if (unlikely(!hpool)) {
+		pr_err("dhugetlb: free error: get hpool failed\n");
+		return;
+	}
+
+	smpool = &hpool->smpool[smp_processor_id()];
+	spin_lock_irqsave(&smpool->lock, flags);
+
+	ClearPagePool(page);
+	if (!free_pages_prepare(page, 0, false)) {
+		SetPagePool(page);
+		goto out;
+	}
+	list_add(&page->lru, &smpool->head_page);
+	smpool->free_pages++;
+	smpool->used_pages--;
+	if (smpool->free_pages > MAX_SMPOOL_PAGE) {
+		spin_lock(&hpool->lock);
+		move_pages_from_smpool_to_hpool(hpool, smpool);
+		spin_unlock(&hpool->lock);
+	}
+out:
+	spin_unlock_irqrestore(&smpool->lock, flags);
+	dhugetlb_pool_put(hpool);
+}
+#endif /* CONFIG_DYNAMIC_HUGETLB */
+
 /**
  * mem_cgroup_iter - iterate over memory cgroup hierarchy
  * @root: hierarchy root
@@ -3118,6 +3153,31 @@ static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 
 	return 0;
 }
+#ifdef CONFIG_DYNAMIC_HUGETLB
+int dhugetlb_pool_force_empty(struct mem_cgroup *memcg)
+{
+	lru_add_drain_all();
+
+	drain_all_stock(memcg);
+
+	while (page_counter_read(&memcg->memory)) {
+		int progress;
+
+		if (signal_pending(current))
+			return -EINTR;
+
+		progress = try_to_free_mem_cgroup_pages(memcg, 1,
+							GFP_HIGHUSER_MOVABLE,
+							false);
+
+		if (!progress) {
+			congestion_wait(BLK_RW_ASYNC, HZ/10);
+			break;
+		}
+	}
+	return 0;
+}
+#endif
 
 static ssize_t mem_cgroup_force_empty_write(struct kernfs_open_file *of,
 					    char *buf, size_t nbytes,
@@ -4652,6 +4712,305 @@ out_kfree:
 	return ret;
 }
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+struct dhugetlb_pool *get_dhugetlb_pool_from_memcg(struct mem_cgroup *memcg)
+{
+	struct mem_cgroup_extension *memcg_ext;
+
+	if (!memcg)
+		return NULL;
+
+	memcg_ext = container_of(memcg, struct mem_cgroup_extension, memcg);
+	if (dhugetlb_pool_get(memcg_ext->hpool))
+		return memcg_ext->hpool;
+	return NULL;
+}
+
+static void set_dhugetlb_pool_to_memcg(struct mem_cgroup *memcg,
+				       struct dhugetlb_pool *hpool)
+{
+	struct mem_cgroup_extension *memcg_ext;
+
+	memcg_ext = container_of(memcg, struct mem_cgroup_extension, memcg);
+
+	memcg_ext->hpool = hpool;
+}
+
+static bool should_allocate_from_dhugetlb_pool(gfp_t gfp_mask)
+{
+	gfp_t gfp = gfp_mask & GFP_HIGHUSER_MOVABLE;
+
+	if (current->flags & PF_KTHREAD)
+		return false;
+
+	/*
+	 * The cgroup only charges anonymous and file pages from usespage.
+	 * some filesystem maybe has masked out the __GFP_IO | __GFP_FS
+	 * to avoid recursive memory request. eg: loop device, xfs.
+	 */
+	if ((gfp | __GFP_IO | __GFP_FS) != GFP_HIGHUSER_MOVABLE)
+		return false;
+
+	return true;
+}
+
+static struct page *__alloc_page_from_dhugetlb_pool(void)
+{
+	bool ret;
+	struct dhugetlb_pool *hpool;
+	struct small_page_pool *smpool;
+	struct page *page = NULL;
+	unsigned long flags;
+
+	hpool = get_dhugetlb_pool_from_task(current);
+	if (unlikely(!hpool))
+		goto out;
+
+	smpool = &hpool->smpool[smp_processor_id()];
+	spin_lock_irqsave(&smpool->lock, flags);
+
+	if (smpool->free_pages == 0) {
+		spin_lock(&hpool->lock);
+		ret = move_pages_from_hpool_to_smpool(hpool, smpool);
+		spin_unlock(&hpool->lock);
+		if (!ret)
+			goto unlock;
+	}
+
+	page = list_entry(smpool->head_page.next, struct page, lru);
+	list_del(&page->lru);
+	smpool->free_pages--;
+	smpool->used_pages++;
+	check_new_page(page);
+	SetPagePool(page);
+unlock:
+	spin_unlock_irqrestore(&smpool->lock, flags);
+out:
+	dhugetlb_pool_put(hpool);
+	return page;
+}
+
+struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp_mask)
+{
+	struct page *page = NULL;
+
+	if (should_allocate_from_dhugetlb_pool(gfp_mask))
+		page = __alloc_page_from_dhugetlb_pool();
+
+	return page;
+}
+
+static void assign_new_dhugetlb_pool(struct mem_cgroup *memcg,
+				     unsigned long nid)
+{
+	struct dhugetlb_pool *hpool;
+
+	hpool = hpool_alloc(nid);
+	if (!hpool)
+		return;
+
+	hpool->attach_memcg = memcg;
+	css_get(&memcg->css);
+	set_dhugetlb_pool_to_memcg(memcg, hpool);
+}
+
+static int update_dhugetlb_pool(struct mem_cgroup *memcg,
+				unsigned long nid, unsigned long size)
+{
+	int ret;
+	struct dhugetlb_pool *hpool = get_dhugetlb_pool_from_memcg(memcg);
+
+	if (!hpool) {
+		if (memcg_has_children(memcg))
+			return -EINVAL;
+		assign_new_dhugetlb_pool(memcg, nid);
+		hpool = get_dhugetlb_pool_from_memcg(memcg);
+	}
+	if (!hpool)
+		return -ENOMEM;
+	if (hpool->attach_memcg != memcg || hpool->nid != nid) {
+		dhugetlb_pool_put(hpool);
+		return -EINVAL;
+	}
+
+	ret = alloc_hugepage_from_hugetlb(hpool, nid, size);
+
+	dhugetlb_pool_put(hpool);
+	return ret;
+}
+
+/*
+ * Test whether an process can allocate specified memory size.
+ *
+ * Input must be in format '<nid> <size>'.
+ * size is regarded as how many it does 1G huge page.
+ */
+static ssize_t memcg_write_dhugetlb(struct kernfs_open_file *of,
+		char *buf, size_t nbytes, loff_t off)
+{
+	int ret;
+	unsigned long nid, size;
+	char *endp;
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	if (!dhugetlb_enabled)
+		return -EINVAL;
+
+	buf = strstrip(buf);
+	nid = memparse(buf, &endp);
+	if (*endp != ' ' || nid >= MAX_NUMNODES)
+		return -EINVAL;
+
+	buf = endp + 1;
+	size = memparse(buf, &endp);
+	if (*endp != '\0' || size == 0)
+		return -EINVAL;
+
+	ret = update_dhugetlb_pool(memcg, nid, size);
+
+	return ret ?: nbytes;
+}
+
+static int memcg_read_dhugetlb(struct seq_file *m, void *v)
+{
+	int i;
+	unsigned long free_pages;
+	long used_pages = 0;
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	struct dhugetlb_pool *hpool = get_dhugetlb_pool_from_memcg(memcg);
+
+	if (!dhugetlb_enabled)
+		return 0;
+	if (!hpool) {
+		seq_printf(m, "Curent hierarchial have not memory pool.\n");
+		return 0;
+	}
+
+	for (i = 0; i < NR_SMPOOL; i++)
+		spin_lock(&hpool->smpool[i].lock);
+	spin_lock(&hpool->lock);
+
+	free_pages = hpool->free_pages;
+	for (i = 0; i < NR_SMPOOL; i++) {
+		free_pages += hpool->smpool[i].free_pages;
+		used_pages += hpool->smpool[i].used_pages;
+	}
+
+	seq_printf(m, "dhugetlb_total_pages %ld\n"
+		      "1G_total_reserved_pages %ld\n"
+		      "1G_free_reserved_pages %ld\n"
+		      "1G_mmap_reserved_pages %ld\n"
+		      "1G_used_pages %ld\n"
+		      "1G_free_unreserved_pages %ld\n"
+		      "2M_total_reserved_pages %ld\n"
+		      "2M_free_reserved_pages %ld\n"
+		      "2M_mmap_reserved_pages %ld\n"
+		      "2M_used_pages %ld\n"
+		      "2M_free_unreserved_pages %ld\n"
+		      "4K_free_pages %ld\n"
+		      "4K_used_pages %ld\n",
+		   hpool->total_nr_pages,
+		   hpool->total_reserved_1G,
+		   hpool->free_reserved_1G,
+		   hpool->mmap_reserved_1G,
+		   hpool->used_1G,
+		   hpool->free_unreserved_1G,
+		   hpool->total_reserved_2M,
+		   hpool->free_reserved_2M,
+		   hpool->mmap_reserved_2M,
+		   hpool->used_2M,
+		   hpool->free_unreserved_2M,
+		   free_pages,
+		   used_pages);
+
+	spin_unlock(&hpool->lock);
+	for (i = NR_SMPOOL - 1; i >= 0; i--)
+		spin_unlock(&hpool->smpool[i].lock);
+	dhugetlb_pool_put(hpool);
+	return 0;
+}
+
+static int update_reserve_pages(struct kernfs_open_file *of,
+				char *buf, bool gigantic)
+{
+	unsigned long size;
+	char *endp;
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	struct dhugetlb_pool *hpool;
+
+	if (!dhugetlb_enabled)
+		return -EINVAL;
+
+	buf = strstrip(buf);
+	size = memparse(buf, &endp);
+	if (*endp != '\0')
+		return -EINVAL;
+
+	hpool = get_dhugetlb_pool_from_memcg(memcg);
+	if (!hpool)
+		return -EINVAL;
+	spin_lock(&hpool->reserved_lock);
+	dhugetlb_reserve_hugepages(hpool, size, gigantic);
+	spin_unlock(&hpool->reserved_lock);
+	dhugetlb_pool_put(hpool);
+	return 0;
+}
+
+static ssize_t dhugetlb_1G_reserve_write(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	return update_reserve_pages(of, buf, true) ?: nbytes;
+}
+
+static ssize_t dhugetlb_2M_reserve_write(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	return update_reserve_pages(of, buf, false) ?: nbytes;
+}
+
+static void dhugetlb_pool_inherits(struct mem_cgroup *memcg,
+				   struct mem_cgroup *parent)
+{
+	struct dhugetlb_pool *hpool;
+
+	hpool = get_dhugetlb_pool_from_memcg(parent);
+	if (!hpool)
+		return;
+
+	set_dhugetlb_pool_to_memcg(memcg, hpool);
+	dhugetlb_pool_put(hpool);
+}
+
+static bool dhugetlb_pool_free(struct mem_cgroup *memcg)
+{
+	bool ret = true;
+	struct dhugetlb_pool *hpool;
+
+	hpool = get_dhugetlb_pool_from_memcg(memcg);
+	if (hpool && hpool->attach_memcg == memcg)
+		ret = free_dhugetlb_pool(hpool);
+	dhugetlb_pool_put(hpool);
+	return ret;
+}
+
+bool dhugetlb_pool_is_free(struct cgroup_subsys_state *css)
+{
+	if (dhugetlb_enabled)
+		return dhugetlb_pool_free(mem_cgroup_from_css(css));
+	return true;
+}
+#else
+static void dhugetlb_pool_inherits(struct mem_cgroup *memcg,
+				   struct mem_cgroup *parent)
+{
+}
+
+bool dhugetlb_pool_is_free(struct cgroup_subsys_state *css)
+{
+	return true;
+}
+#endif /* CONFIG_DYNAMIC_HUGETLB */
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -4700,6 +5059,27 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = memcg_write_event_control,
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE,
 	},
+#ifdef CONFIG_DYNAMIC_HUGETLB
+	{
+		.name = "dhugetlb.nr_pages",
+		.write = memcg_write_dhugetlb,
+		.seq_show = memcg_read_dhugetlb,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE |
+			 CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.1G.reserved_pages",
+		.write = dhugetlb_1G_reserve_write,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE |
+			 CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.2M.reserved_pages",
+		.write = dhugetlb_2M_reserve_write,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE |
+			 CFTYPE_NOT_ON_ROOT,
+	},
+#endif
 	{
 		.name = "swappiness",
 		.read_u64 = mem_cgroup_swappiness_read,
@@ -5062,6 +5442,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		root_mem_cgroup = memcg;
 		return &memcg->css;
 	}
+
+	if (dhugetlb_enabled)
+		dhugetlb_pool_inherits(memcg, parent);
 
 	error = memcg_online_kmem(memcg);
 	if (error)
@@ -5681,6 +6064,14 @@ static int mem_cgroup_can_attach(struct cgroup_taskset *tset)
 	if (!p)
 		return 0;
 
+	if (dhugetlb_enabled) {
+		struct dhugetlb_pool *hpool = get_dhugetlb_pool_from_task(p);
+
+		if (hpool) {
+			dhugetlb_pool_put(hpool);
+			return -EPERM;
+		}
+	}
 	/*
 	 * We are now commited to this value whatever it is. Changes in this
 	 * tunable will only affect upcoming migrations, not the current one.

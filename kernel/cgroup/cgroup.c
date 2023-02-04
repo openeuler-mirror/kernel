@@ -65,6 +65,7 @@
 /* let's not notify more than 100 times per second */
 #define CGROUP_FILE_NOTIFY_MIN_INTV	DIV_ROUND_UP(HZ, 100)
 
+bool dhugetlb_pool_is_free(struct cgroup_subsys_state *css);
 /*
  * cgroup_mutex is the master lock.  Any modification to cgroup or its
  * hierarchy must be performed while holding it.
@@ -5280,6 +5281,11 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	if (css_has_online_children(&cgrp->self))
 		return -EBUSY;
 
+#ifdef CONFIG_MEMCG
+	/* If we use dynamic hugetlb, make sure dhugtlb_pool is free */
+	if (!dhugetlb_pool_is_free(cgrp->subsys[memory_cgrp_id]))
+		return -EBUSY;
+#endif
 	/*
 	 * Mark @cgrp and the associated csets dead.  The former prevents
 	 * further task migration and child creation by disabling

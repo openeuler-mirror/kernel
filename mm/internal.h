@@ -182,6 +182,7 @@ extern void __putback_isolated_page(struct page *page, unsigned int order,
 				    int mt);
 extern void __free_pages_core(struct page *page, unsigned int order);
 extern void prep_compound_page(struct page *page, unsigned int order);
+extern int check_new_page(struct page *page);
 extern void post_alloc_hook(struct page *page, unsigned int order,
 					gfp_t gfp_flags);
 extern int user_min_free_kbytes;

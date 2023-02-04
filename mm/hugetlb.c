@@ -27,6 +27,12 @@
 #include <linux/jhash.h>
 #include <linux/mman.h>
 #include <linux/share_pool.h>
+#include <linux/kthread.h>
+#include <linux/cpuhotplug.h>
+#include <linux/freezer.h>
+#include <linux/delay.h>
+#include <linux/migrate.h>
+#include <linux/mm_inline.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -39,7 +45,13 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/page_owner.h>
 #include <linux/share_pool.h>
+#include <linux/memblock.h>
 #include "internal.h"
+
+#if (defined CONFIG_DYNAMIC_HUGETLB) && (!defined __GENKSYMS__)
+#define CREATE_TRACE_POINTS
+#include <trace/events/dhugetlb.h>
+#endif
 
 int hugetlb_max_hstate __read_mostly;
 unsigned int default_hstate_idx;
@@ -89,7 +101,8 @@ static inline void ClearPageHugeFreed(struct page *head)
 }
 
 /* Forward declaration */
-static int hugetlb_acct_memory(struct hstate *h, long delta);
+static int hugetlb_acct_memory(struct hstate *h, long delta,
+			       struct dhugetlb_pool *hpool);
 
 static inline void unlock_or_release_subpool(struct hugepage_subpool *spool)
 {
@@ -103,7 +116,7 @@ static inline void unlock_or_release_subpool(struct hugepage_subpool *spool)
 	if (free) {
 		if (spool->min_hpages != -1)
 			hugetlb_acct_memory(spool->hstate,
-						-spool->min_hpages);
+						-spool->min_hpages, NULL);
 		kfree(spool);
 	}
 }
@@ -123,7 +136,7 @@ struct hugepage_subpool *hugepage_new_subpool(struct hstate *h, long max_hpages,
 	spool->hstate = h;
 	spool->min_hpages = min_hpages;
 
-	if (min_hpages != -1 && hugetlb_acct_memory(h, min_hpages)) {
+	if (min_hpages != -1 && hugetlb_acct_memory(h, min_hpages, NULL)) {
 		kfree(spool);
 		return NULL;
 	}
@@ -149,11 +162,15 @@ void hugepage_put_subpool(struct hugepage_subpool *spool)
  * a subpool minimum size must be manitained.
  */
 static long hugepage_subpool_get_pages(struct hugepage_subpool *spool,
-				      long delta)
+				      long delta, struct dhugetlb_pool *hpool)
 {
 	long ret = delta;
 
 	if (!spool)
+		return ret;
+
+	/* Skip subpool when hugetlb file belongs to a hugetlb_pool */
+	if (dhugetlb_enabled && hpool)
 		return ret;
 
 	spin_lock(&spool->lock);
@@ -194,12 +211,16 @@ unlock_ret:
  * in the case where a subpool minimum size must be maintained.
  */
 static long hugepage_subpool_put_pages(struct hugepage_subpool *spool,
-				       long delta)
+				       long delta, struct dhugetlb_pool *hpool)
 {
 	long ret = delta;
 
 	if (!spool)
 		return delta;
+
+	/* Skip subpool when hugetlb file belongs to a hugetlb_pool */
+	if (dhugetlb_enabled && hpool)
+		return ret;
 
 	spin_lock(&spool->lock);
 
@@ -594,12 +615,13 @@ void hugetlb_fix_reserve_counts(struct inode *inode)
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	long rsv_adjust;
 	bool reserved = false;
+	struct dhugetlb_pool *hpool = HUGETLBFS_I(inode)->hpool;
 
-	rsv_adjust = hugepage_subpool_get_pages(spool, 1);
+	rsv_adjust = hugepage_subpool_get_pages(spool, 1, hpool);
 	if (rsv_adjust > 0) {
 		struct hstate *h = hstate_inode(inode);
 
-		if (!hugetlb_acct_memory(h, 1))
+		if (!hugetlb_acct_memory(h, 1, hpool))
 			reserved = true;
 	} else if (!rsv_adjust) {
 		reserved = true;
@@ -1300,6 +1322,56 @@ static inline void ClearPageHugeTemporary(struct page *page)
 	page[2].mapping = NULL;
 }
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+static void free_huge_page_to_dhugetlb_pool(struct page *page,
+					    bool restore_reserve)
+{
+	struct hstate *h = page_hstate(page);
+	struct dhugetlb_pool *hpool;
+
+	hpool = get_dhugetlb_pool_from_dhugetlb_pagelist(page);
+	if (unlikely(!hpool)) {
+		pr_err("dhugetlb: free error: get hpool failed\n");
+		return;
+	}
+
+	spin_lock(&hpool->lock);
+	ClearPagePool(page);
+	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
+	if (!hstate_is_gigantic(h)) {
+		list_add(&page->lru, &hpool->dhugetlb_2M_freelists);
+		hpool->free_reserved_2M++;
+		hpool->used_2M--;
+		if (restore_reserve) {
+			hpool->mmap_reserved_2M++;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_2M,
+						   DHUGETLB_RESV_2M);
+		}
+		trace_dhugetlb_alloc_free(hpool, page, hpool->free_reserved_2M,
+					  DHUGETLB_FREE_2M);
+	} else {
+		list_add(&page->lru, &hpool->dhugetlb_1G_freelists);
+		hpool->free_reserved_1G++;
+		hpool->used_1G--;
+		if (restore_reserve) {
+			hpool->mmap_reserved_1G++;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_1G,
+						   DHUGETLB_RESV_1G);
+		}
+		trace_dhugetlb_alloc_free(hpool, page, hpool->free_reserved_1G,
+					  DHUGETLB_FREE_1G);
+	}
+	spin_unlock(&hpool->lock);
+	dhugetlb_pool_put(hpool);
+}
+#else
+void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
+{
+}
+#endif
+
 void free_huge_page(struct page *page)
 {
 	/*
@@ -1320,6 +1392,17 @@ void free_huge_page(struct page *page)
 	restore_reserve = PagePrivate(page);
 	ClearPagePrivate(page);
 
+	if (dhugetlb_enabled && PagePool(page)) {
+		spin_lock(&hugetlb_lock);
+		clear_page_huge_active(page);
+		list_del(&page->lru);
+		hugetlb_cgroup_uncharge_page(hstate_index(h),
+					     pages_per_huge_page(h), page);
+		spin_unlock(&hugetlb_lock);
+		free_huge_page_to_dhugetlb_pool(page, restore_reserve);
+		return;
+	}
+
 	/*
 	 * If PagePrivate() was set on page, page allocation consumed a
 	 * reservation.  If the page was associated with a subpool, there
@@ -1335,7 +1418,7 @@ void free_huge_page(struct page *page)
 		 * after page is free.  Therefore, force restore_reserve
 		 * operation.
 		 */
-		if (hugepage_subpool_put_pages(spool, 1) == 0)
+		if (hugepage_subpool_put_pages(spool, 1, NULL) == 0)
 			restore_reserve = true;
 	}
 
@@ -2211,6 +2294,81 @@ static void restore_reserve_on_error(struct hstate *h,
 	}
 }
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+static struct page *__alloc_huge_page_from_dhugetlb_pool(
+		struct dhugetlb_pool *hpool, int idx, bool need_unreserved)
+{
+	unsigned long flags;
+	struct page *page = NULL;
+
+	spin_lock_irqsave(&hpool->lock, flags);
+	if (hstate_is_gigantic(&hstates[idx]) && hpool->free_reserved_1G) {
+		page = list_entry(hpool->dhugetlb_1G_freelists.next,
+				  struct page, lru);
+		list_del(&page->lru);
+		hpool->free_reserved_1G--;
+		hpool->used_1G++;
+		if (need_unreserved) {
+			SetPagePrivate(page);
+			hpool->mmap_reserved_1G--;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_1G,
+						   DHUGETLB_UNRESV_1G);
+		}
+		trace_dhugetlb_alloc_free(hpool, page, hpool->free_reserved_1G,
+					  DHUGETLB_ALLOC_1G);
+	} else if (!hstate_is_gigantic(&hstates[idx]) &&
+		   hpool->free_reserved_2M) {
+		page = list_entry(hpool->dhugetlb_2M_freelists.next,
+				  struct page, lru);
+		list_del(&page->lru);
+		hpool->free_reserved_2M--;
+		hpool->used_2M++;
+		if (need_unreserved) {
+			SetPagePrivate(page);
+			hpool->mmap_reserved_2M--;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_2M,
+						   DHUGETLB_UNRESV_2M);
+		}
+		trace_dhugetlb_alloc_free(hpool, page, hpool->free_reserved_2M,
+					  DHUGETLB_ALLOC_2M);
+	}
+	if (page) {
+		INIT_LIST_HEAD(&page->lru);
+		set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+		set_page_refcounted(page);
+		SetPagePool(page);
+	}
+	spin_unlock_irqrestore(&hpool->lock, flags);
+
+	return page;
+}
+
+static struct page *alloc_huge_page_from_dhugetlb_pool(
+		struct vm_area_struct *vma, int idx, int avoid_reserve,
+		long gbl_chg, struct dhugetlb_pool *hpool)
+{
+	struct page *page;
+	bool need_unreserved = false;
+
+	if (!avoid_reserve && vma_has_reserves(vma, gbl_chg))
+		need_unreserved = true;
+
+	page = __alloc_huge_page_from_dhugetlb_pool(hpool, idx,
+						    need_unreserved);
+
+	return page;
+}
+#else
+static inline struct page *alloc_huge_page_from_dhugetlb_pool(
+		struct vm_area_struct *vma, int idx, int avoid_reserve,
+		long gbl_chg, struct dhugetlb_pool *hpool)
+{
+	return NULL;
+}
+#endif
+
 struct page *alloc_huge_page(struct vm_area_struct *vma,
 				    unsigned long addr, int avoid_reserve)
 {
@@ -2221,6 +2379,8 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	long gbl_chg;
 	int ret, idx;
 	struct hugetlb_cgroup *h_cg;
+	struct dhugetlb_pool *hpool =
+			HUGETLBFS_I(file_inode(vma->vm_file))->hpool;
 
 	idx = hstate_index(h);
 	/*
@@ -2240,7 +2400,7 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	 * checked against any subpool limit.
 	 */
 	if (map_chg || avoid_reserve) {
-		gbl_chg = hugepage_subpool_get_pages(spool, 1);
+		gbl_chg = hugepage_subpool_get_pages(spool, 1, hpool);
 		if (gbl_chg < 0) {
 			vma_end_reservation(h, vma, addr);
 			return ERR_PTR(-ENOSPC);
@@ -2261,6 +2421,26 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	ret = hugetlb_cgroup_charge_cgroup(idx, pages_per_huge_page(h), &h_cg);
 	if (ret)
 		goto out_subpool_put;
+
+	if (dhugetlb_enabled && hpool) {
+		page = alloc_huge_page_from_dhugetlb_pool(vma, idx,
+							  avoid_reserve,
+							  gbl_chg, hpool);
+		if (page) {
+			/*
+			 * Use hugetlb_lock to manage the account of
+			 * hugetlb cgroup.
+			 */
+			spin_lock(&hugetlb_lock);
+			list_add(&page->lru, &h->hugepage_activelist);
+			hugetlb_cgroup_commit_charge(idx,
+				pages_per_huge_page(hstate_vma(vma)),
+				h_cg, page);
+			spin_unlock(&hugetlb_lock);
+			goto out;
+		}
+		goto out_uncharge_cgroup;
+	}
 
 	spin_lock(&hugetlb_lock);
 	/*
@@ -2284,7 +2464,7 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	}
 	hugetlb_cgroup_commit_charge(idx, pages_per_huge_page(h), h_cg, page);
 	spin_unlock(&hugetlb_lock);
-
+out:
 	set_page_private(page, (unsigned long)spool);
 
 	map_commit = vma_commit_reservation(h, vma, addr);
@@ -2300,8 +2480,8 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 		 */
 		long rsv_adjust;
 
-		rsv_adjust = hugepage_subpool_put_pages(spool, 1);
-		hugetlb_acct_memory(h, -rsv_adjust);
+		rsv_adjust = hugepage_subpool_put_pages(spool, 1, hpool);
+		hugetlb_acct_memory(h, -rsv_adjust, hpool);
 	}
 	return page;
 
@@ -2309,7 +2489,7 @@ out_uncharge_cgroup:
 	hugetlb_cgroup_uncharge_cgroup(idx, pages_per_huge_page(h), h_cg);
 out_subpool_put:
 	if (map_chg || avoid_reserve)
-		hugepage_subpool_put_pages(spool, 1);
+		hugepage_subpool_put_pages(spool, 1, hpool);
 	vma_end_reservation(h, vma, addr);
 	return ERR_PTR(-ENOSPC);
 }
@@ -3098,6 +3278,932 @@ static void hugetlb_register_all_nodes(void) { }
 
 #endif
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+static bool enable_dhugetlb;
+DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
+DEFINE_RWLOCK(dhugetlb_pagelist_rwlock);
+struct dhugetlb_pagelist *dhugetlb_pagelist_t;
+
+bool dhugetlb_pool_get(struct dhugetlb_pool *hpool)
+{
+	if (!hpool)
+		return false;
+
+	return atomic_inc_not_zero(&hpool->refcnt);
+}
+
+void dhugetlb_pool_put(struct dhugetlb_pool *hpool)
+{
+	if (!dhugetlb_enabled || !hpool)
+		return;
+
+	if (atomic_dec_and_test(&hpool->refcnt)) {
+		css_put(&hpool->attach_memcg->css);
+		kfree(hpool);
+	}
+}
+
+struct dhugetlb_pool *hpool_alloc(unsigned long nid)
+{
+	int i;
+	struct dhugetlb_pool *hpool;
+
+	hpool = kzalloc(sizeof(struct dhugetlb_pool) +
+			NR_SMPOOL * sizeof(struct small_page_pool), GFP_KERNEL);
+	if (!hpool)
+		return NULL;
+
+	spin_lock_init(&hpool->lock);
+	spin_lock_init(&hpool->reserved_lock);
+	hpool->nid = nid;
+	atomic_set(&hpool->refcnt, 1);
+	INIT_LIST_HEAD(&hpool->dhugetlb_1G_freelists);
+	INIT_LIST_HEAD(&hpool->dhugetlb_2M_freelists);
+	INIT_LIST_HEAD(&hpool->dhugetlb_4K_freelists);
+	INIT_LIST_HEAD(&hpool->split_1G_freelists);
+	INIT_LIST_HEAD(&hpool->split_2M_freelists);
+
+	for (i = 0; i < NR_SMPOOL; i++) {
+		spin_lock_init(&hpool->smpool[i].lock);
+		INIT_LIST_HEAD(&hpool->smpool[i].head_page);
+	}
+
+	return hpool;
+}
+
+int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
+				unsigned long nid, unsigned long size)
+{
+	int ret;
+	struct page *page, *next;
+	unsigned long idx;
+	unsigned long i = 0;
+	struct hstate *h = size_to_hstate(PUD_SIZE);
+
+	if (!h)
+		return -ENOMEM;
+
+	spin_lock(&hpool->lock);
+	spin_lock(&hugetlb_lock);
+	if (h->free_huge_pages_node[nid] < size) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
+
+	list_for_each_entry_safe(page, next, &h->hugepage_freelists[nid], lru) {
+		idx = page_to_pfn(page) >> (PUD_SHIFT - PAGE_SHIFT);
+		ret = update_dhugetlb_pagelist(idx, hpool);
+		if (ret)
+			continue;
+		ClearPageHugeFreed(page);
+		list_move_tail(&page->lru, &hpool->dhugetlb_1G_freelists);
+		h->free_huge_pages--;
+		h->free_huge_pages_node[nid]--;
+		hpool->total_nr_pages++;
+		hpool->free_unreserved_1G++;
+		if (++i == size)
+			break;
+	}
+	ret = 0;
+out_unlock:
+	spin_unlock(&hugetlb_lock);
+	spin_unlock(&hpool->lock);
+	return ret;
+}
+
+/*
+ * When we assign a hugepage to dhugetlb_pool, we need to record it in
+ * dhugetlb_pagelist_t. In this situation, we just need read_lock because
+ * there is not conflit when write to dhugetlb_pagelist_t->hpool.
+ *
+ * If page's pfn is greater than dhugetlb_pagelist_t->count (which may
+ * occurs due to memory hotplug), we need to realloc enough memory so that
+ * pfn = dhugetlb_pagelist_t->count - 1 and then record it.
+ * In this situation, we need write_lock because while we are reallocating,
+ * the read request should wait.
+ */
+int update_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_pool *hpool)
+{
+	read_lock(&dhugetlb_pagelist_rwlock);
+	if (idx >= dhugetlb_pagelist_t->count) {
+		unsigned long size;
+		struct dhugetlb_pagelist *tmp;
+
+		read_unlock(&dhugetlb_pagelist_rwlock);
+		write_lock(&dhugetlb_pagelist_rwlock);
+
+		size = sizeof(struct dhugetlb_pagelist) +
+		       (idx + 1) * sizeof(struct dhugetlb_pool *);
+		tmp = krealloc(dhugetlb_pagelist_t, size, GFP_ATOMIC);
+		if (!tmp) {
+			write_unlock(&dhugetlb_pagelist_rwlock);
+			return -ENOMEM;
+		}
+		tmp->count = idx + 1;
+		dhugetlb_pagelist_t = tmp;
+
+		write_unlock(&dhugetlb_pagelist_rwlock);
+		read_lock(&dhugetlb_pagelist_rwlock);
+	}
+	dhugetlb_pagelist_t->hpool[idx] = hpool;
+	read_unlock(&dhugetlb_pagelist_rwlock);
+	return 0;
+}
+
+struct dhugetlb_pool *get_dhugetlb_pool_from_dhugetlb_pagelist(
+							struct page *page)
+{
+	struct dhugetlb_pool *hpool = NULL;
+	unsigned long idx = page_to_pfn(page) >> (PUD_SHIFT - PAGE_SHIFT);
+
+	read_lock(&dhugetlb_pagelist_rwlock);
+	if (idx < dhugetlb_pagelist_t->count)
+		hpool = dhugetlb_pagelist_t->hpool[idx];
+	read_unlock(&dhugetlb_pagelist_rwlock);
+	if (dhugetlb_pool_get(hpool))
+		return hpool;
+	return NULL;
+}
+
+struct dhugetlb_pool *get_dhugetlb_pool_from_task(struct task_struct *tsk)
+{
+	struct mem_cgroup *memcg;
+	struct dhugetlb_pool *hpool;
+
+	if (!dhugetlb_enabled)
+		return NULL;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(tsk);
+	rcu_read_unlock();
+
+	hpool = get_dhugetlb_pool_from_memcg(memcg);
+
+	return hpool;
+}
+
+static void add_new_huge_page_to_pool(struct dhugetlb_pool *hpool,
+				      struct page *page, bool gigantic)
+{
+	lockdep_assert_held(&hpool->lock);
+	VM_BUG_ON_PAGE(page_mapcount(page), page);
+	INIT_LIST_HEAD(&page->lru);
+
+	if (gigantic) {
+		prep_compound_gigantic_page(page, PUD_SHIFT - PAGE_SHIFT);
+		list_add_tail(&page->lru, &hpool->dhugetlb_1G_freelists);
+		hpool->free_unreserved_1G++;
+	} else {
+		prep_new_page(page, PMD_SHIFT - PAGE_SHIFT, __GFP_COMP, 0);
+		set_page_count(page, 0);
+		list_add_tail(&page->lru, &hpool->dhugetlb_2M_freelists);
+		hpool->free_unreserved_2M++;
+	}
+	set_page_private(page, 0);
+	page->mapping = NULL;
+	set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+	set_hugetlb_cgroup(page, NULL);
+}
+
+static void free_dhugetlb_pcpool(struct dhugetlb_pool *hpool)
+{
+	int i;
+	struct  small_page_pool *smpool;
+
+	for (i = 0; i < NR_SMPOOL; i++) {
+		smpool = &hpool->smpool[i];
+		list_splice(&smpool->head_page, &hpool->dhugetlb_4K_freelists);
+		smpool->free_pages = 0;
+		smpool->used_pages = 0;
+		INIT_LIST_HEAD(&smpool->head_page);
+	}
+}
+
+static void __free_dhugetlb_small_page(struct dhugetlb_pool *hpool)
+{
+	struct page *page, *next;
+	struct split_pages *split_huge, *split_next;
+
+	if (list_empty(&hpool->dhugetlb_4K_freelists))
+		return;
+
+	list_for_each_entry_safe(page, next,
+				 &hpool->dhugetlb_4K_freelists, lru) {
+		list_del(&page->lru);
+		add_new_huge_page_to_pool(hpool, page, false);
+	}
+
+	list_for_each_entry_safe(split_huge, split_next,
+				 &hpool->split_2M_freelists, list) {
+		list_del(&split_huge->list);
+		kfree(split_huge);
+		hpool->nr_split_2M--;
+	}
+
+	hpool->free_pages = 0;
+	INIT_LIST_HEAD(&hpool->dhugetlb_4K_freelists);
+}
+
+static void free_dhugetlb_small_page(struct dhugetlb_pool *hpool)
+{
+	struct page *page, *next;
+	unsigned long nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+
+	lockdep_assert_held(&hpool->lock);
+	if (list_empty(&hpool->dhugetlb_4K_freelists))
+		return;
+
+	list_for_each_entry_safe(page, next,
+				 &hpool->dhugetlb_4K_freelists, lru) {
+		if (page_to_pfn(page) % nr_pages != 0)
+			list_del(&page->lru);
+	}
+
+	__free_dhugetlb_small_page(hpool);
+}
+
+static void __free_dhugetlb_huge_page(struct dhugetlb_pool *hpool)
+{
+	struct page *page, *next;
+	struct split_pages *split_giga, *split_next;
+
+	if (list_empty(&hpool->dhugetlb_2M_freelists))
+		return;
+
+	list_for_each_entry_safe(page, next,
+				 &hpool->dhugetlb_2M_freelists, lru) {
+		list_del(&page->lru);
+		add_new_huge_page_to_pool(hpool, page, true);
+	}
+	list_for_each_entry_safe(split_giga, split_next,
+				 &hpool->split_1G_freelists, list) {
+		list_del(&split_giga->list);
+		kfree(split_giga);
+		hpool->nr_split_1G--;
+	}
+
+	hpool->total_reserved_2M = 0;
+	hpool->free_reserved_2M = 0;
+	hpool->free_unreserved_2M = 0;
+	INIT_LIST_HEAD(&hpool->dhugetlb_2M_freelists);
+}
+
+static void free_dhugetlb_huge_page(struct dhugetlb_pool *hpool)
+{
+	struct page *page, *next;
+	unsigned long nr_pages = 1 << (PUD_SHIFT - PAGE_SHIFT);
+	unsigned long block_size = 1 << (PMD_SHIFT - PAGE_SHIFT);
+	int i;
+
+	lockdep_assert_held(&hpool->lock);
+	if (list_empty(&hpool->dhugetlb_2M_freelists))
+		return;
+
+	list_for_each_entry_safe(page, next,
+				 &hpool->dhugetlb_2M_freelists, lru) {
+		set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
+		atomic_set(compound_mapcount_ptr(page), 0);
+		for (i = 1; i < block_size; i++)
+			clear_compound_head(&page[i]);
+		set_compound_order(page, 0);
+		__ClearPageHead(page);
+		if (page_to_pfn(page) % nr_pages != 0)
+			list_del(&page->lru);
+	}
+	__free_dhugetlb_huge_page(hpool);
+}
+
+static int try_migrate_page(struct page *page, unsigned long nid)
+{
+	unsigned long pfn = page_to_pfn(page);
+	int ret = 0;
+
+	LIST_HEAD(source);
+
+	if (!pfn_valid(pfn))
+		return 0;
+	BUG_ON(PageHuge(page) || PageTransHuge(page));
+	/*
+	 * HWPoison pages have elevated reference counts so the migration
+	 * would fail on them. It also doesn't make any sense to migrate them
+	 * in the first place. Still try to unmap such a page in case it is
+	 * still mapped(e.g. current hwpoison implementation doesn't unmap
+	 * KSM pages but keep the unmap as the catch all safety net).
+	 */
+	if (PageHWPoison(page)) {
+		if (WARN_ON(PageLRU(page)))
+			isolate_lru_page(page);
+		if (page_mapped(page))
+			try_to_unmap(page,
+				     TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS);
+		return 0;
+	}
+
+	if (!get_page_unless_zero(page))
+		return 0;
+	/*
+	 * We can skip free pages. And we can deal with pages on
+	 * LRU and non-lru movable pages.
+	 */
+	if (PageLRU(page))
+		ret = isolate_lru_page(page);
+	else
+		ret = isolate_movable_page(page, ISOLATE_UNEVICTABLE);
+	put_page(page);
+	if (ret) {
+		if (page_count(page))
+			ret = -EBUSY;
+		return ret;
+	}
+	list_add_tail(&page->lru, &source);
+	if (!__PageMovable(page))
+		inc_node_page_state(page,
+			NR_ISOLATED_ANON + page_is_file_cache(page));
+
+	ret = migrate_pages(&source, alloc_new_node_page, NULL, nid,
+			    MIGRATE_SYNC_LIGHT, MR_COMPACTION);
+	if (ret)
+		putback_movable_pages(&source);
+	return ret;
+}
+
+static void try_migrate_pages(struct dhugetlb_pool *hpool)
+{
+	int i, j;
+	unsigned long nr_free_pages;
+	struct split_pages *split_giga, *next;
+	unsigned int nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+	struct page *page;
+	int sleep_interval = 100; /* wait for the migration */
+
+	spin_unlock(&hpool->lock);
+	for (i = NR_SMPOOL - 1; i >= 0; i--)
+		spin_unlock(&hpool->smpool[i].lock);
+
+	msleep(sleep_interval);
+	dhugetlb_pool_force_empty(hpool->attach_memcg);
+
+	spin_lock(&hpool->lock);
+	nr_free_pages = hpool->free_pages;
+	spin_unlock(&hpool->lock);
+	for (i = 0; i < NR_SMPOOL; i++) {
+		spin_lock(&hpool->smpool[i].lock);
+		nr_free_pages += hpool->smpool[i].free_pages;
+		spin_unlock(&hpool->smpool[i].lock);
+	}
+
+	if (nr_free_pages >> HUGETLB_PAGE_ORDER < hpool->nr_split_2M) {
+		list_for_each_entry_safe(split_giga, next,
+				&hpool->split_1G_freelists, list) {
+			for (i = 0; i < nr_pages; i++) {
+				if (PageCompound(pfn_to_page(
+					split_giga->start_pfn + i * nr_pages)))
+					continue;
+				page = pfn_to_page(split_giga->start_pfn +
+						   i * nr_pages);
+				for (j = 0; j < nr_pages; j++) {
+					if (PagePool(page + j))
+						try_migrate_page(page + j,
+								 hpool->nid);
+				}
+			}
+		}
+	}
+
+	for (i = 0; i < NR_SMPOOL; i++)
+		spin_lock(&hpool->smpool[i].lock);
+	spin_lock(&hpool->lock);
+}
+
+/*
+ * If there are some pages are still in use. We will try to reclaim/migrate it.
+ * After trying at most HPOOL_RECLAIM_RETRIES times, we may success.
+ * Or we will print the failed information and return false.
+ */
+static bool free_dhugetlb_pages(struct dhugetlb_pool *hpool)
+{
+	int i;
+	long used_pages;
+	int try_count = 0;
+
+retry:
+	used_pages = 0;
+	for (i = 0; i < NR_SMPOOL; i++)
+		used_pages += hpool->smpool[i].used_pages;
+
+	if (try_count < HPOOL_RECLAIM_RETRIES &&
+	    (used_pages || hpool->used_2M || hpool->used_1G)) {
+		try_migrate_pages(hpool);
+		try_count++;
+		goto retry;
+	}
+
+	if (used_pages)
+		pr_err("dhugetlb: some 4K pages not free, memcg: %s delete failed!\n",
+			hpool->attach_memcg->css.cgroup->kn->name);
+	else if (hpool->used_2M)
+		pr_err("dhugetlb: some 2M pages not free, memcg: %s delete failed!\n",
+			hpool->attach_memcg->css.cgroup->kn->name);
+	else if (hpool->used_1G)
+		pr_err("dhugetlb: some 1G pages not free, memcg: %s delete failed!\n",
+			hpool->attach_memcg->css.cgroup->kn->name);
+	else {
+		free_dhugetlb_pcpool(hpool);
+		free_dhugetlb_small_page(hpool);
+		free_dhugetlb_huge_page(hpool);
+		return true;
+	}
+	return false;
+}
+
+static void free_back_hugetlb(struct dhugetlb_pool *hpool)
+{
+	int nid;
+	unsigned int  nr_pages;
+	unsigned long pfn, idx;
+	struct page *page, *page_next, *p;
+	struct hstate *h = size_to_hstate(PUD_SIZE);
+
+	if (!h)
+		return;
+
+	spin_lock(&hugetlb_lock);
+	list_for_each_entry_safe(page, page_next,
+				 &hpool->dhugetlb_1G_freelists, lru) {
+		nr_pages = 1 << huge_page_order(h);
+		pfn = page_to_pfn(page);
+		for (; nr_pages--; pfn++) {
+			p = pfn_to_page(pfn);
+			p->mapping = NULL;
+		}
+		SetPageHugeFreed(page);
+		set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+		nid = page_to_nid(page);
+		BUG_ON(nid >= MAX_NUMNODES);
+		list_move(&page->lru, &h->hugepage_freelists[nid]);
+		h->free_huge_pages_node[nid]++;
+		read_lock(&dhugetlb_pagelist_rwlock);
+		idx = page_to_pfn(page) >> (PUD_SHIFT - PAGE_SHIFT);
+		if (idx < dhugetlb_pagelist_t->count)
+			dhugetlb_pagelist_t->hpool[idx] = NULL;
+		read_unlock(&dhugetlb_pagelist_rwlock);
+	}
+	h->free_huge_pages += hpool->total_nr_pages;
+	hpool->total_nr_pages = 0;
+	hpool->free_unreserved_1G = 0;
+	hpool->free_reserved_1G = 0;
+	hpool->total_reserved_1G = 0;
+	INIT_LIST_HEAD(&hpool->dhugetlb_1G_freelists);
+	spin_unlock(&hugetlb_lock);
+}
+
+bool free_dhugetlb_pool(struct dhugetlb_pool *hpool)
+{
+	int i;
+	bool ret = false;
+
+	for (i = 0; i < NR_SMPOOL; i++)
+		spin_lock(&hpool->smpool[i].lock);
+	spin_lock(&hpool->lock);
+
+	ret = free_dhugetlb_pages(hpool);
+	if (!ret)
+		goto out_unlock;
+
+	free_back_hugetlb(hpool);
+
+out_unlock:
+	spin_unlock(&hpool->lock);
+	for (i = NR_SMPOOL - 1; i >= 0; i--)
+		spin_unlock(&hpool->smpool[i].lock);
+
+	if (ret)
+		dhugetlb_pool_put(hpool);
+	return ret;
+}
+
+static void __split_free_huge_page(struct dhugetlb_pool *hpool,
+				   struct page *page)
+{
+	int i;
+	int order_h = PUD_SHIFT - PAGE_SHIFT;
+	int order_m = PMD_SHIFT - PAGE_SHIFT;
+	int blocks = 1 << (order_h - order_m);
+	struct page *p = page + 1;
+
+	lockdep_assert_held(&hpool->lock);
+	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
+	atomic_set(compound_mapcount_ptr(page), 0);
+	for (i = 1; i < (1 << order_h); i++, p = mem_map_next(p, page, i))
+		clear_compound_head(p);
+
+	set_compound_order(page, 0);
+	__ClearPageHead(page);
+
+	/* make it be 2M huge pages and put it to huge pool */
+	for (i = 0; i < blocks; i++, page += (1 << order_m))
+		add_new_huge_page_to_pool(hpool, page, false);
+}
+
+static void __split_free_small_page(struct dhugetlb_pool *hpool,
+				    struct page *page)
+{
+	int i;
+	int nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+
+	lockdep_assert_held(&hpool->lock);
+	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
+	set_compound_order(page, 0);
+	for (i = 0; i < nr_pages; i++) {
+		if (i != 0) {
+			page[i].mapping = NULL;
+			clear_compound_head(&page[i]);
+		} else
+			__ClearPageHead(page);
+
+		/*
+		 * If a hugepage is mapped in private mode, the PG_uptodate bit
+		 * will not be cleared when the hugepage freed. Clear the
+		 * hugepage using free_pages_prepare() here.
+		 */
+		free_pages_prepare(&page[i], 0, false);
+		hpool->free_pages++;
+		list_add_tail(&page[i].lru, &hpool->dhugetlb_4K_freelists);
+	}
+}
+
+static bool split_free_huge_page(struct dhugetlb_pool *hpool)
+{
+	struct page *page;
+	struct split_pages *split_page;
+
+	lockdep_assert_held(&hpool->lock);
+
+	if (!hpool->free_unreserved_1G)
+		return false;
+
+	split_page = kzalloc(sizeof(struct split_pages), GFP_ATOMIC);
+	if (!split_page)
+		return false;
+
+	page = list_entry(hpool->dhugetlb_1G_freelists.next, struct page, lru);
+	list_del(&page->lru);
+	hpool->free_unreserved_1G--;
+
+	split_page->start_pfn = page_to_pfn(page);
+	list_add(&split_page->list, &hpool->split_1G_freelists);
+	hpool->nr_split_1G++;
+
+	trace_dhugetlb_split_merge(hpool, page, DHUGETLB_SPLIT_1G);
+
+	__split_free_huge_page(hpool, page);
+	return true;
+}
+
+static bool split_free_small_page(struct dhugetlb_pool *hpool)
+{
+	struct page *page;
+	struct split_pages *split_page;
+
+	lockdep_assert_held(&hpool->lock);
+
+	if (!hpool->free_unreserved_2M && !split_free_huge_page(hpool))
+		return false;
+
+	split_page = kzalloc(sizeof(struct split_pages), GFP_ATOMIC);
+	if (!split_page)
+		return false;
+
+	page = list_entry(hpool->dhugetlb_2M_freelists.next, struct page, lru);
+	list_del(&page->lru);
+	hpool->free_unreserved_2M--;
+
+	split_page->start_pfn = page_to_pfn(page);
+	list_add(&split_page->list, &hpool->split_2M_freelists);
+	hpool->nr_split_2M++;
+
+	trace_dhugetlb_split_merge(hpool, page, DHUGETLB_SPLIT_2M);
+
+	__split_free_small_page(hpool, page);
+	return true;
+}
+
+bool move_pages_from_hpool_to_smpool(struct dhugetlb_pool *hpool,
+				     struct small_page_pool *smpool)
+{
+	int i = 0;
+	struct page *page, *next;
+
+	if (!hpool->free_pages && !split_free_small_page(hpool))
+		return false;
+
+	list_for_each_entry_safe(page, next,
+				 &hpool->dhugetlb_4K_freelists, lru) {
+		list_del(&page->lru);
+		hpool->free_pages--;
+		list_add_tail(&page->lru, &smpool->head_page);
+		smpool->free_pages++;
+		if (++i == BATCH_SMPOOL_PAGE)
+			break;
+	}
+	return true;
+}
+
+void move_pages_from_smpool_to_hpool(struct dhugetlb_pool *hpool,
+				     struct small_page_pool *smpool)
+{
+	int i = 0;
+	struct page *page, *next;
+
+	list_for_each_entry_safe(page, next, &smpool->head_page, lru) {
+		list_del(&page->lru);
+		smpool->free_pages--;
+		list_add(&page->lru, &hpool->dhugetlb_4K_freelists);
+		hpool->free_pages++;
+		if (++i == BATCH_SMPOOL_PAGE)
+			break;
+	}
+}
+
+static unsigned long list_len(struct list_head *head)
+{
+	unsigned long len = 0;
+	struct page *page;
+
+	list_for_each_entry(page, head, lru)
+		len++;
+
+	return len;
+}
+
+static void hugetlb_migrate_pages(struct dhugetlb_pool *hpool,
+				  unsigned long count)
+{
+	int i, try;
+	struct page *page;
+	struct split_pages *split_huge, *split_next;
+	unsigned long nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+	LIST_HEAD(wait_page_list);
+
+	list_for_each_entry_safe(split_huge, split_next,
+				 &hpool->split_2M_freelists, list) {
+		/*
+		 * Isolate free page first because we dont want them to be
+		 * allocated.
+		 */
+		for (i = 0; i < nr_pages; i++) {
+			page = pfn_to_page(split_huge->start_pfn + i);
+			if (!PagePool(page))
+				list_move(&page->lru, &wait_page_list);
+		}
+
+		for (try = 0; try < HPOOL_RECLAIM_RETRIES; try++) {
+			/*
+			 * Unlock and try migration, after migration we need
+			 * to lock back.
+			 */
+			for (i = 0; i < NR_SMPOOL; i++)
+				hpool->smpool[i].free_pages =
+					list_len(&hpool->smpool[i].head_page);
+			hpool->free_pages =
+				list_len(&hpool->dhugetlb_4K_freelists);
+			spin_unlock(&hpool->lock);
+			for (i = NR_SMPOOL - 1; i >= 0; i--)
+				spin_unlock(&hpool->smpool[i].lock);
+
+			for (i = 0; i < nr_pages; i++) {
+				page = pfn_to_page(split_huge->start_pfn + i);
+				if (PagePool(page))
+					try_migrate_page(page, hpool->nid);
+			}
+			for (i = 0; i < NR_SMPOOL; i++)
+				spin_lock(&hpool->smpool[i].lock);
+			spin_lock(&hpool->lock);
+
+			/*
+			 * Isolate free page. If all page in the split_huge
+			 * is free, return it.
+			 */
+			split_huge->free_pages = 0;
+			for (i = 0; i < nr_pages; i++) {
+				page = pfn_to_page(split_huge->start_pfn + i);
+				if (!PagePool(page)) {
+					list_move(&page->lru, &wait_page_list);
+					split_huge->free_pages++;
+				}
+			}
+			if (split_huge->free_pages == nr_pages)
+				break;
+		}
+		if (split_huge->free_pages == nr_pages) {
+			for (i = 0; i < nr_pages; i++) {
+				page = pfn_to_page(split_huge->start_pfn + i);
+				list_del(&page->lru);
+			}
+			INIT_LIST_HEAD(&wait_page_list);
+			page = pfn_to_page(split_huge->start_pfn);
+			add_new_huge_page_to_pool(hpool, page, false);
+			list_del(&split_huge->list);
+			kfree(split_huge);
+			hpool->nr_split_2M--;
+
+			trace_dhugetlb_split_merge(hpool, page,
+						   DHUGETLB_MIGRATE_4K);
+
+			if (--count == 0)
+				return;
+		} else {
+			/* Failed, put back the isolate pages */
+			list_splice(&wait_page_list,
+				    &hpool->dhugetlb_4K_freelists);
+			INIT_LIST_HEAD(&wait_page_list);
+		}
+	}
+}
+
+static unsigned long merge_free_split_huge(struct dhugetlb_pool *hpool,
+					   unsigned long count)
+{
+	int i;
+	struct page *page;
+	struct split_pages *split_huge, *split_next;
+	unsigned long nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+
+	list_for_each_entry_safe(split_huge, split_next,
+				 &hpool->split_2M_freelists, list) {
+		split_huge->free_pages = 0;
+		for (i = 0; i < nr_pages; i++) {
+			page = pfn_to_page(split_huge->start_pfn + i);
+			if (!PagePool(page))
+				split_huge->free_pages++;
+		}
+		if (split_huge->free_pages == nr_pages) {
+			for (i = 0; i < nr_pages; i++) {
+				page = pfn_to_page(split_huge->start_pfn + i);
+				list_del(&page->lru);
+			}
+			page = pfn_to_page(split_huge->start_pfn);
+			add_new_huge_page_to_pool(hpool, page, false);
+			list_del(&split_huge->list);
+			kfree(split_huge);
+			hpool->nr_split_2M--;
+
+			trace_dhugetlb_split_merge(hpool, page,
+						   DHUGETLB_MERGE_4K);
+
+			if (--count == 0)
+				return 0;
+		}
+	}
+	return count;
+}
+
+static void merge_free_small_page(struct dhugetlb_pool *hpool,
+				  unsigned long count)
+{
+	int i;
+	unsigned long need_migrate;
+
+	if (!hpool->nr_split_2M)
+		return;
+
+	need_migrate = merge_free_split_huge(hpool, count);
+	if (need_migrate)
+		hugetlb_migrate_pages(hpool, need_migrate);
+
+	for (i = 0; i < NR_SMPOOL; i++)
+		hpool->smpool[i].free_pages =
+				list_len(&hpool->smpool[i].head_page);
+	hpool->free_pages = list_len(&hpool->dhugetlb_4K_freelists);
+}
+
+static void dhugetlb_collect_2M_pages(struct dhugetlb_pool *hpool,
+				      unsigned long count)
+{
+	int i;
+
+	while (hpool->free_unreserved_1G &&
+	       count > hpool->free_unreserved_2M)
+		split_free_huge_page(hpool);
+
+	/*
+	 * If we try to merge 4K pages to 2M, we need to unlock hpool->lock
+	 * first, and then try to lock every lock in order to avoid deadlock.
+	 */
+	if (count > hpool->free_unreserved_2M) {
+		spin_unlock(&hpool->lock);
+		for (i = 0; i < NR_SMPOOL; i++)
+			spin_lock(&hpool->smpool[i].lock);
+		spin_lock(&hpool->lock);
+		merge_free_small_page(hpool, count - hpool->free_unreserved_2M);
+		for (i = NR_SMPOOL - 1; i >= 0; i--)
+			spin_unlock(&hpool->smpool[i].lock);
+	}
+}
+
+/*
+ * Parameter gigantic: true means reserve 1G pages and false means reserve
+ * 2M pages. When we want to reserve 2M pages more than
+ * hpool->free_unreserved_2M, we have to try split/merge. Still, we can't
+ * guarantee success.
+ */
+void dhugetlb_reserve_hugepages(struct dhugetlb_pool *hpool,
+				unsigned long count, bool gigantic)
+{
+	unsigned long delta;
+
+	spin_lock(&hpool->lock);
+	if (gigantic) {
+		if (count > hpool->total_reserved_1G) {
+			delta = min(count - hpool->total_reserved_1G,
+				    hpool->free_unreserved_1G);
+			hpool->total_reserved_1G += delta;
+			hpool->free_reserved_1G += delta;
+			hpool->free_unreserved_1G -= delta;
+		} else {
+			delta = min(hpool->total_reserved_1G - count,
+				    hpool->free_reserved_1G -
+				    hpool->mmap_reserved_1G);
+			hpool->total_reserved_1G -= delta;
+			hpool->free_reserved_1G -= delta;
+			hpool->free_unreserved_1G += delta;
+		}
+	} else {
+		if (count > hpool->total_reserved_2M) {
+			delta = count - hpool->total_reserved_2M;
+			if (delta > hpool->free_unreserved_2M)
+				dhugetlb_collect_2M_pages(hpool, delta);
+			delta = min(count - hpool->total_reserved_2M,
+				    hpool->free_unreserved_2M);
+			hpool->total_reserved_2M += delta;
+			hpool->free_reserved_2M += delta;
+			hpool->free_unreserved_2M -= delta;
+		} else {
+			delta = min(hpool->total_reserved_2M - count,
+				    hpool->free_reserved_2M -
+				    hpool->mmap_reserved_2M);
+			hpool->total_reserved_2M -= delta;
+			hpool->free_reserved_2M -= delta;
+			hpool->free_unreserved_2M += delta;
+		}
+	}
+	spin_unlock(&hpool->lock);
+}
+
+static int dhugetlb_acct_memory(struct hstate *h, long delta,
+				struct dhugetlb_pool *hpool)
+{
+	int ret = -ENOMEM;
+
+	if (delta == 0)
+		return 0;
+
+	spin_lock(&hpool->lock);
+	if (hstate_is_gigantic(h)) {
+		if (delta > 0 && delta <= hpool->free_reserved_1G -
+					  hpool->mmap_reserved_1G) {
+			hpool->mmap_reserved_1G += delta;
+			ret = 0;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_1G,
+						   DHUGETLB_RESV_1G);
+		} else if (delta < 0) {
+			hpool->mmap_reserved_1G -= (unsigned long)(-delta);
+			WARN_ON(hpool->mmap_reserved_1G < 0);
+			ret = 0;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_1G,
+						   DHUGETLB_UNRESV_1G);
+		}
+	} else {
+		if (delta > 0 && delta <= hpool->free_reserved_2M -
+					  hpool->mmap_reserved_2M) {
+			hpool->mmap_reserved_2M += delta;
+			ret = 0;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_2M,
+						   DHUGETLB_RESV_2M);
+		} else if (delta < 0) {
+			hpool->mmap_reserved_2M -= (unsigned long)(-delta);
+			WARN_ON(hpool->mmap_reserved_2M < 0);
+			ret = 0;
+			trace_dhugetlb_acct_memory(hpool,
+						   hpool->mmap_reserved_2M,
+						   DHUGETLB_UNRESV_2M);
+		}
+	}
+	spin_unlock(&hpool->lock);
+
+	return ret;
+}
+#else
+static int dhugetlb_acct_memory(struct hstate *h, long delta,
+				struct dhugetlb_pool *hpool)
+{
+	return 0;
+}
+#endif /* CONFIG_DYNAMIC_HUGETLB */
+
 static int __init hugetlb_init(void)
 {
 	int i;
@@ -3133,6 +4239,23 @@ static int __init hugetlb_init(void)
 	hugetlb_sysfs_init();
 	hugetlb_register_all_nodes();
 	hugetlb_cgroup_file_init();
+
+#ifdef CONFIG_DYNAMIC_HUGETLB
+	if (enable_dhugetlb) {
+		unsigned long count = max(max_pfn >> (PUD_SHIFT - PAGE_SHIFT),
+					  (unsigned long)DEFAULT_PAGESIZE);
+		unsigned long size = sizeof(struct dhugetlb_pagelist) +
+				     count * sizeof(struct dhugetlb_pool *);
+		dhugetlb_pagelist_t = kzalloc(size, GFP_KERNEL);
+		if (dhugetlb_pagelist_t) {
+			dhugetlb_pagelist_t->count = count;
+			static_branch_enable(&dhugetlb_enabled_key);
+			pr_info("Dynamic 1G hugepage enabled\n");
+		} else
+			pr_info("Dynamic 1G hugepage disabled due to out of memory, need %lu\n",
+				size);
+	}
+#endif
 
 #ifdef CONFIG_SMP
 	num_fault_mutexes = roundup_pow_of_two(8 * num_possible_cpus());
@@ -3269,6 +4392,16 @@ invalid:
 	return 0;
 }
 __setup("hugepages=", hugetlb_nrpages_setup);
+
+#ifdef CONFIG_DYNAMIC_HUGETLB
+static int __init dhugetlb_setup(char *s)
+{
+	if (!strcmp(s, "on"))
+		enable_dhugetlb = true;
+	return 1;
+}
+__setup("dynamic_1G_hugepage=", dhugetlb_setup);
+#endif
 
 static int __init hugetlb_default_setup(char *s)
 {
@@ -3471,9 +4604,13 @@ unsigned long hugetlb_total_pages(void)
 	return nr_total_pages;
 }
 
-static int hugetlb_acct_memory(struct hstate *h, long delta)
+static int hugetlb_acct_memory(struct hstate *h, long delta,
+			       struct dhugetlb_pool *hpool)
 {
 	int ret = -ENOMEM;
+
+	if (dhugetlb_enabled && hpool)
+		return dhugetlb_acct_memory(h, delta, hpool);
 
 	spin_lock(&hugetlb_lock);
 	/*
@@ -3535,6 +4672,8 @@ static void hugetlb_vm_op_close(struct vm_area_struct *vma)
 	struct hugepage_subpool *spool = subpool_vma(vma);
 	unsigned long reserve, start, end;
 	long gbl_reserve;
+	struct dhugetlb_pool *hpool =
+			HUGETLBFS_I(file_inode(vma->vm_file))->hpool;
 
 	if (!resv || !is_vma_resv_set(vma, HPAGE_RESV_OWNER))
 		return;
@@ -3551,8 +4690,8 @@ static void hugetlb_vm_op_close(struct vm_area_struct *vma)
 		 * Decrement reserve counts.  The global reserve count may be
 		 * adjusted if the subpool has a minimum size.
 		 */
-		gbl_reserve = hugepage_subpool_put_pages(spool, reserve);
-		hugetlb_acct_memory(h, -gbl_reserve);
+		gbl_reserve = hugepage_subpool_put_pages(spool, reserve, hpool);
+		hugetlb_acct_memory(h, -gbl_reserve, hpool);
 	}
 }
 
@@ -4934,6 +6073,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	struct resv_map *resv_map;
 	long gbl_reserve;
+	struct dhugetlb_pool *hpool = HUGETLBFS_I(inode)->hpool;
 
 	/* This should never happen */
 	if (from > to) {
@@ -4986,7 +6126,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	 * the subpool has a minimum size, there may be some global
 	 * reservations already in place (gbl_reserve).
 	 */
-	gbl_reserve = hugepage_subpool_get_pages(spool, chg);
+	gbl_reserve = hugepage_subpool_get_pages(spool, chg, hpool);
 	if (gbl_reserve < 0) {
 		ret = -ENOSPC;
 		goto out_err;
@@ -4996,10 +6136,10 @@ int hugetlb_reserve_pages(struct inode *inode,
 	 * Check enough hugepages are available for the reservation.
 	 * Hand the pages back to the subpool if there are not
 	 */
-	ret = hugetlb_acct_memory(h, gbl_reserve);
+	ret = hugetlb_acct_memory(h, gbl_reserve, hpool);
 	if (ret < 0) {
 		/* put back original number of pages, chg */
-		(void)hugepage_subpool_put_pages(spool, chg);
+		(void)hugepage_subpool_put_pages(spool, chg, hpool);
 		goto out_err;
 	}
 
@@ -5028,8 +6168,9 @@ int hugetlb_reserve_pages(struct inode *inode,
 			long rsv_adjust;
 
 			rsv_adjust = hugepage_subpool_put_pages(spool,
-								chg - add);
-			hugetlb_acct_memory(h, -rsv_adjust);
+								chg - add,
+								hpool);
+			hugetlb_acct_memory(h, -rsv_adjust, hpool);
 		}
 	}
 	return 0;
@@ -5051,6 +6192,7 @@ long hugetlb_unreserve_pages(struct inode *inode, long start, long end,
 	long chg = 0;
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	long gbl_reserve;
+	struct dhugetlb_pool *hpool = HUGETLBFS_I(inode)->hpool;
 
 	/*
 	 * Since this routine can be called in the evict inode path for all
@@ -5075,8 +6217,8 @@ long hugetlb_unreserve_pages(struct inode *inode, long start, long end,
 	 * If the subpool has a minimum size, the number of global
 	 * reservations to be released may be adjusted.
 	 */
-	gbl_reserve = hugepage_subpool_put_pages(spool, (chg - freed));
-	hugetlb_acct_memory(h, -gbl_reserve);
+	gbl_reserve = hugepage_subpool_put_pages(spool, (chg - freed), hpool);
+	hugetlb_acct_memory(h, -gbl_reserve, hpool);
 
 	return 0;
 }
