@@ -751,6 +751,11 @@ static inline struct dhugetlb_pool *get_dhugetlb_pool_from_task(
 {
 	return NULL;
 }
+static inline struct dhugetlb_pool *get_dhugetlb_pool_from_dhugetlb_pagelist(
+							struct page *page)
+{
+	return NULL;
+}
 static inline void dhugetlb_pool_put(struct dhugetlb_pool *hpool) { return; }
 #endif /* CONFIG_DYNAMIC_HUGETLB */
 
