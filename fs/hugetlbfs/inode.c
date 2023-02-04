@@ -1164,8 +1164,10 @@ static struct inode *hugetlbfs_alloc_inode(struct super_block *sb)
 	 * private inode.  This simplifies hugetlbfs_destroy_inode.
 	 */
 	mpol_shared_policy_init(&p->policy, NULL);
+#ifdef CONFIG_DYNAMIC_HUGETLB
 	/* Initialize hpool here in case of a quick call to destroy */
 	p->hpool = get_dhugetlb_pool_from_task(current);
+#endif
 
 	return &p->vfs_inode;
 }
@@ -1180,8 +1182,10 @@ static void hugetlbfs_destroy_inode(struct inode *inode)
 {
 	hugetlbfs_inc_free_inodes(HUGETLBFS_SB(inode->i_sb));
 	mpol_free_shared_policy(&HUGETLBFS_I(inode)->policy);
+#ifdef CONFIG_DYNAMIC_HUGETLB
 	dhugetlb_pool_put(HUGETLBFS_I(inode)->hpool);
 	HUGETLBFS_I(inode)->hpool = NULL;
+#endif
 	call_rcu(&inode->i_rcu, hugetlbfs_i_callback);
 }
 

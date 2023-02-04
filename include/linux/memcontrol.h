@@ -326,7 +326,9 @@ struct mem_cgroup {
 };
 
 struct mem_cgroup_extension {
+#ifdef CONFIG_DYNAMIC_HUGETLB
 	struct dhugetlb_pool *hpool;
+#endif
 #ifdef CONFIG_MEMCG_QOS
 	/* Currently support 0 and -1.
 	 * in the future it can expand to other value.

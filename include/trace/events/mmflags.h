@@ -79,9 +79,14 @@
 #define IF_HAVE_PG_IDLE(flag,string)
 #endif
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+#define IF_HAVE_PG_POOL(flag,string) ,{1UL << flag, string}
+#else
+#define IF_HAVE_PG_POOL(flag,string)
+#endif
+
 #define __def_pageflag_names						\
 	{1UL << PG_locked,		"locked"	},		\
-	{1UL << PG_pool,		"pool"		},		\
 	{1UL << PG_waiters,		"waiters"	},		\
 	{1UL << PG_error,		"error"		},		\
 	{1UL << PG_referenced,		"referenced"	},		\
@@ -102,6 +107,7 @@
 	{1UL << PG_swapbacked,		"swapbacked"	},		\
 	{1UL << PG_unevictable,		"unevictable"	}		\
 IF_HAVE_PG_MLOCK(PG_mlocked,		"mlocked"	)		\
+IF_HAVE_PG_POOL(PG_pool,		"pool"		)		\
 IF_HAVE_PG_UNCACHED(PG_uncached,	"uncached"	)		\
 IF_HAVE_PG_HWPOISON(PG_hwpoison,	"hwpoison"	)		\
 IF_HAVE_PG_IDLE(PG_young,		"young"		)		\

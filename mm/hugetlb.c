@@ -601,6 +601,18 @@ retry:
 	return del;
 }
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+static struct dhugetlb_pool *get_hpool_from_inode(struct inode *inode)
+{
+	return HUGETLBFS_I(inode)->hpool;
+}
+#else
+static struct dhugetlb_pool *get_hpool_from_inode(struct inode *inode)
+{
+	return NULL;
+}
+#endif
+
 /*
  * A rare out of memory error was encountered which prevented removal of
  * the reserve map region for a page.  The huge page itself was free'ed
@@ -615,7 +627,7 @@ void hugetlb_fix_reserve_counts(struct inode *inode)
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	long rsv_adjust;
 	bool reserved = false;
-	struct dhugetlb_pool *hpool = HUGETLBFS_I(inode)->hpool;
+	struct dhugetlb_pool *hpool = get_hpool_from_inode(inode);
 
 	rsv_adjust = hugepage_subpool_get_pages(spool, 1, hpool);
 	if (rsv_adjust > 0) {
@@ -2380,7 +2392,7 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	int ret, idx;
 	struct hugetlb_cgroup *h_cg;
 	struct dhugetlb_pool *hpool =
-			HUGETLBFS_I(file_inode(vma->vm_file))->hpool;
+			get_hpool_from_inode(file_inode(vma->vm_file));
 
 	idx = hstate_index(h);
 	/*
@@ -4673,7 +4685,7 @@ static void hugetlb_vm_op_close(struct vm_area_struct *vma)
 	unsigned long reserve, start, end;
 	long gbl_reserve;
 	struct dhugetlb_pool *hpool =
-			HUGETLBFS_I(file_inode(vma->vm_file))->hpool;
+			get_hpool_from_inode(file_inode(vma->vm_file));
 
 	if (!resv || !is_vma_resv_set(vma, HPAGE_RESV_OWNER))
 		return;
@@ -6073,7 +6085,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	struct resv_map *resv_map;
 	long gbl_reserve;
-	struct dhugetlb_pool *hpool = HUGETLBFS_I(inode)->hpool;
+	struct dhugetlb_pool *hpool = get_hpool_from_inode(inode);
 
 	/* This should never happen */
 	if (from > to) {
@@ -6192,7 +6204,7 @@ long hugetlb_unreserve_pages(struct inode *inode, long start, long end,
 	long chg = 0;
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	long gbl_reserve;
-	struct dhugetlb_pool *hpool = HUGETLBFS_I(inode)->hpool;
+	struct dhugetlb_pool *hpool = get_hpool_from_inode(inode);
 
 	/*
 	 * Since this routine can be called in the evict inode path for all

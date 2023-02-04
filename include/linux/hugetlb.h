@@ -289,7 +289,9 @@ struct hugetlbfs_inode_info {
 	struct shared_policy policy;
 	struct inode vfs_inode;
 	unsigned int seals;
+#ifdef CONFIG_DYNAMIC_HUGETLB
 	struct dhugetlb_pool *hpool;
+#endif
 };
 
 static inline struct hugetlbfs_inode_info *HUGETLBFS_I(struct inode *inode)
