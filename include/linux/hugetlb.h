@@ -668,6 +668,7 @@ static inline void set_huge_swap_pte_at(struct mm_struct *mm, unsigned long addr
 /* We don't need to try 5 times, or we can't migrate the pages. */
 #define HPOOL_RECLAIM_RETRIES	5
 
+extern bool enable_dhugetlb;
 extern struct static_key_false dhugetlb_enabled_key;
 #define dhugetlb_enabled (static_branch_unlikely(&dhugetlb_enabled_key))
 
@@ -744,7 +745,8 @@ void move_pages_from_smpool_to_hpool(struct dhugetlb_pool *hpool,
 void dhugetlb_reserve_hugepages(struct dhugetlb_pool *hpool,
 				unsigned long count, bool gigantic);
 #else
-#define dhugetlb_enabled       0
+#define enable_dhugetlb		0
+#define dhugetlb_enabled	0
 struct dhugetlb_pool {};
 static inline struct dhugetlb_pool *get_dhugetlb_pool_from_task(
 						struct task_struct *tsk)

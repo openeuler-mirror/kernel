@@ -3299,7 +3299,7 @@ static void hugetlb_register_all_nodes(void) { }
 #endif
 
 #ifdef CONFIG_DYNAMIC_HUGETLB
-static bool enable_dhugetlb;
+bool enable_dhugetlb;
 DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
 DEFINE_RWLOCK(dhugetlb_pagelist_rwlock);
 struct dhugetlb_pagelist *dhugetlb_pagelist_t;
