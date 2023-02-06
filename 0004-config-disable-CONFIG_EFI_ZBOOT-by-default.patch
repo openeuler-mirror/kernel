@@ -1,0 +1,53 @@
+From 6fbc58368796705497c61fd8093cfadb0c35abcd Mon Sep 17 00:00:00 2001
+From: Xie XiuQi <xiexiuqi@huawei.com>
+Date: Wed, 1 Feb 2023 17:52:52 +0800
+Subject: [PATCH] config: disable CONFIG_EFI_ZBOOT by default
+
+CONFIG_EFI_ZBOOT is introduced to openEuler 22.03 LTS SP1 by this
+commit for loongarch and enabled by default:
+  e46780727555("efi/libstub: implement generic EFI zboot").
+
+However, if is enabled, the compiled version cannot be booted on
+openEuler 22.03 LTS. So, disable it on this version.
+
+Signed-off-by: Xie XiuQi  <xiexiuqi@huawei.com>
+Signed-off-by: Zheng Zengkai <zhengzengkai@huawei.com>
+---
+ arch/arm64/configs/openeuler_defconfig | 14 +-------------
+ 1 file changed, 1 insertion(+), 13 deletions(-)
+
+diff --git a/arch/arm64/configs/openeuler_defconfig b/arch/arm64/configs/openeuler_defconfig
+index fbb71f7520a8..63f2adbbc778 100644
+--- a/arch/arm64/configs/openeuler_defconfig
++++ b/arch/arm64/configs/openeuler_defconfig
+@@ -15,18 +15,6 @@ CONFIG_INIT_ENV_ARG_LIMIT=32
+ CONFIG_LOCALVERSION=""
+ # CONFIG_LOCALVERSION_AUTO is not set
+ CONFIG_BUILD_SALT=""
+-CONFIG_HAVE_KERNEL_GZIP=y
+-CONFIG_HAVE_KERNEL_LZMA=y
+-CONFIG_HAVE_KERNEL_XZ=y
+-CONFIG_HAVE_KERNEL_LZO=y
+-CONFIG_HAVE_KERNEL_LZ4=y
+-CONFIG_HAVE_KERNEL_ZSTD=y
+-CONFIG_KERNEL_GZIP=y
+-# CONFIG_KERNEL_LZMA is not set
+-# CONFIG_KERNEL_XZ is not set
+-# CONFIG_KERNEL_LZO is not set
+-# CONFIG_KERNEL_LZ4 is not set
+-# CONFIG_KERNEL_ZSTD is not set
+ CONFIG_DEFAULT_INIT=""
+ CONFIG_DEFAULT_HOSTNAME="(none)"
+ CONFIG_SYSVIPC=y
+@@ -2008,7 +1996,7 @@ CONFIG_EFI_SOFT_RESERVE=y
+ CONFIG_EFI_PARAMS_FROM_FDT=y
+ CONFIG_EFI_RUNTIME_WRAPPERS=y
+ CONFIG_EFI_GENERIC_STUB=y
+-CONFIG_EFI_ZBOOT=y
++# CONFIG_EFI_ZBOOT is not set
+ CONFIG_EFI_ARMSTUB_DTB_LOADER=y
+ CONFIG_EFI_GENERIC_STUB_INITRD_CMDLINE_LOADER=y
+ # CONFIG_EFI_BOOTLOADER_CONTROL is not set
+-- 
+2.25.1
+
