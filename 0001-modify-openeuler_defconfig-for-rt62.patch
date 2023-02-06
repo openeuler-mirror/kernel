@@ -1,7 +1,7 @@
-From 430ab8c58ebcf6305676db654c0711f9cf0e1d94 Mon Sep 17 00:00:00 2001
-From: ryan <ryan@ex.com>
-Date: Tue, 29 Nov 2022 15:23:28 +0800
-Subject: [PATCH 2/2] modify-openeuler_defconfig-for-rt62
+From 0026e130f88770f45b00f52ba1374dd90b8be0f0 Mon Sep 17 00:00:00 2001
+From: liyulei <liyulei@kylinos.cn>
+Date: Mon, 6 Feb 2023 18:04:41 +0800
+Subject: [PATCH 2/2] modify openeuler_defconfig for rt62
 
 ---
  arch/arm64/configs/openeuler_defconfig |  5 +++--
@@ -13,10 +13,10 @@ Subject: [PATCH 2/2] modify-openeuler_defconfig-for-rt62
  6 files changed, 24 insertions(+), 12 deletions(-)
 
 diff --git a/arch/arm64/configs/openeuler_defconfig b/arch/arm64/configs/openeuler_defconfig
-index a96c3ae85a19..ad870eabf021 100644
+index 30384eacad4f..b0ed4a9b3058 100644
 --- a/arch/arm64/configs/openeuler_defconfig
 +++ b/arch/arm64/configs/openeuler_defconfig
-@@ -73,6 +73,7 @@ CONFIG_HIGH_RES_TIMERS=y
+@@ -74,6 +74,7 @@ CONFIG_HIGH_RES_TIMERS=y
  CONFIG_PREEMPT_NONE=y
  # CONFIG_PREEMPT_VOLUNTARY is not set
  # CONFIG_PREEMPT is not set
@@ -24,7 +24,7 @@ index a96c3ae85a19..ad870eabf021 100644
  
  #
  # CPU/Task time and stats accounting
-@@ -729,7 +730,7 @@ CONFIG_ACPI_MPAM=y
+@@ -733,7 +734,7 @@ CONFIG_ACPI_MPAM=y
  CONFIG_ACPI_PPTT=y
  # CONFIG_PMIC_OPREGION is not set
  CONFIG_IRQ_BYPASS_MANAGER=y
@@ -33,7 +33,7 @@ index a96c3ae85a19..ad870eabf021 100644
  CONFIG_KVM=y
  CONFIG_HAVE_KVM_IRQCHIP=y
  CONFIG_HAVE_KVM_IRQFD=y
-@@ -1116,7 +1117,7 @@ CONFIG_ARCH_USES_HIGH_VMA_FLAGS=y
+@@ -1125,7 +1126,7 @@ CONFIG_ARCH_USES_HIGH_VMA_FLAGS=y
  # CONFIG_GUP_BENCHMARK is not set
  # CONFIG_READ_ONLY_THP_FOR_FS is not set
  CONFIG_ARCH_HAS_PTE_SPECIAL=y
@@ -41,7 +41,7 @@ index a96c3ae85a19..ad870eabf021 100644
 +# CONFIG_PIN_MEMORY is not set
  CONFIG_PID_RESERVE=y
  CONFIG_MEMORY_RELIABLE=y
- 
+ # CONFIG_CLEAR_FREELIST_PAGE is not set
 diff --git a/arch/arm64/kernel/fpsimd.c b/arch/arm64/kernel/fpsimd.c
 index 84520f11667d..aa631771e0dc 100644
 --- a/arch/arm64/kernel/fpsimd.c
@@ -65,10 +65,10 @@ index 84520f11667d..aa631771e0dc 100644
  
  static bool have_cpu_fpsimd_context(void)
 diff --git a/arch/x86/configs/openeuler_defconfig b/arch/x86/configs/openeuler_defconfig
-index e5a68009ed20..8a8b42b4cb59 100644
+index 5ada612f1d75..685a49ca1fef 100644
 --- a/arch/x86/configs/openeuler_defconfig
 +++ b/arch/x86/configs/openeuler_defconfig
-@@ -88,9 +88,10 @@ CONFIG_NO_HZ=y
+@@ -89,9 +89,10 @@ CONFIG_NO_HZ=y
  CONFIG_HIGH_RES_TIMERS=y
  # end of Timers subsystem
  
@@ -80,7 +80,7 @@ index e5a68009ed20..8a8b42b4cb59 100644
  
  #
  # CPU/Task time and stats accounting
-@@ -205,7 +206,7 @@ CONFIG_HAVE_UID16=y
+@@ -206,7 +207,7 @@ CONFIG_HAVE_UID16=y
  CONFIG_SYSCTL_EXCEPTION_TRACE=y
  CONFIG_HAVE_PCSPKR_PLATFORM=y
  CONFIG_BPF=y
@@ -89,7 +89,7 @@ index e5a68009ed20..8a8b42b4cb59 100644
  CONFIG_UID16=y
  CONFIG_MULTIUSER=y
  CONFIG_SGETMASK_SYSCALL=y
-@@ -725,7 +726,7 @@ CONFIG_KVM_COMPAT=y
+@@ -735,7 +736,7 @@ CONFIG_KVM_COMPAT=y
  CONFIG_HAVE_KVM_IRQ_BYPASS=y
  CONFIG_HAVE_KVM_NO_POLL=y
  CONFIG_KVM_XFER_TO_GUEST_WORK=y
@@ -158,5 +158,5 @@ index e95b00f24c75..59bd804e662a 100644
  {
  //	if (raw_spin_is_locked(&logbuf_lock)) {
 -- 
-2.25.1
+2.36.1
 
