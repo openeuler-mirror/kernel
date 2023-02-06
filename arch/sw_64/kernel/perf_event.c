@@ -10,15 +10,11 @@
 
 /* For tracking PMCs and the hw events they monitor on each CPU. */
 struct cpu_hw_events {
-	/* Number of events currently scheduled onto this cpu.
-	 * This tells how many entries in the arrays below
-	 * are valid.
+	/*
+	 * Set the bit (indexed by the counter number) when the counter
+	 * is used for an event.
 	 */
-	int			n_events;
-	/* Track counter usage of each counter */
-#define PMC_IN_USE  1
-#define PMC_NOT_USE 0
-	int			pmcs[MAX_HWEVENTS];
+	unsigned long		used_mask[BITS_TO_LONGS(MAX_HWEVENTS)];
 	/* Array of events current scheduled on this cpu. */
 	struct perf_event	*event[MAX_HWEVENTS];
 };
@@ -433,16 +429,12 @@ static int sw64_pmu_add(struct perf_event *event, int flags)
 
 	local_irq_save(irq_flags);
 
-	if (cpuc->pmcs[hwc->idx] == PMC_IN_USE) {
+	if (__test_and_set_bit(hwc->idx, cpuc->used_mask)) {
 		err = -ENOSPC;
 		goto out;
 	}
 
-	cpuc->pmcs[hwc->idx] = PMC_IN_USE;
 	cpuc->event[hwc->idx] = event;
-
-
-	cpuc->n_events++;
 
 	hwc->state = PERF_HES_STOPPED | PERF_HES_UPTODATE;
 	if (flags & PERF_EF_START)
@@ -470,8 +462,7 @@ static void sw64_pmu_del(struct perf_event *event, int flags)
 
 	sw64_pmu_stop(event, PERF_EF_UPDATE);
 	cpuc->event[hwc->idx] = NULL;
-	cpuc->pmcs[hwc->idx] = PMC_NOT_USE;
-	cpuc->n_events--;
+	__clear_bit(event->hw.idx, cpuc->used_mask);
 
 	/* Absorb the final count and turn off the event. */
 	perf_event_update_userpage(event);
