@@ -461,7 +461,7 @@ void __init setup_arch(char **cmdline_p)
 	memblock_init();
 	pagetable_init();
 	parse_early_param();
-	reserve_initrd_mem();
+	loongarch_reserve_initrd_mem();
 
 	platform_init();
 	arch_mem_init(cmdline_p);
