@@ -10,9 +10,9 @@
 
 %global upstream_version    6.1
 %global upstream_sublevel   8
-%global devel_release       2
+%global devel_release       3
 %global maintenance_release .0.0
-%global pkg_release         .6
+%global pkg_release         .7
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -74,6 +74,7 @@ Patch0001: 0001-kconfig-Add-script-to-update-openeuler_defconfig.patch
 Patch0002: 0002-config-add-initial-openeuler_defconfig-for-arm64.patch
 Patch0003: 0003-config-add-initial-openeuler_defconfig-for-x86_64.patch
 Patch0004: 0004-config-disable-CONFIG_EFI_ZBOOT-by-default.patch
+Patch0005: 0005-arm64-vmalloc-use-module-region-only-for-module_allo.patch
 
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
@@ -302,6 +303,7 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0002 -p1
 %patch0003 -p1
 %patch0004 -p1
+%patch0005 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -884,6 +886,10 @@ fi
 %endif
 
 %changelog
+* Tue Feb 7 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 6.1.8-3.0.0.7
+- update to v6.1.8-3.0.0.7
+- arm64/vmalloc: use module region only for module_alloc() if CONFIG_RANDOMIZE_BASE is set
+
 * Fri Feb 3 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 6.1.8-2.0.0.6
 - update to v6.1.8-2.0.0.6
 - config: disable CONFIG_EFI_ZBOOT by default
