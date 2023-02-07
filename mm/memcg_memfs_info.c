@@ -157,7 +157,8 @@ static void memfs_show_files_in_mem_cgroup(struct super_block *sb, void *data)
 	mntput(pfc->vfsmnt);
 }
 
-void mem_cgroup_print_memfs_info(struct mem_cgroup *memcg, struct seq_file *m)
+void mem_cgroup_print_memfs_info(struct mem_cgroup *memcg, char *pathbuf,
+				 struct seq_file *m)
 {
 	struct print_files_control pfc = {
 		.memcg = memcg,
@@ -165,17 +166,11 @@ void mem_cgroup_print_memfs_info(struct mem_cgroup *memcg, struct seq_file *m)
 		.max_print_files = memfs_max_print_files,
 		.size_threshold = memfs_size_threshold,
 	};
-	char *pathbuf;
 	int i;
 
 	if (!memfs_enable || !memcg)
 		return;
 
-	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!pathbuf) {
-		SEQ_printf(m, "Show memfs failed due to OOM\n");
-		return;
-	}
 	pfc.pathbuf = pathbuf;
 	pfc.pathbuf_size = PATH_MAX;
 
@@ -192,15 +187,20 @@ void mem_cgroup_print_memfs_info(struct mem_cgroup *memcg, struct seq_file *m)
 		SEQ_printf(m, "total files: %lu, total memory-size: %lukB\n",
 			   pfc.total_print_files, pfc.total_files_size >> 10);
 	}
-
-	kfree(pfc.pathbuf);
 }
 
 int mem_cgroup_memfs_files_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+	char *pathbuf;
 
-	mem_cgroup_print_memfs_info(memcg, m);
+	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!pathbuf) {
+		SEQ_printf(m, "Show memfs abort: failed to allocate memory\n");
+		return 0;
+	}
+	mem_cgroup_print_memfs_info(memcg, pathbuf, m);
+	kfree(pathbuf);
 	return 0;
 }
 

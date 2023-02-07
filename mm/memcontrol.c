@@ -1611,6 +1611,7 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 {
 	/* Use static buffer, for the caller is holding oom_lock. */
 	static char buf[PAGE_SIZE];
+	static char pathbuf[PATH_MAX];
 
 	lockdep_assert_held(&oom_lock);
 
@@ -1636,7 +1637,7 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 	memory_stat_format(memcg, buf, sizeof(buf));
 	pr_info("%s", buf);
 
-	mem_cgroup_print_memfs_info(memcg, NULL);
+	mem_cgroup_print_memfs_info(memcg, pathbuf, NULL);
 }
 
 /*
