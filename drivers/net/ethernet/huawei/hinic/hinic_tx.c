@@ -61,7 +61,7 @@ void hinic_txq_get_stats(struct hinic_txq *txq,
 
 	u64_stats_update_begin(&stats->syncp);
 	do {
-		start = u64_stats_fetch_begin(&txq_stats->syncp);
+		start = u64_stats_fetch_begin_irq(&txq_stats->syncp);
 		stats->bytes = txq_stats->bytes;
 		stats->packets = txq_stats->packets;
 		stats->busy = txq_stats->busy;
@@ -69,7 +69,7 @@ void hinic_txq_get_stats(struct hinic_txq *txq,
 		stats->dropped = txq_stats->dropped;
 		stats->big_frags_pkts = txq_stats->big_frags_pkts;
 		stats->big_udp_pkts = txq_stats->big_udp_pkts;
-	} while (u64_stats_fetch_retry(&txq_stats->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&txq_stats->syncp, start));
 	u64_stats_update_end(&stats->syncp);
 }
 
