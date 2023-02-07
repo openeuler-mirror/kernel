@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2301.6.0
+%global hulkrelease 2302.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0186
+Release: %{hulkrelease}.0187
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,25 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 07 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.1.0.0187
+- ring-buffer: Fix race between reset page and reading page
+- block: don't allow a disk link holder to itself
+- ext4: fix use-after-free in ext4_orphan_cleanup
+- ext4: lost matching-pair of trace in ext4_truncate
+- ipv6: raw: Deduct extension header length in rawv6_push_pending_frames
+- mm/swapfile: add cond_resched() in get_swap_pages()
+- hugetlbfs: don't delete error page from pagecache
+- mm: hwpoison: refactor refcount check handling
+- dhugetlb: set DYNAMIC_HUGETLB to y for hulk_defconfig
+- dhugetlb: use enable_dhugetlb to disable huge_memory
+- dhugetlb: skip dissolve hugepage belonging to dynamic hugetlb
+- dhugetlb: only support 1G/2M hugepage and ARM64_4K_PAGES
+- dhugetlb: isolate dynamic hugetlb code
+- dhugetlb: backport dynamic hugetlb feature
+- !344 mm: fix false-positive OVERCOMMIT_GUESS failures
+- cfq: fix memory leak for cfqq
+- mm: fix false-positive OVERCOMMIT_GUESS failures
 
 * Tue Jan 31 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2301.6.0.0186
 - bus: hisi_lpc: Fixup IO ports addresses to avoid use-after-free in host removal
