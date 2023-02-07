@@ -1503,6 +1503,13 @@ void scsi_remove_device(struct scsi_device *sdev)
 }
 EXPORT_SYMBOL(scsi_remove_device);
 
+static int scsi_device_try_get(struct scsi_device *sdev)
+{
+	if (!kobject_get_unless_zero(&sdev->sdev_gendev.kobj))
+		return -ENXIO;
+	return 0;
+}
+
 static void __scsi_remove_target(struct scsi_target *starget)
 {
 	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
@@ -1521,9 +1528,7 @@ static void __scsi_remove_target(struct scsi_target *starget)
 		if (sdev->channel != starget->channel ||
 		    sdev->id != starget->id)
 			continue;
-		if (sdev->sdev_state == SDEV_DEL ||
-		    sdev->sdev_state == SDEV_CANCEL ||
-		    !get_device(&sdev->sdev_gendev))
+		if (scsi_device_try_get(sdev))
 			continue;
 		spin_unlock_irqrestore(shost->host_lock, flags);
 		scsi_remove_device(sdev);
