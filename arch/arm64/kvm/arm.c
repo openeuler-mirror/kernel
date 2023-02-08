@@ -1176,6 +1176,8 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 	else
 		vcpu->arch.power_off = false;
 
+	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
+
 	return 0;
 }
 
