@@ -40,8 +40,10 @@ __start:
 	call	$26, relocate_kernel
 	ldl	$29, 0($30)
 	addl	$29, $0, $29
+	addl	$8, $0, $8
+	ldi	$30, 8($30)
 	/* Repoint the sp into the new kernel image */
-	ldi	$30, ASM_THREAD_SIZE($8)
+	addl	$30, $0, $30
 #endif
 	/* ... and then we can start the kernel.  */
 	call	$26, sw64_start_kernel

@@ -239,9 +239,6 @@ unsigned int __init relocate_kernel(void)
 		if (plat_post_relocation(offset))
 			goto out;
 
-		/* The current thread is now within the relocated image */
-		__current_thread_info = RELOCATED(&init_thread_union);
-
 		/* Return the new kernel's offset */
 		return offset;
 	}
