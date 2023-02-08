@@ -138,6 +138,34 @@ static struct orc_entry null_orc_entry = {
 	.type = ORC_TYPE_CALL
 };
 
+#ifdef CONFIG_PARAVIRT
+static bool check_paravirt(struct unwind_state *state, struct orc_entry *orc)
+{
+	u8 *ip = (u8 *)state->ip;
+
+	/*
+	 * In paravirt_patch_64.c, patched paravirt opcode should be:
+	 * pushfq; popq %rax // 0x9c 0x58
+	 * pushq %rdi; popfq // 0x57 0x9d
+	 *
+	 * Error unwinding only happens when:
+	 * 1. In irq or preempt context.
+	 * 2. Current insn is popq, and it doesn't change orc.
+	 * 3. Last insn doesn't change orc, checking it first to
+	 *    promise ip - 1 is valid.
+	 * 4. Last byte fits pushf.
+	 */
+	if (state->regs && orc->type == ORC_TYPE_CALL &&
+		(ip[0] == 0x58 || ip[0] == 0x9d) &&
+		orc == orc_find((unsigned long)(ip + 1)) &&
+		orc == orc_find((unsigned long)(ip - 1)) &&
+		(ip[-1] == 0x9c || ip[-1] == 0x57))
+		return true;
+
+	return false;
+}
+#endif
+
 static struct orc_entry *orc_find(unsigned long ip)
 {
 	static struct orc_entry *orc;
@@ -415,6 +443,9 @@ bool unwind_next_frame(struct unwind_state *state)
 	enum stack_type prev_type = state->stack_info.type;
 	struct orc_entry *orc;
 	bool indirect = false;
+#ifdef CONFIG_PARAVIRT
+	struct orc_entry para_orc;
+#endif
 
 	if (unwind_done(state))
 		return false;
@@ -435,6 +466,18 @@ bool unwind_next_frame(struct unwind_state *state)
 	orc = orc_find(state->signal ? state->ip : state->ip - 1);
 	if (!orc)
 		goto err;
+
+#ifdef CONFIG_PARAVIRT
+	/*
+	 * When hitting paravirt POP insn, the orc entry should add
+	 * one slot for PUSH insn.
+	 */
+	if (!state->error && check_paravirt(state, orc)) {
+		para_orc = *orc;
+		para_orc.sp_offset += sizeof(long);
+		orc = &para_orc;
+	}
+#endif
 
 	/* End-of-stack check for kernel threads: */
 	if (orc->sp_reg == ORC_REG_UNDEFINED) {
