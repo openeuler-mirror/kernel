@@ -746,6 +746,9 @@ static inline unsigned int hns3_page_order(struct hns3_enet_ring *ring)
 	return 0;
 }
 
+#define hns3_ubl_supported(handle) \
+	hnae3_dev_ubl_supported((struct hnae3_ae_dev *)pci_get_drvdata((handle)->pdev))
+
 #define hns3_page_size(_ring) (PAGE_SIZE << hns3_page_order(_ring))
 
 /* iterator for handling rings in ring group */

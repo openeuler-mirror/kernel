@@ -79,6 +79,10 @@ static const struct pci_device_id ae_algo_pci_tbl[] = {
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_RDMA), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_ROH), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_400G_ROH), 0},
+#ifdef CONFIG_HNS3_UBL
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL), 0},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_OVER_UBL), 0},
+#endif
 	/* required last entry */
 	{0, }
 };
