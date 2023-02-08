@@ -140,3 +140,4 @@ int __init pv_sched_init(void)
 
 	return 0;
 }
+early_initcall(pv_sched_init);
