@@ -121,7 +121,7 @@ entMM:
 entIF:
 	SAVE_ALL
 	ldi	$26, ret_from_sys_call
-	mov	$sp, $17
+	mov	$sp, $18
 	call	$31, do_entIF
 	.end entIF
 

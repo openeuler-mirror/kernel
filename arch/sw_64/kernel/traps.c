@@ -38,6 +38,7 @@ enum SW64_IF_TYPES {
 	IF_GENTRAP,
 	IF_FEN,
 	IF_OPDEC,
+	IF_SIMDEMU,
 };
 
 void show_regs(struct pt_regs *regs)
@@ -165,18 +166,43 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
 
+void simd_emulate(unsigned int inst, unsigned long va)
+{
+	unsigned long *fp;
+	int instr_opc, reg;
+
+	instr_opc = (inst >> 26) & 0x3f;
+	reg = (inst >> 21) & 0x1f;
+	fp = (unsigned long *) va;
+
+	switch (instr_opc) {
+	case 0x0d: /* vldd */
+		sw64_write_simd_fp_reg_d(reg, fp[0], fp[1], fp[2], fp[3]);
+		return;
+
+	case 0x0f: /* vstd */
+		sw64_read_simd_fp_m_d(reg, fp);
+		return;
+	}
+}
+
 /*
  * BPT/GENTRAP/OPDEC make regs->pc = exc_pc + 4. debugger should
  * do something necessary to handle it correctly.
  */
 asmlinkage void
-do_entIF(unsigned long inst_type, struct pt_regs *regs)
+do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 {
 	int signo, code;
 	unsigned int inst, type;
 
 	type = inst_type & 0xffffffff;
 	inst = inst_type >> 32;
+
+	if (type == IF_SIMDEMU) {
+		simd_emulate(inst, va);
+		return;
+	}
 
 	if (!user_mode(regs) && type != IF_OPDEC) {
 		if (type == IF_BREAKPOINT) {
