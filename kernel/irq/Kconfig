@@ -32,7 +32,9 @@ config GENERIC_IRQ_LEGACY_ALLOC_HWIRQ
 
 # Support for delayed migration from interrupt context
 config GENERIC_PENDING_IRQ
-	bool
+	bool "Support for delayed migration from interrupt context"
+	depends on SMP
+	default n
 
 # Support for generic irq migrating off cpu before the cpu is offline.
 config GENERIC_IRQ_MIGRATION
