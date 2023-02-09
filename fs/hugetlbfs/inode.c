@@ -447,6 +447,14 @@ hugetlb_vmdelete_list(struct rb_root_cached *root, pgoff_t start, pgoff_t end)
 	}
 }
 
+static inline bool PageHugeTemporary(struct page *page)
+{
+	if (!PageHuge(page))
+		return false;
+
+	return (unsigned long)page[2].mapping == -1U;
+}
+
 /*
  * remove_inode_hugepages handles two distinct cases: truncation and hole
  * punch.  There are subtle differences in operation for each case.
@@ -531,11 +539,17 @@ static void remove_inode_hugepages(struct inode *inode, loff_t lstart,
 			 */
 			VM_BUG_ON(PagePrivate(page));
 			remove_huge_page(page);
-			freed++;
-			if (!truncate_op) {
-				if (unlikely(hugetlb_unreserve_pages(inode,
+			/*
+			 * if the page is from buddy system, do not add to freed.
+			 * because freed is used for hugetlbfs reservation accounting.
+			 */
+			if (!PageHugeTemporary(page)) {
+				freed++;
+				if (!truncate_op) {
+					if (unlikely(hugetlb_unreserve_pages(inode,
 							index, index + 1, 1)))
 					hugetlb_fix_reserve_counts(inode);
+				}
 			}
 
 			unlock_page(page);
