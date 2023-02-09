@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       141
+%global devel_release       142
 %global maintenance_release .0.0
-%global pkg_release         .70
+%global pkg_release         .71
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,173 @@ fi
 %endif
 
 %changelog
+* Thu Feb 09 2023 Jialin Zhang <zhangjialin11@huawei.com> - 5.10.0-142.0.0.71
+- !390 Backport 5.10.142 LTS
+- USB: serial: ch341: fix disabled rx timer on older devices
+- USB: serial: ch341: fix lost character on LCR updates
+- usb: dwc3: disable USB core PHY management
+- usb: dwc3: qcom: fix use-after-free on runtime-PM wakeup
+- usb: dwc3: fix PHY disable sequence
+- mmc: core: Fix UHS-I SD 1.8V workaround branch
+- btrfs: harden identification of a stale device
+- drm/i915/glk: ECS Liva Q2 needs GLK HDMI port timing quirk
+- ALSA: seq: Fix data-race at module auto-loading
+- ALSA: seq: oss: Fix data-race for max_midi_devs access
+- ALSA: hda/realtek: Add speaker AMP init for Samsung laptops with ALC298
+- net: mac802154: Fix a condition in the receive path
+- ip: fix triggering of 'icmp redirect'
+- wifi: mac80211: Fix UAF in ieee80211_scan_rx()
+- wifi: mac80211: Don't finalize CSA in IBSS mode if state is disconnected
+- driver core: Don't probe devices after bus_type.match() probe deferral
+- usb: gadget: mass_storage: Fix cdrom data transfers on MAC-OS
+- s390: fix nospec table alignments
+- s390/hugetlb: fix prepare_hugepage_range() check for 2 GB hugepages
+- usb-storage: Add ignore-residue quirk for NXP PN7462AU
+- USB: cdc-acm: Add Icom PMR F3400 support (0c26:0020)
+- usb: dwc2: fix wrong order of phy_power_on and phy_init
+- usb: typec: altmodes/displayport: correct pin assignment for UFP receptacles
+- USB: serial: option: add support for Cinterion MV32-WA/WB RmNet mode
+- USB: serial: option: add Quectel EM060K modem
+- USB: serial: option: add support for OPPO R11 diag port
+- USB: serial: cp210x: add Decagon UCA device id
+- xhci: Add grace period after xHC start to prevent premature runtime suspend.
+- thunderbolt: Use the actual buffer in tb_async_error()
+- xen-blkfront: Advertise feature-persistent as user requested
+- xen-blkback: Advertise feature-persistent as user requested
+- mm: pagewalk: Fix race between unmap and page walker
+- xen/grants: prevent integer overflow in gnttab_dma_alloc_pages()
+- KVM: x86: Mask off unsupported and unknown bits of IA32_ARCH_CAPABILITIES
+- gpio: pca953x: Add mutex_lock for regcache sync in PM
+- hwmon: (gpio-fan) Fix array out of bounds access
+- clk: bcm: rpi: Add missing newline
+- clk: bcm: rpi: Prevent out-of-bounds access
+- clk: bcm: rpi: Use correct order for the parameters of devm_kcalloc()
+- clk: bcm: rpi: Fix error handling of raspberrypi_fw_get_rate
+- Input: rk805-pwrkey - fix module autoloading
+- clk: core: Fix runtime PM sequence in clk_core_unprepare()
+- Revert "clk: core: Honor CLK_OPS_PARENT_ENABLE for clk gate ops"
+- clk: core: Honor CLK_OPS_PARENT_ENABLE for clk gate ops
+- drm/i915/reg: Fix spelling mistake "Unsupport" -> "Unsupported"
+- USB: serial: ftdi_sio: add Omron CS1W-CIF31 device id
+- misc: fastrpc: fix memory corruption on open
+- misc: fastrpc: fix memory corruption on probe
+- iio: adc: mcp3911: use correct formula for AD conversion
+- iio: ad7292: Prevent regulator double disable
+- Input: iforce - wake up after clearing IFORCE_XMIT_RUNNING flag
+- tty: serial: lpuart: disable flow control while waiting for the transmit engine to complete
+- vt: Clear selection before changing the font
+- powerpc: align syscall table for ppc32
+- serial: fsl_lpuart: RS485 RTS polariy is inverse
+- net/smc: Remove redundant refcount increase
+- Revert "sch_cake: Return __NET_XMIT_STOLEN when consuming enqueued skb"
+- tcp: annotate data-race around challenge_timestamp
+- sch_cake: Return __NET_XMIT_STOLEN when consuming enqueued skb
+- kcm: fix strp_init() order and cleanup
+- ethernet: rocker: fix sleep in atomic context bug in neigh_timer_handler
+- net/sched: fix netdevice reference leaks in attach_default_qdiscs()
+- net: sched: tbf: don't call qdisc_put() while holding tree lock
+- Revert "xhci: turn off port power in shutdown"
+- wifi: cfg80211: debugfs: fix return type in ht40allow_map_read()
+- ALSA: hda: intel-nhlt: Correct the handling of fmt_config flexible array
+- ALSA: hda: intel-nhlt: remove use of __func__ in dev_dbg
+- ieee802154/adf7242: defer destroy_workqueue call
+- iio: adc: mcp3911: make use of the sign bit
+- platform/x86: pmc_atom: Fix SLP_TYPx bitfield mask
+- drm/msm/dsi: Fix number of regulators for SDM660
+- drm/msm/dsi: Fix number of regulators for msm8996_dsi_cfg
+- drm/msm/dp: delete DP_RECOVERED_CLOCK_OUT_EN to fix tps4
+- drm/msm/dsi: fix the inconsistent indenting
+- !389 [sync] PR-385: Backport CVEs and bugfixes
+- cgroup: Add missing cpus_read_lock() to cgroup_attach_task_all()
+- cgroup: Fix threadgroup_rwsem <-> cpus_read_lock() deadlock
+- cgroup: Elide write-locking threadgroup_rwsem when updating csses on an empty subtree
+- net: sched: fix race condition in qdisc_graft()
+- macvlan: enforce a consistent minimal mtu
+- net: switch to storing KCOV handle directly in sk_buff
+- kabi: add early_demux_handler and early_demux back to fix kabi broken in struct net_protocol and inet6_protocol
+- tcp/udp: Make early_demux back namespacified.
+- net: Use u64_stats_fetch_begin_irq() for stats fetch.
+- drm/i915/gvt: fix double free bug in split_2MB_gtt_entry
+- ipv6: raw: Deduct extension header length in rawv6_push_pending_frames
+- ext4: fix use-after-free in ext4_orphan_cleanup
+- ext4: fix null-ptr-deref in ext4_write_info
+- block: don't allow a disk link holder to itself
+- hugetlbfs: fix off-by-one error in hugetlb_vmdelete_list()
+- scsi: fix iscsi rescan fails to create block
+- mm/memcg_memfs_info: fix potential oom_lock recursion deadlock
+- mm: memcontrol: fix potential oom_lock recursion deadlock
+- irqchip/gic-v4: Wait for GICR_VPENDBASER.Dirty to clear before descheduling
+- xfs: fix potential log item leak
+- !365 net: hns3: Some bugfix about L3E check, promisc mode update, FD counter rules and rss config for HNS3
+- !373 [sync] PR-372: Backport 5.10.141 LTS
+- net: neigh: don't call kfree_skb() under spin_lock_irqsave()
+- net/af_packet: check len when min_header_len equals to 0
+- lib/vdso: Mark do_hres_timens() and do_coarse_timens() __always_inline()
+- netfilter: conntrack: NF_CONNTRACK_PROCFS should no longer default to y
+- drm/amdgpu: Increase tlb flush timeout for sriov
+- drm/amd/display: Fix pixel clock programming
+- drm/amd/pm: add missing ->fini_microcode interface for Sienna Cichlid
+- s390/hypfs: avoid error message under KVM
+- neigh: fix possible DoS due to net iface start/stop loop
+- drm/amd/display: clear optc underflow before turn off odm clock
+- drm/amd/display: For stereo keep "FLIP_ANY_FRAME"
+- drm/amd/display: Avoid MPC infinite loop
+- mmc: mtk-sd: Clear interrupts when cqe off/disable
+- ftrace: Fix NULL pointer dereference in is_ftrace_trampoline when ftrace is dead
+- fbdev: fb_pm2fb: Avoid potential divide by zero error
+- net: fix refcount bug in sk_psock_get (2)
+- HID: hidraw: fix memory leak in hidraw_release()
+- udmabuf: Set the DMA mask for the udmabuf device (v2)
+- HID: steam: Prevent NULL pointer dereference in steam_{recv,send}_report
+- Revert "PCI/portdrv: Don't disable AER reporting in get_port_device_capability()"
+- kbuild: Fix include path in scripts/Makefile.modpost
+- s390/mm: do not trigger write fault when vma does not allow VM_WRITE
+- crypto: lib - remove unneeded selection of XOR_BLOCKS
+- x86/nospec: Fix i386 RSB stuffing
+- x86/nospec: Unwreck the RSB stuffing
+- !371 [sync] PR-368: Backport CVEs and bugfixes
+- mm/memory: return vm_fault_t result from migrate_to_ram() callback
+- net: sched: disallow noqueue for qdisc classes
+- netfilter: nft_payload: incorrect arithmetics when fetching VLAN header bits
+- xfs: Fix deadlock on xfs_inodegc_worker
+- net: sched: cbq: dont intepret cls results when asked to drop
+- net: sched: atm: dont intepret cls results when asked to drop
+- scsi: ses: fix slab-out-of-bounds in ses_enclosure_data_process
+- of/fdt: Don't calculate initrd size from DT if start > end
+- lib/cmdline: avoid page fault in next_arg
+- rndis_wlan: Prevent buffer overflow in rndis_query_oid
+- mm/vmpressure: fix data-race with memcg->socket_pressure
+- !362 AMD: Support svm guest when host CR4.LA57 is set.
+- !360 [sync] PR-338: Fix virtio-gpu free issues
+- KVM: x86: Allow CPU to force vendor-specific TDP level
+- net: hns3: fix wrong use of rss size during VF rss config
+- net: hns3: add support for FD counter
+- net: hns3: fix VF promisc mode not update when mac table full
+- net: hns3: fix miss L3E checking for rx packet
+- net: hns3: add interrupts re-initialization while doing VF FLR
+- !354 [OLK-5.10] machine check safe review issue modification
+- drm/virtio: free virtqueues on probe failure
+- drm/virtio: Fixes a potential NULL pointer dereference on probe failure
+- !343 Add KVM related info to openEuler/MAINTAINERS
+- !359 [sync] PR-358: Backport CVEs, bugfixes and other
+- binder: fix UAF of alloc->vma in race with munmap()
+- io_uring: add missing item types for splice request
+- xfs: fix overfilling of reserve pool
+- xfs: always succeed at setting the reserve pool size
+- xfs: remove infinite loop when reserving free block pool
+- xfs: use current->journal_info for detecting transaction recursion
+- fix kabi broken due to may_pollfree
+- io_uring: disable polling pollfree files
+- ksmbd: check nt_len to be at least CIFS_ENCPWD_SIZE in ksmbd_decode_ntlmssp_auth_blob
+- driver: char: delete svm.c
+- mm: fix unexpected changes to {failslab|fail_page_alloc}.attr
+- fs/ntfs3: Fix attr_punch_hole() null pointer derenference
+- tracing/osnoise: Do not unregister events twice
+- tracing/osnoise: Properly unhook events if start_per_cpu_kthreads() fails
+- kasan: add kasan support for memcpy_mcs()
+- arm64: fix return value type of memcpy_mcs()
+- docs: Add KVM related info to openEuler/MAINTAINERS
+
 * Thu Jan 19 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-141.0.0.70
 - !350 AMD: Fix cpu capabilities incorrect detection bug.
 - !355 [sync] PR-347: Backport CVEs and fs bugfixes
