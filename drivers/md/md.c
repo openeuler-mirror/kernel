@@ -8854,11 +8854,10 @@ no_add:
 static void md_start_sync(struct work_struct *ws)
 {
 	struct mddev *mddev = container_of(ws, struct mddev, del_work);
+	struct md_thread *sync_thread;
 
-	mddev->sync_thread = md_register_thread(md_do_sync,
-						mddev,
-						"resync");
-	if (!mddev->sync_thread) {
+	sync_thread = md_register_thread(md_do_sync, mddev, "resync");
+	if (!sync_thread) {
 		pr_warn("%s: could not start resync thread...\n",
 			mdname(mddev));
 		/* leave the spares where they are, it shouldn't hurt */
@@ -8872,8 +8871,12 @@ static void md_start_sync(struct work_struct *ws)
 				       &mddev->recovery))
 			if (mddev->sysfs_action)
 				sysfs_notify_dirent_safe(mddev->sysfs_action);
-	} else
+	} else {
+		spin_lock(&pers_lock);
+		mddev->sync_thread = sync_thread;
 		md_wakeup_thread(mddev->sync_thread);
+		spin_unlock(&pers_lock);
+	}
 	sysfs_notify_dirent_safe(mddev->sysfs_action);
 	md_new_event(mddev);
 }
