@@ -1092,8 +1092,10 @@ gss_read_proxy_verf(struct svc_rqst *rqstp,
 		return res;
 
 	inlen = svc_getnl(argv);
-	if (inlen > (argv->iov_len + rqstp->rq_arg.page_len))
+	if (inlen > (argv->iov_len + rqstp->rq_arg.page_len)) {
+		kfree(in_handle->data);
 		return SVC_DENIED;
+	}
 
 	in_token->pages = rqstp->rq_pages;
 	in_token->page_base = (ulong)argv->iov_base & ~PAGE_MASK;
