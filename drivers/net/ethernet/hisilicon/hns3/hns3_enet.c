@@ -4420,6 +4420,23 @@ static int hns3_add_frag(struct hns3_enet_ring *ring)
 	return 0;
 }
 
+u32 hns3_get_l3_type(struct hns3_nic_priv *priv, u32 l234info, u32 ol_info)
+{
+	u32 l3_type;
+
+	if (test_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state)) {
+		u32 ptype = hnae3_get_field(ol_info, HNS3_RXD_PTYPE_M,
+					    HNS3_RXD_PTYPE_S);
+
+		l3_type = hns3_rx_ptype_tbl[ptype].l3_type;
+	} else {
+		l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
+					  HNS3_RXD_L3ID_S);
+	}
+
+	return l3_type;
+}
+
 static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 				     struct sk_buff *skb, u32 l234info,
 				     u32 bd_base_info, u32 ol_info, u16 csum)
@@ -4442,15 +4459,7 @@ static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 						  HNS3_RXD_GRO_COUNT_M,
 						  HNS3_RXD_GRO_COUNT_S);
 
-	if (test_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state)) {
-		u32 ptype = hnae3_get_field(ol_info, HNS3_RXD_PTYPE_M,
-					    HNS3_RXD_PTYPE_S);
-
-		l3_type = hns3_rx_ptype_tbl[ptype].l3_type;
-	} else {
-		l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
-					  HNS3_RXD_L3ID_S);
-	}
+	l3_type = hns3_get_l3_type(priv, l234info, ol_info);
 
 	if (l3_type == HNS3_L3_TYPE_IPV4)
 		skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
