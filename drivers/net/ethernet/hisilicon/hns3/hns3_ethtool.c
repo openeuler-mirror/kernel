@@ -8,6 +8,7 @@
 
 #include "hns3_enet.h"
 #include "hns3_ethtool.h"
+#include "hns3_unic.h"
 
 /* tqp related stats */
 #define HNS3_TQP_STAT(_string, _member)	{			\
@@ -178,6 +179,32 @@ static void hns3_lp_setup_skb(struct sk_buff *skb)
 		packet[i] = (unsigned char)(i & 0xff);
 }
 
+static struct sk_buff *hns3_lp_skb_prepare(struct net_device *ndev)
+{
+	unsigned int size = hns3_ubl_supported(hns3_get_handle(ndev)) ?
+		HNS3_NIC_LB_TEST_PACKET_SIZE + 1 + NET_IP_ALIGN :
+		HNS3_NIC_LB_TEST_PACKET_SIZE + ETH_HLEN + NET_IP_ALIGN;
+	struct sk_buff *skb;
+
+	skb = alloc_skb(size, GFP_KERNEL);
+	if (!skb)
+		return NULL;
+
+	skb->dev = ndev;
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(ndev))) {
+		skb->protocol = htons(ETH_P_UB);
+		hns3_unic_lp_setup_skb(skb);
+	} else {
+		hns3_lp_setup_skb(skb);
+	}
+#else
+	hns3_lp_setup_skb(skb);
+#endif
+	skb->queue_mapping = HNS3_NIC_LB_TEST_RING_ID;
+	return skb;
+}
+
 static void hns3_lb_check_skb_data(struct hns3_enet_ring *ring,
 				   struct sk_buff *skb)
 {
@@ -218,7 +245,16 @@ static u32 hns3_lb_check_rx_ring(struct hns3_nic_priv *priv, u32 budget)
 		pre_rx_pkt = rx_group->total_packets;
 
 		preempt_disable();
+#ifdef CONFIG_HNS3_UBL
+		if (hns3_ubl_supported(hns3_get_handle(priv->netdev)))
+			hns3_clean_rx_ring(ring, budget,
+					   hns3_unic_lb_check_skb_data);
+		else
+			hns3_clean_rx_ring(ring, budget,
+					   hns3_lb_check_skb_data);
+#else
 		hns3_clean_rx_ring(ring, budget, hns3_lb_check_skb_data);
+#endif
 		preempt_enable();
 
 		rcv_good_pkt_total += (rx_group->total_packets - pre_rx_pkt);
@@ -253,14 +289,9 @@ static int hns3_lp_run_test(struct net_device *ndev, enum hnae3_loop mode)
 	u32 i, good_cnt;
 	int ret_val = 0;
 
-	skb = alloc_skb(HNS3_NIC_LB_TEST_PACKET_SIZE + ETH_HLEN + NET_IP_ALIGN,
-			GFP_KERNEL);
+	skb = hns3_lp_skb_prepare(ndev);
 	if (!skb)
 		return HNS3_NIC_LB_TEST_NO_MEM_ERR;
-
-	skb->dev = ndev;
-	hns3_lp_setup_skb(skb);
-	skb->queue_mapping = HNS3_NIC_LB_TEST_RING_ID;
 
 	good_cnt = 0;
 	for (i = 0; i < HNS3_NIC_LB_TEST_PKT_NUM; i++) {

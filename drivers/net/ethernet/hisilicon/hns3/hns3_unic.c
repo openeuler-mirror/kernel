@@ -20,6 +20,8 @@
 #include "hns3_enet.h"
 #include "hns3_unic.h"
 
+#define HNS3_UNIC_LB_TEST_PACKET_SIZE	128
+
 void hns3_unic_set_default_cc(struct sk_buff *skb)
 {
 	struct ublhdr *ubl = (struct ublhdr *)skb->data;
@@ -79,4 +81,70 @@ u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info)
 		return UB_NOIP_CFG_TYPE;
 
 	return UB_UNKNOWN_CFG_TYPE;
+}
+
+#define UNIC_DHCPV4_PROTO 0x0100
+void hns3_unic_lp_setup_skb(struct sk_buff *skb)
+{
+	unsigned int nip_ctrl_len = sizeof(struct ub_nip_ctrl_fld);
+	struct net_device *ndev = skb->dev;
+	struct ub_nip_ctrl_fld *ctrl_fld;
+	unsigned char *sw_ptype;
+	unsigned char *packet;
+	unsigned int i;
+
+	skb_reserve(skb, NET_IP_ALIGN);
+
+	sw_ptype = (unsigned char *)skb_put(skb, sizeof(unsigned char));
+	*sw_ptype = UB_NOIP_CFG_TYPE;
+	ctrl_fld = (struct ub_nip_ctrl_fld *)skb_put(skb, nip_ctrl_len);
+	packet = (unsigned char *)skb_put(skb, HNS3_UNIC_LB_TEST_PACKET_SIZE -
+					  nip_ctrl_len);
+	ctrl_fld->proto = htons(UNIC_DHCPV4_PROTO);
+	memcpy(ctrl_fld->d_guid, ndev->dev_addr, UBL_ALEN);
+	memcpy(ctrl_fld->s_guid, ndev->dev_addr, UBL_ALEN);
+
+	skb_reset_mac_header(skb);
+	skb_reset_network_header(skb);
+
+	for (i = 0; i < HNS3_UNIC_LB_TEST_PACKET_SIZE - nip_ctrl_len; i++)
+		packet[i] = (unsigned char)(i & 0xff);
+}
+
+void hns3_unic_lb_check_skb_data(struct hns3_enet_ring *ring,
+				 struct sk_buff *skb)
+{
+	unsigned int nip_ctrl_len = sizeof(struct ub_nip_ctrl_fld);
+	struct hns3_enet_tqp_vector *tqp_vector = ring->tqp_vector;
+	struct net_device *ndev = skb->dev;
+	struct ub_nip_ctrl_fld *ctrl_fld;
+	u32 len = skb_headlen(skb);
+	bool is_success = false;
+	unsigned char *packet;
+	u32 i;
+
+	if (len != HNS3_UNIC_LB_TEST_PACKET_SIZE + 1)
+		goto out;
+
+	ctrl_fld = (struct ub_nip_ctrl_fld *)(skb->data + 1);
+	if (memcmp(ctrl_fld->d_guid, ndev->dev_addr, UBL_ALEN) ||
+	    memcmp(ctrl_fld->s_guid, ndev->dev_addr, UBL_ALEN) ||
+	    ctrl_fld->proto != htons(UNIC_DHCPV4_PROTO))
+		goto out;
+
+	packet = (unsigned char *)ctrl_fld + nip_ctrl_len;
+	for (i = 0; i < HNS3_UNIC_LB_TEST_PACKET_SIZE - nip_ctrl_len; i++)
+		if (packet[i] != (unsigned char)(i & 0xff))
+			goto out;
+
+	is_success = true;
+
+out:
+	if (is_success)
+		tqp_vector->rx_group.total_packets++;
+	else
+		print_hex_dump(KERN_ERR, "ubn selftest:", DUMP_PREFIX_OFFSET,
+			       16, 1, skb->data, len, true);
+
+	dev_kfree_skb_any(skb);
 }
