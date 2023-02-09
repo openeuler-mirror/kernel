@@ -26,7 +26,8 @@ bool irq_fixup_move_pending(struct irq_desc *desc, bool force_clear)
 	 * The outgoing CPU might be the last online target in a pending
 	 * interrupt move. If that's the case clear the pending move bit.
 	 */
-	if (cpumask_any_and(desc->pending_mask, cpu_online_mask) >= nr_cpu_ids) {
+	if (cpumask_any_and(irq_desc_get_pending_mask(desc),
+			    cpu_online_mask) >= nr_cpu_ids) {
 		irqd_clr_move_pending(data);
 		return false;
 	}
@@ -54,7 +55,7 @@ void irq_move_masked_irq(struct irq_data *idata)
 		return;
 	}
 
-	if (unlikely(cpumask_empty(desc->pending_mask)))
+	if (unlikely(cpumask_empty(irq_desc_get_pending_mask(desc))))
 		return;
 
 	if (!chip->irq_set_affinity)
@@ -74,10 +75,12 @@ void irq_move_masked_irq(struct irq_data *idata)
 	 * For correct operation this depends on the caller
 	 * masking the irqs.
 	 */
-	if (cpumask_any_and(desc->pending_mask, cpu_online_mask) < nr_cpu_ids) {
+	if (cpumask_any_and(irq_desc_get_pending_mask(desc),
+			    cpu_online_mask) < nr_cpu_ids) {
 		int ret;
 
-		ret = irq_do_set_affinity(data, desc->pending_mask, false);
+		ret = irq_do_set_affinity(data, irq_desc_get_pending_mask(desc),
+					  false);
 		/*
 		 * If the there is a cleanup pending in the underlying
 		 * vector management, reschedule the move for the next
@@ -88,7 +91,7 @@ void irq_move_masked_irq(struct irq_data *idata)
 			return;
 		}
 	}
-	cpumask_clear(desc->pending_mask);
+	cpumask_clear(irq_desc_get_pending_mask(desc));
 }
 
 void __irq_move_irq(struct irq_data *idata)
