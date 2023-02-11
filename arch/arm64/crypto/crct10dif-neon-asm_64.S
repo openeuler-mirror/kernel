@@ -83,7 +83,7 @@ crc_t10dif_neon:
 
 	/* deal data when the size of buffer bigger than 128 bytes */
 	/* _fold_64_B_loop */
-	LDR		Q6,=0xe658000000000000044c000000000000
+	LDR		Q6, .Ldata1
 1:
 
 	LDP		Q16, Q17, [X1] ,#0x40
@@ -134,7 +134,7 @@ crc_t10dif_neon:
 	CMP		X2, #0x0
 	B.GE		1b			// >=0
 
-	LDR		Q6, =0x06df0000000000002d56000000000000
+	LDR		Q6, .Ldata2
 	MOV		V4.16B, V10.16B
 	/* V10 carry-less 0x06df000000000000([127:64]*[127:64]) */
 	PMULL		V4.1Q, V4.1D, V6.1D	//switch PMULL & PMULL2 order
@@ -264,70 +264,70 @@ crc_t10dif_neon:
 30:
 	EOR		V13.16B, V13.16B, V13.16B
 	EOR		V8.16B, V8.16B, V8.16B
-	LDR		Q9,=0xffffffffffffffffffffffffffffffff
+	LDR		Q9, .L128B
 	B		46f
 
 	// >> 120bit
 31:
 	USHR		V13.2D, V13.2D, #56
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xff
-	LDR		Q9,=0xffffffffffffffffffffffffffffff00
+	LDR		Q8, .LQ8_8B
+	LDR		Q9, .L120B
 	B		46f
 
 	// >> 112bit
 32:
 	USHR		 V13.2D, V13.2D, #48
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffff
-	LDR		Q9,=0xffffffffffffffffffffffffffff0000
+	LDR		Q8, .LQ8_16B
+	LDR		Q9, .L112B
 	B		46f
 
 	// >> 104bit
 33:
 	USHR		V13.2D, V13.2D, #40
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffffff
-	LDR		Q9,=0xffffffffffffffffffffffffff000000
+	LDR		Q8, .LQ8_24B
+	LDR		Q9, .L104B
 	B		46f
 
 	// >> 96bit
 34:
 	USHR		V13.2D, V13.2D, #32
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffffffff
-	LDR		Q9,=0xffffffffffffffffffffffff00000000
+	LDR		Q8, .LQ8_32B
+	LDR		Q9, .L96B
 	B		46f
 
 	// >> 88bit
 35:
 	USHR		V13.2D, V13.2D, #24
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffffffffff
-	LDR		Q9,=0xffffffffffffffffffffff0000000000
+	LDR		Q8, .LQ8_40B
+	LDR		Q9, .L88B
 	B		46f
 
 	// >> 80bit
 36:
 	USHR		V13.2D, V13.2D, #16
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffffffffffff
-	LDR		Q9,=0xffffffffffffffffffff000000000000
+	LDR		Q8, .LQ8_48B
+	LDR		Q9, .L80B
 	B		46f
 
 	// >> 72bit
 37:
 	USHR		V13.2D, V13.2D, #8
 	EXT		V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffffffffffffff
-	LDR		Q9,=0xffffffffffffffffff00000000000000
+	LDR		Q8, .LQ8_56B
+	LDR		Q9, .L72B
 	B		46f
 
 	// >> 64bit
 38:
 	EXT		 V13.16B, V13.16B, V14.16B, #8
-	LDR		Q8,=0xffffffffffffffff
-	LDR		Q9,=0xffffffffffffffff0000000000000000
+	LDR		Q8, .LQ8_64B
+	LDR		Q9, .L64B
 	B		46f
 
 	// >> 56bit
@@ -337,8 +337,8 @@ crc_t10dif_neon:
 	MOV		V13.H[5], V14.H[0]
 	MOV		V13.B[9], V14.B[0]
 
-	LDR		Q8,=0xffffffffffffffffff
-	LDR		Q9,=0xffffffffffffff000000000000000000
+	LDR		Q8, .LQ8_72B
+	LDR		Q9, .L56B
 	B		46f
 
 	// >> 48bit
@@ -347,8 +347,8 @@ crc_t10dif_neon:
 	MOV		V13.S[3], V14.S[0]
 	MOV		V13.H[5], V14.H[0]
 
-	LDR		Q8,=0xffffffffffffffffffff
-	LDR		Q9,=0xffffffffffff00000000000000000000
+	LDR		Q8, .LQ8_80B
+	LDR		Q9, .L48B
 	B		46f
 
 	// >> 40bit
@@ -357,8 +357,8 @@ crc_t10dif_neon:
 	MOV		V13.S[3], V14.S[0]
 	MOV		V13.B[11], V14.B[0]
 
-	LDR		Q8,=0xffffffffffffffffffffff
-	LDR		Q9,=0xffffffffff0000000000000000000000
+	LDR		Q8,  .LQ8_88B
+	LDR		Q9,  .L40B
 	B		46f
 
 	// >> 32bit
@@ -366,8 +366,8 @@ crc_t10dif_neon:
 	EXT		V13.16B, V13.16B, V13.16B, #4
 	MOV		V13.S[3], V14.S[0]
 
-	LDR		Q8,=0xffffffffffffffffffffffff
-	LDR		Q9,=0xffffffff000000000000000000000000
+	LDR		Q8, .LQ8_96B
+	LDR		Q9, .L32B
 	B		46f
 
 	// >> 24bit
@@ -376,8 +376,8 @@ crc_t10dif_neon:
 	MOV		V13.H[7], V14.H[0]
 	MOV		V13.B[13], V14.B[0]
 
-	LDR		Q8,=0xffffffffffffffffffffffffff
-	LDR		Q9,=0xffffff00000000000000000000000000
+	LDR		Q8, .LQ8_104B
+	LDR		Q9, .L24B
 	B		46f
 
 	// >> 16bit
@@ -385,8 +385,8 @@ crc_t10dif_neon:
 	EXT		V13.16B, V13.16B, V13.16B, #2
 	MOV		V13.H[7], V14.H[0]
 
-	LDR		Q8,=0xffffffffffffffffffffffffffff
-	LDR		Q9,=0xffff0000000000000000000000000000
+	LDR		Q8, .LQ8_112B
+	LDR		Q9, .L16B
 	B		46f
 
 	// >> 8bit
@@ -394,8 +394,8 @@ crc_t10dif_neon:
 	EXT		 V13.16B, V13.16B, V13.16B, #1
 	MOV		V13.B[15], V14.B[0]
 
-	LDR		Q8,=0xffffffffffffffffffffffffffffff
-	LDR		Q9,=0xff000000000000000000000000000000
+	LDR		Q8, .LQ8_120B
+	LDR		Q9, .L8B
 
 	// backup V12 first
 	// pblendvb	xmm1, xmm2
@@ -412,7 +412,7 @@ crc_t10dif_neon:
 	EOR		V13.16B, V13.16B, V12.16B
 
 	/* _128_done. we change the Q6 D[0] and D[1] */
-5:	LDR		Q6, =0x2d560000000000001368000000000000
+5:	LDR		Q6, .Ldata3
 	MOVI		D14, #0
 	MOV		V10.16B, V13.16B
 	PMULL2		V13.1Q, V13.2D, V6.2D
@@ -423,7 +423,7 @@ crc_t10dif_neon:
 	EOR		V13.16B, V13.16B, V10.16B
 
 	MOV		V10.16B, V13.16B
-	LDR		Q7, =0x00000000FFFFFFFFFFFFFFFFFFFFFFFF
+	LDR		Q7, .Ldata4
 	AND		V10.16B, V10.16B, V7.16B
 
 	MOV		S13, V13.S[3]
@@ -432,7 +432,7 @@ crc_t10dif_neon:
 	EOR		V13.16B, V13.16B, V10.16B
 
 	/* _barrett */
-7:	LDR		Q6, =0x00000001f65a57f8000000018bb70000
+7:	LDR		Q6, .Ldata5
 	MOVI    	D14, #0
 	MOV		V10.16B, V13.16B
 	PMULL2		V13.1Q, V13.2D, V6.2D
@@ -475,10 +475,10 @@ crc_t10dif_neon:
 	/* _less_than_128 */
 2:	CMP		X2, #32
 	B.LT		9f				// _less_than_32
-	LDR		Q6, =0x06df0000000000002d56000000000000
+	LDR		Q6, .Ldata2
 
 	LSL		X0, X0, #48
-	LDR		Q10, =0x0
+	LDR		Q10, .Lzero
 	MOV		V10.D[1], X0
 	LDR		Q13, [X1], #0x10
 	REV64		V13.16B, V13.16B
@@ -493,7 +493,7 @@ crc_t10dif_neon:
 9:	CMP		X2, #0
 	B.EQ		99b			// _cleanup
 	LSL		X0, X0, #48
-	LDR		Q10,=0x0
+	LDR		Q10, .Lzero
 	MOV		V10.D[1], X0
 
 	CMP		X2, #16
@@ -506,7 +506,7 @@ crc_t10dif_neon:
 
 	EOR		V13.16B, V13.16B, V10.16B
 	SUB		X2, X2, #16
-	LDR		Q6, =0x06df0000000000002d56000000000000
+	LDR		Q6, .Ldata2
 	B		6b			// _get_last_two_xmms
 
 	/*  _less_than_16_left */
@@ -687,7 +687,7 @@ crc_t10dif_neon:
 	B		5b
 
 95:
-	LDR		Q13,=0x0
+	LDR		Q13, .Lzero
 	B		5b				// _128_done
 
 	/* _exact_16_left */
@@ -739,7 +739,7 @@ crc_t10dif_neon:
 	/* _only_less_than_2 */
 18:
 	LDRB		W7, [X1], #1
-	LDR		Q13, = 0x0
+	LDR		Q13, .Lzero
 	MOV		V13.B[15], W7
 
 	EOR		V13.16B, V13.16B, V10.16B
@@ -750,3 +750,222 @@ crc_t10dif_neon:
 	MOV		V13.B[9], V14.B[0]
 
 	B		7b				// _barrett
+
+.Ldata1:
+	.word	0x00000000
+	.word	0x044c0000
+	.word	0x00000000
+	.word	0xe6580000
+
+.Ldata2:
+	.word	0x00000000
+	.word	0x2d560000
+	.word	0x00000000
+	.word	0x06df0000
+
+.Ldata3:
+	.word	0x00000000
+	.word	0x13680000
+	.word	0x00000000
+	.word	0x2d560000
+
+.Ldata4:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x00000000
+
+.Ldata5:
+	.word	0x8bb70000
+	.word	0x00000001
+	.word	0xf65a57f8
+	.word	0x00000001
+
+.L128B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+
+.L120B:
+	.word	0xFFFFFF00
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+
+.L112B:
+	.word	0xFFFF0000
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+
+.L104B:
+	.word	0xFF000000
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+
+.L96B:
+	.word	0x00000000
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+.L88B:
+	.word	0x00000000
+	.word	0xFFFFFF00
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+.L80B:
+	.word	0x00000000
+	.word	0xFFFF0000
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+.L72B:
+	.word	0x00000000
+	.word	0xFF000000
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+.L64B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+.L56B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFFFFFF00
+	.word	0xFFFFFFFF
+.L48B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFFFF0000
+	.word	0xFFFFFFFF
+.L40B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFF000000
+	.word	0xFFFFFFFF
+.L32B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFFFFFFFF
+.L24B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFFFFFF00
+.L16B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFFFF0000
+.L8B:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+	.word	0xFF000000
+
+.LQ8_8B:
+	.word	0x000000FF
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_16B:
+	.word	0x0000FFFF
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_24B:
+	.word	0x00FFFFFF
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_32B:
+	.word	0xFFFFFFFF
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_40B:
+	.word	0xFFFFFFFF
+	.word	0x000000FF
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_48B:
+	.word	0xFFFFFFFF
+	.word	0x0000FFFF
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_56B:
+	.word	0xFFFFFFFF
+	.word	0x00FFFFFF
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_64B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x00000000
+	.word	0x00000000
+
+.LQ8_72B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x000000FF
+	.word	0x00000000
+
+.LQ8_80B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x0000FFFF
+	.word	0x00000000
+
+
+.LQ8_88B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x00FFFFFF
+	.word	0x00000000
+
+
+.LQ8_96B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x00000000
+
+.LQ8_104B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x000000FF
+
+.LQ8_112B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x0000FFFF
+
+.LQ8_120B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0x00FFFFFF
+
+.LQ8_128B:
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+	.word	0xFFFFFFFF
+
+.Lzero:
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
+	.word	0x00000000
