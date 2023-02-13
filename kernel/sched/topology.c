@@ -1574,7 +1574,7 @@ void set_sched_cluster(void)
 }
 
 /* set via /proc/sys/kernel/sched_cluster */
-unsigned int __read_mostly sysctl_sched_cluster = 1;
+unsigned int __read_mostly sysctl_sched_cluster;
 
 static DEFINE_MUTEX(sched_cluster_mutex);
 int sched_cluster_handler(struct ctl_table *table, int write,
