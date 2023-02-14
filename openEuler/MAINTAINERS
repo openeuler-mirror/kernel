@@ -94,6 +94,12 @@ F:	include/linux/wait.h
 F:	include/uapi/linux/sched.h
 F:	kernel/sched/
 
+SSSRAID SCSI/Raid DRIVERS
+M:	Steven Song <steven.song@3snic.com>
+S:	Maintained
+F:	Documentation/scsi/sssraid.rst
+F:	drivers/scsi/sssraid/
+
 THE REST
 M:	xiexiuqi@huawei.com
 M:	zhengzengkai@huawei.com
