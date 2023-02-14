@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2302.1.0
+%global hulkrelease 2302.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0187
+Release: %{hulkrelease}.0188
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,75 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 14 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.3.0.0188
+- block, bfq: switch 'bfqg->ref' to use atomic refcount apis
+- x86/bugs: Flush IBP in ib_prctl_set()
+- media: vivid: fix compose size exceed boundary
+- cifs: do not include page data when checking signature
+- SUNRPC: Don't leak netobj memory when gss_read_proxy_verf() fails
+- net: stream: purge sk_error_queue in sk_stream_kill_queues()
+- net: stream: don't purge sk_error_queue in sk_stream_kill_queues()
+- ext4: fix deadlock due to mbcache entry corruption
+- mbcache: automatically delete entries from cache on freeing
+- mm/khugepaged: invoke MMU notifiers in shmem/file collapse paths
+- mm/khugepaged: fix GUP-fast interaction by sending IPI
+- mm: gup: fix the fast GUP race against THP collapse
+- prlimit: do_prlimit needs to have a speculation check
+- arm64: cmpxchg_double*: hazard against entire exchange variable
+- net/ulp: prevent ULP without clone op from entering the LISTEN status
+- driver core: Fix bus_type.match() error handling in __driver_attach()
+- md: fix a crash in mempool_free
+- bpf: pull before calling skb_postpull_rcsum()
+- SUNRPC: ensure the matching upcall is in-flight upon downcall
+- ovl: Use ovl mounter's fsuid and fsgid in ovl_link()
+- pnode: terminate at peers of source
+- cifs: Fix uninitialized memory read for smb311 posix symlink create
+- device_cgroup: Roll back to original exceptions after copy failure
+- PCI/sysfs: Fix double free in error path
+- PCI: Fix pci_device_is_present() for VFs by checking PF
+- ipmi: fix use after free in _ipmi_destroy_user()
+- ima: Fix a potential NULL pointer access in ima_restore_measurement_list
+- ipmi: fix long wait in unload when IPMI disconnect
+- binfmt: Fix error return code in load_elf_fdpic_binary()
+- chardev: fix error handling in cdev_device_add()
+- mrp: introduce active flags to prevent UAF when applicant uninit
+- bpf: make sure skb->len != 0 when redirecting to a tunneling device
+- ipmi: fix memleak when unload ipmi driver
+- ACPICA: Fix error code path in acpi_ds_call_control_method()
+- skbuff: Account for tail adjustment during pull operations
+- serial: pl011: Do not clear RX FIFO & RX interrupt in unthrottle.
+- serial: amba-pl011: avoid SBSA UART accessing DMACR register
+- class: fix possible memory leak in __class_register()
+- crypto: tcrypt - Fix multibuffer skcipher speed test mem leak
+- blktrace: Fix output non-blktrace event when blk_classic option enabled
+- SUNRPC: Fix missing release socket in rpc_sockname()
+- bonding: uninitialized variable in bond_miimon_inspect()
+- pinctrl: pinconf-generic: add missing of_node_put()
+- ima: Fix misuse of dereference of pointer in template_desc_init_fields()
+- ACPICA: Fix use-after-free in acpi_ut_copy_ipackage_to_ipackage()
+- md/raid1: stop mdx_raid1 thread when raid1 array run failed
+- blk-mq: fix possible memleak when register 'hctx' failed
+- perf: Fix possible memleak in pmu_dev_alloc()
+- cpuidle: dt: Return the correct numbers of parsed idle states
+- pstore: Avoid kcore oops by vmap()ing with VM_IOREMAP
+- pstore/ram: Fix error return code in ramoops_probe()
+- perf: arm_dsu: Fix hotplug callback leak in dsu_pmu_init()
+- sched/rt: Optimize checking group RT scheduler constraints
+- md: protect md_unregister_thread from reentrancy
+- hugetlbfs: fix off-by-one error in hugetlb_vmdelete_list()
+- lib/list_debug.c: Detect uninitialized lists
+- crypto: tcrypt - avoid signed overflow in byte count
+- mm: sharepool: fix hugepage_rsvd count increase error
+- config: enbale irq pending config for openeuler
+- genirq: introduce CONFIG_GENERIC_PENDING_IRQ_FIX_KABI
+- irqchip/gic-v3-its: introduce CONFIG_GENERIC_PENDING_IRQ
+- md: fix uaf in md_wakeup_thread
+- genirq: add printk safe in irq context
+- jbd2: Fix data missing when reusing bh which is ready to be checkpointed
+- x86/unwind: Fix orc entry for paravirt {save,restore}_fl
+- cifs: sanitize multiple delimiters in prepath
+- drm/i915/gvt: fix double free bug in split_2MB_gtt_entry
 
 * Tue Feb 07 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.1.0.0187
 - ring-buffer: Fix race between reset page and reading page
