@@ -1610,6 +1610,19 @@ init_qm_error:
 	return -ENOMEM;
 }
 
+static int hisi_acc_get_vf_id(struct pci_dev *dev)
+{
+	struct pci_dev *pf;
+
+	if (!dev->is_virtfn)
+		return -EINVAL;
+
+	pf = pci_physfn(dev);
+	return (((dev->bus->number << 8) + dev->devfn) -
+		((pf->bus->number << 8) + pf->devfn + pf->sriov->offset)) /
+	       pf->sriov->stride;
+}
+
 static void *acc_vf_probe(struct pci_dev *pdev)
 {
 	struct acc_vf_migration *acc_vf_dev;
@@ -1635,7 +1648,7 @@ static void *acc_vf_probe(struct pci_dev *pdev)
 		return ERR_PTR(-EINVAL);
 	}
 
-	vf_id = PCI_FUNC(vf_dev->devfn);
+	vf_id = hisi_acc_get_vf_id(vf_dev);
 	if (vf_id < 0) {
 		dev_info(&pdev->dev, "vf device: %s, vf id: %d\n",
 			 pf_qm->dev_name, vf_id);
@@ -1652,7 +1665,7 @@ static void *acc_vf_probe(struct pci_dev *pdev)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	acc_vf_dev->vf_id = vf_id;
+	acc_vf_dev->vf_id = vf_id + 1;
 	acc_vf_dev->vf_vendor = pdev->vendor;
 	acc_vf_dev->vf_device = pdev->device;
 	acc_vf_dev->pf_dev = pf_dev;
