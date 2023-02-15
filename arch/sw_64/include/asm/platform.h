@@ -15,6 +15,7 @@ struct sw64_platform_ops {
 extern struct sw64_platform_ops *sw64_platform;
 
 extern struct sw64_platform_ops xuelang_ops;
+extern struct boot_params *sunway_boot_params;
 
 extern void sw64_halt(void);
 extern void sw64_poweroff(void);

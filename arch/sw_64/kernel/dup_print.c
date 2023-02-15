@@ -3,7 +3,7 @@
 #include <linux/smp.h>
 #include <linux/spinlock.h>
 
-#include <asm/chip3_io.h>
+#include <asm/platform.h>
 #include <asm/io.h>
 
 #ifdef CONFIG_SW64_RRK
