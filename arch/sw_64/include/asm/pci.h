@@ -24,6 +24,15 @@ struct piu_saved {
 	unsigned long epdmabar;
 	unsigned long msiaddr;
 	unsigned long msiconfig[256];
+	unsigned long iommuexcpt_ctrl;
+	unsigned long dtbaseaddr;
+	unsigned long hpintconfig;
+	unsigned long pmeintconfig;
+	unsigned long aererrintconfig;
+	unsigned long intaconfig;
+	unsigned long intbconfig;
+	unsigned long intcconfig;
+	unsigned long intdconfig;
 };
 
 /* A controller.  Used to manage multiple PCI busses.  */

@@ -528,6 +528,18 @@ static void chip3_pcie_save(void)
 			piu_save->msiconfig[i] = read_piu_ior0(node, index,
 					MSICONFIG0 + (i << 7));
 		}
+
+		piu_save->iommuexcpt_ctrl = read_piu_ior0(node, index, IOMMUEXCPT_CTRL);
+		piu_save->dtbaseaddr = read_piu_ior0(node, index, DTBASEADDR);
+
+		piu_save->intaconfig = read_piu_ior0(node, index, INTACONFIG);
+		piu_save->intbconfig = read_piu_ior0(node, index, INTBCONFIG);
+		piu_save->intcconfig = read_piu_ior0(node, index, INTCCONFIG);
+		piu_save->intdconfig = read_piu_ior0(node, index, INTDCONFIG);
+		piu_save->pmeintconfig = read_piu_ior0(node, index, PMEINTCONFIG);
+		piu_save->aererrintconfig = read_piu_ior0(node, index, AERERRINTCONFIG);
+		piu_save->hpintconfig = read_piu_ior0(node, index, HPINTCONFIG);
+
 	}
 }
 
@@ -554,6 +566,17 @@ static void chip3_pcie_restore(void)
 			write_piu_ior0(node, index, MSICONFIG0 + (i << 7),
 					piu_save->msiconfig[i]);
 		}
+
+		write_piu_ior0(node, index, IOMMUEXCPT_CTRL, piu_save->iommuexcpt_ctrl);
+		write_piu_ior0(node, index, DTBASEADDR, piu_save->dtbaseaddr);
+
+		write_piu_ior0(node, index, INTACONFIG, piu_save->intaconfig);
+		write_piu_ior0(node, index, INTBCONFIG, piu_save->intbconfig);
+		write_piu_ior0(node, index, INTCCONFIG, piu_save->intcconfig);
+		write_piu_ior0(node, index, INTDCONFIG, piu_save->intdconfig);
+		write_piu_ior0(node, index, PMEINTCONFIG, piu_save->pmeintconfig);
+		write_piu_ior0(node, index, AERERRINTCONFIG, piu_save->aererrintconfig);
+		write_piu_ior0(node, index, HPINTCONFIG, piu_save->hpintconfig);
 
 		/* Enable DBI_RO_WR_EN */
 		rc_misc_ctrl = read_rc_conf(node, index, RC_MISC_CONTROL_1);
