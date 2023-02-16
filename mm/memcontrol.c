@@ -1490,6 +1490,7 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 {
 	struct mem_cgroup *iter;
 	unsigned int i;
+	static char pathbuf[PATH_MAX];
 
 	pr_info("memory: usage %llukB, limit %llukB, failcnt %lu\n",
 		K((u64)page_counter_read(&memcg->memory)),
@@ -1522,7 +1523,7 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 		pr_cont("\n");
 	}
 
-	mem_cgroup_print_memfs_info(memcg, NULL);
+	mem_cgroup_print_memfs_info(memcg, pathbuf, NULL);
 }
 
 /*
