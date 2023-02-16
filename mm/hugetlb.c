@@ -1683,10 +1683,6 @@ static struct page *alloc_fresh_huge_page(struct hstate *h,
 	return page;
 }
 
-#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
-gfp_t hugepage_gfp_mask = 0;
-EXPORT_SYMBOL(hugepage_gfp_mask);
-#endif
 /*
  * Allocates a fresh page to the hugetlb allocator pool in the node interleaved
  * manner.
@@ -1696,12 +1692,7 @@ static int alloc_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 {
 	struct page *page;
 	int nr_nodes, node;
-#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
-	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE |
-			 hugepage_gfp_mask;
-#else
 	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE;
-#endif
 
 	for_each_node_mask_to_alloc(h, nr_nodes, node, nodes_allowed) {
 		page = alloc_fresh_huge_page(h, gfp_mask, node, nodes_allowed,
@@ -4492,19 +4483,6 @@ int hugetlb_sysctl_handler(struct ctl_table *table, int write,
 	return hugetlb_sysctl_handler_common(false, table, write,
 							buffer, length, ppos);
 }
-
-#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
-int hugetlb_sysctl_store(size_t length)
-{
-	int ret;
-	struct hstate *h = &default_hstate;
-
-	ret = __nr_hugepages_store_common(false, h, NUMA_NO_NODE, length,
-					  length);
-	return ret;
-}
-EXPORT_SYMBOL(hugetlb_sysctl_store);
-#endif
 
 #ifdef CONFIG_NUMA
 int hugetlb_mempolicy_sysctl_handler(struct ctl_table *table, int write,
