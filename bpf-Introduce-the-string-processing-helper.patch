@@ -1,0 +1,199 @@
+From 7163e4ba95a8a1cae371e812f9a5822f4119fe08 Mon Sep 17 00:00:00 2001
+From: bitcoffee <liuxin350@huawei.com>
+Date: Thu, 16 Feb 2023 02:49:00 +0800
+Subject: [PATCH] bpf: Introduce the string processing helper
+
+Currently, some character strings need to be processed in the ebpf
+function. Some character string helper processing functions, such
+as strlen and strnstr, need to be introduced.
+
+Signed-off-by: bitcoffee <liuxin350@huawei.com>
+---
+ include/uapi/linux/bpf.h       | 28 ++++++++++++++++++
+ kernel/bpf/helpers.c           | 53 ++++++++++++++++++++++++++++++++--
+ tools/include/uapi/linux/bpf.h | 24 +++++++++++++++
+ 3 files changed, 102 insertions(+), 3 deletions(-)
+
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index 51b9aa640ad2..3d47789b1548 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -5435,6 +5435,26 @@ union bpf_attr {
+  *		**-E2BIG** if user-space has tried to publish a sample which is
+  *		larger than the size of the ring buffer, or which cannot fit
+  *		within a struct bpf_dynptr.
++ *
++ * void *bpf_strncpy(char *dst, u32 dst_size, char *src)
++ * 	Description
++ * 		Copies a string that starts with the src address and ends with the
++ * 		NULL character to the address space that starts with dst.
++ * 	Return
++ * 		Returns a apointer to dst.
++ *
++ * void *bpf_strnstr(void *s1, void *s2, u32 size)
++ * 	Description
++ * 		Search for s2 in the first position character string os s1.
++ * 	Return
++ * 		If s2 exists, returns the position of s2 in s1. If s2 is not found,
++ * 		return NULL.
++ *
++ * u64 bpf_strnlen(char *buff, u32 size)
++ * 	Description
++ * 		Obtains the length of a character string.
++ * 	Return
++ * 		Length of the string.
+  */
+ #define __BPF_FUNC_MAPPER(FN)		\
+ 	FN(unspec),			\
+@@ -5647,6 +5667,9 @@ union bpf_attr {
+ 	FN(tcp_raw_check_syncookie_ipv6),	\
+ 	FN(ktime_get_tai_ns),		\
+ 	FN(user_ringbuf_drain),		\
++	FN(strncpy),				\
++	FN(strnstr),			\
++	FN(strnlen),				\
+ 	/* */
+ 
+ /* integer value in 'imm' field of BPF_CALL instruction selects which helper
+@@ -6975,6 +6998,11 @@ enum bpf_core_relo_kind {
+  *
+  * [0] https://llvm.org/docs/LangRef.html#getelementptr-instruction
+  */
++
++/*
++ * struct bpf_mem_ptr is used for pointer to the memory. It records
++ * the location and length of the memory.
++ */
+ struct bpf_core_relo {
+ 	__u32 insn_off;
+ 	__u32 type_id;
+diff --git a/kernel/bpf/helpers.c b/kernel/bpf/helpers.c
+index a6b04faed282..2acad85f829a 100644
+--- a/kernel/bpf/helpers.c
++++ b/kernel/bpf/helpers.c
+@@ -567,9 +567,9 @@ static const struct bpf_func_proto bpf_strncmp_proto = {
+ 	.func		= bpf_strncmp,
+ 	.gpl_only	= false,
+ 	.ret_type	= RET_INTEGER,
+-	.arg1_type	= ARG_PTR_TO_MEM,
+-	.arg2_type	= ARG_CONST_SIZE,
+-	.arg3_type	= ARG_PTR_TO_CONST_STR,
++	.arg1_type	= ARG_ANYTHING,
++	.arg2_type	= ARG_ANYTHING,
++	.arg3_type	= ARG_ANYTHING,
+ };
+ 
+ BPF_CALL_4(bpf_get_ns_current_pid_tgid, u64, dev, u64, ino,
+@@ -1559,6 +1559,47 @@ static const struct bpf_func_proto bpf_dynptr_data_proto = {
+ 	.arg3_type	= ARG_CONST_ALLOC_SIZE_OR_ZERO,
+ };
+ 
++BPF_CALL_2(bpf_strnlen, void *, src, size_t, len)
++{
++	return strnlen(src, len);
++}
++
++const struct bpf_func_proto bpf_strnlen_proto = {
++	.func		= bpf_strnlen,
++	.gpl_only	= false,
++	.ret_type	= RET_INTEGER,
++	.arg1_type	= ARG_ANYTHING,
++	.arg2_type	= ARG_ANYTHING,
++};
++
++BPF_CALL_3(bpf_strnstr, void *, s1, void *, s2, size_t, len)
++{
++	return strnstr(s1, s2, len);
++}
++
++const struct bpf_func_proto bpf_strnstr_proto = {
++	.func		= bpf_strnstr,
++	.gpl_only	= false,
++	.ret_type	= RET_PTR_TO_ALLOC_MEM_OR_NULL,
++	.arg1_type	= ARG_ANYTHING,
++	.arg2_type	= ARG_ANYTHING,
++	.arg3_type	= ARG_ANYTHING,
++};
++
++BPF_CALL_3(bpf_strncpy, void *, dst, u32, dst_size, void *, src)
++{
++	return strncpy(dst, src, dst_size);
++}
++
++const struct bpf_func_proto bpf_strncpy_proto = {
++	.func		= bpf_strncpy,
++	.gpl_only	= false,
++	.ret_type	= RET_PTR_TO_ALLOC_MEM_OR_NULL,
++	.arg1_type	= ARG_ANYTHING,
++	.arg2_type	= ARG_ANYTHING,
++	.arg3_type	= ARG_ANYTHING,
++};
++
+ const struct bpf_func_proto bpf_get_current_task_proto __weak;
+ const struct bpf_func_proto bpf_get_current_task_btf_proto __weak;
+ const struct bpf_func_proto bpf_probe_read_user_proto __weak;
+@@ -1615,6 +1656,12 @@ bpf_base_func_proto(enum bpf_func_id func_id)
+ 		return &bpf_strtol_proto;
+ 	case BPF_FUNC_strtoul:
+ 		return &bpf_strtoul_proto;
++	case BPF_FUNC_strnlen:
++		return &bpf_strnlen_proto;
++	case BPF_FUNC_strncpy:
++		return &bpf_strncpy_proto;
++	case BPF_FUNC_strnstr:
++		return &bpf_strnstr_proto;
+ 	default:
+ 		break;
+ 	}
+diff --git a/tools/include/uapi/linux/bpf.h b/tools/include/uapi/linux/bpf.h
+index 51b9aa640ad2..5403a0ee272d 100644
+--- a/tools/include/uapi/linux/bpf.h
++++ b/tools/include/uapi/linux/bpf.h
+@@ -5435,6 +5435,26 @@ union bpf_attr {
+  *		**-E2BIG** if user-space has tried to publish a sample which is
+  *		larger than the size of the ring buffer, or which cannot fit
+  *		within a struct bpf_dynptr.
++ *
++ * void *bpf_strncpy(char *dst, u32 dst_size, char *src)
++ * 	Description
++ * 		Copies a string that starts with the src address and ends with the
++ * 		NULL character to the address space that starts with dst.
++ * 	Return
++ * 		Returns a apointer to dst.
++ *
++ * void *bpf_strnstr(void *s1, void *s2, u32 size)
++ * 	Description
++ * 		Search for s2 in the first position character string os s1.
++ * 	Return
++ * 		If s2 exists, returns the position of s2 in s1. If s2 is not found,
++ * 		return NULL.
++ *
++ * u64 bpf_strnlen(char *buff, u32 size)
++ * 	Description
++ * 		Obtains the length of a character string.
++ * 	Return
++ * 		Length of the string.
+  */
+ #define __BPF_FUNC_MAPPER(FN)		\
+ 	FN(unspec),			\
+@@ -5647,6 +5667,9 @@ union bpf_attr {
+ 	FN(tcp_raw_check_syncookie_ipv6),	\
+ 	FN(ktime_get_tai_ns),		\
+ 	FN(user_ringbuf_drain),		\
++	FN(strncpy),				\
++	FN(strnstr),			\
++	FN(strnlen),				\
+ 	/* */
+ 
+ /* integer value in 'imm' field of BPF_CALL instruction selects which helper
+@@ -6975,6 +6998,7 @@ enum bpf_core_relo_kind {
+  *
+  * [0] https://llvm.org/docs/LangRef.html#getelementptr-instruction
+  */
++
+ struct bpf_core_relo {
+ 	__u32 insn_off;
+ 	__u32 type_id;
+-- 
+2.33.0
+
