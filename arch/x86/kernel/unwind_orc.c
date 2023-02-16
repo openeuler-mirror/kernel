@@ -79,9 +79,9 @@ static struct orc_entry *orc_module_find(unsigned long ip)
 }
 #endif
 
-#ifdef CONFIG_DYNAMIC_FTRACE
 static struct orc_entry *orc_find(unsigned long ip);
 
+#ifdef CONFIG_DYNAMIC_FTRACE
 /*
  * Ftrace dynamic trampolines do not have orc entries of their own.
  * But they are copies of the ftrace entries that are static and
