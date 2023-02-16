@@ -1183,6 +1183,8 @@ static struct inode *hugetlbfs_alloc_inode(struct super_block *sb)
 	if (huge_page_size(sbinfo->hstate) == PMD_SIZE ||
 	    huge_page_size(sbinfo->hstate) == PUD_SIZE)
 		p->hpool = get_dhugetlb_pool_from_task(current);
+	else
+		p->hpool = NULL;
 #endif
 
 	return &p->vfs_inode;
