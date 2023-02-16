@@ -1,0 +1,63 @@
+From 7c93ae9aeda1d9c255dae8691832a6a08239fdd4 Mon Sep 17 00:00:00 2001
+From: bitcoffee <liuxin350@huawei.com>
+Date: Thu, 16 Feb 2023 22:31:48 +0800
+Subject: [PATCH] net, bpf: Add a writeable_tracepoint to inet_stream_connect
+
+hulk inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CPF6
+
+---
+
+A trace point is added to the connection process. Theebpf program
+can be mounted to modify the return value of the function. This is
+mandatory for delaying the establishment of an ebpf link. After
+the connection is complete, a message is returned immediately and
+no unnecessary operation is performed.
+
+Signed-off-by: bitcoffee <liuxin350@huawei.com>
+---
+ include/trace/events/sock.h | 14 ++++++++++++++
+ net/ipv4/af_inet.c          |  1 +
+ 2 files changed, 15 insertions(+)
+
+diff --git a/include/trace/events/sock.h b/include/trace/events/sock.h
+index 777ee6cbe933..e9e56e2d9ab4 100644
+--- a/include/trace/events/sock.h
++++ b/include/trace/events/sock.h
+@@ -263,6 +263,20 @@ TRACE_EVENT(inet_sk_error_report,
+ 		  __entry->error)
+ );
+ 
++#undef NET_DECLARE_TRACE
++#ifdef DECLARE_TRACE_WRITABLE
++#define NET_DECLARE_TRACE(call, proto, args, size) \
++	DECLARE_TRACE_WRITABLE(call, PARAMS(proto), PARAMS(args), size)
++#else
++#define NET_DECLARE_TRACE(call, proto, args, size) \
++	DECLARE_TRACE(call, PARAMS(proto), PARAMS(args))
++#endif
++
++NET_DECLARE_TRACE(connect_ret,
++		TP_PROTO(int * err),
++		TP_ARGS(err),
++		sizeof(int));
++
+ #endif /* _TRACE_SOCK_H */
+ 
+ /* This part must be outside protection */
+diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
+index 472d0ef7664d..703af5acdbbf 100644
+--- a/net/ipv4/af_inet.c
++++ b/net/ipv4/af_inet.c
+@@ -732,6 +732,7 @@ int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
+ 	lock_sock(sock->sk);
+ 	err = __inet_stream_connect(sock, uaddr, addr_len, flags, 0);
+ 	release_sock(sock->sk);
++	trace_connect_ret(&err);
+ 	return err;
+ }
+ EXPORT_SYMBOL(inet_stream_connect);
+-- 
+2.33.0
+
