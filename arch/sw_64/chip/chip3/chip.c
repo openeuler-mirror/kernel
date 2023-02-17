@@ -604,41 +604,6 @@ static inline void chip3_spbu_restore(void)
 	sw64_io_write(0, MCU_DVC_INT_EN, saved_dvc_int);
 }
 
-#define BIOS_SECBIN	0x2F00000UL
-#define BIOS_SECSIZE	0x40000UL
-#define	BOUNCE_BUFFER	((1UL<<32) - BIOS_SECSIZE)
-#define	BIOS_MEMSAVE	((1UL<<32) - 2 * BIOS_SECSIZE)
-
-/*
- * Due to specific architecture PCI MEM32 addressing, we reserve 512M memory
- * size at PCI_32BIT_MEMIO (0xE000_0000) on SW64 platform.
- *
- * Since this memory region is still usable by OS, we implement a interface
- * contract between BIOS and kernel:
- *
- * Firstly BIOS should back up SEC relative code segment to BIOS_MEMSAVE region
- * with the length BIOS_SECSIZE in order to restore BIOS SEC phase binary during
- * S3 sleep.
- *
- * Secondly kernel should use a bounce buffer to save memory region which may be
- * overwritten by BIOS on resume from S3 sleep.
- */
-static void chip3_mem_restore(void)
-{
-	void *dst, *src;
-	unsigned long size = BIOS_SECSIZE;
-
-	/* Firstly kernel back up to a bounce buffer */
-	src = __va(BIOS_SECBIN);
-	dst = __va(BOUNCE_BUFFER);
-	memcpy(dst, src, size);
-
-	/* Secondly restore BIOS SEC phase binary */
-	src = __va(BIOS_MEMSAVE);
-	dst = __va(BIOS_SECBIN);
-	memcpy(dst, src, size);
-}
-
 extern void cpld_write(uint8_t slave_addr, uint8_t reg, uint8_t data);
 
 static void chip3_suspend(bool wakeup)
@@ -655,7 +620,6 @@ static void chip3_suspend(bool wakeup)
 		chip3_spbu_save();
 		chip3_intpu_save();
 		chip3_pcie_save();
-		chip3_mem_restore();
 	}
 }
 
