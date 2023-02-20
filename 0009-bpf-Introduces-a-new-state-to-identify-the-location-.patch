@@ -1,0 +1,37 @@
+From 549179725d1e460b0387c6af1ae595c3cf753e2c Mon Sep 17 00:00:00 2001
+From: bitcoffee <liuxin350@huawei.com>
+Date: Wed, 15 Feb 2023 20:24:56 +0800
+Subject: [PATCH 2/4] bpf: Introduces a new state to identify the location of
+ the sockops call 
+
+hulk inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CPF6
+
+---
+
+Currently, a permission status code is required to identify
+that the access to the sockops is from the delayed link establishment
+scenario. Therefore, "BPF_SOCK_OPS_TCP_DEFFER_CONNECT_CB"
+
+Signed-off-by: bitcoffee <liuxin350@huawei.com>
+---
+ include/uapi/linux/bpf.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/uapi/linux/bpf.h b/include/uapi/linux/bpf.h
+index 51b9aa640ad2..013a35285c29 100644
+--- a/include/uapi/linux/bpf.h
++++ b/include/uapi/linux/bpf.h
+@@ -6556,6 +6556,8 @@ enum {
+ 					 * by the kernel or the
+ 					 * earlier bpf-progs.
+ 					 */
++	BPF_SOCK_OPS_TCP_DEFER_CONNECT_CB,/* call ebpf to defer connect
++					   */
+ };
+ 
+ /* List of TCP states. There is a build check in net/ipv4/tcp.c to detect
+-- 
+2.33.0
+

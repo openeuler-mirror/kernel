@@ -12,7 +12,7 @@
 %global upstream_sublevel   8
 %global devel_release       3
 %global maintenance_release .0.0
-%global pkg_release         .8
+%global pkg_release         .9
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -75,7 +75,14 @@ Patch0002: 0002-config-add-initial-openeuler_defconfig-for-arm64.patch
 Patch0003: 0003-config-add-initial-openeuler_defconfig-for-x86_64.patch
 Patch0004: 0004-config-disable-CONFIG_EFI_ZBOOT-by-default.patch
 Patch0005: 0005-arm64-vmalloc-use-module-region-only-for-module_allo.patch
-Patch0006: bpf-Introduce-the-string-processing-helper.patch
+Patch0006: 0006-bpf-Introduce-the-string-processing-helper.patch
+Patch0007: 0007-net-ipv4-A-new-bit-is-added-to-indicate-whether-to-d.patch
+Patch0008: 0008-ipv4-bpf-Introduced-to-support-the-ULP-to-modify-soc.patch
+Patch0009: 0009-bpf-Introduces-a-new-state-to-identify-the-location-.patch
+Patch0010: 0010-net-bpf-Sockops-supports-modification-of-remote_ip-a.patch
+Patch0011: 0011-bpf-Two-helper-functions-are-introduced-to-parse-use.patch
+Patch0012: 0012-net-bpf-Add-a-writeable_tracepoint-to-inet_stream_co.patch
+
 
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
@@ -306,6 +313,12 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0004 -p1
 %patch0005 -p1
 %patch0006 -p1
+%patch0007 -p1
+%patch0008 -p1
+%patch0009 -p1
+%patch0010 -p1
+%patch0011 -p1
+%patch0012 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -888,6 +901,9 @@ fi
 %endif
 
 %changelog
+* Thu Feb 16 2023 Liu Xin <liuxin350@huawei.com> - 6.1.8-3.0.0.9
+- add feature for ebpf defer connect network
+
 * Thu Feb 16 2023 Liu Xin <liuxin350@huawei.com> - 6.1.8-3.0.0.8
 - add feature for ebpf defer connect helper
 

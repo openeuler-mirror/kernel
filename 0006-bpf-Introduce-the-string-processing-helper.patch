@@ -3,6 +3,12 @@ From: bitcoffee <liuxin350@huawei.com>
 Date: Thu, 16 Feb 2023 02:49:00 +0800
 Subject: [PATCH] bpf: Introduce the string processing helper
 
+hulk inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CPF6
+
+---
+
 Currently, some character strings need to be processed in the ebpf
 function. Some character string helper processing functions, such
 as strlen and strnstr, need to be introduced.

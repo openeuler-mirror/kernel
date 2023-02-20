@@ -1,0 +1,39 @@
+From e92dfc4eccbbbc7e7e9a56b5d0175716119c363a Mon Sep 17 00:00:00 2001
+From: bitcoffee <liuxin350@huawei.com>
+Date: Wed, 15 Feb 2023 20:47:54 +0800
+Subject: [PATCH 3/4] ipv4, bpf: Introduced to support the ULP to modify
+ sockets during setopt
+
+hulk inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CPF6
+
+---
+
+Currently, the ebpf program can distinguish sockets according to
+the address accessed by the client, and use the ULP framework to
+modify the matched sockets to delay link establishment.
+
+Signed-off-by: bitcoffee <liuxin350@huawei.com>
+---
+ net/core/filter.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/net/core/filter.c b/net/core/filter.c
+index bb0136e7a8e4..86df050648e4 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -5183,6 +5183,10 @@ static int sol_tcp_sockopt(struct sock *sk, int optname,
+ 		if (*optlen < 1)
+ 			return -EINVAL;
+ 		break;
++	case TCP_ULP:
++		if (getopt)
++			return -EINVAL;
++		break;
+ 	default:
+ 		if (getopt)
+ 			return -EINVAL;
+-- 
+2.33.0
+

@@ -1,0 +1,76 @@
+From a24514ef6ae71cf8a47b73b616b6ce09f9e4f26c Mon Sep 17 00:00:00 2001
+From: bitcoffee <liuxin350@huawei.com>
+Date: Wed, 15 Feb 2023 23:01:51 +0800
+Subject: [PATCH 2/3] net, bpf: Sockops supports modification of remote_ip and
+ remeto_port
+
+hulk inclusion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CPF6
+
+---
+
+In the scenario where link setup is delayed, the server may change
+the IP address and port number of the backed. This function is
+supported.
+
+Signed-off-by: bitcoffee <liuxin350@huawei.com>
+---
+ net/core/filter.c | 27 ++++++++++-----------------
+ 1 file changed, 10 insertions(+), 17 deletions(-)
+
+diff --git a/net/core/filter.c b/net/core/filter.c
+index 86df050648e4..dfcaac101121 100644
+--- a/net/core/filter.c
++++ b/net/core/filter.c
+@@ -8893,6 +8893,8 @@ static bool sock_ops_is_valid_access(int off, int size,
+ 		switch (off) {
+ 		case offsetof(struct bpf_sock_ops, reply):
+ 		case offsetof(struct bpf_sock_ops, sk_txhash):
++		case offsetof(struct bpf_sock_ops, remote_ip4):
++		case offsetof(struct bpf_sock_ops, remote_port):
+ 			if (size != size_default)
+ 				return false;
+ 			break;
+@@ -10157,14 +10159,10 @@ static u32 sock_ops_convert_ctx_access(enum bpf_access_type type,
+ 		break;
+ 
+ 	case offsetof(struct bpf_sock_ops, remote_ip4):
+-		BUILD_BUG_ON(sizeof_field(struct sock_common, skc_daddr) != 4);
+-
+-		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(
+-						struct bpf_sock_ops_kern, sk),
+-				      si->dst_reg, si->src_reg,
+-				      offsetof(struct bpf_sock_ops_kern, sk));
+-		*insn++ = BPF_LDX_MEM(BPF_W, si->dst_reg, si->dst_reg,
+-				      offsetof(struct sock_common, skc_daddr));
++		SOCK_ADDR_LOAD_OR_STORE_NESTED_FIELD(
++				struct bpf_sock_ops_kern,
++				struct sock_common,
++				sk, skc_daddr, temp);
+ 		break;
+ 
+ 	case offsetof(struct bpf_sock_ops, local_ip4):
+@@ -10225,15 +10223,10 @@ static u32 sock_ops_convert_ctx_access(enum bpf_access_type type,
+ 	case offsetof(struct bpf_sock_ops, remote_port):
+ 		BUILD_BUG_ON(sizeof_field(struct sock_common, skc_dport) != 2);
+ 
+-		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(
+-						struct bpf_sock_ops_kern, sk),
+-				      si->dst_reg, si->src_reg,
+-				      offsetof(struct bpf_sock_ops_kern, sk));
+-		*insn++ = BPF_LDX_MEM(BPF_H, si->dst_reg, si->dst_reg,
+-				      offsetof(struct sock_common, skc_dport));
+-#ifndef __BIG_ENDIAN_BITFIELD
+-		*insn++ = BPF_ALU32_IMM(BPF_LSH, si->dst_reg, 16);
+-#endif
++		SOCK_ADDR_LOAD_OR_STORE_NESTED_FIELD(
++				struct bpf_sock_ops_kern,
++				struct sock_common,
++				sk, skc_dport, temp);
+ 		break;
+ 
+ 	case offsetof(struct bpf_sock_ops, local_port):
+-- 
+2.33.0
+
