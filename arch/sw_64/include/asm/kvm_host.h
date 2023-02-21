@@ -96,12 +96,33 @@ struct kvm_vm_stat {
 };
 
 struct kvm_vcpu_stat {
+	u64 pid;
+	u64 exits;
+	u64 io_exits;
+	u64 mmio_exits;
+	u64 migration_set_dirty;
+	u64 shutdown_exits;
+	u64 restart_exits;
+	u64 ipi_exits;
+	u64 timer_exits;
+	u64 debug_exits;
+#ifdef CONFIG_KVM_MEMHOTPLUG
+	u64 memhotplug_exits;
+#endif
+	u64 fatal_error_exits;
+	u64 halt_exits;
 	u64 halt_successful_poll;
 	u64 halt_attempted_poll;
+	u64 halt_wakeup;
 	u64 halt_poll_success_ns;
 	u64 halt_poll_fail_ns;
-	u64 halt_wakeup;
 	u64 halt_poll_invalid;
+	u64 signal_exits;
+	u64 steal;
+	u64 st_max;
+	u64 utime;
+	u64 stime;
+	u64 gtime;
 };
 
 #ifdef CONFIG_KVM_MEMHOTPLUG

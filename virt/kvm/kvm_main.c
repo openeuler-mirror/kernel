@@ -3322,9 +3322,9 @@ static long kvm_vcpu_ioctl(struct file *filp,
 			if (oldpid)
 				synchronize_rcu();
 			put_pid(oldpid);
-#if defined(CONFIG_X86) || defined(CONFIG_ARM64)
+#if defined(CONFIG_X86) || defined(CONFIG_ARM64) || defined(CONFIG_SW64)
 			vcpu->stat.pid = current->pid;
-#endif /* defined(CONFIG_X86) || defined (CONFIG_ARM64) */
+#endif /* defined(CONFIG_X86) || defined (CONFIG_ARM64) || defined(CONFIG_SW64) */
 		}
 		r = kvm_arch_vcpu_ioctl_run(vcpu);
 		trace_kvm_userspace_exit(vcpu->run->exit_reason, r);

@@ -38,6 +38,13 @@ extern bool bind_vcpu_enabled;
 #define HARDWARE_VPN_MASK	((1UL << WIDTH_HARDWARE_VPN) - 1)
 #define VPN_SHIFT		(64 - WIDTH_HARDWARE_VPN)
 
+#define VCPU_STAT(n, x, ...) \
+	{ n, offsetof(struct kvm_vcpu, stat.x), KVM_STAT_VCPU, ##  __VA_ARGS__ }
+#define VM_STAT(n, x, ...) \
+	{ n, offsetof(struct kvm, stat.x), KVM_STAT_VM, ## __VA_ARGS__ }
+#define DFX_STAT(n, x, ...) \
+	{ n, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64, ## __VA_ARGS__ }
+
 static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_running_vcpu);
 
 static void kvm_set_running_vcpu(struct kvm_vcpu *vcpu)
@@ -149,6 +156,52 @@ static void check_vcpu_requests(struct kvm_vcpu *vcpu)
 }
 
 struct kvm_stats_debugfs_item debugfs_entries[] = {
+	VCPU_STAT("exits", exits),
+	VCPU_STAT("io_exits", io_exits),
+	VCPU_STAT("mmio_exits", mmio_exits),
+	VCPU_STAT("migration_set_dirty", migration_set_dirty),
+	VCPU_STAT("shutdown_exits", shutdown_exits),
+	VCPU_STAT("restart_exits", restart_exits),
+	VCPU_STAT("ipi_exits", ipi_exits),
+	VCPU_STAT("timer_exits", timer_exits),
+	VCPU_STAT("debug_exits", debug_exits),
+#ifdef CONFIG_KVM_MEMHOTPLUG
+	VCPU_STAT("memhotplug_exits", memhotplug_exits),
+#endif
+	VCPU_STAT("fatal_error_exits", fatal_error_exits),
+	VCPU_STAT("halt_exits", halt_exits),
+	VCPU_STAT("halt_successful_poll", halt_successful_poll),
+	VCPU_STAT("halt_attempted_poll", halt_attempted_poll),
+	VCPU_STAT("halt_wakeup", halt_wakeup),
+	VCPU_STAT("halt_poll_invalid", halt_poll_invalid),
+	VCPU_STAT("signal_exits", signal_exits),
+	{ "vcpu_stat", 0, KVM_STAT_DFX },
+	{ NULL }
+};
+
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT("pid", pid),
+	DFX_STAT("exits", exits),
+	DFX_STAT("io_exits", io_exits),
+	DFX_STAT("mmio_exits", mmio_exits),
+	DFX_STAT("migration_set_dirty", migration_set_dirty),
+	DFX_STAT("shutdown_exits", shutdown_exits),
+	DFX_STAT("restart_exits", restart_exits),
+	DFX_STAT("ipi_exits", ipi_exits),
+	DFX_STAT("timer_exits", timer_exits),
+	DFX_STAT("debug_exits", debug_exits),
+	DFX_STAT("fatal_error_exits", fatal_error_exits),
+	DFX_STAT("halt_exits", halt_exits),
+	DFX_STAT("halt_successful_poll", halt_successful_poll),
+	DFX_STAT("halt_attempted_poll", halt_attempted_poll),
+	DFX_STAT("halt_wakeup", halt_wakeup),
+	DFX_STAT("halt_poll_invalid", halt_poll_invalid),
+	DFX_STAT("signal_exits", signal_exits),
+	DFX_STAT("steal", steal),
+	DFX_STAT("st_max", st_max),
+	DFX_STAT("utime", utime),
+	DFX_STAT("stime", stime),
+	DFX_STAT("gtime", gtime),
 	{ NULL }
 };
 
@@ -521,10 +574,25 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->st_max = 0;
+}
+
+static void update_steal_time(struct kvm_vcpu *vcpu)
+{
+	u64 delta;
+
+	delta = current->sched_info.run_delay - vcpu->stat.steal;
+	vcpu->stat.steal = current->sched_info.run_delay;
+	vcpu->stat.st_max = max(vcpu->stat.st_max, delta);
+}
+
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	vcpu->cpu = cpu;
 	kvm_set_running_vcpu(vcpu);
+	update_steal_time(vcpu);
 }
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
@@ -584,6 +652,13 @@ void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
 	if (opc == 0x06 && disp16 == 0x1000) /* RD_F */
 		pr_info("vcpu exit: pc = %#lx (%px), insn[%x] : rd_f r%d [%#lx]\n",
 				pc, pc_phys, insn, ra, vcpu_get_reg(vcpu, ra));
+}
+
+static void update_vcpu_stat_time(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->utime = current->utime;
+	vcpu_stat->stime = current->stime;
+	vcpu_stat->gtime = current->gtime;
 }
 
 /*
@@ -651,6 +726,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		if (signal_pending(current)) {
 			ret = -EINTR;
 			run->exit_reason = KVM_EXIT_INTR;
+			vcpu->stat.signal_exits++;
 		}
 
 		if (ret <= 0) {
@@ -681,6 +757,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		/* Back from guest */
 		vcpu->mode = OUTSIDE_GUEST_MODE;
 
+		vcpu->stat.exits++;
 		local_irq_enable();
 		guest_exit_irqoff();
 
@@ -690,6 +767,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		/* ret = 0 indicate interrupt in guest mode, ret > 0 indicate hcall */
 		ret = handle_exit(vcpu, run, ret, &hargs);
+		update_vcpu_stat_time(&vcpu->stat);
 	}
 
 	if (vcpu->sigset_active)

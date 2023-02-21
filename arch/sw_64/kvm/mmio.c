@@ -52,6 +52,7 @@ int kvm_handle_mmio_return(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		vcpu_set_reg(vcpu, vcpu->arch.mmio_decode.rt, data);
 	}
 
+	vcpu->stat.mmio_exits++;
 	vcpu->arch.regs.pc += 4;
 
 	return 0;
