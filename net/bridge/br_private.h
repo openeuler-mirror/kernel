@@ -1572,4 +1572,6 @@ void br_do_suppress_nd(struct sk_buff *skb, struct net_bridge *br,
 struct nd_msg *br_is_nd_neigh_msg(struct sk_buff *skb, struct nd_msg *m);
 void br_multicast_set_startup_query_intvl(struct net_bridge *br,
 					  unsigned long val);
+void br_multicast_set_query_intvl(struct net_bridge *br,
+				  unsigned long val);
 #endif
