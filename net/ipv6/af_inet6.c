@@ -62,6 +62,7 @@
 #include <net/rpl.h>
 #include <net/compat.h>
 #include <net/xfrm.h>
+#include <net/raw_common.h>
 #include <net/rawv6.h>
 
 #include <linux/uaccess.h>

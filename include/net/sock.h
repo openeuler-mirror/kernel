@@ -1155,6 +1155,7 @@ struct request_sock_ops;
 struct timewait_sock_ops;
 struct inet_hashinfo;
 struct raw_hashinfo;
+struct raw_hashinfo_new;
 struct smc_hashinfo;
 struct module;
 
@@ -1269,7 +1270,8 @@ struct proto {
 	union {
 		struct inet_hashinfo	*hashinfo;
 		struct udp_table	*udp_table;
-		struct raw_hashinfo	*raw_hash;
+		KABI_REPLACE(struct raw_hashinfo *raw_hash,
+			     struct raw_hashinfo_new *raw_hash)
 		struct smc_hashinfo	*smc_hash;
 	} h;
 

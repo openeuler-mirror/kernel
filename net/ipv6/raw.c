@@ -61,7 +61,7 @@
 
 #define	ICMPV6_HDRLEN	4	/* ICMPv6 header, RFC 4443 Section 2.1 */
 
-struct raw_hashinfo raw_v6_hashinfo;
+struct raw_hashinfo_new raw_v6_hashinfo;
 EXPORT_SYMBOL_GPL(raw_v6_hashinfo);
 
 bool raw_v6_match(struct net *net, struct sock *sk, unsigned short num,

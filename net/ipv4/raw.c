@@ -85,12 +85,12 @@ struct raw_frag_vec {
 	int hlen;
 };
 
-struct raw_hashinfo raw_v4_hashinfo;
+struct raw_hashinfo_new raw_v4_hashinfo;
 EXPORT_SYMBOL_GPL(raw_v4_hashinfo);
 
 int raw_hash_sk(struct sock *sk)
 {
-	struct raw_hashinfo *h = sk->sk_prot->h.raw_hash;
+	struct raw_hashinfo_new *h = sk->sk_prot->h.raw_hash;
 	struct hlist_nulls_head *hlist;
 
 	hlist = &h->ht[inet_sk(sk)->inet_num & (RAW_HTABLE_SIZE - 1)];
@@ -107,7 +107,7 @@ EXPORT_SYMBOL_GPL(raw_hash_sk);
 
 void raw_unhash_sk(struct sock *sk)
 {
-	struct raw_hashinfo *h = sk->sk_prot->h.raw_hash;
+	struct raw_hashinfo_new *h = sk->sk_prot->h.raw_hash;
 
 	spin_lock(&h->lock);
 	if (__sk_nulls_del_node_init_rcu(sk))
@@ -944,7 +944,7 @@ struct proto raw_prot = {
 #ifdef CONFIG_PROC_FS
 static struct sock *raw_get_first(struct seq_file *seq, int bucket)
 {
-	struct raw_hashinfo *h = PDE_DATA(file_inode(seq->file));
+	struct raw_hashinfo_new *h = PDE_DATA(file_inode(seq->file));
 	struct raw_iter_state *state = raw_seq_private(seq);
 	struct hlist_nulls_head *hlist;
 	struct hlist_nulls_node *hnode;

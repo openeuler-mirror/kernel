@@ -14,7 +14,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-static struct raw_hashinfo *
+static struct raw_hashinfo_new *
 raw_get_hashinfo(const struct inet_diag_req_v2 *r)
 {
 	if (r->sdiag_family == AF_INET) {
@@ -56,7 +56,7 @@ static bool raw_lookup(struct net *net, struct sock *sk,
 
 static struct sock *raw_sock_get(struct net *net, const struct inet_diag_req_v2 *r)
 {
-	struct raw_hashinfo *hashinfo = raw_get_hashinfo(r);
+	struct raw_hashinfo_new *hashinfo = raw_get_hashinfo(r);
 	struct hlist_nulls_head *hlist;
 	struct hlist_nulls_node *hnode;
 	struct sock *sk;
@@ -142,7 +142,7 @@ static void raw_diag_dump(struct sk_buff *skb, struct netlink_callback *cb,
 			  const struct inet_diag_req_v2 *r)
 {
 	bool net_admin = netlink_net_capable(cb->skb, CAP_NET_ADMIN);
-	struct raw_hashinfo *hashinfo = raw_get_hashinfo(r);
+	struct raw_hashinfo_new *hashinfo = raw_get_hashinfo(r);
 	struct net *net = sock_net(skb->sk);
 	struct inet_diag_dump_data *cb_data;
 	struct hlist_nulls_head *hlist;
