@@ -1712,14 +1712,6 @@ int mg_sp_group_del_task(int pid, int spg_id)
 		ret = -EINVAL;
 		goto out;
 	}
-
-	if (!list_empty(&spg->spa_list)) {
-		up_write(&sp_group_sem);
-		pr_err_ratelimited("spa is not empty");
-		ret = -EINVAL;
-		goto out;
-	}
-
 	ret = get_task(pid, &tsk);
 	if (ret) {
 		up_write(&sp_group_sem);
@@ -1743,6 +1735,15 @@ int mg_sp_group_del_task(int pid, int spg_id)
 	}
 
 	down_write(&spg->rw_lock);
+
+	if (!list_empty(&spg->spa_list)) {
+		up_write(&spg->rw_lock);
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("spa is not empty");
+		ret = -EINVAL;
+		goto out_put_mm;
+	}
+
 	if (list_is_singular(&spg->procs))
 		is_alive = spg->is_alive = false;
 	spg->proc_num--;
