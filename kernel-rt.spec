@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       141
+%global devel_release       142
 %global maintenance_release .0.0
-%global pkg_release         .56
+%global pkg_release         .57
 %global rt_release          .rt62
 
 %define with_debuginfo 1
@@ -886,6 +886,9 @@ fi
 %endif
 
 %changelog
+* Wed Feb 22 2023 wuchunguang <wuchunguang@kylinos.cn> - 5.10.0-142.0.0.57
+- update kernel-rt version to 5.10.0-142.0.0
+
 * Mon Feb  06 2023 kylin-liyulei <liyulei@kylinos.cn> - 5.10.0-141.0.0.56
 - add kernel-rt.spec and rt patches
 
