@@ -15,11 +15,12 @@
 
 #include <net/inet_sock.h>
 #include <net/protocol.h>
+#include <net/raw_common.h>
 #include <linux/icmp.h>
 
 extern struct proto raw_prot;
 
-extern struct raw_hashinfo raw_v4_hashinfo;
+extern struct raw_hashinfo_new raw_v4_hashinfo;
 bool raw_v4_match(struct net *net, struct sock *sk, unsigned short num,
 		  __be32 raddr, __be32 laddr, int dif, int sdif);
 
@@ -29,21 +30,10 @@ int raw_local_deliver(struct sk_buff *, int);
 
 int raw_rcv(struct sock *, struct sk_buff *);
 
-#define RAW_HTABLE_SIZE	MAX_INET_PROTOS
-
 struct raw_hashinfo {
-	spinlock_t lock;
-	struct hlist_nulls_head ht[RAW_HTABLE_SIZE];
+	rwlock_t lock;
+	struct hlist_head ht[RAW_HTABLE_SIZE];
 };
-
-static inline void raw_hashinfo_init(struct raw_hashinfo *hashinfo)
-{
-	int i;
-
-	spin_lock_init(&hashinfo->lock);
-	for (i = 0; i < RAW_HTABLE_SIZE; i++)
-		INIT_HLIST_NULLS_HEAD(&hashinfo->ht[i], i);
-}
 
 #ifdef CONFIG_PROC_FS
 int raw_proc_init(void);
