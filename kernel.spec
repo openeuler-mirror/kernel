@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2302.3.0
+%global hulkrelease 2302.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0188
+Release: %{hulkrelease}.0189
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,19 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 21 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.4.0.0189
+- !213  net: bonding: Inherit MPLS features from slave devices
+- x86/unwind: Fix check_paravirt() calls orc_find() before declaration
+- dhugetlb: set hpool to NULL for cont-bit hugepage
+- arm64/ascend: Delete CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE in hulk_defconfig
+- arm64/ascend: Delete unused feature auto-tuning hugepage
+- mm/memcg_memfs_info: fix potential oom_lock recursion deadlock
+- net: bridge: mcast: add and enforce query interval minimum
+- net: bridge: mcast: add and enforce startup query interval minimum
+- !396 anolis: bond: broadcast ARP or ND messages to all slaves
+- anolis: bond: broadcast ARP or ND messages to all slaves
+- net: bonding: Inherit MPLS features from slave devices
 
 * Tue Feb 14 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.3.0.0188
 - block, bfq: switch 'bfqg->ref' to use atomic refcount apis
