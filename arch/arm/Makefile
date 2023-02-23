@@ -49,7 +49,8 @@ KBUILD_LDFLAGS	+= -EL
 endif
 
 ifeq ($(CONFIG_RELOCATABLE),y)
-KBUILD_CFLAGS		+= -fpic -include $(srctree)/include/linux/hidden.h
+KBUILD_CFLAGS		+= -include $(srctree)/include/linux/hidden.h
+CFLAGS_KERNEL		+= -fpic
 CFLAGS_MODULE		+= -fno-pic
 LDFLAGS_vmlinux		+= -pie -shared -Bsymbolic
 endif

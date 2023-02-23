@@ -419,8 +419,10 @@ EXPORT_SYMBOL(bma_intf_int_to_bmc);
 
 int bma_intf_is_link_ok(void)
 {
-	return (g_bma_dev->edma_host.statistics.remote_status ==
-		REGISTERED) ? 1 : 0;
+	if ((&g_bma_dev->edma_host != NULL) &&
+		(g_bma_dev->edma_host.statistics.remote_status == REGISTERED))
+		return 1;
+	return 0;
 }
 EXPORT_SYMBOL(bma_intf_is_link_ok);
 
@@ -460,14 +462,10 @@ int bma_cdev_recv_msg(void *handle, char __user *data, size_t count)
 }
 EXPORT_SYMBOL_GPL(bma_cdev_recv_msg);
 
-int bma_cdev_add_msg(void *handle, const char __user *msg, size_t msg_len)
+static int check_cdev_add_msg_param(struct bma_priv_data_s *handle,
+const char __user *msg, size_t msg_len)
 {
 	struct bma_priv_data_s *priv = NULL;
-	struct edma_msg_hdr_s *hdr = NULL;
-	unsigned long flags = 0;
-	int total_len = 0;
-	int ret = 0;
-	struct edma_host_s *phost = &g_bma_dev->edma_host;
 
 	if (!handle || !msg || msg_len == 0) {
 		BMA_LOG(DLOG_DEBUG, "input NULL point!\n");
@@ -479,54 +477,80 @@ int bma_cdev_add_msg(void *handle, const char __user *msg, size_t msg_len)
 		return -EINVAL;
 	}
 
-	priv = (struct bma_priv_data_s *)handle;
+	priv = handle;
 
 	if (priv->user.type >= TYPE_MAX) {
 		BMA_LOG(DLOG_DEBUG, "error type = %d\n", priv->user.type);
 		return -EFAULT;
 	}
-	total_len = SIZE_OF_MSG_HDR + msg_len;
+
+	return 0;
+}
+
+static void edma_msg_hdr_init(struct edma_msg_hdr_s *hdr,
+				struct bma_priv_data_s *private_data,
+				char *msg_buf, size_t msg_len)
+{
+	hdr->type = private_data->user.type;
+	hdr->sub_type = private_data->user.sub_type;
+	hdr->user_id = private_data->user.user_id;
+	hdr->datalen = msg_len;
+	BMA_LOG(DLOG_DEBUG, "msg_len is %zu\n", msg_len);
+
+	memcpy(hdr->data, msg_buf, msg_len);
+}
+
+int bma_cdev_add_msg(void *handle, const char __user *msg, size_t msg_len)
+{
+	struct bma_priv_data_s *priv = NULL;
+	struct edma_msg_hdr_s *hdr = NULL;
+	unsigned long flags = 0;
+	unsigned int total_len = 0;
+	int ret = 0;
+	struct edma_host_s *phost = &g_bma_dev->edma_host;
+	char *msg_buf = NULL;
+
+	ret = check_cdev_add_msg_param(handle, msg, msg_len);
+	if (ret != 0)
+		return ret;
+
+	priv = (struct bma_priv_data_s *)handle;
+
+	total_len = (unsigned int)(SIZE_OF_MSG_HDR + msg_len);
+	if (phost->msg_send_write + total_len > HOST_MAX_SEND_MBX_LEN - SIZE_OF_MBX_HDR) {
+		BMA_LOG(DLOG_DEBUG, "msg lost,msg_send_write: %u,msg_len:%u,max_len: %d\n",
+				phost->msg_send_write, total_len, HOST_MAX_SEND_MBX_LEN);
+		return -ENOSPC;
+	}
+
+	msg_buf = (char *)kmalloc(msg_len, GFP_KERNEL);
+	if (!msg_buf) {
+		BMA_LOG(DLOG_ERROR, "malloc msg_buf failed\n");
+		return -ENOMEM;
+	}
+
+	if (copy_from_user(msg_buf, msg, msg_len)) {
+		BMA_LOG(DLOG_ERROR, "copy_from_user error\n");
+		kfree(msg_buf);
+		return -EFAULT;
+	}
 
 	spin_lock_irqsave(&phost->send_msg_lock, flags);
 
-	if (phost->msg_send_write + total_len <=
-	    HOST_MAX_SEND_MBX_LEN - SIZE_OF_MBX_HDR) {
-		hdr = (struct edma_msg_hdr_s *)(phost->msg_send_buf +
-						phost->msg_send_write);
-		hdr->type = priv->user.type;
-		hdr->sub_type = priv->user.sub_type;
-		hdr->user_id = priv->user.user_id;
-		hdr->datalen = msg_len;
-		BMA_LOG(DLOG_DEBUG, "msg_len is %zu\n", msg_len);
+	hdr = (struct edma_msg_hdr_s *)(phost->msg_send_buf + phost->msg_send_write);
+	edma_msg_hdr_init(hdr, priv, msg_buf, msg_len);
 
-		if (copy_from_user(hdr->data, msg, msg_len)) {
-			BMA_LOG(DLOG_ERROR, "copy_from_user error\n");
-		ret = -EFAULT;
-		goto end;
-		}
-
-		phost->msg_send_write += total_len;
-		phost->statistics.send_bytes += total_len;
-		phost->statistics.send_pkgs++;
+	phost->msg_send_write += total_len;
+	phost->statistics.send_bytes += total_len;
+	phost->statistics.send_pkgs++;
 #ifdef EDMA_TIMER
-		(void)mod_timer(&phost->timer, jiffies_64);
+	(void)mod_timer(&phost->timer, jiffies_64);
 #endif
-		BMA_LOG(DLOG_DEBUG, "msg_send_write = %d\n",
-			phost->msg_send_write);
+	BMA_LOG(DLOG_DEBUG, "msg_send_write = %d\n", phost->msg_send_write);
 
-		ret = msg_len;
-		goto end;
-	} else {
-		BMA_LOG(DLOG_DEBUG,
-			"msg lost,msg_send_write: %d,msg_len:%d,max_len: %d\n",
-			phost->msg_send_write, total_len,
-			HOST_MAX_SEND_MBX_LEN);
-		ret = -ENOSPC;
-		goto end;
-	}
-
-end:
+	ret = msg_len;
 	spin_unlock_irqrestore(&g_bma_dev->edma_host.send_msg_lock, flags);
+	kfree(msg_buf);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(bma_cdev_add_msg);
