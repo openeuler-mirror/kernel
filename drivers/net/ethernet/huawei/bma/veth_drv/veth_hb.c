@@ -638,6 +638,7 @@ s32 veth_refill_rxskb(struct bspveth_rxtx_q *prx_queue, int queue)
 		next_to_fill = (next_to_fill + 1) & BSPVETH_POINT_MASK;
 	}
 
+	mb();/* memory barriers. */
 	prx_queue->next_to_fill = next_to_fill;
 
 	tail = prx_queue->tail;
@@ -672,6 +673,7 @@ s32 bspveth_setup_rx_skb(struct bspveth_device *pvethdev,
 	if (!idx)	/* Can't alloc even one packets */
 		return -EFAULT;
 
+	mb();/* memory barriers. */
 	prx_queue->next_to_fill = idx;
 
 	VETH_LOG(DLOG_DEBUG, "prx_queue->next_to_fill=%d\n",
@@ -886,8 +888,6 @@ s32 bspveth_setup_all_rx_resources(struct bspveth_device *pvethdev)
 		err = bspveth_setup_rx_resources(pvethdev,
 						 pvethdev->prx_queue[qid]);
 		if (err) {
-			kfree(pvethdev->prx_queue[qid]);
-			pvethdev->prx_queue[qid] = NULL;
 			VETH_LOG(DLOG_ERROR,
 				 "Allocation for Rx Queue %u failed\n", qid);
 
@@ -1328,6 +1328,7 @@ s32 veth_send_one_pkt(struct sk_buff *skb, int queue)
 	pbd_v->off = off;
 	pbd_v->len = skb->len;
 
+	mb();/* memory barriers. */
 	head = (head + 1) & BSPVETH_POINT_MASK;
 	ptx_queue->head = head;
 
@@ -1424,6 +1425,7 @@ s32 veth_free_txskb(struct bspveth_rxtx_q *ptx_queue, int queue)
 		next_to_free = (next_to_free + 1) & BSPVETH_POINT_MASK;
 	}
 
+	mb(); /* memory barriers. */
 	ptx_queue->next_to_free = next_to_free;
 	tail = ptx_queue->tail;
 
@@ -1522,6 +1524,7 @@ s32 veth_recv_pkt(struct bspveth_rxtx_q *prx_queue, int queue)
 		}
 	}
 
+	mb();/* memory barriers. */
 	prx_queue->tail = tail;
 	head = prx_queue->head;
 
