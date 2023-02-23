@@ -1348,8 +1348,9 @@ static void free_huge_page_to_dhugetlb_pool(struct page *page,
 	}
 
 	spin_lock(&hpool->lock);
+	if (PageHWPoison(page))
+		goto out;
 	ClearPagePool(page);
-	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
 	if (!hstate_is_gigantic(h)) {
 		list_add(&page->lru, &hpool->dhugetlb_2M_freelists);
 		hpool->free_reserved_2M++;
@@ -1375,6 +1376,7 @@ static void free_huge_page_to_dhugetlb_pool(struct page *page,
 		trace_dhugetlb_alloc_free(hpool, page, hpool->free_reserved_1G,
 					  DHUGETLB_FREE_1G);
 	}
+out:
 	spin_unlock(&hpool->lock);
 	dhugetlb_pool_put(hpool);
 }
