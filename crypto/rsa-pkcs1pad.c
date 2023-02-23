@@ -475,6 +475,8 @@ static int pkcs1pad_verify_complete(struct akcipher_request *req, int err)
 		goto done;
 	pos++;
 
+	if (digest_info->size > dst_len - pos)
+		goto done;
 	if (crypto_memneq(out_buf + pos, digest_info->data, digest_info->size))
 		goto done;
 
