@@ -28,6 +28,7 @@
 #include <linux/pci.h>
 #include <acpi/apei.h>
 #include <linux/suspend.h>
+#include <linux/prmt.h>
 
 #include "internal.h"
 
@@ -1246,6 +1247,7 @@ static int __init acpi_init(void)
 		acpi_kobj = NULL;
 	}
 
+	init_prmt();
 	result = acpi_bus_init();
 	if (result) {
 		kobject_put(acpi_kobj);
