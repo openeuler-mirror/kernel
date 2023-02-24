@@ -581,11 +581,13 @@ void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
 
 static void update_steal_time(struct kvm_vcpu *vcpu)
 {
+#ifdef CONFIG_SCHED_INFO
 	u64 delta;
 
 	delta = current->sched_info.run_delay - vcpu->stat.steal;
 	vcpu->stat.steal = current->sched_info.run_delay;
 	vcpu->stat.st_max = max(vcpu->stat.st_max, delta);
+#endif
 }
 
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
