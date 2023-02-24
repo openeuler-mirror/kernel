@@ -389,14 +389,17 @@ static void setup_segment_table(struct kvm *kvm,
 	struct kvm_memory_slot *memslot, unsigned long addr, size_t size)
 {
 	unsigned long *seg_pgd = kvm->arch.seg_pgd;
-	unsigned int num_of_entry = size >> 30;
-	unsigned long base_hpa = addr >> 30;
-	int i;
+	unsigned long num_of_entry;
+	unsigned long base_hpa = addr;
+	unsigned long i;
+
+	num_of_entry = round_up(size, 1 << 30) >> 30;
 
 	for (i = 0; i < num_of_entry; i++) {
-		*seg_pgd = base_hpa + i;
+		*seg_pgd = base_hpa + (i << 30);
 		seg_pgd++;
 	}
+
 }
 #endif
 
@@ -928,11 +931,11 @@ void vcpu_mem_hotplug(struct kvm_vcpu *vcpu, unsigned long start_addr)
 			unsigned long *seg_pgd;
 			unsigned long num_of_entry = slot->npages >> 17;
 			unsigned long base_hpa = slot->arch.host_phys_addr;
-			int i;
+			unsigned long i;
 
 			seg_pgd = kvm->arch.seg_pgd + (start_pfn >> 17);
 			for (i = 0; i < num_of_entry; i++) {
-				*seg_pgd = (base_hpa >> 30) + i;
+				*seg_pgd = base_hpa + (i << 30);
 				seg_pgd++;
 			}
 		}
