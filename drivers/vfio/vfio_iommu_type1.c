@@ -241,7 +241,7 @@ static int vfio_dma_bitmap_alloc(struct vfio_dma *dma, size_t pgsize)
 
 static void vfio_dma_bitmap_free(struct vfio_dma *dma)
 {
-	kfree(dma->bitmap);
+	kvfree(dma->bitmap);
 	dma->bitmap = NULL;
 }
 
@@ -1129,7 +1129,7 @@ static int vfio_iova_dirty_log_clear(u64 __user *bitmap,
 	int ret = 0;
 
 	bitmap_size = DIRTY_BITMAP_BYTES(size >> pgshift);
-	bitmap_buffer = kvmalloc(bitmap_size, GFP_KERNEL);
+	bitmap_buffer = kvzalloc(bitmap_size, GFP_KERNEL);
 	if (!bitmap_buffer) {
 		ret = -ENOMEM;
 		goto out;
@@ -1179,7 +1179,7 @@ static int vfio_iova_dirty_log_clear(u64 __user *bitmap,
 	}
 
 out:
-	kfree(bitmap_buffer);
+	kvfree(bitmap_buffer);
 	return ret;
 }
 

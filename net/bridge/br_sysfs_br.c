@@ -594,7 +594,7 @@ static ssize_t multicast_query_interval_show(struct device *d,
 
 static int set_query_interval(struct net_bridge *br, unsigned long val)
 {
-	br->multicast_query_interval = clock_t_to_jiffies(val);
+	br_multicast_set_query_intvl(br, val);
 	return 0;
 }
 
@@ -640,7 +640,7 @@ static ssize_t multicast_startup_query_interval_show(
 
 static int set_startup_query_interval(struct net_bridge *br, unsigned long val)
 {
-	br->multicast_startup_query_interval = clock_t_to_jiffies(val);
+	br_multicast_set_startup_query_intvl(br, val);
 	return 0;
 }
 
