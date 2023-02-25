@@ -1,0 +1,3914 @@
+From 7aa5c33876de233dd2c56600269b2cfd0e530967 Mon Sep 17 00:00:00 2001
+From: jiangzhongbing <jiangzhongbing@huawei.com>
+Date: Wed, 22 Feb 2023 11:15:19 +0800
+Subject: [PATCH] sunrpc, nfs: Add nfs client multipath feature
+
+driver includesion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CR7Z
+
+-----------------------------------------------
+
+Add multipath feature for nfs client, include:
+1. register nfs multipath module to kernel
+2. implement the hooks of nfs multipath
+3. implement multipath failover
+4. implement round robin policy for select connection
+5. etc.
+
+Signed-off-by: jiangzhongbing <jiangzhongbing@huawei.com>
+
+---
+ fs/nfs/Kconfig                        |  12 +
+ fs/nfs/Makefile                       |   5 +-
+ fs/nfs/client.c                       |  19 +-
+ fs/nfs/fs_context.c                   |  35 +-
+ fs/nfs/internal.h                     |   2 +
+ fs/nfs/multipath/Makefile             |   7 +
+ fs/nfs/multipath/multipath.c          |  86 ++++
+ fs/nfs/multipath/multipath.h          |  47 ++
+ fs/nfs/multipath/multipath_client.c   | 613 ++++++++++++++++++++++++++
+ fs/nfs/multipath/multipath_client.h   |  50 +++
+ fs/nfs/multipath/multipath_parse.c    | 228 ++++++++++
+ fs/nfs/multipath/multipath_parse.h    |  23 +
+ fs/nfs/multipath/multipath_proc.c     | 199 +++++++++
+ fs/nfs/multipath/multipath_proc.h     |  19 +
+ fs/nfs/multipath/round_robin_policy.c |  92 ++++
+ fs/nfs/multipath/round_robin_policy.h |  14 +
+ fs/nfs/multipath/router_ping.c        | 330 ++++++++++++++
+ fs/nfs/multipath/router_ping.h        |  18 +
+ fs/nfs/multipath/router_policy.c      | 177 ++++++++
+ fs/nfs/multipath/router_policy.h      |  41 ++
+ fs/nfs/nfs3proc.c                     |  29 +-
+ fs/nfs/nfs4client.c                   |  33 +-
+ fs/nfs/nfs4proc.c                     | 106 ++++-
+ fs/nfs/nfs_multipath.c                | 425 ++++++++++++++++++
+ fs/nfs/nfs_multipath.h                |  59 +++
+ fs/nfs/pagelist.c                     |   3 +-
+ fs/nfs/super.c                        |   3 +-
+ fs/nfs/unlink.c                       |   6 +-
+ fs/nfs/write.c                        |   4 +-
+ include/linux/errno.h                 |   5 +
+ include/linux/nfs.h                   |   6 +
+ include/linux/nfs_fs_sb.h             |   1 +
+ include/linux/sunrpc/clnt.h           |   4 +
+ include/linux/sunrpc/sched.h          |  10 +-
+ net/sunrpc/clnt.c                     | 142 +++++-
+ net/sunrpc/rpcb_clnt.c                |  14 +-
+ net/sunrpc/sched.c                    |   3 +
+ net/sunrpc/xprt.c                     |  35 +-
+ 38 files changed, 2844 insertions(+), 61 deletions(-)
+ create mode 100644 fs/nfs/multipath/Makefile
+ create mode 100644 fs/nfs/multipath/multipath.c
+ create mode 100644 fs/nfs/multipath/multipath.h
+ create mode 100644 fs/nfs/multipath/multipath_client.c
+ create mode 100644 fs/nfs/multipath/multipath_client.h
+ create mode 100644 fs/nfs/multipath/multipath_parse.c
+ create mode 100644 fs/nfs/multipath/multipath_parse.h
+ create mode 100644 fs/nfs/multipath/multipath_proc.c
+ create mode 100644 fs/nfs/multipath/multipath_proc.h
+ create mode 100644 fs/nfs/multipath/round_robin_policy.c
+ create mode 100644 fs/nfs/multipath/round_robin_policy.h
+ create mode 100644 fs/nfs/multipath/router_ping.c
+ create mode 100644 fs/nfs/multipath/router_ping.h
+ create mode 100644 fs/nfs/multipath/router_policy.c
+ create mode 100644 fs/nfs/multipath/router_policy.h
+ create mode 100644 fs/nfs/nfs_multipath.c
+ create mode 100644 fs/nfs/nfs_multipath.h
+
+diff --git a/fs/nfs/Kconfig b/fs/nfs/Kconfig
+index 14a72224b657..0ec97214facb 100644
+--- a/fs/nfs/Kconfig
++++ b/fs/nfs/Kconfig
+@@ -214,3 +214,15 @@ config NFS_V4_2_READ_PLUS
+ 	 This is intended for developers only. The READ_PLUS operation has
+ 	 been shown to have issues under specific conditions and should not
+ 	 be used in production.
++
++config NFS_MULTIPATH
++	tristate "NFS client support for multipath"
++	depends on NFS_FS
++	default y
++	help
++	  This option enables support multipath of the NFS protocol
++	  in the kernel's NFS client.
++	  This feature will improve performance and reliability.
++
++	  If unsure, say N.
++
+diff --git a/fs/nfs/Makefile b/fs/nfs/Makefile
+index 5f6db37f461e..aded246c6b19 100644
+--- a/fs/nfs/Makefile
++++ b/fs/nfs/Makefile
+@@ -8,8 +8,8 @@ obj-$(CONFIG_NFS_FS) += nfs.o
+ CFLAGS_nfstrace.o += -I$(src)
+ nfs-y 			:= client.o dir.o file.o getroot.o inode.o super.o \
+ 			   io.o direct.o pagelist.o read.o symlink.o unlink.o \
+-			   write.o namespace.o mount_clnt.o nfstrace.o \
+-			   export.o sysfs.o fs_context.o
++			   write.o namespace.o mount_clnt.o nfstrace.o\
++			   export.o sysfs.o fs_context.o nfs_multipath.o
+ nfs-$(CONFIG_ROOT_NFS)	+= nfsroot.o
+ nfs-$(CONFIG_SYSCTL)	+= sysctl.o
+ nfs-$(CONFIG_NFS_FSCACHE) += fscache.o
+@@ -35,3 +35,4 @@ nfsv4-$(CONFIG_NFS_V4_2)	+= nfs42proc.o nfs42xattr.o
+ obj-$(CONFIG_PNFS_FILE_LAYOUT) += filelayout/
+ obj-$(CONFIG_PNFS_BLOCK) += blocklayout/
+ obj-$(CONFIG_PNFS_FLEXFILE_LAYOUT) += flexfilelayout/
++obj-$(CONFIG_NFS_MULTIPATH) += multipath/
+diff --git a/fs/nfs/client.c b/fs/nfs/client.c
+index f50e025ae406..f8c8560b13c2 100644
+--- a/fs/nfs/client.c
++++ b/fs/nfs/client.c
+@@ -38,13 +38,11 @@
+ #include <linux/sunrpc/bc_xprt.h>
+ #include <linux/nsproxy.h>
+ #include <linux/pid_namespace.h>
+-
+-
+ #include "nfs4_fs.h"
+ #include "callback.h"
+ #include "delegation.h"
+ #include "iostat.h"
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "fscache.h"
+ #include "pnfs.h"
+ #include "nfs.h"
+@@ -184,8 +182,8 @@ struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *cl_init)
+ 	clp->cl_net = get_net(cl_init->net);
+ 
+ 	clp->cl_principal = "*";
+-	return clp;
+ 
++	return clp;
+ error_cleanup:
+ 	put_nfs_version(clp->cl_nfs_mod);
+ error_dealloc:
+@@ -245,6 +243,7 @@ void nfs_free_client(struct nfs_client *clp)
+ 	put_nfs_version(clp->cl_nfs_mod);
+ 	kfree(clp->cl_hostname);
+ 	kfree(clp->cl_acceptor);
++	nfs_free_multi_path_client(clp);
+ 	kfree(clp);
+ }
+ EXPORT_SYMBOL_GPL(nfs_free_client);
+@@ -273,6 +272,7 @@ void nfs_put_client(struct nfs_client *clp)
+ }
+ EXPORT_SYMBOL_GPL(nfs_put_client);
+ 
++
+ /*
+  * Find an nfs_client on the list that matches the initialisation data
+  * that is supplied.
+@@ -325,6 +325,8 @@ static struct nfs_client *nfs_match_client(const struct nfs_client_initdata *dat
+                             !rpc_clnt_xprt_switch_has_addr(clp->cl_rpcclient,
+ 							   sap))
+ 				continue;
++		if (!nfs_multipath_client_match(clp->cl_multipath_data, data->multipath_option))
++			continue;
+ 
+ 		refcount_inc(&clp->cl_count);
+ 		return clp;
+@@ -675,6 +677,7 @@ static int nfs_init_server(struct nfs_server *server,
+ 		.cred = server->cred,
+ 		.nconnect = ctx->nfs_server.nconnect,
+ 		.init_flags = (1UL << NFS_CS_REUSEPORT),
++		.multipath_option = ctx->multipath_option
+ 	};
+ 	struct nfs_client *clp;
+ 	int error;
+@@ -730,6 +733,10 @@ static int nfs_init_server(struct nfs_server *server,
+ 	if (error < 0)
+ 		goto error;
+ 
++	error = nfs_create_multi_path_client(server->nfs_client, ctx, &cl_init, NFSV3_PROTO);
++	if (error < 0)
++		goto error;
++
+ 	/* Preserve the values of mount_server-related mount options */
+ 	if (ctx->mount_server.addrlen) {
+ 		memcpy(&server->mountd_address, &ctx->mount_server.address,
+@@ -1108,6 +1115,10 @@ struct nfs_server *nfs_clone_server(struct nfs_server *source,
+ 	if (error < 0)
+ 		goto out_free_server;
+ 
++	error = nfs_multipath_clone_client_info(source, server, flavor);
++	if (error < 0)
++		goto out_free_server;
++
+ 	/* probe the filesystem info for this server filesystem */
+ 	error = nfs_probe_server(server, fh);
+ 	if (error < 0)
+diff --git a/fs/nfs/fs_context.c b/fs/nfs/fs_context.c
+index 09833ec102fc..39623f792200 100644
+--- a/fs/nfs/fs_context.c
++++ b/fs/nfs/fs_context.c
+@@ -19,7 +19,7 @@
+ #include <linux/nfs_mount.h>
+ #include <linux/nfs4_mount.h>
+ #include "nfs.h"
+-#include "internal.h"
++#include "nfs_multipath.h"
+ 
+ #include "nfstrace.h"
+ 
+@@ -88,6 +88,11 @@ enum nfs_param {
+ 	Opt_vers,
+ 	Opt_wsize,
+ 	Opt_write,
++
++	/* support multipath input */
++	Opt_remote_iplist,
++	Opt_local_iplist,
++	Opt_remote_dnslist,
+ };
+ 
+ enum {
+@@ -194,6 +199,9 @@ static const struct fs_parameter_spec nfs_fs_parameters[] = {
+ 	fsparam_string("vers",		Opt_vers),
+ 	fsparam_enum  ("write",		Opt_write, nfs_param_enums_write),
+ 	fsparam_u32   ("wsize",		Opt_wsize),
++	fsparam_string("remoteaddrs",		Opt_remote_iplist),
++	fsparam_string("localaddrs",		Opt_local_iplist),
++	fsparam_string("remotednsname",		Opt_remote_dnslist),
+ 	{}
+ };
+ 
+@@ -479,7 +487,7 @@ static int nfs_fs_context_parse_param(struct fs_context *fc,
+ 	struct nfs_fs_context *ctx = nfs_fc2context(fc);
+ 	unsigned short protofamily, mountfamily;
+ 	unsigned int len;
+-	int ret, opt;
++	int ret, opt, rc;
+ 
+ 	trace_nfs_mount_option(param);
+ 
+@@ -848,6 +856,23 @@ static int nfs_fs_context_parse_param(struct fs_context *fc,
+ 			goto out_invalid_value;
+ 		}
+ 		break;
++	case Opt_remote_iplist:
++	case Opt_local_iplist:
++	case Opt_remote_dnslist:
++		rc = nfs_multipath_parse_mount_options(param->key, param->string, ctx, fc->net_ns);
++		switch (rc) {
++		case  0:
++			break;
++		case -ENOMEM:
++			goto out_nomem;
++		case -ENOSPC:
++			goto out_limit;
++		case -EINVAL:
++			goto out_invalid_address;
++		case -EOPNOTSUPP:
++			goto out_invalid_address;
++		}
++		break;
+ 
+ 		/*
+ 		 * Special options
+@@ -867,6 +892,10 @@ static int nfs_fs_context_parse_param(struct fs_context *fc,
+ 	return nfs_invalf(fc, "NFS: Value for '%s' out of range", param->key);
+ out_bad_transport:
+ 	return nfs_invalf(fc, "NFS: Unrecognized transport protocol");
++out_limit:
++	return nfs_invalf(fc, "NFS: param is more than supported limit: '%d'\n", rc);
++out_nomem:
++	return nfs_invalf(fc, "NFS: not enough memory to parse option\n");
+ }
+ 
+ /*
+@@ -1464,6 +1493,7 @@ static int nfs_fs_context_dup(struct fs_context *fc, struct fs_context *src_fc)
+ 	ctx->nfs_server.hostname	= NULL;
+ 	ctx->fscache_uniq		= NULL;
+ 	ctx->clone_data.fattr		= NULL;
++	ctx->multipath_option = nfs_multipath_dup_mount_options(ctx);
+ 	fc->fs_private = ctx;
+ 	return 0;
+ }
+@@ -1484,6 +1514,7 @@ static void nfs_fs_context_free(struct fs_context *fc)
+ 		kfree(ctx->fscache_uniq);
+ 		nfs_free_fhandle(ctx->mntfh);
+ 		nfs_free_fattr(ctx->clone_data.fattr);
++		nfs_multipath_free_mount_options(ctx);
+ 		kfree(ctx);
+ 	}
+ }
+diff --git a/fs/nfs/internal.h b/fs/nfs/internal.h
+index 647fc3f547cb..7fdd3a6a7a3b 100644
+--- a/fs/nfs/internal.h
++++ b/fs/nfs/internal.h
+@@ -81,6 +81,7 @@ struct nfs_client_initdata {
+ 	struct net *net;
+ 	const struct rpc_timeout *timeparms;
+ 	const struct cred *cred;
++	void *multipath_option;
+ };
+ 
+ /*
+@@ -147,6 +148,7 @@ struct nfs_fs_context {
+ 		struct nfs_fattr	*fattr;
+ 		unsigned int		inherited_bsize;
+ 	} clone_data;
++	void *multipath_option;
+ };
+ 
+ #define nfs_errorf(fc, fmt, ...) ((fc)->log.log ?		\
+diff --git a/fs/nfs/multipath/Makefile b/fs/nfs/multipath/Makefile
+new file mode 100644
+index 000000000000..ac6ba91427e4
+--- /dev/null
++++ b/fs/nfs/multipath/Makefile
+@@ -0,0 +1,7 @@
++# SPDX-License-Identifier: GPL-2.0-only
++#
++# Makefile for the nfs multipath kernel module
++#
++
++obj-$(CONFIG_NFS_MULTIPATH) += nfs_multipath.o
++nfs_multipath-y := multipath.o multipath_client.o multipath_parse.o round_robin_policy.o router_ping.o router_policy.o multipath_proc.o
+diff --git a/fs/nfs/multipath/multipath.c b/fs/nfs/multipath/multipath.c
+new file mode 100644
+index 000000000000..1d986aefdc5a
+--- /dev/null
++++ b/fs/nfs/multipath/multipath.c
+@@ -0,0 +1,86 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath init.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#include <linux/module.h>
++#include <linux/sunrpc/sched.h>
++#include <linux/sunrpc/clnt.h>
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs3.h>
++#include <linux/nfs_fs.h>
++#include <linux/nfs_fs_sb.h>
++#include "router_ping.h"
++#include "round_robin_policy.h"
++#include "router_policy.h"
++#include "multipath_client.h"
++#include "multipath_parse.h"
++#include "multipath_proc.h"
++
++struct nfs_multipath_ops nfs_multipath = {
++	.name				= "nfs_multipath",
++	.owner				= THIS_MODULE,
++	.parse_mount_options     = nfs_multipath_parse_options,
++	.free_mount_options      = nfs_multipath_free_options,
++	.dup_mount_options       = nfs_multipath_dup_options,
++	.client_info_init        = nfs_multipath_client_info_init,
++	.client_info_free        = nfs_multipath_client_info_free,
++	.client_info_match       = nfs_multipath_client_info_match,
++	.client_info_show        = nfs_multipath_client_info_show,
++	.client_info_clone       = nfs_multipath_client_info_clone,
++	.get_best_conn           = nfs_multipath_get_best_conn,
++	.conn_set_unavailable    = nfs_multipath_set_conn_disconnect,
++};
++
++static int __init init_nfs_multipath(void)
++{
++	int ret;
++
++	router_ping_init();
++	ret = router_policy_init();
++	if (ret)
++		goto router_ping;
++
++	ret = round_robin_init();
++	if (ret)
++		goto router_policy;
++
++	ret = nfs_multipath_register_proc_ops();
++	if (ret)
++		goto round_robin;
++
++	ret = nfs_multipath_register(&nfs_multipath);
++	if (ret)
++		goto proc_ops;
++	return 0;
++proc_ops:
++	nfs_multipath_unregister_proc_ops();
++round_robin:
++	round_robin_exit();
++router_policy:
++	router_policy_exit();
++router_ping:
++	router_ping_exit();
++	return -1;
++}
++
++static void __exit exit_nfs_multipath(void)
++{
++	nfs_multipath_unregister(&nfs_multipath);
++	nfs_multipath_unregister_proc_ops();
++	router_ping_exit();
++	round_robin_exit();
++	router_policy_exit();
++}
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
++MODULE_DESCRIPTION("Nfs client router");
++MODULE_VERSION("1.0");
++
++module_init(init_nfs_multipath);
++module_exit(exit_nfs_multipath);
++
+diff --git a/fs/nfs/multipath/multipath.h b/fs/nfs/multipath/multipath.h
+new file mode 100644
+index 000000000000..6b181a2bc28a
+--- /dev/null
++++ b/fs/nfs/multipath/multipath.h
+@@ -0,0 +1,47 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath init header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _MULTIPATH_H_
++#define _MULTIPATH_H_
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs3.h>
++#include <linux/nfs_fs.h>
++#include <linux/nfs_fs_sb.h>
++#include "../nfs_multipath.h"
++
++enum router_conn_state {
++	CONN_NORMAL = 0,
++	CONN_SUNHEALTH = 1,
++	CONN_DISCONNECT = 2
++};
++
++#define MAX_SUPPORTED_IP_COUNT (8)
++#define IP_ADDRESS_LEN_MAX (64)
++
++struct nfs_ip_list {
++	int count;
++	struct sockaddr_storage address[MAX_SUPPORTED_IP_COUNT];
++	size_t addrlen[MAX_SUPPORTED_IP_COUNT];
++};
++
++struct nfs_ip_pair {
++	int local_ip_idx;
++	int remote_ip_idx;
++	struct nfs_ip_pair *next;
++};
++
++struct nfs_ip_pair_ctx {
++	int max_ip_pair_count;
++	int ip_pair_count;
++	int local_ip_count;
++	int remote_ip_count;
++	struct nfs_ip_pair *ip_pair_list;
++};
++
++#endif
++
+diff --git a/fs/nfs/multipath/multipath_client.c b/fs/nfs/multipath/multipath_client.c
+new file mode 100644
+index 000000000000..3786f128d9e1
+--- /dev/null
++++ b/fs/nfs/multipath/multipath_client.c
+@@ -0,0 +1,613 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath create and get.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#include <linux/types.h>
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs_fs.h>
++#include <linux/nfs_fs_sb.h>
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/sunrpc/clnt.h>
++#include "router_ping.h"
++#include "multipath.h"
++#include "multipath_client.h"
++#include "multipath_parse.h"
++#include "router_policy.h"
++
++static atomic64_t client_multipath_id;
++#define NFSDBG_FACILITY NFSDBG_CLIENT
++
++void nfs_multipath_client_info_free_work(struct work_struct *work)
++{
++	int i;
++	struct multipath_client_info *clp_info;
++
++	if (work == NULL)
++		return;
++
++	clp_info = container_of(work, struct multipath_client_info, work);
++	router_ping_cancle_client_work(clp_info->client_id);
++	for (i = 0; i < clp_info->conn_pairs.count; i++) {
++		if (clp_info->conn_pairs.conn[i].clnt != NULL) {
++			rpc_shutdown_client(clp_info->conn_pairs.conn[i].clnt);
++			clp_info->conn_pairs.conn[i].clnt = NULL;
++		}
++	}
++
++	kfree(clp_info->local_ip_list);
++	kfree(clp_info->remote_ip_list);
++	kfree(clp_info);
++}
++
++void nfs_multipath_client_info_free(struct nfs_client *clp)
++{
++	struct multipath_client_info *clp_info;
++
++	if (clp == NULL || clp->cl_multipath_data == NULL)
++		return;
++
++	clp_info = (struct multipath_client_info *)clp->cl_multipath_data;
++	INIT_WORK(&clp_info->work, nfs_multipath_client_info_free_work);
++	schedule_work(&clp_info->work);
++}
++
++/*
++ * Increment the number such that num always falls in range 0 <= num <= max
++ * return : 1 - rollover, 0 - normal increment
++ */
++static int nfs_multipath_roll_over_increment(int *num, int max)
++{
++	if (*num == max) {
++		*num = 0;
++		return 1;
++	}
++	*num = *num + 1;
++	return 0;
++}
++
++void nfs_multipath_destroy_ip_pairs(struct nfs_ip_pair_ctx *pair_ctx)
++{
++	struct nfs_ip_pair *cur = NULL;
++	struct nfs_ip_pair *next = NULL;
++
++	cur = pair_ctx->ip_pair_list;
++	while (cur != NULL) {
++		next = cur->next;
++		kfree(cur);
++		cur = next;
++	}
++}
++
++/*
++ * Logic for creating distributed ip-pair index
++ * return : 0-success, 1-failure
++ */
++int nfs_multipath_create_ip_pairs(struct nfs_ip_pair_ctx *pair_ctx)
++{
++	int local_index = 0;
++	int remote_index = 0;
++	int max_pair_possible = 0;
++	struct nfs_ip_pair **list_tail = NULL;
++	struct nfs_ip_pair *ip_pair = NULL;
++	int remote_index_done[MAX_SUPPORTED_IP_COUNT];
++
++	if (pair_ctx->remote_ip_count == 0 || pair_ctx->local_ip_count == 0)
++		return 1;
++
++	pair_ctx->ip_pair_count = 0;
++	max_pair_possible = pair_ctx->local_ip_count * pair_ctx->remote_ip_count;
++	max_pair_possible = (max_pair_possible > pair_ctx->max_ip_pair_count) ?
++		pair_ctx->max_ip_pair_count : max_pair_possible;
++
++	memset(remote_index_done, '\0', sizeof(remote_index_done));
++	list_tail = &pair_ctx->ip_pair_list;
++
++	while (pair_ctx->ip_pair_count < max_pair_possible) {
++		ip_pair = kzalloc(sizeof(struct nfs_ip_pair), GFP_KERNEL);
++		if (ip_pair == NULL) {
++			nfs_multipath_destroy_ip_pairs(pair_ctx);
++			return -ENOMEM;
++		}
++		if (local_index == 0) {
++			while (remote_index_done[remote_index] == 1)
++				nfs_multipath_roll_over_increment(&remote_index,
++					pair_ctx->remote_ip_count - 1);
++
++			remote_index_done[remote_index] = 1;
++		}
++		ip_pair->local_ip_idx = local_index;
++		ip_pair->remote_ip_idx = remote_index;
++		*list_tail = ip_pair;
++		ip_pair->next = NULL;
++		list_tail = &ip_pair->next;
++		pair_ctx->ip_pair_count++;
++
++		nfs_multipath_roll_over_increment(&remote_index, pair_ctx->remote_ip_count - 1);
++		nfs_multipath_roll_over_increment(&local_index, pair_ctx->local_ip_count - 1);
++	}
++	return 0;
++}
++
++static int nfs_multipath_create_rpc_client_ip_pairs(struct nfs_ip_pair_ctx *pair_ctx,
++	struct nfs_client *clp, struct rpc_create_args *args,
++	struct multipath_mount_options *mount_info)
++{
++	struct nfs_ip_pair *ip_pair = NULL;
++	int client_ip_index;
++	int remote_ip_index;
++	int cur_index = 0;
++	struct rpc_clnt *clnt = NULL;
++	struct multipath_client_info *clp_info =
++		(struct multipath_client_info *)clp->cl_multipath_data;
++	struct multipath_conn_pairs *conn_pairs = &clp_info->conn_pairs;
++
++	for (ip_pair = pair_ctx->ip_pair_list; ip_pair != NULL; ip_pair = ip_pair->next) {
++		client_ip_index = ip_pair->local_ip_idx;
++		remote_ip_index = ip_pair->remote_ip_idx;
++		args->address =
++			(struct sockaddr *)&mount_info->remote_ip_list->address[remote_ip_index];
++		args->addrsize = mount_info->remote_ip_list->addrlen[remote_ip_index];
++		args->saddress =
++			(struct sockaddr *)&mount_info->local_ip_list->address[client_ip_index];
++		clnt = rpc_create(args);
++		if (IS_ERR(clnt)) {
++			pr_err("[MULTIPATH:%s] create rpc client fail %ld",
++				__func__, PTR_ERR(clnt));
++			return PTR_ERR(clnt);
++		}
++		conn_pairs->conn[cur_index].index = cur_index;
++		conn_pairs->conn[cur_index].ip_family = args->saddress->sa_family;
++		rpc_ntop(args->saddress, conn_pairs->conn[cur_index].client_ip, IP_ADDRESS_LEN_MAX);
++		rpc_ntop(args->address, conn_pairs->conn[cur_index].server_ip, IP_ADDRESS_LEN_MAX);
++		dprintk("[MULTIPATH:%s] count %d, ipserver %s, client %s ",
++			__func__, conn_pairs->count, conn_pairs->conn[cur_index].server_ip,
++			conn_pairs->conn[cur_index].client_ip);
++		conn_pairs->conn[cur_index].clnt = clnt;
++		conn_pairs->conn[cur_index].status = CONN_DISCONNECT;
++		cur_index++;
++		conn_pairs->count++;
++	}
++	return 0;
++}
++
++int nfs_multipath_create_rpc_client_both(struct nfs_client *clp, struct rpc_create_args *args,
++	struct multipath_mount_options *mount_info)
++{
++	struct nfs_ip_pair_ctx pair_ctx = { 0 };
++	int rc;
++
++	pair_ctx.max_ip_pair_count = MAX_SUPPORTED_IP_COUNT;
++	pair_ctx.local_ip_count = mount_info->local_ip_list->count;
++	pair_ctx.remote_ip_count = mount_info->remote_ip_list->count;
++	rc = nfs_multipath_create_ip_pairs(&pair_ctx);
++	if (rc)
++		return rc;
++
++	rc = nfs_multipath_create_rpc_client_ip_pairs(&pair_ctx, clp, args, mount_info);
++	nfs_multipath_destroy_ip_pairs(&pair_ctx);
++	return rc;
++}
++
++int nfs_multipath_create_rpc_client_remote(struct nfs_client *clp, struct rpc_create_args *args,
++	struct multipath_mount_options *mount_info)
++{
++	int i = 0;
++	int cur_index = 0;
++	struct rpc_clnt *clnt = NULL;
++	struct multipath_client_info *clp_info =
++		(struct multipath_client_info *)clp->cl_multipath_data;
++	struct multipath_conn_pairs *conn_pairs = &clp_info->conn_pairs;
++
++	if (mount_info->remote_ip_list == NULL)
++		return 0;
++
++	for (i = 0; i < mount_info->remote_ip_list->count; ++i) {
++		args->address = (struct sockaddr *)&mount_info->remote_ip_list->address[i];
++		args->addrsize = mount_info->remote_ip_list->addrlen[i];
++		clnt = rpc_create(args);
++		if (IS_ERR(clnt)) {
++			pr_err("[MULTIPATH:%s] create rpc client fail %ld, cur index %d\n",
++				__func__, PTR_ERR(clnt), i);
++			return PTR_ERR(clnt);
++		}
++		conn_pairs->conn[cur_index].index = cur_index;
++		conn_pairs->conn[cur_index].ip_family = args->address->sa_family;
++		if (args->saddress)
++			rpc_ntop(args->saddress, conn_pairs->conn[cur_index].client_ip,
++				IP_ADDRESS_LEN_MAX);
++
++		rpc_ntop(args->address, conn_pairs->conn[cur_index].server_ip, IP_ADDRESS_LEN_MAX);
++		dprintk("[MULTIPATH:%s] count %d, ipserver %s, client %s ", __func__,
++			conn_pairs->count, conn_pairs->conn[cur_index].server_ip,
++			conn_pairs->conn[cur_index].client_ip);
++		conn_pairs->conn[cur_index].clnt = clnt;
++		conn_pairs->conn[cur_index].status = CONN_DISCONNECT;
++		cur_index++;
++		conn_pairs->count++;
++	}
++	return 0;
++}
++
++int nfs_multipath_create_rpc_client_local(struct nfs_client *clp,
++	struct rpc_create_args *args, struct multipath_mount_options *mount_info)
++{
++	struct multipath_client_info *clp_info =
++		(struct multipath_client_info *)clp->cl_multipath_data;
++	struct multipath_conn_pairs *conn_pairs = &clp_info->conn_pairs;
++	struct rpc_clnt *clnt = NULL;
++	int j = 0;
++	int cur_index = 0;
++
++	if (mount_info->local_ip_list == NULL)
++		return 0;
++
++	for (j = 0; j < mount_info->local_ip_list->count; ++j) {
++		args->saddress = (struct sockaddr *)&mount_info->local_ip_list->address[j];
++		args->addrsize = mount_info->local_ip_list->addrlen[j];
++		clnt = rpc_create(args);
++		if (IS_ERR(clnt)) {
++			pr_err("[MULTIPATH:%s] create rpc client fail %ld, current index %d\n",
++				__func__, PTR_ERR(clnt), j);
++			return PTR_ERR(clnt);
++		}
++		conn_pairs->conn[cur_index].index = cur_index;
++		conn_pairs->conn[cur_index].ip_family = args->saddress->sa_family;
++		rpc_ntop(args->saddress, conn_pairs->conn[cur_index].client_ip, IP_ADDRESS_LEN_MAX);
++		rpc_ntop(args->address, conn_pairs->conn[cur_index].server_ip, IP_ADDRESS_LEN_MAX);
++		dprintk("[MULTIPATH:%s] index %d, ipserver %s, client %s ", __func__,
++			conn_pairs->count, conn_pairs->conn[cur_index].server_ip,
++			conn_pairs->conn[cur_index].client_ip);
++		conn_pairs->conn[cur_index].clnt = clnt;
++		conn_pairs->conn[cur_index].status = CONN_DISCONNECT;
++		cur_index++;
++		conn_pairs->count++;
++	}
++	return 0;
++}
++
++int nfs_multipath_create_rpc_client_impl(struct nfs_client *clp,
++	struct rpc_create_args *args, const struct nfs_client_initdata *cl_init)
++{
++	struct multipath_mount_options *mount_info =
++		(struct multipath_mount_options *)cl_init->multipath_option;
++
++	if ((mount_info->remote_ip_list == NULL) && (mount_info->local_ip_list == NULL))
++		return 0;
++
++	if (mount_info->remote_ip_list == NULL)
++		return nfs_multipath_create_rpc_client_local(clp, args, mount_info);
++
++	if (mount_info->local_ip_list == NULL)
++		return nfs_multipath_create_rpc_client_remote(clp, args, mount_info);
++
++	return nfs_multipath_create_rpc_client_both(clp, args, mount_info);
++}
++
++void nfs_multipath_rpc_client_nfs4_init(struct nfs_client *clp,
++	const struct nfs_client_initdata *cl_init)
++{
++	if (cl_init->minorversion != 0)
++		__set_bit(NFS_CS_INFINITE_SLOTS, &clp->cl_flags);
++	__set_bit(NFS_CS_DISCRTRY, &clp->cl_flags);
++	__set_bit(NFS_CS_NO_RETRANS_TIMEOUT, &clp->cl_flags);
++}
++
++void nfs_multipath_init_rpc_create_arg(const struct rpc_program *program,
++	struct nfs_client *clp, struct rpc_create_args *args,
++	const struct nfs_client_initdata *cl_init, rpc_authflavor_t flavor)
++{
++	args->net		= clp->cl_net;
++	args->protocol	= clp->cl_proto;
++	args->nconnect	= clp->cl_nconnect;
++	args->address	= (struct sockaddr *)&clp->cl_addr;
++	args->addrsize	= clp->cl_addrlen;
++	args->timeout	= cl_init->timeparms;
++	args->servername	= clp->cl_hostname;
++	args->nodename	= cl_init->nodename;
++	args->program	= program;
++	args->version	= clp->rpc_ops->version;
++	args->authflavor	= flavor;
++	args->cred		= cl_init->cred;
++
++	if (test_bit(NFS_CS_DISCRTRY, &clp->cl_flags))
++		args->flags |= RPC_CLNT_CREATE_DISCRTRY;
++	if (test_bit(NFS_CS_NO_RETRANS_TIMEOUT, &clp->cl_flags))
++		args->flags |= RPC_CLNT_CREATE_NO_RETRANS_TIMEOUT;
++	if (test_bit(NFS_CS_NORESVPORT, &clp->cl_flags))
++		args->flags |= RPC_CLNT_CREATE_NONPRIVPORT;
++	if (test_bit(NFS_CS_INFINITE_SLOTS, &clp->cl_flags))
++		args->flags |= RPC_CLNT_CREATE_INFINITE_SLOTS;
++	if (test_bit(NFS_CS_NOPING, &clp->cl_flags))
++		args->flags |= RPC_CLNT_CREATE_NOPING;
++	if (test_bit(NFS_CS_REUSEPORT, &clp->cl_flags))
++		args->flags |= RPC_CLNT_CREATE_REUSEPORT;
++	args->flags |= RPC_CLNT_CREATE_NOPING;
++}
++
++int nfs_multipath_create_rpc_client_nfs3(const struct rpc_program *program,
++	struct nfs_client *clp, const struct nfs_client_initdata *cl_init,
++	const struct nfs_fs_context *ctx)
++{
++	struct rpc_create_args args = { 0 };
++
++	nfs_multipath_init_rpc_create_arg(program, clp, &args, cl_init, ctx->selected_flavor);
++	return nfs_multipath_create_rpc_client_impl(clp, &args, cl_init);
++}
++
++int nfs_multipath_create_rpc_client_nfs4(const struct rpc_program *program,
++	struct nfs_client *clp, const struct nfs_client_initdata *cl_init,
++	const struct nfs_fs_context *ctx)
++{
++	int rc;
++	struct rpc_create_args args = { 0 };
++
++	nfs_multipath_rpc_client_nfs4_init(clp, cl_init);
++	nfs_multipath_init_rpc_create_arg(program, clp, &args, cl_init, RPC_AUTH_GSS_KRB5I);
++	rc = nfs_multipath_create_rpc_client_impl(clp, &args, cl_init);
++	if (rc == -EINVAL) {
++		nfs_multipath_init_rpc_create_arg(program, clp, &args, cl_init, RPC_AUTH_UNIX);
++		rc = nfs_multipath_create_rpc_client_impl(clp, &args, cl_init);
++	}
++	return rc;
++}
++
++int nfs_multipath_create_rpc_client(const struct rpc_program *program,
++	struct nfs_client *clp, const struct nfs_client_initdata *cl_init,
++	const struct nfs_fs_context *ctx, enum nfs_protocol_type nfs_proto)
++{
++	int ret = 0;
++	struct multipath_client_info *client_info =
++		(struct multipath_client_info *)clp->cl_multipath_data;
++
++	if (nfs_proto == NFSV4_PROTO)
++		ret = nfs_multipath_create_rpc_client_nfs4(program, clp, cl_init, ctx);
++	else
++		ret = nfs_multipath_create_rpc_client_nfs3(program, clp, cl_init, ctx);
++	if (ret)
++		return ret;
++
++	client_info->client_id = atomic64_inc_return(&client_multipath_id);
++	client_info->conn_pairs.proto = nfs_proto;
++
++	pr_info("[MULTIPATH:%s] client id:%lld conn count %d proto %d count\n", __func__,
++		client_info->client_id, client_info->conn_pairs.count,
++		client_info->conn_pairs.proto);
++	return 0;
++}
++
++int nfs_multipath_client_mount_info_init(struct nfs_client *clp,
++	const struct nfs_client_initdata *client_init_data)
++{
++	struct multipath_client_info *client_info =
++		(struct multipath_client_info *)clp->cl_multipath_data;
++	struct multipath_mount_options *mount_options = NULL;
++
++	mount_options = (struct multipath_mount_options *)client_init_data->multipath_option;
++
++	if (mount_options->local_ip_list) {
++		client_info->local_ip_list = kzalloc(sizeof(struct nfs_ip_list), GFP_KERNEL);
++		if (!client_info->local_ip_list)
++			return -ENOMEM;
++
++		memcpy(client_info->local_ip_list, mount_options->local_ip_list,
++			sizeof(struct nfs_ip_list));
++	}
++
++	if (mount_options->remote_ip_list) {
++		client_info->remote_ip_list = kzalloc(sizeof(struct nfs_ip_list), GFP_KERNEL);
++		if (!client_info->remote_ip_list) {
++			kfree(client_info->local_ip_list);
++			client_info->local_ip_list = NULL;
++			return -ENOMEM;
++		}
++		memcpy(client_info->remote_ip_list, mount_options->remote_ip_list,
++			sizeof(struct nfs_ip_list));
++	}
++	return 0;
++}
++
++int nfs_multipath_client_info_init(const struct rpc_program *program,
++	struct nfs_client *clp, const struct nfs_client_initdata *cl_init,
++	const struct nfs_fs_context *ctx, enum nfs_protocol_type nfs_proto)
++{
++	int rc;
++	struct multipath_client_info *clp_info;
++
++	/* no multi path info, no need do multipath init */
++	if (cl_init->multipath_option == NULL)
++		return 0;
++
++	clp_info = kzalloc(sizeof(struct multipath_client_info), GFP_KERNEL);
++	if (clp_info == NULL)
++		return -ENOMEM;
++
++	clp->cl_multipath_data = clp_info;
++
++	rc = nfs_multipath_client_mount_info_init(clp, cl_init);
++	if (rc) {
++		nfs_multipath_client_info_free(clp);
++		return rc;
++	}
++
++	rc = nfs_multipath_create_rpc_client(program, clp, cl_init, ctx, nfs_proto);
++	if (rc)
++		nfs_multipath_client_info_free(clp);
++	else
++		router_ping_all_conn_start();
++
++	return rc;
++}
++
++bool nfs_multipath_ip_list_info_match(const struct nfs_ip_list *ip_list_src,
++	const struct nfs_ip_list *ip_list_dst)
++{
++	int i;
++
++	/* if both are equal or NULL, then return true. */
++	if (ip_list_src == ip_list_dst)
++		return true;
++
++	if ((ip_list_src == NULL || ip_list_dst == NULL))
++		return false;
++
++	if (ip_list_src->count != ip_list_dst->count)
++		return false;
++
++	for (i = 0; i < ip_list_src->count; i++) {
++		if (!rpc_cmp_addr_port((const struct sockaddr *)&ip_list_src->address[i],
++			(const struct sockaddr *)&ip_list_dst->address[i])) {
++			return false;
++		}
++	}
++	return true;
++}
++
++int nfs_multipath_client_info_match(void *src, void *dst)
++{
++	int ret;
++
++	struct multipath_client_info *src_info = (struct multipath_client_info *)src;
++	struct multipath_mount_options *dst_info = (struct multipath_mount_options *)dst;
++
++	ret = nfs_multipath_ip_list_info_match(src_info->local_ip_list, dst_info->local_ip_list);
++	if (ret == false)
++		return ret;
++
++	ret = nfs_multipath_ip_list_info_match(src_info->remote_ip_list, dst_info->remote_ip_list);
++	if (ret == false)
++		return ret;
++
++	return ret;
++}
++
++void nfs_multipath_print_ip_info(struct seq_file *mount_option, struct nfs_ip_list *ip_list,
++								const char *type)
++{
++	char buf[IP_ADDRESS_LEN_MAX + 1];
++	int len = 0;
++	int i = 0;
++
++	seq_printf(mount_option, ",%s=", type);
++	for (i = 0; i < ip_list->count; i++) {
++		len = rpc_ntop((struct sockaddr *)&ip_list->address[i], buf, IP_ADDRESS_LEN_MAX);
++		if (len > 0 && len < IP_ADDRESS_LEN_MAX)
++			buf[len] = '\0';
++
++		if (i == 0)
++			seq_printf(mount_option, "%s", buf);
++		else
++			seq_printf(mount_option, "~%s", buf);
++	}
++}
++
++void nfs_multipath_client_info_show(struct seq_file *mount_option, struct nfs_server *server)
++{
++	struct multipath_client_info *client_info = NULL;
++
++	if ((server == NULL) || (server->client == NULL))
++		return;
++
++	if (server->nfs_client->cl_multipath_data == NULL)
++		return;
++
++	client_info = (struct multipath_client_info *)server->nfs_client->cl_multipath_data;
++	if (client_info->conn_pairs.count <= 0)
++		return;
++
++	if ((client_info->remote_ip_list) && (client_info->remote_ip_list->count > 0))
++		nfs_multipath_print_ip_info(mount_option, client_info->remote_ip_list,
++			"remoteaddrs");
++
++	if ((client_info->local_ip_list) && (client_info->local_ip_list->count > 0))
++		nfs_multipath_print_ip_info(mount_option, client_info->local_ip_list,
++			"localaddrs");
++}
++
++int nfs_multipath_client_info_clone(struct nfs_server *src, struct nfs_server *dst,
++									rpc_authflavor_t flavor)
++{
++	struct multipath_client_info *src_clp_info;
++	struct multipath_client_info *dst_clp_info;
++	int i;
++	struct rpc_clnt *src_clnt;
++	struct rpc_clnt *dst_clnt;
++
++	if ((src->nfs_client == NULL) || (src->nfs_client->cl_multipath_data == NULL))
++		return 0;
++
++	if ((dst->nfs_client == NULL) || (dst->nfs_client->cl_multipath_data == NULL))
++		return 0;
++
++	src_clp_info = (struct multipath_client_info *)src->nfs_client->cl_multipath_data;
++	dst_clp_info = (struct multipath_client_info *)dst->nfs_client->cl_multipath_data;
++	dst_clp_info->conn_pairs.proto = src_clp_info->conn_pairs.proto;
++
++	for (i = 0; i < src_clp_info->conn_pairs.count; ++i) {
++		src_clnt = src_clp_info->conn_pairs.conn[i].clnt;
++		if (src_clnt) {
++			dst_clnt = rpc_clone_client_set_auth(src_clnt, flavor);
++			if (IS_ERR(dst_clnt))
++				return PTR_ERR(src_clnt);
++
++			memcpy(&dst_clnt->cl_timeout_default, &src_clnt->cl_timeout_default,
++				sizeof(dst_clnt->cl_timeout_default));
++			dst_clnt->cl_timeout = &dst_clnt->cl_timeout_default;
++			dst_clnt->cl_autobind = 1;
++			dst_clp_info->conn_pairs.conn[i].clnt = dst_clnt;
++		}
++	}
++	return 0;
++}
++
++struct rpc_clnt *nfs_multipath_get_best_conn(struct nfs_client *clp, struct nfs_fh *fh)
++{
++	u32 index;
++	struct router_policy_type *policy;
++	struct multipath_client_info *clp_info;
++	struct rpc_clnt *clnt = NULL;
++
++	if ((clp == NULL) || (clp->cl_multipath_data == NULL))
++		return NULL;
++
++	policy = nfs_get_router_policy();
++	if ((policy == NULL) || (policy->ops == NULL) ||
++		(policy->ops->get_best_conn_index == NULL)) {
++		nfs_put_router_policy(policy);
++		return NULL;
++	}
++
++	clp_info = (struct multipath_client_info *)clp->cl_multipath_data;
++	index = policy->ops->get_best_conn_index(clp_info->client_id,
++		(const struct multipath_conn_pairs *)&clp_info->conn_pairs, fh);
++	if ((index < MAX_SUPPORTED_IP_COUNT) && (index < clp_info->conn_pairs.count)) {
++		atomic64_inc(&(clp_info->conn_pairs.conn[index].load));
++		clnt = clp_info->conn_pairs.conn[index].clnt;
++		clp_info->conn_pairs.last_conn_index = index;
++	}
++	nfs_put_router_policy(policy);
++	return clnt;
++}
++
++void nfs_multipath_set_conn_disconnect(struct nfs_client *clp, struct rpc_clnt *clnt)
++{
++	int i;
++	struct multipath_client_info *clp_info;
++
++	if ((clp == NULL) || (clp->cl_multipath_data == NULL) || (clnt == NULL))
++		return;
++
++	clp_info = (struct multipath_client_info *)clp->cl_multipath_data;
++	for (i = 0; i < clp_info->conn_pairs.count; i++) {
++		if (clp_info->conn_pairs.conn[i].clnt == clnt) {
++			clp_info->conn_pairs.conn[i].status = CONN_DISCONNECT;
++			break;
++		}
++	}
++	router_ping_normal_conn_start();
++}
++
+diff --git a/fs/nfs/multipath/multipath_client.h b/fs/nfs/multipath/multipath_client.h
+new file mode 100644
+index 000000000000..84fb00a12a03
+--- /dev/null
++++ b/fs/nfs/multipath/multipath_client.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath create and get header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _MULTIPATH_CLIENT_H_
++#define _MULTIPATH_CLIENT_H_
++
++#include "multipath.h"
++
++struct multipath_conn_info {
++	enum router_conn_state status; // connection status
++	struct rpc_clnt *clnt;
++	int  ip_family;                /* ipv4/ipv6 */
++	char client_ip[IP_ADDRESS_LEN_MAX];
++	char server_ip[IP_ADDRESS_LEN_MAX];
++	atomic64_t load;             // current connection req count
++	u32 index;
++};
++
++struct multipath_conn_pairs {
++	int count;
++	enum nfs_protocol_type proto;
++	u32    last_conn_index;
++	struct multipath_conn_info conn[MAX_SUPPORTED_IP_COUNT];
++};
++
++struct multipath_client_info {
++	struct work_struct   work;
++	struct nfs_ip_list  *remote_ip_list;
++	struct nfs_ip_list  *local_ip_list;
++	struct multipath_conn_pairs conn_pairs;
++	s64 client_id;
++};
++
++void nfs_multipath_set_conn_disconnect(struct nfs_client *clp, struct rpc_clnt *clnt);
++struct rpc_clnt *nfs_multipath_get_best_conn(struct nfs_client *clp, struct nfs_fh *fh);
++int nfs_multipath_client_info_clone(struct nfs_server *src, struct nfs_server *dst,
++									rpc_authflavor_t flavor);
++void nfs_multipath_client_info_show(struct seq_file *mount_option, struct nfs_server *server);
++int nfs_multipath_client_info_init(const struct rpc_program *program, struct nfs_client *clp,
++	const struct nfs_client_initdata *cl_init, const struct nfs_fs_context *ctx,
++	enum nfs_protocol_type nfs_proto);
++void nfs_multipath_client_info_free(struct nfs_client *clp);
++int nfs_multipath_client_info_match(void *src, void *dst);
++
++#endif
++
+diff --git a/fs/nfs/multipath/multipath_parse.c b/fs/nfs/multipath/multipath_parse.c
+new file mode 100644
+index 000000000000..6c10442cfdcd
+--- /dev/null
++++ b/fs/nfs/multipath/multipath_parse.c
+@@ -0,0 +1,228 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath mount option parse.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#include <linux/types.h>
++#include <linux/parser.h>
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs_fs.h>
++#include <linux/nfs_fs_sb.h>
++#include <linux/kern_levels.h>
++#include "multipath.h"
++#include "multipath_parse.h"
++
++
++static int nfs_multipath_parse_ip_range(struct net *net_ns, const char *cursor,
++	struct nfs_ip_list *ip_list, const char *type)
++{
++	struct sockaddr_storage addr;
++	size_t len;
++	struct sockaddr_in *sin1;
++
++	len = rpc_pton(net_ns, cursor, strlen(cursor), (struct sockaddr *)&addr, sizeof(addr));
++	if (!len)
++		return -EINVAL;
++
++	while (true) {
++		if (ip_list->count >= MAX_SUPPORTED_IP_COUNT) {
++			pr_info("[MULTIPATH:%s] iplist for %s reached %d, more than supported limit %d\n",
++				__func__, type, ip_list->count, MAX_SUPPORTED_IP_COUNT);
++			ip_list->count = 0;
++			return -ENOSPC;
++		}
++		ip_list->address[ip_list->count] = ip_list->address[ip_list->count - 1];
++		ip_list->addrlen[ip_list->count] = ip_list->addrlen[ip_list->count - 1];
++
++		switch (addr.ss_family) {
++		case AF_INET: {
++			sin1 = (struct sockaddr_in *)&ip_list->address[ip_list->count];
++			sin1->sin_addr.s_addr = htonl(ntohl(sin1->sin_addr.s_addr) + 1);
++			break;
++		}
++		case AF_INET6:
++			return -EOPNOTSUPP;
++		default:
++			return -EOPNOTSUPP;
++		}
++
++		ip_list->count += 1;
++
++		if (rpc_cmp_addr((const struct sockaddr *)&ip_list->address[ip_list->count - 1],
++			(const struct sockaddr *)&addr)) {
++			break;
++		}
++	}
++	return 0;
++}
++
++int nfs_multipath_parse_ip_list_inter(struct nfs_ip_list *ip_list, struct net *net_ns,
++	char *cursor, const char *type)
++{
++	if (ip_list->count >= MAX_SUPPORTED_IP_COUNT) {
++		pr_info("[MULTIPATH:%s] iplist for %s reached %d, more than limit %d\n",
++			__func__, type, ip_list->count, MAX_SUPPORTED_IP_COUNT);
++		ip_list->count = 0;
++		return -ENOSPC;
++	}
++	ip_list->addrlen[ip_list->count] = rpc_pton(net_ns, cursor, strlen(cursor),
++		(struct sockaddr *)&ip_list->address[ip_list->count],
++		sizeof(ip_list->address[ip_list->count]));
++	if (ip_list->addrlen[ip_list->count] == 0) {
++		ip_list->count = 0;
++		return -EINVAL;
++	}
++
++	ip_list->count++;
++	return 0;
++}
++
++char *nfs_multipath_parse_ip_list_get_cursor(char **buf_to_parse, bool *single)
++{
++	char *cursor = NULL;
++	const char *single_sep = strchr(*buf_to_parse, '~');
++	const char *range_sep = strchr(*buf_to_parse, '-');
++
++	if (range_sep) {
++		if (range_sep > single_sep) {
++			cursor = strsep(buf_to_parse, "-");
++			if (cursor)
++				*single = false;
++		} else {
++			cursor = strsep(buf_to_parse, "~");
++		}
++	} else {
++		cursor = strsep(buf_to_parse, "~");
++	}
++	return cursor;
++}
++
++int nfs_multipath_parse_ip_list(char *buffer, struct nfs_fs_context *ctx,
++		struct net *net_ns, struct nfs_ip_list **ip_list, const char *type)
++{
++	struct nfs_ip_list *ip_list_tmp = NULL;
++	char *buf_to_parse;
++	bool  prev_range = false;
++	int   ret    = 0;
++	char *cursor = NULL;
++	bool  single = true;
++
++	ip_list_tmp = kzalloc(sizeof(struct nfs_ip_list), GFP_KERNEL);
++	if (!ip_list_tmp)
++		return -ENOMEM;
++
++	buf_to_parse = buffer;
++	while (buf_to_parse != NULL) {
++		cursor = nfs_multipath_parse_ip_list_get_cursor(&buf_to_parse, &single);
++		if (!cursor)
++			break;
++
++		if (prev_range == false) {
++			ret = nfs_multipath_parse_ip_list_inter(ip_list_tmp, net_ns, cursor, type);
++			if (ret) {
++				kfree(ip_list_tmp);
++				return ret;
++			}
++		} else {
++			ret = nfs_multipath_parse_ip_range(net_ns, cursor, ip_list_tmp, type);
++			if (ret != 0) {
++				kfree(ip_list_tmp);
++				return ret;
++			}
++			prev_range = false;
++		}
++		if (single == false) {
++			if (prev_range) {
++				kfree(ip_list_tmp);
++				return -EINVAL;
++			}
++			prev_range = true;
++		}
++	}
++
++	*ip_list = ip_list_tmp;
++	return 0;
++}
++
++int nfs_multipath_parse_options(const char *key, char *str, struct nfs_fs_context *ctx,
++								struct net *net_ns)
++{
++	int rc;
++	struct multipath_mount_options *options;
++
++	if ((key == NULL) || (str == NULL) || (ctx == NULL) || (net_ns == NULL))
++		return -EINVAL;
++
++	if (ctx->multipath_option == NULL)
++		ctx->multipath_option = kzalloc(sizeof(struct multipath_mount_options), GFP_KERNEL);
++
++	if (ctx->multipath_option == NULL)
++		return -ENOMEM;
++
++	options = (struct multipath_mount_options *)ctx->multipath_option;
++	if (strncmp("remoteaddrs", key, strlen(key)) == 0)
++		rc = nfs_multipath_parse_ip_list(str, ctx, net_ns, &options->remote_ip_list,
++			"remote");
++	else if (strncmp("localaddrs", key, strlen(key)) == 0)
++		rc = nfs_multipath_parse_ip_list(str, ctx, net_ns, &options->local_ip_list,
++			"local");
++	else
++		rc = -EOPNOTSUPP;
++	return rc;
++}
++
++void nfs_multipath_free_options(struct nfs_fs_context *ctx)
++{
++	struct multipath_mount_options *options;
++
++	if (ctx == NULL || ctx->multipath_option == NULL)
++		return;
++
++	options = (struct multipath_mount_options *)ctx->multipath_option;
++	kfree(options->remote_ip_list);
++	options->remote_ip_list = NULL;
++
++	kfree(options->local_ip_list);
++	options->local_ip_list = NULL;
++	kfree(options);
++	ctx->multipath_option = NULL;
++}
++
++void *nfs_multipath_dup_options(struct nfs_fs_context *ctx)
++{
++	struct multipath_mount_options *old_options;
++	struct multipath_mount_options *new_options;
++
++	if (ctx == NULL || ctx->multipath_option == NULL)
++		return NULL;
++
++	old_options = (struct multipath_mount_options *)ctx->multipath_option;
++	new_options = (struct multipath_mount_options *)
++		kzalloc(sizeof(struct multipath_mount_options), GFP_KERNEL);
++	if (new_options == NULL)
++		return NULL;
++
++	if (old_options->local_ip_list) {
++		new_options->local_ip_list = kmemdup(old_options->local_ip_list,
++			sizeof(struct nfs_ip_list), GFP_KERNEL);
++		if (new_options->local_ip_list == NULL) {
++			kfree(new_options);
++			return NULL;
++		}
++	}
++
++	if (old_options->remote_ip_list) {
++		new_options->remote_ip_list = kmemdup(old_options->remote_ip_list,
++			sizeof(struct nfs_ip_list), GFP_KERNEL);
++		if (new_options->remote_ip_list == NULL) {
++			kfree(new_options->local_ip_list);
++			kfree(new_options);
++			return NULL;
++		}
++	}
++	return new_options;
++}
++
+diff --git a/fs/nfs/multipath/multipath_parse.h b/fs/nfs/multipath/multipath_parse.h
+new file mode 100644
+index 000000000000..b98d92e8d1ce
+--- /dev/null
++++ b/fs/nfs/multipath/multipath_parse.h
+@@ -0,0 +1,23 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath mount option parse header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _MULTIPATH_PARSE_H_
++#define _MULTIPATH_PARSE_H_
++
++#include "multipath.h"
++
++struct multipath_mount_options {
++	struct nfs_ip_list  *remote_ip_list;
++	struct nfs_ip_list  *local_ip_list;
++};
++
++int nfs_multipath_parse_options(const char *key, char *str, struct nfs_fs_context *ctx,
++	struct net *net_ns);
++void nfs_multipath_free_options(struct nfs_fs_context *ctx);
++void *nfs_multipath_dup_options(struct nfs_fs_context *ctx);
++
++#endif
+diff --git a/fs/nfs/multipath/multipath_proc.c b/fs/nfs/multipath/multipath_proc.c
+new file mode 100644
+index 000000000000..d4fafb04bf5d
+--- /dev/null
++++ b/fs/nfs/multipath/multipath_proc.c
+@@ -0,0 +1,199 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath proc fs interface.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#include <linux/types.h>
++#include <linux/sunrpc/sched.h>
++#include <linux/sunrpc/clnt.h>
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs3.h>
++#include <linux/nfs_fs_sb.h>
++#include "router_policy.h"
++#include "multipath.h"
++#include "../nfs4_fs.h"
++#include "../netns.h"
++#include "multipath_client.h"
++#include "multipath_proc.h"
++
++struct nfs_multipath_proc_entry {
++	const char *name;
++	umode_t mode;
++	const struct proc_ops *proc_ops;
++};
++
++static int router_policy_proc_show(struct seq_file *m, void *v)
++{
++	if (router_policy_get_name())
++		seq_printf(m, "%s\n", router_policy_get_name());
++	else
++		seq_puts(m, "round_robin\n");
++
++	return 0;
++}
++
++static int router_policy_proc_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, router_policy_proc_show, NULL);
++}
++
++static ssize_t router_policy_proc_write(struct file *file, const char __user *buffer,
++			size_t count, loff_t *ppos)
++{
++	char *buf_tmp = NULL;
++	char *end;
++
++	if (*ppos || (count > ROUTER_POLICY_MAX_NAME_LEN))
++		return -EINVAL;
++
++	buf_tmp = kzalloc(count + 1, GFP_KERNEL);
++	if (buf_tmp == NULL)
++		return -ENOMEM;
++
++	if (copy_from_user(buf_tmp, buffer, count)) {
++		kfree(buf_tmp);
++		return -EFAULT;
++	}
++	end = strchr(buf_tmp, '\n');
++	if (end)
++		*end = '\0';
++	router_policy_update(buf_tmp);
++	return count;
++}
++
++static const struct proc_ops router_policy_proc_ops = {
++	.proc_open	= router_policy_proc_open,
++	.proc_read	= seq_read,
++	.proc_release	= single_release,
++	.proc_write	= router_policy_proc_write,
++	.proc_lseek = no_llseek,
++};
++
++int router_conn_info_show(struct seq_file *m, struct nfs_client *clp)
++{
++	struct multipath_client_info *clp_info;
++	int i = 0;
++
++	clp_info = (struct multipath_client_info *)clp->cl_multipath_data;
++	seq_printf(m, "===============================Id:%lld count %d proto %d start========================\n",
++		clp_info->client_id, clp_info->conn_pairs.count, clp_info->conn_pairs.proto);
++	for (i = 0; i < clp_info->conn_pairs.count; i++) {
++		seq_printf(m, "index:%d, client_ip:%s, server_ip:%s, status:%s, load:%lld\n", i,
++			clp_info->conn_pairs.conn[i].client_ip,
++			clp_info->conn_pairs.conn[i].server_ip,
++			clp_info->conn_pairs.conn[i].status == CONN_NORMAL ?
++				"connect" : "disconnect",
++			atomic64_read(&(clp_info->conn_pairs.conn[i].load)));
++	}
++
++	seq_printf(m, "=========================================Id:%lld end================================\n",
++		clp_info->client_id);
++	return 0;
++}
++
++static int router_conn_info_proc_show(struct seq_file *m, void *v)
++{
++	struct net *net;
++	struct nfs_net *nn;
++	struct nfs_client *clp;
++
++	rcu_read_lock();
++	for_each_net_rcu(net) {
++		nn = net_generic(net, nfs_net_id);
++		if (nn == NULL)
++			continue;
++
++		spin_lock(&nn->nfs_client_lock);
++		list_for_each_entry(clp, &nn->nfs_client_list, cl_share_link) {
++			if (clp->cl_multipath_data == NULL)
++				continue;
++			router_conn_info_show(m, clp);
++		}
++		spin_unlock(&nn->nfs_client_lock);
++	}
++	rcu_read_unlock();
++	return 0;
++}
++
++static int router_conn_info_proc_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, router_conn_info_proc_show, NULL);
++}
++
++static const struct proc_ops router_conn_info_proc_ops = {
++	.proc_open	= router_conn_info_proc_open,
++	.proc_read	= seq_read,
++	.proc_release	= single_release,
++	.proc_lseek = no_llseek,
++};
++
++struct proc_dir_entry *nfs_parent_entry;
++
++struct nfs_multipath_proc_entry proc_entry[] = {
++	{
++		.name = "policy",
++		.mode = 0,
++		.proc_ops = &router_policy_proc_ops,
++	},
++	{
++		.name = "conn_info",
++		.mode = 0,
++		.proc_ops = &router_conn_info_proc_ops,
++	},
++};
++
++void nfs_multipath_remove_proc_entry(struct proc_dir_entry *parent)
++{
++	int i = 0;
++
++	if (nfs_parent_entry == NULL)
++		return;
++
++	for (i = 0; i < sizeof(proc_entry) / sizeof(struct nfs_multipath_proc_entry); i++)
++		remove_proc_entry(proc_entry[i].name, parent);
++
++	remove_proc_entry("fs/nfs/mutipath", NULL);
++	nfs_parent_entry = NULL;
++}
++
++int nfs_multipath_create_proc_entry(void)
++{
++	struct proc_dir_entry *child;
++	int i = 0;
++
++	(void)proc_mkdir("fs/nfs", NULL);
++	nfs_parent_entry = proc_mkdir("fs/nfs/mutipath", NULL);
++	if (!nfs_parent_entry) {
++		remove_proc_entry("fs/nfs/mutipath/policy", NULL);
++		remove_proc_entry("fs/nfs/mutipath/conn_info", NULL);
++		remove_proc_entry("fs/nfs/mutipath", NULL);
++		nfs_parent_entry = proc_mkdir("fs/nfs/mutipath", NULL);
++		if (!nfs_parent_entry)
++			return -ENOMEM;
++	}
++
++	for (i = 0; i < sizeof(proc_entry) / sizeof(struct nfs_multipath_proc_entry); i++) {
++		child = proc_create(proc_entry[i].name, proc_entry[i].mode,
++			nfs_parent_entry, proc_entry[i].proc_ops);
++		if (!child) {
++			nfs_multipath_remove_proc_entry(nfs_parent_entry);
++			return -ENOMEM;
++		}
++	}
++	return 0;
++}
++
++int nfs_multipath_register_proc_ops(void)
++{
++	return nfs_multipath_create_proc_entry();
++}
++
++void nfs_multipath_unregister_proc_ops(void)
++{
++	nfs_multipath_remove_proc_entry(nfs_parent_entry);
++}
++
++
+diff --git a/fs/nfs/multipath/multipath_proc.h b/fs/nfs/multipath/multipath_proc.h
+new file mode 100644
+index 000000000000..94b7fd14efb1
+--- /dev/null
++++ b/fs/nfs/multipath/multipath_proc.h
+@@ -0,0 +1,19 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath proc fs interface header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _MULTIPATH_PROC_H_
++#define _MULTIPATH_PROC_H_
++
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++
++
++int nfs_multipath_register_proc_ops(void);
++void nfs_multipath_unregister_proc_ops(void);
++
++#endif
++
+diff --git a/fs/nfs/multipath/round_robin_policy.c b/fs/nfs/multipath/round_robin_policy.c
+new file mode 100644
+index 000000000000..c993943d3562
+--- /dev/null
++++ b/fs/nfs/multipath/round_robin_policy.c
+@@ -0,0 +1,92 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath round robin policy.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#include <linux/types.h>
++#include <linux/export.h>
++#include <linux/nfs.h>
++#include <linux/sunrpc/clnt.h>
++#include "round_robin_policy.h"
++#include "router_policy.h"
++#include "multipath.h"
++
++u32 round_robin_get_best_conn_nfs4(s64 client_id, const struct multipath_conn_pairs *conn_pairs,
++									struct nfs_fh *fh)
++{
++	int i;
++
++	for (i = 0; i < conn_pairs->count; i++) {
++		if (conn_pairs->conn[i].status == CONN_NORMAL)
++			return i;
++	}
++	return -1;
++}
++
++u32 round_robin_get_best_conn_nfs3(s64 client_id, const struct multipath_conn_pairs *conn_pairs,
++	struct nfs_fh *fh)
++{
++	int i;
++	u32 next_conn_index = (conn_pairs->last_conn_index + 1) % conn_pairs->count;
++
++	for (i = 0; i < conn_pairs->count; i++) {
++		if (conn_pairs->conn[next_conn_index].status == CONN_NORMAL)
++			return next_conn_index;
++
++		if (++next_conn_index >= conn_pairs->count)
++			next_conn_index = 0;
++	}
++	return -1;
++}
++
++u32 round_robin_get_best_conn(s64 client_id, const struct multipath_conn_pairs *conn_pairs,
++								struct nfs_fh *fh)
++{
++	if (conn_pairs == NULL)
++		return -1;
++
++	if (conn_pairs->proto == NFSV3_PROTO)
++		return round_robin_get_best_conn_nfs3(client_id, conn_pairs, fh);
++	else if (conn_pairs->proto == NFSV4_PROTO)
++		return round_robin_get_best_conn_nfs4(client_id, conn_pairs, fh);
++	else
++		return -1;
++}
++
++int round_robin_conn_connectivity_check(s64 client_id, const struct multipath_conn_info *conn_info)
++{
++	if ((conn_info == NULL) || (conn_info->clnt == NULL))
++		return -EINVAL;
++
++	return rpc_fast_ping(conn_info->clnt);
++}
++
++static const struct router_policy_ops round_robin_ops = {
++	.get_best_conn_index	= round_robin_get_best_conn,
++	.conn_connectivity_check = round_robin_conn_connectivity_check,
++};
++
++static struct router_policy_type round_robin_type = {
++	.owner			= THIS_MODULE,
++	.name			= "round_robin",
++	.ops	        = &round_robin_ops,
++	.id             = 0,
++	.next           = NULL,
++};
++
++int round_robin_init(void)
++{
++	int rc;
++
++	rc = nfs_register_router_policy(&round_robin_type);
++
++	return rc;
++}
++
++void round_robin_exit(void)
++{
++	nfs_unregister_router_policy(&round_robin_type);
++}
++
+diff --git a/fs/nfs/multipath/round_robin_policy.h b/fs/nfs/multipath/round_robin_policy.h
+new file mode 100644
+index 000000000000..1d5a442779c7
+--- /dev/null
++++ b/fs/nfs/multipath/round_robin_policy.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath round robin policy header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _ROUND_ROBIN_POLICY_H
++#define _ROUND_ROBIN_POLICY_H
++
++int round_robin_init(void);
++void round_robin_exit(void);
++
++#endif
+diff --git a/fs/nfs/multipath/router_ping.c b/fs/nfs/multipath/router_ping.c
+new file mode 100644
+index 000000000000..5e0087968074
+--- /dev/null
++++ b/fs/nfs/multipath/router_ping.c
+@@ -0,0 +1,330 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath check server connectivity.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++
++#include <linux/spinlock.h>
++#include <linux/slab.h>
++#include <linux/module.h>
++#include <linux/printk.h>
++#include <linux/timer.h>
++#include <linux/jiffies.h>
++#include <linux/sunrpc/sched.h>
++#include <linux/sunrpc/clnt.h>
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs3.h>
++#include <linux/nfs_fs_sb.h>
++#include "multipath.h"
++#include "../nfs4_fs.h"
++#include "../netns.h"
++#include "multipath_client.h"
++#include "router_policy.h"
++
++#define NFSDBG_FACILITY NFSDBG_CLIENT
++
++static struct timer_list router_ping_timer;
++static struct workqueue_struct *router_ping_workq;
++static struct work_struct router_ping_work;
++static struct work_struct router_normal_ping_work;
++static struct workqueue_struct *router_ping_execute_workq;
++static struct list_head router_ping_wait_head;
++static spinlock_t router_ping_wait_lock;
++static atomic_t router_ping_created_workq;
++
++
++#define ROUTER_PING_TIMER 10000
++struct router_ping_traverse_ctx {
++	int cpu_index;
++	bool only_normal;
++};
++
++struct router_ping_wait_queue {
++	struct list_head node;
++	s64 client_id; // router info id (server_identifier id)
++	int conn_index; // router info ip conn tables index
++	struct multipath_client_info *clp_info;
++	struct work_struct work;
++};
++
++struct router_ping_wait_queue *router_ping_add_waitq(s64 client_id, struct nfs_client *clp,
++	int conn_index)
++{
++	struct router_ping_wait_queue *cur_waite_node = NULL;
++	struct router_ping_wait_queue *next = NULL;
++
++	spin_lock(&router_ping_wait_lock);
++	list_for_each_entry_safe(cur_waite_node, next, &router_ping_wait_head, node) {
++		if (cur_waite_node->client_id == client_id &&
++			cur_waite_node->conn_index == conn_index) {
++			spin_unlock(&router_ping_wait_lock);
++			return NULL;
++		}
++	}
++	cur_waite_node = kzalloc(sizeof(struct router_ping_wait_queue), GFP_KERNEL);
++	if (cur_waite_node == NULL) {
++		spin_unlock(&router_ping_wait_lock);
++		pr_info("%s:kmalloc ROUTER_PING_WAIT_QUEUE failed.\n", __func__);
++		return NULL;
++	}
++	cur_waite_node->client_id = client_id;
++	cur_waite_node->conn_index = conn_index;
++	cur_waite_node->clp_info = clp->cl_multipath_data;
++	list_add_tail(&cur_waite_node->node, &router_ping_wait_head);
++	spin_unlock(&router_ping_wait_lock);
++	return cur_waite_node;
++}
++
++void router_ping_remove_waitq(s64 client_id, int conn_index)
++{
++	struct router_ping_wait_queue *cur_waite_node = NULL;
++	struct router_ping_wait_queue *next = NULL;
++
++	spin_lock(&router_ping_wait_lock);
++	list_for_each_entry_safe(cur_waite_node, next, &router_ping_wait_head, node) {
++		if (cur_waite_node->client_id == client_id &&
++			cur_waite_node->conn_index == conn_index) {
++			list_del(&(cur_waite_node->node));
++			kfree(cur_waite_node);
++			spin_unlock(&router_ping_wait_lock);
++			return;
++		}
++	}
++	spin_unlock(&router_ping_wait_lock);
++}
++
++int router_ping_policy_excute(s64 client_id, struct multipath_conn_info *conn_info)
++{
++	struct router_policy_type *policy;
++	int status;
++
++	if (conn_info == NULL)
++		return -EINVAL;
++
++	policy = nfs_get_router_policy();
++	if ((policy == NULL) || (policy->ops == NULL) ||
++		(policy->ops->conn_connectivity_check == NULL)) {
++		nfs_put_router_policy(policy);
++		return -EINVAL;
++	}
++
++	status = policy->ops->conn_connectivity_check(client_id, conn_info);
++	nfs_put_router_policy(policy);
++	return status;
++}
++
++void router_ping_excute_and_update_status(struct work_struct *workp)
++{
++	enum router_conn_state state;
++	int ret = -1;
++	struct router_ping_wait_queue *ctx = container_of(workp,
++		struct router_ping_wait_queue, work);
++	struct multipath_client_info *clp_info = NULL;
++
++	if (ctx->clp_info == NULL) {
++		router_ping_remove_waitq(ctx->client_id, ctx->conn_index);
++		return;
++	}
++
++	clp_info = ctx->clp_info;
++	if (ctx->conn_index < clp_info->conn_pairs.count)
++		ret = router_ping_policy_excute(clp_info->client_id,
++			&(clp_info->conn_pairs.conn[ctx->conn_index]));
++
++	state = (ret == 0) ? CONN_NORMAL : CONN_DISCONNECT;
++	clp_info->conn_pairs.conn[ctx->conn_index].status = state;
++	router_ping_remove_waitq(ctx->client_id, ctx->conn_index);
++}
++
++int router_ping_traverse_all_conn(struct nfs_client *clp, struct router_ping_traverse_ctx *ctx)
++{
++	struct multipath_client_info *clp_info =
++		(struct multipath_client_info *)clp->cl_multipath_data;
++	struct router_ping_wait_queue *wait_ping_node;
++	int cpu_oline_num = num_online_cpus();
++	int conn_index;
++
++	for (conn_index = 0; conn_index < clp_info->conn_pairs.count; conn_index++) {
++		if (ctx->only_normal &&
++			clp_info->conn_pairs.conn[conn_index].status != CONN_NORMAL)
++			continue;
++
++		ctx->cpu_index = cpumask_next(ctx->cpu_index, cpu_online_mask);
++		if (ctx->cpu_index >= cpu_oline_num)
++			ctx->cpu_index = cpumask_next(-1, cpu_online_mask);
++
++		wait_ping_node = router_ping_add_waitq(clp_info->client_id, clp, conn_index);
++		if (wait_ping_node == NULL)
++			continue;
++
++		INIT_WORK(&(wait_ping_node->work), router_ping_excute_and_update_status);
++		queue_work_on(ctx->cpu_index, router_ping_execute_workq, &(wait_ping_node->work));
++	}
++	return 0;
++}
++
++void router_ping_all_conn(bool only_normal)
++{
++	struct router_ping_traverse_ctx ctx = { -1, only_normal };
++
++	int ret;
++	struct net *net;
++	struct nfs_net *nn;
++	struct nfs_client *clp;
++
++	rcu_read_lock();
++	for_each_net_rcu(net) {
++		nn = net_generic(net, nfs_net_id);
++		if (nn == NULL)
++			continue;
++
++		spin_lock(&nn->nfs_client_lock);
++		list_for_each_entry(clp, &nn->nfs_client_list, cl_share_link) {
++			if (clp->cl_multipath_data == NULL)
++				continue;
++			ret = router_ping_traverse_all_conn(clp, &ctx);
++			if (ret != 0) {
++				rcu_read_unlock();
++				spin_unlock(&nn->nfs_client_lock);
++				return;
++			}
++		}
++		spin_unlock(&nn->nfs_client_lock);
++	}
++	rcu_read_unlock();
++}
++
++static void router_ping_work_func(struct work_struct *work)
++{
++	router_ping_all_conn(false);
++	dprintk("%s: router ping and update all ip done.\n", __func__);
++}
++
++static void router_ping_normal_work_func(struct work_struct *work)
++{
++	router_ping_all_conn(true);
++	dprintk("%s: router ping and update normal ip done.\n", __func__);
++}
++
++static void router_ping_timer_callback(struct timer_list *unused)
++{
++	queue_work(router_ping_workq, &router_ping_work);
++	mod_timer(&router_ping_timer, jiffies + msecs_to_jiffies(ROUTER_PING_TIMER));
++}
++
++int router_ping_reg_notify(void)
++{
++	if (atomic_inc_return(&router_ping_created_workq) == 1) {
++		router_ping_execute_workq = create_workqueue("executeIPPing_workqueue");
++		if (router_ping_execute_workq == NULL) {
++			pr_err("%s: create executeIPPing_workqueue failed.\n", __func__);
++			atomic_dec(&router_ping_created_workq);
++			return -EINVAL;
++		}
++		router_ping_workq = create_workqueue("ping_workq");
++		if (router_ping_workq == NULL) {
++			pr_err("%s: create router_ping_workq failed.\n", __func__);
++			atomic_dec(&router_ping_created_workq);
++			destroy_workqueue(router_ping_execute_workq);
++			return -EINVAL;
++		}
++
++		timer_setup(&router_ping_timer, router_ping_timer_callback, 0);
++		router_ping_timer.expires = jiffies + msecs_to_jiffies(ROUTER_PING_TIMER);
++		add_timer(&router_ping_timer);
++		pr_info("%s: create ping worker.\n", __func__);
++	} else {
++		atomic_dec(&router_ping_created_workq);
++	}
++
++	return 0;
++}
++
++void router_ping_normal_conn_start(void)
++{
++	router_ping_reg_notify();
++	queue_work(router_ping_workq, &router_normal_ping_work);
++}
++
++void router_ping_all_conn_start(void)
++{
++	router_ping_reg_notify();
++	queue_work(router_ping_workq, &router_ping_work);
++}
++
++void router_ping_work_start(void)
++{
++	struct net *net;
++	struct nfs_net *nn;
++	struct nfs_client *clp;
++	int need_start = false;
++
++	rcu_read_lock();
++	for_each_net_rcu(net) {
++		nn = net_generic(net, nfs_net_id);
++		if (nn == NULL)
++			continue;
++
++		spin_lock(&nn->nfs_client_lock);
++		list_for_each_entry(clp, &nn->nfs_client_list, cl_share_link) {
++			if (clp->cl_multipath_data) {
++				need_start = true;
++				spin_unlock(&nn->nfs_client_lock);
++				rcu_read_unlock();
++				goto start_work;
++			}
++		}
++		spin_unlock(&nn->nfs_client_lock);
++	}
++	rcu_read_unlock();
++
++start_work:
++	if (need_start)
++		router_ping_all_conn_start();
++}
++
++void router_ping_cancle_client_work(s64 client_id)
++{
++	struct router_ping_wait_queue *cur_waite_node = NULL;
++	struct router_ping_wait_queue *next = NULL;
++	struct list_head del_head;
++
++	INIT_LIST_HEAD(&del_head);
++	spin_lock(&router_ping_wait_lock);
++	list_for_each_entry_safe(cur_waite_node, next, &router_ping_wait_head, node) {
++		if (cur_waite_node->client_id == client_id) {
++			list_del_init(&cur_waite_node->node);
++			list_add_tail(&cur_waite_node->node, &del_head);
++		}
++	}
++	spin_unlock(&router_ping_wait_lock);
++	list_for_each_entry_safe(cur_waite_node, next, &del_head, node) {
++		cancel_work_sync(&cur_waite_node->work);
++		list_del_init(&cur_waite_node->node);
++		kfree(cur_waite_node);
++		cur_waite_node = NULL;
++	}
++}
++
++void router_ping_init(void)
++{
++	INIT_WORK(&router_ping_work, router_ping_work_func);
++	INIT_WORK(&router_normal_ping_work, router_ping_normal_work_func);
++	INIT_LIST_HEAD(&router_ping_wait_head);
++	spin_lock_init(&router_ping_wait_lock);
++	atomic_set(&router_ping_created_workq, 0);
++	router_ping_work_start();
++}
++
++void router_ping_exit(void)
++{
++	if (router_ping_execute_workq) {
++		del_timer_sync(&router_ping_timer);
++		flush_workqueue(router_ping_execute_workq);
++		destroy_workqueue(router_ping_execute_workq);
++	}
++}
++
+diff --git a/fs/nfs/multipath/router_ping.h b/fs/nfs/multipath/router_ping.h
+new file mode 100644
+index 000000000000..80da490e4f7b
+--- /dev/null
++++ b/fs/nfs/multipath/router_ping.h
+@@ -0,0 +1,18 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath check server connectivity header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _ROUTER_PING_H_
++#define _ROUTER_PING_H_
++
++void router_ping_init(void);
++void router_ping_exit(void);
++void router_ping_normal_conn_start(void);
++void router_ping_all_conn_start(void);
++void router_ping_cancle_client_work(s64 client_id);
++
++#endif
++
+diff --git a/fs/nfs/multipath/router_policy.c b/fs/nfs/multipath/router_policy.c
+new file mode 100644
+index 000000000000..a4abc06a75da
+--- /dev/null
++++ b/fs/nfs/multipath/router_policy.c
+@@ -0,0 +1,177 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath manage router policy.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/string.h>
++#include <linux/module.h>
++#include "router_policy.h"
++
++#define INVALID_ROUTER_POLICY_ID (0x7FFFFFFFFFFFFFFF)
++
++static DEFINE_RWLOCK(router_policy_lock);
++static struct router_policy_type *nfs_router_policy;
++static atomic64_t nfs_router_id = ATOMIC64_INIT(1);
++
++static s64 router_policy_id;
++char *router_policy_name;
++
++static struct router_policy_type **nfs_find_router_policy(const char *name, u32 len)
++{
++	struct router_policy_type **p;
++
++	for (p = &nfs_router_policy; *p; p = &(*p)->next)
++		if (strncmp((*p)->name, name, len) == 0 &&
++			!(*p)->name[len])
++			break;
++	return p;
++}
++
++static struct router_policy_type **nfs_find_router_policy_by_id(s64 id)
++{
++	struct router_policy_type **p;
++
++	for (p = &nfs_router_policy; *p; p = &(*p)->next)
++		if ((*p)->id == id)
++			break;
++	return p;
++}
++
++void router_policy_id_update(void)
++{
++	struct router_policy_type **p;
++
++	write_lock(&router_policy_lock);
++
++	p = nfs_find_router_policy(router_policy_name, strlen(router_policy_name));
++	if (*p)
++		router_policy_id = (*p)->id;
++	else
++		router_policy_id = INVALID_ROUTER_POLICY_ID;
++
++	write_unlock(&router_policy_lock);
++}
++
++/**
++ *	nfs_register_router - register a new router
++ *	@router: the router structure
++ *
++ *	Adds the router passed to the list of router
++ *
++ *	The &struct router_type that is passed is linked into the kernel
++ *	structures and must not be freed until the router has been unregistered.
++ */
++
++int nfs_register_router_policy(struct router_policy_type *policy)
++{
++	int res = 0;
++	struct router_policy_type **p;
++
++	if ((policy == NULL) || (policy->name == NULL) ||
++		(strlen(policy->name) > ROUTER_POLICY_MAX_NAME_LEN))
++		return -EINVAL;
++
++	if (policy->next)
++		return -EBUSY;
++
++	write_lock(&router_policy_lock);
++	p = nfs_find_router_policy(policy->name, strlen(policy->name));
++	if (*p)
++		res = -EBUSY;
++	else {
++		policy->id = atomic64_inc_return(&nfs_router_id);
++		*p = policy;
++	}
++	write_unlock(&router_policy_lock);
++	router_policy_id_update();
++	return res;
++}
++EXPORT_SYMBOL_GPL(nfs_register_router_policy);
++
++int nfs_unregister_router_policy(struct router_policy_type *policy)
++{
++	struct router_policy_type **tmp;
++
++	write_lock(&router_policy_lock);
++	tmp = &nfs_router_policy;
++	while (*tmp) {
++		if (policy == *tmp) {
++			*tmp = policy->next;
++			policy->next = NULL;
++			write_unlock(&router_policy_lock);
++			synchronize_rcu();
++			router_policy_id_update();
++			return 0;
++		}
++		tmp = &(*tmp)->next;
++	}
++	write_unlock(&router_policy_lock);
++	router_policy_id_update();
++	return -EINVAL;
++}
++EXPORT_SYMBOL_GPL(nfs_unregister_router_policy);
++
++/**
++ *	nfs_get_router_type - get a router by name
++ *	@name: the router name
++ *
++ *	The &struct router_type need module put after use.
++ */
++struct router_policy_type *nfs_get_router_policy(void)
++{
++	struct router_policy_type *policy = NULL;
++
++	read_lock(&router_policy_lock);
++	policy = *(nfs_find_router_policy_by_id(router_policy_id));
++	if (policy && !try_module_get(policy->owner))
++		policy = NULL;
++	read_unlock(&router_policy_lock);
++	return policy;
++}
++
++void nfs_put_router_policy(struct router_policy_type *policy)
++{
++	if (policy)
++		module_put(policy->owner);
++}
++
++void router_policy_name_update(char *buf)
++{
++	write_lock(&router_policy_lock);
++	kfree(router_policy_name);
++
++	router_policy_name = buf;
++	write_unlock(&router_policy_lock);
++}
++
++char *router_policy_get_name(void)
++{
++	return router_policy_name;
++}
++
++void router_policy_update(char *policy_name)
++{
++	router_policy_name_update(policy_name);
++	router_policy_id_update();
++}
++
++int router_policy_init(void)
++{
++	router_policy_name = kzalloc(strlen("round_robin") + 1, GFP_KERNEL);
++	if (router_policy_name == NULL)
++		return -ENOMEM;
++	strncpy(router_policy_name, "round_robin", strlen("round_robin"));
++	return 0;
++}
++
++void router_policy_exit(void)
++{
++	kfree(router_policy_name);
++	router_policy_name = NULL;
++}
++
+diff --git a/fs/nfs/multipath/router_policy.h b/fs/nfs/multipath/router_policy.h
+new file mode 100644
+index 000000000000..1482c44cbea8
+--- /dev/null
++++ b/fs/nfs/multipath/router_policy.h
+@@ -0,0 +1,41 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath manage router policy header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _ROUTER_TYPE_H_
++#define _ROUTER_TYPE_H_
++
++#include <linux/types.h>
++#include <linux/nfs.h>
++#include "multipath_client.h"
++
++#define ROUTER_POLICY_MAX_NAME_LEN (128)
++
++struct router_policy_ops {
++	u32 (*get_best_conn_index)(s64 client_id, const struct multipath_conn_pairs *conn_pairs,
++		struct nfs_fh *fh);
++	int (*conn_connectivity_check)(s64 client_id, const struct multipath_conn_info *conn_info);
++};
++
++struct router_policy_type {
++	const char *name;         // module name
++	struct module *owner;
++	const struct router_policy_ops *ops;
++	struct router_policy_type *next; // no need fill
++	s64 id; // no need fill
++};
++
++struct router_policy_type *nfs_get_router_policy(void);
++void nfs_put_router_policy(struct router_policy_type *policy);
++int nfs_register_router_policy(struct router_policy_type *policy);
++int nfs_unregister_router_policy(struct router_policy_type *policy);
++int router_policy_init(void);
++void router_policy_exit(void);
++char *router_policy_get_name(void);
++void router_policy_update(char *policy_name);
++
++#endif
++
+diff --git a/fs/nfs/nfs3proc.c b/fs/nfs/nfs3proc.c
+index 2e7579626cf0..1a9a77a4b743 100644
+--- a/fs/nfs/nfs3proc.c
++++ b/fs/nfs/nfs3proc.c
+@@ -22,7 +22,7 @@
+ #include <linux/xattr.h>
+ 
+ #include "iostat.h"
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "nfs3_fs.h"
+ 
+ #define NFSDBG_FACILITY		NFSDBG_PROC
+@@ -48,6 +48,9 @@ nfs3_rpc_wrapper(struct rpc_clnt *clnt, struct rpc_message *msg, int flags)
+ static int
+ nfs3_async_handle_jukebox(struct rpc_task *task, struct inode *inode)
+ {
++	if (RPC_IS_MULTIPATH(task))
++		return nfs3_async_handle_jukebox_multipath(task, inode);
++
+ 	if (task->tk_status != -EJUKEBOX)
+ 		return 0;
+ 	nfs_inc_stats(inode, NFSIOS_DELAY);
+@@ -117,7 +120,7 @@ nfs3_proc_getattr(struct nfs_server *server, struct nfs_fh *fhandle,
+ 
+ 	dprintk("NFS call  getattr\n");
+ 	nfs_fattr_init(fattr);
+-	status = rpc_call_sync(server->client, &msg, task_flags);
++	status = nfs3_rpc_call_sync(inode, server, &msg, task_flags);
+ 	dprintk("NFS reply getattr: %d\n", status);
+ 	return status;
+ }
+@@ -142,7 +145,7 @@ nfs3_proc_setattr(struct dentry *dentry, struct nfs_fattr *fattr,
+ 	if (sattr->ia_valid & ATTR_FILE)
+ 		msg.rpc_cred = nfs_file_cred(sattr->ia_file);
+ 	nfs_fattr_init(fattr);
+-	status = rpc_call_sync(NFS_CLIENT(inode), &msg, 0);
++	status = nfs3_rpc_call_sync(inode, NFS_SERVER(inode), &msg, 0);
+ 	if (status == 0) {
+ 		nfs_setattr_update_inode(inode, sattr, fattr);
+ 		if (NFS_I(inode)->cache_validity & NFS_INO_INVALID_ACL)
+@@ -178,13 +181,13 @@ __nfs3_proc_lookup(struct inode *dir, const char *name, size_t len,
+ 		return -ENOMEM;
+ 
+ 	nfs_fattr_init(fattr);
+-	status = rpc_call_sync(NFS_CLIENT(dir), &msg, task_flags);
++	status = nfs3_rpc_call_sync(dir, NFS_SERVER(dir), &msg, task_flags);
+ 	nfs_refresh_inode(dir, res.dir_attr);
+ 	if (status >= 0 && !(fattr->valid & NFS_ATTR_FATTR)) {
+ 		msg.rpc_proc = &nfs3_procedures[NFS3PROC_GETATTR];
+ 		msg.rpc_argp = fhandle;
+ 		msg.rpc_resp = fattr;
+-		status = rpc_call_sync(NFS_CLIENT(dir), &msg, task_flags);
++		status = nfs3_rpc_call_sync(dir, NFS_SERVER(dir), &msg, task_flags);
+ 	}
+ 	nfs_free_fattr(res.dir_attr);
+ 	dprintk("NFS reply lookup: %d\n", status);
+@@ -242,7 +245,7 @@ static int nfs3_proc_access(struct inode *inode, struct nfs_access_entry *entry,
+ 	if (res.fattr == NULL)
+ 		goto out;
+ 
+-	status = rpc_call_sync(NFS_CLIENT(inode), &msg, 0);
++	status = nfs3_rpc_call_sync(inode, NFS_SERVER(inode), &msg, 0);
+ 	nfs_refresh_inode(inode, res.fattr);
+ 	if (status == 0)
+ 		nfs_access_set_mask(entry, res.access);
+@@ -274,7 +277,7 @@ static int nfs3_proc_readlink(struct inode *inode, struct page *page,
+ 		goto out;
+ 	msg.rpc_resp = fattr;
+ 
+-	status = rpc_call_sync(NFS_CLIENT(inode), &msg, 0);
++	status = nfs3_rpc_call_sync(inode, NFS_SERVER(inode), &msg, 0);
+ 	nfs_refresh_inode(inode, fattr);
+ 	nfs_free_fattr(fattr);
+ out:
+@@ -318,7 +321,7 @@ nfs3_do_create(struct inode *dir, struct dentry *dentry, struct nfs3_createdata
+ {
+ 	int status;
+ 
+-	status = rpc_call_sync(NFS_CLIENT(dir), &data->msg, 0);
++	status = nfs3_rpc_call_sync(dir, NFS_SERVER(dir), &data->msg, 0);
+ 	nfs_post_op_update_inode(dir, data->res.dir_attr);
+ 	if (status != 0)
+ 		return ERR_PTR(status);
+@@ -449,7 +452,7 @@ nfs3_proc_remove(struct inode *dir, struct dentry *dentry)
+ 	if (res.dir_attr == NULL)
+ 		goto out;
+ 
+-	status = rpc_call_sync(NFS_CLIENT(dir), &msg, 0);
++	status = nfs3_rpc_call_sync(dir, NFS_SERVER(dir), &msg, 0);
+ 	nfs_post_op_update_inode(dir, res.dir_attr);
+ 	nfs_free_fattr(res.dir_attr);
+ out:
+@@ -532,7 +535,7 @@ nfs3_proc_link(struct inode *inode, struct inode *dir, const struct qstr *name)
+ 	if (res.fattr == NULL || res.dir_attr == NULL)
+ 		goto out;
+ 
+-	status = rpc_call_sync(NFS_CLIENT(inode), &msg, 0);
++	status = nfs3_rpc_call_sync(inode, NFS_SERVER(inode), &msg, 0);
+ 	nfs_post_op_update_inode(dir, res.dir_attr);
+ 	nfs_post_op_update_inode(inode, res.fattr);
+ out:
+@@ -644,7 +647,7 @@ nfs3_proc_rmdir(struct inode *dir, const struct qstr *name)
+ 		goto out;
+ 
+ 	msg.rpc_resp = dir_attr;
+-	status = rpc_call_sync(NFS_CLIENT(dir), &msg, 0);
++	status = nfs3_rpc_call_sync(dir, NFS_SERVER(dir), &msg, 0);
+ 	nfs_post_op_update_inode(dir, dir_attr);
+ 	nfs_free_fattr(dir_attr);
+ out:
+@@ -696,7 +699,7 @@ static int nfs3_proc_readdir(struct nfs_readdir_arg *nr_arg,
+ 	if (res.dir_attr == NULL)
+ 		goto out;
+ 
+-	status = rpc_call_sync(NFS_CLIENT(dir), &msg, 0);
++	status = nfs3_rpc_call_sync(dir, NFS_SERVER(dir), &msg, 0);
+ 
+ 	nfs_invalidate_atime(dir);
+ 	nfs_refresh_inode(dir, res.dir_attr);
+@@ -786,7 +789,7 @@ nfs3_proc_statfs(struct nfs_server *server, struct nfs_fh *fhandle,
+ 
+ 	dprintk("NFS call  fsstat\n");
+ 	nfs_fattr_init(stat->fattr);
+-	status = rpc_call_sync(server->client, &msg, 0);
++		status = nfs3_rpc_call_sync(NULL, server, &msg, 0);
+ 	dprintk("NFS reply fsstat: %d\n", status);
+ 	return status;
+ }
+diff --git a/fs/nfs/nfs4client.c b/fs/nfs/nfs4client.c
+index d3051b051a56..bc3dd773e409 100644
+--- a/fs/nfs/nfs4client.c
++++ b/fs/nfs/nfs4client.c
+@@ -11,7 +11,7 @@
+ #include <linux/sunrpc/xprt.h>
+ #include <linux/sunrpc/bc_xprt.h>
+ #include <linux/sunrpc/rpc_pipe_fs.h>
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "callback.h"
+ #include "delegation.h"
+ #include "nfs4session.h"
+@@ -1121,6 +1121,33 @@ static int nfs4_server_common_setup(struct nfs_server *server,
+ 	return error;
+ }
+ 
++int nfs4_create_multi_path(struct nfs_server *server, struct fs_context *fc,
++	const struct rpc_timeout *timeparms, struct nfs_subversion *subversion)
++{
++	struct nfs_fs_context *ctx = nfs_fc2context(fc);
++	struct nfs_client_initdata cl_init = {
++		.hostname = ctx->nfs_server.hostname,
++		.addr = (const struct sockaddr_storage *)&ctx->nfs_server.address,
++		.addrlen = ctx->nfs_server.addrlen,
++		.ip_addr = ctx->client_address,
++		.nfs_mod = subversion,
++		.proto = ctx->nfs_server.protocol,
++		.minorversion = ctx->minorversion,
++		.net = fc->net_ns,
++		.timeparms = timeparms,
++		.multipath_option = ctx->multipath_option,
++	};
++
++	if (server->flags & NFS_MOUNT_NORESVPORT)
++		set_bit(NFS_CS_NORESVPORT, &cl_init.init_flags);
++	if (server->options & NFS_OPTION_MIGRATION)
++		set_bit(NFS_CS_MIGRATION, &cl_init.init_flags);
++	if (test_bit(NFS_MIG_TSM_POSSIBLE, &server->mig_status))
++		set_bit(NFS_CS_TSM_POSSIBLE, &cl_init.init_flags);
++
++	return nfs_create_multi_path_client(server->nfs_client, ctx, &cl_init, NFSV4_PROTO);
++}
++
+ /*
+  * Create a version 4 volume record
+  */
+@@ -1161,6 +1188,10 @@ static int nfs4_init_server(struct nfs_server *server, struct fs_context *fc)
+ 	if (error < 0)
+ 		return error;
+ 
++	error = nfs4_create_multi_path(server, fc, &timeparms, &nfs_v4);
++	if (error < 0)
++		return error;
++
+ 	if (ctx->rsize)
+ 		server->rsize = nfs_io_size(ctx->rsize, server->nfs_client->cl_proto);
+ 	if (ctx->wsize)
+diff --git a/fs/nfs/nfs4proc.c b/fs/nfs/nfs4proc.c
+index 86ed5c0142c3..c524fa6ea40f 100644
+--- a/fs/nfs/nfs4proc.c
++++ b/fs/nfs/nfs4proc.c
+@@ -58,7 +58,7 @@
+ 
+ #include "nfs4_fs.h"
+ #include "delegation.h"
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "iostat.h"
+ #include "callback.h"
+ #include "pnfs.h"
+@@ -460,7 +460,7 @@ nfs4_recoverable_stateid(const nfs4_stateid *stateid)
+ /* This is the error handling routine for processes that are allowed
+  * to sleep.
+  */
+-static int nfs4_do_handle_exception(struct nfs_server *server,
++static int nfs4_do_handle_exception(struct rpc_task *task, struct nfs_server *server,
+ 		int errorcode, struct nfs4_exception *exception)
+ {
+ 	struct nfs_client *clp = server->nfs_client;
+@@ -572,6 +572,12 @@ static int nfs4_do_handle_exception(struct nfs_server *server,
+ 						"Reenabling the idmapper.\n",
+ 						server->nfs_client->cl_hostname);
+ 			}
++			break;
++		case -ERETRY_NEW_RPC:
++		case -ERETRY:
++			nfs4_async_handle_jukebox_multipath(task, server);
++			exception->retry = 1;
++			return 0;
+ 	}
+ 	/* We failed to handle the error */
+ 	return nfs4_map_errors(ret);
+@@ -588,7 +594,7 @@ int nfs4_handle_exception(struct nfs_server *server, int errorcode, struct nfs4_
+ 	struct nfs_client *clp = server->nfs_client;
+ 	int ret;
+ 
+-	ret = nfs4_do_handle_exception(server, errorcode, exception);
++	ret = nfs4_do_handle_exception(NULL, server, errorcode, exception);
+ 	if (exception->delay) {
+ 		ret = nfs4_delay(&exception->timeout,
+ 				exception->interruptible);
+@@ -616,7 +622,7 @@ nfs4_async_handle_exception(struct rpc_task *task, struct nfs_server *server,
+ 	struct nfs_client *clp = server->nfs_client;
+ 	int ret;
+ 
+-	ret = nfs4_do_handle_exception(server, errorcode, exception);
++	ret = nfs4_do_handle_exception(task, server, errorcode, exception);
+ 	if (exception->delay) {
+ 		rpc_delay(task, nfs4_update_delay(&exception->timeout));
+ 		goto out_retry;
+@@ -1119,8 +1125,12 @@ static int nfs4_call_sync_custom(struct rpc_task_setup *task_setup)
+ {
+ 	int ret;
+ 	struct rpc_task *task;
++	struct nfs_client *clp = (struct nfs_client *)task_setup->timeout_data;
+ 
+-	task = rpc_run_task(task_setup);
++	if (clp && clp->cl_multipath_data)
++		task = nfs4_multipath_rpc_run_task(task_setup);
++	else
++		task = rpc_run_task(task_setup);
+ 	if (IS_ERR(task))
+ 		return PTR_ERR(task);
+ 
+@@ -1148,6 +1158,7 @@ static int nfs4_do_call_sync(struct rpc_clnt *clnt,
+ 		.callback_ops = clp->cl_mvops->call_sync_ops,
+ 		.callback_data = &data,
+ 		.flags = task_flags,
++		.timeout_data = clp,
+ 	};
+ 
+ 	return nfs4_call_sync_custom(&task_setup);
+@@ -2485,12 +2496,35 @@ static void nfs4_open_prepare(struct rpc_task *task, void *calldata)
+ 	nfs4_sequence_done(task, &data->o_res.seq_res);
+ }
+ 
++static int nfs4_open_retry(struct rpc_task *task, struct nfs4_opendata *data)
++{
++	struct rpc_clnt *clnt;
++	struct nfs_client *clp = NULL;
++
++	clp = (struct nfs_client *)task->tk_timeout_data;
++
++	clnt = nfs_get_best_rpc_clnt(clp);
++	task->tk_status = 0;
++	if (clnt == clp->cl_rpcclient)
++		task->tk_flags = task->tk_flags & (~RPC_TASK_MULTIPATH);
++
++	if (!rpc_restart_call_with_newclnt(task, clnt))
++		return 1;
++
++	return 0;
++}
++
+ static void nfs4_open_done(struct rpc_task *task, void *calldata)
+ {
+ 	struct nfs4_opendata *data = calldata;
+ 
+ 	data->rpc_status = task->tk_status;
+ 
++	if (RPC_IS_MULTIPATH(task) && is_nfs_retry_error(task->tk_status)) {
++		if (!nfs4_open_retry(task, data))
++			return;
++	}
++
+ 	if (!nfs4_sequence_process(task, &data->o_res.seq_res))
+ 		return;
+ 
+@@ -2583,6 +2617,7 @@ static int nfs4_run_open_task(struct nfs4_opendata *data,
+ 		nfs4_init_sequence(&o_arg->seq_args, &o_res->seq_res, 1, 0);
+ 		pnfs_lgopen_prepare(data, ctx);
+ 	}
++	nfs_multipath_task_setup_init(&task_setup_data, server->nfs_client);
+ 	task = rpc_run_task(&task_setup_data);
+ 	if (IS_ERR(task))
+ 		return PTR_ERR(task);
+@@ -3775,6 +3810,7 @@ int nfs4_do_close(struct nfs4_state *state, gfp_t gfp_mask, int wait)
+ 	msg.rpc_argp = &calldata->arg;
+ 	msg.rpc_resp = &calldata->res;
+ 	task_setup_data.callback_data = calldata;
++	nfs_multipath_task_setup_init(&task_setup_data, server->nfs_client);
+ 	task = rpc_run_task(&task_setup_data);
+ 	if (IS_ERR(task))
+ 		return PTR_ERR(task);
+@@ -5771,7 +5807,10 @@ static int nfs4_proc_renew(struct nfs_client *clp, const struct cred *cred)
+ 	unsigned long now = jiffies;
+ 	int status;
+ 
+-	status = rpc_call_sync(clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
++	if (clp->cl_multipath_data)
++		status = nfs4_multipath_rpc_call_sync(clp, &msg, RPC_TASK_TIMEOUT);
++	else
++		status = rpc_call_sync(clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
+ 	if (status < 0)
+ 		return status;
+ 	do_renew_lease(clp, now);
+@@ -6431,6 +6470,7 @@ int nfs4_proc_setclientid(struct nfs_client *clp, u32 program,
+ 		.callback_ops = &nfs4_setclientid_ops,
+ 		.callback_data = &setclientid,
+ 		.flags = RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN,
++		.timeout_data = clp,
+ 	};
+ 	unsigned long now = jiffies;
+ 	int status;
+@@ -6496,7 +6536,12 @@ int nfs4_proc_setclientid_confirm(struct nfs_client *clp,
+ 	dprintk("NFS call  setclientid_confirm auth=%s, (client ID %llx)\n",
+ 		clp->cl_rpcclient->cl_auth->au_ops->au_name,
+ 		clp->cl_clientid);
+-	status = rpc_call_sync(clp->cl_rpcclient, &msg,
++
++	if (clp->cl_multipath_data) {
++		status = nfs4_multipath_rpc_call_sync(clp, &msg,
++			RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	} else
++		status = rpc_call_sync(clp->cl_rpcclient, &msg,
+ 			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_setclientid_confirm(clp, status);
+ 	dprintk("NFS reply setclientid_confirm: %d\n", status);
+@@ -6990,6 +7035,8 @@ static struct rpc_task *nfs4_do_unlck(struct file_lock *fl,
+ 	msg.rpc_argp = &data->arg;
+ 	msg.rpc_resp = &data->res;
+ 	task_setup_data.callback_data = data;
++	nfs_multipath_task_setup_init(&task_setup_data,
++		NFS_SERVER(lsp->ls_state->inode)->nfs_client);
+ 	return rpc_run_task(&task_setup_data);
+ }
+ 
+@@ -7260,6 +7307,7 @@ static int _nfs4_do_setlk(struct nfs4_state *state, int cmd, struct file_lock *f
+ 			data->arg.reclaim = NFS_LOCK_RECLAIM;
+ 	} else
+ 		data->arg.new_lock = 1;
++	nfs_multipath_task_setup_init(&task_setup_data, NFS_SERVER(state->inode)->nfs_client);
+ 	task = rpc_run_task(&task_setup_data);
+ 	if (IS_ERR(task))
+ 		return PTR_ERR(task);
+@@ -8338,6 +8386,7 @@ static int _nfs4_proc_secinfo(struct inode *dir, const struct qstr *name, struct
+ 		.callback_ops = clp->cl_mvops->call_sync_ops,
+ 		.callback_data = &data,
+ 		.flags = RPC_TASK_NO_ROUND_ROBIN,
++		.timeout_data = clp,
+ 	};
+ 	const struct cred *cred = NULL;
+ 
+@@ -8540,7 +8589,9 @@ int nfs4_proc_bind_conn_to_session(struct nfs_client *clp, const struct cred *cr
+ 		.clp = clp,
+ 		.cred = cred,
+ 	};
+-	return rpc_clnt_iterate_for_each_xprt(clp->cl_rpcclient,
++	struct rpc_clnt *clnt = nfs_get_best_rpc_clnt(clp);
++
++	return rpc_clnt_iterate_for_each_xprt(clnt,
+ 			nfs4_proc_bind_conn_to_session_callback, &data);
+ }
+ 
+@@ -8776,7 +8827,11 @@ nfs4_run_exchange_id(struct nfs_client *clp, const struct cred *cred,
+ 	msg.rpc_resp = &calldata->res;
+ 	task_setup_data.callback_data = calldata;
+ 
+-	return rpc_run_task(&task_setup_data);
++	if (clp->cl_multipath_data != NULL) {
++		task_setup_data.timeout_data = clp;
++		return nfs4_multipath_rpc_run_task(&task_setup_data);
++	} else
++		return rpc_run_task(&task_setup_data);
+ 
+ out_impl_id:
+ 	kfree(calldata->res.impl_id);
+@@ -8943,8 +8998,12 @@ static int _nfs4_proc_destroy_clientid(struct nfs_client *clp,
+ 	};
+ 	int status;
+ 
+-	status = rpc_call_sync(clp->cl_rpcclient, &msg,
+-			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	if (clp->cl_multipath_data) {
++		status = nfs4_multipath_rpc_call_sync(clp, &msg,
++					RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	} else
++		status = rpc_call_sync(clp->cl_rpcclient, &msg,
++					RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_destroy_clientid(clp, status);
+ 	if (status)
+ 		dprintk("NFS: Got error %d from the server %s on "
+@@ -9067,6 +9126,7 @@ int nfs4_proc_get_lease_time(struct nfs_client *clp, struct nfs_fsinfo *fsinfo)
+ 		.callback_ops = &nfs4_get_lease_time_ops,
+ 		.callback_data = &data,
+ 		.flags = RPC_TASK_TIMEOUT,
++		.timeout_data = clp,
+ 	};
+ 
+ 	nfs4_init_sequence(&args.la_seq_args, &res.lr_seq_res, 0, 1);
+@@ -9216,8 +9276,12 @@ static int _nfs4_proc_create_session(struct nfs_client *clp,
+ 	nfs4_init_channel_attrs(&args, clp->cl_rpcclient);
+ 	args.flags = (SESSION4_PERSIST | SESSION4_BACK_CHAN);
+ 
+-	status = rpc_call_sync(session->clp->cl_rpcclient, &msg,
+-			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	if (session->clp->cl_multipath_data) {
++		status = nfs4_multipath_rpc_call_sync(session->clp, &msg,
++					RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	} else
++		status = rpc_call_sync(session->clp->cl_rpcclient, &msg,
++					RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_create_session(clp, status);
+ 
+ 	switch (status) {
+@@ -9298,8 +9362,12 @@ int nfs4_proc_destroy_session(struct nfs4_session *session,
+ 	if (!test_and_clear_bit(NFS4_SESSION_ESTABLISHED, &session->session_state))
+ 		return 0;
+ 
+-	status = rpc_call_sync(session->clp->cl_rpcclient, &msg,
+-			       RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	if (session->clp->cl_multipath_data) {
++		status = nfs4_multipath_rpc_call_sync(session->clp, &msg,
++					RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
++	} else
++		status = rpc_call_sync(session->clp->cl_rpcclient, &msg,
++					RPC_TASK_TIMEOUT | RPC_TASK_NO_ROUND_ROBIN);
+ 	trace_nfs4_destroy_session(session->clp, status);
+ 
+ 	if (status)
+@@ -9414,7 +9482,7 @@ static struct rpc_task *_nfs41_proc_sequence(struct nfs_client *clp,
+ 	msg.rpc_resp = &calldata->res;
+ 	calldata->clp = clp;
+ 	task_setup_data.callback_data = calldata;
+-
++	nfs_multipath_task_setup_init(&task_setup_data, clp);
+ 	ret = rpc_run_task(&task_setup_data);
+ 	if (IS_ERR(ret))
+ 		goto out_err;
+@@ -9549,6 +9617,8 @@ static int nfs41_proc_reclaim_complete(struct nfs_client *clp,
+ 		.rpc_message = &msg,
+ 		.callback_ops = &nfs4_reclaim_complete_call_ops,
+ 		.flags = RPC_TASK_NO_ROUND_ROBIN,
++		.timeout_cb = nfs_multipath_timeout_handler,
++		.timeout_data = clp,
+ 	};
+ 	int status = -ENOMEM;
+ 
+@@ -10058,6 +10128,7 @@ _nfs41_proc_secinfo_no_name(struct nfs_server *server, struct nfs_fh *fhandle,
+ 		.callback_ops = server->nfs_client->cl_mvops->call_sync_ops,
+ 		.callback_data = &data,
+ 		.flags = RPC_TASK_NO_ROUND_ROBIN,
++		.timeout_data = server->nfs_client,
+ 	};
+ 	const struct cred *cred = NULL;
+ 	int status;
+@@ -10232,7 +10303,7 @@ static void nfs4_handle_delay_or_session_error(struct nfs_server *server,
+ 	case -NFS4ERR_BAD_HIGH_SLOT:
+ 	case -NFS4ERR_CONN_NOT_BOUND_TO_SESSION:
+ 	case -NFS4ERR_DEADSESSION:
+-		nfs4_do_handle_exception(server, err, exception);
++		nfs4_do_handle_exception(NULL, server, err, exception);
+ 	}
+ }
+ 
+@@ -10352,6 +10423,7 @@ static int nfs41_free_stateid(struct nfs_server *server,
+ 	msg.rpc_argp = &data->args;
+ 	msg.rpc_resp = &data->res;
+ 	nfs4_init_sequence(&data->args.seq_args, &data->res.seq_res, 1, privileged);
++	nfs_multipath_task_setup_init(&task_setup, server->nfs_client);
+ 	task = rpc_run_task(&task_setup);
+ 	if (IS_ERR(task))
+ 		return PTR_ERR(task);
+diff --git a/fs/nfs/nfs_multipath.c b/fs/nfs/nfs_multipath.c
+new file mode 100644
+index 000000000000..d93a30789a31
+--- /dev/null
++++ b/fs/nfs/nfs_multipath.c
+@@ -0,0 +1,425 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Client-side NFS multipath adapt.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#include <linux/types.h>
++#include <linux/sunrpc/clnt.h>
++#include <linux/nfs.h>
++#include <linux/nfs4.h>
++#include <linux/nfs3.h>
++#include <linux/nfs_fs.h>
++#include <linux/nfs_fs_sb.h>
++#include <linux/sunrpc/sched.h>
++#include <linux/nfs_iostat.h>
++#include "nfs_multipath.h"
++#include "iostat.h"
++
++struct nfs_multipath_ops __rcu *multipath_module;
++
++int nfs_multipath_register(struct nfs_multipath_ops *ops)
++{
++	struct nfs_multipath_ops *old;
++
++	old = cmpxchg((struct nfs_multipath_ops **)&multipath_module, NULL, ops);
++	if (old == NULL || old == ops)
++		return 0;
++	return -EPERM;
++}
++EXPORT_SYMBOL_GPL(nfs_multipath_register);
++
++int nfs_multipath_unregister(struct nfs_multipath_ops *ops)
++{
++	struct nfs_multipath_ops *old;
++
++	old = cmpxchg((struct nfs_multipath_ops **)&multipath_module, ops, NULL);
++	if (old == ops || old == NULL)
++		return 0;
++	return -EPERM;
++}
++EXPORT_SYMBOL_GPL(nfs_multipath_unregister);
++
++struct nfs_multipath_ops *nfs_multipath_router_get(void)
++{
++	struct nfs_multipath_ops *ops;
++
++	rcu_read_lock();
++	ops = rcu_dereference(multipath_module);
++	if (ops == NULL) {
++		rcu_read_unlock();
++		return NULL;
++	}
++	if (!try_module_get(ops->owner))
++		ops = NULL;
++	rcu_read_unlock();
++	return ops;
++}
++
++void nfs_multipath_router_put(struct nfs_multipath_ops *ops)
++{
++	if (ops)
++		module_put(ops->owner);
++}
++
++int nfs_multipath_parse_mount_options(const char *key, char *str, struct nfs_fs_context *ctx,
++	struct net *net_ns)
++{
++	int rc;
++	struct nfs_multipath_ops *ops;
++
++	ops = nfs_multipath_router_get();
++	if ((ops == NULL) || (ops->parse_mount_options == NULL)) {
++		nfs_multipath_router_put(ops);
++		return -EOPNOTSUPP;
++	}
++	rc = ops->parse_mount_options(key, str, ctx, net_ns);
++	nfs_multipath_router_put(ops);
++	return rc;
++}
++
++void nfs_multipath_free_mount_options(struct nfs_fs_context *ctx)
++{
++	struct nfs_multipath_ops *ops;
++
++	if (ctx->multipath_option == NULL)
++		return;
++
++	ops = nfs_multipath_router_get();
++	if ((ops == NULL) || (ops->free_mount_options == NULL)) {
++		nfs_multipath_router_put(ops);
++		return;
++	}
++	ops->free_mount_options(ctx);
++	nfs_multipath_router_put(ops);
++}
++
++void *nfs_multipath_dup_mount_options(struct nfs_fs_context *ctx)
++{
++	struct nfs_multipath_ops *ops;
++	void *mount_option;
++
++	if (ctx->multipath_option == NULL)
++		return NULL;
++
++	ops = nfs_multipath_router_get();
++	if ((ops == NULL) || (ops->dup_mount_options == NULL)) {
++		nfs_multipath_router_put(ops);
++		return NULL;
++	}
++	mount_option = ops->dup_mount_options(ctx);
++	nfs_multipath_router_put(ops);
++	return mount_option;
++}
++
++
++struct rpc_clnt *nfs_get_rpc_clnt_by_fh(struct nfs_server *server, struct nfs_fh *fh)
++{
++	struct nfs_multipath_ops *multipath;
++	struct rpc_clnt *clnt = NULL;
++
++	if (server == NULL)
++		return NULL;
++
++	if ((server->nfs_client == NULL) || (server->nfs_client->cl_multipath_data == NULL))
++		return server->client;
++
++	multipath = nfs_multipath_router_get();
++	if (multipath && multipath->get_best_conn)
++		clnt = multipath->get_best_conn(server->nfs_client, fh);
++	nfs_multipath_router_put(multipath);
++	if (clnt == NULL)
++		clnt = server->client;
++	return clnt;
++}
++EXPORT_SYMBOL_GPL(nfs_get_rpc_clnt_by_fh);
++
++void nfs_multipath_mark_conn_unavailable(struct nfs_client *clp, struct rpc_clnt *clnt)
++{
++	struct nfs_multipath_ops *multipath;
++
++	if ((clp == NULL) || (clnt == NULL))
++		return;
++
++	multipath = nfs_multipath_router_get();
++	if ((multipath == NULL) || (multipath->conn_set_unavailable == NULL)) {
++		nfs_multipath_router_put(multipath);
++		return;
++	}
++	multipath->conn_set_unavailable(clp, clnt);
++	nfs_multipath_router_put(multipath);
++}
++EXPORT_SYMBOL_GPL(nfs_multipath_mark_conn_unavailable);
++
++void nfs_multipath_timeout_handler(struct rpc_task *task)
++{
++	if (task)
++		nfs_multipath_mark_conn_unavailable((struct nfs_client *)task->tk_timeout_data,
++			task->tk_client);
++}
++EXPORT_SYMBOL_GPL(nfs_multipath_timeout_handler);
++
++struct rpc_clnt *nfs_get_best_rpc_clnt(struct nfs_client *clp)
++{
++	struct nfs_multipath_ops *multipath;
++	struct rpc_clnt *clnt = NULL;
++
++	if (clp->cl_multipath_data == NULL)
++		return clp->cl_rpcclient;
++
++	multipath = nfs_multipath_router_get();
++	if ((multipath == NULL) || (multipath->get_best_conn == NULL)) {
++		nfs_multipath_router_put(multipath);
++		return clp->cl_rpcclient;
++	}
++
++	clnt = multipath->get_best_conn(clp, NULL);
++	nfs_multipath_router_put(multipath);
++
++	if (clnt == NULL)
++		clnt = clp->cl_rpcclient;
++
++	return clnt;
++}
++EXPORT_SYMBOL_GPL(nfs_get_best_rpc_clnt);
++
++int nfs4_multipath_rpc_call_sync(struct nfs_client *clp, struct rpc_message *pMsg, int flags)
++{
++	int ret = 0;
++	struct rpc_clnt *clnt = NULL;
++
++	flags = flags | RPC_TASK_MULTIPATH;
++	do {
++		clnt = nfs_get_best_rpc_clnt(clp);
++		if (clnt != clp->cl_rpcclient)
++			flags = flags | RPC_TASK_MULTIPATH;
++		else
++			flags = flags & (~RPC_TASK_MULTIPATH);
++		ret = rpc_call_sync(clnt, pMsg, flags);
++		if (clnt != clp->cl_rpcclient && is_nfs_retry_error(ret))
++			nfs_multipath_mark_conn_unavailable(clp, clnt);
++
++	} while (is_nfs_retry_error(ret));
++	return ret;
++}
++EXPORT_SYMBOL_GPL(nfs4_multipath_rpc_call_sync);
++
++struct rpc_task *nfs4_multipath_rpc_run_task(struct rpc_task_setup *task_setup)
++{
++	struct nfs_client *clp = NULL;
++	struct rpc_task *task = NULL;
++	int ret = 0;
++
++	clp = (struct nfs_client *)task_setup->timeout_data;
++	do {
++		task_setup->rpc_client = nfs_get_best_rpc_clnt(clp);
++		if (task_setup->rpc_client != clp->cl_rpcclient)
++			task_setup->flags = task_setup->flags | RPC_TASK_MULTIPATH;
++		else
++			task_setup->flags = task_setup->flags & (~RPC_TASK_MULTIPATH);
++		task = rpc_run_task(task_setup);
++		if (task == NULL)
++			return task;
++
++		ret = task->tk_status;
++		if (is_nfs_retry_error(ret)) {
++			rpc_put_task(task);
++			task = NULL;
++			if (task_setup->rpc_client != clp->cl_rpcclient)
++				nfs_multipath_mark_conn_unavailable(clp, task_setup->rpc_client);
++		}
++	} while (is_nfs_retry_error(ret));
++
++	return task;
++}
++EXPORT_SYMBOL_GPL(nfs4_multipath_rpc_run_task);
++
++bool is_nfs_retry_error(int ret)
++{
++	if (ret == -ERETRY_NEW_RPC || ret == -ERETRY)
++		return true;
++
++	return false;
++}
++EXPORT_SYMBOL_GPL(is_nfs_retry_error);
++
++int nfs_create_multi_path_client(struct nfs_client *client, const struct nfs_fs_context *ctx,
++	struct nfs_client_initdata *cl_init, enum nfs_protocol_type nfs_proto)
++{
++	int ret = 0;
++	struct nfs_multipath_ops *multipath;
++
++	if (cl_init->multipath_option == NULL)
++		return 0;
++
++	multipath = nfs_multipath_router_get();
++	if (multipath != NULL && multipath->client_info_init != NULL)
++		ret = multipath->client_info_init(&nfs_program, client, cl_init, ctx, nfs_proto);
++	nfs_multipath_router_put(multipath);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(nfs_create_multi_path_client);
++
++void nfs_free_multi_path_client(struct nfs_client *clp)
++{
++	struct nfs_multipath_ops *multipath;
++
++	if (clp->cl_multipath_data == NULL)
++		return;
++
++	multipath = nfs_multipath_router_get();
++	if (multipath != NULL && multipath->client_info_free != NULL)
++		multipath->client_info_free(clp);
++	nfs_multipath_router_put(multipath);
++}
++
++int nfs_multipath_client_match(void *src, void *dst)
++{
++	int ret = true;
++	struct nfs_multipath_ops *multipath;
++
++	if (src == NULL && dst == NULL)
++		return true;
++
++	if ((src == NULL && dst) || (src && dst == NULL))
++		return false;
++
++	multipath = nfs_multipath_router_get();
++	if (multipath != NULL && multipath->client_info_match != NULL)
++		ret = multipath->client_info_match(src, dst);
++	nfs_multipath_router_put(multipath);
++
++	return ret;
++}
++
++int nfs_multipath_clone_client_info(struct nfs_server *src, struct nfs_server *dst,
++	rpc_authflavor_t flavor)
++{
++	int ret = 0;
++	struct nfs_multipath_ops *multipath;
++
++	if (src == NULL || dst == NULL)
++		return ret;
++
++	multipath = nfs_multipath_router_get();
++	if (multipath != NULL && multipath->client_info_clone != NULL)
++		ret = multipath->client_info_clone(src, dst, flavor);
++	nfs_multipath_router_put(multipath);
++
++	return ret;
++}
++
++void nfs_multipath_show_client_info(struct seq_file *mount_option, struct nfs_server *server)
++{
++	struct nfs_multipath_ops *multipath;
++
++	if (mount_option == NULL || server == NULL)
++		return;
++
++	multipath = nfs_multipath_router_get();
++	if (multipath != NULL && multipath->client_info_show != NULL)
++		multipath->client_info_show(mount_option, server);
++	nfs_multipath_router_put(multipath);
++}
++
++int nfs3_rpc_multi_path_sync(struct nfs_server *server, struct nfs_fh *fh, struct rpc_message *msg,
++	unsigned short task_flags)
++{
++	struct rpc_clnt *rpc_clnt;
++	int ret = 0;
++	int flags = 0;
++
++	do {
++		if (ret == -ERETRY_NEW_RPC)
++			nfs_multipath_mark_conn_unavailable(server->nfs_client, server->client);
++
++		rpc_clnt = nfs_get_rpc_clnt_by_fh(server, fh);
++		if (rpc_clnt != server->client) {
++			flags = RPC_TASK_MULTIPATH | RPC_TASK_TIMEOUT;
++			ret = rpc_call_sync(rpc_clnt, msg, flags);
++		} else {
++			flags = task_flags;
++			ret = rpc_call_sync(rpc_clnt, msg, flags);
++			break;
++		}
++	} while (is_nfs_retry_error(ret));
++	return ret;
++}
++
++int nfs3_rpc_call_sync(struct inode *inode, struct nfs_server *server,
++	struct rpc_message *msg, unsigned short task_flags)
++{
++	if (server == NULL)
++		return -EINVAL;
++
++	if (inode == NULL || server->nfs_client == NULL ||
++		server->nfs_client->cl_multipath_data == NULL)
++		return rpc_call_sync(server->client, msg, task_flags);
++	else
++		return nfs3_rpc_multi_path_sync(server, NFS_FH(inode), msg, task_flags);
++}
++EXPORT_SYMBOL_GPL(nfs3_rpc_call_sync);
++
++int nfs3_async_handle_jukebox_multipath(struct rpc_task *task, struct inode *inode)
++{
++	bool taskNeedDelay = true;
++	struct rpc_clnt *clnt;
++
++	if ((task->tk_status != -EJUKEBOX) && (!is_nfs_retry_error(task->tk_status)))
++		return 0;
++	nfs_inc_stats(inode, NFSIOS_DELAY);
++
++	if (is_nfs_retry_error(task->tk_status))
++		taskNeedDelay = false;
++
++	clnt = nfs_get_rpc_clnt_by_fh(NFS_SERVER(inode), NFS_FH(inode));
++	if (clnt == NFS_SERVER(inode)->client)
++		task->tk_flags = task->tk_flags & (~RPC_TASK_MULTIPATH);
++
++	task->tk_status = 0;
++	rpc_restart_call_with_newclnt(task, clnt);
++	if (taskNeedDelay)
++		rpc_delay(task, NFS_JUKEBOX_RETRY_TIME);
++
++	return 1;
++}
++EXPORT_SYMBOL_GPL(nfs3_async_handle_jukebox_multipath);
++
++void nfs4_async_handle_jukebox_multipath(struct rpc_task *task, struct nfs_server *server)
++{
++	struct rpc_clnt *clnt;
++
++	if (task == NULL)
++		return;
++
++	clnt = nfs_get_rpc_clnt_by_fh(server, NULL);
++	if (clnt != server->client)
++		task->tk_flags = task->tk_flags | RPC_TASK_MULTIPATH;
++	else
++		task->tk_flags = task->tk_flags & (~RPC_TASK_MULTIPATH);
++
++	task->tk_status = 0;
++	rpc_restart_call_with_newclnt(task, clnt);
++}
++EXPORT_SYMBOL_GPL(nfs4_async_handle_jukebox_multipath);
++
++void nfs_multipath_task_setup_init(struct rpc_task_setup *task_setup_data, struct nfs_client *clp)
++{
++	struct rpc_clnt *rpc_client = NULL;
++
++	task_setup_data->timeout_cb = NULL;
++	task_setup_data->timeout_data = NULL;
++	if (clp && clp->cl_multipath_data)
++		rpc_client = nfs_get_best_rpc_clnt(clp);
++
++	if (rpc_client && task_setup_data->rpc_client != rpc_client) {
++		task_setup_data->rpc_client = rpc_client;
++		task_setup_data->flags |= RPC_TASK_MULTIPATH;
++		task_setup_data->timeout_cb = nfs_multipath_timeout_handler;
++		task_setup_data->timeout_data = clp;
++	}
++}
++EXPORT_SYMBOL_GPL(nfs_multipath_task_setup_init);
++
+diff --git a/fs/nfs/nfs_multipath.h b/fs/nfs/nfs_multipath.h
+new file mode 100644
+index 000000000000..27ef9d49dbc7
+--- /dev/null
++++ b/fs/nfs/nfs_multipath.h
+@@ -0,0 +1,59 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ *  Client-side NFS multipath adapt header.
++ *
++ *  Copyright (c) 2023. Huawei Technologies Co., Ltd. All rights reserved.
++ */
++
++#ifndef _NFS_MULTIPATH_H_
++#define _NFS_MULTIPATH_H_
++
++#include "internal.h"
++
++struct nfs_multipath_ops {
++	const char *name;
++	struct module *owner;
++	struct rpc_clnt *(*get_best_conn)(struct nfs_client *clp, struct nfs_fh *fh);
++	void (*conn_set_unavailable)(struct nfs_client *clp, struct rpc_clnt *clnt);
++	int (*parse_mount_options)(const char *key, char *str, struct nfs_fs_context *ctx,
++		struct net *net_ns);
++	void (*free_mount_options)(struct nfs_fs_context *ctx);
++	void *(*dup_mount_options)(struct nfs_fs_context *ctx);
++	int (*client_info_init)(const struct rpc_program *program, struct nfs_client *clp,
++							const struct nfs_client_initdata *cl_init,
++							const struct nfs_fs_context *ctx,
++							enum nfs_protocol_type nfs_proto);
++	void (*client_info_free)(struct nfs_client *clp);
++	int (*client_info_match)(void *src, void *dst);
++	void (*client_info_show)(struct seq_file *mount_option, struct nfs_server *server);
++	int (*client_info_clone)(struct nfs_server *src, struct nfs_server *dst,
++		rpc_authflavor_t flavor);
++};
++
++int nfs_multipath_parse_mount_options(const char *key, char *str, struct nfs_fs_context *ctx,
++	struct net *net_ns);
++void nfs_multipath_free_mount_options(struct nfs_fs_context *ctx);
++void *nfs_multipath_dup_mount_options(struct nfs_fs_context *ctx);
++bool is_nfs_retry_error(int ret);
++int nfs_multipath_register(struct nfs_multipath_ops *ops);
++int nfs_multipath_unregister(struct nfs_multipath_ops *ops);
++void nfs_multipath_timeout_handler(struct rpc_task *task);
++int nfs_multipath_client_match(void *src, void *dst);
++void nfs_free_multi_path_client(struct nfs_client *clp);
++int nfs_create_multi_path_client(struct nfs_client *client, const struct nfs_fs_context *ctx,
++	struct nfs_client_initdata *cl_init, enum nfs_protocol_type nfs_proto);
++void nfs_multipath_mark_conn_unavailable(struct nfs_client *clp, struct rpc_clnt *clnt);
++struct rpc_clnt *nfs_get_rpc_clnt_by_fh(struct nfs_server *server, struct nfs_fh *fh);
++int nfs_multipath_clone_client_info(struct nfs_server *src, struct nfs_server *dst,
++	rpc_authflavor_t flavor);
++void nfs_multipath_show_client_info(struct seq_file *mount_option, struct nfs_server *server);
++struct rpc_task *nfs4_multipath_rpc_run_task(struct rpc_task_setup *task_setup);
++struct rpc_clnt *nfs_get_best_rpc_clnt(struct nfs_client *clp);
++int nfs4_multipath_rpc_call_sync(struct nfs_client *clp, struct rpc_message *pMsg, int flags);
++int nfs3_rpc_call_sync(struct inode *inode, struct nfs_server *server, struct rpc_message *msg,
++	unsigned short task_flags);
++int nfs3_async_handle_jukebox_multipath(struct rpc_task *task, struct inode *inode);
++void nfs4_async_handle_jukebox_multipath(struct rpc_task *task, struct nfs_server *server);
++void nfs_multipath_task_setup_init(struct rpc_task_setup *task_setup_data, struct nfs_client *clp);
++
++#endif
+diff --git a/fs/nfs/pagelist.c b/fs/nfs/pagelist.c
+index 317cedfa52bf..e97d10ee55e5 100644
+--- a/fs/nfs/pagelist.c
++++ b/fs/nfs/pagelist.c
+@@ -22,7 +22,7 @@
+ #include <linux/nfs_mount.h>
+ #include <linux/export.h>
+ 
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "pnfs.h"
+ #include "nfstrace.h"
+ 
+@@ -770,6 +770,7 @@ int nfs_initiate_pgio(struct rpc_clnt *clnt, struct nfs_pgio_header *hdr,
+ 	if (nfs_server_capable(hdr->inode, NFS_CAP_MOVEABLE))
+ 		task_setup_data.flags |= RPC_TASK_MOVEABLE;
+ 
++	nfs_multipath_task_setup_init(&task_setup_data, NFS_SERVER(hdr->inode)->nfs_client);
+ 	hdr->rw_ops->rw_initiate(hdr, &msg, rpc_ops, &task_setup_data, how);
+ 
+ 	dprintk("NFS: initiated pgio call "
+diff --git a/fs/nfs/super.c b/fs/nfs/super.c
+index 05ae23657527..c644fc108fc2 100644
+--- a/fs/nfs/super.c
++++ b/fs/nfs/super.c
+@@ -63,7 +63,7 @@
+ #include "callback.h"
+ #include "delegation.h"
+ #include "iostat.h"
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "fscache.h"
+ #include "nfs4session.h"
+ #include "pnfs.h"
+@@ -543,6 +543,7 @@ int nfs_show_options(struct seq_file *m, struct dentry *root)
+ 	seq_printf(m, ",addr=%s",
+ 			rpc_peeraddr2str(nfss->nfs_client->cl_rpcclient,
+ 							RPC_DISPLAY_ADDR));
++	nfs_multipath_show_client_info(m, nfss);
+ 	rcu_read_unlock();
+ 
+ 	return 0;
+diff --git a/fs/nfs/unlink.c b/fs/nfs/unlink.c
+index 9697cd5d2561..b3e2efad116a 100644
+--- a/fs/nfs/unlink.c
++++ b/fs/nfs/unlink.c
+@@ -17,7 +17,7 @@
+ #include <linux/namei.h>
+ #include <linux/fsnotify.h>
+ 
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "nfs4_fs.h"
+ #include "iostat.h"
+ #include "delegation.h"
+@@ -113,6 +113,7 @@ static void nfs_do_call_unlink(struct inode *inode, struct nfs_unlinkdata *data)
+ 	NFS_PROTO(dir)->unlink_setup(&msg, data->dentry, inode);
+ 
+ 	task_setup_data.rpc_client = NFS_CLIENT(dir);
++	nfs_multipath_task_setup_init(&task_setup_data, NFS_SERVER(dir)->nfs_client);
+ 	task = rpc_run_task(&task_setup_data);
+ 	if (!IS_ERR(task))
+ 		rpc_put_task_async(task);
+@@ -348,8 +349,9 @@ nfs_async_rename(struct inode *old_dir, struct inode *new_dir,
+ 		.flags = RPC_TASK_ASYNC | RPC_TASK_CRED_NOREF,
+ 	};
+ 
++	nfs_multipath_task_setup_init(&task_setup_data, NFS_SERVER(old_dir)->nfs_client);
+ 	if (nfs_server_capable(old_dir, NFS_CAP_MOVEABLE) &&
+-	    nfs_server_capable(new_dir, NFS_CAP_MOVEABLE))
++		nfs_server_capable(new_dir, NFS_CAP_MOVEABLE))
+ 		task_setup_data.flags |= RPC_TASK_MOVEABLE;
+ 
+ 	data = kzalloc(sizeof(*data), GFP_KERNEL);
+diff --git a/fs/nfs/write.c b/fs/nfs/write.c
+index f41d24b54fd1..6450eed5050e 100644
+--- a/fs/nfs/write.c
++++ b/fs/nfs/write.c
+@@ -30,7 +30,7 @@
+ #include <linux/sched/mm.h>
+ 
+ #include "delegation.h"
+-#include "internal.h"
++#include "nfs_multipath.h"
+ #include "iostat.h"
+ #include "nfs4_fs.h"
+ #include "fscache.h"
+@@ -1697,7 +1697,7 @@ int nfs_initiate_commit(struct rpc_clnt *clnt, struct nfs_commit_data *data,
+ 		.flags = RPC_TASK_ASYNC | flags,
+ 		.priority = priority,
+ 	};
+-
++	nfs_multipath_task_setup_init(&task_setup_data, NFS_SERVER(data->inode)->nfs_client);
+ 	if (nfs_server_capable(data->inode, NFS_CAP_MOVEABLE))
+ 		task_setup_data.flags |= RPC_TASK_MOVEABLE;
+ 
+diff --git a/include/linux/errno.h b/include/linux/errno.h
+index 8b0c754bab02..9ff23da9e090 100644
+--- a/include/linux/errno.h
++++ b/include/linux/errno.h
+@@ -32,5 +32,10 @@
+ #define EIOCBQUEUED	529	/* iocb queued, will get completion event */
+ #define ERECALLCONFLICT	530	/* conflict with recalled state */
+ #define ENOGRACE	531	/* NFS file lock reclaim refused */
++/* async task need to retry immediately if there is a connection issue
++ *try on new rpc connection
++ */
++#define ERETRY_NEW_RPC 532
++#define ERETRY 533      /* task need retry */
+ 
+ #endif
+diff --git a/include/linux/nfs.h b/include/linux/nfs.h
+index b06375e88e58..3ffe4bbe3b38 100644
+--- a/include/linux/nfs.h
++++ b/include/linux/nfs.h
+@@ -44,4 +44,10 @@ enum nfs3_stable_how {
+ 	/* used by direct.c to mark verf as invalid */
+ 	NFS_INVALID_STABLE_HOW = -1
+ };
++
++enum nfs_protocol_type {
++	NFSV3_PROTO = 3,
++	NFSV4_PROTO = 4,
++};
++
+ #endif /* _LINUX_NFS_H */
+diff --git a/include/linux/nfs_fs_sb.h b/include/linux/nfs_fs_sb.h
+index ea2f7e6b1b0b..8390bddda22f 100644
+--- a/include/linux/nfs_fs_sb.h
++++ b/include/linux/nfs_fs_sb.h
+@@ -122,6 +122,7 @@ struct nfs_client {
+ 	char			cl_ipaddr[48];
+ 	struct net		*cl_net;
+ 	struct list_head	pending_cb_stateids;
++	void *cl_multipath_data; /* multi path private structure */
+ };
+ 
+ /*
+diff --git a/include/linux/sunrpc/clnt.h b/include/linux/sunrpc/clnt.h
+index 770ef2cb5775..0f9eb517e3ee 100644
+--- a/include/linux/sunrpc/clnt.h
++++ b/include/linux/sunrpc/clnt.h
+@@ -202,6 +202,7 @@ struct rpc_task *rpc_call_null(struct rpc_clnt *clnt, struct rpc_cred *cred,
+ 			       int flags);
+ int		rpc_restart_call_prepare(struct rpc_task *);
+ int		rpc_restart_call(struct rpc_task *);
++int     rpc_restart_call_with_newclnt(struct rpc_task *task, struct rpc_clnt *newclnt);
+ void		rpc_setbufsize(struct rpc_clnt *, unsigned int, unsigned int);
+ struct net *	rpc_net_ns(struct rpc_clnt *);
+ size_t		rpc_max_payload(struct rpc_clnt *);
+@@ -260,4 +261,7 @@ static inline void rpc_task_close_connection(struct rpc_task *task)
+ 	if (task->tk_xprt)
+ 		xprt_force_disconnect(task->tk_xprt);
+ }
++
++int rpc_fast_ping(struct rpc_clnt *clnt);
++
+ #endif /* _LINUX_SUNRPC_CLNT_H */
+diff --git a/include/linux/sunrpc/sched.h b/include/linux/sunrpc/sched.h
+index b8ca3ecaf8d7..bf597b54b9c5 100644
+--- a/include/linux/sunrpc/sched.h
++++ b/include/linux/sunrpc/sched.h
+@@ -82,7 +82,7 @@ struct rpc_task {
+ 	pid_t			tk_owner;	/* Process id for batching tasks */
+ 
+ 	int			tk_rpc_status;	/* Result of last RPC operation */
+-	unsigned short		tk_flags;	/* misc flags */
++	unsigned int		tk_flags;	/* misc flags */
+ 	unsigned short		tk_timeouts;	/* maj timeouts */
+ 
+ #if IS_ENABLED(CONFIG_SUNRPC_DEBUG) || IS_ENABLED(CONFIG_TRACEPOINTS)
+@@ -92,6 +92,8 @@ struct rpc_task {
+ 				tk_garb_retry : 2,
+ 				tk_cred_retry : 2,
+ 				tk_rebind_retry : 2;
++	void (*tk_timeout_cb)(struct rpc_task *task);
++	void *tk_timeout_data; /* timeout private data */
+ };
+ 
+ typedef void			(*rpc_action)(struct rpc_task *);
+@@ -112,8 +114,10 @@ struct rpc_task_setup {
+ 	const struct rpc_call_ops *callback_ops;
+ 	void *callback_data;
+ 	struct workqueue_struct *workqueue;
+-	unsigned short flags;
++	unsigned int flags;
+ 	signed char priority;
++	void (*timeout_cb)(struct rpc_task *task);
++	void *timeout_data; /* timeout private data */
+ };
+ 
+ /*
+@@ -133,6 +137,7 @@ struct rpc_task_setup {
+ #define RPC_TASK_NOCONNECT	0x2000		/* return ENOTCONN if not connected */
+ #define RPC_TASK_NO_RETRANS_TIMEOUT	0x4000		/* wait forever for a reply */
+ #define RPC_TASK_CRED_NOREF	0x8000		/* No refcount on the credential */
++#define RPC_TASK_MULTIPATH 0x10000      /* multipath task, will retry by upper layer(like NFS) */
+ 
+ #define RPC_IS_ASYNC(t)		((t)->tk_flags & RPC_TASK_ASYNC)
+ #define RPC_IS_SWAPPER(t)	((t)->tk_flags & RPC_TASK_SWAPPER)
+@@ -140,6 +145,7 @@ struct rpc_task_setup {
+ #define RPC_IS_SOFTCONN(t)	((t)->tk_flags & RPC_TASK_SOFTCONN)
+ #define RPC_WAS_SENT(t)		((t)->tk_flags & RPC_TASK_SENT)
+ #define RPC_IS_MOVEABLE(t)	((t)->tk_flags & RPC_TASK_MOVEABLE)
++#define RPC_IS_MULTIPATH(t) ((t)->tk_flags & RPC_TASK_MULTIPATH)
+ 
+ #define RPC_TASK_RUNNING	0
+ #define RPC_TASK_QUEUED		1
+diff --git a/net/sunrpc/clnt.c b/net/sunrpc/clnt.c
+index 993acf38af87..25c98029bb10 100644
+--- a/net/sunrpc/clnt.c
++++ b/net/sunrpc/clnt.c
+@@ -858,8 +858,7 @@ void rpc_killall_tasks(struct rpc_clnt *clnt)
+ {
+ 	struct rpc_task	*rovr;
+ 
+-
+-	if (list_empty(&clnt->cl_tasks))
++	if (!clnt || list_empty(&clnt->cl_tasks))
+ 		return;
+ 
+ 	/*
+@@ -1235,6 +1234,8 @@ int rpc_call_sync(struct rpc_clnt *clnt, const struct rpc_message *msg, int flag
+ 		.rpc_message = msg,
+ 		.callback_ops = &rpc_default_ops,
+ 		.flags = flags,
++		.timeout_cb = NULL,
++		.timeout_data = NULL,
+ 	};
+ 	int status;
+ 
+@@ -1254,6 +1255,25 @@ int rpc_call_sync(struct rpc_clnt *clnt, const struct rpc_message *msg, int flag
+ }
+ EXPORT_SYMBOL_GPL(rpc_call_sync);
+ 
++/* Restart an (async) RPC call. Usually called from within the
++ * exit handler using new clnt.
++ */
++int  rpc_restart_call_with_newclnt(struct rpc_task *task, struct rpc_clnt *newclnt)
++{
++	if (!newclnt)
++		return 0;
++
++	xprt_release(task);
++	rpc_task_release_client(task);
++
++	rpc_task_set_client(task, newclnt);
++
++	task->tk_action = call_start;
++	task->tk_status = 0;
++	return 1;
++}
++EXPORT_SYMBOL_GPL(rpc_restart_call_with_newclnt);
++
+ /**
+  * rpc_call_async - Perform an asynchronous RPC call
+  * @clnt: pointer to RPC client
+@@ -1768,6 +1788,9 @@ call_reserveresult(struct rpc_task *task)
+ 	case -EAGAIN:	/* woken up; retry */
+ 		task->tk_action = call_retry_reserve;
+ 		return;
++	case -ERETRY:
++		rpc_exit(task, status);
++		return;
+ 	default:
+ 		rpc_call_rpcerror(task, status);
+ 	}
+@@ -1993,6 +2016,8 @@ rpc_task_handle_transmitted(struct rpc_task *task)
+ 	task->tk_action = call_transmit_status;
+ }
+ 
++#define TASK_BIND_TIMEOUT (0.5 * HZ)
++
+ /*
+  * 4.	Get the server port number if not yet set
+  */
+@@ -2012,6 +2037,8 @@ call_bind(struct rpc_task *task)
+ 	}
+ 
+ 	task->tk_action = call_bind_status;
++	if (RPC_IS_MULTIPATH(task))
++		task->tk_timeout = TASK_BIND_TIMEOUT;
+ 	if (!xprt_prepare_transmit(task))
+ 		return;
+ 
+@@ -2080,6 +2107,11 @@ call_bind_status(struct rpc_task *task)
+ 	case -ENETUNREACH:
+ 	case -EPIPE:
+ 		trace_rpcb_unreachable_err(task);
++		if (RPC_IS_MULTIPATH(task)) {
++			status = task->tk_status;
++			break;
++		}
++
+ 		if (!RPC_IS_SOFTCONN(task)) {
+ 			rpc_delay(task, 5*HZ);
+ 			goto retry_timeout;
+@@ -2163,7 +2195,7 @@ call_connect_status(struct rpc_task *task)
+ 		/* A positive refusal suggests a rebind is needed. */
+ 		if (RPC_IS_SOFTCONN(task))
+ 			break;
+-		if (clnt->cl_autobind) {
++		if ((!RPC_IS_MULTIPATH(task)) && clnt->cl_autobind) {
+ 			rpc_force_rebind(clnt);
+ 			goto out_retry;
+ 		}
+@@ -2180,12 +2212,17 @@ call_connect_status(struct rpc_task *task)
+ 		if (RPC_IS_SOFTCONN(task))
+ 			break;
+ 		/* retry with existing socket, after a delay */
+-		rpc_delay(task, 3*HZ);
++		if (!RPC_IS_MULTIPATH(task))
++			rpc_delay(task, 3 * HZ);
++
+ 		fallthrough;
+ 	case -EADDRINUSE:
+ 	case -ENOTCONN:
+ 	case -EAGAIN:
+ 	case -ETIMEDOUT:
++		if (RPC_IS_MULTIPATH(task))
++			task->tk_status = status;
++
+ 		if (!(task->tk_flags & RPC_TASK_NO_ROUND_ROBIN) &&
+ 		    (task->tk_flags & RPC_TASK_MOVEABLE) &&
+ 		    test_bit(XPRT_REMOVE, &xprt->state)) {
+@@ -2434,9 +2471,12 @@ call_status(struct rpc_task *task)
+ 		 * Delay any retries for 3 seconds, then handle as if it
+ 		 * were a timeout.
+ 		 */
+-		rpc_delay(task, 3*HZ);
++		if (!RPC_IS_MULTIPATH(task))
++			rpc_delay(task, 3 * HZ);
+ 		fallthrough;
+ 	case -ETIMEDOUT:
++		if (RPC_IS_MULTIPATH(task))
++			task->tk_status = status;
+ 		break;
+ 	case -ECONNREFUSED:
+ 	case -ECONNRESET:
+@@ -2481,6 +2521,54 @@ rpc_check_connected(const struct rpc_rqst *req)
+ 	return xprt_connected(req->rq_xprt);
+ }
+ 
++static void rpc_set_retry_status(struct rpc_task *task)
++{
++	dprintk("RPC: %s %5u (entry) task is %d\n",
++		__func__, task->tk_pid, task->tk_status);
++
++	if (task->tk_timeout_cb)
++		task->tk_timeout_cb(task);
++
++	dprintk("RPC: %s %5u  status %d\n",
++		__func__, task->tk_pid, task->tk_status);
++	rpc_exit(task, -ERETRY_NEW_RPC);
++}
++
++static bool rpc_check_need_retry(struct rpc_task *task)
++{
++	switch (task->tk_status) {
++		case -EAGAIN:{
++			dprintk("RPC: %s %5u with egain, tk_timeouts %d\n",
++				__func__, task->tk_pid, task->tk_timeouts);
++			return false;
++		}
++		case 0: {
++			dprintk("RPC: %5u rpc need retry with 0\n", task->tk_pid);
++			return false;
++		}
++	}
++
++	if (RPC_IS_SOFTCONN(task))
++		return true;
++
++	if (rpc_fast_ping(task->tk_client) == 0)
++		return false;
++
++	return true;
++}
++
++int rpc_nfs_check_timeout(struct rpc_rqst *req)
++{
++	int status = 0;
++
++	if (time_before(jiffies, req->rq_majortimeo))
++		req->rq_timeout = 1 * HZ;
++	else
++		status = -ETIMEDOUT;
++	req->rq_timeout = 1 * HZ;
++	return status;
++}
++
+ static void
+ rpc_check_timeout(struct rpc_task *task)
+ {
+@@ -2489,6 +2577,18 @@ rpc_check_timeout(struct rpc_task *task)
+ 	if (RPC_SIGNALLED(task))
+ 		return;
+ 
++	if (RPC_IS_MULTIPATH(task)) {
++		if (rpc_check_need_retry(task)) {
++			rpc_set_retry_status(task);
++			return;
++		}
++		task->tk_status = 0;
++		if (rpc_nfs_check_timeout(task->tk_rqstp) == 0)
++			return;
++		rpc_exit(task, -ERETRY_NEW_RPC);
++		return;
++	}
++
+ 	if (xprt_adjust_timeout(task->tk_rqstp) == 0)
+ 		return;
+ 
+@@ -2859,6 +2959,38 @@ static int rpc_ping_noreply(struct rpc_clnt *clnt)
+ 	return status;
+ }
+ 
++int rpc_fast_ping(struct rpc_clnt *clnt)
++{
++	struct rpc_task task = { 0 };
++	struct rpc_task *run_task = 0;
++	struct rpc_message msg = {
++		.rpc_proc = &rpcproc_null,
++		.rpc_cred = NULL,
++	};
++	int err;
++	struct rpc_task_setup task_setup_data = {
++		.task = &task,
++		.rpc_client = clnt,
++		.rpc_xprt = NULL,
++		.rpc_message = &msg,
++		.callback_ops = &rpc_default_ops,
++		.callback_data = NULL,
++		.flags = RPC_TASK_SOFTCONN | RPC_TASK_TIMEOUT | RPC_TASK_MULTIPATH,
++	};
++	clnt->cl_timeout_default.to_initval = 1 * HZ;
++
++	run_task = rpc_run_task(&task_setup_data);
++	if (IS_ERR(run_task)) {
++		err = PTR_ERR(run_task);
++	} else {
++		err = run_task->tk_status;
++		rpc_put_task(run_task);
++	}
++
++	return err;
++}
++EXPORT_SYMBOL_GPL(rpc_fast_ping);
++
+ struct rpc_cb_add_xprt_calldata {
+ 	struct rpc_xprt_switch *xps;
+ 	struct rpc_xprt *xprt;
+diff --git a/net/sunrpc/rpcb_clnt.c b/net/sunrpc/rpcb_clnt.c
+index 5a8e6d46809a..7aa1ccd29423 100644
+--- a/net/sunrpc/rpcb_clnt.c
++++ b/net/sunrpc/rpcb_clnt.c
+@@ -595,7 +595,7 @@ int rpcb_v4_register(struct net *net, const u32 program, const u32 version,
+ }
+ 
+ static struct rpc_task *rpcb_call_async(struct rpc_clnt *rpcb_clnt,
+-		struct rpcbind_args *map, const struct rpc_procinfo *proc)
++		struct rpcbind_args *map, const struct rpc_procinfo *proc, struct rpc_task *parent)
+ {
+ 	struct rpc_message msg = {
+ 		.rpc_proc = proc,
+@@ -607,9 +607,17 @@ static struct rpc_task *rpcb_call_async(struct rpc_clnt *rpcb_clnt,
+ 		.rpc_message = &msg,
+ 		.callback_ops = &rpcb_getport_ops,
+ 		.callback_data = map,
+-		.flags = RPC_TASK_ASYNC | RPC_TASK_SOFTCONN,
++		.flags = RPC_TASK_ASYNC,
+ 	};
+ 
++	if (RPC_IS_MULTIPATH(parent)) {
++		task_setup_data.timeout_cb = parent->tk_timeout_cb,
++		task_setup_data.timeout_data = parent->tk_timeout_data,
++		task_setup_data.flags |= RPC_TASK_MULTIPATH;
++	} else {
++		task_setup_data.flags |= RPC_TASK_SOFTCONN;
++	}
++
+ 	return rpc_run_task(&task_setup_data);
+ }
+ 
+@@ -744,7 +752,7 @@ void rpcb_getport_async(struct rpc_task *task)
+ 		BUG();
+ 	}
+ 
+-	child = rpcb_call_async(rpcb_clnt, map, proc);
++	child = rpcb_call_async(rpcb_clnt, map, proc, task);
+ 	rpc_release_client(rpcb_clnt);
+ 
+ 	xprt->stat.bind_count++;
+diff --git a/net/sunrpc/sched.c b/net/sunrpc/sched.c
+index be587a308e05..790a932f3c63 100644
+--- a/net/sunrpc/sched.c
++++ b/net/sunrpc/sched.c
+@@ -1114,6 +1114,9 @@ static void rpc_init_task(struct rpc_task *task, const struct rpc_task_setup *ta
+ 	task->tk_priority = task_setup_data->priority - RPC_PRIORITY_LOW;
+ 	task->tk_owner = current->tgid;
+ 
++	task->tk_timeout_data = task_setup_data->timeout_data;
++	task->tk_timeout_cb = task_setup_data->timeout_cb;
++
+ 	/* Initialize workqueue for async tasks */
+ 	task->tk_workqueue = task_setup_data->workqueue;
+ 
+diff --git a/net/sunrpc/xprt.c b/net/sunrpc/xprt.c
+index 656cec208371..623dbd00fcf1 100644
+--- a/net/sunrpc/xprt.c
++++ b/net/sunrpc/xprt.c
+@@ -253,6 +253,17 @@ static void xprt_clear_locked(struct rpc_xprt *xprt)
+ 		queue_work(xprtiod_workqueue, &xprt->task_cleanup);
+ }
+ 
++static void xprt_send_queue_timeout(struct rpc_task *task)
++{
++	dprintk("RPC: %5u call_timeout  (retry) %s  with status %d\n",
++		task->tk_pid, __func__, task->tk_status);
++	if (task->tk_status == -ETIMEDOUT) {
++		task->tk_status = -ERETRY;
++		dprintk("RPC: %5u call_timeout  (exit) %s  with status %d\n",
++			task->tk_pid, __func__, task->tk_status);
++	}
++}
++
+ /**
+  * xprt_reserve_xprt - serialize write access to transports
+  * @task: task that is requesting access to the transport
+@@ -283,11 +294,17 @@ int xprt_reserve_xprt(struct rpc_xprt *xprt, struct rpc_task *task)
+ 	xprt_clear_locked(xprt);
+ out_sleep:
+ 	task->tk_status = -EAGAIN;
+-	if  (RPC_IS_SOFT(task))
++	if  (RPC_IS_SOFT(task)) {
+ 		rpc_sleep_on_timeout(&xprt->sending, task, NULL,
+ 				xprt_request_timeout(req));
+-	else
+-		rpc_sleep_on(&xprt->sending, task, NULL);
++	} else {
++		if (RPC_IS_MULTIPATH(task)) {
++			task->tk_timeout = 1 * HZ;
++			rpc_sleep_on(&xprt->sending, task, xprt_send_queue_timeout);
++		} else {
++			rpc_sleep_on(&xprt->sending, task, NULL);
++		}
++	}
+ 	return 0;
+ }
+ EXPORT_SYMBOL_GPL(xprt_reserve_xprt);
+@@ -349,11 +366,17 @@ int xprt_reserve_xprt_cong(struct rpc_xprt *xprt, struct rpc_task *task)
+ 	xprt_clear_locked(xprt);
+ out_sleep:
+ 	task->tk_status = -EAGAIN;
+-	if (RPC_IS_SOFT(task))
++	if (RPC_IS_SOFT(task)) {
+ 		rpc_sleep_on_timeout(&xprt->sending, task, NULL,
+ 				xprt_request_timeout(req));
+-	else
+-		rpc_sleep_on(&xprt->sending, task, NULL);
++	} else {
++		if (RPC_IS_MULTIPATH(task)) {
++			task->tk_timeout = 1 * HZ;
++			rpc_sleep_on(&xprt->sending, task, xprt_send_queue_timeout);
++		} else {
++			rpc_sleep_on(&xprt->sending, task, NULL);
++		}
++	}
+ 	return 0;
+ out_locked:
+ 	trace_xprt_reserve_cong(xprt, task);
+-- 
+2.17.1
+
