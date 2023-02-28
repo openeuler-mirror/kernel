@@ -1706,7 +1706,6 @@ static int nbd_dev_add(int index)
 	struct gendisk *disk;
 	struct request_queue *q;
 	int err = -ENOMEM;
-	int first_minor = index << part_shift;
 
 	nbd = kzalloc(sizeof(struct nbd_device), GFP_KERNEL);
 	if (!nbd)
@@ -1770,7 +1769,7 @@ static int nbd_dev_add(int index)
 	refcount_set(&nbd->refs, 1);
 	INIT_LIST_HEAD(&nbd->list);
 	disk->major = NBD_MAJOR;
-	disk->first_minor = first_minor;
+	disk->first_minor = index << part_shift;
 	disk->fops = &nbd_fops;
 	disk->private_data = nbd;
 	sprintf(disk->disk_name, "nbd%d", index);
