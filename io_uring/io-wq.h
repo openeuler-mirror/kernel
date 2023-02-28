@@ -2,7 +2,7 @@
 #define INTERNAL_IO_WQ_H
 
 #include <linux/refcount.h>
-
+#include <linux/io_uring.h>
 struct io_wq;
 
 enum {

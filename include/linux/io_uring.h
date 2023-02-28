@@ -5,6 +5,37 @@
 #include <linux/sched.h>
 #include <linux/xarray.h>
 
+struct io_identity {
+	struct files_struct		*files;
+	struct mm_struct		*mm;
+#ifdef CONFIG_BLK_CGROUP
+	struct cgroup_subsys_state	*blkcg_css;
+#endif
+	const struct cred		*creds;
+	struct nsproxy			*nsproxy;
+	struct fs_struct		*fs;
+	unsigned long			fsize;
+#ifdef CONFIG_AUDIT
+	kuid_t				loginuid;
+	unsigned int			sessionid;
+#endif
+	refcount_t			count;
+};
+
+#ifdef __GENKSYMS__
+struct io_uring_task {
+	/* submission side */
+	struct xarray			xa;
+	struct wait_queue_head		wait;
+	struct file			*last;
+	struct percpu_counter		inflight;
+	struct io_identity		 __identity;
+	struct io_identity		*identity;
+	atomic_t			in_idle;
+	bool				sqpoll;
+};
+#endif
+
 #if defined(CONFIG_IO_URING)
 struct sock *io_uring_get_socket(struct file *file);
 void __io_uring_cancel(bool cancel_all);
