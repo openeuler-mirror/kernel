@@ -921,9 +921,6 @@ struct task_struct {
 	/* CLONE_CHILD_CLEARTID: */
 	int __user			*clear_child_tid;
 
-	/* PF_IO_WORKER */
-	void				*pf_io_worker;
-
 	u64				utime;
 	u64				stime;
 #ifdef CONFIG_ARCH_HAS_SCALED_CPUTIME
@@ -1402,7 +1399,7 @@ struct task_struct {
 	 */
 	randomized_struct_fields_end
 
-	KABI_RESERVE(1)
+	KABI_USE(1, void *pf_io_worker)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

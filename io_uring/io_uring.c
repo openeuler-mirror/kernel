@@ -461,6 +461,7 @@ struct io_ring_ctx {
 	};
 };
 
+#ifndef __GENKSYMS__
 struct io_uring_task {
 	/* submission side */
 	int			cached_refs;
@@ -477,6 +478,7 @@ struct io_uring_task {
 	struct callback_head	task_work;
 	bool			task_running;
 };
+#endif
 
 /*
  * First field must be the file pointer in all the
@@ -9850,13 +9852,15 @@ static int io_get_ext_arg(unsigned flags, const void __user *argp, size_t *argsz
 }
 
 SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit,
-		u32, min_complete, u32, flags, const void __user *, argp,
-		size_t, argsz)
+		u32, min_complete, u32, flags, const sigset_t __user *, sig,
+		size_t, sigsz)
 {
 	struct io_ring_ctx *ctx;
 	int submitted = 0;
 	struct fd f;
 	long ret;
+	const void __user *argp = (const void __user *) sig;
+	size_t argsz = sigsz;
 
 	io_run_task_work();
 
