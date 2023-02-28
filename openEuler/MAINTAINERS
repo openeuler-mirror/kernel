@@ -67,6 +67,49 @@ Maintainers List
           first. When adding to this list, please keep the entries in
           alphabetical order.
 
+HISILICON ACCELERATOR Controller DRIVER
+M:	Yang Shen <shenyang39@huawei.com>
+S:	Maintained
+F:	Documentation/ABI/testing/debugfs-hisi-zip
+F:	Documentation/ABI/testing/debugfs-hisi-sec
+F:	Documentation/ABI/testing/debugfs-hisi-hpre
+F:	drivers/crypto/hisilicon/
+F:	include/linux/hisi_acc_qm.h
+
+HISILICON PMU DRIVER
+M:	Yang Shen <shenyang39@huawei.com>
+S:	Supported
+W:	http://www.hisilicon.com
+F:	Documentation/admin-guide/perf/hisi-pcie-pmu.rst
+F:	Documentation/admin-guide/perf/hisi-pmu.rst
+F:	drivers/perf/hisilicon/
+
+HISILICON NETWORK SUBSYSTEM 3 DRIVER (HNS3)
+M:	Jian Shen <shenjian15@huawei.com>
+S:	Maintained
+F:	drivers/net/ethernet/hisilicon/hns3/
+F:	drivers/perf/hisilicon/hns3_pmu.c
+
+HISILICON ROCE DRIVER
+M:	Chengchang Tang <tangchengchang@huawei.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
+F:	include/uapi/rdma/hns-abi.h
+F:	drivers/infiniband/hw/hns/
+
+HISILICON ROH DRIVER
+M:	Ke Chen <chenke54@huawei.com>
+S:	Maintained
+F:	drivers/roh/core
+F:	drivers/roh/hw/hns3
+
+HISILICON SAS/SATE DRIVER
+M:	Yihang Li <liyihang9@huawei.com>
+S:	Maintained
+F:	Documentation/devicetree/bindings/scsi/hisilicon-sas.txt
+F:	drivers/scsi/hisi_sas/
+F:	drivers/ata/ahci.c
+
 KERNEL VIRTUAL MACHINE (KVM)
 M:	zhukeqian1@huawei.com
 M:	yuzenghui@huawei.com
@@ -85,6 +128,33 @@ F:	arch/*/include/asm/kvm*
 F:	arch/*/include/uapi/asm/kvm*
 F:	arch/*/kvm/
 
+Kunpeng SoC
+M:	Xinwei Kong <kong.kongxinwei@hisilicon.com>
+M:	Mingqiang Ling <lingmingqiang@huawei.com>
+S:	Maintained
+
+Kunpeng SoC PCIe
+M:	Yicong Yang <yangyicong@hisilicon.com>
+S:	Maintained
+F:	drivers/hwtracing/ptt
+F:	drivers/pci
+F:	drivers/acpi/pci*
+F:	arch/arm64/kernel/pci.c
+
+Kunpeng SoC IP
+M:	Yicong Yang <yangyicong@hisilicon.com>
+S:	Maintained
+F:	drivers/i2c/busses/i2c-hisi.c
+F:	drivers/spi/spi-hisi-*
+F:	drivers/gpio/gpio-hisi.c
+
+RAS Public Architecture
+M:	Xiaofei Tan <tanxiaofei@huawei.com>
+S:	Maintained
+F:	drivers/ras/
+F:	drivers/acpi/apei/
+F:	drivers/firmware/efi/cper.c
+
 SCHEDULER
 M:	zhengzucheng@huawei.com
 S:	Maintained
@@ -99,6 +169,18 @@ M:	Steven Song <steven.song@3snic.com>
 S:	Maintained
 F:	Documentation/scsi/sssraid.rst
 F:	drivers/scsi/sssraid/
+
+UB DRIVER
+M:	Chunzhi Hu <huchunzhi@huawei.com>
+M:	delong ouyang <ouyangdelong@huawei.com>
+M:	Lilijun (Jerry) <jerry.lilijun@huawei.com>
+S:	Maintained
+F:	drivers/net/ethernet/ub/
+F:	drivers/ub
+F:	drivers/iommu/hisilicon
+F:	drivers/ubus
+F:	drivers/vfio/ubus
+F:	net/ubl
 
 THE REST
 M:	xiexiuqi@huawei.com
