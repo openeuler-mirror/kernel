@@ -4563,7 +4563,7 @@ __ATTR_PREALLOC(array_state, S_IRUGO|S_IWUSR, array_state_show, array_state_stor
 
 static ssize_t
 max_corrected_read_errors_show(struct mddev *mddev, char *page) {
-	return sprintf(page, "%d\n",
+	return sprintf(page, "%u\n",
 		       atomic_read(&mddev->max_corr_read_errors));
 }
 
