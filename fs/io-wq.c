@@ -578,8 +578,6 @@ get_next:
 				linked = NULL;
 			}
 			io_assign_current_work(worker, work);
-			if (current->fs != worker->restore_fs)
-				current->fs = worker->restore_fs;
 			wq->free_work(old_work);
 
 			if (linked)
