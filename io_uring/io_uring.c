@@ -7190,6 +7190,10 @@ static int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr)
 		submitted++;
 		if (io_submit_sqe(ctx, req, sqe))
 			break;
+
+		/* to avoid doing too much in one submit round */
+		if (submitted > IORING_MAX_ENTRIES / 2)
+			cond_resched();
 	}
 
 	if (unlikely(submitted != nr)) {
