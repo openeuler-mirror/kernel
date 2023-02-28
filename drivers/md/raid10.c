@@ -2325,7 +2325,7 @@ static void fix_read_error(struct r10conf *conf, struct mddev *mddev, struct r10
 	int sect = 0; /* Offset from r10_bio->sector */
 	int sectors = r10_bio->sectors;
 	struct md_rdev *rdev;
-	int max_read_errors = atomic_read(&mddev->max_corr_read_errors);
+	unsigned int max_read_errors = atomic_read(&mddev->max_corr_read_errors);
 	int d = r10_bio->devs[r10_bio->read_slot].devnum;
 
 	/* still own a reference to this rdev, so it cannot
@@ -2344,7 +2344,7 @@ static void fix_read_error(struct r10conf *conf, struct mddev *mddev, struct r10
 		char b[BDEVNAME_SIZE];
 		bdevname(rdev->bdev, b);
 
-		pr_notice("md/raid10:%s: %s: Raid device exceeded read_error threshold [cur %d:max %d]\n",
+		pr_notice("md/raid10:%s: %s: Raid device exceeded read_error threshold [cur %u:max %u]\n",
 			  mdname(mddev), b,
 			  atomic_read(&rdev->read_errors), max_read_errors);
 		pr_notice("md/raid10:%s: %s: Failing raid device\n",
