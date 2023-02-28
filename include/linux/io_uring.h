@@ -22,33 +22,34 @@ struct io_identity {
 	refcount_t			count;
 };
 
+#ifdef __GENKSYMS__
 struct io_uring_task {
 	/* submission side */
-	struct xarray		xa;
-	struct wait_queue_head	wait;
-	struct file		*last;
-	struct percpu_counter	inflight;
-	struct io_identity	__identity;
-	struct io_identity	*identity;
-	atomic_t		in_idle;
-	bool			sqpoll;
+	struct xarray			xa;
+	struct wait_queue_head		wait;
+	struct file			*last;
+	struct percpu_counter		inflight;
+	struct io_identity		 __identity;
+	struct io_identity		*identity;
+	atomic_t			in_idle;
+	bool				sqpoll;
 };
+#endif
 
 #if defined(CONFIG_IO_URING)
 struct sock *io_uring_get_socket(struct file *file);
-void __io_uring_task_cancel(void);
-void __io_uring_files_cancel(struct files_struct *files);
+void __io_uring_cancel(bool cancel_all);
 void __io_uring_free(struct task_struct *tsk);
 
+static inline void io_uring_files_cancel(void)
+{
+	if (current->io_uring)
+		__io_uring_cancel(false);
+}
 static inline void io_uring_task_cancel(void)
 {
-	if (current->io_uring && !xa_empty(&current->io_uring->xa))
-		__io_uring_task_cancel();
-}
-static inline void io_uring_files_cancel(struct files_struct *files)
-{
-	if (current->io_uring && !xa_empty(&current->io_uring->xa))
-		__io_uring_files_cancel(files);
+	if (current->io_uring)
+		__io_uring_cancel(true);
 }
 static inline void io_uring_free(struct task_struct *tsk)
 {
@@ -63,7 +64,7 @@ static inline struct sock *io_uring_get_socket(struct file *file)
 static inline void io_uring_task_cancel(void)
 {
 }
-static inline void io_uring_files_cancel(struct files_struct *files)
+static inline void io_uring_files_cancel(void)
 {
 }
 static inline void io_uring_free(struct task_struct *tsk)

@@ -1421,7 +1421,7 @@ struct task_struct {
 #else
 	KABI_RESERVE(6)
 #endif
-	KABI_RESERVE(7)
+	KABI_USE(7, void *pf_io_worker)
 	KABI_RESERVE(8)
 	KABI_RESERVE(9)
 	KABI_RESERVE(10)
