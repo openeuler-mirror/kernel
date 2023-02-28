@@ -2073,16 +2073,6 @@ static int io_req_task_work_add(struct io_kiocb *req, bool twa_signal_ok)
 	return ret;
 }
 
-static void io_req_task_work_add_fallback(struct io_kiocb *req,
-					  void (*cb)(struct callback_head *))
-{
-	struct task_struct *tsk = io_wq_get_task(req->ctx->io_wq);
-
-	init_task_work(&req->task_work, cb);
-	task_work_add(tsk, &req->task_work, TWA_NONE);
-	wake_up_process(tsk);
-}
-
 static void __io_req_task_cancel(struct io_kiocb *req, int error)
 {
 	struct io_ring_ctx *ctx = req->ctx;
@@ -2138,8 +2128,14 @@ static void io_req_task_queue(struct io_kiocb *req)
 	percpu_ref_get(&req->ctx->refs);
 
 	ret = io_req_task_work_add(req, true);
-	if (unlikely(ret))
-		io_req_task_work_add_fallback(req, io_req_task_cancel);
+	if (unlikely(ret)) {
+		struct task_struct *tsk;
+
+		init_task_work(&req->task_work, io_req_task_cancel);
+		tsk = io_wq_get_task(req->ctx->io_wq);
+		task_work_add(tsk, &req->task_work, TWA_NONE);
+		wake_up_process(tsk);
+	}
 }
 
 static void io_queue_next(struct io_kiocb *req)
@@ -2258,8 +2254,13 @@ static void io_free_req_deferred(struct io_kiocb *req)
 
 	init_task_work(&req->task_work, io_put_req_deferred_cb);
 	ret = io_req_task_work_add(req, true);
-	if (unlikely(ret))
-		io_req_task_work_add_fallback(req, io_put_req_deferred_cb);
+	if (unlikely(ret)) {
+		struct task_struct *tsk;
+
+		tsk = io_wq_get_task(req->ctx->io_wq);
+		task_work_add(tsk, &req->task_work, TWA_NONE);
+		wake_up_process(tsk);
+	}
 }
 
 static inline void io_put_req_deferred(struct io_kiocb *req, int refs)
@@ -3322,8 +3323,15 @@ static int io_async_buf_func(struct wait_queue_entry *wait, unsigned mode,
 	/* submit ref gets dropped, acquire a new one */
 	refcount_inc(&req->refs);
 	ret = io_req_task_work_add(req, true);
-	if (unlikely(ret))
-		io_req_task_work_add_fallback(req, io_req_task_cancel);
+	if (unlikely(ret)) {
+		struct task_struct *tsk;
+
+		/* queue just for cancelation */
+		init_task_work(&req->task_work, io_req_task_cancel);
+		tsk = io_wq_get_task(req->ctx->io_wq);
+		task_work_add(tsk, &req->task_work, TWA_NONE);
+		wake_up_process(tsk);
+	}
 	return 1;
 }
 
@@ -4939,8 +4947,12 @@ static int __io_async_wake(struct io_kiocb *req, struct io_poll_iocb *poll,
 	 */
 	ret = io_req_task_work_add(req, twa_signal_ok);
 	if (unlikely(ret)) {
+		struct task_struct *tsk;
+
 		WRITE_ONCE(poll->canceled, true);
-		io_req_task_work_add_fallback(req, func);
+		tsk = io_wq_get_task(req->ctx->io_wq);
+		task_work_add(tsk, &req->task_work, TWA_NONE);
+		wake_up_process(tsk);
 	}
 	return 1;
 }
