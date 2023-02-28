@@ -1,0 +1,48 @@
+From b1269796f57518d8fb2ea9df2d2683b3b6ee7033 Mon Sep 17 00:00:00 2001
+From: jiangzhongbing <jiangzhongbing@huawei.com>
+Date: Tue, 28 Feb 2023 23:31:34 +0800
+Subject: [Add multipath feature for nfs client 1/1] Add multipath feature for
+ nfs client
+
+driver includesion
+category: feature
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6CR7Z
+
+--------------------------------------------------------
+
+openEuler defconfig set config nfs multipath m
+
+Signed-off-by: jiangzhongbing <jiangzhongbing@huawei.com>
+
+---
+ arch/arm64/configs/openeuler_defconfig | 1 +
+ arch/x86/configs/openeuler_defconfig   | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/arch/arm64/configs/openeuler_defconfig b/arch/arm64/configs/openeuler_defconfig
+index fbb71f7520a8..2ce9cc23a505 100644
+--- a/arch/arm64/configs/openeuler_defconfig
++++ b/arch/arm64/configs/openeuler_defconfig
+@@ -6759,6 +6759,7 @@ CONFIG_NFS_USE_KERNEL_DNS=y
+ CONFIG_NFS_DEBUG=y
+ # CONFIG_NFS_DISABLE_UDP_SUPPORT is not set
+ # CONFIG_NFS_V4_2_READ_PLUS is not set
++CONFIG_NFS_MULTIPATH=m
+ CONFIG_NFSD=m
+ CONFIG_NFSD_V2_ACL=y
+ CONFIG_NFSD_V3_ACL=y
+diff --git a/arch/x86/configs/openeuler_defconfig b/arch/x86/configs/openeuler_defconfig
+index 8a824f33bc5b..b307d5f0de56 100644
+--- a/arch/x86/configs/openeuler_defconfig
++++ b/arch/x86/configs/openeuler_defconfig
+@@ -7961,6 +7961,7 @@ CONFIG_NFS_USE_KERNEL_DNS=y
+ CONFIG_NFS_DEBUG=y
+ # CONFIG_NFS_DISABLE_UDP_SUPPORT is not set
+ # CONFIG_NFS_V4_2_READ_PLUS is not set
++CONFIG_NFS_MULTIPATH=m
+ CONFIG_NFSD=m
+ CONFIG_NFSD_V2_ACL=y
+ CONFIG_NFSD_V3_ACL=y
+-- 
+2.25.1
+
