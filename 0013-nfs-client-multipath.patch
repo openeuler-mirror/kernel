@@ -88,13 +88,13 @@ index 14a72224b657..0ec97214facb 100644
 +config NFS_MULTIPATH
 +	tristate "NFS client support for multipath"
 +	depends on NFS_FS
-+	default y
++	default n
 +	help
 +	  This option enables support multipath of the NFS protocol
 +	  in the kernel's NFS client.
 +	  This feature will improve performance and reliability.
 +
-+	  If unsure, say N.
++	  If sure, say Y.
 +
 diff --git a/fs/nfs/Makefile b/fs/nfs/Makefile
 index 5f6db37f461e..aded246c6b19 100644
