@@ -38,11 +38,11 @@ static void update_siblings_masks(int cpu)
 		if (cpu_topo->package_id == sib_topo->package_id) {
 			cpumask_set_cpu(cpu, &sib_topo->core_sibling);
 			cpumask_set_cpu(sib, &cpu_topo->core_sibling);
-		}
 
-		if (cpu_topo->core_id == sib_topo->core_id) {
-			cpumask_set_cpu(cpu, &sib_topo->thread_sibling);
-			cpumask_set_cpu(sib, &cpu_topo->thread_sibling);
+			if (cpu_topo->core_id == sib_topo->core_id) {
+				cpumask_set_cpu(cpu, &sib_topo->thread_sibling);
+				cpumask_set_cpu(sib, &cpu_topo->thread_sibling);
+			}
 		}
 	}
 }
