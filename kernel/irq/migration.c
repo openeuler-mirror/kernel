@@ -105,8 +105,10 @@ void __irq_move_irq(struct irq_data *idata)
 	 */
 	idata = irq_desc_get_irq_data(irq_data_to_desc(idata));
 
+#ifndef CONFIG_ARM64
 	if (unlikely(irqd_irq_disabled(idata)))
 		return;
+#endif
 
 	/*
 	 * Be careful vs. already masked interrupts. If this is a
