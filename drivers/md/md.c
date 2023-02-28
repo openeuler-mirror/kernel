@@ -3846,35 +3846,51 @@ static int analyze_sbs(struct mddev *mddev)
  */
 int strict_strtoul_scaled(const char *cp, unsigned long *res, int scale)
 {
-	unsigned long result = 0;
-	long decimals = -1;
-	while (isdigit(*cp) || (*cp == '.' && decimals < 0)) {
-		if (*cp == '.')
-			decimals = 0;
-		else if (decimals < scale) {
-			unsigned int value;
-			value = *cp - '0';
-			result = result * 10 + value;
-			if (decimals >= 0)
-				decimals++;
+	unsigned long result = 0, decimals = 0;
+	char *pos, *str;
+	int rv;
+
+	str = kmemdup_nul(cp, strlen(cp), GFP_KERNEL);
+	if (!str)
+		return -ENOMEM;
+	pos = strchr(str, '.');
+	if (pos) {
+		int cnt = scale;
+
+		*pos = '\0';
+		while (isdigit(*(++pos))) {
+			if (cnt) {
+				decimals = decimals * 10 + *pos - '0';
+				cnt--;
+			}
 		}
-		cp++;
+		if (*pos == '\n')
+			pos++;
+		if (*pos) {
+			kfree(str);
+			return -EINVAL;
+		}
+		decimals *= int_pow(10, cnt);
 	}
-	if (*cp == '\n')
-		cp++;
-	if (*cp)
+
+	rv = kstrtoul(str, 10, &result);
+	kfree(str);
+	if (rv)
+		return rv;
+
+	if (result > (ULONG_MAX - decimals) / (unsigned int)int_pow(10, scale))
 		return -EINVAL;
-	if (decimals < 0)
-		decimals = 0;
-	*res = result * int_pow(10, scale - decimals);
-	return 0;
+	*res = result * int_pow(10, scale) + decimals;
+
+	return rv;
 }
 
 static ssize_t
 safe_delay_show(struct mddev *mddev, char *page)
 {
-	int msec = (mddev->safemode_delay*1000)/HZ;
-	return sprintf(page, "%d.%03d\n", msec/1000, msec%1000);
+	unsigned int msec = ((unsigned long)mddev->safemode_delay*1000)/HZ;
+
+	return sprintf(page, "%u.%03u\n", msec/1000, msec%1000);
 }
 static ssize_t
 safe_delay_store(struct mddev *mddev, const char *cbuf, size_t len)
@@ -3888,10 +3904,14 @@ safe_delay_store(struct mddev *mddev, const char *cbuf, size_t len)
 
 	if (strict_strtoul_scaled(cbuf, &msec, 3) < 0)
 		return -EINVAL;
+	if (msec > UINT_MAX)
+		return -EINVAL;
+
 	if (msec == 0)
 		mddev->safemode_delay = 0;
 	else {
 		unsigned long old_delay = mddev->safemode_delay;
+		/* HZ <= 1000, so new_delay < UINT_MAX, too */
 		unsigned long new_delay = (msec*HZ)/1000;
 
 		if (new_delay == 0)
@@ -4543,7 +4563,7 @@ __ATTR_PREALLOC(array_state, S_IRUGO|S_IWUSR, array_state_show, array_state_stor
 
 static ssize_t
 max_corrected_read_errors_show(struct mddev *mddev, char *page) {
-	return sprintf(page, "%d\n",
+	return sprintf(page, "%u\n",
 		       atomic_read(&mddev->max_corr_read_errors));
 }
 
