@@ -12,7 +12,7 @@
 %global upstream_sublevel   8
 %global devel_release       3
 %global maintenance_release .0.0
-%global pkg_release         .10
+%global pkg_release         .11
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -82,6 +82,8 @@ Patch0009: 0009-bpf-Introduces-a-new-state-to-identify-the-location-.patch
 Patch0010: 0010-net-bpf-Sockops-supports-modification-of-remote_ip-a.patch
 Patch0011: 0011-bpf-Two-helper-functions-are-introduced-to-parse-use.patch
 Patch0012: 0012-net-bpf-Add-a-writeable_tracepoint-to-inet_stream_co.patch
+Patch0013: 0013-nfs-client-multipath.patch
+Patch0014: 0014-nfs-client-multipath-config.patch
 
 
 #BuildRequires:
@@ -319,6 +321,8 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0010 -p1
 %patch0011 -p1
 %patch0012 -p1
+%patch0013 -p1
+%patch0014 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -901,6 +905,9 @@ fi
 %endif
 
 %changelog
+* Mon Feb 25 2023 Jiang zhongbing <jiangzhongbing@huawei.com> 6.1.8-3.0.0.11
+- Add feature for nfs client support multipath
+
 * Mon Feb 20 2023 Ge Wang <wangge20@h-partners.com> 6.1.8-3.0.0.10
 - update to v6.1.8-3.0.0.10
 - config: add option CONFIG_DRM_GUD and CONFIG_LZ4_COMPRESS for x86_64 architecture
