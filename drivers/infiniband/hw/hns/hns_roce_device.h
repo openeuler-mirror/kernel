@@ -914,6 +914,32 @@ enum hns_roce_device_state {
 	HNS_ROCE_DEVICE_STATE_UNINIT,
 };
 
+enum hns_roce_hw_pkt_stat_index {
+	HNS_ROCE_HW_RX_RC_PKT_CNT,
+	HNS_ROCE_HW_RX_UC_PKT_CNT,
+	HNS_ROCE_HW_RX_UD_PKT_CNT,
+	HNS_ROCE_HW_RX_XRC_PKT_CNT,
+	HNS_ROCE_HW_RX_PKT_CNT,
+	HNS_ROCE_HW_RX_ERR_PKT_CNT,
+	HNS_ROCE_HW_RX_CNP_PKT_CNT,
+	HNS_ROCE_HW_TX_RC_PKT_CNT,
+	HNS_ROCE_HW_TX_UC_PKT_CNT,
+	HNS_ROCE_HW_TX_UD_PKT_CNT,
+	HNS_ROCE_HW_TX_XRC_PKT_CNT,
+	HNS_ROCE_HW_TX_PKT_CNT,
+	HNS_ROCE_HW_TX_ERR_PKT_CNT,
+	HNS_ROCE_HW_TX_CNP_PKT_CNT,
+	HNS_ROCE_HW_TRP_GET_MPT_ERR_PKT_CNT,
+	HNS_ROCE_HW_TRP_GET_IRRL_ERR_PKT_CNT,
+	HNS_ROCE_HW_ECN_DB_CNT,
+	HNS_ROCE_HW_RX_BUF_CNT,
+	HNS_ROCE_HW_TRP_RX_SOF_CNT,
+	HNS_ROCE_HW_CQ_CQE_CNT,
+	HNS_ROCE_HW_CQ_POE_CNT,
+	HNS_ROCE_HW_CQ_NOTIFY_CNT,
+	HNS_ROCE_HW_CNT_TOTAL,
+};
+
 struct hns_roce_hw {
 	int (*cmq_init)(struct hns_roce_dev *hr_dev);
 	void (*cmq_exit)(struct hns_roce_dev *hr_dev);
@@ -962,6 +988,8 @@ struct hns_roce_hw {
 	int (*query_mpt)(struct hns_roce_dev *hr_dev, u32 key, void *buffer);
 	int (*get_dscp)(struct hns_roce_dev *hr_dev, u8 dscp,
 			u8 *tc_mode, u8 *priority);
+	int (*query_hw_counter)(struct hns_roce_dev *hr_dev,
+				u64 *stats, u32 port, int *hw_counters);
 	const struct ib_device_ops *hns_roce_dev_ops;
 	const struct ib_device_ops *hns_roce_dev_srq_ops;
 	int (*bond_init)(struct hns_roce_dev *hr_dev);
