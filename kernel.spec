@@ -83,6 +83,7 @@ Patch0010: 0010-net-bpf-Sockops-supports-modification-of-remote_ip-a.patch
 Patch0011: 0011-bpf-Two-helper-functions-are-introduced-to-parse-use.patch
 Patch0012: 0012-net-bpf-Add-a-writeable_tracepoint-to-inet_stream_co.patch
 Patch0013: 0013-nfs-client-multipath.patch
+Patch0014: 0014-nfs-client-multipath-config.patch
 
 
 #BuildRequires:
@@ -321,6 +322,7 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0011 -p1
 %patch0012 -p1
 %patch0013 -p1
+%patch0014 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
