@@ -29,6 +29,7 @@ ENTRY(sw64_suspend_deep_sleep)
 	vstd	$f9, CALLEE_F9($1)
 	rfpcr	$f0
 	fstd	$f0, PSTATE_FPCR($16)
+	stl	$8, PSTATE_KTP($16)
 
 	/* save the address of suspend_state to $18 */
 	mov	$16, $18
@@ -53,9 +54,8 @@ $subloop:
 	bis	$16, $16, $16
 	bne	$16, $subloop
 
-	ldi	$8, 0x3fff
-	bic	sp, $8, $8
 
+	ldl	$8, PSTATE_KTP($18)
 	ldi	$1, PSTATE_REGS($18)
 	ldl	$9, CALLEE_R9($1)
 	ldl	$10, CALLEE_R10($1)

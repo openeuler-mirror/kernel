@@ -37,6 +37,7 @@ void foo(void)
 	OFFSET(PSTATE_REGS, processor_state, regs);
 	OFFSET(PSTATE_FPREGS, processor_state, fpregs);
 	OFFSET(PSTATE_FPCR, processor_state, fpcr);
+	OFFSET(PSTATE_KTP, processor_state, ktp);
 #ifdef CONFIG_HIBERNATION
 	OFFSET(PSTATE_SP, processor_state, sp);
 #endif

@@ -30,6 +30,7 @@ ENTRY(swsusp_arch_suspend)
 	rfpcr	$f0
 	fstd	$f0, PSTATE_FPCR($16)
 
+	stl	$8, PSTATE_KTP($16)
 	stl	sp, PSTATE_SP($16)
 	call	swsusp_save
 	ldi	$16, hibernate_state
@@ -112,9 +113,8 @@ $hibernate_setfpec_over:
 	vldd	$f9, CALLEE_F9($1)
 
 	ldl	sp, PSTATE_SP($16)
+	ldl	$8, PSTATE_KTP($16)
 
-	ldi	$8, 0x3fff
-	bic	sp, $8, $8
 
 	ldi	$0, 0($31)
 
