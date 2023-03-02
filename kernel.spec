@@ -9,10 +9,10 @@
 %global debuginfodir /usr/lib/debug
 
 %global upstream_version    6.1
-%global upstream_sublevel   8
-%global devel_release       3
+%global upstream_sublevel   14
+%global devel_release       4
 %global maintenance_release .0.0
-%global pkg_release         .11
+%global pkg_release         .12
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -905,6 +905,9 @@ fi
 %endif
 
 %changelog
+* Tue Feb 28 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 6.1.14-4.0.0.12
+- update to v6.1.14-4.0.0.12
+
 * Mon Feb 25 2023 Jiang zhongbing <jiangzhongbing@huawei.com> 6.1.8-3.0.0.11
 - Add feature for nfs client support multipath
 
