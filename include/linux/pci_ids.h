@@ -3139,4 +3139,6 @@
 
 #define PCI_VENDOR_ID_NCUBE		0x10ff
 
+#define PCI_VENDOR_ID_TRUSTNETIC    0x8088
+
 #endif /* _LINUX_PCI_IDS_H */
