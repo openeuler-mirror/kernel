@@ -26,11 +26,14 @@ static struct hns_roce_dev *hns_roce_get_hrdev_by_netdev(struct net_device *net_
 	return hr_dev;
 }
 
-static struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev)
+struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_bond_group *bond_grp = NULL;
 	struct net_device *upper_dev;
 	struct net_device *net_dev;
+
+	if (!netif_is_lag_port(hr_dev->iboe.netdevs[0]))
+		return NULL;
 
 	rcu_read_lock();
 
@@ -53,9 +56,6 @@ bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_bond_group *bond_grp;
 
-	if (!netif_is_lag_port(hr_dev->iboe.netdevs[0]))
-		return false;
-
 	bond_grp = hns_roce_get_bond_grp(hr_dev);
 
 	if (bond_grp &&
@@ -73,9 +73,6 @@ struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev)
 	int i;
 
 	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
-		return NULL;
-
-	if (!netif_is_lag_port(hr_dev->iboe.netdevs[0]))
 		return NULL;
 
 	if (!bond_grp) {
@@ -644,7 +641,7 @@ static enum bond_support_type
 			slave_num++;
 			if (bus_num == -1)
 				bus_num = hr_dev->pci_dev->bus->number;
-			if (hr_dev->is_vf ||
+			if (hr_dev->is_vf || pci_num_vf(hr_dev->pci_dev) > 0 ||
 			    bus_num != hr_dev->pci_dev->bus->number) {
 				support = false;
 				break;

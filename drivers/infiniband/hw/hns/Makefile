@@ -4,6 +4,8 @@
 #
 
 ccflags-y :=  -I $(srctree)/drivers/net/ethernet/hisilicon/hns3
+ccflags-y +=  -I $(srctree)/drivers/net/ethernet/hisilicon/hns3/hns3pf
+ccflags-y +=  -I $(srctree)/drivers/net/ethernet/hisilicon/hns3/hns3_common
 
 hns-roce-objs := hns_roce_main.o hns_roce_cmd.o hns_roce_pd.o \
 	hns_roce_ah.o hns_roce_hem.o hns_roce_mr.o hns_roce_qp.o \
