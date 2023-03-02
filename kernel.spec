@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2302.4.0
+%global hulkrelease 2302.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0189
+Release: %{hulkrelease}.0190
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,34 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 28 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.5.0.0190
+- !423 genirq bugfix for arm64
+- genirq: Remove irqd_irq_disabled in __irq_move_irq
+- !422 iscsi bugfixes backport
+- scsi: iscsi_tcp: Fix UAF during login when accessing the shost ipaddress
+- scsi: iscsi_tcp: Fix UAF during logout when accessing the shost ipaddress
+- !420 backport CVEs and bugfixes
+- net: mpls: fix stale pointer if allocation fails during device rename
+- nbd: fix assignment error for first_minor in nbd_dev_add
+- selinux: further adjust init order for cred_* hooks
+- selinux: further adjust init order for file_alloc_security hook
+- !415 mainline bugfix backport
+- selinux: reorder hooks to make runtime disable less broken
+- evm: Fix a small race in init_desc()
+- evm: Check also if *tfm is an error pointer in init_desc()
+- iommu: Properly export iommu_group_get_for_dev()
+- of: resolver: Add of_node_put() before return and break
+- of: unittest: Add of_node_put() before return
+- drivers/iommu: Allow IOMMU bus ops to be unregistered
+- drivers/iommu: Export core IOMMU API symbols to permit modular drivers
+- component: do not dereference opaque pointer in debugfs
+- ipmi: use %*ph to print small buffer
+- crypto: algif_skcipher - Use chunksize instead of blocksize
+- crypto: algif_skcipher - EBUSY on aio should be an error
+- crypto: rsa-pkcs1pad - fix buffer overread in pkcs1pad_verify_complete()
+- dhugetlb: isolate hwpoison hugepage when release
+- mm/sharepool: Fix null-pointer-deference in sp_free_area
 
 * Tue Feb 21 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.4.0.0189
 - !213  net: bonding: Inherit MPLS features from slave devices
