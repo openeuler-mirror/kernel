@@ -20,6 +20,7 @@
 #include <linux/blkdev.h>
 #include <linux/bsg-lib.h>
 #include <linux/sort.h>
+#include <linux/msi.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
@@ -1462,6 +1463,17 @@ void sssraid_back_all_io(struct sssraid_ioc *sdioc)
 	}
 }
 
+static int sssraid_get_first_sibling(unsigned int cpu)
+{
+	unsigned int ret;
+
+	ret = cpumask_first(topology_sibling_cpumask(cpu));
+	if (ret < nr_cpu_ids)
+		return ret;
+
+	return cpu;
+}
+
 /*
  * static struct scsi_host_template sssraid_driver_template
  */
@@ -1534,6 +1546,69 @@ static int sssraid_sysfs_host_reset(struct Scsi_Host *shost, int reset_type)
 	ioc_info(sdioc, "stop sysfs host reset cmd[%d]\n", ret);
 
 	return ret;
+}
+
+static int sssraid_map_queues(struct Scsi_Host *shost)
+{
+	struct sssraid_ioc *sdioc = shost_priv(shost);
+	struct pci_dev *pdev = sdioc->pdev;
+	struct msi_desc *entry = NULL;
+	struct irq_affinity_desc *affinity = NULL;
+	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+	struct blk_mq_queue_map *queue_map = &tag_set->map[HCTX_TYPE_DEFAULT];
+	const struct cpumask *node_mask = NULL;
+	unsigned int queue_offset = queue_map->queue_offset;
+	unsigned int *map = queue_map->mq_map;
+	unsigned int nr_queues = queue_map->nr_queues;
+	unsigned int node_id, node_id_last = 0xFFFFFFFF;
+	int cpu, first_sibling, cpu_index = 0;
+	u8 node_count = 0, i;
+	unsigned int node_id_array[100];
+
+	for_each_pci_msi_entry(entry, pdev) {
+		struct list_head *msi_list = &pdev->dev.msi_list;
+
+		if (list_is_last(msi_list, &entry->list))
+			goto get_next_numa_node;
+
+		if (entry->irq) {
+			affinity = entry->affinity;
+			node_mask = &affinity->mask;
+
+			cpu = cpumask_first(node_mask);
+			node_id = cpu_to_node(cpu);
+			if (node_id_last == node_id)
+				continue;
+
+			for (i = 0; i < node_count; i++) {
+				if (node_id == node_id_array[i])
+					goto get_next_numa_node;
+			}
+			node_id_array[node_count++] = node_id;
+			node_id_last = node_id;
+		}
+get_next_numa_node:
+		continue;
+	}
+
+	for (i = 0; i < node_count; i++) {
+		node_mask = cpumask_of_node(node_id_array[i]);
+		dbgprint(sdioc, "NUMA_node = %d\n", node_id_array[i]);
+		for_each_cpu(cpu, node_mask) {
+			if (cpu_index < nr_queues) {
+				map[cpu_index++] = queue_offset + (cpu % nr_queues);
+			} else {
+				first_sibling = sssraid_get_first_sibling(cpu);
+				if (first_sibling == cpu)
+					map[cpu_index++] = queue_offset + (cpu % nr_queues);
+				else
+					map[cpu_index++] = map[first_sibling];
+			}
+			dbgprint(sdioc, "map[%d] = %d\n", cpu_index - 1, map[cpu_index - 1]);
+		}
+	}
+
+	return 0;
 }
 
 /* queuecommand	call back */
@@ -1989,6 +2064,7 @@ static struct scsi_host_template sssraid_driver_template = {
 	.name			= "3SNIC Logic sssraid driver",
 	.proc_name		= "sssraid",
 	.queuecommand		= sssraid_qcmd,
+	.map_queues		= sssraid_map_queues,
 	.slave_alloc		= sssraid_slave_alloc,
 	.slave_destroy		= sssraid_slave_destroy,
 	.slave_configure	= sssraid_slave_configure,
@@ -2330,7 +2406,7 @@ static void __exit sssraid_exit(void)
 	pci_unregister_driver(&sssraid_pci_driver);
 }
 
-MODULE_AUTHOR("liangry1@3snic.com");
+MODULE_AUTHOR("steven.song@3snic.com");
 MODULE_DESCRIPTION("3SNIC Information Technology SSSRAID Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(SSSRAID_DRIVER_VERSION);
