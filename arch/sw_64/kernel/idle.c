@@ -7,6 +7,7 @@
 #include <linux/irqflags.h>
 #include <asm/cpu.h>
 #include <asm/idle.h>
+#include <asm/asm-offsets.h>
 
 #ifdef CONFIG_HOTPLUG_CPU
 void arch_cpu_idle_dead(void)
@@ -17,17 +18,27 @@ void arch_cpu_idle_dead(void)
 
 void cpu_idle(void)
 {
-	int i;
-
 	local_irq_enable();
 	cpu_relax();
 
-	if (is_in_guest())
-		hcall(HCALL_HALT, 0, 0, 0);
-	else {
-		for (i = 0; i < 16; i++)
-			asm("nop");
-		asm("halt");
+	if (is_in_guest()) {
+		if (!need_resched())
+			hcall(HCALL_HALT, 0, 0, 0);
+	} else {
+		/*
+		 * We use inline assembly here to make sure
+		 * checking TIF_NEED_RESCHED and HALT instruction
+		 * are in the same instruction group.
+		 */
+		asm(
+		".align 4\n"
+		"ldw	$1, %0($8)\n"
+		"srl	$1, %1, $1\n"
+		"blbs	$1, $need_resched\n"
+		"halt\n"
+		"$need_resched:"
+		:: "i"(TI_FLAGS), "i"(TIF_NEED_RESCHED)
+		: "$1");
 	}
 }
 
