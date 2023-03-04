@@ -301,6 +301,11 @@ static inline long meminfo_alloc_sum_byKB(struct sp_meminfo *meminfo)
 	return byte2kb(meminfo_alloc_sum(meminfo));
 }
 
+static inline long meminfo_k2u_size(struct sp_meminfo *meminfo)
+{
+	return byte2kb(atomic64_read(&meminfo->k2u_size));
+}
+
 static unsigned long sp_mapping_type(struct sp_mapping *spm)
 {
 	return spm->type;
@@ -3619,11 +3624,6 @@ static void get_mm_rss_info(struct mm_struct *mm, unsigned long *anon,
 	*total_rss = *anon + *file + *shmem;
 }
 
-static long get_proc_k2u(struct sp_meminfo *meminfo)
-{
-	return byte2kb(atomic64_read(&meminfo->k2u_size));
-}
-
 static void get_process_sp_res(struct sp_group_master *master,
 		long *sp_res_out, long *sp_res_nsize_out)
 {
@@ -3656,11 +3656,6 @@ static void get_process_non_sp_res(unsigned long total_rss, unsigned long shmem,
 
 	*non_sp_res_out = non_sp_res;
 	*non_sp_shm_out = non_sp_shm;
-}
-
-static long get_spg_proc_k2u(struct sp_group_node *spg_node)
-{
-	return byte2kb(atomic64_read(&spg_node->meminfo.k2u_size));
 }
 
 static void print_process_prot(struct seq_file *seq, unsigned long prot)
@@ -3709,7 +3704,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	seq_printf(m, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
 		   master->tgid, master->comm,
 		   meminfo_alloc_sum_byKB(meminfo),
-		   get_proc_k2u(meminfo),
+		   meminfo_k2u_size(meminfo),
 		   sp_res, non_sp_res, non_sp_shm,
 		   page2kb(mm->total_vm));
 
@@ -3721,7 +3716,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		seq_printf(m, "%-8d %-9ld %-9ld %-9ld ",
 				spg_node->spg->id,
 				meminfo_alloc_sum_byKB(&spg_node->meminfo),
-				get_spg_proc_k2u(spg_node),
+				meminfo_k2u_size(&spg_node->meminfo),
 				meminfo_alloc_sum_byKB(&spg_node->spg->meminfo));
 		print_process_prot(m, spg_node->prot);
 		seq_putc(m, '\n');
@@ -3929,7 +3924,7 @@ static int proc_usage_by_group(int id, void *p, void *data)
 		seq_printf(seq, "%-8d ", id);
 		seq_printf(seq, "%-9ld %-9ld %-9ld %-8ld %-7ld %-7ld ",
 				meminfo_alloc_sum_byKB(&spg_node->meminfo),
-				get_spg_proc_k2u(spg_node),
+				meminfo_k2u_size(&spg_node->meminfo),
 				meminfo_alloc_sum_byKB(&spg_node->spg->meminfo),
 				page2kb(mm->total_vm), page2kb(total_rss),
 				page2kb(shmem));
@@ -3992,7 +3987,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 		seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
 				master->tgid, master->comm,
 				meminfo_alloc_sum_byKB(meminfo),
-				get_proc_k2u(meminfo),
+				meminfo_k2u_size(meminfo),
 				sp_res, non_sp_res, non_sp_shm,
 				page2kb(master->mm->total_vm));
 	}
