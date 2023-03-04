@@ -278,24 +278,24 @@ static void meminfo_init(struct sp_meminfo *meminfo)
 	memset(meminfo, 0, sizeof(struct sp_meminfo));
 }
 
-static void meminfo_update(unsigned long size, bool inc,
-	bool huge, struct sp_meminfo *meminfo)
+static void meminfo_inc_usage(unsigned long size, bool huge, struct sp_meminfo *meminfo)
 {
-	if (inc) {
-		atomic64_add(size, &meminfo->size);
-		atomic64_add(size, &meminfo->alloc_size);
-		if (huge)
-			atomic64_add(size, &meminfo->alloc_hsize);
-		else
-			atomic64_add(size, &meminfo->alloc_nsize);
-	} else {
-		atomic64_sub(size, &meminfo->size);
-		atomic64_sub(size, &meminfo->alloc_size);
-		if (huge)
-			atomic64_sub(size, &meminfo->alloc_hsize);
-		else
-			atomic64_sub(size, &meminfo->alloc_nsize);
-	}
+	atomic64_add(size, &meminfo->size);
+	atomic64_add(size, &meminfo->alloc_size);
+	if (huge)
+		atomic64_add(size, &meminfo->alloc_hsize);
+	else
+		atomic64_add(size, &meminfo->alloc_nsize);
+}
+
+static void meminfo_dec_usage(unsigned long size, bool huge, struct sp_meminfo *meminfo)
+{
+	atomic64_sub(size, &meminfo->size);
+	atomic64_sub(size, &meminfo->alloc_size);
+	if (huge)
+		atomic64_sub(size, &meminfo->alloc_hsize);
+	else
+		atomic64_sub(size, &meminfo->alloc_nsize);
 }
 
 static void meminfo_update_k2u(unsigned long size, bool inc,
@@ -768,7 +768,7 @@ static void spa_inc_usage(struct sp_area *spa)
 	case SPA_TYPE_ALLOC:
 		spa_stat.alloc_num += 1;
 		spa_stat.alloc_size += size;
-		meminfo_update(size, true, is_huge, &spa->spg->meminfo);
+		meminfo_inc_usage(size, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num += 1;
@@ -815,7 +815,7 @@ static void spa_dec_usage(struct sp_area *spa)
 	case SPA_TYPE_ALLOC:
 		spa_stat.alloc_num -= 1;
 		spa_stat.alloc_size -= size;
-		meminfo_update(size, false, is_huge, &spa->spg->meminfo);
+		meminfo_dec_usage(size, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num -= 1;
