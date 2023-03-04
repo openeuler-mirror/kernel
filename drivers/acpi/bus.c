@@ -966,6 +966,12 @@ struct bus_type acpi_bus_type = {
 	.uevent		= acpi_device_uevent,
 };
 
+int acpi_dev_for_each_child(struct acpi_device *adev,
+			    int (*fn)(struct device *, void *), void *data)
+{
+	return device_for_each_child(&adev->dev, data, fn);
+}
+
 /* --------------------------------------------------------------------------
                              Initialization/Cleanup
    -------------------------------------------------------------------------- */
