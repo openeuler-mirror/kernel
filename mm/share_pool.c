@@ -105,14 +105,10 @@ do {						\
 } while (0)
 
 struct sp_meminfo {
-	/* total size from sp_alloc and k2u */
-	atomic64_t	size;
 	/* not huge page size from sp_alloc */
 	atomic64_t	alloc_nsize;
 	/* huge page size from sp_alloc */
 	atomic64_t	alloc_hsize;
-	/* total size from sp_alloc */
-	atomic64_t	alloc_size;
 	/* total size from sp_k2u */
 	atomic64_t	k2u_size;
 };
@@ -257,8 +253,6 @@ static void meminfo_init(struct sp_meminfo *meminfo)
 
 static void meminfo_inc_usage(unsigned long size, bool huge, struct sp_meminfo *meminfo)
 {
-	atomic64_add(size, &meminfo->size);
-	atomic64_add(size, &meminfo->alloc_size);
 	if (huge)
 		atomic64_add(size, &meminfo->alloc_hsize);
 	else
@@ -267,8 +261,6 @@ static void meminfo_inc_usage(unsigned long size, bool huge, struct sp_meminfo *
 
 static void meminfo_dec_usage(unsigned long size, bool huge, struct sp_meminfo *meminfo)
 {
-	atomic64_sub(size, &meminfo->size);
-	atomic64_sub(size, &meminfo->alloc_size);
 	if (huge)
 		atomic64_sub(size, &meminfo->alloc_hsize);
 	else
@@ -277,13 +269,11 @@ static void meminfo_dec_usage(unsigned long size, bool huge, struct sp_meminfo *
 
 static void meminfo_inc_k2u(unsigned long size, struct sp_meminfo *meminfo)
 {
-	atomic64_add(size, &meminfo->size);
 	atomic64_add(size, &meminfo->k2u_size);
 }
 
 static void meminfo_dec_k2u(unsigned long size, struct sp_meminfo *meminfo)
 {
-	atomic64_sub(size, &meminfo->size);
 	atomic64_sub(size, &meminfo->k2u_size);
 }
 
@@ -301,6 +291,13 @@ static inline long meminfo_alloc_sum_byKB(struct sp_meminfo *meminfo)
 static inline long meminfo_k2u_size(struct sp_meminfo *meminfo)
 {
 	return byte2kb(atomic64_read(&meminfo->k2u_size));
+}
+
+static inline long long meminfo_total_size(struct sp_meminfo *meminfo)
+{
+	return atomic64_read(&meminfo->alloc_nsize) +
+		atomic64_read(&meminfo->alloc_hsize) +
+		atomic64_read(&meminfo->k2u_size);
 }
 
 static unsigned long sp_mapping_type(struct sp_mapping *spm)
@@ -3841,10 +3838,10 @@ static int spg_info_show(int id, void *p, void *data)
 	SEQ_printf(seq, "Group %6d ", id);
 
 	down_read(&spg->rw_lock);
-	SEQ_printf(seq, "size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
-			byte2kb(atomic64_read(&spg->meminfo.size)),
+	SEQ_printf(seq, "size: %lld KB, spa num: %d, total alloc: %ld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
+			byte2kb(meminfo_total_size(&spg->meminfo)),
 			atomic_read(&spg->spa_num),
-			byte2kb(atomic64_read(&spg->meminfo.alloc_size)),
+			meminfo_alloc_sum_byKB(&spg->meminfo),
 			byte2kb(atomic64_read(&spg->meminfo.alloc_nsize)),
 			byte2kb(atomic64_read(&spg->meminfo.alloc_hsize)));
 	up_read(&spg->rw_lock);
