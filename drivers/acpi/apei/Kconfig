@@ -33,6 +33,13 @@ config ACPI_APEI_GHES
 	  by firmware to produce more valuable hardware error
 	  information for Linux.
 
+config ACPI_APEI_GHES_TS_CORE
+	bool "Support ts core ras process for ascend"
+	depends on ARM64 && ACPI_APEI_GHES
+	default n
+	help
+	  Enable the support for ts core ras process for ascend.
+
 config ACPI_APEI_PCIEAER
 	bool "APEI PCIe AER logging/recovering support"
 	depends on ACPI_APEI && PCIEAER

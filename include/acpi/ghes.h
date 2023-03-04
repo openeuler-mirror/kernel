@@ -145,6 +145,8 @@ int ghes_notify_sea(void);
 static inline int ghes_notify_sea(void) { return -ENOENT; }
 #endif
 
+#ifdef CONFIG_ACPI_APEI_GHES_TS_CORE
 extern struct blocking_notifier_head ghes_ts_err_chain;
+#endif
 
 #endif /* GHES_H */
