@@ -109,9 +109,6 @@ do {						\
 
 #ifndef __GENKSYMS__
 struct sp_spg_stat {
-	int spg_id;
-	/* record the number of hugepage allocation failures */
-	atomic_t hugepage_failures;
 	/* number of sp_area */
 	atomic_t	 spa_num;
 	/* total size of all sp_area from sp_alloc and k2u */
@@ -690,7 +687,6 @@ static void sp_init_spg_proc_stat(struct spg_proc_stat *stat, int spg_id)
 
 static void sp_init_group_stat(struct sp_spg_stat *stat)
 {
-	atomic_set(&stat->hugepage_failures, 0);
 	atomic_set(&stat->spa_num, 0);
 	atomic64_set(&stat->size, 0);
 	atomic64_set(&stat->alloc_nsize, 0);
@@ -2462,7 +2458,6 @@ static void sp_alloc_fallback(struct sp_area *spa, struct sp_alloc_context *ac)
 		return;
 	}
 
-	atomic_inc(&ac->spg->instat.hugepage_failures);
 	if (!(ac->sp_flags & SP_HUGEPAGE_ONLY)) {
 		ac->file = ac->spg->file;
 		ac->size_aligned = ALIGN(ac->size, PAGE_SIZE);
