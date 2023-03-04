@@ -974,7 +974,7 @@ static void free_sp_group(struct sp_group *spg)
 	up_write(&sp_group_sem);
 }
 
-static void sp_group_drop_locked(struct sp_group *spg)
+static void sp_group_put_locked(struct sp_group *spg)
 {
 	lockdep_assert_held_write(&sp_group_sem);
 
@@ -982,7 +982,7 @@ static void sp_group_drop_locked(struct sp_group *spg)
 		free_sp_group_locked(spg);
 }
 
-static void sp_group_drop(struct sp_group *spg)
+static void sp_group_put(struct sp_group *spg)
 {
 	if (atomic_dec_and_test(&spg->use_count))
 		free_sp_group(spg);
@@ -1025,8 +1025,8 @@ static bool is_process_in_group(struct sp_group *spg,
 	return false;
 }
 
-/* user must call sp_group_drop() after use */
-static struct sp_group *__sp_find_spg_locked(int tgid, int spg_id)
+/* user must call sp_group_put() after use */
+static struct sp_group *sp_group_get_locked(int tgid, int spg_id)
 {
 	struct sp_group *spg = NULL;
 	struct task_struct *tsk = NULL;
@@ -1055,12 +1055,12 @@ static struct sp_group *__sp_find_spg_locked(int tgid, int spg_id)
 	return spg;
 }
 
-static struct sp_group *__sp_find_spg(int tgid, int spg_id)
+static struct sp_group *sp_group_get(int tgid, int spg_id)
 {
 	struct sp_group *spg;
 
 	down_read(&sp_group_sem);
-	spg = __sp_find_spg_locked(tgid, spg_id);
+	spg = sp_group_get_locked(tgid, spg_id);
 	up_read(&sp_group_sem);
 	return spg;
 }
@@ -1218,7 +1218,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
 {
 	struct sp_group *spg;
 
-	spg = __sp_find_spg_locked(current->tgid, spg_id);
+	spg = sp_group_get_locked(current->tgid, spg_id);
 
 	if (!spg) {
 		spg = create_spg(spg_id, flag);
@@ -1226,11 +1226,11 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
 			up_read(&spg->rw_lock);
-			sp_group_drop_locked(spg);
+			sp_group_put_locked(spg);
 			return ERR_PTR(-ENODEV);
 		}
 		up_read(&spg->rw_lock);
-		/* spg->use_count has increased due to __sp_find_spg() */
+		/* spg->use_count has increased due to sp_group_get() */
 	}
 
 	return spg;
@@ -1413,7 +1413,7 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 	}
 
 	if (spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX) {
-		spg = __sp_find_spg(tgid, spg_id);
+		spg = sp_group_get(tgid, spg_id);
 
 		if (!spg) {
 			pr_err_ratelimited("spg %d hasn't been created\n", spg_id);
@@ -1424,12 +1424,12 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		if (!spg_valid(spg)) {
 			up_read(&spg->rw_lock);
 			pr_err_ratelimited("add group failed, group id %d is dead\n", spg_id);
-			sp_group_drop(spg);
+			sp_group_put(spg);
 			return -EINVAL;
 		}
 		up_read(&spg->rw_lock);
 
-		sp_group_drop(spg);
+		sp_group_put(spg);
 	}
 
 	if (spg_id == SPG_ID_AUTO) {
@@ -1603,7 +1603,7 @@ out_drop_spg_node:
 out_drop_group:
 	if (unlikely(ret)) {
 		up_write(&sp_group_sem);
-		sp_group_drop(spg);
+		sp_group_put(spg);
 	} else
 		up_write(&sp_group_sem);
 out_put_mm:
@@ -1646,7 +1646,7 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 		return -EINVAL;
 	}
 
-	spg = __sp_find_spg(tgid, spg_id);
+	spg = sp_group_get(tgid, spg_id);
 	if (!spg) {
 		pr_err_ratelimited("spg not found or get task failed.");
 		return -EINVAL;
@@ -1701,7 +1701,7 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 		is_alive = spg->is_alive = false;
 	spg->proc_num--;
 	list_del(&spg_node->proc_node);
-	sp_group_drop(spg);
+	sp_group_put(spg);
 	up_write(&spg->rw_lock);
 	if (!is_alive)
 		blocking_notifier_call_chain(&sp_notifier_chain, 0, spg);
@@ -1718,7 +1718,7 @@ out_put_mm:
 out_put_task:
 	put_task_struct(tsk);
 out:
-	sp_group_drop(spg); /* if spg dead, freed here */
+	sp_group_put(spg); /* if spg dead, freed here */
 	return ret;
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_del_task);
@@ -2163,7 +2163,7 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 	struct sp_area *spa;
 	struct sp_group *spg;
 
-	spg = __sp_find_spg(current->tgid, fc->spg_id);
+	spg = sp_group_get(current->tgid, fc->spg_id);
 	if (!spg) {
 		pr_debug("sp free get group failed %d\n", fc->spg_id);
 		return -EINVAL;
@@ -2172,7 +2172,7 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 	fc->state = FREE_CONT;
 
 	spa = get_sp_area(spg, addr);
-	sp_group_drop(spg);
+	sp_group_put(spg);
 	if (!spa) {
 		pr_debug("sp free invalid input addr %lx\n", addr);
 		return -EINVAL;
@@ -2344,7 +2344,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 		sp_flags |= SP_HUGEPAGE;
 
 	if (spg_id != SPG_ID_DEFAULT) {
-		spg = __sp_find_spg(current->tgid, spg_id);
+		spg = sp_group_get(current->tgid, spg_id);
 		if (!spg) {
 			pr_err_ratelimited("allocation failed, can't find group\n");
 			return -ENODEV;
@@ -2354,14 +2354,14 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
 			up_read(&spg->rw_lock);
-			sp_group_drop(spg);
+			sp_group_put(spg);
 			pr_err_ratelimited("allocation failed, spg is dead\n");
 			return -ENODEV;
 		}
 
 		if (!is_process_in_group(spg, current->mm)) {
 			up_read(&spg->rw_lock);
-			sp_group_drop(spg);
+			sp_group_put(spg);
 			pr_err_ratelimited("allocation failed, task not in group\n");
 			return -ENODEV;
 		}
@@ -2598,7 +2598,7 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 	if (spa && !IS_ERR(spa))
 		__sp_area_drop(spa);
 
-	sp_group_drop(spg);
+	sp_group_put(spg);
 }
 
 /**
@@ -2937,16 +2937,16 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 		spg_id = SPG_ID_DEFAULT;
 	}
 
-	spg = __sp_find_spg(current->tgid, spg_id);
+	spg = sp_group_get(current->tgid, spg_id);
 	if (spg) {
 		ret = sp_check_caller_permission(spg, current->mm);
 		if (ret < 0) {
-			sp_group_drop(spg);
+			sp_group_put(spg);
 			uva = ERR_PTR(ret);
 			goto out;
 		}
 		uva = sp_make_share_kva_to_spg(&kc, spg);
-		sp_group_drop(spg);
+		sp_group_put(spg);
 	} else {
 		uva = ERR_PTR(-ENODEV);
 	}
@@ -3290,7 +3290,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 	unsigned int page_size;
 	struct sp_group *spg;
 
-	spg = __sp_find_spg(current->tgid, group_id);
+	spg = sp_group_get(current->tgid, group_id);
 	if (!spg) {
 		pr_debug("sp unshare find group failed %d\n", group_id);
 		return -EINVAL;
@@ -3418,7 +3418,7 @@ out_clr_flag:
 out_drop_area:
 	__sp_area_drop(spa);
 out:
-	sp_group_drop(spg);
+	sp_group_put(spg);
 	return ret;
 }
 
@@ -3643,7 +3643,7 @@ bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int tgid)
 	err = true;
 
 put_spg:
-	sp_group_drop(spg);
+	sp_group_put(spg);
 put_mm:
 	mmput(mm);
 put_task:
