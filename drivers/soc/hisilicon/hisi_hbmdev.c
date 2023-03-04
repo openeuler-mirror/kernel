@@ -8,6 +8,9 @@
 #include <linux/nodemask.h>
 #include <linux/acpi.h>
 #include <linux/container.h>
+#include <linux/node.h>
+#include <linux/arch_topology.h>
+#include <linux/memory_hotplug.h>
 
 #include "hisi_internal.h"
 
@@ -21,10 +24,66 @@ struct cdev_node {
 
 struct memory_dev {
 	struct kobject *memdev_kobj;
+	struct kobject *topo_kobj;
 	struct cdev_node cdev_list;
+	nodemask_t cluster_cpumask[MAX_NUMNODES];
 };
 
 static struct memory_dev *mdev;
+
+static ssize_t memory_locality_show(struct kobject *kobj,
+				   struct kobj_attribute *attr,
+				   char *buf)
+{
+	int i, count = 0;
+
+	for (i = 0; i < MAX_NUMNODES; i++) {
+		if (hotplug_mdev[i] != NULL && !nodes_empty(mdev->cluster_cpumask[i])) {
+			count += sysfs_emit_at(buf, count, "%d %*pbl\n", i,
+					       nodemask_pr_args(&mdev->cluster_cpumask[i]));
+		}
+	}
+
+	return count;
+}
+
+static struct kobj_attribute memory_locality_attribute =
+	__ATTR(memory_locality, 0444, memory_locality_show, NULL);
+
+static void memory_topo_init(void)
+{
+	int ret, nid, cluster_id, cpu;
+	struct acpi_device *adev;
+	nodemask_t mask;
+
+	for (nid = 0; nid < MAX_NUMNODES; nid++) {
+		if (!hotplug_mdev[nid])
+			continue;
+
+		adev = hotplug_mdev[nid];
+		ret = fwnode_property_read_u32(acpi_fwnode_handle(adev),
+						"cluster-id", &cluster_id);
+		if (ret < 0) {
+			pr_debug("Failed to read cluster id\n");
+			return;
+		}
+
+		nodes_clear(mask);
+		for_each_possible_cpu(cpu) {
+			if (topology_cluster_id(cpu) == cluster_id)
+				node_set(cpu, mask);
+		}
+		mdev->cluster_cpumask[nid] = mask;
+	}
+
+	mdev->topo_kobj = kobject_create_and_add("memory_topo", mdev->memdev_kobj);
+	if (!mdev->topo_kobj)
+		return;
+
+	ret = sysfs_create_file(mdev->topo_kobj, &memory_locality_attribute.attr);
+	if (ret)
+		kobject_put(mdev->topo_kobj);
+}
 
 static int get_pxm(struct acpi_device *acpi_device, void *arg)
 {
@@ -224,6 +283,7 @@ static int __init mdev_init(void)
 		return -ENOMEM;
 	}
 
+	memory_topo_init();
 	return ret;
 }
 module_init(mdev_init);
@@ -232,6 +292,7 @@ static void __exit mdev_exit(void)
 {
 	container_remove();
 	kobject_put(mdev->memdev_kobj);
+	kobject_put(mdev->topo_kobj);
 	kfree(mdev);
 }
 module_exit(mdev_exit);
