@@ -121,17 +121,6 @@ struct sp_meminfo {
 };
 
 #ifndef __GENKSYMS__
-/* per process/sp-group memory usage statistics */
-struct spg_proc_stat {
-	/*
-	 * alloc amount minus free amount, may be negative when freed by
-	 * another task in the same sp group.
-	 */
-	atomic64_t alloc_size;
-	atomic64_t alloc_nsize;
-	atomic64_t alloc_hsize;
-	atomic64_t k2u_size;
-};
 
 enum sp_mapping_type {
 	SP_MAPPING_START,
@@ -241,7 +230,12 @@ struct sp_group_node {
 	struct sp_group_master *master;
 	struct sp_group *spg;
 	unsigned long prot;
-	struct spg_proc_stat instat;
+
+	/*
+	 * alloc amount minus free amount, may be negative when freed by
+	 * another task in the same sp group.
+	 */
+	struct sp_meminfo meminfo;
 };
 #endif
 
@@ -615,16 +609,10 @@ static void update_mem_usage_alloc(unsigned long size, bool inc,
 		bool is_hugepage, struct sp_group_node *spg_node)
 {
 	if (inc) {
-		if (is_hugepage)
-			atomic64_add(size, &spg_node->instat.alloc_hsize);
-		else
-			atomic64_add(size, &spg_node->instat.alloc_nsize);
+		meminfo_inc_usage(size, is_hugepage, &spg_node->meminfo);
 		meminfo_inc_usage(size, is_hugepage, &spg_node->master->meminfo);
 	} else {
-		if (is_hugepage)
-			atomic64_sub(size, &spg_node->instat.alloc_hsize);
-		else
-			atomic64_sub(size, &spg_node->instat.alloc_nsize);
+		meminfo_dec_usage(size, is_hugepage, &spg_node->meminfo);
 		meminfo_dec_usage(size, is_hugepage, &spg_node->master->meminfo);
 	}
 }
@@ -633,19 +621,12 @@ static void update_mem_usage_k2u(unsigned long size, bool inc,
 		struct sp_group_node *spg_node)
 {
 	if (inc) {
-		atomic64_add(size, &spg_node->instat.k2u_size);
+		meminfo_inc_k2u(size, &spg_node->meminfo);
 		meminfo_inc_k2u(size, &spg_node->master->meminfo);
 	} else {
-		atomic64_sub(size, &spg_node->instat.k2u_size);
+		meminfo_dec_k2u(size, &spg_node->meminfo);
 		meminfo_dec_k2u(size, &spg_node->master->meminfo);
 	}
-}
-
-static void sp_init_spg_proc_stat(struct spg_proc_stat *stat)
-{
-	atomic64_set(&stat->alloc_nsize, 0);
-	atomic64_set(&stat->alloc_hsize, 0);
-	atomic64_set(&stat->k2u_size, 0);
 }
 
 /* statistics of all sp area, protected by sp_area_lock */
@@ -1265,7 +1246,7 @@ static struct sp_group_node *create_spg_node(struct mm_struct *mm,
 	spg_node->spg = spg;
 	spg_node->master = master;
 	spg_node->prot = prot;
-	sp_init_spg_proc_stat(&spg_node->instat);
+	meminfo_init(&spg_node->meminfo);
 
 	list_add_tail(&spg_node->group_node, &master->node_list);
 	master->count++;
@@ -3681,13 +3662,13 @@ static void get_process_non_sp_res(unsigned long total_rss, unsigned long shmem,
 
 static long get_spg_proc_alloc(struct sp_group_node *spg_node)
 {
-	return byte2kb(atomic64_read(&spg_node->instat.alloc_nsize) +
-				atomic64_read(&spg_node->instat.alloc_hsize));
+	return byte2kb(atomic64_read(&spg_node->meminfo.alloc_nsize) +
+				atomic64_read(&spg_node->meminfo.alloc_hsize));
 }
 
 static long get_spg_proc_k2u(struct sp_group_node *spg_node)
 {
-	return byte2kb(atomic64_read(&spg_node->instat.k2u_size));
+	return byte2kb(atomic64_read(&spg_node->meminfo.k2u_size));
 }
 
 static void print_process_prot(struct seq_file *seq, unsigned long prot)
