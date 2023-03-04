@@ -96,9 +96,6 @@ static LIST_HEAD(spm_dvpp_list);
 /* mutex to protect insert/delete ops from master_list */
 static DEFINE_MUTEX(spm_list_lock);
 
-/* for kthread buff_module_guard_work */
-static struct sp_meminfo kthread_stat;
-
 #define SEQ_printf(m, x...)			\
 do {						\
 	if (m)					\
@@ -2224,9 +2221,7 @@ int mg_sp_free(unsigned long addr, int id)
 
 	sp_free_unmap_fallocate(fc.spa);
 
-	if (current->mm == NULL)
-		atomic64_sub(fc.spa->real_size, &kthread_stat.alloc_size);
-	else
+	if (current->mm != NULL)
 		sp_update_process_stat(current, false, fc.spa);
 
 	__sp_area_drop(fc.spa);  /* match get_sp_area in sp_free_get_spa */
@@ -3316,9 +3311,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 	__sp_free(spa->spg, spa->va_start, spa->real_size, NULL);
 	up_read(&spa->spg->rw_lock);
 
-	if (current->mm == NULL)
-		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
-	else
+	if (current->mm != NULL)
 		sp_update_process_stat(current, false, spa);
 
 out_clr_flag:
@@ -3949,11 +3942,6 @@ static int proc_group_usage_show(struct seq_file *seq, void *offset)
 	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-8s %-7s %-7s %-4s\n",
 			"PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES",
 			"VIRT", "RES", "Shm", "PROT");
-	/* print kthread buff_module_guard_work */
-	seq_printf(seq, "%-8s %-8s %-9lld %-9lld\n",
-			"guard", "-",
-			byte2kb(atomic64_read(&kthread_stat.alloc_size)),
-			byte2kb(atomic64_read(&kthread_stat.k2u_size)));
 
 	down_read(&sp_group_sem);
 	idr_for_each(&sp_group_idr, proc_usage_by_group, seq);
