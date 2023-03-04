@@ -97,7 +97,7 @@ static LIST_HEAD(spm_dvpp_list);
 static DEFINE_MUTEX(spm_list_lock);
 
 /* for kthread buff_module_guard_work */
-static struct sp_proc_stat kthread_stat;
+static struct sp_meminfo kthread_stat;
 
 #define SEQ_printf(m, x...)			\
 do {						\
@@ -121,18 +121,6 @@ struct sp_meminfo {
 };
 
 #ifndef __GENKSYMS__
-/* per process memory usage statistics indexed by tgid */
-struct sp_proc_stat {
-	/*
-	 * alloc amount minus free amount, may be negative when freed by
-	 * another task in the same sp group.
-	 */
-	atomic64_t alloc_size;
-	atomic64_t alloc_nsize;
-	atomic64_t alloc_hsize;
-	atomic64_t k2u_size;
-};
-
 /* per process/sp-group memory usage statistics */
 struct spg_proc_stat {
 	int tgid;
@@ -236,7 +224,7 @@ struct sp_group_master {
 	 * For example, sp_alloc non-share memory or k2task.
 	 */
 	struct sp_group *local;
-	struct sp_proc_stat instat;
+	struct sp_meminfo meminfo;
 	struct list_head list_node;
 	char comm[TASK_COMM_LEN];
 };
@@ -308,15 +296,6 @@ static void meminfo_dec_k2u(unsigned long size, struct sp_meminfo *meminfo)
 {
 	atomic64_sub(size, &meminfo->size);
 	atomic64_sub(size, &meminfo->k2u_size);
-}
-
-/* The caller should hold mmap_sem to protect master (TBD) */
-static void sp_init_group_master_stat(struct mm_struct *mm,
-		struct sp_proc_stat *stat)
-{
-	atomic64_set(&stat->alloc_nsize, 0);
-	atomic64_set(&stat->alloc_hsize, 0);
-	atomic64_set(&stat->k2u_size, 0);
 }
 
 static unsigned long sp_mapping_type(struct sp_mapping *spm)
@@ -584,7 +563,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	master->mm = mm;
 	master->tgid = tsk->tgid;
 	get_task_comm(master->comm, current);
-	sp_init_group_master_stat(mm, &master->instat);
+	meminfo_init(&master->meminfo);
 	mm->sp_group_master = master;
 	sp_add_group_master(master);
 
@@ -637,40 +616,30 @@ static struct sp_group *sp_get_local_group(struct task_struct *tsk, struct mm_st
 static void update_mem_usage_alloc(unsigned long size, bool inc,
 		bool is_hugepage, struct sp_group_node *spg_node)
 {
-	struct sp_proc_stat *proc_stat = &spg_node->master->instat;
-
 	if (inc) {
-		if (is_hugepage) {
+		if (is_hugepage)
 			atomic64_add(size, &spg_node->instat.alloc_hsize);
-			atomic64_add(size, &proc_stat->alloc_hsize);
-			return;
-		}
-		atomic64_add(size, &spg_node->instat.alloc_nsize);
-		atomic64_add(size, &proc_stat->alloc_nsize);
-		return;
+		else
+			atomic64_add(size, &spg_node->instat.alloc_nsize);
+		meminfo_inc_usage(size, is_hugepage, &spg_node->master->meminfo);
+	} else {
+		if (is_hugepage)
+			atomic64_sub(size, &spg_node->instat.alloc_hsize);
+		else
+			atomic64_sub(size, &spg_node->instat.alloc_nsize);
+		meminfo_dec_usage(size, is_hugepage, &spg_node->master->meminfo);
 	}
-
-	if (is_hugepage) {
-		atomic64_sub(size, &spg_node->instat.alloc_hsize);
-		atomic64_sub(size, &proc_stat->alloc_hsize);
-		return;
-	}
-	atomic64_sub(size, &spg_node->instat.alloc_nsize);
-	atomic64_sub(size, &proc_stat->alloc_nsize);
-	return;
 }
 
 static void update_mem_usage_k2u(unsigned long size, bool inc,
 		struct sp_group_node *spg_node)
 {
-	struct sp_proc_stat *proc_stat = &spg_node->master->instat;
-
 	if (inc) {
 		atomic64_add(size, &spg_node->instat.k2u_size);
-		atomic64_add(size, &proc_stat->k2u_size);
+		meminfo_inc_k2u(size, &spg_node->master->meminfo);
 	} else {
 		atomic64_sub(size, &spg_node->instat.k2u_size);
-		atomic64_sub(size, &proc_stat->k2u_size);
+		meminfo_dec_k2u(size, &spg_node->master->meminfo);
 	}
 }
 
@@ -3662,15 +3631,15 @@ static void get_mm_rss_info(struct mm_struct *mm, unsigned long *anon,
 	*total_rss = *anon + *file + *shmem;
 }
 
-static long get_proc_k2u(struct sp_proc_stat *stat)
+static long get_proc_k2u(struct sp_meminfo *meminfo)
 {
-	return byte2kb(atomic64_read(&stat->k2u_size));
+	return byte2kb(atomic64_read(&meminfo->k2u_size));
 }
 
-static long get_proc_alloc(struct sp_proc_stat *stat)
+static long get_proc_alloc(struct sp_meminfo *meminfo)
 {
-	return byte2kb(atomic64_read(&stat->alloc_nsize) +
-			atomic64_read(&stat->alloc_hsize));
+	return byte2kb(atomic64_read(&meminfo->alloc_nsize) +
+			atomic64_read(&meminfo->alloc_hsize));
 }
 
 static void get_process_sp_res(struct sp_group_master *master,
@@ -3740,7 +3709,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 {
 	struct mm_struct *mm;
 	struct sp_group_master *master;
-	struct sp_proc_stat *proc_stat;
+	struct sp_meminfo *meminfo;
 	struct sp_group_node *spg_node;
 	unsigned long anon, file, shmem, total_rss;
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
@@ -3759,7 +3728,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		goto out;
 
 	get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
-	proc_stat = &master->instat;
+	meminfo = &master->meminfo;
 	get_process_sp_res(master, &sp_res, &sp_res_nsize);
 	get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 			       &non_sp_res, &non_sp_shm);
@@ -3770,8 +3739,8 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		   "Non-SP_Shm", "VIRT");
 	seq_printf(m, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
 		   master->tgid, master->comm,
-		   get_proc_alloc(proc_stat),
-		   get_proc_k2u(proc_stat),
+		   get_proc_alloc(meminfo),
+		   get_proc_k2u(meminfo),
 		   sp_res, non_sp_res, non_sp_shm,
 		   page2kb(mm->total_vm));
 
@@ -4034,7 +4003,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 	struct sp_group_master *master = NULL;
 	unsigned long anon, file, shmem, total_rss;
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
-	struct sp_proc_stat *proc_stat;
+	struct sp_meminfo *meminfo;
 
 	if (!should_show_statistics())
 		return -EPERM;
@@ -4046,15 +4015,15 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 	down_read(&sp_group_sem);
 	mutex_lock(&master_list_lock);
 	list_for_each_entry(master, &master_list, list_node) {
-		proc_stat = &master->instat;
+		meminfo = &master->meminfo;
 		get_mm_rss_info(master->mm, &anon, &file, &shmem, &total_rss);
 		get_process_sp_res(master, &sp_res, &sp_res_nsize);
 		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 				&non_sp_res, &non_sp_shm);
 		seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
 				master->tgid, master->comm,
-				get_proc_alloc(proc_stat),
-				get_proc_k2u(proc_stat),
+				get_proc_alloc(meminfo),
+				get_proc_k2u(meminfo),
 				sp_res, non_sp_res, non_sp_shm,
 				page2kb(master->mm->total_vm));
 	}
@@ -4251,7 +4220,7 @@ int sp_group_exit(void)
 
 void sp_group_post_exit(struct mm_struct *mm)
 {
-	struct sp_proc_stat *stat;
+	struct sp_meminfo *meminfo;
 	long alloc_size, k2u_size;
 	/* lockless visit */
 	struct sp_group_master *master = mm->sp_group_master;
@@ -4276,16 +4245,13 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 * A process not in an sp group doesn't need to print because there
 	 * wont't be any memory which is not freed.
 	 */
-	stat = &master->instat;
-	if (stat) {
-		alloc_size = atomic64_read(&stat->alloc_nsize) + atomic64_read(&stat->alloc_hsize);
-		k2u_size = atomic64_read(&stat->k2u_size);
-
-		if (alloc_size != 0 || k2u_size != 0)
-			pr_info("process %s(%d) exits. It applied %ld aligned KB, k2u shared %ld aligned KB\n",
-				master->comm, master->tgid,
-				byte2kb(alloc_size), byte2kb(k2u_size));
-	}
+	meminfo = &master->meminfo;
+	alloc_size = atomic64_read(&meminfo->alloc_nsize) + atomic64_read(&meminfo->alloc_hsize);
+	k2u_size = atomic64_read(&meminfo->k2u_size);
+	if (alloc_size != 0 || k2u_size != 0)
+		pr_info("process %s(%d) exits. It applied %ld aligned KB, k2u shared %ld aligned KB\n",
+			master->comm, master->tgid,
+			byte2kb(alloc_size), byte2kb(k2u_size));
 
 	down_write(&sp_group_sem);
 	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
