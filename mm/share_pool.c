@@ -1642,20 +1642,21 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 		return -EOPNOTSUPP;
 
 	if (spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO) {
-		pr_err_ratelimited("del from group failed, invalid group id %d\n", spg_id);
+		pr_err("del from group failed, invalid group id %d\n", spg_id);
 		return -EINVAL;
 	}
 
 	spg = sp_group_get(tgid, spg_id);
 	if (!spg) {
-		pr_err_ratelimited("spg not found or get task failed.");
+		pr_err("spg not found or get task failed, tgid:%d, spg_id:%d\n",
+			tgid, spg_id);
 		return -EINVAL;
 	}
 	down_write(&sp_group_sem);
 
 	if (!spg_valid(spg)) {
 		up_write(&sp_group_sem);
-		pr_err_ratelimited("spg dead.");
+		pr_err("spg dead, spg_id:%d\n", spg_id);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1663,13 +1664,13 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 	ret = get_task(tgid, &tsk);
 	if (ret) {
 		up_write(&sp_group_sem);
-		pr_err_ratelimited("task is not found");
+		pr_err("task is not found, tgid:%d\n", tgid);
 		goto out;
 	}
 	mm = get_task_mm(tsk->group_leader);
 	if (!mm) {
 		up_write(&sp_group_sem);
-		pr_err_ratelimited("mm is not found");
+		pr_err("mm is not found, tgid:%d\n", tgid);
 		ret = -ESRCH;
 		goto out_put_task;
 	}
@@ -1684,7 +1685,7 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 	spg_node = find_spg_node_by_spg(mm, spg);
 	if (!spg_node) {
 		up_write(&sp_group_sem);
-		pr_err_ratelimited("process not in group");
+		pr_err("task(%d) not in group(%d)\n", tgid, spg_id);
 		ret = -ESRCH;
 		goto out_put_mm;
 	}
@@ -1694,7 +1695,7 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 	if (!list_empty(&spg->spa_list)) {
 		up_write(&spg->rw_lock);
 		up_write(&sp_group_sem);
-		pr_err_ratelimited("spa is not empty");
+		pr_err("spa is not empty, task:%d, spg_id:%d\n", tgid, spg_id);
 		ret = -EINVAL;
 		goto out_put_mm;
 	}
