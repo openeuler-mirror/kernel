@@ -123,8 +123,6 @@ struct sp_meminfo {
 #ifndef __GENKSYMS__
 /* per process/sp-group memory usage statistics */
 struct spg_proc_stat {
-	int tgid;
-	int spg_id;  /* 0 for non-group data, such as k2u_task */
 	/*
 	 * alloc amount minus free amount, may be negative when freed by
 	 * another task in the same sp group.
@@ -643,10 +641,8 @@ static void update_mem_usage_k2u(unsigned long size, bool inc,
 	}
 }
 
-static void sp_init_spg_proc_stat(struct spg_proc_stat *stat, int spg_id)
+static void sp_init_spg_proc_stat(struct spg_proc_stat *stat)
 {
-	stat->tgid = current->tgid;
-	stat->spg_id = spg_id;
 	atomic64_set(&stat->alloc_nsize, 0);
 	atomic64_set(&stat->alloc_hsize, 0);
 	atomic64_set(&stat->k2u_size, 0);
@@ -1269,7 +1265,7 @@ static struct sp_group_node *create_spg_node(struct mm_struct *mm,
 	spg_node->spg = spg;
 	spg_node->master = master;
 	spg_node->prot = prot;
-	sp_init_spg_proc_stat(&spg_node->instat, spg->id);
+	sp_init_spg_proc_stat(&spg_node->instat);
 
 	list_add_tail(&spg_node->group_node, &master->node_list);
 	master->count++;
