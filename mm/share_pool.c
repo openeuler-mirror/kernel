@@ -502,12 +502,14 @@ static struct sp_mapping *sp_mapping_find(struct sp_group *spg,
 static struct sp_group *create_spg(int spg_id, unsigned long flag);
 static void free_new_spg_id(bool new, int spg_id);
 static void free_sp_group_locked(struct sp_group *spg);
-static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg);
+static struct sp_group_node *group_add_task(struct mm_struct *mm, struct sp_group *spg,
+					    unsigned long prot);
 static int init_local_group(struct mm_struct *mm)
 {
 	int spg_id, ret;
 	struct sp_group *spg;
 	struct sp_mapping *spm;
+	struct sp_group_node *spg_node;
 	struct sp_group_master *master = mm->sp_group_master;
 
 	spg_id = ida_alloc_range(&sp_group_id_ida, SPG_ID_LOCAL_MIN,
@@ -533,10 +535,13 @@ static int init_local_group(struct mm_struct *mm)
 	sp_mapping_attach(master->local, sp_mapping_normal);
 	sp_mapping_attach(master->local, sp_mapping_ro);
 
-	ret = local_group_add_task(mm, spg);
-	if (ret < 0)
+	spg_node = group_add_task(mm, spg, PROT_READ | PROT_WRITE);
+	if (IS_ERR(spg_node)) {
 		/* The spm would be released while destroying the spg */
+		ret = PTR_ERR(spg_node);
 		goto free_spg;
+	}
+	mmget(mm);
 
 	return 0;
 
@@ -1297,18 +1302,24 @@ static void free_spg_node(struct mm_struct *mm, struct sp_group *spg,
 	kfree(spg_node);
 }
 
-static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
+/* the caller must hold sp_group_sem and down_write(&spg->rw_lock) in order */
+static struct sp_group_node *group_add_task(struct mm_struct *mm, struct sp_group *spg,
+					    unsigned long prot)
 {
 	struct sp_group_node *node;
+	int ret;
 
-	node = create_spg_node(mm, PROT_READ | PROT_WRITE, spg);
+	node = create_spg_node(mm, prot, spg);
 	if (IS_ERR(node))
-		return PTR_ERR(node);
+		return node;
 
-	insert_spg_node(spg, node);
-	mmget(mm);
+	ret = insert_spg_node(spg, node);
+	if (unlikely(ret)) {
+		free_spg_node(mm, spg, node);
+		return ERR_PTR(ret);
+	}
 
-	return 0;
+	return node;
 }
 
 /**
@@ -1451,17 +1462,11 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		goto out_drop_group;
 	}
 
-	node = create_spg_node(mm, prot, spg);
+	node = group_add_task(mm, spg, prot);
 	if (unlikely(IS_ERR(node))) {
 		up_write(&spg->rw_lock);
 		ret = PTR_ERR(node);
 		goto out_drop_group;
-	}
-
-	ret = insert_spg_node(spg, node);
-	if (unlikely(ret)) {
-		up_write(&spg->rw_lock);
-		goto out_drop_spg_node;
 	}
 
 	/*
@@ -1544,7 +1549,6 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		delete_spg_node(spg, node);
 	up_write(&spg->rw_lock);
 
-out_drop_spg_node:
 	if (unlikely(ret))
 		free_spg_node(mm, spg, node);
 	/*
