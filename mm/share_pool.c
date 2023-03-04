@@ -1143,31 +1143,8 @@ static bool is_online_node_id(int node_id)
 	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
 }
 
-static struct sp_group *create_spg(int spg_id, unsigned long flag)
+static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
 {
-	int ret;
-	struct sp_group *spg;
-	char name[20];
-	struct user_struct *user = NULL;
-	int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
-
-	if (unlikely(system_group_count + 1 == MAX_GROUP_FOR_SYSTEM &&
-		     !is_local_group(spg_id))) {
-		pr_err_ratelimited("reach system max group num\n");
-		return ERR_PTR(-ENOSPC);
-	}
-
-	spg = kzalloc(sizeof(*spg), GFP_KERNEL);
-	if (spg == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1, GFP_KERNEL);
-	if (ret < 0) {
-		pr_err_ratelimited("group %d idr alloc failed %d\n",
-				   spg_id, ret);
-		goto out_kfree;
-	}
-
 	spg->id = spg_id;
 	spg->flag = flag;
 	spg->is_alive = true;
@@ -1178,33 +1155,60 @@ static struct sp_group *create_spg(int spg_id, unsigned long flag)
 	INIT_LIST_HEAD(&spg->mnode);
 	init_rwsem(&spg->rw_lock);
 	sp_init_group_stat(&spg->instat);
+}
+
+static struct sp_group *create_spg(int spg_id, unsigned long flag)
+{
+	int ret;
+	struct sp_group *spg;
+	char name[DNAME_INLINE_LEN];
+	struct user_struct *user = NULL;
+	int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
+
+	if (unlikely(system_group_count + 1 == MAX_GROUP_FOR_SYSTEM &&
+		     !is_local_group(spg_id))) {
+		pr_err("reach system max group num\n");
+		return ERR_PTR(-ENOSPC);
+	}
+
+	spg = kzalloc(sizeof(*spg), GFP_KERNEL);
+	if (spg == NULL)
+		return ERR_PTR(-ENOMEM);
 
 	sprintf(name, "sp_group_%d", spg_id);
-	spg->file = shmem_kernel_file_setup(name, MAX_LFS_FILESIZE,
-					    VM_NORESERVE);
+	spg->file = shmem_kernel_file_setup(name, MAX_LFS_FILESIZE, VM_NORESERVE);
 	if (IS_ERR(spg->file)) {
 		pr_err("spg file setup failed %ld\n", PTR_ERR(spg->file));
 		ret = PTR_ERR(spg->file);
-		goto out_idr;
+		goto out_kfree;
 	}
 
+	sprintf(name, "sp_group_%d_huge", spg_id);
 	spg->file_hugetlb = hugetlb_file_setup(name, MAX_LFS_FILESIZE,
-					       VM_NORESERVE, &user, HUGETLB_ANONHUGE_INODE, hsize_log);
+				VM_NORESERVE, &user, HUGETLB_ANONHUGE_INODE, hsize_log);
 	if (IS_ERR(spg->file_hugetlb)) {
-		pr_err("spg file_hugetlb setup failed %ld\n",
-		       PTR_ERR(spg->file_hugetlb));
+		pr_err("spg file_hugetlb setup failed %ld\n", PTR_ERR(spg->file_hugetlb));
 		ret = PTR_ERR(spg->file_hugetlb);
 		goto out_fput;
 	}
 
+	sp_group_init(spg, spg_id, flag);
+
+	ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1, GFP_KERNEL);
+	if (ret < 0) {
+		pr_err("group %d idr alloc failed %d\n", spg_id, ret);
+		goto out_fput_huge;
+	}
+
 	if (!is_local_group(spg_id))
 		system_group_count++;
+
 	return spg;
 
+out_fput_huge:
+	fput(spg->file_hugetlb);
 out_fput:
 	fput(spg->file);
-out_idr:
-	idr_remove(&sp_group_idr, spg_id);
 out_kfree:
 	kfree(spg);
 	return ERR_PTR(ret);
