@@ -487,8 +487,8 @@ static int init_local_group(struct mm_struct *mm)
 
 	spg = create_spg(spg_id, 0);
 	if (IS_ERR(spg)) {
-		ret = PTR_ERR(spg);
-		goto free_spg_id;
+		free_new_spg_id(true, spg_id);
+		return PTR_ERR(spg);
 	}
 
 	master->local = spg;
@@ -509,11 +509,9 @@ static int init_local_group(struct mm_struct *mm)
 	return 0;
 
 free_spg:
+	/* spg_id is freed in free_sp_group_locked */
 	free_sp_group_locked(spg);
 	master->local = NULL;
-free_spg_id:
-	free_new_spg_id(true, spg_id);
-
 	return ret;
 }
 
