@@ -1661,6 +1661,13 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 		goto out_put_task;
 	}
 
+	if (!mm->sp_group_master) {
+		up_write(&sp_group_sem);
+		pr_err("task(%d) is not in any group(%d)\n", tgid, spg_id);
+		ret = -EINVAL;
+		goto out_put_mm;
+	}
+
 	spg_node = find_spg_node_by_spg(mm, spg);
 	if (!spg_node) {
 		up_write(&sp_group_sem);
