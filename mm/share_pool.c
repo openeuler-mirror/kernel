@@ -1666,8 +1666,7 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 
 	if (list_is_singular(&spg->procs))
 		is_alive = spg->is_alive = false;
-	spg->proc_num--;
-	list_del(&spg_node->proc_node);
+	delete_spg_node(spg, spg_node);
 	sp_group_put(spg);
 	up_write(&spg->rw_lock);
 	if (!is_alive)
@@ -4151,8 +4150,7 @@ int sp_group_exit(void)
 		/* a dead group should NOT be reactive again */
 		if (spg_valid(spg) && list_is_singular(&spg->procs))
 			is_alive = spg->is_alive = false;
-		spg->proc_num--;
-		list_del(&spg_node->proc_node);
+		delete_spg_node(spg, spg_node);
 		up_write(&spg->rw_lock);
 
 		if (!is_alive)
