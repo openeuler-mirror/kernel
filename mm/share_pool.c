@@ -264,6 +264,20 @@ struct sp_group_node {
 };
 #endif
 
+static inline void sp_add_group_master(struct sp_group_master *master)
+{
+	mutex_lock(&master_list_lock);
+	list_add_tail(&master->list_node, &master_list);
+	mutex_unlock(&master_list_lock);
+}
+
+static inline void sp_del_group_master(struct sp_group_master *master)
+{
+	mutex_lock(&master_list_lock);
+	list_del(&master->list_node);
+	mutex_unlock(&master_list_lock);
+}
+
 /* The caller should hold mmap_sem to protect master (TBD) */
 static void sp_init_group_master_stat(int tgid, struct mm_struct *mm,
 		struct sp_proc_stat *stat)
@@ -541,10 +555,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	master->mm = mm;
 	sp_init_group_master_stat(tsk->tgid, mm, &master->instat);
 	mm->sp_group_master = master;
-
-	mutex_lock(&master_list_lock);
-	list_add_tail(&master->list_node, &master_list);
-	mutex_unlock(&master_list_lock);
+	sp_add_group_master(master);
 
 	ret = init_local_group(mm);
 	if (ret)
@@ -553,9 +564,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	return 0;
 
 free_master:
-	mutex_lock(&master_list_lock);
-	list_del(&master->list_node);
-	mutex_unlock(&master_list_lock);
+	sp_del_group_master(master);
 	mm->sp_group_master = NULL;
 	kfree(master);
 
@@ -4387,9 +4396,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 	}
 	up_write(&sp_group_sem);
 
-	mutex_lock(&master_list_lock);
-	list_del(&master->list_node);
-	mutex_unlock(&master_list_lock);
+	sp_del_group_master(master);
 
 	kfree(master);
 }
