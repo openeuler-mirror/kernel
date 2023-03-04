@@ -99,6 +99,14 @@ static DEFINE_MUTEX(spm_list_lock);
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat;
 
+#define SEQ_printf(m, x...)			\
+do {						\
+	if (m)					\
+		seq_printf(m, x);		\
+	else					\
+		pr_info(x);			\
+} while (0)
+
 #ifndef __GENKSYMS__
 struct sp_spg_stat {
 	int spg_id;
@@ -3978,29 +3986,16 @@ void spa_overview_show(struct seq_file *seq)
 	dvpp_va_size  = spa_stat.dvpp_va_size;
 	spin_unlock(&sp_area_lock);
 
-	if (seq != NULL) {
-		seq_printf(seq, "Spa total num %u.\n", total_num);
-		seq_printf(seq, "Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
-			   alloc_num, k2u_task_num, k2u_spg_num);
-		seq_printf(seq, "Spa total size:     %13lu KB\n", byte2kb(total_size));
-		seq_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
-		seq_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
-		seq_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
-		seq_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
-		seq_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
-		seq_puts(seq, "\n");
-	} else {
-		pr_info("Spa total num %u.\n", total_num);
-		pr_info("Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
-			alloc_num, k2u_task_num, k2u_spg_num);
-		pr_info("Spa total size:     %13lu KB\n", byte2kb(total_size));
-		pr_info("Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
-		pr_info("Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
-		pr_info("Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
-		pr_info("Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
-		pr_info("Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
-		pr_info("\n");
-	}
+	SEQ_printf(seq, "Spa total num %u.\n", total_num);
+	SEQ_printf(seq, "Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
+		   alloc_num, k2u_task_num, k2u_spg_num);
+	SEQ_printf(seq, "Spa total size:     %13lu KB\n", byte2kb(total_size));
+	SEQ_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
+	SEQ_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
+	SEQ_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
+	SEQ_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
+	SEQ_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
+	SEQ_printf(seq, "\n");
 }
 
 static int spg_info_show(int id, void *p, void *data)
@@ -4011,29 +4006,16 @@ static int spg_info_show(int id, void *p, void *data)
 	if (id >= SPG_ID_LOCAL_MIN && id <= SPG_ID_LOCAL_MAX)
 		return 0;
 
-	if (seq != NULL) {
-		seq_printf(seq, "Group %6d ", id);
+	SEQ_printf(seq, "Group %6d ", id);
 
-		down_read(&spg->rw_lock);
-		seq_printf(seq, "size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
-				byte2kb(atomic64_read(&spg->instat.size)),
-				atomic_read(&spg->instat.spa_num),
-				byte2kb(atomic64_read(&spg->instat.alloc_size)),
-				byte2kb(atomic64_read(&spg->instat.alloc_nsize)),
-				byte2kb(atomic64_read(&spg->instat.alloc_hsize)));
-		up_read(&spg->rw_lock);
-	} else {
-		pr_info("Group %6d ", id);
-
-		down_read(&spg->rw_lock);
-		pr_info("size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
-				byte2kb(atomic64_read(&spg->instat.size)),
-				atomic_read(&spg->instat.spa_num),
-				byte2kb(atomic64_read(&spg->instat.alloc_size)),
-				byte2kb(atomic64_read(&spg->instat.alloc_nsize)),
-				byte2kb(atomic64_read(&spg->instat.alloc_hsize)));
-		up_read(&spg->rw_lock);
-	}
+	down_read(&spg->rw_lock);
+	SEQ_printf(seq, "size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
+			byte2kb(atomic64_read(&spg->instat.size)),
+			atomic_read(&spg->instat.spa_num),
+			byte2kb(atomic64_read(&spg->instat.alloc_size)),
+			byte2kb(atomic64_read(&spg->instat.alloc_nsize)),
+			byte2kb(atomic64_read(&spg->instat.alloc_hsize)));
+	up_read(&spg->rw_lock);
 
 	return 0;
 }
@@ -4043,24 +4025,15 @@ void spg_overview_show(struct seq_file *seq)
 	if (!sp_is_enabled())
 		return;
 
-	if (seq != NULL) {
-		seq_printf(seq, "Share pool total size: %lld KB, spa total num: %d.\n",
-				byte2kb(atomic64_read(&sp_overall_stat.spa_total_size)),
-				atomic_read(&sp_overall_stat.spa_total_num));
-	} else {
-		pr_info("Share pool total size: %lld KB, spa total num: %d.\n",
-				byte2kb(atomic64_read(&sp_overall_stat.spa_total_size)),
-				atomic_read(&sp_overall_stat.spa_total_num));
-	}
+	SEQ_printf(seq, "Share pool total size: %lld KB, spa total num: %d.\n",
+			byte2kb(atomic64_read(&sp_overall_stat.spa_total_size)),
+			atomic_read(&sp_overall_stat.spa_total_num));
 
 	down_read(&sp_group_sem);
 	idr_for_each(&sp_group_idr, spg_info_show, seq);
 	up_read(&sp_group_sem);
 
-	if (seq != NULL)
-		seq_puts(seq, "\n");
-	else
-		pr_info("\n");
+	SEQ_printf(seq, "\n");
 }
 
 static bool should_show_statistics(void)
