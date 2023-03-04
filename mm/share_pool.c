@@ -3264,54 +3264,42 @@ void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int tgid)
 EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
 
 /*
- * Input parameters uva, tgid and spg_id are now useless. spg_id will be useful
- * when supporting a process in multiple sp groups.
+ * sp_unshare_uva - unshare a uva from sp_make_share_k2u
+ * @uva: the uva to be unshared
+ * @size: not used actually and we just check it
+ * @group_id: specify the spg of the uva; for local group, it can be SPG_ID_DEFAULT
+ *            unless current process is exiting.
  *
  * Procedure of unshare uva must be compatible with:
  *
  * 1. DVPP channel destroy procedure:
  * do_exit() -> exit_mm() (mm no longer in spg and current->mm == NULL) ->
  * exit_task_work() -> task_work_run() -> __fput() -> ... -> vdec_close() ->
- * sp_unshare(uva, SPG_ID_DEFAULT)
- *
- * 2. Process A once was the target of k2u(to group), then it exits.
- * Guard worker kthread tries to free this uva and it must succeed, otherwise
- * spa of this uva leaks.
- *
- * This also means we must trust DVPP channel destroy and guard worker code.
+ * sp_unshare(uva, local_spg_id)
  */
 static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 {
 	int ret = 0;
-	struct mm_struct *mm;
 	struct sp_area *spa;
-	unsigned long uva_aligned;
-	unsigned long size_aligned;
 	unsigned int page_size;
 	struct sp_group *spg;
 
 	spg = sp_group_get(current->tgid, group_id);
 	if (!spg) {
-		pr_debug("sp unshare find group failed %d\n", group_id);
+		pr_err("sp unshare find group failed %d\n", group_id);
 		return -EINVAL;
 	}
 
-	/*
-	 * at first we guess it's a hugepage addr
-	 * we can tolerate at most PMD_SIZE or PAGE_SIZE which is matched in k2u
-	 */
+	/* All the spa are aligned to 2M. */
 	spa = get_sp_area(spg, ALIGN_DOWN(uva, PMD_SIZE));
 	if (!spa) {
-		spa = get_sp_area(spg, ALIGN_DOWN(uva, PAGE_SIZE));
-		if (!spa) {
-			ret = -EINVAL;
-			pr_debug("invalid input uva %lx in unshare uva\n", (unsigned long)uva);
-			goto out;
-		}
+		ret = -EINVAL;
+		pr_err("invalid input uva %lx in unshare uva\n", (unsigned long)uva);
+		goto out;
 	}
 
 	if (spa->type != SPA_TYPE_K2TASK && spa->type != SPA_TYPE_K2SPG) {
-		pr_err_ratelimited("unshare wrong type spa\n");
+		pr_err("unshare wrong type spa\n");
 		ret = -EINVAL;
 		goto out_drop_area;
 	}
@@ -3322,97 +3310,52 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int group_id)
 	 *    Thus input parameter size is not necessarily needed.
 	 */
 	page_size = (spa->is_hugepage ? PMD_SIZE : PAGE_SIZE);
-	uva_aligned = spa->va_start;
-	size_aligned = spa->real_size;
 
-	if (size_aligned < ALIGN(size, page_size)) {
+	if (spa->real_size < ALIGN(size, page_size)) {
 		ret = -EINVAL;
-		pr_err_ratelimited("unshare uva failed, invalid parameter size %lu\n", size);
+		pr_err("unshare uva failed, invalid parameter size %lu\n", size);
 		goto out_drop_area;
 	}
 
-	if (spa->type == SPA_TYPE_K2TASK) {
-		if (spa->applier != current->tgid) {
-			pr_err_ratelimited("unshare uva(to task) no permission\n");
-			ret = -EPERM;
-			goto out_drop_area;
-		}
-
-		/*
-		 * current thread may be exiting in a multithread process
-		 *
-		 * 1. never need a kthread to make unshare when process has exited
-		 * 2. in dvpp channel destroy procedure, exit_mm() has been called
-		 *    and don't need to make unshare
-		 */
-		mm = get_task_mm(current->group_leader);
-		if (!mm) {
-			pr_info_ratelimited("no need to unshare uva(to task), target process mm is exiting\n");
-			goto out_clr_flag;
-		}
-
-		down_write(&mm->mmap_lock);
-		if (unlikely(mm->core_state)) {
-			ret = 0;
-			up_write(&mm->mmap_lock);
-			mmput(mm);
-			goto out_drop_area;
-		}
-
-		ret = do_munmap(mm, uva_aligned, size_aligned, NULL);
-		up_write(&mm->mmap_lock);
-		mmput(mm);
-		/* we are not supposed to fail */
-		if (ret)
-			pr_err("failed to unmap VA %pK when munmap in unshare uva\n",
-			       (void *)uva_aligned);
-		sp_update_process_stat(current, false, spa);
-
-	} else if (spa->type == SPA_TYPE_K2SPG) {
-		down_read(&spa->spg->rw_lock);
-		/* always allow kthread and dvpp channel destroy procedure */
-		if (current->mm) {
-			if (!is_process_in_group(spa->spg, current->mm)) {
-				up_read(&spa->spg->rw_lock);
-				pr_err_ratelimited("unshare uva(to group) failed, caller process doesn't belong to target group\n");
-				ret = -EPERM;
-				goto out_drop_area;
-			}
-		}
+	down_read(&spa->spg->rw_lock);
+	/* always allow dvpp channel destroy procedure */
+	if (current->mm && !is_process_in_group(spa->spg, current->mm)) {
 		up_read(&spa->spg->rw_lock);
-
-		down_write(&spa->spg->rw_lock);
-		if (!spg_valid(spa->spg)) {
-			up_write(&spa->spg->rw_lock);
-			pr_info_ratelimited("share pool: no need to unshare uva(to group), sp group of spa is dead\n");
-			goto out_clr_flag;
-		}
-		/* the life cycle of spa has a direct relation with sp group */
-		if (unlikely(spa->is_dead)) {
-			up_write(&spa->spg->rw_lock);
-			pr_err_ratelimited("unexpected double sp unshare\n");
-			dump_stack();
-			ret = -EINVAL;
-			goto out_drop_area;
-		}
-		spa->is_dead = true;
-		up_write(&spa->spg->rw_lock);
-
-		down_read(&spa->spg->rw_lock);
-		__sp_free(spa->spg, uva_aligned, size_aligned, NULL);
-		up_read(&spa->spg->rw_lock);
-
-		if (current->mm == NULL)
-			atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
-		else
-			sp_update_process_stat(current, false, spa);
-	} else {
-		WARN(1, "unshare uva invalid spa type");
+		pr_err("unshare uva failed, caller process doesn't belong to target group\n");
+		ret = -EPERM;
+		goto out_drop_area;
 	}
+	up_read(&spa->spg->rw_lock);
+
+	down_write(&spa->spg->rw_lock);
+	if (!spg_valid(spa->spg)) {
+		up_write(&spa->spg->rw_lock);
+		pr_info("no need to unshare uva, sp group of spa is dead\n");
+		goto out_clr_flag;
+	}
+	/* the life cycle of spa has a direct relation with sp group */
+	if (unlikely(spa->is_dead)) {
+		up_write(&spa->spg->rw_lock);
+		pr_err("unexpected double sp unshare\n");
+		dump_stack();
+		ret = -EINVAL;
+		goto out_drop_area;
+	}
+	spa->is_dead = true;
+	up_write(&spa->spg->rw_lock);
+
+	down_read(&spa->spg->rw_lock);
+	__sp_free(spa->spg, spa->va_start, spa->real_size, NULL);
+	up_read(&spa->spg->rw_lock);
+
+	if (current->mm == NULL)
+		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
+	else
+		sp_update_process_stat(current, false, spa);
 
 out_clr_flag:
 	if (!vmalloc_area_clr_flag(spa->kva, VM_SHAREPOOL))
-		pr_debug("clear spa->kva %ld is not valid\n", spa->kva);
+		pr_info("clear spa->kva %ld is not valid\n", spa->kva);
 	spa->kva = 0;
 
 out_drop_area:
