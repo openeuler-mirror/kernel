@@ -4031,6 +4031,7 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 	int err;
 	int node_id;
 	struct sp_area *spa;
+	bool charge_hpage;
 
 	spa = vma->vm_private_data;
 	if (!spa) {
@@ -4046,12 +4047,15 @@ retry:
 		if (idx >= size)
 			goto out;
 
+		charge_hpage = false;
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
 			page = hugetlb_alloc_hugepage(node_id,
 					HUGETLB_ALLOC_BUDDY | HUGETLB_ALLOC_NORECLAIM);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
+			else if (!PageMemcgKmem(page))
+				charge_hpage = true;
 		}
 		if (IS_ERR(page)) {
 			ptl = huge_pte_lock(h, mm, ptep);
@@ -4064,6 +4068,13 @@ retry:
 			ret = vmf_error(PTR_ERR(page));
 			goto out;
 		}
+
+		if (charge_hpage && mem_cgroup_charge(page, vma->vm_mm, GFP_KERNEL)) {
+			put_page(page);
+			ret = vmf_error(-ENOMEM);
+			goto out;
+		}
+
 		__SetPageUptodate(page);
 		new_page = true;
 
@@ -4096,9 +4107,8 @@ retry:
 
 	spin_unlock(ptl);
 
-	if (new_page) {
+	if (new_page)
 		SetPagePrivate(&page[1]);
-	}
 
 	unlock_page(page);
 out:
