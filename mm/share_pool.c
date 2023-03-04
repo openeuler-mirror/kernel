@@ -123,7 +123,6 @@ struct sp_meminfo {
 #ifndef __GENKSYMS__
 /* per process memory usage statistics indexed by tgid */
 struct sp_proc_stat {
-	char comm[TASK_COMM_LEN];
 	/*
 	 * alloc amount minus free amount, may be negative when freed by
 	 * another task in the same sp group.
@@ -239,6 +238,7 @@ struct sp_group_master {
 	struct sp_group *local;
 	struct sp_proc_stat instat;
 	struct list_head list_node;
+	char comm[TASK_COMM_LEN];
 };
 
 /*
@@ -317,7 +317,6 @@ static void sp_init_group_master_stat(struct mm_struct *mm,
 	atomic64_set(&stat->alloc_nsize, 0);
 	atomic64_set(&stat->alloc_hsize, 0);
 	atomic64_set(&stat->k2u_size, 0);
-	get_task_comm(stat->comm, current);
 }
 
 static unsigned long sp_mapping_type(struct sp_mapping *spm)
@@ -584,6 +583,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	master->count = 0;
 	master->mm = mm;
 	master->tgid = tsk->tgid;
+	get_task_comm(master->comm, current);
 	sp_init_group_master_stat(mm, &master->instat);
 	mm->sp_group_master = master;
 	sp_add_group_master(master);
@@ -3769,7 +3769,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		   "PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
 		   "Non-SP_Shm", "VIRT");
 	seq_printf(m, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
-		   master->tgid, proc_stat->comm,
+		   master->tgid, master->comm,
 		   get_proc_alloc(proc_stat),
 		   get_proc_k2u(proc_stat),
 		   sp_res, non_sp_res, non_sp_shm,
@@ -4052,7 +4052,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 				&non_sp_res, &non_sp_shm);
 		seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
-				master->tgid, proc_stat->comm,
+				master->tgid, master->comm,
 				get_proc_alloc(proc_stat),
 				get_proc_k2u(proc_stat),
 				sp_res, non_sp_res, non_sp_shm,
@@ -4283,7 +4283,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 
 		if (alloc_size != 0 || k2u_size != 0)
 			pr_info("process %s(%d) exits. It applied %ld aligned KB, k2u shared %ld aligned KB\n",
-				stat->comm, master->tgid,
+				master->comm, master->tgid,
 				byte2kb(alloc_size), byte2kb(k2u_size));
 	}
 
