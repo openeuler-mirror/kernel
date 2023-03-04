@@ -224,6 +224,7 @@ struct sp_group {
 
 /* a per-process(per mm) struct which manages a sp_group_node list */
 struct sp_group_master {
+	pid_t tgid;
 	/*
 	 * number of sp groups the process belongs to,
 	 * a.k.a the number of sp_node in node_list
@@ -584,6 +585,7 @@ static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct
 	INIT_LIST_HEAD(&master->node_list);
 	master->count = 0;
 	master->mm = mm;
+	master->tgid = tsk->tgid;
 	sp_init_group_master_stat(tsk->tgid, mm, &master->instat);
 	mm->sp_group_master = master;
 	sp_add_group_master(master);
@@ -1465,6 +1467,15 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		goto out_put_task;
 	}
 
+	if (mm->sp_group_master && mm->sp_group_master->tgid != tgid) {
+		up_write(&sp_group_sem);
+		pr_err("add: task(%d) is a vfork child of the original task(%d)\n",
+			tgid, mm->sp_group_master->tgid);
+		ret = -EINVAL;
+		free_new_spg_id(id_newly_generated, spg_id);
+		goto out_put_mm;
+	}
+
 	spg = find_or_alloc_sp_group(spg_id, flag);
 	if (IS_ERR(spg)) {
 		up_write(&sp_group_sem);
@@ -1665,6 +1676,14 @@ int mg_sp_group_del_task(int tgid, int spg_id)
 	if (!mm->sp_group_master) {
 		up_write(&sp_group_sem);
 		pr_err("task(%d) is not in any group(%d)\n", tgid, spg_id);
+		ret = -EINVAL;
+		goto out_put_mm;
+	}
+
+	if (mm->sp_group_master->tgid != tgid) {
+		up_write(&sp_group_sem);
+		pr_err("del: task(%d) is a vfork child of the original task(%d)\n",
+			tgid, mm->sp_group_master->tgid);
 		ret = -EINVAL;
 		goto out_put_mm;
 	}
@@ -4196,6 +4215,11 @@ int sp_group_exit(void)
 
 	master = mm->sp_group_master;
 	if (!master) {
+		up_write(&sp_group_sem);
+		return 0;
+	}
+
+	if (master->tgid != current->tgid) {
 		up_write(&sp_group_sem);
 		return 0;
 	}
