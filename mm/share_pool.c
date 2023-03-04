@@ -928,12 +928,11 @@ struct sp_k2u_context {
 	unsigned long size_aligned;
 	unsigned long sp_flags;
 	int state;
-	int spg_id;
-	bool to_task;
+	enum spa_type type;
 };
 
-static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
-				struct mm_struct *mm, unsigned long prot, struct sp_k2u_context *kc);
+static unsigned long sp_remap_kva_to_vma(struct sp_area *spa, struct mm_struct *mm,
+					unsigned long prot, struct sp_k2u_context *kc);
 
 static void free_sp_group_id(int spg_id)
 {
@@ -1539,7 +1538,7 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		spin_unlock(&sp_area_lock);
 
 		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
-			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, prot_spa, NULL);
+			addr = sp_remap_kva_to_vma(spa, mm, prot_spa, NULL);
 			if (IS_ERR_VALUE(addr))
 				pr_warn("add group remap k2u failed %ld\n", addr);
 
@@ -2699,14 +2698,15 @@ static unsigned long __sp_remap_get_pfn(unsigned long kva)
 }
 
 /* when called by k2u to group, always make sure rw_lock of spg is down */
-static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
-					 struct mm_struct *mm, unsigned long prot, struct sp_k2u_context *kc)
+static unsigned long sp_remap_kva_to_vma(struct sp_area *spa, struct mm_struct *mm,
+					unsigned long prot, struct sp_k2u_context *kc)
 {
 	struct vm_area_struct *vma;
 	unsigned long ret_addr;
 	unsigned long populate = 0;
 	int ret = 0;
 	unsigned long addr, buf, offset;
+	unsigned long kva = spa->kva;
 
 	down_write(&mm->mmap_lock);
 	if (unlikely(mm->core_state)) {
@@ -2768,110 +2768,49 @@ put_mm:
 }
 
 /**
- * sp_make_share_kva_to_task() - Share kernel memory to current task.
- * @kva: the VA of shared kernel memory
- * @size: the size of area to share, should be aligned properly
- * @sp_flags: the flags for the opreation
- *
- * Return:
- * * if succeed, return the shared user address to start at.
- * * if fail, return the pointer of -errno.
- */
-static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, unsigned long sp_flags)
-{
-	int ret;
-	void *uva;
-	struct sp_area *spa;
-	struct sp_group_node *spg_node;
-	unsigned long prot = PROT_READ | PROT_WRITE;
-	struct sp_k2u_context kc;
-	struct sp_group *spg;
-
-	down_write(&sp_group_sem);
-	ret = sp_init_group_master_locked(current, current->mm);
-	if (ret) {
-		up_write(&sp_group_sem);
-		pr_err_ratelimited("k2u_task init local mapping failed %d\n", ret);
-		return ERR_PTR(ret);
-	}
-
-	spg = current->mm->sp_group_master->local;
-	up_write(&sp_group_sem);
-
-	spa = sp_alloc_area(size, sp_flags, spg, SPA_TYPE_K2TASK, current->tgid);
-	if (IS_ERR(spa)) {
-		pr_err_ratelimited("alloc spa failed in k2u_task (potential no enough virtual memory when -75): %ld\n",
-				PTR_ERR(spa));
-		return spa;
-	}
-
-	spa->kva = kva;
-	kc.sp_flags = sp_flags;
-	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot, &kc);
-	if (IS_ERR(uva))
-		pr_err("remap k2u to task failed %ld\n", PTR_ERR(uva));
-	else {
-		spg_node = find_spg_node_by_spg(current->mm, spa->spg);
-		update_mem_usage(size, true, spa->is_hugepage, spg_node, SPA_TYPE_K2TASK);
-		spa->mm = current->mm;
-	}
-	__sp_area_drop(spa);
-
-	return uva;
-}
-
-/**
  * Share kernel memory to a spg, the current process must be in that group
- * @kva: the VA of shared kernel memory
- * @size: the size of area to share, should be aligned properly
- * @sp_flags: the flags for the opreation
+ * @kc: the context for k2u, including kva, size, flags...
  * @spg: the sp group to be shared with
  *
  * Return: the shared user address to start at
  */
-static void *sp_make_share_kva_to_spg(unsigned long kva, unsigned long size,
-				      unsigned long sp_flags, struct sp_group *spg)
+static void *sp_make_share_kva_to_spg(struct sp_k2u_context *kc, struct sp_group *spg)
 {
 	struct sp_area *spa;
 	struct mm_struct *mm;
 	struct sp_group_node *spg_node;
-	void *uva = ERR_PTR(-ENODEV);
-	struct sp_k2u_context kc;
 	unsigned long ret_addr = -ENODEV;
 
 	down_read(&spg->rw_lock);
-	spa = sp_alloc_area(size, sp_flags, spg, SPA_TYPE_K2SPG, current->tgid);
+	spa = sp_alloc_area(kc->size_aligned, kc->sp_flags, spg, kc->type, current->tgid);
 	if (IS_ERR(spa)) {
 		up_read(&spg->rw_lock);
-		pr_err_ratelimited("alloc spa failed in k2u_spg (potential no enough virtual memory when -75): %ld\n",
+		pr_err("alloc spa failed in k2u_spg (potential no enough virtual memory when -75): %ld\n",
 				PTR_ERR(spa));
 		return spa;
 	}
 
-	spa->kva = kva;
-	kc.sp_flags = sp_flags;
+	spa->kva = kc->kva_aligned;
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
 		mm = spg_node->master->mm;
-		kc.state = K2U_NORMAL;
-		ret_addr = sp_remap_kva_to_vma(kva, spa, mm, spg_node->prot, &kc);
+		kc->state = K2U_NORMAL;
+		ret_addr = sp_remap_kva_to_vma(spa, mm, spg_node->prot, kc);
 		if (IS_ERR_VALUE(ret_addr)) {
-			if (kc.state == K2U_COREDUMP)
+			if (kc->state == K2U_COREDUMP)
 				continue;
-			uva = (void *)ret_addr;
-			pr_err("remap k2u to spg failed %ld\n", PTR_ERR(uva));
+			pr_err("remap k2u to spg failed %ld\n", ret_addr);
 			__sp_free(spg, spa->va_start, spa_size(spa), mm);
 			goto out;
 		}
-		uva = (void *)ret_addr;
 	}
 
 out:
 	up_read(&spg->rw_lock);
-	if (!IS_ERR(uva))
+	if (!IS_ERR_VALUE(ret_addr))
 		sp_update_process_stat(current, true, spa);
 	__sp_area_drop(spa);
 
-	return uva;
+	return (void *)ret_addr;
 }
 
 static bool vmalloc_area_set_flag(unsigned long kva, unsigned long flags)
@@ -2930,16 +2869,13 @@ static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 		return -EINVAL;
 	}
 
-	kc->kva = kva;
-	kc->kva_aligned = kva_aligned;
-	kc->size = size;
+	kc->kva          = kva;
+	kc->kva_aligned  = kva_aligned;
+	kc->size         = size;
 	kc->size_aligned = size_aligned;
-	kc->sp_flags = sp_flags;
-	kc->spg_id = spg_id;
-	if (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE)
-		kc->to_task = true;
-	else
-		kc->to_task = false;
+	kc->sp_flags     = sp_flags;
+	kc->type         = (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE)
+				? SPA_TYPE_K2TASK : SPA_TYPE_K2SPG;
 
 	return 0;
 }
@@ -2977,6 +2913,7 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 	void *uva;
 	int ret;
 	struct sp_k2u_context kc;
+	struct sp_group *spg;
 
 	if (!sp_is_enabled())
 		return ERR_PTR(-EOPNOTSUPP);
@@ -2987,24 +2924,31 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 	if (ret)
 		return ERR_PTR(ret);
 
-	if (kc.to_task) {
-		uva = sp_make_share_kva_to_task(kc.kva_aligned, kc.size_aligned, kc.sp_flags);
-	} else {
-		struct sp_group *spg;
-
-		spg = __sp_find_spg(current->tgid, kc.spg_id);
-		if (spg) {
-			ret = sp_check_caller_permission(spg, current->mm);
-			if (ret < 0) {
-				sp_group_drop(spg);
-				uva = ERR_PTR(ret);
-				goto out;
-			}
-			uva = sp_make_share_kva_to_spg(kc.kva_aligned, kc.size_aligned, kc.sp_flags, spg);
-			sp_group_drop(spg);
-		} else {
-			uva = ERR_PTR(-ENODEV);
+	if (kc.type == SPA_TYPE_K2TASK) {
+		down_write(&sp_group_sem);
+		ret = sp_init_group_master_locked(current, current->mm);
+		up_write(&sp_group_sem);
+		if (ret) {
+			pr_err("k2u_task init local mapping failed %d\n", ret);
+			uva = ERR_PTR(ret);
+			goto out;
 		}
+		/* the caller could use SPG_ID_NONE */
+		spg_id = SPG_ID_DEFAULT;
+	}
+
+	spg = __sp_find_spg(current->tgid, spg_id);
+	if (spg) {
+		ret = sp_check_caller_permission(spg, current->mm);
+		if (ret < 0) {
+			sp_group_drop(spg);
+			uva = ERR_PTR(ret);
+			goto out;
+		}
+		uva = sp_make_share_kva_to_spg(&kc, spg);
+		sp_group_drop(spg);
+	} else {
+		uva = ERR_PTR(-ENODEV);
 	}
 
 out:
