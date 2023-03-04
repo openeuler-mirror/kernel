@@ -4063,8 +4063,22 @@ void spg_overview_show(struct seq_file *seq)
 		pr_info("\n");
 }
 
+static bool should_show_statistics(void)
+{
+	if (!capable(CAP_SYS_ADMIN))
+		return false;
+
+	if (task_active_pid_ns(current) != &init_pid_ns)
+		return false;
+
+	return true;
+}
+
 static int spa_stat_show(struct seq_file *seq, void *offset)
 {
+	if (!should_show_statistics())
+		return -EPERM;
+
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
@@ -4113,6 +4127,9 @@ static int proc_usage_by_group(int id, void *p, void *data)
 
 static int proc_group_usage_show(struct seq_file *seq, void *offset)
 {
+	if (!should_show_statistics())
+		return -EPERM;
+
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 
@@ -4139,6 +4156,9 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 	unsigned long anon, file, shmem, total_rss;
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 	struct sp_proc_stat *proc_stat;
+
+	if (!should_show_statistics())
+		return -EPERM;
 
 	seq_printf(seq, "%-8s %-16s %-9s %-9s %-9s %-10s %-10s %-8s\n",
 			"PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
