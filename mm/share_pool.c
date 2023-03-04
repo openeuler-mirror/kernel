@@ -298,16 +298,16 @@ static void meminfo_dec_usage(unsigned long size, bool huge, struct sp_meminfo *
 		atomic64_sub(size, &meminfo->alloc_nsize);
 }
 
-static void meminfo_update_k2u(unsigned long size, bool inc,
-	struct sp_meminfo *meminfo)
+static void meminfo_inc_k2u(unsigned long size, struct sp_meminfo *meminfo)
 {
-	if (inc) {
-		atomic64_add(size, &meminfo->size);
-		atomic64_add(size, &meminfo->k2u_size);
-	} else {
-		atomic64_sub(size, &meminfo->size);
-		atomic64_sub(size, &meminfo->k2u_size);
-	}
+	atomic64_add(size, &meminfo->size);
+	atomic64_add(size, &meminfo->k2u_size);
+}
+
+static void meminfo_dec_k2u(unsigned long size, struct sp_meminfo *meminfo)
+{
+	atomic64_sub(size, &meminfo->size);
+	atomic64_sub(size, &meminfo->k2u_size);
 }
 
 /* The caller should hold mmap_sem to protect master (TBD) */
@@ -773,12 +773,12 @@ static void spa_inc_usage(struct sp_area *spa)
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num += 1;
 		spa_stat.k2u_task_size += size;
-		meminfo_update_k2u(size, true, &spa->spg->meminfo);
+		meminfo_inc_k2u(size, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
 		spa_stat.k2u_spg_num += 1;
 		spa_stat.k2u_spg_size += size;
-		meminfo_update_k2u(size, true, &spa->spg->meminfo);
+		meminfo_inc_k2u(size, &spa->spg->meminfo);
 		break;
 	default:
 		WARN(1, "invalid spa type");
@@ -820,12 +820,12 @@ static void spa_dec_usage(struct sp_area *spa)
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num -= 1;
 		spa_stat.k2u_task_size -= size;
-		meminfo_update_k2u(size, false, &spa->spg->meminfo);
+		meminfo_dec_k2u(size, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
 		spa_stat.k2u_spg_num -= 1;
 		spa_stat.k2u_spg_size -= size;
-		meminfo_update_k2u(size, false, &spa->spg->meminfo);
+		meminfo_dec_k2u(size, &spa->spg->meminfo);
 		break;
 	default:
 		WARN(1, "invalid spa type");
