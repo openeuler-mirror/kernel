@@ -992,6 +992,12 @@ config CLEAR_FREELIST_PAGE
 	  To enable this feature, kernel parameter "clear_freelist" also
 	  needs to be added.
 
+config EXTEND_HUGEPAGE_MAPPING
+	bool "Extend for hugepages mapping"
+	depends on ARM64
+	default n
+	help
+	  Introduce vmalloc/vmap/remap interfaces that handle only hugepages.
 
 source "mm/damon/Kconfig"
 
