@@ -114,7 +114,6 @@ struct sp_meminfo {
 };
 
 #ifndef __GENKSYMS__
-
 enum sp_mapping_type {
 	SP_MAPPING_START,
 	SP_MAPPING_DVPP		= SP_MAPPING_START,
@@ -465,11 +464,13 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 		if (is_mapping_empty(local_dvpp_mapping)) {
 			sp_mapping_merge(spg_dvpp_mapping, local_dvpp_mapping);
 			if (is_conflict)
-				pr_warn_ratelimited("task address space conflict, spg_id=%d\n", spg->id);
+				pr_warn_ratelimited("task address space conflict, spg_id=%d\n",
+						spg->id);
 		} else if (is_mapping_empty(spg_dvpp_mapping)) {
 			sp_mapping_merge(local_dvpp_mapping, spg_dvpp_mapping);
 			if (is_conflict)
-				pr_warn_ratelimited("group address space conflict, spg_id=%d\n", spg->id);
+				pr_warn_ratelimited("group address space conflict, spg_id=%d\n",
+						spg->id);
 		} else {
 			pr_info_ratelimited("Duplicate address space, id=%d\n", spg->id);
 			return -EINVAL;
@@ -823,7 +824,7 @@ static void update_mem_usage(unsigned long size, bool inc, bool is_hugepage,
 	}
 }
 
-struct sp_group_node *find_spg_node_by_spg(struct mm_struct *mm,
+static struct sp_group_node *find_spg_node_by_spg(struct mm_struct *mm,
 		struct sp_group *spg)
 {
 	struct sp_group_node *spg_node;
@@ -2443,7 +2444,6 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	 * page fault later on, and more importantly sp_make_share_u2k()
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
-
 	return do_mm_populate(mm, spa->va_start, ac->populate, 0);
 }
 
@@ -2464,7 +2464,6 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	int ret;
 
 	ret = sp_alloc_mmap(mm, spa, spg_node, ac);
-
 	if (ret < 0)
 		return ret;
 
@@ -2486,6 +2485,7 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
 					ret);
 	}
+
 	return ret;
 }
 
@@ -2538,8 +2538,7 @@ unmap:
 	sp_fallocate(spa);
 
 	/* if hugepage allocation fails, this will transfer to normal page
-	 * and try again. (only if SP_HUGEPAGE_ONLY is not flagged
-	 */
+	 * and try again. (only if SP_HUGEPAGE_ONLY is not flagged */
 	sp_alloc_fallback(spa, ac);
 
 	return mmap_ret;
@@ -3796,7 +3795,7 @@ static void spa_dvpp_stat_show(struct seq_file *seq)
 }
 
 
-void spa_overview_show(struct seq_file *seq)
+static void spa_overview_show(struct seq_file *seq)
 {
 	unsigned int total_num, alloc_num, k2u_task_num, k2u_spg_num;
 	unsigned long total_size, alloc_size, k2u_task_size, k2u_spg_size;
@@ -3852,7 +3851,7 @@ static int spg_info_show(int id, void *p, void *data)
 	return 0;
 }
 
-void spg_overview_show(struct seq_file *seq)
+static void spg_overview_show(struct seq_file *seq)
 {
 	if (!sp_is_enabled())
 		return;
@@ -4121,7 +4120,7 @@ backout:
 	goto out;
 }
 
-/*
+/**
  * The caller must ensure that this function is called
  * when the last thread in the thread group exits.
  */
