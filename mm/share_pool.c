@@ -290,6 +290,17 @@ static void meminfo_dec_k2u(unsigned long size, struct sp_meminfo *meminfo)
 	atomic64_sub(size, &meminfo->k2u_size);
 }
 
+static inline long meminfo_alloc_sum(struct sp_meminfo *meminfo)
+{
+	return atomic64_read(&meminfo->alloc_nsize) +
+			atomic64_read(&meminfo->alloc_hsize);
+}
+
+static inline long meminfo_alloc_sum_byKB(struct sp_meminfo *meminfo)
+{
+	return byte2kb(meminfo_alloc_sum(meminfo));
+}
+
 static unsigned long sp_mapping_type(struct sp_mapping *spm)
 {
 	return spm->type;
@@ -3613,12 +3624,6 @@ static long get_proc_k2u(struct sp_meminfo *meminfo)
 	return byte2kb(atomic64_read(&meminfo->k2u_size));
 }
 
-static long get_proc_alloc(struct sp_meminfo *meminfo)
-{
-	return byte2kb(atomic64_read(&meminfo->alloc_nsize) +
-			atomic64_read(&meminfo->alloc_hsize));
-}
-
 static void get_process_sp_res(struct sp_group_master *master,
 		long *sp_res_out, long *sp_res_nsize_out)
 {
@@ -3630,16 +3635,9 @@ static void get_process_sp_res(struct sp_group_master *master,
 
 	list_for_each_entry(spg_node, &master->node_list, group_node) {
 		spg = spg_node->spg;
-		*sp_res_out += byte2kb(atomic64_read(&spg->meminfo.alloc_nsize));
-		*sp_res_out += byte2kb(atomic64_read(&spg->meminfo.alloc_hsize));
+		*sp_res_out += meminfo_alloc_sum_byKB(&spg->meminfo);
 		*sp_res_nsize_out += byte2kb(atomic64_read(&spg->meminfo.alloc_nsize));
 	}
-}
-
-static long get_sp_res_by_spg_proc(struct sp_group_node *spg_node)
-{
-	return byte2kb(atomic64_read(&spg_node->spg->meminfo.alloc_nsize) +
-			atomic64_read(&spg_node->spg->meminfo.alloc_hsize));
 }
 
 /*
@@ -3658,12 +3656,6 @@ static void get_process_non_sp_res(unsigned long total_rss, unsigned long shmem,
 
 	*non_sp_res_out = non_sp_res;
 	*non_sp_shm_out = non_sp_shm;
-}
-
-static long get_spg_proc_alloc(struct sp_group_node *spg_node)
-{
-	return byte2kb(atomic64_read(&spg_node->meminfo.alloc_nsize) +
-				atomic64_read(&spg_node->meminfo.alloc_hsize));
 }
 
 static long get_spg_proc_k2u(struct sp_group_node *spg_node)
@@ -3716,7 +3708,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		   "Non-SP_Shm", "VIRT");
 	seq_printf(m, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
 		   master->tgid, master->comm,
-		   get_proc_alloc(meminfo),
+		   meminfo_alloc_sum_byKB(meminfo),
 		   get_proc_k2u(meminfo),
 		   sp_res, non_sp_res, non_sp_shm,
 		   page2kb(mm->total_vm));
@@ -3728,9 +3720,9 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	list_for_each_entry(spg_node, &master->node_list, group_node) {
 		seq_printf(m, "%-8d %-9ld %-9ld %-9ld ",
 				spg_node->spg->id,
-				get_spg_proc_alloc(spg_node),
+				meminfo_alloc_sum_byKB(&spg_node->meminfo),
 				get_spg_proc_k2u(spg_node),
-				get_sp_res_by_spg_proc(spg_node));
+				meminfo_alloc_sum_byKB(&spg_node->spg->meminfo));
 		print_process_prot(m, spg_node->prot);
 		seq_putc(m, '\n');
 	}
@@ -3936,9 +3928,9 @@ static int proc_usage_by_group(int id, void *p, void *data)
 		seq_printf(seq, "%-8d ", tgid);
 		seq_printf(seq, "%-8d ", id);
 		seq_printf(seq, "%-9ld %-9ld %-9ld %-8ld %-7ld %-7ld ",
-				get_spg_proc_alloc(spg_node),
+				meminfo_alloc_sum_byKB(&spg_node->meminfo),
 				get_spg_proc_k2u(spg_node),
-				get_sp_res_by_spg_proc(spg_node),
+				meminfo_alloc_sum_byKB(&spg_node->spg->meminfo),
 				page2kb(mm->total_vm), page2kb(total_rss),
 				page2kb(shmem));
 		print_process_prot(seq, spg_node->prot);
@@ -3999,7 +3991,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 				&non_sp_res, &non_sp_shm);
 		seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
 				master->tgid, master->comm,
-				get_proc_alloc(meminfo),
+				meminfo_alloc_sum_byKB(meminfo),
 				get_proc_k2u(meminfo),
 				sp_res, non_sp_res, non_sp_shm,
 				page2kb(master->mm->total_vm));
@@ -4223,7 +4215,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 * wont't be any memory which is not freed.
 	 */
 	meminfo = &master->meminfo;
-	alloc_size = atomic64_read(&meminfo->alloc_nsize) + atomic64_read(&meminfo->alloc_hsize);
+	alloc_size = meminfo_alloc_sum(meminfo);
 	k2u_size = atomic64_read(&meminfo->k2u_size);
 	if (alloc_size != 0 || k2u_size != 0)
 		pr_info("process %s(%d) exits. It applied %ld aligned KB, k2u shared %ld aligned KB\n",
