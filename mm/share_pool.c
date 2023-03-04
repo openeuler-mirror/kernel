@@ -126,7 +126,6 @@ struct sp_spg_stat {
 /* per process memory usage statistics indexed by tgid */
 struct sp_proc_stat {
 	int tgid;
-	struct mm_struct *mm;
 	char comm[TASK_COMM_LEN];
 	/*
 	 * alloc amount minus free amount, may be negative when freed by
@@ -282,7 +281,6 @@ static void sp_init_group_master_stat(int tgid, struct mm_struct *mm,
 	atomic64_set(&stat->alloc_nsize, 0);
 	atomic64_set(&stat->alloc_hsize, 0);
 	atomic64_set(&stat->k2u_size, 0);
-	stat->mm = mm;
 	stat->tgid = tgid;
 	get_task_comm(stat->comm, current);
 }
