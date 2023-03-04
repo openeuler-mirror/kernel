@@ -109,8 +109,6 @@ do {						\
 
 #ifndef __GENKSYMS__
 struct sp_spg_stat {
-	/* number of sp_area */
-	atomic_t	 spa_num;
 	/* total size of all sp_area from sp_alloc and k2u */
 	atomic64_t	 size;
 	/* total size of all sp_area from sp_alloc 0-order page */
@@ -216,6 +214,7 @@ struct sp_group {
 	/* is_alive == false means it's being destroyed */
 	bool		 is_alive;
 	atomic_t	 use_count;
+	atomic_t	 spa_num;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
 	/* list node for dvpp mapping */
@@ -602,7 +601,6 @@ static void update_spg_stat_alloc(unsigned long size, bool inc,
 	bool huge, struct sp_spg_stat *stat)
 {
 	if (inc) {
-		atomic_inc(&stat->spa_num);
 		atomic64_add(size, &stat->size);
 		atomic64_add(size, &stat->alloc_size);
 		if (huge)
@@ -610,7 +608,6 @@ static void update_spg_stat_alloc(unsigned long size, bool inc,
 		else
 			atomic64_add(size, &stat->alloc_nsize);
 	} else {
-		atomic_dec(&stat->spa_num);
 		atomic64_sub(size, &stat->size);
 		atomic64_sub(size, &stat->alloc_size);
 		if (huge)
@@ -624,11 +621,9 @@ static void update_spg_stat_k2u(unsigned long size, bool inc,
 	struct sp_spg_stat *stat)
 {
 	if (inc) {
-		atomic_inc(&stat->spa_num);
 		atomic64_add(size, &stat->size);
 		atomic64_add(size, &stat->k2u_size);
 	} else {
-		atomic_dec(&stat->spa_num);
 		atomic64_sub(size, &stat->size);
 		atomic64_sub(size, &stat->k2u_size);
 	}
@@ -685,7 +680,6 @@ static void sp_init_spg_proc_stat(struct spg_proc_stat *stat, int spg_id)
 
 static void sp_init_group_stat(struct sp_spg_stat *stat)
 {
-	atomic_set(&stat->spa_num, 0);
 	atomic64_set(&stat->size, 0);
 	atomic64_set(&stat->alloc_nsize, 0);
 	atomic64_set(&stat->alloc_hsize, 0);
@@ -799,6 +793,7 @@ static void spa_inc_usage(struct sp_area *spa)
 		spa_stat.dvpp_va_size += ALIGN(size, PMD_SIZE);
 	}
 
+	atomic_inc(&spa->spg->spa_num);
 	/*
 	 * all the calculations won't overflow due to system limitation and
 	 * parameter checking in sp_alloc_area()
@@ -845,6 +840,7 @@ static void spa_dec_usage(struct sp_area *spa)
 		spa_stat.dvpp_va_size -= ALIGN(size, PMD_SIZE);
 	}
 
+	atomic_dec(&spa->spg->spa_num);
 	spa_stat.total_num -= 1;
 	spa_stat.total_size -= size;
 
@@ -1143,6 +1139,7 @@ static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
 	spg->is_alive = true;
 	spg->proc_num = 0;
 	atomic_set(&spg->use_count, 1);
+	atomic_set(&spg->spa_num, 0);
 	INIT_LIST_HEAD(&spg->procs);
 	INIT_LIST_HEAD(&spg->spa_list);
 	INIT_LIST_HEAD(&spg->mnode);
@@ -3907,7 +3904,7 @@ static int spg_info_show(int id, void *p, void *data)
 	down_read(&spg->rw_lock);
 	SEQ_printf(seq, "size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
 			byte2kb(atomic64_read(&spg->instat.size)),
-			atomic_read(&spg->instat.spa_num),
+			atomic_read(&spg->spa_num),
 			byte2kb(atomic64_read(&spg->instat.alloc_size)),
 			byte2kb(atomic64_read(&spg->instat.alloc_nsize)),
 			byte2kb(atomic64_read(&spg->instat.alloc_hsize)));
