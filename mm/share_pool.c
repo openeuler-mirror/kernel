@@ -107,20 +107,20 @@ do {						\
 		pr_info(x);			\
 } while (0)
 
-#ifndef __GENKSYMS__
-struct sp_spg_stat {
-	/* total size of all sp_area from sp_alloc and k2u */
-	atomic64_t	 size;
-	/* total size of all sp_area from sp_alloc 0-order page */
-	atomic64_t	 alloc_nsize;
-	/* total size of all sp_area from sp_alloc hugepage */
-	atomic64_t	 alloc_hsize;
-	/* total size of all sp_area from ap_alloc */
-	atomic64_t	 alloc_size;
-	/* total size of all sp_area from sp_k2u */
-	atomic64_t	 k2u_size;
+struct sp_meminfo {
+	/* total size from sp_alloc and k2u */
+	atomic64_t	size;
+	/* not huge page size from sp_alloc */
+	atomic64_t	alloc_nsize;
+	/* huge page size from sp_alloc */
+	atomic64_t	alloc_hsize;
+	/* total size from sp_alloc */
+	atomic64_t	alloc_size;
+	/* total size from sp_k2u */
+	atomic64_t	k2u_size;
 };
 
+#ifndef __GENKSYMS__
 /* per process memory usage statistics indexed by tgid */
 struct sp_proc_stat {
 	int tgid;
@@ -210,7 +210,7 @@ struct sp_group {
 	/* list head of sp_area. it is protected by spin_lock sp_area_lock */
 	struct list_head spa_list;
 	/* group statistics */
-	struct sp_spg_stat instat;
+	struct sp_meminfo meminfo;
 	/* is_alive == false means it's being destroyed */
 	bool		 is_alive;
 	atomic_t	 use_count;
@@ -271,6 +271,43 @@ static inline void sp_del_group_master(struct sp_group_master *master)
 	mutex_lock(&master_list_lock);
 	list_del(&master->list_node);
 	mutex_unlock(&master_list_lock);
+}
+
+static void meminfo_init(struct sp_meminfo *meminfo)
+{
+	memset(meminfo, 0, sizeof(struct sp_meminfo));
+}
+
+static void meminfo_update(unsigned long size, bool inc,
+	bool huge, struct sp_meminfo *meminfo)
+{
+	if (inc) {
+		atomic64_add(size, &meminfo->size);
+		atomic64_add(size, &meminfo->alloc_size);
+		if (huge)
+			atomic64_add(size, &meminfo->alloc_hsize);
+		else
+			atomic64_add(size, &meminfo->alloc_nsize);
+	} else {
+		atomic64_sub(size, &meminfo->size);
+		atomic64_sub(size, &meminfo->alloc_size);
+		if (huge)
+			atomic64_sub(size, &meminfo->alloc_hsize);
+		else
+			atomic64_sub(size, &meminfo->alloc_nsize);
+	}
+}
+
+static void meminfo_update_k2u(unsigned long size, bool inc,
+	struct sp_meminfo *meminfo)
+{
+	if (inc) {
+		atomic64_add(size, &meminfo->size);
+		atomic64_add(size, &meminfo->k2u_size);
+	} else {
+		atomic64_sub(size, &meminfo->size);
+		atomic64_sub(size, &meminfo->k2u_size);
+	}
 }
 
 /* The caller should hold mmap_sem to protect master (TBD) */
@@ -597,38 +634,6 @@ static struct sp_group *sp_get_local_group(struct task_struct *tsk, struct mm_st
 	return master->local;
 }
 
-static void update_spg_stat_alloc(unsigned long size, bool inc,
-	bool huge, struct sp_spg_stat *stat)
-{
-	if (inc) {
-		atomic64_add(size, &stat->size);
-		atomic64_add(size, &stat->alloc_size);
-		if (huge)
-			atomic64_add(size, &stat->alloc_hsize);
-		else
-			atomic64_add(size, &stat->alloc_nsize);
-	} else {
-		atomic64_sub(size, &stat->size);
-		atomic64_sub(size, &stat->alloc_size);
-		if (huge)
-			atomic64_sub(size, &stat->alloc_hsize);
-		else
-			atomic64_sub(size, &stat->alloc_nsize);
-	}
-}
-
-static void update_spg_stat_k2u(unsigned long size, bool inc,
-	struct sp_spg_stat *stat)
-{
-	if (inc) {
-		atomic64_add(size, &stat->size);
-		atomic64_add(size, &stat->k2u_size);
-	} else {
-		atomic64_sub(size, &stat->size);
-		atomic64_sub(size, &stat->k2u_size);
-	}
-}
-
 static void update_mem_usage_alloc(unsigned long size, bool inc,
 		bool is_hugepage, struct sp_group_node *spg_node)
 {
@@ -675,15 +680,6 @@ static void sp_init_spg_proc_stat(struct spg_proc_stat *stat, int spg_id)
 	stat->spg_id = spg_id;
 	atomic64_set(&stat->alloc_nsize, 0);
 	atomic64_set(&stat->alloc_hsize, 0);
-	atomic64_set(&stat->k2u_size, 0);
-}
-
-static void sp_init_group_stat(struct sp_spg_stat *stat)
-{
-	atomic64_set(&stat->size, 0);
-	atomic64_set(&stat->alloc_nsize, 0);
-	atomic64_set(&stat->alloc_hsize, 0);
-	atomic64_set(&stat->alloc_size, 0);
 	atomic64_set(&stat->k2u_size, 0);
 }
 
@@ -772,17 +768,17 @@ static void spa_inc_usage(struct sp_area *spa)
 	case SPA_TYPE_ALLOC:
 		spa_stat.alloc_num += 1;
 		spa_stat.alloc_size += size;
-		update_spg_stat_alloc(size, true, is_huge, &spa->spg->instat);
+		meminfo_update(size, true, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num += 1;
 		spa_stat.k2u_task_size += size;
-		update_spg_stat_k2u(size, true, &spa->spg->instat);
+		meminfo_update_k2u(size, true, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
 		spa_stat.k2u_spg_num += 1;
 		spa_stat.k2u_spg_size += size;
-		update_spg_stat_k2u(size, true, &spa->spg->instat);
+		meminfo_update_k2u(size, true, &spa->spg->meminfo);
 		break;
 	default:
 		WARN(1, "invalid spa type");
@@ -819,17 +815,17 @@ static void spa_dec_usage(struct sp_area *spa)
 	case SPA_TYPE_ALLOC:
 		spa_stat.alloc_num -= 1;
 		spa_stat.alloc_size -= size;
-		update_spg_stat_alloc(size, false, is_huge, &spa->spg->instat);
+		meminfo_update(size, false, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num -= 1;
 		spa_stat.k2u_task_size -= size;
-		update_spg_stat_k2u(size, false, &spa->spg->instat);
+		meminfo_update_k2u(size, false, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
 		spa_stat.k2u_spg_num -= 1;
 		spa_stat.k2u_spg_size -= size;
-		update_spg_stat_k2u(size, false, &spa->spg->instat);
+		meminfo_update_k2u(size, false, &spa->spg->meminfo);
 		break;
 	default:
 		WARN(1, "invalid spa type");
@@ -1144,7 +1140,7 @@ static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
 	INIT_LIST_HEAD(&spg->spa_list);
 	INIT_LIST_HEAD(&spg->mnode);
 	init_rwsem(&spg->rw_lock);
-	sp_init_group_stat(&spg->instat);
+	meminfo_init(&spg->meminfo);
 }
 
 static struct sp_group *create_spg(int spg_id, unsigned long flag)
@@ -3671,16 +3667,16 @@ static void get_process_sp_res(struct sp_group_master *master,
 
 	list_for_each_entry(spg_node, &master->node_list, group_node) {
 		spg = spg_node->spg;
-		*sp_res_out += byte2kb(atomic64_read(&spg->instat.alloc_nsize));
-		*sp_res_out += byte2kb(atomic64_read(&spg->instat.alloc_hsize));
-		*sp_res_nsize_out += byte2kb(atomic64_read(&spg->instat.alloc_nsize));
+		*sp_res_out += byte2kb(atomic64_read(&spg->meminfo.alloc_nsize));
+		*sp_res_out += byte2kb(atomic64_read(&spg->meminfo.alloc_hsize));
+		*sp_res_nsize_out += byte2kb(atomic64_read(&spg->meminfo.alloc_nsize));
 	}
 }
 
 static long get_sp_res_by_spg_proc(struct sp_group_node *spg_node)
 {
-	return byte2kb(atomic64_read(&spg_node->spg->instat.alloc_nsize) +
-			atomic64_read(&spg_node->spg->instat.alloc_hsize));
+	return byte2kb(atomic64_read(&spg_node->spg->meminfo.alloc_nsize) +
+			atomic64_read(&spg_node->spg->meminfo.alloc_hsize));
 }
 
 /*
@@ -3903,11 +3899,11 @@ static int spg_info_show(int id, void *p, void *data)
 
 	down_read(&spg->rw_lock);
 	SEQ_printf(seq, "size: %lld KB, spa num: %d, total alloc: %lld KB, normal alloc: %lld KB, huge alloc: %lld KB\n",
-			byte2kb(atomic64_read(&spg->instat.size)),
+			byte2kb(atomic64_read(&spg->meminfo.size)),
 			atomic_read(&spg->spa_num),
-			byte2kb(atomic64_read(&spg->instat.alloc_size)),
-			byte2kb(atomic64_read(&spg->instat.alloc_nsize)),
-			byte2kb(atomic64_read(&spg->instat.alloc_hsize)));
+			byte2kb(atomic64_read(&spg->meminfo.alloc_size)),
+			byte2kb(atomic64_read(&spg->meminfo.alloc_nsize)),
+			byte2kb(atomic64_read(&spg->meminfo.alloc_hsize)));
 	up_read(&spg->rw_lock);
 
 	return 0;
