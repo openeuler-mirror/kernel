@@ -24,8 +24,10 @@
 #include <linux/screen_info.h>
 
 #include <asm/efi.h>
+#include <asm/platform.h>
 
 unsigned long entSuspend;
+unsigned long bios_version;
 
 static int __init is_memory(efi_memory_desc_t *md)
 {
@@ -35,7 +37,8 @@ static int __init is_memory(efi_memory_desc_t *md)
 }
 static efi_config_table_type_t arch_tables[] __initdata = {
 	{SMBIOS3_TABLE_GUID, NULL, NULL},
-	{SLEEP_ENTRY_GUID, &entSuspend, "SLEEP ENTRY"}
+	{SLEEP_ENTRY_GUID, &entSuspend, "SLEEP ENTRY"},
+	{BIOS_VERSION_GUID,  &bios_version, "BIOS VERSION"}
 };
 
 static int __init uefi_init(u64 efi_system_table)
