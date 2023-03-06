@@ -494,6 +494,8 @@ void acpi_bus_detach_private_data(acpi_handle);
 extern int acpi_notifier_call_chain(struct acpi_device *, u32, u32);
 extern int register_acpi_notifier(struct notifier_block *);
 extern int unregister_acpi_notifier(struct notifier_block *);
+int acpi_dev_for_each_child(struct acpi_device *adev,
+			    int (*fn)(struct acpi_device *, void *), void *data);
 
 /*
  * External Functions

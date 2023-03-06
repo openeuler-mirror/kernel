@@ -1407,5 +1407,6 @@ acpi_platform_notify(struct device *dev, enum kobject_action action)
 struct acpi_pptt_processor *
 acpi_pptt_find_cache_backwards(struct acpi_table_header *table_hdr,
 			       struct acpi_pptt_cache *cache);
+acpi_status acpi_hotplug_schedule(struct acpi_device *adev, u32 src);
 
 #endif	/*_LINUX_ACPI_H*/

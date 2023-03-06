@@ -56,6 +56,9 @@ struct acpi_memory_device {
 	struct list_head res_list;
 };
 
+struct acpi_device *hotplug_mdev[MAX_NUMNODES];
+EXPORT_SYMBOL_GPL(hotplug_mdev);
+
 static acpi_status
 acpi_memory_get_resource(struct acpi_resource *resource, void *context)
 {
@@ -217,6 +220,8 @@ static int acpi_memory_enable_device(struct acpi_memory_device *mem_device)
 		 * Add num_enable even if add_memory() returns -EEXIST, so the
 		 * device is bound to this driver.
 		 */
+
+		hotplug_mdev[node] = mem_device->device;
 		num_enabled++;
 	}
 	if (!num_enabled) {
@@ -240,6 +245,7 @@ static void acpi_memory_remove_memory(struct acpi_memory_device *mem_device)
 	struct acpi_memory_info *info, *n;
 	int nid = acpi_get_node(handle);
 
+	hotplug_mdev[nid] = NULL;
 	list_for_each_entry_safe(info, n, &mem_device->res_list, list) {
 		if (!info->enabled)
 			continue;
