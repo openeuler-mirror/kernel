@@ -3327,7 +3327,7 @@ struct dhugetlb_pool *hpool_alloc(unsigned long nid)
 		return NULL;
 
 	spin_lock_init(&hpool->lock);
-	spin_lock_init(&hpool->reserved_lock);
+	mutex_init(&hpool->reserved_lock);
 	hpool->nid = nid;
 	atomic_set(&hpool->refcnt, 1);
 	INIT_LIST_HEAD(&hpool->dhugetlb_1G_freelists);

@@ -696,7 +696,7 @@ struct small_page_pool {
 struct dhugetlb_pool {
 	int nid;
 	spinlock_t lock;
-	spinlock_t reserved_lock;
+	struct mutex reserved_lock;
 	atomic_t refcnt;
 
 	struct mem_cgroup *attach_memcg;

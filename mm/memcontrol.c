@@ -4950,9 +4950,9 @@ static int update_reserve_pages(struct kernfs_open_file *of,
 	hpool = get_dhugetlb_pool_from_memcg(memcg);
 	if (!hpool)
 		return -EINVAL;
-	spin_lock(&hpool->reserved_lock);
+	mutex_lock(&hpool->reserved_lock);
 	dhugetlb_reserve_hugepages(hpool, size, gigantic);
-	spin_unlock(&hpool->reserved_lock);
+	mutex_unlock(&hpool->reserved_lock);
 	dhugetlb_pool_put(hpool);
 	return 0;
 }
