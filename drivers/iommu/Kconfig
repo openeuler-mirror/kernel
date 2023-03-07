@@ -336,6 +336,13 @@ config AGENT_SMMU_ATOS
 	  Say Y here if your system will be used in Ascend Advanced Accelerator
 	  with HCCS bus. Or want use the ATOS of SMMU.
 
+config ARM_SMMU_V3_PM
+	bool "Add arm_smmu_v3  suspend and resume support"
+	depends on ARM_SMMU_V3 && PM_SLEEP
+	default n
+	help
+	  Add support for suspend and resume support for arm smmu v3.
+
 config S390_IOMMU
 	def_bool y if S390 && PCI
 	depends on S390 && PCI

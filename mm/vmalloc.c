@@ -578,6 +578,7 @@ static int vmap_pages_range(unsigned long addr, unsigned long end,
 	return err;
 }
 
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
 static int vmap_hugepages_range_noflush(unsigned long addr, unsigned long end,
 		pgprot_t prot, struct page **pages, unsigned int page_shift)
 {
@@ -609,6 +610,7 @@ static int vmap_hugepages_range(unsigned long addr, unsigned long end,
 
 	return err;
 }
+#endif
 
 /**
  * map_kernel_range_noflush - map kernel VM area with the specified pages
@@ -2792,6 +2794,7 @@ void *vmap(struct page **pages, unsigned int count,
 }
 EXPORT_SYMBOL(vmap);
 
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
 /**
  *	vmap_hugepage  -  map an array of huge pages into virtually contiguous space
  *	@pages:		array of huge page pointers (only the header)
@@ -2830,6 +2833,7 @@ void *vmap_hugepage(struct page **pages, unsigned int count,
 	return area->addr;
 }
 EXPORT_SYMBOL(vmap_hugepage);
+#endif
 
 #ifdef CONFIG_VMAP_PFN
 struct vmap_pfn_data {
@@ -3015,7 +3019,11 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 		size_per_node = size;
 		if (node == NUMA_NO_NODE)
 			size_per_node /= num_online_nodes();
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
 		if (size_per_node >= PMD_SIZE || vm_flags & VM_HUGE_PAGES) {
+#else
+		if (size_per_node >= PMD_SIZE) {
+#endif
 			shift = PMD_SHIFT;
 			align = max(real_align, 1UL << shift);
 			size = ALIGN(real_size, 1UL << shift);
@@ -3050,8 +3058,12 @@ again:
 	return addr;
 
 fail:
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
 	/* User could specify VM_HUGE_PAGES to alloc only hugepages. */
 	if (shift > PAGE_SHIFT && !(vm_flags & VM_HUGE_PAGES)) {
+#else
+	if (shift > PAGE_SHIFT) {
+#endif
 		shift = PAGE_SHIFT;
 		align = real_align;
 		size = real_size;
@@ -3261,6 +3273,7 @@ void *vmalloc_32_user(unsigned long size)
 }
 EXPORT_SYMBOL(vmalloc_32_user);
 
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
 /**
  * vmalloc_hugepage - allocate virtually contiguous hugetlb memory
  *	@size:          allocation size
@@ -3298,6 +3311,7 @@ void *vmalloc_hugepage_user(unsigned long size)
 				    __builtin_return_address(0));
 }
 EXPORT_SYMBOL(vmalloc_hugepage_user);
+#endif
 
 /*
  * small helper routine , copy contents to buf from addr.
@@ -3620,6 +3634,7 @@ int remap_vmalloc_range(struct vm_area_struct *vma, void *addr,
 }
 EXPORT_SYMBOL(remap_vmalloc_range);
 
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
 /**
  *	remap_vmalloc_hugepage_range_partial - map vmalloc hugepages
  *	to userspace
@@ -3706,6 +3721,7 @@ int remap_vmalloc_hugepage_range(struct vm_area_struct *vma, void *addr,
 						    vma->vm_end - vma->vm_start);
 }
 EXPORT_SYMBOL(remap_vmalloc_hugepage_range);
+#endif
 
 void free_vm_area(struct vm_struct *area)
 {

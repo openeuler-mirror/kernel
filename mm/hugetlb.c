@@ -46,6 +46,7 @@
 #include <linux/dynamic_hugetlb.h>
 #include "internal.h"
 #include "hugetlb_vmemmap.h"
+#include "share_pool_internal.h"
 
 int hugetlb_max_hstate __read_mostly;
 unsigned int default_hstate_idx;
@@ -1625,6 +1626,7 @@ void free_huge_page(struct page *page)
 		h->resv_huge_pages++;
 
 	if (HPageTemporary(page)) {
+		sp_memcg_uncharge_hpage(page);
 		remove_hugetlb_page(h, page, false);
 		spin_unlock_irqrestore(&hugetlb_lock, flags);
 		update_and_free_page(h, page, true);

@@ -24,3 +24,22 @@ config HNS3_PMU
 	  devices.
 	  Adds the HNS3 PMU into perf events system for monitoring latency,
 	  bandwidth etc.
+
+config HISI_L3T_PMU
+	tristate "HiSilicon SoC L3T PMU drivers"
+	depends on HISI_PMU
+	default n
+	  help
+	  Support for HiSilicon SoC L3 Cache performance monitor, Hydra Home
+	  Agent performance monitor and DDR Controller performance monitor.
+	  L3T is a specialized PMU driver.
+
+config HISI_LPDDRC_PMU
+	tristate "HiSilicon SoC LDPPRC PMU drivers"
+	depends on HISI_PMU
+	default n
+	  help
+	  Support for HiSilicon SoC L3 Cache performance monitor, Hydra Home
+	  Agent performance monitor and DDR Controller performance monitor.
+	  LPDDRC is a specialize PMU driver.
+

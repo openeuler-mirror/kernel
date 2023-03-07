@@ -4349,7 +4349,7 @@ static void arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 	doorbell = (((u64)msg->address_hi) << 32) | msg->address_lo;
 	doorbell &= MSI_CFG0_ADDR_MASK;
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_ARM_SMMU_V3_PM
 	/* Saves the msg (base addr of msi irq) and restores it during resume */
 	desc->msg.address_lo = msg->address_lo;
 	desc->msg.address_hi = msg->address_hi;
@@ -4411,7 +4411,7 @@ static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 	devm_add_action(dev, arm_smmu_free_msis, dev);
 }
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_ARM_SMMU_V3_PM
 static void arm_smmu_resume_msis(struct arm_smmu_device *smmu)
 {
 	struct msi_desc *desc;
@@ -5313,8 +5313,7 @@ static void __iomem *arm_smmu_ioremap(struct device *dev, resource_size_t start,
 	return devm_ioremap_resource(dev, &res);
 }
 
-#ifdef CONFIG_PM_SLEEP
-
+#ifdef CONFIG_ARM_SMMU_V3_PM
 static int arm_smmu_ecmdq_disable(struct device *dev)
 {
 	int i, j;
@@ -5521,7 +5520,7 @@ static const struct of_device_id arm_smmu_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, arm_smmu_of_match);
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_ARM_SMMU_V3_PM
 static const struct dev_pm_ops arm_smmu_pm_ops = {
 	.suspend = arm_smmu_suspend,
 	.resume = arm_smmu_resume,
