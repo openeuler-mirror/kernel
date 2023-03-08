@@ -34,6 +34,25 @@ static void intel_sst_remove(struct auxiliary_device *auxdev)
 	tpmi_sst_exit();
 }
 
+static int intel_sst_suspend(struct device *dev)
+{
+	tpmi_sst_dev_suspend(to_auxiliary_dev(dev));
+
+	return 0;
+}
+
+static int intel_sst_resume(struct device *dev)
+{
+	tpmi_sst_dev_resume(to_auxiliary_dev(dev));
+
+	return 0;
+}
+
+static const struct dev_pm_ops intel_sst_pm_ops = {
+	.suspend	= intel_sst_suspend,
+	.resume		= intel_sst_resume,
+};
+
 static const struct auxiliary_device_id intel_sst_id_table[] = {
 	{ .name = "intel_vsec.tpmi-sst" },
 	{}
@@ -44,6 +63,9 @@ static struct auxiliary_driver intel_sst_aux_driver = {
 	.id_table       = intel_sst_id_table,
 	.remove         = intel_sst_remove,
 	.probe          = intel_sst_probe,
+	.driver = {
+		.pm = &intel_sst_pm_ops,
+	},
 };
 
 module_auxiliary_driver(intel_sst_aux_driver);
