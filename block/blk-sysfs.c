@@ -933,6 +933,7 @@ int blk_register_queue(struct gendisk *disk)
 	int ret;
 	struct device *dev = disk_to_dev(disk);
 	struct request_queue *q = disk->queue;
+	bool has_elevator = false;
 
 	if (WARN_ON(!q))
 		return -ENXIO;
@@ -940,14 +941,12 @@ int blk_register_queue(struct gendisk *disk)
 	WARN_ONCE(test_bit(QUEUE_FLAG_REGISTERED, &q->queue_flags),
 		  "%s is registering an already registered queue\n",
 		  kobject_name(&dev->kobj));
-	queue_flag_set_unlocked(QUEUE_FLAG_REGISTERED, q);
 
 	ret = blk_trace_init_sysfs(dev);
 	if (ret)
 		return ret;
 
-	/* Prevent changes through sysfs until registration is completed. */
-	mutex_lock(&q->sysfs_lock);
+	mutex_lock(&q->sysfs_dir_lock);
 
 	ret = kobject_add(&q->kobj, kobject_get(&dev->kobj), "%s", "queue");
 	if (ret < 0) {
@@ -960,28 +959,37 @@ int blk_register_queue(struct gendisk *disk)
 		blk_mq_debugfs_register(q);
 	}
 
-	kobject_uevent(&q->kobj, KOBJ_ADD);
-
-	wbt_enable_default(q);
-
-	blk_throtl_register_queue(q);
-	blk_queue_flag_set(QUEUE_FLAG_THROTL_INIT_DONE, q);
-
+	/*
+	 * The flag of QUEUE_FLAG_REGISTERED isn't set yet, so elevator
+	 * switch won't happen at all.
+	 */
 	if (q->request_fn || (q->mq_ops && q->elevator)) {
-		ret = elv_register_queue(q);
+		ret = elv_register_queue(q, false);
 		if (ret) {
-			mutex_unlock(&q->sysfs_lock);
-			kobject_uevent(&q->kobj, KOBJ_REMOVE);
+			mutex_unlock(&q->sysfs_dir_lock);
 			kobject_del(&q->kobj);
 			blk_trace_remove_sysfs(dev);
 			kobject_put(&dev->kobj);
 			return ret;
 		}
+		has_elevator = true;
 	}
+
+	mutex_lock(&q->sysfs_lock);
+	blk_queue_flag_set(QUEUE_FLAG_REGISTERED, q);
+	wbt_enable_default(q);
+	blk_throtl_register_queue(q);
+	blk_queue_flag_set(QUEUE_FLAG_THROTL_INIT_DONE, q);
+
+	/* Now everything is ready and send out KOBJ_ADD uevent */
+	kobject_uevent(&q->kobj, KOBJ_ADD);
+	if (has_elevator)
+		kobject_uevent(&q->elevator->kobj, KOBJ_ADD);
+	mutex_unlock(&q->sysfs_lock);
 
 	ret = 0;
 unlock:
-	mutex_unlock(&q->sysfs_lock);
+	mutex_unlock(&q->sysfs_dir_lock);
 
 	/*
 	 * SCSI probing may synchronously create and destroy a lot of
@@ -1012,6 +1020,7 @@ EXPORT_SYMBOL_GPL(blk_register_queue);
 void blk_unregister_queue(struct gendisk *disk)
 {
 	struct request_queue *q = disk->queue;
+	bool has_elevator;
 
 	if (WARN_ON(!q))
 		return;
@@ -1029,21 +1038,22 @@ void blk_unregister_queue(struct gendisk *disk)
 	mutex_lock(&q->sysfs_lock);
 
 	blk_queue_flag_clear(QUEUE_FLAG_REGISTERED, q);
+	has_elevator = !!q->elevator;
+	mutex_unlock(&q->sysfs_lock);
 
+	mutex_lock(&q->sysfs_dir_lock);
 	/*
 	 * Remove the sysfs attributes before unregistering the queue data
 	 * structures that can be modified through sysfs.
 	 */
 	if (q->mq_ops)
 		blk_mq_unregister_dev(disk_to_dev(disk), q);
-	mutex_unlock(&q->sysfs_lock);
 
 	blk_trace_remove_sysfs(disk_to_dev(disk));
 
-	mutex_lock(&q->sysfs_lock);
-	if (q->request_fn || (q->mq_ops && q->elevator))
+	if (q->request_fn || (q->mq_ops && has_elevator))
 		elv_unregister_queue(q);
-	mutex_unlock(&q->sysfs_lock);
+	mutex_unlock(&q->sysfs_dir_lock);
 
 	/* Now that we've deleted all child objects, we can delete the queue. */
 	kobject_uevent(&q->kobj, KOBJ_REMOVE);
