@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2302.5.0
+%global hulkrelease 2303.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0190
+Release: %{hulkrelease}.0191
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,20 @@ fi
 %endif
 
 %changelog
+
+* Wed Mar 08 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.1.0.0191
+- HID: check empty report_list in hid_validate_values()
+- dhugetlb: use mutex lock in update_reserve_pages()
+- ntfs: fix out-of-bounds read in ntfs_attr_find()
+- ntfs: fix use-after-free in ntfs_ucsncmp()
+- media: rc: Fix use-after-free bugs caused by ene_tx_irqsim()
+- phy: tegra: xusb: Fix return value of tegra_xusb_find_port_node function
+- netfilter: nf_tables: fix null deref due to zeroed list head
+- tcp: Fix listen() regression in 5.15.88.
+- tap: tap_open(): correctly initialize socket uid
+- tun: tun_chr_open(): correctly initialize socket uid
+- net: add sock_init_data_uid()
+- rds: rds_rm_zerocopy_callback() use list_first_entry()
 
 * Tue Feb 28 2023 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2302.5.0.0190
 - !423 genirq bugfix for arm64
