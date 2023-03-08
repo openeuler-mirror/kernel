@@ -355,3 +355,6 @@
 438	n64	pidfd_getfd			sys_pidfd_getfd
 439	n64	faccessat2			sys_faccessat2
 440	n64	process_madvise			sys_process_madvise
+444 n64 landlock_create_ruleset     sys_landlock_create_ruleset
+445 n64 landlock_add_rule       sys_landlock_add_rule
+446 n64 landlock_restrict_self      sys_landlock_restrict_self
