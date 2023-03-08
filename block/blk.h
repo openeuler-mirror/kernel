@@ -54,6 +54,7 @@ struct request_queue_wrapper {
 	struct cpumask		dispatch_async_cpus;
 	int __percpu		*last_dispatch_cpu;
 #endif
+	struct mutex		sysfs_dir_lock;
 };
 
 #define queue_to_wrapper(q) \

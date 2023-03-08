@@ -946,7 +946,7 @@ int blk_register_queue(struct gendisk *disk)
 	if (ret)
 		return ret;
 
-	mutex_lock(&q->sysfs_dir_lock);
+	mutex_lock(&queue_to_wrapper(q)->sysfs_dir_lock);
 
 	ret = kobject_add(&q->kobj, kobject_get(&dev->kobj), "%s", "queue");
 	if (ret < 0) {
@@ -964,7 +964,7 @@ int blk_register_queue(struct gendisk *disk)
 		ret = elv_register_queue(q, false);
 		if (ret) {
 			mutex_unlock(&q->sysfs_lock);
-			mutex_unlock(&q->sysfs_dir_lock);
+			mutex_unlock(&queue_to_wrapper(q)->sysfs_dir_lock);
 			kobject_del(&q->kobj);
 			blk_trace_remove_sysfs(dev);
 			kobject_put(&dev->kobj);
@@ -986,7 +986,7 @@ int blk_register_queue(struct gendisk *disk)
 
 	ret = 0;
 unlock:
-	mutex_unlock(&q->sysfs_dir_lock);
+	mutex_unlock(&queue_to_wrapper(q)->sysfs_dir_lock);
 
 	/*
 	 * SCSI probing may synchronously create and destroy a lot of
@@ -1036,7 +1036,7 @@ void blk_unregister_queue(struct gendisk *disk)
 	blk_queue_flag_clear(QUEUE_FLAG_REGISTERED, q);
 	mutex_unlock(&q->sysfs_lock);
 
-	mutex_lock(&q->sysfs_dir_lock);
+	mutex_lock(&queue_to_wrapper(q)->sysfs_dir_lock);
 	/*
 	 * Remove the sysfs attributes before unregistering the queue data
 	 * structures that can be modified through sysfs.
@@ -1050,7 +1050,7 @@ void blk_unregister_queue(struct gendisk *disk)
 	if (q->request_fn || (q->mq_ops && q->elevator))
 		elv_unregister_queue(q);
 	mutex_unlock(&q->sysfs_lock);
-	mutex_unlock(&q->sysfs_dir_lock);
+	mutex_unlock(&queue_to_wrapper(q)->sysfs_dir_lock);
 
 	/* Now that we've deleted all child objects, we can delete the queue. */
 	kobject_uevent(&q->kobj, KOBJ_REMOVE);
