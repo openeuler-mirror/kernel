@@ -462,11 +462,10 @@ struct request_queue;
 struct block_device {
 	dev_t			bd_dev;  /* not a kdev_t - it's a search key */
 	int			bd_openers;
+	int			bd_write_openers;
 	struct inode *		bd_inode;	/* will die */
 	struct super_block *	bd_super;
 	struct mutex		bd_mutex;	/* open/close mutex */
-	int			bd_write_openers;
-	int			bd_part_write_openers;
 	void *			bd_claiming;
 	void *			bd_holder;
 	int			bd_holders;
@@ -498,7 +497,11 @@ struct block_device {
 	/* Mutex for freeze */
 	struct mutex		bd_fsfreeze_mutex;
 
+#ifndef __GENKSYMS__
+	int			bd_part_write_openers;
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
