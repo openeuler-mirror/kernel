@@ -20,6 +20,7 @@
 #include <linux/blkdev.h>
 #include <linux/bsg-lib.h>
 #include <linux/sort.h>
+#include <linux/msi.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
@@ -307,7 +308,7 @@ void sssraid_cleanup_fwevt_list(struct sssraid_ioc *sdioc)
  */
 static int sssraid_npages_prp(struct sssraid_ioc *sdioc)
 {
-	u32 size = 1U << ((sdioc->ctrl_info->mdts) * 1U) << 12;
+	u32 size = (1U << ((sdioc->ctrl_info->mdts) * 1U)) << 12;
 	u32 nprps = DIV_ROUND_UP(size + sdioc->page_size, sdioc->page_size);
 
 	return DIV_ROUND_UP(PRP_ENTRY_SIZE * nprps, sdioc->page_size - PRP_ENTRY_SIZE);
@@ -618,7 +619,7 @@ static int sssraid_setup_rw_cmd(struct sssraid_ioc *sdioc,
 	}
 
 	/* 6-byte READ(0x08) or WRITE(0x0A) cdb */
-	if (scmd->cmd_len == 6) {
+	if (scmd->cmd_len == SCSI_6_BYTE_CDB_LEN) {
 		datalength = (u32)(scmd->cmnd[4] == 0 ?
 				IO_6_DEFAULT_TX_LEN : scmd->cmnd[4]);
 		start_lba_lo = (u32)get_unaligned_be24(&scmd->cmnd[1]);
@@ -627,7 +628,7 @@ static int sssraid_setup_rw_cmd(struct sssraid_ioc *sdioc,
 	}
 
 	/* 10-byte READ(0x28) or WRITE(0x2A) cdb */
-	else if (scmd->cmd_len == 10) {
+	else if (scmd->cmd_len == SCSI_10_BYTE_CDB_LEN) {
 		datalength = (u32)get_unaligned_be16(&scmd->cmnd[7]);
 		start_lba_lo = get_unaligned_be32(&scmd->cmnd[2]);
 
@@ -636,7 +637,7 @@ static int sssraid_setup_rw_cmd(struct sssraid_ioc *sdioc,
 	}
 
 	/* 12-byte READ(0xA8) or WRITE(0xAA) cdb */
-	else if (scmd->cmd_len == 12) {
+	else if (scmd->cmd_len == SCSI_12_BYTE_CDB_LEN) {
 		datalength = get_unaligned_be32(&scmd->cmnd[6]);
 		start_lba_lo = get_unaligned_be32(&scmd->cmnd[2]);
 
@@ -644,7 +645,7 @@ static int sssraid_setup_rw_cmd(struct sssraid_ioc *sdioc,
 			control |= SSSRAID_RW_FUA;
 	}
 	/* 16-byte READ(0x88) or WRITE(0x8A) cdb */
-	else if (scmd->cmd_len == 16) {
+	else if (scmd->cmd_len == SCSI_16_BYTE_CDB_LEN) {
 		datalength = get_unaligned_be32(&scmd->cmnd[10]);
 		start_lba_lo = get_unaligned_be32(&scmd->cmnd[6]);
 		start_lba_hi = get_unaligned_be32(&scmd->cmnd[2]);
@@ -1067,6 +1068,7 @@ bool sssraid_change_host_state(struct sssraid_ioc *sdioc, enum sssraid_state new
 	default:
 		break;
 	}
+
 	if (change)
 		sdioc->state = newstate;
 	spin_unlock_irqrestore(&sdioc->state_lock, flags);
@@ -1386,14 +1388,6 @@ static int sssraid_bsg_host_dispatch(struct bsg_job *job)
 	return 0;
 }
 
-static inline void sssraid_remove_bsg(struct sssraid_ioc *sdioc)
-{
-	if (sdioc->bsg_queue) {
-		bsg_unregister_queue(sdioc->bsg_queue);
-		blk_cleanup_queue(sdioc->bsg_queue);
-	}
-}
-
 static void sssraid_back_fault_cqe(struct sssraid_squeue *sqinfo, struct sssraid_completion *cqe)
 {
 	struct sssraid_ioc *sdioc = sqinfo->sdioc;
@@ -1460,6 +1454,17 @@ void sssraid_back_all_io(struct sssraid_ioc *sdioc)
 			complete(&(sdioc->ioq_ptcmds[i].cmd_done));
 		}
 	}
+}
+
+static int sssraid_get_first_sibling(unsigned int cpu)
+{
+	unsigned int ret;
+
+	ret = cpumask_first(topology_sibling_cpumask(cpu));
+	if (ret < nr_cpu_ids)
+		return ret;
+
+	return cpu;
 }
 
 /*
@@ -1534,6 +1539,69 @@ static int sssraid_sysfs_host_reset(struct Scsi_Host *shost, int reset_type)
 	ioc_info(sdioc, "stop sysfs host reset cmd[%d]\n", ret);
 
 	return ret;
+}
+
+static int sssraid_map_queues(struct Scsi_Host *shost)
+{
+	struct sssraid_ioc *sdioc = shost_priv(shost);
+	struct pci_dev *pdev = sdioc->pdev;
+	struct msi_desc *entry = NULL;
+	struct irq_affinity_desc *affinity = NULL;
+	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+	struct blk_mq_queue_map *queue_map = &tag_set->map[HCTX_TYPE_DEFAULT];
+	const struct cpumask *node_mask = NULL;
+	unsigned int queue_offset = queue_map->queue_offset;
+	unsigned int *map = queue_map->mq_map;
+	unsigned int nr_queues = queue_map->nr_queues;
+	unsigned int node_id, node_id_last = 0xFFFFFFFF;
+	int cpu, first_sibling, cpu_index = 0;
+	u8 node_count = 0, i;
+	unsigned int node_id_array[100];
+
+	for_each_pci_msi_entry(entry, pdev) {
+		struct list_head *msi_list = &pdev->dev.msi_list;
+
+		if (list_is_last(msi_list, &entry->list))
+			goto get_next_numa_node;
+
+		if (entry->irq) {
+			affinity = entry->affinity;
+			node_mask = &affinity->mask;
+
+			cpu = cpumask_first(node_mask);
+			node_id = cpu_to_node(cpu);
+			if (node_id_last == node_id)
+				continue;
+
+			for (i = 0; i < node_count; i++) {
+				if (node_id == node_id_array[i])
+					goto get_next_numa_node;
+			}
+			node_id_array[node_count++] = node_id;
+			node_id_last = node_id;
+		}
+get_next_numa_node:
+		continue;
+	}
+
+	for (i = 0; i < node_count; i++) {
+		node_mask = cpumask_of_node(node_id_array[i]);
+		dbgprint(sdioc, "NUMA_node = %d\n", node_id_array[i]);
+		for_each_cpu(cpu, node_mask) {
+			if (cpu_index < nr_queues) {
+				map[cpu_index++] = queue_offset + (cpu % nr_queues);
+			} else {
+				first_sibling = sssraid_get_first_sibling(cpu);
+				if (first_sibling == cpu)
+					map[cpu_index++] = queue_offset + (cpu % nr_queues);
+				else
+					map[cpu_index++] = map[first_sibling];
+			}
+			dbgprint(sdioc, "map[%d] = %d\n", cpu_index - 1, map[cpu_index - 1]);
+		}
+	}
+
+	return 0;
 }
 
 /* queuecommand	call back */
@@ -1989,6 +2057,7 @@ static struct scsi_host_template sssraid_driver_template = {
 	.name			= "3SNIC Logic sssraid driver",
 	.proc_name		= "sssraid",
 	.queuecommand		= sssraid_qcmd,
+	.map_queues		= sssraid_map_queues,
 	.slave_alloc		= sssraid_slave_alloc,
 	.slave_destroy		= sssraid_slave_destroy,
 	.slave_configure	= sssraid_slave_configure,
@@ -2026,7 +2095,7 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct sssraid_ioc *sdioc;
 	struct Scsi_Host *shost;
 	int node;
-	char bsg_name[15];
+	char bsg_name[BSG_NAME_SIZE];
 	int retval = 0;
 
 	node = dev_to_node(&pdev->dev);
@@ -2038,14 +2107,15 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	shost = scsi_host_alloc(&sssraid_driver_template, sizeof(*sdioc));
 	if (!shost) {
 		retval = -ENODEV;
-		ioc_err(sdioc, "err: failed to allocate scsi host\n");
+		dev_err(&pdev->dev, "err: failed to allocate scsi host\n");
 		goto shost_failed;
 	}
 
 	sdioc = shost_priv(shost);
 	sdioc->numa_node = node;
 	sdioc->instance = shost->host_no; /* for device instance */
-	sprintf(sdioc->name, "%s%d", SSSRAID_DRIVER_NAME, sdioc->instance);
+	snprintf(sdioc->name, sizeof(sdioc->name),
+			"%s%d", SSSRAID_DRIVER_NAME, sdioc->instance);
 
 	init_rwsem(&sdioc->devices_rwsem);
 	spin_lock_init(&sdioc->state_lock);
@@ -2055,7 +2125,6 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	INIT_LIST_HEAD(&sdioc->fwevt_list);
 
-//	logging_level = 1; //garden test
 	sdioc->logging_level = logging_level; /* according to log_debug_switch*/
 
 	snprintf(sdioc->fwevt_worker_name, sizeof(sdioc->fwevt_worker_name),
@@ -2063,8 +2132,7 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	sdioc->fwevt_worker_thread = alloc_ordered_workqueue(
 	    sdioc->fwevt_worker_name, WQ_MEM_RECLAIM);
 	if (!sdioc->fwevt_worker_thread) {
-		ioc_err(sdioc, "failure at %s:%d/%s()!\n",
-		    __FILE__, __LINE__, __func__);
+		ioc_err(sdioc, "err: fail to alloc workqueue for fwevt_work!\n");
 		retval = -ENODEV;
 		goto out_fwevtthread_failed;
 	}
@@ -2073,8 +2141,7 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	sdioc->pdev = pdev;
 
 	if (sssraid_init_ioc(sdioc, 0)) {
-		ioc_err(sdioc, "failure at %s:%d/%s()!\n",
-		    __FILE__, __LINE__, __func__);
+		ioc_err(sdioc, "err: failure at init sssraid_ioc!\n");
 		retval = -ENODEV;
 		goto out_iocinit_failed;
 	}
@@ -2083,8 +2150,7 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	retval = scsi_add_host(shost, &pdev->dev);
 	if (retval) {
-		ioc_err(sdioc, "failure at %s:%d/%s()!\n",
-		    __FILE__, __LINE__, __func__);
+		ioc_err(sdioc, "err: add shost to system failed!\n");
 		goto addhost_failed;
 	}
 
@@ -2092,16 +2158,22 @@ sssraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	sdioc->bsg_queue = bsg_setup_queue(&shost->shost_gendev, bsg_name,
 				sssraid_bsg_host_dispatch,  NULL, sssraid_cmd_size(sdioc));
 	if (IS_ERR(sdioc->bsg_queue)) {
-		ioc_err(sdioc, "err: setup bsg failed\n");
+		ioc_err(sdioc, "err: setup bsg failed!\n");
 		sdioc->bsg_queue = NULL;
 		goto bsg_setup_failed;
 	}
 
-	sssraid_change_host_state(sdioc, SSSRAID_LIVE);
+	if (!sssraid_change_host_state(sdioc, SSSRAID_LIVE)) {
+		retval = -ENODEV;
+		ioc_err(sdioc, "err: change host state failed!\n");
+		goto sssraid_state_change_failed;
+	}
 
 	scsi_scan_host(shost);
 	return retval;
 
+sssraid_state_change_failed:
+	bsg_remove_queue(sdioc->bsg_queue);
 bsg_setup_failed:
 	scsi_remove_host(shost);
 addhost_failed:
@@ -2117,15 +2189,15 @@ shost_failed:
 static void sssraid_remove(struct pci_dev *pdev)
 {
 	struct Scsi_Host *shost = pci_get_drvdata(pdev);
-	struct sssraid_ioc *sdioc;
+	struct sssraid_ioc *sdioc = NULL;
 
-	if (!shost)
+	if (!shost) {
+		dev_err(&pdev->dev, "driver probe process failed, remove not be allowed.\n");
 		return;
-
-	ioc_info(sdioc, "sssraid remove entry\n");
-
+	}
 	sdioc = shost_priv(shost);
 
+	ioc_info(sdioc, "sssraid remove entry\n");
 	sssraid_change_host_state(sdioc, SSSRAID_DELETING);
 
 	if (!pci_device_is_present(pdev))
@@ -2134,7 +2206,7 @@ static void sssraid_remove(struct pci_dev *pdev)
 	sssraid_cleanup_fwevt_list(sdioc);
 	destroy_workqueue(sdioc->fwevt_worker_thread);
 
-	sssraid_remove_bsg(sdioc);
+	bsg_remove_queue(sdioc->bsg_queue);
 	scsi_remove_host(shost);
 	sssraid_cleanup_ioc(sdioc, 0);
 
@@ -2323,14 +2395,14 @@ static int __init sssraid_init(void)
 
 static void __exit sssraid_exit(void)
 {
+	pci_unregister_driver(&sssraid_pci_driver);
+	class_destroy(sssraid_class);
+
 	pr_info("Unloading %s version %s\n", SSSRAID_DRIVER_NAME,
 		SSSRAID_DRIVER_VERSION);
-
-	class_destroy(sssraid_class);
-	pci_unregister_driver(&sssraid_pci_driver);
 }
 
-MODULE_AUTHOR("liangry1@3snic.com");
+MODULE_AUTHOR("steven.song@3snic.com");
 MODULE_DESCRIPTION("3SNIC Information Technology SSSRAID Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(SSSRAID_DRIVER_VERSION);

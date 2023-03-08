@@ -188,14 +188,18 @@ static int sssraid_alloc_resources(struct sssraid_ioc *sdioc)
 		return -ENOMEM;
 
 	retval = sssraid_create_dma_pools(sdioc);
-	if (retval)
+	if (retval) {
+		ioc_err(sdioc, "err: failure at create dma pool!\n");
 		goto free_ctrl_info;
+	}
+
 	/* not num_online_cpus */
 	nqueue = num_possible_cpus() + 1;
 	sdioc->cqinfo = kcalloc_node(nqueue, sizeof(struct sssraid_cqueue),
 			    GFP_KERNEL, sdioc->numa_node);
 	if (!sdioc->cqinfo) {
 		retval = -ENOMEM;
+		ioc_err(sdioc, "err: failure at alloc memory for cqueue!");
 		goto destroy_dma_pools;
 	}
 
@@ -203,6 +207,7 @@ static int sssraid_alloc_resources(struct sssraid_ioc *sdioc)
 			    GFP_KERNEL, sdioc->numa_node);
 	if (!sdioc->sqinfo) {
 		retval = -ENOMEM;
+		ioc_err(sdioc, "err: failure at alloc memory for squeue!");
 		goto free_cqueues;
 	}
 
@@ -263,7 +268,7 @@ static int sssraid_setup_resources(struct sssraid_ioc *sdioc)
 	 */
 	retval = sssraid_remap_bar(sdioc, SSSRAID_REG_DBS + 4096);
 	if (retval) {
-		retval = -ENODEV;
+		ioc_err(sdioc, "Failed to re-map bar, error %d\n", retval);
 		goto out_failed;
 	}
 
@@ -282,7 +287,7 @@ static int sssraid_setup_resources(struct sssraid_ioc *sdioc)
 
 	maskbit = SSSRAID_CAP_DMAMASK(sdioc->cap);
 	if (maskbit < 32 || maskbit > SSSRAID_DMA_MSK_BIT_MAX) {
-		ioc_err(sdioc, "err: DMA MASK BIT invalid[%llu], set to default\n", maskbit);
+		ioc_notice(sdioc, "err: DMA MASK BIT invalid[%llu], set to default\n", maskbit);
 		maskbit = SSSRAID_DMA_MSK_BIT_MAX;
 	}
 
@@ -352,13 +357,16 @@ static int sssraid_alloc_qpair(struct sssraid_ioc *sdioc, u16 qidx, u16 depth)
 
 	cqinfo->cqes = dma_alloc_coherent(&sdioc->pdev->dev, CQ_SIZE(depth),
 					   &cqinfo->cq_dma_addr, GFP_KERNEL | __GFP_ZERO);
-	if (!cqinfo->cqes)
+	if (!cqinfo->cqes) {
+		ioc_err(sdioc, "failure at alloc dma space for cqueue.\n");
 		return -ENOMEM;
+	}
 
 	sqinfo->sq_cmds = dma_alloc_coherent(&sdioc->pdev->dev, SQ_SIZE(qidx, depth),
 					      &sqinfo->sq_dma_addr, GFP_KERNEL);
 	if (!sqinfo->sq_cmds) {
 		retval = -ENOMEM;
+		ioc_err(sdioc, "failure at alloc dma space for squeue cmds.\n");
 		goto  free_cqes;
 	}
 
@@ -367,6 +375,7 @@ static int sssraid_alloc_qpair(struct sssraid_ioc *sdioc, u16 qidx, u16 depth)
 					    &sqinfo->sense_dma_addr, GFP_KERNEL | __GFP_ZERO);
 	if (!sqinfo->sense) {
 		retval = -ENOMEM;
+		ioc_err(sdioc, "failure at alloc dma space for sense data.\n");
 		goto free_sq_cmds;
 	}
 
@@ -420,8 +429,10 @@ static int sssraid_setup_admin_qpair(struct sssraid_ioc *sdioc)
 	ioc_info(sdioc, "Starting disable ctrl...\n");
 
 	retval = sssraid_disable_ctrl(sdioc);
-	if (retval)
+	if (retval) {
+		ioc_err(sdioc, "disable ctrl failed\n");
 		return retval;
+	}
 
 	/* this func don't alloc admin queue */
 
@@ -435,6 +446,7 @@ static int sssraid_setup_admin_qpair(struct sssraid_ioc *sdioc)
 
 	retval = sssraid_enable_ctrl(sdioc);
 	if (retval) {
+		ioc_err(sdioc, "enable ctrl failed\n");
 		retval = -ENODEV;
 		return retval;
 	}
@@ -633,7 +645,7 @@ static int sssraid_setup_isr(struct sssraid_ioc *sdioc, u8 setup_one)
 		goto out_failed;
 	}
 	if (i != max_vectors) {
-		ioc_info(sdioc,
+		ioc_warn(sdioc,
 		    "Allocated vectors (%d) are less than requested (%d)\n",
 		    i, max_vectors);
 
@@ -643,7 +655,8 @@ static int sssraid_setup_isr(struct sssraid_ioc *sdioc, u8 setup_one)
 	sdioc->intr_info = kzalloc(sizeof(struct sssraid_intr_info) * max_vectors,
 	    GFP_KERNEL);
 	if (!sdioc->intr_info) {
-		retval = -1;
+		retval = -ENOMEM;
+		ioc_err(sdioc, "err: failed to alloc memory for intr_info!\n");
 		pci_free_irq_vectors(sdioc->pdev);
 		goto out_failed;
 	}
@@ -651,6 +664,7 @@ static int sssraid_setup_isr(struct sssraid_ioc *sdioc, u8 setup_one)
 	for (i = 0; i < max_vectors; i++) {
 		retval = sssraid_request_irq(sdioc, i);
 		if (retval) {
+			ioc_err(sdioc, "err: request irq for pci device failed.\n");
 			sdioc->intr_info_count = i; /* =i is for offload interrupt loop counter */
 			goto out_failed;
 		}
@@ -1174,14 +1188,16 @@ static inline void sssraid_send_all_aen(struct sssraid_ioc *sdioc)
 		sssraid_send_event_ack(sdioc, 0, 0, i + SSSRAID_AMDQ_BLK_MQ_DEPTH);
 }
 
-static int sssraid_dev_list_init(struct sssraid_ioc *sdioc)
+static int sssraid_disk_list_init(struct sssraid_ioc *sdioc)
 {
 	u32 nd = le32_to_cpu(sdioc->ctrl_info->nd);
 
 	sdioc->devices = kzalloc_node(nd * sizeof(struct sssraid_dev_info),
 				     GFP_KERNEL, sdioc->numa_node);
-	if (!sdioc->devices)
+	if (!sdioc->devices) {
+		ioc_err(sdioc, "err: failed to alloc memory for device info.\n");
 		return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -1331,7 +1347,7 @@ int sssraid_init_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 	sssraid_send_all_aen(sdioc);
 
 	if (!re_init) {
-		retval = sssraid_dev_list_init(sdioc);
+		retval = sssraid_disk_list_init(sdioc);
 		if (retval) {
 			ioc_err(sdioc, "Failed to init device list, error %d\n",
 					retval);
@@ -1358,6 +1374,7 @@ void sssraid_cleanup_resources(struct sssraid_ioc *sdioc)
 {
 	struct pci_dev *pdev = sdioc->pdev;
 
+	pci_set_drvdata(pdev, NULL);
 	sssraid_cleanup_isr(sdioc);
 
 	if (sdioc->bar) {
@@ -1372,6 +1389,12 @@ void sssraid_cleanup_resources(struct sssraid_ioc *sdioc)
 	}
 }
 
+static void sssraid_free_disk_list(struct sssraid_ioc *sdioc)
+{
+	kfree(sdioc->devices);
+	sdioc->devices = NULL;
+}
+
 static void sssraid_free_ioq_ptcmds(struct sssraid_ioc *sdioc)
 {
 	kfree(sdioc->ioq_ptcmds);
@@ -1382,7 +1405,7 @@ static void sssraid_free_ioq_ptcmds(struct sssraid_ioc *sdioc)
 
 static void sssraid_delete_io_queues(struct sssraid_ioc *sdioc)
 {
-	u16 queues = sdioc->init_done_queue_cnt - 1;
+	u16 queues = sdioc->init_done_queue_cnt - SSSRAID_ADM_QUEUE_NUM;
 	u8 opcode = SSSRAID_ADM_DELETE_SQ;
 	u16 i, pass;
 
@@ -1391,7 +1414,7 @@ static void sssraid_delete_io_queues(struct sssraid_ioc *sdioc)
 		return;
 	}
 
-	if (sdioc->init_done_queue_cnt < 2) {
+	if (sdioc->init_done_queue_cnt <= SSSRAID_ADM_QUEUE_NUM) {
 		ioc_err(sdioc, "Err: io queue has been delete\n");
 		return;
 	}
@@ -1669,8 +1692,10 @@ static void sssraid_free_resources(struct sssraid_ioc *sdioc)
 
 void sssraid_cleanup_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 {
-	if (!re_init)
+	if (!re_init) {
+		sssraid_free_disk_list(sdioc);
 		sssraid_free_ioq_ptcmds(sdioc);
+	}
 
 	sssraid_delete_io_queues(sdioc);
 	sssraid_disable_admin_queue(sdioc, !re_init);
