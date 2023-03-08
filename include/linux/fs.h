@@ -465,6 +465,8 @@ struct block_device {
 	struct inode *		bd_inode;	/* will die */
 	struct super_block *	bd_super;
 	struct mutex		bd_mutex;	/* open/close mutex */
+	int			bd_write_openers;
+	int			bd_part_write_openers;
 	void *			bd_claiming;
 	void *			bd_holder;
 	int			bd_holders;

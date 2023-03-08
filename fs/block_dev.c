@@ -35,6 +35,7 @@
 #include <linux/falloc.h>
 #include <linux/uaccess.h>
 #include <linux/suspend.h>
+#include <linux/sched/task.h>
 #include "internal.h"
 
 struct bdev_inode {
@@ -1538,6 +1539,39 @@ static void bdev_disk_changed(struct block_device *bdev, bool invalidate)
 	}
 }
 
+static void blkdev_dump_conflict_opener(struct block_device *bdev, char *msg)
+{
+	char name[BDEVNAME_SIZE];
+	struct task_struct *p = NULL;
+	char comm_buf[TASK_COMM_LEN];
+	pid_t p_pid;
+
+	rcu_read_lock();
+	p = rcu_dereference(current->real_parent);
+	get_task_comm(comm_buf, p);
+	p_pid = p->pid;
+	rcu_read_unlock();
+
+	pr_info_ratelimited("%s %s. current [%d %s]. parent [%d %s]\n",
+			    msg, bdevname(bdev, name),
+			    current->pid, current->comm, p_pid, comm_buf);
+}
+
+static bool is_conflict_excl_open(struct block_device *bdev,
+		struct block_device *whole, fmode_t mode)
+{
+	if (bdev->bd_holders)
+		return false;
+
+	if (bdev->bd_write_openers > ((mode & FMODE_WRITE) ? 1 : 0))
+		return true;
+
+	if (bdev == whole)
+		return !!bdev->bd_part_write_openers;
+
+	return !!whole->bd_write_openers;
+}
+
 /*
  * bd_mutex locking:
  *
@@ -1666,6 +1700,15 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	bdev->bd_openers++;
 	if (for_part)
 		bdev->bd_part_count++;
+
+	if (!for_part && (mode & FMODE_WRITE)) {
+		spin_lock(&bdev_lock);
+		bdev->bd_write_openers++;
+		if (bdev->bd_contains != bdev)
+			bdev->bd_contains->bd_part_write_openers++;
+		spin_unlock(&bdev_lock);
+	}
+
 	mutex_unlock(&bdev->bd_mutex);
 	disk_unblock_events(disk);
 	/* only one opener holds refs to the module and disk */
@@ -1732,6 +1775,14 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 		/* finish claiming */
 		mutex_lock(&bdev->bd_mutex);
 		spin_lock(&bdev_lock);
+		/*
+		 * Open an write opened block device exclusively, the
+		 * writing process may probability corrupt the device,
+		 * such as a mounted file system, give a hint here.
+		 */
+		if (!res && is_conflict_excl_open(bdev, whole, mode))
+			blkdev_dump_conflict_opener(bdev,
+					"VFS: Open an write opened block device exclusively");
 
 		if (!res) {
 			BUG_ON(!bd_may_claim(bdev, whole, holder));
@@ -1906,6 +1957,14 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 	mutex_lock_nested(&bdev->bd_mutex, for_part);
 	if (for_part)
 		bdev->bd_part_count--;
+
+	if (!for_part && (mode & FMODE_WRITE)) {
+		spin_lock(&bdev_lock);
+		bdev->bd_write_openers--;
+		if (bdev->bd_contains != bdev)
+			bdev->bd_contains->bd_part_write_openers--;
+		spin_unlock(&bdev_lock);
+	}
 
 	if (!--bdev->bd_openers) {
 		WARN_ON_ONCE(bdev->bd_holders);
