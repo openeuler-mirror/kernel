@@ -85,7 +85,7 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 		ret = 0;
 
 	if (ret && grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
-		return ret;
+		goto err_out;
 
 	if (tc_mode == HNAE3_TC_MAP_MODE_DSCP &&
 	    grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
@@ -101,7 +101,7 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 		ret = rdma_read_gid_l2_fields(ah_attr->grh.sgid_attr,
 					      &ah->av.vlan_id, NULL);
 		if (ret)
-			return ret;
+			goto err_out;
 
 		ah->av.vlan_en = ah->av.vlan_id < VLAN_N_VID;
 	}
@@ -112,6 +112,10 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
 	}
+
+err_out:
+	if (ret)
+		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_AH_CREATE_ERR_CNT]);
 
 	return ret;
 }

@@ -1396,6 +1396,8 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 	/* Write to hardware */
 	roce_write(hr_dev, ROCEE_TX_CMQ_PI_REG, csq->head);
 
+	atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_CMDS_CNT]);
+
 	do {
 		if (hns_roce_cmq_csq_done(hr_dev))
 			break;
@@ -1432,6 +1434,9 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 	}
 
 	spin_unlock_bh(&csq->lock);
+
+	if (ret)
+		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_CMDS_ERR_CNT]);
 
 	return ret;
 }
@@ -1770,6 +1775,56 @@ static int hns_roce_query_func_info(struct hns_roce_dev *hr_dev)
 	hr_dev->cong_algo_tmpl_id = le32_to_cpu(desc.func_info.own_mac_id);
 
 	return 0;
+}
+
+static int hns_roce_hw_v2_query_counter(struct hns_roce_dev *hr_dev,
+					u64 *stats, u32 port, int *num_counters)
+{
+#define CNT_PER_DESC 3
+	struct hns_roce_cmq_desc *desc;
+	int bd_idx, cnt_idx;
+	__le64 *cnt_data;
+	int desc_num;
+	int ret;
+	int i;
+
+	if (port > hr_dev->caps.num_ports)
+		return -EINVAL;
+
+	desc_num = DIV_ROUND_UP(HNS_ROCE_HW_CNT_TOTAL, CNT_PER_DESC);
+	desc = kcalloc(desc_num, sizeof(*desc), GFP_KERNEL);
+	if (!desc)
+		return -ENOMEM;
+
+	for (i = 0; i < desc_num; i++) {
+		hns_roce_cmq_setup_basic_desc(&desc[i],
+					      HNS_ROCE_OPC_QUERY_COUNTER, true);
+		if (i != desc_num - 1)
+			desc[i].flag |= cpu_to_le16(HNS_ROCE_CMD_FLAG_NEXT);
+	}
+
+	ret = hns_roce_cmq_send(hr_dev, desc, desc_num);
+	if (ret) {
+		ibdev_err(&hr_dev->ib_dev,
+			  "failed to get counter, ret = %d.\n", ret);
+		goto err_out;
+	}
+
+	for (i = 0; i < HNS_ROCE_HW_CNT_TOTAL && i < *num_counters; i++) {
+		bd_idx = i / CNT_PER_DESC;
+		if (!(desc[bd_idx].flag & HNS_ROCE_CMD_FLAG_NEXT) &&
+		    bd_idx != HNS_ROCE_HW_CNT_TOTAL / CNT_PER_DESC)
+			break;
+
+		cnt_data = (__le64 *)&desc[bd_idx].data[0];
+		cnt_idx = i % CNT_PER_DESC;
+		stats[i] = le64_to_cpu(cnt_data[cnt_idx]);
+	}
+	*num_counters = i;
+
+err_out:
+	kfree(desc);
+	return ret;
 }
 
 static int hns_roce_config_global_param(struct hns_roce_dev *hr_dev)
@@ -6465,6 +6520,7 @@ static irqreturn_t hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 		eq->sub_type = sub_type;
 		++eq->cons_index;
 		aeqe_found = IRQ_HANDLED;
+		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_AEQE_CNT]);
 
 		hns_roce_v2_init_irq_work(hr_dev, eq, queue_num);
 
@@ -6507,6 +6563,7 @@ static irqreturn_t hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 
 		++eq->cons_index;
 		ceqe_found = IRQ_HANDLED;
+		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_CEQE_CNT]);
 
 		ceqe = next_ceqe_sw_v2(eq);
 	}
@@ -7140,6 +7197,7 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.bond_init = hns_roce_bond_init,
 	.bond_is_active = hns_roce_bond_is_active,
 	.get_bond_netdev = hns_roce_get_bond_netdev,
+	.query_hw_counter = hns_roce_hw_v2_query_counter,
 };
 
 static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
