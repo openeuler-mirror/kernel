@@ -866,12 +866,12 @@ __SYSCALL(__NR_kabi_reserved441, sys_ni_syscall)
 __SYSCALL(__NR_kabi_reserved442, sys_ni_syscall)
 #define __NR_kabi_reserved443 443
 __SYSCALL(__NR_kabi_reserved443, sys_ni_syscall)
-#define __NR_kabi_reserved444 444
-__SYSCALL(__NR_kabi_reserved444, sys_ni_syscall)
-#define __NR_kabi_reserved445 445
-__SYSCALL(__NR_kabi_reserved445, sys_ni_syscall)
-#define __NR_kabi_reserved446 446
-__SYSCALL(__NR_kabi_reserved446, sys_ni_syscall)
+#define __NR_landlock_create_ruleset 444
+__SYSCALL(__NR_landlock_create_ruleset, sys_landlock_create_ruleset)
+#define __NR_landlock_add_rule 445
+__SYSCALL(__NR_landlock_add_rule, sys_landlock_add_rule)
+#define __NR_landlock_restrict_self 446
+__SYSCALL(__NR_landlock_restrict_self, sys_landlock_restrict_self)
 #define __NR_kabi_reserved447 447
 __SYSCALL(__NR_kabi_reserved447, sys_ni_syscall)
 #define __NR_kabi_reserved448 448
