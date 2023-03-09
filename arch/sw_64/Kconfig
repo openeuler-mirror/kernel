@@ -107,6 +107,7 @@ config SW64
 	select SET_FS
 	select SPARSEMEM_EXTREME if SPARSEMEM
 	select SWIOTLB
+	select THREAD_INFO_IN_TASK
 
 config LOCKDEP_SUPPORT
 	def_bool y

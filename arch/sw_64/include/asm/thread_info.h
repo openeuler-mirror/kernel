@@ -5,7 +5,6 @@
 #ifdef __KERNEL__
 
 #ifndef __ASSEMBLY__
-#include <asm/processor.h>
 #include <asm/types.h>
 #include <asm/sysinfo.h>
 
@@ -25,12 +24,11 @@ struct pcb_struct {
 struct thread_info {
 	struct pcb_struct	pcb;		/* hmcode state */
 
-	struct task_struct	*task;		/* main task structure */
 	unsigned int		flags;		/* low level flags */
 	unsigned int		ieee_state;	/* see fpu.h */
 
 	mm_segment_t		addr_limit;	/* thread address space */
-	unsigned int		cpu;		/* current CPU */
+	unsigned int            cpu;            /* current CPU */
 	int			preempt_count;	/* 0 => preemptible, <0 => BUG */
 	unsigned int		status;		/* thread-synchronous flags */
 
@@ -58,14 +56,10 @@ static __always_inline u64 rtid(void)
  */
 #define INIT_THREAD_INFO(tsk)				\
 {							\
-	.task		= &tsk,				\
 	.addr_limit	= KERNEL_DS,			\
 	.preempt_count	= INIT_PREEMPT_COUNT,		\
 }
 
-/* How to get the thread information struct from C.  */
-register struct thread_info *__current_thread_info __asm__("$8");
-#define current_thread_info()	 __current_thread_info
 
 #endif /* __ASSEMBLY__ */
 

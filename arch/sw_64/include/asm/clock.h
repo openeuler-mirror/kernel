@@ -11,8 +11,6 @@
 
 struct clk;
 
-extern struct cpufreq_frequency_table sw64_clockmod_table[];
-
 extern char curruent_policy[CPUFREQ_NAME_LEN];
 
 struct clk_ops {
@@ -44,7 +42,7 @@ struct clk {
 
 int clk_init(void);
 
-void sw64_set_rate(unsigned long rate);
+void sw64_set_rate(unsigned int index);
 
 struct clk *sw64_clk_get(struct device *dev, const char *id);
 

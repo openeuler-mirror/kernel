@@ -2,9 +2,18 @@
 #ifndef _ASM_SW64_CURRENT_H
 #define _ASM_SW64_CURRENT_H
 
-#include <linux/thread_info.h>
+#ifndef __ASSEMBLY__
 
-#define get_current()	(current_thread_info()->task)
-#define current		get_current()
+struct task_struct;
+static __always_inline struct task_struct *get_current(void)
+{
+	register struct task_struct *tp __asm__("$8");
+
+	return tp;
+}
+
+#define current get_current()
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* _ASM_SW64_CURRENT_H */

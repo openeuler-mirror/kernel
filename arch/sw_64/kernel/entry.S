@@ -20,7 +20,7 @@
  * regs 29-30 saved and set up by HMcode
  */
 
-	.macro SAVE_COMMON_REGS
+	.macro SAVE_ALL
 	ldi	$sp, -PT_REGS_PS($sp)
 	stl	$0, PT_REGS_R0($sp)
 	stl	$1, PT_REGS_R1($sp)
@@ -32,6 +32,13 @@
 	stl	$6, PT_REGS_R6($sp)
 	stl	$7, PT_REGS_R7($sp)
 	stl	$8, PT_REGS_R8($sp)
+	stl	$9, PT_REGS_R9($sp)
+	stl	$10, PT_REGS_R10($sp)
+	stl	$11, PT_REGS_R11($sp)
+	stl	$12, PT_REGS_R12($sp)
+	stl	$13, PT_REGS_R13($sp)
+	stl	$14, PT_REGS_R14($sp)
+	stl	$15, PT_REGS_R15($sp)
 	stl	$19, PT_REGS_R19($sp)
 	stl	$20, PT_REGS_R20($sp)
 	stl	$21, PT_REGS_R21($sp)
@@ -41,9 +48,10 @@
 	stl	$25, PT_REGS_R25($sp)
 	stl	$26, PT_REGS_R26($sp)
 	stl	$27, PT_REGS_R27($sp)
+	sys_call HMC_rdktp
 	.endm
 
-	.macro RESTORE_COMMON_REGS
+	.macro RESTORE_ALL
 	ldl	$0, PT_REGS_R0($sp)
 	ldl	$1, PT_REGS_R1($sp)
 	ldl	$2, PT_REGS_R2($sp)
@@ -53,6 +61,13 @@
 	ldl	$6, PT_REGS_R6($sp)
 	ldl	$7, PT_REGS_R7($sp)
 	ldl	$8, PT_REGS_R8($sp)
+	ldl	$9, PT_REGS_R9($sp)
+	ldl	$10, PT_REGS_R10($sp)
+	ldl	$11, PT_REGS_R11($sp)
+	ldl	$12, PT_REGS_R12($sp)
+	ldl	$13, PT_REGS_R13($sp)
+	ldl	$14, PT_REGS_R14($sp)
+	ldl	$15, PT_REGS_R15($sp)
 	ldl	$19, PT_REGS_R19($sp)
 	ldl	$20, PT_REGS_R20($sp)
 	ldl	$21, PT_REGS_R21($sp)
@@ -66,36 +81,6 @@
 	ldi	$sp, PT_REGS_PS($sp)
 	.endm
 
-	.macro SAVE_CALLEE_REGS
-	stl	$9, PT_REGS_R9($sp)
-	stl	$10, PT_REGS_R10($sp)
-	stl	$11, PT_REGS_R11($sp)
-	stl	$12, PT_REGS_R12($sp)
-	stl	$13, PT_REGS_R13($sp)
-	stl	$14, PT_REGS_R14($sp)
-	stl	$15, PT_REGS_R15($sp)
-	.endm
-
-	.macro RESTORE_CALLEE_REGS
-	ldl	$9, PT_REGS_R9($sp)
-	ldl	$10, PT_REGS_R10($sp)
-	ldl	$11, PT_REGS_R11($sp)
-	ldl	$12, PT_REGS_R12($sp)
-	ldl	$13, PT_REGS_R13($sp)
-	ldl	$14, PT_REGS_R14($sp)
-	ldl	$15, PT_REGS_R15($sp)
-	.endm
-
-	.macro SAVE_ALL
-	SAVE_COMMON_REGS
-	SAVE_CALLEE_REGS
-	.endm
-
-	.macro RESTORE_ALL
-	RESTORE_CALLEE_REGS
-	RESTORE_COMMON_REGS
-	.endm
-
 /*
  * Non-syscall kernel entry points.
  */
@@ -105,9 +90,7 @@
 	.ent entInt
 entInt:
 	SAVE_ALL
-	ldi	$8, 0x3fff
 	ldi	$26, ret_from_sys_call
-	bic	$sp, $8, $8
 	mov	$sp, $19
 	call	$31, do_entInt
 	.end entInt
@@ -117,9 +100,7 @@ entInt:
 	.ent entArith
 entArith:
 	SAVE_ALL
-	ldi	$8, 0x3fff
 	ldi	$26, ret_from_sys_call
-	bic	$sp, $8, $8
 	mov	$sp, $18
 	call	$31, do_entArith
 	.end entArith
@@ -129,9 +110,7 @@ entArith:
 	.ent entMM
 entMM:
 	SAVE_ALL
-	ldi	$8, 0x3fff
 	ldi	$26, ret_from_sys_call
-	bic	$sp, $8, $8
 	mov	$sp, $19
 	call	$31, do_page_fault
 	.end entMM
@@ -141,10 +120,8 @@ entMM:
 	.ent entIF
 entIF:
 	SAVE_ALL
-	ldi	$8, 0x3fff
 	ldi	$26, ret_from_sys_call
-	bic	$sp, $8, $8
-	mov	$sp, $17
+	mov	$sp, $18
 	call	$31, do_entIF
 	.end entIF
 
@@ -159,8 +136,6 @@ entIF:
 	.ent entUna
 entUna:
 	SAVE_ALL
-	ldi	$8, 0x3fff
-	bic	$sp, $8, $8
 	mov	$sp, $19
 	ldl	$0, PT_REGS_PS($sp)
 	and	$0, 8, $0		/* user mode ? */
@@ -192,8 +167,6 @@ entUna:
 entSys:
 
 	SAVE_ALL
-	ldi	$8, 0x3fff
-	bic	$sp, $8, $8
 	ldi	$4, NR_SYSCALLS($31)
 	stl	$16, PT_REGS_R16($sp)
 	ldi	$5, sys_call_table
@@ -411,8 +384,8 @@ __switch_to:
 	ldl	$13, TASK_THREAD_S4($17)
 	ldl	$14, TASK_THREAD_S5($17)
 	ldl	$15, TASK_THREAD_S6($17)
-	ldi	$8, 0x3fff
-	bic	$sp, $8, $8
+	mov	$17, $8
+	sys_call HMC_wrktp
 	mov	$16, $0
 	ret
 	.end __switch_to

@@ -25,6 +25,8 @@
 
 #include <asm/efi.h>
 
+unsigned long entSuspend;
+
 static int __init is_memory(efi_memory_desc_t *md)
 {
 	if (md->attribute & (EFI_MEMORY_WB|EFI_MEMORY_WT|EFI_MEMORY_WC))
@@ -32,7 +34,8 @@ static int __init is_memory(efi_memory_desc_t *md)
 	return 0;
 }
 static efi_config_table_type_t arch_tables[] __initdata = {
-	{SMBIOS3_TABLE_GUID, NULL, NULL}
+	{SMBIOS3_TABLE_GUID, NULL, NULL},
+	{SLEEP_ENTRY_GUID, &entSuspend, "SLEEP ENTRY"}
 };
 
 static int __init uefi_init(u64 efi_system_table)

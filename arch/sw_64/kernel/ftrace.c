@@ -100,10 +100,12 @@ void arch_ftrace_update_code(int command)
 
 int __init ftrace_dyn_arch_init(void)
 {
-	init_thread_info.dyn_ftrace_addr = FTRACE_ADDR;
+	struct thread_info *ti = task_thread_info(&init_task);
+
+	ti->dyn_ftrace_addr = FTRACE_ADDR;
 
 #ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
-	init_thread_info.dyn_ftrace_regs_addr = FTRACE_REGS_ADDR;
+	ti->dyn_ftrace_regs_addr = FTRACE_REGS_ADDR;
 #endif
 	return 0;
 }

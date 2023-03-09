@@ -6,6 +6,10 @@
 #include <asm/early_ioremap.h>
 #ifdef CONFIG_EFI
 extern void efi_init(void);
+extern unsigned long entSuspend;
+
+#define SLEEP_ENTRY_GUID        EFI_GUID(0x59cb76bb, 0x9c3a, 0x4c8f, 0xbd, 0x5c, 0xc0, 0x0f, 0x20, 0x61, 0x18, 0x4b)
+
 #else
 #define efi_init()
 #define efi_idmap_init()

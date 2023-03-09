@@ -25,7 +25,7 @@ static int sample_ustack(struct perf_sample *sample,
 		return -1;
 	}
 
-	sp = (unsigned long) regs[30];
+	sp = (unsigned long) regs[PERF_REG_SW64_SP];
 
 	map = maps__find(thread->maps, (u64)sp);
 	if (!map) {

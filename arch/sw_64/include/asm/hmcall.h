@@ -13,6 +13,8 @@
 #define HMC_sleepen		0x05
 #define HMC_rdksp		0x06
 #define HMC_wrasid		0x08
+#define HMC_rdktp		0x09
+#define HMC_wrktp		0x0A
 #define HMC_rdptbr		0x0B
 #define HMC_wrptbr		0x0C
 #define HMC_wrksp		0x0E
@@ -149,6 +151,11 @@ __CALL_HMC_VOID(wrfen);
 
 __CALL_HMC_VOID(sleepen);
 __CALL_HMC_VOID(mtinten);
+
+__CALL_HMC_VOID(rdktp);
+#define restore_ktp()	rdktp()
+__CALL_HMC_VOID(wrktp);
+#define save_ktp()	wrktp()
 
 __CALL_HMC_R0(rdps, unsigned long);
 
