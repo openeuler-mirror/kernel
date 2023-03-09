@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       143
+%global devel_release       144
 %global maintenance_release .0.0
-%global pkg_release         .72
+%global pkg_release         .73
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,165 @@ fi
 %endif
 
 %changelog
+* Wed Mar 08 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-144.0.0.73
+- !456 Backport CVEs and bugfixes
+- !426 scsi:sssraid: Introduce map_queue in sssraid module & code quality reinforcement content
+- media: rc: Fix use-after-free bugs caused by ene_tx_irqsim()
+- HID: check empty report_list in bigben_probe()
+- HID: check empty report_list in hid_validate_values()
+- neigh: make sure used and confirmed times are valid
+- Documentation/hw-vuln: Fix rST warning
+- Documentation/hw-vuln: Add documentation for Cross-Thread Return Predictions
+- KVM: x86: Mitigate the cross-thread return address predictions bug
+- x86/speculation: Identify processors vulnerable to SMT RSB predictions
+- radi10: fix leak of 'r10bio->remaining' for recovery
+- md: fix soft lockup in status_resync
+- md: don't update recovery_cp when curr_resync is ACTIVE
+- md: Ensure resync is reported after it starts
+- md: Use enum for overloaded magic numbers used by mddev->curr_resync
+- raid10: fix leak of io accounting
+- tcp: Fix listen() regression in 5.15.88.
+- net/ulp: Remove redundant ->clone() test in inet_clone_ulp().
+- net/ulp: use consistent error code when blocking ULP
+- net/ulp: prevent ULP without clone op from entering the LISTEN status
+- net/tls: tls_is_tx_ready() checked list_entry
+- usb: dwc3: dwc3-qcom: Add missing platform_device_put() in dwc3_qcom_acpi_register_core
+- ntfs: fix out-of-bounds read in ntfs_attr_find()
+- splice: don't generate zero-len segement bvecs
+- rds: rds_rm_zerocopy_callback() use list_first_entry()
+- tap: tap_open(): correctly initialize socket uid
+- tun: tun_chr_open(): correctly initialize socket uid
+- net: add sock_init_data_uid()
+- ring-buffer: Handle race between rb_move_tail and rb_check_pages
+- blk-mq: use quiesced elevator switch when reinitializing queues
+- ovl: fix use inode directly in rcu-walk mode
+- !443 OLK-5.10 backport sharepool and config isolation patches
+- !451 add drivers to support hbm memory and hbm cache
+- soc: hbmcache: Add support for online and offline the hbm cache
+- soc: hisilicon: hisi_hbmdev: Provide extra memory topology information
+- ACPI: memhotplug: export the state of each hotplug device
+- soc: hisilicon: hisi_hbmdev: Add power domain control methods
+- ACPI: OSL: Export the symbol of acpi_hotplug_schedule
+- ACPI: bus: Export acpi_dev_for_each_child() to modules
+- ACPI: bus: Avoid non-ACPI device objects in walks over children
+- ACPI: bus: Introduce acpi_dev_for_each_child()
+- mm: sharepool: add static modifier to find_spg_node_by_spg()
+- mm: sharepool: Charge Buddy hugepage to memcg
+- mm/sharepool: use delete_spg_node to replace some repetitive code
+- mm/sharepool: extract group_add_task
+- mm/sharepool: Delete redundant size and alloc_size in sp_meminfo.
+- mm/sharepool: Delete unused kthread_stat.
+- mm/sharepool: Add meminfo_k2u_size.
+- mm/sharepool: Add meminfo_alloc_sum_byKB and meminfo_alloc_sum.
+- mm/sharepool: Replace spg_proc_stat with sp_meminfo.
+- mm/sharepool: Delete unused tgid and spg_id in spg_proc_stat.
+- mm/sharepool: replace sp_proc_stat with sp_meminfo.
+- mm/sharepool: Move comm from sp_proc_stat to sp_group_master.
+- mm/sharepool: Delete redundant tgid in sp_proc_stat.
+- mm/sharepool: Fix double delete list in sp_group_exit
+- mm/sharepool: split meminfo_update_k2u into meminfo_inc_k2u and meminfo_dec_k2u.
+- mm/sharepool: Split meminfo_update into meminfo_inc_usage and meminfo_dec_usage.
+- mm/sharepool: Rename sp_spg_stat to sp_meminfo.
+- mm/sharepool: Move spa_num field to sp_group.
+- mm/sharepool: Delete unused mm in sp_proc_stat.
+- mm/sharepool: Delete unused spg_id and hugepage_failures.
+- mm/sharepool: Modify error message in mg_sp_group_del_task
+- mm/sharepool: Fix null-pointer-deference in sp_free_area
+- mm/sharepool: Simplify sp_unshare_uva()
+- mm/sharepool: Rename sp_group operations
+- mm/sharepool: Simplify sp_make_share_k2u()
+- mm/sharepool: Reorganize create_spg()
+- mm/sharepool: Add helper for master_list
+- mm/sharepool: Refactoring proc file interface similar code
+- mm/sharepool: Don't display sharepool statistics in the container
+- mm/sharepool: Fix NULL pointer dereference in mg_sp_group_del_task
+- mm/sharepool: Fix a double free problem caused by init_local_group
+- hugetlbfs: Add config to isolate the code of share_pool
+- iommu/arm-smmu-v3: Add config to Add support for suspend and resume
+- vmalloc: Add config for Extend for hugepages mapping
+- ACPI / APEI: Add config to isolate Notify all ras err
+- driver: Add CONFIG_ACPI_APEI_GHES_TS_CORE for code isolation
+- perf: hisi: Add configs for PMU isolation
+- !413 ACPI: Add Platform Runtime Mechanism(PRM) feature support
+- !402 Fixed the following errors:  The reset with stream fails, the query of AH attr is invalid and the RoCE Bonding
+- SCSI: SSSRAID: Code quality reinforcement content
+- SCSI: SSSRAID: Introduce map_queue in sssraid module
+- Enable ACPI Platform Runtime Mechanism(PRM) feature support
+- ACPI: PRM: Check whether EFI runtime is available
+- !418 Backport CVEs and bugfixes
+- net: mpls: fix stale pointer if allocation fails during device rename
+- x86/bugs: Flush IBP in ib_prctl_set()
+- binder: Gracefully handle BINDER_TYPE_FDA objects with num_fds=0
+- binder: Address corner cases in deferred copy and fixup
+- binder: fix pointer cast warning
+- binder: defer copies of pre-patched txn data
+- binder: read pre-translated fds from sender buffer
+- binder: avoid potential data leakage when copying txn
+- rcu: Avoid stack overflow due to __rcu_irq_enter_check_tick() being kprobe-ed
+- net/sched: sch_taprio: do not schedule in taprio_reset()
+- net/sched: sch_taprio: fix possible use-after-free
+- nbd: fix assignment error for first_minor in nbd_dev_add
+- md/raid10: fix wrong setting of max_corr_read_errors
+- md/raid10: fix overflow in safe_delay_store
+- md/raid10: fix slab-out-of-bounds in md_bitmap_get_counter
+- arm64: topology: fix possible overflow in amu_fie_setup()
+- ARM: 9242/1: kasan: Only map modules if CONFIG_KASAN_VMALLOC=n
+- io_uring: fix soft lockup in io_submit_sqes()
+- fix kabi broken due to import of 5.15-stable io_uring
+- io_uring: import 5.15-stable io_uring
+- task_work: add helper for more targeted task_work canceling
+- coredump: Limit what can interrupt coredumps
+- kernel: provide create_io_thread() helper
+- fs: provide locked helper variant of close_fd_get_file()
+- kernel: remove checking for TIF_NOTIFY_SIGNAL
+- entry: Add support for TIF_NOTIFY_SIGNAL
+- signal: Add task_sigpending() helper
+- arm: add support for TIF_NOTIFY_SIGNAL
+- arm64: add support for TIF_NOTIFY_SIGNAL
+- riscv: add support for TIF_NOTIFY_SIGNAL
+- powerpc: add support for TIF_NOTIFY_SIGNAL
+- x86: Wire up TIF_NOTIFY_SIGNAL
+- iov_iter: add helper to save iov_iter state
+- perf beauty: Update copy of linux/socket.h with the kernel sources
+- perf trace beauty: Update copy of linux/socket.h with the kernel sources
+- io_uring: correct pinned_vm accounting
+- file: Rename __close_fd_get_file close_fd_get_file
+- io_uring: don't hold uring_lock when calling io_run_task_work*
+- io_uring: don't take uring_lock during iowq cancel
+- fs: make do_renameat2() take struct filename
+- net: add accept helper not installing fd
+- net: provide __sys_shutdown_sock() that takes a socket
+- fs: expose LOOKUP_CACHED through openat2() RESOLVE_CACHED
+- Make sure nd->path.mnt and nd->path.dentry are always valid pointers
+- fix handling of nd->depth on LOOKUP_CACHED failures in try_to_unlazy*
+- fs: add support for LOOKUP_CACHED
+- Revert "io_uring: fix soft lockup when call __io_remove_buffers"
+- Revert "io_uring: deduplicate failing task_work_add"
+- Revert "io_uring: don't take uring_lock during iowq cancel"
+- Revert "[Backport] io_uring: don't keep looping for more events if we can't flush overflow"
+- Revert "[Huawei] io-wq: Switch io_wqe_worker's fs before releasing request"
+- Revert "[Huawei] io_uring: fix soft lockup in io_submit_sqes()"
+- Revert "[Huawei] io_uring:drop identity before creating a private one"
+- !332 [5.10]Make Multiple functions On Netswift PCIE NIC belong to different IOMMU group
+- ACPI: PRM: Change handler_addr type to void pointer
+- ACPI: PRM: Handle memory allocation and memory remap failure
+- ACPI: PRM: Remove unnecessary blank lines
+- ACPI: PRM: Find PRMT table before parsing it
+- ACPI: PRM: Deal with table not present or no module found
+- ACPI: Do not singal PRM support if not enabled
+- ACPI: Correct _SB._OSC bit definition for PRM
+- ACPI: Kconfig: Provide help text for the ACPI_PRMT option
+- ACPI: PRM: make symbol 'prm_module_list' static
+- ACPI: Add _SB._OSC bit for PRM
+- ACPI: PRM: implement OperationRegion handler for the PlatformRtMechanism subtype
+- ACPICA: Add PRMT module header to facilitate parsing
+- ACPICA: Add support for PlatformRtMechanism OperationRegion handler
+- ACPICA: iASL: add disassembler support for PRMT
+- openeuler: pci: workaround multiple functions can be assigned to only one VM
+- RDMA/hns: fix the error of RoCE VF based on RoCE Bonding PF
+- RDMA/hns: Fix AH attr queried by query_qp
+- RDMA/hns: Kernel notify usr space to stop ring db
+
 * Sat Feb 25 2023 Jialin Zhang <zhangjialin11@huawei.com> - 5.10.0-143.0.0.72
 - !414 Backport CVEs and bugfixes
 - x86/kasan: Populate shadow for shared chunk of the CPU entry area
