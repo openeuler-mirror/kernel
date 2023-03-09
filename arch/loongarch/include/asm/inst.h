@@ -8,6 +8,8 @@
 #include <linux/types.h>
 #include <asm/asm.h>
 
+#define INSN_NOP		0x03400000
+
 #define ADDR_IMMMASK_LU52ID	0xFFF0000000000000
 #define ADDR_IMMMASK_LU32ID	0x000FFFFF00000000
 #define ADDR_IMMMASK_ADDU16ID	0x00000000FFFF0000
@@ -18,14 +20,25 @@
 
 #define ADDR_IMM(addr, INSN)	((addr & ADDR_IMMMASK_##INSN) >> ADDR_IMMSHIFT_##INSN)
 
+enum reg0i26_op {
+	b_op		= 0x14,
+	bl_op		= 0x15,
+};
+
 enum reg1i20_op {
 	lu12iw_op	= 0x0a,
 	lu32id_op	= 0x0b,
+	pcaddi_op	= 0x0c,
+	pcalau12i_op	= 0x0d,
+	pcaddu12i_op	= 0x0e,
+	pcaddu18i_op	= 0x0f,
 };
 
 enum reg1i21_op {
 	beqz_op		= 0x10,
 	bnez_op		= 0x11,
+	bceqz_op	= 0x12, /* bits[9:8] = 0x00 */
+	bcnez_op	= 0x12, /* bits[9:8] = 0x01 */
 };
 
 enum reg2i12_op {
@@ -136,6 +149,20 @@ enum loongarch_gpr {
 static inline bool is_imm_negative(unsigned long val, unsigned int bit)
 {
 	return val & (1UL << (bit - 1));
+}
+
+static inline unsigned long sign_extend(unsigned long val, unsigned int idx)
+{
+	if (!is_imm_negative(val, idx + 1))
+		return ((1UL << idx) - 1) & val;
+	else
+		return ~((1UL << idx) - 1) | val;
+}
+
+static inline bool is_pc_ins(union loongarch_instruction *ip)
+{
+	return ip->reg1i20_format.opcode >= pcaddi_op &&
+			ip->reg1i20_format.opcode <= pcaddu18i_op;
 }
 
 static inline bool is_branch_ins(union loongarch_instruction *ip)
