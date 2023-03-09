@@ -17,6 +17,7 @@
 #include <linux/threads.h>
 #include <linux/export.h>
 #include <linux/time.h>
+#include <linux/syscore_ops.h>
 #include <linux/tracepoint.h>
 #include <linux/sched/hotplug.h>
 #include <linux/sched/task_stack.h>

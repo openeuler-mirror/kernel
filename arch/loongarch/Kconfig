@@ -39,6 +39,7 @@ config LOONGARCH
 	select ARCH_INLINE_SPIN_UNLOCK_BH if !PREEMPTION
 	select ARCH_INLINE_SPIN_UNLOCK_IRQ if !PREEMPTION
 	select ARCH_INLINE_SPIN_UNLOCK_IRQRESTORE if !PREEMPTION
+	select ARCH_KEEP_MEMBLOCK
 	select ARCH_MIGHT_HAVE_PC_PARPORT
 	select ARCH_MIGHT_HAVE_PC_SERIO
 	select ARCH_SPARSEMEM_ENABLE
@@ -75,6 +76,8 @@ config LOONGARCH
 	select GENERIC_SCHED_CLOCK
 	select GENERIC_SMP_IDLE_THREAD
 	select GENERIC_TIME_VSYSCALL
+	select CPU_SUPPORTS_LSX
+	select CPU_SUPPORTS_LASX
 	select GPIOLIB
 	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_MMAP_RND_BITS if MMU
@@ -144,6 +147,36 @@ config CPU_HAS_FPU
 config CPU_HAS_PREFETCH
 	bool
 	default y
+
+config CPU_HAS_LSX
+	bool "Support for the Loongson SIMD Extension"
+	depends on CPU_SUPPORTS_LSX
+	depends on 64BIT
+	help
+	  Loongson SIMD Extension (LSX) introduces 128 bit wide vector registers
+	  and a set of SIMD instructions to operate on them. When this option
+	  is enabled the kernel will support allocating & switching LSX
+	  vector register contexts. If you know that your kernel will only be
+	  running on CPUs which do not support LSX or that your userland will
+	  not be making use of it then you may wish to say N here to reduce
+	  the size & complexity of your kernel.
+
+	  If unsure, say Y.
+
+config CPU_HAS_LASX
+	bool "Support for the Loongson Advanced SIMD Extension"
+	depends on CPU_SUPPORTS_LASX
+	depends on 64BIT && CPU_HAS_LSX
+	help
+	  Loongson Advanced SIMD Extension is 256 bit wide SIMD extension.
+
+	  If unsure, say Y.
+
+config CPU_SUPPORTS_LSX
+	bool
+
+config CPU_SUPPORTS_LASX
+	bool
 
 config GENERIC_CALIBRATE_DELAY
 	def_bool y
@@ -393,6 +426,13 @@ config NODES_SHIFT
 	default "6"
 	depends on NUMA
 
+config VA_BITS_40
+	bool "40-bits"
+	default y
+	depends on 64BIT
+	help
+	  Support a maximum at least 40 bits of application virtual memory.
+
 config FORCE_MAX_ZONEORDER
 	int "Maximum zone order"
 	range 14 64 if PAGE_SIZE_64KB
@@ -457,6 +497,9 @@ config ARCH_SPARSEMEM_ENABLE
 	  or have huge holes in the physical address space for other reasons.
 	  See <file:Documentation/vm/numa.rst> for more.
 
+config SYS_SUPPORTS_HUGETLBFS
+        def_bool y
+
 config ARCH_ENABLE_THP_MIGRATION
 	def_bool y
 	depends on TRANSPARENT_HUGEPAGE
@@ -477,7 +520,21 @@ config ARCH_MMAP_RND_BITS_MAX
 
 menu "Power management options"
 
+config ARCH_HIBERNATION_POSSIBLE
+	def_bool y
+
+config ARCH_SUSPEND_POSSIBLE
+	def_bool y
+
+source "kernel/power/Kconfig"
+
 source "drivers/acpi/Kconfig"
+
+endmenu
+
+menu "CPU Power Management"
+
+source "drivers/cpufreq/Kconfig"
 
 endmenu
 

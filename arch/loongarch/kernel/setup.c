@@ -29,7 +29,9 @@
 #include <linux/swiotlb.h>
 
 #include <asm/addrspace.h>
+#include <asm/alternative.h>
 #include <asm/bootinfo.h>
+#include <asm/bugs.h>
 #include <asm/cache.h>
 #include <asm/cpu.h>
 #include <asm/dma.h>
@@ -77,6 +79,11 @@ static struct resource bss_resource  = { .name = "Kernel bss", };
 const char *get_system_type(void)
 {
 	return "generic-loongson-machine";
+}
+
+void __init check_bugs(void)
+{
+	alternative_instructions();
 }
 
 static const char *dmi_string_parse(const struct dmi_header *dm, u8 s)
@@ -198,10 +205,24 @@ static int __init early_parse_mem(char *p)
 	return 0;
 }
 early_param("mem", early_parse_mem);
+static void __init set_pcie_wakeup(void)
+{
+	acpi_status status;
+	u32 value;
+
+	if (loongson_sysconf.is_soc_cpu || acpi_gbl_reduced_hardware)
+		return;
+
+	status = acpi_read_bit_register(ACPI_BITREG_PCIEXP_WAKE_DISABLE, &value);
+	if (ACPI_FAILURE(status)) {
+		return;
+	}
+	loongson_sysconf.pcie_wake_enabled = !value;
+}
+
 
 void __init platform_init(void)
 {
-	loongson_efi_init();
 #ifdef CONFIG_ACPI_TABLE_UPGRADE
 	acpi_table_upgrade();
 #endif
@@ -210,6 +231,7 @@ void __init platform_init(void)
 	acpi_boot_table_init();
 	acpi_boot_init();
 #endif
+	set_pcie_wakeup();
 
 #ifdef CONFIG_NUMA
 	init_numa_memory();
@@ -362,6 +384,7 @@ void __init setup_arch(char **cmdline_p)
 	legacy_boot_init(fw_arg0, fw_arg1, fw_arg2);
 
 	init_environ();
+	loongson_efi_init();
 	memblock_init();
 	pagetable_init();
 	parse_early_param();

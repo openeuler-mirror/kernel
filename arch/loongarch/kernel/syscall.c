@@ -37,18 +37,16 @@ void *sys_call_table[__NR_syscalls] = {
 typedef long (*sys_call_fn)(unsigned long, unsigned long,
 	unsigned long, unsigned long, unsigned long, unsigned long);
 
-void noinstr do_syscall(struct pt_regs *regs)
+unsigned long noinstr do_syscall(struct pt_regs *regs, unsigned long nr)
 {
-	unsigned long nr;
 	sys_call_fn syscall_fn;
 
-	nr = regs->regs[11];
 	/* Set for syscall restarting */
 	if (nr < NR_syscalls)
 		regs->regs[0] = nr + 1;
+	else
+		regs->regs[0] = 0;
 
-	regs->csr_era += 4;
-	regs->orig_a0 = regs->regs[4];
 	regs->regs[4] = -ENOSYS;
 
 	nr = syscall_enter_from_user_mode(regs, nr);
@@ -60,4 +58,6 @@ void noinstr do_syscall(struct pt_regs *regs)
 	}
 
 	syscall_exit_to_user_mode(regs);
+
+	return nr;
 }

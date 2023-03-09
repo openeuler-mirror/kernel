@@ -20,6 +20,7 @@
 #include <linux/memblock.h>
 #include <linux/reboot.h>
 #include <linux/uaccess.h>
+#include <linux/initrd.h>
 
 #include <asm/early_ioremap.h>
 #include <asm/efi.h>
@@ -27,11 +28,18 @@
 #include <asm/loongson.h>
 #include "legacy_boot.h"
 
+static __initdata unsigned long new_memmap = EFI_INVALID_TABLE_ADDR;
+static __initdata unsigned long initrd = EFI_INVALID_TABLE_ADDR;
+
 static unsigned long efi_nr_tables;
 static unsigned long efi_config_table;
 
 static efi_system_table_t *efi_systab;
-static efi_config_table_type_t arch_tables[] __initdata = {{},};
+static efi_config_table_type_t arch_tables[] __initdata = {
+	{LINUX_EFI_NEW_MEMMAP_GUID, &new_memmap, "NEWMEM"},
+	{LINUX_EFI_INITRD_MEDIA_GUID, &initrd, "INITRD"},
+	{},
+};
 static __initdata pgd_t *pgd_efi;
 
 static int __init efimap_populate_hugepages(
@@ -184,6 +192,9 @@ static int __init set_virtual_map(void)
 			(efi_memory_desc_t *)TO_PHYS((unsigned long)runtime_map));
 
 	efi_unmap_pgt();
+	if (status != EFI_SUCCESS)
+		return -1;
+
 	return 0;
 }
 
@@ -213,6 +224,44 @@ void __init efi_runtime_init(void)
 	set_bit(EFI_RUNTIME_SERVICES, &efi.flags);
 }
 
+static void __init get_initrd(void)
+{
+	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) &&
+		initrd != EFI_INVALID_TABLE_ADDR && phys_initrd_size == 0) {
+		struct linux_efi_initrd *tbl;
+
+		tbl = early_memremap(initrd, sizeof(*tbl));
+		if (tbl) {
+			phys_initrd_start = tbl->base;
+			phys_initrd_size = tbl->size;
+			early_memunmap(tbl, sizeof(*tbl));
+		}
+	}
+}
+
+static void __init init_new_memmap(void)
+{
+	struct efi_new_memmap *tbl;
+
+	if (new_memmap == EFI_INVALID_TABLE_ADDR)
+		return;
+
+	tbl = early_memremap_ro(new_memmap, sizeof(*tbl));
+	if (tbl) {
+		struct efi_memory_map_data data;
+
+		data.phys_map           = new_memmap + sizeof(*tbl);
+		data.size               = tbl->map_size;
+		data.desc_size          = tbl->desc_size;
+		data.desc_version       = tbl->desc_ver;
+
+		if (efi_memmap_init_early(&data) < 0)
+			panic("Unable to map EFI memory map.\n");
+
+		early_memunmap(tbl, sizeof(*tbl));
+	}
+}
+
 void __init loongson_efi_init(void)
 {
 	int size;
@@ -236,6 +285,10 @@ void __init loongson_efi_init(void)
 	config_tables = early_memremap(efi_config_table, efi_nr_tables * size);
 	efi_config_parse_tables(config_tables, efi_systab->nr_tables, arch_tables);
 	early_memunmap(config_tables, efi_nr_tables * size);
+
+	get_initrd();
+
+	init_new_memmap();
 
 	if (screen_info.orig_video_isVGA == VIDEO_TYPE_EFI)
 		memblock_reserve(screen_info.lfb_base, screen_info.lfb_size);

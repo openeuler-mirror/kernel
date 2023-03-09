@@ -17,16 +17,15 @@ static inline void arch_local_irq_enable(void)
 	__asm__ __volatile__(
 		"csrxchg %[val], %[mask], %[reg]\n\t"
 		: [val] "+r" (flags)
-		: [mask] "r" (CSR_CRMD_IE), [reg] "i" (LOONGARCH_CSR_CRMD)
+		: [mask] "r" (flags), [reg] "i" (LOONGARCH_CSR_CRMD)
 		: "memory");
 }
 
 static inline void arch_local_irq_disable(void)
 {
-	u32 flags = 0;
 	__asm__ __volatile__(
-		"csrxchg %[val], %[mask], %[reg]\n\t"
-		: [val] "+r" (flags)
+		"csrxchg $zero, %[mask], %[reg]\n\t"
+		:
 		: [mask] "r" (CSR_CRMD_IE), [reg] "i" (LOONGARCH_CSR_CRMD)
 		: "memory");
 }

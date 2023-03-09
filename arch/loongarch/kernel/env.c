@@ -22,7 +22,8 @@ void __init init_environ(void)
 {
 	int efi_boot = fw_arg0;
 	struct efi_memory_map_data data;
-	void *fdt_ptr = early_memremap_ro(fw_arg1, SZ_64K);
+	char *cmdline;
+	void *fdt_ptr;
 
 	if (efi_bp)
 		return;
@@ -31,6 +32,20 @@ void __init init_environ(void)
 		set_bit(EFI_BOOT, &efi.flags);
 	else
 		clear_bit(EFI_BOOT, &efi.flags);
+
+	if (fw_arg2 == 0)
+		goto parse_fdt;
+
+	cmdline = early_memremap_ro(fw_arg1, COMMAND_LINE_SIZE);
+	strscpy(boot_command_line, cmdline, COMMAND_LINE_SIZE);
+	early_memunmap(cmdline, COMMAND_LINE_SIZE);
+
+	efi_system_table = fw_arg2;
+
+	return;
+
+parse_fdt:
+	fdt_ptr = early_memremap_ro(fw_arg1, SZ_64K);
 
 	early_init_dt_scan(fdt_ptr);
 	early_init_fdt_reserve_self();

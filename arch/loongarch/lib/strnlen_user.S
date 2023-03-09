@@ -6,6 +6,7 @@
 #include <asm/asmmacro.h>
 #include <asm/export.h>
 #include <asm/regdef.h>
+#include <asm/asm-extable.h>
 
 /*
  * long __strnlen_user(const char *s, long n)
@@ -36,9 +37,7 @@ SYM_FUNC_START(__strnlen_user)
 	jr	ra
 	.previous
 
-	.section __ex_table, "a"
-	PTR	1b, 3b
-	.previous
+	_asm_extable 1b, 3b
 SYM_FUNC_END(__strnlen_user)
 
 EXPORT_SYMBOL(__strnlen_user)
