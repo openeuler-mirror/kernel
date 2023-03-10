@@ -265,9 +265,9 @@ static int isst_if_get_platform_info(void __user *argp)
 {
 	struct isst_if_platform_info info;
 
-	info.api_version = ISST_IF_API_VERSION,
-	info.driver_version = ISST_IF_DRIVER_VERSION,
-	info.max_cmds_per_ioctl = ISST_IF_CMD_LIMIT,
+	info.api_version = ISST_IF_API_VERSION;
+	info.driver_version = ISST_IF_DRIVER_VERSION;
+	info.max_cmds_per_ioctl = ISST_IF_CMD_LIMIT;
 	info.mbox_supported = punit_callbacks[ISST_IF_DEV_MBOX].registered;
 	info.mmio_supported = punit_callbacks[ISST_IF_DEV_MMIO].registered;
 
@@ -277,14 +277,88 @@ static int isst_if_get_platform_info(void __user *argp)
 	return 0;
 }
 
+#define ISST_MAX_BUS_NUMBER	2
 
 struct isst_if_cpu_info {
 	/* For BUS 0 and BUS 1 only, which we need for PUNIT interface */
-	int bus_info[2];
+	int bus_info[ISST_MAX_BUS_NUMBER];
+	struct pci_dev *pci_dev[ISST_MAX_BUS_NUMBER];
 	int punit_cpu_id;
+	int numa_node;
+};
+
+struct isst_if_pkg_info {
+	struct pci_dev *pci_dev[ISST_MAX_BUS_NUMBER];
 };
 
 static struct isst_if_cpu_info *isst_cpu_info;
+static struct isst_if_pkg_info *isst_pkg_info;
+
+#define ISST_MAX_PCI_DOMAINS	8
+
+static struct pci_dev *_isst_if_get_pci_dev(int cpu, int bus_no, int dev, int fn)
+{
+	struct pci_dev *matched_pci_dev = NULL;
+	struct pci_dev *pci_dev = NULL;
+	int no_matches = 0, pkg_id;
+	int i, bus_number;
+
+	if (bus_no < 0 || bus_no >= ISST_MAX_BUS_NUMBER || cpu < 0 ||
+	    cpu >= nr_cpu_ids || cpu >= num_possible_cpus())
+		return NULL;
+
+	pkg_id = topology_physical_package_id(cpu);
+
+	bus_number = isst_cpu_info[cpu].bus_info[bus_no];
+	if (bus_number < 0)
+		return NULL;
+
+	for (i = 0; i < ISST_MAX_PCI_DOMAINS; ++i) {
+		struct pci_dev *_pci_dev;
+		int node;
+
+		_pci_dev = pci_get_domain_bus_and_slot(i, bus_number, PCI_DEVFN(dev, fn));
+		if (!_pci_dev)
+			continue;
+
+		++no_matches;
+		if (!matched_pci_dev)
+			matched_pci_dev = _pci_dev;
+
+		node = dev_to_node(&_pci_dev->dev);
+		if (node == NUMA_NO_NODE) {
+			pr_info("Fail to get numa node for CPU:%d bus:%d dev:%d fn:%d\n",
+				cpu, bus_no, dev, fn);
+			continue;
+		}
+
+		if (node == isst_cpu_info[cpu].numa_node) {
+			isst_pkg_info[pkg_id].pci_dev[bus_no] = _pci_dev;
+
+			pci_dev = _pci_dev;
+			break;
+		}
+	}
+
+	/*
+	 * If there is no numa matched pci_dev, then there can be following cases:
+	 * 1. CONFIG_NUMA is not defined: In this case if there is only single device
+	 *    match, then we don't need numa information. Simply return last match.
+	 *    Othewise return NULL.
+	 * 2. NUMA information is not exposed via _SEG method. In this case it is similar
+	 *    to case 1.
+	 * 3. Numa information doesn't match with CPU numa node and more than one match
+	 *    return NULL.
+	 */
+	if (!pci_dev && no_matches == 1)
+		pci_dev = matched_pci_dev;
+
+	/* Return pci_dev pointer for any matched CPU in the package */
+	if (!pci_dev)
+		pci_dev = isst_pkg_info[pkg_id].pci_dev[bus_no];
+
+	return pci_dev;
+}
 
 /**
  * isst_if_get_pci_dev() - Get the PCI device instance for a CPU
@@ -300,17 +374,18 @@ static struct isst_if_cpu_info *isst_cpu_info;
  */
 struct pci_dev *isst_if_get_pci_dev(int cpu, int bus_no, int dev, int fn)
 {
-	int bus_number;
+	struct pci_dev *pci_dev;
 
-	if (bus_no < 0 || bus_no > 1 || cpu < 0 || cpu >= nr_cpu_ids ||
-	    cpu >= num_possible_cpus())
+	if (bus_no < 0 || bus_no >= ISST_MAX_BUS_NUMBER  || cpu < 0 ||
+	    cpu >= nr_cpu_ids || cpu >= num_possible_cpus())
 		return NULL;
 
-	bus_number = isst_cpu_info[cpu].bus_info[bus_no];
-	if (bus_number < 0)
-		return NULL;
+	pci_dev = isst_cpu_info[cpu].pci_dev[bus_no];
 
-	return pci_get_domain_bus_and_slot(0, bus_number, PCI_DEVFN(dev, fn));
+	if (pci_dev && pci_dev->devfn == PCI_DEVFN(dev, fn))
+		return pci_dev;
+
+	return _isst_if_get_pci_dev(cpu, bus_no, dev, fn);
 }
 EXPORT_SYMBOL_GPL(isst_if_get_pci_dev);
 
@@ -318,6 +393,8 @@ static int isst_if_cpu_online(unsigned int cpu)
 {
 	u64 data;
 	int ret;
+
+	isst_cpu_info[cpu].numa_node = cpu_to_node(cpu);
 
 	ret = rdmsrl_safe(MSR_CPU_BUS_NUMBER, &data);
 	if (ret) {
@@ -327,6 +404,8 @@ static int isst_if_cpu_online(unsigned int cpu)
 	} else {
 		isst_cpu_info[cpu].bus_info[0] = data & 0xff;
 		isst_cpu_info[cpu].bus_info[1] = (data >> 8) & 0xff;
+		isst_cpu_info[cpu].pci_dev[0] = _isst_if_get_pci_dev(cpu, 0, 0, 1);
+		isst_cpu_info[cpu].pci_dev[1] = _isst_if_get_pci_dev(cpu, 1, 30, 1);
 	}
 
 	ret = rdmsrl_safe(MSR_THREAD_ID_INFO, &data);
@@ -353,10 +432,19 @@ static int isst_if_cpu_info_init(void)
 	if (!isst_cpu_info)
 		return -ENOMEM;
 
+	isst_pkg_info = kcalloc(topology_max_packages(),
+				sizeof(*isst_pkg_info),
+				GFP_KERNEL);
+	if (!isst_pkg_info) {
+		kfree(isst_cpu_info);
+		return -ENOMEM;
+	}
+
 	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
 				"platform/x86/isst-if:online",
 				isst_if_cpu_online, NULL);
 	if (ret < 0) {
+		kfree(isst_pkg_info);
 		kfree(isst_cpu_info);
 		return ret;
 	}
@@ -369,6 +457,7 @@ static int isst_if_cpu_info_init(void)
 static void isst_if_cpu_info_exit(void)
 {
 	cpuhp_remove_state(isst_if_online_id);
+	kfree(isst_pkg_info);
 	kfree(isst_cpu_info);
 };
 
