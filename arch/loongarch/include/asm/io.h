@@ -41,7 +41,7 @@ static inline void __iomem *ioremap_prot(phys_addr_t offset, unsigned long size,
 #define ioremap(offset, size)		\
 	ioremap_prot((offset), (size), pgprot_val(PAGE_KERNEL_SUC))
 
-#define iounmap(addr) 			do { } while (0)
+#define iounmap(addr)	((void)(addr))
 
 #endif
 
