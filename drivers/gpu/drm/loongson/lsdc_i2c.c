@@ -9,6 +9,7 @@
  */
 
 #include <linux/i2c.h>
+#include <linux/io.h>
 
 #include <drm/drm_print.h>
 #include <drm/drm_device.h>
