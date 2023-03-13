@@ -85,6 +85,10 @@ SYM_CODE_START(kernel_entry)			# kernel entry point
 	set_saved_sp	sp, t0, t1
 	PTR_ADDI	sp, sp, -4 * SZREG	# init stack pointer
 
+#ifdef CONFIG_RELOCATABLE
+	bl		relocate_kernel
+#endif
+
 	bl		start_kernel
 
 SYM_CODE_END(kernel_entry)

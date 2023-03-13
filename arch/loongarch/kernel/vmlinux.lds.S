@@ -66,6 +66,17 @@ SECTIONS
 		__alt_instructions_end = .;
 	}
 
+#ifdef CONFIG_RELOCATABLE
+	. = ALIGN(8);
+	.la_abs : AT(ADDR(.la_abs) - LOAD_OFFSET) {
+		__la_abs_begin = .;
+		*(.la_abs)
+		__la_abs_end = .;
+	}
+#endif
+
+	.data.rel : { *(.data.rel*) }
+
 	. = ALIGN(PECOFF_SEGMENT_ALIGN);
 	__init_begin = .;
 	__inittext_begin = .;
@@ -101,6 +112,12 @@ SECTIONS
 	RO_DATA(4096)
 	RW_DATA(1 << CONFIG_L1_CACHE_SHIFT, PAGE_SIZE, THREAD_SIZE)
 
+	.rela.dyn : ALIGN(8) {
+		__rela_dyn_begin = .;
+		 *(.rela.dyn) *(.rela*)
+		__rela_dyn_end = .;
+	}
+
 	.sdata : {
 		*(.sdata)
 	}
@@ -127,6 +144,7 @@ SECTIONS
 
 	DISCARDS
 	/DISCARD/ : {
+		*(.dynamic .dynsym .dynstr .hash .gnu.hash)
 		*(.gnu.attributes)
 		*(.options)
 		*(.eh_frame)
