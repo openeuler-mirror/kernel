@@ -199,6 +199,10 @@ ret_from_sys_call:
 	and	$0, 8, $0
 	beq	$0, ret_to_kernel
 ret_to_user:
+#ifdef CONFIG_DEBUG_RSEQ
+	mov	$sp, $16
+	call	$26, rseq_syscall
+#endif
 	/* Make sure need_resched and sigpending don't change between
 		sampling and the rti.  */
 	ldi	$16, 7
