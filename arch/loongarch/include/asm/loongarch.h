@@ -275,6 +275,11 @@ static __always_inline u64 iocsr_read64(u32 reg)
 	return __iocsrrd_d(reg);
 }
 
+static __always_inline void iocsr_write8(u8 val, u32 reg)
+{
+	__iocsrwr_b(val, reg);
+}
+
 static __always_inline void iocsr_write32(u32 val, u32 reg)
 {
 	__iocsrwr_w(val, reg);
