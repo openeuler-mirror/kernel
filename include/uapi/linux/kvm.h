@@ -252,6 +252,7 @@ struct kvm_hyperv_exit {
 #define KVM_EXIT_X86_WRMSR        30
 #define KVM_EXIT_RISCV_SBI        31
 #define KVM_EXIT_X86_BUS_LOCK     33
+#define KVM_EXIT_LOONGARCH_IOCSR  36
 #define KVM_EXIT_NOTIFY           37
 
 /* For KVM_EXIT_INTERNAL_ERROR */
@@ -322,6 +323,13 @@ struct kvm_run {
 			__u32 len;
 			__u8  is_write;
 		} mmio;
+		/* KVM_EXIT_LOONGARCH_IOCSR */
+		struct {
+			__u64 phys_addr;
+			__u8  data[8];
+			__u32 len;
+			__u8  is_write;
+		} iocsr_io;
 		/* KVM_EXIT_HYPERCALL */
 		struct {
 			__u64 nr;
@@ -710,6 +718,16 @@ struct kvm_s390_irq_state {
 	__u32 reserved[4];  /* will stay unused for compatibility reasons */
 };
 
+struct kvm_loongarch_vcpu_state {
+	__u8 online_vcpus;
+	__u8 is_migrate;
+	__u32 cpu_freq;
+	__u32 count_ctl;
+	__u64 irq_pending;
+	__u64 irq_clear;
+	__u64 core_ext_ioisr[4];
+};
+
 /* for KVM_SET_GUEST_DEBUG */
 
 #define KVM_GUESTDBG_ENABLE		0x00000001
@@ -1077,6 +1095,10 @@ struct kvm_ppc_resize_hpt {
 
 #define KVM_CAP_ARM_CPU_FEATURE 555
 
+#define KVM_CAP_LOONGARCH_FPU 800
+#define KVM_CAP_LOONGARCH_LSX 801
+#define KVM_CAP_LOONGARCH_VZ 802
+
 #ifdef KVM_CAP_IRQ_ROUTING
 
 struct kvm_irq_routing_irqchip {
@@ -1223,6 +1245,7 @@ struct kvm_dirty_tlb {
 #define KVM_REG_ARM64		0x6000000000000000ULL
 #define KVM_REG_MIPS		0x7000000000000000ULL
 #define KVM_REG_RISCV		0x8000000000000000ULL
+#define KVM_REG_LOONGARCH	0x9000000000000000ULL
 
 #define KVM_REG_SIZE_SHIFT	52
 #define KVM_REG_SIZE_MASK	0x00f0000000000000ULL
@@ -1559,6 +1582,14 @@ struct kvm_enc_region {
 /* Available with  KVM_CAP_S390_VCPU_RESETS */
 #define KVM_S390_NORMAL_RESET	_IO(KVMIO,   0xc3)
 #define KVM_S390_CLEAR_RESET	_IO(KVMIO,   0xc4)
+
+/* Add for LOONGSON read nodecounter */
+#define KVM_LOONGARCH_GET_VCPU_STATE	_IOR(KVMIO,   0xc0, struct kvm_loongarch_vcpu_state)
+#define KVM_LOONGARCH_SET_VCPU_STATE	_IOW(KVMIO,   0xc1, struct kvm_loongarch_vcpu_state)
+#define KVM_LOONGARCH_GET_CPUCFG	_IOR(KVMIO,   0xc2, struct kvm_cpucfg)
+#define KVM_LOONGARCH_GET_IOCSR		_IOR(KVMIO,   0xc3, struct kvm_iocsr_entry)
+#define KVM_LOONGARCH_SET_IOCSR		_IOW(KVMIO,   0xc4, struct kvm_iocsr_entry)
+#define KVM_LOONGARCH_SET_CPUCFG	_IOR(KVMIO,   0xc5, struct kvm_cpucfg)
 
 /* Available with KVM_CAP_XSAVE2 */
 #define KVM_GET_XSAVE2		  _IOR(KVMIO,  0xcf, struct kvm_xsave)

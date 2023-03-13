@@ -2,5 +2,9 @@ obj-y += kernel/
 obj-y += mm/
 obj-y += vdso/
 
+ifdef CONFIG_KVM
+obj-y += kvm/
+endif
+
 # for cleaning
 subdir- += boot
