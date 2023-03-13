@@ -344,6 +344,7 @@ void fw_init_cmdline(unsigned long argc, unsigned long cmdp)
 	}
 	strlcat(boot_command_line, arcs_cmdline, COMMAND_LINE_SIZE);
 }
+EXPORT_SYMBOL_GPL(fw_init_cmdline);
 
 static u8 ext_listhdr_checksum(u8 *buffer, u32 length)
 {
