@@ -10,9 +10,9 @@
 
 %global upstream_version    6.1
 %global upstream_sublevel   14
-%global devel_release       4
+%global devel_release       5
 %global maintenance_release .0.0
-%global pkg_release         .12
+%global pkg_release         .13
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -74,7 +74,7 @@ Patch0001: 0001-kconfig-Add-script-to-update-openeuler_defconfig.patch
 Patch0002: 0002-config-add-initial-openeuler_defconfig-for-arm64.patch
 Patch0003: 0003-config-add-initial-openeuler_defconfig-for-x86_64.patch
 Patch0004: 0004-config-disable-CONFIG_EFI_ZBOOT-by-default.patch
-Patch0005: 0005-arm64-vmalloc-use-module-region-only-for-module_allo.patch
+Patch0005: 0005-arm64-kaslr-don-t-pretend-KASLR-is-enabled-if-offset.patch
 Patch0006: 0006-bpf-Introduce-the-string-processing-helper.patch
 Patch0007: 0007-net-ipv4-A-new-bit-is-added-to-indicate-whether-to-d.patch
 Patch0008: 0008-ipv4-bpf-Introduced-to-support-the-ULP-to-modify-soc.patch
@@ -905,6 +905,9 @@ fi
 %endif
 
 %changelog
+* Tue Mar 14 2023 Gaosheng Cui <cuigaosheng1@huawei.com> - 6.1.14-5.0.0.13
+- update the patch to fix module_alloc failed when CONFIG_RANDOMIZE_BASE is set
+
 * Tue Feb 28 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 6.1.14-4.0.0.12
 - update to v6.1.14-4.0.0.12
 
