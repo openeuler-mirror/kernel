@@ -28,6 +28,7 @@
 #include <asm/loongson.h>
 #include "legacy_boot.h"
 
+static __initdata unsigned long screen_info_table = EFI_INVALID_TABLE_ADDR;
 static __initdata unsigned long new_memmap = EFI_INVALID_TABLE_ADDR;
 static __initdata unsigned long initrd = EFI_INVALID_TABLE_ADDR;
 
@@ -36,11 +37,31 @@ static unsigned long efi_config_table;
 
 static efi_system_table_t *efi_systab;
 static efi_config_table_type_t arch_tables[] __initdata = {
+	{LINUX_EFI_ARM_SCREEN_INFO_TABLE_GUID, &screen_info_table, NULL},
 	{LINUX_EFI_NEW_MEMMAP_GUID, &new_memmap, "NEWMEM"},
 	{LINUX_EFI_INITRD_MEDIA_GUID, &initrd, "INITRD"},
 	{},
 };
 static __initdata pgd_t *pgd_efi;
+
+static void __init init_screen_info(void)
+{
+	struct screen_info *si;
+
+	if (screen_info_table != EFI_INVALID_TABLE_ADDR) {
+		si = early_memremap_ro(screen_info_table, sizeof(*si));
+		if (!si) {
+			pr_err("Could not map screen_info config table\n");
+			return;
+		}
+		screen_info = *si;
+		memset(si, 0, sizeof(*si));
+		early_memunmap(si, sizeof(*si));
+	}
+
+	if (screen_info.orig_video_isVGA == VIDEO_TYPE_EFI)
+		memblock_reserve(screen_info.lfb_base, screen_info.lfb_size);
+}
 
 static int __init efimap_populate_hugepages(
 		unsigned long start, unsigned long end,
@@ -290,6 +311,5 @@ void __init loongson_efi_init(void)
 
 	init_new_memmap();
 
-	if (screen_info.orig_video_isVGA == VIDEO_TYPE_EFI)
-		memblock_reserve(screen_info.lfb_base, screen_info.lfb_size);
+	init_screen_info();
 }
