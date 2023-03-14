@@ -24,19 +24,18 @@ HOSTCFLAGS_extract-cert.o = $(CRYPTO_CFLAGS)
 HOSTLDLIBS_extract-cert = $(CRYPTO_LIBS)
 
 ifdef CONFIG_UNWINDER_ORC
-# Additional ARCH settings for x86
+ifneq ($(filter loongarch loongarch64, $(ARCH)),)
+HOSTCFLAGS_sorttable.o += -I$(srctree)/tools/arch/loongarch/include
+HOSTCFLAGS_sorttable.o += -DUNWINDER_ORC_ENABLED
+HOSTLDLIBS_sorttable = -lpthread
+else
 ifeq ($(ARCH),x86_64)
 ARCH := x86
 endif
-
-# Additional ARCH settings for loongarch
-ifeq ($(ARCH),loongarch64)
-ARCH := loongarch
-endif
-
-HOSTCFLAGS_sorttable.o += -I$(srctree)/tools/arch/$(ARCH)/include
+HOSTCFLAGS_sorttable.o += -I$(srctree)/tools/arch/x86/include
 HOSTCFLAGS_sorttable.o += -DUNWINDER_ORC_ENABLED
 HOSTLDLIBS_sorttable = -lpthread
+endif
 endif
 
 # The following programs are only built on demand
