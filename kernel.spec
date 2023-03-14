@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2303.1.0
+%global hulkrelease 2303.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0191
+Release: %{hulkrelease}.0192
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,75 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 14 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.3.0.0192
+- scsi: cancel the inflight async device probe when remove scsi_target
+- scsi: fix use-after-free problem in scsi_remove_target
+- HID: asus: use spinlock to safely schedule workers
+- HID: asus: use spinlock to protect concurrent accesses
+- HID: asus: Remove check for same LED brightness on set
+- blk-wbt: don't enable throttling if default elevator is bfq
+- block: Fix kabi broken by "block: split .sysfs_lock into two locks"
+- block: fix comment and add lockdep assert
+- block: don't release queue's sysfs lock during switching elevator
+- block: fix race between switching elevator and removing queues
+- block: split .sysfs_lock into two locks
+- crypto: rsa-pkcs1pad - restore signature length check
+- fs/proc: task_mmu.c: don't read mapcount for migration entry
+- migrate: hugetlb: check for hugetlb shared PMD in node migration
+- mm: hugetlb: proc: check for hugetlb shared PMD in /proc/PID/smaps
+- ipv6: Fix tcp socket connection with DSCP.
+- ipv6: Fix datagram socket connection with DSCP.
+- aio: fix mremap after fork null-deref
+- bpf: Always return target ifindex in bpf_fib_lookup
+- serial: 8250_dma: Fix DMA Rx rearm race
+- serial: 8250_dma: Fix DMA Rx completion race
+- x86/i8259: Mark legacy PIC interrupts with IRQ_LEVEL
+- ipv4: prevent potential spectre v1 gadget in ip_metrics_convert()
+- netlink: annotate data races around sk_state
+- netlink: annotate data races around dst_portid and dst_group
+- netlink: annotate data races around nlk->portid
+- netlink: remove hash::nelems check in netlink_insert
+- net: fix UaF in netns ops registration error path
+- netfilter: conntrack: do not renew entry stuck in tcp SYN_SENT state
+- binder: Gracefully handle BINDER_TYPE_FDA objects with num_fds=0
+- binder: Address corner cases in deferred copy and fixup
+- binder: fix pointer cast warning
+- binder: defer copies of pre-patched txn data
+- binder: read pre-translated fds from sender buffer
+- binder: avoid potential data leakage when copying txn
+- binder: fix handling of error during copy
+- binder: use cred instead of task for getsecid
+- binder: don't detect sender/target during buffer cleanup
+- binder: make sure fd closes complete
+- binder: Remove bogus warning on failed same-process transaction
+- binder: fix incorrect calculation for num_valid
+- binder: Prevent repeated use of ->mmap() via NULL mapping
+- binder: Don't modify VMA bounds in ->mmap handler
+- binder: Set end of SG buffer area properly.
+- binder: return errors from buffer copy functions
+- binder: check for overflow when alloc for security context
+- binder: fix BUG_ON found by selinux-testsuite
+- binder: fix handling of misaligned binder object
+- binder: use userspace pointer as base of buffer space
+- binder: remove user_buffer_offset
+- binder: remove kernel vm_area for buffer space
+- binder: avoid kernel vm_area for buffer fixups
+- binder: add function to copy binder object from buffer
+- binder: add functions to copy to/from binder buffers
+- binder: create userspace-to-binder-buffer copy function
+- binder: fix use-after-free due to ksys_close() during fdget()
+- binder: fix kerneldoc header for struct binder_buffer
+- binder: create node flag to request sender's security context
+- binder: Add BINDER_GET_NODE_INFO_FOR_REF ioctl.
+- binder: use standard functions to allocate fds
+- block: fix kabi change since add bd_write_openers and bd_part_write_openers
+- block: add info when opening an exclusive opened block device for write
+- block: add info when opening a write opend block device exclusively
+- Revert "block: add info when opening an exclusive opened block device for write"
+- Revert "block: add info when opening a write opend block device exclusively"
+- ext4: fix WARNING in mb_find_extent
+- sctp: fail if no bound addresses can be used for a given scope
 
 * Wed Mar 08 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.1.0.0191
 - HID: check empty report_list in hid_validate_values()
