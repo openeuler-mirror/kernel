@@ -1,0 +1,128 @@
+From 7abca08d1435c18995431b50203002251e2e7f05 Mon Sep 17 00:00:00 2001
+From: Ard Biesheuvel <ardb@kernel.org>
+Date: Mon, 13 Mar 2023 17:12:40 +0800
+Subject: [PATCH 05/14] arm64: kaslr: don't pretend KASLR is enabled if offset
+ < MIN_KIMG_ALIGN
+
+mainline inclusion
+from master
+commit 010338d729c1090036eb40d2a60b7b7bce2445b8
+category: bugfix
+bugzilla: https://gitee.com/openeuler/kernel/issues/I6BJZK
+CVE: NA
+
+Reference: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=010338d729c1090036eb40d2a60b7b7bce2445b8
+
+--------------------------------
+
+Our virtual KASLR displacement is a randomly chosen multiple of
+2 MiB plus an offset that is equal to the physical placement modulo 2
+MiB. This arrangement ensures that we can always use 2 MiB block
+mappings (or contiguous PTE mappings for 16k or 64k pages) to map the
+kernel.
+
+This means that a KASLR offset of less than 2 MiB is simply the product
+of this physical displacement, and no randomization has actually taken
+place. Currently, we use 'kaslr_offset() > 0' to decide whether or not
+randomization has occurred, and so we misidentify this case.
+
+If the kernel image placement is not randomized, modules are allocated
+from a dedicated region below the kernel mapping, which is only used for
+modules and not for other vmalloc() or vmap() calls.
+
+When randomization is enabled, the kernel image is vmap()'ed randomly
+inside the vmalloc region, and modules are allocated in the vicinity of
+this mapping to ensure that relative references are always in range.
+However, unlike the dedicated module region below the vmalloc region,
+this region is not reserved exclusively for modules, and so ordinary
+vmalloc() calls may end up overlapping with it. This should rarely
+happen, given that vmalloc allocates bottom up, although it cannot be
+ruled out entirely.
+
+The misidentified case results in a placement of the kernel image within
+2 MiB of its default address. However, the logic that randomizes the
+module region is still invoked, and this could result in the module
+region overlapping with the start of the vmalloc region, instead of
+using the dedicated region below it. If this happens, a single large
+vmalloc() or vmap() call will use up the entire region, and leave no
+space for loading modules after that.
+
+Since commit 82046702e288 ("efi/libstub/arm64: Replace 'preferred'
+offset with alignment check"), this is much more likely to occur on
+systems that boot via EFI but lack an implementation of the EFI RNG
+protocol, as in that case, the EFI stub will decide to leave the image
+where it found it, and the EFI firmware uses 64k alignment only.
+
+Fix this, by correctly identifying the case where the virtual
+displacement is a result of the physical displacement only.
+
+Signed-off-by: Ard Biesheuvel <ardb@kernel.org>
+Reviewed-by: Mark Brown <broonie@kernel.org>
+Acked-by: Mark Rutland <mark.rutland@arm.com>
+Link: https://lore.kernel.org/r/20230223204101.1500373-1-ardb@kernel.org
+Signed-off-by: Catalin Marinas <catalin.marinas@arm.com>
+Signed-off-by: Gaosheng Cui <cuigaosheng1@huawei.com>
+---
+ arch/arm64/include/asm/memory.h | 11 +++++++++++
+ arch/arm64/kernel/cpufeature.c  |  2 +-
+ arch/arm64/kernel/kaslr.c       |  2 +-
+ 3 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/include/asm/memory.h b/arch/arm64/include/asm/memory.h
+index 9dd08cd339c3..78e5163836a0 100644
+--- a/arch/arm64/include/asm/memory.h
++++ b/arch/arm64/include/asm/memory.h
+@@ -180,6 +180,7 @@
+ #include <linux/compiler.h>
+ #include <linux/mmdebug.h>
+ #include <linux/types.h>
++#include <asm/boot.h>
+ #include <asm/bug.h>
+ 
+ #if VA_BITS > 48
+@@ -203,6 +204,16 @@ static inline unsigned long kaslr_offset(void)
+ 	return kimage_vaddr - KIMAGE_VADDR;
+ }
+ 
++static inline bool kaslr_enabled(void)
++{
++	/*
++	 * The KASLR offset modulo MIN_KIMG_ALIGN is taken from the physical
++	 * placement of the image rather than from the seed, so a displacement
++	 * of less than MIN_KIMG_ALIGN means that no seed was provided.
++	 */
++	return kaslr_offset() >= MIN_KIMG_ALIGN;
++}
++
+ /*
+  * Allow all memory at the discovery stage. We will clip it later.
+  */
+diff --git a/arch/arm64/kernel/cpufeature.c b/arch/arm64/kernel/cpufeature.c
+index b3f37e2209ad..ded7684b0a30 100644
+--- a/arch/arm64/kernel/cpufeature.c
++++ b/arch/arm64/kernel/cpufeature.c
+@@ -1620,7 +1620,7 @@ bool kaslr_requires_kpti(void)
+ 			return false;
+ 	}
+ 
+-	return kaslr_offset() > 0;
++	return kaslr_enabled();
+ }
+ 
+ static bool __meltdown_safe = true;
+diff --git a/arch/arm64/kernel/kaslr.c b/arch/arm64/kernel/kaslr.c
+index 325455d16dbc..e7477f21a4c9 100644
+--- a/arch/arm64/kernel/kaslr.c
++++ b/arch/arm64/kernel/kaslr.c
+@@ -41,7 +41,7 @@ static int __init kaslr_init(void)
+ 		return 0;
+ 	}
+ 
+-	if (!kaslr_offset()) {
++	if (!kaslr_enabled()) {
+ 		pr_warn("KASLR disabled due to lack of seed\n");
+ 		return 0;
+ 	}
+-- 
+2.25.1
+
