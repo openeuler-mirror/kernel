@@ -298,7 +298,7 @@ static void raid_end_bio_io(struct r10bio *r10_bio)
 		bio->bi_status = BLK_STS_IOERR;
 
 	if (blk_queue_io_stat(bio->bi_disk->queue))
-		bio_end_io_acct(bio, r10_bio->start_time);
+		bio_end_precise_io_acct(bio, r10_bio->start_time);
 	bio_endio(bio);
 	/*
 	 * Wake up any possible resync thread that waits for the device
@@ -1188,7 +1188,7 @@ static void raid10_read_request(struct mddev *mddev, struct bio *bio,
 	slot = r10_bio->read_slot;
 
 	if (!handle_error && blk_queue_io_stat(bio->bi_disk->queue))
-		r10_bio->start_time = bio_start_io_acct(bio);
+		r10_bio->start_time = bio_start_precise_io_acct(bio);
 	read_bio = bio_clone_fast(bio, gfp, &mddev->bio_set);
 
 	r10_bio->devs[slot].bio = read_bio;
@@ -1473,7 +1473,7 @@ retry_write:
 	}
 
 	if (blk_queue_io_stat(bio->bi_disk->queue))
-		r10_bio->start_time = bio_start_io_acct(bio);
+		r10_bio->start_time = bio_start_precise_io_acct(bio);
 	atomic_set(&r10_bio->remaining, 1);
 	md_bitmap_startwrite(mddev->bitmap, r10_bio->sector, r10_bio->sectors, 0);
 
