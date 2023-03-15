@@ -1374,15 +1374,18 @@ void blk_account_io_start(struct request *rq)
 }
 
 static unsigned long __part_start_io_acct(struct hd_struct *part,
-					  unsigned int sectors, unsigned int op)
+					  unsigned int sectors, unsigned int op,
+					  bool precise)
 {
 	const int sgrp = op_stat_group(op);
 	unsigned long now = READ_ONCE(jiffies);
 
 	part_stat_lock();
 	update_io_ticks(part, now, false);
-	part_stat_inc(part, ios[sgrp]);
-	part_stat_add(part, sectors[sgrp], sectors);
+	if (!precise) {
+		part_stat_inc(part, ios[sgrp]);
+		part_stat_add(part, sectors[sgrp], sectors);
+	}
 	part_stat_local_inc(part, in_flight[op_is_write(op)]);
 	part_stat_unlock();
 
@@ -1394,19 +1397,21 @@ unsigned long part_start_io_acct(struct gendisk *disk, struct hd_struct **part,
 {
 	*part = disk_map_sector_rcu(disk, bio->bi_iter.bi_sector);
 
-	return __part_start_io_acct(*part, bio_sectors(bio), bio_op(bio));
+	return __part_start_io_acct(*part, bio_sectors(bio), bio_op(bio),
+				    false);
 }
 EXPORT_SYMBOL_GPL(part_start_io_acct);
 
 unsigned long disk_start_io_acct(struct gendisk *disk, unsigned int sectors,
 				 unsigned int op)
 {
-	return __part_start_io_acct(&disk->part0, sectors, op);
+	return __part_start_io_acct(&disk->part0, sectors, op, false);
 }
 EXPORT_SYMBOL(disk_start_io_acct);
 
-static void __part_end_io_acct(struct hd_struct *part, unsigned int op,
-			       unsigned long start_time)
+static void __part_end_io_acct(struct hd_struct *part, unsigned int sectors,
+			       unsigned int op, unsigned long start_time,
+			       bool precise)
 {
 	const int sgrp = op_stat_group(op);
 	unsigned long now = READ_ONCE(jiffies);
@@ -1414,6 +1419,10 @@ static void __part_end_io_acct(struct hd_struct *part, unsigned int op,
 
 	part_stat_lock();
 	update_io_ticks(part, now, true);
+	if (precise) {
+		part_stat_inc(part, ios[sgrp]);
+		part_stat_add(part, sectors[sgrp], sectors);
+	}
 	part_stat_add(part, nsecs[sgrp], jiffies_to_nsecs(duration));
 	part_stat_local_dec(part, in_flight[op_is_write(op)]);
 	part_stat_unlock();
@@ -1422,7 +1431,7 @@ static void __part_end_io_acct(struct hd_struct *part, unsigned int op,
 void part_end_io_acct(struct hd_struct *part, struct bio *bio,
 		      unsigned long start_time)
 {
-	__part_end_io_acct(part, bio_op(bio), start_time);
+	__part_end_io_acct(part, 0, bio_op(bio), start_time, false);
 	hd_struct_put(part);
 }
 EXPORT_SYMBOL_GPL(part_end_io_acct);
@@ -1430,9 +1439,41 @@ EXPORT_SYMBOL_GPL(part_end_io_acct);
 void disk_end_io_acct(struct gendisk *disk, unsigned int op,
 		      unsigned long start_time)
 {
-	__part_end_io_acct(&disk->part0, op, start_time);
+	__part_end_io_acct(&disk->part0, 0, op, start_time, false);
 }
 EXPORT_SYMBOL(disk_end_io_acct);
+
+unsigned long part_start_precise_io_acct(struct gendisk *disk,
+					 struct hd_struct **part,
+					 struct bio *bio)
+{
+	*part = disk_map_sector_rcu(disk, bio->bi_iter.bi_sector);
+
+	return __part_start_io_acct(*part, 0, bio_op(bio), true);
+}
+EXPORT_SYMBOL_GPL(part_start_precise_io_acct);
+
+unsigned long disk_start_precise_io_acct(struct gendisk *disk, unsigned int op)
+{
+	return __part_start_io_acct(&disk->part0, 0, op, true);
+}
+EXPORT_SYMBOL(disk_start_precise_io_acct);
+
+void part_end_precise_io_acct(struct hd_struct *part, struct bio *bio,
+			      unsigned long start_time)
+{
+	__part_end_io_acct(part, bio_sectors(bio), bio_op(bio), start_time,
+			   true);
+	hd_struct_put(part);
+}
+EXPORT_SYMBOL_GPL(part_end_precise_io_acct);
+
+void disk_end_precise_io_acct(struct gendisk *disk, unsigned int sectors,
+			      unsigned int op, unsigned long start_time)
+{
+	__part_end_io_acct(&disk->part0, sectors, op, start_time, true);
+}
+EXPORT_SYMBOL(disk_end_precise_io_acct);
 
 /*
  * Steal bios from a request and add them to a bio list.
