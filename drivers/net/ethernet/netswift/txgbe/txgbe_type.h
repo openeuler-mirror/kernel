@@ -89,11 +89,6 @@
 #endif
 
 /************ txgbe_register.h ************/
-/* Vendor ID */
-#ifndef PCI_VENDOR_ID_TRUSTNETIC
-#define PCI_VENDOR_ID_TRUSTNETIC                0x8088
-#endif
-
 /* Device IDs */
 #define TXGBE_DEV_ID_SP1000                     0x1001
 #define TXGBE_DEV_ID_WX1820                     0x2001
