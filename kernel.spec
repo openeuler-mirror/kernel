@@ -9,10 +9,10 @@
 %global debuginfodir /usr/lib/debug
 
 %global upstream_version    6.1
-%global upstream_sublevel   14
-%global devel_release       5
+%global upstream_sublevel   19
+%global devel_release       6
 %global maintenance_release .0.0
-%global pkg_release         .13
+%global pkg_release         .14
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -905,6 +905,9 @@ fi
 %endif
 
 %changelog
+* Wed Mar 15 2023 Sang Lipeng <sanglipeng1@jd.com> - 6.1.19-6.0.0.14
+- update to v6.1.19-6.0.0.14
+
 * Tue Mar 14 2023 Gaosheng Cui <cuigaosheng1@huawei.com> - 6.1.14-5.0.0.13
 - update the patch to fix module_alloc failed when CONFIG_RANDOMIZE_BASE is set
 
