@@ -10,6 +10,23 @@
 #define HCLGE_NOTIFY_PARA_CFG_PKT_NUM_M		GENMASK(5, 2)
 #define HCLGE_NOTIFY_PARA_CFG_PKT_NUM_S		2
 
+#define HCLGE_TORUS_MAC_ID_MASK 0x3
+#define HCLGE_TOURS_TCX_MAP_TCY_INIT 0x1c6144
+#define HCLGE_TOURS_TCX_MAP_TCY_NODE0_INIT 0x1c6141
+
+#define HCLGE_VLAN_FE_NIC_INGRESS 0
+#define HCLGE_VLAN_FE_ROCEE_INGRESS 2
+
+#define HCLGE_TORUS_LPBK_DROP_EN 20
+#define HCLGE_TC2VLANPRI_MAPPING_EN 19
+#define HCLGE_LLDP_LAN_PAIR_EN 18
+#define HCLGE_MC_BC_LAN_PAIR_EN 17
+#define HCLGE_UC_LAN_PAIR_EN 16
+
+#define HCLGE_TORUS_TC1_DROP_EN BIT(26)
+
+#define HCLGE_TOURS_TCX_MAP_TCY_MASK 0x1c71c7
+
 struct hclge_pfc_storm_para_cmd {
 	__le32 dir;
 	__le32 enable;
@@ -29,8 +46,20 @@ struct hclge_notify_pkt_param_cmd {
 	u8 rsv[21];
 };
 
+struct hclge_torus_cfg_cmd {
+	u8 rsv[4];
+	__le32 lan_port_pair;
+	__le32 lan_fwd_tc_cfg;
+	__le32 pause_time_out;
+	__le32 pause_time_out_en;
+	__le32 torus_en;
+};
+
 enum hclge_ext_opcode_type {
+	HCLGE_OPC_CONFIG_SWITCH_PARAM = 0x1033,
+	HCLGE_OPC_CONFIG_VLAN_FILTER = 0x1100,
 	HCLGE_OPC_SET_NOTIFY_PKT = 0x180A,
+	HCLGE_OPC_CONFIG_1D_TORUS = 0x2300,
 	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
 };
 
