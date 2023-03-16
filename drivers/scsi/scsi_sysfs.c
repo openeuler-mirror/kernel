@@ -1503,6 +1503,40 @@ void scsi_remove_device(struct scsi_device *sdev)
 }
 EXPORT_SYMBOL(scsi_remove_device);
 
+/* Cancel the inflight async probe for scsi_device */
+static void __scsi_kill_devices(struct scsi_target *starget)
+{
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	struct scsi_device *sdev, *to_put = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(shost->host_lock, flags);
+	list_for_each_entry(sdev, &shost->__devices, siblings) {
+		if (sdev->channel != starget->channel ||
+		    sdev->id != starget->id)
+			continue;
+
+		if ((sdev->sdev_state != SDEV_DEL &&
+		     sdev->sdev_state != SDEV_CANCEL) || !sdev->is_visible)
+			continue;
+		if (!kobject_get_unless_zero(&sdev->sdev_gendev.kobj))
+			continue;
+		spin_unlock_irqrestore(shost->host_lock, flags);
+
+		if (to_put)
+			put_device(&to_put->sdev_gendev);
+		device_lock(&sdev->sdev_gendev);
+		kill_device(&sdev->sdev_gendev);
+		device_unlock(&sdev->sdev_gendev);
+		to_put = sdev;
+
+		spin_lock_irqsave(shost->host_lock, flags);
+	}
+	spin_unlock_irqrestore(shost->host_lock, flags);
+	if (to_put)
+		put_device(&to_put->sdev_gendev);
+}
+
 static void __scsi_remove_target(struct scsi_target *starget)
 {
 	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
@@ -1532,6 +1566,8 @@ static void __scsi_remove_target(struct scsi_target *starget)
 		goto restart;
 	}
 	spin_unlock_irqrestore(shost->host_lock, flags);
+
+	__scsi_kill_devices(starget);
 }
 
 /**
@@ -1556,7 +1592,16 @@ restart:
 		    starget->state == STARGET_CREATED_REMOVE)
 			continue;
 		if (starget->dev.parent == dev || &starget->dev == dev) {
-			kref_get(&starget->reap_ref);
+			/*
+			 * If the reference count is already zero, skip
+			 * this target. Calling kref_get_unless_zero() if
+			 * the reference count is zero is safe because
+			 * scsi_target_destroy() will wait until the host
+			 * lock has been released before freeing starget.
+			 */
+			if (!kref_get_unless_zero(&starget->reap_ref))
+				continue;
+
 			if (starget->state == STARGET_CREATED)
 				starget->state = STARGET_CREATED_REMOVE;
 			else

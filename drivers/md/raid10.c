@@ -298,7 +298,7 @@ static void raid_end_bio_io(struct r10bio *r10_bio)
 		bio->bi_status = BLK_STS_IOERR;
 
 	if (blk_queue_io_stat(bio->bi_disk->queue))
-		bio_end_io_acct(bio, r10_bio->start_time);
+		bio_end_precise_io_acct(bio, r10_bio->start_time);
 	bio_endio(bio);
 	/*
 	 * Wake up any possible resync thread that waits for the device
@@ -1188,7 +1188,7 @@ static void raid10_read_request(struct mddev *mddev, struct bio *bio,
 	slot = r10_bio->read_slot;
 
 	if (!handle_error && blk_queue_io_stat(bio->bi_disk->queue))
-		r10_bio->start_time = bio_start_io_acct(bio);
+		r10_bio->start_time = bio_start_precise_io_acct(bio);
 	read_bio = bio_clone_fast(bio, gfp, &mddev->bio_set);
 
 	r10_bio->devs[slot].bio = read_bio;
@@ -1473,7 +1473,7 @@ retry_write:
 	}
 
 	if (blk_queue_io_stat(bio->bi_disk->queue))
-		r10_bio->start_time = bio_start_io_acct(bio);
+		r10_bio->start_time = bio_start_precise_io_acct(bio);
 	atomic_set(&r10_bio->remaining, 1);
 	md_bitmap_startwrite(mddev->bitmap, r10_bio->sector, r10_bio->sectors, 0);
 
@@ -3624,6 +3624,20 @@ static int setup_geo(struct geom *geo, struct mddev *mddev, enum geo_type new)
 	return nc*fc;
 }
 
+static void raid10_free_conf(struct r10conf *conf)
+{
+	if (!conf)
+		return;
+
+	mempool_exit(&conf->r10bio_pool);
+	kfree(conf->mirrors);
+	kfree(conf->mirrors_old);
+	kfree(conf->mirrors_new);
+	safe_put_page(conf->tmppage);
+	bioset_exit(&conf->bio_split);
+	kfree(conf);
+}
+
 static struct r10conf *setup_conf(struct mddev *mddev)
 {
 	struct r10conf *conf = NULL;
@@ -3706,13 +3720,7 @@ static struct r10conf *setup_conf(struct mddev *mddev)
 	return conf;
 
  out:
-	if (conf) {
-		mempool_exit(&conf->r10bio_pool);
-		kfree(conf->mirrors);
-		safe_put_page(conf->tmppage);
-		bioset_exit(&conf->bio_split);
-		kfree(conf);
-	}
+	raid10_free_conf(conf);
 	return ERR_PTR(err);
 }
 
@@ -3918,10 +3926,7 @@ static int raid10_run(struct mddev *mddev)
 
 out_free_conf:
 	md_unregister_thread(&mddev->thread);
-	mempool_exit(&conf->r10bio_pool);
-	safe_put_page(conf->tmppage);
-	kfree(conf->mirrors);
-	kfree(conf);
+	raid10_free_conf(conf);
 	mddev->private = NULL;
 out:
 	return -EIO;
@@ -3929,15 +3934,7 @@ out:
 
 static void raid10_free(struct mddev *mddev, void *priv)
 {
-	struct r10conf *conf = priv;
-
-	mempool_exit(&conf->r10bio_pool);
-	safe_put_page(conf->tmppage);
-	kfree(conf->mirrors);
-	kfree(conf->mirrors_old);
-	kfree(conf->mirrors_new);
-	bioset_exit(&conf->bio_split);
-	kfree(conf);
+	raid10_free_conf(priv);
 }
 
 static void raid10_quiesce(struct mddev *mddev, int quiesce)

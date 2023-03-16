@@ -2027,6 +2027,27 @@ static inline void bio_end_io_acct(struct bio *bio, unsigned long start_time)
 	return disk_end_io_acct(bio->bi_disk, bio_op(bio), start_time);
 }
 
+unsigned long disk_start_precise_io_acct(struct gendisk *disk, unsigned int op);
+void disk_end_precise_io_acct(struct gendisk *disk, unsigned int sectors,
+			      unsigned int op, unsigned long start_time);
+unsigned long part_start_precise_io_acct(struct gendisk *disk,
+					 struct hd_struct **part,
+					 struct bio *bio);
+void part_end_precise_io_acct(struct hd_struct *part, struct bio *bio,
+			      unsigned long start_time);
+
+static inline unsigned long bio_start_precise_io_acct(struct bio *bio)
+{
+	return disk_start_precise_io_acct(bio->bi_disk, bio_op(bio));
+}
+
+static inline void bio_end_precise_io_acct(struct bio *bio,
+					   unsigned long start_time)
+{
+	return disk_end_precise_io_acct(bio->bi_disk, bio_sectors(bio),
+					bio_op(bio), start_time);
+}
+
 int bdev_read_only(struct block_device *bdev);
 int set_blocksize(struct block_device *bdev, int size);
 
