@@ -119,7 +119,15 @@ EXPORT_SYMBOL(percpu_counter_sync);
 
 /*
  * Add up all the per-cpu counts, return the result.  This is a more accurate
- * but much slower version of percpu_counter_read_positive()
+ * but much slower version of percpu_counter_read_positive().
+ *
+ * We use the cpu mask of (cpu_online_mask | cpu_dying_mask) to capture sums
+ * from CPUs that are in the process of being taken offline. Dying cpus have
+ * been removed from the online mask, but may not have had the hotplug dead
+ * notifier called to fold the percpu count back into the global counter sum.
+ * By including dying CPUs in the iteration mask, we avoid this race condition
+ * so __percpu_counter_sum() just does the right thing when CPUs are being taken
+ * offline.
  */
 s64 __percpu_counter_sum(struct percpu_counter *fbc)
 {
@@ -129,7 +137,7 @@ s64 __percpu_counter_sum(struct percpu_counter *fbc)
 
 	raw_spin_lock_irqsave(&fbc->lock, flags);
 	ret = fbc->count;
-	for_each_online_cpu(cpu) {
+	for_each_cpu_or(cpu, cpu_online_mask, cpu_dying_mask) {
 		s32 *pcount = per_cpu_ptr(fbc->counters, cpu);
 		ret += *pcount;
 	}
