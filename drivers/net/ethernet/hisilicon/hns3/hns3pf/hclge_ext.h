@@ -5,6 +5,19 @@
 #define __HCLGE_EXT_H
 #include <linux/types.h>
 
+struct hclge_pfc_storm_para_cmd {
+	__le32 dir;
+	__le32 enable;
+	__le32 period_ms;
+	__le32 times;
+	__le32 recovery_period_ms;
+	__le32 rsv;
+};
+
+enum hclge_ext_opcode_type {
+	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
+};
+
 struct hclge_reset_fail_type_map {
 	enum hnae3_reset_type reset_type;
 	enum hnae3_event_type_custom custom_type;
