@@ -325,6 +325,58 @@ extern int cpumask_next_wrap(int n, const struct cpumask *mask, int start, bool 
 		(cpu) < nr_cpu_ids;)
 #endif /* SMP */
 
+/*
+ * We have several different "preferred sizes" for the cpumask
+ * operations, depending on operation.
+ *
+ * For example, the bitmap scanning and operating operations have
+ * optimized routines that work for the single-word case, but only when
+ * the size is constant. So if NR_CPUS fits in one single word, we are
+ * better off using that small constant, in order to trigger the
+ * optimized bit finding. That is 'small_cpumask_size'.
+ *
+ * The clearing and copying operations will similarly perform better
+ * with a constant size, but we limit that size arbitrarily to four
+ * words. We call this 'large_cpumask_size'.
+ *
+ * Finally, some operations just want the exact limit, either because
+ * they set bits or just don't have any faster fixed-sized versions. We
+ * call this just 'nr_cpumask_bits'.
+ *
+ * Note that these optional constants are always guaranteed to be at
+ * least as big as 'nr_cpu_ids' itself is, and all our cpumask
+ * allocations are at least that size (see cpumask_size()). The
+ * optimization comes from being able to potentially use a compile-time
+ * constant instead of a run-time generated exact number of CPUs.
+ */
+#if NR_CPUS <= BITS_PER_LONG
+  #define small_cpumask_bits ((unsigned int)NR_CPUS)
+  #define large_cpumask_bits ((unsigned int)NR_CPUS)
+#elif NR_CPUS <= 4*BITS_PER_LONG
+  #define small_cpumask_bits nr_cpu_ids
+  #define large_cpumask_bits ((unsigned int)NR_CPUS)
+#else
+  #define small_cpumask_bits nr_cpu_ids
+  #define large_cpumask_bits nr_cpu_ids
+#endif
+
+/**
+ * for_each_cpu_or - iterate over every cpu present in either mask
+ * @cpu: the (optionally unsigned) integer iterator
+ * @mask1: the first cpumask pointer
+ * @mask2: the second cpumask pointer
+ *
+ * This saves a temporary CPU mask in many places.  It is equivalent to:
+ *	struct cpumask tmp;
+ *	cpumask_or(&tmp, &mask1, &mask2);
+ *	for_each_cpu(cpu, &tmp)
+ *		...
+ *
+ * After the loop, cpu is >= nr_cpu_ids.
+ */
+#define for_each_cpu_or(cpu, mask1, mask2)				\
+	for_each_or_bit(cpu, cpumask_bits(mask1), cpumask_bits(mask2), small_cpumask_bits)
+
 #define CPU_BITS_NONE						\
 {								\
 	[0 ... BITS_TO_LONGS(NR_CPUS)-1] = 0UL			\
