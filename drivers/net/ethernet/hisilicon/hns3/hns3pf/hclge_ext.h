@@ -5,6 +5,11 @@
 #define __HCLGE_EXT_H
 #include <linux/types.h>
 
+#define HCLGE_NOTIFY_PARA_CFG_PKT_EN		BIT(0)
+#define HCLGE_NOTIFY_PARA_CFG_START_EN		BIT(1)
+#define HCLGE_NOTIFY_PARA_CFG_PKT_NUM_M		GENMASK(5, 2)
+#define HCLGE_NOTIFY_PARA_CFG_PKT_NUM_S		2
+
 struct hclge_pfc_storm_para_cmd {
 	__le32 dir;
 	__le32 enable;
@@ -14,7 +19,18 @@ struct hclge_pfc_storm_para_cmd {
 	__le32 rsv;
 };
 
+struct hclge_notify_pkt_param_cmd {
+	__le32 cfg;
+	__le32 ipg;
+	__le32 data[16];
+	u8 vld_cfg;
+	u8 vld_ipg;
+	u8 vld_data;
+	u8 rsv[21];
+};
+
 enum hclge_ext_opcode_type {
+	HCLGE_OPC_SET_NOTIFY_PKT = 0x180A,
 	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
 };
 

@@ -21,4 +21,7 @@ int nic_set_pfc_storm_para(struct net_device *ndev, int dir, int enable,
 			   int period_ms, int times, int recovery_period_ms);
 int nic_get_pfc_storm_para(struct net_device *ndev, int dir, int *enable,
 			   int *period_ms, int *times, int *recovery_period_ms);
+int nic_set_notify_pkt_param(struct net_device *ndev,
+			     struct hnae3_notify_pkt_param *param);
+int nic_set_notify_pkt_start(struct net_device *ndev);
 #endif
