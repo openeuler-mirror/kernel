@@ -696,7 +696,7 @@ static int hisi_sas_init_device(struct domain_device *device)
 	case SAS_END_DEVICE:
 		int_to_scsilun(0, &lun);
 
-		tmf_task.tmf = TMF_CLEAR_TASK_SET;
+		tmf_task.tmf = TMF_ABORT_TASK_SET;
 		while (retry-- > 0) {
 			rc = hisi_sas_debug_issue_ssp_tmf(device, lun.scsi_lun,
 							  &tmf_task);
