@@ -77,6 +77,7 @@ static void default_restart(void)
 void (*pm_restart)(void);
 
 void (*pm_power_off)(void);
+EXPORT_SYMBOL(pm_power_off);
 
 void (*pm_halt)(void);
 
