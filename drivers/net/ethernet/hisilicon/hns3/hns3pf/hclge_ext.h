@@ -27,6 +27,24 @@
 
 #define HCLGE_TOURS_TCX_MAP_TCY_MASK 0x1c71c7
 
+struct hclge_id_info_cmd {
+	__le32 chip_id;
+	__le32 mac_id;
+	__le32 io_die_id;
+	u8 rsv[12];
+};
+
+struct hclge_num_info_cmd {
+	__le32 chip_num;
+	__le32 io_die_num;
+	u8 rsv[16];
+};
+
+struct hclge_port_num_info_cmd {
+	__le32 port_num;
+	u8 rsv[20];
+};
+
 struct hclge_pfc_storm_para_cmd {
 	__le32 dir;
 	__le32 enable;
@@ -60,6 +78,9 @@ enum hclge_ext_opcode_type {
 	HCLGE_OPC_CONFIG_VLAN_FILTER = 0x1100,
 	HCLGE_OPC_SET_NOTIFY_PKT = 0x180A,
 	HCLGE_OPC_CONFIG_1D_TORUS = 0x2300,
+	HCLGE_OPC_CHIP_ID_GET = 0x7003,
+	HCLGE_OPC_GET_CHIP_NUM = 0x7005,
+	HCLGE_OPC_GET_PORT_NUM = 0x7006,
 	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
 };
 
