@@ -24,9 +24,7 @@
 static int lsdc_get_modes(struct drm_connector *connector)
 {
 	unsigned int num = 0;
-	struct lsdc_output *lop = drm_connector_to_lsdc_output(connector);
-	struct lsdc_i2c *li2c = lop->li2c;
-	struct i2c_adapter *ddc = &li2c->adapter;
+	struct i2c_adapter *ddc = connector->ddc;
 
 	if (ddc) {
 		struct edid *edid;
@@ -51,26 +49,46 @@ static int lsdc_get_modes(struct drm_connector *connector)
 }
 
 static enum drm_connector_status
-lsdc_connector_detect(struct drm_connector *connector, bool force)
+ls7a1000_connector_detect(struct drm_connector *connector, bool force)
 {
-	struct lsdc_output *lop = drm_connector_to_lsdc_output(connector);
-	struct lsdc_i2c *li2c = lop->li2c;
-	struct i2c_adapter *ddc = &li2c->adapter;
+	struct i2c_adapter *ddc = connector->ddc;
 
-	if (ddc && drm_probe_ddc(ddc))
-		return connector_status_connected;
+	if (ddc) {
+		if (drm_probe_ddc(ddc))
+			return connector_status_connected;
+		else
+			return connector_status_disconnected;
+	}
 
-	if (connector->connector_type == DRM_MODE_CONNECTOR_VIRTUAL)
-		return connector_status_connected;
+	return connector_status_unknown;
+}
 
-	if (connector->connector_type == DRM_MODE_CONNECTOR_DVIA ||
-	    connector->connector_type == DRM_MODE_CONNECTOR_DVID ||
-	    connector->connector_type == DRM_MODE_CONNECTOR_DVII)
+static enum drm_connector_status
+ls7a2000_connector_detect(struct drm_connector *connector, bool force)
+{
+	struct lsdc_display_pipe *dispipe = connector_to_display_pipe(connector);
+	struct drm_device *ddev = connector->dev;
+	struct lsdc_device *ldev = to_lsdc(ddev);
+	u32 val;
+
+	val = lsdc_rreg32(ldev, LSDC_HDMI_HPD_STATUS_REG);
+
+	if (dispipe->index == 0) {
+		if (val & HDMI0_HPD_FLAG)
+			return connector_status_connected;
+
+		if (connector->ddc) {
+			if (drm_probe_ddc(connector->ddc))
+				return connector_status_connected;
+
+			return connector_status_disconnected;
+		}
+	} else if (dispipe->index == 1) {
+		if (val & HDMI1_HPD_FLAG)
+			return connector_status_connected;
+
 		return connector_status_disconnected;
-
-	if (connector->connector_type == DRM_MODE_CONNECTOR_HDMIA ||
-	    connector->connector_type == DRM_MODE_CONNECTOR_HDMIB)
-		return connector_status_disconnected;
+	}
 
 	return connector_status_unknown;
 }
@@ -84,9 +102,19 @@ static const struct drm_connector_helper_funcs lsdc_connector_helpers = {
 	.get_modes = lsdc_get_modes,
 };
 
-static const struct drm_connector_funcs lsdc_connector_funcs = {
+static const struct drm_connector_funcs ls7a1000_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
-	.detect = lsdc_connector_detect,
+	.detect = ls7a1000_connector_detect,
+	.fill_modes = drm_helper_probe_single_connector_modes,
+	.destroy = lsdc_connector_destroy,
+	.reset = drm_atomic_helper_connector_reset,
+	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+};
+
+static const struct drm_connector_funcs ls7a2000_connector_funcs = {
+	.dpms = drm_helper_connector_dpms,
+	.detect = ls7a2000_connector_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
 	.destroy = lsdc_connector_destroy,
 	.reset = drm_atomic_helper_connector_reset,
@@ -149,8 +177,8 @@ ls7a2000_hdmi_encoder_mode_set(struct drm_encoder *encoder,
 	struct drm_device *ddev = encoder->dev;
 	struct lsdc_device *ldev = to_lsdc(ddev);
 	int clock = mode->clock;
+	int counter = 0;
 	u32 val;
-	int counter;
 
 	if (index == 0) {
 		writel(0x0, ldev->reg_base + HDMI0_PLL_REG);
@@ -219,12 +247,11 @@ static int lsdc_attach_bridges(struct lsdc_device *ldev,
 			       unsigned int i)
 {
 	struct lsdc_display_pipe * const dispipe = &ldev->dispipe[i];
-	struct drm_device *ddev = ldev->ddev;
+	struct drm_device *ddev = &ldev->ddev;
 	struct drm_bridge *bridge;
 	struct drm_panel *panel;
 	struct drm_connector *connector;
 	struct drm_encoder *encoder;
-	struct lsdc_output *output;
 	int ret;
 
 	ret = drm_of_find_panel_or_bridge(ports, i, 0, &panel, &bridge);
@@ -237,11 +264,7 @@ static int lsdc_attach_bridges(struct lsdc_device *ldev,
 	if (!bridge)
 		return ret;
 
-	output = devm_kzalloc(ddev->dev, sizeof(*output), GFP_KERNEL);
-	if (!output)
-		return -ENOMEM;
-
-	encoder = &output->encoder;
+	encoder = &dispipe->encoder;
 
 	ret = drm_encoder_init(ddev, encoder, &lsdc_encoder_funcs,
 			       DRM_MODE_ENCODER_DPI, "encoder-%u", i);
@@ -271,14 +294,12 @@ static int lsdc_attach_bridges(struct lsdc_device *ldev,
 
 	drm_info(ddev, "bridge-%u attached to %s\n", i, encoder->name);
 
-	dispipe->output = output;
-
 	return 0;
 }
 
 int lsdc_attach_output(struct lsdc_device *ldev, uint32_t num_crtc)
 {
-	struct drm_device *ddev = ldev->ddev;
+	struct drm_device *ddev = &ldev->ddev;
 	struct device_node *ports;
 	struct lsdc_display_pipe *disp;
 	unsigned int i;
@@ -286,7 +307,7 @@ int lsdc_attach_output(struct lsdc_device *ldev, uint32_t num_crtc)
 
 	ldev->num_output = 0;
 
-	ports = of_get_child_by_name(ldev->dev->of_node, "ports");
+	ports = of_get_child_by_name(ddev->dev->of_node, "ports");
 
 	for (i = 0; i < num_crtc; i++) {
 		struct drm_bridge *b;
@@ -343,19 +364,23 @@ int lsdc_create_output(struct lsdc_device *ldev,
 {
 	const struct lsdc_chip_desc * const descp = ldev->desc;
 	struct lsdc_display_pipe * const dispipe = &ldev->dispipe[index];
-	struct drm_device *ddev = ldev->ddev;
+	struct drm_encoder *encoder = &dispipe->encoder;
+	struct drm_connector *connector = &dispipe->connector;
+	struct drm_device *ddev = &ldev->ddev;
 	int encoder_type = DRM_MODE_ENCODER_DPI;
 	int connector_type = DRM_MODE_CONNECTOR_DPI;
-	struct lsdc_output *output;
-	struct drm_encoder *encoder;
-	struct drm_connector *connector;
 	int ret;
 
-	output = devm_kzalloc(ddev->dev, sizeof(*output), GFP_KERNEL);
-	if (!output)
-		return -ENOMEM;
-
-	encoder = &output->encoder;
+	if (descp->has_builtin_i2c) {
+		dispipe->li2c = lsdc_create_i2c_chan(ddev, ldev->reg_base, index);
+		if (IS_ERR(dispipe->li2c)) {
+			drm_err(ddev, "Failed to create i2c adapter\n");
+			return PTR_ERR(dispipe->li2c);
+		}
+	} else {
+		drm_warn(ddev, "output-%u don't has ddc\n", index);
+		dispipe->li2c = NULL;
+	}
 
 	if (descp->chip == LSDC_CHIP_7A2000) {
 		encoder_type = DRM_MODE_ENCODER_TMDS;
@@ -370,32 +395,31 @@ int lsdc_create_output(struct lsdc_device *ldev,
 		return ret;
 	}
 
+	encoder->possible_crtcs = BIT(index);
+
 	if (descp->chip == LSDC_CHIP_7A2000)
 		drm_encoder_helper_add(encoder, &ls7a2000_hdmi_encoder_helper_funcs);
 
-	encoder->possible_crtcs = BIT(index);
-
-	if (descp->has_builtin_i2c) {
-		output->li2c = lsdc_create_i2c_chan(ddev, ldev->reg_base, index);
-		if (IS_ERR(output->li2c)) {
-			drm_err(ddev, "Failed to create i2c adapter\n");
-			return PTR_ERR(output->li2c);
+	if (descp->chip == LSDC_CHIP_7A2000) {
+		ret = drm_connector_init_with_ddc(ddev,
+						  connector,
+						  &ls7a2000_connector_funcs,
+						  connector_type,
+						  &dispipe->li2c->adapter);
+		if (ret) {
+			drm_err(ddev, "Init connector%d failed\n", index);
+			return ret;
 		}
 	} else {
-		drm_warn(ddev, "output-%u don't has ddc\n", index);
-		output->li2c = NULL;
-	}
-
-	connector = &output->connector;
-
-	ret = drm_connector_init_with_ddc(ddev,
-					  connector,
-					  &lsdc_connector_funcs,
-					  connector_type,
-					  &output->li2c->adapter);
-	if (ret) {
-		drm_err(ddev, "Init connector%d failed\n", index);
-		return ret;
+		ret = drm_connector_init_with_ddc(ddev,
+						  connector,
+						  &ls7a1000_connector_funcs,
+						  connector_type,
+						  &dispipe->li2c->adapter);
+		if (ret) {
+			drm_err(ddev, "Init connector%d failed\n", index);
+			return ret;
+		}
 	}
 
 	drm_connector_helper_add(connector, &lsdc_connector_helpers);
@@ -405,7 +429,7 @@ int lsdc_create_output(struct lsdc_device *ldev,
 	drm_connector_attach_encoder(connector, encoder);
 
 	dispipe->available = true;
-	dispipe->output = output;
+
 	ldev->num_output++;
 
 	return 0;

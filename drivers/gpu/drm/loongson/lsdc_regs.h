@@ -77,9 +77,8 @@ enum lsdc_pixel_format {
 
 /******** CRTC0 & DVO0 ********/
 #define LSDC_CRTC0_CFG_REG              0x1240
-#define LSDC_CRTC0_FB_ADDR0_REG         0x1260
-#define LSDC_CRTC0_FB_ADDR1_REG         0x1580
-#define LSDC_CRTC0_FB_HI_ADDR_REG       0x15A0
+#define LSDC_CRTC0_FB0_LO_ADDR_REG      0x1260
+#define LSDC_CRTC0_FB0_HI_ADDR_REG      0x15A0
 #define LSDC_CRTC0_STRIDE_REG           0x1280
 #define LSDC_CRTC0_FB_ORIGIN_REG        0x1300
 #define LSDC_CRTC0_HDISPLAY_REG         0x1400
@@ -88,12 +87,13 @@ enum lsdc_pixel_format {
 #define LSDC_CRTC0_VSYNC_REG            0x14A0
 #define LSDC_CRTC0_GAMMA_INDEX_REG      0x14E0
 #define LSDC_CRTC0_GAMMA_DATA_REG       0x1500
+#define LSDC_CRTC0_FB1_LO_ADDR_REG      0x1580
+#define LSDC_CRTC0_FB1_HI_ADDR_REG      0x15C0
 
 /******** CTRC1 & DVO1 ********/
 #define LSDC_CRTC1_CFG_REG              0x1250
-#define LSDC_CRTC1_FB_ADDR0_REG         0x1270
-#define LSDC_CRTC1_FB_ADDR1_REG         0x1590
-#define LSDC_CRTC1_FB_HI_ADDR_REG       0x15C0
+#define LSDC_CRTC1_FB0_LO_ADDR_REG      0x1270
+#define LSDC_CRTC1_FB0_HI_ADDR_REG      0x15B0
 #define LSDC_CRTC1_STRIDE_REG           0x1290
 #define LSDC_CRTC1_FB_ORIGIN_REG        0x1310
 #define LSDC_CRTC1_HDISPLAY_REG         0x1410
@@ -102,8 +102,17 @@ enum lsdc_pixel_format {
 #define LSDC_CRTC1_VSYNC_REG            0x14B0
 #define LSDC_CRTC1_GAMMA_INDEX_REG      0x14F0
 #define LSDC_CRTC1_GAMMA_DATA_REG       0x1510
+#define LSDC_CRTC1_FB1_LO_ADDR_REG      0x1590
+#define LSDC_CRTC1_FB1_HI_ADDR_REG      0x15D0
 
-#define LSDC_REGS_OFFSET                0x0010
+/*
+ * In gross, LSDC_CRTC1_XXX_REG - LSDC_CRTC0_XXX_REG = 0x10, but not all of
+ * the registers obey this rule, LSDC_CURSORx_XXX_REG just don't honor this.
+ * This is the root cause we can't untangle the code by manpulating offset
+ * of the register access simply. Our hardware engineers are lack experiance
+ * when they design this...
+ */
+#define CRTC_PIPE_OFFSET                0x10
 
 /*
  * Hardware cursor
@@ -248,5 +257,12 @@ enum lsdc_pixel_format {
 #define DMA_STEP_128_BYTE       (1 << 16)
 #define DMA_STEP_64_BYTE        (2 << 16)
 #define DMA_STEP_32_BYTE        (3 << 16)
+
+/* LS7A2000/LS2K2000 has hpd status reg, while the two hdmi's status
+ * located at the one register again.
+ */
+#define LSDC_HDMI_HPD_STATUS_REG        0x1BA0
+#define HDMI0_HPD_FLAG                  BIT(0)
+#define HDMI1_HPD_FLAG                  BIT(1)
 
 #endif

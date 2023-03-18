@@ -21,6 +21,7 @@
 #include <drm/drm_atomic.h>
 
 #include "lsdc_pll.h"
+#include "lsdc_regs.h"
 
 #define DRIVER_AUTHOR		"Sui Jingfeng <suijingfeng@loongson.cn>"
 #define DRIVER_NAME		"lsdc"
@@ -57,19 +58,6 @@ struct lsdc_chip_desc {
 	bool broken_gamma;
 };
 
-/* There is only a 1:1 mapping of encoders and connectors for lsdc */
-struct lsdc_output {
-	struct drm_encoder encoder;
-	struct drm_connector connector;
-	struct lsdc_i2c *li2c;
-};
-
-static inline struct lsdc_output *
-drm_connector_to_lsdc_output(struct drm_connector *connp)
-{
-	return container_of(connp, struct lsdc_output, connector);
-}
-
 /*
  * struct lsdc_display_pipe - Abstraction of hardware display pipeline.
  * @crtc: CRTC control structure
@@ -89,21 +77,41 @@ struct lsdc_display_pipe {
 	struct drm_plane primary;
 	struct drm_plane cursor;
 	struct lsdc_pll pixpll;
-	struct lsdc_output *output;
+	struct drm_encoder encoder;
+	struct drm_connector connector;
+	struct lsdc_i2c *li2c;
 	int index;
 	bool available;
 };
 
 static inline struct lsdc_display_pipe *
-drm_crtc_to_dispipe(struct drm_crtc *crtc)
+crtc_to_display_pipe(struct drm_crtc *crtc)
 {
 	return container_of(crtc, struct lsdc_display_pipe, crtc);
 }
 
 static inline struct lsdc_display_pipe *
-lsdc_cursor_to_dispipe(struct drm_plane *plane)
+primary_to_display_pipe(struct drm_plane *plane)
+{
+	return container_of(plane, struct lsdc_display_pipe, primary);
+}
+
+static inline struct lsdc_display_pipe *
+cursor_to_display_pipe(struct drm_plane *plane)
 {
 	return container_of(plane, struct lsdc_display_pipe, cursor);
+}
+
+static inline struct lsdc_display_pipe *
+connector_to_display_pipe(struct drm_connector *connector)
+{
+	return container_of(connector, struct lsdc_display_pipe, connector);
+}
+
+static inline struct lsdc_display_pipe *
+encoder_to_display_pipe(struct drm_encoder *encoder)
+{
+	return container_of(encoder, struct lsdc_display_pipe, encoder);
 }
 
 struct lsdc_crtc_state {
@@ -112,10 +120,7 @@ struct lsdc_crtc_state {
 };
 
 struct lsdc_device {
-	struct device *dev;
-	struct drm_device *ddev;
-	/* @dc: pointer to the platform device created at runtime */
-	struct platform_device *dc;
+	struct drm_device ddev;
 	/* @desc: device dependent data and feature descriptions */
 	const struct lsdc_chip_desc *desc;
 
@@ -126,6 +131,9 @@ struct lsdc_device {
 	resource_size_t vram_size;
 
 	struct lsdc_display_pipe dispipe[LSDC_NUM_CRTC];
+
+	/* @reglock: protects concurrent register access */
+	spinlock_t reglock;
 
 	/*
 	 * @num_output: count the number of active display pipe.
@@ -158,7 +166,7 @@ struct lsdc_device {
 
 static inline struct lsdc_device *to_lsdc(struct drm_device *ddev)
 {
-	return ddev->dev_private;
+	return container_of(ddev, struct lsdc_device, ddev);
 }
 
 static inline struct lsdc_crtc_state *
@@ -180,5 +188,82 @@ const struct lsdc_chip_desc *
 lsdc_detect_chip(struct pci_dev *pdev, const struct pci_device_id * const ent);
 
 extern struct platform_driver lsdc_platform_driver;
+
+static inline u32 lsdc_rreg32(struct lsdc_device *ldev, u32 offset)
+{
+	return readl(ldev->reg_base + offset);
+}
+
+static inline void lsdc_wreg32(struct lsdc_device *ldev, u32 offset, u32 val)
+{
+	writel(val, ldev->reg_base + offset);
+}
+
+static inline void lsdc_ureg32_set(struct lsdc_device *ldev,
+				   u32 offset,
+				   u32 bit)
+{
+	void __iomem *addr = ldev->reg_base + offset;
+	u32 val = readl(addr);
+
+	writel(val | bit, addr);
+}
+
+static inline void lsdc_ureg32_clr(struct lsdc_device *ldev,
+				   u32 offset,
+				   u32 bit)
+{
+	void __iomem *addr = ldev->reg_base + offset;
+	u32 val = readl(addr);
+
+	writel(val & ~bit, addr);
+}
+
+static inline u32 lsdc_pipe_rreg32(struct lsdc_device *ldev,
+				   u32 offset,
+				   u32 pipe)
+{
+	return readl(ldev->reg_base + offset + pipe * CRTC_PIPE_OFFSET);
+}
+
+#define lsdc_hdmi_rreg32 lsdc_pipe_rreg32
+#define lsdc_crtc_rreg32 lsdc_pipe_rreg32
+
+static inline void lsdc_pipe_wreg32(struct lsdc_device *ldev,
+				    u32 offset,
+				    u32 pipe,
+				    u32 val)
+{
+	writel(val, ldev->reg_base + offset + pipe * CRTC_PIPE_OFFSET);
+}
+
+#define lsdc_hdmi_wreg32 lsdc_pipe_wreg32
+#define lsdc_crtc_wreg32 lsdc_pipe_wreg32
+
+static inline void lsdc_crtc_ureg32_set(struct lsdc_device *ldev,
+					u32 offset,
+					u32 pipe,
+					u32 bit)
+{
+	void __iomem *addr;
+	u32 val;
+
+	addr = ldev->reg_base + offset + pipe * CRTC_PIPE_OFFSET;
+	val = readl(addr);
+	writel(val | bit, addr);
+}
+
+static inline void lsdc_crtc_ureg32_clr(struct lsdc_device *ldev,
+					u32 offset,
+					u32 pipe,
+					u32 bit)
+{
+	void __iomem *addr;
+	u32 val;
+
+	addr = ldev->reg_base + offset + pipe * CRTC_PIPE_OFFSET;
+	val = readl(addr);
+	writel(val & ~bit, addr);
+}
 
 #endif

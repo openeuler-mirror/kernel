@@ -18,8 +18,9 @@
 struct lsdc_i2c {
 	struct i2c_adapter adapter;
 	struct i2c_algo_bit_data bit;
-	/* @reglock: protects concurrent register access */
-	spinlock_t reglock;
+
+	struct drm_device *ddev;
+
 	void __iomem *dir_reg;
 	void __iomem *dat_reg;
 	/* pin bit mask */
