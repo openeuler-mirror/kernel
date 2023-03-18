@@ -10,9 +10,9 @@
 
 %global upstream_version    6.1
 %global upstream_sublevel   19
-%global devel_release       6
+%global devel_release       7
 %global maintenance_release .0.0
-%global pkg_release         .16
+%global pkg_release         .17
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -84,6 +84,16 @@ Patch0011: 0011-bpf-Two-helper-functions-are-introduced-to-parse-use.patch
 Patch0012: 0012-net-bpf-Add-a-writeable_tracepoint-to-inet_stream_co.patch
 Patch0013: 0013-nfs-client-multipath.patch
 Patch0014: 0014-nfs-client-multipath-config.patch
+Patch0015: 0015-mm-demotion-fix-NULL-vs-IS_ERR-checking-in-memory_ti.patch
+Patch0016: 0016-x86-mm-Randomize-per-cpu-entry-area.patch
+Patch0017: 0017-x86-kasan-Map-shadow-for-percpu-pages-on-demand.patch
+Patch0018: 0018-x86-mm-Recompute-physical-address-for-every-page-of-.patch
+Patch0019: 0019-x86-mm-Populate-KASAN-shadow-for-entire-per-CPU-rang.patch
+Patch0020: 0020-x86-kasan-Rename-local-CPU_ENTRY_AREA-variables-to-s.patch
+Patch0021: 0021-x86-kasan-Add-helpers-to-align-shadow-addresses-up-a.patch
+Patch0022: 0022-x86-kasan-Populate-shadow-for-shared-chunk-of-the-CP.patch
+Patch0023: 0023-net-sched-act_mirred-better-wording-on-protection-ag.patch
+Patch0024: 0024-act_mirred-use-the-backlog-for-nested-calls-to-mirre.patch
 
 
 #BuildRequires:
@@ -323,6 +333,16 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0012 -p1
 %patch0013 -p1
 %patch0014 -p1
+%patch0015 -p1
+%patch0016 -p1
+%patch0017 -p1
+%patch0018 -p1
+%patch0019 -p1
+%patch0020 -p1
+%patch0021 -p1
+%patch0022 -p1
+%patch0023 -p1
+%patch0024 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -905,6 +925,9 @@ fi
 %endif
 
 %changelog
+* Fri Mar 18 2023 Jialin Zhang <zhangjialin11@huawei.com> - 6.1.19-7.0.0.17
+- Fix CVE-2023-23005, CVE-2023-0597 and CVE-2022-4269
+
 * Fri Mar 17 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 6.1.19-6.0.0.16
 - Fix kernel rpm build failure that libperf-jvmti.so is missing
 
