@@ -1,0 +1,126 @@
+From 68992563c4b6b1776bd90dafe76caa88ff6dbfe8 Mon Sep 17 00:00:00 2001
+From: Andrey Ryabinin <ryabinin.a.a@gmail.com>
+Date: Fri, 17 Mar 2023 03:07:42 +0000
+Subject: [PATCH 17/24] x86/kasan: Map shadow for percpu pages on demand
+
+mainline inclusion
+from mainline-v6.2-rc1
+commit 3f148f3318140035e87decc1214795ff0755757b
+category: bugfix
+bugzilla: 188336
+CVE: CVE-2023-0597
+
+Reference: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3f148f3318140035e87decc1214795ff0755757b
+
+--------------------------------
+
+KASAN maps shadow for the entire CPU-entry-area:
+  [CPU_ENTRY_AREA_BASE, CPU_ENTRY_AREA_BASE + CPU_ENTRY_AREA_MAP_SIZE]
+
+This will explode once the per-cpu entry areas are randomized since it
+will increase CPU_ENTRY_AREA_MAP_SIZE to 512 GB and KASAN fails to
+allocate shadow for such big area.
+
+Fix this by allocating KASAN shadow only for really used cpu entry area
+addresses mapped by cea_map_percpu_pages()
+
+Thanks to the 0day folks for finding and reporting this to be an issue.
+
+[ dhansen: tweak changelog since this will get committed before peterz's
+	   actual cpu-entry-area randomization ]
+
+Signed-off-by: Andrey Ryabinin <ryabinin.a.a@gmail.com>
+Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
+Tested-by: Yujie Liu <yujie.liu@intel.com>
+Cc: kernel test robot <yujie.liu@intel.com>
+Link: https://lore.kernel.org/r/202210241508.2e203c3d-yujie.liu@intel.com
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Reviewed-by: Nanyong Sun <sunnanyong@huawei.com>
+Reviewed-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Signed-off-by: Jialin Zhang <zhangjialin11@huawei.com>
+---
+ arch/x86/include/asm/kasan.h |  3 +++
+ arch/x86/mm/cpu_entry_area.c |  8 +++++++-
+ arch/x86/mm/kasan_init_64.c  | 15 ++++++++++++---
+ 3 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/arch/x86/include/asm/kasan.h b/arch/x86/include/asm/kasan.h
+index 13e70da38bed..de75306b932e 100644
+--- a/arch/x86/include/asm/kasan.h
++++ b/arch/x86/include/asm/kasan.h
+@@ -28,9 +28,12 @@
+ #ifdef CONFIG_KASAN
+ void __init kasan_early_init(void);
+ void __init kasan_init(void);
++void __init kasan_populate_shadow_for_vaddr(void *va, size_t size, int nid);
+ #else
+ static inline void kasan_early_init(void) { }
+ static inline void kasan_init(void) { }
++static inline void kasan_populate_shadow_for_vaddr(void *va, size_t size,
++						   int nid) { }
+ #endif
+ 
+ #endif
+diff --git a/arch/x86/mm/cpu_entry_area.c b/arch/x86/mm/cpu_entry_area.c
+index 20844cf141fb..dff9001e5e12 100644
+--- a/arch/x86/mm/cpu_entry_area.c
++++ b/arch/x86/mm/cpu_entry_area.c
+@@ -9,6 +9,7 @@
+ #include <asm/cpu_entry_area.h>
+ #include <asm/fixmap.h>
+ #include <asm/desc.h>
++#include <asm/kasan.h>
+ 
+ static DEFINE_PER_CPU_PAGE_ALIGNED(struct entry_stack_page, entry_stack_storage);
+ 
+@@ -90,8 +91,13 @@ void cea_set_pte(void *cea_vaddr, phys_addr_t pa, pgprot_t flags)
+ static void __init
+ cea_map_percpu_pages(void *cea_vaddr, void *ptr, int pages, pgprot_t prot)
+ {
++	phys_addr_t pa = per_cpu_ptr_to_phys(ptr);
++
++	kasan_populate_shadow_for_vaddr(cea_vaddr, pages * PAGE_SIZE,
++					early_pfn_to_nid(PFN_DOWN(pa)));
++
+ 	for ( ; pages; pages--, cea_vaddr+= PAGE_SIZE, ptr += PAGE_SIZE)
+-		cea_set_pte(cea_vaddr, per_cpu_ptr_to_phys(ptr), prot);
++		cea_set_pte(cea_vaddr, pa, prot);
+ }
+ 
+ static void __init percpu_setup_debug_store(unsigned int cpu)
+diff --git a/arch/x86/mm/kasan_init_64.c b/arch/x86/mm/kasan_init_64.c
+index e7b9b464a82f..d1416926ad52 100644
+--- a/arch/x86/mm/kasan_init_64.c
++++ b/arch/x86/mm/kasan_init_64.c
+@@ -316,6 +316,18 @@ void __init kasan_early_init(void)
+ 	kasan_map_early_shadow(init_top_pgt);
+ }
+ 
++void __init kasan_populate_shadow_for_vaddr(void *va, size_t size, int nid)
++{
++	unsigned long shadow_start, shadow_end;
++
++	shadow_start = (unsigned long)kasan_mem_to_shadow(va);
++	shadow_start = round_down(shadow_start, PAGE_SIZE);
++	shadow_end = (unsigned long)kasan_mem_to_shadow(va + size);
++	shadow_end = round_up(shadow_end, PAGE_SIZE);
++
++	kasan_populate_shadow(shadow_start, shadow_end, nid);
++}
++
+ void __init kasan_init(void)
+ {
+ 	int i;
+@@ -393,9 +405,6 @@ void __init kasan_init(void)
+ 		kasan_mem_to_shadow((void *)VMALLOC_END + 1),
+ 		shadow_cpu_entry_begin);
+ 
+-	kasan_populate_shadow((unsigned long)shadow_cpu_entry_begin,
+-			      (unsigned long)shadow_cpu_entry_end, 0);
+-
+ 	kasan_populate_early_shadow(shadow_cpu_entry_end,
+ 			kasan_mem_to_shadow((void *)__START_KERNEL_map));
+ 
+-- 
+2.25.1
+

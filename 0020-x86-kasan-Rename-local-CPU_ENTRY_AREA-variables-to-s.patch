@@ -1,0 +1,88 @@
+From 0560fceb4d3c76133f1a89decbf1c3334afdbd00 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 17 Mar 2023 03:07:45 +0000
+Subject: [PATCH 20/24] x86/kasan: Rename local CPU_ENTRY_AREA variables to
+ shorten names
+
+mainline inclusion
+from mainline-v6.2-rc1
+commit 7077d2ccb94dafd00b29cc2d601c9f6891648f5b
+category: bugfix
+bugzilla: 188336
+CVE: CVE-2023-0597
+
+Reference: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7077d2ccb94dafd00b29cc2d601c9f6891648f5b
+
+--------------------------------
+
+Rename the CPU entry area variables in kasan_init() to shorten their
+names, a future fix will reference the beginning of the per-CPU portion
+of the CPU entry area, and shadow_cpu_entry_per_cpu_begin is a bit much.
+
+No functional change intended.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Andrey Ryabinin <ryabinin.a.a@gmail.com>
+Link: https://lkml.kernel.org/r/20221110203504.1985010-4-seanjc@google.com
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Reviewed-by: Nanyong Sun <sunnanyong@huawei.com>
+Reviewed-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Signed-off-by: Jialin Zhang <zhangjialin11@huawei.com>
+---
+ arch/x86/mm/kasan_init_64.c | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/arch/x86/mm/kasan_init_64.c b/arch/x86/mm/kasan_init_64.c
+index d1416926ad52..ad7872ae10ed 100644
+--- a/arch/x86/mm/kasan_init_64.c
++++ b/arch/x86/mm/kasan_init_64.c
+@@ -331,7 +331,7 @@ void __init kasan_populate_shadow_for_vaddr(void *va, size_t size, int nid)
+ void __init kasan_init(void)
+ {
+ 	int i;
+-	void *shadow_cpu_entry_begin, *shadow_cpu_entry_end;
++	void *shadow_cea_begin, *shadow_cea_end;
+ 
+ 	memcpy(early_top_pgt, init_top_pgt, sizeof(early_top_pgt));
+ 
+@@ -372,16 +372,16 @@ void __init kasan_init(void)
+ 		map_range(&pfn_mapped[i]);
+ 	}
+ 
+-	shadow_cpu_entry_begin = (void *)CPU_ENTRY_AREA_BASE;
+-	shadow_cpu_entry_begin = kasan_mem_to_shadow(shadow_cpu_entry_begin);
+-	shadow_cpu_entry_begin = (void *)round_down(
+-			(unsigned long)shadow_cpu_entry_begin, PAGE_SIZE);
++	shadow_cea_begin = (void *)CPU_ENTRY_AREA_BASE;
++	shadow_cea_begin = kasan_mem_to_shadow(shadow_cea_begin);
++	shadow_cea_begin = (void *)round_down(
++			(unsigned long)shadow_cea_begin, PAGE_SIZE);
+ 
+-	shadow_cpu_entry_end = (void *)(CPU_ENTRY_AREA_BASE +
++	shadow_cea_end = (void *)(CPU_ENTRY_AREA_BASE +
+ 					CPU_ENTRY_AREA_MAP_SIZE);
+-	shadow_cpu_entry_end = kasan_mem_to_shadow(shadow_cpu_entry_end);
+-	shadow_cpu_entry_end = (void *)round_up(
+-			(unsigned long)shadow_cpu_entry_end, PAGE_SIZE);
++	shadow_cea_end = kasan_mem_to_shadow(shadow_cea_end);
++	shadow_cea_end = (void *)round_up(
++			(unsigned long)shadow_cea_end, PAGE_SIZE);
+ 
+ 	kasan_populate_early_shadow(
+ 		kasan_mem_to_shadow((void *)PAGE_OFFSET + MAXMEM),
+@@ -403,9 +403,9 @@ void __init kasan_init(void)
+ 
+ 	kasan_populate_early_shadow(
+ 		kasan_mem_to_shadow((void *)VMALLOC_END + 1),
+-		shadow_cpu_entry_begin);
++		shadow_cea_begin);
+ 
+-	kasan_populate_early_shadow(shadow_cpu_entry_end,
++	kasan_populate_early_shadow(shadow_cea_end,
+ 			kasan_mem_to_shadow((void *)__START_KERNEL_map));
+ 
+ 	kasan_populate_shadow((unsigned long)kasan_mem_to_shadow(_stext),
+-- 
+2.25.1
+

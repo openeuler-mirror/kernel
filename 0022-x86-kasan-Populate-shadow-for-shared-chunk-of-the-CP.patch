@@ -1,0 +1,99 @@
+From 885cbab14224aca9bcf6df23a432a84e55b55dd5 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 17 Mar 2023 03:07:47 +0000
+Subject: [PATCH 22/24] x86/kasan: Populate shadow for shared chunk of the CPU
+ entry area
+
+mainline inclusion
+from mainline-v6.2-rc1
+commit 1cfaac2400c73378e78182a706be0f3ac8b93cd7
+category: bugfix
+bugzilla: 188336
+CVE: CVE-2023-0597
+
+Reference: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1cfaac2400c73378e78182a706be0f3ac8b93cd7
+
+--------------------------------
+
+Popuplate the shadow for the shared portion of the CPU entry area, i.e.
+the read-only IDT mapping, during KASAN initialization.  A recent change
+modified KASAN to map the per-CPU areas on-demand, but forgot to keep a
+shadow for the common area that is shared amongst all CPUs.
+
+Map the common area in KASAN init instead of letting idt_map_in_cea() do
+the dirty work so that it Just Works in the unlikely event more shared
+data is shoved into the CPU entry area.
+
+The bug manifests as a not-present #PF when software attempts to lookup
+an IDT entry, e.g. when KVM is handling IRQs on Intel CPUs (KVM performs
+direct CALL to the IRQ handler to avoid the overhead of INTn):
+
+ BUG: unable to handle page fault for address: fffffbc0000001d8
+ #PF: supervisor read access in kernel mode
+ #PF: error_code(0x0000) - not-present page
+ PGD 16c03a067 P4D 16c03a067 PUD 0
+ Oops: 0000 [#1] PREEMPT SMP KASAN
+ CPU: 5 PID: 901 Comm: repro Tainted: G        W          6.1.0-rc3+ #410
+ Hardware name: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 0.0.0 02/06/2015
+ RIP: 0010:kasan_check_range+0xdf/0x190
+  vmx_handle_exit_irqoff+0x152/0x290 [kvm_intel]
+  vcpu_run+0x1d89/0x2bd0 [kvm]
+  kvm_arch_vcpu_ioctl_run+0x3ce/0xa70 [kvm]
+  kvm_vcpu_ioctl+0x349/0x900 [kvm]
+  __x64_sys_ioctl+0xb8/0xf0
+  do_syscall_64+0x2b/0x50
+  entry_SYSCALL_64_after_hwframe+0x46/0xb0
+
+Fixes: 9fd429c28073 ("x86/kasan: Map shadow for percpu pages on demand")
+Reported-by: syzbot+8cdd16fd5a6c0565e227@syzkaller.appspotmail.com
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20221110203504.1985010-6-seanjc@google.com
+Signed-off-by: Tong Tiangen <tongtiangen@huawei.com>
+Reviewed-by: Nanyong Sun <sunnanyong@huawei.com>
+Reviewed-by: Kefeng Wang <wangkefeng.wang@huawei.com>
+Signed-off-by: Jialin Zhang <zhangjialin11@huawei.com>
+---
+ arch/x86/mm/kasan_init_64.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/mm/kasan_init_64.c b/arch/x86/mm/kasan_init_64.c
+index afc5e129ca7b..0302491d799d 100644
+--- a/arch/x86/mm/kasan_init_64.c
++++ b/arch/x86/mm/kasan_init_64.c
+@@ -341,7 +341,7 @@ void __init kasan_populate_shadow_for_vaddr(void *va, size_t size, int nid)
+ 
+ void __init kasan_init(void)
+ {
+-	unsigned long shadow_cea_begin, shadow_cea_end;
++	unsigned long shadow_cea_begin, shadow_cea_per_cpu_begin, shadow_cea_end;
+ 	int i;
+ 
+ 	memcpy(early_top_pgt, init_top_pgt, sizeof(early_top_pgt));
+@@ -384,6 +384,7 @@ void __init kasan_init(void)
+ 	}
+ 
+ 	shadow_cea_begin = kasan_mem_to_shadow_align_down(CPU_ENTRY_AREA_BASE);
++	shadow_cea_per_cpu_begin = kasan_mem_to_shadow_align_up(CPU_ENTRY_AREA_PER_CPU);
+ 	shadow_cea_end = kasan_mem_to_shadow_align_up(CPU_ENTRY_AREA_BASE +
+ 						      CPU_ENTRY_AREA_MAP_SIZE);
+ 
+@@ -409,6 +410,15 @@ void __init kasan_init(void)
+ 		kasan_mem_to_shadow((void *)VMALLOC_END + 1),
+ 		(void *)shadow_cea_begin);
+ 
++	/*
++	 * Populate the shadow for the shared portion of the CPU entry area.
++	 * Shadows for the per-CPU areas are mapped on-demand, as each CPU's
++	 * area is randomly placed somewhere in the 512GiB range and mapping
++	 * the entire 512GiB range is prohibitively expensive.
++	 */
++	kasan_populate_shadow(shadow_cea_begin,
++			      shadow_cea_per_cpu_begin, 0);
++
+ 	kasan_populate_early_shadow((void *)shadow_cea_end,
+ 			kasan_mem_to_shadow((void *)__START_KERNEL_map));
+ 
+-- 
+2.25.1
+
