@@ -168,7 +168,7 @@ lsdc_crtc_helper_mode_valid(struct drm_crtc *crtc,
 static int lsdc_pixpll_atomic_check(struct drm_crtc *crtc,
 				    struct drm_crtc_state *state)
 {
-	struct lsdc_display_pipe * const dispipe = drm_crtc_to_dispipe(crtc);
+	struct lsdc_display_pipe * const dispipe = crtc_to_display_pipe(crtc);
 	struct lsdc_pll * const pixpll = &dispipe->pixpll;
 	const struct lsdc_pixpll_funcs * const pfuncs = pixpll->funcs;
 	struct lsdc_crtc_state *priv_state = to_lsdc_crtc_state(state);
@@ -197,7 +197,7 @@ static int lsdc_crtc_helper_atomic_check(struct drm_crtc *crtc,
 
 static void lsdc_update_pixclk(struct drm_crtc *crtc)
 {
-	struct lsdc_display_pipe * const dispipe = drm_crtc_to_dispipe(crtc);
+	struct lsdc_display_pipe * const dispipe = crtc_to_display_pipe(crtc);
 	struct lsdc_pll * const pixpll = &dispipe->pixpll;
 	const struct lsdc_pixpll_funcs * const clkfun = pixpll->funcs;
 	struct lsdc_crtc_state *priv_state = to_lsdc_crtc_state(crtc->state);

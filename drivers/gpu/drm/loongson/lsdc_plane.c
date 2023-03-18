@@ -70,54 +70,32 @@ static void lsdc_update_fb_format(struct lsdc_device *ldev,
 }
 
 static void lsdc_update_fb_start_addr(struct lsdc_device *ldev,
-				      struct drm_crtc *crtc,
-				      u64 paddr)
+				      unsigned int index,
+				      u64 fb_addr)
 {
-	unsigned int index = drm_crtc_index(crtc);
-	u32 lo32_addr_reg;
-	u32 hi32_addr_reg;
-	u32 cfg_reg;
-	u32 val;
+	u32 lo = fb_addr & 0xFFFFFFFF;
+	u32 hi = (fb_addr >> 32) & 0xFF;
+	u32 cfg;
 
-	/*
-	 * Find which framebuffer address register should update.
-	 * if FB_ADDR0_REG is in using, we write the addr to FB_ADDR1_REG,
-	 * if FB_ADDR1_REG is in using, we write the addr to FB_ADDR0_REG
-	 */
 	if (index == 0) {
-		/* CRTC0 */
-		val = readl(ldev->reg_base + LSDC_CRTC0_CFG_REG);
-
-		cfg_reg = LSDC_CRTC0_CFG_REG;
-		hi32_addr_reg = LSDC_CRTC0_FB_HI_ADDR_REG;
-
-		if (val & CFG_FB_IDX_BIT)
-			lo32_addr_reg = LSDC_CRTC0_FB_ADDR0_REG;
-		else
-			lo32_addr_reg = LSDC_CRTC0_FB_ADDR1_REG;
+		cfg = lsdc_crtc_rreg32(ldev, LSDC_CRTC0_CFG_REG, index);
+		if (cfg & BIT(9)) {
+			lsdc_wreg32(ldev, LSDC_CRTC0_FB1_LO_ADDR_REG, lo);
+			lsdc_wreg32(ldev, LSDC_CRTC0_FB1_HI_ADDR_REG, hi);
+		} else {
+			lsdc_wreg32(ldev, LSDC_CRTC0_FB0_LO_ADDR_REG, lo);
+			lsdc_wreg32(ldev, LSDC_CRTC0_FB0_HI_ADDR_REG, hi);
+		}
 	} else if (index == 1) {
-		/* CRTC1 */
-		val = readl(ldev->reg_base + LSDC_CRTC1_CFG_REG);
-
-		cfg_reg = LSDC_CRTC1_CFG_REG;
-		hi32_addr_reg = LSDC_CRTC1_FB_HI_ADDR_REG;
-
-		if (val & CFG_FB_IDX_BIT)
-			lo32_addr_reg = LSDC_CRTC1_FB_ADDR0_REG;
-		else
-			lo32_addr_reg = LSDC_CRTC1_FB_ADDR1_REG;
+		cfg = lsdc_crtc_rreg32(ldev, LSDC_CRTC1_CFG_REG, index);
+		if (cfg & BIT(9)) {
+			lsdc_wreg32(ldev, LSDC_CRTC1_FB1_LO_ADDR_REG, lo);
+			lsdc_wreg32(ldev, LSDC_CRTC1_FB1_HI_ADDR_REG, hi);
+		} else {
+			lsdc_wreg32(ldev, LSDC_CRTC1_FB0_LO_ADDR_REG, lo);
+			lsdc_wreg32(ldev, LSDC_CRTC1_FB0_HI_ADDR_REG, hi);
+		}
 	}
-
-	drm_dbg(ldev->ddev, "crtc%u scantout from 0x%llx\n", index, paddr);
-
-	/* The bridge's bus width is 40 */
-	writel(paddr, ldev->reg_base + lo32_addr_reg);
-	writel((paddr >> 32) & 0xFF, ldev->reg_base + hi32_addr_reg);
-	/*
-	 * Then, we triger the fb switch, the switch of the framebuffer
-	 * to be scanout will complete at the next vblank.
-	 */
-	writel(val | CFG_PAGE_FLIP_BIT, ldev->reg_base + cfg_reg);
 }
 
 static unsigned int lsdc_get_fb_offset(struct drm_framebuffer *fb,
@@ -176,7 +154,7 @@ static void lsdc_update_stride(struct lsdc_device *ldev,
 	else if (index == 1)
 		writel(stride, ldev->reg_base + LSDC_CRTC1_STRIDE_REG);
 
-	drm_dbg(ldev->ddev, "update stride to %u\n", stride);
+	drm_dbg(&ldev->ddev, "update stride to %u\n", stride);
 }
 
 static void lsdc_primary_plane_atomic_update(struct drm_plane *plane,
@@ -204,7 +182,7 @@ static void lsdc_primary_plane_atomic_update(struct drm_plane *plane,
 		fb_addr = obj->paddr + fb_offset;
 	}
 
-	lsdc_update_fb_start_addr(ldev, crtc, fb_addr);
+	lsdc_update_fb_start_addr(ldev, drm_crtc_index(crtc), fb_addr);
 
 	lsdc_update_stride(ldev, crtc, fb->pitches[0]);
 
@@ -276,7 +254,7 @@ static int lsdc_cursor_atomic_check(struct drm_plane *plane,
 static void lsdc_cursor_atomic_update(struct drm_plane *plane,
 				      struct drm_plane_state *old_plane_state)
 {
-	struct lsdc_display_pipe * const dispipe = lsdc_cursor_to_dispipe(plane);
+	struct lsdc_display_pipe * const dispipe = cursor_to_display_pipe(plane);
 	struct drm_device *ddev = plane->dev;
 	struct lsdc_device *ldev = to_lsdc(ddev);
 	const struct lsdc_chip_desc * const descp = ldev->desc;
@@ -357,7 +335,7 @@ static void lsdc_cursor_atomic_update(struct drm_plane *plane,
 static void lsdc_cursor_atomic_disable(struct drm_plane *plane,
 				       struct drm_plane_state *old_state)
 {
-	const struct lsdc_display_pipe * const dispipe = lsdc_cursor_to_dispipe(plane);
+	const struct lsdc_display_pipe * const dispipe = cursor_to_display_pipe(plane);
 	struct drm_device *ddev = plane->dev;
 	struct lsdc_device *ldev = to_lsdc(ddev);
 	const struct lsdc_chip_desc * const descp = ldev->desc;
@@ -423,7 +401,7 @@ int lsdc_plane_init(struct lsdc_device *ldev,
 		    enum drm_plane_type type,
 		    unsigned int index)
 {
-	struct drm_device *ddev = ldev->ddev;
+	struct drm_device *ddev = &ldev->ddev;
 	int zpos = lsdc_plane_get_default_zpos(type);
 	unsigned int format_count;
 	const u32 *formats;
