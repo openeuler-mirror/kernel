@@ -854,6 +854,7 @@ struct se_device {
 	struct rcu_head		rcu_head;
 	int			queue_cnt;
 	struct se_device_queue	*queues;
+	struct mutex		lun_reset_mutex;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
