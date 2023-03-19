@@ -857,6 +857,7 @@ struct se_device {
 	KABI_RESERVE(2)
 	int			queue_cnt;
 	struct se_device_queue	*queues;
+	struct mutex		lun_reset_mutex;
 };
 
 struct se_hba {
