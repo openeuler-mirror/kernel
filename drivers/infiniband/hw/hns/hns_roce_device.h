@@ -767,11 +767,19 @@ struct hns_roce_eq_table {
 	struct hns_roce_eq	*eq;
 };
 
+enum hns_roce_scc_algo {
+	HNS_ROCE_SCC_ALGO_DCQCN = 0,
+	HNS_ROCE_SCC_ALGO_LDCP,
+	HNS_ROCE_SCC_ALGO_HC3,
+	HNS_ROCE_SCC_ALGO_DIP,
+	HNS_ROCE_SCC_ALGO_TOTAL,
+};
+
 enum cong_type {
-	CONG_TYPE_DCQCN,
-	CONG_TYPE_LDCP,
-	CONG_TYPE_HC3,
-	CONG_TYPE_DIP,
+	CONG_TYPE_DCQCN = 1 << HNS_ROCE_SCC_ALGO_DCQCN,
+	CONG_TYPE_LDCP = 1 << HNS_ROCE_SCC_ALGO_LDCP,
+	CONG_TYPE_HC3 = 1 << HNS_ROCE_SCC_ALGO_HC3,
+	CONG_TYPE_DIP = 1 << HNS_ROCE_SCC_ALGO_DIP,
 };
 
 struct hns_roce_caps {
@@ -1016,6 +1024,28 @@ struct hns_roce_hw {
 	int (*bond_init)(struct hns_roce_dev *hr_dev);
 	bool (*bond_is_active)(struct hns_roce_dev *hr_dev);
 	struct net_device *(*get_bond_netdev)(struct hns_roce_dev *hr_dev);
+	int (*config_scc_param)(struct hns_roce_dev *hr_dev, u8 port_num,
+				enum hns_roce_scc_algo algo);
+	int (*query_scc_param)(struct hns_roce_dev *hr_dev, u8 port_num,
+			       enum hns_roce_scc_algo alog);
+};
+
+#define HNS_ROCE_SCC_PARAM_SIZE 4
+struct hns_roce_scc_param {
+	__le32 param[HNS_ROCE_SCC_PARAM_SIZE];
+	u32 lifespan;
+	unsigned long timestamp;
+	enum hns_roce_scc_algo algo_type;
+	struct delayed_work scc_cfg_dwork;
+	struct hns_roce_dev *hr_dev;
+	u8 port_num;
+};
+
+struct hns_roce_port {
+	struct hns_roce_dev *hr_dev;
+	u8 port_num;
+	struct kobject kobj;
+	struct hns_roce_scc_param *scc_param;
 };
 
 struct hns_roce_dev {
@@ -1094,6 +1124,7 @@ struct hns_roce_dev {
 	struct delayed_work bond_work;
 	struct hns_roce_bond_group *bond_grp;
 	struct netdev_lag_lower_state_info slave_state;
+	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
 	atomic64_t *dfx_cnt;
 };
 
@@ -1379,4 +1410,7 @@ struct hns_user_mmap_entry *
 hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 				size_t length,
 				enum hns_roce_mmap_type mmap_type);
+int hns_roce_create_port_files(struct ib_device *ibdev, u8 port_num,
+			       struct kobject *kobj);
+void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
 #endif /* _HNS_ROCE_DEVICE_H */

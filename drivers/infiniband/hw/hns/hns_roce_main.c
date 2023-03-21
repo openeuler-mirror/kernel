@@ -870,6 +870,7 @@ static const struct ib_device_ops hns_roce_dev_ops = {
 	.reg_user_mr = hns_roce_reg_user_mr,
 	.alloc_hw_stats = hns_roce_alloc_hw_port_stats,
 	.get_hw_stats = hns_roce_get_hw_stats,
+	.init_port = hns_roce_create_port_files,
 
 	INIT_RDMA_OBJ_SIZE(ib_ah, hns_roce_ah, ibah),
 	INIT_RDMA_OBJ_SIZE(ib_cq, hns_roce_cq, ib_cq),
@@ -1441,6 +1442,7 @@ error_failed_alloc_dfx_cnt:
 
 void hns_roce_exit(struct hns_roce_dev *hr_dev)
 {
+	hns_roce_unregister_sysfs(hr_dev);
 	hns_roce_unregister_device(hr_dev);
 	hns_roce_unregister_debugfs(hr_dev);
 
