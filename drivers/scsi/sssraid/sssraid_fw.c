@@ -1316,7 +1316,7 @@ int sssraid_init_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 	/* num_vecs no sense, abandon */
 
 	if (!re_init) {
-		for (i = sdioc->init_done_queue_cnt; i <= sdioc->intr_info_count; i++) {
+		for (i = sdioc->init_done_queue_cnt; i < sdioc->intr_info_count; i++) {
 			retval = sssraid_alloc_qpair(sdioc, i, sdioc->ioq_depth);
 			if (retval) {
 				ioc_err(sdioc, "Failed to alloc io queue:error %d\n",
@@ -1631,27 +1631,30 @@ void sssraid_complete_cqes(struct sssraid_ioc *sdioc, u16 midx, u16 start, u16 e
 	}
 }
 
-static void sssraid_disable_admin_queue(struct sssraid_ioc *sdioc, bool shutdown)
+static int sssraid_disable_admin_queue(struct sssraid_ioc *sdioc, bool shutdown)
 {
 	struct sssraid_cqueue *adm_cqinfo = &sdioc->cqinfo[0];
 	u16 start, end;
+	int ret = 0;
 
 	if (pci_device_is_present(sdioc->pdev)) {
 		if (shutdown)
 			sssraid_shutdown_ctrl(sdioc);
 		else
-			sssraid_disable_ctrl(sdioc);
+			ret = sssraid_disable_ctrl(sdioc);
 	}
 
 	if (sdioc->init_done_queue_cnt == 0) {
 		ioc_err(sdioc, "err: admin queue has been delete\n");
-		return;
+		return -ENODEV;
 	}
 
 	spin_lock_irq(&adm_cqinfo->cq_lock);
 	sssraid_process_cq(sdioc, 0, &start, &end, -1);
 	spin_unlock_irq(&adm_cqinfo->cq_lock);
 	sssraid_complete_cqes(sdioc, 0, start, end);
+
+	return ret;
 }
 
 static void sssraid_free_all_queues(struct sssraid_ioc *sdioc)
@@ -1722,29 +1725,38 @@ int sssraid_soft_reset_handler(struct sssraid_ioc *sdioc)
 
 	ioc_info(sdioc, "host reset entry\n");
 
-	sssraid_ioc_disable_intr(sdioc);
 	sssraid_cleanup_fwevt_list(sdioc);
 
-	/* realize above here:
-	 * sssraid_dev_disable -> sssraid_back_all_io
-	 */
-	sssraid_back_all_io(sdioc);
 	/*
 	 * realize sssraid_dev_disable,
 	 * i.e. sssraid_cleanup_ioc(1)
 	 */
 	if (sdioc->ctrl_config & SSSRAID_CC_ENABLE) {
-		ioc_info(sdioc, "start cleanup ioc\n");
-		sssraid_cleanup_ioc(sdioc, 1);
+		ioc_info(sdioc, "start disable admin queue\n");
+		retval = sssraid_disable_admin_queue(sdioc, 0);
 	}
+
+	sssraid_cleanup_resources(sdioc);
+
+	/* realize above here:
+	 * sssraid_dev_disable -> sssraid_back_all_io
+	 */
+	sssraid_back_all_io(sdioc);
+
+	if (retval)
+		goto host_reset_failed;
 
 	retval = sssraid_init_ioc(sdioc, 1);
-	if (retval) {
-		ioc_err(sdioc, "err: init ioc fail.\n");
-		return retval;
-	}
+	if (retval)
+		goto cleanup_resources;
 
 	sssraid_change_host_state(sdioc, SSSRAID_LIVE);
+	return 0;
 
+cleanup_resources:
+	sssraid_cleanup_resources(sdioc);
+host_reset_failed:
+	sssraid_change_host_state(sdioc, SSSRAID_DEAD);
+	ioc_err(sdioc, "err, host reset failed\n");
 	return retval;
 }
