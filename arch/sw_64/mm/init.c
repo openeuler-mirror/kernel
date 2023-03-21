@@ -12,6 +12,7 @@
 #include <linux/acpi.h>
 #include <linux/memory.h>
 
+#include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
 
 struct mem_desc_t mem_desc;
@@ -97,7 +98,7 @@ void __init callback_init(void)
 	/* Allocate one PGD and one PUD. */
 	pgd = pgd_offset_k(VMALLOC_START);
 	p4d = p4d_offset(pgd, VMALLOC_START);
-	p4d_set(p4d, (pud_t *)vmalloc_pud);
+	p4d_populate(&init_mm, p4d, (pud_t *)vmalloc_pud);
 }
 
 void __init zone_sizes_init(void)
