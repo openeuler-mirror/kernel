@@ -1669,6 +1669,27 @@ static void klp_breakpoint_post_process(struct klp_patch *patch, bool restore)
 	module_put(patch->mod);
 }
 
+static int klp_stop_machine(cpu_stop_fn_t fn, void *data, const struct cpumask *cpus)
+{
+	int ret;
+
+	/*
+	 * Cpu hotplug locking is a "percpu" rw semaphore, however write
+	 * lock and read lock on it are globally mutual exclusive, that is
+	 * cpus_write_lock() on one cpu can block all cpus_read_lock()
+	 * on other cpus, vice versa.
+	 *
+	 * Since cpu hotplug take the cpus_write_lock() before text_mutex,
+	 * here take cpus_read_lock() before text_mutex to avoid deadlock.
+	 */
+	cpus_read_lock();
+	arch_klp_code_modify_prepare();
+	ret = stop_machine_cpuslocked(fn, data, cpus);
+	arch_klp_code_modify_post_process();
+	cpus_read_unlock();
+	return ret;
+}
+
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	int ret;
@@ -1689,9 +1710,7 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	}
 #endif
 
-	arch_klp_code_modify_prepare();
-	ret = stop_machine(klp_try_disable_patch, &patch_data, cpu_online_mask);
-	arch_klp_code_modify_post_process();
+	ret = klp_stop_machine(klp_try_disable_patch, &patch_data, cpu_online_mask);
 	if (ret)
 		return ret;
 
@@ -1960,10 +1979,8 @@ static int klp_breakpoint_optimize(struct klp_patch *patch)
 
 		cnt++;
 
-		arch_klp_code_modify_prepare();
-		ret = stop_machine(klp_try_enable_patch, &patch_data,
-				   cpu_online_mask);
-		arch_klp_code_modify_post_process();
+		ret = klp_stop_machine(klp_try_enable_patch, &patch_data,
+				       cpu_online_mask);
 		if (!ret || ret != -EAGAIN)
 			break;
 
@@ -2010,10 +2027,7 @@ static int __klp_enable_patch(struct klp_patch *patch)
 	if (ret)
 		return ret;
 
-	arch_klp_code_modify_prepare();
-	ret = stop_machine(klp_try_enable_patch, &patch_data,
-			   cpu_online_mask);
-	arch_klp_code_modify_post_process();
+	ret = klp_stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
 	if (!ret)
 		goto move_patch_to_tail;
 	if (ret != -EAGAIN)
