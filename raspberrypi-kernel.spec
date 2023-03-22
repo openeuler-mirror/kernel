@@ -7,8 +7,8 @@
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
-Version: 6.1.14
-Release: %{hulkrelease}.1
+Version: 6.1.19
+Release: %{hulkrelease}.2
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -166,5 +166,8 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Tue Mar 21 2023 Yafen Fang <yafen@iscas.ac.cn> - 6.1.19-1.0.0.2
+- update kernel version to upstream v6.1.19
+
 * Fri Mar 03 2023 Yafen Fang <yafen@iscas.ac.cn> - 6.1.14-1.0.0.1
 - package init based on upstream v6.1.14
