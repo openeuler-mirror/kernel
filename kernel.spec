@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2303.3.0
+%global hulkrelease 2303.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0192
+Release: %{hulkrelease}.0193
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,20 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 21 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.4.0.0193
+- tipc: add an extra conn_get in tipc_conn_alloc
+- tipc: set con sock in tipc_conn_alloc
+- mm/oom_kill.c: fix oom_cpuset_eligible() comment
+- oom: decouple mems_allowed from oom_unkillable_task
+- mm, oom: remove redundant task_in_mem_cgroup() check
+- mm, oom: refactor dump_tasks for memcg OOMs
+- block: Fix wrong offset in bio_truncate()
+- fs: move guard_bio_eod() after bio_set_op_attrs
+- block: add bio_truncate to fix guard_bio_eod
+- mm/mempolicy.c: fix out of bounds write in mpol_parse_str()
+- cifs: Fix use-after-free in rdata->read_into_pages()
+- media: dvb-usb: az6027: fix null-ptr-deref in az6027_i2c_xfer()
 
 * Tue Mar 14 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.3.0.0192
 - scsi: cancel the inflight async device probe when remove scsi_target
