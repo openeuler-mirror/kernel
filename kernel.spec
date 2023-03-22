@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       144
+%global devel_release       145
 %global maintenance_release .0.0
-%global pkg_release         .73
+%global pkg_release         .74
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,196 @@ fi
 %endif
 
 %changelog
+* Wed Mar 22 2023 Jialin Zhang <zhangjialin11@huawei.com> - 5.10.0-145.0.0.74
+- !511 Backport CVEs and bugfixes
+- livepatch/core: Fix hungtask against cpu hotplug on x86
+- seccomp: Move copy_seccomp() to no failure path.
+- media: dvb-usb: az6027: fix null-ptr-deref in az6027_i2c_xfer()
+- mm: optimize do_wp_page() for fresh pages in local LRU pagevecs
+- mm: optimize do_wp_page() for exclusive pages in the swapcache
+- ftrace: Fix invalid address access in lookup_rec() when index is 0
+- tipc: add an extra conn_get in tipc_conn_alloc
+- tipc: set con sock in tipc_conn_alloc
+- ext4: fix another off-by-one fsmap error on 1k block filesystems
+- mm/vmalloc: huge vmalloc backing pages should be split rather than compound
+- HID: asus: use spinlock to safely schedule workers
+- HID: asus: use spinlock to protect concurrent accesses
+- HID: asus: Remove check for same LED brightness on set
+- jbd2: fix data missing when reusing bh which is ready to be checkpointed
+- !475 Support congestion control algorithm parameter configuration
+- !471 Intel: Support In Field Scan(IFS) multi-blob images
+- !476 LoongArch: fix failed to boot
+- !497 SAS-related bugfix
+- !479 LoongArch: update network related default config
+- scsi: hisi_sas: Grab sas_dev lock when traversing the members of sas_dev.list
+- scsi: hisi_sas: Handle NCQ error when IPTT is valid
+- scsi: libsas: Grab the ATA port lock in sas_ata_device_link_abort()
+- scsi: libsas: Update SATA dev FIS in sas_ata_task_done()
+- scsi: hisi_sas: Use abort task set to reset SAS disks when discovered
+- scsi: hisi_sas: Add SATA_DISK_ERR bit handling for v3 hw
+- scsi: hisi_sas: Move slot variable definition in hisi_sas_abort_task()
+- scsi: libsas: Add sas_ata_device_link_abort()
+- LoongArch: Initialize screen_info variable
+- x86/microcode/intel: Do not retry microcode reloading on the APs
+- x86/microcode/intel: Do not print microcode revision and processor flags
+- platform/x86/intel/ifs: Add missing kernel-doc entry
+- Revert "platform/x86/intel/ifs: Mark as BROKEN"
+- Documentation/ABI: Update IFS ABI doc
+- platform/x86/intel/ifs: Add current_batch sysfs entry
+- platform/x86/intel/ifs: Remove reload sysfs entry
+- platform/x86/intel/ifs: Add metadata validation
+- platform/x86/intel/ifs: Use generic microcode headers and functions
+- platform/x86/intel/ifs: Add metadata support
+- x86/microcode/intel: Use a reserved field for metasize
+- x86/microcode/intel: Add hdr_type to intel_microcode_sanity_check()
+- x86/microcode/intel: Reuse microcode_sanity_check()
+- x86/microcode/intel: Use appropriate type in microcode_sanity_check()
+- x86/microcode/intel: Reuse find_matching_signature()
+- platform/x86/intel/ifs: Remove memory allocation from load path
+- platform/x86/intel/ifs: Remove image loading during init
+- platform/x86/intel/ifs: Return a more appropriate error code
+- platform/x86/intel/ifs: Remove unused selection
+- x86/microcode: Drop struct ucode_cpu_info.valid
+- x86/microcode: Do some minor fixups
+- x86/microcode: Kill refresh_fw
+- x86/microcode: Simplify init path even more
+- x86/microcode: Rip out the subsys interface gunk
+- x86/microcode: Print previous version of microcode after reload
+- x86/microcode: Remove ->request_microcode_user()
+- x86/microcode: Document the whole late loading problem
+- docs: Update documentation to reflect what TAINT_CPU_OUT_OF_SPEC means
+- misc: Mark MICROCODE_MINOR unused
+- !448 LoongArch: fix some pci problems
+- !486 Backport CVEs and bugfixes
+- platform/x86/intel/ifs: Mark as BROKEN
+- !477 tools: fix compile error introduced by LoongArch commit
+- x86/microcode: Remove unnecessary perf callback
+- x86/microcode: Taint and warn on late loading
+- x86/microcode: Default-disable late loading
+- x86/microcode: Rip out the OLD_INTERFACE
+- scsi: cancel the inflight async device probe when remove scsi_target
+- ring-buffer: Fix race between reset page and reading page
+- raid1, raid10: switch to precise io accounting
+- block: add precise io accouting apis
+- md/raid10: fix memleak for 'conf->bio_split'
+- scsi: fix use-after-free problem in scsi_remove_target
+- sctp: fail if no bound addresses can be used for a given scope
+- ext4: fix WARNING in mb_find_extent
+- scsi: iscsi_tcp: Fix UAF during login when accessing the shost ipaddress
+- scsi: iscsi_tcp: Fix UAF during logout when accessing the shost ipaddress
+- scsi: iscsi: Move pool freeing
+- xfs: aborting inodes on shutdown may need buffer lock
+- ext4: fix incorrect options show of original mount_opt and extend mount_opt2
+- LoongArch: Fixed EIOINTC structure members
+- LoongArch: Fix virtual machine startup error
+- loongarch/kvm: ls7a add iocsrw emulation
+- LoongArch: defconfig: update network configurations
+- LoongArch: fix signal handler name changed
+- fix compile error introduced by LoongArch commit
+- LoongArch: pci root bridige set acpi companion only when not acpi_disabled.
+- pci: fix X server auto probe fail when both ast and etnaviv drm present
+- LS7A2000: PCIE: Fixup GPU card error
+- pci/quirks: ls7a2000: fix pm transition of devices under pcie port
+- LoongArch: Fixed some pcie card not scanning properly
+- pci: fix kabi error caused by pm_suspend_target_state
+- PCI: PM: Fix pcie mrrs restoring
+- PCI: Check if the pci controller can use both CFG0 and CFG1 mode to access configuration space
+- PCI: Check if entry->offset already exist for mem resource
+- RDMA/hns: Support congestion control algorithm parameter configuration
+- !447 add perf loongarch support
+- !449 LoongArch: add kvm support
+- LoongArch: kvm: KVM support for 5.10
+- LoongArch: Export symbol for function smp_send_reschedule()
+- LoongArch: kvm: add initial kvm support
+- !466 LoongArch: fix compile error when using make allmodconfig
+- LoongArch: fix compile error when using make allmodconfig
+- !458 Backport CVEs and bugfixes
+- !465 Revert "scsi: fix iscsi rescan fails to create block"
+- Revert "scsi: fix iscsi rescan fails to create block"
+- !427 Support the feature of querying stats
+- !388 Add landlock support
+- !425 update patches for sw64 architecture
+- !444 LoongArch: some LS7a device drivers support and LoongArch bug fix
+- RDMA/hns: Add dfx cnt stats
+- landlock: Use square brackets around "landlock-ruleset"
+- landlock: Enable user space to infer supported features
+- landlock: Add user and kernel documentation
+- samples/landlock: Add a sandbox manager example
+- selftests/landlock: Add user space tests
+- arch: Wire up Landlock syscalls
+- landlock: Add syscall implementations
+- landlock: Support filesystem access-control
+- fs,security: Add sb_delete hook
+- LSM: Infrastructure management of the superblock
+- landlock: Add ptrace restrictions
+- landlock: Set up the security framework and manage credentials
+- landlock: Add ruleset and domain management
+- landlock: Add object management
+- phy: tegra: xusb: Fix return value of tegra_xusb_find_port_node function
+- LoongArch: remove __ARCH_WANT_NEW_STAT
+- LoongArch: modify defconfig according to other architectures
+- LoongArch: Change definition of cpu_relax() for Loongson-3
+- drm/loongson: add kernel modesetting driver support for ls7a1000/ls7a2000
+- LoongArch: Use alternative to optimize libraries
+- LoongArch: Add alternative runtime patching mechanism
+- LoongArch: Remove the .fixup section usage
+- LoongArch: extable: Add a dedicated uaccess handler
+- LoongArch: extable: Add `type` and `data` fields
+- LoongArch: Switch to relative exception tables
+- LoongArch: Consolidate __ex_table construction
+- LoongArch: fix SECCOMP test error
+- LoongArch: fix vmlinux ld error
+- LoongArch: enable hugetlbfs support
+- LoongArch: save one instruction for arch_local_irq_{enable,disable}
+- LoongArch: optimize for syscall return
+- LoongArch: refresh usage of sync
+- LoongArch: use 40 bits address space for user
+- LoongArch: Support loader and kernel interface V40
+- LoongArch: Enhance booting and resume compatibility
+- LoongArch: Remove redudant csr save/restore
+- LoongArch: Support Power Manager
+- irqchip/loongson-liointc: Set different isr for differnt core
+- platform: Support loongson laptop generic driver
+- LoongArch: Adapted SECTION_SIZE_BITS with page size
+- ACPI: Support ACPI_MACHINE_WIDTH for 64
+- spi: loongson: Add LS7A spi driver support
+- i2c: loongson: Add LS7A i2c driver support
+- LoongArch: Call irq_find_matching_fwnode get irq domain
+- irqchip/ACPI: Introduce ACPI_IRQ_MODEL_LPIC for LoongArch
+- gpio: loongson: Add 3A/3B/3C/7A gpio dirver support
+- rtc: ls2x: Add support for the Loongson-2K/LS7A RTC
+- LoongArch: convert p v s cache to l1 l2 l3 format
+- cpufreq: Add cpufreq driver for LoongArch
+- LoongArch: Fix section mismatch due to acpi_os_ioremap()
+- LoongArch: Add vector extensions support
+- tools/perf: Add basic support for LoongArch
+- perf machine: Use path__join() to compose a path instead of snprintf(dir, '/', filename)
+- RDMA/hns: Support hns HW stats
+- sw64: implement a new policy of power management
+- sw64: add DVFS support for different boards
+- sw64: add SIMD emulation for guest IO access
+- sw64: fix THREAD_INFO_IN_TASK support
+- sw64: maintain PMU counter usage status with bitmap
+- sw64: activate CONFIG_THREAD_INFO_IN_TASK
+- sw64: LPC: support suspend and resume
+- sw64: fix a type mismatch problem
+- sw64: perf: remove redundant function declarations
+- sw64: fix a compile error with CONFIG_EFI=n
+- sw64: iommu: fix the mask of physical address when flushing pcache
+- sw64: perf: don't rely on layout of pt_regs to grab some registers
+- sw64: perf: fix support for dwarf in perf
+- sw64: deliver a warm/cold reset to Root Complex with plugin JMicron 585 card
+- sw64: refactor platform dependent codes
+- sw64: implement the reset hooks for general platforms
+- sw64: split out the idle loop in idle.c
+- sw64: rewrite {SAVE,RESTORE}_ALL in a simpler way
+- sw64: fix "unwind: target platform=sw_64 is not supported"
+- sw64: register a suspend entry
+- sw64: update openeuler_defconfig
+- sw64: organize defconfigs
+- sw64: remove unused code for unaligned load store emulation
+- sw64: fix sw64_set_rate()
+
 * Wed Mar 08 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-144.0.0.73
 - !456 Backport CVEs and bugfixes
 - !426 scsi:sssraid: Introduce map_queue in sssraid module & code quality reinforcement content
