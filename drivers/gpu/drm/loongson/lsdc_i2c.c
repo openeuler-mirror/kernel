@@ -17,6 +17,7 @@
 
 #include "lsdc_regs.h"
 #include "lsdc_i2c.h"
+#include "lsdc_drv.h"
 
 /*
  * ls7a_gpio_i2c_set - set the state of a gpio pin, either high or low.
@@ -24,10 +25,11 @@
  */
 static void ls7a_gpio_i2c_set(struct lsdc_i2c * const li2c, int mask, int state)
 {
+	struct lsdc_device *ldev = to_lsdc(li2c->ddev);
 	unsigned long flags;
 	u8 val;
 
-	spin_lock_irqsave(&li2c->reglock, flags);
+	spin_lock_irqsave(&ldev->reglock, flags);
 
 	if (state) {
 		/*
@@ -50,7 +52,7 @@ static void ls7a_gpio_i2c_set(struct lsdc_i2c * const li2c, int mask, int state)
 		writeb(val, li2c->dat_reg);
 	}
 
-	spin_unlock_irqrestore(&li2c->reglock, flags);
+	spin_unlock_irqrestore(&ldev->reglock, flags);
 }
 
 /*
@@ -59,10 +61,11 @@ static void ls7a_gpio_i2c_set(struct lsdc_i2c * const li2c, int mask, int state)
  */
 static int ls7a_gpio_i2c_get(struct lsdc_i2c * const li2c, int mask)
 {
+	struct lsdc_device *ldev = to_lsdc(li2c->ddev);
 	unsigned long flags;
 	u8 val;
 
-	spin_lock_irqsave(&li2c->reglock, flags);
+	spin_lock_irqsave(&ldev->reglock, flags);
 
 	/* First, set this pin as input */
 	val = readb(li2c->dir_reg);
@@ -72,7 +75,7 @@ static int ls7a_gpio_i2c_get(struct lsdc_i2c * const li2c, int mask)
 	/* Then, get level state from this pin */
 	val = readb(li2c->dat_reg);
 
-	spin_unlock_irqrestore(&li2c->reglock, flags);
+	spin_unlock_irqrestore(&ldev->reglock, flags);
 
 	return (val & mask) ? 1 : 0;
 }
@@ -143,8 +146,6 @@ struct lsdc_i2c *lsdc_of_create_i2c_adapter(struct device *parent,
 	li2c = kzalloc(sizeof(*li2c), GFP_KERNEL);
 	if (!li2c)
 		return ERR_PTR(-ENOMEM);
-
-	spin_lock_init(&li2c->reglock);
 
 	ret = of_property_read_u32(i2c_np, "loongson,sda", &sda);
 	if (ret) {
@@ -248,8 +249,7 @@ struct lsdc_i2c *lsdc_create_i2c_chan(struct drm_device *ddev,
 		li2c->scl = 0x08;
 	}
 
-	spin_lock_init(&li2c->reglock);
-
+	li2c->ddev = ddev;
 	li2c->dir_reg = reg_base + LS7A_DC_GPIO_DIR_REG;
 	li2c->dat_reg = reg_base + LS7A_DC_GPIO_DAT_REG;
 

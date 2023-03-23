@@ -8,7 +8,6 @@ loongson-y := \
 	lsdc_pll.o \
 	lsdc_i2c.o \
 	lsdc_output.o \
-	lsdc_pci_drv.o \
 	lsdc_debugfs.o \
 
 lsdc-$(CONFIG_DEBUG_FS) += lsdc_debugfs.o
