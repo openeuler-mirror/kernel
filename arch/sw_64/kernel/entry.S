@@ -21,7 +21,7 @@
  */
 
 	.macro SAVE_ALL
-	ldi	$sp, -PT_REGS_PS($sp)
+	ldi	$sp, -PT_REGS_HM_PS($sp)
 	stl	$0, PT_REGS_R0($sp)
 	stl	$1, PT_REGS_R1($sp)
 	stl	$2, PT_REGS_R2($sp)
@@ -48,10 +48,40 @@
 	stl	$25, PT_REGS_R25($sp)
 	stl	$26, PT_REGS_R26($sp)
 	stl	$27, PT_REGS_R27($sp)
+	ldl	$1, PT_REGS_HM_R16($sp)
+	ldl	$2, PT_REGS_HM_R17($sp)
+	ldl	$3, PT_REGS_HM_R18($sp)
+	ldl	$4, PT_REGS_HM_GP($sp)
+	ldl	$5, PT_REGS_HM_PC($sp)
+	ldl	$6, PT_REGS_HM_PS($sp)
+	stl	$1, PT_REGS_R16($sp)
+	stl	$2, PT_REGS_R17($sp)
+	stl	$3, PT_REGS_R18($sp)
+	stl	$4, PT_REGS_GP($sp)
+	stl	$5, PT_REGS_PC($sp)
+	stl	$6, PT_REGS_PS($sp)
+	and	$6, 0x8, $7
+	beq	$7, 1f
+	sys_call HMC_rdusp
+	br	$31, 2f
+1:	ldi	$0, PT_REGS_SIZE($sp)
+2:	stl	$0, PT_REGS_SP($sp)
 	sys_call HMC_rdktp
 	.endm
 
 	.macro RESTORE_ALL
+	ldl	$1, PT_REGS_R16($sp)
+	ldl	$2, PT_REGS_R17($sp)
+	ldl	$3, PT_REGS_R18($sp)
+	ldl	$4, PT_REGS_GP($sp)
+	ldl	$5, PT_REGS_PC($sp)
+	ldl	$6, PT_REGS_PS($sp)
+	stl	$1, PT_REGS_HM_R16($sp)
+	stl	$2, PT_REGS_HM_R17($sp)
+	stl	$3, PT_REGS_HM_R18($sp)
+	stl	$4, PT_REGS_HM_GP($sp)
+	stl	$5, PT_REGS_HM_PC($sp)
+	stl	$6, PT_REGS_HM_PS($sp)
 	ldl	$0, PT_REGS_R0($sp)
 	ldl	$1, PT_REGS_R1($sp)
 	ldl	$2, PT_REGS_R2($sp)
@@ -78,7 +108,7 @@
 	ldl	$26, PT_REGS_R26($sp)
 	ldl	$27, PT_REGS_R27($sp)
 	ldl	$28, PT_REGS_R28($sp)
-	ldi	$sp, PT_REGS_PS($sp)
+	ldi	$sp, PT_REGS_HM_PS($sp)
 	.endm
 
 /*
@@ -167,6 +197,7 @@ entUna:
 entSys:
 
 	SAVE_ALL
+	ldl	$0, PT_REGS_R0($sp)
 	ldi	$4, NR_SYSCALLS($31)
 	stl	$16, PT_REGS_R16($sp)
 	ldi	$5, sys_call_table
