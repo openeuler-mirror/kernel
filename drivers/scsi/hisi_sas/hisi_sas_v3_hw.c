@@ -1937,7 +1937,7 @@ static void handle_chl_int0_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 
 		dev_dbg(dev, "phy%d OOB ready\n", phy_no);
 		if (phy->phy_attached)
-			return;
+			goto out;
 
 		if (!timer_pending(&phy->timer)) {
 			phy->timer.function = wait_phyup_timedout_v3_hw;
@@ -1947,6 +1947,7 @@ static void handle_chl_int0_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 		}
 	}
 
+out:
 	hisi_sas_phy_write32(hisi_hba, phy_no, CHL_INT0,
 			     irq_value0 & (~CHL_INT0_SL_RX_BCST_ACK_MSK)
 			     & (~CHL_INT0_SL_PHY_ENABLE_MSK)
