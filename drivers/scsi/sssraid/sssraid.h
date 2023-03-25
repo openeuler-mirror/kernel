@@ -58,7 +58,8 @@
 #define SSSRAID_ADM_QUEUE_NUM 1
 #define SSSRAID_PTCMDS_PERQ 1
 #define SSSRAID_IO_BLK_MQ_DEPTH (sdioc->scsi_qd)
-#define SSSRAID_NR_IOQ_PTCMDS (SSSRAID_PTCMDS_PERQ * sdioc->shost->nr_hw_queues)
+#define SSSRAID_NR_HW_QUEUES (sdioc->init_done_queue_cnt - 1)
+#define SSSRAID_NR_IOQ_PTCMDS (SSSRAID_PTCMDS_PERQ * SSSRAID_NR_HW_QUEUES)
 
 #define FUA_MASK 0x08
 #define SSSRAID_MINORS BIT(MINORBITS)

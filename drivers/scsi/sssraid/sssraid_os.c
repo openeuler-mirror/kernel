@@ -566,7 +566,7 @@ static void sssraid_shost_init(struct sssraid_ioc *sdioc)
 	bus = pdev->bus->number;
 	dev_func = pdev->devfn;
 
-	sdioc->shost->nr_hw_queues = sdioc->init_done_queue_cnt - 1;
+	sdioc->shost->nr_hw_queues = SSSRAID_NR_HW_QUEUES;
 	sdioc->shost->can_queue = (sdioc->ioq_depth - SSSRAID_PTCMDS_PERQ);
 
 	sdioc->shost->sg_tablesize = le16_to_cpu(sdioc->ctrl_info->max_num_sge);
