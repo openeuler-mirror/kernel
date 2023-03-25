@@ -4325,6 +4325,19 @@ bool __init __weak hugetlb_node_alloc_supported(void)
 	return true;
 }
 
+static void __init hugepages_clear_pages_in_node(void)
+{
+	if (!hugetlb_max_hstate) {
+		default_hstate_max_huge_pages = 0;
+		memset(default_hugepages_in_node, 0,
+			MAX_NUMNODES * sizeof(unsigned int));
+	} else {
+		parsed_hstate->max_huge_pages = 0;
+		memset(parsed_hstate->max_huge_pages_node, 0,
+			MAX_NUMNODES * sizeof(unsigned int));
+	}
+}
+
 static int __init hugetlb_nrpages_setup(char *s)
 {
 	unsigned long *mhp;
@@ -4403,6 +4416,7 @@ static int __init hugetlb_nrpages_setup(char *s)
 
 invalid:
 	pr_warn("HugeTLB: Invalid hugepages parameter %s\n", p);
+	hugepages_clear_pages_in_node();
 	return 0;
 }
 __setup("hugepages=", hugetlb_nrpages_setup);
