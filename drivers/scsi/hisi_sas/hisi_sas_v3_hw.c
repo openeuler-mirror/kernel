@@ -2268,6 +2268,22 @@ static bool is_ncq_err(struct hisi_sas_complete_v3_hdr *complete_hdr)
 		(dw3 & FIS_ATA_STATUS_ERR);
 }
 
+static void hisi_sas_ata_device_link_abort(struct domain_device *device)
+{
+	struct ata_port *ap = device->sata_dev.ap;
+	struct ata_link *link = &ap->link;
+	unsigned long flags;
+
+	spin_lock_irqsave(ap->lock, flags);
+	device->sata_dev.fis[2] = ATA_ERR | ATA_DRDY; /* tf status */
+	device->sata_dev.fis[3] = ATA_ABORTED;        /* tf error */
+
+	link->eh_info.err_mask |= AC_ERR_DEV;
+	link->eh_info.action |= ATA_EH_RESET;
+	ata_link_abort(link);
+	spin_unlock_irqrestore(ap->lock, flags);
+}
+
 static void set_aborted_iptt(struct hisi_hba *hisi_hba,
 			     struct hisi_sas_slot *slot)
 {
@@ -2490,7 +2506,11 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 					iu->resp_data[0]);
 		}
 		if (unlikely(slot->abort)) {
-			sas_task_abort(task);
+			if (dev_is_sata(device) && task->ata_task.use_ncq)
+				hisi_sas_ata_device_link_abort(device);
+			else
+				sas_task_abort(task);
+
 			return ts->stat;
 		}
 		goto out;
@@ -2580,6 +2600,31 @@ out:
 	return sts;
 }
 
+static void hisi_sas_disk_err_handler(struct hisi_hba *hisi_hba,
+		struct hisi_sas_complete_v3_hdr *complete_hdr)
+{
+	u32 dw0 = le32_to_cpu(complete_hdr->dw0);
+	u32 dw1 = le32_to_cpu(complete_hdr->dw1);
+	u32 dw3 = le32_to_cpu(complete_hdr->dw3);
+	int device_id = (dw1 & CMPLT_HDR_DEV_ID_MSK) >>
+			CMPLT_HDR_DEV_ID_OFF;
+	struct hisi_sas_itct *itct =
+			&hisi_hba->itct[device_id];
+	struct hisi_sas_device *sas_dev =
+			&hisi_hba->devices[device_id];
+	struct domain_device *device = sas_dev->sas_device;
+	struct device *dev = hisi_hba->dev;
+
+	dev_err(dev, "erroneous completion disk err dev id=%d sas_addr=0x%llx CQ hdr: 0x%x 0x%x 0x%x 0x%x\n",
+		device_id, itct->sas_addr, dw0, dw1,
+		complete_hdr->act, dw3);
+
+	if (is_ncq_err(complete_hdr))
+		sas_dev->dev_status = HISI_SAS_DEV_NCQ_ERR;
+
+	hisi_sas_ata_device_link_abort(device);
+}
+
 static void cq_tasklet_v3_hw(unsigned long val)
 {
 	struct hisi_sas_cq *cq = (struct hisi_sas_cq *)val;
@@ -2608,26 +2653,7 @@ static void cq_tasklet_v3_hw(unsigned long val)
 
 		if (unlikely((dw0 & CMPLT_HDR_CMPLT_MSK) == 0x3) &&
 			(dw3 & CMPLT_HDR_SATA_DISK_ERR_MSK)) {
-			int device_id = (dw1 & CMPLT_HDR_DEV_ID_MSK) >>
-					CMPLT_HDR_DEV_ID_OFF;
-			struct hisi_sas_itct *itct =
-					&hisi_hba->itct[device_id];
-			struct hisi_sas_device *sas_dev =
-					&hisi_hba->devices[device_id];
-			struct domain_device *device = sas_dev->sas_device;
-			struct ata_port *ap = device->sata_dev.ap;
-			struct ata_link *link = &ap->link;
-
-			dev_err(dev, "erroneous completion disk err dev id=%d sas_addr=0x%llx CQ hdr: 0x%x 0x%x 0x%x 0x%x\n",
-				device_id, itct->sas_addr, dw0, dw1,
-				complete_hdr->act, dw3);
-
-			if (is_ncq_err(complete_hdr))
-				sas_dev->dev_status = HISI_SAS_DEV_NCQ_ERR;
-
-			link->eh_info.err_mask |= AC_ERR_DEV;
-			link->eh_info.action |= ATA_EH_RESET;
-			ata_link_abort(link);
+			hisi_sas_disk_err_handler(hisi_hba, complete_hdr);
 		} else if (likely(iptt < HISI_SAS_COMMAND_ENTRIES_V3_HW)) {
 			slot = &hisi_hba->slot_info[iptt];
 			slot->cmplt_queue_slot = rd_point;
