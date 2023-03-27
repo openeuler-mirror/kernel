@@ -403,6 +403,9 @@ static struct hns3_dbg_cap_info hns3_dbg_cap[] = {
 		.name = "support modify vlan filter state",
 		.cap_bit = HNAE3_DEV_SUPPORT_VLAN_FLTR_MDF_B,
 	}, {
+		.name = "support wake on lan",
+		.cap_bit = HNAE3_DEV_SUPPORT_WOL_B,
+	}, {
 		.name = "support vf fault detect",
 		.cap_bit = HNAE3_DEV_SUPPORT_VF_FAULT_B,
 	}
