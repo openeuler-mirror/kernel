@@ -54,6 +54,7 @@ int nic_set_sfp_state(struct net_device *ndev, bool en);
 int nic_disable_net_lane(struct net_device *ndev);
 int nic_get_net_lane_status(struct net_device *ndev, u32 *status);
 int nic_disable_clock(struct net_device *ndev);
+int nic_set_pfc_time_cfg(struct net_device *ndev, u16 time);
 int nic_get_port_fault_status(struct net_device *ndev, u32 fault_type, u32 *status);
 int nic_get_port_wire_type(struct net_device *ndev, u32 *wire_type);
 int nic_set_mac_state(struct net_device *ndev, int enable);
