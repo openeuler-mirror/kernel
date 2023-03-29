@@ -400,8 +400,7 @@ void blk_cleanup_queue(struct request_queue *q)
 	 * prevent that blk_mq_run_hw_queues() accesses the hardware queues
 	 * after draining finished.
 	 */
-	blk_freeze_queue_start(q);
-	blk_mq_freeze_queue_wait_sync(q);
+	blk_freeze_queue(q);
 
 	rq_qos_exit(q);
 
@@ -518,7 +517,6 @@ static void blk_queue_usage_counter_release(struct percpu_ref *ref)
 	struct request_queue *q =
 		container_of(ref, struct request_queue, q_usage_counter);
 
-	blk_queue_flag_set(QUEUE_FLAG_USAGE_COUNT_SYNC, q);
 	wake_up_all(&q->mq_freeze_wq);
 }
 
