@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2303.4.0
+%global hulkrelease 2303.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0193
+Release: %{hulkrelease}.0194
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,66 @@ fi
 %endif
 
 %changelog
+
+* Wed Mar 29 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.5.0.0194
+- net/sched: tcindex: search key must be 16 bits
+- net/sched: tcindex: update imperfect hash filters respecting rcu
+- rcu: Upgrade rcu_swap_protected() to rcu_replace_pointer()
+- x86/speculation: Add RSB VM Exit protections
+- x86/bugs: Warn when "ibrs" mitigation is selected on Enhanced IBRS parts
+- x86/speculation: Use DECLARE_PER_CPU for x86_spec_ctrl_current
+- x86/speculation: Disable RRSBA behavior
+- x86/bugs: Add Cannon lake to RETBleed affected CPU list
+- x86/cpu/amd: Enumerate BTC_NO
+- x86/common: Stamp out the stepping madness
+- x86/speculation: Fill RSB on vmexit for IBRS
+- KVM: VMX: Fix IBRS handling after vmexit
+- KVM: VMX: Prevent guest RSB poisoning attacks with eIBRS
+- x86/speculation: Remove x86_spec_ctrl_mask
+- x86/speculation: Use cached host SPEC_CTRL value for guest entry/exit
+- x86/speculation: Fix SPEC_CTRL write on SMT state change
+- x86/speculation: Fix firmware entry SPEC_CTRL handling
+- x86/speculation: Fix RSB filling with CONFIG_RETPOLINE=n
+- x86/speculation: Change FILL_RETURN_BUFFER to work with objtool
+- intel_idle: Disable IBRS during long idle
+- x86/bugs: Report Intel retbleed vulnerability
+- x86/bugs: Split spectre_v2_select_mitigation() and spectre_v2_user_select_mitigation()
+- x86/speculation: Add spectre_v2=ibrs option to support Kernel IBRS
+- x86/bugs: Optimize SPEC_CTRL MSR writes
+- x86/entry: Add kernel IBRS implementation
+- x86/entry: Remove skip_r11rcx
+- x86/bugs: Keep a per-CPU IA32_SPEC_CTRL value
+- x86/bugs: Add AMD retbleed= boot parameter
+- x86/bugs: Report AMD retbleed vulnerability
+- x86/cpufeatures: Move RETPOLINE flags to word 11
+- x86/cpu: Add a steppings field to struct x86_cpu_id
+- x86/cpu: Add consistent CPU match macros
+- x86/devicetable: Move x86 specific macro out of generic code
+- x86/cpufeature: Fix various quality problems in the <asm/cpu_device_hd.h> header
+- x86/cpufeature: Add facility to check for min microcode revisions
+- Revert "x86/cpu: Add a steppings field to struct x86_cpu_id"
+- Revert "x86/speculation: Add RSB VM Exit protections"
+- x86/nospec: Fix i386 RSB stuffing
+- ext4: make sure fs error flag setted before clear journal error
+- ext4: commit super block if fs record error when journal record without error
+- hugetlb: fix hugepages_setup when deal with pernode
+- hugetlb: fix wrong use of nr_online_nodes
+- tty: fix out-of-bounds access in tty_driver_lookup_tty()
+- arm64: errata: Remove AES hwcap for COMPAT tasks
+- kernel: Initialize cpumask before parsing
+- genirq: Disable interrupts for force threaded handlers
+- softirq: Don't try waking ksoftirqd before it has been spawned
+- scsi: hisi_sas: Clear interrupt status when exiting channel int0 for v3 hw
+- scsi: hisi_sas: Handle NCQ error when IPTT is valid
+- scsi: hisi_sas: Grab sas_dev lock when traversing the members of sas_dev.list
+- act_mirred: use the backlog for nested calls to mirred ingress
+- net/sched: act_mirred: refactor the handle of xmit
+- net: sched: don't expose action qstats to skb_tc_reinsert()
+- net: sched: protect against stack overflow in TC act_mirred
+- net: sched: refactor reinsert action
+- net: tls: fix possible race condition between do_tls_getsockopt_conf() and do_tls_setsockopt_conf()
+- wifi: brcmfmac: slab-out-of-bounds read in brcmf_get_assoc_ies()
+- ext4: fix another off-by-one fsmap error on 1k block filesystems
 
 * Tue Mar 21 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.4.0.0193
 - tipc: add an extra conn_get in tipc_conn_alloc
