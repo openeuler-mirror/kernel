@@ -4290,7 +4290,7 @@ int kswapd_run(int nid)
 	int ret = 0;
 	struct task_struct *t;
 
-	if (pgdat->kswapd)
+	if (READ_ONCE(pgdat->kswapd))
 		return 0;
 
 	t = kthread_run(kswapd, pgdat, "kswapd%d", nid);
@@ -4300,7 +4300,7 @@ int kswapd_run(int nid)
 		pr_err("Failed to start kswapd on node %d\n", nid);
 		ret = PTR_ERR(t);
 	} else {
-		pgdat->kswapd = t;
+		WRITE_ONCE(pgdat->kswapd, t);
 	}
 	return ret;
 }
@@ -4311,11 +4311,11 @@ int kswapd_run(int nid)
  */
 void kswapd_stop(int nid)
 {
-	struct task_struct *kswapd = NODE_DATA(nid)->kswapd;
+	struct task_struct *kswapd = READ_ONCE(NODE_DATA(nid)->kswapd);
 
 	if (kswapd) {
 		kthread_stop(kswapd);
-		NODE_DATA(nid)->kswapd = NULL;
+		WRITE_ONCE(NODE_DATA(nid)->kswapd, NULL);
 	}
 }
 
