@@ -643,8 +643,6 @@ struct request_queue {
 #define QUEUE_FLAG_NOWAIT       29	/* device supports NOWAIT */
 /*at least one blk-mq hctx can't get driver tag */
 #define QUEUE_FLAG_HCTX_WAIT	30
-/* sync for q_usage_counter */
-#define QUEUE_FLAG_USAGE_COUNT_SYNC    31
 
 #define QUEUE_FLAG_MQ_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_SAME_COMP) |		\

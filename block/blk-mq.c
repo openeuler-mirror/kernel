@@ -195,7 +195,6 @@ void blk_freeze_queue_start(struct request_queue *q)
 {
 	mutex_lock(&q->mq_freeze_lock);
 	if (++q->mq_freeze_depth == 1) {
-		blk_queue_flag_clear(QUEUE_FLAG_USAGE_COUNT_SYNC, q);
 		percpu_ref_kill(&q->q_usage_counter);
 		mutex_unlock(&q->mq_freeze_lock);
 		if (queue_is_mq(q))
@@ -205,12 +204,6 @@ void blk_freeze_queue_start(struct request_queue *q)
 	}
 }
 EXPORT_SYMBOL_GPL(blk_freeze_queue_start);
-
-void blk_mq_freeze_queue_wait_sync(struct request_queue *q)
-{
-	wait_event(q->mq_freeze_wq, percpu_ref_is_zero(&q->q_usage_counter) &&
-			test_bit(QUEUE_FLAG_USAGE_COUNT_SYNC, &q->queue_flags));
-}
 
 void blk_mq_freeze_queue_wait(struct request_queue *q)
 {

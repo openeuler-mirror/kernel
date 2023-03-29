@@ -98,6 +98,12 @@ static struct inode *ntfs_read_mft(struct inode *inode,
 	/* Record should contain $I30 root. */
 	is_dir = rec->flags & RECORD_FLAG_DIR;
 
+	/* MFT_REC_MFT is not a dir */
+	if (is_dir && ino == MFT_REC_MFT) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	inode->i_generation = le16_to_cpu(rec->seq);
 
 	/* Enumerate all struct Attributes MFT. */
@@ -128,6 +134,9 @@ next_attr:
 	roff = attr->non_res ? 0 : le16_to_cpu(attr->res.data_off);
 	rsize = attr->non_res ? 0 : le32_to_cpu(attr->res.data_size);
 	asize = le32_to_cpu(attr->size);
+
+	if (le16_to_cpu(attr->name_off) + attr->name_len > asize)
+		goto out;
 
 	switch (attr->type) {
 	case ATTR_STD:

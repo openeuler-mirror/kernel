@@ -133,7 +133,9 @@ int ima_store_template(struct ima_template_entry *entry,
 
 	entry->pcr = pcr;
 	result = ima_add_template_entry(entry, violation, op, inode, filename);
-	if (!result && duplicated_entry) {
+	if (result) {
+		kfree(duplicated_entry);
+	} else if (duplicated_entry) {
 		result = ima_add_template_entry(duplicated_entry, violation, op,
 						inode, filename);
 		if (result < 0)

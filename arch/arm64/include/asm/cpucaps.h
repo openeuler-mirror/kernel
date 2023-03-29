@@ -72,6 +72,7 @@
 #define ARM64_HAS_ECV				64
 #define ARM64_HAS_EPAN				65
 #define ARM64_SPECTRE_BHB			66
+#define ARM64_WORKAROUND_1742098	67
 
 #define ARM64_NCAPS				80
 
