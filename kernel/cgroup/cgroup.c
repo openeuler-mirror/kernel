@@ -2236,7 +2236,7 @@ EXPORT_SYMBOL_GPL(task_cgroup_path);
  * write-locking cgroup_threadgroup_rwsem. This allows ->attach() to assume that
  * CPU hotplug is disabled on entry.
  */
-static void cgroup_attach_lock(void)
+void cgroup_attach_lock(void)
 {
 	cpus_read_lock();
 	percpu_down_write(&cgroup_threadgroup_rwsem);
@@ -2246,7 +2246,7 @@ static void cgroup_attach_lock(void)
  * cgroup_attach_unlock - Undo cgroup_attach_lock()
  * @lock_threadgroup: whether to up_write cgroup_threadgroup_rwsem
  */
-static void cgroup_attach_unlock(void)
+void cgroup_attach_unlock(void)
 {
 	percpu_up_write(&cgroup_threadgroup_rwsem);
 	cpus_read_unlock();
