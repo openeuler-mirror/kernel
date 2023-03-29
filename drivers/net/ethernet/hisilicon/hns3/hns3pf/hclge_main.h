@@ -12,7 +12,7 @@
 
 #include "hclge_cmd.h"
 #include "hclge_ptp.h"
-#include "hnae3.h"
+#include "hnae3_ext.h"
 #include "hclge_comm_rss.h"
 #include "hclge_comm_tqp_stats.h"
 
@@ -25,6 +25,8 @@
 
 #define HCLGE_RD_FIRST_STATS_NUM        2
 #define HCLGE_RD_OTHER_STATS_NUM        4
+
+#define HCLGE_RESET_MAX_FAIL_CNT	5
 
 #define HCLGE_INVALID_VPORT 0xffff
 
@@ -957,6 +959,8 @@ struct hclge_dev {
 	struct hclge_ptp *ptp;
 	struct devlink *devlink;
 	struct hclge_comm_rss_cfg rss_cfg;
+	struct hnae3_notify_pkt_param notify_param;
+	struct hnae3_torus_param torus_param;
 };
 
 /* VPort level vlan tag configuration for TX direction */
@@ -1159,4 +1163,6 @@ int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,
 int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported);
 int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode);
 struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
+void hclge_reset_task_schedule(struct hclge_dev *hdev);
+void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle);
 #endif
