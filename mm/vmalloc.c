@@ -2637,17 +2637,14 @@ static void __vunmap(const void *addr, int deallocate_pages)
 	vm_remove_mappings(area, deallocate_pages);
 
 	if (deallocate_pages) {
+		unsigned int page_order = vm_area_page_order(area);
 		int i;
 
-		for (i = 0; i < area->nr_pages; i++) {
+		for (i = 0; i < area->nr_pages; i += 1U << page_order) {
 			struct page *page = area->pages[i];
 
 			BUG_ON(!page);
-			/*
-			 * High-order allocs for huge vmallocs are split, so
-			 * can be freed as an array of order-0 allocations
-			 */
-			__free_pages(page, 0);
+			__free_pages(page, page_order);
 		}
 		atomic_long_sub(area->nr_pages, &nr_vmalloc_pages);
 
@@ -2927,7 +2924,8 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 		struct page *page;
 		int p;
 
-		page = alloc_pages_node(node, gfp_mask, page_order);
+		/* Compound pages required for remap_vmalloc_page */
+		page = alloc_pages_node(node, gfp_mask | __GFP_COMP, page_order);
 		if (unlikely(!page)) {
 			/* Successfully allocated i pages, free them in __vfree() */
 			area->nr_pages = i;
@@ -2938,16 +2936,6 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 				   area->nr_pages * PAGE_SIZE, page_order);
 			goto fail;
 		}
-
-		/*
-		 * Higher order allocations must be able to be treated as
-		 * indepdenent small pages by callers (as they can with
-		 * small-page vmallocs). Some drivers do their own refcounting
-		 * on vmalloc_to_page() pages, some use page->mapping,
-		 * page->lru, etc.
-		 */
-		if (page_order)
-			split_page(page, page_order);
 
 		for (p = 0; p < (1U << page_order); p++)
 			area->pages[i + p] = page + p;
