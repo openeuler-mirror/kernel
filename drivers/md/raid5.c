@@ -5429,7 +5429,6 @@ static int raid5_read_one_chunk(struct mddev *mddev, struct bio *raid_bio)
 	atomic_inc(&rdev->nr_pending);
 	rcu_read_unlock();
 
-	align_bio = bio_clone_fast(raid_bio, GFP_NOIO, &mddev->bio_set);
 	align_bio = bio_clone_fast(raid_bio, GFP_NOIO, &mddev->io_acct_set);
 	md_io_acct = container_of(align_bio, struct md_io_acct, bio_clone);
 	raid_bio->bi_next = (void *)rdev;
