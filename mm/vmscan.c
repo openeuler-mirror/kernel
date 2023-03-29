@@ -4288,17 +4288,19 @@ int kswapd_run(int nid)
 {
 	pg_data_t *pgdat = NODE_DATA(nid);
 	int ret = 0;
+	struct task_struct *t;
 
 	if (pgdat->kswapd)
 		return 0;
 
-	pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
-	if (IS_ERR(pgdat->kswapd)) {
+	t = kthread_run(kswapd, pgdat, "kswapd%d", nid);
+	if (IS_ERR(t)) {
 		/* failure at boot is fatal */
 		BUG_ON(system_state < SYSTEM_RUNNING);
 		pr_err("Failed to start kswapd on node %d\n", nid);
-		ret = PTR_ERR(pgdat->kswapd);
-		pgdat->kswapd = NULL;
+		ret = PTR_ERR(t);
+	} else {
+		pgdat->kswapd = t;
 	}
 	return ret;
 }
