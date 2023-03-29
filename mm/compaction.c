@@ -1926,7 +1926,9 @@ static inline bool is_via_compact_memory(int order)
 
 static bool kswapd_is_running(pg_data_t *pgdat)
 {
-	return pgdat->kswapd && (pgdat->kswapd->state == TASK_RUNNING);
+	struct task_struct *t = READ_ONCE(pgdat->kswapd);
+
+	return t && (t->state == TASK_RUNNING);
 }
 
 /*
