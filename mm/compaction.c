@@ -1926,7 +1926,9 @@ static inline bool is_via_compact_memory(int order)
 
 static bool kswapd_is_running(pg_data_t *pgdat)
 {
-	return pgdat->kswapd && (pgdat->kswapd->state == TASK_RUNNING);
+	struct task_struct *t = READ_ONCE(pgdat->kswapd);
+
+	return t && (t->state == TASK_RUNNING);
 }
 
 /*
@@ -2947,7 +2949,8 @@ static int kcompactd_cpu_online(unsigned int cpu)
 
 		if (cpumask_any_and(cpu_online_mask, mask) < nr_cpu_ids)
 			/* One of our CPUs online: restore mask */
-			set_cpus_allowed_ptr(pgdat->kcompactd, mask);
+			if (pgdat->kcompactd)
+				set_cpus_allowed_ptr(pgdat->kcompactd, mask);
 	}
 	return 0;
 }

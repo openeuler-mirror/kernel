@@ -82,6 +82,9 @@ struct coredump_params {
 	unsigned long mm_flags;
 	loff_t written;
 	loff_t pos;
+	KABI_EXTEND(int vma_count)
+	KABI_EXTEND(size_t vma_data_size)
+	KABI_EXTEND(struct core_vma_metadata *vma_meta)
 };
 
 /*
