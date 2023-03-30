@@ -124,6 +124,16 @@ static int chip3_get_cpu_nums(void)
 	return cpus;
 }
 
+static void chip3_get_vt_smp_info(void)
+{
+	unsigned long smp_info;
+
+	smp_info = sw64_io_read(0, SMP_INFO);
+	topo_nr_threads = (smp_info >> VT_THREADS_SHIFT) & VT_THREADS_MASK;
+	topo_nr_cores = (smp_info >> VT_CORES_SHIFT) & VT_CORES_MASK;
+	topo_nr_maxcpus = (smp_info >> VT_MAX_CPUS_SHIFT) & VT_MAX_CPUS_MASK;
+}
+
 static unsigned long chip3_get_vt_node_mem(int nodeid)
 {
 	return *(unsigned long *)MMSIZE & MMSIZE_MASK;
@@ -699,6 +709,7 @@ static void chip3_init_ops_fixup(void)
 	if (is_guest_or_emul()) {
 		sw64_chip_init->early_init.setup_core_start = chip3_setup_vt_core_start;
 		sw64_chip_init->early_init.get_node_mem = chip3_get_vt_node_mem;
+		sw64_chip_init->early_init.get_smp_info = chip3_get_vt_smp_info;
 		sw64_chip_init->pci_init.check_pci_linkup = chip3_check_pci_vt_linkup;
 	}
 };

@@ -2,7 +2,7 @@
 
 #include <linux/acpi.h>
 #include <linux/of.h>
-
+#include <linux/printk.h>
 #include <asm/topology.h>
 
 static int __init parse_dt_topology(void)
@@ -15,6 +15,64 @@ static int __init parse_dt_topology(void)
  */
 struct cpu_topology cpu_topology[NR_CPUS];
 EXPORT_SYMBOL_GPL(cpu_topology);
+
+int topo_nr_threads, topo_nr_cores, topo_nr_maxcpus;
+
+static int topo_nr_cpus;
+static int topo_threads[NR_CPUS];
+static int topo_cores[NR_CPUS];
+static int topo_packages[NR_CPUS];
+
+static void __init init_topo_threads(void)
+{
+	int i, j;
+
+	if (topo_nr_threads == 0)
+		topo_nr_threads = 1;
+
+	for (i = 0; i < topo_nr_cpus; i += topo_nr_threads) {
+		for (j = 0; j < topo_nr_threads; j++)
+			topo_threads[i+j] = j;
+	}
+}
+
+static void __init init_topo_cores(void)
+{
+	int i, j;
+
+	if (topo_nr_cores == 0)
+		topo_nr_cores = topo_nr_cpus;
+
+	for (i = 0; i < topo_nr_cpus; i += topo_nr_cores) {
+		for (j = 0; j < topo_nr_cores; j++)
+			topo_cores[i+j] = j;
+	}
+}
+
+static void __init init_topo_packages(void)
+{
+	int i, j, packet_index = 0;
+	int topo_nr_packages = topo_nr_cpus / (topo_nr_cores * topo_nr_threads);
+	int div_package = topo_nr_cpus / topo_nr_packages;
+
+	for (i = 0; i < topo_nr_cpus; i += div_package) {
+		for (j = 0 ; j < div_package; j++)
+			topo_packages[i+j] = packet_index;
+		packet_index++;
+	}
+	if (packet_index > topo_nr_packages)
+		pr_err("topo_cores init failed.\n");
+}
+
+static void __init init_topology_array(void)
+{
+	topo_nr_cpus = num_present_cpus();
+	if (topo_nr_maxcpus > topo_nr_cpus)
+		topo_nr_cpus = topo_nr_maxcpus;
+	init_topo_threads();
+	init_topo_cores();
+	init_topo_packages();
+}
 
 const struct cpumask *cpu_coregroup_mask(int cpu)
 {
@@ -53,6 +111,14 @@ void store_cpu_topology(int cpu)
 
 	if (cpu_topo->package_id != -1)
 		goto topology_populated;
+
+	if (is_guest_or_emul()) {
+		cpu_topo->package_id = topo_packages[cpu];
+		cpu_topo->core_id = topo_cores[cpu];
+		cpu_topo->thread_id = topo_threads[cpu];
+		cpu_topo->llc_id = topo_packages[cpu];
+		goto topology_populated;
+	}
 
 	cpu_topo->package_id = rcid_to_package(cpu_to_rcid(cpu));
 	cpu_topo->core_id = cpu_to_rcid(cpu) & CORE_ID_MASK;
@@ -126,6 +192,8 @@ void __init init_cpu_topology(void)
 {
 	reset_cpu_topology();
 
+	if (is_guest_or_emul())
+		init_topology_array();
 	/*
 	 * Discard anything that was parsed if we hit an error so we
 	 * don't use partial information.

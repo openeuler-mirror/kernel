@@ -752,6 +752,8 @@ setup_arch(char **cmdline_p)
 	setup_socket_info();
 	show_socket_mem_layout();
 	sw64_chip_init->early_init.setup_core_start(&core_start);
+	if (is_guest_or_emul())
+		sw64_chip_init->early_init.get_smp_info();
 
 	setup_sched_clock();
 #ifdef CONFIG_GENERIC_SCHED_CLOCK
