@@ -125,25 +125,6 @@ static const struct drm_mode_config_funcs lsdc_mode_config_funcs = {
 	.mode_valid = lsdc_device_mode_valid,
 };
 
-static int lsdc_gem_cma_dumb_create(struct drm_file *file,
-				    struct drm_device *ddev,
-				    struct drm_mode_create_dumb *args)
-{
-	struct lsdc_device *ldev = to_lsdc(ddev);
-	const struct lsdc_chip_desc *desc = ldev->desc;
-	unsigned int bytes_per_pixel = (args->bpp + 7) / 8;
-	unsigned int pitch = bytes_per_pixel * args->width;
-
-	/*
-	 * The dc in ls7a1000/ls2k1000/ls2k0500 require the stride be a
-	 * multiple of 256 bytes which is for sake of optimize dma data
-	 * transfer.
-	 */
-	args->pitch = roundup(pitch, desc->stride_alignment);
-
-	return drm_gem_cma_dumb_create_internal(file, ddev, args);
-}
-
 DEFINE_DRM_GEM_FOPS(lsdc_gem_fops);
 
 static struct drm_driver lsdc_vram_driver = {
@@ -456,7 +437,6 @@ err_kms:
 static void lsdc_pci_remove(struct pci_dev *pdev)
 {
 	struct drm_device *ddev = pci_get_drvdata(pdev);
-	struct lsdc_device *ldev = to_lsdc(ddev);
 
 	drm_dev_unregister(ddev);
 	drm_atomic_helper_shutdown(ddev);
