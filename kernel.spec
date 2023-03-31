@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       145
+%global devel_release       146
 %global maintenance_release .0.0
-%global pkg_release         .74
+%global pkg_release         .75
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,74 @@ fi
 %endif
 
 %changelog
+* Sat Apr 01 2023 Jialin Zhang <zhangjialin11@huawei.com> - 5.10.0-146.0.0.75
+- !540 fix CVE-2023-0266
+- ALSA: pcm: Move rwsem lock inside snd_ctl_elem_read to prevent UAF
+- !507 KVM: arm64: Add minimal handling for the ARMv8.7 PMU
+- !527 i2c: hisi: Only use the completion interrupt to finish the transfer and i2c: hisi: Avoid redundant interrupts
+- KVM: arm64: Add minimal handling for the ARMv8.7 PMU
+- KVM: arm64: Use symbolic names for the PMU versions
+- !531 Backport CVEs and bugfixes
+- i2c: hisi: Only use the completion interrupt to finish the transfer
+- i2c: hisi: Avoid redundant interrupts
+- block: fix use-after-free of q->q_usage_counter
+- block: move q_usage_counter release into blk_queue_release
+- Revert "block: fix null-deref in percpu_ref_put"
+- md/raid6: Fix the problem of repeatedly applying for memory in raid5_read_one_chunk
+- xfs, iomap: limit individual ioend chain lengths in writeback
+- net/sched: tcindex: search key must be 16 bits
+- net/sched: tcindex: update imperfect hash filters respecting rcu
+- tty: fix out-of-bounds access in tty_driver_lookup_tty()
+- fs/ntfs3: Validate resident attribute name
+- Revert "mm/vmalloc: huge vmalloc backing pages should be split rather than compound"
+- mm: compaction: avoid possible NULL pointer dereference in kcompactd_cpu_online
+- coredump: fix kabi broken in struct coredump_params
+- coredump: Use the vma snapshot in fill_files_note
+- coredump/elf: Pass coredump_params into fill_note_info
+- coredump: Remove the WARN_ON in dump_vma_snapshot
+- coredump: Snapshot the vmas in do_coredump
+- mm/swapfile: add cond_resched() in get_swap_pages()
+- mm: slince possible data races about pgdat->kswapd
+- mm: fix null-ptr-deref in kswapd_is_running()
+- fs/ntfs3: Validate MFT flags before replaying logs
+- fs/ntfs3: Validate attribute name offset
+- bpf: Fixes possible race in update_prog_stats() for 32bit arches
+- bpf: Avoid races in __bpf_prog_run() for 32bit arches
+- ext4: make sure fs error flag setted before clear journal error
+- ext4: commit super block if fs record error when journal record without error
+- ima: Fix memory leakage in ima_store_template
+- af_unix: Get user_ns from in_skb in unix_diag_get_exact().
+- net: tls: fix possible race condition between do_tls_getsockopt_conf() and do_tls_setsockopt_conf()
+- wifi: brcmfmac: slab-out-of-bounds read in brcmf_get_assoc_ies()
+- arm64: errata: Remove AES hwcap for COMPAT tasks
+- ARM: 9206/1: A9: Add ARM ERRATA 764319 workaround (Updated)
+- kernel: Initialize cpumask before parsing
+- softirq: Don't try waking ksoftirqd before it has been spawned
+- bpf: Prevent decl_tag from being referenced in func_proto arg
+- bpf: Skip task with pid=1 in send_signal_common()
+- bpf, sockmap: Fix an infinite loop error when len is 0 in tcp_bpf_recvmsg_parser()
+- !525 net: hns3: add supports storage product scustomization requirements
+- !519 Add new command to support query vf caps
+- net: hns3: add support query port ext information
+- net: hns3: add support configuring function-level interrupt affinity
+- net: hns3: add support clear mac statistics
+- net: hns3: add support to get/set 1d torus param
+- net: hns3: add supports fast reporting of faulty nodes
+- net: hns3: add supports pfc storm detection and suppression
+- net: hns3: add support customized exception handling interfaces.
+- !459 Backport CVEs and bugfixes
+- RDMA/hns: Add new command to support query vf caps
+- !508 SCSI: SSSRAID: Fix the bug that system automatically reboot when issue a 'pcie-linkdown' command
+- !374 Enable CONFIG_UPROBES_SUPPORT_PC_ALTER in arm64 by default
+- !510 LoongArch: fix dual-bridge machine can not work
+- !509 Loongson: fix 7a2000 gpu driver can not work
+- drm/loongson: using hdmi hot plug status register
+- irqchip/loongson: Fix syscore ops registration
+- irqchip/loongarch: Fix some issues of irq controllers
+- SCSI: SSSRAID: Fix the bug that system automatically reboot when issue a 'pcie-linkdown' command
+- uprobe: enable CONFIG_UPROBES_SUPPORT_PC_ALTER in arm64
+- malidp: Fix NULL vs IS_ERR() checking
+
 * Wed Mar 22 2023 Jialin Zhang <zhangjialin11@huawei.com> - 5.10.0-145.0.0.74
 - !511 Backport CVEs and bugfixes
 - livepatch/core: Fix hungtask against cpu hotplug on x86
