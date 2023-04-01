@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2303.5.0
+%global hulkrelease 2303.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0194
+Release: %{hulkrelease}.0195
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,18 @@ fi
 %endif
 
 %changelog
+
+* Fri Mar 31 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.6.0.0195
+- ALSA: pcm: Move rwsem lock inside snd_ctl_elem_read to prevent UAF
+- ftrace: Fix invalid address access in lookup_rec() when index is 0
+- ftrace: Fix NULL pointer dereference in is_ftrace_trampoline when ftrace is dead
+- scsi: scsi_dh_alua: fix memleak for 'qdata' in alua_activate()
+- RDMA/core: Don't infoleak GRH fields
+- !480 mm  bugfixes backport
+- cgroup: Add missing cpus_read_lock() to cgroup_attach_task_all()
+- cgroup: Fix threadgroup_rwsem <-> cpus_read_lock() deadlock
+- cgroup/cpuset: Change cpuset_rwsem and hotplug lock order
+- mm: memcontrol: fix cannot alloc the maximum memcg ID
 
 * Wed Mar 29 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.5.0.0194
 - net/sched: tcindex: search key must be 16 bits
