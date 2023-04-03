@@ -793,7 +793,8 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 		return kvm_arch_vcpu_reset(vcpu);
 	case KVM_SW64_GET_VCB:
 		if (vcpu->arch.vcb.migration_mark) {
-			result = sw64_io_read(0, LONG_TIME);
+			result = sw64_io_read(0, LONG_TIME)
+					+ vcpu->arch.vcb.guest_longtime_offset;
 			vcpu->arch.vcb.guest_longtime = result;
 			vcpu->arch.vcb.guest_irqs_pending = vcpu->arch.irqs_pending[0];
 		}
