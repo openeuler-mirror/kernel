@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2303.6.0
+%global hulkrelease 2304.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0195
+Release: %{hulkrelease}.0196
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,15 @@ fi
 %endif
 
 %changelog
+
+* Tue Apr 04 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.1.0.0196
+- ext4: Fix i_disksize exceeding i_size problem in paritally written case
+- ext4: ext4_put_super: Remove redundant checking for 'sbi->s_journal_bdev'
+- ext4: Fix reusing stale buffer heads from last failed mounting
+- kvm: initialize all of the kvm_debugregs structure before sending it to userspace
+- net: virtio_net_hdr_to_skb: count transport header in UFO
+- net: be more gentle about silly gso requests coming from user
+- ext4: fix race between writepages and remount
 
 * Fri Mar 31 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2303.6.0.0195
 - ALSA: pcm: Move rwsem lock inside snd_ctl_elem_read to prevent UAF
