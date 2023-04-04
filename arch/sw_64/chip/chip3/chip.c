@@ -129,6 +129,8 @@ static void chip3_get_vt_smp_info(void)
 	unsigned long smp_info;
 
 	smp_info = sw64_io_read(0, SMP_INFO);
+	if (smp_info == -1UL)
+		smp_info = 0;
 	topo_nr_threads = (smp_info >> VT_THREADS_SHIFT) & VT_THREADS_MASK;
 	topo_nr_cores = (smp_info >> VT_CORES_SHIFT) & VT_CORES_MASK;
 	topo_nr_maxcpus = (smp_info >> VT_MAX_CPUS_SHIFT) & VT_MAX_CPUS_MASK;
