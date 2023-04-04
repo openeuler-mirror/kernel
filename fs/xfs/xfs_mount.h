@@ -478,7 +478,7 @@ static inline uint64_t
 xfs_fdblocks_unavailable(
 	struct xfs_mount	*mp)
 {
-	return mp->m_alloc_set_aside;
+	return mp->m_alloc_set_aside + atomic64_read(&mp->m_allocbt_blks);
 }
 
 extern int	xfs_mod_fdblocks(struct xfs_mount *mp, int64_t delta,
