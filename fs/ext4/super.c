@@ -1226,7 +1226,7 @@ static void ext4_put_super(struct super_block *sb)
 
 	sync_blockdev(sb->s_bdev);
 	invalidate_bdev(sb->s_bdev);
-	if (sbi->journal_bdev && sbi->journal_bdev != sb->s_bdev) {
+	if (sbi->journal_bdev) {
 		sync_blockdev(sbi->journal_bdev);
 		ext4_blkdev_remove(sbi);
 	}
