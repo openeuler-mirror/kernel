@@ -3949,14 +3949,10 @@ static void check_spread(struct cfs_rq *cfs_rq, struct sched_entity *se)
 #endif
 }
 
-/* The threshold when the wakee's vruntime should be set cfs_rq->min_vruntime, default: 200 days */
-#define WAKEUP_REINIT_THRESHOLD_NS     (200 * 24 * 3600 * NSEC_PER_SEC)
-
 static void
 place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 {
 	u64 vruntime = cfs_rq->min_vruntime;
-	struct rq *rq = rq_of(cfs_rq);
 
 	/*
 	 * The 'current' period is already promised to the current tasks,
@@ -3981,11 +3977,8 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int initial)
 		vruntime -= thresh;
 	}
 
-	if (unlikely(!initial && (s64)(rq_clock_task(rq) - se->exec_start) > WAKEUP_REINIT_THRESHOLD_NS))
-		se->vruntime = vruntime;
-	else
 	/* ensure we never gain time by being placed backwards. */
-		se->vruntime = max_vruntime(se->vruntime, vruntime);
+	se->vruntime = max_vruntime(se->vruntime, vruntime);
 }
 
 static void check_enqueue_throttle(struct cfs_rq *cfs_rq);
