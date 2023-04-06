@@ -201,7 +201,7 @@ static int hwmon_thermal_register_sensors(struct device *dev)
 {
 	struct hwmon_device *hwdev = to_hwmon_device(dev);
 	const struct hwmon_chip_info *chip = hwdev->chip;
-	const struct hwmon_channel_info **info = chip->info;
+	const struct hwmon_channel_info * const *info = chip->info;
 	void *drvdata = dev_get_drvdata(dev);
 	int i;
 
