@@ -4699,11 +4699,14 @@ static void idle_sync_thread(struct mddev *mddev)
 {
 	int sync_seq = atomic_read(&mddev->sync_seq);
 
-	mutex_lock(&mddev->sync_mutex);
+	if (mutex_lock_interruptible(&mddev->sync_mutex))
+		return;
+
 	clear_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
 	stop_sync_thread(mddev);
 
-	wait_event(resync_wait, sync_seq != atomic_read(&mddev->sync_seq) ||
+	wait_event_interruptible(resync_wait,
+			sync_seq != atomic_read(&mddev->sync_seq) ||
 			!test_bit(MD_RECOVERY_RUNNING, &mddev->recovery));
 
 	mutex_unlock(&mddev->sync_mutex);
@@ -4711,11 +4714,13 @@ static void idle_sync_thread(struct mddev *mddev)
 
 static void frozen_sync_thread(struct mddev *mddev)
 {
-	mutex_lock(&mddev->sync_mutex);
+	if (mutex_lock_interruptible(&mddev->sync_mutex))
+		return;
+
 	set_bit(MD_RECOVERY_FROZEN, &mddev->recovery);
 	stop_sync_thread(mddev);
 
-	wait_event(resync_wait, mddev->sync_thread == NULL &&
+	wait_event_interruptible(resync_wait, mddev->sync_thread == NULL &&
 			!test_bit(MD_RECOVERY_RUNNING, &mddev->recovery));
 
 	mutex_unlock(&mddev->sync_mutex);
