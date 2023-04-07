@@ -382,3 +382,17 @@ int nic_get_port_num_per_chip(struct net_device *ndev, u32 *port_num)
 	return nic_get_port_num_of_die(ndev, port_num);
 }
 EXPORT_SYMBOL(nic_get_port_num_per_chip);
+
+int nic_set_tx_timeout(struct net_device *ndev, int tx_timeout)
+{
+	if (nic_netdev_match_check(ndev))
+		return -ENODEV;
+
+	if (tx_timeout <= 0)
+		return -EINVAL;
+
+	ndev->watchdog_timeo = tx_timeout;
+
+	return 0;
+}
+EXPORT_SYMBOL(nic_set_tx_timeout);
