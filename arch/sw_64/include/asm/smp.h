@@ -78,86 +78,14 @@ extern int __rcid_to_cpu[NR_CPUS];
 #define cpu_physical_id(cpu)    __cpu_to_rcid[cpu]
 
 extern unsigned long tidle_pcb[NR_CPUS];
+extern void play_dead(void);
+extern void arch_send_call_function_single_ipi(int cpu);
+extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
 
-struct smp_ops {
-	void (*smp_prepare_boot_cpu)(void);
-	void (*smp_prepare_cpus)(unsigned int max_cpus);
-	void (*smp_cpus_done)(unsigned int max_cpus);
-
-	void (*stop_other_cpus)(int wait);
-	void (*smp_send_reschedule)(int cpu);
-
-	int (*cpu_up)(unsigned int cpu, struct task_struct *tidle);
-	int (*cpu_disable)(void);
-	void (*cpu_die)(unsigned int cpu);
-	void (*play_dead)(void);
-
-	void (*send_call_func_ipi)(const struct cpumask *mask);
-	void (*send_call_func_single_ipi)(int cpu);
-};
-
-extern struct smp_ops smp_ops;
-
-static inline void smp_send_stop(void)
-{
-	smp_ops.stop_other_cpus(0);
-}
-
-static inline void stop_other_cpus(void)
-{
-	smp_ops.stop_other_cpus(1);
-}
-
-static inline void smp_prepare_boot_cpu(void)
-{
-	smp_ops.smp_prepare_boot_cpu();
-}
-
-static inline void smp_prepare_cpus(unsigned int max_cpus)
-{
-	smp_ops.smp_prepare_cpus(max_cpus);
-}
-
-static inline void smp_cpus_done(unsigned int max_cpus)
-{
-	smp_ops.smp_cpus_done(max_cpus);
-}
-
-static inline int __cpu_up(unsigned int cpu, struct task_struct *tidle)
-{
-	return smp_ops.cpu_up(cpu, tidle);
-}
-
-static inline int __cpu_disable(void)
-{
-	return smp_ops.cpu_disable();
-}
-
-static inline void __cpu_die(unsigned int cpu)
-{
-	smp_ops.cpu_die(cpu);
-}
-
-static inline void play_dead(void)
-{
-	smp_ops.play_dead();
-}
-
-static inline void smp_send_reschedule(int cpu)
-{
-	smp_ops.smp_send_reschedule(cpu);
-}
-
-static inline void arch_send_call_function_single_ipi(int cpu)
-{
-	smp_ops.send_call_func_single_ipi(cpu);
-}
-
-static inline void arch_send_call_function_ipi_mask(const struct cpumask *mask)
-{
-	smp_ops.send_call_func_ipi(mask);
-}
-
+#ifdef CONFIG_HOTPLUG_CPU
+int __cpu_disable(void);
+void __cpu_die(unsigned int cpu);
+#endif /* CONFIG_HOTPLUG_CPU */
 
 #else /* CONFIG_SMP */
 static inline void play_dead(void)

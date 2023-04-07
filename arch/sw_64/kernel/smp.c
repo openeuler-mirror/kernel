@@ -230,7 +230,7 @@ void __init setup_smp(void)
 /*
  * Called by smp_init prepare the secondaries
  */
-void __init native_smp_prepare_cpus(unsigned int max_cpus)
+void __init smp_prepare_cpus(unsigned int max_cpus)
 {
 	unsigned int cpu;
 	/* Take care of some initial bookkeeping.  */
@@ -255,14 +255,14 @@ void __init native_smp_prepare_cpus(unsigned int max_cpus)
 	pr_info("SMP starting up secondaries.\n");
 }
 
-void  native_smp_prepare_boot_cpu(void)
+void smp_prepare_boot_cpu(void)
 {
 	int me = smp_processor_id();
 
 	per_cpu(cpu_state, me) = CPU_ONLINE;
 }
 
-int native_vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
+int vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
 	printk("%s: cpu = %d\n", __func__, cpu);
 
@@ -274,10 +274,10 @@ int native_vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
 }
 
 DECLARE_STATIC_KEY_FALSE(use_tc_as_sched_clock);
-int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
+int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
 	if (is_in_guest())
-		return native_vt_cpu_up(cpu, tidle);
+		return vt_cpu_up(cpu, tidle);
 
 	wmb();
 	smp_rcb->ready = 0;
@@ -311,7 +311,7 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 	return cpu_online(cpu) ? 0 : -ENOSYS;
 }
 
-void __init native_smp_cpus_done(unsigned int max_cpus)
+void __init smp_cpus_done(unsigned int max_cpus)
 {
 	smp_booted = 1;
 	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
@@ -336,10 +336,18 @@ static void send_ipi_message(const struct cpumask *to_whom, enum ipi_message_typ
 		send_ipi(i, II_II0);
 }
 
+static void ipi_cpu_stop(int cpu)
+{
+	local_irq_disable();
+	set_cpu_online(cpu, false);
+	while (1)
+		wait_for_interrupt();
+}
+
 void handle_ipi(struct pt_regs *regs)
 {
-	int this_cpu = smp_processor_id();
-	unsigned long *pending_ipis = &ipi_data[this_cpu].bits;
+	int cpu = smp_processor_id();
+	unsigned long *pending_ipis = &ipi_data[cpu].bits;
 	unsigned long ops;
 
 	mb();	/* Order interrupt and bit testing. */
@@ -364,11 +372,9 @@ void handle_ipi(struct pt_regs *regs)
 				break;
 
 			case IPI_CPU_STOP:
-				local_irq_disable();
-				asm("halt");
-
+				ipi_cpu_stop(cpu);
 			default:
-				pr_crit("Unknown IPI on CPU %d: %lu\n", this_cpu, which);
+				pr_crit("Unknown IPI on CPU %d: %lu\n", cpu, which);
 				break;
 			}
 		} while (ops);
@@ -376,38 +382,46 @@ void handle_ipi(struct pt_regs *regs)
 		mb();	/* Order data access and bit testing. */
 	}
 
-	cpu_data[this_cpu].ipi_count++;
+	cpu_data[cpu].ipi_count++;
 }
 
-void native_smp_send_reschedule(int cpu)
+void smp_send_reschedule(int cpu)
 {
-#ifdef DEBUG_IPI_MSG
-	if (cpu == hard_smp_processor_id())
-		pr_warn("smp_send_reschedule: Sending IPI to self.\n");
-#endif
 	send_ipi_message(cpumask_of(cpu), IPI_RESCHEDULE);
 }
+EXPORT_SYMBOL(smp_send_reschedule);
 
-static void native_stop_other_cpus(int wait)
+void smp_send_stop(void)
 {
-	cpumask_t to_whom;
+	unsigned long timeout;
 
-	cpumask_copy(&to_whom, cpu_possible_mask);
-	cpumask_clear_cpu(smp_processor_id(), &to_whom);
-#ifdef DEBUG_IPI_MSG
-	if (hard_smp_processor_id() != boot_cpu_id)
-		pr_warn("smp_send_stop: Not on boot cpu.\n");
-#endif
-	send_ipi_message(&to_whom, IPI_CPU_STOP);
+	if (num_online_cpus() > 1) {
+		cpumask_t mask;
 
+		cpumask_copy(&mask, cpu_online_mask);
+		cpumask_clear_cpu(smp_processor_id(), &mask);
+
+		if (system_state <= SYSTEM_RUNNING)
+			pr_crit("SMP: stopping secondary CPUs\n");
+		send_ipi_message(&mask, IPI_CPU_STOP);
+	}
+
+	/* Wait up to one second for other CPUs to stop */
+	timeout = USEC_PER_SEC;
+	while (num_online_cpus() > 1 && timeout--)
+		udelay(1);
+
+	if (num_online_cpus() > 1)
+		pr_warn("SMP: failed to stop secondary CPUs %*pbl\n",
+				cpumask_pr_args(cpu_online_mask));
 }
 
-void native_send_call_func_ipi(const struct cpumask *mask)
+void arch_send_call_function_ipi_mask(const struct cpumask *mask)
 {
 	send_ipi_message(mask, IPI_CALL_FUNC);
 }
 
-void native_send_call_func_single_ipi(int cpu)
+void arch_send_call_function_single_ipi(int cpu)
 {
 	send_ipi_message(cpumask_of(cpu), IPI_CALL_FUNC);
 }
@@ -523,20 +537,18 @@ void flush_tlb_kernel_range(unsigned long start, unsigned long end)
 }
 EXPORT_SYMBOL(flush_tlb_kernel_range);
 
-int native_cpu_disable(void)
+int __cpu_disable(void)
 {
 	int cpu = smp_processor_id();
 
 	set_cpu_online(cpu, false);
 	remove_cpu_topology(cpu);
 	numa_remove_cpu(cpu);
-#ifdef CONFIG_HOTPLUG_CPU
 	clear_tasks_mm_cpumask(cpu);
-#endif
 	return 0;
 }
 
-void native_cpu_die(unsigned int cpu)
+void __cpu_die(unsigned int cpu)
 {
 	/* We don't do anything here: idle task is faking death itself. */
 	unsigned int i;
@@ -554,15 +566,7 @@ void native_cpu_die(unsigned int cpu)
 	pr_err("CPU %u didn't die...\n", cpu);
 }
 
-static void disable_timer(void)
-{
-	if (is_in_guest())
-		hcall(HCALL_SET_CLOCKEVENT, 0, 0, 0);
-	else
-		wrtimer(0);
-}
-
-void native_play_dead(void)
+void play_dead(void)
 {
 	idle_task_exit();
 	mb();
@@ -572,10 +576,12 @@ void native_play_dead(void)
 #endif
 	local_irq_disable();
 
-	disable_timer();
-
-	if (is_in_guest())
+	if (is_in_guest()) {
+		hcall(HCALL_SET_CLOCKEVENT, 0, 0, 0);
 		hcall(HCALL_STOP, 0, 0, 0);
+	} else {
+		wrtimer(0);
+	}
 
 #ifdef CONFIG_SUSPEND
 
@@ -596,21 +602,3 @@ void native_play_dead(void)
 	asm volatile("halt");
 #endif
 }
-
-struct smp_ops smp_ops = {
-	.smp_prepare_boot_cpu	= native_smp_prepare_boot_cpu,
-	.smp_prepare_cpus	= native_smp_prepare_cpus,
-	.smp_cpus_done		= native_smp_cpus_done,
-
-	.stop_other_cpus	= native_stop_other_cpus,
-	.smp_send_reschedule	= native_smp_send_reschedule,
-
-	.cpu_up			= native_cpu_up,
-	.cpu_die		= native_cpu_die,
-	.cpu_disable		= native_cpu_disable,
-	.play_dead		= native_play_dead,
-
-	.send_call_func_ipi	= native_send_call_func_ipi,
-	.send_call_func_single_ipi = native_send_call_func_single_ipi,
-};
-EXPORT_SYMBOL_GPL(smp_ops);
