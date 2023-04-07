@@ -1612,7 +1612,11 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	cgroup_taskset_first(tset, &css);
 	cs = css_cs(css);
 
-	lockdep_assert_cpus_held();     /* see cgroup_attach_lock() */
+	/*
+	 * It should hold cpus lock because a cpu offline event can
+	 * cause set_cpus_allowed_ptr() failed.
+	 */
+	get_online_cpus();
 	mutex_lock(&cpuset_mutex);
 
 	/* prepare for attach */
@@ -1675,6 +1679,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 		wake_up(&cpuset_attach_wq);
 
 	mutex_unlock(&cpuset_mutex);
+	put_online_cpus();
 }
 
 /* The various types of files and directories in a cpuset file system */
