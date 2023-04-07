@@ -4563,6 +4563,7 @@ static void cfq_exit_queue(struct elevator_queue *e)
 	kfree(cfqd->root_group);
 #endif
 	kfree(cfqd);
+	wbt_enable_default(q);
 }
 
 static int cfq_init_queue(struct request_queue *q, struct elevator_type *e)
