@@ -639,31 +639,30 @@ static void register_disk(struct device *parent, struct gendisk *disk)
 	}
 }
 
-static void disk_init_partition(struct gendisk *disk)
+static void disk_scan_partitions(struct gendisk *disk)
 {
-	struct device *ddev = disk_to_dev(disk);
 	struct block_device *bdev;
-	struct disk_part_iter piter;
-	struct hd_struct *part;
 
-	/* No minors to use for partitions */
-	if (!disk_part_scan_enabled(disk))
-		goto exit;
-
-	/* No such device (e.g., media were just removed) */
-	if (!get_capacity(disk))
-		goto exit;
+	if (!get_capacity(disk) || !disk_part_scan_enabled(disk))
+		return;
 
 	bdev = bdget_disk(disk, 0);
 	if (!bdev)
-		goto exit;
+		return;
 
 	bdev->bd_invalidated = 1;
-	if (blkdev_get(bdev, FMODE_READ, NULL))
-		goto exit;
-	blkdev_put(bdev, FMODE_READ);
+	if (!blkdev_get(bdev, FMODE_READ, NULL))
+		blkdev_put(bdev, FMODE_READ);
+}
 
-exit:
+static void disk_init_partition(struct gendisk *disk)
+{
+	struct device *ddev = disk_to_dev(disk);
+	struct disk_part_iter piter;
+	struct hd_struct *part;
+
+	disk_scan_partitions(disk);
+
 	/* announce disk after possible partitions are created */
 	dev_set_uevent_suppress(ddev, 0);
 	kobject_uevent(&ddev->kobj, KOBJ_ADD);
