@@ -10,7 +10,7 @@
 #include <linux/pr.h>
 #include <linux/uaccess.h>
 
-#include "blk.h"
+#include "blk_extra_api.h"
 
 static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
 {
