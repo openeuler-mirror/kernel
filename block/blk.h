@@ -214,6 +214,7 @@ unsigned int blk_plug_queued_count(struct request_queue *q);
 void blk_account_io_start(struct request *req, bool new_io);
 void blk_account_io_completion(struct request *req, unsigned int bytes);
 void blk_account_io_done(struct request *req, u64 now);
+int disk_scan_partitions(struct gendisk *disk, fmode_t mode);
 
 /*
  * EH timer and IO completion will both attempt to 'grab' the request, make

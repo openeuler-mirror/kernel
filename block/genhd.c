@@ -639,20 +639,25 @@ static void register_disk(struct device *parent, struct gendisk *disk)
 	}
 }
 
-static void disk_scan_partitions(struct gendisk *disk)
+int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
 {
 	struct block_device *bdev;
+	int ret;
 
-	if (!get_capacity(disk) || !disk_part_scan_enabled(disk))
-		return;
+	if (!disk_part_scan_enabled(disk))
+		return -EINVAL;
 
 	bdev = bdget_disk(disk, 0);
 	if (!bdev)
-		return;
+		return -ENOMEM;
 
 	bdev->bd_invalidated = 1;
-	if (!blkdev_get(bdev, FMODE_READ, NULL))
-		blkdev_put(bdev, FMODE_READ);
+
+	ret = blkdev_get(bdev, mode, NULL);
+	if (!ret)
+		blkdev_put(bdev, mode);
+
+	return ret;
 }
 
 static void disk_init_partition(struct gendisk *disk)
@@ -661,7 +666,8 @@ static void disk_init_partition(struct gendisk *disk)
 	struct disk_part_iter piter;
 	struct hd_struct *part;
 
-	disk_scan_partitions(disk);
+	if (get_capacity(disk))
+		disk_scan_partitions(disk, FMODE_READ);
 
 	/* announce disk after possible partitions are created */
 	dev_set_uevent_suppress(ddev, 0);

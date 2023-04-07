@@ -10,6 +10,8 @@
 #include <linux/pr.h>
 #include <linux/uaccess.h>
 
+#include "blk.h"
+
 static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
 {
 	struct block_device *bdevp;
@@ -597,7 +599,11 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	case BLKPG:
 		return blkpg_ioctl(bdev, argp);
 	case BLKRRPART:
-		return blkdev_reread_part(bdev);
+		if (!capable(CAP_SYS_ADMIN))
+			return -EACCES;
+		if (bdev != bdev->bd_contains)
+			return -EINVAL;
+		return disk_scan_partitions(bdev->bd_disk, mode & ~FMODE_EXCL);
 	case BLKGETSIZE:
 		size = i_size_read(bdev->bd_inode);
 		if ((size >> 9) > ~0UL)
