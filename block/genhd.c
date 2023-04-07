@@ -671,7 +671,7 @@ int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
 	bdev->bd_invalidated = 1;
 	ret = blkdev_get(bdev, mode & ~FMODE_EXCL, NULL);
 	if (!ret)
-		blkdev_put(bdev, mode);
+		blkdev_put(bdev, mode & ~FMODE_EXCL);
 
 	if (!(mode & FMODE_EXCL)) {
 		bd_abort_claiming(bdev, bdev, disk_scan_partitions);
