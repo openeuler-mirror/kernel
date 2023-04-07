@@ -123,6 +123,13 @@ static inline bool mem_reliable_shmem_limit_check(void)
 	       shmem_reliable_nr_page;
 }
 
+static inline void reliable_clear_page_counter(struct mm_struct *mm)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	atomic_long_set(&mm->reliable_nr_page, 0);
+}
 #else
 #define reliable_enabled 0
 #define reliable_allow_fb_enabled() false
@@ -171,6 +178,7 @@ static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
 						     int val) {}
 
 static inline bool mem_reliable_counter_initialized(void) { return false; }
+static inline void reliable_clear_page_counter(struct mm_struct *mm) {}
 #endif
 
 #endif
