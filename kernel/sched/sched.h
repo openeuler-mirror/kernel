@@ -1136,8 +1136,12 @@ struct rq {
 	unsigned int		core_forceidle_seq;
 #endif
 
+#if defined(CONFIG_QOS_SCHED_PRIO_LB) && !defined(__GENKSYMS__)
+	struct list_head cfs_offline_tasks;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
