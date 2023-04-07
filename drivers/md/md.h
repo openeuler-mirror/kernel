@@ -509,6 +509,9 @@ struct mddev {
 	unsigned int			good_device_nr;	/* good device num within cluster raid */
 
 	bool	has_superblocks:1;
+
+	/* Used to synchronize idle and frozen for action_store() */
+	struct mutex sync_mutex;
 };
 
 enum recovery_flags {
