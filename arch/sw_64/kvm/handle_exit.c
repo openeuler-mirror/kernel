@@ -42,6 +42,12 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		vcpu->run->exit_reason = KVM_EXIT_SYSTEM_EVENT;
 		vcpu->run->system_event.type = KVM_SYSTEM_EVENT_RESET;
 		return 0;
+	case SW64_KVM_EXIT_STOP:
+		vcpu->stat.stop_exits++;
+		vcpu->arch.halted = 1;
+		memset(&vcpu->arch.irqs_pending, 0, sizeof(vcpu->arch.irqs_pending));
+		kvm_vcpu_block(vcpu);
+		return 1;
 	case SW64_KVM_EXIT_TIMER:
 		vcpu->stat.timer_exits++;
 		set_timer(vcpu, hargs->arg0);

@@ -103,6 +103,7 @@ struct kvm_vcpu_stat {
 	u64 migration_set_dirty;
 	u64 shutdown_exits;
 	u64 restart_exits;
+	u64 stop_exits;
 	u64 ipi_exits;
 	u64 timer_exits;
 	u64 debug_exits;
