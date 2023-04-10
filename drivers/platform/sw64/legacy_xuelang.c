@@ -51,12 +51,13 @@ void sw64_restart(void)
 
 static int sw64_reset_init(void)
 {
-	if (!sunway_boot_params->efi_systab || (void *)bios_version == NULL) {
-		pm_restart = sw64_restart;
-		pm_power_off = sw64_poweroff;
-		pm_halt = sw64_halt;
-	}
-
+#ifdef CONFIG_EFI
+	if (BIOS_SUPPORT_RESET_CLALLBACK((void *)bios_version))
+		return 0;
+#endif
+	pm_restart = sw64_restart;
+	pm_power_off = sw64_poweroff;
+	pm_halt = sw64_halt;
 	return 0;
 }
 subsys_initcall(sw64_reset_init);
