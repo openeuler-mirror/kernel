@@ -468,8 +468,14 @@ struct sched_statistics {
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 #endif
+
+#if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY) && !defined(__GENKSYMS__)
+	u64				nr_wakeups_preferred_cpus;
+	u64				nr_wakeups_force_preferred_cpus;
+#else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 #endif
 };
 
@@ -1422,8 +1428,13 @@ struct task_struct {
 	KABI_RESERVE(6)
 #endif
 	KABI_USE(7, void *pf_io_worker)
+#if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY) && !defined(__GENKSYMS__)
+	KABI_USE(8, cpumask_t *prefer_cpus)
+	KABI_USE(9, const cpumask_t *select_cpus)
+#else
 	KABI_RESERVE(8)
 	KABI_RESERVE(9)
+#endif
 	KABI_RESERVE(10)
 	KABI_RESERVE(11)
 	KABI_RESERVE(12)
@@ -2204,6 +2215,13 @@ static inline int sched_qos_cpu_overload(void)
 {
 	return 0;
 }
+#endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+int set_prefer_cpus_ptr(struct task_struct *p,
+			const struct cpumask *new_mask);
+int sched_prefer_cpus_fork(struct task_struct *p, struct cpumask *mask);
+void sched_prefer_cpus_free(struct task_struct *p);
 #endif
 
 #ifdef CONFIG_BPF_SCHED
