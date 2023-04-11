@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2304.1.0
+%global hulkrelease 2304.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0196
+Release: %{hulkrelease}.0197
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,63 @@ fi
 %endif
 
 %changelog
+
+* Tue Apr 11 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.3.0.0197
+- hwmon: (xgene) Fix use after free bug in xgene_hwmon_remove due to race condition
+- xirc2ps_cs: Fix use after free bug in xirc2ps_detach
+- 9p/xen : Fix use after free bug in xen_9pfs_front_remove due to race condition
+- !566 linux-4.19.y bugfixes backport
+- bpf: add missing header file include
+- uaccess: Add speculation barrier to copy_from_user()
+- random: always mix cycle counter in add_latent_entropy()
+- x86/mm: Fix use of uninitialized buffer in sme_enable()
+- ext4: fail ext4_iget if special inode unallocated
+- ext4: zero i_disksize when initializing the bootloader inode
+- irqdomain: Drop bogus fwspec-mapping error handling
+- irqdomain: Fix disassociation race
+- irqdomain: Fix association race
+- x86/kprobes: Fix arch_check_optimized_kprobe check within optimized_kprobe range
+- x86/kprobes: Fix __recover_optprobed_insn check optimizing logic
+- x86/bugs: Reset speculation control settings on init
+- timers: Prevent union confusion from unexpected restart_syscall()
+- crypto: rsa-pkcs1pad - Use akcipher_request_complete
+- crypto: seqiv - Handle EBUSY correctly
+- ACPI: battery: Fix missing NUL-termination with large strings
+- ACPICA: nsrepair: handle cases without a return value correctly
+- genirq: Fix the return type of kstat_cpu_irqs_sum()
+- ACPI: NFIT: fix a potential deadlock during NFIT teardown
+- alarmtimer: Prevent starvation by small intervals and SIG_IGN
+- ring-buffer: Fix race while reader and writer are on the same page
+- cgroup: Add missing cpus_read_lock() to cgroup_attach_task_all()
+- cgroup: Fix threadgroup_rwsem <-> cpus_read_lock() deadlock
+- cgroup/cpuset: Change cpuset_rwsem and hotplug lock order
+- Revert "cgroup/cpuset: Change cpuset_rwsem and hotplug lock order"
+- Revert "cgroup: Fix threadgroup_rwsem <-> cpus_read_lock() deadlock"
+- Revert "cgroup: Add missing cpus_read_lock() to cgroup_attach_task_all()"
+- block: fix wrong mode for blkdev_put() from disk_scan_partitions()
+- block: fix scan partition for exclusively open device again
+- block: fix kabi broken in ioctl.c
+- block: merge disk_scan_partitions and blkdev_reread_part
+- block: cleanup partition scanning in register_disk
+- block: Revert "block: check 'bd_super' before rescanning partition"
+- md: fix kabi broken in struct mddev
+- md: use interruptible apis in idle/frozen_sync_thread
+- md: wake up 'resync_wait' at last in md_reap_sync_thread()
+- md: refactor idle/frozen_sync_thread()
+- md: add a mutex to synchronize idle and frozen in action_store()
+- md: refactor action_store() for 'idle' and 'frozen'
+- mm: mem_reliable: Initialize reliable_nr_page when mm_init()
+- md: fix soft lockup in status_resync
+- md: don't update recovery_cp when curr_resync is ACTIVE
+- md: Ensure resync is reported after it starts
+- md: Use enum for overloaded magic numbers used by mddev->curr_resync
+- loop: Add parm check in loop_control_ioctl
+- block/wbt: enable wbt after switching cfq to other schedulers
+- Fix double fget() in vhost_net_set_backend()
+- sched/fair: Sanitize vruntime of entity being migrated
+- sched/fair: sanitize vruntime of entity being placed
+- Revert "sched: Reinit task's vruntime if a task sleep over 200 days"
+- btrfs: fix race between quota disable and quota assign ioctls
 
 * Tue Apr 04 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.1.0.0196
 - ext4: Fix i_disksize exceeding i_size problem in paritally written case
