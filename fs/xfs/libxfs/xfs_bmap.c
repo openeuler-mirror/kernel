@@ -1089,13 +1089,10 @@ xfs_bmap_add_attrfork(
 	error = xfs_bmap_set_attrforkoff(ip, size, &version);
 	if (error)
 		goto trans_cancel;
-	ASSERT(ip->i_afp == NULL);
+	ASSERT(!ip->i_af.if_present);
 
-	ip->i_afp = kmem_cache_zalloc(xfs_ifork_zone,
-				      GFP_KERNEL | __GFP_NOFAIL);
-
-	ip->i_afp->if_format = XFS_DINODE_FMT_EXTENTS;
-	ip->i_afp->if_flags = XFS_IFEXTENTS;
+	xfs_ifork_init_attr(ip, XFS_DINODE_FMT_EXTENTS, 0);
+	ip->i_af.if_flags = XFS_IFEXTENTS;
 	logflags = 0;
 	switch (ip->i_df.if_format) {
 	case XFS_DINODE_FMT_LOCAL:
