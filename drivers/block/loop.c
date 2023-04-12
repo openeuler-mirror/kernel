@@ -2084,6 +2084,17 @@ static int loop_add(struct loop_device **l, int i)
 	struct gendisk *disk;
 	int err;
 
+	/*
+	 * i << part_shift is actually used as the first_minor.
+	 * So here should avoid i << part_shift overflow.
+	 * And, MKDEV() expect that the max bits of
+	 * first_minor is 20.
+	 */
+	if (i > 0 && i > MINORMASK >> part_shift) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	err = -ENOMEM;
 	lo = kzalloc(sizeof(*lo), GFP_KERNEL);
 	if (!lo)
@@ -2097,7 +2108,8 @@ static int loop_add(struct loop_device **l, int i)
 		if (err == -ENOSPC)
 			err = -EEXIST;
 	} else {
-		err = idr_alloc(&loop_index_idr, lo, 0, 0, GFP_KERNEL);
+		err = idr_alloc(&loop_index_idr, lo, 0,
+				(MINORMASK >> part_shift) + 1, GFP_KERNEL);
 	}
 	if (err < 0)
 		goto out_free_dev;
