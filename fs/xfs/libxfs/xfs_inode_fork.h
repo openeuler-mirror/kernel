@@ -98,28 +98,8 @@ struct xfs_ifork {
 /*
  * Fork handling.
  */
-
-#define XFS_IFORK_Q(ip)			((ip)->i_d.di_forkoff != 0)
-#define XFS_IFORK_BOFF(ip)		((int)((ip)->i_d.di_forkoff << 3))
-
-#define XFS_IFORK_PTR(ip,w)		\
-	((w) == XFS_DATA_FORK ? \
-		&(ip)->i_df : \
-		((w) == XFS_ATTR_FORK ? \
-			(ip)->i_afp : \
-			(ip)->i_cowfp))
-#define XFS_IFORK_DSIZE(ip) \
-	(XFS_IFORK_Q(ip) ? XFS_IFORK_BOFF(ip) : XFS_LITINO((ip)->i_mount))
-#define XFS_IFORK_ASIZE(ip) \
-	(XFS_IFORK_Q(ip) ? XFS_LITINO((ip)->i_mount) - XFS_IFORK_BOFF(ip) : 0)
-#define XFS_IFORK_SIZE(ip,w) \
-	((w) == XFS_DATA_FORK ? \
-		XFS_IFORK_DSIZE(ip) : \
-		((w) == XFS_ATTR_FORK ? \
-			XFS_IFORK_ASIZE(ip) : \
-			0))
 #define XFS_IFORK_MAXEXT(ip, w) \
-	(XFS_IFORK_SIZE(ip, w) / sizeof(xfs_bmbt_rec_t))
+	(xfs_inode_fork_size(ip, w) / sizeof(xfs_bmbt_rec_t))
 
 static inline bool xfs_ifork_has_extents(struct xfs_ifork *ifp)
 {
@@ -141,6 +121,10 @@ static inline int8_t xfs_ifork_format(struct xfs_ifork *ifp)
 	return ifp->if_format;
 }
 
+
+void xfs_ifork_zap_attr(struct xfs_inode *ip);
+void xfs_ifork_init_attr(struct xfs_inode *ip, enum xfs_dinode_fmt format,
+		xfs_extnum_t nextents);
 struct xfs_ifork *xfs_iext_state_to_fork(struct xfs_inode *ip, int state);
 
 int		xfs_iformat_data_fork(struct xfs_inode *, struct xfs_dinode *);
