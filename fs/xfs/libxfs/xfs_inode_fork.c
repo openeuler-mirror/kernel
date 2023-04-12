@@ -287,9 +287,6 @@ xfs_ifork_init_attr(
 	enum xfs_dinode_fmt	format,
 	xfs_extnum_t		nextents)
 {
-	ASSERT(!ip->i_af.if_present);
-
-	ip->i_af.if_present = 1;
 	ip->i_af.if_format = format;
 	ip->i_af.if_nextents = nextents;
 }
@@ -298,7 +295,6 @@ void
 xfs_ifork_zap_attr(
 	struct xfs_inode	*ip)
 {
-	ASSERT(ip->i_af.if_present);
 	ASSERT(ip->i_af.if_broot == NULL);
 	ASSERT(ip->i_af.if_u1.if_data == NULL);
 	ASSERT(ip->i_af.if_height == 0);
@@ -697,7 +693,6 @@ xfs_ifork_init_cow(
 
 	ip->i_cowfp = kmem_cache_zalloc(xfs_ifork_zone,
 				       GFP_NOFS | __GFP_NOFAIL);
-	ip->i_cowfp->if_present = 1;
 	ip->i_cowfp->if_flags = XFS_IFEXTENTS;
 	ip->i_cowfp->if_format = XFS_DINODE_FMT_EXTENTS;
 }
@@ -737,7 +732,7 @@ xfs_ifork_verify_local_attr(
 	struct xfs_ifork	*ifp = &ip->i_af;
 	xfs_failaddr_t		fa;
 
-	if (!ifp->if_present)
+	if (!XFS_IFORK_Q(ip))
 		fa = __this_address;
 	else
 		fa = xfs_attr_shortform_verify(ip);
