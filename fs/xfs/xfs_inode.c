@@ -124,9 +124,9 @@ xfs_ilock_attr_map_shared(
 {
 	uint			lock_mode = XFS_ILOCK_SHARED;
 
-	if (ip->i_afp &&
-	    ip->i_afp->if_format == XFS_DINODE_FMT_BTREE &&
-	    (ip->i_afp->if_flags & XFS_IFEXTENTS) == 0)
+	if (ip->i_af.if_present &&
+	    ip->i_af.if_format == XFS_DINODE_FMT_BTREE &&
+	    (ip->i_af.if_flags & XFS_IFEXTENTS) == 0)
 		lock_mode = XFS_ILOCK_EXCL;
 	xfs_ilock(ip, lock_mode);
 	return lock_mode;
@@ -1927,7 +1927,7 @@ xfs_inactive(
 			goto out;
 	}
 
-	ASSERT(!ip->i_afp);
+	ASSERT(!ip->i_af.if_present);
 	ASSERT(ip->i_d.di_forkoff == 0);
 
 	/*
@@ -3605,13 +3605,13 @@ xfs_iflush(
 			goto flush_out;
 		}
 	}
-	if (XFS_TEST_ERROR(ip->i_df.if_nextents + xfs_ifork_nextents(ip->i_afp) >
+	if (XFS_TEST_ERROR(ip->i_df.if_nextents + xfs_ifork_nextents(&ip->i_af) >
 				ip->i_d.di_nblocks, mp, XFS_ERRTAG_IFLUSH_5)) {
 		xfs_alert_tag(mp, XFS_PTAG_IFLUSH,
 			"%s: detected corrupt incore inode %Lu, "
 			"total extents = %d, nblocks = %Ld, ptr "PTR_FMT,
 			__func__, ip->i_ino,
-			ip->i_df.if_nextents + xfs_ifork_nextents(ip->i_afp),
+			ip->i_df.if_nextents + xfs_ifork_nextents(&ip->i_af),
 			ip->i_d.di_nblocks, ip);
 		goto flush_out;
 	}
@@ -3642,7 +3642,8 @@ xfs_iflush(
 	if (ip->i_df.if_format == XFS_DINODE_FMT_LOCAL &&
 	    xfs_ifork_verify_local_data(ip))
 		goto flush_out;
-	if (ip->i_afp && ip->i_afp->if_format == XFS_DINODE_FMT_LOCAL &&
+	if (ip->i_af.if_present &&
+	    ip->i_af.if_format == XFS_DINODE_FMT_LOCAL &&
 	    xfs_ifork_verify_local_attr(ip))
 		goto flush_out;
 
