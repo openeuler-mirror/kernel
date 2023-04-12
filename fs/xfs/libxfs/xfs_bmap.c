@@ -932,7 +932,7 @@ xfs_bmap_add_attrfork_btree(
 	int			stat;		/* newroot status */
 
 	mp = ip->i_mount;
-	if (ip->i_df.if_broot_bytes <= XFS_IFORK_DSIZE(ip))
+	if (ip->i_df.if_broot_bytes <= xfs_inode_data_fork_size(ip))
 		*flags |= XFS_ILOG_DBROOT;
 	else {
 		cur = xfs_bmbt_init_cursor(mp, tp, ip, XFS_DATA_FORK);
@@ -972,7 +972,7 @@ xfs_bmap_add_attrfork_extents(
 	int			error;		/* error return value */
 
 	if (ip->i_df.if_nextents * sizeof(struct xfs_bmbt_rec) <=
-	    XFS_IFORK_DSIZE(ip))
+	    xfs_inode_data_fork_size(ip))
 		return 0;
 	cur = NULL;
 	error = xfs_bmap_extents_to_btree(tp, ip, &cur, 0, flags,
@@ -1003,7 +1003,7 @@ xfs_bmap_add_attrfork_local(
 {
 	struct xfs_da_args	dargs;		/* args for dir/attr code */
 
-	if (ip->i_df.if_bytes <= XFS_IFORK_DSIZE(ip))
+	if (ip->i_df.if_bytes <= xfs_inode_data_fork_size(ip))
 		return 0;
 
 	if (S_ISDIR(VFS_I(ip)->i_mode)) {
