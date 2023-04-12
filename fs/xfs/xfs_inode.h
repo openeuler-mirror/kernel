@@ -67,6 +67,11 @@ typedef struct xfs_inode {
 	struct list_head	i_ioend_list;
 } xfs_inode_t;
 
+static inline bool xfs_inode_has_attr_fork(struct xfs_inode *ip)
+{
+	return (ip)->i_d.di_forkoff > 0;
+}
+
 static inline struct xfs_ifork *
 xfs_ifork_ptr(
 	struct xfs_inode	*ip,
@@ -76,7 +81,7 @@ xfs_ifork_ptr(
 	case XFS_DATA_FORK:
 		return &ip->i_df;
 	case XFS_ATTR_FORK:
-		if (!XFS_IFORK_Q(ip))
+		if (!xfs_inode_has_attr_fork(ip))
 			return NULL;
 		return &ip->i_af;
 	case XFS_COW_FORK:
