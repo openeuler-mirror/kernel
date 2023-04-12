@@ -124,7 +124,7 @@ xfs_ilock_attr_map_shared(
 {
 	uint			lock_mode = XFS_ILOCK_SHARED;
 
-	if (XFS_IFORK_Q(ip) &&
+	if (xfs_inode_has_attr_fork(ip) &&
 	    ip->i_af.if_format == XFS_DINODE_FMT_BTREE &&
 	    (ip->i_af.if_flags & XFS_IFEXTENTS) == 0)
 		lock_mode = XFS_ILOCK_EXCL;
@@ -656,7 +656,7 @@ xfs_ip2xflags(
 {
 	struct xfs_icdinode	*dic = &ip->i_d;
 
-	return _xfs_dic2xflags(dic->di_flags, dic->di_flags2, XFS_IFORK_Q(ip));
+	return _xfs_dic2xflags(dic->di_flags, dic->di_flags2, xfs_inode_has_attr_fork(ip));
 }
 
 /*
@@ -1921,7 +1921,7 @@ xfs_inactive(
 	 * now.  The code calls a routine that recursively deconstructs the
 	 * attribute fork. If also blows away the in-core attribute fork.
 	 */
-	if (XFS_IFORK_Q(ip)) {
+	if (xfs_inode_has_attr_fork(ip)) {
 		error = xfs_attr_inactive(ip);
 		if (error)
 			goto out;
@@ -3643,7 +3643,7 @@ xfs_iflush(
 	if (ip->i_df.if_format == XFS_DINODE_FMT_LOCAL &&
 	    xfs_ifork_verify_local_data(ip))
 		goto flush_out;
-	if (XFS_IFORK_Q(ip) &&
+	if (xfs_inode_has_attr_fork(ip) &&
 	    ip->i_af.if_format == XFS_DINODE_FMT_LOCAL &&
 	    xfs_ifork_verify_local_attr(ip))
 		goto flush_out;
@@ -3660,7 +3660,7 @@ xfs_iflush(
 		ip->i_d.di_flushiter = 0;
 
 	xfs_iflush_fork(ip, dip, iip, XFS_DATA_FORK);
-	if (XFS_IFORK_Q(ip))
+	if (xfs_inode_has_attr_fork(ip))
 		xfs_iflush_fork(ip, dip, iip, XFS_ATTR_FORK);
 
 	/*
