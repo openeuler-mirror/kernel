@@ -136,7 +136,6 @@ xfs_inode_free_callback(
 		break;
 	}
 
-	xfs_idestroy_fork(&ip->i_af);
 	xfs_ifork_zap_attr(ip);
 
 	if (ip->i_cowfp) {
