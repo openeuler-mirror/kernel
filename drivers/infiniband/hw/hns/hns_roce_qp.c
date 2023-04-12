@@ -1072,6 +1072,48 @@ static void free_kernel_wrid(struct hns_roce_qp *hr_qp)
 	kfree(hr_qp->sq.wrid);
 }
 
+static inline void default_congest_type(struct hns_roce_dev *hr_dev,
+					struct hns_roce_qp *hr_qp)
+{
+	struct hns_roce_caps *caps = &hr_dev->caps;
+
+	hr_qp->congest_type = 1 << caps->default_congest_type;
+}
+
+static int set_congest_type(struct hns_roce_qp *hr_qp,
+			    struct hns_roce_ib_create_qp *ucmd)
+{
+	int ret = 0;
+
+	if (ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_DCQCN)
+		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_DCQCN;
+	else if (ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_LDCP)
+		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_LDCP;
+	else if (ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_HC3)
+		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_HC3;
+	else if (ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_DIP)
+		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_DIP;
+	else
+		ret = -EINVAL;
+
+	return ret;
+}
+
+static void set_congest_param(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_qp *hr_qp,
+			      struct hns_roce_ib_create_qp *ucmd)
+{
+	int ret;
+
+	if (ucmd->comp_mask & HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE) {
+		ret = set_congest_type(hr_qp, ucmd);
+		if (ret == 0)
+			return;
+	}
+
+	default_congest_type(hr_dev, hr_qp);
+}
+
 static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
 			struct ib_udata *udata,
@@ -1096,6 +1138,9 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		return ret;
 	}
 
+	if (init_attr->qp_type == IB_QPT_XRC_TGT)
+		default_congest_type(hr_dev, hr_qp);
+
 	if (udata) {
 		ret = ib_copy_from_udata(ucmd, udata,
 					 min(udata->inlen, sizeof(*ucmd)));
@@ -1113,6 +1158,7 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		if (ret)
 			ibdev_err(ibdev, "Failed to set user SQ size, ret = %d\n",
 				  ret);
+		set_congest_param(hr_dev, hr_qp, ucmd);
 	} else {
 		if (init_attr->create_flags &
 		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {

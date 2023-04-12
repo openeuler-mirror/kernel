@@ -2452,6 +2452,7 @@ static int hns_roce_query_caps(struct hns_roce_dev *hr_dev)
 	caps->ceqe_depth = 1 << hr_reg_read(resp_d, PF_CAPS_D_CEQ_DEPTH);
 	caps->num_comp_vectors = hr_reg_read(resp_d, PF_CAPS_D_NUM_CEQS);
 	caps->aeqe_depth = 1 << hr_reg_read(resp_d, PF_CAPS_D_AEQ_DEPTH);
+	caps->default_congest_type = hr_reg_read(resp_d, PF_CAPS_D_DEFAULT_ALG);
 	caps->reserved_pds = hr_reg_read(resp_d, PF_CAPS_D_RSV_PDS);
 	caps->num_uars = 1 << hr_reg_read(resp_d, PF_CAPS_D_NUM_UARS);
 	caps->reserved_qps = hr_reg_read(resp_d, PF_CAPS_D_RSV_QPS);
@@ -5094,10 +5095,10 @@ enum {
 static int check_congest_type(struct ib_qp *ibqp,
 			      struct hns_roce_congestion_algorithm *congest_alg)
 {
-	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 
 	/* different congestion types match different configurations */
-	switch (hr_dev->caps.congest_type) {
+	switch (hr_qp->congest_type) {
 	case HNS_ROCE_CONGEST_TYPE_DCQCN:
 		congest_alg->alg_sel = CONGEST_DCQCN;
 		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_LEVEL;

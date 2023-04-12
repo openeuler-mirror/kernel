@@ -654,6 +654,7 @@ struct hns_roce_qp {
 	struct hns_roce_db	rdb;
 	struct hns_roce_db	sdb;
 	unsigned long		en_flags;
+	unsigned long		congest_type;
 	u32			doorbell_qpn;
 	enum ib_sig_type	sq_signal_bits;
 	struct hns_roce_wq	sq;
@@ -914,6 +915,7 @@ struct hns_roce_caps {
 	u16		default_aeq_arm_st;
 	u16		default_ceq_arm_st;
 	u8		congest_type;
+	u8		default_congest_type;
 };
 
 enum hns_roce_device_state {

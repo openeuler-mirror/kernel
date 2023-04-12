@@ -63,6 +63,18 @@ struct hns_roce_ib_create_srq_resp {
 	__u32	reserved;
 };
 
+enum hns_roce_create_qp_comp_mask {
+	HNS_ROCE_CREATE_QP_MASK_CREATE_FLAGS = 1 << 0,
+	HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE = 1 << 1,
+};
+
+enum hns_roce_congest_type_flags {
+	HNS_ROCE_CREATE_QP_FLAGS_DCQCN = 1 << 0,
+	HNS_ROCE_CREATE_QP_FLAGS_LDCP = 1 << 1,
+	HNS_ROCE_CREATE_QP_FLAGS_HC3 = 1 << 2,
+	HNS_ROCE_CREATE_QP_FLAGS_DIP = 1 << 3,
+};
+
 struct hns_roce_ib_create_qp {
 	__aligned_u64 buf_addr;
 	__aligned_u64 db_addr;
@@ -71,6 +83,9 @@ struct hns_roce_ib_create_qp {
 	__u8    sq_no_prefetch;
 	__u8    reserved[5];
 	__aligned_u64 sdb_addr;
+	__aligned_u64 comp_mask;
+	__aligned_u64 create_flags;
+	__aligned_u64 congest_type_flags;
 };
 
 enum hns_roce_qp_cap_flags {
@@ -123,7 +138,8 @@ struct hns_roce_ib_alloc_ucontext_resp {
 	__u32	config;
 	__u32	max_inline_data;
 	__u8	mac_type;
-	__u8	rsv1[7];
+	__u8	congest_type;
+	__u8	rsv1[6];
 	__u32	dca_qps;
 	__u32	dca_mmap_size;
 	__aligned_u64 dca_mmap_key;
