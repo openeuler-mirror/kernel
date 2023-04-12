@@ -124,7 +124,7 @@ xfs_ilock_attr_map_shared(
 {
 	uint			lock_mode = XFS_ILOCK_SHARED;
 
-	if (ip->i_af.if_present &&
+	if (XFS_IFORK_Q(ip) &&
 	    ip->i_af.if_format == XFS_DINODE_FMT_BTREE &&
 	    (ip->i_af.if_flags & XFS_IFEXTENTS) == 0)
 		lock_mode = XFS_ILOCK_EXCL;
@@ -1927,7 +1927,6 @@ xfs_inactive(
 			goto out;
 	}
 
-	ASSERT(!ip->i_af.if_present);
 	ASSERT(ip->i_d.di_forkoff == 0);
 
 	/*
@@ -3642,7 +3641,7 @@ xfs_iflush(
 	if (ip->i_df.if_format == XFS_DINODE_FMT_LOCAL &&
 	    xfs_ifork_verify_local_data(ip))
 		goto flush_out;
-	if (ip->i_af.if_present &&
+	if (XFS_IFORK_Q(ip) &&
 	    ip->i_af.if_format == XFS_DINODE_FMT_LOCAL &&
 	    xfs_ifork_verify_local_attr(ip))
 		goto flush_out;
