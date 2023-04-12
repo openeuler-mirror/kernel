@@ -25,7 +25,6 @@ struct xfs_ifork {
 	unsigned char		if_flags;	/* per-fork flags */
 	int8_t			if_format;	/* format of this fork */
 	xfs_extnum_t		if_nextents;	/* # of extents in this fork */
-	int8_t                  if_present;     /* 1 if present */
 };
 
 /*
