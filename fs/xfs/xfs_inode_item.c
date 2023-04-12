@@ -56,7 +56,7 @@ xfs_inode_item_data_fork_size(
 		    ip->i_df.if_nextents > 0 &&
 		    ip->i_df.if_bytes > 0) {
 			/* worst case, doesn't subtract delalloc extents */
-			*nbytes += XFS_IFORK_DSIZE(ip);
+			*nbytes += xfs_inode_data_fork_size(ip);
 			*nvecs += 1;
 		}
 		break;
@@ -91,27 +91,27 @@ xfs_inode_item_attr_fork_size(
 {
 	struct xfs_inode	*ip = iip->ili_inode;
 
-	switch (ip->i_afp->if_format) {
+	switch (ip->i_af.if_format) {
 	case XFS_DINODE_FMT_EXTENTS:
 		if ((iip->ili_fields & XFS_ILOG_AEXT) &&
-		    ip->i_afp->if_nextents > 0 &&
-		    ip->i_afp->if_bytes > 0) {
+		    ip->i_af.if_nextents > 0 &&
+		    ip->i_af.if_bytes > 0) {
 			/* worst case, doesn't subtract unused space */
-			*nbytes += XFS_IFORK_ASIZE(ip);
+			*nbytes += xfs_inode_attr_fork_size(ip);
 			*nvecs += 1;
 		}
 		break;
 	case XFS_DINODE_FMT_BTREE:
 		if ((iip->ili_fields & XFS_ILOG_ABROOT) &&
-		    ip->i_afp->if_broot_bytes > 0) {
-			*nbytes += ip->i_afp->if_broot_bytes;
+		    ip->i_af.if_broot_bytes > 0) {
+			*nbytes += ip->i_af.if_broot_bytes;
 			*nvecs += 1;
 		}
 		break;
 	case XFS_DINODE_FMT_LOCAL:
 		if ((iip->ili_fields & XFS_ILOG_ADATA) &&
-		    ip->i_afp->if_bytes > 0) {
-			*nbytes += roundup(ip->i_afp->if_bytes, 4);
+		    ip->i_af.if_bytes > 0) {
+			*nbytes += roundup(ip->i_af.if_bytes, 4);
 			*nvecs += 1;
 		}
 		break;
@@ -142,7 +142,7 @@ xfs_inode_item_size(
 		   xfs_log_dinode_size(ip->i_mount);
 
 	xfs_inode_item_data_fork_size(iip, nvecs, nbytes);
-	if (XFS_IFORK_Q(ip))
+	if (xfs_inode_has_attr_fork(ip))
 		xfs_inode_item_attr_fork_size(iip, nvecs, nbytes);
 }
 
@@ -241,18 +241,18 @@ xfs_inode_item_format_attr_fork(
 	struct xfs_inode	*ip = iip->ili_inode;
 	size_t			data_bytes;
 
-	switch (ip->i_afp->if_format) {
+	switch (ip->i_af.if_format) {
 	case XFS_DINODE_FMT_EXTENTS:
 		iip->ili_fields &=
 			~(XFS_ILOG_ADATA | XFS_ILOG_ABROOT);
 
 		if ((iip->ili_fields & XFS_ILOG_AEXT) &&
-		    ip->i_afp->if_nextents > 0 &&
-		    ip->i_afp->if_bytes > 0) {
+		    ip->i_af.if_nextents > 0 &&
+		    ip->i_af.if_bytes > 0) {
 			struct xfs_bmbt_rec *p;
 
-			ASSERT(xfs_iext_count(ip->i_afp) ==
-				ip->i_afp->if_nextents);
+			ASSERT(xfs_iext_count(&ip->i_af) ==
+				ip->i_af.if_nextents);
 
 			p = xlog_prepare_iovec(lv, vecp, XLOG_REG_TYPE_IATTR_EXT);
 			data_bytes = xfs_iextents_copy(ip, p, XFS_ATTR_FORK);
@@ -269,13 +269,13 @@ xfs_inode_item_format_attr_fork(
 			~(XFS_ILOG_ADATA | XFS_ILOG_AEXT);
 
 		if ((iip->ili_fields & XFS_ILOG_ABROOT) &&
-		    ip->i_afp->if_broot_bytes > 0) {
-			ASSERT(ip->i_afp->if_broot != NULL);
+		    ip->i_af.if_broot_bytes > 0) {
+			ASSERT(ip->i_af.if_broot != NULL);
 
 			xlog_copy_iovec(lv, vecp, XLOG_REG_TYPE_IATTR_BROOT,
-					ip->i_afp->if_broot,
-					ip->i_afp->if_broot_bytes);
-			ilf->ilf_asize = ip->i_afp->if_broot_bytes;
+					ip->i_af.if_broot,
+					ip->i_af.if_broot_bytes);
+			ilf->ilf_asize = ip->i_af.if_broot_bytes;
 			ilf->ilf_size++;
 		} else {
 			iip->ili_fields &= ~XFS_ILOG_ABROOT;
@@ -286,16 +286,16 @@ xfs_inode_item_format_attr_fork(
 			~(XFS_ILOG_AEXT | XFS_ILOG_ABROOT);
 
 		if ((iip->ili_fields & XFS_ILOG_ADATA) &&
-		    ip->i_afp->if_bytes > 0) {
+		    ip->i_af.if_bytes > 0) {
 			/*
 			 * Round i_bytes up to a word boundary.
 			 * The underlying memory is guaranteed
 			 * to be there by xfs_idata_realloc().
 			 */
-			data_bytes = roundup(ip->i_afp->if_bytes, 4);
-			ASSERT(ip->i_afp->if_u1.if_data != NULL);
+			data_bytes = roundup(ip->i_af.if_bytes, 4);
+			ASSERT(ip->i_af.if_u1.if_data != NULL);
 			xlog_copy_iovec(lv, vecp, XLOG_REG_TYPE_IATTR_LOCAL,
-					ip->i_afp->if_u1.if_data,
+					ip->i_af.if_u1.if_data,
 					data_bytes);
 			ilf->ilf_asize = (unsigned)data_bytes;
 			ilf->ilf_size++;
@@ -360,9 +360,9 @@ xfs_inode_to_log_dinode(
 	to->di_nblocks = from->di_nblocks;
 	to->di_extsize = from->di_extsize;
 	to->di_nextents = xfs_ifork_nextents(&ip->i_df);
-	to->di_anextents = xfs_ifork_nextents(ip->i_afp);
+	to->di_anextents = xfs_ifork_nextents(&ip->i_af);
 	to->di_forkoff = from->di_forkoff;
-	to->di_aformat = xfs_ifork_format(ip->i_afp);
+	to->di_aformat = xfs_ifork_format(&ip->i_af);
 	to->di_dmevmask = from->di_dmevmask;
 	to->di_dmstate = from->di_dmstate;
 	to->di_flags = from->di_flags;
@@ -449,7 +449,7 @@ xfs_inode_item_format(
 
 	xfs_inode_item_format_core(ip, lv, &vecp);
 	xfs_inode_item_format_data_fork(iip, ilf, lv, &vecp);
-	if (XFS_IFORK_Q(ip)) {
+	if (xfs_inode_has_attr_fork(ip)) {
 		xfs_inode_item_format_attr_fork(iip, ilf, lv, &vecp);
 	} else {
 		iip->ili_fields &=

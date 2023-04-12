@@ -42,7 +42,7 @@ xchk_symlink(
 
 	if (!S_ISLNK(VFS_I(ip)->i_mode))
 		return -ENOENT;
-	ifp = XFS_IFORK_PTR(ip, XFS_DATA_FORK);
+	ifp = xfs_ifork_ptr(ip, XFS_DATA_FORK);
 	len = ip->i_d.di_size;
 
 	/* Plausible size? */
@@ -53,8 +53,8 @@ xchk_symlink(
 
 	/* Inline symlink? */
 	if (ifp->if_flags & XFS_IFINLINE) {
-		if (len > XFS_IFORK_DSIZE(ip) ||
-		    len > strnlen(ifp->if_u1.if_data, XFS_IFORK_DSIZE(ip)))
+		if (len > xfs_inode_data_fork_size(ip) ||
+		    len > strnlen(ifp->if_u1.if_data, xfs_inode_data_fork_size(ip)))
 			xchk_fblock_set_corrupt(sc, XFS_DATA_FORK, 0);
 		goto out;
 	}
