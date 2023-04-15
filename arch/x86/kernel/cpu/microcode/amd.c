@@ -885,7 +885,8 @@ load_microcode_amd(bool save, u8 family, const u8 *data, size_t size)
  *
  * These might be larger than 2K.
  */
-static enum ucode_state request_microcode_amd(int cpu, struct device *device)
+static enum ucode_state request_microcode_amd(int cpu, struct device *device,
+					      bool refresh_fw)
 {
 	char fw_name[36] = "amd-ucode/microcode_amd.bin";
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
@@ -894,7 +895,7 @@ static enum ucode_state request_microcode_amd(int cpu, struct device *device)
 	const struct firmware *fw;
 
 	/* reload ucode container only on the boot cpu */
-	if (!bsp)
+	if (!refresh_fw || !bsp)
 		return UCODE_OK;
 
 	if (c->x86 >= 0x15)

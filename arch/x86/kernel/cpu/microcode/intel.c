@@ -738,7 +738,8 @@ static bool is_blacklisted(unsigned int cpu)
 	return false;
 }
 
-static enum ucode_state request_microcode_fw(int cpu, struct device *device)
+static enum ucode_state request_microcode_fw(int cpu, struct device *device,
+					     bool refresh_fw)
 {
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	const struct firmware *firmware;
