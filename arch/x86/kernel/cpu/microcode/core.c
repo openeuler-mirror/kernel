@@ -393,7 +393,6 @@ static int apply_microcode_on_target(int cpu)
 /* fake device for request_firmware */
 static struct platform_device	*microcode_pdev;
 
-#ifdef CONFIG_MICROCODE_LATE_LOADING
 /*
  * Late loading dance. Why the heavy-handed stomp_machine effort?
  *
@@ -561,9 +560,6 @@ put:
 	return ret;
 }
 
-static DEVICE_ATTR_WO(reload);
-#endif
-
 static ssize_t version_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
@@ -580,6 +576,7 @@ static ssize_t pf_show(struct device *dev,
 	return sprintf(buf, "0x%x\n", uci->cpu_sig.pf);
 }
 
+static DEVICE_ATTR_WO(reload);
 static DEVICE_ATTR(version, 0444, version_show, NULL);
 static DEVICE_ATTR(processor_flags, 0444, pf_show, NULL);
 
@@ -732,9 +729,7 @@ static int mc_cpu_down_prep(unsigned int cpu)
 }
 
 static struct attribute *cpu_root_microcode_attrs[] = {
-#ifdef CONFIG_MICROCODE_LATE_LOADING
 	&dev_attr_reload.attr,
-#endif
 	NULL
 };
 
