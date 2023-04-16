@@ -408,9 +408,10 @@ static void select_bad_process(struct oom_control *oc)
 {
 	oc->chosen_points = LONG_MIN;
 
-	if (is_memcg_oom(oc))
-		mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc);
-	else {
+	if (is_memcg_oom(oc)) {
+		if (!mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc))
+			memcg_print_bad_task(oc);
+	} else {
 		struct task_struct *p;
 
 #ifdef CONFIG_MEMCG_QOS
@@ -473,9 +474,10 @@ static void dump_tasks(struct oom_control *oc)
 	pr_info("Tasks state (memory values in pages):\n");
 	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
 
-	if (is_memcg_oom(oc))
-		mem_cgroup_scan_tasks(oc->memcg, dump_task, oc);
-	else {
+	if (is_memcg_oom(oc)) {
+		if (!mem_cgroup_scan_tasks(oc->memcg, dump_task, oc))
+			memcg_print_bad_task(oc);
+	} else {
 		struct task_struct *p;
 
 		rcu_read_lock();

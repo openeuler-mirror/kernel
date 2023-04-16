@@ -409,7 +409,7 @@ DECLARE_STATIC_KEY_FALSE(memcg_qos_stat_key);
 
 bool memcg_low_priority_scan_tasks(int (*)(struct task_struct *, void *),
 				   void *);
-void memcg_print_bad_task(void *arg, int ret);
+void memcg_print_bad_task(struct oom_control *oc);
 extern int sysctl_memcg_qos_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *length, loff_t *ppos);
 #endif
