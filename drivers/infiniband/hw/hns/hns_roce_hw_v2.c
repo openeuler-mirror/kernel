@@ -1792,7 +1792,7 @@ static int hns_roce_query_func_info(struct hns_roce_dev *hr_dev)
 	}
 
 	hr_dev->func_num = le32_to_cpu(desc.func_info.own_func_num);
-	hr_dev->cong_algo_tmpl_id = le32_to_cpu(desc.func_info.own_mac_id);
+	hr_dev->congest_algo_tmpl_id = le32_to_cpu(desc.func_info.own_mac_id);
 
 	return 0;
 }
@@ -2447,11 +2447,12 @@ static int hns_roce_query_caps(struct hns_roce_dev *hr_dev)
 	caps->max_wqes = 1 << le16_to_cpu(resp_c->sq_depth);
 
 	caps->num_srqs = 1 << hr_reg_read(resp_d, PF_CAPS_D_NUM_SRQS);
-	caps->cong_type = hr_reg_read(resp_d, PF_CAPS_D_CONG_TYPE);
+	caps->congest_type = hr_reg_read(resp_d, PF_CAPS_D_CONGEST_TYPE);
 	caps->max_srq_wrs = 1 << le16_to_cpu(resp_d->srq_depth);
 	caps->ceqe_depth = 1 << hr_reg_read(resp_d, PF_CAPS_D_CEQ_DEPTH);
 	caps->num_comp_vectors = hr_reg_read(resp_d, PF_CAPS_D_NUM_CEQS);
 	caps->aeqe_depth = 1 << hr_reg_read(resp_d, PF_CAPS_D_AEQ_DEPTH);
+	caps->default_congest_type = hr_reg_read(resp_d, PF_CAPS_D_DEFAULT_ALG);
 	caps->reserved_pds = hr_reg_read(resp_d, PF_CAPS_D_RSV_PDS);
 	caps->num_uars = 1 << hr_reg_read(resp_d, PF_CAPS_D_NUM_UARS);
 	caps->reserved_qps = hr_reg_read(resp_d, PF_CAPS_D_RSV_QPS);
@@ -5067,18 +5068,18 @@ out:
 }
 
 enum {
-	CONG_DCQCN,
-	CONG_WINDOW,
+	CONGEST_DCQCN,
+	CONGEST_WINDOW,
 };
 
 enum {
-	UNSUPPORT_CONG_LEVEL,
-	SUPPORT_CONG_LEVEL,
+	UNSUPPORT_CONGEST_LEVEL,
+	SUPPORT_CONGEST_LEVEL,
 };
 
 enum {
-	CONG_LDCP,
-	CONG_HC3,
+	CONGEST_LDCP,
+	CONGEST_HC3,
 };
 
 enum {
@@ -5091,54 +5092,54 @@ enum {
 	WND_UNLIMIT,
 };
 
-static int check_cong_type(struct ib_qp *ibqp,
-			   struct hns_roce_congestion_algorithm *cong_alg)
+static int check_congest_type(struct ib_qp *ibqp,
+			      struct hns_roce_congestion_algorithm *congest_alg)
 {
-	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 
 	/* different congestion types match different configurations */
-	switch (hr_dev->caps.cong_type) {
-	case CONG_TYPE_DCQCN:
-		cong_alg->alg_sel = CONG_DCQCN;
-		cong_alg->alg_sub_sel = UNSUPPORT_CONG_LEVEL;
-		cong_alg->dip_vld = DIP_INVALID;
-		cong_alg->wnd_mode_sel = WND_LIMIT;
+	switch (hr_qp->congest_type) {
+	case HNS_ROCE_CONGEST_TYPE_DCQCN:
+		congest_alg->alg_sel = CONGEST_DCQCN;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_LEVEL;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
 		break;
-	case CONG_TYPE_LDCP:
-		cong_alg->alg_sel = CONG_WINDOW;
-		cong_alg->alg_sub_sel = CONG_LDCP;
-		cong_alg->dip_vld = DIP_INVALID;
-		cong_alg->wnd_mode_sel = WND_UNLIMIT;
+	case HNS_ROCE_CONGEST_TYPE_LDCP:
+		congest_alg->alg_sel = CONGEST_WINDOW;
+		congest_alg->alg_sub_sel = CONGEST_LDCP;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_UNLIMIT;
 		break;
-	case CONG_TYPE_HC3:
-		cong_alg->alg_sel = CONG_WINDOW;
-		cong_alg->alg_sub_sel = CONG_HC3;
-		cong_alg->dip_vld = DIP_INVALID;
-		cong_alg->wnd_mode_sel = WND_LIMIT;
+	case HNS_ROCE_CONGEST_TYPE_HC3:
+		congest_alg->alg_sel = CONGEST_WINDOW;
+		congest_alg->alg_sub_sel = CONGEST_HC3;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
 		break;
-	case CONG_TYPE_DIP:
-		cong_alg->alg_sel = CONG_DCQCN;
-		cong_alg->alg_sub_sel = UNSUPPORT_CONG_LEVEL;
-		cong_alg->dip_vld = DIP_VALID;
-		cong_alg->wnd_mode_sel = WND_LIMIT;
+	case HNS_ROCE_CONGEST_TYPE_DIP:
+		congest_alg->alg_sel = CONGEST_DCQCN;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_LEVEL;
+		congest_alg->dip_vld = DIP_VALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
 		break;
 	default:
-		cong_alg->alg_sel = CONG_DCQCN;
-		cong_alg->alg_sub_sel = UNSUPPORT_CONG_LEVEL;
-		cong_alg->dip_vld = DIP_INVALID;
-		cong_alg->wnd_mode_sel = WND_LIMIT;
+		congest_alg->alg_sel = CONGEST_DCQCN;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_LEVEL;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
 		break;
 	}
 
 	return 0;
 }
 
-static int fill_cong_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
-			   struct hns_roce_v2_qp_context *context,
-			   struct hns_roce_v2_qp_context *qpc_mask)
+static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
+			      struct hns_roce_v2_qp_context *context,
+			      struct hns_roce_v2_qp_context *qpc_mask)
 {
 	const struct ib_global_route *grh = rdma_ah_read_grh(&attr->ah_attr);
-	struct hns_roce_congestion_algorithm cong_field;
+	struct hns_roce_congestion_algorithm congest_field;
 	struct ib_device *ibdev = ibqp->device;
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibdev);
 	u32 dip_idx = 0;
@@ -5148,31 +5149,35 @@ static int fill_cong_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 	    grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE)
 		return 0;
 
-	ret = check_cong_type(ibqp, &cong_field);
+	ret = check_congest_type(ibqp, &congest_field);
 	if (ret)
 		return ret;
 
-	hr_reg_write(context, QPC_CONG_ALGO_TMPL_ID, hr_dev->cong_algo_tmpl_id +
-		     hr_dev->caps.cong_type * HNS_ROCE_CONG_SIZE);
-	hr_reg_clear(qpc_mask, QPC_CONG_ALGO_TMPL_ID);
-	hr_reg_write(&context->ext, QPCEX_CONG_ALG_SEL, cong_field.alg_sel);
-	hr_reg_clear(&qpc_mask->ext, QPCEX_CONG_ALG_SEL);
-	hr_reg_write(&context->ext, QPCEX_CONG_ALG_SUB_SEL,
-		     cong_field.alg_sub_sel);
-	hr_reg_clear(&qpc_mask->ext, QPCEX_CONG_ALG_SUB_SEL);
-	hr_reg_write(&context->ext, QPCEX_DIP_CTX_IDX_VLD, cong_field.dip_vld);
+	hr_reg_write(context, QPC_CONGEST_ALGO_TMPL_ID,
+		     hr_dev->congest_algo_tmpl_id +
+		     hr_dev->caps.congest_type * HNS_ROCE_CONGEST_SIZE);
+	hr_reg_clear(qpc_mask, QPC_CONGEST_ALGO_TMPL_ID);
+	hr_reg_write(&context->ext, QPCEX_CONGEST_ALG_SEL,
+		     congest_field.alg_sel);
+	hr_reg_clear(&qpc_mask->ext, QPCEX_CONGEST_ALG_SEL);
+	hr_reg_write(&context->ext, QPCEX_CONGEST_ALG_SUB_SEL,
+		     congest_field.alg_sub_sel);
+	hr_reg_clear(&qpc_mask->ext, QPCEX_CONGEST_ALG_SUB_SEL);
+	hr_reg_write(&context->ext, QPCEX_DIP_CTX_IDX_VLD,
+		     congest_field.dip_vld);
 	hr_reg_clear(&qpc_mask->ext, QPCEX_DIP_CTX_IDX_VLD);
 	hr_reg_write(&context->ext, QPCEX_SQ_RQ_NOT_FORBID_EN,
-		     cong_field.wnd_mode_sel);
+		     congest_field.wnd_mode_sel);
 	hr_reg_clear(&qpc_mask->ext, QPCEX_SQ_RQ_NOT_FORBID_EN);
 
 	/* if dip is disabled, there is no need to set dip idx */
-	if (cong_field.dip_vld == 0)
+	if (congest_field.dip_vld == 0)
 		return 0;
 
 	ret = get_dip_ctx_idx(ibqp, attr, &dip_idx);
 	if (ret) {
-		ibdev_err(ibdev, "failed to fill cong field, ret = %d.\n", ret);
+		ibdev_err(ibdev, "failed to fill congest field, ret = %d.\n",
+			  ret);
 		return ret;
 	}
 
@@ -5319,7 +5324,7 @@ static int hns_roce_v2_set_path(struct ib_qp *ibqp,
 	hr_reg_write(context, QPC_HOPLIMIT, grh->hop_limit);
 	hr_reg_clear(qpc_mask, QPC_HOPLIMIT);
 
-	ret = fill_cong_field(ibqp, attr, context, qpc_mask);
+	ret = fill_congest_field(ibqp, attr, context, qpc_mask);
 	if (ret)
 		return ret;
 

@@ -440,6 +440,10 @@ static void ucontext_set_resp(struct ib_ucontext *uctx,
 	resp->srq_tab_size = hr_dev->caps.num_srqs;
 	resp->cqe_size = hr_dev->caps.cqe_sz;
 	resp->mac_type = hr_dev->mac_type;
+
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		resp->congest_type = hr_dev->caps.congest_type;
+
 	if (context->dca_ctx.dca_mmap_entry) {
 		resp->dca_qps = context->dca_ctx.max_qps;
 		resp->dca_mmap_size = PAGE_SIZE * context->dca_ctx.status_npage;

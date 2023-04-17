@@ -654,6 +654,7 @@ struct hns_roce_qp {
 	struct hns_roce_db	rdb;
 	struct hns_roce_db	sdb;
 	unsigned long		en_flags;
+	unsigned long		congest_type;
 	u32			doorbell_qpn;
 	enum ib_sig_type	sq_signal_bits;
 	struct hns_roce_wq	sq;
@@ -775,11 +776,11 @@ enum hns_roce_scc_algo {
 	HNS_ROCE_SCC_ALGO_TOTAL,
 };
 
-enum cong_type {
-	CONG_TYPE_DCQCN = 1 << HNS_ROCE_SCC_ALGO_DCQCN,
-	CONG_TYPE_LDCP = 1 << HNS_ROCE_SCC_ALGO_LDCP,
-	CONG_TYPE_HC3 = 1 << HNS_ROCE_SCC_ALGO_HC3,
-	CONG_TYPE_DIP = 1 << HNS_ROCE_SCC_ALGO_DIP,
+enum congest_type {
+	HNS_ROCE_CONGEST_TYPE_DCQCN = 1 << HNS_ROCE_SCC_ALGO_DCQCN,
+	HNS_ROCE_CONGEST_TYPE_LDCP = 1 << HNS_ROCE_SCC_ALGO_LDCP,
+	HNS_ROCE_CONGEST_TYPE_HC3 = 1 << HNS_ROCE_SCC_ALGO_HC3,
+	HNS_ROCE_CONGEST_TYPE_DIP = 1 << HNS_ROCE_SCC_ALGO_DIP,
 };
 
 struct hns_roce_caps {
@@ -913,7 +914,8 @@ struct hns_roce_caps {
 	u16		default_aeq_period;
 	u16		default_aeq_arm_st;
 	u16		default_ceq_arm_st;
-	enum cong_type	cong_type;
+	u8		congest_type;
+	u8		default_congest_type;
 };
 
 enum hns_roce_device_state {
@@ -1117,7 +1119,7 @@ struct hns_roce_dev {
 	struct work_struct ecc_work;
 	u32 func_num;
 	u32 is_vf;
-	u32 cong_algo_tmpl_id;
+	u32 congest_algo_tmpl_id;
 	u64 dwqe_page;
 
 	struct notifier_block bond_nb;
