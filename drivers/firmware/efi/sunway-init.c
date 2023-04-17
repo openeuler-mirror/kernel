@@ -105,6 +105,10 @@ static int __init uefi_init(u64 efi_system_table)
 	early_memunmap(config_tables, table_size);
 out:
 	early_memunmap(systab,  sizeof(efi_system_table_t));
+
+	if (!bios_version)
+		retval = -EINVAL;
+
 	return retval;
 }
 
