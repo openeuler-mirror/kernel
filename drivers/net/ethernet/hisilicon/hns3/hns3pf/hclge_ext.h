@@ -78,6 +78,11 @@ struct hclge_sfp_present_cmd {
 	__le32 rsv[5];
 };
 
+struct hclge_sfp_enable_cmd {
+	__le32 sfp_enable;
+	__le32 rsv[5];
+};
+
 enum hclge_ext_opcode_type {
 	HCLGE_OPC_CONFIG_SWITCH_PARAM = 0x1033,
 	HCLGE_OPC_CONFIG_VLAN_FILTER = 0x1100,
@@ -88,6 +93,7 @@ enum hclge_ext_opcode_type {
 	HCLGE_OPC_GET_PORT_NUM = 0x7006,
 	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
 	HCLGE_OPC_SFP_GET_PRESENT = 0x7101,
+	HCLGE_OPC_SFP_SET_STATUS = 0x7102,
 };
 
 struct hclge_reset_fail_type_map {
