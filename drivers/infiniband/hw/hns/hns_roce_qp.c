@@ -793,6 +793,9 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		 */
 		if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DIRECT_WQE)
 			hr_qp->en_flags |= HNS_ROCE_QP_CAP_DIRECT_WQE;
+
+		if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SVE_DIRECT_WQE)
+			hr_qp->en_flags |= HNS_ROCE_QP_CAP_SVE_DIRECT_WQE;
 	}
 
 	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, buf_attr,
