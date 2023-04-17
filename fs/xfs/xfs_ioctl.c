@@ -1113,7 +1113,7 @@ xfs_fill_fsxattr(
 	bool			attr,
 	struct fsxattr		*fa)
 {
-	struct xfs_ifork	*ifp = attr ? ip->i_afp : &ip->i_df;
+	struct xfs_ifork	*ifp = attr ? &ip->i_af : &ip->i_df;
 
 	simple_fill_fsxattr(fa, xfs_ip2xflags(ip));
 	fa->fsx_extsize = ip->i_d.di_extsize << ip->i_mount->m_sb.sb_blocklog;

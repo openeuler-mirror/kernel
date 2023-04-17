@@ -449,7 +449,7 @@ xfs_reflink_cancel_cow_blocks(
 	xfs_fileoff_t			end_fsb,
 	bool				cancel_real)
 {
-	struct xfs_ifork		*ifp = XFS_IFORK_PTR(ip, XFS_COW_FORK);
+	struct xfs_ifork		*ifp = xfs_ifork_ptr(ip, XFS_COW_FORK);
 	struct xfs_bmbt_irec		got, del;
 	struct xfs_iext_cursor		icur;
 	int				error = 0;
@@ -590,7 +590,7 @@ xfs_reflink_end_cow_extent(
 	struct xfs_iext_cursor	icur;
 	struct xfs_mount	*mp = ip->i_mount;
 	struct xfs_trans	*tp;
-	struct xfs_ifork	*ifp = XFS_IFORK_PTR(ip, XFS_COW_FORK);
+	struct xfs_ifork	*ifp = xfs_ifork_ptr(ip, XFS_COW_FORK);
 	xfs_filblks_t		rlen;
 	unsigned int		resblks;
 	int			error;
@@ -1394,7 +1394,7 @@ xfs_reflink_inode_has_shared_extents(
 	bool				found;
 	int				error;
 
-	ifp = XFS_IFORK_PTR(ip, XFS_DATA_FORK);
+	ifp = xfs_ifork_ptr(ip, XFS_DATA_FORK);
 	if (!(ifp->if_flags & XFS_IFEXTENTS)) {
 		error = xfs_iread_extents(tp, ip, XFS_DATA_FORK);
 		if (error)
