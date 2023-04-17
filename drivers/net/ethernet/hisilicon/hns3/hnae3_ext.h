@@ -38,6 +38,7 @@ enum hnae3_ext_opcode {
 	HNAE3_EXT_OPC_GET_PORT_EXT_ID_INFO,
 	HNAE3_EXT_OPC_GET_PORT_EXT_NUM_INFO,
 	HNAE3_EXT_OPC_GET_PORT_NUM,
+	HNAE3_EXT_OPC_GET_PRESENT,
 };
 
 struct hnae3_pfc_storm_para {
