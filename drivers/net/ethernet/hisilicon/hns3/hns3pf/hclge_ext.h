@@ -84,6 +84,7 @@ struct hclge_sfp_enable_cmd {
 };
 
 enum hclge_ext_opcode_type {
+	HCLGE_OPC_CONFIG_NIC_CLOCK = 0x0060,
 	HCLGE_OPC_CONFIG_SWITCH_PARAM = 0x1033,
 	HCLGE_OPC_CONFIG_VLAN_FILTER = 0x1100,
 	HCLGE_OPC_SET_NOTIFY_PKT = 0x180A,
