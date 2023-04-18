@@ -74,6 +74,7 @@
 #define HNAE3_UNIC_CLIENT_INITED_B		0x4
 #define HNAE3_ROCE_CLIENT_INITED_B		0x5
 #define HNAE3_ROH_CLIENT_INITED_B		0x6
+#define HNAE3_UDMA_CLIENT_INITED_B		0x7
 #define HNAE3_DEV_SUPPORT_UDMA_B		0x8
 #define HNAE3_DEV_SUPPORT_UBL_B			0x9
 
@@ -251,6 +252,7 @@ enum hnae3_client_type {
 	HNAE3_CLIENT_KNIC,
 	HNAE3_CLIENT_ROCE,
 	HNAE3_CLIENT_ROH,
+	HNAE3_CLIENT_UDMA,
 };
 
 enum hnae3_mac_type {
@@ -912,6 +914,17 @@ struct hnae3_roh_private_info {
 	unsigned long reset_state;
 };
 
+struct hnae3_udma_private_info {
+	struct net_device *netdev;
+	void __iomem *udma_io_base;
+	void __iomem *udma_mem_base;
+	int base_vector;
+	int num_vectors;
+	unsigned long reset_state;
+	unsigned long instance_state;
+	unsigned long state;
+};
+
 #define HNAE3_SUPPORT_APP_LOOPBACK    BIT(0)
 #define HNAE3_SUPPORT_PHY_LOOPBACK    BIT(1)
 #define HNAE3_SUPPORT_SERDES_SERIAL_LOOPBACK	BIT(2)
@@ -946,6 +959,7 @@ struct hnae3_handle {
 		struct hnae3_knic_private_info kinfo;
 		struct hnae3_roce_private_info rinfo;
 		struct hnae3_roh_private_info rohinfo;
+		struct hnae3_udma_private_info udmainfo;
 	};
 
 	u32 numa_node_mask;	/* for multi-chip support */

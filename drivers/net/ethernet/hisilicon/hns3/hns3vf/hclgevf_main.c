@@ -11,6 +11,7 @@
 #include "hnae3.h"
 #include "hclgevf_devlink.h"
 #include "hclge_comm_rss.h"
+#include "hclgevf_udma.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -74,6 +75,8 @@ struct hclgevf_dev *hclgevf_ae_get_hdev(struct hnae3_handle *handle)
 		return container_of(handle, struct hclgevf_dev, nic);
 	else if (handle->client->type == HNAE3_CLIENT_ROCE)
 		return container_of(handle, struct hclgevf_dev, roce);
+	else if (handle->client->type == HNAE3_CLIENT_UDMA)
+		return container_of(handle, struct hclgevf_dev, udma);
 	else
 		return container_of(handle, struct hclgevf_dev, nic);
 }
@@ -445,8 +448,10 @@ static void hclgevf_request_link_info(struct hclgevf_dev *hdev)
 void hclgevf_update_link_status(struct hclgevf_dev *hdev, int link_state)
 {
 	struct hnae3_handle *rhandle = &hdev->roce;
+	struct hnae3_handle *uhandle = &hdev->udma;
 	struct hnae3_handle *handle = &hdev->nic;
 	struct hnae3_client *rclient;
+	struct hnae3_client *uclient;
 	struct hnae3_client *client;
 
 	if (test_and_set_bit(HCLGEVF_STATE_LINK_UPDATING, &hdev->state))
@@ -454,6 +459,7 @@ void hclgevf_update_link_status(struct hclgevf_dev *hdev, int link_state)
 
 	client = handle->client;
 	rclient = hdev->roce_client;
+	uclient = hdev->udma_client;
 
 	link_state =
 		test_bit(HCLGEVF_STATE_DOWN, &hdev->state) ? 0 : link_state;
@@ -462,6 +468,8 @@ void hclgevf_update_link_status(struct hclgevf_dev *hdev, int link_state)
 		client->ops->link_status_change(handle, !!link_state);
 		if (rclient && rclient->ops->link_status_change)
 			rclient->ops->link_status_change(rhandle, !!link_state);
+		if (uclient && uclient->ops->link_status_change)
+			uclient->ops->link_status_change(uhandle, !!link_state);
 	}
 
 	clear_bit(HCLGEVF_STATE_LINK_UPDATING, &hdev->state);
@@ -1597,6 +1605,10 @@ static int hclgevf_reset_prepare(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclgevf_notify_udma_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	/* bring down the nic to stop any ongoing TX/RX */
 	ret = hclgevf_notify_client(hdev, HNAE3_DOWN_CLIENT);
@@ -1613,6 +1625,10 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 
 	hdev->rst_stats.hw_rst_done_cnt++;
 	ret = hclgevf_notify_roce_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclgevf_notify_udma_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
 		return ret;
 
@@ -1634,6 +1650,18 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 		return ret;
 
 	ret = hclgevf_notify_roce_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclgevf_notify_udma_client(hdev, HNAE3_INIT_CLIENT);
+	/* ignore UDMA notify error if it fails HCLGEVF_RESET_MAX_FAIL_CNT - 1
+	 * times
+	 */
+	if (ret &&
+	    hdev->rst_stats.rst_fail_cnt < HCLGEVF_RESET_MAX_FAIL_CNT - 1)
+		return ret;
+
+	ret = hclgevf_notify_udma_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
 
@@ -2336,11 +2364,12 @@ static void hclgevf_state_uninit(struct hclgevf_dev *hdev)
 
 static int hclgevf_init_msi(struct hclgevf_dev *hdev)
 {
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct pci_dev *pdev = hdev->pdev;
 	int vectors;
 	int i;
 
-	if (hnae3_dev_roce_supported(hdev))
+	if (hnae3_dev_roce_supported(hdev) || hnae3_dev_udma_supported(ae_dev))
 		vectors = pci_alloc_irq_vectors(pdev,
 						hdev->roce_base_msix_offset + 1,
 						hdev->num_msi,
@@ -2516,6 +2545,11 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 		if (ret)
 			goto clear_roce;
 
+		ret = hclgevf_init_udma_client_instance(ae_dev,
+							hdev->udma_client);
+		if (ret)
+			goto clear_udma;
+
 		break;
 	case HNAE3_CLIENT_ROCE:
 		if (hnae3_dev_roce_supported(hdev)) {
@@ -2526,6 +2560,17 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 		ret = hclgevf_init_roce_client_instance(ae_dev, client);
 		if (ret)
 			goto clear_roce;
+
+		break;
+	case HNAE3_CLIENT_UDMA:
+		if (hnae3_dev_udma_supported(ae_dev)) {
+			hdev->udma_client = client;
+			hdev->udma.client = client;
+		}
+
+		ret = hclgevf_init_udma_client_instance(ae_dev, client);
+		if (ret)
+			goto clear_udma;
 
 		break;
 	default:
@@ -2542,12 +2587,30 @@ clear_roce:
 	hdev->roce_client = NULL;
 	hdev->roce.client = NULL;
 	return ret;
+clear_udma:
+	hdev->udma_client = NULL;
+	hdev->udma.client = NULL;
+	return ret;
 }
 
 static void hclgevf_uninit_client_instance(struct hnae3_client *client,
 					   struct hnae3_ae_dev *ae_dev)
 {
 	struct hclgevf_dev *hdev = ae_dev->priv;
+
+	/* un-init udma, if it exists and called by nic or udma client */
+	if (hdev->udma_client && (client->type == HNAE3_CLIENT_UDMA ||
+				  client->type == HNAE3_CLIENT_KNIC)) {
+		while (test_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state))
+			msleep(HCLGEVF_WAIT_RESET_DONE);
+		clear_bit(HCLGEVF_STATE_UDMA_REGISTERED, &hdev->state);
+
+		hdev->udma_client->ops->uninit_instance(&hdev->udma, 0);
+		hdev->udma_client = NULL;
+		hdev->udma.client = NULL;
+	}
+	if (client->type == HNAE3_CLIENT_UDMA)
+		return;
 
 	/* un-init roce, if it exists */
 	if (hdev->roce_client) {
@@ -2659,6 +2722,7 @@ static void hclgevf_pci_uninit(struct hclgevf_dev *hdev)
 
 static int hclgevf_query_vf_resource(struct hclgevf_dev *hdev)
 {
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct hclgevf_query_res_cmd *req;
 	struct hclge_desc desc;
 	int ret;
@@ -2689,6 +2753,23 @@ static int hclgevf_query_vf_resource(struct hclgevf_dev *hdev)
 		 * are queued before Roce vectors. The offset is fixed to 64.
 		 */
 		hdev->num_msi = hdev->num_roce_msix +
+				hdev->roce_base_msix_offset;
+	} else if (hnae3_dev_udma_supported(ae_dev)) {
+		hdev->roce_base_msix_offset =
+		hnae3_get_field(le16_to_cpu(req->msixcap_localid_ba_rocee),
+				HCLGEVF_MSIX_OFT_ROCEE_M,
+				HCLGEVF_MSIX_OFT_ROCEE_S);
+		hdev->num_udma_msix =
+		hnae3_get_field(le16_to_cpu(req->vf_intr_vector_number),
+				HCLGEVF_VEC_NUM_M, HCLGEVF_VEC_NUM_S);
+
+		/* nic's msix numbers is always equals to the udma's. */
+		hdev->num_nic_msix = hdev->num_udma_msix;
+
+		/* VF should have NIC vectors and UDMA vectors, NIC vectors
+		 * are queued before UDMA vectors. The offset is fixed to 64.
+		 */
+		hdev->num_msi = hdev->num_udma_msix +
 				hdev->roce_base_msix_offset;
 	} else {
 		hdev->num_msi =

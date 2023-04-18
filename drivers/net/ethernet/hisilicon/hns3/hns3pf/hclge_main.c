@@ -29,6 +29,7 @@
 #include "hnae3.h"
 #include "hclge_devlink.h"
 #include "hclge_comm_cmd.h"
+#include "hclge_udma.h"
 
 #define HCLGE_NAME			"hclge"
 
@@ -791,6 +792,7 @@ static int hclge_query_function_status(struct hclge_dev *hdev)
 
 static int hclge_query_pf_resource(struct hclge_dev *hdev)
 {
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct hclge_pf_res_cmd *req;
 	struct hclge_desc desc;
 	int ret;
@@ -843,6 +845,11 @@ static int hclge_query_pf_resource(struct hclge_dev *hdev)
 		 */
 		hdev->num_msi = hdev->num_nic_msi + hdev->num_roce_msi +
 				hdev->num_roh_msi;
+	} else if (hnae3_dev_udma_supported(ae_dev)) {
+		hdev->num_udma_msi =
+			le16_to_cpu(req->pf_intr_vector_number_roce);
+
+		hdev->num_msi = hdev->num_nic_msi + hdev->num_udma_msi;
 	} else {
 		hdev->num_msi = hdev->num_nic_msi;
 	}
@@ -2938,8 +2945,10 @@ static void hclge_push_link_status(struct hclge_dev *hdev)
 static void hclge_update_link_status(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *rhandle = &hdev->vport[0].roce;
+	struct hnae3_handle *uhandle = &hdev->vport[0].udma;
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	struct hnae3_client *rclient = hdev->roce_client;
+	struct hnae3_client *uclient = hdev->udma_client;
 	struct hnae3_client *client = hdev->nic_client;
 	int state;
 	int ret;
@@ -2962,6 +2971,8 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 		hclge_config_mac_tnl_int(hdev, state);
 		if (rclient && rclient->ops->link_status_change)
 			rclient->ops->link_status_change(rhandle, state);
+		if (uclient && uclient->ops->link_status_change)
+			uclient->ops->link_status_change(uhandle, state);
 
 		hclge_push_link_status(hdev);
 	}
@@ -4206,6 +4217,10 @@ static int hclge_reset_prepare(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_udma_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 	rtnl_unlock();
@@ -4227,6 +4242,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 		return ret;
 
 	ret = hclge_notify_roh_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclge_notify_udma_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
 		return ret;
 
@@ -4254,6 +4273,14 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
 		return ret;
 
+	ret = hclge_notify_udma_client(hdev, HNAE3_INIT_CLIENT);
+	/* ignore udma notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
+	 * times
+	 */
+	if (ret &&
+	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
+		return ret;
+
 	ret = hclge_reset_prepare_up(hdev);
 	if (ret)
 		return ret;
@@ -4269,6 +4296,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 		return ret;
 
 	ret = hclge_notify_roh_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclge_notify_udma_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
 
@@ -4781,6 +4812,8 @@ struct hclge_vport *hclge_get_vport(struct hnae3_handle *handle)
 		return container_of(handle, struct hclge_vport, roce);
 	else if (handle->client->type == HNAE3_CLIENT_ROH)
 		return container_of(handle, struct hclge_vport, roh);
+	else if (handle->client->type == HNAE3_CLIENT_UDMA)
+		return container_of(handle, struct hclge_vport, udma);
 	else
 		return container_of(handle, struct hclge_vport, nic);
 }
@@ -11703,6 +11736,10 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 		if (ret)
 			goto clear_roce;
 
+		ret = hclge_init_udma_client_instance(ae_dev, vport);
+		if (ret)
+			goto clear_udma;
+
 		break;
 	case HNAE3_CLIENT_ROCE:
 		if (hnae3_dev_roce_supported(hdev)) {
@@ -11724,6 +11761,17 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 			goto clear_roh;
 
 		break;
+	case HNAE3_CLIENT_UDMA:
+		if (hnae3_dev_udma_supported(ae_dev)) {
+			hdev->udma_client = client;
+			vport->udma.client = client;
+		}
+
+		ret = hclge_init_udma_client_instance(ae_dev, vport);
+		if (ret)
+			goto clear_udma;
+
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -11742,6 +11790,10 @@ clear_roh:
 	hdev->roh_client = NULL;
 	vport->roh.client = NULL;
 	return ret;
+clear_udma:
+	hdev->udma_client = NULL;
+	vport->udma.client = NULL;
+	return ret;
 }
 
 static void hclge_uninit_client_instance(struct hnae3_client *client,
@@ -11749,6 +11801,19 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 {
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_vport *vport = &hdev->vport[0];
+
+	if (hdev->udma_client && (client->type == HNAE3_CLIENT_UDMA ||
+				  client->type == HNAE3_CLIENT_KNIC)) {
+		clear_bit(HCLGE_STATE_UDMA_REGISTERED, &hdev->state);
+		while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+			msleep(HCLGE_WAIT_RESET_DONE);
+
+		hdev->udma_client->ops->uninit_instance(&vport->udma, 0);
+		hdev->udma_client = NULL;
+		vport->udma.client = NULL;
+	}
+	if (client->type == HNAE3_CLIENT_UDMA)
+		return;
 
 	if (hdev->roh_client && (client->type == HNAE3_CLIENT_ROH ||
 				 client->type == HNAE3_CLIENT_KNIC)) {

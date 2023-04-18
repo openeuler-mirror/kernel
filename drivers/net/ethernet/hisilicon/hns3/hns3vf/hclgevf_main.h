@@ -128,6 +128,7 @@ enum hclgevf_states {
 	HCLGEVF_STATE_REMOVING,
 	HCLGEVF_STATE_NIC_REGISTERED,
 	HCLGEVF_STATE_ROCE_REGISTERED,
+	HCLGEVF_STATE_UDMA_REGISTERED,
 	HCLGEVF_STATE_SERVICE_INITED,
 	/* task states */
 	HCLGEVF_STATE_RST_SERVICE_SCHED,
@@ -252,6 +253,7 @@ struct hclgevf_dev {
 	u16 num_msi_used;
 	u16 num_nic_msix;	/* Num of nic vectors for this VF */
 	u16 num_roce_msix;	/* Num of roce vectors for this VF */
+	u16 num_udma_msix;	/* Num of udma vectors for this VF */
 	u16 roce_base_msix_offset;
 	u16 *vector_status;
 	int *vector_irq;
@@ -271,9 +273,11 @@ struct hclgevf_dev {
 
 	struct hnae3_handle nic;
 	struct hnae3_handle roce;
+	struct hnae3_handle udma;
 
 	struct hnae3_client *nic_client;
 	struct hnae3_client *roce_client;
+	struct hnae3_client *udma_client;
 	u32 flag;
 	unsigned long serv_processed_cnt;
 	unsigned long last_serv_processed;
