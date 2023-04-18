@@ -871,6 +871,10 @@ xfs_buffered_write_iomap_begin(
 
 	ASSERT(!XFS_IS_REALTIME_INODE(ip));
 
+	error = xfs_qm_dqattach(ip);
+	if (error)
+		return error;
+
 	xfs_ilock(ip, XFS_ILOCK_EXCL);
 
 	if (XFS_IS_CORRUPT(mp, !xfs_ifork_has_extents(&ip->i_df)) ||
@@ -973,10 +977,6 @@ xfs_buffered_write_iomap_begin(
 		if (xfs_is_always_cow_inode(ip))
 			allocfork = XFS_COW_FORK;
 	}
-
-	error = xfs_qm_dqattach_locked(ip, false);
-	if (error)
-		goto out_unlock;
 
 	if (eof && offset + count > XFS_ISIZE(ip)) {
 		/*
