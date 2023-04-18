@@ -510,6 +510,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	/* Set up the timer for Guest */
 	pr_info("vcpu: [%d], regs addr = %#lx, vcpucb = %#lx\n", vcpu->vcpu_id,
 			(unsigned long)&vcpu->arch.regs, (unsigned long)&vcpu->arch.vcb);
+	vcpu->arch.vtimer_freq = cpuid(GET_CPU_FREQ, 0) * 1000UL * 1000UL;
 	hrtimer_init(&vcpu->arch.hrt, CLOCK_REALTIME, HRTIMER_MODE_ABS);
 	vcpu->arch.hrt.function = clockdev_fn;
 	vcpu->arch.tsk = current;

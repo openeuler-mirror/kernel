@@ -64,6 +64,7 @@ struct kvm_vcpu_arch {
 	/* Virtual clock device */
 	struct hrtimer hrt;
 	unsigned long timer_next_event;
+	unsigned long vtimer_freq;
 	int first_run;
 	int halted;
 	int stopped;
