@@ -115,6 +115,15 @@ static const struct dcbnl_rtnl_ops hns3_dcbnl_ops = {
 	.setdcbx	= hns3_dcbnl_setdcbx,
 };
 
+static const struct dcbnl_rtnl_ops hns3_unic_dcbnl_ops = {
+	.ieee_getets	= hns3_dcbnl_ieee_getets,
+	.ieee_setets	= hns3_dcbnl_ieee_setets,
+	.ieee_setapp	= hns3_dcbnl_ieee_setapp,
+	.ieee_delapp	= hns3_dcbnl_ieee_delapp,
+	.getdcbx	= hns3_dcbnl_getdcbx,
+	.setdcbx	= hns3_dcbnl_setdcbx,
+};
+
 /* hclge_dcbnl_setup - DCBNL setup
  * @handle: the corresponding vport handle
  * Set up DCBNL
@@ -126,5 +135,12 @@ void hns3_dcbnl_setup(struct hnae3_handle *handle)
 	if ((!handle->kinfo.dcb_ops) || (handle->flags & HNAE3_SUPPORT_VF))
 		return;
 
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		dev->dcbnl_ops = &hns3_unic_dcbnl_ops;
+	else
+		dev->dcbnl_ops = &hns3_dcbnl_ops;
+#else
 	dev->dcbnl_ops = &hns3_dcbnl_ops;
+#endif
 }

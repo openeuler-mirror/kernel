@@ -26,6 +26,7 @@
 #include "hnae3.h"
 #include "hnae3_ext.h"
 #include "hns3_enet.h"
+#include "hns3_unic.h"
 /* All hns3 tracepoints are defined by the include below, which
  * must be included exactly once across the whole kernel with
  * CREATE_TRACE_POINTS defined
@@ -3266,6 +3267,28 @@ out:
 	return netdev_pick_tx(netdev, skb, sb_dev);
 }
 
+const struct net_device_ops hns3_unic_netdev_ops = {
+	.ndo_open		= hns3_nic_net_open,
+	.ndo_stop		= hns3_nic_net_stop,
+	.ndo_start_xmit		= hns3_nic_net_xmit,
+	.ndo_tx_timeout		= hns3_nic_net_timeout,
+	.ndo_do_ioctl		= hns3_nic_do_ioctl,
+	.ndo_change_mtu		= hns3_nic_change_mtu,
+	.ndo_set_features	= hns3_nic_set_features,
+	.ndo_features_check	= hns3_features_check,
+	.ndo_get_stats64	= hns3_nic_get_stats64,
+	.ndo_setup_tc		= hns3_nic_setup_tc,
+	.ndo_set_rx_mode	= hns3_nic_set_rx_mode,
+	.ndo_set_vf_trust	= hns3_set_vf_trust,
+#ifdef CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	= hns3_rx_flow_steer,
+#endif
+	.ndo_get_vf_config	= hns3_nic_get_vf_config,
+	.ndo_set_vf_link_state	= hns3_nic_set_vf_link_state,
+	.ndo_set_vf_rate	= hns3_nic_set_vf_rate,
+	.ndo_select_queue	= hns3_nic_select_queue,
+};
+
 static const struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_open		= hns3_nic_net_open,
 	.ndo_stop		= hns3_nic_net_stop,
@@ -5581,7 +5604,16 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	netdev->watchdog_timeo = HNS3_TX_TIMEOUT;
 	netdev->priv_flags |= IFF_UNICAST_FLT;
+
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		netdev->netdev_ops = &hns3_unic_netdev_ops;
+	else
+		netdev->netdev_ops = &hns3_nic_netdev_ops;
+#else
 	netdev->netdev_ops = &hns3_nic_netdev_ops;
+#endif
+
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	hns3_ethtool_set_ops(netdev);
 
@@ -5649,6 +5681,10 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	}
 
 	netdev->max_mtu = HNS3_MAX_MTU(ae_dev->dev_specs.max_frm_size);
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_init(netdev);
+#endif
 
 	hns3_state_init(handle);
 
