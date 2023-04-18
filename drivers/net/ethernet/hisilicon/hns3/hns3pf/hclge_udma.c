@@ -14,9 +14,9 @@
  */
 
 #include "hclge_main.h"
-#include "hclge_udma.h"
 #include "hclge_err.h"
 #include "hclge_debugfs.h"
+#include "hclge_udma.h"
 
 static const struct hclge_dbg_status_dfx_info hclge_dbg_rst_info_ub[] = {
 	{HCLGE_RAS_PF_OTHER_INT_STS_REG_UB, "UB RAS interrupt status"}

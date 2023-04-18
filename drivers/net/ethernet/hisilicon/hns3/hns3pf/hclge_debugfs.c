@@ -6,13 +6,14 @@
 #include "hclge_debugfs.h"
 #include "hclge_err.h"
 #include "hclge_main.h"
+#include "hclge_comm_unic_addr.h"
 #include "hclge_regs.h"
 #include "hclge_tm.h"
 #include "hclge_udma.h"
 #include "hnae3.h"
 
 static const char * const state_str[] = { "off", "on" };
-static const char * const hclge_mac_state_str[] = {
+static const char * const hclge_entry_state_str[] = {
 	"TO_ADD", "TO_DEL", "ACTIVE"
 };
 
@@ -394,9 +395,14 @@ static void hclge_dbg_dump_mac_type(struct hclge_dev *hdev, char *buf, int len,
 {
 	struct hclge_vport *vport = &hdev->vport[0];
 	struct hnae3_handle *handle = &vport->nic;
+	char *type;
 
-	*pos += scnprintf(buf + *pos, len - *pos, "type: %s\n",
-			  handle->mac_type ? "ROH" : "Ethernet");
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		type = "UB";
+	else
+		type = handle->mac_type ? "ROH" : "Ethernet";
+
+	*pos += scnprintf(buf + *pos, len - *pos, "type: %s\n", type);
 }
 
 static int hclge_dbg_dump_mac(struct hclge_dev *hdev, char *buf, int len)
@@ -2121,7 +2127,7 @@ static void hclge_dbg_dump_mac_list(struct hclge_dev *hdev, char *buf, int len,
 								func_id);
 			sprintf(result[i++], "%pM", mac_node->mac_addr);
 			sprintf(result[i++], "%5s",
-				hclge_mac_state_str[mac_node->state]);
+				hclge_entry_state_str[mac_node->state]);
 			hclge_dbg_fill_content(content, sizeof(content),
 					       mac_list_items,
 					       (const char **)result,
@@ -2575,6 +2581,150 @@ static int hclge_dbg_dump_wol_info(struct hclge_dev *hdev, char *buf, int len)
 	return 0;
 }
 
+static int hclge_dbg_dump_ip_spec(struct hclge_dev *hdev, char *buf, int len)
+{
+	struct unic_ip_table_info *iptbl_info = &hdev->iptbl_info;
+	u8 func_num = pci_num_vf(hdev->pdev) + 1;
+	struct hclge_vport *vport;
+	int pos = 0;
+	u8 i;
+
+	pos += scnprintf(buf, len, "num_alloc_vport       : %u\n",
+			 hdev->num_alloc_vport);
+	pos += scnprintf(buf + pos, len - pos, "max_ip_table_size     : %u\n",
+			 iptbl_info->max_iptbl_size);
+	pos += scnprintf(buf + pos, len - pos, "priv_ip_table_size    : %u\n",
+			 iptbl_info->priv_iptbl_size);
+
+	mutex_lock(&hdev->vport_lock);
+	pos += scnprintf(buf + pos, len - pos, "share_ip_table_size   : %u\n",
+			 iptbl_info->share_iptbl_size);
+	for (i = 0; i < func_num; i++) {
+		vport = &hdev->vport[i];
+		pos += scnprintf(buf + pos, len - pos,
+				 "vport(%u) used_ip_table_num : %u\n",
+				 i, vport->used_iptbl_num);
+	}
+	mutex_unlock(&hdev->vport_lock);
+
+	return 0;
+}
+
+static int hclge_dbg_dump_guid_spec(struct hclge_dev *hdev, char *buf, int len)
+{
+	u16 mc_guid_tbl_size;
+
+	mc_guid_tbl_size = min(HCLGE_UNIC_MC_GUID_NUM,
+			       hdev->ae_dev->dev_specs.guid_tbl_space -
+			       HCLGE_VPORT_NUM);
+	scnprintf(buf, len, "function guid tbl size: %u\nmc guid tbl size: %u\n",
+		  HCLGE_VPORT_NUM, mc_guid_tbl_size);
+
+	return 0;
+}
+
+#define HCLGE_UNIC_DBG_DATA_STR_LEN	50
+#define HCLGE_UNIC_IPV6_LEN		16
+
+static const struct hclge_dbg_item ip_list_items[] = {
+	{ "FUNC_ID", 2 },
+	{ "IP_ADDR", 34 },
+	{ "STATE", 2 },
+};
+
+static int hclge_dbg_dump_ip_list(struct hclge_dev *hdev, char *buf, int len)
+{
+	char data_str[ARRAY_SIZE(ip_list_items)][HCLGE_UNIC_DBG_DATA_STR_LEN];
+	char content[HCLGE_DBG_INFO_LEN], str_id[HCLGE_DBG_ID_LEN];
+	struct hclge_comm_unic_addr_node *ip_node, *tmp;
+	char *result[ARRAY_SIZE(ip_list_items)];
+	struct hclge_vport *vport;
+	struct list_head *list;
+	u16 used_iptbl_num = 0;
+	u32 func_id;
+	int pos = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(ip_list_items); i++)
+		result[i] = &data_str[i][0];
+
+	for (i = 0; i < hdev->num_alloc_vport; i++)
+		used_iptbl_num += hdev->vport[i].used_iptbl_num;
+
+	pos += scnprintf(buf + pos, len - pos, "used ip number: %u\n",
+			 used_iptbl_num);
+
+	hclge_dbg_fill_content(content, sizeof(content), ip_list_items,
+			       NULL, ARRAY_SIZE(ip_list_items));
+	pos += scnprintf(buf + pos, len - pos, "%s", content);
+
+	for (func_id = 0; func_id < hdev->num_alloc_vport; func_id++) {
+		vport = &hdev->vport[func_id];
+		list = &vport->ip_list;
+		spin_lock_bh(&vport->ip_list_lock);
+		list_for_each_entry_safe(ip_node, tmp, list, node) {
+			i = 0;
+			result[i++] = hclge_dbg_get_func_id_str(str_id,
+								func_id);
+			sprintf(result[i++], "%pI6c", &ip_node->ip_addr.s6_addr);
+			sprintf(result[i++], "%5s",
+				hclge_entry_state_str[ip_node->state]);
+			hclge_dbg_fill_content(content, sizeof(content),
+					       ip_list_items,
+					       (const char **)result,
+					       ARRAY_SIZE(ip_list_items));
+
+			if (len - pos < strlen(content)) {
+				spin_unlock_bh(&vport->ip_list_lock);
+				dev_warn(&hdev->pdev->dev,
+					 "Warning: IP list debugfs buffer overflow.\n");
+				return 0;
+			}
+
+			pos += scnprintf(buf + pos, len - pos, "%s", content);
+		}
+		spin_unlock_bh(&vport->ip_list_lock);
+	}
+	return 0;
+}
+
+static int hclge_dbg_dump_guid_list(struct hclge_dev *hdev, char *buf, int len)
+{
+	char format_guid_addr[HCLGE_COMM_FORMAT_GUID_ADDR_LEN];
+	struct hclge_comm_unic_addr_node *guid_node, *tmp;
+	char str_id[HCLGE_DBG_ID_LEN];
+	struct hclge_vport *vport;
+	struct list_head *list;
+	u16 func_id;
+	int pos = 0;
+	u16 i;
+
+	pos += scnprintf(buf + pos, len - pos, "used mc guid number: %u\n",
+			 hdev->used_mc_guid_num);
+	pos += scnprintf(buf + pos, len - pos, "mc guid table bitmap: ");
+	for (i = 0; i < BITS_TO_LONGS(HCLGE_UNIC_MC_GUID_NUM); i++)
+		pos += scnprintf(buf + pos, len - pos, "%lx ",
+				 hdev->mc_guid_tbl_bmap[i]);
+	pos += scnprintf(buf + pos, len - pos, "\nMC GUID LIST:\n");
+	pos += scnprintf(buf + pos, len - pos, "No. FUNC_ID %-48s STATE\n", "MC_GUID");
+	for (func_id = 0, i = 0; func_id < hdev->num_alloc_vport; func_id++) {
+		vport = &hdev->vport[func_id];
+		list = &vport->mc_guid_list;
+		spin_lock_bh(&vport->mguid_list_lock);
+		list_for_each_entry_safe(guid_node, tmp, list, node) {
+			hclge_comm_format_guid_addr(format_guid_addr,
+						    guid_node->mguid);
+			pos += scnprintf(buf + pos, len - pos,
+					 "%-3d %-7s %-48s %s\n", i++,
+					 hclge_dbg_get_func_id_str(str_id, func_id),
+					 format_guid_addr,
+					 hclge_entry_state_str[guid_node->state]);
+		}
+		spin_unlock_bh(&vport->mguid_list_lock);
+	}
+	return 0;
+}
+
 static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_TM_NODES,
@@ -2727,6 +2877,22 @@ static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_WOL_INFO,
 		.dbg_dump = hclge_dbg_dump_wol_info,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_IP_SPEC,
+		.dbg_dump = hclge_dbg_dump_ip_spec,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_GUID_SPEC,
+		.dbg_dump = hclge_dbg_dump_guid_spec,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_IP_LIST,
+		.dbg_dump = hclge_dbg_dump_ip_list,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_GUID_LIST,
+		.dbg_dump = hclge_dbg_dump_guid_list,
 	},
 };
 

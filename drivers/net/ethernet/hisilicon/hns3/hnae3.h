@@ -371,6 +371,10 @@ enum hnae3_dbg_cmd {
 	HNAE3_DBG_CMD_PAGE_POOL_INFO,
 	HNAE3_DBG_CMD_COAL_INFO,
 	HNAE3_DBG_CMD_WOL_INFO,
+	HNAE3_DBG_CMD_IP_SPEC,
+	HNAE3_DBG_CMD_GUID_SPEC,
+	HNAE3_DBG_CMD_IP_LIST,
+	HNAE3_DBG_CMD_GUID_LIST,
 	HNAE3_DBG_CMD_UNKNOWN,
 };
 
@@ -987,6 +991,7 @@ struct hnae3_handle {
 	/* protects concurrent contention between debugfs commands */
 	struct mutex dbgfs_lock;
 	char **dbgfs_buf;
+	char **ub_dbgfs_buf;
 
 	/* Network interface message level enabled bits */
 	u32 msg_enable;

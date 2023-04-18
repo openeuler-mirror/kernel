@@ -16,7 +16,7 @@ hns3-objs = hns3_enet.o hns3_ethtool.o hns3_debugfs.o
 hns3-objs += hns3_ext.o
 
 hns3-$(CONFIG_HNS3_DCB) += hns3_dcbnl.o
-hns3-$(CONFIG_HNS3_UBL) += hns3_unic.o
+hns3-$(CONFIG_HNS3_UBL) += hns3_unic.o hns3_unic_debugfs.o
 
 obj-$(CONFIG_HNS3_HCLGEVF) += hclgevf.o
 
