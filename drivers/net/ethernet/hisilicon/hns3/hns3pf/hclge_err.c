@@ -2992,7 +2992,7 @@ static bool hclge_reset_vf_in_bitmap(struct hclge_dev *hdev,
 			return false;
 		}
 
-		ret = hclge_func_reset_cmd(hdev, func_id);
+		ret = hclge_inform_vf_reset(vport, HNAE3_VF_FUNC_RESET);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"failed to reset func %d, ret = %d.",
