@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2304.3.0
+%global hulkrelease 2304.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0197
+Release: %{hulkrelease}.0198
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,18 @@ fi
 %endif
 
 %changelog
+
+* Wed Apr 19 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.4.0.0198
+- KVM: nVMX: add missing consistency checks for CR0 and CR4
+- drm/vmwgfx: Validate the box size for the snooped cursor
+- net/sched: Retire tcindex classifier
+- Documentation/hw-vuln: Fix rST warning
+- Documentation/hw-vuln: Add documentation for Cross-Thread Return Predictions
+- KVM: x86: Mitigate the cross-thread return address predictions bug
+- x86/speculation: Identify processors vulnerable to SMT RSB predictions
+- cpu/SMT: create and export cpu_smt_possible()
+- nfc: st-nci: Fix use after free bug in ndlc_remove due to race condition
+- Bluetooth: btsdio: fix use after free bug in btsdio_remove due to race condition
 
 * Tue Apr 11 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.3.0.0197
 - hwmon: (xgene) Fix use after free bug in xgene_hwmon_remove due to race condition
