@@ -1947,6 +1947,7 @@ xfs_free_buftarg(
 	list_lru_destroy(&btp->bt_lru);
 
 	xfs_blkdev_issue_flush(btp);
+	invalidate_bdev(btp->bt_bdev);
 
 	kmem_free(btp);
 }
