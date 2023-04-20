@@ -25,17 +25,15 @@ void cpu_idle(void)
 		if (!need_resched())
 			hcall(HCALL_HALT, 0, 0, 0);
 	} else {
-		/*
-		 * We use inline assembly here to make sure
-		 * checking TIF_NEED_RESCHED and HALT instruction
-		 * are in the same instruction group.
-		 */
 		asm(
-		".align 4\n"
+		".globl __idle_start\n"
+		"__idle_start = .\n"
 		"ldw	$1, %0($8)\n"
 		"srl	$1, %1, $1\n"
 		"blbs	$1, $need_resched\n"
 		"halt\n"
+		".globl __idle_end\n"
+		"__idle_end = .\n"
 		"$need_resched:"
 		:: "i"(TI_FLAGS), "i"(TIF_NEED_RESCHED)
 		: "$1");

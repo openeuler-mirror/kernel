@@ -826,6 +826,7 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 			  unsigned long irq_arg, struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
+	extern char __idle_start[], __idle_end[];
 
 	if (is_guest_or_emul()) {
 		if ((type & 0xffff) > 15) {
@@ -836,6 +837,10 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 				type = INT_MSI;
 		}
 	}
+
+	/* restart idle routine if it is interrupted */
+	if (regs->pc > (u64)__idle_start && regs->pc < (u64)__idle_end)
+		regs->pc = (u64)__idle_start;
 
 	switch (type & 0xffff) {
 	case INT_MSI:
