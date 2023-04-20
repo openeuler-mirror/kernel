@@ -230,16 +230,16 @@ config SW64_ASIC
 endchoice
 
 config SW64_CHIP3_ASIC_DEBUG
-        bool "Debug Support for Chip3 Asic"
-        depends on SW64_ASIC
-        help
-          Used for debug
+	bool "Debug Support for Chip3 Asic"
+	depends on SW64_ASIC
+	help
+	  Used for debug
 
 config CPUFREQ_DEBUGFS
-        bool "CPU Frequency debugfs interface for Chip3 Asic"
-        depends on SW64_CHIP3 && DEBUG_FS
-        help
-          Turns on the DebugFS interface for CPU Frequency.
+	bool "CPU Frequency debugfs interface for Chip3 Asic"
+	depends on SW64_CHIP3 && DEBUG_FS
+	help
+	  Turns on the DebugFS interface for CPU Frequency.
 
 	  If you don't know what to do here, say N.
 
@@ -284,11 +284,11 @@ config ISA
 	bool
 	default y
 	help
-	  Find out whether you have ISA slots on your motherboard.  ISA is the
+	  Find out whether you have ISA slots on your motherboard. ISA is the
 	  name of a bus system, i.e. the way the CPU talks to the other stuff
-	  inside your box.  Other bus systems are PCI, EISA, MicroChannel
-	  (MCA) or VESA.  ISA is an older system, now being displaced by PCI;
-	  newer boards don't support it.  If you have ISA, say Y, otherwise N.
+	  inside your box. Other bus systems are PCI, EISA, MicroChannel
+	  (MCA) or VESA. ISA is an older system, now being displaced by PCI;
+	  newer boards don't support it. If you have ISA, say Y, otherwise N.
 
 config ISA_DMA_API
 	bool
@@ -318,15 +318,15 @@ config KEXEC
 	select KEXEC_CORE
 	help
 	  kexec is a system call that implements the ability to shutdown your
-	  current kernel, and to start another kernel.  It is like a reboot
-	  but it is independent of the system firmware.   And like a reboot
+	  current kernel, and to start another kernel. It is like a reboot
+	  but it is independent of the system firmware. And like a reboot
 	  you can start any kernel with it, not just Linux.
 
 	  The name comes from the similarity to the exec system call.
 
 	  It is an ongoing process to be certain the hardware in a machine
 	  is properly shutdown, so do not be surprised if this code does not
-	  initially work for you.  As of this writing the exact hardware
+	  initially work for you. As of this writing the exact hardware
 	  interface is strongly in flux, so no good recommendation can be
 	  made.
 
@@ -389,7 +389,7 @@ config SMP
 	  If you don't know what to do here, say N.
 
 config ARCH_PROC_KCORE_TEXT
-        def_bool y
+	def_bool y
 
 config HAVE_DEC_LOCK
 	bool "Use arch-specified dec_and_lock"
@@ -432,8 +432,8 @@ config NUMA
 	depends on SMP && !FLATMEM
 	help
 	  Say Y to compile the kernel to support NUMA (Non-Uniform Memory
-	  Access).  This option is for configuring high-end multiprocessor
-	  server machines.  If in doubt, say N.
+	  Access). This option is for configuring high-end multiprocessor
+	  server machines. If in doubt, say N.
 
 config USE_PERCPU_NUMA_NODE_ID
 	def_bool y
@@ -566,7 +566,7 @@ config CMDLINE_BOOL
 	bool "Built-in kernel command line"
 	help
 	  Allow for specifying boot arguments to the kernel at
-	  build time.  On some systems (e.g. embedded ones), it is
+	  build time. On some systems (e.g. embedded ones), it is
 	  necessary or convenient to provide some or all of the
 	  kernel boot arguments with the kernel itself (that is,
 	  to not rely on the boot loader to provide them.)
@@ -584,7 +584,7 @@ config CMDLINE
 	default ""
 	help
 	  Enter arguments here that should be compiled into the kernel
-	  image and used at boot time.  If the boot loader provides a
+	  image and used at boot time. If the boot loader provides a
 	  command line at boot time, it is appended to this string to
 	  form the full kernel command line, when the system boots.
 
@@ -602,7 +602,7 @@ config CMDLINE_OVERRIDE
 	  Set this option to 'Y' to have the kernel ignore the boot loader
 	  command line, and use ONLY the built-in command line.
 
-	  This is used to work around broken boot loaders.  This should
+	  This is used to work around broken boot loaders. This should
 	  be set to 'N' under normal conditions.
 
 config FORCE_MAX_ZONEORDER
@@ -612,8 +612,8 @@ config FORCE_MAX_ZONEORDER
 	help
 	  The kernel memory allocator divides physically contiguous memory
 	  blocks into "zones", where each zone is a power of two number of
-	  pages.  This option selects the largest power of two that the kernel
-	  keeps in the memory allocator.  If you need to allocate very large
+	  pages. This option selects the largest power of two that the kernel
+	  keeps in the memory allocator. If you need to allocate very large
 	  blocks of physically contiguous memory, then you may need to
 	  increase this value.
 
