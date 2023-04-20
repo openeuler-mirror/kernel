@@ -305,7 +305,13 @@ static inline int pmd_bad(pmd_t pmd)
 
 static inline int pmd_present(pmd_t pmd)
 {
-	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE);
+	/*
+	 * Checking for _PAGE_PSE is needed too because
+	 * split_huge_page will temporarily clear the valid bit (but
+	 * the _PAGE_PSE flag will remain set at all times while the
+	 * _PAGE_VALID bit is clear).
+	 */
+	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_PSE);
 }
 
 static inline void pmd_clear(pmd_t *pmdp)
