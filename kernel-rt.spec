@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       144
+%global devel_release       146
 %global maintenance_release .0.0
-%global pkg_release         .58
+%global pkg_release         .59
 %global rt_release          .rt62
 
 %define with_debuginfo 1
@@ -886,6 +886,9 @@ fi
 %endif
 
 %changelog
+
+* Wed Apr 10 2023 liyulei <liyulei@kylinos.cn> - 5.10.0-146.0.0.59
+- update kernel-rt version to 5.10.0-146.0.0
 
 * Wed Mar 10 2023 liyulei <liyulei@kylinos.cn> - 5.10.0-144.0.0.58
 - update kernel-rt version to 5.10.0-144.0.0
