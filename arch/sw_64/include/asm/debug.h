@@ -24,4 +24,15 @@
  */
 extern struct dentry *sw64_debugfs_dir;
 
+#define UNA_MAX_ENTRIES	64
+
+struct unaligned_stat {
+	unsigned long pc;
+	unsigned long va;
+};
+
+extern char unaligned_task[];
+extern unsigned long unaligned_count;
+extern struct unaligned_stat unaligned[];
+
 #endif /* _ASM_SW64_DEBUG_H */
