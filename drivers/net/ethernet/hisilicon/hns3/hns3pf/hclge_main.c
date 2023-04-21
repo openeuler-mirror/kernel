@@ -11493,8 +11493,8 @@ static void hclge_get_ksettings_an_result(struct hnae3_handle *handle,
 		*auto_neg = hdev->hw.mac.autoneg;
 }
 
-static void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
-				 u8 *module_type)
+void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
+			  u8 *module_type)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
