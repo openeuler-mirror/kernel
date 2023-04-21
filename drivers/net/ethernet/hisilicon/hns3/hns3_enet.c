@@ -3132,15 +3132,26 @@ static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 }
 
 static void hns3_set_rx_skb_rss_type(struct hns3_enet_ring *ring,
-				     struct sk_buff *skb, u32 rss_hash)
+				     struct sk_buff *skb, u32 rss_hash,
+				     u32 l234info)
 {
+	enum pkt_hash_types rss_type = PKT_HASH_TYPE_NONE;
 	struct hnae3_handle *handle = ring->tqp->handle;
-	enum pkt_hash_types rss_type;
+	int l3_type;
+	int l4_type;
 
-	if (rss_hash)
-		rss_type = handle->kinfo.rss_type;
-	else
-		rss_type = PKT_HASH_TYPE_NONE;
+	l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M, HNS3_RXD_L3ID_S);
+	l4_type = hnae3_get_field(l234info, HNS3_RXD_L4ID_M, HNS3_RXD_L4ID_S);
+	if (l3_type == HNS3_L3_TYPE_IPV4 ||
+	    l3_type == HNS3_L3_TYPE_IPV6) {
+		if (l4_type == HNS3_L4_TYPE_UDP ||
+		    l4_type == HNS3_L4_TYPE_TCP ||
+		    l4_type == HNS3_L4_TYPE_SCTP)
+			rss_type = PKT_HASH_TYPE_L4;
+		else if (l4_type == HNS3_L4_TYPE_IGMP ||
+			 l4_type == HNS3_L4_TYPE_ICMP)
+			rss_type = PKT_HASH_TYPE_L3;
+	}
 
 	skb_set_hash(skb, rss_hash, rss_type);
 }
@@ -3218,7 +3229,8 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 
 	ring->tqp_vector->rx_group.total_bytes += len;
 
-	hns3_set_rx_skb_rss_type(ring, skb, le32_to_cpu(desc->rx.rss_hash));
+	hns3_set_rx_skb_rss_type(ring, skb, le32_to_cpu(desc->rx.rss_hash),
+				 l234info);
 	return 0;
 }
 
