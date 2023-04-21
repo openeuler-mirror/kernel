@@ -7977,7 +7977,7 @@ static void hclge_enable_fd(struct hnae3_handle *handle, bool enable)
 	hclge_task_schedule(hdev, 0);
 }
 
-static void hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable)
+int hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable)
 {
 	struct hclge_desc desc;
 	struct hclge_config_mac_mode_cmd *req =
@@ -8004,8 +8004,10 @@ static void hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable)
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret)
-		dev_err(&hdev->pdev->dev,
-			"mac enable fail, ret =%d.\n", ret);
+		dev_err(&hdev->pdev->dev, "failed to %s mac, ret = %d.\n",
+			enable ? "enable" : "disable", ret);
+
+	return ret;
 }
 
 static int hclge_config_switch_param(struct hclge_dev *hdev, int vfid,
