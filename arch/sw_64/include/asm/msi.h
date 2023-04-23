@@ -17,8 +17,18 @@
 
 #define MSIX_MSG_ADDR		(0x91abc0UL)
 
+#define VT_MSIX_MSG_ADDR	(0x8000fee00000UL)
+#define VT_MSIX_ADDR_DEST_ID_SHIFT	12
+#define VT_MSIX_ADDR_DEST_ID_MASK	(0xff << VT_MSIX_ADDR_DEST_ID_SHIFT)
+#define VT_MSIX_ADDR_DEST_ID(dest)	\
+	(((dest) << VT_MSIX_ADDR_DEST_ID_SHIFT) & VT_MSIX_ADDR_DEST_ID_MASK)
+
+
 #ifdef CONFIG_PCI_MSI
+extern void vt_sw64_vector_free_irqs(unsigned int virq, unsigned int nr_irqs);
 extern int sw64_setup_vt_msi_irqs(struct pci_dev *dev, int nvec, int type);
+extern bool find_free_cpu_vector(const struct cpumask *search_mask,
+				 int *found_cpu, int *found_vector);
 extern int msi_compose_msg(unsigned int irq, struct msi_msg *msg);
 extern void sw64_irq_noop(struct irq_data *d);
 extern struct irq_chip sw64_irq_chip;
@@ -26,9 +36,20 @@ extern struct irq_chip sw64_irq_chip;
 #ifdef CONFIG_PCI_MSI_IRQ_DOMAIN
 #define MSI_ADDR_BASE_HI	0
 #define MSI_ADDR_BASE_LO	0x91abc0
-struct sw6_msi_chip_data {
+
+struct sw64_msi_chip_data {
+	spinlock_t cdata_lock;
+	unsigned long msi_config;
+	unsigned long rc_node;
+	unsigned long rc_index;
 	unsigned int msi_config_index;
+	unsigned int dst_cpu;
+	unsigned int vector;
+	unsigned int prev_cpu;
+	unsigned int prev_vector;
+	bool move_in_progress;
 };
+
 extern void arch_init_msi_domain(struct irq_domain *domain);
 enum irq_alloc_type {
 	IRQ_ALLOC_TYPE_MSI,

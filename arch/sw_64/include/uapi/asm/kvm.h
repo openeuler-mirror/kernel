@@ -6,6 +6,9 @@
  * KVM SW specific structures and definitions.
  */
 #define SWVM_IRQS 256
+#define IRQ_PENDING_INTX_SHIFT		16
+#define IRQ_PENDING_MSI_VECTORS_SHIFT	17
+
 enum SW64_KVM_IRQ {
 	SW64_KVM_IRQ_IPI = 27,
 	SW64_KVM_IRQ_TIMER = 9,

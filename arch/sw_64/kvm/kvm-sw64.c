@@ -13,6 +13,7 @@
 #include <linux/kvm.h>
 #include <linux/uaccess.h>
 #include <linux/sched.h>
+#include <linux/msi.h>
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 
@@ -62,11 +63,13 @@ int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
 int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm, int irq_source_id,
 		int level, bool line_status)
 {
-	int irq = e->msi.data & 0xff;
+	unsigned int vcid;
 	unsigned int vcpu_idx;
 	struct kvm_vcpu *vcpu = NULL;
+	int irq = e->msi.data & 0xff;
 
-	vcpu_idx = irq % atomic_read(&kvm->online_vcpus);
+	vcid = (e->msi.address_lo & VT_MSIX_ADDR_DEST_ID_MASK) >> VT_MSIX_ADDR_DEST_ID_SHIFT;
+	vcpu_idx = vcid & 0x1f;
 	vcpu = kvm_get_vcpu(kvm, vcpu_idx);
 
 	if (!vcpu)
@@ -962,14 +965,13 @@ int kvm_vm_ioctl_irq_line(struct kvm *kvm, struct kvm_irq_level *irq_level,
 		bool line_status)
 {
 	u32 irq = irq_level->irq;
-	unsigned int vcpu_idx, irq_num;
+	unsigned int irq_num;
 	struct kvm_vcpu *vcpu = NULL;
 	bool level = irq_level->level;
 
-	vcpu_idx = irq % atomic_read(&kvm->online_vcpus);
 	irq_num = irq;
-
-	vcpu = kvm_get_vcpu(kvm, vcpu_idx);
+	/* target core for Intx is core0 */
+	vcpu = kvm_get_vcpu(kvm, 0);
 	if (!vcpu)
 		return -EINVAL;
 
