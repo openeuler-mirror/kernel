@@ -164,6 +164,12 @@ F:	include/linux/wait.h
 F:	include/uapi/linux/sched.h
 F:	kernel/sched/
 
+SSSNIC Ethernet Controller DRIVERS
+M:      Steven Song <steven.song@3snic.com>
+S:      Maintained
+F:      Documentation/networking/device_drivers/ethernet/3snic/sssnic/sssnic.rst
+F:      drivers/net/ethernet/3snic/sssnic
+
 SSSRAID SCSI/Raid DRIVERS
 M:	Steven Song <steven.song@3snic.com>
 S:	Maintained

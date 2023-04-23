@@ -16691,6 +16691,12 @@ S:	Maintained
 F:	Documentation/scsi/sssraid.rst
 F:	drivers/scsi/sssraid/
 
+SSSNIC Ethernet Controller DRIVERS
+M:	Steven Song <steven.song@3snic.com>
+S:	Maintained
+F:	Documentation/networking/device_drivers/ethernet/3snic/sssnic/sssnic.rst
+F:	drivers/net/ethernet/3snic/sssnic
+
 ST LSM6DSx IMU IIO DRIVER
 M:	Lorenzo Bianconi <lorenzo.bianconi83@gmail.com>
 L:	linux-iio@vger.kernel.org
