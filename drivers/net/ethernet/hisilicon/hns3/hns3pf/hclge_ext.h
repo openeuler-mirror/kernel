@@ -83,6 +83,15 @@ struct hclge_sfp_enable_cmd {
 	__le32 rsv[5];
 };
 
+struct hclge_lamp_signal_cmd {
+	__le32 type;
+	__le32 status;
+	u8 error;
+	u8 locate;
+	u8 activity;
+	u8 rsv[13];
+};
+
 enum hclge_ext_opcode_type {
 	HCLGE_OPC_CONFIG_NIC_CLOCK = 0x0060,
 	HCLGE_OPC_CONFIG_SWITCH_PARAM = 0x1033,
@@ -92,6 +101,7 @@ enum hclge_ext_opcode_type {
 	HCLGE_OPC_CHIP_ID_GET = 0x7003,
 	HCLGE_OPC_GET_CHIP_NUM = 0x7005,
 	HCLGE_OPC_GET_PORT_NUM = 0x7006,
+	HCLGE_OPC_SET_LED = 0x7007,
 	HCLGE_OPC_DISABLE_NET_LANE = 0x7008,
 	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
 	HCLGE_OPC_CFG_GET_HILINK_REF_LOS = 0x701B,
