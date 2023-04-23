@@ -1742,7 +1742,8 @@ arm_smmu_find_master(struct arm_smmu_device *smmu, u32 sid)
 	struct arm_smmu_stream *stream;
 	struct arm_smmu_master_data *master = NULL;
 
-	mutex_lock(&smmu->streams_mutex);
+	lockdep_assert_held(&smmu->streams_mutex);
+
 	node = smmu->streams.rb_node;
 	while (node) {
 		stream = rb_entry(node, struct arm_smmu_stream, node);
@@ -1755,7 +1756,6 @@ arm_smmu_find_master(struct arm_smmu_device *smmu, u32 sid)
 			break;
 		}
 	}
-	mutex_unlock(&smmu->streams_mutex);
 
 	return master;
 }
@@ -1791,9 +1791,12 @@ static int arm_smmu_handle_evt(struct arm_smmu_device *smmu, u64 *evt)
 	if (evt[1] & EVTQ_1_S2)
 		return -EFAULT;
 
+	mutex_lock(&smmu->streams_mutex);
 	master = arm_smmu_find_master(smmu, sid);
-	if (!master)
-		return -EINVAL;
+	if (!master) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
 
 	/*
 	 * The domain is valid until the fault returns, because detach() flushes
@@ -1833,6 +1836,8 @@ static int arm_smmu_handle_evt(struct arm_smmu_device *smmu, u64 *evt)
 		arm_smmu_page_response(master->dev, &resp);
 	}
 
+out_unlock:
+	mutex_unlock(&smmu->streams_mutex);
 	return ret;
 }
 
@@ -2935,8 +2940,8 @@ static void arm_smmu_remove_device(struct device *dev)
 	iopf_queue_remove_device(dev);
 	if (master->ste.assigned)
 		arm_smmu_detach_dev(dev);
-	iommu_group_remove_device(dev);
 	arm_smmu_remove_master(smmu, master);
+	iommu_group_remove_device(dev);
 	iommu_device_unlink(&smmu->iommu, dev);
 	kfree(master);
 	iommu_fwspec_free(dev);
