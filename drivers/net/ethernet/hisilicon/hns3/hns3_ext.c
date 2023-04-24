@@ -382,3 +382,60 @@ int nic_get_port_num_per_chip(struct net_device *ndev, u32 *port_num)
 	return nic_get_port_num_of_die(ndev, port_num);
 }
 EXPORT_SYMBOL(nic_get_port_num_per_chip);
+
+int nic_set_tx_timeout(struct net_device *ndev, int tx_timeout)
+{
+	if (nic_netdev_match_check(ndev))
+		return -ENODEV;
+
+	if (tx_timeout <= 0)
+		return -EINVAL;
+
+	ndev->watchdog_timeo = tx_timeout;
+
+	return 0;
+}
+EXPORT_SYMBOL(nic_set_tx_timeout);
+
+int nic_get_sfp_present(struct net_device *ndev, int *present)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_GET_PRESENT,
+				  present, sizeof(*present));
+}
+EXPORT_SYMBOL(nic_get_sfp_present);
+
+int nic_set_sfp_state(struct net_device *ndev, bool en)
+{
+	u32 state = en ? 1 : 0;
+
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_SET_SFP_STATE,
+				  &state, sizeof(state));
+}
+EXPORT_SYMBOL(nic_set_sfp_state);
+
+int nic_disable_net_lane(struct net_device *ndev)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_DISABLE_LANE, NULL, 0);
+}
+EXPORT_SYMBOL(nic_disable_net_lane);
+
+int nic_get_net_lane_status(struct net_device *ndev, u32 *status)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_GET_LANE_STATUS,
+				  status, sizeof(*status));
+}
+EXPORT_SYMBOL(nic_get_net_lane_status);
+
+int nic_disable_clock(struct net_device *ndev)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_DISABLE_CLOCK,
+				  NULL, 0);
+}
+EXPORT_SYMBOL(nic_disable_clock);
+
+int nic_set_pfc_time_cfg(struct net_device *ndev, u16 time)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_SET_PFC_TIME,
+				  &time, sizeof(time));
+}
+EXPORT_SYMBOL(nic_set_pfc_time_cfg);

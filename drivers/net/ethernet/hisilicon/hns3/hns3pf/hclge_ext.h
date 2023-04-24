@@ -73,7 +73,18 @@ struct hclge_torus_cfg_cmd {
 	__le32 torus_en;
 };
 
+struct hclge_sfp_present_cmd {
+	__le32 sfp_present;
+	__le32 rsv[5];
+};
+
+struct hclge_sfp_enable_cmd {
+	__le32 sfp_enable;
+	__le32 rsv[5];
+};
+
 enum hclge_ext_opcode_type {
+	HCLGE_OPC_CONFIG_NIC_CLOCK = 0x0060,
 	HCLGE_OPC_CONFIG_SWITCH_PARAM = 0x1033,
 	HCLGE_OPC_CONFIG_VLAN_FILTER = 0x1100,
 	HCLGE_OPC_SET_NOTIFY_PKT = 0x180A,
@@ -81,7 +92,10 @@ enum hclge_ext_opcode_type {
 	HCLGE_OPC_CHIP_ID_GET = 0x7003,
 	HCLGE_OPC_GET_CHIP_NUM = 0x7005,
 	HCLGE_OPC_GET_PORT_NUM = 0x7006,
+	HCLGE_OPC_DISABLE_NET_LANE = 0x7008,
 	HCLGE_OPC_CFG_PAUSE_STORM_PARA = 0x7019,
+	HCLGE_OPC_SFP_GET_PRESENT = 0x7101,
+	HCLGE_OPC_SFP_SET_STATUS = 0x7102,
 };
 
 struct hclge_reset_fail_type_map {

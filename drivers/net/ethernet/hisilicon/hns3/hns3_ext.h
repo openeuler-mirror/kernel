@@ -35,4 +35,11 @@ int nic_get_chip_num(struct net_device *ndev, u32 *chip_num);
 int nic_get_io_die_num(struct net_device *ndev, u32 *io_die_num);
 int nic_get_port_num_of_die(struct net_device *ndev, u32 *port_num);
 int nic_get_port_num_per_chip(struct net_device *ndev, u32 *port_num);
+int nic_set_tx_timeout(struct net_device *ndev, int tx_timeout);
+int nic_get_sfp_present(struct net_device *ndev, int *present);
+int nic_set_sfp_state(struct net_device *ndev, bool en);
+int nic_disable_net_lane(struct net_device *ndev);
+int nic_get_net_lane_status(struct net_device *ndev, u32 *status);
+int nic_disable_clock(struct net_device *ndev);
+int nic_set_pfc_time_cfg(struct net_device *ndev, u16 time);
 #endif

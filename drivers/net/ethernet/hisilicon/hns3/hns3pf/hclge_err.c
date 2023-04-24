@@ -2992,7 +2992,7 @@ static bool hclge_reset_vf_in_bitmap(struct hclge_dev *hdev,
 			return false;
 		}
 
-		ret = hclge_func_reset_cmd(hdev, func_id);
+		ret = hclge_inform_vf_reset(vport, HNAE3_VF_FUNC_RESET);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"failed to reset func %d, ret = %d.",
@@ -3015,6 +3015,9 @@ static void hclge_get_vf_fault_bitmap(struct hclge_desc *desc,
 #define HCLGE_SEC_FAULT_BYTES	8
 
 	u8 *buff;
+
+	BUILD_BUG_ON(HCLGE_FIR_FAULT_BYTES + HCLGE_SEC_FAULT_BYTES !=
+		     BITS_TO_BYTES(HCLGE_VPORT_NUM));
 
 	memcpy(bitmap, desc[0].data, HCLGE_FIR_FAULT_BYTES);
 	buff = (u8 *)bitmap + HCLGE_FIR_FAULT_BYTES;
