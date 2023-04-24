@@ -13,6 +13,10 @@
 #include <asm/tlb.h>
 #include "kvm_compat.h"
 
+#if defined(CONFIG_HUGETLB_PAGE) || defined(CONFIG_TRANSPARENT_HUGEPAGE)
+#define KVM_HUGE_TLB_SUPPORT
+#endif
+
 /*
  * KVM_MMU_CACHE_MIN_PAGES is the number of GPA page table translation levels
  * for which pages need to be cached.
@@ -34,7 +38,7 @@ static int kvm_tlb_flush_gpa(struct kvm_vcpu *vcpu, unsigned long gpa)
 
 static inline int kvm_pmd_huge(pmd_t pmd)
 {
-#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+#ifdef KVM_HUGE_TLB_SUPPORT
 	return (pmd_val(pmd) & _PAGE_HUGE) != 0;
 #else
 	return 0;
@@ -43,7 +47,7 @@ static inline int kvm_pmd_huge(pmd_t pmd)
 
 static inline int kvm_pud_huge(pud_t pud)
 {
-#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+#ifdef KVM_HUGE_TLB_SUPPORT
 	return (pud_val(pud) & _PAGE_HUGE) != 0;
 #else
 	return 0;
@@ -52,7 +56,7 @@ static inline int kvm_pud_huge(pud_t pud)
 
 static inline pmd_t kvm_pmd_mkhuge(pmd_t pmd)
 {
-#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+#ifdef KVM_HUGE_TLB_SUPPORT
 #ifdef	CONFIG_TRANSPARENT_HUGEPAGE
 	return pmd_mkhuge(pmd);
 #else
@@ -68,7 +72,7 @@ static inline pmd_t kvm_pmd_mkhuge(pmd_t pmd)
 
 static inline pmd_t kvm_pmd_mkclean(pmd_t pmd)
 {
-#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+#ifdef KVM_HUGE_TLB_SUPPORT
 #ifdef	CONFIG_TRANSPARENT_HUGEPAGE
 	return pmd_mkclean(pmd);
 #else
@@ -84,7 +88,7 @@ static inline pmd_t kvm_pmd_mkclean(pmd_t pmd)
 
 static inline pmd_t kvm_pmd_mkold(pmd_t pmd)
 {
-#ifdef CONFIG_LOONGARCH_HUGE_TLB_SUPPORT
+#ifdef KVM_HUGE_TLB_SUPPORT
 #ifdef	CONFIG_TRANSPARENT_HUGEPAGE
 	return pmd_mkold(pmd);
 #else
