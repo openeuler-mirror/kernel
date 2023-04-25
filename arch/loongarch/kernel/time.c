@@ -16,6 +16,7 @@
 #include <asm/cpu-features.h>
 #include <asm/loongarch.h>
 #include <asm/time.h>
+#include <asm/paravirt.h>
 
 u64 cpu_clock_freq;
 EXPORT_SYMBOL(cpu_clock_freq);
@@ -228,4 +229,6 @@ void __init time_init(void)
 
 	constant_clockevent_init();
 	constant_clocksource_init();
+
+	pv_time_init();
 }

@@ -28,6 +28,7 @@
 #include "kvmcpu.h"
 #include <asm/setup.h>
 #include <asm/time.h>
+#include <asm/paravirt.h>
 
 #include "intc/ls3a_ipi.h"
 #include "intc/ls7a_irq.h"
