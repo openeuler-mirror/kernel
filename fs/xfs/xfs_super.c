@@ -2023,7 +2023,7 @@ xfs_init_zones(void)
 
 	xfs_efd_zone = kmem_cache_create("xfs_efd_item",
 					(sizeof(struct xfs_efd_log_item) +
-					(XFS_EFD_MAX_FAST_EXTENTS - 1) *
+					XFS_EFD_MAX_FAST_EXTENTS *
 					sizeof(struct xfs_extent)),
 					0, 0, NULL);
 	if (!xfs_efd_zone)
@@ -2031,7 +2031,7 @@ xfs_init_zones(void)
 
 	xfs_efi_zone = kmem_cache_create("xfs_efi_item",
 					 (sizeof(struct xfs_efi_log_item) +
-					 (XFS_EFI_MAX_FAST_EXTENTS - 1) *
+					 XFS_EFI_MAX_FAST_EXTENTS *
 					 sizeof(struct xfs_extent)),
 					 0, 0, NULL);
 	if (!xfs_efi_zone)

@@ -444,9 +444,6 @@ struct xlog {
 	uint32_t		l_iclog_roundoff;/* padding roundoff */
 };
 
-#define XLOG_BUF_CANCEL_BUCKET(log, blkno) \
-	((log)->l_buf_cancel_table + ((uint64_t)blkno % XLOG_BC_TABLE_SIZE))
-
 /*
  * Bits for operational state
  */
