@@ -21,6 +21,7 @@
 #include <linux/cpuidle.h>
 #include <linux/cpu.h>
 #include <linux/perf_event.h>
+#include <linux/perf_event_lopwr.h>
 #include <acpi/processor.h>
 
 /*

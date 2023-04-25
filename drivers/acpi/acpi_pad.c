@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/acpi.h>
 #include <linux/perf_event.h>
+#include <linux/perf_event_lopwr.h>
 #include <asm/mwait.h>
 #include <xen/xen.h>
 
