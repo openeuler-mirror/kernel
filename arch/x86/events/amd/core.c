@@ -10,6 +10,7 @@
 #include <asm/apicdef.h>
 #include <asm/apic.h>
 #include <asm/nmi.h>
+#include <linux/static_call.h>
 
 #include "../perf_event.h"
 

@@ -12,6 +12,7 @@
 #include <asm/cpufeature.h>
 
 #include "../perf_event.h"
+#include <linux/static_call.h>
 
 #define BRS_POISON	0xFFFFFFFFFFFFFFFEULL /* mark limit of valid entries */
 
