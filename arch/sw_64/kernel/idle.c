@@ -9,13 +9,6 @@
 #include <asm/idle.h>
 #include <asm/asm-offsets.h>
 
-#ifdef CONFIG_HOTPLUG_CPU
-void arch_cpu_idle_dead(void)
-{
-	play_dead();
-}
-#endif
-
 void cpu_idle(void)
 {
 	local_irq_enable();

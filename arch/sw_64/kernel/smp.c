@@ -537,6 +537,7 @@ void flush_tlb_kernel_range(unsigned long start, unsigned long end)
 }
 EXPORT_SYMBOL(flush_tlb_kernel_range);
 
+#ifdef CONFIG_HOTPLUG_CPU
 int __cpu_disable(void)
 {
 	int cpu = smp_processor_id();
@@ -566,14 +567,12 @@ void __cpu_die(unsigned int cpu)
 	pr_err("CPU %u didn't die...\n", cpu);
 }
 
-void play_dead(void)
+void arch_cpu_idle_dead(void)
 {
 	idle_task_exit();
 	mb();
 	__this_cpu_write(cpu_state, CPU_DEAD);
-#ifdef CONFIG_HOTPLUG_CPU
 	fixup_irqs();
-#endif
 	local_irq_disable();
 
 	if (is_in_guest()) {
@@ -602,3 +601,4 @@ void play_dead(void)
 	asm volatile("halt");
 #endif
 }
+#endif

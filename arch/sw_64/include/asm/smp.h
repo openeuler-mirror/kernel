@@ -78,7 +78,6 @@ extern int __rcid_to_cpu[NR_CPUS];
 #define cpu_physical_id(cpu)    __cpu_to_rcid[cpu]
 
 extern unsigned long tidle_pcb[NR_CPUS];
-extern void play_dead(void);
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
 
@@ -88,10 +87,6 @@ void __cpu_die(unsigned int cpu);
 #endif /* CONFIG_HOTPLUG_CPU */
 
 #else /* CONFIG_SMP */
-static inline void play_dead(void)
-{
-	BUG(); /*Fixed me*/
-}
 #define hard_smp_processor_id()		0
 #define smp_call_function_on_cpu(func, info, wait, cpu)    ({ 0; })
 #define cpu_to_rcid(cpu)	((int)whami())
