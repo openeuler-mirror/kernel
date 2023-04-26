@@ -48,6 +48,16 @@ enum xlog_iclog_state {
 	{ XLOG_STATE_CALLBACK,	"XLOG_STATE_CALLBACK" }, \
 	{ XLOG_STATE_DIRTY,	"XLOG_STATE_DIRTY" }
 
+/*
+ * In core log flags
+ */
+#define XLOG_ICL_NEED_FLUSH	(1 << 0)	/* iclog needs REQ_PREFLUSH */
+#define XLOG_ICL_NEED_FUA	(1 << 1)	/* iclog needs REQ_FUA */
+
+#define XLOG_ICL_STRINGS \
+	{ XLOG_ICL_NEED_FLUSH,	"XLOG_ICL_NEED_FLUSH" }, \
+	{ XLOG_ICL_NEED_FUA,	"XLOG_ICL_NEED_FUA" }
+
 
 /*
  * Log ticket flags
@@ -131,9 +141,6 @@ enum xlog_iclog_state {
 #define XLOG_STATE_COVER_DONE2	4
 
 #define XLOG_COVER_OPS		5
-
-#define XLOG_ICL_NEED_FLUSH	(1 << 0)	/* iclog needs REQ_PREFLUSH */
-#define XLOG_ICL_NEED_FUA	(1 << 1)	/* iclog needs REQ_FUA */
 
 /* Ticket reservation region accounting */ 
 #define XLOG_TIC_LEN_MAX	15
@@ -511,8 +518,7 @@ void	xfs_log_ticket_regrant(struct xlog *log, struct xlog_ticket *ticket);
 
 void xlog_state_switch_iclogs(struct xlog *log, struct xlog_in_core *iclog,
 		int eventual_size);
-int xlog_state_release_iclog(struct xlog *log, struct xlog_in_core *iclog,
-		xfs_lsn_t log_tail_lsn);
+int xlog_state_release_iclog(struct xlog *log, struct xlog_in_core *iclog);
 
 /*
  * When we crack an atomic LSN, we sample it first so that the value will not

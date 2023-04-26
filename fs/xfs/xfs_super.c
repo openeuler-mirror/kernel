@@ -789,8 +789,11 @@ xfs_fs_statfs(
 	xfs_extlen_t		lsize;
 	int64_t			ffree;
 
-	/* Wait for whatever inactivations are in progress. */
-	xfs_inodegc_flush(mp);
+	/*
+	 * Expedite background inodegc but don't wait. We do not want to block
+	 * here waiting hours for a billion extent file to be truncated.
+	 */
+	xfs_inodegc_push(mp);
 
 	statp->f_type = XFS_SUPER_MAGIC;
 	statp->f_namelen = MAXNAMELEN - 1;
@@ -1101,7 +1104,7 @@ xfs_inodegc_init_percpu(
 		gc = per_cpu_ptr(mp->m_inodegc, cpu);
 		init_llist_head(&gc->list);
 		gc->items = 0;
-		INIT_WORK(&gc->work, xfs_inodegc_worker);
+		INIT_DELAYED_WORK(&gc->work, xfs_inodegc_worker);
 	}
 	return 0;
 }
@@ -1545,6 +1548,38 @@ xfs_fc_fill_super(
 		error = -EINVAL;
 		goto out_free_sb;
 #endif
+	}
+
+	/*
+	 * Don't touch the filesystem if a user tool thinks it owns the primary
+	 * superblock.  mkfs doesn't clear the flag from secondary supers, so
+	 * we don't check them at all.
+	 */
+	if (mp->m_sb.sb_inprogress) {
+		xfs_warn(mp, "Offline file system operation in progress!");
+		error = -EFSCORRUPTED;
+		goto out_free_sb;
+	}
+
+	/*
+	 * Until this is fixed only page-sized or smaller data blocks work.
+	 */
+	if (mp->m_sb.sb_blocksize > PAGE_SIZE) {
+		xfs_warn(mp,
+		"File system with blocksize %d bytes. "
+		"Only pagesize (%ld) or less will currently work.",
+				mp->m_sb.sb_blocksize, PAGE_SIZE);
+		error = -ENOSYS;
+		goto out_free_sb;
+	}
+
+	/* Ensure this filesystem fits in the page cache limits */
+	if (xfs_sb_validate_fsb_count(&mp->m_sb, mp->m_sb.sb_dblocks) ||
+	    xfs_sb_validate_fsb_count(&mp->m_sb, mp->m_sb.sb_rblocks)) {
+		xfs_warn(mp,
+		"file system too large to be mounted on this system.");
+		error = -EFBIG;
+		goto out_free_sb;
 	}
 
 	/*
