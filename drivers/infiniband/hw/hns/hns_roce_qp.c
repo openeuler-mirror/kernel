@@ -756,12 +756,32 @@ static void free_qp_buf(struct hns_roce_qp *hr_qp, struct ib_pd *ib_pd)
 		hns_roce_free_recv_inline_buffer(hr_qp);
 }
 
+static int set_max_inline_data(struct hns_roce_dev *hr_dev,
+			       struct ib_qp_init_attr *init_attr)
+{
+	if (init_attr->cap.max_inline_data > hr_dev->caps.max_sq_inline)
+		return -EINVAL;
+
+	if (init_attr->qp_type == IB_QPT_UD)
+		init_attr->cap.max_inline_data = 0;
+
+	if (init_attr->cap.max_inline_data)
+		init_attr->cap.max_inline_data = roundup_pow_of_two(
+					init_attr->cap.max_inline_data);
+
+	return 0;
+}
+
 static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
 			struct ib_udata *udata,
 			struct hns_roce_ib_create_qp *ucmd)
 {
 	int ret;
+
+	ret = set_max_inline_data(hr_dev, init_attr);
+	if (ret != 0)
+		return -EINVAL;
 
 	hr_qp->ibqp.qp_type = init_attr->qp_type;
 
