@@ -75,13 +75,12 @@ xlog_verify_iclog(
 STATIC void
 xlog_verify_tail_lsn(
 	struct xlog		*log,
-	struct xlog_in_core	*iclog,
-	xfs_lsn_t		tail_lsn);
+	struct xlog_in_core	*iclog);
 #else
 #define xlog_verify_dest_ptr(a,b)
 #define xlog_verify_grant_tail(a)
 #define xlog_verify_iclog(a,b,c)
-#define xlog_verify_tail_lsn(a,b,c)
+#define xlog_verify_tail_lsn(a,b)
 #endif
 
 STATIC int
@@ -523,17 +522,28 @@ xlog_state_shutdown_callbacks(
 
 /*
  * Flush iclog to disk if this is the last reference to the given iclog and the
- * it is in the WANT_SYNC state.  If the caller passes in a non-zero
- * @old_tail_lsn and the current log tail does not match, there may be metadata
- * on disk that must be persisted before this iclog is written.  To satisfy that
- * requirement, set the XLOG_ICL_NEED_FLUSH flag as a condition for writing this
- * iclog with the new log tail value.
+ * it is in the WANT_SYNC state.
+ *
+ * If XLOG_ICL_NEED_FUA is already set on the iclog, we need to ensure that the
+ * log tail is updated correctly. NEED_FUA indicates that the iclog will be
+ * written to stable storage, and implies that a commit record is contained
+ * within the iclog. We need to ensure that the log tail does not move beyond
+ * the tail that the first commit record in the iclog ordered against, otherwise
+ * correct recovery of that checkpoint becomes dependent on future operations
+ * performed on this iclog.
+ *
+ * Hence if NEED_FUA is set and the current iclog tail lsn is empty, write the
+ * current tail into iclog. Once the iclog tail is set, future operations must
+ * not modify it, otherwise they potentially violate ordering constraints for
+ * the checkpoint commit that wrote the initial tail lsn value. The tail lsn in
+ * the iclog will get zeroed on activation of the iclog after sync, so we
+ * always capture the tail lsn on the iclog on the first NEED_FUA release
+ * regardless of the number of active reference counts on this iclog.
  */
 int
 xlog_state_release_iclog(
 	struct xlog		*log,
-	struct xlog_in_core	*iclog,
-	xfs_lsn_t		old_tail_lsn)
+	struct xlog_in_core	*iclog)
 {
 	xfs_lsn_t		tail_lsn;
 	bool			last_ref;
@@ -544,14 +554,14 @@ xlog_state_release_iclog(
 	/*
 	 * Grabbing the current log tail needs to be atomic w.r.t. the writing
 	 * of the tail LSN into the iclog so we guarantee that the log tail does
-	 * not move between deciding if a cache flush is required and writing
-	 * the LSN into the iclog below.
+	 * not move between the first time we know that the iclog needs to be
+	 * made stable and when we eventually submit it.
 	 */
-	if (old_tail_lsn || iclog->ic_state == XLOG_STATE_WANT_SYNC) {
+	if ((iclog->ic_state == XLOG_STATE_WANT_SYNC ||
+	     (iclog->ic_flags & XLOG_ICL_NEED_FUA)) &&
+	    !iclog->ic_header.h_tail_lsn) {
 		tail_lsn = xlog_assign_tail_lsn(log->l_mp);
-
-		if (old_tail_lsn && tail_lsn != old_tail_lsn)
-			iclog->ic_flags |= XLOG_ICL_NEED_FLUSH;
+		iclog->ic_header.h_tail_lsn = cpu_to_be64(tail_lsn);
 	}
 
 	last_ref = atomic_dec_and_test(&iclog->ic_refcnt);
@@ -576,8 +586,7 @@ xlog_state_release_iclog(
 	}
 
 	iclog->ic_state = XLOG_STATE_SYNCING;
-	iclog->ic_header.h_tail_lsn = cpu_to_be64(tail_lsn);
-	xlog_verify_tail_lsn(log, iclog, tail_lsn);
+	xlog_verify_tail_lsn(log, iclog);
 	trace_xlog_iclog_syncing(iclog, _RET_IP_);
 
 	spin_unlock(&log->l_icloglock);
@@ -845,7 +854,7 @@ xlog_force_iclog(
 	iclog->ic_flags |= XLOG_ICL_NEED_FLUSH | XLOG_ICL_NEED_FUA;
 	if (iclog->ic_state == XLOG_STATE_ACTIVE)
 		xlog_state_switch_iclogs(iclog->ic_log, iclog, 0);
-	return xlog_state_release_iclog(iclog->ic_log, iclog, 0);
+	return xlog_state_release_iclog(iclog->ic_log, iclog);
 }
 
 /*
@@ -2299,7 +2308,7 @@ xlog_write_copy_finish(
 		ASSERT(iclog->ic_state == XLOG_STATE_WANT_SYNC ||
 			xlog_is_shutdown(log));
 release_iclog:
-	error = xlog_state_release_iclog(log, iclog, 0);
+	error = xlog_state_release_iclog(log, iclog);
 	spin_unlock(&log->l_icloglock);
 	return error;
 }
@@ -2516,7 +2525,7 @@ next_lv:
 
 	spin_lock(&log->l_icloglock);
 	xlog_state_finish_copy(log, iclog, record_cnt, data_cnt);
-	error = xlog_state_release_iclog(log, iclog, 0);
+	error = xlog_state_release_iclog(log, iclog);
 	spin_unlock(&log->l_icloglock);
 
 	return error;
@@ -2553,6 +2562,7 @@ xlog_state_activate_iclog(
 	memset(iclog->ic_header.h_cycle_data, 0,
 		sizeof(iclog->ic_header.h_cycle_data));
 	iclog->ic_header.h_lsn = 0;
+	iclog->ic_header.h_tail_lsn = 0;
 }
 
 /*
@@ -2939,7 +2949,7 @@ restart:
 		 * reference to the iclog.
 		 */
 		if (!atomic_add_unless(&iclog->ic_refcnt, -1, 1))
-			error = xlog_state_release_iclog(log, iclog, 0);
+			error = xlog_state_release_iclog(log, iclog);
 		spin_unlock(&log->l_icloglock);
 		if (error)
 			return error;
@@ -3581,10 +3591,10 @@ xlog_verify_grant_tail(
 STATIC void
 xlog_verify_tail_lsn(
 	struct xlog		*log,
-	struct xlog_in_core	*iclog,
-	xfs_lsn_t		tail_lsn)
+	struct xlog_in_core	*iclog)
 {
-    int blocks;
+	xfs_lsn_t	tail_lsn = be64_to_cpu(iclog->ic_header.h_tail_lsn);
+	int		blocks;
 
     if (CYCLE_LSN(tail_lsn) == log->l_prev_cycle) {
 	blocks =
