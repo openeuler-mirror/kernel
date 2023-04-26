@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2304.4.0
+%global hulkrelease 2304.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0198
+Release: %{hulkrelease}.0199
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,18 @@ fi
 %endif
 
 %changelog
+
+* Wed Apr 26 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.5.0.0199
+- RDMA/hns: Add check for user-configured max_inline_data value
+- power: supply: da9150: Fix use after free bug in da9150_charger_remove due to race condition
+- !430 [openEuler-1.0-LTS] ata: sata_zhaoxin: Update Zhaoxin Serial ATA product name
+- i2c: xgene-slimpro: Fix out-of-bounds bug in xgene_slimpro_i2c_xfer()
+- audit: fix a memleak caused by auditing load module
+- !595 [openEuler-1.0-LTS] iommu/arm-smmu-v3: Fix UAF when handle evt during iommu group removing
+- tcp: restrict net.ipv4.tcp_app_win
+- x86/speculation: Allow enabling STIBP with legacy IBRS
+- iommu/arm-smmu-v3: Fix UAF when handle evt during iommu group removing
+- ata: sata_zhaoxin: Update Zhaoxin Serial ATA product name
 
 * Wed Apr 19 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.4.0.0198
 - KVM: nVMX: add missing consistency checks for CR0 and CR4
