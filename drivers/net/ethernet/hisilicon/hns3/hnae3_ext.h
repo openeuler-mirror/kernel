@@ -44,6 +44,32 @@ enum hnae3_ext_opcode {
 	HNAE3_EXT_OPC_GET_LANE_STATUS,
 	HNAE3_EXT_OPC_DISABLE_CLOCK,
 	HNAE3_EXT_OPC_SET_PFC_TIME,
+	HNAE3_EXT_OPC_GET_HILINK_REF_LOS,
+	HNAE3_EXT_OPC_GET_PORT_FAULT_STATUS,
+	HNAE3_EXT_OPC_GET_PORT_TYPE,
+	HNAE3_EXT_OPC_SET_MAC_STATE,
+	HNAE3_EXT_OPC_SET_LED,
+	HNAE3_EXT_OPC_GET_LED_SIGNAL,
+	HNAE3_EXT_OPC_GET_PHY_REG,
+	HNAE3_EXT_OPC_SET_PHY_REG,
+};
+
+struct hnae3_led_state_para {
+	u32 type;
+	u32 status;
+};
+
+struct hnae3_phy_para {
+	u32 page_select_addr;
+	u32 reg_addr;
+	u16 page;
+	u16 data;
+};
+
+struct hnae3_lamp_signal {
+	u8 error;
+	u8 locate;
+	u8 activity;
 };
 
 struct hnae3_pfc_storm_para {
@@ -52,6 +78,19 @@ struct hnae3_pfc_storm_para {
 	u32 period_ms;
 	u32 times;
 	u32 recovery_period_ms;
+};
+
+enum hnae3_port_fault_type {
+	HNAE3_FAULT_TYPE_CDR_FLASH,
+	HNAE3_FAULT_TYPE_9545_ERR,
+	HNAE3_FAULT_TYPE_CDR_CORE,
+	HNAE3_FAULT_TYPE_HILINK_REF_LOS,
+	HNAE3_FAULT_TYPE_INVALID
+};
+
+struct hnae3_port_fault {
+	u32 fault_type;
+	u32 fault_status;
 };
 
 struct hnae3_notify_pkt_param {

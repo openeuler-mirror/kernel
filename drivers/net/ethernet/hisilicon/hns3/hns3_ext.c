@@ -439,3 +439,94 @@ int nic_set_pfc_time_cfg(struct net_device *ndev, u16 time)
 				  &time, sizeof(time));
 }
 EXPORT_SYMBOL(nic_set_pfc_time_cfg);
+
+int nic_get_port_fault_status(struct net_device *ndev, u32 fault_type, u32 *status)
+{
+	int opcode = HNAE3_EXT_OPC_GET_PORT_FAULT_STATUS;
+	struct hnae3_port_fault fault_para;
+	int ret;
+
+	if (!status)
+		return -EINVAL;
+
+	if (fault_type == HNAE3_FAULT_TYPE_HILINK_REF_LOS)
+		opcode = HNAE3_EXT_OPC_GET_HILINK_REF_LOS;
+
+	fault_para.fault_type = fault_type;
+	ret = nic_invoke_pri_ops(ndev, opcode, &fault_para, sizeof(fault_para));
+	if (ret)
+		return ret;
+
+	*status = fault_para.fault_status;
+	return 0;
+}
+EXPORT_SYMBOL(nic_get_port_fault_status);
+
+int nic_get_port_wire_type(struct net_device *ndev, u32 *wire_type)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_GET_PORT_TYPE,
+				  wire_type, sizeof(*wire_type));
+}
+EXPORT_SYMBOL(nic_get_port_wire_type);
+
+int nic_set_mac_state(struct net_device *ndev, int enable)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_SET_MAC_STATE,
+				  &enable, sizeof(enable));
+}
+EXPORT_SYMBOL(nic_set_mac_state);
+
+int nic_set_led(struct net_device *ndev, int type, int status)
+{
+	struct hnae3_led_state_para para;
+
+	para.status = status;
+	para.type = type;
+
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_SET_LED,
+				  &para, sizeof(para));
+}
+EXPORT_SYMBOL(nic_set_led);
+
+int nic_get_led_signal(struct net_device *ndev, struct hnae3_lamp_signal *signal)
+{
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_GET_LED_SIGNAL,
+				  signal, sizeof(*signal));
+}
+EXPORT_SYMBOL(nic_get_led_signal);
+
+int nic_get_phy_reg(struct net_device *ndev, u32 page_select_addr,
+		    u16 page, u32 reg_addr, u16 *data)
+{
+	struct hnae3_phy_para para;
+	int ret;
+
+	if (!data)
+		return -EINVAL;
+
+	para.page_select_addr = page_select_addr;
+	para.page = page;
+	para.reg_addr = reg_addr;
+	ret = nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_GET_PHY_REG,
+				 &para, sizeof(para));
+	if (ret)
+		return ret;
+
+	*data = para.data;
+	return 0;
+}
+EXPORT_SYMBOL(nic_get_phy_reg);
+
+int nic_set_phy_reg(struct net_device *ndev, u32 page_select_addr,
+		    u16 page, u32 reg_addr, u16 data)
+{
+	struct hnae3_phy_para para;
+
+	para.page_select_addr = page_select_addr;
+	para.page = page;
+	para.reg_addr = reg_addr;
+	para.data = data;
+	return nic_invoke_pri_ops(ndev, HNAE3_EXT_OPC_SET_PHY_REG,
+				  &para, sizeof(para));
+}
+EXPORT_SYMBOL(nic_set_phy_reg);
