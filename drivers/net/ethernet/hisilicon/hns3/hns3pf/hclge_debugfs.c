@@ -2497,29 +2497,29 @@ static int hclge_dbg_dump_mac_mc(struct hclge_dev *hdev, char *buf, int len)
 
 static void hclge_dump_wol_mode(u32 mode, char *buf, int len, int *pos)
 {
-	if (mode & HCLGE_WOL_PHY)
+	if (mode & WAKE_PHY)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [p]phy\n");
 
-	if (mode & HCLGE_WOL_UNICAST)
+	if (mode & WAKE_UCAST)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [u]unicast\n");
 
-	if (mode & HCLGE_WOL_MULTICAST)
+	if (mode & WAKE_MCAST)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [m]multicast\n");
 
-	if (mode & HCLGE_WOL_BROADCAST)
+	if (mode & WAKE_BCAST)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [b]broadcast\n");
 
-	if (mode & HCLGE_WOL_ARP)
+	if (mode & WAKE_ARP)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [a]arp\n");
 
-	if (mode & HCLGE_WOL_MAGIC)
+	if (mode & WAKE_MAGIC)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [g]magic\n");
 
-	if (mode & HCLGE_WOL_MAGICSECURED)
+	if (mode & WAKE_MAGICSECURE)
 		*pos += scnprintf(buf + *pos, len - *pos,
 				 "  [s]magic secured\n");
 
-	if (mode & HCLGE_WOL_FILTER)
+	if (mode & WAKE_FILTER)
 		*pos += scnprintf(buf + *pos, len - *pos, "  [f]filter\n");
 }
 
