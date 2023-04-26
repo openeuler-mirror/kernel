@@ -886,7 +886,7 @@ long vfio_pci_ioctl(void *device_data,
 		if (vdev->reset_works)
 			info.flags |= VFIO_DEVICE_FLAGS_RESET;
 
-		info.num_regions = VFIO_PCI_NUM_REGIONS +
+		info.num_regions = VFIO_PCI_NUM_REGIONS + vdev->num_regions +
 				   vdev->num_vendor_regions;
 		info.num_irqs = VFIO_PCI_NUM_IRQS + vdev->num_vendor_irqs;
 
