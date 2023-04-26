@@ -529,5 +529,5 @@ void reliable_report_usage(struct seq_file *m, struct mm_struct *mm)
 		return;
 
 	SEQ_PUT_DEC("Reliable:\t", atomic_long_read(&mm->reliable_nr_page));
-	seq_puts(m, "kB\n");
+	seq_puts(m, " kB\n");
 }
