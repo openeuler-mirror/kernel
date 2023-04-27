@@ -822,15 +822,17 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 	return hw_counters + HNS_ROCE_DFX_CNT_TOTAL;
 }
 
-static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
+static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
+				       bool bond_cleanup)
 {
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
 	struct hns_roce_bond_group *bond_grp;
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
+		unregister_netdevice_notifier(&hr_dev->bond_nb);
 		bond_grp = hns_roce_get_bond_grp(hr_dev);
-		if (bond_grp)
-			hns_roce_cleanup_bond(hr_dev, bond_grp);
+		if (bond_grp && bond_cleanup)
+			hns_roce_cleanup_bond(bond_grp);
 	}
 
 	hr_dev->active = false;
@@ -1448,10 +1450,10 @@ error_failed_alloc_dfx_cnt:
 	return ret;
 }
 
-void hns_roce_exit(struct hns_roce_dev *hr_dev)
+void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 {
 	hns_roce_unregister_sysfs(hr_dev);
-	hns_roce_unregister_device(hr_dev);
+	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_debugfs(hr_dev);
 
 	if (hr_dev->hw->hw_exit)
