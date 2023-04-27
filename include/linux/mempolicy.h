@@ -204,6 +204,11 @@ extern void mpol_put_task_policy(struct task_struct *);
 extern long __do_mbind(unsigned long start, unsigned long len,
 		       unsigned short mode, unsigned short mode_flags,
 		       nodemask_t *nmask, unsigned long flags, struct mm_struct *mm);
+
+static inline bool mpol_is_preferred_many(struct mempolicy *pol)
+{
+	return  (pol->mode == MPOL_PREFERRED_MANY);
+}
 #else
 
 struct mempolicy {};
@@ -318,6 +323,11 @@ static inline void mpol_put_task_policy(struct task_struct *task)
 static inline nodemask_t *policy_nodemask_current(gfp_t gfp)
 {
 	return NULL;
+}
+
+static inline bool mpol_is_preferred_many(struct mempolicy *pol)
+{
+	return  false;
 }
 #endif /* CONFIG_NUMA */
 #endif
