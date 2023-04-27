@@ -107,10 +107,10 @@ out:
 	return net_dev;
 }
 
-static void hns_roce_queue_bond_work(struct hns_roce_dev *hr_dev,
+static void hns_roce_queue_bond_work(struct hns_roce_bond_group *bond_grp,
 				     unsigned long delay)
 {
-	schedule_delayed_work(&hr_dev->bond_work, delay);
+	schedule_delayed_work(&bond_grp->bond_work, delay);
 }
 
 static void hns_roce_bond_get_active_slave(struct hns_roce_bond_group *bond_grp)
@@ -378,28 +378,27 @@ static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 
 void hns_roce_do_bond_work(struct work_struct *work)
 {
+	struct hns_roce_bond_group *bond_grp;
 	struct delayed_work *delayed_work;
-	struct hns_roce_dev *hr_dev;
 	int status;
 
 	delayed_work = to_delayed_work(work);
-	hr_dev = container_of(delayed_work, struct hns_roce_dev, bond_work);
+	bond_grp = container_of(delayed_work, struct hns_roce_bond_group,
+				bond_work);
 	status = mutex_trylock(&roce_bond_mutex);
 	if (!status) {
 		/* delay 1 sec */
-		hns_roce_queue_bond_work(hr_dev, HZ);
+		hns_roce_queue_bond_work(bond_grp, HZ);
 		return;
 	}
 
-	hns_roce_do_bond(hr_dev->bond_grp);
+	hns_roce_do_bond(bond_grp);
 	mutex_unlock(&roce_bond_mutex);
 }
 
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev)
 {
 	int ret;
-
-	INIT_DELAYED_WORK(&hr_dev->bond_work, hns_roce_do_bond_work);
 
 	hr_dev->bond_nb.notifier_call = hns_roce_bond_event;
 	ret = register_netdevice_notifier(&hr_dev->bond_nb);
@@ -415,10 +414,11 @@ int hns_roce_bond_init(struct hns_roce_dev *hr_dev)
 void hns_roce_cleanup_bond(struct hns_roce_dev *hr_dev)
 {
 	unregister_netdevice_notifier(&hr_dev->bond_nb);
-	cancel_delayed_work(&hr_dev->bond_work);
 
-	if (hr_dev->bond_grp && hr_dev == hr_dev->bond_grp->main_hr_dev)
+	if (hr_dev->bond_grp && hr_dev == hr_dev->bond_grp->main_hr_dev) {
+		cancel_delayed_work(&hr_dev->bond_grp->bond_work);
 		kfree(hr_dev->bond_grp);
+	}
 
 	hr_dev->bond_grp = NULL;
 }
@@ -561,6 +561,9 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 		return NULL;
 
 	mutex_init(&bond_grp->bond_mutex);
+
+	INIT_DELAYED_WORK(&bond_grp->bond_work, hns_roce_do_bond_work);
+
 	bond_grp->upper_dev = upper_dev;
 	bond_grp->main_hr_dev = main_hr_dev;
 	bond_grp->main_net_dev = main_hr_dev->iboe.netdevs[0];
@@ -698,7 +701,7 @@ int hns_roce_bond_event(struct notifier_block *self,
 		}
 		if (support == BOND_EXISTING_NOT_SUPPORT) {
 			hr_dev->bond_grp->bond_ready = false;
-			hns_roce_queue_bond_work(hr_dev, HZ);
+			hns_roce_queue_bond_work(hr_dev->bond_grp, HZ);
 			return NOTIFY_DONE;
 		}
 		changed = hns_roce_bond_upper_event(hr_dev, ptr);
@@ -706,7 +709,7 @@ int hns_roce_bond_event(struct notifier_block *self,
 		changed = hns_roce_bond_lowerstate_event(hr_dev, ptr);
 	}
 	if (changed)
-		hns_roce_queue_bond_work(hr_dev, HZ);
+		hns_roce_queue_bond_work(hr_dev->bond_grp, HZ);
 
 	return NOTIFY_DONE;
 }

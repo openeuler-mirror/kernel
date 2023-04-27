@@ -67,6 +67,7 @@ struct hns_roce_bond_group {
 	 */
 	struct mutex bond_mutex;
 	struct hns_roce_func_info bond_func_info[ROCE_BOND_FUNC_MAX];
+	struct delayed_work bond_work;
 };
 
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev);
