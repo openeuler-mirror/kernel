@@ -304,8 +304,6 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 	int ret;
 	int i;
 
-	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
-
 	main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
 	if (dec_slave_map & (1 << main_func_idx)) {
 		hns_roce_cmd_bond(hr_dev, HNS_ROCE_CLEAR_BOND);
