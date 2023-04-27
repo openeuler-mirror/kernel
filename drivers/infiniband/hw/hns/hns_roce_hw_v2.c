@@ -7570,11 +7570,21 @@ static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
 {
 	struct net_device *netdev = handle->rinfo.netdev;
 	struct hns_roce_dev *hr_dev = handle->priv;
+	struct hns_roce_bond_group *bond_grp;
 	struct ib_event event;
 	unsigned long flags;
 	u8 phy_port;
 
 	if (linkup || !hr_dev)
+		return;
+
+	/* For bond device, the link status depends on the upper netdev,
+	 * and the upper device's link status depends on all the slaves'
+	 * netdev but not only one. So bond device cannot get a correct
+	 * link status from this path.
+	 */
+	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	if (bond_grp)
 		return;
 
 	for (phy_port = 0; phy_port < hr_dev->caps.num_ports; phy_port++)

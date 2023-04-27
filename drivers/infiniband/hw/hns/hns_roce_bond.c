@@ -136,15 +136,16 @@ struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev)
 	if (bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
 		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 			net_dev = bond_grp->bond_func_info[i].net_dev;
-			if (net_dev && is_active_slave(net_dev, bond_grp))
-				break;
+			if (net_dev && is_active_slave(net_dev, bond_grp) &&
+			    get_port_state(net_dev) == IB_PORT_ACTIVE)
+				goto out;
 		}
-	} else {
-		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
-			net_dev = bond_grp->bond_func_info[i].net_dev;
-			if (net_dev && get_port_state(net_dev) == IB_PORT_ACTIVE)
-				break;
-		}
+	}
+
+	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
+		net_dev = bond_grp->bond_func_info[i].net_dev;
+		if (net_dev && get_port_state(net_dev) == IB_PORT_ACTIVE)
+			break;
 	}
 
 out:
