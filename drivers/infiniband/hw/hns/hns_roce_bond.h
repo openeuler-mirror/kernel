@@ -10,7 +10,9 @@
 #include <net/bonding.h>
 
 #define ROCE_BOND_FUNC_MAX 4
-#define ROCE_BOND_NAME_ID_IDX 9
+#define ROCE_BOND_NUM_MAX 2
+
+#define BOND_ID(id) BIT(id)
 
 enum {
 	BOND_MODE_1,
@@ -68,6 +70,11 @@ struct hns_roce_bond_group {
 	struct mutex bond_mutex;
 	struct hns_roce_func_info bond_func_info[ROCE_BOND_FUNC_MAX];
 	struct delayed_work bond_work;
+};
+
+struct hns_roce_die_info {
+	u8 bond_id_mask;
+	struct hns_roce_bond_group *bgrps[ROCE_BOND_NUM_MAX];
 };
 
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev);

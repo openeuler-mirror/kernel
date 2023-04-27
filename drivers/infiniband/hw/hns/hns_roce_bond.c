@@ -10,6 +10,7 @@
 #include "hns_roce_bond.h"
 
 static DEFINE_MUTEX(roce_bond_mutex);
+static DEFINE_XARRAY(roce_bond_xa);
 
 static struct hns_roce_dev *hns_roce_get_hrdev_by_netdev(struct net_device *net_dev)
 {
@@ -189,9 +190,6 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 		if (net_dev && net_dev != main_net_dev) {
 			hr_dev = hns_roce_bond_init_client(bond_grp, i);
 			if (hr_dev) {
-				bond_grp->bond_id =
-					hr_dev->ib_dev.name[ROCE_BOND_NAME_ID_IDX]
-						- '0';
 				bond_grp->main_hr_dev->bond_grp = NULL;
 				bond_grp->main_hr_dev = hr_dev;
 				bond_grp->main_net_dev = net_dev;
@@ -411,12 +409,87 @@ int hns_roce_bond_init(struct hns_roce_dev *hr_dev)
 	return ret;
 }
 
+static struct hns_roce_die_info *alloc_die_info(int bus_num)
+{
+	struct hns_roce_die_info *die_info;
+	int ret;
+
+	die_info = kzalloc(sizeof(struct hns_roce_die_info), GFP_KERNEL);
+	if (!die_info)
+		return NULL;
+
+	ret = xa_err(xa_store(&roce_bond_xa, bus_num, die_info, GFP_KERNEL));
+	if (ret) {
+		kfree(die_info);
+		return NULL;
+	}
+
+	return die_info;
+}
+
+static int alloc_bond_id(struct hns_roce_bond_group *bond_grp)
+{
+	int bus_num = bond_grp->main_hr_dev->pci_dev->bus->number;
+	struct hns_roce_die_info *die_info = xa_load(&roce_bond_xa, bus_num);
+	int i;
+
+	if (!die_info) {
+		die_info = alloc_die_info(bus_num);
+		if (!die_info) {
+			ibdev_err(&bond_grp->main_hr_dev->ib_dev,
+				  "failed to alloc die_info.\n");
+			return -ENOMEM;
+		}
+	}
+
+	for (i = 0; i < ROCE_BOND_NUM_MAX; i++) {
+		if (die_info->bond_id_mask & BOND_ID(i))
+			continue;
+
+		die_info->bond_id_mask |= BOND_ID(i);
+		die_info->bgrps[i] = bond_grp;
+		bond_grp->bond_id = i;
+
+		return 0;
+	}
+
+	return -ENOSPC;
+}
+
+static int remove_bond_id(int bus_num, u8 bond_id)
+{
+	struct hns_roce_die_info *die_info = xa_load(&roce_bond_xa, bus_num);
+
+	if (bond_id >= ROCE_BOND_NUM_MAX)
+		return -EINVAL;
+
+	if (!die_info)
+		return -ENODEV;
+
+	die_info->bond_id_mask &= ~BOND_ID(bond_id);
+	die_info->bgrps[bond_id] = NULL;
+	if (!die_info->bond_id_mask) {
+		kfree(die_info);
+		xa_erase(&roce_bond_xa, bus_num);
+	}
+
+	return 0;
+}
+
 void hns_roce_cleanup_bond(struct hns_roce_dev *hr_dev)
 {
+	int ret;
+
 	unregister_netdevice_notifier(&hr_dev->bond_nb);
 
 	if (hr_dev->bond_grp && hr_dev == hr_dev->bond_grp->main_hr_dev) {
 		cancel_delayed_work(&hr_dev->bond_grp->bond_work);
+		ret = remove_bond_id(hr_dev->pci_dev->bus->number,
+				     hr_dev->bond_grp->bond_id);
+		if (ret)
+			ibdev_err(&hr_dev->ib_dev,
+				  "failed to remove bond ID %d, ret = %d.\n",
+				  hr_dev->bond_grp->bond_id, ret);
 		kfree(hr_dev->bond_grp);
 	}
 
@@ -555,6 +628,7 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 							   struct net_device *upper_dev)
 {
 	struct hns_roce_bond_group *bond_grp;
+	int ret;
 
 	bond_grp = kzalloc(sizeof(*bond_grp), GFP_KERNEL);
 	if (!bond_grp)
@@ -569,6 +643,14 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 	bond_grp->main_net_dev = main_hr_dev->iboe.netdevs[0];
 	bond_grp->bond_ready = false;
 	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+
+	ret = alloc_bond_id(bond_grp);
+	if (ret) {
+		ibdev_err(&main_hr_dev->ib_dev,
+			  "failed to alloc bond ID, ret = %d.\n", ret);
+		kfree(bond_grp);
+		return NULL;
+	}
 
 	hns_roce_bond_info_record(bond_grp, upper_dev);
 
