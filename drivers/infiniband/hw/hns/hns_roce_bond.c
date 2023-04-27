@@ -14,10 +14,10 @@ static DEFINE_XARRAY(roce_bond_xa);
 
 static struct hns_roce_dev *hns_roce_get_hrdev_by_netdev(struct net_device *net_dev)
 {
+	struct ib_device *ibdev =
+		ib_device_get_by_netdev(net_dev, RDMA_DRIVER_HNS);
 	struct hns_roce_dev *hr_dev;
-	struct ib_device *ibdev;
 
-	ibdev = ib_device_get_by_netdev(net_dev, RDMA_DRIVER_HNS);
 	if (!ibdev)
 		return NULL;
 
@@ -55,9 +55,7 @@ struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev)
 
 bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_bond_group *bond_grp;
-
-	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	struct hns_roce_bond_group *bond_grp = hns_roce_get_bond_grp(hr_dev);
 
 	if (bond_grp &&
 	    (bond_grp->bond_state == HNS_ROCE_BOND_REGISTERING ||
@@ -143,11 +141,9 @@ static struct hns_roce_dev
 		*hns_roce_bond_init_client(struct hns_roce_bond_group *bond_grp,
 					   int func_idx)
 {
-	struct hnae3_handle *handle;
-	int ret;
+	struct hnae3_handle *handle = bond_grp->bond_func_info[func_idx].handle;
+	int ret = hns_roce_hw_v2_init_instance(handle);
 
-	handle = bond_grp->bond_func_info[func_idx].handle;
-	ret = hns_roce_hw_v2_init_instance(handle);
 	if (ret)
 		return NULL;
 
@@ -157,9 +153,8 @@ static struct hns_roce_dev
 static void hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
 					int func_idx)
 {
-	struct hnae3_handle *handle;
+	struct hnae3_handle *handle = bond_grp->bond_func_info[func_idx].handle;
 
-	handle = bond_grp->bond_func_info[func_idx].handle;
 	hns_roce_hw_v2_uninit_instance(handle, 0);
 }
 
@@ -296,15 +291,14 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 
 static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 {
+	u8 main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
 	u32 dec_slave_map = bond_grp->slave_map_diff;
 	struct hns_roce_dev *hr_dev;
 	struct net_device *net_dev;
-	u8 main_func_idx = 0;
 	u8 dec_func_idx = 0;
 	int ret;
 	int i;
 
-	main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
 	if (dec_slave_map & (1 << main_func_idx)) {
 		hns_roce_cmd_bond(hr_dev, HNS_ROCE_CLEAR_BOND);
 		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
@@ -351,11 +345,9 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 
 static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 {
-	enum hns_roce_bond_state bond_state;
-	bool bond_ready;
+	enum hns_roce_bond_state bond_state = bond_grp->bond_state;
+	bool bond_ready = bond_grp->bond_ready;
 
-	bond_ready = bond_grp->bond_ready;
-	bond_state = bond_grp->bond_state;
 	ibdev_info(&bond_grp->main_hr_dev->ib_dev,
 		   "do_bond: bond_ready - %d, bond_state - %d.\n",
 		   bond_ready, bond_grp->bond_state);
@@ -374,13 +366,12 @@ static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 
 void hns_roce_do_bond_work(struct work_struct *work)
 {
-	struct hns_roce_bond_group *bond_grp;
-	struct delayed_work *delayed_work;
+	struct delayed_work *delayed_work = to_delayed_work(work);
+	struct hns_roce_bond_group *bond_grp =
+		container_of(delayed_work, struct hns_roce_bond_group,
+			     bond_work);
 	int status;
 
-	delayed_work = to_delayed_work(work);
-	bond_grp = container_of(delayed_work, struct hns_roce_bond_group,
-				bond_work);
 	status = mutex_trylock(&roce_bond_mutex);
 	if (!status) {
 		/* delay 1 sec */
@@ -497,12 +488,12 @@ void hns_roce_cleanup_bond(struct hns_roce_dev *hr_dev)
 static bool hns_roce_bond_lowerstate_event(struct hns_roce_dev *hr_dev,
 					   struct netdev_notifier_changelowerstate_info *info)
 {
+	struct net_device *net_dev =
+		netdev_notifier_info_to_dev((struct netdev_notifier_info *)info);
 	struct hns_roce_bond_group *bond_grp = hr_dev->bond_grp;
 	struct netdev_lag_lower_state_info *bond_lower_info;
-	struct net_device *net_dev;
 	int i;
 
-	net_dev = netdev_notifier_info_to_dev((struct netdev_notifier_info *)info);
 	if (!netif_is_lag_port(net_dev))
 		return false;
 
