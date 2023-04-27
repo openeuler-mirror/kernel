@@ -893,6 +893,9 @@ __SYSCALL(__NR_kabi_reserved455, sys_ni_syscall)
 #define __NR_kabi_reserved456 456
 __SYSCALL(__NR_kabi_reserved456, sys_ni_syscall)
 
+#define __NR_set_mempolicy_home_node 450
+__SYSCALL(__NR_set_mempolicy_home_node, sys_set_mempolicy_home_node)
+
 #undef __NR_syscalls
 #define __NR_syscalls 457
 
