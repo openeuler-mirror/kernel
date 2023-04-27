@@ -1124,7 +1124,6 @@ struct hns_roce_dev {
 	u64 dwqe_page;
 
 	struct notifier_block bond_nb;
-	struct hns_roce_bond_group *bond_grp;
 	struct netdev_lag_lower_state_info slave_state;
 	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
 	atomic64_t *dfx_cnt;

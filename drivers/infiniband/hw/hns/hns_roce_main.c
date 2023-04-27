@@ -825,9 +825,13 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
+	struct hns_roce_bond_group *bond_grp;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND)
-		hns_roce_cleanup_bond(hr_dev);
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
+		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		if (bond_grp)
+			hns_roce_cleanup_bond(hr_dev, bond_grp);
+	}
 
 	hr_dev->active = false;
 	unregister_netdevice_notifier(&iboe->nb);

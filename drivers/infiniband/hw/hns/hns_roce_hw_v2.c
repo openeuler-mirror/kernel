@@ -1493,7 +1493,7 @@ static inline enum hns_roce_opcode_type
 		return HNS_ROCE_OPC_CLEAR_BOND_INFO;
 }
 
-int hns_roce_cmd_bond(struct hns_roce_dev *hr_dev,
+int hns_roce_cmd_bond(struct hns_roce_bond_group *bond_grp,
 		      enum hns_roce_bond_cmd_type bond_type)
 {
 	enum hns_roce_opcode_type opcode = get_bond_opcode(bond_type);
@@ -1504,33 +1504,33 @@ int hns_roce_cmd_bond(struct hns_roce_dev *hr_dev,
 	slave_info = (struct hns_roce_bond_info *)desc.data;
 	hns_roce_cmq_setup_basic_desc(&desc, opcode, false);
 
-	slave_info->bond_id = cpu_to_le32(hr_dev->bond_grp->bond_id);
+	slave_info->bond_id = cpu_to_le32(bond_grp->bond_id);
 	if (bond_type == HNS_ROCE_CLEAR_BOND)
 		goto out;
 
-	if (hr_dev->bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
+	if (bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
 		slave_info->bond_mode = cpu_to_le32(BOND_MODE_1);
-		if (hr_dev->bond_grp->active_slave_num != 1)
-			ibdev_err(&hr_dev->ib_dev,
+		if (bond_grp->active_slave_num != 1)
+			ibdev_err(&bond_grp->main_hr_dev->ib_dev,
 				  "active slave cnt(%d) in Mode 1 is invalid.\n",
-				  hr_dev->bond_grp->active_slave_num);
+				  bond_grp->active_slave_num);
 	} else {
 		slave_info->bond_mode = cpu_to_le32(BOND_MODE_2_4);
 		slave_info->hash_policy =
-			cpu_to_le32(hr_dev->bond_grp->bond->params.xmit_policy);
+			cpu_to_le32(bond_grp->bond->params.xmit_policy);
 	}
 
 	slave_info->active_slave_cnt =
-		cpu_to_le32(hr_dev->bond_grp->active_slave_num);
+		cpu_to_le32(bond_grp->active_slave_num);
 	slave_info->active_slave_mask =
-		cpu_to_le32(hr_dev->bond_grp->active_slave_map);
+		cpu_to_le32(bond_grp->active_slave_map);
 	slave_info->slave_mask =
-		cpu_to_le32(hr_dev->bond_grp->slave_map);
+		cpu_to_le32(bond_grp->slave_map);
 
 out:
-	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	ret = hns_roce_cmq_send(bond_grp->main_hr_dev, &desc, 1);
 	if (ret)
-		ibdev_err(&hr_dev->ib_dev,
+		ibdev_err(&bond_grp->main_hr_dev->ib_dev,
 			  "cmq bond type(%d) failed, ret = %d.\n",
 			  bond_type, ret);
 
