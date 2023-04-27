@@ -703,7 +703,7 @@ static enum bond_support_type
 	}
 	rcu_read_unlock();
 
-	if (slave_num <= 1)
+	if (slave_num <= 1 || slave_num > ROCE_BOND_FUNC_MAX)
 		support = false;
 	if (support)
 		return BOND_SUPPORT;
