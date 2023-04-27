@@ -53,7 +53,6 @@ struct hns_roce_func_info {
 struct hns_roce_bond_group {
 	struct net_device *upper_dev;
 	struct hns_roce_dev *main_hr_dev;
-	u8 slave_num;
 	u8 active_slave_num;
 	u32 slave_map;
 	u32 active_slave_map;

@@ -225,6 +225,7 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 	if (!hr_dev)
 		return;
 
+	bond_grp->slave_map_diff = 0;
 	hns_roce_bond_get_active_slave(bond_grp);
 	ret = hns_roce_cmd_bond(bond_grp, HNS_ROCE_SET_BOND);
 	if (ret) {
@@ -291,6 +292,7 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 		inc_func_idx++;
 	}
 
+	bond_grp->slave_map_diff = 0;
 	hns_roce_bond_get_active_slave(bond_grp);
 	ret = hns_roce_cmd_bond(bond_grp, HNS_ROCE_CHANGE_BOND);
 	if (ret) {
@@ -338,6 +340,7 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 		dec_func_idx++;
 	}
 
+	bond_grp->slave_map_diff = 0;
 	hns_roce_bond_get_active_slave(bond_grp);
 	ret = hns_roce_cmd_bond(bond_grp, HNS_ROCE_CHANGE_BOND);
 	if (ret) {
@@ -560,24 +563,34 @@ static inline bool hns_roce_bond_mode_is_supported(enum netdev_lag_tx_type tx_ty
 }
 
 static void hns_roce_bond_info_update(struct hns_roce_bond_group *bond_grp,
-				      struct net_device *upper_dev)
+				      struct net_device *upper_dev,
+				      bool slave_inc)
 {
 	struct hns_roce_v2_priv *priv;
 	struct hns_roce_dev *hr_dev;
 	struct net_device *net_dev;
-	u8 func_idx;
+	u8 func_idx, i;
 
-	bond_grp->slave_num = 0;
-	bond_grp->slave_map = 0;
+	if (!slave_inc) {
+		for (i = 0; i < ROCE_BOND_FUNC_MAX; ++i) {
+			net_dev = bond_grp->bond_func_info[i].net_dev;
+			if (net_dev && upper_dev !=
+				get_upper_dev_from_ndev(net_dev)) {
+				bond_grp->slave_map_diff |= (1 << i);
+				bond_grp->slave_map &= ~(1 << i);
+			}
+		}
+		return;
+	}
 
 	rcu_read_lock();
 	for_each_netdev_in_bond_rcu(upper_dev, net_dev) {
 		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
 		if (hr_dev) {
 			func_idx = PCI_FUNC(hr_dev->pci_dev->devfn);
-			bond_grp->slave_map |= (1 << func_idx);
-			bond_grp->slave_num++;
 			if (!bond_grp->bond_func_info[func_idx].net_dev) {
+				bond_grp->slave_map_diff |= (1 << func_idx);
+				bond_grp->slave_map |= (1 << func_idx);
 				priv = hr_dev->priv;
 
 				bond_grp->bond_func_info[func_idx].net_dev =
@@ -599,14 +612,13 @@ static bool hns_roce_bond_upper_event(struct hns_roce_bond_group *bond_grp,
 {
 	struct netdev_lag_upper_info *bond_upper_info = NULL;
 	struct net_device *upper_dev = info->upper_dev;
+	bool slave_inc = info->linking;
 	bool changed = false;
-	u32 pre_slave_map;
-	u8 pre_slave_num;
 
 	if (!bond_grp || !upper_dev || !netif_is_lag_master(upper_dev))
 		return false;
 
-	if (info->linking)
+	if (slave_inc)
 		bond_upper_info = info->upper_info;
 
 	mutex_lock(&bond_grp->bond_mutex);
@@ -614,21 +626,17 @@ static bool hns_roce_bond_upper_event(struct hns_roce_bond_group *bond_grp,
 	if (bond_upper_info)
 		bond_grp->tx_type = bond_upper_info->tx_type;
 
-	pre_slave_map = bond_grp->slave_map;
-	pre_slave_num = bond_grp->slave_num;
-	hns_roce_bond_info_update(bond_grp, upper_dev);
+	hns_roce_bond_info_update(bond_grp, upper_dev, slave_inc);
 
 	bond_grp->bond = netdev_priv(upper_dev);
 
 	if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED) {
 		bond_grp->bond_ready = true;
 		changed = true;
-	} else if (bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED &&
-	    bond_grp->slave_num != pre_slave_num) {
-		bond_grp->bond_state = bond_grp->slave_num > pre_slave_num ?
+	} else {
+		bond_grp->bond_state = slave_inc ?
 				       HNS_ROCE_BOND_SLAVE_INC :
 				       HNS_ROCE_BOND_SLAVE_DEC;
-		bond_grp->slave_map_diff = pre_slave_map ^ bond_grp->slave_map;
 		bond_grp->bond_ready = true;
 		changed = true;
 	}
@@ -665,7 +673,7 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 		return NULL;
 	}
 
-	hns_roce_bond_info_update(bond_grp, upper_dev);
+	hns_roce_bond_info_update(bond_grp, upper_dev, true);
 
 	return bond_grp;
 }
