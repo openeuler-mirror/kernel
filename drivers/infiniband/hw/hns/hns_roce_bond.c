@@ -185,7 +185,7 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 	int ret;
 	int i;
 
-	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
+	for (i = ROCE_BOND_FUNC_MAX - 1; i >= 0; i--) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
 		if (net_dev)
 			hns_roce_bond_uninit_client(bond_grp, i);
