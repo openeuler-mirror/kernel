@@ -122,12 +122,14 @@ enum zone_type policy_zone = 0;
 /*
  * run-time system-wide default policy => local allocation
  */
-static struct mempolicy default_policy = {
-	.refcnt = ATOMIC_INIT(1), /* never free it */
-	.mode = MPOL_LOCAL,
+static struct mempolicy_wrapper default_policy = {
+	.policy = {
+		.refcnt = ATOMIC_INIT(1), /* never free it */
+		.mode = MPOL_LOCAL,
+	}
 };
 
-static struct mempolicy preferred_node_policy[MAX_NUMNODES];
+static struct mempolicy_wrapper preferred_node_policy[MAX_NUMNODES];
 
 /**
  * numa_map_to_online_node - Find closest online node
@@ -165,13 +167,13 @@ struct mempolicy *get_task_policy(struct task_struct *p)
 
 	node = numa_node_id();
 	if (node != NUMA_NO_NODE) {
-		pol = &preferred_node_policy[node];
+		pol = &preferred_node_policy[node].policy;
 		/* preferred_node_policy is not initialised early in boot */
 		if (pol->mode)
 			return pol;
 	}
 
-	return &default_policy;
+	return &default_policy.policy;
 }
 
 static const struct mempolicy_operations {
@@ -311,6 +313,7 @@ static int mpol_set_nodemask(struct mempolicy *pol,
 static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 				  nodemask_t *nodes)
 {
+	struct mempolicy_wrapper *wrapper;
 	struct mempolicy *policy;
 
 	pr_debug("setting mode %d flags %d nodes[0] %lx\n",
@@ -346,10 +349,11 @@ static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 	policy = kmem_cache_alloc(policy_cache, GFP_KERNEL);
 	if (!policy)
 		return ERR_PTR(-ENOMEM);
+	wrapper = container_of(policy, struct mempolicy_wrapper, policy);
 	atomic_set(&policy->refcnt, 1);
 	policy->mode = mode;
 	policy->flags = flags;
-	policy->home_node = NUMA_NO_NODE;
+	wrapper->home_node = NUMA_NO_NODE;
 
 	return policy;
 }
@@ -933,7 +937,7 @@ out:
 static void get_policy_nodemask(struct mempolicy *p, nodemask_t *nodes)
 {
 	nodes_clear(*nodes);
-	if (p == &default_policy)
+	if (p == &default_policy.policy)
 		return;
 
 	switch (p->mode) {
@@ -1013,7 +1017,7 @@ static long do_get_mempolicy(int *policy, nodemask_t *nmask,
 		return -EINVAL;
 
 	if (!pol)
-		pol = &default_policy;	/* indicates default behavior */
+		pol = &default_policy.policy;	/* indicates default behavior */
 
 	if (flags & MPOL_F_NODE) {
 		if (flags & MPOL_F_ADDR) {
@@ -1038,7 +1042,7 @@ static long do_get_mempolicy(int *policy, nodemask_t *nmask,
 			goto out;
 		}
 	} else {
-		*policy = pol == &default_policy ? MPOL_DEFAULT :
+		*policy = pol == &default_policy.policy ? MPOL_DEFAULT :
 						pol->mode;
 		/*
 		 * Internal mempolicy flags must be masked off before exposing
@@ -1530,6 +1534,7 @@ SYSCALL_DEFINE4(set_mempolicy_home_node, unsigned long, start, unsigned long, le
 		unsigned long, home_node, unsigned long, flags)
 {
 	struct mm_struct *mm = current->mm;
+	struct mempolicy_wrapper *wrapper;
 	struct vm_area_struct *vma;
 	struct mempolicy *new;
 	unsigned long vmstart;
@@ -1588,7 +1593,8 @@ SYSCALL_DEFINE4(set_mempolicy_home_node, unsigned long, start, unsigned long, le
 			break;
 		}
 
-		new->home_node = home_node;
+		wrapper = container_of(new, struct mempolicy_wrapper, policy);
+		wrapper->home_node = home_node;
 		err = mbind_range(mm, vmstart, vmend, new);
 		mpol_put(new);
 		if (err)
@@ -2022,6 +2028,9 @@ nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
  */
 static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)
 {
+	struct mempolicy_wrapper *warpper;
+
+	warpper = container_of(policy, struct mempolicy_wrapper, policy);
 	if (policy->mode == MPOL_PREFERRED) {
 		nd = policy->v.preferred_node;
 	} else {
@@ -2042,8 +2051,8 @@ static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)
 
 	if ((policy->mode == MPOL_BIND ||
 	     policy->mode == MPOL_PREFERRED_MANY) &&
-	    policy->home_node != NUMA_NO_NODE)
-		return policy->home_node;
+	    warpper->home_node != NUMA_NO_NODE)
+		return warpper->home_node;
 
 	return nd;
 }
@@ -2439,7 +2448,7 @@ EXPORT_SYMBOL(alloc_pages_vma);
  */
 struct page *alloc_pages(gfp_t gfp, unsigned order)
 {
-	struct mempolicy *pol = &default_policy;
+	struct mempolicy *pol = &default_policy.policy;
 	struct page *page;
 
 	if (!in_interrupt() && !(gfp & __GFP_THISNODE))
@@ -2488,17 +2497,22 @@ int vma_dup_policy(struct vm_area_struct *src, struct vm_area_struct *dst)
 struct mempolicy *__mpol_dup(struct mempolicy *old)
 {
 	struct mempolicy *new = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+	struct mempolicy_wrapper *old_wrapper, *new_wrapper;
 
 	if (!new)
 		return ERR_PTR(-ENOMEM);
 
+	old_wrapper = container_of(old, struct mempolicy_wrapper, policy);
+	new_wrapper = container_of(new, struct mempolicy_wrapper, policy);
+
 	/* task's mempolicy is protected by alloc_lock */
 	if (old == current->mempolicy) {
 		task_lock(current);
-		*new = *old;
+		*new_wrapper = *old_wrapper;
 		task_unlock(current);
-	} else
-		*new = *old;
+	} else {
+		*new_wrapper = *old_wrapper;
+	}
 
 	if (current_cpuset_is_being_rebound()) {
 		nodemask_t mems = cpuset_mems_allowed(current);
@@ -2511,13 +2525,18 @@ struct mempolicy *__mpol_dup(struct mempolicy *old)
 /* Slow path of a mempolicy comparison */
 bool __mpol_equal(struct mempolicy *a, struct mempolicy *b)
 {
+	struct mempolicy_wrapper *wrapper_a, *wrapper_b;
+
+	wrapper_a = container_of(a, struct mempolicy_wrapper, policy);
+	wrapper_b = container_of(b, struct mempolicy_wrapper, policy);
+
 	if (!a || !b)
 		return false;
 	if (a->mode != b->mode)
 		return false;
 	if (a->flags != b->flags)
 		return false;
-	if (a->home_node != b->home_node)
+	if (wrapper_a->home_node != wrapper_b->home_node)
 		return false;
 	if (mpol_store_user_nodemask(a))
 		if (!nodes_equal(a->w.user_nodemask, b->w.user_nodemask))
@@ -2981,7 +3000,7 @@ void __init numa_policy_init(void)
 	int nid, prefer = 0;
 
 	policy_cache = kmem_cache_create("numa_policy",
-					 sizeof(struct mempolicy),
+					 sizeof(struct mempolicy_wrapper),
 					 0, SLAB_PANIC, NULL);
 
 	sn_cache = kmem_cache_create("shared_policy_node",
@@ -2989,7 +3008,7 @@ void __init numa_policy_init(void)
 				     0, SLAB_PANIC, NULL);
 
 	for_each_node(nid) {
-		preferred_node_policy[nid] = (struct mempolicy) {
+		preferred_node_policy[nid].policy = (struct mempolicy) {
 			.refcnt = ATOMIC_INIT(1),
 			.mode = MPOL_PREFERRED,
 			.flags = MPOL_F_MOF | MPOL_F_MORON,
@@ -3202,7 +3221,8 @@ void mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol)
 	unsigned short mode = MPOL_DEFAULT;
 	unsigned short flags = 0;
 
-	if (pol && pol != &default_policy && !(pol->flags & MPOL_F_MORON)) {
+	if (pol && pol != &default_policy.policy &&
+	    !(pol->flags & MPOL_F_MORON)) {
 		mode = pol->mode;
 		flags = pol->flags;
 	}
