@@ -826,13 +826,19 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 				       bool bond_cleanup)
 {
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
+	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hns_roce_bond_group *bond_grp;
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
 		unregister_netdevice_notifier(&hr_dev->bond_nb);
 		bond_grp = hns_roce_get_bond_grp(hr_dev);
-		if (bond_grp && bond_cleanup)
-			hns_roce_cleanup_bond(bond_grp);
+		if (bond_grp) {
+			if (bond_cleanup)
+				hns_roce_cleanup_bond(bond_grp);
+			else if (priv->handle->rinfo.reset_state ==
+				 HNS_ROCE_STATE_RST_UNINIT)
+				bond_grp->main_hr_dev = NULL;
+		}
 	}
 
 	hr_dev->active = false;
