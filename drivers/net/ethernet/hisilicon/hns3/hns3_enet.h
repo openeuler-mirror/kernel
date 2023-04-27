@@ -604,6 +604,56 @@ struct hns3_nic_priv {
 	struct hns3_enet_coalesce rx_coal;
 	u32 tx_copybreak;
 	u32 rx_copybreak;
+	u8 roh_perm_mac[ETH_ALEN];
+};
+
+#define HNS3_DHCP_SERVER_PORT		68
+#define HNS3_DHCP_CLIENT_PORT		67
+#define HNS3_DHCP_MAGIC			0x63825363
+#define DHCP_OPT_CODE			0
+#define DHCP_OPT_LEN			1
+#define DHCP_OPT_DATA			2
+#define DHCP_CLIENT_ID_LEN		7
+#define DHCP_CLIENT_ID_MAC_OFT		3
+#define DHCP_OVERLOAD_FILE		0x1
+#define DHCP_OVERLOAD_SNAME		0x2
+#define DHCP_OVERLOAD_FILE_USED		0x101
+#define DHCP_OVERLOAD_SNAME_USED	0x202
+#define DHCP_OVERLOAD_USE_FILE(x)	\
+		(((x) & DHCP_OVERLOAD_FILE_USED) == DHCP_OVERLOAD_FILE)
+#define DHCP_OVERLOAD_USE_SNAME(x)	\
+		(((x) & DHCP_OVERLOAD_SNAME_USED) == DHCP_OVERLOAD_SNAME)
+
+enum DHCP_OPTION_CODES {
+	DHCP_OPT_PADDING = 0,
+	DHCP_OPT_OVERLOAD = 52,
+	DHCP_OPT_CLIENT_ID = 61,
+	DHCP_OPT_END = 255
+};
+
+struct hns3_dhcp_packet {
+	u8 op;
+	u8 htype;
+	u8 hlen;
+	u8 hops;
+	u32 xid;
+	u16 secs;
+	u16 flags;
+	u32 ciaddr;
+	u32 yiaddr;
+	u32 siaddr_nip;
+	u32 gateway_nip;
+	u8 chaddr[16]; /* link-layer client hardware address (MAC) */
+	u8 sname[64];
+	u8 file[128];
+	u32 cookie; /* DHCP magic bytes: 0x63825363 */
+	u8 options[312];
+};
+
+struct hns3_dhcp_opt_state {
+	u8 *opt_ptr; /* refer to current option item */
+	int rem; /* remain bytes in options */
+	u32 overload_flag; /* whether use file and sname field as options */
 };
 
 union l3_hdr_info {
