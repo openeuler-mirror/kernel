@@ -107,6 +107,15 @@ bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
 	return false;
 }
 
+static inline bool is_active_slave(struct net_device *net_dev,
+				   struct hns_roce_bond_group *bond_grp)
+{
+	if (!bond_grp || !bond_grp->bond || !bond_grp->bond->curr_active_slave)
+		return false;
+
+	return net_dev == bond_grp->bond->curr_active_slave->dev;
+}
+
 struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_bond_group *bond_grp = hns_roce_get_bond_grp(hr_dev);
@@ -127,8 +136,7 @@ struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev)
 	if (bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
 		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 			net_dev = bond_grp->bond_func_info[i].net_dev;
-			if (net_dev &&
-			    bond_grp->bond_func_info[i].state.tx_enabled)
+			if (net_dev && is_active_slave(net_dev, bond_grp))
 				break;
 		}
 	} else {
@@ -153,7 +161,6 @@ static void hns_roce_queue_bond_work(struct hns_roce_bond_group *bond_grp,
 
 static void hns_roce_bond_get_active_slave(struct hns_roce_bond_group *bond_grp)
 {
-	struct netdev_lag_lower_state_info *state;
 	struct net_device *net_dev;
 	u32 active_slave_map = 0;
 	u8 active_slave_num = 0;
@@ -162,24 +169,12 @@ static void hns_roce_bond_get_active_slave(struct hns_roce_bond_group *bond_grp)
 
 	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
-		state = &bond_grp->bond_func_info[i].state;
 		if (!net_dev)
 			continue;
 
-		state->tx_enabled = (bond_grp->bond->curr_active_slave &&
-			(net_dev == bond_grp->bond->curr_active_slave->dev)) ?
-			1 : 0;
-		state->link_up =
-			(get_port_state(net_dev) == IB_PORT_ACTIVE) ? 1 : 0;
-
-		/*
-		 * For bond mode 1(active-backup), only the tx-enabled slave is
-		 * considered active. For other bond mode, all the link-up
-		 * slaves are considered active.
-		 */
 		active = (bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) ?
-			bond_grp->bond_func_info[i].state.tx_enabled :
-			bond_grp->bond_func_info[i].state.link_up;
+			 is_active_slave(net_dev, bond_grp) :
+			 (get_port_state(net_dev) == IB_PORT_ACTIVE);
 		if (active) {
 			active_slave_num++;
 			active_slave_map |= (1 << i);
@@ -520,29 +515,12 @@ static bool hns_roce_bond_lowerstate_event(struct hns_roce_dev *hr_dev,
 {
 	struct net_device *net_dev =
 		netdev_notifier_info_to_dev((struct netdev_notifier_info *)info);
-	struct netdev_lag_lower_state_info *bond_lower_info;
-	int i;
 
-	if (!netif_is_lag_port(net_dev))
+	if (!netif_is_lag_port(net_dev) ||
+	    (!bond_grp || hr_dev != bond_grp->main_hr_dev))
 		return false;
-
-	bond_lower_info = info->lower_state_info;
-	if (!bond_lower_info)
-		return false;
-
-	if (!bond_grp || hr_dev != bond_grp->main_hr_dev) {
-		hr_dev->slave_state = *bond_lower_info;
-		return false;
-	}
 
 	mutex_lock(&bond_grp->bond_mutex);
-
-	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
-		if (net_dev == bond_grp->bond_func_info[i].net_dev) {
-			bond_grp->bond_func_info[i].state = *bond_lower_info;
-			break;
-		}
-	}
 
 	if (bond_grp->bond_ready &&
 	    bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED)
@@ -598,9 +576,6 @@ static void hns_roce_bond_info_update(struct hns_roce_bond_group *bond_grp,
 
 				bond_grp->bond_func_info[func_idx].handle =
 					priv->handle;
-
-				bond_grp->bond_func_info[func_idx].state =
-					hr_dev->slave_state;
 			}
 		}
 	}

@@ -47,7 +47,6 @@ enum hns_roce_bond_cmd_type {
 struct hns_roce_func_info {
 	struct net_device *net_dev;
 	struct hnae3_handle *handle;
-	struct netdev_lag_lower_state_info state;
 };
 
 struct hns_roce_bond_group {
