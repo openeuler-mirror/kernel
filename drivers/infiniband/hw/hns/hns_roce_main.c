@@ -527,12 +527,14 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
 		context->config |= ucmd.config & HNS_ROCE_RQ_INLINE_FLAGS;
-		resp.config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
+			resp.config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
 	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
 		context->config |= ucmd.config & HNS_ROCE_CQE_INLINE_FLAGS;
-		resp.config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
+			resp.config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
 	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE) {
