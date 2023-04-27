@@ -2867,12 +2867,28 @@ static void hclge_get_fec(struct hnae3_handle *handle, u8 *fec_ability,
 	if (fec_mode)
 		*fec_mode = mac->fec_mode;
 }
+
+static void hclge_roh_convert_mac_addr(struct hclge_dev *hdev)
+{
+#define HCLGE_ROH_EID_MASK_BYTE		3
+
+	struct hclge_vport *vport = &hdev->vport[0];
+	struct hnae3_handle *handle = &vport->nic;
+
+	if (hnae3_check_roh_mac_type(handle)) {
+		if (!is_valid_ether_addr(hdev->hw.mac.mac_addr))
+			random_ether_addr(hdev->hw.mac.mac_addr);
+		memset(hdev->hw.mac.mac_addr, 0, HCLGE_ROH_EID_MASK_BYTE);
+	}
+}
+
 static int hclge_mac_init(struct hclge_dev *hdev)
 {
 	struct hclge_mac *mac = &hdev->hw.mac;
 	int ret;
 
 	hclge_mac_type_init(hdev);
+	hclge_roh_convert_mac_addr(hdev);
 
 	hdev->support_sfp_query = true;
 	hdev->hw.mac.duplex = HCLGE_MAC_FULL;

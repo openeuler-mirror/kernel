@@ -1166,6 +1166,142 @@ static void hns3_tx_spare_reclaim_cb(struct hns3_enet_ring *ring,
 	}
 }
 
+static struct hns3_dhcp_packet *hns3_get_dhcp_packet(struct sk_buff *skb,
+						     int *dhcp_len)
+{
+	struct hns3_dhcp_packet *dhcp;
+	union l4_hdr_info l4;
+	int l4_payload_len;
+
+	l4.hdr = skb_transport_header(skb);
+	if (l4.udp->dest != htons(HNS3_DHCP_CLIENT_PORT) ||
+	    l4.udp->source != htons(HNS3_DHCP_SERVER_PORT))
+		return NULL;
+
+	dhcp = (struct hns3_dhcp_packet *)(l4.hdr + sizeof(struct udphdr));
+	l4_payload_len = ntohs(l4.udp->len) - sizeof(struct udphdr);
+	if (l4_payload_len < offsetof(struct hns3_dhcp_packet, options) ||
+	    dhcp->hlen != ETH_ALEN ||
+	    dhcp->cookie != htonl(HNS3_DHCP_MAGIC))
+		return NULL;
+
+	*dhcp_len = l4_payload_len;
+	return dhcp;
+}
+
+static u8 *hns3_dhcp_option_scan(struct hns3_dhcp_packet *packet,
+				 struct hns3_dhcp_opt_state *opt_state)
+{
+	int opt_len;
+	u8 *cur_opt;
+
+	/* option bytes: [code][len][data0~data[len-1]] */
+	while (opt_state->rem > 0) {
+		switch (opt_state->opt_ptr[DHCP_OPT_CODE]) {
+		/* option padding and end have no len and data byte. */
+		case DHCP_OPT_PADDING:
+			opt_state->rem--;
+			opt_state->opt_ptr++;
+			break;
+		case DHCP_OPT_END:
+			if (DHCP_OVERLOAD_USE_FILE(opt_state->overload_flag)) {
+				opt_state->overload_flag |=
+						DHCP_OVERLOAD_FILE_USED;
+				opt_state->opt_ptr = packet->file;
+				opt_state->rem = sizeof(packet->file);
+				break;
+			}
+			if (DHCP_OVERLOAD_USE_SNAME(opt_state->overload_flag)) {
+				opt_state->overload_flag |=
+						DHCP_OVERLOAD_SNAME_USED;
+				opt_state->opt_ptr = packet->sname;
+				opt_state->rem = sizeof(packet->sname);
+				break;
+			}
+			return NULL;
+		default:
+			if (opt_state->rem <= DHCP_OPT_LEN)
+				return NULL;
+			/* opt_len includes code, len and data bytes */
+			opt_len = opt_state->opt_ptr[DHCP_OPT_LEN] +
+				DHCP_OPT_DATA;
+			cur_opt = opt_state->opt_ptr;
+			if (opt_state->rem < opt_len)
+				return NULL;
+
+			opt_state->opt_ptr += opt_len;
+			opt_state->rem -= opt_len;
+			if (cur_opt[DHCP_OPT_CODE] == DHCP_OPT_OVERLOAD) {
+				opt_state->overload_flag |=
+						cur_opt[DHCP_OPT_DATA];
+				break;
+			}
+			return cur_opt;
+		}
+	}
+
+	return NULL;
+}
+
+static void hns3_dhcp_update_option61(struct hns3_nic_priv *priv,
+				      struct hns3_dhcp_packet *packet,
+				      int dhcp_len)
+{
+	struct hns3_dhcp_opt_state opt_state;
+	u8 *cur_opt;
+
+	opt_state.opt_ptr = packet->options;
+	opt_state.rem = dhcp_len - offsetof(struct hns3_dhcp_packet, options);
+	opt_state.overload_flag = 0;
+
+	cur_opt = hns3_dhcp_option_scan(packet, &opt_state);
+	while (cur_opt) {
+		if (cur_opt[DHCP_OPT_CODE] != DHCP_OPT_CLIENT_ID) {
+			cur_opt = hns3_dhcp_option_scan(packet, &opt_state);
+			continue;
+		}
+		if (cur_opt[DHCP_OPT_LEN] > ETH_ALEN)
+			ether_addr_copy(&cur_opt[DHCP_CLIENT_ID_MAC_OFT],
+					priv->roh_perm_mac);
+		break;
+	}
+}
+
+static void hns3_dhcp_cal_l4_csum(struct sk_buff *skb)
+{
+	union l3_hdr_info l3;
+	union l4_hdr_info l4;
+	__wsum csum = 0;
+	int offset;
+
+	if (skb->ip_summed == CHECKSUM_PARTIAL)
+		return;
+
+	l3.hdr = skb_network_header(skb);
+	l4.hdr = skb_transport_header(skb);
+	offset = skb_transport_offset(skb);
+	l4.udp->check = 0;
+	csum = csum_partial(l4.udp, ntohs(l4.udp->len), 0);
+	l4.udp->check = csum_tcpudp_magic(l3.v4->saddr, l3.v4->daddr,
+					  skb->len - offset, IPPROTO_UDP, csum);
+}
+
+static void hns3_dhcp_packet_convert(struct hns3_nic_priv *priv,
+				     struct sk_buff *skb,
+				     struct hns3_dhcp_packet *dhcp,
+				     int dhcp_len)
+{
+	struct ethhdr *l2hdr = eth_hdr(skb);
+
+	if (!dhcp)
+		return;
+
+	ether_addr_copy(dhcp->chaddr, l2hdr->h_source);
+	hns3_dhcp_update_option61(priv, dhcp, dhcp_len);
+	/* for l4 payload changed, need to re-calculate the csum */
+	hns3_dhcp_cal_l4_csum(skb);
+}
+
 static int hns3_set_tso(struct sk_buff *skb, u32 *paylen_fdop_ol4cs,
 			u16 *mss, u32 *type_cs_vlan_tso, u32 *send_bytes)
 {
@@ -1717,7 +1853,20 @@ static int hns3_handle_csum_partial(struct hns3_enet_ring *ring,
 	return 0;
 }
 
-static int hns3_fill_skb_desc(struct hns3_enet_ring *ring,
+static bool hns3_roh_check_udpv4(struct sk_buff *skb)
+{
+	union l3_hdr_info l3;
+
+	l3.hdr = skb_network_header(skb);
+	if (skb->protocol != htons(ETH_P_IP) ||
+	    l3.v4->version != IP_VERSION_IPV4)
+		return false;
+
+	return l3.v4->protocol == IPPROTO_UDP;
+}
+
+static int hns3_fill_skb_desc(struct hns3_nic_priv *priv,
+			      struct hns3_enet_ring *ring,
 			      struct sk_buff *skb, struct hns3_desc *desc,
 			      struct hns3_desc_cb *desc_cb)
 {
@@ -1741,6 +1890,15 @@ static int hns3_fill_skb_desc(struct hns3_enet_ring *ring,
 	fd_op = hns3_fd_qb_handle(ring, skb);
 	hnae3_set_field(param.paylen_fdop_ol4cs, HNS3_TXD_FD_OP_M,
 			HNS3_TXD_FD_OP_S, fd_op);
+
+	if (hnae3_check_roh_mac_type(priv->ae_handle) &&
+	    hns3_roh_check_udpv4(skb)) {
+		struct hns3_dhcp_packet *dhcp;
+		int dhcp_len;
+
+		dhcp = hns3_get_dhcp_packet(skb, &dhcp_len);
+		hns3_dhcp_packet_convert(priv, skb, dhcp, dhcp_len);
+	}
 
 	/* Set txbd */
 	desc->tx.ol_type_vlan_len_msec =
@@ -2339,15 +2497,16 @@ out:
 	return hns3_fill_skb_to_desc(ring, skb, DESC_TYPE_SKB);
 }
 
-static int hns3_handle_skb_desc(struct hns3_enet_ring *ring,
+static int hns3_handle_skb_desc(struct hns3_nic_priv *priv,
+				struct hns3_enet_ring *ring,
 				struct sk_buff *skb,
 				struct hns3_desc_cb *desc_cb,
 				int next_to_use_head)
 {
 	int ret;
 
-	ret = hns3_fill_skb_desc(ring, skb, &ring->desc[ring->next_to_use],
-				 desc_cb);
+	ret = hns3_fill_skb_desc(priv, ring, skb,
+				 &ring->desc[ring->next_to_use], desc_cb);
 	if (unlikely(ret < 0))
 		goto fill_err;
 
@@ -2396,7 +2555,7 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		goto out_err_tx_ok;
 	}
 
-	ret = hns3_handle_skb_desc(ring, skb, desc_cb, ring->next_to_use);
+	ret = hns3_handle_skb_desc(priv, ring, skb, desc_cb, ring->next_to_use);
 	if (unlikely(ret <= 0))
 		goto out_err_tx_ok;
 
@@ -5225,6 +5384,10 @@ static int hns3_init_mac_addr(struct net_device *netdev)
 		return 0;
 	}
 
+	if (hnae3_check_roh_mac_type(h) &&
+	    is_zero_ether_addr(priv->roh_perm_mac))
+		ether_addr_copy(priv->roh_perm_mac, netdev->dev_addr);
+
 	if (h->ae_algo->ops->set_mac_addr)
 		ret = h->ae_algo->ops->set_mac_addr(h, netdev->dev_addr, true);
 
@@ -5376,6 +5539,7 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	priv->tx_timeout_count = 0;
 	priv->max_non_tso_bd_num = ae_dev->dev_specs.max_non_tso_bd_num;
 	set_bit(HNS3_NIC_STATE_DOWN, &priv->state);
+	eth_zero_addr(priv->roh_perm_mac);
 
 	handle->msg_enable = netif_msg_init(debug, DEFAULT_MSG_LEVEL);
 
