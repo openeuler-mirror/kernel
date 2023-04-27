@@ -559,7 +559,7 @@ static inline bool hns_roce_bond_mode_is_supported(enum netdev_lag_tx_type tx_ty
 	return true;
 }
 
-static void hns_roce_bond_info_record(struct hns_roce_bond_group *bond_grp,
+static void hns_roce_bond_info_update(struct hns_roce_bond_group *bond_grp,
 				      struct net_device *upper_dev)
 {
 	struct hns_roce_v2_priv *priv;
@@ -616,7 +616,7 @@ static bool hns_roce_bond_upper_event(struct hns_roce_bond_group *bond_grp,
 
 	pre_slave_map = bond_grp->slave_map;
 	pre_slave_num = bond_grp->slave_num;
-	hns_roce_bond_info_record(bond_grp, upper_dev);
+	hns_roce_bond_info_update(bond_grp, upper_dev);
 
 	bond_grp->bond = netdev_priv(upper_dev);
 
@@ -665,7 +665,7 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 		return NULL;
 	}
 
-	hns_roce_bond_info_record(bond_grp, upper_dev);
+	hns_roce_bond_info_update(bond_grp, upper_dev);
 
 	return bond_grp;
 }
