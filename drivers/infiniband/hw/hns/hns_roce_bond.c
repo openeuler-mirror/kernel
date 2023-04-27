@@ -527,7 +527,7 @@ static bool hns_roce_bond_lowerstate_event(struct hns_roce_dev *hr_dev,
 	if (!bond_lower_info)
 		return false;
 
-	if (!bond_grp) {
+	if (!bond_grp || hr_dev != bond_grp->main_hr_dev) {
 		hr_dev->slave_state = *bond_lower_info;
 		return false;
 	}
