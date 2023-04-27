@@ -31,6 +31,9 @@
  *                but useful to set in a VMA when you have a non default
  *                process policy.
  *
+ * preferred many Try a set of nodes first before normal fallback. This is
+ *                similar to preferred without the special case.
+ *
  * default        Allocate on the local node first, or when on a VMA
  *                use the process policy. This is what Linux always did
  *		  in a NUMA aware kernel and still does by, ahem, default.
@@ -241,6 +244,14 @@ static int mpol_new_preferred(struct mempolicy *pol, const nodemask_t *nodes)
 	return 0;
 }
 
+static int mpol_new_preferred_many(struct mempolicy *pol, const nodemask_t *nodes)
+{
+	if (nodes_empty(*nodes))
+		return -EINVAL;
+	pol->v.nodes = *nodes;
+	return 0;
+}
+
 static int mpol_new_bind(struct mempolicy *pol, const nodemask_t *nodes)
 {
 	if (nodes_empty(*nodes))
@@ -444,6 +455,10 @@ static const struct mempolicy_operations mpol_ops[MPOL_MAX] = {
 	},
 	[MPOL_LOCAL] = {
 		.rebind = mpol_rebind_default,
+	},
+	[MPOL_PREFERRED_MANY] = {
+		.create = mpol_new_preferred_many,
+		.rebind = mpol_rebind_preferred,
 	},
 };
 
@@ -923,6 +938,7 @@ static void get_policy_nodemask(struct mempolicy *p, nodemask_t *nodes)
 	switch (p->mode) {
 	case MPOL_BIND:
 	case MPOL_INTERLEAVE:
+	case MPOL_PREFERRED_MANY:
 		*nodes = p->v.nodes;
 		break;
 	case MPOL_LOCAL:
@@ -1479,7 +1495,13 @@ static inline int sanitize_mpol_flags(int *mode, unsigned short *flags)
 {
 	*flags = *mode & MPOL_MODE_FLAGS;
 	*mode &= ~MPOL_MODE_FLAGS;
-	if ((unsigned int)(*mode) >= MPOL_MAX)
+
+	/*
+	 * The check should be 'mode >= MPOL_MAX', but as 'prefer_many'
+	 * is not fully implemented, don't permit it to be used for now,
+	 * and the logic will be restored in following patch
+	 */
+	if ((unsigned int)(*mode) >=  MPOL_PREFERRED_MANY)
 		return -EINVAL;
 	if ((*flags & MPOL_F_STATIC_NODES) && (*flags & MPOL_F_RELATIVE_NODES))
 		return -EINVAL;
@@ -1908,17 +1930,28 @@ static int apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
  */
 nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
 {
+	int mode = policy->mode;
+
 	/* Lower zones don't get a nodemask applied for MPOL_BIND */
-	if (unlikely(policy->mode == MPOL_BIND) &&
+	if (unlikely(mode == MPOL_BIND) &&
 			apply_policy_zone(policy, gfp_zone(gfp)) &&
 			(cpuset_nodemask_valid_mems_allowed(&policy->v.nodes) ||
 			nodemask_has_cdm(policy->v.nodes)))
 		return &policy->v.nodes;
 
+	if (mode == MPOL_PREFERRED_MANY)
+		return &policy->v.nodes;
+
 	return NULL;
 }
 
-/* Return the node id preferred by the given mempolicy, or the given id */
+/*
+ * Return the  preferred node id for 'prefer' mempolicy, and return
+ * the given id for all other policies.
+ *
+ * policy_node() is always coupled with policy_nodemask(), which
+ * secures the nodemask limit for 'bind' and 'prefer-many' policy.
+ */
 static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)
 {
 	if (policy->mode == MPOL_PREFERRED) {
@@ -1977,7 +2010,9 @@ unsigned int mempolicy_slab_node(void)
 	case MPOL_INTERLEAVE:
 		return interleave_nodes(policy);
 
-	case MPOL_BIND: {
+	case MPOL_BIND:
+	case MPOL_PREFERRED_MANY:
+	{
 		struct zoneref *z;
 
 		/*
@@ -2058,12 +2093,12 @@ static inline unsigned interleave_nid(struct mempolicy *pol,
  * @addr: address in @vma for shared policy lookup and interleave policy
  * @gfp_flags: for requested zone
  * @mpol: pointer to mempolicy pointer for reference counted mempolicy
- * @nodemask: pointer to nodemask pointer for MPOL_BIND nodemask
+ * @nodemask: pointer to nodemask pointer for 'bind' and 'prefer-many' policy
  *
  * Returns a nid suitable for a huge page allocation and a pointer
  * to the struct mempolicy for conditional unref after allocation.
- * If the effective policy is 'BIND, returns a pointer to the mempolicy's
- * @nodemask for filtering the zonelist.
+ * If the effective policy is 'bind' or 'prefer-many', returns a pointer
+ * to the mempolicy's @nodemask for filtering the zonelist.
  *
  * Must be protected by read_mems_allowed_begin()
  */
@@ -2071,16 +2106,18 @@ int huge_node(struct vm_area_struct *vma, unsigned long addr, gfp_t gfp_flags,
 				struct mempolicy **mpol, nodemask_t **nodemask)
 {
 	int nid;
+	int mode;
 
 	*mpol = get_vma_policy(vma, addr);
-	*nodemask = NULL;	/* assume !MPOL_BIND */
+	*nodemask = NULL;
+	mode = (*mpol)->mode;
 
-	if (unlikely((*mpol)->mode == MPOL_INTERLEAVE)) {
+	if (unlikely(mode == MPOL_INTERLEAVE)) {
 		nid = interleave_nid(*mpol, vma, addr,
 					huge_page_shift(hstate_vma(vma)));
 	} else {
 		nid = policy_node(gfp_flags, *mpol, numa_node_id());
-		if ((*mpol)->mode == MPOL_BIND)
+		if ((*mpol)->mode == MPOL_BIND || mode == MPOL_PREFERRED_MANY)
 			*nodemask = &(*mpol)->v.nodes;
 	}
 	return nid;
@@ -2118,6 +2155,7 @@ bool init_nodemask_of_mempolicy(nodemask_t *mask)
 		init_nodemask_of_node(mask, nid);
 		break;
 
+	case MPOL_PREFERRED_MANY:
 	case MPOL_BIND:
 	case MPOL_INTERLEAVE:
 		*mask = mempolicy->v.nodes;
@@ -2245,7 +2283,7 @@ struct page *alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 		 * node and don't fall back to other nodes, as the cost of
 		 * remote accesses would likely offset THP benefits.
 		 *
-		 * If the policy is interleave, or does not allow the current
+		 * If the policy is interleave or does not allow the current
 		 * node in its nodemask, we allocate the standard way.
 		 */
 		if (pol->mode == MPOL_PREFERRED)
@@ -2384,6 +2422,7 @@ bool __mpol_equal(struct mempolicy *a, struct mempolicy *b)
 	case MPOL_INTERLEAVE:
 		return !!nodes_equal(a->v.nodes, b->v.nodes);
 	case MPOL_PREFERRED:
+	case MPOL_PREFERRED_MANY:
 		return a->v.preferred_node == b->v.preferred_node;
 	case MPOL_LOCAL:
 		return true;
@@ -2524,6 +2563,8 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		break;
 
 	case MPOL_PREFERRED:
+		if (node_isset(curnid, pol->v.nodes))
+			goto out;
 		polnid = pol->v.preferred_node;
 		break;
 
@@ -2533,8 +2574,8 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 
 	case MPOL_BIND:
 
+	case MPOL_PREFERRED_MANY:
 		/*
-		 * allows binding to multiple nodes.
 		 * use current page if in policy nodemask,
 		 * else select nearest allowed node, if any.
 		 * If no allowed nodes, use current [!misplaced].
@@ -2901,6 +2942,7 @@ static const char * const policy_modes[] =
 	[MPOL_BIND]       = "bind",
 	[MPOL_INTERLEAVE] = "interleave",
 	[MPOL_LOCAL]      = "local",
+	[MPOL_PREFERRED_MANY]  = "prefer (many)",
 };
 
 
@@ -2979,6 +3021,7 @@ int mpol_parse_str(char *str, struct mempolicy **mpol)
 		if (!nodelist)
 			err = 0;
 		goto out;
+	case MPOL_PREFERRED_MANY:
 	case MPOL_BIND:
 		/*
 		 * Insist on a nodelist
@@ -3065,6 +3108,7 @@ void mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol)
 	case MPOL_PREFERRED:
 		node_set(pol->v.preferred_node, nodes);
 		break;
+	case MPOL_PREFERRED_MANY:
 	case MPOL_BIND:
 	case MPOL_INTERLEAVE:
 		nodes = pol->v.nodes;
