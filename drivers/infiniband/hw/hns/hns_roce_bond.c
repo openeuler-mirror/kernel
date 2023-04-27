@@ -661,15 +661,21 @@ static enum bond_support_type
 
 	rcu_read_lock();
 	for_each_netdev_in_bond_rcu(*upper_dev, net_dev) {
-		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
-		if (hr_dev) {
-			slave_num++;
-			if (bus_num == -1)
-				bus_num = hr_dev->pci_dev->bus->number;
-			if (hr_dev->is_vf || pci_num_vf(hr_dev->pci_dev) > 0 ||
-			    bus_num != hr_dev->pci_dev->bus->number) {
-				support = false;
-				break;
+		if (!info->linking && bond_grp_exist) {
+			if (is_netdev_bond_slave(net_dev, bond_grp))
+				slave_num++;
+		} else {
+			hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
+			if (hr_dev) {
+				slave_num++;
+				if (bus_num == -1)
+					bus_num = hr_dev->pci_dev->bus->number;
+				if (hr_dev->is_vf ||
+				    pci_num_vf(hr_dev->pci_dev) > 0 ||
+				    bus_num != hr_dev->pci_dev->bus->number) {
+					support = false;
+					break;
+				}
 			}
 		}
 	}
