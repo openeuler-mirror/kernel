@@ -118,6 +118,19 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 	return ret;
 }
 
+static enum ib_port_state get_upper_port_state(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_bond_group *bond_grp;
+	struct net_device *upper;
+
+	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	upper = bond_grp ? bond_grp->upper_dev : NULL;
+	if (upper)
+		return get_port_state(upper);
+
+	return IB_PORT_ACTIVE;
+}
+
 static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 			   unsigned long dev_event)
 {
@@ -301,6 +314,11 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	mtu = iboe_get_mtu(net_dev->mtu);
 	props->active_mtu = mtu ? min(props->max_mtu, mtu) : IB_MTU_256;
 	props->state = get_port_state(net_dev);
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND &&
+	    props->state == IB_PORT_ACTIVE)
+		props->state = get_upper_port_state(hr_dev);
+
 	props->phys_state = props->state == IB_PORT_ACTIVE ?
 				    IB_PORT_PHYS_STATE_LINK_UP :
 				    IB_PORT_PHYS_STATE_DISABLED;
