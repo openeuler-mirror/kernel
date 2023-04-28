@@ -1838,6 +1838,7 @@ struct inode_operations {
 	const char * (*get_link) (struct dentry *, struct inode *, struct delayed_call *);
 	int (*permission) (struct inode *, int);
 	struct posix_acl * (*get_acl)(struct inode *, int);
+	struct posix_acl * (*get_acl2)(struct inode *, int, bool);
 
 	int (*readlink) (struct dentry *, char __user *,int);
 

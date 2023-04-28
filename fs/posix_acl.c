@@ -133,11 +133,14 @@ struct posix_acl *get_acl(struct inode *inode, int type)
 	 * If the filesystem doesn't have a get_acl() function at all, we'll
 	 * just create the negative cache entry.
 	 */
-	if (!inode->i_op->get_acl) {
+	if (!inode->i_op->get_acl && !inode->i_op->get_acl2) {
 		set_cached_acl(inode, type, NULL);
 		return NULL;
 	}
-	acl = inode->i_op->get_acl(inode, type);
+	if (inode->i_op->get_acl)
+		acl = inode->i_op->get_acl(inode, type);
+	else
+		acl = inode->i_op->get_acl2(inode, type, false);
 
 	if (IS_ERR(acl)) {
 		/*
