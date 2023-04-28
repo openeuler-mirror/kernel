@@ -118,17 +118,29 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 	return ret;
 }
 
-static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
-			   unsigned long dev_event)
+static enum ib_port_state get_upper_port_state(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_bond_group *bond_grp;
+	struct net_device *upper;
+
+	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	upper = bond_grp ? bond_grp->upper_dev : NULL;
+	if (upper)
+		return get_port_state(upper);
+
+	return IB_PORT_ACTIVE;
+}
+
+static int handle_en_event(struct net_device *netdev,
+			   struct hns_roce_dev *hr_dev,
+			   u32 port, unsigned long dev_event)
 {
 	struct device *dev = hr_dev->dev;
 	enum ib_port_state port_state;
-	struct net_device *netdev;
 	struct ib_event event;
 	unsigned long flags;
 	int ret = 0;
 
-	netdev = hr_dev->iboe.netdevs[port];
 	if (!netdev) {
 		dev_err(dev, "Can't find netdev on port(%u)!\n", port);
 		return -ENODEV;
@@ -176,17 +188,24 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 				 unsigned long event, void *ptr)
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct hns_roce_bond_group *bond_grp;
 	struct hns_roce_ib_iboe *iboe = NULL;
 	struct hns_roce_dev *hr_dev = NULL;
+	struct net_device *upper = NULL;
 	int ret;
 	u8 port;
 
 	hr_dev = container_of(self, struct hns_roce_dev, iboe.nb);
 	iboe = &hr_dev->iboe;
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
+		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		upper = bond_grp ? bond_grp->upper_dev : NULL;
+	}
 
 	for (port = 0; port < hr_dev->caps.num_ports; port++) {
-		if (dev == iboe->netdevs[port]) {
-			ret = handle_en_event(hr_dev, port, event);
+		if ((!upper && dev == iboe->netdevs[port]) ||
+		    (upper && dev == upper)) {
+			ret = handle_en_event(dev, hr_dev, port, event);
 			if (ret)
 				return NOTIFY_DONE;
 			break;
@@ -301,6 +320,11 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	mtu = iboe_get_mtu(net_dev->mtu);
 	props->active_mtu = mtu ? min(props->max_mtu, mtu) : IB_MTU_256;
 	props->state = get_port_state(net_dev);
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND &&
+	    props->state == IB_PORT_ACTIVE)
+		props->state = get_upper_port_state(hr_dev);
+
 	props->phys_state = props->state == IB_PORT_ACTIVE ?
 				    IB_PORT_PHYS_STATE_LINK_UP :
 				    IB_PORT_PHYS_STATE_DISABLED;
@@ -503,12 +527,14 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
 		context->config |= ucmd.config & HNS_ROCE_RQ_INLINE_FLAGS;
-		resp.config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
+			resp.config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
 	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
 		context->config |= ucmd.config & HNS_ROCE_CQE_INLINE_FLAGS;
-		resp.config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
+			resp.config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
 	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE) {
@@ -822,12 +848,24 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 	return hw_counters + HNS_ROCE_DFX_CNT_TOTAL;
 }
 
-static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
+static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
+				       bool bond_cleanup)
 {
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
+	struct hns_roce_v2_priv *priv = hr_dev->priv;
+	struct hns_roce_bond_group *bond_grp;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND)
-		hns_roce_cleanup_bond(hr_dev);
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
+		unregister_netdevice_notifier(&hr_dev->bond_nb);
+		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		if (bond_grp) {
+			if (bond_cleanup)
+				hns_roce_cleanup_bond(bond_grp);
+			else if (priv->handle->rinfo.reset_state ==
+				 HNS_ROCE_STATE_RST_UNINIT)
+				bond_grp->main_hr_dev = NULL;
+		}
+	}
 
 	hr_dev->active = false;
 	unregister_netdevice_notifier(&iboe->nb);
@@ -1444,10 +1482,10 @@ error_failed_alloc_dfx_cnt:
 	return ret;
 }
 
-void hns_roce_exit(struct hns_roce_dev *hr_dev)
+void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 {
 	hns_roce_unregister_sysfs(hr_dev);
-	hns_roce_unregister_device(hr_dev);
+	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_debugfs(hr_dev);
 
 	if (hr_dev->hw->hw_exit)

@@ -10,7 +10,9 @@
 #include <net/bonding.h>
 
 #define ROCE_BOND_FUNC_MAX 4
-#define ROCE_BOND_NAME_ID_IDX 9
+#define ROCE_BOND_NUM_MAX 2
+
+#define BOND_ID(id) BIT(id)
 
 enum {
 	BOND_MODE_1,
@@ -45,14 +47,11 @@ enum hns_roce_bond_cmd_type {
 struct hns_roce_func_info {
 	struct net_device *net_dev;
 	struct hnae3_handle *handle;
-	struct netdev_lag_lower_state_info state;
 };
 
 struct hns_roce_bond_group {
 	struct net_device *upper_dev;
-	struct net_device *main_net_dev;
 	struct hns_roce_dev *main_hr_dev;
-	u8 slave_num;
 	u8 active_slave_num;
 	u32 slave_map;
 	u32 active_slave_map;
@@ -67,12 +66,18 @@ struct hns_roce_bond_group {
 	 */
 	struct mutex bond_mutex;
 	struct hns_roce_func_info bond_func_info[ROCE_BOND_FUNC_MAX];
+	struct delayed_work bond_work;
+};
+
+struct hns_roce_die_info {
+	u8 bond_id_mask;
+	struct hns_roce_bond_group *bgrps[ROCE_BOND_NUM_MAX];
 };
 
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev);
 int hns_roce_bond_event(struct notifier_block *self,
 			unsigned long event, void *ptr);
-void hns_roce_cleanup_bond(struct hns_roce_dev *hr_dev);
+void hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp);
 bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev);
 struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev);
 struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev);

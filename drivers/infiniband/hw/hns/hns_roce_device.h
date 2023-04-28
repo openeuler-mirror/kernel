@@ -143,8 +143,7 @@ enum hns_roce_qp_create_flags {
 enum {
 	HNS_ROCE_CAP_FLAG_REREG_MR		= BIT(0),
 	HNS_ROCE_CAP_FLAG_ROCE_V1_V2		= BIT(1),
-	/* discard this bit, reserved for compatibility */
-	HNS_ROCE_CAP_FLAG_DISCARD		= BIT(2),
+	HNS_ROCE_CAP_FLAG_RQ_INLINE		= BIT(2),
 	HNS_ROCE_CAP_FLAG_CQ_RECORD_DB		= BIT(3),
 	HNS_ROCE_CAP_FLAG_QP_RECORD_DB		= BIT(4),
 	HNS_ROCE_CAP_FLAG_SRQ			= BIT(5),
@@ -159,7 +158,6 @@ enum {
 	HNS_ROCE_CAP_FLAG_DCA_MODE		= BIT(15),
 	HNS_ROCE_CAP_FLAG_STASH			= BIT(17),
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
-	HNS_ROCE_CAP_FLAG_RQ_INLINE		= BIT(20),
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
 };
 
@@ -1124,9 +1122,6 @@ struct hns_roce_dev {
 	u64 dwqe_page;
 
 	struct notifier_block bond_nb;
-	struct delayed_work bond_work;
-	struct hns_roce_bond_group *bond_grp;
-	struct netdev_lag_lower_state_info slave_state;
 	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
 	atomic64_t *dfx_cnt;
 };
@@ -1402,7 +1397,7 @@ void hns_roce_srq_event(struct hns_roce_dev *hr_dev, u32 srqn, int event_type);
 u8 hns_get_gid_index(struct hns_roce_dev *hr_dev, u8 port, int gid_index);
 void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev);
 int hns_roce_init(struct hns_roce_dev *hr_dev);
-void hns_roce_exit(struct hns_roce_dev *hr_dev);
+void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup);
 int hns_roce_fill_res_cq_entry(struct sk_buff *msg, struct ib_cq *ib_cq);
 int hns_roce_fill_res_cq_entry_raw(struct sk_buff *msg, struct ib_cq *ib_cq);
 int hns_roce_fill_res_qp_entry(struct sk_buff *msg, struct ib_qp *ib_qp);

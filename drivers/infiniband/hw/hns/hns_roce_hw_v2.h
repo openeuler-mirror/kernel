@@ -1594,15 +1594,17 @@ struct hns_roce_bond_info {
 	__le32 hash_policy;
 };
 
-int hns_roce_hw_v2_init_instance(struct hnae3_handle *handle);
-void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle, bool reset);
-
+struct hns_roce_dev
+	*hns_roce_bond_init_client(struct hns_roce_bond_group *bond_grp,
+				   int func_idx);
+void hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
+				 int func_idx);
 int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata);
 
 int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 				  struct hns_roce_qp *hr_qp,
 				  struct ib_udata *udata);
-int hns_roce_cmd_bond(struct hns_roce_dev *hr_dev,
+int hns_roce_cmd_bond(struct hns_roce_bond_group *bond_grp,
 		      enum hns_roce_bond_cmd_type bond_type);
 
 static inline void hns_roce_write64(struct hns_roce_dev *hr_dev, __le32 val[2],
