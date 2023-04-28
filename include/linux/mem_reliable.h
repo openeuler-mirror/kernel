@@ -111,12 +111,6 @@ static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
 		percpu_counter_add(&reliable_shmem_used_nr_page, nr_page);
 }
 
-static inline void mem_reliable_buddy_counter(struct page *page, int nr_page)
-{
-	if (page_reliable(page))
-		this_cpu_add(nr_reliable_buddy_pages, nr_page);
-}
-
 static inline bool mem_reliable_shmem_limit_check(void)
 {
 	return percpu_counter_read_positive(&reliable_shmem_used_nr_page) <
@@ -168,7 +162,6 @@ static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
 
 static inline bool pagecache_reliable_is_enabled(void) { return false; }
 static inline bool mem_reliable_status(void) { return false; }
-static inline void mem_reliable_buddy_counter(struct page *page, int nr_page) {}
 static inline bool mem_reliable_shmem_limit_check(void) { return true; }
 static inline void reliable_lru_add(enum lru_list lru,
 					       struct page *page,

@@ -28,7 +28,6 @@ unsigned long task_reliable_limit = ULONG_MAX;
 bool reliable_allow_fallback __read_mostly = true;
 bool shmem_reliable __read_mostly = true;
 struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
-DEFINE_PER_CPU(long, nr_reliable_buddy_pages);
 long shmem_reliable_nr_page = LONG_MAX;
 
 bool pagecache_use_reliable_mem __read_mostly = true;
@@ -176,16 +175,21 @@ static unsigned long total_reliable_mem_sz(void)
 	return atomic_long_read(&total_reliable_mem);
 }
 
+static inline long free_reliable_pages(void)
+{
+	struct zone *zone;
+	unsigned long cnt = 0;
+
+	for_each_populated_zone(zone)
+		if (zone_idx(zone) < ZONE_MOVABLE)
+			cnt += zone_page_state(zone, NR_FREE_PAGES);
+
+	return cnt;
+}
+
 static unsigned long used_reliable_mem_sz(void)
 {
-	unsigned long nr_page = 0;
-	struct zone *z;
-
-	for_each_populated_zone(z)
-		if (zone_idx(z) < ZONE_MOVABLE)
-			nr_page += zone_page_state(z, NR_FREE_PAGES);
-
-	return total_reliable_mem_sz() - nr_page * PAGE_SIZE;
+	return total_reliable_mem_sz() - (free_reliable_pages() << PAGE_SHIFT);
 }
 
 static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
@@ -198,14 +202,9 @@ void reliable_report_meminfo(struct seq_file *m)
 {
 	s64 nr_pagecache_pages = 0;
 	s64 nr_anon_pages = 0;
-	long nr_buddy_pages = 0;
-	int cpu;
 
 	if (!mem_reliable_is_enabled())
 		return;
-
-	for_each_possible_cpu(cpu)
-		nr_buddy_pages += per_cpu(nr_reliable_buddy_pages, cpu);
 
 	nr_anon_pages = percpu_counter_sum_positive(&anon_reliable_pages);
 	nr_pagecache_pages = percpu_counter_sum_positive(&pagecache_reliable_pages);
@@ -215,7 +214,7 @@ void reliable_report_meminfo(struct seq_file *m)
 	show_val_kb(m, "ReliableUsed:     ",
 			used_reliable_mem_sz() >> PAGE_SHIFT);
 	show_val_kb(m, "ReliableTaskUsed: ", nr_anon_pages + nr_pagecache_pages);
-	show_val_kb(m, "ReliableBuddyMem: ", nr_buddy_pages);
+	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
 
 	if (shmem_reliable_is_enabled()) {
 		show_val_kb(m, "ReliableShmem:    ",
