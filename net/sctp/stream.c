@@ -231,7 +231,7 @@ int sctp_stream_init(struct sctp_stream *stream, __u16 outcnt, __u16 incnt,
 
 	ret = sctp_stream_alloc_out(stream, outcnt, gfp);
 	if (ret)
-		goto out;
+		return ret;
 
 	stream->outcnt = outcnt;
 	for (i = 0; i < stream->outcnt; i++)
@@ -240,21 +240,9 @@ int sctp_stream_init(struct sctp_stream *stream, __u16 outcnt, __u16 incnt,
 in:
 	sctp_stream_interleave_init(stream);
 	if (!incnt)
-		goto out;
+		return 0;
 
-	ret = sctp_stream_alloc_in(stream, incnt, gfp);
-	if (ret) {
-		sched->free(stream);
-		fa_free(stream->out);
-		stream->out = NULL;
-		stream->outcnt = 0;
-		goto out;
-	}
-
-	stream->incnt = incnt;
-
-out:
-	return ret;
+	return sctp_stream_alloc_in(stream, incnt, gfp);
 }
 
 int sctp_stream_init_ext(struct sctp_stream *stream, __u16 sid)
