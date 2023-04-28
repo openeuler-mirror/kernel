@@ -1843,7 +1843,6 @@ struct inode_operations {
 	const char * (*get_link) (struct dentry *, struct inode *, struct delayed_call *);
 	int (*permission) (struct inode *, int);
 	struct posix_acl * (*get_acl)(struct inode *, int);
-	struct posix_acl * (*get_acl2)(struct inode *, int, bool);
 
 	int (*readlink) (struct dentry *, char __user *,int);
 
@@ -1868,7 +1867,11 @@ struct inode_operations {
 	int (*tmpfile) (struct inode *, struct dentry *, umode_t);
 	int (*set_acl)(struct inode *, struct posix_acl *, int);
 
+#ifndef __GENKSYMS__
+	struct posix_acl * (*get_acl2)(struct inode *, int, bool);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
