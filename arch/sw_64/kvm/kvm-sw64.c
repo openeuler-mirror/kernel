@@ -16,6 +16,7 @@
 #include <linux/msi.h>
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
+#include <asm/core.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
@@ -38,6 +39,8 @@ extern bool bind_vcpu_enabled;
 #define VPN_FIRST_VERSION	(1UL << WIDTH_HARDWARE_VPN)
 #define HARDWARE_VPN_MASK	((1UL << WIDTH_HARDWARE_VPN) - 1)
 #define VPN_SHIFT		(64 - WIDTH_HARDWARE_VPN)
+
+#define GUEST_RESET_PC          0xffffffff80011100
 
 #define DFX_STAT(n, x, ...) \
 	{ n, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64, ## __VA_ARGS__ }
@@ -734,6 +737,13 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		memset(&hargs, 0, sizeof(hargs));
 
 		clear_vcpu_irq(vcpu);
+
+		if (vcpu->arch.restart == 1) {
+			/* handle reset vCPU */
+			vcpu->arch.regs.pc = GUEST_RESET_PC;
+			vcpu->arch.restart = 0;
+		}
+
 		irq = interrupt_pending(vcpu, &more);
 		if (irq < SWVM_IRQS)
 			try_deliver_interrupt(vcpu, irq, more);
@@ -943,9 +953,12 @@ void vcpu_mem_hotplug(struct kvm_vcpu *vcpu, unsigned long start_addr)
 }
 #endif
 
-void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid)
+void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid, int type)
 {
 	struct kvm_vcpu *target_vcpu = kvm_get_vcpu(vcpu->kvm, target_vcpuid);
+
+	if (type == II_RESET)
+		target_vcpu->arch.restart = 1;
 
 	if (target_vcpu != NULL)
 		vcpu_interrupt_line(target_vcpu, 1, 1);

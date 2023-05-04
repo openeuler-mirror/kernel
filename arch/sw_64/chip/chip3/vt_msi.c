@@ -32,12 +32,57 @@ static void vt_irq_msi_update_msg(struct irq_data *irqd,
 	pci_write_msi_msg(irqd->irq, msg);
 }
 
+static int
+vt_set_affinity(struct irq_data *irqd, const struct cpumask *cpumask,
+		bool force)
+{
+	struct sw64_msi_chip_data *cdata;
+	struct cpumask searchmask;
+	int cpu, vector;
+
+	/* Is this valid ? */
+	if (cpumask_any_and(cpumask, cpu_online_mask) >= nr_cpu_ids)
+		return -EINVAL;
+
+	if (!irqd_is_started(irqd))
+		return IRQ_SET_MASK_OK;
+
+	cdata = irqd->chip_data;
+	if (!cdata)
+		return -ENOMEM;
+
+	/*
+	 * If existing target coreid is already in the new mask,
+	 * and is online then do nothing.
+	 */
+	if (cpu_online(cdata->dst_cpu) && cpumask_test_cpu(cdata->dst_cpu, cpumask))
+		return IRQ_SET_MASK_OK;
+
+	cpumask_and(&searchmask, cpumask, cpu_online_mask);
+	if (!find_free_cpu_vector(&searchmask, &cpu, &vector))
+		return -ENOSPC;
+
+	per_cpu(vector_irq, cpu)[vector] = irqd->irq;
+	spin_lock(&cdata->cdata_lock);
+	cdata->dst_cpu = cpu;
+	cdata->vector = vector;
+	cdata->prev_cpu = cdata->dst_cpu;
+	cdata->prev_vector = cdata->vector;
+	cdata->move_in_progress = true;
+	spin_unlock(&cdata->cdata_lock);
+	cpumask_copy(irq_data_get_affinity_mask(irqd), &searchmask);
+	vt_irq_msi_update_msg(irqd, irqd->chip_data);
+
+	return 0;
+}
+
 static struct irq_chip vt_pci_msi_controller = {
 	.name = "PCI-MSI",
 	.irq_unmask = pci_msi_unmask_irq,
 	.irq_mask = pci_msi_mask_irq,
 	.irq_ack = sw64_irq_noop,
 	.irq_compose_msi_msg = vt_irq_msi_compose_msg,
+	.irq_set_affinity = vt_set_affinity,
 };
 
 int chip_setup_vt_msix_irq(struct pci_dev *dev, struct msi_desc *desc)

@@ -132,7 +132,7 @@ void vcpu_mem_hotplug(struct kvm_vcpu *vcpu, unsigned long start_addr);
 #endif
 int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		int exception_index, struct hcall_args *hargs);
-void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid);
+void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid, int type);
 static inline void kvm_arch_hardware_disable(void) {}
 static inline void kvm_arch_sync_events(struct kvm *kvm) {}
 static inline void kvm_arch_vcpu_uninit(struct kvm_vcpu *vcpu) {}

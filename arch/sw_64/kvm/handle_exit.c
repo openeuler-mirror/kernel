@@ -54,7 +54,7 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		return 1;
 	case SW64_KVM_EXIT_IPI:
 		vcpu->stat.ipi_exits++;
-		vcpu_send_ipi(vcpu, hargs->arg0);
+		vcpu_send_ipi(vcpu, hargs->arg0, hargs->arg1);
 		return 1;
 	case SW64_KVM_EXIT_DEBUG:
 		vcpu->stat.debug_exits++;

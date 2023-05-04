@@ -268,6 +268,10 @@ int vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 	wmb();
 	smp_rcb->ready = 0;
+	if (smp_booted) {
+		/* irq must be disabled before reset vCPU */
+		reset_cpu(cpu);
+	}
 	smp_boot_one_cpu(cpu, tidle);
 
 	return cpu_online(cpu) ? 0 : -ENOSYS;
