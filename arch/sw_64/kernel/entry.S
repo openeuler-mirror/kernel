@@ -292,7 +292,7 @@ $ret_success:
 	.align 4
 	.ent work_pending
 work_pending:
-	and	$17, _TIF_NOTIFY_RESUME | _TIF_SIGPENDING | _TIF_UPROBE, $2
+	and	$17, _TIF_NOTIFY_RESUME | _TIF_SIGPENDING | _TIF_UPROBE | _TIF_PATCH_PENDING, $2
 	bne	$2, $work_notifysig
 
 $work_resched:

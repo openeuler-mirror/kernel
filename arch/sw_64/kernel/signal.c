@@ -11,6 +11,7 @@
 #include <linux/errno.h>
 #include <linux/tracehook.h>
 #include <linux/syscalls.h>
+#include <linux/livepatch.h>
 
 #include <asm/ucontext.h>
 #include <asm/vdso.h>
@@ -422,6 +423,9 @@ do_work_pending(struct pt_regs *regs, unsigned long thread_flags,
 
 			if (thread_flags & _TIF_UPROBE)
 				uprobe_notify_resume(regs);
+
+			if (thread_flags & _TIF_PATCH_PENDING)
+				klp_update_patch_state(current);
 
 			if (thread_flags & _TIF_SIGPENDING) {
 				do_signal(regs, r0, r19);
