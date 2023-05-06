@@ -178,6 +178,15 @@ static void __init reserve_crashkernel(void)
 	if (ret || !crash_size)
 		return;
 
+	if (!crash_size) {
+		pr_warn("size of crash kernel memory unspecified, no memory reserved for crash kernel\n");
+		return;
+	}
+	if (!crash_base) {
+		pr_warn("base of crash kernel memory unspecified, no memory reserved for crash kernel\n");
+		return;
+	}
+
 	if (!memblock_is_region_memory(crash_base, crash_size))
 		memblock_add(crash_base, crash_size);
 
@@ -819,6 +828,8 @@ setup_arch(char **cmdline_p)
 
 	sw64_memblock_init();
 
+	reserve_crashkernel();
+
 	/* Reserve large chunks of memory for use by CMA for KVM. */
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
 	sw64_kvm_reserve();
@@ -847,7 +858,6 @@ setup_arch(char **cmdline_p)
 	 */
 	sw64_init_arch();
 
-	reserve_crashkernel();
 	/* Reserve standard resources.  */
 	reserve_std_resources();
 
