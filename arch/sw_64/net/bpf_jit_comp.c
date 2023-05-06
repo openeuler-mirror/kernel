@@ -280,54 +280,12 @@ static void emit_sw64_ldu64(const int dst, const u64 imm, struct jit_ctx *ctx)
 /* Do not change!!! See arch/sw_64/lib/divide.S for more detail */
 #define REG(x)		"$"str(x)
 #define str(x)		#x
+#define DIV_RET_ADDR	23
 #define DIVIDEND	24
 #define DIVISOR		25
 #define RESULT		27
-/* Make these functions noinline because we need their address at runtime */
-noinline void sw64_bpf_jit_helper_div32(void)
-{
-	register u32 __dividend asm(REG(DIVIDEND));
-	register u32 __divisor asm(REG(DIVISOR));
-	u32 res = __dividend / __divisor;
 
-	asm volatile(
-	""
-	:: "r"(res));
-}
-
-noinline void sw64_bpf_jit_helper_mod32(void)
-{
-	register u32 __dividend asm(REG(DIVIDEND));
-	register u32 __divisor asm(REG(DIVISOR));
-	u32 res = __dividend % __divisor;
-
-	asm volatile(
-	""
-	:: "r"(res));
-}
-
-noinline void sw64_bpf_jit_helper_div64(void)
-{
-	register u64 __dividend asm(REG(DIVIDEND));
-	register u64 __divisor asm(REG(DIVISOR));
-	u64 res = __dividend / __divisor;
-
-	asm volatile(
-	""
-	:: "r"(res));
-}
-
-noinline void sw64_bpf_jit_helper_mod64(void)
-{
-	register u64 __dividend asm(REG(DIVIDEND));
-	register u64 __divisor asm(REG(DIVISOR));
-	u64 res = __dividend % __divisor;
-
-	asm volatile(
-	""
-	:: "r"(res));
-}
-
+#include <asm/asm-prototypes.h>
 static void emit_sw64_divmod(const int dst, const int src, struct jit_ctx *ctx, u8 code)
 {
 	emit(SW64_BPF_BIS_REG(SW64_BPF_REG_ZR, dst, DIVIDEND), ctx);
@@ -336,25 +294,25 @@ static void emit_sw64_divmod(const int dst, const int src, struct jit_ctx *ctx, 
 	case BPF_ALU:
 		switch (BPF_OP(code)) {
 		case BPF_DIV:
-			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)sw64_bpf_jit_helper_div32, ctx);
+			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)__divwu, ctx);
 			break;
 		case BPF_MOD:
-			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)sw64_bpf_jit_helper_mod32, ctx);
+			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)__remwu, ctx);
 			break;
 		}
-		emit(SW64_BPF_CALL(SW64_BPF_REG_RA, SW64_BPF_REG_PV), ctx);
+		emit(SW64_BPF_CALL(DIV_RET_ADDR, SW64_BPF_REG_PV), ctx);
 		emit(SW64_BPF_ZAP_IMM(RESULT, 0xf0, dst), ctx);
 		break;
 	case BPF_ALU64:
 		switch (BPF_OP(code)) {
 		case BPF_DIV:
-			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)sw64_bpf_jit_helper_div64, ctx);
+			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)__divlu, ctx);
 			break;
 		case BPF_MOD:
-			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)sw64_bpf_jit_helper_mod64, ctx);
+			emit_sw64_ldu64(SW64_BPF_REG_PV, (u64)__remlu, ctx);
 			break;
 		}
-		emit(SW64_BPF_CALL(SW64_BPF_REG_RA, SW64_BPF_REG_PV), ctx);
+		emit(SW64_BPF_CALL(DIV_RET_ADDR, SW64_BPF_REG_PV), ctx);
 		emit(SW64_BPF_BIS_REG(SW64_BPF_REG_ZR, RESULT, dst), ctx);
 		break;
 	}
