@@ -1,128 +1,176 @@
-// SPDX-License-Identifier: MIT/GPL 
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /*
  * Siemens System Memory Buffer driver.
- * Copyright(c) 2021, HiSilicon Limited.
+ * Copyright(c) 2022, HiSilicon Limited.
  */
 
+#include <linux/atomic.h>
 #include <linux/acpi.h>
 #include <linux/circ_buf.h>
 #include <linux/err.h>
+#include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 
+#include "coresight-etm-perf.h"
+#include "coresight-priv.h"
 #include "ultrasoc-smb.h"
 
-DEFINE_CORESIGHT_DEVLIST(sink_devs, "smb");
+DEFINE_CORESIGHT_DEVLIST(sink_devs, "ultra_smb");
 
-static bool smb_buffer_is_empty(struct smb_drv_data *drvdata)
+#define ULTRASOC_SMB_DSM_UUID	"82ae1283-7f6a-4cbe-aa06-53e8fb24db18"
+
+static bool smb_buffer_not_empty(struct smb_drv_data *drvdata)
 {
-	u32 buf_status = readl(drvdata->base + SMB_LB_INT_STS);
+	u32 buf_status = readl(drvdata->base + SMB_LB_INT_STS_REG);
 
-	return buf_status & BIT(0) ? false : true;
-}
-
-static bool smb_buffer_cmp_pointer(struct smb_drv_data *drvdata)
-{
-	u32 wr_offset, rd_offset;
-
-	wr_offset = readl(drvdata->base + SMB_LB_WR_ADDR);
-	rd_offset = readl(drvdata->base + SMB_LB_RD_ADDR);
-	return wr_offset == rd_offset;
-}
-
-static void smb_reset_buffer_status(struct smb_drv_data *drvdata)
-{
-	writel(0xf, drvdata->base + SMB_LB_INT_STS);
-}
-
-/* Purge data remaining in hardware path to SMB. */
-static void smb_purge_data(struct smb_drv_data *drvdata)
-{
-	writel(0x1, drvdata->base + SMB_LB_PURGE);
+	return FIELD_GET(SMB_LB_INT_STS_NOT_EMPTY_MSK, buf_status);
 }
 
 static void smb_update_data_size(struct smb_drv_data *drvdata)
 {
 	struct smb_data_buffer *sdb = &drvdata->sdb;
-	u32 write_offset;
+	u32 buf_wrptr;
 
-	smb_purge_data(drvdata);
-	if (smb_buffer_cmp_pointer(drvdata)) {
-		if (smb_buffer_is_empty(drvdata))
-			sdb->data_size = 0;
-		else
-			sdb->data_size = sdb->buf_size;
+	buf_wrptr = readl(drvdata->base + SMB_LB_WR_ADDR_REG) -
+			  sdb->buf_hw_base;
+
+	/* Buffer is full */
+	if (buf_wrptr == sdb->buf_rdptr && smb_buffer_not_empty(drvdata)) {
+		sdb->data_size = sdb->buf_size;
 		return;
 	}
 
-	write_offset = readl(drvdata->base + SMB_LB_WR_ADDR) - sdb->start_addr;
-	sdb->data_size = CIRC_CNT(write_offset, sdb->rd_offset, sdb->buf_size);
+	/* The buffer mode is circular buffer mode */
+	sdb->data_size = CIRC_CNT(buf_wrptr, sdb->buf_rdptr,
+				  sdb->buf_size);
+}
+
+/*
+ * The read pointer adds @nbytes bytes (may round up to the beginning)
+ * after the data is read or discarded, while needing to update the
+ * available data size.
+ */
+static void smb_update_read_ptr(struct smb_drv_data *drvdata, u32 nbytes)
+{
+	struct smb_data_buffer *sdb = &drvdata->sdb;
+
+	sdb->buf_rdptr += nbytes;
+	sdb->buf_rdptr %= sdb->buf_size;
+	writel(sdb->buf_hw_base + sdb->buf_rdptr,
+	       drvdata->base + SMB_LB_RD_ADDR_REG);
+
+	sdb->data_size -= nbytes;
+}
+
+static void smb_reset_buffer(struct smb_drv_data *drvdata)
+{
+	struct smb_data_buffer *sdb = &drvdata->sdb;
+	u32 write_ptr;
+
+	/*
+	 * We must flush and discard any data left in hardware path
+	 * to avoid corrupting the next session.
+	 * Note: The write pointer will never exceed the read pointer.
+	 */
+	writel(SMB_LB_PURGE_PURGED, drvdata->base + SMB_LB_PURGE_REG);
+
+	/* Reset SMB logical buffer status flags */
+	writel(SMB_LB_INT_STS_RESET, drvdata->base + SMB_LB_INT_STS_REG);
+
+	write_ptr = readl(drvdata->base + SMB_LB_WR_ADDR_REG);
+
+	/* Do nothing, not data left in hardware path */
+	if (!write_ptr || write_ptr == sdb->buf_rdptr + sdb->buf_hw_base)
+		return;
+
+	/*
+	 * The SMB_LB_WR_ADDR_REG register is read-only,
+	 * Synchronize the read pointer to write pointer.
+	 */
+	writel(write_ptr, drvdata->base + SMB_LB_RD_ADDR_REG);
+	sdb->buf_rdptr = write_ptr - sdb->buf_hw_base;
 }
 
 static int smb_open(struct inode *inode, struct file *file)
 {
 	struct smb_drv_data *drvdata = container_of(file->private_data,
-						    struct smb_drv_data, miscdev);
+					struct smb_drv_data, miscdev);
+	int ret = 0;
 
-	if (local_cmpxchg(&drvdata->reading, 0, 1))
-		return -EBUSY;
+	mutex_lock(&drvdata->mutex);
 
-	return 0;
-}
-
-static ssize_t smb_read(struct file *file, char __user *data, size_t len, loff_t *ppos)
-{
-	struct smb_drv_data *drvdata = container_of(file->private_data,
-						    struct smb_drv_data, miscdev);
-	struct smb_data_buffer *sdb = &drvdata->sdb;
-	struct device *dev = &drvdata->csdev->dev;
-	unsigned long flags;
-	int to_copy = 0;
-
-	spin_lock_irqsave(&drvdata->spinlock, flags);
-
-	if (!sdb->data_size) {
-		smb_update_data_size(drvdata);
-		if (!sdb->data_size)
-			goto out;
-	}
-
-	if (atomic_read(drvdata->csdev->refcnt)) {
-		to_copy = -EBUSY;
+	if (drvdata->reading) {
+		ret = -EBUSY;
 		goto out;
 	}
 
+	if (atomic_read(drvdata->csdev->refcnt)) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	smb_update_data_size(drvdata);
+
+	drvdata->reading = true;
+out:
+	mutex_unlock(&drvdata->mutex);
+
+	return ret;
+}
+
+static ssize_t smb_read(struct file *file, char __user *data, size_t len,
+			loff_t *ppos)
+{
+	struct smb_drv_data *drvdata = container_of(file->private_data,
+					struct smb_drv_data, miscdev);
+	struct smb_data_buffer *sdb = &drvdata->sdb;
+	struct device *dev = &drvdata->csdev->dev;
+	ssize_t to_copy = 0;
+
+	if (!len)
+		return 0;
+
+	mutex_lock(&drvdata->mutex);
+
+	if (!sdb->data_size)
+		goto out;
+
 	to_copy = min(sdb->data_size, len);
 
-	/* Copy parts of trace data when the read pointer will wrap around SMB buffer. */
-	if (sdb->rd_offset + to_copy > sdb->buf_size)
-		to_copy = sdb->buf_size - sdb->rd_offset;
+	/* Copy parts of trace data when read pointer wrap around SMB buffer */
+	if (sdb->buf_rdptr + to_copy > sdb->buf_size)
+		to_copy = sdb->buf_size - sdb->buf_rdptr;
 
-	if (copy_to_user(data, (void *)sdb->buf_base + sdb->rd_offset, to_copy)) {
-		dev_dbg(dev, "Failed to copy data to user.\n");
+	if (copy_to_user(data, sdb->buf_base + sdb->buf_rdptr, to_copy)) {
+		dev_dbg(dev, "Failed to copy data to user\n");
 		to_copy = -EFAULT;
 		goto out;
 	}
 
 	*ppos += to_copy;
-	sdb->data_size -= to_copy;
-	sdb->rd_offset += to_copy;
-	sdb->rd_offset %= sdb->buf_size;
-	writel(sdb->start_addr + sdb->rd_offset, drvdata->base + SMB_LB_RD_ADDR);
-	dev_dbg(dev, "%d bytes copied.\n", to_copy);
+
+	smb_update_read_ptr(drvdata, to_copy);
+
+	dev_dbg(dev, "%zu bytes copied\n", to_copy);
 out:
 	if (!sdb->data_size)
-		smb_reset_buffer_status(drvdata);
-	spin_unlock_irqrestore(&drvdata->spinlock, flags);
+		smb_reset_buffer(drvdata);
+	mutex_unlock(&drvdata->mutex);
+
 	return to_copy;
 }
 
 static int smb_release(struct inode *inode, struct file *file)
 {
 	struct smb_drv_data *drvdata = container_of(file->private_data,
-						    struct smb_drv_data, miscdev);
-	local_set(&drvdata->reading, 0);
+					struct smb_drv_data, miscdev);
+
+	mutex_lock(&drvdata->mutex);
+	drvdata->reading = false;
+	mutex_unlock(&drvdata->mutex);
+
 	return 0;
 }
 
@@ -134,11 +182,8 @@ static const struct file_operations smb_fops = {
 	.llseek		= no_llseek,
 };
 
-smb_reg(read_pos, SMB_LB_RD_ADDR);
-smb_reg(write_pos, SMB_LB_WR_ADDR);
-smb_reg(buf_status, SMB_LB_INT_STS);
-
-static ssize_t buf_size_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t buf_size_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
 {
 	struct smb_drv_data *drvdata = dev_get_drvdata(dev->parent);
 
@@ -147,93 +192,66 @@ static ssize_t buf_size_show(struct device *dev, struct device_attribute *attr, 
 static DEVICE_ATTR_RO(buf_size);
 
 static struct attribute *smb_sink_attrs[] = {
-	&dev_attr_read_pos.attr,
-	&dev_attr_write_pos.attr,
-	&dev_attr_buf_status.attr,
+	coresight_simple_reg32(read_pos, SMB_LB_RD_ADDR_REG),
+	coresight_simple_reg32(write_pos, SMB_LB_WR_ADDR_REG),
+	coresight_simple_reg32(buf_status, SMB_LB_INT_STS_REG),
 	&dev_attr_buf_size.attr,
-	NULL,
+	NULL
 };
 
 static const struct attribute_group smb_sink_group = {
 	.attrs = smb_sink_attrs,
-	.name = "status",
+	.name = "mgmt",
 };
 
 static const struct attribute_group *smb_sink_groups[] = {
 	&smb_sink_group,
-	NULL,
+	NULL
 };
-
-static int smb_set_perf_buffer(struct perf_output_handle *handle)
-{
-	struct cs_buffers *buf = etm_perf_sink_config(handle);
-	u32 head;
-
-	if (!buf)
-		return -EINVAL;
-
-	/* Wrap head around to the amount of space we have */
-	head = handle->head & ((buf->nr_pages << PAGE_SHIFT) - 1);
-
-	/* Find the page to write to and offset within that page */
-	buf->cur = head / PAGE_SIZE;
-	buf->offset = head % PAGE_SIZE;
-
-	local_set(&buf->data_size, 0);
-
-	return 0;
-}
 
 static void smb_enable_hw(struct smb_drv_data *drvdata)
 {
-	writel(0x1, drvdata->base + SMB_GLOBAL_EN);
+	writel(SMB_GLB_EN_HW_ENABLE, drvdata->base + SMB_GLB_EN_REG);
 }
 
 static void smb_disable_hw(struct smb_drv_data *drvdata)
 {
-	writel(0x0, drvdata->base + SMB_GLOBAL_EN);
+	writel(0x0, drvdata->base + SMB_GLB_EN_REG);
 }
 
-static int smb_enable_sysfs(struct smb_drv_data *drvdata)
+static void smb_enable_sysfs(struct coresight_device *csdev)
 {
-	if (drvdata->mode == CS_MODE_PERF)
-		return -EBUSY;
+	struct smb_drv_data *drvdata = dev_get_drvdata(csdev->dev.parent);
 
-	if (drvdata->mode == CS_MODE_SYSFS)
-		return 0;
+	if (drvdata->mode != CS_MODE_DISABLED)
+		return;
 
 	smb_enable_hw(drvdata);
 	drvdata->mode = CS_MODE_SYSFS;
-	return 0;
 }
 
-static int smb_enable_perf(struct smb_drv_data *drvdata, void *data)
+static int smb_enable_perf(struct coresight_device *csdev, void *data)
 {
-	struct device *dev = &drvdata->csdev->dev;
+	struct smb_drv_data *drvdata = dev_get_drvdata(csdev->dev.parent);
 	struct perf_output_handle *handle = data;
+	struct cs_buffers *buf = etm_perf_sink_config(handle);
 	pid_t pid;
 
-	if (drvdata->mode == CS_MODE_SYSFS) {
-		dev_err(dev, "Device is already in used by sysfs.\n");
-		return -EBUSY;
-	}
-
-	/* Get a handle on the pid of the target process*/
-	pid = task_pid_nr(handle->event->owner);
-	if (drvdata->pid != -1 && drvdata->pid != pid) {
-		dev_err(dev, "Device is already in used by other session.\n");
-		return -EBUSY;
-	}
-	/* The sink is already enabled by this session. */
-	if (drvdata->pid == pid)
-		return 0;
-
-	if (smb_set_perf_buffer(handle))
+	if (!buf)
 		return -EINVAL;
 
-	smb_enable_hw(drvdata);
-	drvdata->pid = pid;
-	drvdata->mode = CS_MODE_PERF;
+	/* Get a handle on the pid of the target process */
+	pid = buf->pid;
+
+	/* Device is already in used by other session */
+	if (drvdata->pid != -1 && drvdata->pid != pid)
+		return -EBUSY;
+
+	if (drvdata->pid == -1) {
+		smb_enable_hw(drvdata);
+		drvdata->pid = pid;
+		drvdata->mode = CS_MODE_PERF;
+	}
 
 	return 0;
 }
@@ -241,62 +259,76 @@ static int smb_enable_perf(struct smb_drv_data *drvdata, void *data)
 static int smb_enable(struct coresight_device *csdev, u32 mode, void *data)
 {
 	struct smb_drv_data *drvdata = dev_get_drvdata(csdev->dev.parent);
-	unsigned long flags;
-	int ret = -EINVAL;
+	int ret = 0;
 
-	/* Do nothing if trace data is reading by other interface now. */
-	if (local_read(&drvdata->reading))
-		return -EBUSY;
+	mutex_lock(&drvdata->mutex);
 
-	spin_lock_irqsave(&drvdata->spinlock, flags);
+	/* Do nothing, the trace data is reading by other interface now */
+	if (drvdata->reading) {
+		ret = -EBUSY;
+		goto out;
+	}
 
-	if (mode == CS_MODE_SYSFS)
-		ret = smb_enable_sysfs(drvdata);
+	/* Do nothing, the SMB is already enabled as other mode */
+	if (drvdata->mode != CS_MODE_DISABLED && drvdata->mode != mode) {
+		ret = -EBUSY;
+		goto out;
+	}
 
-	if (mode == CS_MODE_PERF)
-		ret = smb_enable_perf(drvdata, data);
-
-	spin_unlock_irqrestore(&drvdata->spinlock, flags);
+	switch (mode) {
+	case CS_MODE_SYSFS:
+		smb_enable_sysfs(csdev);
+		break;
+	case CS_MODE_PERF:
+		ret = smb_enable_perf(csdev, data);
+		break;
+	default:
+		ret = -EINVAL;
+	}
 
 	if (ret)
-		return ret;
+		goto out;
 
 	atomic_inc(csdev->refcnt);
-	dev_dbg(&csdev->dev, "Ultrasoc SMB enabled.\n");
 
-	return 0;
+	dev_dbg(&csdev->dev, "Ultrasoc SMB enabled\n");
+out:
+	mutex_unlock(&drvdata->mutex);
+
+	return ret;
 }
 
 static int smb_disable(struct coresight_device *csdev)
 {
 	struct smb_drv_data *drvdata = dev_get_drvdata(csdev->dev.parent);
-	unsigned long flags;
+	int ret = 0;
 
-	spin_lock_irqsave(&drvdata->spinlock, flags);
+	mutex_lock(&drvdata->mutex);
 
-	if (atomic_dec_return(csdev->refcnt)) {
-		spin_unlock_irqrestore(&drvdata->spinlock, flags);
-		return -EBUSY;
+	if (drvdata->reading) {
+		ret = -EBUSY;
+		goto out;
 	}
 
-	WARN_ON_ONCE(drvdata->mode == CS_MODE_DISABLED);
-	smb_disable_hw(drvdata);
+	if (atomic_dec_return(csdev->refcnt)) {
+		ret = -EBUSY;
+		goto out;
+	}
 
-	/*
-	 * Data remaining in hardware path will be sent to SMB after purge, so needs to
-	 * synchronize the read pointer to write pointer in perf mode.
-	 */
-	smb_purge_data(drvdata);
-	if (drvdata->mode == CS_MODE_PERF)
-		writel(readl(drvdata->base + SMB_LB_WR_ADDR), drvdata->base + SMB_LB_RD_ADDR);
+	/* Complain if we (somehow) got out of sync */
+	WARN_ON_ONCE(drvdata->mode == CS_MODE_DISABLED);
+
+	smb_disable_hw(drvdata);
 
 	/* Dissociate from the target process. */
 	drvdata->pid = -1;
 	drvdata->mode = CS_MODE_DISABLED;
-	spin_unlock_irqrestore(&drvdata->spinlock, flags);
 
-	dev_dbg(&csdev->dev, "Ultrasoc SMB disabled.\n");
-	return 0;
+	dev_dbg(&csdev->dev, "Ultrasoc SMB disabled\n");
+out:
+	mutex_unlock(&drvdata->mutex);
+
+	return ret;
 }
 
 static void *smb_alloc_buffer(struct coresight_device *csdev,
@@ -314,6 +346,7 @@ static void *smb_alloc_buffer(struct coresight_device *csdev,
 	buf->snapshot = overwrite;
 	buf->nr_pages = nr_pages;
 	buf->data_pages = pages;
+	buf->pid = task_pid_nr(event->owner);
 
 	return buf;
 }
@@ -326,38 +359,39 @@ static void smb_free_buffer(void *config)
 }
 
 static void smb_sync_perf_buffer(struct smb_drv_data *drvdata,
-				 struct cs_buffers *buf, unsigned long data_size)
+				 struct cs_buffers *buf,
+				 unsigned long head)
 {
 	struct smb_data_buffer *sdb = &drvdata->sdb;
 	char **dst_pages = (char **)buf->data_pages;
-	unsigned long buf_offset = buf->offset;
-	unsigned int cur = buf->cur;
 	unsigned long to_copy;
+	long pg_idx, pg_offset;
 
-	while (data_size) {
-		/* Copy parts of trace data when the read pointer will wrap around SMB buffer. */
-		if (sdb->rd_offset + PAGE_SIZE - buf_offset > sdb->buf_size)
-			to_copy = sdb->buf_size - sdb->rd_offset;
-		else
-			to_copy = min(data_size, PAGE_SIZE - buf_offset);
+	pg_idx = head >> PAGE_SHIFT;
+	pg_offset = head & (PAGE_SIZE - 1);
 
-		memcpy_fromio(dst_pages[cur] + buf_offset, sdb->buf_base + sdb->rd_offset, to_copy);
+	while (sdb->data_size) {
+		unsigned long pg_space = PAGE_SIZE - pg_offset;
 
-		buf_offset += to_copy;
-		if (buf_offset >= PAGE_SIZE) {
-			buf_offset = 0;
-			cur++;
-			cur %= buf->nr_pages;
+		to_copy = min(sdb->data_size, pg_space);
+
+		/* Copy parts of trace data when read pointer wrap around */
+		if (sdb->buf_rdptr + to_copy > sdb->buf_size)
+			to_copy = sdb->buf_size - sdb->buf_rdptr;
+
+		memcpy(dst_pages[pg_idx] + pg_offset,
+			      sdb->buf_base + sdb->buf_rdptr, to_copy);
+
+		pg_offset += to_copy;
+		if (pg_offset >= PAGE_SIZE) {
+			pg_offset = 0;
+			pg_idx++;
+			pg_idx %= buf->nr_pages;
 		}
-		data_size -= to_copy;
-		/* ensure memcpy finished before update the read pointer */
-		sdb->rd_offset += to_copy;
-		sdb->rd_offset %= sdb->buf_size;
+		smb_update_read_ptr(drvdata, to_copy);
 	}
 
-	sdb->data_size = 0;
-	writel(sdb->start_addr + sdb->rd_offset, drvdata->base + SMB_LB_RD_ADDR);
-	smb_reset_buffer_status(drvdata);
+	smb_reset_buffer(drvdata);
 }
 
 static unsigned long smb_update_buffer(struct coresight_device *csdev,
@@ -368,33 +402,37 @@ static unsigned long smb_update_buffer(struct coresight_device *csdev,
 	struct smb_data_buffer *sdb = &drvdata->sdb;
 	struct cs_buffers *buf = sink_config;
 	unsigned long data_size = 0;
-	unsigned long flags;
 	bool lost = false;
 
 	if (!buf)
 		return 0;
 
-	spin_lock_irqsave(&drvdata->spinlock, flags);
+	mutex_lock(&drvdata->mutex);
 
 	/* Don't do anything if another tracer is using this sink. */
 	if (atomic_read(csdev->refcnt) != 1)
 		goto out;
 
+	smb_disable_hw(drvdata);
 	smb_update_data_size(drvdata);
-	data_size = sdb->data_size;
-	if (data_size > handle->size) {
-		sdb->rd_offset += data_size - handle->size;
-		sdb->rd_offset %= sdb->buf_size;
-		data_size = handle->size;
+
+	/*
+	 * The SMB buffer may be bigger than the space available in the
+	 * perf ring buffer (handle->size). If so advance the offset so
+	 * that we get the latest trace data.
+	 */
+	if (sdb->data_size > handle->size) {
+		smb_update_read_ptr(drvdata, sdb->data_size - handle->size);
 		lost = true;
 	}
 
-	smb_sync_perf_buffer(drvdata, buf, data_size);
+	data_size = sdb->data_size;
+	smb_sync_perf_buffer(drvdata, buf, handle->head);
 	if (!buf->snapshot && lost)
 		perf_aux_output_flag(handle, PERF_AUX_FLAG_TRUNCATED);
-
 out:
-	spin_unlock_irqrestore(&drvdata->spinlock, flags);
+	mutex_unlock(&drvdata->mutex);
+
 	return data_size;
 }
 
@@ -410,23 +448,30 @@ static const struct coresight_ops cs_ops = {
 	.sink_ops	= &smb_cs_ops,
 };
 
-static int smb_init_data_buffer(struct platform_device *pdev, struct smb_data_buffer *sdb)
+static int smb_init_data_buffer(struct platform_device *pdev,
+				struct smb_data_buffer *sdb)
 {
 	struct resource *res;
-	void __iomem *base;
+	void *base;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	res = platform_get_resource(pdev, IORESOURCE_MEM, SMB_BUF_ADDR_RES);
 	if (IS_ERR(res)) {
-		dev_err(&pdev->dev, "SMB device failed to get resource.\n");
+		dev_err(&pdev->dev, "SMB device failed to get resource\n");
 		return -EINVAL;
 	}
 
-	sdb->start_addr = res->start & SMB_BASE_LOW_MASK;
+	sdb->buf_rdptr = 0;
+	sdb->buf_hw_base = FIELD_GET(SMB_BUF_ADDR_LO_MSK, res->start);
 	sdb->buf_size = resource_size(res);
 	if (sdb->buf_size == 0)
 		return -EINVAL;
 
-	base = devm_ioremap_resource(&pdev->dev, res);
+	/*
+	 * This is a chunk of memory, use classic mapping with better
+	 * performance.
+	 */
+	base = devm_memremap(&pdev->dev, sdb->buf_hw_base, sdb->buf_size,
+				MEMREMAP_WB);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 
@@ -437,25 +482,18 @@ static int smb_init_data_buffer(struct platform_device *pdev, struct smb_data_bu
 
 static void smb_init_hw(struct smb_drv_data *drvdata)
 {
-	u32 value;
-
-	/* First disable smb and clear the status of SMB buffer */
-	smb_reset_buffer_status(drvdata);
 	smb_disable_hw(drvdata);
-	smb_purge_data(drvdata);
+	smb_reset_buffer(drvdata);
 
-	/* Using smb in single-end mode, and set other configures default */
-	value = SMB_BUF_CFG_STREAMING | SMB_BUF_SINGLE_END | SMB_BUF_EN;
-	writel(value, drvdata->base + SMB_LB_CFG_LO);
-	value = SMB_MSG_FILTER(0x0, 0xff);
-	writel(value, drvdata->base + SMB_LB_CFG_HI);
-
-	writel(SMB_GLOBAL_CFG, drvdata->base + SMB_CFG_REG);
-	writel(SMB_GLB_INT_CFG, drvdata->base + SMB_GLOBAL_INT);
-	writel(SMB_BUF_INT_CFG, drvdata->base + SMB_LB_INT_CTRL);
+	writel(SMB_LB_CFG_LO_DEFAULT, drvdata->base + SMB_LB_CFG_LO_REG);
+	writel(SMB_LB_CFG_HI_DEFAULT, drvdata->base + SMB_LB_CFG_HI_REG);
+	writel(SMB_GLB_CFG_DEFAULT, drvdata->base + SMB_GLB_CFG_REG);
+	writel(SMB_GLB_INT_CFG, drvdata->base + SMB_GLB_INT_REG);
+	writel(SMB_LB_INT_CTRL_CFG, drvdata->base + SMB_LB_INT_CTRL_REG);
 }
 
-static int smb_register_sink(struct platform_device *pdev, struct smb_drv_data *drvdata)
+static int smb_register_sink(struct platform_device *pdev,
+			     struct smb_drv_data *drvdata)
 {
 	struct coresight_platform_data *pdata = NULL;
 	struct coresight_desc desc = { 0 };
@@ -473,9 +511,10 @@ static int smb_register_sink(struct platform_device *pdev, struct smb_drv_data *
 	desc.groups = smb_sink_groups;
 	desc.name = coresight_alloc_device_name(&sink_devs, &pdev->dev);
 	if (!desc.name) {
-		dev_err(&pdev->dev, "Failed to alloc coresight device name.");
+		dev_err(&pdev->dev, "Failed to alloc coresight device name");
 		return -ENOMEM;
 	}
+	desc.access = CSDEV_ACCESS_IOMEM(drvdata->base);
 
 	drvdata->csdev = coresight_register(&desc);
 	if (IS_ERR(drvdata->csdev))
@@ -487,7 +526,7 @@ static int smb_register_sink(struct platform_device *pdev, struct smb_drv_data *
 	ret = misc_register(&drvdata->miscdev);
 	if (ret) {
 		coresight_unregister(drvdata->csdev);
-		dev_err(&pdev->dev, "Failed to register misc, ret=%d.\n", ret);
+		dev_err(&pdev->dev, "Failed to register misc, ret=%d\n", ret);
 	}
 
 	return ret;
@@ -499,68 +538,74 @@ static void smb_unregister_sink(struct smb_drv_data *drvdata)
 	coresight_unregister(drvdata->csdev);
 }
 
-/*
- * Send ultrasoc messge to control hardwares on the tracing path,
- * using DSM calls to avoid exposing ultrasoc message format.
- */
 static int smb_config_inport(struct device *dev, bool enable)
 {
-	u32 flag = enable ? 1 : 0;
+	u64 func = enable ? 1 : 0;
 	union acpi_object *obj;
 	guid_t guid;
+	u64 rev = 0;
 
-	if (guid_parse("82ae1283-7f6a-4cbe-aa06-53e8fb24db18", &guid)) {
-		dev_err(dev, "Get GUID failed.\n");
+	/*
+	 * Using DSM calls to enable/disable ultrasoc hardwares on
+	 * tracing path, to prevent ultrasoc packet format being exposed.
+	 */
+	if (guid_parse(ULTRASOC_SMB_DSM_UUID, &guid)) {
+		dev_err(dev, "Get GUID failed\n");
 		return -EINVAL;
 	}
 
-	obj = acpi_evaluate_dsm(ACPI_HANDLE(dev), &guid, 0, flag, NULL);
-	if (!obj)
-		dev_err(dev, "ACPI handle failed!\n");
-	else
-		ACPI_FREE(obj);
+	obj = acpi_evaluate_dsm(ACPI_HANDLE(dev), &guid, rev, func, NULL);
+	if (!obj) {
+		dev_err(dev, "ACPI handle failed\n");
+		return -ENODEV;
+	}
+
+	ACPI_FREE(obj);
 
 	return 0;
 }
 
 static int smb_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
 	struct smb_drv_data *drvdata;
 	int ret;
 
-	drvdata = devm_kzalloc(&pdev->dev, sizeof(*drvdata), GFP_KERNEL);
+	drvdata = devm_kzalloc(dev, sizeof(*drvdata), GFP_KERNEL);
 	if (!drvdata)
 		return -ENOMEM;
 
-	drvdata->base = devm_platform_ioremap_resource(pdev, 0);
+	drvdata->base = devm_platform_ioremap_resource(pdev, SMB_REG_ADDR_RES);
 	if (IS_ERR(drvdata->base)) {
-		dev_err(&pdev->dev, "Failed to ioremap resource.\n");
+		dev_err(dev, "Failed to ioremap resource\n");
 		return PTR_ERR(drvdata->base);
 	}
 
+	smb_init_hw(drvdata);
+
 	ret = smb_init_data_buffer(pdev, &drvdata->sdb);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to init buffer, ret = %d.\n", ret);
+		dev_err(dev, "Failed to init buffer, ret = %d\n", ret);
 		return ret;
 	}
 
-	smb_init_hw(drvdata);
-	spin_lock_init(&drvdata->spinlock);
+	mutex_init(&drvdata->mutex);
 	drvdata->pid = -1;
 
 	ret = smb_register_sink(pdev, drvdata);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to register smb sink.\n");
+		dev_err(dev, "Failed to register SMB sink\n");
 		return ret;
 	}
 
-	ret = smb_config_inport(&pdev->dev, true);
+	ret = smb_config_inport(dev, true);
 	if (ret) {
 		smb_unregister_sink(drvdata);
 		return ret;
 	}
 
 	platform_set_drvdata(pdev, drvdata);
+
 	return 0;
 }
 
@@ -574,13 +619,14 @@ static int smb_remove(struct platform_device *pdev)
 		return ret;
 
 	smb_unregister_sink(drvdata);
+
 	return 0;
 }
 
 #ifdef CONFIG_ACPI
 static const struct acpi_device_id ultrasoc_smb_acpi_match[] = {
 	{"HISI03A1", 0},
-	{},
+	{}
 };
 MODULE_DEVICE_TABLE(acpi, ultrasoc_smb_acpi_match);
 #endif
@@ -596,7 +642,7 @@ static struct platform_driver smb_driver = {
 };
 module_platform_driver(smb_driver);
 
-MODULE_DESCRIPTION("Ultrasoc smb driver");
+MODULE_DESCRIPTION("UltraSoc SMB CoreSight driver");
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("Jonathan Zhou <jonathan.zhouwen@huawei.com>");
 MODULE_AUTHOR("Qi Liu <liuqi115@huawei.com>");
