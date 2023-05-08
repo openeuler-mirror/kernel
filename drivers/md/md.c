@@ -4399,20 +4399,6 @@ null_show(struct mddev *mddev, char *page)
 	return -EINVAL;
 }
 
-/* need to ensure rdev_delayed_delete() has completed */
-static void flush_rdev_wq(struct mddev *mddev)
-{
-	struct md_rdev *rdev;
-
-	rcu_read_lock();
-	rdev_for_each_rcu(rdev, mddev)
-		if (work_pending(&rdev->del_work)) {
-			flush_workqueue(md_rdev_misc_wq);
-			break;
-		}
-	rcu_read_unlock();
-}
-
 static ssize_t
 new_dev_store(struct mddev *mddev, const char *buf, size_t len)
 {
@@ -4440,7 +4426,7 @@ new_dev_store(struct mddev *mddev, const char *buf, size_t len)
 	    minor != MINOR(dev))
 		return -EOVERFLOW;
 
-	flush_rdev_wq(mddev);
+	flush_workqueue(md_rdev_misc_wq);
 	err = mddev_lock(mddev);
 	if (err)
 		return err;
@@ -7348,7 +7334,7 @@ static int md_ioctl(struct block_device *bdev, fmode_t mode,
 	}
 
 	if (cmd == ADD_NEW_DISK || cmd == HOT_ADD_DISK)
-		flush_rdev_wq(mddev);
+		flush_workqueue(md_rdev_misc_wq);
 
 	if (cmd == HOT_REMOVE_DISK)
 		/* need to ensure recovery thread has run */
