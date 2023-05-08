@@ -2255,8 +2255,9 @@ EXPORT_SYMBOL(md_integrity_add_rdev);
 
 static int bind_rdev_to_array(struct md_rdev *rdev, struct mddev *mddev)
 {
-	char b[BDEVNAME_SIZE];
+	char b[BDEVNAME_SIZE + 4];
 	struct kobject *ko;
+	struct kernfs_node *sysfs_rdev;
 	int err;
 
 	/* prevent duplicates */
@@ -2307,13 +2308,22 @@ static int bind_rdev_to_array(struct md_rdev *rdev, struct mddev *mddev)
 			mdname(mddev), mddev->max_disks);
 		return -EBUSY;
 	}
-	bdevname(rdev->bdev,b);
+	memcpy(b, "dev-", 4);
+	bdevname(rdev->bdev, b + 4);
 	strreplace(b, '/', '!');
 
 	rdev->mddev = mddev;
 	pr_debug("md: bind<%s>\n", b);
 
-	if ((err = kobject_add(&rdev->kobj, &mddev->kobj, "dev-%s", b)))
+	sysfs_rdev = sysfs_get_dirent_safe(mddev->kobj.sd, b);
+	if (sysfs_rdev) {
+		sysfs_put(sysfs_rdev);
+		err = -EBUSY;
+		goto fail;
+	}
+
+	err = kobject_add(&rdev->kobj, &mddev->kobj, b);
+	if (err)
 		goto fail;
 
 	ko = &part_to_dev(rdev->bdev->bd_part)->kobj;
@@ -2334,7 +2344,7 @@ static int bind_rdev_to_array(struct md_rdev *rdev, struct mddev *mddev)
 	return 0;
 
  fail:
-	pr_warn("md: failed to register dev-%s for %s\n",
+	pr_warn("md: failed to register %s for %s\n",
 		b, mdname(mddev));
 	return err;
 }
