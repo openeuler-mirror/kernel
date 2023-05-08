@@ -122,5 +122,3 @@ void __irq_move_irq(struct irq_data *idata)
 	if (!masked)
 		idata->chip->irq_unmask(idata);
 }
-
-void __weak irq_force_complete_move(struct irq_desc *desc) { }
