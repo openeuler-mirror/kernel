@@ -23,12 +23,6 @@
 
 #include "internals.h"
 
-#ifdef CONFIG_GENERIC_PENDING_IRQ_FIX_KABI
-struct cpumask irq_pending_mask[IRQ_BITMAP_BITS] = {
-	[0 ... IRQ_BITMAP_BITS - 1] = { CPU_BITS_NONE }
-};
-#endif
-
 #ifdef CONFIG_IRQ_FORCED_THREADING
 __read_mostly bool force_irqthreads;
 EXPORT_SYMBOL_GPL(force_irqthreads);

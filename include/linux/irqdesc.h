@@ -77,8 +77,7 @@ struct irq_desc {
 #ifdef CONFIG_SMP
 	const struct cpumask	*affinity_hint;
 	struct irq_affinity_notify *affinity_notify;
-#if defined(CONFIG_GENERIC_PENDING_IRQ) && \
-	!defined(CONFIG_GENERIC_PENDING_IRQ_FIX_KABI)
+#ifdef CONFIG_GENERIC_PENDING_IRQ
 	cpumask_var_t		pending_mask;
 #endif
 #endif

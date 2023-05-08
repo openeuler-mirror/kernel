@@ -39,7 +39,7 @@ static void irq_debug_show_masks(struct seq_file *m, struct irq_desc *desc)
 	seq_printf(m, "effectiv: %*pbl\n", cpumask_pr_args(msk));
 #endif
 #ifdef CONFIG_GENERIC_PENDING_IRQ
-	msk = irq_desc_get_pending_mask(desc);
+	msk = desc->pending_mask;
 	seq_printf(m, "pending:  %*pbl\n", cpumask_pr_args(msk));
 #endif
 }

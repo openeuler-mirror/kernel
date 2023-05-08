@@ -54,7 +54,7 @@ static int show_irq_affinity(int type, struct seq_file *m)
 		mask = desc->irq_common_data.affinity;
 #ifdef CONFIG_GENERIC_PENDING_IRQ
 		if (irqd_is_setaffinity_pending(&desc->irq_data))
-			mask = irq_desc_get_pending_mask(desc);
+			mask = desc->pending_mask;
 #endif
 		break;
 	case EFFECTIVE:

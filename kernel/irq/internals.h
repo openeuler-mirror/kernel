@@ -410,7 +410,6 @@ static inline bool irq_move_pending(struct irq_data *data)
 {
 	return irqd_is_setaffinity_pending(data);
 }
-#ifndef CONFIG_GENERIC_PENDING_IRQ_FIX_KABI
 static inline void
 irq_copy_pending(struct irq_desc *desc, const struct cpumask *mask)
 {
@@ -425,24 +424,6 @@ static inline struct cpumask *irq_desc_get_pending_mask(struct irq_desc *desc)
 {
 	return desc->pending_mask;
 }
-#else
-extern struct cpumask irq_pending_mask[IRQ_BITMAP_BITS];
-
-static inline void
-irq_copy_pending(struct irq_desc *desc, const struct cpumask *mask)
-{
-	cpumask_copy(&irq_pending_mask[irq_desc_get_irq(desc)], mask);
-}
-static inline void
-irq_get_pending(struct cpumask *mask, struct irq_desc *desc)
-{
-	cpumask_copy(mask, &irq_pending_mask[irq_desc_get_irq(desc)]);
-}
-static inline struct cpumask *irq_desc_get_pending_mask(struct irq_desc *desc)
-{
-	return &irq_pending_mask[irq_desc_get_irq(desc)];
-}
-#endif
 static inline bool handle_enforce_irqctx(struct irq_data *data)
 {
 	return irqd_is_handle_enforce_irqctx(data);

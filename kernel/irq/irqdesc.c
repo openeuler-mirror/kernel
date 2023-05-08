@@ -66,8 +66,7 @@ static int alloc_masks(struct irq_desc *desc, int node)
 	}
 #endif
 
-#if defined(CONFIG_GENERIC_PENDING_IRQ) && \
-	!defined(CONFIG_GENERIC_PENDING_IRQ_FIX_KABI)
+#ifdef CONFIG_GENERIC_PENDING_IRQ
 	if (!zalloc_cpumask_var_node(&desc->pending_mask, GFP_KERNEL, node)) {
 #ifdef CONFIG_GENERIC_IRQ_EFFECTIVE_AFF_MASK
 		free_cpumask_var(desc->irq_common_data.effective_affinity);
@@ -87,7 +86,7 @@ static void desc_smp_init(struct irq_desc *desc, int node,
 	cpumask_copy(desc->irq_common_data.affinity, affinity);
 
 #ifdef CONFIG_GENERIC_PENDING_IRQ
-	cpumask_clear(irq_desc_get_pending_mask(desc));
+	cpumask_clear(desc->pending_mask);
 #endif
 #ifdef CONFIG_NUMA
 	desc->irq_common_data.node = node;
@@ -362,8 +361,7 @@ static void delete_irq_desc(unsigned int irq)
 #ifdef CONFIG_SMP
 static void free_masks(struct irq_desc *desc)
 {
-#if defined(CONFIG_GENERIC_PENDING_IRQ) && \
-	!defined(CONFIG_GENERIC_PENDING_IRQ_FIX_KABI)
+#ifdef CONFIG_GENERIC_PENDING_IRQ
 	free_cpumask_var(desc->pending_mask);
 #endif
 	free_cpumask_var(desc->irq_common_data.affinity);
