@@ -275,16 +275,14 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 	if (sectors == 0 && hi < bb->count) {
 		/* we might be able to combine lo and hi */
 		/* Note: 's' is at the end of 'lo' */
-		sector_t a = BB_OFFSET(p[hi]);
-		int lolen = BB_LEN(p[lo]);
-		int hilen = BB_LEN(p[hi]);
-		int newlen = lolen + hilen - (s - a);
+		sector_t a = BB_OFFSET(p[lo]);
+		int newlen = max((u64)s, BB_OFFSET(p[hi]) + BB_LEN(p[hi])) - a;
 
-		if (s >= a && newlen < BB_MAX_LEN) {
+		if (s >= BB_OFFSET(p[hi]) && newlen < BB_MAX_LEN) {
 			/* yes, we can combine them */
 			int ack = BB_ACK(p[lo]) && BB_ACK(p[hi]);
 
-			p[lo] = BB_MAKE(BB_OFFSET(p[lo]), newlen, ack);
+			p[lo] = BB_MAKE(a, newlen, ack);
 			memmove(p + hi, p + hi + 1,
 				(bb->count - hi - 1) * 8);
 			bb->count--;
