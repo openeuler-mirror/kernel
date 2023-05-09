@@ -1669,6 +1669,7 @@ static void uncore_pci_remove(struct pci_dev *pdev)
 	struct zhaoxin_uncore_box **boxes = pci_get_drvdata(pdev);
 	struct zhaoxin_uncore_box *box;
 	struct zhaoxin_uncore_pmu *pmu;
+	const char *name;
 	int subnode_id;
 	int i = 0;
 
@@ -1678,6 +1679,7 @@ static void uncore_pci_remove(struct pci_dev *pdev)
 again:
 	box = boxes[i];
 	pmu = box->pmu;
+	name = box->pmu->type->name;
 	if (WARN_ON_ONCE(subnode_id != box->subnode_id))
 		return;
 
@@ -1688,7 +1690,7 @@ again:
 	uncore_box_exit(box);
 	kfree(box);
 
-	if (!strcmp(box->pmu->type->name, "mc0")) {
+	if (!strcmp(name, "mc0")) {
 		i++;
 		goto again;
 	}
