@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2304.5.0
+%global hulkrelease 2305.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0199
+Release: %{hulkrelease}.0200
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,52 @@ fi
 %endif
 
 %changelog
+
+* Tue May 09 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2305.1.0.0200
+- ipv6: Fix an uninit variable access bug in __ip6_make_skb()
+- cgroup/cpuset: Wake up cpuset_attach_wq tasks in cpuset_cancel_attach()
+- verify_pefile: relax wrapper length check
+- udp6: fix potential access to stale information
+- mm/swap: fix swap_info_struct race between swapoff and get_swap_pages()
+- ftrace: Mark get_lock_parent_ip() __always_inline
+- perf/core: Fix the same task check in perf_event_set_output
+- net: don't let netpoll invoke NAPI if in xmit context
+- icmp: guard against too small mtu
+- sched_getaffinity: don't assume 'cpumask_size()' is fully initialized
+- dm stats: check for and propagate alloc_percpu failure
+- dm thin: fix deadlock when swapping to thin device
+- genirq: introduce handle_fasteoi_edge_irq for phytium
+- genirq: introduce handle_fasteoi_edge_irq flow handler
+- Revert "genirq: Remove irqd_irq_disabled in __irq_move_irq"
+- Revert "config: enbale irq pending config for openeuler"
+- Revert "genirq: introduce CONFIG_GENERIC_PENDING_IRQ_FIX_KABI"
+- Revert "irqchip/gic-v3-its: introduce CONFIG_GENERIC_PENDING_IRQ"
+- scsi: dpt_i2o: Remove obsolete driver
+- md: extend disks_mutex coverage
+- md: use msleep() in md_notify_reboot()
+- md: fix double free of mddev->private in autorun_array()
+- block/badblocks: fix badblocks loss when badblocks combine
+- block/badblocks: fix the bug of reverse order
+- block: Only set bb->changed when badblocks changes
+- md: fix sysfs duplicate file while adding rdev
+- md: replace invalid function flush_rdev_wq() with flush_workqueue()
+- bonding: Fix memory leak when changing bond type to Ethernet
+- dm ioctl: fix nested locking in table_clear() to remove deadlock concern
+- timers/nohz: Last resort update jiffies on nohz_full IRQ entry
+- bonding: restore bond's IFF_SLAVE flag if a non-eth dev enslave fails
+- bonding: restore IFF_MASTER/SLAVE flags on bond enslave ether type change
+- net: qcom/emac: Fix use after free bug in emac_remove due to race condition
+- ovl: get_acl: Fix null pointer dereference at realinode in rcu-walk mode
+- net: sched: sch_qfq: prevent slab-out-of-bounds in qfq_activate_agg
+- ext4: only update i_reserved_data_blocks on successful block allocation
+- mm: mem_reliable: Use zone_page_state to count free reliable pages
+- writeback, cgroup: fix null-ptr-deref write in bdi_split_work_to_wbs
+- sctp: leave the err path free in sctp_stream_init to sctp_stream_free
+- RDMA/core: Refactor rdma_bind_addr
+- Revert "RDMA/cma: Simplify rdma_resolve_addr() error flow"
+- fix kabi broken due to import new inode operation get_inode_acl
+- ovl: enable RCU'd ->get_acl()
+- vfs: add rcu argument to ->get_acl() callback
 
 * Wed Apr 26 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2304.5.0.0199
 - RDMA/hns: Add check for user-configured max_inline_data value
