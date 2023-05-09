@@ -233,11 +233,11 @@ struct hifc_card_func_info {
 #ifndef MAX_CARD_NUM
 #define MAX_CARD_NUM (64)
 #endif
-extern void *g_card_node_array[MAX_CARD_NUM];
-extern void *g_card_vir_addr[MAX_CARD_NUM];
-extern u64 g_card_phy_addr[MAX_CARD_NUM];
-extern struct mutex	g_addr_lock;
-extern int card_id;
+extern void *g_hifc_card_node_array[MAX_CARD_NUM];
+extern void *g_hifc_card_vir_addr[MAX_CARD_NUM];
+extern u64 g_hifc_card_phy_addr[MAX_CARD_NUM];
+extern struct mutex	g_hifc_addr_lock;
+extern int g_hifc_card_id;
 
 struct hifc_nic_loop_mode {
 	u32 loop_mode;
@@ -299,8 +299,8 @@ enum sm_cmd_type {
 	SM_CTR_RD64
 };
 
-int nictool_k_init(void);
-void nictool_k_uninit(void);
+int hifc_tool_k_init(void);
+void hifc_tool_k_uninit(void);
 
 int send_to_hw_driver(void *hwdev, struct msg_module *nt_msg,
 		      void *buf_in, u32 in_size, void *buf_out, u32 *out_size);
@@ -314,7 +314,7 @@ int send_to_up(void *hwdev, struct msg_module *nt_msg, void *buf_in,
 int send_to_ucode(void *hwdev, struct msg_module *nt_msg, void *buf_in,
 		  u32 in_size, void *buf_out, u32 *out_size);
 
-void get_fc_devname(char *devname);
+void hifc_get_fc_devname(char *devname);
 void *hifc_get_hwdev_by_ifname(char *ifname);
 enum hifc_init_state hifc_get_init_state_by_ifname(char *ifname);
 void hifc_get_all_chip_id(void *id_info);

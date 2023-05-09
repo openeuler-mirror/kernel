@@ -406,7 +406,7 @@ struct hifc_mgmt_status_log {
 	const char *log;
 };
 
-struct hifc_mgmt_status_log mgmt_status_log[] = {
+static struct hifc_mgmt_status_log mgmt_status_log[] = {
 	{HIFC_MGMT_STATUS_ERR_PARAM, "Invalid parameter"},
 	{HIFC_MGMT_STATUS_ERR_FAILED, "Operation failed"},
 	{HIFC_MGMT_STATUS_ERR_PORT, "Invalid port"},
@@ -2139,7 +2139,7 @@ int hifc_func_tmr_bitmap_set(void *hwdev, bool en)
 	return 0;
 }
 
-int ppf_ht_gpa_set(struct hifc_hwdev *hwdev, struct hifc_page_addr *pg0,
+static int ppf_ht_gpa_set(struct hifc_hwdev *hwdev, struct hifc_page_addr *pg0,
 		   struct hifc_page_addr *pg1)
 {
 	struct comm_info_ht_gpa_set ht_gpa_set = {0};
@@ -3211,35 +3211,35 @@ static void pf_hilink_event_handler(void *hwdev, void *pri_handle, u8 cmd,
 }
 
 /* pf fault report event */
-void pf_fault_event_handler(void *hwdev, void *buf_in, u16 in_size,
+static void pf_fault_event_handler(void *hwdev, void *buf_in, u16 in_size,
 			    void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HIFC_MOD_COMM, HIFC_MGMT_CMD_FAULT_REPORT,
 		       buf_in, in_size, buf_out, out_size);
 }
 
-void mgmt_watchdog_event_handler(void *hwdev, void *buf_in, u16 in_size,
+static void mgmt_watchdog_event_handler(void *hwdev, void *buf_in, u16 in_size,
 				 void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HIFC_MOD_COMM, HIFC_MGMT_CMD_WATCHDOG_INFO,
 		       buf_in, in_size, buf_out, out_size);
 }
 
-void mgmt_fmw_act_event_handler(void *hwdev, void *buf_in, u16 in_size,
+static void mgmt_fmw_act_event_handler(void *hwdev, void *buf_in, u16 in_size,
 				void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HIFC_MOD_COMM, HIFC_MGMT_CMD_FMW_ACT_NTC,
 		       buf_in, in_size, buf_out, out_size);
 }
 
-void mgmt_pcie_dfx_event_handler(void *hwdev, void *buf_in, u16 in_size,
+static void mgmt_pcie_dfx_event_handler(void *hwdev, void *buf_in, u16 in_size,
 				 void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HIFC_MOD_COMM, HIFC_MGMT_CMD_PCIE_DFX_NTC,
 		       buf_in, in_size, buf_out, out_size);
 }
 
-void mgmt_get_mctp_event_handler(void *hwdev, void *buf_in, u16 in_size,
+static void mgmt_get_mctp_event_handler(void *hwdev, void *buf_in, u16 in_size,
 				 void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HIFC_MOD_COMM, HIFC_MGMT_CMD_GET_HOST_INFO,

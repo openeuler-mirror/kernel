@@ -25,7 +25,7 @@
 #include "hifc_mgmt.h"
 #include "hifc_cfg.h"
 
-uint intr_mode;
+static uint intr_mode;
 
 int hifc_sync_time(void *hwdev, u64 time)
 {
@@ -389,7 +389,7 @@ void hifc_free_irq(void *hwdev, enum hifc_service_type type, u32 irq_id)
 	mutex_unlock(&irq_info->irq_mutex);
 }
 
-int init_cfg_mgmt(struct hifc_hwdev *dev)
+static int init_cfg_mgmt(struct hifc_hwdev *dev)
 {
 	int err;
 	struct cfg_mgmt_info *cfg_mgmt;
@@ -439,7 +439,7 @@ free_mgmt_mem:
 	return err;
 }
 
-void free_cfg_mgmt(struct hifc_hwdev *dev)
+static void free_cfg_mgmt(struct hifc_hwdev *dev)
 {
 	struct cfg_mgmt_info *cfg_mgmt = dev->cfg_mgmt;
 
@@ -472,7 +472,7 @@ void free_cfg_mgmt(struct hifc_hwdev *dev)
 	kfree(cfg_mgmt);
 }
 
-int init_capability(struct hifc_hwdev *dev)
+static int init_capability(struct hifc_hwdev *dev)
 {
 	int err;
 	enum func_type type = HIFC_FUNC_TYPE(dev);
@@ -497,7 +497,7 @@ int init_capability(struct hifc_hwdev *dev)
 	return 0;
 }
 
-void free_capability(struct hifc_hwdev *dev)
+static void free_capability(struct hifc_hwdev *dev)
 {
 	sdk_info(dev->dev_hdl, "Free capability success");
 }

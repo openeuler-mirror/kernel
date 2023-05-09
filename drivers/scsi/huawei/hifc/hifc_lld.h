@@ -17,7 +17,7 @@ struct hifc_lld_dev {
 	void *hwdev;
 };
 
-extern struct list_head g_hinic_chip_list;
+extern struct list_head g_hifc_chip_list;
 
 /* Structure pcidev private*/
 struct hifc_pcidev {

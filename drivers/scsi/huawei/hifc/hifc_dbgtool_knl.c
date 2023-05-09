@@ -43,11 +43,11 @@ struct ffm_intr_info {
 #define HIFC_SELF_CMD_UP2PF_FFM         0x26
 
 void *g_card_node_array[MAX_CARD_NUM] = {0};
-void *g_card_vir_addr[MAX_CARD_NUM] = {0};
-u64 g_card_phy_addr[MAX_CARD_NUM] = {0};
-/* lock for g_card_vir_addr */
-struct mutex	g_addr_lock;
-int card_id;
+void *g_hifc_card_vir_addr[MAX_CARD_NUM] = {0};
+u64 g_hifc_card_phy_addr[MAX_CARD_NUM] = {0};
+/* lock for g_hifc_card_vir_addr */
+struct mutex	g_hifc_addr_lock;
+int g_hifc_card_id;
 
 /* dbgtool character device name, class name, dev path */
 #define CHR_DEV_DBGTOOL "hifc_dbgtool_chr_dev"
@@ -59,15 +59,15 @@ struct dbgtool_k_glb_info {
 	struct ffm_record_info *ffm;
 };
 
-dev_t dbgtool_dev_id; /* device id */
-struct cdev dbgtool_chr_dev; /* struct of char device */
+static dev_t dbgtool_dev_id; /* device id */
+static struct cdev dbgtool_chr_dev; /* struct of char device */
 
 /*lint -save -e104 -e808*/
-struct class *dbgtool_d_class; /* struct of char class */
+static struct class *dbgtool_d_class; /* struct of char class */
 /*lint -restore*/
 
-int g_dbgtool_init_flag;
-int g_dbgtool_ref_cnt;
+static int g_dbgtool_init_flag;
+static int g_dbgtool_ref_cnt;
 
 static int dbgtool_knl_open(struct inode *pnode,
 			    struct file *pfile)
@@ -102,7 +102,7 @@ static bool is_valid_phy_addr(u64 offset)
 	int i;
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		if (offset == g_card_phy_addr[i])
+		if (offset == g_hifc_card_phy_addr[i])
 			return true;
 	}
 
@@ -127,9 +127,9 @@ int hifc_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	/* old version of tool set vma->vm_pgoff to 0 */
-	phy_addr = offset ? offset : g_card_phy_addr[card_id];
+	phy_addr = offset ? offset : g_hifc_card_phy_addr[g_hifc_card_id];
 	if (!phy_addr) {
-		pr_err("Card_id = %d physical address is 0\n", card_id);
+		pr_err("Card_id = %d physical address is 0\n", g_hifc_card_id);
 		return -EAGAIN;
 	}
 
@@ -147,7 +147,7 @@ int hifc_mem_mmap(struct file *filp, struct vm_area_struct *vma)
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
+static long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
 			      void **g_func_handle_array)
 {
 	long ret = 0;
@@ -231,7 +231,7 @@ alloc_ack_mem_fail:
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
+static long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
 			       void **g_func_handle_array)
 {
 	long ret = 0;
@@ -298,7 +298,7 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
 	for (func_idx = 0; func_idx < 16; func_idx++) {
 		hwdev = (struct hifc_hwdev *)g_func_handle_array[func_idx];
 
-		dev_info[func_idx].phy_addr = g_card_phy_addr[card_idx];
+		dev_info[func_idx].phy_addr = g_hifc_card_phy_addr[card_idx];
 
 		if (!hwdev) {
 			dev_info[func_idx].bar0_size = 0;
@@ -328,47 +328,48 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
+static long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
 				 void **g_func_handle_array)
 {
 	struct pf_dev_info dev_info[16] = { {0} };
 	unsigned char *tmp;
 	int i;
 
-	mutex_lock(&g_addr_lock);
-	if (!g_card_vir_addr[card_id]) {
-		g_card_vir_addr[card_id] =
+	mutex_lock(&g_hifc_addr_lock);
+	if (!g_hifc_card_vir_addr[g_hifc_card_id]) {
+		g_hifc_card_vir_addr[g_hifc_card_id] =
 			(void *)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
-		if (!g_card_vir_addr[card_id]) {
+		if (!g_hifc_card_vir_addr[g_hifc_card_id]) {
 			pr_err("Alloc dbgtool api chain fail!\n");
-			mutex_unlock(&g_addr_lock);
+			mutex_unlock(&g_hifc_addr_lock);
 			return -EFAULT;
 		}
 
-		memset(g_card_vir_addr[card_id], 0,
+		memset(g_hifc_card_vir_addr[g_hifc_card_id], 0,
 		       PAGE_SIZE * (1 << DBGTOOL_PAGE_ORDER));
 
-		g_card_phy_addr[card_id] =
-			virt_to_phys(g_card_vir_addr[card_id]);
-		if (!g_card_phy_addr[card_id]) {
-			pr_err("phy addr for card %d is 0\n", card_id);
-			free_pages((unsigned long)g_card_vir_addr[card_id],
-				   DBGTOOL_PAGE_ORDER);
-			g_card_vir_addr[card_id] = NULL;
-			mutex_unlock(&g_addr_lock);
+		g_hifc_card_phy_addr[g_hifc_card_id] =
+			virt_to_phys(g_hifc_card_vir_addr[g_hifc_card_id]);
+		if (!g_hifc_card_phy_addr[g_hifc_card_id]) {
+			pr_err("phy addr for card %d is 0\n", g_hifc_card_id);
+			free_pages((unsigned long)g_hifc_card_vir_addr
+				   [g_hifc_card_id], DBGTOOL_PAGE_ORDER);
+			g_hifc_card_vir_addr[g_hifc_card_id] = NULL;
+			mutex_unlock(&g_hifc_addr_lock);
 			return -EFAULT;
 		}
 
-		tmp = g_card_vir_addr[card_id];
+		tmp = g_hifc_card_vir_addr[g_hifc_card_id];
 		for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 			SetPageReserved(virt_to_page(tmp));
 			tmp += PAGE_SIZE;
 		}
 	}
-	mutex_unlock(&g_addr_lock);
+	mutex_unlock(&g_hifc_addr_lock);
 
-	chipif_get_all_pf_dev_info(dev_info, card_id, g_func_handle_array);
+	chipif_get_all_pf_dev_info(dev_info, g_hifc_card_id,
+				   g_func_handle_array);
 
 	/* Copy the dev_info to user mode */
 	if (copy_to_user(para->param.dev_info, dev_info,
@@ -386,7 +387,7 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
  * @dbgtool_info: the dbgtool info
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
+static long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
 			     struct dbgtool_k_glb_info *dbgtool_info)
 {
 	/* Copy the ffm_info to user mode */
@@ -404,7 +405,7 @@ long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
  * @para: unused
  * @dbgtool_info: the dbgtool info
  */
-void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
+static void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
 			      struct dbgtool_k_glb_info *dbgtool_info)
 {
 	dbgtool_info->ffm->ffm_num = 0;
@@ -416,7 +417,7 @@ void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
+static long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
 			   void **g_func_handle_array)
 {
 	long ret = 0;
@@ -500,29 +501,29 @@ alloc_buf_out_mem_fail:
 	return ret;
 }
 
-long dbgtool_knl_free_mem(int id)
+long hifc_dbgtool_knl_free_mem(int id)
 {
 	unsigned char *tmp;
 	int i;
 
-	mutex_lock(&g_addr_lock);
+	mutex_lock(&g_hifc_addr_lock);
 
-	if (!g_card_vir_addr[id]) {
-		mutex_unlock(&g_addr_lock);
+	if (!g_hifc_card_vir_addr[id]) {
+		mutex_unlock(&g_hifc_addr_lock);
 		return 0;
 	}
 
-	tmp = g_card_vir_addr[id];
+	tmp = g_hifc_card_vir_addr[id];
 	for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 		ClearPageReserved(virt_to_page(tmp));
 		tmp += PAGE_SIZE;
 	}
 
-	free_pages((unsigned long)g_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
-	g_card_vir_addr[id] = NULL;
-	g_card_phy_addr[id] = 0;
+	free_pages((unsigned long)g_hifc_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
+	g_hifc_card_vir_addr[id] = NULL;
+	g_hifc_card_phy_addr[id] = 0;
 
-	mutex_unlock(&g_addr_lock);
+	mutex_unlock(&g_hifc_addr_lock);
 
 	return 0;
 }
@@ -558,7 +559,7 @@ static long process_dbgtool_cmd(struct dbgtool_param *param, unsigned int cmd,
 	unsigned int real_cmd;
 	long ret = 0;
 
-	card_id = idx;
+	g_hifc_card_id = idx;
 	card_info = (struct card_node *)g_card_node_array[idx];
 	dbgtool_info = (struct dbgtool_k_glb_info *)card_info->dbgtool_info;
 
@@ -590,7 +591,7 @@ static long process_dbgtool_cmd(struct dbgtool_param *param, unsigned int cmd,
 					    card_info->func_handle_array);
 		break;
 	case DBGTOOL_CMD_FREE_MEM:
-		ret = dbgtool_knl_free_mem(idx);
+		ret = hifc_dbgtool_knl_free_mem(idx);
 		break;
 	default:
 		pr_err("Dbgtool cmd(x%x) not support now\n", real_cmd);
@@ -609,7 +610,7 @@ static long process_dbgtool_cmd(struct dbgtool_param *param, unsigned int cmd,
  * @arg: user space
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_unlocked_ioctl(struct file *pfile,
+static long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 				unsigned int cmd,
 				unsigned long arg)
 {
@@ -669,7 +670,7 @@ static struct card_node *get_card_node_by_hwdev(const void *handle)
  * @buf_out: the pointer to outputput buffer
  * @out_size: output buffer size
  */
-void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
+static void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 			 void *buf_out, u16 *out_size)
 {
 	struct dbgtool_k_glb_info *dbgtool_info;
@@ -793,12 +794,12 @@ cdev_add_fail:
 }
 
 /**
- * dbgtool_knl_init - dbgtool character device init
+ * hifc_dbgtool_knl_init - dbgtool character device init
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
  * Return: 0 - success, negative - failure
  */
-int dbgtool_knl_init(void *vhwdev, void *chip_node)
+int hifc_dbgtool_knl_init(void *vhwdev, void *chip_node)
 {
 	struct card_node *chip_info = (struct card_node *)chip_node;
 	struct dbgtool_k_glb_info *dbgtool_info;
@@ -868,7 +869,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 
 	g_dbgtool_init_flag = 1;
 	g_dbgtool_ref_cnt = 1;
-	mutex_init(&g_addr_lock);
+	mutex_init(&g_hifc_addr_lock);
 
 	return 0;
 
@@ -889,11 +890,11 @@ dbgtool_info_fail:
 }
 
 /**
- * dbgtool_knl_deinit - dbgtool character device deinit
+ * hifc_dbgtool_knl_deinit - dbgtool character device deinit
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
  */
-void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
+void hifc_dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 {
 	struct dbgtool_k_glb_info *dbgtool_info;
 	struct card_node *chip_info = (struct card_node *)chip_node;
@@ -929,7 +930,7 @@ void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 	kfree(dbgtool_info);
 	chip_info->dbgtool_info = NULL;
 
-	(void)dbgtool_knl_free_mem(id);
+	(void)hifc_dbgtool_knl_free_mem(id);
 
 	if (g_dbgtool_init_flag) {
 		if ((--g_dbgtool_ref_cnt))
