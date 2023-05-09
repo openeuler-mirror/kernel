@@ -286,6 +286,10 @@ static int sock_map_link(struct bpf_map *map, struct sk_psock_progs *progs,
 
 	if (msg_parser)
 		psock_set_prog(&psock->progs.msg_parser, msg_parser);
+	if (skb_parser)
+		psock_set_prog(&psock->progs.skb_parser, skb_parser);
+	if (skb_verdict)
+		psock_set_prog(&psock->progs.skb_verdict, skb_verdict);
 
 	ret = sock_map_init_proto(sk, psock);
 	if (ret < 0)
@@ -296,11 +300,8 @@ static int sock_map_link(struct bpf_map *map, struct sk_psock_progs *progs,
 		ret = sk_psock_init_strp(sk, psock);
 		if (ret)
 			goto out_unlock_drop;
-		psock_set_prog(&psock->progs.skb_verdict, skb_verdict);
-		psock_set_prog(&psock->progs.skb_parser, skb_parser);
 		sk_psock_start_strp(sk, psock);
 	} else if (!skb_parser && skb_verdict && !psock->parser.enabled) {
-		psock_set_prog(&psock->progs.skb_verdict, skb_verdict);
 		sk_psock_start_verdict(sk,psock);
 	}
 	write_unlock_bh(&sk->sk_callback_lock);
