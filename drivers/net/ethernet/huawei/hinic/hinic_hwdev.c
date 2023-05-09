@@ -610,7 +610,7 @@ struct hinic_mgmt_status_log {
 	const char *log;
 };
 
-struct hinic_mgmt_status_log mgmt_status_log[] = {
+static struct hinic_mgmt_status_log mgmt_status_log[] = {
 	{HINIC_MGMT_STATUS_ERR_PARAM, "Invalid parameter"},
 	{HINIC_MGMT_STATUS_ERR_FAILED, "Operation failed"},
 	{HINIC_MGMT_STATUS_ERR_PORT, "Invalid port"},
@@ -2700,8 +2700,9 @@ int hinic_func_tmr_bitmap_set(void *hwdev, bool en)
 }
 EXPORT_SYMBOL(hinic_func_tmr_bitmap_set);
 
-int ppf_ht_gpa_set(struct hinic_hwdev *hwdev, struct hinic_page_addr *pg0,
-		   struct hinic_page_addr *pg1)
+static int ppf_ht_gpa_set(struct hinic_hwdev *hwdev,
+			  struct hinic_page_addr *pg0,
+			  struct hinic_page_addr *pg1)
 {
 	struct comm_info_ht_gpa_set ht_gpa_set = {0};
 	u16 out_size = sizeof(ht_gpa_set);
@@ -3903,9 +3904,10 @@ static void hinic_mctp_get_host_info_event_handler(struct hinic_hwdev *hwdev,
 	mctp_out->actual_len = host_info->data_len;
 }
 
-char *__hw_to_char_fec[HILINK_FEC_MAX_TYPE] = {"RS-FEC", "BASE-FEC", "NO-FEC"};
+static char *__hw_to_char_fec[HILINK_FEC_MAX_TYPE] = {"RS-FEC", "BASE-FEC",
+	"NO-FEC"};
 
-char *__hw_to_char_port_type[LINK_PORT_MAX_TYPE] = {
+static char *__hw_to_char_port_type[LINK_PORT_MAX_TYPE] = {
 	"Unknown", "Fibre", "Electric", "Direct Attach Copper", "AOC",
 	"Back plane", "BaseT"
 };
@@ -4067,9 +4069,9 @@ static char *hilink_info_report_type[HILINK_EVENT_MAX_TYPE] = {
 	"", "link up", "link down", "cable plugged"
 };
 
-void print_hilink_info(struct hinic_hwdev *hwdev,
-		       enum hilink_info_print_event type,
-		       struct hinic_link_info *info)
+static void print_hilink_info(struct hinic_hwdev *hwdev,
+			      enum hilink_info_print_event type,
+			      struct hinic_link_info *info)
 {
 	__print_cable_info(hwdev, info);
 
@@ -4318,37 +4320,37 @@ static void pf_hilink_event_handler(void *hwdev, void *pri_handle, u8 cmd,
 }
 
 /* pf fault report event */
-void pf_fault_event_handler(void *hwdev,
-			    void *buf_in, u16 in_size,
-		   void *buf_out, u16 *out_size)
+static void pf_fault_event_handler(void *hwdev,
+				   void *buf_in, u16 in_size,
+				   void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HINIC_EVENT_MGMT_FAULT, buf_in,
 		       in_size, buf_out, out_size);
 }
 
-void mgmt_watchdog_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				 void *buf_out, u16 *out_size)
+static void mgmt_watchdog_event_handler(void *hwdev, void *buf_in, u16 in_size,
+					void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HINIC_EVENT_MGMT_WATCHDOG, buf_in,
 		       in_size, buf_out, out_size);
 }
 
-void mgmt_fmw_act_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				void *buf_out, u16 *out_size)
+static void mgmt_fmw_act_event_handler(void *hwdev, void *buf_in, u16 in_size,
+				       void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HINIC_EVENT_MGMT_FMW_ACT_NTC, buf_in,
 		       in_size, buf_out, out_size);
 }
 
-void mgmt_pcie_dfx_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				 void *buf_out, u16 *out_size)
+static void mgmt_pcie_dfx_event_handler(void *hwdev, void *buf_in, u16 in_size,
+					void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HINIC_EVENT_MGMT_PCIE_DFX, buf_in,
 		       in_size, buf_out, out_size);
 }
 
-void mgmt_get_mctp_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				 void *buf_out, u16 *out_size)
+static void mgmt_get_mctp_event_handler(void *hwdev, void *buf_in, u16 in_size,
+					void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HINIC_EVENT_MCTP_HOST_INFO, buf_in,
 		       in_size, buf_out, out_size);
