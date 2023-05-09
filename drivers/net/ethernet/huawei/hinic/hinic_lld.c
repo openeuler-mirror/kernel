@@ -146,7 +146,7 @@ struct hinic_lld_lock {
 	atomic_t		dev_ref_cnt;
 };
 
-struct hinic_lld_lock g_lld_lock;
+static struct hinic_lld_lock g_lld_lock;
 
 #define WAIT_LLD_DEV_HOLD_TIMEOUT	(10 * 60 * 1000)	/* 10minutes */
 #define WAIT_LLD_DEV_NODE_CHANGED	(10 * 60 * 1000)	/* 10minutes */
@@ -1383,7 +1383,7 @@ int hinic_get_pf_id(void *hwdev, u32 port_id, u32 *pf_id, u32 *isvalid)
 	return 0;
 }
 
-void get_fc_devname(char *devname)
+void hinic_get_fc_devname(char *devname)
 {
 	struct card_node *chip_node;
 	struct hinic_pcidev *dev;
@@ -2441,7 +2441,7 @@ static int hinic_func_init(struct pci_dev *pdev,
 
 	/* dbgtool init */
 	lld_lock_chip_node();
-	err = dbgtool_knl_init(pci_adapter->hwdev, pci_adapter->chip_node);
+	err = hinic_dbgtool_knl_init(pci_adapter->hwdev, pci_adapter->chip_node);
 	if (err) {
 		lld_unlock_chip_node();
 		sdk_err(&pdev->dev, "Failed to initialize dbgtool\n");
@@ -2500,7 +2500,7 @@ static void hinic_func_deinit(struct pci_dev *pdev)
 
 	if (pci_adapter->init_state >= HINIC_INIT_STATE_DBGTOOL_INITED) {
 		lld_lock_chip_node();
-		dbgtool_knl_deinit(pci_adapter->hwdev, pci_adapter->chip_node);
+		hinic_dbgtool_knl_deinit(pci_adapter->hwdev, pci_adapter->chip_node);
 		lld_unlock_chip_node();
 		hinic_destroy_syncfw_timer(pci_adapter);
 		hinic_event_unregister(pci_adapter->hwdev);
@@ -2603,7 +2603,7 @@ static void hinic_remove(struct pci_dev *pdev)
 		lld_lock_chip_node();
 		if (pci_adapter->init_state < HINIC_INIT_STATE_HW_IF_INITED)
 			list_del(&pci_adapter->node);
-		nictool_k_uninit();
+		hinic_tool_k_uninit();
 		free_chip_node(pci_adapter);
 		lld_unlock_chip_node();
 		unmapping_bar(pci_adapter);
@@ -2720,7 +2720,7 @@ static int hinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	sscanf(pci_adapter->chip_node->chip_name, HINIC_CHIP_NAME "%d",
 	       &pci_adapter->card_id);
 
-	err = nictool_k_init();
+	err = hinic_tool_k_init();
 	if (err) {
 		sdk_warn(&pdev->dev, "Failed to init nictool");
 		goto init_nictool_err;

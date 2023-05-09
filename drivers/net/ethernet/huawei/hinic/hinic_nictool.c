@@ -1306,40 +1306,40 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 	unsigned char *tmp;
 	int i;
 
-	mutex_lock(&g_addr_lock);
-	card_id = card_idx;
-	if (!g_card_vir_addr[card_idx]) {
-		g_card_vir_addr[card_idx] =
+	mutex_lock(&g_hinic_addr_lock);
+	g_hinic_card_id = card_idx;
+	if (!g_hinic_card_vir_addr[card_idx]) {
+		g_hinic_card_vir_addr[card_idx] =
 			(void *)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
-		if (!g_card_vir_addr[card_idx]) {
+		if (!g_hinic_card_vir_addr[card_idx]) {
 			pr_err("Alloc api chain memory fail for card %d\n",
 			       card_idx);
-			mutex_unlock(&g_addr_lock);
+			mutex_unlock(&g_hinic_addr_lock);
 			return -EFAULT;
 		}
 
-		memset(g_card_vir_addr[card_idx], 0,
+		memset(g_hinic_card_vir_addr[card_idx], 0,
 		       PAGE_SIZE * (1 << DBGTOOL_PAGE_ORDER));
 
-		g_card_phy_addr[card_idx] =
-			virt_to_phys(g_card_vir_addr[card_idx]);
-		if (!g_card_phy_addr[card_idx]) {
+		g_hinic_card_phy_addr[card_idx] =
+			virt_to_phys(g_hinic_card_vir_addr[card_idx]);
+		if (!g_hinic_card_phy_addr[card_idx]) {
 			pr_err("phy addr for card %d is 0\n", card_idx);
-			free_pages((unsigned long)g_card_vir_addr[card_idx],
+			free_pages((unsigned long)g_hinic_card_vir_addr[card_idx],
 				   DBGTOOL_PAGE_ORDER);
-			g_card_vir_addr[card_idx] = NULL;
-			mutex_unlock(&g_addr_lock);
+			g_hinic_card_vir_addr[card_idx] = NULL;
+			mutex_unlock(&g_hinic_addr_lock);
 			return -EFAULT;
 		}
 
-		tmp = g_card_vir_addr[card_idx];
+		tmp = g_hinic_card_vir_addr[card_idx];
 		for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 			SetPageReserved(virt_to_page(tmp));
 			tmp += PAGE_SIZE;
 		}
 	}
-	mutex_unlock(&g_addr_lock);
+	mutex_unlock(&g_hinic_addr_lock);
 
 	return 0;
 }
@@ -1360,7 +1360,7 @@ static int get_pf_dev_info(char *dev_name, struct msg_module *nt_msg)
 	}
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		card_info = (struct card_node *)g_card_node_array[i];
+		card_info = (struct card_node *)g_hinic_card_node_array[i];
 		if (!card_info)
 			continue;
 		if (!strncmp(dev_name, card_info->chip_name, IFNAMSIZ))
@@ -1379,8 +1379,8 @@ static int get_pf_dev_info(char *dev_name, struct msg_module *nt_msg)
 		return -EFAULT;
 	}
 
-	chipif_get_all_pf_dev_info(dev_info, i,
-				   card_info->func_handle_array);
+	hinic_chipif_get_all_pf_dev_info(dev_info, i,
+					 card_info->func_handle_array);
 
 	/* Copy the dev_info to user mode */
 	if (copy_to_user(nt_msg->out_buf, dev_info, sizeof(dev_info))) {
@@ -1397,7 +1397,7 @@ static int knl_free_mem(char *dev_name, struct msg_module *nt_msg)
 	int i;
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		card_info = (struct card_node *)g_card_node_array[i];
+		card_info = (struct card_node *)g_hinic_card_node_array[i];
 		if (!card_info)
 			continue;
 		if (!strncmp(dev_name, card_info->chip_name, IFNAMSIZ))
@@ -1409,7 +1409,7 @@ static int knl_free_mem(char *dev_name, struct msg_module *nt_msg)
 		return -EFAULT;
 	}
 
-	dbgtool_knl_free_mem(i);
+	hinic_dbgtool_knl_free_mem(i);
 
 	return 0;
 }
@@ -1462,7 +1462,7 @@ static int get_card_func_info(char *dev_name, struct msg_module *nt_msg)
 		return -EFAULT;
 	}
 
-	card_func_info.usr_api_phy_addr = g_card_phy_addr[id];
+	card_func_info.usr_api_phy_addr = g_hinic_card_phy_addr[id];
 
 	/* Copy the dev_info to user mode */
 	if (copy_to_user(nt_msg->out_buf, &card_func_info,
@@ -1883,7 +1883,7 @@ struct sm_module_handle {
 	sm_module		sm_func;
 };
 
-struct sm_module_handle sm_module_cmd_handle[] = {
+static struct sm_module_handle sm_module_cmd_handle[] = {
 	{SM_CTR_RD32,		sm_rd32},
 	{SM_CTR_RD64_PAIR,	sm_rd64_pair},
 	{SM_CTR_RD64,		sm_rd64}
@@ -2160,8 +2160,8 @@ static int get_service_drv_version(void *hwdev, struct msg_module *nt_msg,
 	return ret;
 }
 
-int send_to_service_driver(struct msg_module *nt_msg, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size)
+static int send_to_service_driver(struct msg_module *nt_msg, void *buf_in,
+				  u32 in_size, void *buf_out, u32 *out_size)
 {
 	enum hinic_service_type type;
 	void *uld_dev;
@@ -2311,7 +2311,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile,
 
 	if (cmd_raw == HINICADM_FC_DRIVER &&
 	    nt_msg.msg_formate == GET_CHIP_ID)
-		get_fc_devname(nt_msg.device_name);
+		hinic_get_fc_devname(nt_msg.device_name);
 
 	if (!nictool_k_is_cmd_support(cmd_raw, nt_msg.device_name,
 				      nt_msg.up_cmd.up_db.up_api_type)) {
@@ -2388,7 +2388,7 @@ static const struct file_operations fifo_operations = {
 	.mmap = hinic_mem_mmap,
 };
 
-int if_nictool_exist(void)
+static int if_nictool_exist(void)
 {
 	struct file *fp = NULL;
 	int exist = 0;
@@ -2405,9 +2405,9 @@ int if_nictool_exist(void)
 }
 
 /**
- * nictool_k_init - initialize the hw interface
+ * hinic_tool_k_init - initialize the hw interface
  */
-int nictool_k_init(void)
+int hinic_tool_k_init(void)
 {
 	int ret;
 	struct device *pdevice;
@@ -2480,7 +2480,7 @@ class_create_err:
 	return ret;
 }
 
-void nictool_k_uninit(void)
+void hinic_tool_k_uninit(void)
 {
 	if (g_nictool_init_flag) {
 		if ((--g_nictool_ref_cnt))

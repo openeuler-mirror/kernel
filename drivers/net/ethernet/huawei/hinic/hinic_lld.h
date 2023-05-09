@@ -86,7 +86,7 @@ int hinic_get_chip_cos_up_map(struct pci_dev *pdev, bool *is_setted,
 void hinic_get_all_chip_id(void *card_id);
 void hinic_get_card_info(void *hwdev, void *bufin);
 int hinic_get_device_id(void *hwdev, u16 *dev_id);
-void get_fc_devname(char *devname);
+void hinic_get_fc_devname(char *devname);
 int hinic_get_pf_id(void *hwdev, u32 port_id, u32 *pf_id, u32 *isvalid);
 
 void hinic_tool_cnt_inc(void);
