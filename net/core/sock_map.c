@@ -145,6 +145,8 @@ static void sock_map_add_link(struct sk_psock *psock,
 	spin_unlock_bh(&psock->link_lock);
 }
 
+static int sock_map_init_proto(struct sock *sk, struct sk_psock *psock);
+
 static void sock_map_del_link(struct sock *sk,
 			      struct sk_psock *psock, void *link_raw)
 {
@@ -170,8 +172,10 @@ static void sock_map_del_link(struct sock *sk,
 		write_lock_bh(&sk->sk_callback_lock);
 		if (strp_stop)
 			sk_psock_stop_strp(sk, psock);
-		else
+		if (verdict_stop)
 			sk_psock_stop_verdict(sk, psock);
+
+		sock_map_init_proto(sk, psock);
 		write_unlock_bh(&sk->sk_callback_lock);
 	}
 }
