@@ -5420,14 +5420,6 @@ L:	linux-kernel@vger.kernel.org
 S:	Maintained
 F:	drivers/staging/fsl-dpaa2/ethsw
 
-DPT_I2O SCSI RAID DRIVER
-M:	Adaptec OEM Raid Solutions <aacraid@microsemi.com>
-L:	linux-scsi@vger.kernel.org
-S:	Maintained
-W:	http://www.adaptec.com/
-F:	drivers/scsi/dpt*
-F:	drivers/scsi/dpt/
-
 DRBD DRIVER
 M:	Philipp Reisner <philipp.reisner@linbit.com>
 M:	Lars Ellenberg <lars.ellenberg@linbit.com>
