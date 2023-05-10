@@ -1,7 +1,7 @@
-/* 
- * Cryptographic API.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
  *
- * Support for VIA PadLock hardware crypto engine.
+ * Support for ACE hardware crypto engine.
  *
  * Copyright (c) 2004  Michal Ludvig <michal@logix.cz>
  *
@@ -19,9 +19,9 @@
 #include <linux/percpu.h>
 #include <linux/smp.h>
 #include <linux/slab.h>
+#include <linux/processor.h>
 #include <asm/cpu_device_id.h>
 #include <asm/byteorder.h>
-#include <asm/processor.h>
 #include <asm/fpu/api.h>
 
 /*
@@ -68,14 +68,18 @@ struct aes_ctx {
 
 static DEFINE_PER_CPU(struct cword *, paes_last_cword);
 
-/* Tells whether the ACE is capable to generate
-   the extended key for a given key_len. */
+/*
+ * Tells whether the ACE is capable to generate
+ * the extended key for a given key_len.
+ */
 static inline int
 aes_hw_extkey_available(uint8_t key_len)
 {
-	/* TODO: We should check the actual CPU model/stepping
-	         as it's possible that the capability will be
-	         added in the next CPU revisions. */
+	/*
+	 * TODO: We should check the actual CPU model/stepping
+	 *		 as it's possible that the capability will be
+	 *		 added in the next CPU revisions.
+	 */
 	if (key_len == 16)
 		return 1;
 	return 0;
@@ -102,7 +106,7 @@ static inline struct aes_ctx *blk_aes_ctx(struct crypto_blkcipher *tfm)
 }
 
 static int aes_set_key(struct crypto_tfm *tfm, const u8 *in_key,
-		       unsigned int key_len)
+				unsigned int key_len)
 {
 	struct aes_ctx *ctx = aes_ctx(tfm);
 	const __le32 *key = (const __le32 *)in_key;
@@ -155,7 +159,7 @@ static int aes_set_key(struct crypto_tfm *tfm, const u8 *in_key,
 ok:
 	for_each_online_cpu(cpu)
 		if (&ctx->cword.encrypt == per_cpu(paes_last_cword, cpu) ||
-		    &ctx->cword.decrypt == per_cpu(paes_last_cword, cpu))
+			&ctx->cword.decrypt == per_cpu(paes_last_cword, cpu))
 			per_cpu(paes_last_cword, cpu) = NULL;
 
 	return 0;
@@ -191,16 +195,16 @@ static inline void rep_xcrypt_ecb(const u8 *input, u8 *output, void *key,
 				  struct cword *control_word, int count)
 {
 	asm volatile (".byte 0xf3,0x0f,0xa7,0xc8"	/* rep xcryptecb */
-		      : "+S"(input), "+D"(output)
-		      : "d"(control_word), "b"(key), "c"(count));
+				: "+S"(input), "+D"(output)
+				: "d"(control_word), "b"(key), "c"(count));
 }
 
 static inline u8 *rep_xcrypt_cbc(const u8 *input, u8 *output, void *key,
 				 u8 *iv, struct cword *control_word, int count)
 {
 	asm volatile (".byte 0xf3,0x0f,0xa7,0xd0"	/* rep xcryptcbc */
-		      : "+S" (input), "+D" (output), "+a" (iv)
-		      : "d" (control_word), "b" (key), "c" (count));
+				: "+S" (input), "+D" (output), "+a" (iv)
+				: "d" (control_word), "b" (key), "c" (count));
 	return iv;
 }
 
@@ -270,12 +274,12 @@ static inline void padlock_xcrypt_ecb(const u8 *input, u8 *output, void *key,
 
 	if (initial)
 		asm volatile (".byte 0xf3,0x0f,0xa7,0xc8"	/* rep xcryptecb */
-			      : "+S"(input), "+D"(output)
-			      : "d"(control_word), "b"(key), "c"(initial));
+					: "+S"(input), "+D"(output)
+					: "d"(control_word), "b"(key), "c"(initial));
 
 	asm volatile (".byte 0xf3,0x0f,0xa7,0xc8"	/* rep xcryptecb */
-		      : "+S"(input), "+D"(output)
-		      : "d"(control_word), "b"(key), "c"(count));
+				: "+S"(input), "+D"(output)
+				: "d"(control_word), "b"(key), "c"(count));
 }
 
 static inline u8 *padlock_xcrypt_cbc(const u8 *input, u8 *output, void *key,
@@ -290,12 +294,12 @@ static inline u8 *padlock_xcrypt_cbc(const u8 *input, u8 *output, void *key,
 
 	if (initial)
 		asm volatile (".byte 0xf3,0x0f,0xa7,0xd0"	/* rep xcryptcbc */
-			      : "+S" (input), "+D" (output), "+a" (iv)
-			      : "d" (control_word), "b" (key), "c" (initial));
+					: "+S" (input), "+D" (output), "+a" (iv)
+					: "d" (control_word), "b" (key), "c" (initial));
 
 	asm volatile (".byte 0xf3,0x0f,0xa7,0xd0"	/* rep xcryptcbc */
-		      : "+S" (input), "+D" (output), "+a" (iv)
-		      : "d" (control_word), "b" (key), "c" (count));
+				: "+S" (input), "+D" (output), "+a" (iv)
+				: "d" (control_word), "b" (key), "c" (count));
 	return iv;
 }
 
@@ -321,25 +325,25 @@ static struct crypto_alg aes_alg = {
 	.cra_name		=	"aes",
 	.cra_driver_name	=	"aes-padlock",
 	.cra_priority		=	PADLOCK_CRA_PRIORITY,
-	.cra_flags		=	CRYPTO_ALG_TYPE_CIPHER,
+	.cra_flags			=	CRYPTO_ALG_TYPE_CIPHER,
 	.cra_blocksize		=	AES_BLOCK_SIZE,
 	.cra_ctxsize		=	sizeof(struct aes_ctx),
 	.cra_alignmask		=	PADLOCK_ALIGNMENT - 1,
-	.cra_module		=	THIS_MODULE,
-	.cra_u			=	{
+	.cra_module			=	THIS_MODULE,
+	.cra_u = {
 		.cipher = {
 			.cia_min_keysize	=	AES_MIN_KEY_SIZE,
 			.cia_max_keysize	=	AES_MAX_KEY_SIZE,
-			.cia_setkey	   	= 	aes_set_key,
-			.cia_encrypt	 	=	aes_encrypt,
-			.cia_decrypt	  	=	aes_decrypt,
+			.cia_setkey			=	aes_set_key,
+			.cia_encrypt		=	aes_encrypt,
+			.cia_decrypt		=	aes_decrypt,
 		}
 	}
 };
 
 static int ecb_aes_encrypt(struct blkcipher_desc *desc,
-			   struct scatterlist *dst, struct scatterlist *src,
-			   unsigned int nbytes)
+				struct scatterlist *dst, struct scatterlist *src,
+				unsigned int nbytes)
 {
 	struct aes_ctx *ctx = blk_aes_ctx(desc->tfm);
 	struct blkcipher_walk walk;
@@ -352,8 +356,8 @@ static int ecb_aes_encrypt(struct blkcipher_desc *desc,
 
 	while ((nbytes = walk.nbytes)) {
 		padlock_xcrypt_ecb(walk.src.virt.addr, walk.dst.virt.addr,
-				   ctx->E, &ctx->cword.encrypt,
-				   nbytes / AES_BLOCK_SIZE);
+					ctx->E, &ctx->cword.encrypt,
+					nbytes / AES_BLOCK_SIZE);
 		nbytes &= AES_BLOCK_SIZE - 1;
 		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
@@ -364,8 +368,8 @@ static int ecb_aes_encrypt(struct blkcipher_desc *desc,
 }
 
 static int ecb_aes_decrypt(struct blkcipher_desc *desc,
-			   struct scatterlist *dst, struct scatterlist *src,
-			   unsigned int nbytes)
+				struct scatterlist *dst, struct scatterlist *src,
+				unsigned int nbytes)
 {
 	struct aes_ctx *ctx = blk_aes_ctx(desc->tfm);
 	struct blkcipher_walk walk;
@@ -378,8 +382,8 @@ static int ecb_aes_decrypt(struct blkcipher_desc *desc,
 
 	while ((nbytes = walk.nbytes)) {
 		padlock_xcrypt_ecb(walk.src.virt.addr, walk.dst.virt.addr,
-				   ctx->D, &ctx->cword.decrypt,
-				   nbytes / AES_BLOCK_SIZE);
+					ctx->D, &ctx->cword.decrypt,
+					nbytes / AES_BLOCK_SIZE);
 		nbytes &= AES_BLOCK_SIZE - 1;
 		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
@@ -390,20 +394,20 @@ static int ecb_aes_decrypt(struct blkcipher_desc *desc,
 }
 
 static struct crypto_alg ecb_aes_alg = {
-	.cra_name		=	"ecb(aes)",
+	.cra_name			=	"ecb(aes)",
 	.cra_driver_name	=	"ecb-aes-padlock",
 	.cra_priority		=	PADLOCK_COMPOSITE_PRIORITY,
-	.cra_flags		=	CRYPTO_ALG_TYPE_BLKCIPHER,
+	.cra_flags			=	CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		=	AES_BLOCK_SIZE,
 	.cra_ctxsize		=	sizeof(struct aes_ctx),
 	.cra_alignmask		=	PADLOCK_ALIGNMENT - 1,
-	.cra_type		=	&crypto_blkcipher_type,
-	.cra_module		=	THIS_MODULE,
-	.cra_u			=	{
+	.cra_type			=	&crypto_blkcipher_type,
+	.cra_module			=	THIS_MODULE,
+	.cra_u = {
 		.blkcipher = {
-			.min_keysize		=	AES_MIN_KEY_SIZE,
-			.max_keysize		=	AES_MAX_KEY_SIZE,
-			.setkey	   		= 	aes_set_key,
+			.min_keysize	=	AES_MIN_KEY_SIZE,
+			.max_keysize	=	AES_MAX_KEY_SIZE,
+			.setkey			= 	aes_set_key,
 			.encrypt		=	ecb_aes_encrypt,
 			.decrypt		=	ecb_aes_decrypt,
 		}
@@ -411,8 +415,8 @@ static struct crypto_alg ecb_aes_alg = {
 };
 
 static int cbc_aes_encrypt(struct blkcipher_desc *desc,
-			   struct scatterlist *dst, struct scatterlist *src,
-			   unsigned int nbytes)
+				struct scatterlist *dst, struct scatterlist *src,
+				unsigned int nbytes)
 {
 	struct aes_ctx *ctx = blk_aes_ctx(desc->tfm);
 	struct blkcipher_walk walk;
@@ -425,9 +429,9 @@ static int cbc_aes_encrypt(struct blkcipher_desc *desc,
 
 	while ((nbytes = walk.nbytes)) {
 		u8 *iv = padlock_xcrypt_cbc(walk.src.virt.addr,
-					    walk.dst.virt.addr, ctx->E,
-					    walk.iv, &ctx->cword.encrypt,
-					    nbytes / AES_BLOCK_SIZE);
+						walk.dst.virt.addr, ctx->E,
+						walk.iv, &ctx->cword.encrypt,
+						nbytes / AES_BLOCK_SIZE);
 		memcpy(walk.iv, iv, AES_BLOCK_SIZE);
 		nbytes &= AES_BLOCK_SIZE - 1;
 		err = blkcipher_walk_done(desc, &walk, nbytes);
@@ -439,8 +443,8 @@ static int cbc_aes_encrypt(struct blkcipher_desc *desc,
 }
 
 static int cbc_aes_decrypt(struct blkcipher_desc *desc,
-			   struct scatterlist *dst, struct scatterlist *src,
-			   unsigned int nbytes)
+				struct scatterlist *dst, struct scatterlist *src,
+				unsigned int nbytes)
 {
 	struct aes_ctx *ctx = blk_aes_ctx(desc->tfm);
 	struct blkcipher_walk walk;
@@ -453,8 +457,8 @@ static int cbc_aes_decrypt(struct blkcipher_desc *desc,
 
 	while ((nbytes = walk.nbytes)) {
 		padlock_xcrypt_cbc(walk.src.virt.addr, walk.dst.virt.addr,
-				   ctx->D, walk.iv, &ctx->cword.decrypt,
-				   nbytes / AES_BLOCK_SIZE);
+					ctx->D, walk.iv, &ctx->cword.decrypt,
+					nbytes / AES_BLOCK_SIZE);
 		nbytes &= AES_BLOCK_SIZE - 1;
 		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
@@ -486,41 +490,38 @@ static struct crypto_alg cbc_aes_alg = {
 	}
 };
 
-static const struct x86_cpu_id padlock_cpu_id[] = {
-	{ X86_VENDOR_CENTAUR, 6, X86_MODEL_ANY, X86_FEATURE_XCRYPT },
+static const struct x86_cpu_id zhaoxin_cpu_id[] = {
+	{ X86_VENDOR_CENTAUR, 7, X86_MODEL_ANY, X86_STEPPING_ANY, X86_FEATURE_XCRYPT },
+	{ X86_VENDOR_ZHAOXIN, 7, X86_MODEL_ANY, X86_STEPPING_ANY, X86_FEATURE_XCRYPT },
 	{}
 };
-MODULE_DEVICE_TABLE(x86cpu, padlock_cpu_id);
+MODULE_DEVICE_TABLE(x86cpu, zhaoxin_cpu_id);
 
 static int __init padlock_init(void)
 {
 	int ret;
-	struct cpuinfo_x86 *c = &cpu_data(0);
 
-	if (!x86_match_cpu(padlock_cpu_id))
+	if (!x86_match_cpu(zhaoxin_cpu_id))
 		return -ENODEV;
 
 	if (!boot_cpu_has(X86_FEATURE_XCRYPT_EN)) {
-		printk(KERN_NOTICE PFX "VIA PadLock detected, but not enabled. Hmm, strange...\n");
+		pr_notice("ACE detected, but not enabled. Hmm, strange...\n");
 		return -ENODEV;
 	}
 
-	if ((ret = crypto_register_alg(&aes_alg)))
+	ret = crypto_register_alg(&aes_alg);
+	if (ret)
 		goto aes_err;
 
-	if ((ret = crypto_register_alg(&ecb_aes_alg)))
+	ret = crypto_register_alg(&ecb_aes_alg);
+	if (ret)
 		goto ecb_aes_err;
 
-	if ((ret = crypto_register_alg(&cbc_aes_alg)))
+	ret = crypto_register_alg(&cbc_aes_alg);
+	if (ret)
 		goto cbc_aes_err;
 
-	printk(KERN_NOTICE PFX "Using VIA PadLock ACE for AES algorithm.\n");
-
-	if (c->x86 == 6 && c->x86_model == 15 && c->x86_stepping == 2) {
-		ecb_fetch_blocks = MAX_ECB_FETCH_BLOCKS;
-		cbc_fetch_blocks = MAX_CBC_FETCH_BLOCKS;
-		printk(KERN_NOTICE PFX "VIA Nano stepping 2 detected: enabling workaround.\n");
-	}
+	pr_notice("Using ACE for AES algorithm.\n");
 
 out:
 	return ret;
@@ -530,7 +531,7 @@ cbc_aes_err:
 ecb_aes_err:
 	crypto_unregister_alg(&aes_alg);
 aes_err:
-	printk(KERN_ERR PFX "VIA PadLock AES initialization failed.\n");
+	pr_err("ACE AES initialization failed.\n");
 	goto out;
 }
 
@@ -544,7 +545,7 @@ static void __exit padlock_fini(void)
 module_init(padlock_init);
 module_exit(padlock_fini);
 
-MODULE_DESCRIPTION("VIA PadLock AES algorithm support");
+MODULE_DESCRIPTION("ACE AES algorithm support");
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Michal Ludvig");
 
