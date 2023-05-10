@@ -111,4 +111,10 @@ int sched_energy_aware_handler(struct ctl_table *table, int write,
 		void *buffer, size_t *lenp, loff_t *ppos);
 #endif
 
+#ifdef CONFIG_SCHED_CLUSTER
+extern unsigned int sysctl_sched_cluster;
+int sched_cluster_handler(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos);
+#endif
+
 #endif /* _LINUX_SCHED_SYSCTL_H */
