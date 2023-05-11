@@ -51,7 +51,7 @@ MODULE_LICENSE("GPL");
 
 #define MAX_CARD_ID             64
 static u64 card_bit_map;
-LIST_HEAD(g_hinic_chip_list);
+LIST_HEAD(g_hifc_chip_list);
 
 enum hifc_lld_status {
 	HIFC_NODE_CHANGE = BIT(0),
@@ -64,7 +64,7 @@ struct hifc_lld_lock {
 	atomic_t            dev_ref_cnt;
 };
 
-struct hifc_lld_lock g_lld_lock;
+static struct hifc_lld_lock g_lld_lock;
 
 #define WAIT_LLD_DEV_HOLD_TIMEOUT        (10 * 60 * 1000) /* 10minutes */
 #define WAIT_LLD_DEV_NODE_CHANGED        (10 * 60 * 1000) /* 10minutes */
@@ -455,7 +455,7 @@ static int alloc_chip_node(struct hifc_pcidev *pci_adapter)
 		parent_bus_number = pci_adapter->pcidev->bus->parent->number;
 
 	if (parent_bus_number != 0) {
-		list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+		list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 			if (chip_node->dp_bus_num == parent_bus_number) {
 				pci_adapter->chip_node = chip_node;
 				return 0;
@@ -503,7 +503,7 @@ static int alloc_chip_node(struct hifc_pcidev *pci_adapter)
 		 "Add new chip %s to global list succeed\n",
 		 chip_node->chip_name);
 
-	list_add_tail(&chip_node->node, &g_hinic_chip_list);
+	list_add_tail(&chip_node->node, &g_hifc_chip_list);
 
 	INIT_LIST_HEAD(&chip_node->func_list);
 	pci_adapter->chip_node = chip_node;
@@ -664,7 +664,7 @@ static int hifc_func_init(struct pci_dev *pdev,
 	hifc_sync_time_to_fmw(pci_adapter);
 
 	lld_lock_chip_node();
-	err = dbgtool_knl_init(pci_adapter->hwdev, pci_adapter->chip_node);
+	err = hifc_dbgtool_knl_init(pci_adapter->hwdev, pci_adapter->chip_node);
 	if (err) {
 		lld_unlock_chip_node();
 		sdk_err(&pdev->dev, "Failed to initialize dbgtool\n");
@@ -700,7 +700,7 @@ static void hifc_func_deinit(struct pci_dev *pdev)
 
 	if (pci_adapter->init_state >= HIFC_INIT_STATE_DBGTOOL_INITED) {
 		lld_lock_chip_node();
-		dbgtool_knl_deinit(pci_adapter->hwdev, pci_adapter->chip_node);
+		hifc_dbgtool_knl_deinit(pci_adapter->hwdev, pci_adapter->chip_node);
 		lld_unlock_chip_node();
 		hifc_event_unregister(pci_adapter->hwdev);
 	}
@@ -738,7 +738,7 @@ static void remove_func(struct hifc_pcidev *pci_adapter)
 		lld_lock_chip_node();
 		if (pci_adapter->init_state < HIFC_INIT_STATE_HW_IF_INITED)
 			list_del(&pci_adapter->node);
-		nictool_k_uninit();
+		hifc_tool_k_uninit();
 		free_chip_node(pci_adapter);
 		lld_unlock_chip_node();
 		unmapping_bar(pci_adapter);
@@ -802,7 +802,7 @@ static int hifc_hwdev_probe(struct pci_dev *pdev,
 			"Failed to add new chip node to global list\n");
 		goto alloc_chip_node_fail;
 	}
-	err = nictool_k_init();
+	err = hifc_tool_k_init();
 	if (err) {
 		sdk_warn(&pdev->dev, "Failed to init nictool");
 		goto init_nictool_err;

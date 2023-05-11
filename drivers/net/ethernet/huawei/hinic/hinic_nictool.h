@@ -236,11 +236,11 @@ struct hinic_card_func_info {
 };
 
 #define MAX_CARD_NUM 64
-extern void *g_card_node_array[MAX_CARD_NUM];
-extern void *g_card_vir_addr[MAX_CARD_NUM];
-extern u64 g_card_phy_addr[MAX_CARD_NUM];
-extern struct mutex	g_addr_lock;
-extern int card_id;
+extern void *g_hinic_card_node_array[MAX_CARD_NUM];
+extern void *g_hinic_card_vir_addr[MAX_CARD_NUM];
+extern u64 g_hinic_card_phy_addr[MAX_CARD_NUM];
+extern struct mutex	g_hinic_addr_lock;
+extern int g_hinic_card_id;
 
 struct hinic_nic_loop_mode {
 	u32 loop_mode;
@@ -265,8 +265,8 @@ struct hinic_pf_info {
 	u32 pf_id;
 };
 
-int nictool_k_init(void);
-void nictool_k_uninit(void);
+int hinic_tool_k_init(void);
+void hinic_tool_k_uninit(void);
 
 u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev);
 void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
