@@ -97,11 +97,11 @@ struct dbgtool_param {
 #endif
 #define DBGTOOL_PAGE_ORDER 10
 
-int dbgtool_knl_init(void *vhwdev, void *chip_node);
-void dbgtool_knl_deinit(void *vhwdev, void *chip_node);
+int hifc_dbgtool_knl_init(void *vhwdev, void *chip_node);
+void hifc_dbgtool_knl_deinit(void *vhwdev, void *chip_node);
 int hifc_mem_mmap(struct file *filp, struct vm_area_struct *vma);
-void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_id,
+void hifc_chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_id,
 				void **g_func_handle_array);
-long dbgtool_knl_free_mem(int id);
+long hifc_dbgtool_knl_free_mem(int id);
 
 #endif

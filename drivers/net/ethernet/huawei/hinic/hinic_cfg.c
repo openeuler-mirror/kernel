@@ -48,7 +48,7 @@ MODULE_PARM_DESC(g_rdma_mpts_num, "number of roce used mpts, use default value w
 module_param(g_vfs_num, uint, 0444);
 MODULE_PARM_DESC(g_vfs_num, "number of used vfs, use default value when pass 0 ");
 
-uint intr_mode;
+static uint intr_mode;
 
 uint timer_enable = 1;
 uint bloomfilter_enable;
@@ -1461,7 +1461,7 @@ static void cfg_mbx_cleanup(struct hinic_hwdev *dev)
 	hinic_unregister_vf_mbox_cb(dev, HINIC_MOD_CFGM);
 }
 
-int init_cfg_mgmt(struct hinic_hwdev *dev)
+static int init_cfg_mgmt(struct hinic_hwdev *dev)
 {
 	int err;
 	struct cfg_mgmt_info *cfg_mgmt;
@@ -1509,7 +1509,7 @@ free_mgmt_mem:
 	return err;
 }
 
-void free_cfg_mgmt(struct hinic_hwdev *dev)
+static void free_cfg_mgmt(struct hinic_hwdev *dev)
 {
 	struct cfg_mgmt_info *cfg_mgmt = dev->cfg_mgmt;
 
@@ -1542,7 +1542,7 @@ void free_cfg_mgmt(struct hinic_hwdev *dev)
 	kfree(cfg_mgmt);
 }
 
-int init_capability(struct hinic_hwdev *dev)
+static int init_capability(struct hinic_hwdev *dev)
 {
 	struct cfg_mgmt_info *cfg_mgmt = dev->cfg_mgmt;
 	int err;
@@ -1571,7 +1571,7 @@ int init_capability(struct hinic_hwdev *dev)
 	return 0;
 }
 
-void free_capability(struct hinic_hwdev *dev)
+static void free_capability(struct hinic_hwdev *dev)
 {
 	cfg_mbx_cleanup(dev);
 	sdk_info(dev->dev_hdl, "Free capability success");
