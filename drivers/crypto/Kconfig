@@ -10,6 +10,32 @@ menuconfig CRYPTO_HW
 
 if CRYPTO_HW
 
+config CRYPTO_DEV_ZHAOXIN_SM3
+	tristate "Zhaoxin GMI driver for SM3 algorithm"
+	depends on CRYPTO && X86
+	select CRYPTO_HASH
+	help
+	  Use Zhaoxin GMI for SM3 algorithm.
+
+	  Available in ZX-C+ and newer CPUs.
+
+	  If unsure say M. The compiled module will be
+	  called zhaoxin_gmi_sm3.
+
+config CRYPTO_DEV_ZHAOXIN_SM4
+	tristate "Zhaoxin GMI driver for SM4 algorithm"
+	depends on CRYPTO && X86
+	select CRYPTO_SIMD
+	select CRYPTO_SKCIPHER
+	select CRYPTO_ALGAPI
+	help
+	  Use Zhaoxin GMI for SM4 algorithm.
+
+	  Available in ZX-C+ and newer CPUs.
+
+	  If unsure say M. The compiled module will be
+	  called zhaoxin_gmi_sm4.
+
 config CRYPTO_DEV_PADLOCK
 	tristate "Support for VIA PadLock ACE"
 	depends on X86 && !UML
