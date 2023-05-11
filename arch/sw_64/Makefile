@@ -31,7 +31,7 @@ cflags-y	+= $(call cc-option, -fno-jump-tables)
 cflags-y				+= $(cpuflags-y)
 
 KBUILD_CFLAGS += $(cflags-y)
-KBUILD_DEFCONFIG = defconfig
+KBUILD_DEFCONFIG = openeuler_defconfig
 
 head-y := arch/sw_64/kernel/head.o
 
