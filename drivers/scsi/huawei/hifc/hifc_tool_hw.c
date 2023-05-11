@@ -239,7 +239,7 @@ bool hifc_is_in_host(void)
 	struct hifc_pcidev *dev;
 
 	lld_dev_hold();
-	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+	list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 		list_for_each_entry(dev, &chip_node->func_list, node) {
 			if (test_bit(HIFC_FUNC_IN_REMOVE, &dev->flag))
 				continue;
@@ -398,7 +398,7 @@ struct sm_module_handle {
 	sm_module           sm_func;
 };
 
-struct sm_module_handle sm_module_cmd_handle[] = {
+static struct sm_module_handle sm_module_cmd_handle[] = {
 	{SM_CTR_RD32,		sm_rd32},
 	{SM_CTR_RD64_PAIR,	sm_rd64_pair},
 	{SM_CTR_RD64,		sm_rd64}
@@ -664,7 +664,7 @@ static struct hifc_pcidev *_get_pcidev_by_chip_name(char *ifname,
 	struct hifc_pcidev *dev;
 
 	lld_dev_hold();
-	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+	list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 		list_for_each_entry(dev, &chip_node->func_list, node) {
 			if (test_bit(HIFC_FUNC_IN_REMOVE, &dev->flag))
 				continue;
@@ -763,7 +763,7 @@ enum hifc_init_state hifc_get_init_state_by_ifname(char *ifname)
 	return HIFC_INIT_STATE_NONE;
 }
 
-void get_fc_devname(char *devname)
+void hifc_get_fc_devname(char *devname)
 {
 	struct card_node *chip_node;
 	struct hifc_pcidev *dev;
@@ -774,7 +774,7 @@ void get_fc_devname(char *devname)
 	}
 
 	lld_dev_hold();
-	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+	list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 		list_for_each_entry(dev, &chip_node->func_list, node) {
 			if (test_bit(HIFC_FUNC_IN_REMOVE, &dev->flag))
 				continue;
@@ -806,7 +806,7 @@ void hifc_get_all_chip_id(void *id_info)
 	}
 
 	lld_dev_hold();
-	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+	list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 		err = sscanf(chip_node->chip_name, HIFC_CHIP_NAME "%d", &id);
 		if (err < 0)
 			pr_err("Failed to get hifc id\n");
@@ -828,7 +828,7 @@ static struct card_node *hifc_get_chip_node_by_hwdev(const void *hwdev)
 		return NULL;
 
 	lld_dev_hold();
-	list_for_each_entry(node_tmp, &g_hinic_chip_list, node) {
+	list_for_each_entry(node_tmp, &g_hifc_chip_list, node) {
 		if (!chip_node) {
 			list_for_each_entry(dev, &node_tmp->func_list, node) {
 				if (test_bit(HIFC_FUNC_IN_REMOVE, &dev->flag))
@@ -911,7 +911,7 @@ bool hifc_is_valid_bar_addr(u64 offset)
 	struct hifc_pcidev *dev;
 
 	lld_dev_hold();
-	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+	list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 		list_for_each_entry(dev, &chip_node->func_list, node) {
 			if (test_bit(HIFC_FUNC_IN_REMOVE, &dev->flag))
 				continue;
@@ -941,7 +941,7 @@ void hifc_get_card_func_info_by_card_name(
 	card_func->num_pf = 0;
 
 	lld_dev_hold();
-	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
+	list_for_each_entry(chip_node, &g_hifc_chip_list, node) {
 		if (strncmp(chip_node->chip_name, chip_name, IFNAMSIZ))
 			continue;
 

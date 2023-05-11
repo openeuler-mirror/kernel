@@ -49,12 +49,12 @@ struct ffm_intr_info {
 #define DBGTOOL_MSG_MAX_SIZE			2048ULL
 #define HINIC_SELF_CMD_UP2PF_FFM		0x26
 
-void *g_card_node_array[MAX_CARD_NUM] = {0};
-void *g_card_vir_addr[MAX_CARD_NUM] = {0};
-u64 g_card_phy_addr[MAX_CARD_NUM] = {0};
-/* lock for g_card_vir_addr */
-struct mutex	g_addr_lock;
-int card_id;
+void *g_hinic_card_node_array[MAX_CARD_NUM] = {0};
+void *g_hinic_card_vir_addr[MAX_CARD_NUM] = {0};
+u64 g_hinic_card_phy_addr[MAX_CARD_NUM] = {0};
+/* lock for g_hinic_card_vir_addr */
+struct mutex	g_hinic_addr_lock;
+int g_hinic_card_id;
 
 /* dbgtool character device name, class name, dev path */
 #define CHR_DEV_DBGTOOL		"dbgtool_chr_dev"
@@ -66,15 +66,15 @@ struct dbgtool_k_glb_info {
 	struct ffm_record_info *ffm;
 };
 
-dev_t dbgtool_dev_id;			/* device id */
-struct cdev dbgtool_chr_dev;		/* struct of char device */
+static dev_t dbgtool_dev_id;			/* device id */
+static struct cdev dbgtool_chr_dev;		/* struct of char device */
 
 /*lint -save -e104 -e808*/
-struct class *dbgtool_d_class;		/* struct of char class */
+static struct class *dbgtool_d_class;		/* struct of char class */
 /*lint -restore*/
 
-int g_dbgtool_init_flag;
-int g_dbgtool_ref_cnt;
+static int g_dbgtool_init_flag;
+static int g_dbgtool_ref_cnt;
 
 static int dbgtool_knl_open(struct inode *pnode,
 			    struct file *pfile)
@@ -109,7 +109,7 @@ static bool is_valid_phy_addr(u64 offset)
 	int i;
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		if (offset == g_card_phy_addr[i])
+		if (offset == g_hinic_card_phy_addr[i])
 			return true;
 	}
 
@@ -134,9 +134,9 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	/* old version of tool set vma->vm_pgoff to 0 */
-	phy_addr = offset ? offset : g_card_phy_addr[card_id];
+	phy_addr = offset ? offset : g_hinic_card_phy_addr[g_hinic_card_id];
 	if (!phy_addr) {
-		pr_err("Card_id = %d physical address is 0\n", card_id);
+		pr_err("Card_id = %d physical address is 0\n", g_hinic_card_id);
 		return -EAGAIN;
 	}
 
@@ -154,8 +154,8 @@ int hinic_mem_mmap(struct file *filp, struct vm_area_struct *vma)
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
-			      void **g_func_handle_array)
+static long dbgtool_knl_api_cmd_read(struct dbgtool_param *para,
+				     void **g_func_handle_array)
 {
 	long ret = 0;
 	u8 *cmd;
@@ -237,8 +237,8 @@ alloc_ack_mem_fail:
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
-			       void **g_func_handle_array)
+static long dbgtool_knl_api_cmd_write(struct dbgtool_param *para,
+				      void **g_func_handle_array)
 {
 	long ret = 0;
 	u8 *cmd;
@@ -289,8 +289,8 @@ copy_user_cmd_fail:
 	return ret;
 }
 
-void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
-				void **g_func_handle_array)
+void hinic_chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info,
+				      int card_idx, void **g_func_handle_array)
 {
 	u32 func_idx;
 	struct hinic_hwdev *hwdev;
@@ -304,7 +304,7 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
 	for (func_idx = 0; func_idx < 16; func_idx++) {
 		hwdev = (struct hinic_hwdev *)g_func_handle_array[func_idx];
 
-		dev_info[func_idx].phy_addr = g_card_phy_addr[card_idx];
+		dev_info[func_idx].phy_addr = g_hinic_card_phy_addr[card_idx];
 
 		if (!hwdev) {
 			dev_info[func_idx].bar0_size = 0;
@@ -334,47 +334,48 @@ void chipif_get_all_pf_dev_info(struct pf_dev_info *dev_info, int card_idx,
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
-				 void **g_func_handle_array)
+static long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
+					void **g_func_handle_array)
 {
 	struct pf_dev_info dev_info[16] = { {0} };
 	unsigned char *tmp;
 	int i;
 
-	mutex_lock(&g_addr_lock);
-	if (!g_card_vir_addr[card_id]) {
-		g_card_vir_addr[card_id] =
+	mutex_lock(&g_hinic_addr_lock);
+	if (!g_hinic_card_vir_addr[g_hinic_card_id]) {
+		g_hinic_card_vir_addr[g_hinic_card_id] =
 			(void *)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
-		if (!g_card_vir_addr[card_id]) {
+		if (!g_hinic_card_vir_addr[g_hinic_card_id]) {
 			pr_err("Alloc dbgtool api chain fail!\n");
-			mutex_unlock(&g_addr_lock);
+			mutex_unlock(&g_hinic_addr_lock);
 			return -EFAULT;
 		}
 
-		memset(g_card_vir_addr[card_id], 0,
+		memset(g_hinic_card_vir_addr[g_hinic_card_id], 0,
 		       PAGE_SIZE * (1 << DBGTOOL_PAGE_ORDER));
 
-		g_card_phy_addr[card_id] =
-			virt_to_phys(g_card_vir_addr[card_id]);
-		if (!g_card_phy_addr[card_id]) {
-			pr_err("phy addr for card %d is 0\n", card_id);
-			free_pages((unsigned long)g_card_vir_addr[card_id],
-				   DBGTOOL_PAGE_ORDER);
-			g_card_vir_addr[card_id] = NULL;
-			mutex_unlock(&g_addr_lock);
+		g_hinic_card_phy_addr[g_hinic_card_id] =
+			virt_to_phys(g_hinic_card_vir_addr[g_hinic_card_id]);
+		if (!g_hinic_card_phy_addr[g_hinic_card_id]) {
+			pr_err("phy addr for card %d is 0\n", g_hinic_card_id);
+			free_pages((unsigned long)g_hinic_card_vir_addr
+				   [g_hinic_card_id], DBGTOOL_PAGE_ORDER);
+			g_hinic_card_vir_addr[g_hinic_card_id] = NULL;
+			mutex_unlock(&g_hinic_addr_lock);
 			return -EFAULT;
 		}
 
-		tmp = g_card_vir_addr[card_id];
+		tmp = g_hinic_card_vir_addr[g_hinic_card_id];
 		for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 			SetPageReserved(virt_to_page(tmp));
 			tmp += PAGE_SIZE;
 		}
 	}
-	mutex_unlock(&g_addr_lock);
+	mutex_unlock(&g_hinic_addr_lock);
 
-	chipif_get_all_pf_dev_info(dev_info, card_id, g_func_handle_array);
+	hinic_chipif_get_all_pf_dev_info(dev_info, g_hinic_card_id,
+					 g_func_handle_array);
 
 	/* Copy the dev_info to user mode */
 	if (copy_to_user(para->param.dev_info, dev_info,
@@ -392,8 +393,8 @@ long dbgtool_knl_pf_dev_info_get(struct dbgtool_param *para,
  * @dbgtool_info: the dbgtool info
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
-			     struct dbgtool_k_glb_info *dbgtool_info)
+static long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
+				    struct dbgtool_k_glb_info *dbgtool_info)
 {
 	/* Copy the ffm_info to user mode */
 	if (copy_to_user(para->param.ffm_rd, dbgtool_info->ffm,
@@ -410,8 +411,8 @@ long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
  * @para: unused
  * @dbgtool_info: the dbgtool info
  */
-void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
-			      struct dbgtool_k_glb_info *dbgtool_info)
+static void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
+				     struct dbgtool_k_glb_info *dbgtool_info)
 {
 	dbgtool_info->ffm->ffm_num = 0;
 }
@@ -422,8 +423,8 @@ void dbgtool_knl_ffm_info_clr(struct dbgtool_param *para,
  * @g_func_handle_array: global function handle
  * Return: 0 - success, negative - failure
  */
-long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
-			   void **g_func_handle_array)
+static long dbgtool_knl_msg_to_up(struct dbgtool_param *para,
+				  void **g_func_handle_array)
 {
 	long ret = 0;
 	void *buf_in;
@@ -506,29 +507,30 @@ alloc_buf_out_mem_fail:
 	return ret;
 }
 
-long dbgtool_knl_free_mem(int id)
+long hinic_dbgtool_knl_free_mem(int id)
 {
 	unsigned char *tmp;
 	int i;
 
-	mutex_lock(&g_addr_lock);
+	mutex_lock(&g_hinic_addr_lock);
 
-	if (!g_card_vir_addr[id]) {
-		mutex_unlock(&g_addr_lock);
+	if (!g_hinic_card_vir_addr[id]) {
+		mutex_unlock(&g_hinic_addr_lock);
 		return 0;
 	}
 
-	tmp = g_card_vir_addr[id];
+	tmp = g_hinic_card_vir_addr[id];
 	for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
 		ClearPageReserved(virt_to_page(tmp));
 		tmp += PAGE_SIZE;
 	}
 
-	free_pages((unsigned long)g_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
-	g_card_vir_addr[id] = NULL;
-	g_card_phy_addr[id] = 0;
+	free_pages((unsigned long)g_hinic_card_vir_addr[id],
+		   DBGTOOL_PAGE_ORDER);
+	g_hinic_card_vir_addr[id] = NULL;
+	g_hinic_card_phy_addr[id] = 0;
 
-	mutex_unlock(&g_addr_lock);
+	mutex_unlock(&g_hinic_addr_lock);
 
 	return 0;
 }
@@ -540,9 +542,9 @@ long dbgtool_knl_free_mem(int id)
  * @pfile: the pointer to file
  * @cmd: the command type
  */
-long dbgtool_knl_unlocked_ioctl(struct file *pfile,
-				unsigned int cmd,
-				unsigned long arg)
+static long dbgtool_knl_unlocked_ioctl(struct file *pfile,
+				       unsigned int cmd,
+				       unsigned long arg)
 {
 	long ret = 0;
 	unsigned int real_cmd;
@@ -560,7 +562,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 
 	param.chip_name[IFNAMSIZ - 1] = '\0';
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		card_info = (struct card_node *)g_card_node_array[i];
+		card_info = (struct card_node *)g_hinic_card_node_array[i];
 		if (!card_info)
 			continue;
 		if (!strncmp(param.chip_name, card_info->chip_name, IFNAMSIZ))
@@ -572,7 +574,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 		return -EFAULT;
 	}
 
-	card_id = i;
+	g_hinic_card_id = i;
 
 	dbgtool_info = (struct dbgtool_k_glb_info *)card_info->dbgtool_info;
 
@@ -604,7 +606,7 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
 					    card_info->func_handle_array);
 		break;
 	case DBGTOOL_CMD_FREE_MEM:
-		ret = dbgtool_knl_free_mem(i);
+		ret = hinic_dbgtool_knl_free_mem(i);
 		break;
 	default:
 		pr_err("Dbgtool cmd(x%x) not support now\n", real_cmd);
@@ -621,8 +623,8 @@ long dbgtool_knl_unlocked_ioctl(struct file *pfile,
  * @buf_in: the pointer to input buffer
  * @buf_out: the pointer to outputput buffer
  */
-void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
-			 void *buf_out, u16 *out_size)
+static void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
+				void *buf_out, u16 *out_size)
 {
 	struct dbgtool_k_glb_info *dbgtool_info;
 	struct ffm_intr_info *intr;
@@ -635,7 +637,7 @@ void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 	int i, j;
 
 	for (i = 0; i < MAX_CARD_NUM; i++) {
-		card_info = (struct card_node *)g_card_node_array[i];
+		card_info = (struct card_node *)g_hinic_card_node_array[i];
 		if (!card_info)
 			continue;
 
@@ -714,12 +716,12 @@ static const struct file_operations dbgtool_file_operations = {
 };
 
 /**
- * dbgtool_knl_init - dbgtool character device init
+ * hinic_dbgtool_knl_init - dbgtool character device init
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
  * Return: 0 - success, negative - failure
  */
-int dbgtool_knl_init(void *vhwdev, void *chip_node)
+int hinic_dbgtool_knl_init(void *vhwdev, void *chip_node)
 {
 	int ret = 0;
 	int id;
@@ -775,7 +777,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 		goto sscanf_chdev_fail;
 	}
 
-	g_card_node_array[id] = chip_info;
+	g_hinic_card_node_array[id] = chip_info;
 	chip_info->func_num++;
 
 	if (g_dbgtool_init_flag) {
@@ -822,7 +824,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 	}
 	g_dbgtool_init_flag = 1;
 	g_dbgtool_ref_cnt = 1;
-	mutex_init(&g_addr_lock);
+	mutex_init(&g_hinic_addr_lock);
 
 	return 0;
 
@@ -833,7 +835,7 @@ cls_create_fail:
 cdev_add_fail:
 	unregister_chrdev_region(dbgtool_dev_id, 1);
 alloc_chdev_fail:
-	g_card_node_array[id] = NULL;
+	g_hinic_card_node_array[id] = NULL;
 sscanf_chdev_fail:
 	kfree(dbgtool_info->ffm);
 dbgtool_info_ffm_fail:
@@ -849,11 +851,11 @@ dbgtool_info_fail:
 }
 
 /**
- * dbgtool_knl_deinit - dbgtool character device deinit
+ * hinic_dbgtool_knl_deinit - dbgtool character device deinit
  * @hwdev: the pointer to hardware device
  * @chip_node: the pointer to card node
  */
-void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
+void hinic_dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 {
 	struct dbgtool_k_glb_info *dbgtool_info;
 	struct card_node *chip_info = (struct card_node *)chip_node;
@@ -879,7 +881,7 @@ void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 	if (err <= 0)
 		pr_err("Failed to get hinic id\n");
 
-	g_card_node_array[id] = NULL;
+	g_hinic_card_node_array[id] = NULL;
 
 	dbgtool_info = chip_info->dbgtool_info;
 	/* FFM deinit */
@@ -889,7 +891,7 @@ void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 	kfree(dbgtool_info);
 	chip_info->dbgtool_info = NULL;
 
-	(void)dbgtool_knl_free_mem(id);
+	(void)hinic_dbgtool_knl_free_mem(id);
 
 	if (g_dbgtool_init_flag) {
 		if ((--g_dbgtool_ref_cnt))
