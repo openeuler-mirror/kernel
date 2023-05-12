@@ -242,7 +242,11 @@ in:
 	if (!incnt)
 		return 0;
 
-	return sctp_stream_alloc_in(stream, incnt, gfp);
+	ret = sctp_stream_alloc_in(stream, incnt, gfp);
+	if (!ret)
+		stream->incnt = incnt;
+
+	return ret;
 }
 
 int sctp_stream_init_ext(struct sctp_stream *stream, __u16 sid)
