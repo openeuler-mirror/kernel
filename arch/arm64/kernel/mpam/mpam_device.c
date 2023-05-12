@@ -499,7 +499,7 @@ static void mpam_enable_irqs(void)
 		rc = request_irq(irq, mpam_handle_error_irq, request_flags,
 				"MPAM ERR IRQ", dev);
 		if (rc) {
-			pr_err_ratelimited("Failed to register irq %u\n", irq);
+			pr_warn_ratelimited("Not support to register irq %u\n", irq);
 			continue;
 		}
 
