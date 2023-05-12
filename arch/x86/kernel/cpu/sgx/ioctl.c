@@ -111,7 +111,7 @@ static int sgx_encl_create(struct sgx_encl *encl, struct sgx_secs *secs)
 	encl->base = secs->base;
 	encl->size = secs->size;
 	encl->attributes = secs->attributes;
-	encl->attributes_mask = SGX_ATTR_DEBUG | SGX_ATTR_MODE64BIT | SGX_ATTR_KSS;
+	encl->attributes_mask = SGX_ATTR_UNPRIV_MASK;
 
 	/* Set only after completion, as encl->lock has not been taken. */
 	set_bit(SGX_ENCL_CREATED, &encl->flags);
@@ -354,6 +354,9 @@ static int sgx_validate_offset_length(struct sgx_encl *encl,
 		return -EINVAL;
 
 	if (!length || !IS_ALIGNED(length, PAGE_SIZE))
+		return -EINVAL;
+
+	if (offset + length < offset)
 		return -EINVAL;
 
 	if (offset + length - PAGE_SIZE >= encl->size)
