@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2305.1.0
+%global hulkrelease 2305.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0200
+Release: %{hulkrelease}.0201
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,38 @@ fi
 %endif
 
 %changelog
+
+* Sat May 13 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2305.2.0.0201
+- net: sctp: update stream->incnt after successful allocation of stream_in
+- !741 [openEuler-1.0-LTS] openeuler_defconfig: Add configuration items for zhaoxin
+- !752 arm64/mpam: modify mpam irq register error log
+- arm64/mpam: modify mpam irq register error log
+- !437 [openEuler-1.0-LTS] USB: HCD: Fix URB giveback issue in tasklet function
+- openeuler_defconfig: Add configuration items for zhaoxin
+- bluetooth: Perform careful capability checks in hci_sock_ioctl()
+- netrom: Fix use-after-free caused by accept on already connected socket
+- !689 Fix compile error in allyesconfigs
+- !441 [openEuler-1.0-LTS] Add support for Zhaoxin SM3 and SM4 instruction
+- !438 [openEuler-1.0-LTS] Add Zhaoxin I2C driver
+- i2c: Add Zhaoxin I2C driver
+- !432 [openEuler-1.0-LTS] Add Zhaoxin ACE driver
+- mm: memcontrol: switch to rcu protection in drain_all_stock()
+- !429 [openEuler-1.0.-LTS] ACPI, x86: Improve Zhaoxin processors support for NONSTOP TSC
+- !428 [openEuelr-1.0-LTS] x86/acpi/cstate: Optimize ARB_DISABLE on Centaur CPUs
+- !687 [HUST CSE] fix a use-after-free bug in uncore_pci_remove()
+- scsi/hifc: Fix compile error in allyesconfigs
+- net/hinic: Fix compile error in allyesconfigs
+- x86/perf: fix use-after-free bug in uncore_pci_remove()
+- crypto: Driver for Zhaoxin GMI SM4 Block Cipher Algorithm
+- crypto: Driver for Zhaoxin GMI SM3 Secure Hash algorithm
+- !433 [openEuler-1.0-LTS] Add support of turbo boost control interface for Zhaoxin CPUs
+- !431 [openEuler-1.0-LTS] Add Zhaoxin rng driver
+- crypto: Add Zhaoxin ACE driver
+- cpufreq: ACPI: Add Zhaoxin/Centaur turbo boost control interface support
+- hwrng: Add Zhaoxin rng driver
+- USB: HCD: Fix URB giveback issue in tasklet function
+- ACPI, x86: Improve Zhaoxin processors support for NONSTOP TSC
+- x86/acpi/cstate: Optimize ARB_DISABLE on Centaur CPUs
 
 * Tue May 09 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2305.1.0.0200
 - ipv6: Fix an uninit variable access bug in __ip6_make_skb()
