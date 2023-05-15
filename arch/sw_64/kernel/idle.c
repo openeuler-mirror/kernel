@@ -9,7 +9,7 @@
 #include <asm/idle.h>
 #include <asm/asm-offsets.h>
 
-void cpu_idle(void)
+void arch_cpu_idle(void)
 {
 	local_irq_enable();
 	cpu_relax();
@@ -31,9 +31,4 @@ void cpu_idle(void)
 		:: "i"(TI_FLAGS), "i"(TIF_NEED_RESCHED)
 		: "$1");
 	}
-}
-
-void arch_cpu_idle(void)
-{
-	cpu_idle();
 }
