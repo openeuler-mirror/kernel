@@ -650,6 +650,12 @@ struct cfs_rq {
 	unsigned int		forceidle_seq;
 	KABI_FILL_HOLE(unsigned int kabi_hole)
 	u64			min_vruntime_fi;
+#elif defined CONFIG_QOS_SCHED_SMT_EXPELLER && !defined(__GENKSYMS__)
+	union {
+		unsigned int            qos_idle_h_nr_running; /* qos_level：-1 */
+		unsigned long           qos_idle_h_nr_running_padding;
+	};
+	KABI_FILL_HOLE(unsigned long kabi_hole)
 #else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -3025,6 +3031,20 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 		return false;
 
 	return true;
+}
+#endif
+
+#ifdef CONFIG_QOS_SCHED
+static inline int qos_idle_policy(int policy)
+{
+	return policy == QOS_LEVEL_OFFLINE;
+}
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static inline int task_has_qos_idle_policy(struct task_struct *p)
+{
+	return qos_idle_policy(task_group(p)->qos_level) && p->policy == SCHED_IDLE;
 }
 #endif
 
