@@ -594,5 +594,11 @@ source "drivers/cpufreq/Kconfig"
 
 endmenu
 
+config ARCH_ENABLE_MEMORY_HOTPLUG
+	def_bool y
+
+config ARCH_ENABLE_MEMORY_HOTREMOVE
+	def_bool y
+
 source "drivers/firmware/Kconfig"
 source "arch/loongarch/kvm/Kconfig"
