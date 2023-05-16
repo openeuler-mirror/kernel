@@ -1933,6 +1933,7 @@ struct inode_operations {
 			   umode_t create_mode);
 	int (*tmpfile) (struct inode *, struct dentry *, umode_t);
 	int (*set_acl)(struct inode *, struct posix_acl *, int);
+	struct posix_acl * (*get_acl2)(struct inode *, int, bool);
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
