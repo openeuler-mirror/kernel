@@ -2434,13 +2434,6 @@ got_pages:
 	goto find_page;
 }
 
-static inline bool pos_same_page(loff_t pos1, loff_t pos2, struct page *page)
-{
-	unsigned int shift = page_shift(page);
-
-	return (pos1 >> shift == pos2 >> shift);
-}
-
 /**
  * generic_file_buffered_read - generic file read routine
  * @iocb:	the iocb to read
@@ -2531,10 +2524,11 @@ ssize_t generic_file_buffered_read(struct kiocb *iocb,
 		writably_mapped = mapping_writably_mapped(mapping);
 
 		/*
-		 * When a read accesses a page several times, only
+		 * When a sequential read accesses a page several times, only
 		 * mark it as accessed the first time.
 		 */
-		if (pos_same_page(iocb->ki_pos, ra->prev_pos -1, pages[0]))
+		if (iocb->ki_pos >> PAGE_SHIFT !=
+		    ra->prev_pos >> PAGE_SHIFT)
 			mark_page_accessed(pages[0]);
 		for (i = 1; i < pg_nr; i++)
 			mark_page_accessed(pages[i]);
