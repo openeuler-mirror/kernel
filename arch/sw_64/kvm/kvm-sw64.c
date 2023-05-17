@@ -481,7 +481,7 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 #endif
 
 		info->start = addr;
-		info->size = size;
+		info->size = mem->memory_size;
 		vma->vm_private_data = (void *) info;
 
 		vma->vm_ops = &vmem_vm_ops;

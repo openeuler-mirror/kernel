@@ -72,7 +72,7 @@ static void vmem_vm_close(struct vm_area_struct *vma)
 
 	info = vma->vm_private_data;
 	addr = info->start;
-	size = info->size;
+	size = round_up(info->size, 8 << 20);
 
 	if (atomic_dec_and_test(&info->refcnt)) {
 		if (sw64_kvm_pool && addr_in_pool(sw64_kvm_pool, addr, size)) {
@@ -123,7 +123,7 @@ static int vmem_mmap(struct file *flip, struct vm_area_struct *vma)
 		return -ENOMEM;
 
 	if (flip->private_data == NULL) {
-		addr = gen_pool_alloc(sw64_kvm_pool, size);
+		addr = gen_pool_alloc(sw64_kvm_pool, round_up(size, 8 << 20));
 		if (!addr)
 			return -ENOMEM;
 
