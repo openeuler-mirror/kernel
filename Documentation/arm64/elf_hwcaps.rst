@@ -257,6 +257,10 @@ HWCAP2_RPRES
 
     Functionality implied by ID_AA64ISAR2_EL1.RPRES == 0b0001.
 
+HWCAP2_WFXT
+
+    Functionality implied by ID_AA64ISAR2_EL1.WFXT == 0b0010.
+
 4. Unused AT_HWCAP bits
 -----------------------
 

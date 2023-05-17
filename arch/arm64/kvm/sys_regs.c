@@ -1166,6 +1166,9 @@ static u64 read_id_reg(struct kvm_vcpu *vcpu,
 			 (0xfUL << ID_AA64ISAR1_API_SHIFT) |
 			 (0xfUL << ID_AA64ISAR1_GPA_SHIFT) |
 			 (0xfUL << ID_AA64ISAR1_GPI_SHIFT));
+	} else if (id == SYS_ID_AA64ISAR2_EL1) {
+		if (!cpus_have_final_cap(ARM64_HAS_WFXT))
+			val &= ~(0xfUL << ID_AA64ISAR2_WFXT_SHIFT);
 	} else if (id == SYS_ID_AA64DFR0_EL1) {
 		/* Limit guests to PMUv3 for ARMv8.1 */
 		val = cpuid_feature_cap_perfmon_field(val,
