@@ -97,6 +97,12 @@ F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
 F:	include/uapi/rdma/hns-abi.h
 F:	drivers/infiniband/hw/hns/
 
+NEBULA-MATRIX Ethernet Controller DRIVERS
+M:      Yi Chen <open@nebula-matrix.com>
+S:      Maintained
+F:      Documentation/networking/device_drivers/ethernet/nebula-matrix/
+F:      drivers/net/ethernet/nebula-matrix/
+
 HISILICON ROH DRIVER
 M:	Ke Chen <chenke54@huawei.com>
 S:	Maintained

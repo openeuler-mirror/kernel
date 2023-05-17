@@ -1,0 +1,55 @@
+.. SPDX-License-Identifier: GPL-2.0
+
+============================================================
+Linux Base Driver for Nebula-matrix M1600-NIC family
+============================================================
+
+Overview:
+=========
+M1600-NIC is a series of network interface card for the Data Center Area.
+
+The driver supports link-speed 10GbE.
+
+M1600 devices support SR-IOV. This driver is used for both of Physical
+Function(PF) and Virtual Function(VF).
+
+M1600 devices support MSI-X interrupt vector for each Tx/Rx queue and
+interrupt moderation.
+
+M1600 devices support also various offload features such as checksum offload,
+Receive-Side Scaling(RSS).
+
+
+Supported PCI vendor ID/device IDs:
+===================================
+
+1f0f:1600 - M1600-Nic PF
+1f0f:1601 - M1600-Nic VF
+
+ethtool tool support
+====================
+
+Obtain basic information of the network card:
+	ethtool -i enp130s0f0
+
+Get network card ring parameters:
+	ethtool -g enp130s0f0
+
+Set the ring parameter:
+	ethtool -G enp130s0f0 rx 1024 tx 1024
+
+View statistics:
+	ethtool -S enp130s0f0
+
+Viewing Optical Module Information:
+	ethtool -m enp130s0f0
+
+Support
+=======
+
+For more information about M1600-NIC, please visit the following URL:
+https://www.nebula-matrix.com/
+
+If an issue is identified with the released source code on the supported kernel
+with a supported adapter, email the specific information related to the issue to
+open@nebula-matrix.com.
