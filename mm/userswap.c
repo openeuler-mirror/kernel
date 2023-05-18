@@ -367,7 +367,8 @@ unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 	    offset_in_page(new_addr) || (len % PAGE_SIZE))
 		return ret;
 
-	if (new_len > TASK_SIZE || new_addr > TASK_SIZE - new_len)
+	if (new_len > TASK_SIZE || new_addr > TASK_SIZE - new_len ||
+	    old_addr > TASK_SIZE - old_len)
 		return ret;
 
 	/* Ensure the old/new locations do not overlap */
