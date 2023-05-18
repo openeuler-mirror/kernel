@@ -500,13 +500,12 @@ bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 
 	mmap_read_lock(mm);
 	vma = find_vma(mm, uffdio_register->range.start);
-	if (!vma)
+	if (!vma || vma->vm_start >= end)
 		goto out_unlock;
 	uffdio_register->range.start = vma->vm_start;
 	vma = find_vma(mm, end);
-	if (!vma)
-		goto out_unlock;
-	uffdio_register->range.len = vma->vm_end - uffdio_register->range.start;
+	if (vma && end >= vma->vm_start)
+		uffdio_register->range.len = vma->vm_end - uffdio_register->range.start;
 
 	*vm_flags |= VM_USWAP;
 
