@@ -66,6 +66,12 @@ static inline bool uswap_missing(struct vm_area_struct *vma)
 	return false;
 }
 
+static inline void uswap_get_cpu_id(unsigned long reason, struct uffd_msg *msg)
+{
+	if (reason & VM_USWAP)
+		msg->reserved3 = smp_processor_id();
+}
+
 #endif /* CONFIG_USERSWAP */
 
 #endif /* _LINUX_USERSWAP_H */
