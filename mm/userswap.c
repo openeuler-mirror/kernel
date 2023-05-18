@@ -162,7 +162,7 @@ static void uswap_unmap_anon_page(struct mm_struct *mm,
 {
 	struct mmu_notifier_range range;
 	spinlock_t *ptl;
-	pte_t *pte;
+	pte_t *pte, _old_pte;
 
 	mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0, vma,
 				vma->vm_mm, addr, addr + PAGE_SIZE);
@@ -171,7 +171,7 @@ static void uswap_unmap_anon_page(struct mm_struct *mm,
 	if (pte_none(*pte))
 		goto out_release_unlock;
 	flush_cache_page(vma, addr, pte_pfn(*pte));
-	*old_pte = ptep_clear_flush(vma, addr, pte);
+	_old_pte = ptep_clear_flush(vma, addr, pte);
 	if (set_to_swp)
 		set_pte_at(mm, addr, pte, swp_entry_to_pte(swp_entry(
 			   SWP_USERSWAP_ENTRY, page_to_pfn(page))));
@@ -184,6 +184,8 @@ out_release_unlock:
 	pte_unmap_unlock(pte, ptl);
 	mmu_notifier_invalidate_range_end(&range);
 	page->mapping = NULL;
+	if (old_pte)
+		*old_pte = _old_pte;
 }
 
 static void uswap_map_anon_page(struct mm_struct *mm,
