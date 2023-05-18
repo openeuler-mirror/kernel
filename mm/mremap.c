@@ -25,6 +25,7 @@
 #include <linux/mm-arch-hooks.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/share_pool.h>
+#include <linux/userswap.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlb.h>
@@ -915,8 +916,13 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	 */
 	addr = untagged_addr(addr);
 
+#ifdef CONFIG_USERSWAP
+	if (!uswap_validate_mremap_flags(flags))
+		return ret;
+#else
 	if (flags & ~(MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP))
 		return ret;
+#endif
 
 	if (flags & MREMAP_FIXED && !(flags & MREMAP_MAYMOVE))
 		return ret;
@@ -946,6 +952,11 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	 */
 	if (!new_len)
 		return ret;
+
+#ifdef CONFIG_USERSWAP
+	if (flags & MREMAP_USWAP_SET_PTE)
+		return uswap_mremap(addr, old_len, new_addr, new_len);
+#endif
 
 	if (mmap_write_lock_killable(current->mm))
 		return -EINTR;
