@@ -1314,12 +1314,11 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	if (ret)
 		goto out;
 #ifdef CONFIG_USERSWAP
-	if (uswap_mode)
-		if (!uswap_adjust_uffd_range(&uffdio_register, &vm_flags,
-					     mm)) {
-			ret = -EINVAL;
-			goto out;
-		}
+	if (uswap_mode && !uswap_adjust_uffd_range(&uffdio_register,
+						   &vm_flags, mm)) {
+		ret = -EINVAL;
+		goto out;
+	}
 #endif
 	start = uffdio_register.range.start;
 	end = start + uffdio_register.range.len;

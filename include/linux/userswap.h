@@ -45,13 +45,18 @@ static inline bool uswap_check_copy_mode(struct vm_area_struct *vma, __u64 mode)
 
 static inline bool uswap_validate_mremap_flags(unsigned long flags)
 {
-	if (!static_branch_unlikely(&userswap_enabled) && flags & MREMAP_USWAP_SET_PTE)
-		return false;
-	if (flags & MREMAP_USWAP_SET_PTE && flags & ~MREMAP_USWAP_SET_PTE)
-		return false;
-	if (flags & ~(MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP |
-		      MREMAP_USWAP_SET_PTE))
-		return false;
+	if (static_branch_unlikely(&userswap_enabled)) {
+		if (flags & MREMAP_USWAP_SET_PTE &&
+		    flags & ~MREMAP_USWAP_SET_PTE)
+			return false;
+		if (flags & ~(MREMAP_FIXED | MREMAP_MAYMOVE |
+			      MREMAP_DONTUNMAP | MREMAP_USWAP_SET_PTE))
+			return false;
+	} else {
+		if (flags & ~(MREMAP_FIXED | MREMAP_MAYMOVE |
+			      MREMAP_DONTUNMAP))
+			return false;
+	}
 	return true;
 }
 
@@ -63,7 +68,8 @@ static inline bool uswap_vm_flag_bug_on(unsigned long reason)
 	if (reason & ~(VM_UFFD_MISSING | VM_UFFD_WP | VM_USWAP))
 		return true;
 	if (reason & VM_USWAP)
-		return !(reason & VM_UFFD_MISSING) || reason & ~(VM_USWAP|VM_UFFD_MISSING);
+		return !(reason & VM_UFFD_MISSING) ||
+		       reason & ~(VM_USWAP|VM_UFFD_MISSING);
 	return !(reason & VM_UFFD_MISSING) ^ !!(reason & VM_UFFD_WP);
 }
 

@@ -82,7 +82,7 @@ static unsigned long pages_can_be_swapped(struct mm_struct *mm,
 	struct page **pages = NULL;
 	unsigned long addr_end = addr + len;
 	unsigned long ret;
-	int i, page_num = 0;
+	unsigned long i, page_num = 0;
 	*ppages = NULL;
 
 
@@ -248,7 +248,7 @@ static void uswapout_recover(struct mm_struct *mm,
 	struct page *page;
 	pmd_t *old_pmd, *new_pmd;
 	pte_t pte;
-	int i;
+	unsigned long i;
 
 	for (i = 0; i < len; i++) {
 		page = pages[i];
@@ -288,7 +288,7 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 	pmd_t *pmd;
 	pte_t old_pte, *ptes;
 	bool pages_dirty = false;
-	int i = 0, j;
+	unsigned long i = 0, j;
 	int ret;
 
 	ptes = kmalloc(sizeof(pte_t) * (len / PAGE_SIZE), GFP_KERNEL);
@@ -337,7 +337,7 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 	}
 
 	if (pages_dirty)
-		new_addr = new_addr | USWAP_PAGES_DIRTY;
+		new_addr_start = new_addr_start | USWAP_PAGES_DIRTY;
 	kfree(ptes);
 	return new_addr_start;
 
@@ -361,7 +361,7 @@ unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 	struct mm_struct *mm = current->mm;
 	unsigned long len = old_len;
 	unsigned long ret = -EINVAL;
-	int i;
+	unsigned long i;
 
 	if (!len || old_len != new_len || offset_in_page(old_addr) ||
 	    (len % PAGE_SIZE))
@@ -485,22 +485,28 @@ bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 {
 	struct vm_area_struct *vma;
 	unsigned long end;
+	bool ret = false;
 
 	if (!static_branch_unlikely(&userswap_enabled))
 		return true;
 	end = uffdio_register->range.start + uffdio_register->range.len - 1;
+
+	mmap_read_lock(mm);
 	vma = find_vma(mm, uffdio_register->range.start);
 	if (!vma)
-		return false;
+		goto out_unlock;
 	uffdio_register->range.start = vma->vm_start;
 	vma = find_vma(mm, end);
 	if (!vma)
-		return false;
+		goto out_unlock;
 	uffdio_register->range.len = vma->vm_end - uffdio_register->range.start;
 
 	*vm_flags |= VM_USWAP;
 
-	return true;
+	ret = true;
+out_unlock:
+	mmap_read_unlock(mm);
+	return ret;
 }
 
 bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
