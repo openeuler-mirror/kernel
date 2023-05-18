@@ -16,7 +16,7 @@
 
 .text
 SYM_FUNC_START(swsusp_arch_save)
-	la.abs t0, saved_regs
+	la.pcrel t0, saved_regs
 	PTR_S ra, t0, PT_R1
 	PTR_S sp, t0, PT_R3
 	PTR_S fp, t0, PT_R22
