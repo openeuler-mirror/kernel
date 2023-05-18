@@ -311,8 +311,8 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 			goto out_recover;
 
 		ret = -EACCES;
-		if (pgprot_val(old_vma->vm_page_prot) !=
-		    pgprot_val(new_vma->vm_page_prot))
+		if (!(old_vma->vm_flags & VM_WRITE) &&
+		    (new_vma->vm_flags & VM_WRITE))
 			goto out_recover;
 
 		ret = -ENXIO;
