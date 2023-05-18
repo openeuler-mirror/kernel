@@ -36,10 +36,22 @@ bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
 		   struct vm_area_struct *vma, vm_fault_t *ret);
 
-static inline bool uswap_check_copy_mode(struct vm_area_struct *vma, __u64 mode)
+static inline bool uswap_check_copy(struct vm_area_struct *vma,
+				    unsigned long src_addr,
+				    unsigned long len, __u64 mode)
 {
-	if (!(vma->vm_flags & VM_USWAP) && (mode & UFFDIO_COPY_MODE_DIRECT_MAP))
-		return false;
+	if (vma->vm_flags & VM_USWAP) {
+		if (!(mode & UFFDIO_COPY_MODE_DIRECT_MAP))
+			return false;
+		if (offset_in_page(src_addr))
+			return false;
+		if (src_addr > TASK_SIZE || src_addr > TASK_SIZE - len)
+			return false;
+	} else {
+		if (mode & UFFDIO_COPY_MODE_DIRECT_MAP)
+			return false;
+	}
+
 	return true;
 }
 

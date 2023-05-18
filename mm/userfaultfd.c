@@ -512,7 +512,7 @@ retry:
 
 	err = -EINVAL;
 #ifdef CONFIG_USERSWAP
-	if (!uswap_check_copy_mode(dst_vma, mode))
+	if (!uswap_check_copy(dst_vma, src_addr, len, mode))
 		goto out_unlock;
 #endif
 	/*
