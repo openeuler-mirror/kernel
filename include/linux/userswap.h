@@ -59,6 +59,13 @@ static inline bool uswap_vm_flag_bug_on(unsigned long reason)
 	return !(reason & VM_UFFD_MISSING) ^ !!(reason & VM_UFFD_WP);
 }
 
+static inline bool uswap_missing(struct vm_area_struct *vma)
+{
+	if (vma->vm_flags & VM_USWAP && vma->vm_flags & VM_UFFD_MISSING)
+		return true;
+	return false;
+}
+
 #endif /* CONFIG_USERSWAP */
 
 #endif /* _LINUX_USERSWAP_H */

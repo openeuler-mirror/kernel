@@ -485,6 +485,10 @@ vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason)
 	uwq.wq.private = current;
 	uwq.msg = userfault_msg(vmf->address, vmf->flags, reason,
 			ctx->features);
+#ifdef CONFIG_USERSWAP
+	if (reason & VM_USWAP && pte_none(vmf->orig_pte))
+		uwq.msg.arg.pagefault.flags |= UFFD_PAGEFAULT_FLAG_FPF;
+#endif
 	uwq.ctx = ctx;
 	uwq.waken = false;
 
