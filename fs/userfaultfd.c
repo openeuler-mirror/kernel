@@ -1282,6 +1282,9 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	bool found;
 	bool basic_ioctls;
 	unsigned long start, end, vma_end;
+#ifdef CONFIG_USERSWAP
+	bool uswap_mode = false;
+#endif
 
 	user_uffdio_register = (struct uffdio_register __user *) arg;
 
@@ -1295,7 +1298,7 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 		goto out;
 	vm_flags = 0;
 #ifdef CONFIG_USERSWAP
-	if (!uswap_register(&uffdio_register, &vm_flags, mm))
+	if (!uswap_register(&uffdio_register, &uswap_mode))
 		goto out;
 #endif
 	if (uffdio_register.mode & ~(UFFDIO_REGISTER_MODE_MISSING|
@@ -1310,7 +1313,14 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 			     uffdio_register.range.len);
 	if (ret)
 		goto out;
-
+#ifdef CONFIG_USERSWAP
+	if (uswap_mode)
+		if (!uswap_adjust_uffd_range(&uffdio_register, &vm_flags,
+					     mm)) {
+			ret = -EINVAL;
+			goto out;
+		}
+#endif
 	start = uffdio_register.range.start;
 	end = start + uffdio_register.range.len;
 

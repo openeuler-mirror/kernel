@@ -11,6 +11,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/userswap.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/security.h>
 
 #include "internal.h"
 
@@ -462,16 +463,8 @@ out_put_page:
 	return ret;
 }
 
-/*
- * register the whole vma overlapping with the address range to avoid splitting
- * the vma.
- */
-bool uswap_register(struct uffdio_register *uffdio_register,
-		    unsigned long *vm_flags, struct mm_struct *mm)
+bool uswap_register(struct uffdio_register *uffdio_register, bool *uswap_mode)
 {
-	struct vm_area_struct *vma;
-	unsigned long end;
-
 	if (!static_branch_unlikely(&userswap_enabled))
 		return true;
 	if (!(uffdio_register->mode & UFFDIO_REGISTER_MODE_USWAP))
@@ -479,7 +472,22 @@ bool uswap_register(struct uffdio_register *uffdio_register,
 	uffdio_register->mode &= ~UFFDIO_REGISTER_MODE_USWAP;
 	if (!uffdio_register->mode)
 		return false;
+	*uswap_mode = true;
+	return true;
+}
 
+/*
+ * register the whole vma overlapping with the address range to avoid splitting
+ * the vma which could reduce fragmentation.
+ */
+bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
+			     unsigned long *vm_flags, struct mm_struct *mm)
+{
+	struct vm_area_struct *vma;
+	unsigned long end;
+
+	if (!static_branch_unlikely(&userswap_enabled))
+		return true;
 	end = uffdio_register->range.start + uffdio_register->range.len - 1;
 	vma = find_vma(mm, uffdio_register->range.start);
 	if (!vma)

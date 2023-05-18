@@ -28,8 +28,10 @@ int mfill_atomic_pte_nocopy(struct mm_struct *dst_mm,
 unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 			   unsigned long new_addr, unsigned long new_len);
 
-bool uswap_register(struct uffdio_register *uffdio_register,
-		    unsigned long *vm_flags, struct mm_struct *mm);
+bool uswap_register(struct uffdio_register *uffdio_register, bool *uswap_mode);
+
+bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
+			     unsigned long *vm_flags, struct mm_struct *mm);
 
 bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
 		   struct vm_area_struct *vma, vm_fault_t *ret);
