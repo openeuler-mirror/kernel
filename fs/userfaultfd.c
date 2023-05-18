@@ -335,8 +335,7 @@ static inline bool userfaultfd_must_wait(struct userfaultfd_ctx *ctx,
 	 * changes under us.
 	 */
 #ifdef CONFIG_USERSWAP
-	if ((reason & VM_USWAP) && (!pte_present(*pte)))
-		ret = true;
+	uswap_must_wait(reason, *pte, &ret);
 #endif
 	if (pte_none(*pte))
 		ret = true;
@@ -875,8 +874,7 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		userfault_flags = VM_UFFD_MISSING | VM_UFFD_WP;
 #ifdef CONFIG_USERSWAP
-		if (enable_userswap)
-			userfault_flags |= VM_USWAP;
+		uswap_release(&userfault_flags);
 #endif
 		cond_resched();
 		BUG_ON(!!vma->vm_userfaultfd_ctx.ctx ^
@@ -1297,26 +1295,8 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 		goto out;
 	vm_flags = 0;
 #ifdef CONFIG_USERSWAP
-	/*
-	 * register the whole vma overlapping with the address range to avoid
-	 * splitting the vma.
-	 */
-	if (enable_userswap && (uffdio_register.mode & UFFDIO_REGISTER_MODE_USWAP)) {
-		uffdio_register.mode &= ~UFFDIO_REGISTER_MODE_USWAP;
-		if (!uffdio_register.mode)
-			goto out;
-		vm_flags |= VM_USWAP;
-		end = uffdio_register.range.start + uffdio_register.range.len - 1;
-		vma = find_vma(mm, uffdio_register.range.start);
-		if (!vma)
-			goto out;
-		uffdio_register.range.start = vma->vm_start;
-
-		vma = find_vma(mm, end);
-		if (!vma)
-			goto out;
-		uffdio_register.range.len = vma->vm_end - uffdio_register.range.start;
-	}
+	if (!uswap_register(&uffdio_register, &vm_flags, mm))
+		goto out;
 #endif
 	if (uffdio_register.mode & ~(UFFDIO_REGISTER_MODE_MISSING|
 				     UFFDIO_REGISTER_MODE_WP))
@@ -2040,15 +2020,6 @@ SYSCALL_DEFINE1(userfaultfd, int, flags)
 	}
 	return fd;
 }
-
-#ifdef CONFIG_USERSWAP
-static int __init enable_userswap_setup(char *str)
-{
-	enable_userswap = true;
-	return 1;
-}
-__setup("enable_userswap", enable_userswap_setup);
-#endif
 
 static int __init userfaultfd_init(void)
 {

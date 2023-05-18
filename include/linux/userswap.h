@@ -28,6 +28,12 @@ int mfill_atomic_pte_nocopy(struct mm_struct *dst_mm,
 unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 			   unsigned long new_addr, unsigned long new_len);
 
+bool uswap_register(struct uffdio_register *uffdio_register,
+		    unsigned long *vm_flags, struct mm_struct *mm);
+
+bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
+		   struct vm_area_struct *vma, vm_fault_t *ret);
+
 static inline bool uswap_check_copy_mode(struct vm_area_struct *vma, __u64 mode)
 {
 	if (!(vma->vm_flags & VM_USWAP) && (mode & UFFDIO_COPY_MODE_DIRECT_MAP))
@@ -70,6 +76,18 @@ static inline void uswap_get_cpu_id(unsigned long reason, struct uffd_msg *msg)
 {
 	if (reason & VM_USWAP)
 		msg->reserved3 = smp_processor_id();
+}
+
+static inline void uswap_release(unsigned long *userfault_flags)
+{
+	if (enable_userswap)
+		*userfault_flags |= VM_USWAP;
+}
+
+static inline void uswap_must_wait(unsigned long reason, pte_t pte, bool *ret)
+{
+	if ((reason & VM_USWAP) && (!pte_present(pte)))
+		*ret = true;
 }
 
 #endif /* CONFIG_USERSWAP */

@@ -10,6 +10,7 @@
 #include <linux/rmap.h>
 #include <linux/mmu_notifier.h>
 #include <linux/userswap.h>
+#include <linux/userfaultfd_k.h>
 
 #include "internal.h"
 
@@ -458,3 +459,67 @@ out_put_page:
 	put_page(page);
 	return ret;
 }
+
+/*
+ * register the whole vma overlapping with the address range to avoid splitting
+ * the vma.
+ */
+bool uswap_register(struct uffdio_register *uffdio_register,
+		    unsigned long *vm_flags, struct mm_struct *mm)
+{
+	struct vm_area_struct *vma;
+	unsigned long end;
+
+	if (!enable_userswap)
+		return true;
+	if (!(uffdio_register->mode & UFFDIO_REGISTER_MODE_USWAP))
+		return true;
+	uffdio_register->mode &= ~UFFDIO_REGISTER_MODE_USWAP;
+	if (!uffdio_register->mode)
+		return false;
+
+	end = uffdio_register->range.start + uffdio_register->range.len - 1;
+	vma = find_vma(mm, uffdio_register->range.start);
+	if (!vma)
+		return false;
+	uffdio_register->range.start = vma->vm_start;
+	vma = find_vma(mm, end);
+	if (!vma)
+		return false;
+	uffdio_register->range.len = vma->vm_end - uffdio_register->range.start;
+
+	*vm_flags |= VM_USWAP;
+
+	return true;
+}
+
+bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
+		   struct vm_area_struct *vma, vm_fault_t *ret)
+{
+	if (swp_type(entry) != SWP_USERSWAP_ENTRY)
+		return true;
+
+	/* print error if we come across a nested fault */
+	if (!strncmp(current->comm, "uswap", 5)) {
+		pr_err("USWAP: fault %lx is triggered by %s\n", vmf->address,
+		       current->comm);
+		*ret = VM_FAULT_SIGBUS;
+		return false;
+	}
+
+	if (!(vma->vm_flags & VM_UFFD_MISSING)) {
+		pr_err("USWAP: addr %lx flags %lx is not a user swap page",
+				vmf->address, vma->vm_flags);
+		return true;
+	}
+
+	*ret = handle_userfault(vmf, VM_UFFD_MISSING | VM_USWAP);
+	return false;
+}
+
+static int __init enable_userswap_setup(char *str)
+{
+	enable_userswap = true;
+	return 1;
+}
+__setup("enable_userswap", enable_userswap_setup);
