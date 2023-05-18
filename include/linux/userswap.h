@@ -11,7 +11,7 @@
 
 #ifdef CONFIG_USERSWAP
 
-extern int enable_userswap;
+extern struct static_key_false userswap_enabled;
 
 /*
  * In uswap situation, we use the bit 0 of the returned address to indicate
@@ -43,7 +43,7 @@ static inline bool uswap_check_copy_mode(struct vm_area_struct *vma, __u64 mode)
 
 static inline bool uswap_validate_mremap_flags(unsigned long flags)
 {
-	if (!enable_userswap && flags & MREMAP_USWAP_SET_PTE)
+	if (!static_branch_unlikely(&userswap_enabled) && flags & MREMAP_USWAP_SET_PTE)
 		return false;
 	if (flags & MREMAP_USWAP_SET_PTE && flags & ~MREMAP_USWAP_SET_PTE)
 		return false;
@@ -80,7 +80,7 @@ static inline void uswap_get_cpu_id(unsigned long reason, struct uffd_msg *msg)
 
 static inline void uswap_release(unsigned long *userfault_flags)
 {
-	if (enable_userswap)
+	if (static_branch_unlikely(&userswap_enabled))
 		*userfault_flags |= VM_USWAP;
 }
 

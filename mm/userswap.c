@@ -14,7 +14,7 @@
 
 #include "internal.h"
 
-int enable_userswap;
+DEFINE_STATIC_KEY_FALSE(userswap_enabled);
 
 static bool vma_uswap_compatible(struct vm_area_struct *vma)
 {
@@ -470,7 +470,7 @@ bool uswap_register(struct uffdio_register *uffdio_register,
 	struct vm_area_struct *vma;
 	unsigned long end;
 
-	if (!enable_userswap)
+	if (!static_branch_unlikely(&userswap_enabled))
 		return true;
 	if (!(uffdio_register->mode & UFFDIO_REGISTER_MODE_USWAP))
 		return true;
@@ -496,6 +496,9 @@ bool uswap_register(struct uffdio_register *uffdio_register,
 bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
 		   struct vm_area_struct *vma, vm_fault_t *ret)
 {
+	if (!static_branch_unlikely(&userswap_enabled))
+		return true;
+
 	if (swp_type(entry) != SWP_USERSWAP_ENTRY)
 		return true;
 
@@ -519,7 +522,7 @@ bool do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
 
 static int __init enable_userswap_setup(char *str)
 {
-	enable_userswap = true;
+	static_branch_enable(&userswap_enabled);
 	return 1;
 }
 __setup("enable_userswap", enable_userswap_setup);

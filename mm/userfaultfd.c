@@ -586,7 +586,8 @@ retry:
 		BUG_ON(pmd_trans_huge(*dst_pmd));
 
 #ifdef CONFIG_USERSWAP
-		if (dst_vma->vm_flags & VM_USWAP &&
+		if (static_branch_unlikely(&userswap_enabled) &&
+		    dst_vma->vm_flags & VM_USWAP &&
 		    mode & UFFDIO_COPY_MODE_DIRECT_MAP)
 			err = mfill_atomic_pte_nocopy(dst_mm, dst_pmd, dst_vma,
 						      dst_addr, src_addr);
