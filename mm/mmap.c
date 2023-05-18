@@ -49,6 +49,7 @@
 #include <linux/sched/mm.h>
 #include <linux/swapops.h>
 #include <linux/share_pool.h>
+#include <linux/userswap.h>
 
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>

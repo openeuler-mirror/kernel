@@ -27,13 +27,11 @@
 #include <linux/ioctl.h>
 #include <linux/security.h>
 #include <linux/hugetlb.h>
+#include <linux/userswap.h>
 
 int sysctl_unprivileged_userfaultfd __read_mostly = 1;
 
 static struct kmem_cache *userfaultfd_ctx_cachep __read_mostly;
-#ifdef CONFIG_USERSWAP
-int enable_userswap;
-#endif
 
 /*
  * Start with fault_pending_wqh and fault_wqh so they're more likely
@@ -1717,7 +1715,10 @@ static int userfaultfd_copy(struct userfaultfd_ctx *ctx,
 	ret = -EINVAL;
 	if (uffdio_copy.src + uffdio_copy.len <= uffdio_copy.src)
 		goto out;
-	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE|UFFDIO_COPY_MODE_WP))
+	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE |
+				 UFFDIO_COPY_MODE_WP |
+				 IS_ENABLED(CONFIG_USERSWAP) ?
+				 UFFDIO_COPY_MODE_DIRECT_MAP : 0))
 		goto out;
 	if (mmget_not_zero(ctx->mm)) {
 		ret = mcopy_atomic(ctx->mm, uffdio_copy.dst, uffdio_copy.src,
