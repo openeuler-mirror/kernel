@@ -20,12 +20,12 @@ void __net_exit smc_sysctl_net_exit(struct net *net);
 
 #else
 
-int __net_init smc_sysctl_net_init(struct net *net)
+static inline int smc_sysctl_net_init(struct net *net)
 {
 	return 0;
 }
 
-void __net_exit smc_sysctl_net_exit(struct net *net) { }
+static inline void smc_sysctl_net_exit(struct net *net) { }
 
 #endif /* CONFIG_SYSCTL */
 
