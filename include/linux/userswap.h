@@ -47,6 +47,18 @@ static inline bool uswap_validate_mremap_flags(unsigned long flags)
 	return true;
 }
 
+/* When CONFIG_USERSWAP=y, VM_UFFD_MISSING|VM_USWAP is right;
+ * 0 or > 1 flags set is a bug; we expect exactly 1.
+ */
+static inline bool uswap_vm_flag_bug_on(unsigned long reason)
+{
+	if (reason & ~(VM_UFFD_MISSING | VM_UFFD_WP | VM_USWAP))
+		return true;
+	if (reason & VM_USWAP)
+		return !(reason & VM_UFFD_MISSING) || reason & ~(VM_USWAP|VM_UFFD_MISSING);
+	return !(reason & VM_UFFD_MISSING) ^ !!(reason & VM_UFFD_WP);
+}
+
 #endif /* CONFIG_USERSWAP */
 
 #endif /* _LINUX_USERSWAP_H */

@@ -406,8 +406,12 @@ vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason)
 
 	BUG_ON(ctx->mm != mm);
 
+#ifdef CONFIG_USERSWAP
+	VM_BUG_ON(uswap_vm_flag_bug_on(reason));
+#else
 	VM_BUG_ON(reason & ~(VM_UFFD_MISSING|VM_UFFD_WP));
 	VM_BUG_ON(!(reason & VM_UFFD_MISSING) ^ !!(reason & VM_UFFD_WP));
+#endif
 
 	if (ctx->features & UFFD_FEATURE_SIGBUS)
 		goto out;
