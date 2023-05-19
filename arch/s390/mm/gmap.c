@@ -2573,6 +2573,13 @@ int gmap_mark_unmergeable(void)
 	struct vm_area_struct *vma;
 	int ret;
 
+	/*
+	 * Make sure to disable KSM (if enabled for the whole process or
+	 * individual VMAs). Note that nothing currently hinders user space
+	 * from re-enabling it.
+	 */
+	clear_bit(MMF_VM_MERGE_ANY, &mm->flags);
+
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		ret = ksm_madvise(vma, vma->vm_start, vma->vm_end,
 				  MADV_UNMERGEABLE, &vma->vm_flags);

@@ -49,6 +49,7 @@
 #include <linux/sched/mm.h>
 #include <linux/swapops.h>
 #include <linux/share_pool.h>
+#include <linux/ksm.h>
 
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
@@ -2131,6 +2132,7 @@ unmap_writable:
 			allow_write_access(file);
 	}
 	file = vma->vm_file;
+	ksm_add_vma(vma);
 out:
 	perf_event_mmap(vma);
 
@@ -3436,6 +3438,7 @@ static int do_brk_flags(unsigned long addr, unsigned long len, unsigned long fla
 	vma->vm_flags = flags;
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
+	ksm_add_vma(vma);
 out:
 	perf_event_mmap(vma);
 	mm->total_vm += len >> PAGE_SHIFT;
