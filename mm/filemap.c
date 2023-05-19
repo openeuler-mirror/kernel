@@ -2630,7 +2630,7 @@ ssize_t generic_file_buffered_read(struct kiocb *iocb,
 		 * When a read accesses a page several times, only
 		 * mark it as accessed the first time.
 		 */
-		if (pos_same_page(iocb->ki_pos, ra->prev_pos -1, pages[0]))
+		if (!pos_same_page(iocb->ki_pos, ra->prev_pos -1, pages[0]))
 			mark_page_accessed(pages[0]);
 		for (i = 1; i < pg_nr; i++)
 			mark_page_accessed(pages[i]);
