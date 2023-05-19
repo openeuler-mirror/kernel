@@ -804,9 +804,11 @@ static int hns3_pmu_find_related_event_idx(struct hns3_pmu *hns3_pmu,
 		if (!hns3_pmu_cmp_event(sibling, event))
 			continue;
 
-		/* Related events is used in group */
+		/* Related events is used in group, else we use index 0 event as related event */
 		if (sibling->group_leader == event->group_leader)
 			return idx;
+		else
+			return 0;
 	}
 
 	/* No related event and all hardware events are used up */
