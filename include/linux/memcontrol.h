@@ -392,7 +392,11 @@ struct mem_cgroup {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 #endif
+#ifdef CONFIG_KSM
+	KABI_USE(5, bool ksm_merge_any)
+#else
 	KABI_RESERVE(5)
+#endif
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
