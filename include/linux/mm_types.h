@@ -623,7 +623,15 @@ struct mm_struct {
 #else
 	KABI_RESERVE(1)
 #endif
+#ifdef CONFIG_KSM
+	/*
+	 * Represent how many pages of this process are involved in KSM
+	 * merging.
+	 */
+	KABI_USE(2, unsigned long ksm_merging_pages)
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
