@@ -437,6 +437,7 @@ static int smc_lgr_create(struct smc_sock *smc, struct smc_init_info *ini)
 			goto free_wq;
 		lgr_list = &smc_lgr_list.list;
 		lgr_lock = &smc_lgr_list.lock;
+		lgr->buf_type = sock_net(&smc->sk)->smc.sysctl_smcr_buf_type;
 		atomic_inc(&lgr_cnt);
 	}
 	smc->conn.lgr = lgr;
