@@ -7,5 +7,7 @@ struct netns_smc {
 	struct ctl_table_header		*smc_hdr;
 #endif
 	unsigned int			sysctl_smcr_buf_type;
+	int				sysctl_wmem;
+	int				sysctl_rmem;
 };
 #endif
