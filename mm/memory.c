@@ -73,6 +73,7 @@
 #include <linux/perf_event.h>
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
+#include <linux/userswap.h>
 
 #include <trace/events/kmem.h>
 
@@ -3395,22 +3396,8 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 
 	entry = pte_to_swp_entry(vmf->orig_pte);
 #ifdef CONFIG_USERSWAP
-	if (swp_type(entry) == SWP_USERSWAP_ENTRY) {
-		/* print error if we come across a nested fault */
-		if (!strncmp(current->comm, "uswap", 5)) {
-			pr_err("USWAP: fault %lx is triggered by %s\n",
-					vmf->address, current->comm);
-			return VM_FAULT_SIGBUS;
-		}
-		if (!(vma->vm_flags & VM_UFFD_MISSING)) {
-			pr_err("USWAP: addr %lx flags %lx is not a user swap page",
-					vmf->address, vma->vm_flags);
-			goto skip_uswap;
-		}
-		ret = handle_userfault(vmf, VM_UFFD_MISSING | VM_USWAP);
+	if (!do_uswap_page(entry, vmf, vma, &ret))
 		return ret;
-	}
-skip_uswap:
 #endif
 	if (unlikely(non_swap_entry(entry))) {
 		if (is_migration_entry(entry)) {
@@ -3689,6 +3676,12 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		if (ret)
 			goto unlock;
 		/* Deliver the page fault to userland, check inside PT lock */
+#ifdef CONFIG_USERSWAP
+		if (uswap_missing(vma)) {
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			return handle_userfault(vmf, VM_UFFD_MISSING|VM_USWAP);
+		}
+#endif
 		if (userfaultfd_missing(vma)) {
 			pte_unmap_unlock(vmf->pte, vmf->ptl);
 			return handle_userfault(vmf, VM_UFFD_MISSING);
@@ -3731,6 +3724,13 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		goto release;
 
 	/* Deliver the page fault to userland, check inside PT lock */
+#ifdef CONFIG_USERSWAP
+	if (uswap_missing(vma)) {
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		put_page(page);
+		return handle_userfault(vmf, VM_UFFD_MISSING | VM_USWAP);
+	}
+#endif
 	if (userfaultfd_missing(vma)) {
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
 		put_page(page);

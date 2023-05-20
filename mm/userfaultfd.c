@@ -15,6 +15,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/hugetlb.h>
 #include <linux/shmem_fs.h>
+#include <linux/userswap.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
 
@@ -90,10 +91,6 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 		*pagep = NULL;
 	}
 
-#ifdef CONFIG_USERSWAP
-	if (dst_vma->vm_flags & VM_USWAP)
-		ClearPageDirty(page);
-#endif
 	/*
 	 * The memory barrier inside __SetPageUptodate makes sure that
 	 * preceding stores to the page contents become visible before
@@ -112,10 +109,6 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 		else
 			_dst_pte = pte_mkwrite(_dst_pte);
 	}
-#ifdef CONFIG_USERSWAP
-	if (dst_vma->vm_flags & VM_USWAP)
-		_dst_pte = pte_mkclean(_dst_pte);
-#endif
 
 	dst_pte = pte_offset_map_lock(dst_mm, dst_pmd, dst_addr, &ptl);
 	if (dst_vma->vm_file) {
@@ -128,26 +121,9 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 			goto out_release_uncharge_unlock;
 	}
 
-#ifdef CONFIG_USERSWAP
-	if (!(dst_vma->vm_flags & VM_USWAP)) {
-		ret = -EEXIST;
-		if (!pte_none(*dst_pte))
-			goto out_release_uncharge_unlock;
-	} else {
-		/*
-		 * The userspace may swap in a large area. Part of the area is
-		 * not swapped out. Skip those pages.
-		 */
-		ret = 0;
-		if (swp_type(pte_to_swp_entry(*dst_pte)) != SWP_USERSWAP_ENTRY ||
-		    pte_present(*dst_pte))
-			goto out_release_uncharge_unlock;
-	}
-#else
 	ret = -EEXIST;
 	if (!pte_none(*dst_pte))
 		goto out_release_uncharge_unlock;
-#endif
 
 	inc_mm_counter(dst_mm, MM_ANONPAGES);
 	reliable_page_counter(page, dst_mm, 1);
@@ -535,6 +511,10 @@ retry:
 		goto out_unlock;
 
 	err = -EINVAL;
+#ifdef CONFIG_USERSWAP
+	if (!uswap_check_copy(dst_vma, src_addr, len, mode))
+		goto out_unlock;
+#endif
 	/*
 	 * shmem_zero_setup is invoked in mmap for MAP_ANONYMOUS|MAP_SHARED but
 	 * it will overwrite vm_ops, so vma_is_anonymous must return false.
@@ -605,8 +585,17 @@ retry:
 		BUG_ON(pmd_none(*dst_pmd));
 		BUG_ON(pmd_trans_huge(*dst_pmd));
 
-		err = mfill_atomic_pte(dst_mm, dst_pmd, dst_vma, dst_addr,
-				       src_addr, &page, zeropage, wp_copy);
+#ifdef CONFIG_USERSWAP
+		if (static_branch_unlikely(&userswap_enabled) &&
+		    dst_vma->vm_flags & VM_USWAP &&
+		    mode & UFFDIO_COPY_MODE_DIRECT_MAP)
+			err = mfill_atomic_pte_nocopy(dst_mm, dst_pmd, dst_vma,
+						      dst_addr, src_addr);
+		else
+#endif
+			err = mfill_atomic_pte(dst_mm, dst_pmd, dst_vma,
+					       dst_addr, src_addr, &page,
+					       zeropage, wp_copy);
 		cond_resched();
 
 		if (unlikely(err == -ENOENT)) {

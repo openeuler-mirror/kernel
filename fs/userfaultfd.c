@@ -27,13 +27,11 @@
 #include <linux/ioctl.h>
 #include <linux/security.h>
 #include <linux/hugetlb.h>
+#include <linux/userswap.h>
 
 int sysctl_unprivileged_userfaultfd __read_mostly = 1;
 
 static struct kmem_cache *userfaultfd_ctx_cachep __read_mostly;
-#ifdef CONFIG_USERSWAP
-int enable_userswap;
-#endif
 
 /*
  * Start with fault_pending_wqh and fault_wqh so they're more likely
@@ -220,6 +218,9 @@ static inline struct uffd_msg userfault_msg(unsigned long address,
 		msg.arg.pagefault.flags |= UFFD_PAGEFAULT_FLAG_WP;
 	if (features & UFFD_FEATURE_THREAD_ID)
 		msg.arg.pagefault.feat.ptid = task_pid_vnr(current);
+#ifdef CONFIG_USERSWAP
+	uswap_get_cpu_id(reason, &msg);
+#endif
 	return msg;
 }
 
@@ -334,8 +335,7 @@ static inline bool userfaultfd_must_wait(struct userfaultfd_ctx *ctx,
 	 * changes under us.
 	 */
 #ifdef CONFIG_USERSWAP
-	if ((reason & VM_USWAP) && (!pte_present(*pte)))
-		ret = true;
+	uswap_must_wait(reason, *pte, &ret);
 #endif
 	if (pte_none(*pte))
 		ret = true;
@@ -408,8 +408,12 @@ vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason)
 
 	BUG_ON(ctx->mm != mm);
 
+#ifdef CONFIG_USERSWAP
+	VM_BUG_ON(uswap_vm_flag_bug_on(reason));
+#else
 	VM_BUG_ON(reason & ~(VM_UFFD_MISSING|VM_UFFD_WP));
 	VM_BUG_ON(!(reason & VM_UFFD_MISSING) ^ !!(reason & VM_UFFD_WP));
+#endif
 
 	if (ctx->features & UFFD_FEATURE_SIGBUS)
 		goto out;
@@ -483,6 +487,10 @@ vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason)
 	uwq.wq.private = current;
 	uwq.msg = userfault_msg(vmf->address, vmf->flags, reason,
 			ctx->features);
+#ifdef CONFIG_USERSWAP
+	if (reason & VM_USWAP && pte_none(vmf->orig_pte))
+		uwq.msg.arg.pagefault.flags |= UFFD_PAGEFAULT_FLAG_FPF;
+#endif
 	uwq.ctx = ctx;
 	uwq.waken = false;
 
@@ -866,8 +874,7 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		userfault_flags = VM_UFFD_MISSING | VM_UFFD_WP;
 #ifdef CONFIG_USERSWAP
-		if (enable_userswap)
-			userfault_flags |= VM_USWAP;
+		uswap_release(&userfault_flags);
 #endif
 		cond_resched();
 		BUG_ON(!!vma->vm_userfaultfd_ctx.ctx ^
@@ -1275,6 +1282,9 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	bool found;
 	bool basic_ioctls;
 	unsigned long start, end, vma_end;
+#ifdef CONFIG_USERSWAP
+	bool uswap_mode = false;
+#endif
 
 	user_uffdio_register = (struct uffdio_register __user *) arg;
 
@@ -1288,26 +1298,8 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 		goto out;
 	vm_flags = 0;
 #ifdef CONFIG_USERSWAP
-	/*
-	 * register the whole vma overlapping with the address range to avoid
-	 * splitting the vma.
-	 */
-	if (enable_userswap && (uffdio_register.mode & UFFDIO_REGISTER_MODE_USWAP)) {
-		uffdio_register.mode &= ~UFFDIO_REGISTER_MODE_USWAP;
-		if (!uffdio_register.mode)
-			goto out;
-		vm_flags |= VM_USWAP;
-		end = uffdio_register.range.start + uffdio_register.range.len - 1;
-		vma = find_vma(mm, uffdio_register.range.start);
-		if (!vma)
-			goto out;
-		uffdio_register.range.start = vma->vm_start;
-
-		vma = find_vma(mm, end);
-		if (!vma)
-			goto out;
-		uffdio_register.range.len = vma->vm_end - uffdio_register.range.start;
-	}
+	if (!uswap_register(&uffdio_register, &uswap_mode))
+		goto out;
 #endif
 	if (uffdio_register.mode & ~(UFFDIO_REGISTER_MODE_MISSING|
 				     UFFDIO_REGISTER_MODE_WP))
@@ -1321,7 +1313,13 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 			     uffdio_register.range.len);
 	if (ret)
 		goto out;
-
+#ifdef CONFIG_USERSWAP
+	if (uswap_mode && !uswap_adjust_uffd_range(&uffdio_register,
+						   &vm_flags, mm)) {
+		ret = -EINVAL;
+		goto out;
+	}
+#endif
 	start = uffdio_register.range.start;
 	end = start + uffdio_register.range.len;
 
@@ -1717,7 +1715,10 @@ static int userfaultfd_copy(struct userfaultfd_ctx *ctx,
 	ret = -EINVAL;
 	if (uffdio_copy.src + uffdio_copy.len <= uffdio_copy.src)
 		goto out;
-	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE|UFFDIO_COPY_MODE_WP))
+	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE |
+				 UFFDIO_COPY_MODE_WP |
+				 IS_ENABLED(CONFIG_USERSWAP) ?
+				 UFFDIO_COPY_MODE_DIRECT_MAP : 0))
 		goto out;
 	if (mmget_not_zero(ctx->mm)) {
 		ret = mcopy_atomic(ctx->mm, uffdio_copy.dst, uffdio_copy.src,
@@ -2028,15 +2029,6 @@ SYSCALL_DEFINE1(userfaultfd, int, flags)
 	}
 	return fd;
 }
-
-#ifdef CONFIG_USERSWAP
-static int __init enable_userswap_setup(char *str)
-{
-	enable_userswap = true;
-	return 1;
-}
-__setup("enable_userswap", enable_userswap_setup);
-#endif
 
 static int __init userfaultfd_init(void)
 {
