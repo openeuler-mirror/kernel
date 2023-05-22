@@ -194,7 +194,7 @@ static int sssraid_alloc_resources(struct sssraid_ioc *sdioc)
 	}
 
 	/* not num_online_cpus */
-	nqueue = num_possible_cpus() + 1;
+	nqueue = min(num_possible_cpus(), max_hwq_num) + 1;
 	sdioc->cqinfo = kcalloc_node(nqueue, sizeof(struct sssraid_cqueue),
 			    GFP_KERNEL, sdioc->numa_node);
 	if (!sdioc->cqinfo) {
@@ -282,7 +282,6 @@ static int sssraid_setup_resources(struct sssraid_ioc *sdioc)
 
 	sdioc->cap = lo_hi_readq(sdioc->bar + SSSRAID_REG_CAP);
 	sdioc->ioq_depth = min_t(u32, SSSRAID_CAP_MQES(sdioc->cap) + 1, io_queue_depth);
-	sdioc->scsi_qd = sdioc->ioq_depth - SSSRAID_PTCMDS_PERQ;
 	sdioc->db_stride = 1 << SSSRAID_CAP_STRIDE(sdioc->cap);
 
 	maskbit = SSSRAID_CAP_DMAMASK(sdioc->cap);
@@ -357,10 +356,8 @@ static int sssraid_alloc_qpair(struct sssraid_ioc *sdioc, u16 qidx, u16 depth)
 
 	cqinfo->cqes = dma_alloc_coherent(&sdioc->pdev->dev, CQ_SIZE(depth),
 					   &cqinfo->cq_dma_addr, GFP_KERNEL | __GFP_ZERO);
-	if (!cqinfo->cqes) {
-		ioc_err(sdioc, "failure at alloc dma space for cqueue.\n");
+	if (!cqinfo->cqes)
 		return -ENOMEM;
-	}
 
 	sqinfo->sq_cmds = dma_alloc_coherent(&sdioc->pdev->dev, SQ_SIZE(qidx, depth),
 					      &sqinfo->sq_dma_addr, GFP_KERNEL);
@@ -369,6 +366,13 @@ static int sssraid_alloc_qpair(struct sssraid_ioc *sdioc, u16 qidx, u16 depth)
 		ioc_err(sdioc, "failure at alloc dma space for squeue cmds.\n");
 		goto  free_cqes;
 	}
+
+	/*
+	 * if single hw queue, we do not need to alloc sense buffer for every queue,
+	 * we have alloced all on hiraid_alloc_resources.
+	 */
+	if (work_mode)
+		goto initq;
 
 	/* alloc sense buffer */
 	sqinfo->sense = dma_alloc_coherent(&sdioc->pdev->dev, SENSE_SIZE(depth),
@@ -379,6 +383,7 @@ static int sssraid_alloc_qpair(struct sssraid_ioc *sdioc, u16 qidx, u16 depth)
 		goto free_sq_cmds;
 	}
 
+initq:
 	spin_lock_init(&sqinfo->sq_lock);
 	spin_lock_init(&cqinfo->cq_lock);
 	cqinfo->sdioc = sdioc;
@@ -413,6 +418,8 @@ static void sssraid_init_queue(struct sssraid_ioc *sdioc, u16 qidx)
 	memset((void *)cqinfo->cqes, 0, CQ_SIZE(sqinfo->q_depth));
 
 	sqinfo->sq_tail = 0;
+	atomic_set(&sqinfo->inflight, 0);
+
 	cqinfo->cq_head = 0;
 	cqinfo->cq_phase = 1;
 	sqinfo->q_db = &sdioc->dbs[qidx * 2 * sdioc->db_stride];
@@ -819,6 +826,8 @@ int sssraid_init_ctrl_info(struct sssraid_ioc *sdioc)
 	if (sdioc->ctrl_info->aerl > SSSRAID_NR_AEN_CMDS)
 		sdioc->ctrl_info->aerl = SSSRAID_NR_AEN_CMDS;
 
+	sdioc->scsi_qd = work_mode ? le16_to_cpu(sdioc->ctrl_info->max_cmds) :
+					 sdioc->ioq_depth - SSSRAID_PTCMDS_PERQ;
 	return 0;
 }
 
@@ -902,6 +911,8 @@ static int sssraid_create_io_cq(struct sssraid_ioc *sdioc, u16 qidx)
 	if (retval)
 		return retval;
 
+	if (!sdioc->last_qcnt)
+		sdioc->last_qcnt = sdioc->init_done_queue_cnt;
 	/*
 	 * cqinfo initialization at sssraid_init_queue
 	 */
@@ -1093,9 +1104,18 @@ static int sssraid_setup_io_qpair(struct sssraid_ioc *sdioc)
 		}
 	}
 
-	ioc_info(sdioc, "init_done_queue_cnt[%d], intr_info_count[%d] num_queues[%d]",
+	if (work_mode && !sdioc->senses) {
+		sdioc->senses = dma_alloc_coherent(&sdioc->pdev->dev,
+			SENSE_SIZE(SSSRAID_IO_BLK_MQ_DEPTH + max_hwq_num *
+			SSSRAID_PTCMDS_PERQ), &sdioc->sense_dma_addr,
+			GFP_KERNEL | __GFP_ZERO);
+		if (!sdioc->senses)
+			return -ENOMEM;
+	}
+
+	ioc_info(sdioc, "init_done_queue_cnt[%d], intr_info_count[%d] num_queues[%d], last_online[%d]",
 		 sdioc->init_done_queue_cnt,
-		 sdioc->intr_info_count, num_queues);
+		 sdioc->intr_info_count, num_queues, sdioc->last_qcnt);
 
 	return retval >= 0 ? 0 : retval;
 }
@@ -1194,10 +1214,8 @@ static int sssraid_disk_list_init(struct sssraid_ioc *sdioc)
 
 	sdioc->devices = kzalloc_node(nd * sizeof(struct sssraid_dev_info),
 				     GFP_KERNEL, sdioc->numa_node);
-	if (!sdioc->devices) {
-		ioc_err(sdioc, "err: failed to alloc memory for device info.\n");
+	if (!sdioc->devices)
 		return -ENOMEM;
-	}
 
 	return 0;
 }
@@ -1230,21 +1248,19 @@ int sssraid_init_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 			    retval);
 			goto out_nocleanup;
 		}
-	}
 
-	/* reset need re-setup */
-	retval = sssraid_setup_resources(sdioc);
-	if (retval) {
-		ioc_err(sdioc, "Err: Failed to setup resources, ret %d\n",
-		    retval);
-		goto out_failed;
-	}
+		/* reset need re-setup */
+		retval = sssraid_setup_resources(sdioc);
+		if (retval) {
+			ioc_err(sdioc, "Err: Failed to setup resources, ret %d\n",
+					retval);
+			goto out_failed;
+		}
 
-	if (!re_init) {
 		retval = sssraid_alloc_admin_cmds(sdioc);
 		if (retval) {
 			ioc_err(sdioc, "Err: Failed to alloc admin cmds, ret %d\n",
-			    retval);
+				retval);
 			goto out_failed;
 		}
 		/* put here:
@@ -1253,17 +1269,14 @@ int sssraid_init_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 		retval = sssraid_alloc_qpair(sdioc, 0, SSSRAID_ADMQ_DEPTH);
 		if (retval) {
 			ioc_err(sdioc, "Err: Failed to alloc admin queue, ret %d\n",
-			    retval);
+				retval);
 			goto out_failed;
 		}
 	}
 
 	retval = sssraid_setup_admin_qpair(sdioc);
-	if (retval) {
-		ioc_err(sdioc, "Err: Failed to setup admin queue, ret %d\n",
-		    retval);
+	if (retval)
 		goto out_failed;
-	}
 
 	/* 1. unregister all interrupt
 	 * 2. admin interrupt registry
@@ -1275,14 +1288,16 @@ int sssraid_init_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 		goto out_failed;
 	}
 
-	retval = sssraid_init_ctrl_info(sdioc);
-	if (retval) {
-		ioc_err(sdioc, "Failed to get ctrl info error %d\n",
-		    retval);
-		goto out_failed;
+	if (!re_init) {
+		retval = sssraid_init_ctrl_info(sdioc);
+		if (retval) {
+			ioc_err(sdioc, "Failed to get ctrl info error %d\n",
+					retval);
+			goto out_failed;
+		}
 	}
 
-	nr_ioqs = sdioc->cpu_count;
+	nr_ioqs = min(sdioc->cpu_count, max_hwq_num);
 	retval = sssraid_set_queue_cnt(sdioc, &nr_ioqs);
 	if (retval) {
 		ioc_err(sdioc, "Failed to set queue cnt error %d\n",
@@ -1303,19 +1318,19 @@ int sssraid_init_ioc(struct sssraid_ioc *sdioc, u8 re_init)
 		goto out_failed;
 	}
 
-	/* remap */
-	bar_size = SSSRAID_REG_DBS + ((nr_ioqs + 1) * 8 * sdioc->db_stride);
-	retval = sssraid_remap_bar(sdioc, bar_size);
-	if (retval) {
-		ioc_err(sdioc, "Failed to re-map bar, error %d\n",
-			    retval);
-		goto out_failed;
-	}
-	sdioc->sqinfo[0].q_db = sdioc->dbs;
-
 	/* num_vecs no sense, abandon */
 
 	if (!re_init) {
+		/* remap */
+		bar_size = SSSRAID_REG_DBS + ((nr_ioqs + 1) * 8 * sdioc->db_stride);
+		retval = sssraid_remap_bar(sdioc, bar_size);
+		if (retval) {
+			ioc_err(sdioc, "Failed to re-map bar, error %d\n",
+					retval);
+			goto out_failed;
+		}
+		sdioc->sqinfo[0].q_db = sdioc->dbs;
+
 		for (i = sdioc->init_done_queue_cnt; i < sdioc->intr_info_count; i++) {
 			retval = sssraid_alloc_qpair(sdioc, i, sdioc->ioq_depth);
 			if (retval) {
@@ -1403,6 +1418,15 @@ static void sssraid_free_ioq_ptcmds(struct sssraid_ioc *sdioc)
 	INIT_LIST_HEAD(&sdioc->ioq_pt_list);
 }
 
+static void sssraid_free_sense_buffer(struct sssraid_ioc *sdioc)
+{
+	if (sdioc->senses) {
+		dma_free_coherent(&sdioc->pdev->dev, SENSE_SIZE(SSSRAID_IO_BLK_MQ_DEPTH +
+			max_hwq_num * SSSRAID_PTCMDS_PERQ), sdioc->senses, sdioc->sense_dma_addr);
+		sdioc->senses = NULL;
+	}
+}
+
 static void sssraid_delete_io_queues(struct sssraid_ioc *sdioc)
 {
 	u16 queues = sdioc->init_done_queue_cnt - SSSRAID_ADM_QUEUE_NUM;
@@ -1419,6 +1443,7 @@ static void sssraid_delete_io_queues(struct sssraid_ioc *sdioc)
 		return;
 	}
 
+	sssraid_free_sense_buffer(sdioc);
 	for (pass = 0; pass < 2; pass++) {
 		for (i = queues; i > 0; i--)
 			if (sssraid_delete_queue(sdioc, opcode, i))
@@ -1516,7 +1541,12 @@ static void sssraid_complete_ioq_cmnd(struct sssraid_ioc *sdioc, u16 qidx,
 	struct request *req;
 	unsigned long elapsed;
 
-	tags = sdioc->shost->tag_set.tags[sqinfo->qidx - 1];
+	atomic_dec(&sqinfo->inflight);
+
+	if (work_mode)
+		tags = sdioc->shost->tag_set.tags[0];
+	else
+		tags = sdioc->shost->tag_set.tags[sqinfo->qidx - 1];
 
 	req = blk_mq_tag_to_rq(tags, le16_to_cpu(cqe->cmd_id));
 	if (unlikely(!req || !blk_mq_request_started(req))) {
@@ -1556,9 +1586,9 @@ static void sssraid_complete_ioq_cmnd(struct sssraid_ioc *sdioc, u16 qidx,
 	scmd->scsi_done(scmd);
 }
 
-static void sssraid_process_admin_cq(struct sssraid_ioc *sdioc,
-	struct sssraid_squeue *sqinfo,
-	struct sssraid_completion *cqe)
+static
+void sssraid_process_admin_cq(struct sssraid_ioc *sdioc, struct sssraid_squeue *sqinfo,
+							  struct sssraid_completion *cqe)
 {
 	struct sssraid_fwevt *fwevt = NULL;
 	u16 cid = le16_to_cpu(cqe->cmd_id), sz;
@@ -1584,9 +1614,8 @@ static void sssraid_process_admin_cq(struct sssraid_ioc *sdioc,
 	}
 }
 
-static void sssraid_process_io_cq(struct sssraid_ioc *sdioc,
-	struct sssraid_squeue *sqinfo,
-	struct sssraid_completion *cqe)
+static void sssraid_process_io_cq(struct sssraid_ioc *sdioc, struct sssraid_squeue *sqinfo,
+								  struct sssraid_completion *cqe)
 {
 	u16 cid = le16_to_cpu(cqe->cmd_id);
 
@@ -1604,7 +1633,7 @@ static inline void sssraid_handle_cqe(struct sssraid_ioc *sdioc, u16 mdix, u16 d
 	struct sssraid_completion *cqe = &cqinfo->cqes[didx];
 	u16 cid = le16_to_cpu(cqe->cmd_id);
 
-	if (unlikely(cid >= sqinfo->q_depth)) {
+	if (unlikely(!work_mode && (cid >= sqinfo->q_depth))) {
 		ioc_err(sdioc, "Err: invalid command id[%d] completed on queue %d\n",
 			cid, cqe->sq_id);
 		return;
@@ -1670,8 +1699,9 @@ static void sssraid_free_all_queues(struct sssraid_ioc *sdioc)
 				(void *)cqinfo->cqes, cqinfo->cq_dma_addr);
 		dma_free_coherent(&sdioc->pdev->dev, SQ_SIZE(sqinfo->qidx, sqinfo->q_depth),
 				sqinfo->sq_cmds, sqinfo->sq_dma_addr);
-		dma_free_coherent(&sdioc->pdev->dev, SENSE_SIZE(sqinfo->q_depth),
-				sqinfo->sense, sqinfo->sense_dma_addr);
+		if (!work_mode)
+			dma_free_coherent(&sdioc->pdev->dev, SENSE_SIZE(sqinfo->q_depth),
+							  sqinfo->sense, sqinfo->sense_dma_addr);
 	}
 
 	sdioc->init_done_queue_cnt = 0;
@@ -1732,11 +1762,11 @@ int sssraid_soft_reset_handler(struct sssraid_ioc *sdioc)
 	 * i.e. sssraid_cleanup_ioc(1)
 	 */
 	if (sdioc->ctrl_config & SSSRAID_CC_ENABLE) {
-		ioc_info(sdioc, "start disable admin queue\n");
+		ioc_info(sdioc, "\n");
 		retval = sssraid_disable_admin_queue(sdioc, 0);
 	}
 
-	sssraid_cleanup_resources(sdioc);
+	sssraid_cleanup_isr(sdioc);
 
 	/* realize above here:
 	 * sssraid_dev_disable -> sssraid_back_all_io
@@ -1747,14 +1777,13 @@ int sssraid_soft_reset_handler(struct sssraid_ioc *sdioc)
 		goto host_reset_failed;
 
 	retval = sssraid_init_ioc(sdioc, 1);
-	if (retval)
-		goto cleanup_resources;
+	if (retval || sdioc->last_qcnt != sdioc->init_done_queue_cnt)
+		goto host_reset_failed;
 
+	sssraid_scan_disk(sdioc);
 	sssraid_change_host_state(sdioc, SSSRAID_LIVE);
 	return 0;
 
-cleanup_resources:
-	sssraid_cleanup_resources(sdioc);
 host_reset_failed:
 	sssraid_change_host_state(sdioc, SSSRAID_DEAD);
 	ioc_err(sdioc, "err, host reset failed\n");

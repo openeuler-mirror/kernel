@@ -38,6 +38,9 @@
 #include "sssraid.h"
 #include "sssraid_debug.h"
 
+#define MAX_IO_QUEUES		128
+#define MIN_IO_QUEUES		1
+
 u32 admin_tmout = 60;
 module_param(admin_tmout, uint, 0644);
 MODULE_PARM_DESC(admin_tmout, "admin commands timeout (seconds)");
@@ -49,6 +52,31 @@ MODULE_PARM_DESC(scmd_tmout_rawdisk, "scsi commands timeout for rawdisk(seconds)
 static u32 scmd_tmout_vd = 180;
 module_param(scmd_tmout_vd, uint, 0644);
 MODULE_PARM_DESC(scmd_tmout_vd, "scsi commands timeout for vd(seconds)");
+
+bool work_mode;
+module_param(work_mode, bool, 0444);
+MODULE_PARM_DESC(work_mode, "work mode switch, default false for multi hw queues");
+
+static int ioq_num_set(const char *val, const struct kernel_param *kp)
+{
+	int n = 0;
+	int ret;
+
+	ret = kstrtoint(val, 10, &n);
+	if (ret != 0 || n < MIN_IO_QUEUES || n > MAX_IO_QUEUES)
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops max_hwq_num_ops = {
+	.set = ioq_num_set,
+	.get = param_get_uint,
+};
+
+u32 max_hwq_num = 128;
+module_param_cb(max_hwq_num, &max_hwq_num_ops, &max_hwq_num, 0444);
+MODULE_PARM_DESC(max_hwq_num, "max num of hw io queues, should >= 1, default 128");
 
 static int ioq_depth_set(const char *val, const struct kernel_param *kp);
 static const struct kernel_param_ops ioq_depth_ops = {
@@ -122,6 +150,11 @@ enum FW_STAT_CODE {
 	FW_STAT_NAC_DMA_ERROR,
 	FW_STAT_ABORTED,
 	FW_STAT_NEED_RETRY
+};
+
+enum {
+	FW_EH_OK = 0,
+	FW_EH_DEV_NONE = 0x701
 };
 
 static const char * const raid_levels[] = {"0", "1", "5", "6", "10", "50", "60", "NA"};
@@ -268,6 +301,19 @@ static struct sssraid_fwevt *sssraid_dequeue_fwevt(
 	spin_unlock_irqrestore(&sdioc->fwevt_lock, flags);
 
 	return fwevt;
+}
+
+static bool sssraid_disk_is_hdd(u8 attr)
+{
+	switch (SSSRAID_DISK_TYPE(attr)) {
+	case SSSRAID_SAS_HDD_VD:
+	case SSSRAID_SATA_HDD_VD:
+	case SSSRAID_SAS_HDD_PD:
+	case SSSRAID_SATA_HDD_PD:
+		return true;
+	default:
+		return false;
+	}
 }
 
 void sssraid_cleanup_fwevt_list(struct sssraid_ioc *sdioc)
@@ -566,8 +612,8 @@ static void sssraid_shost_init(struct sssraid_ioc *sdioc)
 	bus = pdev->bus->number;
 	dev_func = pdev->devfn;
 
-	sdioc->shost->nr_hw_queues = SSSRAID_NR_HW_QUEUES;
-	sdioc->shost->can_queue = (sdioc->ioq_depth - SSSRAID_PTCMDS_PERQ);
+	sdioc->shost->nr_hw_queues = work_mode ? 1 : SSSRAID_NR_HW_QUEUES;
+	sdioc->shost->can_queue = SSSRAID_IO_BLK_MQ_DEPTH;
 
 	sdioc->shost->sg_tablesize = le16_to_cpu(sdioc->ctrl_info->max_num_sge);
 	/* 512B per sector */
@@ -583,11 +629,22 @@ static void sssraid_shost_init(struct sssraid_ioc *sdioc)
 	sdioc->shost->hostt->cmd_size = sssraid_cmd_size(sdioc);
 }
 
-static inline void sssraid_get_tag_from_scmd(struct scsi_cmnd *scmd, u16 *qidx, u16 *cid)
+static
+inline void sssraid_get_tag_from_scmd(struct scsi_cmnd *scmd, u16 *qidx,
+							struct sssraid_ioc *sdioc, u16 *cid,
+							struct sssraid_sdev_hostdata *hostdata)
 {
 	u32 tag = blk_mq_unique_tag(scmd->request);
 
-	*qidx = blk_mq_unique_tag_to_hwq(tag) + 1;
+	if (work_mode) {
+		if ((sdioc->hdd_dispatch == DISPATCH_BY_DISK) && (hostdata->hwq != 0))
+			*qidx = hostdata->hwq;
+		else
+			*qidx = raw_smp_processor_id() % (sdioc->init_done_queue_cnt - 1) + 1;
+	} else {
+		*qidx = blk_mq_unique_tag_to_hwq(tag) + 1;
+	}
+
 	*cid = blk_mq_unique_tag_to_tag(tag);
 }
 
@@ -971,54 +1028,97 @@ static bool sssraid_check_scmd_completed(struct scsi_cmnd *scmd)
 	struct sssraid_ioc *sdioc = shost_priv(scmd->device->host);
 	struct sssraid_iod *iod = scsi_cmd_priv(scmd);
 	struct sssraid_squeue *sqinfo;
-	u16 hwq, cid;
 
-	sssraid_get_tag_from_scmd(scmd, &hwq, &cid);
-	sqinfo = &sdioc->sqinfo[hwq];
-	if (READ_ONCE(iod->state) == SSSRAID_CMDSTAT_COMPLETE || sssraid_poll_cq(sdioc, hwq, cid)) {
+	sqinfo = iod->sqinfo;
+	if (!sqinfo)
+		return false;
+
+	if (READ_ONCE(iod->state) == SSSRAID_CMDSTAT_COMPLETE ||
+		sssraid_poll_cq(sdioc, sqinfo->qidx, iod->cid)) {
 		ioc_warn(sdioc, "warn: cid[%d] qidx[%d] has completed\n",
-			 cid, sqinfo->qidx);
+			 iod->cid, sqinfo->qidx);
 		return true;
 	}
 	return false;
 }
 
+static bool sssraid_tgt_rst_pending_io_count(struct request *rq, void *data, bool reserved)
+{
+	unsigned int id = *(unsigned int *)data;
+	struct scsi_cmnd *scmd = blk_mq_rq_to_pdu(rq);
+	struct sssraid_iod *iod;
+	struct sssraid_sdev_hostdata *hostdata;
+
+	if (scmd) {
+		iod = scsi_cmd_priv(scmd);
+		if ((iod->state == SSSRAID_CMDSTAT_FLIGHT) ||
+			(iod->state == SSSRAID_CMDSTAT_TIMEOUT)) {
+			if ((scmd->device) && (scmd->device->id == id)) {
+				hostdata = scmd->device->hostdata;
+				hostdata->pend_count++;
+			}
+		}
+	}
+		return true;
+}
+
+static int wait_tgt_reset_io_done(struct scsi_cmnd *scmd)
+{
+	u16 timeout = 0;
+	struct sssraid_sdev_hostdata *hostdata;
+	struct sssraid_ioc *sdioc = shost_priv(scmd->device->host);
+
+	hostdata = scmd->device->hostdata;
+
+	do {
+		hostdata->pend_count = 0;
+		blk_mq_tagset_busy_iter(&sdioc->shost->tag_set, sssraid_tgt_rst_pending_io_count,
+			(void *) (&scmd->device->id));
+		if (!hostdata->pend_count)
+			return 0;
+
+		msleep(500);
+		timeout++;
+	} while (timeout <= SSSRAID_WAIT_RST_IO_TIMEOUT);
+
+		return -ETIMEDOUT;
+}
+
 static int sssraid_scsi_reset(struct scsi_cmnd *scmd, enum sssraid_scsi_rst_type rst)
 {
 	struct sssraid_ioc *sdioc = shost_priv(scmd->device->host);
-	struct sssraid_iod *iod = scsi_cmd_priv(scmd);
 	struct sssraid_sdev_hostdata *hostdata;
-	u16 hwq, cid;
 	int ret;
 
-	scsi_print_command(scmd);
-
-	if (sdioc->state != SSSRAID_LIVE || !sssraid_wait_abnl_cmd_done(iod) ||
-	    sssraid_check_scmd_completed(scmd))
+	if (sdioc->state != SSSRAID_LIVE)
 		return SUCCESS;
 
 	hostdata = scmd->device->hostdata;
-	sssraid_get_tag_from_scmd(scmd, &hwq, &cid);
 
-	ioc_warn(sdioc, "warn: cid[%d] qidx[%d] timeout, %s reset\n", cid, hwq,
-		rst ? "bus" : "target");
+	ioc_warn(sdioc, "sdev[%d:%d] send %s reset\n", scmd->device->channel, scmd->device->id,
+			 rst ? "bus" : "target");
 	ret = sssraid_send_reset_cmd(sdioc, rst, hostdata->hdid);
-	if (ret == 0) {
-		ret = sssraid_wait_abnl_cmd_done(iod);
-		if (ret) {
-			ioc_warn(sdioc, "warn: cid[%d] qidx[%d] %s reset failed, no found\n",
-				 cid, hwq, rst ? "bus" : "target");
+	if ((ret == 0) || (ret == FW_EH_DEV_NONE && rst == SSSRAID_RESET_TARGET)) {
+		if (rst == SSSRAID_RESET_TARGET) {
+			ret = wait_tgt_reset_io_done(scmd);
+			if (ret) {
+				ioc_warn(sdioc, "sdev[%d:%d] target has %d pending comands;"
+						 "target reset failed\n", scmd->device->channel,
+						 scmd->device->id, hostdata->pend_count);
 			return FAILED;
+			}
 		}
 
-		ioc_warn(sdioc, "cid[%d] qidx[%d] %s reset success\n", cid, hwq,
-			rst ? "bus" : "target");
+		ioc_warn(sdioc, "sdev[%d:%d] %s reset success\n", scmd->device->channel,
+				 scmd->device->id, rst ? "bus" : "target");
 		return SUCCESS;
 	}
 
-	ioc_warn(sdioc, "warn: cid[%d] qidx[%d] ret[%d] %s reset failed\n", cid, hwq, ret,
-		rst ? "bus" : "target");
+	ioc_warn(sdioc, "sdev[%d:%d] %s reset failed\n", scmd->device->channel, scmd->device->id,
+			 rst ? "bus" : "target");
+
 	return FAILED;
+
 }
 
 bool sssraid_change_host_state(struct sssraid_ioc *sdioc, enum sssraid_state newstate)
@@ -1252,8 +1352,17 @@ static int sssraid_submit_ioq_sync_cmd(struct sssraid_ioc *sdioc, struct sssraid
 
 	sqinfo = &sdioc->sqinfo[pt_cmd->qid];
 	ret = pt_cmd->cid * SCSI_SENSE_BUFFERSIZE;
-	sense_addr = sqinfo->sense + ret;
-	sense_dma = sqinfo->sense_dma_addr + ret;
+
+	if (work_mode) {
+		ret = ((pt_cmd->qid - 1) * SSSRAID_PTCMDS_PERQ + pt_cmd->cid) *
+			  SCSI_SENSE_BUFFERSIZE;
+		sense_addr = sdioc->senses + ret;
+		sense_dma = sdioc->sense_dma_addr + ret;
+	} else {
+		ret = pt_cmd->cid * SCSI_SENSE_BUFFERSIZE;
+		sense_addr = sqinfo->sense + ret;
+		sense_dma = sqinfo->sense_dma_addr + ret;
+	}
 
 	cmd->common.sense_addr = cpu_to_le64(sense_dma);
 	cmd->common.sense_len = cpu_to_le16(SCSI_SENSE_BUFFERSIZE);
@@ -1388,51 +1497,15 @@ static int sssraid_bsg_host_dispatch(struct bsg_job *job)
 	return 0;
 }
 
-static void sssraid_back_fault_cqe(struct sssraid_squeue *sqinfo, struct sssraid_completion *cqe)
-{
-	struct sssraid_ioc *sdioc = sqinfo->sdioc;
-	struct blk_mq_tags *tags;
-	struct scsi_cmnd *scmd;
-	struct sssraid_iod *iod;
-	struct request *req;
-
-	tags = sdioc->shost->tag_set.tags[sqinfo->qidx - 1];
-	req = blk_mq_tag_to_rq(tags, le16_to_cpu(cqe->cmd_id));
-	if (unlikely(!req || !blk_mq_request_started(req)))
-		return;
-
-	scmd = blk_mq_rq_to_pdu(req);
-	iod = scsi_cmd_priv(scmd);
-
-	if (READ_ONCE(iod->state) != SSSRAID_CMDSTAT_FLIGHT &&
-	    READ_ONCE(iod->state) != SSSRAID_CMDSTAT_TIMEOUT)
-		return;
-
-	WRITE_ONCE(iod->state, SSSRAID_CMDSTAT_TMO_COMPLETE);
-	set_host_byte(scmd, DID_NO_CONNECT);
-	if (iod->nsge)
-		scsi_dma_unmap(scmd);
-	sssraid_free_iod_res(sdioc, iod);
-	scmd->scsi_done(scmd);
-	ioc_warn(sdioc, "warn: back fault CQE, cid[%d] qidx[%d]\n",
-		 le16_to_cpu(cqe->cmd_id), sqinfo->qidx);
-}
-
+static void sssraid_drain_pending_ios(struct sssraid_ioc *sdioc);
 void sssraid_back_all_io(struct sssraid_ioc *sdioc)
 {
 	int i, j;
-	struct sssraid_squeue *sqinfo;
-	struct sssraid_completion cqe = { 0 };
 
 	scsi_block_requests(sdioc->shost);
 
-	for (i = 1; i <= sdioc->shost->nr_hw_queues; i++) {
-		sqinfo = &sdioc->sqinfo[i];
-		for (j = 0; j < sdioc->scsi_qd; j++) {
-			cqe.cmd_id = cpu_to_le16(j);
-			sssraid_back_fault_cqe(sqinfo, &cqe);
-		}
-	}
+	sssraid_drain_pending_ios(sdioc);
+
 
 	scsi_unblock_requests(sdioc->shost);
 
@@ -1454,17 +1527,6 @@ void sssraid_back_all_io(struct sssraid_ioc *sdioc)
 			complete(&(sdioc->ioq_ptcmds[i].cmd_done));
 		}
 	}
-}
-
-static int sssraid_get_first_sibling(unsigned int cpu)
-{
-	unsigned int ret;
-
-	ret = cpumask_first(topology_sibling_cpumask(cpu));
-	if (ret < nr_cpu_ids)
-		return ret;
-
-	return cpu;
 }
 
 /*
@@ -1495,15 +1557,12 @@ static int sssraid_bus_reset_handler(struct scsi_cmnd *scmd)
 /* eh_host_reset_handler call back */
 static int sssraid_eh_host_reset(struct scsi_cmnd *scmd)
 {
-	u16 hwq, cid;
 	struct sssraid_ioc *sdioc = shost_priv(scmd->device->host);
 
-	scsi_print_command(scmd);
-	if (sdioc->state != SSSRAID_LIVE || sssraid_check_scmd_completed(scmd))
+	if (sdioc->state != SSSRAID_LIVE)
 		return SUCCESS;
 
-	sssraid_get_tag_from_scmd(scmd, &hwq, &cid);
-	ioc_warn(sdioc, "warn: cid[%d] qidx[%d] host reset\n", cid, hwq);
+	ioc_warn(sdioc, "sdev[%d:%d] send host reset\n", scmd->device->channel, scmd->device->id);
 
 	/* It's useless:
 	 * old code sssraid_reset_work_sync
@@ -1515,11 +1574,13 @@ static int sssraid_eh_host_reset(struct scsi_cmnd *scmd)
 		return FAILED;
 	}
 	if (sssraid_soft_reset_handler(sdioc)) {
-		ioc_warn(sdioc, "warn: cid[%d] qidx[%d] host reset failed\n", cid, hwq);
+		ioc_warn(sdioc, "warn: sdev[%d:%d] host reset failed\n",
+				 scmd->device->channel, scmd->device->id);
 		return FAILED;
 	}
 
-	ioc_warn(sdioc, "cid[%d] qidx[%d] host reset success\n", cid, hwq);
+	ioc_warn(sdioc, "sdev[%d:%d] host reset success\n", scmd->device->channel,
+			 scmd->device->id);
 
 	return SUCCESS;
 }
@@ -1550,11 +1611,10 @@ static int sssraid_map_queues(struct Scsi_Host *shost)
 	struct blk_mq_tag_set *tag_set = &shost->tag_set;
 	struct blk_mq_queue_map *queue_map = &tag_set->map[HCTX_TYPE_DEFAULT];
 	const struct cpumask *node_mask = NULL;
-	unsigned int queue_offset = queue_map->queue_offset;
 	unsigned int *map = queue_map->mq_map;
 	unsigned int nr_queues = queue_map->nr_queues;
 	unsigned int node_id, node_id_last = 0xFFFFFFFF;
-	int cpu, first_sibling, cpu_index = 0;
+	int cpu, queue = 0;
 	u8 node_count = 0, i;
 	unsigned int node_id_array[100];
 
@@ -1588,16 +1648,8 @@ get_next_numa_node:
 		node_mask = cpumask_of_node(node_id_array[i]);
 		dbgprint(sdioc, "NUMA_node = %d\n", node_id_array[i]);
 		for_each_cpu(cpu, node_mask) {
-			if (cpu_index < nr_queues) {
-				map[cpu_index++] = queue_offset + (cpu % nr_queues);
-			} else {
-				first_sibling = sssraid_get_first_sibling(cpu);
-				if (first_sibling == cpu)
-					map[cpu_index++] = queue_offset + (cpu % nr_queues);
-				else
-					map[cpu_index++] = map[first_sibling];
-			}
-			dbgprint(sdioc, "map[%d] = %d\n", cpu_index - 1, map[cpu_index - 1]);
+			map[cpu] = (queue < nr_queues) ? queue++ : 0;
+			dbgprint(sdioc, "map[%d] = %d\n", cpu, map[cpu]);
 		}
 	}
 
@@ -1611,7 +1663,7 @@ static int sssraid_qcmd(struct Scsi_Host *shost,
 	struct sssraid_iod *iod = scsi_cmd_priv(scmd);
 	struct sssraid_ioc *sdioc = shost_priv(shost);
 	struct scsi_device *sdev = scmd->device;
-	struct sssraid_sdev_hostdata *hostdata = sdev->hostdata;
+	struct sssraid_sdev_hostdata *hostdata;
 	u16 hwq, cid;
 	struct sssraid_squeue *sq;
 	struct sssraid_ioq_command ioq_cmd;
@@ -1629,9 +1681,14 @@ static int sssraid_qcmd(struct Scsi_Host *shost,
 	if (unlikely(sdioc->logging_level & SSSRAID_DEBUG))
 		scsi_print_command(scmd);
 
-	sssraid_get_tag_from_scmd(scmd, &hwq, &cid);
 	hostdata = sdev->hostdata;
+	sssraid_get_tag_from_scmd(scmd, &hwq, sdioc, &cid, hostdata);
 	sq = &sdioc->sqinfo[hwq];
+
+	if (unlikely(atomic_inc_return(&sq->inflight) > (sdioc->ioq_depth - SSSRAID_PTCMDS_PERQ))) {
+		atomic_dec(&sq->inflight);
+		return SCSI_MLQUEUE_HOST_BUSY;
+	}
 
 	memset(&ioq_cmd, 0, sizeof(ioq_cmd));
 	ioq_cmd.rw.hdid = cpu_to_le32(hostdata->hdid);
@@ -1640,18 +1697,27 @@ static int sssraid_qcmd(struct Scsi_Host *shost,
 	retval = sssraid_setup_ioq_cmd(sdioc, &ioq_cmd, scmd);
 	if (unlikely(retval)) {
 		set_host_byte(scmd, DID_ERROR);
+		atomic_dec(&sq->inflight);
 		scmd->scsi_done(scmd);
 		return 0;
 	}
 
-	iod->sense = sq->sense + retval;
-	iod->sense_dma = sq->sense_dma_addr + retval;
+	retval = cid * SCSI_SENSE_BUFFERSIZE;
+	if (work_mode) {
+		iod->sense = sdioc->senses + retval;
+		iod->sense_dma = sdioc->sense_dma_addr + retval;
+	} else {
+		iod->sense = sq->sense + retval;
+		iod->sense_dma = sq->sense_dma_addr + retval;
+	}
+
 	ioq_cmd.common.sense_addr = cpu_to_le64(iod->sense_dma);
 	ioq_cmd.common.sense_len = cpu_to_le16(SCSI_SENSE_BUFFERSIZE);
 
 	sssraid_init_iod(iod);
 
 	iod->sqinfo = sq;
+	iod->cid = cid;
 	retval = sssraid_io_map_data(sdioc, iod, scmd, &ioq_cmd);
 	if (unlikely(retval)) {
 		ioc_err(sdioc, "err: io map data fail.\n");
@@ -1667,6 +1733,7 @@ static int sssraid_qcmd(struct Scsi_Host *shost,
 	return 0;
 
 deinit_iod:
+	atomic_dec(&sq->inflight);
 	sssraid_free_iod_res(sdioc, iod);
 	return retval;
 }
@@ -1691,6 +1758,11 @@ static int sssraid_slave_configure(struct scsi_device *sdev)
 			timeout = scmd_tmout_rawdisk * HZ;
 		max_sec = hostdata->max_io_kb << 1;
 		qd = sssraid_get_qd_by_disk(hostdata->attr);
+
+		if (sssraid_disk_is_hdd(hostdata->attr))
+			hostdata->hwq = hostdata->hdid % (sdioc->init_done_queue_cnt - 1) + 1;
+		else
+			hostdata->hwq = 0;
 	} else {
 		ioc_err(sdioc, "err: scsi dev hostdata is null\n");
 	}
@@ -1708,6 +1780,40 @@ static int sssraid_slave_configure(struct scsi_device *sdev)
 		 sdev->channel, sdev->id, sdev->lun, timeout / HZ, max_sec);
 
 	return 0;
+}
+
+static bool sssraid_clean_pending_io(struct request *rq, void *data, bool reserved)
+{
+	struct sssraid_ioc *sdioc = data;
+	struct scsi_cmnd *scmd;
+	struct sssraid_iod *iod;
+
+	if (unlikely(!rq || !blk_mq_request_started(rq)))
+		return true;
+
+	scmd = blk_mq_rq_to_pdu(rq);
+	iod = scsi_cmd_priv(scmd);
+
+	if ((cmpxchg(&iod->state, SSSRAID_CMDSTAT_FLIGHT, SSSRAID_CMDSTAT_COMPLETE) !=
+		SSSRAID_CMDSTAT_FLIGHT) &&
+	    (cmpxchg(&iod->state, SSSRAID_CMDSTAT_TIMEOUT, SSSRAID_CMDSTAT_COMPLETE) !=
+	    SSSRAID_CMDSTAT_TIMEOUT))
+		return true;
+
+	set_host_byte(scmd, DID_NO_CONNECT);
+	if (iod->nsge)
+		scsi_dma_unmap(scmd);
+	sssraid_free_iod_res(sdioc, iod);
+	dev_warn_ratelimited(&sdioc->pdev->dev, "back unfinished CQE, cid[%d] qid[%d]\n",
+		 iod->cid, iod->sqinfo->qidx);
+	scmd->scsi_done(scmd);
+
+	return true;
+}
+
+static void sssraid_drain_pending_ios(struct sssraid_ioc *sdioc)
+{
+	blk_mq_tagset_busy_iter(&sdioc->shost->tag_set, sssraid_clean_pending_io, (void *)(sdioc));
 }
 
 /* slave_alloc call back */
@@ -1787,7 +1893,8 @@ static int sssraid_abort_handler(struct scsi_cmnd *scmd)
 		return SUCCESS;
 
 	hostdata = scmd->device->hostdata;
-	sssraid_get_tag_from_scmd(scmd, &hwq, &cid);
+	cid = iod->cid;
+	hwq = iod->sqinfo->qidx;
 
 	ioc_warn(sdioc, "warn: cid[%d] qidx[%d] timeout, aborting\n", cid, hwq);
 	ret = sssraid_send_abort_cmd(sdioc, hostdata->hdid, hwq, cid);
@@ -1866,11 +1973,47 @@ static ssize_t fw_version_show(struct device *cdev, struct device_attribute *att
 	return snprintf(buf, PAGE_SIZE, "%s\n", sdioc->ctrl_info->fr);
 }
 
+static
+ssize_t hdd_dispatch_store(struct device *cdev, struct device_attribute *attr,
+						   const char *buf, size_t count)
+{
+	int val = 0;
+	struct Scsi_Host *shost = class_to_shost(cdev);
+	struct sssraid_ioc *sdioc = shost_priv(shost);
+
+	if (kstrtoint(buf, 0, &val) != 0)
+		return -EINVAL;
+	if (val < DISPATCH_BY_CPU || val > DISPATCH_BY_DISK)
+		return -EINVAL;
+	sdioc->hdd_dispatch = val;
+
+	return strlen(buf);
+}
+
+static ssize_t hdd_dispatch_show(struct device *cdev, struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(cdev);
+	struct sssraid_ioc *sdioc = shost_priv(shost);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", sdioc->hdd_dispatch);
+}
+
+static ssize_t can_queue_count_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+
+	return snprintf(buf, 20, "%d\n", tag_set->nr_hw_queues + 1);
+}
+
 static DEVICE_ATTR_RO(csts_pp);
 static DEVICE_ATTR_RO(csts_shst);
 static DEVICE_ATTR_RO(csts_cfs);
 static DEVICE_ATTR_RO(csts_rdy);
 static DEVICE_ATTR_RO(fw_version);
+static DEVICE_ATTR_RW(hdd_dispatch);
+static DEVICE_ATTR_RO(can_queue_count);
 
 static struct device_attribute *sssraid_host_attrs[] = {
 	&dev_attr_csts_pp,
@@ -1878,6 +2021,8 @@ static struct device_attribute *sssraid_host_attrs[] = {
 	&dev_attr_csts_cfs,
 	&dev_attr_csts_rdy,
 	&dev_attr_fw_version,
+	&dev_attr_hdd_dispatch,
+	&dev_attr_can_queue_count,
 	NULL,
 };
 
@@ -2041,14 +2186,48 @@ out:
 	return snprintf(buf, PAGE_SIZE, "%d\n", progress);
 }
 
+static ssize_t dispatch_hwq_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct sssraid_sdev_hostdata *hostdata;
+
+	hostdata = to_scsi_device(dev)->hostdata;
+	return snprintf(buf, PAGE_SIZE, "%d\n", hostdata->hwq);
+}
+
+static
+ssize_t dispatch_hwq_store(struct device *dev, struct device_attribute *attr,
+						   const char *buf, size_t count)
+{
+	int val;
+	struct sssraid_ioc *sdioc;
+	struct scsi_device *sdev;
+	struct sssraid_sdev_hostdata *hostdata;
+
+	sdev = to_scsi_device(dev);
+	sdioc = shost_priv(sdev->host);
+	hostdata = sdev->hostdata;
+
+	if (kstrtoint(buf, 0, &val) != 0)
+		return -EINVAL;
+	if (val <= 0 || val >= sdioc->init_done_queue_cnt)
+		return -EINVAL;
+	if (!sssraid_disk_is_hdd(hostdata->attr))
+		return -EINVAL;
+
+	hostdata->hwq = val;
+	return strlen(buf);
+}
+
 static DEVICE_ATTR_RO(raid_level);
 static DEVICE_ATTR_RO(raid_state);
 static DEVICE_ATTR_RO(raid_resync);
+static DEVICE_ATTR_RW(dispatch_hwq);
 
 static struct device_attribute *sssraid_dev_attrs[] = {
 	&dev_attr_raid_level,
 	&dev_attr_raid_state,
 	&dev_attr_raid_resync,
+	&dev_attr_dispatch_hwq,
 	NULL,
 };
 

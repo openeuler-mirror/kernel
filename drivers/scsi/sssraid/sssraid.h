@@ -13,6 +13,7 @@
 
 #define SSSRAID_NAME_LENGTH 32
 #define BSG_NAME_SIZE 15
+
 /*
  * SSSRAID Vendor ID and Device IDs
  */
@@ -90,7 +91,7 @@ extern u32 admin_tmout;
 #define ADMIN_TIMEOUT		(admin_tmout * HZ)
 
 #define SSSRAID_WAIT_ABNL_CMD_TIMEOUT	6
-
+#define SSSRAID_WAIT_RST_IO_TIMEOUT 10
 #define SSSRAID_DMA_MSK_BIT_MAX	64
 
 enum {
@@ -325,7 +326,7 @@ struct sssraid_ioc {
 	int logging_level;
 
 	char name[SSSRAID_NAME_LENGTH];
-	int cpu_count;
+	u32 cpu_count;
 	/*
 	 * before_affinity_msix_cnt is
 	 * min("FW support IO Queue count", num_online_cpus)+1
@@ -363,6 +364,11 @@ struct sssraid_ioc {
 	struct list_head fwevt_list;
 
 	struct sssraid_fwevt *current_event;
+
+	void *senses;
+	dma_addr_t sense_dma_addr;
+	u32 last_qcnt;
+	u8 hdd_dispatch;
 };
 
 /*
@@ -790,6 +796,7 @@ struct sssraid_squeue {
 	void *sense;
 	dma_addr_t sense_dma_addr;
 	struct dma_pool *prp_small_pool;
+	atomic_t inflight;
 };
 
 struct sssraid_cqueue {
@@ -813,6 +820,7 @@ struct sssraid_iod {
 	enum sssraid_cmd_state state;
 	int npages;
 	u32 nsge;
+	u16 cid;
 	u32 length;
 	bool use_sgl;
 	dma_addr_t first_dma;
@@ -848,6 +856,11 @@ enum {
 	SSSRAID_SAS_SSD_PD  = 0x0e,
 	SSSRAID_SATA_SSD_PD = 0x12,
 	SSSRAID_NVME_SSD_PD = 0x16,
+};
+
+enum {
+	DISPATCH_BY_CPU,
+	DISPATCH_BY_DISK,
 };
 
 /*
@@ -929,11 +942,14 @@ struct sssraid_sdev_hostdata {
 	u8 attr;
 	u8 flag;
 	u8 rg_id;
-	u8 rsvd[3];
+	u8 hwq;
+	u16 pend_count;
 };
 
 extern unsigned char small_pool_num;
 extern u32 io_queue_depth;
+extern u32 max_hwq_num;
+extern bool work_mode;
 irqreturn_t sssraid_isr_poll(int irq, void *privdata);
 bool sssraid_poll_cq(struct sssraid_ioc *sdioc, u16 qidx, int cid);
 void sssraid_submit_cmd(struct sssraid_squeue *sqinfo, const void *cmd);
