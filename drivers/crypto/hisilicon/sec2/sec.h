@@ -189,7 +189,6 @@ struct sec_dev {
 	struct hisi_qm qm;
 	struct sec_debug debug;
 	u32 ctx_q_num;
-	bool iommu_used;
 };
 
 enum sec_cap_type {
