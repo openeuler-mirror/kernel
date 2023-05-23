@@ -23,7 +23,6 @@
 #undef pr_fmt
 #define pr_fmt(fmt)     "hisi_pmu: " fmt
 
-#define HISI_PMU_V2		0x30
 #define HISI_MAX_COUNTERS 0x10
 #define to_hisi_pmu(p)	(container_of(p, struct hisi_pmu, pmu))
 
@@ -43,9 +42,22 @@
 		return FIELD_GET(GENMASK_ULL(hi, lo), event->attr.config);  \
 	}
 
+enum hisi_pmu_version {
+	HISI_PMU_V1,
+	HISI_PMU_V2 = 0x30,
+	HISI_PMU_V3 = 0x40,
+	HISI_PMU_MAX
+};
+
+#define HISI_GET_EVENTID(ev) (ev->hw.config_base & 0xff)
+
+#define HISI_PMU_EVTYPE_BITS		8
+#define HISI_PMU_EVTYPE_SHIFT(idx)	((idx) % 4 * HISI_PMU_EVTYPE_BITS)
+
 struct hisi_pmu;
 
 struct hisi_uncore_ops {
+	int (*check_format)(struct perf_event *event);
 	void (*write_evtype)(struct hisi_pmu *, int, u32);
 	int (*get_event_idx)(struct perf_event *);
 	u64 (*read_counter)(struct hisi_pmu *, struct hw_perf_event *);
@@ -62,6 +74,13 @@ struct hisi_uncore_ops {
 	void (*disable_filter)(struct perf_event *event);
 };
 
+/* Describes the HISI PMU chip features information */
+struct hisi_pmu_dev_info {
+	const char *name;
+	const struct attribute_group **attr_groups;
+	void *present;
+};
+
 struct hisi_pmu_hwevents {
 	struct perf_event *hw_events[HISI_MAX_COUNTERS];
 	DECLARE_BITMAP(used_mask, HISI_MAX_COUNTERS);
@@ -72,6 +91,7 @@ struct hisi_pmu_hwevents {
 struct hisi_pmu {
 	struct pmu pmu;
 	const struct hisi_uncore_ops *ops;
+	const struct hisi_pmu_dev_info *dev_info;
 	struct hisi_pmu_hwevents pmu_events;
 	/* associated_cpus: All CPUs associated with the PMU */
 	cpumask_t associated_cpus;
@@ -92,7 +112,7 @@ struct hisi_pmu {
 	int counter_bits;
 	/* check event code range */
 	int check_event;
-	u32 identifier;
+	enum hisi_pmu_version identifier;
 };
 
 int hisi_uncore_pmu_get_event_idx(struct perf_event *event);
@@ -121,4 +141,23 @@ ssize_t hisi_uncore_pmu_identifier_attr_show(struct device *dev,
 int hisi_uncore_pmu_init_irq(struct hisi_pmu *hisi_pmu,
 			     struct platform_device *pdev);
 
+void hisi_pmu_init(struct hisi_pmu *hisi_pmu, struct module *module);
+
+int hisi_uncore_pmu_ver2idx(struct hisi_pmu *pmu)
+{
+	int idx;
+
+	switch (pmu->identifier) {
+	case HISI_PMU_V1:
+		idx = 0; break;
+	case HISI_PMU_V2:
+		idx = 1; break;
+	case HISI_PMU_V3:
+	/* When running on later version, returns the largest supported version */
+	default:
+		idx = 2;
+	}
+
+	return idx;
+}
 #endif /* __HISI_UNCORE_PMU_H__ */

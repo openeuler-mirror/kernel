@@ -20,7 +20,6 @@
 
 #include "hisi_uncore_pmu.h"
 
-#define HISI_GET_EVENTID(ev) (ev->hw.config_base & 0xff)
 #define HISI_MAX_PERIOD(nr) (GENMASK_ULL((nr) - 1, 0))
 
 /*
@@ -225,6 +224,10 @@ int hisi_uncore_pmu_event_init(struct perf_event *event)
 	 */
 	hwc->idx		= -1;
 	hwc->config_base	= event->attr.config;
+
+	if (hisi_pmu->ops->check_format)
+		if (hisi_pmu->ops->check_format(event))
+			return -EINVAL;
 
 	/* Enforce to use the same CPU for all events in this PMU */
 	event->cpu = hisi_pmu->on_cpu;
@@ -536,5 +539,24 @@ int hisi_uncore_pmu_offline_cpu(unsigned int cpu, struct hlist_node *node)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hisi_uncore_pmu_offline_cpu);
+
+void hisi_pmu_init(struct hisi_pmu *hisi_pmu, struct module *module)
+{
+	struct pmu *pmu = &hisi_pmu->pmu;
+
+	pmu->module             = module;
+	pmu->task_ctx_nr        = perf_invalid_context;
+	pmu->event_init         = hisi_uncore_pmu_event_init;
+	pmu->pmu_enable         = hisi_uncore_pmu_enable;
+	pmu->pmu_disable        = hisi_uncore_pmu_disable;
+	pmu->add                = hisi_uncore_pmu_add;
+	pmu->del                = hisi_uncore_pmu_del;
+	pmu->start              = hisi_uncore_pmu_start;
+	pmu->stop               = hisi_uncore_pmu_stop;
+	pmu->read               = hisi_uncore_pmu_read;
+	pmu->attr_groups        = hisi_pmu->pmu_events.attr_groups;
+	pmu->capabilities       = PERF_PMU_CAP_NO_EXCLUDE;
+}
+EXPORT_SYMBOL_GPL(hisi_pmu_init);
 
 MODULE_LICENSE("GPL v2");
