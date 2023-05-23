@@ -113,9 +113,8 @@ SYM_CODE_START(loongarch_wakeup_start)
 	li.d	t0, CSR_DMW1_INIT	# CA, PLV0
 	csrwr	t0, LOONGARCH_CSR_DMWIN1
 
-	la.abs	t0, 0f
-	jirl	zero, t0, 0
-0:
+	JUMP_VIRT_ADDR	t0, t1
+
 	la.pcrel	t0, acpi_saved_sp
 	ld.d	sp, t0, 0
 	SETUP_WAKEUP

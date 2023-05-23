@@ -49,8 +49,7 @@ void __noreturn efi_enter_kernel(unsigned long entrypoint, unsigned long fdt, un
 	csr_write64(CSR_DMW0_INIT, LOONGARCH_CSR_DMWIN0);
 	csr_write64(CSR_DMW1_INIT, LOONGARCH_CSR_DMWIN1);
 
-	real_kernel_entry = (kernel_entry_t)
-		((unsigned long)&kernel_entry - entrypoint + VMLINUX_LOAD_ADDRESS);
+	real_kernel_entry = (kernel_entry_t) kernel_entry;
 
 	real_kernel_entry(true, fdt, 0);
 }

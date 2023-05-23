@@ -87,4 +87,6 @@ extern int __init
 pch_msi_parse_madt(union acpi_subtable_headers *header,
 		const unsigned long end);
 extern struct irq_domain *get_pchpic_irq_domain(void);
+
+extern void __init loongarch_reserve_initrd_mem(void);
 #endif
