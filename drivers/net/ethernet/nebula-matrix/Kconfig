@@ -5,7 +5,6 @@
 
 config NET_VENDOR_NEBULA_MATRIX
 	bool "Nebula-matrix devices"
-	default y
 	help
 	  If you have a network (Ethernet) card belonging to this class, say Y.
 
@@ -18,9 +17,8 @@ if NET_VENDOR_NEBULA_MATRIX
 
 config M1600
 	tristate "Nebula-matrix Ethernet Controller m1600 Family support"
-	depends on PCI
+	depends on PCI && HWMON
 	depends on ARM64 || X86_64
-	default m
 	help
 	  This driver supports Nebula-matrix Ethernet Controller m1600 Family of
 	  devices.  For more information about this product, go to the product
