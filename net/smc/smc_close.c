@@ -199,6 +199,7 @@ int smc_close_active(struct smc_sock *smc)
 	long timeout;
 	int rc = 0;
 	int rc1 = 0;
+	int i = 0;
 
 	timeout = current->flags & PF_EXITING ?
 		  0 : sock_flag(sk, SOCK_LINGER) ?
@@ -220,7 +221,8 @@ again:
 		}
 		smc_close_cleanup_listen(sk);
 		release_sock(sk);
-		flush_work(&smc->tcp_listen_work);
+		for (i = 0; i < SMC_MAX_TCP_LISTEN_WORKS; i++)
+			flush_work(&smc->tcp_listen_works[i].work);
 		lock_sock(sk);
 		break;
 	case SMC_ACTIVE:

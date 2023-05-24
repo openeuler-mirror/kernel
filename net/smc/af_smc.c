@@ -255,6 +255,7 @@ static struct sock *smc_sock_alloc(struct net *net, struct socket *sock,
 	struct smc_sock *smc;
 	struct proto *prot;
 	struct sock *sk;
+	int i = 0;
 
 	prot = (protocol == SMCPROTO_SMC6) ? &smc_proto6 : &smc_proto;
 	sk = sk_alloc(net, PF_SMC, GFP_KERNEL, prot, 0);
@@ -266,7 +267,11 @@ static struct sock *smc_sock_alloc(struct net *net, struct socket *sock,
 	sk->sk_destruct = smc_destruct;
 	sk->sk_protocol = protocol;
 	smc = smc_sk(sk);
-	INIT_WORK(&smc->tcp_listen_work, smc_tcp_listen_work);
+	for (i = 0; i < SMC_MAX_TCP_LISTEN_WORKS; i++) {
+		smc->tcp_listen_works[i].smc = smc;
+		INIT_WORK(&smc->tcp_listen_works[i].work, smc_tcp_listen_work);
+	}
+	atomic_set(&smc->tcp_listen_work_seq, 0);
 	INIT_WORK(&smc->connect_work, smc_connect_work);
 	INIT_DELAYED_WORK(&smc->conn.tx_work, smc_tx_work);
 	INIT_LIST_HEAD(&smc->accept_q);
@@ -1850,8 +1855,9 @@ out_free:
 
 static void smc_tcp_listen_work(struct work_struct *work)
 {
-	struct smc_sock *lsmc = container_of(work, struct smc_sock,
-					     tcp_listen_work);
+	struct smc_tcp_listen_work *twork =
+		container_of(work, struct smc_tcp_listen_work, work);
+	struct smc_sock *lsmc = twork->smc;
 	struct sock *lsk = &lsmc->sk;
 	struct smc_sock *new_smc;
 	int rc = 0;
@@ -1892,8 +1898,10 @@ static void smc_clcsock_data_ready(struct sock *listen_clcsock)
 		return;
 	lsmc->clcsk_data_ready(listen_clcsock);
 	if (lsmc->sk.sk_state == SMC_LISTEN) {
+		int idx = atomic_fetch_inc(&lsmc->tcp_listen_work_seq) %
+				  SMC_MAX_TCP_LISTEN_WORKS;
 		sock_hold(&lsmc->sk); /* sock_put in smc_tcp_listen_work() */
-		if (!queue_work(smc_tcp_ls_wq, &lsmc->tcp_listen_work))
+		if (!queue_work(smc_tcp_ls_wq, &lsmc->tcp_listen_works[idx].work))
 			sock_put(&lsmc->sk);
 	}
 }
