@@ -614,10 +614,10 @@ static void smcr_buf_unuse(struct smc_buf_desc *rmb_desc,
 		rc = smc_llc_flow_initiate(lgr, SMC_LLC_FLOW_RKEY);
 		if (!rc) {
 			/* protect against smc_llc_cli_rkey_exchange() */
-			down_read(&lgr->llc_conf_mutex);
+			down_read(&lgr->llc_conf_lock);
 			smc_llc_do_delete_rkey(lgr, rmb_desc);
 			rmb_desc->is_conf_rkey = false;
-			up_read(&lgr->llc_conf_mutex);
+			up_read(&lgr->llc_conf_lock);
 			smc_llc_flow_stop(lgr, &lgr->llc_flow_lcl);
 		}
 	}
@@ -815,12 +815,12 @@ static void smc_lgr_free(struct smc_link_group *lgr)
 	int i;
 
 	if (!lgr->is_smcd) {
-		down_write(&lgr->llc_conf_mutex);
+		down_write(&lgr->llc_conf_lock);
 		for (i = 0; i < SMC_LINKS_PER_LGR_MAX; i++) {
 			if (lgr->lnk[i].state != SMC_LNK_UNUSED)
 				smcr_link_clear(&lgr->lnk[i], false);
 		}
-		up_write(&lgr->llc_conf_mutex);
+		up_write(&lgr->llc_conf_lock);
 		smc_llc_lgr_clear(lgr);
 	}
 
@@ -1143,12 +1143,12 @@ static void smcr_link_down(struct smc_link *lnk)
 	} else {
 		if (lgr->llc_flow_lcl.type != SMC_LLC_FLOW_NONE) {
 			/* another llc task is ongoing */
-			up_write(&lgr->llc_conf_mutex);
+			up_write(&lgr->llc_conf_lock);
 			wait_event_timeout(lgr->llc_flow_waiter,
 				(list_empty(&lgr->list) ||
 				 lgr->llc_flow_lcl.type == SMC_LLC_FLOW_NONE),
 				SMC_LLC_WAIT_TIME);
-			down_write(&lgr->llc_conf_mutex);
+			down_write(&lgr->llc_conf_lock);
 		}
 		if (!list_empty(&lgr->list)) {
 			smc_llc_send_delete_link(to_lnk, del_link_id,
@@ -1204,9 +1204,9 @@ static void smc_link_down_work(struct work_struct *work)
 	if (list_empty(&lgr->list))
 		return;
 	wake_up_all(&lgr->llc_msg_waiter);
-	down_write(&lgr->llc_conf_mutex);
+	down_write(&lgr->llc_conf_lock);
 	smcr_link_down(link);
-	up_write(&lgr->llc_conf_mutex);
+	up_write(&lgr->llc_conf_lock);
 }
 
 static int smc_vlan_by_tcpsk_walk(struct net_device *lower_dev,
@@ -1587,7 +1587,7 @@ static int smcr_buf_map_usable_links(struct smc_link_group *lgr,
 	int i, rc = 0, cnt = 0;
 
 	/* protect against parallel link reconfiguration */
-	down_read(&lgr->llc_conf_mutex);
+	down_read(&lgr->llc_conf_lock);
 	for (i = 0; i < SMC_LINKS_PER_LGR_MAX; i++) {
 		struct smc_link *lnk = &lgr->lnk[i];
 
@@ -1600,7 +1600,7 @@ static int smcr_buf_map_usable_links(struct smc_link_group *lgr,
 		cnt++;
 	}
 out:
-	up_read(&lgr->llc_conf_mutex);
+	up_read(&lgr->llc_conf_lock);
 	if (!rc && !cnt)
 		rc = -EINVAL;
 	return rc;
