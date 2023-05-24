@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2305.2.0
+%global hulkrelease 2305.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0201
+Release: %{hulkrelease}.0202
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,13 @@ fi
 %endif
 
 %changelog
+
+* Wed May 24 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2305.3.0.0202
+- netfilter: nf_tables: deactivate anonymous set from preparation phase
+- x86/msr-index: make SPEC_CTRL_IBRS assembler-portable
+- xfs: verify buffer contents when we skip log replay
+- !586 [openEuelr-1.0-LTS] kvm: arm64: fix some pvsched bugs
+- kvm: arm64: fix some pvsched bugs
 
 * Sat May 13 2023 Zhang Changzhong <zhangchangzhong@huawei.com> - 4.19.90-2305.2.0.0201
 - net: sctp: update stream->incnt after successful allocation of stream_in
