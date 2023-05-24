@@ -8,7 +8,6 @@ config SSSNIC
 	depends on PCI
 	depends on ARM64 || X86_64
 	select SSSNIC_HW
-	default m
 	help
 	  This driver supports 3SNIC Ethernet Controller SSSNIC device.
 	  For more information about this product, go to the product
@@ -22,4 +21,3 @@ config SSSNIC
 config SSSNIC_HW
 	tristate
 	depends on PCI
-	default n
