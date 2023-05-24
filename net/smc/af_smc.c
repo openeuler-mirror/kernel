@@ -1250,6 +1250,11 @@ static void smc_accept_unlink(struct sock *sk)
 	sock_put(sk); /* sock_hold in smc_accept_enqueue */
 }
 
+static inline bool smc_accept_queue_empty(struct sock *sk)
+{
+	return list_empty(&smc_sk(sk)->accept_q);
+}
+
 /* remove a sock from the accept queue to bind it to a new socket created
  * for a socket accept call from user space
  */
@@ -1969,7 +1974,8 @@ static int smc_accept(struct socket *sock, struct socket *new_sock,
 			break;
 		}
 		release_sock(sk);
-		timeo = schedule_timeout(timeo);
+		if (smc_accept_queue_empty(sk))
+			timeo = schedule_timeout(timeo);
 		/* wakeup by sk_data_ready in smc_listen_work() */
 		sched_annotate_sleep();
 		lock_sock(sk);
