@@ -5,8 +5,8 @@
 
 config NET_VENDOR_3SNIC
 	bool "3SNIC smart NIC devices"
-	default y
 	depends on PCI
+	select NET_DEVLINK
 	help
 	  If you have a network (Ethernet) card belonging to this class, say Y.
 
