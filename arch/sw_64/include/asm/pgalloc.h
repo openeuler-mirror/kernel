@@ -15,26 +15,34 @@
 static inline void
 pmd_populate(struct mm_struct *mm, pmd_t *pmd, pgtable_t pte)
 {
-	pmd_set(pmd, (pte_t *)__va(page_to_pa(pte)));
+	unsigned long pfn = page_to_pfn(pte);
+
+	set_pmd(pmd, __pmd((pfn << _PFN_SHIFT) | _PAGE_TABLE));
 }
 #define pmd_pgtable(pmd) pmd_page(pmd)
 
 static inline void
 pmd_populate_kernel(struct mm_struct *mm, pmd_t *pmd, pte_t *pte)
 {
-	pmd_set(pmd, pte);
-}
+	unsigned long pfn = virt_to_pfn(pte);
 
-static inline void
-p4d_populate(struct mm_struct *mm, p4d_t *p4d, pud_t *pud)
-{
-	p4d_set(p4d, pud);
+	set_pmd(pmd, __pmd((pfn << _PFN_SHIFT) | _PAGE_TABLE));
 }
 
 static inline void
 pud_populate(struct mm_struct *mm, pud_t *pud, pmd_t *pmd)
 {
-	pud_set(pud, pmd);
+	unsigned long pfn = virt_to_pfn(pmd);
+
+	set_pud(pud, __pud((pfn << _PFN_SHIFT) | _PAGE_TABLE));
+}
+
+static inline void
+p4d_populate(struct mm_struct *mm, p4d_t *p4d, pud_t *pud)
+{
+	unsigned long pfn = virt_to_pfn(pud);
+
+	set_p4d(p4d, __p4d((pfn << _PFN_SHIFT) | _PAGE_TABLE));
 }
 
 extern pgd_t *pgd_alloc(struct mm_struct *mm);

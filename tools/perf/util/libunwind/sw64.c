@@ -24,7 +24,7 @@
 #include "unwind.h"
 #include "debug.h"
 #include "libunwind-sw_64.h"
-#include <../../../../arch/sw_64/include/uapi/asm/perf_regs.h>
+#include <../../../arch/sw_64/include/uapi/asm/perf_regs.h>
 #include "../../arch/sw_64/util/unwind-libunwind.c"
 
 #include "util/unwind-libunwind-local.c"

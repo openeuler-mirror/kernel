@@ -90,6 +90,8 @@
 	stl	$27, PT_REGS_R27($sp)
 	stl	$28, PT_REGS_R28($sp)
 	stl	$29, PT_REGS_GP($sp)
+	ldi	$0, PT_REGS_SIZE($sp)
+	stl	$0, PT_REGS_SP($sp)
 	.endm
 
 	.macro RESTORE_PT_REGS

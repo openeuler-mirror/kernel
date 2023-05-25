@@ -48,7 +48,6 @@ struct sunway_iommu_domain {
 	struct iommu_domain domain;	/* IOMMU domain handle */
 	unsigned long *pt_root;		/* Page Table root */
 	unsigned int dev_cnt;		/* Number of devices in this domain */
-	struct sunway_iommu *iommu;
 };
 
 struct sw64dev_table_entry {

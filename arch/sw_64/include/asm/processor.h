@@ -96,4 +96,8 @@ static inline void spin_lock_prefetch(const void *ptr)
 }
 #endif
 
+static inline void wait_for_interrupt(void)
+{
+	__asm__ __volatile__ ("halt");
+}
 #endif /* _ASM_SW64_PROCESSOR_H */

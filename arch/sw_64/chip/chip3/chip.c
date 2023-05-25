@@ -124,6 +124,18 @@ static int chip3_get_cpu_nums(void)
 	return cpus;
 }
 
+static void chip3_get_vt_smp_info(void)
+{
+	unsigned long smp_info;
+
+	smp_info = sw64_io_read(0, SMP_INFO);
+	if (smp_info == -1UL)
+		smp_info = 0;
+	topo_nr_threads = (smp_info >> VT_THREADS_SHIFT) & VT_THREADS_MASK;
+	topo_nr_cores = (smp_info >> VT_CORES_SHIFT) & VT_CORES_MASK;
+	topo_nr_maxcpus = (smp_info >> VT_MAX_CPUS_SHIFT) & VT_MAX_CPUS_MASK;
+}
+
 static unsigned long chip3_get_vt_node_mem(int nodeid)
 {
 	return *(unsigned long *)MMSIZE & MMSIZE_MASK;
@@ -528,6 +540,18 @@ static void chip3_pcie_save(void)
 			piu_save->msiconfig[i] = read_piu_ior0(node, index,
 					MSICONFIG0 + (i << 7));
 		}
+
+		piu_save->iommuexcpt_ctrl = read_piu_ior0(node, index, IOMMUEXCPT_CTRL);
+		piu_save->dtbaseaddr = read_piu_ior0(node, index, DTBASEADDR);
+
+		piu_save->intaconfig = read_piu_ior0(node, index, INTACONFIG);
+		piu_save->intbconfig = read_piu_ior0(node, index, INTBCONFIG);
+		piu_save->intcconfig = read_piu_ior0(node, index, INTCCONFIG);
+		piu_save->intdconfig = read_piu_ior0(node, index, INTDCONFIG);
+		piu_save->pmeintconfig = read_piu_ior0(node, index, PMEINTCONFIG);
+		piu_save->aererrintconfig = read_piu_ior0(node, index, AERERRINTCONFIG);
+		piu_save->hpintconfig = read_piu_ior0(node, index, HPINTCONFIG);
+
 	}
 }
 
@@ -554,6 +578,17 @@ static void chip3_pcie_restore(void)
 			write_piu_ior0(node, index, MSICONFIG0 + (i << 7),
 					piu_save->msiconfig[i]);
 		}
+
+		write_piu_ior0(node, index, IOMMUEXCPT_CTRL, piu_save->iommuexcpt_ctrl);
+		write_piu_ior0(node, index, DTBASEADDR, piu_save->dtbaseaddr);
+
+		write_piu_ior0(node, index, INTACONFIG, piu_save->intaconfig);
+		write_piu_ior0(node, index, INTBCONFIG, piu_save->intbconfig);
+		write_piu_ior0(node, index, INTCCONFIG, piu_save->intcconfig);
+		write_piu_ior0(node, index, INTDCONFIG, piu_save->intdconfig);
+		write_piu_ior0(node, index, PMEINTCONFIG, piu_save->pmeintconfig);
+		write_piu_ior0(node, index, AERERRINTCONFIG, piu_save->aererrintconfig);
+		write_piu_ior0(node, index, HPINTCONFIG, piu_save->hpintconfig);
 
 		/* Enable DBI_RO_WR_EN */
 		rc_misc_ctrl = read_rc_conf(node, index, RC_MISC_CONTROL_1);
@@ -604,41 +639,6 @@ static inline void chip3_spbu_restore(void)
 	sw64_io_write(0, MCU_DVC_INT_EN, saved_dvc_int);
 }
 
-#define BIOS_SECBIN	0x2F00000UL
-#define BIOS_SECSIZE	0x40000UL
-#define	BOUNCE_BUFFER	((1UL<<32) - BIOS_SECSIZE)
-#define	BIOS_MEMSAVE	((1UL<<32) - 2 * BIOS_SECSIZE)
-
-/*
- * Due to specific architecture PCI MEM32 addressing, we reserve 512M memory
- * size at PCI_32BIT_MEMIO (0xE000_0000) on SW64 platform.
- *
- * Since this memory region is still usable by OS, we implement a interface
- * contract between BIOS and kernel:
- *
- * Firstly BIOS should back up SEC relative code segment to BIOS_MEMSAVE region
- * with the length BIOS_SECSIZE in order to restore BIOS SEC phase binary during
- * S3 sleep.
- *
- * Secondly kernel should use a bounce buffer to save memory region which may be
- * overwritten by BIOS on resume from S3 sleep.
- */
-static void chip3_mem_restore(void)
-{
-	void *dst, *src;
-	unsigned long size = BIOS_SECSIZE;
-
-	/* Firstly kernel back up to a bounce buffer */
-	src = __va(BIOS_SECBIN);
-	dst = __va(BOUNCE_BUFFER);
-	memcpy(dst, src, size);
-
-	/* Secondly restore BIOS SEC phase binary */
-	src = __va(BIOS_MEMSAVE);
-	dst = __va(BIOS_SECBIN);
-	memcpy(dst, src, size);
-}
-
 extern void cpld_write(uint8_t slave_addr, uint8_t reg, uint8_t data);
 
 static void chip3_suspend(bool wakeup)
@@ -655,7 +655,6 @@ static void chip3_suspend(bool wakeup)
 		chip3_spbu_save();
 		chip3_intpu_save();
 		chip3_pcie_save();
-		chip3_mem_restore();
 	}
 }
 
@@ -712,6 +711,7 @@ static void chip3_init_ops_fixup(void)
 	if (is_guest_or_emul()) {
 		sw64_chip_init->early_init.setup_core_start = chip3_setup_vt_core_start;
 		sw64_chip_init->early_init.get_node_mem = chip3_get_vt_node_mem;
+		sw64_chip_init->early_init.get_smp_info = chip3_get_vt_smp_info;
 		sw64_chip_init->pci_init.check_pci_linkup = chip3_check_pci_vt_linkup;
 	}
 };
@@ -826,6 +826,7 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 			  unsigned long irq_arg, struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
+	extern char __idle_start[], __idle_end[];
 
 	if (is_guest_or_emul()) {
 		if ((type & 0xffff) > 15) {
@@ -836,6 +837,10 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 				type = INT_MSI;
 		}
 	}
+
+	/* restart idle routine if it is interrupted */
+	if (regs->pc > (u64)__idle_start && regs->pc < (u64)__idle_end)
+		regs->pc = (u64)__idle_start;
 
 	switch (type & 0xffff) {
 	case INT_MSI:

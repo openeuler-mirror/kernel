@@ -12,40 +12,51 @@
  */
 
 struct pt_regs {
-	unsigned long r0;
-	unsigned long r1;
-	unsigned long r2;
-	unsigned long r3;
-	unsigned long r4;
-	unsigned long r5;
-	unsigned long r6;
-	unsigned long r7;
-	unsigned long r8;
-	unsigned long r9;
-	unsigned long r10;
-	unsigned long r11;
-	unsigned long r12;
-	unsigned long r13;
-	unsigned long r14;
-	unsigned long r15;
-	/* r16 ~ r18 saved by hmcode */
-	unsigned long r19;
-	unsigned long r20;
-	unsigned long r21;
-	unsigned long r22;
-	unsigned long r23;
-	unsigned long r24;
-	unsigned long r25;
-	unsigned long r26;
-	unsigned long r27;
-	unsigned long r28;
+	union {
+		struct user_pt_regs user_regs;
+		struct {
+			unsigned long r0;
+			unsigned long r1;
+			unsigned long r2;
+			unsigned long r3;
+			unsigned long r4;
+			unsigned long r5;
+			unsigned long r6;
+			unsigned long r7;
+			unsigned long r8;
+			unsigned long r9;
+			unsigned long r10;
+			unsigned long r11;
+			unsigned long r12;
+			unsigned long r13;
+			unsigned long r14;
+			unsigned long r15;
+			unsigned long r16;
+			unsigned long r17;
+			unsigned long r18;
+			unsigned long r19;
+			unsigned long r20;
+			unsigned long r21;
+			unsigned long r22;
+			unsigned long r23;
+			unsigned long r24;
+			unsigned long r25;
+			unsigned long r26;
+			unsigned long r27;
+			unsigned long r28;
+			unsigned long gp;
+			unsigned long sp;
+			unsigned long pc;
+			unsigned long ps;
+		};
+	};
 	/* These are saved by HMcode: */
-	unsigned long ps;
-	unsigned long pc;
-	unsigned long gp;
-	unsigned long r16;
-	unsigned long r17;
-	unsigned long r18;
+	unsigned long hm_ps;
+	unsigned long hm_pc;
+	unsigned long hm_gp;
+	unsigned long hm_r16;
+	unsigned long hm_r17;
+	unsigned long hm_r18;
 };
 
 #define arch_has_single_step()		(1)
@@ -59,7 +70,7 @@ struct pt_regs {
 
 #define force_successful_syscall_return() (current_pt_regs()->r0 = 0)
 
-#define MAX_REG_OFFSET (offsetof(struct pt_regs, r18))
+#define MAX_REG_OFFSET (offsetof(struct pt_regs, ps))
 
 extern short regoffsets[];
 

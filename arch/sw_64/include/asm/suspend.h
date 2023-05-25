@@ -38,6 +38,7 @@ struct processor_state {
 	struct callee_saved_regs regs;
 	struct callee_saved_fpregs fpregs;
 	unsigned long fpcr;
+	unsigned long ktp;
 #ifdef CONFIG_HIBERNATION
 	unsigned long sp;
 	struct vcpucb vcb;

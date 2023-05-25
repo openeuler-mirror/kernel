@@ -37,7 +37,7 @@ enum {
 
 static struct cpufreq_frequency_table freq_table[] = {
 	{0, DC_0, CPUFREQ_ENTRY_INVALID},
-	{0, DC_1, 0},
+	{0, DC_1, CPUFREQ_ENTRY_INVALID},
 	{0, DC_2, 0},
 	{0, DC_3, 0},
 	{0, DC_4, 0},
@@ -126,8 +126,6 @@ static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 
 	/* clock table init */
 	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
-		if (i == 1)
-			freq_table[i].frequency = freq_off * 24;
 		if (i == 2)
 			freq_table[i].frequency = freq_off * 36;
 		if (i > 2)

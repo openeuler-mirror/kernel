@@ -28,6 +28,16 @@
 #define IO_NODE_SHIFT		44
 #define IO_MARK_BIT		47
 
+extern int topo_nr_threads;
+extern int topo_nr_cores;
+extern int topo_nr_maxcpus;
+#define VT_MAX_CPUS_SHIFT	0
+#define VT_MAX_CPUS_MASK	0x3ff
+#define VT_CORES_SHIFT		10
+#define VT_CORES_MASK		0x3ff
+#define VT_THREADS_SHIFT	20
+#define VT_THREADS_MASK		0xfff
+
 /* MSIConfig */
 #define MSICONFIG_VALID		(0x1UL << 63)
 #define MSICONFIG_EN		(0x1UL << 62)
@@ -148,6 +158,7 @@ enum {
 
 /* MCU CSR */
 enum {
+	SMP_INFO =		MCU_BASE | 0x80UL,
 	INIT_CTL =		MCU_BASE | 0x680UL,
 	MT_STATE =		MCU_BASE | 0x700UL,
 	CORE_ONLINE =		MCU_BASE | 0x780UL,

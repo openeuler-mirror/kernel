@@ -10,6 +10,7 @@
 struct sw64_early_init_ops {
 	void (*setup_core_start)(struct cpumask *cpumask);
 	unsigned long (*get_node_mem)(int nodeid);
+	void (*get_smp_info)(void);
 };
 
 struct sw64_pci_init_ops {

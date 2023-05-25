@@ -26,20 +26,37 @@ struct vm_area_struct;
  * within a page table are directly modified.  Thus, the following
  * hook is made available.
  */
-#define set_pte(pteptr, pteval) ((*(pteptr)) = (pteval))
+static inline void set_pte(pte_t *ptep, pte_t pteval)
+{
+	*ptep = pteval;
+}
+
 static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 			      pte_t *ptep, pte_t pteval)
 {
 	set_pte(ptep, pteval);
 }
 
-#define set_pmd(pmdptr, pmdval) ((*(pmdptr)) = (pmdval))
+static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
+{
+	*pmdp = pmd;
+}
+
 static inline void set_pmd_at(struct mm_struct *mm, unsigned long addr,
 			      pmd_t *pmdp, pmd_t pmdval)
 {
 	set_pmd(pmdp, pmdval);
 }
 
+static inline void set_pud(pud_t *pudp, pud_t pud)
+{
+	*pudp = pud;
+}
+
+static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
+{
+	*p4dp = p4d;
+}
 /* PGDIR_SHIFT determines what a forth-level page table entry can map */
 #define PGDIR_SHIFT	(PAGE_SHIFT + 3 * (PAGE_SHIFT - 3))
 #define PGDIR_SIZE	(1UL << PGDIR_SHIFT)
@@ -210,21 +227,6 @@ static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 	return pmd;
 }
 
-static inline void pmd_set(pmd_t *pmdp, pte_t *ptep)
-{
-	pmd_val(*pmdp) = _PAGE_TABLE | (virt_to_pfn(ptep) << _PFN_SHIFT);
-}
-
-static inline void pud_set(pud_t *pudp, pmd_t *pmdp)
-{
-	pud_val(*pudp) = _PAGE_TABLE | (virt_to_pfn(pmdp) << _PFN_SHIFT);
-}
-
-static inline void p4d_set(p4d_t *p4dp, pud_t *pudp)
-{
-	p4d_val(*p4dp) = _PAGE_TABLE | (virt_to_pfn(pudp) << _PFN_SHIFT);
-}
-
 static inline unsigned long pmd_page_vaddr(pmd_t pmd)
 {
 	return (unsigned long)pfn_to_virt(pmd_val(pmd) >> _PFN_SHIFT);
@@ -303,7 +305,13 @@ static inline int pmd_bad(pmd_t pmd)
 
 static inline int pmd_present(pmd_t pmd)
 {
-	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE);
+	/*
+	 * Checking for _PAGE_PSE is needed too because
+	 * split_huge_page will temporarily clear the valid bit (but
+	 * the _PAGE_PSE flag will remain set at all times while the
+	 * _PAGE_VALID bit is clear).
+	 */
+	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_PSE);
 }
 
 static inline void pmd_clear(pmd_t *pmdp)

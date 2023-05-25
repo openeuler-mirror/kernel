@@ -13,6 +13,7 @@
 #include <linux/kvm.h>
 #include <linux/uaccess.h>
 #include <linux/sched.h>
+#include <linux/msi.h>
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 
@@ -38,6 +39,13 @@ extern bool bind_vcpu_enabled;
 #define HARDWARE_VPN_MASK	((1UL << WIDTH_HARDWARE_VPN) - 1)
 #define VPN_SHIFT		(64 - WIDTH_HARDWARE_VPN)
 
+#define VCPU_STAT(n, x, ...) \
+	{ n, offsetof(struct kvm_vcpu, stat.x), KVM_STAT_VCPU, ##  __VA_ARGS__ }
+#define VM_STAT(n, x, ...) \
+	{ n, offsetof(struct kvm, stat.x), KVM_STAT_VM, ## __VA_ARGS__ }
+#define DFX_STAT(n, x, ...) \
+	{ n, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64, ## __VA_ARGS__ }
+
 static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_running_vcpu);
 
 static void kvm_set_running_vcpu(struct kvm_vcpu *vcpu)
@@ -55,11 +63,13 @@ int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
 int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm, int irq_source_id,
 		int level, bool line_status)
 {
-	int irq = e->msi.data & 0xff;
+	unsigned int vcid;
 	unsigned int vcpu_idx;
 	struct kvm_vcpu *vcpu = NULL;
+	int irq = e->msi.data & 0xff;
 
-	vcpu_idx = irq % atomic_read(&kvm->online_vcpus);
+	vcid = (e->msi.address_lo & VT_MSIX_ADDR_DEST_ID_MASK) >> VT_MSIX_ADDR_DEST_ID_SHIFT;
+	vcpu_idx = vcid & 0x1f;
 	vcpu = kvm_get_vcpu(kvm, vcpu_idx);
 
 	if (!vcpu)
@@ -149,6 +159,52 @@ static void check_vcpu_requests(struct kvm_vcpu *vcpu)
 }
 
 struct kvm_stats_debugfs_item debugfs_entries[] = {
+	VCPU_STAT("exits", exits),
+	VCPU_STAT("io_exits", io_exits),
+	VCPU_STAT("mmio_exits", mmio_exits),
+	VCPU_STAT("migration_set_dirty", migration_set_dirty),
+	VCPU_STAT("shutdown_exits", shutdown_exits),
+	VCPU_STAT("restart_exits", restart_exits),
+	VCPU_STAT("ipi_exits", ipi_exits),
+	VCPU_STAT("timer_exits", timer_exits),
+	VCPU_STAT("debug_exits", debug_exits),
+#ifdef CONFIG_KVM_MEMHOTPLUG
+	VCPU_STAT("memhotplug_exits", memhotplug_exits),
+#endif
+	VCPU_STAT("fatal_error_exits", fatal_error_exits),
+	VCPU_STAT("halt_exits", halt_exits),
+	VCPU_STAT("halt_successful_poll", halt_successful_poll),
+	VCPU_STAT("halt_attempted_poll", halt_attempted_poll),
+	VCPU_STAT("halt_wakeup", halt_wakeup),
+	VCPU_STAT("halt_poll_invalid", halt_poll_invalid),
+	VCPU_STAT("signal_exits", signal_exits),
+	{ "vcpu_stat", 0, KVM_STAT_DFX },
+	{ NULL }
+};
+
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT("pid", pid),
+	DFX_STAT("exits", exits),
+	DFX_STAT("io_exits", io_exits),
+	DFX_STAT("mmio_exits", mmio_exits),
+	DFX_STAT("migration_set_dirty", migration_set_dirty),
+	DFX_STAT("shutdown_exits", shutdown_exits),
+	DFX_STAT("restart_exits", restart_exits),
+	DFX_STAT("ipi_exits", ipi_exits),
+	DFX_STAT("timer_exits", timer_exits),
+	DFX_STAT("debug_exits", debug_exits),
+	DFX_STAT("fatal_error_exits", fatal_error_exits),
+	DFX_STAT("halt_exits", halt_exits),
+	DFX_STAT("halt_successful_poll", halt_successful_poll),
+	DFX_STAT("halt_attempted_poll", halt_attempted_poll),
+	DFX_STAT("halt_wakeup", halt_wakeup),
+	DFX_STAT("halt_poll_invalid", halt_poll_invalid),
+	DFX_STAT("signal_exits", signal_exits),
+	DFX_STAT("steal", steal),
+	DFX_STAT("st_max", st_max),
+	DFX_STAT("utime", utime),
+	DFX_STAT("stime", stime),
+	DFX_STAT("gtime", gtime),
 	{ NULL }
 };
 
@@ -457,6 +513,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	/* Set up the timer for Guest */
 	pr_info("vcpu: [%d], regs addr = %#lx, vcpucb = %#lx\n", vcpu->vcpu_id,
 			(unsigned long)&vcpu->arch.regs, (unsigned long)&vcpu->arch.vcb);
+	vcpu->arch.vtimer_freq = cpuid(GET_CPU_FREQ, 0) * 1000UL * 1000UL;
 	hrtimer_init(&vcpu->arch.hrt, CLOCK_REALTIME, HRTIMER_MODE_ABS);
 	vcpu->arch.hrt.function = clockdev_fn;
 	vcpu->arch.tsk = current;
@@ -521,10 +578,27 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->st_max = 0;
+}
+
+static void update_steal_time(struct kvm_vcpu *vcpu)
+{
+#ifdef CONFIG_SCHED_INFO
+	u64 delta;
+
+	delta = current->sched_info.run_delay - vcpu->stat.steal;
+	vcpu->stat.steal = current->sched_info.run_delay;
+	vcpu->stat.st_max = max(vcpu->stat.st_max, delta);
+#endif
+}
+
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	vcpu->cpu = cpu;
 	kvm_set_running_vcpu(vcpu);
+	update_steal_time(vcpu);
 }
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
@@ -584,6 +658,13 @@ void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
 	if (opc == 0x06 && disp16 == 0x1000) /* RD_F */
 		pr_info("vcpu exit: pc = %#lx (%px), insn[%x] : rd_f r%d [%#lx]\n",
 				pc, pc_phys, insn, ra, vcpu_get_reg(vcpu, ra));
+}
+
+static void update_vcpu_stat_time(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->utime = current->utime;
+	vcpu_stat->stime = current->stime;
+	vcpu_stat->gtime = current->gtime;
 }
 
 /*
@@ -651,6 +732,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		if (signal_pending(current)) {
 			ret = -EINTR;
 			run->exit_reason = KVM_EXIT_INTR;
+			vcpu->stat.signal_exits++;
 		}
 
 		if (ret <= 0) {
@@ -681,6 +763,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		/* Back from guest */
 		vcpu->mode = OUTSIDE_GUEST_MODE;
 
+		vcpu->stat.exits++;
 		local_irq_enable();
 		guest_exit_irqoff();
 
@@ -690,6 +773,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		/* ret = 0 indicate interrupt in guest mode, ret > 0 indicate hcall */
 		ret = handle_exit(vcpu, run, ret, &hargs);
+		update_vcpu_stat_time(&vcpu->stat);
 	}
 
 	if (vcpu->sigset_active)
@@ -713,7 +797,8 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 		return kvm_arch_vcpu_reset(vcpu);
 	case KVM_SW64_GET_VCB:
 		if (vcpu->arch.vcb.migration_mark) {
-			result = sw64_io_read(0, LONG_TIME);
+			result = sw64_io_read(0, LONG_TIME)
+					+ vcpu->arch.vcb.guest_longtime_offset;
 			vcpu->arch.vcb.guest_longtime = result;
 			vcpu->arch.vcb.guest_irqs_pending = vcpu->arch.irqs_pending[0];
 		}
@@ -880,14 +965,13 @@ int kvm_vm_ioctl_irq_line(struct kvm *kvm, struct kvm_irq_level *irq_level,
 		bool line_status)
 {
 	u32 irq = irq_level->irq;
-	unsigned int vcpu_idx, irq_num;
+	unsigned int irq_num;
 	struct kvm_vcpu *vcpu = NULL;
 	bool level = irq_level->level;
 
-	vcpu_idx = irq % atomic_read(&kvm->online_vcpus);
 	irq_num = irq;
-
-	vcpu = kvm_get_vcpu(kvm, vcpu_idx);
+	/* target core for Intx is core0 */
+	vcpu = kvm_get_vcpu(kvm, 0);
 	if (!vcpu)
 		return -EINVAL;
 

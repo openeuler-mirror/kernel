@@ -28,6 +28,7 @@
 #include <asm/stacktrace.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
+#include <asm/debug.h>
 #include <asm/efi.h>
 
 #include "proto.h"
@@ -572,6 +573,21 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 	unsigned long tmp, tmp5, tmp6, tmp7, tmp8, vb;
 	unsigned long fp[4];
 	unsigned long instr, instr_op, value;
+
+#ifdef CONFIG_DEBUG_FS
+	/*
+	 * If command name is specified, record some information
+	 * to debugfs.
+	 */
+	if (unaligned_task[0] && !strcmp(unaligned_task, current->comm)) {
+		int idx;
+
+		idx = unaligned_count % UNA_MAX_ENTRIES;
+		unaligned[idx].va = (unsigned long)va;
+		unaligned[idx].pc = regs->pc;
+		unaligned_count++;
+	}
+#endif
 
 	/* Check the UAC bits to decide what the user wants us to do
 	 * with the unaliged access.

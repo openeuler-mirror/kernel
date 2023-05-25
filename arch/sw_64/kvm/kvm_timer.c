@@ -16,7 +16,7 @@
  * timer interrupt.
  *
  * The Guest uses the LHCALL_SET_CLOCKEVENT hypercall to tell us how long to
- * the next timer interrupt (in nanoseconds).  We use the high-resolution timer
+ * the next timer interrupt (in ticks).  We use the high-resolution timer
  * infrastructure to set a callback at that time.
  *
  * 0 means "turn off the clock".
@@ -31,6 +31,11 @@ void set_timer(struct kvm_vcpu *vcpu, unsigned long delta)
 		hrtimer_cancel(&vcpu->arch.hrt);
 		return;
 	}
+
+	/* Convert clock event device ticks to nanoseconds */
+	delta = delta * NSEC_PER_SEC;
+	do_div(delta, vcpu->arch.vtimer_freq);
+
 	/*
 	 * We use wallclock time here, so the Guest might not be running for
 	 * all the time between now and the timer interrupt it asked for.  This
