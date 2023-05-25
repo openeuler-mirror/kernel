@@ -3,7 +3,7 @@
 
 %define modsign_cmd %{SOURCE10}
 
-%global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
+%global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/ -e s/riscv.*/riscv/)
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 %global debuginfodir /usr/lib/debug
@@ -12,7 +12,7 @@
 %global upstream_sublevel   8
 %global devel_release       3
 %global maintenance_release .0.0
-%global pkg_release         .7
+%global pkg_release         .8
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -75,6 +75,7 @@ Patch0002: 0002-config-add-initial-openeuler_defconfig-for-arm64.patch
 Patch0003: 0003-config-add-initial-openeuler_defconfig-for-x86_64.patch
 Patch0004: 0004-config-disable-CONFIG_EFI_ZBOOT-by-default.patch
 Patch0005: 0005-arm64-vmalloc-use-module-region-only-for-module_allo.patch
+Patch0006: 0006-config-add-initial-openeuler_defconfig-for-riscv64.patch
 
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
@@ -109,12 +110,12 @@ Conflicts: mdadm < 3.2.1-5 nfs-utils < 1.0.7-12 oprofile < 0.9.1-2 ppp < 2.4.3-3
 Conflicts: reiserfs-utils < 3.6.19-2 selinux-policy-targeted < 1.25.3-14 squashfs-tools < 4.0
 Conflicts: udev < 063-6 util-linux < 2.12 wireless-tools < 29-3 xfsprogs < 2.6.13-4
 
-Provides: kernel-aarch64 = %{version}-%{release} kernel-drm = 4.3.0 kernel-drm-nouveau = 16 kernel-modeset = 1
+Provides: kernel-drm = 4.3.0 kernel-drm-nouveau = 16 kernel-modeset = 1
 Provides: kernel-uname-r = %{KernelVer} kernel=%{KernelVer}
 
 Requires: dracut >= 001-7 grubby >= 8.28-2 initscripts >= 8.11.1-1 linux-firmware >= 20100806-2 module-init-tools >= 3.16-2
 
-ExclusiveArch: noarch aarch64 i686 x86_64
+ExclusiveArch: aarch64 i686 x86_64 riscv64
 ExclusiveOS: Linux
 
 %if %{with_perf}
@@ -304,6 +305,7 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0003 -p1
 %patch0004 -p1
 %patch0005 -p1
+%patch0006 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -354,8 +356,8 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
     fi
 %endif
 
-# aarch64 make dtbs
-%ifarch aarch64
+# make dtbs
+%ifarch aarch64 riscv64
     make ARCH=%{Arch} dtbs
 %endif
 
@@ -534,8 +536,8 @@ popd
 make ARCH=%{Arch} INSTALL_HDR_PATH=$RPM_BUILD_ROOT/usr KBUILD_SRC= headers_install
 find $RPM_BUILD_ROOT/usr/include -name "\.*"  -exec rm -rf {} \;
 
-# aarch64 dtbs install
-%ifarch aarch64
+# dtbs install
+%ifarch aarch64 riscv64
     mkdir -p $RPM_BUILD_ROOT/boot/dtb-%{KernelVer}
     install -m 644 $(find arch/%{Arch}/boot -name "*.dtb") $RPM_BUILD_ROOT/boot/dtb-%{KernelVer}/
     rm -f $(find arch/$Arch/boot -name "*.dtb")
@@ -774,7 +776,7 @@ fi
 %defattr (-, root, root)
 %doc
 /boot/config-*
-%ifarch aarch64
+%ifarch aarch64 riscv64
 /boot/dtb-*
 %endif
 /boot/symvers-*
@@ -886,6 +888,9 @@ fi
 %endif
 
 %changelog
+* Thu May 25 2023 laokz <zhangkai@iscas.ac.cn> - 6.1.8-3.0.0.8
+- add riscv64 support
+
 * Tue Feb 7 2023 Zheng Zengkai <zhengzengkai@huawei.com> - 6.1.8-3.0.0.7
 - update to v6.1.8-3.0.0.7
 - arm64/vmalloc: use module region only for module_alloc() if CONFIG_RANDOMIZE_BASE is set
