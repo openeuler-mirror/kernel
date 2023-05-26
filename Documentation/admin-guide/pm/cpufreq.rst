@@ -587,6 +587,13 @@ This governor exposes the following tunables:
 	It effectively causes the frequency to go down ``sampling_down_factor``
 	times slower than it ramps up.
 
+``fast_mode``
+	Frequency scaling strategy switch for fast_mode. Enable `conservative`
+	governor changing frequency a little bit quickly.
+
+	If the user seeks to reduce performance loss, set it to 1(default 0) and
+	adopt fast mode; Otherwise, pursue greater power consumption benefits, set
+	it to 0 and adopt slow mode.
 
 Frequency Boost Support
 =======================
