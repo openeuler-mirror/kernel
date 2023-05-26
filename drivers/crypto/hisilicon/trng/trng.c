@@ -27,6 +27,7 @@
 #define SW_DRBG_SEED(n)         (SW_DRBG_KEY_BASE - ((n) << SW_DRBG_NUM_SHIFT))
 #define SW_DRBG_SEED_REGS_NUM	12
 #define SW_DRBG_SEED_SIZE	48
+#define SW_DRBG_CRYPTO_ALG_PRI 100
 #define SW_DRBG_BLOCKS		0x0830
 #define SW_DRBG_INIT		0x0834
 #define SW_DRBG_GEN		0x083c
@@ -218,7 +219,7 @@ static struct rng_alg hisi_trng_alg = {
 	.base = {
 		.cra_name = "stdrng",
 		.cra_driver_name = "hisi_stdrng",
-		.cra_priority = 300,
+		.cra_priority = SW_DRBG_CRYPTO_ALG_PRI,
 		.cra_ctxsize = sizeof(struct hisi_trng_ctx),
 		.cra_module = THIS_MODULE,
 		.cra_init = hisi_trng_init,
