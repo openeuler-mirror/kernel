@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/
+
+obj-$(CONFIG_HINIC3) += hinic3.o
+hinic3-objs := hw/hinic3_hwdev.o \
+			hw/hinic3_hw_cfg.o \
+			hw/hinic3_hw_comm.o \
+			hw/hinic3_prof_adap.o \
+			hw/hinic3_sriov.o \
+			hw/hinic3_lld.o \
+			hw/hinic3_dev_mgmt.o \
+			hw/hinic3_common.o \
+			hw/hinic3_hwif.o \
+			hw/hinic3_wq.o \
+            hw/hinic3_cmdq.o \
+			hw/hinic3_eqs.o \
+			hw/hinic3_mbox.o \
+			hw/hinic3_mgmt.o \
+			hw/hinic3_api_cmd.o \
+			hw/hinic3_hw_api.o \
+			hw/hinic3_sml_lt.o \
+			hw/hinic3_hw_mt.o \
+            hw/hinic3_nictool.o \
+			hw/hinic3_devlink.o \
+			hw/ossl_knl_linux.o \
+			hinic3_main.o \
+			hinic3_tx.o \
+			hinic3_rx.o \
+			hinic3_rss.o \
+			hinic3_ntuple.o \
+			hinic3_dcb.o \
+			hinic3_ethtool.o \
+			hinic3_ethtool_stats.o \
+			hinic3_dbg.o \
+			hinic3_irq.o \
+			hinic3_filter.o \
+			hinic3_netdev_ops.o \
+			hinic3_nic_prof.o \
+			hinic3_nic_cfg.o \
+			hinic3_mag_cfg.o \
+			hinic3_nic_cfg_vf.o \
+			hinic3_rss_cfg.o \
+			hinic3_nic_event.o \
+			hinic3_nic_io.o \
+			hinic3_nic_dbg.o
