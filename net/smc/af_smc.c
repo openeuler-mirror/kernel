@@ -2227,9 +2227,10 @@ static int smc_setsockopt(struct socket *sock, int level, int optname,
 		if (sk->sk_state != SMC_INIT &&
 		    sk->sk_state != SMC_LISTEN &&
 		    sk->sk_state != SMC_CLOSED) {
-			if (val)
-				mod_delayed_work(smc->conn.lgr->tx_wq,
-						 &smc->conn.tx_work, 0);
+			if (val) {
+				smc_tx_pending(&smc->conn);
+				cancel_delayed_work(&smc->conn.tx_work);
+			}
 		}
 		break;
 	case TCP_CORK:
