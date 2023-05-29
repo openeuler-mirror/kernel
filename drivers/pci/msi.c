@@ -1107,11 +1107,31 @@ int pci_msi_enabled(void)
 }
 EXPORT_SYMBOL(pci_msi_enabled);
 
+#ifdef CONFIG_LOONGARCH
+static unsigned int pci_irq_numbers = 32;
+
+static int __init pci_irq_limit(char *str)
+{
+	get_option(&str, &pci_irq_numbers);
+
+	if (pci_irq_numbers == 0)
+		pci_irq_numbers = 32;
+	return 0;
+}
+
+early_param("pci_irq_limit", pci_irq_limit);
+#endif
+
 static int __pci_enable_msi_range(struct pci_dev *dev, int minvec, int maxvec,
 				  struct irq_affinity *affd)
 {
 	int nvec;
 	int rc;
+
+#ifdef CONFIG_LOONGARCH
+	if (maxvec > 32)
+		maxvec = pci_irq_numbers;
+#endif
 
 	if (!pci_msi_supported(dev, minvec) || dev->current_state != PCI_D0)
 		return -EINVAL;
@@ -1173,6 +1193,11 @@ static int __pci_enable_msix_range(struct pci_dev *dev,
 				   int flags)
 {
 	int rc, nvec = maxvec;
+
+#ifdef CONFIG_LOONGARCH
+	if (maxvec > 32)
+		nvec = pci_irq_numbers;
+#endif
 
 	if (maxvec < minvec)
 		return -ERANGE;
