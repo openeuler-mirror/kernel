@@ -262,6 +262,7 @@ static void etm4x_allow_trace(struct etmv4_drvdata *drvdata)
 #ifdef CONFIG_ETM4X_IMPDEF_FEATURE
 
 #define HISI_HIP08_AMBA_ID		0x000b6d01
+#define HISI_HIP09_AMBA_ID		0x000b6d02
 #define ETM4_AMBA_MASK			0xfffff
 #define HISI_HIP08_CORE_COMMIT_MASK	0x3000
 #define HISI_HIP08_CORE_COMMIT_SHIFT	12
@@ -278,6 +279,11 @@ struct etm4_arch_features {
 static bool etm4_hisi_match_pid(unsigned int id)
 {
 	return (id & ETM4_AMBA_MASK) == HISI_HIP08_AMBA_ID;
+}
+
+static bool etm4_hisi_hip09_match_pid(unsigned int id)
+{
+	return (id & ETM4_AMBA_MASK) == HISI_HIP09_AMBA_ID;
 }
 
 static void etm4_hisi_config_core_commit(void *info)
@@ -302,9 +308,12 @@ static void etm4_hisi_config_core_commit(void *info)
 static void etm4_hisi_config_set_auxctrlr(void *info)
 {
 	struct csdev_access *csa = info;
+	u32 trcauxctlr;
 
 	/* Switch the ETM to idle state */
-	etm4x_relaxed_write32(csa, HISI_HIP08_AUXCTRL_CHICKEN_BIT, TRCAUXCTLR);
+	trcauxctlr = etm4x_read32(csa, TRCAUXCTLR);
+	trcauxctlr |= HISI_HIP08_AUXCTRL_CHICKEN_BIT;
+	etm4x_relaxed_write32(csa, trcauxctlr, TRCAUXCTLR);
 }
 
 static struct etm4_arch_features etm4_features[] = {
@@ -355,6 +364,9 @@ static void etm4_check_arch_features(struct etmv4_drvdata *drvdata,
 		set_bit(ETM4_IMPDEF_HISI_CORE_COMMIT, drvdata->arch_features);
 		set_bit(ETM4_IMPDEF_HISI_SET_AUXCTRLR, drvdata->arch_features);
 	}
+
+	if (etm4_hisi_hip09_match_pid(id))
+		set_bit(ETM4_IMPDEF_HISI_SET_AUXCTRLR, drvdata->arch_features);
 }
 #else
 static void etm4_enable_arch_specific(struct etmv4_drvdata *drvdata)
@@ -2118,6 +2130,7 @@ static const struct amba_id etm4_ids[] = {
 	CS_AMBA_UCI_ID(0x000cc0af, uci_id_etm4),/* Marvell ThunderX2 */
 	CS_AMBA_UCI_ID(0x000b6d01, uci_id_etm4),/* HiSilicon-Hip08 */
 	CS_AMBA_UCI_ID(0x000b6d02, uci_id_etm4),/* HiSilicon-Hip09 */
+	CS_AMBA_UCI_ID(0x000b6d45, uci_id_etm4),/* HiSilicon-T6 */
 	{},
 };
 

@@ -558,7 +558,7 @@ cs_etm_info_priv_size(struct auxtrace_record *itr __maybe_unused,
 
 static bool cs_etm_is_etmv4(struct auxtrace_record *itr, int cpu)
 {
-	bool ret = false;
+	bool ret = true;
 	char path[PATH_MAX];
 	int scan;
 	unsigned int val;
@@ -570,10 +570,11 @@ static bool cs_etm_is_etmv4(struct auxtrace_record *itr, int cpu)
 	snprintf(path, PATH_MAX, "cpu%d/%s",
 		 cpu, metadata_etmv4_ro[CS_ETMV4_TRCIDR0]);
 	scan = perf_pmu__scan_file(cs_etm_pmu, path, "%x", &val);
-
-	/* The file was read successfully, we have a winner */
-	if (scan == 1)
-		ret = true;
+	if (scan != 1) {
+		pr_err("%s: can't read file %s\n",
+		       CORESIGHT_ETM_PMU_NAME, path);
+		ret = false;
+	}
 
 	return ret;
 }
