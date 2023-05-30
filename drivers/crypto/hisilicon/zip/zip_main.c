@@ -421,7 +421,7 @@ static int hisi_zip_set_qm_algs(struct hisi_qm *qm)
 	u32 alg_mask;
 	int i;
 
-	if (!qm->use_sva)
+	if (!qm->use_uacce)
 		return 0;
 
 	algs = devm_kzalloc(dev, HZIP_DEV_ALG_MAX_LEN * sizeof(char), GFP_KERNEL);
