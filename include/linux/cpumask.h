@@ -91,10 +91,12 @@ extern struct cpumask __cpu_possible_mask;
 extern struct cpumask __cpu_online_mask;
 extern struct cpumask __cpu_present_mask;
 extern struct cpumask __cpu_active_mask;
+extern struct cpumask __cpu_dying_mask;
 #define cpu_possible_mask ((const struct cpumask *)&__cpu_possible_mask)
 #define cpu_online_mask   ((const struct cpumask *)&__cpu_online_mask)
 #define cpu_present_mask  ((const struct cpumask *)&__cpu_present_mask)
 #define cpu_active_mask   ((const struct cpumask *)&__cpu_active_mask)
+#define cpu_dying_mask    ((const struct cpumask *)&__cpu_dying_mask)
 
 extern atomic_t __num_online_cpus;
 
@@ -118,6 +120,11 @@ static inline unsigned int num_online_cpus(void)
 #define cpu_possible(cpu)	cpumask_test_cpu((cpu), cpu_possible_mask)
 #define cpu_present(cpu)	cpumask_test_cpu((cpu), cpu_present_mask)
 #define cpu_active(cpu)		cpumask_test_cpu((cpu), cpu_active_mask)
+static inline int cpumask_test_cpu(int cpu, const struct cpumask *cpumask);
+static inline bool cpu_dying(unsigned int cpu)
+{
+	return cpumask_test_cpu(cpu, cpu_dying_mask);
+}
 #else
 #define num_online_cpus()	1U
 #define num_possible_cpus()	1U
@@ -127,6 +134,10 @@ static inline unsigned int num_online_cpus(void)
 #define cpu_possible(cpu)	((cpu) == 0)
 #define cpu_present(cpu)	((cpu) == 0)
 #define cpu_active(cpu)		((cpu) == 0)
+static inline bool cpu_dying(unsigned int cpu)
+{
+	return false;
+}
 #endif
 
 extern cpumask_t cpus_booted_once_mask;
@@ -313,6 +324,58 @@ extern int cpumask_next_wrap(int n, const struct cpumask *mask, int start, bool 
 		(cpu) = cpumask_next_and((cpu), (mask1), (mask2)),	\
 		(cpu) < nr_cpu_ids;)
 #endif /* SMP */
+
+/*
+ * We have several different "preferred sizes" for the cpumask
+ * operations, depending on operation.
+ *
+ * For example, the bitmap scanning and operating operations have
+ * optimized routines that work for the single-word case, but only when
+ * the size is constant. So if NR_CPUS fits in one single word, we are
+ * better off using that small constant, in order to trigger the
+ * optimized bit finding. That is 'small_cpumask_size'.
+ *
+ * The clearing and copying operations will similarly perform better
+ * with a constant size, but we limit that size arbitrarily to four
+ * words. We call this 'large_cpumask_size'.
+ *
+ * Finally, some operations just want the exact limit, either because
+ * they set bits or just don't have any faster fixed-sized versions. We
+ * call this just 'nr_cpumask_bits'.
+ *
+ * Note that these optional constants are always guaranteed to be at
+ * least as big as 'nr_cpu_ids' itself is, and all our cpumask
+ * allocations are at least that size (see cpumask_size()). The
+ * optimization comes from being able to potentially use a compile-time
+ * constant instead of a run-time generated exact number of CPUs.
+ */
+#if NR_CPUS <= BITS_PER_LONG
+  #define small_cpumask_bits ((unsigned int)NR_CPUS)
+  #define large_cpumask_bits ((unsigned int)NR_CPUS)
+#elif NR_CPUS <= 4*BITS_PER_LONG
+  #define small_cpumask_bits nr_cpu_ids
+  #define large_cpumask_bits ((unsigned int)NR_CPUS)
+#else
+  #define small_cpumask_bits nr_cpu_ids
+  #define large_cpumask_bits nr_cpu_ids
+#endif
+
+/**
+ * for_each_cpu_or - iterate over every cpu present in either mask
+ * @cpu: the (optionally unsigned) integer iterator
+ * @mask1: the first cpumask pointer
+ * @mask2: the second cpumask pointer
+ *
+ * This saves a temporary CPU mask in many places.  It is equivalent to:
+ *	struct cpumask tmp;
+ *	cpumask_or(&tmp, &mask1, &mask2);
+ *	for_each_cpu(cpu, &tmp)
+ *		...
+ *
+ * After the loop, cpu is >= nr_cpu_ids.
+ */
+#define for_each_cpu_or(cpu, mask1, mask2)				\
+	for_each_or_bit(cpu, cpumask_bits(mask1), cpumask_bits(mask2), small_cpumask_bits)
 
 #define CPU_BITS_NONE						\
 {								\
@@ -851,6 +914,14 @@ set_cpu_active(unsigned int cpu, bool active)
 		cpumask_clear_cpu(cpu, &__cpu_active_mask);
 }
 
+static inline void
+set_cpu_dying(unsigned int cpu, bool dying)
+{
+	if (dying)
+		cpumask_set_cpu(cpu, &__cpu_dying_mask);
+	else
+		cpumask_clear_cpu(cpu, &__cpu_dying_mask);
+}
 
 /**
  * to_cpumask - convert an NR_CPUS bitmap to a struct cpumask *
