@@ -215,7 +215,7 @@ static unsigned long vm_insert_anon_page(struct vm_area_struct *vma,
 {
 	struct mm_struct *mm = vma->vm_mm;
 	int ret = 0;
-	pte_t *pte;
+	pte_t *pte, dst_pte;
 	spinlock_t *ptl;
 
 	if (unlikely(anon_vma_prepare(vma)))
@@ -233,7 +233,10 @@ static unsigned long vm_insert_anon_page(struct vm_area_struct *vma,
 	inc_mm_counter(mm, MM_ANONPAGES);
 	reliable_page_counter(page, mm, 1);
 	page_add_new_anon_rmap(page, vma, addr, false);
-	set_pte_at(mm, addr, pte, mk_pte(page, vma->vm_page_prot));
+	dst_pte = mk_pte(page, vma->vm_page_prot);
+	if (vma->vm_flags & VM_WRITE)
+		dst_pte = pte_mkwrite(pte_mkdirty(dst_pte));
+	set_pte_at(mm, addr, pte, dst_pte);
 
 out_unlock:
 	pte_unmap_unlock(pte, ptl);
