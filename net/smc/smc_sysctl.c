@@ -24,7 +24,6 @@ static int min_rcvbuf = SMC_BUF_MIN_SIZE;
 static struct ctl_table smc_table[] = {
 	{
 		.procname	= "smcr_buf_type",
-		.data		= &init_net.smc.sysctl_smcr_buf_type,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_douintvec_minmax,
@@ -33,7 +32,6 @@ static struct ctl_table smc_table[] = {
 	},
 	{
 		.procname	= "wmem",
-		.data		= &init_net.smc.sysctl_wmem,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
@@ -41,7 +39,6 @@ static struct ctl_table smc_table[] = {
 	},
 	{
 		.procname	= "rmem",
-		.data		= &init_net.smc.sysctl_rmem,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
@@ -50,34 +47,55 @@ static struct ctl_table smc_table[] = {
 	{  }
 };
 
+int sysctl_smcr_buf_type(struct net *net)
+{
+	return READ_ONCE(net->smc->sysctl_smcr_buf_type);
+}
+
+int sysctl_smcr_wmem(struct net *net)
+{
+	return READ_ONCE(net->smc->sysctl_wmem);
+}
+
+int sysctl_smcr_rmem(struct net *net)
+{
+	return READ_ONCE(net->smc->sysctl_rmem);
+}
+
 int __net_init smc_sysctl_net_init(struct net *net)
 {
 	struct ctl_table *table;
+	int idx;
 
 	table = smc_table;
+	net->smc = kmalloc(sizeof(*net->smc), GFP_KERNEL);
+	if (!net->smc)
+		goto err_alloc;
 	if (!net_eq(net, &init_net)) {
-		int i;
-
 		table = kmemdup(table, sizeof(smc_table), GFP_KERNEL);
 		if (!table)
-			goto err_alloc;
-
-		for (i = 0; i < ARRAY_SIZE(smc_table) - 1; i++)
-			table[i].data += (void *)net - (void *)&init_net;
+			goto err_table;
 	}
 
-	net->smc.smc_hdr = register_net_sysctl(net, "net/smc", table);
-	if (!net->smc.smc_hdr)
+	idx = 0;
+	net->smc->sysctl_smcr_buf_type = SMCR_PHYS_CONT_BUFS;
+	table[idx++].data = &net->smc->sysctl_smcr_buf_type;
+	WRITE_ONCE(net->smc->sysctl_wmem, READ_ONCE(net->ipv4.sysctl_tcp_wmem[1]));
+	table[idx++].data = &net->smc->sysctl_wmem;
+	WRITE_ONCE(net->smc->sysctl_rmem, READ_ONCE(net->ipv4.sysctl_tcp_rmem[1]));
+	table[idx++].data = &net->smc->sysctl_rmem;
+
+	net->smc->smc_hdr = register_net_sysctl(net, "net/smc", table);
+	if (!net->smc->smc_hdr)
 		goto err_reg;
 
-	net->smc.sysctl_smcr_buf_type = SMCR_PHYS_CONT_BUFS;
-	WRITE_ONCE(net->smc.sysctl_wmem, READ_ONCE(net->ipv4.sysctl_tcp_wmem[1]));
-	WRITE_ONCE(net->smc.sysctl_rmem, READ_ONCE(net->ipv4.sysctl_tcp_rmem[1]));
 	return 0;
 
 err_reg:
 	if (!net_eq(net, &init_net))
 		kfree(table);
+err_table:
+	kfree(net->smc);
 err_alloc:
 	return -ENOMEM;
 }
@@ -86,8 +104,9 @@ void __net_exit smc_sysctl_net_exit(struct net *net)
 {
 	struct ctl_table *table;
 
-	table = net->smc.smc_hdr->ctl_table_arg;
-	unregister_net_sysctl_table(net->smc.smc_hdr);
+	table = net->smc->smc_hdr->ctl_table_arg;
+	unregister_net_sysctl_table(net->smc->smc_hdr);
 	if (!net_eq(net, &init_net))
 		kfree(table);
+	kfree(net->smc);
 }

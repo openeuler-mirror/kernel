@@ -187,6 +187,7 @@ struct smc_rtoken {				/* address/key of remote RMB */
 };
 
 #define SMC_BUF_MIN_SIZE	16384	/* minimum size of an RMB */
+#define SMC_RMB_DEF_SIZE	131072	/* default size of an RMB */
 #define SMC_RMBE_SIZES		16	/* number of distinct RMBE sizes */
 /* theoretically, the RFC states that largest size would be 512K,
  * i.e. compressed 5 and thus 6 sizes (0..5), despite

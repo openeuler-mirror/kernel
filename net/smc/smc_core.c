@@ -30,6 +30,7 @@
 #include "smc_cdc.h"
 #include "smc_close.h"
 #include "smc_ism.h"
+#include "smc_sysctl.h"
 
 #define SMC_LGR_NUM_INCR		256
 #define SMC_LGR_FREE_DELAY_SERV		(600 * HZ)
@@ -437,7 +438,7 @@ static int smc_lgr_create(struct smc_sock *smc, struct smc_init_info *ini)
 			goto free_wq;
 		lgr_list = &smc_lgr_list.list;
 		lgr_lock = &smc_lgr_list.lock;
-		lgr->buf_type = sock_net(&smc->sk)->smc.sysctl_smcr_buf_type;
+		lgr->buf_type = sysctl_smcr_buf_type(sock_net(&smc->sk));
 		atomic_inc(&lgr_cnt);
 	}
 	smc->conn.lgr = lgr;

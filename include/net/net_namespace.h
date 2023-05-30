@@ -192,9 +192,10 @@ struct net {
 #endif
 	struct sock		*diag_nlsk;
 #if IS_ENABLED(CONFIG_SMC)
-	struct netns_smc	smc;
-#endif
+	KABI_USE(1, struct netns_smc *smc)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
