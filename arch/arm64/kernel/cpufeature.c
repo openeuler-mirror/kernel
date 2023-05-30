@@ -1588,6 +1588,7 @@ bool cpu_has_amu_feat(int cpu)
 {
 	return cpumask_test_cpu(cpu, &amu_cpus);
 }
+EXPORT_SYMBOL(cpu_has_amu_feat);
 
 int get_cpu_with_amu_feat(void)
 {
