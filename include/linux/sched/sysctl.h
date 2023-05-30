@@ -83,6 +83,10 @@ extern unsigned int sysctl_overload_detect_period;
 extern unsigned int sysctl_offline_wait_interval;
 #endif
 
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+extern unsigned int sysctl_qos_level_weights[];
+#endif
+
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
 extern unsigned int sysctl_sched_prio_load_balance_enabled;
 #endif

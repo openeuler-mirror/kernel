@@ -977,6 +977,15 @@ config QOS_SCHED
 
     default n
 
+config QOS_SCHED_MULTILEVEL
+	bool "Multiple qos level task scheduling"
+	depends on QOS_SCHED
+	default n
+	help
+	  This feature enable multiple qos level on task scheduling.
+	  Expand the qos_level to [-2,2] to distinguish the tasks expected
+	  to be with extremely high or low priority level.
+
 config QOS_SCHED_SMT_EXPELLER
 	bool "Qos smt expeller"
 	depends on SCHED_SMT
