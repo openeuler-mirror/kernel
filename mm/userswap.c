@@ -139,7 +139,8 @@ get_again:
 		 * Check that no O_DIRECT or similar I/O is in progress on the
 		 * page
 		 */
-		if (page_mapcount(page) > 1) {
+		if (page_mapcount(page) > 1 ||
+		    page_mapcount(page) + 1 != page_count(page)) {
 			ret = -EBUSY;
 			goto out_err;
 		}
@@ -378,6 +379,7 @@ unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 	if (old_addr + old_len > new_addr && new_addr + new_len > old_addr)
 		return ret;
 
+	lru_add_drain_all();
 	down_read(&mm->mmap_lock);
 	ret = pages_can_be_swapped(mm, old_addr, len, &pages);
 	if (ret) {
