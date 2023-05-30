@@ -1182,11 +1182,20 @@ static inline int cpu_of(struct rq *rq)
 }
 
 #ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE_EX = -2,
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+	QOS_LEVEL_HIGH = 1,
+	QOS_LEVEL_HIGH_EX = 2
+};
+#else
 enum task_qos_level {
 	QOS_LEVEL_OFFLINE = -1,
 	QOS_LEVEL_ONLINE = 0,
-	QOS_LEVEL_MAX
 };
+#endif
 void init_qos_hrtimer(int cpu);
 #endif
 
@@ -3036,7 +3045,22 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 #ifdef CONFIG_QOS_SCHED
 static inline int qos_idle_policy(int policy)
 {
-	return policy == QOS_LEVEL_OFFLINE;
+	return policy <= QOS_LEVEL_OFFLINE;
+}
+
+static inline int is_high_level(long qos_level)
+{
+	return qos_level > QOS_LEVEL_ONLINE;
+}
+
+static inline int is_normal_level(long qos_level)
+{
+	return qos_level == QOS_LEVEL_ONLINE;
+}
+
+static inline int is_offline_level(long qos_level)
+{
+	return qos_level < QOS_LEVEL_ONLINE;
 }
 #endif
 

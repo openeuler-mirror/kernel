@@ -140,6 +140,23 @@ static int unthrottle_qos_cfs_rqs(int cpu);
 static bool qos_smt_expelled(int this_cpu);
 #endif
 
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+#define QOS_LEVEL_WEIGHT_OFFLINE_EX	1
+#define QOS_LEVEL_WEIGHT_OFFLINE	10
+#define QOS_LEVEL_WEIGHT_ONLINE 	100
+#define QOS_LEVEL_WEIGHT_HIGH		1000
+#define QOS_LEVEL_WEIGHT_HIGH_EX	10000
+
+unsigned int sysctl_qos_level_weights[5] = {
+	QOS_LEVEL_WEIGHT_OFFLINE_EX,
+	QOS_LEVEL_WEIGHT_OFFLINE,
+	QOS_LEVEL_WEIGHT_ONLINE,
+	QOS_LEVEL_WEIGHT_HIGH,
+	QOS_LEVEL_WEIGHT_HIGH_EX,
+};
+static long qos_reweight(long shares, struct task_group *tg);
+#endif
+
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
 unsigned int sysctl_sched_prio_load_balance_enabled;
 #endif
@@ -2987,7 +3004,7 @@ adjust_rq_cfs_tasks(void (*list_op)(struct list_head *, struct list_head *),
 {
 	struct task_group *tg = task_group(task_of(se));
 
-	if (sysctl_sched_prio_load_balance_enabled && tg->qos_level == -1)
+	if (sysctl_sched_prio_load_balance_enabled && is_offline_level(tg->qos_level))
 		(*list_op)(&se->group_node, &rq->cfs_offline_tasks);
 	else
 		(*list_op)(&se->group_node, &rq->cfs_tasks);
@@ -3217,6 +3234,9 @@ static long calc_group_shares(struct cfs_rq *cfs_rq)
 	struct task_group *tg = cfs_rq->tg;
 
 	tg_shares = READ_ONCE(tg->shares);
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+	tg_shares = qos_reweight(tg_shares, tg);
+#endif
 
 	load = max(scale_load_down(cfs_rq->load.weight), cfs_rq->avg.load_avg);
 
@@ -3265,6 +3285,9 @@ static void update_cfs_group(struct sched_entity *se)
 
 #ifndef CONFIG_SMP
 	shares = READ_ONCE(gcfs_rq->tg->shares);
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+	shares = qos_reweight(shares, gcfs_rq->tg);
+#endif
 
 	if (likely(se->load.weight == shares))
 		return;
@@ -4493,6 +4516,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	if ((flags & (DEQUEUE_SAVE | DEQUEUE_MOVE)) != DEQUEUE_SAVE)
 		update_min_vruntime(cfs_rq);
 }
+
 
 /*
  * Preempt the current task with a newly woken task if needed:
@@ -7548,7 +7572,7 @@ static inline void cancel_qos_timer(int cpu)
 
 static inline bool is_offline_task(struct task_struct *p)
 {
-	return task_group(p)->qos_level == QOS_LEVEL_OFFLINE;
+	return task_group(p)->qos_level < QOS_LEVEL_ONLINE;
 }
 
 static void start_qos_hrtimer(int cpu);
@@ -7739,7 +7763,7 @@ static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 		return false;
 	}
 
-	if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
+	if (unlikely(cfs_rq && is_offline_level(cfs_rq->tg->qos_level) &&
 		!sched_idle_cpu(smp_processor_id()) &&
 		cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
 		throttle_qos_cfs_rq(cfs_rq);
@@ -7755,7 +7779,7 @@ static inline void unthrottle_qos_sched_group(struct cfs_rq *cfs_rq)
 	struct rq_flags rf;
 
 	rq_lock_irqsave(rq, &rf);
-	if (cfs_rq->tg->qos_level == -1 && cfs_rq_throttled(cfs_rq))
+	if (is_offline_level(cfs_rq->tg->qos_level) && cfs_rq_throttled(cfs_rq))
 		unthrottle_qos_cfs_rq(cfs_rq);
 	rq_unlock_irqrestore(rq, &rf);
 }
@@ -7768,7 +7792,7 @@ void sched_qos_offline_wait(void)
 		rcu_read_lock();
 		qos_level = task_group(current)->qos_level;
 		rcu_read_unlock();
-		if (qos_level != -1 || fatal_signal_pending(current))
+		if (!is_offline_level(qos_level) || fatal_signal_pending(current))
 			break;
 
 		schedule_timeout_killable(msecs_to_jiffies(sysctl_offline_wait_interval));
@@ -7835,6 +7859,39 @@ static bool qos_smt_expelled(int this_cpu)
 #endif
 #endif
 
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+static long qos_reweight(long shares, struct task_group *tg)
+{
+	long qos_weight = 100;
+	long div = 100;
+	long scale_shares;
+
+	switch (tg->qos_level) {
+	case QOS_LEVEL_OFFLINE_EX:
+		qos_weight = sysctl_qos_level_weights[0];
+		break;
+	case QOS_LEVEL_OFFLINE:
+		qos_weight = sysctl_qos_level_weights[1];
+		break;
+	case QOS_LEVEL_ONLINE:
+		qos_weight = sysctl_qos_level_weights[2];
+		break;
+	case QOS_LEVEL_HIGH:
+		qos_weight = sysctl_qos_level_weights[3];
+		break;
+	case QOS_LEVEL_HIGH_EX:
+		qos_weight = sysctl_qos_level_weights[4];
+		break;
+	}
+	if (qos_weight > LONG_MAX / shares)
+		scale_shares = LONG_MAX / div;
+	else
+		scale_shares = shares * qos_weight / div;
+	scale_shares = clamp_t(long, scale_shares, scale_load(MIN_SHARES), scale_load(MAX_SHARES));
+	return scale_shares;
+}
+#endif
+
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 DEFINE_STATIC_KEY_TRUE(qos_smt_expell_switch);
 
@@ -7891,7 +7948,7 @@ static bool qos_smt_update_status(struct task_struct *p)
 {
 	int status = QOS_LEVEL_OFFLINE;
 
-	if (p != NULL && task_group(p)->qos_level >= QOS_LEVEL_ONLINE)
+	if (p != NULL && !is_offline_level(task_group(p)->qos_level))
 		status = QOS_LEVEL_ONLINE;
 
 	if (__this_cpu_read(qos_smt_status) == status)
@@ -7969,7 +8026,7 @@ static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
 		*    and current cpu only has SCHED_IDLE tasks enqueued.
 		*/
 		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE &&
-		    task_group(current)->qos_level < QOS_LEVEL_ONLINE) {
+		    is_offline_level(task_group(current)->qos_level)) {
 			trace_sched_qos_smt_expel(cpu_curr(cpu), per_cpu(qos_smt_status, cpu));
 			return true;
 		}
