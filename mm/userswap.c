@@ -407,7 +407,7 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm,
 
 	src_vma = find_vma(mm, src_addr);
 	if (!src_vma || src_addr < src_vma->vm_start)
-		return -ENOENT;
+		return -EINVAL;
 
 	if (src_vma->vm_flags & VM_LOCKED)
 		return -EINVAL;
