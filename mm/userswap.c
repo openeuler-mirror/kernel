@@ -19,9 +19,9 @@ DEFINE_STATIC_KEY_FALSE(userswap_enabled);
 
 static bool vma_uswap_compatible(struct vm_area_struct *vma)
 {
-	if (!vma || !(vma->vm_flags & VM_USWAP) || !vma_is_anonymous(vma) ||
-	    vma->vm_file || vma->vm_flags & (VM_SHARED | VM_LOCKED | VM_STACK |
-					     VM_IO | VM_PFNMAP))
+	if (!vma || !vma_is_anonymous(vma) || vma->vm_file ||
+	    vma->vm_flags & (VM_SHARED | VM_LOCKED | VM_STACK | VM_IO |
+	    VM_PFNMAP | VM_HUGETLB))
 		return false;
 	return true;
 }
@@ -93,6 +93,7 @@ static unsigned long pages_can_be_swapped(struct mm_struct *mm,
 	while (addr < addr_end) {
 		vma = find_vma(mm, addr);
 		if (!vma || addr < vma->vm_start ||
+		    !(vma->vm_flags & VM_USWAP) ||
 		    !vma_uswap_compatible(vma)) {
 			ret = -EINVAL;
 			goto out_err;
@@ -309,6 +310,8 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 		new_vma = find_vma(mm, new_addr);
 		if (!new_vma || new_addr < new_vma->vm_start)
 			goto out_recover;
+		if (!vma_uswap_compatible(new_vma))
+			goto out_recover;
 
 		ret = -EACCES;
 		if (!(old_vma->vm_flags & VM_WRITE) &&
@@ -409,7 +412,7 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm,
 	if (!src_vma || src_addr < src_vma->vm_start)
 		return -EINVAL;
 
-	if (src_vma->vm_flags & VM_LOCKED)
+	if (!vma_uswap_compatible(src_vma))
 		return -EINVAL;
 
 	page = follow_page(src_vma, src_addr, FOLL_GET | FOLL_MIGRATION);
