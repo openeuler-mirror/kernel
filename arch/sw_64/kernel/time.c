@@ -133,6 +133,7 @@ void __init setup_sched_clock(void)
 }
 
 #ifdef CONFIG_GENERIC_SCHED_CLOCK
+#include <linux/sched_clock.h>
 static u64 notrace sched_clock_read(void)
 {
 	return (rdtc() - sc_start) >> sc_shift;
