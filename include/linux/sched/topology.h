@@ -153,8 +153,12 @@ struct sched_domain {
 		struct rcu_head rcu;	/* used during destruction */
 	};
 	struct sched_domain_shared *shared;
-
+#ifndef __GENKSYMS__
+	unsigned int imb_numa_nr;	/* Nr running tasks that allows a NUMA imbalance */
+	KABI_FILL_HOLE(unsigned int kabi_hole)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 
 	unsigned int span_weight;
