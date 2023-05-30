@@ -496,7 +496,7 @@ bool uswap_register(struct uffdio_register *uffdio_register, bool *uswap_mode)
 bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 			     unsigned long *vm_flags, struct mm_struct *mm)
 {
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma, *cur;
 	unsigned long end;
 	bool ret = false;
 
@@ -508,6 +508,9 @@ bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 	vma = find_vma(mm, uffdio_register->range.start);
 	if (!vma || vma->vm_start >= end)
 		goto out_unlock;
+	for (cur = vma; cur && cur->vm_start < end; cur = cur->vm_next)
+		if (!vma_uswap_compatible(cur))
+			goto out_unlock;
 	uffdio_register->range.start = vma->vm_start;
 	vma = find_vma(mm, end);
 	if (vma && end >= vma->vm_start)
