@@ -22,6 +22,12 @@ $(USER_OBJS) $(UNPROFILE_OBJS): \
 	CHECKFLAGS := $(patsubst $(NOSTDINC_FLAGS),,$(CHECKFLAGS))
 
 # The stubs can't try to call mcount or update basic block data
+ifeq ($(CONFIG_PGO_KERNEL),y)
+define unprofile
+	$(patsubst -pg,,$(patsubst -fprofile-generate -ftest-coverage,,$(1)))
+endef
+else
 define unprofile
 	$(patsubst -pg,,$(patsubst -fprofile-arcs -ftest-coverage,,$(1)))
 endef
+endif

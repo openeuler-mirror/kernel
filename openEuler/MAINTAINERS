@@ -154,6 +154,13 @@ F:	drivers/i2c/busses/i2c-hisi.c
 F:	drivers/spi/spi-hisi-*
 F:	drivers/gpio/gpio-hisi.c
 
+PGO KERNEL
+M:	Yancheng Li <liyancheng@huawei.com>
+M:	Zhiheng Xie <xiezhiheng@huawei.com>
+S:	Maintained
+F:	kernel/gcov/gcc_4_7.c
+F:	kernel/gcov/gcc_base.c
+
 RAS Public Architecture
 M:	Xiaofei Tan <tanxiaofei@huawei.com>
 S:	Maintained
