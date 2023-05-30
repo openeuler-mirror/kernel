@@ -108,7 +108,7 @@ get_again:
 		 * follow_page will inc page ref, dec the ref after we remap
 		 * the page.
 		 */
-		page = follow_page(vma, addr, FOLL_GET);
+		page = follow_page(vma, addr, FOLL_GET | FOLL_DUMP);
 		if (IS_ERR_OR_NULL(page)) {
 			ret = -ENODEV;
 			goto out_err;
@@ -416,9 +416,9 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm,
 
 	if (!vma_uswap_compatible(src_vma))
 		return -EINVAL;
-
-	page = follow_page(src_vma, src_addr, FOLL_GET | FOLL_MIGRATION);
-	if (!page)
+	page = follow_page(src_vma, src_addr, FOLL_GET | FOLL_MIGRATION |
+			   FOLL_DUMP);
+	if (IS_ERR_OR_NULL(page))
 		return -ENODEV;
 
 	src_pmd = mm_find_pmd(mm, src_addr);
