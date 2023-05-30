@@ -157,24 +157,28 @@ out_err:
 	return ret;
 }
 
-static void uswap_unmap_anon_page(struct mm_struct *mm,
-				  struct vm_area_struct *vma,
-				  unsigned long addr, struct page *page,
-				  pmd_t *pmd, pte_t *old_pte,
-				  bool set_to_swp)
+static int uswap_unmap_anon_page(struct mm_struct *mm,
+				 struct vm_area_struct *vma,
+				 unsigned long addr, struct page *page,
+				 pmd_t *pmd, pte_t *old_pte, bool set_to_swp)
 {
 	struct mmu_notifier_range range;
 	spinlock_t *ptl;
 	pte_t *pte, _old_pte;
+	int ret = 0;
 
 	mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0, vma,
 				vma->vm_mm, addr, addr + PAGE_SIZE);
 	mmu_notifier_invalidate_range_start(&range);
 	pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
-	if (pte_none(*pte))
+	if (!pte_present(*pte)) {
+		ret = -EINVAL;
 		goto out_release_unlock;
+	}
 	flush_cache_page(vma, addr, pte_pfn(*pte));
 	_old_pte = ptep_clear_flush(vma, addr, pte);
+	if (old_pte)
+		*old_pte = _old_pte;
 	if (set_to_swp)
 		set_pte_at(mm, addr, pte, swp_entry_to_pte(swp_entry(
 			   SWP_USERSWAP_ENTRY, page_to_pfn(page))));
@@ -182,13 +186,12 @@ static void uswap_unmap_anon_page(struct mm_struct *mm,
 	dec_mm_counter(mm, MM_ANONPAGES);
 	reliable_page_counter(page, mm, -1);
 	page_remove_rmap(page, false);
+	page->mapping = NULL;
 
 out_release_unlock:
 	pte_unmap_unlock(pte, ptl);
 	mmu_notifier_invalidate_range_end(&range);
-	page->mapping = NULL;
-	if (old_pte)
-		*old_pte = _old_pte;
+	return ret;
 }
 
 static void uswap_map_anon_page(struct mm_struct *mm,
@@ -326,8 +329,10 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 		pmd = mm_find_pmd(mm, old_addr);
 		if (!pmd)
 			goto out_recover;
-		uswap_unmap_anon_page(mm, old_vma, old_addr, page, pmd,
-				      &old_pte, true);
+		ret = uswap_unmap_anon_page(mm, old_vma, old_addr, page, pmd,
+					    &old_pte, true);
+		if (ret)
+			goto out_recover;
 		ptes[i] = old_pte;
 		if (pte_dirty(old_pte)  || PageDirty(page))
 			pages_dirty = true;
@@ -429,9 +434,10 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm,
 		ret = -ENXIO;
 		goto out_put_page;
 	}
-	uswap_unmap_anon_page(mm, src_vma, src_addr, page, src_pmd, &src_pte,
-			      false);
-
+	ret = uswap_unmap_anon_page(mm, src_vma, src_addr, page, src_pmd,
+				    &src_pte, false);
+	if (ret)
+		goto out_put_page;
 	if (dst_vma->vm_flags & VM_USWAP)
 		ClearPageDirty(page);
 	/*
