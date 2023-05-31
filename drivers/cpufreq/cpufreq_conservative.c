@@ -28,6 +28,7 @@ static inline struct cs_policy_dbs_info *to_dbs_info(struct policy_dbs_info *pol
 struct cs_dbs_tuners {
 	unsigned int down_threshold;
 	unsigned int freq_step;
+	unsigned int fast_mode;
 };
 
 /* Conservative governor macros */
@@ -36,6 +37,8 @@ struct cs_dbs_tuners {
 #define DEF_FREQUENCY_STEP			(5)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
 #define MAX_SAMPLING_DOWN_FACTOR		(10)
+/* 50000 is the recommended hardware supported frequency step, 50MHz */
+#define RECOMMAND_FREQUENCY_STEP	(50000)
 
 static inline unsigned int get_freq_step(struct cs_dbs_tuners *cs_tuners,
 					 struct cpufreq_policy *policy)
@@ -47,6 +50,47 @@ static inline unsigned int get_freq_step(struct cs_dbs_tuners *cs_tuners,
 		freq_step = DEF_FREQUENCY_STEP;
 
 	return freq_step;
+}
+
+static unsigned int fast_dbs_update(struct cpufreq_policy *policy)
+{
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct cs_policy_dbs_info *dbs_info = to_dbs_info(policy_dbs);
+	unsigned int requested_freq = dbs_info->requested_freq;
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
+	unsigned int load = dbs_update(policy);
+	unsigned int min_f, max_f;
+
+	/*
+	 * If requested_freq is out of range, it is likely that the limits
+	 * changed in the meantime, so fall back to current frequency in that
+	 * case.
+	 */
+	if (requested_freq > policy->max || requested_freq < policy->min) {
+		requested_freq = policy->cur;
+		dbs_info->requested_freq = requested_freq;
+	}
+
+	/* Check for frequency increase */
+	if (load > dbs_data->up_threshold) {
+		/* If switching to max speed, apply sampling_down_factor */
+		if (policy->cur < policy->max)
+			policy_dbs->rate_mult = dbs_data->sampling_down_factor;
+		requested_freq = policy->max;
+	} else {
+		/* Calculate the next frequency proportional to load */
+		min_f = policy->cpuinfo.min_freq;
+		max_f = policy->cpuinfo.max_freq;
+		/* The range of load is 0 ~ 100, divide by 100 for percentage */
+		requested_freq = min_f + load * (max_f - min_f) / 100;
+
+		/* No longer fully busy, reset rate_mult */
+		policy_dbs->rate_mult = 1;
+	}
+	requested_freq = (requested_freq / RECOMMAND_FREQUENCY_STEP) * RECOMMAND_FREQUENCY_STEP;
+	__cpufreq_driver_target(policy, requested_freq, CPUFREQ_RELATION_C);
+
+	return dbs_data->sampling_rate * policy_dbs->rate_mult;
 }
 
 /*
@@ -74,6 +118,10 @@ static unsigned int cs_dbs_update(struct cpufreq_policy *policy)
 	 */
 	if (cs_tuners->freq_step == 0)
 		goto out;
+
+	/* If seek to reduce performance loss */
+	if (cs_tuners->fast_mode == 1)
+		return fast_dbs_update(policy);
 
 	/*
 	 * If requested_freq is out of range, it is likely that the limits
@@ -244,12 +292,30 @@ static ssize_t store_freq_step(struct gov_attr_set *attr_set, const char *buf,
 	return count;
 }
 
+static ssize_t store_fast_mode(struct gov_attr_set *attr_set,
+				    const char *buf, size_t count)
+{
+	struct dbs_data *dbs_data = to_dbs_data(attr_set);
+	struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
+	unsigned int input;
+	int ret;
+
+	ret = sscanf(buf, "%u", &input);
+
+	if (ret != 1 || (input != 0 && input != 1))
+		return -EINVAL;
+
+	cs_tuners->fast_mode = input;
+	return count;
+}
+
 gov_show_one_common(sampling_rate);
 gov_show_one_common(sampling_down_factor);
 gov_show_one_common(up_threshold);
 gov_show_one_common(ignore_nice_load);
 gov_show_one(cs, down_threshold);
 gov_show_one(cs, freq_step);
+gov_show_one(cs, fast_mode);
 
 gov_attr_rw(sampling_rate);
 gov_attr_rw(sampling_down_factor);
@@ -257,6 +323,7 @@ gov_attr_rw(up_threshold);
 gov_attr_rw(ignore_nice_load);
 gov_attr_rw(down_threshold);
 gov_attr_rw(freq_step);
+gov_attr_rw(fast_mode);
 
 static struct attribute *cs_attributes[] = {
 	&sampling_rate.attr,
@@ -265,6 +332,7 @@ static struct attribute *cs_attributes[] = {
 	&down_threshold.attr,
 	&ignore_nice_load.attr,
 	&freq_step.attr,
+	&fast_mode.attr,
 	NULL
 };
 
@@ -293,6 +361,7 @@ static int cs_init(struct dbs_data *dbs_data)
 
 	tuners->down_threshold = DEF_FREQUENCY_DOWN_THRESHOLD;
 	tuners->freq_step = DEF_FREQUENCY_STEP;
+	tuners->fast_mode = 0;
 	dbs_data->up_threshold = DEF_FREQUENCY_UP_THRESHOLD;
 	dbs_data->sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
 	dbs_data->ignore_nice_load = 0;
