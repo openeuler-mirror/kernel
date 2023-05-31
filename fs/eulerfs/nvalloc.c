@@ -525,7 +525,7 @@ void nv_fini(struct super_block *sb)
 	kfree(sbi->gpool);
 }
 
-void nv_init(struct super_block *sb, bool init)
+int nv_init(struct super_block *sb, bool init)
 {
 	struct eufs_sb_info *sbi = EUFS_SB(sb);
 	struct mem_pool *ppool;
@@ -533,6 +533,9 @@ void nv_init(struct super_block *sb, bool init)
 
 	/* allocate pools */
 	sbi->gpool = kmalloc(sizeof(struct mem_pool), GFP_KERNEL);
+	if (!sbi->gpool)
+		return -ENOMEM;
+
 	INIT_LIST_HEAD(&sbi->gpool->large_list);
 	INIT_LIST_HEAD(&sbi->gpool->page_list);
 	INIT_LIST_HEAD(&sbi->gpool->line4_list);
@@ -543,6 +546,9 @@ void nv_init(struct super_block *sb, bool init)
 	sbi->gpool->nlines = 0;
 
 	sbi->rest_pool = kmalloc(sizeof(struct mem_pool), GFP_KERNEL);
+	if (!sbi->rest_pool)
+		goto err_rest_pool;
+
 	INIT_LIST_HEAD(&sbi->rest_pool->large_list);
 	INIT_LIST_HEAD(&sbi->rest_pool->page_list);
 	INIT_LIST_HEAD(&sbi->rest_pool->line4_list);
@@ -554,6 +560,9 @@ void nv_init(struct super_block *sb, bool init)
 	sbi->rest_pool->nlines = 0;
 
 	sbi->ppool = alloc_percpu(struct mem_pool);
+	if (!sbi->ppool)
+		goto err_ppool;
+
 	for_each_online_cpu(cpu) {
 		ppool = per_cpu_ptr(sbi->ppool, cpu);
 		INIT_LIST_HEAD(&ppool->large_list);
@@ -568,6 +577,15 @@ void nv_init(struct super_block *sb, bool init)
 	}
 
 	partition(sb, init);
+	return 0;
+
+err_ppool:
+	kfree(sbi->rest_pool);
+	sbi->rest_pool = NULL;
+err_rest_pool:
+	kfree(sbi->gpool);
+	sbi->gpool = NULL;
+	return -ENOMEM;
 }
 
 static int cut_from_list_remaining(struct list_head *head, int remaining,
