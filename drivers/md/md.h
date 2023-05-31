@@ -528,6 +528,11 @@ struct mddev {
 	bool	has_superblocks:1;
 	bool	fail_last_dev:1;
 	bool	serialize_policy:1;
+
+	/* Used to synchronize idle and frozen for action_store() */
+	KABI_EXTEND(struct mutex sync_mutex)
+	/* The sequence number for sync thread */
+	KABI_EXTEND(atomic_t sync_seq)
 };
 
 enum recovery_flags {
