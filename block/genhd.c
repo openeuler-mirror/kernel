@@ -739,16 +739,42 @@ static void register_disk(struct device *parent, struct gendisk *disk,
 int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
 {
 	struct block_device *bdev;
+	struct block_device *claim;
+	int ret = 0;
 
 	if (!disk_part_scan_enabled(disk))
 		return -EINVAL;
 
+	/*
+	 * If the device is opened exclusively by current thread already, it's
+	 * safe to scan partitons, otherwise, use bd_prepare_to_claim() to
+	 * synchronize with other exclusive openers and other partition
+	 * scanners.
+	 */
+	if (!(mode & FMODE_EXCL)) {
+		claim = bdget_part(&disk->part0);
+		if (!claim)
+			return -ENOMEM;
+
+		ret = bd_prepare_to_claim(claim, claim, disk_scan_partitions);
+		if (ret) {
+			bdput(claim);
+			return ret;
+		}
+	}
+
 	set_bit(GD_NEED_PART_SCAN, &disk->state);
-	bdev = blkdev_get_by_dev(disk_devt(disk), mode, NULL);
+	bdev = blkdev_get_by_dev(disk_devt(disk), mode & ~FMODE_EXCL, NULL);
 	if (IS_ERR(bdev))
-		return PTR_ERR(bdev);
-	blkdev_put(bdev, mode);
-	return 0;
+		ret = PTR_ERR(bdev);
+	else
+		blkdev_put(bdev, mode);
+
+	if (!(mode & FMODE_EXCL)) {
+		bd_abort_claiming(claim, claim, disk_scan_partitions);
+		bdput(claim);
+	}
+	return ret;
 }
 
 static void disk_init_partition(struct gendisk *disk)
@@ -849,6 +875,10 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 
 	disk_add_events(disk);
 	blk_integrity_add(disk);
+
+	/* Make sure the first partition scan will be proceed */
+	if (get_capacity(disk) && disk_part_scan_enabled(disk))
+		set_bit(GD_NEED_PART_SCAN, &disk->state);
 
 	/*
 	 * Set the flag at last, so that block devcie can't be opened
