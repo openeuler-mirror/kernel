@@ -2035,7 +2035,7 @@ static void sd_llc_free_all(const struct cpumask *cpu_map)
 
 	for_each_sd_topology(tl) {
 		sdd = &tl->data;
-		if (!sdd)
+		if (!sdd || !sdd->sd)
 			continue;
 		for_each_cpu(j, cpu_map) {
 			sd = *per_cpu_ptr(sdd->sd, j);
