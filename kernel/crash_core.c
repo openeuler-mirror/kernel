@@ -440,6 +440,13 @@ static void __init free_reserved_high_mem(void)
 	memblock_free(crashk_res_high.start, resource_size(&crashk_res_high));
 }
 
+static bool __init within_low_mem(unsigned long long crash_base,
+				  unsigned long long crash_size)
+{
+	return crash_base < CRASH_ADDR_LOW_MAX &&
+		CRASH_ADDR_LOW_MAX - crash_base >= crash_size;
+}
+
 /*
  * reserve_crashkernel() - reserves memory for crash kernel
  *
@@ -469,6 +476,8 @@ void __init reserve_crashkernel(void)
 
 		if (crash_high_mem_reserved) {
 			take_reserved_high_mem(&crash_base, &crash_size);
+			if (within_low_mem(crash_base, crash_size))
+				goto reserve_ok;
 			goto reserve_low;
 		}
 	}
@@ -490,6 +499,8 @@ void __init reserve_crashkernel(void)
 					CRASH_ALIGN);
 			if (!crash_base && crash_high_mem_reserved) {
 				take_reserved_high_mem(&crash_base, &crash_size);
+				if (within_low_mem(crash_base, crash_size))
+					goto reserve_ok;
 				goto reserve_low;
 			}
 		}
@@ -539,6 +550,7 @@ reserve_low:
 		free_reserved_high_mem();
 	}
 
+reserve_ok:
 	pr_info("Reserving %ldMB of memory at %ldMB for crashkernel (System RAM: %ldMB)\n",
 		(unsigned long)(crash_size >> 20),
 		(unsigned long)(crash_base >> 20),
