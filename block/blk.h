@@ -186,6 +186,7 @@ bool blk_bio_list_merge(struct request_queue *q, struct list_head *list,
 
 void blk_account_io_start(struct request *req);
 void blk_account_io_done(struct request *req, u64 now);
+int disk_scan_partitions(struct gendisk *disk, fmode_t mode);
 
 /*
  * Plug flush limits
