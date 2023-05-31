@@ -543,7 +543,7 @@ static int blkdev_common_ioctl(struct block_device *bdev, fmode_t mode,
 			return -EINVAL;
 		if (bdev->bd_part_count)
 			return -EBUSY;
-		return disk_scan_partitions(bdev->bd_disk, mode & ~FMODE_EXCL);
+		return disk_scan_partitions(bdev->bd_disk, mode);
 	case BLKTRACESTART:
 	case BLKTRACESTOP:
 	case BLKTRACETEARDOWN:
