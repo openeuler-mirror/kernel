@@ -528,6 +528,9 @@ struct mddev {
 	bool	has_superblocks:1;
 	bool	fail_last_dev:1;
 	bool	serialize_policy:1;
+
+	/* Used to synchronize idle and frozen for action_store() */
+	struct mutex sync_mutex;
 };
 
 enum recovery_flags {
