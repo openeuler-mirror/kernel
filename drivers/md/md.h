@@ -530,9 +530,9 @@ struct mddev {
 	bool	serialize_policy:1;
 
 	/* Used to synchronize idle and frozen for action_store() */
-	struct mutex sync_mutex;
+	KABI_EXTEND(struct mutex sync_mutex)
 	/* The sequence number for sync thread */
-	atomic_t sync_seq;
+	KABI_EXTEND(atomic_t sync_seq)
 };
 
 enum recovery_flags {
