@@ -32,8 +32,15 @@ static int blkpg_do_ioctl(struct block_device *bdev,
 	if (op == BLKPG_DEL_PARTITION)
 		return bdev_del_partition(bdev, p.pno);
 
+	if (p.start < 0 || p.length <= 0 || p.start + p.length < 0)
+		return -EINVAL;
+
 	start = p.start >> SECTOR_SHIFT;
 	length = p.length >> SECTOR_SHIFT;
+
+	/* length may be equal to 0 after right shift */
+	if (!length || start + length > get_capacity(bdev->bd_disk))
+		return -EINVAL;
 
 	/* check for fit in a hd_struct */
 	if (sizeof(sector_t) < sizeof(long long)) {
