@@ -166,14 +166,21 @@ static void set_frmr_seg(struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 	hr_reg_clear(fseg, FRMR_BLK_MODE);
 }
 
-static void set_atomic_seg(const struct ib_send_wr *wr,
-			   struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
-			   unsigned int valid_num_sge)
+static int set_atomic_seg(struct hns_roce_dev *hr_dev,
+			  const struct ib_send_wr *wr,
+			  struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
+			  unsigned int valid_num_sge, u32 msg_len)
 {
 	struct hns_roce_v2_wqe_data_seg *dseg =
 		(void *)rc_sq_wqe + sizeof(struct hns_roce_v2_rc_send_wqe);
 	struct hns_roce_wqe_atomic_seg *aseg =
 		(void *)dseg + sizeof(struct hns_roce_v2_wqe_data_seg);
+
+	if (msg_len != ATOMIC_WR_LEN) {
+		ibdev_err(&hr_dev->ib_dev, "invalid atomic wr len, len = %u.\n",
+			  msg_len);
+		return -EINVAL;
+	}
 
 	set_data_seg_v2(dseg, wr->sg_list);
 
@@ -187,6 +194,8 @@ static void set_atomic_seg(const struct ib_send_wr *wr,
 	}
 
 	hr_reg_write(rc_sq_wqe, RC_SEND_WQE_SGE_NUM, valid_num_sge);
+
+	return 0;
 }
 
 static int fill_ext_sge_inl_data(struct hns_roce_qp *qp,
@@ -685,7 +694,8 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 
 	if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP ||
 	    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD)
-		set_atomic_seg(wr, rc_sq_wqe, valid_num_sge);
+		ret = set_atomic_seg(hr_dev, wr, rc_sq_wqe, valid_num_sge,
+				     msg_len);
 	else if (wr->opcode != IB_WR_REG_MR)
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
