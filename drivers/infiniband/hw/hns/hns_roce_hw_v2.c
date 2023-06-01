@@ -7275,7 +7275,7 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 
 	if (hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
 		ret = -EOPNOTSUPP;
-		goto error_failed_kzalloc;
+		goto error_failed_roce_init;
 	}
 
 	ret = hns_roce_init(hr_dev);
