@@ -1016,7 +1016,7 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		if (ret)
 			return ret;
 	}
-	dma_set_max_seg_size(dev, UINT_MAX);
+	dma_set_max_seg_size(dev, SZ_2G);
 
 	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) &&
 	    (hr_dev->hw->bond_is_active(hr_dev)))
