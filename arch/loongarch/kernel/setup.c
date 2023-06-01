@@ -29,6 +29,7 @@
 #include <linux/device.h>
 #include <linux/dma-map-ops.h>
 #include <linux/swiotlb.h>
+#include <asm/smp.h>
 
 #include <asm/addrspace.h>
 #include <asm/alternative.h>
@@ -44,6 +45,7 @@
 #include <asm/sections.h>
 #include <asm/setup.h>
 #include <asm/time.h>
+#include <asm/paravirt.h>
 #include "legacy_boot.h"
 
 #define SMBIOS_BIOSSIZE_OFFSET		0x09
@@ -334,6 +336,8 @@ void __init platform_init(void)
 	pr_info("The BIOS Version: %s\n", b_info.bios_version);
 
 	efi_runtime_init();
+
+	pv_ipi_init();
 }
 
 static void __init check_kernel_sections_mem(void)

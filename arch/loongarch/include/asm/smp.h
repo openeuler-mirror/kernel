@@ -12,6 +12,11 @@
 #include <linux/threads.h>
 #include <linux/cpumask.h>
 
+struct smp_ops {
+	void (*send_call_func_ipi)(const struct cpumask *mask, unsigned int action);
+	void (*send_call_func_single_ipi)(int cpu, unsigned int action);
+};
+
 extern int smp_num_siblings;
 extern int num_processors;
 extern int disabled_cpus;
@@ -78,15 +83,8 @@ extern void calculate_cpu_foreign_map(void);
  */
 extern void show_ipi_list(struct seq_file *p, int prec);
 
-static inline void arch_send_call_function_single_ipi(int cpu)
-{
-	loongson3_send_ipi_single(cpu, SMP_CALL_FUNCTION);
-}
-
-static inline void arch_send_call_function_ipi_mask(const struct cpumask *mask)
-{
-	loongson3_send_ipi_mask(mask, SMP_CALL_FUNCTION);
-}
+void arch_send_call_function_single_ipi(int cpu);
+void arch_send_call_function_ipi_mask(const struct cpumask *mask);
 
 #ifdef CONFIG_HOTPLUG_CPU
 static inline int __cpu_disable(void)

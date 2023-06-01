@@ -30,6 +30,7 @@
 #include <asm/processor.h>
 #include <asm/setup.h>
 #include <asm/time.h>
+#include <asm/paravirt.h>
 #include "legacy_boot.h"
 
 int __cpu_number_map[NR_CPUS];   /* Map physical to logical */
@@ -149,6 +150,22 @@ void loongson3_send_ipi_mask(const struct cpumask *mask, unsigned int action)
 
 	for_each_cpu(i, mask)
 		ipi_write_action(cpu_logical_map(i), (u32)action);
+}
+
+struct smp_ops smp_ops = {
+	.send_call_func_single_ipi = loongson3_send_ipi_single,
+	.send_call_func_ipi = loongson3_send_ipi_mask,
+};
+EXPORT_SYMBOL(smp_ops);
+
+void arch_send_call_function_single_ipi(int cpu)
+{
+	smp_ops.send_call_func_single_ipi(cpu, SMP_CALL_FUNCTION);
+}
+
+void arch_send_call_function_ipi_mask(const struct cpumask *mask)
+{
+	smp_ops.send_call_func_ipi(mask, SMP_CALL_FUNCTION);
 }
 
 /*
