@@ -7067,6 +7067,27 @@ fail:
 }
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+
+#ifdef CONFIG_JUMP_LABEL
+static DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_used);
+
+static inline bool dynamic_affinity_used(void)
+{
+	return static_branch_unlikely(&__dynamic_affinity_used);
+}
+
+void dynamic_affinity_enable(void)
+{
+	static_branch_enable_cpuslocked(&__dynamic_affinity_used);
+}
+
+#else /* CONFIG_JUMP_LABEL */
+static bool dynamic_affinity_used(void)
+{
+	return true;
+}
+#endif
+
 /*
  * Low utilization threshold for CPU
  *
@@ -7076,6 +7097,9 @@ int sysctl_sched_util_low_pct = 85;
 
 static inline bool prefer_cpus_valid(struct task_struct *p)
 {
+	if (!dynamic_affinity_used())
+		return false;
+
 	return p->prefer_cpus &&
 	       !cpumask_empty(p->prefer_cpus) &&
 	       !cpumask_equal(p->prefer_cpus, p->cpus_ptr) &&
