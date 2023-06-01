@@ -797,7 +797,6 @@ struct hns_roce_caps {
 	u32		max_rq_sg;
 	u32		max_extend_sg;
 	u32		num_qps;
-	u32		num_pi_qps;
 	u32		reserved_qps;
 	int		num_qpc_timer;
 	u32		num_srqs;
