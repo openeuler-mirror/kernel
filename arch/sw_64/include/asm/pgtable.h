@@ -521,6 +521,7 @@ static inline int pmd_protnone(pmd_t pmd)
 }
 #endif
 
+#define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 
@@ -543,12 +544,6 @@ static inline int has_transparent_hugepage(void)
 }
 
 #ifdef CONFIG_ARCH_HAS_PTE_DEVMAP
-#define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
-static inline int pte_devmap(pte_t a)
-{
-	return (pte_val(a) & _PAGE_DEVMAP) == _PAGE_DEVMAP;
-}
-
 static inline int pmd_devmap(pmd_t pmd)
 {
 	return !!(pmd_val(pmd) & _PAGE_DEVMAP);
@@ -571,13 +566,20 @@ static inline int pgd_devmap(pgd_t pgd)
 	return 0;
 }
 #endif
-#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
 static inline pmd_t pmd_mkdevmap(pmd_t pmd)
 {
 	pmd_val(pmd) |= _PAGE_DEVMAP;
 	return pmd;
 }
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+
+#ifdef CONFIG_ARCH_HAS_PTE_DEVMAP
+static inline int pte_devmap(pte_t a)
+{
+	return (pte_val(a) & _PAGE_DEVMAP) == _PAGE_DEVMAP;
+}
+#endif
 
 #define __HAVE_ARCH_PMDP_GET_AND_CLEAR
 static inline pmd_t pmdp_get_and_clear(struct mm_struct *mm,
