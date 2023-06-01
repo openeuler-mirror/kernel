@@ -1085,9 +1085,7 @@ static void cleanup_dca_context(struct hns_roce_dev *hr_dev,
 	unsigned long flags;
 	bool is_user;
 
-	spin_lock(&ctx->aging_lock);
 	cancel_delayed_work_sync(&ctx->aging_dwork);
-	spin_unlock(&ctx->aging_lock);
 
 	is_user = (ctx != &hr_dev->dca_ctx);
 	spin_lock_irqsave(&ctx->pool_lock, flags);
