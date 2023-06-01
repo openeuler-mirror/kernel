@@ -3298,6 +3298,12 @@ static ssize_t preferred_cpuset_write(struct file *file, const char __user *buf,
 	if (retval < 0)
 		goto out_free_cpumask;
 
+	if (!cpumask_empty(new_mask)) {
+		cpus_read_lock();
+		dynamic_affinity_enable();
+		cpus_read_unlock();
+	}
+
 	retval = count;
 
 out_free_cpumask:
