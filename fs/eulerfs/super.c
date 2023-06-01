@@ -332,7 +332,9 @@ static struct eufs_inode *eufs_init(struct super_block *sb, unsigned long size)
 	sbi->s_crash_ver = 1;
 	super->s_crash_ver = cpu_to_le64(1);
 
-	nv_init(sb, true);
+	if (nv_init(sb, true))
+		return ERR_PTR(-ENOMEM);
+
 	super->s_page_map = cpu_to_le64(p2o(sb, sbi->page_map));
 	super->s_mtime = 0;
 
@@ -478,7 +480,9 @@ static int eufs_fill_super(struct super_block *sb, void *data, int silent)
 		eufs_pbarrier();
 	}
 
-	nv_init(sb, false);
+	err = nv_init(sb, false);
+	if (err)
+		goto out;
 
 	root_pi = (struct eufs_inode *)s2p(sb, super->s_root_pi);
 

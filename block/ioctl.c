@@ -32,8 +32,15 @@ static int blkpg_do_ioctl(struct block_device *bdev,
 	if (op == BLKPG_DEL_PARTITION)
 		return bdev_del_partition(bdev, p.pno);
 
+	if (p.start < 0 || p.length <= 0 || p.start + p.length < 0)
+		return -EINVAL;
+
 	start = p.start >> SECTOR_SHIFT;
 	length = p.length >> SECTOR_SHIFT;
+
+	/* length may be equal to 0 after right shift */
+	if (!length || start + length > get_capacity(bdev->bd_disk))
+		return -EINVAL;
 
 	/* check for fit in a hd_struct */
 	if (sizeof(sector_t) < sizeof(long long)) {
@@ -89,31 +96,6 @@ static int compat_blkpg_ioctl(struct block_device *bdev,
 	return blkpg_do_ioctl(bdev, compat_ptr(udata), op);
 }
 #endif
-
-static int blkdev_reread_part(struct block_device *bdev, fmode_t mode)
-{
-	struct block_device *tmp;
-
-	if (!disk_part_scan_enabled(bdev->bd_disk) || bdev_is_partition(bdev))
-		return -EINVAL;
-	if (!capable(CAP_SYS_ADMIN))
-		return -EACCES;
-	if (bdev->bd_part_count)
-		return -EBUSY;
-
-	/*
-	 * Reopen the device to revalidate the driver state and force a
-	 * partition rescan.
-	 */
-	mode &= ~FMODE_EXCL;
-	set_bit(GD_NEED_PART_SCAN, &bdev->bd_disk->state);
-
-	tmp = blkdev_get_by_dev(bdev->bd_dev, mode, NULL);
-	if (IS_ERR(tmp))
-		return PTR_ERR(tmp);
-	blkdev_put(tmp, mode);
-	return 0;
-}
 
 static int blk_ioctl_discard(struct block_device *bdev, fmode_t mode,
 		unsigned long arg, unsigned long flags)
@@ -562,7 +544,13 @@ static int blkdev_common_ioctl(struct block_device *bdev, fmode_t mode,
 		bdev->bd_bdi->ra_pages = (arg * 512) / PAGE_SIZE;
 		return 0;
 	case BLKRRPART:
-		return blkdev_reread_part(bdev, mode);
+		if (!capable(CAP_SYS_ADMIN))
+			return -EACCES;
+		if (bdev_is_partition(bdev))
+			return -EINVAL;
+		if (bdev->bd_part_count)
+			return -EBUSY;
+		return disk_scan_partitions(bdev->bd_disk, mode);
 	case BLKTRACESTART:
 	case BLKTRACESTOP:
 	case BLKTRACETEARDOWN:

@@ -77,11 +77,11 @@ void destroy_dep_node_cache(void)
 
 void *eufs_zalloc_page(void)
 {
-	return kmem_cache_zalloc(eufs_page_cachep, GFP_NOFS);
+	return kmem_cache_zalloc(eufs_page_cachep, GFP_NOFS | __GFP_NOFAIL);
 }
 void *eufs_alloc_page(void)
 {
-	return kmem_cache_alloc(eufs_page_cachep, GFP_NOFS);
+	return kmem_cache_alloc(eufs_page_cachep, GFP_NOFS | __GFP_NOFAIL);
 }
 void eufs_free_page(void *page)
 {

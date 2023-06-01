@@ -134,7 +134,7 @@ int nvmalloc_pre(struct super_block *sb, struct alloc_batch *ab, size_t count,
 		 size_t size);
 void *nvmalloc(struct super_block *sb, size_t size, u8 tag, bool nonblocking);
 void nvfree(struct super_block *sb, void *ptr, bool rest);
-void nv_init(struct super_block *sb, bool init);
+int nv_init(struct super_block *sb, bool init);
 void nv_fini(struct super_block *sb);
 void eufs_get_layout(struct super_block *sb, bool init);
 
