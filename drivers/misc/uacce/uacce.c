@@ -355,8 +355,8 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	atomic_inc(&uacce->ref);
 	init_waitqueue_head(&q->wait);
 	filep->private_data = q;
-	uacce->inode = inode;
 	q->state = UACCE_Q_INIT;
+	q->private_data = filep;
 	mutex_init(&q->mutex);
 	list_add(&q->list, &uacce->queues);
 	mutex_unlock(&uacce->mutex);
@@ -1054,12 +1054,6 @@ void uacce_remove(struct uacce_device *uacce)
 
 	if (!uacce)
 		return;
-	/*
-	 * unmap remaining mapping from user space, preventing user still
-	 * access the mmaped area while parent device is already removed
-	 */
-	if (uacce->inode)
-		unmap_mapping_range(uacce->inode->i_mapping, 0, 0, 1);
 
 	/*
 	 * uacce_fops_open() may be running concurrently, even after we remove
@@ -1069,6 +1063,8 @@ void uacce_remove(struct uacce_device *uacce)
 	mutex_lock(&uacce->mutex);
 	/* ensure no open queue remains */
 	list_for_each_entry_safe(q, next_q, &uacce->queues, list) {
+		struct file *filep = q->private_data;
+
 		/*
 		 * Taking q->mutex ensures that fops do not use the defunct
 		 * uacce->ops after the queue is disabled.
@@ -1077,6 +1073,12 @@ void uacce_remove(struct uacce_device *uacce)
 		uacce_put_queue(q);
 		mutex_unlock(&q->mutex);
 		uacce_unbind_queue(q);
+
+		/*
+		 * unmap remaining mapping from user space, preventing user still
+		 * access the mmaped area while parent device is already removed
+		 */
+		unmap_mapping_range(filep->f_mapping, 0, 0, 1);
 	}
 
 	/* disable sva now since no opened queues */
