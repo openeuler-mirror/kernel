@@ -94,8 +94,16 @@ extern int regs_query_register_offset(const char *name);
 extern unsigned long regs_get_kernel_stack_nth(struct pt_regs *regs,
 					       unsigned int n);
 
-static inline unsigned long regs_return_value(struct pt_regs *regs)
+static inline int is_syscall_success(struct pt_regs *regs)
 {
-	return regs->r0;
+	return !regs->r19;
+}
+
+static inline long regs_return_value(struct pt_regs *regs)
+{
+	if (is_syscall_success(regs) || !user_mode(regs))
+		return regs->r0;
+	else
+		return -regs->r0;
 }
 #endif /* _ASM_SW64_PTRACE_H */
