@@ -240,10 +240,18 @@ else
 endif
 
 $(OUTPUT)test-libbfd-buildid.bin:
+ifeq ($(ARCH),sw_64)
+	$(BUILD) -DPACKAGE='"perf"' -lbfd -ldl -liberty -lz
+else
 	$(BUILD) -DPACKAGE='"perf"' -lbfd -ldl
+endif
 
 $(OUTPUT)test-disassembler-four-args.bin:
+ifeq ($(ARCH),sw_64)
+	$(BUILD) -DPACKAGE='"perf"' -lbfd -lopcodes -liberty -lz
+else
 	$(BUILD) -DPACKAGE='"perf"' -lbfd -lopcodes
+endif
 
 $(OUTPUT)test-disassembler-init-styled.bin:
 	$(BUILD) -DPACKAGE='"perf"' -lbfd -lopcodes
