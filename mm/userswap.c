@@ -19,9 +19,9 @@ DEFINE_STATIC_KEY_FALSE(userswap_enabled);
 
 static bool vma_uswap_compatible(struct vm_area_struct *vma)
 {
-	if (!vma || !(vma->vm_flags & VM_USWAP) || !vma_is_anonymous(vma) ||
-	    vma->vm_file || vma->vm_flags & (VM_SHARED | VM_LOCKED | VM_STACK |
-					     VM_IO | VM_PFNMAP))
+	if (!vma || !vma_is_anonymous(vma) || vma->vm_file ||
+	    vma->vm_flags & (VM_SHARED | VM_LOCKED | VM_STACK | VM_IO |
+	    VM_PFNMAP | VM_HUGETLB))
 		return false;
 	return true;
 }
@@ -93,6 +93,7 @@ static unsigned long pages_can_be_swapped(struct mm_struct *mm,
 	while (addr < addr_end) {
 		vma = find_vma(mm, addr);
 		if (!vma || addr < vma->vm_start ||
+		    !(vma->vm_flags & VM_USWAP) ||
 		    !vma_uswap_compatible(vma)) {
 			ret = -EINVAL;
 			goto out_err;
@@ -107,7 +108,7 @@ get_again:
 		 * follow_page will inc page ref, dec the ref after we remap
 		 * the page.
 		 */
-		page = follow_page(vma, addr, FOLL_GET);
+		page = follow_page(vma, addr, FOLL_GET | FOLL_DUMP);
 		if (IS_ERR_OR_NULL(page)) {
 			ret = -ENODEV;
 			goto out_err;
@@ -138,7 +139,8 @@ get_again:
 		 * Check that no O_DIRECT or similar I/O is in progress on the
 		 * page
 		 */
-		if (page_mapcount(page) > 1) {
+		if (page_mapcount(page) > 1 ||
+		    page_mapcount(page) + 1 != page_count(page)) {
 			ret = -EBUSY;
 			goto out_err;
 		}
@@ -155,24 +157,28 @@ out_err:
 	return ret;
 }
 
-static void uswap_unmap_anon_page(struct mm_struct *mm,
-				  struct vm_area_struct *vma,
-				  unsigned long addr, struct page *page,
-				  pmd_t *pmd, pte_t *old_pte,
-				  bool set_to_swp)
+static int uswap_unmap_anon_page(struct mm_struct *mm,
+				 struct vm_area_struct *vma,
+				 unsigned long addr, struct page *page,
+				 pmd_t *pmd, pte_t *old_pte, bool set_to_swp)
 {
 	struct mmu_notifier_range range;
 	spinlock_t *ptl;
 	pte_t *pte, _old_pte;
+	int ret = 0;
 
 	mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0, vma,
 				vma->vm_mm, addr, addr + PAGE_SIZE);
 	mmu_notifier_invalidate_range_start(&range);
 	pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
-	if (pte_none(*pte))
+	if (!pte_present(*pte)) {
+		ret = -EINVAL;
 		goto out_release_unlock;
+	}
 	flush_cache_page(vma, addr, pte_pfn(*pte));
 	_old_pte = ptep_clear_flush(vma, addr, pte);
+	if (old_pte)
+		*old_pte = _old_pte;
 	if (set_to_swp)
 		set_pte_at(mm, addr, pte, swp_entry_to_pte(swp_entry(
 			   SWP_USERSWAP_ENTRY, page_to_pfn(page))));
@@ -180,13 +186,12 @@ static void uswap_unmap_anon_page(struct mm_struct *mm,
 	dec_mm_counter(mm, MM_ANONPAGES);
 	reliable_page_counter(page, mm, -1);
 	page_remove_rmap(page, false);
+	page->mapping = NULL;
 
 out_release_unlock:
 	pte_unmap_unlock(pte, ptl);
 	mmu_notifier_invalidate_range_end(&range);
-	page->mapping = NULL;
-	if (old_pte)
-		*old_pte = _old_pte;
+	return ret;
 }
 
 static void uswap_map_anon_page(struct mm_struct *mm,
@@ -213,7 +218,7 @@ static unsigned long vm_insert_anon_page(struct vm_area_struct *vma,
 {
 	struct mm_struct *mm = vma->vm_mm;
 	int ret = 0;
-	pte_t *pte;
+	pte_t *pte, dst_pte;
 	spinlock_t *ptl;
 
 	if (unlikely(anon_vma_prepare(vma)))
@@ -231,7 +236,10 @@ static unsigned long vm_insert_anon_page(struct vm_area_struct *vma,
 	inc_mm_counter(mm, MM_ANONPAGES);
 	reliable_page_counter(page, mm, 1);
 	page_add_new_anon_rmap(page, vma, addr, false);
-	set_pte_at(mm, addr, pte, mk_pte(page, vma->vm_page_prot));
+	dst_pte = mk_pte(page, vma->vm_page_prot);
+	if (vma->vm_flags & VM_WRITE)
+		dst_pte = pte_mkwrite(pte_mkdirty(dst_pte));
+	set_pte_at(mm, addr, pte, dst_pte);
 
 out_unlock:
 	pte_unmap_unlock(pte, ptl);
@@ -309,6 +317,8 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 		new_vma = find_vma(mm, new_addr);
 		if (!new_vma || new_addr < new_vma->vm_start)
 			goto out_recover;
+		if (!vma_uswap_compatible(new_vma))
+			goto out_recover;
 
 		ret = -EACCES;
 		if (!(old_vma->vm_flags & VM_WRITE) &&
@@ -319,8 +329,10 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 		pmd = mm_find_pmd(mm, old_addr);
 		if (!pmd)
 			goto out_recover;
-		uswap_unmap_anon_page(mm, old_vma, old_addr, page, pmd,
-				      &old_pte, true);
+		ret = uswap_unmap_anon_page(mm, old_vma, old_addr, page, pmd,
+					    &old_pte, true);
+		if (ret)
+			goto out_recover;
 		ptes[i] = old_pte;
 		if (pte_dirty(old_pte)  || PageDirty(page))
 			pages_dirty = true;
@@ -375,6 +387,7 @@ unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 	if (old_addr + old_len > new_addr && new_addr + new_len > old_addr)
 		return ret;
 
+	lru_add_drain_all();
 	down_read(&mm->mmap_lock);
 	ret = pages_can_be_swapped(mm, old_addr, len, &pages);
 	if (ret) {
@@ -407,13 +420,13 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm,
 
 	src_vma = find_vma(mm, src_addr);
 	if (!src_vma || src_addr < src_vma->vm_start)
-		return -ENOENT;
-
-	if (src_vma->vm_flags & VM_LOCKED)
 		return -EINVAL;
 
-	page = follow_page(src_vma, src_addr, FOLL_GET | FOLL_MIGRATION);
-	if (!page)
+	if (!vma_uswap_compatible(src_vma))
+		return -EINVAL;
+	page = follow_page(src_vma, src_addr, FOLL_GET | FOLL_MIGRATION |
+			   FOLL_DUMP);
+	if (IS_ERR_OR_NULL(page))
 		return -ENODEV;
 
 	src_pmd = mm_find_pmd(mm, src_addr);
@@ -421,9 +434,10 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm,
 		ret = -ENXIO;
 		goto out_put_page;
 	}
-	uswap_unmap_anon_page(mm, src_vma, src_addr, page, src_pmd, &src_pte,
-			      false);
-
+	ret = uswap_unmap_anon_page(mm, src_vma, src_addr, page, src_pmd,
+				    &src_pte, false);
+	if (ret)
+		goto out_put_page;
 	if (dst_vma->vm_flags & VM_USWAP)
 		ClearPageDirty(page);
 	/*
@@ -491,7 +505,7 @@ bool uswap_register(struct uffdio_register *uffdio_register, bool *uswap_mode)
 bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 			     unsigned long *vm_flags, struct mm_struct *mm)
 {
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma, *cur;
 	unsigned long end;
 	bool ret = false;
 
@@ -503,6 +517,9 @@ bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 	vma = find_vma(mm, uffdio_register->range.start);
 	if (!vma || vma->vm_start >= end)
 		goto out_unlock;
+	for (cur = vma; cur && cur->vm_start < end; cur = cur->vm_next)
+		if (!vma_uswap_compatible(cur))
+			goto out_unlock;
 	uffdio_register->range.start = vma->vm_start;
 	vma = find_vma(mm, end);
 	if (vma && end >= vma->vm_start)

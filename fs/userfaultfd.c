@@ -1506,7 +1506,7 @@ static int userfaultfd_unregister(struct userfaultfd_ctx *ctx,
 	struct vm_area_struct *vma, *prev, *cur;
 	int ret;
 	struct uffdio_range uffdio_unregister;
-	unsigned long new_flags;
+	unsigned long new_flags, userfault_flags;
 	bool found;
 	unsigned long start, end, vma_end;
 	const void __user *buf = (void __user *)arg;
@@ -1607,8 +1607,11 @@ static int userfaultfd_unregister(struct userfaultfd_ctx *ctx,
 			range.len = vma_end - start;
 			wake_userfault(vma->vm_userfaultfd_ctx.ctx, &range);
 		}
-
-		new_flags = vma->vm_flags & ~(VM_UFFD_MISSING | VM_UFFD_WP);
+		userfault_flags = VM_UFFD_MISSING | VM_UFFD_WP;
+#ifdef CONFIG_USERSWAP
+		uswap_release(&userfault_flags);
+#endif
+		new_flags = vma->vm_flags & ~userfault_flags;
 		prev = vma_merge(mm, prev, start, vma_end, new_flags,
 				 vma->anon_vma, vma->vm_file, vma->vm_pgoff,
 				 vma_policy(vma),
