@@ -40,8 +40,22 @@ struct clk {
 #define CLK_ALWAYS_ENABLED	(1 << 0)
 #define CLK_RATE_PROPAGATES	(1 << 1)
 
-int clk_init(void);
+#define CLK_PRT         0x1UL
+#define CORE_CLK0_V     (0x1UL << 1)
+#define CORE_CLK0_R     (0x1UL << 2)
+#define CORE_CLK2_V     (0x1UL << 15)
+#define CORE_CLK2_R     (0x1UL << 16)
 
+#define CLK_LV1_SEL_PRT         0x1UL
+#define CLK_LV1_SEL_MUXA        (0x1UL << 2)
+#define CLK_LV1_SEL_MUXB        (0x1UL << 3)
+
+#define CORE_PLL0_CFG_SHIFT     4
+#define CORE_PLL2_CFG_SHIFT     18
+
+extern struct cpufreq_frequency_table freq_table[];
+
+int clk_init(void);
 void sw64_set_rate(unsigned int index);
 
 struct clk *sw64_clk_get(struct device *dev, const char *id);

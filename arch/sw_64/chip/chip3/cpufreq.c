@@ -10,20 +10,8 @@
 #include <asm/sw64io.h>
 #include <asm/hw_init.h>
 #include <asm/debug.h>
-#include <asm/clock.h>
+#include <asm/cpufreq.h>
 
-#define CLK_PRT         0x1UL
-#define CORE_CLK0_V     (0x1UL << 1)
-#define CORE_CLK0_R     (0x1UL << 2)
-#define CORE_CLK2_V     (0x1UL << 15)
-#define CORE_CLK2_R     (0x1UL << 16)
-
-#define CLK_LV1_SEL_PRT         0x1UL
-#define CLK_LV1_SEL_MUXA        (0x1UL << 2)
-#define CLK_LV1_SEL_MUXB        (0x1UL << 3)
-
-#define CORE_PLL0_CFG_SHIFT     4
-#define CORE_PLL2_CFG_SHIFT     18
 
 char curruent_policy[CPUFREQ_NAME_LEN];
 
@@ -48,7 +36,7 @@ unsigned int __sw64_cpufreq_get(struct cpufreq_policy *policy)
 	val = sw64_io_read(0, CLK_CTL) >> CORE_PLL2_CFG_SHIFT;
 
 	for (i = 0; ft[i].frequency != CPUFREQ_TABLE_END; i++) {
-		if (val == ft[i].driver_data)
+		if (val == i)
 			return ft[i].frequency;
 	}
 	return 0;

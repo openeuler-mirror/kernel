@@ -6,40 +6,27 @@
 
 #include <asm/sw64io.h>
 #include <asm/debug.h>
-
-#define CLK_PRT		0x1UL
-#define CORE_CLK0_V	(0x1UL << 1)
-#define CORE_CLK0_R	(0x1UL << 2)
-#define CORE_CLK2_V	(0x1UL << 15)
-#define CORE_CLK2_R	(0x1UL << 16)
-
-#define CLK_LV1_SEL_PRT		0x1UL
-#define CLK_LV1_SEL_MUXA	(0x1UL << 2)
-#define CLK_LV1_SEL_MUXB	(0x1UL << 3)
-
-#define CORE_PLL0_CFG_SHIFT	4
-#define CORE_PLL2_CFG_SHIFT	18
-
-static int cpu_freq[16] = {
-	200,	1200,	1800,	1900,
-	1950,	2000,	2050,	2100,
-	2150,	2200,	2250,	2300,
-	2350,	2400,	2450,	2500
-};
+#include <asm/cpufreq.h>
 
 static int cpufreq_show(struct seq_file *m, void *v)
 {
 	int i;
 	u64 val;
+	int freq;
 
 	val = sw64_io_read(0, CLK_CTL);
 	val = val >> CORE_PLL2_CFG_SHIFT;
 
-	for (i = 0; i < sizeof(cpu_freq)/sizeof(int); i++) {
-		if (cpu_freq[val] == cpu_freq[i])
-			seq_printf(m, "[%d] ", cpu_freq[i]);
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+			freq = freq_table[i].frequency;
 		else
-			seq_printf(m, "%d ", cpu_freq[i]);
+			freq = freq_table[i].driver_data;
+
+		if (val == i)
+			seq_printf(m, "[%d] ", freq);
+		else
+			seq_printf(m, "%d ", freq);
 	}
 	seq_puts(m, "\n");
 
@@ -56,8 +43,7 @@ static ssize_t cpufreq_set(struct file *file, const char __user *user_buf,
 {
 	char buf[5];
 	size_t size;
-	int cf, i, err, index;
-	u64 val;
+	int cf, i, err, index, freq;
 
 	size = min(sizeof(buf) - 1, len);
 	if (copy_from_user(buf, user_buf, size))
@@ -69,8 +55,13 @@ static ssize_t cpufreq_set(struct file *file, const char __user *user_buf,
 		return err;
 
 	index = -1;
-	for (i = 0; i < sizeof(cpu_freq)/sizeof(int); i++) {
-		if (cf == cpu_freq[i]) {
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+			freq = freq_table[i].frequency;
+		else
+			freq = freq_table[i].driver_data;
+
+		if (cf == freq) {
 			index = i;
 			break;
 		}
@@ -79,46 +70,8 @@ static ssize_t cpufreq_set(struct file *file, const char __user *user_buf,
 	if (index < 0)
 		return -EINVAL;
 
-	/* Set CLK_CTL PLL2 */
-	sw64_io_write(0, CLK_CTL, CORE_CLK2_R | CORE_CLK2_V | CLK_PRT);
-	sw64_io_write(1, CLK_CTL, CORE_CLK2_R | CORE_CLK2_V | CLK_PRT);
-	val = sw64_io_read(0, CLK_CTL);
-
-	sw64_io_write(0, CLK_CTL, val | index << CORE_PLL2_CFG_SHIFT);
-	sw64_io_write(1, CLK_CTL, val | index << CORE_PLL2_CFG_SHIFT);
-
-	udelay(1);
-
-	sw64_io_write(0, CLK_CTL, CORE_CLK2_V | CLK_PRT
-			| index << CORE_PLL2_CFG_SHIFT);
-	sw64_io_write(1, CLK_CTL, CORE_CLK2_V | CLK_PRT
-			| index << CORE_PLL2_CFG_SHIFT);
-	val = sw64_io_read(0, CLK_CTL);
-
-	/* LV1 select PLL1/PLL2 */
-	sw64_io_write(0, CLU_LV1_SEL, CLK_LV1_SEL_MUXA | CLK_LV1_SEL_PRT);
-	sw64_io_write(1, CLU_LV1_SEL, CLK_LV1_SEL_MUXA | CLK_LV1_SEL_PRT);
-
-	/* Set CLK_CTL PLL0 */
-	sw64_io_write(0, CLK_CTL, val | CORE_CLK0_R | CORE_CLK0_V);
-	sw64_io_write(1, CLK_CTL, val | CORE_CLK0_R | CORE_CLK0_V);
-
-	sw64_io_write(0, CLK_CTL, val | CORE_CLK0_R | CORE_CLK0_V
-			| index << CORE_PLL0_CFG_SHIFT);
-	sw64_io_write(1, CLK_CTL, val | CORE_CLK0_R | CORE_CLK0_V
-			| index << CORE_PLL0_CFG_SHIFT);
-
-	udelay(1);
-
-	sw64_io_write(0, CLK_CTL, val | CORE_CLK0_V
-			| index << CORE_PLL0_CFG_SHIFT);
-	sw64_io_write(1, CLK_CTL, val | CORE_CLK0_V
-			| index << CORE_PLL0_CFG_SHIFT);
-
-	/* LV1 select PLL0/PLL1 */
-	sw64_io_write(0, CLU_LV1_SEL, CLK_LV1_SEL_MUXB | CLK_LV1_SEL_PRT);
-	sw64_io_write(1, CLU_LV1_SEL, CLK_LV1_SEL_MUXB | CLK_LV1_SEL_PRT);
-
+	sw64_set_rate(index);
+	update_cpu_freq(freq);
 	return len;
 }
 

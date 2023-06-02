@@ -4,4 +4,5 @@ obj-y	:= chip.o i2c-lib.o
 
 obj-$(CONFIG_PCI)	+= pci-quirks.o
 obj-$(CONFIG_PCI_MSI)	+= msi.o vt_msi.o
+obj-$(CONFIG_CPU_FREQ) += cpufreq_platform.o cpufreq.o
 obj-$(CONFIG_CPUFREQ_DEBUGFS)   += cpufreq_debugfs.o

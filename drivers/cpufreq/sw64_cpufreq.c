@@ -20,40 +20,13 @@
 #include <linux/mod_devicetable.h>
 
 #include <asm/hw_init.h>
-#include <asm/clock.h>
+#include <asm/cpufreq.h>
 #include <asm/sw64io.h>
-
-#define CRYSTAL_BIT	(1UL << 34)
 
 static uint nowait;
 
 static struct clk *cpuclk;
 
-/* Minimum CLK support */
-enum {
-	DC_0, DC_1, DC_2, DC_3, DC_4, DC_5, DC_6, DC_7, DC_8,
-	DC_9, DC_10, DC_11, DC_12, DC_13, DC_14, DC_15, DC_RESV
-};
-
-static struct cpufreq_frequency_table freq_table[] = {
-	{0, DC_0, CPUFREQ_ENTRY_INVALID},
-	{0, DC_1, CPUFREQ_ENTRY_INVALID},
-	{0, DC_2, 0},
-	{0, DC_3, 0},
-	{0, DC_4, 0},
-	{0, DC_5, 0},
-	{0, DC_6, 0},
-	{0, DC_7, 0},
-	{0, DC_8, 0},
-	{0, DC_9, 0},
-	{0, DC_10, 0},
-	{0, DC_11, 0},
-	{0, DC_12, 0},
-	{0, DC_13, 0},
-	{0, DC_14, 0},
-	{0, DC_15, 0},
-	{-1, DC_RESV, CPUFREQ_TABLE_END},
-};
 
 static int sw64_cpu_freq_notifier(struct notifier_block *nb,
 					unsigned long val, void *data);
@@ -102,37 +75,17 @@ static int sw64_cpufreq_target(struct cpufreq_policy *policy,
 
 	/* setting the cpu frequency */
 	sw64_set_rate(index);
+	update_cpu_freq(freq_table[index].frequency);
 
 	return 0;
 }
 
 static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 {
-	int i;
-	unsigned long max_rate, freq_off;
-
 	cpuclk = sw64_clk_get(NULL, "cpu_clk");
 	if (IS_ERR(cpuclk)) {
 		pr_err("couldn't get CPU clk\n");
 		return PTR_ERR(cpuclk);
-	}
-
-	max_rate = get_cpu_freq() / 1000000;
-
-	if (sw64_io_read(0, INIT_CTL) & CRYSTAL_BIT)
-		freq_off = 50;
-	else
-		freq_off = 60;
-
-	/* clock table init */
-	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
-		if (i == 2)
-			freq_table[i].frequency = freq_off * 36;
-		if (i > 2)
-			freq_table[i].frequency = freq_off * 38 + ((i - 3) * freq_off);
-
-		if (freq_table[i].frequency == max_rate)
-			freq_table[i + 1].frequency = CPUFREQ_TABLE_END;
 	}
 
 	policy->clk = cpuclk;

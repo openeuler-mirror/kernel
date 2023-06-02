@@ -46,7 +46,6 @@ obj-y += kvm_cma.o
 endif
 
 # Core logic support
-obj-$(CONFIG_SW64_CPUFREQ) += platform.o clock.o
 obj-$(CONFIG_SW64_CPUAUTOPLUG) += cpuautoplug.o
 
 obj-$(CONFIG_CRASH_DUMP)    += crash_dump.o

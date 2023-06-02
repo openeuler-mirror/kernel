@@ -12,7 +12,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/platform_device.h>
 
-#include <asm/clock.h>
+#include <asm/cpufreq.h>
 #include <asm/cputime.h>
 #include <asm/smp.h>
 

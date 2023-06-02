@@ -897,7 +897,7 @@ show_cpuinfo(struct seq_file *f, void *slot)
 	int i;
 	unsigned long cpu_freq;
 
-	cpu_freq = get_cpu_freq() / 1000 / 1000;
+	cpu_freq = cpuid(GET_CPU_FREQ, 0);
 
 	for_each_online_cpu(i) {
 		/*
@@ -921,7 +921,7 @@ show_cpuinfo(struct seq_file *f, void *slot)
 				"cache size\t: %u KB\n"
 				"physical id\t: %d\n"
 				"bogomips\t: %lu.%02lu\n",
-				cpu_freq, cpu_data[i].tcache.size >> 10,
+				get_cpu_freq() / 1000 / 1000, cpu_data[i].tcache.size >> 10,
 				cpu_topology[i].package_id,
 				loops_per_jiffy / (500000/HZ),
 				(loops_per_jiffy / (5000/HZ)) % 100);
