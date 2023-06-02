@@ -541,7 +541,7 @@ static int __init lsdc_drm_init(void)
 		 * This integrated video card will always be selected as
 		 * default boot device by vgaarb subsystem.
 		 */
-		if (pdev->vendor != PCI_VENDOR_ID_LOONGSON) {
+		if (pdev->vendor != PCI_VENDOR_ID_LOONGSON || pdev->device == 0x1a05) {
 			pr_info("Discrete graphic card detected, abort\n");
 			return 0;
 		}
