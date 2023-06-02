@@ -117,3 +117,12 @@ config EXT4_KUNIT_TESTS
 	  to the KUnit documentation in Documentation/dev-tools/kunit/.
 
 	  If unsure, say N.
+
+config EXT4_MITIGATION_FALSE_SHARING
+	bool "mitigation false sharing in ext4 inode"
+	depends on EXT4_FS
+	default n
+	help
+	  Enable this to mitigation cacheline false sharing in ext4 inode info.
+
+	  If unsure, say N.
