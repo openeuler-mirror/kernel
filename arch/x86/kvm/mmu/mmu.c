@@ -6902,6 +6902,7 @@ static int set_nx_huge_pages_recovery_param(const char *val, const struct kernel
 static void kvm_recover_nx_huge_pages(struct kvm *kvm)
 {
 	unsigned long nx_lpage_splits = kvm->stat.nx_lpage_splits;
+	struct kvm_memslots *slots;
 	struct kvm_memory_slot *slot;
 	int rcu_idx;
 	struct kvm_mmu_page *sp;
@@ -6939,7 +6940,9 @@ static void kvm_recover_nx_huge_pages(struct kvm *kvm)
 		WARN_ON_ONCE(!sp->nx_huge_page_disallowed);
 		WARN_ON_ONCE(!sp->role.direct);
 
-		slot = gfn_to_memslot(kvm, sp->gfn);
+		slot = NULL;
+		slots = kvm_memslots_for_spte_role(kvm, sp->role);
+		slot = __gfn_to_memslot(slots, sp->gfn);
 		WARN_ON_ONCE(!slot);
 
 		/*
