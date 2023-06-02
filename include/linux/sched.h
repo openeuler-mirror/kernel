@@ -2227,6 +2227,7 @@ int set_prefer_cpus_ptr(struct task_struct *p,
 			const struct cpumask *new_mask);
 int sched_prefer_cpus_fork(struct task_struct *p, struct cpumask *mask);
 void sched_prefer_cpus_free(struct task_struct *p);
+void dynamic_affinity_enable(void);
 #endif
 
 #ifdef CONFIG_BPF_SCHED
