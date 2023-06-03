@@ -9577,13 +9577,13 @@ int rdev_set_badblocks(struct md_rdev *rdev, sector_t s, int sectors,
 		       int is_new)
 {
 	struct mddev *mddev = rdev->mddev;
-	int rv;
+
 	if (is_new)
 		s += rdev->new_data_offset;
 	else
 		s += rdev->data_offset;
-	rv = badblocks_set(&rdev->badblocks, s, sectors, 0);
-	if (rv == 0) {
+	badblocks_set(&rdev->badblocks, s, sectors, 0);
+	if (rdev->badblocks.changed) {
 		/* Make sure they get written out promptly */
 		if (test_bit(ExternalBbl, &rdev->flags))
 			sysfs_notify_dirent_safe(rdev->sysfs_unack_badblocks);
