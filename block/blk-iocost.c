@@ -3166,6 +3166,10 @@ static ssize_t ioc_qos_write(struct kernfs_open_file *of, char *input,
 	disk = blkcg_conf_get_disk(&input);
 	if (IS_ERR(disk))
 		return PTR_ERR(disk);
+	if (!queue_is_mq(disk->queue)) {
+		ret = -EOPNOTSUPP;
+		goto err;
+	}
 
 	ioc = q_to_ioc(disk->queue);
 	if (!ioc) {
@@ -3333,6 +3337,10 @@ static ssize_t ioc_cost_model_write(struct kernfs_open_file *of, char *input,
 	disk = blkcg_conf_get_disk(&input);
 	if (IS_ERR(disk))
 		return PTR_ERR(disk);
+	if (!queue_is_mq(disk->queue)) {
+		ret = -EOPNOTSUPP;
+		goto err;
+	}
 
 	ioc = q_to_ioc(disk->queue);
 	if (!ioc) {
