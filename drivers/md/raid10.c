@@ -753,9 +753,11 @@ static struct md_rdev *read_balance(struct r10conf *conf,
 		disk = r10_bio->devs[slot].devnum;
 		rdev = rcu_dereference(conf->mirrors[disk].replacement);
 		if (rdev == NULL || test_bit(Faulty, &rdev->flags) ||
+		    test_bit(WantRemove, &rdev->flags) ||
 		    r10_bio->devs[slot].addr + sectors > rdev->recovery_offset)
 			rdev = rcu_dereference(conf->mirrors[disk].rdev);
 		if (rdev == NULL ||
+		    test_bit(WantRemove, &rdev->flags) ||
 		    test_bit(Faulty, &rdev->flags))
 			continue;
 		if (!test_bit(In_sync, &rdev->flags) &&
@@ -1376,9 +1378,11 @@ retry_write:
 			blocked_rdev = rrdev;
 			break;
 		}
-		if (rdev && (test_bit(Faulty, &rdev->flags)))
+		if (rdev && (test_bit(Faulty, &rdev->flags) ||
+		    test_bit(WantRemove, &rdev->flags)))
 			rdev = NULL;
-		if (rrdev && (test_bit(Faulty, &rrdev->flags)))
+		if (rrdev && (test_bit(Faulty, &rrdev->flags) ||
+		    test_bit(WantRemove, &rrdev->flags)))
 			rrdev = NULL;
 
 		r10_bio->devs[i].bio = NULL;
@@ -1790,6 +1794,7 @@ static int raid10_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 				continue;
 			clear_bit(In_sync, &rdev->flags);
 			set_bit(Replacement, &rdev->flags);
+			clear_bit(WantRemove, &rdev->flags);
 			rdev->raid_disk = mirror;
 			err = 0;
 			if (mddev->gendisk)
@@ -1807,6 +1812,7 @@ static int raid10_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 		p->head_position = 0;
 		p->recovery_disabled = mddev->recovery_disabled - 1;
 		rdev->raid_disk = mirror;
+		clear_bit(WantRemove, &rdev->flags);
 		err = 0;
 		if (rdev->saved_raid_disk != mirror)
 			conf->fullsync = 1;
@@ -1855,16 +1861,22 @@ static int raid10_remove_disk(struct mddev *mddev, struct md_rdev *rdev)
 		err = -EBUSY;
 		goto abort;
 	}
-	*rdevp = NULL;
+	/*
+	 * Before set p->rdev = NULL, we set WantRemove bit avoiding
+	 * race between rdev remove and issue bio, which can cause
+	 * NULL pointer deference of rdev by conf->mirrors[i].rdev.
+	 */
+	set_bit(WantRemove, &rdev->flags);
 	if (!test_bit(RemoveSynchronized, &rdev->flags)) {
 		synchronize_rcu();
 		if (atomic_read(&rdev->nr_pending)) {
 			/* lost the race, try later */
 			err = -EBUSY;
-			*rdevp = rdev;
+			clear_bit(WantRemove, &rdev->flags);
 			goto abort;
 		}
 	}
+	*rdevp = NULL;
 	if (p->replacement) {
 		/* We must have just cleared 'rdev' */
 		p->rdev = p->replacement;
