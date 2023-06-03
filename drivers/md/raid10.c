@@ -452,8 +452,6 @@ static void raid10_end_write_request(struct bio *bio)
 				md_error(rdev->mddev, rdev);
 				goto out;
 			}
-		} else {
-			WARN_ON_ONCE(rdev != conf->mirrors[dev].rdev);
 		}
 	} else {
 		rdev = r10_bio->devs[slot].rdev;
