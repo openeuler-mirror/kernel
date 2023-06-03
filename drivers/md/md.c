@@ -9577,12 +9577,13 @@ int rdev_set_badblocks(struct md_rdev *rdev, sector_t s, int sectors,
 		       int is_new)
 {
 	struct mddev *mddev = rdev->mddev;
+	int rv;
 
 	if (is_new)
 		s += rdev->new_data_offset;
 	else
 		s += rdev->data_offset;
-	badblocks_set(&rdev->badblocks, s, sectors, 0);
+	rv = badblocks_set(&rdev->badblocks, s, sectors, 0);
 	if (rdev->badblocks.changed) {
 		/* Make sure they get written out promptly */
 		if (test_bit(ExternalBbl, &rdev->flags))
@@ -9591,9 +9592,8 @@ int rdev_set_badblocks(struct md_rdev *rdev, sector_t s, int sectors,
 		set_mask_bits(&mddev->sb_flags, 0,
 			      BIT(MD_SB_CHANGE_CLEAN) | BIT(MD_SB_CHANGE_PENDING));
 		md_wakeup_thread(rdev->mddev->thread);
-		return 1;
-	} else
-		return 0;
+	}
+	return !rv;
 }
 EXPORT_SYMBOL_GPL(rdev_set_badblocks);
 
