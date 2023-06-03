@@ -1252,23 +1252,13 @@ static void raid10_write_one_disk(struct mddev *mddev, struct r10bio *r10_bio,
 	int devnum = r10_bio->devs[n_copy].devnum;
 	struct bio *mbio;
 
-	if (replacement) {
-		rdev = conf->mirrors[devnum].replacement;
-		if (rdev == NULL) {
-			/* Replacement just got moved to main 'rdev' */
-			smp_mb();
-			rdev = conf->mirrors[devnum].rdev;
-		}
-	} else
-		rdev = conf->mirrors[devnum].rdev;
-
 	mbio = bio_clone_fast(bio, GFP_NOIO, &mddev->bio_set);
 	if (replacement) {
 		r10_bio->devs[n_copy].repl_bio = mbio;
-		r10_bio->devs[n_copy].replacement = rdev;
+		rdev = r10_bio->devs[n_copy].replacement;
 	} else {
 		r10_bio->devs[n_copy].bio = mbio;
-		r10_bio->devs[n_copy].rdev = rdev;
+		rdev = r10_bio->devs[n_copy].rdev;
 	}
 
 	mbio->bi_iter.bi_sector	= (r10_bio->devs[n_copy].addr +
@@ -1276,8 +1266,7 @@ static void raid10_write_one_disk(struct mddev *mddev, struct r10bio *r10_bio,
 	bio_set_dev(mbio, rdev->bdev);
 	mbio->bi_end_io	= raid10_end_write_request;
 	bio_set_op_attrs(mbio, op, do_sync | do_fua);
-	if (!replacement && test_bit(FailFast,
-				     &conf->mirrors[devnum].rdev->flags)
+	if (!replacement && test_bit(FailFast, &rdev->flags)
 			 && enough(conf, devnum))
 		mbio->bi_opf |= MD_FAILFAST;
 	mbio->bi_private = r10_bio;
@@ -1456,10 +1445,12 @@ retry_write:
 		}
 		if (rdev) {
 			r10_bio->devs[i].bio = bio;
+			r10_bio->devs[i].rdev = rdev;
 			atomic_inc(&rdev->nr_pending);
 		}
 		if (rrdev) {
 			r10_bio->devs[i].repl_bio = bio;
+			r10_bio->devs[i].replacement = rrdev;
 			atomic_inc(&rrdev->nr_pending);
 		}
 	}
@@ -1468,24 +1459,12 @@ retry_write:
 	if (unlikely(blocked_rdev)) {
 		/* Have to wait for this device to get unblocked, then retry */
 		int j;
-		int d;
 
 		for (j = 0; j < i; j++) {
-			if (r10_bio->devs[j].bio) {
-				d = r10_bio->devs[j].devnum;
-				rdev_dec_pending(conf->mirrors[d].rdev, mddev);
-			}
-			if (r10_bio->devs[j].repl_bio) {
-				struct md_rdev *rdev;
-				d = r10_bio->devs[j].devnum;
-				rdev = conf->mirrors[d].replacement;
-				if (!rdev) {
-					/* Race with remove_disk */
-					smp_mb();
-					rdev = conf->mirrors[d].rdev;
-				}
-				rdev_dec_pending(rdev, mddev);
-			}
+			if (r10_bio->devs[j].bio)
+				rdev_dec_pending(r10_bio->devs[j].rdev, mddev);
+			if (r10_bio->devs[j].repl_bio)
+				rdev_dec_pending(r10_bio->devs[j].replacement, mddev);
 		}
 		allow_barrier(conf);
 		raid10_log(conf->mddev, "wait rdev %d blocked", blocked_rdev->raid_disk);
