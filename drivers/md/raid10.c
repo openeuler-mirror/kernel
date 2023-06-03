@@ -3105,6 +3105,8 @@ static sector_t raid10_sync_request(struct mddev *mddev, sector_t sector_nr,
 			if (mreplace != NULL &&
 			    !test_bit(Faulty, &mreplace->flags))
 				need_replace = 1;
+			else
+				mreplace = NULL;
 
 			if (!need_recover && !need_replace) {
 				rcu_read_unlock();
@@ -3122,8 +3124,6 @@ static sector_t raid10_sync_request(struct mddev *mddev, sector_t sector_nr,
 				rcu_read_unlock();
 				continue;
 			}
-			if (mreplace && test_bit(Faulty, &mreplace->flags))
-				mreplace = NULL;
 			/* Unless we are doing a full sync, or a replacement
 			 * we only need to recover the block if it is set in
 			 * the bitmap
