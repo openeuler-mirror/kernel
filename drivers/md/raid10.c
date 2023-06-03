@@ -1872,7 +1872,7 @@ static int raid10_remove_disk(struct mddev *mddev, struct md_rdev *rdev)
 		if (atomic_read(&rdev->nr_pending)) {
 			/* lost the race, try later */
 			err = -EBUSY;
-			clear_bit(WantRemove, &rdev->flags);
+			md_error(rdev->mddev, rdev);
 			goto abort;
 		}
 	}
