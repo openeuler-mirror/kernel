@@ -165,7 +165,7 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 {
 	u64 *p;
 	int lo, hi;
-	int rv = 0;
+	int rv = 0, changed = 0;
 	unsigned long flags;
 
 	if (bb->shift < 0)
@@ -230,6 +230,7 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 				s = a + BB_MAX_LEN;
 			}
 			sectors = e - s;
+			changed = 1;
 		}
 	}
 	if (sectors && hi < bb->count) {
@@ -260,6 +261,7 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 			sectors = e - s;
 			lo = hi;
 			hi++;
+			changed = 1;
 		}
 	}
 	if (sectors == 0 && hi < bb->count) {
@@ -278,6 +280,7 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 			memmove(p + hi, p + hi + 1,
 				(bb->count - hi - 1) * 8);
 			bb->count--;
+			changed = 1;
 		}
 	}
 	while (sectors) {
@@ -300,14 +303,17 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 			p[hi] = BB_MAKE(s, this_sectors, acknowledged);
 			sectors -= this_sectors;
 			s += this_sectors;
+			changed = 1;
 		}
 	}
 
-	bb->changed = 1;
-	if (!acknowledged)
-		bb->unacked_exist = 1;
-	else
-		badblocks_update_acked(bb);
+	if (changed) {
+		bb->changed = changed;
+		if (!acknowledged)
+			bb->unacked_exist = 1;
+		else
+			badblocks_update_acked(bb);
+	}
 	write_sequnlock_irqrestore(&bb->lock, flags);
 
 	return rv;
