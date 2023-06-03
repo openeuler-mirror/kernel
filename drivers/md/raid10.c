@@ -441,47 +441,52 @@ static void raid10_end_write_request(struct bio *bio)
 
 	dev = find_bio_disk(conf, r10_bio, bio, &slot, &repl);
 
-	if (repl)
-		rdev = conf->mirrors[dev].replacement;
-	if (!rdev) {
-		smp_rmb();
-		repl = 0;
-		rdev = conf->mirrors[dev].rdev;
+	if (repl) {
+		rdev = r10_bio->devs[slot].replacement;
+		if (rdev == conf->mirrors[dev].replacement) {
+			if (bio->bi_status && !discard_error) {
+				/*
+				 * Never record new bad blocks to replacement,
+				 * just fail it.
+				 */
+				md_error(rdev->mddev, rdev);
+				goto out;
+			}
+		} else {
+			WARN_ON_ONCE(rdev != conf->mirrors[dev].rdev);
+		}
+	} else {
+		rdev = r10_bio->devs[slot].rdev;
 	}
 	/*
 	 * this branch is our 'one mirror IO has finished' event handler:
 	 */
 	if (bio->bi_status && !discard_error) {
-		if (repl)
-			/* Never record new bad blocks to replacement,
-			 * just fail it.
-			 */
+		set_bit(WriteErrorSeen,	&rdev->flags);
+		if (!test_and_set_bit(WantReplacement, &rdev->flags))
+			set_bit(MD_RECOVERY_NEEDED,
+				&rdev->mddev->recovery);
+
+		dec_rdev = 0;
+		if (test_bit(FailFast, &rdev->flags) &&
+		    (bio->bi_opf & MD_FAILFAST))
 			md_error(rdev->mddev, rdev);
-		else {
-			set_bit(WriteErrorSeen,	&rdev->flags);
-			if (!test_and_set_bit(WantReplacement, &rdev->flags))
-				set_bit(MD_RECOVERY_NEEDED,
-					&rdev->mddev->recovery);
 
-			dec_rdev = 0;
-			if (test_bit(FailFast, &rdev->flags) &&
-			    (bio->bi_opf & MD_FAILFAST)) {
-				md_error(rdev->mddev, rdev);
-			}
-
-			/*
-			 * When the device is faulty, it is not necessary to
-			 * handle write error.
-			 */
-			if (!test_bit(Faulty, &rdev->flags))
-				set_bit(R10BIO_WriteError, &r10_bio->state);
-			else {
-				/* Fail the request */
-				set_bit(R10BIO_Degraded, &r10_bio->state);
+		/*
+		 * When the device is faulty, it is not necessary to
+		 * handle write error.
+		 */
+		if (!test_bit(Faulty, &rdev->flags)) {
+			set_bit(R10BIO_WriteError, &r10_bio->state);
+		} else {
+			/* Fail the request */
+			set_bit(R10BIO_Degraded, &r10_bio->state);
+			if (repl)
+				r10_bio->devs[slot].repl_bio = NULL;
+			else
 				r10_bio->devs[slot].bio = NULL;
-				to_put = bio;
-				dec_rdev = 1;
-			}
+			to_put = bio;
+			dec_rdev = 1;
 		}
 	} else {
 		/*
@@ -513,16 +518,17 @@ static void raid10_end_write_request(struct bio *bio)
 				r10_bio->devs[slot].addr,
 				r10_bio->sectors,
 				&first_bad, &bad_sectors) && !discard_error) {
-			bio_put(bio);
 			if (repl)
 				r10_bio->devs[slot].repl_bio = IO_MADE_GOOD;
 			else
 				r10_bio->devs[slot].bio = IO_MADE_GOOD;
+			bio_put(bio);
 			dec_rdev = 0;
 			set_bit(R10BIO_MadeGood, &r10_bio->state);
 		}
 	}
 
+out:
 	/*
 	 *
 	 * Let's see if all mirrored write operations have finished
@@ -1259,10 +1265,13 @@ static void raid10_write_one_disk(struct mddev *mddev, struct r10bio *r10_bio,
 		rdev = conf->mirrors[devnum].rdev;
 
 	mbio = bio_clone_fast(bio, GFP_NOIO, &mddev->bio_set);
-	if (replacement)
+	if (replacement) {
 		r10_bio->devs[n_copy].repl_bio = mbio;
-	else
+		r10_bio->devs[n_copy].replacement = rdev;
+	} else {
 		r10_bio->devs[n_copy].bio = mbio;
+		r10_bio->devs[n_copy].rdev = rdev;
+	}
 
 	mbio->bi_iter.bi_sector	= (r10_bio->devs[n_copy].addr +
 				   choose_data_offset(r10_bio, rdev));
@@ -2703,9 +2712,8 @@ static void handle_write_completed(struct r10conf *conf, struct r10bio *r10_bio)
 	} else {
 		bool fail = false;
 		for (m = 0; m < conf->copies; m++) {
-			int dev = r10_bio->devs[m].devnum;
 			struct bio *bio = r10_bio->devs[m].bio;
-			rdev = conf->mirrors[dev].rdev;
+			rdev = r10_bio->devs[m].rdev;
 			if (bio == IO_MADE_GOOD) {
 				rdev_clear_badblocks(
 					rdev,
@@ -2722,7 +2730,7 @@ static void handle_write_completed(struct r10conf *conf, struct r10bio *r10_bio)
 				rdev_dec_pending(rdev, conf->mddev);
 			}
 			bio = r10_bio->devs[m].repl_bio;
-			rdev = conf->mirrors[dev].replacement;
+			rdev = r10_bio->devs[m].replacement;
 			if (rdev && bio == IO_MADE_GOOD) {
 				rdev_clear_badblocks(
 					rdev,

@@ -146,12 +146,12 @@ struct r10bio {
 	 */
 	struct r10dev {
 		struct bio	*bio;
-		union {
-			struct bio	*repl_bio; /* used for resync and
-						    * writes */
-			struct md_rdev	*rdev;	   /* used for reads
-						    * (read_slot >= 0) */
-		};
+		/* Currently just used for normal reads and writes */
+		struct md_rdev	*rdev;
+		/* used for resync and writes */
+		struct bio	*repl_bio;
+		/* Currently just used for normal writes */
+		struct md_rdev	*replacement;
 		sector_t	addr;
 		int		devnum;
 	} devs[];
