@@ -61,13 +61,13 @@ short regoffsets[32] = {
 #define PCB_OFF(var)	offsetof(struct pcb_struct, var)
 
 static int pcboff[] = {
-	[USP] = PCB_OFF(usp),
-	[TP] = PCB_OFF(tp),
-	[DA_MATCH] = PCB_OFF(da_match),
-	[DA_MASK] = PCB_OFF(da_mask),
-	[DV_MATCH] = PCB_OFF(dv_match),
-	[DV_MASK] = PCB_OFF(dv_mask),
-	[DC_CTL] = PCB_OFF(dc_ctl)
+	[PT_USP] = PCB_OFF(usp),
+	[PT_TP] = PCB_OFF(tp),
+	[PT_DA_MATCH] = PCB_OFF(da_match),
+	[PT_DA_MASK] = PCB_OFF(da_mask),
+	[PT_DV_MATCH] = PCB_OFF(dv_match),
+	[PT_DV_MASK] = PCB_OFF(dv_mask),
+	[PT_DC_CTL] = PCB_OFF(dc_ctl)
 };
 
 static unsigned long zero;
@@ -83,39 +83,39 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 	int fno, vno;
 
 	switch (regno) {
-	case USP:
-	case UNIQUE:
-	case DA_MATCH:
-	case DA_MASK:
-	case DV_MATCH:
-	case DV_MASK:
-	case DC_CTL:
+	case PT_USP:
+	case PT_UNIQUE:
+	case PT_DA_MATCH:
+	case PT_DA_MASK:
+	case PT_DV_MATCH:
+	case PT_DV_MASK:
+	case PT_DC_CTL:
 		addr = (void *)task_thread_info(task) + pcboff[regno];
 		break;
-	case REG_BASE ... REG_END:
+	case PT_REG_BASE ... PT_REG_END:
 		addr = (void *)task_pt_regs(task) + regoffsets[regno];
 		break;
-	case FPREG_BASE ... FPREG_END:
-		fno = regno - FPREG_BASE;
+	case PT_FPREG_BASE ... PT_FPREG_END:
+		fno = regno - PT_FPREG_BASE;
 		addr = &task->thread.fpstate.fp[fno].v[0];
 		break;
-	case VECREG_BASE ... VECREG_END:
+	case PT_VECREG_BASE ... PT_VECREG_END:
 		/*
 		 * return addr for zero value if we catch vectors of f31
 		 * v0 and v3 of f31 are not in this range so ignore them
 		 */
-		if (regno == F31_V1 || regno == F31_V2) {
+		if (regno == PT_F31_V1 || regno == PT_F31_V2) {
 			addr = &zero;
 			break;
 		}
-		fno = (regno - VECREG_BASE) & 0x1f;
-		vno = 1 + ((regno - VECREG_BASE) >> 5);
+		fno = (regno - PT_VECREG_BASE) & 0x1f;
+		vno = 1 + ((regno - PT_VECREG_BASE) >> 5);
 		addr = &task->thread.fpstate.fp[fno].v[vno];
 		break;
-	case FPCR:
+	case PT_FPCR:
 		addr = &task->thread.fpstate.fpcr;
 		break;
-	case PC:
+	case PT_PC:
 		addr = (void *)task_pt_regs(task) + PT_REGS_PC;
 		break;
 	default:
@@ -170,7 +170,7 @@ ptrace_set_bpt(struct task_struct *child)
 	unsigned int insn, op_code;
 	unsigned long pc;
 
-	pc = get_reg(child, PC);
+	pc = get_reg(child, PT_PC);
 	res = read_int(child, pc, (int *)&insn);
 	if (res < 0)
 		return res;

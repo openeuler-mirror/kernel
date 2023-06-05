@@ -29,23 +29,23 @@ struct user_fpsimd_state {
 /* PTRACE_ATTACH is 16 */
 /* PTRACE_DETACH is 17 */
 
-#define REG_BASE		0
-#define REG_END			29
-#define USP			30
-#define FPREG_BASE		32
-#define FPREG_END		62
-#define FPCR			63
-#define PC			64
-#define TP			65
-#define UNIQUE			TP
-#define VECREG_BASE		67
-#define VECREG_END		161
-#define F31_V1			98
-#define F31_V2			130
-#define DA_MATCH		163
-#define DA_MASK			164
-#define DV_MATCH		165
-#define DV_MASK			166
-#define DC_CTL			167
+#define PT_REG_BASE		0
+#define PT_REG_END		29
+#define PT_USP			30
+#define PT_FPREG_BASE		32
+#define PT_FPREG_END		62
+#define PT_FPCR			63
+#define PT_PC			64
+#define PT_TP			65
+#define PT_UNIQUE		PT_TP
+#define PT_VECREG_BASE		67
+#define PT_VECREG_END		161
+#define PT_F31_V1		98
+#define PT_F31_V2		130
+#define PT_DA_MATCH		163
+#define PT_DA_MASK		164
+#define PT_DV_MATCH		165
+#define PT_DV_MASK		166
+#define PT_DC_CTL		167
 
 #endif /* _UAPI_ASM_SW64_PTRACE_H */
