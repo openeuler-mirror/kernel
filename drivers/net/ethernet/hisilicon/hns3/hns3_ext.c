@@ -239,6 +239,13 @@ int nic_set_cpu_affinity(struct net_device *ndev, cpumask_t *affinity_mask)
 		goto err_unlock;
 	}
 
+	if (test_bit(HNS3_NIC_STATE_DOWN, &priv->state)) {
+		netdev_err(ndev,
+			   "ethernet is down, not support cpu affinity set\n");
+		ret = -ENETDOWN;
+		goto err_unlock;
+	}
+
 	for (i = 0; i < priv->vector_num; i++) {
 		tqp_vector = &priv->tqp_vector[i];
 		if (tqp_vector->irq_init_flag != HNS3_VECTOR_INITED)
