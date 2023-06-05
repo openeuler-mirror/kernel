@@ -1090,7 +1090,9 @@ struct ext4_inode_info {
 	 * to occasionally drop it.
 	 */
 	struct rw_semaphore i_mmap_sem;
+#ifndef CONFIG_EXT4_MITIGATION_FALSE_SHARING
 	struct inode vfs_inode;
+#endif
 	struct jbd2_inode *jinode;
 
 	spinlock_t i_raw_lock;	/* protects updates to the raw inode */
@@ -1103,6 +1105,9 @@ struct ext4_inode_info {
 
 	/* mballoc */
 	atomic_t i_prealloc_active;
+#ifdef CONFIG_EXT4_MITIGATION_FALSE_SHARING
+	struct inode vfs_inode;
+#endif
 	struct list_head i_prealloc_list;
 	spinlock_t i_prealloc_lock;
 
