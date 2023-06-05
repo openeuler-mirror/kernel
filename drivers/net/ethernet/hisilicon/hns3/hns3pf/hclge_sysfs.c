@@ -7,11 +7,16 @@
 static ssize_t lane_num_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
+#define HCLGE_GE_PORT_ONE_LANE	1
 	struct pci_dev *pdev = container_of(dev, struct pci_dev, dev);
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
 	struct hclge_dev *hdev = ae_dev->priv;
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", hdev->hw.mac.lane_num);
+	if (hdev->hw.mac.media_type == HNAE3_MEDIA_TYPE_COPPER)
+		return scnprintf(buf, PAGE_SIZE, "%u\n",
+				 HCLGE_GE_PORT_ONE_LANE);
+	else
+		return scnprintf(buf, PAGE_SIZE, "%u\n", hdev->hw.mac.lane_num);
 }
 
 static ssize_t lane_num_store(struct device *dev,
