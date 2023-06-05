@@ -146,6 +146,14 @@ enum vf_state {
 	VF_PREPARE,
 };
 
+enum qm_mist_ctl_bits {
+	QM_DRIVER_DOWN = 0x0,
+	QM_RST_SCHED,
+	QM_RESETTING,
+	QM_DEVICE_DOWN,
+	QM_MODULE_PARAM,
+};
+
 enum qm_cap_bits {
 	QM_SUPPORT_DB_ISOLATION = 0x0,
 	QM_SUPPORT_FUNC_QOS,
