@@ -51,6 +51,7 @@ static int comp_sack_nr_max = 255;
 static u32 u32_max_div_HZ = UINT_MAX / HZ;
 static int one_day_secs = 24 * 3600;
 
+int sysctl_local_port_allocation;
 /* obsolete */
 static int sysctl_tcp_low_latency __read_mostly;
 
@@ -575,6 +576,13 @@ static struct ctl_table ipv4_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif
+	{
+		.procname	= "local_port_allocation",
+		.data		= &sysctl_local_port_allocation,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 	{ }
 };
 
