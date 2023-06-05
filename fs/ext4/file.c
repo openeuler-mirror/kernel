@@ -190,9 +190,8 @@ ext4_extending_io(struct inode *inode, loff_t offset, size_t len)
 	return false;
 }
 
-/* Is IO overwriting allocated or initialized blocks? */
-static bool ext4_overwrite_io(struct inode *inode,
-			      loff_t pos, loff_t len, bool *unwritten)
+/* Is IO overwriting allocated and initialized blocks? */
+static bool ext4_overwrite_io(struct inode *inode, loff_t pos, loff_t len)
 {
 	struct ext4_map_blocks map;
 	unsigned int blkbits = inode->i_blkbits;
@@ -206,15 +205,12 @@ static bool ext4_overwrite_io(struct inode *inode,
 	blklen = map.m_len;
 
 	err = ext4_map_blocks(NULL, inode, &map, 0);
-	if (err != blklen)
-		return false;
 	/*
 	 * 'err==len' means that all of the blocks have been preallocated,
-	 * regardless of whether they have been initialized or not. We need to
-	 * check m_flags to distinguish the unwritten extents.
+	 * regardless of whether they have been initialized or not. To exclude
+	 * unwritten extents, we need to check m_flags.
 	 */
-	*unwritten = !(map.m_flags & EXT4_MAP_MAPPED);
-	return true;
+	return err == blklen && (map.m_flags & EXT4_MAP_MAPPED);
 }
 
 static ssize_t ext4_generic_write_checks(struct kiocb *iocb,
@@ -425,16 +421,11 @@ static const struct iomap_dio_ops ext4_dio_write_ops = {
  * - For extending writes case we don't take the shared lock, since it requires
  *   updating inode i_disksize and/or orphan handling with exclusive lock.
  *
- * - shared locking will only be true mostly with overwrites, including
- *   initialized blocks and unwritten blocks. For overwrite unwritten blocks
- *   we protect splitting extents by i_data_sem in ext4_inode_info, so we can
- *   also release exclusive i_rwsem lock.
- *
- * - Otherwise we will switch to exclusive i_rwsem lock.
+ * - shared locking will only be true mostly with overwrites. Otherwise we will
+ *   switch to exclusive i_rwsem lock.
  */
 static ssize_t ext4_dio_write_checks(struct kiocb *iocb, struct iov_iter *from,
-				     bool *ilock_shared, bool *extend,
-				     bool *unwritten)
+				     bool *ilock_shared, bool *extend)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file);
@@ -458,7 +449,7 @@ restart:
 	 * in file_modified().
 	 */
 	if (*ilock_shared && (!IS_NOSEC(inode) || *extend ||
-	     !ext4_overwrite_io(inode, offset, count, unwritten))) {
+	     !ext4_overwrite_io(inode, offset, count))) {
 		if (iocb->ki_flags & IOCB_NOWAIT) {
 			ret = -EAGAIN;
 			goto out;
@@ -490,7 +481,7 @@ static ssize_t ext4_dio_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	loff_t offset = iocb->ki_pos;
 	size_t count = iov_iter_count(from);
 	const struct iomap_ops *iomap_ops = &ext4_iomap_ops;
-	bool extend = false, unaligned_io = false, unwritten = false;
+	bool extend = false, unaligned_io = false;
 	bool ilock_shared = true;
 
 	/*
@@ -533,8 +524,7 @@ static ssize_t ext4_dio_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		return ext4_buffered_write_iter(iocb, from);
 	}
 
-	ret = ext4_dio_write_checks(iocb, from,
-				    &ilock_shared, &extend, &unwritten);
+	ret = ext4_dio_write_checks(iocb, from, &ilock_shared, &extend);
 	if (ret <= 0)
 		return ret;
 
@@ -584,7 +574,7 @@ static ssize_t ext4_dio_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		ext4_journal_stop(handle);
 	}
 
-	if (ilock_shared && !unwritten)
+	if (ilock_shared)
 		iomap_ops = &ext4_iomap_overwrite_ops;
 	ret = iomap_dio_rw(iocb, from, iomap_ops, &ext4_dio_write_ops,
 			   is_sync_kiocb(iocb) || unaligned_io || extend);
