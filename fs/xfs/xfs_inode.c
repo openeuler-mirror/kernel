@@ -678,7 +678,7 @@ xfs_lookup(
 
 	trace_xfs_lookup(dp, name);
 
-	if (XFS_FORCED_SHUTDOWN(dp->i_mount))
+	if (xfs_is_shutdown(dp->i_mount))
 		return -EIO;
 
 	error = xfs_dir_lookup(NULL, dp, name, &inum, ci_name);
@@ -1129,7 +1129,7 @@ xfs_create(
 
 	trace_xfs_create(dp, name);
 
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xfs_is_shutdown(mp))
 		return -EIO;
 
 	prid = xfs_get_initial_prid(dp);
@@ -1277,7 +1277,7 @@ xfs_create_tmpfile(
 	struct xfs_trans_res	*tres;
 	uint			resblks;
 
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xfs_is_shutdown(mp))
 		return -EIO;
 
 	prid = xfs_get_initial_prid(dp);
@@ -1363,7 +1363,7 @@ xfs_link(
 
 	ASSERT(!S_ISDIR(VFS_I(sip)->i_mode));
 
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xfs_is_shutdown(mp))
 		return -EIO;
 
 	error = xfs_qm_dqattach(sip);
@@ -1577,7 +1577,7 @@ xfs_release(
 	if (xfs_is_readonly(mp))
 		return 0;
 
-	if (!XFS_FORCED_SHUTDOWN(mp)) {
+	if (!xfs_is_shutdown(mp)) {
 		int truncated;
 
 		/*
@@ -1658,7 +1658,7 @@ xfs_inactive_truncate(
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_itruncate, 0, 0, 0, &tp);
 	if (error) {
-		ASSERT(XFS_FORCED_SHUTDOWN(mp));
+		ASSERT(xfs_is_shutdown(mp));
 		return error;
 	}
 	xfs_ilock(ip, XFS_ILOCK_EXCL);
@@ -1729,7 +1729,7 @@ xfs_inactive_ifree(
 			"Failed to remove inode(s) from unlinked list. "
 			"Please free space, unmount and run xfs_repair.");
 		} else {
-			ASSERT(XFS_FORCED_SHUTDOWN(mp));
+			ASSERT(xfs_is_shutdown(mp));
 		}
 		return error;
 	}
@@ -1765,7 +1765,7 @@ xfs_inactive_ifree(
 		 * might do that, we need to make sure.  Otherwise the
 		 * inode might be lost for a long time or forever.
 		 */
-		if (!XFS_FORCED_SHUTDOWN(mp)) {
+		if (!xfs_is_shutdown(mp)) {
 			xfs_notice(mp, "%s: xfs_ifree returned error %d",
 				__func__, error);
 			xfs_force_shutdown(mp, SHUTDOWN_META_IO_ERROR);
@@ -1816,7 +1816,7 @@ xfs_inode_needs_inactive(
 		return false;
 
 	/* If the log isn't running, push inodes straight to reclaim. */
-	if (XFS_FORCED_SHUTDOWN(mp) || xfs_has_norecovery(mp))
+	if (xfs_is_shutdown(mp) || xfs_has_norecovery(mp))
 		return false;
 
 	/* Metadata inodes require explicit resource cleanup. */
@@ -2147,7 +2147,7 @@ xfs_iunlink_destroy(
 	rhashtable_free_and_destroy(&pag->pagi_unlinked_hash,
 			xfs_iunlink_free_item, &freed_anything);
 
-	ASSERT(freed_anything == false || XFS_FORCED_SHUTDOWN(pag->pag_mount));
+	ASSERT(freed_anything == false || xfs_is_shutdown(pag->pag_mount));
 }
 
 /*
@@ -2882,7 +2882,7 @@ xfs_remove(
 
 	trace_xfs_remove(dp, name);
 
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xfs_is_shutdown(mp))
 		return -EIO;
 
 	error = xfs_qm_dqattach(dp);

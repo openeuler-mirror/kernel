@@ -243,7 +243,7 @@ xfs_check_agi_freecount(
 			}
 		} while (i == 1);
 
-		if (!XFS_FORCED_SHUTDOWN(cur->bc_mp))
+		if (!xfs_is_shutdown(cur->bc_mp))
 			ASSERT(freecount == be32_to_cpu(agi->agi_freecount));
 	}
 	return 0;
@@ -1027,7 +1027,7 @@ nextag:
 		 * No point in iterating over the rest, if we're shutting
 		 * down.
 		 */
-		if (XFS_FORCED_SHUTDOWN(mp))
+		if (xfs_is_shutdown(mp))
 			return NULLAGNUMBER;
 		agno++;
 		if (agno >= agcount)
@@ -2659,7 +2659,7 @@ xfs_ialloc_read_agi(
 	 * we are in the middle of a forced shutdown.
 	 */
 	ASSERT(pag->pagi_freecount == be32_to_cpu(agi->agi_freecount) ||
-		XFS_FORCED_SHUTDOWN(mp));
+		xfs_is_shutdown(mp));
 	return 0;
 }
 
