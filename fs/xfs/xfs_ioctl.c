@@ -1393,7 +1393,7 @@ xfs_ioctl_setattr_check_cowextsize(
 	if (!(fa->fsx_xflags & FS_XFLAG_COWEXTSIZE))
 		return 0;
 
-	if (!xfs_sb_version_hasreflink(&ip->i_mount->m_sb))
+	if (!xfs_has_reflink(mp))
 		return -EINVAL;
 
 	if (fa->fsx_cowextsize == 0)
