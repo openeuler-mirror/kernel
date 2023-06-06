@@ -1005,7 +1005,7 @@ xfs_ioc_fsgeometry(
 	struct xfs_fsop_geom	fsgeo;
 	size_t			len;
 
-	xfs_fs_geometry(&mp->m_sb, &fsgeo, struct_version);
+	xfs_fs_geometry(mp, &fsgeo, struct_version);
 
 	if (struct_version <= 3)
 		len = sizeof(struct xfs_fsop_geom_v1);
