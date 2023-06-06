@@ -493,6 +493,7 @@ void pcie_port_device_remove(struct pci_dev *dev)
 {
 	device_for_each_child(&dev->dev, NULL, remove_iter);
 	pci_free_irq_vectors(dev);
+	pci_disable_device(dev);
 }
 
 /**
