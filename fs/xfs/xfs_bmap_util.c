@@ -680,7 +680,7 @@ xfs_free_eofblocks(
 		error = xfs_trans_alloc(mp, &M_RES(mp)->tr_itruncate, 0, 0, 0,
 				&tp);
 		if (error) {
-			ASSERT(XFS_FORCED_SHUTDOWN(mp));
+			ASSERT(xfs_is_shutdown(mp));
 			return error;
 		}
 
@@ -734,7 +734,7 @@ xfs_alloc_file_space(
 
 	trace_xfs_alloc_file_space(ip);
 
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xfs_is_shutdown(mp))
 		return -EIO;
 
 	error = xfs_qm_dqattach(ip);

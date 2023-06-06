@@ -640,7 +640,7 @@ static void
 xfs_ifree_unmount(
 		struct xfs_mount	*mp)
 {
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xfs_is_shutdown(mp))
 		return;
 
 	if (percpu_counter_sum(&mp->m_ifree) >
@@ -1198,7 +1198,7 @@ xfs_fs_writable(
 {
 	ASSERT(level > SB_UNFROZEN);
 	if ((mp->m_super->s_writers.frozen >= level) ||
-	    XFS_FORCED_SHUTDOWN(mp) || xfs_is_readonly(mp))
+	    xfs_is_shutdown(mp) || xfs_is_readonly(mp))
 		return false;
 
 	return true;
