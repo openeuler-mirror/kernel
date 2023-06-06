@@ -486,6 +486,7 @@ struct ioc_gq {
 	u32				inuse;
 
 	u32				last_inuse;
+	bool				online;
 	s64				saved_margin;
 
 	sector_t			cursor;		/* to detect randio */
@@ -2932,6 +2933,7 @@ static void ioc_pd_init(struct blkg_policy_data *pd)
 	ioc_now(ioc, &now);
 
 	iocg->ioc = ioc;
+	iocg->online = true;
 	atomic64_set(&iocg->vtime, now.vnow);
 	atomic64_set(&iocg->done_vtime, now.vnow);
 	atomic64_set(&iocg->active_period, atomic64_read(&ioc->cur_period));
@@ -2965,6 +2967,8 @@ static void ioc_pd_offline(struct blkg_policy_data *pd)
 
 	if (ioc) {
 		spin_lock_irqsave(&ioc->lock, flags);
+
+		iocg->online = false;
 
 		if (!list_empty(&iocg->active_list)) {
 			struct ioc_now now;
