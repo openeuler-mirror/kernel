@@ -452,7 +452,7 @@ static int hi6421_spmi_regulator_remove(struct platform_device *pdev)
 	if (rdev->desc->volt_table)
 		devm_kfree(&pdev->dev, (unsigned int *)rdev->desc->volt_table);
 
-	kfree(sreg);
+	devm_kfree(&pdev->dev, sreg);
 
 	return 0;
 }
