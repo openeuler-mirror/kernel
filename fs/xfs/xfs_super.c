@@ -1625,7 +1625,7 @@ xfs_fc_fill_super(
 	if (XFS_SB_VERSION_NUM(&mp->m_sb) == XFS_SB_VERSION_5)
 		sb->s_flags |= SB_I_VERSION;
 
-	if (xfs_sb_version_hasbigtime(&mp->m_sb))
+	if (xfs_has_bigtime(mp))
 		xfs_warn(mp,
  "EXPERIMENTAL big timestamp feature in use. Use at your own risk!");
 
@@ -1684,7 +1684,7 @@ xfs_fc_fill_super(
 		goto out_filestream_unmount;
 	}
 
-	if (xfs_sb_version_hasinobtcounts(&mp->m_sb))
+	if (xfs_has_inobtcounts(mp))
 		xfs_warn(mp,
  "EXPERIMENTAL inode btree counters feature in use. Use at your own risk!");
 
