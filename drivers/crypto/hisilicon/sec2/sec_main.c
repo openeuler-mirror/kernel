@@ -189,59 +189,59 @@ static const struct sec_dev_alg sec_dev_algs[] = { {
 static const struct sec_hw_error sec_hw_errors[] = {
 	{
 		.int_msk = BIT(0),
-		.msg = "sec_axi_rresp_err_rint"
+		.msg = "sec_axi_rresp_err_rint",
 	},
 	{
 		.int_msk = BIT(1),
-		.msg = "sec_axi_bresp_err_rint"
+		.msg = "sec_axi_bresp_err_rint",
 	},
 	{
 		.int_msk = BIT(2),
-		.msg = "sec_ecc_2bit_err_rint"
+		.msg = "sec_ecc_2bit_err_rint",
 	},
 	{
 		.int_msk = BIT(3),
-		.msg = "sec_ecc_1bit_err_rint"
+		.msg = "sec_ecc_1bit_err_rint",
 	},
 	{
 		.int_msk = BIT(4),
-		.msg = "sec_req_trng_timeout_rint"
+		.msg = "sec_req_trng_timeout_rint",
 	},
 	{
 		.int_msk = BIT(5),
-		.msg = "sec_fsm_hbeat_rint"
+		.msg = "sec_fsm_hbeat_rint",
 	},
 	{
 		.int_msk = BIT(6),
-		.msg = "sec_channel_req_rng_timeout_rint"
+		.msg = "sec_channel_req_rng_timeout_rint",
 	},
 	{
 		.int_msk = BIT(7),
-		.msg = "sec_bd_err_rint"
+		.msg = "sec_bd_err_rint",
 	},
 	{
 		.int_msk = BIT(8),
-		.msg = "sec_chain_buff_err_rint"
+		.msg = "sec_chain_buff_err_rint",
 	},
 	{
 		.int_msk = BIT(14),
-		.msg = "sec_no_secure_access"
+		.msg = "sec_no_secure_access",
 	},
 	{
 		.int_msk = BIT(15),
-		.msg = "sec_wrapping_key_auth_err"
+		.msg = "sec_wrapping_key_auth_err",
 	},
 	{
 		.int_msk = BIT(16),
-		.msg = "sec_km_key_crc_fail"
+		.msg = "sec_km_key_crc_fail",
 	},
 	{
 		.int_msk = BIT(17),
-		.msg = "sec_axi_poison_err"
+		.msg = "sec_axi_poison_err",
 	},
 	{
 		.int_msk = BIT(18),
-		.msg = "sec_sva_err"
+		.msg = "sec_sva_err",
 	},
 	{}
 };
@@ -282,6 +282,11 @@ static const struct debugfs_reg32 sec_dfx_regs[] = {
 	{"SEC_BD_SAA6                   ",  0x301C38},
 	{"SEC_BD_SAA7                   ",  0x301C3C},
 	{"SEC_BD_SAA8                   ",  0x301C40},
+	{"SEC_RAS_CE_ENABLE             ",  0x301050},
+	{"SEC_RAS_FE_ENABLE             ",  0x301054},
+	{"SEC_RAS_NFE_ENABLE            ",  0x301058},
+	{"SEC_REQ_TRNG_TIME_TH          ",  0x30112C},
+	{"SEC_CHANNEL_RNG_REQ_THLD      ",  0x302110},
 };
 
 /* define the SEC's dfx regs region and region length */
