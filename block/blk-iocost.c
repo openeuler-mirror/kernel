@@ -703,6 +703,20 @@ static struct ioc_cgrp *blkcg_to_iocc(struct blkcg *blkcg)
 			    struct ioc_cgrp, cpd);
 }
 
+static struct ioc_gq *ioc_bio_iocg(struct bio *bio)
+{
+	struct blkcg_gq *blkg = bio->bi_blkg;
+
+	if (blkg && blkg->online) {
+		struct ioc_gq *iocg = blkg_to_iocg(blkg);
+
+		if (iocg && iocg->online)
+			return iocg;
+	}
+
+	return NULL;
+}
+
 /*
  * Scale @abs_cost to the inverse of @hw_inuse.  The lower the hierarchical
  * weight, the more expensive each IO.  Must round up.
@@ -1218,6 +1232,9 @@ static bool iocg_activate(struct ioc_gq *iocg, struct ioc_now *now)
 		return false;
 
 	spin_lock_irq(&ioc->lock);
+
+	if (!iocg->online)
+		goto fail_unlock;
 
 	ioc_now(ioc, now);
 
@@ -2542,9 +2559,8 @@ static u64 calc_size_vtime_cost(struct request *rq, struct ioc *ioc)
 
 static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio)
 {
-	struct blkcg_gq *blkg = bio->bi_blkg;
 	struct ioc *ioc = rqos_to_ioc(rqos);
-	struct ioc_gq *iocg = blkg_to_iocg(blkg);
+	struct ioc_gq *iocg = ioc_bio_iocg(bio);
 	struct ioc_now now;
 	struct iocg_wait wait;
 	u64 abs_cost, cost, vtime;
@@ -2678,7 +2694,7 @@ retry_lock:
 static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 			   struct bio *bio)
 {
-	struct ioc_gq *iocg = blkg_to_iocg(bio->bi_blkg);
+	struct ioc_gq *iocg = ioc_bio_iocg(bio);
 	struct ioc *ioc = rqos_to_ioc(rqos);
 	sector_t bio_end = bio_end_sector(bio);
 	struct ioc_now now;
@@ -2736,7 +2752,7 @@ static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 
 static void ioc_rqos_done_bio(struct rq_qos *rqos, struct bio *bio)
 {
-	struct ioc_gq *iocg = blkg_to_iocg(bio->bi_blkg);
+	struct ioc_gq *iocg = ioc_bio_iocg(bio);
 
 	if (iocg && bio->bi_iocost_cost)
 		atomic64_add(bio->bi_iocost_cost, &iocg->done_vtime);
