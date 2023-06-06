@@ -1223,7 +1223,7 @@ xfs_log_sbcount(xfs_mount_t *mp)
 	 * we don't need to do this if we are updating the superblock
 	 * counters on every modification.
 	 */
-	if (!xfs_sb_version_haslazysbcount(&mp->m_sb))
+	if (!xfs_has_lazysbcount(mp))
 		return 0;
 
 	return xfs_sync_sb(mp, true);
