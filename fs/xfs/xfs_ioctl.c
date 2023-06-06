@@ -1282,7 +1282,7 @@ xfs_ioctl_setattr_get_trans(
 	struct xfs_trans	*tp;
 	int			error = -EROFS;
 
-	if (mp->m_flags & XFS_MOUNT_RDONLY)
+	if (xfs_is_readonly(mp))
 		goto out_error;
 	error = -EIO;
 	if (XFS_FORCED_SHUTDOWN(mp))
@@ -2223,7 +2223,7 @@ xfs_file_ioctl(
 		if (!capable(CAP_SYS_ADMIN))
 			return -EPERM;
 
-		if (mp->m_flags & XFS_MOUNT_RDONLY)
+		if (xfs_is_readonly(mp))
 			return -EROFS;
 
 		if (copy_from_user(&inout, arg, sizeof(inout)))
@@ -2340,7 +2340,7 @@ xfs_file_ioctl(
 		if (!capable(CAP_SYS_ADMIN))
 			return -EPERM;
 
-		if (mp->m_flags & XFS_MOUNT_RDONLY)
+		if (xfs_is_readonly(mp))
 			return -EROFS;
 
 		if (copy_from_user(&eofb, arg, sizeof(eofb)))
