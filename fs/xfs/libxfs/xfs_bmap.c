@@ -1045,7 +1045,7 @@ xfs_bmap_set_attrforkoff(
 		ip->i_d.di_forkoff = xfs_attr_shortform_bytesfit(ip, size);
 		if (!ip->i_d.di_forkoff)
 			ip->i_d.di_forkoff = xfs_default_attroffset(ip) >> 3;
-		else if ((ip->i_mount->m_flags & XFS_MOUNT_ATTR2) && version)
+		else if (xfs_has_attr2(ip->i_mount) && version)
 			*version = 2;
 		break;
 	default:
@@ -3480,7 +3480,7 @@ xfs_bmap_btalloc(
 
 	/* stripe alignment for allocation is determined by mount parameters */
 	stripe_align = 0;
-	if (mp->m_swidth && (mp->m_flags & XFS_MOUNT_SWALLOC))
+	if (mp->m_swidth && xfs_has_swalloc(mp))
 		stripe_align = mp->m_swidth;
 	else if (mp->m_dalign)
 		stripe_align = mp->m_dalign;
