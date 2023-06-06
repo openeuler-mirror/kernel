@@ -1233,7 +1233,7 @@ xfs_ioctl_setattr_xflags(
 
 	/* diflags2 only valid for v3 inodes. */
 	di_flags2 = xfs_flags2diflags2(ip, fa->fsx_xflags);
-	if (di_flags2 && !xfs_sb_version_has_v3inode(&mp->m_sb))
+	if (di_flags2 && !xfs_has_v3inodes(mp))
 		return -EINVAL;
 
 	ip->i_d.di_flags = xfs_flags2diflags(ip, fa->fsx_xflags);
@@ -1419,9 +1419,9 @@ xfs_ioctl_setattr_check_projid(
 	struct xfs_inode	*ip,
 	struct fsxattr		*fa)
 {
-	/* Disallow 32bit project ids if projid32bit feature is not enabled. */
+	/* Disallow 32bit project ids if 32bit IDs are not enabled. */
 	if (fa->fsx_projid > (uint16_t)-1 &&
-	    !xfs_sb_version_hasprojid32bit(&ip->i_mount->m_sb))
+	    !xfs_has_projid32(ip->i_mount))
 		return -EINVAL;
 	return 0;
 }
@@ -1515,7 +1515,7 @@ xfs_ioctl_setattr(
 		ip->i_d.di_extsize = fa->fsx_extsize >> mp->m_sb.sb_blocklog;
 	else
 		ip->i_d.di_extsize = 0;
-	if (xfs_sb_version_has_v3inode(&mp->m_sb) &&
+	if (xfs_has_v3inodes(mp) &&
 	    (ip->i_d.di_flags2 & XFS_DIFLAG2_COWEXTSIZE))
 		ip->i_d.di_cowextsize = fa->fsx_cowextsize >>
 				mp->m_sb.sb_blocklog;

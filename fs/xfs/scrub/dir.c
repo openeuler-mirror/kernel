@@ -52,7 +52,7 @@ xchk_dir_check_ftype(
 	int			ino_dtype;
 	int			error = 0;
 
-	if (!xfs_sb_version_hasftype(&mp->m_sb)) {
+	if (!xfs_has_ftype(mp)) {
 		if (dtype != DT_UNKNOWN && dtype != DT_DIR)
 			xchk_fblock_set_corrupt(sdc->sc, XFS_DATA_FORK,
 					offset);
@@ -141,7 +141,7 @@ xchk_dir_actor(
 
 	if (!strncmp(".", name, namelen)) {
 		/* If this is "." then check that the inum matches the dir. */
-		if (xfs_sb_version_hasftype(&mp->m_sb) && type != DT_DIR)
+		if (xfs_has_ftype(mp) && type != DT_DIR)
 			xchk_fblock_set_corrupt(sdc->sc, XFS_DATA_FORK,
 					offset);
 		checked_ftype = true;
@@ -153,7 +153,7 @@ xchk_dir_actor(
 		 * If this is ".." in the root inode, check that the inum
 		 * matches this dir.
 		 */
-		if (xfs_sb_version_hasftype(&mp->m_sb) && type != DT_DIR)
+		if (xfs_has_ftype(mp) && type != DT_DIR)
 			xchk_fblock_set_corrupt(sdc->sc, XFS_DATA_FORK,
 					offset);
 		checked_ftype = true;
@@ -527,7 +527,7 @@ xchk_directory_leaf1_bestfree(
 	bestcount = be32_to_cpu(ltp->bestcount);
 	bestp = xfs_dir2_leaf_bests_p(ltp);
 
-	if (xfs_sb_version_hascrc(&sc->mp->m_sb)) {
+	if (xfs_has_crc(sc->mp)) {
 		struct xfs_dir3_leaf_hdr	*hdr3 = bp->b_addr;
 
 		if (hdr3->pad != cpu_to_be32(0))
@@ -624,7 +624,7 @@ xchk_directory_free_bestfree(
 		return error;
 	xchk_buffer_recheck(sc, bp);
 
-	if (xfs_sb_version_hascrc(&sc->mp->m_sb)) {
+	if (xfs_has_crc(sc->mp)) {
 		struct xfs_dir3_free_hdr	*hdr3 = bp->b_addr;
 
 		if (hdr3->pad != cpu_to_be32(0))
