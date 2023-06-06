@@ -1405,14 +1405,17 @@ static int iocg_wake_fn(struct wait_queue_entry *wq_entry, unsigned mode,
 {
 	struct iocg_wait *wait = container_of(wq_entry, struct iocg_wait, wait);
 	struct iocg_wake_ctx *ctx = (struct iocg_wake_ctx *)key;
-	u64 cost = abs_cost_to_cost(wait->abs_cost, ctx->hw_inuse);
 
-	ctx->vbudget -= cost;
+	if (ctx->iocg->online) {
+		u64 cost = abs_cost_to_cost(wait->abs_cost, ctx->hw_inuse);
 
-	if (ctx->vbudget < 0)
-		return -1;
+		ctx->vbudget -= cost;
+		if (ctx->vbudget < 0)
+			return -1;
 
-	iocg_commit_bio(ctx->iocg, wait->bio, wait->abs_cost, cost);
+		iocg_commit_bio(ctx->iocg, wait->bio, wait->abs_cost, cost);
+	}
+
 	wait->committed = true;
 
 	/*
@@ -2982,7 +2985,9 @@ static void ioc_pd_offline(struct blkg_policy_data *pd)
 	unsigned long flags;
 
 	if (ioc) {
-		spin_lock_irqsave(&ioc->lock, flags);
+		struct iocg_wake_ctx ctx = { .iocg = iocg };
+
+		iocg_lock(iocg, true, &flags);
 
 		iocg->online = false;
 
@@ -2997,9 +3002,10 @@ static void ioc_pd_offline(struct blkg_policy_data *pd)
 		WARN_ON_ONCE(!list_empty(&iocg->walk_list));
 		WARN_ON_ONCE(!list_empty(&iocg->surplus_list));
 
-		spin_unlock_irqrestore(&ioc->lock, flags);
+		iocg_unlock(iocg, true, &flags);
 
 		hrtimer_cancel(&iocg->waitq_timer);
+		__wake_up(&iocg->waitq, TASK_NORMAL, 0, &ctx);
 	}
 }
 
