@@ -140,6 +140,11 @@ static int __init cpufreq_init(void)
 {
 	int ret;
 
+	if (is_in_guest()) {
+		pr_warn("Now sw_64 CPUFreq does not support virtual machines\n");
+		return -ENODEV;
+	}
+
 	/* Register platform stuff */
 	ret = platform_driver_register(&platform_driver);
 	if (ret)

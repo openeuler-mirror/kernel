@@ -257,18 +257,17 @@ static inline cputime64_t sw64_get_idle_time(cputime64_t *wall)
 
 static cputime64_t get_min_busy_time(cputime64_t arr[], int size)
 {
-	int loop, min_idx;
+	int i, min_cpu_idx;
 	cputime64_t min_time = arr[0];
 
-	for (loop = 1; loop < size; loop++) {
-		if (arr[loop] > 0) {
-			if (arr[loop] < min_time) {
-				min_time = arr[loop];
-				min_idx = loop;
-			}
+	for (i = 0; i < size; i++) {
+		if (arr[i] > 0 && arr[i] < min_time) {
+			min_time = arr[i];
+			min_cpu_idx = i;
 		}
 	}
-	return min_idx;
+
+	return min_cpu_idx;
 }
 
 static int find_min_busy_cpu(void)
@@ -284,8 +283,6 @@ static int find_min_busy_cpu(void)
 		b_time[cpus] = busy_time;
 	}
 	target_cpu = get_min_busy_time(b_time, nr_all_cpus);
-	pr_info("The target_cpu is %d, the cpu_num is %d\n",
-			target_cpu, num_online_cpus() - 1);
 	return target_cpu;
 }
 
@@ -321,6 +318,8 @@ static void decrease_cores(int cur_cpus)
 		per_cpu(cpu_adjusting, dev->id) = -1;
 		lock_device_hotplug();
 		cpu_device_down(dev);
+		pr_info("The target_cpu is %d. After cpu_down, the cpu_num is %d\n",
+				cur_cpus, num_online_cpus());
 		get_cpu_device(dev->id)->offline = true;
 		unlock_device_hotplug();
 		per_cpu(cpu_adjusting, dev->id) = 0;
@@ -452,7 +451,7 @@ static int __init cpuautoplug_init(void)
 
 	ap_info.maxcpus =
 		setup_max_cpus > nr_cpu_ids ? nr_cpu_ids : setup_max_cpus;
-	ap_info.mincpus = 16;
+	ap_info.mincpus = ap_info.maxcpus / 4;
 	ap_info.dec_reqs = 0;
 	ap_info.inc_reqs = 0;
 	ap_info.sampling_rate = 720;  /* 720ms */
