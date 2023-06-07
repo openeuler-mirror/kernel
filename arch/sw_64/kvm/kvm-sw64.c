@@ -39,19 +39,8 @@ extern bool bind_vcpu_enabled;
 #define HARDWARE_VPN_MASK	((1UL << WIDTH_HARDWARE_VPN) - 1)
 #define VPN_SHIFT		(64 - WIDTH_HARDWARE_VPN)
 
-#define VCPU_STAT(n, x, ...) \
-	{ n, offsetof(struct kvm_vcpu, stat.x), KVM_STAT_VCPU, ##  __VA_ARGS__ }
-#define VM_STAT(n, x, ...) \
-	{ n, offsetof(struct kvm, stat.x), KVM_STAT_VM, ## __VA_ARGS__ }
 #define DFX_STAT(n, x, ...) \
 	{ n, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64, ## __VA_ARGS__ }
-
-static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_running_vcpu);
-
-static void kvm_set_running_vcpu(struct kvm_vcpu *vcpu)
-{
-	__this_cpu_write(kvm_running_vcpu, vcpu);
-}
 
 int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
 {
@@ -272,7 +261,7 @@ void kvm_arch_commit_memory_region(struct kvm *kvm,
 {
 	/*
 	 * At this point memslot has been committed and there is an
-	 * allocated dirty_bitmap[], dirty pages will be be tracked while the
+	 * allocated dirty_bitmap[], dirty pages will be tracked while the
 	 * memory slot is write protected.
 	 */
 
@@ -597,7 +586,6 @@ static void update_steal_time(struct kvm_vcpu *vcpu)
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	vcpu->cpu = cpu;
-	kvm_set_running_vcpu(vcpu);
 	update_steal_time(vcpu);
 }
 
@@ -609,7 +597,6 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	 * optimized make_all_cpus_request path.
 	 */
 	vcpu->cpu = -1;
-	kvm_set_running_vcpu(NULL);
 }
 
 int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
@@ -656,7 +643,7 @@ void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
 	disp16 = insn & 0xffff;
 
 	if (opc == 0x06 && disp16 == 0x1000) /* RD_F */
-		pr_info("vcpu exit: pc = %#lx (%px), insn[%x] : rd_f r%d [%#lx]\n",
+		pr_info("vcpu exit: pc = %#lx (%p), insn[%x] : rd_f r%d [%#lx]\n",
 				pc, pc_phys, insn, ra, vcpu_get_reg(vcpu, ra));
 }
 
