@@ -53,7 +53,6 @@
 #define QM_MB_OP_SHIFT			14
 #define QM_MB_CMD_DATA_ADDR_L		0x304
 #define QM_MB_CMD_DATA_ADDR_H		0x308
-#define QM_MB_MAX_WAIT_CNT		6000
 
 /* doorbell */
 #define QM_DOORBELL_CMD_SQ              0
@@ -534,10 +533,6 @@ pci_ers_result_t hisi_qm_dev_err_detected(struct pci_dev *pdev,
 pci_ers_result_t hisi_qm_dev_slot_reset(struct pci_dev *pdev);
 void hisi_qm_reset_prepare(struct pci_dev *pdev);
 void hisi_qm_reset_done(struct pci_dev *pdev);
-
-int hisi_qm_wait_mb_ready(struct hisi_qm *qm);
-int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
-	       bool op);
 
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,

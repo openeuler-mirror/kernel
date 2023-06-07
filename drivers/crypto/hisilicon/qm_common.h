@@ -82,5 +82,6 @@ void hisi_qm_ctx_free(struct hisi_qm *qm, size_t ctx_size,
 		      const void *ctx_addr, dma_addr_t *dma_addr);
 void hisi_qm_show_last_dfx_regs(struct hisi_qm *qm);
 void hisi_qm_set_algqos_init(struct hisi_qm *qm);
+int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue, bool op);
 
 #endif
