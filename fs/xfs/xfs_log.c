@@ -1809,7 +1809,8 @@ xlog_write_iclog(
 		 * but it *must* complete before we issue the external log IO.
 		 */
 		if (log->l_targ != log->l_mp->m_ddev_targp)
-			xfs_blkdev_issue_flush(log->l_mp->m_ddev_targp);
+			blkdev_issue_flush(log->l_mp->m_ddev_targp->bt_bdev,
+					   GFP_NOFS);
 	}
 	if (iclog->ic_flags & XLOG_ICL_NEED_FUA)
 		iclog->ic_bio.bi_opf |= REQ_FUA;
