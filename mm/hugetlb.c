@@ -2025,6 +2025,13 @@ retry:
 	if (!PageHuge(page))
 		return 0;
 
+	/*
+	 * the page belong to dynamic hugetlb will be isolated as a whole
+	 * when free. See free_huge_page_to_dhugetlb_pool() for detail.
+	 */
+	if (page_belong_to_dynamic_hugetlb(page))
+		return -EBUSY;
+
 	spin_lock_irq(&hugetlb_lock);
 	if (!PageHuge(page)) {
 		rc = 0;

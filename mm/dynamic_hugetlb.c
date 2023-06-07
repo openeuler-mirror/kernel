@@ -448,6 +448,19 @@ static struct dhugetlb_pool *find_hpool_by_dhugetlb_pagelist(struct page *page)
 	return hpool;
 }
 
+bool page_belong_to_dynamic_hugetlb(struct page *page)
+{
+	struct dhugetlb_pool *hpool;
+
+	if (!dhugetlb_enabled)
+		return false;
+
+	hpool = find_hpool_by_dhugetlb_pagelist(page);
+	if (hpool)
+		return true;
+	return false;
+}
+
 static struct dhugetlb_pool *find_hpool_by_task(struct task_struct *tsk)
 {
 	struct mem_cgroup *memcg;
@@ -740,8 +753,15 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	}
 
 	spin_lock(&hpool->lock);
+	/*
+	 * memory_failure will free the hwpoison hugepage, and then try to
+	 * dissolve it and free subpage to buddy system. Since the page in
+	 * dhugetlb_pool should not free to buudy system, we isolate the
+	 * hugepage here directly, and skip the latter dissolution.
+	 */
+	if (PageHWPoison(page))
+		goto out;
 	ClearPagePool(page);
-	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
 	if (hstate_is_gigantic(h))
 		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
 	else
@@ -757,6 +777,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	}
 	trace_dynamic_hugetlb_alloc_free(hpool, page, hpages_pool->free_huge_pages,
 					 DHUGETLB_FREE, huge_page_size(h));
+out:
 	spin_unlock(&hpool->lock);
 	put_hpool(hpool);
 }
