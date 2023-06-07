@@ -632,13 +632,13 @@ extern char *disk_name (struct gendisk *hd, int partno, char *buf);
 extern int disk_expand_part_tbl(struct gendisk *disk, int target);
 extern int rescan_partitions(struct gendisk *disk, struct block_device *bdev);
 extern int invalidate_partitions(struct gendisk *disk, struct block_device *bdev);
-extern struct hd_struct * __must_check add_partition(struct gendisk *disk,
-						     int partno, sector_t start,
-						     sector_t len, int flags,
-						     struct partition_meta_info
-						       *info);
 extern void __delete_partition(struct percpu_ref *);
 extern void delete_partition(struct gendisk *, int);
+int bdev_add_partition(struct block_device *bdev, int partno,
+		sector_t start, sector_t length);
+int bdev_del_partition(struct block_device *bdev, int partno);
+int bdev_resize_partition(struct block_device *bdev, int partno,
+		sector_t start, sector_t length);
 extern void printk_all_partitions(void);
 
 extern struct gendisk *__alloc_disk_node(int minors, int node_id);
