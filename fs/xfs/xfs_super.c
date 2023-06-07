@@ -83,15 +83,15 @@ xfs_mount_set_dax_mode(
 {
 	switch (mode) {
 	case XFS_DAX_INODE:
-		mp->m_flags &= ~(XFS_MOUNT_DAX_ALWAYS | XFS_MOUNT_DAX_NEVER);
+		mp->m_features &= ~(XFS_FEAT_DAX_ALWAYS | XFS_FEAT_DAX_NEVER);
 		break;
 	case XFS_DAX_ALWAYS:
-		mp->m_flags |= XFS_MOUNT_DAX_ALWAYS;
-		mp->m_flags &= ~XFS_MOUNT_DAX_NEVER;
+		mp->m_features |= XFS_FEAT_DAX_ALWAYS;
+		mp->m_features &= ~XFS_FEAT_DAX_NEVER;
 		break;
 	case XFS_DAX_NEVER:
-		mp->m_flags |= XFS_MOUNT_DAX_NEVER;
-		mp->m_flags &= ~XFS_MOUNT_DAX_ALWAYS;
+		mp->m_features |= XFS_FEAT_DAX_NEVER;
+		mp->m_features &= ~XFS_FEAT_DAX_ALWAYS;
 		break;
 	}
 }
@@ -175,33 +175,32 @@ xfs_fs_show_options(
 {
 	static struct proc_xfs_info xfs_info_set[] = {
 		/* the few simple ones we can get from the mount struct */
-		{ XFS_MOUNT_IKEEP,		",ikeep" },
-		{ XFS_MOUNT_WSYNC,		",wsync" },
-		{ XFS_MOUNT_NOALIGN,		",noalign" },
-		{ XFS_MOUNT_SWALLOC,		",swalloc" },
-		{ XFS_MOUNT_NOUUID,		",nouuid" },
-		{ XFS_MOUNT_NORECOVERY,		",norecovery" },
-		{ XFS_MOUNT_ATTR2,		",attr2" },
-		{ XFS_MOUNT_FILESTREAMS,	",filestreams" },
-		{ XFS_MOUNT_GRPID,		",grpid" },
-		{ XFS_MOUNT_DISCARD,		",discard" },
-		{ XFS_MOUNT_LARGEIO,		",largeio" },
-		{ XFS_MOUNT_DAX_ALWAYS,		",dax=always" },
-		{ XFS_MOUNT_DAX_NEVER,		",dax=never" },
+		{ XFS_FEAT_IKEEP,		",ikeep" },
+		{ XFS_FEAT_WSYNC,		",wsync" },
+		{ XFS_FEAT_NOALIGN,		",noalign" },
+		{ XFS_FEAT_SWALLOC,		",swalloc" },
+		{ XFS_FEAT_NOUUID,		",nouuid" },
+		{ XFS_FEAT_NORECOVERY,		",norecovery" },
+		{ XFS_FEAT_ATTR2,		",attr2" },
+		{ XFS_FEAT_FILESTREAMS,		",filestreams" },
+		{ XFS_FEAT_GRPID,		",grpid" },
+		{ XFS_FEAT_DISCARD,		",discard" },
+		{ XFS_FEAT_LARGE_IOSIZE,	",largeio" },
+		{ XFS_FEAT_DAX_ALWAYS,		",dax=always" },
+		{ XFS_FEAT_DAX_NEVER,		",dax=never" },
 		{ 0, NULL }
 	};
 	struct xfs_mount	*mp = XFS_M(root->d_sb);
 	struct proc_xfs_info	*xfs_infop;
 
 	for (xfs_infop = xfs_info_set; xfs_infop->flag; xfs_infop++) {
-		if (mp->m_flags & xfs_infop->flag)
+		if (mp->m_features & xfs_infop->flag)
 			seq_puts(m, xfs_infop->str);
 	}
 
-	seq_printf(m, ",inode%d",
-		(mp->m_flags & XFS_MOUNT_SMALL_INUMS) ? 32 : 64);
+	seq_printf(m, ",inode%d", xfs_has_small_inums(mp) ? 32 : 64);
 
-	if (mp->m_flags & XFS_MOUNT_ALLOCSIZE)
+	if (xfs_has_allocsize(mp))
 		seq_printf(m, ",allocsize=%dk",
 			   (1 << mp->m_allocsize_log) >> 10);
 
@@ -246,11 +245,11 @@ xfs_fs_show_options(
 /*
  * Set parameters for inode allocation heuristics, taking into account
  * filesystem size and inode32/inode64 mount options; i.e. specifically
- * whether or not XFS_MOUNT_SMALL_INUMS is set.
+ * whether or not XFS_FEAT_SMALL_INUMS is set.
  *
  * Inode allocation patterns are altered only if inode32 is requested
- * (XFS_MOUNT_SMALL_INUMS), and the filesystem is sufficiently large.
- * If altered, XFS_MOUNT_32BITINODES is set as well.
+ * (XFS_FEAT_SMALL_INUMS), and the filesystem is sufficiently large.
+ * If altered, XFS_OPSTATE_INODE32 is set as well.
  *
  * An agcount independent of that in the mount structure is provided
  * because in the growfs case, mp->m_sb.sb_agcount is not yet updated
@@ -292,13 +291,13 @@ xfs_set_inode_alloc(
 
 	/*
 	 * If user asked for no more than 32-bit inodes, and the fs is
-	 * sufficiently large, set XFS_MOUNT_32BITINODES if we must alter
+	 * sufficiently large, set XFS_OPSTATE_INODE32 if we must alter
 	 * the allocator to accommodate the request.
 	 */
-	if ((mp->m_flags & XFS_MOUNT_SMALL_INUMS) && ino > XFS_MAXINUMBER_32)
-		mp->m_flags |= XFS_MOUNT_32BITINODES;
+	if (xfs_has_small_inums(mp) && ino > XFS_MAXINUMBER_32)
+		set_bit(XFS_OPSTATE_INODE32, &mp->m_opstate);
 	else
-		mp->m_flags &= ~XFS_MOUNT_32BITINODES;
+		clear_bit(XFS_OPSTATE_INODE32, &mp->m_opstate);
 
 	for (index = 0; index < agcount; index++) {
 		struct xfs_perag	*pag;
@@ -307,7 +306,7 @@ xfs_set_inode_alloc(
 
 		pag = xfs_perag_get(mp, index);
 
-		if (mp->m_flags & XFS_MOUNT_32BITINODES) {
+		if (xfs_is_inode32(mp)) {
 			if (ino > XFS_MAXINUMBER_32) {
 				pag->pagi_inodeok = 0;
 				pag->pagf_metadata = 0;
@@ -327,7 +326,7 @@ xfs_set_inode_alloc(
 		xfs_perag_put(pag);
 	}
 
-	return (mp->m_flags & XFS_MOUNT_32BITINODES) ? maxagi : agcount;
+	return xfs_is_inode32(mp) ? maxagi : agcount;
 }
 
 STATIC int
@@ -491,7 +490,7 @@ xfs_setup_devices(
 	if (mp->m_logdev_targp && mp->m_logdev_targp != mp->m_ddev_targp) {
 		unsigned int	log_sector_size = BBSIZE;
 
-		if (xfs_sb_version_hassector(&mp->m_sb))
+		if (xfs_has_sector(mp))
 			log_sector_size = mp->m_sb.sb_logsectsize;
 		error = xfs_setsize_buftarg(mp->m_logdev_targp,
 					    log_sector_size);
@@ -936,7 +935,7 @@ xfs_fs_freeze(
 	 * here, so we can restart safely without racing with a stop in
 	 * xfs_fs_sync_fs().
 	 */
-	if (ret && !(mp->m_flags & XFS_MOUNT_RDONLY)) {
+	if (ret && !xfs_is_readonly(mp)) {
 		xfs_blockgc_start(mp);
 		xfs_inodegc_start(mp);
 	}
@@ -959,7 +958,7 @@ xfs_fs_unfreeze(
 	 * worker because there are no speculative preallocations on a readonly
 	 * filesystem.
 	 */
-	if (!(mp->m_flags & XFS_MOUNT_RDONLY)) {
+	if (!xfs_is_readonly(mp)) {
 		xfs_blockgc_start(mp);
 		xfs_inodegc_start(mp);
 	}
@@ -975,10 +974,8 @@ STATIC int
 xfs_finish_flags(
 	struct xfs_mount	*mp)
 {
-	int			ronly = (mp->m_flags & XFS_MOUNT_RDONLY);
-
 	/* Fail a mount where the logbuf is smaller than the log stripe */
-	if (xfs_sb_version_haslogv2(&mp->m_sb)) {
+	if (xfs_has_logv2(mp)) {
 		if (mp->m_logbsize <= 0 &&
 		    mp->m_sb.sb_logsunit > XLOG_BIG_RECORD_BSIZE) {
 			mp->m_logbsize = mp->m_sb.sb_logsunit;
@@ -1000,25 +997,16 @@ xfs_finish_flags(
 	/*
 	 * V5 filesystems always use attr2 format for attributes.
 	 */
-	if (xfs_sb_version_hascrc(&mp->m_sb) &&
-	    (mp->m_flags & XFS_MOUNT_NOATTR2)) {
+	if (xfs_has_crc(mp) && xfs_has_noattr2(mp)) {
 		xfs_warn(mp, "Cannot mount a V5 filesystem as noattr2. "
 			     "attr2 is always enabled for V5 filesystems.");
 		return -EINVAL;
 	}
 
 	/*
-	 * mkfs'ed attr2 will turn on attr2 mount unless explicitly
-	 * told by noattr2 to turn it off
-	 */
-	if (xfs_sb_version_hasattr2(&mp->m_sb) &&
-	    !(mp->m_flags & XFS_MOUNT_NOATTR2))
-		mp->m_flags |= XFS_MOUNT_ATTR2;
-
-	/*
 	 * prohibit r/w mounts of read-only filesystems
 	 */
-	if ((mp->m_sb.sb_flags & XFS_SBF_READONLY) && !ronly) {
+	if ((mp->m_sb.sb_flags & XFS_SBF_READONLY) && !xfs_is_readonly(mp)) {
 		xfs_warn(mp,
 			"cannot mount a read-only filesystem as read-write");
 		return -EROFS;
@@ -1026,7 +1014,7 @@ xfs_finish_flags(
 
 	if ((mp->m_qflags & XFS_GQUOTA_ACCT) &&
 	    (mp->m_qflags & XFS_PQUOTA_ACCT) &&
-	    !xfs_sb_version_has_pquotino(&mp->m_sb)) {
+	    !xfs_has_pquotino(mp)) {
 		xfs_warn(mp,
 		  "Super block does not support project and group quota together");
 		return -EINVAL;
@@ -1084,7 +1072,7 @@ xfs_destroy_percpu_counters(
 	percpu_counter_destroy(&mp->m_icount);
 	percpu_counter_destroy(&mp->m_ifree);
 	percpu_counter_destroy(&mp->m_fdblocks);
-	ASSERT(XFS_FORCED_SHUTDOWN(mp) ||
+	ASSERT(xfs_is_shutdown(mp) ||
 	       percpu_counter_sum(&mp->m_delalloc_blks) == 0);
 	percpu_counter_destroy(&mp->m_delalloc_blks);
 }
@@ -1224,7 +1212,7 @@ xfs_fs_warn_deprecated(
 	 * already had the flag set
 	 */
 	if ((fc->purpose & FS_CONTEXT_FOR_RECONFIGURE) &&
-			!!(XFS_M(fc->root->d_sb)->m_flags & flag) == value)
+		!!(XFS_M(fc->root->d_sb)->m_features & flag) == value)
 		return;
 	xfs_warn(fc->s_fs_info, "%s mount option is deprecated.", param->key);
 }
@@ -1272,27 +1260,27 @@ xfs_fc_parse_param(
 		if (suffix_kstrtoint(param->string, 10, &size))
 			return -EINVAL;
 		parsing_mp->m_allocsize_log = ffs(size) - 1;
-		parsing_mp->m_flags |= XFS_MOUNT_ALLOCSIZE;
+		parsing_mp->m_features |= XFS_FEAT_ALLOCSIZE;
 		return 0;
 	case Opt_grpid:
 	case Opt_bsdgroups:
-		parsing_mp->m_flags |= XFS_MOUNT_GRPID;
+		parsing_mp->m_features |= XFS_FEAT_GRPID;
 		return 0;
 	case Opt_nogrpid:
 	case Opt_sysvgroups:
-		parsing_mp->m_flags &= ~XFS_MOUNT_GRPID;
+		parsing_mp->m_features &= ~XFS_FEAT_GRPID;
 		return 0;
 	case Opt_wsync:
-		parsing_mp->m_flags |= XFS_MOUNT_WSYNC;
+		parsing_mp->m_features |= XFS_FEAT_WSYNC;
 		return 0;
 	case Opt_norecovery:
-		parsing_mp->m_flags |= XFS_MOUNT_NORECOVERY;
+		parsing_mp->m_features |= XFS_FEAT_NORECOVERY;
 		return 0;
 	case Opt_noalign:
-		parsing_mp->m_flags |= XFS_MOUNT_NOALIGN;
+		parsing_mp->m_features |= XFS_FEAT_NOALIGN;
 		return 0;
 	case Opt_swalloc:
-		parsing_mp->m_flags |= XFS_MOUNT_SWALLOC;
+		parsing_mp->m_features |= XFS_FEAT_SWALLOC;
 		return 0;
 	case Opt_sunit:
 		parsing_mp->m_dalign = result.uint_32;
@@ -1301,22 +1289,22 @@ xfs_fc_parse_param(
 		parsing_mp->m_swidth = result.uint_32;
 		return 0;
 	case Opt_inode32:
-		parsing_mp->m_flags |= XFS_MOUNT_SMALL_INUMS;
+		parsing_mp->m_features |= XFS_FEAT_SMALL_INUMS;
 		return 0;
 	case Opt_inode64:
-		parsing_mp->m_flags &= ~XFS_MOUNT_SMALL_INUMS;
+		parsing_mp->m_features &= ~XFS_FEAT_SMALL_INUMS;
 		return 0;
 	case Opt_nouuid:
-		parsing_mp->m_flags |= XFS_MOUNT_NOUUID;
+		parsing_mp->m_features |= XFS_FEAT_NOUUID;
 		return 0;
 	case Opt_largeio:
-		parsing_mp->m_flags |= XFS_MOUNT_LARGEIO;
+		parsing_mp->m_features |= XFS_FEAT_LARGE_IOSIZE;
 		return 0;
 	case Opt_nolargeio:
-		parsing_mp->m_flags &= ~XFS_MOUNT_LARGEIO;
+		parsing_mp->m_features &= ~XFS_FEAT_LARGE_IOSIZE;
 		return 0;
 	case Opt_filestreams:
-		parsing_mp->m_flags |= XFS_MOUNT_FILESTREAMS;
+		parsing_mp->m_features |= XFS_FEAT_FILESTREAMS;
 		return 0;
 	case Opt_noquota:
 		parsing_mp->m_qflags &= ~XFS_ALL_QUOTA_ACCT;
@@ -1349,10 +1337,10 @@ xfs_fc_parse_param(
 		parsing_mp->m_qflags &= ~XFS_GQUOTA_ENFD;
 		return 0;
 	case Opt_discard:
-		parsing_mp->m_flags |= XFS_MOUNT_DISCARD;
+		parsing_mp->m_features |= XFS_FEAT_DISCARD;
 		return 0;
 	case Opt_nodiscard:
-		parsing_mp->m_flags &= ~XFS_MOUNT_DISCARD;
+		parsing_mp->m_features &= ~XFS_FEAT_DISCARD;
 		return 0;
 #ifdef CONFIG_FS_DAX
 	case Opt_dax:
@@ -1364,21 +1352,20 @@ xfs_fc_parse_param(
 #endif
 	/* Following mount options will be removed in September 2025 */
 	case Opt_ikeep:
-		xfs_fs_warn_deprecated(fc, param, XFS_MOUNT_IKEEP, true);
-		parsing_mp->m_flags |= XFS_MOUNT_IKEEP;
+		xfs_fs_warn_deprecated(fc, param, XFS_FEAT_IKEEP, true);
+		parsing_mp->m_features |= XFS_FEAT_IKEEP;
 		return 0;
 	case Opt_noikeep:
-		xfs_fs_warn_deprecated(fc, param, XFS_MOUNT_IKEEP, false);
-		parsing_mp->m_flags &= ~XFS_MOUNT_IKEEP;
+		xfs_fs_warn_deprecated(fc, param, XFS_FEAT_IKEEP, false);
+		parsing_mp->m_features &= ~XFS_FEAT_IKEEP;
 		return 0;
 	case Opt_attr2:
-		xfs_fs_warn_deprecated(fc, param, XFS_MOUNT_ATTR2, true);
-		parsing_mp->m_flags |= XFS_MOUNT_ATTR2;
+		xfs_fs_warn_deprecated(fc, param, XFS_FEAT_ATTR2, true);
+		parsing_mp->m_features |= XFS_FEAT_ATTR2;
 		return 0;
 	case Opt_noattr2:
-		xfs_fs_warn_deprecated(fc, param, XFS_MOUNT_NOATTR2, true);
-		parsing_mp->m_flags &= ~XFS_MOUNT_ATTR2;
-		parsing_mp->m_flags |= XFS_MOUNT_NOATTR2;
+		xfs_fs_warn_deprecated(fc, param, XFS_FEAT_NOATTR2, true);
+		parsing_mp->m_features |= XFS_FEAT_NOATTR2;
 		return 0;
 	default:
 		xfs_warn(parsing_mp, "unknown mount option [%s].", param->key);
@@ -1392,17 +1379,23 @@ static int
 xfs_fc_validate_params(
 	struct xfs_mount	*mp)
 {
-	/*
-	 * no recovery flag requires a read-only mount
-	 */
-	if ((mp->m_flags & XFS_MOUNT_NORECOVERY) &&
-	    !(mp->m_flags & XFS_MOUNT_RDONLY)) {
+	/* No recovery flag requires a read-only mount */
+	if (xfs_has_norecovery(mp) && !xfs_is_readonly(mp)) {
 		xfs_warn(mp, "no-recovery mounts must be read-only.");
 		return -EINVAL;
 	}
 
-	if ((mp->m_flags & XFS_MOUNT_NOALIGN) &&
-	    (mp->m_dalign || mp->m_swidth)) {
+	/*
+	 * We have not read the superblock at this point, so only the attr2
+	 * mount option can set the attr2 feature by this stage.
+	 */
+	if (xfs_has_attr2(mp) && xfs_has_noattr2(mp)) {
+		xfs_warn(mp, "attr2 and noattr2 cannot both be specified.");
+		return -EINVAL;
+	}
+
+
+	if (xfs_has_noalign(mp) && (mp->m_dalign || mp->m_swidth)) {
 		xfs_warn(mp,
 	"sunit and swidth options incompatible with the noalign option");
 		return -EINVAL;
@@ -1446,7 +1439,7 @@ xfs_fc_validate_params(
 		return -EINVAL;
 	}
 
-	if ((mp->m_flags & XFS_MOUNT_ALLOCSIZE) &&
+	if (xfs_has_allocsize(mp) &&
 	    (mp->m_allocsize_log > XFS_MAX_IO_LOG ||
 	     mp->m_allocsize_log < XFS_MIN_IO_LOG)) {
 		xfs_warn(mp, "invalid log iosize: %d [not %d-%d]",
@@ -1538,7 +1531,7 @@ xfs_fc_fill_super(
 		goto out_free_sb;
 
 	/* V4 support is undergoing deprecation. */
-	if (!xfs_sb_version_hascrc(&mp->m_sb)) {
+	if (!xfs_has_crc(mp)) {
 #ifdef CONFIG_XFS_SUPPORT_V4
 		xfs_warn_once(mp,
 	"Deprecated V4 format (crc=0) will not be supported after September 2030.");
@@ -1616,7 +1609,7 @@ xfs_fc_fill_super(
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
 	sb->s_max_links = XFS_MAXLINK;
 	sb->s_time_gran = 1;
-	if (xfs_sb_version_hasbigtime(&mp->m_sb)) {
+	if (xfs_has_bigtime(mp)) {
 		sb->s_time_min = xfs_bigtime_to_unix(XFS_BIGTIME_TIME_MIN);
 		sb->s_time_max = xfs_bigtime_to_unix(XFS_BIGTIME_TIME_MAX);
 	} else {
@@ -1629,14 +1622,14 @@ xfs_fc_fill_super(
 	set_posix_acl_flag(sb);
 
 	/* version 5 superblocks support inode version counters. */
-	if (XFS_SB_VERSION_NUM(&mp->m_sb) == XFS_SB_VERSION_5)
+	if (xfs_has_crc(mp))
 		sb->s_flags |= SB_I_VERSION;
 
-	if (xfs_sb_version_hasbigtime(&mp->m_sb))
+	if (xfs_has_bigtime(mp))
 		xfs_warn(mp,
  "EXPERIMENTAL big timestamp feature in use. Use at your own risk!");
 
-	if (mp->m_flags & XFS_MOUNT_DAX_ALWAYS) {
+	if (xfs_has_dax_always(mp)) {
 		bool rtdev_is_dax = false, datadev_is_dax;
 
 		xfs_warn(mp,
@@ -1652,7 +1645,7 @@ xfs_fc_fill_super(
 			"DAX unsupported by block device. Turning off DAX.");
 			xfs_mount_set_dax_mode(mp, XFS_DAX_NEVER);
 		}
-		if (xfs_sb_version_hasreflink(&mp->m_sb)) {
+		if (xfs_has_reflink(mp)) {
 			xfs_alert(mp,
 		"DAX and reflink cannot be used together!");
 			error = -EINVAL;
@@ -1660,17 +1653,17 @@ xfs_fc_fill_super(
 		}
 	}
 
-	if (mp->m_flags & XFS_MOUNT_DISCARD) {
+	if (xfs_has_discard(mp)) {
 		struct request_queue *q = bdev_get_queue(sb->s_bdev);
 
 		if (!blk_queue_discard(q)) {
 			xfs_warn(mp, "mounting with \"discard\" option, but "
 					"the device does not support discard");
-			mp->m_flags &= ~XFS_MOUNT_DISCARD;
+			mp->m_features &= ~XFS_FEAT_DISCARD;
 		}
 	}
 
-	if (xfs_sb_version_hasreflink(&mp->m_sb)) {
+	if (xfs_has_reflink(mp)) {
 		if (mp->m_sb.sb_rblocks) {
 			xfs_alert(mp,
 	"reflink not compatible with realtime device!");
@@ -1684,14 +1677,14 @@ xfs_fc_fill_super(
 		}
 	}
 
-	if (xfs_sb_version_hasrmapbt(&mp->m_sb) && mp->m_sb.sb_rblocks) {
+	if (xfs_has_rmapbt(mp) && mp->m_sb.sb_rblocks) {
 		xfs_alert(mp,
 	"reverse mapping btree not compatible with realtime device!");
 		error = -EINVAL;
 		goto out_filestream_unmount;
 	}
 
-	if (xfs_sb_version_hasinobtcounts(&mp->m_sb))
+	if (xfs_has_inobtcounts(mp))
 		xfs_warn(mp,
  "EXPERIMENTAL inode btree counters feature in use. Use at your own risk!");
 
@@ -1752,13 +1745,13 @@ xfs_remount_rw(
 	struct xfs_sb		*sbp = &mp->m_sb;
 	int error;
 
-	if (mp->m_flags & XFS_MOUNT_NORECOVERY) {
+	if (xfs_has_norecovery(mp)) {
 		xfs_warn(mp,
 			"ro->rw transition prohibited on norecovery mount");
 		return -EINVAL;
 	}
 
-	if (XFS_SB_VERSION_NUM(sbp) == XFS_SB_VERSION_5 &&
+	if (xfs_sb_is_v5(sbp) &&
 	    xfs_sb_has_ro_compat_feature(sbp, XFS_SB_FEAT_RO_COMPAT_UNKNOWN)) {
 		xfs_warn(mp,
 	"ro->rw transition prohibited on unknown (0x%x) ro-compat filesystem",
@@ -1767,7 +1760,7 @@ xfs_remount_rw(
 		return -EINVAL;
 	}
 
-	mp->m_flags &= ~XFS_MOUNT_RDONLY;
+	clear_bit(XFS_OPSTATE_READONLY, &mp->m_opstate);
 
 	/*
 	 * If this is the first remount to writeable state we might have some
@@ -1859,7 +1852,7 @@ xfs_remount_ro(
 	xfs_save_resvblks(mp);
 
 	xfs_quiesce_attr(mp);
-	mp->m_flags |= XFS_MOUNT_RDONLY;
+	set_bit(XFS_OPSTATE_READONLY, &mp->m_opstate);
 
 	return 0;
 }
@@ -1882,12 +1875,11 @@ xfs_fc_reconfigure(
 {
 	struct xfs_mount	*mp = XFS_M(fc->root->d_sb);
 	struct xfs_mount        *new_mp = fc->s_fs_info;
-	xfs_sb_t		*sbp = &mp->m_sb;
 	int			flags = fc->sb_flags;
 	int			error;
 
 	/* version 5 superblocks always support version counters. */
-	if (XFS_SB_VERSION_NUM(&mp->m_sb) == XFS_SB_VERSION_5)
+	if (xfs_has_crc(mp))
 		fc->sb_flags |= SB_I_VERSION;
 
 	error = xfs_fc_validate_params(new_mp);
@@ -1895,28 +1887,26 @@ xfs_fc_reconfigure(
 		return error;
 
 	/* inode32 -> inode64 */
-	if ((mp->m_flags & XFS_MOUNT_SMALL_INUMS) &&
-	    !(new_mp->m_flags & XFS_MOUNT_SMALL_INUMS)) {
-		mp->m_flags &= ~XFS_MOUNT_SMALL_INUMS;
-		mp->m_maxagi = xfs_set_inode_alloc(mp, sbp->sb_agcount);
+	if (xfs_has_small_inums(mp) && !xfs_has_small_inums(new_mp)) {
+		mp->m_features &= ~XFS_FEAT_SMALL_INUMS;
+		mp->m_maxagi = xfs_set_inode_alloc(mp, mp->m_sb.sb_agcount);
 	}
 
 	/* inode64 -> inode32 */
-	if (!(mp->m_flags & XFS_MOUNT_SMALL_INUMS) &&
-	    (new_mp->m_flags & XFS_MOUNT_SMALL_INUMS)) {
-		mp->m_flags |= XFS_MOUNT_SMALL_INUMS;
-		mp->m_maxagi = xfs_set_inode_alloc(mp, sbp->sb_agcount);
+	if (!xfs_has_small_inums(mp) && xfs_has_small_inums(new_mp)) {
+		mp->m_features |= XFS_FEAT_SMALL_INUMS;
+		mp->m_maxagi = xfs_set_inode_alloc(mp, mp->m_sb.sb_agcount);
 	}
 
 	/* ro -> rw */
-	if ((mp->m_flags & XFS_MOUNT_RDONLY) && !(flags & SB_RDONLY)) {
+	if (xfs_is_readonly(mp) && !(flags & SB_RDONLY)) {
 		error = xfs_remount_rw(mp);
 		if (error)
 			return error;
 	}
 
 	/* rw -> ro */
-	if (!(mp->m_flags & XFS_MOUNT_RDONLY) && (flags & SB_RDONLY)) {
+	if (!xfs_is_readonly(mp) && (flags & SB_RDONLY)) {
 		error = xfs_remount_ro(mp);
 		if (error)
 			return error;
@@ -1983,11 +1973,11 @@ static int xfs_init_fs_context(
 	 * Copy binary VFS mount flags we are interested in.
 	 */
 	if (fc->sb_flags & SB_RDONLY)
-		mp->m_flags |= XFS_MOUNT_RDONLY;
+		set_bit(XFS_OPSTATE_READONLY, &mp->m_opstate);
 	if (fc->sb_flags & SB_DIRSYNC)
-		mp->m_flags |= XFS_MOUNT_DIRSYNC;
+		mp->m_features |= XFS_FEAT_DIRSYNC;
 	if (fc->sb_flags & SB_SYNCHRONOUS)
-		mp->m_flags |= XFS_MOUNT_WSYNC;
+		mp->m_features |= XFS_FEAT_WSYNC;
 
 	fc->s_fs_info = mp;
 	fc->ops = &xfs_context_ops;

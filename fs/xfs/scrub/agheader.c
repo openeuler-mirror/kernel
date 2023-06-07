@@ -247,7 +247,7 @@ xchk_superblock(
 			xchk_block_set_corrupt(sc, bp);
 	} else {
 		v2_ok = XFS_SB_VERSION2_OKBITS;
-		if (XFS_SB_VERSION_NUM(&mp->m_sb) >= XFS_SB_VERSION_5)
+		if (xfs_sb_is_v5(&mp->m_sb))
 			v2_ok |= XFS_SB_VERSION2_CRCBIT;
 
 		if (!!(sb->sb_features2 & cpu_to_be32(~v2_ok)))
@@ -272,7 +272,7 @@ xchk_superblock(
 	    (cpu_to_be32(mp->m_sb.sb_features2) & features_mask))
 		xchk_block_set_corrupt(sc, bp);
 
-	if (!xfs_sb_version_hascrc(&mp->m_sb)) {
+	if (!xfs_has_crc(mp)) {
 		/* all v5 fields must be zero */
 		if (memchr_inv(&sb->sb_features_compat, 0,
 				sizeof(struct xfs_dsb) -
@@ -323,7 +323,7 @@ xchk_superblock(
 		/* Don't care about sb_lsn */
 	}
 
-	if (xfs_sb_version_hasmetauuid(&mp->m_sb)) {
+	if (xfs_has_metauuid(mp)) {
 		/* The metadata UUID must be the same for all supers */
 		if (!uuid_equal(&sb->sb_meta_uuid, &mp->m_sb.sb_meta_uuid))
 			xchk_block_set_corrupt(sc, bp);
@@ -418,7 +418,7 @@ xchk_agf_xref_btreeblks(
 	int			error;
 
 	/* agf_btreeblks didn't exist before lazysbcount */
-	if (!xfs_sb_version_haslazysbcount(&sc->mp->m_sb))
+	if (!xfs_has_lazysbcount(sc->mp))
 		return;
 
 	/* Check agf_rmap_blocks; set up for agf_btreeblks check */
@@ -437,7 +437,7 @@ xchk_agf_xref_btreeblks(
 	 * No rmap cursor; we can't xref if we have the rmapbt feature.
 	 * We also can't do it if we're missing the free space btree cursors.
 	 */
-	if ((xfs_sb_version_hasrmapbt(&mp->m_sb) && !sc->sa.rmap_cur) ||
+	if ((xfs_has_rmapbt(mp) && !sc->sa.rmap_cur) ||
 	    !sc->sa.bno_cur || !sc->sa.cnt_cur)
 		return;
 
@@ -554,7 +554,7 @@ xchk_agf(
 	if (level <= 0 || level > XFS_BTREE_MAXLEVELS)
 		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
 
-	if (xfs_sb_version_hasrmapbt(&mp->m_sb)) {
+	if (xfs_has_rmapbt(mp)) {
 		agbno = be32_to_cpu(agf->agf_roots[XFS_BTNUM_RMAP]);
 		if (!xfs_verify_agbno(mp, agno, agbno))
 			xchk_block_set_corrupt(sc, sc->sa.agf_bp);
@@ -564,7 +564,7 @@ xchk_agf(
 			xchk_block_set_corrupt(sc, sc->sa.agf_bp);
 	}
 
-	if (xfs_sb_version_hasreflink(&mp->m_sb)) {
+	if (xfs_has_reflink(mp)) {
 		agbno = be32_to_cpu(agf->agf_refcount_root);
 		if (!xfs_verify_agbno(mp, agno, agbno))
 			xchk_block_set_corrupt(sc, sc->sa.agf_bp);
@@ -591,7 +591,7 @@ xchk_agf(
 		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
 	if (pag->pagf_flcount != be32_to_cpu(agf->agf_flcount))
 		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
-	if (xfs_sb_version_haslazysbcount(&sc->mp->m_sb) &&
+	if (xfs_has_lazysbcount(sc->mp) &&
 	    pag->pagf_btreeblks != be32_to_cpu(agf->agf_btreeblks))
 		xchk_block_set_corrupt(sc, sc->sa.agf_bp);
 	xfs_perag_put(pag);
@@ -796,7 +796,7 @@ xchk_agi_xref_fiblocks(
 	xfs_agblock_t		blocks;
 	int			error = 0;
 
-	if (!xfs_sb_version_hasinobtcounts(&sc->mp->m_sb))
+	if (!xfs_has_inobtcounts(sc->mp))
 		return;
 
 	if (sc->sa.ino_cur) {
@@ -886,7 +886,7 @@ xchk_agi(
 	if (level <= 0 || level > XFS_BTREE_MAXLEVELS)
 		xchk_block_set_corrupt(sc, sc->sa.agi_bp);
 
-	if (xfs_sb_version_hasfinobt(&mp->m_sb)) {
+	if (xfs_has_finobt(mp)) {
 		agbno = be32_to_cpu(agi->agi_free_root);
 		if (!xfs_verify_agbno(mp, agno, agbno))
 			xchk_block_set_corrupt(sc, sc->sa.agi_bp);

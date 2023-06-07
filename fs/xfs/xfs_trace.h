@@ -168,13 +168,13 @@ DECLARE_EVENT_CLASS(xfs_fs_class,
 	TP_fast_assign(
 		if (mp) {
 			__entry->dev = mp->m_super->s_dev;
-			__entry->mflags = mp->m_flags;
+			__entry->mflags = mp->m_features;
 			__entry->opstate = mp->m_opstate;
 			__entry->sbflags = mp->m_super->s_flags;
 		}
 		__entry->caller_ip = caller_ip;
 	),
-	TP_printk("dev %d:%d m_flags 0x%llx opstate (%s) s_flags 0x%lx caller %pS",
+	TP_printk("dev %d:%d m_features 0x%llx opstate (%s) s_flags 0x%lx caller %pS",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
 		  __entry->mflags,
 		  __print_flags(__entry->opstate, "|", XFS_OPSTATE_STRINGS),
@@ -1253,7 +1253,7 @@ DECLARE_EVENT_CLASS(xfs_log_item_class,
 		__field(xfs_lsn_t, lsn)
 	),
 	TP_fast_assign(
-		__entry->dev = lip->li_mountp->m_super->s_dev;
+		__entry->dev = lip->li_log->l_mp->m_super->s_dev;
 		__entry->lip = lip;
 		__entry->type = lip->li_type;
 		__entry->flags = lip->li_flags;
@@ -1306,7 +1306,7 @@ DECLARE_EVENT_CLASS(xfs_ail_class,
 		__field(xfs_lsn_t, new_lsn)
 	),
 	TP_fast_assign(
-		__entry->dev = lip->li_mountp->m_super->s_dev;
+		__entry->dev = lip->li_log->l_mp->m_super->s_dev;
 		__entry->lip = lip;
 		__entry->type = lip->li_type;
 		__entry->flags = lip->li_flags;

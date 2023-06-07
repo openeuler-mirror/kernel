@@ -15,6 +15,7 @@
 #include "xfs_trace.h"
 #include "xfs_log.h"
 #include "xfs_log_recover.h"
+#include "xfs_log_priv.h"
 #include "xfs_trans.h"
 #include "xfs_buf_item.h"
 #include "xfs_errortag.h"
@@ -863,7 +864,15 @@ xfs_buf_read_map(
 	 * buffer.
 	 */
 	if (error) {
-		if (!XFS_FORCED_SHUTDOWN(target->bt_mount))
+		/*
+		 * Check against log shutdown for error reporting because
+		 * metadata writeback may require a read first and we need to
+		 * report errors in metadata writeback until the log is shut
+		 * down. High level transaction read functions already check
+		 * against mount shutdown, anyway, so we only need to be
+		 * concerned about low level IO interactions here.
+		 */
+		if (!xlog_is_shutdown(target->bt_mount->m_log))
 			xfs_buf_ioerror_alert(bp, fa);
 
 		bp->b_flags &= ~XBF_DONE;
@@ -1211,7 +1220,7 @@ xfs_buf_ioerror_permanent(
 		return true;
 
 	/* At unmount we may treat errors differently */
-	if ((mp->m_flags & XFS_MOUNT_UNMOUNTING) && mp->m_fail_unmount)
+	if (xfs_is_unmounting(mp) && mp->m_fail_unmount)
 		return true;
 
 	return false;
@@ -1242,10 +1251,10 @@ xfs_buf_ioend_handle_error(
 	struct xfs_error_cfg	*cfg;
 
 	/*
-	 * If we've already decided to shutdown the filesystem because of I/O
-	 * errors, there's no point in giving this a retry.
+	 * If we've already shutdown the journal because of I/O errors, there's
+	 * no point in giving this a retry.
 	 */
-	if (XFS_FORCED_SHUTDOWN(mp))
+	if (xlog_is_shutdown(mp->m_log))
 		goto out_stale;
 
 	xfs_buf_ioerror_alert_ratelimited(bp);
@@ -1587,7 +1596,7 @@ _xfs_buf_ioapply(
 			 * non-crc filesystems don't attach verifiers during
 			 * log recovery, so don't warn for such filesystems.
 			 */
-			if (xfs_sb_version_hascrc(&mp->m_sb)) {
+			if (xfs_has_crc(mp)) {
 				xfs_warn(mp,
 					"%s: no buf ops on daddr 0x%llx len %d",
 					__func__, bp->b_bn, bp->b_length);
@@ -1657,8 +1666,23 @@ __xfs_buf_submit(
 
 	ASSERT(!(bp->b_flags & _XBF_DELWRI_Q));
 
-	/* on shutdown we stale and complete the buffer immediately */
-	if (XFS_FORCED_SHUTDOWN(bp->b_mount)) {
+	/*
+	 * On log shutdown we stale and complete the buffer immediately. We can
+	 * be called to read the superblock before the log has been set up, so
+	 * be careful checking the log state.
+	 *
+	 * Checking the mount shutdown state here can result in the log tail
+	 * moving inappropriately on disk as the log may not yet be shut down.
+	 * i.e. failing this buffer on mount shutdown can remove it from the AIL
+	 * and move the tail of the log forwards without having written this
+	 * buffer to disk. This corrupts the log tail state in memory, and
+	 * because the log may not be shut down yet, it can then be propagated
+	 * to disk before the log is shutdown. Hence we check log shutdown
+	 * state here rather than mount state to avoid corrupting the log tail
+	 * on shutdown.
+	 */
+	if (bp->b_mount->m_log &&
+	    xlog_is_shutdown(bp->b_mount->m_log)) {
 		xfs_buf_ioend_fail(bp);
 		return -EIO;
 	}
@@ -1863,10 +1887,10 @@ xfs_wait_buftarg(
 	 * If one or more failed buffers were freed, that means dirty metadata
 	 * was thrown away. This should only ever happen after I/O completion
 	 * handling has elevated I/O error(s) to permanent failures and shuts
-	 * down the fs.
+	 * down the journal.
 	 */
 	if (write_fail) {
-		ASSERT(XFS_FORCED_SHUTDOWN(btp->bt_mount));
+		ASSERT(xlog_is_shutdown(btp->bt_mount->m_log));
 		xfs_alert(btp->bt_mount,
 	      "Please run xfs_repair to determine the extent of the problem.");
 	}
@@ -2361,7 +2385,7 @@ xfs_verify_magic(
 	struct xfs_mount	*mp = bp->b_mount;
 	int			idx;
 
-	idx = xfs_sb_version_hascrc(&mp->m_sb);
+	idx = xfs_has_crc(mp);
 	if (WARN_ON(!bp->b_ops || !bp->b_ops->magic[idx]))
 		return false;
 	return dmagic == bp->b_ops->magic[idx];
@@ -2379,7 +2403,7 @@ xfs_verify_magic16(
 	struct xfs_mount	*mp = bp->b_mount;
 	int			idx;
 
-	idx = xfs_sb_version_hascrc(&mp->m_sb);
+	idx = xfs_has_crc(mp);
 	if (WARN_ON(!bp->b_ops || !bp->b_ops->magic16[idx]))
 		return false;
 	return dmagic == bp->b_ops->magic16[idx];
