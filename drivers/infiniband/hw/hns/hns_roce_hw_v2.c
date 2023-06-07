@@ -167,14 +167,21 @@ static void set_frmr_seg(struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 	hr_reg_clear(fseg, FRMR_BLK_MODE);
 }
 
-static void set_atomic_seg(const struct ib_send_wr *wr,
-			   struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
-			   unsigned int valid_num_sge)
+static int set_atomic_seg(struct hns_roce_dev *hr_dev,
+			  const struct ib_send_wr *wr,
+			  struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
+			  unsigned int valid_num_sge, u32 msg_len)
 {
 	struct hns_roce_v2_wqe_data_seg *dseg =
 		(void *)rc_sq_wqe + sizeof(struct hns_roce_v2_rc_send_wqe);
 	struct hns_roce_wqe_atomic_seg *aseg =
 		(void *)dseg + sizeof(struct hns_roce_v2_wqe_data_seg);
+
+	if (msg_len != ATOMIC_WR_LEN) {
+		ibdev_err(&hr_dev->ib_dev, "invalid atomic wr len, len = %u.\n",
+			  msg_len);
+		return -EINVAL;
+	}
 
 	set_data_seg_v2(dseg, wr->sg_list);
 
@@ -188,6 +195,8 @@ static void set_atomic_seg(const struct ib_send_wr *wr,
 	}
 
 	hr_reg_write(rc_sq_wqe, RC_SEND_WQE_SGE_NUM, valid_num_sge);
+
+	return 0;
 }
 
 static int fill_ext_sge_inl_data(struct hns_roce_qp *qp,
@@ -691,7 +700,8 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 
 	if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP ||
 	    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD)
-		set_atomic_seg(wr, rc_sq_wqe, valid_num_sge);
+		ret = set_atomic_seg(hr_dev, wr, rc_sq_wqe, valid_num_sge,
+				     msg_len);
 	else if (wr->opcode != IB_WR_REG_MR)
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
@@ -853,7 +863,8 @@ out:
 		qp->sq.head += nreq;
 		qp->next_sge = sge_idx;
 
-		if (nreq == 1 && (qp->en_flags & HNS_ROCE_QP_CAP_DIRECT_WQE))
+		if (nreq == 1 && !ret &&
+		    (qp->en_flags & HNS_ROCE_QP_CAP_DIRECT_WQE))
 			write_dwqe(hr_dev, qp, wqe);
 		else
 			update_sq_db(hr_dev, qp);
@@ -1915,29 +1926,6 @@ static int load_func_res_caps(struct hns_roce_dev *hr_dev, bool is_vf)
 	return 0;
 }
 
-static int load_ext_cfg_caps(struct hns_roce_dev *hr_dev, bool is_vf)
-{
-	struct hns_roce_cmq_desc desc;
-	struct hns_roce_cmq_req *req = (struct hns_roce_cmq_req *)desc.data;
-	struct hns_roce_caps *caps = &hr_dev->caps;
-	u32 func_num, qp_num;
-	int ret;
-
-	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_EXT_CFG, true);
-	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
-	if (ret)
-		return ret;
-
-	func_num = is_vf ? 1 : max_t(u32, 1, hr_dev->func_num);
-	qp_num = hr_reg_read(req, EXT_CFG_QP_PI_NUM) / func_num;
-	caps->num_pi_qps = round_down(qp_num, HNS_ROCE_QP_BANK_NUM);
-
-	qp_num = hr_reg_read(req, EXT_CFG_QP_NUM) / func_num;
-	caps->num_qps = round_down(qp_num, HNS_ROCE_QP_BANK_NUM);
-
-	return 0;
-}
-
 static int load_pf_timer_res_caps(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_cmq_desc desc;
@@ -1958,36 +1946,16 @@ static int load_pf_timer_res_caps(struct hns_roce_dev *hr_dev)
 	return 0;
 }
 
-static int query_func_resource_caps(struct hns_roce_dev *hr_dev, bool is_vf)
-{
-	struct device *dev = hr_dev->dev;
-	int ret;
-
-	ret = load_func_res_caps(hr_dev, is_vf);
-	if (ret) {
-		dev_err(dev, "failed to load res caps, ret = %d (%s).\n", ret,
-			is_vf ? "vf" : "pf");
-		return ret;
-	}
-
-	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09) {
-		ret = load_ext_cfg_caps(hr_dev, is_vf);
-		if (ret)
-			dev_err(dev, "failed to load ext cfg, ret = %d (%s).\n",
-				ret, is_vf ? "vf" : "pf");
-	}
-
-	return ret;
-}
-
 static int hns_roce_query_pf_resource(struct hns_roce_dev *hr_dev)
 {
 	struct device *dev = hr_dev->dev;
 	int ret;
 
-	ret = query_func_resource_caps(hr_dev, false);
-	if (ret)
+	ret = load_func_res_caps(hr_dev, false);
+	if (ret) {
+		dev_err(dev, "failed to load pf res caps, ret = %d.\n", ret);
 		return ret;
+	}
 
 	ret = load_pf_timer_res_caps(hr_dev);
 	if (ret)
@@ -1999,7 +1967,14 @@ static int hns_roce_query_pf_resource(struct hns_roce_dev *hr_dev)
 
 static int hns_roce_query_vf_resource(struct hns_roce_dev *hr_dev)
 {
-	return query_func_resource_caps(hr_dev, true);
+	struct device *dev = hr_dev->dev;
+	int ret;
+
+	ret = load_func_res_caps(hr_dev, true);
+	if (ret)
+		dev_err(dev, "failed to load vf res caps, ret = %d.\n", ret);
+
+	return ret;
 }
 
 static int __hns_roce_set_vf_switch_param(struct hns_roce_dev *hr_dev,
@@ -2084,24 +2059,6 @@ static int config_vf_hem_resource(struct hns_roce_dev *hr_dev, int vf_id)
 	return hns_roce_cmq_send(hr_dev, desc, 2);
 }
 
-static int config_vf_ext_resource(struct hns_roce_dev *hr_dev, u32 vf_id)
-{
-	struct hns_roce_cmq_desc desc;
-	struct hns_roce_cmq_req *req = (struct hns_roce_cmq_req *)desc.data;
-	struct hns_roce_caps *caps = &hr_dev->caps;
-
-	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_EXT_CFG, false);
-
-	hr_reg_write(req, EXT_CFG_VF_ID, vf_id);
-
-	hr_reg_write(req, EXT_CFG_QP_PI_NUM, caps->num_pi_qps);
-	hr_reg_write(req, EXT_CFG_QP_PI_IDX, vf_id * caps->num_pi_qps);
-	hr_reg_write(req, EXT_CFG_QP_NUM, caps->num_qps);
-	hr_reg_write(req, EXT_CFG_QP_IDX, vf_id * caps->num_qps);
-
-	return hns_roce_cmq_send(hr_dev, &desc, 1);
-}
-
 static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 {
 	u32 func_num = max_t(u32, 1, hr_dev->func_num);
@@ -2115,16 +2072,6 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 				"failed to config vf-%u hem res, ret = %d.\n",
 				vf_id, ret);
 			return ret;
-		}
-
-		if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09) {
-			ret = config_vf_ext_resource(hr_dev, vf_id);
-			if (ret) {
-				dev_err(hr_dev->dev,
-					"failed to config vf-%u ext res, ret = %d.\n",
-					vf_id, ret);
-				return ret;
-			}
 		}
 	}
 
@@ -7328,20 +7275,20 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 
 	if (hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
 		ret = -EOPNOTSUPP;
-		goto error_failed_kzalloc;
+		goto error_failed_roce_init;
 	}
 
 	ret = hns_roce_init(hr_dev);
 	if (ret) {
 		dev_err(hr_dev->dev, "RoCE Engine init failed!\n");
-		goto error_failed_cfg;
+		goto error_failed_roce_init;
 	}
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08) {
 		ret = free_mr_init(hr_dev);
 		if (ret) {
 			dev_err(hr_dev->dev, "failed to init free mr!\n");
-			goto error_failed_roce_init;
+			goto error_failed_free_mr_init;
 		}
 	}
 
@@ -7349,10 +7296,10 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 
 	return 0;
 
-error_failed_roce_init:
+error_failed_free_mr_init:
 	hns_roce_exit(hr_dev, true);
 
-error_failed_cfg:
+error_failed_roce_init:
 	kfree(hr_dev->priv);
 
 error_failed_kzalloc:
