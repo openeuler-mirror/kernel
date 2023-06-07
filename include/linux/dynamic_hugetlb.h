@@ -66,7 +66,7 @@ enum huge_pages_pool_type {
 struct dhugetlb_pool {
 	int nid;
 	spinlock_t lock;
-	spinlock_t reserved_lock;
+	KABI_DEPRECATE(spinlock_t, reserved_lock)
 	atomic_t refcnt;
 	unsigned long normal_pages_disabled;
 
@@ -74,6 +74,18 @@ struct dhugetlb_pool {
 
 	unsigned long total_huge_pages;
 	struct huge_pages_pool hpages_pool[HUGE_PAGES_POOL_MAX];
+
+	/* The dhugetlb_pool structures is only used by core kernel, it is
+	 * also accessed only the memory cgroup and hugetlb core code and
+	 * so changes made to dhugetlb_pool structure should not affect
+	 * third-party kernel modules.
+	 */
+	KABI_EXTEND(struct mutex reserved_lock)
+
+	/*
+	 * The percpu_pool[] should only be used by dynamic hugetlb core.
+	 * External kernel modules should not used it.
+	 */
 	struct percpu_pages_pool percpu_pool[0];
 };
 
