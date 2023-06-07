@@ -657,6 +657,11 @@ found:
 		XFS_STATS_INC(btp->bt_mount, xb_get_locked_waited);
 	}
 
+	if (xlog_is_shutdown(btp->bt_mount->m_log)) {
+		xfs_buf_relse(bp);
+		return -EIO;
+	}
+
 	/*
 	 * if the buffer is stale, clear all the external state associated with
 	 * it. We need to keep flags such as how we allocated the buffer memory
