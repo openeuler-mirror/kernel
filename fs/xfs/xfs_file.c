@@ -1327,7 +1327,7 @@ __xfs_filemap_fault(
 	} else {
 		if (write_fault)
 			ret = iomap_page_mkwrite(vmf,
-					&xfs_buffered_write_iomap_ops);
+					&xfs_page_mkwrite_iomap_ops);
 		else
 			ret = filemap_fault(vmf);
 	}
