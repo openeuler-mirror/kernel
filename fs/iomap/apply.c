@@ -24,10 +24,15 @@ loff_t
 iomap_apply(struct inode *inode, loff_t pos, loff_t length, unsigned flags,
 		const struct iomap_ops *ops, void *data, iomap_actor_t actor)
 {
-	struct iomap iomap = { .type = IOMAP_HOLE };
-	struct iomap srcmap = { .type = IOMAP_HOLE };
-	loff_t written = 0, ret;
+	struct iomap iomap;
+	struct iomap srcmap;
+	loff_t written, ret;
 	u64 end;
+
+stale:
+	memset(&iomap, 0, sizeof(struct iomap));
+	memset(&srcmap, 0, sizeof(struct iomap));
+	written = 0;
 
 	trace_iomap_apply(inode, pos, length, flags, ops, actor, _RET_IP_);
 
@@ -94,6 +99,9 @@ out:
 				     written > 0 ? written : 0,
 				     flags, &iomap);
 	}
+
+	if (!ret && !written && iomap.flags & IOMAP_F_STALE)
+		goto stale;
 
 	return written ? written : ret;
 }
