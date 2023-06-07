@@ -58,9 +58,11 @@
 #define QM_MB_CMD_SEND_BASE		0x300
 #define QM_MB_BUSY_SHIFT		13
 #define QM_MB_OP_SHIFT			14
-#define QM_MB_CMD_DATA_ADDR_L		0x304
-#define QM_MB_CMD_DATA_ADDR_H		0x308
-#define QM_MB_MAX_WAIT_CNT		6000
+#define QM_MB_WAIT_READY_CNT		10
+#define QM_MB_MAX_WAIT_CNT		3000
+#define WAIT_PERIOD_US_MIN		100
+#define WAIT_PERIOD_US_MAX		200
+#define QM_MB_STATUS_MASK		GENMASK(12, 9)
 
 /* doorbell */
 #define QM_DOORBELL_CMD_SQ		0
