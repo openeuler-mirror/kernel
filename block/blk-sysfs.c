@@ -792,6 +792,8 @@ static void blk_release_queue(struct kobject *kobj)
 
 	blk_free_queue_stats(q->stats);
 
+	rq_qos_exit(q);
+
 	blk_exit_queue(q);
 
 	blk_queue_free_zone_bitmaps(q);
