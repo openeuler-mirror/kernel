@@ -176,9 +176,9 @@
 #define QM_IFC_INT_DISABLE		BIT(0)
 #define QM_IFC_INT_STATUS_MASK		BIT(0)
 #define QM_IFC_INT_SET_MASK		BIT(0)
-#define QM_WAIT_DST_ACK			10
-#define QM_MAX_PF_WAIT_COUNT		10
-#define QM_MAX_VF_WAIT_COUNT		40
+#define QM_WAIT_DST_ACK			100
+#define QM_MAX_PF_WAIT_COUNT		50
+#define QM_MAX_VF_WAIT_COUNT		100
 #define QM_VF_RESET_WAIT_US            20000
 #define QM_VF_RESET_WAIT_CNT           3000
 #define QM_VF_RESET_WAIT_TIMEOUT_US    \
@@ -550,6 +550,9 @@ static bool qm_check_dev_error(struct hisi_qm *qm)
 {
 	u32 val, dev_val;
 
+	if (test_bit(QM_DEVICE_DOWN, &qm->misc_ctl))
+		return true;
+
 	if (qm->fun_type == QM_HW_VF)
 		return false;
 
@@ -721,11 +724,18 @@ mb_err_cnt_increase:
 
 int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue, bool op)
 {
+	struct hisi_qm *pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
 	struct qm_mailbox mailbox;
 	int ret;
 
 	dev_dbg(&qm->pdev->dev, "QM mailbox request to q%u: %u-0x%llx\n",
 		queue, cmd, (unsigned long long)dma_addr);
+
+	/* No need to judge if master OOO is blocked. */
+	if (qm_check_dev_error(pf_qm)) {
+		dev_err(&qm->pdev->dev, "QM mailbox operation failed since qm is stop!\n");
+		return -EIO;
+	}
 
 	qm_mb_pre_init(&mailbox, cmd, dma_addr, queue, op);
 	mutex_lock(&qm->mailbox_lock);
@@ -1755,8 +1765,8 @@ static int qm_ping_all_vfs(struct hisi_qm *qm, u64 cmd)
 	mutex_lock(&qm->mailbox_lock);
 	/* PF sends command to all VFs by mailbox */
 	ret = qm_mb_nolock(qm, &mailbox);
-	if (ret) {
-		dev_err(dev, "failed to send command to VFs!\n");
+	if (ret && cmd != QM_PF_FLR_PREPARE && cmd != QM_PF_SRST_PREPARE) {
+		dev_err(dev, "failed to send command to all vfs, cmd = %llu!\n", cmd);
 		mutex_unlock(&qm->mailbox_lock);
 		return ret;
 	}
@@ -1796,8 +1806,8 @@ static int qm_ping_pf(struct hisi_qm *qm, u64 cmd)
 	qm_mb_pre_init(&mailbox, QM_MB_CMD_SRC, cmd, 0, 0);
 	mutex_lock(&qm->mailbox_lock);
 	ret = qm_mb_nolock(qm, &mailbox);
-	if (ret) {
-		dev_err(&qm->pdev->dev, "failed to send command to PF!\n");
+	if (ret && (cmd > QM_VF_START_FAIL || cmd < QM_VF_PREPARE_DONE)) {
+		dev_err(&qm->pdev->dev, "failed to send command to PF, cmd = %llu!\n", cmd);
 		goto unlock;
 	}
 
@@ -1806,8 +1816,10 @@ static int qm_ping_pf(struct hisi_qm *qm, u64 cmd)
 	while (true) {
 		msleep(QM_WAIT_DST_ACK);
 		val = readl(qm->io_base + QM_IFC_INT_SET_V);
-		if (!(val & QM_IFC_INT_STATUS_MASK))
+		if (!(val & QM_IFC_INT_STATUS_MASK)) {
+			ret = 0;
 			break;
+		}
 
 		if (++cnt > QM_MAX_VF_WAIT_COUNT) {
 			ret = -ETIMEDOUT;
@@ -5012,6 +5024,7 @@ static void qm_pf_reset_vf_process(struct hisi_qm *qm,
 	if (ret)
 		goto err_get_status;
 
+	clear_bit(QM_DEVICE_DOWN, &qm->misc_ctl);
 	qm_pf_reset_vf_done(qm);
 
 	dev_info(dev, "device reset done.\n");
@@ -5019,6 +5032,7 @@ static void qm_pf_reset_vf_process(struct hisi_qm *qm,
 	return;
 
 err_get_status:
+	clear_bit(QM_DEVICE_DOWN, &qm->misc_ctl);
 	qm_cmd_init(qm);
 	qm_reset_bit_clear(qm);
 }
@@ -5037,8 +5051,13 @@ static void qm_handle_cmd_msg(struct hisi_qm *qm, u32 fun_num)
 	ret = hisi_qm_mb_read(qm, &msg, QM_MB_CMD_DST, fun_num);
 	qm_clear_cmd_interrupt(qm, BIT(fun_num));
 	if (ret) {
-		dev_err(dev, "failed to get msg from source!\n");
-		return;
+		if (!fun_num) {
+			msg = QM_PF_SRST_PREPARE;
+			dev_info(dev, "failed to get response from PF, suppos it is soft reset!\n");
+		} else {
+			dev_err(dev, "failed to get msg from source!\n");
+			return;
+		}
 	}
 
 	cmd = msg & QM_MB_CMD_DATA_MASK;
@@ -5047,6 +5066,7 @@ static void qm_handle_cmd_msg(struct hisi_qm *qm, u32 fun_num)
 		qm_pf_reset_vf_process(qm, QM_DOWN);
 		break;
 	case QM_PF_SRST_PREPARE:
+		set_bit(QM_DEVICE_DOWN, &qm->misc_ctl);
 		qm_pf_reset_vf_process(qm, QM_SOFT_RESET);
 		break;
 	case QM_VF_GET_QOS:
