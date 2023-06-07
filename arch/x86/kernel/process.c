@@ -177,7 +177,7 @@ int copy_thread(unsigned long clone_flags, unsigned long sp, unsigned long arg,
 	fpu_clone(p, clone_flags);
 
 	/* Kernel thread ? */
-	if (unlikely(p->flags & PF_KTHREAD)) {
+	if (unlikely(p->flags & (PF_KTHREAD | PF_IO_WORKER))) {
 		p->thread.pkru = pkru_get_init_value();
 		memset(childregs, 0, sizeof(struct pt_regs));
 		kthread_frame_init(frame, sp, arg);
