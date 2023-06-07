@@ -1970,7 +1970,7 @@ xfs_free_buftarg(
 	percpu_counter_destroy(&btp->bt_io_count);
 	list_lru_destroy(&btp->bt_lru);
 
-	xfs_blkdev_issue_flush(btp);
+	blkdev_issue_flush(btp->bt_bdev, GFP_NOFS);
 	invalidate_bdev(btp->bt_bdev);
 
 	kmem_free(btp);
