@@ -54,6 +54,9 @@ xfs_growfs_data_private(
 	new = nb;	/* use new as a temporary here */
 	nb_mod = do_div(new, mp->m_sb.sb_agblocks);
 	nagcount = new + (nb_mod != 0);
+	/* check for overflow */
+	if (nagcount < new)
+		return -EINVAL;
 	if (nb_mod && nb_mod < XFS_MIN_AG_BLOCKS) {
 		nagcount--;
 		nb = (xfs_rfsblock_t)nagcount * mp->m_sb.sb_agblocks;
