@@ -620,6 +620,25 @@ iomap_write_begin(struct inode *inode, loff_t pos, unsigned len, unsigned flags,
 		goto out_no_page;
 	}
 
+	/*
+	 * Now we have a locked folio, before we do anything with it we need to
+	 * check that the iomap we have cached is not stale. The inode extent
+	 * mapping can change due to concurrent IO in flight (e.g.
+	 * IOMAP_UNWRITTEN state can change and memory reclaim could have
+	 * reclaimed a previously partially written page at this index after IO
+	 * completion before this write reaches this file offset) and hence we
+	 * could do the wrong thing here (zero a page range incorrectly or fail
+	 * to zero) and corrupt data.
+	 */
+	if (page_ops && page_ops->iomap_valid) {
+		bool iomap_valid = page_ops->iomap_valid(inode, iomap);
+		if (!iomap_valid) {
+			iomap->flags |= IOMAP_F_STALE;
+			status = 0;
+			goto out_unlock;
+		}
+	}
+
 	if (srcmap->type == IOMAP_INLINE)
 		iomap_read_inline_data(inode, page, srcmap);
 	else if (iomap->flags & IOMAP_F_BUFFER_HEAD)
@@ -790,6 +809,8 @@ again:
 				srcmap);
 		if (unlikely(status))
 			break;
+		if (iomap->flags & IOMAP_F_STALE)
+			break;
 
 		if (mapping_writably_mapped(inode->i_mapping))
 			flush_dcache_page(page);
@@ -868,6 +889,8 @@ iomap_unshare_actor(struct inode *inode, loff_t pos, loff_t length, void *data,
 				IOMAP_WRITE_F_UNSHARE, &page, iomap, srcmap);
 		if (unlikely(status))
 			return status;
+		if (iomap->flags & IOMAP_F_STALE)
+			break;
 
 		status = iomap_write_end(inode, pos, bytes, bytes, page, iomap,
 				srcmap);
@@ -916,6 +939,8 @@ static s64 iomap_zero(struct inode *inode, loff_t pos, u64 length,
 	status = iomap_write_begin(inode, pos, bytes, 0, &page, iomap, srcmap);
 	if (status)
 		return status;
+	if (iomap->flags & IOMAP_F_STALE)
+		return 0;
 
 	zero_user(page, offset, bytes);
 	mark_page_accessed(page);
@@ -943,6 +968,8 @@ static loff_t iomap_zero_range_actor(struct inode *inode, loff_t pos,
 			bytes = iomap_zero(inode, pos, length, iomap, srcmap);
 		if (bytes < 0)
 			return bytes;
+		if (iomap->flags & IOMAP_F_STALE)
+			break;
 
 		pos += bytes;
 		length -= bytes;
