@@ -165,7 +165,7 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 {
 	u64 *p;
 	int lo, hi;
-	int rv = 0;
+	int rv = 0, changed = 0;
 	unsigned long flags;
 
 	if (bb->shift < 0)
@@ -230,6 +230,7 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 				s = a + BB_MAX_LEN;
 			}
 			sectors = e - s;
+			changed = 1;
 		}
 	}
 	if (sectors && hi < bb->count) {
@@ -260,24 +261,24 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 			sectors = e - s;
 			lo = hi;
 			hi++;
+			changed = 1;
 		}
 	}
 	if (sectors == 0 && hi < bb->count) {
 		/* we might be able to combine lo and hi */
 		/* Note: 's' is at the end of 'lo' */
-		sector_t a = BB_OFFSET(p[hi]);
-		int lolen = BB_LEN(p[lo]);
-		int hilen = BB_LEN(p[hi]);
-		int newlen = lolen + hilen - (s - a);
+		sector_t a = BB_OFFSET(p[lo]);
+		int newlen = max(s, BB_OFFSET(p[hi]) + BB_LEN(p[hi])) - a;
 
-		if (s >= a && newlen < BB_MAX_LEN) {
+		if (s >= BB_OFFSET(p[hi]) && newlen < BB_MAX_LEN) {
 			/* yes, we can combine them */
 			int ack = BB_ACK(p[lo]) && BB_ACK(p[hi]);
 
-			p[lo] = BB_MAKE(BB_OFFSET(p[lo]), newlen, ack);
+			p[lo] = BB_MAKE(a, newlen, ack);
 			memmove(p + hi, p + hi + 1,
 				(bb->count - hi - 1) * 8);
 			bb->count--;
+			changed = 1;
 		}
 	}
 	while (sectors) {
@@ -300,14 +301,18 @@ int badblocks_set(struct badblocks *bb, sector_t s, int sectors,
 			p[hi] = BB_MAKE(s, this_sectors, acknowledged);
 			sectors -= this_sectors;
 			s += this_sectors;
+			hi++;
+			changed = 1;
 		}
 	}
 
-	bb->changed = 1;
-	if (!acknowledged)
-		bb->unacked_exist = 1;
-	else
-		badblocks_update_acked(bb);
+	if (changed) {
+		bb->changed = changed;
+		if (!acknowledged)
+			bb->unacked_exist = 1;
+		else
+			badblocks_update_acked(bb);
+	}
 	write_sequnlock_irqrestore(&bb->lock, flags);
 
 	return rv;
