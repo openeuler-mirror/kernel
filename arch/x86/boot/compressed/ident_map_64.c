@@ -359,3 +359,15 @@ void do_boot_page_fault(struct pt_regs *regs, unsigned long error_code)
 	 */
 	add_identity_map(address, end);
 }
+
+void do_boot_nmi_fault(struct pt_regs *regs, unsigned long error_code)
+{
+	/*
+	 * Default boot loader placeholder fault handler - there's no real
+	 * kernel running yet, so there's not much we can do - but NMIs
+	 * can arrive in a kdump scenario, for example by the NMI watchdog.
+	 *
+	 * Not having any handler would cause the CPU to silently reboot,
+	 * so we do the second-worst thing here and ignore the NMI.
+	 */
+}
