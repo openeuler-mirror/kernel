@@ -486,6 +486,7 @@ struct ioc_gq {
 	u32				inuse;
 
 	u32				last_inuse;
+	bool				online;
 	s64				saved_margin;
 
 	sector_t			cursor;		/* to detect randio */
@@ -700,6 +701,20 @@ static struct ioc_cgrp *blkcg_to_iocc(struct blkcg *blkcg)
 {
 	return container_of(blkcg_to_cpd(blkcg, &blkcg_policy_iocost),
 			    struct ioc_cgrp, cpd);
+}
+
+static struct ioc_gq *ioc_bio_iocg(struct bio *bio)
+{
+	struct blkcg_gq *blkg = bio->bi_blkg;
+
+	if (blkg && blkg->online) {
+		struct ioc_gq *iocg = blkg_to_iocg(blkg);
+
+		if (iocg && iocg->online)
+			return iocg;
+	}
+
+	return NULL;
 }
 
 /*
@@ -1218,6 +1233,9 @@ static bool iocg_activate(struct ioc_gq *iocg, struct ioc_now *now)
 
 	spin_lock_irq(&ioc->lock);
 
+	if (!iocg->online)
+		goto fail_unlock;
+
 	ioc_now(ioc, now);
 
 	/* update period */
@@ -1387,14 +1405,17 @@ static int iocg_wake_fn(struct wait_queue_entry *wq_entry, unsigned mode,
 {
 	struct iocg_wait *wait = container_of(wq_entry, struct iocg_wait, wait);
 	struct iocg_wake_ctx *ctx = (struct iocg_wake_ctx *)key;
-	u64 cost = abs_cost_to_cost(wait->abs_cost, ctx->hw_inuse);
 
-	ctx->vbudget -= cost;
+	if (ctx->iocg->online) {
+		u64 cost = abs_cost_to_cost(wait->abs_cost, ctx->hw_inuse);
 
-	if (ctx->vbudget < 0)
-		return -1;
+		ctx->vbudget -= cost;
+		if (ctx->vbudget < 0)
+			return -1;
 
-	iocg_commit_bio(ctx->iocg, wait->bio, wait->abs_cost, cost);
+		iocg_commit_bio(ctx->iocg, wait->bio, wait->abs_cost, cost);
+	}
+
 	wait->committed = true;
 
 	/*
@@ -2542,9 +2563,8 @@ static u64 calc_size_vtime_cost(struct request *rq, struct ioc *ioc)
 
 static void ioc_rqos_throttle(struct rq_qos *rqos, struct bio *bio)
 {
-	struct blkcg_gq *blkg = bio->bi_blkg;
 	struct ioc *ioc = rqos_to_ioc(rqos);
-	struct ioc_gq *iocg = blkg_to_iocg(blkg);
+	struct ioc_gq *iocg = ioc_bio_iocg(bio);
 	struct ioc_now now;
 	struct iocg_wait wait;
 	u64 abs_cost, cost, vtime;
@@ -2678,7 +2698,7 @@ retry_lock:
 static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 			   struct bio *bio)
 {
-	struct ioc_gq *iocg = blkg_to_iocg(bio->bi_blkg);
+	struct ioc_gq *iocg = ioc_bio_iocg(bio);
 	struct ioc *ioc = rqos_to_ioc(rqos);
 	sector_t bio_end = bio_end_sector(bio);
 	struct ioc_now now;
@@ -2736,7 +2756,7 @@ static void ioc_rqos_merge(struct rq_qos *rqos, struct request *rq,
 
 static void ioc_rqos_done_bio(struct rq_qos *rqos, struct bio *bio)
 {
-	struct ioc_gq *iocg = blkg_to_iocg(bio->bi_blkg);
+	struct ioc_gq *iocg = ioc_bio_iocg(bio);
 
 	if (iocg && bio->bi_iocost_cost)
 		atomic64_add(bio->bi_iocost_cost, &iocg->done_vtime);
@@ -2939,6 +2959,7 @@ static void ioc_pd_init(struct blkg_policy_data *pd)
 	ioc_now(ioc, &now);
 
 	iocg->ioc = ioc;
+	iocg->online = true;
 	atomic64_set(&iocg->vtime, now.vnow);
 	atomic64_set(&iocg->done_vtime, now.vnow);
 	atomic64_set(&iocg->active_period, atomic64_read(&ioc->cur_period));
@@ -2964,14 +2985,18 @@ static void ioc_pd_init(struct blkg_policy_data *pd)
 	spin_unlock_irqrestore(&ioc->lock, flags);
 }
 
-static void ioc_pd_free(struct blkg_policy_data *pd)
+static void ioc_pd_offline(struct blkg_policy_data *pd)
 {
 	struct ioc_gq *iocg = pd_to_iocg(pd);
 	struct ioc *ioc = iocg->ioc;
 	unsigned long flags;
 
 	if (ioc) {
-		spin_lock_irqsave(&ioc->lock, flags);
+		struct iocg_wake_ctx ctx = { .iocg = iocg };
+
+		iocg_lock(iocg, true, &flags);
+
+		iocg->online = false;
 
 		if (!list_empty(&iocg->active_list)) {
 			struct ioc_now now;
@@ -2984,10 +3009,17 @@ static void ioc_pd_free(struct blkg_policy_data *pd)
 		WARN_ON_ONCE(!list_empty(&iocg->walk_list));
 		WARN_ON_ONCE(!list_empty(&iocg->surplus_list));
 
-		spin_unlock_irqrestore(&ioc->lock, flags);
+		iocg_unlock(iocg, true, &flags);
 
 		hrtimer_cancel(&iocg->waitq_timer);
+		__wake_up(&iocg->waitq, TASK_NORMAL, 0, &ctx);
 	}
+}
+
+static void ioc_pd_free(struct blkg_policy_data *pd)
+{
+	struct ioc_gq *iocg = pd_to_iocg(pd);
+
 	free_percpu(iocg->pcpu_stat);
 	kfree(iocg);
 }
@@ -3445,6 +3477,7 @@ static struct blkcg_policy blkcg_policy_iocost = {
 	.cpd_free_fn	= ioc_cpd_free,
 	.pd_alloc_fn	= ioc_pd_alloc,
 	.pd_init_fn	= ioc_pd_init,
+	.pd_offline_fn	= ioc_pd_offline,
 	.pd_free_fn	= ioc_pd_free,
 	.pd_stat_fn	= ioc_pd_stat,
 };
