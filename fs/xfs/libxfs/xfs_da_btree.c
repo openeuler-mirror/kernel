@@ -366,16 +366,17 @@ xfs_da3_node_set_type(
 }
 
 int
-xfs_da3_node_read(
+__xfs_da3_node_read(
 	struct xfs_trans	*tp,
 	struct xfs_inode	*dp,
 	xfs_dablk_t		bno,
+	unsigned int		flags,
 	struct xfs_buf		**bpp,
 	int			whichfork)
 {
 	int			error;
 
-	error = xfs_da_read_buf(tp, dp, bno, 0, bpp, whichfork,
+	error = xfs_da_read_buf(tp, dp, bno, flags, bpp, whichfork,
 			&xfs_da3_node_buf_ops);
 	if (error || !*bpp || !tp)
 		return error;
@@ -2180,8 +2181,8 @@ xfs_da_grow_inode_int(
 		 */
 		mapp = kmem_alloc(sizeof(*mapp) * count, 0);
 		for (b = *bno, mapi = 0; b < *bno + count; ) {
-			nmap = min(XFS_BMAP_MAX_NMAP, count);
 			c = (int)(*bno + count - b);
+			nmap = min(XFS_BMAP_MAX_NMAP, c);
 			error = xfs_bmapi_write(tp, dp, b, c,
 					xfs_bmapi_aflag(w)|XFS_BMAPI_METADATA,
 					args->total, &mapp[mapi], &nmap);
