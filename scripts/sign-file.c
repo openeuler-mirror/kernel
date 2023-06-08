@@ -206,7 +206,7 @@ static X509 *read_x509(const char *x509_name)
 	return x509;
 }
 
-#if defined(EVP_PKEY_SM2)
+#if defined(EVP_PKEY_SM2) && OPENSSL_VERSION_NUMBER < 0x10200000L
 static int pkey_is_sm2(EVP_PKEY *pkey)
 {
 	EC_KEY *eckey = NULL;
@@ -242,7 +242,7 @@ int main(int argc, char **argv)
 	unsigned int use_signed_attrs;
 	const EVP_MD *digest_algo;
 	EVP_PKEY *private_key;
-#if defined(EVP_PKEY_SM2)
+#if defined(EVP_PKEY_SM2) && OPENSSL_VERSION_NUMBER < 0x10200000L
 	EVP_PKEY *public_key;
 #endif
 
@@ -329,7 +329,7 @@ int main(int argc, char **argv)
 		digest_algo = EVP_get_digestbyname(hash_algo);
 		ERR(!digest_algo, "EVP_get_digestbyname");
 
-#if defined(EVP_PKEY_SM2)
+#if defined(EVP_PKEY_SM2) && OPENSSL_VERSION_NUMBER < 0x10200000L
 	if (pkey_is_sm2(private_key))
 		EVP_PKEY_set_alias_type(private_key, EVP_PKEY_SM2);
 
