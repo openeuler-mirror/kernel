@@ -405,6 +405,21 @@ end:
 	return result;
 }
 
+bool acpi_cpc_valid(void)
+{
+	struct cpc_desc *cpc_ptr;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		cpc_ptr = per_cpu(cpc_desc_ptr, cpu);
+		if (!cpc_ptr)
+			return false;
+	}
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(acpi_cpc_valid);
+
 /**
  * acpi_get_psd_map - Map the CPUs in a common freq domain.
  * @all_cpu_data: Ptrs to CPU specific CPPC data including PSD info.
