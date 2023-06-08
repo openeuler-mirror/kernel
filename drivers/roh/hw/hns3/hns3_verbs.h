@@ -7,7 +7,6 @@
 #include "hns3_common.h"
 
 int hns3_roh_set_eid(struct roh_device *rohdev, struct roh_eid_attr *eid_attr);
-int hns3_roh_query_guid(struct roh_device *rohdev, struct roh_guid_attr *guid_attr);
 struct roh_mib_stats *hns3_roh_alloc_hw_stats(struct roh_device *rohdev,
 					      enum roh_mib_type mib_type);
 int hns3_roh_get_hw_stats(struct roh_device *rohdev, struct roh_mib_stats *stats,
