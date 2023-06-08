@@ -7,7 +7,7 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <linux/netdevice.h>
-#include <net/bonding.h>
+#include <linux/etherdevice.h>
 
 #define ROH_DEVICE_NAME_MAX 64
 #define MAX_DEVICE_REFCOUNT 2
@@ -23,23 +23,14 @@ enum roh_link_status { ROH_LINK_DOWN = 0, ROH_LINK_UP };
 
 enum roh_mib_type { ROH_MIB_PUBLIC = 0, ROH_MIB_PRIVATE };
 
-static inline void convert_eid_to_mac(u8 mac[6], u32 eid)
+static inline void convert_eid_to_mac(u8 *mac, u32 eid)
 {
-	mac[0] = 0;
-	mac[1] = 0;
-	mac[2] = 0;
-	mac[3] = (eid >> 16) & 0xff;
-	mac[4] = (eid >> 8) & 0xff;
-	mac[5] = eid & 0xff;
+	u64_to_ether_addr((u64)eid, mac);
 }
 
 struct roh_eid_attr {
 	u32 base;
 	u32 num;
-};
-
-struct roh_guid_attr {
-	u8 data[16];
 };
 
 struct roh_mib_stats {
@@ -51,13 +42,7 @@ struct roh_mib_stats {
 
 struct roh_device;
 struct roh_device_ops {
-	int (*query_guid)(struct roh_device *device, struct roh_guid_attr *attr);
 	int (*set_eid)(struct roh_device *device, struct roh_eid_attr *attr);
-	struct sk_buff *(*pkt_create)(struct net_device *ndev,
-				      u8 *dest_mac, u8 *src_mac, int ptype,
-				      struct roh_guid_attr *guid, u16 eid_nums);
-	int (*pkt_parse)(struct sk_buff *skb, struct roh_eid_attr *eid_attr, int ptype);
-	enum roh_dev_tx (*xmit_pkt)(struct roh_device *device, struct sk_buff *skb);
 	struct roh_mib_stats *(*alloc_hw_stats)(struct roh_device *device, enum roh_mib_type);
 	int (*get_hw_stats)(struct roh_device *device,
 			    struct roh_mib_stats *stats, enum roh_mib_type);
@@ -85,7 +70,6 @@ struct roh_device {
 	struct completion unreg_completion;
 	struct mutex unregistration_lock; /* lock for unregiste */
 
-	struct roh_guid_attr node_guid;
 	struct roh_eid_attr eid;
 	struct mutex eid_mutex; /* operate eid needs to be mutexed */
 	u32 link_status;
