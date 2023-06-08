@@ -2020,9 +2020,9 @@ static void ip__resolve_ams(struct thread *thread,
 
 	ams->addr = ip;
 	ams->al_addr = al.addr;
-	ams->ms.maps = al.maps;
+	ams->ms.maps = maps__get(al.maps);
 	ams->ms.sym = al.sym;
-	ams->ms.map = al.map;
+	ams->ms.map = map__get(al.map);
 	ams->phys_addr = 0;
 }
 
