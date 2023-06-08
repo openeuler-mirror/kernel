@@ -1001,12 +1001,13 @@ static bool
 hns3_pmu_is_enabled_port_tc_mode(struct perf_event *event,
 				 struct hns3_pmu_event_attr *pmu_event)
 {
+	u16 bdf = hns3_pmu_get_bdf(event);
 	u8 tc_id = hns3_pmu_get_tc(event);
 
 	if (!(pmu_event->filter_support & HNS3_PMU_FILTER_SUPPORT_PORT_TC))
 		return false;
 
-	return tc_id != HNS3_PMU_FILTER_ALL_TC;
+	return (tc_id != HNS3_PMU_FILTER_ALL_TC) && (!bdf);
 }
 
 static bool
