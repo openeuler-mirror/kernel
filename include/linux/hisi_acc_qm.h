@@ -163,6 +163,11 @@ enum qm_cap_bits {
 	QM_SUPPORT_RPM,
 };
 
+struct qm_dev_alg {
+	u64 alg_msk;
+	const char *alg;
+};
+
 enum qm_dev_fail_state {
 	STOP_QUEUE_FAIL = 1,
 	ALLOC_CTX_FAIL,
@@ -280,6 +285,11 @@ struct hisi_qm_cap_info {
 	u32 v1_val;
 	u32 v2_val;
 	u32 v3_val;
+};
+
+struct hisi_qm_cap_record {
+	u32 type;
+	u32 cap_val;
 };
 
 struct hisi_qm_list {
@@ -556,4 +566,6 @@ void hisi_qm_regs_dump(struct seq_file *s, struct debugfs_regset32 *regset);
 u32 hisi_qm_get_hw_info(struct hisi_qm *qm,
 			const struct hisi_qm_cap_info *info_table,
 			u32 index, bool is_read);
+int hisi_qm_set_algs(struct hisi_qm *qm, u64 alg_msk, const struct qm_dev_alg *dev_algs,
+		     u32 dev_algs_size);
 #endif

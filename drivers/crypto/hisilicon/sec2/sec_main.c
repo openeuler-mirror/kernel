@@ -121,7 +121,6 @@
 					GENMASK_ULL(42, 25))
 #define SEC_AEAD_BITMAP			(GENMASK_ULL(7, 6) | GENMASK_ULL(18, 17) | \
 					GENMASK_ULL(45, 43))
-#define SEC_DEV_ALG_MAX_LEN		256
 
 struct sec_hw_error {
 	u32 int_msk;
@@ -131,11 +130,6 @@ struct sec_hw_error {
 struct sec_dfx_item {
 	const char *name;
 	u32 offset;
-};
-
-struct sec_dev_alg {
-	u64 alg_msk;
-	const char *algs;
 };
 
 static const char sec_name[] = "hisi_sec2";
@@ -174,74 +168,81 @@ static const struct hisi_qm_cap_info sec_basic_info[] = {
 	{SEC_CORE4_ALG_BITMAP_HIGH, 0x3170, 0, GENMASK(31, 0), 0x3FFF, 0x3FFF, 0x3FFF},
 };
 
-static const struct sec_dev_alg sec_dev_algs[] = { {
+static struct hisi_qm_cap_record sec_cap_reg_record[] = {
+	{SEC_DRV_ALG_BITMAP_LOW,	0x187F0FF},
+	{SEC_DRV_ALG_BITMAP_HIGH,	0x395C},
+	{SEC_DEV_ALG_BITMAP_LOW,	0xFFFFFFFF},
+	{SEC_DEV_ALG_BITMAP_HIGH,	0x3FFF},
+};
+
+static const struct qm_dev_alg sec_dev_algs[] = { {
 		.alg_msk = SEC_CIPHER_BITMAP,
-		.algs = "cipher\n",
+		.alg = "cipher\n",
 	}, {
 		.alg_msk = SEC_DIGEST_BITMAP,
-		.algs = "digest\n",
+		.alg = "digest\n",
 	}, {
 		.alg_msk = SEC_AEAD_BITMAP,
-		.algs = "aead\n",
+		.alg = "aead\n",
 	},
 };
 
 static const struct sec_hw_error sec_hw_errors[] = {
 	{
 		.int_msk = BIT(0),
-		.msg = "sec_axi_rresp_err_rint"
+		.msg = "sec_axi_rresp_err_rint",
 	},
 	{
 		.int_msk = BIT(1),
-		.msg = "sec_axi_bresp_err_rint"
+		.msg = "sec_axi_bresp_err_rint",
 	},
 	{
 		.int_msk = BIT(2),
-		.msg = "sec_ecc_2bit_err_rint"
+		.msg = "sec_ecc_2bit_err_rint",
 	},
 	{
 		.int_msk = BIT(3),
-		.msg = "sec_ecc_1bit_err_rint"
+		.msg = "sec_ecc_1bit_err_rint",
 	},
 	{
 		.int_msk = BIT(4),
-		.msg = "sec_req_trng_timeout_rint"
+		.msg = "sec_req_trng_timeout_rint",
 	},
 	{
 		.int_msk = BIT(5),
-		.msg = "sec_fsm_hbeat_rint"
+		.msg = "sec_fsm_hbeat_rint",
 	},
 	{
 		.int_msk = BIT(6),
-		.msg = "sec_channel_req_rng_timeout_rint"
+		.msg = "sec_channel_req_rng_timeout_rint",
 	},
 	{
 		.int_msk = BIT(7),
-		.msg = "sec_bd_err_rint"
+		.msg = "sec_bd_err_rint",
 	},
 	{
 		.int_msk = BIT(8),
-		.msg = "sec_chain_buff_err_rint"
+		.msg = "sec_chain_buff_err_rint",
 	},
 	{
 		.int_msk = BIT(14),
-		.msg = "sec_no_secure_access"
+		.msg = "sec_no_secure_access",
 	},
 	{
 		.int_msk = BIT(15),
-		.msg = "sec_wrapping_key_auth_err"
+		.msg = "sec_wrapping_key_auth_err",
 	},
 	{
 		.int_msk = BIT(16),
-		.msg = "sec_km_key_crc_fail"
+		.msg = "sec_km_key_crc_fail",
 	},
 	{
 		.int_msk = BIT(17),
-		.msg = "sec_axi_poison_err"
+		.msg = "sec_axi_poison_err",
 	},
 	{
 		.int_msk = BIT(18),
-		.msg = "sec_sva_err"
+		.msg = "sec_sva_err",
 	},
 	{}
 };
@@ -282,6 +283,11 @@ static const struct debugfs_reg32 sec_dfx_regs[] = {
 	{"SEC_BD_SAA6                   ",  0x301C38},
 	{"SEC_BD_SAA7                   ",  0x301C3C},
 	{"SEC_BD_SAA8                   ",  0x301C40},
+	{"SEC_RAS_CE_ENABLE             ",  0x301050},
+	{"SEC_RAS_FE_ENABLE             ",  0x301054},
+	{"SEC_RAS_NFE_ENABLE            ",  0x301058},
+	{"SEC_REQ_TRNG_TIME_TH          ",  0x30112C},
+	{"SEC_CHANNEL_RNG_REQ_THLD      ",  0x302110},
 };
 
 /* define the SEC's dfx regs region and region length */
@@ -395,8 +401,8 @@ u64 sec_get_alg_bitmap(struct hisi_qm *qm, u32 high, u32 low)
 {
 	u32 cap_val_h, cap_val_l;
 
-	cap_val_h = hisi_qm_get_hw_info(qm, sec_basic_info, high, qm->cap_ver);
-	cap_val_l = hisi_qm_get_hw_info(qm, sec_basic_info, low, qm->cap_ver);
+	cap_val_h = sec_cap_reg_record[high].cap_val;
+	cap_val_l = sec_cap_reg_record[low].cap_val;
 
 	return ((u64)cap_val_h << SEC_ALG_BITMAP_SHIFT) | (u64)cap_val_l;
 }
@@ -1031,13 +1037,13 @@ static void sec_err_info_init(struct hisi_qm *qm)
 	err_info->nfe = hisi_qm_get_hw_info(qm, sec_basic_info, SEC_QM_NFE_MASK_CAP, qm->cap_ver);
 	err_info->ecc_2bits_mask = SEC_CORE_INT_STATUS_M_ECC;
 	err_info->qm_shutdown_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-				     SEC_QM_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
+							 SEC_QM_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
 	err_info->dev_shutdown_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-			SEC_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
+							  SEC_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
 	err_info->qm_reset_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-			SEC_QM_RESET_MASK_CAP, qm->cap_ver);
+						      SEC_QM_RESET_MASK_CAP, qm->cap_ver);
 	err_info->dev_reset_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-			SEC_RESET_MASK_CAP, qm->cap_ver);
+						       SEC_RESET_MASK_CAP, qm->cap_ver);
 	err_info->msi_wr_port = BIT(0);
 	err_info->acpi_rst = "SRST";
 }
@@ -1078,37 +1084,20 @@ static int sec_pf_probe_init(struct sec_dev *sec)
 	return ret;
 }
 
-static int sec_set_qm_algs(struct hisi_qm *qm)
+static void sec_pre_store_cap_reg(struct hisi_qm *qm)
 {
-	struct device *dev = &qm->pdev->dev;
-	char *algs, *ptr;
-	u64 alg_mask;
-	int i;
+	int i, size;
 
-	if (!qm->use_uacce)
-		return 0;
-
-	algs = devm_kzalloc(dev, SEC_DEV_ALG_MAX_LEN * sizeof(char), GFP_KERNEL);
-	if (!algs)
-		return -ENOMEM;
-
-	alg_mask = sec_get_alg_bitmap(qm, SEC_DEV_ALG_BITMAP_HIGH, SEC_DEV_ALG_BITMAP_LOW);
-
-	for (i = 0; i < ARRAY_SIZE(sec_dev_algs); i++)
-		if (alg_mask & sec_dev_algs[i].alg_msk)
-			strcat(algs, sec_dev_algs[i].algs);
-
-	ptr = strrchr(algs, '\n');
-	if (ptr)
-		*ptr = '\0';
-
-	qm->uacce->algs = algs;
-
-	return 0;
+	size = ARRAY_SIZE(sec_cap_reg_record);
+	for (i = 0; i < size; i++) {
+		sec_cap_reg_record[i].cap_val = hisi_qm_get_hw_info(qm, sec_basic_info,
+						sec_cap_reg_record[i].type, qm->cap_ver);
+	}
 }
 
 static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
+	u64 alg_msk;
 	int ret;
 
 	qm->pdev = pdev;
@@ -1143,7 +1132,11 @@ static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		return ret;
 	}
 
-	ret = sec_set_qm_algs(qm);
+	/* Fetch and save the value of capability registers */
+	sec_pre_store_cap_reg(qm);
+
+	alg_msk = sec_get_alg_bitmap(qm, SEC_DEV_ALG_BITMAP_HIGH_IDX, SEC_DEV_ALG_BITMAP_LOW_IDX);
+	ret = hisi_qm_set_algs(qm, alg_msk, sec_dev_algs, ARRAY_SIZE(sec_dev_algs));
 	if (ret) {
 		pci_err(qm->pdev, "Failed to set sec algs!\n");
 		hisi_qm_uninit(qm);
