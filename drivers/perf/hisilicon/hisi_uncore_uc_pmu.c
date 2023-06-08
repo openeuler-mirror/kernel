@@ -292,7 +292,6 @@ static u64 hisi_uc_pmu_read_counter(struct hisi_pmu *uc_pmu,
 static void hisi_uc_pmu_write_counter(struct hisi_pmu *uc_pmu,
 				      struct hw_perf_event *hwc, u64 val)
 {
-	hisi_uc_pmu_start_counters(uc_pmu);
 	writeq(val, uc_pmu->base + HISI_UC_CNTR_REG(hwc->idx));
 }
 
