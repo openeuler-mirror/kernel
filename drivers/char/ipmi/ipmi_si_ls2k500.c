@@ -18,9 +18,20 @@
 #include <linux/ioport.h>
 #include <linux/version.h>
 #include "ipmi_si.h"
+static unsigned long *mscycles;
+static unsigned long *event_jiffies;
 #include "kcs_bmc_ls2k500.h"
+static int resetbootwait = 60;
+module_param(resetbootwait, int, 0664);
 
 #define KCS_STATUS_CMD_DAT      BIT(3)
+
+static int pcie_busy(void)
+{
+	if (time_before(jiffies, *event_jiffies + resetbootwait*HZ))
+		return -1;
+	return 0;
+}
 
 static unsigned char intf_sim_inb(const struct si_sm_io *io,
 				  unsigned int offset)
@@ -28,7 +39,10 @@ static unsigned char intf_sim_inb(const struct si_sm_io *io,
 	IPMIKCS *ik = io->addr_source_data;
 	uint32_t ret;
 
-	btlock_lock(&ik->lock, 0, 1);
+	if (pcie_busy())
+		return 0;
+	if (btlock_lock(&ik->lock, 0, 1) < 0)
+		return 0;
 	switch (offset & 1) {
 	case 0:
 		ret = ik->data_out_reg;
@@ -47,7 +61,10 @@ static void intf_sim_outb(const struct si_sm_io *io, unsigned int offset,
 {
 	IPMIKCS *ik = io->addr_source_data;
 
-	btlock_lock(&ik->lock, 0, 1);
+	if (pcie_busy())
+		return;
+	if (btlock_lock(&ik->lock, 0, 1) < 0)
+		return;
 	if (IPMI_KCS_GET_IBF(ik->status_reg))
 		goto out;
 
@@ -86,7 +103,7 @@ static int of_ipmi_ls2k500_probe(struct platform_device *pdev)
 {
 	int rv;
 	struct si_sm_io io;
-
+	void **kcs_data;
 	memset(&io, 0, sizeof(io));
 	io.addr_source = SI_PLATFORM;
 	dev_info(&pdev->dev, "probing via ls2k500 platform");
@@ -100,6 +117,9 @@ static int of_ipmi_ls2k500_probe(struct platform_device *pdev)
 	io.addr_source_data = ioremap(pdev->resource[0].start,
 					pdev->resource[0].end -
 					pdev->resource[0].start + 1);
+	kcs_data = dev_get_platdata(&pdev->dev);
+	event_jiffies = kcs_data[0];
+	mscycles = kcs_data[1];
 	io.dev = &pdev->dev;
 	io.regspacing = 4;
 	io.regsize = DEFAULT_REGSIZE;
@@ -112,6 +132,8 @@ static int of_ipmi_ls2k500_probe(struct platform_device *pdev)
 		&pdev->resource[0], io.regsize, io.regspacing, io.irq);
 
 	rv = ipmi_si_add_smi(&io);
+	if (rv)
+		ipmi_si_remove_by_dev(&pdev->dev);
 
 	return rv;
 }
