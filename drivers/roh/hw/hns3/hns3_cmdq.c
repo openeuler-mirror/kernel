@@ -10,8 +10,8 @@
 #include "core.h"
 #include "hns3_device.h"
 #include "hns3_common.h"
-#include "hns3_cmdq.h"
 #include "hns3_reg.h"
+#include "hns3_cmdq.h"
 
 static int hns3_roh_alloc_cmdq_desc(struct hns3_roh_device *hroh_dev,
 				    struct hns3_roh_cmdq_ring *ring)
@@ -224,6 +224,11 @@ static int hns3_roh_cmdq_build(struct hns3_roh_device *hroh_dev,
 	int handle = 0;
 
 	if (num > hns3_roh_cmdq_space(csq)) {
+		/* If CMDQ ring is full, SW HEAD and HW HEAD may be different,
+		 * need update the SW HEAD pointer csq->next_to_clean
+		 */
+		csq->next_to_clean =
+			hns3_roh_read(hroh_dev, HNS3_ROH_TX_CMDQ_HEAD_REG);
 		dev_err(hroh_dev->dev, "cmdq is full, opcode %x\n", desc->opcode);
 		return -EBUSY;
 	}
@@ -241,49 +246,96 @@ static int hns3_roh_cmdq_build(struct hns3_roh_device *hroh_dev,
 	return 0;
 }
 
-static int hns3_roh_cmdq_done_parse(struct hns3_roh_device *hroh_dev,
-				    struct hns3_roh_desc *desc,
-				    int num, int ntc)
+static void hns3_roh_cmd_wait_for_resp(struct hns3_roh_device *hroh_dev,
+				       bool *is_completed)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
-	struct hns3_roh_cmdq_ring *csq = &priv->cmdq.csq;
-	struct hns3_roh_desc *desc_to_use = NULL;
-	int handle = 0;
-	u16 desc_ret;
-	int ret;
+	u32 timeout = 0;
 
-	if (hns3_roh_cmdq_csq_done(hroh_dev)) {
-		while (handle < num) {
-			desc_to_use = &csq->desc[ntc];
-			desc[handle] = *desc_to_use;
-			desc_ret = le16_to_cpu(desc[handle].retval);
-			if (desc_ret == HNS3_ROH_CMD_EXEC_SUCCESS) {
-				ret = 0;
-			} else if (desc_ret == HNS3_ROH_CMD_EXEC_TIMEOUT) {
-				priv->cmdq.last_status = desc_ret;
-				ret = -ETIME;
-			} else {
-				pr_err("desc_ret = %d\n", desc_ret);
-				ret = -EIO;
-			}
-
-			ntc++;
-			handle++;
-			if (ntc == csq->desc_num)
-				ntc = 0;
+	do {
+		if (hns3_roh_cmdq_csq_done(hroh_dev)) {
+			*is_completed = true;
+			break;
 		}
-	} else {
-		ret = -EAGAIN;
-	}
+		udelay(1);
+		timeout++;
+	} while (timeout < priv->cmdq.tx_timeout);
+}
 
-	return ret;
+static const u16 spec_opcode[] = { HNS3_ROH_OPC_QUERY_MIB_PUBLIC,
+				   HNS3_ROH_OPC_QUERY_MIB_PRIVATE };
+
+static bool hns_roh_is_special_opcode(u16 opcode)
+{
+	/* these commands have several descriptors,
+	 * and use the first one to save opcode and return value
+	 */
+	u32 i;
+
+	for (i = 0; i < ARRAY_SIZE(spec_opcode); i++)
+		if (spec_opcode[i] == opcode)
+			return true;
+
+	return false;
+}
+
+static int hns3_roh_cmd_convert_err_code(u16 desc_ret)
+{
+	struct hns3_roh_errcode hns3_roh_cmd_errcode[] = {
+		{ HNS3_ROH_CMD_EXEC_SUCCESS, 0 },
+		{ HNS3_ROH_CMD_NO_AUTH, -EPERM },
+		{ HNS3_ROH_CMD_NOT_SUPPORTED, -EOPNOTSUPP },
+		{ HNS3_ROH_CMD_QUEUE_FULL, -EXFULL },
+		{ HNS3_ROH_CMD_NEXT_ERR, -ENOSR },
+		{ HNS3_ROH_CMD_UNEXE_ERR, -ENOTBLK },
+		{ HNS3_ROH_CMD_PARA_ERR, -EINVAL },
+		{ HNS3_ROH_CMD_RESULT_ERR, -ERANGE },
+		{ HNS3_ROH_CMD_TIMEOUT, -ETIME },
+		{ HNS3_ROH_CMD_HILINK_ERR, -ENOLINK },
+		{ HNS3_ROH_CMD_QUEUE_ILLEGAL, -ENXIO },
+		{ HNS3_ROH_CMD_INVALID, -EBADR },
+	};
+	u32 errcode_count = ARRAY_SIZE(hns3_roh_cmd_errcode);
+	u32 i;
+
+	for (i = 0; i < errcode_count; i++)
+		if (hns3_roh_cmd_errcode[i].imp_errcode == desc_ret)
+			return hns3_roh_cmd_errcode[i].common_errno;
+
+	return -EIO;
+}
+
+static int hns3_roh_cmd_check_retval(struct hns3_roh_device *hroh_dev,
+				     struct hns3_roh_desc *desc, int num,
+				     int next_to_clean)
+{
+	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
+	int ntc = next_to_clean;
+	u16 opcode, desc_ret;
+	int handle;
+
+	opcode = le16_to_cpu(desc[0].opcode);
+	for (handle = 0; handle < num; handle++) {
+		desc[handle] = priv->cmdq.csq.desc[ntc];
+		ntc++;
+		if (ntc >= priv->cmdq.csq.desc_num)
+			ntc = 0;
+	}
+	if (likely(!hns_roh_is_special_opcode(opcode)))
+		desc_ret = le16_to_cpu(desc[num - 1].retval);
+	else
+		desc_ret = le16_to_cpu(desc[0].retval);
+
+	priv->cmdq.last_status = desc_ret;
+
+	return hns3_roh_cmd_convert_err_code(desc_ret);
 }
 
 int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *desc, int num)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
 	struct hns3_roh_cmdq_ring *csq = &priv->cmdq.csq;
-	u32 timeout = 0;
+	bool is_completed = false;
 	int handle = 0;
 	int ntc = 0;
 	int ret = 0;
@@ -298,16 +350,13 @@ int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *d
 	/* Write to hardware */
 	hns3_roh_write(hroh_dev, HNS3_ROH_TX_CMDQ_TAIL_REG, csq->next_to_use);
 
-	if (desc->flag & cpu_to_le16(HNS3_ROH_CMD_FLAG_NO_INTR)) {
-		do {
-			if (hns3_roh_cmdq_csq_done(hroh_dev))
-				break;
-			udelay(1);
-			timeout++;
-		} while (timeout < priv->cmdq.tx_timeout);
-	}
+	if (le16_to_cpu(desc->flag) & HNS3_ROH_CMD_FLAG_NO_INTR)
+		hns3_roh_cmd_wait_for_resp(hroh_dev, &is_completed);
 
-	ret = hns3_roh_cmdq_done_parse(hroh_dev, desc, num, ntc);
+	if (!is_completed)
+		ret = -EBADE;
+	else
+		ret = hns3_roh_cmd_check_retval(hroh_dev, desc, num, ntc);
 
 	handle = hns3_roh_cmdq_csq_clean(hroh_dev);
 	if (handle != num)

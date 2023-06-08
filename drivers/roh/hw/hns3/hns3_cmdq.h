@@ -28,21 +28,28 @@ enum hns3_roh_opcode_type {
 	HNS3_ROH_OPC_GET_INTR_INFO = 0x0023,
 	HNS3_ROH_OPC_QUERY_PORT_LINK_STATUS = 0x038a,
 	HNS3_ROH_OPC_SET_EID = 0x9001,
-	HNS3_ROH_OPC_GET_GUID = 0x9002,
 	HNS3_ROH_OPC_QUERY_MIB_PUBLIC = 0x9005,
 	HNS3_ROH_OPC_QUERY_MIB_PRIVATE = 0x9006,
 };
 
+struct hns3_roh_errcode {
+	u32 imp_errcode;
+	int common_errno;
+};
+
 enum hns3_roh_cmd_return_status {
-	HNS3_ROH_CMD_EXEC_SUCCESS = 0,
-	HNS3_ROH_CMD_NO_AUTH,
-	HNS3_ROH_CMD_NOT_EXIST,
-	HNS3_ROH_CMD_QUEUE_FULL,
-	HNS3_ROH_CMD_NEXT_ERR,
-	HNS3_ROH_CMD_NOT_EXEC,
-	HNS3_ROH_CMD_PARA_ERR,
-	HNS3_ROH_CMD_RESULT_ERR,
-	HNS3_ROH_CMD_EXEC_TIMEOUT
+	HNS3_ROH_CMD_EXEC_SUCCESS	= 0,
+	HNS3_ROH_CMD_NO_AUTH		= 1,
+	HNS3_ROH_CMD_NOT_SUPPORTED	= 2,
+	HNS3_ROH_CMD_QUEUE_FULL		= 3,
+	HNS3_ROH_CMD_NEXT_ERR		= 4,
+	HNS3_ROH_CMD_UNEXE_ERR		= 5,
+	HNS3_ROH_CMD_PARA_ERR		= 6,
+	HNS3_ROH_CMD_RESULT_ERR		= 7,
+	HNS3_ROH_CMD_TIMEOUT		= 8,
+	HNS3_ROH_CMD_HILINK_ERR		= 9,
+	HNS3_ROH_CMD_QUEUE_ILLEGAL	= 10,
+	HNS3_ROH_CMD_INVALID		= 11,
 };
 
 enum hns3_roh_mbx_opcode {
@@ -67,11 +74,6 @@ struct hns3_roh_set_eid_info {
 	__le32 base_eid;
 	__le32 num_eid;
 	u8 rsv[16];
-};
-
-struct hns3_roh_get_guid_info {
-	u8 guid[16];
-	u8 rsv[8];
 };
 
 struct hns3_roh_query_link_status_info {
