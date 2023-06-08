@@ -2854,7 +2854,8 @@ static void determine_ecc_sym_sz(struct amd64_pvt *pvt)
 			if (pvt->umc[i].sdp_ctrl & UMC_SDP_INIT) {
 				if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
 				    boot_cpu_data.x86 == 0x18 &&
-				    boot_cpu_data.x86_model == 0x4 &&
+				    (boot_cpu_data.x86_model == 0x4 ||
+				     boot_cpu_data.x86_model == 0x5) &&
 				    (pvt->umc[i].umc_cfg & GENMASK(2, 0)) == 0x1) {
 					determine_ecc_sym_sz_f18h_m4h(pvt, i);
 					return;
@@ -3530,6 +3531,12 @@ static struct amd64_family_type *per_family_init(struct amd64_pvt *pvt)
 			pvt->ops = &family_types[F17_M30H_CPUS].ops;
 			family_types[F17_M30H_CPUS].max_mcs = 3;
 			family_types[F17_M30H_CPUS].ctl_name = "F18h_M04h";
+			break;
+		} else if (pvt->model == 0x5) {
+			fam_type = &family_types[F17_M30H_CPUS];
+			pvt->ops = &family_types[F17_M30H_CPUS].ops;
+			family_types[F17_M30H_CPUS].max_mcs = 1;
+			family_types[F17_M30H_CPUS].ctl_name = "F18h_M05h";
 			break;
 		}
 		fam_type	= &family_types[F17_CPUS];
