@@ -168,7 +168,7 @@ xchk_inode_flags2(
 
 	/* reflink flag requires reflink feature */
 	if ((flags2 & XFS_DIFLAG2_REFLINK) &&
-	    !xfs_sb_version_hasreflink(&mp->m_sb))
+	    !xfs_has_reflink(mp))
 		goto bad;
 
 	/* cowextsize flag is checked w.r.t. mode separately */
@@ -186,8 +186,7 @@ xchk_inode_flags2(
 		goto bad;
 
 	/* no bigtime iflag without the bigtime feature */
-	if (xfs_dinode_has_bigtime(dip) &&
-	    !xfs_sb_version_hasbigtime(&mp->m_sb))
+	if (xfs_dinode_has_bigtime(dip) && !xfs_has_bigtime(mp))
 		goto bad;
 
 	return;
@@ -265,7 +264,7 @@ xchk_dinode(
 			xchk_ino_set_corrupt(sc, ino);
 
 		if (dip->di_projid_hi != 0 &&
-		    !xfs_sb_version_hasprojid32bit(&mp->m_sb))
+		    !xfs_has_projid32(mp))
 			xchk_ino_set_corrupt(sc, ino);
 		break;
 	default:
@@ -548,7 +547,7 @@ xchk_inode_check_reflink_iflag(
 	bool			has_shared;
 	int			error;
 
-	if (!xfs_sb_version_hasreflink(&mp->m_sb))
+	if (!xfs_has_reflink(mp))
 		return;
 
 	error = xfs_reflink_inode_has_shared_extents(sc->tp, sc->ip,
