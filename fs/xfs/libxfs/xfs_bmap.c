@@ -3626,6 +3626,7 @@ xfs_bmap_btalloc(
 		args.alignment = 1;
 		args.minalignslop = 0;
 	}
+	args.postallocs = 1;
 	args.minleft = ap->minleft;
 	args.wasdel = ap->wasdel;
 	args.resv = XFS_AG_RESV_NONE;
