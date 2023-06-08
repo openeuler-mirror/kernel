@@ -129,7 +129,7 @@ xfs_da3_node_hdr_from_disk(
 	struct xfs_da3_icnode_hdr	*to,
 	struct xfs_da_intnode		*from)
 {
-	if (xfs_sb_version_hascrc(&mp->m_sb)) {
+	if (xfs_has_crc(mp)) {
 		struct xfs_da3_intnode	*from3 = (struct xfs_da3_intnode *)from;
 
 		to->forw = be32_to_cpu(from3->hdr.info.hdr.forw);
@@ -156,7 +156,7 @@ xfs_da3_node_hdr_to_disk(
 	struct xfs_da_intnode		*to,
 	struct xfs_da3_icnode_hdr	*from)
 {
-	if (xfs_sb_version_hascrc(&mp->m_sb)) {
+	if (xfs_has_crc(mp)) {
 		struct xfs_da3_intnode	*to3 = (struct xfs_da3_intnode *)to;
 
 		ASSERT(from->magic == XFS_DA3_NODE_MAGIC);
@@ -191,7 +191,7 @@ xfs_da3_blkinfo_verify(
 	if (!xfs_verify_magic16(bp, hdr->magic))
 		return __this_address;
 
-	if (xfs_sb_version_hascrc(&mp->m_sb)) {
+	if (xfs_has_crc(mp)) {
 		if (!uuid_equal(&hdr3->uuid, &mp->m_sb.sb_meta_uuid))
 			return __this_address;
 		if (be64_to_cpu(hdr3->blkno) != bp->b_bn)
@@ -253,7 +253,7 @@ xfs_da3_node_write_verify(
 		return;
 	}
 
-	if (!xfs_sb_version_hascrc(&mp->m_sb))
+	if (!xfs_has_crc(mp))
 		return;
 
 	if (bip)
@@ -442,7 +442,7 @@ xfs_da3_node_create(
 	xfs_trans_buf_set_type(tp, bp, XFS_BLFT_DA_NODE_BUF);
 	node = bp->b_addr;
 
-	if (xfs_sb_version_hascrc(&mp->m_sb)) {
+	if (xfs_has_crc(mp)) {
 		struct xfs_da3_node_hdr *hdr3 = bp->b_addr;
 
 		memset(hdr3, 0, sizeof(struct xfs_da3_node_hdr));
