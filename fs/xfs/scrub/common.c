@@ -491,7 +491,7 @@ xchk_ag_btcur_init(
 	}
 
 	/* Set up a finobt cursor for cross-referencing. */
-	if (sa->agi_bp && xfs_sb_version_hasfinobt(&mp->m_sb) &&
+	if (sa->agi_bp && xfs_has_finobt(mp) &&
 	    xchk_ag_btree_healthy_enough(sc, sa->pag, XFS_BTNUM_FINO)) {
 		sa->fino_cur = xfs_inobt_init_cursor(mp, sc->tp, sa->agi_bp,
 				agno, XFS_BTNUM_FINO);
@@ -500,7 +500,7 @@ xchk_ag_btcur_init(
 	}
 
 	/* Set up a rmapbt cursor for cross-referencing. */
-	if (sa->agf_bp && xfs_sb_version_hasrmapbt(&mp->m_sb) &&
+	if (sa->agf_bp && xfs_has_rmapbt(mp) &&
 	    xchk_ag_btree_healthy_enough(sc, sa->pag, XFS_BTNUM_RMAP)) {
 		sa->rmap_cur = xfs_rmapbt_init_cursor(mp, sc->tp, sa->agf_bp,
 				agno);
@@ -509,7 +509,7 @@ xchk_ag_btcur_init(
 	}
 
 	/* Set up a refcountbt cursor for cross-referencing. */
-	if (sa->agf_bp && xfs_sb_version_hasreflink(&mp->m_sb) &&
+	if (sa->agf_bp && xfs_has_reflink(mp) &&
 	    xchk_ag_btree_healthy_enough(sc, sa->pag, XFS_BTNUM_REFC)) {
 		sa->refc_cur = xfs_refcountbt_init_cursor(mp, sc->tp,
 				sa->agf_bp, agno);
@@ -863,7 +863,7 @@ xchk_metadata_inode_forks(
 		return error;
 
 	/* Look for incorrect shared blocks. */
-	if (xfs_sb_version_hasreflink(&sc->mp->m_sb)) {
+	if (xfs_has_reflink(sc->mp)) {
 		error = xfs_reflink_inode_has_shared_extents(sc->tp, sc->ip,
 				&shared);
 		if (!xchk_fblock_process_error(sc, XFS_DATA_FORK, 0,
@@ -917,7 +917,7 @@ xchk_start_reaping(
 	 * Readonly filesystems do not perform inactivation or speculative
 	 * preallocation, so there's no need to restart the workers.
 	 */
-	if (!(sc->mp->m_flags & XFS_MOUNT_RDONLY)) {
+	if (!xfs_is_readonly(sc->mp)) {
 		xfs_inodegc_start(sc->mp);
 		xfs_blockgc_start(sc->mp);
 	}

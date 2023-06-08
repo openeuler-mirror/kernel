@@ -23,6 +23,7 @@
 #include "xfs_dquot.h"
 #include "xfs_reflink.h"
 #include "xfs_ialloc.h"
+#include "xfs_log_priv.h"
 
 #include <linux/iversion.h>
 
@@ -594,7 +595,7 @@ xfs_iget_cache_miss(
 
 	/*
 	 * For version 5 superblocks, if we are initialising a new inode and we
-	 * are not utilising the XFS_MOUNT_IKEEP inode cluster mode, we can
+	 * are not utilising the XFS_FEAT_IKEEP inode cluster mode, we can
 	 * simply build the new inode core with a random generation number.
 	 *
 	 * For version 4 (and older) superblocks, log recovery is dependent on
@@ -602,8 +603,8 @@ xfs_iget_cache_miss(
 	 * value and hence we must also read the inode off disk even when
 	 * initializing new inodes.
 	 */
-	if (xfs_sb_version_has_v3inode(&mp->m_sb) &&
-	    (flags & XFS_IGET_CREATE) && !(mp->m_flags & XFS_MOUNT_IKEEP)) {
+	if (xfs_has_v3inodes(mp) &&
+	    (flags & XFS_IGET_CREATE) && !xfs_has_ikeep(mp)) {
 		VFS_I(ip)->i_generation = prandom_u32();
 	} else {
 		struct xfs_dinode	*dip;
@@ -882,7 +883,14 @@ xfs_reclaim_inode(
 	if (xfs_iflags_test_and_set(ip, XFS_IFLUSHING))
 		goto out_iunlock;
 
-	if (XFS_FORCED_SHUTDOWN(ip->i_mount)) {
+	/*
+	 * Check for log shutdown because aborting the inode can move the log
+	 * tail and corrupt in memory state. This is fine if the log is shut
+	 * down, but if the log is still active and only the mount is shut down
+	 * then the in-memory log tail movement caused by the abort can be
+	 * incorrectly propagated to disk.
+	 */
+	if (xlog_is_shutdown(ip->i_mount->m_log)) {
 		xfs_iunpin_wait(ip);
 		xfs_iflush_shutdown_abort(ip);
 		goto reclaim;
@@ -959,9 +967,8 @@ static inline bool
 xfs_want_reclaim_sick(
 	struct xfs_mount	*mp)
 {
-	return (mp->m_flags & XFS_MOUNT_UNMOUNTING) ||
-	       (mp->m_flags & XFS_MOUNT_NORECOVERY) ||
-	       XFS_FORCED_SHUTDOWN(mp);
+	return xfs_is_unmounting(mp) || xfs_has_norecovery(mp) ||
+	       xfs_is_shutdown(mp);
 }
 
 void
@@ -1416,7 +1423,7 @@ xfs_blockgc_igrab(
 	spin_unlock(&ip->i_flags_lock);
 
 	/* nothing to sync during shutdown */
-	if (XFS_FORCED_SHUTDOWN(ip->i_mount))
+	if (xfs_is_shutdown(ip->i_mount))
 		return false;
 
 	/* If we can't grab the inode, it must on it's way to reclaim. */
@@ -1835,7 +1842,7 @@ xfs_inodegc_set_reclaimable(
 	struct xfs_mount	*mp = ip->i_mount;
 	struct xfs_perag	*pag;
 
-	if (!XFS_FORCED_SHUTDOWN(mp) && ip->i_delayed_blks) {
+	if (!xfs_is_shutdown(mp) && ip->i_delayed_blks) {
 		xfs_check_delalloc(ip, XFS_DATA_FORK);
 		xfs_check_delalloc(ip, XFS_COW_FORK);
 		ASSERT(0);
