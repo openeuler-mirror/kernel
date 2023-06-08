@@ -77,7 +77,6 @@ static int hns3_roh_register_device(struct hns3_roh_device *hroh_dev)
 	rohdev->netdev = hroh_dev->netdev;
 
 	rohdev->ops.set_eid = hns3_roh_set_eid;
-	rohdev->ops.query_guid = hns3_roh_query_guid;
 	rohdev->ops.alloc_hw_stats = hns3_roh_alloc_hw_stats;
 	rohdev->ops.get_hw_stats = hns3_roh_get_hw_stats;
 
@@ -332,10 +331,8 @@ static int hns3_roh_init_instance(struct hnae3_handle *handle)
 	int ret;
 
 	id = pci_match_id(hns3_roh_pci_tbl, handle->pdev);
-	if (!id) {
-		dev_err(dev, "failed to match pci id.\n");
+	if (!id)
 		return 0;
-	}
 
 	if (id->driver_data) {
 		dev_err(dev, "not support vf.\n");
@@ -562,8 +559,9 @@ static void hns3_roh_dfx_init(struct hns3_roh_device *hroh_dev)
 	if (IS_ERR_OR_NULL(hroh_dev->dfx_debugfs))
 		return;
 
-	entry = debugfs_create_file("hns3_roh_dfx", 0600, hroh_dev->dfx_debugfs,
-				    hroh_dev, &hns3_roh_dfx_cmd_fops);
+	entry = debugfs_create_file("hns3_roh_dfx", 0600,
+				    hroh_dev->dfx_debugfs, hroh_dev,
+				    &hns3_roh_dfx_cmd_fops);
 	if (IS_ERR_OR_NULL(entry)) {
 		debugfs_remove_recursive(hroh_dev->dfx_debugfs);
 		hroh_dev->dfx_debugfs = NULL;

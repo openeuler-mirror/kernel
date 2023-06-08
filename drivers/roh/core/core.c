@@ -2,10 +2,10 @@
 // Copyright (c) 2022 Hisilicon Limited.
 
 #include <linux/pci.h>
-#include <net/rtnetlink.h>
+#include <linux/inetdevice.h>
 
-#include "core.h"
 #include "core_priv.h"
+#include "core.h"
 
 static DEFINE_XARRAY_FLAGS(devices, XA_FLAGS_ALLOC);
 static DECLARE_RWSEM(devices_rwsem);
@@ -193,20 +193,6 @@ out:
 	return ret;
 }
 
-static int setup_device(struct roh_device *device)
-{
-	int ret;
-
-	/* Query GUID */
-	ret = device->ops.query_guid(device, &device->node_guid);
-	if (ret) {
-		pr_err("failed to query guid, ret = %d\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
 static void disable_device(struct roh_device *device)
 {
 	u32 cid;
@@ -264,10 +250,8 @@ static int roh_ipv4_event(struct notifier_block *this, unsigned long event, void
 
 	device = container_of(this, struct roh_device, nb);
 	ndev = ifa->ifa_dev->dev;
-	if (device->netdev != ndev) {
-		pr_warn("netdev mismatch.\n");
+	if (device->netdev != ndev || event != NETDEV_UP)
 		return NOTIFY_DONE;
-	}
 
 	in.sin_addr.s_addr = ifa->ifa_address;
 
@@ -315,12 +299,6 @@ int roh_register_device(struct roh_device *device)
 	ret = assign_name(device);
 	if (ret) {
 		pr_err("roh_core: failed to assigne name, ret = %d\n", ret);
-		return ret;
-	}
-
-	ret = setup_device(device);
-	if (ret) {
-		pr_err("roh_core: failed to setup device, ret = %d\n", ret);
 		return ret;
 	}
 
@@ -559,7 +537,7 @@ static int roh_set_pf_mac_by_eid(struct roh_device *device,
 	u32 eid = eid_attr->base;
 	struct net_device *ndev;
 	struct sockaddr s_addr;
-	u8 mac[ETH_ALEN];
+	u8 mac[ETH_ALEN] = {0};
 	int ret;
 
 	ndev = device->netdev;
@@ -626,11 +604,6 @@ void roh_device_get_eid(struct roh_device *device, struct roh_eid_attr *attr)
 	mutex_lock(&device->eid_mutex);
 	memcpy(attr, &device->eid, sizeof(*attr));
 	mutex_unlock(&device->eid_mutex);
-}
-
-void roh_device_query_guid(struct roh_device *device, struct roh_guid_attr *attr)
-{
-	memcpy(attr, &device->node_guid, sizeof(*attr));
 }
 
 enum roh_link_status roh_device_query_link_status(struct roh_device *device)

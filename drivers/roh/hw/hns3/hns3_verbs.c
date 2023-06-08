@@ -3,8 +3,8 @@
 
 #include "core.h"
 
-#include "hns3_verbs.h"
 #include "hns3_cmdq.h"
+#include "hns3_verbs.h"
 
 int hns3_roh_set_eid(struct roh_device *rohdev, struct roh_eid_attr *eid_attr)
 {
@@ -24,26 +24,6 @@ int hns3_roh_set_eid(struct roh_device *rohdev, struct roh_eid_attr *eid_attr)
 		dev_err(hroh_dev->dev, "failed to set eid, ret = %d\n", ret);
 		return ret;
 	}
-
-	return 0;
-}
-
-int hns3_roh_query_guid(struct roh_device *rohdev, struct roh_guid_attr *guid_attr)
-{
-	struct hns3_roh_device *hroh_dev = to_hroh_dev(rohdev);
-	struct hns3_roh_get_guid_info *req;
-	struct hns3_roh_desc desc;
-	int ret;
-
-	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_GET_GUID, true);
-	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
-	if (ret) {
-		dev_err(hroh_dev->dev, "failed to query guid, ret = %d\n", ret);
-		return ret;
-	}
-
-	req = (struct hns3_roh_get_guid_info *)desc.data;
-	memcpy(guid_attr->data, req->guid, sizeof(req->guid));
 
 	return 0;
 }

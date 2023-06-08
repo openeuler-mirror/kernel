@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2020-2022 Hisilicon Limited.
 
+#include <net/sock.h>
 #include <linux/sysfs.h>
 #include <linux/stat.h>
-#include <net/sock.h>
 
 #include "core.h"
 #include "core_priv.h"
@@ -21,18 +21,6 @@ static ssize_t node_eid_show(struct device *device,
 	return sprintf(buf, "base:%u num:%u\n", eid.base, eid.num);
 }
 
-static ssize_t node_guid_show(struct device *device,
-			      struct device_attribute *attr, char *buf)
-{
-	struct roh_device *dev = container_of(device, struct roh_device, dev);
-	struct roh_guid_attr guid;
-	u32 *val = (u32 *)guid.data;
-
-	roh_device_query_guid(dev, &guid);
-
-	return sprintf(buf, "%08x:%08x:%08x:%08x\n", val[0], val[1], val[2], val[3]);
-}
-
 static ssize_t node_link_status_show(struct device *device,
 				     struct device_attribute *attr, char *buf)
 {
@@ -44,12 +32,10 @@ static ssize_t node_link_status_show(struct device *device,
 }
 
 static DEVICE_ATTR_RO(node_eid);
-static DEVICE_ATTR_RO(node_guid);
 static DEVICE_ATTR_RO(node_link_status);
 
 static struct device_attribute *roh_class_attr[] = {
 	&dev_attr_node_eid,
-	&dev_attr_node_guid,
 	&dev_attr_node_link_status,
 };
 
@@ -71,7 +57,7 @@ static void remove_device_sysfs(struct roh_device *device)
 		device_remove_file(&device->dev, roh_class_attr[i]);
 }
 
-static const char * const roh_hw_stats_name[ROH_MIB_STATS_TYPE_NUM] = {
+static const char * const g_roh_hw_stats_name[ROH_MIB_STATS_TYPE_NUM] = {
 	"mib_public",
 	"mib_private",
 };
@@ -91,18 +77,19 @@ static ssize_t print_hw_stat(struct roh_device *dev,
 static ssize_t node_public_mib_stats_show(struct kobject *kobj,
 					  struct attribute *attr, char *buf)
 {
-	struct roh_hw_stats_attribute *hsa;
 	struct roh_mib_stats *public_stats;
 	struct roh_device *dev;
 	int ret;
 
-	hsa = container_of(attr, struct roh_hw_stats_attribute, attr);
 	dev = container_of(kobj, struct roh_device, dev.kobj);
 	public_stats = dev->hw_public_stats;
 	mutex_lock(&public_stats->lock);
 	ret = dev->ops.get_hw_stats(dev, public_stats, ROH_MIB_PUBLIC);
-	if (ret)
+	if (ret) {
+		dev_err(&dev->dev,
+			"failed to get roh public hw stats, ret = %d.\n", ret);
 		goto unlock;
+	}
 
 	ret = print_hw_stat(dev, public_stats, buf);
 
@@ -115,17 +102,18 @@ static ssize_t node_private_mib_stats_show(struct kobject *kobj,
 					   struct attribute *attr, char *buf)
 {
 	struct roh_mib_stats *private_stats;
-	struct roh_hw_stats_attribute *hsa;
 	struct roh_device *dev;
 	int ret;
 
-	hsa = container_of(attr, struct roh_hw_stats_attribute, attr);
 	dev = container_of(kobj, struct roh_device, dev.kobj);
 	private_stats = dev->hw_private_stats;
 	mutex_lock(&private_stats->lock);
 	ret = dev->ops.get_hw_stats(dev, private_stats, ROH_MIB_PRIVATE);
-	if (ret)
+	if (ret) {
+		dev_err(&dev->dev,
+			"failed to get roh private hw stats, ret = %d.\n", ret);
 		goto unlock;
+	}
 
 	ret = print_hw_stat(dev, private_stats, buf);
 
@@ -134,7 +122,7 @@ unlock:
 	return ret;
 }
 
-static ssize_t (*show_roh_mib_hw_stats[ROH_MIB_STATS_TYPE_NUM])
+static ssize_t (*g_show_roh_mib_hw_stats[ROH_MIB_STATS_TYPE_NUM])
 	(struct kobject *, struct attribute *, char *) = {
 	node_public_mib_stats_show,
 	node_private_mib_stats_show
@@ -168,70 +156,131 @@ static struct attribute *alloc_hsa(const char *name,
 	return &hsa->attr;
 }
 
-static void setup_mib_stats(struct roh_device *device)
+static void free_hw_stats(struct roh_device *device)
+{
+	kfree(device->hw_private_stats);
+	kfree(device->hw_public_stats);
+}
+
+static int alloc_and_get_hw_stats(struct roh_device *device)
 {
 	struct roh_mib_stats *privite_stats, *public_stats;
-	struct attribute_group *hsag;
-	struct kobject *kobj;
-	int i, j;
 	int ret;
 
 	public_stats = device->ops.alloc_hw_stats(device, ROH_MIB_PUBLIC);
-	if (!public_stats)
-		return;
+	if (!public_stats) {
+		dev_err(&device->dev, "failed to alloc roh public hw stats.\n");
+		return -ENOMEM;
+	}
 
 	privite_stats = device->ops.alloc_hw_stats(device, ROH_MIB_PRIVATE);
 	if (!privite_stats) {
+		dev_err(&device->dev, "failed to alloc roh privite hw stats.\n");
 		kfree(public_stats);
-		return;
+		return -ENOMEM;
 	}
 
-	hsag = kzalloc(sizeof(*hsag) +
-		       sizeof(void *) * (ARRAY_SIZE(roh_hw_stats_name)),
-		       GFP_KERNEL);
-	if (!hsag)
-		goto err_free_stats;
-
 	ret = device->ops.get_hw_stats(device, public_stats, ROH_MIB_PUBLIC);
-	if (ret)
-		goto err_free_hsag;
+	if (ret) {
+		dev_err(&device->dev,
+			"failed to get roh public mib stats, ret = %d\n", ret);
+		goto err;
+	}
 
 	ret = device->ops.get_hw_stats(device, privite_stats, ROH_MIB_PRIVATE);
-	if (ret)
-		goto err_free_hsag;
-
-	hsag->name = "node_mib_stats";
-	hsag->attrs = (void *)hsag + sizeof(*hsag);
-
-	for (i = 0; i < ARRAY_SIZE(roh_hw_stats_name); i++) {
-		hsag->attrs[i] = alloc_hsa(roh_hw_stats_name[i],
-					   show_roh_mib_hw_stats[i]);
-		if (!hsag->attrs[i])
-			goto err;
-		sysfs_attr_init(hsag->attrs[i]);
+	if (ret) {
+		dev_err(&device->dev,
+			"failed to get roh privite mib stats, ret = %d\n", ret);
+		goto err;
 	}
 
 	mutex_init(&privite_stats->lock);
 	mutex_init(&public_stats->lock);
 
-	kobj = &device->dev.kobj;
-	ret = sysfs_create_group(kobj, hsag);
-	if (ret)
-		goto err;
-	device->hw_stats_ag = hsag;
 	device->hw_public_stats = public_stats;
 	device->hw_private_stats = privite_stats;
 
-	return;
+	return 0;
 
+err:
+	free_hw_stats(device);
+
+	return ret;
+}
+
+static int alloc_hsag(struct roh_device *device)
+{
+	struct attribute_group *hsag;
+	struct kobject *kobj;
+	int i, j;
+	int ret;
+
+	/*
+	 * one extra attribue elements here, terminate the
+	 * list for the sysfs core code
+	 */
+	hsag = kzalloc(sizeof(*hsag) +
+		       sizeof(void *) * (ARRAY_SIZE(g_roh_hw_stats_name) + 1),
+		       GFP_KERNEL);
+	if (!hsag) {
+		dev_err(&device->dev, "failed to kzalloc hsag.\n");
+		return -ENOMEM;
+	}
+
+	hsag->name = "node_mib_stats";
+	hsag->attrs = (void *)hsag + sizeof(*hsag);
+
+	for (i = 0; i < ARRAY_SIZE(g_roh_hw_stats_name); i++) {
+		hsag->attrs[i] = alloc_hsa(g_roh_hw_stats_name[i],
+					   g_show_roh_mib_hw_stats[i]);
+		if (!hsag->attrs[i]) {
+			ret = -ENOMEM;
+			dev_err(&device->dev,
+				"failed to alloc hsa for hsag attrs[%d].\n", i);
+			goto err;
+		}
+		sysfs_attr_init(hsag->attrs[i]);
+	}
+
+	kobj = &device->dev.kobj;
+	ret = sysfs_create_group(kobj, hsag);
+	if (ret) {
+		dev_err(&device->dev,
+			"failed to create roh sysfs group, ret = %d\n", ret);
+		goto err;
+	}
+
+	device->hw_stats_ag = hsag;
+
+	return 0;
 err:
 	for (j = i - 1; j >= 0; j--)
 		kfree(hsag->attrs[j]);
-err_free_hsag:
 	kfree(hsag);
-err_free_stats:
-	kfree(public_stats);
-	kfree(privite_stats);
+
+	return ret;
+}
+
+static int setup_mib_stats(struct roh_device *device)
+{
+	int ret;
+
+	ret = alloc_and_get_hw_stats(device);
+	if (ret) {
+		dev_err(&device->dev,
+			"failed to alloc and get roh hw stats, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = alloc_hsag(device);
+	if (ret) {
+		dev_err(&device->dev,
+			"failed to alloc hsag, ret = %d.\n", ret);
+		free_hw_stats(device);
+		return ret;
+	}
+
+	return 0;
 }
 
 int roh_device_register_sysfs(struct roh_device *device)
@@ -242,17 +291,23 @@ int roh_device_register_sysfs(struct roh_device *device)
 	for (i = 0; i < ARRAY_SIZE(roh_class_attr); i++) {
 		ret = device_create_file(&device->dev, roh_class_attr[i]);
 		if (ret) {
-			pr_err("failed to create node %s, ret = %d.\n",
-			       roh_class_attr[i]->attr.name, ret);
+			dev_err(&device->dev,
+				"failed to create node %s, ret = %d.\n",
+				roh_class_attr[i]->attr.name, ret);
 			goto err;
 		}
 	}
 
-	if (device->ops.alloc_hw_stats)
-		setup_mib_stats(device);
+	if (device->ops.alloc_hw_stats) {
+		ret = setup_mib_stats(device);
+		if (ret) {
+			dev_err(&device->dev,
+				"failed to setup roh mib stats, ret = %d.\n", ret);
+			goto err;
+		}
+	}
 
 	return 0;
-
 err:
 	remove_device_sysfs(device);
 	return ret;
@@ -263,8 +318,7 @@ void roh_device_unregister_sysfs(struct roh_device *device)
 	if (device->hw_stats_ag)
 		free_hsag(&device->dev.kobj, device->hw_stats_ag);
 
-	kfree(device->hw_private_stats);
-	kfree(device->hw_public_stats);
+	free_hw_stats(device);
 
 	remove_device_sysfs(device);
 }
