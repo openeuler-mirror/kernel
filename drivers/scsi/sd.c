@@ -3663,6 +3663,7 @@ static int sd_suspend_common(struct device *dev, bool ignore_stop_errors)
 {
 	struct scsi_disk *sdkp = dev_get_drvdata(dev);
 	struct scsi_sense_hdr sshdr;
+	int retries;
 	int ret = 0;
 
 	if (!sdkp)	/* E.g.: runtime suspend following sd_remove() */
@@ -3693,9 +3694,15 @@ static int sd_suspend_common(struct device *dev, bool ignore_stop_errors)
 	if (sdkp->device->manage_start_stop) {
 		sd_printk(KERN_NOTICE, sdkp, "Stopping disk\n");
 		/* an error is not worth aborting a system sleep */
-		ret = sd_start_stop_device(sdkp, 0);
-		if (ignore_stop_errors)
-			ret = 0;
+		for (retries = 3; retries > 0; --retries) {
+			ret = sd_start_stop_device(sdkp, 0);
+			if (!ret)
+				break;
+			if (ignore_stop_errors) {
+				ret = 0;
+				break;
+			}
+		}
 	}
 
 	return ret;
@@ -3714,6 +3721,7 @@ static int sd_suspend_runtime(struct device *dev)
 static int sd_resume(struct device *dev)
 {
 	struct scsi_disk *sdkp = dev_get_drvdata(dev);
+	int retries;
 	int ret;
 
 	if (!sdkp)	/* E.g.: runtime resume at the start of sd_probe() */
@@ -3723,9 +3731,13 @@ static int sd_resume(struct device *dev)
 		return 0;
 
 	sd_printk(KERN_NOTICE, sdkp, "Starting disk\n");
-	ret = sd_start_stop_device(sdkp, 1);
-	if (!ret)
-		opal_unlock_from_suspend(sdkp->opal_dev);
+	for (retries = 3; retries > 0; --retries) {
+		ret = sd_start_stop_device(sdkp, 1);
+		if (!ret) {
+			opal_unlock_from_suspend(sdkp->opal_dev);
+			break;
+		}
+	}
 	return ret;
 }
 
