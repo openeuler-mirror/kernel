@@ -77,9 +77,9 @@ static struct orc_entry *orc_module_find(unsigned long ip)
 }
 #endif
 
-#ifdef CONFIG_DYNAMIC_FTRACE
 static struct orc_entry *orc_find(unsigned long ip);
 
+#ifdef CONFIG_DYNAMIC_FTRACE
 /*
  * Ftrace dynamic trampolines do not have orc entries of their own.
  * But they are copies of the ftrace entries that are static and
@@ -145,6 +145,34 @@ static struct orc_entry orc_fp_entry = {
 	.bp_offset	= -16,
 	.end		= 0,
 };
+
+#ifdef CONFIG_PARAVIRT_XXL
+static bool check_paravirt(struct unwind_state *state, struct orc_entry *orc)
+{
+	u8 *ip = (u8 *)state->ip;
+
+	/*
+	 * In paravirt_patch.c, patched paravirt opcode should be:
+	 * pushfq; popq %rax // 0x9c 0x58
+	 * pushq %rdi; popfq // 0x57 0x9d
+	 *
+	 * Error unwinding only happens when:
+	 * 1. In irq or preempt context.
+	 * 2. Current insn is popq, and it doesn't change orc.
+	 * 3. Last insn doesn't change orc, checking it first to
+	 *    promise ip - 1 is valid.
+	 * 4. Last byte fits pushf.
+	 */
+	if (state->regs && orc->type == UNWIND_HINT_TYPE_CALL &&
+		(ip[0] == 0x58 || ip[0] == 0x9d) &&
+		orc == orc_find((unsigned long)(ip + 1)) &&
+		orc == orc_find((unsigned long)(ip - 1)) &&
+		(ip[-1] == 0x9c || ip[-1] == 0x57))
+		return true;
+
+	return false;
+}
+#endif
 
 static struct orc_entry *orc_find(unsigned long ip)
 {
@@ -425,6 +453,9 @@ bool unwind_next_frame(struct unwind_state *state)
 	enum stack_type prev_type = state->stack_info.type;
 	struct orc_entry *orc;
 	bool indirect = false;
+#ifdef CONFIG_PARAVIRT_XXL
+	struct orc_entry para_orc;
+#endif
 
 	if (unwind_done(state))
 		return false;
@@ -456,6 +487,18 @@ bool unwind_next_frame(struct unwind_state *state)
 		orc = &orc_fp_entry;
 		state->error = true;
 	}
+
+#ifdef CONFIG_PARAVIRT_XXL
+	/*
+	 * When hitting paravirt POP insn, the orc entry should add
+	 * one slot for PUSH insn.
+	 */
+	if (!state->error && check_paravirt(state, orc)) {
+		para_orc = *orc;
+		para_orc.sp_offset += sizeof(long);
+		orc = &para_orc;
+	}
+#endif
 
 	/* End-of-stack check for kernel threads: */
 	if (orc->sp_reg == ORC_REG_UNDEFINED) {
