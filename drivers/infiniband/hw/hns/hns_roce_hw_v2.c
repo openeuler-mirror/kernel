@@ -2257,7 +2257,6 @@ static void apply_func_caps(struct hns_roce_dev *hr_dev)
 	caps->qpc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
 	caps->cqc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
 
-	caps->num_mtt_segs = HNS_ROCE_V2_MAX_MTT_SEGS;
 	caps->num_srqwqe_segs = HNS_ROCE_V2_MAX_SRQWQE_SEGS;
 	caps->num_idx_segs = HNS_ROCE_V2_MAX_IDX_SEGS;
 
@@ -2347,7 +2346,6 @@ static int hns_roce_query_caps(struct hns_roce_dev *hr_dev)
 	caps->max_sq_inline = le16_to_cpu(resp_a->max_sq_inline);
 	caps->max_rq_sg = le16_to_cpu(resp_a->max_rq_sg);
 	caps->max_rq_sg = roundup_pow_of_two(caps->max_rq_sg);
-	caps->max_extend_sg = le32_to_cpu(resp_a->max_extend_sg);
 	caps->num_qpc_timer = le16_to_cpu(resp_a->num_qpc_timer);
 	caps->max_srq_sges = le16_to_cpu(resp_a->max_srq_sges);
 	caps->max_srq_sges = roundup_pow_of_two(caps->max_srq_sges);
