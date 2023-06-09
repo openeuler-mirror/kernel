@@ -4703,22 +4703,30 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev)
 	u32 delay = 0;
 	int ret;
 
-	hisi_qm_dev_err_uninit(pf_qm);
-
-	/*
-	 * Check whether there is an ECC mbit error, If it occurs, need to
-	 * wait for soft reset to fix it.
-	 */
-	while (qm_check_dev_error(pf_qm)) {
-		msleep(++delay);
-		if (delay > QM_RESET_WAIT_TIMEOUT)
+	while (true) {
+		ret = qm_reset_prepare_ready(qm);
+		if (ret) {
+			pci_err(pdev, "FLR not ready!\n");
 			return;
-	}
+		}
 
-	ret = qm_reset_prepare_ready(qm);
-	if (ret) {
-		pci_err(pdev, "FLR not ready!\n");
-		return;
+		hisi_qm_dev_err_uninit(pf_qm);
+		/*
+		 * Check whether there is an ECC mbit error,
+		 * If it occurs, need to wait for soft reset
+		 * to fix it.
+		 */
+		if (qm_check_dev_error(pf_qm)) {
+			qm_reset_bit_clear(qm);
+			if (delay > QM_RESET_WAIT_TIMEOUT) {
+				pci_err(pdev, "the hardware error was not recovered!\n");
+				return;
+			}
+
+			msleep(++delay);
+		} else {
+			break;
+		}
 	}
 
 	/* PF obtains the information of VF by querying the register. */
