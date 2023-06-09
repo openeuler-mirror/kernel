@@ -372,7 +372,7 @@ struct mem_cgroup {
 	struct deferred_split deferred_split_queue;
 #endif
 
-#ifdef CONFIG_DYNAMIC_HUGETLB
+#if defined(CONFIG_DYNAMIC_HUGETLB) && defined(CONFIG_X86_64)
 	struct dhugetlb_pool *hpool;
 #endif
 #ifndef __GENKSYMS__
@@ -392,7 +392,11 @@ struct mem_cgroup {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 #endif
+#if defined(CONFIG_DYNAMIC_HUGETLB) && defined(CONFIG_ARM64)
+	KABI_USE(5, struct dhugetlb_pool *hpool)
+#else
 	KABI_RESERVE(5)
+#endif
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
