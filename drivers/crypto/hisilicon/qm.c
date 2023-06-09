@@ -2804,7 +2804,6 @@ static int qm_alloc_uacce(struct hisi_qm *qm)
 	qm->uacce = uacce;
 
 	qm_uacce_base_init(qm);
-	qm->uacce = uacce;
 	INIT_LIST_HEAD(&qm->isolate_data.qm_hw_errs);
 	mutex_init(&qm->isolate_data.isolate_lock);
 
@@ -3113,10 +3112,6 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	qm_remove_uacce(qm);
 	qm_irqs_unregister(qm);
 	hisi_qm_pci_uninit(qm);
-	if (qm->use_sva) {
-		uacce_remove(qm->uacce);
-		qm->uacce = NULL;
-	}
 }
 EXPORT_SYMBOL_GPL(hisi_qm_uninit);
 
@@ -4638,7 +4633,7 @@ err_reset:
 	qm_reset_bit_clear(qm);
 
 	/* if resetting fails, isolate the device */
-	if (qm->use_sva)
+	if (qm->use_uacce)
 		qm->isolate_data.is_isolate = true;
 	return ret;
 }
