@@ -206,7 +206,6 @@
 #define WAIT_PERIOD			20
 #define REMOVE_WAIT_DELAY		10
 
-#define QM_DRIVER_REMOVING		0
 #define QM_QOS_PARAM_NUM		2
 #define QM_QOS_MAX_VAL			1000
 #define QM_QOS_RATE			100
@@ -1114,6 +1113,11 @@ static irqreturn_t qm_mb_cmd_irq(int irq, void *data)
 	val &= QM_IFC_INT_STATUS_MASK;
 	if (!val)
 		return IRQ_NONE;
+
+	if (test_bit(QM_DRIVER_DOWN, &qm->misc_ctl)) {
+		dev_warn(&qm->pdev->dev, "Driver is down, message cannot be processed!\n");
+		return IRQ_HANDLED;
+	}
 
 	schedule_work(&qm->cmd_process);
 
@@ -2826,7 +2830,7 @@ EXPORT_SYMBOL_GPL(qm_register_uacce);
  */
 static int qm_frozen(struct hisi_qm *qm)
 {
-	if (test_bit(QM_DRIVER_REMOVING, &qm->misc_ctl))
+	if (test_bit(QM_DRIVER_DOWN, &qm->misc_ctl))
 		return 0;
 
 	down_write(&qm->qps_lock);
@@ -2834,7 +2838,7 @@ static int qm_frozen(struct hisi_qm *qm)
 	if (!qm->qp_in_used) {
 		qm->qp_in_used = qm->qp_num;
 		up_write(&qm->qps_lock);
-		set_bit(QM_DRIVER_REMOVING, &qm->misc_ctl);
+		set_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 		return 0;
 	}
 
@@ -2890,6 +2894,9 @@ void hisi_qm_wait_task_finish(struct hisi_qm *qm, struct hisi_qm_list *qm_list)
 	while (test_bit(QM_RST_SCHED, &qm->misc_ctl) ||
 	       test_bit(QM_RESETTING, &qm->misc_ctl))
 		msleep(WAIT_PERIOD);
+
+	if (test_bit(QM_SUPPORT_MB_COMMAND, &qm->caps))
+		flush_work(&qm->cmd_process);
 
 	udelay(REMOVE_WAIT_DELAY);
 }
@@ -4775,7 +4782,7 @@ static irqreturn_t qm_abnormal_irq(int irq, void *data)
 	atomic64_inc(&qm->debug.dfx.abnormal_irq_cnt);
 	ret = qm_process_dev_error(qm);
 	if (ret == ACC_ERR_NEED_RESET &&
-	    !test_bit(QM_DRIVER_REMOVING, &qm->misc_ctl) &&
+	    !test_bit(QM_DRIVER_DOWN, &qm->misc_ctl) &&
 	    !test_and_set_bit(QM_RST_SCHED, &qm->misc_ctl))
 		schedule_work(&qm->rst_work);
 
