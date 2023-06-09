@@ -2870,7 +2870,8 @@ static int slave_configure_v3_hw(struct scsi_device *sdev)
 		return 0;
 
 	if (!device_link_add(&sdev->sdev_gendev, dev,
-			     DL_FLAG_PM_RUNTIME | DL_FLAG_RPM_ACTIVE)) {
+			     DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME |
+			     DL_FLAG_RPM_ACTIVE)) {
 		if (pm_runtime_enabled(dev)) {
 			dev_info(dev, "add device link failed, disable runtime PM for the host\n");
 			pm_runtime_disable(dev);
@@ -2878,6 +2879,15 @@ static int slave_configure_v3_hw(struct scsi_device *sdev)
 	}
 
 	return 0;
+}
+
+static void slave_destroy_v3_hw(struct scsi_device *sdev)
+{
+	struct Scsi_Host *shost = dev_to_shost(&sdev->sdev_gendev);
+	struct hisi_hba *hisi_hba = shost_priv(shost);
+	struct device *dev = hisi_hba->dev;
+
+	device_link_remove(&sdev->sdev_gendev, dev);
 }
 
 static struct device_attribute *host_attrs_v3_hw[] = {
@@ -3064,21 +3074,24 @@ static const struct hisi_sas_debugfs_reg debugfs_ras_reg = {
 
 static void debugfs_snapshot_prepare_v3_hw(struct hisi_hba *hisi_hba)
 {
-	set_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
+	struct Scsi_Host *shost = hisi_hba->shost;
 
-	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE, 0);
-
+	scsi_block_requests(shost);
 	wait_cmds_complete_timeout_v3_hw(hisi_hba, 100, 5000);
-
+	set_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
 	hisi_sas_sync_irqs(hisi_hba);
+	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE, 0);
 }
 
 static void debugfs_snapshot_restore_v3_hw(struct hisi_hba *hisi_hba)
 {
+	struct Scsi_Host *shost = hisi_hba->shost;
+
 	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE,
 			 (u32)((1ULL << hisi_hba->queue_count) - 1));
 
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
+	scsi_unblock_requests(shost);
 }
 
 static void read_iost_itct_cache_v3_hw(struct hisi_hba *hisi_hba,
@@ -3268,6 +3281,7 @@ static struct scsi_host_template sht_v3_hw = {
 	.eh_device_reset_handler = sas_eh_device_reset_handler,
 	.eh_target_reset_handler = sas_eh_target_reset_handler,
 	.slave_alloc		= hisi_sas_slave_alloc,
+	.slave_destroy		= slave_destroy_v3_hw,
 	.target_destroy		= sas_target_destroy,
 	.ioctl			= sas_ioctl,
 #ifdef CONFIG_COMPAT
@@ -5087,11 +5101,14 @@ static int _suspend_v3_hw(struct device *device)
 	flush_workqueue(hisi_hba->wq);
 	interrupt_disable_v3_hw(hisi_hba);
 
-	if (atomic_read(&device->power.usage_count)) {
+#ifdef CONFIG_PM
+	if ((device->power.runtime_status == RPM_SUSPENDING) &&
+	    atomic_read(&device->power.usage_count)) {
 		dev_err(dev, "PM suspend: host status cannot be suspended\n");
 		rc = -EBUSY;
 		goto err_out;
 	}
+#endif
 
 	rc = disable_host_v3_hw(hisi_hba);
 	if (rc) {
@@ -5110,7 +5127,9 @@ static int _suspend_v3_hw(struct device *device)
 
 err_out_recover_host:
 	enable_host_v3_hw(hisi_hba);
+#ifdef CONFIG_PM
 err_out:
+#endif
 	interrupt_enable_v3_hw(hisi_hba);
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
 	clear_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags);
