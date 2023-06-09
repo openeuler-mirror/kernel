@@ -104,6 +104,7 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetlb_pool *hpool,
 						bool need_unreserved);
 void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve);
+bool page_belong_to_dynamic_hugetlb(struct page *page);
 
 #else
 
@@ -170,6 +171,11 @@ struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetl
 static inline
 void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 {
+}
+static inline
+bool page_belong_to_dynamic_hugetlb(struct page *page)
+{
+	return false;
 }
 #endif
 
