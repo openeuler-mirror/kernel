@@ -2000,4 +2000,17 @@ int sched_prefer_cpus_fork(struct task_struct *p, struct task_struct *orig);
 void sched_prefer_cpus_free(struct task_struct *p);
 #endif
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+extern struct static_key __smart_grid_used;
+static inline bool smart_grid_used(void)
+{
+	return static_key_false(&__smart_grid_used);
+}
+#else
+static inline bool smart_grid_used(void)
+{
+	return false;
+}
+#endif
+
 #endif
