@@ -529,6 +529,13 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 	spin_lock_irqsave(&percpu_pool->lock, flags);
 
 	do {
+		/*
+		 * Before discard the bad page, set PagePool flag to
+		 * distinguish from free page. And increase used_pages
+		 * to guarantee used + freed = total.
+		 */
+		if (page)
+			SetPagePool(page);
 		page = NULL;
 		if (percpu_pool->free_pages == 0) {
 			int ret;
@@ -544,8 +551,8 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 		page = list_entry(percpu_pool->head_page.next, struct page, lru);
 		list_del(&page->lru);
 		percpu_pool->free_pages--;
+		percpu_pool->used_pages++;
 	} while (page && check_new_page(page));
-	percpu_pool->used_pages++;
 	SetPagePool(page);
 
 unlock:
