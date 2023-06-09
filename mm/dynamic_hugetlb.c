@@ -887,7 +887,7 @@ static int hugetlb_pool_create(struct mem_cgroup *memcg, unsigned long nid)
 		return -ENOMEM;
 
 	spin_lock_init(&hpool->lock);
-	spin_lock_init(&hpool->reserved_lock);
+	mutex_init(&hpool->reserved_lock);
 	hpool->nid = nid;
 	atomic_set(&hpool->refcnt, 1);
 
@@ -1000,7 +1000,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 	if (!get_hpool_unless_zero(hpool))
 		return -EINVAL;
 
-	spin_lock(&hpool->reserved_lock);
+	mutex_lock(&hpool->reserved_lock);
 	spin_lock(&hpool->lock);
 	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
 	if (nr_pages > hpages_pool->nr_huge_pages) {
@@ -1036,7 +1036,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		hpages_pool->free_normal_pages += delta;
 	}
 	spin_unlock(&hpool->lock);
-	spin_unlock(&hpool->reserved_lock);
+	mutex_unlock(&hpool->reserved_lock);
 	put_hpool(hpool);
 	return 0;
 }
