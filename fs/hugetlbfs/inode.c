@@ -1194,7 +1194,7 @@ static struct inode *hugetlbfs_alloc_inode(struct super_block *sb)
 	 */
 	mpol_shared_policy_init(&p->policy, NULL);
 	/* Initialize hpool here in case of a quick call to destroy */
-	link_hpool(p);
+	link_hpool(p, sbinfo->hstate);
 
 	return &p->vfs_inode;
 }

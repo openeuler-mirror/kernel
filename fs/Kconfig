@@ -254,7 +254,7 @@ config HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON
 
 config DYNAMIC_HUGETLB
 	bool "Dynamic HugeTLB"
-	depends on X86_64
+	depends on X86_64 || (ARM64 && ARM64_4K_PAGES)
 	depends on HUGETLBFS
 	depends on MEMCG && CGROUP_HUGETLB
 	help

@@ -5,6 +5,7 @@
 
 #include <linux/rmap.h>
 #include <linux/migrate.h>
+#include <linux/memblock.h>
 #include <linux/memory_hotplug.h>
 #include <linux/dynamic_hugetlb.h>
 
@@ -618,13 +619,19 @@ void free_page_list_to_dhugetlb_pool(struct list_head *list)
 	}
 }
 
-void link_hpool(struct hugetlbfs_inode_info *p)
+void link_hpool(struct hugetlbfs_inode_info *p, struct hstate *h)
 {
+	unsigned long size;
+
 	if (!dhugetlb_enabled || !p)
 		return;
 
-	p->hpool = find_hpool_by_task(current);
-	if (!get_hpool_unless_zero(p->hpool))
+	size = huge_page_size(h);
+	if (size == PMD_SIZE || size == PUD_SIZE) {
+		p->hpool = find_hpool_by_task(current);
+		if (!get_hpool_unless_zero(p->hpool))
+			p->hpool = NULL;
+	} else
 		p->hpool = NULL;
 }
 
