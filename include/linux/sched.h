@@ -1277,7 +1277,16 @@ struct task_struct {
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 #endif
+
+#if !defined(__GENKSYMS__)
+#if defined(CONFIG_QOS_SCHED_SMART_GRID)
+	struct sched_grid_qos *grid_qos;
+#else
 	KABI_RESERVE(8)
+#endif
+#else
+	KABI_RESERVE(8)
+#endif
 
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;

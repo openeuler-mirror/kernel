@@ -21,6 +21,7 @@
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/cputime.h>
+#include <linux/sched/grid_qos.h>
 #include <linux/rtmutex.h>
 #include <linux/init.h>
 #include <linux/unistd.h>
@@ -461,6 +462,9 @@ void free_task(struct task_struct *tsk)
 		free_kthread_struct(tsk);
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	sched_prefer_cpus_free(tsk);
+#endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	sched_grid_qos_free(tsk);
 #endif
 	free_task_struct(tsk);
 }
@@ -1875,6 +1879,11 @@ static __latent_entropy struct task_struct *copy_process(
 	retval = sched_prefer_cpus_fork(p, current);
 	if (retval)
 		goto bad_fork_free;
+#endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	retval = sched_grid_qos_fork(p, current);
+	if (retval)
+		goto bad_fork_cleanup_count;
 #endif
 
 	/*
