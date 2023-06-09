@@ -821,7 +821,9 @@ xfs_log_mount_finish(
 	} else {
 		xfs_info(mp, "Ending clean mount");
 	}
-	xfs_wait_buftarg(mp->m_ddev_targp);
+
+	if (!error)
+		xfs_wait_buftarg(mp->m_ddev_targp);
 
 	clear_bit(XLOG_RECOVERY_NEEDED, &log->l_opstate);
 	if (readonly)
@@ -1307,7 +1309,7 @@ xlog_ioend_work(
 	 */
 	if (XFS_TEST_ERROR(error, log->l_mp, XFS_ERRTAG_IODONE_IOERR)) {
 		xfs_alert(log->l_mp, "log I/O error %d", error);
-		xfs_force_shutdown(log->l_mp, SHUTDOWN_LOG_IO_ERROR);
+		xlog_force_shutdown(log, SHUTDOWN_LOG_IO_ERROR);
 	}
 
 	xlog_state_done_syncing(iclog);
@@ -1807,9 +1809,18 @@ xlog_write_iclog(
 		 * device cache first to ensure all metadata writeback covered
 		 * by the LSN in this iclog is on stable storage. This is slow,
 		 * but it *must* complete before we issue the external log IO.
+		 *
+		 * If the flush fails, we cannot conclude that past metadata
+		 * writeback from the log succeeded.  Repeating the flush is
+		 * not possible, hence we must shut down with log IO error to
+		 * avoid shutdown re-entering this path and erroring out again.
 		 */
-		if (log->l_targ != log->l_mp->m_ddev_targp)
-			xfs_blkdev_issue_flush(log->l_mp->m_ddev_targp);
+		if (log->l_targ != log->l_mp->m_ddev_targp &&
+		    blkdev_issue_flush(log->l_mp->m_ddev_targp->bt_bdev,
+			               GFP_NOFS)) {
+			xlog_force_shutdown(log, SHUTDOWN_LOG_IO_ERROR);
+			return;
+		}
 	}
 	if (iclog->ic_flags & XLOG_ICL_NEED_FUA)
 		iclog->ic_bio.bi_opf |= REQ_FUA;
@@ -1817,7 +1828,7 @@ xlog_write_iclog(
 	iclog->ic_flags &= ~(XLOG_ICL_NEED_FLUSH | XLOG_ICL_NEED_FUA);
 
 	if (xlog_map_iclog_data(&iclog->ic_bio, iclog->ic_data, count)) {
-		xfs_force_shutdown(log->l_mp, SHUTDOWN_LOG_IO_ERROR);
+		xlog_force_shutdown(log, SHUTDOWN_LOG_IO_ERROR);
 		return;
 	}
 	if (is_vmalloc_addr(iclog->ic_data))
@@ -2387,7 +2398,7 @@ xlog_write(
 		xfs_alert_tag(log->l_mp, XFS_PTAG_LOGRES,
 		     "ctx ticket reservation ran out. Need to up reservation");
 		xlog_print_tic_res(log->l_mp, ticket);
-		xfs_force_shutdown(log->l_mp, SHUTDOWN_LOG_IO_ERROR);
+		xlog_force_shutdown(log, SHUTDOWN_LOG_IO_ERROR);
 	}
 
 	len = xlog_write_calc_vec_length(ticket, log_vector, optype);
@@ -3721,9 +3732,10 @@ xlog_verify_iclog(
 #endif
 
 /*
- * Perform a forced shutdown on the log. This should be called once and once
- * only by the high level filesystem shutdown code to shut the log subsystem
- * down cleanly.
+ * Perform a forced shutdown on the log.
+ *
+ * This can be called from low level log code to trigger a shutdown, or from the
+ * high level mount shutdown code when the mount shuts down.
  *
  * Our main objectives here are to make sure that:
  *	a. if the shutdown was not due to a log IO error, flush the logs to
@@ -3732,6 +3744,8 @@ xlog_verify_iclog(
  *	   parties to find out. Nothing new gets queued after this is done.
  *	c. Tasks sleeping on log reservations, pinned objects and
  *	   other resources get woken up.
+ *	d. The mount is also marked as shut down so that log triggered shutdowns
+ *	   still behave the same as if they called xfs_forced_shutdown().
  *
  * Return true if the shutdown cause was a log IO error and we actually shut the
  * log down.
@@ -3743,14 +3757,8 @@ xlog_force_shutdown(
 {
 	bool		log_error = (shutdown_flags & SHUTDOWN_LOG_IO_ERROR);
 
-	/*
-	 * If this happens during log recovery then we aren't using the runtime
-	 * log mechanisms yet so there's nothing to shut down.
-	 */
-	if (!log || xlog_in_recovery(log))
+	if (!log)
 		return false;
-
-	ASSERT(!xlog_is_shutdown(log));
 
 	/*
 	 * Flush all the completed transactions to disk before marking the log
@@ -3758,10 +3766,16 @@ xlog_force_shutdown(
 	 * before the force will prevent the log force from flushing the iclogs
 	 * to disk.
 	 *
-	 * Re-entry due to a log IO error shutdown during the log force is
-	 * prevented by the atomicity of higher level shutdown code.
+	 * When we are in recovery, there are no transactions to flush, and
+	 * we don't want to touch the log because we don't want to perturb the
+	 * current head/tail for future recovery attempts. Hence we need to
+	 * avoid a log force in this case.
+	 *
+	 * If we are shutting down due to a log IO error, then we must avoid
+	 * trying to write the log as that may just result in more IO errors and
+	 * an endless shutdown/force loop.
 	 */
-	if (!log_error)
+	if (!log_error && !xlog_in_recovery(log))
 		xfs_log_force(log->l_mp, XFS_LOG_SYNC);
 
 	/*
@@ -3778,10 +3792,23 @@ xlog_force_shutdown(
 	spin_lock(&log->l_icloglock);
 	if (test_and_set_bit(XLOG_IO_ERROR, &log->l_opstate)) {
 		spin_unlock(&log->l_icloglock);
-		ASSERT(0);
 		return false;
 	}
 	spin_unlock(&log->l_icloglock);
+
+	/*
+	 * If this log shutdown also sets the mount shutdown state, issue a
+	 * shutdown warning message.
+	 */
+	if (!test_and_set_bit(XFS_OPSTATE_SHUTDOWN, &log->l_mp->m_opstate)) {
+		xfs_alert_tag(log->l_mp, XFS_PTAG_SHUTDOWN_LOGERROR,
+"Filesystem has been shut down due to log error (0x%x).",
+				shutdown_flags);
+		xfs_alert(log->l_mp,
+"Please unmount the filesystem and rectify the problem(s).");
+		if (xfs_error_level >= XFS_ERRLEVEL_HIGH)
+			xfs_stack_trace();
+	}
 
 	/*
 	 * We don't want anybody waiting for log reservations after this. That
@@ -3808,6 +3835,7 @@ xlog_force_shutdown(
 	xlog_state_shutdown_callbacks(log);
 	spin_unlock(&log->l_icloglock);
 
+	wake_up_var(&log->l_opstate);
 	return log_error;
 }
 
