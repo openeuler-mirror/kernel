@@ -116,6 +116,6 @@ static inline int mpam_register_device_irq(struct mpam_device *dev,
 	return ret;
 }
 
-int __init acpi_mpam_parse(void);
+int __init acpi_mpam_parse_version(void);
 
 #endif
