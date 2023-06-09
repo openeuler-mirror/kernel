@@ -66,7 +66,7 @@ enum huge_pages_pool_type {
 struct dhugetlb_pool {
 	int nid;
 	spinlock_t lock;
-	spinlock_t reserved_lock;
+	KABI_DEPRECATE(spinlock_t, reserved_lock)
 	atomic_t refcnt;
 	unsigned long normal_pages_disabled;
 
@@ -74,6 +74,18 @@ struct dhugetlb_pool {
 
 	unsigned long total_huge_pages;
 	struct huge_pages_pool hpages_pool[HUGE_PAGES_POOL_MAX];
+
+	/* The dhugetlb_pool structures is only used by core kernel, it is
+	 * also accessed only the memory cgroup and hugetlb core code and
+	 * so changes made to dhugetlb_pool structure should not affect
+	 * third-party kernel modules.
+	 */
+	KABI_EXTEND(struct mutex reserved_lock)
+
+	/*
+	 * The percpu_pool[] should only be used by dynamic hugetlb core.
+	 * External kernel modules should not used it.
+	 */
 	struct percpu_pages_pool percpu_pool[0];
 };
 
@@ -97,13 +109,14 @@ bool free_page_to_dhugetlb_pool(struct page *page);
 void free_page_list_to_dhugetlb_pool(struct list_head *list);
 int task_has_mem_in_hpool(struct task_struct *tsk);
 
-void link_hpool(struct hugetlbfs_inode_info *p);
+void link_hpool(struct hugetlbfs_inode_info *p, struct hstate *h);
 void unlink_hpool(struct hugetlbfs_inode_info *p);
 bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p);
 int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p);
 struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetlb_pool *hpool,
 						bool need_unreserved);
 void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve);
+bool page_belong_to_dynamic_hugetlb(struct page *page);
 
 #else
 
@@ -147,7 +160,7 @@ static inline int task_has_mem_in_hpool(struct task_struct *tsk)
 }
 
 #ifdef CONFIG_HUGETLBFS
-static inline void link_hpool(struct hugetlbfs_inode_info *p)
+static inline void link_hpool(struct hugetlbfs_inode_info *p, struct hstate *h)
 {
 }
 static inline void unlink_hpool(struct hugetlbfs_inode_info *p)
@@ -170,6 +183,11 @@ struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetl
 static inline
 void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 {
+}
+static inline
+bool page_belong_to_dynamic_hugetlb(struct page *page)
+{
+	return false;
 }
 #endif
 

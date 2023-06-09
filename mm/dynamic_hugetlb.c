@@ -5,6 +5,7 @@
 
 #include <linux/rmap.h>
 #include <linux/migrate.h>
+#include <linux/memblock.h>
 #include <linux/memory_hotplug.h>
 #include <linux/dynamic_hugetlb.h>
 
@@ -54,7 +55,8 @@ static void __hpool_split_gigantic_page(struct dhugetlb_pool *hpool, struct page
 {
 	int nr_pages = 1 << (PUD_SHIFT - PAGE_SHIFT);
 	int nr_blocks = 1 << (PMD_SHIFT - PAGE_SHIFT);
-	int i, pfn = page_to_pfn(page);
+	unsigned long pfn = page_to_pfn(page);
+	int i;
 
 	lockdep_assert_held(&hpool->lock);
 	atomic_set(compound_mapcount_ptr(page), 0);
@@ -447,6 +449,19 @@ static struct dhugetlb_pool *find_hpool_by_dhugetlb_pagelist(struct page *page)
 	return hpool;
 }
 
+bool page_belong_to_dynamic_hugetlb(struct page *page)
+{
+	struct dhugetlb_pool *hpool;
+
+	if (!dhugetlb_enabled)
+		return false;
+
+	hpool = find_hpool_by_dhugetlb_pagelist(page);
+	if (hpool)
+		return true;
+	return false;
+}
+
 static struct dhugetlb_pool *find_hpool_by_task(struct task_struct *tsk)
 {
 	struct mem_cgroup *memcg;
@@ -515,6 +530,13 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 	spin_lock_irqsave(&percpu_pool->lock, flags);
 
 	do {
+		/*
+		 * Before discard the bad page, set PagePool flag to
+		 * distinguish from free page. And increase used_pages
+		 * to guarantee used + freed = total.
+		 */
+		if (page)
+			SetPagePool(page);
 		page = NULL;
 		if (percpu_pool->free_pages == 0) {
 			int ret;
@@ -530,8 +552,8 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 		page = list_entry(percpu_pool->head_page.next, struct page, lru);
 		list_del(&page->lru);
 		percpu_pool->free_pages--;
+		percpu_pool->used_pages++;
 	} while (page && check_new_page(page));
-	percpu_pool->used_pages++;
 	SetPagePool(page);
 
 unlock:
@@ -618,13 +640,19 @@ void free_page_list_to_dhugetlb_pool(struct list_head *list)
 	}
 }
 
-void link_hpool(struct hugetlbfs_inode_info *p)
+void link_hpool(struct hugetlbfs_inode_info *p, struct hstate *h)
 {
+	unsigned long size;
+
 	if (!dhugetlb_enabled || !p)
 		return;
 
-	p->hpool = find_hpool_by_task(current);
-	if (!get_hpool_unless_zero(p->hpool))
+	size = huge_page_size(h);
+	if (size == PMD_SIZE || size == PUD_SIZE) {
+		p->hpool = find_hpool_by_task(current);
+		if (!get_hpool_unless_zero(p->hpool))
+			p->hpool = NULL;
+	} else
 		p->hpool = NULL;
 }
 
@@ -733,8 +761,15 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	}
 
 	spin_lock(&hpool->lock);
+	/*
+	 * memory_failure will free the hwpoison hugepage, and then try to
+	 * dissolve it and free subpage to buddy system. Since the page in
+	 * dhugetlb_pool should not free to buudy system, we isolate the
+	 * hugepage here directly, and skip the latter dissolution.
+	 */
+	if (PageHWPoison(page))
+		goto out;
 	ClearPagePool(page);
-	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
 	if (hstate_is_gigantic(h))
 		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
 	else
@@ -750,6 +785,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	}
 	trace_dynamic_hugetlb_alloc_free(hpool, page, hpages_pool->free_huge_pages,
 					 DHUGETLB_FREE, huge_page_size(h));
+out:
 	spin_unlock(&hpool->lock);
 	put_hpool(hpool);
 }
@@ -859,7 +895,7 @@ static int hugetlb_pool_create(struct mem_cgroup *memcg, unsigned long nid)
 		return -ENOMEM;
 
 	spin_lock_init(&hpool->lock);
-	spin_lock_init(&hpool->reserved_lock);
+	mutex_init(&hpool->reserved_lock);
 	hpool->nid = nid;
 	atomic_set(&hpool->refcnt, 1);
 
@@ -972,7 +1008,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 	if (!get_hpool_unless_zero(hpool))
 		return -EINVAL;
 
-	spin_lock(&hpool->reserved_lock);
+	mutex_lock(&hpool->reserved_lock);
 	spin_lock(&hpool->lock);
 	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
 	if (nr_pages > hpages_pool->nr_huge_pages) {
@@ -1008,7 +1044,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		hpages_pool->free_normal_pages += delta;
 	}
 	spin_unlock(&hpool->lock);
-	spin_unlock(&hpool->reserved_lock);
+	mutex_unlock(&hpool->reserved_lock);
 	put_hpool(hpool);
 	return 0;
 }
