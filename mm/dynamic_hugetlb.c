@@ -55,7 +55,8 @@ static void __hpool_split_gigantic_page(struct dhugetlb_pool *hpool, struct page
 {
 	int nr_pages = 1 << (PUD_SHIFT - PAGE_SHIFT);
 	int nr_blocks = 1 << (PMD_SHIFT - PAGE_SHIFT);
-	int i, pfn = page_to_pfn(page);
+	unsigned long pfn = page_to_pfn(page);
+	int i;
 
 	lockdep_assert_held(&hpool->lock);
 	atomic_set(compound_mapcount_ptr(page), 0);
