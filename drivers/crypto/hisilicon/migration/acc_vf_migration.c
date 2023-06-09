@@ -173,6 +173,27 @@ static int qm_config_get(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 	return 0;
 }
 
+static void qm_db(struct hisi_qm *qm, u16 qn, u8 cmd,
+	u16 index, u8 priority)
+{
+	void __iomem *io_base = qm->io_base;
+	u16 randata = 0;
+	u64 doorbell;
+
+	if (cmd == QM_DOORBELL_CMD_SQ || cmd == QM_DOORBELL_CMD_CQ)
+		io_base = qm->db_io_base + (u64)qn * qm->db_interval +
+			  QM_DOORBELL_SQ_CQ_BASE_V2;
+	else
+		io_base += QM_DOORBELL_EQ_AEQ_BASE_V2;
+
+	doorbell = qn | ((u64)cmd << QM_DB_CMD_SHIFT_V2) |
+		   ((u64)randata << QM_DB_RAND_SHIFT_V2) |
+		   ((u64)index << QM_DB_INDEX_SHIFT_V2) |
+		   ((u64)priority << QM_DB_PRIORITY_SHIFT_V2);
+
+	writeq(doorbell, io_base);
+}
+
 /*
  * Each state Reg is checked 100 times,
  * with a delay of 100 microseconds after each check
@@ -438,6 +459,19 @@ static int qm_rw_regs_write(struct hisi_qm *qm, struct acc_vf_data *vf_data)
 	return 0;
 }
 
+static void vf_qm_xeqc_save(struct hisi_qm *qm,
+	struct acc_vf_migration *acc_vf_dev)
+{
+	struct acc_vf_data *vf_data = acc_vf_dev->vf_data;
+	u16 eq_head, aeq_head;
+
+	eq_head = vf_data->qm_eqc_dw[0] & 0xFFFF;
+	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, eq_head, 0);
+
+	aeq_head = vf_data->qm_aeqc_dw[0] & 0xFFFF;
+	qm_db(qm, 0, QM_DOORBELL_CMD_AEQ, aeq_head, 0);
+}
+
 /*
  * the vf QM have unbind from host, insmod in the VM
  * so, qm just have the addr from pci dev
@@ -461,12 +495,12 @@ static int vf_migration_data_store(struct hisi_qm *qm,
 	 * every Reg is 32 bit, the dma address is 64 bit
 	 * so, the dma address is store in the Reg2 and Reg1
 	 */
-	vf_data->eqe_dma = vf_data->qm_eqc_dw[2];
+	vf_data->eqe_dma = vf_data->qm_eqc_dw[QM_XQC_ADDR_HIGH];
 	vf_data->eqe_dma <<= QM_XQC_ADDR_OFFSET;
-	vf_data->eqe_dma |= vf_data->qm_eqc_dw[1];
-	vf_data->aeqe_dma = vf_data->qm_aeqc_dw[2];
+	vf_data->eqe_dma |= vf_data->qm_eqc_dw[QM_XQC_ADDR_LOW];
+	vf_data->aeqe_dma = vf_data->qm_aeqc_dw[QM_XQC_ADDR_HIGH];
 	vf_data->aeqe_dma <<= QM_XQC_ADDR_OFFSET;
-	vf_data->aeqe_dma |= vf_data->qm_aeqc_dw[1];
+	vf_data->aeqe_dma |= vf_data->qm_aeqc_dw[QM_XQC_ADDR_LOW];
 
 	/* Through SQC_BT/CQC_BT to get sqc and cqc address */
 	ret = qm_config_get(qm, &vf_data->sqc_dma, QM_MB_CMD_SQC_BT, 0);
@@ -481,6 +515,9 @@ static int vf_migration_data_store(struct hisi_qm *qm,
 		return -EINVAL;
 	}
 
+	/* Save eqc and aeqc interrupt information */
+	vf_qm_xeqc_save(qm, acc_vf_dev);
+
 	return 0;
 }
 
@@ -491,27 +528,6 @@ static void qm_dev_cmd_init(struct hisi_qm *qm)
 
 	/* enable pf and vf communication. */
 	writel(0x0, qm->io_base + QM_IFC_INT_MASK);
-}
-
-static void qm_db(struct hisi_qm *qm, u16 qn, u8 cmd,
-	u16 index, u8 priority)
-{
-	void __iomem *io_base = qm->io_base;
-	u16 randata = 0;
-	u64 doorbell;
-
-	if (cmd == QM_DOORBELL_CMD_SQ || cmd == QM_DOORBELL_CMD_CQ)
-		io_base = qm->db_io_base + (u64)qn * qm->db_interval +
-			  QM_DOORBELL_SQ_CQ_BASE_V2;
-	else
-		io_base += QM_DOORBELL_EQ_AEQ_BASE_V2;
-
-	doorbell = qn | ((u64)cmd << QM_DB_CMD_SHIFT_V2) |
-		   ((u64)randata << QM_DB_RAND_SHIFT_V2) |
-		   ((u64)index << QM_DB_INDEX_SHIFT_V2) |
-		   ((u64)priority << QM_DB_PRIORITY_SHIFT_V2);
-
-	writeq(doorbell, io_base);
 }
 
 static void vf_qm_fun_restart(struct hisi_qm *qm,
