@@ -1108,6 +1108,117 @@ struct acpi_mpam_node_memory {
 
 /*******************************************************************************
  *
+ * MPAM - Memory System Resource Partitioning and Monitoring
+ *
+ * Conforms to "ACPI for Memory System Resource Partitioning and Monitoring 2.0"
+ * Document number: ARM DEN 0065, December, 2022.
+ *
+ ******************************************************************************/
+
+/* MPAM RIS locator types. Table 11, Location types */
+enum acpi_mpam_locator_type {
+	ACPI_MPAM_LOCATION_TYPE_PROCESSOR_CACHE = 0,
+	ACPI_MPAM_LOCATION_TYPE_MEMORY = 1,
+	ACPI_MPAM_LOCATION_TYPE_SMMU = 2,
+	ACPI_MPAM_LOCATION_TYPE_MEMORY_CACHE = 3,
+	ACPI_MPAM_LOCATION_TYPE_ACPI_DEVICE = 4,
+	ACPI_MPAM_LOCATION_TYPE_INTERCONNECT = 5,
+	ACPI_MPAM_LOCATION_TYPE_UNKNOWN = 0xFF
+};
+
+/* MPAM Functional dependency descriptor. Table 10 */
+struct acpi_mpam_func_deps {
+	u32 producer;
+	u32 reserved;
+};
+
+/* MPAM Processor cache locator descriptor. Table 13 */
+struct acpi_mpam_resource_cache_locator {
+	u64 cache_reference;
+	u32 reserved;
+};
+
+/* MPAM Memory locator descriptor. Table 14 */
+struct acpi_mpam_resource_memory_locator {
+	u64 proximity_domain;
+	u32 reserved;
+};
+
+/* MPAM SMMU locator descriptor. Table 15 */
+struct acpi_mpam_resource_smmu_locator {
+	u64 smmu_interface;
+	u32 reserved;
+};
+
+/* MPAM Memory-side cache locator descriptor. Table 16 */
+struct acpi_mpam_resource_memcache_locator {
+	u8 reserved[7];
+	u8 level;
+	u32 reference;
+};
+
+/* MPAM ACPI device locator descriptor. Table 17 */
+struct acpi_mpam_resource_acpi_locator {
+	u64 acpi_hw_id;
+	u32 acpi_unique_id;
+};
+
+/* MPAM Interconnect locator descriptor. Table 18 */
+struct acpi_mpam_resource_interconnect_locator {
+	u64 inter_connect_desc_tbl_off;
+	u32 reserved;
+};
+
+/* MPAM Locator structure. Table 12 */
+struct acpi_mpam_resource_generic_locator {
+	u64 descriptor1;
+	u32 descriptor2;
+};
+
+union acpi_mpam_resource_locator {
+	struct acpi_mpam_resource_cache_locator cache_locator;
+	struct acpi_mpam_resource_memory_locator memory_locator;
+	struct acpi_mpam_resource_smmu_locator smmu_locator;
+	struct acpi_mpam_resource_memcache_locator mem_cache_locator;
+	struct acpi_mpam_resource_acpi_locator acpi_locator;
+	struct acpi_mpam_resource_interconnect_locator interconnect_ifc_locator;
+	struct acpi_mpam_resource_generic_locator generic_locator;
+};
+
+/* Memory System Component Resource Node Structure Table 9 */
+struct acpi_mpam_resource_node {
+	u32 identifier;
+	u8 ris_index;
+	u16 reserved1;
+	u8 locator_type;
+	union acpi_mpam_resource_locator locator;
+	u32 num_functional_deps;
+};
+
+/* Memory System Component (MSC) Node Structure. Table 4 */
+struct acpi_mpam_msc_node {
+	u16 length;
+	u8 interface_type;
+	u8 reserved;
+	u32 identifier;
+	u64 base_address;
+	u32 mmio_size;
+	u32 overflow_interrupt;
+	u32 overflow_interrupt_flags;
+	u32 reserved1;
+	u32 overflow_interrupt_affinity;
+	u32 error_interrupt;
+	u32 error_interrupt_flags;
+	u32 reserved2;
+	u32 error_interrupt_affinity;
+	u32 max_nrdy_usec;
+	u64 hardware_id_linked_device;
+	u32 instance_id_linked_device;
+	u32 num_resouce_nodes;
+};
+
+/*******************************************************************************
+ *
  * MSDM - Microsoft Data Management table
  *
  * Conforms to "Microsoft Software Licensing Tables (SLIC and MSDM)",
@@ -1695,6 +1806,12 @@ struct acpi_pptt_cache {
 	u16 line_size;
 };
 
+/* 1: Cache Type Structure for PPTT version 3 */
+
+struct acpi_pptt_cache_v1 {
+	u32 cache_id;
+};
+
 /* Flags */
 
 #define ACPI_PPTT_SIZE_PROPERTY_VALID       (1)	/* Physical property valid */
@@ -1704,6 +1821,7 @@ struct acpi_pptt_cache {
 #define ACPI_PPTT_CACHE_TYPE_VALID          (1<<4)	/* Cache type valid */
 #define ACPI_PPTT_WRITE_POLICY_VALID        (1<<5)	/* Write policy valid */
 #define ACPI_PPTT_LINE_SIZE_VALID           (1<<6)	/* Line size valid */
+#define ACPI_PPTT_CACHE_ID_VALID            (1<<7)	/* Cache ID valid */
 
 /* Masks for Attributes */
 
