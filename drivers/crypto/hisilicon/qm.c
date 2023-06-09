@@ -375,7 +375,7 @@ struct hisi_qm_hw_ops {
 	int (*debug_init)(struct hisi_qm *qm);
 	void (*hw_error_init)(struct hisi_qm *qm);
 	void (*hw_error_uninit)(struct hisi_qm *qm);
-	enum acc_err_result (*hw_error_handle)(struct hisi_qm *qm);
+	enum acc_err_result (*hw_error_handle)(struct hisi_qm *qm, bool need_reset);
 	int (*set_msi)(struct hisi_qm *qm, bool set);
 };
 
@@ -1569,24 +1569,35 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 	}
 }
 
-static enum acc_err_result qm_hw_error_handle_v2(struct hisi_qm *qm)
+static enum acc_err_result qm_hw_error_handle_v2(struct hisi_qm *qm, bool need_reset)
 {
 	u32 error_status, tmp;
 
 	/* read err sts */
 	tmp = readl(qm->io_base + QM_ABNORMAL_INT_STATUS);
-	error_status = qm->error_mask & tmp;
-
+	error_status = tmp & (~qm->err_info.qm_err_type);
+	qm->err_info.qm_err_type |= tmp;
 	if (error_status) {
 		if (error_status & QM_ECC_MBIT)
 			qm->err_status.is_qm_ecc_mbit = true;
 
 		qm_log_hw_error(qm, error_status);
-		if (error_status & qm->err_info.qm_reset_mask)
-			return ACC_ERR_NEED_RESET;
+		/* If the device is ready to reset, only print new error type. */
+		if (!need_reset)
+			return ACC_ERR_RECOVERED;
 
-		writel(error_status, qm->io_base + QM_ABNORMAL_INT_SOURCE);
+		if (error_status & qm->err_info.qm_reset_mask) {
+			/* Disable the same error reporting until the error is recovered. */
+			writel(qm->err_info.nfe & (~qm->err_info.qm_err_type),
+			       qm->io_base + QM_RAS_NFE_ENABLE);
+			return ACC_ERR_NEED_RESET;
+		}
+
+		/* Clear error source if not need reset. */
+		writel(qm->err_info.qm_err_type, qm->io_base + QM_ABNORMAL_INT_SOURCE);
+		/* Avoid bios disable error type in v2 version, re-enable. */
 		writel(qm->err_info.nfe, qm->io_base + QM_RAS_NFE_ENABLE);
+		writel(qm->err_info.ce, qm->io_base + QM_RAS_CE_ENABLE);
 	}
 
 	return ACC_ERR_RECOVERED;
@@ -3446,14 +3457,14 @@ static void qm_hw_error_uninit(struct hisi_qm *qm)
 	qm->ops->hw_error_uninit(qm);
 }
 
-static enum acc_err_result qm_hw_error_handle(struct hisi_qm *qm)
+static enum acc_err_result qm_hw_error_handle(struct hisi_qm *qm, bool need_reset)
 {
 	if (!qm->ops->hw_error_handle) {
 		dev_err(&qm->pdev->dev, "QM doesn't support hw error report!\n");
 		return ACC_ERR_NONE;
 	}
 
-	return qm->ops->hw_error_handle(qm);
+	return qm->ops->hw_error_handle(qm, need_reset);
 }
 
 /**
@@ -4077,17 +4088,19 @@ int hisi_qm_sriov_configure(struct pci_dev *pdev, int num_vfs)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_sriov_configure);
 
-static enum acc_err_result qm_dev_err_handle(struct hisi_qm *qm)
+static enum acc_err_result qm_dev_err_handle(struct hisi_qm *qm, bool need_reset)
 {
-	u32 err_sts;
+	u32 err_sts, tmp;
 
 	if (!qm->err_ini->get_dev_hw_err_status) {
 		dev_err(&qm->pdev->dev, "Device doesn't support get hw error status!\n");
 		return ACC_ERR_NONE;
 	}
 
-	/* get device hardware error status */
-	err_sts = qm->err_ini->get_dev_hw_err_status(qm);
+	/* Get device hardware new error status */
+	tmp = qm->err_ini->get_dev_hw_err_status(qm);
+	err_sts = tmp & (~qm->err_info.dev_err_type);
+	qm->err_info.dev_err_type |= tmp;
 	if (err_sts) {
 		if (err_sts & qm->err_info.ecc_2bits_mask)
 			qm->err_status.is_dev_ecc_mbit = true;
@@ -4095,11 +4108,21 @@ static enum acc_err_result qm_dev_err_handle(struct hisi_qm *qm)
 		if (qm->err_ini->log_dev_hw_err)
 			qm->err_ini->log_dev_hw_err(qm, err_sts);
 
-		if (err_sts & qm->err_info.dev_reset_mask)
-			return ACC_ERR_NEED_RESET;
+		/* If the device is ready to reset, only print new error type. */
+		if (!need_reset)
+			return ACC_ERR_RECOVERED;
 
-		if (qm->err_ini->clear_dev_hw_err_status)
-			qm->err_ini->clear_dev_hw_err_status(qm, err_sts);
+		if (err_sts & qm->err_info.dev_reset_mask) {
+			/* Disable the same error reporting until the error is recovered. */
+			qm->err_ini->disable_error_report(qm, qm->err_info.dev_err_type);
+			return ACC_ERR_NEED_RESET;
+		}
+
+		/* Clear error source if not need reset. */
+		if (qm->err_ini->clear_dev_hw_err_status) {
+			qm->err_ini->clear_dev_hw_err_status(qm, qm->err_info.dev_err_type);
+			qm->err_ini->enable_error_report(qm);
+		}
 	}
 
 	return ACC_ERR_RECOVERED;
@@ -4108,16 +4131,25 @@ static enum acc_err_result qm_dev_err_handle(struct hisi_qm *qm)
 static enum acc_err_result qm_process_dev_error(struct hisi_qm *qm)
 {
 	enum acc_err_result qm_ret, dev_ret;
+	bool need_reset = true;
+
+	if (!test_bit(QM_RST_SCHED, &qm->misc_ctl)) {
+		qm->err_info.qm_err_type = 0;
+		qm->err_info.dev_err_type = 0;
+	} else {
+		need_reset = false;
+	}
 
 	/* log qm error */
-	qm_ret = qm_hw_error_handle(qm);
+	qm_ret = qm_hw_error_handle(qm, need_reset);
 
 	/* log device error */
-	dev_ret = qm_dev_err_handle(qm);
+	dev_ret = qm_dev_err_handle(qm, need_reset);
+	if (need_reset && (qm_ret == ACC_ERR_NEED_RESET ||
+	    dev_ret == ACC_ERR_NEED_RESET))
+		return ACC_ERR_NEED_RESET;
 
-	return (qm_ret == ACC_ERR_NEED_RESET ||
-		dev_ret == ACC_ERR_NEED_RESET) ?
-		ACC_ERR_NEED_RESET : ACC_ERR_RECOVERED;
+	return ACC_ERR_RECOVERED;
 }
 
 /**
@@ -4316,8 +4348,6 @@ static int qm_controller_reset_prepare(struct hisi_qm *qm)
 	ret = qm_wait_vf_prepare_finish(qm);
 	if (ret)
 		pci_err(pdev, "failed to stop by vfs in soft reset!\n");
-
-	clear_bit(QM_RST_SCHED, &qm->misc_ctl);
 
 	return 0;
 }
@@ -4557,6 +4587,7 @@ static int qm_controller_reset_done(struct hisi_qm *qm)
 			return ret;
 		}
 	}
+	clear_bit(QM_RST_SCHED, &qm->misc_ctl);
 
 	ret = qm_dev_hw_init(qm);
 	if (ret) {
@@ -4630,6 +4661,7 @@ static int qm_controller_reset(struct hisi_qm *qm)
 
 err_reset:
 	pci_err(pdev, "Controller reset failed (%d)\n", ret);
+	clear_bit(QM_RST_SCHED, &qm->misc_ctl);
 	qm_reset_bit_clear(qm);
 
 	/* if resetting fails, isolate the device */

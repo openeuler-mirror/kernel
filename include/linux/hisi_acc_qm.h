@@ -252,6 +252,8 @@ struct hisi_qm_err_info {
 	u32 ce;
 	u32 nfe;
 	u32 fe;
+	u32 qm_err_type;
+	u32 dev_err_type;
 };
 
 struct hisi_qm_err_status {
@@ -265,6 +267,8 @@ struct hisi_qm_err_ini {
 	void (*hw_err_disable)(struct hisi_qm *qm);
 	u32 (*get_dev_hw_err_status)(struct hisi_qm *qm);
 	void (*clear_dev_hw_err_status)(struct hisi_qm *qm, u32 err_sts);
+	void (*disable_error_report)(struct hisi_qm *qm, u32 err_type);
+	void (*enable_error_report)(struct hisi_qm *qm);
 	void (*open_axi_master_ooo)(struct hisi_qm *qm);
 	void (*close_axi_master_ooo)(struct hisi_qm *qm);
 	void (*open_sva_prefetch)(struct hisi_qm *qm);
