@@ -1739,6 +1739,8 @@ static void acc_vf_remove(void *vendor_data)
 static struct vfio_pci_vendor_driver_ops  sec_vf_mig_ops = {
 	.owner		= THIS_MODULE,
 	.name		= "hisi_sec2",
+	.vendor		= PCI_VENDOR_ID_HUAWEI,
+	.device		= PCI_DEVICE_ID_HUAWEI_SEC_VF,
 	.probe		= acc_vf_probe,
 	.remove		= acc_vf_remove,
 	.device_ops	= &acc_vf_device_ops_node,
@@ -1747,6 +1749,8 @@ static struct vfio_pci_vendor_driver_ops  sec_vf_mig_ops = {
 static struct vfio_pci_vendor_driver_ops  hpre_vf_mig_ops = {
 	.owner		= THIS_MODULE,
 	.name		= "hisi_hpre",
+	.vendor		= PCI_VENDOR_ID_HUAWEI,
+	.device		= PCI_DEVICE_ID_HUAWEI_HPRE_VF,
 	.probe		= acc_vf_probe,
 	.remove		= acc_vf_remove,
 	.device_ops	= &acc_vf_device_ops_node,
@@ -1755,6 +1759,8 @@ static struct vfio_pci_vendor_driver_ops  hpre_vf_mig_ops = {
 static struct vfio_pci_vendor_driver_ops  zip_vf_mig_ops = {
 	.owner		= THIS_MODULE,
 	.name		= "hisi_zip",
+	.vendor		= PCI_VENDOR_ID_HUAWEI,
+	.device		= PCI_DEVICE_ID_HUAWEI_ZIP_VF,
 	.probe		= acc_vf_probe,
 	.remove		= acc_vf_remove,
 	.device_ops	= &acc_vf_device_ops_node,
@@ -1773,7 +1779,9 @@ static int __init acc_vf_module_init(void)
 
 static void __exit acc_vf_module_exit(void)
 {
-	vfio_pci_unregister_vendor_driver(&acc_vf_device_ops_node);
+	vfio_pci_unregister_vendor_driver(&sec_vf_mig_ops);
+	vfio_pci_unregister_vendor_driver(&hpre_vf_mig_ops);
+	vfio_pci_unregister_vendor_driver(&zip_vf_mig_ops);
 };
 module_init(acc_vf_module_init);
 module_exit(acc_vf_module_exit);
