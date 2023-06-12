@@ -649,9 +649,6 @@ static void chip3_suspend(bool wakeup)
 		chip3_intpu_restore();
 		chip3_spbu_restore();
 	} else {
-		/* Set S3 flag */
-		cpld_write(0x64, 0x34, 0x33);
-
 		chip3_spbu_save();
 		chip3_intpu_save();
 		chip3_pcie_save();
