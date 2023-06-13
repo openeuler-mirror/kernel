@@ -873,12 +873,12 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 	prev = NULL;
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		userfault_flags = VM_UFFD_MISSING | VM_UFFD_WP;
-#ifdef CONFIG_USERSWAP
-		uswap_release(&userfault_flags);
-#endif
 		cond_resched();
 		BUG_ON(!!vma->vm_userfaultfd_ctx.ctx ^
 		       !!(vma->vm_flags & userfault_flags));
+#ifdef CONFIG_USERSWAP
+		uswap_release(&userfault_flags);
+#endif
 		if (vma->vm_userfaultfd_ctx.ctx != ctx) {
 			prev = vma;
 			continue;
