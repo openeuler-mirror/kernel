@@ -592,4 +592,12 @@ config NET_FAILOVER
 	  a VM with direct attached VF by failing over to the paravirtual
 	  datapath when the VF is unplugged.
 
+config NET_LOCALIP_LST
+	tristate "Collect local ipv4 address"
+	depends on INET
+	default n
+	help
+	  Similar to inet_addr_lst, only the IP address is recorded, and
+	  net_namespace is not concerned.
+
 endif # NETDEVICES
