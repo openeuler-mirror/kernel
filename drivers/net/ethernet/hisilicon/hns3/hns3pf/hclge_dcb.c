@@ -509,6 +509,36 @@ static u8 hclge_setdcbx(struct hnae3_handle *h, u8 mode)
 	return 0;
 }
 
+static int hclge_mqprio_qopt_check_rate(struct hclge_dev *hdev, u64 min_rate,
+					u64 max_rate)
+{
+	u32 max_speed = hclge_tm_rate_2_port_rate(max_rate);
+
+	if (min_rate) {
+		dev_err(&hdev->pdev->dev, "unsupported min_rate, min_rate = %lluB/s\n",
+			min_rate);
+		return -EOPNOTSUPP;
+	}
+
+	if (!max_rate)
+		return 0;
+
+	if (hnae3_dev_roh_supported(hdev)) {
+		if (max_rate < TM_RATE_PORT_RATE_SCALE ||
+		    max_speed > hdev->hw.mac.max_speed) {
+			dev_err(&hdev->pdev->dev,
+				"invalid max_rate[%lluB/s]: the range is [1Mbps, %uMbps]\n",
+				max_rate, hdev->hw.mac.max_speed);
+			return -EINVAL;
+		}
+		return 0;
+	}
+
+	dev_err(&hdev->pdev->dev, "unsupported max_rate, max_rate = %lluB/s\n",
+		max_rate);
+	return -EOPNOTSUPP;
+}
+
 static int hclge_mqprio_qopt_check(struct hclge_dev *hdev,
 				   struct tc_mqprio_qopt_offload *mqprio_qopt)
 {
@@ -546,11 +576,11 @@ static int hclge_mqprio_qopt_check(struct hclge_dev *hdev,
 			return -EINVAL;
 		}
 
-		if (mqprio_qopt->min_rate[i] || mqprio_qopt->max_rate[i]) {
-			dev_err(&hdev->pdev->dev,
-				"qopt tx_rate is not supported\n");
-			return -EOPNOTSUPP;
-		}
+		ret = hclge_mqprio_qopt_check_rate(hdev,
+						   mqprio_qopt->min_rate[i],
+						   mqprio_qopt->max_rate[i]);
+		if (ret)
+			return ret;
 
 		queue_sum = mqprio_qopt->qopt.offset[i];
 		queue_sum += mqprio_qopt->qopt.count[i];
@@ -576,6 +606,8 @@ static void hclge_sync_mqprio_qopt(struct hnae3_tc_info *tc_info,
 	       sizeof_field(struct hnae3_tc_info, tqp_count));
 	memcpy(tc_info->tqp_offset, mqprio_qopt->qopt.offset,
 	       sizeof_field(struct hnae3_tc_info, tqp_offset));
+	memcpy(tc_info->max_rate, mqprio_qopt->max_rate,
+	       sizeof_field(struct hnae3_tc_info, max_rate));
 }
 
 static int hclge_config_tc(struct hclge_dev *hdev,

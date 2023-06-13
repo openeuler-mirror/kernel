@@ -362,6 +362,8 @@ struct hclge_cfg {
 	u16 umv_space;
 };
 
+#define TM_RATE_PORT_RATE_SCALE	125000
+
 struct hclge_tm_info {
 	u8 num_tc;
 	u8 num_pg;      /* It must be 1 if vNET-Base schd */

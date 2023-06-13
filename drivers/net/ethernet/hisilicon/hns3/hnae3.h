@@ -72,6 +72,9 @@
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) | \
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
 
+#define hnae3_dev_roh_supported(hdev) \
+	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_ROH_CLIENT_INITED_B)
+
 #define hnae3_dev_roce_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROCE_B)
 
@@ -834,6 +837,7 @@ struct hnae3_tc_info {
 	u8 num_tc; /* Total number of enabled TCs */
 	bool mqprio_active;
 	bool dcb_ets_active;
+	u64 max_rate[HNAE3_MAX_TC];     /* Unit Bps */
 };
 
 #define HNAE3_MAX_DSCP			64
