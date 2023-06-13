@@ -3872,6 +3872,12 @@ union bpf_attr {
  *		check src_cpu whether share cache with dst_cpu.
  *	Return
  *		yes 1, no 0.
+ *
+ * long bpf_is_local_ipaddr(u32 ipaddr)
+ *	Description
+ *		Check the ipaddr is local address or not.
+ *	Return
+ *		1 is local address, 0 is not.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4044,6 +4050,7 @@ union bpf_attr {
 	FN(sched_entity_to_tg),		\
 	FN(cpumask_op),			\
 	FN(cpus_share_cache),		\
+	FN(is_local_ipaddr),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

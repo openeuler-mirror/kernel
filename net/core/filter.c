@@ -77,6 +77,7 @@
 #include <net/transp_v6.h>
 #include <linux/btf_ids.h>
 #include <net/tls.h>
+#include <trace/events/net.h>
 
 static const struct bpf_func_proto *
 bpf_sk_base_func_proto(enum bpf_func_id func_id);
@@ -5084,6 +5085,21 @@ static const struct bpf_func_proto bpf_sk_original_addr_proto = {
 	.arg4_type	= ARG_CONST_SIZE,
 };
 
+BPF_CALL_1(bpf_is_local_ipaddr, uint32_t, ipaddr)
+{
+	int ret = 0;
+
+	trace_is_local_ipaddr(&ret, ipaddr);
+	return ret;
+}
+
+static const struct bpf_func_proto bpf_is_local_ipaddr_proto = {
+	.func		= bpf_is_local_ipaddr,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+};
+
 BPF_CALL_5(bpf_sock_addr_getsockopt, struct bpf_sock_addr_kern *, ctx,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
@@ -7398,6 +7414,10 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_tcp_sock:
 		return &bpf_tcp_sock_proto;
 #endif /* CONFIG_INET */
+	case BPF_FUNC_is_local_ipaddr:
+		return &bpf_is_local_ipaddr_proto;
+	case BPF_FUNC_get_current_comm:
+		return &bpf_get_current_comm_proto;
 	default:
 		return bpf_sk_base_func_proto(func_id);
 	}
