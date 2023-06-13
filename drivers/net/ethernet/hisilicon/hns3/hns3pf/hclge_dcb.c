@@ -613,13 +613,21 @@ static void hclge_sync_mqprio_qopt(struct hnae3_tc_info *tc_info,
 static int hclge_config_tc(struct hclge_dev *hdev,
 			   struct hnae3_tc_info *tc_info)
 {
+	int ret;
 	int i;
 
 	hclge_tm_schd_info_update(hdev, tc_info->num_tc);
 	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
 		hdev->tm_info.prio_tc[i] = tc_info->prio_tc[i];
 
-	return hclge_map_update(hdev);
+	ret = hclge_map_update(hdev);
+	if (ret)
+		return ret;
+
+	if (hnae3_dev_roh_supported(hdev))
+		return hclge_tm_set_tc_rate_limit(hdev, tc_info);
+
+	return 0;
 }
 
 /* Set up TC for hardware offloaded mqprio in channel mode */
