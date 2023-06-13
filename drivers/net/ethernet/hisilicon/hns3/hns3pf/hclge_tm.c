@@ -1668,6 +1668,12 @@ void hclge_tm_schd_info_update(struct hclge_dev *hdev, u8 num_tc)
 	hclge_tm_schd_info_init(hdev);
 }
 
+u32 hclge_tm_rate_2_port_rate(u64 rate)
+{
+	do_div(rate, TM_RATE_PORT_RATE_SCALE);
+	return rate > U32_MAX ? U32_MAX : (u32)rate;
+}
+
 int hclge_tm_init_hw(struct hclge_dev *hdev, bool init)
 {
 	int ret;
