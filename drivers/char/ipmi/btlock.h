@@ -19,6 +19,7 @@ static inline int btlock_lock(volatile union btlock *p, int n, unsigned char del
 {
 	union btlock t, t1;
 	unsigned long flags;
+	unsigned long c0 = get_cycles(), c1;
 
 	if (n > 1)
 		return -1;
@@ -39,7 +40,10 @@ static inline int btlock_lock(volatile union btlock *p, int n, unsigned char del
 		t.u = p->u;
 		wmb(); /* flush write out immediately */
 		local_irq_restore(flags);
-		ndelay(((t.b[1 - n] & 0x7f) + (get_cycles() & 1)) * 100);
+		c1 = get_cycles();
+		if (c1 - c0 > *mscycles * 1000)
+			return -1;
+		ndelay(((t.b[1 - n] & 0x7f) + (c1 & 1)) * 100);
 	}
 	return 0;
 }
