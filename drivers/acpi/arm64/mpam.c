@@ -32,6 +32,8 @@
 #include <linux/nodemask.h>
 #include <linux/arm_mpam.h>
 
+extern int __init acpi_mpam_parse_table_v2(struct acpi_table_header *table,
+					struct acpi_table_header *pptt);
 /**
  * acpi_mpam_label_cache_component_id() - Recursivly find @min_physid
  * for all leaf CPUs below @cpu_node, use numa node id of @min_cpu_node
@@ -40,7 +42,7 @@
  * @cpu_node:  The point in the toplogy to start the walk
  * @component_id: The id labels the structure mpam_node cache
  */
-static int
+int
 acpi_mpam_label_cache_component_id(struct acpi_table_header *table_hdr,
 					struct acpi_pptt_processor *cpu_node,
 					u32 *component_id)
@@ -187,10 +189,10 @@ static int __init acpi_mpam_parse_table(struct acpi_table_header *table,
 			pr_warn_once("Unknown node type %u offset %ld.",
 					node_hdr->type,
 					(table_offset-(char *)table));
-			/* fall through */
+			fallthrough;
 		case ACPI_MPAM_TYPE_SMMU:
 			/* not yet supported */
-			/* fall through */
+			fallthrough;
 		case ACPI_MPAM_TYPE_UNKNOWN:
 			break;
 		}
@@ -213,7 +215,7 @@ static int __init acpi_mpam_parse_table(struct acpi_table_header *table,
 	return ret;
 }
 
-int __init acpi_mpam_parse(void)
+int __init acpi_mpam_parse_version(void)
 {
 	struct acpi_table_header *mpam, *pptt;
 	acpi_status status;
@@ -234,7 +236,18 @@ int __init acpi_mpam_parse(void)
 	if (ACPI_FAILURE(status))
 		pptt = NULL;
 
-	ret = acpi_mpam_parse_table(mpam, pptt);
+	/*
+	 * The BIOS of Kunpeng 920 supports MPAM ACPI 1.0, but the ACPI
+	 * revision is wrongly written as 1, so distinguished by
+	 * oem_table_id here.
+	 */
+	if (mpam->revision == 0 || strncmp(mpam->oem_table_id, "HIP08", 5) == 0)
+		ret = acpi_mpam_parse_table(mpam, pptt);
+	else if (mpam->revision == 1)
+		ret = acpi_mpam_parse_table_v2(mpam, pptt);
+	else
+		pr_err("unsupported MPAM ACPI version: %u\n", mpam->revision);
+
 	acpi_put_table(pptt);
 	acpi_put_table(mpam);
 

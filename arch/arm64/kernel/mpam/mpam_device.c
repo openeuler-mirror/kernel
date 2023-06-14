@@ -1865,7 +1865,7 @@ static int __init arm_mpam_driver_init(void)
 	if (acpi_disabled)
 		return platform_driver_register(&arm_mpam_driver);
 	else
-		return acpi_mpam_parse();
+		return acpi_mpam_parse_version();
 }
 
 /*
