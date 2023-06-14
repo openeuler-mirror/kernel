@@ -86,7 +86,7 @@ static unsigned long pages_can_be_swapped(struct mm_struct *mm,
 	*ppages = NULL;
 
 
-	pages = kmalloc(sizeof(struct page *) * (len / PAGE_SIZE), GFP_KERNEL);
+	pages = kvzalloc(sizeof(struct page *) * (len / PAGE_SIZE), GFP_KERNEL);
 	if (!pages)
 		return -ENOMEM;
 
@@ -153,7 +153,7 @@ get_again:
 out_err:
 	for (i = 0; i < page_num; i++)
 		put_page(pages[i]);
-	kfree(pages);
+	kvfree(pages);
 	return ret;
 }
 
@@ -299,10 +299,9 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 	unsigned long i = 0, j;
 	int ret;
 
-	ptes = kmalloc(sizeof(pte_t) * (len / PAGE_SIZE), GFP_KERNEL);
+	ptes = kvzalloc(sizeof(pte_t) * (len / PAGE_SIZE), GFP_KERNEL);
 	if (!ptes)
 		return -ENOMEM;
-	memset(ptes, 0, sizeof(pte_t) * (len / PAGE_SIZE));
 	lru_add_drain();
 	for (j = 0; j < len; j += PAGE_SIZE) {
 		page = pages[i];
@@ -350,12 +349,12 @@ static unsigned long do_user_swap(struct mm_struct *mm,
 
 	if (pages_dirty)
 		new_addr_start = new_addr_start | USWAP_PAGES_DIRTY;
-	kfree(ptes);
+	kvfree(ptes);
 	return new_addr_start;
 
 out_recover:
 	uswapout_recover(mm, old_addr_start, i, pages, new_addr_start, ptes);
-	kfree(ptes);
+	kvfree(ptes);
 	return ret;
 }
 
@@ -401,7 +400,7 @@ unsigned long uswap_mremap(unsigned long old_addr, unsigned long old_len,
 	for (i = 0; i < len / PAGE_SIZE; i++)
 		if (pages[i])
 			put_page(pages[i]);
-	kfree(pages);
+	kvfree(pages);
 	return ret;
 }
 
