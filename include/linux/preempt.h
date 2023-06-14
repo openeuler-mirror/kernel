@@ -352,4 +352,6 @@ static __always_inline void migrate_enable(void)
 	preempt_enable();
 }
 
+int in_dbg(void);
+
 #endif /* __LINUX_PREEMPT_H */

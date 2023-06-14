@@ -957,7 +957,7 @@ void __rcu_irq_enter_check_tick(void)
 	struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
 
 	// If we're here from NMI there's nothing to do.
-	if (in_nmi())
+	if (in_nmi() || in_dbg())
 		return;
 
 	RCU_LOCKDEP_WARN(rcu_dynticks_curr_cpu_in_eqs(),
