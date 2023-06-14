@@ -1869,15 +1869,19 @@ extern char *__get_task_comm(char *to, size_t len, struct task_struct *tsk);
 	__get_task_comm(buf, sizeof(buf), tsk);		\
 })
 
-#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-void qos_smt_check_need_resched(void);
-#endif
-
 #ifdef CONFIG_SMP
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static __always_inline bool qos_sched_enabled(void);
+extern struct static_key_true qos_smt_expell_switch;
+extern void qos_smt_check_need_resched(void);
+#endif
 static __always_inline void scheduler_ipi(void)
 {
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-	qos_smt_check_need_resched();
+
+	if (qos_sched_enabled() &&
+	    static_branch_likely(&qos_smt_expell_switch))
+		qos_smt_check_need_resched();
 #endif
 	/*
 	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
@@ -2215,10 +2219,24 @@ static inline void sched_core_fork(struct task_struct *p) { }
 void sched_move_offline_task(struct task_struct *p);
 void sched_qos_offline_wait(void);
 int sched_qos_cpu_overload(void);
+
+extern struct static_key_true __qos_sched_switch;
+static __always_inline bool qos_sched_enabled(void)
+{
+	if (static_branch_likely(&__qos_sched_switch))
+		return true;
+
+	return false;
+}
 #else
 static inline int sched_qos_cpu_overload(void)
 {
 	return 0;
+}
+
+static __always_inline bool qos_sched_enabled(void)
+{
+	return false;
 }
 #endif
 

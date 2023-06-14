@@ -1050,7 +1050,8 @@ static void complete_signal(int sig, struct task_struct *p, enum pid_type type)
 			t = p;
 			do {
 #ifdef CONFIG_QOS_SCHED
-				sched_move_offline_task(t);
+				if (qos_sched_enabled())
+					sched_move_offline_task(t);
 #endif
 				task_clear_jobctl_pending(t, JOBCTL_PENDING_MASK);
 				sigaddset(&t->pending.signal, SIGKILL);
