@@ -361,7 +361,7 @@ void __init process_memmap(void)
 	static int i;	// Make it static so we won't start over again every time.
 	int ret;
 	phys_addr_t base, size;
-	unsigned long dma_end __maybe_unused = virt_to_phys((void *)MAX_DMA_ADDRESS);
+	unsigned long dma_end __maybe_unused = (MAX_DMA32_PFN << PAGE_SHIFT);
 
 	if (!memblock_initialized)
 		return;

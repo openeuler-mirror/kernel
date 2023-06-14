@@ -104,14 +104,11 @@ void __init callback_init(void)
 void __init zone_sizes_init(void)
 {
 	unsigned long max_zone_pfns[MAX_NR_ZONES];
-	unsigned long dma_pfn;
 
 	memset(max_zone_pfns, 0, sizeof(max_zone_pfns));
 
-	dma_pfn = PFN_DOWN(virt_to_phys((void *)MAX_DMA_ADDRESS));
-
 #ifdef CONFIG_ZONE_DMA32
-	max_zone_pfns[ZONE_DMA32] = min(dma_pfn, max_low_pfn);
+	max_zone_pfns[ZONE_DMA32] = min(MAX_DMA32_PFN, max_low_pfn);
 #endif
 	max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
 
