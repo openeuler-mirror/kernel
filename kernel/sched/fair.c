@@ -7131,6 +7131,29 @@ static int wake_cap(struct task_struct *p, int cpu, int prev_cpu)
 }
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+
+#ifdef CONFIG_JUMP_LABEL
+static DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_used);
+
+static inline bool dynamic_affinity_used(void)
+{
+	return static_branch_unlikely(&__dynamic_affinity_used);
+}
+
+void dynamic_affinity_enable(void)
+{
+	static_branch_enable_cpuslocked(&__dynamic_affinity_used);
+}
+
+#else /* CONFIG_JUMP_LABEL */
+static bool dynamic_affinity_used(void)
+{
+	return true;
+}
+
+void dynamic_affinity_enable(void) {}
+#endif
+
 /*
  * Low utilization threshold for CPU
  *
@@ -7246,7 +7269,9 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	time = schedstat_start_time();
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	set_task_select_cpus(p, &idlest_cpu, sd_flag);
+	p->select_cpus = &p->cpus_allowed;
+	if (dynamic_affinity_used())
+		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
 
 	if (sd_flag & SD_BALANCE_WAKE) {
@@ -8272,7 +8297,10 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		return 0;
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	set_task_select_cpus(p, NULL, 0);
+	p->select_cpus = &p->cpus_allowed;
+	if (dynamic_affinity_used())
+		set_task_select_cpus(p, NULL, 0);
+
 	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
 #else
 	if (!cpumask_test_cpu(env->dst_cpu, &p->cpus_allowed)) {

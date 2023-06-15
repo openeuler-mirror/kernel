@@ -625,6 +625,9 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 
 	update_tasks_prefer_cpumask(trialcs);
 
+	if (!cpumask_empty(trialcs->prefer_cpus))
+		dynamic_affinity_enable();
+
 	spin_lock_irq(&callback_lock);
 	cpumask_copy(cs->prefer_cpus, trialcs->prefer_cpus);
 	spin_unlock_irq(&callback_lock);
