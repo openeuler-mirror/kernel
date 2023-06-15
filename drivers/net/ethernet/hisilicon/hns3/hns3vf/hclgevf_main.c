@@ -12,6 +12,7 @@
 #include "hclgevf_devlink.h"
 #include "hclge_comm_rss.h"
 #include "hclgevf_udma.h"
+#include "hclgevf_unic_guid.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -117,8 +118,8 @@ static void hclgevf_get_stats(struct hnae3_handle *handle, u64 *data)
 	hclge_comm_tqps_get_stats(handle, data);
 }
 
-static void hclgevf_build_send_msg(struct hclge_vf_to_pf_msg *msg, u8 code,
-				   u8 subcode)
+void hclgevf_build_send_msg(struct hclge_vf_to_pf_msg *msg, u8 code,
+			    u8 subcode)
 {
 	if (msg) {
 		memset(msg, 0, sizeof(struct hclge_vf_to_pf_msg));
@@ -3468,6 +3469,10 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.get_cmdq_stat = hclgevf_get_cmdq_stat,
 	.request_flush_qb_config = hclgevf_set_fd_qb,
 	.query_fd_qb_state = hclgevf_query_fd_qb_state,
+#ifdef CONFIG_HNS3_UBL
+	.get_func_guid = hclgevf_unic_get_func_guid,
+	.set_func_guid = hclgevf_unic_set_func_guid,
+#endif
 };
 
 static struct hnae3_ae_algo ae_algovf = {

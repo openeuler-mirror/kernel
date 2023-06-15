@@ -97,6 +97,7 @@
 #define HCLGE_UMV_TBL_SIZE		3072
 #define HCLGE_DEFAULT_UMV_SPACE_PER_PF \
 	(HCLGE_UMV_TBL_SIZE / HCLGE_MAX_PF_NUM)
+#define HCLGE_DEFAULT_GUID_TBL_SIZE	64
 
 #define HCLGE_TQP_RESET_TRY_TIMES	200
 
@@ -286,6 +287,10 @@ struct hclge_mac {
 	__ETHTOOL_DECLARE_LINK_MODE_MASK(supported);
 	__ETHTOOL_DECLARE_LINK_MODE_MASK(advertising);
 };
+
+#ifndef UBL_ALEN
+#define UBL_ALEN	16
+#endif
 
 struct hclge_hw {
 	struct hclge_comm_hw hw;

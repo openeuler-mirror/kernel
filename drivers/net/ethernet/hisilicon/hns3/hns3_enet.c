@@ -5455,6 +5455,9 @@ static int hns3_init_mac_addr(struct net_device *netdev)
 	u8 mac_addr_temp[ETH_ALEN];
 	int ret = 0;
 
+	if (hns3_ubl_supported(h))
+		return 0;
+
 	if (h->ae_algo->ops->get_mac_addr)
 		h->ae_algo->ops->get_mac_addr(h, mac_addr_temp);
 
@@ -6043,6 +6046,10 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 		dev_err(priv->dev, "hns3_client_start fail! ret=%d\n", ret);
 		goto err_client_start_fail;
 	}
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_init_guid(netdev);
+#endif
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 

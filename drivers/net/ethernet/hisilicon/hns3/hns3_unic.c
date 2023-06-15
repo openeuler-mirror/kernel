@@ -47,6 +47,8 @@ void hns3_unic_init(struct net_device *netdev)
 
 	netdev->flags &= ~(IFF_BROADCAST | IFF_MULTICAST);
 	netdev->max_mtu = ae_dev->dev_specs.max_frm_size;
+
+	hns3_unic_init_guid(netdev);
 }
 
 /**
@@ -81,6 +83,33 @@ u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info)
 		return UB_NOIP_CFG_TYPE;
 
 	return UB_UNKNOWN_CFG_TYPE;
+}
+
+void hns3_unic_init_guid(struct net_device *netdev)
+{
+	struct hns3_nic_priv *priv = netdev_priv(netdev);
+	struct hnae3_handle *h = priv->ae_handle;
+	u8 temp_guid_addr[UBL_ALEN];
+	int ret;
+
+	if (!h->ae_algo->ops->get_func_guid ||
+	    !h->ae_algo->ops->set_func_guid) {
+		netdev_err(netdev, "the guid handlers does not exist\n");
+		return;
+	}
+
+	ret = h->ae_algo->ops->get_func_guid(h, temp_guid_addr);
+	if (ret) {
+		netdev_err(netdev, "get function guid fail, ret = %d!\n", ret);
+		return;
+	}
+
+	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
+	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
+
+	ret = h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
+	if (ret)
+		netdev_err(netdev, "set function guid fail, ret = %d\n", ret);
 }
 
 #define UNIC_DHCPV4_PROTO 0x0100

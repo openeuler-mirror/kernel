@@ -23,6 +23,7 @@ obj-$(CONFIG_HNS3_HCLGEVF) += hclgevf.o
 hclgevf-objs = hns3vf/hclgevf_main.o hns3vf/hclgevf_mbx.o  hns3vf/hclgevf_devlink.o hns3vf/hclgevf_regs.o \
 		hns3_common/hclge_comm_cmd.o hns3_common/hclge_comm_rss.o hns3_common/hclge_comm_tqp_stats.o \
 		hns3vf/hclgevf_udma.o
+hclgevf-$(CONFIG_HNS3_UBL) += hns3_common/hclge_comm_unic_addr.o hns3vf/hclgevf_unic_guid.o
 
 obj-$(CONFIG_HNS3_HCLGE) += hclge.o
 hclge-objs = hns3pf/hclge_main.o hns3pf/hclge_mdio.o hns3pf/hclge_tm.o hns3pf/hclge_sysfs.o hns3pf/hclge_regs.o \
@@ -31,4 +32,5 @@ hclge-objs = hns3pf/hclge_main.o hns3pf/hclge_mdio.o hns3pf/hclge_tm.o hns3pf/hc
 		hns3pf/hclge_udma.o
 hclge-objs += hns3pf/hclge_ext.o
 
+hclge-$(CONFIG_HNS3_UBL) += hns3_common/hclge_comm_unic_addr.o hns3pf/hclge_unic_guid.o
 hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o

@@ -30,6 +30,7 @@
 #include "hclge_devlink.h"
 #include "hclge_comm_cmd.h"
 #include "hclge_udma.h"
+#include "hclge_unic_guid.h"
 
 #define HCLGE_NAME			"hclge"
 
@@ -1371,12 +1372,27 @@ static void hclge_parse_dev_specs(struct hclge_dev *hdev,
 	ae_dev->dev_specs.umv_size = le16_to_cpu(req1->umv_size);
 	ae_dev->dev_specs.mc_mac_size = le16_to_cpu(req1->mc_mac_size);
 	ae_dev->dev_specs.tnl_num = req1->tnl_num;
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(ae_dev))
+		ae_dev->dev_specs.guid_tbl_space =
+			le16_to_cpu(req1->guid_tbl_space);
+#endif
 }
 
 static void hclge_check_dev_specs(struct hclge_dev *hdev)
 {
 	struct hnae3_dev_specs *dev_specs = &hdev->ae_dev->dev_specs;
+#ifdef CONFIG_HNS3_UBL
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 
+	if (hnae3_dev_ubl_supported(ae_dev)) {
+		if (!dev_specs->guid_tbl_space) {
+			dev_warn(&hdev->pdev->dev,
+				 "Can't get guid table size from firmware!\n");
+			dev_specs->guid_tbl_space = HCLGE_DEFAULT_GUID_TBL_SIZE;
+		}
+	}
+#endif
 	if (!dev_specs->max_non_tso_bd_num)
 		dev_specs->max_non_tso_bd_num = HCLGE_MAX_NON_TSO_BD_NUM;
 	if (!dev_specs->rss_ind_tbl_size)
@@ -12818,6 +12834,10 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_ptp_uninit(hdev);
 	hclge_uninit_rxd_adv_layout(hdev);
 	hclge_uninit_mac_table(hdev);
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(ae_dev))
+		hclge_unic_rm_func_guid(hdev);
+#endif
 	hclge_del_all_fd_entries(hdev);
 
 	if (mac->phydev)
@@ -13392,6 +13412,10 @@ struct hnae3_ae_ops hclge_ops = {
 	.get_wol = hclge_get_wol,
 	.set_wol = hclge_set_wol,
 	.priv_ops = hclge_ext_ops_handle,
+#ifdef CONFIG_HNS3_UBL
+	.get_func_guid = hclge_unic_get_func_guid,
+	.set_func_guid = hclge_unic_set_func_guid,
+#endif
 };
 
 static struct hnae3_ae_algo ae_algo = {

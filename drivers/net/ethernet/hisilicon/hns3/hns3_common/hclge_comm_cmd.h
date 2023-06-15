@@ -310,6 +310,10 @@ enum hclge_opcode_type {
 
 	/* Query link diagnosis info command */
 	HCLGE_OPC_QUERY_LINK_DIAGNOSIS	= 0x702A,
+
+	/* UB commands */
+	HCLGE_OPC_COMM_GET_FUNC_GUID	= 0xA001,
+	HCLGE_OPC_COMM_CFG_FUNC_GUID	= 0xA122,
 };
 
 enum hclge_comm_cmd_return_status {
