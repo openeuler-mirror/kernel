@@ -203,6 +203,20 @@ TRACE_EVENT(inet_sock_set_state,
 			show_tcp_state_name(__entry->newstate))
 );
 
+#undef NET_DECLARE_TRACE
+#ifdef DECLARE_TRACE_WRITABLE
+#define NET_DECLARE_TRACE(call, proto, args, size) \
+	DECLARE_TRACE_WRITABLE(call, PARAMS(proto), PARAMS(args), size)
+#else
+#define NET_DECLARE_TRACE(call, proto, args, size) \
+	DECLARE_TRACE(call, PARAMS(proto), PARAMS(args))
+#endif
+
+NET_DECLARE_TRACE(connect_ret,
+	TP_PROTO(int *err),
+	TP_ARGS(err),
+	sizeof(int));
+
 #endif /* _TRACE_SOCK_H */
 
 /* This part must be outside protection */
