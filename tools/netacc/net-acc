@@ -1,0 +1,34 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+
+function usage() {
+	echo ""
+	echo "Usage:"
+	echo "    $0 [enable | disable]"
+	echo ""
+}
+
+function mount_cgp2() {
+	CGP2=`mount | grep cgroup2`
+	if [[ "$CGP2"X == "X" ]]; then
+		CGP2_PATCH=/sys/fs/cgroup/tunned-acc
+		mount -o rw,remount  /sys/fs/cgroup
+		mkdir -p ${CGP2_PATCH}
+		mount -t cgroup2 -o nosuid,nodev,noexec none ${CGP2_PATCH}
+		mount -o ro,remount  /sys/fs/cgroup
+	fi
+}
+
+CMD=$1
+
+if [[ "$CMD"X == "enableX" ]]; then
+	mount_cgp2
+	modprobe localip
+	/usr/sbin/tuned_acc/redis_acc enable
+elif [[ "$CMD"X == "disableX" ]]; then
+	/usr/sbin/tuned_acc/redis_acc disable
+	rmmod localip
+	exit 0
+else
+	usage;
+fi
