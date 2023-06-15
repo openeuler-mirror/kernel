@@ -52,13 +52,12 @@ static inline unsigned int get_freq_step(struct cs_dbs_tuners *cs_tuners,
 	return freq_step;
 }
 
-static unsigned int fast_dbs_update(struct cpufreq_policy *policy)
+static unsigned int fast_dbs_update(struct cpufreq_policy *policy, const unsigned int load)
 {
 	struct policy_dbs_info *policy_dbs = policy->governor_data;
 	struct cs_policy_dbs_info *dbs_info = to_dbs_info(policy_dbs);
 	unsigned int requested_freq = dbs_info->requested_freq;
 	struct dbs_data *dbs_data = policy_dbs->dbs_data;
-	unsigned int load = dbs_update(policy);
 	unsigned int min_f, max_f;
 
 	/*
@@ -121,7 +120,7 @@ static unsigned int cs_dbs_update(struct cpufreq_policy *policy)
 
 	/* If seek to reduce performance loss */
 	if (cs_tuners->fast_mode == 1)
-		return fast_dbs_update(policy);
+		return fast_dbs_update(policy, load);
 
 	/*
 	 * If requested_freq is out of range, it is likely that the limits
