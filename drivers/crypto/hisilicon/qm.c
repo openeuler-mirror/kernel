@@ -666,7 +666,7 @@ static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox)
 {
 	int i = 0;
 
-	while (i++) {
+	while (++i) {
 		qm_mb_read(qm, mailbox);
 		if (!((le16_to_cpu(mailbox->w0) >> QM_MB_BUSY_SHIFT) & 0x1))
 			break;
