@@ -6988,9 +6988,6 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 int tg_set_dynamic_affinity_mode(struct task_group *tg, u64 mode)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
-	int ret = 0;
-
-	raw_spin_lock_irq(&auto_affi->lock);
 
 	/* auto mode*/
 	if (mode == 1) {
@@ -6998,14 +6995,10 @@ int tg_set_dynamic_affinity_mode(struct task_group *tg, u64 mode)
 	} else if (mode == 0) {
 		stop_auto_affinity(auto_affi);
 	} else {
-		raw_spin_unlock_irq(&auto_affi->lock);
 		return -EINVAL;
 	}
 
-	auto_affi->mode = mode;
-	raw_spin_unlock_irq(&auto_affi->lock);
-
-	return ret;
+	return 0;
 }
 
 static u64 cpu_affinity_mode_read_u64(struct cgroup_subsys_state *css,

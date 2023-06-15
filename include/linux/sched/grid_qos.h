@@ -2,6 +2,7 @@
 #ifndef _LINUX_SCHED_GRID_QOS_H
 #define _LINUX_SCHED_GRID_QOS_H
 #include <linux/nodemask.h>
+#include <linux/sched.h>
 
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 enum sched_grid_qos_class {
@@ -61,6 +62,7 @@ struct sched_grid_qos_power {
 
 struct sched_grid_qos_affinity {
 	nodemask_t mem_preferred_node_mask;
+	const struct cpumask *prefer_cpus;
 };
 
 struct task_struct;
@@ -71,6 +73,11 @@ struct sched_grid_qos {
 
 	int (*affinity_set)(struct task_struct *p);
 };
+
+static inline int sched_qos_affinity_set(struct task_struct *p)
+{
+	return p->grid_qos->affinity_set(p);
+}
 
 int sched_grid_qos_fork(struct task_struct *p, struct task_struct *orig);
 void sched_grid_qos_free(struct task_struct *p);
@@ -87,6 +94,11 @@ static inline int
 sched_grid_preferred_nid(int preferred_nid, nodemask_t *nodemask)
 {
 	return preferred_nid;
+}
+
+static inline int sched_qos_affinity_set(struct task_struct *p)
+{
+	return 0;
 }
 #endif
 #endif

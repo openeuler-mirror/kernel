@@ -23,20 +23,26 @@
 #include <linux/sched/grid_qos.h>
 #include "internal.h"
 
-static int qos_affinity_set(struct task_struct *p)
+static inline int qos_affinity_set(struct task_struct *p)
 {
 	int n;
 	struct sched_grid_qos_affinity *affinity = &p->grid_qos->affinity;
 
-	nodes_clear(affinity->mem_preferred_node_mask);
+	if (likely(affinity->prefer_cpus == p->select_cpus))
+		return 0;
+
 	/*
 	 * We want the memory allocation to be as close to the CPU
 	 * as possible, and adjust after getting memory bandwidth usage.
 	 */
-	for (n = 0; n < nr_node_ids; n++)
-		if (cpumask_intersects(cpumask_of_node(n), p->prefer_cpus))
+	for (n = 0; n < nr_node_ids; n++) {
+		if (cpumask_intersects(cpumask_of_node(n), p->select_cpus))
 			node_set(n, affinity->mem_preferred_node_mask);
+		else
+			node_clear(n, affinity->mem_preferred_node_mask);
+	}
 
+	affinity->prefer_cpus = p->select_cpus;
 	return 0;
 }
 
