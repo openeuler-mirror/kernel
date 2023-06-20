@@ -139,7 +139,7 @@ static int one_thousand = 1000;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
 #endif
-#ifdef CONFIG_QOS_SCHED
+#if defined(CONFIG_QOS_SCHED) || defined(CONFIG_QOS_SCHED_SMART_GRID)
 static int hundred_thousand = 100000;
 #endif
 #ifdef CONFIG_PERF_EVENTS
@@ -1343,7 +1343,9 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_affinity_adjust_delay_ms,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &zero,
+		.extra2		= &hundred_thousand,
 	},
 #endif
 	{ }
