@@ -6989,6 +6989,9 @@ int tg_set_dynamic_affinity_mode(struct task_group *tg, u64 mode)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
 
+	if (unlikely(!auto_affi))
+		return -EPERM;
+
 	/* auto mode*/
 	if (mode == 1) {
 		start_auto_affinity(auto_affi);
@@ -7006,6 +7009,9 @@ static u64 cpu_affinity_mode_read_u64(struct cgroup_subsys_state *css,
 {
 	struct task_group *tg = css_tg(css);
 
+	if (unlikely(!tg->auto_affinity))
+		return -EPERM;
+
 	return tg->auto_affinity->mode;
 }
 
@@ -7017,6 +7023,9 @@ static int cpu_affinity_mode_write_u64(struct cgroup_subsys_state *css,
 
 int tg_set_affinity_period(struct task_group *tg, u64 period_ms)
 {
+	if (unlikely(!tg->auto_affinity))
+		return -EPERM;
+
 	if (period_ms > U64_MAX / NSEC_PER_MSEC)
 		return -EINVAL;
 
@@ -7028,6 +7037,9 @@ int tg_set_affinity_period(struct task_group *tg, u64 period_ms)
 
 u64 tg_get_affinity_period(struct task_group *tg)
 {
+	if (unlikely(!tg->auto_affinity))
+		return -EPERM;
+
 	return ktime_to_ms(tg->auto_affinity->period);
 }
 
@@ -7048,9 +7060,14 @@ static int cpu_affinity_domain_mask_write_u64(struct cgroup_subsys_state *css,
 					      u64 mask)
 {
 	struct task_group *tg = css_tg(css);
-	struct affinity_domain *ad = &tg->auto_affinity->ad;
-	u16 full = (1 << ad->dcount) - 1;
+	struct affinity_domain *ad;
+	u16 full;
 
+	if (unlikely(!tg->auto_affinity))
+		return -EPERM;
+
+	ad = &tg->auto_affinity->ad;
+	full = (1 << ad->dcount) - 1;
 	if (mask > full)
 		return -EINVAL;
 
@@ -7065,6 +7082,9 @@ static u64 cpu_affinity_domain_mask_read_u64(struct cgroup_subsys_state *css,
 {
 	struct task_group *tg = css_tg(css);
 
+	if (unlikely(!tg->auto_affinity))
+		return -EPERM;
+
 	return tg->auto_affinity->ad.domain_mask;
 }
 
@@ -7072,9 +7092,13 @@ static int cpu_affinity_stat_show(struct seq_file *sf, void *v)
 {
 	struct task_group *tg = css_tg(seq_css(sf));
 	struct auto_affinity *auto_affi = tg->auto_affinity;
-	struct affinity_domain *ad = &auto_affi->ad;
+	struct affinity_domain *ad;
 	int i;
 
+	if (unlikely(!auto_affi))
+		return -EPERM;
+
+	ad = &auto_affi->ad;
 	seq_printf(sf, "period_active %d\n", auto_affi->period_active);
 	seq_printf(sf, "dcount %d\n", ad->dcount);
 	seq_printf(sf, "domain_mask 0x%x\n", ad->domain_mask);
