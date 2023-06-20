@@ -67,6 +67,32 @@ Maintainers List
           first. When adding to this list, please keep the entries in
           alphabetical order.
 
+LoongArch ARCHITECTURE
+M:	Xuefeng Li <lixuefeng@loongson.cn>
+M:	Bibo Mao <maobibo@loongson.cn>
+M:	Hongchen Zhang <zhanghongchen@loongson.cn>
+S:	Maintained
+F:	arch/loongarch/
+F:	tools/arch/loongarch/
+F:	drivers/gpu/drm/loongson/
+F:	tools/perf/arch/loongarch/
+F:	drivers/irqchip/irq-loongson-*
+F:	drivers/irqchip/irq-loongarch-*
+F:	drivers/spi/spi-loongson.c
+F:	drivers/char/ipmi/btlock.h
+F:	drivers/char/ipmi/ipmi_si.h
+F:	drivers/char/ipmi/ipmi_si_intf.c
+F:	drivers/char/ipmi/ipmi_si_ls2k500.c
+F:	drivers/char/ipmi/kcs_bmc_ls2k500.h
+F:	drivers/gpio/gpio-loongson.c
+F:	drivers/i2c/busses/i2c-loongson.c
+F:	drivers/pci/controller/pci-loongson.c
+F:	drivers/input/serio/i8042-loongsonio.h
+F:	drivers/cpufreq/loongson3-acpi-cpufreq.c
+F:	drivers/firmware/efi/libstub/loongarch-stub.c
+F:	drivers/net/ethernet/stmicro/stmmac/dwmac-loongson.c
+F:	drivers/platform/loongarch/loongson_generic_laptop.c
+
 SCHEDULER
 M:	zhengzucheng@huawei.com
 S:	Maintained
