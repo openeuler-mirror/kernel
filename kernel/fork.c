@@ -1878,7 +1878,7 @@ static __latent_entropy struct task_struct *copy_process(
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	retval = sched_prefer_cpus_fork(p, current);
 	if (retval)
-		goto bad_fork_free;
+		goto bad_fork_cleanup_count;
 #endif
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 	retval = sched_grid_qos_fork(p, current);
