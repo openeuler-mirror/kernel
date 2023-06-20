@@ -2997,14 +2997,15 @@ static inline void update_scan_period(struct task_struct *p, int new_cpu)
 #endif /* CONFIG_NUMA_BALANCING */
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
-static void
+static __always_inline void
 adjust_rq_cfs_tasks(void (*list_op)(struct list_head *, struct list_head *),
 	struct rq *rq,
 	struct sched_entity *se)
 {
 	struct task_group *tg = task_group(task_of(se));
 
-	if (sysctl_sched_prio_load_balance_enabled && is_offline_level(tg->qos_level))
+	if (qos_sched_enabled() && sysctl_sched_prio_load_balance_enabled &&
+	    is_offline_level(tg->qos_level))
 		(*list_op)(&se->group_node, &rq->cfs_offline_tasks);
 	else
 		(*list_op)(&se->group_node, &rq->cfs_tasks);
@@ -3235,7 +3236,8 @@ static long calc_group_shares(struct cfs_rq *cfs_rq)
 
 	tg_shares = READ_ONCE(tg->shares);
 #ifdef CONFIG_QOS_SCHED_MULTILEVEL
-	tg_shares = qos_reweight(tg_shares, tg);
+	if (qos_sched_enabled())
+		tg_shares = qos_reweight(tg_shares, tg);
 #endif
 
 	load = max(scale_load_down(cfs_rq->load.weight), cfs_rq->avg.load_avg);
@@ -3286,7 +3288,8 @@ static void update_cfs_group(struct sched_entity *se)
 #ifndef CONFIG_SMP
 	shares = READ_ONCE(gcfs_rq->tg->shares);
 #ifdef CONFIG_QOS_SCHED_MULTILEVEL
-	shares = qos_reweight(shares, gcfs_rq->tg);
+	if (qos_sched_enabled())
+		shares = qos_reweight(shares, gcfs_rq->tg);
 #endif
 
 	if (likely(se->load.weight == shares))
@@ -7071,7 +7074,7 @@ fail:
 #ifdef CONFIG_JUMP_LABEL
 static DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_used);
 
-static inline bool dynamic_affinity_used(void)
+static __always_inline bool dynamic_affinity_used(void)
 {
 	return static_branch_unlikely(&__dynamic_affinity_used);
 }
@@ -7082,7 +7085,7 @@ void dynamic_affinity_enable(void)
 }
 
 #else /* CONFIG_JUMP_LABEL */
-static bool dynamic_affinity_used(void)
+static __always_inline bool dynamic_affinity_used(void)
 {
 	return true;
 }
@@ -7097,9 +7100,6 @@ int sysctl_sched_util_low_pct = 85;
 
 static inline bool prefer_cpus_valid(struct task_struct *p)
 {
-	if (!dynamic_affinity_used())
-		return false;
-
 	return p->prefer_cpus &&
 	       !cpumask_empty(p->prefer_cpus) &&
 	       !cpumask_equal(p->prefer_cpus, p->cpus_ptr) &&
@@ -7208,7 +7208,9 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	lockdep_assert_held(&p->pi_lock);
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	set_task_select_cpus(p, &idlest_cpu, sd_flag);
+	p->select_cpus = p->cpus_ptr;
+	if (dynamic_affinity_used())
+		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
 
 	if (sd_flag & SD_BALANCE_WAKE) {
@@ -7770,9 +7772,13 @@ static int __unthrottle_qos_cfs_rqs(int cpu)
 	return res;
 }
 
-static int unthrottle_qos_cfs_rqs(int cpu)
+static __always_inline int unthrottle_qos_cfs_rqs(int cpu)
 {
 	int res;
+
+	if (!qos_sched_enabled())
+		return 0;
+
 	res = __unthrottle_qos_cfs_rqs(cpu);
 
 	if (qos_timer_is_activated(cpu) && !qos_smt_expelled(cpu))
@@ -7781,8 +7787,11 @@ static int unthrottle_qos_cfs_rqs(int cpu)
 	return res;
 }
 
-static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
+static __always_inline bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	if (!qos_sched_enabled())
+		return false;
+
 	if (unlikely(__this_cpu_read(qos_cpu_overload))) {
 		return false;
 	}
@@ -7864,8 +7873,11 @@ void init_qos_hrtimer(int cpu)
  * we should schedule offline tasks to run so that they can leave kernel
  * critical sections, and throttle them before returning to user mode.
  */
-static void qos_schedule_throttle(struct task_struct *p)
+static __always_inline void qos_schedule_throttle(struct task_struct *p)
 {
+	if (!qos_sched_enabled())
+		return;
+
 	if (unlikely(current->flags & PF_KTHREAD))
 		return;
 
@@ -7876,7 +7888,7 @@ static void qos_schedule_throttle(struct task_struct *p)
 }
 
 #ifndef CONFIG_QOS_SCHED_SMT_EXPELLER
-static bool qos_smt_expelled(int this_cpu)
+static __always_inline bool qos_smt_expelled(int this_cpu)
 {
 	return false;
 }
@@ -7952,8 +7964,11 @@ static bool qos_sched_idle_cpu(int this_cpu)
 			rq->nr_running);
 }
 
-static bool qos_smt_expelled(int this_cpu)
+static __always_inline bool qos_smt_expelled(int this_cpu)
 {
+	if (!qos_sched_enabled())
+		return false;
+
 	if (!static_branch_likely(&qos_smt_expell_switch))
 		return false;
 
@@ -8011,8 +8026,11 @@ static void qos_smt_send_ipi(int this_cpu)
 	}
 }
 
-static void qos_smt_expel(int this_cpu, struct task_struct *p)
+static __always_inline void qos_smt_expel(int this_cpu, struct task_struct *p)
 {
+	if (!qos_sched_enabled())
+		return;
+
 	if (!static_branch_likely(&qos_smt_expell_switch))
 		return;
 
@@ -8035,7 +8053,7 @@ static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
 {
 	int cpu;
 
-	if (!qos_smt_enabled())
+	if (!qos_sched_enabled() || !qos_smt_enabled())
 		return false;
 
 	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
@@ -8145,7 +8163,8 @@ again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (!prev || prev->sched_class != &fair_sched_class) {
 #ifdef CONFIG_QOS_SCHED
-		if (cfs_rq->idle_h_nr_running != 0 && rq->online)
+		if (qos_sched_enabled() &&
+		    cfs_rq->idle_h_nr_running != 0 && rq->online)
 			goto qos_simple;
 		else
 #endif
@@ -8661,7 +8680,7 @@ static int task_hot(struct task_struct *p, struct lb_env *env)
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
 	/* Preempt sched idle cpu do not consider migration cost */
-	if (sysctl_sched_prio_load_balance_enabled &&
+	if (qos_sched_enabled() && sysctl_sched_prio_load_balance_enabled &&
 	    cpus_share_cache(env->src_cpu, env->dst_cpu) &&
 	    sched_idle_cpu(env->dst_cpu))
 		return 0;
@@ -8770,7 +8789,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		return 0;
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	set_task_select_cpus(p, NULL, 0);
+	p->select_cpus = p->cpus_ptr;
+	if (dynamic_affinity_used())
+		set_task_select_cpus(p, NULL, 0);
 	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
 #else
 	if (!cpumask_test_cpu(env->dst_cpu, p->cpus_ptr)) {
@@ -8916,7 +8937,7 @@ again:
 		return p;
 	}
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
-	if (sysctl_sched_prio_load_balance_enabled) {
+	if (qos_sched_enabled() && sysctl_sched_prio_load_balance_enabled) {
 		loop++;
 		if (loop == 1) {
 			tasks = &env->src_rq->cfs_offline_tasks;
@@ -9055,7 +9076,8 @@ next:
 	}
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
-	if (sysctl_sched_prio_load_balance_enabled && env->imbalance > 0) {
+	if (qos_sched_enabled() && sysctl_sched_prio_load_balance_enabled &&
+	    env->imbalance > 0) {
 		/*
 		 * Avoid offline tasks starve to death if env->loop exceed
 		 * env->loop_max, so we should set env->loop to 0 and detach

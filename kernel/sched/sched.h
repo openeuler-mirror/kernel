@@ -3065,8 +3065,12 @@ static inline int is_offline_level(long qos_level)
 #endif
 
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-static inline int task_has_qos_idle_policy(struct task_struct *p)
+static __always_inline int task_has_qos_idle_policy(struct task_struct *p)
 {
+	if (!qos_sched_enabled() ||
+	    !static_branch_likely(&qos_smt_expell_switch))
+		return 0;
+
 	return qos_idle_policy(task_group(p)->qos_level) && p->policy == SCHED_IDLE;
 }
 #endif

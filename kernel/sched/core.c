@@ -3617,6 +3617,17 @@ static void __init init_schedstats(void)
 	set_schedstats(__sched_schedstats);
 }
 
+#ifdef CONFIG_QOS_SCHED
+DEFINE_STATIC_KEY_TRUE(__qos_sched_switch);
+
+static int __init no_qos_sched_switch_setup(char *__unused)
+{
+	static_branch_disable(&__qos_sched_switch);
+	return 1;
+}
+__setup("noqossched", no_qos_sched_switch_setup);
+#endif
+
 #ifdef CONFIG_PROC_SYSCTL
 int sysctl_schedstats(struct ctl_table *table, int write, void *buffer,
 		size_t *lenp, loff_t *ppos)
