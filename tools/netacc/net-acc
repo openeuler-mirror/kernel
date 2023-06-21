@@ -27,7 +27,7 @@ if [[ "$CMD"X == "enableX" ]]; then
 	/usr/sbin/tuned_acc/redis_acc enable
 elif [[ "$CMD"X == "disableX" ]]; then
 	/usr/sbin/tuned_acc/redis_acc disable
-	rmmod localip
+	rmmod localip 2>/dev/null
 	exit 0
 else
 	usage;
