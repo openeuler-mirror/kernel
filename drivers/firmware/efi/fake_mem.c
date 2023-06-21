@@ -61,6 +61,19 @@ static void __init efi_fake_range(struct efi_mem_range *efi_range)
 	/* swap into new EFI memmap */
 	early_memunmap(new_memmap, data.size);
 
+#ifdef CONFIG_ARM64
+	/*
+	 * Efi fake mem support for arm64 is introduced for debug propose
+	 * only. However efi_memmap_init_late in arm_enable_runtime_services
+	 * will free this memory which will lead to UAF on efi.memmap.map.
+	 *
+	 * In order to slove this, clear efi.memmap.flags to skip free.
+	 * Since efi map is never freed in arm64, this will not lead to
+	 * memroy leak.
+	 */
+	data.flags &= ~(EFI_MEMMAP_SLAB | EFI_MEMMAP_MEMBLOCK);
+#endif
+
 	efi_memmap_install(&data);
 }
 
