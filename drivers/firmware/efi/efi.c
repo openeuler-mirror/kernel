@@ -31,6 +31,7 @@
 #include <linux/ucs2_string.h>
 #include <linux/memblock.h>
 #include <linux/security.h>
+#include <linux/crash_dump.h>
 
 #include <asm/early_ioremap.h>
 
@@ -445,6 +446,11 @@ void __init efi_find_mirror(void)
 
 	if (!mirrored_kernelcore)
 		return;
+
+	if (is_kdump_kernel()) {
+		mirrored_kernelcore = false;
+		return;
+	}
 
 	for_each_efi_memory_desc(md) {
 		unsigned long long start = md->phys_addr;
