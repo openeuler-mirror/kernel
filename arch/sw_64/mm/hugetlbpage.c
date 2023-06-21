@@ -306,19 +306,13 @@ arch_initcall(sw64_256m_hugetlb_init);
 #endif
 #endif /* CONFIG_HUGETLB_PAGE */
 
-static __init int setup_hugepagesz(char *opt)
+bool __init arch_hugetlb_valid_size(unsigned long size)
 {
-	unsigned long ps = memparse(opt, &opt);
-
-	if (ps == PMD_SIZE) {
-		hugetlb_add_hstate(PMD_SHIFT - PAGE_SHIFT);
-	} else if (ps == (PMD_SIZE << 5)) {
-		hugetlb_add_hstate(PMD_SHIFT + 5 - PAGE_SHIFT);
-	} else {
-		printk(KERN_ERR "hugepagesz: Unsupported page size %lu M\n",
-			ps >> 20);
-		return 0;
+	switch (size) {
+	case PMD_SIZE:
+	case (PMD_SIZE<<5):
+		return true;
 	}
-	return 1;
+
+	return false;
 }
-__setup("hugepagesz=", setup_hugepagesz);
