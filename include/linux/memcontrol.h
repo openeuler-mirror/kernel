@@ -416,6 +416,8 @@ bool memcg_low_priority_scan_tasks(int (*)(struct task_struct *, void *),
 void memcg_print_bad_task(struct oom_control *oc);
 extern int sysctl_memcg_qos_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *length, loff_t *ppos);
+#else
+void memcg_print_bad_task(struct oom_control *oc);
 #endif
 
 /*
@@ -1690,6 +1692,10 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 					    unsigned long *total_scanned)
 {
 	return 0;
+}
+
+static inline void memcg_print_bad_task(struct oom_control *oc)
+{
 }
 #endif /* CONFIG_MEMCG */
 
