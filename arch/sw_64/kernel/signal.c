@@ -14,6 +14,7 @@
 #include <linux/livepatch.h>
 
 #include <asm/ucontext.h>
+#include <asm/uprobes.h>
 #include <asm/vdso.h>
 #include <asm/switch_to.h>
 
@@ -421,8 +422,12 @@ do_work_pending(struct pt_regs *regs, unsigned long thread_flags,
 		} else {
 			local_irq_enable();
 
-			if (thread_flags & _TIF_UPROBE)
+			if (thread_flags & _TIF_UPROBE) {
+				unsigned long pc = regs->pc;
+
 				uprobe_notify_resume(regs);
+				sw64_fix_uretprobe(regs, pc - 4);
+			}
 
 			if (thread_flags & _TIF_PATCH_PENDING)
 				klp_update_patch_state(current);

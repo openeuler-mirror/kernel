@@ -172,14 +172,11 @@ static unsigned long get_trampoline_vaddr(void)
 	return trampoline_vaddr;
 }
 
-void sw64_fix_uretprobe(struct pt_regs *regs)
+void sw64_fix_uretprobe(struct pt_regs *regs, unsigned long exc_pc)
 {
-	unsigned long bp_vaddr;
-
-	bp_vaddr = uprobe_get_swbp_addr(regs);
 	/*
 	 * regs->pc has been changed to orig_ret_vaddr in handle_trampoline().
 	 */
-	if (bp_vaddr == get_trampoline_vaddr())
+	if (exc_pc == get_trampoline_vaddr())
 		regs->r26 = regs->pc;
 }

@@ -300,10 +300,10 @@ do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 #ifdef CONFIG_UPROBES
 		case UPROBE_BRK_UPROBE:
 			if (notify_die(DIE_UPROBE, "uprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return sw64_fix_uretprobe(regs);
+				return;
 		case UPROBE_BRK_UPROBE_XOL:
 			if (notify_die(DIE_UPROBE_XOL, "uprobe_xol", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return sw64_fix_uretprobe(regs);
+				return;
 #endif
 		}
 
