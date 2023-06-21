@@ -225,7 +225,7 @@ int vfs_fstatat(int dfd, const char __user *filename,
 static int cp_old_stat(struct kstat *stat, struct __old_kernel_stat __user * statbuf)
 {
 	static int warncount = 5;
-	struct __old_kernel_stat tmp;
+	struct __old_kernel_stat __aligned(16) tmp;
 
 	if (warncount > 0) {
 		warncount--;
@@ -312,7 +312,7 @@ SYSCALL_DEFINE2(fstat, unsigned int, fd, struct __old_kernel_stat __user *, stat
 
 static int cp_new_stat(struct kstat *stat, struct stat __user *statbuf)
 {
-	struct stat tmp;
+	struct stat __aligned(16) tmp;
 
 	if (sizeof(tmp.st_dev) < 4 && !old_valid_dev(stat->dev))
 		return -EOVERFLOW;
@@ -457,7 +457,7 @@ SYSCALL_DEFINE3(readlink, const char __user *, path, char __user *, buf,
 
 static long cp_new_stat64(struct kstat *stat, struct stat64 __user *statbuf)
 {
-	struct stat64 tmp;
+	struct stat64 __aligned(16) tmp;
 
 	INIT_STRUCT_STAT64_PADDING(tmp);
 #ifdef CONFIG_MIPS
@@ -541,7 +541,7 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
 static noinline_for_stack int
 cp_statx(const struct kstat *stat, struct statx __user *buffer)
 {
-	struct statx tmp;
+	struct statx __aligned(16) tmp;
 
 	memset(&tmp, 0, sizeof(tmp));
 
@@ -613,7 +613,7 @@ SYSCALL_DEFINE5(statx,
 #ifdef CONFIG_COMPAT
 static int cp_compat_stat(struct kstat *stat, struct compat_stat __user *ubuf)
 {
-	struct compat_stat tmp;
+	struct compat_stat __aligned(16) tmp;
 
 	if (sizeof(tmp.st_dev) < 4 && !old_valid_dev(stat->dev))
 		return -EOVERFLOW;
