@@ -270,19 +270,12 @@ static inline void rwsem_set_nonspinnable(struct rw_semaphore *sem)
 					  owner | RWSEM_NONSPINNABLE));
 }
 
-static inline bool rwsem_read_trylock(struct rw_semaphore *sem, long *cntp)
+static inline bool rwsem_read_trylock(struct rw_semaphore *sem)
 {
-	*cntp = atomic_long_add_return_acquire(RWSEM_READER_BIAS, &sem->count);
-
-	if (WARN_ON_ONCE(*cntp < 0))
+	long cnt = atomic_long_add_return_acquire(RWSEM_READER_BIAS, &sem->count);
+	if (WARN_ON_ONCE(cnt < 0))
 		rwsem_set_nonspinnable(sem);
-
-	if (!(*cntp & RWSEM_READ_FAILED_MASK)) {
-		rwsem_set_reader_owned(sem);
-		return true;
-	}
-
-	return false;
+	return !(cnt & RWSEM_READ_FAILED_MASK);
 }
 
 /*
@@ -996,29 +989,18 @@ rwsem_spin_on_owner(struct rw_semaphore *sem, unsigned long nonspinnable)
  * Wait for the read lock to be granted
  */
 static struct rw_semaphore __sched *
-rwsem_down_read_slowpath(struct rw_semaphore *sem, long count, int state)
+rwsem_down_read_slowpath(struct rw_semaphore *sem, int state)
 {
-	long owner, adjustment = -RWSEM_READER_BIAS;
-	long rcnt = (count >> RWSEM_READER_SHIFT);
+	long count, adjustment = -RWSEM_READER_BIAS;
 	struct rwsem_waiter waiter;
 	DEFINE_WAKE_Q(wake_q);
 	bool wake = false;
 
 	/*
-	 * To prevent a constant stream of readers from starving a sleeping
-	 * waiter, don't attempt optimistic spinning if the lock is currently
-	 * owned by readers.
-	 */
-	owner = atomic_long_read(&sem->owner);
-	if ((owner & RWSEM_READER_OWNED) && (rcnt > 1) &&
-	   !(count & RWSEM_WRITER_LOCKED))
-		goto queue;
-
-	/*
 	 * Save the current read-owner of rwsem, if available, and the
 	 * reader nonspinnable bit.
 	 */
-	waiter.last_rowner = owner;
+	waiter.last_rowner = atomic_long_read(&sem->owner);
 	if (!(waiter.last_rowner & RWSEM_READER_OWNED))
 		waiter.last_rowner &= RWSEM_RD_NONSPINNABLE;
 
@@ -1355,34 +1337,34 @@ static struct rw_semaphore *rwsem_downgrade_wake(struct rw_semaphore *sem)
  */
 static inline void __down_read(struct rw_semaphore *sem)
 {
-	long count;
-
-	if (!rwsem_read_trylock(sem, &count)) {
-		rwsem_down_read_slowpath(sem, count, TASK_UNINTERRUPTIBLE);
+	if (!rwsem_read_trylock(sem)) {
+		rwsem_down_read_slowpath(sem, TASK_UNINTERRUPTIBLE);
 		DEBUG_RWSEMS_WARN_ON(!is_rwsem_reader_owned(sem), sem);
+	} else {
+		rwsem_set_reader_owned(sem);
 	}
 }
 
 static inline int __down_read_interruptible(struct rw_semaphore *sem)
 {
-	long count;
-
-	if (!rwsem_read_trylock(sem, &count)) {
-		if (IS_ERR(rwsem_down_read_slowpath(sem, count, TASK_INTERRUPTIBLE)))
+	if (!rwsem_read_trylock(sem)) {
+		if (IS_ERR(rwsem_down_read_slowpath(sem, TASK_INTERRUPTIBLE)))
 			return -EINTR;
 		DEBUG_RWSEMS_WARN_ON(!is_rwsem_reader_owned(sem), sem);
+	} else {
+		rwsem_set_reader_owned(sem);
 	}
 	return 0;
 }
 
 static inline int __down_read_killable(struct rw_semaphore *sem)
 {
-	long count;
-
-	if (!rwsem_read_trylock(sem, &count)) {
-		if (IS_ERR(rwsem_down_read_slowpath(sem, count, TASK_KILLABLE)))
+	if (!rwsem_read_trylock(sem)) {
+		if (IS_ERR(rwsem_down_read_slowpath(sem, TASK_KILLABLE)))
 			return -EINTR;
 		DEBUG_RWSEMS_WARN_ON(!is_rwsem_reader_owned(sem), sem);
+	} else {
+		rwsem_set_reader_owned(sem);
 	}
 	return 0;
 }
