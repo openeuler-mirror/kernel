@@ -1941,6 +1941,9 @@ retry:
 		goto retry;
 	}
 
+	if (unlikely(!cpu_online(lowest_rq->cpu)))
+		goto out;
+
 	deactivate_task(rq, next_task, 0);
 	set_task_cpu(next_task, lowest_rq->cpu);
 	activate_task(lowest_rq, next_task, 0);
