@@ -77,6 +77,8 @@ Patch0004: 0004-config-disable-CONFIG_EFI_ZBOOT-by-default.patch
 Patch0005: 0005-arm64-vmalloc-use-module-region-only-for-module_allo.patch
 Patch0006: 0006-config-add-initial-openeuler_defconfig-for-riscv64.patch
 Patch0007: 0007-cpupower-clang-compile-support.patch
+Patch0008: 0008-x86_energy_perf_policy-clang-compile-support.patch
+Patch0009: 0009-turbostat-clang-compile-support.patch
 
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
@@ -308,6 +310,8 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0005 -p1
 %patch0006 -p1
 %patch0007 -p1
+%patch0008 -p1
+%patch0009 -p1
 touch .scmversion
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
@@ -372,7 +376,7 @@ make %{Clang_Make_Option} ARCH=%{Arch} modules %{?_smp_mflags}
 # perf
 %if "%toolchain" == "clang"
 %global perf_make \
-    make %{Clang_Make_Option} EXTRA_CFLAGS="-g -Wall -fstack-protector-strong -fPIC" EXTRA_PERFLIBS="-fpie -pie" %{?_smp_mflags} -s V=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_LIBNUMA=1 NO_STRLCPY=1 prefix=%{_prefix}
+    make %{Clang_Make_Option} EXTRA_CFLAGS="-g -Wall -fstack-protector-strong -fPIC" EXTRA_LDFLAGS="-z now" EXTRA_PERFLIBS="-fpie -pie" %{?_smp_mflags} -s V=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_LIBNUMA=1 NO_STRLCPY=1 prefix=%{_prefix}
 %else
 %global perf_make \
     make EXTRA_CFLAGS="-Wl,-z,now -g -Wall -fstack-protector-strong -fPIC" EXTRA_PERFLIBS="-fpie -pie" %{?_smp_mflags} -s V=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_LIBNUMA=1 NO_STRLCPY=1 prefix=%{_prefix}
@@ -899,7 +903,7 @@ fi
 %endif
 
 %changelog
-* Tue Jul 20 2023 liyunfei <liyunfei33@huawei.com> - 6.1.8-3.0.0.9
+* Sun Jul 25 2023 liyunfei <liyunfei33@huawei.com> - 6.1.8-3.0.0.9
 - add clang compile support
 
 * Thu May 25 2023 laokz <zhangkai@iscas.ac.cn> - 6.1.8-3.0.0.8
