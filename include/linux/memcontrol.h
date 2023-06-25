@@ -424,6 +424,10 @@ extern int sysctl_memcg_qos_handler(struct ctl_table *table,
 void memcg_print_bad_task(struct oom_control *oc);
 #endif
 
+#ifdef CONFIG_MEMCG_SWAP_QOS
+DECLARE_STATIC_KEY_FALSE(memcg_swap_qos_key);
+#endif
+
 /*
  * size of first charge trial. "32" comes from vmscan.c's magic value.
  * TODO: maybe necessary to use big numbers in big irons.

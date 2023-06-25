@@ -4055,6 +4055,59 @@ void memcg_print_bad_task(struct oom_control *oc)
 
 #endif
 
+#ifdef CONFIG_MEMCG_SWAP_QOS
+DEFINE_STATIC_KEY_FALSE(memcg_swap_qos_key);
+
+#ifdef CONFIG_SYSCTL
+static int sysctl_memcg_swap_qos_stat;
+
+static void memcg_swap_qos_reset(void)
+{
+}
+
+static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
+	if (ret)
+		return ret;
+	if (write) {
+		if (sysctl_memcg_swap_qos_stat) {
+			memcg_swap_qos_reset();
+			static_branch_enable(&memcg_swap_qos_key);
+		} else {
+			static_branch_disable(&memcg_swap_qos_key);
+		}
+	}
+	return 0;
+}
+
+static struct ctl_table memcg_swap_qos_sysctls[] = {
+	{
+		.procname	= "memcg_swap_qos_enable",
+		.data		= &sysctl_memcg_swap_qos_stat,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_memcg_swap_qos_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{ }
+};
+
+static __init int memcg_swap_qos_sysctls_init(void)
+{
+	if (mem_cgroup_disabled() || cgroup_memory_noswap)
+		return 0;
+	register_sysctl_init("vm", memcg_swap_qos_sysctls);
+	return 0;
+}
+late_initcall(memcg_swap_qos_sysctls_init);
+#endif
+#endif
+
 #ifdef CONFIG_NUMA
 
 #define LRU_ALL_FILE (BIT(LRU_INACTIVE_FILE) | BIT(LRU_ACTIVE_FILE))
