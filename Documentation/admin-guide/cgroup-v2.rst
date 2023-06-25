@@ -1196,15 +1196,16 @@ PAGE_SIZE multiple when read back.
 	target cgroup.
 
 	This file accepts a single key, the number of bytes to reclaim.
-	No nested keys are currently supported.
 
 	Example::
 
 	  echo "1G" > memory.reclaim
 
-	The interface can be later extended with nested keys to
-	configure the reclaim behavior. For example, specify the
-	type of memory to reclaim from (anon, file, ..).
+	This file also accepts nested keys, the number of bytes to reclaim
+	with the type of memory to reclaim.
+
+	Example::
+	  echo "1G type=file" > memory.reclaim
 
 	Please note that the kernel can over or under reclaim from
 	the target cgroup. If less bytes are reclaimed than the

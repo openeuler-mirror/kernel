@@ -5266,6 +5266,35 @@ static int memcg_events_local_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+static int reclaim_param_parse(char *buf, unsigned long *nr_pages,
+			       unsigned int *reclaim_options)
+{
+	char *endp;
+	u64 bytes;
+
+	if (!strcmp(buf, "")) {
+		*nr_pages = PAGE_COUNTER_MAX;
+		return 0;
+	}
+
+	bytes = memparse(buf, &endp);
+	if (*endp == ' ') {
+		buf = endp + 1;
+		buf = strim(buf);
+		if (!strcmp(buf, "type=anon"))
+			*reclaim_options |= MEMCG_RECLAIM_NOT_FILE;
+		else if (!strcmp(buf, "type=file"))
+			*reclaim_options &= ~MEMCG_RECLAIM_MAY_SWAP;
+		else
+			return -EINVAL;
+	} else if (*endp != '\0')
+		return -EINVAL;
+
+	*nr_pages = min(bytes / PAGE_SIZE, (u64)PAGE_COUNTER_MAX);
+
+	return 0;
+}
+
 static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 			      size_t nbytes, loff_t off)
 {
@@ -5275,8 +5304,9 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 	unsigned int reclaim_options;
 	int err;
 
+	reclaim_options = MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
 	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "", &nr_to_reclaim);
+	err = reclaim_param_parse(buf, &nr_to_reclaim, &reclaim_options);
 	if (err)
 		return err;
 
@@ -5284,12 +5314,16 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 			mem_cgroup_is_root(memcg))
 		return -EINVAL;
 
-	reclaim_options = MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
 	while (nr_reclaimed < nr_to_reclaim) {
 		unsigned long reclaimed;
 
 		if (signal_pending(current))
 			return -EINTR;
+
+		/* If only reclaim swap pages, check swap space at first. */
+		if ((reclaim_options & MEMCG_RECLAIM_NOT_FILE) &&
+		    (mem_cgroup_get_nr_swap_pages(memcg) <= 0))
+			return -EAGAIN;
 
 		/* This is the final attempt, drain percpu lru caches in the
 		 * hope of introducing more evictable pages for
