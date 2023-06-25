@@ -5584,7 +5584,9 @@ void free_affinity_domains(struct affinity_domain *ad)
 
 	for (i = 0; i < ad->dcount; i++) {
 		kfree(ad->domains[i]);
+		kfree(ad->domains_orig[i]);
 		ad->domains[i] = NULL;
+		ad->domains_orig[i] = NULL;
 	}
 	ad->dcount = 0;
 }
@@ -5605,7 +5607,7 @@ static int init_affinity_domains_orig(struct affinity_domain *ad)
 err:
 	for (j = 0; j < i; j++) {
 		kfree(ad->domains_orig[j]);
-		ad->domains_orig[i] = NULL;
+		ad->domains_orig[j] = NULL;
 	}
 	return -ENOMEM;
 }
@@ -5671,7 +5673,7 @@ int init_auto_affinity(struct task_group *tg)
 	struct auto_affinity *auto_affi;
 	int ret;
 
-	auto_affi = kmalloc(sizeof(*auto_affi), GFP_KERNEL);
+	auto_affi = kzalloc(sizeof(*auto_affi), GFP_KERNEL);
 	if (!auto_affi)
 		return -ENOMEM;
 
