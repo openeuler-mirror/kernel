@@ -437,5 +437,15 @@ config SMMU_BYPASS_DEV
 
 	  This feature will be replaced by ACPI IORT RMR node, which will be
 	  upstreamed in mainline.
+config IOVA_MAX_GLOBAL_MAGS
+	int "Set the max iova global magzines in iova rcache"
+	range 16 2048
+	default "32"
+	help
+	  Iova rcache global magizine is shared among every cpu. The size of
+	  it can be a bottle neck when lots of cpus are contending to use it.
+	  If you are suffering from the speed of allocing iova with more than
+	  128 cpus, try to tune this config larger.
+
 
 endif # IOMMU_SUPPORT
