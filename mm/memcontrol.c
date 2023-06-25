@@ -4106,6 +4106,32 @@ static __init int memcg_swap_qos_sysctls_init(void)
 }
 late_initcall(memcg_swap_qos_sysctls_init);
 #endif
+
+static int mem_cgroup_task_swapin(struct task_struct *task, void *arg)
+{
+	struct mm_struct *mm = task->mm;
+	struct vm_area_struct *vma;
+	struct blk_plug plug;
+
+	mmap_read_lock(mm);
+	blk_start_plug(&plug);
+	for (vma = mm->mmap; vma; vma = vma->vm_next)
+		force_swapin_vma(vma);
+	blk_finish_plug(&plug);
+	mmap_read_unlock(mm);
+
+	return 0;
+}
+
+static ssize_t memory_swapin(struct kernfs_open_file *of, char *buf,
+			      size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	mem_cgroup_scan_tasks(memcg, mem_cgroup_task_swapin, NULL);
+
+	return nbytes;
+}
 #endif
 
 #ifdef CONFIG_NUMA
@@ -5800,6 +5826,13 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "reclaim",
 		.write = memory_reclaim,
 	},
+#ifdef CONFIG_MEMCG_SWAP_QOS
+	{
+		.name = "force_swapin",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memory_swapin,
+	},
+#endif
 	{
 		.name = "high_async_ratio",
 		.flags = CFTYPE_NOT_ON_ROOT,

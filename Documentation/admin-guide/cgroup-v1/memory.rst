@@ -78,6 +78,7 @@ Brief summary of control files.
  memory.stat			     show various statistics
  memory.use_hierarchy		     set/show hierarchical account enabled
  memory.force_empty		     trigger forced page reclaim
+ memory.force_swapin		     trigger forced swapin anon page
  memory.pressure_level		     set memory pressure notifications
  memory.swappiness		     set/show swappiness parameter of vmscan
 				     (See sysctl's vm.swappiness)
