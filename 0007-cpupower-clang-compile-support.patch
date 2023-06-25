@@ -1,0 +1,35 @@
+From dfc3fdee367ba9aafc5ef7639a1fb0dbb9c6d213 Mon Sep 17 00:00:00 2001
+From: liyunfei <liyunfei33@huawei.com>
+Date: Tue, 20 Jun 2023 10:27:45 +0800
+Subject: [PATCH] cpupower clang compile support
+
+---
+ tools/power/cpupower/Makefile | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/tools/power/cpupower/Makefile b/tools/power/cpupower/Makefile
+index e9b6de3..cc30f4e 100644
+--- a/tools/power/cpupower/Makefile
++++ b/tools/power/cpupower/Makefile
+@@ -86,12 +86,12 @@ INSTALL_SCRIPT = ${INSTALL} -m 644
+ # to something more interesting, like "arm-linux-".  If you want
+ # to compile vs uClibc, that can be done here as well.
+ CROSS = #/usr/i386-linux-uclibc/usr/bin/i386-uclibc-
+-CC = $(CROSS)gcc
+-LD = $(CROSS)gcc
+-AR = $(CROSS)ar
+-STRIP = $(CROSS)strip
+-RANLIB = $(CROSS)ranlib
+-HOSTCC = gcc
++CC ?= $(CROSS)gcc
++LD ?= $(CROSS)gcc
++AR ?= $(CROSS)ar
++STRIP ?= $(CROSS)strip
++RANLIB ?= $(CROSS)ranlib
++HOSTCC ?= gcc
+ MKDIR = mkdir
+ 
+ # 64bit library detection
+-- 
+2.27.0
+

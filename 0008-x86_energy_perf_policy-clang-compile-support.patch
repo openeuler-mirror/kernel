@@ -1,0 +1,24 @@
+From b52db4e09378e62cf785644344aeb36cad0db406 Mon Sep 17 00:00:00 2001
+From: liyunfei <liyunfei33@huawei.com>
+Date: Wed, 21 Jun 2023 14:38:15 +0800
+Subject: [PATCH] x86_energy_perf_policy clang compile support
+
+---
+ tools/power/x86/x86_energy_perf_policy/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/power/x86/x86_energy_perf_policy/Makefile b/tools/power/x86/x86_energy_perf_policy/Makefile
+index 666b325a6..86702c2e5 100644
+--- a/tools/power/x86/x86_energy_perf_policy/Makefile
++++ b/tools/power/x86/x86_energy_perf_policy/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-CC		= $(CROSS_COMPILE)gcc
++CC		?= $(CROSS_COMPILE)gcc
+ BUILD_OUTPUT    := $(CURDIR)
+ PREFIX		:= /usr
+ DESTDIR		:=
+-- 
+2.28.0.windows.1
+
+
