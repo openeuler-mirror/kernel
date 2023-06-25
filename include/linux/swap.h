@@ -511,11 +511,14 @@ static inline long get_nr_swap_pages(void)
 	return atomic_long_read(&nr_swap_pages);
 }
 
+extern long get_nr_swap_pages_type(int type);
+
 extern void si_swapinfo(struct sysinfo *);
 extern swp_entry_t get_swap_page(struct page *page);
 extern void put_swap_page(struct page *page, swp_entry_t entry);
 extern swp_entry_t get_swap_page_of_type(int);
-extern int get_swap_pages(int n, swp_entry_t swp_entries[], int entry_size);
+extern int get_swap_pages(int n, swp_entry_t swp_entries[], int entry_size,
+			  int type);
 extern int add_swap_count_continuation(swp_entry_t, gfp_t);
 extern void swap_shmem_alloc(swp_entry_t);
 extern int swap_duplicate(swp_entry_t);
@@ -547,6 +550,11 @@ static inline void put_swap_device(struct swap_info_struct *si)
 	percpu_ref_put(&si->sei->users);
 }
 
+#ifdef CONFIG_MEMCG_SWAP_QOS
+extern int write_swapfile_for_memcg(struct address_space *mapping,
+				    int *swap_type);
+extern void read_swapfile_for_memcg(struct seq_file *m, int type);
+#endif
 #else /* CONFIG_SWAP */
 
 static inline int swap_readpage(struct page *page, bool do_poll)

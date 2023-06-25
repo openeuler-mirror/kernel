@@ -50,6 +50,11 @@ enum memcg_memory_event {
 	MEMCG_NR_MEMORY_EVENTS,
 };
 
+enum {
+	SWAP_TYPE_ALL	= -1, /* allowd use all swap file */
+	SWAP_TYPE_NONE	= -2, /* prohibited use any swapfile */
+};
+
 struct mem_cgroup_reclaim_cookie {
 	pg_data_t *pgdat;
 	unsigned int generation;
@@ -242,6 +247,7 @@ struct obj_cgroup {
 
 struct swap_device {
 	unsigned long max;
+	int type;
 };
 
 /*
@@ -1307,6 +1313,9 @@ static inline bool memcg_has_children(struct mem_cgroup *memcg)
 
 int mem_cgroup_force_empty(struct mem_cgroup *memcg);
 
+int memcg_get_swap_type(struct page *page);
+void memcg_remove_swapfile(int type);
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1712,6 +1721,15 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 }
 
 static inline void memcg_print_bad_task(struct oom_control *oc)
+{
+}
+
+static inline int memcg_get_swap_type(struct page *page)
+{
+	return SWAP_TYPE_ALL;
+}
+
+static inline void memcg_remove_swapfile(int type)
 {
 }
 #endif /* CONFIG_MEMCG */

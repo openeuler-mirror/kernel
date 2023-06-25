@@ -266,7 +266,7 @@ static int refill_swap_slots_cache(struct swap_slots_cache *cache)
 	cache->cur = 0;
 	if (swap_slot_cache_active)
 		cache->nr = get_swap_pages(SWAP_SLOTS_CACHE_SIZE,
-					   cache->slots, 1);
+					   cache->slots, 1, SWAP_TYPE_ALL);
 
 	return cache->nr;
 }
@@ -307,12 +307,17 @@ swp_entry_t get_swap_page(struct page *page)
 {
 	swp_entry_t entry;
 	struct swap_slots_cache *cache;
+	int type;
 
 	entry.val = 0;
 
+	type = memcg_get_swap_type(page);
+	if (type == SWAP_TYPE_NONE)
+		goto out;
+
 	if (PageTransHuge(page)) {
 		if (IS_ENABLED(CONFIG_THP_SWAP))
-			get_swap_pages(1, &entry, HPAGE_PMD_NR);
+			get_swap_pages(1, &entry, HPAGE_PMD_NR, type);
 		goto out;
 	}
 
@@ -327,7 +332,8 @@ swp_entry_t get_swap_page(struct page *page)
 	 */
 	cache = raw_cpu_ptr(&swp_slots);
 
-	if (likely(check_cache_active() && cache->slots)) {
+	if (likely(check_cache_active() && cache->slots) &&
+	    type == SWAP_TYPE_ALL) {
 		mutex_lock(&cache->alloc_lock);
 		if (cache->slots) {
 repeat:
@@ -344,7 +350,7 @@ repeat:
 			goto out;
 	}
 
-	get_swap_pages(1, &entry, 1);
+	get_swap_pages(1, &entry, 1, type);
 out:
 	if (mem_cgroup_try_charge_swap(page, entry)) {
 		put_swap_page(page, entry);
