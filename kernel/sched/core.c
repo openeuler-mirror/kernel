@@ -6534,9 +6534,6 @@ void sched_move_task(struct task_struct *tsk)
 		DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
 	struct rq_flags rf;
 	struct rq *rq;
-#ifdef CONFIG_QOS_SCHED_SMART_GRID
-	struct affinity_domain *ad;
-#endif
 
 	rq = task_rq_lock(tsk, &rf);
 	update_rq_clock(rq);
@@ -6557,14 +6554,6 @@ void sched_move_task(struct task_struct *tsk)
 		set_curr_task(rq, tsk);
 
 	task_rq_unlock(rq, tsk, &rf);
-
-#ifdef CONFIG_QOS_SCHED_SMART_GRID
-	if (smart_grid_used()) {
-		ad = &task_group(tsk)->auto_affinity->ad;
-		set_prefer_cpus_ptr(tsk, ad->domains[ad->curr_level]);
-	}
-#endif
-
 }
 
 static inline struct task_group *css_tg(struct cgroup_subsys_state *css)

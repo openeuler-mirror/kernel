@@ -5714,17 +5714,21 @@ static void destroy_auto_affinity(struct task_group *tg)
 static void destroy_auto_affinity(struct task_group *tg) {}
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+static inline bool prefer_cpus_valid(struct task_struct *p);
+
 static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
 {
 	return p->prefer_cpus;
 }
-#endif
 
 static inline int dynamic_affinity_mode(struct task_struct *p)
 {
+	if (!prefer_cpus_valid(p))
+		return -1;
+
 	return 0;
 }
-
+#endif
 #endif
 
 /**************************************************
