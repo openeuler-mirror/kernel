@@ -494,8 +494,11 @@ struct fpu {
 	 * context switch and when the kernel uses the FPU. The registers
 	 * are restored from this storage on return to user space if they
 	 * are not longer containing the tasks FPU register state.
+	 *
+	 * For kabi fix:
+	 * Assuming that no 3rd party driver will reach into struct fpu
 	 */
-	KABI_DEPRECATE(union fpregs_state, state)
+	KABI_BROKEN_REMOVE(union fpregs_state state)
 	KABI_EXTEND(struct fpstate __fpstate)
 	/*
 	 * WARNING: '__fpstate' is dynamically-sized.  Do not put
