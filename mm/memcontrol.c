@@ -4083,6 +4083,7 @@ static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
 		if (sysctl_memcg_swap_qos_stat) {
 			memcg_swap_qos_reset();
 			static_branch_enable(&memcg_swap_qos_key);
+			enable_swap_slots_cache_max();
 		} else {
 			static_branch_disable(&memcg_swap_qos_key);
 		}

@@ -35,6 +35,11 @@
 #include <linux/mm.h>
 
 static DEFINE_PER_CPU(struct swap_slots_cache, swp_slots);
+#ifdef CONFIG_MEMCG_SWAP_QOS
+static unsigned int nr_swap_slots;
+static unsigned int max_swap_slots;
+static DEFINE_PER_CPU(struct swap_slots_cache [MAX_SWAPFILES], swp_type_slots);
+#endif
 static bool	swap_slot_cache_active;
 bool	swap_slot_cache_enabled;
 static bool	swap_slot_cache_initialized;
@@ -111,7 +116,37 @@ out:
 	return swap_slot_cache_active;
 }
 
-static int alloc_swap_slot_cache(unsigned int cpu)
+#ifdef CONFIG_MEMCG_SWAP_QOS
+static inline struct swap_slots_cache *get_slots_cache(int swap_type)
+{
+	if (swap_type == SWAP_TYPE_ALL)
+		return raw_cpu_ptr(&swp_slots);
+	else
+		return raw_cpu_ptr(&swp_type_slots)[swap_type];
+}
+
+static inline struct swap_slots_cache *get_slots_cache_cpu(unsigned int cpu,
+							   int swap_type)
+{
+	if (swap_type == SWAP_TYPE_ALL)
+		return &per_cpu(swp_slots, cpu);
+	else
+		return &per_cpu(swp_type_slots, cpu)[swap_type];
+}
+#else
+static inline struct swap_slots_cache *get_slots_cache(int swap_type)
+{
+	return raw_cpu_ptr(&swp_slots);
+}
+
+static inline struct swap_slots_cache *get_slots_cache_cpu(unsigned int cpu,
+							   int swap_type)
+{
+	return &per_cpu(swp_slots, cpu);
+}
+#endif
+
+static int alloc_swap_slot_cache_cpu_type(unsigned int cpu, int swap_type)
 {
 	struct swap_slots_cache *cache;
 	swp_entry_t *slots, *slots_ret;
@@ -134,7 +169,7 @@ static int alloc_swap_slot_cache(unsigned int cpu)
 	}
 
 	mutex_lock(&swap_slots_cache_mutex);
-	cache = &per_cpu(swp_slots, cpu);
+	cache = get_slots_cache_cpu(cpu, swap_type);
 	if (cache->slots || cache->slots_ret) {
 		/* cache already allocated */
 		mutex_unlock(&swap_slots_cache_mutex);
@@ -166,13 +201,74 @@ static int alloc_swap_slot_cache(unsigned int cpu)
 	return 0;
 }
 
-static void drain_slots_cache_cpu(unsigned int cpu, unsigned int type,
-				  bool free_slots)
+#ifdef CONFIG_MEMCG_SWAP_QOS
+static int __alloc_swap_slot_cache_cpu(unsigned int cpu)
+{
+	int i, ret;
+
+	ret = alloc_swap_slot_cache_cpu_type(cpu, SWAP_TYPE_ALL);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < nr_swap_slots; i++) {
+		ret = alloc_swap_slot_cache_cpu_type(cpu, i);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
+}
+
+static void alloc_swap_slot_cache_type(int type)
+{
+	unsigned int cpu;
+
+	if (type >= max_swap_slots)
+		max_swap_slots = type + 1;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return;
+
+	/* serialize with cpu hotplug operations */
+	get_online_cpus();
+	while (type >= nr_swap_slots) {
+		for_each_online_cpu(cpu)
+			alloc_swap_slot_cache_cpu_type(cpu, nr_swap_slots);
+		nr_swap_slots++;
+	}
+	put_online_cpus();
+}
+
+void enable_swap_slots_cache_max(void)
+{
+	mutex_lock(&swap_slots_cache_enable_mutex);
+	if (max_swap_slots)
+		alloc_swap_slot_cache_type(max_swap_slots - 1);
+	mutex_unlock(&swap_slots_cache_enable_mutex);
+}
+#else
+static inline int __alloc_swap_slot_cache_cpu(unsigned int cpu)
+{
+	return alloc_swap_slot_cache_cpu_type(cpu, SWAP_TYPE_ALL);
+}
+
+static void alloc_swap_slot_cache_type(int type)
+{
+}
+#endif
+
+static int alloc_swap_slot_cache(unsigned int cpu)
+{
+	return __alloc_swap_slot_cache_cpu(cpu);
+}
+
+static void drain_slots_cache_cpu_type(unsigned int cpu, unsigned int type,
+				    bool free_slots, int swap_type)
 {
 	struct swap_slots_cache *cache;
 	swp_entry_t *slots = NULL;
 
-	cache = &per_cpu(swp_slots, cpu);
+	cache = get_slots_cache_cpu(cpu, swap_type);
 	if ((type & SLOTS_CACHE) && cache->slots) {
 		mutex_lock(&cache->alloc_lock);
 		swapcache_free_entries(cache->slots + cache->cur, cache->nr);
@@ -196,6 +292,30 @@ static void drain_slots_cache_cpu(unsigned int cpu, unsigned int type,
 		if (slots)
 			kvfree(slots);
 	}
+}
+
+#ifdef CONFIG_MEMCG_SWAP_QOS
+static void __drain_slots_cache_cpu(unsigned int cpu, unsigned int type,
+				       bool free_slots)
+{
+	int i;
+
+	drain_slots_cache_cpu_type(cpu, type, free_slots, SWAP_TYPE_ALL);
+	for (i = 0; i < nr_swap_slots; i++)
+		drain_slots_cache_cpu_type(cpu, type, free_slots, i);
+}
+#else
+static inline void __drain_slots_cache_cpu(unsigned int cpu,
+					unsigned int type, bool free_slots)
+{
+	drain_slots_cache_cpu_type(cpu, type, free_slots, SWAP_TYPE_ALL);
+}
+#endif
+
+static void drain_slots_cache_cpu(unsigned int cpu, unsigned int type,
+				  bool free_slots)
+{
+	__drain_slots_cache_cpu(cpu, type, free_slots);
 }
 
 static void __drain_swap_slots_cache(unsigned int type)
@@ -237,7 +357,7 @@ static int free_slot_cache(unsigned int cpu)
 	return 0;
 }
 
-void enable_swap_slots_cache(void)
+void enable_swap_slots_cache(int type)
 {
 	mutex_lock(&swap_slots_cache_enable_mutex);
 	if (!swap_slot_cache_initialized) {
@@ -251,14 +371,14 @@ void enable_swap_slots_cache(void)
 
 		swap_slot_cache_initialized = true;
 	}
-
+	alloc_swap_slot_cache_type(type);
 	__reenable_swap_slots_cache();
 out_unlock:
 	mutex_unlock(&swap_slots_cache_enable_mutex);
 }
 
 /* called with swap slot cache's alloc lock held */
-static int refill_swap_slots_cache(struct swap_slots_cache *cache)
+static int refill_swap_slots_cache(struct swap_slots_cache *cache, int type)
 {
 	if (!use_swap_slot_cache || cache->nr)
 		return 0;
@@ -266,7 +386,7 @@ static int refill_swap_slots_cache(struct swap_slots_cache *cache)
 	cache->cur = 0;
 	if (swap_slot_cache_active)
 		cache->nr = get_swap_pages(SWAP_SLOTS_CACHE_SIZE,
-					   cache->slots, 1, SWAP_TYPE_ALL);
+					   cache->slots, 1, type);
 
 	return cache->nr;
 }
@@ -330,10 +450,9 @@ swp_entry_t get_swap_page(struct page *page)
 	 * The alloc path here does not touch cache->slots_ret
 	 * so cache->free_lock is not taken.
 	 */
-	cache = raw_cpu_ptr(&swp_slots);
+	cache = get_slots_cache(type);
 
-	if (likely(check_cache_active() && cache->slots) &&
-	    type == SWAP_TYPE_ALL) {
+	if (likely(check_cache_active() && cache->slots)) {
 		mutex_lock(&cache->alloc_lock);
 		if (cache->slots) {
 repeat:
@@ -341,7 +460,7 @@ repeat:
 				entry = cache->slots[cache->cur];
 				cache->slots[cache->cur++].val = 0;
 				cache->nr--;
-			} else if (refill_swap_slots_cache(cache)) {
+			} else if (refill_swap_slots_cache(cache, type)) {
 				goto repeat;
 			}
 		}

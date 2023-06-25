@@ -23,7 +23,7 @@ struct swap_slots_cache {
 
 void disable_swap_slots_cache_lock(void);
 void reenable_swap_slots_cache_unlock(void);
-void enable_swap_slots_cache(void);
+void enable_swap_slots_cache(int type);
 int free_swap_slot(swp_entry_t entry);
 
 extern bool swap_slot_cache_enabled;

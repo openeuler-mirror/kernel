@@ -554,6 +554,7 @@ static inline void put_swap_device(struct swap_info_struct *si)
 extern int write_swapfile_for_memcg(struct address_space *mapping,
 				    int *swap_type);
 extern void read_swapfile_for_memcg(struct seq_file *m, int type);
+void enable_swap_slots_cache_max(void);
 #endif
 #else /* CONFIG_SWAP */
 
