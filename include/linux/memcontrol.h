@@ -240,6 +240,10 @@ struct obj_cgroup {
 	};
 };
 
+struct swap_device {
+	unsigned long max;
+};
+
 /*
  * The memory controller data structure. The memory controller controls both
  * page cache and RSS per cgroup. We would eventually like to provide
@@ -402,7 +406,12 @@ struct mem_cgroup {
 #else
 	KABI_RESERVE(6)
 #endif
+#ifdef CONFIG_MEMCG_SWAP_QOS
+	/* per-memcg swap device control; protected by swap_lock */
+	KABI_USE(7, struct swap_device *swap_dev)
+#else
 	KABI_RESERVE(7)
+#endif
 	KABI_RESERVE(8)
 
 	struct mem_cgroup_per_node *nodeinfo[0];
