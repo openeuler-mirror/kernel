@@ -26,7 +26,7 @@ struct iova_magazine;
 struct iova_cpu_rcache;
 
 #define IOVA_RANGE_CACHE_MAX_SIZE 6	/* log of max cached IOVA range size (in pages) */
-#define MAX_GLOBAL_MAGS 32	/* magazines per bin */
+#define MAX_GLOBAL_MAGS CONFIG_IOVA_MAX_GLOBAL_MAGS	/* magazines per bin */
 
 struct iova_rcache {
 	spinlock_t lock;
