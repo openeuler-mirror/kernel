@@ -2727,9 +2727,6 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 	struct huge_bootmem_page *m = NULL; /* initialize for clang */
 	int nr_nodes, node;
 
-	if (nid != NUMA_NO_NODE && nid >= nr_online_nodes)
-		return 0;
-
 	if (!huge_page_limit_check(HUGE_PAGE_BOOTMEM_ALLOC, huge_page_size(h), nid))
 		return 0;
 
@@ -2840,7 +2837,7 @@ static void __init hugetlb_hstate_alloc_pages(struct hstate *h)
 	}
 
 	/* do node specific alloc */
-	for (i = 0; i < nr_online_nodes; i++) {
+	for_each_online_node(i) {
 		if (h->max_huge_pages_node[i] > 0) {
 			hugetlb_hstate_alloc_pages_onenode(h, i);
 			node_specific_alloc = true;
@@ -3577,7 +3574,7 @@ static int __init hugetlb_init(void)
 			default_hstate.max_huge_pages =
 				default_hstate_max_huge_pages;
 
-			for (i = 0; i < nr_online_nodes; i++)
+			for_each_online_node(i)
 				default_hstate.max_huge_pages_node[i] =
 					default_hugepages_in_node[i];
 		}
@@ -3696,7 +3693,7 @@ static int __init hugepages_setup(char *s)
 				pr_warn("HugeTLB: architecture can't support node specific alloc, ignoring!\n");
 				return 0;
 			}
-			if (tmp >= nr_online_nodes)
+			if (tmp >= MAX_NUMNODES || !node_online(tmp))
 				goto invalid;
 			node = tmp;
 			p += count + 1;
@@ -3826,7 +3823,7 @@ static int __init default_hugepagesz_setup(char *s)
 	 */
 	if (default_hstate_max_huge_pages) {
 		default_hstate.max_huge_pages = default_hstate_max_huge_pages;
-		for (i = 0; i < nr_online_nodes; i++)
+		for_each_online_node(i)
 			default_hstate.max_huge_pages_node[i] =
 				default_hugepages_in_node[i];
 		if (hstate_is_gigantic(&default_hstate))
