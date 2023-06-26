@@ -50,6 +50,11 @@ enum memcg_memory_event {
 	MEMCG_NR_MEMORY_EVENTS,
 };
 
+enum {
+	SWAP_TYPE_ALL	= -1, /* allowd use all swap file */
+	SWAP_TYPE_NONE	= -2, /* prohibited use any swapfile */
+};
+
 struct mem_cgroup_reclaim_cookie {
 	pg_data_t *pgdat;
 	unsigned int generation;
@@ -240,6 +245,11 @@ struct obj_cgroup {
 	};
 };
 
+struct swap_device {
+	unsigned long max;
+	int type;
+};
+
 /*
  * The memory controller data structure. The memory controller controls both
  * page cache and RSS per cgroup. We would eventually like to provide
@@ -402,7 +412,12 @@ struct mem_cgroup {
 #else
 	KABI_RESERVE(6)
 #endif
+#ifdef CONFIG_MEMCG_SWAP_QOS
+	/* per-memcg swap device control; protected by swap_lock */
+	KABI_USE(7, struct swap_device *swap_dev)
+#else
 	KABI_RESERVE(7)
+#endif
 	KABI_RESERVE(8)
 
 	struct mem_cgroup_per_node *nodeinfo[0];
@@ -422,6 +437,10 @@ extern int sysctl_memcg_qos_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *length, loff_t *ppos);
 #else
 void memcg_print_bad_task(struct oom_control *oc);
+#endif
+
+#ifdef CONFIG_MEMCG_SWAP_QOS
+DECLARE_STATIC_KEY_FALSE(memcg_swap_qos_key);
 #endif
 
 /*
@@ -1294,6 +1313,9 @@ static inline bool memcg_has_children(struct mem_cgroup *memcg)
 
 int mem_cgroup_force_empty(struct mem_cgroup *memcg);
 
+int memcg_get_swap_type(struct page *page);
+void memcg_remove_swapfile(int type);
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0
@@ -1699,6 +1721,15 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 }
 
 static inline void memcg_print_bad_task(struct oom_control *oc)
+{
+}
+
+static inline int memcg_get_swap_type(struct page *page)
+{
+	return SWAP_TYPE_ALL;
+}
+
+static inline void memcg_remove_swapfile(int type)
 {
 }
 #endif /* CONFIG_MEMCG */

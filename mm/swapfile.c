@@ -1056,7 +1056,97 @@ static unsigned long scan_swap_map(struct swap_info_struct *si,
 
 }
 
-int get_swap_pages(int n_goal, swp_entry_t swp_entries[], int entry_size)
+#ifdef CONFIG_MEMCG_SWAP_QOS
+int write_swapfile_for_memcg(struct address_space *mapping, int *swap_type)
+{
+	struct swap_info_struct *si;
+	unsigned int type;
+	int ret = -EINVAL;
+
+	spin_lock(&swap_lock);
+	for (type = 0; type < nr_swapfiles; type++) {
+		si = swap_info[type];
+		if ((si->flags & SWP_WRITEOK) &&
+		    (si->swap_file->f_mapping == mapping)) {
+			WRITE_ONCE(*swap_type, type);
+			ret = 0;
+			break;
+		}
+	}
+	spin_unlock(&swap_lock);
+	return ret;
+}
+
+void read_swapfile_for_memcg(struct seq_file *m, int type)
+{
+	struct swap_info_struct *si;
+
+	spin_lock(&swap_lock);
+	if (type < nr_swapfiles) {
+		si = swap_info[type];
+		if (si->flags & SWP_WRITEOK) {
+			seq_file_path(m, si->swap_file, "\t\n\\");
+			seq_printf(m, "\n");
+		}
+	}
+	spin_unlock(&swap_lock);
+}
+
+long get_nr_swap_pages_type(int type)
+{
+	struct swap_info_struct *si;
+	long nr_swap_pages = 0;
+
+	spin_lock(&swap_lock);
+	if (type < nr_swapfiles) {
+		si = swap_info[type];
+		if (si->flags & SWP_WRITEOK)
+			nr_swap_pages = si->pages - si->inuse_pages;
+	}
+	spin_unlock(&swap_lock);
+
+	return nr_swap_pages;
+}
+
+static long get_avail_pages(unsigned long size, int type)
+{
+	long avail_pgs = 0;
+
+	if (type == SWAP_TYPE_ALL)
+		return atomic_long_read(&nr_swap_pages) / size;
+
+	spin_unlock(&swap_avail_lock);
+	avail_pgs = get_nr_swap_pages_type(type) / size;
+	spin_lock(&swap_avail_lock);
+	return avail_pgs;
+}
+
+static inline bool should_skip_swap_type(int swap_type, int type)
+{
+	if (type == SWAP_TYPE_ALL)
+		return false;
+
+	return (type != swap_type);
+}
+#else
+long get_nr_swap_pages_type(int type)
+{
+	return 0;
+}
+
+static inline long get_avail_pages(unsigned long size, int type)
+{
+	return atomic_long_read(&nr_swap_pages) / size;
+}
+
+static inline bool should_skip_swap_type(int swap_type, int type)
+{
+	return false;
+}
+#endif
+
+int get_swap_pages(int n_goal, swp_entry_t swp_entries[], int entry_size,
+		   int type)
 {
 	unsigned long size = swap_entry_size(entry_size);
 	struct swap_info_struct *si, *next;
@@ -1069,7 +1159,7 @@ int get_swap_pages(int n_goal, swp_entry_t swp_entries[], int entry_size)
 
 	spin_lock(&swap_avail_lock);
 
-	avail_pgs = atomic_long_read(&nr_swap_pages) / size;
+	avail_pgs = get_avail_pages(size, type);
 	if (avail_pgs <= 0) {
 		spin_unlock(&swap_avail_lock);
 		goto noswap;
@@ -1086,6 +1176,11 @@ start_over:
 		plist_requeue(&si->avail_lists[node], &swap_avail_heads[node]);
 		spin_unlock(&swap_avail_lock);
 		spin_lock(&si->lock);
+		if (should_skip_swap_type(si->type, type)) {
+			spin_unlock(&si->lock);
+			spin_lock(&swap_avail_lock);
+			goto nextsi;
+		}
 		if (!si->highest_bit || !(si->flags & SWP_WRITEOK)) {
 			spin_lock(&swap_avail_lock);
 			if (plist_node_empty(&si->avail_lists[node])) {
@@ -2703,6 +2798,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	cluster_info = p->cluster_info;
 	p->cluster_info = NULL;
 	frontswap_map = frontswap_map_get(p);
+	memcg_remove_swapfile(p->type);
 	spin_unlock(&p->lock);
 	spin_unlock(&swap_lock);
 	arch_swap_invalidate_area(p->type);
@@ -3457,7 +3553,7 @@ out:
 	if (inode)
 		inode_unlock(inode);
 	if (!error)
-		enable_swap_slots_cache();
+		enable_swap_slots_cache(p->type);
 	return error;
 }
 

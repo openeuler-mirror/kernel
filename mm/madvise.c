@@ -259,6 +259,25 @@ static void force_shm_swapin_readahead(struct vm_area_struct *vma,
 
 	lru_add_drain();	/* Push any new pages onto the LRU now */
 }
+
+void force_swapin_vma(struct vm_area_struct *vma)
+{
+	struct file *file = vma->vm_file;
+
+	if (!can_madv_lru_vma(vma))
+		return;
+
+	if (!file) {
+		walk_page_vma(vma, &swapin_walk_ops, vma);
+		lru_add_drain();
+	} else if (shmem_mapping(file->f_mapping))
+		force_shm_swapin_readahead(vma, vma->vm_start,
+			vma->vm_end, file->f_mapping);
+}
+#else
+void force_swapin_vma(struct vm_area_struct *vma)
+{
+}
 #endif		/* CONFIG_SWAP */
 
 /*
