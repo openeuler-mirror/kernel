@@ -35,6 +35,7 @@ struct mem_cgroup;
 struct page;
 struct mm_struct;
 struct kmem_cache;
+struct oom_control;
 
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
@@ -354,9 +355,11 @@ DECLARE_STATIC_KEY_FALSE(memcg_qos_stat_key);
 
 bool memcg_low_priority_scan_tasks(int (*)(struct task_struct *, void *),
 				   void *);
-void memcg_print_bad_task(void *arg, int ret);
+void memcg_print_bad_task(struct oom_control *oc);
 extern int sysctl_memcg_qos_handler(struct ctl_table *table,
 		int write, void __user *buffer, size_t *length, loff_t *ppos);
+#else
+void memcg_print_bad_task(struct oom_control *oc);
 #endif
 
 /*
@@ -1132,6 +1135,11 @@ static inline
 void count_memcg_event_mm(struct mm_struct *mm, enum vm_event_item idx)
 {
 }
+
+static inline void memcg_print_bad_task(struct oom_control *oc)
+{
+}
+
 #endif /* CONFIG_MEMCG */
 
 /* idx can be of type enum memcg_stat_item or node_stat_item */

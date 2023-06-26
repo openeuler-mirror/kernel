@@ -1246,9 +1246,6 @@ int mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 			break;
 		}
 	}
-#ifdef CONFIG_MEMCG_QOS
-	memcg_print_bad_task(arg, ret);
-#endif
 	return ret;
 }
 
@@ -3747,16 +3744,15 @@ retry:
 	return oc->chosen ? true : false;
 }
 
-void memcg_print_bad_task(void *arg, int ret)
+void memcg_print_bad_task(struct oom_control *oc)
 {
-	struct oom_control *oc = arg;
 	struct mem_cgroup *memcg;
 	struct mem_cgroup_extension *memcg_ext;
 
 	if (!static_branch_likely(&memcg_qos_stat_key))
 		return;
 
-	if (!ret && oc->chosen) {
+	if (oc->chosen) {
 		memcg = mem_cgroup_from_task(oc->chosen);
 		memcg_ext = to_memcg_ext(memcg);
 		if (memcg_ext->memcg_priority)
@@ -3786,6 +3782,13 @@ int sysctl_memcg_qos_handler(struct ctl_table *table, int write,
 
 	return ret;
 }
+
+#else
+
+void memcg_print_bad_task(struct oom_control *oc)
+{
+}
+
 #endif
 
 #ifdef CONFIG_NUMA
