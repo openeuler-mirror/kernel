@@ -2642,8 +2642,6 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 	struct huge_bootmem_page *m = NULL; /* initialize for clang */
 	int nr_nodes, node;
 
-	if (nid != NUMA_NO_NODE && nid >= nr_online_nodes)
-		return 0;
 	/* do node specific alloc */
 	if (nid != NUMA_NO_NODE) {
 		m = memblock_alloc_try_nid_raw(huge_page_size(h), huge_page_size(h),
@@ -2751,7 +2749,7 @@ static void __init hugetlb_hstate_alloc_pages(struct hstate *h)
 	}
 
 	/* do node specific alloc */
-	for (i = 0; i < nr_online_nodes; i++) {
+	for_each_online_node(i) {
 		if (h->max_huge_pages_node[i] > 0) {
 			hugetlb_hstate_alloc_pages_onenode(h, i);
 			node_specific_alloc = true;
@@ -3488,7 +3486,7 @@ static int __init hugetlb_init(void)
 			default_hstate.max_huge_pages =
 				default_hstate_max_huge_pages;
 
-			for (i = 0; i < nr_online_nodes; i++)
+			for_each_online_node(i)
 				default_hstate.max_huge_pages_node[i] =
 					default_hugepages_in_node[i];
 		}
@@ -3559,6 +3557,20 @@ bool __init __weak hugetlb_node_alloc_supported(void)
 {
 	return true;
 }
+
+static void __init hugepages_clear_pages_in_node(void)
+{
+	if (!hugetlb_max_hstate) {
+		default_hstate_max_huge_pages = 0;
+		memset(default_hugepages_in_node, 0,
+			MAX_NUMNODES * sizeof(unsigned int));
+	} else {
+		parsed_hstate->max_huge_pages = 0;
+		memset(parsed_hstate->max_huge_pages_node, 0,
+			MAX_NUMNODES * sizeof(unsigned int));
+	}
+}
+
 /*
  * hugepages command line processing
  * hugepages normally follows a valid hugepagsz or default_hugepagsz
@@ -3607,7 +3619,7 @@ static int __init hugepages_setup(char *s)
 				pr_warn("HugeTLB: architecture can't support node specific alloc, ignoring!\n");
 				return 0;
 			}
-			if (tmp >= nr_online_nodes)
+			if (tmp >= MAX_NUMNODES || !node_online(tmp))
 				goto invalid;
 			node = tmp;
 			p += count + 1;
@@ -3646,6 +3658,7 @@ static int __init hugepages_setup(char *s)
 
 invalid:
 	pr_warn("HugeTLB: Invalid hugepages parameter %s\n", p);
+	hugepages_clear_pages_in_node();
 	return 0;
 }
 __setup("hugepages=", hugepages_setup);
@@ -3737,7 +3750,7 @@ static int __init default_hugepagesz_setup(char *s)
 	 */
 	if (default_hstate_max_huge_pages) {
 		default_hstate.max_huge_pages = default_hstate_max_huge_pages;
-		for (i = 0; i < nr_online_nodes; i++)
+		for_each_online_node(i)
 			default_hstate.max_huge_pages_node[i] =
 				default_hugepages_in_node[i];
 		if (hstate_is_gigantic(&default_hstate))
