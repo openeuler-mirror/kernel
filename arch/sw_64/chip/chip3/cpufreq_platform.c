@@ -5,8 +5,6 @@
 #include <asm/cpufreq.h>
 #include <asm/sw64io.h>
 
-#define CRYSTAL_BIT	(1UL << 34)
-
 /* Minimum CLK support */
 enum {
 	DC_0, DC_1, DC_2, DC_3, DC_4, DC_5, DC_6, DC_7, DC_8,
@@ -42,13 +40,16 @@ static struct platform_device sw64_cpufreq_device = {
 static int __init sw64_cpufreq_init(void)
 {
 	int i;
+	unsigned char external_clk;
 	unsigned long max_rate, freq_off;
 	max_rate = get_cpu_freq() / 1000000;
 
-	if (sw64_io_read(0, INIT_CTL) & CRYSTAL_BIT)
-		freq_off = 50;
-	else
+	external_clk = *((unsigned char *)__va(0x908011));
+
+	if (external_clk == 240)
 		freq_off = 60;
+	else
+		freq_off = 50;
 
 	/* clock table init */
 	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
