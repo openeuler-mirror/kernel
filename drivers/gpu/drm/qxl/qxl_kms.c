@@ -287,10 +287,14 @@ vram_mapping_free:
 
 void qxl_device_fini(struct qxl_device *qdev)
 {
+	struct drm_device *ddev = &qdev->ddev;
+	struct pci_dev *pdev = to_pci_dev(ddev->dev);
+
 	qxl_bo_unref(&qdev->current_release_bo[0]);
 	qxl_bo_unref(&qdev->current_release_bo[1]);
 	qxl_gem_fini(qdev);
 	qxl_bo_fini(qdev);
+	free_irq(pdev->irq, ddev);
 	flush_work(&qdev->gc_work);
 	qxl_ring_free(qdev->command_ring);
 	qxl_ring_free(qdev->cursor_ring);
