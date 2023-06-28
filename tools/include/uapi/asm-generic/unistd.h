@@ -878,8 +878,8 @@ __SYSCALL(__NR_kabi_reserved447, sys_ni_syscall)
 __SYSCALL(__NR_kabi_reserved448, sys_ni_syscall)
 #define __NR_kabi_reserved449 449
 __SYSCALL(__NR_kabi_reserved449, sys_ni_syscall)
-#define __NR_kabi_reserved450 450
-__SYSCALL(__NR_kabi_reserved450, sys_ni_syscall)
+#define __NR_set_mempolicy_home_node 450
+__SYSCALL(__NR_set_mempolicy_home_node, sys_set_mempolicy_home_node)
 #define __NR_kabi_reserved451 451
 __SYSCALL(__NR_kabi_reserved451, sys_ni_syscall)
 #define __NR_kabi_reserved452 452
@@ -892,6 +892,9 @@ __SYSCALL(__NR_kabi_reserved454, sys_ni_syscall)
 __SYSCALL(__NR_kabi_reserved455, sys_ni_syscall)
 #define __NR_kabi_reserved456 456
 __SYSCALL(__NR_kabi_reserved456, sys_ni_syscall)
+
+#define __NR_set_mempolicy_home_node 450
+__SYSCALL(__NR_set_mempolicy_home_node, sys_set_mempolicy_home_node)
 
 #undef __NR_syscalls
 #define __NR_syscalls 457

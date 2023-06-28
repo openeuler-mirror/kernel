@@ -31,6 +31,9 @@
  *                but useful to set in a VMA when you have a non default
  *                process policy.
  *
+ * preferred many Try a set of nodes first before normal fallback. This is
+ *                similar to preferred without the special case.
+ *
  * default        Allocate on the local node first, or when on a VMA
  *                use the process policy. This is what Linux always did
  *		  in a NUMA aware kernel and still does by, ahem, default.
@@ -119,13 +122,14 @@ enum zone_type policy_zone = 0;
 /*
  * run-time system-wide default policy => local allocation
  */
-static struct mempolicy default_policy = {
-	.refcnt = ATOMIC_INIT(1), /* never free it */
-	.mode = MPOL_PREFERRED,
-	.flags = MPOL_F_LOCAL,
+static struct mempolicy_wrapper default_policy = {
+	.policy = {
+		.refcnt = ATOMIC_INIT(1), /* never free it */
+		.mode = MPOL_LOCAL,
+	}
 };
 
-static struct mempolicy preferred_node_policy[MAX_NUMNODES];
+static struct mempolicy_wrapper preferred_node_policy[MAX_NUMNODES];
 
 /**
  * numa_map_to_online_node - Find closest online node
@@ -163,13 +167,13 @@ struct mempolicy *get_task_policy(struct task_struct *p)
 
 	node = numa_node_id();
 	if (node != NUMA_NO_NODE) {
-		pol = &preferred_node_policy[node];
+		pol = &preferred_node_policy[node].policy;
 		/* preferred_node_policy is not initialised early in boot */
 		if (pol->mode)
 			return pol;
 	}
 
-	return &default_policy;
+	return &default_policy.policy;
 }
 
 static const struct mempolicy_operations {
@@ -236,12 +240,17 @@ static int mpol_new_interleave(struct mempolicy *pol, const nodemask_t *nodes)
 
 static int mpol_new_preferred(struct mempolicy *pol, const nodemask_t *nodes)
 {
-	if (!nodes)
-		pol->flags |= MPOL_F_LOCAL;	/* local allocation */
-	else if (nodes_empty(*nodes))
-		return -EINVAL;			/*  no allowed nodes */
-	else
-		pol->v.preferred_node = first_node(*nodes);
+	if (nodes_empty(*nodes))
+		return -EINVAL;
+	pol->v.preferred_node = first_node(*nodes);
+	return 0;
+}
+
+static int mpol_new_preferred_many(struct mempolicy *pol, const nodemask_t *nodes)
+{
+	if (nodes_empty(*nodes))
+		return -EINVAL;
+	pol->v.nodes = *nodes;
 	return 0;
 }
 
@@ -256,8 +265,7 @@ static int mpol_new_bind(struct mempolicy *pol, const nodemask_t *nodes)
 /*
  * mpol_set_nodemask is called after mpol_new() to set up the nodemask, if
  * any, for the new policy.  mpol_new() has already validated the nodes
- * parameter with respect to the policy mode and flags.  But, we need to
- * handle an empty nodemask with MPOL_PREFERRED here.
+ * parameter with respect to the policy mode and flags.
  *
  * Must be called holding task's alloc_lock to protect task's mems_allowed
  * and mempolicy.  May also be called holding the mmap_lock for write.
@@ -267,9 +275,14 @@ static int mpol_set_nodemask(struct mempolicy *pol,
 {
 	int ret;
 
-	/* if mode is MPOL_DEFAULT, pol is NULL. This is right. */
-	if (pol == NULL)
+	/*
+	 * Default (pol==NULL) resp. local memory policies are not a
+	 * subject of any remapping. They also do not need any special
+	 * constructor.
+	 */
+	if (!pol || pol->mode == MPOL_LOCAL)
 		return 0;
+
 	/* Check N_MEMORY */
 	nodes_and(nsc->mask1,
 		  cpuset_current_mems_allowed, node_states[N_MEMORY]);
@@ -278,25 +291,18 @@ static int mpol_set_nodemask(struct mempolicy *pol,
 	nodes_or(nsc->mask1, cdmmask, nsc->mask1);
 #endif
 	VM_BUG_ON(!nodes);
-	if (pol->mode == MPOL_PREFERRED && nodes_empty(*nodes))
-		nodes = NULL;	/* explicit local allocation */
-	else {
-		if (pol->flags & MPOL_F_RELATIVE_NODES)
-			mpol_relative_nodemask(&nsc->mask2, nodes, &nsc->mask1);
-		else
-			nodes_and(nsc->mask2, *nodes, nsc->mask1);
 
-		if (mpol_store_user_nodemask(pol))
-			pol->w.user_nodemask = *nodes;
-		else
-			pol->w.cpuset_mems_allowed =
-						cpuset_current_mems_allowed;
-	}
-
-	if (nodes)
-		ret = mpol_ops[pol->mode].create(pol, &nsc->mask2);
+	if (pol->flags & MPOL_F_RELATIVE_NODES)
+		mpol_relative_nodemask(&nsc->mask2, nodes, &nsc->mask1);
 	else
-		ret = mpol_ops[pol->mode].create(pol, NULL);
+		nodes_and(nsc->mask2, *nodes, nsc->mask1);
+
+	if (mpol_store_user_nodemask(pol))
+		pol->w.user_nodemask = *nodes;
+	else
+		pol->w.cpuset_mems_allowed = cpuset_current_mems_allowed;
+
+	ret = mpol_ops[pol->mode].create(pol, &nsc->mask2);
 	return ret;
 }
 
@@ -307,6 +313,7 @@ static int mpol_set_nodemask(struct mempolicy *pol,
 static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 				  nodemask_t *nodes)
 {
+	struct mempolicy_wrapper *wrapper;
 	struct mempolicy *policy;
 
 	pr_debug("setting mode %d flags %d nodes[0] %lx\n",
@@ -329,21 +336,24 @@ static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 			if (((flags & MPOL_F_STATIC_NODES) ||
 			     (flags & MPOL_F_RELATIVE_NODES)))
 				return ERR_PTR(-EINVAL);
+
+			mode = MPOL_LOCAL;
 		}
 	} else if (mode == MPOL_LOCAL) {
 		if (!nodes_empty(*nodes) ||
 		    (flags & MPOL_F_STATIC_NODES) ||
 		    (flags & MPOL_F_RELATIVE_NODES))
 			return ERR_PTR(-EINVAL);
-		mode = MPOL_PREFERRED;
 	} else if (nodes_empty(*nodes))
 		return ERR_PTR(-EINVAL);
 	policy = kmem_cache_alloc(policy_cache, GFP_KERNEL);
 	if (!policy)
 		return ERR_PTR(-ENOMEM);
+	wrapper = container_of(policy, struct mempolicy_wrapper, policy);
 	atomic_set(&policy->refcnt, 1);
 	policy->mode = mode;
 	policy->flags = flags;
+	wrapper->home_node = NUMA_NO_NODE;
 
 	return policy;
 }
@@ -383,25 +393,7 @@ static void mpol_rebind_nodemask(struct mempolicy *pol, const nodemask_t *nodes)
 static void mpol_rebind_preferred(struct mempolicy *pol,
 						const nodemask_t *nodes)
 {
-	nodemask_t tmp;
-
-	if (pol->flags & MPOL_F_STATIC_NODES) {
-		int node = first_node(pol->w.user_nodemask);
-
-		if (node_isset(node, *nodes)) {
-			pol->v.preferred_node = node;
-			pol->flags &= ~MPOL_F_LOCAL;
-		} else
-			pol->flags |= MPOL_F_LOCAL;
-	} else if (pol->flags & MPOL_F_RELATIVE_NODES) {
-		mpol_relative_nodemask(&tmp, &pol->w.user_nodemask, nodes);
-		pol->v.preferred_node = first_node(tmp);
-	} else if (!(pol->flags & MPOL_F_LOCAL)) {
-		pol->v.preferred_node = node_remap(pol->v.preferred_node,
-						   pol->w.cpuset_mems_allowed,
-						   *nodes);
-		pol->w.cpuset_mems_allowed = *nodes;
-	}
+	pol->w.cpuset_mems_allowed = *nodes;
 }
 
 /*
@@ -415,7 +407,7 @@ static void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *newmask)
 {
 	if (!pol || pol->mode == MPOL_LOCAL)
 		return;
-	if (!mpol_store_user_nodemask(pol) && !(pol->flags & MPOL_F_LOCAL) &&
+	if (!mpol_store_user_nodemask(pol) &&
 	    nodes_equal(pol->w.cpuset_mems_allowed, *newmask))
 		return;
 
@@ -465,6 +457,13 @@ static const struct mempolicy_operations mpol_ops[MPOL_MAX] = {
 	[MPOL_BIND] = {
 		.create = mpol_new_bind,
 		.rebind = mpol_rebind_nodemask,
+	},
+	[MPOL_LOCAL] = {
+		.rebind = mpol_rebind_default,
+	},
+	[MPOL_PREFERRED_MANY] = {
+		.create = mpol_new_preferred_many,
+		.rebind = mpol_rebind_preferred,
 	},
 };
 
@@ -938,18 +937,21 @@ out:
 static void get_policy_nodemask(struct mempolicy *p, nodemask_t *nodes)
 {
 	nodes_clear(*nodes);
-	if (p == &default_policy)
+	if (p == &default_policy.policy)
 		return;
 
 	switch (p->mode) {
 	case MPOL_BIND:
 	case MPOL_INTERLEAVE:
+	case MPOL_PREFERRED_MANY:
 		*nodes = p->v.nodes;
 		break;
+	case MPOL_LOCAL:
+		/* return empty node mask for local allocation */
+		break;
+
 	case MPOL_PREFERRED:
-		if (!(p->flags & MPOL_F_LOCAL))
-			node_set(p->v.preferred_node, *nodes);
-		/* else return empty node mask for local allocation */
+		node_set(p->v.preferred_node, *nodes);
 		break;
 	default:
 		BUG();
@@ -1015,7 +1017,7 @@ static long do_get_mempolicy(int *policy, nodemask_t *nmask,
 		return -EINVAL;
 
 	if (!pol)
-		pol = &default_policy;	/* indicates default behavior */
+		pol = &default_policy.policy;	/* indicates default behavior */
 
 	if (flags & MPOL_F_NODE) {
 		if (flags & MPOL_F_ADDR) {
@@ -1040,7 +1042,7 @@ static long do_get_mempolicy(int *policy, nodemask_t *nmask,
 			goto out;
 		}
 	} else {
-		*policy = pol == &default_policy ? MPOL_DEFAULT :
+		*policy = pol == &default_policy.policy ? MPOL_DEFAULT :
 						pol->mode;
 		/*
 		 * Internal mempolicy flags must be masked off before exposing
@@ -1493,26 +1495,113 @@ static int copy_nodes_to_user(unsigned long __user *mask, unsigned long maxnode,
 	return copy_to_user(mask, nodes_addr(*nodes), copy) ? -EFAULT : 0;
 }
 
+/* Basic parameter sanity check used by both mbind() and set_mempolicy() */
+static inline int sanitize_mpol_flags(int *mode, unsigned short *flags)
+{
+	*flags = *mode & MPOL_MODE_FLAGS;
+	*mode &= ~MPOL_MODE_FLAGS;
+
+	if ((unsigned int)(*mode) >=  MPOL_MAX)
+		return -EINVAL;
+	if ((*flags & MPOL_F_STATIC_NODES) && (*flags & MPOL_F_RELATIVE_NODES))
+		return -EINVAL;
+
+	return 0;
+}
+
 static long kernel_mbind(unsigned long start, unsigned long len,
 			 unsigned long mode, const unsigned long __user *nmask,
 			 unsigned long maxnode, unsigned int flags)
 {
-	nodemask_t nodes;
-	int err;
 	unsigned short mode_flags;
+	nodemask_t nodes;
+	int lmode = mode;
+	int err;
 
 	start = untagged_addr(start);
-	mode_flags = mode & MPOL_MODE_FLAGS;
-	mode &= ~MPOL_MODE_FLAGS;
-	if (mode >= MPOL_MAX)
-		return -EINVAL;
-	if ((mode_flags & MPOL_F_STATIC_NODES) &&
-	    (mode_flags & MPOL_F_RELATIVE_NODES))
-		return -EINVAL;
+	err = sanitize_mpol_flags(&lmode, &mode_flags);
+	if (err)
+		return err;
+
 	err = get_nodes(&nodes, nmask, maxnode);
 	if (err)
 		return err;
-	return do_mbind(start, len, mode, mode_flags, &nodes, flags);
+
+	return do_mbind(start, len, lmode, mode_flags, &nodes, flags);
+}
+
+SYSCALL_DEFINE4(set_mempolicy_home_node, unsigned long, start, unsigned long, len,
+		unsigned long, home_node, unsigned long, flags)
+{
+	struct mm_struct *mm = current->mm;
+	struct mempolicy_wrapper *wrapper;
+	struct vm_area_struct *vma;
+	struct mempolicy *new;
+	unsigned long vmstart;
+	unsigned long vmend;
+	unsigned long end;
+	int err = -ENOENT;
+
+	start = untagged_addr(start);
+	if (start & ~PAGE_MASK)
+		return -EINVAL;
+	/*
+	 * flags is used for future extension if any.
+	 */
+	if (flags != 0)
+		return -EINVAL;
+
+	/*
+	 * Check home_node is online to avoid accessing uninitialized
+	 * NODE_DATA.
+	 */
+	if (home_node >= MAX_NUMNODES || !node_online(home_node))
+		return -EINVAL;
+
+	len = (len + PAGE_SIZE - 1) & PAGE_MASK;
+	end = start + len;
+
+	if (end < start)
+		return -EINVAL;
+	if (end == start)
+		return 0;
+	mmap_write_lock(mm);
+	vma = find_vma(mm, start);
+	for (; vma && vma->vm_start < end;  vma = vma->vm_next) {
+
+		vmstart = max(start, vma->vm_start);
+		vmend   = min(end, vma->vm_end);
+		new = mpol_dup(vma_policy(vma));
+		if (IS_ERR(new)) {
+			err = PTR_ERR(new);
+			break;
+		}
+		/*
+		 * Only update home node if there is an existing vma policy
+		 */
+		if (!new)
+			continue;
+
+		/*
+		 * If any vma in the range got policy other than MPOL_BIND
+		 * or MPOL_PREFERRED_MANY we return error. We don't reset
+		 * the home node for vmas we already updated before.
+		 */
+		if (new->mode != MPOL_BIND && new->mode != MPOL_PREFERRED_MANY) {
+			mpol_put(new);
+			err = -EOPNOTSUPP;
+			break;
+		}
+
+		wrapper = container_of(new, struct mempolicy_wrapper, policy);
+		wrapper->home_node = home_node;
+		err = mbind_range(mm, vmstart, vmend, new);
+		mpol_put(new);
+		if (err)
+			break;
+	}
+	mmap_write_unlock(mm);
+	return err;
 }
 
 SYSCALL_DEFINE6(mbind, unsigned long, start, unsigned long, len,
@@ -1526,20 +1615,20 @@ SYSCALL_DEFINE6(mbind, unsigned long, start, unsigned long, len,
 static long kernel_set_mempolicy(int mode, const unsigned long __user *nmask,
 				 unsigned long maxnode)
 {
-	int err;
+	unsigned short mode_flags;
 	nodemask_t nodes;
-	unsigned short flags;
+	int lmode = mode;
+	int err;
 
-	flags = mode & MPOL_MODE_FLAGS;
-	mode &= ~MPOL_MODE_FLAGS;
-	if ((unsigned int)mode >= MPOL_MAX)
-		return -EINVAL;
-	if ((flags & MPOL_F_STATIC_NODES) && (flags & MPOL_F_RELATIVE_NODES))
-		return -EINVAL;
+	err = sanitize_mpol_flags(&lmode, &mode_flags);
+	if (err)
+		return err;
+
 	err = get_nodes(&nodes, nmask, maxnode);
 	if (err)
 		return err;
-	return do_set_mempolicy(mode, flags, &nodes);
+
+	return do_set_mempolicy(lmode, mode_flags, &nodes);
 }
 
 SYSCALL_DEFINE3(set_mempolicy, int, mode, const unsigned long __user *, nmask,
@@ -1889,7 +1978,7 @@ bool vma_policy_mof(struct vm_area_struct *vma)
 	return pol->flags & MPOL_F_MOF;
 }
 
-static int apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
+bool apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
 {
 	enum zone_type dynamic_policy_zone = policy_zone;
 
@@ -1915,22 +2004,36 @@ static int apply_policy_zone(struct mempolicy *policy, enum zone_type zone)
  */
 nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
 {
+	int mode = policy->mode;
+
 	/* Lower zones don't get a nodemask applied for MPOL_BIND */
-	if (unlikely(policy->mode == MPOL_BIND) &&
+	if (unlikely(mode == MPOL_BIND) &&
 			apply_policy_zone(policy, gfp_zone(gfp)) &&
 			(cpuset_nodemask_valid_mems_allowed(&policy->v.nodes) ||
 			nodemask_has_cdm(policy->v.nodes)))
 		return &policy->v.nodes;
 
+	if (mode == MPOL_PREFERRED_MANY)
+		return &policy->v.nodes;
+
 	return NULL;
 }
 
-/* Return the node id preferred by the given mempolicy, or the given id */
+/*
+ * Return the  preferred node id for 'prefer' mempolicy, and return
+ * the given id for all other policies.
+ *
+ * policy_node() is always coupled with policy_nodemask(), which
+ * secures the nodemask limit for 'bind' and 'prefer-many' policy.
+ */
 static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)
 {
-	if (policy->mode == MPOL_PREFERRED && !(policy->flags & MPOL_F_LOCAL))
+	struct mempolicy_wrapper *warpper;
+
+	warpper = container_of(policy, struct mempolicy_wrapper, policy);
+	if (policy->mode == MPOL_PREFERRED) {
 		nd = policy->v.preferred_node;
-	else {
+	} else {
 		/*
 		 * __GFP_THISNODE shouldn't even be used with the bind policy
 		 * because we might easily break the expectation to stay on the
@@ -1945,6 +2048,11 @@ static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)
 				nd = first_node(policy->v.nodes);
 		}
 	}
+
+	if ((policy->mode == MPOL_BIND ||
+	     policy->mode == MPOL_PREFERRED_MANY) &&
+	    warpper->home_node != NUMA_NO_NODE)
+		return warpper->home_node;
 
 	return nd;
 }
@@ -1974,20 +2082,19 @@ unsigned int mempolicy_slab_node(void)
 		return node;
 
 	policy = current->mempolicy;
-	if (!policy || policy->flags & MPOL_F_LOCAL)
+	if (!policy)
 		return node;
 
 	switch (policy->mode) {
 	case MPOL_PREFERRED:
-		/*
-		 * handled MPOL_F_LOCAL above
-		 */
 		return policy->v.preferred_node;
 
 	case MPOL_INTERLEAVE:
 		return interleave_nodes(policy);
 
-	case MPOL_BIND: {
+	case MPOL_BIND:
+	case MPOL_PREFERRED_MANY:
+	{
 		struct zoneref *z;
 
 		/*
@@ -2001,6 +2108,8 @@ unsigned int mempolicy_slab_node(void)
 							&policy->v.nodes);
 		return z->zone ? zone_to_nid(z->zone) : node;
 	}
+	case MPOL_LOCAL:
+		return node;
 
 	default:
 		BUG();
@@ -2066,12 +2175,12 @@ static inline unsigned interleave_nid(struct mempolicy *pol,
  * @addr: address in @vma for shared policy lookup and interleave policy
  * @gfp_flags: for requested zone
  * @mpol: pointer to mempolicy pointer for reference counted mempolicy
- * @nodemask: pointer to nodemask pointer for MPOL_BIND nodemask
+ * @nodemask: pointer to nodemask pointer for 'bind' and 'prefer-many' policy
  *
  * Returns a nid suitable for a huge page allocation and a pointer
  * to the struct mempolicy for conditional unref after allocation.
- * If the effective policy is 'BIND, returns a pointer to the mempolicy's
- * @nodemask for filtering the zonelist.
+ * If the effective policy is 'bind' or 'prefer-many', returns a pointer
+ * to the mempolicy's @nodemask for filtering the zonelist.
  *
  * Must be protected by read_mems_allowed_begin()
  */
@@ -2079,16 +2188,18 @@ int huge_node(struct vm_area_struct *vma, unsigned long addr, gfp_t gfp_flags,
 				struct mempolicy **mpol, nodemask_t **nodemask)
 {
 	int nid;
+	int mode;
 
 	*mpol = get_vma_policy(vma, addr);
-	*nodemask = NULL;	/* assume !MPOL_BIND */
+	*nodemask = NULL;
+	mode = (*mpol)->mode;
 
-	if (unlikely((*mpol)->mode == MPOL_INTERLEAVE)) {
+	if (unlikely(mode == MPOL_INTERLEAVE)) {
 		nid = interleave_nid(*mpol, vma, addr,
 					huge_page_shift(hstate_vma(vma)));
 	} else {
 		nid = policy_node(gfp_flags, *mpol, numa_node_id());
-		if ((*mpol)->mode == MPOL_BIND)
+		if ((*mpol)->mode == MPOL_BIND || mode == MPOL_PREFERRED_MANY)
 			*nodemask = &(*mpol)->v.nodes;
 	}
 	return nid;
@@ -2122,16 +2233,19 @@ bool init_nodemask_of_mempolicy(nodemask_t *mask)
 	mempolicy = current->mempolicy;
 	switch (mempolicy->mode) {
 	case MPOL_PREFERRED:
-		if (mempolicy->flags & MPOL_F_LOCAL)
-			nid = numa_node_id();
-		else
-			nid = mempolicy->v.preferred_node;
+		nid = mempolicy->v.preferred_node;
 		init_nodemask_of_node(mask, nid);
 		break;
 
+	case MPOL_PREFERRED_MANY:
 	case MPOL_BIND:
 	case MPOL_INTERLEAVE:
-		*mask =  mempolicy->v.nodes;
+		*mask = mempolicy->v.nodes;
+		break;
+
+	case MPOL_LOCAL:
+		nid = numa_node_id();
+		init_nodemask_of_node(mask, nid);
 		break;
 
 	default:
@@ -2206,6 +2320,27 @@ static struct page *alloc_page_interleave(gfp_t gfp, unsigned order,
 	return page;
 }
 
+static struct page *alloc_pages_preferred_many(gfp_t gfp, unsigned int order,
+						int nid, struct mempolicy *pol)
+{
+	struct page *page;
+	gfp_t preferred_gfp;
+
+	/*
+	 * This is a two pass approach. The first pass will only try the
+	 * preferred nodes but skip the direct reclaim and allow the
+	 * allocation to fail, while the second pass will try all the
+	 * nodes in system.
+	 */
+	preferred_gfp = gfp | __GFP_NOWARN;
+	preferred_gfp &= ~(__GFP_DIRECT_RECLAIM | __GFP_NOFAIL);
+	page = __alloc_pages(preferred_gfp, order, nid, &pol->v.nodes);
+	if (!page)
+		page = __alloc_pages(gfp, order, nid, NULL);
+
+	return page;
+}
+
 /**
  * alloc_pages_vma - Allocate a page for a VMA.
  * @gfp: GFP flags.
@@ -2241,6 +2376,13 @@ struct page *alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 		goto out;
 	}
 
+	if (pol->mode == MPOL_PREFERRED_MANY) {
+		node = policy_node(gfp, pol, node);
+		page = alloc_pages_preferred_many(gfp, order, node, pol);
+		mpol_cond_put(pol);
+		goto out;
+	}
+
 	if (unlikely(IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) && hugepage)) {
 		int hpage_node = node;
 
@@ -2251,10 +2393,10 @@ struct page *alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 		 * node and don't fall back to other nodes, as the cost of
 		 * remote accesses would likely offset THP benefits.
 		 *
-		 * If the policy is interleave, or does not allow the current
+		 * If the policy is interleave or does not allow the current
 		 * node in its nodemask, we allocate the standard way.
 		 */
-		if (pol->mode == MPOL_PREFERRED && !(pol->flags & MPOL_F_LOCAL))
+		if (pol->mode == MPOL_PREFERRED)
 			hpage_node = pol->v.preferred_node;
 
 		nmask = policy_nodemask(gfp, pol);
@@ -2306,7 +2448,7 @@ EXPORT_SYMBOL(alloc_pages_vma);
  */
 struct page *alloc_pages(gfp_t gfp, unsigned order)
 {
-	struct mempolicy *pol = &default_policy;
+	struct mempolicy *pol = &default_policy.policy;
 	struct page *page;
 
 	if (!in_interrupt() && !(gfp & __GFP_THISNODE))
@@ -2318,6 +2460,9 @@ struct page *alloc_pages(gfp_t gfp, unsigned order)
 	 */
 	if (pol->mode == MPOL_INTERLEAVE)
 		page = alloc_page_interleave(gfp, order, interleave_nodes(pol));
+	else if (pol->mode == MPOL_PREFERRED_MANY)
+		page = alloc_pages_preferred_many(gfp, order,
+				  policy_node(gfp, pol, numa_node_id()), pol);
 	else
 		page = __alloc_pages(gfp, order,
 				policy_node(gfp, pol, numa_node_id()),
@@ -2352,17 +2497,22 @@ int vma_dup_policy(struct vm_area_struct *src, struct vm_area_struct *dst)
 struct mempolicy *__mpol_dup(struct mempolicy *old)
 {
 	struct mempolicy *new = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+	struct mempolicy_wrapper *old_wrapper, *new_wrapper;
 
 	if (!new)
 		return ERR_PTR(-ENOMEM);
 
+	old_wrapper = container_of(old, struct mempolicy_wrapper, policy);
+	new_wrapper = container_of(new, struct mempolicy_wrapper, policy);
+
 	/* task's mempolicy is protected by alloc_lock */
 	if (old == current->mempolicy) {
 		task_lock(current);
-		*new = *old;
+		*new_wrapper = *old_wrapper;
 		task_unlock(current);
-	} else
-		*new = *old;
+	} else {
+		*new_wrapper = *old_wrapper;
+	}
 
 	if (current_cpuset_is_being_rebound()) {
 		nodemask_t mems = cpuset_mems_allowed(current);
@@ -2375,11 +2525,18 @@ struct mempolicy *__mpol_dup(struct mempolicy *old)
 /* Slow path of a mempolicy comparison */
 bool __mpol_equal(struct mempolicy *a, struct mempolicy *b)
 {
+	struct mempolicy_wrapper *wrapper_a, *wrapper_b;
+
+	wrapper_a = container_of(a, struct mempolicy_wrapper, policy);
+	wrapper_b = container_of(b, struct mempolicy_wrapper, policy);
+
 	if (!a || !b)
 		return false;
 	if (a->mode != b->mode)
 		return false;
 	if (a->flags != b->flags)
+		return false;
+	if (wrapper_a->home_node != wrapper_b->home_node)
 		return false;
 	if (mpol_store_user_nodemask(a))
 		if (!nodes_equal(a->w.user_nodemask, b->w.user_nodemask))
@@ -2390,10 +2547,10 @@ bool __mpol_equal(struct mempolicy *a, struct mempolicy *b)
 	case MPOL_INTERLEAVE:
 		return !!nodes_equal(a->v.nodes, b->v.nodes);
 	case MPOL_PREFERRED:
-		/* a's ->flags is the same as b's */
-		if (a->flags & MPOL_F_LOCAL)
-			return true;
+	case MPOL_PREFERRED_MANY:
 		return a->v.preferred_node == b->v.preferred_node;
+	case MPOL_LOCAL:
+		return true;
 	default:
 		BUG();
 		return false;
@@ -2531,16 +2688,19 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		break;
 
 	case MPOL_PREFERRED:
-		if (pol->flags & MPOL_F_LOCAL)
-			polnid = numa_node_id();
-		else
-			polnid = pol->v.preferred_node;
+		if (node_isset(curnid, pol->v.nodes))
+			goto out;
+		polnid = pol->v.preferred_node;
+		break;
+
+	case MPOL_LOCAL:
+		polnid = numa_node_id();
 		break;
 
 	case MPOL_BIND:
 
+	case MPOL_PREFERRED_MANY:
 		/*
-		 * allows binding to multiple nodes.
 		 * use current page if in policy nodemask,
 		 * else select nearest allowed node, if any.
 		 * If no allowed nodes, use current [!misplaced].
@@ -2840,7 +3000,7 @@ void __init numa_policy_init(void)
 	int nid, prefer = 0;
 
 	policy_cache = kmem_cache_create("numa_policy",
-					 sizeof(struct mempolicy),
+					 sizeof(struct mempolicy_wrapper),
 					 0, SLAB_PANIC, NULL);
 
 	sn_cache = kmem_cache_create("shared_policy_node",
@@ -2848,7 +3008,7 @@ void __init numa_policy_init(void)
 				     0, SLAB_PANIC, NULL);
 
 	for_each_node(nid) {
-		preferred_node_policy[nid] = (struct mempolicy) {
+		preferred_node_policy[nid].policy = (struct mempolicy) {
 			.refcnt = ATOMIC_INIT(1),
 			.mode = MPOL_PREFERRED,
 			.flags = MPOL_F_MOF | MPOL_F_MORON,
@@ -2900,9 +3060,6 @@ void numa_default_policy(void)
  * Parse and format mempolicy from/to strings
  */
 
-/*
- * "local" is implemented internally by MPOL_PREFERRED with MPOL_F_LOCAL flag.
- */
 static const char * const policy_modes[] =
 {
 	[MPOL_DEFAULT]    = "default",
@@ -2910,6 +3067,7 @@ static const char * const policy_modes[] =
 	[MPOL_BIND]       = "bind",
 	[MPOL_INTERLEAVE] = "interleave",
 	[MPOL_LOCAL]      = "local",
+	[MPOL_PREFERRED_MANY]  = "prefer (many)",
 };
 
 
@@ -2980,7 +3138,6 @@ int mpol_parse_str(char *str, struct mempolicy **mpol)
 		 */
 		if (nodelist)
 			goto out;
-		mode = MPOL_PREFERRED;
 		break;
 	case MPOL_DEFAULT:
 		/*
@@ -2989,6 +3146,7 @@ int mpol_parse_str(char *str, struct mempolicy **mpol)
 		if (!nodelist)
 			err = 0;
 		goto out;
+	case MPOL_PREFERRED_MANY:
 	case MPOL_BIND:
 		/*
 		 * Insist on a nodelist
@@ -3024,7 +3182,7 @@ int mpol_parse_str(char *str, struct mempolicy **mpol)
 	else if (nodelist)
 		new->v.preferred_node = first_node(nodes);
 	else
-		new->flags |= MPOL_F_LOCAL;
+		new->mode = MPOL_LOCAL;
 
 	/*
 	 * Save nodes for contextualization: this will be used to "clone"
@@ -3063,20 +3221,20 @@ void mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol)
 	unsigned short mode = MPOL_DEFAULT;
 	unsigned short flags = 0;
 
-	if (pol && pol != &default_policy && !(pol->flags & MPOL_F_MORON)) {
+	if (pol && pol != &default_policy.policy &&
+	    !(pol->flags & MPOL_F_MORON)) {
 		mode = pol->mode;
 		flags = pol->flags;
 	}
 
 	switch (mode) {
 	case MPOL_DEFAULT:
+	case MPOL_LOCAL:
 		break;
 	case MPOL_PREFERRED:
-		if (flags & MPOL_F_LOCAL)
-			mode = MPOL_LOCAL;
-		else
-			node_set(pol->v.preferred_node, nodes);
+		node_set(pol->v.preferred_node, nodes);
 		break;
+	case MPOL_PREFERRED_MANY:
 	case MPOL_BIND:
 	case MPOL_INTERLEAVE:
 		nodes = pol->v.nodes;
