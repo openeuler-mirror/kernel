@@ -4810,7 +4810,7 @@
 			[KNL, SMP] Set scheduler's default relax_domain_level.
 			See Documentation/admin-guide/cgroup-v1/cpusets.rst.
 
-	reliable_debug=	[ARM64]
+	reliable_debug=	[ARM64,X86-64]
 			Format: [F][,S][,P]
 			Only works with CONFIG_MEMORY_RELIABLE and
 			"kernelcore=reliable" is configured.
