@@ -3559,7 +3559,7 @@ static void hisi_sas_debugfs_create_files(struct hisi_hba *hisi_hba)
 
 	return;
 fail:
-	debugfs_remove_recursive(hisi_hba->debugfs_dir);
+	hisi_sas_debugfs_exit(hisi_hba);
 }
 
 static void hisi_sas_debugfs_snapshot_regs(struct hisi_hba *hisi_hba)
@@ -3741,14 +3741,15 @@ fail_port:
 		devm_kfree(dev, hisi_hba->debugfs_port_reg[i]);
 	devm_kfree(dev, hisi_hba->debugfs_global_reg);
 fail_global:
-	debugfs_remove_recursive(hisi_hba->debugfs_dir);
-	dev_dbg(dev, "failed to init debugfs!\n");
+	hisi_sas_debugfs_exit(hisi_hba);
+	dev_info(dev, "failed to init debugfs!\n");
 }
 EXPORT_SYMBOL_GPL(hisi_sas_debugfs_init);
 
 void hisi_sas_debugfs_exit(struct hisi_hba *hisi_hba)
 {
 	debugfs_remove_recursive(hisi_hba->debugfs_dir);
+	hisi_hba->debugfs_dir = NULL;
 }
 EXPORT_SYMBOL_GPL(hisi_sas_debugfs_exit);
 
