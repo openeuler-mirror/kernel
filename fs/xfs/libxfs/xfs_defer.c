@@ -713,6 +713,7 @@ xfs_defer_ops_capture_and_commit(
 	/* Commit the transaction and add the capture structure to the list. */
 	error = xfs_trans_commit(tp);
 	if (error) {
+		xfs_defer_pending_abort(mp, &dfc->dfc_dfops);
 		xfs_defer_ops_release(mp, dfc);
 		return error;
 	}
