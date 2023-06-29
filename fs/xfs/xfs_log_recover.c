@@ -2514,6 +2514,7 @@ xlog_abort_defer_ops(
 
 	list_for_each_entry_safe(dfc, next, capture_list, dfc_list) {
 		list_del_init(&dfc->dfc_list);
+		xfs_defer_pending_abort(mp, &dfc->dfc_dfops);
 		xfs_defer_ops_release(mp, dfc);
 	}
 }
