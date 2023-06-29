@@ -76,7 +76,7 @@ xfs_growfs_data_private(
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_growdata,
 			XFS_GROWFS_SPACE_RES(mp), 0, XFS_TRANS_RESERVE, &tp);
 	if (error)
-		return error;
+		goto destroy_perag;
 
 	/*
 	 * Write new AG headers to disk. Non-transactional, but need to be
@@ -167,6 +167,9 @@ xfs_growfs_data_private(
 
 out_trans_cancel:
 	xfs_trans_cancel(tp);
+destroy_perag:
+	if (nagcount > oagcount)
+		xfs_destroy_perag(mp, oagcount, nagcount);
 	return error;
 }
 
