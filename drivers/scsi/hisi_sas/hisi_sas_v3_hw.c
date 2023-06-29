@@ -2353,7 +2353,8 @@ slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 			ts->stat = SAS_OPEN_REJECT;
 			ts->open_rej_reason = SAS_OREJ_RSVD_RETRY;
 		}
-		hisi_sas_sata_done(task, slot);
+		if (dw0 & CMPLT_HDR_RSPNS_XFRD_MSK)
+			hisi_sas_sata_done(task, slot);
 		break;
 	case SAS_PROTOCOL_SMP:
 		ts->stat = SAM_STAT_CHECK_CONDITION;
@@ -2402,6 +2403,7 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 			&complete_queue[slot->cmplt_queue_slot];
 	unsigned long flags;
 	bool is_internal = slot->is_internal;
+	u32 dw0, dw1, dw3;
 
 	if (unlikely(!task || !task->lldd_task || !task->dev))
 		return -EINVAL;
@@ -2425,10 +2427,14 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 		goto out;
 	}
 
+	dw0 = le32_to_cpu(complete_hdr->dw0);
+	dw1 = le32_to_cpu(complete_hdr->dw1);
+	dw3 = le32_to_cpu(complete_hdr->dw3);
+
 	/*
 	 * Use SAS+TMF status codes
 	 */
-	switch ((complete_hdr->dw0 & CMPLT_HDR_ABORT_STAT_MSK)
+	switch ((dw0 & CMPLT_HDR_ABORT_STAT_MSK)
 			>> CMPLT_HDR_ABORT_STAT_OFF) {
 	case STAT_IO_ABORTED:
 		/* this IO has been aborted by abort command */
@@ -2452,9 +2458,9 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 	}
 
 	/* check for erroneous completion, 0x3 means abnormal */
-	if ((complete_hdr->dw0 & CMPLT_HDR_CMPLT_MSK) == 0x3) {
+	if ((dw0 & CMPLT_HDR_CMPLT_MSK) == 0x3) {
 		u32 *error_info = hisi_sas_status_buf_addr_mem(slot);
-		u32 device_id = (complete_hdr->dw1 & 0xffff0000) >> 16;
+		u32 device_id = (dw1 & 0xffff0000) >> 16;
 		struct hisi_sas_itct *itct = &hisi_hba->itct[device_id];
 
 		set_aborted_iptt(hisi_hba, slot);
@@ -2464,12 +2470,12 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 			"Error info: 0x%x 0x%x 0x%x 0x%x\n",
 			slot->idx, task, sas_dev->device_id,
 			itct->sas_addr,
-			complete_hdr->dw0, complete_hdr->dw1,
-			complete_hdr->act, complete_hdr->dw3,
+			dw0, dw1,
+			complete_hdr->act, dw3,
 			error_info[0], error_info[1],
 			error_info[2], error_info[3]);
 
-		if ((complete_hdr->dw0 & CMPLT_HDR_RSPNS_XFRD_MSK) &&
+		if ((dw0 & CMPLT_HDR_RSPNS_XFRD_MSK) &&
 			(task->task_proto & SAS_PROTOCOL_SATA ||
 			task->task_proto & SAS_PROTOCOL_STP)) {
 			struct hisi_sas_status_buffer *status_buf =
@@ -2559,7 +2565,8 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 	case SAS_PROTOCOL_STP:
 	case SAS_PROTOCOL_SATA | SAS_PROTOCOL_STP:
 		ts->stat = SAM_STAT_GOOD;
-		hisi_sas_sata_done(task, slot);
+		if (dw0 & CMPLT_HDR_RSPNS_XFRD_MSK)
+			hisi_sas_sata_done(task, slot);
 		break;
 	default:
 		ts->stat = SAM_STAT_CHECK_CONDITION;
