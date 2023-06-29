@@ -17,6 +17,7 @@
 #include <asm/mmu.h>
 #include <asm/sysreg.h>
 
+static DEFINE_PER_CPU(int, dbg_count);
 /*
  * This is intended to match the logic in irqentry_enter(), handling the kernel
  * mode transitions only.
@@ -150,10 +151,16 @@ static void noinstr el1_inv(struct pt_regs *regs, unsigned long esr)
 	exit_to_kernel_mode(regs);
 }
 
+int in_dbg(void)
+{
+	return this_cpu_read(dbg_count) > 0;
+}
+
 static void noinstr arm64_enter_el1_dbg(struct pt_regs *regs)
 {
 	regs->lockdep_hardirqs = lockdep_hardirqs_enabled();
 
+	this_cpu_inc(dbg_count);
 	lockdep_hardirqs_off(CALLER_ADDR0);
 	rcu_nmi_enter();
 
@@ -172,6 +179,7 @@ static void noinstr arm64_exit_el1_dbg(struct pt_regs *regs)
 	rcu_nmi_exit();
 	if (restore)
 		lockdep_hardirqs_on(CALLER_ADDR0);
+	this_cpu_dec(dbg_count);
 }
 
 static void noinstr el1_dbg(struct pt_regs *regs, unsigned long esr)

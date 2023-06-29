@@ -761,3 +761,8 @@ static int __init panic_on_taint_setup(char *s)
 	return 0;
 }
 early_param("panic_on_taint", panic_on_taint_setup);
+
+int __weak in_dbg(void)
+{
+	return 0;
+}
