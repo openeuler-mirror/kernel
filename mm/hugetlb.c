@@ -75,6 +75,7 @@ static unsigned long __initdata default_hstate_max_huge_pages;
 static bool __initdata parsed_valid_hugepagesz = true;
 static bool __initdata parsed_default_hugepagesz;
 static unsigned int default_hugepages_in_node[MAX_NUMNODES] __initdata;
+static bool hugepage_no_mirror __initdata;
 
 /*
  * Protects updates to hugepage_freelists, hugepage_activelist, nr_huge_pages,
@@ -4425,6 +4426,14 @@ invalid:
 	return 1;
 }
 __setup("hugepages=", hugepages_setup);
+
+static int __init hugepage_no_mirror_setup(char *__unused)
+{
+	hugepage_no_mirror = true;
+	pr_info("HugeTLB: allocate boot time hugepages in non-mirrored memory if kernelcore=mirror is set.\n");
+	return 1;
+}
+__setup("hugepage_no_mirror", hugepage_no_mirror_setup);
 
 /*
  * hugepagesz command line processing

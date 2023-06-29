@@ -1751,6 +1751,15 @@
 			See also Documentation/admin-guide/mm/hugetlbpage.rst.
 			Format: <integer> or (node format)
 				<node>:<integer>[,<node>:<integer>]
+			If this follows hugepage_no_mirror (below), it specifies
+			to allocate bootmem hugepage from non-mirrored memory.
+
+	hugepage_no_mirror
+			[HW] If "kernelcore=mirror" is set, and this precedes
+			hugepages, it specifies to allocate bootmem hugepages
+			from non-mirrored memory, and the allocated hugepages
+			will be pinnable so that they can be used for virtual
+			machines with passthrough device.
 
 	hugepagesz=
 			[HW] The size of the HugeTLB pages.  This is used in
