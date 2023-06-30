@@ -110,6 +110,7 @@ struct evsel {
 	bool			merged_stat;
 	bool			reset_group;
 	bool			errored;
+	bool			needs_auxtrace_mmap;
 	unsigned long		*per_pkg_mask;
 	struct evsel		*leader;
 	struct list_head	config_terms;
