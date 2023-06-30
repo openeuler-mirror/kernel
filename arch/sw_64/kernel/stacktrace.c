@@ -174,6 +174,19 @@ int save_trace(unsigned long pc, void *d)
 	return (trace->nr_entries >= trace->max_entries);
 }
 
+void save_stack_trace_regs(struct pt_regs *regs, struct stack_trace *trace)
+{
+	struct stack_trace_data data;
+
+	data.trace = trace;
+	data.nosched = 0;
+
+	walk_stackframe(current, regs, save_trace, &data);
+
+	if (trace->nr_entries < trace->max_entries)
+		trace->entries[trace->nr_entries++] = ULONG_MAX;
+}
+
 static void __save_stack_trace(struct task_struct *tsk,
 		struct stack_trace *trace, unsigned int nosched)
 {
