@@ -177,9 +177,10 @@ void auxtrace_mmap_params__init(struct auxtrace_mmap_params *mp,
 
 void auxtrace_mmap_params__set_idx(struct auxtrace_mmap_params *mp,
 				   struct evlist *evlist,
-				   struct evsel *evsel, int idx,
-				   bool per_cpu)
+				   struct evsel *evsel, int idx)
 {
+	bool per_cpu = !perf_cpu_map__empty(evlist->core.cpus);
+
 	mp->mmap_needed = evsel->needs_auxtrace_mmap;
 
 	if (!mp->mmap_needed)
