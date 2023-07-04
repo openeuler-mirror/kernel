@@ -979,7 +979,7 @@ static int _kvm_set_one_reg(struct kvm_vcpu *vcpu,
 	case KVM_REG_LOONGARCH_VCPU_RESET:
 		kvm_reset_timer(vcpu);
 		if (vcpu->vcpu_id == 0)
-			kvm_enable_ls3a_extirq(vcpu->kvm, false);
+			kvm_setup_ls3a_extirq(vcpu->kvm);
 		memset(&vcpu->arch.irq_pending, 0, sizeof(vcpu->arch.irq_pending));
 		memset(&vcpu->arch.irq_clear, 0, sizeof(vcpu->arch.irq_clear));
 
