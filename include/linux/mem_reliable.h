@@ -132,8 +132,19 @@ static inline bool reliable_allow_fb_enabled(void)
 static inline void reliable_page_counter(struct page *page,
 		struct mm_struct *mm, int val)
 {
-	if (page_reliable(page))
-		atomic_long_add(val, &mm->reliable_nr_page);
+	if (!page_reliable(page))
+		return;
+
+	atomic_long_add(val, &mm->reliable_nr_page);
+
+	/*
+	 * Update reliable page counter to zero if underflows.
+	 *
+	 * Since reliable page counter is used for debug purpose only,
+	 * there is no real function problem by doing this.
+	 */
+	if (unlikely(atomic_long_read(&mm->reliable_nr_page) < 0))
+		atomic_long_set(&mm->reliable_nr_page, 0);
 }
 
 static inline void reliable_clear_page_counter(struct mm_struct *mm)
