@@ -2023,29 +2023,6 @@ void jbd2_journal_unfile_buffer(journal_t *journal, struct journal_head *jh)
 	__brelse(bh);
 }
 
-/*
- * Called from jbd2_journal_try_to_free_buffers().
- *
- * Called under jbd_lock_bh_state(bh)
- */
-static void
-__journal_try_to_free_buffer(journal_t *journal, struct buffer_head *bh)
-{
-	struct journal_head *jh;
-
-	jh = bh2jh(bh);
-
-	if (jh->b_next_transaction != NULL || jh->b_transaction != NULL)
-		return;
-
-	spin_lock(&journal->j_list_lock);
-	/* Remove written-back checkpointed metadata buffer */
-	if (jh->b_cp_transaction != NULL)
-		jbd2_journal_try_remove_checkpoint(jh);
-	spin_unlock(&journal->j_list_lock);
-	return;
-}
-
 /**
  * int jbd2_journal_try_to_free_buffers() - try to free page buffers.
  * @journal: journal for operation
@@ -2108,7 +2085,13 @@ int jbd2_journal_try_to_free_buffers(journal_t *journal,
 			continue;
 
 		jbd_lock_bh_state(bh);
-		__journal_try_to_free_buffer(journal, bh);
+		if (!jh->b_transaction && !jh->b_next_transaction) {
+			spin_lock(&journal->j_list_lock);
+			/* Remove written-back checkpointed metadata buffer */
+			if (jh->b_cp_transaction != NULL)
+				jbd2_journal_try_remove_checkpoint(jh);
+			spin_unlock(&journal->j_list_lock);
+		}
 		jbd2_journal_put_journal_head(jh);
 		jbd_unlock_bh_state(bh);
 		if (buffer_jbd(bh))
