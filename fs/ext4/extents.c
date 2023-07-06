@@ -1328,7 +1328,8 @@ cleanup:
 			if (!ablocks[i])
 				continue;
 			ext4_free_blocks(handle, inode, NULL, ablocks[i], 1,
-					 EXT4_FREE_BLOCKS_METADATA);
+					 EXT4_FREE_BLOCKS_METADATA |
+					 EXT4_FREE_BLOCKS_DONT_WAIT_JOURNAL);
 		}
 	}
 	kfree(ablocks);
@@ -4606,6 +4607,7 @@ got_allocated_blocks:
 		/* not a good idea to call discard here directly,
 		 * but otherwise we'd need to call it every free() */
 		ext4_discard_preallocations(inode);
+		fb_flags |= EXT4_FREE_BLOCKS_DONT_WAIT_JOURNAL;
 		ext4_free_blocks(handle, inode, NULL, newblock,
 				 EXT4_C2B(sbi, allocated_clusters), fb_flags);
 		goto out2;
