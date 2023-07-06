@@ -71,7 +71,7 @@ struct bma_pci_dev_s {
 #ifdef DRV_VERSION
 #define BMA_VERSION MICRO_TO_STR(DRV_VERSION)
 #else
-#define BMA_VERSION "0.3.5"
+#define BMA_VERSION "0.3.6"
 #endif
 
 #ifdef CONFIG_ARM64

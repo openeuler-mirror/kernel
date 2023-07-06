@@ -23,7 +23,7 @@
 #ifdef DRV_VERSION
 #define KBOX_VERSION MICRO_TO_STR(DRV_VERSION)
 #else
-#define KBOX_VERSION "0.3.5"
+#define KBOX_VERSION "0.3.6"
 #endif
 
 #define UNUSED(x) (x = x)
