@@ -87,6 +87,12 @@ u32 g_testlbk;
 
 struct bspveth_device g_bspveth_dev = {};
 
+/* g_shutdown_flag is used to prevent veth_shutdown_task
+ * from being preempted by veth_dma_tx_timer_do_H.
+ * The default value is 0.The value 1 indicates that veth_shutdown_flag cannot be preempted,
+ * and the value 0 indicates that veth_shutdown_task can be preempted.
+ */
+static int g_shutdown_flag;
 static int veth_int_handler(struct notifier_block *pthis, unsigned long ev,
 			    void *unuse);
 
@@ -1607,6 +1613,7 @@ void veth_netdev_exit(void)
 static void veth_shutdown_task(struct work_struct *work)
 {
 	struct net_device *netdev = g_bspveth_dev.pnetdev;
+	g_shutdown_flag = 1;
 
 	VETH_LOG(DLOG_ERROR, "veth is going down, please restart it manual\n");
 
@@ -1626,6 +1633,7 @@ static void veth_shutdown_task(struct work_struct *work)
 
 		(void)veth_dmatimer_close_H();
 	}
+	g_shutdown_flag = 0;
 }
 
 s32 veth_netdev_init(void)
@@ -1728,7 +1736,7 @@ void veth_dma_tx_timer_do_H(unsigned long data)
 
 	rxret = veth_dma_task_H(BSPVETH_RX);
 
-	if (txret == BSP_ERR_AGAIN || rxret == BSP_ERR_AGAIN) {
+	if ((txret == BSP_ERR_AGAIN || rxret == BSP_ERR_AGAIN) && (g_shutdown_flag == 0)) {
 #ifndef USE_TASKLET
 		(void)mod_timer(&g_bspveth_dev.dmatimer, jiffies_64);
 #else

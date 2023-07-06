@@ -667,6 +667,7 @@ static int edma_veth_copy_full_packet(struct edma_eth_dev_s *eth_dev,
 				      u8 *packet, u32 len)
 {
 	unsigned int count = 0;
+	unsigned long flags = 0;
 	u8 *ptr = NULL;
 
 	LOG(DLOG_DEBUG, "Recv full packet, len %u.", len);
@@ -674,14 +675,14 @@ static int edma_veth_copy_full_packet(struct edma_eth_dev_s *eth_dev,
 	ptr = kmalloc(len, GFP_ATOMIC);
 	if (ptr) {
 		/* lock the queue. */
-		spin_lock(&eth_dev->rx_queue_lock);
+		spin_lock_irqsave(&eth_dev->rx_queue_lock, flags);
 
 		count = edma_veth_get_ring_buf_count(eth_dev->rx_packet_head,
 						     eth_dev->rx_packet_tail,
 						     MAX_RXTX_PACKET_LEN);
 		if (count >= (MAX_RXTX_PACKET_LEN - 1)) {
 			LOG(DLOG_DEBUG, "The rx queue is full.");
-			spin_unlock(&eth_dev->rx_queue_lock);
+			spin_unlock_irqrestore(&eth_dev->rx_queue_lock, flags);
 			kfree(ptr);
 			return -EBUSY;
 		}
@@ -692,7 +693,7 @@ static int edma_veth_copy_full_packet(struct edma_eth_dev_s *eth_dev,
 		eth_dev->rx_packet_tail = (eth_dev->rx_packet_tail + 1) %
 					   MAX_RXTX_PACKET_LEN;
 
-		spin_unlock(&eth_dev->rx_queue_lock);
+		spin_unlock_irqrestore(&eth_dev->rx_queue_lock, flags);
 
 		return 0;
 	}
@@ -1672,16 +1673,17 @@ static ssize_t cdev_copy_packet_to_user(struct edma_eth_dev_s *dev,
 	unsigned char *packet = NULL;
 	unsigned char *start = NULL;
 	unsigned int free_packet = 0;
+	unsigned long flags = 0;
 	ssize_t length = (ssize_t)count;
 	ssize_t left;
 
 	LOG(DLOG_DEBUG, "rx_packet_head:%u, rx_packet_tail: %u",
 	    dev->rx_packet_head, dev->rx_packet_tail);
 
-	spin_lock(&dev->rx_queue_lock);
+	spin_lock_irqsave(&dev->rx_queue_lock, flags);
 
 	if (!cdev_check_ring_recv()) {
-		spin_unlock(&dev->rx_queue_lock);
+		spin_unlock_irqrestore(&dev->rx_queue_lock, flags);
 		return -EAGAIN;
 	}
 
@@ -1712,7 +1714,7 @@ static ssize_t cdev_copy_packet_to_user(struct edma_eth_dev_s *dev,
 				      MAX_RXTX_PACKET_LEN;
 	}
 
-	spin_unlock(&dev->rx_queue_lock);
+	spin_unlock_irqrestore(&dev->rx_queue_lock, flags);
 
 	if (length > 0 && copy_to_user(data, start, length)) {
 		LOG(DLOG_DEBUG, "Failed to copy to user, skip this message.");
