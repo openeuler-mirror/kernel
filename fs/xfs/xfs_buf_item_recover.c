@@ -162,6 +162,8 @@ xlog_recover_buf_reorder(
 		return XLOG_REORDER_CANCEL_LIST;
 	if (buf_f->blf_flags & XFS_BLF_INODE_BUF)
 		return XLOG_REORDER_INODE_BUFFER_LIST;
+	if (buf_f->blf_blkno == XFS_SB_DADDR)
+		return XLOG_REORDER_SB_BUFFER_LIST;
 	return XLOG_REORDER_BUFFER_LIST;
 }
 
