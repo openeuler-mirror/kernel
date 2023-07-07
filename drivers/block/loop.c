@@ -1287,6 +1287,9 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
 			err = -EFBIG;
 			goto out_unfreeze;
 		}
+		/* loff_t vars have been assigned __u64 */
+		if (lo->lo_offset < 0 || lo->lo_sizelimit < 0)
+			return -EOVERFLOW;
 	}
 
 	loop_config_discard(lo);
