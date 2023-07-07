@@ -1,0 +1,61 @@
+From cdd5708edfa719e96d140d56924947bbe331eb54 Mon Sep 17 00:00:00 2001
+From: Mingzheng Xing <xingmingzheng@iscas.ac.cn>
+Date: Fri, 7 Jul 2023 18:59:21 +0800
+Subject: [PATCH] 0010-kernel-v6.4-clang-compile-support.patch
+
+---
+ tools/firewire/Makefile                               | 2 +-
+ tools/usb/ffs-aio-example/multibuff/host_app/Makefile | 2 +-
+ tools/usb/ffs-aio-example/simple/host_app/Makefile    | 2 +-
+ tools/virtio/virtio-trace/Makefile                    | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/tools/firewire/Makefile b/tools/firewire/Makefile
+index 67b6e9fca83c..91e3e89ab7c9 100644
+--- a/tools/firewire/Makefile
++++ b/tools/firewire/Makefile
+@@ -2,7 +2,7 @@
+ prefix = /usr
+ nosy-dump-version = 0.4
+ 
+-CC = gcc
++CC ?= gcc
+ 
+ all : nosy-dump
+ 
+diff --git a/tools/usb/ffs-aio-example/multibuff/host_app/Makefile b/tools/usb/ffs-aio-example/multibuff/host_app/Makefile
+index df36e4c28f61..81a65a76729a 100644
+--- a/tools/usb/ffs-aio-example/multibuff/host_app/Makefile
++++ b/tools/usb/ffs-aio-example/multibuff/host_app/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-CC = gcc
++CC ?= gcc
+ LIBUSB_CFLAGS = $(shell pkg-config --cflags libusb-1.0)
+ LIBUSB_LIBS = $(shell pkg-config --libs libusb-1.0)
+ WARNINGS = -Wall -Wextra
+diff --git a/tools/usb/ffs-aio-example/simple/host_app/Makefile b/tools/usb/ffs-aio-example/simple/host_app/Makefile
+index c3523837c936..bc7ca56a645b 100644
+--- a/tools/usb/ffs-aio-example/simple/host_app/Makefile
++++ b/tools/usb/ffs-aio-example/simple/host_app/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+-CC = gcc
++CC ?= gcc
+ LIBUSB_CFLAGS = $(shell pkg-config --cflags libusb-1.0)
+ LIBUSB_LIBS = $(shell pkg-config --libs libusb-1.0)
+ WARNINGS = -Wall -Wextra
+diff --git a/tools/virtio/virtio-trace/Makefile b/tools/virtio/virtio-trace/Makefile
+index 7843ebcda71d..4e6824f4e852 100644
+--- a/tools/virtio/virtio-trace/Makefile
++++ b/tools/virtio/virtio-trace/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-CC = gcc
++CC ?= gcc
+ CFLAGS = -O2 -Wall -pthread
+ 
+ all: trace-agent
+-- 
+2.23.0
+

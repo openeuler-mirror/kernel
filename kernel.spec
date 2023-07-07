@@ -1,3 +1,5 @@
+%global _unpackaged_files_terminate_build 0
+
 %define with_signmodules  1
 %define with_kabichk 0
 
@@ -8,11 +10,11 @@
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 %global debuginfodir /usr/lib/debug
 
-%global upstream_version    6.1
-%global upstream_sublevel   8
-%global devel_release       3
+%global upstream_version    6.4
+%global upstream_sublevel   0
+%global devel_release       0
 %global maintenance_release .0.0
-%global pkg_release         .9
+%global pkg_release         .1
 
 %define with_debuginfo 0
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -38,8 +40,11 @@
 %define with_64kb  0
 %endif
 
-#default is enabled. You can disable it with --without option
-%define with_perf    %{?_without_perf: 0} %{?!_without_perf: 1}
+##default is enabled. You can disable it with --without option
+#%define with_perf    %{?_without_perf: 0} %{?!_without_perf: 1}
+
+# Temporarily disable perf. FIXME!!
+%define with_perf 0
 
 Name:	 kernel%{?package64kb}
 Version: %{upstream_version}.%{upstream_sublevel}
@@ -79,6 +84,9 @@ Patch0006: 0006-config-add-initial-openeuler_defconfig-for-riscv64.patch
 Patch0007: 0007-cpupower-clang-compile-support.patch
 Patch0008: 0008-x86_energy_perf_policy-clang-compile-support.patch
 Patch0009: 0009-turbostat-clang-compile-support.patch
+Patch0010: 0010-kernel-v6.4-clang-compile-support.patch
+Patch0011: 0011-temporarily-bypass-as-version-check.patch
+Patch0012: 0012-clang15-unsupported-argument-misa-spec.patch
 
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
@@ -90,6 +98,7 @@ BuildRequires: xmlto, asciidoc
 BuildRequires: openssl-devel openssl
 BuildRequires: hmaccalc
 BuildRequires: ncurses-devel
+BuildRequires: libpfm-devel libtraceevent-devel
 #BuildRequires: pesign >= 0.109-4
 BuildRequires: elfutils-libelf-devel
 BuildRequires: rpm >= 4.14.2
@@ -113,7 +122,7 @@ Conflicts: mdadm < 3.2.1-5 nfs-utils < 1.0.7-12 oprofile < 0.9.1-2 ppp < 2.4.3-3
 Conflicts: reiserfs-utils < 3.6.19-2 selinux-policy-targeted < 1.25.3-14 squashfs-tools < 4.0
 Conflicts: udev < 063-6 util-linux < 2.12 wireless-tools < 29-3 xfsprogs < 2.6.13-4
 
-Provides: kernel-drm = 4.3.0 kernel-drm-nouveau = 16 kernel-modeset = 1
+Provides: kernel-%{_target_cpu} = %{version}-%{release} kernel-drm = 4.3.0 kernel-drm-nouveau = 16 kernel-modeset = 1
 Provides: kernel-uname-r = %{KernelVer} kernel=%{KernelVer}
 
 Requires: dracut >= 001-7 grubby >= 8.28-2 initscripts >= 8.11.1-1 linux-firmware >= 20100806-2 module-init-tools >= 3.16-2
@@ -312,7 +321,9 @@ Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
 %patch0007 -p1
 %patch0008 -p1
 %patch0009 -p1
-touch .scmversion
+%patch0010 -p1
+%patch0011 -p1
+%patch0012 -p1
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
 find . -name .gitignore -exec rm -f {} \; >/dev/null
@@ -347,6 +358,8 @@ sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_VA_BITS_.*/CON
 
 %if "%toolchain" == "clang"
 %global Clang_Make_Option LLVM=1 LLVM_IAS=1 HOSTLD=ld LD=ld
+%else
+%global Clang_Make_Option %{nil}   
 %endif
 
 make %{Clang_Make_Option} ARCH=%{Arch} openeuler_defconfig
@@ -405,7 +418,12 @@ popd
 
 # bpftool
 pushd tools/bpf/bpftool
-make %{Clang_Make_Option}
+%ifarch aarch64 riscv64
+    make %{Clang_Make_Option} EXTRA_CFLAGS="-fPIC"
+%endif
+%ifarch x86_64
+    make %{Clang_Make_Option} EXTRA_CFLAGS="-fPIE"
+%endif
 popd
 
 # cpupower
@@ -452,7 +470,6 @@ popd
     mkdir -p $RPM_BUILD_ROOT/usr/src/
     mv linux-%{KernelVer}-source $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}
     cp linux-%{KernelVer}/.config $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}/
-    cp linux-%{KernelVer}/.scmversion $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}/
 %endif
 
 cd linux-%{KernelVer}
@@ -866,7 +883,6 @@ fi
 %{_bindir}/gpio-hammer
 %{_bindir}/gpio-event-mon
 %{_bindir}/gpio-watch
-%{_mandir}/man1/kvm_stat*
 %{_bindir}/kvm_stat
 %{_libdir}/libcpupower.so.0
 %{_libdir}/libcpupower.so.0.0.1
@@ -880,18 +896,7 @@ fi
 %files -n bpftool
 %{_sbindir}/bpftool
 %{_sysconfdir}/bash_completion.d/bpftool
-%{_mandir}/man8/bpftool-cgroup.8.gz
-%{_mandir}/man8/bpftool-map.8.gz
-%{_mandir}/man8/bpftool-prog.8.gz
-%{_mandir}/man8/bpftool-perf.8.gz
-%{_mandir}/man8/bpftool.8.gz
-%{_mandir}/man8/bpftool-btf.8.gz
-%{_mandir}/man8/bpftool-feature.8.gz
-%{_mandir}/man8/bpftool-gen.8.gz
-%{_mandir}/man8/bpftool-iter.8.gz
-%{_mandir}/man8/bpftool-link.8.gz
-%{_mandir}/man8/bpftool-net.8.gz
-%{_mandir}/man8/bpftool-struct_ops.8.gz
+%{_mandir}/man8/bpftool*
 %license linux-%{KernelVer}/COPYING
 
 %if 0%{?with_source}
@@ -899,11 +904,27 @@ fi
 %defattr(-,root,root)
 /usr/src/linux-%{KernelVer}/*
 /usr/src/linux-%{KernelVer}/.config
-/usr/src/linux-%{KernelVer}/.scmversion
 %endif
 
 %changelog
-* Sun Jul 25 2023 liyunfei <liyunfei33@huawei.com> - 6.1.8-3.0.0.9
+* Fri Jul 7 2023 Mingzheng Xing <xingmingzheng@iscas.ac.cn> - 6.4.0-0.0.0.1
+- update to v6.4.0-0.0.0.1
+- add missed provides (from: @laokz)
+- add dependency packages
+- add 0010-kernel-v6.4-clang-compile-support.patch
+- add 0011-temporarily-bypass-as-version-check.patch
+- add 0012-clang15-unsupported-argument-misa-spec.patch
+- Delete `.scmversion` related code
+  see kernel commitID: f6e09b07cc12a4d104bb19fe7566b0636f60c413
+  kbuild: do not put .scmversion into the source tarball
+- add EXTRA_CFLAGS for bpftool
+- Temporarily disable perf
+  see kernel commitID: 30a9c6444810429aa2b7cbfbd453ce339baaadbf
+  perf tools: Install tools/lib/traceevent plugins with install-bin
+- add "%global _unpackaged_files_terminate_build 0"
+- update "%files cpupower.lang"
+
+* Sun Jun 25 2023 liyunfei <liyunfei33@huawei.com> - 6.1.8-3.0.0.9
 - add clang compile support
 
 * Thu May 25 2023 laokz <zhangkai@iscas.ac.cn> - 6.1.8-3.0.0.8

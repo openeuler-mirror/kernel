@@ -1,0 +1,27 @@
+From 5ce3e30c069e0a0385d21725ad901a0cec0c9094 Mon Sep 17 00:00:00 2001
+From: Mingzheng Xing <xingmingzheng@iscas.ac.cn>
+Date: Sat, 8 Jul 2023 21:37:53 +0800
+Subject: [PATCH] 0011-patch: bypass binutil version check
+
+---
+ arch/riscv/Kconfig | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/riscv/Kconfig b/arch/riscv/Kconfig
+index 5966ad97c30c..4311c3ba3281 100644
+--- a/arch/riscv/Kconfig
++++ b/arch/riscv/Kconfig
+@@ -524,7 +524,9 @@ config TOOLCHAIN_HAS_ZIHINTPAUSE
+ config TOOLCHAIN_NEEDS_EXPLICIT_ZICSR_ZIFENCEI
+ 	def_bool y
+ 	# https://sourceware.org/git/?p=binutils-gdb.git;a=commit;h=aed44286efa8ae8717a77d94b51ac3614e2ca6dc
+-	depends on AS_IS_GNU && AS_VERSION >= 23800
++	# depends on AS_IS_GNU && AS_VERSION >= 23800
++	depends on CC_IS_GCC
++	# Currently, the AS tool version is 23700, so we temporarily bypass it. FIXME!!
+ 	help
+ 	  Newer binutils versions default to ISA spec version 20191213 which
+ 	  moves some instructions from the I extension to the Zicsr and Zifencei
+-- 
+2.23.0
+
