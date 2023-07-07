@@ -79,6 +79,8 @@ int __blkdev_reread_part(struct block_device *bdev)
 		return -EINVAL;
 	if (!capable(CAP_SYS_ADMIN))
 		return -EACCES;
+	if (bdev->bd_part_count)
+		return -EBUSY;
 
 	lockdep_assert_held(&bdev->bd_mutex);
 
@@ -503,6 +505,8 @@ int blkdev_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 			return -EACCES;
 		if (bdev != bdev->bd_contains)
 			return -EINVAL;
+		if (bdev->bd_part_count)
+			return -EBUSY;
 		return disk_scan_partitions(bdev->bd_disk, mode);
 	case BLKGETSIZE:
 		size = i_size_read(bdev->bd_inode);
