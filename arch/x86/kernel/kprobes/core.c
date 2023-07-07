@@ -995,7 +995,15 @@ int kprobe_debug_handler(struct pt_regs *regs)
 	struct kprobe *cur = kprobe_running();
 	struct kprobe_ctlblk *kcb = get_kprobe_ctlblk();
 
-	if (!cur)
+	if (!cur || !cur->ainsn.insn)
+		return 0;
+
+	/* kprobe will change the status from KPROBE_HIT_ACTIVE to
+	 * KPROBE_HIT_SS or KPROBE_HIT_SSDONE before single-step execution, so
+	 * if the current status is KPROBE_HIT_ACTIVE, its not a debug
+	 * exception triggered by kprobe.
+	 */
+	if (kcb->kprobe_status == KPROBE_HIT_ACTIVE)
 		return 0;
 
 	resume_execution(cur, regs, kcb);
