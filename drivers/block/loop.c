@@ -1283,13 +1283,15 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
 				lo->lo_device->bd_inode->i_mapping->nrpages);
 			goto out_unfreeze;
 		}
+
+		/* Avoid assigning overflow values */
+		if (info->lo_offset > LLONG_MAX || info->lo_sizelimit > LLONG_MAX)
+			return -EOVERFLOW;
+
 		if (figure_loop_size(lo, info->lo_offset, info->lo_sizelimit)) {
 			err = -EFBIG;
 			goto out_unfreeze;
 		}
-		/* loff_t vars have been assigned __u64 */
-		if (lo->lo_offset < 0 || lo->lo_sizelimit < 0)
-			return -EOVERFLOW;
 	}
 
 	loop_config_discard(lo);
