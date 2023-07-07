@@ -673,6 +673,12 @@ int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
 	if (!ret)
 		blkdev_put(bdev, mode & ~FMODE_EXCL);
 
+	/*
+	 * If blkdev_get_by_dev() failed early, GD_NEED_PART_SCAN is still set,
+	 * and this will cause that re-assemble partitioned raid device will
+	 * creat partition for underlying disk.
+	 */
+	bdev->bd_invalidated = 0;
 	if (!(mode & FMODE_EXCL)) {
 		bd_abort_claiming(bdev, bdev, disk_scan_partitions);
 		bdput(bdev);
