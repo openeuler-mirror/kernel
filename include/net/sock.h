@@ -394,7 +394,6 @@ struct sock {
 	unsigned int		sk_napi_id;
 #endif
 	int			sk_rcvbuf;
-	int			sk_wait_pending;
 
 	struct sk_filter __rcu	*sk_filter;
 	union {
@@ -529,7 +528,11 @@ struct sock {
 #else
 	KABI_RESERVE(1)
 #endif
+#ifndef __GENKSYMS__
+	int			sk_wait_pending;
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
