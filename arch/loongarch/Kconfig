@@ -131,6 +131,18 @@ config LOONGARCH
 	select USER_STACKTRACE_SUPPORT
 	select ZONE_DMA32
 
+config HAVE_SETUP_PER_CPU_AREA
+	def_bool y
+	depends on NUMA
+
+config NEED_PER_CPU_EMBED_FIRST_CHUNK
+	def_bool y
+	depends on NUMA
+
+config NEED_PER_CPU_PAGE_FIRST_CHUNK
+	def_bool y
+	depends on NUMA
+
 config 32BIT
 	bool
 
