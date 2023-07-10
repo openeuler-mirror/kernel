@@ -1,0 +1,19 @@
+diff --git a/arch/riscv/Kconfig b/arch/riscv/Kconfig
+index 4311c3ba3281..bf7e84a8315e 100644
+--- a/arch/riscv/Kconfig
++++ b/arch/riscv/Kconfig
+@@ -533,10 +533,11 @@ config TOOLCHAIN_NEEDS_EXPLICIT_ZICSR_ZIFENCEI
+ 	  extensions.
+ 
+ config TOOLCHAIN_NEEDS_OLD_ISA_SPEC
+-	def_bool y
+-	depends on TOOLCHAIN_NEEDS_EXPLICIT_ZICSR_ZIFENCEI
++	# clang15 unsupported argument '-misa-spec=2.2', so bypass it. FIXME!!
++	def_bool n
++	# depends on TOOLCHAIN_NEEDS_EXPLICIT_ZICSR_ZIFENCEI
+ 	# https://github.com/llvm/llvm-project/commit/22e199e6afb1263c943c0c0d4498694e15bf8a16
+-	depends on CC_IS_CLANG && CLANG_VERSION < 170000
++	# depends on CC_IS_CLANG && CLANG_VERSION < 170000
+ 	help
+ 	  Certain versions of clang do not support zicsr and zifencei via -march
+ 	  but newer versions of binutils require it for the reasons noted in the
