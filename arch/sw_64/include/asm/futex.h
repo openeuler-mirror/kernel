@@ -34,8 +34,8 @@
 		insn						\
 	LOCK_FIXUP						\
 	"2:	lstw	%1, 0(%3)\n"				\
-	"	rd_f	%2\n"					\
-	"	beq	%2, 4f\n"				\
+	"	rd_f	%1\n"					\
+	"	beq	%1, 4f\n"				\
 	"	bis	$31, $31, %1\n"				\
 	"3:	.subsection 2\n"				\
 	"4:	br	1b\n"					\

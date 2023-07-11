@@ -44,8 +44,8 @@ set_bit(unsigned long nr, volatile void *addr)
 	"	memb\n"
 #endif
 	"	lstw	%0, 0(%3)\n"
-	"	rd_f	%1\n"
-	"	beq	%1, 2f\n"
+	"	rd_f	%0\n"
+	"	beq	%0, 2f\n"
 	".subsection 2\n"
 	"2:	br	1b\n"
 	".previous"
@@ -86,8 +86,8 @@ clear_bit(unsigned long nr, volatile void *addr)
 	"	memb\n"
 #endif
 	"	lstw	%0, 0(%3)\n"
-	"	rd_f	%1\n"
-	"	beq	%1, 2f\n"
+	"	rd_f	%0\n"
+	"	beq	%0, 2f\n"
 	".subsection 2\n"
 	"2:	br	1b\n"
 	".previous"
@@ -139,8 +139,8 @@ change_bit(unsigned long nr, volatile void *addr)
 	"	memb\n"
 #endif
 	"	lstw	%0, 0(%3)\n"
-	"	rd_f	%1\n"
-	"	beq	%1, 2f\n"
+	"	rd_f	%0\n"
+	"	beq	%0, 2f\n"
 	".subsection 2\n"
 	"2:	br	1b\n"
 	".previous"
