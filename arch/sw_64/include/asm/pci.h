@@ -74,7 +74,7 @@ struct pci_controller {
  * bus numbers.
  */
 
-#define pcibios_assign_all_busses()	1
+#define pcibios_assign_all_busses() (pci_has_flag(PCI_REASSIGN_ALL_BUS))
 
 #define PCIBIOS_MIN_IO		0
 #define PCIBIOS_MIN_MEM		0

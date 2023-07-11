@@ -690,7 +690,9 @@ void __init sw64_init_irq(void)
 void __init
 sw64_init_pci(void)
 {
+	pci_add_flags(PCI_REASSIGN_ALL_BUS);
 	common_init_pci();
+	pci_clear_flags(PCI_REASSIGN_ALL_BUS);
 }
 
 static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
