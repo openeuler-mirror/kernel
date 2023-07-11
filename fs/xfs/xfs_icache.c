@@ -534,6 +534,12 @@ xfs_iget_cache_hit(
 		if (!igrab(inode))
 			goto out_skip;
 
+		if (!(flags & XFS_IGET_DONTCACHE)) {
+			spin_lock(&inode->i_lock);
+			inode->i_state &= ~I_DONTCACHE;
+			spin_unlock(&inode->i_lock);
+		}
+
 		/* We've got a live one. */
 		spin_unlock(&ip->i_flags_lock);
 		rcu_read_unlock();
