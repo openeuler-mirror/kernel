@@ -39,6 +39,7 @@
 #include <linux/ktime.h>
 #include <linux/rwsem.h>
 #include <linux/wait.h>
+#include <linux/topology.h>
 
 #include <acpi/cppc_acpi.h>
 
@@ -405,6 +406,21 @@ end:
 	return result;
 }
 
+bool acpi_cpc_valid(void)
+{
+	struct cpc_desc *cpc_ptr;
+	int cpu;
+
+	for_each_present_cpu(cpu) {
+		cpc_ptr = per_cpu(cpc_desc_ptr, cpu);
+		if (!cpc_ptr)
+			return false;
+	}
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(acpi_cpc_valid);
+
 /**
  * acpi_get_psd_map - Map the CPUs in a common freq domain.
  * @all_cpu_data: Ptrs to CPU specific CPPC data including PSD info.
@@ -725,6 +741,10 @@ static int pcc_data_alloc(int pcc_ss_id)
  *	}
  */
 
+#ifndef arch_init_invariance_cppc
+static inline void arch_init_invariance_cppc(void) { }
+#endif
+
 /**
  * acpi_cppc_processor_probe - Search for per CPU _CPC objects.
  * @pr: Ptr to acpi_processor containing this CPU's logical ID.
@@ -912,6 +932,8 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 		kobject_put(&cpc_ptr->kobj);
 		goto out_free;
 	}
+
+	arch_init_invariance_cppc();
 
 	kfree(output.pointer);
 	return 0;
