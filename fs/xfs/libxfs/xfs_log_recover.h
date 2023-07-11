@@ -18,6 +18,7 @@ enum xlog_recover_reorder {
 	XLOG_REORDER_ITEM_LIST,
 	XLOG_REORDER_INODE_BUFFER_LIST,
 	XLOG_REORDER_CANCEL_LIST,
+	XLOG_REORDER_SB_BUFFER_LIST,
 };
 
 struct xlog_recover_item_ops {
