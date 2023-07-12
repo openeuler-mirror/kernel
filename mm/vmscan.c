@@ -4913,8 +4913,10 @@ do_scan:
 		for_each_node_state(nid, N_MEMORY) {
 			cond_resched();
 
-			nr_to_reclaim[nid_num] = (swapcache_to_reclaim /
-						 (swapcache_total_reclaimable / nr[nid_num]));
+			nr_to_reclaim[nid_num] = (swapcache_total_reclaimable == 0) ? 0 :
+						 ((swapcache_to_reclaim * nr[nid_num]) /
+						   swapcache_total_reclaimable);
+
 			reclaim_page_count += reclaim_swapcache_pages_from_list(nid,
 						&swapcache_list[nid_num],
 						nr_to_reclaim[nid_num], false);
