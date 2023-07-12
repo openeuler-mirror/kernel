@@ -1440,10 +1440,14 @@ static void hns3_tx_doorbell(struct hns3_enet_ring *ring, int num,
 	if (!ring->pending_buf)
 		return;
 
+	/* This smp_store_release() pairs with smp_load_aquire() in
+	 * hns3_nic_reclaim_desc(). Ensure that the BD valid bit is updated.
+	 */
+	smp_store_release(&ring->last_to_use, ring->next_to_use);
+
 	writel(ring->pending_buf,
 	       ring->tqp->io_base + HNS3_RING_TX_RING_TAIL_REG);
 	ring->pending_buf = 0;
-	WRITE_ONCE(ring->last_to_use, ring->next_to_use);
 }
 
 netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
@@ -2629,9 +2633,8 @@ static void hns3_reuse_buffer(struct hns3_enet_ring *ring, int i)
 static bool hns3_nic_reclaim_desc(struct hns3_enet_ring *ring,
 				  int *bytes, int *pkts, int budget)
 {
-	/* pair with ring->last_to_use update in hns3_tx_doorbell(),
-	 * smp_store_release() is not used in hns3_tx_doorbell() because
-	 * the doorbell operation already have the needed barrier operation.
+	/* This smp_load_acquire() pairs with smp_store_release() in
+	 * hns3_tx_doorbell().
 	 */
 	int ltu = smp_load_acquire(&ring->last_to_use);
 	int ntc = ring->next_to_clean;
