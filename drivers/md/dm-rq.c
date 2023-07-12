@@ -503,11 +503,9 @@ static blk_status_t dm_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 		struct dm_table *map;
 
 		map = dm_get_live_table(md, &srcu_idx);
-		if (!map) {
-			DMERR_LIMIT("%s: mapping table unavailable, erroring io",
-				    dm_device_name(md));
+		if (unlikely(!map)) {
 			dm_put_live_table(md, srcu_idx);
-			return BLK_STS_IOERR;
+			return BLK_STS_RESOURCE;
 		}
 		ti = dm_table_find_target(map, 0);
 		dm_put_live_table(md, srcu_idx);
