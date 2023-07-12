@@ -5498,8 +5498,9 @@ do_more:
 	 * consistency guarantees.
 	 */
 	if (ext4_handle_valid(handle) &&
-	    ((flags & EXT4_FREE_BLOCKS_METADATA) ||
-	     !ext4_should_writeback_data(inode))) {
+	    (((flags & EXT4_FREE_BLOCKS_METADATA) ||
+	     !ext4_should_writeback_data(inode)) &&
+	     !(flags & EXT4_FREE_BLOCKS_DONT_WAIT_JOURNAL))) {
 		struct ext4_free_data *new_entry;
 		/*
 		 * We use __GFP_NOFAIL because ext4_free_blocks() is not allowed
