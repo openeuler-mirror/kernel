@@ -1294,7 +1294,8 @@ cleanup:
 			if (!ablocks[i])
 				continue;
 			ext4_free_blocks(handle, inode, NULL, ablocks[i], 1,
-					 EXT4_FREE_BLOCKS_METADATA);
+					 EXT4_FREE_BLOCKS_METADATA |
+					 EXT4_FREE_BLOCKS_DONT_WAIT_JOURNAL);
 		}
 	}
 	kfree(ablocks);
@@ -4329,6 +4330,7 @@ got_allocated_blocks:
 			ext4_discard_preallocations(inode, 0);
 			if (flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE)
 				fb_flags = EXT4_FREE_BLOCKS_NO_QUOT_UPDATE;
+			fb_flags |= EXT4_FREE_BLOCKS_DONT_WAIT_JOURNAL;
 			ext4_free_blocks(handle, inode, NULL, newblock,
 					 EXT4_C2B(sbi, allocated_clusters),
 					 fb_flags);
