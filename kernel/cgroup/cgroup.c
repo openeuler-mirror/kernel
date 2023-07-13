@@ -215,8 +215,6 @@ static int cgroup_apply_control(struct cgroup *cgrp);
 static void cgroup_finalize_control(struct cgroup *cgrp, int ret);
 static void css_task_iter_skip(struct css_task_iter *it,
 			       struct task_struct *task);
-static void css_task_iter_stop(struct css_task_iter *it,
-			       struct cgroup_subsys *ss);
 static int cgroup_destroy_locked(struct cgroup *cgrp);
 static struct cgroup_subsys_state *css_create(struct cgroup *cgrp,
 					      struct cgroup_subsys *ss);
@@ -855,19 +853,6 @@ static void css_set_skip_task_iters(struct css_set *cset,
 
 	list_for_each_entry_safe(it, pos, &cset->task_iters, iters_node)
 		css_task_iter_skip(it, task);
-}
-
-/*
- * @cset is moving to other list, it's not safe to continue the iteration,
- * because the cset_head of css_task_iter which is from the old list can
- * not be used as the stop condition of iteration.
- */
-static void css_set_stop_iters(struct css_set *cset, struct cgroup_subsys *ss)
-{
-	struct css_task_iter *it, *pos;
-
-	list_for_each_entry_safe(it, pos, &cset->task_iters, iters_node)
-		css_task_iter_stop(it, ss);
 }
 
 /**
@@ -1790,11 +1775,9 @@ int rebind_subsystems(struct cgroup_root *dst_root, u16 ss_mask)
 		css->cgroup = dcgrp;
 
 		spin_lock_irq(&css_set_lock);
-		hash_for_each(css_set_table, i, cset, hlist) {
-			css_set_stop_iters(cset, ss);
+		hash_for_each(css_set_table, i, cset, hlist)
 			list_move_tail(&cset->e_cset_node[ss->id],
 				       &dcgrp->e_csets[ss->id]);
-		}
 		spin_unlock_irq(&css_set_lock);
 
 		if (ss->css_rstat_flush) {
@@ -4723,16 +4706,6 @@ static void css_task_iter_skip(struct css_task_iter *it,
 	}
 }
 
-static void css_task_iter_stop(struct css_task_iter *it,
-			       struct cgroup_subsys *ss)
-{
-	lockdep_assert_held(&css_set_lock);
-
-	if (it->ss == ss) {
-		it->flags |= CSS_TASK_ITER_STOPPED;
-	}
-}
-
 static void css_task_iter_advance(struct css_task_iter *it)
 {
 	struct task_struct *task;
@@ -4835,11 +4808,6 @@ struct task_struct *css_task_iter_next(struct css_task_iter *it)
 	}
 
 	spin_lock_irq(&css_set_lock);
-
-	if (it->flags & CSS_TASK_ITER_STOPPED) {
-		spin_unlock_irq(&css_set_lock);
-		return NULL;
-	}
 
 	/* @it may be half-advanced by skips, finish advancing */
 	if (it->flags & CSS_TASK_ITER_SKIPPED)
