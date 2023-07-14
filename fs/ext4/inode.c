@@ -2525,7 +2525,7 @@ static int mpage_map_and_submit_extent(handle_t *handle,
 			 * is non-zero, a commit should free up blocks.
 			 */
 			if ((err == -ENOMEM) ||
-			    (err == -ENOSPC && EXT4_SB(sb)->s_mb_free_pending)) {
+			    (err == -ENOSPC && ext4_count_free_clusters(sb))) {
 				if (progress)
 					goto update_disksize;
 				return err;
