@@ -5255,6 +5255,10 @@ static int sol_tcp_sockopt(struct sock *sk, int optname,
 		if (*optlen < 1)
 			return -EINVAL;
 		break;
+	case TCP_ULP:
+		if (getopt)
+			return -EINVAL;
+		break;
 	default:
 		if (getopt)
 			return -EINVAL;
