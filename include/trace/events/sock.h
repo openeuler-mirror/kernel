@@ -332,6 +332,21 @@ DEFINE_EVENT(sock_msg_length, sock_recv_length,
 
 	TP_ARGS(sk, ret, flags)
 );
+
+#undef NET_DECLARE_TRACE
+#ifdef DECLARE_TRACE_WRITABLE
+#define NET_DECLARE_TRACE(call, proto, args, size) \
+	DECLARE_TRACE_WRITABLE(call, PARAMS(proto), PARAMS(args), size)
+#else
+#define NET_DECLARE_TRACE(call, proto, args, size) \
+	DECLARE_TRACE(call, PARAMS(proto), PARAMS(args))
+#endif
+
+NET_DECLARE_TRACE(connect_ret,
+	TP_PROTO(int *err),
+	TP_ARGS(err),
+	sizeof(int));
+
 #endif /* _TRACE_SOCK_H */
 
 /* This part must be outside protection */
