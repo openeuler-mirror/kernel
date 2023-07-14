@@ -47,7 +47,6 @@ struct kernel_clone_args;
 
 /* internal flags */
 #define CSS_TASK_ITER_SKIPPED		(1U << 16)
-#define CSS_TASK_ITER_STOPPED		(1U << 17)
 
 /* a css_task_iter should be treated as an opaque object */
 struct css_task_iter {
