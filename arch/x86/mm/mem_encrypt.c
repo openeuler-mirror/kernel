@@ -33,6 +33,8 @@
 
 #include "mm_internal.h"
 
+#include <asm/processor-hygon.h>
+
 /*
  * Since SME related variables are set early in the boot process they must
  * reside in the .data section so as not to be zeroed out when the .bss
@@ -412,6 +414,11 @@ void __init mem_encrypt_free_decrypted_mem(void)
 
 static void print_mem_encrypt_feature_info(void)
 {
+	if (is_x86_vendor_hygon()) {
+		print_hygon_cc_feature_info();
+		return;
+	}
+
 	pr_info("AMD Memory Encryption Features active:");
 
 	/* Secure Memory Encryption */
