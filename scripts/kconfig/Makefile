@@ -81,6 +81,26 @@ PHONY += savedefconfig defconfig
 savedefconfig: $(obj)/conf
 	$(Q)$< $(silent) --$@=defconfig $(Kconfig)
 
+update_oedefconfig: $(obj)/conf
+	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/openeuler_defconfig $(Kconfig)
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/makeconfig.sh $(SRCARCH)
+
+save_oedefconfig: $(obj)/conf
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/makeconfig.sh $(SRCARCH)
+
+check_oedefconfig: $(obj)/conf
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/merge_config.sh -m arch/$(SRCARCH)/configs/openeuler_defconfig > /dev/null
+	@$(kecho) "#"
+	@$(kecho) "# New options might needs to be updated to the default configuration file."
+	@$(kecho) "# Use the following command:"
+	@$(kecho) "# 'make openeuler_defconfig/menuconfig/update_oedefconfig/save_oedefconfig'"
+	@$(kecho) "# !!! DO NOT EDIT !!!"
+	@$(kecho) "#"
+	@$(kecho) "# defconfig: arch/$(SRCARCH)/configs/openeuler_defconfig"
+	@$(kecho) "#"
+	$(Q)$(MAKE) -f $(srctree)/Makefile listnewconfig
+
+
 defconfig: $(obj)/conf
 ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG)),)
 	@$(kecho) "*** Default configuration is based on '$(KBUILD_DEFCONFIG)'"
@@ -141,6 +161,9 @@ help:
 	@echo  '                    default value without prompting'
 	@echo  '  tinyconfig	  - Configure the tiniest possible kernel'
 	@echo  '  testconfig	  - Run Kconfig unit tests (requires python3 and pytest)'
+	@echo  '  update_oedefconfig  - Update arch/<ARCH>/configs/openeuler_defconfig base on current source code'
+	@echo  '  save_oedefconfig    - Save current .config to arch/<ARCH>/configs/openeuler_defconfig'
+	@echo  '  check_oedefconfig   - Check whether new options need to be added to the defdefault file'
 
 # ===========================================================================
 # object files used by all kconfig flavours
