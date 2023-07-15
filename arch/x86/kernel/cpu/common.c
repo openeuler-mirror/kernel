@@ -2340,6 +2340,7 @@ void microcode_check(struct cpuinfo_x86 *prev_info)
 	struct cpuinfo_x86 curr_info;
 
 	perf_check_microcode();
+	amd_check_microcode();
 
 	store_cpu_caps(&curr_info);
 
