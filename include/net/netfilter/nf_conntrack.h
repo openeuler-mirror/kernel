@@ -381,4 +381,8 @@ int nf_ct_handle_fragments(struct net *net, struct sk_buff *skb,
 #define MODULE_ALIAS_NFCT_HELPER(helper) \
         MODULE_ALIAS("nfct-helper-" helper)
 
+typedef int (*bpf_getorigdst_opt_func)(struct sock *sk, int optname,
+				       void *optval, int *optlen, int dir);
+extern bpf_getorigdst_opt_func bpf_getorigdst_opt;
+
 #endif /* _NF_CONNTRACK_H */

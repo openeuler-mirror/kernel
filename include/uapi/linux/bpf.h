@@ -5566,6 +5566,12 @@ union bpf_attr {
  *     Return
  *             A 64-bit integer containing the current GID and UID, and
  *             created as such: *current_gid* **<< 32 \|** *current_uid*.
+ *
+ * int bpf_sk_original_addr(void *bpf_socket, int optname, char *optval, int optlen)
+ *     Description
+ *             Get Ipv4 origdst or replysrc. Works with IPv4.
+ *     Return
+ *             0 on success, or a negative error in case of failure.
  */
 #define ___BPF_FUNC_MAPPER(FN, ctx...)			\
 	FN(unspec, 0, ##ctx)				\
@@ -5781,6 +5787,7 @@ union bpf_attr {
 	FN(cgrp_storage_get, 210, ##ctx)		\
 	FN(cgrp_storage_delete, 211, ##ctx)		\
 	FN(get_sockops_uid_gid, 212, ##ctx)		\
+	FN(sk_original_addr, 213, ##ctx)		\
 	/* */
 
 /* backwards-compatibility macros for users of __BPF_FUNC_MAPPER that don't

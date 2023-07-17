@@ -5506,6 +5506,53 @@ static const struct bpf_func_proto bpf_get_sockops_uid_gid_proto = {
 	.arg1_type	= ARG_PTR_TO_CTX,
 };
 
+#include <net/netfilter/nf_conntrack.h>
+#include <linux/netfilter_ipv4.h>
+
+bpf_getorigdst_opt_func bpf_getorigdst_opt;
+EXPORT_SYMBOL(bpf_getorigdst_opt);
+
+BPF_CALL_4(bpf_sk_original_addr, struct bpf_sock_ops_kern *, bpf_sock,
+	   int, optname, char *, optval, int, optlen)
+{
+	struct sock *sk = bpf_sock->sk;
+	int ret = -EINVAL;
+
+	if (!sk_fullsock(sk))
+		goto err_clear;
+
+	if (optname != BPF_SO_ORIGINAL_DST && optname != BPF_SO_REPLY_SRC)
+		goto err_clear;
+
+	if (!bpf_getorigdst_opt)
+		goto err_clear;
+#if IS_ENABLED(CONFIG_NF_CONNTRACK)
+	if (optname == BPF_SO_ORIGINAL_DST)
+		ret = bpf_getorigdst_opt(sk, optname, optval, &optlen,
+					 IP_CT_DIR_ORIGINAL);
+	else if (optname == BPF_SO_REPLY_SRC)
+		ret = bpf_getorigdst_opt(sk, optname, optval, &optlen,
+					 IP_CT_DIR_REPLY);
+	if (ret < 0)
+		goto err_clear;
+
+	return 0;
+#endif
+err_clear:
+	memset(optval, 0, optlen);
+	return ret;
+}
+
+static const struct bpf_func_proto bpf_sk_original_addr_proto = {
+	.func		= bpf_sk_original_addr,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
+	.arg3_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg4_type	= ARG_CONST_SIZE,
+};
+
 BPF_CALL_5(bpf_sock_addr_getsockopt, struct bpf_sock_addr_kern *, ctx,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
@@ -8147,6 +8194,8 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_netns_cookie_sock_ops_proto;
 	case BPF_FUNC_get_sockops_uid_gid:
 		return &bpf_get_sockops_uid_gid_proto;
+	case BPF_FUNC_sk_original_addr:
+		return &bpf_sk_original_addr_proto;
 #ifdef CONFIG_INET
 	case BPF_FUNC_load_hdr_opt:
 		return &bpf_sock_ops_load_hdr_opt_proto;
