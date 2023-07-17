@@ -6701,6 +6701,7 @@ enum {
 					 * by the kernel or the
 					 * earlier bpf-progs.
 					 */
+	BPF_SOCK_OPS_TCP_DEFER_CONNECT_CB,/* call ebpf to defer connect*/
 };
 
 /* List of TCP states. There is a build check in net/ipv4/tcp.c to detect

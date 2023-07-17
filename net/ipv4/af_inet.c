@@ -728,6 +728,7 @@ int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	lock_sock(sock->sk);
 	err = __inet_stream_connect(sock, uaddr, addr_len, flags, 0);
 	release_sock(sock->sk);
+	trace_connect_ret(&err);
 	return err;
 }
 EXPORT_SYMBOL(inet_stream_connect);
