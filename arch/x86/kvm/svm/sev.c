@@ -22,6 +22,8 @@
 #include "x86.h"
 #include "svm.h"
 
+#include "csv.h"
+
 static int sev_flush_asids(void);
 static DECLARE_RWSEM(sev_deactivate_lock);
 static DEFINE_MUTEX(sev_bitmap_lock);
@@ -1149,6 +1151,13 @@ void sev_vm_destroy(struct kvm *kvm)
 
 int __init sev_hardware_setup(void)
 {
+	/*
+	 * For firmware with a build ID < 1878, the CSV guest cannot run if the
+	 * host kernel is not using SME.
+	 */
+	if (is_x86_vendor_hygon() && hygon_csv_build < 1878 && !sme_me_mask)
+		return 1;
+
 	/* Maximum number of encrypted guests supported simultaneously */
 	max_sev_asid = cpuid_ecx(0x8000001F);
 
@@ -1167,7 +1176,7 @@ int __init sev_hardware_setup(void)
 	if (!sev_reclaim_asid_bitmap)
 		return 1;
 
-	pr_info("SEV supported\n");
+	pr_info("%s supported\n", is_x86_vendor_hygon() ? "CSV" : "SEV");
 
 	return 0;
 }

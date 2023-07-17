@@ -24,6 +24,7 @@
  *    in AMD SEV.
  */
 u32 hygon_csv_build;
+EXPORT_SYMBOL_GPL(hygon_csv_build);
 
 /*
  * csv_update_api_version used to update the api version of HYGON CSV
