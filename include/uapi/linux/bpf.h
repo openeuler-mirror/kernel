@@ -5559,6 +5559,13 @@ union bpf_attr {
  *		0 on success.
  *
  *		**-ENOENT** if the bpf_local_storage cannot be found.
+ *
+ * u64 bpf_get_sockops_uid_gid(void *sockops)
+ *     Description
+ *             Get sock's uid and gid
+ *     Return
+ *             A 64-bit integer containing the current GID and UID, and
+ *             created as such: *current_gid* **<< 32 \|** *current_uid*.
  */
 #define ___BPF_FUNC_MAPPER(FN, ctx...)			\
 	FN(unspec, 0, ##ctx)				\
@@ -5773,6 +5780,7 @@ union bpf_attr {
 	FN(user_ringbuf_drain, 209, ##ctx)		\
 	FN(cgrp_storage_get, 210, ##ctx)		\
 	FN(cgrp_storage_delete, 211, ##ctx)		\
+	FN(get_sockops_uid_gid, 212, ##ctx)		\
 	/* */
 
 /* backwards-compatibility macros for users of __BPF_FUNC_MAPPER that don't
