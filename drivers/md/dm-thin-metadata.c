@@ -1806,7 +1806,7 @@ int dm_pool_inc_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_
 
 int dm_pool_dec_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_t e)
 {
-	int r = -EINVAL;
+	int r = 0;
 
 	pmd_write_lock(pmd);
 	if (!pmd->fail_io) {
