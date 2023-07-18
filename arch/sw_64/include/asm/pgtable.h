@@ -117,12 +117,13 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define _PAGE_DIRTY	0x20000
 #define _PAGE_ACCESSED	0x40000
 
-#define _PAGE_BIT_ACCESSED	18		/* bit of _PAGE_ACCESSED */
-#define _PAGE_BIT_FOW		2		/* bit of _PAGE_FOW */
 #define _PAGE_SPLITTING		0x200000	/* For Transparent Huge Page */
+#define _PAGE_DEVMAP		0x400000	/* For ZONE DEVICE page */
+
+#define _PAGE_BIT_FOW		2		/* bit of _PAGE_FOW */
+#define _PAGE_BIT_ACCESSED	18		/* bit of _PAGE_ACCESSED */
 #define _PAGE_BIT_SPLITTING	21		/* bit of _PAGE_SPLITTING */
 #define _PAGE_BIT_DEVMAP	22		/* bit of _PAGE_DEVMAP */
-
 /*
  * NOTE! The "accessed" bit isn't necessarily exact:  it can be kept exactly
  * by software (use the KRE/URE/KWE/UWE bits appropriately), but I'll fake it.
@@ -373,6 +374,12 @@ static inline pmd_t pmd_mkdirty(pmd_t pmd)
 	return pmd;
 }
 
+static inline pmd_t pmd_mkdevmap(pmd_t pmd)
+{
+	pmd_val(pmd) |= _PAGE_DEVMAP;
+	return pmd;
+}
+
 static inline pmd_t pmd_mkyoung(pmd_t pmd)
 {
 	pmd_val(pmd) |= __ACCESS_BITS;
@@ -521,7 +528,12 @@ static inline int pmd_protnone(pmd_t pmd)
 }
 #endif
 
-#define _PAGE_DEVMAP	(_AT(u64, 1) << _PAGE_BIT_DEVMAP)
+#ifdef CONFIG_ARCH_HAS_PTE_DEVMAP
+static inline int pte_devmap(pte_t a)
+{
+	return (pte_val(a) & _PAGE_DEVMAP) == _PAGE_DEVMAP;
+}
+#endif
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 
@@ -566,20 +578,7 @@ static inline int pgd_devmap(pgd_t pgd)
 	return 0;
 }
 #endif
-
-static inline pmd_t pmd_mkdevmap(pmd_t pmd)
-{
-	pmd_val(pmd) |= _PAGE_DEVMAP;
-	return pmd;
-}
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
-
-#ifdef CONFIG_ARCH_HAS_PTE_DEVMAP
-static inline int pte_devmap(pte_t a)
-{
-	return (pte_val(a) & _PAGE_DEVMAP) == _PAGE_DEVMAP;
-}
-#endif
 
 #define __HAVE_ARCH_PMDP_GET_AND_CLEAR
 static inline pmd_t pmdp_get_and_clear(struct mm_struct *mm,
