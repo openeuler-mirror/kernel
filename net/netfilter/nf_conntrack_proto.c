@@ -311,6 +311,67 @@ getorigdst(struct sock *sk, int optval, void __user *user, int *len)
 	return -ENOENT;
 }
 
+static int
+bpf_getorigdst_impl(struct sock *sk, int optval, void *user, int *len, int dir)
+{
+	const struct inet_sock *inet = inet_sk(sk);
+	const struct nf_conntrack_tuple_hash *h;
+	struct nf_conntrack_tuple tuple;
+
+	memset(&tuple, 0, sizeof(tuple));
+
+	tuple.src.u3.ip = inet->inet_rcv_saddr;
+	tuple.src.u.tcp.port = inet->inet_sport;
+	tuple.dst.u3.ip = inet->inet_daddr;
+	tuple.dst.u.tcp.port = inet->inet_dport;
+	tuple.src.l3num = PF_INET;
+	tuple.dst.protonum = sk->sk_protocol;
+
+	/* We only do TCP and SCTP at the moment: is there a better way? */
+	if (tuple.dst.protonum != IPPROTO_TCP &&
+	    tuple.dst.protonum != IPPROTO_SCTP) {
+		pr_debug("SO_ORIGINAL_DST: Not a TCP/SCTP socket\n");
+		return -ENOPROTOOPT;
+	}
+
+	if ((unsigned int)*len < sizeof(struct sockaddr_in)) {
+		pr_debug("SO_ORIGINAL_DST: len %d not %zu\n",
+			 *len, sizeof(struct sockaddr_in));
+		return -EINVAL;
+	}
+
+	h = nf_conntrack_find_get(sock_net(sk), &nf_ct_zone_dflt, &tuple);
+	if (h) {
+		struct sockaddr_in sin;
+		struct nf_conn *ct = nf_ct_tuplehash_to_ctrack(h);
+
+		sin.sin_family = AF_INET;
+		if (dir == IP_CT_DIR_REPLY) {
+			sin.sin_port = ct->tuplehash[IP_CT_DIR_REPLY]
+					.tuple.src.u.tcp.port;
+			sin.sin_addr.s_addr = ct->tuplehash[IP_CT_DIR_REPLY]
+					.tuple.src.u3.ip;
+		} else {
+			sin.sin_port = ct->tuplehash[IP_CT_DIR_ORIGINAL]
+					.tuple.dst.u.tcp.port;
+			sin.sin_addr.s_addr = ct->tuplehash[IP_CT_DIR_ORIGINAL]
+					.tuple.dst.u3.ip;
+		}
+		memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
+
+		pr_debug("SO_ORIGINAL_DST: %pI4 %u\n",
+			 &sin.sin_addr.s_addr, ntohs(sin.sin_port));
+		nf_ct_put(ct);
+
+		memcpy(user, &sin, sizeof(sin));
+		return 0;
+	}
+	pr_debug("SO_ORIGINAL_DST: Can't find %pI4/%u-%pI4/%u.\n",
+		 &tuple.src.u3.ip, ntohs(tuple.src.u.tcp.port),
+		 &tuple.dst.u3.ip, ntohs(tuple.dst.u.tcp.port));
+	return -ENOENT;
+}
+
 static struct nf_sockopt_ops so_getorigdst = {
 	.pf		= PF_INET,
 	.get_optmin	= SO_ORIGINAL_DST,
@@ -655,6 +716,8 @@ int nf_conntrack_proto_init(void)
 		goto cleanup_sockopt;
 #endif
 
+	bpf_getorigdst_opt = bpf_getorigdst_impl;
+
 	return ret;
 
 #if IS_ENABLED(CONFIG_IPV6)
@@ -666,6 +729,8 @@ cleanup_sockopt:
 
 void nf_conntrack_proto_fini(void)
 {
+	bpf_getorigdst_opt = NULL;
+
 	nf_unregister_sockopt(&so_getorigdst);
 #if IS_ENABLED(CONFIG_IPV6)
 	nf_unregister_sockopt(&so_getorigdst6);
