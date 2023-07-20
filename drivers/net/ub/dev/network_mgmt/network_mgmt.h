@@ -19,8 +19,35 @@
 #include <net/addrconf.h>
 #include <linux/inetdevice.h>
 
+struct ip_notify_attrs {
+	struct kobj_attribute good_ipv4_notify_tx_cnt;
+	struct kobj_attribute bad_ipv4_notify_tx_cnt;
+	struct kobj_attribute good_ipv6_notify_tx_cnt;
+	struct kobj_attribute bad_ipv6_notify_tx_cnt;
+	struct kobj_attribute print_ip_notify_pkt_en;
+};
+
+struct ip_notify_stats {
+	atomic64_t good_ipv4_notify_tx_cnt;
+	atomic64_t bad_ipv4_notify_tx_cnt;
+	atomic64_t good_ipv6_notify_tx_cnt;
+	atomic64_t bad_ipv6_notify_tx_cnt;
+};
+
+struct ip_notify_ctls {
+	u32 print_ip_notify_pkt_en;
+};
+
+struct ub_nm_ip_notify_ctx {
+	struct kobject *ip_notify_root;
+	struct ip_notify_attrs attrs;
+	struct ip_notify_stats stats;
+	struct ip_notify_ctls ctls;
+};
+
 struct ub_nm_sysfs_context {
 	struct kobject *nm_root;
+	struct ub_nm_ip_notify_ctx ip_notify_ctx;
 };
 
 struct ub_nm_device {
@@ -40,6 +67,12 @@ struct ub_um_device_op_work {
 	enum ub_nm_device_op op;
 };
 
+int ub_ipv4_notify_event(struct notifier_block *nb, unsigned long event,
+			 void *ptr);
+int ub_ipv6_notify_event(struct notifier_block *nb, unsigned long event,
+			 void *ptr);
+int ub_ip_notify_init(struct ub_nm_device *nm_dev);
+void ub_ip_notify_uninit(struct ub_nm_device *nm_dev);
 void ub_nm_down_read(void);
 void ub_nm_up_read(void);
 void ub_nm_down_write(void);

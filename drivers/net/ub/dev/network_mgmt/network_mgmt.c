@@ -97,9 +97,17 @@ static int ub_nm_add_device(struct net_device *ndev)
 		goto err_nm_sysfs_create;
 	}
 
+	ret = ub_ip_notify_init(nm_dev);
+	if (ret) {
+		netdev_err(ndev, "failed to init ip notify feature.\n");
+		goto err_nm_ip_notify_init;
+	}
+
 	list_add_tail(&nm_dev->nm_dev_list, dev_list);
 	goto out;
 
+err_nm_ip_notify_init:
+	ub_nm_sysfs_destroy(nm_dev);
 err_nm_sysfs_create:
 	kfree(nm_dev);
 out:
@@ -118,6 +126,7 @@ static void ub_nm_del_device(struct net_device *ndev)
 			continue;
 
 		list_del(&nm_dev->nm_dev_list);
+		ub_ip_notify_uninit(nm_dev);
 		ub_nm_sysfs_destroy(nm_dev);
 		kfree(nm_dev);
 		break;
@@ -191,11 +200,26 @@ static struct notifier_block ub_nm_netdev_chain_nb = {
 	.notifier_call = ub_nm_netdev_chain_event
 };
 
-/* The network management module tries its best to add all UB devices
- * to ub_nm_dev_list. If ub_nm_dev_list fails to be initialized due
- * to insufficient system memory, some UB devices are not in
- * ub_nm_dev_list. Error logs are generated.
- */
+static int ub_nm_ipv4_event(struct notifier_block *nb, unsigned long event,
+			    void *ptr)
+{
+	return ub_ipv4_notify_event(nb, event, ptr);
+}
+
+static struct notifier_block ub_nm_ipv4_nb = {
+	.notifier_call = ub_nm_ipv4_event
+};
+
+static int ub_nm_ipv6_event(struct notifier_block *nb, unsigned long event,
+			    void *ptr)
+{
+	return ub_ipv6_notify_event(nb, event, ptr);
+}
+
+static struct notifier_block ub_nm_ipv6_nb = {
+	.notifier_call = ub_nm_ipv6_event
+};
+
 static void ub_nm_dev_init(void)
 {
 	struct list_head *dev_list = ub_nm_get_dev_list();
@@ -225,6 +249,12 @@ static void ub_nm_dev_init(void)
 					   "failed to create nm sysfs.\n");
 				goto err_nm_sysfs_create;
 			}
+
+			ret = ub_ip_notify_init(nm_dev);
+			if (ret) {
+				netdev_err(ndev, "failed to init ip notify feature.\n");
+				goto err_nm_ip_notify_init;
+			}
 			list_add_tail(&nm_dev->nm_dev_list,
 				      dev_list);
 			dev_put(ndev);
@@ -232,6 +262,8 @@ static void ub_nm_dev_init(void)
 	}
 	goto out;
 
+err_nm_ip_notify_init:
+	ub_nm_sysfs_destroy(nm_dev);
 err_nm_sysfs_create:
 	kfree(nm_dev);
 err_nm_dev_create:
@@ -251,6 +283,7 @@ static void ub_nm_dev_cleanup(void)
 	list_for_each_entry_safe(nm_dev, tmp, dev_list,
 				 nm_dev_list) {
 		list_del(&nm_dev->nm_dev_list);
+		ub_ip_notify_uninit(nm_dev);
 		ub_nm_sysfs_destroy(nm_dev);
 		kfree(nm_dev);
 	}
@@ -275,14 +308,39 @@ static int __init ub_nm_init_module(void)
 	if (ret) {
 		pr_err("failed to register netdev notifier chain, ret = %d\n",
 		       ret);
-		ub_nm_dev_cleanup();
-		destroy_workqueue(ub_nm_wq);
-		return ret;
+		goto err_out;
+	}
+
+	/* register inetaddr_chain(IPv4) */
+	ret = register_inetaddr_notifier(&ub_nm_ipv4_nb);
+	if (ret) {
+		pr_err("failed to register IPv4 notifier chain, ret = %d\n",
+		       ret);
+		goto err_register_ipv4;
+	}
+
+	/* register inet6addr_chain(IPv6) */
+	if (IS_ENABLED(CONFIG_IPV6)) {
+		ret = register_inet6addr_notifier(&ub_nm_ipv6_nb);
+		if (ret) {
+			pr_err("failed to register IPv6 notifier chain, ret = %d\n",
+			       ret);
+			goto err_register_ipv6;
+		}
 	}
 
 	pr_info("ub network mgmt init success.\n");
 
 	return 0;
+
+err_register_ipv6:
+	unregister_inetaddr_notifier(&ub_nm_ipv4_nb);
+err_register_ipv4:
+	unregister_netdevice_notifier(&ub_nm_netdev_chain_nb);
+err_out:
+	ub_nm_dev_cleanup();
+	destroy_workqueue(ub_nm_wq);
+	return ret;
 }
 module_init(ub_nm_init_module);
 
@@ -290,6 +348,21 @@ static void __exit ub_nm_exit_module(void)
 {
 	int ret;
 
+	/* unregister inet6addr_chain(IPv6) */
+	if (IS_ENABLED(CONFIG_IPV6)) {
+		ret = unregister_inet6addr_notifier(&ub_nm_ipv6_nb);
+		if (ret)
+			pr_warn("failed to unregister ipv6 notifier chain, ret = %d\n",
+				ret);
+	}
+
+	/* unregister inetaddr_chain(IPv4) */
+	ret = unregister_inetaddr_notifier(&ub_nm_ipv4_nb);
+	if (ret)
+		pr_warn("failed to unregister ipv4 notifier chain, ret = %d\n",
+			ret);
+
+	/* unregister netdev_chain */
 	ret = unregister_netdevice_notifier(&ub_nm_netdev_chain_nb);
 	if (ret)
 		pr_warn("failed to unregister netdev notifier chain, ret = %d\n",
