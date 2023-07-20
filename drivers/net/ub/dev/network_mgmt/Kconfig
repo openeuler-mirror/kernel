@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# NETWORK_MGNT configuration
+#
+
+config NETWORK_MGNT
+	default n
+	tristate "UB network management"
+	depends on UBL
+	help
+	  Add network management drivers to provide the overall
+	  framework for these network management protocols.
+	  This enables UB link support. Say 'Y' or 'm' if your
+	  device works in UB.
+
