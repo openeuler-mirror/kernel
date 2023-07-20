@@ -256,10 +256,6 @@ config MIGHT_HAVE_PC_SERIO
 
 endmenu
 
-config LOCK_MEMB
-	bool "Insert mem barrier before lock instruction"
-	default y
-
 menu "CPU Power Management"
 source "drivers/cpufreq/Kconfig"
 

@@ -32,9 +32,6 @@ set_bit(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %5\n"
 	"1:	lldw	%0, 0(%3)\n"
 	"	ldi	%1, 1\n"
@@ -74,9 +71,6 @@ clear_bit(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %5\n"
 	"1:	lldw	%0, 0(%3)\n"
 	"	ldi	%1, 1\n"
@@ -127,9 +121,6 @@ change_bit(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %5\n"
 	"1:	lldw	%0, 0(%3)\n"
 	"	ldi	%1, 1\n"
@@ -168,9 +159,6 @@ test_and_set_bit(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%4, %6\n"
 	"1:	lldw	%0, 0(%4)\n"
 	"	and	%0, %5, %3\n"
@@ -202,9 +190,6 @@ test_and_set_bit_lock(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%4, %6\n"
 	"1:	lldw	%0, 0(%4)\n"
 	"	and	%0, %5, %3\n"
@@ -250,9 +235,6 @@ test_and_clear_bit(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%4, %6\n"
 	"1:	lldw	%0, 0(%4)\n"
 	"	and	%0, %5, %3\n"
@@ -298,9 +280,6 @@ test_and_change_bit(unsigned long nr, volatile void *addr)
 	int *m = ((int *) addr) + (nr >> 5);
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %5\n"
 	"1:	lldw	%0, 0(%3)\n"
 	"	ldi	%2, 1\n"

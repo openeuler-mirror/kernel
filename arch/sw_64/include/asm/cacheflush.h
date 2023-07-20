@@ -5,7 +5,7 @@
 /*
  * DCache: PIPT
  * ICache:
- *	- C3A/B is VIVT with ICTAG, support coherence.
+ *	- C3B is VIVT with ICTAG, support coherence.
  *	- C4 is VIPT
  */
 #include <asm-generic/cacheflush.h>

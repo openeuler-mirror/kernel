@@ -23,9 +23,6 @@ ____xchg(_u8, volatile char *m, unsigned long val)
 	unsigned long ret, tmp, addr64;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 
 	"	andnot	%4, 7, %3\n"
 	"	inslb	%1, %4, %1\n"
@@ -56,9 +53,6 @@ ____xchg(_u16, volatile short *m, unsigned long val)
 	unsigned long ret, tmp, addr64;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	andnot	%4, 7, %3\n"
 	"	inslh	%1, %4, %1\n"
 	"1:	lldl	%2, 0(%3)\n"
@@ -88,9 +82,6 @@ ____xchg(_u32, volatile int *m, unsigned long val)
 	unsigned long dummy, addr;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi %3, %5\n"
 	"1:	lldw %0, 0(%3)\n"
 	"	ldi %1, 1\n"
@@ -117,9 +108,6 @@ ____xchg(_u64, volatile long *m, unsigned long val)
 	unsigned long dummy, addr;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi %3, %5\n"
 	"1:	lldl %0, 0(%3)\n"
 	"	ldi %1, 1\n"
@@ -180,9 +168,6 @@ ____cmpxchg(_u8, volatile char *m, unsigned char old, unsigned char new)
 	unsigned long prev, tmp, cmp, addr64;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	andnot	%5, 7, %4\n"
 	"	inslb	%1, %5, %1\n"
 	"1:	lldl	%2, 0(%4)\n"
@@ -214,9 +199,6 @@ ____cmpxchg(_u16, volatile short *m, unsigned short old, unsigned short new)
 	unsigned long prev, tmp, cmp, addr64;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	andnot	%5, 7, %4\n"
 	"	inslh	%1, %5, %1\n"
 	"1:	lldl	%2, 0(%4)\n"
@@ -248,9 +230,6 @@ ____cmpxchg(_u32, volatile int *m, int old, int new)
 	unsigned long prev, cmp, addr, tmp;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi %3, %7\n"
 	"1:	lldw %0, 0(%3)\n"
 	"	cmpeq %0, %5, %1\n"
@@ -279,9 +258,6 @@ ____cmpxchg(_u64, volatile long *m, unsigned long old, unsigned long new)
 	unsigned long prev, cmp, addr, tmp;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi %3, %7\n"
 	"1:	lldl %0, 0(%3)\n"
 	"	cmpeq %0, %5, %1\n"

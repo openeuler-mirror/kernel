@@ -50,9 +50,6 @@ static inline int atomic_fetch_add_unless(atomic_t *v, int a, int u)
 	unsigned long addr;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %2\n"
 	"1:	lldw	%0, 0(%3)\n"
 	"	cmpeq	%0, %5, %4\n"
@@ -90,9 +87,6 @@ static inline long atomic64_fetch_add_unless(atomic64_t *v, long a, long u)
 	unsigned long addr;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %2\n"
 	"1:	lldl	%0, 0(%3)\n"
 	"	cmpeq	%0, %5, %4\n"
@@ -127,9 +121,6 @@ static inline long atomic64_dec_if_positive(atomic64_t *v)
 	unsigned long old, temp1, addr, temp2;
 
 	__asm__ __volatile__(
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
 	"	ldi	%3, %2\n"
 	"1:	lldl	%4, 0(%3)\n"
 	"	cmple	%4, 0, %0\n"
@@ -155,12 +146,6 @@ static inline long atomic64_dec_if_positive(atomic64_t *v)
 
 #define atomic64_dec_if_positive atomic64_dec_if_positive
 
-#ifdef CONFIG_LOCK_MEMB
-#define LOCK_MEMB	"memb\n"
-#else
-#define LOCK_MEMB
-#endif
-
 #ifdef CONFIG_LOCK_FIXUP
 #define LOCK_FIXUP	"memb\n"
 #else
@@ -173,7 +158,6 @@ static inline void atomic_##op(int i, atomic_t *v)			\
 {									\
 	unsigned long temp1, temp2, addr;				\
 	__asm__ __volatile__(						\
-	LOCK_MEMB							\
 	"	ldi	%3, %2\n"					\
 	"1:	lldw	%0, 0(%3)\n"					\
 	"	ldi	%1, 1\n"					\
@@ -197,7 +181,6 @@ static inline int atomic_##op##_return_relaxed(int i, atomic_t *v)	\
 	int temp1, temp2;						\
 	unsigned long addr;						\
 	__asm__ __volatile__(						\
-	LOCK_MEMB							\
 	"	ldi	%3, %2\n"					\
 	"1:	lldw	%0, 0(%3)\n"					\
 	"	ldi	%1, 1\n"					\
@@ -224,7 +207,6 @@ static inline int atomic_fetch_##op##_relaxed(int i, atomic_t *v)	\
 	int temp1, temp2;						\
 	unsigned long addr;						\
 	__asm__ __volatile__(						\
-	LOCK_MEMB							\
 	"	ldi	%3, %2\n"					\
 	"1:	lldw	%0, 0(%3)\n"					\
 	"	ldi	%1, 1\n"					\
@@ -248,7 +230,6 @@ static inline void atomic64_##op(long i, atomic64_t *v)			\
 {									\
 	unsigned long temp1, temp2, addr;				\
 	__asm__ __volatile__(						\
-	LOCK_MEMB							\
 	"	ldi	%3, %2\n"					\
 	"1:	lldl	%0, 0(%3)\n"					\
 	"	ldi	%1, 1\n"					\
@@ -272,7 +253,6 @@ static inline long atomic64_##op##_return_relaxed(long i, atomic64_t *v)\
 	long temp1, temp2;						\
 	unsigned long addr;						\
 	__asm__ __volatile__(						\
-	LOCK_MEMB							\
 	"	ldi	%3, %2\n"					\
 	"1:	lldl	%0, 0(%3)\n"					\
 	"	ldi	%1, 1\n"					\
@@ -297,7 +277,6 @@ static inline long atomic64_fetch_##op##_relaxed(long i, atomic64_t *v) \
 	long temp1, temp2;						\
 	unsigned long addr;						\
 	__asm__ __volatile__(						\
-	LOCK_MEMB							\
 	"	ldi	%3, %2\n"					\
 	"1:	lldl	%0, 0(%3)\n"					\
 	"	ldi	%1, 1\n"					\
