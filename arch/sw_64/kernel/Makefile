@@ -24,6 +24,7 @@ obj-$(CONFIG_SMP)	+= smp.o
 obj-$(CONFIG_PCI)	+= pci.o pci-sysfs.o
 obj-$(CONFIG_MODULES)	+= module.o
 obj-$(CONFIG_PCI_MSI)   += msi.o
+obj-$(CONFIG_PM)	+= pm.o
 obj-$(CONFIG_SUSPEND)	+= suspend_asm.o suspend.o
 obj-$(CONFIG_PERF_EVENTS) += perf_event.o
 obj-$(CONFIG_HIBERNATION) += hibernate_asm.o hibernate.o

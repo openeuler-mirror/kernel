@@ -654,13 +654,6 @@ config SW64_SUSPEND_DEEPSLEEP_BOOTCORE
 	bool "SW64 bootcore suspend into deep sleep mode"
 	default n
 
-config SW64_SUPPORT_S3_SLEEPING_STATE
-	depends on SUSPEND
-	bool "SW64 support S3 sleeping state"
-	default n
-	help
-	  Only SW831 support S3 sleep option and needs SROM, HMCode and BIOS support.
-
 source "drivers/cpuidle/Kconfig"
 
 source "drivers/idle/Kconfig"

@@ -7,6 +7,7 @@
 #include <asm/pci.h>
 #include <asm/irq_impl.h>
 #include <asm/wrperfmon.h>
+#include <linux/syscore_ops.h>
 #include "../../../../drivers/pci/pci.h"
 
 static u64 read_longtime(struct clocksource *cs)
@@ -641,18 +642,20 @@ static inline void chip3_spbu_restore(void)
 
 extern void cpld_write(uint8_t slave_addr, uint8_t reg, uint8_t data);
 
-static void chip3_suspend(bool wakeup)
+static int chip3_io_suspend(void)
 {
+	chip3_spbu_save();
+	chip3_intpu_save();
+	chip3_pcie_save();
 
-	if (wakeup) {
-		chip3_pcie_restore();
-		chip3_intpu_restore();
-		chip3_spbu_restore();
-	} else {
-		chip3_spbu_save();
-		chip3_intpu_save();
-		chip3_pcie_save();
-	}
+	return 0;
+}
+
+static void chip3_io_resume(void)
+{
+	chip3_pcie_restore();
+	chip3_intpu_restore();
+	chip3_spbu_restore();
 }
 
 static void chip3_hose_init(struct pci_controller *hose)
@@ -737,14 +740,21 @@ static struct sw64_chip_init_ops chip3_chip_init_ops = {
 
 static struct sw64_chip_ops chip3_chip_ops = {
 	.get_cpu_num = chip3_get_cpu_nums,
-	.suspend = chip3_suspend,
 	.fixup = chip3_ops_fixup,
 };
+
+#ifdef CONFIG_PM
+extern struct syscore_ops io_syscore_ops;
+#endif
 
 void __init sw64_setup_chip_ops(void)
 {
 	sw64_chip_init = &chip3_chip_init_ops;
 	sw64_chip = &chip3_chip_ops;
+#ifdef CONFIG_PM
+	io_syscore_ops.suspend = chip3_io_suspend;
+	io_syscore_ops.resume = chip3_io_resume;
+#endif
 }
 
 /* Performance counter hook.  A module can override this to do something useful. */
