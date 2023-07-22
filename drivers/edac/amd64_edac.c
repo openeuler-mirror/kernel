@@ -2905,6 +2905,9 @@ static inline void decode_bus_error(int node_id, struct mce *m)
  */
 static int find_umc_channel(struct mce *m)
 {
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+	    boot_cpu_data.x86 == 0x18)
+		return (m->ipid & GENMASK(23, 0)) >> 20;
 	return (m->ipid & GENMASK(31, 0)) >> 20;
 }
 
