@@ -283,6 +283,9 @@ static int get_df1_register(struct pci_dev *misc, int offset, u32 *value)
 		else
 			device = PCI_DEVICE_ID_HYGON_18H_M04H_DF_F1;
 		break;
+	case 0x6:
+		device = PCI_DEVICE_ID_HYGON_18H_M05H_DF_F1;
+		break;
 	default:
 		return -ENODEV;
 	}
