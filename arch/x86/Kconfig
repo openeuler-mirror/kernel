@@ -1299,14 +1299,14 @@ config X86_REBOOTFIXUPS
 config MICROCODE
 	bool "CPU microcode loading support"
 	default y
-	depends on CPU_SUP_AMD || CPU_SUP_INTEL
+	depends on CPU_SUP_AMD || CPU_SUP_INTEL || CPU_SUP_HYGON
 	help
-	  If you say Y here, you will be able to update the microcode on
-	  Intel and AMD processors. The Intel support is for the IA32 family,
+	  If you say Y here, you will be able to update the microcode on Intel,
+	  AMD and Hygon processors. The Intel support is for the IA32 family,
 	  e.g. Pentium Pro, Pentium II, Pentium III, Pentium 4, Xeon etc. The
-	  AMD support is for families 0x10 and later. You will obviously need
-	  the actual microcode binary data itself which is not shipped with
-	  the Linux kernel.
+	  AMD support is for families 0x10 and later. The Hygon support is for
+	  families 0x18 and later. You will obviously need the actual microcode
+	  binary data itself which is not shipped with the Linux kernel.
 
 	  The preferred method to load microcode from a detached initrd is described
 	  in Documentation/x86/microcode.rst. For that you need to enable
@@ -1334,6 +1334,15 @@ config MICROCODE_AMD
 	depends on CPU_SUP_AMD && MICROCODE
 	help
 	  If you select this option, microcode patch loading support for AMD
+	  processors will be enabled.
+
+config MICROCODE_HYGON
+	bool "Hygon microcode loading support"
+	depends on CPU_SUP_HYGON && MICROCODE
+	default MICROCODE
+	select MICROCODE_AMD
+	help
+	  If you select this option, microcode patch loading support for Hygon
 	  processors will be enabled.
 
 config MICROCODE_OLD_INTERFACE
