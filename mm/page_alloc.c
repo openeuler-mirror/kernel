@@ -3873,7 +3873,8 @@ retry:
 			(alloc_flags & ALLOC_CPUSET) &&
 			!__cpuset_zone_allowed(zone, gfp_mask)
 #ifdef CONFIG_COHERENT_DEVICE
-			&& !(alloc_flags & ALLOC_CDM)
+			&& (!is_cdm_node(zone->zone_pgdat->node_id) ||
+			    !(alloc_flags & ALLOC_CDM))
 #endif
 		)
 				continue;
@@ -4946,7 +4947,8 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 	ac->migratetype = gfp_migratetype(gfp_mask);
 
 #ifdef CONFIG_COHERENT_DEVICE
-	if (cpusets_enabled() && !(*alloc_gfp & __GFP_THISNODE)) {
+	if (cpusets_enabled() &&
+	    (!(*alloc_gfp & __GFP_THISNODE) || !is_cdm_node(preferred_nid))) {
 #else
 	if (cpusets_enabled()) {
 #endif
