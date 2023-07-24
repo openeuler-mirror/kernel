@@ -1522,8 +1522,6 @@ struct net_device_ops {
 	int			(*ndo_xdp_xmit)(struct net_device *dev, int n,
 						struct xdp_frame **xdp,
 						u32 flags);
-	struct net_device *	(*ndo_xdp_get_xmit_slave)(struct net_device *dev,
-							  struct xdp_buff *xdp);
 	int			(*ndo_xsk_wakeup)(struct net_device *dev,
 						  u32 queue_id, u32 flags);
 	struct devlink_port *	(*ndo_get_devlink_port)(struct net_device *dev);
@@ -1531,7 +1529,8 @@ struct net_device_ops {
 						  struct ip_tunnel_parm *p, int cmd);
 	struct net_device *	(*ndo_get_peer_dev)(struct net_device *dev);
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct net_device *(*ndo_xdp_get_xmit_slave)(struct net_device *dev,
+								 struct xdp_buff *xdp))
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
