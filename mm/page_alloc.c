@@ -4946,7 +4946,8 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 	ac->migratetype = gfp_migratetype(gfp_mask);
 
 #ifdef CONFIG_COHERENT_DEVICE
-	if (cpusets_enabled() && !(*alloc_gfp & __GFP_THISNODE)) {
+	if (cpusets_enabled() &&
+	    (!(*alloc_gfp & __GFP_THISNODE) || !is_cdm_node(preferred_nid))) {
 #else
 	if (cpusets_enabled()) {
 #endif
