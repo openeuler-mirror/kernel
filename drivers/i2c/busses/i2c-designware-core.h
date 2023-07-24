@@ -297,6 +297,7 @@ struct dw_i2c_dev {
 
 #define MODEL_MSCC_OCELOT	0x00000100
 #define MODEL_BAIKAL_BT1	0x00000200
+#define MODEL_SUNWAY		0x00000800
 #define MODEL_MASK		0x00000f00
 
 struct i2c_dw_semaphore_callbacks {
