@@ -93,7 +93,7 @@ SYSCALL_DEFINE5(setsysinfo, unsigned long, op, void __user *, buffer,
 			if (fex & IEEE_TRAP_ENABLE_INV)
 				si_code = FPE_FLTINV;
 
-			send_sig_fault(SIGFPE, si_code, (void __user *)NULL, 0, current);
+			send_sig_fault(SIGFPE, si_code, (void __user *)NULL, current);
 		}
 		return 0;
 	}

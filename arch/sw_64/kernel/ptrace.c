@@ -522,7 +522,7 @@ int do_match(unsigned long address, unsigned long mmcsr, long cause, struct pt_r
 		task_thread_info(current)->pcb.dv_match = 0;
 		task_thread_info(current)->pcb.dc_ctl = 0;
 		printk("do_page_fault: want to send SIGTRAP, pid = %d\n", current->pid);
-		force_sig_fault(SIGTRAP, TRAP_HWBKPT, (void *) address, 0);
+		force_sig_fault(SIGTRAP, TRAP_HWBKPT, (void *) address);
 		return 1;
 
 	case MMCSR__IA_MATCH:
