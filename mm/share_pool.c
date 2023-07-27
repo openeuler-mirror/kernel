@@ -841,8 +841,11 @@ static void sp_update_process_stat(struct task_struct *tsk, bool inc,
 	unsigned long size = spa->real_size;
 	enum spa_type type = spa->type;
 
+	down_read(&sp_group_sem);
 	spg_node = find_spg_node_by_spg(tsk->mm, spa->spg);
-	update_mem_usage(size, inc, spa->is_hugepage, spg_node, type);
+	if (spg_node != NULL)
+		update_mem_usage(size, inc, spa->is_hugepage, spg_node, type);
+	up_read(&sp_group_sem);
 }
 
 static inline void check_interrupt_context(void)
