@@ -165,7 +165,6 @@ struct sp_mapping {
  */
 struct sp_group {
 	int		 id;
-	unsigned long	 flag;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* number of process in this group */
@@ -499,7 +498,7 @@ static struct sp_mapping *sp_mapping_find(struct sp_group *spg,
 	return spg->mapping[SP_MAPPING_DVPP];
 }
 
-static struct sp_group *create_spg(int spg_id, unsigned long flag);
+static struct sp_group *create_spg(int spg_id);
 static void free_new_spg_id(bool new, int spg_id);
 static void free_sp_group_locked(struct sp_group *spg);
 static struct sp_group_node *group_add_task(struct mm_struct *mm, struct sp_group *spg,
@@ -519,7 +518,7 @@ static int init_local_group(struct mm_struct *mm)
 		return spg_id;
 	}
 
-	spg = create_spg(spg_id, 0);
+	spg = create_spg(spg_id);
 	if (IS_ERR(spg)) {
 		free_new_spg_id(true, spg_id);
 		return PTR_ERR(spg);
@@ -1081,10 +1080,9 @@ static bool is_online_node_id(int node_id)
 	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
 }
 
-static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
+static void sp_group_init(struct sp_group *spg, int spg_id)
 {
 	spg->id = spg_id;
-	spg->flag = flag;
 	spg->is_alive = true;
 	spg->proc_num = 0;
 	atomic_set(&spg->use_count, 1);
@@ -1096,7 +1094,7 @@ static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
 	meminfo_init(&spg->meminfo);
 }
 
-static struct sp_group *create_spg(int spg_id, unsigned long flag)
+static struct sp_group *create_spg(int spg_id)
 {
 	int ret;
 	struct sp_group *spg;
@@ -1131,7 +1129,7 @@ static struct sp_group *create_spg(int spg_id, unsigned long flag)
 		goto out_fput;
 	}
 
-	sp_group_init(spg, spg_id, flag);
+	sp_group_init(spg, spg_id);
 
 	ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1, GFP_KERNEL);
 	if (ret < 0) {
@@ -1154,14 +1152,14 @@ out_kfree:
 }
 
 /* the caller must hold sp_group_sem */
-static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
+static struct sp_group *find_or_alloc_sp_group(int spg_id)
 {
 	struct sp_group *spg;
 
 	spg = sp_group_get_locked(current->tgid, spg_id);
 
 	if (!spg) {
-		spg = create_spg(spg_id, flag);
+		spg = create_spg(spg_id);
 	} else {
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
@@ -1332,7 +1330,6 @@ static struct sp_group_node *group_add_task(struct mm_struct *mm, struct sp_grou
  */
 int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 {
-	unsigned long flag = 0;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct sp_group *spg;
@@ -1433,7 +1430,7 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		goto out_put_mm;
 	}
 
-	spg = find_or_alloc_sp_group(spg_id, flag);
+	spg = find_or_alloc_sp_group(spg_id);
 	if (IS_ERR(spg)) {
 		up_write(&sp_group_sem);
 		ret = PTR_ERR(spg);
