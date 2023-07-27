@@ -11,13 +11,6 @@
 #define RLIMIT_NPROC		8	/* max number of processes */
 #define RLIMIT_MEMLOCK		9	/* max locked-in-memory address space */
 
-/*
- * SuS says limits have to be unsigned.  Fine, it's unsigned, but
- * we retain the old value for compatibility, especially with DU.
- * When you run into the 2^63 barrier, you call me.
- */
-#define RLIM_INFINITY		0x7ffffffffffffffful
-
 #include <asm-generic/resource.h>
 
 #endif /* _UAPI_ASM_SW64_RESOURCE_H */
