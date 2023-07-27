@@ -645,18 +645,17 @@ static void update_mem_usage_k2u(unsigned long size, bool inc,
 	}
 }
 
-/* statistics of all sp area, protected by sp_area_lock */
 struct sp_spa_stat {
-	unsigned int total_num;
-	unsigned int alloc_num;
-	unsigned int k2u_task_num;
-	unsigned int k2u_spg_num;
-	unsigned long total_size;
-	unsigned long alloc_size;
-	unsigned long k2u_task_size;
-	unsigned long k2u_spg_size;
-	unsigned long dvpp_size;
-	unsigned long dvpp_va_size;
+	atomic64_t total_num;
+	atomic64_t alloc_num;
+	atomic64_t k2u_task_num;
+	atomic64_t k2u_spg_num;
+	atomic64_t total_size;
+	atomic64_t alloc_size;
+	atomic64_t k2u_task_size;
+	atomic64_t k2u_spg_size;
+	atomic64_t dvpp_size;
+	atomic64_t dvpp_va_size;
 };
 
 static struct sp_spa_stat spa_stat;
@@ -728,18 +727,18 @@ static void spa_inc_usage(struct sp_area *spa)
 
 	switch (type) {
 	case SPA_TYPE_ALLOC:
-		spa_stat.alloc_num += 1;
-		spa_stat.alloc_size += size;
+		atomic64_inc(&spa_stat.alloc_num);
+		atomic64_add(size, &spa_stat.alloc_size);
 		meminfo_inc_usage(size, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
-		spa_stat.k2u_task_num += 1;
-		spa_stat.k2u_task_size += size;
+		atomic64_inc(&spa_stat.k2u_task_num);
+		atomic64_add(size, &spa_stat.k2u_task_size);
 		meminfo_inc_k2u(size, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
-		spa_stat.k2u_spg_num += 1;
-		spa_stat.k2u_spg_size += size;
+		atomic64_inc(&spa_stat.k2u_spg_num);
+		atomic64_add(size, &spa_stat.k2u_spg_size);
 		meminfo_inc_k2u(size, &spa->spg->meminfo);
 		break;
 	default:
@@ -747,8 +746,8 @@ static void spa_inc_usage(struct sp_area *spa)
 	}
 
 	if (is_dvpp) {
-		spa_stat.dvpp_size += size;
-		spa_stat.dvpp_va_size += ALIGN(size, PMD_SIZE);
+		atomic64_add(size, &spa_stat.dvpp_size);
+		atomic64_add(ALIGN(size, PMD_SIZE), &spa_stat.dvpp_va_size);
 	}
 
 	atomic_inc(&spa->spg->spa_num);
@@ -756,8 +755,8 @@ static void spa_inc_usage(struct sp_area *spa)
 	 * all the calculations won't overflow due to system limitation and
 	 * parameter checking in sp_alloc_area()
 	 */
-	spa_stat.total_num += 1;
-	spa_stat.total_size += size;
+	atomic64_inc(&spa_stat.total_num);
+	atomic64_add(size, &spa_stat.total_size);
 
 	if (!is_local_group(spa->spg->id)) {
 		atomic_inc(&sp_overall_stat.spa_total_num);
@@ -775,18 +774,18 @@ static void spa_dec_usage(struct sp_area *spa)
 
 	switch (type) {
 	case SPA_TYPE_ALLOC:
-		spa_stat.alloc_num -= 1;
-		spa_stat.alloc_size -= size;
+		atomic64_dec(&spa_stat.alloc_num);
+		atomic64_sub(size, &spa_stat.alloc_size);
 		meminfo_dec_usage(size, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
-		spa_stat.k2u_task_num -= 1;
-		spa_stat.k2u_task_size -= size;
+		atomic64_dec(&spa_stat.k2u_task_num);
+		atomic64_sub(size, &spa_stat.k2u_task_size);
 		meminfo_dec_k2u(size, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
-		spa_stat.k2u_spg_num -= 1;
-		spa_stat.k2u_spg_size -= size;
+		atomic64_dec(&spa_stat.k2u_spg_num);
+		atomic64_sub(size, &spa_stat.k2u_spg_size);
 		meminfo_dec_k2u(size, &spa->spg->meminfo);
 		break;
 	default:
@@ -794,13 +793,13 @@ static void spa_dec_usage(struct sp_area *spa)
 	}
 
 	if (is_dvpp) {
-		spa_stat.dvpp_size -= size;
-		spa_stat.dvpp_va_size -= ALIGN(size, PMD_SIZE);
+		atomic64_sub(size, &spa_stat.dvpp_size);
+		atomic64_sub(ALIGN(size, PMD_SIZE), &spa_stat.dvpp_va_size);
 	}
 
 	atomic_dec(&spa->spg->spa_num);
-	spa_stat.total_num -= 1;
-	spa_stat.total_size -= size;
+	atomic64_dec(&spa_stat.total_num);
+	atomic64_sub(size, &spa_stat.total_size);
 
 	if (!is_local_group(spa->spg->id)) {
 		atomic_dec(&sp_overall_stat.spa_total_num);
@@ -1895,13 +1894,13 @@ found:
 	spa->preferred_node_id = node_id;
 	spa->device_id = device_id;
 
-	spa_inc_usage(spa);
 	insert_sp_area(mapping, spa);
 	mapping->free_area_cache = &spa->rb_node;
 	list_add_tail(&spa->link, &spg->spa_list);
 
 	spin_unlock(&sp_area_lock);
 
+	spa_inc_usage(spa);
 	return spa;
 
 error:
@@ -3817,35 +3816,33 @@ static void spa_dvpp_stat_show(struct seq_file *seq)
 
 static void spa_overview_show(struct seq_file *seq)
 {
-	unsigned int total_num, alloc_num, k2u_task_num, k2u_spg_num;
-	unsigned long total_size, alloc_size, k2u_task_size, k2u_spg_size;
-	unsigned long dvpp_size, dvpp_va_size;
+	s64 total_num, alloc_num, k2u_task_num, k2u_spg_num;
+	s64 total_size, alloc_size, k2u_task_size, k2u_spg_size;
+	s64 dvpp_size, dvpp_va_size;
 
 	if (!sp_is_enabled())
 		return;
 
-	spin_lock(&sp_area_lock);
-	total_num     = spa_stat.total_num;
-	alloc_num     = spa_stat.alloc_num;
-	k2u_task_num  = spa_stat.k2u_task_num;
-	k2u_spg_num   = spa_stat.k2u_spg_num;
-	total_size    = spa_stat.total_size;
-	alloc_size    = spa_stat.alloc_size;
-	k2u_task_size = spa_stat.k2u_task_size;
-	k2u_spg_size  = spa_stat.k2u_spg_size;
-	dvpp_size     = spa_stat.dvpp_size;
-	dvpp_va_size  = spa_stat.dvpp_va_size;
-	spin_unlock(&sp_area_lock);
+	total_num     = atomic64_read(&spa_stat.total_num);
+	alloc_num     = atomic64_read(&spa_stat.alloc_num);
+	k2u_task_num  = atomic64_read(&spa_stat.k2u_task_num);
+	k2u_spg_num   = atomic64_read(&spa_stat.k2u_spg_num);
+	total_size    = atomic64_read(&spa_stat.total_size);
+	alloc_size    = atomic64_read(&spa_stat.alloc_size);
+	k2u_task_size = atomic64_read(&spa_stat.k2u_task_size);
+	k2u_spg_size  = atomic64_read(&spa_stat.k2u_spg_size);
+	dvpp_size     = atomic64_read(&spa_stat.dvpp_size);
+	dvpp_va_size  = atomic64_read(&spa_stat.dvpp_va_size);
 
-	SEQ_printf(seq, "Spa total num %u.\n", total_num);
-	SEQ_printf(seq, "Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
+	SEQ_printf(seq, "Spa total num %lld.\n", total_num);
+	SEQ_printf(seq, "Spa alloc num %lld, k2u(task) num %lld, k2u(spg) num %lld.\n",
 		   alloc_num, k2u_task_num, k2u_spg_num);
-	SEQ_printf(seq, "Spa total size:     %13lu KB\n", byte2kb(total_size));
-	SEQ_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
-	SEQ_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
-	SEQ_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
-	SEQ_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
-	SEQ_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
+	SEQ_printf(seq, "Spa total size:     %13lld KB\n", byte2kb(total_size));
+	SEQ_printf(seq, "Spa alloc size:     %13lld KB\n", byte2kb(alloc_size));
+	SEQ_printf(seq, "Spa k2u(task) size: %13lld KB\n", byte2kb(k2u_task_size));
+	SEQ_printf(seq, "Spa k2u(spg) size:  %13lld KB\n", byte2kb(k2u_spg_size));
+	SEQ_printf(seq, "Spa dvpp size:      %13lld KB\n", byte2kb(dvpp_size));
+	SEQ_printf(seq, "Spa dvpp va size:   %13lld MB\n", byte2mb(dvpp_va_size));
 	SEQ_printf(seq, "\n");
 }
 
