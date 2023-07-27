@@ -645,11 +645,9 @@ static void update_mem_usage_k2u(unsigned long size, bool inc,
 }
 
 struct sp_spa_stat {
-	atomic64_t total_num;
 	atomic64_t alloc_num;
 	atomic64_t k2u_task_num;
 	atomic64_t k2u_spg_num;
-	atomic64_t total_size;
 	atomic64_t alloc_size;
 	atomic64_t k2u_task_size;
 	atomic64_t k2u_spg_size;
@@ -750,12 +748,6 @@ static void spa_inc_usage(struct sp_area *spa)
 	}
 
 	atomic_inc(&spa->spg->spa_num);
-	/*
-	 * all the calculations won't overflow due to system limitation and
-	 * parameter checking in sp_alloc_area()
-	 */
-	atomic64_inc(&spa_stat.total_num);
-	atomic64_add(size, &spa_stat.total_size);
 
 	if (!is_local_group(spa->spg->id)) {
 		atomic_inc(&sp_overall_stat.spa_total_num);
@@ -797,8 +789,6 @@ static void spa_dec_usage(struct sp_area *spa)
 	}
 
 	atomic_dec(&spa->spg->spa_num);
-	atomic64_dec(&spa_stat.total_num);
-	atomic64_sub(size, &spa_stat.total_size);
 
 	if (!is_local_group(spa->spg->id)) {
 		atomic_dec(&sp_overall_stat.spa_total_num);
@@ -3825,16 +3815,16 @@ static void spa_overview_show(struct seq_file *seq)
 	if (!sp_is_enabled())
 		return;
 
-	total_num     = atomic64_read(&spa_stat.total_num);
 	alloc_num     = atomic64_read(&spa_stat.alloc_num);
 	k2u_task_num  = atomic64_read(&spa_stat.k2u_task_num);
 	k2u_spg_num   = atomic64_read(&spa_stat.k2u_spg_num);
-	total_size    = atomic64_read(&spa_stat.total_size);
 	alloc_size    = atomic64_read(&spa_stat.alloc_size);
 	k2u_task_size = atomic64_read(&spa_stat.k2u_task_size);
 	k2u_spg_size  = atomic64_read(&spa_stat.k2u_spg_size);
 	dvpp_size     = atomic64_read(&spa_stat.dvpp_size);
 	dvpp_va_size  = atomic64_read(&spa_stat.dvpp_va_size);
+	total_num = alloc_num + k2u_task_num + k2u_spg_num;
+	total_size = alloc_size + k2u_task_size + k2u_spg_size;
 
 	SEQ_printf(seq, "Spa total num %lld.\n", total_num);
 	SEQ_printf(seq, "Spa alloc num %lld, k2u(task) num %lld, k2u(spg) num %lld.\n",
