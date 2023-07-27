@@ -50,8 +50,6 @@
 #define SPG_ID_LOCAL_MIN	200001
 #define SPG_ID_LOCAL_MAX	299999
 
-#define SPG_FLAG_NON_DVPP	(1 << 0)
-
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
 extern struct static_key_false share_pool_enabled_key;

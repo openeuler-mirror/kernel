@@ -452,7 +452,7 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	local_dvpp_mapping = mm->sp_group_master->local->mapping[SP_MAPPING_DVPP];
 	spg_dvpp_mapping = spg->mapping[SP_MAPPING_DVPP];
 
-	if (!list_empty(&spg->procs) && !(spg->flag & SPG_FLAG_NON_DVPP)) {
+	if (!list_empty(&spg->procs)) {
 		/*
 		 * Don't return an error when the mappings' address range conflict.
 		 * As long as the mapping is unused, we can drop the empty mapping.
@@ -476,9 +476,8 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 			return -EINVAL;
 		}
 	} else {
-		if (!(spg->flag & SPG_FLAG_NON_DVPP))
-			/* the mapping of local group is always set */
-			sp_mapping_attach(spg, local_dvpp_mapping);
+		/* the mapping of local group is always set */
+		sp_mapping_attach(spg, local_dvpp_mapping);
 		if (!spg->mapping[SP_MAPPING_NORMAL])
 			sp_mapping_attach(spg, sp_mapping_normal);
 		if (!spg->mapping[SP_MAPPING_RO])
