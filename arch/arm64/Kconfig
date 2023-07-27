@@ -510,7 +510,7 @@ config ARM64_ERRATUM_1742098
       are only present if the cryptography extensions are present.
       All software should have a fallback implementation for CPUs
       that don't implement the cryptography extensions.
- 
+
       If unsure, say Y.
 
 config ARM64_ERRATUM_845719
@@ -1736,6 +1736,9 @@ config AS_HAS_PAC
 
 config AS_HAS_CFI_NEGATE_RA_STATE
 	def_bool $(as-instr,.cfi_startproc\n.cfi_negate_ra_state\n.cfi_endproc\n)
+
+config AS_HAS_LDAPR
+	def_bool $(as-instr,.arch_extension rcpc)
 
 endmenu
 
