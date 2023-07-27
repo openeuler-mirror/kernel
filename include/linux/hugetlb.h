@@ -629,6 +629,9 @@ int huge_add_to_page_cache(struct page *page, struct address_space *mapping,
 
 const struct hstate *hugetlb_get_hstate(void);
 struct page *hugetlb_alloc_hugepage(int nid, int flag);
+struct page *hugetlb_alloc_hugepage_vma(struct vm_area_struct *vma,
+		unsigned long address, int flag);
+
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 				pgprot_t prot, struct page *hpage);
 int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
@@ -643,6 +646,12 @@ static inline const struct hstate *hugetlb_get_hstate(void)
 static inline struct page *hugetlb_alloc_hugepage(int nid, int flag)
 {
 	return  NULL;
+}
+
+static inline struct page *hugetlb_alloc_hugepage_vma(struct vm_area_struct *vma,
+		unsigned long address, int flag)
+{
+	return NULL;
 }
 
 static inline int hugetlb_insert_hugepage_pte(struct mm_struct *mm,
@@ -1087,6 +1096,12 @@ static inline const struct hstate *hugetlb_get_hstate(void)
 }
 
 static inline struct page *hugetlb_alloc_hugepage(int nid, int flag)
+{
+	return  NULL;
+}
+
+static inline struct page *hugetlb_alloc_hugepage_vma(struct vm_area_struct *vma,
+		unsigned long address, int flag)
 {
 	return  NULL;
 }

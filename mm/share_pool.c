@@ -700,7 +700,7 @@ struct sp_area {
 	struct mm_struct *mm;		/* owner of k2u(task) */
 	unsigned long kva;		/* shared kva */
 	pid_t applier;			/* the original applier process */
-	int node_id;			/* memory node */
+	int preferred_node_id;			/* memory node */
 	int device_id;
 };
 static DEFINE_SPINLOCK(sp_area_lock);
@@ -1892,7 +1892,7 @@ found:
 	spa->mm = NULL;
 	spa->kva = 0;   /* NULL pointer */
 	spa->applier = applier;
-	spa->node_id = node_id;
+	spa->preferred_node_id = node_id;
 	spa->device_id = device_id;
 
 	spa_inc_usage(spa);
@@ -2191,7 +2191,9 @@ drop_spa:
 }
 
 /**
- * mg_sp_free() - Free the memory allocated by mg_sp_alloc().
+ * mg_sp_free() - Free the memory allocated by mg_sp_alloc() or
+ * mg_sp_alloc_nodemask().
+ *
  * @addr: the starting VA of the memory.
  * @id: Address space identifier, which is used to distinguish the addr.
  *
@@ -2448,18 +2450,15 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 }
 
 static long sp_mbind(struct mm_struct *mm, unsigned long start, unsigned long len,
-		unsigned long node)
+		nodemask_t *nodemask)
 {
-	nodemask_t nmask;
-
-	nodes_clear(nmask);
-	node_set(node, nmask);
 	return __do_mbind(start, len, MPOL_BIND, MPOL_F_STATIC_NODES,
-			&nmask, MPOL_MF_STRICT, mm);
+			nodemask, MPOL_MF_STRICT, mm);
 }
 
 static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
-	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac,
+	nodemask_t *nodemask)
 {
 	int ret;
 
@@ -2468,10 +2467,10 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 		return ret;
 
 	if (!ac->have_mbind) {
-		ret = sp_mbind(mm, spa->va_start, spa->real_size, spa->node_id);
+		ret = sp_mbind(mm, spa->va_start, spa->real_size, nodemask);
 		if (ret < 0) {
-			pr_err("cannot bind the memory range to specified node:%d, err:%d\n",
-				spa->node_id, ret);
+			pr_err("cannot bind the memory range to node[%*pbl], err:%d\n",
+					nodemask_pr_args(nodemask), ret);
 			return ret;
 		}
 		ac->have_mbind = true;
@@ -2490,17 +2489,25 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 }
 
 static int sp_alloc_mmap_populate(struct sp_area *spa,
-				  struct sp_alloc_context *ac)
+				  struct sp_alloc_context *ac,
+				  nodemask_t *nodemask)
 {
 	int ret = -EINVAL;
 	int mmap_ret = 0;
 	struct mm_struct *mm, *end_mm = NULL;
 	struct sp_group_node *spg_node;
+	nodemask_t __nodemask;
+
+	if (!nodemask) { /* mg_sp_alloc */
+		nodes_clear(__nodemask);
+		node_set(spa->preferred_node_id, __nodemask);
+	} else /* mg_sp_alloc_nodemask */
+		__nodemask = *nodemask;
 
 	/* create mapping for each process in the group */
 	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
 		mm = spg_node->master->mm;
-		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac, &__nodemask);
 		if (mmap_ret) {
 
 			/*
@@ -2563,19 +2570,8 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 	sp_group_put(spg);
 }
 
-/**
- * mg_sp_alloc() - Allocate shared memory for all the processes in a sp_group.
- * @size: the size of memory to allocate.
- * @sp_flags: how to allocate the memory.
- * @spg_id: the share group that the memory is allocated to.
- *
- * Use pass through allocation if spg_id == SPG_ID_DEFAULT in multi-group mode.
- *
- * Return:
- * * if succeed, return the starting address of the shared memory.
- * * if fail, return the pointer of -errno.
- */
-void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+void *__mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+		nodemask_t *nodemask)
 {
 	struct sp_area *spa = NULL;
 	int ret = 0;
@@ -2598,7 +2594,7 @@ try_again:
 		goto out;
 	}
 
-	ret = sp_alloc_mmap_populate(spa, &ac);
+	ret = sp_alloc_mmap_populate(spa, &ac, nodemask);
 	if (ret && ac.state == ALLOC_RETRY) {
 		/*
 		 * The mempolicy for shared memory is located at backend file, which varies
@@ -2615,6 +2611,30 @@ out:
 		return ERR_PTR(ret);
 	else
 		return (void *)(spa->va_start);
+}
+
+void *mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+		nodemask_t nodemask)
+{
+	return __mg_sp_alloc_nodemask(size, sp_flags, spg_id, &nodemask);
+}
+EXPORT_SYMBOL_GPL(mg_sp_alloc_nodemask);
+
+/**
+ * mg_sp_alloc() - Allocate shared memory for all the processes in a sp_group.
+ * @size: the size of memory to allocate.
+ * @sp_flags: how to allocate the memory.
+ * @spg_id: the share group that the memory is allocated to.
+ *
+ * Use pass through allocation if spg_id == SPG_ID_DEFAULT in multi-group mode.
+ *
+ * Return:
+ * * if succeed, return the starting address of the shared memory.
+ * * if fail, return the pointer of -errno.
+ */
+void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+{
+	return __mg_sp_alloc_nodemask(size, sp_flags, spg_id, NULL);
 }
 EXPORT_SYMBOL_GPL(mg_sp_alloc);
 
@@ -3599,7 +3619,7 @@ int sp_node_id(struct vm_area_struct *vma)
 
 	if (vma && (vma->vm_flags & VM_SHARE_POOL) && vma->vm_private_data) {
 		spa = vma->vm_private_data;
-		node_id = spa->node_id;
+		node_id = spa->preferred_node_id;
 	}
 
 	return node_id;
@@ -4028,7 +4048,6 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 	unsigned long haddr = address & huge_page_mask(h);
 	bool new_page = false;
 	int err;
-	int node_id;
 	struct sp_area *spa;
 	bool charge_hpage;
 
@@ -4037,7 +4056,6 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 		pr_err("share pool: vma is invalid, not from sp mmap\n");
 		return ret;
 	}
-	node_id = spa->node_id;
 
 retry:
 	page = find_lock_page(mapping, idx);
@@ -4049,7 +4067,7 @@ retry:
 		charge_hpage = false;
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
-			page = hugetlb_alloc_hugepage(node_id,
+			page = hugetlb_alloc_hugepage_vma(vma, haddr,
 					HUGETLB_ALLOC_BUDDY | HUGETLB_ALLOC_NORECLAIM);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
