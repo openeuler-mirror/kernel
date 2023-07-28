@@ -65,6 +65,11 @@
 #endif
 
 /************ ngbe_register.h ************/
+/* Vendor ID */
+#ifndef PCI_VENDOR_ID_TRUSTNETIC
+#define PCI_VENDOR_ID_TRUSTNETIC                0x8088
+#endif
+
 /* Device IDs */
 /* copper */
 #define NGBE_DEV_ID_EM_TEST                   0x0000
