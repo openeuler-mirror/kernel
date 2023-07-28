@@ -6312,7 +6312,7 @@ static struct page *hugetlb_alloc_hugepage_normal(struct hstate *h,
 /*
  * Allocate hugepage without reserve
  */
-struct page *hugetlb_alloc_hugepage(int nid, int flag)
+struct page *hugetlb_alloc_hugepage_nodemask(int nid, int flag, nodemask_t *nodemask)
 {
 	struct hstate *h = &default_hstate;
 	gfp_t gfp_mask = htlb_alloc_mask(h);
@@ -6327,7 +6327,6 @@ struct page *hugetlb_alloc_hugepage(int nid, int flag)
 	if (flag & ~HUGETLB_ALLOC_MASK)
 		return NULL;
 
-	gfp_mask |= __GFP_THISNODE;
 	if (enable_charge_mighp)
 		gfp_mask |= __GFP_ACCOUNT;
 
@@ -6337,11 +6336,21 @@ struct page *hugetlb_alloc_hugepage(int nid, int flag)
 	if (flag & HUGETLB_ALLOC_NORMAL)
 		page = hugetlb_alloc_hugepage_normal(h, gfp_mask, nid);
 	else if (flag & HUGETLB_ALLOC_BUDDY)
-		page = alloc_migrate_huge_page(h, gfp_mask, nid, NULL);
+		page = alloc_migrate_huge_page(h, gfp_mask, nid, nodemask);
 	else
-		page = alloc_huge_page_nodemask(h, nid, NULL, gfp_mask);
+		page = alloc_huge_page_nodemask(h, nid, nodemask, gfp_mask);
 
 	return page;
+}
+
+struct page *hugetlb_alloc_hugepage(int nid, int flag)
+{
+	nodemask_t nodemask;
+
+	nodes_clear(nodemask);
+	node_set(nid, nodemask);
+
+	return hugetlb_alloc_hugepage_nodemask(nid, flag, &nodemask);
 }
 EXPORT_SYMBOL_GPL(hugetlb_alloc_hugepage);
 
@@ -6362,6 +6371,19 @@ static pte_t *hugetlb_huge_pte_alloc(struct mm_struct *mm, unsigned long addr,
 	ptep = (pte_t *)pmd_alloc(mm, pudp, addr);
 
 	return ptep;
+}
+
+struct page *hugetlb_alloc_hugepage_vma(struct vm_area_struct *vma, unsigned long address, int flag)
+{
+	int nid;
+	struct hstate *h = hstate_vma(vma);
+	struct mempolicy *mpol;
+	nodemask_t *nodemask;
+	gfp_t gfp_mask;
+
+	gfp_mask = htlb_alloc_mask(h);
+	nid = huge_node(vma, address, gfp_mask, &mpol, &nodemask);
+	return hugetlb_alloc_hugepage_nodemask(nid, flag, nodemask);
 }
 
 static int __hugetlb_insert_hugepage(struct mm_struct *mm, unsigned long addr,

@@ -12,6 +12,8 @@
 #include <linux/jump_label.h>
 #include <linux/kabi.h>
 
+#include <linux/share_pool_interface.h>
+
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
 #define SP_DVPP			(1 << 2)
@@ -47,8 +49,6 @@
 #define SPG_ID_AUTO     200000  /* generate group id automatically */
 #define SPG_ID_LOCAL_MIN	200001
 #define SPG_ID_LOCAL_MAX	299999
-
-#define SPG_FLAG_NON_DVPP	(1 << 0)
 
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
@@ -256,6 +256,8 @@ extern int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task);
 
 extern void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
+extern void *mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+		nodemask_t nodemask);
 extern int mg_sp_free(unsigned long addr, int id);
 
 extern void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
@@ -286,7 +288,6 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 			     unsigned long address, pte_t *ptep, unsigned int flags);
 extern bool sp_check_addr(unsigned long addr);
 extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
-extern int sp_node_id(struct vm_area_struct *vma);
 
 static inline bool sp_is_enabled(void)
 {
@@ -450,11 +451,6 @@ static inline bool is_vm_huge_special(struct vm_area_struct *vma)
 static inline bool is_vmalloc_sharepool(unsigned long vm_flags)
 {
 	return NULL;
-}
-
-static inline int sp_node_id(struct vm_area_struct *vma)
-{
-	return numa_node_id();
 }
 
 static inline bool sp_check_addr(unsigned long addr)

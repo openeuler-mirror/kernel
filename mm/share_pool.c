@@ -165,7 +165,6 @@ struct sp_mapping {
  */
 struct sp_group {
 	int		 id;
-	unsigned long	 flag;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* number of process in this group */
@@ -452,7 +451,7 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	local_dvpp_mapping = mm->sp_group_master->local->mapping[SP_MAPPING_DVPP];
 	spg_dvpp_mapping = spg->mapping[SP_MAPPING_DVPP];
 
-	if (!list_empty(&spg->procs) && !(spg->flag & SPG_FLAG_NON_DVPP)) {
+	if (!list_empty(&spg->procs)) {
 		/*
 		 * Don't return an error when the mappings' address range conflict.
 		 * As long as the mapping is unused, we can drop the empty mapping.
@@ -476,9 +475,8 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 			return -EINVAL;
 		}
 	} else {
-		if (!(spg->flag & SPG_FLAG_NON_DVPP))
-			/* the mapping of local group is always set */
-			sp_mapping_attach(spg, local_dvpp_mapping);
+		/* the mapping of local group is always set */
+		sp_mapping_attach(spg, local_dvpp_mapping);
 		if (!spg->mapping[SP_MAPPING_NORMAL])
 			sp_mapping_attach(spg, sp_mapping_normal);
 		if (!spg->mapping[SP_MAPPING_RO])
@@ -500,7 +498,7 @@ static struct sp_mapping *sp_mapping_find(struct sp_group *spg,
 	return spg->mapping[SP_MAPPING_DVPP];
 }
 
-static struct sp_group *create_spg(int spg_id, unsigned long flag);
+static struct sp_group *create_spg(int spg_id);
 static void free_new_spg_id(bool new, int spg_id);
 static void free_sp_group_locked(struct sp_group *spg);
 static struct sp_group_node *group_add_task(struct mm_struct *mm, struct sp_group *spg,
@@ -520,7 +518,7 @@ static int init_local_group(struct mm_struct *mm)
 		return spg_id;
 	}
 
-	spg = create_spg(spg_id, 0);
+	spg = create_spg(spg_id);
 	if (IS_ERR(spg)) {
 		free_new_spg_id(true, spg_id);
 		return PTR_ERR(spg);
@@ -645,18 +643,15 @@ static void update_mem_usage_k2u(unsigned long size, bool inc,
 	}
 }
 
-/* statistics of all sp area, protected by sp_area_lock */
 struct sp_spa_stat {
-	unsigned int total_num;
-	unsigned int alloc_num;
-	unsigned int k2u_task_num;
-	unsigned int k2u_spg_num;
-	unsigned long total_size;
-	unsigned long alloc_size;
-	unsigned long k2u_task_size;
-	unsigned long k2u_spg_size;
-	unsigned long dvpp_size;
-	unsigned long dvpp_va_size;
+	atomic64_t alloc_num;
+	atomic64_t k2u_task_num;
+	atomic64_t k2u_spg_num;
+	atomic64_t alloc_size;
+	atomic64_t k2u_task_size;
+	atomic64_t k2u_spg_size;
+	atomic64_t dvpp_size;
+	atomic64_t dvpp_va_size;
 };
 
 static struct sp_spa_stat spa_stat;
@@ -700,7 +695,7 @@ struct sp_area {
 	struct mm_struct *mm;		/* owner of k2u(task) */
 	unsigned long kva;		/* shared kva */
 	pid_t applier;			/* the original applier process */
-	int node_id;			/* memory node */
+	int preferred_node_id;			/* memory node */
 	int device_id;
 };
 static DEFINE_SPINLOCK(sp_area_lock);
@@ -728,18 +723,18 @@ static void spa_inc_usage(struct sp_area *spa)
 
 	switch (type) {
 	case SPA_TYPE_ALLOC:
-		spa_stat.alloc_num += 1;
-		spa_stat.alloc_size += size;
+		atomic64_inc(&spa_stat.alloc_num);
+		atomic64_add(size, &spa_stat.alloc_size);
 		meminfo_inc_usage(size, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
-		spa_stat.k2u_task_num += 1;
-		spa_stat.k2u_task_size += size;
+		atomic64_inc(&spa_stat.k2u_task_num);
+		atomic64_add(size, &spa_stat.k2u_task_size);
 		meminfo_inc_k2u(size, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
-		spa_stat.k2u_spg_num += 1;
-		spa_stat.k2u_spg_size += size;
+		atomic64_inc(&spa_stat.k2u_spg_num);
+		atomic64_add(size, &spa_stat.k2u_spg_size);
 		meminfo_inc_k2u(size, &spa->spg->meminfo);
 		break;
 	default:
@@ -747,17 +742,11 @@ static void spa_inc_usage(struct sp_area *spa)
 	}
 
 	if (is_dvpp) {
-		spa_stat.dvpp_size += size;
-		spa_stat.dvpp_va_size += ALIGN(size, PMD_SIZE);
+		atomic64_add(size, &spa_stat.dvpp_size);
+		atomic64_add(ALIGN(size, PMD_SIZE), &spa_stat.dvpp_va_size);
 	}
 
 	atomic_inc(&spa->spg->spa_num);
-	/*
-	 * all the calculations won't overflow due to system limitation and
-	 * parameter checking in sp_alloc_area()
-	 */
-	spa_stat.total_num += 1;
-	spa_stat.total_size += size;
 
 	if (!is_local_group(spa->spg->id)) {
 		atomic_inc(&sp_overall_stat.spa_total_num);
@@ -775,18 +764,18 @@ static void spa_dec_usage(struct sp_area *spa)
 
 	switch (type) {
 	case SPA_TYPE_ALLOC:
-		spa_stat.alloc_num -= 1;
-		spa_stat.alloc_size -= size;
+		atomic64_dec(&spa_stat.alloc_num);
+		atomic64_sub(size, &spa_stat.alloc_size);
 		meminfo_dec_usage(size, is_huge, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2TASK:
-		spa_stat.k2u_task_num -= 1;
-		spa_stat.k2u_task_size -= size;
+		atomic64_dec(&spa_stat.k2u_task_num);
+		atomic64_sub(size, &spa_stat.k2u_task_size);
 		meminfo_dec_k2u(size, &spa->spg->meminfo);
 		break;
 	case SPA_TYPE_K2SPG:
-		spa_stat.k2u_spg_num -= 1;
-		spa_stat.k2u_spg_size -= size;
+		atomic64_dec(&spa_stat.k2u_spg_num);
+		atomic64_sub(size, &spa_stat.k2u_spg_size);
 		meminfo_dec_k2u(size, &spa->spg->meminfo);
 		break;
 	default:
@@ -794,13 +783,11 @@ static void spa_dec_usage(struct sp_area *spa)
 	}
 
 	if (is_dvpp) {
-		spa_stat.dvpp_size -= size;
-		spa_stat.dvpp_va_size -= ALIGN(size, PMD_SIZE);
+		atomic64_sub(size, &spa_stat.dvpp_size);
+		atomic64_sub(ALIGN(size, PMD_SIZE), &spa_stat.dvpp_va_size);
 	}
 
 	atomic_dec(&spa->spg->spa_num);
-	spa_stat.total_num -= 1;
-	spa_stat.total_size -= size;
 
 	if (!is_local_group(spa->spg->id)) {
 		atomic_dec(&sp_overall_stat.spa_total_num);
@@ -843,8 +830,11 @@ static void sp_update_process_stat(struct task_struct *tsk, bool inc,
 	unsigned long size = spa->real_size;
 	enum spa_type type = spa->type;
 
+	down_read(&sp_group_sem);
 	spg_node = find_spg_node_by_spg(tsk->mm, spa->spg);
-	update_mem_usage(size, inc, spa->is_hugepage, spg_node, type);
+	if (spg_node != NULL)
+		update_mem_usage(size, inc, spa->is_hugepage, spg_node, type);
+	up_read(&sp_group_sem);
 }
 
 static inline void check_interrupt_context(void)
@@ -1090,10 +1080,9 @@ static bool is_online_node_id(int node_id)
 	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
 }
 
-static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
+static void sp_group_init(struct sp_group *spg, int spg_id)
 {
 	spg->id = spg_id;
-	spg->flag = flag;
 	spg->is_alive = true;
 	spg->proc_num = 0;
 	atomic_set(&spg->use_count, 1);
@@ -1105,7 +1094,7 @@ static void sp_group_init(struct sp_group *spg, int spg_id, unsigned long flag)
 	meminfo_init(&spg->meminfo);
 }
 
-static struct sp_group *create_spg(int spg_id, unsigned long flag)
+static struct sp_group *create_spg(int spg_id)
 {
 	int ret;
 	struct sp_group *spg;
@@ -1140,7 +1129,7 @@ static struct sp_group *create_spg(int spg_id, unsigned long flag)
 		goto out_fput;
 	}
 
-	sp_group_init(spg, spg_id, flag);
+	sp_group_init(spg, spg_id);
 
 	ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1, GFP_KERNEL);
 	if (ret < 0) {
@@ -1163,14 +1152,14 @@ out_kfree:
 }
 
 /* the caller must hold sp_group_sem */
-static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
+static struct sp_group *find_or_alloc_sp_group(int spg_id)
 {
 	struct sp_group *spg;
 
 	spg = sp_group_get_locked(current->tgid, spg_id);
 
 	if (!spg) {
-		spg = create_spg(spg_id, flag);
+		spg = create_spg(spg_id);
 	} else {
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
@@ -1341,7 +1330,6 @@ static struct sp_group_node *group_add_task(struct mm_struct *mm, struct sp_grou
  */
 int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 {
-	unsigned long flag = 0;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct sp_group *spg;
@@ -1442,7 +1430,7 @@ int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 		goto out_put_mm;
 	}
 
-	spg = find_or_alloc_sp_group(spg_id, flag);
+	spg = find_or_alloc_sp_group(spg_id);
 	if (IS_ERR(spg)) {
 		up_write(&sp_group_sem);
 		ret = PTR_ERR(spg);
@@ -1892,16 +1880,16 @@ found:
 	spa->mm = NULL;
 	spa->kva = 0;   /* NULL pointer */
 	spa->applier = applier;
-	spa->node_id = node_id;
+	spa->preferred_node_id = node_id;
 	spa->device_id = device_id;
 
-	spa_inc_usage(spa);
 	insert_sp_area(mapping, spa);
 	mapping->free_area_cache = &spa->rb_node;
 	list_add_tail(&spa->link, &spg->spa_list);
 
 	spin_unlock(&sp_area_lock);
 
+	spa_inc_usage(spa);
 	return spa;
 
 error:
@@ -2191,7 +2179,9 @@ drop_spa:
 }
 
 /**
- * mg_sp_free() - Free the memory allocated by mg_sp_alloc().
+ * mg_sp_free() - Free the memory allocated by mg_sp_alloc() or
+ * mg_sp_alloc_nodemask().
+ *
  * @addr: the starting VA of the memory.
  * @id: Address space identifier, which is used to distinguish the addr.
  *
@@ -2448,18 +2438,15 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 }
 
 static long sp_mbind(struct mm_struct *mm, unsigned long start, unsigned long len,
-		unsigned long node)
+		nodemask_t *nodemask)
 {
-	nodemask_t nmask;
-
-	nodes_clear(nmask);
-	node_set(node, nmask);
 	return __do_mbind(start, len, MPOL_BIND, MPOL_F_STATIC_NODES,
-			&nmask, MPOL_MF_STRICT, mm);
+			nodemask, MPOL_MF_STRICT, mm);
 }
 
 static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
-	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac,
+	nodemask_t *nodemask)
 {
 	int ret;
 
@@ -2468,10 +2455,10 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 		return ret;
 
 	if (!ac->have_mbind) {
-		ret = sp_mbind(mm, spa->va_start, spa->real_size, spa->node_id);
+		ret = sp_mbind(mm, spa->va_start, spa->real_size, nodemask);
 		if (ret < 0) {
-			pr_err("cannot bind the memory range to specified node:%d, err:%d\n",
-				spa->node_id, ret);
+			pr_err("cannot bind the memory range to node[%*pbl], err:%d\n",
+					nodemask_pr_args(nodemask), ret);
 			return ret;
 		}
 		ac->have_mbind = true;
@@ -2490,17 +2477,25 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 }
 
 static int sp_alloc_mmap_populate(struct sp_area *spa,
-				  struct sp_alloc_context *ac)
+				  struct sp_alloc_context *ac,
+				  nodemask_t *nodemask)
 {
 	int ret = -EINVAL;
 	int mmap_ret = 0;
 	struct mm_struct *mm, *end_mm = NULL;
 	struct sp_group_node *spg_node;
+	nodemask_t __nodemask;
+
+	if (!nodemask) { /* mg_sp_alloc */
+		nodes_clear(__nodemask);
+		node_set(spa->preferred_node_id, __nodemask);
+	} else /* mg_sp_alloc_nodemask */
+		__nodemask = *nodemask;
 
 	/* create mapping for each process in the group */
 	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
 		mm = spg_node->master->mm;
-		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac, &__nodemask);
 		if (mmap_ret) {
 
 			/*
@@ -2563,19 +2558,8 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 	sp_group_put(spg);
 }
 
-/**
- * mg_sp_alloc() - Allocate shared memory for all the processes in a sp_group.
- * @size: the size of memory to allocate.
- * @sp_flags: how to allocate the memory.
- * @spg_id: the share group that the memory is allocated to.
- *
- * Use pass through allocation if spg_id == SPG_ID_DEFAULT in multi-group mode.
- *
- * Return:
- * * if succeed, return the starting address of the shared memory.
- * * if fail, return the pointer of -errno.
- */
-void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+void *__mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+		nodemask_t *nodemask)
 {
 	struct sp_area *spa = NULL;
 	int ret = 0;
@@ -2598,7 +2582,7 @@ try_again:
 		goto out;
 	}
 
-	ret = sp_alloc_mmap_populate(spa, &ac);
+	ret = sp_alloc_mmap_populate(spa, &ac, nodemask);
 	if (ret && ac.state == ALLOC_RETRY) {
 		/*
 		 * The mempolicy for shared memory is located at backend file, which varies
@@ -2615,6 +2599,30 @@ out:
 		return ERR_PTR(ret);
 	else
 		return (void *)(spa->va_start);
+}
+
+void *mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+		nodemask_t nodemask)
+{
+	return __mg_sp_alloc_nodemask(size, sp_flags, spg_id, &nodemask);
+}
+EXPORT_SYMBOL_GPL(mg_sp_alloc_nodemask);
+
+/**
+ * mg_sp_alloc() - Allocate shared memory for all the processes in a sp_group.
+ * @size: the size of memory to allocate.
+ * @sp_flags: how to allocate the memory.
+ * @spg_id: the share group that the memory is allocated to.
+ *
+ * Use pass through allocation if spg_id == SPG_ID_DEFAULT in multi-group mode.
+ *
+ * Return:
+ * * if succeed, return the starting address of the shared memory.
+ * * if fail, return the pointer of -errno.
+ */
+void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+{
+	return __mg_sp_alloc_nodemask(size, sp_flags, spg_id, NULL);
 }
 EXPORT_SYMBOL_GPL(mg_sp_alloc);
 
@@ -3599,7 +3607,7 @@ int sp_node_id(struct vm_area_struct *vma)
 
 	if (vma && (vma->vm_flags & VM_SHARE_POOL) && vma->vm_private_data) {
 		spa = vma->vm_private_data;
-		node_id = spa->node_id;
+		node_id = spa->preferred_node_id;
 	}
 
 	return node_id;
@@ -3797,35 +3805,33 @@ static void spa_dvpp_stat_show(struct seq_file *seq)
 
 static void spa_overview_show(struct seq_file *seq)
 {
-	unsigned int total_num, alloc_num, k2u_task_num, k2u_spg_num;
-	unsigned long total_size, alloc_size, k2u_task_size, k2u_spg_size;
-	unsigned long dvpp_size, dvpp_va_size;
+	s64 total_num, alloc_num, k2u_task_num, k2u_spg_num;
+	s64 total_size, alloc_size, k2u_task_size, k2u_spg_size;
+	s64 dvpp_size, dvpp_va_size;
 
 	if (!sp_is_enabled())
 		return;
 
-	spin_lock(&sp_area_lock);
-	total_num     = spa_stat.total_num;
-	alloc_num     = spa_stat.alloc_num;
-	k2u_task_num  = spa_stat.k2u_task_num;
-	k2u_spg_num   = spa_stat.k2u_spg_num;
-	total_size    = spa_stat.total_size;
-	alloc_size    = spa_stat.alloc_size;
-	k2u_task_size = spa_stat.k2u_task_size;
-	k2u_spg_size  = spa_stat.k2u_spg_size;
-	dvpp_size     = spa_stat.dvpp_size;
-	dvpp_va_size  = spa_stat.dvpp_va_size;
-	spin_unlock(&sp_area_lock);
+	alloc_num     = atomic64_read(&spa_stat.alloc_num);
+	k2u_task_num  = atomic64_read(&spa_stat.k2u_task_num);
+	k2u_spg_num   = atomic64_read(&spa_stat.k2u_spg_num);
+	alloc_size    = atomic64_read(&spa_stat.alloc_size);
+	k2u_task_size = atomic64_read(&spa_stat.k2u_task_size);
+	k2u_spg_size  = atomic64_read(&spa_stat.k2u_spg_size);
+	dvpp_size     = atomic64_read(&spa_stat.dvpp_size);
+	dvpp_va_size  = atomic64_read(&spa_stat.dvpp_va_size);
+	total_num = alloc_num + k2u_task_num + k2u_spg_num;
+	total_size = alloc_size + k2u_task_size + k2u_spg_size;
 
-	SEQ_printf(seq, "Spa total num %u.\n", total_num);
-	SEQ_printf(seq, "Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
+	SEQ_printf(seq, "Spa total num %lld.\n", total_num);
+	SEQ_printf(seq, "Spa alloc num %lld, k2u(task) num %lld, k2u(spg) num %lld.\n",
 		   alloc_num, k2u_task_num, k2u_spg_num);
-	SEQ_printf(seq, "Spa total size:     %13lu KB\n", byte2kb(total_size));
-	SEQ_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
-	SEQ_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
-	SEQ_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
-	SEQ_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
-	SEQ_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
+	SEQ_printf(seq, "Spa total size:     %13lld KB\n", byte2kb(total_size));
+	SEQ_printf(seq, "Spa alloc size:     %13lld KB\n", byte2kb(alloc_size));
+	SEQ_printf(seq, "Spa k2u(task) size: %13lld KB\n", byte2kb(k2u_task_size));
+	SEQ_printf(seq, "Spa k2u(spg) size:  %13lld KB\n", byte2kb(k2u_spg_size));
+	SEQ_printf(seq, "Spa dvpp size:      %13lld KB\n", byte2kb(dvpp_size));
+	SEQ_printf(seq, "Spa dvpp va size:   %13lld MB\n", byte2mb(dvpp_va_size));
 	SEQ_printf(seq, "\n");
 }
 
@@ -4028,7 +4034,6 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 	unsigned long haddr = address & huge_page_mask(h);
 	bool new_page = false;
 	int err;
-	int node_id;
 	struct sp_area *spa;
 	bool charge_hpage;
 
@@ -4037,7 +4042,6 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 		pr_err("share pool: vma is invalid, not from sp mmap\n");
 		return ret;
 	}
-	node_id = spa->node_id;
 
 retry:
 	page = find_lock_page(mapping, idx);
@@ -4049,7 +4053,7 @@ retry:
 		charge_hpage = false;
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
-			page = hugetlb_alloc_hugepage(node_id,
+			page = hugetlb_alloc_hugepage_vma(vma, haddr,
 					HUGETLB_ALLOC_BUDDY | HUGETLB_ALLOC_NORECLAIM);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
