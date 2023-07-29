@@ -10,7 +10,7 @@
 #include "hclgevf_cmd.h"
 #include "hnae3.h"
 
-#define HCLGEVF_MOD_VERSION "22.9.2"
+#define HCLGEVF_MOD_VERSION "23.7.1"
 #define HCLGEVF_DRIVER_NAME "hclgevf"
 
 #define HCLGEVF_MAX_VLAN_ID	4095

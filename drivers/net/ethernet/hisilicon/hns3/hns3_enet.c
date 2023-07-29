@@ -1440,10 +1440,14 @@ static void hns3_tx_doorbell(struct hns3_enet_ring *ring, int num,
 	if (!ring->pending_buf)
 		return;
 
+	/* This smp_store_release() pairs with smp_load_aquire() in
+	 * hns3_nic_reclaim_desc(). Ensure that the BD valid bit is updated.
+	 */
+	smp_store_release(&ring->last_to_use, ring->next_to_use);
+
 	writel(ring->pending_buf,
 	       ring->tqp->io_base + HNS3_RING_TX_RING_TAIL_REG);
 	ring->pending_buf = 0;
-	WRITE_ONCE(ring->last_to_use, ring->next_to_use);
 }
 
 netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
@@ -2629,9 +2633,8 @@ static void hns3_reuse_buffer(struct hns3_enet_ring *ring, int i)
 static bool hns3_nic_reclaim_desc(struct hns3_enet_ring *ring,
 				  int *bytes, int *pkts, int budget)
 {
-	/* pair with ring->last_to_use update in hns3_tx_doorbell(),
-	 * smp_store_release() is not used in hns3_tx_doorbell() because
-	 * the doorbell operation already have the needed barrier operation.
+	/* This smp_load_acquire() pairs with smp_store_release() in
+	 * hns3_tx_doorbell().
 	 */
 	int ltu = smp_load_acquire(&ring->last_to_use);
 	int ntc = ring->next_to_clean;
@@ -3132,15 +3135,26 @@ static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 }
 
 static void hns3_set_rx_skb_rss_type(struct hns3_enet_ring *ring,
-				     struct sk_buff *skb, u32 rss_hash)
+				     struct sk_buff *skb, u32 rss_hash,
+				     u32 l234info)
 {
+	enum pkt_hash_types rss_type = PKT_HASH_TYPE_NONE;
 	struct hnae3_handle *handle = ring->tqp->handle;
-	enum pkt_hash_types rss_type;
+	int l3_type;
+	int l4_type;
 
-	if (rss_hash)
-		rss_type = handle->kinfo.rss_type;
-	else
-		rss_type = PKT_HASH_TYPE_NONE;
+	l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M, HNS3_RXD_L3ID_S);
+	l4_type = hnae3_get_field(l234info, HNS3_RXD_L4ID_M, HNS3_RXD_L4ID_S);
+	if (l3_type == HNS3_L3_TYPE_IPV4 ||
+	    l3_type == HNS3_L3_TYPE_IPV6) {
+		if (l4_type == HNS3_L4_TYPE_UDP ||
+		    l4_type == HNS3_L4_TYPE_TCP ||
+		    l4_type == HNS3_L4_TYPE_SCTP)
+			rss_type = PKT_HASH_TYPE_L4;
+		else if (l4_type == HNS3_L4_TYPE_IGMP ||
+			 l4_type == HNS3_L4_TYPE_ICMP)
+			rss_type = PKT_HASH_TYPE_L3;
+	}
 
 	skb_set_hash(skb, rss_hash, rss_type);
 }
@@ -3218,7 +3232,8 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 
 	ring->tqp_vector->rx_group.total_bytes += len;
 
-	hns3_set_rx_skb_rss_type(ring, skb, le32_to_cpu(desc->rx.rss_hash));
+	hns3_set_rx_skb_rss_type(ring, skb, le32_to_cpu(desc->rx.rss_hash),
+				 l234info);
 	return 0;
 }
 

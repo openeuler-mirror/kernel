@@ -12,7 +12,7 @@
 #include "hclge_cmd.h"
 #include "hnae3.h"
 
-#define HCLGE_MOD_VERSION "22.9.2"
+#define HCLGE_MOD_VERSION "23.7.1"
 #define HCLGE_DRIVER_NAME "hclge"
 
 #define HCLGE_MAX_PF_NUM		8
