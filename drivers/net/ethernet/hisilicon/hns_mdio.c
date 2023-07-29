@@ -22,7 +22,7 @@
 
 #define MDIO_DRV_NAME "Hi-HNS_MDIO"
 #define MDIO_BUS_NAME "Hisilicon MII Bus"
-#define MDIO_MOD_VERSION "21.12.1"
+#define MDIO_MOD_VERSION "23.7.1"
 
 #define MDIO_TIMEOUT			1000000
 
