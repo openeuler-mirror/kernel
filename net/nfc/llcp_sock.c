@@ -743,6 +743,10 @@ static int llcp_sock_connect(struct socket *sock, struct sockaddr *_addr,
 	llcp_sock->service_name = kmemdup(addr->service_name,
 					  llcp_sock->service_name_len,
 					  GFP_KERNEL);
+	if (!llcp_sock->service_name) {
+		ret = -ENOMEM;
+		goto sock_llcp_release;
+	}
 
 	nfc_llcp_sock_link(&local->connecting_sockets, sk);
 
@@ -762,13 +766,14 @@ static int llcp_sock_connect(struct socket *sock, struct sockaddr *_addr,
 	return ret;
 
 sock_unlink:
-	nfc_llcp_put_ssap(local, llcp_sock->ssap);
-	nfc_llcp_local_put(llcp_sock->local);
-	llcp_sock->local = NULL;
-
 	nfc_llcp_sock_unlink(&local->connecting_sockets, sk);
 	kfree(llcp_sock->service_name);
 	llcp_sock->service_name = NULL;
+
+sock_llcp_release:
+	nfc_llcp_put_ssap(local, llcp_sock->ssap);
+	nfc_llcp_local_put(llcp_sock->local);
+	llcp_sock->local = NULL;
 
 put_dev:
 	nfc_put_device(dev);
