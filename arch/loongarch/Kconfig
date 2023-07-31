@@ -149,6 +149,9 @@ config 32BIT
 config 64BIT
 	def_bool y
 
+config ZONE_DMA32
+	bool
+
 config USE_PERCPU_NUMA_NODE_ID
 	def_bool y
 	depends on NUMA
