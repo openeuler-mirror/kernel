@@ -52,6 +52,8 @@ void sw64_suspend_enter(void)
 
 static int native_suspend_enter(suspend_state_t state)
 {
+	if (is_in_guest())
+		return 0;
 	/* processor specific suspend */
 	sw64_suspend_enter();
 	return 0;
