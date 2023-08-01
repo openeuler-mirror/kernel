@@ -101,10 +101,10 @@ void kvm_restore_hw_perf(struct kvm_vcpu *vcpu);
 
 void kvm_acquire_timer(struct kvm_vcpu *vcpu);
 void kvm_reset_timer(struct kvm_vcpu *vcpu);
-enum hrtimer_restart kvm_count_timeout(struct kvm_vcpu *vcpu);
 void kvm_init_timer(struct kvm_vcpu *vcpu, unsigned long hz);
 void kvm_restore_timer(struct kvm_vcpu *vcpu);
 void kvm_save_timer(struct kvm_vcpu *vcpu);
+enum hrtimer_restart kvm_swtimer_wakeup(struct hrtimer *timer);
 
 /*
  * Loongarch KVM guest interrupt handling.

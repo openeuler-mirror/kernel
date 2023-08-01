@@ -499,20 +499,11 @@ static int _kvm_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 	return ret;
 }
 
-/* low level hrtimer wake routine */
-static enum hrtimer_restart kvm_swtimer_wakeup(struct hrtimer *timer)
-{
-	struct kvm_vcpu *vcpu;
-
-	vcpu = container_of(timer, struct kvm_vcpu, arch.swtimer);
-	_kvm_queue_irq(vcpu, LARCH_INT_TIMER);
-	kvm_vcpu_wake_up(vcpu);
-	return kvm_count_timeout(vcpu);
-}
-
 static void _kvm_vcpu_init(struct kvm_vcpu *vcpu)
 {
 	int i;
+	unsigned long timer_hz;
+	struct loongarch_csrs *csr = vcpu->arch.csr;
 
 	for_each_possible_cpu(i)
 		vcpu->arch.vpid[i] = 0;
@@ -522,6 +513,21 @@ static void _kvm_vcpu_init(struct kvm_vcpu *vcpu)
 	vcpu->arch.swtimer.function = kvm_swtimer_wakeup;
 	vcpu->arch.fpu_enabled = true;
 	vcpu->arch.lsx_enabled = true;
+
+	/*
+	 * Initialize guest register state to valid architectural reset state.
+	 */
+	timer_hz = calc_const_freq();
+	kvm_init_timer(vcpu, timer_hz);
+
+	/* Set Initialize mode for GUEST */
+	kvm_write_sw_gcsr(csr, KVM_CSR_CRMD, KVM_CRMD_DA);
+
+	/* Set cpuid */
+	kvm_write_sw_gcsr(csr, KVM_CSR_TMID, vcpu->vcpu_id);
+
+	/* start with no pending virtual guest interrupts */
+	csr->csrs[KVM_CSR_GINTC] = 0;
 }
 
 int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
@@ -1773,29 +1779,6 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 int kvm_arch_vcpu_ioctl_translate(struct kvm_vcpu *vcpu,
 				  struct kvm_translation *tr)
 {
-	return 0;
-}
-
-/* Initial guest state */
-int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
-{
-	struct loongarch_csrs *csr = vcpu->arch.csr;
-	unsigned long timer_hz;
-
-	/*
-	 * Initialize guest register state to valid architectural reset state.
-	 */
-	timer_hz = calc_const_freq();
-	kvm_init_timer(vcpu, timer_hz);
-
-	/* Set Initialize mode for GUEST */
-	kvm_write_sw_gcsr(csr, KVM_CSR_CRMD, KVM_CRMD_DA);
-
-	/* Set cpuid */
-	kvm_write_sw_gcsr(csr, KVM_CSR_TMID, vcpu->vcpu_id);
-
-	/* start with no pending virtual guest interrupts */
-	csr->csrs[KVM_CSR_GINTC] = 0;
 	return 0;
 }
 
