@@ -220,16 +220,9 @@ struct kvm_vcpu_arch {
 	/* vcpu's vpid is different on each host cpu in an smp system */
 	u64 vpid[NR_CPUS];
 
-	/* Period of stable timer tick in ns */
-	u64 timer_period;
 	/* Frequency of stable timer in Hz */
 	u64 timer_mhz;
-	/* Stable bias from the raw time */
-	u64 timer_bias;
-	/* Dynamic nanosecond bias (multiple of timer_period) to avoid overflow */
-	s64 timer_dyn_bias;
-	/* Save ktime */
-	ktime_t stable_ktime_saved;
+	ktime_t expire;
 
 	u64 core_ext_ioisr[4];
 
