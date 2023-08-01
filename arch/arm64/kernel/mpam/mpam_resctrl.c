@@ -2272,6 +2272,16 @@ void __mpam_sched_in(void)
 	}
 }
 
+void mpam_restore_context(void)
+{
+	struct intel_pqr_state *state = this_cpu_ptr(&pqr_state);
+
+	state->cur_rmid = 0;
+	state->cur_closid = 0;
+
+	mpam_sched_in();
+}
+
 static void
 mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
 			u32 resctrl_cfg, enum rdt_event_id evt,
