@@ -7070,8 +7070,6 @@ fail:
 }
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-
-#ifdef CONFIG_JUMP_LABEL
 static DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_used);
 
 static __always_inline bool dynamic_affinity_used(void)
@@ -7083,13 +7081,6 @@ void dynamic_affinity_enable(void)
 {
 	static_branch_enable_cpuslocked(&__dynamic_affinity_used);
 }
-
-#else /* CONFIG_JUMP_LABEL */
-static __always_inline bool dynamic_affinity_used(void)
-{
-	return true;
-}
-#endif
 
 /*
  * Low utilization threshold for CPU
