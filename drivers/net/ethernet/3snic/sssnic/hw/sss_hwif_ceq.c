@@ -302,7 +302,7 @@ int sss_hwif_init_ceq(struct sss_hwdev *hwdev)
 	act_num = sss_alloc_irq(hwdev, SSS_SERVICE_TYPE_INTF, irq_desc, ceq_num);
 	if (act_num == 0) {
 		sdk_err(hwdev->dev_hdl, "Fail to alloc irq, ceq_num: %u\n", ceq_num);
-		return ret;
+		return -EINVAL;
 	}
 
 	if (act_num < ceq_num) {
