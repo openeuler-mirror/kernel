@@ -666,7 +666,7 @@ static netdev_tx_t sss_nic_send_one_skb(struct sk_buff *skb,
 					struct sss_nic_sq_desc *sq_desc)
 {
 	u32 qinfo = 0;
-	u32 offload;
+	u32 offload = 0;
 	u16 pi = 0;
 	u16 owner;
 	u16 sge_cnt;

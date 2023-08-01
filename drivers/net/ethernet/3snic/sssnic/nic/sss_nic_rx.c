@@ -674,9 +674,9 @@ do { \
 #define sss_nic_xdp_update_rx_info(rq_desc, wqe_num)	\
 do { \
 	struct sss_nic_rx_desc *_rx_desc = NULL; \
-	u16 _wqe_num = wqe_num; \
+	u16 _wqe_cnt = wqe_num; \
 \
-	while (_wqe_num > 0) { \
+	while (_wqe_cnt > 0) { \
 		_rx_desc = &(rq_desc)->rx_desc_group[(rq_desc)->ci & (rq_desc)->qid_mask]; \
 		if (likely(page_to_nid(_rx_desc->page) == numa_node_id())) \
 			sss_nic_rx_reuse_dma_page((rq_desc), _rx_desc); \
@@ -686,7 +686,7 @@ do { \
 		_rx_desc->buf_daddr = 0; \
 		_rx_desc->page = NULL; \
 \
-		_wqe_num--; \
+		_wqe_cnt--; \
 	} \
 } while (0)
 
