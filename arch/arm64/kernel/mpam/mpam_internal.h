@@ -342,4 +342,6 @@ int rmid_mon_ptrs_init(u32 nr_rmids);
 struct resctrl_resource *
 mpam_resctrl_get_resource(enum resctrl_resource_level level);
 
+void mpam_restore_context(void);
+
 #endif

@@ -35,6 +35,7 @@
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
+#include <linux/cpu_pm.h>
 
 #include "mpam_resource.h"
 #include "mpam_device.h"
@@ -532,6 +533,30 @@ static void mpam_disable_irqs(void)
 	}
 }
 
+static struct notifier_block mpam_notifier_block;
+static int cpu_pm_mpam_notify(struct notifier_block *b,
+		unsigned long cmd, void *v)
+{
+	switch (cmd) {
+	case CPU_PM_ENTER:
+		break;
+	case CPU_PM_EXIT:
+	case CPU_PM_ENTER_FAILED:
+		mpam_restore_context();
+		break;
+	default:
+		return NOTIFY_DONE;
+	}
+
+	return NOTIFY_OK;
+}
+
+static int cpu_pm_mpam_register(void)
+{
+	mpam_notifier_block.notifier_call = cpu_pm_mpam_notify;
+	return cpu_pm_register_notifier(&mpam_notifier_block);
+}
+
 /*
  * Enable mpam once all devices have been probed.
  * Scheduled by mpam_discovery_complete() once all devices have been created.
@@ -604,6 +629,8 @@ static void mpam_enable(struct work_struct *work)
 	if (mpam_cpuhp_state <= 0)
 		pr_err("Failed to re-register 'dyn' cpuhp callbacks");
 	mutex_unlock(&mpam_cpuhp_lock);
+
+	cpu_pm_mpam_register();
 }
 
 static void mpam_failed(struct work_struct *work)
