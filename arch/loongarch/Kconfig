@@ -131,6 +131,9 @@ config LOONGARCH
 	select USER_STACKTRACE_SUPPORT
 	select ZONE_DMA32
 
+config TRACE_IRQFLAGS_SUPPORT
+	def_bool y
+
 config HAVE_SETUP_PER_CPU_AREA
 	def_bool y
 	depends on NUMA
