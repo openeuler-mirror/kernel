@@ -13,6 +13,7 @@
 #define HNS3_PFC_STORM_PARA_ENABLE 1
 #define HNS3_PFC_STORM_PARA_PERIOD_MIN 5
 #define HNS3_PFC_STORM_PARA_PERIOD_MAX 2000
+#define HNS3_MAX_TX_TIMEOUT (10 * 60 * HZ)
 
 #define nic_set_8211_phy_reg nic_set_phy_reg
 #define nic_get_8211_phy_reg nic_get_phy_reg

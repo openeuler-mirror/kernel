@@ -392,13 +392,15 @@ EXPORT_SYMBOL(nic_get_port_num_per_chip);
 
 int nic_set_tx_timeout(struct net_device *ndev, int tx_timeout)
 {
+	int watchdog_timeo = tx_timeout * HZ;
+
 	if (nic_netdev_match_check(ndev))
 		return -ENODEV;
 
-	if (tx_timeout <= 0)
+	if (watchdog_timeo <= 0 || watchdog_timeo > HNS3_MAX_TX_TIMEOUT)
 		return -EINVAL;
 
-	ndev->watchdog_timeo = tx_timeout;
+	ndev->watchdog_timeo = watchdog_timeo;
 
 	return 0;
 }
