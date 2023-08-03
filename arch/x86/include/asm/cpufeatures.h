@@ -487,6 +487,10 @@
 #define X86_FEATURE_CLEAR_BHB_HW	(21*32+ 3) /* "" BHI_DIS_S HW control enabled */
 #define X86_FEATURE_CLEAR_BHB_LOOP_ON_VMEXIT (21*32+ 4) /* "" Clear branch history at vmexit using SW loop */
 
+/* HYGON-defined CPU features, CPUID level 0x8c860000:0 (EDX), word 29 */
+#define X86_FEATURE_SM3			(29*32 + 1) /* SM3 instructions */
+#define X86_FEATURE_SM4			(29*32 + 2) /* SM4 instructions */
+
 /* VIA/Cyrix/Centaur/Zhaoxin-defined CPU features, CPUID level 0xC0000006, word 21 */
 #define X86_FEATURE_ZXPAUSE		(30*32 + 0) /* Zhaoxin ZXPAUSE */
 
