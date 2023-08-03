@@ -271,6 +271,22 @@ static void bsp_init_hygon(struct cpuinfo_x86 *c)
 	resctrl_cpu_detect(c);
 }
 
+static void init_hygon_cap(struct cpuinfo_x86 *c)
+{
+	/* Test for Extended Feature Flags presence */
+	if (cpuid_eax(0x8C860000) >= 0x8C860000) {
+		/*
+		 * Store Extended Feature Flags of the CPU capability
+		 * bit array
+		 */
+		if (cpuid_edx(0x8C860000) & BIT(1))
+			set_cpu_cap(c, X86_FEATURE_HYGON_SM3);
+
+		if (cpuid_edx(0x8C860000) & BIT(2))
+			set_cpu_cap(c, X86_FEATURE_HYGON_SM4);
+	}
+}
+
 static void early_detect_mem_encrypt(struct cpuinfo_x86 *c)
 {
 	u64 msr;
@@ -419,6 +435,8 @@ static void init_hygon(struct cpuinfo_x86 *c)
 		set_cpu_bug(c, X86_BUG_SYSRET_SS_ATTRS);
 
 	check_null_seg_clears_base(c);
+
+	init_hygon_cap(c);
 
 	/* Hygon CPUs don't need fencing after x2APIC/TSC_DEADLINE MSR writes. */
 	clear_cpu_cap(c, X86_FEATURE_APIC_MSRS_FENCE);

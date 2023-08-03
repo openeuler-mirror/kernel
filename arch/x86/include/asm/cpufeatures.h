@@ -256,6 +256,10 @@
 #define X86_FEATURE_VMCALL		( 8*32+18) /* "" Hypervisor supports the VMCALL instruction */
 #define X86_FEATURE_VMW_VMMCALL		( 8*32+19) /* "" VMware prefers VMMCALL hypercall instruction */
 
+/* HYGON-defined CPU features, CPUID level 0x8c860000:0 (EDX), word 8 */
+#define X86_FEATURE_HYGON_SM3		(8*32+21) /* "sm3" SM3 instructions */
+#define X86_FEATURE_HYGON_SM4		(8*32+22) /* "sm4" SM4 instructions */
+
 /* Intel-defined CPU features, CPUID level 0x00000007:0 (EBX), word 9 */
 #define X86_FEATURE_FSGSBASE		( 9*32+ 0) /* RDFSBASE, WRFSBASE, RDGSBASE, WRGSBASE instructions*/
 #define X86_FEATURE_TSC_ADJUST		( 9*32+ 1) /* TSC adjustment MSR 0x3B */
