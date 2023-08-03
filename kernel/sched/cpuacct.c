@@ -390,6 +390,7 @@ static int __init setup_psi_v1(char *str)
 }
 __setup("psi_v1=", setup_psi_v1);
 
+extern struct cftype cgroup_v1_psi_files[];
 static int __init cgroup_v1_psi_init(void)
 {
 	if (!psi_v1_enable)
