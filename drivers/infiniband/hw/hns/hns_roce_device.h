@@ -108,6 +108,7 @@
 #define MAX_NOTIFY_MEM_SIZE BIT(24)
 
 #define HNS_ROCE_MEM_BAR 2
+#define CQ_BANKID_MASK GENMASK(1, 0)
 
 enum {
 	SERV_TYPE_RC,
