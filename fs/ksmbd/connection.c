@@ -329,8 +329,6 @@ int ksmbd_conn_handler_loop(void *p)
 			continue;
 
 		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		if (!ksmbd_smb_request(conn))
-			break;
 
 		/*
 		 * We already read 4 bytes to find out PDU size, now
@@ -347,6 +345,9 @@ int ksmbd_conn_handler_loop(void *p)
 			       size, pdu_size);
 			continue;
 		}
+
+		if (!ksmbd_smb_request(conn))
+			break;
 
 		if (!default_conn_ops.process_fn) {
 			pr_err("No connection request callback\n");
