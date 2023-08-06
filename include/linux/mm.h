@@ -2493,6 +2493,7 @@ extern void get_pfn_range_for_nid(unsigned int nid,
 extern unsigned long find_min_pfn_with_active_regions(void);
 
 extern bool mirrored_kernelcore;
+extern bool memblock_has_mirror(void);
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 static inline int early_pfn_to_nid(unsigned long pfn)
