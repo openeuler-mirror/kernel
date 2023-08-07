@@ -2077,6 +2077,10 @@ static int probe_vendor_drivers(struct vfio_pci_device *vdev)
 	list_for_each_entry(driver, &vfio_pci.vendor_drivers_list, next) {
 		void *data;
 
+		if (vdev->pdev->vendor != driver->ops->vendor ||
+		    vdev->pdev->device != driver->ops->device)
+			continue;
+
 		if (!try_module_get(driver->ops->owner))
 			continue;
 
@@ -2604,7 +2608,8 @@ int __vfio_pci_register_vendor_driver(struct vfio_pci_vendor_driver_ops *ops)
 
 	/* Check for duplicates */
 	list_for_each_entry(tmp, &vfio_pci.vendor_drivers_list, next) {
-		if (tmp->ops->device_ops == ops->device_ops) {
+		if (tmp->ops->vendor == ops->vendor &&
+		    tmp->ops->vendor == ops->device) {
 			mutex_unlock(&vfio_pci.vendor_drivers_lock);
 			kfree(driver);
 			return -EINVAL;
@@ -2622,14 +2627,15 @@ int __vfio_pci_register_vendor_driver(struct vfio_pci_vendor_driver_ops *ops)
 }
 EXPORT_SYMBOL_GPL(__vfio_pci_register_vendor_driver);
 
-void vfio_pci_unregister_vendor_driver(struct vfio_device_ops *device_ops)
+void vfio_pci_unregister_vendor_driver(struct vfio_pci_vendor_driver_ops *ops)
 {
 	struct vfio_pci_vendor_driver *driver, *tmp;
 
 	mutex_lock(&vfio_pci.vendor_drivers_lock);
 	list_for_each_entry_safe(driver, tmp,
 				 &vfio_pci.vendor_drivers_list, next) {
-		if (driver->ops->device_ops == device_ops) {
+		if (driver->ops->vendor == ops->vendor &&
+		    driver->ops->device == ops->device) {
 			list_del(&driver->next);
 			mutex_unlock(&vfio_pci.vendor_drivers_lock);
 			kfree(driver);
