@@ -227,10 +227,6 @@ static int hclge_notify_down_uinit(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
-	ret = hclge_tm_flush_cfg(hdev, true);
-	if (ret)
-		return ret;
-
 	return hclge_notify_client(hdev, HNAE3_UNINIT_CLIENT);
 }
 
@@ -239,10 +235,6 @@ static int hclge_notify_init_up(struct hclge_dev *hdev)
 	int ret;
 
 	ret = hclge_notify_client(hdev, HNAE3_INIT_CLIENT);
-	if (ret)
-		return ret;
-
-	ret = hclge_tm_flush_cfg(hdev, false);
 	if (ret)
 		return ret;
 
@@ -332,7 +324,6 @@ static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 	struct net_device *netdev = h->kinfo.netdev;
 	struct hclge_dev *hdev = vport->back;
 	u8 i, j, pfc_map, *prio_tc;
-	int last_bad_ret = 0;
 	int ret;
 
 	if (!(hdev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE))
@@ -370,28 +361,13 @@ static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 	if (ret)
 		return ret;
 
-	ret = hclge_tm_flush_cfg(hdev, true);
-	if (ret)
-		return ret;
-
-	/* No matter whether the following operations are performed
-	 * successfully or not, disabling the tm flush and notify
-	 * the network status to up are necessary.
-	 * Do not return immediately.
-	 */
 	ret = hclge_buffer_alloc(hdev);
-	if (ret)
-		last_bad_ret = ret;
+	if (ret) {
+		hclge_notify_client(hdev, HNAE3_UP_CLIENT);
+		return ret;
+	}
 
-	ret = hclge_tm_flush_cfg(hdev, false);
-	if (ret)
-		last_bad_ret = ret;
-
-	ret = hclge_notify_client(hdev, HNAE3_UP_CLIENT);
-	if (ret)
-		last_bad_ret = ret;
-
-	return last_bad_ret;
+	return hclge_notify_client(hdev, HNAE3_UP_CLIENT);
 }
 
 static int hclge_ieee_setapp(struct hnae3_handle *h, struct dcb_app *app)
