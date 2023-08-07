@@ -308,6 +308,18 @@ void disassociate_ctty(int on_exit)
 		spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 		tty_unlock(tty);
 		tty_kref_put(tty);
+
+		/*
+		 * Race with tty_signal_session_leader(), current->signal
+		 * ->tty_old_pgrp may be reassigned, put_pid() again to ensure
+		 *  the pid does not leak memory.
+		 */
+		if (on_exit) {
+			spin_lock_irq(&current->sighand->siglock);
+			put_pid(current->signal->tty_old_pgrp);
+			current->signal->tty_old_pgrp = NULL;
+			spin_unlock_irq(&current->sighand->siglock);
+		}
 	}
 
 	/* Now clear signal->tty under the lock */
