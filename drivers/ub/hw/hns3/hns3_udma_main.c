@@ -74,6 +74,21 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_hw_profile;
 	}
 
+	ret = udma_cmd_init(udma_dev);
+	if (ret) {
+		dev_err(dev, "cmd init failed!\n");
+		goto error_failed_cmd_init;
+	}
+
+	if (udma_dev->cmd_mod) {
+		ret = udma_cmd_use_events(udma_dev);
+		if (ret) {
+			udma_dev->cmd_mod = 0;
+			dev_warn(dev,
+				 "Cmd event mode failed, set back to poll!\n");
+		}
+	}
+
 	ret = udma_dev->hw->hw_init(udma_dev);
 	if (ret) {
 		dev_err(dev, "hw_init failed!\n");
@@ -92,6 +107,7 @@ error_failed_register_device:
 	udma_dev->hw->hw_exit(udma_dev);
 
 error_failed_engine_init:
+error_failed_cmd_init:
 error_failed_hw_profile:
 	udma_dev->hw->cmq_exit(udma_dev);
 

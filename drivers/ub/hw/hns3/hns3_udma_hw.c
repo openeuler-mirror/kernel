@@ -393,14 +393,89 @@ static int udma_profile(struct udma_dev *udma_dev)
 	return udma_pf_profile(udma_dev);
 }
 
+static int udma_alloc_cmq_desc(struct udma_dev *udma_dev,
+			       struct udma_cmq_ring *ring)
+{
+	int size = ring->desc_num * sizeof(struct udma_cmq_desc);
+
+	ring->desc = kzalloc(size, GFP_KERNEL);
+	if (!ring->desc)
+		return -ENOMEM;
+
+	ring->desc_dma_addr = dma_map_single(udma_dev->dev, ring->desc, size,
+					     DMA_BIDIRECTIONAL);
+	if (dma_mapping_error(udma_dev->dev, ring->desc_dma_addr)) {
+		ring->desc_dma_addr = 0;
+		kfree(ring->desc);
+		ring->desc = NULL;
+
+		dev_err_ratelimited(udma_dev->dev,
+				    "failed to map cmq desc addr.\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void udma_free_cmq_desc(struct udma_dev *udma_dev,
+			       struct udma_cmq_ring *ring)
+{
+	dma_unmap_single(udma_dev->dev, ring->desc_dma_addr,
+			 ring->desc_num * sizeof(struct udma_cmq_desc),
+			 DMA_BIDIRECTIONAL);
+
+	ring->desc_dma_addr = 0;
+	kfree(ring->desc);
+	ring->desc = NULL;
+}
+
+static int init_csq(struct udma_dev *udma_dev,
+		    struct udma_cmq_ring *csq)
+{
+	dma_addr_t dma;
+	int ret;
+
+	csq->desc_num = UDMA_CMD_CSQ_DESC_NUM;
+	mutex_init(&csq->lock);
+	csq->flag = TYPE_CSQ;
+	csq->head = 0;
+
+	ret = udma_alloc_cmq_desc(udma_dev, csq);
+	if (ret)
+		return ret;
+
+	dma = csq->desc_dma_addr;
+	ub_write(udma_dev, UDMA_TX_CMQ_BASEADDR_L_REG, lower_32_bits(dma));
+	ub_write(udma_dev, UDMA_TX_CMQ_BASEADDR_H_REG, upper_32_bits(dma));
+	ub_write(udma_dev, UDMA_TX_CMQ_DEPTH_REG,
+		 (uint32_t)csq->desc_num >> UDMA_CMQ_DESC_NUM_S);
+
+	/* Make sure to write CI first and then PI */
+	ub_write(udma_dev, UDMA_TX_CMQ_CI_REG, 0);
+	ub_write(udma_dev, UDMA_TX_CMQ_PI_REG, 0);
+
+	return 0;
+}
+
 static int udma_cmq_init(struct udma_dev *udma_dev)
 {
-	return 0;
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+	int ret;
+
+	priv->cmq.tx_timeout = UDMA_CMQ_TX_TIMEOUT;
+
+	ret = init_csq(udma_dev, &priv->cmq.csq);
+	if (ret)
+		dev_err(udma_dev->dev, "failed to init CSQ, ret = %d.\n", ret);
+
+	return ret;
 }
 
 static void udma_cmq_exit(struct udma_dev *udma_dev)
 {
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
 
+	udma_free_cmq_desc(udma_dev, &priv->cmq.csq);
 }
 
 static int udma_hw_init(struct udma_dev *udma_dev)
@@ -419,6 +494,8 @@ static const struct udma_hw udma_hw = {
 	.hw_profile = udma_profile,
 	.hw_init = udma_hw_init,
 	.hw_exit = udma_hw_exit,
+	.post_mbox = udma_post_mbox,
+	.poll_mbox_done = udma_poll_mbox_done,
 };
 
 static void udma_get_cfg(struct udma_dev *udma_dev,

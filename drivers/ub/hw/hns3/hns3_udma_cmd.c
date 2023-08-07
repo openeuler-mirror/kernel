@@ -43,6 +43,75 @@ void udma_cmd_cleanup(struct udma_dev *udma_dev)
 	up_write(&udma_dev->cmd.udma_mb_rwsem);
 }
 
+int udma_cmd_use_events(struct udma_dev *udma_dev)
+{
+	struct udma_cmdq *udma_cmd = &udma_dev->cmd;
+	int i;
+
+	udma_cmd->context = (struct udma_cmd_context *)
+		kcalloc(udma_cmd->max_cmds, sizeof(*udma_cmd->context),
+			GFP_KERNEL);
+	if (!udma_cmd->context)
+		return -ENOMEM;
+
+	for (i = 0; i < udma_cmd->max_cmds; ++i) {
+		udma_cmd->context[i].token = i;
+		udma_cmd->context[i].next = i + 1;
+		init_completion(&udma_cmd->context[i].done);
+	}
+	udma_cmd->context[udma_cmd->max_cmds - 1].next = 0;
+	udma_cmd->free_head = 0;
+
+	sema_init(&udma_cmd->event_sem, udma_cmd->max_cmds);
+	spin_lock_init(&udma_cmd->ctx_lock);
+
+	udma_cmd->use_events = 1;
+
+	return 0;
+}
+
+void udma_cmd_use_polling(struct udma_dev *udma_dev)
+{
+	struct udma_cmdq *udma_cmd = &udma_dev->cmd;
+
+	kfree(udma_cmd->context);
+	udma_cmd->use_events = 0;
+}
+
+struct udma_cmd_mailbox *udma_alloc_cmd_mailbox(struct udma_dev *dev)
+{
+	struct udma_cmd_mailbox *mailbox;
+
+	mailbox = kzalloc(sizeof(*mailbox), GFP_KERNEL);
+	if (!mailbox)
+		return ERR_PTR(-ENOMEM);
+
+	down_read(&dev->cmd.udma_mb_rwsem);
+	mailbox->buf =
+		dma_pool_zalloc(dev->cmd.pool, GFP_KERNEL, &mailbox->dma);
+	if (!mailbox->buf) {
+		up_read(&dev->cmd.udma_mb_rwsem);
+
+		kfree(mailbox);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	return mailbox;
+}
+
+void udma_free_cmd_mailbox(struct udma_dev *dev,
+			   struct udma_cmd_mailbox *mailbox)
+{
+	if (!mailbox)
+		return;
+
+	dma_pool_free(dev->cmd.pool, mailbox->buf, mailbox->dma);
+
+	up_read(&dev->cmd.udma_mb_rwsem);
+
+	kfree(mailbox);
+}
+
 static uint32_t udma_cmd_hw_reseted(struct udma_dev *dev,
 				    uint64_t instance_stage,
 				    uint64_t reset_stage)
@@ -299,4 +368,231 @@ int udma_cmq_send(struct udma_dev *dev, struct udma_cmq_desc *desc, int num)
 	}
 
 	return ret;
+}
+
+static int udma_wait_mbox_complete(struct udma_dev *dev, uint32_t timeout,
+				   uint8_t *complete_status)
+{
+	struct udma_mbox_status *mb_st;
+	struct udma_cmq_desc desc;
+	unsigned long end;
+	int ret = -EBUSY;
+	uint32_t status;
+	bool busy;
+
+	mb_st = (struct udma_mbox_status *)desc.data;
+	end = msecs_to_jiffies(timeout) + jiffies;
+	while (udma_chk_mbox_is_avail(dev, &busy)) {
+		status = 0;
+		udma_cmq_setup_basic_desc(&desc, UDMA_OPC_QUERY_MB_ST,
+					  true);
+		ret = __udma_cmq_send(dev, &desc, 1);
+		if (!ret) {
+			status = le32_to_cpu(mb_st->mb_status_hw_run);
+			/* No pending message exists in UDMA mbox. */
+			if (!(status & MB_ST_HW_RUN_M))
+				break;
+		} else if (!udma_chk_mbox_is_avail(dev, &busy)) {
+			break;
+		}
+
+		if (time_after(jiffies, end)) {
+			dev_err_ratelimited(dev->dev,
+					    "failed to wait mbox status 0x%x\n",
+					    status);
+			return -ETIMEDOUT;
+		}
+
+		cond_resched();
+		ret = -EBUSY;
+	}
+
+	if (!ret) {
+		*complete_status = (uint8_t)(status & MB_ST_COMPLETE_M);
+	} else if (!udma_chk_mbox_is_avail(dev, &busy)) {
+		/* Ignore all errors if the mbox is unavailable. */
+		ret = busy ? -EBUSY : 0;
+		*complete_status = MB_ST_COMPLETE_M;
+	}
+
+	return ret;
+}
+
+static int __udma_post_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
+			    uint16_t token, int vfid_event)
+{
+	struct udma_mbox *mb = (struct udma_mbox *)desc->data;
+
+	mb->token_event_en = cpu_to_le32(vfid_event
+					 << UDMA_MB_EVENT_EN_SHIFT | token);
+
+	return udma_cmq_send(dev, desc, 1);
+}
+
+int udma_post_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
+		   uint16_t token, int vfid_event)
+{
+	uint8_t status = 0;
+	int ret;
+
+	/* Waiting for the mbox to be idle */
+	ret = udma_wait_mbox_complete(dev, UDMA_GO_BIT_TIMEOUT_MSECS,
+				      &status);
+	if (unlikely(ret)) {
+		dev_err_ratelimited(dev->dev,
+				    "failed to check post mbox status = 0x%x, ret = %d.\n",
+				    status, ret);
+		return ret;
+	}
+
+	/* Post new message to mbox */
+	ret = __udma_post_mbox(dev, desc, token, vfid_event);
+	if (ret)
+		dev_err_ratelimited(dev->dev,
+				    "failed to post mailbox, ret = %d.\n", ret);
+
+	return ret;
+}
+
+int udma_poll_mbox_done(struct udma_dev *dev, uint32_t timeout)
+{
+	uint8_t status = 0;
+	int ret;
+
+	ret = udma_wait_mbox_complete(dev, timeout, &status);
+	if (!ret) {
+		if (status != MB_ST_COMPLETE_SUCC)
+			return -EBUSY;
+	} else {
+		dev_err_ratelimited(dev->dev,
+				    "failed to check mbox status = 0x%x, ret = %d.\n",
+				    status, ret);
+	}
+
+	return ret;
+}
+
+static int udma_cmd_mbox_post_hw(struct udma_dev *dev,
+				 struct udma_cmq_desc *desc,
+				 uint16_t token, int vfid_event)
+{
+	return dev->hw->post_mbox(dev, desc, token, vfid_event);
+}
+
+static int __udma_cmd_mbox_poll(struct udma_dev *dev,
+				struct udma_cmq_desc *desc,
+				uint32_t timeout, int vfid)
+{
+	int vfid_event = (vfid << 1);
+	int ret, op;
+
+	op = le32_to_cpu(((struct udma_mbox *)desc->data)->cmd_tag) & 0xff;
+	ret = udma_cmd_mbox_post_hw(dev, desc, CMD_POLL_TOKEN, vfid_event);
+	if (ret) {
+		dev_err_ratelimited(dev->dev,
+				    "failed to post mailbox %x in poll mode, ret = %d.\n",
+				    op, ret);
+		return ret;
+	}
+
+	return dev->hw->poll_mbox_done(dev, timeout);
+}
+
+static int udma_cmd_mbox_poll(struct udma_dev *dev, struct udma_cmq_desc *desc,
+			      uint32_t timeout, int vfid)
+{
+	int ret;
+
+	down(&dev->cmd.poll_sem);
+	ret = __udma_cmd_mbox_poll(dev, desc, timeout, vfid);
+	up(&dev->cmd.poll_sem);
+
+	return ret;
+}
+
+void udma_cmd_event(struct udma_dev *udma_dev, uint16_t token, uint8_t status,
+		    uint64_t out_param)
+{
+	struct udma_cmd_context *ctx =
+		&udma_dev->cmd.context[token % udma_dev->cmd.max_cmds];
+
+	if (unlikely(token != ctx->token)) {
+		dev_err_ratelimited(udma_dev->dev,
+				    "[cmd] invalid ae token 0x%x, context token is 0x%x.\n",
+				    token, ctx->token);
+		return;
+	}
+
+	ctx->result = (status == CMD_RST_PRC_SUCCESS) ? 0 : (-EIO);
+	ctx->out_param = out_param;
+	complete(&ctx->done);
+}
+
+static int __udma_cmd_mbox_wait(struct udma_dev *udma_dev,
+				struct udma_cmq_desc *desc,
+				uint32_t timeout, int vfid)
+{
+	struct udma_cmdq *cmd = &udma_dev->cmd;
+	int vfid_event = (vfid << 1) | 0x1;
+	struct device *dev = udma_dev->dev;
+	struct udma_cmd_context *context;
+	int ret, op;
+
+	spin_lock(&cmd->ctx_lock);
+	do {
+		context = &cmd->context[cmd->free_head];
+		cmd->free_head = context->next;
+	} while (context->busy);
+	context->token += cmd->max_cmds;
+	context->busy = 1;
+	spin_unlock(&cmd->ctx_lock);
+
+	reinit_completion(&context->done);
+
+	op = le32_to_cpu(((struct udma_mbox *)desc->data)->cmd_tag) & 0xff;
+	ret = udma_cmd_mbox_post_hw(udma_dev, desc, context->token, vfid_event);
+	if (ret) {
+		dev_err_ratelimited(dev,
+				    "failed to post mailbox %x in event mode, ret = %d.\n",
+				    op, ret);
+		goto out;
+	}
+
+	if (!wait_for_completion_timeout(&context->done,
+					 msecs_to_jiffies(timeout))) {
+		dev_err_ratelimited(dev, "[cmd]token 0x%x of mailbox 0x%x timeout.\n",
+				    context->token, op);
+		ret = -EBUSY;
+		goto out;
+	}
+
+	ret = context->result;
+	if (ret)
+		dev_err_ratelimited(dev, "[cmd]token 0x%x of mailbox 0x%x error %d\n",
+				    context->token, op, ret);
+
+out:
+	context->busy = 0;
+	return ret;
+}
+
+static int udma_cmd_mbox_wait(struct udma_dev *dev, struct udma_cmq_desc *desc,
+			      uint32_t timeout, int vfid)
+{
+	int ret;
+
+	down(&dev->cmd.event_sem);
+	ret = __udma_cmd_mbox_wait(dev, desc, timeout, vfid);
+	up(&dev->cmd.event_sem);
+
+	return ret;
+}
+
+int udma_cmd_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
+		  uint32_t timeout, int vfid)
+{
+	if (dev->cmd.use_events)
+		return udma_cmd_mbox_wait(dev, desc, timeout, vfid);
+	else
+		return udma_cmd_mbox_poll(dev, desc, timeout, vfid);
 }

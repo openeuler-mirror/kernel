@@ -38,8 +38,53 @@ enum {
 	CMD_RST_PRC_EBUSY,
 };
 
+struct udma_mbox {
+	uint32_t	in_param_l;
+	uint32_t	in_param_h;
+	uint32_t	out_param_l;
+	uint32_t	out_param_h;
+	uint32_t	cmd_tag;
+	uint32_t	token_event_en;
+};
+
+struct udma_mbox_status {
+	uint32_t	mb_status_hw_run;
+	uint32_t	rsv[5];
+};
+
+#define UDMA_GO_BIT_TIMEOUT_MSECS 10000
+
+#define MB_ST_HW_RUN_M BIT(31)
+#define MB_ST_COMPLETE_M GENMASK(7, 0)
+
+#define MB_ST_COMPLETE_SUCC 1
+#define UDMA_MB_EVENT_EN_SHIFT 16
+
+void dump_desc(struct udma_dev *dev, struct udma_cmq_desc *desc);
+struct udma_cmd_mailbox *udma_alloc_cmd_mailbox(struct udma_dev *dev);
+void udma_free_cmd_mailbox(struct udma_dev *dev,
+			   struct udma_cmd_mailbox *mailbox);
+int udma_post_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
+		   uint16_t token, int vfid_event);
+int udma_poll_mbox_done(struct udma_dev *dev, uint32_t timeout);
+bool udma_chk_mbox_is_avail(struct udma_dev *dev, bool *busy);
 void udma_cmq_setup_basic_desc(struct udma_cmq_desc *desc,
 			       enum udma_opcode_type opcode,
 			       bool is_read);
 int udma_cmq_send(struct udma_dev *dev, struct udma_cmq_desc *desc, int num);
+int udma_cmd_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
+		  uint32_t timeout, int vfid);
+void udma_cmd_event(struct udma_dev *udma_dev, uint16_t token, uint8_t status,
+		    uint64_t out_param);
+static inline void mbox_desc_init(struct udma_mbox *mb, uint64_t in_param,
+				  uint64_t out_param, uint32_t in_modifier,
+				  uint16_t op)
+{
+	mb->in_param_l = cpu_to_le32(in_param);
+	mb->in_param_h = cpu_to_le32(in_param >> 32);
+	mb->out_param_l = cpu_to_le32(out_param);
+	mb->out_param_h = cpu_to_le32(out_param >> 32);
+	mb->cmd_tag = cpu_to_le32(in_modifier << 8 | op);
+}
+
 #endif /* _UDMA_CMD_H */

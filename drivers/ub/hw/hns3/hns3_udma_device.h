@@ -25,6 +25,14 @@
 #define UDMA_INVALID_ID				0xffff
 #define UDMA_MAX_IRQ_NUM			128
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
+
+#define UDMA_CMQ_TX_TIMEOUT			30000
+#define UDMA_CMQ_DESC_NUM_S			3
+#define UDMA_CMD_CSQ_DESC_NUM			1024
+
+#define UDMA_TX_CMQ_BASEADDR_L_REG		0x07000
+#define UDMA_TX_CMQ_BASEADDR_H_REG		0x07004
+#define UDMA_TX_CMQ_DEPTH_REG			0x07008
 #define UDMA_TX_CMQ_PI_REG			0x07010
 #define UDMA_TX_CMQ_CI_REG			0x07014
 
@@ -42,9 +50,15 @@ enum udma_instance_state {
 	UDMA_STATE_UNINIT,
 };
 
+enum {
+	TYPE_CSQ = 1
+};
+
 struct udma_cmd_context {
 	struct completion	done;
+	int			result;
 	int			next;
+	uint64_t		out_param;
 	uint16_t		token;
 	uint16_t		busy;
 };
@@ -89,6 +103,12 @@ struct udma_cmdq {
 	struct rw_semaphore	udma_mb_rwsem;
 	enum udma_cmdq_state	state;
 };
+
+struct udma_cmd_mailbox {
+	void		       *buf;
+	dma_addr_t		dma;
+};
+
 struct udma_netdev {
 	spinlock_t		lock;
 	struct net_device	*netdevs[UDMA_MAX_PORTS];
@@ -116,6 +136,10 @@ struct udma_hw {
 	int (*hw_profile)(struct udma_dev *udma_dev);
 	int (*hw_init)(struct udma_dev *udma_dev);
 	void (*hw_exit)(struct udma_dev *udma_dev);
+	int (*post_mbox)(struct udma_dev *udma_dev, struct udma_cmq_desc *desc,
+			 uint16_t token, int event);
+	int (*poll_mbox_done)(struct udma_dev *udma_dev,
+			      uint32_t timeout);
 };
 
 struct udma_caps {
@@ -291,6 +315,12 @@ struct udma_dev {
 	uint32_t			cong_algo_tmpl_id;
 };
 
+int udma_cmd_init(struct udma_dev *udma_dev);
+void udma_cmd_cleanup(struct udma_dev *udma_dev);
+int udma_cmd_use_events(struct udma_dev *udma_dev);
+void udma_cmd_use_polling(struct udma_dev *udma_dev);
+int udma_cmq_send(struct udma_dev *udma_dev,
+		  struct udma_cmq_desc *desc, int num);
 int udma_hnae_client_init(struct udma_dev *udma_dev);
 void udma_hnae_client_exit(struct udma_dev *udma_dev);
 
