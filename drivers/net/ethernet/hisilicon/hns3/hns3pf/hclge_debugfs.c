@@ -2513,64 +2513,6 @@ static int hclge_dbg_dump_mac_mc(struct hclge_dev *hdev, char *buf, int len)
 	return 0;
 }
 
-static void hclge_dump_wol_mode(u32 mode, char *buf, int len, int *pos)
-{
-	if (mode & HCLGE_WOL_PHY)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [p]phy\n");
-
-	if (mode & HCLGE_WOL_UNICAST)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [u]unicast\n");
-
-	if (mode & HCLGE_WOL_MULTICAST)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [m]multicast\n");
-
-	if (mode & HCLGE_WOL_BROADCAST)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [b]broadcast\n");
-
-	if (mode & HCLGE_WOL_ARP)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [a]arp\n");
-
-	if (mode & HCLGE_WOL_MAGIC)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [g]magic\n");
-
-	if (mode & HCLGE_WOL_MAGICSECURED)
-		*pos += scnprintf(buf + *pos, len - *pos,
-				 "  [s]magic secured\n");
-
-	if (mode & HCLGE_WOL_FILTER)
-		*pos += scnprintf(buf + *pos, len - *pos, "  [f]filter\n");
-}
-
-static int hclge_dbg_dump_wol_info(struct hclge_dev *hdev, char *buf, int len)
-{
-	u32 wol_supported;
-	int pos = 0;
-	u32 mode;
-
-	if (!hnae3_ae_dev_wol_supported(hdev->ae_dev)) {
-		pos += scnprintf(buf + pos, len - pos,
-				 "wake-on-lan is unsupported\n");
-		return 0;
-	}
-
-	pos += scnprintf(buf + pos, len - pos, "wake-on-lan mode:\n");
-	pos += scnprintf(buf + pos, len - pos, " supported:\n");
-	if (hclge_get_wol_supported_mode(hdev, &wol_supported))
-		return -EINVAL;
-
-	hclge_dump_wol_mode(wol_supported, buf, len, &pos);
-
-	pos += scnprintf(buf + pos, len - pos, " current:\n");
-	if (hclge_get_wol_cfg(hdev, &mode))
-		return -EINVAL;
-	if (mode)
-		hclge_dump_wol_mode(mode, buf, len, &pos);
-	else
-		pos += scnprintf(buf + pos, len - pos, "  [d]disabled\n");
-
-	return 0;
-}
-
 static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_TM_NODES,
@@ -2719,10 +2661,6 @@ static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_UMV_INFO,
 		.dbg_dump = hclge_dbg_dump_umv_info,
-	},
-	{
-		.cmd = HNAE3_DBG_CMD_WOL_INFO,
-		.dbg_dump = hclge_dbg_dump_wol_info,
 	},
 };
 
