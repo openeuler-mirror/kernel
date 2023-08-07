@@ -202,7 +202,7 @@ static const struct hisi_qm_cap_info hpre_basic_info[] = {
 	{HPRE_QM_RESET_MASK_CAP, 0x3128, 0, GENMASK(31, 0), 0x0, 0xC37, 0x6C37},
 	{HPRE_QM_OOO_SHUTDOWN_MASK_CAP, 0x3128, 0, GENMASK(31, 0), 0x0, 0x4, 0x6C37},
 	{HPRE_QM_CE_MASK_CAP, 0x312C, 0, GENMASK(31, 0), 0x0, 0x8, 0x8},
-	{HPRE_NFE_MASK_CAP, 0x3130, 0, GENMASK(31, 0), 0x0, 0x3FFFFE, 0xFFFFFE},
+	{HPRE_NFE_MASK_CAP, 0x3130, 0, GENMASK(31, 0), 0x0, 0x3FFFFE, 0x1FFFFFE},
 	{HPRE_RESET_MASK_CAP, 0x3134, 0, GENMASK(31, 0), 0x0, 0x3FFFFE, 0xBFFFFE},
 	{HPRE_OOO_SHUTDOWN_MASK_CAP, 0x3134, 0, GENMASK(31, 0), 0x0, 0x22, 0xBFFFFE},
 	{HPRE_CE_MASK_CAP, 0x3138, 0, GENMASK(31, 0), 0x0, 0x1, 0x1},
@@ -278,6 +278,9 @@ static const struct hpre_hw_error hpre_hw_errors[] = {
 	}, {
 		.int_msk = BIT(23),
 		.msg = "sva_fsm_timeout_int_set"
+	}, {
+		.int_msk = BIT(24),
+		.msg = "sva_int_set"
 	}, {
 		/* sentinel */
 	}
@@ -1262,11 +1265,26 @@ static u32 hpre_get_hw_err_status(struct hisi_qm *qm)
 
 static void hpre_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
 {
-	u32 nfe;
-
 	writel(err_sts, qm->io_base + HPRE_HAC_SOURCE_INT);
-	nfe = hisi_qm_get_hw_info(qm, hpre_basic_info, HPRE_NFE_MASK_CAP, qm->cap_ver);
-	writel(nfe, qm->io_base + HPRE_RAS_NFE_ENB);
+}
+
+static void hpre_disable_error_report(struct hisi_qm *qm, u32 err_type)
+{
+	u32 nfe_mask;
+
+	nfe_mask = hisi_qm_get_hw_info(qm, hpre_basic_info, HPRE_NFE_MASK_CAP, qm->cap_ver);
+	writel(nfe_mask & (~err_type), qm->io_base + HPRE_RAS_NFE_ENB);
+}
+
+static void hpre_enable_error_report(struct hisi_qm *qm)
+{
+	u32 nfe_mask, ce_mask;
+
+	nfe_mask = hisi_qm_get_hw_info(qm, hpre_basic_info, HPRE_NFE_MASK_CAP, qm->cap_ver);
+	ce_mask = hisi_qm_get_hw_info(qm, hpre_basic_info, HPRE_CE_MASK_CAP, qm->cap_ver);
+
+	writel(nfe_mask, qm->io_base + HPRE_RAS_NFE_ENB);
+	writel(ce_mask, qm->io_base + HPRE_RAS_CE_ENB);
 }
 
 static void hpre_open_axi_master_ooo(struct hisi_qm *qm)
@@ -1306,6 +1324,8 @@ static const struct hisi_qm_err_ini hpre_err_ini = {
 	.hw_err_disable		= hpre_hw_error_disable,
 	.get_dev_hw_err_status	= hpre_get_hw_err_status,
 	.clear_dev_hw_err_status = hpre_clear_hw_err_status,
+	.disable_error_report   = hpre_disable_error_report,
+	.enable_error_report	= hpre_enable_error_report,
 	.log_dev_hw_err		= hpre_log_hw_error,
 	.open_axi_master_ooo	= hpre_open_axi_master_ooo,
 	.open_sva_prefetch	= hpre_open_sva_prefetch,

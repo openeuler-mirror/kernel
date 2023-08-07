@@ -1012,11 +1012,25 @@ static u32 sec_get_hw_err_status(struct hisi_qm *qm)
 
 static void sec_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
 {
-	u32 nfe;
-
 	writel(err_sts, qm->io_base + SEC_CORE_INT_SOURCE);
-	nfe = hisi_qm_get_hw_info(qm, sec_basic_info, SEC_NFE_MASK_CAP, qm->cap_ver);
-	writel(nfe, qm->io_base + SEC_RAS_NFE_REG);
+}
+
+static void sec_disable_error_report(struct hisi_qm *qm, u32 err_type)
+{
+	u32 nfe_mask;
+
+	nfe_mask = hisi_qm_get_hw_info(qm, sec_basic_info, SEC_NFE_MASK_CAP, qm->cap_ver);
+	writel(nfe_mask & (~err_type), qm->io_base + SEC_RAS_NFE_REG);
+}
+
+static void sec_enable_error_report(struct hisi_qm *qm)
+{
+	u32 nfe_mask, ce_mask;
+
+	nfe_mask = hisi_qm_get_hw_info(qm, sec_basic_info, SEC_NFE_MASK_CAP, qm->cap_ver);
+	ce_mask = hisi_qm_get_hw_info(qm, sec_basic_info, SEC_CE_MASK_CAP, qm->cap_ver);
+	writel(nfe_mask, qm->io_base + SEC_RAS_NFE_REG);
+	writel(ce_mask, qm->io_base + SEC_RAS_CE_REG);
 }
 
 static void sec_open_axi_master_ooo(struct hisi_qm *qm)
@@ -1054,6 +1068,8 @@ static const struct hisi_qm_err_ini sec_err_ini = {
 	.hw_err_disable		= sec_hw_error_disable,
 	.get_dev_hw_err_status	= sec_get_hw_err_status,
 	.clear_dev_hw_err_status = sec_clear_hw_err_status,
+	.disable_error_report   = sec_disable_error_report,
+	.enable_error_report    = sec_enable_error_report,
 	.log_dev_hw_err		= sec_log_hw_error,
 	.open_axi_master_ooo	= sec_open_axi_master_ooo,
 	.open_sva_prefetch	= sec_open_sva_prefetch,
