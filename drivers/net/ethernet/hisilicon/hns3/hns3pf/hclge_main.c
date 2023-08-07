@@ -12248,10 +12248,12 @@ static int hclge_set_wol(struct hnae3_handle *handle,
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
+	u32 wol_supported;
 	u32 wol_mode;
 
+	wol_supported = hclge_wol_mode_from_ethtool(wol->supported);
 	wol_mode = hclge_wol_mode_from_ethtool(wol->wolopts);
-	if (wol_mode & ~wol_info->wol_support_mode)
+	if (wol_mode & ~wol_supported)
 		return -EINVAL;
 
 	wol_info->wol_current_mode = wol_mode;
