@@ -12090,7 +12090,7 @@ int hclge_get_wol_supported_mode(struct hclge_dev *hdev,
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_WOL_GET_SUPPORTED_MODE,
 				   true);
-	wol_supported_cmd = (struct hclge_query_wol_supported_cmd *)desc.data;
+	wol_supported_cmd = (struct hclge_query_wol_supported_cmd *)&desc.data;
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
@@ -12118,7 +12118,7 @@ int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode)
 		return ret;
 	}
 
-	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)desc.data;
+	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)&desc.data;
 	*mode = le32_to_cpu(wol_cfg_cmd->wake_on_lan_mode);
 
 	return 0;
@@ -12132,7 +12132,7 @@ static int hclge_set_wol_cfg(struct hclge_dev *hdev,
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_WOL_CFG, false);
-	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)desc.data;
+	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)&desc.data;
 	wol_cfg_cmd->wake_on_lan_mode = cpu_to_le32(wol_info->wol_current_mode);
 	wol_cfg_cmd->sopass_size = wol_info->wol_sopass_size;
 	memcpy(&wol_cfg_cmd->sopass, wol_info->wol_sopass, SOPASS_MAX);
