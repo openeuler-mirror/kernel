@@ -252,13 +252,6 @@ enum HCLGE_MAC_DUPLEX {
 #define QUERY_SFP_SPEED		0
 #define QUERY_ACTIVE_SPEED	1
 
-struct hclge_wol_info {
-	u32 wol_support_mode; /* store the wake on lan info */
-	u32 wol_current_mode;
-	u8 wol_sopass[SOPASS_MAX];
-	u8 wol_sopass_size;
-};
-
 struct hclge_mac {
 	u8 mac_id;
 	u8 phy_addr;
@@ -278,7 +271,6 @@ struct hclge_mac {
 	u32 user_fec_mode;
 	u32 fec_ability;
 	int link;	/* store the link status of mac & phy (if phy exists) */
-	struct hclge_wol_info wol;
 	struct phy_device *phydev;
 	struct mii_bus *mdio_bus;
 	phy_interface_t phy_if;
@@ -1156,8 +1148,6 @@ int hclge_register_sysfs(struct hclge_dev *hdev);
 void hclge_unregister_sysfs(struct hclge_dev *hdev);
 int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,
 			       u8 lane_num);
-int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported);
-int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode);
 struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
 int hclge_inform_vf_reset(struct hclge_vport *vport, u16 reset_type);
 void hclge_reset_task_schedule(struct hclge_dev *hdev);

@@ -12074,199 +12074,6 @@ static void hclge_uninit_rxd_adv_layout(struct hclge_dev *hdev)
 		hclge_write_dev(&hdev->hw, HCLGE_RXD_ADV_LAYOUT_EN_REG, 0);
 }
 
-static __u32 hclge_wol_mode_to_ethtool(u32 mode)
-{
-	__u32 ret = 0;
-
-	if (mode & HCLGE_WOL_PHY)
-		ret |= WAKE_PHY;
-
-	if (mode & HCLGE_WOL_UNICAST)
-		ret |= WAKE_UCAST;
-
-	if (mode & HCLGE_WOL_MULTICAST)
-		ret |= WAKE_MCAST;
-
-	if (mode & HCLGE_WOL_BROADCAST)
-		ret |= WAKE_BCAST;
-
-	if (mode & HCLGE_WOL_ARP)
-		ret |= WAKE_ARP;
-
-	if (mode & HCLGE_WOL_MAGIC)
-		ret |= WAKE_MAGIC;
-
-	if (mode & HCLGE_WOL_MAGICSECURED)
-		ret |= WAKE_MAGICSECURE;
-
-	if (mode & HCLGE_WOL_FILTER)
-		ret |= WAKE_FILTER;
-
-	return ret;
-}
-
-static u32 hclge_wol_mode_from_ethtool(__u32 mode)
-{
-	u32 ret = HCLGE_WOL_DISABLE;
-
-	if (mode & WAKE_PHY)
-		ret |= HCLGE_WOL_PHY;
-
-	if (mode & WAKE_UCAST)
-		ret |= HCLGE_WOL_UNICAST;
-
-	if (mode & WAKE_MCAST)
-		ret |= HCLGE_WOL_MULTICAST;
-
-	if (mode & WAKE_BCAST)
-		ret |= HCLGE_WOL_BROADCAST;
-
-	if (mode & WAKE_ARP)
-		ret |= HCLGE_WOL_ARP;
-
-	if (mode & WAKE_MAGIC)
-		ret |= HCLGE_WOL_MAGIC;
-
-	if (mode & WAKE_MAGICSECURE)
-		ret |= HCLGE_WOL_MAGICSECURED;
-
-	if (mode & WAKE_FILTER)
-		ret |= HCLGE_WOL_FILTER;
-
-	return ret;
-}
-
-int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported)
-{
-	struct hclge_query_wol_supported_cmd *wol_supported_cmd;
-	struct hclge_desc desc;
-	int ret;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_WOL_GET_SUPPORTED_MODE,
-				   true);
-	wol_supported_cmd = (struct hclge_query_wol_supported_cmd *)&desc.data;
-
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"failed to query wol supported, ret = %d\n", ret);
-		return ret;
-	}
-
-	*wol_supported = le32_to_cpu(wol_supported_cmd->supported_wake_mode);
-
-	return 0;
-}
-
-int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode)
-{
-	struct hclge_wol_cfg_cmd *wol_cfg_cmd;
-	struct hclge_desc desc;
-	int ret;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_WOL_CFG, true);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"failed to get wol config, ret = %d\n", ret);
-		return ret;
-	}
-
-	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)&desc.data;
-	*mode = le32_to_cpu(wol_cfg_cmd->wake_on_lan_mode);
-
-	return 0;
-}
-
-static int hclge_set_wol_cfg(struct hclge_dev *hdev,
-			     struct hclge_wol_info *wol_info)
-{
-	struct hclge_wol_cfg_cmd *wol_cfg_cmd;
-	struct hclge_desc desc;
-	int ret;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_WOL_CFG, false);
-	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)&desc.data;
-	wol_cfg_cmd->wake_on_lan_mode = cpu_to_le32(wol_info->wol_current_mode);
-	wol_cfg_cmd->sopass_size = wol_info->wol_sopass_size;
-	memcpy(&wol_cfg_cmd->sopass, wol_info->wol_sopass, SOPASS_MAX);
-
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-	if (ret)
-		dev_err(&hdev->pdev->dev,
-			"failed to set wol config, ret = %d\n", ret);
-
-	return ret;
-}
-
-static int hclge_update_wol(struct hclge_dev *hdev)
-{
-	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
-
-	if (!hnae3_ae_dev_wol_supported(hdev->ae_dev))
-		return 0;
-
-	return hclge_set_wol_cfg(hdev, wol_info);
-}
-
-static int hclge_init_wol(struct hclge_dev *hdev)
-{
-	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
-	int ret;
-
-	if (!hnae3_ae_dev_wol_supported(hdev->ae_dev))
-		return 0;
-
-	memset(wol_info, 0, sizeof(struct hclge_wol_info));
-	ret = hclge_get_wol_supported_mode(hdev,
-					   &wol_info->wol_support_mode);
-	if (ret) {
-		wol_info->wol_support_mode = HCLGE_WOL_DISABLE;
-		return ret;
-	}
-
-	return hclge_update_wol(hdev);
-}
-
-static void hclge_get_wol(struct hnae3_handle *handle,
-			  struct ethtool_wolinfo *wol)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
-
-	wol->supported = hclge_wol_mode_to_ethtool(wol_info->wol_support_mode);
-	wol->wolopts =
-		hclge_wol_mode_to_ethtool(wol_info->wol_current_mode);
-	if (wol_info->wol_current_mode & HCLGE_WOL_MAGICSECURED)
-		memcpy(&wol->sopass, wol_info->wol_sopass, SOPASS_MAX);
-}
-
-static int hclge_set_wol(struct hnae3_handle *handle,
-			 struct ethtool_wolinfo *wol)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
-	u32 wol_supported;
-	u32 wol_mode;
-
-	wol_supported = hclge_wol_mode_from_ethtool(wol->supported);
-	wol_mode = hclge_wol_mode_from_ethtool(wol->wolopts);
-	if (wol_mode & ~wol_supported)
-		return -EINVAL;
-
-	wol_info->wol_current_mode = wol_mode;
-	if (wol_mode & HCLGE_WOL_MAGICSECURED) {
-		memcpy(wol_info->wol_sopass, &wol->sopass, SOPASS_MAX);
-		wol_info->wol_sopass_size = SOPASS_MAX;
-	} else {
-		wol_info->wol_sopass_size = 0;
-	}
-
-	return hclge_set_wol_cfg(hdev, wol_info);
-}
-
 static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 {
 	struct pci_dev *pdev = ae_dev->pdev;
@@ -12468,11 +12275,6 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	/* Enable MISC vector(vector0) */
 	hclge_enable_vector(&hdev->misc_vector, true);
-
-	ret = hclge_init_wol(hdev);
-	if (ret)
-		dev_warn(&pdev->dev,
-			 "failed to wake on lan init, ret = %d\n", ret);
 
 	hclge_state_init(hdev);
 	hdev->last_reset_time = jiffies;
@@ -12855,8 +12657,6 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 		return ret;
 
 	hclge_init_rxd_adv_layout(hdev);
-
-	(void)hclge_update_wol(hdev);
 
 	dev_info(&pdev->dev, "Reset done, %s driver initialization finished.\n",
 		 HCLGE_DRIVER_NAME);
@@ -13904,8 +13704,6 @@ struct hnae3_ae_ops hclge_ops = {
 	.get_link_diagnosis_info = hclge_get_link_diagnosis_info,
 	.clean_vf_config = hclge_clean_vport_config,
 	.get_dscp_prio = hclge_get_dscp_prio,
-	.get_wol = hclge_get_wol,
-	.set_wol = hclge_set_wol,
 	.priv_ops = hclge_ext_ops_handle,
 };
 

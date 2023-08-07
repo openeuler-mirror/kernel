@@ -898,30 +898,6 @@ struct hclge_phy_reg_cmd {
 	u8 rsv2[12];
 };
 
-enum HCLGE_WOL_MODE {
-	HCLGE_WOL_PHY           = BIT(0),
-	HCLGE_WOL_UNICAST       = BIT(1),
-	HCLGE_WOL_MULTICAST     = BIT(2),
-	HCLGE_WOL_BROADCAST     = BIT(3),
-	HCLGE_WOL_ARP           = BIT(4),
-	HCLGE_WOL_MAGIC         = BIT(5),
-	HCLGE_WOL_MAGICSECURED  = BIT(6),
-	HCLGE_WOL_FILTER        = BIT(7),
-	HCLGE_WOL_DISABLE       = 0,
-};
-
-struct hclge_wol_cfg_cmd {
-	__le32 wake_on_lan_mode;
-	u8 sopass[SOPASS_MAX];
-	u8 sopass_size;
-	u8 rsv[13];
-};
-
-struct hclge_query_wol_supported_cmd {
-	__le32 supported_wake_mode;
-	u8 rsv[20];
-};
-
 struct hclge_hw;
 int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num);
 enum hclge_comm_cmd_status hclge_cmd_mdio_write(struct hclge_hw *hw,
