@@ -2045,10 +2045,10 @@ static int hns3_get_link_ext_state(struct net_device *netdev,
 static void hns3_get_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 {
 	struct hnae3_handle *handle = hns3_get_handle(netdev);
-	const struct hnae3_ae_ops *ops = hns3_get_ops(handle);
-	struct hnae3_ae_dev *ae_dev = hns3_get_ae_dev(handle);
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(handle->pdev);
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
 
-	if (!hnae3_ae_dev_wol_supported(ae_dev))
+	if (!hnae3_ae_dev_wol_supported(ae_dev) || !ops->get_wol)
 		return;
 
 	ops->get_wol(handle, wol);
@@ -2058,10 +2058,10 @@ static int hns3_set_wol(struct net_device *netdev,
 			struct ethtool_wolinfo *wol)
 {
 	struct hnae3_handle *handle = hns3_get_handle(netdev);
-	const struct hnae3_ae_ops *ops = hns3_get_ops(handle);
-	struct hnae3_ae_dev *ae_dev = hns3_get_ae_dev(handle);
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(handle->pdev);
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
 
-	if (!hnae3_ae_dev_wol_supported(ae_dev))
+	if (!hnae3_ae_dev_wol_supported(ae_dev) || !ops->set_wol)
 		return -EOPNOTSUPP;
 
 	return ops->set_wol(handle, wol);

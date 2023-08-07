@@ -12074,15 +12074,69 @@ static void hclge_uninit_rxd_adv_layout(struct hclge_dev *hdev)
 		hclge_write_dev(&hdev->hw, HCLGE_RXD_ADV_LAYOUT_EN_REG, 0);
 }
 
-static struct hclge_wol_info *hclge_get_wol_info(struct hnae3_handle *handle)
+static __u32 hclge_wol_mode_to_ethtool(u32 mode)
 {
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	__u32 ret = 0;
 
-	return &vport->back->hw.mac.wol;
+	if (mode & HCLGE_WOL_PHY)
+		ret |= WAKE_PHY;
+
+	if (mode & HCLGE_WOL_UNICAST)
+		ret |= WAKE_UCAST;
+
+	if (mode & HCLGE_WOL_MULTICAST)
+		ret |= WAKE_MCAST;
+
+	if (mode & HCLGE_WOL_BROADCAST)
+		ret |= WAKE_BCAST;
+
+	if (mode & HCLGE_WOL_ARP)
+		ret |= WAKE_ARP;
+
+	if (mode & HCLGE_WOL_MAGIC)
+		ret |= WAKE_MAGIC;
+
+	if (mode & HCLGE_WOL_MAGICSECURED)
+		ret |= WAKE_MAGICSECURE;
+
+	if (mode & HCLGE_WOL_FILTER)
+		ret |= WAKE_FILTER;
+
+	return ret;
 }
 
-int hclge_get_wol_supported_mode(struct hclge_dev *hdev,
-				 u32 *wol_supported)
+static u32 hclge_wol_mode_from_ethtool(__u32 mode)
+{
+	u32 ret = HCLGE_WOL_DISABLE;
+
+	if (mode & WAKE_PHY)
+		ret |= HCLGE_WOL_PHY;
+
+	if (mode & WAKE_UCAST)
+		ret |= HCLGE_WOL_UNICAST;
+
+	if (mode & WAKE_MCAST)
+		ret |= HCLGE_WOL_MULTICAST;
+
+	if (mode & WAKE_BCAST)
+		ret |= HCLGE_WOL_BROADCAST;
+
+	if (mode & WAKE_ARP)
+		ret |= HCLGE_WOL_ARP;
+
+	if (mode & WAKE_MAGIC)
+		ret |= HCLGE_WOL_MAGIC;
+
+	if (mode & WAKE_MAGICSECURE)
+		ret |= HCLGE_WOL_MAGICSECURED;
+
+	if (mode & WAKE_FILTER)
+		ret |= HCLGE_WOL_FILTER;
+
+	return ret;
+}
+
+int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported)
 {
 	struct hclge_query_wol_supported_cmd *wol_supported_cmd;
 	struct hclge_desc desc;
@@ -12167,7 +12221,7 @@ static int hclge_init_wol(struct hclge_dev *hdev)
 	ret = hclge_get_wol_supported_mode(hdev,
 					   &wol_info->wol_support_mode);
 	if (ret) {
-		wol_info->wol_support_mode = 0;
+		wol_info->wol_support_mode = HCLGE_WOL_DISABLE;
 		return ret;
 	}
 
@@ -12177,39 +12231,38 @@ static int hclge_init_wol(struct hclge_dev *hdev)
 static void hclge_get_wol(struct hnae3_handle *handle,
 			  struct ethtool_wolinfo *wol)
 {
-	struct hclge_wol_info *wol_info = hclge_get_wol_info(handle);
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
 
-	wol->supported = wol_info->wol_support_mode;
-	wol->wolopts = wol_info->wol_current_mode;
-	if (wol_info->wol_current_mode & WAKE_MAGICSECURE)
-		memcpy(wol->sopass, wol_info->wol_sopass, SOPASS_MAX);
+	wol->supported = hclge_wol_mode_to_ethtool(wol_info->wol_support_mode);
+	wol->wolopts =
+		hclge_wol_mode_to_ethtool(wol_info->wol_current_mode);
+	if (wol_info->wol_current_mode & HCLGE_WOL_MAGICSECURED)
+		memcpy(&wol->sopass, wol_info->wol_sopass, SOPASS_MAX);
 }
 
 static int hclge_set_wol(struct hnae3_handle *handle,
 			 struct ethtool_wolinfo *wol)
 {
-	struct hclge_wol_info *wol_info = hclge_get_wol_info(handle);
 	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_wol_info *wol_info = &hdev->hw.mac.wol;
 	u32 wol_mode;
-	int ret;
 
-	wol_mode = wol->wolopts;
+	wol_mode = hclge_wol_mode_from_ethtool(wol->wolopts);
 	if (wol_mode & ~wol_info->wol_support_mode)
 		return -EINVAL;
 
 	wol_info->wol_current_mode = wol_mode;
-	if (wol_mode & WAKE_MAGICSECURE) {
-		memcpy(wol_info->wol_sopass, wol->sopass, SOPASS_MAX);
+	if (wol_mode & HCLGE_WOL_MAGICSECURED) {
+		memcpy(wol_info->wol_sopass, &wol->sopass, SOPASS_MAX);
 		wol_info->wol_sopass_size = SOPASS_MAX;
 	} else {
 		wol_info->wol_sopass_size = 0;
 	}
 
-	ret = hclge_set_wol_cfg(vport->back, wol_info);
-	if (ret)
-		wol_info->wol_current_mode = 0;
-
-	return ret;
+	return hclge_set_wol_cfg(hdev, wol_info);
 }
 
 static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
