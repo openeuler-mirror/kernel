@@ -595,12 +595,11 @@ int hns_roce_table_get(struct hns_roce_dev *hr_dev,
 	}
 
 	/* Set HEM base address(128K/page, pa) to Hardware */
-	ret = hr_dev->hw->set_hem(hr_dev, table, obj, HEM_HOP_STEP_DIRECT);
-	if (ret) {
+	if (hr_dev->hw->set_hem(hr_dev, table, obj, HEM_HOP_STEP_DIRECT)) {
 		hns_roce_free_hem(hr_dev, table->hem[i]);
 		table->hem[i] = NULL;
-		dev_err(dev, "set HEM base address to HW failed, ret = %d.\n",
-			ret);
+		ret = -ENODEV;
+		dev_err(dev, "set HEM base address to HW failed.\n");
 		goto out;
 	}
 
