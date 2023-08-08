@@ -2077,10 +2077,6 @@ static int probe_vendor_drivers(struct vfio_pci_device *vdev)
 	list_for_each_entry(driver, &vfio_pci.vendor_drivers_list, next) {
 		void *data;
 
-		if (vdev->pdev->vendor != driver->ops->vendor ||
-		    vdev->pdev->device != driver->ops->device)
-			continue;
-
 		if (!try_module_get(driver->ops->owner))
 			continue;
 

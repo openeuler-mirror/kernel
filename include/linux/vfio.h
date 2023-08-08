@@ -253,9 +253,6 @@ extern int vfio_pci_set_vendor_regions(void *device_data,
 struct vfio_pci_vendor_driver_ops {
 	char			*name;
 	struct module		*owner;
-	/* Used to match device */
-	unsigned short		vendor;
-	unsigned short		device;
 	void			*(*probe)(struct pci_dev *pdev);
 	void			(*remove)(void *vendor_data);
 	struct vfio_device_ops *device_ops;
