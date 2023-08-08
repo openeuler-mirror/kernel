@@ -1781,8 +1781,9 @@ static blk_qc_t dm_make_request(struct request_queue *q, struct bio *bio)
 
 	map = dm_get_live_table(md, &srcu_idx);
 
-	/* if we're suspended, we have to queue this io for later */
-	if (unlikely(test_bit(DMF_BLOCK_IO_FOR_SUSPEND, &md->flags))) {
+	/* If suspended, or map not yet available, queue this IO for later */
+	if (unlikely(test_bit(DMF_BLOCK_IO_FOR_SUSPEND, &md->flags)) ||
+	    unlikely(!map)) {
 		dm_put_live_table(md, srcu_idx);
 
 		if (!(bio->bi_opf & REQ_RAHEAD))
