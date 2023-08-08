@@ -4388,10 +4388,12 @@ static int amd_ir_set_vcpu_affinity(struct irq_data *data, void *vcpu_info)
 	} else {
 		/* Un-Setting */
 		struct irq_cfg *cfg = irqd_cfg(data);
+		u64 valid = irte->lo.fields_remap.valid;
 
 		irte->hi.val = 0;
 		irte->lo.val = 0;
 		irte->hi.fields.vector = cfg->vector;
+		irte->lo.fields_remap.valid = valid;
 		irte->lo.fields_remap.guest_mode = 0;
 		irte->lo.fields_remap.destination =
 				APICID_TO_IRTE_DEST_LO(cfg->dest_apicid);
