@@ -177,10 +177,8 @@ static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
 	size = slice[slice_idx].size;
 	if (!size) {
 		max_idx = slice[0].total_num - 1;
-		dev_err(&uacce->dev, "%luth ss region[0x%lx, %lu] no exist, range[[0](0x%llx, %llu) -> [%u](0x%llx, %llu)]\n",
-			slice_idx, dma, size,
-			slice[0].dma, slice[0].size, max_idx,
-			slice[max_idx].dma, slice[max_idx].size);
+		dev_err(&uacce->dev, "%luth ss region[size = %lu] no exist, range[[0](size = %llu) -> [%u](size = %llu)]\n",
+			slice_idx, size, slice[0].size, max_idx, slice[max_idx].size);
 		ret = -ENODEV;
 		goto param_check;
 	}
@@ -209,9 +207,7 @@ static void uacce_free_dma_buffers(struct uacce_queue *q)
 		return;
 	while (i < qfr->dma_list[0].total_num) {
 		WARN_ON(!qfr->dma_list[i].size || !qfr->dma_list[i].dma);
-		dev_dbg(pdev, "free dma qfr (kaddr=%lx, dma=%llx)\n",
-			(unsigned long)(uintptr_t)qfr->dma_list[i].kaddr,
-			qfr->dma_list[i].dma);
+		dev_dbg(pdev, "free dma qfr (index = %d)\n", i);
 		dma_free_coherent(pdev, qfr->dma_list[i].size,
 				  qfr->dma_list[i].kaddr,
 				  qfr->dma_list[i].dma);
@@ -550,8 +546,8 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 						    PAGE_SIZE - 1) & PAGE_MASK,
 						    &slice[i].dma, GFP_KERNEL);
 		if (!slice[i].kaddr) {
-			dev_err(pdev, "Get dma slice(sz=%lu,dma=0x%llx) fail!\n",
-			size, slice[i].dma);
+			dev_err(pdev, "get dma slice(sz = %lu,slice num = %d) fail!\n",
+			size, i);
 			slice[0].total_num = i;
 			uacce_free_dma_buffers(q);
 			return -ENOMEM;
@@ -594,8 +590,8 @@ static int uacce_mmap_dma_buffers(struct uacce_queue *q,
 					slice[i].dma,
 					slice[i].size);
 		if (ret) {
-			dev_err(pdev, "dma mmap fail(dma=0x%llx,size=0x%llx)!\n",
-				slice[i].dma, slice[i].size);
+			dev_err(pdev, "dma mmap fail(dma index = %d, size = %llu)!\n",
+				i, slice[i].size);
 			goto DMA_MMAP_FAIL;
 		}
 
@@ -846,10 +842,11 @@ static ssize_t dev_state_show(struct device *dev,
 static ssize_t node_id_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
-	struct uacce_device *uacce = to_uacce_device(dev);
 	int node_id = -1;
 
 #ifdef CONFIG_NUMA
+	struct uacce_device *uacce = to_uacce_device(dev);
+
 	node_id = uacce->parent->numa_node;
 #endif
 	return sysfs_emit(buf, "%d\n", node_id);
@@ -858,10 +855,11 @@ static ssize_t node_id_show(struct device *dev,
 static ssize_t numa_distance_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
-	struct uacce_device *uacce = to_uacce_device(dev);
 	int distance = 0;
 
 #ifdef CONFIG_NUMA
+	struct uacce_device *uacce = to_uacce_device(dev);
+
 	distance = node_distance(uacce->parent->numa_node,
 		cpu_to_node(smp_processor_id()));
 #endif
