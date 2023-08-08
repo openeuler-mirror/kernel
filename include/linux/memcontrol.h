@@ -402,11 +402,7 @@ struct mem_cgroup {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 #endif
-#ifdef CONFIG_KSM
-	KABI_USE(5, bool ksm_merge_any)
-#else
 	KABI_RESERVE(5)
-#endif
 #if defined(CONFIG_DYNAMIC_HUGETLB) && defined(CONFIG_ARM64)
 	KABI_USE(6, struct dhugetlb_pool *hpool)
 #else
