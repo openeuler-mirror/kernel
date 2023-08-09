@@ -1779,7 +1779,9 @@ static int __init acc_vf_module_init(void)
 
 static void __exit acc_vf_module_exit(void)
 {
-	vfio_pci_unregister_vendor_driver(&acc_vf_device_ops_node);
+	vfio_pci_unregister_vendor_driver(&sec_vf_mig_ops);
+	vfio_pci_unregister_vendor_driver(&hpre_vf_mig_ops);
+	vfio_pci_unregister_vendor_driver(&zip_vf_mig_ops);
 };
 module_init(acc_vf_module_init);
 module_exit(acc_vf_module_exit);

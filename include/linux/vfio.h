@@ -261,7 +261,7 @@ struct vfio_pci_vendor_driver_ops {
 	struct vfio_device_ops *device_ops;
 };
 int __vfio_pci_register_vendor_driver(struct vfio_pci_vendor_driver_ops *ops);
-void vfio_pci_unregister_vendor_driver(struct vfio_device_ops *device_ops);
+void vfio_pci_unregister_vendor_driver(struct vfio_pci_vendor_driver_ops *ops);
 
 #define vfio_pci_register_vendor_driver(__name, __probe, __remove,	\
 					__device_ops)			\
