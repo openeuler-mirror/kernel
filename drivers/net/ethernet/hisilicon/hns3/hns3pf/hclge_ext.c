@@ -6,7 +6,6 @@
 #include "hnae3_ext.h"
 #include "hclge_cmd.h"
 #include "hclge_ext.h"
-#include "hclge_tm.h"
 
 static nic_event_fn_t nic_event_call;
 
@@ -1449,7 +1448,6 @@ static const hclge_priv_ops_fn hclge_ext_func_arr[] = {
 	[HNAE3_EXT_OPC_DISABLE_LANE] = hclge_disable_net_lane,
 	[HNAE3_EXT_OPC_GET_LANE_STATUS] = hclge_get_net_lane_status,
 	[HNAE3_EXT_OPC_DISABLE_CLOCK] = hclge_disable_nic_clock,
-	[HNAE3_EXT_OPC_SET_PFC_TIME] = hclge_set_pause_trans_time,
 	[HNAE3_EXT_OPC_GET_HILINK_REF_LOS] = hclge_get_hilink_ref_los,
 	[HNAE3_EXT_OPC_GET_PORT_FAULT_STATUS] = hclge_get_port_fault_status,
 	[HNAE3_EXT_OPC_GET_PORT_TYPE] = hclge_get_port_wire_type,
