@@ -42,14 +42,14 @@ static int __init sw64_cpufreq_init(void)
 	int i;
 	unsigned char external_clk;
 	unsigned long max_rate, freq_off;
-	max_rate = get_cpu_freq() / 1000000;
+	max_rate = get_cpu_freq() / 1000;
 
 	external_clk = *((unsigned char *)__va(0x908011));
 
 	if (external_clk == 240)
-		freq_off = 60;
+		freq_off = 60000;
 	else
-		freq_off = 50;
+		freq_off = 50000;
 
 	/* clock table init */
 	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {

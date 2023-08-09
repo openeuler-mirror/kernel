@@ -42,7 +42,7 @@ static int sw64_cpu_freq_notifier(struct notifier_block *nb,
 	unsigned long cpu = freqs->policy->cpu;
 
 	if (val == CPUFREQ_POSTCHANGE)
-		sw64_update_clockevents(cpu, freqs->new * 1000000);
+		sw64_update_clockevents(cpu, freqs->new * 1000);
 
 	return 0;
 }
