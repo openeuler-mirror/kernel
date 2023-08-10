@@ -58,7 +58,7 @@ struct sw64_msi_chip_data {
 	unsigned int prev_vector;
 	unsigned int multi_msi;
 	bool move_in_progress;
-};
+} ____cacheline_aligned;
 
 static inline int rcid_to_msicid(int rcid)
 {
