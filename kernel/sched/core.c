@@ -9666,6 +9666,7 @@ static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_QOS_SCHED
 	{
 		.name = "qos_level",
+		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_s64 = cpu_qos_read,
 		.write_s64 = cpu_qos_write,
 	},
