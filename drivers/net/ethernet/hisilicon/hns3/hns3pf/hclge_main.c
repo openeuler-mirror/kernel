@@ -12135,7 +12135,7 @@ static int hclge_set_wol_cfg(struct hclge_dev *hdev,
 	wol_cfg_cmd = (struct hclge_wol_cfg_cmd *)desc.data;
 	wol_cfg_cmd->wake_on_lan_mode = cpu_to_le32(wol_info->wol_current_mode);
 	wol_cfg_cmd->sopass_size = wol_info->wol_sopass_size;
-	memcpy(&wol_cfg_cmd->sopass, wol_info->wol_sopass, SOPASS_MAX);
+	memcpy(wol_cfg_cmd->sopass, wol_info->wol_sopass, SOPASS_MAX);
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret)
@@ -12801,7 +12801,10 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	hclge_init_rxd_adv_layout(hdev);
 
-	(void)hclge_update_wol(hdev);
+	ret = hclge_update_wol(hdev);
+	if (ret)
+		dev_warn(&pdev->dev,
+			 "failed to update wol config, ret = %d\n", ret);
 
 	dev_info(&pdev->dev, "Reset done, %s driver initialization finished.\n",
 		 HCLGE_DRIVER_NAME);
