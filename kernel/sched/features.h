@@ -106,3 +106,10 @@ SCHED_FEAT(UTIL_EST_FASTUP, true)
 
 SCHED_FEAT(ALT_PERIOD, true)
 SCHED_FEAT(BASE_SLICE, true)
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+/*
+ * Use util_avg of bottom-Level taskgroup
+ */
+SCHED_FEAT(DA_UTIL_TASKGROUP, true)
+#endif

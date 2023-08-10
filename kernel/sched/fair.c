@@ -7097,6 +7097,17 @@ static inline bool prefer_cpus_valid(struct task_struct *p)
 	       cpumask_subset(p->prefer_cpus, p->cpus_ptr);
 }
 
+static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
+					       int cpu)
+{
+#ifdef CONFIG_FAIR_GROUP_SCHED
+	if (tg->se[cpu] && sched_feat(DA_UTIL_TASKGROUP))
+		return tg->se[cpu]->avg.util_avg;
+#endif
+
+	return cpu_util(cpu);
+}
+
 /*
  * set_task_select_cpus: select the cpu range for task
  * @p: the task whose available cpu range will to set
@@ -7127,13 +7138,11 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	rcu_read_lock();
 	tg = task_group(p);
 	for_each_cpu(cpu, p->prefer_cpus) {
-		if (unlikely(!tg->se[cpu]))
-			continue;
-
 		if (idlest_cpu && available_idle_cpu(cpu)) {
 			*idlest_cpu = cpu;
 		} else if (idlest_cpu) {
-			spare = (long)(capacity_of(cpu) - tg->se[cpu]->avg.util_avg);
+			spare = (long)(capacity_of(cpu) -
+				taskgroup_cpu_util(tg, cpu));
 			if (spare > min_util) {
 				min_util = spare;
 				*idlest_cpu = cpu;
@@ -7148,7 +7157,7 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 			return;
 		}
 
-		util_avg_sum += tg->se[cpu]->avg.util_avg;
+		util_avg_sum += taskgroup_cpu_util(tg, cpu);
 		tg_capacity += capacity_of(cpu);
 	}
 	rcu_read_unlock();
