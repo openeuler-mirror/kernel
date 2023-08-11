@@ -23,7 +23,7 @@ enum sss_service_type {
 	SSS_SERVICE_TYPE_MAX,
 
 	SSS_SERVICE_TYPE_INTF = (1 << 15),
-	SSS_SERVICE_TYPE_CQM = (1 << 16),
+	SSS_SERVICE_TYPE_QMM = (1 << 16),
 };
 
 /* RDMA service capability */

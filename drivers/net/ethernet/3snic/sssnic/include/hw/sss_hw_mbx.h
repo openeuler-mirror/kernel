@@ -171,7 +171,7 @@ enum sss_mod_type {
 	SSS_MOD_TYPE_FLR = 5,
 	SSS_MOD_TYPE_RSVD1 = 6,
 	SSS_MOD_TYPE_CFGM = 7, /* Configuration module */
-	SSS_MOD_TYPE_CQM = 8,
+	SSS_MOD_TYPE_QMM = 8,
 	SSS_MOD_TYPE_RSVD2 = 9,
 	COMM_MOD_FC = 10,
 	SSS_MOD_TYPE_OVS = 11,

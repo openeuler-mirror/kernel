@@ -107,6 +107,11 @@ struct sss_service_cap {
 	struct sss_vbs_service_cap		vbs_cap; /* VBS capability */
 };
 
+struct sss_svc_cap_info {
+	u32 func_id;
+	struct sss_service_cap cap;
+};
+
 struct sss_mgmt_info {
 	void *hwdev;
 	struct sss_service_cap	svc_cap;

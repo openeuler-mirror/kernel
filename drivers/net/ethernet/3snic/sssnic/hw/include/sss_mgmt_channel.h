@@ -109,29 +109,33 @@ struct sss_recv_msg {
 };
 
 struct sss_msg_pf_to_mgmt {
-	void						*hwdev;
+	void			*hwdev;
+	spinlock_t		async_msg_lock; /* protect msg async and sync */
 
-	struct semaphore			sync_lock;
+	struct semaphore	sync_lock;
 
-	struct workqueue_struct		*workq;
+	struct workqueue_struct	*workq;
 
+	void	*async_msg_buf;
 	void	*sync_buf;
 	void	*ack_buf;
 
-	struct sss_recv_msg			recv_msg;
-	struct sss_recv_msg			recv_resp_msg;
+	struct sss_recv_msg		recv_msg;
+	struct sss_recv_msg		recv_resp_msg;
 
-	u16							rsvd;
-	u16							sync_msg_id;
-	struct sss_adm_msg			adm_msg;
+	u16				rsvd;
+	u16				async_msg_id;
+	u16				sync_msg_id;
+	struct sss_adm_msg		*adm_msg[SSS_ADM_MSG_MAX];
 
-	sss_mgmt_msg_handler_t			recv_handler[SSS_MOD_TYPE_HW_MAX];
-	void						*recv_data[SSS_MOD_TYPE_HW_MAX];
-	unsigned long				recv_handler_state[SSS_MOD_TYPE_HW_MAX];
+	sss_mgmt_msg_handler_t		recv_handler[SSS_MOD_TYPE_HW_MAX];
+	void				*recv_data[SSS_MOD_TYPE_HW_MAX];
+	unsigned long			recv_handler_state[SSS_MOD_TYPE_HW_MAX];
+	void				*async_msg_cb_data[SSS_MOD_TYPE_HW_MAX];
 
 	/* lock when sending msg */
-	spinlock_t							sync_event_lock;
-	enum sss_pf_to_mgmt_event_state		event_state;
+	spinlock_t			sync_event_lock; /* protect event async and sync */
+	enum sss_pf_to_mgmt_event_state	event_state;
 };
 
 #endif

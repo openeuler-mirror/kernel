@@ -40,6 +40,8 @@
 #include "sss_nic_netdev_ops_api.h"
 #include "sss_nic_ntuple.h"
 #include "sss_nic_event.h"
+#include "sss_tool_nic_func.h"
+
 
 #define DEFAULT_POLL_BUDGET	64
 static u32 poll_budget = DEFAULT_POLL_BUDGET;
@@ -1021,6 +1023,7 @@ struct sss_uld_info g_nic_uld_info = {
 	.suspend = NULL,
 	.resume = NULL,
 	.event = sss_nic_event,
+	.ioctl = sss_tool_ioctl,
 };
 
 struct sss_uld_info *get_nic_uld_info(void)
