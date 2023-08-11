@@ -100,6 +100,23 @@ struct udma_hem_mhop {
 	uint32_t l2_idx; /* level 2 base address table index */
 };
 
+struct udma_hem_item {
+	struct list_head	list; /* link all hems in the same bt level */
+	struct list_head	sibling; /* link all hems in last hop for mtt */
+	void			*addr;
+	dma_addr_t		dma_addr;
+	size_t			count; /* max ba numbers */
+	int			start; /* start buf offset in this hem */
+	int			end; /* end buf offset in this hem */
+};
+
+/* All HEM itmes are linked in a tree structure */
+struct udma_hem_head {
+	struct list_head branch[UDMA_MAX_BT_REGION];
+	struct list_head root;
+	struct list_head leaf;
+};
+
 struct udma_buf *udma_buf_alloc(struct udma_dev *udma_dev, uint32_t size,
 				uint32_t page_shift, uint32_t flags);
 void udma_buf_free(struct udma_dev *udma_dev, struct udma_buf *buf);

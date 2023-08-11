@@ -55,6 +55,9 @@
 #define UDMA_TX_CMQ_PI_REG			0x07010
 #define UDMA_TX_CMQ_CI_REG			0x07014
 
+#define UDMA_MAX_BT_REGION			3
+#define UDMA_MAX_BT_LEVEL			3
+
 enum udma_reset_stage {
 	UDMA_STATE_RST_DOWN = 2,
 	UDMA_STATE_RST_UNINIT,
@@ -104,9 +107,45 @@ struct udma_ida {
 	uint32_t	min; /* Lowest ID to allocate.  */
 	uint32_t	max; /* Highest ID to allocate. */
 };
+
+struct udma_buf_region {
+	uint32_t	offset; /* page offset */
+	uint32_t	count; /* page count */
+	int		hopnum; /* addressing hop num */
+};
+
+struct udma_hem_list {
+	struct list_head	root_bt;
+	/* link all bt dma mem by hop config */
+	struct list_head	mid_bt[UDMA_MAX_BT_REGION][UDMA_MAX_BT_LEVEL];
+	struct list_head	btm_bt; /* link all bottom bt in @mid_bt */
+	dma_addr_t		root_ba; /* pointer to the root ba table */
+};
+
+struct udma_buf_attr {
+	struct {
+		size_t		size;  /* region size */
+		int		hopnum; /* multi-hop addressing hop num */
+	} region[UDMA_MAX_BT_REGION];
+	uint32_t		region_count; /* valid region count */
+	uint32_t		page_shift;  /* buffer page shift */
+	/* only alloc buffer-required MTT memory */
+	bool			mtt_only;
+};
+
 struct udma_buf_list {
 	void		*buf;
 	dma_addr_t	map;
+};
+
+struct udma_hem_cfg {
+	dma_addr_t		root_ba; /* root BA table's address */
+	bool			is_direct; /* addressing without BA table */
+	uint32_t		ba_pg_shift; /* BA table page shift */
+	uint32_t		buf_pg_shift; /* buffer page shift */
+	uint32_t		buf_pg_count;  /* buffer page count */
+	struct udma_buf_region	region[UDMA_MAX_BT_REGION];
+	uint32_t		region_count;
 };
 
 struct udma_buf {
@@ -121,6 +160,15 @@ struct udma_link_table {
 	struct udma_buf_list	table;
 	struct udma_buf		*buf;
 };
+
+/* memory translate region */
+struct udma_mtr {
+	struct udma_hem_list	hem_list; /* multi-hop addressing resource */
+	struct ubcore_umem	*umem; /* user space buffer */
+	struct udma_buf		*kmem; /* kernel space buffer */
+	struct udma_hem_cfg	hem_cfg; /* config for hardware addressing */
+};
+
 struct udma_dev;
 struct udma_cmd_context {
 	struct completion	done;
@@ -498,6 +546,10 @@ int udma_cmq_send(struct udma_dev *udma_dev,
 		  struct udma_cmq_desc *desc, int num);
 int udma_hnae_client_init(struct udma_dev *udma_dev);
 void udma_hnae_client_exit(struct udma_dev *udma_dev);
+int udma_mtr_create(struct udma_dev *udma_dev, struct udma_mtr *mtr,
+		    struct udma_buf_attr *buf_attr, uint32_t ba_page_shift,
+		    uint64_t user_addr, bool is_user);
+void udma_mtr_destroy(struct udma_dev *udma_dev, struct udma_mtr *mtr);
 void udma_cleanup_common_hem(struct udma_dev *udma_dev);
 int udma_init_common_hem(struct udma_dev *udma_dev);
 
