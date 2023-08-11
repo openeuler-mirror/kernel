@@ -1310,6 +1310,20 @@ int timer_delete(struct timer_list *timer)
 EXPORT_SYMBOL(timer_delete);
 
 /**
+ * del_timer - Delete a pending timer
+ * @timer:	The timer to be deleted
+ *
+ * See timer_delete() for detailed explanation.
+ *
+ * Do not use in new code. Use timer_delete() instead.
+ */
+int del_timer(struct timer_list *timer)
+{
+	return __timer_delete(timer, false);
+}
+EXPORT_SYMBOL(del_timer);
+
+/**
  * timer_shutdown - Deactivate a timer and prevent rearming
  * @timer:	The timer to be deactivated
  *
@@ -1568,6 +1582,20 @@ int timer_delete_sync(struct timer_list *timer)
 	return __timer_delete_sync(timer, false);
 }
 EXPORT_SYMBOL(timer_delete_sync);
+
+/**
+ * del_timer_sync - Delete a pending timer and wait for a running callback
+ * @timer:	The timer to be deleted
+ *
+ * See timer_delete_sync() for detailed explanation.
+ *
+ * Do not use in new code. Use timer_delete_sync() instead.
+ */
+int del_timer_sync(struct timer_list *timer)
+{
+	return __timer_delete_sync(timer, false);
+}
+EXPORT_SYMBOL(del_timer_sync);
 
 /**
  * timer_shutdown_sync - Shutdown a timer and prevent rearming
