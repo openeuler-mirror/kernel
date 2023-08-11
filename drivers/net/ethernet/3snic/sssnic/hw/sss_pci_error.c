@@ -28,7 +28,7 @@ static void sss_record_pcie_error(void *dev)
 {
 	struct sss_hwdev *hwdev = (struct sss_hwdev *)dev;
 
-	atomic_inc(&hwdev->hw_stats.sss_fault_event_stats.pcie_fault_stats);
+	atomic_inc(&hwdev->hw_stats.fault_event_stats.pcie_fault_stats);
 }
 
 pci_ers_result_t sss_detect_pci_error(struct pci_dev *pdev,

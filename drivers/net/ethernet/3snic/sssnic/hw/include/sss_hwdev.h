@@ -24,6 +24,8 @@
 #include "sss_mbx_info.h"
 #include "sss_mgmt_channel.h"
 
+#define SSSNIC_CHANNEL_DETECT_PERIOD (5 * 1000)
+
 enum sss_func_mode {
 	SSS_FUNC_MOD_MIN,
 
@@ -81,6 +83,11 @@ struct sss_aeq_stat {
 	u64	last_recv_cnt;
 };
 
+struct sss_clp_pf_to_mgmt {
+	struct semaphore	clp_msg_lock;
+	void			*clp_msg_buf;
+};
+
 struct sss_hwdev {
 	void	*adapter_hdl; /* pointer to sss_pci_adapter or NDIS_Adapter */
 	void	*pcidev_hdl; /* pointer to pcidev or Handler */
@@ -108,6 +115,7 @@ struct sss_hwdev {
 	struct sss_ceq_info			*ceq_info;
 	struct sss_mbx				*mbx; // mbx
 	struct sss_msg_pf_to_mgmt	*pf_to_mgmt; // adm
+	struct sss_clp_pf_to_mgmt *clp_pf_to_mgmt;
 
 	struct sss_hw_stats			hw_stats;
 	u8							*chip_fault_stats;
@@ -132,6 +140,8 @@ struct sss_hwdev {
 	enum sss_func_mode			func_mode;
 
 	struct sss_aeq_stat			aeq_stat;
+
+	u16 aeq_busy_cnt;
 };
 
 #define SSS_TO_HWDEV(ptr)			((struct sss_hwdev *)(ptr)->hwdev)
@@ -220,6 +230,8 @@ enum sss_servic_bit_define {
 #define SSS_IS_PPF(dev) \
 		(SSS_GET_FUNC_TYPE(dev) == SSS_FUNC_TYPE_PPF)
 
+#define SSS_GET_FUNC_ID(hwdev)		((hwdev)->hwif->attr.func_id)
+
 #define SSS_IS_BMGW_MASTER_HOST(hwdev)	\
 		((hwdev)->func_mode == SSS_FUNC_MOD_MULTI_BM_MASTER)
 #define SSS_IS_BMGW_SLAVE_HOST(hwdev)	\
@@ -248,6 +260,10 @@ enum sss_servic_bit_define {
 			((hwdev)->features[0] & SSS_COMM_F_CTRLQ_NUM)
 #define SSS_SUPPORT_VIRTIO_VQ_SIZE(hwdev)	\
 			((hwdev)->features[0] & SSS_COMM_F_VIRTIO_VQ_SIZE)
+#define SSS_SUPPORT_CHANNEL_DETECT(hwdev)	\
+			((hwdev)->features[0] & SSS_COMM_F_CHANNEL_DETECT)
+#define SSS_SUPPORT_CLP(hwdev)	\
+			((hwdev)->features[0] & SSS_COMM_F_CLP)
 
 enum {
 	SSS_CFG_FREE = 0,

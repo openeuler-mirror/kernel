@@ -93,7 +93,7 @@ struct sss_adm_msg {
 	u32				ci;
 
 	struct semaphore				sem;
-
+	spinlock_t			async_lock; /* protect adm msg async and sync */
 	dma_addr_t						wb_state_paddr;
 
 	dma_addr_t						head_elem_paddr;
