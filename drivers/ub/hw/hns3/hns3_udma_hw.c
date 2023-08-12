@@ -162,6 +162,16 @@ static int udma_set_vf_switch_param(struct udma_dev *udma_dev)
 	return 0;
 }
 
+static void set_default_jetty_caps(struct udma_dev *dev)
+{
+	struct udma_caps *caps = &dev->caps;
+
+	caps->num_jfc_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+	caps->num_jfs_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+	caps->num_jfr_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+	caps->num_jetty_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+}
+
 static int udma_query_caps(struct udma_dev *udma_dev)
 {
 	enum udma_opcode_type opcode = UDMA_OPC_QUERY_PF_CAPS_NUM;
@@ -337,6 +347,7 @@ static int udma_query_caps(struct udma_dev *udma_dev)
 					      QUERY_PF_CAPS_D_RQWQE_HOP_NUM_M,
 					      QUERY_PF_CAPS_D_RQWQE_HOP_NUM_S);
 
+	set_default_jetty_caps(udma_dev);
 	return 0;
 }
 

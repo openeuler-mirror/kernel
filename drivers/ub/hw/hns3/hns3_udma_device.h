@@ -31,6 +31,8 @@
 #define PG_SHIFT_OFFSET				(PAGE_SHIFT - 12)
 #define UDMA_MAX_IRQ_NUM			128
 #define UDMA_QP_BANK_NUM			8
+#define QP_BANKID_SHIFT				3
+#define QP_BANKID_MASK				GENMASK(2, 0)
 #define UDMA_QPC_SZ				512
 #define UDMA_CQE_SZ				64
 #define UDMA_SCCC_SZ				64
@@ -57,6 +59,7 @@
 
 #define UDMA_MAX_BT_REGION			3
 #define UDMA_MAX_BT_LEVEL			3
+#define UDMA_DEFAULT_MAX_JETTY_X_SHIFT	8
 
 enum udma_reset_stage {
 	UDMA_STATE_RST_DOWN = 2,
@@ -452,6 +455,11 @@ struct udma_qp_table {
 	struct udma_idx_table	idx_table;
 };
 
+struct udma_eq_table {
+	uint32_t	*idx_table;
+	struct udma_eq	*eq;
+};
+
 struct udma_jfc_table {
 	struct xarray		xa;
 	struct udma_hem_table	table;
@@ -470,6 +478,11 @@ struct udma_jfr_table {
 	struct udma_ida		jfr_ida;
 };
 
+struct udma_jetty_table {
+	struct xarray		xa;
+	struct udma_ida		jetty_ida;
+};
+
 struct udma_seg_table {
 	struct udma_ida		seg_ida;
 	struct udma_hem_table	table;
@@ -484,6 +497,9 @@ struct udma_dev {
 	bool				dis_db;
 	uint64_t			reset_cnt;
 	struct udma_netdev		uboe;
+
+	struct list_head		pgdir_list;
+	struct mutex			pgdir_mutex;
 	uint8_t __iomem			*reg_base;
 	struct udma_caps		caps;
 
@@ -498,14 +514,21 @@ struct udma_dev {
 	uint16_t			func_id;
 	uint32_t			func_num;
 	uint32_t			cong_algo_tmpl_id;
+	struct udma_ida			uar_ida;
 	struct udma_jfs_table		jfs_table;
 	struct udma_jfr_table		jfr_table;
+	struct udma_jetty_table		jetty_table;
 	struct udma_seg_table		seg_table;
 	struct udma_jfc_table		jfc_table;
 	struct udma_qp_table		qp_table;
+	struct udma_eq_table		eq_table;
 	struct udma_hem_table		qpc_timer_table;
 	struct udma_hem_table		cqc_timer_table;
 	struct udma_hem_table		gmv_table;
+	struct list_head		qp_list;
+	spinlock_t			qp_list_lock;
+	struct list_head		dip_list;
+	spinlock_t			dip_list_lock;
 };
 
 static inline uint64_t to_hr_hw_page_addr(uint64_t addr)
@@ -550,6 +573,8 @@ int udma_mtr_create(struct udma_dev *udma_dev, struct udma_mtr *mtr,
 		    struct udma_buf_attr *buf_attr, uint32_t ba_page_shift,
 		    uint64_t user_addr, bool is_user);
 void udma_mtr_destroy(struct udma_dev *udma_dev, struct udma_mtr *mtr);
+int udma_init_qp_table(struct udma_dev *udma_dev);
+void udma_cleanup_qp_table(struct udma_dev *udma_dev);
 void udma_cleanup_common_hem(struct udma_dev *udma_dev);
 int udma_init_common_hem(struct udma_dev *udma_dev);
 

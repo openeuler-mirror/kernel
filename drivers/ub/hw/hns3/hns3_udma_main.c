@@ -16,11 +16,252 @@
 #include "urma/ubcore_api.h"
 #include "hns3_udma_device.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_jfc.h"
 #include "hns3_udma_cmd.h"
 
 static struct ubcore_ops g_udma_dev_ops = {
 
 };
+
+static void udma_cleanup_uar_table(struct udma_dev *dev)
+{
+	struct udma_ida *uar_ida = &dev->uar_ida;
+
+	if (!ida_is_empty(&uar_ida->ida))
+		dev_err(dev->dev, "IDA not empty in clean up uar table.\n");
+	ida_destroy(&uar_ida->ida);
+}
+
+static void udma_init_uar_table(struct udma_dev *udma_dev)
+{
+	struct udma_ida *uar_ida = &udma_dev->uar_ida;
+
+	ida_init(&uar_ida->ida);
+	uar_ida->max = udma_dev->caps.num_uars - 1;
+	uar_ida->min = udma_dev->caps.reserved_uars;
+}
+
+static void udma_cleanup_seg_table(struct udma_dev *dev)
+{
+	struct udma_ida *seg_ida = &dev->seg_table.seg_ida;
+
+	if (!ida_is_empty(&seg_ida->ida))
+		dev_err(dev->dev, "IDA not empty in clean up seg table.\n");
+	ida_destroy(&seg_ida->ida);
+}
+
+static void udma_init_seg_table(struct udma_dev *udma_dev)
+{
+	struct udma_ida *seg_ida = &udma_dev->seg_table.seg_ida;
+
+	ida_init(&seg_ida->ida);
+	seg_ida->max = udma_dev->caps.num_mtpts - 1;
+	seg_ida->min = udma_dev->caps.reserved_mrws;
+}
+
+static void udma_cleanup_jfc_table(struct udma_dev *udma_dev)
+{
+	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	struct udma_jfc *jfc;
+	unsigned long index;
+	int i;
+
+	for (i = 0; i < UDMA_CQ_BANK_NUM; i++) {
+		if (!ida_is_empty(&jfc_table->bank[i].ida))
+			dev_err(udma_dev->dev,
+				"IDA not empty in clean up jfc bank[%d] table\n",
+				i);
+		ida_destroy(&jfc_table->bank[i].ida);
+	}
+
+	if (!xa_empty(&jfc_table->xa)) {
+		dev_err(udma_dev->dev, "JFC not empty\n");
+		xa_for_each(&jfc_table->xa, index, jfc)
+			udma_table_put(udma_dev, &jfc_table->table, index);
+	}
+	xa_destroy(&jfc_table->xa);
+}
+
+static void udma_init_jfc_table(struct udma_dev *udma_dev)
+{
+	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	uint32_t reserved_from_bot;
+	uint32_t i;
+
+	mutex_init(&jfc_table->bank_mutex);
+	xa_init(&jfc_table->xa);
+
+	reserved_from_bot = 1;
+
+	for (i = 0; i < reserved_from_bot; i++) {
+		jfc_table->bank[get_jfc_bankid(i)].inuse++;
+		jfc_table->bank[get_jfc_bankid(i)].min++;
+	}
+
+	for (i = 0; i < UDMA_CQ_BANK_NUM; i++) {
+		ida_init(&jfc_table->bank[i].ida);
+		jfc_table->bank[i].max = (1 << udma_dev->caps.num_jfc_shift) /
+					UDMA_CQ_BANK_NUM - 1;
+	}
+}
+
+static void udma_cleanup_jfr_table(struct udma_dev *dev)
+{
+	struct udma_jfr_table *jfr_table = &dev->jfr_table;
+	struct udma_ida *jfr_ida = &jfr_table->jfr_ida;
+	unsigned long index = 0;
+	struct udma_jfr *jfr;
+
+	if (!ida_is_empty(&jfr_ida->ida))
+		dev_err(dev->dev, "IDA not empty in clean up jfr table.\n");
+	ida_destroy(&jfr_ida->ida);
+
+	if (!xa_empty(&jfr_table->xa)) {
+		dev_err(dev->dev, "JFR not empty\n");
+		xa_for_each(&jfr_table->xa, index, jfr)
+			udma_table_put(dev, &jfr_table->table, index);
+	}
+	xa_destroy(&jfr_table->xa);
+}
+
+static void udma_init_jfr_table(struct udma_dev *dev)
+{
+	struct udma_jfr_table *jfr_table = &dev->jfr_table;
+	struct udma_ida *jfr_ida = &jfr_table->jfr_ida;
+
+	xa_init(&jfr_table->xa);
+	ida_init(&jfr_ida->ida);
+	jfr_ida->max = (1 << dev->caps.num_jfr_shift) - 1;
+	/* reserve jfr id 0 */
+	jfr_ida->min = 1;
+}
+
+static void udma_cleanup_jfs_table(struct udma_dev *dev)
+{
+	struct udma_jfs_table *jfs_table = &dev->jfs_table;
+	struct udma_ida *jfs_ida = &jfs_table->jfs_ida;
+
+	if (!ida_is_empty(&jfs_ida->ida))
+		dev_err(dev->dev, "IDA not empty in clean up jfs table.\n");
+	ida_destroy(&jfs_ida->ida);
+
+	if (!xa_empty(&jfs_table->xa))
+		dev_err(dev->dev, "JFS table not empty.\n");
+	xa_destroy(&jfs_table->xa);
+}
+
+static void udma_init_jfs_table(struct udma_dev *dev)
+{
+	struct udma_jfs_table *jfs_table = &dev->jfs_table;
+	struct udma_ida *jfs_ida = &jfs_table->jfs_ida;
+
+	xa_init(&jfs_table->xa);
+	ida_init(&jfs_ida->ida);
+	jfs_ida->max = (1 << dev->caps.num_jfs_shift) - 1;
+	/* reserve jfs id 0 */
+	jfs_ida->min = 1;
+}
+
+static void udma_cleanup_jetty_table(struct udma_dev *dev)
+{
+	struct udma_jetty_table	*jetty_table = &dev->jetty_table;
+	struct udma_ida *jetty_ida = &jetty_table->jetty_ida;
+
+	if (!ida_is_empty(&jetty_ida->ida))
+		dev_err(dev->dev, "IDA not empty in clean up jetty table.\n");
+	ida_destroy(&jetty_ida->ida);
+
+	if (!xa_empty(&jetty_table->xa))
+		dev_err(dev->dev, "Jetty table not empty.\n");
+	xa_destroy(&jetty_table->xa);
+}
+
+static void udma_init_jetty_table(struct udma_dev *dev)
+{
+	struct udma_jetty_table	*jetty_table = &dev->jetty_table;
+	struct udma_ida *jetty_ida = &jetty_table->jetty_ida;
+
+	xa_init(&jetty_table->xa);
+	ida_init(&jetty_ida->ida);
+	jetty_ida->max = (1 << dev->caps.num_jetty_shift) - 1;
+	/* reserve jetty id 0 */
+	jetty_ida->min = 1;
+}
+
+int udma_init_eq_idx_table(struct udma_dev *udma_dev)
+{
+	uint32_t eq_num;
+
+	eq_num = udma_dev->caps.num_comp_vectors +
+		 udma_dev->caps.num_aeq_vectors;
+	udma_dev->eq_table.idx_table = kcalloc(eq_num, sizeof(uint32_t),
+						GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(udma_dev->eq_table.idx_table))
+		return -ENOMEM;
+
+	return 0;
+}
+
+int udma_setup_hca(struct udma_dev *udma_dev)
+{
+	struct device *dev = udma_dev->dev;
+	int ret;
+
+	INIT_LIST_HEAD(&udma_dev->qp_list);
+	spin_lock_init(&udma_dev->qp_list_lock);
+	INIT_LIST_HEAD(&udma_dev->dip_list);
+	spin_lock_init(&udma_dev->dip_list_lock);
+
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB ||
+	    udma_dev->caps.flags & UDMA_CAP_FLAG_QP_RECORD_DB) {
+		INIT_LIST_HEAD(&udma_dev->pgdir_list);
+		mutex_init(&udma_dev->pgdir_mutex);
+	}
+
+	udma_init_uar_table(udma_dev);
+
+	ret = udma_init_qp_table(udma_dev);
+	if (ret) {
+		dev_err(dev, "Failed to init qp_table.\n");
+		goto err_uar_table_free;
+	}
+
+	udma_init_seg_table(udma_dev);
+	udma_init_jfc_table(udma_dev);
+	udma_init_jfr_table(udma_dev);
+	udma_init_jfs_table(udma_dev);
+	udma_init_jetty_table(udma_dev);
+	ret = udma_init_eq_idx_table(udma_dev);
+	if (ret) {
+		dev_err(dev, "Failed to init eq_table.\n");
+		goto err_eq_table;
+	}
+
+	return 0;
+err_eq_table:
+	udma_cleanup_jetty_table(udma_dev);
+	udma_cleanup_jfs_table(udma_dev);
+	udma_cleanup_jfr_table(udma_dev);
+	udma_cleanup_jfc_table(udma_dev);
+	udma_cleanup_seg_table(udma_dev);
+	udma_cleanup_qp_table(udma_dev);
+
+err_uar_table_free:
+	udma_cleanup_uar_table(udma_dev);
+	return ret;
+}
+
+void udma_teardown_hca(struct udma_dev *udma_dev)
+{
+	kfree(udma_dev->eq_table.idx_table);
+	udma_cleanup_jetty_table(udma_dev);
+	udma_cleanup_jfs_table(udma_dev);
+	udma_cleanup_jfr_table(udma_dev);
+	udma_cleanup_jfc_table(udma_dev);
+	udma_cleanup_seg_table(udma_dev);
+	udma_cleanup_qp_table(udma_dev);
+	udma_cleanup_uar_table(udma_dev);
+}
 
 int udma_init_common_hem(struct udma_dev *udma_dev)
 {
@@ -285,6 +526,11 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_hem_init;
 	}
 
+	ret = udma_setup_hca(udma_dev);
+	if (ret) {
+		dev_err(dev, "setup hca failed!\n");
+		goto error_failed_setup;
+	}
 	ret = udma_dev->hw->hw_init(udma_dev);
 	if (ret) {
 		dev_err(dev, "hw_init failed!\n");
@@ -303,6 +549,9 @@ error_failed_register_device:
 	udma_dev->hw->hw_exit(udma_dev);
 
 error_failed_engine_init:
+	udma_teardown_hca(udma_dev);
+
+error_failed_setup:
 	udma_cleanup_hem(udma_dev);
 
 error_failed_hem_init:
@@ -325,6 +574,15 @@ void udma_hnae_client_exit(struct udma_dev *udma_dev)
 
 	if (udma_dev->hw->hw_exit)
 		udma_dev->hw->hw_exit(udma_dev);
+
+	udma_teardown_hca(udma_dev);
+
+	udma_cleanup_hem(udma_dev);
+
+	if (udma_dev->cmd_mod)
+		udma_cmd_use_polling(udma_dev);
+
+	udma_cmd_cleanup(udma_dev);
 	if (udma_dev->hw->cmq_exit)
 		udma_dev->hw->cmq_exit(udma_dev);
 }

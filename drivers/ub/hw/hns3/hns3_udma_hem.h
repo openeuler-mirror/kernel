@@ -18,6 +18,8 @@
 
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
+#include "hns3_udma_device.h"
+
 #define HEM_HOP_STEP_DIRECT 0xff
 #define HEM_INDEX_BUF BIT(0)
 #define HEM_INDEX_L0 BIT(1)
