@@ -612,7 +612,7 @@ struct mm_struct {
 		u32 pasid;
 #endif
 
-#ifdef CONFIG_MEMORY_RELIABLE
+#if defined(CONFIG_MEMORY_RELIABLE) && !defined(CONFIG_X86_64)
 		/* total used reliable pages */
 		KABI_RENAME(atomic_long_t reserve_0, atomic_long_t reliable_nr_page);
 #endif
@@ -638,7 +638,11 @@ struct mm_struct {
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 #endif
+#if defined(CONFIG_X86_64) && defined(CONFIG_MEMORY_RELIABLE)
+	KABI_USE(4, atomic_long_t reliable_nr_page)
+#else
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
