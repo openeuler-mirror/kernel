@@ -1013,6 +1013,16 @@ config RT_GROUP_SCHED
 
 endif #CGROUP_SCHED
 
+config QOS_SCHED_DYNAMIC_AFFINITY
+	bool "qos dynamic affinity"
+	depends on CPUSETS
+	default n
+	help
+	 This feature lets you allocate preferred cpus to taskgroup. If enabled,
+	 it will make taskgroup only to use preferred cpus when cpu utilization
+	 of taskgroup is below threshold setted, otherwise make taskgroup to use
+	 cpus allowed.
+
 config SCHED_MM_CID
 	def_bool y
 	depends on SMP && RSEQ
