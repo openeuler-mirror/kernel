@@ -858,6 +858,9 @@ static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 	if (cs == &top_cpuset)
 		return -EACCES;
 
+	if (!dynamic_affinity_enabled())
+		return -EPERM;
+
 	/*
 	 * An empty prefer_cpus is ok which mean that the cpuset tasks disable
 	 * dynamic affinity feature.
