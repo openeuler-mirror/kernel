@@ -12,7 +12,7 @@
 
 static int timer_next_event(unsigned long delta,
 		struct clock_event_device *evt);
-static int timer_shutdown(struct clock_event_device *evt);
+static int sw64_timer_shutdown(struct clock_event_device *evt);
 static int timer_set_oneshot(struct clock_event_device *evt);
 
 /*
@@ -23,7 +23,7 @@ static struct clock_event_device timer_clockevent = {
 	.features		= CLOCK_EVT_FEAT_ONESHOT,
 	.shift			= 20,
 	.mult			= 0,
-	.set_state_shutdown	= timer_shutdown,
+	.set_state_shutdown	= sw64_timer_shutdown,
 	.set_state_oneshot	= timer_set_oneshot,
 	.set_next_event		= timer_next_event,
 	.rating			= 300,
@@ -71,7 +71,7 @@ static int timer_next_event(unsigned long delta,
 	return 0;
 }
 
-static int timer_shutdown(struct clock_event_device *evt)
+static int sw64_timer_shutdown(struct clock_event_device *evt)
 {
 	wrtimer(0);
 	return 0;
@@ -134,7 +134,7 @@ void sw64_timer_interrupt(void)
 	if (!evt->event_handler) {
 		pr_warn("Spurious local timer interrupt on cpu %d\n",
 				smp_processor_id());
-		timer_shutdown(evt);
+		sw64_timer_shutdown(evt);
 		return;
 	}
 
