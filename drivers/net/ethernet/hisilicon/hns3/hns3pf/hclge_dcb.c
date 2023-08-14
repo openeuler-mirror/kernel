@@ -523,7 +523,8 @@ static int hclge_mqprio_qopt_check_rate(struct hclge_dev *hdev, u64 min_rate,
 	if (!max_rate)
 		return 0;
 
-	if (hnae3_dev_roh_supported(hdev)) {
+	if (hnae3_dev_roh_supported(hdev) ||
+	    hnae3_dev_ubl_supported(hdev->ae_dev)) {
 		if (max_rate < TM_RATE_PORT_RATE_SCALE ||
 		    max_speed > hdev->hw.mac.max_speed) {
 			dev_err(&hdev->pdev->dev,
@@ -624,7 +625,7 @@ static int hclge_config_tc(struct hclge_dev *hdev,
 	if (ret)
 		return ret;
 
-	if (hnae3_dev_roh_supported(hdev))
+	if (hnae3_dev_roh_supported(hdev) || hnae3_dev_ubl_supported(hdev->ae_dev))
 		return hclge_tm_set_tc_rate_limit(hdev, tc_info);
 
 	return 0;
