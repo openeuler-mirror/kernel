@@ -3165,6 +3165,76 @@ static const struct file_operations proc_setgroups_operations = {
 };
 #endif /* CONFIG_USER_NS */
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+
+static int preferred_cpuset_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	if (p->prefer_cpus)
+		seq_printf(m, "%*pbl\n", cpumask_pr_args(p->prefer_cpus));
+	else
+		seq_putc(m, '\n');
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static ssize_t preferred_cpuset_write(struct file *file, const char __user *buf,
+					size_t count, loff_t *offset)
+{
+	cpumask_var_t new_mask;
+	int retval;
+	struct inode *inode = file_inode(file);
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	if (!alloc_cpumask_var(&new_mask, GFP_KERNEL)) {
+		retval = -ENOMEM;
+		goto out_put_task;
+	}
+
+	retval = cpumask_parselist_user(buf, count, new_mask);
+	if (retval < 0)
+		goto out_free_cpumask;
+
+	retval = set_prefer_cpus_ptr(p, new_mask);
+	if (retval < 0)
+		goto out_free_cpumask;
+
+	retval = count;
+
+out_free_cpumask:
+	free_cpumask_var(new_mask);
+out_put_task:
+	put_task_struct(p);
+
+	return retval;
+}
+
+static int preferred_cpuset_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, preferred_cpuset_show, inode);
+}
+
+static const struct file_operations proc_preferred_cpuset_operations = {
+	.open		= preferred_cpuset_open,
+	.write		= preferred_cpuset_write,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
+
 static int proc_pid_personality(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task)
 {
@@ -3688,6 +3758,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #ifdef CONFIG_KSM
 	ONE("ksm_merging_pages",  S_IRUSR, proc_pid_ksm_merging_pages),
 	ONE("ksm_stat",  S_IRUSR, proc_pid_ksm_stat),
+#endif
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	REG("preferred_cpuset", 0644, proc_preferred_cpuset_operations),
 #endif
 };
 
