@@ -201,34 +201,6 @@ config SW64_CHIP3
 endchoice
 
 choice
-	prompt "Runtime System"
-	depends on SW64_CHIP3
-	default SW64_ASIC
-
-config SW64_FPGA
-	bool "FPGA"
-	help
-	  Support for chip3 FPGA.
-
-config SW64_SIM
-	bool "Hardware Simulator"
-	help
-	  Support for chip3 hardware simulator.
-
-config SW64_ASIC
-	bool "ASIC"
-	help
-	  Support for chip3 asic.
-
-endchoice
-
-config SW64_CHIP3_ASIC_DEBUG
-	bool "Debug Support for Chip3 Asic"
-	depends on SW64_ASIC
-	help
-	  Used for debug
-
-choice
 	prompt "Platform Type"
 
 config PLATFORM_XUELANG

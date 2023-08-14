@@ -795,17 +795,6 @@ setup_arch(char **cmdline_p)
 	}
 #endif /* CMDLINE_EXTEND */
 #endif
-	if (IS_ENABLED(CONFIG_SW64_CHIP3_ASIC_DEBUG) &&
-			IS_ENABLED(CONFIG_SW64_CHIP3)) {
-		unsigned long bmc, cpu_online, node;
-
-		bmc = *(unsigned long *)__va(0x800000);
-		pr_info("bmc = %ld\n", bmc);
-		cpu_online = sw64_chip->get_cpu_num();
-		for (node = 0; node < cpu_online; node++)
-			sw64_io_write(node, SI_FAULT_INT_EN, 0);
-		sprintf(boot_command_line, "root=/dev/sda2 ip=172.16.137.%ld::172.16.137.254:255.255.255.0::eth0:off", 180+bmc);
-	}
 
 	strlcpy(command_line, boot_command_line, COMMAND_LINE_SIZE);
 	*cmdline_p = command_line;

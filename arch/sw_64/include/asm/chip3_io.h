@@ -9,11 +9,7 @@
 #define PCI_IOR0_BASE		(0x2UL << 32)
 #define PCI_IOR1_BASE		(0x3UL << 32)
 
-#ifdef CONFIG_SW64_FPGA
-#define PCI_RC_CFG		(0x4UL << 32)
-#else
 #define PCI_RC_CFG		(0x5UL << 32)
-#endif
 
 #define PCI_EP_CFG		(0x3UL << 33)
 #define PCI_LEGACY_IO		(0x1UL << 32)

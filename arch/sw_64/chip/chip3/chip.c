@@ -15,10 +15,7 @@ static u64 read_longtime(struct clocksource *cs)
 	u64 result;
 	unsigned long node;
 
-	if (IS_ENABLED(CONFIG_SW64_FPGA) || IS_ENABLED(CONFIG_SW64_SIM))
-		node = 0;
-	else
-		node = __this_cpu_read(hard_node_id);
+	node = __this_cpu_read(hard_node_id);
 	result = sw64_io_read(node, LONG_TIME);
 
 	return result;
@@ -79,16 +76,10 @@ static struct clocksource clocksource_vtime = {
 
 void setup_chip_clocksource(void)
 {
-#ifdef CONFIG_SW64_SIM
-	clocksource_register_khz(&clocksource_longtime, 400000); /* Hardware Simulator 400Mhz */
-#elif defined(CONFIG_SW64_FPGA)
-	clocksource_register_khz(&clocksource_longtime, 1000); /* FPGA 1Mhz */
-#else
 	if (is_in_host())
 		clocksource_register_khz(&clocksource_longtime, 25000);
 	else
 		clocksource_register_khz(&clocksource_vtime, 25000);
-#endif
 }
 
 void set_devint_wken(int node)
@@ -335,28 +326,6 @@ static int chip3_check_pci_linkup(unsigned long node, unsigned long index)
 {
 	unsigned long rc_debug;
 
-#ifdef CONFIG_SW64_FPGA           //for PCIE4.0
-	printk("waiting for link up...\n");
-	if (index == 0)
-		sw64_io_write(node, PIU_TOP0_CONFIG, 0x10011);
-	else
-		sw64_io_write(node, PIU_TOP1_CONFIG, 0x10011);
-	mdelay(10);
-	rc_debug = read_piu_ior1(node, index, RCDEBUGINF1);
-	while (!(rc_debug & 0x1)) {
-		udelay(10);
-		rc_debug = read_piu_ior1(node, index, RCDEBUGINF1);
-	}
-	mdelay(10);
-#endif
-#ifdef CONFIG_SW64_SIM
-	printk("waiting for link up...\n");
-	rc_debug = read_piu_ior1(node, index, RCDEBUGINF1);
-	while (!(rc_debug & 0x1)) {
-		udelay(10);
-		rc_debug = read_piu_ior1(node, index, RCDEBUGINF1);
-	}
-#endif
 	rc_debug = read_piu_ior1(node, index, RCDEBUGINF1);
 
 	return !(rc_debug & 0x1);
@@ -376,12 +345,6 @@ static void chip3_set_rc_piu(unsigned long node, unsigned long index)
 	write_rc_conf(node, index, RC_EXP_DEVCTL, 0x2850);
 	write_rc_conf(node, index, RC_EXP_DEVCTL2, 0x6);
 	write_rc_conf(node, index, RC_ORDER_RULE_CTL, 0x0100);
-
-	if (IS_ENABLED(CONFIG_SUSPEND) && IS_ENABLED(CONFIG_SW64_SIM)) {
-		value = read_rc_conf(node, index, RC_LINK_STAT);
-		value |= 0x3;
-		write_rc_conf(node, index, RC_LINK_STAT, value);
-	}
 
 	/* enable DBI_RO_WR_EN */
 	rc_misc_ctrl = read_rc_conf(node, index, RC_MISC_CONTROL_1);
@@ -431,10 +394,6 @@ static unsigned long chip3_get_rc_enable(unsigned long node)
 	if (is_guest_or_emul())
 		return 1;
 
-	if (!IS_ENABLED(CONFIG_SW64_ASIC)) {
-		rc_enable = 0x1;
-		sw64_io_write(node, IO_START, rc_enable);
-	}
 	rc_enable = sw64_io_read(node, IO_START);
 
 	return rc_enable;
