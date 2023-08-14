@@ -95,6 +95,9 @@ struct cpuinfo_topology {
 	// Physical die ID on AMD, Relative on Intel
 	u32			die_id;
 
+	// Compute unit ID - AMD specific
+	u32			cu_id;
+
 	// Core ID relative to the package
 	u32			core_id;
 };
@@ -115,7 +118,6 @@ struct cpuinfo_x86 {
 	__u8			x86_phys_bits;
 	/* CPUID returned core id bits: */
 	__u8			x86_coreid_bits;
-	__u8			cu_id;
 	/* Max extended CPUID function supported: */
 	__u32			extended_cpuid_level;
 	/* Maximum supported CPUID level, -1=no CPUID: */
