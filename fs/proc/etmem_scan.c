@@ -314,7 +314,12 @@ static int vm_walk_host_range(unsigned long long start,
 	unsigned long tmp_gpa_to_hva = pic->gpa_to_hva;
 
 	pic->gpa_to_hva = 0;
+
+#ifdef KVM_HAVE_MMU_RWLOCK
+	write_unlock_irq(&pic->kvm->mmu_lock);
+#else
 	spin_unlock_irq(&pic->kvm->mmu_lock);
+#endif
 	down_read(&walk->mm->mmap_lock);
 	local_irq_disable();
 	ret = walk_page_range(walk->mm, start + tmp_gpa_to_hva, end + tmp_gpa_to_hva,
@@ -537,13 +542,21 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 
 	WARN_ON(addr >= end);
 
+#ifdef KVM_HAVE_MMU_RWLOCK
+	write_lock_irq(&pic->kvm->mmu_lock);
+#else
 	spin_lock_irq(&pic->kvm->mmu_lock);
+#endif
 
 	vcpu = kvm_get_vcpu(pic->kvm, 0);
 	if (!vcpu) {
 		pic->gpa_to_hva = 0;
 		set_restart_gpa(TASK_SIZE, "NO-VCPU");
+#ifdef KVM_HAVE_MMU_RWLOCK
+		write_unlock_irq(&pic->kvm->mmu_lock);
+#else
 		spin_unlock_irq(&pic->kvm->mmu_lock);
+#endif
 		return -EINVAL;
 	}
 
@@ -551,7 +564,11 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 	if (!VALID_PAGE(mmu->root_hpa)) {
 		pic->gpa_to_hva = 0;
 		set_restart_gpa(TASK_SIZE, "NO-HPA");
+#ifdef KVM_HAVE_MMU_RWLOCK
+		write_unlock_irq(&pic->kvm->mmu_lock);
+#else
 		spin_unlock_irq(&pic->kvm->mmu_lock);
+#endif
 		return -EINVAL;
 	}
 
@@ -567,7 +584,11 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 	 * and RET_RESCAN_FLAG will be set in ret value
 	 */
 	if (!(err & RET_RESCAN_FLAG))
+#ifdef KVM_HAVE_MMU_RWLOCK
+		write_unlock_irq(&pic->kvm->mmu_lock);
+#else
 		spin_unlock_irq(&pic->kvm->mmu_lock);
+#endif
 	else
 		err &= ~RET_RESCAN_FLAG;
 
@@ -584,7 +605,11 @@ static int ept_idle_supports_cpu(struct kvm *kvm)
 		if (!vcpu)
 			return -EINVAL;
 
+#ifdef KVM_HAVE_MMU_RWLOCK
+		write_lock(&kvm->mmu_lock);
+#else
 		spin_lock(&kvm->mmu_lock);
+#endif
 		mmu = kvm_arch_mmu_pointer(vcpu);
 		if (kvm_mmu_ad_disabled(mmu)) {
 			printk(KERN_NOTICE "CPU does not support EPT A/D bits tracking\n");
@@ -595,7 +620,11 @@ static int ept_idle_supports_cpu(struct kvm *kvm)
 			ret = -EINVAL;
 		} else
 			ret = 0;
+#ifdef KVM_HAVE_MMU_RWLOCK
+		write_unlock(&kvm->mmu_lock);
+#else
 		spin_unlock(&kvm->mmu_lock);
+#endif
 
 		return ret;
 }
@@ -724,9 +753,17 @@ static int arm_page_range(struct page_idle_ctrl *pic,
 
 	WARN_ON(addr >= end);
 
+#ifdef KVM_HAVE_MMU_RWLOCK
+	write_lock(&pic->kvm->mmu_lock);
+#else
 	spin_lock(&pic->kvm->mmu_lock);
+#endif
 	pgd = (pgd_t *)kvm->arch.mmu.pgt->pgd + pgd_index(addr);
+#ifdef KVM_HAVE_MMU_RWLOCK
+	write_unlock(&pic->kvm->mmu_lock);
+#else
 	spin_unlock(&pic->kvm->mmu_lock);
+#endif
 
 	local_irq_disable();
 	do {
@@ -1045,9 +1082,18 @@ static int page_scan_release(struct inode *inode, struct file *file)
 		goto out;
 	}
 #ifdef CONFIG_X86_64
+#ifdef KVM_HAVE_MMU_RWLOCK
+	write_lock(&kvm->mmu_lock);
+#else
 	spin_lock(&kvm->mmu_lock);
+#endif
+
 	kvm_flush_remote_tlbs(kvm);
+#ifdef KVM_HAVE_MMU_RWLOCK
+	write_unlock(&kvm->mmu_lock);
+#else
 	spin_unlock(&kvm->mmu_lock);
+#endif
 #endif
 
 out:
