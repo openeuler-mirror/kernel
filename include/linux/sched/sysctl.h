@@ -29,4 +29,7 @@ extern int sysctl_numa_balancing_mode;
 #define sysctl_numa_balancing_mode	0
 #endif
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+extern int sysctl_sched_util_low_pct;
+#endif
 #endif /* _LINUX_SCHED_SYSCTL_H */
