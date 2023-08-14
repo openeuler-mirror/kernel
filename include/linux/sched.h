@@ -543,6 +543,11 @@ struct sched_statistics {
 #ifdef CONFIG_SCHED_CORE
 	u64				core_forceidle_sum;
 #endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	u64				nr_wakeups_preferred_cpus;
+	u64				nr_wakeups_force_preferred_cpus;
+#endif
 #endif /* CONFIG_SCHEDSTATS */
 } ____cacheline_aligned;
 

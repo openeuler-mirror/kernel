@@ -7730,6 +7730,8 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 		if (available_idle_cpu(cpu)) {
 			rcu_read_unlock();
 			p->select_cpus = p->prefer_cpus;
+			if (sd_flag & SD_BALANCE_WAKE)
+				schedstat_inc(p->stats.nr_wakeups_preferred_cpus);
 			return;
 		}
 
@@ -7739,8 +7741,11 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	rcu_read_unlock();
 
 	if (tg_capacity > cpumask_weight(p->prefer_cpus) &&
-	    util_avg_sum * 100 <= tg_capacity * sysctl_sched_util_low_pct)
+	    util_avg_sum * 100 <= tg_capacity * sysctl_sched_util_low_pct) {
 		p->select_cpus = p->prefer_cpus;
+		if (sd_flag & SD_BALANCE_WAKE)
+			schedstat_inc(p->stats.nr_wakeups_preferred_cpus);
+	}
 }
 #endif
 
@@ -7836,8 +7841,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	rcu_read_unlock();
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	if (!cpumask_test_cpu(new_cpu, p->select_cpus))
+	if (!cpumask_test_cpu(new_cpu, p->select_cpus)) {
 		new_cpu = idlest_cpu;
+		schedstat_inc(p->stats.nr_wakeups_force_preferred_cpus);
+	}
 #endif
 	return new_cpu;
 }
