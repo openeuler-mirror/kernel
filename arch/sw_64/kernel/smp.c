@@ -373,6 +373,8 @@ void handle_ipi(struct pt_regs *regs)
 
 			case IPI_CPU_STOP:
 				ipi_cpu_stop(cpu);
+				break;
+
 			default:
 				pr_crit("Unknown IPI on CPU %d: %lu\n", cpu, which);
 				break;
