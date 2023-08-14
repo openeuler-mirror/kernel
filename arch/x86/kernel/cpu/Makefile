@@ -57,6 +57,8 @@ obj-$(CONFIG_ACRN_GUEST)		+= acrn.o
 obj-$(CONFIG_BPF_RVI)			+= bpf-rvi.o proc.o
 obj-$(CONFIG_X86_BUS_LOCK_DETECT)	+= bus_lock.o
 
+obj-$(CONFIG_DEBUG_FS)			+= debugfs.o
+
 quiet_cmd_mkcapflags = MKCAP   $@
       cmd_mkcapflags = $(CONFIG_SHELL) $(srctree)/$(src)/mkcapflags.sh $@ $^
 
