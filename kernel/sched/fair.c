@@ -8655,7 +8655,12 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	if (kthread_is_per_cpu(p))
 		return 0;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	set_task_select_cpus(p, NULL, 0);
+	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
+#else
 	if (!cpumask_test_cpu(env->dst_cpu, p->cpus_ptr)) {
+#endif
 		int cpu;
 
 		schedstat_inc(p->stats.nr_failed_migrations_affine);
@@ -8678,7 +8683,11 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 		/* Prevent to re-select dst_cpu via env's CPUs: */
 		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+			if (cpumask_test_cpu(cpu, p->select_cpus)) {
+#else
 			if (cpumask_test_cpu(cpu, p->cpus_ptr)) {
+#endif
 				env->flags |= LBF_DST_PINNED;
 				env->new_dst_cpu = cpu;
 				break;
