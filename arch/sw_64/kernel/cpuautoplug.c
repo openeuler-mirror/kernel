@@ -275,7 +275,7 @@ static int find_min_busy_cpu(void)
 	int nr_all_cpus = num_possible_cpus();
 	unsigned int cpus, target_cpu;
 	cputime64_t busy_time;
-	cputime64_t b_time[nr_all_cpus];
+	cputime64_t b_time[NR_CPUS];
 
 	memset(b_time, 0, sizeof(b_time));
 	for_each_online_cpu(cpus) {
@@ -288,12 +288,14 @@ static int find_min_busy_cpu(void)
 
 static void increase_cores(int cur_cpus)
 {
+	struct device *dev;
+
 	if (cur_cpus == ap_info.maxcpus)
 		return;
 
 	cur_cpus = cpumask_next_zero(0, cpu_online_mask);
 
-	struct device *dev = get_cpu_device(cur_cpus);
+	dev = get_cpu_device(cur_cpus);
 
 	per_cpu(cpu_adjusting, dev->id) = 1;
 	lock_device_hotplug();
@@ -307,12 +309,14 @@ static void increase_cores(int cur_cpus)
 
 static void decrease_cores(int cur_cpus)
 {
+	struct device *dev;
+
 	if (cur_cpus == ap_info.mincpus)
 		return;
 
 	cur_cpus = find_min_busy_cpu();
 
-	struct device *dev = get_cpu_device(cur_cpus);
+	dev = get_cpu_device(cur_cpus);
 
 	if (dev->id > 0) {
 		per_cpu(cpu_adjusting, dev->id) = -1;
