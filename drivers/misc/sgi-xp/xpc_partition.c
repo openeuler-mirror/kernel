@@ -291,7 +291,7 @@ xpc_partition_disengaged(struct xpc_partition *part)
 
 		/* cancel the timer function, provided it's not us */
 		if (!in_interrupt())
-			del_singleshot_timer_sync(&part->disengage_timer);
+			del_timer_sync(&part->disengage_timer);
 
 		DBUG_ON(part->act_state != XPC_P_AS_DEACTIVATING &&
 			part->act_state != XPC_P_AS_INACTIVE);
