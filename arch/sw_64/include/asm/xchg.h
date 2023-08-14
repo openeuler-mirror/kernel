@@ -82,19 +82,19 @@ ____xchg(_u32, volatile int *m, unsigned long val)
 	unsigned long dummy, addr;
 
 	__asm__ __volatile__(
-	"	ldi %3, %5\n"
-	"1:	lldw %0, 0(%3)\n"
-	"	ldi %1, 1\n"
-	"	wr_f %1\n"
-	"	bis $31, %4, %1\n"
+	"	ldi	%3, %5\n"
+	"1:	lldw	%0, 0(%3)\n"
+	"	ldi	%1, 1\n"
+	"	wr_f	%1\n"
+	"	bis	$31, %4, %1\n"
 #ifdef CONFIG_LOCK_FIXUP
 	"	memb\n"
 #endif
-	"	lstw %1, 0(%3)\n"
-	"	rd_f %1\n"
-	"	beq %1, 2f\n"
+	"	lstw	%1, 0(%3)\n"
+	"	rd_f	%1\n"
+	"	beq	%1, 2f\n"
 	".subsection 2\n"
-	"2:	br 1b\n"
+	"2:	br	1b\n"
 	".previous"
 	: "=&r" (val), "=&r" (dummy), "=m" (*m), "=&r"(addr)
 	: "rI" (val), "m" (*m) : "memory");
@@ -108,19 +108,19 @@ ____xchg(_u64, volatile long *m, unsigned long val)
 	unsigned long dummy, addr;
 
 	__asm__ __volatile__(
-	"	ldi %3, %5\n"
-	"1:	lldl %0, 0(%3)\n"
-	"	ldi %1, 1\n"
-	"	wr_f %1\n"
-	"	bis $31, %4, %1\n"
+	"	ldi	%3, %5\n"
+	"1:	lldl	%0, 0(%3)\n"
+	"	ldi	%1, 1\n"
+	"	wr_f	%1\n"
+	"	bis	$31, %4, %1\n"
 #ifdef CONFIG_LOCK_FIXUP
 	"	memb\n"
 #endif
-	"	lstl %1, 0(%3)\n"
-	"	rd_f %1\n"
-	"	beq %1, 2f\n"
+	"	lstl	%1, 0(%3)\n"
+	"	rd_f	%1\n"
+	"	beq	%1, 2f\n"
 	".subsection 2\n"
-	"2:	br 1b\n"
+	"2:	br	1b\n"
 	".previous"
 	: "=&r" (val), "=&r" (dummy), "=m" (*m), "=&r"(addr)
 	: "rI" (val), "m" (*m) : "memory");
@@ -230,21 +230,21 @@ ____cmpxchg(_u32, volatile int *m, int old, int new)
 	unsigned long prev, cmp, addr, tmp;
 
 	__asm__ __volatile__(
-	"	ldi %3, %7\n"
-	"1:	lldw %0, 0(%3)\n"
-	"	cmpeq %0, %5, %1\n"
-	"	wr_f %1\n"
-	"	bis $31, %6, %4\n"
+	"	ldi	%3, %7\n"
+	"1:	lldw	%0, 0(%3)\n"
+	"	cmpeq	%0, %5, %1\n"
+	"	wr_f	%1\n"
+	"	bis	$31, %6, %4\n"
 #ifdef CONFIG_LOCK_FIXUP
 	"	memb\n"
 #endif
-	"	lstw %4, 0(%3)\n"
-	"	rd_f %4\n"
-	"	beq %1, 2f\n"
-	"	beq %4, 3f\n"
+	"	lstw	%4, 0(%3)\n"
+	"	rd_f	%4\n"
+	"	beq	%1, 2f\n"
+	"	beq	%4, 3f\n"
 	"2:\n"
 	".subsection 2\n"
-	"3:	br 1b\n"
+	"3:	br	1b\n"
 	".previous"
 	: "=&r"(prev), "=&r"(cmp), "=m"(*m), "=&r"(addr), "=&r"(tmp)
 	: "r"((long) old), "r"(new), "m"(*m) : "memory");
@@ -258,21 +258,21 @@ ____cmpxchg(_u64, volatile long *m, unsigned long old, unsigned long new)
 	unsigned long prev, cmp, addr, tmp;
 
 	__asm__ __volatile__(
-	"	ldi %3, %7\n"
-	"1:	lldl %0, 0(%3)\n"
-	"	cmpeq %0, %5, %1\n"
-	"	wr_f %1\n"
-	"	bis $31, %6, %4\n"
+	"	ldi	%3, %7\n"
+	"1:	lldl	%0, 0(%3)\n"
+	"	cmpeq	%0, %5, %1\n"
+	"	wr_f	%1\n"
+	"	bis	$31, %6, %4\n"
 #ifdef CONFIG_LOCK_FIXUP
 	"	memb\n"
 #endif
-	"	lstl %4, 0(%3)\n"
-	"	rd_f %4\n"
-	"	beq %1, 2f\n"
-	"	beq %4, 3f\n"
+	"	lstl	%4, 0(%3)\n"
+	"	rd_f	%4\n"
+	"	beq	%1, 2f\n"
+	"	beq	%4, 3f\n"
 	"2:\n"
 	".subsection 2\n"
-	"3:	br 1b\n"
+	"3:	br	1b\n"
 	".previous"
 	: "=&r"(prev), "=&r"(cmp), "=m"(*m), "=&r"(addr), "=&r"(tmp)
 	: "r"((long) old), "r"(new), "m"(*m) : "memory");
