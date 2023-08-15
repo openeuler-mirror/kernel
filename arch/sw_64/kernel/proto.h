@@ -15,12 +15,4 @@ extern int ptrace_cancel_bpt(struct task_struct *child);
 extern void show_regs(struct pt_regs *regs);
 extern void die(char *str, struct pt_regs *regs, long err);
 
-/* timer.c */
-extern void setup_timer(void);
-
-extern void __init setup_sched_clock(void);
-#ifdef CONFIG_GENERIC_SCHED_CLOCK
-extern void __init sw64_sched_clock_init(void);
-#endif
-
 #endif /* _SW64_KERNEL_PROTO_H */

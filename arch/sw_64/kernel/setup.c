@@ -32,6 +32,7 @@
 #include <asm/kvm_cma.h>
 #include <asm/mmu_context.h>
 #include <asm/sw64_init.h>
+#include <asm/timer.h>
 
 #include "proto.h"
 #include "pci_impl.h"
@@ -765,9 +766,6 @@ setup_arch(char **cmdline_p)
 		sw64_chip_init->early_init.get_smp_info();
 
 	setup_sched_clock();
-#ifdef CONFIG_GENERIC_SCHED_CLOCK
-	sw64_sched_clock_init();
-#endif
 
 	setup_machine_fdt();
 

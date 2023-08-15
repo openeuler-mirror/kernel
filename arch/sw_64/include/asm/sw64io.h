@@ -5,8 +5,6 @@
 #include <asm/io.h>
 #include <asm/page.h>
 
-extern void setup_chip_clocksource(void);
-
 #if defined(CONFIG_SW64_CHIP3)
 #include <asm/chip3_io.h>
 #endif

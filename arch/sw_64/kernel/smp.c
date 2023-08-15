@@ -15,6 +15,7 @@
 #include <asm/tlbflush.h>
 #include <asm/sw64_init.h>
 #include <asm/topology.h>
+#include <asm/timer.h>
 
 #include "proto.h"
 
@@ -82,7 +83,7 @@ void smp_callin(void)
 	wrent(entInt, 0);
 
 	/* Get our local ticker going. */
-	setup_timer();
+	sw64_setup_timer();
 
 	/* All kernel threads share the same mm context.  */
 	mmgrab(&init_mm);
