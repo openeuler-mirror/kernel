@@ -231,14 +231,6 @@ config SW64_CPUAUTOPLUG
 	help
 	  Turns on the interface for SW64_CPU CPUAUTOPLUG.
 
-config CPUFREQ_DEBUGFS
-	bool "CPU Frequency debugfs interface for Chip3 Asic"
-	depends on SW64_CHIP3 && DEBUG_FS && CPU_FREQ
-	help
-	  Turns on the DebugFS interface for CPU Frequency.
-
-	  If you don't know what to do here, say N.
-
 endmenu
 # clear all implied options (don't want default values for those):
 # Most of these machines have ISA slots; not exactly sure which don't,
