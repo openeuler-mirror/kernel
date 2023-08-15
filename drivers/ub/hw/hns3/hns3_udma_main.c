@@ -13,14 +13,124 @@
  *
  */
 
+#include <linux/pci.h>
 #include "urma/ubcore_api.h"
+#include "hns3_udma_abi.h"
 #include "hns3_udma_device.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_cmd.h"
+static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
+{
+	struct udma_ida *uar_ida = &udma_dev->uar_ida;
+	int id;
+
+	/* Using bitmap to manager UAR index */
+	id = ida_alloc_range(&uar_ida->ida, uar_ida->min, uar_ida->max,
+			     GFP_KERNEL);
+	if (id < 0) {
+		dev_err(udma_dev->dev, "failed to alloc uar id(%d).\n", id);
+		return id;
+	}
+	uar->logic_idx = (uint64_t)id;
+
+	if (uar->logic_idx > 0 && udma_dev->caps.phy_num_uars > 1)
+		uar->index = (uar->logic_idx - 1) %
+			     (udma_dev->caps.phy_num_uars - 1) + 1;
+	else
+		uar->index = 0;
+
+	uar->pfn = ((pci_resource_start(udma_dev->pci_dev,
+					UDMA_DEV_START_OFFSET)) >> PAGE_SHIFT);
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE)
+		udma_dev->dwqe_page =
+			pci_resource_start(udma_dev->pci_dev,
+					   UDMA_DEV_EX_START_OFFSET);
+
+	return 0;
+}
+
+static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_create_ctx_resp resp = {};
+	int ret;
+
+	resp.num_comp_vectors = dev->caps.num_comp_vectors;
+	resp.num_qps_shift = dev->caps.num_qps_shift;
+	resp.num_jfs_shift = dev->caps.num_jfs_shift;
+	resp.num_jfr_shift = dev->caps.num_jfr_shift;
+	resp.num_jetty_shift = dev->caps.num_jetty_shift;
+	resp.max_jfc_cqe = dev->caps.max_cqes;
+	resp.cqe_size = dev->caps.cqe_sz;
+	resp.max_jfr_wr = dev->caps.max_srq_wrs;
+	resp.max_jfr_sge = dev->caps.max_srq_sges;
+	resp.max_jfs_wr = dev->caps.max_wqes;
+	resp.max_jfs_sge = dev->caps.max_sq_sg;
+
+	ret = copy_to_user((void *)udrv_data->out_addr, &resp,
+			   min(udrv_data->out_len, (uint32_t)sizeof(resp)));
+	if (ret)
+		dev_err(dev->dev,
+			"copy ctx resp to user failed, ret = %d.\n", ret);
+
+	return ret;
+}
+
+static void udma_uar_free(struct udma_dev *udma_dev,
+			  struct udma_ucontext *context)
+{
+	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
+}
+
+static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
+						   uint32_t uasid,
+						   struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct udma_ucontext *context;
+	int ret;
+
+	context = kzalloc(sizeof(struct udma_ucontext), GFP_KERNEL);
+	if (!context)
+		return NULL;
+
+	ret = udma_uar_alloc(udma_dev, &context->uar);
+	if (ret) {
+		dev_err(udma_dev->dev, "Alloc udma_uar Failed.\n");
+		goto err_alloc_ucontext;
+	}
+
+	context->pdn = uasid; /* Use the UASID as pd number */
+	ret = udma_init_ctx_resp(udma_dev, udrv_data);
+	if (ret) {
+		dev_err(udma_dev->dev, "Init ctx resp failed.\n");
+		goto err_alloc_uar;
+	}
+
+	return &context->uctx;
+
+err_alloc_uar:
+	udma_uar_free(udma_dev, context);
+err_alloc_ucontext:
+	kfree(context);
+	return NULL;
+}
+
+static int udma_free_ucontext(struct ubcore_ucontext *uctx)
+{
+	struct udma_ucontext *context = to_udma_ucontext(uctx);
+	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
+
+	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
+	kfree(context);
+	return 0;
+}
 
 static struct ubcore_ops g_udma_dev_ops = {
-
+	.owner = THIS_MODULE,
+	.abi_version = 1,
+	.alloc_ucontext = udma_alloc_ucontext,
+	.free_ucontext = udma_free_ucontext,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)

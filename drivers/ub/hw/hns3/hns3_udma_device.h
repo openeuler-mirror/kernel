@@ -78,6 +78,10 @@
 #define EQ_REG_OFFSET			0x4
 #define UDMA_DEFAULT_MAX_JETTY_X_SHIFT	8
 
+#define UDMA_DB_ADDR_OFFSET 0x230
+#define UDMA_DEV_START_OFFSET 2
+#define UDMA_DEV_EX_START_OFFSET 4
+
 enum {
 	NO_ARMED = 0x0
 };
@@ -136,6 +140,12 @@ enum {
 	UDMA_BUF_DIRECT = BIT(0),
 	UDMA_BUF_NOSLEEP = BIT(1),
 	UDMA_BUF_NOFAIL = BIT(2),
+};
+
+struct udma_uar {
+	uint64_t	pfn;
+	uint64_t	index;
+	uint64_t	logic_idx;
 };
 
 struct udma_ida {
@@ -241,6 +251,12 @@ struct udma_work {
 };
 
 struct udma_dev;
+struct udma_ucontext {
+	struct ubcore_ucontext		uctx;
+	struct udma_uar			uar;
+	uint64_t			pdn;
+};
+
 struct udma_cmd_context {
 	struct completion	done;
 	int			result;
@@ -621,6 +637,7 @@ struct udma_dev {
 	struct udma_hem_table		qpc_timer_table;
 	struct udma_hem_table		cqc_timer_table;
 	struct udma_hem_table		gmv_table;
+	uint64_t			dwqe_page;
 	struct list_head		qp_list;
 	spinlock_t			qp_list_lock;
 	struct list_head		dip_list;
@@ -650,6 +667,17 @@ static inline uint32_t to_udma_hem_hopnum(uint32_t hopnum, uint32_t count)
 		return hopnum == UDMA_HOP_NUM_0 ? 0 : hopnum;
 
 	return 0;
+}
+
+static inline struct udma_ucontext
+			*to_udma_ucontext(struct ubcore_ucontext *uctx)
+{
+	return container_of(uctx, struct udma_ucontext, uctx);
+}
+
+static inline struct udma_dev *to_udma_dev(const struct ubcore_device *ubcore_dev)
+{
+	return container_of(ubcore_dev, struct udma_dev, ub_dev);
 }
 
 static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
