@@ -144,3 +144,35 @@ const struct dma_map_ops sw64_dma_direct_ops = {
 
 const struct dma_map_ops *dma_ops = &sw64_dma_direct_ops;
 EXPORT_SYMBOL(dma_ops);
+
+#ifdef CONFIG_DCA
+static void enable_sw_dca(struct pci_dev *dev)
+{
+	struct pci_controller *hose = (struct pci_controller *)dev->sysdata;
+	unsigned long node, rc_index, dca_ctl, dca_conf;
+	int i;
+
+	if (dev->class >> 8 != PCI_CLASS_NETWORK_ETHERNET)
+		return;
+	node = hose->node;
+	rc_index = hose->index;
+	for (i = 0; i < 256; i++) {
+		dca_conf = read_piu_ior1(node, rc_index, DEVICEID0 + (i << 7));
+		if (dca_conf >> 63)
+			continue;
+		else {
+			dca_conf = (1UL << 63) | (dev->bus->number << 8) | dev->devfn;
+			pr_info("dca device index %d, dca_conf = %#lx\n", i, dca_conf);
+			write_piu_ior1(node, rc_index, DEVICEID0 + (i << 7), dca_conf);
+			break;
+		}
+	}
+	dca_ctl = read_piu_ior1(node, rc_index, DCACONTROL);
+	if (dca_ctl & 0x1) {
+		dca_ctl = 0x2;
+		write_piu_ior1(node, rc_index, DCACONTROL, dca_ctl);
+		pr_info("Node %ld RC %ld enable DCA 1.0\n", node, rc_index);
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, enable_sw_dca);
+#endif

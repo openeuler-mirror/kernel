@@ -804,36 +804,3 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 	pr_crit("PC = %016lx PS = %04lx\n", regs->pc, regs->ps);
 }
 EXPORT_SYMBOL(do_entInt);
-
-/*
- * Early fix up the chip3 Root Complex settings
- */
-static void chip3_pci_fixup_root_complex(struct pci_dev *dev)
-{
-	int i;
-	struct pci_bus *bus = dev->bus;
-	struct pci_controller *hose = bus->sysdata;
-
-	hose->self_busno = hose->busn_space->start;
-
-	if (likely(bus->number == hose->self_busno)) {
-		if (IS_ENABLED(CONFIG_HOTPLUG_PCI_PCIE)) {
-			/* Check Root Complex port again */
-			dev->is_hotplug_bridge = 0;
-			dev->current_state = PCI_D0;
-		}
-
-		dev->class &= 0xff;
-		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
-		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
-			dev->resource[i].start = 0;
-			dev->resource[i].end   = 0;
-			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
-		}
-	}
-	atomic_inc(&dev->enable_cnt);
-
-	dev->no_msi = 1;
-}
-
-DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_CHIP3, chip3_pci_fixup_root_complex);

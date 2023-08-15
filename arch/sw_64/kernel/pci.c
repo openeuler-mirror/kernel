@@ -57,6 +57,39 @@ static void quirk_isa_bridge(struct pci_dev *dev)
 }
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82378, quirk_isa_bridge);
 
+/*
+ * Early fix up the Root Complex settings
+ */
+static void fixup_root_complex(struct pci_dev *dev)
+{
+	int i;
+	struct pci_bus *bus = dev->bus;
+	struct pci_controller *hose = bus->sysdata;
+
+	hose->self_busno = hose->busn_space->start;
+
+	if (likely(bus->number == hose->self_busno)) {
+		if (IS_ENABLED(CONFIG_HOTPLUG_PCI_PCIE)) {
+			/* Check Root Complex port again */
+			dev->is_hotplug_bridge = 0;
+			dev->current_state = PCI_D0;
+		}
+
+		dev->class &= 0xff;
+		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
+		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
+			dev->resource[i].start = 0;
+			dev->resource[i].end   = 0;
+			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
+		}
+	}
+	atomic_inc(&dev->enable_cnt);
+
+	dev->no_msi = 1;
+}
+
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_CHIP3, fixup_root_complex);
+
 /* Just declaring that the power-of-ten prefixes are actually the
  * power-of-two ones doesn't make it true :)
  */
