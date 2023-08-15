@@ -460,7 +460,12 @@ struct task_group {
 #else
 	KABI_RESERVE(1)
 #endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	KABI_USE(2, long smt_expell)
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
@@ -1197,6 +1202,19 @@ enum task_qos_level {
 };
 #endif
 void init_qos_hrtimer(int cpu);
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+enum tg_smt_status {
+	TG_SMT_NONE = 0, //task group without smt expell capability.
+	TG_SMT_EXPELL = 1, //online task group with smt expell capability.
+};
+
+enum cpu_smt_status {
+	CPU_SMT_NONE = 0,     //current is online task without smt expell capibility.
+	CPU_SMT_EXPELLED = 1, //curent is offline task or idle.
+	CPU_SMT_EXPELLER = 2, //current is online task with smt expell capibility.
+};
 #endif
 
 struct sched_group;
@@ -3057,6 +3075,14 @@ static inline int is_normal_level(long qos_level)
 static inline int is_offline_level(long qos_level)
 {
 	return qos_level < QOS_LEVEL_ONLINE;
+}
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static inline int is_expeller_level(struct task_group *tg)
+{
+	return !is_offline_level(tg->qos_level) &&
+		tg->smt_expell == TG_SMT_EXPELL;
 }
 #endif
 

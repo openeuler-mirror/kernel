@@ -8206,6 +8206,9 @@ void __init sched_init(void)
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
 		init_cfs_bandwidth(&root_task_group.cfs_bandwidth);
 #endif /* CONFIG_FAIR_GROUP_SCHED */
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		root_task_group.smt_expell = TG_SMT_EXPELL;
+#endif
 #ifdef CONFIG_RT_GROUP_SCHED
 		root_task_group.rt_se = (struct sched_rt_entity **)ptr;
 		ptr += nr_cpu_ids * sizeof(void **);
@@ -8560,6 +8563,9 @@ static inline int alloc_qos_sched_group(struct task_group *tg,
 {
 	tg->qos_level = parent->qos_level;
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	tg->smt_expell = parent->smt_expell;
+#endif
 	return 1;
 }
 
@@ -9463,6 +9469,36 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 }
 #endif /* CONFIG_RT_GROUP_SCHED */
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static int cpu_smt_expell_write(struct cgroup_subsys_state *css,
+			 struct cftype *cftype, s64 smt_expell)
+{
+	struct task_group *tg = css_tg(css);
+
+	if (!tg->se[0])
+		return -EINVAL;
+
+	if (smt_expell != TG_SMT_NONE && smt_expell != TG_SMT_EXPELL)
+		return -EINVAL;
+
+	/*
+	 * a. This attribute takes effect with a delay, and it will not take
+	 *    effect until the next cfs task is selected.
+	 * b. This property creates temporary state inconsistencies, which may
+	 *    result in an invalid smt expell, but overall works fine.
+	 */
+	tg->smt_expell = smt_expell;
+
+	return 0;
+}
+
+static inline s64 cpu_smt_expell_read(struct cgroup_subsys_state *css,
+			       struct cftype *cft)
+{
+	return css_tg(css)->smt_expell;
+}
+#endif
+
 #ifdef CONFIG_QOS_SCHED
 static int tg_change_scheduler(struct task_group *tg, void *data)
 {
@@ -9669,6 +9705,14 @@ static struct cftype cpu_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_s64 = cpu_qos_read,
 		.write_s64 = cpu_qos_write,
+	},
+#endif
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	{
+		.name = "smt_expell",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_s64 = cpu_smt_expell_read,
+		.write_s64 = cpu_smt_expell_write,
 	},
 #endif
 #ifdef CONFIG_BPF_SCHED

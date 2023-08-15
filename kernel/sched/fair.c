@@ -8072,8 +8072,7 @@ static bool qos_smt_check_siblings_status(int this_cpu)
 	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
 		if (cpu == this_cpu)
 			continue;
-
-		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE)
+		if (per_cpu(qos_smt_status, cpu) == CPU_SMT_EXPELLER)
 			return true;
 	}
 
@@ -8109,10 +8108,12 @@ static __always_inline bool qos_smt_expelled(int this_cpu)
 
 static bool qos_smt_update_status(struct task_struct *p)
 {
-	int status = QOS_LEVEL_OFFLINE;
+	int status = CPU_SMT_EXPELLED;
 
-	if (p != NULL && !is_offline_level(task_group(p)->qos_level))
-		status = QOS_LEVEL_ONLINE;
+	if (p != NULL && is_expeller_level(task_group(p)))
+		status = CPU_SMT_EXPELLER;
+	else if (p != NULL && !is_offline_level(task_group(p)->qos_level))
+		status = CPU_SMT_NONE;
 
 	if (__this_cpu_read(qos_smt_status) == status)
 		return false;
@@ -8137,12 +8138,14 @@ static void qos_smt_send_ipi(int this_cpu)
 		rq = cpu_rq(cpu);
 
 		/*
-		* There are two cases where current don't need to send scheduler_ipi:
-		* a) The qos_smt_status of siblings cpu is online;
-		* b) The cfs.h_nr_running of siblings cpu is 0.
-		*/
-		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE ||
-		    rq->cfs.h_nr_running == 0)
+		 * There are two cases where current don't need to send
+		 * scheduler_ipi:
+		 * a) The qos_smt_status of siblings cpu is SMT_EXPELLER or SMT_NONE
+		 * b) The cfs.h_nr_running of siblings cpu is 0.
+		 */
+		if (per_cpu(qos_smt_status, cpu) == CPU_SMT_EXPELLER ||
+			per_cpu(qos_smt_status, cpu) == CPU_SMT_NONE ||
+			rq->cfs.h_nr_running == 0)
 			continue;
 
 		schedstat_inc(current->se.statistics.nr_qos_smt_send_ipi);
@@ -8185,20 +8188,23 @@ static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
 			continue;
 
 		/*
-		* There are two cases rely on the set need_resched to drive away
-		* offline task：
-		* a) The qos_smt_status of siblings cpu is online, the task of current cpu is offline;
-		* b) The qos_smt_status of siblings cpu is offline, the task of current cpu is idle,
-		*    and current cpu only has SCHED_IDLE tasks enqueued.
-		*/
-		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE &&
+		 * There are two cases rely on the set need_resched to drive away or pick up
+		 * offline task：
+		 * a) The qos_smt_status of siblings cpu is online with expeller capability,
+		 *    the task of current cpu is offline;
+		 * b) The qos_smt_status of siblings cpu is offline or online without smt
+		 *    capability. the task of current cpu is idle, and current cpu only
+		 *    has offline tasks enqueued.
+		 */
+		if (per_cpu(qos_smt_status, cpu) == CPU_SMT_EXPELLER &&
 		    is_offline_level(task_group(current)->qos_level)) {
 			trace_sched_qos_smt_expel(cpu_curr(cpu), per_cpu(qos_smt_status, cpu));
 			return true;
 		}
 
-		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_OFFLINE &&
-		    rq->curr == rq->idle && qos_sched_idle_cpu(this_cpu)) {
+		if ((per_cpu(qos_smt_status, cpu) == CPU_SMT_EXPELLED ||
+			per_cpu(qos_smt_status, cpu) == CPU_SMT_NONE)
+			&& rq->curr == rq->idle && qos_sched_idle_cpu(this_cpu)) {
 			trace_sched_qos_smt_expel(cpu_curr(cpu), per_cpu(qos_smt_status, cpu));
 			return true;
 		}
@@ -8270,7 +8276,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 again:
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	if (qos_smt_expelled(this_cpu) && !__this_cpu_read(qos_cpu_overload)) {
-		__this_cpu_write(qos_smt_status, QOS_LEVEL_OFFLINE);
+		__this_cpu_write(qos_smt_status, CPU_SMT_EXPELLED);
 
 		if (!qos_timer_is_activated(this_cpu))
 			start_qos_hrtimer(this_cpu);
