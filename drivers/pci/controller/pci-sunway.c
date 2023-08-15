@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/pci.h>
-#include <linux/clocksource.h>
 
 #include <asm/sw64_init.h>
-#include <asm/sw64io.h>
-#include <asm/pci.h>
-#include <asm/irq_impl.h>
-#include <asm/wrperfmon.h>
-#include <linux/syscore_ops.h>
-#include "../../../../drivers/pci/pci.h"
 
 void set_devint_wken(int node)
 {
@@ -167,7 +159,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 	return bus_max_num;
 }
 
-static int chip3_check_pci_linkup(unsigned long node, unsigned long index)
+static int check_pci_linkup(unsigned long node, unsigned long index)
 {
 	unsigned long rc_debug;
 
@@ -183,7 +175,7 @@ static int chip3_check_pci_linkup(unsigned long node, unsigned long index)
 	return !(rc_debug & 0x1);
 }
 
-static void chip3_set_rc_piu(unsigned long node, unsigned long index)
+static void set_rc_piu(unsigned long node, unsigned long index)
 {
 	unsigned int i, value;
 	u32 rc_misc_ctrl;
@@ -227,7 +219,7 @@ static void chip3_set_rc_piu(unsigned long node, unsigned long index)
 	}
 }
 
-static void chip3_set_intx(unsigned long node, unsigned long index,
+static void set_intx(unsigned long node, unsigned long index,
 			   unsigned long int_conf)
 {
 	if (is_guest_or_emul())
@@ -239,7 +231,7 @@ static void chip3_set_intx(unsigned long node, unsigned long index,
 	write_piu_ior0(node, index, INTDCONFIG, int_conf | (0x1UL << 10));
 }
 
-static unsigned long chip3_get_rc_enable(unsigned long node)
+static unsigned long get_rc_enable(unsigned long node)
 {
 	unsigned long rc_enable;
 
@@ -251,7 +243,7 @@ static unsigned long chip3_get_rc_enable(unsigned long node)
 	return rc_enable;
 }
 
-static int chip3_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+static int map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	struct pci_controller *hose = dev->sysdata;
 
@@ -261,7 +253,7 @@ static int chip3_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 		return hose->int_irq;
 }
 
-static void chip3_hose_init(struct pci_controller *hose)
+static void hose_init(struct pci_controller *hose)
 {
 	unsigned long pci_io_base;
 
@@ -310,12 +302,12 @@ static void chip3_hose_init(struct pci_controller *hose)
 };
 
 static struct sw64_pci_init_ops chip_pci_init_ops = {
-	.map_irq = chip3_map_irq,
-	.get_rc_enable = chip3_get_rc_enable,
-	.hose_init = chip3_hose_init,
-	.set_rc_piu = chip3_set_rc_piu,
-	.check_pci_linkup = chip3_check_pci_linkup,
-	.set_intx = chip3_set_intx,
+	.map_irq = map_irq,
+	.get_rc_enable = get_rc_enable,
+	.hose_init = hose_init,
+	.set_rc_piu = set_rc_piu,
+	.check_pci_linkup = check_pci_linkup,
+	.set_intx = set_intx,
 };
 
 void __init setup_chip_pci_ops(void)

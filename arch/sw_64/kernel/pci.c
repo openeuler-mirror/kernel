@@ -728,6 +728,21 @@ sw64_init_pci(void)
 	pci_clear_flags(PCI_REASSIGN_ALL_BUS);
 }
 
+void __init reserve_mem_for_pci(void)
+{
+	int ret;
+	unsigned long base = PCI_32BIT_MEMIO;
+
+	ret = add_memmap_region(base, PCI_32BIT_MEMIO_SIZE, memmap_pci);
+	if (ret) {
+		pr_err("reserved pages for pcie memory space failed\n");
+		return;
+	}
+
+	pr_info("reserved pages for pcie memory space %lx:%lx\n", base >> PAGE_SHIFT,
+			(base + PCI_32BIT_MEMIO_SIZE) >> PAGE_SHIFT);
+}
+
 static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
 {
 	pdev->dev.bus_dma_limit = DMA_BIT_MASK(32);

@@ -106,6 +106,7 @@ config SW64
 	select OF_EARLY_FLATTREE if OF
 	select OLD_SIGSUSPEND
 	select PCI_MSI_ARCH_FALLBACKS
+	select PCI_SW64 if PCI
 	select SET_FS
 	select SPARSEMEM_EXTREME if SPARSEMEM
 	select SW64_IRQ_CPU
