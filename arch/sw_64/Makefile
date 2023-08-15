@@ -37,7 +37,6 @@ head-y := arch/sw_64/kernel/head.o
 
 core-y				+= arch/sw_64/kernel/ arch/sw_64/mm/
 core-y				+= arch/sw_64/platform/
-core-y				+= arch/sw_64/chip/
 core-$(CONFIG_MATHEMU)		+= arch/sw_64/math-emu/
 drivers-$(CONFIG_OPROFILE)	+= arch/sw_64/oprofile/
 libs-y				+= arch/sw_64/lib/
