@@ -34,6 +34,16 @@ config SW64_IRQ_CPU
 	depends on SW64
 	default y
 
+config SW64_IRQ_MSI
+	bool
+	depends on SW64 && PCI_MSI
+	default y
+
+config SW64_IRQ_MSI_VT
+	bool
+	depends on SW64_IRQ_MSI
+	default y
+
 config ARM_GIC_PM
 	bool
 	depends on PM
