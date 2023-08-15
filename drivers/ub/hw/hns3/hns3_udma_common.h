@@ -24,6 +24,10 @@
 
 #define udma_get_field(origin, mask, shift)                                    \
 	((le32_to_cpu(origin) & (mask)) >> (uint32_t)(shift))
+#define udma_get_field64(origin, mask, shift)                                  \
+	((le64_to_cpu(origin) & (mask)) >> (uint32_t)(shift))
+#define udma_get_bit(origin, shift) \
+	udma_get_field((origin), (1ul << (shift)), (shift))
 
 #define udma_set_field(origin, mask, shift, val)                               \
 	do {                                                                   \

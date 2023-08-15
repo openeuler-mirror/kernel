@@ -16,6 +16,7 @@
 #include <linux/spinlock.h>
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_qp.h"
 static inline uint8_t get_qp_bankid(uint64_t qpn)
 {
 	/* The lower 3 bits of QPN are used to hash to different banks */
@@ -60,4 +61,27 @@ void udma_cleanup_qp_table(struct udma_dev *dev)
 	for (i = 0; i < UDMA_QP_BANK_NUM; i++)
 		ida_destroy(&dev->qp_table.bank[i].ida);
 	kfree(dev->qp_table.idx_table.spare_idx);
+}
+
+void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type)
+{
+	struct device *dev = udma_dev->dev;
+	struct udma_qp *qp;
+
+	xa_lock(&udma_dev->qp_table.xa);
+	qp = (struct udma_qp *)xa_load(&udma_dev->qp_table.xa, qpn);
+	if (qp)
+		refcount_inc(&qp->refcount);
+	xa_unlock(&udma_dev->qp_table.xa);
+
+	if (!qp) {
+		dev_warn(dev, "Async event for bogus QP 0x%08x\n", qpn);
+		return;
+	}
+
+	if (qp->event)
+		qp->event(qp, (enum udma_event)event_type);
+
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
 }

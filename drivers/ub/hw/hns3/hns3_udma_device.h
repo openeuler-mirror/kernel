@@ -30,6 +30,9 @@
 /* Configure to HW for PAGE_SIZE larger than 4KB */
 #define PG_SHIFT_OFFSET				(PAGE_SHIFT - 12)
 #define UDMA_MAX_IRQ_NUM			128
+
+#define MTT_MIN_COUNT				2
+
 #define UDMA_QP_BANK_NUM			8
 #define QP_BANKID_SHIFT				3
 #define QP_BANKID_MASK				GENMASK(2, 0)
@@ -59,7 +62,25 @@
 
 #define UDMA_MAX_BT_REGION			3
 #define UDMA_MAX_BT_LEVEL			3
+#define EQ_ENABLE			1
+#define EQ_DISABLE			0
+#define UDMA_CEQ			0
+#define UDMA_AEQ			1
+#define UDMA_AEQ_DEFAULT_BURST_NUM	0x0
+#define UDMA_AEQ_DEFAULT_INTERVAL	0x0
+#define UDMA_CEQ_DEFAULT_BURST_NUM	0x0
+#define UDMA_CEQ_DEFAULT_INTERVAL	0x0
+#define UDMA_VF_EQ_DB_CFG0_REG		0x238
+#define UDMA_VF_ABN_INT_CFG_REG		0x13000
+#define UDMA_VF_ABN_INT_ST_REG		0x13004
+#define UDMA_VF_ABN_INT_EN_REG		0x13008
+#define UDMA_VF_EVENT_INT_EN_REG	0x1300c
+#define EQ_REG_OFFSET			0x4
 #define UDMA_DEFAULT_MAX_JETTY_X_SHIFT	8
+
+enum {
+	NO_ARMED = 0x0
+};
 
 enum udma_reset_stage {
 	UDMA_STATE_RST_DOWN = 2,
@@ -73,6 +94,18 @@ enum udma_instance_state {
 	UDMA_STATE_INIT,
 	UDMA_STATE_INITED,
 	UDMA_STATE_UNINIT,
+};
+
+enum udma_event {
+	UDMA_EVENT_TYPE_COMM_EST		= 0x03,
+	UDMA_EVENT_TYPE_WQ_CATAS_ERROR		= 0x05,
+	UDMA_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR	= 0x06,
+	UDMA_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR	= 0x07,
+	UDMA_EVENT_TYPE_JFR_LIMIT_REACH		= 0x08,
+	UDMA_EVENT_TYPE_JFR_LAST_WQE_REACH	= 0x09,
+	UDMA_EVENT_TYPE_JFC_ACCESS_ERROR	= 0x0b,
+	UDMA_EVENT_TYPE_JFC_OVERFLOW		= 0x0c,
+	UDMA_EVENT_TYPE_MB			= 0x13,
 };
 
 
@@ -170,6 +203,41 @@ struct udma_mtr {
 	struct ubcore_umem	*umem; /* user space buffer */
 	struct udma_buf		*kmem; /* kernel space buffer */
 	struct udma_hem_cfg	hem_cfg; /* config for hardware addressing */
+};
+
+struct udma_ceqe {
+	uint32_t	comp;
+	uint32_t	rsv[15];
+};
+
+struct udma_aeqe {
+	uint32_t			asyn;
+	union {
+		struct {
+			uint32_t	num;
+			uint32_t	rsv0;
+			uint32_t	rsv1;
+		} queue_event;
+
+		struct {
+			uint64_t	out_param;
+			uint16_t	token;
+			uint8_t		status;
+			uint8_t		rsv0;
+		} __packed cmd;
+	 } event;
+	uint32_t			rsv[12];
+};
+
+struct udma_work {
+	struct udma_dev		*udma_dev;
+	struct work_struct	work;
+	int			event_type;
+	int			sub_type;
+	struct udma_aeqe	aeqe;
+	uint32_t		queue_num;
+	uint32_t		eq_ci;
+	int			eqn;
 };
 
 struct udma_dev;
@@ -280,6 +348,8 @@ struct udma_hw {
 	int (*clear_hem)(struct udma_dev *udma_dev,
 			 struct udma_hem_table *table, int obj,
 			 int step_idx);
+	int (*init_eq)(struct udma_dev *udma_dev);
+	void (*cleanup_eq)(struct udma_dev *udma_dev);
 };
 
 struct udma_caps {
@@ -444,6 +514,30 @@ struct udma_bank {
 	uint32_t next; /* Next ID to allocate. */
 };
 
+#define TRACE_AEQE_LEN_MAX 64
+
+struct udma_eq {
+	struct udma_dev			*udma_dev;
+	void __iomem			*db_reg;
+
+	int				type_flag; /* Aeq:1 ceq:0 */
+	int				eqn;
+	uint32_t			entries;
+	int				eqe_size;
+	int				irq;
+	uint32_t			cons_index;
+	int				over_ignore;
+	int				coalesce;
+	int				arm_st;
+	int				hop_num;
+	struct udma_mtr			mtr;
+	uint16_t			eq_max_cnt;
+	uint32_t			eq_period;
+	int				shift;
+	int				event_type;
+	int				sub_type;
+};
+
 struct udma_qp_table {
 	struct xarray		xa;
 	struct udma_hem_table	qp_table;
@@ -505,12 +599,14 @@ struct udma_dev {
 
 	int				irq_num;
 	int				irq[UDMA_MAX_IRQ_NUM];
+	const char			*irq_names[UDMA_MAX_IRQ_NUM];
 	char				dev_name[UBCORE_MAX_DEV_NAME];
 	uint64_t			sys_image_guid;
 	struct udma_cmdq		cmd;
 	int				cmd_mod;
 	const struct udma_hw		*hw;
 	void				*priv;
+	struct workqueue_struct		*irq_workq;
 	uint16_t			func_id;
 	uint32_t			func_num;
 	uint32_t			cong_algo_tmpl_id;
@@ -531,6 +627,13 @@ struct udma_dev {
 	spinlock_t			dip_list_lock;
 };
 
+static inline void *udma_buf_offset(struct udma_buf *buf,
+				    uint32_t offset)
+{
+	return (char *)(buf->trunk_list[offset >> buf->trunk_shift].buf) +
+			(offset & ((1 << buf->trunk_shift) - 1));
+}
+
 static inline uint64_t to_hr_hw_page_addr(uint64_t addr)
 {
 	return addr >> UDMA_HW_PAGE_SHIFT;
@@ -547,6 +650,11 @@ static inline uint32_t to_udma_hem_hopnum(uint32_t hopnum, uint32_t count)
 		return hopnum == UDMA_HOP_NUM_0 ? 0 : hopnum;
 
 	return 0;
+}
+
+static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
+{
+	return page_shift - UDMA_HW_PAGE_SHIFT;
 }
 
 static inline dma_addr_t udma_buf_dma_addr(struct udma_buf *buf,
@@ -577,5 +685,6 @@ int udma_init_qp_table(struct udma_dev *udma_dev);
 void udma_cleanup_qp_table(struct udma_dev *udma_dev);
 void udma_cleanup_common_hem(struct udma_dev *udma_dev);
 int udma_init_common_hem(struct udma_dev *udma_dev);
+void udma_destroy_eqc(struct udma_dev *udma_dev, int eqn, uint32_t eq_cmd);
 
 #endif /* _UDMA_DEVICE_H */

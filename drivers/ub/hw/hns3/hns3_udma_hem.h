@@ -18,6 +18,7 @@
 
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
+#include <linux/dma-mapping.h>
 #include "hns3_udma_device.h"
 
 #define HEM_HOP_STEP_DIRECT 0xff
@@ -126,6 +127,9 @@ int udma_table_get(struct udma_dev *udma_dev,
 		   struct udma_hem_table *table, uint64_t obj);
 void udma_table_put(struct udma_dev *udma_dev,
 		    struct udma_hem_table *table, uint64_t obj);
+void *udma_table_find(struct udma_dev *udma_dev,
+		      struct udma_hem_table *table, uint64_t obj,
+		      dma_addr_t *dma_handle);
 int udma_init_hem_table(struct udma_dev *udma_dev,
 			struct udma_hem_table *table, uint32_t type,
 			uint64_t obj_size, uint64_t nobj);
@@ -135,6 +139,15 @@ int udma_calc_hem_mhop(struct udma_dev *udma_dev,
 		       struct udma_hem_table *table, uint64_t *obj,
 		       struct udma_hem_mhop *mhop);
 bool udma_check_whether_mhop(struct udma_dev *udma_dev, uint32_t type);
+
+int udma_mtr_find(struct udma_dev *udma_device, struct udma_mtr *mtr,
+		  int offset, uint64_t *mtt_buf, int mtt_max,
+		  uint64_t *base_addr);
+
+void udma_mtr_move(struct udma_mtr *from_mtr, struct udma_mtr *to_mtr);
+
+int udma_mtr_map(struct udma_dev *dev, struct udma_mtr *mtr,
+		 dma_addr_t *pages, uint32_t page_count);
 
 static inline void udma_hem_first(struct udma_hem *hem,
 				  struct udma_hem_iter *iter)

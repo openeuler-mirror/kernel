@@ -19,6 +19,8 @@
 #include "hnae3.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_eq.h"
+#include "hns3_udma_qp.h"
 
 static const struct pci_device_id udma_hw_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL),
@@ -1454,6 +1456,8 @@ static const struct udma_hw udma_hw = {
 	.poll_mbox_done = udma_poll_mbox_done,
 	.set_hem = udma_set_hem,
 	.clear_hem = udma_clear_hem,
+	.init_eq = udma_init_eq_table,
+	.cleanup_eq = udma_cleanup_eq_table,
 };
 
 bool udma_is_virtual_func(struct pci_dev *pdev)

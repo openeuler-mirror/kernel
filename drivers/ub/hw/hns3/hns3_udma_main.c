@@ -511,6 +511,12 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_cmd_init;
 	}
 
+	ret = udma_dev->hw->init_eq(udma_dev);
+	if (ret) {
+		dev_err(dev, "eq init failed!\n");
+		goto error_failed_eq_table;
+	}
+
 	if (udma_dev->cmd_mod) {
 		ret = udma_cmd_use_events(udma_dev);
 		if (ret) {
@@ -558,6 +564,9 @@ error_failed_hem_init:
 	if (udma_dev->cmd_mod)
 		udma_cmd_use_polling(udma_dev);
 
+	udma_dev->hw->cleanup_eq(udma_dev);
+
+error_failed_eq_table:
 	udma_cmd_cleanup(udma_dev);
 
 error_failed_cmd_init:
@@ -581,6 +590,8 @@ void udma_hnae_client_exit(struct udma_dev *udma_dev)
 
 	if (udma_dev->cmd_mod)
 		udma_cmd_use_polling(udma_dev);
+
+	udma_dev->hw->cleanup_eq(udma_dev);
 
 	udma_cmd_cleanup(udma_dev);
 	if (udma_dev->hw->cmq_exit)
