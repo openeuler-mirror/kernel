@@ -89,6 +89,7 @@ extern void __init sw64_init_arch(void);
 extern struct pci_ops sw64_pci_ops;
 extern int sw64_map_irq(const struct pci_dev *dev, u8 slot, u8 pin);
 extern struct pci_controller *hose_head;
+extern void __init setup_chip_pci_ops(void);
 
 #ifdef CONFIG_SUNWAY_IOMMU
 extern struct syscore_ops iommu_cpu_syscore_ops;

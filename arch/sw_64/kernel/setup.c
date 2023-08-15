@@ -633,25 +633,6 @@ static void __init setup_cpu_info(void)
 	cpu_desc.pa_bits = CPUID_PA_BITS(val);
 	cpu_desc.va_bits = CPUID_VA_BITS(val);
 
-	if (*(unsigned long *)MMSIZE) {
-		static_branch_disable(&run_mode_host_key);
-		if (*(unsigned long *)MMSIZE & EMUL_FLAG) {
-			pr_info("run mode: emul\n");
-			static_branch_disable(&run_mode_guest_key);
-			static_branch_enable(&run_mode_emul_key);
-
-		} else {
-			pr_info("run mode: guest\n");
-			static_branch_enable(&run_mode_guest_key);
-			static_branch_disable(&run_mode_emul_key);
-		}
-	} else {
-		pr_info("run mode: host\n");
-		static_branch_enable(&run_mode_host_key);
-		static_branch_disable(&run_mode_guest_key);
-		static_branch_disable(&run_mode_emul_key);
-	}
-
 	for (i = 0; i < VENDOR_ID_MAX; i++) {
 		val = cpuid(GET_VENDOR_ID, i);
 		memcpy(cpu_desc.vendor_id + (i * 8), &val, 8);
@@ -692,6 +673,28 @@ static void __init setup_cpu_info(void)
 		c->linesz = 1 << (CACHE_LINE_BITS(val));
 		c->sets = 1 << (CACHE_INDEX_BITS(val));
 		c->ways = c->size / c->sets / c->linesz;
+	}
+}
+
+static void __init setup_run_mode(void)
+{
+	if (*(unsigned long *)MMSIZE) {
+		static_branch_disable(&run_mode_host_key);
+		if (*(unsigned long *)MMSIZE & EMUL_FLAG) {
+			pr_info("run mode: emul\n");
+			static_branch_disable(&run_mode_guest_key);
+			static_branch_enable(&run_mode_emul_key);
+
+		} else {
+			pr_info("run mode: guest\n");
+			static_branch_enable(&run_mode_guest_key);
+			static_branch_disable(&run_mode_emul_key);
+		}
+	} else {
+		pr_info("run mode: host\n");
+		static_branch_enable(&run_mode_host_key);
+		static_branch_disable(&run_mode_guest_key);
+		static_branch_disable(&run_mode_emul_key);
 	}
 }
 
@@ -757,13 +760,13 @@ setup_arch(char **cmdline_p)
 {
 	jump_label_init();
 	setup_cpu_info();
-	sw64_chip->fixup();
-	sw64_chip_init->fixup();
+	setup_run_mode();
+	setup_chip_ops();
 	setup_socket_info();
 	show_socket_mem_layout();
 	sw64_chip_init->early_init.setup_core_start(&core_start);
 	if (is_guest_or_emul())
-		sw64_chip_init->early_init.get_smp_info();
+		get_vt_smp_info();
 
 	setup_sched_clock();
 

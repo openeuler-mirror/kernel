@@ -24,9 +24,6 @@
 #define IO_NODE_SHIFT		44
 #define IO_MARK_BIT		47
 
-extern int topo_nr_threads;
-extern int topo_nr_cores;
-extern int topo_nr_maxcpus;
 #define VT_MAX_CPUS_SHIFT	0
 #define VT_MAX_CPUS_MASK	0x3ff
 #define VT_CORES_SHIFT		10
