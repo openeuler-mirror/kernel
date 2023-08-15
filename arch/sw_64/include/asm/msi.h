@@ -32,6 +32,9 @@ extern bool find_free_cpu_vector(const struct cpumask *search_mask,
 extern int msi_compose_msg(unsigned int irq, struct msi_msg *msg);
 extern void sw64_irq_noop(struct irq_data *d);
 extern struct irq_chip sw64_irq_chip;
+extern void handle_pci_msi_interrupt(unsigned long type,
+				     unsigned long vector,
+				     unsigned long pci_msi1_addr);
 
 #ifdef CONFIG_PCI_MSI_IRQ_DOMAIN
 #define MSI_ADDR_BASE_HI	0
@@ -64,5 +67,11 @@ struct irq_alloc_info {
 };
 typedef struct irq_alloc_info msi_alloc_info_t;
 #endif /* CONFIG_PCI_MSI_IRQ_DOMAIN */
+#else /* !CONFIG_PCI_MSI */
+static inline void handle_pci_msi_interrupt(unsigned long type,
+			      unsigned long vector, unsigned long pci_msi1_addr)
+{
+	pr_warn("SW arch disable CONFIG_PCI_MSI option.\n");
+}
 #endif /* CONFIG_PCI_MSI */
 #endif /* _ASM_SW64_MSI_H */

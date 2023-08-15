@@ -29,6 +29,11 @@ config SW64_LPC_INTC
 	   Say yes here to add support for the SW64 cpu builtin LPC
 	   IRQ controller.
 
+config SW64_IRQ_CPU
+	bool
+	depends on SW64
+	default y
+
 config ARM_GIC_PM
 	bool
 	depends on PM

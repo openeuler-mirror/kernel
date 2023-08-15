@@ -225,6 +225,8 @@ ret_from_sys_call:
 	fillcs	0($sp)			/* prefetch */
 	fillcs	128($sp)		/* prefetch */
 #endif
+	br	$27, 1f
+1:	ldgp	$29, 0($27)
 	selne	$26, 0, $18, $18		/* $18 = 0 => non-restartable */
 	ldl	$0, PT_REGS_PS($sp)
 	and	$0, 8, $0

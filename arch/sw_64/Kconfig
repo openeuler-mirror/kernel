@@ -108,6 +108,7 @@ config SW64
 	select PCI_MSI_ARCH_FALLBACKS
 	select SET_FS
 	select SPARSEMEM_EXTREME if SPARSEMEM
+	select SW64_IRQ_CPU
 	select SW64_TIMER
 	select SWIOTLB
 	select THREAD_INFO_IN_TASK
