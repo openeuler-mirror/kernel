@@ -323,6 +323,17 @@ config I2C_VIAPRO
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-viapro.
 
+config I2C_SUNWAY
+	tristate "Sunway i2c lib"
+	depends on UNCORE_XUELANG
+	help
+	  If you say yes to this option, support will be included for the
+	  Sunway Soc I2C interface on SW64 platfrom.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called i2c-sunway.
+
+
 if ACPI
 
 comment "ACPI drivers"
