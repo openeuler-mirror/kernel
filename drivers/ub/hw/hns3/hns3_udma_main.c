@@ -13,6 +13,7 @@
  *
  */
 
+#include <linux/iommu.h>
 #include <linux/pci.h>
 #include "urma/ubcore_api.h"
 #include "hns3_udma_abi.h"
@@ -126,11 +127,45 @@ static int udma_free_ucontext(struct ubcore_ucontext *uctx)
 	return 0;
 }
 
+static int get_mmap_cmd(struct vm_area_struct *vma)
+{
+	return (vma->vm_pgoff & MAP_COMMAND_MASK);
+}
+
+static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
+{
+	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
+	int cmd;
+
+	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0) {
+		dev_err(udma_dev->dev,
+			"mmap failed, unexpected vm area size.\n");
+		return -EINVAL;
+	}
+
+	cmd = get_mmap_cmd(vma);
+	switch (cmd) {
+	case UDMA_MMAP_UAR_PAGE:
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+		if (io_remap_pfn_range(vma, vma->vm_start,
+				       to_udma_ucontext(uctx)->uar.pfn,
+				       PAGE_SIZE, vma->vm_page_prot))
+			return -EAGAIN;
+		break;
+	default:
+		dev_err(udma_dev->dev,
+			"mmap failed, cmd(%d) not support\n", cmd);
+		return -EINVAL;
+	}
+
+	return 0;
+}
 static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
+	.mmap = udma_mmap,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)

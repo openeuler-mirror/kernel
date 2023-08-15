@@ -17,6 +17,13 @@
 #define _UDMA_ABI_H
 
 #include <linux/types.h>
+
+#define MAP_COMMAND_MASK		0xff
+
+enum {
+	UDMA_MMAP_UAR_PAGE,
+};
+
 struct udma_create_ctx_resp {
 	uint32_t num_comp_vectors;
 	uint32_t num_qps_shift;
