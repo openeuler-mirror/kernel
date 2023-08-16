@@ -19,9 +19,23 @@
 #include <linux/types.h>
 
 #define MAP_COMMAND_MASK		0xff
+#define UDMA_ADDR_4K_MASK		0xfffUL
 
 enum {
 	UDMA_MMAP_UAR_PAGE,
+};
+
+struct udma_create_jfc_ucmd {
+	uint64_t		buf_addr;
+	uint64_t		db_addr;
+};
+
+enum udma_jfc_cap_flags {
+	UDMA_JFC_CAP_RECORD_DB = 1 << 0,
+};
+
+struct udma_create_jfc_resp {
+	uint32_t jfc_caps;
 };
 
 struct udma_create_ctx_resp {

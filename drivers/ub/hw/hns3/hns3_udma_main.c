@@ -166,6 +166,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,
+	.create_jfc = udma_create_jfc,
+	.destroy_jfc = udma_destroy_jfc,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)

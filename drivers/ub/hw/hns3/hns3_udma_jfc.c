@@ -1,0 +1,430 @@
+// SPDX-License-Identifier: GPL-2.0
+/* Huawei UDMA Linux driver
+ * Copyright (c) 2023-2023 Hisilicon Limited.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+ * for more details.
+ *
+ */
+
+#include <linux/vmalloc.h>
+#include "hns3_udma_hem.h"
+#include "hns3_udma_cmd.h"
+#include "hns3_udma_db.h"
+#include "hns3_udma_jfc.h"
+
+static int udma_hw_create_cq(struct udma_dev *dev,
+			     struct udma_cmd_mailbox *mailbox, uint32_t cqn)
+{
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, mailbox->dma, 0, cqn, UDMA_CMD_CREATE_CQC);
+
+	return udma_cmd_mbox(dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+}
+
+static int udma_hw_destroy_cq(struct udma_dev *dev, uint32_t cqn)
+{
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, 0, 0, cqn, UDMA_CMD_DESTROY_CQC);
+
+	return udma_cmd_mbox(dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+}
+
+static int check_jfc_cfg(struct udma_dev *udma_dev, const struct ubcore_jfc_cfg *cfg)
+{
+	if (!cfg->depth || cfg->depth > udma_dev->caps.max_cqes) {
+		dev_err(udma_dev->dev,
+			"failed to check jfc attr depth = 0x%x.\n",
+			cfg->depth);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int check_create_jfc(struct udma_dev *udma_dev,
+			    const struct ubcore_jfc_cfg *cfg,
+			    struct udma_create_jfc_ucmd *ucmd,
+			    struct ubcore_udata *udata)
+{
+	int ret;
+
+	if (udata) {
+		ret = copy_from_user((void *)ucmd,
+				     (void *)udata->udrv_data->in_addr,
+				     min(udata->udrv_data->in_len,
+					 (uint32_t)sizeof(struct udma_create_jfc_ucmd)));
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to copy JFC udata, ret = %d.\n", ret);
+			return ret;
+		}
+	}
+
+	ret = check_jfc_cfg(udma_dev, cfg);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to check JFC cfg.\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+void set_jfc_param(struct udma_jfc *udma_jfc, const struct ubcore_jfc_cfg *cfg)
+{
+	udma_jfc->jfc_depth = roundup_pow_of_two(cfg->depth);
+	memcpy(&udma_jfc->ubcore_jfc.jfc_cfg, cfg, sizeof(struct ubcore_jfc_cfg));
+}
+
+static void init_jfc(struct udma_jfc *udma_jfc, struct udma_create_jfc_ucmd *ucmd)
+{
+	spin_lock_init(&udma_jfc->lock);
+	INIT_LIST_HEAD(&udma_jfc->sq_list);
+	INIT_LIST_HEAD(&udma_jfc->rq_list);
+}
+
+static int alloc_jfc_cqe_buf(struct udma_dev *dev, struct udma_jfc *jfc,
+			     struct ubcore_udata *udata, uint64_t addr)
+{
+	struct udma_buf_attr buf_attr = {};
+	int ret;
+
+	buf_attr.page_shift = dev->caps.cqe_buf_pg_sz + PAGE_SHIFT;
+	buf_attr.region[0].size = jfc->jfc_depth * dev->caps.cqe_sz;
+	buf_attr.region[0].hopnum = dev->caps.cqe_hop_num;
+	buf_attr.region_count = 1;
+	ret = udma_mtr_create(dev, &jfc->mtr, &buf_attr,
+			      dev->caps.cqe_ba_pg_sz + PAGE_SHIFT,
+			      addr, udata ? true : false);
+	if (ret)
+		dev_err(dev->dev,
+			"failed to alloc JFC buf, ret = %d.\n", ret);
+
+	return ret;
+}
+
+static void free_jfc_cqe_buf(struct udma_dev *dev, struct udma_jfc *jfc)
+{
+	udma_mtr_destroy(dev, &jfc->mtr);
+}
+
+static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
+			 struct ubcore_udata *udata,
+			 struct udma_create_jfc_ucmd *ucmd)
+{
+	struct udma_create_jfc_resp resp = {};
+	int ret;
+
+	ret = alloc_jfc_cqe_buf(udma_dev, udma_jfc, udata, ucmd->buf_addr);
+	if (ret)
+		return ret;
+
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB) {
+		ret = udma_db_map_user(udma_dev, ucmd->db_addr, &udma_jfc->db);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to map JFC db, ret = %d.\n", ret);
+			goto db_err;
+		}
+		udma_jfc->jfc_caps |= UDMA_JFC_CAP_RECORD_DB;
+	}
+
+	if (udata) {
+		resp.jfc_caps = udma_jfc->jfc_caps;
+		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
+				   min(udata->udrv_data->out_len,
+				       (uint32_t)sizeof(resp)));
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to copy jfc resp, ret = %d\n", ret);
+			goto err_copy;
+		}
+	}
+	refcount_set(&udma_jfc->refcount, 1);
+	init_completion(&udma_jfc->free);
+	return ret;
+
+err_copy:
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB) {
+		udma_db_unmap_user(udma_dev, &udma_jfc->db);
+		udma_jfc->jfc_caps &= ~UDMA_JFC_CAP_RECORD_DB;
+	}
+db_err:
+	free_jfc_cqe_buf(udma_dev, udma_jfc);
+
+	return ret;
+}
+
+static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
+			void *mb_buf, uint64_t *mtts, uint64_t dma_handle)
+{
+	struct udma_jfc_context *jfc_context;
+
+	jfc_context = (struct udma_jfc_context *)mb_buf;
+	memset(jfc_context, 0, sizeof(*jfc_context));
+
+	udma_reg_write(jfc_context, CQC_CQ_ST, CQ_STATE_VALID);
+	udma_reg_write(jfc_context, CQC_ARM_ST, NO_ARMED);
+
+	udma_reg_write(jfc_context, CQC_SHIFT, ilog2(udma_jfc->jfc_depth));
+	udma_reg_write(jfc_context, CQC_CQN, udma_jfc->cqn);
+
+	udma_reg_write(jfc_context, CQC_CQE_SIZE, CQE_SIZE_64B);
+
+	udma_reg_write(jfc_context, CQC_CQE_CUR_BLK_ADDR_L,
+		       to_hr_hw_page_addr(mtts[0]));
+	udma_reg_write(jfc_context, CQC_CQE_CUR_BLK_ADDR_H,
+		       upper_32_bits(to_hr_hw_page_addr(mtts[0])));
+	udma_reg_write(jfc_context, CQC_CQE_HOP_NUM,
+		       udma_dev->caps.cqe_hop_num ==
+		       UDMA_HOP_NUM_0 ? 0 : udma_dev->caps.cqe_hop_num);
+	udma_reg_write(jfc_context, CQC_CQE_NEX_BLK_ADDR_L,
+		       to_hr_hw_page_addr(mtts[1]));
+	udma_reg_write(jfc_context, CQC_CQE_NEX_BLK_ADDR_H,
+		       upper_32_bits(to_hr_hw_page_addr(mtts[1])));
+	udma_reg_write(jfc_context, CQC_CQE_BAR_PG_SZ,
+		       to_hr_hw_page_shift(udma_jfc->mtr.hem_cfg.ba_pg_shift));
+	udma_reg_write(jfc_context, CQC_CQE_BUF_PG_SZ,
+		       to_hr_hw_page_shift(udma_jfc->mtr.hem_cfg.buf_pg_shift));
+	udma_reg_write(jfc_context, CQC_CQE_BA_L,
+		       dma_handle >> CQC_CQE_BA_L_OFFSET);
+	udma_reg_write(jfc_context, CQC_CQE_BA_H,
+		       dma_handle >> CQC_CQE_BA_H_OFFSET);
+	udma_reg_write(jfc_context, CQC_CQ_MAX_CNT, UDMA_CQ_DEFAULT_BURST_NUM);
+	udma_reg_write(jfc_context, CQC_CQ_PERIOD, UDMA_CQ_DEFAULT_INTERVAL);
+	if (udma_jfc->jfc_caps & UDMA_JFC_CAP_RECORD_DB) {
+		udma_reg_enable(jfc_context, CQC_DB_RECORD_EN);
+		udma_reg_write(jfc_context, CQC_CQE_DB_RECORD_ADDR_L,
+			       lower_32_bits(udma_jfc->db.dma) >>
+			       DMA_DB_RECORD_SHIFT);
+		udma_reg_write(jfc_context, CQC_CQE_DB_RECORD_ADDR_H,
+			       upper_32_bits(udma_jfc->db.dma));
+	}
+}
+
+static int udma_create_jfc_cqc(struct udma_dev *udma_dev,
+			       struct udma_jfc *udma_jfc,
+			       uint64_t *mtts, uint64_t dma_handle)
+{
+	struct udma_cmd_mailbox *mailbox;
+	int ret;
+
+	mailbox = udma_alloc_cmd_mailbox(udma_dev);
+	if (IS_ERR(mailbox)) {
+		dev_err(udma_dev->dev, "failed to alloc mailbox for CQC.\n");
+		return PTR_ERR(mailbox);
+	}
+
+	udma_write_jfc_cqc(udma_dev, udma_jfc, mailbox->buf, mtts, dma_handle);
+
+	ret = udma_hw_create_cq(udma_dev, mailbox, udma_jfc->cqn);
+	if (ret)
+		dev_err(udma_dev->dev,
+			"failed to send create cmd for jfc(0x%llx), ret = %d.\n",
+			udma_jfc->cqn, ret);
+
+	udma_free_cmd_mailbox(udma_dev, mailbox);
+
+	return ret;
+}
+
+static int alloc_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	uint64_t mtts[MTT_MIN_COUNT] = {};
+	uint64_t dma_handle;
+	int ret;
+
+	ret = udma_mtr_find(udma_dev, &udma_jfc->mtr, 0, mtts,
+			    ARRAY_SIZE(mtts), &dma_handle);
+	if (!ret) {
+		dev_err(udma_dev->dev,
+			"failed to find JFC mtr, ret = %d.\n", ret);
+		return -EINVAL;
+	}
+
+	ret = udma_table_get(udma_dev, &jfc_table->table, udma_jfc->cqn);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to get JFC(0x%llx) context, ret = %d.\n",
+			udma_jfc->cqn, ret);
+		return ret;
+	}
+
+	ret = xa_err(xa_store(&jfc_table->xa, udma_jfc->cqn, udma_jfc,
+			      GFP_KERNEL));
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to store JFC, ret = %d.\n", ret);
+		goto err_put;
+	}
+
+	ret = udma_create_jfc_cqc(udma_dev, udma_jfc, mtts, dma_handle);
+	if (ret)
+		goto err_xa;
+
+	udma_jfc->arm_sn = 1;
+	return 0;
+
+err_xa:
+	xa_erase(&jfc_table->xa, udma_jfc->cqn);
+err_put:
+	udma_table_put(udma_dev, &jfc_table->table, udma_jfc->cqn);
+
+	return ret;
+}
+
+static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	int ret;
+
+	ret = udma_hw_destroy_cq(udma_dev, udma_jfc->cqn);
+	if (ret)
+		dev_err(udma_dev->dev, "destroy failed (%d) for JFC %06llx\n",
+			ret, udma_jfc->cqn);
+
+	xa_erase(&jfc_table->xa, udma_jfc->cqn);
+	udma_table_put(udma_dev, &jfc_table->table, udma_jfc->cqn);
+}
+
+static void free_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	/* wait for all interrupt processed */
+	if (refcount_dec_and_test(&udma_jfc->refcount))
+		complete(&udma_jfc->free);
+	wait_for_completion(&udma_jfc->free);
+
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB)
+		udma_db_unmap_user(udma_dev, &udma_jfc->db);
+	udma_mtr_destroy(udma_dev, &udma_jfc->mtr);
+}
+
+static uint8_t get_least_load_bankid_for_jfc(struct udma_bank *bank)
+{
+	uint32_t least_load = bank[0].inuse;
+	uint8_t bankid = 0;
+	uint32_t bankcnt;
+	uint8_t i;
+
+	for (i = 1; i < UDMA_CQ_BANK_NUM; i++) {
+		bankcnt = bank[i].inuse;
+		if (bankcnt < least_load) {
+			least_load = bankcnt;
+			bankid = i;
+		}
+	}
+
+	return bankid;
+}
+
+static int alloc_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	struct udma_bank *bank;
+	uint8_t bankid;
+	int id;
+
+	mutex_lock(&jfc_table->bank_mutex);
+	bankid = get_least_load_bankid_for_jfc(jfc_table->bank);
+	bank = &jfc_table->bank[bankid];
+
+	id = ida_alloc_range(&bank->ida, bank->min, bank->max, GFP_KERNEL);
+	if (id < 0) {
+		mutex_unlock(&jfc_table->bank_mutex);
+		return id;
+	}
+
+	/* the lower 2 bits is bankid */
+	udma_jfc->cqn = (id << CQ_BANKID_SHIFT) | bankid;
+	bank->inuse++;
+	mutex_unlock(&jfc_table->bank_mutex);
+	udma_jfc->ubcore_jfc.id = udma_jfc->cqn;
+
+	return 0;
+}
+
+static void free_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	struct udma_bank *bank;
+
+	bank = &jfc_table->bank[get_jfc_bankid(udma_jfc->cqn)];
+	ida_free(&bank->ida, udma_jfc->cqn >> CQ_BANKID_SHIFT);
+
+	mutex_lock(&jfc_table->bank_mutex);
+	bank->inuse--;
+	mutex_unlock(&jfc_table->bank_mutex);
+}
+
+struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
+			      struct ubcore_udata *udata)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct udma_create_jfc_ucmd ucmd = {};
+	struct udma_jfc *udma_jfc;
+	int ret;
+
+	ret = check_create_jfc(udma_dev, cfg, &ucmd, udata);
+	if (ret)
+		goto err;
+
+	udma_jfc = kzalloc(sizeof(*udma_jfc), GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(udma_jfc)) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	init_jfc(udma_jfc, &ucmd);
+
+	set_jfc_param(udma_jfc, cfg);
+
+	ret = alloc_jfc_buf(udma_dev, udma_jfc, udata, &ucmd);
+	if (ret)
+		goto err_jfc;
+
+	ret = alloc_jfc_id(udma_dev, udma_jfc);
+	if (ret)
+		goto err_jfc_buf;
+
+	ret = alloc_jfc_cqc(udma_dev, udma_jfc);
+	if (ret)
+		goto err_jfc_id;
+
+	return &udma_jfc->ubcore_jfc;
+
+err_jfc_id:
+	free_jfc_id(udma_dev, udma_jfc);
+err_jfc_buf:
+	free_jfc_buf(udma_dev, udma_jfc);
+err_jfc:
+	kfree(udma_jfc);
+err:
+	return NULL;
+}
+
+int udma_destroy_jfc(struct ubcore_jfc *jfc)
+{
+	struct udma_dev *udma_dev = to_udma_dev(jfc->ub_dev);
+	struct udma_jfc *udma_jfc = to_udma_jfc(jfc);
+
+	free_jfc_cqc(udma_dev, udma_jfc);
+	free_jfc_id(udma_dev, udma_jfc);
+	free_jfc_buf(udma_dev, udma_jfc);
+	kfree(udma_jfc);
+
+	return 0;
+}
