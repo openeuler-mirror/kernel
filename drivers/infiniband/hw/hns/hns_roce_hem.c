@@ -942,7 +942,7 @@ void hns_roce_cleanup_hem_table(struct hns_roce_dev *hr_dev,
 			obj = i * table->table_chunk_size / table->obj_size;
 			ret = hr_dev->hw->clear_hem(hr_dev, table, obj, 0);
 			if (ret)
-				dev_err(dev, "Clear HEM base address failed, ret = %d.\n",
+				dev_err(dev, "clear HEM base address failed, ret = %d.\n",
 					ret);
 
 			hns_roce_free_hem(hr_dev, table->hem[i]);
