@@ -215,6 +215,13 @@ struct udma_mtr {
 	struct udma_hem_cfg	hem_cfg; /* config for hardware addressing */
 };
 
+struct udma_user_db_page {
+	struct list_head	list;
+	struct ubcore_umem	*umem;
+	uint64_t		user_virt;
+	refcount_t		refcount;
+};
+
 struct udma_ceqe {
 	uint32_t	comp;
 	uint32_t	rsv[15];
@@ -251,6 +258,14 @@ struct udma_work {
 };
 
 struct udma_dev;
+
+struct udma_db {
+	uint32_t	*db_record;
+	struct udma_user_db_page *user_page;
+	dma_addr_t	dma;
+	void		*virt_addr;
+};
+
 struct udma_ucontext {
 	struct ubcore_ucontext		uctx;
 	struct udma_uar			uar;
