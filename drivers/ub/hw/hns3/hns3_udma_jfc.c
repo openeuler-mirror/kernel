@@ -56,6 +56,56 @@ static int check_jfc_cfg(struct udma_dev *udma_dev, const struct ubcore_jfc_cfg 
 	return 0;
 }
 
+static int check_notify_attr(struct udma_dev *udma_dev,
+			     struct udma_jfc_attr_ex *jfc_attr_ex)
+{
+	if (!(udma_dev->caps.flags & UDMA_CAP_FLAG_WRITE_NOTIFY)) {
+		dev_err(udma_dev->dev, "Unsupport NOTIFY JFC.\n");
+		return -EINVAL;
+	}
+
+	switch (jfc_attr_ex->notify_mode) {
+	case UDMA_JFC_NOTIFY_MODE_4B_ALIGN:
+	case UDMA_JFC_NOTIFY_MODE_DDR_4B_ALIGN:
+		break;
+	case UDMA_JFC_NOTIFY_MODE_64B_ALIGN:
+	case UDMA_JFC_NOTIFY_MODE_DDR_64B_ALIGN:
+		dev_err(udma_dev->dev, "Doesn't support notify mode %u\n",
+			jfc_attr_ex->notify_mode);
+		return -EINVAL;
+	default:
+		dev_err(udma_dev->dev, "Invalid notify mode %u\n",
+			jfc_attr_ex->notify_mode);
+		return -EINVAL;
+	}
+
+	if (jfc_attr_ex->notify_addr & UDMA_ADDR_4K_MASK) {
+		dev_err(udma_dev->dev,
+			"Notify addr should be aligned to 4k.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int check_jfc_attr_ex(struct udma_dev *udma_dev,
+			     struct udma_jfc_attr_ex *jfc_attr_ex)
+{
+	int ret;
+
+	switch (jfc_attr_ex->create_flags) {
+	case UDMA_JFC_CREATE_ENABLE_NOTIFY:
+		ret = check_notify_attr(udma_dev, jfc_attr_ex);
+		break;
+	default:
+		dev_err(udma_dev->dev, "Invalid create flags %llu\n",
+			jfc_attr_ex->create_flags);
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
 static int check_create_jfc(struct udma_dev *udma_dev,
 			    const struct ubcore_jfc_cfg *cfg,
 			    struct udma_create_jfc_ucmd *ucmd,
@@ -81,6 +131,16 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 		return ret;
 	}
 
+	if (ucmd->jfc_attr_ex.jfc_ex_mask &
+	    UDMA_JFC_NOTIFY_CREATE_FLAGS) {
+		ret = check_jfc_attr_ex(udma_dev, &ucmd->jfc_attr_ex);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to check JFC attr ex.\n");
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -95,6 +155,8 @@ static void init_jfc(struct udma_jfc *udma_jfc, struct udma_create_jfc_ucmd *ucm
 	spin_lock_init(&udma_jfc->lock);
 	INIT_LIST_HEAD(&udma_jfc->sq_list);
 	INIT_LIST_HEAD(&udma_jfc->rq_list);
+	if (ucmd->jfc_attr_ex.jfc_ex_mask & UDMA_JFC_NOTIFY_CREATE_FLAGS)
+		udma_jfc->jfc_attr_ex = ucmd->jfc_attr_ex;
 }
 
 static int alloc_jfc_cqe_buf(struct udma_dev *dev, struct udma_jfc *jfc,
@@ -169,6 +231,44 @@ db_err:
 	return ret;
 }
 
+static void set_write_notify_param(struct udma_dev *udma_dev,
+				   struct udma_jfc *udma_jfc,
+				   struct udma_jfc_context *jfc_context)
+{
+	uint8_t device_mode;
+
+	if (udma_jfc->jfc_attr_ex.notify_mode == UDMA_JFC_NOTIFY_MODE_4B_ALIGN)
+		device_mode = UDMA_NOTIFY_DEV;
+	else
+		device_mode = UDMA_NOTIFY_DDR;
+
+	udma_reg_enable(jfc_context, CQC_NOTIFY_EN);
+	udma_reg_write(jfc_context, CQC_NOTIFY_DEVICE_EN, device_mode);
+	/* Supports only 4B alignment. */
+	udma_reg_write(jfc_context, CQC_NOTIFY_MODE, UDMA_NOTIFY_MODE_4B);
+	udma_reg_write(jfc_context, CQC_NOTIFY_ADDR_0,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_0_M, CQC_NOTIFY_ADDR_0_S));
+	udma_reg_write(jfc_context, CQC_POE_QID,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_1_M, CQC_NOTIFY_ADDR_1_S));
+	udma_reg_write(jfc_context, CQC_NOTIFY_ADDR_2,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_2_M, CQC_NOTIFY_ADDR_2_S));
+	udma_reg_write(jfc_context, CQC_NOTIFY_ADDR_3,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_3_M, CQC_NOTIFY_ADDR_3_S));
+	udma_reg_write(jfc_context, CQC_NOTIFY_ADDR_4,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_4_M, CQC_NOTIFY_ADDR_4_S));
+	udma_reg_write(jfc_context, CQC_NOTIFY_ADDR_5,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_5_M, CQC_NOTIFY_ADDR_5_S));
+	udma_reg_write(jfc_context, CQC_NOTIFY_ADDR_6,
+		       (uint32_t)udma_get_field64(udma_jfc->jfc_attr_ex.notify_addr,
+		       CQC_NOTIFY_ADDR_6_M, CQC_NOTIFY_ADDR_6_S));
+}
+
 static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 			void *mb_buf, uint64_t *mtts, uint64_t dma_handle)
 {
@@ -214,6 +314,9 @@ static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_
 		udma_reg_write(jfc_context, CQC_CQE_DB_RECORD_ADDR_H,
 			       upper_32_bits(udma_jfc->db.dma));
 	}
+
+	if (udma_jfc->jfc_attr_ex.create_flags == UDMA_JFC_CREATE_ENABLE_NOTIFY)
+		set_write_notify_param(udma_dev, udma_jfc, jfc_context);
 }
 
 static int udma_create_jfc_cqc(struct udma_dev *udma_dev,

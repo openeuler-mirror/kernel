@@ -32,12 +32,35 @@ struct udma_jfc {
 	struct completion	free;
 	struct list_head	sq_list;
 	struct list_head	rq_list;
+	struct udma_jfc_attr_ex	jfc_attr_ex;
 };
 
 #define UDMA_JFC_CONTEXT_SIZE 16
 struct udma_jfc_context {
 	uint32_t jfc_data[UDMA_JFC_CONTEXT_SIZE];
 };
+
+#define UDMA_NOTIFY_MODE_4B 1UL
+
+enum udma_notify_device_en {
+	UDMA_NOTIFY_DEV,
+	UDMA_NOTIFY_DDR,
+};
+
+#define CQC_NOTIFY_ADDR_0_S 12
+#define CQC_NOTIFY_ADDR_0_M GENMASK(19, 12)
+#define CQC_NOTIFY_ADDR_1_S 20
+#define CQC_NOTIFY_ADDR_1_M GENMASK(29, 20)
+#define CQC_NOTIFY_ADDR_2_S 30
+#define CQC_NOTIFY_ADDR_2_M GENMASK(33, 30)
+#define CQC_NOTIFY_ADDR_3_S 34
+#define CQC_NOTIFY_ADDR_3_M GENMASK(41, 34)
+#define CQC_NOTIFY_ADDR_4_S 42
+#define CQC_NOTIFY_ADDR_4_M GENMASK(49, 42)
+#define CQC_NOTIFY_ADDR_5_S 50
+#define CQC_NOTIFY_ADDR_5_M GENMASK(57, 50)
+#define CQC_NOTIFY_ADDR_6_S 58
+#define CQC_NOTIFY_ADDR_6_M GENMASK(63, 58)
 
 static inline struct udma_jfc *to_udma_jfc(struct ubcore_jfc *jfc)
 {

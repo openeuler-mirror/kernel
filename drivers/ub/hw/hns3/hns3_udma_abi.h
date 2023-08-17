@@ -25,9 +25,32 @@ enum {
 	UDMA_MMAP_UAR_PAGE,
 };
 
+enum udma_jfc_init_attr_mask {
+	UDMA_JFC_NOTIFY_CREATE_FLAGS = 1 << 0,
+};
+
+enum udma_jfc_create_flags {
+	UDMA_JFC_CREATE_ENABLE_NOTIFY = 1 << 1,
+};
+
+enum udma_jfc_notify_mode {
+	UDMA_JFC_NOTIFY_MODE_64B_ALIGN,
+	UDMA_JFC_NOTIFY_MODE_4B_ALIGN,
+	UDMA_JFC_NOTIFY_MODE_DDR_64B_ALIGN,
+	UDMA_JFC_NOTIFY_MODE_DDR_4B_ALIGN,
+};
+
+struct udma_jfc_attr_ex {
+	uint64_t	jfc_ex_mask; /* Use enum udma_jfc_init_attr_mask */
+	uint64_t	create_flags; /* Use enum udma_jfc_create_flags */
+	uint64_t	notify_addr;
+	uint8_t		notify_mode; /* Use enum udma_jfc_notify_mode */
+};
+
 struct udma_create_jfc_ucmd {
 	uint64_t		buf_addr;
 	uint64_t		db_addr;
+	struct udma_jfc_attr_ex	jfc_attr_ex;
 };
 
 enum udma_jfc_cap_flags {
