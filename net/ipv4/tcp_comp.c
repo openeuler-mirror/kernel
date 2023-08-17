@@ -82,7 +82,7 @@ static bool tcp_comp_enabled(__be32 saddr, __be32 daddr, int port)
 
 bool tcp_syn_comp_enabled(const struct sock *sk)
 {
-	struct inet_sock *inet = inet_sk(sk);
+	const struct inet_sock *inet = inet_sk(sk);
 
 	return tcp_comp_enabled(inet->inet_saddr, inet->inet_daddr,
 				ntohs(inet->inet_dport));
@@ -91,7 +91,7 @@ bool tcp_syn_comp_enabled(const struct sock *sk)
 bool tcp_synack_comp_enabled(const struct sock *sk,
 			     const struct inet_request_sock *ireq)
 {
-	struct inet_sock *inet = inet_sk(sk);
+	const struct inet_sock *inet = inet_sk(sk);
 
 	if (!ireq->comp_ok)
 		return false;
