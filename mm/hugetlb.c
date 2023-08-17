@@ -3152,6 +3152,34 @@ out_subpool_put:
 	return ERR_PTR(-ENOSPC);
 }
 
+#ifdef CONFIG_MEMORY_HOTPLUG
+static void __init move_bootmem_to_normal_zone(struct huge_bootmem_page *m,
+					       int order)
+{
+	struct page *page = virt_to_page(m);
+	unsigned long pfn = page_to_pfn(page);
+	struct zone *src_zone, *dst_zone;
+	int nr_pages = 1 << order;
+
+	src_zone = page_zone(page);
+
+	if (zone_idx(src_zone) != ZONE_MOVABLE)
+		pr_warn("HugeTLB: trying to move %s pages (should be ZONE_MOVABLE) to ZONE_NORMAL!\n",
+			src_zone->name);
+
+	adjust_present_page_count(page, NULL, -nr_pages);
+	remove_pfn_range_from_zone(src_zone, pfn, nr_pages);
+
+	dst_zone = &NODE_DATA(pfn_to_nid(pfn))->node_zones[ZONE_NORMAL];
+	move_pfn_range_to_zone(dst_zone, pfn, nr_pages,
+			       NULL, MIGRATE_UNMOVABLE);
+	adjust_present_page_count(page, NULL, nr_pages);
+
+	pr_info("HugeTLB: moved %d pages from %s to %s\n", nr_pages,
+		src_zone->name, dst_zone->name);
+}
+#endif
+
 static void *__init __alloc_bootmem_huge_page_inner(phys_addr_t size,
 						    phys_addr_t align,
 						    phys_addr_t min_addr,
@@ -3200,6 +3228,16 @@ found:
 	INIT_LIST_HEAD(&m->list);
 	list_add(&m->list, &huge_boot_pages);
 	m->hstate = h;
+
+#ifdef CONFIG_MEMORY_HOTPLUG
+	/*
+	 * If kernelcore=mirror, non-mirrored memory was initially
+	 * put into ZONE_MOVABLE, which can't be pinned for virtual
+	 * machine device passthrough, move them to ZONE_NORMAL
+	 */
+	if (mirrored_kernelcore && hugepage_no_mirror)
+		move_bootmem_to_normal_zone(m, huge_page_order(h));
+#endif
 	return 1;
 }
 
@@ -4444,6 +4482,9 @@ static int __init hugepage_no_mirror_setup(char *__unused)
 {
 	hugepage_no_mirror = true;
 	pr_info("HugeTLB: allocate boot time hugepages in non-mirrored memory if kernelcore=mirror is set.\n");
+	if (IS_ENABLED(CONFIG_MEMORY_HOTPLUG))
+		pr_info("HugeTLB: Also make them pinnable.\n");
+
 	return 1;
 }
 __setup("hugepage_no_mirror", hugepage_no_mirror_setup);
