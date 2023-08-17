@@ -531,3 +531,64 @@ int udma_destroy_jfc(struct ubcore_jfc *jfc)
 
 	return 0;
 }
+
+int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, const struct ubcore_jfc_attr *attr,
+		    struct ubcore_udata *udata)
+{
+	struct udma_dev *udma_device = to_udma_dev(ubcore_jfc->ub_dev);
+	uint16_t cq_period = attr->moderate_period;
+	uint16_t cq_count = attr->moderate_count;
+	struct udma_jfc_context *jfc_context;
+	struct udma_jfc_context *cqc_mask;
+	struct udma_cmd_mailbox *mailbox;
+	struct udma_cmq_desc desc;
+	struct udma_jfc *udma_jfc;
+	struct udma_mbox *mb;
+	int ret;
+
+	udma_jfc = to_udma_jfc(ubcore_jfc);
+	ret = check_jfc_cfg(udma_device, &ubcore_jfc->jfc_cfg);
+	if (ret)
+		return ret;
+
+	if (!(attr->mask & (UBCORE_JFC_MODERATE_COUNT |
+			    UBCORE_JFC_MODERATE_PERIOD))) {
+		dev_err(udma_device->dev,
+			"JFC modify mask is not set or invalid.\n");
+		return -EINVAL;
+	}
+
+	mailbox = udma_alloc_cmd_mailbox(udma_device);
+	if (IS_ERR(mailbox)) {
+		dev_err(udma_device->dev, "failed to alloc mailbox for CQ.\n");
+		return -ENOMEM;
+	}
+
+	jfc_context = (struct udma_jfc_context *)mailbox->buf;
+	cqc_mask = (struct udma_jfc_context *)mailbox->buf + 1;
+
+	memset(cqc_mask, 0xff, sizeof(*cqc_mask));
+	if (attr->mask & UBCORE_JFC_MODERATE_COUNT) {
+		udma_reg_write(jfc_context, CQC_CQ_MAX_CNT, cq_count);
+		udma_reg_clear(cqc_mask, CQC_CQ_MAX_CNT);
+	}
+
+	if (attr->mask & UBCORE_JFC_MODERATE_PERIOD) {
+		udma_reg_write(jfc_context, CQC_CQ_PERIOD, cq_period);
+		udma_reg_clear(cqc_mask, CQC_CQ_PERIOD);
+	}
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, mailbox->dma, 0, ubcore_jfc->id,
+		       UDMA_CMD_MODIFY_CQC);
+
+	ret = udma_cmd_mbox(udma_device, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret)
+		dev_err(udma_device->dev,
+			"failed to send modify cmd for jfc(0x%x), ret = %d.\n",
+			ubcore_jfc->id, ret);
+	udma_free_cmd_mailbox(udma_device, mailbox);
+
+	return ret;
+}

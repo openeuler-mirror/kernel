@@ -70,6 +70,8 @@ static inline struct udma_jfc *to_udma_jfc(struct ubcore_jfc *jfc)
 struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
 			      struct ubcore_udata *udata);
 int udma_destroy_jfc(struct ubcore_jfc *jfc);
+int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, const struct ubcore_jfc_attr *attr,
+		    struct ubcore_udata *udata);
 static inline uint8_t get_jfc_bankid(uint64_t cqn)
 {
 	/* The lower 2 bits of CQN are used to hash to different banks */

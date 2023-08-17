@@ -167,6 +167,7 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,
 	.create_jfc = udma_create_jfc,
+	.modify_jfc = udma_modify_jfc,
 	.destroy_jfc = udma_destroy_jfc,
 };
 
