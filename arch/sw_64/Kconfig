@@ -198,6 +198,10 @@ choice
 config SUBARCH_C3B
 	bool "C3B"
 
+config SUBARCH_C4
+	bool "C4"
+	select HAVE_CSRRW
+	select GENERIC_SCHED_CLOCK
 endchoice
 
 choice

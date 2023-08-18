@@ -102,6 +102,7 @@ DECLARE_STATIC_KEY_FALSE(run_mode_emul_key);
 
 #define CPU_SW3231		0x31
 #define CPU_SW831		0x32
+#define CPU_SW8A		0x41
 
 #define GET_TABLE_ENTRY		1
 #define GET_VENDOR_ID		2
