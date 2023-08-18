@@ -16,6 +16,7 @@
 #include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/inetdevice.h>
+#include "urma/ubcore_api.h"
 #include "hnae3.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_hem.h"
@@ -1674,9 +1675,50 @@ static void udma_uninit_instance(struct hnae3_handle *handle, bool reset)
 	handle->udmainfo.instance_state = UDMA_STATE_NON_INIT;
 }
 
+static void udma_link_status_change(struct hnae3_handle *handle, bool linkup)
+{
+	struct net_device *net_dev;
+	struct ubcore_event event;
+	struct udma_dev *dev;
+	uint32_t port_id;
+
+	dev = handle->priv;
+
+	if (IS_ERR_OR_NULL(dev)) {
+		pr_err("[hns3-udma:link_status_change]: Invalid dev!\n");
+		return;
+	}
+
+	for (port_id = 0; port_id < dev->caps.num_ports; port_id++) {
+		net_dev = dev->uboe.netdevs[port_id];
+		if (!net_dev) {
+			dev_err(dev->dev, "Find netdev %u failed!\n", port_id);
+			return;
+		}
+
+		if (net_dev == handle->udmainfo.netdev)
+			break;
+	}
+
+	if (port_id == dev->caps.num_ports) {
+		dev_err(dev->dev, "Cannot find netdev!\n");
+		return;
+	}
+
+	if (linkup)
+		event.event_type = UBCORE_EVENT_PORT_ACTIVE;
+	else
+		event.event_type = UBCORE_EVENT_PORT_ERR;
+
+	event.ub_dev = &dev->ub_dev;
+	event.element.port_id = port_id;
+	ubcore_dispatch_async_event(&event);
+}
+
 static const struct hnae3_client_ops udma_ops = {
 	.init_instance = udma_init_instance,
 	.uninit_instance = udma_uninit_instance,
+	.link_status_change = udma_link_status_change,
 };
 
 static struct hnae3_client udma_client = {
