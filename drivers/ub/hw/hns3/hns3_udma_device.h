@@ -430,6 +430,7 @@ struct udma_hw {
 	int (*clear_hem)(struct udma_dev *udma_dev,
 			 struct udma_hem_table *table, int obj,
 			 int step_idx);
+	int (*set_eid)(struct udma_dev *udma_dev, union ubcore_eid eid);
 	int (*init_eq)(struct udma_dev *udma_dev);
 	void (*cleanup_eq)(struct udma_dev *udma_dev);
 };

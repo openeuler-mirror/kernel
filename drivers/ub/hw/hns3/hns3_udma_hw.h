@@ -202,6 +202,8 @@ enum udma_opcode_type {
 	UDMA_OPC_EXT_CFG				= 0x8512,
 	UDMA_SWITCH_PARAMETER_CFG			= 0x1033,
 	UDMA_QUERY_OOR_CAPS				= 0xA002,
+	UDMA_OPC_DEID_TBL_ADD				= 0xA110,
+	UDMA_OPC_CFG_GMV_TBL				= 0xA140,
 };
 
 #define UDMA_QUERY_PF_CAPS_CMD_NUM 5
@@ -399,5 +401,59 @@ enum {
 #define CFG_GMV_BT_VF_ID CMQ_REQ_FIELD_LOC(103, 96)
 
 #define UDMA_INT_NAME_LEN		32
+
+struct udma_cfg_gmv_tb_a {
+	uint32_t vf_sgid_l;
+	uint32_t vf_sgid_ml;
+	uint32_t vf_sgid_mh;
+	uint32_t vf_sgid_h;
+	uint32_t vf_type_vlan_smac;
+	uint32_t vf_smac_h;
+};
+
+struct udma_cfg_gmv_tb_b {
+	uint32_t	vf_upi;
+	uint32_t	vf_eid_high;
+	uint32_t	table_idx_rsv;
+	uint32_t	vf_id;
+	uint32_t	resv[2];
+};
+
+#define SGID_TYPE_IPV4 1
+
+#define CFG_GMV_TB_VF_SGID_TYPE_S 0
+#define CFG_GMV_TB_VF_SMAC_L_S 16
+#define CFG_GMV_TB_VF_PATTERN_S 3
+#define CFG_GMV_TB_VF_SGID_TYPE_M GENMASK(1, 0)
+#define CFG_GMV_TB_VF_SMAC_L_M GENMASK(31, 16)
+
+#define SGID_H_SHIFT 12
+#define SMAC_L_SHIFT 0
+#define SMAC_H_SHIFT 2
+
+#define CFG_GMV_TBL_CMD_NUM 2
+
+struct udma_eid_tbl_entry_cmd {
+	uint8_t		resp_code;
+	uint8_t		rsv1[3];
+	uint32_t	eid_addr[4];
+	uint16_t	eid_ad;
+	uint8_t		rsv2[2];
+};
+
+#define UDMA_EID_TB_VFID_S 0
+#define UDMA_EID_TB_VFID_M GENMASK(7, 0)
+#define UDMA_EID_TB_RES_SUCCESS 0
+#define UDMA_EID_TB_RES_MODIFY 2
+
+union udma_eid {
+	union ubcore_eid		ubcore_eid;
+	struct {
+		uint32_t	eid_l;
+		uint32_t	eid_ml;
+		uint32_t	eid_mh;
+		uint32_t	eid_h;
+	} bit32_data;
+};
 
 #endif /* _UDMA_HW_H */

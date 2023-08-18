@@ -21,6 +21,17 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_cmd.h"
+static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	uint8_t port = 0;
+
+	if (port >= udma_dev->caps.num_ports)
+		return -EINVAL;
+
+	return udma_dev->hw->set_eid(udma_dev, eid);
+}
+
 static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 {
 	struct udma_ida *uar_ida = &udma_dev->uar_ida;
@@ -163,6 +174,7 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
+	.set_eid = udma_set_eid,
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,

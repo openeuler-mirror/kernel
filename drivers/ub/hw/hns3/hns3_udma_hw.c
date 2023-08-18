@@ -1006,6 +1006,88 @@ static void udma_cmq_exit(struct udma_dev *udma_dev)
 	udma_free_cmq_desc(udma_dev, &priv->cmq.csq);
 }
 
+static int config_gmv_table(struct udma_dev *udma_dev, union ubcore_eid eid)
+{
+	uint32_t sgid_type = SGID_TYPE_IPV4;
+	struct udma_cfg_gmv_tb_a *tb_a;
+	struct udma_cfg_gmv_tb_b *tb_b;
+	struct udma_cmq_desc desc[2];
+	uint16_t smac_l;
+
+	tb_a = (struct udma_cfg_gmv_tb_a *)desc[0].data;
+	tb_b = (struct udma_cfg_gmv_tb_b *)desc[1].data;
+
+	udma_cmq_setup_basic_desc(&desc[0], UDMA_OPC_CFG_GMV_TBL, false);
+	desc[0].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	udma_cmq_setup_basic_desc(&desc[1], UDMA_OPC_CFG_GMV_TBL, false);
+
+	smac_l =
+		*(uint16_t *)&udma_dev->uboe.netdevs[0]->dev_addr[SMAC_L_SHIFT];
+	udma_set_field(tb_a->vf_type_vlan_smac, CFG_GMV_TB_VF_SMAC_L_M,
+		       CFG_GMV_TB_VF_SMAC_L_S, smac_l);
+	tb_a->vf_smac_h =
+		*(uint32_t *)&udma_dev->uboe.netdevs[0]->dev_addr[SMAC_H_SHIFT];
+	udma_set_field(tb_a->vf_type_vlan_smac, CFG_GMV_TB_VF_SGID_TYPE_M,
+		       CFG_GMV_TB_VF_SGID_TYPE_S, sgid_type);
+	memcpy(tb_a, &eid, sizeof(eid));
+	udma_set_bit(tb_a->vf_type_vlan_smac, CFG_GMV_TB_VF_PATTERN_S, 0);
+	tb_b->vf_id = 0;
+
+	return udma_cmq_send(udma_dev, desc, CFG_GMV_TBL_CMD_NUM);
+}
+
+static void udma_fill_eid_addr(struct udma_eid_tbl_entry_cmd *eid_entry,
+			       union ubcore_eid eid)
+{
+	int i;
+
+	/* big endian */
+	for (i = 0; i < UDMA_EID_SIZE_IDX; i++)
+		eid_entry->eid_addr[i] = (*(((uint32_t *)eid.raw) + i));
+}
+
+static int set_eid_table(struct udma_dev *udma_dev, union ubcore_eid eid)
+{
+	struct udma_eid_tbl_entry_cmd *eid_entry;
+	struct udma_cmq_desc desc = {};
+	uint8_t resp_code;
+	int ret;
+
+	eid_entry = (struct udma_eid_tbl_entry_cmd *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_DEID_TBL_ADD, false);
+	udma_set_field(eid_entry->eid_ad, UDMA_EID_TB_VFID_M,
+		       UDMA_EID_TB_VFID_S, 0);
+	udma_fill_eid_addr(eid_entry, eid);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_err(udma_dev->dev, "Send set eid table cmd failed.\n");
+		return ret;
+	}
+
+	resp_code = (le32_to_cpu(desc.data[0])) & 0xff;
+	if (resp_code == UDMA_EID_TB_RES_SUCCESS ||
+	    resp_code == UDMA_EID_TB_RES_MODIFY)
+		return 0;
+	else
+		return -EIO;
+}
+
+static int udma_hw_set_eid(struct udma_dev *udma_dev, union ubcore_eid eid)
+{
+	int ret;
+
+	ret = config_gmv_table(udma_dev, eid);
+	if (ret) {
+		dev_err(udma_dev->dev, "Set EID to GMV table failed.\n");
+		return ret;
+	}
+
+	ret = set_eid_table(udma_dev, eid);
+	if (ret)
+		dev_err(udma_dev->dev, "Set EID table failed.\n");
+
+	return ret;
+}
 
 static void config_llm_table(struct udma_buf *data_buf, void *cfg_buf)
 {
@@ -1456,6 +1538,7 @@ static const struct udma_hw udma_hw = {
 	.poll_mbox_done = udma_poll_mbox_done,
 	.set_hem = udma_set_hem,
 	.clear_hem = udma_clear_hem,
+	.set_eid = udma_hw_set_eid,
 	.init_eq = udma_init_eq_table,
 	.cleanup_eq = udma_cleanup_eq_table,
 };
