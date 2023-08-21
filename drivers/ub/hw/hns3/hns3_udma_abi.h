@@ -22,6 +22,7 @@
 #define UDMA_JETTY_X_PREFIX_BIT_NUM	2
 #define UDMA_JFR_QPN_PREFIX		0x1
 #define UDMA_ADDR_4K_MASK		0xfffUL
+#define URMA_SEG_ACCESS_GUARD		(1UL << 5)
 
 enum {
 	UDMA_MMAP_UAR_PAGE,

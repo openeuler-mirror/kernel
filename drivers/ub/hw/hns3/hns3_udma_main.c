@@ -21,6 +21,7 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_jfr.h"
 #include "hns3_udma_jfc.h"
+#include "hns3_udma_segment.h"
 #include "hns3_udma_cmd.h"
 static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
 {
@@ -179,6 +180,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,
+	.register_seg = udma_register_seg,
+	.unregister_seg = udma_unregister_seg,
 	.create_jfc = udma_create_jfc,
 	.modify_jfc = udma_modify_jfc,
 	.destroy_jfc = udma_destroy_jfc,

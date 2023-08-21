@@ -719,6 +719,19 @@ struct udma_dev {
 	spinlock_t			dip_list_lock;
 };
 
+struct udma_seg {
+	struct ubcore_target_seg		ubcore_seg;
+	uint64_t		iova;
+	uint64_t		size;
+	uint32_t		key;
+	uint32_t		pd;
+	uint32_t		access;
+	int			enabled;
+	uint32_t		pbl_hop_num;
+	struct udma_mtr		pbl_mtr;
+	uint32_t		npages;
+};
+
 static inline void *udma_buf_offset(struct udma_buf *buf,
 				    uint32_t offset)
 {
@@ -753,6 +766,11 @@ static inline struct udma_ucontext
 static inline struct udma_dev *to_udma_dev(const struct ubcore_device *ubcore_dev)
 {
 	return container_of(ubcore_dev, struct udma_dev, ub_dev);
+}
+
+static inline struct udma_seg *to_udma_seg(struct ubcore_target_seg *seg)
+{
+	return container_of(seg, struct udma_seg, ubcore_seg);
 }
 
 static inline uint32_t to_udma_hem_entries_size(uint32_t count,
