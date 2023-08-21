@@ -14,9 +14,60 @@
  */
 
 #include <linux/spinlock.h>
+#include "hns3_udma_abi.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_qp.h"
+static void init_qpn_bitmap(struct udma_qpn_bitmap *qpn_map, uint32_t qpn_shift)
+{
+	int i;
+
+	qpn_map->qpn_shift = qpn_shift;
+	mutex_init(&qpn_map->bank_mutex);
+	/* reserved 0 for UD */
+	qpn_map->bank[0].min = 1;
+	qpn_map->bank[0].inuse = 1;
+	qpn_map->bank[0].next = qpn_map->bank[0].min;
+	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
+		ida_init(&qpn_map->bank[i].ida);
+		qpn_map->bank[i].max = (1 << qpn_shift) / UDMA_QP_BANK_NUM - 1;
+	}
+}
+
+void init_jetty_x_qpn_bitmap(struct udma_dev *dev,
+			     struct udma_qpn_bitmap *qpn_map,
+			     uint32_t jetty_x_shift,
+			     uint32_t prefix, uint32_t jid)
+{
+#define QPN_SHIFT_MIN 3
+	int qpn_shift;
+
+	qpn_shift = dev->caps.num_qps_shift - jetty_x_shift -
+		    UDMA_JETTY_X_PREFIX_BIT_NUM;
+	if (qpn_shift <= QPN_SHIFT_MIN) {
+		qpn_map->qpn_shift = 0;
+		return;
+	}
+
+	qpn_map->qpn_prefix = prefix <<
+			      (dev->caps.num_qps_shift -
+			      UDMA_JETTY_X_PREFIX_BIT_NUM);
+	qpn_map->jid = jid;
+	init_qpn_bitmap(qpn_map, qpn_shift);
+}
+
+void clean_jetty_x_qpn_bitmap(struct udma_qpn_bitmap *qpn_map)
+{
+	int i;
+
+	if (!qpn_map->qpn_shift)
+		return;
+	mutex_lock(&qpn_map->bank_mutex);
+	for (i = 0; i < UDMA_QP_BANK_NUM; i++)
+		ida_destroy(&qpn_map->bank[i].ida);
+	mutex_unlock(&qpn_map->bank_mutex);
+}
+
 static inline uint8_t get_qp_bankid(uint64_t qpn)
 {
 	/* The lower 3 bits of QPN are used to hash to different banks */

@@ -45,6 +45,8 @@
 #define UDMA_GMV_ENTRY_SZ			32
 
 #define UDMA_CQ_BANK_NUM			4
+#define UDMA_SGE_SIZE				16
+#define UDMA_IDX_QUE_ENTRY_SZ			4
 /* The minimum page size is 4K for hardware */
 #define UDMA_HW_PAGE_SHIFT			12
 #define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
@@ -186,6 +188,12 @@ enum {
 	TYPE_CSQ = 1
 };
 
+enum udma_qp_state {
+	QPS_RESET,
+	QPS_RTR = 2,
+	QPS_RTS,
+	QPS_ERR = 6,
+};
 
 enum {
 	UDMA_BUF_DIRECT = BIT(0),
@@ -747,9 +755,19 @@ static inline struct udma_dev *to_udma_dev(const struct ubcore_device *ubcore_de
 	return container_of(ubcore_dev, struct udma_dev, ub_dev);
 }
 
+static inline uint32_t to_udma_hem_entries_size(uint32_t count,
+						uint32_t buf_shift)
+{
+	return udma_hw_page_align(count << buf_shift);
+}
 static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
 {
 	return page_shift - UDMA_HW_PAGE_SHIFT;
+}
+
+static inline uint64_t to_udma_hw_page_addr(uint64_t addr)
+{
+	return addr >> UDMA_HW_PAGE_SHIFT;
 }
 
 static inline dma_addr_t udma_buf_dma_addr(struct udma_buf *buf,

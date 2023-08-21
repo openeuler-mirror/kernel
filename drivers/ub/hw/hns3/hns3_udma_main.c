@@ -19,6 +19,7 @@
 #include "hns3_udma_abi.h"
 #include "hns3_udma_device.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_jfr.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_cmd.h"
 static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
@@ -181,6 +182,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.create_jfc = udma_create_jfc,
 	.modify_jfc = udma_modify_jfc,
 	.destroy_jfc = udma_destroy_jfc,
+	.create_jfr = udma_create_jfr,
+	.destroy_jfr = udma_destroy_jfr,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)

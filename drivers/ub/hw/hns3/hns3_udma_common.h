@@ -21,6 +21,7 @@
 #define ub_read(dev, reg)	readl((dev)->reg_base + (reg))
 
 #define UDMA_UDP_DPORT		4791
+#define DMA_WQE_SHIFT		3
 #define DMA_DB_RECORD_SHIFT	1
 
 #define udma_get_field(origin, mask, shift)                                    \

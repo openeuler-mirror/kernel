@@ -19,6 +19,8 @@
 #include <linux/types.h>
 
 #define MAP_COMMAND_MASK		0xff
+#define UDMA_JETTY_X_PREFIX_BIT_NUM	2
+#define UDMA_JFR_QPN_PREFIX		0x1
 #define UDMA_ADDR_4K_MASK		0xfffUL
 
 enum {
@@ -38,6 +40,20 @@ enum udma_jfc_notify_mode {
 	UDMA_JFC_NOTIFY_MODE_4B_ALIGN,
 	UDMA_JFC_NOTIFY_MODE_DDR_64B_ALIGN,
 	UDMA_JFC_NOTIFY_MODE_DDR_4B_ALIGN,
+};
+
+struct udma_create_jfr_ucmd {
+	uint64_t buf_addr;
+	uint64_t idx_addr;
+	uint64_t db_addr;
+};
+
+enum udma_jfr_cap_flags {
+	UDMA_JFR_CAP_RECORD_DB = 1 << 0,
+};
+
+struct udma_create_jfr_resp {
+	uint32_t jfr_caps;
 };
 
 struct udma_jfc_attr_ex {
