@@ -311,3 +311,23 @@ int udma_unregister_seg(struct ubcore_target_seg *seg)
 
 	return 0;
 }
+
+struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
+			       const struct ubcore_target_seg_cfg *cfg,
+			       struct ubcore_udata *udata)
+{
+	struct ubcore_target_seg *tseg;
+
+	tseg = kcalloc(1, sizeof(*tseg), GFP_KERNEL);
+	if (!tseg)
+		return NULL;
+
+	return tseg;
+}
+
+int udma_unimport_seg(struct ubcore_target_seg *tseg)
+{
+	kfree(tseg);
+
+	return 0;
+}
