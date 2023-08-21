@@ -25,6 +25,8 @@
 #include "sss_nic_tx.h"
 #include "sss_nic_rx.h"
 #include "sss_nic_ethtool_stats_api.h"
+#include "sss_tool_comm.h"
+#include "sss_tool_nic.h"
 
 #define SSSNIC_SET_SUPPORTED_MODE  0
 #define SSSNIC_SET_ADVERTISED_MODE 1
@@ -89,6 +91,35 @@ do { \
 	(len) == sizeof(u16) ? *(u16 *)(ptr) : *(u8 *)(ptr)	\
 )
 
+#define SSSNIC_DEV_STATS_PACK(items, item_idx, array, stats_ptr) \
+do { \
+	int j; \
+	for (j = 0; j < ARRAY_LEN(array); j++) { \
+		memcpy((items)[item_idx].name, (array)[j].name, SSS_TOOL_SHOW_ITEM_LEN); \
+		(items)[item_idx].hexadecimal = 0; \
+		(items)[item_idx].value = \
+			SSSNIC_GET_VALUE_OF_PTR((array)[j].len, \
+						(char *)(stats_ptr) + (array)[j].offset); \
+		(item_idx)++; \
+	} \
+} while (0)
+
+#define SSSNIC_QUEUE_STATS_PACK(items, item_idx, array, stats_ptr, qid) \
+do { \
+	int j; \
+	for (j = 0; j < ARRAY_LEN(array); j++) { \
+		memcpy((items)[item_idx].name, (array)[j].name, \
+		       SSS_TOOL_SHOW_ITEM_LEN); \
+		snprintf((items)[item_idx].name, SSS_TOOL_SHOW_ITEM_LEN, \
+			 (array)[j].name, (qid)); \
+		(items)[item_idx].hexadecimal = 0; \
+		(items)[item_idx].value = \
+			SSSNIC_GET_VALUE_OF_PTR((array)[j].len, \
+						(char *)(stats_ptr) + (array)[j].offset); \
+		(item_idx)++; \
+	} \
+} while (0)
+
 #define SSSNIC_CONVERT_DATA_TYPE(len, p) (((len) == sizeof(u64)) ? *(u64 *)(p) : *(u32 *)(p))
 #define SSSNIC_AUTONEG_STRING(autoneg) ((autoneg) ? ("autong enable") : ("autong disable"))
 #define SSSNIC_AUTONEG_ENABLE(autoneg) ((autoneg) ? SSSNIC_PORT_CFG_AN_ON : SSSNIC_PORT_CFG_AN_OFF)
@@ -127,6 +158,17 @@ static struct sss_nic_stats g_nic_sq_stats[] = {
 	SSSNIC_SQ_STATS(tx_dropped),
 };
 
+static struct sss_nic_stats g_nic_sq_stats_extern[] = {
+	SSSNIC_SQ_STATS(skb_pad_err),
+	SSSNIC_SQ_STATS(offload_err),
+	SSSNIC_SQ_STATS(dma_map_err),
+	SSSNIC_SQ_STATS(unknown_tunnel_proto),
+	SSSNIC_SQ_STATS(frag_size_zero),
+	SSSNIC_SQ_STATS(frag_len_overflow),
+	SSSNIC_SQ_STATS(rsvd1),
+	SSSNIC_SQ_STATS(rsvd2),
+};
+
 static struct sss_nic_stats g_nic_rq_stats[] = {
 	SSSNIC_RQ_STATS(rx_packets),
 	SSSNIC_RQ_STATS(rx_bytes),
@@ -138,6 +180,14 @@ static struct sss_nic_stats g_nic_rq_stats[] = {
 	SSSNIC_RQ_STATS(xdp_dropped),
 #endif
 	SSSNIC_RQ_STATS(rx_buf_errors),
+};
+
+static struct sss_nic_stats g_nic_rq_stats_extern[] = {
+	SSSNIC_RQ_STATS(alloc_rx_dma_err),
+	SSSNIC_RQ_STATS(alloc_skb_err),
+	SSSNIC_RQ_STATS(reset_drop_sge),
+	SSSNIC_RQ_STATS(large_xdp_pkts),
+	SSSNIC_RQ_STATS(rsvd2),
 };
 
 static struct sss_nic_stats g_netdev_stats[] = {
@@ -165,6 +215,13 @@ static struct sss_nic_stats g_netdev_stats[] = {
 
 static struct sss_nic_stats g_dev_stats[] = {
 	SSSNIC_TX_STATS(tx_timeout),
+};
+
+static struct sss_nic_stats g_dev_stats_extern[] = {
+	SSSNIC_TX_STATS(tx_drop),
+	SSSNIC_TX_STATS(tx_invalid_qid),
+	SSSNIC_TX_STATS(rsvd1),
+	SSSNIC_TX_STATS(rsvd2),
 };
 
 static struct sss_nic_stats g_function_stats[] = {
@@ -431,6 +488,20 @@ static sss_nic_port_type_handler_t g_link_port_set_handler[] = {
 	sss_nic_set_tp_port,
 	sss_nic_set_none_port
 };
+
+u32 sss_nic_get_io_stats_size(const struct sss_nic_dev *nic_dev)
+{
+	u32 count;
+
+	count = ARRAY_LEN(g_dev_stats) +
+		ARRAY_LEN(g_dev_stats_extern) +
+		(ARRAY_LEN(g_nic_sq_stats) +
+		ARRAY_LEN(g_nic_sq_stats_extern) +
+		ARRAY_LEN(g_nic_rq_stats) +
+		ARRAY_LEN(g_nic_rq_stats_extern)) * nic_dev->max_qp_num;
+
+	return count;
+}
 
 int sss_nic_eth_ss_test(struct sss_nic_dev *nic_dev)
 {
@@ -959,3 +1030,29 @@ int sssnic_set_link_settings(struct net_device *netdev,
 
 	return 0;
 }
+
+void sss_nic_get_io_stats(const struct sss_nic_dev *nic_dev, void *stats)
+{
+	struct sss_tool_show_item *items = stats;
+	int item_idx = 0;
+	u16 qid;
+
+	SSSNIC_DEV_STATS_PACK(items, item_idx, g_dev_stats, &nic_dev->tx_stats);
+	SSSNIC_DEV_STATS_PACK(items, item_idx, g_dev_stats_extern,
+			      &nic_dev->tx_stats);
+
+	for (qid = 0; qid < nic_dev->max_qp_num; qid++) {
+		SSSNIC_QUEUE_STATS_PACK(items, item_idx, g_nic_sq_stats,
+					&nic_dev->sq_desc_group[qid].stats, qid);
+		SSSNIC_QUEUE_STATS_PACK(items, item_idx, g_nic_sq_stats_extern,
+					&nic_dev->sq_desc_group[qid].stats, qid);
+	}
+
+	for (qid = 0; qid < nic_dev->max_qp_num; qid++) {
+		SSSNIC_QUEUE_STATS_PACK(items, item_idx, g_nic_rq_stats,
+					&nic_dev->rq_desc_group[qid].stats, qid);
+		SSSNIC_QUEUE_STATS_PACK(items, item_idx, g_nic_rq_stats_extern,
+					&nic_dev->rq_desc_group[qid].stats, qid);
+	}
+}
+

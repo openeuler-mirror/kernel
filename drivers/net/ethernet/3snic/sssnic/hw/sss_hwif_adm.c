@@ -25,62 +25,11 @@
 
 #define SSS_ADM_MSG_ELEM_DESC_SIZE				8
 #define SSS_ADM_MSG_ELEM_DATA_ADDR_SIZE			8
+#define SSS_ADM_MSG_ELEM_WB_ADDR_SIZE	8
 
 #define SSS_ADM_MSG_ELEM_ALIGNMENT				8
 
 #define SSS_ADM_MSG_STATE_TIMEOUT				10000
-
-#define SSS_WRITE_ADM_MSG_PRIV_DATA(id)			(((u8)(id)) << 16)
-
-#define SSS_MASK_ID(adm_msg, id)			\
-		((id) & ((adm_msg)->elem_num - 1))
-
-#define SSS_SIZE_TO_4B(size)				\
-		(ALIGN((u32)(size), 4U) >> 2)
-#define SSS_SIZE_TO_8B(size)				\
-		(ALIGN((u32)(size), 8U) >> 3)
-
-/* adm_msg_elem structure */
-#define SSS_ADM_MSG_ELEM_CTRL_ELEM_LEN_SHIFT			0
-#define SSS_ADM_MSG_ELEM_CTRL_RD_DMA_ATTR_OFF_SHIFT		16
-#define SSS_ADM_MSG_ELEM_CTRL_WR_DMA_ATTR_OFF_SHIFT		24
-#define SSS_ADM_MSG_ELEM_CTRL_XOR_CHKSUM_SHIFT			56
-
-#define SSS_ADM_MSG_ELEM_CTRL_ELEM_LEN_MASK				0x3FU
-#define SSS_ADM_MSG_ELEM_CTRL_RD_DMA_ATTR_OFF_MASK		0x3FU
-#define SSS_ADM_MSG_ELEM_CTRL_WR_DMA_ATTR_OFF_MASK		0x3FU
-#define SSS_ADM_MSG_ELEM_CTRL_XOR_CHKSUM_MASK			0xFFU
-
-#define SSS_ADM_MSG_ELEM_CTRL_SET(val, member)		\
-		((((u64)(val)) & SSS_ADM_MSG_ELEM_CTRL_##member##_MASK) << \
-			SSS_ADM_MSG_ELEM_CTRL_##member##_SHIFT)
-
-/* adm_msg_elem.desc structure */
-#define SSS_ADM_MSG_DESC_SGL_TYPE_SHIFT				0
-#define SSS_ADM_MSG_DESC_RD_WR_SHIFT				1
-#define SSS_ADM_MSG_DESC_MGMT_BYPASS_SHIFT			2
-#define SSS_ADM_MSG_DESC_REPLY_AEQE_EN_SHIFT		3
-#define SSS_ADM_MSG_DESC_MSG_VALID_SHIFT			4
-#define SSS_ADM_MSG_DESC_MSG_CHANNEL_SHIFT			6
-#define SSS_ADM_MSG_DESC_PRIV_DATA_SHIFT			8
-#define SSS_ADM_MSG_DESC_DEST_SHIFT					32
-#define SSS_ADM_MSG_DESC_SIZE_SHIFT					40
-#define SSS_ADM_MSG_DESC_XOR_CHKSUM_SHIFT			56
-
-#define SSS_ADM_MSG_DESC_SGL_TYPE_MASK				0x1U
-#define SSS_ADM_MSG_DESC_RD_WR_MASK					0x1U
-#define SSS_ADM_MSG_DESC_MGMT_BYPASS_MASK			0x1U
-#define SSS_ADM_MSG_DESC_REPLY_AEQE_EN_MASK			0x1U
-#define SSS_ADM_MSG_DESC_MSG_VALID_MASK				0x3U
-#define SSS_ADM_MSG_DESC_MSG_CHANNEL_MASK			0x3U
-#define SSS_ADM_MSG_DESC_PRIV_DATA_MASK				0xFFFFFFU
-#define SSS_ADM_MSG_DESC_DEST_MASK					0x1FU
-#define SSS_ADM_MSG_DESC_SIZE_MASK					0x7FFU
-#define SSS_ADM_MSG_DESC_XOR_CHKSUM_MASK				0xFFU
-
-#define SSS_ADM_MSG_DESC_SET(val, member)			\
-		((((u64)(val)) & SSS_ADM_MSG_DESC_##member##_MASK) << \
-			SSS_ADM_MSG_DESC_##member##_SHIFT)
 
 /* adm_msg_state header */
 #define SSS_ADM_MSG_STATE_HEAD_VALID_SHIFT		0
@@ -88,6 +37,9 @@
 
 #define SSS_ADM_MSG_STATE_HEAD_VALID_MASK			0xFFU
 #define SSS_ADM_MSG_STATE_HEAD_MSG_ID_MASK		0xFFU
+
+#define COMPLETION_TIMEOUT_DEFAULT		1000UL
+#define POLLING_COMPLETION_TIMEOUT_DEFAULT	1000U
 
 #define SSS_ADM_MSG_STATE_HEAD_GET(val, member)		\
 			(((val) >> SSS_ADM_MSG_STATE_HEAD_##member##_SHIFT) & \
@@ -130,8 +82,6 @@ struct sss_msg_head {
 	u8	rsvd0[5];
 };
 
-#define SSS_ADM_MSG_AEQ_ID					2
-
 #define SSS_MGMT_MSG_SIZE_MIN					20
 #define SSS_MGMT_MSG_SIZE_STEP					16
 #define	SSS_MGMT_MSG_RSVD_FOR_DEV				8
@@ -163,6 +113,36 @@ struct sss_msg_head {
 		SSS_SET_MSG_HEADER(SSS_MSG_SRC_MGMT, SOURCE) | \
 		SSS_SET_MSG_HEADER(func_id, SRC_GLB_FUNC_ID) | \
 		SSS_SET_MSG_HEADER(msg_id, MSG_ID))
+
+#define SSSNIC_API_CMD_RESP_HEAD_VALID_SHIFT		0
+#define SSSNIC_API_CMD_RESP_HEAD_STATUS_SHIFT		8
+#define SSSNIC_API_CMD_RESP_HEAD_CHAIN_ID_SHIFT		16
+#define SSSNIC_API_CMD_RESP_HEAD_RESP_LEN_SHIFT		24
+#define SSSNIC_API_CMD_RESP_HEAD_DRIVER_PRIV_SHIFT	40
+
+#define SSSNIC_API_CMD_RESP_HEAD_VALID_MASK		0xFF
+#define SSSNIC_API_CMD_RESP_HEAD_STATUS_MASK		0xFFU
+#define SSSNIC_API_CMD_RESP_HEAD_CHAIN_ID_MASK		0xFFU
+#define SSSNIC_API_CMD_RESP_HEAD_RESP_LEN_MASK		0x1FFU
+#define SSSNIC_API_CMD_RESP_HEAD_DRIVER_PRIV_MASK	0xFFFFFFU
+
+#define SSSNIC_API_CMD_RESP_HEAD_VALID_CODE		0xFF
+
+#define SSSNIC_API_CMD_RESP_HEADER_VALID(val)	\
+		(((val) & SSSNIC_API_CMD_RESP_HEAD_VALID_MASK) == \
+		SSSNIC_API_CMD_RESP_HEAD_VALID_CODE)
+
+#define SSSNIC_API_CMD_RESP_HEAD_GET(val, member) \
+		(((val) >> SSSNIC_API_CMD_RESP_HEAD_##member##_SHIFT) & \
+		SSSNIC_API_CMD_RESP_HEAD_##member##_MASK)
+
+#define SSSNIC_API_CMD_RESP_HEAD_CHAIN_ID(val)	\
+		(((val) >> SSSNIC_API_CMD_RESP_HEAD_CHAIN_ID_SHIFT) & \
+		SSSNIC_API_CMD_RESP_HEAD_CHAIN_ID_MASK)
+
+#define SSSNIC_API_CMD_RESP_HEAD_DRIVER_PRIV(val)	\
+		((u16)(((val) >> SSSNIC_API_CMD_RESP_HEAD_DRIVER_PRIV_SHIFT) & \
+		SSSNIC_API_CMD_RESP_HEAD_DRIVER_PRIV_MASK))
 
 static u8 sss_xor_chksum_set(void *data)
 {
@@ -223,23 +203,65 @@ static void sss_dump_adm_msg_reg(struct sss_adm_msg *adm_msg)
 
 static int sss_adm_msg_busy(struct sss_adm_msg *adm_msg)
 {
-	adm_msg->ci = sss_chip_get_ci(adm_msg);
-	if (adm_msg->ci == SSS_MASK_ID(adm_msg, adm_msg->pi + 1)) {
-		sdk_err(SSS_TO_HWDEV(adm_msg)->dev_hdl, "Adm cmd is busy, ci = %u, pi = %u\n",
-			adm_msg->ci, adm_msg->pi);
-		sss_dump_adm_msg_reg(adm_msg);
-		return -EBUSY;
+	void *dev = SSS_TO_HWDEV(adm_msg)->dev_hdl;
+	struct sss_adm_msg_elem_ctx *ctx = &adm_msg->elem_ctx[adm_msg->pi];
+	u64 resp_header;
+
+	switch (adm_msg->msg_type) {
+	case SSS_ADM_MSG_MULTI_READ:
+	case SSS_ADM_MSG_POLL_READ:
+		resp_header = be64_to_cpu(ctx->reply_fmt->head);
+		if (ctx->state && !SSSNIC_API_CMD_RESP_HEADER_VALID(resp_header)) {
+			sdk_err(dev, "Context(0x%x) busy!, pi: %u, resp_header: 0x%08x%08x\n",
+				ctx->state, adm_msg->pi,
+				upper_32_bits(resp_header),
+				lower_32_bits(resp_header));
+			sss_dump_adm_msg_reg(adm_msg);
+			return -EBUSY;
+		}
+		break;
+	case SSS_ADM_MSG_POLL_WRITE:
+	case SSS_ADM_MSG_WRITE_TO_MGMT_MODULE:
+	case SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE:
+		adm_msg->ci = sss_chip_get_ci(adm_msg);
+
+		if (adm_msg->ci == SSS_MASK_ID(adm_msg, adm_msg->pi + 1)) {
+			sdk_err(dev, "API CMD chain %d is busy, cons_idx = %u, prod_idx = %u\n",
+				adm_msg->msg_type, adm_msg->ci,
+				adm_msg->pi);
+			sss_dump_adm_msg_reg(adm_msg);
+			return -EBUSY;
+		}
+		break;
+	default:
+		sdk_err(dev, "Unknown Chain type %d\n", adm_msg->msg_type);
+		return -EINVAL;
 	}
 
 	return 0;
 }
 
-static void sss_prepare_elem_ctrl(u64 *elem_ctrl)
+static void sss_prepare_elem_ctrl(u64 *elem_ctrl, enum sss_adm_msg_type msg_type)
 {
 	u64 control;
 	u8 chksum;
-	u16 elem_len = ALIGN(SSS_ADM_MSG_ELEM_DESC_SIZE +
-			     SSS_ADM_MSG_ELEM_DATA_ADDR_SIZE, SSS_ADM_MSG_ELEM_ALIGNMENT);
+	u16 elem_len = 0;
+
+	switch (msg_type) {
+	case SSS_ADM_MSG_POLL_READ:
+		elem_len = ALIGN(SSS_ADM_MSG_ELEM_DESC_SIZE + SSS_ADM_MSG_ELEM_WB_ADDR_SIZE +
+				 SSS_ADM_MSG_ELEM_DATA_ADDR_SIZE, SSS_ADM_MSG_ELEM_ALIGNMENT);
+		break;
+
+	case SSS_ADM_MSG_WRITE_TO_MGMT_MODULE:
+	case SSS_ADM_MSG_POLL_WRITE:
+	case SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE:
+		elem_len = ALIGN(SSS_ADM_MSG_ELEM_DESC_SIZE +
+				 SSS_ADM_MSG_ELEM_DATA_ADDR_SIZE, SSS_ADM_MSG_ELEM_ALIGNMENT);
+		break;
+	default:
+		break;
+	}
 
 	control = SSS_ADM_MSG_ELEM_CTRL_SET(SSS_SIZE_TO_8B(elem_len), ELEM_LEN) |
 		  SSS_ADM_MSG_ELEM_CTRL_SET(0ULL, RD_DMA_ATTR_OFF) |
@@ -258,13 +280,41 @@ static void sss_prepare_elem_desc(struct sss_adm_msg *adm_msg,
 {
 	u32 priv;
 	struct sss_adm_msg_elem *elem = adm_msg->now_node;
+	struct sss_adm_msg_elem_ctx *ctx = &adm_msg->elem_ctx[adm_msg->pi];
 
-	priv = SSS_WRITE_ADM_MSG_PRIV_DATA(adm_msg->msg_type);
-	elem->desc = SSS_ADM_MSG_DESC_SET(SSS_SGL_TYPE, SGL_TYPE) |
-		     SSS_ADM_MSG_DESC_SET(SSS_ADM_MSG_WRITE, RD_WR) |
-		     SSS_ADM_MSG_DESC_SET(SSS_NO_BYPASS, MGMT_BYPASS) |
-		     SSS_ADM_MSG_DESC_SET(SSS_TRIGGER, REPLY_AEQE_EN) |
-		     SSS_ADM_MSG_DESC_SET(priv, PRIV_DATA);
+	switch (adm_msg->msg_type) {
+	case SSS_ADM_MSG_POLL_READ:
+		priv = SSS_READ_ADM_MSG_PRIV_DATA(adm_msg->msg_type, ctx->store_pi);
+		elem->desc = SSS_ADM_MSG_DESC_SET(SSS_SGL_TYPE, SGL_TYPE) |
+			     SSS_ADM_MSG_DESC_SET(SSS_ADM_MSG_READ, RD_WR) |
+			     SSS_ADM_MSG_DESC_SET(SSS_BYPASS, MGMT_BYPASS) |
+			     SSS_ADM_MSG_DESC_SET(SSS_NO_TRIGGER, REPLY_AEQE_EN) |
+			     SSS_ADM_MSG_DESC_SET(priv, PRIV_DATA);
+		break;
+	case SSS_ADM_MSG_POLL_WRITE:
+		priv = SSS_WRITE_ADM_MSG_PRIV_DATA(adm_msg->msg_type);
+		elem->desc = SSS_ADM_MSG_DESC_SET(SSS_SGL_TYPE, SGL_TYPE) |
+			     SSS_ADM_MSG_DESC_SET(SSS_ADM_MSG_WRITE, RD_WR) |
+			     SSS_ADM_MSG_DESC_SET(SSS_BYPASS, MGMT_BYPASS) |
+			     SSS_ADM_MSG_DESC_SET(SSS_NO_TRIGGER, REPLY_AEQE_EN) |
+			     SSS_ADM_MSG_DESC_SET(priv, PRIV_DATA);
+		break;
+	case SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE:
+	case SSS_ADM_MSG_WRITE_TO_MGMT_MODULE:
+		priv = SSS_WRITE_ADM_MSG_PRIV_DATA(adm_msg->msg_type);
+		elem->desc = SSS_ADM_MSG_DESC_SET(SSS_SGL_TYPE, SGL_TYPE) |
+			     SSS_ADM_MSG_DESC_SET(SSS_ADM_MSG_WRITE, RD_WR) |
+			     SSS_ADM_MSG_DESC_SET(SSS_NO_BYPASS, MGMT_BYPASS) |
+			     SSS_ADM_MSG_DESC_SET(SSS_TRIGGER, REPLY_AEQE_EN) |
+			     SSS_ADM_MSG_DESC_SET(priv, PRIV_DATA);
+
+		break;
+	default:
+		sdk_err(((struct sss_hwdev *)adm_msg->hwdev)->dev_hdl, "Unknown Chain type: %d\n",
+			adm_msg->msg_type);
+		return;
+	}
+
 
 	elem->desc |= SSS_ADM_MSG_DESC_SET(SSS_ADM_MSG_CHANNEL_0, MSG_CHANNEL) |
 		      SSS_ADM_MSG_DESC_SET(SSS_VALID_MSG_CHANNEL, MSG_VALID);
@@ -291,7 +341,7 @@ static void sss_prepare_elem(struct sss_adm_msg *adm_msg, u8 node_id,
 {
 	struct sss_adm_msg_elem *now_node = adm_msg->now_node;
 
-	sss_prepare_elem_ctrl(&now_node->control);
+	sss_prepare_elem_ctrl(&now_node->control, adm_msg->msg_type);
 	sss_prepare_elem_desc(adm_msg, node_id, cmd_size);
 	sss_prepare_elem_ctx(adm_msg, cmd, cmd_size);
 }
@@ -345,21 +395,87 @@ static enum sss_process_ret sss_wait_for_state_poll_handler(void *priv_data)
 	return SSS_PROCESS_DOING;
 }
 
+static enum sss_process_ret check_cmd_resp_handler(void *priv_data)
+{
+	struct sss_adm_msg_elem_ctx *ctxt = priv_data;
+	u64 resp_header;
+	u8 resp_status;
+
+	if (!SSS_TO_HWDEV(ctxt)->chip_present_flag) {
+		pr_err("Fail to resp chip present");
+		return SSS_PROCESS_ERR;
+	}
+
+	resp_header = be64_to_cpu(ctxt->reply_fmt->head);
+	rmb(); /* read the latest header */
+
+	if (SSSNIC_API_CMD_RESP_HEADER_VALID(resp_header)) {
+		resp_status = SSSNIC_API_CMD_RESP_HEAD_GET(resp_header, STATUS);
+		if (resp_status) {
+			pr_err("Api chain response data err, status: %u\n",
+			       resp_status);
+			return SSS_PROCESS_ERR;
+		}
+
+		return SSS_PROCESS_OK;
+	}
+
+	return SSS_PROCESS_DOING;
+}
+
 static int sss_wait_for_state_poll(struct sss_adm_msg *adm_msg)
 {
 	return sss_check_handler_timeout(adm_msg, sss_wait_for_state_poll_handler,
 					 SSS_ADM_MSG_STATE_TIMEOUT, 100); /* wait 100 us once */
 }
 
+static int wait_for_resp_polling(struct sss_adm_msg_elem_ctx *ctx)
+{
+	return sss_check_handler_timeout(ctx, check_cmd_resp_handler,
+					 POLLING_COMPLETION_TIMEOUT_DEFAULT,
+					 USEC_PER_MSEC);
+}
+
+static void copy_resp_data(struct sss_adm_msg_elem_ctx *ctx, void *ack,
+			   u16 ack_size)
+{
+	struct sss_adm_msg_reply_fmt *resp = ctx->reply_fmt;
+
+	memcpy(ack, &resp->reply, ack_size);
+	ctx->state = 0;
+}
+
 static int sss_wait_for_adm_msg_completion(struct sss_adm_msg *adm_msg,
-					   struct sss_adm_msg_elem_ctx *ctx)
+					   struct sss_adm_msg_elem_ctx *ctx,
+					   void *ack, u16 ack_size)
 {
 	int ret = 0;
 
-	ret = sss_wait_for_state_poll(adm_msg);
-	if (ret != 0) {
-		sdk_err(SSS_TO_HWDEV(adm_msg)->dev_hdl, "Adm msg poll state timeout\n");
+	switch (adm_msg->msg_type) {
+	case SSS_ADM_MSG_POLL_READ:
+		ret = wait_for_resp_polling(ctx);
+		if (ret == 0)
+			copy_resp_data(ctx, ack, ack_size);
+		else
+			sdk_err(SSS_TO_HWDEV(adm_msg)->dev_hdl, "API CMD poll response timeout\n");
+		break;
+	case SSS_ADM_MSG_POLL_WRITE:
+	case SSS_ADM_MSG_WRITE_TO_MGMT_MODULE:
+		ret = sss_wait_for_state_poll(adm_msg);
+		break;
+	case SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE:
+		/* No need to wait */
+		break;
+	default:
+		sdk_err(SSS_TO_HWDEV(adm_msg)->dev_hdl, "Unknown API CMD Chain type: %d\n",
+			adm_msg->msg_type);
+		ret = -EINVAL;
+	}
+
+	if (ret) {
 		sss_dump_adm_msg_reg(adm_msg);
+		sdk_err(SSS_TO_HWDEV(adm_msg)->dev_hdl, "Adm msg wait timeout,type :%d\n",
+			adm_msg->msg_type);
 	}
 
 	return ret;
@@ -381,24 +497,24 @@ static inline void sss_update_adm_msg_ctx(struct sss_adm_msg *adm_msg)
 
 static void sss_adm_msg_lock(struct sss_adm_msg *adm_msg)
 {
-	down(&adm_msg->sem);
+	if (adm_msg->msg_type == SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE)
+		spin_lock(&adm_msg->async_lock);
+	else
+		down(&adm_msg->sem);
 }
 
 static void sss_adm_msg_unlock(struct sss_adm_msg *adm_msg)
 {
-	up(&adm_msg->sem);
+	if (adm_msg->msg_type == SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE)
+		spin_unlock(&adm_msg->async_lock);
+	else
+		up(&adm_msg->sem);
 }
 
-static int sss_send_adm_cmd(struct sss_adm_msg *adm_msg, u8 node_id,
-			    const void *cmd, u16 cmd_size)
+static int sss_adm_msg_io(struct sss_adm_msg *adm_msg, u8 node_id,
+			  const void *cmd, u16 cmd_size, void *ack, u16 ack_size)
 {
 	struct sss_adm_msg_elem_ctx *ctx = NULL;
-
-	if (adm_msg->msg_type != SSS_ADM_MSG_WRITE_TO_MGMT_MODULE) {
-		sdk_err(SSS_TO_HWDEV(adm_msg)->dev_hdl,
-			"Unsupport adm cmd type: %d\n", adm_msg->msg_type);
-		return -EINVAL;
-	}
 
 	sss_adm_msg_lock(adm_msg);
 
@@ -423,7 +539,19 @@ static int sss_send_adm_cmd(struct sss_adm_msg *adm_msg, u8 node_id,
 
 	sss_adm_msg_unlock(adm_msg);
 
-	return sss_wait_for_adm_msg_completion(adm_msg, ctx);
+	return sss_wait_for_adm_msg_completion(adm_msg, ctx, ack, ack_size);
+}
+
+int sss_adm_msg_write(struct sss_adm_msg *adm_msg, u8 node_id,
+		      const void *cmd, u16 cmd_size)
+{
+	return sss_adm_msg_io(adm_msg, node_id, cmd, cmd_size, NULL, 0);
+}
+
+int sss_adm_msg_read(struct sss_adm_msg *adm_msg, u8 node_id,
+		     const void *cmd, u16 size, void *ack, u16 ack_size)
+{
+	return sss_adm_msg_io(adm_msg, node_id, cmd, size, ack, ack_size);
 }
 
 static void sss_set_adm_event_flag(struct sss_msg_pf_to_mgmt *pf_to_mgmt,
@@ -464,15 +592,61 @@ static void sss_encapsulate_adm_msg(u8 *adm_msg, u64 *header,
 	memcpy(adm_msg_new, body, (size_t)(u32)body_len);
 }
 
+#define SSS_MAX_PF_MGMT_BUF_MAX 2048L
+
+int sss_adm_msg_read_ack(void *hwdev, u8 dest, const void *cmd,
+			 u16 size, void *ack, u16 ack_size)
+{
+	struct sss_msg_pf_to_mgmt *pf_to_mgmt = NULL;
+	struct sss_adm_msg *adm_mag = NULL;
+
+	if (!hwdev || !cmd || (ack_size && !ack) || size > SSS_MAX_PF_MGMT_BUF_MAX)
+		return -EINVAL;
+
+	if (!SSS_SUPPORT_ADM_MSG((struct sss_hwdev *)hwdev))
+		return -EPERM;
+
+	pf_to_mgmt = ((struct sss_hwdev *)hwdev)->pf_to_mgmt;
+	adm_mag = pf_to_mgmt->adm_msg[SSS_ADM_MSG_POLL_READ];
+
+	if (!(((struct sss_hwdev *)hwdev)->chip_present_flag))
+		return -EPERM;
+
+	return sss_adm_msg_read(adm_mag, dest, cmd, size, ack, ack_size);
+}
+
+int sss_adm_msg_write_nack(void *hwdev, u8 dest, const void *cmd, u16 size)
+{
+	struct sss_msg_pf_to_mgmt *pf_to_mgmt = NULL;
+	struct sss_adm_msg *adm_mag = NULL;
+
+	if (!hwdev || !size || !cmd || size > SSS_MAX_PF_MGMT_BUF_MAX)
+		return -EINVAL;
+
+	if (!SSS_SUPPORT_ADM_MSG((struct sss_hwdev *)hwdev))
+		return -EPERM;
+
+	pf_to_mgmt = ((struct sss_hwdev *)hwdev)->pf_to_mgmt;
+	adm_mag = pf_to_mgmt->adm_msg[SSS_ADM_MSG_POLL_WRITE];
+
+	if (!(((struct sss_hwdev *)hwdev)->chip_present_flag))
+		return -EPERM;
+
+	return sss_adm_msg_write(adm_mag, dest, cmd, size);
+}
+
+#define SSS_MSG_NO_RESP			0xFFFF
+
 static int sss_send_adm_msg(struct sss_msg_pf_to_mgmt *pf_to_mgmt,
 			    u8 mod, u16 cmd, const void *msg_body, u16 msg_body_len)
 {
 	struct sss_hwif *hwif = SSS_TO_HWDEV(pf_to_mgmt)->hwif;
-	void *adm_msg = pf_to_mgmt->sync_buf;
+	void *msg_buf = pf_to_mgmt->sync_buf;
 	u16 adm_msg_len = sss_align_adm_msg_len(msg_body_len);
 	u32 func_id = SSS_GET_HWIF_GLOBAL_ID(hwif);
 	u8 node_id = SSS_MGMT_CPU_NODE_ID(SSS_TO_HWDEV(pf_to_mgmt));
 	u64 header;
+	struct sss_adm_msg *adm_mag;
 
 	if (sss_get_dev_present_flag(pf_to_mgmt->hwdev) == 0)
 		return -EFAULT;
@@ -481,13 +655,15 @@ static int sss_send_adm_msg(struct sss_msg_pf_to_mgmt *pf_to_mgmt,
 		return -EFAULT;
 
 	sss_set_adm_event_flag(pf_to_mgmt, SSS_ADM_EVENT_START);
-	SSS_INCREASE_SYNC_MSG_ID(pf_to_mgmt);
 
 	header = SSS_ENCAPSULATE_ADM_MSG_HEAD(func_id, msg_body_len, mod,
-					      cmd, SSS_SYNC_MSG_ID(pf_to_mgmt));
-	sss_encapsulate_adm_msg((u8 *)adm_msg, &header, msg_body, msg_body_len);
+					      cmd, SSS_INCREASE_SYNC_MSG_ID(pf_to_mgmt));
 
-	return sss_send_adm_cmd(&pf_to_mgmt->adm_msg, node_id, adm_msg, adm_msg_len);
+	sss_encapsulate_adm_msg((u8 *)msg_buf, &header, msg_body, msg_body_len);
+
+	adm_mag = pf_to_mgmt->adm_msg[SSS_ADM_MSG_WRITE_TO_MGMT_MODULE];
+
+	return sss_adm_msg_write(adm_mag, node_id, msg_buf, adm_msg_len);
 }
 
 static inline void sss_check_msg_body(u8 mod, void *buf_in)

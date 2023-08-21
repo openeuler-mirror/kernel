@@ -161,6 +161,15 @@ int sss_nic_set_loopback_mode(struct sss_nic_dev *nic_dev, u8 lp_mode, u8 enable
 	return sss_nic_cfg_loopback_mode(nic_dev, SSS_MGMT_MSG_SET_CMD, &lp_mode, &enable);
 }
 
+int sss_nic_get_loopback_mode(struct sss_nic_dev *nic_dev, u8 *mode, u8 *enable)
+{
+	if (!nic_dev || !mode || !enable)
+		return -EINVAL;
+
+	return sss_nic_cfg_loopback_mode(nic_dev, SSS_MGMT_MSG_GET_CMD, mode,
+					enable);
+}
+
 int sss_nic_set_hw_led_state(struct sss_nic_dev *nic_dev, enum sss_nic_mag_led_type led_type,
 			     enum sss_nic_mag_led_mode led_mode)
 {
@@ -361,7 +370,7 @@ static void sss_nic_link_status_event_handler(struct sss_nic_io *nic_io,
 	struct sss_event_info event_info = {0};
 	struct sss_nic_event_link_info *link_info = (void *)event_info.event_data;
 
-	sdk_info(nic_io->dev_hdl, "Link status report received, func_id: %u, status: %u\n",
+	nic_info(nic_io->dev_hdl, "Link status report received, func_id: %u, status: %u\n",
 		 sss_get_global_func_id(nic_io->hwdev), in_link_state->status);
 
 	sss_update_link_stats(nic_io->hwdev, in_link_state->status);
@@ -415,7 +424,7 @@ static void sss_nic_port_sfp_event_handler(struct sss_nic_io *nic_io,
 	struct sss_nic_cache_port_sfp *routine_cmd = NULL;
 
 	if (in_size != sizeof(*in_xsfp_info)) {
-		sdk_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %ld\n",
+		nic_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %ld\n",
 			in_size, sizeof(*in_xsfp_info));
 		return;
 	}
@@ -435,7 +444,7 @@ static void sss_nic_port_sfp_absent_event_handler(struct sss_nic_io *nic_io,
 	struct sss_nic_cache_port_sfp *routine_cmd = NULL;
 
 	if (in_size != sizeof(*in_xsfp_present)) {
-		sdk_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %ld\n",
+		nic_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %ld\n",
 			in_size, sizeof(*in_xsfp_present));
 		return;
 	}
@@ -447,7 +456,7 @@ static void sss_nic_port_sfp_absent_event_handler(struct sss_nic_io *nic_io,
 	mutex_unlock(&nic_io->mag_cfg.sfp_mutex);
 }
 
-static bool sss_nic_if_sfp_absent(struct sss_nic_dev *nic_dev)
+bool sss_nic_if_sfp_absent(struct sss_nic_dev *nic_dev)
 {
 	int ret;
 	bool sfp_abs_state;
@@ -484,8 +493,8 @@ static bool sss_nic_if_sfp_absent(struct sss_nic_dev *nic_dev)
 	return !!xsfp_present.abs_status;
 }
 
-static int sss_nic_get_sfp_info(struct sss_nic_dev *nic_dev,
-				struct sss_nic_mbx_get_xsfp_info *xsfp_info)
+int sss_nic_get_sfp_info(struct sss_nic_dev *nic_dev,
+			 struct sss_nic_mbx_get_xsfp_info *xsfp_info)
 {
 	int ret;
 	u16 out_len = sizeof(*xsfp_info);
@@ -709,7 +718,7 @@ static int _sss_nic_mag_event_handler(void *hwdev, u16 cmd,
 	out_msg_head->state = SSS_MGMT_CMD_UNSUPPORTED;
 	*out_size = sizeof(*out_msg_head);
 
-	sdk_warn(nic_io->dev_hdl, "Invalid mag event cmd: %u\n", cmd);
+	nic_warn(nic_io->dev_hdl, "Invalid mag event cmd: %u\n", cmd);
 
 	return 0;
 }

@@ -104,4 +104,6 @@ int sss_nic_set_settings_to_hw(struct sss_nic_dev *nic_dev,
 int sssnic_set_link_settings(struct net_device *netdev,
 			     u8 autoneg, u32 speed);
 
+void sss_nic_get_io_stats(const struct sss_nic_dev *nic_dev, void *stats);
+
 #endif

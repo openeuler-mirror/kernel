@@ -99,5 +99,7 @@ void sss_nic_io_deinit(struct sss_nic_dev *nic_dev);
 
 int sss_nic_rq_hw_pc_info(struct sss_nic_dev *nic_dev,
 			  struct sss_nic_rq_pc_info *out_info, u16 num_qps, u16 wqe_type);
+int sss_nic_set_pf_rate(struct sss_nic_dev *nic_dev, u8 speed);
+
 
 #endif

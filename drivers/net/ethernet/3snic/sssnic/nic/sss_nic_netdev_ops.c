@@ -603,7 +603,7 @@ static int sss_nic_ndo_set_vf_tx_rate(struct net_device *netdev, int vf_id,
 	}
 
 	ret = sss_nic_set_vf_tx_rate_limit(nic_dev->nic_io, (u16)SSSNIC_OS_VF_ID_TO_HW(vf_id),
-					   (u32)max_tx_rate, (u32)min_tx_rate);
+					   (u32)min_tx_rate, (u32)max_tx_rate);
 	if (ret != 0) {
 		nicif_err(nic_dev, drv, netdev,
 			  "Fail to set VF %d max rate %d min rate %d%s\n",

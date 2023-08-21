@@ -15,7 +15,7 @@
 #include "sss_hw_svc_cap.h"
 #include "sss_sriov_info.h"
 
-#define SSS_MAX_FUNCTION_NUM 4096
+#define SSS_MAX_FUNC 4096
 
 struct sss_card_node {
 	struct list_head node;
@@ -23,7 +23,10 @@ struct sss_card_node {
 	char chip_name[IFNAMSIZ];
 	u8 bus_id;
 	u8 resvd[7];
+	u16 func_num;
 	atomic_t channel_timeout_cnt;
+	void *func_handle_array[SSS_MAX_FUNC];
+	void *dbgtool_info;
 };
 
 /* Structure pcidev private */
@@ -57,6 +60,11 @@ struct sss_pci_adapter {
 
 	struct sss_sriov_info sriov_info;
 
+	atomic_t ref_cnt;
+
+	atomic_t uld_ref_cnt[SSS_SERVICE_TYPE_MAX];
+	spinlock_t uld_lock; /* protect uld probe and remove */
+
 	/* set when uld driver processing event */
 	unsigned long uld_run_state;
 
@@ -65,7 +73,6 @@ struct sss_pci_adapter {
 	/* lock for attach/detach uld */
 	struct mutex uld_attach_mutex;
 
-	/* spin lock for uld_attach_state access */
-	spinlock_t dettach_uld_lock;
+	spinlock_t dettach_uld_lock; /* spin lock for uld_attach_state access */
 };
 #endif
