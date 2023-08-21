@@ -592,3 +592,54 @@ int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, const struct ubcore_jfc_attr 
 
 	return ret;
 }
+
+void udma_jfc_completion(struct udma_dev *udma_dev, uint32_t cqn)
+{
+	struct ubcore_jfc *ubcore_jfc;
+	struct udma_jfc *udma_jfc;
+
+	udma_jfc = (struct udma_jfc *)xa_load(&udma_dev->jfc_table.xa, cqn);
+	if (!udma_jfc) {
+		dev_warn(udma_dev->dev,
+			 "Completion event for bogus CQ 0x%06x\n", cqn);
+		return;
+	}
+
+	ubcore_jfc = &udma_jfc->ubcore_jfc;
+	if (ubcore_jfc->jfce_handler)
+		ubcore_jfc->jfce_handler(ubcore_jfc);
+}
+
+void udma_jfc_event(struct udma_dev *udma_dev, uint32_t cqn, int event_type)
+{
+	struct device *dev = udma_dev->dev;
+	struct udma_jfc *udma_jfc;
+	struct ubcore_jfc *ubcore_jfc;
+	struct ubcore_event event;
+
+	udma_jfc = (struct udma_jfc *)xa_load(&udma_dev->jfc_table.xa, cqn);
+	if (!udma_jfc) {
+		dev_warn(dev, "Async event for bogus CQ 0x%06x\n", cqn);
+		return;
+	}
+
+	if (event_type != UDMA_EVENT_TYPE_JFC_ACCESS_ERROR &&
+	    event_type != UDMA_EVENT_TYPE_JFC_OVERFLOW) {
+		dev_err(dev, "Unexpected event type 0x%x on CQ 0x%06x\n",
+			event_type, cqn);
+		return;
+	}
+
+	refcount_inc(&udma_jfc->refcount);
+
+	ubcore_jfc = &udma_jfc->ubcore_jfc;
+	if (ubcore_jfc->jfae_handler) {
+		event.ub_dev = ubcore_jfc->ub_dev;
+		event.element.jfc = ubcore_jfc;
+		event.event_type = UBCORE_EVENT_JFC_ERR;
+		ubcore_jfc->jfae_handler(&event, ubcore_jfc->uctx);
+	}
+
+	if (refcount_dec_and_test(&udma_jfc->refcount))
+		complete(&udma_jfc->free);
+}

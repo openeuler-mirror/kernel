@@ -441,3 +441,35 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 
 	return 0;
 }
+
+void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type)
+{
+	struct udma_jfr_table *jfr_table = &udma_dev->jfr_table;
+	struct ubcore_jfr *ubcore_jfr;
+	struct udma_jfr *jfr;
+	struct ubcore_event event;
+
+	xa_lock(&jfr_table->xa);
+	jfr = (struct udma_jfr *)xa_load(&jfr_table->xa, jfrn);
+	xa_unlock(&jfr_table->xa);
+
+	if (!jfr) {
+		dev_warn(udma_dev->dev, "Async event for bogus SRQ 0x%08x\n",
+			 jfrn);
+		return;
+	}
+
+	event.event_type = UBCORE_EVENT_JFR_ACCESS_ERR;
+
+	refcount_inc(&jfr->refcount);
+	ubcore_jfr = &jfr->ubcore_jfr;
+	if (ubcore_jfr->jfae_handler) {
+		event.ub_dev = ubcore_jfr->ub_dev;
+		event.element.jfr = ubcore_jfr;
+		ubcore_jfr->jfae_handler(&event, ubcore_jfr->uctx);
+		dev_info(udma_dev->dev, "Async event for JFR 0x%08x\n", jfrn);
+	}
+
+	if (refcount_dec_and_test(&jfr->refcount))
+		complete(&jfr->free);
+}

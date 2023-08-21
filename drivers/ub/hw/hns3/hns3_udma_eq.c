@@ -16,8 +16,10 @@
 #include <linux/acpi.h>
 #include "hnae3.h"
 #include "hns3_udma_hem.h"
-#include "hns3_udma_eq.h"
+#include "hns3_udma_jfc.h"
+#include "hns3_udma_jfr.h"
 #include "hns3_udma_qp.h"
+#include "hns3_udma_eq.h"
 
 static int alloc_eq_buf(struct udma_dev *udma_dev, struct udma_eq *eq)
 {
@@ -209,6 +211,13 @@ static void aeq_event_report(struct udma_dev *udma_dev,
 	case UDMA_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR:
 		udma_qp_event(udma_dev, queue_num, event_type);
 		break;
+	case UDMA_EVENT_TYPE_JFR_LIMIT_REACH:
+		udma_jfr_event(udma_dev, queue_num, event_type);
+		break;
+	case UDMA_EVENT_TYPE_JFC_ACCESS_ERROR:
+	case UDMA_EVENT_TYPE_JFC_OVERFLOW:
+		udma_jfc_event(udma_dev, queue_num, event_type);
+		break;
 	case UDMA_EVENT_TYPE_MB:
 		udma_cmd_event(udma_dev,
 			       le16_to_cpu(aeqe->event.cmd.token),
@@ -368,6 +377,8 @@ static int udma_ceq_int(struct udma_dev *udma_dev,
 
 		cqn = udma_get_field(ceqe->comp, UDMA_CEQE_COMP_CQN_M,
 				     UDMA_CEQE_COMP_CQN_S);
+
+		udma_jfc_completion(udma_dev, cqn);
 
 		++eq->cons_index;
 		ceqe_found = 1;
