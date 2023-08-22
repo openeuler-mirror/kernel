@@ -123,24 +123,6 @@ static void nf_nat_ipv4_csum_update(struct sk_buff *skb,
 	inet_proto_csum_replace4(check, skb, oldip, newip, true);
 }
 
-static void nf_nat_ipv4_csum_recalc(struct sk_buff *skb,
-				    u8 proto, void *data, __sum16 *check,
-				    int datalen, int oldlen)
-{
-	if (skb->ip_summed != CHECKSUM_PARTIAL) {
-		const struct iphdr *iph = ip_hdr(skb);
-
-		skb->ip_summed = CHECKSUM_PARTIAL;
-		skb->csum_start = skb_headroom(skb) + skb_network_offset(skb) +
-			ip_hdrlen(skb);
-		skb->csum_offset = (void *)check - data;
-		*check = ~csum_tcpudp_magic(iph->saddr, iph->daddr, datalen,
-					    proto, 0);
-	} else
-		inet_proto_csum_replace2(check, skb,
-					 htons(oldlen), htons(datalen), true);
-}
-
 #if IS_ENABLED(CONFIG_NF_CT_NETLINK)
 static int nf_nat_ipv4_nlattr_to_range(struct nlattr *tb[],
 				       struct nf_nat_range2 *range)
@@ -165,7 +147,6 @@ static const struct nf_nat_l3proto nf_nat_l3proto_ipv4 = {
 	.secure_port		= nf_nat_ipv4_secure_port,
 	.manip_pkt		= nf_nat_ipv4_manip_pkt,
 	.csum_update		= nf_nat_ipv4_csum_update,
-	.csum_recalc		= nf_nat_ipv4_csum_recalc,
 #if IS_ENABLED(CONFIG_NF_CT_NETLINK)
 	.nlattr_to_range	= nf_nat_ipv4_nlattr_to_range,
 #endif
