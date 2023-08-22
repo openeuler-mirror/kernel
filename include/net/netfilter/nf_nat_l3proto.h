@@ -22,6 +22,10 @@ struct nf_nat_l3proto {
 			       const struct nf_conntrack_tuple *t,
 			       enum nf_nat_manip_type maniptype);
 
+	void	(*csum_recalc)(struct sk_buff *skb, u8 proto,
+			       void *data, __sum16 *check,
+			       int datalen, int oldlen);
+
 	void	(*decode_session)(struct sk_buff *skb,
 				  const struct nf_conn *ct,
 				  enum ip_conntrack_dir dir,
