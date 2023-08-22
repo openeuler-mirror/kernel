@@ -19,6 +19,9 @@
 #include <linux/types.h>
 
 #define MAP_COMMAND_MASK		0xff
+#define MAP_INDEX_MASK			0xffffff
+#define MAP_INDEX_SHIFT			8
+#define UDMA_DWQE_PAGE_SIZE		65536
 #define UDMA_JETTY_X_PREFIX_BIT_NUM	2
 #define UDMA_JFR_QPN_PREFIX		0x1
 #define UDMA_ADDR_4K_MASK		0xfffUL
@@ -26,6 +29,7 @@
 
 enum {
 	UDMA_MMAP_UAR_PAGE,
+	UDMA_MMAP_DWQE_PAGE,
 };
 
 enum udma_jfc_init_attr_mask {

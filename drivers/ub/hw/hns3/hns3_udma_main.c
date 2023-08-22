@@ -145,9 +145,16 @@ static int get_mmap_cmd(struct vm_area_struct *vma)
 	return (vma->vm_pgoff & MAP_COMMAND_MASK);
 }
 
+static uint64_t get_mmap_idx(struct vm_area_struct *vma)
+{
+	return ((vma->vm_pgoff >> MAP_INDEX_SHIFT) & MAP_INDEX_MASK);
+}
+
 static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 {
 	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
+	uint64_t address;
+	uint64_t qpn;
 	int cmd;
 
 	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0) {
@@ -163,6 +170,15 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 		if (io_remap_pfn_range(vma, vma->vm_start,
 				       to_udma_ucontext(uctx)->uar.pfn,
 				       PAGE_SIZE, vma->vm_page_prot))
+			return -EAGAIN;
+		break;
+	case UDMA_MMAP_DWQE_PAGE:
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+		qpn = get_mmap_idx(vma);
+		address = udma_dev->dwqe_page + qpn * UDMA_DWQE_PAGE_SIZE;
+		if (io_remap_pfn_range(vma, vma->vm_start,
+				       address >> PAGE_SHIFT,
+				       UDMA_DWQE_PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
 	default:
