@@ -87,6 +87,8 @@ static inline struct udma_jfr *to_udma_jfr(struct ubcore_jfr *ubcore_jfr)
 struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
 			      struct ubcore_udata *udata);
 int udma_destroy_jfr(struct ubcore_jfr *jfr);
+int udma_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+		    struct ubcore_udata *udata);
 void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type);
 
 #endif /* _UDMA_JFR_H */

@@ -442,6 +442,67 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 	return 0;
 }
 
+static int udma_hw_modify_srq(struct udma_dev *dev, uint32_t jfrn,
+			      uint16_t jfr_limit)
+{
+	struct udma_jfr_context *jfr_context;
+	struct udma_jfr_context *jfrc_mask;
+	struct udma_cmd_mailbox *mailbox;
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+	int ret;
+
+	mailbox = udma_alloc_cmd_mailbox(dev);
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
+	jfr_context = (struct udma_jfr_context *)mailbox->buf;
+	jfrc_mask = (struct udma_jfr_context *)mailbox->buf + 1;
+	memset(jfrc_mask, 0xff, sizeof(*jfrc_mask));
+	udma_reg_write(jfr_context, SRQC_LIMIT_WL, jfr_limit);
+	udma_reg_clear(jfrc_mask, SRQC_LIMIT_WL);
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, mailbox->dma, 0, jfrn, UDMA_CMD_MODIFY_SRQC);
+
+	ret = udma_cmd_mbox(dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret)
+		dev_err(dev->dev, "modify JFR(%u) cmd error(%d).\n",
+			jfrn, ret);
+	udma_free_cmd_mailbox(dev, mailbox);
+
+	return ret;
+}
+
+int udma_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+		    struct ubcore_udata *udata)
+{
+	struct udma_dev *udma_dev = to_udma_dev(jfr->ub_dev);
+	struct udma_jfr *udma_jfr = to_udma_jfr(jfr);
+	uint32_t jfr_limit;
+	int ret;
+
+	if (!(attr->mask & UBCORE_JFR_RX_THRESHOLD)) {
+		dev_err(udma_dev->dev, "JFR threshold mask is not set.\n");
+		return -EINVAL;
+	}
+
+	jfr_limit = attr->rx_threshold;
+	if (jfr_limit > udma_jfr->wqe_cnt) {
+		dev_err(udma_dev->dev,
+			"JFR limit(%u) larger than wqe num(%u).\n",
+			jfr_limit, udma_jfr->wqe_cnt);
+		return -EINVAL;
+	}
+
+	ret = udma_hw_modify_srq(udma_dev, udma_jfr->jfrn, jfr_limit);
+	if (ret)
+		dev_err(udma_dev->dev,
+			"hw modify srq failed, ret = %d.\n", ret);
+
+	return ret;
+}
+
 void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type)
 {
 	struct udma_jfr_table *jfr_table = &udma_dev->jfr_table;
