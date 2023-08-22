@@ -16,6 +16,7 @@
 #include <linux/acpi.h>
 #include "hnae3.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_device.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_jfr.h"
 #include "hns3_udma_qp.h"
@@ -249,8 +250,7 @@ static void udma_init_irq_work(struct udma_dev *udma_dev, struct udma_eq *eq,
 {
 	struct udma_work *irq_work;
 
-	irq_work = kzalloc(sizeof(struct udma_work),
-					      GFP_ATOMIC);
+	irq_work = kzalloc(sizeof(struct udma_work), GFP_ATOMIC);
 	if (!irq_work)
 		return;
 
@@ -391,6 +391,154 @@ static int udma_ceq_int(struct udma_dev *udma_dev,
 	return ceqe_found;
 }
 
+static int fmea_ram_ecc_query(struct udma_dev *udma_dev,
+			      struct fmea_ram_ecc *ecc_info)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_QUERY_RAM_ECC, true);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret)
+		return ret;
+
+	ecc_info->is_ecc_err = udma_reg_read(req, QUERY_RAM_ECC_1BIT_ERR);
+	ecc_info->res_type = udma_reg_read(req, QUERY_RAM_ECC_RES_TYPE);
+	ecc_info->index = udma_reg_read(req, QUERY_RAM_ECC_TAG);
+
+	return 0;
+}
+
+static int fmea_recover_gmv(struct udma_dev *udma_dev, uint32_t idx)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	uint32_t addr_upper;
+	uint32_t addr_low;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_GMV_BT, true);
+	udma_reg_write(req, CFG_GMV_BT_IDX, idx);
+	udma_reg_write(req, CFG_GMV_BT_VF_ID, 0);
+
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to execute cmd to read gmv, ret = %d.\n", ret);
+		return ret;
+	}
+
+	addr_low = udma_reg_read(req, CFG_GMV_BT_BA_L);
+	addr_upper = udma_reg_read(req, CFG_GMV_BT_BA_H);
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_GMV_BT, false);
+	udma_reg_write(req, CFG_GMV_BT_BA_L, addr_low);
+	udma_reg_write(req, CFG_GMV_BT_BA_H, addr_upper);
+	udma_reg_write(req, CFG_GMV_BT_IDX, idx);
+	udma_reg_write(req, CFG_GMV_BT_VF_ID, 0);
+
+	return udma_cmq_send(udma_dev, &desc, 1);
+}
+
+static uint64_t fmea_get_ram_res_addr(uint32_t res_type, uint64_t *data)
+{
+	if (res_type == ECC_RESOURCE_QPC_TIMER ||
+	    res_type == ECC_RESOURCE_CQC_TIMER ||
+	    res_type == ECC_RESOURCE_SCCC)
+		return le64_to_cpu(*data);
+
+	return le64_to_cpu(*data) << PAGE_SHIFT;
+}
+
+static int fmea_recover_others(struct udma_dev *udma_dev, uint32_t res_type,
+			       uint32_t index)
+{
+	struct udma_cmd_mailbox *mailbox = udma_alloc_cmd_mailbox(udma_dev);
+	uint8_t write_bt0_op = fmea_ram_res[res_type].write_bt0_op;
+	uint8_t read_bt0_op = fmea_ram_res[res_type].read_bt0_op;
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+	uint64_t addr;
+	int ret;
+
+	if (IS_ERR_OR_NULL(mailbox))
+		return PTR_ERR(mailbox);
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, 0, mailbox->dma, index, read_bt0_op);
+	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to execute cmd to read fmea ram, ret = %d.\n",
+			ret);
+		goto out;
+	}
+
+	addr = fmea_get_ram_res_addr(res_type, (uint64_t *)(mailbox->buf));
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, addr, 0, index, write_bt0_op);
+	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to execute cmd to write fmea ram, ret = %d.\n",
+			ret);
+	}
+
+out:
+	udma_free_cmd_mailbox(udma_dev, mailbox);
+
+	return ret;
+}
+
+static void fmea_ram_ecc_recover(struct udma_dev *udma_dev,
+				 struct fmea_ram_ecc *ecc_info)
+{
+	uint32_t res_type = ecc_info->res_type;
+	uint32_t index = ecc_info->index;
+	int ret;
+
+	BUILD_BUG_ON(ARRAY_SIZE(fmea_ram_res) != ECC_RESOURCE_COUNT);
+
+	if (res_type >= ECC_RESOURCE_COUNT) {
+		dev_err(udma_dev->dev, "unsupported fmea ram ecc type %u.\n",
+			res_type);
+		return;
+	}
+
+	if (res_type == ECC_RESOURCE_GMV)
+		ret = fmea_recover_gmv(udma_dev, index);
+	else
+		ret = fmea_recover_others(udma_dev, res_type, index);
+
+	if (ret)
+		dev_err(udma_dev->dev,
+			"failed to recover %s, index = %u, ret = %d.\n",
+			fmea_ram_res[res_type].name, index, ret);
+}
+
+static void fmea_ram_ecc_work(struct work_struct *ecc_work)
+{
+	struct udma_dev *udma_dev =
+		container_of(ecc_work, struct udma_dev, ecc_work);
+	struct fmea_ram_ecc ecc_info = {};
+
+	if (fmea_ram_ecc_query(udma_dev, &ecc_info)) {
+		dev_err(udma_dev->dev, "failed to query fmea ram ecc.\n");
+		return;
+	}
+
+	if (!ecc_info.is_ecc_err) {
+		dev_err(udma_dev->dev, "there is no fmea ram ecc found.\n");
+		return;
+	}
+
+	fmea_ram_ecc_recover(udma_dev, &ecc_info);
+}
+
 static irqreturn_t abnormal_interrupt_basic(struct udma_dev *udma_dev,
 					    uint32_t int_st)
 {
@@ -435,7 +583,8 @@ static irqreturn_t udma_msix_interrupt_abn(int irq, void *dev_id)
 	if (int_st) {
 		int_work = abnormal_interrupt_basic(udma_dev, int_st);
 	} else {
-		dev_err(udma_dev->dev, "ECC ERROR not supported yet\n");
+		dev_err(udma_dev->dev, "ECC 1bit ERROR!\n");
+		queue_work(udma_dev->irq_workq, &udma_dev->ecc_work);
 		int_work = IRQ_HANDLED;
 	}
 
@@ -716,6 +865,8 @@ int udma_init_eq_table(struct udma_dev *udma_dev)
 	ret = udma_create_hw_eq(udma_dev, ceq_num, aeq_num, other_num);
 	if (ret)
 		goto err_create_eq_fail;
+
+	INIT_WORK(&udma_dev->ecc_work, fmea_ram_ecc_work);
 
 	udma_dev->irq_workq = alloc_ordered_workqueue("udma_irq_workq", 0);
 	if (!udma_dev->irq_workq) {

@@ -84,6 +84,48 @@ struct udma_eq_db {
 	uint32_t	data[2];
 };
 
+struct fmea_ram_ecc {
+	uint32_t	is_ecc_err;
+	uint32_t	res_type;
+	uint32_t	index;
+};
+
+enum ecc_resource_type {
+	ECC_RESOURCE_QPC,
+	ECC_RESOURCE_CQC,
+	ECC_RESOURCE_MPT,
+	ECC_RESOURCE_SRQC,
+	ECC_RESOURCE_GMV,
+	ECC_RESOURCE_QPC_TIMER,
+	ECC_RESOURCE_CQC_TIMER,
+	ECC_RESOURCE_SCCC,
+	ECC_RESOURCE_COUNT,
+};
+
+static const struct {
+	const char	*name;
+	uint8_t		read_bt0_op;
+	uint8_t		write_bt0_op;
+} fmea_ram_res[] = {
+	{ "ECC_RESOURCE_QPC",
+	  UDMA_CMD_READ_QPC_BT0, UDMA_CMD_WRITE_QPC_BT0 },
+	{ "ECC_RESOURCE_CQC",
+	  UDMA_CMD_READ_CQC_BT0, UDMA_CMD_WRITE_CQC_BT0 },
+	{ "ECC_RESOURCE_MPT",
+	  UDMA_CMD_READ_MPT_BT0, UDMA_CMD_WRITE_MPT_BT0 },
+	{ "ECC_RESOURCE_SRQC",
+	  UDMA_CMD_READ_SRQC_BT0, UDMA_CMD_WRITE_SRQC_BT0 },
+	/* ECC_RESOURCE_GMV is handled by cmdq, not mailbox */
+	{ "ECC_RESOURCE_GMV",
+	  0, 0 },
+	{ "ECC_RESOURCE_QPC_TIMER",
+	  UDMA_CMD_READ_QPC_TIMER_BT0, UDMA_CMD_WRITE_QPC_TIMER_BT0 },
+	{ "ECC_RESOURCE_CQC_TIMER",
+	  UDMA_CMD_READ_CQC_TIMER_BT0, UDMA_CMD_WRITE_CQC_TIMER_BT0 },
+	{ "ECC_RESOURCE_SCCC",
+	  UDMA_CMD_READ_SCCC_BT0, UDMA_CMD_WRITE_SCCC_BT0 },
+};
+
 #define EQ_DB_FIELD_LOC(h, l) ((uint64_t)(h) << 32 | (l))
 
 #define UDMA_EQ_DB_TAG EQ_DB_FIELD_LOC(7, 0)

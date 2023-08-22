@@ -698,6 +698,7 @@ struct udma_dev {
 	const struct udma_hw		*hw;
 	void				*priv;
 	struct workqueue_struct		*irq_workq;
+	struct work_struct		ecc_work;
 	uint16_t			func_id;
 	uint32_t			func_num;
 	uint32_t			cong_algo_tmpl_id;
