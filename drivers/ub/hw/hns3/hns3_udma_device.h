@@ -625,6 +625,7 @@ struct udma_caps {
 	uint32_t		num_jfr_shift;
 	uint32_t		num_jetty_shift;
 	uint8_t			poe_ch_num;
+	uint32_t		speed;
 };
 
 struct udma_idx_table {

@@ -113,6 +113,10 @@ struct udma_query_oor_cmq {
 #define UDMA_BA_PG_SZ_SUPPORTED_256K	6
 #define UDMA_BA_PG_SZ_SUPPORTED_16K	2
 
+#define UDMA_QUERY_PORT_INFO	1
+#define SPEED_100G  100000
+#define SPEED_200G  200000
+
 /* Fields of UDMA_OPC_EXT_CFG */
 #define EXT_CFG_VF_ID CMQ_REQ_FIELD_LOC(31, 0)
 #define EXT_CFG_QP_PI_INDEX CMQ_REQ_FIELD_LOC(45, 32)
@@ -209,6 +213,7 @@ enum udma_opcode_type {
 	UDMA_QUERY_OOR_CAPS				= 0xA002,
 	UDMA_OPC_DEID_TBL_ADD				= 0xA110,
 	UDMA_OPC_CFG_GMV_TBL				= 0xA140,
+	UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
 };
 
 #define UDMA_QUERY_PF_CAPS_CMD_NUM 5
@@ -459,6 +464,12 @@ union udma_eid {
 		uint32_t	eid_mh;
 		uint32_t	eid_h;
 	} bit32_data;
+};
+
+struct udma_port_info_cmq {
+	uint32_t speed;
+	uint8_t query_type;
+	uint8_t rsv[19];
 };
 
 #endif /* _UDMA_HW_H */

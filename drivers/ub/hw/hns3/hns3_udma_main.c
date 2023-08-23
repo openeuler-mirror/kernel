@@ -249,11 +249,67 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	return 0;
 }
 
+static int udma_get_active_speed(uint32_t speed, struct ubcore_port_status *port_status)
+{
+	if (speed == SPEED_100G) {
+		port_status->active_width = UBCORE_LINK_X1;
+		port_status->active_speed = UBCORE_SP_100G;
+	} else if (speed == SPEED_200G) {
+		port_status->active_width = UBCORE_LINK_X1;
+		port_status->active_speed = UBCORE_SP_200G;
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int udma_query_device_status(const struct ubcore_device *dev,
+				    struct ubcore_device_status *dev_status)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	enum ubcore_mtu net_dev_mtu;
+	struct net_device *net_dev;
+	enum ubcore_mtu mtu;
+	uint8_t port_num;
+	int ret;
+	int i;
+
+	port_num = udma_dev->caps.num_ports;
+
+	for (i = 0; i < port_num; i++) {
+		net_dev = udma_dev->uboe.netdevs[i];
+		if (!net_dev) {
+			dev_err(udma_dev->dev, "Find netdev %u failed!\n", i);
+			return -EINVAL;
+		}
+
+		dev_status->port_status[i].state =
+			(netif_running(net_dev) &&
+			netif_carrier_ok(net_dev)) ?
+			UBCORE_PORT_ACTIVE : UBCORE_PORT_DOWN;
+		net_dev_mtu = ubcore_get_mtu(net_dev->max_mtu);
+		mtu = ubcore_get_mtu(net_dev->mtu);
+
+		dev_status->port_status[i].active_mtu = (enum ubcore_mtu)
+						(mtu ? min(net_dev_mtu, mtu) : UBCORE_MTU_256);
+
+		ret = udma_get_active_speed(udma_dev->caps.speed, &dev_status->port_status[i]);
+		if (ret) {
+			dev_err(udma_dev->dev, "Port[%u] query speed and width failed!\n", i);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
 	.set_eid = udma_set_eid,
 	.query_device_attr = udma_query_device_attr,
+	.query_device_status = udma_query_device_status,
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,

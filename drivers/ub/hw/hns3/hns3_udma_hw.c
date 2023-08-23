@@ -175,6 +175,24 @@ static void set_default_jetty_caps(struct udma_dev *dev)
 	caps->num_jetty_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
 }
 
+static void query_hw_speed(struct udma_dev *udma_dev)
+{
+	struct udma_port_info_cmq *resp;
+	struct udma_cmq_desc desc;
+	int ret;
+
+	resp = (struct udma_port_info_cmq *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_QUERY_PORT_INFO, true);
+	resp->query_type = UDMA_QUERY_PORT_INFO;
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to query speed, ret = %d. set default 100G\n", ret);
+		udma_dev->caps.speed = SPEED_100G;
+		return;
+	}
+	udma_dev->caps.speed = resp->speed;
+}
+
 static int udma_query_caps(struct udma_dev *udma_dev)
 {
 	enum udma_opcode_type opcode = UDMA_OPC_QUERY_PF_CAPS_NUM;
@@ -351,6 +369,8 @@ static int udma_query_caps(struct udma_dev *udma_dev)
 					      QUERY_PF_CAPS_D_RQWQE_HOP_NUM_S);
 
 	set_default_jetty_caps(udma_dev);
+	query_hw_speed(udma_dev);
+
 	return 0;
 }
 
