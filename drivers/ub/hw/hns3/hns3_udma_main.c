@@ -323,6 +323,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.create_jfr = udma_create_jfr,
 	.modify_jfr = udma_modify_jfr,
 	.destroy_jfr = udma_destroy_jfr,
+	.import_jfr = udma_import_jfr,
+	.unimport_jfr = udma_unimport_jfr,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)

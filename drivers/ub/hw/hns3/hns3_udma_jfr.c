@@ -442,6 +442,26 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 	return 0;
 }
 
+struct ubcore_tjetty *udma_import_jfr(struct ubcore_device *dev,
+				 const struct ubcore_tjetty_cfg *cfg,
+				 struct ubcore_udata *udata)
+{
+	struct ubcore_tjetty *tjfr;
+
+	tjfr = kcalloc(1, sizeof(*tjfr), GFP_KERNEL);
+	if (!tjfr)
+		return NULL;
+
+	return tjfr;
+}
+
+int udma_unimport_jfr(struct ubcore_tjetty *tjfr)
+{
+	kfree(tjfr);
+
+	return 0;
+}
+
 static int udma_hw_modify_srq(struct udma_dev *dev, uint32_t jfrn,
 			      uint16_t jfr_limit)
 {
