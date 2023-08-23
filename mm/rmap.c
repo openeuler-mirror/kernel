@@ -677,7 +677,7 @@ static bool should_defer_flush(struct mm_struct *mm, enum ttu_flags flags)
 void flush_tlb_batched_pending(struct mm_struct *mm)
 {
 	if (data_race(mm->tlb_flush_batched)) {
-		flush_tlb_mm(mm);
+		arch_flush_tlb_batched_pending(mm);
 
 		/*
 		 * Do not allow the compiler to re-order the clearing of
