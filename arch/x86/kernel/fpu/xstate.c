@@ -855,6 +855,13 @@ void __init fpu__init_system_xstate(unsigned int legacy_size)
 	setup_init_fpu_buf();
 
 	/*
+	 * CPU capabilities initialization runs before FPU init. So
+	 * X86_FEATURE_OSXSAVE is not set. Now that XSAVE is completely
+	 * functional, set the feature bit so depending code works.
+	 */
+	setup_force_cpu_cap(X86_FEATURE_OSXSAVE);
+
+	/*
 	 * Paranoia check whether something in the setup modified the
 	 * xfeatures mask.
 	 */
