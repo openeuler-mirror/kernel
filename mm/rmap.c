@@ -596,6 +596,14 @@ void page_unlock_anon_vma_read(struct anon_vma *anon_vma)
 }
 
 #ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
+
+#ifdef CONFIG_ARM64
+#define DEFINE_TLB_UBC(name) struct tlbflush_unmap_batch_arm64 *name = \
+				&current->_resvd->tlb_ubc
+#else
+#define DEFINE_TLB_UBC(name) struct tlbflush_unmap_batch *name = &current->tlb_ubc
+#endif
+
 /*
  * Flush TLB entries for recently unmapped pages from remote CPUs. It is
  * important if a PTE was dirty when it was unmapped that it's flushed
@@ -604,7 +612,7 @@ void page_unlock_anon_vma_read(struct anon_vma *anon_vma)
  */
 void try_to_unmap_flush(void)
 {
-	struct tlbflush_unmap_batch *tlb_ubc = &current->tlb_ubc;
+	DEFINE_TLB_UBC(tlb_ubc);
 
 	if (!tlb_ubc->flush_required)
 		return;
@@ -617,7 +625,7 @@ void try_to_unmap_flush(void)
 /* Flush iff there are potentially writable TLB entries that can race with IO */
 void try_to_unmap_flush_dirty(void)
 {
-	struct tlbflush_unmap_batch *tlb_ubc = &current->tlb_ubc;
+	DEFINE_TLB_UBC(tlb_ubc);
 
 	if (tlb_ubc->writable)
 		try_to_unmap_flush();
@@ -626,7 +634,7 @@ void try_to_unmap_flush_dirty(void)
 static void set_tlb_ubc_flush_pending(struct mm_struct *mm, bool writable,
 						unsigned long uaddr)
 {
-	struct tlbflush_unmap_batch *tlb_ubc = &current->tlb_ubc;
+	DEFINE_TLB_UBC(tlb_ubc);
 
 	arch_tlbbatch_add_pending(&tlb_ubc->arch, mm, uaddr);
 	tlb_ubc->flush_required = true;

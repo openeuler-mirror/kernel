@@ -685,6 +685,9 @@ struct task_struct_resvd {
 #ifdef CONFIG_MMU
 	struct timer_list	oom_reaper_timer;
 #endif
+#if defined(CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH) && defined(CONFIG_ARM64)
+	struct tlbflush_unmap_batch_arm64       tlb_ubc;
+#endif
 };
 
 struct task_struct {
