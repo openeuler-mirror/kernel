@@ -17,6 +17,7 @@
 #include <linux/pci.h>
 #include "urma/ubcore_api.h"
 #include "hns3_udma_abi.h"
+#include "hnae3.h"
 #include "hns3_udma_device.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_jfr.h"
@@ -189,10 +190,70 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 
 	return 0;
 }
+static uint16_t query_congest_alg(uint8_t udma_cc_caps)
+{
+	uint16_t ubcore_cc_alg = 0;
+
+	if (udma_cc_caps & UDMA_CONG_SEL_DCQCN)
+		ubcore_cc_alg |= UBCORE_CC_DCQCN;
+	if (udma_cc_caps & UDMA_CONG_SEL_LDCP)
+		ubcore_cc_alg |= UBCORE_CC_LDCP;
+	if (udma_cc_caps & UDMA_CONG_SEL_HC3)
+		ubcore_cc_alg |= UBCORE_CC_HC3;
+	if (udma_cc_caps & UDMA_CONG_SEL_DIP)
+		ubcore_cc_alg |= UBCORE_CC_DIP;
+
+	return ubcore_cc_alg;
+}
+
+static int udma_query_device_attr(struct ubcore_device *dev,
+				  struct ubcore_device_attr *attr)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct device *dev_of_udma = udma_dev->dev;
+	struct net_device *net_dev;
+	int i;
+
+	attr->guid = udma_dev->sys_image_guid;
+	attr->dev_cap.max_jfc = (1 << udma_dev->caps.num_jfc_shift);
+	attr->dev_cap.max_jfs = (1 << udma_dev->caps.num_jfs_shift);
+	attr->dev_cap.max_jfr = (1 << udma_dev->caps.num_jfr_shift);
+	attr->dev_cap.max_jetty = (1 << udma_dev->caps.num_jetty_shift);
+	attr->dev_cap.max_jfc_depth = udma_dev->caps.max_cqes;
+	attr->dev_cap.max_jfs_depth = udma_dev->caps.max_wqes;
+	attr->dev_cap.max_jfr_depth = udma_dev->caps.max_srq_wrs;
+	attr->dev_cap.max_jfs_inline_size = udma_dev->caps.max_sq_inline;
+	attr->dev_cap.max_jfs_sge = udma_dev->caps.max_sq_sg;
+	attr->dev_cap.max_jfr_sge = udma_dev->caps.max_srq_sges;
+	attr->dev_cap.max_msg_size = UDMA_MAX_MSG_LEN;
+	attr->dev_cap.trans_mode = UBCORE_TP_RM | UBCORE_TP_UM;
+	attr->dev_cap.feature.bs.oor = udma_dev->caps.oor_en;
+	attr->port_cnt = udma_dev->caps.num_ports;
+	attr->dev_cap.comp_vector_cnt = udma_dev->caps.num_comp_vectors;
+	attr->vf_cnt = udma_dev->func_num - 1;
+	attr->dev_cap.feature.bs.jfc_inline = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_CQE_INLINE);
+	attr->dev_cap.feature.bs.spray_en = 1;
+	attr->dev_cap.max_jfs_rsge = udma_dev->caps.max_sq_sg;
+	attr->dev_cap.congestion_ctrl_alg = query_congest_alg(udma_dev->caps.cong_type);
+
+	for (i = 0; i < udma_dev->caps.num_ports; i++) {
+		net_dev = udma_dev->uboe.netdevs[i];
+		if (!net_dev) {
+			dev_err(dev_of_udma, "Find netdev %u failed!\n", i);
+			return -EINVAL;
+		}
+		attr->port_attr[i].max_mtu =
+			udma_mtu_int_to_enum(net_dev->max_mtu);
+	}
+
+	return 0;
+}
+
 static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
 	.set_eid = udma_set_eid,
+	.query_device_attr = udma_query_device_attr,
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,

@@ -65,6 +65,8 @@
 #define UDMA_TX_CMQ_PI_REG			0x07010
 #define UDMA_TX_CMQ_CI_REG			0x07014
 
+#define UDMA_MAX_MSG_LEN			0x80000000
+
 #define UDMA_MAX_BT_REGION			3
 #define UDMA_MAX_BT_LEVEL			3
 
@@ -123,6 +125,11 @@
 #define UDMA_VF_ABN_INT_EN_REG		0x13008
 #define UDMA_VF_EVENT_INT_EN_REG	0x1300c
 #define EQ_REG_OFFSET			0x4
+#define MTU_VAL_256			256
+#define MTU_VAL_512			512
+#define MTU_VAL_1024			1024
+#define MTU_VAL_2048			2048
+#define MTU_VAL_4096			4096
 #define UDMA_DEFAULT_MAX_JETTY_X_SHIFT	8
 
 #define UDMA_DB_ADDR_OFFSET 0x230
@@ -188,6 +195,21 @@ enum {
 	TYPE_CSQ = 1
 };
 
+enum udma_cong_type {
+	UDMA_CONG_TYPE_DCQCN,
+	UDMA_CONG_TYPE_LDCP,
+	UDMA_CONG_TYPE_HC3,
+	UDMA_CONG_TYPE_DIP,
+	UDMA_CONG_TYPE_TOTAL,
+};
+
+enum udma_cong_sel {
+	UDMA_CONG_SEL_DCQCN = 1 << UDMA_CONG_TYPE_DCQCN,
+	UDMA_CONG_SEL_LDCP = 1 << UDMA_CONG_TYPE_LDCP,
+	UDMA_CONG_SEL_HC3 = 1 << UDMA_CONG_TYPE_HC3,
+	UDMA_CONG_SEL_DIP = 1 << UDMA_CONG_TYPE_DIP,
+};
+
 enum udma_qp_state {
 	QPS_RESET,
 	QPS_RTR = 2,
@@ -200,6 +222,20 @@ enum {
 	UDMA_BUF_NOSLEEP = BIT(1),
 	UDMA_BUF_NOFAIL = BIT(2),
 };
+
+static inline enum ubcore_mtu udma_mtu_int_to_enum(int mtu)
+{
+	if (mtu >= MTU_VAL_4096)
+		return UBCORE_MTU_4096;
+	else if (mtu >= MTU_VAL_2048)
+		return UBCORE_MTU_2048;
+	else if (mtu >= MTU_VAL_1024)
+		return UBCORE_MTU_1024;
+	else if (mtu >= MTU_VAL_512)
+		return UBCORE_MTU_512;
+	else
+		return UBCORE_MTU_256;
+}
 
 struct udma_uar {
 	uint64_t	pfn;
