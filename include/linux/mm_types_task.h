@@ -74,11 +74,11 @@ struct page_frag {
 
 /* Track pages that require TLB flushes */
 struct tlbflush_unmap_batch {
-#ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
+#if defined(CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH) && !defined(CONFIG_ARM64)
 	/*
 	 * The arch code makes the following promise: generic code can modify a
-	 * PTE, then call arch_tlbbatch_add_mm() (which internally provides all
-	 * needed barriers), then call arch_tlbbatch_flush(), and the entries
+	 * PTE, then call arch_tlbbatch_add_pending() (which internally provides
+	 * all needed barriers), then call arch_tlbbatch_flush(), and the entries
 	 * will be flushed on all CPUs by the time that arch_tlbbatch_flush()
 	 * returns.
 	 */
@@ -95,5 +95,28 @@ struct tlbflush_unmap_batch {
 	bool writable;
 #endif
 };
+
+#if defined(CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH) && defined(CONFIG_ARM64)
+struct tlbflush_unmap_batch_arm64 {
+	/*
+	 * The arch code makes the following promise: generic code can modify a
+	 * PTE, then call arch_tlbbatch_add_pending() (which internally provides
+	 * all needed barriers), then call arch_tlbbatch_flush(), and the entries
+	 * will be flushed on all CPUs by the time that arch_tlbbatch_flush()
+	 * returns.
+	 */
+	struct arch_tlbflush_unmap_batch arch;
+
+	/* True if a flush is needed. */
+	bool flush_required;
+
+	/*
+	 * If true then the PTE was dirty when unmapped. The entry must be
+	 * flushed before IO is initiated or a stale TLB entry potentially
+	 * allows an update without redirtying the page.
+	 */
+	bool writable;
+};
+#endif
 
 #endif /* _LINUX_MM_TYPES_TASK_H */

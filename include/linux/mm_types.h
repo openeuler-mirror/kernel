@@ -598,7 +598,7 @@ struct mm_struct {
 		 * moving a PROT_NONE or PROT_NUMA mapped page.
 		 */
 		atomic_t tlb_flush_pending;
-#ifdef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
+#if defined(CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH) && !defined(CONFIG_ARM64)
 		/* See flush_tlb_batched_pending() */
 		bool tlb_flush_batched;
 #endif
@@ -620,6 +620,8 @@ struct mm_struct {
 
 #if defined(CONFIG_X86_64)
 	KABI_USE(1, struct mm_struct_extend *mm_extend)
+#elif defined(CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH) && defined(CONFIG_ARM64)
+	KABI_USE(1, bool tlb_flush_batched)
 #else
 	KABI_RESERVE(1)
 #endif
