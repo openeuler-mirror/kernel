@@ -83,7 +83,7 @@ int set_pages_rw(struct page *page, int numpages);
 
 int set_direct_map_invalid_noflush(struct page *page);
 int set_direct_map_default_noflush(struct page *page);
-void notify_range_enc_status_changed(unsigned long vaddr, int npages, bool enc);
+void notify_range_enc_status_changed(unsigned long vaddr, int size, bool enc);
 
 extern int kernel_set_to_readonly;
 

@@ -243,11 +243,10 @@ static inline void notify_page_enc_status_changed(unsigned long pfn,
 }
 /* HYGON added to avoid kabi breakage of pv_ops (end) */
 
-void notify_range_enc_status_changed(unsigned long vaddr, int npages, bool enc)
+void notify_range_enc_status_changed(unsigned long vaddr, int size, bool enc)
 {
 #ifdef CONFIG_PARAVIRT
-	unsigned long sz = npages << PAGE_SHIFT;
-	unsigned long vaddr_end = vaddr + sz;
+	unsigned long vaddr_end = vaddr + size;
 
 	while (vaddr < vaddr_end) {
 		int psize, pmask, level;
@@ -379,7 +378,7 @@ static int __init early_set_memory_enc_dec(unsigned long vaddr,
 
 	ret = 0;
 
-	notify_range_enc_status_changed(start, PAGE_ALIGN(size) >> PAGE_SHIFT, enc);
+	notify_range_enc_status_changed(start, size, enc);
 out:
 	__flush_tlb_all();
 	return ret;
@@ -395,9 +394,9 @@ int __init early_set_memory_encrypted(unsigned long vaddr, unsigned long size)
 	return early_set_memory_enc_dec(vaddr, size, true);
 }
 
-void __init early_set_mem_enc_dec_hypercall(unsigned long vaddr, int npages, bool enc)
+void __init early_set_mem_enc_dec_hypercall(unsigned long vaddr, unsigned long size, bool enc)
 {
-	notify_range_enc_status_changed(vaddr, npages, enc);
+	notify_range_enc_status_changed(vaddr, size, enc);
 }
 
 /*
