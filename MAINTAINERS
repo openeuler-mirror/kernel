@@ -7977,7 +7977,7 @@ F:	drivers/misc/hisi_hikey_usb.c
 F:	Documentation/devicetree/bindings/misc/hisilicon-hikey-usb.yaml
 
 HISILICON PMU DRIVER
-M:	Shaokun Zhang <zhangshaokun@hisilicon.com>
+M:	Yicong Yang <yangyicong@hisilicon.com>
 M:	Qi Liu <liuqi115@huawei.com>
 S:	Supported
 W:	http://www.hisilicon.com
@@ -7994,7 +7994,7 @@ F:      Documentation/trace/hisi-ptt.rst
 F:      drivers/hwtracing/ptt/
 
 HISILICON HNS3 PMU DRIVER
-M:	Guangbin Huang <huangguangbin2@huawei.com>
+M:	Jijie Shao <shaojijie@huawei.com>
 S:	Supported
 F:	Documentation/admin-guide/perf/hns3-pmu.rst
 F:	drivers/perf/hisilicon/hns3_pmu.c
