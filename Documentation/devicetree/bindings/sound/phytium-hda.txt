@@ -1,0 +1,22 @@
+* Phytium HDA controller
+
+The HDA bus (High Definition Audio sound bus) is a serial link for digital
+audio data transfer between devices in the system.
+
+Required properties:
+
+- compatible: should be "phytium,hda"
+- reg: physical base address and length of HDA controller.
+- interrupts: interrupt for the hda controller.
+- clocks: phandle to clock provider with the clock number in the second cell.
+- clock-name: the name of the device clock.
+
+Example for D2000 HDA controller:
+
+hda: hda@28206000 {
+	compatible = "phytium,hda";
+	reg = <0 0x28206000 0x0 0x1000>;
+	interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
+	clocks = <&sysclk_48mhz>;
+	clock-names = "phytium_hda_clk";
+};
