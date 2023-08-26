@@ -847,6 +847,9 @@ struct mm_struct {
 #endif
 		} lru_gen;
 #endif /* CONFIG_LRU_GEN */
+#ifdef CONFIG_GMEM
+	gm_as_t *gm_as;
+#endif
 	} __randomize_layout;
 
 	/*
