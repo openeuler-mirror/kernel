@@ -343,6 +343,8 @@ extern gm_ret_t gm_as_attach(gm_as_t *as, gm_dev_t *dev, gm_mmu_mode_t mode, boo
 extern gm_va_t gm_as_alloc(gm_as_t *as, gm_va_t hint, gm_va_t size, gm_va_t align, gm_va_t no_cross,
 		gm_va_t max_va, gm_region_t **new_region);
 
+extern int hmadvise_inner(int hnid, unsigned long start, size_t len_in, int behavior);
+
 enum gmem_stat_item {
 	NR_PAGE_MIGRATING,
 	NR_GMEM_STAT_ITEMS

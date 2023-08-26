@@ -572,3 +572,192 @@ void hnode_deinit(unsigned int hnid, gm_dev_t *dev)
 	xa_destroy(&hnodes[hnid]->pages);
 	hnodes[hnid] = NULL;
 }
+
+struct prefetch_data {
+	struct mm_struct *mm;
+	gm_dev_t *dev;
+	unsigned long addr;
+	size_t size;
+	struct work_struct work;
+	int *res;
+};
+
+static void prefetch_work_cb(struct work_struct *work)
+{
+	struct prefetch_data *d =
+		container_of(work, struct prefetch_data, work);
+	unsigned long addr = d->addr, end = d->addr + d->size;
+	int page_size = HPAGE_SIZE;
+	int ret;
+
+	do {
+		/* MADV_WILLNEED: dev will soon access this addr. */
+		ret = gm_dev_fault(d->mm, addr, d->dev, MADV_WILLNEED);
+		if (ret == GM_RET_PAGE_EXIST) {
+			pr_info("%s: device has done page fault, ignore prefetch\n", __func__);
+		} else if (ret != GM_RET_SUCCESS) {
+			*d->res = -EFAULT;
+			pr_err("%s: call dev fault error %d\n", __func__, ret);
+		}
+	} while (addr += page_size, addr != end);
+
+	kfree(d);
+}
+
+static int hmadvise_do_prefetch(gm_dev_t *dev, unsigned long addr, size_t size)
+{
+	unsigned long start, end, per_size;
+	int page_size = HPAGE_SIZE;
+	struct prefetch_data *data;
+	struct vm_area_struct *vma;
+	int res = GM_RET_SUCCESS;
+
+	/* Align addr by rounding outward to make page cover addr. */
+	end = round_up(addr + size, page_size);
+	start = round_down(addr, page_size);
+	size = end - start;
+
+	mmap_read_lock(current->mm);
+	vma = find_vma(current->mm, start);
+	if (!vma || start < vma->vm_start || end > vma->vm_end) {
+		mmap_read_unlock(current->mm);
+		return GM_RET_FAILURE_UNKNOWN;
+	}
+	mmap_read_unlock(current->mm);
+
+	per_size = (size / GM_WORK_CONCURRENCY) & ~(page_size - 1);
+
+	while (start < end) {
+		data = kzalloc(sizeof(struct prefetch_data), GFP_KERNEL);
+		if (!data) {
+			flush_workqueue(prefetch_wq);
+			return GM_RET_NOMEM;
+		}
+
+		INIT_WORK(&data->work, prefetch_work_cb);
+		data->mm = current->mm;
+		data->dev = dev;
+		data->addr = start;
+		data->res = &res;
+		if (per_size == 0)
+			data->size = size;
+		else
+			/* Process (1.x * per_size) for the last time */
+			data->size = (end - start < 2 * per_size) ? (end - start) : per_size;
+		queue_work(prefetch_wq, &data->work);
+		start += data->size;
+	}
+
+	flush_workqueue(prefetch_wq);
+	return res;
+}
+
+static int hmadvise_do_eagerfree(unsigned long addr, size_t size)
+{
+	int page_size = HPAGE_SIZE;
+	struct vm_area_struct *vma;
+	int ret = GM_RET_SUCCESS;
+	unsigned long start, end;
+	gm_mapping_t *gm_mapping;
+	struct gm_fault_t gmf = {
+		.mm = current->mm,
+		.size = page_size,
+		.copy = false,
+	};
+	vm_object_t *obj;
+
+	/* Align addr by rounding inward to avoid excessive page release. */
+	end = round_down(addr + size, page_size);
+	start = round_up(addr, page_size);
+	if (start >= end)
+		return ret;
+
+	mmap_read_lock(current->mm);
+	do {
+		vma = find_vma(current->mm, start);
+		if (!vma || !vma_is_peer_shared(vma)) {
+			pr_err("gmem: not peer-shared vma, skip dontneed\n");
+			continue;
+		}
+		obj = vma->vm_obj;
+		if (!obj) {
+			pr_err("gmem: peer-shared vma should have vm_object\n");
+			mmap_read_unlock(current->mm);
+			return -EINVAL;
+		}
+		xa_lock(obj->logical_page_table);
+		gm_mapping = vm_object_lookup(obj, start);
+		if (!gm_mapping) {
+			xa_unlock(obj->logical_page_table);
+			continue;
+		}
+		xa_unlock(obj->logical_page_table);
+		mutex_lock(&gm_mapping->lock);
+		if (gm_mapping_nomap(gm_mapping)) {
+			mutex_unlock(&gm_mapping->lock);
+			continue;
+		} else if (gm_mapping_cpu(gm_mapping)) {
+			zap_page_range_single(vma, start, page_size, NULL);
+		} else {
+			gmf.va = start;
+			gmf.dev = gm_mapping->dev;
+			ret = gm_mapping->dev->mmu->peer_unmap(&gmf);
+			if (ret) {
+				pr_err("gmem: peer_unmap failed. ret %d\n", ret);
+				mutex_unlock(&gm_mapping->lock);
+				continue;
+			}
+		}
+		set_gm_mapping_nomap(gm_mapping);
+		mutex_unlock(&gm_mapping->lock);
+	} while (start += page_size, start != end);
+
+	mmap_read_unlock(current->mm);
+	return ret;
+}
+
+static bool check_hmadvise_behavior(int behavior)
+{
+	return behavior == MADV_DONTNEED;
+}
+
+int hmadvise_inner(int hnid, unsigned long start, size_t len_in, int behavior)
+{
+	int error = -EINVAL;
+	struct hnode *node;
+
+	if (hnid == -1) {
+		if (check_hmadvise_behavior(behavior)) {
+			goto no_hnid;
+		} else {
+			pr_err("hmadvise: behavior %d need hnid or is invalid\n",
+				behavior);
+			return error;
+		}
+	}
+
+	if (hnid < 0)
+		return error;
+
+	if (!is_hnode(hnid) || !is_hnode_allowed(hnid))
+		return error;
+
+	node = get_hnode(hnid);
+	if (!node) {
+		pr_err("hmadvise: hnode id %d is invalid\n", hnid);
+		return error;
+	}
+
+no_hnid:
+	switch (behavior) {
+	case MADV_PREFETCH:
+		return hmadvise_do_prefetch(node->dev, start, len_in);
+	case MADV_DONTNEED:
+		return hmadvise_do_eagerfree(start, len_in);
+	default:
+		pr_err("hmadvise: unsupported behavior %d\n", behavior);
+	}
+
+	return error;
+}
+EXPORT_SYMBOL_GPL(hmadvise_inner);

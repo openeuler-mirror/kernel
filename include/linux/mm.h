@@ -3823,8 +3823,17 @@ static inline bool gmem_is_enabled(void)
 {
 	return static_branch_likely(&gmem_status);
 }
+
+static inline bool vma_is_peer_shared(struct vm_area_struct *vma)
+{
+	return false;
+}
 #else
 static inline bool gmem_is_enabled(void) { return false; }
+static inline bool vma_is_peer_shared(struct vm_area_struct *vma)
+{
+	return false;
+}
 #endif
 
 #endif /* _LINUX_MM_H */

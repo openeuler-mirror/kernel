@@ -55,6 +55,27 @@ static int gmem_get_hnid(unsigned long arg)
 	return 0;
 }
 
+static int gmem_hmadvise(unsigned long arg)
+{
+	struct hmadvise_arg harg;
+	void __user *buf;
+	int ret;
+
+	buf = (void __user *)arg;
+	if (!access_ok(buf, sizeof(struct hmadvise_arg))) {
+		pr_err("access_ok failed.\n");
+		return -EFAULT;
+	}
+
+	if (copy_from_user(&harg, buf, sizeof(struct hmadvise_arg))) {
+		pr_err("copy_from_user failed.\n");
+		return -EFAULT;
+	}
+
+	ret = hmadvise_inner(harg.hnid, harg.start, harg.len_in, harg.behavior);
+	return ret;
+}
+
 static long gmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
@@ -68,6 +89,9 @@ static long gmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case GMEM_GET_HNUMA_ID:
 		ret = gmem_get_hnid(arg);
+		break;
+	case GMEM_MADVISE:
+		ret = gmem_hmadvise(arg);
 		break;
 	default:
 		pr_err("invalid cmd '%#x'.\n", cmd);
