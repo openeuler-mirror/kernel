@@ -32,6 +32,10 @@
 #include <linux/device/driver.h>
 #include <asm/device.h>
 
+#ifdef CONFIG_GMEM
+#include <linux/gmem.h>
+#endif
+
 struct device;
 struct device_private;
 struct device_driver;
@@ -654,6 +658,9 @@ struct device {
 #endif
 #ifdef CONFIG_DMA_OPS_BYPASS
 	bool			dma_ops_bypass : 1;
+#endif
+#ifdef CONFIG_GMEM
+	gm_dev_t		*gm_dev;
 #endif
 };
 
