@@ -407,6 +407,9 @@ enum node_states {
 	N_MEMORY,		/* The node has memory(regular, high, movable) */
 	N_CPU,		/* The node has one or more cpus */
 	N_GENERIC_INITIATOR,	/* The node has one or more Generic Initiators */
+#ifdef CONFIG_GMEM
+	N_HETEROGENEOUS,	/* The node has heterogeneous memory */
+#endif
 	NR_NODE_STATES
 };
 
@@ -535,6 +538,13 @@ static inline int node_random(const nodemask_t *maskp)
 
 #define for_each_node(node)	   for_each_node_state(node, N_POSSIBLE)
 #define for_each_online_node(node) for_each_node_state(node, N_ONLINE)
+
+#ifdef CONFIG_GMEM
+/* For h-NUMA topology */
+#define hnode_map		node_states[N_HETEROGENEOUS]
+#define num_hnodes()		num_node_state(N_HETEROGENEOUS)
+#define for_each_hnode(node)	for_each_node_state(node, N_HETEROGENEOUS)
+#endif
 
 /*
  * For nodemask scratch area.

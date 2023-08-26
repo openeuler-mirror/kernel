@@ -922,6 +922,9 @@ static struct node_attr node_state_attr[] = {
 	[N_CPU] = _NODE_ATTR(has_cpu, N_CPU),
 	[N_GENERIC_INITIATOR] = _NODE_ATTR(has_generic_initiator,
 					   N_GENERIC_INITIATOR),
+#ifdef CONFIG_GMEM
+	[N_HETEROGENEOUS] = _NODE_ATTR(has_hetero_memory, N_HETEROGENEOUS),
+#endif
 };
 
 static struct attribute *node_state_attrs[] = {
@@ -934,6 +937,9 @@ static struct attribute *node_state_attrs[] = {
 	&node_state_attr[N_MEMORY].attr.attr,
 	&node_state_attr[N_CPU].attr.attr,
 	&node_state_attr[N_GENERIC_INITIATOR].attr.attr,
+#ifdef CONFIG_GMEM
+	&node_state_attr[N_HETEROGENEOUS].attr.attr,
+#endif
 	NULL
 };
 
