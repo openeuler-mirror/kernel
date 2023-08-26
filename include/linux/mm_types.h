@@ -20,6 +20,10 @@
 #include <linux/seqlock.h>
 #include <linux/percpu_counter.h>
 
+#ifdef CONFIG_GMEM
+#include <linux/gmem_as.h>
+#endif
+
 #include <asm/mmu.h>
 
 #ifndef AT_VECTOR_SIZE_ARCH

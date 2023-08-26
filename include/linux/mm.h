@@ -3816,4 +3816,15 @@ madvise_set_anon_name(struct mm_struct *mm, unsigned long start,
 }
 #endif
 
+#ifdef CONFIG_GMEM
+DECLARE_STATIC_KEY_FALSE(gmem_status);
+
+static inline bool gmem_is_enabled(void)
+{
+	return static_branch_likely(&gmem_status);
+}
+#else
+static inline bool gmem_is_enabled(void) { return false; }
+#endif
+
 #endif /* _LINUX_MM_H */
