@@ -79,6 +79,11 @@
 
 #define MADV_COLLAPSE	25		/* Synchronous hugepage collapse */
 
+/* for hmadvise */
+#define MADV_GMEM_BASE	0x1000
+#define MADV_PREFETCH	MADV_GMEM_BASE		/* prefetch pages for hNUMA node */
+#define MADV_PINNED	(MADV_GMEM_BASE+1)	/* pin these pages */
+
 /* compatibility flags */
 #define MAP_FILE	0
 
