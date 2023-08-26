@@ -82,6 +82,29 @@ struct udma_create_jfc_resp {
 	uint32_t jfc_caps;
 };
 
+struct udma_create_tp_ucmd {
+	bool			is_jetty;
+	union {
+		uint32_t	jfs_id;
+		uint32_t	jetty_id;
+	} ini_id;
+	union {
+		uint32_t	jfr_id;
+		uint32_t	jetty_id;
+	} tgt_id;
+	/* used for create_qp */
+	uint64_t		buf_addr;
+	uint64_t		db_addr;
+	uint64_t		sdb_addr;
+};
+
+struct udma_create_tp_resp {
+	uint64_t		cap_flags;
+	uint32_t		qpn;
+	uint32_t		path_mtu;
+	uint8_t			priority;
+};
+
 struct udma_create_ctx_resp {
 	uint32_t num_comp_vectors;
 	uint32_t num_qps_shift;

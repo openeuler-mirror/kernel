@@ -45,6 +45,7 @@
 #define UDMA_GMV_ENTRY_SZ			32
 
 #define UDMA_CQ_BANK_NUM			4
+#define UDMA_SGE_SHIFT				4
 #define UDMA_SGE_SIZE				16
 #define UDMA_IDX_QUE_ENTRY_SZ			4
 /* The minimum page size is 4K for hardware */
@@ -208,6 +209,11 @@ enum udma_cong_sel {
 	UDMA_CONG_SEL_LDCP = 1 << UDMA_CONG_TYPE_LDCP,
 	UDMA_CONG_SEL_HC3 = 1 << UDMA_CONG_TYPE_HC3,
 	UDMA_CONG_SEL_DIP = 1 << UDMA_CONG_TYPE_DIP,
+};
+
+enum udma_qp_type {
+	QPT_RC,
+	QPT_UD = 0x3,
 };
 
 enum udma_qp_state {
