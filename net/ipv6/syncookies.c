@@ -216,6 +216,8 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	treq->txhash = net_tx_rndhash();
 	if (IS_ENABLED(CONFIG_SMC))
 		ireq->smc_ok = 0;
+	if (IS_ENABLED(CONFIG_TCP_COMP))
+		ireq->comp_ok = 0;
 
 	/*
 	 * We need to lookup the dst_entry to get the correct window size.

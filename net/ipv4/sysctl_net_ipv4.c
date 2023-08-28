@@ -467,6 +467,30 @@ static int proc_fib_multipath_hash_fields(struct ctl_table *table, int write,
 }
 #endif
 
+#if IS_ENABLED(CONFIG_TCP_COMP)
+static int proc_tcp_compression_ports(struct ctl_table *table, int write,
+				      void __user *buffer, size_t *lenp,
+				      loff_t *ppos)
+{
+	unsigned long *bitmap = *(unsigned long **)table->data;
+	unsigned long bitmap_len = table->maxlen;
+	int ret;
+
+	ret = proc_do_large_bitmap(table, write, buffer, lenp, ppos);
+	if (write && ret == 0) {
+		if (bitmap_empty(bitmap, bitmap_len)) {
+			if (static_key_enabled(&tcp_have_comp))
+				static_branch_disable(&tcp_have_comp);
+		} else {
+			if (!static_key_enabled(&tcp_have_comp))
+				static_branch_enable(&tcp_have_comp);
+		}
+	}
+
+	return ret;
+}
+#endif
+
 static struct ctl_table ipv4_table[] = {
 	{
 		.procname	= "tcp_max_orphans",
@@ -578,6 +602,24 @@ static struct ctl_table ipv4_table[] = {
 		.extra1		= &sysctl_fib_sync_mem_min,
 		.extra2		= &sysctl_fib_sync_mem_max,
 	},
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	{
+		.procname	= "tcp_compression_ports",
+		.data		= &sysctl_tcp_compression_ports,
+		.maxlen		= 65536,
+		.mode		= 0644,
+		.proc_handler	= proc_tcp_compression_ports,
+	},
+	{
+		.procname	= "tcp_compression_local",
+		.data		= &sysctl_tcp_compression_local,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
 	{ }
 };
 

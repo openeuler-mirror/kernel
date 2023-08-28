@@ -194,6 +194,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
  */
 #define TCPOPT_FASTOPEN_MAGIC	0xF989
 #define TCPOPT_SMC_MAGIC	0xE2D4C3D9
+#define TCPOPT_COMP_MAGIC	0x7954
 
 /*
  *     TCP option lengths
@@ -207,6 +208,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_FASTOPEN_BASE  2
 #define TCPOLEN_EXP_FASTOPEN_BASE  4
 #define TCPOLEN_EXP_SMC_BASE   6
+#define TCPOLEN_EXP_COMP_BASE  4
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -2492,5 +2494,43 @@ static inline u64 tcp_transmit_time(const struct sock *sk)
 	}
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_TCP_COMP)
+extern struct static_key_false tcp_have_comp;
+
+extern unsigned long *sysctl_tcp_compression_ports;
+extern int sysctl_tcp_compression_local;
+
+bool tcp_syn_comp_enabled(const struct sock *sk);
+bool tcp_synack_comp_enabled(const struct sock *sk,
+			     const struct inet_request_sock *ireq);
+void tcp_init_compression(struct sock *sk);
+void tcp_cleanup_compression(struct sock *sk);
+int tcp_comp_init(void);
+#else
+static inline bool tcp_syn_comp_enabled(const struct tcp_sock *tp)
+{
+	return false;
+}
+
+static inline bool tcp_synack_comp_enabled(const struct sock *sk,
+					   const struct inet_request_sock *ireq)
+{
+	return false;
+}
+
+static inline void tcp_init_compression(struct sock *sk)
+{
+}
+
+static inline void tcp_cleanup_compression(struct sock *sk)
+{
+}
+
+static inline int tcp_comp_init(void)
+{
+	return 0;
+}
+#endif
 
 #endif	/* _TCP_H */
