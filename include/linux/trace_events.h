@@ -186,6 +186,18 @@ int trace_output_call(struct trace_iterator *iter, char *name, char *fmt, ...);
 
 struct event_filter;
 
+#define STACK_FILTER_ADDR_MAP_SIZE 31
+
+struct stack_filter_addr_map {
+	struct hlist_head map[STACK_FILTER_ADDR_MAP_SIZE];
+	spinlock_t lock;
+};
+
+struct event_stack_filter {
+	struct list_head filters;
+	struct stack_filter_addr_map *addr_map;
+};
+
 enum trace_reg {
 	TRACE_REG_REGISTER,
 	TRACE_REG_UNREGISTER,
@@ -376,6 +388,7 @@ enum {
 	EVENT_FILE_FL_TRIGGER_COND_BIT,
 	EVENT_FILE_FL_PID_FILTER_BIT,
 	EVENT_FILE_FL_WAS_ENABLED_BIT,
+	EVENT_FILE_FL_STACK_FILTER_BIT,
 };
 
 extern struct trace_event_file *trace_get_event_file(const char *instance,
@@ -527,12 +540,16 @@ enum {
 	EVENT_FILE_FL_TRIGGER_COND	= (1 << EVENT_FILE_FL_TRIGGER_COND_BIT),
 	EVENT_FILE_FL_PID_FILTER	= (1 << EVENT_FILE_FL_PID_FILTER_BIT),
 	EVENT_FILE_FL_WAS_ENABLED	= (1 << EVENT_FILE_FL_WAS_ENABLED_BIT),
+	EVENT_FILE_FL_STACK_FILTER	= (1 << EVENT_FILE_FL_STACK_FILTER_BIT),
 };
 
 struct trace_event_file {
 	struct list_head		list;
 	struct trace_event_call		*event_call;
 	struct event_filter __rcu	*filter;
+#ifdef CONFIG_TRACE_EVENT_STACK_FILTER
+	struct event_stack_filter __rcu	*stack_filter;
+#endif
 	struct dentry			*dir;
 	struct trace_array		*tr;
 	struct trace_subsystem_dir	*system;
@@ -595,6 +612,27 @@ enum event_trigger_type {
 };
 
 extern int filter_match_preds(struct event_filter *filter, void *rec);
+
+#ifdef CONFIG_TRACE_EVENT_STACK_FILTER
+extern int stack_filter_match(struct event_stack_filter *stack_filter);
+
+static inline struct event_stack_filter *
+get_stack_filter(struct trace_event_file *file)
+{
+	return rcu_dereference(file->stack_filter);
+}
+#else
+static inline int stack_filter_match(struct event_stack_filter *stack_filter)
+{
+	return 1;
+}
+
+static inline struct event_stack_filter *
+get_stack_filter(struct trace_event_file *file)
+{
+	return NULL;
+}
+#endif
 
 extern enum event_trigger_type
 event_triggers_call(struct trace_event_file *file, void *rec,

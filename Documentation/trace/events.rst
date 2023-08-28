@@ -324,6 +324,89 @@ To add more PIDs without losing the PIDs already included, use '>>'.
 
 	# echo 123 244 1 >> set_event_pid
 
+5.5 Stack filters
+---------------------
+
+Trace events can be filtered by their call stacks.  There could exist
+various paths to tigger an trace event, but people sometimes only care
+about some of them.  Once the stack filter is set, call stack of the
+corresponding event will be compared with the stack filter.  An event
+with matched call stack will appear in the trace output and the rest will
+be discarded.
+
+5.5.1 Expression syntax
+------------------------
+
+Stack filters have the form (in regular expression style) below::
+  '!'?function('/'(function|'**'))*
+
+In the expression, '!' means negating the filter and '**' matches any
+call path (maybe empty).  The top of call stack will be ``stack_filter_match``,
+which means the call path will be something like ``**/stack_filter_match``,
+so we recommand that you add a '**' at the end of stack_filter, if you
+don't know the implementation details of trace system.
+
+Bottom of the call stack can be ignored, which means what
+``work_pending/do_notify_resume/schedule/__schedule/**`` matches can also
+be matched by ``do_notify_resume/schedule/__schedule/**``.
+
+A call stack is matched successfully if the following conditions are
+met simultaneously:
+[1] It matches any positive stack filter.
+[2] It doesn't match any negative stack filter.
+If no positive filter are set, condition 1 don't need to be satisified.
+
+5.5.2 Setting stack filters
+------------------------
+
+Stack filters are add by echo commands to 'stack_filter' file for a given
+event, and unset by echo 0 or blank string to the same file.
+
+Some usage examples:
+Set up a kprobe::
+  # echo 1 > /sys/kernel/tracing/options/stacktrace
+  # echo 'p alloc_pages' > /sys/kernel/tracing/kprobe_events
+
+The call stack contains ``do_sys_openat2``::
+  # echo 'do_sys_openat2/**' > \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+
+The call stack doesn't contain ``do_sys_openat2``::
+  # echo '!do_sys_openat2/**' > \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+
+The call stack contains ``do_sys_openat2`` or ``do_translation_fault``,
+but not ``el0_sync_handler``::
+  # echo 'do_sys_openat2/**' > \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+  # echo 'do_translation_fault/**' >> \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+  # echo '!el0_sync_handler/**' >> \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+
+The call stack contains ``el0_sync_handler -> el0_da``::
+  # echo 'el0_sync_handler/el0_da/**' > \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+
+The call stack contains ``el0_sync_handler -> ... -> do_page_fault``::
+  # echo 'el0_sync_handler/**/do_page_fault/**' > \
+  /sys/kernel/tracing/events/kprobes/p_alloc_pages_0/stack_filter
+
+Enable the kprobe event and check the trace log::
+  # echo 1 > /sys/kernel/tracing/events/kprobes/enable
+  # cat /sys/kernel/tracing/trace
+
+Another example::
+  # cd /sys/kernel/tracing/events/sched/sched_switch
+  # echo \
+  'work_pending/do_notify_resume/schedule/__schedule/**' > stack_filter
+  # echo \
+  '!ret_from_fork/**/kthread/worker_thread/schedule/**' >> stack_filter
+  # cat stack_filter
+
+Disable the stack filter::
+  # echo 0 > stack_filter
+  # echo > stack_filter
 
 6. Event triggers
 =================

@@ -2782,7 +2782,7 @@ trace_event_buffer_lock_reserve(struct trace_buffer **current_rb,
 	*current_rb = trace_file->tr->array_buffer.buffer;
 
 	if (!ring_buffer_time_stamp_abs(*current_rb) && (trace_file->flags &
-	     (EVENT_FILE_FL_SOFT_DISABLED | EVENT_FILE_FL_FILTERED)) &&
+	    (EVENT_FILE_FL_SOFT_DISABLED | EVENT_FILE_FL_FILTERED | EVENT_FILE_FL_STACK_FILTER)) &&
 	    (entry = this_cpu_read(trace_buffered_event))) {
 		/* Try to use the per cpu buffer first */
 		val = this_cpu_inc_return(trace_buffered_event_cnt);
@@ -2835,6 +2835,11 @@ static void output_printk(struct trace_event_buffer *fbuffer)
 	if (test_bit(EVENT_FILE_FL_SOFT_DISABLED_BIT, &file->flags) ||
 	    (unlikely(file->flags & EVENT_FILE_FL_FILTERED) &&
 	     !filter_match_preds(file->filter, fbuffer->entry)))
+		return;
+
+	if (IS_ENABLED(CONFIG_TRACE_EVENT_STACK_FILTER) &&
+	    unlikely(file->flags & EVENT_FILE_FL_STACK_FILTER) &&
+	    !stack_filter_match(get_stack_filter(file)))
 		return;
 
 	event = &fbuffer->trace_file->event_call->event;
