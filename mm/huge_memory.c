@@ -37,6 +37,9 @@
 #include <linux/page_owner.h>
 #include <linux/sched/sysctl.h>
 #include <linux/memory-tiers.h>
+#ifdef CONFIG_GMEM
+#include <linux/vm_object.h>
+#endif
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -656,6 +659,12 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 	pgtable_t pgtable;
 	unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
 	vm_fault_t ret = 0;
+#ifdef CONFIG_GMEM
+	gm_mapping_t *gm_mapping = NULL;
+
+	if (vma_is_peer_shared(vma))
+		gm_mapping = vm_object_lookup(vma->vm_obj, haddr);
+#endif
 
 	VM_BUG_ON_FOLIO(!folio_test_large(folio), folio);
 
@@ -663,7 +672,8 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		folio_put(folio);
 		count_vm_event(THP_FAULT_FALLBACK);
 		count_vm_event(THP_FAULT_FALLBACK_CHARGE);
-		return VM_FAULT_FALLBACK;
+		ret = VM_FAULT_FALLBACK;
+		goto gm_mapping_release;
 	}
 	folio_throttle_swaprate(folio, gfp);
 
@@ -673,7 +683,16 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		goto release;
 	}
 
+#ifdef CONFIG_GMEM
+	/*
+	 * gmem device overcommit needs to reload the swapped page,
+	 * so skip it to avoid clearing device data.
+	 */
+	if (!vma_is_peer_shared(vma) || !gm_mapping_cpu(gm_mapping))
+		clear_huge_page(page, vmf->address, HPAGE_PMD_NR);
+#else
 	clear_huge_page(page, vmf->address, HPAGE_PMD_NR);
+#endif
 	/*
 	 * The memory barrier inside __folio_mark_uptodate makes sure that
 	 * clear_huge_page writes become visible before the set_pmd_at()
@@ -698,7 +717,7 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 			pte_free(vma->vm_mm, pgtable);
 			ret = handle_userfault(vmf, VM_UFFD_MISSING);
 			VM_BUG_ON(ret & VM_FAULT_FALLBACK);
-			return ret;
+			goto gm_mapping_release;
 		}
 
 		entry = mk_huge_pmd(page, vma->vm_page_prot);
@@ -706,6 +725,14 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		folio_add_new_anon_rmap(folio, vma, haddr);
 		folio_add_lru_vma(folio, vma);
 		pgtable_trans_huge_deposit(vma->vm_mm, vmf->pmd, pgtable);
+#ifdef CONFIG_GMEM
+		if (vma_is_peer_shared(vma) && gm_mapping_device(gm_mapping)) {
+			vmf->page = page;
+			ret = gm_host_fault_locked(vmf, PE_SIZE_PMD);
+			if (ret)
+				goto unlock_release;
+		}
+#endif
 		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
 		update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PMD_NR);
@@ -713,6 +740,12 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		spin_unlock(vmf->ptl);
 		count_vm_event(THP_FAULT_ALLOC);
 		count_memcg_event_mm(vma->vm_mm, THP_FAULT_ALLOC);
+#ifdef CONFIG_GMEM
+		if (vma_is_peer_shared(vma)) {
+			set_gm_mapping_host(gm_mapping, page);
+			mutex_unlock(&gm_mapping->lock);
+		}
+#endif
 	}
 
 	return 0;
@@ -722,6 +755,11 @@ release:
 	if (pgtable)
 		pte_free(vma->vm_mm, pgtable);
 	folio_put(folio);
+gm_mapping_release:
+#ifdef CONFIG_GMEM
+	if (vma_is_peer_shared(vma))
+		mutex_unlock(&gm_mapping->lock);
+#endif
 	return ret;
 
 }
@@ -780,17 +818,41 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	gfp_t gfp;
-	struct folio *folio;
+	struct folio *folio = NULL;
 	unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
+	vm_fault_t ret = 0;
+#ifdef CONFIG_GMEM
+	gm_mapping_t *gm_mapping;
 
-	if (!transhuge_vma_suitable(vma, haddr))
-		return VM_FAULT_FALLBACK;
-	if (unlikely(anon_vma_prepare(vma)))
-		return VM_FAULT_OOM;
+	if (vma_is_peer_shared(vma)) {
+		xa_lock(vma->vm_obj->logical_page_table);
+		gm_mapping = vm_object_lookup(vma->vm_obj, haddr);
+		if (!gm_mapping) {
+			vm_object_mapping_create(vma->vm_obj, haddr);
+			gm_mapping = vm_object_lookup(vma->vm_obj, haddr);
+		}
+		xa_unlock(vma->vm_obj->logical_page_table);
+		mutex_lock(&gm_mapping->lock);
+		if (unlikely(!pmd_none(*vmf->pmd))) {
+			mutex_unlock(&gm_mapping->lock);
+			goto gm_mapping_release;
+		}
+	}
+#endif
+
+	if (!transhuge_vma_suitable(vma, haddr)) {
+		ret = VM_FAULT_FALLBACK;
+		goto gm_mapping_release;
+	}
+	if (unlikely(anon_vma_prepare(vma))) {
+		ret = VM_FAULT_OOM;
+		goto gm_mapping_release;
+	}
 	khugepaged_enter_vma(vma, vma->vm_flags);
 
 	if (!(vmf->flags & FAULT_FLAG_WRITE) &&
 			!mm_forbids_zeropage(vma->vm_mm) &&
+			!vma_is_peer_shared(vma) &&
 			transparent_hugepage_use_zero_page()) {
 		pgtable_t pgtable;
 		struct page *zero_page;
@@ -829,12 +891,32 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		return ret;
 	}
 	gfp = vma_thp_gfp_mask(vma);
+
+#ifdef CONFIG_GMEM
+	if (vma_is_peer_shared(vma) && gm_mapping_cpu(gm_mapping))
+		folio = page_folio(gm_mapping->page);
+	if (!folio) {
+		if (vma_is_peer_shared(vma))
+			gfp = GFP_TRANSHUGE;
+		folio = vma_alloc_folio(gfp, HPAGE_PMD_ORDER, vma, haddr, true);
+	}
+#else
 	folio = vma_alloc_folio(gfp, HPAGE_PMD_ORDER, vma, haddr, true);
+#endif
+
 	if (unlikely(!folio)) {
 		count_vm_event(THP_FAULT_FALLBACK);
-		return VM_FAULT_FALLBACK;
+		ret = VM_FAULT_FALLBACK;
+		goto gm_mapping_release;
 	}
 	return __do_huge_pmd_anonymous_page(vmf, &folio->page, gfp);
+
+gm_mapping_release:
+#ifdef CONFIG_GMEM
+	if (vma_is_peer_shared(vma))
+		mutex_unlock(&gm_mapping->lock);
+#endif
+	return ret;
 }
 
 static void insert_pfn_pmd(struct vm_area_struct *vma, unsigned long addr,

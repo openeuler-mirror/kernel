@@ -1716,7 +1716,11 @@ SYSCALL_DEFINE5(get_mempolicy, int __user *, policy,
 
 bool vma_migratable(struct vm_area_struct *vma)
 {
+#ifdef CONFIG_GMEM
+	if (vma->vm_flags & (VM_IO | VM_PFNMAP | VM_PEER_SHARED))
+#else
 	if (vma->vm_flags & (VM_IO | VM_PFNMAP))
+#endif
 		return false;
 
 	/*
