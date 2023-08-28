@@ -42,7 +42,11 @@
 
 #define DRIVER_VERSION	"2.2"
 
+#ifdef CONFIG_MICROCODE_HYGON
+static const struct microcode_ops	*microcode_ops;
+#else
 static struct microcode_ops	*microcode_ops;
+#endif
 static bool dis_ucode_ldr = true;
 
 bool initrd_gone;
@@ -129,7 +133,8 @@ static bool __init check_loader_disabled_bsp(void)
 	if (native_cpuid_ecx(1) & BIT(31))
 		return *res;
 
-	if (x86_cpuid_vendor() == X86_VENDOR_AMD) {
+	if (x86_cpuid_vendor() == X86_VENDOR_AMD ||
+	    x86_cpuid_vendor() == X86_VENDOR_HYGON) {
 		if (amd_check_current_patch_level())
 			return *res;
 	}
@@ -179,6 +184,10 @@ void __init load_ucode_bsp(void)
 		intel = false;
 		break;
 
+	case X86_VENDOR_HYGON:
+		intel = false;
+		break;
+
 	default:
 		return;
 	}
@@ -219,6 +228,9 @@ void load_ucode_ap(void)
 		if (x86_family(cpuid_1_eax) >= 0x10)
 			load_ucode_amd_ap(cpuid_1_eax);
 		break;
+	case X86_VENDOR_HYGON:
+		load_ucode_amd_ap(cpuid_1_eax);
+		break;
 	default:
 		break;
 	}
@@ -237,6 +249,9 @@ static int __init save_microcode_in_initrd(void)
 	case X86_VENDOR_AMD:
 		if (c->x86 >= 0x10)
 			ret = save_microcode_in_initrd_amd(cpuid_eax(1));
+		break;
+	case X86_VENDOR_HYGON:
+		ret = save_microcode_in_initrd_amd(cpuid_eax(1));
 		break;
 	default:
 		break;
@@ -330,6 +345,9 @@ void reload_early_microcode(void)
 	case X86_VENDOR_AMD:
 		if (family >= 0x10)
 			reload_ucode_amd();
+		break;
+	case X86_VENDOR_HYGON:
+		reload_ucode_amd();
 		break;
 	default:
 		break;
@@ -842,6 +860,8 @@ int __init microcode_init(void)
 		microcode_ops = init_intel_microcode();
 	else if (c->x86_vendor == X86_VENDOR_AMD)
 		microcode_ops = init_amd_microcode();
+	else if (c->x86_vendor == X86_VENDOR_HYGON)
+		microcode_ops = init_hygon_microcode();
 	else
 		pr_err("no support for this CPU vendor\n");
 
