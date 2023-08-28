@@ -628,6 +628,10 @@ void free_task(struct task_struct *tsk)
 	if (tsk->flags & PF_KTHREAD)
 		free_kthread_struct(tsk);
 	bpf_task_storage_free(tsk);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (dynamic_affinity_enabled())
+		sched_prefer_cpus_free(tsk);
+#endif
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -1134,6 +1138,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	 * the usage counts on the error path calling free_task.
 	 */
 	tsk->seccomp.filter = NULL;
+#endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	tsk->prefer_cpus = NULL;
 #endif
 
 	setup_thread_stack(tsk, orig);
@@ -2359,6 +2367,14 @@ __latent_entropy struct task_struct *copy_process(
 	ftrace_graph_init_task(p);
 
 	rt_mutex_init_task(p);
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (dynamic_affinity_enabled()) {
+		retval = sched_prefer_cpus_fork(p, current->prefer_cpus);
+		if (retval)
+			goto bad_fork_free;
+	}
+#endif
 
 	lockdep_assert_irqs_enabled();
 #ifdef CONFIG_PROVE_LOCKING

@@ -2055,6 +2055,17 @@ static struct ctl_table kern_table[] = {
 		.extra2		= SYSCTL_INT_MAX,
 	},
 #endif
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	{
+		.procname       = "sched_util_low_pct",
+		.data           = &sysctl_sched_util_low_pct,
+		.maxlen         = sizeof(sysctl_sched_util_low_pct),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE_HUNDRED,
+	},
+#endif
 	{ }
 };
 

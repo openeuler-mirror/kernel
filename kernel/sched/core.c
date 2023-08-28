@@ -11330,6 +11330,104 @@ static int __maybe_unused cpu_period_quota_parse(char *buf,
 	return 0;
 }
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+int sched_prefer_cpus_fork(struct task_struct *p, struct cpumask *mask)
+{
+	p->prefer_cpus = kmalloc(sizeof(cpumask_t), GFP_KERNEL);
+	if (!p->prefer_cpus)
+		return -ENOMEM;
+
+	if (mask)
+		cpumask_copy(p->prefer_cpus, mask);
+	else
+		cpumask_clear(p->prefer_cpus);
+
+	return 0;
+}
+
+void sched_prefer_cpus_free(struct task_struct *p)
+{
+	kfree(p->prefer_cpus);
+}
+
+static void do_set_prefer_cpus(struct task_struct *p,
+				const struct cpumask *new_mask)
+{
+	struct rq *rq = task_rq(p);
+	bool queued, running;
+
+	lockdep_assert_held(&p->pi_lock);
+
+	queued = task_on_rq_queued(p);
+	running = task_current(rq, p);
+
+	if (queued) {
+		/*
+		 * Because __kthread_bind() calls this on blocked tasks without
+		 * holding rq->lock.
+		 */
+		lockdep_assert_held(&rq->__lock);
+		dequeue_task(rq, p, DEQUEUE_SAVE | DEQUEUE_NOCLOCK);
+	}
+	if (running)
+		put_prev_task(rq, p);
+
+	cpumask_copy(p->prefer_cpus, new_mask);
+
+	if (queued)
+		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
+	if (running)
+		set_next_task(rq, p);
+}
+
+/*
+ * Change a given task's prefer CPU affinity. Prioritize migrate the thread to
+ * prefer cpus according to preferred bitmask.
+ *
+ * NOTE: the caller must have a valid reference to the task, the
+ * task must not exit() & deallocate itself prematurely. The
+ * call is not atomic; no spinlocks may be held.
+ */
+static int __set_prefer_cpus_ptr(struct task_struct *p,
+				 const struct cpumask *new_mask)
+{
+	struct rq_flags rf;
+	struct rq *rq;
+	int ret = 0;
+
+	if (!dynamic_affinity_enabled())
+		return -EPERM;
+
+	if (unlikely(!p->prefer_cpus))
+		return -EINVAL;
+
+	rq = task_rq_lock(p, &rf);
+	update_rq_clock(rq);
+
+	if (cpumask_equal(p->prefer_cpus, new_mask))
+		goto out;
+
+	if (!cpumask_subset(new_mask, p->cpus_ptr)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	do_set_prefer_cpus(p, new_mask);
+out:
+	task_rq_unlock(rq, p, &rf);
+
+	return ret;
+}
+
+int set_prefer_cpus_ptr(struct task_struct *p, const struct cpumask *new_mask)
+{
+	if (p->sched_class != &fair_sched_class)
+		return 0;
+
+	return __set_prefer_cpus_ptr(p, new_mask);
+}
+#endif
+
 #ifdef CONFIG_CFS_BANDWIDTH
 static int cpu_max_show(struct seq_file *sf, void *v)
 {
