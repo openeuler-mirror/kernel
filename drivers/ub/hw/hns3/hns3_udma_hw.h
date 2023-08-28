@@ -29,6 +29,11 @@ struct udma_query_fw_info {
 	uint32_t rsv[5];
 };
 
+struct udma_func_clear {
+	uint32_t rst_funcid_en;
+	uint32_t func_done;
+	uint32_t rsv[4];
+};
 
 struct udma_pf_func_info {
 	uint32_t own_func_num;
@@ -104,6 +109,11 @@ struct udma_query_oor_cmq {
 /* Fields of UDMA_OPC_CFG_GLOBAL_PARAM */
 #define CFG_GLOBAL_PARAM_1US_CYCLES CMQ_REQ_FIELD_LOC(9, 0)
 #define CFG_GLOBAL_PARAM_UDP_PORT CMQ_REQ_FIELD_LOC(31, 16)
+
+#define FUNC_CLEAR_RST_FUN_DONE_S 0
+#define UDMA_FUNC_CLEAR_TIMEOUT_MSECS	(249 * 2 * 100)
+#define UDMA_READ_FUNC_CLEAR_FLAG_INTERVAL	40
+#define UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT	20
 
 #define UDMA_FUNC_IRQ_RSV 2
 #define UDMA_1US_CFG 999
@@ -204,6 +214,7 @@ enum udma_opcode_type {
 	UDMA_OPC_POST_MB				= 0x8504,
 	UDMA_OPC_QUERY_MB_ST				= 0x8505,
 	UDMA_OPC_CFG_BT_ATTR				= 0x8506,
+	UDMA_OPC_FUNC_CLEAR				= 0x8508,
 	UDMA_OPC_CLEAR_EXTDB_LIST_INFO			= 0x850d,
 	UDMA_OPC_QUERY_VF_RES				= 0x850e,
 	UDMA_OPC_CFG_GMV_BT				= 0x8510,

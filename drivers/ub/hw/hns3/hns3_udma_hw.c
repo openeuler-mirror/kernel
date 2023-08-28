@@ -1110,6 +1110,74 @@ static int udma_hw_set_eid(struct udma_dev *udma_dev, union ubcore_eid eid)
 	return ret;
 }
 
+static void __udma_function_clear(struct udma_dev *udma_dev, int vf_id)
+{
+	struct udma_func_clear *resp;
+	struct udma_cmq_desc desc;
+	uint64_t end;
+	int ret = 0;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_FUNC_CLEAR, false);
+	resp = (struct udma_func_clear *)desc.data;
+	resp->rst_funcid_en = cpu_to_le32(vf_id);
+
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_err(udma_dev->dev, "Func clear write failed, ret = %d.\n",
+			ret);
+		return;
+	}
+
+	msleep(UDMA_READ_FUNC_CLEAR_FLAG_INTERVAL);
+	end = UDMA_FUNC_CLEAR_TIMEOUT_MSECS;
+	while (end) {
+		msleep(UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT);
+		end -= UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT;
+
+		udma_cmq_setup_basic_desc(&desc, UDMA_OPC_FUNC_CLEAR,
+					  true);
+
+		resp->rst_funcid_en = cpu_to_le32(vf_id);
+		ret = udma_cmq_send(udma_dev, &desc, 1);
+		if (ret)
+			continue;
+
+		if (udma_get_bit(resp->func_done, FUNC_CLEAR_RST_FUN_DONE_S)) {
+			if (vf_id == 0)
+				udma_dev->is_reset = true;
+			return;
+		}
+	}
+}
+
+static void udma_free_vf_resource(struct udma_dev *udma_dev, int vf_id)
+{
+	enum udma_opcode_type opcode = UDMA_OPC_ALLOC_VF_RES;
+	struct udma_cmq_desc desc[2];
+	struct udma_cmq_req *req_a;
+
+	req_a = (struct udma_cmq_req *)desc[0].data;
+	udma_cmq_setup_basic_desc(&desc[0], opcode, false);
+	desc[0].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	udma_cmq_setup_basic_desc(&desc[1], opcode, false);
+	udma_reg_write(req_a, FUNC_RES_A_VF_ID, vf_id);
+	udma_cmq_send(udma_dev, desc, 2);
+}
+
+static void udma_function_clear(struct udma_dev *udma_dev)
+{
+	int i;
+
+	if (udma_dev->cmd.state == UDMA_CMDQ_STATE_FATAL_ERR)
+		return;
+
+	for (i = udma_dev->func_num - 1; i >= 0; i--) {
+		__udma_function_clear(udma_dev, i);
+		if (i != 0)
+			udma_free_vf_resource(udma_dev, i);
+	}
+}
+
 static void config_llm_table(struct udma_buf *data_buf, void *cfg_buf)
 {
 	uint64_t *entry = (uint64_t *)cfg_buf;
@@ -1359,6 +1427,8 @@ err_clear_extdb_failed:
 
 static void udma_hw_exit(struct udma_dev *udma_dev)
 {
+	udma_function_clear(udma_dev);
+
 	udma_free_link_table(udma_dev);
 
 	put_hem_table(udma_dev);
