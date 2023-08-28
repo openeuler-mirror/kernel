@@ -1560,7 +1560,8 @@ static noinline void __init kernel_init_freeable(void)
 
 	rcu_init_tasks_generic();
 	do_pre_smp_initcalls();
-	lockup_detector_init();
+	if (disable_sdei_nmi_watchdog)
+		lockup_detector_init();
 
 	smp_init();
 	sched_init_smp();
@@ -1569,6 +1570,10 @@ static noinline void __init kernel_init_freeable(void)
 	page_alloc_init_late();
 
 	do_basic_setup();
+
+	/* sdei_watchdog needs to be initialized after sdei_init */
+	if (!disable_sdei_nmi_watchdog)
+		lockup_detector_init();
 
 	kunit_run_all_tests();
 

@@ -7,7 +7,7 @@
 
 #include <linux/sched.h>
 #include <asm/irq.h>
-#if defined(CONFIG_HAVE_NMI_WATCHDOG)
+#if defined(CONFIG_HAVE_NMI_WATCHDOG) && !defined(CONFIG_SDEI_WATCHDOG)
 #include <asm/nmi.h>
 #endif
 
@@ -83,6 +83,7 @@ static inline void reset_hung_task_detector(void) { }
 
 #if defined(CONFIG_HARDLOCKUP_DETECTOR)
 extern void hardlockup_detector_disable(void);
+extern void watchdog_hardlockup_check(struct pt_regs *regs);
 extern unsigned int hardlockup_panic;
 #else
 static inline void hardlockup_detector_disable(void) {}
@@ -94,8 +95,17 @@ static inline void hardlockup_detector_disable(void) {}
 # define NMI_WATCHDOG_SYSCTL_PERM	0444
 #endif
 
-#if defined(CONFIG_HARDLOCKUP_DETECTOR_PERF)
+#if defined(CONFIG_HARDLOCKUP_DETECTOR)
+#ifndef CONFIG_PPC
 extern void arch_touch_nmi_watchdog(void);
+#endif
+#else
+# if !defined(CONFIG_HAVE_NMI_WATCHDOG)
+static inline void arch_touch_nmi_watchdog(void) {}
+# endif
+#endif
+
+#if defined(CONFIG_HARDLOCKUP_DETECTOR_PERF)
 extern void hardlockup_detector_perf_stop(void);
 extern void hardlockup_detector_perf_restart(void);
 extern void hardlockup_detector_perf_disable(void);
@@ -110,7 +120,6 @@ static inline void hardlockup_detector_perf_enable(void) { }
 static inline void hardlockup_detector_perf_cleanup(void) { }
 # if !defined(CONFIG_HAVE_NMI_WATCHDOG)
 static inline int hardlockup_detector_perf_init(void) { return -ENODEV; }
-static inline void arch_touch_nmi_watchdog(void) {}
 # else
 static inline int hardlockup_detector_perf_init(void) { return 0; }
 # endif
@@ -195,6 +204,7 @@ u64 hw_nmi_get_sample_period(int watchdog_thresh);
 #if defined(CONFIG_HARDLOCKUP_CHECK_TIMESTAMP) && \
     defined(CONFIG_HARDLOCKUP_DETECTOR)
 void watchdog_update_hrtimer_threshold(u64 period);
+void refresh_hld_last_timestamp(void);
 #else
 static inline void watchdog_update_hrtimer_threshold(u64 period) { }
 #endif
@@ -216,6 +226,14 @@ void nmi_backtrace_stall_check(const struct cpumask *btp);
 #else
 static inline void nmi_backtrace_stall_snap(const struct cpumask *btp) {}
 static inline void nmi_backtrace_stall_check(const struct cpumask *btp) {}
+#endif
+
+#ifdef CONFIG_SDEI_WATCHDOG
+void sdei_watchdog_clear_eoi(void);
+extern bool disable_sdei_nmi_watchdog;
+#else
+static inline void sdei_watchdog_clear_eoi(void) { }
+#define disable_sdei_nmi_watchdog 1
 #endif
 
 #endif
