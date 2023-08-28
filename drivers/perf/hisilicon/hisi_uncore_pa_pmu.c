@@ -22,14 +22,15 @@
 #define PA_TT_CTRL			0x1c08
 #define PA_TGTID_CTRL			0x1c14
 #define PA_SRCID_CTRL			0x1c18
+
 /* H32 PA interrupt registers */
 #define PA_INT_MASK			0x1c70
 #define PA_INT_STATUS			0x1c78
 #define PA_INT_CLEAR			0x1c7c
-/* H60 PA interrupt registers */
+
 #define H60PA_INT_STATUS		0x1c70
 #define H60PA_INT_MASK			0x1c74
-/* End interrupt registers */
+
 #define PA_EVENT_TYPE0			0x1c80
 #define PA_PMU_VERSION			0x1cf0
 #define PA_EVENT_CNT0_L			0x1d00
@@ -52,9 +53,9 @@ HISI_PMU_EVENT_ATTR_EXTRACTOR(srcid_msk, config1, 43, 33);
 HISI_PMU_EVENT_ATTR_EXTRACTOR(tracetag_en, config1, 44, 44);
 
 struct hisi_pa_pmu_int_regs {
-	u32 mask;
-	u32 clear;
-	u32 status;
+	u32 mask_offset;
+	u32 clear_offset;
+	u32 status_offset;
 };
 
 static void hisi_pa_pmu_enable_tracetag(struct perf_event *event)
@@ -230,51 +231,44 @@ static void hisi_pa_pmu_disable_counter(struct hisi_pmu *pa_pmu,
 static void hisi_pa_pmu_enable_counter_int(struct hisi_pmu *pa_pmu,
 					   struct hw_perf_event *hwc)
 {
-	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->present;
+	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->private;
 	u32 val;
 
 	/* Write 0 to enable interrupt */
-	val = readl(pa_pmu->base + regs->mask);
+	val = readl(pa_pmu->base + regs->mask_offset);
 	val &= ~(1 << hwc->idx);
-	writel(val, pa_pmu->base + regs->mask);
+	writel(val, pa_pmu->base + regs->mask_offset);
 }
 
 static void hisi_pa_pmu_disable_counter_int(struct hisi_pmu *pa_pmu,
 					    struct hw_perf_event *hwc)
 {
-	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->present;
+	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->private;
 	u32 val;
 
 	/* Write 1 to mask interrupt */
-	val = readl(pa_pmu->base + regs->mask);
+	val = readl(pa_pmu->base + regs->mask_offset);
 	val |= 1 << hwc->idx;
-	writel(val, pa_pmu->base + regs->mask);
+	writel(val, pa_pmu->base + regs->mask_offset);
 }
 
 static u32 hisi_pa_pmu_get_int_status(struct hisi_pmu *pa_pmu)
 {
-	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->present;
+	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->private;
 
-	return readl(pa_pmu->base + regs->status);
+	return readl(pa_pmu->base + regs->status_offset);
 }
 
 static void hisi_pa_pmu_clear_int_status(struct hisi_pmu *pa_pmu, int idx)
 {
-	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->present;
+	struct hisi_pa_pmu_int_regs *regs = pa_pmu->dev_info->private;
 
-	writel(1 << idx, pa_pmu->base + regs->clear);
+	writel(1 << idx, pa_pmu->base + regs->clear_offset);
 }
 
 static int hisi_pa_pmu_init_data(struct platform_device *pdev,
 				   struct hisi_pmu *pa_pmu)
 {
-	const struct hisi_pmu_dev_info *pa_pmu_info;
-	int idx;
-
-	pa_pmu_info = device_get_match_data(&pdev->dev);
-	if (!pa_pmu_info)
-		return -ENODEV;
-
 	/*
 	 * As PA PMU is in a SICL, use the SICL_ID and the index ID
 	 * to identify the PA PMU.
@@ -294,6 +288,10 @@ static int hisi_pa_pmu_init_data(struct platform_device *pdev,
 	pa_pmu->ccl_id = -1;
 	pa_pmu->sccl_id = -1;
 
+	pa_pmu->dev_info = device_get_match_data(&pdev->dev);
+	if (!pa_pmu->dev_info)
+		return -ENODEV;
+
 	pa_pmu->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(pa_pmu->base)) {
 		dev_err(&pdev->dev, "ioremap failed for pa_pmu resource.\n");
@@ -301,11 +299,6 @@ static int hisi_pa_pmu_init_data(struct platform_device *pdev,
 	}
 
 	pa_pmu->identifier = readl(pa_pmu->base + PA_PMU_VERSION);
-
-	idx = hisi_uncore_pmu_ver2idx(pa_pmu);
-	pa_pmu->dev_info = &pa_pmu_info[idx];
-	if (!pa_pmu->dev_info || !pa_pmu->dev_info->name)
-		return -EINVAL;
 
 	return 0;
 }
@@ -382,8 +375,14 @@ static struct attribute *hisi_pa_pmu_identifier_attrs[] = {
 	NULL
 };
 
-static const struct attribute_group hisi_pa_pmu_identifier_group = {
+static struct attribute_group hisi_pa_pmu_identifier_group = {
 	.attrs = hisi_pa_pmu_identifier_attrs,
+};
+
+static struct hisi_pa_pmu_int_regs hisi_pa_pmu_regs = {
+	.mask_offset = PA_INT_MASK,
+	.clear_offset = PA_INT_CLEAR,
+	.status_offset = PA_INT_STATUS,
 };
 
 static const struct attribute_group *hisi_pa_pmu_v2_attr_groups[] = {
@@ -394,6 +393,12 @@ static const struct attribute_group *hisi_pa_pmu_v2_attr_groups[] = {
 	NULL
 };
 
+static const struct hisi_pmu_dev_info hisi_h32pa_v2 = {
+	.name = "pa",
+	.attr_groups = hisi_pa_pmu_v2_attr_groups,
+	.private = &hisi_pa_pmu_regs,
+};
+
 static const struct attribute_group *hisi_pa_pmu_v3_attr_groups[] = {
 	&hisi_pa_pmu_v2_format_group,
 	&hisi_pa_pmu_v3_events_group,
@@ -402,24 +407,16 @@ static const struct attribute_group *hisi_pa_pmu_v3_attr_groups[] = {
 	NULL
 };
 
-static struct hisi_pa_pmu_int_regs hisi_pa_pmu_regs = {
-	.mask = PA_INT_MASK,
-	.clear = PA_INT_CLEAR,
-	.status = PA_INT_STATUS,
+static const struct hisi_pmu_dev_info hisi_h32pa_v3 = {
+	.name = "pa",
+	.attr_groups = hisi_pa_pmu_v3_attr_groups,
+	.private = &hisi_pa_pmu_regs,
 };
 
-static const struct hisi_pmu_dev_info hisi_h32pa[] = {
-	[1] = {
-		.name = "pa",
-		.attr_groups = hisi_pa_pmu_v2_attr_groups,
-		.present = &hisi_pa_pmu_regs,
-	},
-	[2] = {
-		.name = "pa",
-		.attr_groups = hisi_pa_pmu_v3_attr_groups,
-		.present = &hisi_pa_pmu_regs,
-	},
-	{}
+static struct hisi_pa_pmu_int_regs hisi_h60pa_pmu_regs = {
+	.mask_offset = H60PA_INT_MASK,
+	.clear_offset = H60PA_INT_STATUS, /* Clear on write */
+	.status_offset = H60PA_INT_STATUS,
 };
 
 static const struct attribute_group *hisi_h60pa_pmu_attr_groups[] = {
@@ -430,19 +427,10 @@ static const struct attribute_group *hisi_h60pa_pmu_attr_groups[] = {
 	NULL
 };
 
-static struct hisi_pa_pmu_int_regs hisi_h60pa_pmu_regs = {
-	.mask = H60PA_INT_MASK,
-	.clear = H60PA_INT_STATUS, /* Clear on write */
-	.status = H60PA_INT_STATUS,
-};
-
-static const struct hisi_pmu_dev_info hisi_h60pa[] = {
-	[1] = {
-		.name = "h60pa",
-		.attr_groups = hisi_h60pa_pmu_attr_groups,
-		.present = &hisi_h60pa_pmu_regs,
-	},
-	{}
+static const struct hisi_pmu_dev_info hisi_h60pa = {
+	.name = "h60pa",
+	.attr_groups = hisi_h60pa_pmu_attr_groups,
+	.private = &hisi_h60pa_pmu_regs,
 };
 
 static const struct hisi_uncore_ops hisi_uncore_pa_ops = {
@@ -537,8 +525,9 @@ static int hisi_pa_pmu_remove(struct platform_device *pdev)
 }
 
 static const struct acpi_device_id hisi_pa_pmu_acpi_match[] = {
-	{ "HISI0273", (kernel_ulong_t)hisi_h32pa },
-	{ "HISI0274", (kernel_ulong_t)hisi_h60pa },
+	{ "HISI0273", (kernel_ulong_t)&hisi_h32pa_v2 },
+	{ "HISI0275", (kernel_ulong_t)&hisi_h32pa_v3 },
+	{ "HISI0274", (kernel_ulong_t)&hisi_h60pa },
 	{}
 };
 MODULE_DEVICE_TABLE(acpi, hisi_pa_pmu_acpi_match);
