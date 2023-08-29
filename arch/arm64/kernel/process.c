@@ -597,7 +597,7 @@ unsigned long arch_align_stack(unsigned long sp)
 	return sp & ~0xf;
 }
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 int compat_elf_check_arch(const struct elf32_hdr *hdr)
 {
 	if (!system_supports_32bit_el0())
