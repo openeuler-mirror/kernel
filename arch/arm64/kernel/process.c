@@ -159,7 +159,7 @@ static void print_pstate(struct pt_regs *regs)
 {
 	u64 pstate = regs->pstate;
 
-	if (compat_user_mode(regs)) {
+	if (a32_user_mode(regs)) {
 		printk("pstate: %08llx (%c%c%c%c %c %s %s %c%c%c %cDIT %cSSBS)\n",
 			pstate,
 			pstate & PSR_AA32_N_BIT ? 'N' : 'n',
@@ -202,7 +202,7 @@ void __show_regs(struct pt_regs *regs)
 	int i, top_reg;
 	u64 lr, sp;
 
-	if (compat_user_mode(regs)) {
+	if (a32_user_mode(regs)) {
 		lr = regs->compat_lr;
 		sp = regs->compat_sp;
 		top_reg = 12;

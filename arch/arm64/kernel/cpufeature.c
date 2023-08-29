@@ -2810,7 +2810,7 @@ static bool compat_has_neon(const struct arm64_cpu_capabilities *cap, int scope)
 }
 #endif
 
-static const struct arm64_cpu_capabilities compat_elf_hwcaps[] = {
+static const struct arm64_cpu_capabilities a32_elf_hwcaps[] = {
 #ifdef CONFIG_AARCH32_EL0
 	HWCAP_CAP_MATCH(compat_has_neon, CAP_COMPAT_HWCAP, COMPAT_HWCAP_NEON),
 	HWCAP_CAP(MVFR1_EL1, SIMDFMAC, IMP, CAP_COMPAT_HWCAP, COMPAT_HWCAP_VFPv4),
@@ -3067,7 +3067,7 @@ static void verify_local_elf_hwcaps(void)
 	__verify_local_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (id_aa64pfr0_32bit_el0(read_cpuid(ID_AA64PFR0_EL1)))
-		__verify_local_elf_hwcaps(compat_elf_hwcaps);
+		__verify_local_elf_hwcaps(a32_elf_hwcaps);
 }
 
 static void verify_sve_features(void)
@@ -3267,7 +3267,7 @@ void __init setup_cpu_features(void)
 	setup_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (system_supports_32bit_el0()) {
-		setup_elf_hwcaps(compat_elf_hwcaps);
+		setup_elf_hwcaps(a32_elf_hwcaps);
 		elf_hwcap_fixup();
 	}
 
@@ -3318,7 +3318,7 @@ static int enable_mismatched_32bit_el0(unsigned int cpu)
 	lucky_winner = cpu_32bit ? cpu : cpumask_any_and(cpu_32bit_el0_mask,
 							 cpu_active_mask);
 	get_cpu_device(lucky_winner)->offline_disabled = true;
-	setup_elf_hwcaps(compat_elf_hwcaps);
+	setup_elf_hwcaps(a32_elf_hwcaps);
 	elf_hwcap_fixup();
 	pr_info("Asymmetric 32-bit EL0 support detected on CPU %u; CPU hot-unplug disabled on CPU %u\n",
 		cpu, lucky_winner);
@@ -3422,7 +3422,7 @@ bool try_emulate_mrs(struct pt_regs *regs, u32 insn)
 {
 	u32 sys_reg, rt;
 
-	if (compat_user_mode(regs) || !aarch64_insn_is_mrs(insn))
+	if (a32_user_mode(regs) || !aarch64_insn_is_mrs(insn))
 		return false;
 
 	/*

@@ -233,7 +233,7 @@ fault:
 static bool try_emulate_swp(struct pt_regs *regs, u32 insn)
 {
 	/* SWP{B} only exists in ARM state and does not exist in Thumb */
-	if (!compat_user_mode(regs) || compat_thumb_mode(regs))
+	if (!a32_user_mode(regs) || a32_thumb_mode(regs))
 		return false;
 
 	if ((insn & 0x0fb00ff0) != 0x01000090)
@@ -315,7 +315,7 @@ static int cp15_barrier_set_hw_mode(bool enable)
 
 static bool try_emulate_cp15_barrier(struct pt_regs *regs, u32 insn)
 {
-	if (!compat_user_mode(regs) || compat_thumb_mode(regs))
+	if (!a32_user_mode(regs) || a32_thumb_mode(regs))
 		return false;
 
 	if ((insn & 0x0fff0fdf) == 0x0e070f9a)
@@ -348,7 +348,7 @@ static int setend_set_hw_mode(bool enable)
 	return 0;
 }
 
-static int compat_setend_handler(struct pt_regs *regs, u32 big_endian)
+static int __a32_setend_handler(struct pt_regs *regs, u32 big_endian)
 {
 	char *insn;
 
@@ -371,25 +371,25 @@ static int compat_setend_handler(struct pt_regs *regs, u32 big_endian)
 
 static int a32_setend_handler(struct pt_regs *regs, u32 instr)
 {
-	int rc = compat_setend_handler(regs, (instr >> 9) & 1);
+	int rc = __a32_setend_handler(regs, (instr >> 9) & 1);
 	arm64_skip_faulting_instruction(regs, 4);
 	return rc;
 }
 
 static int t16_setend_handler(struct pt_regs *regs, u32 instr)
 {
-	int rc = compat_setend_handler(regs, (instr >> 3) & 1);
+	int rc = __a32_setend_handler(regs, (instr >> 3) & 1);
 	arm64_skip_faulting_instruction(regs, 2);
 	return rc;
 }
 
 static bool try_emulate_setend(struct pt_regs *regs, u32 insn)
 {
-	if (compat_thumb_mode(regs) &&
+	if (a32_thumb_mode(regs) &&
 	    (insn & 0xfffffff7) == 0x0000b650)
 		return t16_setend_handler(regs, insn) == 0;
 
-	if (compat_user_mode(regs) &&
+	if (a32_user_mode(regs) &&
 	    (insn & 0xfffffdff) == 0xf1010000)
 		return a32_setend_handler(regs, insn) == 0;
 

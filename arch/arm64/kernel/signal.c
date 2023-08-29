@@ -1163,7 +1163,7 @@ static int setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
 static void setup_restart_syscall(struct pt_regs *regs)
 {
 	if (is_compat_task())
-		compat_setup_restart_syscall(regs);
+		a32_setup_restart_syscall(regs);
 	else
 		regs->regs[8] = __NR_restart_syscall;
 }
@@ -1184,9 +1184,9 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	 */
 	if (is_compat_task()) {
 		if (ksig->ka.sa.sa_flags & SA_SIGINFO)
-			ret = compat_setup_rt_frame(usig, ksig, oldset, regs);
+			ret = a32_setup_rt_frame(usig, ksig, oldset, regs);
 		else
-			ret = compat_setup_frame(usig, ksig, oldset, regs);
+			ret = a32_setup_frame(usig, ksig, oldset, regs);
 	} else {
 		ret = setup_rt_frame(usig, ksig, oldset, regs);
 	}
@@ -1221,7 +1221,7 @@ static void do_signal(struct pt_regs *regs)
 	 */
 	if (syscall) {
 		continue_addr = regs->pc;
-		restart_addr = continue_addr - (compat_thumb_mode(regs) ? 2 : 4);
+		restart_addr = continue_addr - (a32_thumb_mode(regs) ? 2 : 4);
 		retval = regs->regs[0];
 
 		/*
