@@ -42,6 +42,7 @@ obj-$(CONFIG_AARCH32_EL0)			+= sigreturn32.o
 obj-$(CONFIG_COMPAT_ALIGNMENT_FIXUPS)	+= compat_alignment.o
 obj-$(CONFIG_KUSER_HELPERS)		+= kuser32.o
 obj-$(CONFIG_ARM64_ILP32)		+= binfmt_ilp32.o
+obj-$(CONFIG_COMPAT)			+= sys32_common.o
 obj-$(CONFIG_FUNCTION_TRACER)		+= ftrace.o entry-ftrace.o
 obj-$(CONFIG_MODULES)			+= module.o
 obj-$(CONFIG_ARM64_MODULE_PLTS)		+= module-plts.o
