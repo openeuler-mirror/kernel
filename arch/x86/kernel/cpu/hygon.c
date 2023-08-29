@@ -78,16 +78,25 @@ static void hygon_get_topology(struct cpuinfo_x86 *c)
 		if (smp_num_siblings > 1)
 			c->x86_max_cores /= smp_num_siblings;
 
-		/*
-		 * In case leaf B is available, use it to derive
-		 * topology information.
-		 */
-		err = detect_extended_topology(c);
-		if (!err)
-			c->x86_coreid_bits = get_count_order(c->x86_max_cores);
-
-		/* Socket ID is ApicId[6] for these processors. */
-		c->phys_proc_id = c->apicid >> APICID_SOCKET_ID_BIT;
+		if (c->x86_model < 0x4 &&
+		    !boot_cpu_has(X86_FEATURE_HYPERVISOR)) {
+			/*
+			 * Socket ID is ApicId[6] for the processors with
+			 * model < 0x4 when running on host.
+			 */
+			c->phys_proc_id = c->apicid >> APICID_SOCKET_ID_BIT;
+		} else {
+			/*
+			 * In case leaf 0xB is available, use it to derive
+			 * topology information.
+			 */
+			err = detect_extended_topology(c);
+			if (!err) {
+				c->x86_coreid_bits =
+					get_count_order(c->x86_max_cores);
+				__max_die_per_package = nodes_per_socket;
+			}
+		}
 
 		cacheinfo_hygon_init_llc_id(c, cpu);
 	} else if (cpu_has(c, X86_FEATURE_NODEID_MSR)) {

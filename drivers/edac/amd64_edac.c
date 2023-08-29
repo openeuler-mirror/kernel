@@ -96,6 +96,17 @@ int __amd64_write_pci_cfg_dword(struct pci_dev *pdev, int offset,
 	return err;
 }
 
+static u32 get_umc_base_f18h_m4h(u16 node, u8 channel)
+{
+	struct pci_dev *f3 = node_to_amd_nb(node)->misc;
+	u8 df_id;
+
+	get_df_id(f3, &df_id);
+	df_id -= 4;
+
+	return get_umc_base(channel) + (0x80000000 + (0x10000000 * df_id));
+}
+
 /*
  * Select DCT to which PCI cfg accesses are routed
  */
@@ -1067,13 +1078,21 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 	ctx.nid = nid;
 	ctx.inst_id = umc;
 
-	/* Read D18F0x1B4 (DramOffset), check if base 1 is used. */
-	if (df_indirect_read_instance(nid, 0, 0x1B4, umc, &ctx.tmp))
+	/* Read DramOffset, check if base 1 is used. */
+	if (hygon_f18h_m4h() &&
+	    df_indirect_read_instance(nid, 0, 0x214, umc, &ctx.tmp))
+		goto out_err;
+	else if (df_indirect_read_instance(nid, 0, 0x1B4, umc, &ctx.tmp))
 		goto out_err;
 
 	/* Remove HiAddrOffset from normalized address, if enabled: */
 	if (ctx.tmp & BIT(0)) {
-		u64 hi_addr_offset = (ctx.tmp & GENMASK_ULL(31, 20)) << 8;
+		u64 hi_addr_offset;
+
+		if (hygon_f18h_m4h())
+			hi_addr_offset = (ctx.tmp & GENMASK_ULL(31, 18)) << 8;
+		else
+			hi_addr_offset = (ctx.tmp & GENMASK_ULL(31, 20)) << 8;
 
 		if (norm_addr >= hi_addr_offset) {
 			ctx.ret_addr -= hi_addr_offset;
@@ -1092,6 +1111,9 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 		goto out_err;
 	}
 
+	intlv_num_sockets = 0;
+	if (hygon_f18h_m4h())
+		intlv_num_sockets = (ctx.tmp >> 2) & 0x3;
 	lgcy_mmio_hole_en = ctx.tmp & BIT(1);
 	intlv_num_chan	  = (ctx.tmp >> 4) & 0xF;
 	intlv_addr_sel	  = (ctx.tmp >> 8) & 0x7;
@@ -1108,7 +1130,8 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 	if (df_indirect_read_instance(nid, 0, 0x114 + (8 * base), umc, &ctx.tmp))
 		goto out_err;
 
-	intlv_num_sockets = (ctx.tmp >> 8) & 0x1;
+	if (!hygon_f18h_m4h())
+		intlv_num_sockets = (ctx.tmp >> 8) & 0x1;
 	intlv_num_dies	  = (ctx.tmp >> 10) & 0x3;
 	dram_limit_addr	  = ((ctx.tmp & GENMASK_ULL(31, 12)) << 16) | GENMASK_ULL(27, 0);
 
@@ -1118,6 +1141,10 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 	switch (intlv_num_chan) {
 	case 0:	intlv_num_chan = 0; break;
 	case 1: intlv_num_chan = 1; break;
+	case 2:
+		if (hygon_f18h_m4h())
+			intlv_num_chan = 2;
+		break;
 	case 3: intlv_num_chan = 2; break;
 	case 5:	intlv_num_chan = 3; break;
 	case 7:	intlv_num_chan = 4; break;
@@ -1144,8 +1171,9 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 	/* Add a bit if sockets are interleaved. */
 	num_intlv_bits += intlv_num_sockets;
 
-	/* Assert num_intlv_bits <= 4 */
-	if (num_intlv_bits > 4) {
+	/* Assert num_intlv_bits in the correct range. */
+	if ((hygon_f18h_m4h() && num_intlv_bits > 7) ||
+	    (!hygon_f18h_m4h() && num_intlv_bits > 4)) {
 		pr_err("%s: Invalid interleave bits %d.\n",
 			__func__, num_intlv_bits);
 		goto out_err;
@@ -1164,7 +1192,10 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 		if (df_indirect_read_instance(nid, 0, 0x50, umc, &ctx.tmp))
 			goto out_err;
 
-		cs_fabric_id = (ctx.tmp >> 8) & 0xFF;
+		if (hygon_f18h_m4h())
+			cs_fabric_id = (ctx.tmp >> 8) & 0x7FF;
+		else
+			cs_fabric_id = (ctx.tmp >> 8) & 0xFF;
 		die_id_bit   = 0;
 
 		/* If interleaved over more than 1 channel: */
@@ -1184,8 +1215,13 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 		/* If interleaved over more than 1 die. */
 		if (intlv_num_dies) {
 			sock_id_bit  = die_id_bit + intlv_num_dies;
-			die_id_shift = (ctx.tmp >> 24) & 0xF;
-			die_id_mask  = (ctx.tmp >> 8) & 0xFF;
+			if (hygon_f18h_m4h()) {
+				die_id_shift = (ctx.tmp >> 12) & 0xF;
+				die_id_mask  = ctx.tmp & 0x7FF;
+			} else {
+				die_id_shift = (ctx.tmp >> 24) & 0xF;
+				die_id_mask  = (ctx.tmp >> 8) & 0xFF;
+			}
 
 			cs_id |= ((cs_fabric_id & die_id_mask) >> die_id_shift) << die_id_bit;
 		}
@@ -1193,7 +1229,10 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 		/* If interleaved over more than 1 socket. */
 		if (intlv_num_sockets) {
 			socket_id_shift	= (ctx.tmp >> 28) & 0xF;
-			socket_id_mask	= (ctx.tmp >> 16) & 0xFF;
+			if (hygon_f18h_m4h())
+				socket_id_mask	= (ctx.tmp >> 16) & 0x7FF;
+			else
+				socket_id_mask	= (ctx.tmp >> 16) & 0xFF;
 
 			cs_id |= ((cs_fabric_id & socket_id_mask) >> socket_id_shift) << sock_id_bit;
 		}
@@ -1531,7 +1570,10 @@ static void umc_dump_misc_regs(struct amd64_pvt *pvt)
 	u32 i, tmp, umc_base;
 
 	for_each_umc(i) {
-		umc_base = get_umc_base(i);
+		if (hygon_f18h_m4h())
+			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, i);
+		else
+			umc_base = get_umc_base(i);
 		umc = &pvt->umc[i];
 
 		edac_dbg(1, "UMC%d DIMM cfg: 0x%x\n", i, umc->dimm_cfg);
@@ -1640,11 +1682,17 @@ static void umc_read_base_mask(struct amd64_pvt *pvt)
 	u32 mask_reg, mask_reg_sec;
 	u32 *base, *base_sec;
 	u32 *mask, *mask_sec;
+	u32 umc_base;
 	int cs, umc;
 
 	for_each_umc(umc) {
-		umc_base_reg = get_umc_base(umc) + UMCCH_BASE_ADDR;
-		umc_base_reg_sec = get_umc_base(umc) + UMCCH_BASE_ADDR_SEC;
+		if (hygon_f18h_m4h())
+			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, umc);
+		else
+			umc_base = get_umc_base(umc);
+
+		umc_base_reg = umc_base + UMCCH_BASE_ADDR;
+		umc_base_reg_sec = umc_base + UMCCH_BASE_ADDR_SEC;
 
 		for_each_chip_select(cs, umc, pvt) {
 			base = &pvt->csels[umc].csbases[cs];
@@ -1662,8 +1710,8 @@ static void umc_read_base_mask(struct amd64_pvt *pvt)
 					 umc, cs, *base_sec, base_reg_sec);
 		}
 
-		umc_mask_reg = get_umc_base(umc) + UMCCH_ADDR_MASK;
-		umc_mask_reg_sec = get_umc_base(umc) + get_umc_reg(pvt, UMCCH_ADDR_MASK_SEC);
+		umc_mask_reg = umc_base + UMCCH_ADDR_MASK;
+		umc_mask_reg_sec = umc_base + get_umc_reg(pvt, UMCCH_ADDR_MASK_SEC);
 
 		for_each_chip_select_mask(cs, umc, pvt) {
 			mask = &pvt->csels[umc].csmasks[cs];
@@ -1746,7 +1794,8 @@ static void umc_determine_memory_type(struct amd64_pvt *pvt)
 		 * Check if the system supports the "DDR Type" field in UMC Config
 		 * and has DDR5 DIMMs in use.
 		 */
-		if (pvt->flags.zn_regs_v2 && ((umc->umc_cfg & GENMASK(2, 0)) == 0x1)) {
+		if ((pvt->flags.zn_regs_v2 || hygon_f18h_m4h()) &&
+		    ((umc->umc_cfg & GENMASK(2, 0)) == 0x1)) {
 			if (umc->dimm_cfg & BIT(5))
 				umc->dram_type = MEM_LRDDR5;
 			else if (umc->dimm_cfg & BIT(4))
@@ -2980,7 +3029,11 @@ static inline void decode_bus_error(int node_id, struct mce *m)
  */
 static void umc_get_err_info(struct mce *m, struct err_info *err)
 {
-	err->channel = (m->ipid & GENMASK(31, 0)) >> 20;
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+	    boot_cpu_data.x86 == 0x18)
+		err->channel = (m->ipid & GENMASK(23, 0)) >> 20;
+	else
+		err->channel = (m->ipid & GENMASK(31, 0)) >> 20;
 	err->csrow = m->synd & 0x7;
 }
 
@@ -3093,8 +3146,11 @@ static void umc_read_mc_regs(struct amd64_pvt *pvt)
 
 	/* Read registers from each UMC */
 	for_each_umc(i) {
+		if (hygon_f18h_m4h())
+			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, i);
+		else
+			umc_base = get_umc_base(i);
 
-		umc_base = get_umc_base(i);
 		umc = &pvt->umc[i];
 
 		amd_smn_read(nid, umc_base + get_umc_reg(pvt, UMCCH_DIMM_CFG), &umc->dimm_cfg);
@@ -3796,6 +3852,18 @@ static int per_family_init(struct amd64_pvt *pvt)
 		break;
 
 	case 0x18:
+		if (pvt->model == 0x4) {
+			pvt->ctl_name			= "F18h_M04h";
+			pvt->max_mcs			= 3;
+			break;
+		} else if (pvt->model == 0x5) {
+			pvt->ctl_name			= "F18h_M05h";
+			pvt->max_mcs			= 1;
+			break;
+		} else if (pvt->model == 0x6) {
+			pvt->ctl_name			= "F18h_M06h";
+			break;
+		}
 		pvt->ctl_name				= "F18h";
 		break;
 
@@ -4020,6 +4088,7 @@ static int __init amd64_edac_init(void)
 {
 	const char *owner;
 	int err = -ENODEV;
+	u16 instance_num;
 	int i;
 
 	if (ghes_get_devices())
@@ -4037,8 +4106,13 @@ static int __init amd64_edac_init(void)
 
 	opstate_init();
 
+	if (hygon_f18h_m4h())
+		instance_num = hygon_nb_num();
+	else
+		instance_num = amd_nb_num();
+
 	err = -ENOMEM;
-	ecc_stngs = kcalloc(amd_nb_num(), sizeof(ecc_stngs[0]), GFP_KERNEL);
+	ecc_stngs = kcalloc(instance_num, sizeof(ecc_stngs[0]), GFP_KERNEL);
 	if (!ecc_stngs)
 		goto err_free;
 
@@ -4046,7 +4120,7 @@ static int __init amd64_edac_init(void)
 	if (!msrs)
 		goto err_free;
 
-	for (i = 0; i < amd_nb_num(); i++) {
+	for (i = 0; i < instance_num; i++) {
 		err = probe_one_instance(i);
 		if (err) {
 			/* unwind properly */
@@ -4093,6 +4167,7 @@ err_free:
 
 static void __exit amd64_edac_exit(void)
 {
+	u16 instance_num;
 	int i;
 
 	if (pci_ctl)
@@ -4104,7 +4179,12 @@ static void __exit amd64_edac_exit(void)
 	else
 		amd_unregister_ecc_decoder(decode_bus_error);
 
-	for (i = 0; i < amd_nb_num(); i++)
+	if (hygon_f18h_m4h())
+		instance_num = hygon_nb_num();
+	else
+		instance_num = amd_nb_num();
+
+	for (i = 0; i < instance_num; i++)
 		remove_one_instance(i);
 
 	kfree(ecc_stngs);
