@@ -73,8 +73,6 @@ static void hclge_restore_hw_table(struct hclge_dev *hdev);
 static void hclge_sync_promisc_mode(struct hclge_dev *hdev);
 static void hclge_sync_fd_table(struct hclge_dev *hdev);
 static void hclge_reset_end(struct hnae3_handle *handle, bool done);
-static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret,
-				      int wait_cnt);
 
 static struct hnae3_ae_algo ae_algo;
 
@@ -8079,9 +8077,10 @@ static void hclge_phy_link_status_wait(struct hclge_dev *hdev,
 	} while (++i < HCLGE_PHY_LINK_STATUS_NUM);
 }
 
-static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret,
-				      int wait_cnt)
+static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret)
 {
+#define HCLGE_MAC_LINK_STATUS_NUM  100
+
 	int link_status;
 	int i = 0;
 	int ret;
@@ -8094,15 +8093,13 @@ static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret,
 			return 0;
 
 		msleep(HCLGE_LINK_STATUS_MS);
-	} while (++i < wait_cnt);
+	} while (++i < HCLGE_MAC_LINK_STATUS_NUM);
 	return -EBUSY;
 }
 
 static int hclge_mac_phy_link_status_wait(struct hclge_dev *hdev, bool en,
 					  bool is_phy)
 {
-#define HCLGE_MAC_LINK_STATUS_NUM  100
-
 	int link_ret;
 
 	link_ret = en ? HCLGE_LINK_STATUS_UP : HCLGE_LINK_STATUS_DOWN;
@@ -8110,8 +8107,7 @@ static int hclge_mac_phy_link_status_wait(struct hclge_dev *hdev, bool en,
 	if (is_phy)
 		hclge_phy_link_status_wait(hdev, link_ret);
 
-	return hclge_mac_link_status_wait(hdev, link_ret,
-					  HCLGE_MAC_LINK_STATUS_NUM);
+	return hclge_mac_link_status_wait(hdev, link_ret);
 }
 
 static int hclge_set_app_loopback(struct hclge_dev *hdev, bool en)
