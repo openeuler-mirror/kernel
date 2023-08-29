@@ -93,6 +93,14 @@ static DEFINE_PER_CPU(unsigned long, hrint_missed);
 struct cpumask corelockup_cpumask __read_mostly;
 unsigned int close_wfi_wfe;
 static bool pmu_based_nmi;
+bool enable_corelockup_detector;
+
+static int __init enable_corelockup_detector_setup(char *str)
+{
+	enable_corelockup_detector = true;
+	return 1;
+}
+__setup("enable_corelockup_detector", enable_corelockup_detector_setup);
 
 static void watchdog_nmi_interrupts(void)
 {
@@ -326,11 +334,13 @@ static inline bool watchdog_check_timestamp(void)
 void watchdog_hardlockup_check(struct pt_regs *regs)
 {
 #ifdef CONFIG_CORELOCKUP_DETECTOR
-	/* Kick nmi interrupts */
-	watchdog_nmi_interrupts();
+	if (enable_corelockup_detector) {
+		/* Kick nmi interrupts */
+		watchdog_nmi_interrupts();
 
-	/* corelockup check */
-	watchdog_corelockup_check(regs);
+		/* corelockup check */
+		watchdog_corelockup_check(regs);
+	}
 #endif
 
 	if (__this_cpu_read(watchdog_nmi_touch) == true) {

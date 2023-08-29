@@ -372,7 +372,8 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 
 #ifdef CONFIG_CORELOCKUP_DETECTOR
 	/* check hrtimer of detector cpu */
-	watchdog_check_hrtimer();
+	if (enable_corelockup_detector)
+		watchdog_check_hrtimer();
 #endif
 
 	/* kick the hardlockup detector */
@@ -542,7 +543,8 @@ int lockup_detector_online_cpu(unsigned int cpu)
 	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask)) {
 		watchdog_enable(cpu);
 #ifdef CONFIG_CORELOCKUP_DETECTOR
-		corelockup_detector_online_cpu(cpu);
+		if (enable_corelockup_detector)
+			corelockup_detector_online_cpu(cpu);
 #endif
 	}
 	return 0;
@@ -553,7 +555,8 @@ int lockup_detector_offline_cpu(unsigned int cpu)
 	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask)) {
 		watchdog_disable(cpu);
 #ifdef CONFIG_CORELOCKUP_DETECTOR
-		corelockup_detector_offline_cpu(cpu);
+		if (enable_corelockup_detector)
+			corelockup_detector_offline_cpu(cpu);
 #endif
 	}
 	return 0;
@@ -888,6 +891,7 @@ void __init lockup_detector_init(void)
 	lockup_detector_setup();
 	watchdog_sysctl_init();
 #ifdef CONFIG_CORELOCKUP_DETECTOR
-	corelockup_detector_init();
+	if (enable_corelockup_detector)
+		corelockup_detector_init();
 #endif
 }
