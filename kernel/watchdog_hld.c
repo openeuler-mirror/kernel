@@ -41,6 +41,163 @@ notrace void __weak arch_touch_nmi_watchdog(void)
 EXPORT_SYMBOL(arch_touch_nmi_watchdog);
 #endif
 
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+/*
+ * The softlockup and hardlockup detector only check the status
+ * of the cpu which it resides. If certain cpu core suspends,
+ * they are both not works. There is no any valid log but the
+ * cpu already abnormal and brings a lot of problems of system.
+ * To detect this case, we add the corelockup detector.
+ *
+ * First we use whether cpu core can responds to nmi  as a sectence
+ * to determine if it is suspended. Then things is simple. Per cpu
+ * core maintains it's nmi interrupt counts and detector the
+ * nmi_counts of next cpu core. If the nmi interrupt counts not
+ * changed any more which means it can't respond nmi normally, we
+ * regard it as suspend.
+ *
+ * To ensure robustness, only consecutive lost nmi more than two
+ * times then trigger the warn.
+ *
+ * The detection chain is as following:
+ * cpu0->cpu1->...->cpuN->cpu0
+ *
+ * detector_cpu: the target cpu to detector of current cpu
+ * nmi_interrupts: the nmi counts of current cpu
+ * nmi_cnt_saved: saved nmi counts of detector_cpu
+ * nmi_cnt_missed: the nmi consecutive miss counts of detector_cpu
+ */
+static DEFINE_PER_CPU(unsigned int, detector_cpu);
+static DEFINE_PER_CPU(unsigned long, nmi_interrupts);
+static DEFINE_PER_CPU(unsigned long, nmi_cnt_saved);
+static DEFINE_PER_CPU(unsigned long, nmi_cnt_missed);
+static DEFINE_PER_CPU(bool, core_watchdog_warn);
+
+static void watchdog_nmi_interrupts(void)
+{
+	__this_cpu_inc(nmi_interrupts);
+}
+
+static void corelockup_status_copy(unsigned int from, unsigned int to)
+{
+	per_cpu(nmi_cnt_saved, to) = per_cpu(nmi_cnt_saved, from);
+	per_cpu(nmi_cnt_missed, to) = per_cpu(nmi_cnt_missed, from);
+
+	/* always update detector cpu at the end */
+	per_cpu(detector_cpu, to) = per_cpu(detector_cpu, from);
+}
+
+static void corelockup_status_init(unsigned int cpu, unsigned int target)
+{
+	/*
+	 * initialize saved count to max to avoid unnecessary misjudge
+	 * caused by delay running of nmi on target cpu
+	 */
+	per_cpu(nmi_cnt_saved, cpu) = ULONG_MAX;
+	per_cpu(nmi_cnt_missed, cpu) = 0;
+
+	/* always update detector cpu at the end */
+	per_cpu(detector_cpu, cpu) = target;
+}
+
+void __init corelockup_detector_init(void)
+{
+	unsigned int cpu, next;
+
+	/* detector cpu is set to the next valid logically one */
+	for_each_cpu_and(cpu, &watchdog_cpumask, cpu_online_mask) {
+		next = cpumask_next_and(cpu, &watchdog_cpumask,
+					cpu_online_mask);
+		if (next >= nr_cpu_ids)
+			next = cpumask_first_and(&watchdog_cpumask,
+						 cpu_online_mask);
+		corelockup_status_init(cpu, next);
+	}
+}
+
+/*
+ * Before: first->next
+ * After: first->[new]->next
+ */
+void corelockup_detector_online_cpu(unsigned int cpu)
+{
+	unsigned int first = cpumask_first_and(&watchdog_cpumask,
+					       cpu_online_mask);
+
+	if (WARN_ON(first >= nr_cpu_ids))
+		return;
+
+	/* cpu->next */
+	corelockup_status_copy(first, cpu);
+
+	/* first->cpu */
+	corelockup_status_init(first, cpu);
+}
+
+/*
+ * Before: prev->cpu->next
+ * After: prev->next
+ */
+void corelockup_detector_offline_cpu(unsigned int cpu)
+{
+	unsigned int prev = nr_cpu_ids;
+	unsigned int i;
+
+	/* found prev cpu */
+	for_each_cpu_and(i, &watchdog_cpumask, cpu_online_mask) {
+		if (per_cpu(detector_cpu, i) == cpu) {
+			prev = i;
+			break;
+		}
+	}
+
+	if (WARN_ON(prev == nr_cpu_ids))
+		return;
+
+	/* prev->next */
+	corelockup_status_copy(cpu, prev);
+}
+
+static bool is_corelockup(unsigned int cpu)
+{
+	unsigned long nmi_int = per_cpu(nmi_interrupts, cpu);
+
+	/* skip check if only one cpu online */
+	if (cpu == smp_processor_id())
+		return false;
+
+	if (__this_cpu_read(nmi_cnt_saved) != nmi_int) {
+		__this_cpu_write(nmi_cnt_saved, nmi_int);
+		__this_cpu_write(nmi_cnt_missed, 0);
+		per_cpu(core_watchdog_warn, cpu) = false;
+		return false;
+	}
+
+	__this_cpu_inc(nmi_cnt_missed);
+	if (__this_cpu_read(nmi_cnt_missed) > 2)
+		return true;
+
+	return false;
+}
+NOKPROBE_SYMBOL(is_corelockup);
+
+static void watchdog_corelockup_check(struct pt_regs *regs)
+{
+	unsigned int cpu = __this_cpu_read(detector_cpu);
+
+	if (is_corelockup(cpu)) {
+		if (per_cpu(core_watchdog_warn, cpu) == true)
+			return;
+		pr_emerg("Watchdog detected core LOCKUP on cpu %d\n", cpu);
+
+		if (hardlockup_panic)
+			nmi_panic(regs, "Core LOCKUP");
+
+		per_cpu(core_watchdog_warn, cpu) = true;
+	}
+}
+#endif
+
 #ifdef CONFIG_HARDLOCKUP_CHECK_TIMESTAMP
 static DEFINE_PER_CPU(ktime_t, last_timestamp);
 static DEFINE_PER_CPU(unsigned int, nmi_rearmed);
@@ -108,6 +265,14 @@ static inline bool watchdog_check_timestamp(void)
 
 void watchdog_hardlockup_check(struct pt_regs *regs)
 {
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	/* Kick nmi interrupts */
+	watchdog_nmi_interrupts();
+
+	/* corelockup check */
+	watchdog_corelockup_check(regs);
+#endif
+
 	if (__this_cpu_read(watchdog_nmi_touch) == true) {
 		__this_cpu_write(watchdog_nmi_touch, false);
 		return;
