@@ -20,6 +20,10 @@
 #include <linux/seqlock.h>
 #include <linux/percpu_counter.h>
 
+#ifdef CONFIG_GMEM
+#include <linux/gmem_as.h>
+#endif
+
 #include <asm/mmu.h>
 
 #ifndef AT_VECTOR_SIZE_ARCH
@@ -465,6 +469,44 @@ struct vm_userfaultfd_ctx {
 struct vm_userfaultfd_ctx {};
 #endif /* CONFIG_USERFAULTFD */
 
+#ifdef CONFIG_GMEM
+/*
+ * Defines a centralized logical mapping table that reflects the mapping information
+ * regardless of the underlying arch-specific MMUs.
+ * The implementation of this data structure borrows the VM_OBJECT from FreeBSD as well
+ * as the filemap address_space struct from Linux page cache.
+ * Only VMAs point to VM_OBJECTs and maintain logical mappings, because we assume that
+ * the coordiantion between page tables must happen with CPU page table involved. That
+ * is to say, a generalized process unit must involve in a UVA-programming model, otherwise
+ * there is no point to support UVA programming.
+ * However, a VMA only needs to maintain logical mappings if the process has been
+ * attached to a GMEM VA space. In normal cases, a CPU process does not need it. (unless
+ * we later build a reservation system on top of the logical mapping tables to support
+ * reservation-based superpages and rangeTLBs).
+ * A GM_REGION does not need to maintain logical mappings. In the case that a device wants
+ * to support its private address space with local physical memory, GMEM should forward address
+ * space management to the core VM, using VMAs, instead of using GM_REGIONs.
+ */
+struct vm_object {
+	spinlock_t lock;
+	struct vm_area_struct *vma;
+
+	/*
+	 * The logical_page_table is a container that holds the mapping
+	 * information between a VA and a struct page.
+	 */
+	struct xarray *logical_page_table;
+	atomic_t nr_pages;
+
+	/*
+	 * a vm object might be referred by multiple VMAs to share
+	 * memory.
+	 */
+	atomic_t ref_count;
+};
+typedef struct vm_object vm_object_t;
+#endif
+
 struct anon_vma_name {
 	struct kref kref;
 	/* The name needs to be at the end because it is dynamically sized. */
@@ -571,6 +613,9 @@ struct vm_area_struct {
 	struct vma_numab_state *numab_state;	/* NUMA Balancing state */
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
+#ifdef CONFIG_GMEM
+	struct vm_object *vm_obj;
+#endif
 } __randomize_layout;
 
 #ifdef CONFIG_SCHED_MM_CID
@@ -802,6 +847,9 @@ struct mm_struct {
 #endif
 		} lru_gen;
 #endif /* CONFIG_LRU_GEN */
+#ifdef CONFIG_GMEM
+	gm_as_t *gm_as;
+#endif
 	} __randomize_layout;
 
 	/*

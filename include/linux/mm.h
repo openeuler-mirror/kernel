@@ -324,6 +324,11 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HIGH_ARCH_2	BIT(VM_HIGH_ARCH_BIT_2)
 #define VM_HIGH_ARCH_3	BIT(VM_HIGH_ARCH_BIT_3)
 #define VM_HIGH_ARCH_4	BIT(VM_HIGH_ARCH_BIT_4)
+#ifdef CONFIG_GMEM
+#define VM_PEER_SHARED	BIT(56)
+#else
+#define VM_PEER_SHARED	VM_NONE
+#endif
 #endif /* CONFIG_ARCH_USES_HIGH_VMA_FLAGS */
 
 #ifdef CONFIG_ARCH_HAS_PKEYS
@@ -3127,6 +3132,9 @@ unsigned long randomize_stack_top(unsigned long stack_top);
 unsigned long randomize_page(unsigned long start, unsigned long range);
 
 extern unsigned long get_unmapped_area(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
+extern unsigned long get_unmapped_area_aligned(struct file *file,
+	unsigned long addr, unsigned long len, unsigned long pgoff,
+	unsigned long flags, unsigned long align);
 
 extern unsigned long mmap_region(struct file *file, unsigned long addr,
 	unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
@@ -3813,6 +3821,29 @@ static inline int
 madvise_set_anon_name(struct mm_struct *mm, unsigned long start,
 		      unsigned long len_in, struct anon_vma_name *anon_name) {
 	return 0;
+}
+#endif
+
+#ifdef CONFIG_GMEM
+DECLARE_STATIC_KEY_FALSE(gmem_status);
+
+static inline bool gmem_is_enabled(void)
+{
+	return static_branch_likely(&gmem_status);
+}
+
+static inline bool vma_is_peer_shared(struct vm_area_struct *vma)
+{
+	if (!gmem_is_enabled())
+		return false;
+
+	return !!(vma->vm_flags & VM_PEER_SHARED);
+}
+#else
+static inline bool gmem_is_enabled(void) { return false; }
+static inline bool vma_is_peer_shared(struct vm_area_struct *vma)
+{
+	return false;
 }
 #endif
 

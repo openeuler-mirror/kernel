@@ -77,6 +77,9 @@
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
 #include <linux/sched/sysctl.h>
+#ifdef CONFIG_GMEM
+#include <linux/vm_object.h>
+#endif
 
 #include <trace/events/kmem.h>
 
@@ -1522,6 +1525,47 @@ again:
 	return addr;
 }
 
+#ifdef CONFIG_GMEM
+static inline void zap_logic_pmd_range(struct vm_area_struct *vma,
+					unsigned long addr,
+					unsigned long end)
+{
+	gm_mapping_t *gm_mapping = NULL;
+	struct page *page = NULL;
+
+	xa_lock(vma->vm_obj->logical_page_table);
+	gm_mapping = vm_object_lookup(vma->vm_obj, addr);
+
+	if (gm_mapping && gm_mapping_cpu(gm_mapping)) {
+		page = gm_mapping->page;
+		if (page && (page_ref_count(page) != 0)) {
+			put_page(page);
+			gm_mapping->page = NULL;
+		}
+	}
+	xa_unlock(vma->vm_obj->logical_page_table);
+}
+
+static inline void zap_logic_pud_range(struct vm_area_struct *vma,
+					unsigned long addr,
+					unsigned long end)
+{
+	unsigned long next;
+
+	do {
+		next = pmd_addr_end(addr, end);
+		zap_logic_pmd_range(vma, addr, next);
+	} while (addr = next, addr != end);
+}
+#else
+static inline void zap_logic_pmd_range(struct vm_area_struct *vma,
+					unsigned long addr,
+					unsigned long end) {}
+static inline void zap_logic_pud_range(struct vm_area_struct *vma,
+					unsigned long addr,
+					unsigned long end) {}
+#endif
+
 static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				struct vm_area_struct *vma, pud_t *pud,
 				unsigned long addr, unsigned long end,
@@ -1558,8 +1602,12 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 		 * because MADV_DONTNEED holds the mmap_lock in read
 		 * mode.
 		 */
-		if (pmd_none_or_trans_huge_or_clear_bad(pmd))
+		if (pmd_none_or_trans_huge_or_clear_bad(pmd)) {
+			if (vma_is_peer_shared(vma))
+				zap_logic_pmd_range(vma, addr, next);
 			goto next;
+		}
+
 		next = zap_pte_range(tlb, vma, pmd, addr, next, details);
 next:
 		cond_resched();
@@ -1587,8 +1635,11 @@ static inline unsigned long zap_pud_range(struct mmu_gather *tlb,
 				goto next;
 			/* fall through */
 		}
-		if (pud_none_or_clear_bad(pud))
+		if (pud_none_or_clear_bad(pud)) {
+			if (vma_is_peer_shared(vma))
+				zap_logic_pud_range(vma, addr, next);
 			continue;
+		}
 		next = zap_pmd_range(tlb, vma, pud, addr, next, details);
 next:
 		cond_resched();
@@ -1608,8 +1659,11 @@ static inline unsigned long zap_p4d_range(struct mmu_gather *tlb,
 	p4d = p4d_offset(pgd, addr);
 	do {
 		next = p4d_addr_end(addr, end);
-		if (p4d_none_or_clear_bad(p4d))
+		if (p4d_none_or_clear_bad(p4d)) {
+			if (vma_is_peer_shared(vma))
+				zap_logic_pud_range(vma, addr, next);
 			continue;
+		}
 		next = zap_pud_range(tlb, vma, p4d, addr, next, details);
 	} while (p4d++, addr = next, addr != end);
 
@@ -1629,8 +1683,11 @@ void unmap_page_range(struct mmu_gather *tlb,
 	pgd = pgd_offset(vma->vm_mm, addr);
 	do {
 		next = pgd_addr_end(addr, end);
-		if (pgd_none_or_clear_bad(pgd))
+		if (pgd_none_or_clear_bad(pgd)) {
+			if (vma_is_peer_shared(vma))
+				zap_logic_pud_range(vma, addr, next);
 			continue;
+		}
 		next = zap_p4d_range(tlb, vma, pgd, addr, next, details);
 	} while (pgd++, addr = next, addr != end);
 	tlb_end_vma(tlb, vma);

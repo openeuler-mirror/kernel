@@ -33,6 +33,8 @@
 #define MAP_UNINITIALIZED 0x4000000	/* For anonymous mmap, memory could be
 					 * uninitialized */
 
+#define MAP_PEER_SHARED		0x8000000
+
 /*
  * Flags for mlock
  */
@@ -78,6 +80,11 @@
 #define MADV_DONTNEED_LOCKED	24	/* like DONTNEED, but drop locked pages too */
 
 #define MADV_COLLAPSE	25		/* Synchronous hugepage collapse */
+
+/* for hmadvise */
+#define MADV_GMEM_BASE	0x1000
+#define MADV_PREFETCH	MADV_GMEM_BASE		/* prefetch pages for hNUMA node */
+#define MADV_PINNED	(MADV_GMEM_BASE+1)	/* pin these pages */
 
 /* compatibility flags */
 #define MAP_FILE	0

@@ -421,4 +421,11 @@ config ADI
 	  and SSM (Silicon Secured Memory).  Intended consumers of this
 	  driver include crash and makedumpfile.
 
+config GMEM_DEV
+	tristate "driver for gmem"
+	depends on GMEM
+	default m
+	help
+	  driver for gmem in order to pass ioctl commands.
+
 endmenu

@@ -1206,6 +1206,15 @@ config PER_VMA_LOCK
 	  This feature allows locking each virtual memory area separately when
 	  handling page faults instead of taking mmap_lock.
 
+config GMEM
+	bool "gmem subsystem for multi-MMU cooperative management"
+	depends on (ARM64 || X86_64) && MMU && TRANSPARENT_HUGEPAGE
+	select ARCH_USES_HIGH_VMA_FLAGS
+	select GMEM_DEV
+	default y
+	help
+	  say Y here to enable gmem subsystem
+
 source "mm/damon/Kconfig"
 
 endmenu
