@@ -555,7 +555,7 @@ config ARM64_ERRATUM_1742098
 
 config ARM64_ERRATUM_845719
 	bool "Cortex-A53: 845719: a load might read incorrect data"
-	depends on COMPAT
+	depends on AARCH32_EL0
 	default y
 	help
 	  This option adds an alternative code sequence to work around ARM
@@ -1603,7 +1603,7 @@ config ARM64_TAGGED_ADDR_ABI
 	  to system calls as pointer arguments. For details, see
 	  Documentation/arm64/tagged-address-abi.rst.
 
-menuconfig COMPAT
+menuconfig AARCH32_EL0
 	bool "Kernel support for 32-bit EL0"
 	depends on ARM64_4K_PAGES || EXPERT
 	select HAVE_UID16
@@ -1621,7 +1621,7 @@ menuconfig COMPAT
 
 	  If you want to execute 32-bit userspace applications, say Y.
 
-if COMPAT
+if AARCH32_EL0
 
 config KUSER_HELPERS
 	bool "Enable kuser helpers page for 32-bit applications"
@@ -1677,6 +1677,7 @@ config COMPAT_ALIGNMENT_FIXUPS
 
 menuconfig ARMV8_DEPRECATED
 	bool "Emulate deprecated/obsolete ARMv8 instructions"
+	depends on AARCH32_EL0
 	depends on SYSCTL
 	help
 	  Legacy software support may require certain instructions
@@ -2314,6 +2315,10 @@ config DMI
 	  continue to boot on existing non-UEFI platforms.
 
 endmenu # "Boot options"
+
+config COMPAT
+	def_bool y
+	depends on AARCH32_EL0
 
 menu "Power management options"
 

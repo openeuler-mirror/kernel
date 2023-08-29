@@ -757,7 +757,7 @@ asmlinkage void noinstr el0t_64_error_handler(struct pt_regs *regs)
 	__el0_error_handler_common(regs);
 }
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 static void noinstr el0_cp15(struct pt_regs *regs, unsigned long esr)
 {
 	enter_from_user_mode(regs);
@@ -832,12 +832,12 @@ asmlinkage void noinstr el0t_32_error_handler(struct pt_regs *regs)
 {
 	__el0_error_handler_common(regs);
 }
-#else /* CONFIG_COMPAT */
+#else /* CONFIG_AARCH32_EL0 */
 UNHANDLED(el0t, 32, sync)
 UNHANDLED(el0t, 32, irq)
 UNHANDLED(el0t, 32, fiq)
 UNHANDLED(el0t, 32, error)
-#endif /* CONFIG_COMPAT */
+#endif /* CONFIG_AARCH32_EL0 */
 
 #ifdef CONFIG_VMAP_STACK
 asmlinkage void noinstr __noreturn handle_bad_stack(struct pt_regs *regs)
