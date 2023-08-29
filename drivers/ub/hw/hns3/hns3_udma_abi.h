@@ -23,6 +23,7 @@
 #define MAP_INDEX_SHIFT			8
 #define UDMA_DWQE_PAGE_SIZE		65536
 #define UDMA_JETTY_X_PREFIX_BIT_NUM	2
+#define UDMA_JFS_QPN_PREFIX		0x0
 #define UDMA_JFR_QPN_PREFIX		0x1
 #define UDMA_ADDR_4K_MASK		0xfffUL
 #define URMA_SEG_ACCESS_GUARD		(1UL << 5)
@@ -103,6 +104,14 @@ struct udma_create_tp_resp {
 	uint32_t		qpn;
 	uint32_t		path_mtu;
 	uint8_t			priority;
+};
+
+struct udma_create_jfs_ucmd {
+	struct udma_create_tp_ucmd create_tp_ucmd;
+};
+
+struct udma_create_jfs_resp {
+	struct udma_create_tp_resp create_tp_resp;
 };
 
 struct udma_create_ctx_resp {
