@@ -120,6 +120,13 @@ int main(void)
   DEFINE(SOFTIRQ_SHIFT, SOFTIRQ_SHIFT);
   DEFINE(IRQ_CPUSTAT_SOFTIRQ_PENDING, offsetof(irq_cpustat_t, __softirq_pending));
   BLANK();
+#ifdef CONFIG_COMPAT
+  DEFINE(COMPAT_TVAL_TV_SEC,	offsetof(struct old_timeval32, tv_sec));
+  DEFINE(COMPAT_TVAL_TV_USEC,	offsetof(struct old_timeval32, tv_usec));
+  DEFINE(COMPAT_TSPEC_TV_SEC,	offsetof(struct old_timespec32, tv_sec));
+  DEFINE(COMPAT_TSPEC_TV_NSEC,	offsetof(struct old_timespec32, tv_nsec));
+  BLANK();
+#endif
   DEFINE(CPU_BOOT_TASK,		offsetof(struct secondary_data, task));
   BLANK();
   DEFINE(FTR_OVR_VAL_OFFSET,	offsetof(struct arm64_ftr_override, val));
