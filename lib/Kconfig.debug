@@ -1074,7 +1074,8 @@ config HARDLOCKUP_DETECTOR
 config CORELOCKUP_DETECTOR
 	bool "Detect Core Lockups"
 	depends on HARDLOCKUP_DETECTOR && SOFTLOCKUP_DETECTOR
-	depends on ARM64
+	depends on ARM64 || X86_64
+	depends on SMP
 	default n
 	help
 	  Corelockups is used to check whether cpu core hungup or not.
