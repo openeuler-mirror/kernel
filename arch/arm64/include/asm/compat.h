@@ -27,6 +27,7 @@ typedef u16		compat_ipc_pid_t;
 #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/sched/task_stack.h>
+#include <asm/is_compat.h>
 
 #ifdef __AARCH64EB__
 #define COMPAT_UTS_MACHINE	"armv8b\0\0"
@@ -85,23 +86,6 @@ struct compat_statfs {
 
 #define compat_user_stack_pointer() (user_stack_pointer(task_pt_regs(current)))
 #define COMPAT_MINSIGSTKSZ	2048
-
-static inline int is_compat_task(void)
-{
-	return test_thread_flag(TIF_32BIT);
-}
-
-static inline int is_compat_thread(struct thread_info *thread)
-{
-	return test_ti_thread_flag(thread, TIF_32BIT);
-}
-
-#else /* !CONFIG_COMPAT */
-
-static inline int is_compat_thread(struct thread_info *thread)
-{
-	return 0;
-}
 
 #endif /* CONFIG_COMPAT */
 #endif /* __ASM_COMPAT_H */

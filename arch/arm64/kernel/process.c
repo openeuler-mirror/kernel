@@ -43,7 +43,6 @@
 #include <linux/stacktrace.h>
 
 #include <asm/alternative.h>
-#include <asm/compat.h>
 #include <asm/cpufeature.h>
 #include <asm/cacheflush.h>
 #include <asm/exec.h>
@@ -252,7 +251,7 @@ static void tls_thread_flush(void)
 	if (system_supports_tpidr2())
 		write_sysreg_s(0, SYS_TPIDR2_EL0);
 
-	if (is_compat_task()) {
+	if (is_a32_compat_task()) {
 		current->thread.uw.tp_value = 0;
 
 		/*
@@ -375,7 +374,7 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 			p->thread.tpidr2_el0 = read_sysreg_s(SYS_TPIDR2_EL0);
 
 		if (stack_start) {
-			if (is_compat_thread(task_thread_info(p)))
+			if (is_a32_compat_thread(task_thread_info(p)))
 				childregs->compat_sp = stack_start;
 			else
 				childregs->sp = stack_start;
@@ -427,7 +426,7 @@ static void tls_thread_switch(struct task_struct *next)
 {
 	tls_preserve_current_state();
 
-	if (is_compat_thread(task_thread_info(next)))
+	if (is_a32_compat_thread(task_thread_info(next)))
 		write_sysreg(next->thread.uw.tp_value, tpidrro_el0);
 	else if (!arm64_kernel_unmapped_at_el0())
 		write_sysreg(0, tpidrro_el0);
