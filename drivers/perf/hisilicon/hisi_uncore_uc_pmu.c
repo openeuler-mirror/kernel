@@ -4,7 +4,7 @@
  *
  * Copyright (C) 2023 HiSilicon Limited
  *
- * This code is based on the uncore PMUs like arm-cci and arm-ccn.
+ * This code is based on the uncore PMUs like hisi_uncore_l3c_pmu.
  */
 #include <linux/cpuhotplug.h>
 #include <linux/interrupt.h>
@@ -34,11 +34,9 @@ static enum cpuhp_state hisi_uc_pmu_online;
 #define HISI_UC_EVENT_URING_MSK		GENMASK(28, 27)
 #define HISI_UC_EVENT_GLB_EN		BIT(26)
 #define HISI_UC_VERSION_REG		0x1cf0
-#define HISI_UC_EVTYPE0_REG		0x1d00
-#define HISI_UC_EVTYPE_REG(n)		(HISI_UC_EVTYPE0_REG + (n) * 4)
+#define HISI_UC_EVTYPE_REGn(n)		(0x1d00 + (n) * 4)
 #define HISI_UC_EVTYPE_MASK		GENMASK(7, 0)
-#define HISI_UC_CNTR0_REG		0x1e00
-#define HISI_UC_CNTR_REG(n)		(HISI_UC_CNTR0_REG + (n) * 8)
+#define HISI_UC_CNTR_REGn(n)		(0x1e00 + (n) * 8)
 
 #define HISI_UC_NR_COUNTERS		0x8
 #define HISI_UC_V2_NR_EVENTS		0xFF
@@ -53,13 +51,13 @@ HISI_PMU_EVENT_ATTR_EXTRACTOR(uring_channel, config1, 5, 4);
 HISI_PMU_EVENT_ATTR_EXTRACTOR(srcid, config1, 19, 6);
 HISI_PMU_EVENT_ATTR_EXTRACTOR(srcid_en, config1, 20, 20);
 
-static int hisi_uc_pmu_check_format(struct perf_event *event)
+static int hisi_uc_pmu_check_filter(struct perf_event *event)
 {
 	struct hisi_pmu *uc_pmu = to_hisi_pmu(event->pmu);
 
 	if (hisi_get_srcid_en(event) && !hisi_get_rd_req_en(event)) {
 		dev_err(uc_pmu->dev,
-			"Failed to set srcid: depending on read request enabled!\n");
+			"rcid_en depends on rd_req_en being enabled!\n");
 		return -EINVAL;
 	}
 
@@ -237,10 +235,10 @@ static void hisi_uc_pmu_write_evtype(struct hisi_pmu *uc_pmu, int idx, u32 type)
 	 * There are 2 32-bit event select registers for the
 	 * 8 hardware counters, each event code is 8-bit wide.
 	 */
-	val = readl(uc_pmu->base + HISI_UC_EVTYPE_REG(idx / 4));
+	val = readl(uc_pmu->base + HISI_UC_EVTYPE_REGn(idx / 4));
 	val &= ~(HISI_UC_EVTYPE_MASK << HISI_PMU_EVTYPE_SHIFT(idx));
 	val |= (type << HISI_PMU_EVTYPE_SHIFT(idx));
-	writel(val, uc_pmu->base + HISI_UC_EVTYPE_REG(idx / 4));
+	writel(val, uc_pmu->base + HISI_UC_EVTYPE_REGn(idx / 4));
 }
 
 static void hisi_uc_pmu_start_counters(struct hisi_pmu *uc_pmu)
@@ -286,13 +284,13 @@ static void hisi_uc_pmu_disable_counter(struct hisi_pmu *uc_pmu,
 static u64 hisi_uc_pmu_read_counter(struct hisi_pmu *uc_pmu,
 				    struct hw_perf_event *hwc)
 {
-	return readq(uc_pmu->base + HISI_UC_CNTR_REG(hwc->idx));
+	return readq(uc_pmu->base + HISI_UC_CNTR_REGn(hwc->idx));
 }
 
 static void hisi_uc_pmu_write_counter(struct hisi_pmu *uc_pmu,
 				      struct hw_perf_event *hwc, u64 val)
 {
-	writeq(val, uc_pmu->base + HISI_UC_CNTR_REG(hwc->idx));
+	writeq(val, uc_pmu->base + HISI_UC_CNTR_REGn(hwc->idx));
 }
 
 static void hisi_uc_pmu_enable_counter_int(struct hisi_pmu *uc_pmu,
@@ -301,7 +299,6 @@ static void hisi_uc_pmu_enable_counter_int(struct hisi_pmu *uc_pmu,
 	u32 val;
 
 	val = readl(uc_pmu->base + HISI_UC_INT_MASK_REG);
-	/* Write 0 to enable interrupt */
 	val &= ~(1 << hwc->idx);
 	writel(val, uc_pmu->base + HISI_UC_INT_MASK_REG);
 }
@@ -312,7 +309,6 @@ static void hisi_uc_pmu_disable_counter_int(struct hisi_pmu *uc_pmu,
 	u32 val;
 
 	val = readl(uc_pmu->base + HISI_UC_INT_MASK_REG);
-	/* Write 1 to mask interrupt */
 	val |= (1 << hwc->idx);
 	writel(val, uc_pmu->base + HISI_UC_INT_MASK_REG);
 }
@@ -331,8 +327,9 @@ static int hisi_uc_pmu_init_data(struct platform_device *pdev,
 				 struct hisi_pmu *uc_pmu)
 {
 	/*
-	 * Use the SCCL_ID and CCL_ID to identify the UC PMU, while
-	 * SCCL_ID is in MPIDR[aff2] and CCL_ID is in MPIDR[aff1].
+	 * Use SCCL (Super CPU Cluster) ID and CCL (CPU Cluster) ID to
+	 * identify the topology information of UC PMU devices in the chip.
+	 * They have some CCLs per SCCL and then 4 UC PMU per CCL.
 	 */
 	if (device_property_read_u32(&pdev->dev, "hisilicon,scl-id",
 				     &uc_pmu->sccl_id)) {
@@ -434,7 +431,7 @@ static const struct attribute_group *hisi_uc_pmu_attr_groups[] = {
 };
 
 static const struct hisi_uncore_ops hisi_uncore_uc_pmu_ops = {
-	.check_format		= hisi_uc_pmu_check_format,
+	.check_filter		= hisi_uc_pmu_check_filter,
 	.write_evtype		= hisi_uc_pmu_write_evtype,
 	.get_event_idx		= hisi_uncore_pmu_get_event_idx,
 	.start_counters		= hisi_uc_pmu_start_counters,
@@ -537,6 +534,11 @@ static struct platform_driver hisi_uc_pmu_driver = {
 	.driver = {
 		.name = "hisi_uc_pmu",
 		.acpi_match_table = hisi_uc_pmu_acpi_match,
+		/*
+		 * We have not worked out a safe bind/unbind process,
+		 * Forcefully unbinding during sampling will lead to a
+		 * kernel panic, so this is not supported yet.
+		 */
 		.suppress_bind_attrs = true,
 	},
 	.probe = hisi_uc_pmu_probe,

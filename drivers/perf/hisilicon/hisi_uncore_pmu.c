@@ -225,9 +225,8 @@ int hisi_uncore_pmu_event_init(struct perf_event *event)
 	hwc->idx		= -1;
 	hwc->config_base	= event->attr.config;
 
-	if (hisi_pmu->ops->check_format)
-		if (hisi_pmu->ops->check_format(event))
-			return -EINVAL;
+	if (hisi_pmu->ops->check_filter && hisi_pmu->ops->check_filter(event))
+		return -EINVAL;
 
 	/* Enforce to use the same CPU for all events in this PMU */
 	event->cpu = hisi_pmu->on_cpu;
