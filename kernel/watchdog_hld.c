@@ -62,16 +62,37 @@ EXPORT_SYMBOL(arch_touch_nmi_watchdog);
  * The detection chain is as following:
  * cpu0->cpu1->...->cpuN->cpu0
  *
+ * When using pmu events as nmi source, the pmu clock is disabled
+ * under wfi/wfe mode. And the nmi can't respond periodically.
+ * To minimize the misjudgment by wfi/wfe, we adopt a simple method
+ * which to disable wfi/wfe at the right time and the watchdog hrtimer
+ * is a good baseline.
+ *
+ * The watchdog hrtimer is based on generate timer and has high freq
+ * than nmi. If watchdog hrtimer not works we disable wfi/wfe mode
+ * then the pmu nmi should always responds as long as the cpu core
+ * not suspend.
+ *
  * detector_cpu: the target cpu to detector of current cpu
  * nmi_interrupts: the nmi counts of current cpu
  * nmi_cnt_saved: saved nmi counts of detector_cpu
  * nmi_cnt_missed: the nmi consecutive miss counts of detector_cpu
+ * hrint_saved: saved hrtimer interrupts of detector_cpu
+ * hrint_missed: the hrtimer consecutive miss counts of detector_cpu
+ * corelockup_cpumask/close_wfi_wfe:
+ * the cpu mask is set if certain cpu maybe fall in suspend and close
+ * wfi/wfe mode if any bit is set
  */
 static DEFINE_PER_CPU(unsigned int, detector_cpu);
 static DEFINE_PER_CPU(unsigned long, nmi_interrupts);
 static DEFINE_PER_CPU(unsigned long, nmi_cnt_saved);
 static DEFINE_PER_CPU(unsigned long, nmi_cnt_missed);
 static DEFINE_PER_CPU(bool, core_watchdog_warn);
+static DEFINE_PER_CPU(unsigned long, hrint_saved);
+static DEFINE_PER_CPU(unsigned long, hrint_missed);
+struct cpumask corelockup_cpumask __read_mostly;
+unsigned int close_wfi_wfe;
+static bool pmu_based_nmi;
 
 static void watchdog_nmi_interrupts(void)
 {
@@ -82,6 +103,8 @@ static void corelockup_status_copy(unsigned int from, unsigned int to)
 {
 	per_cpu(nmi_cnt_saved, to) = per_cpu(nmi_cnt_saved, from);
 	per_cpu(nmi_cnt_missed, to) = per_cpu(nmi_cnt_missed, from);
+	per_cpu(hrint_saved, to) = per_cpu(hrint_saved, from);
+	per_cpu(hrint_missed, to) = per_cpu(hrint_missed, from);
 
 	/* always update detector cpu at the end */
 	per_cpu(detector_cpu, to) = per_cpu(detector_cpu, from);
@@ -95,6 +118,8 @@ static void corelockup_status_init(unsigned int cpu, unsigned int target)
 	 */
 	per_cpu(nmi_cnt_saved, cpu) = ULONG_MAX;
 	per_cpu(nmi_cnt_missed, cpu) = 0;
+	per_cpu(hrint_saved, cpu) = ULONG_MAX;
+	per_cpu(hrint_missed, cpu) = 0;
 
 	/* always update detector cpu at the end */
 	per_cpu(detector_cpu, cpu) = target;
@@ -113,6 +138,38 @@ void __init corelockup_detector_init(void)
 						 cpu_online_mask);
 		corelockup_status_init(cpu, next);
 	}
+}
+
+void watchdog_check_hrtimer(void)
+{
+	unsigned int cpu = __this_cpu_read(detector_cpu);
+	unsigned long hrint = watchdog_hrtimer_interrupts(cpu);
+
+	/*
+	 * The freq of hrtimer is fast than nmi interrupts and
+	 * the core mustn't hangs if hrtimer still working.
+	 * So update the nmi interrupts in hrtimer either to
+	 * improved robustness of nmi counts check.
+	 */
+	watchdog_nmi_interrupts();
+
+	if (!pmu_based_nmi)
+		return;
+
+	if (__this_cpu_read(hrint_saved) != hrint) {
+		__this_cpu_write(hrint_saved, hrint);
+		__this_cpu_write(hrint_missed, 0);
+		cpumask_clear_cpu(cpu, &corelockup_cpumask);
+	} else {
+		__this_cpu_inc(hrint_missed);
+		if (__this_cpu_read(hrint_missed) > 2)
+			cpumask_set_cpu(cpu, &corelockup_cpumask);
+	}
+
+	if (likely(cpumask_empty(&corelockup_cpumask)))
+		close_wfi_wfe = 0;
+	else
+		close_wfi_wfe = 1;
 }
 
 /*
@@ -142,6 +199,9 @@ void corelockup_detector_offline_cpu(unsigned int cpu)
 {
 	unsigned int prev = nr_cpu_ids;
 	unsigned int i;
+
+	/* clear bitmap */
+	cpumask_clear_cpu(cpu, &corelockup_cpumask);
 
 	/* found prev cpu */
 	for_each_cpu_and(i, &watchdog_cpumask, cpu_online_mask) {
@@ -477,6 +537,9 @@ int __init hardlockup_detector_perf_init(void)
 		perf_event_release_kernel(this_cpu_read(watchdog_ev));
 		this_cpu_write(watchdog_ev, NULL);
 	}
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	pmu_based_nmi = true;
+#endif
 	return ret;
 }
 #endif /* CONFIG_HARDLOCKUP_DETECTOR_PERF */

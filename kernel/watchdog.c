@@ -352,6 +352,13 @@ static int softlockup_fn(void *data)
 	return 0;
 }
 
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+unsigned long watchdog_hrtimer_interrupts(unsigned int cpu)
+{
+	return per_cpu(hrtimer_interrupts, cpu);
+}
+#endif
+
 /* watchdog kicker functions */
 static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 {
@@ -362,6 +369,11 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 
 	if (!watchdog_enabled)
 		return HRTIMER_NORESTART;
+
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	/* check hrtimer of detector cpu */
+	watchdog_check_hrtimer();
+#endif
 
 	/* kick the hardlockup detector */
 	watchdog_interrupt_count();

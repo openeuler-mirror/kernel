@@ -129,6 +129,8 @@ static inline int hardlockup_detector_perf_init(void) { return 0; }
 extern void corelockup_detector_init(void);
 extern void corelockup_detector_online_cpu(unsigned int cpu);
 extern void corelockup_detector_offline_cpu(unsigned int cpu);
+extern void watchdog_check_hrtimer(void);
+extern unsigned long watchdog_hrtimer_interrupts(unsigned int cpu);
 #endif
 
 void watchdog_nmi_stop(void);
