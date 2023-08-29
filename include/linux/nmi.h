@@ -132,6 +132,7 @@ extern void corelockup_detector_offline_cpu(unsigned int cpu);
 extern void watchdog_check_hrtimer(void);
 extern unsigned long watchdog_hrtimer_interrupts(unsigned int cpu);
 extern bool enable_corelockup_detector;
+extern int corelockup_miss_thresh;
 #endif
 
 void watchdog_nmi_stop(void);

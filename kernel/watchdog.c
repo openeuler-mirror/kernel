@@ -778,6 +778,9 @@ int proc_watchdog_cpumask(struct ctl_table *table, int write,
 }
 
 static const int sixty = 60;
+#ifdef CONFIG_HARDLOCKUP_DETECTOR
+static const int five = 5;
+#endif
 
 static struct ctl_table watchdog_sysctls[] = {
 	{
@@ -866,6 +869,17 @@ static struct ctl_table watchdog_sysctls[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif /* CONFIG_SMP */
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	{
+		.procname	= "corelockup_thresh",
+		.data		= &corelockup_miss_thresh,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_THREE,
+		.extra2		= (void *)&five,
+	},
+#endif
 #endif
 	{}
 };
