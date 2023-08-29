@@ -1503,10 +1503,7 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 	 * might happen in case reset assertion was made by PF. Yes, this also
 	 * means we might end up waiting bit more even for VF reset.
 	 */
-	if (hdev->reset_type == HNAE3_VF_FULL_RESET)
-		msleep(5000);
-	else
-		msleep(500);
+	msleep(5000);
 
 	return 0;
 }
