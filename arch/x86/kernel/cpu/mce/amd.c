@@ -199,7 +199,7 @@ EXPORT_SYMBOL_GPL(smca_banks);
 static char buf_mcatype[MAX_MCATYPE_NAME_LEN];
 
 static DEFINE_PER_CPU(struct threshold_bank **, threshold_banks);
-static DEFINE_PER_CPU(unsigned int, bank_map);	/* see which banks are on */
+static DEFINE_PER_CPU(u64, bank_map);	/* see which banks are on */
 
 static void amd_threshold_interrupt(void);
 static void amd_deferred_error_interrupt(void);
@@ -528,7 +528,7 @@ prepare_threshold_block(unsigned int bank, unsigned int block, u32 addr,
 	int new;
 
 	if (!block)
-		per_cpu(bank_map, cpu) |= (1 << bank);
+		per_cpu(bank_map, cpu) |= BIT_ULL(bank);
 
 	memset(&b, 0, sizeof(b));
 	b.cpu			= cpu;
@@ -651,13 +651,21 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 	u8 cs_mask, cs_id = 0;
 	bool hash_enabled = false;
 
-	/* Read D18F0x1B4 (DramOffset), check if base 1 is used. */
-	if (amd_df_indirect_read(nid, 0, 0x1B4, umc, &tmp))
+	/* Read DramOffset, check if base 1 is used. */
+	if (hygon_f18h_m4h() &&
+	    amd_df_indirect_read(nid, 0, 0x214, umc, &tmp))
+		goto out_err;
+	else if (amd_df_indirect_read(nid, 0, 0x1B4, umc, &tmp))
 		goto out_err;
 
 	/* Remove HiAddrOffset from normalized address, if enabled: */
 	if (tmp & BIT(0)) {
-		u64 hi_addr_offset = (tmp & GENMASK_ULL(31, 20)) << 8;
+		u64 hi_addr_offset;
+
+		if (hygon_f18h_m4h())
+			hi_addr_offset = (tmp & GENMASK_ULL(31, 18)) << 8;
+		else
+			hi_addr_offset = (tmp & GENMASK_ULL(31, 20)) << 8;
 
 		if (norm_addr >= hi_addr_offset) {
 			ret_addr -= hi_addr_offset;
@@ -676,6 +684,9 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 		goto out_err;
 	}
 
+	intlv_num_sockets = 0;
+	if (hygon_f18h_m4h())
+		intlv_num_sockets = (tmp >> 2) & 0x3;
 	lgcy_mmio_hole_en = tmp & BIT(1);
 	intlv_num_chan	  = (tmp >> 4) & 0xF;
 	intlv_addr_sel	  = (tmp >> 8) & 0x7;
@@ -692,7 +703,8 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 	if (amd_df_indirect_read(nid, 0, 0x114 + (8 * base), umc, &tmp))
 		goto out_err;
 
-	intlv_num_sockets = (tmp >> 8) & 0x1;
+	if (!hygon_f18h_m4h())
+		intlv_num_sockets = (tmp >> 8) & 0x1;
 	intlv_num_dies	  = (tmp >> 10) & 0x3;
 	dram_limit_addr	  = ((tmp & GENMASK_ULL(31, 12)) << 16) | GENMASK_ULL(27, 0);
 
@@ -702,6 +714,10 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 	switch (intlv_num_chan) {
 	case 0:	intlv_num_chan = 0; break;
 	case 1: intlv_num_chan = 1; break;
+	case 2:
+		if (hygon_f18h_m4h())
+			intlv_num_chan = 2;
+		break;
 	case 3: intlv_num_chan = 2; break;
 	case 5:	intlv_num_chan = 3; break;
 	case 7:	intlv_num_chan = 4; break;
@@ -728,8 +744,9 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 	/* Add a bit if sockets are interleaved. */
 	num_intlv_bits += intlv_num_sockets;
 
-	/* Assert num_intlv_bits <= 4 */
-	if (num_intlv_bits > 4) {
+	/* Assert num_intlv_bits in the correct range. */
+	if ((hygon_f18h_m4h() && num_intlv_bits > 7) ||
+	    (!hygon_f18h_m4h() && num_intlv_bits > 4)) {
 		pr_err("%s: Invalid interleave bits %d.\n",
 			__func__, num_intlv_bits);
 		goto out_err;
@@ -748,7 +765,10 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 		if (amd_df_indirect_read(nid, 0, 0x50, umc, &tmp))
 			goto out_err;
 
-		cs_fabric_id = (tmp >> 8) & 0xFF;
+		if (hygon_f18h_m4h())
+			cs_fabric_id = (tmp >> 8) & 0x7FF;
+		else
+			cs_fabric_id = (tmp >> 8) & 0xFF;
 		die_id_bit   = 0;
 
 		/* If interleaved over more than 1 channel: */
@@ -768,8 +788,13 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 		/* If interleaved over more than 1 die. */
 		if (intlv_num_dies) {
 			sock_id_bit  = die_id_bit + intlv_num_dies;
-			die_id_shift = (tmp >> 24) & 0xF;
-			die_id_mask  = (tmp >> 8) & 0xFF;
+			if (hygon_f18h_m4h()) {
+				die_id_shift = (tmp >> 12) & 0xF;
+				die_id_mask  = tmp & 0x7FF;
+			} else {
+				die_id_shift = (tmp >> 24) & 0xF;
+				die_id_mask  = (tmp >> 8) & 0xFF;
+			}
 
 			cs_id |= ((cs_fabric_id & die_id_mask) >> die_id_shift) << die_id_bit;
 		}
@@ -777,7 +802,10 @@ int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
 		/* If interleaved over more than 1 socket. */
 		if (intlv_num_sockets) {
 			socket_id_shift	= (tmp >> 28) & 0xF;
-			socket_id_mask	= (tmp >> 16) & 0xFF;
+			if (hygon_f18h_m4h())
+				socket_id_mask	= (tmp >> 16) & 0x7FF;
+			else
+				socket_id_mask	= (tmp >> 16) & 0xFF;
 
 			cs_id |= ((cs_fabric_id & socket_id_mask) >> socket_id_shift) << sock_id_bit;
 		}
@@ -993,7 +1021,7 @@ static void amd_threshold_interrupt(void)
 	unsigned int bank, cpu = smp_processor_id();
 
 	for (bank = 0; bank < mca_cfg.banks; ++bank) {
-		if (!(per_cpu(bank_map, cpu) & (1 << bank)))
+		if (!(per_cpu(bank_map, cpu) & BIT_ULL(bank)))
 			continue;
 
 		first_block = per_cpu(threshold_banks, cpu)[bank]->blocks;
@@ -1414,7 +1442,7 @@ int mce_threshold_remove_device(unsigned int cpu)
 	unsigned int bank;
 
 	for (bank = 0; bank < mca_cfg.banks; ++bank) {
-		if (!(per_cpu(bank_map, cpu) & (1 << bank)))
+		if (!(per_cpu(bank_map, cpu) & BIT_ULL(bank)))
 			continue;
 		threshold_remove_bank(cpu, bank);
 	}
@@ -1442,7 +1470,7 @@ int mce_threshold_create_device(unsigned int cpu)
 	per_cpu(threshold_banks, cpu) = bp;
 
 	for (bank = 0; bank < mca_cfg.banks; ++bank) {
-		if (!(per_cpu(bank_map, cpu) & (1 << bank)))
+		if (!(per_cpu(bank_map, cpu) & BIT_ULL(bank)))
 			continue;
 		err = threshold_create_bank(cpu, bank);
 		if (err)

@@ -239,11 +239,14 @@ apply_microcode_early_amd(u32 cpuid_1_eax, void *ucode, size_t size, bool save_p
 static bool get_builtin_microcode(struct cpio_data *cp, unsigned int family)
 {
 #ifdef CONFIG_X86_64
-	char fw_name[36] = "amd-ucode/microcode_amd.bin";
+	char fw_name[40] = "amd-ucode/microcode_amd.bin";
 
-	if (family >= 0x15)
+	if (x86_cpuid_vendor() == X86_VENDOR_AMD && family >= 0x15)
 		snprintf(fw_name, sizeof(fw_name),
 			 "amd-ucode/microcode_amd_fam%.2xh.bin", family);
+	else if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+		snprintf(fw_name, sizeof(fw_name),
+			 "hygon-ucode/microcode_hygon_fam%.2xh.bin", family);
 
 	return get_builtin_firmware(cp, fw_name);
 #else
@@ -260,11 +263,18 @@ static void __load_ucode_amd(unsigned int cpuid_1_eax, struct cpio_data *ret)
 
 	if (IS_ENABLED(CONFIG_X86_32)) {
 		uci	= (struct ucode_cpu_info *)__pa_nodebug(ucode_cpu_info);
-		path	= (const char *)__pa_nodebug(ucode_path);
+		if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+			path = (const char *)__pa_nodebug(
+				"kernel/x86/microcode/HygonGenuine.bin");
+		else
+			path	= (const char *)__pa_nodebug(ucode_path);
 		use_pa	= true;
 	} else {
 		uci     = ucode_cpu_info;
-		path	= ucode_path;
+		if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+			path = "kernel/x86/microcode/HygonGenuine.bin";
+		else
+			path	= ucode_path;
 		use_pa	= false;
 	}
 
@@ -327,8 +337,14 @@ int __init save_microcode_in_initrd_amd(unsigned int cpuid_1_eax)
 	struct cont_desc desc = { 0 };
 	enum ucode_state ret;
 	struct cpio_data cp;
+	const char *path;
 
-	cp = find_microcode_in_initrd(ucode_path, false);
+	if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+		path = "kernel/x86/microcode/HygonGenuine.bin";
+	else
+		path = ucode_path;
+
+	cp = find_microcode_in_initrd(path, false);
 	if (!(cp.data && cp.size))
 		return -EINVAL;
 
@@ -466,27 +482,22 @@ static unsigned int verify_patch_size(u8 family, u32 patch_size,
 {
 	u32 max_size;
 
+	if (family >= 0x15)
+		return min_t(u32, patch_size, size);
+
 #define F1XH_MPB_MAX_SIZE 2048
 #define F14H_MPB_MAX_SIZE 1824
-#define F15H_MPB_MAX_SIZE 4096
-#define F16H_MPB_MAX_SIZE 3458
-#define F17H_MPB_MAX_SIZE 3200
 
 	switch (family) {
+	case 0x10 ... 0x12:
+		max_size = F1XH_MPB_MAX_SIZE;
+		break;
 	case 0x14:
 		max_size = F14H_MPB_MAX_SIZE;
 		break;
-	case 0x15:
-		max_size = F15H_MPB_MAX_SIZE;
-		break;
-	case 0x16:
-		max_size = F16H_MPB_MAX_SIZE;
-		break;
-	case 0x17:
-		max_size = F17H_MPB_MAX_SIZE;
-		break;
 	default:
-		max_size = F1XH_MPB_MAX_SIZE;
+		WARN(1, "%s: WTF family: 0x%x\n", __func__, family);
+		return 0;
 		break;
 	}
 
@@ -742,7 +753,7 @@ load_microcode_amd(bool save, u8 family, const u8 *data, size_t size)
 static enum ucode_state request_microcode_amd(int cpu, struct device *device,
 					      bool refresh_fw)
 {
-	char fw_name[36] = "amd-ucode/microcode_amd.bin";
+	char fw_name[40] = "amd-ucode/microcode_amd.bin";
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	bool bsp = c->cpu_index == boot_cpu_data.cpu_index;
 	enum ucode_state ret = UCODE_NFOUND;
@@ -752,8 +763,12 @@ static enum ucode_state request_microcode_amd(int cpu, struct device *device,
 	if (!refresh_fw || !bsp)
 		return UCODE_OK;
 
-	if (c->x86 >= 0x15)
-		snprintf(fw_name, sizeof(fw_name), "amd-ucode/microcode_amd_fam%.2xh.bin", c->x86);
+	if (x86_cpuid_vendor() == X86_VENDOR_AMD && c->x86 >= 0x15)
+		snprintf(fw_name, sizeof(fw_name),
+			"amd-ucode/microcode_amd_fam%.2xh.bin", c->x86);
+	else if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+		snprintf(fw_name, sizeof(fw_name),
+			"hygon-ucode/microcode_hygon_fam%.2xh.bin", c->x86);
 
 	if (request_firmware_direct(&fw, (const char *)fw_name, device)) {
 		pr_debug("failed to load file %s\n", fw_name);
@@ -811,6 +826,22 @@ struct microcode_ops * __init init_amd_microcode(void)
 
 	return &microcode_amd_ops;
 }
+
+#ifdef CONFIG_MICROCODE_HYGON
+const struct microcode_ops * __init init_hygon_microcode(void)
+{
+	struct cpuinfo_x86 *c = &boot_cpu_data;
+
+	if (c->x86_vendor != X86_VENDOR_HYGON)
+		return NULL;
+
+	if (ucode_new_rev)
+		pr_info_once("microcode updated early to new patch_level=0x%08x\n",
+			     ucode_new_rev);
+
+	return &microcode_amd_ops;
+}
+#endif
 
 void __exit exit_amd_microcode(void)
 {

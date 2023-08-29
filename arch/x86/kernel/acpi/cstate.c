@@ -204,6 +204,7 @@ static int __init ffh_cstate_init(void)
 
 	if (c->x86_vendor != X86_VENDOR_INTEL &&
 		c->x86_vendor != X86_VENDOR_AMD &&
+		c->x86_vendor != X86_VENDOR_HYGON &&
 		c->x86_vendor != X86_VENDOR_CENTAUR &&
 		c->x86_vendor != X86_VENDOR_ZHAOXIN)
 		return -1;
