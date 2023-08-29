@@ -148,6 +148,10 @@ void watchdog_check_hrtimer(void)
 	if (cpu == smp_processor_id())
 		return;
 
+	/* return if hard lockup detector is disable */
+	if (!(watchdog_enabled & NMI_WATCHDOG_ENABLED))
+		return;
+
 	/*
 	 * The freq of hrtimer is fast than nmi interrupts and
 	 * the core mustn't hangs if hrtimer still working.
