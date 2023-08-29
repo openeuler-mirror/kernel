@@ -187,10 +187,33 @@ static inline void fp_user_discard(void)
 	}
 }
 
+#ifdef CONFIG_ARM64_ILP32
+static inline void delouse_pt_regs(struct pt_regs *regs)
+{
+	regs->regs[0] &= UINT_MAX;
+	regs->regs[1] &= UINT_MAX;
+	regs->regs[2] &= UINT_MAX;
+	regs->regs[3] &= UINT_MAX;
+	regs->regs[4] &= UINT_MAX;
+	regs->regs[5] &= UINT_MAX;
+	regs->regs[6] &= UINT_MAX;
+	regs->regs[7] &= UINT_MAX;
+}
+#endif
+
 void do_el0_svc(struct pt_regs *regs)
 {
+	const syscall_fn_t *t = sys_call_table;
+
+#ifdef CONFIG_ARM64_ILP32
+	if (is_ilp32_compat_task()) {
+		t = ilp32_sys_call_table;
+		delouse_pt_regs(regs);
+	}
+#endif
+
 	fp_user_discard();
-	el0_svc_common(regs, regs->regs[8], __NR_syscalls, sys_call_table);
+	el0_svc_common(regs, regs->regs[8], __NR_syscalls, t);
 }
 
 #ifdef CONFIG_AARCH32_EL0
