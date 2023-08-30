@@ -170,6 +170,10 @@ static unsigned long exit_to_user_mode_loop(struct pt_regs *regs,
 		if (ti_work & _TIF_NOTIFY_RESUME)
 			resume_user_mode_work(regs);
 
+#ifdef CONFIG_QOS_SCHED
+		sched_qos_offline_wait();
+#endif
+
 		/* Architecture specific TIF work */
 		arch_exit_to_user_mode_work(regs, ti_work);
 
@@ -200,7 +204,8 @@ static void exit_to_user_mode_prepare(struct pt_regs *regs)
 	tick_nohz_user_enter_prepare();
 
 	ti_work = read_thread_flags();
-	if (unlikely(ti_work & EXIT_TO_USER_MODE_WORK))
+	if (unlikely((ti_work & EXIT_TO_USER_MODE_WORK) ||
+		      sched_qos_cpu_overload()))
 		ti_work = exit_to_user_mode_loop(regs, ti_work);
 
 	arch_exit_to_user_mode_prepare(regs, ti_work);

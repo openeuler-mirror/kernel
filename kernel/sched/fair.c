@@ -56,6 +56,10 @@
 #include "stats.h"
 #include "autogroup.h"
 
+#ifdef CONFIG_QOS_SCHED
+#include <linux/delay.h>
+#endif
+
 /*
  * Targeted preemption latency for CPU-bound tasks:
  *
@@ -166,6 +170,10 @@ int __weak arch_asym_cpu_priority(int cpu)
 
 #ifdef CONFIG_QOS_SCHED
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct list_head, qos_throttled_cfs_rq);
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
+static DEFINE_PER_CPU(int, qos_cpu_overload);
+unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
+unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
 static int unthrottle_qos_cfs_rqs(int cpu);
 #endif
 
@@ -8107,6 +8115,7 @@ preempt:
 }
 
 #ifdef CONFIG_QOS_SCHED
+static void start_qos_hrtimer(int cpu);
 static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
@@ -8139,6 +8148,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	if (!se)
 		sub_nr_running(rq, task_delta);
+
+	if (list_empty(&per_cpu(qos_throttled_cfs_rq, cpu_of(rq))))
+		start_qos_hrtimer(cpu_of(rq));
 
 	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
@@ -8195,7 +8207,7 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 		resched_curr(rq);
 }
 
-static int unthrottle_qos_cfs_rqs(int cpu)
+static int __unthrottle_qos_cfs_rqs(int cpu)
 {
 	struct cfs_rq *cfs_rq, *tmp_rq;
 	int res = 0;
@@ -8211,11 +8223,25 @@ static int unthrottle_qos_cfs_rqs(int cpu)
 	return res;
 }
 
+static int unthrottle_qos_cfs_rqs(int cpu)
+{
+	int res;
+
+	res = __unthrottle_qos_cfs_rqs(cpu);
+	if (res)
+		hrtimer_cancel(&(per_cpu(qos_overload_timer, cpu)));
+
+	return res;
+}
+
 static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	if (unlikely(__this_cpu_read(qos_cpu_overload)))
+		return false;
+
 	if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
-		     !sched_idle_cpu(smp_processor_id()) &&
-		     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
+		!sched_idle_cpu(smp_processor_id()) &&
+		cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
 		throttle_qos_cfs_rq(cfs_rq);
 		return true;
 	}
@@ -8232,6 +8258,56 @@ static inline void unthrottle_qos_sched_group(struct cfs_rq *cfs_rq)
 	if (cfs_rq->tg->qos_level == -1 && cfs_rq_throttled(cfs_rq))
 		unthrottle_qos_cfs_rq(cfs_rq);
 	rq_unlock_irqrestore(rq, &rf);
+}
+
+void sched_qos_offline_wait(void)
+{
+	long qos_level;
+
+	while (unlikely(this_cpu_read(qos_cpu_overload))) {
+		rcu_read_lock();
+		qos_level = task_group(current)->qos_level;
+		rcu_read_unlock();
+		if (qos_level != -1 || signal_pending(current))
+			break;
+		msleep_interruptible(sysctl_offline_wait_interval);
+	}
+}
+
+int sched_qos_cpu_overload(void)
+{
+	return __this_cpu_read(qos_cpu_overload);
+}
+
+static enum hrtimer_restart qos_overload_timer_handler(struct hrtimer *timer)
+{
+	struct rq_flags rf;
+	struct rq *rq = this_rq();
+
+	rq_lock_irqsave(rq, &rf);
+	if (__unthrottle_qos_cfs_rqs(smp_processor_id()))
+		__this_cpu_write(qos_cpu_overload, 1);
+	rq_unlock_irqrestore(rq, &rf);
+
+	return HRTIMER_NORESTART;
+}
+
+static void start_qos_hrtimer(int cpu)
+{
+	ktime_t time;
+	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	time = ktime_add_ms(hrtimer->base->get_time(), (u64)sysctl_overload_detect_period);
+	hrtimer_set_expires(hrtimer, time);
+	hrtimer_start_expires(hrtimer, HRTIMER_MODE_ABS_PINNED);
+}
+
+void init_qos_hrtimer(int cpu)
+{
+	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
+	hrtimer->function = qos_overload_timer_handler;
 }
 #endif
 
@@ -8418,6 +8494,8 @@ idle:
 		rq->idle_stamp = 0;
 		goto again;
 	}
+
+	__this_cpu_write(qos_cpu_overload, 0);
 #endif
 	/*
 	 * rq is about to be idle, check if we need to update the

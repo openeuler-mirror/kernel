@@ -32,4 +32,9 @@ extern int sysctl_numa_balancing_mode;
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 extern int sysctl_sched_util_low_pct;
 #endif
+#ifdef CONFIG_QOS_SCHED
+extern unsigned int sysctl_overload_detect_period;
+extern unsigned int sysctl_offline_wait_interval;
+#endif
+
 #endif /* _LINUX_SCHED_SYSCTL_H */

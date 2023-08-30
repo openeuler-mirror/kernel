@@ -96,6 +96,10 @@ EXPORT_SYMBOL_GPL(sysctl_long_vals);
 static const int six_hundred_forty_kb = 640 * 1024;
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+static int one_thousand = 1000;
+static int hundred_thousand = 100000;
+#endif
 
 static const int ngroups_max = NGROUPS_MAX;
 static const int cap_last_cap = CAP_LAST_CAP;
@@ -2045,6 +2049,26 @@ static struct ctl_table kern_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
+#ifdef CONFIG_QOS_SCHED
+	{
+		.procname	= "qos_overload_detect_period_ms",
+		.data		= &sysctl_overload_detect_period,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= &hundred_thousand,
+	},
+	{
+		.procname	= "qos_offline_wait_interval_ms",
+		.data		= &sysctl_offline_wait_interval,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= &one_thousand,
+	},
+#endif
 	{
 		.procname	= "max_rcu_stall_to_panic",
 		.data		= &sysctl_max_rcu_stall_to_panic,

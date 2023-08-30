@@ -2469,6 +2469,13 @@ static inline bool dynamic_affinity_enabled(void)
 #endif
 #ifdef CONFIG_QOS_SCHED
 void sched_move_offline_task(struct task_struct *p);
+void sched_qos_offline_wait(void);
+int sched_qos_cpu_overload(void);
+#else
+static inline int sched_qos_cpu_overload(void)
+{
+	return 0;
+}
 #endif
 
 #endif
