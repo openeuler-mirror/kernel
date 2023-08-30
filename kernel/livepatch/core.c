@@ -1061,6 +1061,12 @@ static int klp_init_patch(struct klp_patch *patch)
 	}
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
+	ret = jump_label_register(patch->mod);
+	if (ret) {
+		pr_err("register jump label failed, ret=%d\n", ret);
+		return ret;
+	}
 	klp_for_each_object(patch, obj)
 		klp_load_hook(obj);
 #endif
