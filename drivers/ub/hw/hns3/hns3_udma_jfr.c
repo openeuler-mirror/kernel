@@ -392,6 +392,73 @@ static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 	free_jfr_idx(dev, jfr);
 }
 
+static int udma_modify_jfr_um_qpc(struct udma_dev *dev, struct udma_jfr *jfr,
+				  enum udma_qp_state target_state)
+{
+	struct udma_modify_tp_attr attr = {};
+	struct udma_qp *qp = jfr->um_qp;
+	int ret;
+
+	attr.path_mtu = UBCORE_MTU_4096;
+	qp->udma_device = dev;
+	qp->qp_attr.jfr = jfr;
+	qp->recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
+	qp->send_jfc = NULL;
+	ret = udma_modify_qp_common(qp, &attr, jfr->um_qp->state, target_state);
+	if (ret)
+		dev_err(dev->dev, "failed to modify qpc to RTR.\n");
+
+	qp->state = target_state;
+	return ret;
+}
+
+static int alloc_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
+{
+	struct ubcore_udata udata;
+	struct udma_qp *qp;
+	int ret;
+
+	qp = kzalloc(sizeof(*qp), GFP_KERNEL);
+	if (!qp)
+		return -ENOMEM;
+
+	qp->qp_type = QPT_UD;
+	qp->qp_attr.qp_type = QPT_UD;
+	qp->qp_attr.qpn_map = &jfr->qpn_map;
+	qp->qp_attr.recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
+	qp->qp_attr.send_jfc = NULL;
+	udata.uctx = NULL;
+	ret = udma_create_qp_common(dev, qp, &udata);
+	if (ret) {
+		dev_err(dev->dev, "failed to create qpc.\n");
+		goto failed_create_qpc;
+	}
+	jfr->um_qp = qp;
+
+	qp->state = QPS_RESET;
+	ret = udma_modify_jfr_um_qpc(dev, jfr, QPS_RTR);
+	if (ret) {
+		dev_err(dev->dev, "failed to modify qpc.\n");
+		goto failed_modify_qpc;
+	}
+
+	return 0;
+
+failed_modify_qpc:
+	udma_destroy_qp_common(dev, qp);
+failed_create_qpc:
+	kfree(qp);
+
+	return ret;
+}
+
+void destroy_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
+{
+	udma_modify_jfr_um_qpc(dev, jfr, QPS_RESET);
+	udma_destroy_qp_common(dev, jfr->um_qp);
+	kfree(jfr->um_qp);
+}
+
 struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
 			      struct ubcore_udata *udata)
 {
@@ -419,8 +486,16 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcor
 	init_jetty_x_qpn_bitmap(udma_dev, &jfr->qpn_map,
 				udma_dev->caps.num_jfr_shift,
 				UDMA_JFR_QPN_PREFIX, jfr->jfrn);
+	if (cfg->trans_mode == UBCORE_TP_UM) {
+		ret = alloc_jfr_um_qp(udma_dev, jfr);
+		if (ret)
+			goto err_alloc_jfrc;
+	}
 	return &jfr->ubcore_jfr;
 
+err_alloc_jfrc:
+	clean_jetty_x_qpn_bitmap(&jfr->qpn_map);
+	free_jfrc(udma_dev, jfr->jfrn);
 err_alloc_buf:
 	free_jfr_buf(udma_dev, jfr);
 err_alloc_jfr:
@@ -434,6 +509,8 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 	struct udma_dev *dev = to_udma_dev(jfr->ub_dev);
 	struct udma_jfr *udma_jfr = to_udma_jfr(jfr);
 
+	if (udma_jfr->um_qp)
+		destroy_jfr_um_qp(dev, udma_jfr);
 	clean_jetty_x_qpn_bitmap(&udma_jfr->qpn_map);
 	free_jfrc(dev, udma_jfr->jfrn);
 	free_jfr_buf(dev, udma_jfr);
