@@ -217,17 +217,17 @@ static inline void forget_syscall(struct pt_regs *regs)
 
 #define arch_has_single_step()	(1)
 
-#ifdef CONFIG_COMPAT
-#define compat_thumb_mode(regs) \
+#ifdef CONFIG_AARCH32_EL0
+#define a32_thumb_mode(regs) \
 	(((regs)->pstate & PSR_AA32_T_BIT))
 #else
-#define compat_thumb_mode(regs) (0)
+#define a32_thumb_mode(regs) (0)
 #endif
 
 #define user_mode(regs)	\
 	(((regs)->pstate & PSR_MODE_MASK) == PSR_MODE_EL0t)
 
-#define compat_user_mode(regs)	\
+#define a32_user_mode(regs)	\
 	(((regs)->pstate & (PSR_MODE32_BIT | PSR_MODE_MASK)) == \
 	 (PSR_MODE32_BIT | PSR_MODE_EL0t))
 
@@ -247,7 +247,7 @@ static inline void forget_syscall(struct pt_regs *regs)
 
 static inline unsigned long user_stack_pointer(struct pt_regs *regs)
 {
-	if (compat_user_mode(regs))
+	if (a32_user_mode(regs))
 		return regs->compat_sp;
 	return regs->sp;
 }
@@ -327,7 +327,7 @@ static inline unsigned long regs_return_value(struct pt_regs *regs)
 	 * syscall_get_return_value(). Apply the same sign-extension here until
 	 * audit is updated to use syscall_get_return_value().
 	 */
-	if (compat_user_mode(regs))
+	if (a32_user_mode(regs))
 		val = sign_extend64(val, 31);
 
 	return val;

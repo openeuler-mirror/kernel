@@ -95,14 +95,14 @@
 /* Kernel representation of AT_HWCAP and AT_HWCAP2 */
 static DECLARE_BITMAP(elf_hwcap, MAX_CPU_FEATURES) __read_mostly;
 
-#ifdef CONFIG_COMPAT
-#define COMPAT_ELF_HWCAP_DEFAULT	\
+#ifdef CONFIG_AARCH32_EL0
+#define AARCH32_EL0_ELF_HWCAP_DEFAULT	\
 				(COMPAT_HWCAP_HALF|COMPAT_HWCAP_THUMB|\
 				 COMPAT_HWCAP_FAST_MULT|COMPAT_HWCAP_EDSP|\
 				 COMPAT_HWCAP_TLS|COMPAT_HWCAP_IDIV|\
 				 COMPAT_HWCAP_LPAE)
-unsigned int compat_elf_hwcap __read_mostly = COMPAT_ELF_HWCAP_DEFAULT;
-unsigned int compat_elf_hwcap2 __read_mostly;
+unsigned int a32_elf_hwcap __read_mostly = AARCH32_EL0_ELF_HWCAP_DEFAULT;
+unsigned int a32_elf_hwcap2 __read_mostly;
 #endif
 
 DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
@@ -2165,7 +2165,7 @@ static void elf_hwcap_fixup(void)
 {
 #ifdef CONFIG_ARM64_ERRATUM_1742098
 	if (cpus_have_const_cap(ARM64_WORKAROUND_1742098))
-		compat_elf_hwcap2 &= ~COMPAT_HWCAP2_AES;
+		a32_elf_hwcap2 &= ~COMPAT_HWCAP2_AES;
 #endif /* ARM64_ERRATUM_1742098 */
 }
 
@@ -2788,7 +2788,7 @@ static const struct arm64_cpu_capabilities arm64_elf_hwcaps[] = {
 	{},
 };
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 static bool compat_has_neon(const struct arm64_cpu_capabilities *cap, int scope)
 {
 	/*
@@ -2810,8 +2810,8 @@ static bool compat_has_neon(const struct arm64_cpu_capabilities *cap, int scope)
 }
 #endif
 
-static const struct arm64_cpu_capabilities compat_elf_hwcaps[] = {
-#ifdef CONFIG_COMPAT
+static const struct arm64_cpu_capabilities a32_elf_hwcaps[] = {
+#ifdef CONFIG_AARCH32_EL0
 	HWCAP_CAP_MATCH(compat_has_neon, CAP_COMPAT_HWCAP, COMPAT_HWCAP_NEON),
 	HWCAP_CAP(MVFR1_EL1, SIMDFMAC, IMP, CAP_COMPAT_HWCAP, COMPAT_HWCAP_VFPv4),
 	/* Arm v8 mandates MVFR0.FPDP == {0, 2}. So, piggy back on this for the presence of VFP support */
@@ -2840,12 +2840,12 @@ static void cap_set_elf_hwcap(const struct arm64_cpu_capabilities *cap)
 	case CAP_HWCAP:
 		cpu_set_feature(cap->hwcap);
 		break;
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 	case CAP_COMPAT_HWCAP:
-		compat_elf_hwcap |= (u32)cap->hwcap;
+		a32_elf_hwcap |= (u32)cap->hwcap;
 		break;
 	case CAP_COMPAT_HWCAP2:
-		compat_elf_hwcap2 |= (u32)cap->hwcap;
+		a32_elf_hwcap2 |= (u32)cap->hwcap;
 		break;
 #endif
 	default:
@@ -2863,12 +2863,12 @@ static bool cpus_have_elf_hwcap(const struct arm64_cpu_capabilities *cap)
 	case CAP_HWCAP:
 		rc = cpu_have_feature(cap->hwcap);
 		break;
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 	case CAP_COMPAT_HWCAP:
-		rc = (compat_elf_hwcap & (u32)cap->hwcap) != 0;
+		rc = (a32_elf_hwcap & (u32)cap->hwcap) != 0;
 		break;
 	case CAP_COMPAT_HWCAP2:
-		rc = (compat_elf_hwcap2 & (u32)cap->hwcap) != 0;
+		rc = (a32_elf_hwcap2 & (u32)cap->hwcap) != 0;
 		break;
 #endif
 	default:
@@ -3067,7 +3067,7 @@ static void verify_local_elf_hwcaps(void)
 	__verify_local_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (id_aa64pfr0_32bit_el0(read_cpuid(ID_AA64PFR0_EL1)))
-		__verify_local_elf_hwcaps(compat_elf_hwcaps);
+		__verify_local_elf_hwcaps(a32_elf_hwcaps);
 }
 
 static void verify_sve_features(void)
@@ -3267,7 +3267,7 @@ void __init setup_cpu_features(void)
 	setup_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (system_supports_32bit_el0()) {
-		setup_elf_hwcaps(compat_elf_hwcaps);
+		setup_elf_hwcaps(a32_elf_hwcaps);
 		elf_hwcap_fixup();
 	}
 
@@ -3318,7 +3318,7 @@ static int enable_mismatched_32bit_el0(unsigned int cpu)
 	lucky_winner = cpu_32bit ? cpu : cpumask_any_and(cpu_32bit_el0_mask,
 							 cpu_active_mask);
 	get_cpu_device(lucky_winner)->offline_disabled = true;
-	setup_elf_hwcaps(compat_elf_hwcaps);
+	setup_elf_hwcaps(a32_elf_hwcaps);
 	elf_hwcap_fixup();
 	pr_info("Asymmetric 32-bit EL0 support detected on CPU %u; CPU hot-unplug disabled on CPU %u\n",
 		cpu, lucky_winner);
@@ -3422,7 +3422,7 @@ bool try_emulate_mrs(struct pt_regs *regs, u32 insn)
 {
 	u32 sys_reg, rt;
 
-	if (compat_user_mode(regs) || !aarch64_insn_is_mrs(insn))
+	if (a32_user_mode(regs) || !aarch64_insn_is_mrs(insn))
 		return false;
 
 	/*

@@ -99,9 +99,9 @@ int main(void)
   DEFINE(FREGS_SIZE,		sizeof(struct ftrace_regs));
   BLANK();
 #endif
-#ifdef CONFIG_COMPAT
-  DEFINE(COMPAT_SIGFRAME_REGS_OFFSET,		offsetof(struct compat_sigframe, uc.uc_mcontext.arm_r0));
-  DEFINE(COMPAT_RT_SIGFRAME_REGS_OFFSET,	offsetof(struct compat_rt_sigframe, sig.uc.uc_mcontext.arm_r0));
+#ifdef CONFIG_AARCH32_EL0
+  DEFINE(COMPAT_SIGFRAME_REGS_OFFSET,		offsetof(struct a32_sigframe, uc.uc_mcontext.arm_r0));
+  DEFINE(COMPAT_RT_SIGFRAME_REGS_OFFSET,	offsetof(struct a32_rt_sigframe, sig.uc.uc_mcontext.arm_r0));
   BLANK();
 #endif
   DEFINE(MM_CONTEXT_ID,		offsetof(struct mm_struct, context.id.counter));
@@ -120,6 +120,13 @@ int main(void)
   DEFINE(SOFTIRQ_SHIFT, SOFTIRQ_SHIFT);
   DEFINE(IRQ_CPUSTAT_SOFTIRQ_PENDING, offsetof(irq_cpustat_t, __softirq_pending));
   BLANK();
+#ifdef CONFIG_COMPAT
+  DEFINE(COMPAT_TVAL_TV_SEC,	offsetof(struct old_timeval32, tv_sec));
+  DEFINE(COMPAT_TVAL_TV_USEC,	offsetof(struct old_timeval32, tv_usec));
+  DEFINE(COMPAT_TSPEC_TV_SEC,	offsetof(struct old_timespec32, tv_sec));
+  DEFINE(COMPAT_TSPEC_TV_NSEC,	offsetof(struct old_timespec32, tv_nsec));
+  BLANK();
+#endif
   DEFINE(CPU_BOOT_TASK,		offsetof(struct secondary_data, task));
   BLANK();
   DEFINE(FTR_OVR_VAL_OFFSET,	offsetof(struct arm64_ftr_override, val));

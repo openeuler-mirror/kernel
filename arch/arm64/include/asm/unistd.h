@@ -2,9 +2,14 @@
 /*
  * Copyright (C) 2012 ARM Ltd.
  */
+
 #ifdef CONFIG_COMPAT
 #define __ARCH_WANT_COMPAT_STAT
 #define __ARCH_WANT_COMPAT_STAT64
+#define __ARCH_WANT_SYS_LLSEEK
+#endif
+
+#ifdef CONFIG_AARCH32_EL0
 #define __ARCH_WANT_SYS_GETHOSTNAME
 #define __ARCH_WANT_SYS_PAUSE
 #define __ARCH_WANT_SYS_GETPGRP

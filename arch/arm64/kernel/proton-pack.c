@@ -643,7 +643,7 @@ void spectre_v4_enable_mitigation(const struct arm64_cpu_capabilities *__unused)
 
 static void __update_pstate_ssbs(struct pt_regs *regs, bool state)
 {
-	u64 bit = compat_user_mode(regs) ? PSR_AA32_SSBS_BIT : PSR_SSBS_BIT;
+	u64 bit = a32_user_mode(regs) ? PSR_AA32_SSBS_BIT : PSR_SSBS_BIT;
 
 	if (state)
 		regs->pstate |= bit;

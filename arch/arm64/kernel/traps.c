@@ -8,6 +8,7 @@
 
 #include <linux/bug.h>
 #include <linux/context_tracking.h>
+#include <linux/compat.h>
 #include <linux/signal.h>
 #include <linux/kallsyms.h>
 #include <linux/kprobes.h>
@@ -368,7 +369,7 @@ void arm64_skip_faulting_instruction(struct pt_regs *regs, unsigned long size)
 	if (user_mode(regs))
 		user_fastforward_single_step(current);
 
-	if (compat_user_mode(regs))
+	if (a32_user_mode(regs))
 		advance_itstate(regs);
 	else
 		regs->pstate &= ~PSR_BTYPE_MASK;
@@ -379,7 +380,7 @@ static int user_insn_read(struct pt_regs *regs, u32 *insnp)
 	u32 instr;
 	unsigned long pc = instruction_pointer(regs);
 
-	if (compat_thumb_mode(regs)) {
+	if (a32_thumb_mode(regs)) {
 		/* 16-bit Thumb instruction */
 		__le16 instr_le;
 		if (get_user(instr_le, (__le16 __user *)pc))

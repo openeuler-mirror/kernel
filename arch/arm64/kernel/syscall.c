@@ -16,15 +16,15 @@
 #include <asm/thread_info.h>
 #include <asm/unistd.h>
 
-long compat_arm_syscall(struct pt_regs *regs, int scno);
+long a32_arm_syscall(struct pt_regs *regs, int scno);
 long sys_ni_syscall(void);
 
 static long do_ni_syscall(struct pt_regs *regs, int scno)
 {
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 	long ret;
-	if (is_compat_task()) {
-		ret = compat_arm_syscall(regs, scno);
+	if (is_a32_compat_task()) {
+		ret = a32_arm_syscall(regs, scno);
 		if (ret != -ENOSYS)
 			return ret;
 	}
@@ -187,16 +187,39 @@ static inline void fp_user_discard(void)
 	}
 }
 
+#ifdef CONFIG_ARM64_ILP32
+static inline void delouse_pt_regs(struct pt_regs *regs)
+{
+	regs->regs[0] &= UINT_MAX;
+	regs->regs[1] &= UINT_MAX;
+	regs->regs[2] &= UINT_MAX;
+	regs->regs[3] &= UINT_MAX;
+	regs->regs[4] &= UINT_MAX;
+	regs->regs[5] &= UINT_MAX;
+	regs->regs[6] &= UINT_MAX;
+	regs->regs[7] &= UINT_MAX;
+}
+#endif
+
 void do_el0_svc(struct pt_regs *regs)
 {
+	const syscall_fn_t *t = sys_call_table;
+
+#ifdef CONFIG_ARM64_ILP32
+	if (is_ilp32_compat_task()) {
+		t = ilp32_sys_call_table;
+		delouse_pt_regs(regs);
+	}
+#endif
+
 	fp_user_discard();
-	el0_svc_common(regs, regs->regs[8], __NR_syscalls, sys_call_table);
+	el0_svc_common(regs, regs->regs[8], __NR_syscalls, t);
 }
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 void do_el0_svc_compat(struct pt_regs *regs)
 {
 	el0_svc_common(regs, regs->regs[7], __NR_compat_syscalls,
-		       compat_sys_call_table);
+		       a32_sys_call_table);
 }
 #endif
