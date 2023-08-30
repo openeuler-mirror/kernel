@@ -8222,6 +8222,17 @@ static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	return false;
 }
+
+static inline void unthrottle_qos_sched_group(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct rq_flags rf;
+
+	rq_lock_irqsave(rq, &rf);
+	if (cfs_rq->tg->qos_level == -1 && cfs_rq_throttled(cfs_rq))
+		unthrottle_qos_cfs_rq(cfs_rq);
+	rq_unlock_irqrestore(rq, &rf);
+}
 #endif
 
 #ifdef CONFIG_SMP
@@ -12653,6 +12664,10 @@ void free_fair_sched_group(struct task_group *tg)
 	int i;
 
 	for_each_possible_cpu(i) {
+#ifdef CONFIG_QOS_SCHED
+		if (tg->cfs_rq)
+			unthrottle_qos_sched_group(tg->cfs_rq[i]);
+#endif
 		if (tg->cfs_rq)
 			kfree(tg->cfs_rq[i]);
 		if (tg->se)
