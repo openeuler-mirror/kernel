@@ -1061,6 +1061,7 @@ static int klp_init_patch(struct klp_patch *patch)
 	}
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	flush_module_icache(patch->mod);
 	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
 	ret = jump_label_register(patch->mod);
 	if (ret) {

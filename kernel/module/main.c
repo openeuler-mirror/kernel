@@ -2316,7 +2316,7 @@ static int check_export_symbol_versions(struct module *mod)
 	return 0;
 }
 
-static void flush_module_icache(const struct module *mod)
+void flush_module_icache(const struct module *mod)
 {
 	/*
 	 * Flush the instruction cache, since we've played with text.
