@@ -26,9 +26,17 @@ struct udma_tp {
 	struct udma_qp		qp;
 	struct ubcore_jetty_id	tjetty_id;
 };
+
+static inline struct udma_tp *to_udma_tp(struct ubcore_tp *ubcore_tp)
+{
+	return container_of(ubcore_tp, struct udma_tp, ubcore_tp);
+}
+
 struct ubcore_tp *udma_create_tp(struct ubcore_device *dev,
 			    const struct ubcore_tp_cfg *cfg,
 			    struct ubcore_udata *udata);
 int udma_destroy_tp(struct ubcore_tp *tp);
+int udma_modify_tp(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
+		   union ubcore_tp_attr_mask mask);
 
 #endif /* _UDMA_TP_H */
