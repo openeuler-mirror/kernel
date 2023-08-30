@@ -2106,7 +2106,7 @@ permissions on the task specified to change its timerslack_ns value.
 
 3.11	/proc/<pid>/patch_state - Livepatch patch operation state
 -----------------------------------------------------------------
-When CONFIG_LIVEPATCH is enabled, this file displays the value of the
+When CONFIG_LIVEPATCH_FTRACE is enabled, this file displays the value of the
 patch state for the task.
 
 A value of '-1' indicates that no patch is in transition.

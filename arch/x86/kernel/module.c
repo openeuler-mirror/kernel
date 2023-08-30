@@ -258,7 +258,7 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 	return write_relocate_add(sechdrs, strtab, symindex, relsec, me, true);
 }
 
-#ifdef CONFIG_LIVEPATCH
+#ifdef CONFIG_LIVEPATCH_FTRACE
 void clear_relocate_add(Elf64_Shdr *sechdrs,
 			const char *strtab,
 			unsigned int symindex,

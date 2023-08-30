@@ -2759,7 +2759,7 @@ config TEST_LIVEPATCH
 	tristate "Test livepatching"
 	default n
 	depends on DYNAMIC_DEBUG
-	depends on LIVEPATCH
+	depends on LIVEPATCH_FTRACE
 	depends on m
 	help
 	  Test kernel livepatching features for correctness.  The tests will

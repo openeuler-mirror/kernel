@@ -75,7 +75,7 @@ int apply_relocate_add(Elf_Shdr *sechdrs,
 		       unsigned int symindex,
 		       unsigned int relsec,
 		       struct module *mod);
-#ifdef CONFIG_LIVEPATCH
+#ifdef CONFIG_LIVEPATCH_FTRACE
 /*
  * Some architectures (namely x86_64 and ppc64) perform sanity checks when
  * applying relocations.  If a patched module gets unloaded and then later
