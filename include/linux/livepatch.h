@@ -87,6 +87,12 @@ struct klp_func {
 	void *func_node; /* Only used in the solution without ftrace */
 };
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+struct klp_hook {
+	void (*hook)(void);
+};
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
+
 struct klp_object;
 
 /**
@@ -128,6 +134,10 @@ struct klp_object {
 	/* external */
 	const char *name;
 	struct klp_func *funcs;
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	struct klp_hook *hooks_load;
+	struct klp_hook *hooks_unload;
+#endif
 	struct klp_callbacks callbacks; /* Not used in the solution without ftrace */
 
 	/* internal */
