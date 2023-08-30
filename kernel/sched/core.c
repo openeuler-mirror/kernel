@@ -11242,13 +11242,10 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 	struct cgroup_subsys_state *css = &tg->css;
 
 	tg->qos_level = qos_level;
-	if (qos_level == -1) {
+	if (qos_level == -1)
 		policy = SCHED_IDLE;
-		cfs_bandwidth_usage_inc();
-	} else {
+	else
 		policy = SCHED_NORMAL;
-		cfs_bandwidth_usage_dec();
-	}
 
 	param.sched_priority = 0;
 	css_task_iter_start(css, 0, &it);
@@ -11275,6 +11272,13 @@ static int cpu_qos_write(struct cgroup_subsys_state *css,
 
 	if (tg->qos_level == -1 && qos_level == 0)
 		return -EINVAL;
+
+	cpus_read_lock();
+	if (qos_level == -1)
+		cfs_bandwidth_usage_inc();
+	else
+		cfs_bandwidth_usage_dec();
+	cpus_read_unlock();
 
 	rcu_read_lock();
 	walk_tg_tree_from(tg, tg_change_scheduler, tg_nop, (void *)(&qos_level));
