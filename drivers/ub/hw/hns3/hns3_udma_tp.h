@@ -19,6 +19,8 @@
 #include <linux/jhash.h>
 #include "hns3_udma_qp.h"
 
+#define MAX_HOP_LIMIT 255
+
 struct udma_tp {
 	struct ubcore_tp		ubcore_tp;
 	struct udma_qp		qp;

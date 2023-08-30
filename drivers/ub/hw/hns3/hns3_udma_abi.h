@@ -99,6 +99,13 @@ struct udma_create_tp_ucmd {
 	uint64_t		sdb_addr;
 };
 
+enum udma_qp_cap_flags {
+	UDMA_QP_CAP_RQ_RECORD_DB = 1 << 0,
+	UDMA_QP_CAP_SQ_RECORD_DB = 1 << 1,
+	UDMA_QP_CAP_OWNER_DB = 1 << 2,
+	UDMA_QP_CAP_DIRECT_WQE = 1 << 5,
+};
+
 struct udma_create_tp_resp {
 	uint64_t		cap_flags;
 	uint32_t		qpn;

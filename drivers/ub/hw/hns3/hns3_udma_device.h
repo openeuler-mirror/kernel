@@ -173,6 +173,13 @@ enum udma_event {
 	UDMA_EVENT_TYPE_MB			= 0x13,
 };
 
+enum udma_mtu {
+	UDMA_MTU_256				= 1,
+	UDMA_MTU_512				= 2,
+	UDMA_MTU_1024				= 3,
+	UDMA_MTU_2048				= 4,
+	UDMA_MTU_4096				= 5
+};
 
 enum {
 	/* discard BIT(2), reserved for compatibility */
@@ -209,6 +216,10 @@ enum udma_cong_sel {
 	UDMA_CONG_SEL_LDCP = 1 << UDMA_CONG_TYPE_LDCP,
 	UDMA_CONG_SEL_HC3 = 1 << UDMA_CONG_TYPE_HC3,
 	UDMA_CONG_SEL_DIP = 1 << UDMA_CONG_TYPE_DIP,
+};
+
+enum udma_sig_type {
+	SIGNAL_REQ_WR = 1,
 };
 
 enum udma_qp_type {
@@ -822,9 +833,25 @@ static inline uint32_t to_udma_hem_entries_size(uint32_t count,
 {
 	return udma_hw_page_align(count << buf_shift);
 }
+
 static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
 {
 	return page_shift - UDMA_HW_PAGE_SHIFT;
+}
+
+static inline uint32_t to_udma_hem_entries_count(uint32_t count,
+						 uint32_t buf_shift)
+{
+	return udma_hw_page_align(count << buf_shift) >> buf_shift;
+}
+
+static inline uint32_t to_udma_hem_entries_shift(uint32_t count,
+						 uint32_t buf_shift)
+{
+	if (!count)
+		return 0;
+
+	return ilog2(to_udma_hem_entries_count(count, buf_shift));
 }
 
 static inline uint64_t to_udma_hw_page_addr(uint64_t addr)
