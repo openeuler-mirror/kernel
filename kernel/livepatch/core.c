@@ -31,6 +31,9 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/stop_machine.h>
+#ifdef CONFIG_LIVEPATCH_RESTRICT_KPROBE
+#include <linux/kprobes.h>
+#endif /* CONFIG_LIVEPATCH_RESTRICT_KPROBE */
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /*
@@ -1889,6 +1892,40 @@ static int klp_mem_prepare(struct klp_patch *patch)
 	return 0;
 }
 
+#ifdef CONFIG_LIVEPATCH_RESTRICT_KPROBE
+/*
+ * Check whether a function has been registered with kprobes before patched.
+ * We can't patched this function util we unregistered the kprobes.
+ */
+static struct kprobe *klp_check_patch_kprobed(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+	struct kprobe *kp;
+	int i;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			for (i = 0; i < func->old_size; i++) {
+				kp = get_kprobe(func->old_func + i);
+				if (kp) {
+					pr_err("func %s has been probed, (un)patch failed\n",
+						func->old_name);
+					return kp;
+				}
+			}
+		}
+	}
+
+	return NULL;
+}
+#else
+static inline struct kprobe *klp_check_patch_kprobed(struct klp_patch *patch)
+{
+	return NULL;
+}
+#endif /* CONFIG_LIVEPATCH_RESTRICT_KPROBE */
+
 void __weak arch_klp_unpatch_func(struct klp_func *func)
 {
 }
@@ -2017,6 +2054,11 @@ static int klp_try_disable_patch(void *data)
 	if (atomic_inc_return(&pd->cpu_count) == 1) {
 		struct klp_patch *patch = pd->patch;
 
+		if (klp_check_patch_kprobed(patch)) {
+			atomic_inc(&pd->cpu_count);
+			return -EINVAL;
+		}
+
 		ret = klp_check_calltrace(patch, 0);
 		if (ret) {
 			atomic_inc(&pd->cpu_count);
@@ -2112,6 +2154,11 @@ static int klp_try_enable_patch(void *data)
 
 	if (atomic_inc_return(&pd->cpu_count) == 1) {
 		struct klp_patch *patch = pd->patch;
+
+		if (klp_check_patch_kprobed(patch)) {
+			atomic_inc(&pd->cpu_count);
+			return -EINVAL;
+		}
 
 		ret = klp_check_calltrace(patch, 1);
 		if (ret) {

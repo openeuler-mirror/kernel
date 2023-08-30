@@ -76,4 +76,15 @@ config LIVEPATCH_STACK
 	help
 	  Say N here if you want to remove the patch stacking principle.
 
+config LIVEPATCH_RESTRICT_KPROBE
+	bool "Enforing check livepatch and kprobe restrict"
+	depends on LIVEPATCH_WO_FTRACE
+	depends on KPROBES
+	default y
+	help
+	  Livepatch without ftrace and kprobe are conflicting.
+	  We should not patch for the functions where registered with kprobe,
+	  and vice versa.
+	  Say Y here if you want to check those.
+
 endmenu
