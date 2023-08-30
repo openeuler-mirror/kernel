@@ -418,6 +418,9 @@ out:
 	return count;
 }
 
+static inline void klp_module_enable_ro(const struct module *mod, bool after_init) {}
+static inline void klp_module_disable_ro(const struct module *mod) {}
+
 #else /* !CONFIG_LIVEPATCH_FTRACE */
 
 static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
@@ -425,6 +428,20 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 static inline int klp_load_hook(struct klp_object *obj);
 static inline int klp_unload_hook(struct klp_object *obj);
 static int check_address_conflict(struct klp_patch *patch);
+
+static void klp_module_enable_ro(const struct module *mod, bool after_init)
+{
+#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+	module_enable_ro(mod, after_init);
+#endif
+}
+
+static void klp_module_disable_ro(const struct module *mod)
+{
+#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+	module_disable_ro(mod);
+#endif
+}
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
@@ -903,6 +920,7 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	struct klp_func *func;
 	int ret;
 
+	klp_module_disable_ro(patch->mod);
 	if (klp_is_module(obj)) {
 		/*
 		 * Only write module-specific relocations here
@@ -911,9 +929,12 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 		 * itself.
 		 */
 		ret = klp_apply_object_relocs(patch, obj);
-		if (ret)
+		if (ret) {
+			klp_module_enable_ro(patch->mod, true);
 			return ret;
+		}
 	}
+	klp_module_enable_ro(patch->mod, true);
 
 	klp_for_each_func(obj, func) {
 		ret = klp_find_object_symbol(obj->name, func->old_name,
@@ -1065,8 +1086,10 @@ static int klp_init_patch(struct klp_patch *patch)
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
 	flush_module_icache(patch->mod);
 	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
+	klp_module_disable_ro(patch->mod);
 	ret = jump_label_register(patch->mod);
 	if (ret) {
+		klp_module_enable_ro(patch->mod, true);
 		pr_err("register jump label failed, ret=%d\n", ret);
 		return ret;
 	}
@@ -1079,9 +1102,11 @@ static int klp_init_patch(struct klp_patch *patch)
 		 *     do_init_module
 		 *       fail_free_freeinit:  <-- notify GOING here
 		 */
+		klp_module_enable_ro(patch->mod, true);
 		pr_err("register static call failed, ret=%d\n", ret);
 		return ret;
 	}
+	klp_module_enable_ro(patch->mod, true);
 
 	ret = check_address_conflict(patch);
 	if (ret)
