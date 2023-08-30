@@ -424,6 +424,7 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 					     const char *buf, size_t count);
 static inline int klp_load_hook(struct klp_object *obj);
 static inline int klp_unload_hook(struct klp_object *obj);
+static int check_address_conflict(struct klp_patch *patch);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
@@ -1081,6 +1082,11 @@ static int klp_init_patch(struct klp_patch *patch)
 		pr_err("register static call failed, ret=%d\n", ret);
 		return ret;
 	}
+
+	ret = check_address_conflict(patch);
+	if (ret)
+		return ret;
+
 	klp_for_each_object(patch, obj)
 		klp_load_hook(obj);
 #endif
@@ -1469,6 +1475,43 @@ static bool klp_is_patch_registered(struct klp_patch *patch)
 			return true;
 
 	return false;
+}
+
+static int check_address_conflict(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+	int ret;
+	void *start;
+	void *end;
+
+	/*
+	 * Locks seem required as comment of jump_label_text_reserved() said:
+	 *   Caller must hold jump_label_mutex.
+	 * But looking into implementation of jump_label_text_reserved() and
+	 * static_call_text_reserved(), call sites of every jump_label or static_call
+	 * are checked, and they won't be changed after corresponding module inserted,
+	 * so no need to take jump_label_lock and static_call_lock here.
+	 */
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			start = func->old_func;
+			end = start + KLP_MAX_REPLACE_SIZE - 1;
+			ret = jump_label_text_reserved(start, end);
+			if (ret) {
+				pr_err("'%s' has static key in first %zu bytes, ret=%d\n",
+				       func->old_name, KLP_MAX_REPLACE_SIZE, ret);
+				return -EINVAL;
+			}
+			ret = static_call_text_reserved(start, end);
+			if (ret) {
+				pr_err("'%s' has static call in first %zu bytes, ret=%d\n",
+				       func->old_name, KLP_MAX_REPLACE_SIZE, ret);
+				return -EINVAL;
+			}
+		}
+	}
+	return 0;
 }
 
 static int state_show(struct seq_file *m, void *v)
