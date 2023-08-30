@@ -9516,8 +9516,14 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 
 	param.sched_priority = 0;
 	css_task_iter_start(css, 0, &it);
-	while ((tsk = css_task_iter_next(&it)))
+	while ((tsk = css_task_iter_next(&it))) {
+		if (unlikely(rt_task(tsk) || dl_task(tsk))) {
+			pr_warn("skip %s/%d when setting qos_level\n", tsk->comm, tsk->pid);
+			continue;
+		}
+
 		sched_setscheduler(tsk, policy, &param);
+	}
 	css_task_iter_end(&it);
 
 	return 0;
