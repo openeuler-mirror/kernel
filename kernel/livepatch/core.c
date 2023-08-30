@@ -22,9 +22,11 @@
 #include <linux/rcupdate.h>
 #include <asm/cacheflush.h>
 #include "core.h"
+#ifdef CONFIG_LIVEPATCH_FTRACE
 #include "patch.h"
 #include "state.h"
 #include "transition.h"
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /*
  * klp_mutex is a coarse lock which serializes access to klp data.  All
@@ -84,6 +86,7 @@ static bool klp_initialized(void)
 	return !!klp_root_kobj;
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static struct klp_func *klp_find_func(struct klp_object *obj,
 				      struct klp_func *old_func)
 {
@@ -117,6 +120,7 @@ static struct klp_object *klp_find_object(struct klp_patch *patch,
 
 	return NULL;
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 struct klp_find_arg {
 	const char *name;
@@ -260,6 +264,7 @@ static int klp_resolve_symbols(Elf_Shdr *sechdrs, const char *strtab,
 	return 0;
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 void __weak clear_relocate_add(Elf_Shdr *sechdrs,
 		   const char *strtab,
 		   unsigned int symindex,
@@ -267,6 +272,7 @@ void __weak clear_relocate_add(Elf_Shdr *sechdrs,
 		   struct module *me)
 {
 }
+#endif
 
 /*
  * At a high-level, there are two types of klp relocation sections: those which
@@ -325,7 +331,9 @@ static int klp_write_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 		return apply_relocate_add(sechdrs, strtab, symndx, secndx, pmod);
 	}
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	clear_relocate_add(sechdrs, strtab, symndx, secndx, pmod);
+#endif
 	return 0;
 }
 
@@ -350,6 +358,8 @@ int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
  * /sys/kernel/livepatch/<patch>/<object>/patched
  * /sys/kernel/livepatch/<patch>/<object>/<function,sympos>
  */
+#ifdef CONFIG_LIVEPATCH_FTRACE
+
 static int __klp_disable_patch(struct klp_patch *patch);
 
 static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
@@ -395,6 +405,21 @@ out:
 	return count;
 }
 
+#else /* !CONFIG_LIVEPATCH_FTRACE */
+
+static int __klp_enable_patch(struct klp_patch *patch)
+{
+		return -EINVAL;
+}
+
+static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
+					     const char *buf, size_t count)
+{
+		return -EINVAL;
+}
+
+#endif /* CONFIG_LIVEPATCH_FTRACE */
+
 static ssize_t enabled_show(struct kobject *kobj,
 			    struct kobj_attribute *attr, char *buf)
 {
@@ -404,6 +429,7 @@ static ssize_t enabled_show(struct kobject *kobj,
 	return snprintf(buf, PAGE_SIZE-1, "%d\n", patch->enabled);
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static ssize_t transition_show(struct kobject *kobj,
 			       struct kobj_attribute *attr, char *buf)
 {
@@ -442,18 +468,24 @@ static ssize_t force_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	return count;
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static struct kobj_attribute enabled_kobj_attr = __ATTR_RW(enabled);
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static struct kobj_attribute transition_kobj_attr = __ATTR_RO(transition);
 static struct kobj_attribute force_kobj_attr = __ATTR_WO(force);
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 static struct attribute *klp_patch_attrs[] = {
 	&enabled_kobj_attr.attr,
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	&transition_kobj_attr.attr,
 	&force_kobj_attr.attr,
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 	NULL
 };
 ATTRIBUTE_GROUPS(klp_patch);
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static ssize_t patched_show(struct kobject *kobj,
 			    struct kobj_attribute *attr, char *buf)
 {
@@ -475,12 +507,14 @@ static void klp_free_object_dynamic(struct klp_object *obj)
 	kfree(obj->name);
 	kfree(obj);
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static void klp_init_func_early(struct klp_object *obj,
 				struct klp_func *func);
 static void klp_init_object_early(struct klp_patch *patch,
 				  struct klp_object *obj);
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static struct klp_object *klp_alloc_object_dynamic(const char *name,
 						   struct klp_patch *patch)
 {
@@ -587,6 +621,7 @@ static int klp_add_nops(struct klp_patch *patch)
 
 	return 0;
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static void klp_kobj_release_patch(struct kobject *kobj)
 {
@@ -604,28 +639,34 @@ static const struct kobj_type klp_ktype_patch = {
 
 static void klp_kobj_release_object(struct kobject *kobj)
 {
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct klp_object *obj;
 
 	obj = container_of(kobj, struct klp_object, kobj);
 
 	if (obj->dynamic)
 		klp_free_object_dynamic(obj);
+#endif
 }
 
 static const struct kobj_type klp_ktype_object = {
 	.release = klp_kobj_release_object,
 	.sysfs_ops = &kobj_sysfs_ops,
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	.default_groups = klp_object_groups,
+#endif
 };
 
 static void klp_kobj_release_func(struct kobject *kobj)
 {
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct klp_func *func;
 
 	func = container_of(kobj, struct klp_func, kobj);
 
 	if (func->nop)
 		klp_free_func_nop(func);
+#endif
 }
 
 static const struct kobj_type klp_ktype_func = {
@@ -638,14 +679,17 @@ static void __klp_free_funcs(struct klp_object *obj, bool nops_only)
 	struct klp_func *func, *tmp_func;
 
 	klp_for_each_func_safe(obj, func, tmp_func) {
+#ifdef CONFIG_LIVEPATCH_FTRACE
 		if (nops_only && !func->nop)
 			continue;
+#endif
 
 		list_del(&func->node);
 		kobject_put(&func->kobj);
 	}
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 /* Clean up when a patched object is unloaded */
 static void klp_free_object_loaded(struct klp_object *obj)
 {
@@ -660,6 +704,7 @@ static void klp_free_object_loaded(struct klp_object *obj)
 			func->new_func = NULL;
 	}
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static void __klp_free_objects(struct klp_patch *patch, bool nops_only)
 {
@@ -667,10 +712,10 @@ static void __klp_free_objects(struct klp_patch *patch, bool nops_only)
 
 	klp_for_each_object_safe(patch, obj, tmp_obj) {
 		__klp_free_funcs(obj, nops_only);
-
+#ifdef CONFIG_LIVEPATCH_FTRACE
 		if (nops_only && !obj->dynamic)
 			continue;
-
+#endif
 		list_del(&obj->node);
 		kobject_put(&obj->kobj);
 	}
@@ -681,10 +726,12 @@ static void klp_free_objects(struct klp_patch *patch)
 	__klp_free_objects(patch, false);
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static void klp_free_objects_dynamic(struct klp_patch *patch)
 {
 	__klp_free_objects(patch, true);
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /*
  * This function implements the free operations that can be called safely
@@ -720,9 +767,13 @@ static void klp_free_patch_finish(struct klp_patch *patch)
 	kobject_put(&patch->kobj);
 	wait_for_completion(&patch->finish);
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	/* Put the module after the last access to struct klp_patch. */
 	if (!patch->forced)
 		module_put(patch->mod);
+#else
+	module_put(patch->mod);
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 }
 
 /*
@@ -738,6 +789,7 @@ static void klp_free_patch_work_fn(struct work_struct *work)
 	klp_free_patch_finish(patch);
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 void klp_free_patch_async(struct klp_patch *patch)
 {
 	klp_free_patch_start(patch);
@@ -754,25 +806,33 @@ void klp_free_replaced_patches_async(struct klp_patch *new_patch)
 		klp_free_patch_async(old_patch);
 	}
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
 	if (!func->old_name)
 		return -EINVAL;
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	/*
 	 * NOPs get the address later. The patched module must be loaded,
 	 * see klp_init_object_loaded().
 	 */
 	if (!func->new_func && !func->nop)
 		return -EINVAL;
+#else /* !CONFIG_LIVEPATCH_FTRACE */
+	if (!func->new_func)
+		return -EINVAL;
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 	if (strlen(func->old_name) >= KSYM_NAME_LEN)
 		return -EINVAL;
 
 	INIT_LIST_HEAD(&func->stack_node);
 	func->patched = false;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	func->transition = false;
+#endif
 
 	/* The format for the sysfs directory is <function,sympos> where sympos
 	 * is the nth occurrence of this symbol in kallsyms for the patched
@@ -814,11 +874,13 @@ static int klp_apply_object_relocs(struct klp_patch *patch,
 	return klp_write_object_relocs(patch, obj, true);
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static void klp_clear_object_relocs(struct klp_patch *patch,
 				    struct klp_object *obj)
 {
 	klp_write_object_relocs(patch, obj, false);
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /* parts of the initialization that is done only when the object is loaded */
 static int klp_init_object_loaded(struct klp_patch *patch,
@@ -853,10 +915,10 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 			       func->old_name);
 			return -ENOENT;
 		}
-
+#ifdef CONFIG_LIVEPATCH_FTRACE
 		if (func->nop)
 			func->new_func = func->old_func;
-
+#endif
 		ret = kallsyms_lookup_size_offset((unsigned long)func->new_func,
 						  &func->new_size, NULL);
 		if (!ret) {
@@ -924,7 +986,9 @@ static void klp_init_patch_early(struct klp_patch *patch)
 	INIT_LIST_HEAD(&patch->obj_list);
 	kobject_init(&patch->kobj, &klp_ktype_patch);
 	patch->enabled = false;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	patch->forced = false;
+#endif
 	INIT_WORK(&patch->free_work, klp_free_patch_work_fn);
 	init_completion(&patch->finish);
 
@@ -946,11 +1010,13 @@ static int klp_init_patch(struct klp_patch *patch)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	if (patch->replace) {
 		ret = klp_add_nops(patch);
 		if (ret)
 			return ret;
 	}
+#endif
 
 	klp_for_each_object(patch, obj) {
 		ret = klp_init_object(patch, obj);
@@ -963,6 +1029,7 @@ static int klp_init_patch(struct klp_patch *patch)
 	return 0;
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1049,6 +1116,7 @@ err:
 	klp_cancel_transition();
 	return ret;
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /**
  * klp_enable_patch() - enable the livepatch
@@ -1093,12 +1161,14 @@ int klp_enable_patch(struct klp_patch *patch)
 
 	mutex_lock(&klp_mutex);
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	if (!klp_is_patch_compatible(patch)) {
 		pr_err("Livepatch patch (%s) is not compatible with the already installed livepatches.\n",
 			patch->mod->name);
 		mutex_unlock(&klp_mutex);
 		return -EINVAL;
 	}
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 	if (!try_module_get(patch->mod)) {
 		mutex_unlock(&klp_mutex);
@@ -1130,6 +1200,7 @@ err:
 }
 EXPORT_SYMBOL_GPL(klp_enable_patch);
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 /*
  * This function unpatches objects from the replaced livepatches.
  *
@@ -1313,6 +1384,7 @@ void klp_module_going(struct module *mod)
 
 	mutex_unlock(&klp_mutex);
 }
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static int __init klp_init(void)
 {

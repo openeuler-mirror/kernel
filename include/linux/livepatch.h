@@ -72,11 +72,16 @@ struct klp_func {
 	struct list_head node;
 	struct list_head stack_node;
 	unsigned long old_size, new_size;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	bool nop;
+#endif
 	bool patched;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	bool transition;
+#endif
 };
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 struct klp_object;
 
 /**
@@ -100,6 +105,7 @@ struct klp_callbacks {
 	void (*post_unpatch)(struct klp_object *obj);
 	bool post_unpatch_enabled;
 };
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /**
  * struct klp_object - kernel object structure for live patching
@@ -118,17 +124,22 @@ struct klp_object {
 	/* external */
 	const char *name;
 	struct klp_func *funcs;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct klp_callbacks callbacks;
+#endif
 
 	/* internal */
 	struct kobject kobj;
 	struct list_head func_list;
 	struct list_head node;
 	struct module *mod;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	bool dynamic;
+#endif
 	bool patched;
 };
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 /**
  * struct klp_state - state of the system modified by the livepatch
  * @id:		system state identifier (non-zero)
@@ -140,6 +151,7 @@ struct klp_state {
 	unsigned int version;
 	void *data;
 };
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /**
  * struct klp_patch - patch structure for live patching
@@ -159,15 +171,19 @@ struct klp_patch {
 	/* external */
 	struct module *mod;
 	struct klp_object *objs;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct klp_state *states;
 	bool replace;
+#endif
 
 	/* internal */
 	struct list_head list;
 	struct kobject kobj;
 	struct list_head obj_list;
 	bool enabled;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	bool forced;
+#endif
 	struct work_struct free_work;
 	struct completion finish;
 };
@@ -231,11 +247,6 @@ void klp_shadow_free_all(unsigned long id, klp_shadow_dtor_t dtor);
 struct klp_state *klp_get_state(struct klp_patch *patch, unsigned long id);
 struct klp_state *klp_get_prev_state(unsigned long id);
 
-int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
-			     const char *shstrtab, const char *strtab,
-			     unsigned int symindex, unsigned int secindex,
-			     const char *objname);
-
 #else /* !CONFIG_LIVEPATCH_FTRACE */
 
 static inline int klp_module_coming(struct module *mod) { return 0; }
@@ -245,16 +256,12 @@ static inline void klp_update_patch_state(struct task_struct *task) {}
 static inline void klp_copy_process(struct task_struct *child) {}
 static inline bool klp_have_reliable_stack(void) { return true; }
 
-static inline
+#endif /* CONFIG_LIVEPATCH_FTRACE */
+
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 			     const char *shstrtab, const char *strtab,
 			     unsigned int symindex, unsigned int secindex,
-			     const char *objname)
-{
-	return 0;
-}
-
-#endif /* CONFIG_LIVEPATCH_FTRACE */
+			     const char *objname);
 
 #else /* !CONFIG_LIVEPATCH */
 
