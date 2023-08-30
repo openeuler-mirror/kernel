@@ -34,6 +34,7 @@
 #ifdef CONFIG_LIVEPATCH_RESTRICT_KPROBE
 #include <linux/kprobes.h>
 #endif /* CONFIG_LIVEPATCH_RESTRICT_KPROBE */
+#include <linux/static_call.h>
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
 /*
@@ -1066,6 +1067,18 @@ static int klp_init_patch(struct klp_patch *patch)
 	ret = jump_label_register(patch->mod);
 	if (ret) {
 		pr_err("register jump label failed, ret=%d\n", ret);
+		return ret;
+	}
+	ret = klp_static_call_register(patch->mod);
+	if (ret) {
+		/*
+		 * We no need to distinctly clean pre-registered jump_label
+		 * here because it will be clean at path:
+		 *   load_module
+		 *     do_init_module
+		 *       fail_free_freeinit:  <-- notify GOING here
+		 */
+		pr_err("register static call failed, ret=%d\n", ret);
 		return ret;
 	}
 	klp_for_each_object(patch, obj)

@@ -367,6 +367,11 @@ static int static_call_add_module(struct module *mod)
 	struct static_call_site *stop = start + mod->num_static_call_sites;
 	struct static_call_site *site;
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return 0;
+#endif
+
 	for (site = start; site != stop; site++) {
 		unsigned long s_key = __static_call_key(site);
 		unsigned long addr = s_key & ~STATIC_CALL_SITE_FLAGS;
@@ -408,6 +413,11 @@ static void static_call_del_module(struct module *mod)
 	struct static_call_key *key, *prev_key = NULL;
 	struct static_call_mod *site_mod, **prev;
 	struct static_call_site *site;
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return;
+#endif
 
 	for (site = start; site < stop; site++) {
 		key = static_call_key(site);
@@ -460,6 +470,16 @@ static int static_call_module_notify(struct notifier_block *nb,
 static struct notifier_block static_call_module_nb = {
 	.notifier_call = static_call_module_notify,
 };
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+int klp_static_call_register(struct module *mod)
+{
+	int ret;
+
+	ret = static_call_module_notify(&static_call_module_nb, MODULE_STATE_COMING, mod);
+	return notifier_to_errno(ret);
+}
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 #else
 
