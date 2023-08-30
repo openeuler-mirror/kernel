@@ -7687,8 +7687,8 @@ change:
 	 * isolation will be invalid, so return -EINVAL in this case.
 	 */
 	if (unlikely(task_group(p)->qos_level == -1 && !idle_policy(policy))) {
-		task_rq_unlock(rq, p, &rf);
-		return -EINVAL;
+		retval = -EINVAL;
+		goto unlock;
 	}
 #endif
 
