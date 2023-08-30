@@ -654,6 +654,10 @@ struct cfs_rq {
 #endif
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
+
+#if defined(CONFIG_QOS_SCHED)
+	struct list_head	qos_throttled_list;
+#endif
 };
 
 static inline int rt_bandwidth_enabled(void)
