@@ -2732,20 +2732,18 @@ static int alloc_va_in_peer_devices(struct mm_struct *mm,
 		vm_flags_t vm_flags)
 {
 	gm_context_t *ctx, *tmp;
-	gm_prot_t prot = VM_NONE;
 	gm_ret_t ret;
 	struct gm_fault_t gmf = {
 		.mm = mm,
 		.va = addr,
 		.size = len,
-		.prot = prot,
+		.prot = vm_flags,
 	};
 
 	pr_debug("gmem: start mmap, as %p\n", mm->gm_as);
 	if (!mm->gm_as)
 		return -ENODEV;
 
-	prot |= vm_flags;
 	if (!vma->vm_obj)
 		vma->vm_obj = vm_object_create(vma);
 	if (!vma->vm_obj)
