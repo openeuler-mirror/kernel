@@ -116,6 +116,16 @@ config UPROBES
 	    managed by the kernel and kept transparent to the probed
 	    application. )
 
+config UPROBES_SUPPORT_PC_ALTER
+	bool "add support for UPROBE to modify the PC register"
+	def_bool n
+	depends on UPROBES
+	help
+	  Add UPROBE_ALTER_PC flag for uprobe handlers. When handlers
+	  change the pc register, set this flag to let the uprobe
+	  mechanism skip the execuation of the next insturction.
+
+
 config HAVE_64BIT_ALIGNED_ACCESS
 	def_bool 64BIT && !HAVE_EFFICIENT_UNALIGNED_ACCESS
 	help

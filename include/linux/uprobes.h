@@ -22,8 +22,14 @@ struct inode;
 struct notifier_block;
 struct page;
 
-#define UPROBE_HANDLER_REMOVE		1
-#define UPROBE_HANDLER_MASK		1
+#define UPROBE_HANDLER_REMOVE          1
+
+#ifndef CONFIG_UPROBES_SUPPORT_PC_ALTER
+#define UPROBE_HANDLER_MASK            1
+#else
+#define UPROBE_ALTER_PC                0x2
+#define UPROBE_HANDLER_MASK            0x3
+#endif
 
 #define MAX_URETPROBE_DEPTH		64
 
