@@ -5,8 +5,8 @@
 
 #include <asm/hw_init.h>
 #include <asm/irq_impl.h>
+#include <asm/pmc.h>
 #include <asm/sw64_init.h>
-#include <asm/wrperfmon.h>
 
 static void handle_intx(unsigned int offset)
 {
@@ -180,10 +180,10 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 		set_irq_regs(old_regs);
 		return;
 	case INT_PC0:
-		perf_irq(PERFMON_PC0, regs);
+		perf_irq(PMC_PC0, regs);
 		return;
 	case INT_PC1:
-		perf_irq(PERFMON_PC1, regs);
+		perf_irq(PMC_PC1, regs);
 		return;
 	case INT_DEV:
 		old_regs = set_irq_regs(regs);

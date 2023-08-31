@@ -91,12 +91,12 @@ static const struct sw64_pmu_t *sw64_pmu;
 
 /* Mapping of the hw event types to the perf tool interface */
 static const struct sw64_perf_event core3_hw_event_map[] = {
-	[PERF_COUNT_HW_CPU_CYCLES]		= {PERFMON_PC0, PC0_CPU_CYCLES},
-	[PERF_COUNT_HW_INSTRUCTIONS]		= {PERFMON_PC0, PC0_INSTRUCTIONS},
-	[PERF_COUNT_HW_CACHE_REFERENCES]	= {PERFMON_PC0,	PC0_SCACHE_REFERENCES},
-	[PERF_COUNT_HW_CACHE_MISSES]		= {PERFMON_PC1, PC1_SCACHE_MISSES},
-	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS]	= {PERFMON_PC0, PC0_BRANCH_INSTRUCTIONS},
-	[PERF_COUNT_HW_BRANCH_MISSES]		= {PERFMON_PC1, PC1_BRANCH_MISSES},
+	[PERF_COUNT_HW_CPU_CYCLES]		= {PMC_PC0, PC0_CPU_CYCLES},
+	[PERF_COUNT_HW_INSTRUCTIONS]		= {PMC_PC0, PC0_INSTRUCTIONS},
+	[PERF_COUNT_HW_CACHE_REFERENCES]	= {PMC_PC0, PC0_SCACHE_REFERENCES},
+	[PERF_COUNT_HW_CACHE_MISSES]		= {PMC_PC1, PC1_SCACHE_MISSES},
+	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS]	= {PMC_PC0, PC0_BRANCH_INSTRUCTIONS},
+	[PERF_COUNT_HW_BRANCH_MISSES]		= {PMC_PC1, PC1_BRANCH_MISSES},
 };
 
 /* Mapping of the hw cache event types to the perf tool interface */
@@ -107,8 +107,8 @@ static const struct sw64_perf_event core3_cache_event_map
 				[PERF_COUNT_HW_CACHE_RESULT_MAX] = {
 	[C(L1D)] = {
 		[C(OP_READ)] = {
-			[C(RESULT_ACCESS)]	= {PERFMON_PC0, PC0_DCACHE_READ},
-			[C(RESULT_MISS)]	= {PERFMON_PC1, PC1_DCACHE_MISSES}
+			[C(RESULT_ACCESS)]	= {PMC_PC0, PC0_DCACHE_READ},
+			[C(RESULT_MISS)]	= {PMC_PC1, PC1_DCACHE_MISSES}
 		},
 		[C(OP_WRITE)] = {
 			[C(RESULT_ACCESS)]	= SW64_OP_UNSUP,
@@ -121,8 +121,8 @@ static const struct sw64_perf_event core3_cache_event_map
 	},
 	[C(L1I)] = {
 		[C(OP_READ)] = {
-			[C(RESULT_ACCESS)]	= {PERFMON_PC0, PC0_ICACHE_READ},
-			[C(RESULT_MISS)]	= {PERFMON_PC1, PC1_ICACHE_READ_MISSES},
+			[C(RESULT_ACCESS)]	= {PMC_PC0, PC0_ICACHE_READ},
+			[C(RESULT_MISS)]	= {PMC_PC1, PC1_ICACHE_READ_MISSES},
 		},
 		[C(OP_WRITE)] = {
 			[C(RESULT_ACCESS)]	= SW64_OP_UNSUP,
@@ -149,8 +149,8 @@ static const struct sw64_perf_event core3_cache_event_map
 	},
 	[C(DTLB)] = {
 		[C(OP_READ)] = {
-			[C(RESULT_ACCESS)]	= {PERFMON_PC0, PC0_DTB_READ},
-			[C(RESULT_MISS)]	= {PERFMON_PC1, PC1_DTB_SINGLE_MISSES},
+			[C(RESULT_ACCESS)]	= {PMC_PC0, PC0_DTB_READ},
+			[C(RESULT_MISS)]	= {PMC_PC1, PC1_DTB_SINGLE_MISSES},
 		},
 		[C(OP_WRITE)] = {
 			[C(RESULT_ACCESS)]	= SW64_OP_UNSUP,
@@ -163,8 +163,8 @@ static const struct sw64_perf_event core3_cache_event_map
 	},
 	[C(ITLB)] = {
 		[C(OP_READ)] = {
-			[C(RESULT_ACCESS)]	= {PERFMON_PC0, PC0_ITB_READ},
-			[C(RESULT_MISS)]	= {PERFMON_PC1, PC1_ITB_MISSES},
+			[C(RESULT_ACCESS)]	= {PMC_PC0, PC0_ITB_READ},
+			[C(RESULT_MISS)]	= {PMC_PC1, PC1_ITB_MISSES},
 		},
 		[C(OP_WRITE)] = {
 			[C(RESULT_ACCESS)]	= SW64_OP_UNSUP,
@@ -267,21 +267,12 @@ static const struct sw64_pmu_t core3_pmu = {
  */
 static void sw64_write_pmc(int idx, unsigned long val)
 {
-	if (idx == PERFMON_PC0)
-		wrperfmon(PERFMON_CMD_WRITE_PC0, val);
-	else
-		wrperfmon(PERFMON_CMD_WRITE_PC1, val);
+	wrperfmon(PMC_CMD_WRITE_BASE + idx, val);
 }
 
 static unsigned long sw64_read_pmc(int idx)
 {
-	unsigned long val;
-
-	if (idx == PERFMON_PC0)
-		val = wrperfmon(PERFMON_CMD_READ, PERFMON_READ_PC0);
-	else
-		val = wrperfmon(PERFMON_CMD_READ, PERFMON_READ_PC1);
-	return val;
+	return wrperfmon(PMC_CMD_READ, idx);
 }
 
 /* Set a new period to sample over */
@@ -386,14 +377,9 @@ static void sw64_pmu_start(struct perf_event *event, int flags)
 	hwc->state = 0;
 
 	/* counting in selected modes, for both counters */
-	wrperfmon(PERFMON_CMD_PM, hwc->config_base);
-	if (hwc->idx == PERFMON_PC0) {
-		wrperfmon(PERFMON_CMD_EVENT_PC0, hwc->event_base);
-		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC0);
-	} else {
-		wrperfmon(PERFMON_CMD_EVENT_PC1, hwc->event_base);
-		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC1);
-	}
+	wrperfmon(PMC_CMD_PM, hwc->config_base);
+	wrperfmon(PMC_CMD_EVENT_BASE + hwc->idx, hwc->event_base);
+	wrperfmon(PMC_CMD_ENABLE, PMC_ENABLE_BASE + hwc->idx);
 }
 
 /*
@@ -404,9 +390,7 @@ static void sw64_pmu_stop(struct perf_event *event, int flags)
 	struct hw_perf_event *hwc = &event->hw;
 
 	if (!(hwc->state & PERF_HES_STOPPED)) {
-		wrperfmon(PERFMON_CMD_DISABLE, hwc->idx == 0 ?
-				PERFMON_DISABLE_ARGS_PC0 :
-				PERFMON_DISABLE_ARGS_PC1);
+		wrperfmon(PMC_CMD_DISABLE, PMC_DISABLE_BASE + hwc->idx);
 		hwc->state |= PERF_HES_STOPPED;
 		barrier();
 	}
@@ -610,27 +594,24 @@ void perf_event_print_debug(void)
 
 	cpu = smp_processor_id();
 
-	pcr0 = wrperfmon(PERFMON_CMD_READ, PERFMON_READ_PC0);
-	pcr1 = wrperfmon(PERFMON_CMD_READ, PERFMON_READ_PC1);
+	pcr0 = wrperfmon(PMC_CMD_READ, PMC_PC0);
+	pcr1 = wrperfmon(PMC_CMD_READ, PMC_PC1);
 
 	pr_info("CPU#%d: PCTR0[%lx] PCTR1[%lx]\n", cpu, pcr0, pcr1);
 
 	local_irq_restore(flags);
 }
 
-static void sw64_perf_event_irq_handler(unsigned long perfmon_num,
+static void sw64_perf_event_irq_handler(unsigned long idx,
 					struct pt_regs *regs)
 {
 	struct cpu_hw_events *cpuc;
 	struct perf_sample_data data;
 	struct perf_event *event;
 	struct hw_perf_event *hwc;
-	int idx;
 
 	__this_cpu_inc(irq_pmi_count);
 	cpuc = this_cpu_ptr(&cpu_hw_events);
-
-	idx = perfmon_num;
 
 	event = cpuc->event[idx];
 
