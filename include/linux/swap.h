@@ -722,5 +722,9 @@ static inline bool mem_cgroup_swap_full(struct folio *folio)
 }
 #endif
 
+#ifdef CONFIG_ETMEM
+extern bool kernel_swap_enabled(void);
+#endif
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */
