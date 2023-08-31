@@ -8146,7 +8146,7 @@ struct page *get_page_from_vaddr(struct mm_struct *mm, unsigned long vaddr)
 	down_read(&mm->mmap_lock);
 
 	vma = find_vma(mm, vaddr);
-	if (!vma || vaddr < vma->vm_start || !vma_migratable(vma)) {
+	if (!vma || vaddr < vma->vm_start || vma->vm_flags & VM_LOCKED) {
 		up_read(&mm->mmap_lock);
 		return NULL;
 	}
