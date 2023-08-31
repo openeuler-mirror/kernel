@@ -1949,11 +1949,19 @@ static int mm_swap_release(struct inode *inode, struct file *file)
 	return ret;
 }
 
+static long mm_swap_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	if (proc_swap_pages_operations.unlocked_ioctl)
+		return proc_swap_pages_operations.unlocked_ioctl(filp, cmd, arg);
+	return 0;
+}
+
 const struct file_operations proc_mm_swap_operations = {
 	.llseek     = mem_lseek,
 	.write      = mm_swap_write,
 	.open       = mm_swap_open,
 	.release    = mm_swap_release,
+	.unlocked_ioctl = mm_swap_ioctl,
 };
 #endif
 #endif /* CONFIG_PROC_PAGE_MONITOR */
