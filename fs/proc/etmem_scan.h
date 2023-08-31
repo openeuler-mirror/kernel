@@ -12,13 +12,16 @@
 #define SCAN_AS_HUGE		0100000000      /* treat normal page as hugepage in vm */
 #define SCAN_IGN_HOST		0200000000      /* ignore host access when scan vm */
 #define VM_SCAN_HOST		0400000000      /* scan and add host page for vm hole(internal) */
+#define VMA_SCAN_FLAG           0x1000        /* scan the specifics vma with flag */
 
 #define ALL_SCAN_FLAGS		(SCAN_HUGE_PAGE | SCAN_SKIM_IDLE | SCAN_DIRTY_PAGE | \
-		SCAN_AS_HUGE | SCAN_IGN_HOST | VM_SCAN_HOST)
+				SCAN_AS_HUGE | SCAN_IGN_HOST | VM_SCAN_HOST | VMA_SCAN_FLAG)
 
 #define IDLE_SCAN_MAGIC         0x66
 #define IDLE_SCAN_ADD_FLAGS	_IOW(IDLE_SCAN_MAGIC, 0x0, unsigned int)
 #define IDLE_SCAN_REMOVE_FLAGS	_IOW(IDLE_SCAN_MAGIC, 0x1, unsigned int)
+#define VMA_SCAN_ADD_FLAGS      _IOW(IDLE_SCAN_MAGIC, 0x2, unsigned int)
+#define VMA_SCAN_REMOVE_FLAGS   _IOW(IDLE_SCAN_MAGIC, 0x3, unsigned int)
 
 enum ProcIdlePageType {
 	PTE_ACCESSED,	/* 4k page */

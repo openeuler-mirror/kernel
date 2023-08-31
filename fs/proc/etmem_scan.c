@@ -1187,6 +1187,11 @@ static int mm_idle_test_walk(unsigned long start, unsigned long end,
 				 struct mm_walk *walk)
 {
 	struct vm_area_struct *vma = walk->vma;
+	struct page_idle_ctrl *pic = walk->private;
+
+	/* If the specified page swapout is set, the untagged vma is skipped. */
+	if ((pic->flags & VMA_SCAN_FLAG) && !(vma->vm_flags & VM_SWAPFLAG))
+		return 1;
 
 	if (vma->vm_file) {
 		if (is_vm_hugetlb_page(vma))
@@ -1323,6 +1328,12 @@ static long page_scan_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		filp->f_flags |= flags;
 		break;
 	case IDLE_SCAN_REMOVE_FLAGS:
+		filp->f_flags &= ~flags;
+		break;
+	case VMA_SCAN_ADD_FLAGS:
+		filp->f_flags |= flags;
+		break;
+	case VMA_SCAN_REMOVE_FLAGS:
 		filp->f_flags &= ~flags;
 		break;
 	default:

@@ -1072,6 +1072,14 @@ static int madvise_vma_behavior(struct vm_area_struct *vma,
 		break;
 	case MADV_COLLAPSE:
 		return madvise_collapse(vma, prev, start, end);
+#ifdef CONFIG_ETMEM
+	case MADV_SWAPFLAG:
+		new_flags |= VM_SWAPFLAG;
+		break;
+	case MADV_SWAPFLAG_REMOVE:
+		new_flags &= ~VM_SWAPFLAG;
+		break;
+#endif
 	}
 
 	anon_name = anon_vma_name(vma);
@@ -1175,8 +1183,11 @@ madvise_behavior_valid(int behavior)
 	case MADV_SOFT_OFFLINE:
 	case MADV_HWPOISON:
 #endif
+#ifdef CONFIG_ETMEM
+	case MADV_SWAPFLAG:
+	case MADV_SWAPFLAG_REMOVE:
+#endif
 		return true;
-
 	default:
 		return false;
 	}
@@ -1368,6 +1379,10 @@ int madvise_set_anon_name(struct mm_struct *mm, unsigned long start,
  *		triggering read faults if required
  *  MADV_POPULATE_WRITE - populate (prefault) page tables writable by
  *		triggering write faults if required
+ *  MADV_SWAPFLAG - Used in the etmem memory extension feature, the process
+ *		specifies the memory swap area by adding a flag to a specific
+ *		vma address.
+ *  MADV_SWAPFLAG_REMOVE - remove the specific vma flag
  *
  * return values:
  *  zero    - success
