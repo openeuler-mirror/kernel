@@ -734,6 +734,11 @@ config MEMIG_SCAN_MODULE
 	 memig page scan feature
 	 used to scan the virtual address of the target process
 
+config MEMIG_SWAP_MODULE
+       tristate "module: memig page swap for memig support"
+       help
+         memig page swap feature
+
 endmenu
 
 config GENERIC_IOREMAP

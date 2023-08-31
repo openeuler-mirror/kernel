@@ -33,6 +33,7 @@
 #include <linux/topology.h>
 #include <linux/cpu.h>
 #include <linux/cpuset.h>
+#include <linux/mempolicy.h>
 #include <linux/compaction.h>
 #include <linux/notifier.h>
 #include <linux/rwsem.h>
@@ -2814,6 +2815,7 @@ unsigned long reclaim_pages(struct list_head *folio_list)
 
 	return nr_reclaimed;
 }
+EXPORT_SYMBOL_GPL(reclaim_pages);
 
 static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 				 struct lruvec *lruvec, struct scan_control *sc)
@@ -8105,3 +8107,58 @@ void check_move_unevictable_folios(struct folio_batch *fbatch)
 	}
 }
 EXPORT_SYMBOL_GPL(check_move_unevictable_folios);
+
+int add_page_for_swap(struct page *page, struct list_head *pagelist)
+{
+	int err = -EBUSY;
+	struct page *head;
+
+	/*If the page is mapped by more than one process, do not swap it */
+	if (page_mapcount(page) > 1)
+		return -EACCES;
+
+	if (PageHuge(page))
+		return -EACCES;
+
+	head = compound_head(page);
+	err = isolate_lru_page(head);
+	if (err) {
+		put_page(page);
+		return err;
+	}
+	put_page(page);
+	if (PageUnevictable(page))
+		putback_lru_page(page);
+	else
+		list_add_tail(&head->lru, pagelist);
+
+	err = 0;
+	return err;
+}
+EXPORT_SYMBOL_GPL(add_page_for_swap);
+
+struct page *get_page_from_vaddr(struct mm_struct *mm, unsigned long vaddr)
+{
+	struct page *page;
+	struct vm_area_struct *vma;
+	unsigned int follflags;
+
+	down_read(&mm->mmap_lock);
+
+	vma = find_vma(mm, vaddr);
+	if (!vma || vaddr < vma->vm_start || !vma_migratable(vma)) {
+		up_read(&mm->mmap_lock);
+		return NULL;
+	}
+
+	follflags = FOLL_GET | FOLL_DUMP;
+	page = follow_page(vma, vaddr, follflags);
+	if (IS_ERR(page) || !page) {
+		up_read(&mm->mmap_lock);
+		return NULL;
+	}
+
+	up_read(&mm->mmap_lock);
+	return page;
+}
+EXPORT_SYMBOL_GPL(get_page_from_vaddr);

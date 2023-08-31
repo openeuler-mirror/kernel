@@ -1835,7 +1835,58 @@ const struct file_operations proc_mm_idle_operations = {
 	.release	= mm_idle_release,
 };
 
+/*swap pages*/
+struct file_operations proc_swap_pages_operations = {
+};
+EXPORT_SYMBOL_GPL(proc_swap_pages_operations);
 
+static ssize_t mm_swap_write(struct file *file, const char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	if (proc_swap_pages_operations.write)
+		return proc_swap_pages_operations.write(file, buf, count, ppos);
+
+	return -1;
+}
+
+static int mm_swap_open(struct inode *inode, struct file *file)
+{
+	struct mm_struct *mm = NULL;
+
+	if (!file_ns_capable(file, &init_user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mm = proc_mem_open(inode, PTRACE_MODE_READ);
+	if (IS_ERR(mm))
+		return PTR_ERR(mm);
+
+	file->private_data = mm;
+
+	if (proc_swap_pages_operations.open)
+		return proc_swap_pages_operations.open(inode, file);
+
+	return 0;
+}
+
+static int mm_swap_release(struct inode *inode, struct file *file)
+{
+	struct mm_struct *mm = file->private_data;
+
+	if (mm)
+		mmdrop(mm);
+
+	if (proc_swap_pages_operations.release)
+		return proc_swap_pages_operations.release(inode, file);
+
+	return 0;
+}
+
+const struct file_operations proc_mm_swap_operations = {
+	.llseek     = mem_lseek,
+	.write      = mm_swap_write,
+	.open       = mm_swap_open,
+	.release    = mm_swap_release,
+};
 #endif /* CONFIG_PROC_PAGE_MONITOR */
 
 #ifdef CONFIG_NUMA
