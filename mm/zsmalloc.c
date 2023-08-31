@@ -1526,7 +1526,7 @@ void zs_free(struct zs_pool *pool, unsigned long handle)
 	enum fullness_group fullness;
 	bool isolated;
 
-	if (unlikely(!handle))
+	if (IS_ERR_OR_NULL((void *)handle))
 		return;
 
 	pin_tag(handle);
