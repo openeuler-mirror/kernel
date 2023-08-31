@@ -1215,6 +1215,21 @@ config GMEM
 	help
 	  say Y here to enable gmem subsystem
 
+config ETMEM_SCAN
+	tristate "module: etmem page scan for etmem support"
+        depends on MMU
+        depends on X86 || ARM64
+	help
+	 etmem page scan feature
+	 used to scan the virtual address of the target process
+
+config ETMEM_SWAP
+	tristate "module: etmem page swap for etmem support"
+	depends on MMU
+	depends on X86 || ARM64
+	help
+	 etmem page swap feature
+
 source "mm/damon/Kconfig"
 
 endmenu
