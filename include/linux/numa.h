@@ -20,6 +20,11 @@
 #define __initdata_or_meminfo __initdata
 #endif
 
+enum node_type {
+	NODE_TYPE_DRAM,
+	NODE_TYPE_PMEM,
+};
+
 #ifdef CONFIG_NUMA
 #include <linux/printk.h>
 #include <asm/sparsemem.h>
@@ -43,6 +48,8 @@ static inline int phys_to_target_node(u64 start)
 	return 0;
 }
 #endif
+void set_node_type(int nid, enum node_type type);
+enum node_type get_node_type(int nid);
 #else /* !CONFIG_NUMA */
 static inline int numa_map_to_online_node(int node)
 {
@@ -56,6 +63,11 @@ static inline int phys_to_target_node(u64 start)
 {
 	return 0;
 }
+static inline enum node_type get_node_type(int nid)
+{
+	return NODE_TYPE_DRAM;
+}
+static inline void set_node_type(int nid, enum node_type type) {}
 #endif
 
 #ifdef CONFIG_HAVE_ARCH_NODE_DEV_GROUP
