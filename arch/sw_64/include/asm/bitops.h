@@ -37,9 +37,6 @@ set_bit(unsigned long nr, volatile void *addr)
 	"	ldi	%1, 1\n"
 	"	wr_f	%1\n"
 	"	bis	%0, %4, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%3)\n"
 	"	rd_f	%0\n"
 	"	beq	%0, 2f\n"
@@ -76,9 +73,6 @@ clear_bit(unsigned long nr, volatile void *addr)
 	"	ldi	%1, 1\n"
 	"	wr_f	%1\n"
 	"	bic	%0, %4, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%3)\n"
 	"	rd_f	%0\n"
 	"	beq	%0, 2f\n"
@@ -126,9 +120,6 @@ change_bit(unsigned long nr, volatile void *addr)
 	"	ldi	%1, 1\n"
 	"	wr_f	%1\n"
 	"	xor	%0, %4, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%3)\n"
 	"	rd_f	%0\n"
 	"	beq	%0, 2f\n"
@@ -165,9 +156,6 @@ test_and_set_bit(unsigned long nr, volatile void *addr)
 	"	seleq	%3, 1, $31, %1\n"
 	"	wr_f	%1\n"
 	"	bis	%0, %5, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%4)\n"
 	"	rd_f	%0\n"
 	"	bne	%3, 2f\n"		// %3 is not zero, no need to set, return
@@ -196,9 +184,6 @@ test_and_set_bit_lock(unsigned long nr, volatile void *addr)
 	"	seleq	%3, 1, $31, %1\n"
 	"	wr_f	%1\n"
 	"	bis	%0, %5, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%4)\n"
 	"	rd_f	%0\n"
 	"	bne	%3, 2f\n"		// %3 is not zero, no need to set, return
@@ -241,9 +226,6 @@ test_and_clear_bit(unsigned long nr, volatile void *addr)
 	"	selne	%3, 1, $31, %1\n"	//Note: here is SELNE!!!
 	"	wr_f	%1\n"
 	"	bic	%0, %5, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%4)\n"
 	"	rd_f	%0\n"
 	"	beq	%3, 2f\n"		// %3 is zero, no need to set, return
@@ -286,9 +268,6 @@ test_and_change_bit(unsigned long nr, volatile void *addr)
 	"	wr_f	%2\n"
 	"	and	%0, %4, %2\n"
 	"	xor	%0, %4, %0\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%0, 0(%3)\n"
 	"	rd_f	%0\n"
 	"	beq	%0, 3f\n"

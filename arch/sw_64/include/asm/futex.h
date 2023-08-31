@@ -9,21 +9,12 @@
 #include <asm/errno.h>
 #include <asm/barrier.h>
 
-#ifndef LOCK_FIXUP
-#ifdef CONFIG_LOCK_FIXUP
-#define LOCK_FIXUP	"memb\n"
-#else
-#define LOCK_FIXUP
-#endif
-#endif
-
 #define __futex_atomic_op(insn, ret, oldval, uaddr, oparg, tmp)	\
 	__asm__ __volatile__(					\
 	"1:	lldw	%0, 0(%3)\n"				\
 	"	ldi	%2, 1\n"				\
 	"	wr_f	%2\n"					\
 		insn						\
-	LOCK_FIXUP						\
 	"2:	lstw	%1, 0(%3)\n"				\
 	"	rd_f	%1\n"					\
 	"	beq	%1, 4f\n"				\
@@ -92,9 +83,6 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 	"	cmpeq	%1, %5, %2\n"
 	"	wr_f	%2\n"
 	"	bis	$31, %6, %3\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"2:	lstw	%3, 0(%4)\n"
 	"	rd_f	%3\n"
 	"	beq	%2, 3f\n"

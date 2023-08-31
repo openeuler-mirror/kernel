@@ -32,9 +32,6 @@ ____xchg(_u8, volatile char *m, unsigned long val)
 	"	extlb	%2, %4, %0\n"
 	"	masklb	%2, %4, %2\n"
 	"	or	%1, %2, %2\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%2, 0(%3)\n"
 	"	rd_f	%2\n"
 	"	beq	%2, 2f\n"
@@ -61,9 +58,6 @@ ____xchg(_u16, volatile short *m, unsigned long val)
 	"	extlh	%2, %4, %0\n"
 	"	masklh	%2, %4, %2\n"
 	"	or	%1, %2, %2\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%2, 0(%3)\n"
 	"	rd_f	%2\n"
 	"	beq	%2, 2f\n"
@@ -87,9 +81,6 @@ ____xchg(_u32, volatile int *m, unsigned long val)
 	"	ldi	%1, 1\n"
 	"	wr_f	%1\n"
 	"	bis	$31, %4, %1\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%1, 0(%3)\n"
 	"	rd_f	%1\n"
 	"	beq	%1, 2f\n"
@@ -113,9 +104,6 @@ ____xchg(_u64, volatile long *m, unsigned long val)
 	"	ldi	%1, 1\n"
 	"	wr_f	%1\n"
 	"	bis	$31, %4, %1\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%1, 0(%3)\n"
 	"	rd_f	%1\n"
 	"	beq	%1, 2f\n"
@@ -176,9 +164,6 @@ ____cmpxchg(_u8, volatile char *m, unsigned char old, unsigned char new)
 	"	wr_f	%3\n"
 	"	masklb	%2, %5, %2\n"
 	"	or	%1, %2, %2\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%2, 0(%4)\n"
 	"	rd_f	%2\n"
 	"	beq	%3, 2f\n"
@@ -207,9 +192,6 @@ ____cmpxchg(_u16, volatile short *m, unsigned short old, unsigned short new)
 	"	wr_f	%3\n"
 	"	masklh	%2, %5, %2\n"
 	"	or	%1, %2, %2\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%2, 0(%4)\n"
 	"	rd_f	%2\n"
 	"	beq	%3, 2f\n"
@@ -235,9 +217,6 @@ ____cmpxchg(_u32, volatile int *m, int old, int new)
 	"	cmpeq	%0, %5, %1\n"
 	"	wr_f	%1\n"
 	"	bis	$31, %6, %4\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%4, 0(%3)\n"
 	"	rd_f	%4\n"
 	"	beq	%1, 2f\n"
@@ -263,9 +242,6 @@ ____cmpxchg(_u64, volatile long *m, unsigned long old, unsigned long new)
 	"	cmpeq	%0, %5, %1\n"
 	"	wr_f	%1\n"
 	"	bis	$31, %6, %4\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%4, 0(%3)\n"
 	"	rd_f	%4\n"
 	"	beq	%1, 2f\n"

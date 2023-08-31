@@ -322,13 +322,6 @@ config GENERIC_HWEIGHT
 	bool
 	default y
 
-config LOCK_FIXUP
-	bool "fix up the lock"
-	depends on SW64
-	help
-	  Add an instruction("memb\n") to ensure the correctness of the lock.
-
-
 config SMP
 	bool "Symmetric multi-processing support"
 	depends on SW64

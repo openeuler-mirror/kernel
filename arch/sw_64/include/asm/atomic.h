@@ -56,9 +56,6 @@ static inline int atomic_fetch_add_unless(atomic_t *v, int a, int u)
 	"	seleq	%4, 1, $31, %4\n"
 	"	wr_f	%4\n"
 	"	addw	%0, %6, %1\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstw	%1, 0(%3)\n"
 	"	rd_f	%1\n"
 	"	beq	%4, 2f\n"
@@ -93,9 +90,6 @@ static inline long atomic64_fetch_add_unless(atomic64_t *v, long a, long u)
 	"	seleq	%4, 1, $31, %4\n"
 	"	wr_f	%4\n"
 	"	addl	%0, %6, %1\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%1, 0(%3)\n"
 	"	rd_f	%1\n"
 	"	beq	%4, 2f\n"
@@ -127,9 +121,6 @@ static inline long atomic64_dec_if_positive(atomic64_t *v)
 	"	seleq	%0, 1, $31, %0\n"
 	"	wr_f	%0\n"
 	"	subl	%4, 1, %1\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
 	"	lstl	%1, 0(%3)\n"
 	"	rd_f	%1\n"
 	"	beq	%0, 2f\n"
@@ -146,13 +137,6 @@ static inline long atomic64_dec_if_positive(atomic64_t *v)
 
 #define atomic64_dec_if_positive atomic64_dec_if_positive
 
-#ifdef CONFIG_LOCK_FIXUP
-#define LOCK_FIXUP	"memb\n"
-#else
-#define LOCK_FIXUP
-#endif
-
-
 #define ATOMIC_OP(op, asm_op)						\
 static inline void atomic_##op(int i, atomic_t *v)			\
 {									\
@@ -163,7 +147,6 @@ static inline void atomic_##op(int i, atomic_t *v)			\
 	"	ldi	%1, 1\n"					\
 	"	wr_f	%1\n"						\
 	"	" #asm_op " %0, %4, %0\n"				\
-	LOCK_FIXUP							\
 	"	lstw	%0, 0(%3)\n"					\
 	"	rd_f	%0\n"						\
 	"	beq	%0, 2f\n"					\
@@ -187,7 +170,6 @@ static inline int atomic_##op##_return_relaxed(int i, atomic_t *v)	\
 	"	wr_f	%1\n"						\
 	"	" #asm_op " %0, %4, %1\n"				\
 	"	" #asm_op " %0, %4, %0\n"				\
-	LOCK_FIXUP							\
 	"	lstw	%1, 0(%3)\n"					\
 	"	rd_f	%1\n"						\
 	"	beq	%1, 2f\n"					\
@@ -212,7 +194,6 @@ static inline int atomic_fetch_##op##_relaxed(int i, atomic_t *v)	\
 	"	ldi	%1, 1\n"					\
 	"	wr_f	%1\n"						\
 	"	" #asm_op " %0, %4, %1\n"				\
-	LOCK_FIXUP							\
 	"	lstw	%1, 0(%3)\n"					\
 	"	rd_f	%1\n"						\
 	"	beq	%1, 2f\n"					\
@@ -235,7 +216,6 @@ static inline void atomic64_##op(long i, atomic64_t *v)			\
 	"	ldi	%1, 1\n"					\
 	"	wr_f	%1\n"						\
 	"	" #asm_op " %0, %4, %0\n"				\
-	LOCK_FIXUP							\
 	"	lstl	%0, 0(%3)\n"					\
 	"	rd_f	%0\n"						\
 	"	beq	%0, 2f\n"					\
@@ -259,7 +239,6 @@ static inline long atomic64_##op##_return_relaxed(long i, atomic64_t *v)\
 	"	wr_f	%1\n"						\
 	"	" #asm_op " %0, %4, %1\n"				\
 	"	" #asm_op " %0, %4, %0\n"				\
-	LOCK_FIXUP							\
 	"	lstl	%1, 0(%3)\n"					\
 	"	rd_f	%1\n"						\
 	"	beq	%1, 2f\n"					\
@@ -282,7 +261,6 @@ static inline long atomic64_fetch_##op##_relaxed(long i, atomic64_t *v) \
 	"	ldi	%1, 1\n"					\
 	"	wr_f	%1\n"						\
 	"	" #asm_op " %0, %4, %1\n"				\
-	LOCK_FIXUP							\
 	"	lstl	%1, 0(%3)\n"					\
 	"	rd_f	%1\n"						\
 	"	beq	%1, 2f\n"					\
