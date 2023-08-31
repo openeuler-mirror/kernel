@@ -993,7 +993,7 @@ static int mm_idle_walk_range(struct page_idle_ctrl *pic,
 					 pic->next_hva, end);
 		ret = 0;
 	} else
-		WARN_ONCE(1, "nothing read");
+		debug_printk("nothing read");
 	return ret;
 }
 
