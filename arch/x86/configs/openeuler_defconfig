@@ -7838,6 +7838,13 @@ CONFIG_INTEL_TH_PTI=m
 # CONFIG_MOST is not set
 # CONFIG_PECI is not set
 # CONFIG_HTE is not set
+
+#
+# remote pager device
+#
+CONFIG_REMOTE_PAGER=m
+CONFIG_REMOTE_PAGER_MASTER=m
+# end of remote pager device
 # end of Device Drivers
 
 #
