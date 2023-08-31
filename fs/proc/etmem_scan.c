@@ -28,6 +28,7 @@
 #include <asm/stage2_pgtable.h>
 #endif
 #include "etmem_scan.h"
+#include <linux/hugetlb_inline.h>
 
 #ifdef CONFIG_X86_64
 /*
@@ -289,8 +290,32 @@ static int page_idle_copy_user(struct page_idle_ctrl *pic,
 }
 
 #ifdef CONFIG_X86_64
+static int vm_walk_host_range(unsigned long long start,
+		unsigned long end,
+		struct mm_walk *walk)
+{
+	int ret;
+	struct page_idle_ctrl *pic = walk->private;
+	unsigned long tmp_gpa_to_hva = pic->gpa_to_hva;
+
+	pic->gpa_to_hva = 0;
+	local_irq_enable();
+	down_read(&walk->mm->mmap_lock);
+	local_irq_disable();
+	ret = walk_page_range(walk->mm, start + tmp_gpa_to_hva, end + tmp_gpa_to_hva,
+			walk->ops, walk->private);
+	up_read(&walk->mm->mmap_lock);
+	pic->gpa_to_hva = tmp_gpa_to_hva;
+	if (pic->flags & VM_SCAN_HOST) {
+		pic->restart_gpa -= tmp_gpa_to_hva;
+		pic->flags &= ~VM_SCAN_HOST;
+	}
+	return ret;
+}
+
 static int ept_pte_range(struct page_idle_ctrl *pic,
-			 pmd_t *pmd, unsigned long addr, unsigned long end)
+			 pmd_t *pmd, unsigned long addr, unsigned long end,
+			 struct mm_walk *walk)
 {
 	pte_t *pte;
 	enum ProcIdlePageType page_type;
@@ -300,9 +325,10 @@ static int ept_pte_range(struct page_idle_ctrl *pic,
 	do {
 		if (KVM_CHECK_INVALID_SPTE(pte->pte)) {
 			page_type = PTE_IDLE;
-		} else if (!ept_pte_present(*pte))
-			page_type = PTE_HOLE;
-		else if (!test_and_clear_bit(_PAGE_BIT_EPT_ACCESSED,
+		} else if (!ept_pte_present(*pte)) {
+			err = vm_walk_host_range(addr, end, walk);
+			goto next;
+		} else if (!test_and_clear_bit(_PAGE_BIT_EPT_ACCESSED,
 						 (unsigned long *) &pte->pte))
 			page_type = PTE_IDLE;
 		else {
@@ -315,6 +341,7 @@ static int ept_pte_range(struct page_idle_ctrl *pic,
 		}
 
 		err = pic_add_page(pic, addr, addr + PAGE_SIZE, page_type);
+next:
 		if (err)
 			break;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
@@ -322,9 +349,30 @@ static int ept_pte_range(struct page_idle_ctrl *pic,
 	return err;
 }
 
+static enum ProcIdlePageType ept_huge_accessed(pmd_t *pmd, unsigned long addr,
+		unsigned long end)
+{
+	int accessed = PMD_IDLE;
+	pte_t *pte;
+
+	pte = pte_offset_kernel(pmd, addr);
+	do {
+		if (!KVM_CHECK_INVALID_SPTE(pte->pte))
+			continue;
+		if (!ept_pte_present(*pte))
+			continue;
+		if (!test_and_clear_bit(_PAGE_BIT_EPT_ACCESSED,
+					(unsigned long *)&pte->pte))
+			continue;
+		accessed = PMD_ACCESSED;
+	} while (pte++, addr += PAGE_SIZE, addr != end);
+
+	return accessed;
+}
 
 static int ept_pmd_range(struct page_idle_ctrl *pic,
-			 pud_t *pud, unsigned long addr, unsigned long end)
+			 pud_t *pud, unsigned long addr, unsigned long end,
+			 struct mm_walk *walk)
 {
 	pmd_t *pmd;
 	unsigned long next;
@@ -342,11 +390,15 @@ static int ept_pmd_range(struct page_idle_ctrl *pic,
 		next = pmd_addr_end(addr, end);
 		if (KVM_CHECK_INVALID_SPTE(pmd->pmd))
 			page_type = PMD_IDLE;
-		else if (!ept_pmd_present(*pmd))
-			page_type = PMD_HOLE;	/* likely won't hit here */
-		else if (!pmd_large(*pmd))
-			page_type = pte_page_type;
-		else if (!test_and_clear_bit(_PAGE_BIT_EPT_ACCESSED,
+		else if (!ept_pmd_present(*pmd)) {
+			err = vm_walk_host_range(addr, next, walk);
+			goto next;
+		} else if (!pmd_large(*pmd)) {
+			if (pic->flags & SCAN_AS_HUGE)
+				page_type = ept_huge_accessed(pmd, addr, next);
+			else
+				page_type = pte_page_type;
+		} else if (!test_and_clear_bit(_PAGE_BIT_EPT_ACCESSED,
 						(unsigned long *)pmd))
 			page_type = PMD_IDLE;
 		else {
@@ -360,7 +412,9 @@ static int ept_pmd_range(struct page_idle_ctrl *pic,
 		if (page_type != IDLE_PAGE_TYPE_MAX)
 			err = pic_add_page(pic, addr, next, page_type);
 		else
-			err = ept_pte_range(pic, pmd, addr, next);
+			err = ept_pte_range(pic, pmd, addr, next, walk);
+
+next:
 		if (err)
 			break;
 	} while (pmd++, addr = next, addr != end);
@@ -370,7 +424,8 @@ static int ept_pmd_range(struct page_idle_ctrl *pic,
 
 
 static int ept_pud_range(struct page_idle_ctrl *pic,
-			 p4d_t *p4d, unsigned long addr, unsigned long end)
+			 p4d_t *p4d, unsigned long addr, unsigned long end,
+			 struct mm_walk *walk)
 {
 	pud_t *pud;
 	unsigned long next;
@@ -381,15 +436,16 @@ static int ept_pud_range(struct page_idle_ctrl *pic,
 		next = pud_addr_end(addr, end);
 
 		if (!ept_pud_present(*pud)) {
-			set_restart_gpa(next, "PUD_HOLE");
-			continue;
+			err = vm_walk_host_range(addr, next, walk);
+			goto next;
 		}
 
 		if (pud_large(*pud))
 			err = pic_add_page(pic, addr, next, PUD_PRESENT);
 		else
-			err = ept_pmd_range(pic, pud, addr, next);
+			err = ept_pmd_range(pic, pud, addr, next, walk);
 
+next:
 		if (err)
 			break;
 	} while (pud++, addr = next, addr != end);
@@ -398,7 +454,8 @@ static int ept_pud_range(struct page_idle_ctrl *pic,
 }
 
 static int ept_p4d_range(struct page_idle_ctrl *pic,
-			 pgd_t *pgd, unsigned long addr, unsigned long end)
+			 pgd_t *pgd, unsigned long addr, unsigned long end,
+			 struct mm_walk *walk)
 {
 	p4d_t *p4d;
 	unsigned long next;
@@ -412,7 +469,7 @@ static int ept_p4d_range(struct page_idle_ctrl *pic,
 			continue;
 		}
 
-		err = ept_pud_range(pic, p4d, addr, next);
+		err = ept_pud_range(pic, p4d, addr, next, walk);
 		if (err)
 			break;
 	} while (p4d++, addr = next, addr != end);
@@ -420,10 +477,10 @@ static int ept_p4d_range(struct page_idle_ctrl *pic,
 	return err;
 }
 
-
 static int ept_page_range(struct page_idle_ctrl *pic,
 			  unsigned long addr,
-			  unsigned long end)
+			  unsigned long end,
+			  struct mm_walk *walk)
 {
 	struct kvm_vcpu *vcpu;
 	struct kvm_mmu *mmu;
@@ -460,7 +517,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 			continue;
 		}
 
-		err = ept_p4d_range(pic, pgd, addr, next);
+		err = ept_p4d_range(pic, pgd, addr, next, walk);
 		if (err)
 			break;
 	} while (pgd++, addr = next, addr != end);
@@ -692,8 +749,44 @@ static unsigned long vm_idle_find_gpa(struct page_idle_ctrl *pic,
 	return INVALID_PAGE;
 }
 
+static int mm_idle_hugetlb_entry(pte_t *pte, unsigned long hmask,
+		unsigned long addr, unsigned long next,
+		struct mm_walk *walk);
+static int vm_idle_hugetlb_entry(pte_t *pte, unsigned long hmask,
+		unsigned long addr, unsigned long next,
+		struct mm_walk *walk)
+{
+	struct page_idle_ctrl *pic = walk->private;
+
+	pic->flags |= VM_SCAN_HOST;
+	return mm_idle_hugetlb_entry(pte, hmask, addr, next, walk);
+}
+
+static int mm_idle_pmd_entry(pmd_t *pmd, unsigned long addr,
+		unsigned long next, struct mm_walk *walk);
+static int vm_idle_pmd_entry(pmd_t *pmd, unsigned long addr,
+		unsigned long next, struct mm_walk *walk)
+{
+	struct page_idle_ctrl *pic = walk->private;
+
+	pic->flags |= VM_SCAN_HOST;
+	return mm_idle_pmd_entry(pmd, addr, next, walk);
+}
+
+static int mm_idle_pud_entry(pud_t *pud, unsigned long addr,
+		unsigned long next, struct mm_walk *walk);
+static int vm_idle_pud_entry(pud_t *pud, unsigned long addr,
+		unsigned long next, struct mm_walk *walk)
+{
+	struct page_idle_ctrl *pic = walk->private;
+
+	pic->flags |= VM_SCAN_HOST;
+	return mm_idle_pud_entry(pud, addr, next, walk);
+}
+
 static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
-				   unsigned long start, unsigned long end)
+				   unsigned long start, unsigned long end,
+				   struct mm_walk *walk)
 {
 	unsigned long gpa_addr;
 	unsigned long addr_range;
@@ -728,7 +821,7 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 #ifdef CONFIG_ARM64
 			arm_page_range(pic, gpa_addr, gpa_addr + addr_range);
 #else
-			ept_page_range(pic, gpa_addr, gpa_addr + addr_range);
+			ept_page_range(pic, gpa_addr, gpa_addr + addr_range, walk);
 #endif
 			va_end = pic->gpa_to_hva + gpa_addr + addr_range;
 		}
@@ -744,10 +837,14 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 	return ret;
 }
 
+static int mm_idle_test_walk(unsigned long start, unsigned long end,
+				 struct mm_walk *walk);
 static ssize_t vm_idle_read(struct file *file, char *buf,
 				 size_t count, loff_t *ppos)
 {
 	struct mm_struct *mm = file->private_data;
+	struct mm_walk mm_walk = {};
+	struct mm_walk_ops mm_walk_ops = {};
 	struct page_idle_ctrl *pic;
 	unsigned long hva_start = *ppos;
 	unsigned long hva_end = hva_start + (count << (3 + PAGE_SHIFT));
@@ -760,7 +857,16 @@ static ssize_t vm_idle_read(struct file *file, char *buf,
 	setup_page_idle_ctrl(pic, buf, count, file->f_flags);
 	pic->kvm = mm_kvm(mm);
 
-	ret = vm_idle_walk_hva_range(pic, hva_start, hva_end);
+	mm_walk_ops.pmd_entry = vm_idle_pmd_entry;
+	mm_walk_ops.pud_entry = vm_idle_pud_entry;
+	mm_walk_ops.hugetlb_entry = vm_idle_hugetlb_entry;
+	mm_walk_ops.test_walk = mm_idle_test_walk;
+
+	mm_walk.mm = mm;
+	mm_walk.ops = &mm_walk_ops;
+	mm_walk.private = pic;
+
+	ret = vm_idle_walk_hva_range(pic, hva_start, hva_end, &mm_walk);
 	if (ret)
 		goto out_kvm;
 
@@ -863,6 +969,8 @@ static int mm_idle_pte_range(struct page_idle_ctrl *pic, pmd_t *pmd,
 	do {
 		if (!pte_present(*pte))
 			page_type = PTE_HOLE;
+		else if (pic->flags & SCAN_IGN_HOST)
+			page_type = PTE_IDLE;
 		else if (!test_and_clear_bit(_PAGE_MM_BIT_ACCESSED,
 						 (unsigned long *) &pte->pte))
 			page_type = PTE_IDLE;
@@ -876,6 +984,39 @@ static int mm_idle_pte_range(struct page_idle_ctrl *pic, pmd_t *pmd,
 	} while (pte++, addr += PAGE_SIZE, addr != next);
 
 	return err;
+}
+
+static inline unsigned long mask_to_size(unsigned long mask)
+{
+	return ~mask + 1;
+}
+
+static int mm_idle_hugetlb_entry(pte_t *pte, unsigned long hmask,
+				unsigned long addr, unsigned long next,
+				struct mm_walk *walk)
+{
+	struct page_idle_ctrl *pic = walk->private;
+	enum ProcIdlePageType page_type;
+	unsigned long start = addr & hmask; /* hugepage may be splited in vm */
+	int ret;
+
+	if (mask_to_size(hmask) == PUD_SIZE) {
+		page_type = PUD_PRESENT;
+		goto add_page;
+	}
+
+	if (!pte_present(*pte))
+		page_type = PMD_HOLE;
+	else if (pic->flags & SCAN_IGN_HOST)
+		page_type = PMD_IDLE;
+	else if (!test_and_clear_bit(_PAGE_MM_BIT_ACCESSED, (unsigned long *)pte))
+		page_type = PMD_IDLE;
+	else
+		page_type = PMD_ACCESSED;
+
+add_page:
+	ret = pic_add_page(pic, start, start + pagetype_size[page_type], page_type);
+	return ret;
 }
 
 static int mm_idle_pmd_entry(pmd_t *pmd, unsigned long addr,
@@ -907,7 +1048,8 @@ static int mm_idle_pmd_entry(pmd_t *pmd, unsigned long addr,
 	else if (!mm_idle_pmd_large(*pmd))
 		page_type = pte_page_type;
 	else if (!test_and_clear_bit(_PAGE_MM_BIT_ACCESSED,
-				(unsigned long *)pmd))
+				(unsigned long *)pmd) ||
+			pic->flags & SCAN_IGN_HOST)
 		page_type = PMD_IDLE;
 	else
 		page_type = PMD_ACCESSED;
@@ -945,6 +1087,8 @@ static int mm_idle_test_walk(unsigned long start, unsigned long end,
 	struct vm_area_struct *vma = walk->vma;
 
 	if (vma->vm_file) {
+		if (is_vm_hugetlb_page(vma))
+			return 0;
 		if ((vma->vm_flags & (VM_WRITE|VM_MAYSHARE)) == VM_WRITE)
 			return 0;
 		return 1;
@@ -1038,6 +1182,7 @@ static ssize_t mm_idle_read(struct file *file, char *buf,
 
 	mm_walk_ops->pmd_entry = mm_idle_pmd_entry;
 	mm_walk_ops->pud_entry = mm_idle_pud_entry;
+	mm_walk_ops->hugetlb_entry = mm_idle_hugetlb_entry;
 	mm_walk_ops->test_walk = mm_idle_test_walk;
 
 	mm_walk.mm = mm;
@@ -1057,6 +1202,29 @@ out_free:
 	return ret;
 }
 
+static long page_scan_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	unsigned int flags;
+
+	if (get_user(flags, (unsigned int __user *)argp))
+		return -EFAULT;
+	flags &= ALL_SCAN_FLAGS;
+
+	switch (cmd) {
+	case IDLE_SCAN_ADD_FLAGS:
+		filp->f_flags |= flags;
+		break;
+	case IDLE_SCAN_REMOVE_FLAGS:
+		filp->f_flags &= ~flags;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 extern struct file_operations proc_page_scan_operations;
 
 static int page_scan_entry(void)
@@ -1065,6 +1233,7 @@ static int page_scan_entry(void)
 	proc_page_scan_operations.read = page_scan_read;
 	proc_page_scan_operations.open = page_scan_open;
 	proc_page_scan_operations.release = page_scan_release;
+	proc_page_scan_operations.unlocked_ioctl = page_scan_ioctl;
 	return 0;
 }
 
