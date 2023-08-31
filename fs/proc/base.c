@@ -3353,6 +3353,8 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("smaps",      S_IRUGO, proc_pid_smaps_operations),
 	REG("smaps_rollup", S_IRUGO, proc_pid_smaps_rollup_operations),
 	REG("pagemap",    S_IRUSR, proc_pagemap_operations),
+#endif
+#ifdef CONFIG_ETMEM
 	REG("idle_pages", S_IRUSR|S_IWUSR, proc_mm_idle_operations),
 	REG("swap_pages", S_IWUSR, proc_mm_swap_operations),
 #endif
@@ -3703,6 +3705,8 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("smaps",     S_IRUGO, proc_pid_smaps_operations),
 	REG("smaps_rollup", S_IRUGO, proc_pid_smaps_rollup_operations),
 	REG("pagemap",    S_IRUSR, proc_pagemap_operations),
+#endif
+#ifdef CONFIG_ETMEM
 	REG("idle_pages", S_IRUSR|S_IWUSR, proc_mm_idle_operations),
 	REG("swap_pages", S_IWUSR, proc_mm_swap_operations),
 #endif

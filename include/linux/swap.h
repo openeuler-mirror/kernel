@@ -441,9 +441,13 @@ extern unsigned long mem_cgroup_shrink_node(struct mem_cgroup *mem,
 extern unsigned long shrink_all_memory(unsigned long nr_pages);
 extern int vm_swappiness;
 long remove_mapping(struct address_space *mapping, struct folio *folio);
+
+#ifdef CONFIG_ETMEM
 extern int add_page_for_swap(struct page *page, struct list_head *pagelist);
 extern struct page *get_page_from_vaddr(struct mm_struct *mm,
 					unsigned long vaddr);
+#endif
+
 #ifdef CONFIG_NUMA
 extern int node_reclaim_mode;
 extern int sysctl_min_unmapped_ratio;
