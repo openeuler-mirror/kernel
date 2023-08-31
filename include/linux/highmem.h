@@ -513,4 +513,21 @@ static inline void put_and_unmap_page(struct page *page, void *addr)
 	put_page(page);
 }
 
+#ifndef __HAVE_ARCH_COPY_HUGEPAGES
+
+static inline void copy_highpages(struct folio *dst, struct folio *src)
+{
+	long i = 0;
+	long nr = folio_nr_pages(src);
+
+	for (;;) {
+		copy_highpage(folio_page(dst, i), folio_page(src, i));
+		if (++i == nr)
+			break;
+		cond_resched();
+	}
+}
+
+#endif /* __HAVE_ARCH_COPY_HUGEPAGES */
+
 #endif /* _LINUX_HIGHMEM_H */

@@ -60,6 +60,13 @@ static inline void clear_page(void *page)
 
 void copy_page(void *to, void *from);
 
+void copy_page_nocache(void *to, void *from);
+void copy_page_nocache_barrir(void);
+
+struct folio;
+#define __HAVE_ARCH_COPY_HUGEPAGES 1
+void copy_highpages(struct folio *dst, struct folio *src);
+
 #ifdef CONFIG_X86_5LEVEL
 /*
  * User space process size.  This is the first address outside the user range.
