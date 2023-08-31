@@ -728,16 +728,16 @@ config PARMAN
 config OBJAGG
 	tristate "objagg" if COMPILE_TEST
 
-config MEMIG_SCAN
-	tristate "module: memig page scan for memig support"
+config ETMEM_SCAN
+	tristate "module: etmem page scan for etmem support"
 	help
-	 memig page scan feature
+	 etmem page scan feature
 	 used to scan the virtual address of the target process
 
-config MEMIG_SWAP
-       tristate "module: memig page swap for memig support"
+config ETMEM_SWAP
+       tristate "module: etmem page swap for etmem support"
        help
-         memig page swap feature
+         etmem page swap feature
 
 endmenu
 
