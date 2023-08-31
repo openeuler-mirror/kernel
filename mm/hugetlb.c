@@ -75,6 +75,7 @@ static unsigned long __initdata default_hstate_max_huge_pages;
 static bool __initdata parsed_valid_hugepagesz = true;
 static bool __initdata parsed_default_hugepagesz;
 static unsigned int default_hugepages_in_node[MAX_NUMNODES] __initdata;
+static bool hugepage_no_mirror __initdata;
 
 /*
  * Protects updates to hugepage_freelists, hugepage_activelist, nr_huge_pages,
@@ -3151,6 +3152,47 @@ out_subpool_put:
 	return ERR_PTR(-ENOSPC);
 }
 
+#ifdef CONFIG_MEMORY_HOTPLUG
+static void __init move_bootmem_to_normal_zone(struct huge_bootmem_page *m,
+					       int order)
+{
+	struct page *page = virt_to_page(m);
+	unsigned long pfn = page_to_pfn(page);
+	struct zone *src_zone, *dst_zone;
+	int nr_pages = 1 << order;
+
+	src_zone = page_zone(page);
+
+	if (zone_idx(src_zone) != ZONE_MOVABLE)
+		pr_warn("HugeTLB: trying to move %s pages (should be ZONE_MOVABLE) to ZONE_NORMAL!\n",
+			src_zone->name);
+
+	adjust_present_page_count(page, NULL, -nr_pages);
+	remove_pfn_range_from_zone(src_zone, pfn, nr_pages);
+
+	dst_zone = &NODE_DATA(pfn_to_nid(pfn))->node_zones[ZONE_NORMAL];
+	move_pfn_range_to_zone(dst_zone, pfn, nr_pages,
+			       NULL, MIGRATE_UNMOVABLE);
+	adjust_present_page_count(page, NULL, nr_pages);
+
+	pr_info("HugeTLB: moved %d pages from %s to %s\n", nr_pages,
+		src_zone->name, dst_zone->name);
+}
+#endif
+
+static void *__init __alloc_bootmem_huge_page_inner(phys_addr_t size,
+						    phys_addr_t align,
+						    phys_addr_t min_addr,
+						    phys_addr_t max_addr,
+						    int nid)
+{
+	if (mirrored_kernelcore && hugepage_no_mirror)
+		return memblock_alloc_try_nid_raw_flags(size, align, min_addr, max_addr,
+							nid, MEMBLOCK_NOMIRROR);
+
+	return memblock_alloc_try_nid_raw(size, align, min_addr, max_addr, nid);
+}
+
 int alloc_bootmem_huge_page(struct hstate *h, int nid)
 	__attribute__ ((weak, alias("__alloc_bootmem_huge_page")));
 int __alloc_bootmem_huge_page(struct hstate *h, int nid)
@@ -3160,7 +3202,7 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 
 	/* do node specific alloc */
 	if (nid != NUMA_NO_NODE) {
-		m = memblock_alloc_try_nid_raw(huge_page_size(h), huge_page_size(h),
+		m = __alloc_bootmem_huge_page_inner(huge_page_size(h), huge_page_size(h),
 				0, MEMBLOCK_ALLOC_ACCESSIBLE, nid);
 		if (!m)
 			return 0;
@@ -3168,7 +3210,7 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 	}
 	/* allocate from next node when distributing huge pages */
 	for_each_node_mask_to_alloc(h, nr_nodes, node, &node_states[N_MEMORY]) {
-		m = memblock_alloc_try_nid_raw(
+		m = __alloc_bootmem_huge_page_inner(
 				huge_page_size(h), huge_page_size(h),
 				0, MEMBLOCK_ALLOC_ACCESSIBLE, node);
 		/*
@@ -3186,6 +3228,16 @@ found:
 	INIT_LIST_HEAD(&m->list);
 	list_add(&m->list, &huge_boot_pages);
 	m->hstate = h;
+
+#ifdef CONFIG_MEMORY_HOTPLUG
+	/*
+	 * If kernelcore=mirror, non-mirrored memory was initially
+	 * put into ZONE_MOVABLE, which can't be pinned for virtual
+	 * machine device passthrough, move them to ZONE_NORMAL
+	 */
+	if (mirrored_kernelcore && hugepage_no_mirror)
+		move_bootmem_to_normal_zone(m, huge_page_order(h));
+#endif
 	return 1;
 }
 
@@ -4425,6 +4477,17 @@ invalid:
 	return 1;
 }
 __setup("hugepages=", hugepages_setup);
+
+static int __init hugepage_no_mirror_setup(char *__unused)
+{
+	hugepage_no_mirror = true;
+	pr_info("HugeTLB: allocate boot time hugepages in non-mirrored memory if kernelcore=mirror is set.\n");
+	if (IS_ENABLED(CONFIG_MEMORY_HOTPLUG))
+		pr_info("HugeTLB: Also make them pinnable.\n");
+
+	return 1;
+}
+__setup("hugepage_no_mirror", hugepage_no_mirror_setup);
 
 /*
  * hugepagesz command line processing
