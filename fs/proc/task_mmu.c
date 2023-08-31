@@ -1770,6 +1770,72 @@ const struct file_operations proc_pagemap_operations = {
 	.open		= pagemap_open,
 	.release	= pagemap_release,
 };
+
+/* will be filled when kvm_ept_idle module loads */
+struct file_operations proc_page_scan_operations = {
+};
+EXPORT_SYMBOL_GPL(proc_page_scan_operations);
+
+static ssize_t mm_idle_read(struct file *file, char __user *buf,
+			    size_t count, loff_t *ppos)
+{
+	struct mm_struct *mm = file->private_data;
+	int ret = 0;
+
+	if (!mm || !mmget_not_zero(mm)) {
+		ret = -ESRCH;
+		return ret;
+	}
+	if (proc_page_scan_operations.read)
+		ret = proc_page_scan_operations.read(file, buf, count, ppos);
+
+	mmput(mm);
+	return ret;
+}
+
+static int mm_idle_open(struct inode *inode, struct file *file)
+{
+	struct mm_struct *mm = NULL;
+
+	if (!file_ns_capable(file, &init_user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mm = proc_mem_open(inode, PTRACE_MODE_READ);
+	if (IS_ERR(mm))
+		return PTR_ERR(mm);
+
+	file->private_data = mm;
+
+	if (proc_page_scan_operations.open)
+		return proc_page_scan_operations.open(inode, file);
+
+	return 0;
+}
+
+static int mm_idle_release(struct inode *inode, struct file *file)
+{
+	struct mm_struct *mm = file->private_data;
+
+	if (mm) {
+		if (!mm_kvm(mm))
+			flush_tlb_mm(mm);
+		mmdrop(mm);
+	}
+
+	if (proc_page_scan_operations.release)
+		return proc_page_scan_operations.release(inode, file);
+
+	return 0;
+}
+
+const struct file_operations proc_mm_idle_operations = {
+	.llseek		= mem_lseek, /* borrow this */
+	.read		= mm_idle_read,
+	.open		= mm_idle_open,
+	.release	= mm_idle_release,
+};
+
+
 #endif /* CONFIG_PROC_PAGE_MONITOR */
 
 #ifdef CONFIG_NUMA

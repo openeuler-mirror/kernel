@@ -728,6 +728,12 @@ config PARMAN
 config OBJAGG
 	tristate "objagg" if COMPILE_TEST
 
+config MEMIG_SCAN_MODULE
+	tristate "module: memig page scan for memig support"
+	help
+	 memig page scan feature
+	 used to scan the virtual address of the target process
+
 endmenu
 
 config GENERIC_IOREMAP
