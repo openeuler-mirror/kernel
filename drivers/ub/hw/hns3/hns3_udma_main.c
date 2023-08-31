@@ -25,6 +25,7 @@
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_segment.h"
+#include "hns3_udma_jetty.h"
 #include "hns3_udma_cmd.h"
 
 static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
@@ -330,6 +331,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.destroy_jfr = udma_destroy_jfr,
 	.import_jfr = udma_import_jfr,
 	.unimport_jfr = udma_unimport_jfr,
+	.create_jetty = udma_create_jetty,
+	.destroy_jetty = udma_destroy_jetty,
 	.create_tp = udma_create_tp,
 	.modify_tp = udma_modify_tp,
 	.destroy_tp = udma_destroy_tp,

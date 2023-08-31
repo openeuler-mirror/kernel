@@ -25,6 +25,7 @@
 #define UDMA_JETTY_X_PREFIX_BIT_NUM	2
 #define UDMA_JFS_QPN_PREFIX		0x0
 #define UDMA_JFR_QPN_PREFIX		0x1
+#define UDMA_JETTY_QPN_PREFIX		0x2
 #define UDMA_ADDR_4K_MASK		0xfffUL
 #define URMA_SEG_ACCESS_GUARD		(1UL << 5)
 
@@ -99,6 +100,13 @@ struct udma_create_tp_ucmd {
 	uint64_t		sdb_addr;
 };
 
+struct udma_create_jetty_ucmd {
+	struct udma_create_tp_ucmd	create_tp_ucmd;
+	uint32_t			jfr_id;
+	uint64_t			buf_addr;
+	uint64_t			sdb_addr;
+};
+
 enum udma_qp_cap_flags {
 	UDMA_QP_CAP_RQ_RECORD_DB = 1 << 0,
 	UDMA_QP_CAP_SQ_RECORD_DB = 1 << 1,
@@ -111,6 +119,10 @@ struct udma_create_tp_resp {
 	uint32_t		qpn;
 	uint32_t		path_mtu;
 	uint8_t			priority;
+};
+
+struct udma_create_jetty_resp {
+	struct udma_create_tp_resp create_tp_resp;
 };
 
 struct udma_create_jfs_ucmd {

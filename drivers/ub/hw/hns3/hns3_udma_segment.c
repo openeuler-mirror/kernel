@@ -98,7 +98,6 @@ static int alloc_seg_pbl(struct udma_dev *udma_dev, struct udma_seg *seg,
 	buf_attr.region[0].size = seg->size;
 	buf_attr.region[0].hopnum = seg->pbl_hop_num;
 	buf_attr.region_count = 1;
-	buf_attr.mtt_only = false;
 
 	err = udma_mtr_create(udma_dev, &seg->pbl_mtr, &buf_attr,
 			      udma_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT,

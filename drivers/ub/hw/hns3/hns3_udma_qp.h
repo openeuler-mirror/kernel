@@ -202,6 +202,7 @@ struct udma_qp_attr {
 	struct udma_jfc		*recv_jfc;
 	struct udma_jfs		*jfs;
 	struct udma_jfr		*jfr;
+	struct udma_jetty	*jetty;
 	struct udma_qp_cap	cap;
 	enum udma_qp_type	qp_type;
 	uint32_t		pdn;
@@ -211,6 +212,7 @@ struct udma_qp_attr {
 	dma_addr_t		reorder_cq_addr;
 	union ubcore_eid		remote_eid;
 	union ubcore_eid		local_eid;
+	int			tgt_id;
 	uint8_t			priority;
 };
 
@@ -236,10 +238,12 @@ struct udma_qp {
 	struct udma_qp_attr	qp_attr;
 	struct udma_wq		sq;
 	struct udma_wq		rq;
+	struct udma_db		sdb;
 	struct udma_jfc		*send_jfc;
 	struct udma_jfc		*recv_jfc;
 	uint64_t		en_flags;
 	struct udma_mtr		mtr;
+	uint32_t		buff_size;
 	enum udma_qp_state	state;
 	void (*event)(struct udma_qp *qp,
 		      enum udma_event event_type);
@@ -260,6 +264,8 @@ struct udma_qp {
 	uint8_t			ack_timeout;
 	uint8_t			min_rnr_timer;
 	uint8_t			priority;
+	bool			no_free_wqe_buf;
+	bool			force_free_wqe_buf;
 };
 
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))
@@ -279,5 +285,6 @@ void init_jetty_x_qpn_bitmap(struct udma_dev *dev,
 			     uint32_t jid);
 void clean_jetty_x_qpn_bitmap(struct udma_qpn_bitmap *qpn_map);
 void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);
+void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp);
 
 #endif /* _UDMA_QP_H */

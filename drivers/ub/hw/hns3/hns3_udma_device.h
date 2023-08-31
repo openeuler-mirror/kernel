@@ -45,6 +45,8 @@
 #define UDMA_GMV_ENTRY_SZ			32
 
 #define UDMA_CQ_BANK_NUM			4
+
+#define UDMA_SGE_IN_WQE				2
 #define UDMA_SGE_SHIFT				4
 #define UDMA_SGE_SIZE				16
 #define UDMA_IDX_QUE_ENTRY_SZ			4
@@ -52,6 +54,9 @@
 #define UDMA_HW_PAGE_SHIFT			12
 #define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
 #define udma_hw_page_align(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
+
+#define UDMA_DWQE_SIZE				65536
+#define UDMA_DWQE_MMAP_QP_NUM			1024
 
 #define UDMA_HOP_NUM_0				0xff
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
@@ -136,6 +141,8 @@
 #define UDMA_DB_ADDR_OFFSET 0x230
 #define UDMA_DEV_START_OFFSET 2
 #define UDMA_DEV_EX_START_OFFSET 4
+
+#define UDMA_MIN_JFS_DEPTH 64
 
 enum {
 	NO_ARMED = 0x0
@@ -287,8 +294,6 @@ struct udma_buf_attr {
 	} region[UDMA_MAX_BT_REGION];
 	uint32_t		region_count; /* valid region count */
 	uint32_t		page_shift;  /* buffer page shift */
-	/* only alloc buffer-required MTT memory */
-	bool			mtt_only;
 };
 
 struct udma_buf_list {

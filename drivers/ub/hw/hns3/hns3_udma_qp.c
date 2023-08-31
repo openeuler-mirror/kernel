@@ -16,10 +16,14 @@
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
 #include "hns3_udma_abi.h"
+#include "hns3_udma_jfs.h"
 #include "hns3_udma_jfr.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_cmd.h"
+#include "hns3_udma_jetty.h"
+#include "hns3_udma_tp.h"
+#include "hns3_udma_db.h"
 #include "hns3_udma_qp.h"
 
 static void set_qpc_wqe_cnt(struct udma_qp *qp,
@@ -616,6 +620,48 @@ out:
 	return ret;
 }
 
+int fill_jfs_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
+		     struct udma_create_tp_ucmd *ucmd)
+{
+	struct udma_jfs *udma_jfs;
+	struct ubcore_jfs *jfs;
+	struct ubcore_jfc *jfc;
+
+	udma_jfs = (struct udma_jfs *)xa_load(&udma_dev->jfs_table.xa,
+					      ucmd->ini_id.jfs_id);
+	if (IS_ERR_OR_NULL(udma_jfs)) {
+		dev_err(udma_dev->dev, "failed to find jfs\n");
+		return -EINVAL;
+	}
+	jfs = &udma_jfs->ubcore_jfs;
+	jfc = jfs->jfs_cfg.jfc;
+	qp_attr->send_jfc = to_udma_jfc(jfc);
+	qp_attr->recv_jfc = NULL;
+	qp_attr->jfs = udma_jfs;
+	qp_attr->qpn_map = &qp_attr->jfs->qpn_map;
+	qp_attr->uctx = qp_attr->jfs->ubcore_jfs.uctx;
+	qp_attr->cap.max_send_wr = jfs->jfs_cfg.depth;
+	qp_attr->cap.max_send_sge = jfs->jfs_cfg.max_sge;
+	qp_attr->cap.max_inline_data = jfs->jfs_cfg.max_inline_data;
+	qp_attr->cap.retry_cnt = jfs->jfs_cfg.retry_cnt;
+	qp_attr->cap.rnr_retry = jfs->jfs_cfg.rnr_retry;
+	qp_attr->cap.ack_timeout = jfs->jfs_cfg.err_timeout;
+	qp_attr->qp_type = QPT_RC;
+	qp_attr->tgt_id = ucmd->tgt_id.jfr_id;
+	if (jfs->jfs_cfg.priority >= udma_dev->caps.sl_num) {
+		qp_attr->priority = udma_dev->caps.sl_num > 0 ?
+				    udma_dev->caps.sl_num - 1 : 0;
+		dev_err(udma_dev->dev,
+			"The setted priority (%d) cannot larger than the max priority (%d), priority (%d) is used.\n",
+			jfs->jfs_cfg.priority, udma_dev->caps.sl_num,
+			qp_attr->priority);
+	} else {
+		qp_attr->priority = jfs->jfs_cfg.priority;
+	}
+
+	return 0;
+}
+
 int fill_jfr_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 		     struct udma_create_tp_ucmd *ucmd)
 {
@@ -637,10 +683,72 @@ int fill_jfr_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	if (jfr->jfr_cfg.trans_mode == UBCORE_TP_UM) {
 		dev_err(udma_dev->dev, "jfr tp mode error\n");
 		return -EINVAL;
+	} else {
+		qp_attr->qp_type = QPT_RC;
+	}
+	qp_attr->cap.min_rnr_timer = jfr->jfr_cfg.min_rnr_timer;
+
+	return 0;
+}
+
+int fill_jetty_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
+		       struct udma_create_tp_ucmd *ucmd)
+{
+	struct udma_jetty *udma_jetty;
+	struct ubcore_jetty *jetty;
+	uint32_t jetty_id;
+
+	jetty_id = qp_attr->is_tgt ? ucmd->tgt_id.jetty_id :
+		   ucmd->ini_id.jetty_id;
+	qp_attr->tgt_id = qp_attr->is_tgt ? ucmd->ini_id.jetty_id :
+			  ucmd->tgt_id.jetty_id;
+
+	udma_jetty = (struct udma_jetty *)xa_load(&udma_dev->jetty_table.xa,
+						  jetty_id);
+	if (IS_ERR_OR_NULL(udma_jetty)) {
+		dev_err(udma_dev->dev, "failed to find jetty\n");
+		return -EINVAL;
 	}
 
+	jetty = &udma_jetty->ubcore_jetty;
+	if (udma_jetty->tp_mode == UBCORE_TP_UM) {
+		dev_err(udma_dev->dev, "jetty tp mode error\n");
+		return -EINVAL;
+	}
+
+	qp_attr->jetty = udma_jetty;
+	if (!qp_attr->is_tgt || udma_jetty->tp_mode == UBCORE_TP_RC) {
+		qp_attr->uctx = jetty->uctx;
+		qp_attr->qpn_map = &udma_jetty->qpn_map;
+		qp_attr->send_jfc = to_udma_jfc(jetty->jetty_cfg.send_jfc);
+		qp_attr->cap.max_send_wr = jetty->jetty_cfg.jfs_depth;
+		qp_attr->cap.max_send_sge = jetty->jetty_cfg.max_send_sge;
+		qp_attr->cap.max_inline_data = jetty->jetty_cfg.max_inline_data;
+		if (jetty->jetty_cfg.priority >= udma_dev->caps.sl_num) {
+			qp_attr->priority = udma_dev->caps.sl_num > 0 ?
+					    udma_dev->caps.sl_num - 1 : 0;
+			dev_err(udma_dev->dev,
+				"The setted priority (%d) should smaller than the max priority (%d), priority (%d) is used\n",
+				jetty->jetty_cfg.priority,
+				udma_dev->caps.sl_num, qp_attr->priority);
+		} else {
+			qp_attr->priority = jetty->jetty_cfg.priority;
+		}
+	}
+
+	qp_attr->jfr = udma_jetty->udma_jfr;
+	qp_attr->uctx = udma_jetty->udma_jfr->ubcore_jfr.uctx;
+	qp_attr->qpn_map = &udma_jetty->qpn_map;
+	qp_attr->recv_jfc =
+		to_udma_jfc(udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.jfc);
+
 	qp_attr->qp_type = QPT_RC;
-	qp_attr->cap.min_rnr_timer = jfr->jfr_cfg.min_rnr_timer;
+	qp_attr->cap.min_rnr_timer =
+		udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
+
+	qp_attr->cap.retry_cnt = jetty->jetty_cfg.retry_cnt;
+	qp_attr->cap.ack_timeout = jetty->jetty_cfg.err_timeout;
+	qp_attr->cap.rnr_retry = jetty->jetty_cfg.rnr_retry;
 
 	return 0;
 }
@@ -677,14 +785,60 @@ int udma_fill_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 
 	if (!is_target) {
 		qp_attr->pdn = udma_ctx->pdn;
-		/* TODO:  fill_jfs_qp_attr */
-		return 0;
+		if (!ucmd.is_jetty)
+			return fill_jfs_qp_attr(udma_dev, qp_attr, &ucmd);
+		else
+			return fill_jetty_qp_attr(udma_dev, qp_attr, &ucmd);
+	} else {
+		if (!ucmd.is_jetty)
+			return fill_jfr_qp_attr(udma_dev, qp_attr, &ucmd);
+		else
+			return fill_jetty_qp_attr(udma_dev, qp_attr, &ucmd);
 	}
 
-	if (!ucmd.is_jetty)
-		return fill_jfr_qp_attr(udma_dev, qp_attr, &ucmd);
-
 	return status;
+}
+
+static uint32_t get_wqe_ext_sge_cnt(struct udma_qp *qp)
+{
+	/* UD QP only has extended sge */
+	if (qp->qp_type == QPT_UD)
+		return qp->sq.max_gs;
+
+	if (qp->sq.max_gs > UDMA_SGE_IN_WQE)
+		return qp->sq.max_gs - UDMA_SGE_IN_WQE;
+
+	return 0;
+}
+
+static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
+			      struct udma_qp *qp, struct udma_qp_cap *cap)
+{
+	uint32_t max_inline_data;
+	uint32_t total_sge_cnt;
+	uint32_t ext_sge_cnt;
+	uint32_t wqe_sge_cnt;
+
+	qp->sge.sge_shift = UDMA_SGE_SHIFT;
+
+	max_inline_data = roundup_pow_of_two(cap->max_inline_data);
+	ext_sge_cnt = max_inline_data / UDMA_SGE_SIZE;
+
+	/* Select the max data set by the user */
+	qp->sq.max_gs = max(ext_sge_cnt, cap->max_send_sge);
+
+	wqe_sge_cnt = get_wqe_ext_sge_cnt(qp);
+	/* If the number of extended sge is not zero, they MUST use the
+	 * space of UDMA_EP_PAGE_SIZE at least.
+	 */
+	if (wqe_sge_cnt) {
+		total_sge_cnt = roundup_pow_of_two(sq_wqe_cnt * wqe_sge_cnt);
+		qp->sge.sge_cnt = max(total_sge_cnt,
+				      (uint32_t)UDMA_PAGE_SIZE / UDMA_SGE_SIZE);
+	}
+
+	/* Ensure that the max_gs size does not exceed */
+	qp->sq.max_gs = min(qp->sq.max_gs, udma_dev->caps.max_sq_sg);
 }
 
 static void set_rq_size(struct udma_qp *qp, struct udma_qp_cap *cap)
@@ -694,6 +848,34 @@ static void set_rq_size(struct udma_qp *qp, struct udma_qp_cap *cap)
 	qp->rq.max_gs = 1;
 	cap->max_recv_wr = 0;
 	cap->max_recv_sge = 0;
+}
+
+static int set_user_sq_size(struct udma_dev *udma_dev, struct udma_qp *qp,
+			    struct udma_qp_cap *cap)
+{
+	uint32_t cfg_depth;
+
+	if (cap->max_send_wr > udma_dev->caps.max_wqes ||
+	    cap->max_send_sge > udma_dev->caps.max_sq_sg)
+		return -EINVAL;
+
+	qp->sq.wqe_shift = UDMA_SQ_WQE_SHIFT;
+	cfg_depth = roundup_pow_of_two(cap->max_send_wr);
+	qp->sq.wqe_cnt = cfg_depth < UDMA_MIN_JFS_DEPTH ?
+			 UDMA_MIN_JFS_DEPTH : cfg_depth;
+
+	set_ext_sge_param(udma_dev, qp->sq.wqe_cnt, qp, cap);
+
+	return 0;
+}
+
+static bool is_rc_jetty(struct udma_qp_attr *qp_attr)
+{
+	if (qp_attr->is_jetty && qp_attr->jetty &&
+	    qp_attr->jetty->tp_mode == UBCORE_TP_RC)
+		return true;
+
+	return false;
 }
 
 static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
@@ -710,7 +892,17 @@ static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
 		qp->retry_cnt = qp_attr->cap.retry_cnt;
 		qp->ack_timeout = qp_attr->cap.ack_timeout;
 		qp->rnr_retry = qp_attr->cap.rnr_retry;
+		if (qp_attr->is_jetty)
+			qp->min_rnr_timer = qp_attr->cap.min_rnr_timer;
 		qp->priority = qp_attr->priority;
+	} else {
+		qp->min_rnr_timer = qp_attr->cap.min_rnr_timer;
+		if (qp_attr->is_jetty) {
+			qp->retry_cnt = qp_attr->cap.retry_cnt;
+			qp->ack_timeout = qp_attr->cap.ack_timeout;
+			qp->rnr_retry = qp_attr->cap.rnr_retry;
+			qp->priority = qp_attr->priority;
+		}
 	}
 
 	if (qp_attr->cap.max_inline_data > udma_dev->caps.max_sq_inline)
@@ -729,6 +921,18 @@ static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
 			return ret;
 		}
 
+		ret = set_user_sq_size(udma_dev, qp, &qp_attr->cap);
+		if (ret)
+			dev_err(dev,
+				"failed to set user SQ size, ret = %d.\n", ret);
+	} else {
+		if (is_rc_jetty(qp_attr)) {
+			ret = set_user_sq_size(udma_dev, qp, &qp_attr->cap);
+			if (ret)
+				dev_err(dev,
+					"failed to set user SQ size for RC Jetty, ret = %d.\n",
+					ret);
+		}
 	}
 
 	return ret;
@@ -855,6 +1059,123 @@ void clean_jetty_x_qpn_bitmap(struct udma_qpn_bitmap *qpn_map)
 	mutex_unlock(&qpn_map->bank_mutex);
 }
 
+static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
+			    struct udma_buf_attr *buf_attr)
+{
+	uint32_t idx = 0;
+	int buf_size;
+
+	qp->buff_size = 0;
+
+	/* SQ WQE */
+	qp->sq.offset = 0;
+
+	buf_size = to_udma_hem_entries_size(qp->sq.wqe_cnt,
+					    qp->sq.wqe_shift);
+	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
+		buf_attr->region[idx].size = buf_size;
+		buf_attr->region[idx].hopnum = udma_dev->caps.wqe_sq_hop_num;
+		idx++;
+		qp->buff_size += buf_size;
+	}
+	/* extend SGE WQE in SQ */
+	qp->sge.offset = qp->buff_size;
+
+	buf_size = to_udma_hem_entries_size(qp->sge.sge_cnt,
+					    qp->sge.sge_shift);
+	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
+		buf_attr->region[idx].size = buf_size;
+		buf_attr->region[idx].hopnum = udma_dev->caps.wqe_sge_hop_num;
+		idx++;
+		qp->buff_size += buf_size;
+	}
+
+	if (qp->buff_size < 1)
+		return -EINVAL;
+
+	buf_attr->region_count = idx;
+	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT + udma_dev->caps.mtt_buf_pg_sz;
+
+	return 0;
+}
+
+static int alloc_wqe_buf(struct udma_dev *dev, struct udma_qp *qp,
+			 struct udma_buf_attr *buf_attr, uint64_t addr)
+{
+	int ret;
+
+	if ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
+	    (dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE) &&
+	    (qp->qpn < UDMA_DWQE_MMAP_QP_NUM))
+		qp->en_flags |= UDMA_QP_CAP_DIRECT_WQE;
+
+	ret = udma_mtr_create(dev, &qp->mtr, buf_attr,
+			      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz, addr, true);
+	if (ret)
+		dev_err(dev->dev, "failed to create WQE mtr, ret = %d.\n", ret);
+
+	return ret;
+}
+
+static int alloc_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp,
+			uint64_t buf_addr)
+{
+	struct device *dev = udma_dev->dev;
+	struct udma_buf_attr buf_attr = {};
+	int ret;
+
+	ret = set_wqe_buf_attr(udma_dev, qp, &buf_attr);
+	if (ret) {
+		dev_err(dev, "failed to set WQE attr, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = alloc_wqe_buf(udma_dev, qp, &buf_attr, buf_addr);
+	if (ret) {
+		dev_err(dev, "failed to alloc WQE buf, ret = %d.\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int alloc_user_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp,
+			    struct udma_create_tp_ucmd *ucmd)
+{
+	int ret;
+
+	if (!ucmd->sdb_addr)
+		return 0;
+
+	ret = udma_db_map_user(udma_dev, ucmd->sdb_addr, &qp->sdb);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to map user sdb_addr, ret = %d.\n", ret);
+		return ret;
+	}
+
+	qp->en_flags |= UDMA_QP_CAP_SQ_RECORD_DB;
+
+	return 0;
+}
+
+static int alloc_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp,
+		       struct ubcore_udata *udata,
+		       struct udma_create_tp_ucmd *ucmd)
+{
+	int ret;
+
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_SDI_MODE)
+		qp->en_flags |= UDMA_QP_CAP_OWNER_DB;
+
+	if (udata) {
+		ret = alloc_user_qp_db(udma_dev, qp, ucmd);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
 
 static int alloc_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
@@ -967,6 +1288,14 @@ static void udma_unlock_cqs(struct udma_jfc *send_jfc,
 	}
 }
 
+void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp)
+{
+	to_qp->qp_attr.send_jfc = from_qp->qp_attr.send_jfc;
+	udma_lock_cqs(to_qp->qp_attr.send_jfc, NULL);
+	list_add_tail(&to_qp->sq_node, &to_qp->qp_attr.send_jfc->sq_list);
+	udma_unlock_cqs(to_qp->qp_attr.send_jfc, NULL);
+}
+
 static void add_qp_to_list(struct udma_dev *udma_dev, struct udma_qp *qp,
 			   struct udma_jfc *send_jfc, struct udma_jfc *recv_jfc)
 {
@@ -1049,6 +1378,28 @@ static void free_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 	udma_table_put(udma_dev, &qp_table->irrl_table, qp->qpn);
 }
 
+static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
+{
+	if (is_rc_jetty(&qp->qp_attr) || qp->no_free_wqe_buf)
+		return;
+
+	if (qp->en_flags & UDMA_QP_CAP_SQ_RECORD_DB)
+		udma_db_unmap_user(udma_dev, &qp->sdb);
+}
+
+static void free_wqe_buf(struct udma_dev *dev, struct udma_qp *qp)
+{
+	if (is_rc_jetty(&qp->qp_attr) || qp->no_free_wqe_buf)
+		return;
+
+	udma_mtr_destroy(dev, &qp->mtr);
+}
+
+static void free_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp)
+{
+	free_wqe_buf(udma_dev, qp);
+}
+
 static inline uint8_t get_qp_bankid(uint64_t qpn)
 {
 	/* The lower 3 bits of QPN are used to hash to different banks */
@@ -1075,9 +1426,53 @@ static void free_qpn(struct udma_qp *qp)
 	mutex_unlock(&qpn_map->bank_mutex);
 }
 
+bool udma_qp_need_alloc_sq(struct udma_qp_attr *qp_attr)
+{
+	if (qp_attr->is_jetty) {
+		/* create qp for UM jetty */
+		if (qp_attr->jetty->tp_mode == UBCORE_TP_UM)
+			return true;
+
+		if (qp_attr->jetty->tp_mode == UBCORE_TP_RC)
+			return true;
+
+		return !qp_attr->is_tgt;
+	}
+
+	/* create qp for jfs for send */
+	if (qp_attr->jfs)
+		return true;
+
+	/* create qp for jfr for recv */
+	return false;
+}
+
+static uint32_t udma_get_jetty_qpn(struct udma_qp *qp)
+{
+	struct udma_tp *tp = container_of(qp, struct udma_tp, qp);
+	struct udma_jetty *jetty = qp->qp_attr.jetty;
+	uint32_t qpn = qp->qpn;
+	struct udma_tp *pre_tp;
+	uint32_t hash;
+
+	if (jetty->tp_mode == UBCORE_TP_RC && jetty->rc_node.tp != NULL)
+		qpn = jetty->rc_node.tpn;
+
+	if (jetty->tp_mode == UBCORE_TP_RM) {
+		hash = udma_get_jetty_hash(&tp->tjetty_id);
+		pre_tp =
+			(struct udma_tp *)xa_load(&jetty->srm_node_table, hash);
+		if (pre_tp)
+			qpn = pre_tp->qp.qpn;
+	}
+
+	return qpn;
+}
+
 int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata)
 {
+	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct device *dev = udma_dev->dev;
 	struct udma_create_tp_ucmd ucmd;
 	struct udma_create_tp_resp resp;
@@ -1102,6 +1497,30 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 		goto err_qpn;
 	}
 
+	if (udma_qp_need_alloc_sq(qp_attr)) {
+		if (is_rc_jetty(qp_attr)) {
+			qp->mtr = qp_attr->jetty->rc_node.mtr;
+			qp->sdb = qp_attr->jetty->rc_node.sdb;
+			qp->en_flags |= UDMA_QP_CAP_SQ_RECORD_DB;
+		} else {
+			ret = alloc_qp_wqe(udma_dev, qp, ucmd.buf_addr);
+			if (ret) {
+				dev_err(dev,
+					"failed to alloc QP buffer, ret = %d.\n",
+					ret);
+				goto err_buf;
+			}
+
+			ret = alloc_qp_db(udma_dev, qp, udata, &ucmd);
+			if (ret) {
+				dev_err(dev,
+					"failed to alloc QP doorbell, ret = %d.\n",
+					ret);
+				goto err_db;
+			}
+		}
+	}
+
 	ret = alloc_qpc(udma_dev, qp);
 	if (ret) {
 		dev_err(dev, "failed to alloc QP context, ret = %d.\n",
@@ -1119,6 +1538,9 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 		resp.cap_flags = qp->en_flags;
 		resp.qpn = qp->qpn;
 		resp.priority = qp->priority;
+		if (qp_attr->is_jetty && qp_attr->jetty)
+			resp.qpn = udma_get_jetty_qpn(qp);
+
 		resp.path_mtu = udma_dev->caps.max_mtu;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
 				   min(udata->udrv_data->out_len,
@@ -1139,6 +1561,12 @@ err_copy:
 err_store:
 	free_qpc(udma_dev, qp);
 err_qpc:
+	if (udma_qp_need_alloc_sq(&qp->qp_attr))
+		free_qp_db(udma_dev, qp);
+err_db:
+	if (udma_qp_need_alloc_sq(&qp->qp_attr))
+		free_qp_wqe(udma_dev, qp);
+err_buf:
 	free_qpn(qp);
 err_qpn:
 	return ret;
@@ -1153,6 +1581,10 @@ void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp)
 	wait_for_completion(&qp->free);
 
 	free_qpc(udma_dev, qp);
+	if (udma_qp_need_alloc_sq(&qp->qp_attr) || qp->force_free_wqe_buf) {
+		free_qp_db(udma_dev, qp);
+		free_qp_wqe(udma_dev, qp);
+	}
 	free_qpn(qp);
 }
 

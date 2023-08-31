@@ -32,6 +32,11 @@ static inline struct udma_tp *to_udma_tp(struct ubcore_tp *ubcore_tp)
 	return container_of(ubcore_tp, struct udma_tp, ubcore_tp);
 }
 
+static inline uint32_t udma_get_jetty_hash(const struct ubcore_jetty_id *jetty_id)
+{
+	return jhash(jetty_id, sizeof(struct ubcore_jetty_id), 0);
+}
+
 struct ubcore_tp *udma_create_tp(struct ubcore_device *dev,
 			    const struct ubcore_tp_cfg *cfg,
 			    struct ubcore_udata *udata);

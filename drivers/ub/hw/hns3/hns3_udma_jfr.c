@@ -519,6 +519,20 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 	return 0;
 }
 
+struct udma_jfr *get_udma_jfr(struct ubcore_device *dev, uint32_t jfr_id)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct udma_jfr *udma_jfr;
+
+	udma_jfr = (struct udma_jfr *)xa_load(&udma_dev->jfr_table.xa, jfr_id);
+	if (IS_ERR_OR_NULL(udma_jfr)) {
+		dev_err(&dev->dev, "failed to find jfr, jfr_id:%u.", jfr_id);
+		return NULL;
+	}
+
+	return udma_jfr;
+}
+
 struct ubcore_tjetty *udma_import_jfr(struct ubcore_device *dev,
 				 const struct ubcore_tjetty_cfg *cfg,
 				 struct ubcore_udata *udata)
