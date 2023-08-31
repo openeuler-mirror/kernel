@@ -26,6 +26,9 @@ endif
 
 CHECKFLAGS	+= -D__sw__
 cflags-y	:= -pipe -ffixed-8 -mno-fp-regs #-msmall-data
+ifeq ($(CONFIG_SUBARCH_C4),y)
+	cflags-y += -fsw-rev
+endif
 cflags-y	+= $(call cc-option, -fno-jump-tables)
 
 cflags-y				+= $(cpuflags-y)
