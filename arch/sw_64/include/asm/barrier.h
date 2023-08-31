@@ -8,7 +8,13 @@
 
 #define rmb()	__asm__ __volatile__("memb" : : : "memory")
 
+#if defined(CONFIG_SUBARCH_C3B)
 #define wmb()	__asm__ __volatile__("memb" : : : "memory")
+#elif defined(CONFIG_SUBARCH_C4)
+#define wmb()	__asm__ __volatile__("wmemb" : : : "memory")
+#endif
+
+#define imemb()	__asm__ __volatile__("imemb" : : : "memory")
 
 #ifdef CONFIG_SMP
 #define __ASM_SMP_MB	"\tmemb\n"
