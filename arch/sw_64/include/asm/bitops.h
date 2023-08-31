@@ -9,10 +9,7 @@
 #include <asm/compiler.h>
 #include <asm/barrier.h>
 
-/*
- * Copyright 1994, Linus Torvalds.
- */
-
+#ifdef CONFIG_SUBARCH_C3B
 /*
  * These have to be done with inline assembly: that way the bit-setting
  * is guaranteed to be atomic. All bit operations return 0 if the bit
@@ -47,19 +44,6 @@ set_bit(unsigned long nr, volatile void *addr)
 	: "Ir" (1UL << (nr & 31)), "m" (*m));
 }
 
-/*
- * WARNING: non atomic version.
- */
-static inline void
-__set_bit(unsigned long nr, volatile void *addr)
-{
-	int *m = ((int *) addr) + (nr >> 5);
-
-	*m |= 1 << (nr & 31);
-}
-
-#define smp_mb__before_clear_bit()	smp_mb()
-#define smp_mb__after_clear_bit()	smp_mb()
 
 static inline void
 clear_bit(unsigned long nr, volatile void *addr)
@@ -84,31 +68,6 @@ clear_bit(unsigned long nr, volatile void *addr)
 }
 
 static inline void
-clear_bit_unlock(unsigned long nr, volatile void *addr)
-{
-	smp_mb();
-	clear_bit(nr, addr);
-}
-
-/*
- * WARNING: non atomic version.
- */
-static inline void
-__clear_bit(unsigned long nr, volatile void *addr)
-{
-	int *m = ((int *) addr) + (nr >> 5);
-
-	*m &= ~(1 << (nr & 31));
-}
-
-static inline void
-__clear_bit_unlock(unsigned long nr, volatile void *addr)
-{
-	smp_mb();
-	__clear_bit(nr, addr);
-}
-
-static inline void
 change_bit(unsigned long nr, volatile void *addr)
 {
 	unsigned long temp1, temp2, base;
@@ -129,18 +88,6 @@ change_bit(unsigned long nr, volatile void *addr)
 	: "=&r" (temp1), "=&r" (temp2), "=m" (*m), "=&r" (base)
 	: "Ir" (1UL << (nr & 31)), "m" (*m));
 }
-
-/*
- * WARNING: non atomic version.
- */
-static inline void
-__change_bit(unsigned long nr, volatile void *addr)
-{
-	int *m = ((int *) addr) + (nr >> 5);
-
-	*m ^= 1 << (nr & 31);
-}
-
 
 static inline int
 test_and_set_bit(unsigned long nr, volatile void *addr)
@@ -198,20 +145,6 @@ test_and_set_bit_lock(unsigned long nr, volatile void *addr)
 	return oldbit != 0;
 }
 
-/*
- * WARNING: non atomic version.
- */
-static inline int
-__test_and_set_bit(unsigned long nr, volatile void *addr)
-{
-	unsigned long mask = 1 << (nr & 0x1f);
-	int *m = ((int *) addr) + (nr >> 5);
-	int old = *m;
-
-	*m = old | mask;
-	return (old & mask) != 0;
-}
-
 static inline int
 test_and_clear_bit(unsigned long nr, volatile void *addr)
 {
@@ -240,20 +173,6 @@ test_and_clear_bit(unsigned long nr, volatile void *addr)
 	return oldbit != 0;
 }
 
-/*
- * WARNING: non atomic version.
- */
-static inline int
-__test_and_clear_bit(unsigned long nr, volatile void *addr)
-{
-	unsigned long mask = 1 << (nr & 0x1f);
-	int *m = ((int *) addr) + (nr >> 5);
-	int old = *m;
-
-	*m = old & ~mask;
-	return (old & mask) != 0;
-}
-
 static inline int
 test_and_change_bit(unsigned long nr, volatile void *addr)
 {
@@ -280,9 +199,231 @@ test_and_change_bit(unsigned long nr, volatile void *addr)
 	return oldbit != 0;
 }
 
+#else /* !CONFIG_SUBARCH_C3B */
+static inline void
+set_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long temp1, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%2, %4\n"
+	"1:	lldw	%0, 0(%2)\n"
+	"	bis	%0, %3, %0\n"
+	"	lstw	%0, 0(%2)\n"
+	"	beq	%0, 2f\n"
+	".subsection 2\n"
+	"2:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp1), "=m" (*m), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m));
+}
+
+static inline void
+clear_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long temp1, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%2, %4\n"
+	"1:	lldw	%0, 0(%2)\n"
+	"	bic	%0, %3, %0\n"
+	"	lstw	%0, 0(%2)\n"
+	"	beq	%0, 2f\n"
+	".subsection 2\n"
+	"2:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp1), "=m" (*m), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m));
+}
+
+static inline void
+change_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long temp1, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%2, %4\n"
+	"1:	lldw	%0, 0(%2)\n"
+	"	xor	%0, %3, %0\n"
+	"	lstw	%0, 0(%2)\n"
+	"	beq	%0, 2f\n"
+	".subsection 2\n"
+	"2:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp1), "=m" (*m), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m));
+}
+
+static inline int
+test_and_set_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long oldbit;
+	unsigned long temp1, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%3, %5\n"
+	"1:	lldw	%0, 0(%3)\n"
+	"	and	%0, %4, %2\n"
+	"	bne	%2, 2f\n"		// %2 is not zero, no need to set, return
+	"	bis	%0, %4, %0\n"
+	"	lstw	%0, 0(%3)\n"
+	"	beq	%0, 3f\n"		// failed to set, try again.
+	"2:\n"
+	".subsection 2\n"
+	"3:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp1), "=m" (*m), "=&r" (oldbit), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m) : "memory");
+
+	return oldbit != 0;
+}
+
+static inline int
+test_and_set_bit_lock(unsigned long nr, volatile void *addr)
+{
+	unsigned long oldbit;
+	unsigned long temp1, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%3, %5\n"
+	"1:	lldw	%0, 0(%3)\n"
+	"	and	%0, %4, %2\n"
+	"	bne	%2, 2f\n"		// %2 is not zero, no need to set, return
+	"	bis	%0, %4, %0\n"
+	"	lstw	%0, 0(%3)\n"
+	"	beq	%0, 3f\n"		// failed to set, try again.
+	"2:\n"
+	".subsection 2\n"
+	"3:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp1), "=m" (*m), "=&r" (oldbit), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m) : "memory");
+
+	return oldbit != 0;
+}
+
+static inline int
+test_and_clear_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long oldbit;
+	unsigned long temp1, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%3, %5\n"
+	"1:	lldw	%0, 0(%3)\n"
+	"	and	%0, %4, %2\n"
+	"	beq	%2, 2f\n"		// %2 is zero, no need to set, return
+	"	bic	%0, %4, %0\n"
+	"	lstw	%0, 0(%3)\n"
+	"	beq	%0, 3f\n"		// failed to set, try again.
+	"2:\n"
+	".subsection 2\n"
+	"3:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp1), "=m" (*m), "=&r" (oldbit), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m) : "memory");
+
+	return oldbit != 0;
+}
+
+static inline int
+test_and_change_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long oldbit;
+	unsigned long temp, base;
+	int *m = ((int *) addr) + (nr >> 5);
+
+	__asm__ __volatile__(
+	"	ldi	%3, %5\n"
+	"1:	lldw	%0, 0(%3)\n"
+	"	and	%0, %4, %2\n"
+	"	xor	%0, %4, %0\n"
+	"	lstw	%0, 0(%3)\n"
+	"	beq	%0, 3f\n"
+	".subsection 2\n"
+	"3:	lbr	1b\n"
+	".previous"
+	: "=&r" (temp), "=m" (*m), "=&r" (oldbit), "=&r" (base)
+	: "Ir" (1UL << (nr & 31)), "m" (*m) : "memory");
+
+	return oldbit != 0;
+}
+
+
+#endif /* CONFIG_SUBARCH_C3B */
+
 /*
  * WARNING: non atomic version.
  */
+static inline void
+__set_bit(unsigned long nr, volatile void *addr)
+{
+	int *m = ((int *) addr) + (nr >> 5);
+
+	*m |= 1 << (nr & 31);
+}
+
+#define smp_mb__before_clear_bit()	smp_mb()
+#define smp_mb__after_clear_bit()	smp_mb()
+
+static inline void
+clear_bit_unlock(unsigned long nr, volatile void *addr)
+{
+	smp_mb();
+	clear_bit(nr, addr);
+}
+
+static inline void
+__clear_bit(unsigned long nr, volatile void *addr)
+{
+	int *m = ((int *) addr) + (nr >> 5);
+
+	*m &= ~(1 << (nr & 31));
+}
+
+static inline void
+__clear_bit_unlock(unsigned long nr, volatile void *addr)
+{
+	smp_mb();
+	__clear_bit(nr, addr);
+}
+
+static inline void
+__change_bit(unsigned long nr, volatile void *addr)
+{
+	int *m = ((int *) addr) + (nr >> 5);
+
+	*m ^= 1 << (nr & 31);
+}
+
+static inline int
+__test_and_set_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long mask = 1 << (nr & 0x1f);
+	int *m = ((int *) addr) + (nr >> 5);
+	int old = *m;
+
+	*m = old | mask;
+	return (old & mask) != 0;
+}
+
+static inline int
+__test_and_clear_bit(unsigned long nr, volatile void *addr)
+{
+	unsigned long mask = 1 << (nr & 0x1f);
+	int *m = ((int *) addr) + (nr >> 5);
+	int old = *m;
+
+	*m = old & ~mask;
+	return (old & mask) != 0;
+}
+
 static inline int
 __test_and_change_bit(unsigned long nr, volatile void *addr)
 {
