@@ -47,5 +47,11 @@ struct user_fpsimd_state {
 #define PT_DV_MATCH		165
 #define PT_DV_MASK		166
 #define PT_DC_CTL		167
+#define PT_MATCH_CTL		167
+#define PT_IA_MATCH		168
+#define PT_IA_MASK		169
+#define PT_IV_MATCH		170
+#define PT_IDA_MATCH		171
+#define PT_IDA_MASK		172
 
 #endif /* _UAPI_ASM_SW64_PTRACE_H */

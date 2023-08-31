@@ -34,6 +34,7 @@ obj-$(CONFIG_PCI) += pci_common.o
 obj-$(CONFIG_RELOCATABLE)   += relocate.o
 obj-$(CONFIG_DEBUG_FS)	+= segvdbg.o unaligned.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
+obj-$(CONFIG_DEBUG_MATCH)	+= match.o
 
 ifeq ($(CONFIG_DEBUG_FS)$(CONFIG_NUMA),yy)
 obj-y += bindvcpu.o

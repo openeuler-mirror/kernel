@@ -18,7 +18,13 @@ struct pcb_struct {
 	unsigned long tp;
 	unsigned long da_match, da_mask;
 	unsigned long dv_match, dv_mask;
-	unsigned long dc_ctl;
+	union {
+		unsigned long dc_ctl;
+		unsigned long match_ctl;
+	};
+	unsigned long ia_match, ia_mask;
+	unsigned long iv_match;
+	unsigned long ida_match, ida_mask;
 };
 
 struct thread_info {

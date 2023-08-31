@@ -72,6 +72,7 @@ static inline bool core_is_ht(void)
 #define MMCSR__DAV_MATCH	0x102
 #define MMCSR__IA_MATCH		0x103
 #define MMCSR__IDA_MATCH	0x104
+#define MMCSR__IV_MATCH		0x105
 
  /* entry.S */
 extern void entArith(void);
