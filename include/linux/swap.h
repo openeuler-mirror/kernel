@@ -449,6 +449,7 @@ enum etmem_swapcache_watermark_en {
 	ETMEM_SWAPCACHE_NR_WMARK
 };
 
+extern struct kobj_attribute kernel_swap_enable_attr;
 extern int add_page_for_swap(struct page *page, struct list_head *pagelist);
 extern struct page *get_page_from_vaddr(struct mm_struct *mm,
 					unsigned long vaddr);
@@ -752,6 +753,7 @@ static inline bool mem_cgroup_swap_full(struct folio *folio)
 	return vm_swap_full();
 }
 #endif
+extern unsigned long reclaim_pages(struct list_head *folio_list);
 
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

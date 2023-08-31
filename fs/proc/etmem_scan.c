@@ -43,7 +43,7 @@
 #endif
 
 # define kvm_arch_mmu_pointer(vcpu) (vcpu->arch.mmu)
-# define kvm_mmu_ad_disabled(mmu) (mmu->mmu_role.base.ad_disabled)
+# define kvm_mmu_ad_disabled(mmu) (mmu->cpu_role.base.ad_disabled)
 #endif /*CONFIG_X86_64*/
 
 #ifdef CONFIG_ARM64
@@ -314,13 +314,13 @@ static int vm_walk_host_range(unsigned long long start,
 	unsigned long tmp_gpa_to_hva = pic->gpa_to_hva;
 
 	pic->gpa_to_hva = 0;
-	spin_unlock_irq(&pic->kvm->mmu_lock);
-	down_read(&walk->mm->mmap_lock);
+	read_unlock(&pic->kvm->mmu_lock);
+	mmap_read_lock(walk->mm);
 	local_irq_disable();
 	ret = walk_page_range(walk->mm, start + tmp_gpa_to_hva, end + tmp_gpa_to_hva,
 			walk->ops, walk->private);
 	local_irq_enable();
-	up_read(&walk->mm->mmap_lock);
+	mmap_read_unlock(walk->mm);
 	pic->gpa_to_hva = tmp_gpa_to_hva;
 	if (pic->flags & VM_SCAN_HOST) {
 		pic->restart_gpa -= tmp_gpa_to_hva;
@@ -537,28 +537,28 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 
 	WARN_ON(addr >= end);
 
-	spin_lock_irq(&pic->kvm->mmu_lock);
+	read_lock(&pic->kvm->mmu_lock);
 
 	vcpu = kvm_get_vcpu(pic->kvm, 0);
 	if (!vcpu) {
 		pic->gpa_to_hva = 0;
 		set_restart_gpa(TASK_SIZE, "NO-VCPU");
-		spin_unlock_irq(&pic->kvm->mmu_lock);
+		read_unlock(&pic->kvm->mmu_lock);
 		return -EINVAL;
 	}
 
 	mmu = kvm_arch_mmu_pointer(vcpu);
-	if (!VALID_PAGE(mmu->root_hpa)) {
+	if (!VALID_PAGE(mmu->root.hpa)) {
 		pic->gpa_to_hva = 0;
 		set_restart_gpa(TASK_SIZE, "NO-HPA");
-		spin_unlock_irq(&pic->kvm->mmu_lock);
+		read_unlock(&pic->kvm->mmu_lock);
 		return -EINVAL;
 	}
 
-	ept_root = __va(mmu->root_hpa);
+	ept_root = __va(mmu->root.hpa);
 
 	/* Walk start at p4d when vm has 4 level table pages */
-	if (mmu->shadow_root_level != 4)
+	if (mmu->root_role.level != 4)
 		err = ept_pgd_range(pic, (pgd_t *)ept_root, addr, end, walk);
 	else
 		err = ept_p4d_range(pic, (p4d_t *)ept_root, addr, end, walk);
@@ -567,7 +567,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 	 * and RET_RESCAN_FLAG will be set in ret value
 	 */
 	if (!(err & RET_RESCAN_FLAG))
-		spin_unlock_irq(&pic->kvm->mmu_lock);
+		read_unlock(&pic->kvm->mmu_lock);
 	else
 		err &= ~RET_RESCAN_FLAG;
 
@@ -584,23 +584,31 @@ static int ept_idle_supports_cpu(struct kvm *kvm)
 		if (!vcpu)
 			return -EINVAL;
 
-		spin_lock(&kvm->mmu_lock);
+		read_lock(&kvm->mmu_lock);
 		mmu = kvm_arch_mmu_pointer(vcpu);
 		if (kvm_mmu_ad_disabled(mmu)) {
 			pr_notice("CPU does not support EPT A/D bits tracking\n");
 			ret = -EINVAL;
-		} else if (mmu->shadow_root_level < 4 ||
-				(mmu->shadow_root_level == 5 && !pgtable_l5_enabled())) {
-			pr_notice("Unsupported EPT level %d\n", mmu->shadow_root_level);
+		} else if (mmu->root_role.level < 4 ||
+				(mmu->root_role.level == 5 && !pgtable_l5_enabled())) {
+			pr_notice("Unsupported EPT level %d\n", mmu->root_role.level);
 			ret = -EINVAL;
 		} else
 			ret = 0;
-		spin_unlock(&kvm->mmu_lock);
+		read_unlock(&kvm->mmu_lock);
 
 		return ret;
 }
 
 #else
+static inline phys_addr_t stage2_range_addr_end(phys_addr_t addr, phys_addr_t end)
+{
+	phys_addr_t size = kvm_granule_size(KVM_PGTABLE_MIN_BLOCK_LEVEL);
+	phys_addr_t boundary = ALIGN_DOWN(addr + size, size);
+
+	return (boundary - 1 < end - 1) ? boundary : end;
+}
+
 static int arm_pte_range(struct page_idle_ctrl *pic,
 			pmd_t *pmd, unsigned long addr, unsigned long end)
 {
@@ -724,13 +732,13 @@ static int arm_page_range(struct page_idle_ctrl *pic,
 
 	WARN_ON(addr >= end);
 
-	spin_lock(&pic->kvm->mmu_lock);
+	read_lock(&pic->kvm->mmu_lock);
 	pgd = (pgd_t *)kvm->arch.mmu.pgt->pgd + pgd_index(addr);
-	spin_unlock(&pic->kvm->mmu_lock);
+	read_unlock(&pic->kvm->mmu_lock);
 
 	local_irq_disable();
 	do {
-		next = stage2_pgd_addr_end(kvm, addr, end);
+		next = stage2_range_addr_end(addr, end);
 		if (!pgd_present(*pgd)) {
 			set_restart_gpa(next, "PGD_HOLE");
 			continue;
@@ -773,11 +781,12 @@ static unsigned long vm_idle_find_gpa(struct page_idle_ctrl *pic,
 	struct kvm_memory_slot *memslot;
 	unsigned long hva_end;
 	gfn_t gfn;
+	int bkt;
 
 	*addr_range = ~0UL;
 	mutex_lock(&kvm->slots_lock);
 	slots = kvm_memslots(pic->kvm);
-	kvm_for_each_memslot(memslot, slots) {
+	kvm_for_each_memslot(memslot, bkt, slots) {
 		hva_end = memslot->userspace_addr +
 			(memslot->npages << PAGE_SHIFT);
 
@@ -1045,9 +1054,9 @@ static int page_scan_release(struct inode *inode, struct file *file)
 		goto out;
 	}
 #ifdef CONFIG_X86_64
-	spin_lock(&kvm->mmu_lock);
+	write_lock(&kvm->mmu_lock);
 	kvm_flush_remote_tlbs(kvm);
-	spin_unlock(&kvm->mmu_lock);
+	write_unlock(&kvm->mmu_lock);
 #endif
 
 out:
@@ -1217,7 +1226,7 @@ static int mm_idle_walk_range(struct page_idle_ctrl *pic,
 		return ret;
 
 	for (; start < end;) {
-		down_read(&walk->mm->mmap_lock);
+		mmap_read_lock(walk->mm);
 		vma = find_vma(walk->mm, start);
 		if (vma) {
 			if (end > vma->vm_start) {
@@ -1229,8 +1238,7 @@ static int mm_idle_walk_range(struct page_idle_ctrl *pic,
 				set_restart_gpa(vma->vm_start, "VMA-HOLE");
 		} else
 			set_restart_gpa(TASK_SIZE, "EOF");
-		up_read(&walk->mm->mmap_lock);
-
+		mmap_read_unlock(walk->mm);
 		WARN_ONCE(pic->gpa_to_hva, "non-zero gpa_to_hva");
 		if (ret != PAGE_IDLE_KBUF_FULL && end > pic->restart_gpa)
 			pic->restart_gpa = end;
