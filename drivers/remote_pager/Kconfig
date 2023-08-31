@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0
+
+menu "remote pager device"
+
+config REMOTE_PAGER
+	tristate "remote pager"
+	default m
+	depends on GMEM
+	help
+		If unsure, say Y.
+
+config REMOTE_PAGER_MASTER
+	tristate "remote pager master"
+	default m
+	depends on REMOTE_PAGER
+	help
+		If unsure, say Y.
+
+endmenu

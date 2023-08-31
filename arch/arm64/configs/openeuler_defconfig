@@ -6593,6 +6593,13 @@ CONFIG_TEE=m
 # CONFIG_PECI is not set
 # CONFIG_HTE is not set
 # CONFIG_CDX_BUS is not set
+
+#
+# remote pager device
+#
+CONFIG_REMOTE_PAGER=m
+CONFIG_REMOTE_PAGER_MASTER=m
+# end of remote pager device
 # end of Device Drivers
 
 #

@@ -188,6 +188,15 @@ gm_ret_t gm_dev_create(gm_mmu_t *mmu, void *dev_data, gm_dev_cap_t cap, gm_dev_t
 }
 EXPORT_SYMBOL_GPL(gm_dev_create);
 
+// Destroy a GMEM device and reclaim the resources.
+gm_ret_t gm_dev_destroy(gm_dev_t *dev)
+{
+	// TODO: implement it
+	xa_erase(&gm_dev_id_pool, dev->id);
+	return GM_RET_SUCCESS;
+}
+EXPORT_SYMBOL_GPL(gm_dev_destroy);
+
 /* Handle the page fault triggered by a given device */
 gm_ret_t gm_dev_fault(struct mm_struct *mm, gm_va_t addr, gm_dev_t *dev, int behavior)
 {
