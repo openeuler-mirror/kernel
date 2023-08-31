@@ -90,6 +90,9 @@ DEFINE_SPINLOCK(hugetlb_lock);
 static int num_fault_mutexes;
 struct mutex *hugetlb_fault_mutex_table ____cacheline_aligned_in_smp;
 
+static int sysctl_hugetlb_mig_noalloc;
+static int sysctl_hugetlb_pmem_allocall;
+
 /* Forward declaration */
 static int hugetlb_acct_memory(struct hstate *h, long delta);
 static void hugetlb_vma_lock_free(struct vm_area_struct *vma);
@@ -2219,6 +2222,8 @@ static int alloc_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE;
 
 	for_each_node_mask_to_alloc(h, nr_nodes, node, nodes_allowed) {
+		if (get_node_type(node) == NODE_TYPE_PMEM && sysctl_hugetlb_pmem_allocall)
+			gfp_mask |= __GFP_MEMALLOC;
 		folio = alloc_fresh_hugetlb_folio(h, gfp_mask, node,
 					nodes_allowed, node_alloc_noretry);
 		if (folio) {
@@ -2487,7 +2492,7 @@ struct folio *alloc_hugetlb_folio_nodemask(struct hstate *h, int preferred_nid,
 
 		folio = dequeue_hugetlb_folio_nodemask(h, gfp_mask,
 						preferred_nid, nmask);
-		if (folio) {
+		if (folio || sysctl_hugetlb_mig_noalloc) {
 			spin_unlock_irq(&hugetlb_lock);
 			return folio;
 		}
@@ -4739,6 +4744,26 @@ static struct ctl_table hugetlb_table[] = {
 		.mode		= 0644,
 		.proc_handler	= hugetlb_overcommit_handler,
 	},
+#ifdef CONFIG_HUGETLBFS
+	{
+		.procname       = "hugepage_mig_noalloc",
+		.data           = &sysctl_hugetlb_mig_noalloc,
+		.maxlen         = sizeof(sysctl_hugetlb_mig_noalloc),
+		.mode           = 0600,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+	{
+		.procname       = "hugepage_pmem_allocall",
+		.data           = &sysctl_hugetlb_pmem_allocall,
+		.maxlen         = sizeof(sysctl_hugetlb_pmem_allocall),
+		.mode           = 0600,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+#endif
 	{ }
 };
 
