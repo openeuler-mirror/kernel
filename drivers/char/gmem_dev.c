@@ -114,3 +114,4 @@ static struct miscdevice gmem_miscdev = {
 };
 
 builtin_misc_device(gmem_miscdev);
+MODULE_LICENSE("GPL");
