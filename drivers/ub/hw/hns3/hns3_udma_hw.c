@@ -1110,12 +1110,118 @@ static int udma_hw_set_eid(struct udma_dev *udma_dev, union ubcore_eid eid)
 	return ret;
 }
 
+static void func_clr_hw_resetting_state(struct udma_dev *udma_dev,
+					struct hnae3_handle *handle)
+{
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
+	uint64_t end;
+
+	udma_dev->dis_db = true;
+
+	dev_warn(udma_dev->dev,
+		 "Func clear is pending, device in resetting state.\n");
+	end = UDMA_HW_RST_TIMEOUT;
+	while (end) {
+		if (!ops->get_hw_reset_stat(handle)) {
+			udma_dev->is_reset = true;
+			dev_info(udma_dev->dev,
+				 "Func clear success after reset.\n");
+			return;
+		}
+		msleep(UDMA_HW_RST_COMPLETION_WAIT);
+		end -= UDMA_HW_RST_COMPLETION_WAIT;
+	}
+
+	dev_warn(udma_dev->dev, "Func clear failed.\n");
+}
+
+static void func_clr_sw_resetting_state(struct udma_dev *udma_dev,
+					struct hnae3_handle *handle)
+{
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
+	uint64_t end;
+
+	udma_dev->dis_db = true;
+
+	dev_warn(udma_dev->dev,
+		 "Func clear is pending, device in resetting state.\n");
+	end = UDMA_HW_RST_TIMEOUT;
+	while (end) {
+		if (ops->ae_dev_reset_cnt(handle) !=
+		    udma_dev->reset_cnt) {
+			udma_dev->is_reset = true;
+			dev_info(udma_dev->dev,
+				 "Func clear success after sw reset\n");
+			return;
+		}
+		msleep(UDMA_HW_RST_COMPLETION_WAIT);
+		end -= UDMA_HW_RST_COMPLETION_WAIT;
+	}
+
+	dev_warn(udma_dev->dev,
+		 "Func clear failed because of unfinished sw reset\n");
+}
+
+static void udma_func_clr_rst_proc(struct udma_dev *udma_dev, int retval,
+				   int flag)
+{
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+	struct hnae3_handle *handle = priv->handle;
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
+
+	if (ops->ae_dev_reset_cnt(handle) != udma_dev->reset_cnt) {
+		udma_dev->dis_db = true;
+		udma_dev->is_reset = true;
+		dev_info(udma_dev->dev, "Func clear success after reset.\n");
+		return;
+	}
+
+	if (ops->get_hw_reset_stat(handle)) {
+		func_clr_hw_resetting_state(udma_dev, handle);
+		return;
+	}
+
+	if (ops->ae_dev_resetting(handle) &&
+	    handle->udmainfo.instance_state == UDMA_STATE_INIT) {
+		func_clr_sw_resetting_state(udma_dev, handle);
+		return;
+	}
+
+	if (retval && !flag)
+		dev_warn(udma_dev->dev,
+			 "Func clear read failed, ret = %d.\n", retval);
+
+	dev_warn(udma_dev->dev, "Func clear failed.\n");
+}
+
+static bool check_device_is_in_reset(struct udma_dev *udma_dev)
+{
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+	struct hnae3_handle *handle = priv->handle;
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
+
+	if (udma_dev->reset_cnt != ops->ae_dev_reset_cnt(handle))
+		return true;
+
+	if (ops->get_hw_reset_stat(handle))
+		return true;
+
+	if (ops->ae_dev_resetting(handle))
+		return true;
+
+	return false;
+}
+
 static void __udma_function_clear(struct udma_dev *udma_dev, int vf_id)
 {
+	bool fclr_write_fail_flag = false;
 	struct udma_func_clear *resp;
 	struct udma_cmq_desc desc;
 	uint64_t end;
 	int ret = 0;
+
+	if (check_device_is_in_reset(udma_dev))
+		goto out;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_FUNC_CLEAR, false);
 	resp = (struct udma_func_clear *)desc.data;
@@ -1123,14 +1229,17 @@ static void __udma_function_clear(struct udma_dev *udma_dev, int vf_id)
 
 	ret = udma_cmq_send(udma_dev, &desc, 1);
 	if (ret) {
+		fclr_write_fail_flag = true;
 		dev_err(udma_dev->dev, "Func clear write failed, ret = %d.\n",
 			ret);
-		return;
+		goto out;
 	}
 
 	msleep(UDMA_READ_FUNC_CLEAR_FLAG_INTERVAL);
 	end = UDMA_FUNC_CLEAR_TIMEOUT_MSECS;
 	while (end) {
+		if (check_device_is_in_reset(udma_dev))
+			goto out;
 		msleep(UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT);
 		end -= UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT;
 
@@ -1148,6 +1257,9 @@ static void __udma_function_clear(struct udma_dev *udma_dev, int vf_id)
 			return;
 		}
 	}
+
+out:
+	udma_func_clr_rst_proc(udma_dev, ret, fclr_write_fail_flag);
 }
 
 static void udma_free_vf_resource(struct udma_dev *udma_dev, int vf_id)
@@ -1311,6 +1423,31 @@ static void udma_free_link_table(struct udma_dev *udma_dev)
 	free_link_table_buf(udma_dev, &priv->ext_llm);
 }
 
+static int udma_get_reset_page(struct udma_dev *dev)
+{
+	dev->reset_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
+	if (!dev->reset_page)
+		return -ENOMEM;
+
+	dev->reset_kaddr = vmap(&dev->reset_page, 1, VM_MAP, PAGE_KERNEL);
+	if (!dev->reset_kaddr)
+		goto err_vmap;
+
+	return 0;
+
+err_vmap:
+	put_page(dev->reset_page);
+	return -ENOMEM;
+}
+
+static void udma_put_reset_page(struct udma_dev *dev)
+{
+	vunmap(dev->reset_kaddr);
+	dev->reset_kaddr = NULL;
+	put_page(dev->reset_page);
+	dev->reset_page = NULL;
+}
+
 static int udma_clear_extdb_list_info(struct udma_dev *udma_dev)
 {
 	struct udma_cmq_desc desc;
@@ -1401,6 +1538,13 @@ static int udma_hw_init(struct udma_dev *udma_dev)
 {
 	int ret;
 
+	ret = udma_get_reset_page(udma_dev);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"get reset page failed, ret = %d.\n", ret);
+		return ret;
+	}
+
 	/* UDMA requires the extdb info to be cleared before using */
 	ret = udma_clear_extdb_list_info(udma_dev);
 	if (ret)
@@ -1421,6 +1565,7 @@ static int udma_hw_init(struct udma_dev *udma_dev)
 err_llm_init_failed:
 	put_hem_table(udma_dev);
 err_clear_extdb_failed:
+	udma_put_reset_page(udma_dev);
 
 	return ret;
 }
@@ -1627,6 +1772,7 @@ static const struct udma_hw udma_hw = {
 	.hw_exit = udma_hw_exit,
 	.post_mbox = udma_post_mbox,
 	.poll_mbox_done = udma_poll_mbox_done,
+	.chk_mbox_avail = udma_chk_mbox_is_avail,
 	.set_hem = udma_set_hem,
 	.clear_hem = udma_clear_hem,
 	.set_eid = udma_hw_set_eid,
@@ -1729,6 +1875,7 @@ static void __udma_uninit_instance(struct hnae3_handle *handle,
 
 static int udma_init_instance(struct hnae3_handle *handle)
 {
+	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
 	struct device *dev = &handle->pdev->dev;
 	const struct pci_device_id *id;
 	int ret;
@@ -1746,11 +1893,21 @@ static int udma_init_instance(struct hnae3_handle *handle)
 			return ret;
 
 		dev_err(dev, "UDMA instance init failed! ret = %d\n", ret);
+		if (ops->ae_dev_resetting(handle) ||
+		    ops->get_hw_reset_stat(handle))
+			goto reset_chk_err;
+		else
+			return ret;
 	}
 
 	handle->udmainfo.instance_state = UDMA_STATE_INITED;
 
 	return 0;
+
+reset_chk_err:
+	dev_err(dev, "Device is being reset, please retry later.\n");
+
+	return -EBUSY;
 }
 
 static void udma_uninit_instance(struct hnae3_handle *handle, bool reset)
@@ -1763,6 +1920,105 @@ static void udma_uninit_instance(struct hnae3_handle *handle, bool reset)
 	__udma_uninit_instance(handle, reset);
 
 	handle->udmainfo.instance_state = UDMA_STATE_NON_INIT;
+}
+
+static void udma_reset_notify_user(struct udma_dev *dev)
+{
+	struct udma_reset_state *state;
+
+	state = (struct udma_reset_state *)dev->reset_kaddr;
+
+	state->reset_state = UDMA_IS_RESETTING;
+	/* Ensure reset state was flushed in memory */
+	wmb();
+}
+
+static int udma_reset_notify_down(struct hnae3_handle *handle)
+{
+	struct udma_dev *dev;
+
+	if (handle->udmainfo.instance_state != UDMA_STATE_INITED) {
+		set_bit(UDMA_RST_DIRECT_RETURN, &handle->udmainfo.state);
+		return 0;
+	}
+
+	handle->udmainfo.reset_state = UDMA_STATE_RST_DOWN;
+	clear_bit(UDMA_RST_DIRECT_RETURN, &handle->udmainfo.state);
+
+	dev = handle->priv;
+	if (!dev)
+		return 0;
+
+	dev->dis_db = true;
+
+	udma_reset_notify_user(dev);
+
+	return 0;
+}
+
+static int udma_reset_notify_init(struct hnae3_handle *handle)
+{
+	struct device *dev = &handle->pdev->dev;
+	int ret;
+
+	if (test_and_clear_bit(UDMA_RST_DIRECT_RETURN,
+			       &handle->udmainfo.state)) {
+		handle->udmainfo.reset_state = UDMA_STATE_RST_INITED;
+		return 0;
+	}
+
+	handle->udmainfo.reset_state = UDMA_STATE_RST_INIT;
+
+	dev_info(&handle->pdev->dev, "In reset process UDMA client reinit.\n");
+	ret = __udma_init_instance(handle);
+	if (ret) {
+		/* when reset notify type is HNAE3_INIT_CLIENT In reset notify
+		 * callback function, UB Engine reinitialize. If UDMA reinit
+		 * failed, we should inform NIC driver.
+		 */
+		handle->priv = NULL;
+		dev_err(dev, "In reset process UDMA reinit failed %d.\n", ret);
+	} else {
+		handle->udmainfo.reset_state = UDMA_STATE_RST_INITED;
+		dev_info(dev, "Reset done, UDMA client reinit finished.\n");
+	}
+
+	return ret;
+}
+
+static int udma_reset_notify_uninit(struct hnae3_handle *handle)
+{
+	if (test_bit(UDMA_RST_DIRECT_RETURN, &handle->udmainfo.state))
+		return 0;
+
+	handle->udmainfo.reset_state = UDMA_STATE_RST_UNINIT;
+	dev_info(&handle->pdev->dev, "In reset process UDMA client uninit.\n");
+	msleep(UDMA_HW_RST_UNINT_DELAY);
+	__udma_uninit_instance(handle, false);
+
+	return 0;
+}
+
+static int udma_reset_notify(struct hnae3_handle *handle,
+			     enum hnae3_reset_notify_type type)
+{
+	int ret = 0;
+
+	switch (type) {
+	case HNAE3_DOWN_CLIENT:
+		ret = udma_reset_notify_down(handle);
+		break;
+	case HNAE3_INIT_CLIENT:
+		ret = udma_reset_notify_init(handle);
+		break;
+	case HNAE3_UNINIT_CLIENT:
+		ret = udma_reset_notify_uninit(handle);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
 }
 
 static void udma_link_status_change(struct hnae3_handle *handle, bool linkup)
@@ -1809,6 +2065,7 @@ static const struct hnae3_client_ops udma_ops = {
 	.init_instance = udma_init_instance,
 	.uninit_instance = udma_uninit_instance,
 	.link_status_change = udma_link_status_change,
+	.reset_notify = udma_reset_notify,
 };
 
 static struct hnae3_client udma_client = {

@@ -168,6 +168,12 @@ enum udma_instance_state {
 	UDMA_STATE_UNINIT,
 };
 
+#define UDMA_IS_RESETTING	1
+
+enum {
+	UDMA_RST_DIRECT_RETURN = 0,
+};
+
 enum udma_event {
 	UDMA_EVENT_TYPE_COMM_EST		= 0x03,
 	UDMA_EVENT_TYPE_WQ_CATAS_ERROR		= 0x05,
@@ -454,6 +460,10 @@ enum udma_device_state {
 	UDMA_DEVICE_STATE_UNINIT,
 };
 
+struct udma_reset_state {
+	uint32_t reset_state; /* stored to use in user space */
+};
+
 struct udma_cmq {
 	struct udma_cmq_ring	csq;
 	uint16_t tx_timeout;
@@ -491,6 +501,7 @@ struct udma_hw {
 			 uint16_t token, int event);
 	int (*poll_mbox_done)(struct udma_dev *udma_dev,
 			      uint32_t timeout);
+	bool (*chk_mbox_avail)(struct udma_dev *udma_dev, bool *is_busy);
 	int (*set_hem)(struct udma_dev *udma_dev,
 		       struct udma_hem_table *table, int obj, int step_idx);
 	int (*clear_hem)(struct udma_dev *udma_dev,
@@ -754,6 +765,8 @@ struct udma_dev {
 	uint64_t			sys_image_guid;
 	struct udma_cmdq		cmd;
 	int				cmd_mod;
+	struct page			*reset_page; /* store reset state */
+	void				*reset_kaddr; /* addr of reset page */
 	const struct udma_hw		*hw;
 	void				*priv;
 	struct workqueue_struct		*irq_workq;

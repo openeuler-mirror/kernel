@@ -186,6 +186,15 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 				       UDMA_DWQE_PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
+	case UDMA_MMAP_RESET_PAGE:
+		if (vma->vm_flags & (VM_WRITE | VM_EXEC))
+			return -EINVAL;
+
+		if (remap_pfn_range(vma, vma->vm_start,
+				    page_to_pfn(udma_dev->reset_page),
+				    PAGE_SIZE, vma->vm_page_prot))
+			return -EAGAIN;
+		break;
 	default:
 		dev_err(udma_dev->dev,
 			"mmap failed, cmd(%d) not support\n", cmd);
@@ -807,6 +816,8 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 {
 	struct device *dev = udma_dev->dev;
 	int ret;
+
+	udma_dev->is_reset = false;
 
 	ret = udma_dev->hw->cmq_init(udma_dev);
 	if (ret) {

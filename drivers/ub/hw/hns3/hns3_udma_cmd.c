@@ -591,6 +591,12 @@ static int udma_cmd_mbox_wait(struct udma_dev *dev, struct udma_cmq_desc *desc,
 int udma_cmd_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
 		  uint32_t timeout, int vfid)
 {
+	bool is_busy;
+
+	if (dev->hw->chk_mbox_avail)
+		if (!dev->hw->chk_mbox_avail(dev, &is_busy))
+			return is_busy ? -EBUSY : 0;
+
 	if (dev->cmd.use_events)
 		return udma_cmd_mbox_wait(dev, desc, timeout, vfid);
 	else

@@ -32,6 +32,7 @@
 enum {
 	UDMA_MMAP_UAR_PAGE,
 	UDMA_MMAP_DWQE_PAGE,
+	UDMA_MMAP_RESET_PAGE,
 };
 
 enum udma_jfc_init_attr_mask {
