@@ -97,4 +97,13 @@ sw64_io_write(unsigned long node, unsigned long reg, unsigned long data)
 	addr = __va(SW64_IO_BASE(node) | reg);
 	writeq(data, addr);
 }
+
+#if defined(CONFIG_UNCORE_XUELANG)
+#include <asm/uncore_io_ops_xuelang.h>
+#endif
+
+#if defined(CONFIG_UNCORE_JUNZHANG)
+#include <asm/uncore_io_ops_junzhang.h>
+#endif
+
 #endif /* _ASM_SW64_SW64IO_H */

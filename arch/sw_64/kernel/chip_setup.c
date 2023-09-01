@@ -11,34 +11,19 @@ struct sw64_chip_init_ops *sw64_chip_init;
 
 static int get_cpu_nums(void)
 {
-	unsigned long trkmode;
-	int cpus;
-
 	if (is_guest_or_emul())
 		return 1;
 
-	trkmode = sw64_io_read(0, TRKMODE);
-	trkmode = (trkmode >> 6) & 0x3;
-	cpus = 1 << trkmode;
-
-	return cpus;
+	return __get_cpu_nums();
 }
 
 static unsigned long __init get_node_mem(int nodeid)
 {
-	unsigned long mc_config, mc_online, mc_cap, mc_num;
-	unsigned long node_mem;
 
 	if (is_guest_or_emul())
 		return *(unsigned long *)MMSIZE & MMSIZE_MASK;
 
-	mc_config = sw64_io_read(nodeid, MC_CAP_CFG) & 0xf;
-	mc_cap = (1UL << mc_config) << 28;
-	mc_online = sw64_io_read(nodeid, MC_ONLINE) & 0xff;
-	mc_num = __kernel_ctpop(mc_online);
-	node_mem = mc_cap * mc_num;
-
-	return node_mem;
+	return __get_node_mem(nodeid);
 }
 
 static void __init setup_core_map(struct cpumask *cpumask)
@@ -184,15 +169,20 @@ static unsigned long saved_dvc_int, saved_long_time;
 
 static inline void intpu_save(void)
 {
-	saved_long_time = sw64_io_read(0, LONG_TIME);
+	switch (cpu_desc.model) {
+	case CPU_SW831:
+		saved_long_time = __io_read_longtime(0);
+	default:
+		break;
+	}
 }
 
 static inline void intpu_restore(void)
 {
 	switch (cpu_desc.model) {
 	case CPU_SW831:
-		sw64_io_write(0, LONG_TIME, saved_long_time);
-		sw64_io_write(0, LONG_TIME_START_EN, 0x1);
+		__io_write_longtime(0, saved_long_time);
+		__io_write_longtime_start_en(0, 0x1);
 		break;
 	default:
 		pr_info("long time start is disable!");

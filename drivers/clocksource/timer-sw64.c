@@ -150,7 +150,7 @@ static u64 read_longtime(struct clocksource *cs)
 	unsigned long node;
 
 	node = __this_cpu_read(hard_node_id);
-	result = sw64_io_read(node, LONG_TIME);
+	result = __io_read_longtime(node);
 
 	return result;
 }
@@ -163,7 +163,7 @@ static int longtime_enable(struct clocksource *cs)
 		sw64_io_write(0, GPIO_SWPORTA_DDR, 0xff);
 		break;
 	case CPU_SW831:
-		sw64_io_write(0, LONG_TIME_START_EN, 0x1);
+		__io_write_longtime_start_en(0, 0x1);
 		break;
 	default:
 		break;
