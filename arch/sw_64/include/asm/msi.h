@@ -2,6 +2,8 @@
 #ifndef _ASM_SW64_MSI_H
 #define _ASM_SW64_MSI_H
 
+#include <asm/sw64io.h>
+
 #define NR_VECTORS NR_IRQS
 #define NR_IRQ_VECTORS NR_IRQS
 
@@ -14,8 +16,6 @@
 #define NUM_MSI_IRQS		256
 
 #define PERCPU_MSI_IRQS		256
-
-#define MSIX_MSG_ADDR		(0x91abc0UL)
 
 #define VT_MSIX_MSG_ADDR	(0x8000fee00000UL)
 #define VT_MSIX_ADDR_DEST_ID_SHIFT	12

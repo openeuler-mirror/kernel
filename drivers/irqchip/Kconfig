@@ -13,7 +13,7 @@ config ARM_GIC
 
 config SW64_INTC_V2
 	bool "SW64 Interrupt Controller V2"
-	depends on SW64_CHIP3
+	depends on UNCORE_XUELANG
 	default y
 	select GENERIC_IRQ_CHIP
 	select IRQ_DOMAIN

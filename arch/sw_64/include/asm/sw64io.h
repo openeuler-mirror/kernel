@@ -5,8 +5,12 @@
 #include <asm/io.h>
 #include <asm/page.h>
 
-#if defined(CONFIG_SW64_CHIP3)
-#include <asm/chip3_io.h>
+#if defined(CONFIG_UNCORE_XUELANG)
+#include <asm/uncore_io_xuelang.h>
+#endif
+
+#if defined(CONFIG_UNCORE_JUNZHANG)
+#include <asm/uncore_io_junzhang.h>
 #endif
 
 #define MK_RC_CFG(nid, idx) \

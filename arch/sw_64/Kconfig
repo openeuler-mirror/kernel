@@ -201,11 +201,19 @@ config SUBARCH_C3B
 endchoice
 
 choice
-	prompt "Chipset Family"
+	prompt "Uncore Configuration"
 
-config SW64_CHIP3
-	bool "Chip3"
+config UNCORE_XUELANG
+	bool "Uncore for C3B"
 	depends on SUBARCH_C3B
+	help
+	  Sunway cpu uncore for C3B
+
+config UNCORE_JUNZHANG
+	bool "Uncore for C4"
+	depends on SUBARCH_C4
+	help
+	  Sunway cpu uncore for C4
 endchoice
 
 choice
@@ -213,7 +221,7 @@ choice
 
 config PLATFORM_XUELANG
 	bool "Xuelang"
-	depends on SW64_CHIP3
+	depends on UNCORE_XUELANG
 	select SPARSE_IRQ
 	select SYS_HAS_EARLY_PRINTK
 	select SW64_INTC_V2
@@ -371,7 +379,7 @@ config NR_CPUS
 	int "Maximum number of CPUs (2-256)"
 	range 2 256
 	depends on SMP
-	default "64" if SW64_CHIP3
+	default "64" if UNCORE_XUELANG
 	help
 	  SW6 support can handle a maximum of 256 CPUs.
 

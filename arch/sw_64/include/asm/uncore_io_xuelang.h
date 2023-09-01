@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_SW64_CHIP3_IO_H
-#define _ASM_SW64_CHIP3_IO_H
+#ifndef _ASM_SW64_UNCORE_IO_XUELANG_H
+#define _ASM_SW64_UNCORE_IO_XUELANG_H
 
 #include <asm/platform.h>
 
@@ -31,10 +31,14 @@
 #define VT_THREADS_SHIFT	20
 #define VT_THREADS_MASK		0xfff
 
+#define QEMU_PRINTF_BUFF_BASE	(IO_BASE | MCU_BASE | 0x40000UL)
+
 /* MSIConfig */
 #define MSICONFIG_VALID		(0x1UL << 63)
 #define MSICONFIG_EN		(0x1UL << 62)
 #define MSICONFIG_VECTOR_SHIFT	10
+
+#define MSIX_MSG_ADDR		(0x91abc0UL)
 
 #define SW64_PCI_IO_BASE(m, n)	\
 	(IO_BASE | ((m) << IO_NODE_SHIFT) | PCI_BASE | ((n) << IO_RC_SHIFT))
@@ -45,13 +49,6 @@
 
 #define MAX_NR_NODES		0x2
 #define MAX_NR_RCS		0x6
-
-#define SW64_PCI_DEBUG		0
-#if SW64_PCI_DEBUG
-#define PCIINFO(fmt, args...)	printk(fmt, ##args)
-#else
-#define PCIINFO(fmt, args...)
-#endif
 
 #define MCU_BASE		(0x3UL << 36)
 #define CAB0_BASE		(0x10UL << 32)
@@ -321,4 +318,4 @@ enum {
 	GPIO_SWPORTA_DDR =	GPIO_BASE | 0x200UL,
 };
 /*--------------------------------------------------------------------------*/
-#endif /* _ASM_SW64_CHIP3_IO_H */
+#endif /* _ASM_SW64_UNCORE_IO_XUELANG_H */
