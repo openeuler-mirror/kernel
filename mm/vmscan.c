@@ -2814,6 +2814,7 @@ unsigned long reclaim_pages(struct list_head *folio_list)
 
 	return nr_reclaimed;
 }
+EXPORT_SYMBOL_GPL(reclaim_pages);
 
 static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 				 struct lruvec *lruvec, struct scan_control *sc)
@@ -6981,6 +6982,18 @@ out:
 	return false;
 }
 
+/*
+ * Check if original kernel swap is enabled
+ * turn off kernel swap,but leave page cache reclaim on
+ */
+static inline void kernel_force_no_swap(struct scan_control *sc)
+{
+#ifdef CONFIG_ETMEM
+	if (sc != NULL && !kernel_swap_enabled())
+		sc->may_swap = 0;
+#endif
+}
+
 unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 				gfp_t gfp_mask, nodemask_t *nodemask)
 {
@@ -6997,6 +7010,7 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_swap = 1,
 	};
 
+	kernel_force_no_swap(&sc);
 	/*
 	 * scan_control uses s8 fields for order, priority, and reclaim_idx.
 	 * Confirm they are large enough for max values.
@@ -7434,6 +7448,8 @@ restart:
 		sc.may_writepage = !laptop_mode && !nr_boost_reclaim;
 		sc.may_swap = !nr_boost_reclaim;
 
+		kernel_force_no_swap(&sc);
+
 		/*
 		 * Do some background aging, to give pages a chance to be
 		 * referenced before reclaiming. All pages are rotated
@@ -7811,6 +7827,8 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 	fs_reclaim_acquire(sc.gfp_mask);
 	noreclaim_flag = memalloc_noreclaim_save();
 	set_task_reclaim_state(current, &sc.reclaim_state);
+
+	kernel_force_no_swap(&sc);
 
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
 

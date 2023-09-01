@@ -23,6 +23,7 @@
 #include <linux/processor.h>
 #include <linux/sizes.h>
 #include <linux/compat.h>
+#include <linux/page-flags.h>
 
 #include <linux/uaccess.h>
 
@@ -792,15 +793,7 @@ EXPORT_SYMBOL(folio_mapping);
  */
 void folio_copy(struct folio *dst, struct folio *src)
 {
-	long i = 0;
-	long nr = folio_nr_pages(src);
-
-	for (;;) {
-		copy_highpage(folio_page(dst, i), folio_page(src, i));
-		if (++i == nr)
-			break;
-		cond_resched();
-	}
+	copy_highpages(dst, src);
 }
 
 int sysctl_overcommit_memory __read_mostly = OVERCOMMIT_GUESS;

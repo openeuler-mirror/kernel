@@ -86,6 +86,10 @@
 #define MADV_PREFETCH	MADV_GMEM_BASE		/* prefetch pages for hNUMA node */
 #define MADV_PINNED	(MADV_GMEM_BASE+1)	/* pin these pages */
 
+#define MADV_ETMEM_BASE	0x1100
+#define MADV_SWAPFLAG   MADV_ETMEM_BASE		/* for memory to be swap out */
+#define MADV_SWAPFLAG_REMOVE (MADV_SWAPFLAG + 1)
+
 /* compatibility flags */
 #define MAP_FILE	0
 
