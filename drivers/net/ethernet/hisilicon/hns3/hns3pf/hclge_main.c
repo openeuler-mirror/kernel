@@ -1872,6 +1872,8 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 #ifdef CONFIG_HNS3_UBL
 		if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 			vport->mps = UB_DATA_LEN;
+			INIT_LIST_HEAD(&vport->mc_guid_list);
+			spin_lock_init(&vport->mguid_list_lock);
 			INIT_LIST_HEAD(&vport->ip_list);
 			spin_lock_init(&vport->ip_list_lock);
 		}
@@ -4765,8 +4767,10 @@ static void hclge_periodic_service_task(struct hclge_dev *hdev)
 	hclge_update_link_status(hdev);
 	hclge_sync_mac_table(hdev);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		hclge_unic_sync_mguid_table(hdev);
 		hclge_unic_sync_ip_table(hdev);
+	}
 #endif
 	hclge_sync_promisc_mode(hdev);
 	hclge_sync_fd_qb_mode(hdev);
@@ -8516,8 +8520,10 @@ int hclge_vport_start(struct hclge_vport *vport)
 			hclge_restore_mac_table_common(vport);
 			hclge_restore_vport_vlan_table(vport);
 #ifdef CONFIG_HNS3_UBL
-			if (hnae3_dev_ubl_supported(hdev->ae_dev))
+			if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+				hclge_unic_restore_mc_guid_table(vport);
 				hclge_unic_restore_ip_table(vport);
+			}
 #endif
 		} else {
 			hclge_restore_hw_table(hdev);
@@ -10731,8 +10737,10 @@ static void hclge_restore_hw_table(struct hclge_dev *hdev)
 	clear_bit(HCLGE_STATE_HW_QB_ENABLE, &hdev->state);
 	hclge_restore_fd_entries(handle);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		hclge_unic_restore_mc_guid_table(vport);
 		hclge_unic_restore_ip_table(vport);
+	}
 #endif
 }
 
@@ -12740,8 +12748,10 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 		bitmap_set(hdev->vport_config_block, 0, hdev->num_alloc_vport);
 		hclge_reset_umv_space(hdev);
 #ifdef CONFIG_HNS3_UBL
-		if (hnae3_dev_ubl_supported(ae_dev))
+		if (hnae3_dev_ubl_supported(ae_dev)) {
 			hclge_unic_reset_iptbl_space(hdev);
+			hclge_unic_reset_mc_guid_space(hdev);
+		}
 #endif
 	}
 
@@ -12879,6 +12889,7 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_uninit_mac_table(hdev);
 #ifdef CONFIG_HNS3_UBL
 	if (hnae3_dev_ubl_supported(ae_dev)) {
+		hclge_unic_uninit_mguid_table(hdev);
 		hclge_unic_uninit_ip_table(hdev);
 		hclge_unic_rm_func_guid(hdev);
 	}
@@ -13124,7 +13135,8 @@ static int hclge_sync_vport_promisc_mode(struct hclge_vport *vport)
 	/* for VF */
 	if (vport->vf_info.trusted) {
 		uc_en = vport->vf_info.request_uc_en > 0 ||
-			vport->overflow_promisc_flags & HNAE3_OVERFLOW_UPE;
+			vport->overflow_promisc_flags & HNAE3_OVERFLOW_UPE ||
+			vport->overflow_promisc_flags & HNAE3_OVERFLOW_MGP;
 		mc_en = vport->vf_info.request_mc_en > 0 ||
 			vport->overflow_promisc_flags & HNAE3_OVERFLOW_MPE;
 	}

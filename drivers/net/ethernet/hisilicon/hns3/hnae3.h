@@ -952,7 +952,8 @@ struct hnae3_udma_private_info {
 #define HNAE3_BPE		BIT(2)	/* broadcast promisc enable */
 #define HNAE3_OVERFLOW_UPE	BIT(3)	/* unicast mac vlan overflow */
 #define HNAE3_OVERFLOW_MPE	BIT(4)	/* multicast mac vlan overflow */
-#define HNAE3_UPE		(HNAE3_USER_UPE | HNAE3_OVERFLOW_UPE)
+#define HNAE3_OVERFLOW_MGP	BIT(5)	/* multicast guid overflow */
+#define HNAE3_UPE		(HNAE3_USER_UPE | HNAE3_OVERFLOW_UPE | HNAE3_OVERFLOW_MGP)
 #define HNAE3_MPE		(HNAE3_USER_MPE | HNAE3_OVERFLOW_MPE)
 
 enum hnae3_pflag {

@@ -3288,7 +3288,9 @@ const struct net_device_ops hns3_unic_netdev_ops = {
 	.ndo_features_check	= hns3_features_check,
 	.ndo_get_stats64	= hns3_nic_get_stats64,
 	.ndo_setup_tc		= hns3_nic_setup_tc,
-	.ndo_set_rx_mode	= hns3_nic_set_rx_mode,
+#ifdef CONFIG_HNS3_UBL
+	.ndo_set_rx_mode	= hns3_unic_set_rx_mode,
+#endif
 	.ndo_set_vf_trust	= hns3_set_vf_trust,
 #ifdef CONFIG_RFS_ACCEL
 	.ndo_rx_flow_steer	= hns3_rx_flow_steer,

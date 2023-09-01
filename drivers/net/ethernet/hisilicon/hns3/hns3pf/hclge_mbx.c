@@ -6,6 +6,7 @@
 #include "hnae3.h"
 #include "hclge_comm_rss.h"
 #include "hclge_comm_unic_addr.h"
+#include "hclge_unic_guid.h"
 #include "hclge_unic_ip.h"
 
 #define CREATE_TRACE_POINTS
@@ -828,8 +829,10 @@ static void hclge_handle_vf_tbl(struct hclge_vport *vport,
 		hclge_rm_vport_all_mac_table(vport, true, HCLGE_MAC_ADDR_MC);
 		hclge_rm_vport_all_vlan_table(vport, true);
 #ifdef CONFIG_HNS3_UBL
-		if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+			hclge_unic_del_vport_all_mc_guid_table(vport, true);
 			hclge_unic_rm_vport_all_ip_table(vport, true);
+		}
 #endif
 	} else {
 		dev_warn(&hdev->pdev->dev, "Invalid cmd(%u)\n",
@@ -1035,8 +1038,10 @@ hclge_mbx_get_vf_flr_status_handler(struct hclge_mbx_ops_param *param)
 				     HCLGE_MAC_ADDR_MC);
 	hclge_rm_vport_all_vlan_table(param->vport, false);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		hclge_unic_del_vport_all_mc_guid_table(param->vport, false);
 		hclge_unic_rm_vport_all_ip_table(param->vport, false);
+	}
 #endif
 	return 0;
 }
@@ -1051,8 +1056,10 @@ static int hclge_mbx_vf_uninit_handler(struct hclge_mbx_ops_param *param)
 				     HCLGE_MAC_ADDR_MC);
 	hclge_rm_vport_all_vlan_table(param->vport, true);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		hclge_unic_del_vport_all_mc_guid_table(param->vport, false);
 		hclge_unic_rm_vport_all_ip_table(param->vport, false);
+	}
 #endif
 	param->vport->mps = 0;
 	return 0;
@@ -1095,6 +1102,18 @@ static int hclge_mbx_handle_vf_qb_handler(struct hclge_mbx_ops_param *param)
 }
 
 #ifdef CONFIG_HNS3_UBL
+static int hclge_unic_mbx_set_mc_guid_handler(struct hclge_mbx_ops_param *param)
+{
+	int ret;
+
+	ret = hclge_unic_set_vf_mc_guid(param->vport, param->req);
+	if (ret)
+		dev_err(&param->vport->back->pdev->dev,
+			"PF fail(%d) to set VF MC guid\n",
+			ret);
+	return ret;
+}
+
 static int
 hclge_unic_mbx_set_vf_ip_addr_handler(struct hclge_mbx_ops_param *param)
 {
@@ -1136,6 +1155,7 @@ static const hclge_mbx_ops_fn hclge_mbx_ops_list[HCLGE_MBX_OPCODE_MAX] = {
 	[HCLGE_MBX_GET_RING_VECTOR_MAP] = hclge_mbx_get_ring_vector_map_handler,
 	[HCLGE_MBX_SET_QB] = hclge_mbx_handle_vf_qb_handler,
 #ifdef CONFIG_HNS3_UBL
+	[HCLGE_MBX_SET_MGUID] = hclge_unic_mbx_set_mc_guid_handler,
 	[HCLGE_UNIC_MBX_SET_IP] = hclge_unic_mbx_set_vf_ip_addr_handler,
 #endif
 	[HCLGE_MBX_GET_VF_FLR_STATUS] = hclge_mbx_get_vf_flr_status_handler,

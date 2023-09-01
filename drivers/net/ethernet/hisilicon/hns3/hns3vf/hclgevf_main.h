@@ -291,6 +291,9 @@ struct hclgevf_dev {
 
 	struct hclgevf_qb_cfg qb_cfg;
 	struct devlink *devlink;
+
+	spinlock_t mguid_list_lock;     /* protect mc guid need to add/detele */
+	struct list_head mc_guid_list;  /* Store VF mc guid table */
 };
 
 static inline bool hclgevf_is_reset_pending(struct hclgevf_dev *hdev)

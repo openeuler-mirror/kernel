@@ -2000,8 +2000,10 @@ static void hclgevf_periodic_service_task(struct hclgevf_dev *hdev)
 	hclgevf_sync_mac_table(hdev);
 
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		hclgevf_unic_sync_mc_guid_list(hdev);
 		hclgevf_unic_sync_ip_list(hdev);
+	}
 #endif
 	hclgevf_sync_promisc_mode(hdev);
 
@@ -2356,6 +2358,8 @@ static void hclgevf_state_init(struct hclgevf_dev *hdev)
 	INIT_LIST_HEAD(&hdev->mac_table.mc_mac_list);
 #ifdef CONFIG_HNS3_UBL
 	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		spin_lock_init(&hdev->mguid_list_lock);
+		INIT_LIST_HEAD(&hdev->mc_guid_list);
 		spin_lock_init(&hdev->ip_table.ip_list_lock);
 		INIT_LIST_HEAD(&hdev->ip_table.ip_list);
 	}
@@ -3144,8 +3148,10 @@ static void hclgevf_uninit_hdev(struct hclgevf_dev *hdev)
 	hclgevf_pci_uninit(hdev);
 	hclgevf_uninit_mac_list(hdev);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		hclgevf_unic_uninit_mc_guid_list(hdev);
 		hclgevf_unic_clear_ip_list(hdev);
+	}
 #endif
 }
 

@@ -14,6 +14,7 @@
 
 #include "hclgevf_main.h"
 #include "hclge_comm_unic_addr.h"
+#include "hclgevf_unic_guid.h"
 #include "hclgevf_unic_ip.h"
 #include "hclgevf_unic_addr.h"
 
@@ -25,6 +26,10 @@ int hclgevf_unic_add_addr(struct hnae3_handle *handle, const unsigned char *addr
 		return hclgevf_unic_update_ip_list(handle,
 						   HCLGE_COMM_UNIC_ADDR_TO_ADD,
 						   (const struct sockaddr *)addr);
+	case HNAE3_UNIC_MCGUID_ADDR:
+		return hclgevf_unic_update_guid_list(handle,
+						     HCLGE_COMM_UNIC_ADDR_TO_ADD,
+						     addr);
 	default:
 		return -EINVAL;
 	}
@@ -38,6 +43,10 @@ int hclgevf_unic_rm_addr(struct hnae3_handle *handle, const unsigned char *addr,
 		return hclgevf_unic_update_ip_list(handle,
 						   HCLGE_COMM_UNIC_ADDR_TO_DEL,
 						   (const struct sockaddr *)addr);
+	case HNAE3_UNIC_MCGUID_ADDR:
+		return hclgevf_unic_update_guid_list(handle,
+						     HCLGE_COMM_UNIC_ADDR_TO_DEL,
+						     addr);
 	default:
 		return -EINVAL;
 	}

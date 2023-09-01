@@ -15,6 +15,7 @@
 #include "hclge_comm_unic_addr.h"
 #include "hclge_main.h"
 #include "hclge_mbx.h"
+#include "hclge_unic_guid.h"
 #include "hclge_unic_ip.h"
 #include "hclge_unic_addr.h"
 
@@ -28,6 +29,10 @@ int hclge_unic_add_addr(struct hnae3_handle *handle, const unsigned char *addr,
 		return hclge_unic_update_ip_list(vport,
 						 HCLGE_COMM_UNIC_ADDR_TO_ADD,
 						 (const struct sockaddr *)addr);
+	case HNAE3_UNIC_MCGUID_ADDR:
+		return hclge_unic_update_guid_list(vport,
+						   HCLGE_COMM_UNIC_ADDR_TO_ADD,
+						   addr);
 	default:
 		return -EINVAL;
 	}
@@ -43,6 +48,10 @@ int hclge_unic_rm_addr(struct hnae3_handle *handle, const unsigned char *addr,
 		return hclge_unic_update_ip_list(vport,
 						 HCLGE_COMM_UNIC_ADDR_TO_DEL,
 						 (const struct sockaddr *)addr);
+	case HNAE3_UNIC_MCGUID_ADDR:
+		return hclge_unic_update_guid_list(vport,
+						   HCLGE_COMM_UNIC_ADDR_TO_DEL,
+						   addr);
 	default:
 		return -EINVAL;
 	}

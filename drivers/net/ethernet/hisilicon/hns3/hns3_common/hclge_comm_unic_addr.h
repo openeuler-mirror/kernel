@@ -40,6 +40,7 @@ struct hclge_comm_unic_addr_node {
 	enum HCLGE_COMM_ADDR_NODE_STATE state;
 	union {
 		u8 unic_addr[UNIC_ADDR_LEN];
+		u8 mguid[UBL_ALEN];
 		struct {
 			u8 prefix[HCLGE_COMM_MGUID_PREFIX_LEN];
 			__le16 proto;
@@ -61,6 +62,19 @@ struct hclge_comm_func_guid_cmd {
 	__le16 hit_info;
 	__le16 rsv3;
 };
+
+#define HCLGE_COMM_FORMAT_GUID_ADDR_LEN		48
+#define HCLGE_COMM_FORMAT_GUID_ADDR_PROTO_HIGH	14
+#define HCLGE_COMM_FORMAT_GUID_ADDR_PROTO_LOW	15
+
+static inline void hclge_comm_format_guid_addr(char *format_guid_addr,
+					       const u8 *guid_addr)
+{
+	snprintf(format_guid_addr, HCLGE_COMM_FORMAT_GUID_ADDR_LEN,
+		 "ff:ff:**:**:**:**:**:**:**:**:**:**:**:**:%02x:%02x",
+		 guid_addr[HCLGE_COMM_FORMAT_GUID_ADDR_PROTO_HIGH],
+		 guid_addr[HCLGE_COMM_FORMAT_GUID_ADDR_PROTO_LOW]);
+}
 
 static inline bool hclge_comm_unic_addr_equal(const u8 *addr1, const u8 *addr2)
 {

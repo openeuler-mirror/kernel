@@ -316,6 +316,7 @@ enum hclge_opcode_type {
 	HCLGE_OPC_ADD_IP_TBL		= 0xA100,
 	HCLGE_OPC_DEL_IP_TBL		= 0xA101,
 	HCLGE_OPC_COMM_CFG_FUNC_GUID	= 0xA122,
+	HCLGE_OPC_CFG_MC_GUID_CMD	= 0xA123,
 };
 
 enum hclge_comm_cmd_return_status {

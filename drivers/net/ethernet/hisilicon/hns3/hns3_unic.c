@@ -90,33 +90,6 @@ u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info)
 	return UB_UNKNOWN_CFG_TYPE;
 }
 
-void hns3_unic_init_guid(struct net_device *netdev)
-{
-	struct hns3_nic_priv *priv = netdev_priv(netdev);
-	struct hnae3_handle *h = priv->ae_handle;
-	u8 temp_guid_addr[UBL_ALEN];
-	int ret;
-
-	if (!h->ae_algo->ops->get_func_guid ||
-	    !h->ae_algo->ops->set_func_guid) {
-		netdev_err(netdev, "the guid handlers does not exist\n");
-		return;
-	}
-
-	ret = h->ae_algo->ops->get_func_guid(h, temp_guid_addr);
-	if (ret) {
-		netdev_err(netdev, "get function guid fail, ret = %d!\n", ret);
-		return;
-	}
-
-	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
-	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
-
-	ret = h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
-	if (ret)
-		netdev_err(netdev, "set function guid fail, ret = %d\n", ret);
-}
-
 static int addr_event(struct notifier_block *nb, unsigned long event,
 		      struct sockaddr *sa, struct net_device *ndev)
 {
@@ -269,4 +242,117 @@ out:
 			       16, 1, skb->data, len, true);
 
 	dev_kfree_skb_any(skb);
+}
+
+static void hns3_unic_extern_mc_guid(u8 *mguid, const unsigned char *addr)
+{
+	int proto_size = sizeof(u16);
+	int addr_proto_oft = HNS3_SIMPLE_GUID_LEN - proto_size;
+	int proto_oft = UBL_ALEN - proto_size;
+
+	memset(mguid, 0xFF, proto_oft);
+	memcpy(&mguid[proto_oft], &addr[addr_proto_oft], proto_size);
+}
+
+static int hns3_unic_add_mc_guid(struct net_device *netdev,
+				 const unsigned char *addr)
+{
+	u8 format_simple_guid_addr[HNS3_SIMPLE_FORMAT_GUID_ADDR_LEN] = {0};
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+	u8 mguid[UBL_ALEN] = {0};
+
+	if (!hns3_unic_mguid_valid_check(addr)) {
+		hns3_unic_format_sim_guid_addr(format_simple_guid_addr, addr);
+		netdev_err(netdev, "Add mc guid err! invalid guid: %s\n",
+			   format_simple_guid_addr);
+		return -EINVAL;
+	}
+
+	hns3_unic_extern_mc_guid(mguid, addr);
+	if (h->ae_algo->ops->add_addr)
+		return h->ae_algo->ops->add_addr(h, (const u8 *)mguid,
+						 HNAE3_UNIC_MCGUID_ADDR);
+
+	return 0;
+}
+
+static int hns3_unic_del_mc_guid(struct net_device *netdev,
+				 const unsigned char *addr)
+{
+	u8 format_simple_guid_addr[HNS3_SIMPLE_FORMAT_GUID_ADDR_LEN] = {0};
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+	u8 mguid[UBL_ALEN] = {0};
+
+	if (!hns3_unic_mguid_valid_check(addr)) {
+		hns3_unic_format_sim_guid_addr(format_simple_guid_addr, addr);
+		netdev_err(netdev, "Del mc guid err! invalid guid: %s\n",
+			   format_simple_guid_addr);
+		return -EINVAL;
+	}
+
+	hns3_unic_extern_mc_guid(mguid, addr);
+	if (h->ae_algo->ops->rm_addr)
+		return h->ae_algo->ops->rm_addr(h, (const u8 *)mguid,
+						HNAE3_UNIC_MCGUID_ADDR);
+
+	return 0;
+}
+
+static u8 hns3_unic_get_netdev_flags(struct net_device *netdev)
+{
+	u8 flags = 0;
+
+	/* GUID promiscuous multiplexing unicast promiscuous, IP promiscuous
+	 * multiplexing multicast promiscuous
+	 */
+	if (netdev->flags & IFF_PROMISC)
+		flags = HNAE3_USER_UPE | HNAE3_USER_MPE;
+
+	return flags;
+}
+
+void hns3_unic_set_rx_mode(struct net_device *netdev)
+{
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+	u8 new_flags;
+
+	new_flags = hns3_unic_get_netdev_flags(netdev);
+
+	__dev_mc_sync(netdev, hns3_unic_add_mc_guid, hns3_unic_del_mc_guid);
+
+	h->netdev_flags = new_flags;
+	hns3_request_update_promisc_mode(h);
+}
+
+void hns3_unic_init_guid(struct net_device *netdev)
+{
+	const u8 bc_guid[HNS3_SIMPLE_GUID_LEN] = {0xff, 0xff, 0xff, 0xff,
+						  0xff, 0xff};
+	struct hns3_nic_priv *priv = netdev_priv(netdev);
+	struct hnae3_handle *h = priv->ae_handle;
+	u8 temp_guid_addr[UBL_ALEN];
+	int ret;
+
+	if (!h->ae_algo->ops->get_func_guid ||
+	    !h->ae_algo->ops->set_func_guid) {
+		netdev_err(netdev, "the guid handlers may not exist\n");
+		return;
+	}
+
+	ret = h->ae_algo->ops->get_func_guid(h, temp_guid_addr);
+	if (ret) {
+		netdev_err(netdev, "get function guid fail, ret = %d!\n", ret);
+		return;
+	}
+
+	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
+	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
+
+	ret = h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
+	if (ret) {
+		netdev_err(netdev, "set function guid fail, ret = %d\n", ret);
+		return;
+	}
+
+	hns3_unic_add_mc_guid(netdev, bc_guid);
 }

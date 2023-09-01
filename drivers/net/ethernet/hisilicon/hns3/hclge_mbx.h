@@ -50,7 +50,8 @@ enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_SET_QB = 0x28,        /* (VF -> PF) set queue bonding */
 	HCLGE_MBX_PUSH_QB_STATE,        /* (PF -> VF) push qb state */
 
-	HCLGE_UNIC_MBX_SET_IP = 0x51,	/* (VF -> PF) set ip addr */
+	HCLGE_MBX_SET_MGUID = 0x50,	/* (VF -> PF) set mc guid */
+	HCLGE_UNIC_MBX_SET_IP,		/* (VF -> PF) set ip addr */
 
 	HCLGE_MBX_GET_VF_FLR_STATUS = 200, /* (M7 -> PF) get vf flr status */
 	HCLGE_MBX_PUSH_LINK_STATUS,	/* (M7 -> PF) get port link status */
@@ -81,6 +82,12 @@ enum hclge_mbx_vlan_cfg_subcode {
 	HCLGE_MBX_PORT_BASE_VLAN_CFG,	/* set port based vlan configuration */
 	HCLGE_MBX_GET_PORT_BASE_VLAN_STATE,	/* get port based vlan state */
 	HCLGE_MBX_ENABLE_VLAN_FILTER,
+};
+
+/* below are per-VF mc guid subcodes */
+enum hclge_mbx_mc_guid_subcode {
+	HCLGE_MBX_MC_GUID_MC_ADD = 0,		/* add new MC guid addr */
+	HCLGE_MBX_MC_GUID_MC_DELETE,		/* delete MC guid addr */
 };
 
 enum hclge_mbx_tbl_cfg_subcode {

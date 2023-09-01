@@ -853,6 +853,8 @@ struct unic_ip_table_info {
 
 #define HCLGE_MAC_TNL_LOG_SIZE	8
 #define HCLGE_VPORT_NUM 256
+
+#define HCLGE_UNIC_MC_GUID_NUM 64
 struct hclge_dev {
 	struct pci_dev *pdev;
 	struct hnae3_ae_dev *ae_dev;
@@ -972,6 +974,10 @@ struct hclge_dev {
 
 	struct unic_ip_table_info iptbl_info;
 
+	/* multicast guid number used by PF and its VFs */
+	u16 used_mc_guid_num;
+	DECLARE_BITMAP(mc_guid_tbl_bmap, HCLGE_UNIC_MC_GUID_NUM);
+
 	DECLARE_KFIFO(mac_tnl_log, struct hclge_mac_tnl_stats,
 		      HCLGE_MAC_TNL_LOG_SIZE);
 
@@ -1013,6 +1019,7 @@ enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_PROMISC_CHANGE,
 	HCLGE_VPORT_STATE_VLAN_FLTR_CHANGE,
 	HCLGE_VPORT_STATE_INITED,
+	HCLGE_VPORT_STATE_GUID_TBL_CHANGE,
 	HCLGE_VPORT_STATE_IP_TBL_CHANGE,
 	HCLGE_VPORT_STATE_MAX
 };
@@ -1087,6 +1094,9 @@ struct hclge_vport {
 	struct list_head mc_mac_list;   /* Store VF multicast table */
 
 	struct list_head vlan_list;     /* Store VF vlan table */
+
+	spinlock_t mguid_list_lock;     /* protect mc guid need to add/detele */
+	struct list_head mc_guid_list;  /* Store VF mc guid table */
 
 	spinlock_t ip_list_lock; /* protect ip address need to add/detele */
 	struct list_head ip_list;	/* Store VF ip table */
