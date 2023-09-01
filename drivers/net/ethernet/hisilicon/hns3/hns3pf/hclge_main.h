@@ -98,6 +98,7 @@
 #define HCLGE_DEFAULT_UMV_SPACE_PER_PF \
 	(HCLGE_UMV_TBL_SIZE / HCLGE_MAX_PF_NUM)
 #define HCLGE_DEFAULT_GUID_TBL_SIZE	64
+#define HCLGE_DEFAULT_IP_TBL_SIZE		1024
 
 #define HCLGE_TQP_RESET_TRY_TIMES	200
 
@@ -814,6 +815,18 @@ struct hclge_vf_vlan_cfg {
 
 #pragma pack()
 
+struct unic_ip_table_info {
+	u16 max_iptbl_size;
+	/* private ip table space, it's same for PF and its VFs */
+	u16 priv_iptbl_size;
+	/* ip table space shared by PF and its VFs */
+	u16 share_iptbl_size;
+	/* store ip addr to assemble */
+	struct sockaddr_in6 ipaddr_to_assemble;
+	/* save upper ip addr subcode, NOT SET: 255 */
+	u8 upper_ip_addr_state;
+};
+
 /* For each bit of TCAM entry, it uses a pair of 'x' and
  * 'y' to indicate which value to match, like below:
  * ----------------------------------
@@ -957,6 +970,8 @@ struct hclge_dev {
 	/* multicast mac address number used by PF and its VFs */
 	u16 used_mc_mac_num;
 
+	struct unic_ip_table_info iptbl_info;
+
 	DECLARE_KFIFO(mac_tnl_log, struct hclge_mac_tnl_stats,
 		      HCLGE_MAC_TNL_LOG_SIZE);
 
@@ -998,6 +1013,7 @@ enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_PROMISC_CHANGE,
 	HCLGE_VPORT_STATE_VLAN_FLTR_CHANGE,
 	HCLGE_VPORT_STATE_INITED,
+	HCLGE_VPORT_STATE_IP_TBL_CHANGE,
 	HCLGE_VPORT_STATE_MAX
 };
 
@@ -1048,6 +1064,8 @@ struct hclge_vport {
 
 	u16 used_umv_num;
 
+	u16 used_iptbl_num;
+
 	u16 vport_id;
 	struct hclge_dev *back;  /* Back reference to associated dev */
 	struct hnae3_handle nic;
@@ -1069,6 +1087,9 @@ struct hclge_vport {
 	struct list_head mc_mac_list;   /* Store VF multicast table */
 
 	struct list_head vlan_list;     /* Store VF vlan table */
+
+	spinlock_t ip_list_lock; /* protect ip address need to add/detele */
+	struct list_head ip_list;	/* Store VF ip table */
 };
 
 struct hclge_speed_bit_map {

@@ -14,6 +14,11 @@
  */
 
 #include <linux/skbuff.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
+#include <linux/if_arp.h>
+#include <linux/inetdevice.h>
+#include <net/addrconf.h>
 
 #include "ubl.h"
 #include "hnae3.h"
@@ -110,6 +115,94 @@ void hns3_unic_init_guid(struct net_device *netdev)
 	ret = h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
 	if (ret)
 		netdev_err(netdev, "set function guid fail, ret = %d\n", ret);
+}
+
+static int addr_event(struct notifier_block *nb, unsigned long event,
+		      struct sockaddr *sa, struct net_device *ndev)
+{
+	struct hnae3_handle *handle;
+	int ret;
+
+	if (ndev->type != ARPHRD_UB)
+		return NOTIFY_DONE;
+
+	if (!hns3_unic_port_dev_check(ndev))
+		return NOTIFY_DONE;
+
+	handle = hns3_get_handle(ndev);
+
+	switch (event) {
+	case NETDEV_UP:
+		if (handle->ae_algo->ops->add_addr) {
+			ret = handle->ae_algo->ops->add_addr(handle,
+				(const unsigned char *)sa, HNAE3_UNIC_IP_ADDR);
+			if (ret)
+				return NOTIFY_BAD;
+		} else {
+			return NOTIFY_DONE;
+		}
+		break;
+	case NETDEV_DOWN:
+		if (handle->ae_algo->ops->rm_addr) {
+			ret = handle->ae_algo->ops->rm_addr(handle,
+				(const unsigned char *)sa, HNAE3_UNIC_IP_ADDR);
+			if (ret)
+				return NOTIFY_BAD;
+		} else {
+			return NOTIFY_DONE;
+		}
+		break;
+	default:
+		return NOTIFY_DONE;
+	}
+
+	return NOTIFY_OK;
+}
+
+static int unic_inetaddr_event(struct notifier_block *this, unsigned long event,
+			       void *ptr)
+{
+	struct in_ifaddr *ifa4 = (struct in_ifaddr *)ptr;
+	struct net_device *ndev = (struct net_device *)ifa4->ifa_dev->dev;
+	struct sockaddr_in in;
+
+	in.sin_family = AF_INET;
+	in.sin_addr.s_addr = ifa4->ifa_address;
+
+	return addr_event(this, event, (struct sockaddr *)&in, ndev);
+}
+
+static int unic_inet6addr_event(struct notifier_block *this, unsigned long event,
+				void *ptr)
+{
+	struct inet6_ifaddr *ifa6 = (struct inet6_ifaddr *)ptr;
+	struct net_device *ndev = (struct net_device *)ifa6->idev->dev;
+	struct sockaddr_in6 in6;
+
+	in6.sin6_family = AF_INET6;
+	in6.sin6_addr = ifa6->addr;
+
+	return addr_event(this, event, (struct sockaddr *)&in6, ndev);
+}
+
+static struct notifier_block unic_inetaddr_notifier = {
+	.notifier_call = unic_inetaddr_event
+};
+
+static struct notifier_block unic_inet6addr_notifier = {
+	.notifier_call = unic_inet6addr_event
+};
+
+void register_ipaddr_notifier(void)
+{
+	register_inetaddr_notifier(&unic_inetaddr_notifier);
+	register_inet6addr_notifier(&unic_inet6addr_notifier);
+}
+
+void unregister_ipaddr_notifier(void)
+{
+	unregister_inetaddr_notifier(&unic_inetaddr_notifier);
+	unregister_inet6addr_notifier(&unic_inet6addr_notifier);
 }
 
 #define UNIC_DHCPV4_PROTO 0x0100

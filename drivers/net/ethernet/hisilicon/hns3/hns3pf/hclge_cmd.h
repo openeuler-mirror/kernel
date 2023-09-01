@@ -426,6 +426,24 @@ struct hclge_check_mac_addr_cmd {
 	u8	rsv[16];
 };
 
+enum hclge_ip_tbl_opcode {
+	HCLGE_IP_TBL_ADD,	/* Add new or modify ip_table */
+	HCLGE_IP_TBL_REMOVE,	/* Remove an entry through ip_table key */
+	HCLGE_IP_TBL_LKUP,	/* Lookup an entry through ip_table key */
+};
+
+#define HCLGE_ADD_IP_TBL_OVERFLOW	2
+#define HCLGE_IP_PORT_VFID_S		0
+#define HCLGE_IP_PORT_VFID_M		GENMASK(7, 0)
+
+struct hclge_ip_tbl_entry_cmd {
+	u8      resp_code;
+	u8      rsv1[3];
+	u8      ipaddr[16];
+	__le16  dip_ad;
+	u8      rsv2[2];
+};
+
 #define HCLGE_UMV_SPC_ALC_B	0
 struct hclge_umv_spc_alc_cmd {
 	u8 allocate;
@@ -848,7 +866,7 @@ struct hclge_dev_specs_1_cmd {
 	__le16 mc_mac_size;
 	u8 rsv1[2];
 	__le16 guid_tbl_space;
-	u8 rsv[2];
+	__le16 ip_tbl_space;
 	u8 tnl_num;
 	u8 rsv2[5];
 };

@@ -428,6 +428,7 @@ struct hnae3_dev_specs {
 	u32 mac_stats_num;
 	u8 tnl_num;
 	u16 guid_tbl_space;
+	u16 ip_tbl_space;
 };
 
 struct hnae3_client_ops {
@@ -460,6 +461,11 @@ struct hnae3_ae_dev {
 	u32 dev_version;
 	DECLARE_BITMAP(caps, HNAE3_DEV_CAPS_MAX_NUM);
 	void *priv;
+};
+
+enum hnae3_unic_addr_type {
+	HNAE3_UNIC_IP_ADDR,
+	HNAE3_UNIC_MCGUID_ADDR
 };
 
 /* This struct defines the operation on the handle.
@@ -827,6 +833,12 @@ struct hnae3_ae_ops {
 		       struct ethtool_wolinfo *wol);
 	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
 			void *data, size_t length);
+	int (*add_addr)(struct hnae3_handle *handle,
+			const unsigned char *addr,
+			enum hnae3_unic_addr_type addr_type);
+	int (*rm_addr)(struct hnae3_handle *handle,
+		       const unsigned char *addr,
+		       enum hnae3_unic_addr_type addr_type);
 	int (*get_func_guid)(struct hnae3_handle *handle, u8 *guid);
 	int (*set_func_guid)(struct hnae3_handle *handle, u8 *guid);
 };

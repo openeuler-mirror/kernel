@@ -12,7 +12,10 @@
 #include "hclgevf_devlink.h"
 #include "hclge_comm_rss.h"
 #include "hclgevf_udma.h"
+#include "hclge_comm_unic_addr.h"
+#include "hclgevf_unic_ip.h"
 #include "hclgevf_unic_guid.h"
+#include "hclgevf_unic_addr.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -1996,6 +1999,10 @@ static void hclgevf_periodic_service_task(struct hclgevf_dev *hdev)
 
 	hclgevf_sync_mac_table(hdev);
 
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		hclgevf_unic_sync_ip_list(hdev);
+#endif
 	hclgevf_sync_promisc_mode(hdev);
 
 	hclgevf_update_fd_qb_state(hdev);
@@ -2347,6 +2354,12 @@ static void hclgevf_state_init(struct hclgevf_dev *hdev)
 	spin_lock_init(&hdev->mac_table.mac_list_lock);
 	INIT_LIST_HEAD(&hdev->mac_table.uc_mac_list);
 	INIT_LIST_HEAD(&hdev->mac_table.mc_mac_list);
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+		spin_lock_init(&hdev->ip_table.ip_list_lock);
+		INIT_LIST_HEAD(&hdev->ip_table.ip_list);
+	}
+#endif
 
 	/* bring the device down */
 	set_bit(HCLGEVF_STATE_DOWN, &hdev->state);
@@ -3130,6 +3143,10 @@ static void hclgevf_uninit_hdev(struct hclgevf_dev *hdev)
 	hclgevf_devlink_uninit(hdev);
 	hclgevf_pci_uninit(hdev);
 	hclgevf_uninit_mac_list(hdev);
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		hclgevf_unic_clear_ip_list(hdev);
+#endif
 }
 
 static int hclgevf_init_ae_dev(struct hnae3_ae_dev *ae_dev)
@@ -3470,6 +3487,8 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.request_flush_qb_config = hclgevf_set_fd_qb,
 	.query_fd_qb_state = hclgevf_query_fd_qb_state,
 #ifdef CONFIG_HNS3_UBL
+	.add_addr = hclgevf_unic_add_addr,
+	.rm_addr = hclgevf_unic_rm_addr,
 	.get_func_guid = hclgevf_unic_get_func_guid,
 	.set_func_guid = hclgevf_unic_set_func_guid,
 #endif

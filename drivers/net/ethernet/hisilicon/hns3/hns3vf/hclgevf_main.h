@@ -207,6 +207,11 @@ struct hclgevf_mac_table_cfg {
 	struct list_head mc_mac_list;
 };
 
+struct hclgevf_ip_table_cfg {
+	spinlock_t ip_list_lock; /* protect ip address need to add/detele */
+	struct list_head ip_list;
+};
+
 struct hclgevf_qb_cfg {
 	bool pf_support_qb;
 	bool hw_qb_en;
@@ -263,6 +268,8 @@ struct hclgevf_dev {
 	unsigned long vlan_del_fail_bmap[BITS_TO_LONGS(VLAN_N_VID)];
 
 	struct hclgevf_mac_table_cfg mac_table;
+
+	struct hclgevf_ip_table_cfg ip_table;
 
 	struct hclgevf_mbx_resp_status mbx_resp; /* mailbox response */
 	struct hclgevf_mbx_arq_ring arq; /* mailbox async rx queue */

@@ -50,6 +50,8 @@ enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_SET_QB = 0x28,        /* (VF -> PF) set queue bonding */
 	HCLGE_MBX_PUSH_QB_STATE,        /* (PF -> VF) push qb state */
 
+	HCLGE_UNIC_MBX_SET_IP = 0x51,	/* (VF -> PF) set ip addr */
+
 	HCLGE_MBX_GET_VF_FLR_STATUS = 200, /* (M7 -> PF) get vf flr status */
 	HCLGE_MBX_PUSH_LINK_STATUS,	/* (M7 -> PF) get port link status */
 	HCLGE_MBX_NCSI_ERROR,		/* (M7 -> PF) receive a NCSI error */
@@ -63,6 +65,12 @@ enum hclge_mbx_mac_vlan_subcode {
 	HCLGE_MBX_MAC_VLAN_MC_MODIFY,		/* modify MC mac addr */
 	HCLGE_MBX_MAC_VLAN_MC_ADD,		/* add new MC mac addr */
 	HCLGE_MBX_MAC_VLAN_MC_REMOVE,		/* remove MC mac addr */
+};
+
+/* below are per-VF ip table subcodes */
+enum hclge_mbx_ip_table_subcode {
+	HCLGE_UNIC_MBX_IP_TABLE_ADD = 0,		/* add ip addr */
+	HCLGE_UNIC_MBX_IP_TABLE_REMOVE,			/* remove ip addr */
 };
 
 /* below are per-VF vlan cfg subcodes */

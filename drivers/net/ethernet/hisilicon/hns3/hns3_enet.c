@@ -3327,6 +3327,11 @@ static const struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_select_queue	= hns3_nic_select_queue,
 };
 
+bool hns3_unic_port_dev_check(const struct net_device *dev)
+{
+	return dev->netdev_ops == &hns3_unic_netdev_ops;
+}
+
 bool hns3_is_phys_func(struct pci_dev *pdev)
 {
 	u32 dev_id = pdev->device;
@@ -6339,6 +6344,9 @@ static int __init hns3_init_module(void)
 	if (ret)
 		goto err_reg_driver;
 
+#ifdef CONFIG_HNS3_UBL
+	register_ipaddr_notifier();
+#endif
 	return ret;
 
 err_reg_driver:
@@ -6355,6 +6363,9 @@ module_init(hns3_init_module);
  */
 static void __exit hns3_exit_module(void)
 {
+#ifdef CONFIG_HNS3_UBL
+	unregister_ipaddr_notifier();
+#endif
 	pci_unregister_driver(&hns3_driver);
 	hnae3_unregister_client(&client);
 	hns3_dbg_unregister_debugfs();

@@ -34,6 +34,8 @@ void hns3_unic_init_guid(struct net_device *netdev);
 void hns3_unic_lp_setup_skb(struct sk_buff *skb);
 void hns3_unic_lb_check_skb_data(struct hns3_enet_ring *ring,
 				 struct sk_buff *skb);
+void register_ipaddr_notifier(void);
+void unregister_ipaddr_notifier(void);
 void hns3_unic_init_guid(struct net_device *netdev);
 
 #endif

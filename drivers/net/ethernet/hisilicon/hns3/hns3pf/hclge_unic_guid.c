@@ -21,6 +21,7 @@
 #include "hclge_main.h"
 #include "hclge_mbx.h"
 #include "hclge_unic_guid.h"
+#include "hclge_comm_unic_addr.h"
 #include "hnae3.h"
 
 int hclge_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid)

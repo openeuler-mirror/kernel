@@ -6,9 +6,7 @@
 
 #include <linux/types.h>
 
-#include "ubl.h"
 #include "hclge_mbx.h"
-#include "hclge_comm_unic_addr.h"
 
 struct hclge_dev;
 

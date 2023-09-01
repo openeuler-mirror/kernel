@@ -30,7 +30,10 @@
 #include "hclge_devlink.h"
 #include "hclge_comm_cmd.h"
 #include "hclge_udma.h"
+#include "hclge_comm_unic_addr.h"
+#include "hclge_unic_ip.h"
 #include "hclge_unic_guid.h"
+#include "hclge_unic_addr.h"
 
 #define HCLGE_NAME			"hclge"
 
@@ -1373,9 +1376,12 @@ static void hclge_parse_dev_specs(struct hclge_dev *hdev,
 	ae_dev->dev_specs.mc_mac_size = le16_to_cpu(req1->mc_mac_size);
 	ae_dev->dev_specs.tnl_num = req1->tnl_num;
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(ae_dev))
+	if (hnae3_dev_ubl_supported(ae_dev)) {
 		ae_dev->dev_specs.guid_tbl_space =
 			le16_to_cpu(req1->guid_tbl_space);
+		ae_dev->dev_specs.ip_tbl_space =
+			le16_to_cpu(req1->ip_tbl_space);
+	}
 #endif
 }
 
@@ -1390,6 +1396,11 @@ static void hclge_check_dev_specs(struct hclge_dev *hdev)
 			dev_warn(&hdev->pdev->dev,
 				 "Can't get guid table size from firmware!\n");
 			dev_specs->guid_tbl_space = HCLGE_DEFAULT_GUID_TBL_SIZE;
+		}
+		if (!dev_specs->ip_tbl_space) {
+			dev_warn(&hdev->pdev->dev,
+				 "Can't get ip table size from firmware!\n");
+			dev_specs->ip_tbl_space = HCLGE_DEFAULT_IP_TBL_SIZE;
 		}
 	}
 #endif
@@ -1568,6 +1579,11 @@ static int hclge_configure(struct hclge_dev *hdev)
 		hdev->fd_en = true;
 		hdev->fd_active_type = HCLGE_FD_RULE_NONE;
 	}
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(ae_dev))
+		hdev->iptbl_info.max_iptbl_size =
+			hdev->ae_dev->dev_specs.ip_tbl_space;
+#endif
 
 	ret = hclge_parse_speed(cfg.default_speed, &hdev->hw.mac.speed);
 	if (ret) {
@@ -1854,8 +1870,11 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 		vport->vf_info.link_state = IFLA_VF_LINK_STATE_AUTO;
 		vport->mps = HCLGE_MAC_DEFAULT_FRAME;
 #ifdef CONFIG_HNS3_UBL
-		if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 			vport->mps = UB_DATA_LEN;
+			INIT_LIST_HEAD(&vport->ip_list);
+			spin_lock_init(&vport->ip_list_lock);
+		}
 #endif
 		vport->port_base_vlan_cfg.state = HNAE3_PORT_BASE_VLAN_DISABLE;
 		vport->port_base_vlan_cfg.tbl_sta = true;
@@ -4745,6 +4764,10 @@ static void hclge_periodic_service_task(struct hclge_dev *hdev)
 	 */
 	hclge_update_link_status(hdev);
 	hclge_sync_mac_table(hdev);
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		hclge_unic_sync_ip_table(hdev);
+#endif
 	hclge_sync_promisc_mode(hdev);
 	hclge_sync_fd_qb_mode(hdev);
 	hclge_sync_fd_table(hdev);
@@ -8492,6 +8515,10 @@ int hclge_vport_start(struct hclge_vport *vport)
 		if (vport->vport_id) {
 			hclge_restore_mac_table_common(vport);
 			hclge_restore_vport_vlan_table(vport);
+#ifdef CONFIG_HNS3_UBL
+			if (hnae3_dev_ubl_supported(hdev->ae_dev))
+				hclge_unic_restore_ip_table(vport);
+#endif
 		} else {
 			hclge_restore_hw_table(hdev);
 		}
@@ -10703,6 +10730,10 @@ static void hclge_restore_hw_table(struct hclge_dev *hdev)
 	set_bit(HCLGE_STATE_FD_USER_DEF_CHANGED, &hdev->state);
 	clear_bit(HCLGE_STATE_HW_QB_ENABLE, &hdev->state);
 	hclge_restore_fd_entries(handle);
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		hclge_unic_restore_ip_table(vport);
+#endif
 }
 
 int hclge_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
@@ -12323,6 +12354,14 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 	if (ret)
 		goto err_mdiobus_unreg;
 
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(ae_dev)) {
+		ret = hclge_unic_init_iptbl_info(hdev);
+		if (ret)
+			goto err_mdiobus_unreg;
+	}
+#endif
+
 	ret = hclge_mac_init(hdev);
 	if (ret) {
 		dev_err(&pdev->dev, "Mac init error, ret = %d\n", ret);
@@ -12700,6 +12739,10 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 		memset(hdev->vf_vlan_full, 0, sizeof(hdev->vf_vlan_full));
 		bitmap_set(hdev->vport_config_block, 0, hdev->num_alloc_vport);
 		hclge_reset_umv_space(hdev);
+#ifdef CONFIG_HNS3_UBL
+		if (hnae3_dev_ubl_supported(ae_dev))
+			hclge_unic_reset_iptbl_space(hdev);
+#endif
 	}
 
 	ret = hclge_comm_cmd_init(hdev->ae_dev, &hdev->hw.hw, &hdev->fw_version,
@@ -12835,8 +12878,10 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_uninit_rxd_adv_layout(hdev);
 	hclge_uninit_mac_table(hdev);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(ae_dev))
+	if (hnae3_dev_ubl_supported(ae_dev)) {
+		hclge_unic_uninit_ip_table(hdev);
 		hclge_unic_rm_func_guid(hdev);
+	}
 #endif
 	hclge_del_all_fd_entries(hdev);
 
@@ -13413,6 +13458,8 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_wol = hclge_set_wol,
 	.priv_ops = hclge_ext_ops_handle,
 #ifdef CONFIG_HNS3_UBL
+	.add_addr = hclge_unic_add_addr,
+	.rm_addr = hclge_unic_rm_addr,
 	.get_func_guid = hclge_unic_get_func_guid,
 	.set_func_guid = hclge_unic_set_func_guid,
 #endif
