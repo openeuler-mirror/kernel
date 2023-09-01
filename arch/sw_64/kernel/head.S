@@ -66,6 +66,7 @@ __smp_callin:
 	bis	$31, $31, $16	# invalidate all TLB with current VPN
 	sys_call HMC_tbi
 
+#if defined(CONFIG_SUBARCH_C3B)
 	sys_call HMC_whami	# Get hard cid
 	ldi	$1, __cpu_to_rcid
 	ldi	$2, 0($31)
@@ -79,6 +80,10 @@ __smp_callin:
 	bne	$5, 5f
 	br	$31, 3b
 4:	ldi	$0, 0($2)
+#else
+	rcid	$0
+#endif
+
 	ldi	$2, idle_task_pointer
 	s8addl	$0, $2, $2
 	ldl	$8, 0($2)	# Get ksp of idle thread

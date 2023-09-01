@@ -63,6 +63,13 @@ static void __init setup_core_map(struct cpumask *cpumask)
 		}
 	}
 
+	if (is_in_host() && core_is_ht()) {
+		for (i = 0; i < cpuid; i++)
+			__cpu_to_rcid[cpuid + i] = __cpu_to_rcid[i] | (1 << THREAD_ID_SHIFT);
+
+		cpuid = cpuid + i;
+	}
+
 	while (cpuid < NR_CPUS) {
 		__cpu_to_rcid[cpuid] = -1;
 		cpuid++;

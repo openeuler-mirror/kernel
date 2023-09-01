@@ -17,6 +17,7 @@
 #define HMC_wrktp		0x0A
 #define HMC_rdptbr		0x0B
 #define HMC_wrptbr		0x0C
+#define HMC_rdhtctl		0x0D
 #define HMC_wrksp		0x0E
 #define HMC_mtinten		0x0F
 #define HMC_load_mm		0x11
@@ -164,6 +165,7 @@ __CALL_HMC_W1(wrusp, unsigned long);
 
 __CALL_HMC_R0(rdksp, unsigned long);
 __CALL_HMC_W1(wrksp, unsigned long);
+__CALL_HMC_R0(rdhtctl, unsigned long);
 
 /*
  * Load a mm context. This is needed when we change the page
