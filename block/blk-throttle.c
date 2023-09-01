@@ -1493,7 +1493,7 @@ static void tg_conf_updated(struct throtl_grp *tg, u64 *old_limits, bool global)
 
 static inline int throtl_check_init_done(struct request_queue *q)
 {
-	if (test_bit(QUEUE_FLAG_THROTL_INIT_DONE, &q->queue_flags))
+	if (test_bit(QUEUE_FLAG_REGISTER_DONE, &q->queue_flags))
 		return 0;
 
 	return blk_queue_dying(q) ? -ENODEV : -EBUSY;
