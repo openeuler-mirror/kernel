@@ -36,7 +36,6 @@ struct piu_saved {
 };
 
 /* A controller.  Used to manage multiple PCI busses.  */
-
 struct pci_controller {
 	struct pci_controller *next;
 	struct pci_bus *bus;
@@ -95,13 +94,14 @@ extern void __init setup_chip_pci_ops(void);
 #define setup_chip_pci_ops()	do { } while (0)
 #endif
 
+extern struct pci_controller *pci_bus_to_pci_controller(const struct pci_bus *bus);
+extern struct pci_controller *bus_num_to_pci_controller(unsigned long bus_num);
+
 #if defined(CONFIG_SUNWAY_IOMMU) || defined(CONFIG_SUNWAY_IOMMU_V2)
 extern struct syscore_ops iommu_cpu_syscore_ops;
 #endif
 
 #ifdef CONFIG_PCI_DOMAINS
-static inline int pci_domain_nr(struct pci_bus *bus) { return 0; }
-
 static inline int pci_proc_domain(struct pci_bus *bus)
 {
 	struct pci_controller *hose = bus->sysdata;
