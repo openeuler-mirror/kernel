@@ -23,6 +23,7 @@
 #include <net/vxlan.h>
 #include <net/geneve.h>
 
+#include "ubl.h"
 #include "hnae3.h"
 #include "hnae3_ext.h"
 #include "hns3_enet.h"
@@ -1916,6 +1917,10 @@ static int hns3_fill_skb_desc(struct hns3_nic_priv *priv,
 	}
 
 	/* Set txbd */
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(priv->ae_handle))
+		hns3_unic_set_l3_type(skb, &param.type_cs_vlan_tso);
+#endif
 	desc->tx.ol_type_vlan_len_msec =
 		cpu_to_le32(param.ol_type_vlan_len_msec);
 	desc->tx.type_cs_vlan_tso_len = cpu_to_le32(param.type_cs_vlan_tso);
@@ -2577,7 +2582,12 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		hns3_rl_err(netdev, "xmit error: %d!\n", ret);
 		goto out_err_tx_ok;
 	}
-
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev))) {
+		ubl_rmv_sw_ctype(skb);
+		hns3_unic_set_default_cc(skb);
+	}
+#endif
 	ret = hns3_handle_skb_desc(priv, ring, skb, desc_cb, ring->next_to_use);
 	if (unlikely(ret <= 0))
 		goto out_err_tx_ok;
@@ -4349,8 +4359,14 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 		skb_mark_for_recycle(skb);
 
 	hns3_ring_stats_update(ring, seg_pkt_cnt);
-
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev)))
+		ring->pull_len = HNS3_RX_HEAD_SIZE;
+	else
+		ring->pull_len = eth_get_headlen(netdev, va, HNS3_RX_HEAD_SIZE);
+#else
 	ring->pull_len = eth_get_headlen(netdev, va, HNS3_RX_HEAD_SIZE);
+#endif
 	__skb_put(skb, ring->pull_len);
 	hns3_nic_reuse_page(skb, ring->frag_num++, ring, ring->pull_len,
 			    desc_cb);
@@ -4579,7 +4595,17 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 	len = skb->len;
 
 	/* Do update ip stack process */
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev)))
+		skb->protocol = ubl_type_trans(skb, netdev,
+					       hns3_unic_get_l3_type(netdev,
+								     ol_info,
+								     l234info));
+	else
+		skb->protocol = eth_type_trans(skb, netdev);
+#else
 	skb->protocol = eth_type_trans(skb, netdev);
+#endif
 
 	/* This is needed in order to enable forwarding support */
 	ret = hns3_set_gro_and_checksum(ring, skb, l234info,
@@ -5589,7 +5615,14 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	handle->ae_algo->ops->get_tqps_and_rss_info(handle, &alloc_tqps,
 						    &max_rss_size);
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		netdev = alloc_ubndev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+	else
+		netdev = alloc_etherdev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+#else
 	netdev = alloc_etherdev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+#endif
 	if (!netdev)
 		return -ENOMEM;
 
