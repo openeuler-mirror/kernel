@@ -40,6 +40,7 @@ head-y := arch/sw_64/kernel/head.o
 
 core-y				+= arch/sw_64/
 drivers-$(CONFIG_OPROFILE)	+= arch/sw_64/oprofile/
+drivers-$(CONFIG_PCI)           += arch/sw_64/pci/
 libs-y				+= arch/sw_64/lib/
 
 # export what is needed by arch/sw_64/boot/Makefile
