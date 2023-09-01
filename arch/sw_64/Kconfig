@@ -185,6 +185,9 @@ config AUDIT_ARCH
 config SYS_HAS_EARLY_PRINTK
 	bool
 
+config HAVE_CSRRW
+	bool
+
 menu "System setup"
 
 menu "Machine Configuration"
