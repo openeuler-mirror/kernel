@@ -60,11 +60,12 @@ struct sunway_iommu_group {
 };
 
 #define SW64_IOMMU_ENTRY_VALID		((1UL) << 63)
+#define SW64_PTE_LAST_MASK		((1UL) << 8)	/*last stage valid*/
 #define SW64_DMA_START			0x1000000
-#define SW64_IOMMU_GRN_8K		((0UL) << 4)	/* page size as 8KB */
-#define SW64_IOMMU_GRN_8M		((0x2UL) << 4)	/* page size as 8MB */
 #define SW64_PTE_GRN_MASK		((0x3UL) << 4)
 #define PAGE_8M_SHIFT			23
+#define PAGE_512M_SHIFT			29
+#define PAGE_8G_SHIFT			33
 #define SW64_IOMMU_ENABLE		3
 #define SW64_IOMMU_DISABLE		0
 #define SW64_IOMMU_LEVEL1_OFFSET	0x1ff
@@ -75,3 +76,5 @@ struct sunway_iommu_group {
 
 #define PAGE_SHIFT_IOMMU	18
 #define PAGE_SIZE_IOMMU		(_AC(1, UL) << PAGE_SHIFT_IOMMU)
+
+#define PCACHE_FLUSHPADDR_MASK		0xffffffffff80UL

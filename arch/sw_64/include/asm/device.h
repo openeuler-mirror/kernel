@@ -3,7 +3,7 @@
 #define _ASM_SW64_DEVICE_H
 
 struct dev_archdata {
-#if defined(CONFIG_SUNWAY_IOMMU)
+#if defined(CONFIG_SUNWAY_IOMMU) || defined(CONFIG_SUNWAY_IOMMU_V2)
 	void *iommu;
 #endif
 };

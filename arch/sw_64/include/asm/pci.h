@@ -95,7 +95,7 @@ extern void __init setup_chip_pci_ops(void);
 #define setup_chip_pci_ops()	do { } while (0)
 #endif
 
-#ifdef CONFIG_SUNWAY_IOMMU
+#if defined(CONFIG_SUNWAY_IOMMU) || defined(CONFIG_SUNWAY_IOMMU_V2)
 extern struct syscore_ops iommu_cpu_syscore_ops;
 #endif
 

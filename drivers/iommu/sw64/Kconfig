@@ -7,3 +7,14 @@ config SUNWAY_IOMMU
         depends on SW64 && PCI
         help
           Support for IOMMU on SW64 platform.
+
+# SW64 IOMMU V2 SUPPORT
+config SUNWAY_IOMMU_V2
+	bool "Sunway IOMMU V2 Support"
+	select IOMMU_API
+	select IOMMU_IOVA
+	depends on SW64 && PCI
+	depends on !SUNWAY_IOMMU
+	help
+	  Support for IOMMU V2 on SW64 platform. It can enable or bypass specific device by
+	  adding boot param "iommu_enable" and "iommu.passthrough".
