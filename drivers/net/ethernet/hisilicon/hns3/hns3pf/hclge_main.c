@@ -16,6 +16,7 @@
 #include <net/ipv6.h>
 #include <net/rtnetlink.h>
 #include <net/vxlan.h>
+#include "ubl.h"
 #include "hclge_cmd.h"
 #include "hclge_dcb.h"
 #include "hclge_ext.h"
@@ -1829,6 +1830,10 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 		vport->vport_id = i;
 		vport->vf_info.link_state = IFLA_VF_LINK_STATE_AUTO;
 		vport->mps = HCLGE_MAC_DEFAULT_FRAME;
+#ifdef CONFIG_HNS3_UBL
+		if (hnae3_dev_ubl_supported(hdev->ae_dev))
+			vport->mps = UB_DATA_LEN;
+#endif
 		vport->port_base_vlan_cfg.state = HNAE3_PORT_BASE_VLAN_DISABLE;
 		vport->port_base_vlan_cfg.tbl_sta = true;
 		vport->rxvlan_cfg.rx_vlan_offload_en = true;
@@ -11035,16 +11040,28 @@ static int hclge_set_mtu(struct hnae3_handle *handle, int new_mtu)
 
 int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu)
 {
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(vport->nic.pdev);
+	int l2_hlen = ETH_HLEN + ETH_FCS_LEN + 2 * VLAN_HLEN;
+	int default_size = HCLGE_MAC_DEFAULT_FRAME;
+	int min_frm_size = HCLGE_MAC_MIN_FRAME;
 	struct hclge_dev *hdev = vport->back;
 	int i, max_frm_size, ret;
 
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(ae_dev)) {
+		/* UB MTU */
+		l2_hlen = 0;
+		min_frm_size = UB_MIN_MTU;
+		default_size = UB_DATA_LEN;
+	}
+#endif
 	/* HW supprt 2 layer vlan */
-	max_frm_size = new_mtu + ETH_HLEN + ETH_FCS_LEN + 2 * VLAN_HLEN;
-	if (max_frm_size < HCLGE_MAC_MIN_FRAME ||
+	max_frm_size = new_mtu + l2_hlen;
+	if (max_frm_size < min_frm_size ||
 	    max_frm_size > hdev->ae_dev->dev_specs.max_frm_size)
 		return -EINVAL;
 
-	max_frm_size = max(max_frm_size, HCLGE_MAC_DEFAULT_FRAME);
+	max_frm_size = max(max_frm_size, default_size);
 	mutex_lock(&hdev->vport_lock);
 	/* VF's mps must fit within hdev->mps */
 	if (vport->vport_id && max_frm_size > hdev->mps) {

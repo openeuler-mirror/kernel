@@ -31,6 +31,10 @@ void hns3_unic_set_default_cc(struct sk_buff *skb)
 
 void hns3_unic_init(struct net_device *netdev)
 {
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+	struct pci_dev *pdev = h->pdev;
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
+
 	netdev->features &= ~(NETIF_F_HW_VLAN_CTAG_FILTER | NETIF_F_HW_CSUM |
 		NETIF_F_RXCSUM | NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
 		NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX);
@@ -40,6 +44,7 @@ void hns3_unic_init(struct net_device *netdev)
 		NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX);
 
 	netdev->flags &= ~(IFF_BROADCAST | IFF_MULTICAST);
+	netdev->max_mtu = ae_dev->dev_specs.max_frm_size;
 }
 
 /**
