@@ -713,7 +713,7 @@ struct request_queue {
 #define QUEUE_FLAG_NOMERGES     5	/* disable merge attempts */
 #define QUEUE_FLAG_SAME_COMP	6	/* complete on same CPU-group */
 #define QUEUE_FLAG_FAIL_IO	7	/* fake timeout */
-#define QUEUE_FLAG_THROTL_INIT_DONE 8	/* io throttle can be online */
+#define QUEUE_FLAG_REGISTER_DONE 8	/* blkdev can be opened */
 #define QUEUE_FLAG_NONROT	9	/* non-rotational device (SSD) */
 #define QUEUE_FLAG_VIRT        QUEUE_FLAG_NONROT /* paravirt device */
 #define QUEUE_FLAG_IO_STAT     10	/* do IO stats */
