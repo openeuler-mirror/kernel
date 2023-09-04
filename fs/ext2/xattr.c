@@ -696,7 +696,7 @@ ext2_xattr_set2(struct inode *inode, struct buffer_head *old_bh,
 						EXT2_I(inode)->i_block_group);
 			unsigned long count = 1;
 			int block = ext2_new_blocks(inode, goal, &count,
-						    &error);
+						    &error, 0);
 			if (error)
 				goto cleanup;
 			ea_idebug(inode, "creating block %d", block);
