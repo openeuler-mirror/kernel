@@ -17,7 +17,7 @@
 static struct workqueue_struct *remote_pager_wq;
 
 struct msg_handler_st rpg_kmsg_cbftns[GMEM_MSG_MAX_ID] = {
-#ifdef CONFIG_REMOTE_PAGER_SLAVE
+#if IS_ENABLED(CONFIG_REMOTE_PAGER_SLAVE)
 	/* HOST TO REMOTE */
 	[GMEM_TASK_PAIRING_REQUEST] = {
 		gmem_handle_task_pairing
@@ -42,7 +42,7 @@ struct msg_handler_st rpg_kmsg_cbftns[GMEM_MSG_MAX_ID] = {
 	},
 #endif
 
-#ifdef CONFIG_REMOTE_PAGER_MASTER
+#if IS_ENABLED(CONFIG_REMOTE_PAGER_MASTER)
 	/* REMOTE TO HOST */
 	[GMEM_PAGE_FAULT_REQUEST] = {
 		gmem_handle_dev_fault
