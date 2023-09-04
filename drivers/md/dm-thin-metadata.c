@@ -1771,13 +1771,15 @@ int dm_thin_remove_range(struct dm_thin_device *td,
 
 int dm_pool_block_is_shared(struct dm_pool_metadata *pmd, dm_block_t b, bool *result)
 {
-	int r;
+	int r = -EINVAL;
 	uint32_t ref_count;
 
 	down_read(&pmd->root_lock);
-	r = dm_sm_get_count(pmd->data_sm, b, &ref_count);
-	if (!r)
-		*result = (ref_count > 1);
+	if (!pmd->fail_io) {
+		r = dm_sm_get_count(pmd->data_sm, b, &ref_count);
+		if (!r)
+			*result = (ref_count > 1);
+	}
 	up_read(&pmd->root_lock);
 
 	return r;
@@ -1788,10 +1790,14 @@ int dm_pool_inc_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_
 	int r = 0;
 
 	pmd_write_lock(pmd);
-	for (; b != e; b++) {
-		r = dm_sm_inc_block(pmd->data_sm, b);
-		if (r)
-			break;
+	if (!pmd->fail_io) {
+		for (; b != e; b++) {
+			r = dm_sm_inc_block(pmd->data_sm, b);
+			if (r)
+				break;
+		}
+	} else {
+		r = -EINVAL;
 	}
 	pmd_write_unlock(pmd);
 
@@ -1800,13 +1806,17 @@ int dm_pool_inc_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_
 
 int dm_pool_dec_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_t e)
 {
-	int r = 0;
+	int r = -EINVAL;
 
 	pmd_write_lock(pmd);
-	for (; b != e; b++) {
-		r = dm_sm_dec_block(pmd->data_sm, b);
-		if (r)
-			break;
+	if (!pmd->fail_io) {
+		for (; b != e; b++) {
+			r = dm_sm_dec_block(pmd->data_sm, b);
+			if (r)
+				break;
+		}
+	} else {
+		r = -EINVAL;
 	}
 	pmd_write_unlock(pmd);
 
