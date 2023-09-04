@@ -376,3 +376,23 @@ int udma_destroy_jetty(struct ubcore_jetty *jetty)
 
 	return ret;
 }
+
+struct ubcore_tjetty *udma_import_jetty(struct ubcore_device *dev,
+				   const struct ubcore_tjetty_cfg *cfg,
+				   struct ubcore_udata *udata)
+{
+	struct ubcore_tjetty *tjetty;
+
+	tjetty = kcalloc(1, sizeof(struct ubcore_tjetty), GFP_KERNEL);
+	if (!tjetty)
+		return NULL;
+
+	return tjetty;
+}
+
+int udma_unimport_jetty(struct ubcore_tjetty *tjetty)
+{
+	kfree(tjetty);
+
+	return 0;
+}

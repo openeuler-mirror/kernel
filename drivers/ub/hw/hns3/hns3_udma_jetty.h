@@ -56,5 +56,9 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 				  const struct ubcore_jetty_cfg *cfg,
 				  struct ubcore_udata *udata);
 int udma_destroy_jetty(struct ubcore_jetty *jetty);
+struct ubcore_tjetty *udma_import_jetty(struct ubcore_device *dev,
+				   const struct ubcore_tjetty_cfg *cfg,
+				   struct ubcore_udata *udata);
+int udma_unimport_jetty(struct ubcore_tjetty *tjetty);
 
 #endif /* _UDMA_JETTY_H */
