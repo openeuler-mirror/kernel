@@ -338,7 +338,6 @@ vm_fault_t gm_host_fault_locked(struct vm_fault *vmf, enum page_entry_size pe_si
 extern gm_ret_t gm_dev_register_physmem(gm_dev_t *dev, gm_pa_t begin, gm_pa_t end);
 extern void gm_dev_unregister_physmem(gm_dev_t *dev, unsigned int nid);
 extern gm_mapping_t *gm_mappings_alloc(unsigned int nid, unsigned int order);
-extern void gm_mappings_free(gm_mapping_t *mapping, unsigned int order);
 extern gm_ret_t gm_as_create(gm_va_t begin, gm_va_t end, gm_as_alloc_t policy, gm_va_t cache_quantum, gm_as_t **new_as);
 extern gm_ret_t gm_as_destroy(gm_as_t *as);
 extern gm_ret_t gm_as_attach(gm_as_t *as, gm_dev_t *dev, gm_mmu_mode_t mode, bool activate, gm_context_t **out_ctx);

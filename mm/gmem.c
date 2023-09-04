@@ -433,25 +433,6 @@ gm_mapping_t *gm_mappings_alloc(unsigned int nid, unsigned int order)
 }
 EXPORT_SYMBOL_GPL(gm_mappings_alloc);
 
-void gm_mappings_free(gm_mapping_t *mapping, unsigned int order)
-{
-	gm_mapping_t *entry;
-	struct hnode *node = get_hnode(mapping->node_id);
-	XA_STATE(xas, &node->pages, 0);
-
-	/* TODO: support order > 0 */
-	if (order != 0)
-		return;
-
-	xas_for_each(&xas, entry, ULONG_MAX) {
-		if (entry == mapping) {
-			xas_set_mark(&xas, XA_MARK_0);
-			break;
-		}
-	}
-}
-EXPORT_SYMBOL_GPL(gm_mappings_free);
-
 /* GMEM Virtual Address Space API */
 gm_ret_t gm_as_create(gm_va_t begin, gm_va_t end, gm_as_alloc_t policy,
 		gm_va_t cache_quantum, gm_as_t **new_as)
