@@ -133,8 +133,10 @@ struct gm_mmu {
 	unsigned long cookie;
 
 	/* Synchronize VMA in a peer OS to interact with the host OS */
-	gm_ret_t (*peer_va_alloc_fixed)(struct gm_fault_t *gmf);
-	gm_ret_t (*peer_va_free)(struct gm_fault_t *gmf);
+	gm_ret_t (*peer_va_alloc_fixed)(struct mm_struct *mm, unsigned long va,
+					unsigned long size, unsigned long prot);
+	gm_ret_t (*peer_va_free)(struct mm_struct *mm, unsigned long va,
+				 unsigned long size);
 
 	/* Create physical mappings on peer host.
 	 * If copy is set, copy data [dma_addr, dma_addr + size] to peer host

@@ -207,18 +207,18 @@ gm_ret_t gmem_unmap(struct gm_fault_t *gmf)
 	return GM_RET_SUCCESS;
 }
 
-gm_ret_t gmem_alloc(struct gm_fault_t *gmf)
+gm_ret_t gmem_alloc(struct mm_struct *mm, unsigned long va, unsigned long size,
+		    unsigned long prot)
 {
 	int ret = 0;
 	struct wait_station *ws;
 	struct comm_msg_rsp *rsp;
-	struct mm_struct *mm = gmf->mm;
 	struct svm_proc *proc = search_svm_proc_by_mm(mm);
 	struct gm_pager_msg_rq req = {
 		.peer_pid = proc->peer_pid,
-		.va = gmf->va,
-		.size = gmf->size,
-		.prot = gmf->prot,
+		.va = va,
+		.size = size,
+		.prot = prot,
 	};
 
 	if (!proc) {
@@ -243,17 +243,16 @@ gm_ret_t gmem_alloc(struct gm_fault_t *gmf)
 	return GM_RET_SUCCESS;
 }
 
-gm_ret_t gmem_free(struct gm_fault_t *gmf)
+gm_ret_t gmem_free(struct mm_struct *mm, unsigned long va, unsigned long size)
 {
 	int ret = 0;
 	struct wait_station *ws;
 	struct comm_msg_rsp *rsp;
-	struct mm_struct *mm = gmf->mm;
 	struct svm_proc *proc = search_svm_proc_by_mm(mm);
 	struct gm_pager_msg_rq req = {
 		.peer_pid = proc->peer_pid,
-		.va = gmf->va,
-		.size = gmf->size,
+		.va = va,
+		.size = size,
 	};
 
 	if (!proc) {
