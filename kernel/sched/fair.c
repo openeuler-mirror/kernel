@@ -5847,11 +5847,16 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int idle_h_nr_running = task_has_idle_policy(p);
-#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-	int qos_idle_h_nr_running = task_has_qos_idle_policy(p);
-#endif
+
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 	unsigned int prev_nr = rq->cfs.h_nr_running;
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	int qos_idle_h_nr_running;
+
+	se->qos_idle = task_has_qos_idle_policy(p);
+	qos_idle_h_nr_running = se->qos_idle ? 1 : 0;
+#endif
 
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
@@ -5974,11 +5979,15 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int task_sleep = flags & DEQUEUE_SLEEP;
 	int idle_h_nr_running = task_has_idle_policy(p);
-#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-	int qos_idle_h_nr_running = task_has_qos_idle_policy(p);
-#endif
+
 	unsigned int prev_nr = rq->cfs.h_nr_running;
 	bool was_sched_idle = sched_idle_rq(rq);
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	int qos_idle_h_nr_running = se->qos_idle ? 1 : 0;
+
+	se->qos_idle = 0;
+#endif
 
 	util_est_dequeue(&rq->cfs, p);
 
