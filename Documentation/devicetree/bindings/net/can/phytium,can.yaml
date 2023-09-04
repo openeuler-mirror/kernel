@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/net/can/phytium,can.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Phytium CAN Controller
+
+maintainers:
+  - Chen Baozi <chenbaozi@phytium.com.cn>
+
+allOf:
+  - $ref: /schemas/net/can/phytium/phytium,can.yaml#
+
+properties:
+  compatible:
+    oneOf:
+      - item:
+          -const: phytium,can
+          - const: phytium,canfd
+
+  reg:
+    minItems: 1
+    items:
+      - description: Should contain CANFD controller registers location and length
+
+  interrupts:
+    maxItems: 1
+
+  clocks:
+    minItems: 1
+    items:
+      - description: CLocks used by the controller
+
+  clock-names:
+    items:
+      - const: can_clk
+
+required:
+  - compatible
+  - reg
+  - interrupts
+
+examples:
+  - |
+	 can0: can@2800a000{
+		 compatible = "phytium,canfd";
+		 reg = <0x0 0x2800a000 0x0 0x1000>;
+		 interrupts = <GIC_SPI 81 IRQ_TYPE_LEVEL_HIGH>;
+		 clocks = <&sysclk_600mhz>;
+		 clock-names = "can_clk";
+		 tx-fifo-depth = <64>;
+		 rx-fifo-depth = <64>;
+	 };
+...
