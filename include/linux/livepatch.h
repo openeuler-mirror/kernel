@@ -17,10 +17,16 @@
 
 #if IS_ENABLED(CONFIG_LIVEPATCH)
 
+#include <asm/livepatch.h>
+
 /* task patch states */
 #define KLP_UNDEFINED	-1
 #define KLP_UNPATCHED	 0
 #define KLP_PATCHED	 1
+
+#define KLP_NORMAL_FORCE	0
+#define KLP_ENFORCEMENT		1
+#define KLP_STACK_OPTIMIZE	2
 
 /**
  * struct klp_func - function structure for live patching
@@ -65,6 +71,7 @@ struct klp_func {
 	 * in kallsyms for the given object is used.
 	 */
 	unsigned long old_sympos;
+	int force; /* Only used in the solution without ftrace */
 
 	/* internal */
 	void *old_func;
@@ -72,10 +79,19 @@ struct klp_func {
 	struct list_head node;
 	struct list_head stack_node;
 	unsigned long old_size, new_size;
-	bool nop;
+	bool nop; /* Not used in the solution without ftrace */
 	bool patched;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	bool transition;
+#endif
+	void *func_node; /* Only used in the solution without ftrace */
 };
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+struct klp_hook {
+	void (*hook)(void);
+};
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 struct klp_object;
 
@@ -118,14 +134,18 @@ struct klp_object {
 	/* external */
 	const char *name;
 	struct klp_func *funcs;
-	struct klp_callbacks callbacks;
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	struct klp_hook *hooks_load;
+	struct klp_hook *hooks_unload;
+#endif
+	struct klp_callbacks callbacks; /* Not used in the solution without ftrace */
 
 	/* internal */
 	struct kobject kobj;
 	struct list_head func_list;
 	struct list_head node;
 	struct module *mod;
-	bool dynamic;
+	bool dynamic; /* Not used in the solution without ftrace */
 	bool patched;
 };
 
@@ -159,15 +179,15 @@ struct klp_patch {
 	/* external */
 	struct module *mod;
 	struct klp_object *objs;
-	struct klp_state *states;
-	bool replace;
+	struct klp_state *states; /* Not used in the solution without ftrace */
+	bool replace; /* Not used in the solution without ftrace */
 
 	/* internal */
 	struct list_head list;
 	struct kobject kobj;
 	struct list_head obj_list;
 	bool enabled;
-	bool forced;
+	bool forced; /* Not used in the solution without ftrace */
 	struct work_struct free_work;
 	struct completion finish;
 };
@@ -192,6 +212,7 @@ struct klp_patch {
 #define klp_for_each_func(obj, func)	\
 	list_for_each_entry(func, &obj->func_list, node)
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 int klp_enable_patch(struct klp_patch *);
 
 /* Called from the module loader during module coming/going states */
@@ -229,6 +250,70 @@ void klp_shadow_free_all(unsigned long id, klp_shadow_dtor_t dtor);
 
 struct klp_state *klp_get_state(struct klp_patch *patch, unsigned long id);
 struct klp_state *klp_get_prev_state(unsigned long id);
+
+#else /* !CONFIG_LIVEPATCH_FTRACE */
+
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	void *old_func;
+	struct arch_klp_data arch_data;
+};
+
+static inline
+int klp_compare_address(unsigned long pc, unsigned long func_addr,
+			const char *func_name, unsigned long check_size)
+{
+	if (pc >= func_addr && pc < func_addr + check_size) {
+		pr_warn("func %s is in use!\n", func_name);
+		/* Return -EAGAIN for next retry */
+		return -EAGAIN;
+	}
+	return 0;
+}
+
+typedef int (*klp_add_func_t)(struct list_head *func_list,
+			       unsigned long func_addr, unsigned long func_size,
+			       const char *func_name, int force);
+
+struct walk_stackframe_args {
+	void *data;
+	int ret;
+	bool (*check_func)(void *data, int *ret, unsigned long pc);
+};
+
+#ifndef klp_smp_isb
+#define klp_smp_isb()
+#endif
+
+#define KLP_MIGRATION_NAME_PREFIX	"migration/"
+static inline bool klp_is_migration_thread(const char *task_name)
+{
+	/*
+	 * current on other CPU
+	 * we call this in stop_machine, so the current
+	 * of each CPUs is migration, just compare the
+	 * task_comm here, because we can't get the
+	 * cpu_curr(task_cpu(t))). This assumes that no
+	 * other thread will pretend to be a stopper via
+	 * task_comm.
+	 */
+	return !strncmp(task_name, KLP_MIGRATION_NAME_PREFIX,
+			sizeof(KLP_MIGRATION_NAME_PREFIX) - 1);
+}
+
+int klp_register_patch(struct klp_patch *patch);
+int klp_unregister_patch(struct klp_patch *patch);
+static inline int klp_module_coming(struct module *mod) { return 0; }
+static inline void klp_module_going(struct module *mod) {}
+static inline bool klp_patch_pending(struct task_struct *task) { return false; }
+static inline void klp_update_patch_state(struct task_struct *task) {}
+static inline void klp_copy_process(struct task_struct *child) {}
+static inline bool klp_have_reliable_stack(void) { return true; }
+extern void module_enable_ro(const struct module *mod, bool after_init);
+extern void module_disable_ro(const struct module *mod);
+
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 			     const char *shstrtab, const char *strtab,

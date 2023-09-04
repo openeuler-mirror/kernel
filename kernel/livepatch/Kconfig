@@ -1,20 +1,90 @@
 # SPDX-License-Identifier: GPL-2.0-only
-config HAVE_LIVEPATCH
+config HAVE_LIVEPATCH_FTRACE
 	bool
 	help
-	  Arch supports kernel live patching
+	  Arch supports kernel live patching based on ftrace
+
+config HAVE_LIVEPATCH_WO_FTRACE
+	bool
+	help
+	  Arch supports kernel live patching without ftrace
+
+menu "Enable Livepatch"
 
 config LIVEPATCH
 	bool "Kernel Live Patching"
-	depends on DYNAMIC_FTRACE_WITH_REGS || DYNAMIC_FTRACE_WITH_ARGS
+	depends on (HAVE_LIVEPATCH_FTRACE && (DYNAMIC_FTRACE_WITH_REGS || DYNAMIC_FTRACE_WITH_ARGS)) || (HAVE_LIVEPATCH_WO_FTRACE && DEBUG_INFO)
 	depends on MODULES
 	depends on SYSFS
 	depends on KALLSYMS_ALL
-	depends on HAVE_LIVEPATCH
 	depends on !TRIM_UNUSED_KSYMS
+	default n
 	help
 	  Say Y here if you want to support kernel live patching.
 	  This option has no runtime impact until a kernel "patch"
 	  module uses the interface provided by this option to register
 	  a patch, causing calls to patched functions to be redirected
 	  to new function code contained in the patch module.
+
+choice
+	prompt "live patching method"
+	depends on LIVEPATCH
+	help
+	  Live patching implementation method configuration.
+	  Choose an interested live patching solution which will
+	  allow calls to patched functions to be redirected to new
+	  function code contained in the patch module.
+
+config LIVEPATCH_FTRACE
+	bool "based on ftrace"
+	depends on HAVE_LIVEPATCH_FTRACE
+	depends on DYNAMIC_FTRACE_WITH_REGS || DYNAMIC_FTRACE_WITH_ARGS
+	help
+	  Supports kernel live patching based on ftrace.
+	  This is the original implementation of kernel live
+	  patching which is just renamed to distinguish from
+	  another live patching solution.
+
+config LIVEPATCH_WO_FTRACE
+	bool "without ftrace"
+	depends on HAVE_LIVEPATCH_WO_FTRACE
+	depends on DEBUG_INFO
+	select LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	help
+	  Supports kernel live patching without ftrace.
+	  This solution will patch the first few instructions
+	  of a function so that caller of it will jump to
+	  another expected function.
+	  Note that this patching solution would not handle conflict
+	  with other patching technologies (i.e. ftrace, kprobe),
+	  please avoid acting them on the same function!
+
+endchoice
+
+config LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	bool "Stop machine consistency"
+	depends on LIVEPATCH_WO_FTRACE
+	help
+	  Use stop machine consistency model
+	  stop-machine consistency and kpatch's stack
+	  trace checking.
+
+config LIVEPATCH_STACK
+	bool "Enforcing the patch stacking principle"
+	depends on LIVEPATCH_WO_FTRACE
+	default y
+	help
+	  Say N here if you want to remove the patch stacking principle.
+
+config LIVEPATCH_RESTRICT_KPROBE
+	bool "Enforing check livepatch and kprobe restrict"
+	depends on LIVEPATCH_WO_FTRACE
+	depends on KPROBES
+	default y
+	help
+	  Livepatch without ftrace and kprobe are conflicting.
+	  We should not patch for the functions where registered with kprobe,
+	  and vice versa.
+	  Say Y here if you want to check those.
+
+endmenu

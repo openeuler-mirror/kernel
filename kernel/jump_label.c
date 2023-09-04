@@ -628,6 +628,11 @@ static int jump_label_add_module(struct module *mod)
 	struct static_key *key = NULL;
 	struct static_key_mod *jlm, *jlm2;
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return 0;
+#endif
+
 	/* if the module doesn't have jump label entries, just return */
 	if (iter_start == iter_stop)
 		return 0;
@@ -689,6 +694,11 @@ static void jump_label_del_module(struct module *mod)
 	struct jump_entry *iter;
 	struct static_key *key = NULL;
 	struct static_key_mod *jlm, **prev;
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return;
+#endif
 
 	for (iter = iter_start; iter < iter_stop; iter++) {
 		if (jump_entry_key(iter) == key)
@@ -765,6 +775,18 @@ static struct notifier_block jump_label_module_nb = {
 	.notifier_call = jump_label_module_notify,
 	.priority = 1, /* higher than tracepoints */
 };
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+int jump_label_register(struct module *mod)
+{
+	int ret;
+
+	ret = jump_label_module_notify(&jump_label_module_nb,
+			MODULE_STATE_COMING, mod);
+
+	return notifier_to_errno(ret);
+}
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 static __init int jump_label_init_module(void)
 {

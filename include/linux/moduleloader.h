@@ -75,7 +75,7 @@ int apply_relocate_add(Elf_Shdr *sechdrs,
 		       unsigned int symindex,
 		       unsigned int relsec,
 		       struct module *mod);
-#ifdef CONFIG_LIVEPATCH
+#ifdef CONFIG_LIVEPATCH_FTRACE
 /*
  * Some architectures (namely x86_64 and ppc64) perform sanity checks when
  * applying relocations.  If a patched module gets unloaded and then later
@@ -115,6 +115,8 @@ void module_arch_cleanup(struct module *mod);
 
 /* Any cleanup before freeing mod->module_init */
 void module_arch_freeing_init(struct module *mod);
+
+void flush_module_icache(const struct module *mod);
 
 #if (defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)) && \
 		!defined(CONFIG_KASAN_VMALLOC)

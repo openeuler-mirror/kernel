@@ -239,6 +239,7 @@ config ARM64
 	select SWIOTLB
 	select SYSCTL_EXCEPTION_TRACE
 	select THREAD_INFO_IN_TASK
+	select HAVE_LIVEPATCH_WO_FTRACE
 	select HAVE_ARCH_USERFAULTFD_MINOR if USERFAULTFD
 	select TRACE_IRQFLAGS_SUPPORT
 	select TRACE_IRQFLAGS_NMI_SUPPORT
@@ -401,6 +402,8 @@ config UNWIND_TABLES
 	bool
 
 source "arch/arm64/Kconfig.platforms"
+
+source "kernel/livepatch/Kconfig"
 
 menu "Kernel Features"
 

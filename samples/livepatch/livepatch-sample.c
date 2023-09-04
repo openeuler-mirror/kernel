@@ -30,6 +30,31 @@
  */
 
 #include <linux/seq_file.h>
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+void load_hook(void)
+{
+	pr_info("load_hook\n");
+}
+
+void unload_hook(void)
+{
+	pr_info("unload_hook\n");
+}
+
+static struct klp_hook hooks_load[] = {
+	{
+		.hook = load_hook
+	}, { }
+};
+
+static struct klp_hook hooks_unload[] = {
+	{
+		.hook = unload_hook
+	}, { }
+};
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
+
 static int livepatch_cmdline_proc_show(struct seq_file *m, void *v)
 {
 	seq_printf(m, "%s\n", "this has been live patched");
@@ -47,6 +72,10 @@ static struct klp_object objs[] = {
 	{
 		/* name being NULL means vmlinux */
 		.funcs = funcs,
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+		.hooks_load = hooks_load,
+		.hooks_unload = hooks_unload,
+#endif
 	}, { }
 };
 
@@ -57,11 +86,18 @@ static struct klp_patch patch = {
 
 static int livepatch_init(void)
 {
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	return klp_register_patch(&patch);
+#else
 	return klp_enable_patch(&patch);
+#endif
 }
 
 static void livepatch_exit(void)
 {
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	WARN_ON(klp_unregister_patch(&patch));
+#endif
 }
 
 module_init(livepatch_init);
