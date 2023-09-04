@@ -221,8 +221,6 @@ struct gm_dev {
 	gm_mapping_t *gm_mapping;
 };
 
-#define HOST_NODE_ID	(-1)
-
 #define GM_PAGE_DIRTY	0x8 /* Whether the page is dirty */
 #define GM_PAGE_CPU	0x10 /* Determines whether page is a pointer or a pfn number. */
 #define GM_PAGE_DEVICE	0x20
@@ -234,15 +232,6 @@ struct gm_dev {
 
 /* Records the status of a page-size physical page */
 struct gm_mapping {
-	/*
-	 * The node index may have three definitions:
-	 * 1. a common CPU node
-	 * 2. a hetero-node, e.g. GPU (that not necessarily supports CC ld/st)
-	 * 3. a network ip (another OS that may have multiple hNUMA nodes), dynamically attached by dsm_attach
-	 * Among these definitions, #1 and #2 in combination defines an h-NUMA topology
-	 */
-	unsigned int node_id;
-
 	unsigned int flag;
 
 	union {
@@ -254,17 +243,22 @@ struct gm_mapping {
 	struct mutex lock;
 };
 
+static inline void gm_mapping_flags_set(gm_mapping_t *gm_mapping, int flags)
+{
+	if (flags & GM_PAGE_TYPE_MASK)
+		gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
+
+	gm_mapping->flag |= flags;
+}
+
+static inline void gm_mapping_flags_clear(gm_mapping_t *gm_mapping, int flags)
+{
+	gm_mapping->flag &= ~flags;
+}
+
 static inline bool gm_mapping_cpu(gm_mapping_t *gm_mapping)
 {
 	return !!(gm_mapping->flag & GM_PAGE_CPU);
-}
-
-static inline void set_gm_mapping_host(gm_mapping_t *gm_mapping, struct page *page)
-{
-	gm_mapping->node_id = HOST_NODE_ID;
-	gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
-	gm_mapping->flag |= GM_PAGE_CPU;
-	gm_mapping->page = page;
 }
 
 static inline bool gm_mapping_device(gm_mapping_t *gm_mapping)
@@ -272,48 +266,14 @@ static inline bool gm_mapping_device(gm_mapping_t *gm_mapping)
 	return !!(gm_mapping->flag & GM_PAGE_DEVICE);
 }
 
-static inline void set_gm_mapping_device(gm_mapping_t *gm_mapping, gm_dev_t *dev)
-{
-	gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
-	gm_mapping->flag |= GM_PAGE_DEVICE;
-	gm_mapping->dev = dev;
-}
-
 static inline bool gm_mapping_nomap(gm_mapping_t *gm_mapping)
 {
 	return !!(gm_mapping->flag & GM_PAGE_NOMAP);
 }
 
-static inline void set_gm_mapping_nomap(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
-	gm_mapping->flag |= GM_PAGE_NOMAP;
-	gm_mapping->page = NULL;
-}
-
-static inline void set_gm_mapping_willneed(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag |= GM_PAGE_WILLNEED;
-}
-
-static inline void clear_gm_mapping_willneed(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag &= ~GM_PAGE_WILLNEED;
-}
-
 static inline bool gm_mapping_willneed(gm_mapping_t *gm_mapping)
 {
 	return !!(gm_mapping->flag & GM_PAGE_WILLNEED);
-}
-
-static inline void set_gm_mapping_pinned(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag |= GM_PAGE_PINNED;
-}
-
-static inline void clear_gm_mapping_pinned(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag &= ~GM_PAGE_PINNED;
 }
 
 static inline bool gm_mapping_pinned(gm_mapping_t *gm_mapping)

@@ -348,7 +348,7 @@ int gmem_handle_evict_page(struct rpg_kmsg_message *msg)
 	mutex_lock(&gm_mapping->lock);
 	if (gm_mapping_willneed(gm_mapping)) {
 		pr_info("gmem: racing with prefetch or willneed so cancel evict\n");
-		clear_gm_mapping_willneed(gm_mapping);
+		gm_mapping_flags_clear(gm_mapping, GM_PAGE_WILLNEED);
 		ret = -EINVAL;
 		goto unlock;
 	}
@@ -385,7 +385,8 @@ int gmem_handle_evict_page(struct rpg_kmsg_message *msg)
 		goto unlock;
 	}
 
-	set_gm_mapping_host(gm_mapping, page);
+	gm_mapping_flags_set(gm_mapping, GM_PAGE_CPU);
+	gm_mapping->page = page;
 
 unlock:
 	mutex_unlock(&gm_mapping->lock);

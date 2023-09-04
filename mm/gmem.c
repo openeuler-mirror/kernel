@@ -254,7 +254,7 @@ gm_ret_t gm_dev_fault(struct mm_struct *mm, gm_va_t addr, gm_dev_t *dev, int beh
 		page = gm_mapping->page;
 		if (!page) {
 			pr_err("gmem: host gm_mapping page is NULL. Set nomap\n");
-			set_gm_mapping_nomap(gm_mapping);
+			gm_mapping_flags_set(gm_mapping, GM_PAGE_NOMAP);
 			goto unlock;
 		}
 		get_page(page);
@@ -274,13 +274,13 @@ peer_map:
 			 * gmem page is migrating due to overcommit.
 			 * update page to willneed and this will stop page evicting
 			 */
-			set_gm_mapping_willneed(gm_mapping);
+			gm_mapping_flags_set(gm_mapping, GM_PAGE_WILLNEED);
 			gmem_state_counter(NR_PAGE_MIGRATING, 1);
 			ret = GM_RET_SUCCESS;
 		} else {
 			pr_err("gmem: peer map failed\n");
 			if (page) {
-				set_gm_mapping_nomap(gm_mapping);
+				gm_mapping_flags_set(gm_mapping, GM_PAGE_NOMAP);
 				put_page(page);
 			}
 		}
@@ -292,7 +292,8 @@ peer_map:
 		put_page(page);
 	}
 
-	set_gm_mapping_device(gm_mapping, dev);
+	gm_mapping_flags_set(gm_mapping, GM_PAGE_DEVICE);
+	gm_mapping->dev = dev;
 unlock:
 	mutex_unlock(&gm_mapping->lock);
 mmap_unlock:
@@ -368,7 +369,6 @@ gm_ret_t gm_dev_register_physmem(gm_dev_t *dev, gm_pa_t begin, gm_pa_t end)
 		goto deinit_hnode;
 
 	for (i = 0; i < page_num; i++, addr += PAGE_SIZE) {
-		mapping[i].node_id = hnode->id;
 		mapping[i].pfn = addr >> PAGE_SHIFT;
 		mapping[i].flag = 0;
 	}
@@ -698,7 +698,7 @@ static int hmadvise_do_eagerfree(unsigned long addr, size_t size)
 				continue;
 			}
 		}
-		set_gm_mapping_nomap(gm_mapping);
+		gm_mapping_flags_set(gm_mapping, GM_PAGE_NOMAP);
 		mutex_unlock(&gm_mapping->lock);
 	} while (start += page_size, start != end);
 
