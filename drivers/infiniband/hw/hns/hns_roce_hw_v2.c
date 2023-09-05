@@ -7246,7 +7246,8 @@ static bool check_vf_support(struct pci_dev *vf)
 	if (!hr_dev)
 		return false;
 
-	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	bond_grp = hns_roce_get_bond_grp(get_hr_netdev(hr_dev, 0),
+					 pf->bus->number);
 	if (bond_grp)
 		return false;
 
@@ -7376,6 +7377,19 @@ reset_chk_err:
 static void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 					   bool reset)
 {
+	struct hns_roce_bond_group *bond_grp;
+
+	/* Wait for the completion of bond work to avoid concurrency */
+	if (handle->rinfo.instance_state == HNS_ROCE_STATE_BOND_UNINIT) {
+		bond_grp = hns_roce_get_bond_grp(handle->rinfo.netdev,
+						 handle->pdev->bus->number);
+		if (bond_grp) {
+			wait_for_completion(&bond_grp->bond_work_done);
+			if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED)
+				kfree(bond_grp);
+		}
+	}
+
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
 		return;
 
@@ -7409,7 +7423,7 @@ void hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
 		return;
 
-	handle->rinfo.instance_state = HNS_ROCE_STATE_UNINIT;
+	handle->rinfo.instance_state = HNS_ROCE_STATE_BOND_UNINIT;
 
 	__hns_roce_hw_v2_uninit_instance(handle, false, false);
 
@@ -7524,9 +7538,11 @@ static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
 	struct net_device *netdev = handle->rinfo.netdev;
 	struct hns_roce_dev *hr_dev = handle->priv;
 	struct hns_roce_bond_group *bond_grp;
+	struct net_device *hr_net_dev;
 	struct ib_event event;
 	unsigned long flags;
 	u8 phy_port;
+	u8 bus_num;
 
 	if (linkup || !hr_dev)
 		return;
@@ -7536,7 +7552,9 @@ static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
 	 * netdev but not only one. So bond device cannot get a correct
 	 * link status from this path.
 	 */
-	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	hr_net_dev = get_hr_netdev(hr_dev, 0);
+	bus_num = get_hr_bus_num(hr_dev);
+	bond_grp = hns_roce_get_bond_grp(hr_net_dev, bus_num);
 	if (bond_grp)
 		return;
 

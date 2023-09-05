@@ -119,10 +119,12 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 
 static enum ib_port_state get_upper_port_state(struct hns_roce_dev *hr_dev)
 {
+	struct net_device *net_dev = get_hr_netdev(hr_dev, 0);
 	struct hns_roce_bond_group *bond_grp;
+	u8 bus_num = get_hr_bus_num(hr_dev);
 	struct net_device *upper;
 
-	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
 	upper = bond_grp ? bond_grp->upper_dev : NULL;
 	if (upper)
 		return get_port_state(upper);
@@ -197,7 +199,8 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 	hr_dev = container_of(self, struct hns_roce_dev, iboe.nb);
 	iboe = &hr_dev->iboe;
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
-		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		bond_grp = hns_roce_get_bond_grp(get_hr_netdev(hr_dev, 0),
+						 get_hr_bus_num(hr_dev));
 		upper = bond_grp ? bond_grp->upper_dev : NULL;
 	}
 
@@ -850,13 +853,15 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 				       bool bond_cleanup)
 {
+	struct net_device *net_dev = get_hr_netdev(hr_dev, 0);
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hns_roce_bond_group *bond_grp;
+	u8 bus_num = get_hr_bus_num(hr_dev);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
 		unregister_netdevice_notifier(&hr_dev->bond_nb);
-		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
 		if (bond_grp) {
 			if (bond_cleanup)
 				hns_roce_cleanup_bond(bond_grp);
