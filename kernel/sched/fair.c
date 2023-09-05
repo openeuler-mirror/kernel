@@ -168,6 +168,7 @@ int __weak arch_asym_cpu_priority(int cpu)
  */
 #define capacity_greater(cap1, cap2) ((cap1) * 1024 > (cap2) * 1078)
 #endif
+#include <linux/bpf_sched.h>
 
 #ifdef CONFIG_QOS_SCHED
 
@@ -5025,6 +5026,21 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 	ideal_runtime = min_t(u64, sched_slice(cfs_rq, curr), sysctl_sched_latency);
 
 	delta_exec = curr->sum_exec_runtime - curr->prev_sum_exec_runtime;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_check_preempt_tick(curr, delta_exec);
+
+		if (ret < 0)
+			return;
+		else if (ret > 0) {
+			resched_curr(rq_of(cfs_rq));
+			clear_buddies(cfs_rq, curr);
+			return;
+		}
+	}
+#endif
+
 	if (delta_exec > ideal_runtime) {
 		resched_curr(rq_of(cfs_rq));
 		/*
@@ -7995,6 +8011,15 @@ wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
 {
 	s64 gran, vdiff = curr->vruntime - se->vruntime;
 
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_wakeup_preempt_entity(curr, se);
+
+		if (ret)
+			return ret;
+	}
+#endif
+
 	if (vdiff <= 0)
 		return -1;
 
@@ -8079,6 +8104,17 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	if (unlikely(task_has_idle_policy(curr)) &&
 	    likely(!task_has_idle_policy(p)))
 		goto preempt;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_check_preempt_wakeup(current, p);
+
+		if (ret < 0)
+			return;
+		else if (ret > 0)
+			goto preempt;
+	}
+#endif
 
 	/*
 	 * Batch and idle tasks do not preempt non-idle tasks (their preemption
