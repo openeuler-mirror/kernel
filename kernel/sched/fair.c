@@ -192,6 +192,7 @@ static DEFINE_PER_CPU(int, qos_cpu_overload);
 unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
 unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
 static int unthrottle_qos_cfs_rqs(int cpu);
+static bool qos_smt_expelled(int this_cpu);
 #endif
 
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
@@ -8304,6 +8305,15 @@ preempt:
 }
 
 #ifdef CONFIG_QOS_SCHED
+static inline bool qos_timer_is_activated(int cpu)
+{
+	return hrtimer_active(per_cpu_ptr(&qos_overload_timer, cpu));
+}
+
+static inline void cancel_qos_timer(int cpu)
+{
+	hrtimer_cancel(per_cpu_ptr(&qos_overload_timer, cpu));
+}
 
 static inline bool is_offline_task(struct task_struct *p)
 {
@@ -8376,7 +8386,7 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	sub_nr_running(rq, task_delta);
 
 done:
-	if (list_empty(&per_cpu(qos_throttled_cfs_rq, cpu_of(rq))))
+	if (!qos_timer_is_activated(cpu_of(rq)))
 		start_qos_hrtimer(cpu_of(rq));
 
 	cfs_rq->throttled = QOS_THROTTLED;
@@ -8467,10 +8477,6 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 unthrottle_throttle:
 
 	assert_list_leaf_cfs_rq(rq);
-
-	/* Determine whether we need to wake up potentially idle CPU: */
-	if (rq->curr == rq->idle && rq->cfs.nr_running)
-		resched_curr(rq);
 }
 
 static int __unthrottle_qos_cfs_rqs(int cpu)
@@ -8492,11 +8498,10 @@ static int __unthrottle_qos_cfs_rqs(int cpu)
 static int unthrottle_qos_cfs_rqs(int cpu)
 {
 	int res;
-
 	res = __unthrottle_qos_cfs_rqs(cpu);
-	if (res)
-		hrtimer_cancel(&(per_cpu(qos_overload_timer, cpu)));
 
+	if (qos_timer_is_activated(cpu) && !qos_smt_expelled(cpu))
+		cancel_qos_timer(cpu);
 	return res;
 }
 
@@ -8552,8 +8557,13 @@ static enum hrtimer_restart qos_overload_timer_handler(struct hrtimer *timer)
 	struct rq *rq = this_rq();
 
 	rq_lock_irqsave(rq, &rf);
-	if (__unthrottle_qos_cfs_rqs(smp_processor_id()))
-		__this_cpu_write(qos_cpu_overload, 1);
+	__unthrottle_qos_cfs_rqs(smp_processor_id());
+	__this_cpu_write(qos_cpu_overload, 1);
+
+	/* Determine whether we need to wake up potentially idle CPU. */
+	if (rq->curr == rq->idle && rq->cfs.nr_running)
+		resched_curr(rq);
+
 	rq_unlock_irqrestore(rq, &rf);
 
 	return HRTIMER_NORESTART;
@@ -8592,6 +8602,13 @@ static void qos_schedule_throttle(struct task_struct *p)
 			set_notify_resume(p);
 	}
 }
+
+#ifndef CONFIG_QOS_SCHED_SMT_EXPELLER
+static bool qos_smt_expelled(int this_cpu)
+{
+	return false;
+}
+#endif
 
 #endif
 
@@ -8780,8 +8797,12 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 
 again:
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-	if (qos_smt_expelled(this_cpu)) {
+	if (qos_smt_expelled(this_cpu) && !__this_cpu_read(qos_cpu_overload)) {
 		__this_cpu_write(qos_smt_status, QOS_LEVEL_OFFLINE);
+
+		if (!qos_timer_is_activated(this_cpu))
+			start_qos_hrtimer(this_cpu);
+
 		schedstat_inc(rq->curr->stats.nr_qos_smt_expelled);
 		trace_sched_qos_smt_expelled(rq->curr, per_cpu(qos_smt_status, this_cpu));
 		return NULL;
@@ -8972,7 +8993,8 @@ idle:
 		goto again;
 	}
 
-	__this_cpu_write(qos_cpu_overload, 0);
+	if (!qos_smt_expelled(cpu_of(rq)))
+		__this_cpu_write(qos_cpu_overload, 0);
 #endif
 	/*
 	 * rq is about to be idle, check if we need to update the
