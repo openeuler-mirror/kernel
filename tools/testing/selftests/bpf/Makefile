@@ -41,6 +41,7 @@ TEST_GEN_PROGS = test_verifier test_tag test_maps test_lru_map test_lpm_map test
 	test_cgroup_storage \
 	test_tcpnotify_user test_sysctl \
 	test_progs-no_alu32
+TEST_GEN_PROGS += file_read_pattern
 
 # Also test bpf-gcc, if present
 ifneq ($(BPF_GCC),)
