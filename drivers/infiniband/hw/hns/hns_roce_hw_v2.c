@@ -7393,6 +7393,9 @@ struct hns_roce_dev
 	int ret;
 
 	handle = bond_grp->bond_func_info[func_idx].handle;
+	if (!handle || !handle->client)
+		return NULL;
+
 	ret = hns_roce_hw_v2_init_instance(handle);
 	if (ret)
 		return NULL;

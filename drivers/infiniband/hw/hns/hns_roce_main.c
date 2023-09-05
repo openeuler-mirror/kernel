@@ -858,19 +858,34 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hns_roce_bond_group *bond_grp;
 	u8 bus_num = get_hr_bus_num(hr_dev);
+	int i;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
-		unregister_netdevice_notifier(&hr_dev->bond_nb);
-		bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
-		if (bond_grp) {
-			if (bond_cleanup)
-				hns_roce_cleanup_bond(bond_grp);
-			else if (priv->handle->rinfo.reset_state ==
-				 HNS_ROCE_STATE_RST_UNINIT)
-				bond_grp->main_hr_dev = NULL;
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
+		goto normal_unregister;
+
+	unregister_netdevice_notifier(&hr_dev->bond_nb);
+	bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
+	if (!bond_grp)
+		goto normal_unregister;
+
+	if (bond_cleanup) {
+		/* To avoid the loss of other slave devices when main_hr_dev
+		 * is unregistered, re-initialized the remaining slaves before
+		 * the bond resources cleanup.
+		 */
+		bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
+			net_dev = bond_grp->bond_func_info[i].net_dev;
+			if (net_dev && net_dev != iboe->netdevs[0])
+				hns_roce_bond_init_client(bond_grp, i);
 		}
+		hns_roce_cleanup_bond(bond_grp);
+	} else if (priv->handle->rinfo.reset_state ==
+		   HNS_ROCE_STATE_RST_UNINIT) {
+		bond_grp->main_hr_dev = NULL;
 	}
 
+normal_unregister:
 	hr_dev->active = false;
 	unregister_netdevice_notifier(&iboe->nb);
 	ib_unregister_device(&hr_dev->ib_dev);
