@@ -584,6 +584,33 @@ static int sp_init_group_master(struct task_struct *tsk, struct mm_struct *mm)
 	return ret;
 }
 
+static struct sp_group *sp_get_local_group(struct task_struct *tsk, struct mm_struct *mm)
+{
+	int ret;
+	struct sp_group_master *master;
+
+	down_read(&sp_global_sem);
+	master = mm->sp_group_master;
+	if (master && master->local) {
+		atomic_inc(&master->local->use_count);
+		up_read(&sp_global_sem);
+		return master->local;
+	}
+	up_read(&sp_global_sem);
+
+	down_write(&sp_global_sem);
+	ret = sp_init_group_master_locked(tsk, mm);
+	if (ret) {
+		up_write(&sp_global_sem);
+		return ERR_PTR(ret);
+	}
+	master = mm->sp_group_master;
+	atomic_inc(&master->local->use_count);
+	up_write(&sp_global_sem);
+
+	return master->local;
+}
+
 static void update_mem_usage_alloc(unsigned long size, bool inc,
 		bool is_hugepage, struct sp_group_node *spg_node)
 {
@@ -2900,6 +2927,7 @@ void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 }
 EXPORT_SYMBOL_GPL(mg_sp_walk_page_free);
 
+static bool is_sp_dynamic_dvpp_addr(unsigned long addr);
 /**
  * mg_sp_config_dvpp_range() - User can config the share pool start address
  *                          of each Da-vinci device.
@@ -2914,7 +2942,54 @@ EXPORT_SYMBOL_GPL(mg_sp_walk_page_free);
  */
 bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int tgid)
 {
-	return false;
+	int ret;
+	bool err = false;
+	struct task_struct *tsk;
+	struct mm_struct *mm;
+	struct sp_group *spg;
+	struct sp_mapping *spm;
+	unsigned long default_start;
+
+	if (!sp_is_enabled())
+		return false;
+
+	/* NOTE: check the start address */
+	if (tgid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
+	    device_id < 0 || device_id >= MAX_DEVID || !is_online_node_id(device_id)
+		|| !is_sp_dynamic_dvpp_addr(start) || !is_sp_dynamic_dvpp_addr(start + size - 1))
+		return false;
+
+	ret = get_task(tgid, &tsk);
+	if (ret)
+		return false;
+
+	mm = get_task_mm(tsk->group_leader);
+	if (!mm)
+		goto put_task;
+
+	spg = sp_get_local_group(tsk, mm);
+	if (IS_ERR(spg))
+		goto put_mm;
+
+	spm = spg->mapping[SP_MAPPING_DVPP];
+	default_start = MMAP_SHARE_POOL_DVPP_START + device_id * MMAP_SHARE_POOL_16G_SIZE;
+	/* The dvpp range of each group can be configured only once */
+	if (spm->start[device_id] != default_start)
+		goto put_spg;
+
+	spm->start[device_id] = start;
+	spm->end[device_id] = start + size;
+
+	err = true;
+
+put_spg:
+	sp_group_put(spg);
+put_mm:
+	mmput(mm);
+put_task:
+	put_task_struct(tsk);
+
+	return err;
 }
 EXPORT_SYMBOL_GPL(mg_sp_config_dvpp_range);
 
