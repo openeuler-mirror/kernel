@@ -943,6 +943,11 @@ config MEMCG
 	help
 	  Provides control over the memory footprint of tasks in a cgroup.
 
+config MEMCG_V1_THRESHOLD_QOS
+	bool "Qos memcg threshold in v1"
+	depends on MEMCG
+	default n
+
 config MEMCG_KMEM
 	bool
 	depends on MEMCG

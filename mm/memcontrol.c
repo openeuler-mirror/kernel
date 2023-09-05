@@ -4575,8 +4575,10 @@ static int mem_cgroup_oom_control_read(struct seq_file *sf, void *v)
 	seq_printf(sf, "under_oom %d\n", (bool)memcg->under_oom);
 	seq_printf(sf, "oom_kill %lu\n",
 		   atomic_long_read(&memcg->memory_events[MEMCG_OOM_KILL]));
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
 	seq_printf(sf, "oom_kill_local %lu\n",
 		   atomic_long_read(&memcg->memory_events_local[MEMCG_OOM_KILL]));
+#endif
 
 	return 0;
 }
@@ -5167,6 +5169,7 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
 static void __memcg_events_show(struct seq_file *m, atomic_long_t *events)
 {
 	seq_printf(m, "low %lu\n", atomic_long_read(&events[MEMCG_LOW]));
@@ -5191,6 +5194,7 @@ static int memcg_events_local_show(struct seq_file *m, void *v)
 	__memcg_events_show(m, memcg->memory_events_local);
 	return 0;
 }
+#endif
 
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
@@ -5318,6 +5322,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = mem_cgroup_reset,
 		.read_u64 = mem_cgroup_read_u64,
 	},
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
 	{
 		.name = "min",
 		.flags = CFTYPE_NOT_ON_ROOT,
@@ -5348,6 +5353,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.file_offset = offsetof(struct mem_cgroup, events_local_file),
 		.seq_show = memcg_events_local_show,
 	},
+#endif
 	{ },	/* terminate */
 };
 
