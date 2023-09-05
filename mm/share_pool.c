@@ -671,6 +671,13 @@ static void spa_dec_usage(struct sp_area *spa)
 		atomic64_sub(spa->real_size, &sp_overall_stat.spa_total_size);
 	}
 }
+
+static inline void check_interrupt_context(void)
+{
+	if (unlikely(in_interrupt()))
+		panic("function can't be used in interrupt context\n");
+}
+
 /**
  * mp_sp_group_id_by_pid() - Get the sp_group ID array of a process.
  * @tgid: tgid of target process.
@@ -1117,6 +1124,247 @@ void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 }
 EXPORT_SYMBOL_GPL(mg_sp_make_share_k2u);
 
+static int sp_pmd_entry(pmd_t *pmd, unsigned long addr,
+			unsigned long next, struct mm_walk *walk)
+{
+	struct page *page;
+	struct sp_walk_data *sp_walk_data = walk->private;
+
+	/*
+	 * There exist a scene in DVPP where the pagetable is huge page but its
+	 * vma doesn't record it, something like THP.
+	 * So we cannot make out whether it is a hugepage map until we access the
+	 * pmd here. If mixed size of pages appear, just return an error.
+	 */
+	if (pmd_huge(*pmd)) {
+		if (!sp_walk_data->is_page_type_set) {
+			sp_walk_data->is_page_type_set = true;
+			sp_walk_data->is_hugepage = true;
+		} else if (!sp_walk_data->is_hugepage) {
+			return -EFAULT;
+		}
+
+		/* To skip pte level walk */
+		walk->action = ACTION_CONTINUE;
+
+		page = pmd_page(*pmd);
+		get_page(page);
+		sp_walk_data->pages[sp_walk_data->page_count++] = page;
+
+		return 0;
+	}
+
+	if (!sp_walk_data->is_page_type_set) {
+		sp_walk_data->is_page_type_set = true;
+		sp_walk_data->is_hugepage = false;
+	} else if (sp_walk_data->is_hugepage)
+		return -EFAULT;
+
+	sp_walk_data->pmd = pmd;
+
+	return 0;
+}
+
+static int sp_pte_entry(pte_t *pte, unsigned long addr,
+			unsigned long next, struct mm_walk *walk)
+{
+	struct page *page;
+	struct sp_walk_data *sp_walk_data = walk->private;
+	pmd_t *pmd = sp_walk_data->pmd;
+
+retry:
+	if (unlikely(!pte_present(*pte))) {
+		swp_entry_t entry;
+		spinlock_t *ptl = pte_lockptr(walk->mm, pmd);
+
+		if (pte_none(*pte))
+			goto no_page;
+		entry = pte_to_swp_entry(*pte);
+		if (!is_migration_entry(entry))
+			goto no_page;
+
+		pte_unmap_unlock(pte, ptl);
+		migration_entry_wait(walk->mm, pmd, addr);
+		pte = pte_offset_map_lock(walk->mm, pmd, addr, &ptl);
+		goto retry;
+	}
+
+	page = pte_page(*pte);
+	get_page(page);
+	sp_walk_data->pages[sp_walk_data->page_count++] = page;
+	return 0;
+
+no_page:
+	pr_debug("the page of addr %lx unexpectedly not in RAM\n",
+		 (unsigned long)addr);
+	return -EFAULT;
+}
+
+static int sp_test_walk(unsigned long addr, unsigned long next,
+			struct mm_walk *walk)
+{
+	/*
+	 * FIXME: The devmm driver uses remap_pfn_range() but actually there
+	 * are associated struct pages, so they should use vm_map_pages() or
+	 * similar APIs. Before the driver has been converted to correct APIs
+	 * we use this test_walk() callback so we can treat VM_PFNMAP VMAs as
+	 * normal VMAs.
+	 */
+	return 0;
+}
+
+static int sp_pte_hole(unsigned long start, unsigned long end,
+		       int depth, struct mm_walk *walk)
+{
+	pr_debug("hole [%lx, %lx) appeared unexpectedly\n",
+			(unsigned long)start, (unsigned long)end);
+	return -EFAULT;
+}
+
+static int sp_hugetlb_entry(pte_t *ptep, unsigned long hmask,
+			    unsigned long addr, unsigned long next,
+			    struct mm_walk *walk)
+{
+	pte_t pte = huge_ptep_get(ptep);
+	struct page *page = pte_page(pte);
+	struct sp_walk_data *sp_walk_data;
+
+	if (unlikely(!pte_present(pte))) {
+		pr_debug("the page of addr %lx unexpectedly not in RAM\n", (unsigned long)addr);
+		return -EFAULT;
+	}
+
+	sp_walk_data = walk->private;
+	get_page(page);
+	sp_walk_data->pages[sp_walk_data->page_count++] = page;
+	return 0;
+}
+
+/*
+ * __sp_walk_page_range() - Walk page table with caller specific callbacks.
+ * @uva: the start VA of user memory.
+ * @size: the size of user memory.
+ * @mm: mm struct of the target task.
+ * @sp_walk_data: a structure of a page pointer array.
+ *
+ * the caller must hold mm->mmap_lock
+ *
+ * Notes for parameter alignment:
+ * When size == 0, let it be page_size, so that at least one page is walked.
+ *
+ * When size > 0, for convenience, usually the parameters of uva and
+ * size are not page aligned. There are four different alignment scenarios and
+ * we must handler all of them correctly.
+ *
+ * The basic idea is to align down uva and align up size so all the pages
+ * in range [uva, uva + size) are walked. However, there are special cases.
+ *
+ * Considering a 2M-hugepage addr scenario. Assuming the caller wants to
+ * traverse range [1001M, 1004.5M), so uva and size is 1001M and 3.5M
+ * accordingly. The aligned-down uva is 1000M and the aligned-up size is 4M.
+ * The traverse range will be [1000M, 1004M). Obviously, the final page for
+ * [1004M, 1004.5M) is not covered.
+ *
+ * To fix this problem, we need to walk an additional page, size should be
+ * ALIGN(uva+size) - uva_aligned
+ */
+static int __sp_walk_page_range(unsigned long uva, unsigned long size,
+	struct mm_struct *mm, struct sp_walk_data *sp_walk_data)
+{
+	int ret = 0;
+	struct vm_area_struct *vma;
+	unsigned long page_nr;
+	struct page **pages = NULL;
+	bool is_hugepage = false;
+	unsigned long uva_aligned;
+	unsigned long size_aligned;
+	unsigned int page_size = PAGE_SIZE;
+	struct mm_walk_ops sp_walk = {};
+
+	/*
+	 * Here we also support non share pool memory in this interface
+	 * because the caller can't distinguish whether a uva is from the
+	 * share pool or not. It is not the best idea to do so, but currently
+	 * it simplifies overall design.
+	 *
+	 * In this situation, the correctness of the parameters is mainly
+	 * guaranteed by the caller.
+	 */
+	vma = find_vma(mm, uva);
+	if (!vma) {
+		pr_debug("u2k input uva %lx is invalid\n", (unsigned long)uva);
+		return -EINVAL;
+	}
+	if (is_vm_hugetlb_page(vma))
+		is_hugepage = true;
+
+	sp_walk.pte_hole = sp_pte_hole;
+	sp_walk.test_walk = sp_test_walk;
+	if (is_hugepage) {
+		sp_walk_data->is_hugepage = true;
+		sp_walk.hugetlb_entry = sp_hugetlb_entry;
+		page_size = PMD_SIZE;
+	} else {
+		sp_walk_data->is_hugepage = false;
+		sp_walk.pte_entry = sp_pte_entry;
+		sp_walk.pmd_entry = sp_pmd_entry;
+	}
+
+	sp_walk_data->is_page_type_set = false;
+	sp_walk_data->page_count = 0;
+	sp_walk_data->page_size = page_size;
+	uva_aligned = ALIGN_DOWN(uva, page_size);
+	sp_walk_data->uva_aligned = uva_aligned;
+	if (size == 0)
+		size_aligned = page_size;
+	else
+		/* special alignment handling */
+		size_aligned = ALIGN(uva + size, page_size) - uva_aligned;
+
+	if (uva_aligned + size_aligned < uva_aligned) {
+		pr_err_ratelimited("overflow happened in walk page range\n");
+		return -EINVAL;
+	}
+
+	page_nr = size_aligned / page_size;
+	pages = kvmalloc_array(page_nr, sizeof(struct page *), GFP_KERNEL);
+	if (!pages) {
+		pr_err_ratelimited("alloc page array failed in walk page range\n");
+		return -ENOMEM;
+	}
+	sp_walk_data->pages = pages;
+
+	ret = walk_page_range(mm, uva_aligned, uva_aligned + size_aligned,
+			      &sp_walk, sp_walk_data);
+	if (ret) {
+		while (sp_walk_data->page_count--)
+			put_page(pages[sp_walk_data->page_count]);
+		kvfree(pages);
+		sp_walk_data->pages = NULL;
+	}
+
+	if (sp_walk_data->is_hugepage)
+		sp_walk_data->uva_aligned = ALIGN_DOWN(uva, PMD_SIZE);
+
+	return ret;
+}
+
+static void __sp_walk_page_free(struct sp_walk_data *data)
+{
+	int i = 0;
+	struct page *page;
+
+	while (i < data->page_count) {
+		page = data->pages[i++];
+		put_page(page);
+	}
+
+	kvfree(data->pages);
+	/* prevent repeated release */
+	data->page_count = 0;
+	data->pages = NULL;
+}
+
 /**
  * mg_sp_make_share_u2k() - Share user memory of a specified process to kernel.
  * @uva: the VA of shared user memory
@@ -1129,7 +1377,56 @@ EXPORT_SYMBOL_GPL(mg_sp_make_share_k2u);
  */
 void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int tgid)
 {
-	return ERR_PTR(-EOPNOTSUPP);
+	int ret = 0;
+	struct mm_struct *mm = current->mm;
+	void *p = ERR_PTR(-ESRCH);
+	struct sp_walk_data sp_walk_data;
+	struct vm_struct *area;
+
+	if (!sp_is_enabled())
+		return ERR_PTR(-EOPNOTSUPP);
+
+	check_interrupt_context();
+
+	if (mm == NULL) {
+		pr_err("u2k: kthread is not allowed\n");
+		return ERR_PTR(-EPERM);
+	}
+
+	down_write(&mm->mmap_lock);
+	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
+	if (ret) {
+		pr_err_ratelimited("walk page range failed %d\n", ret);
+		up_write(&mm->mmap_lock);
+		return ERR_PTR(ret);
+	}
+
+	if (sp_walk_data.is_hugepage)
+		p = vmap_hugepage(sp_walk_data.pages, sp_walk_data.page_count,
+				  VM_MAP, PAGE_KERNEL);
+	else
+		p = vmap(sp_walk_data.pages, sp_walk_data.page_count, VM_MAP,
+			 PAGE_KERNEL);
+	up_write(&mm->mmap_lock);
+
+	if (!p) {
+		pr_err("vmap(huge) in u2k failed\n");
+		__sp_walk_page_free(&sp_walk_data);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	p = p + (uva - sp_walk_data.uva_aligned);
+
+	/*
+	 * kva p may be used later in k2u. Since p comes from uva originally,
+	 * it's reasonable to add flag VM_USERMAP so that p can be remapped
+	 * into userspace again.
+	 */
+	area = find_vm_area(p);
+	area->flags |= VM_USERMAP;
+
+	kvfree(sp_walk_data.pages);
+	return p;
 }
 EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
 
