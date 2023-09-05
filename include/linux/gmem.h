@@ -133,8 +133,10 @@ struct gm_mmu {
 	unsigned long cookie;
 
 	/* Synchronize VMA in a peer OS to interact with the host OS */
-	gm_ret_t (*peer_va_alloc_fixed)(struct gm_fault_t *gmf);
-	gm_ret_t (*peer_va_free)(struct gm_fault_t *gmf);
+	gm_ret_t (*peer_va_alloc_fixed)(struct mm_struct *mm, unsigned long va,
+					unsigned long size, unsigned long prot);
+	gm_ret_t (*peer_va_free)(struct mm_struct *mm, unsigned long va,
+				 unsigned long size);
 
 	/* Create physical mappings on peer host.
 	 * If copy is set, copy data [dma_addr, dma_addr + size] to peer host
@@ -219,8 +221,6 @@ struct gm_dev {
 	gm_mapping_t *gm_mapping;
 };
 
-#define HOST_NODE_ID	(-1)
-
 #define GM_PAGE_DIRTY	0x8 /* Whether the page is dirty */
 #define GM_PAGE_CPU	0x10 /* Determines whether page is a pointer or a pfn number. */
 #define GM_PAGE_DEVICE	0x20
@@ -232,15 +232,6 @@ struct gm_dev {
 
 /* Records the status of a page-size physical page */
 struct gm_mapping {
-	/*
-	 * The node index may have three definitions:
-	 * 1. a common CPU node
-	 * 2. a hetero-node, e.g. GPU (that not necessarily supports CC ld/st)
-	 * 3. a network ip (another OS that may have multiple hNUMA nodes), dynamically attached by dsm_attach
-	 * Among these definitions, #1 and #2 in combination defines an h-NUMA topology
-	 */
-	unsigned int node_id;
-
 	unsigned int flag;
 
 	union {
@@ -252,17 +243,22 @@ struct gm_mapping {
 	struct mutex lock;
 };
 
+static inline void gm_mapping_flags_set(gm_mapping_t *gm_mapping, int flags)
+{
+	if (flags & GM_PAGE_TYPE_MASK)
+		gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
+
+	gm_mapping->flag |= flags;
+}
+
+static inline void gm_mapping_flags_clear(gm_mapping_t *gm_mapping, int flags)
+{
+	gm_mapping->flag &= ~flags;
+}
+
 static inline bool gm_mapping_cpu(gm_mapping_t *gm_mapping)
 {
 	return !!(gm_mapping->flag & GM_PAGE_CPU);
-}
-
-static inline void set_gm_mapping_host(gm_mapping_t *gm_mapping, struct page *page)
-{
-	gm_mapping->node_id = HOST_NODE_ID;
-	gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
-	gm_mapping->flag |= GM_PAGE_CPU;
-	gm_mapping->page = page;
 }
 
 static inline bool gm_mapping_device(gm_mapping_t *gm_mapping)
@@ -270,48 +266,14 @@ static inline bool gm_mapping_device(gm_mapping_t *gm_mapping)
 	return !!(gm_mapping->flag & GM_PAGE_DEVICE);
 }
 
-static inline void set_gm_mapping_device(gm_mapping_t *gm_mapping, gm_dev_t *dev)
-{
-	gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
-	gm_mapping->flag |= GM_PAGE_DEVICE;
-	gm_mapping->dev = dev;
-}
-
 static inline bool gm_mapping_nomap(gm_mapping_t *gm_mapping)
 {
 	return !!(gm_mapping->flag & GM_PAGE_NOMAP);
 }
 
-static inline void set_gm_mapping_nomap(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag &= ~GM_PAGE_TYPE_MASK;
-	gm_mapping->flag |= GM_PAGE_NOMAP;
-	gm_mapping->page = NULL;
-}
-
-static inline void set_gm_mapping_willneed(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag |= GM_PAGE_WILLNEED;
-}
-
-static inline void clear_gm_mapping_willneed(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag &= ~GM_PAGE_WILLNEED;
-}
-
 static inline bool gm_mapping_willneed(gm_mapping_t *gm_mapping)
 {
 	return !!(gm_mapping->flag & GM_PAGE_WILLNEED);
-}
-
-static inline void set_gm_mapping_pinned(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag |= GM_PAGE_PINNED;
-}
-
-static inline void clear_gm_mapping_pinned(gm_mapping_t *gm_mapping)
-{
-	gm_mapping->flag &= ~GM_PAGE_PINNED;
 }
 
 static inline bool gm_mapping_pinned(gm_mapping_t *gm_mapping)
@@ -336,7 +298,6 @@ vm_fault_t gm_host_fault_locked(struct vm_fault *vmf, enum page_entry_size pe_si
 extern gm_ret_t gm_dev_register_physmem(gm_dev_t *dev, gm_pa_t begin, gm_pa_t end);
 extern void gm_dev_unregister_physmem(gm_dev_t *dev, unsigned int nid);
 extern gm_mapping_t *gm_mappings_alloc(unsigned int nid, unsigned int order);
-extern void gm_mappings_free(gm_mapping_t *mapping, unsigned int order);
 extern gm_ret_t gm_as_create(gm_va_t begin, gm_va_t end, gm_as_alloc_t policy, gm_va_t cache_quantum, gm_as_t **new_as);
 extern gm_ret_t gm_as_destroy(gm_as_t *as);
 extern gm_ret_t gm_as_attach(gm_as_t *as, gm_dev_t *dev, gm_mmu_mode_t mode, bool activate, gm_context_t **out_ctx);

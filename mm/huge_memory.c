@@ -742,7 +742,8 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		count_memcg_event_mm(vma->vm_mm, THP_FAULT_ALLOC);
 #ifdef CONFIG_GMEM
 		if (vma_is_peer_shared(vma)) {
-			set_gm_mapping_host(gm_mapping, page);
+			gm_mapping_flags_set(gm_mapping, GM_PAGE_CPU);
+			gm_mapping->page = page;
 			mutex_unlock(&gm_mapping->lock);
 		}
 #endif

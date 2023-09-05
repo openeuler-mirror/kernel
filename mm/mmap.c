@@ -2473,11 +2473,7 @@ static void munmap_in_peer_devices(struct mm_struct *mm,
 		if (!ctx->dev->mmu->peer_va_free)
 			continue;
 
-		gmf.va = start;
-		gmf.size = end - start;
-		gmf.dev = ctx->dev;
-
-		ret = ctx->dev->mmu->peer_va_free(&gmf);
+		ret = ctx->dev->mmu->peer_va_free(mm, start, end - start);
 		if (ret != GM_RET_SUCCESS)
 			pr_debug("gmem: free_vma(start:%lx, len:%lx) ret %d\n",
 				start, end - start, ret);
@@ -2733,12 +2729,6 @@ static int alloc_va_in_peer_devices(struct mm_struct *mm,
 {
 	gm_context_t *ctx, *tmp;
 	gm_ret_t ret;
-	struct gm_fault_t gmf = {
-		.mm = mm,
-		.va = addr,
-		.size = len,
-		.prot = vm_flags,
-	};
 
 	pr_debug("gmem: start mmap, as %p\n", mm->gm_as);
 	if (!mm->gm_as)
@@ -2761,10 +2751,8 @@ static int alloc_va_in_peer_devices(struct mm_struct *mm,
 			continue;
 		}
 
-		gmf.dev = ctx->dev;
-
 		pr_debug("gmem: call vma_alloc\n");
-		ret = ctx->dev->mmu->peer_va_alloc_fixed(&gmf);
+		ret = ctx->dev->mmu->peer_va_alloc_fixed(mm, addr, len, vm_flags);
 		if (ret != GM_RET_SUCCESS) {
 			pr_debug("gmem: alloc_vma ret %d\n", ret);
 			return ret;

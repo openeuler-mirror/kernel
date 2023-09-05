@@ -51,7 +51,7 @@ gm_mapping_t *alloc_gm_mapping(void)
 	if (!gm_mapping)
 		return NULL;
 
-	set_gm_mapping_nomap(gm_mapping);
+	gm_mapping_flags_set(gm_mapping, GM_PAGE_NOMAP);
 	mutex_init(&gm_mapping->lock);
 
 	return gm_mapping;

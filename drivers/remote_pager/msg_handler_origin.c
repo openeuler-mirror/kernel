@@ -207,18 +207,18 @@ gm_ret_t gmem_unmap(struct gm_fault_t *gmf)
 	return GM_RET_SUCCESS;
 }
 
-gm_ret_t gmem_alloc(struct gm_fault_t *gmf)
+gm_ret_t gmem_alloc(struct mm_struct *mm, unsigned long va, unsigned long size,
+		    unsigned long prot)
 {
 	int ret = 0;
 	struct wait_station *ws;
 	struct comm_msg_rsp *rsp;
-	struct mm_struct *mm = gmf->mm;
 	struct svm_proc *proc = search_svm_proc_by_mm(mm);
 	struct gm_pager_msg_rq req = {
 		.peer_pid = proc->peer_pid,
-		.va = gmf->va,
-		.size = gmf->size,
-		.prot = gmf->prot,
+		.va = va,
+		.size = size,
+		.prot = prot,
 	};
 
 	if (!proc) {
@@ -243,17 +243,16 @@ gm_ret_t gmem_alloc(struct gm_fault_t *gmf)
 	return GM_RET_SUCCESS;
 }
 
-gm_ret_t gmem_free(struct gm_fault_t *gmf)
+gm_ret_t gmem_free(struct mm_struct *mm, unsigned long va, unsigned long size)
 {
 	int ret = 0;
 	struct wait_station *ws;
 	struct comm_msg_rsp *rsp;
-	struct mm_struct *mm = gmf->mm;
 	struct svm_proc *proc = search_svm_proc_by_mm(mm);
 	struct gm_pager_msg_rq req = {
 		.peer_pid = proc->peer_pid,
-		.va = gmf->va,
-		.size = gmf->size,
+		.va = va,
+		.size = size,
 	};
 
 	if (!proc) {
@@ -290,7 +289,7 @@ int gmem_handle_evict_page(struct rpg_kmsg_message *msg)
 	struct vm_area_struct *vma;
 	struct page *page;
 	dma_addr_t dma_addr;
-	gm_mapping_t *gm_page;
+	gm_mapping_t *gm_mapping;
 	struct device *dma_dev;
 	struct gm_fault_t gmf;
 	struct svm_proc *proc;
@@ -339,22 +338,22 @@ int gmem_handle_evict_page(struct rpg_kmsg_message *msg)
 		goto put_mm;
 	}
 
-	gm_page = vm_object_lookup(vma->vm_obj, addr);
-	if (!gm_page) {
+	gm_mapping = vm_object_lookup(vma->vm_obj, addr);
+	if (!gm_mapping) {
 		pr_err("evictim gm_page is NULL\n");
 		ret = -EINVAL;
 		goto put_mm;
 	}
 
-	mutex_lock(&gm_page->lock);
-	if (gm_mapping_willneed(gm_page)) {
+	mutex_lock(&gm_mapping->lock);
+	if (gm_mapping_willneed(gm_mapping)) {
 		pr_info("gmem: racing with prefetch or willneed so cancel evict\n");
-		clear_gm_mapping_willneed(gm_page);
+		gm_mapping_flags_clear(gm_mapping, GM_PAGE_WILLNEED);
 		ret = -EINVAL;
 		goto unlock;
 	}
 
-	if (!gm_mapping_device(gm_page)) {
+	if (!gm_mapping_device(gm_mapping)) {
 		pr_info("gmem: page is not in device\n");
 		ret = -EINVAL;
 		goto unlock;
@@ -373,9 +372,9 @@ int gmem_handle_evict_page(struct rpg_kmsg_message *msg)
 		goto unlock;
 	}
 
-	dma_dev = gm_page->dev->dma_dev;
+	dma_dev = gm_mapping->dev->dma_dev;
 	dma_addr = dma_map_page(dma_dev, page, 0, size, DMA_BIDIRECTIONAL);
-	gmf.dev = gm_page->dev;
+	gmf.dev = gm_mapping->dev;
 	gmf.dma_addr = dma_addr;
 
 	ret = gmem_unmap(&gmf);
@@ -386,10 +385,11 @@ int gmem_handle_evict_page(struct rpg_kmsg_message *msg)
 		goto unlock;
 	}
 
-	set_gm_mapping_host(gm_page, page);
+	gm_mapping_flags_set(gm_mapping, GM_PAGE_CPU);
+	gm_mapping->page = page;
 
 unlock:
-	mutex_unlock(&gm_page->lock);
+	mutex_unlock(&gm_mapping->lock);
 put_mm:
 	mmput(mm);
 put_task:
