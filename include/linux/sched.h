@@ -549,6 +549,12 @@ struct sched_statistics {
 	u64				nr_wakeups_preferred_cpus;
 	u64				nr_wakeups_force_preferred_cpus;
 #endif
+
+#if defined(CONFIG_QOS_SCHED_SMT_EXPELLER) && !defined(__GENKSYMS__)
+	u64				nr_qos_smt_send_ipi;
+	u64				nr_qos_smt_expelled;
+#endif
+
 #endif /* CONFIG_SCHEDSTATS */
 } ____cacheline_aligned;
 
@@ -2012,9 +2018,16 @@ extern char *__get_task_comm(char *to, size_t len, struct task_struct *tsk);
 	__get_task_comm(buf, sizeof(buf), tsk);		\
 })
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+void qos_smt_check_need_resched(void);
+#endif
+
 #ifdef CONFIG_SMP
 static __always_inline void scheduler_ipi(void)
 {
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_smt_check_need_resched();
+#endif
 	/*
 	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
 	 * TIF_NEED_RESCHED remotely (for the first time) will also send
