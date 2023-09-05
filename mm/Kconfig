@@ -1243,6 +1243,7 @@ menuconfig ASCEND_FEATURES
 	bool "Support Ascend Features"
 	depends on ARM64
 	select HUGETLB_INSERT_PAGE
+	select EXTEND_HUGEPAGE_MAPPING
 	help
 	  The Ascend chip use the Hisilicon DaVinci architecture, and mainly
 	  focus on AI and machine leanring area, contains many external features.
@@ -1253,6 +1254,13 @@ config HUGETLB_INSERT_PAGE
 	bool
 	help
 	  This allowed a driver to insert hugetlb mapping into user address space.
+
+config EXTEND_HUGEPAGE_MAPPING
+	bool
+	help
+	  Introduce vmalloc/vmap/remap interfaces that handle only hugepages.
+	  This allow the user to do huge vmalloc and remap those hugepage range
+	  into userspace.
 
 source "mm/damon/Kconfig"
 
