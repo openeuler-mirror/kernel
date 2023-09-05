@@ -24,6 +24,8 @@
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/fs.h>
 
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
@@ -1718,3 +1720,39 @@ int generic_file_rw_checks(struct file *file_in, struct file *file_out)
 
 	return 0;
 }
+
+#ifdef CONFIG_TRACEPOINTS
+static void fs_file_read_ctx_init(struct fs_file_read_ctx *ctx,
+				  struct file *filp, loff_t pos)
+{
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->name = file_dentry(filp)->d_name.name;
+	ctx->f_mode = filp->f_mode;
+	ctx->key = (unsigned long)filp;
+	ctx->i_size = file_inode(filp)->i_size;
+	ctx->prev_index = filp->f_ra.prev_pos >> PAGE_SHIFT;
+	ctx->index = pos >> PAGE_SHIFT;
+}
+
+#define FS_FILE_READ_VERSION 1
+#define FS_FILE_READ_MODE_MASK (FMODE_CTL_RANDOM | FMODE_CTL_WILLNEED)
+
+void fs_file_read_update_args_by_trace(struct kiocb *iocb)
+{
+	struct file *filp = iocb->ki_filp;
+	struct fs_file_read_ctx ctx;
+
+	fs_file_read_ctx_init(&ctx, filp, iocb->ki_pos);
+	trace_fs_file_read(&ctx, FS_FILE_READ_VERSION);
+
+	if (!ctx.set_f_mode && !ctx.clr_f_mode)
+		return;
+
+	filp->f_ctl_mode |= ctx.set_f_mode & FS_FILE_READ_MODE_MASK;
+	filp->f_ctl_mode &= ~(ctx.clr_f_mode & FS_FILE_READ_MODE_MASK);
+}
+EXPORT_SYMBOL_GPL(fs_file_read_update_args_by_trace);
+#endif
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_read);
+EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_release);

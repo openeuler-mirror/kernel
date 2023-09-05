@@ -30,6 +30,7 @@
 #include <linux/uio.h>
 #include <linux/mman.h>
 #include <linux/backing-dev.h>
+#include <trace/events/fs.h>
 #include "ext4.h"
 #include "ext4_jbd2.h"
 #include "xattr.h"
@@ -144,6 +145,7 @@ static ssize_t ext4_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	if (iocb->ki_flags & IOCB_DIRECT)
 		return ext4_dio_read_iter(iocb, to);
 
+	fs_file_read_do_trace(iocb);
 	return generic_file_read_iter(iocb, to);
 }
 
@@ -154,6 +156,8 @@ static ssize_t ext4_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
  */
 static int ext4_release_file(struct inode *inode, struct file *filp)
 {
+	trace_fs_file_release(inode, filp);
+
 	if (ext4_test_inode_state(inode, EXT4_STATE_DA_ALLOC_CLOSE)) {
 		ext4_alloc_da_blocks(inode);
 		ext4_clear_inode_state(inode, EXT4_STATE_DA_ALLOC_CLOSE);
