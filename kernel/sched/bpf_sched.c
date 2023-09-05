@@ -176,6 +176,91 @@ static const struct bpf_func_proto bpf_sched_entity_to_tg_proto = {
 	.arg1_btf_id	= &btf_sched_entity_ids[0],
 };
 
+BPF_CALL_2(bpf_cpumask_op, struct cpumask_op_args *, op, int, len)
+{
+	int ret;
+
+	if (len != sizeof(*op) || !op->arg1)
+		return -EINVAL;
+
+	switch (op->op_type) {
+	case CPUMASK_EMPTY:
+		return cpumask_empty((const struct cpumask *)op->arg1);
+	case CPUMASK_AND:
+		if (!op->arg2 || !op->arg3)
+			return -EINVAL;
+		return cpumask_and((struct cpumask *)op->arg1,
+				   (const struct cpumask *)op->arg2,
+				   (const struct cpumask *)op->arg3);
+	case CPUMASK_ANDNOT:
+		if (!op->arg2 || !op->arg3)
+			return -EINVAL;
+		cpumask_andnot((struct cpumask *)op->arg1,
+			       (const struct cpumask *)op->arg2,
+			       (const struct cpumask *)op->arg3);
+		break;
+	case CPUMASK_SUBSET:
+		if (!op->arg2)
+			return -EINVAL;
+		return cpumask_subset((const struct cpumask *)op->arg1,
+				      (const struct cpumask *)op->arg2);
+	case CPUMASK_EQUAL:
+		if (!op->arg2)
+			return -EINVAL;
+		return cpumask_equal((const struct cpumask *)op->arg1,
+				     (const struct cpumask *)op->arg2);
+	case CPUMASK_TEST_CPU:
+		if (!op->arg2)
+			return -EINVAL;
+		return cpumask_test_cpu(*(int *)op->arg1, op->arg2);
+	case CPUMASK_COPY:
+		if (!op->arg2)
+			return -EINVAL;
+		cpumask_copy((struct cpumask *)op->arg1,
+			     (const struct cpumask *)op->arg2);
+		break;
+	case CPUMASK_WEIGHT:
+		return cpumask_weight((const struct cpumask *)op->arg1);
+	case CPUMASK_NEXT:
+		if (!op->arg2)
+			return -EINVAL;
+		return cpumask_next(*(int *)op->arg1,
+				    (const struct cpumask *)op->arg2);
+	case CPUMASK_NEXT_WRAP:
+		if (!op->arg2 || !op->arg3 || !op->arg4)
+			return -EINVAL;
+		return cpumask_next_wrap(*(int *)op->arg1,
+					 (const struct cpumask *)op->arg2,
+					 *(int *)op->arg3, *(int *)op->arg4);
+	case CPUMASK_NEXT_AND:
+		if (!op->arg2 || !op->arg3)
+			return -EINVAL;
+		return cpumask_next_and(*(int *)op->arg1,
+					(const struct cpumask *)op->arg2,
+					(const struct cpumask *)op->arg3);
+	case CPUMASK_CPULIST_PARSE:
+		if (!op->arg2)
+			return -EINVAL;
+
+		op->arg1 = (void *)strstrip((void *)op->arg1);
+		ret = cpulist_parse((void *)op->arg1,
+				    (struct cpumask *)op->arg2);
+		return ret;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_cpumask_op_proto = {
+	.func		= bpf_cpumask_op,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+};
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -194,6 +279,8 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sched_entity_to_task_proto;
 	case BPF_FUNC_sched_entity_to_tg:
 		return &bpf_sched_entity_to_tg_proto;
+	case BPF_FUNC_cpumask_op:
+		return &bpf_cpumask_op_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}

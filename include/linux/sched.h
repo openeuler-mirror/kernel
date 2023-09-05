@@ -2518,6 +2518,29 @@ struct bpf_sched_cpu_stats {
 	unsigned long capacity_orig;
 };
 
+struct cpumask_op_args {
+	unsigned int op_type;
+	void *arg1;
+	void *arg2;
+	void *arg3;
+	void *arg4;
+};
+
+enum cpumask_op_type {
+	CPUMASK_EMPTY,
+	CPUMASK_AND,
+	CPUMASK_ANDNOT,
+	CPUMASK_SUBSET,
+	CPUMASK_EQUAL,
+	CPUMASK_TEST_CPU,
+	CPUMASK_COPY,
+	CPUMASK_WEIGHT,
+	CPUMASK_NEXT,
+	CPUMASK_NEXT_WRAP,
+	CPUMASK_NEXT_AND,
+	CPUMASK_CPULIST_PARSE
+};
+
 #endif
 
 #endif
