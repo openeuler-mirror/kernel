@@ -59,6 +59,7 @@
 #include <linux/sched/cputime.h>
 #include <linux/psi.h>
 #include <net/sock.h>
+#include <linux/backing-dev.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cgroup.h>
@@ -5605,6 +5606,7 @@ err_list_del:
 	list_del_rcu(&css->sibling);
 err_free_css:
 	list_del_rcu(&css->rstat_css_node);
+	wb_kill_memcg_blkcg(css);
 	INIT_RCU_WORK(&css->destroy_rwork, css_free_rwork_fn);
 	queue_rcu_work(cgroup_destroy_wq, &css->destroy_rwork);
 	return ERR_PTR(err);
@@ -5874,6 +5876,7 @@ static void kill_css(struct cgroup_subsys_state *css)
 	 */
 	css_get(css);
 
+	wb_kill_memcg_blkcg(css);
 	/*
 	 * cgroup core guarantees that, by the time ->css_offline() is
 	 * invoked, no new css reference will be given out via
@@ -6348,6 +6351,7 @@ out:
 	return retval;
 }
 
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
 struct cgroup *cgroup1_get_from_id(struct cgroup_root *root, u64 id)
 {
 	struct kernfs_node *kn;
@@ -6384,6 +6388,7 @@ struct cgroup *cgroup1_get_from_id(struct cgroup_root *root, u64 id)
 
 	return cgrp;
 }
+#endif
 
 /**
  * cgroup_fork - initialize cgroup related fields during copy_process()

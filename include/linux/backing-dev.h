@@ -150,6 +150,26 @@ static inline bool mapping_can_writeback(struct address_space *mapping)
 	return inode_to_bdi(mapping->host)->capabilities & BDI_CAP_WRITEBACK;
 }
 
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+void wb_kill_memcg_blkcg(struct cgroup_subsys_state *css);
+void wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
+			      struct cgroup_subsys_state *blkcg_css);
+bool cgroup1_writeback_enabled(void);
+#else
+static inline void wb_kill_memcg_blkcg(struct cgroup_subsys_state *css)
+{
+}
+static inline void
+wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
+			 struct cgroup_subsys_state *blkcg_css)
+{
+}
+static inline bool cgroup1_writeback_enabled(void)
+{
+	return false;
+}
+#endif /* CONFIG_CGROUP_V1_WRITEBACK */
+
 #ifdef CONFIG_CGROUP_WRITEBACK
 
 struct bdi_writeback *wb_get_lookup(struct backing_dev_info *bdi,
@@ -175,10 +195,11 @@ static inline bool inode_cgwb_enabled(struct inode *inode)
 {
 	struct backing_dev_info *bdi = inode_to_bdi(inode);
 
-	return cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
-		cgroup_subsys_on_dfl(io_cgrp_subsys) &&
-		(bdi->capabilities & BDI_CAP_WRITEBACK) &&
-		(inode->i_sb->s_iflags & SB_I_CGROUPWB);
+	return ((cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
+	       cgroup_subsys_on_dfl(io_cgrp_subsys)) ||
+	       cgroup1_writeback_enabled()) &&
+	       (bdi->capabilities & BDI_CAP_WRITEBACK) &&
+	       (inode->i_sb->s_iflags & SB_I_CGROUPWB);
 }
 
 /**

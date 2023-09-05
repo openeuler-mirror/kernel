@@ -114,6 +114,9 @@ struct blkcg {
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct list_head		cgwb_list;
 #endif
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+	struct list_head		memcg_list;
+#endif
 };
 
 static inline struct blkcg *css_to_blkcg(struct cgroup_subsys_state *css)
