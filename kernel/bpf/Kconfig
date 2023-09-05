@@ -99,4 +99,15 @@ config BPF_LSM
 
 	  If you are unsure how to answer this question, answer N.
 
+config BPF_SCHED
+	bool "SCHED Instrumentation with BPF"
+	depends on BPF_EVENTS
+	depends on BPF_SYSCALL
+	help
+	  Enables instrumentation of the sched hooks with eBPF programs for
+	  implementing dynamic scheduling policies.
+
+	  If you are unsure  howto answer this question, answer N.
+
+
 endmenu # "BPF subsystem"

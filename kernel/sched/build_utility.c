@@ -108,3 +108,8 @@
 #ifdef CONFIG_SCHED_AUTOGROUP
 # include "autogroup.c"
 #endif
+
+#ifdef CONFIG_BPF_SCHED
+# include "bpf_sched.c"
+# include "bpf_topology.c"
+#endif

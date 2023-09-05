@@ -1374,6 +1374,7 @@ struct task_struct {
 #ifdef CONFIG_KCSAN_WEAK_MEMORY
 	int				kcsan_stack_depth;
 #endif
+
 #endif
 
 #ifdef CONFIG_KMSAN
@@ -1543,6 +1544,10 @@ struct task_struct {
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	cpumask_t 			*prefer_cpus;
 	const cpumask_t			*select_cpus;
+#endif
+
+#ifdef CONFIG_BPF_SCHED
+	long tag;
 #endif
 
 	/*
@@ -2476,6 +2481,84 @@ static inline int sched_qos_cpu_overload(void)
 {
 	return 0;
 }
+#endif
+
+
+#ifdef CONFIG_BPF_SCHED
+extern void sched_settag(struct task_struct *tsk, s64 tag);
+
+struct bpf_sched_cpu_stats {
+	/* load/util */
+	unsigned long cfs_load_avg;
+	unsigned long cfs_runnable_avg;
+	unsigned long cfs_util_avg;
+	unsigned long rt_load_avg;
+	unsigned long rt_runnable_avg;
+	unsigned long rt_util_avg;
+	unsigned long irq_load_avg;
+	unsigned long irq_runnable_avg;
+	unsigned long irq_util_avg;
+
+	/* nr_running */
+	unsigned int nr_running;
+	unsigned int cfs_nr_running;
+	unsigned int cfs_h_nr_running;
+	unsigned int cfs_idle_h_nr_running;
+	unsigned int rt_nr_running;
+	unsigned int rr_nr_running;
+
+	/* idle statistics */
+	int available_idle;
+	unsigned int exit_latency;
+	unsigned long idle_stamp;
+	unsigned long avg_idle;
+
+	/* capacity */
+	unsigned long capacity;
+	unsigned long capacity_orig;
+};
+
+struct cpumask_op_args {
+	unsigned int op_type;
+	void *arg1;
+	void *arg2;
+	void *arg3;
+	void *arg4;
+};
+
+enum cpumask_op_type {
+	CPUMASK_EMPTY,
+	CPUMASK_AND,
+	CPUMASK_ANDNOT,
+	CPUMASK_SUBSET,
+	CPUMASK_EQUAL,
+	CPUMASK_TEST_CPU,
+	CPUMASK_COPY,
+	CPUMASK_WEIGHT,
+	CPUMASK_NEXT,
+	CPUMASK_NEXT_WRAP,
+	CPUMASK_NEXT_AND,
+	CPUMASK_CPULIST_PARSE
+};
+
+struct sched_migrate_ctx {
+	struct task_struct *task;
+	struct cpumask *select_idle_mask;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+	int want_affine;
+	int wake_flags;
+	int sd_flag;
+	int new_cpu;
+};
+
+struct sched_affine_ctx {
+	struct task_struct *task;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+};
 #endif
 
 #endif

@@ -700,6 +700,15 @@ class PrinterHelpers(Printer):
             'struct bpf_dynptr',
             'struct iphdr',
             'struct ipv6hdr',
+            'struct task_group',
+            'struct bpf_sched_cpu_stats',
+            'struct bpf_cpu_topology',
+            'struct bpf_cpumask_info',
+            'struct sched_entity',
+            'struct cpumask',
+            'struct cpumask_op_args',
+            'struct sched_migrate_ctx',
+            'struct sched_affine_ctx',
     ]
     known_types = {
             '...',
@@ -755,6 +764,15 @@ class PrinterHelpers(Printer):
             'const struct bpf_dynptr',
             'struct iphdr',
             'struct ipv6hdr',
+            'struct task_group',
+            'struct bpf_sched_cpu_stats',
+            'struct bpf_cpu_topology',
+            'struct bpf_cpumask_info',
+            'struct sched_entity',
+            'struct cpumask',
+            'struct cpumask_op_args',
+            'struct sched_migrate_ctx',
+            'struct sched_affine_ctx',
     }
     mapped_types = {
             'u8': '__u8',

@@ -3660,6 +3660,68 @@ static const struct inode_operations proc_tid_comm_inode_operations = {
 		.permission = proc_tid_comm_permission,
 };
 
+#ifdef CONFIG_BPF_SCHED
+static ssize_t pid_tag_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *tsk;
+	char buffer[PROC_NUMBUF];
+	int err = 0, tag = 0;
+
+	tsk = get_proc_task(inode);
+	if (!tsk)
+		return -ESRCH;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoint(strstrip(buffer), 0, &tag);
+	if (err)
+		goto out;
+
+	sched_settag(tsk, tag);
+
+out:
+	put_task_struct(tsk);
+	return err < 0 ? err : count;
+}
+
+static int pid_tag_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *tsk;
+
+	tsk = get_proc_task(inode);
+	if (!tsk)
+		return -ESRCH;
+
+	seq_printf(m, "%ld\n", tsk->tag);
+	put_task_struct(tsk);
+
+	return 0;
+}
+
+static int pid_tag_open(struct inode *inode, struct file *flip)
+{
+	return single_open(flip, pid_tag_show, inode);
+}
+
+static const struct file_operations proc_pid_tag_operations = {
+		.open		= pid_tag_open,
+		.read		= seq_read,
+		.write		= pid_tag_write,
+		.llseek		= seq_lseek,
+		.release	= single_release,
+};
+#endif
+
 /*
  * Tasks
  */
@@ -3769,6 +3831,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	REG("preferred_cpuset", 0644, proc_preferred_cpuset_operations),
+#endif
+#ifdef CONFIG_BPF_SCHED
+	REG("tag", 0644, proc_pid_tag_operations),
 #endif
 };
 

@@ -3763,6 +3763,9 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 		rq->idle_stamp = 0;
 	}
 #endif
+#ifdef CONFIG_BPF_SCHED
+	p->tag		= 0;
+#endif
 }
 
 /*
@@ -9884,6 +9887,10 @@ LIST_HEAD(task_groups);
 static struct kmem_cache *task_group_cache __read_mostly;
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+DECLARE_PER_CPU(cpumask_var_t, select_idle_mask);
+#endif
+
 void __init sched_init(void)
 {
 	unsigned long ptr = 0;
@@ -9927,6 +9934,13 @@ void __init sched_init(void)
 
 #endif /* CONFIG_RT_GROUP_SCHED */
 	}
+
+#if defined(CONFIG_CPUMASK_OFFSTACK) && defined(CONFIG_BPF_SCHED)
+	for_each_possible_cpu(i) {
+		per_cpu(select_idle_mask, i) = (cpumask_var_t)kzalloc_node(
+			cpumask_size(), GFP_KERNEL, cpu_to_node(i));
+	}
+#endif
 
 	init_rt_bandwidth(&def_rt_bandwidth, global_rt_period(), global_rt_runtime());
 
@@ -10422,6 +10436,13 @@ static void sched_unregister_group(struct task_group *tg)
 	call_rcu(&tg->rcu, sched_free_group_rcu);
 }
 
+#ifdef CONFIG_BPF_SCHED
+static inline void tg_init_tag(struct task_group *tg, struct task_group *ptg)
+{
+	tg->tag = ptg->tag;
+}
+#endif
+
 /* allocate runqueue etc for a new task group */
 struct task_group *sched_create_group(struct task_group *parent)
 {
@@ -10441,6 +10462,10 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
+
+#ifdef CONFIG_BPF_SCHED
+	tg_init_tag(tg, parent);
+#endif
 
 	alloc_uclamp_sched_group(tg, parent);
 
@@ -10527,6 +10552,14 @@ static void sched_change_group(struct task_struct *tsk, struct task_group *group
 
 #ifdef CONFIG_QOS_SCHED
 	sched_change_qos_group(tsk, group);
+#endif
+
+#ifdef CONFIG_BPF_SCHED
+	/*
+	 * This function has cleared and restored the task status,
+	 * so we do not need to dequeue and enqueue the task again.
+	 */
+	tsk->tag = group->tag;
 #endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -11294,6 +11327,80 @@ static inline s64 cpu_qos_read(struct cgroup_subsys_state *css,
 }
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+void sched_settag(struct task_struct *tsk, s64 tag)
+{
+	int queued, running, queue_flags =
+			DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
+	struct rq_flags rf;
+	struct rq *rq;
+
+	if (tsk->tag == tag)
+		return;
+
+	rq = task_rq_lock(tsk, &rf);
+
+	running = task_current(rq, tsk);
+	queued = task_on_rq_queued(tsk);
+
+	update_rq_clock(rq);
+	if (queued)
+		dequeue_task(rq, tsk, queue_flags);
+	if (running)
+		put_prev_task(rq, tsk);
+
+	tsk->tag = tag;
+
+	if (queued)
+		enqueue_task(rq, tsk, queue_flags);
+	if (running)
+		set_next_task(rq, tsk);
+
+	task_rq_unlock(rq, tsk, &rf);
+}
+
+int tg_change_tag(struct task_group *tg, void *data)
+{
+	struct css_task_iter it;
+	struct task_struct *tsk;
+	s64 tag = *(s64 *)data;
+	struct cgroup_subsys_state *css = &tg->css;
+
+	tg->tag = tag;
+
+	css_task_iter_start(css, 0, &it);
+	while ((tsk = css_task_iter_next(&it)))
+		sched_settag(tsk, tag);
+	css_task_iter_end(&it);
+
+	return 0;
+}
+
+static int cpu_tag_write(struct cgroup_subsys_state *css,
+			 struct cftype *cftype, s64 tag)
+{
+	struct task_group *tg = css_tg(css);
+
+	if (tg == &root_task_group)
+		return -EINVAL;
+
+	if (tg->tag == tag)
+		return 0;
+
+	rcu_read_lock();
+	walk_tg_tree_from(tg, tg_change_tag, tg_nop, (void *)(&tag));
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static inline s64 cpu_tag_read(struct cgroup_subsys_state *css,
+			 struct cftype *cft)
+{
+	return css_tg(css)->tag;
+}
+#endif
+
 static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
@@ -11359,6 +11466,13 @@ static struct cftype cpu_legacy_files[] = {
 		.name = "qos_level",
 		.read_s64 = cpu_qos_read,
 		.write_s64 = cpu_qos_write,
+	},
+#endif
+#ifdef CONFIG_BPF_SCHED
+	{
+		.name = "tag",
+		.read_s64 = cpu_tag_read,
+		.write_s64 = cpu_tag_write,
 	},
 #endif
 	{ }	/* Terminate */
