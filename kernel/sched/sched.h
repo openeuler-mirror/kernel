@@ -409,6 +409,10 @@ struct task_group {
 
 	struct cfs_bandwidth	cfs_bandwidth;
 
+#ifdef CONFIG_QOS_SCHED
+	long qos_level;
+#endif
+
 #ifdef CONFIG_UCLAMP_TASK_GROUP
 	/* The two decimal precision [%] value requested from user-space */
 	unsigned int		uclamp_pct[UCLAMP_CNT];
@@ -650,6 +654,10 @@ struct cfs_rq {
 #endif
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
+
+#if defined(CONFIG_QOS_SCHED)
+	struct list_head	qos_throttled_list;
+#endif
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -1396,6 +1404,10 @@ static inline void raw_spin_rq_unlock_irqrestore(struct rq *rq, unsigned long fl
 do {						\
 	flags = _raw_spin_rq_lock_irqsave(rq);	\
 } while (0)
+
+#ifdef CONFIG_QOS_SCHED
+void init_qos_hrtimer(int cpu);
+#endif
 
 #ifdef CONFIG_SCHED_SMT
 extern void __update_idle_core(struct rq *rq);

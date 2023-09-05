@@ -984,6 +984,18 @@ menuconfig CGROUP_SCHED
 	  tasks.
 
 if CGROUP_SCHED
+config QOS_SCHED
+	bool "Qos task scheduling"
+	depends on CGROUP_SCHED
+	depends on CFS_BANDWIDTH
+	default n
+	help
+	  This option enable qos scheduler, and support co-location online
+	  services (Latency Sensitive) and offline tasks. colocation can
+	  effectively improve the resource utilization.
+
+	  If in doubt, say N.
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED
