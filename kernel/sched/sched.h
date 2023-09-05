@@ -459,6 +459,9 @@ static inline int walk_tg_tree(tg_visitor down, tg_visitor up, void *data)
 }
 
 extern int tg_nop(struct task_group *tg, void *data);
+#ifdef CONFIG_BPF_SCHED
+extern int tg_change_tag(struct task_group *tg, void *data);
+#endif
 
 extern void free_fair_sched_group(struct task_group *tg);
 extern int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent);
