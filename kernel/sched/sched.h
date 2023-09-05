@@ -664,6 +664,14 @@ struct cfs_rq {
 #if defined(CONFIG_QOS_SCHED)
 	struct list_head	qos_throttled_list;
 #endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	union {
+		unsigned int            qos_idle_h_nr_running; /* qos_level：-1 */
+		unsigned long           qos_idle_h_nr_running_padding;
+	};
+#endif
+
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -3253,6 +3261,20 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 		return false;
 
 	return true;
+}
+#endif
+
+#ifdef CONFIG_QOS_SCHED
+static inline int qos_idle_policy(int policy)
+{
+	return policy == QOS_LEVEL_OFFLINE;
+}
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static inline int task_has_qos_idle_policy(struct task_struct *p)
+{
+	return qos_idle_policy(task_group(p)->qos_level) && p->policy == SCHED_IDLE;
 }
 #endif
 

@@ -5461,6 +5461,9 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta, dequeue = 1;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	long qos_idle_delta;
+#endif
 
 	raw_spin_lock(&cfs_b->lock);
 	/* This will start the period timer if necessary */
@@ -5492,6 +5495,10 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	task_delta = cfs_rq->h_nr_running;
 	idle_task_delta = cfs_rq->idle_h_nr_running;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
+#endif
+
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
 		/* throttled entity or throttle-on-deactivate */
@@ -5505,6 +5512,9 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running -= task_delta;
 		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		qcfs_rq->qos_idle_h_nr_running -= qos_idle_delta;
+#endif
 
 		if (qcfs_rq->load.weight) {
 			/* Avoid re-evaluating load for this entity: */
@@ -5527,6 +5537,9 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running -= task_delta;
 		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		qcfs_rq->qos_idle_h_nr_running -= qos_idle_delta;
+#endif
 	}
 
 	/* At this point se is NULL and we are at root level*/
@@ -5548,6 +5561,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	long qos_idle_delta;
+#endif
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
 
@@ -5587,6 +5603,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	task_delta = cfs_rq->h_nr_running;
 	idle_task_delta = cfs_rq->idle_h_nr_running;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
+#endif
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
 
@@ -5599,6 +5618,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running += task_delta;
 		qcfs_rq->idle_h_nr_running += idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		qcfs_rq->qos_idle_h_nr_running += qos_idle_delta;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(qcfs_rq))
@@ -5616,6 +5638,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running += task_delta;
 		qcfs_rq->idle_h_nr_running += idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		qcfs_rq->qos_idle_h_nr_running += qos_idle_delta;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(qcfs_rq))
@@ -6366,6 +6391,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
 	int idle_h_nr_running = task_has_idle_policy(p);
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	int qos_idle_h_nr_running = task_has_qos_idle_policy(p);
+#endif
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 
 	/*
@@ -6392,6 +6420,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running++;
 		cfs_rq->idle_h_nr_running += idle_h_nr_running;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		cfs_rq->qos_idle_h_nr_running += qos_idle_h_nr_running;
+#endif
 
 		if (cfs_rq_is_idle(cfs_rq))
 			idle_h_nr_running = 1;
@@ -6412,7 +6443,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running++;
 		cfs_rq->idle_h_nr_running += idle_h_nr_running;
-
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		cfs_rq->qos_idle_h_nr_running += qos_idle_h_nr_running;
+#endif
 		if (cfs_rq_is_idle(cfs_rq))
 			idle_h_nr_running = 1;
 
@@ -6465,6 +6498,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int task_sleep = flags & DEQUEUE_SLEEP;
 	int idle_h_nr_running = task_has_idle_policy(p);
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	int qos_idle_h_nr_running = task_has_qos_idle_policy(p);
+#endif
 	bool was_sched_idle = sched_idle_rq(rq);
 
 	util_est_dequeue(&rq->cfs, p);
@@ -6475,6 +6511,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running--;
 		cfs_rq->idle_h_nr_running -= idle_h_nr_running;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		cfs_rq->qos_idle_h_nr_running -= qos_idle_h_nr_running;
+#endif
 
 		if (cfs_rq_is_idle(cfs_rq))
 			idle_h_nr_running = 1;
@@ -6507,7 +6546,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 		cfs_rq->h_nr_running--;
 		cfs_rq->idle_h_nr_running -= idle_h_nr_running;
-
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		cfs_rq->qos_idle_h_nr_running -= qos_idle_h_nr_running;
+#endif
 		if (cfs_rq_is_idle(cfs_rq))
 			idle_h_nr_running = 1;
 
@@ -8276,7 +8317,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
-
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	long qos_idle_delta;
+#endif
 	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
 
 	/* freeze hierarchy runnable averages while throttled */
@@ -8286,6 +8329,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	task_delta = cfs_rq->h_nr_running;
 	idle_task_delta = cfs_rq->idle_h_nr_running;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
+#endif
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
 		/* throttled entity or throttle-on-deactivate */
@@ -8296,6 +8342,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running -= task_delta;
 		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		qcfs_rq->qos_idle_h_nr_running -= qos_idle_delta;
+#endif
 
 		if (qcfs_rq->load.weight) {
 			/* Avoid re-evaluating load for this entity: */
@@ -8318,6 +8367,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 		qcfs_rq->h_nr_running -= task_delta;
 		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		qcfs_rq->qos_idle_h_nr_running -= qos_idle_delta;
+#endif
 	}
 
 	/* At this point se is NULL and we are at root level*/
@@ -8338,6 +8390,9 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	long qos_idle_delta;
+#endif
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
 
@@ -8370,6 +8425,9 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	task_delta = cfs_rq->h_nr_running;
 	idle_task_delta = cfs_rq->idle_h_nr_running;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
+#endif
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			break;
@@ -8379,6 +8437,9 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 		cfs_rq->h_nr_running += task_delta;
 		cfs_rq->idle_h_nr_running += idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		cfs_rq->qos_idle_h_nr_running += qos_idle_delta;
+#endif
 
 		if (cfs_rq_throttled(cfs_rq))
 			goto unthrottle_throttle;
@@ -8392,6 +8453,9 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 		cfs_rq->h_nr_running += task_delta;
 		cfs_rq->idle_h_nr_running += idle_task_delta;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		cfs_rq->qos_idle_h_nr_running += qos_idle_delta;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -8550,6 +8614,14 @@ static bool qos_smt_check_siblings_status(int this_cpu)
 	return false;
 }
 
+static bool qos_sched_idle_cpu(int this_cpu)
+{
+	struct rq *rq = cpu_rq(this_cpu);
+
+	return unlikely(rq->nr_running == rq->cfs.qos_idle_h_nr_running &&
+			rq->nr_running);
+}
+
 static bool qos_smt_expelled(int this_cpu)
 {
 	/*
@@ -8557,7 +8629,7 @@ static bool qos_smt_expelled(int this_cpu)
 	 * offline tasks enqueued, there is not suitable task,
 	 * so pick_next_task_fair return null.
 	 */
-	if (qos_smt_check_siblings_status(this_cpu) && sched_idle_cpu(this_cpu))
+	if (qos_smt_check_siblings_status(this_cpu) && qos_sched_idle_cpu(this_cpu))
 		return true;
 
 	return false;
@@ -8638,7 +8710,7 @@ static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
 		}
 
 		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_OFFLINE &&
-		    rq->curr == rq->idle && sched_idle_cpu(this_cpu)) {
+		    rq->curr == rq->idle && qos_sched_idle_cpu(this_cpu)) {
 			trace_sched_qos_smt_expel(cpu_curr(cpu), per_cpu(qos_smt_status, cpu));
 			return true;
 		}
