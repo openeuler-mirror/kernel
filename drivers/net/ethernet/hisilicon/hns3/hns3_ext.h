@@ -17,10 +17,10 @@
 
 #define nic_set_8211_phy_reg nic_set_phy_reg
 #define nic_get_8211_phy_reg nic_get_phy_reg
-#define nic_set_8521_phy_reg(ndev, page_region, page, reg_addr, data) \
-	nic_set_phy_reg(ndev, 0, page_region, page, reg_addr, data)
-#define nic_get_8521_phy_reg(ndev, page_region, page, reg_addr, data) \
-	nic_get_phy_reg(ndev, 0, page_region, page, reg_addr, data)
+#define nic_set_8521_phy_reg(ndev, page, reg_addr, data) \
+	nic_set_phy_reg(ndev, 0, page, reg_addr, data)
+#define nic_get_8521_phy_reg(ndev, page, reg_addr, data) \
+	nic_get_phy_reg(ndev, 0, page, reg_addr, data)
 
 #define nic_get_cdr_flash_status(ndev, status)	\
 	nic_get_port_fault_status(ndev, HNAE3_FAULT_TYPE_CDR_FLASH, status)
