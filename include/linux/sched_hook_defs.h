@@ -5,3 +5,5 @@ BPF_SCHED_HOOK(int, 0, cfs_wakeup_preempt_entity, struct sched_entity *curr,
 	struct sched_entity *se)
 BPF_SCHED_HOOK(int, 0, cfs_tag_pick_next_entity, const struct sched_entity *curr,
 	       const struct sched_entity *next)
+BPF_SCHED_HOOK(void, (void) 0, cfs_enqueue_task, struct rq *rq, struct task_struct *p)
+BPF_SCHED_HOOK(void, (void) 0, cfs_dequeue_task, struct rq *rq, struct task_struct *p)

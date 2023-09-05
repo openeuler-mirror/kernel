@@ -6433,6 +6433,11 @@ enqueue_throttle:
 	assert_list_leaf_cfs_rq(rq);
 
 	hrtick_update(rq);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled())
+		bpf_sched_cfs_enqueue_task(rq, p);
+#endif
 }
 
 static void set_next_buddy(struct sched_entity *se);
@@ -6510,6 +6515,11 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 dequeue_throttle:
 	util_est_update(&rq->cfs, p, task_sleep);
 	hrtick_update(rq);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled())
+		bpf_sched_cfs_dequeue_task(rq, p);
+#endif
 }
 
 #ifdef CONFIG_SMP
