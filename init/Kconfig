@@ -1189,6 +1189,11 @@ config SOCK_CGROUP_DATA
 	bool
 	default n
 
+config CGROUP_V1_KILL
+	bool "Kill All Tasks In Cgroup"
+	default n
+	depends on CGROUPS
+
 endif # CGROUPS
 
 menuconfig NAMESPACES
