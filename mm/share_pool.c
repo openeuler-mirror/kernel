@@ -709,6 +709,15 @@ struct sp_alloc_context {
 	enum spa_type type;
 };
 
+struct sp_k2u_context {
+	unsigned long kva;
+	unsigned long kva_aligned;
+	unsigned long size;
+	unsigned long size_aligned;
+	unsigned long sp_flags;
+	enum spa_type type;
+};
+
 /*
  * Get the sp_group from the mm and return the associated sp_group_node.
  * The caller should promise the @mm would not be deleted from the @spg.
@@ -1443,10 +1452,7 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	return ret;
 }
 
-static int sp_k2u_populate(struct mm_struct *mm, struct sp_area *spa)
-{
-	return -EOPNOTSUPP;
-}
+static int sp_k2u_populate(struct mm_struct *mm, struct sp_area *spa);
 
 #define SP_SKIP_ERR 1
 /*
@@ -1542,7 +1548,7 @@ unmap:
 	return mmap_ret;
 }
 
-void *__mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+static void *__mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
 			     nodemask_t *nodemask)
 {
 	int ret = 0;
@@ -1654,6 +1660,115 @@ static int is_vmap_hugepage(unsigned long addr)
 		return 0;
 }
 
+static unsigned long __sp_remap_get_pfn(unsigned long kva)
+{
+	unsigned long pfn = -EINVAL;
+
+	/* sp_make_share_k2u only support vmalloc address */
+	if (is_vmalloc_addr((void *)kva))
+		pfn = vmalloc_to_pfn((void *)kva);
+
+	return pfn;
+}
+
+static int sp_k2u_populate(struct mm_struct *mm, struct sp_area *spa)
+{
+	int ret;
+	struct vm_area_struct *vma;
+	unsigned long kva = spa->kva;
+	unsigned long addr, buf, offset;
+
+	/* This should not fail because we hold the mmap_lock sicne mmap */
+	vma = find_vma(mm, spa->va_start);
+	if (is_vm_hugetlb_page(vma)) {
+		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
+		if (ret) {
+			pr_debug("remap vmalloc hugepage failed, ret %d, kva is %lx\n",
+				 ret, (unsigned long)kva);
+			return ret;
+		}
+		vm_flags_set(vma, VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP);
+	} else {
+		addr = kva;
+		offset = 0;
+		buf = spa->va_start;
+		do {
+			ret = remap_pfn_range(vma, buf, __sp_remap_get_pfn(addr), PAGE_SIZE,
+					__pgprot(vma->vm_page_prot.pgprot));
+			if (ret) {
+				pr_err("remap_pfn_range failed %d\n", ret);
+				return ret;
+			}
+			offset += PAGE_SIZE;
+			buf += PAGE_SIZE;
+			addr += PAGE_SIZE;
+		} while (offset < spa_size(spa));
+	}
+
+	return 0;
+}
+
+static int sp_k2u_prepare(unsigned long kva, unsigned long size,
+	unsigned long sp_flags, int spg_id, struct sp_k2u_context *kc)
+{
+	int is_hugepage, ret;
+	unsigned int page_size = PAGE_SIZE;
+	unsigned long kva_aligned, size_aligned;
+
+	check_interrupt_context();
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	if (!size) {
+		pr_err_ratelimited("k2u input size is 0.\n");
+		return -EINVAL;
+	}
+
+	if (sp_flags & ~SP_FLAG_MASK) {
+		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
+		return -EINVAL;
+	}
+	sp_flags &= ~SP_HUGEPAGE;
+
+	if (!current->mm) {
+		pr_err_ratelimited("k2u: kthread is not allowed\n");
+		return -EPERM;
+	}
+
+	is_hugepage = is_vmap_hugepage(kva);
+	if (is_hugepage > 0) {
+		sp_flags |= SP_HUGEPAGE;
+		page_size = PMD_SIZE;
+	} else if (is_hugepage == 0) {
+		/* do nothing */
+	} else {
+		pr_err_ratelimited("k2u kva is not vmalloc address\n");
+		return is_hugepage;
+	}
+
+	if (spg_id == SPG_ID_DEFAULT) {
+		ret = sp_init_group_master(current, current->mm);
+		if (ret) {
+			pr_err("k2u_task init local mapping failed %d\n", ret);
+			return ret;
+		}
+	}
+
+	/* aligned down kva is convenient for caller to start with any valid kva */
+	kva_aligned = ALIGN_DOWN(kva, page_size);
+	size_aligned = ALIGN(kva + size, page_size) - kva_aligned;
+
+	kc->kva          = kva;
+	kc->kva_aligned  = kva_aligned;
+	kc->size         = size;
+	kc->size_aligned = size_aligned;
+	kc->sp_flags     = sp_flags;
+	kc->type         = (spg_id == SPG_ID_DEFAULT) ? SPA_TYPE_K2TASK : SPA_TYPE_K2SPG;
+
+	return 0;
+}
+
 /**
  * mg_sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
  * @kva: the VA of shared kernel memory.
@@ -1674,7 +1789,57 @@ static int is_vmap_hugepage(unsigned long addr)
 void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int tgid, int spg_id)
 {
-	return ERR_PTR(-EOPNOTSUPP);
+	int mmap_ret, ret;
+	struct sp_area *spa;
+	struct sp_group *spg;
+	struct sp_k2u_context kc;
+	struct sp_group_node *spg_node, *ori_node;
+
+	spg_id = (spg_id == SPG_ID_NONE) ? SPG_ID_DEFAULT : spg_id;
+	ret = sp_k2u_prepare(kva, size, sp_flags, spg_id, &kc);
+	if (ret)
+		return ERR_PTR(ret);
+
+	spg = sp_group_get_from_mm(current->mm, spg_id, &ori_node);
+	if (!spg) {
+		pr_err("k2u failed, can't find group(%d)\n", spg_id);
+		return ERR_PTR(-ENODEV);
+	}
+
+	down_write(&spg->rw_lock);
+	spa = sp_area_alloc(kc.size_aligned, kc.sp_flags, spg, kc.type, current->tgid, 0);
+	if (IS_ERR(spa)) {
+		up_write(&spg->rw_lock);
+		pr_err("alloc spa failed in k2u_spg (potential no enough virtual memory when -75): %ld\n",
+				PTR_ERR(spa));
+		sp_group_put(spg);
+		return spa;
+	}
+
+	ret = -EINVAL;
+	spa->kva = kc.kva_aligned;
+	list_for_each_entry(spg_node, &spg->proc_head, proc_node) {
+		struct mm_struct *mm = spg_node->master->mm;
+
+		mmap_ret = sp_map_spa_to_mm(mm, spa, spg_node->prot, NULL, "k2u");
+		if (mmap_ret) {
+			if (mmap_ret == SP_SKIP_ERR)
+				continue;
+			pr_err("remap k2u to spg failed %d\n", mmap_ret);
+			__sp_free(spa, mm);
+			ret = mmap_ret;
+			break;
+		}
+		ret = mmap_ret;
+	}
+
+	if (!ret)
+		update_mem_usage(spa_size(spa), true, spa->is_hugepage, ori_node, spa->type);
+	sp_area_put_locked(spa);
+	up_write(&spg->rw_lock);
+	sp_group_put(spg);
+
+	return ret ? ERR_PTR(ret) : (void *)(spa->va_start + (kc.kva - kc.kva_aligned));
 }
 EXPORT_SYMBOL_GPL(mg_sp_make_share_k2u);
 
