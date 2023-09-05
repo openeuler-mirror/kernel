@@ -124,19 +124,24 @@ extern bool mg_is_sharepool_addr(unsigned long addr);
 
 extern int mg_sp_id_of_current(void);
 
-extern void sp_area_drop(struct vm_area_struct *vma);
-extern void sp_mm_clean(struct mm_struct *mm);
-vm_fault_t sharepool_no_page(struct mm_struct *mm,
-			     struct vm_area_struct *vma,
-			     struct address_space *mapping, pgoff_t idx,
-			     unsigned long address, pte_t *ptep, unsigned int flags);
-extern bool sp_check_addr(unsigned long addr);
-extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
-extern int sp_node_id(struct vm_area_struct *vma);
+extern void __sp_area_drop(struct vm_area_struct *vma);
+extern void __sp_mm_clean(struct mm_struct *mm);
 
 static inline bool sp_is_enabled(void)
 {
 	return static_branch_likely(&share_pool_enabled_key);
+}
+
+static inline void sp_mm_clean(struct mm_struct *mm)
+{
+	if (sp_is_enabled())
+		__sp_mm_clean(mm);
+}
+
+static inline void sp_area_drop(struct vm_area_struct *vma)
+{
+	if (sp_is_enabled())
+		__sp_area_drop(vma);
 }
 
 static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
@@ -158,10 +163,6 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 static inline int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
 {
 	return -EPERM;
-}
-
-static inline void sp_mm_clean(struct mm_struct *mm)
-{
 }
 
 static inline int mg_sp_group_id_by_pid(int tgid, int *spg_ids, int *num)
@@ -198,6 +199,10 @@ static inline int mg_sp_unshare(unsigned long va, unsigned long size, int id)
 static inline int mg_sp_id_of_current(void)
 {
 	return -EPERM;
+}
+
+static inline void sp_mm_clean(struct mm_struct *mm)
+{
 }
 
 static inline void sp_init_mm(struct mm_struct *mm)
@@ -253,24 +258,6 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 static inline bool is_vm_huge_special(struct vm_area_struct *vma)
 {
 	return false;
-}
-
-static inline bool sp_check_addr(unsigned long addr)
-{
-	return false;
-}
-
-static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
-{
-	return false;
-}
-
-static inline vm_fault_t sharepool_no_page(struct mm_struct *mm,
-			struct vm_area_struct *vma,
-			struct address_space *mapping, pgoff_t idx,
-			unsigned long address, pte_t *ptep, unsigned int flags)
-{
-	return VM_FAULT_SIGBUS;
 }
 
 static inline int sp_node_id(struct vm_area_struct *vma)

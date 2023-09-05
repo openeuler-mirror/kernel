@@ -1744,7 +1744,7 @@ static void sp_area_drop_func(struct work_struct *work)
 		sp_group_put(spg);
 }
 
-void sp_area_drop(struct vm_area_struct *vma)
+void __sp_area_drop(struct vm_area_struct *vma)
 {
 	struct sp_area *spa = vma->spa;
 
@@ -3334,6 +3334,65 @@ static void __init proc_sharepool_init(void)
 }
 
 /*** End of tatistical and maintenance functions ***/
+
+void __sp_mm_clean(struct mm_struct *mm)
+{
+	struct sp_meminfo *meminfo;
+	long alloc_size, k2u_size;
+	/* lockless visit */
+	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_group_node *spg_node, *tmp;
+	struct sp_group *spg;
+
+	if (!master)
+		return;
+
+	/*
+	 * There are two basic scenarios when a process in the share pool is
+	 * exiting but its share pool memory usage is not 0.
+	 * 1. Process A called sp_alloc(), but it terminates without calling
+	 *    sp_free(). Then its share pool memory usage is a positive number.
+	 * 2. Process A never called sp_alloc(), and process B in the same spg
+	 *    called sp_alloc() to get an addr u. Then A gets u somehow and
+	 *    called sp_free(u). Now A's share pool memory usage is a negative
+	 *    number. Notice B's memory usage will be a positive number.
+	 *
+	 * We decide to print an info when seeing both of the scenarios.
+	 *
+	 * A process not in an sp group doesn't need to print because there
+	 * wont't be any memory which is not freed.
+	 */
+	meminfo = &master->meminfo;
+	alloc_size = meminfo_alloc_sum(meminfo);
+	k2u_size = atomic64_read(&meminfo->k2u_size);
+	if (alloc_size != 0 || k2u_size != 0)
+		pr_info("process %s(%d) exits. It applied %ld aligned KB, k2u shared %ld aligned KB\n",
+			master->comm, master->tgid,
+			byte2kb(alloc_size), byte2kb(k2u_size));
+
+	down_write(&sp_global_sem);
+	list_for_each_entry_safe(spg_node, tmp, &master->group_head, group_node) {
+		spg = spg_node->spg;
+
+		down_write(&spg->rw_lock);
+
+		list_del(&spg_node->proc_node);
+		spg->proc_num--;
+		list_del(&spg_node->group_node);
+		master->group_num--;
+
+		up_write(&spg->rw_lock);
+
+		mmdrop(mm);
+		sp_group_put_locked(spg);
+		kfree(spg_node);
+	}
+	up_write(&sp_global_sem);
+
+	sp_del_group_master(master);
+
+	kfree(master);
+}
 
 DEFINE_STATIC_KEY_FALSE(share_pool_enabled_key);
 
