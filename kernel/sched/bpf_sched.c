@@ -261,6 +261,23 @@ static const struct bpf_func_proto bpf_cpumask_op_proto = {
 	.arg2_type	= ARG_CONST_SIZE,
 };
 
+BPF_CALL_2(bpf_cpus_share_cache, int, src_cpu, int, dst_cpu)
+{
+	if ((unsigned int)src_cpu >= nr_cpu_ids ||
+	    (unsigned int)dst_cpu >= nr_cpu_ids)
+		return 0;
+
+	return cpus_share_cache(src_cpu, dst_cpu);
+}
+
+static const struct bpf_func_proto bpf_cpus_share_cache_proto = {
+	.func		= bpf_cpus_share_cache,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_ANYTHING,
+};
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -281,6 +298,8 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sched_entity_to_tg_proto;
 	case BPF_FUNC_cpumask_op:
 		return &bpf_cpumask_op_proto;
+	case BPF_FUNC_cpus_share_cache:
+		return &bpf_cpus_share_cache_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}

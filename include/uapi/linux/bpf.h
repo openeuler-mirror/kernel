@@ -5679,6 +5679,12 @@ union bpf_attr {
  *			0 on success, or a negative error in case of failure.
  *	Return
  *		View above.
+ *
+ * int bpf_cpus_share_cache(int src_cpu, int dst_cpu)
+ *	Description
+ *		check src_cpu whether share cache with dst_cpu.
+ *	Return
+ *		yes 1, no 0.
  */
 #define ___BPF_FUNC_MAPPER(FN, ctx...)			\
 	FN(unspec, 0, ##ctx)				\
@@ -5906,6 +5912,7 @@ union bpf_attr {
 	FN(sched_entity_to_task, 222, ##ctx)	\
 	FN(sched_entity_to_tg, 223, ##ctx)		\
 	FN(cpumask_op, 224, ##ctx)				\
+	FN(cpus_share_cache, 225, ##ctx)		\
 	/* */
 
 /* backwards-compatibility macros for users of __BPF_FUNC_MAPPER that don't
