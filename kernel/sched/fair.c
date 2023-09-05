@@ -8613,6 +8613,15 @@ static bool qos_smt_expelled(int this_cpu)
 #endif
 
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+DEFINE_STATIC_KEY_TRUE(qos_smt_expell_switch);
+
+static int __init qos_sched_smt_noexpell_setup(char *__unused)
+{
+	static_branch_disable(&qos_smt_expell_switch);
+	return 1;
+}
+__setup("nosmtexpell", qos_sched_smt_noexpell_setup);
+
 static bool qos_smt_check_siblings_status(int this_cpu)
 {
 	int cpu;
@@ -8641,6 +8650,9 @@ static bool qos_sched_idle_cpu(int this_cpu)
 
 static bool qos_smt_expelled(int this_cpu)
 {
+	if (!static_branch_likely(&qos_smt_expell_switch))
+		return false;
+
 	/*
 	 * The qos_smt_status of siblings cpu is online, and current cpu only has
 	 * offline tasks enqueued, there is not suitable task,
@@ -8697,15 +8709,29 @@ static void qos_smt_send_ipi(int this_cpu)
 
 static void qos_smt_expel(int this_cpu, struct task_struct *p)
 {
+	if (!static_branch_likely(&qos_smt_expell_switch))
+		return;
+
 	if (qos_smt_update_status(p))
 		qos_smt_send_ipi(this_cpu);
+}
+
+static inline bool qos_smt_enabled(void)
+{
+	if (!static_branch_likely(&qos_smt_expell_switch))
+		return false;
+
+	if (!sched_smt_active())
+		return false;
+
+	return true;
 }
 
 static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
 {
 	int cpu;
 
-	if (!sched_smt_active())
+	if (!qos_smt_enabled())
 		return false;
 
 	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
