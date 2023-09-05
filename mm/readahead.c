@@ -132,6 +132,7 @@
 
 #include "internal.h"
 
+#define READAHEAD_FIRST_SIZE	(2 * 1024 * 1024)
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
  * memset *ra to zero.
@@ -682,10 +683,41 @@ readit:
 	page_cache_ra_order(ractl, ra, order);
 }
 
+/*
+ * Try to read first @ra_size from head of the file.
+ */
+static bool page_cache_readahead_from_head(struct address_space *mapping,
+					struct file *filp, pgoff_t offset,
+					unsigned long req_size,
+					unsigned long ra_size)
+{
+	struct backing_dev_info *bdi = inode_to_bdi(mapping->host);
+	struct file_ra_state *ra = &filp->f_ra;
+	unsigned long size = min_t(unsigned long, ra_size,
+					file_inode(filp)->i_size);
+	unsigned long nrpages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+	unsigned long max_pages;
+	unsigned int offs = 0;
+
+	/* Cannot read date over target size, back to normal way */
+	if (offset + req_size > nrpages)
+		return false;
+
+	max_pages = max_t(unsigned long, bdi->io_pages, ra->ra_pages);
+	max_pages = min(max_pages, nrpages);
+	while (offs < nrpages) {
+		force_page_cache_readahead(mapping, filp, offs, max_pages);
+		offs += max_pages;
+	}
+	return true;
+}
+
 void page_cache_sync_ra(struct readahead_control *ractl,
 		unsigned long req_count)
 {
-	bool do_forced_ra = ractl->file && (ractl->file->f_mode & FMODE_RANDOM);
+	bool do_forced_ra = ractl->file &&
+			    ((ractl->file->f_mode & FMODE_RANDOM) ||
+			     (ractl->file->f_ctl_mode & FMODE_CTL_RANDOM));
 
 	/*
 	 * Even if readahead is disabled, issue this request as readahead
@@ -699,6 +731,12 @@ void page_cache_sync_ra(struct readahead_control *ractl,
 		req_count = 1;
 		do_forced_ra = true;
 	}
+
+	/* try to read first READAHEAD_FIRST_SIZE into pagecache */
+	if (ractl->file && (ractl->file->f_ctl_mode & FMODE_CTL_WILLNEED) &&
+		page_cache_readahead_from_head(ractl->mapping, ractl->file,
+			ractl->_index, req_count, READAHEAD_FIRST_SIZE))
+		return;
 
 	/* be dumb */
 	if (do_forced_ra) {
