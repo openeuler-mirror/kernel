@@ -1654,6 +1654,7 @@ const struct bpf_func_proto bpf_probe_read_user_str_proto __weak;
 const struct bpf_func_proto bpf_probe_read_kernel_proto __weak;
 const struct bpf_func_proto bpf_probe_read_kernel_str_proto __weak;
 const struct bpf_func_proto bpf_task_pt_regs_proto __weak;
+const struct bpf_func_proto bpf_sched_tg_tag_of_proto __weak;
 
 const struct bpf_func_proto *
 bpf_base_func_proto(enum bpf_func_id func_id)
@@ -1703,6 +1704,8 @@ bpf_base_func_proto(enum bpf_func_id func_id)
 		return &bpf_strtol_proto;
 	case BPF_FUNC_strtoul:
 		return &bpf_strtoul_proto;
+	case BPF_FUNC_sched_tg_tag_of:
+		return &bpf_sched_tg_tag_of_proto;
 	default:
 		break;
 	}
