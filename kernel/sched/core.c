@@ -3763,6 +3763,9 @@ ttwu_do_activate(struct rq *rq, struct task_struct *p, int wake_flags,
 		rq->idle_stamp = 0;
 	}
 #endif
+#ifdef CONFIG_BPF_SCHED
+	p->tag		= 0;
+#endif
 }
 
 /*
