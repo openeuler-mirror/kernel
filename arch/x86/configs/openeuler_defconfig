@@ -7792,6 +7792,12 @@ CONFIG_USB4=m
 # CONFIG_ANDROID_BINDER_IPC is not set
 # end of Android
 
+#
+# Vendor Hooks
+#
+CONFIG_VENDOR_HOOKS=y
+# end of Vendor Hooks
+
 CONFIG_LIBNVDIMM=m
 CONFIG_BLK_DEV_PMEM=m
 CONFIG_ND_CLAIM=y
