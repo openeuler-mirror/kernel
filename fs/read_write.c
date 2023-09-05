@@ -1727,7 +1727,7 @@ static void fs_file_read_ctx_init(struct fs_file_read_ctx *ctx,
 {
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->name = file_dentry(filp)->d_name.name;
-	ctx->f_ctl_mode = filp->f_ctl_mode;
+	ctx->f_mode = filp->f_mode;
 	ctx->key = (unsigned long)filp;
 	ctx->i_size = file_inode(filp)->i_size;
 	ctx->prev_index = filp->f_ra.prev_pos >> PAGE_SHIFT;
@@ -1745,11 +1745,11 @@ void fs_file_read_update_args_by_trace(struct kiocb *iocb)
 	fs_file_read_ctx_init(&ctx, filp, iocb->ki_pos);
 	trace_fs_file_read(&ctx, FS_FILE_READ_VERSION);
 
-	if (!ctx.set_f_ctl_mode && !ctx.clr_f_ctl_mode)
+	if (!ctx.set_f_mode && !ctx.clr_f_mode)
 		return;
 
-	filp->f_ctl_mode |= ctx.set_f_ctl_mode & FS_FILE_READ_MODE_MASK;
-	filp->f_ctl_mode &= ~(ctx.clr_f_ctl_mode & FS_FILE_READ_MODE_MASK);
+	filp->f_ctl_mode |= ctx.set_f_mode & FS_FILE_READ_MODE_MASK;
+	filp->f_ctl_mode &= ~(ctx.clr_f_mode & FS_FILE_READ_MODE_MASK);
 }
 EXPORT_SYMBOL_GPL(fs_file_read_update_args_by_trace);
 #endif

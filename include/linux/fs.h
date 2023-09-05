@@ -191,10 +191,10 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 #define FMODE_BUF_WASYNC	((__force fmode_t)0x80000000)
 
 /* File mode control flag, expect random access pattern */
-#define FMODE_CTL_RANDOM	((__force fmode_t)0x1)
+#define FMODE_CTL_RANDOM	((__force fmode_t)0x1000)
 
 /* File mode control flag, will try to read head of the file into pagecache */
-#define FMODE_CTL_WILLNEED	((__force fmode_t)0x2)
+#define FMODE_CTL_WILLNEED		((__force fmode_t)0x400000)
 
 /*
  * Attribute flags.  These should be or-ed together to figure out what
@@ -3215,12 +3215,12 @@ extern int generic_fadvise(struct file *file, loff_t offset, loff_t len,
 
 struct fs_file_read_ctx {
 	const unsigned char *name;
-	unsigned int f_ctl_mode;
+	unsigned int f_mode;
 	unsigned int rsvd;
 	/* clear from f_ctl_mode */
-	unsigned int clr_f_ctl_mode;
+	unsigned int clr_f_mode;
 	/* set into f_ctl_mode */
-	unsigned int set_f_ctl_mode;
+	unsigned int set_f_mode;
 	unsigned long key;
 	/* file size */
 	long long i_size;
