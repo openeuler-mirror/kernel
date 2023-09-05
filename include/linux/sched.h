@@ -2486,6 +2486,38 @@ static inline int sched_qos_cpu_overload(void)
 
 #ifdef CONFIG_BPF_SCHED
 extern void sched_settag(struct task_struct *tsk, s64 tag);
+
+struct bpf_sched_cpu_stats {
+	/* load/util */
+	unsigned long cfs_load_avg;
+	unsigned long cfs_runnable_avg;
+	unsigned long cfs_util_avg;
+	unsigned long rt_load_avg;
+	unsigned long rt_runnable_avg;
+	unsigned long rt_util_avg;
+	unsigned long irq_load_avg;
+	unsigned long irq_runnable_avg;
+	unsigned long irq_util_avg;
+
+	/* nr_running */
+	unsigned int nr_running;
+	unsigned int cfs_nr_running;
+	unsigned int cfs_h_nr_running;
+	unsigned int cfs_idle_h_nr_running;
+	unsigned int rt_nr_running;
+	unsigned int rr_nr_running;
+
+	/* idle statistics */
+	int available_idle;
+	unsigned int exit_latency;
+	unsigned long idle_stamp;
+	unsigned long avg_idle;
+
+	/* capacity */
+	unsigned long capacity;
+	unsigned long capacity_orig;
+};
+
 #endif
 
 #endif

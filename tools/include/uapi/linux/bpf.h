@@ -5601,6 +5601,12 @@ union bpf_attr {
  *		Set tag to *tsk*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_stats_of(int cpu, struct bpf_sched_cpu_stats *ctx, int len)
+ *	Description
+ *		Get multiple types of *cpu* statistics and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define ___BPF_FUNC_MAPPER(FN, ctx...)			\
 	FN(unspec, 0, ##ctx)				\
@@ -5821,6 +5827,7 @@ union bpf_attr {
 	FN(sched_task_tag_of, 215, ##ctx)		\
 	FN(sched_set_tg_tag, 216, ##ctx)		\
 	FN(sched_set_task_tag, 217, ##ctx)		\
+	FN(sched_cpu_stats_of, 218, ##ctx)		\
 	/* */
 
 /* backwards-compatibility macros for users of __BPF_FUNC_MAPPER that don't
