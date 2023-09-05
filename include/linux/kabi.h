@@ -396,6 +396,7 @@
 # define _KABI_DEPRECATE(_type, _orig)	_type kabi_reserved_##_orig
 # define _KABI_DEPRECATE_FN(_type, _orig, _args...)  \
 	_type (* kabi_reserved_##_orig)(_args)
+#ifdef CONFIG_KABI_RESERVE
 # define _KABI_REPLACE(_orig, _new)			  \
 	union {						  \
 		_new;					  \
@@ -404,6 +405,9 @@
 		} __UNIQUE_ID(kabi_hide);		  \
 		__KABI_CHECK_SIZE_ALIGN(_orig, _new);  \
 	}
+#else
+# define _KABI_REPLACE(_orig, _new)		KABI_BROKEN_REPLACE(_orig, _new)
+#endif
 
 # define _KABI_EXCLUDE(_elem)		_elem
 
@@ -426,9 +430,9 @@
  * code.
  */
 #ifdef CONFIG_KABI_RESERVE
-	# define _KABI_RESERVE(n)		u64 kabi_reserved##n
+# define _KABI_RESERVE(n)		u64 kabi_reserved##n
 #else
-	# define _KABI_RESERVE(n)
+# define _KABI_RESERVE(n)
 #endif
 # define KABI_RESERVE(n)		_KABI_RESERVE(n);
 /*
