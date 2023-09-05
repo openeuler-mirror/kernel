@@ -106,6 +106,18 @@ static bool do_memsw_account(void)
 #define SOFTLIMIT_EVENTS_TARGET 1024
 
 /*
+ * memcg warning watermark = memory.high * memcg->high_async_ratio /
+ * HIGH_ASYNC_RATIO_BASE.
+ * when memcg usage is larger than warning watermark, but smaller than
+ * memory.high, start memcg async reclaim;
+ * when memcg->high_async_ratio is HIGH_ASYNC_RATIO_BASE, memcg async
+ * relcaim is disabled;
+ */
+
+#define HIGH_ASYNC_RATIO_BASE			100
+#define HIGH_ASYNC_RATIO_GAP			10
+
+/*
  * Cgroups above their limits are maintained in a RB-Tree, independent of
  * their hierarchy representation
  */
@@ -2439,12 +2451,52 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 	return nr_reclaimed;
 }
 
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+static bool is_high_async_reclaim(struct mem_cgroup *memcg)
+{
+	int ratio = READ_ONCE(memcg->high_async_ratio);
+	unsigned long memcg_high = READ_ONCE(memcg->memory.high);
+
+	if (ratio == HIGH_ASYNC_RATIO_BASE || memcg_high == PAGE_COUNTER_MAX)
+		return false;
+
+	return page_counter_read(&memcg->memory) >
+	       memcg_high * ratio / HIGH_ASYNC_RATIO_BASE;
+}
+
+static void async_reclaim_high(struct mem_cgroup *memcg)
+{
+	unsigned long nr_pages, pflags;
+	unsigned long memcg_high = READ_ONCE(memcg->memory.high);
+	unsigned long memcg_usage = page_counter_read(&memcg->memory);
+	int ratio = READ_ONCE(memcg->high_async_ratio) - HIGH_ASYNC_RATIO_GAP;
+	unsigned long safe_pages = memcg_high * ratio / HIGH_ASYNC_RATIO_BASE;
+
+	if (!is_high_async_reclaim(memcg)) {
+		WRITE_ONCE(memcg->high_async_reclaim, false);
+		return;
+	}
+
+	psi_memstall_enter(&pflags);
+	nr_pages = memcg_usage > safe_pages ? memcg_usage - safe_pages :
+		   MEMCG_CHARGE_BATCH;
+	try_to_free_mem_cgroup_pages(memcg, nr_pages, GFP_KERNEL, MEMCG_RECLAIM_MAY_SWAP);
+	psi_memstall_leave(&pflags);
+	WRITE_ONCE(memcg->high_async_reclaim, false);
+}
+#endif
+
 static void high_work_func(struct work_struct *work)
 {
-	struct mem_cgroup *memcg;
+	struct mem_cgroup *memcg = container_of(work, struct mem_cgroup,
+						high_work);
 
-	memcg = container_of(work, struct mem_cgroup, high_work);
-	reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	if (READ_ONCE(memcg->high_async_reclaim))
+		async_reclaim_high(memcg);
+	else
+#endif
+		reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
 }
 
 /*
@@ -2832,6 +2884,14 @@ done_restock:
 			}
 			continue;
 		}
+
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+		if (is_high_async_reclaim(memcg) && !mem_high) {
+			WRITE_ONCE(memcg->high_async_reclaim, true);
+			schedule_work(&memcg->high_work);
+			break;
+		}
+#endif
 
 		if (mem_high || swap_high) {
 			/*
@@ -5580,6 +5640,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	WRITE_ONCE(memcg->soft_limit, PAGE_COUNTER_MAX);
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_ZSWAP)
 	memcg->zswap_max = PAGE_COUNTER_MAX;
+#endif
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	memcg->high_async_ratio = HIGH_ASYNC_RATIO_BASE;
 #endif
 	page_counter_set_high(&memcg->swap, PAGE_COUNTER_MAX);
 	if (parent) {

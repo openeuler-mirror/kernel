@@ -326,6 +326,10 @@ struct mem_cgroup {
 	struct lru_gen_mm_list mm_list;
 #endif
 
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	int high_async_ratio;
+	bool high_async_reclaim;
+#endif
 	struct mem_cgroup_per_node *nodeinfo[];
 };
 
