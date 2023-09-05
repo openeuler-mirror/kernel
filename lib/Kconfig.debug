@@ -1071,6 +1071,15 @@ config HARDLOCKUP_DETECTOR
 	  chance to run.  The current stack trace is displayed upon detection
 	  and the system will stay locked up.
 
+config CORELOCKUP_DETECTOR
+	bool "Detect Core Lockups"
+	depends on HARDLOCKUP_DETECTOR && SOFTLOCKUP_DETECTOR
+	depends on ARM64 || X86_64
+	depends on SMP
+	default n
+	help
+	  Corelockups is used to check whether cpu core hungup or not.
+
 config BOOTPARAM_HARDLOCKUP_PANIC
 	bool "Panic (Reboot) On Hard Lockups"
 	depends on HARDLOCKUP_DETECTOR

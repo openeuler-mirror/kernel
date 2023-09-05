@@ -352,6 +352,13 @@ static int softlockup_fn(void *data)
 	return 0;
 }
 
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+unsigned long watchdog_hrtimer_interrupts(unsigned int cpu)
+{
+	return per_cpu(hrtimer_interrupts, cpu);
+}
+#endif
+
 /* watchdog kicker functions */
 static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 {
@@ -362,6 +369,12 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 
 	if (!watchdog_enabled)
 		return HRTIMER_NORESTART;
+
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	/* check hrtimer of detector cpu */
+	if (enable_corelockup_detector)
+		watchdog_check_hrtimer();
+#endif
 
 	/* kick the hardlockup detector */
 	watchdog_interrupt_count();
@@ -527,15 +540,25 @@ static void softlockup_start_all(void)
 
 int lockup_detector_online_cpu(unsigned int cpu)
 {
-	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask))
+	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask)) {
 		watchdog_enable(cpu);
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+		if (enable_corelockup_detector)
+			corelockup_detector_online_cpu(cpu);
+#endif
+	}
 	return 0;
 }
 
 int lockup_detector_offline_cpu(unsigned int cpu)
 {
-	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask))
+	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask)) {
 		watchdog_disable(cpu);
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+		if (enable_corelockup_detector)
+			corelockup_detector_offline_cpu(cpu);
+#endif
+	}
 	return 0;
 }
 
@@ -755,6 +778,9 @@ int proc_watchdog_cpumask(struct ctl_table *table, int write,
 }
 
 static const int sixty = 60;
+#ifdef CONFIG_HARDLOCKUP_DETECTOR
+static const int five = 5;
+#endif
 
 static struct ctl_table watchdog_sysctls[] = {
 	{
@@ -843,6 +869,17 @@ static struct ctl_table watchdog_sysctls[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif /* CONFIG_SMP */
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	{
+		.procname	= "corelockup_thresh",
+		.data		= &corelockup_miss_thresh,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_THREE,
+		.extra2		= (void *)&five,
+	},
+#endif
 #endif
 	{}
 };
@@ -867,4 +904,8 @@ void __init lockup_detector_init(void)
 		nmi_watchdog_available = true;
 	lockup_detector_setup();
 	watchdog_sysctl_init();
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	if (enable_corelockup_detector)
+		corelockup_detector_init();
+#endif
 }
