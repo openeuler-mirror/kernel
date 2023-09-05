@@ -106,6 +106,18 @@ static bool do_memsw_account(void)
 #define SOFTLIMIT_EVENTS_TARGET 1024
 
 /*
+ * memcg warning watermark = memory.high * memcg->high_async_ratio /
+ * HIGH_ASYNC_RATIO_BASE.
+ * when memcg usage is larger than warning watermark, but smaller than
+ * memory.high, start memcg async reclaim;
+ * when memcg->high_async_ratio is HIGH_ASYNC_RATIO_BASE, memcg async
+ * relcaim is disabled;
+ */
+
+#define HIGH_ASYNC_RATIO_BASE			100
+#define HIGH_ASYNC_RATIO_GAP			10
+
+/*
  * Cgroups above their limits are maintained in a RB-Tree, independent of
  * their hierarchy representation
  */
@@ -2439,12 +2451,52 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 	return nr_reclaimed;
 }
 
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+static bool is_high_async_reclaim(struct mem_cgroup *memcg)
+{
+	int ratio = READ_ONCE(memcg->high_async_ratio);
+	unsigned long memcg_high = READ_ONCE(memcg->memory.high);
+
+	if (ratio == HIGH_ASYNC_RATIO_BASE || memcg_high == PAGE_COUNTER_MAX)
+		return false;
+
+	return page_counter_read(&memcg->memory) >
+	       memcg_high * ratio / HIGH_ASYNC_RATIO_BASE;
+}
+
+static void async_reclaim_high(struct mem_cgroup *memcg)
+{
+	unsigned long nr_pages, pflags;
+	unsigned long memcg_high = READ_ONCE(memcg->memory.high);
+	unsigned long memcg_usage = page_counter_read(&memcg->memory);
+	int ratio = READ_ONCE(memcg->high_async_ratio) - HIGH_ASYNC_RATIO_GAP;
+	unsigned long safe_pages = memcg_high * ratio / HIGH_ASYNC_RATIO_BASE;
+
+	if (!is_high_async_reclaim(memcg)) {
+		WRITE_ONCE(memcg->high_async_reclaim, false);
+		return;
+	}
+
+	psi_memstall_enter(&pflags);
+	nr_pages = memcg_usage > safe_pages ? memcg_usage - safe_pages :
+		   MEMCG_CHARGE_BATCH;
+	try_to_free_mem_cgroup_pages(memcg, nr_pages, GFP_KERNEL, MEMCG_RECLAIM_MAY_SWAP);
+	psi_memstall_leave(&pflags);
+	WRITE_ONCE(memcg->high_async_reclaim, false);
+}
+#endif
+
 static void high_work_func(struct work_struct *work)
 {
-	struct mem_cgroup *memcg;
+	struct mem_cgroup *memcg = container_of(work, struct mem_cgroup,
+						high_work);
 
-	memcg = container_of(work, struct mem_cgroup, high_work);
-	reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	if (READ_ONCE(memcg->high_async_reclaim))
+		async_reclaim_high(memcg);
+	else
+#endif
+		reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
 }
 
 /*
@@ -2832,6 +2884,14 @@ done_restock:
 			}
 			continue;
 		}
+
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+		if (is_high_async_reclaim(memcg) && !mem_high) {
+			WRITE_ONCE(memcg->high_async_reclaim, true);
+			schedule_work(&memcg->high_work);
+			break;
+		}
+#endif
 
 		if (mem_high || swap_high) {
 			/*
@@ -4575,6 +4635,11 @@ static int mem_cgroup_oom_control_read(struct seq_file *sf, void *v)
 	seq_printf(sf, "under_oom %d\n", (bool)memcg->under_oom);
 	seq_printf(sf, "oom_kill %lu\n",
 		   atomic_long_read(&memcg->memory_events[MEMCG_OOM_KILL]));
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	seq_printf(sf, "oom_kill_local %lu\n",
+		   atomic_long_read(&memcg->memory_events_local[MEMCG_OOM_KILL]));
+#endif
+
 	return 0;
 }
 
@@ -5059,6 +5124,170 @@ static int mem_cgroup_slab_show(struct seq_file *m, void *p)
 }
 #endif
 
+static int seq_puts_memcg_tunable(struct seq_file *m, unsigned long value)
+{
+	if (value == PAGE_COUNTER_MAX)
+		seq_puts(m, "max\n");
+	else
+		seq_printf(m, "%llu\n", (u64)value * PAGE_SIZE);
+
+	return 0;
+}
+
+static int memory_min_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->memory.min));
+}
+
+static ssize_t memory_min_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long min;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &min);
+	if (err)
+		return err;
+
+	page_counter_set_min(&memcg->memory, min);
+
+	return nbytes;
+}
+
+static int memory_low_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->memory.low));
+}
+
+static ssize_t memory_low_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long low;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &low);
+	if (err)
+		return err;
+
+	page_counter_set_low(&memcg->memory, low);
+
+	return nbytes;
+}
+
+static int memory_high_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->memory.high));
+}
+
+static ssize_t memory_high_write(struct kernfs_open_file *of,
+				 char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned int nr_retries = MAX_RECLAIM_RETRIES;
+	bool drained = false;
+	unsigned long high;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &high);
+	if (err)
+		return err;
+
+	page_counter_set_high(&memcg->memory, high);
+
+	for (;;) {
+		unsigned long nr_pages = page_counter_read(&memcg->memory);
+		unsigned long reclaimed;
+
+		if (nr_pages <= high)
+			break;
+
+		if (signal_pending(current))
+			break;
+
+		if (!drained) {
+			drain_all_stock(memcg);
+			drained = true;
+			continue;
+		}
+
+		reclaimed = try_to_free_mem_cgroup_pages(memcg, nr_pages - high,
+							 GFP_KERNEL, true);
+
+		if (!reclaimed && !nr_retries--)
+			break;
+	}
+
+	memcg_wb_domain_size_changed(memcg);
+	return nbytes;
+}
+
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+static void __memcg_events_show(struct seq_file *m, atomic_long_t *events)
+{
+	seq_printf(m, "low %lu\n", atomic_long_read(&events[MEMCG_LOW]));
+	seq_printf(m, "high %lu\n", atomic_long_read(&events[MEMCG_HIGH]));
+	seq_printf(m, "limit_in_bytes %lu\n",
+		   atomic_long_read(&events[MEMCG_MAX]));
+	seq_printf(m, "oom %lu\n", atomic_long_read(&events[MEMCG_OOM]));
+}
+
+static int memcg_events_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	__memcg_events_show(m, memcg->memory_events);
+	return 0;
+}
+
+static int memcg_events_local_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	__memcg_events_show(m, memcg->memory_events_local);
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+static int memcg_high_async_ratio_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n",
+		   READ_ONCE(mem_cgroup_from_seq(m)->high_async_ratio));
+	return 0;
+}
+
+static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
+					    char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	int ret, high_async_ratio;
+
+	buf = strstrip(buf);
+	if (!buf)
+		return -EINVAL;
+
+	ret = kstrtoint(buf, 0, &high_async_ratio);
+	if (ret)
+		return ret;
+
+	if (high_async_ratio > HIGH_ASYNC_RATIO_BASE ||
+	    high_async_ratio <= HIGH_ASYNC_RATIO_GAP)
+		return -EINVAL;
+
+	WRITE_ONCE(memcg->high_async_ratio, high_async_ratio);
+
+	return nbytes;
+}
+#endif
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5185,6 +5414,45 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = mem_cgroup_reset,
 		.read_u64 = mem_cgroup_read_u64,
 	},
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	{
+		.name = "min",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_min_show,
+		.write = memory_min_write,
+	},
+	{
+		.name = "low",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_low_show,
+		.write = memory_low_write,
+	},
+	{
+		.name = "high",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_high_show,
+		.write = memory_high_write,
+	},
+	{
+		.name = "events",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, events_file),
+		.seq_show = memcg_events_show,
+	},
+	{
+		.name = "events.local",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, events_local_file),
+		.seq_show = memcg_events_local_show,
+	},
+	{
+		.name = "high_async_ratio",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memcg_high_async_ratio_show,
+		.write = memcg_high_async_ratio_write,
+	},
+
+#endif
 	{ },	/* terminate */
 };
 
@@ -5411,6 +5679,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	WRITE_ONCE(memcg->soft_limit, PAGE_COUNTER_MAX);
 #if defined(CONFIG_MEMCG_KMEM) && defined(CONFIG_ZSWAP)
 	memcg->zswap_max = PAGE_COUNTER_MAX;
+#endif
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	memcg->high_async_ratio = HIGH_ASYNC_RATIO_BASE;
 #endif
 	page_counter_set_high(&memcg->swap, PAGE_COUNTER_MAX);
 	if (parent) {
@@ -6428,16 +6699,6 @@ static void mem_cgroup_attach(struct cgroup_taskset *tset)
 }
 #endif /* CONFIG_LRU_GEN */
 
-static int seq_puts_memcg_tunable(struct seq_file *m, unsigned long value)
-{
-	if (value == PAGE_COUNTER_MAX)
-		seq_puts(m, "max\n");
-	else
-		seq_printf(m, "%llu\n", (u64)value * PAGE_SIZE);
-
-	return 0;
-}
-
 static u64 memory_current_read(struct cgroup_subsys_state *css,
 			       struct cftype *cft)
 {
@@ -6452,101 +6713,6 @@ static u64 memory_peak_read(struct cgroup_subsys_state *css,
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
 	return (u64)memcg->memory.watermark * PAGE_SIZE;
-}
-
-static int memory_min_show(struct seq_file *m, void *v)
-{
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->memory.min));
-}
-
-static ssize_t memory_min_write(struct kernfs_open_file *of,
-				char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	unsigned long min;
-	int err;
-
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "max", &min);
-	if (err)
-		return err;
-
-	page_counter_set_min(&memcg->memory, min);
-
-	return nbytes;
-}
-
-static int memory_low_show(struct seq_file *m, void *v)
-{
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->memory.low));
-}
-
-static ssize_t memory_low_write(struct kernfs_open_file *of,
-				char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	unsigned long low;
-	int err;
-
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "max", &low);
-	if (err)
-		return err;
-
-	page_counter_set_low(&memcg->memory, low);
-
-	return nbytes;
-}
-
-static int memory_high_show(struct seq_file *m, void *v)
-{
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->memory.high));
-}
-
-static ssize_t memory_high_write(struct kernfs_open_file *of,
-				 char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	unsigned int nr_retries = MAX_RECLAIM_RETRIES;
-	bool drained = false;
-	unsigned long high;
-	int err;
-
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "max", &high);
-	if (err)
-		return err;
-
-	page_counter_set_high(&memcg->memory, high);
-
-	for (;;) {
-		unsigned long nr_pages = page_counter_read(&memcg->memory);
-		unsigned long reclaimed;
-
-		if (nr_pages <= high)
-			break;
-
-		if (signal_pending(current))
-			break;
-
-		if (!drained) {
-			drain_all_stock(memcg);
-			drained = true;
-			continue;
-		}
-
-		reclaimed = try_to_free_mem_cgroup_pages(memcg, nr_pages - high,
-					GFP_KERNEL, MEMCG_RECLAIM_MAY_SWAP);
-
-		if (!reclaimed && !nr_retries--)
-			break;
-	}
-
-	memcg_wb_domain_size_changed(memcg);
-	return nbytes;
 }
 
 static int memory_max_show(struct seq_file *m, void *v)

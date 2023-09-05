@@ -943,6 +943,11 @@ config MEMCG
 	help
 	  Provides control over the memory footprint of tasks in a cgroup.
 
+config MEMCG_V1_THRESHOLD_QOS
+	bool "Qos memcg threshold in v1"
+	depends on MEMCG
+	default n
+
 config MEMCG_KMEM
 	bool
 	depends on MEMCG
@@ -1195,6 +1200,11 @@ config CGROUP_DEBUG
 config SOCK_CGROUP_DATA
 	bool
 	default n
+
+config CGROUP_V1_KILL
+	bool "Kill All Tasks In Cgroup"
+	default n
+	depends on CGROUPS
 
 endif # CGROUPS
 
