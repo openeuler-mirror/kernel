@@ -3989,8 +3989,8 @@ static void cgroup_kill(struct cgroup *cgrp)
 		__cgroup_kill(dsct);
 }
 
-static ssize_t cgroup_kill_write(struct kernfs_open_file *of, char *buf,
-				 size_t nbytes, loff_t off)
+ssize_t cgroup_kill_write(struct kernfs_open_file *of, char *buf, size_t nbytes,
+			  loff_t off)
 {
 	ssize_t ret = 0;
 	int kill;

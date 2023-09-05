@@ -661,6 +661,11 @@ struct cftype cgroup1_base_files[] = {
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
 	},
+	{
+		.name = "cgroup.kill",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = cgroup_kill_write,
+	},
 	{ }	/* terminate */
 };
 
