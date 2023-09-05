@@ -253,6 +253,9 @@ static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 	struct net_device *net_dev;
 	int i, ret;
 
+	if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED)
+		goto out;
+
 	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
 	bond_grp->main_hr_dev = NULL;
 
@@ -267,6 +270,7 @@ static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 		}
 	}
 
+out:
 	ret = hns_roce_cleanup_bond(bond_grp);
 	if (!ret)
 		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
@@ -388,16 +392,27 @@ static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 
 	reinit_completion(&bond_grp->bond_work_done);
 
-	if (bond_ready && bond_state == HNS_ROCE_BOND_NOT_BONDED)
-		hns_roce_set_bond(bond_grp);
-	else if (bond_ready && bond_state == HNS_ROCE_BOND_SLAVE_CHANGESTATE)
-		hns_roce_slave_changestate(bond_grp);
-	else if (bond_ready && bond_state == HNS_ROCE_BOND_SLAVE_INC)
-		hns_roce_slave_inc(bond_grp);
-	else if (bond_ready && bond_state == HNS_ROCE_BOND_SLAVE_DEC)
-		hns_roce_slave_dec(bond_grp);
-	else if (!bond_ready && bond_state != HNS_ROCE_BOND_NOT_BONDED)
+	if (!bond_ready) {
 		hns_roce_clear_bond(bond_grp);
+		return;
+	}
+
+	switch (bond_state) {
+	case HNS_ROCE_BOND_NOT_BONDED:
+		hns_roce_set_bond(bond_grp);
+		return;
+	case HNS_ROCE_BOND_SLAVE_CHANGESTATE:
+		hns_roce_slave_changestate(bond_grp);
+		return;
+	case HNS_ROCE_BOND_SLAVE_INC:
+		hns_roce_slave_inc(bond_grp);
+		return;
+	case HNS_ROCE_BOND_SLAVE_DEC:
+		hns_roce_slave_dec(bond_grp);
+		return;
+	default:
+		return;
+	}
 }
 
 void hns_roce_do_bond_work(struct work_struct *work)
