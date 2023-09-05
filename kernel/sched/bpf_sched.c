@@ -117,6 +117,65 @@ static const struct bpf_func_proto bpf_sched_cpu_stats_of_proto = {
 	.arg3_type	= ARG_CONST_SIZE,
 };
 
+BTF_ID_LIST_SINGLE(btf_sched_entity_ids, struct, sched_entity)
+BTF_ID_LIST_SINGLE(btf_sched_task_ids, struct, task_struct)
+BTF_ID_LIST_SINGLE(btf_sched_tg_ids, struct, task_group)
+
+BPF_CALL_1(bpf_sched_entity_is_task, struct sched_entity *, se)
+{
+	return entity_is_task(se) ? 1 : 0;
+}
+
+static const struct bpf_func_proto bpf_sched_entity_is_task_proto = {
+	.func		= bpf_sched_entity_is_task,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_entity_ids[0],
+};
+
+BPF_CALL_1(bpf_sched_entity_to_task, struct sched_entity *, se)
+{
+	if (entity_is_task(se)) {
+		struct task_struct *tsk = task_of(se);
+
+		return (unsigned long)tsk;
+	}
+
+	return (unsigned long)NULL;
+}
+
+static const struct bpf_func_proto bpf_sched_entity_to_task_proto = {
+	.func		= bpf_sched_entity_to_task,
+	.gpl_only	= false,
+	.ret_type	= RET_PTR_TO_BTF_ID_OR_NULL,
+	.ret_btf_id	= &btf_sched_task_ids[0],
+	.arg1_type	= ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_entity_ids[0],
+};
+
+BPF_CALL_1(bpf_sched_entity_to_tg, struct sched_entity *, se)
+{
+#if CONFIG_FAIR_GROUP_SCHED
+	if (!entity_is_task(se)) {
+		struct task_group *tg = group_cfs_rq(se)->tg;
+
+		return (unsigned long)tg;
+	}
+#endif
+
+	return (unsigned long)NULL;
+}
+
+static const struct bpf_func_proto bpf_sched_entity_to_tg_proto = {
+	.func		= bpf_sched_entity_to_tg,
+	.gpl_only	= false,
+	.ret_type	= RET_PTR_TO_BTF_ID_OR_NULL,
+	.ret_btf_id	= &btf_sched_tg_ids[0],
+	.arg1_type	= ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_entity_ids[0],
+};
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -129,6 +188,12 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_init_cpu_topology_proto;
 	case BPF_FUNC_get_cpumask_info:
 		return &bpf_get_cpumask_info_proto;
+	case BPF_FUNC_sched_entity_is_task:
+		return &bpf_sched_entity_is_task_proto;
+	case BPF_FUNC_sched_entity_to_task:
+		return &bpf_sched_entity_to_task_proto;
+	case BPF_FUNC_sched_entity_to_tg:
+		return &bpf_sched_entity_to_tg_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -155,8 +220,6 @@ BPF_CALL_1(bpf_sched_tg_tag_of, struct task_group *, tg)
 	return ret;
 }
 
-BTF_ID_LIST_SINGLE(btf_sched_tg_ids, struct, task_group)
-
 const struct bpf_func_proto bpf_sched_tg_tag_of_proto = {
 	.func		= bpf_sched_tg_tag_of,
 	.gpl_only	= false,
@@ -171,8 +234,6 @@ BPF_CALL_1(bpf_sched_task_tag_of, struct task_struct *, tsk)
 		return -EINVAL;
 	return tsk->tag;
 }
-
-BTF_ID_LIST_SINGLE(btf_sched_task_ids, struct, task_struct)
 
 const struct bpf_func_proto bpf_sched_task_tag_of_proto = {
 	.func		= bpf_sched_task_tag_of,
