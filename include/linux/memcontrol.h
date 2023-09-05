@@ -1129,8 +1129,6 @@ static inline void memcg_memory_event(struct mem_cgroup *memcg,
 		else
 			cgroup_file_notify(&memcg->events_file);
 
-		if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
-			break;
 		if (cgrp_dfl_root.flags & CGRP_ROOT_MEMORY_LOCAL_EVENTS)
 			break;
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
