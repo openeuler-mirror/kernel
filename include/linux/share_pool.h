@@ -102,8 +102,6 @@ static inline void sp_init_mm(struct mm_struct *mm)
  */
 extern int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id);
 extern int mg_sp_group_id_by_pid(int tgid, int *spg_ids, int *num);
-extern int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
-			struct pid *pid, struct task_struct *task);
 
 extern void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
 extern void *mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
@@ -167,12 +165,6 @@ static inline void sp_mm_clean(struct mm_struct *mm)
 }
 
 static inline int mg_sp_group_id_by_pid(int tgid, int *spg_ids, int *num)
-{
-	return -EPERM;
-}
-
-static inline  int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
-			       struct pid *pid, struct task_struct *task)
 {
 	return -EPERM;
 }

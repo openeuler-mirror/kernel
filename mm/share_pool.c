@@ -1912,12 +1912,6 @@ int mg_sp_free(unsigned long addr, int id)
 }
 EXPORT_SYMBOL_GPL(mg_sp_free);
 
-static void __init proc_sharepool_init(void)
-{
-	if (!proc_mkdir("sharepool", NULL))
-		return;
-}
-
 /* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_lock). */
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			     struct sp_area *spa, unsigned long *populate,
@@ -3025,6 +3019,321 @@ bool mg_is_sharepool_addr(unsigned long addr)
 		((is_sp_reserve_addr(addr) || is_sp_dynamic_dvpp_addr(addr)));
 }
 EXPORT_SYMBOL_GPL(mg_is_sharepool_addr);
+
+/*** Statistical and maintenance functions ***/
+
+static void get_mm_rss_info(struct mm_struct *mm, unsigned long *anon,
+	unsigned long *file, unsigned long *shmem, unsigned long *total_rss)
+{
+	*anon = get_mm_counter(mm, MM_ANONPAGES);
+	*file = get_mm_counter(mm, MM_FILEPAGES);
+	*shmem = get_mm_counter(mm, MM_SHMEMPAGES);
+	*total_rss = *anon + *file + *shmem;
+}
+
+static void get_process_sp_res(struct sp_group_master *master,
+		long *sp_res_out, long *sp_res_nsize_out)
+{
+	struct sp_group *spg;
+	struct sp_group_node *spg_node;
+
+	*sp_res_out = 0;
+	*sp_res_nsize_out = 0;
+
+	list_for_each_entry(spg_node, &master->group_head, group_node) {
+		spg = spg_node->spg;
+		*sp_res_out += meminfo_alloc_sum_byKB(&spg->meminfo);
+		*sp_res_nsize_out += byte2kb(atomic64_read(&spg->meminfo.alloc_nsize));
+	}
+}
+
+/*
+ *  Statistics of RSS has a maximum 64 pages deviation (256KB).
+ *  Please check_sync_rss_stat().
+ */
+static void get_process_non_sp_res(unsigned long total_rss, unsigned long shmem,
+	long sp_res_nsize, long *non_sp_res_out, long *non_sp_shm_out)
+{
+	long non_sp_res, non_sp_shm;
+
+	non_sp_res = page2kb(total_rss) - sp_res_nsize;
+	non_sp_res = non_sp_res < 0 ? 0 : non_sp_res;
+	non_sp_shm = page2kb(shmem) - sp_res_nsize;
+	non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;
+
+	*non_sp_res_out = non_sp_res;
+	*non_sp_shm_out = non_sp_shm;
+}
+
+static void print_process_prot(struct seq_file *seq, unsigned long prot)
+{
+	if (prot == PROT_READ)
+		seq_puts(seq, "R");
+	else if (prot == (PROT_READ | PROT_WRITE))
+		seq_puts(seq, "RW");
+	else
+		seq_puts(seq, "-");
+}
+
+static void spa_stat_of_mapping_show(struct seq_file *seq, struct sp_mapping *spm)
+{
+	struct rb_node *node;
+	struct sp_area *spa;
+
+	spin_lock(&spm->sp_mapping_lock);
+	for (node = rb_first(&spm->area_root); node; node = rb_next(node)) {
+		spa = rb_entry(node, struct sp_area, rb_node);
+
+		seq_printf(seq, "%-10d 0x%-14lx 0x%-14lx %-10ld ",
+			   spa->spg->id, spa->va_start, spa->va_end, byte2kb(spa->real_size));
+
+		switch (spa->type) {
+		case SPA_TYPE_ALLOC:
+			seq_printf(seq, "%-7s ", "ALLOC");
+			break;
+		case SPA_TYPE_K2TASK:
+			seq_printf(seq, "%-7s ", "TASK");
+			break;
+		case SPA_TYPE_K2SPG:
+			seq_printf(seq, "%-7s ", "SPG");
+			break;
+		default:
+			/* usually impossible, perhaps a developer's mistake */
+			break;
+		}
+
+		if (spa->is_hugepage)
+			seq_printf(seq, "%-5s ", "Y");
+		else
+			seq_printf(seq, "%-5s ", "N");
+
+		seq_printf(seq, "%-8d ",  spa->applier);
+		seq_printf(seq, "%-8d\n", atomic_read(&spa->use_count));
+
+	}
+	spin_unlock(&spm->sp_mapping_lock);
+}
+
+static void spa_ro_stat_show(struct seq_file *seq)
+{
+	spa_stat_of_mapping_show(seq, sp_mapping_ro);
+}
+
+static void spa_normal_stat_show(struct seq_file *seq)
+{
+	spa_stat_of_mapping_show(seq, sp_mapping_normal);
+}
+
+static void spa_dvpp_stat_show(struct seq_file *seq)
+{
+	struct sp_mapping *spm;
+
+	mutex_lock(&spm_list_lock);
+	list_for_each_entry(spm, &spm_dvpp_list, spm_node)
+		spa_stat_of_mapping_show(seq, spm);
+	mutex_unlock(&spm_list_lock);
+}
+
+
+static void spa_overview_show(struct seq_file *seq)
+{
+	s64 total_num, alloc_num, k2u_task_num, k2u_spg_num;
+	s64 total_size, alloc_size, k2u_task_size, k2u_spg_size;
+	s64 dvpp_size, dvpp_va_size;
+
+	if (!sp_is_enabled())
+		return;
+
+	alloc_num     = atomic64_read(&spa_stat.alloc_num);
+	k2u_task_num  = atomic64_read(&spa_stat.k2u_task_num);
+	k2u_spg_num   = atomic64_read(&spa_stat.k2u_spg_num);
+	alloc_size    = atomic64_read(&spa_stat.alloc_size);
+	k2u_task_size = atomic64_read(&spa_stat.k2u_task_size);
+	k2u_spg_size  = atomic64_read(&spa_stat.k2u_spg_size);
+	dvpp_size     = atomic64_read(&spa_stat.dvpp_size);
+	dvpp_va_size  = atomic64_read(&spa_stat.dvpp_va_size);
+	total_num = alloc_num + k2u_task_num + k2u_spg_num;
+	total_size = alloc_size + k2u_task_size + k2u_spg_size;
+
+	SEQ_printf(seq, "Spa total num %lld.\n", total_num);
+	SEQ_printf(seq, "Spa alloc num %lld, k2u(task) num %lld, k2u(spg) num %lld.\n",
+		   alloc_num, k2u_task_num, k2u_spg_num);
+	SEQ_printf(seq, "Spa total size:     %13lld KB\n", byte2kb(total_size));
+	SEQ_printf(seq, "Spa alloc size:     %13lld KB\n", byte2kb(alloc_size));
+	SEQ_printf(seq, "Spa k2u(task) size: %13lld KB\n", byte2kb(k2u_task_size));
+	SEQ_printf(seq, "Spa k2u(spg) size:  %13lld KB\n", byte2kb(k2u_spg_size));
+	SEQ_printf(seq, "Spa dvpp size:      %13lld KB\n", byte2kb(dvpp_size));
+	SEQ_printf(seq, "Spa dvpp va size:   %13lld MB\n", byte2mb(dvpp_va_size));
+	SEQ_printf(seq, "\n");
+}
+
+static int spg_info_show(int id, void *p, void *data)
+{
+	struct sp_group *spg = p;
+	struct seq_file *seq = data;
+
+	if (id >= SPG_ID_LOCAL_MIN && id <= SPG_ID_LOCAL_MAX)
+		return 0;
+
+	SEQ_printf(seq, "Group %6d ", id);
+
+	down_read(&spg->rw_lock);
+	SEQ_printf(seq, "size: %lld KB, spa num: %d, total alloc: %ld KB, ",
+			byte2kb(meminfo_total_size(&spg->meminfo)),
+			atomic_read(&spg->spa_num),
+			meminfo_alloc_sum_byKB(&spg->meminfo));
+	SEQ_printf(seq, "normal alloc: %lld KB, huge alloc: %lld KB\n",
+			byte2kb(atomic64_read(&spg->meminfo.alloc_nsize)),
+			byte2kb(atomic64_read(&spg->meminfo.alloc_hsize)));
+	up_read(&spg->rw_lock);
+
+	return 0;
+}
+
+static void spg_overview_show(struct seq_file *seq)
+{
+	if (!sp_is_enabled())
+		return;
+
+	SEQ_printf(seq, "Share pool total size: %lld KB, spa total num: %d.\n",
+			byte2kb(atomic64_read(&sp_overall_stat.spa_total_size)),
+			atomic_read(&sp_overall_stat.spa_total_num));
+
+	down_read(&sp_global_sem);
+	idr_for_each(&sp_group_idr, spg_info_show, seq);
+	up_read(&sp_global_sem);
+
+	SEQ_printf(seq, "\n");
+}
+
+static bool should_show_statistics(void)
+{
+	if (!capable(CAP_SYS_ADMIN))
+		return false;
+
+	if (task_active_pid_ns(current) != &init_pid_ns)
+		return false;
+
+	return true;
+}
+
+static int spa_stat_show(struct seq_file *seq, void *offset)
+{
+	if (!should_show_statistics())
+		return -EPERM;
+
+	spg_overview_show(seq);
+	spa_overview_show(seq);
+	/* print the file header */
+	seq_printf(seq, "%-10s %-16s %-16s %-10s %-7s %-5s %-8s %-8s\n",
+			"Group ID", "va_start", "va_end", "Size(KB)", "Type", "Huge", "PID", "Ref");
+	spa_ro_stat_show(seq);
+	spa_normal_stat_show(seq);
+	spa_dvpp_stat_show(seq);
+	return 0;
+}
+
+static int proc_usage_by_group(int id, void *p, void *data)
+{
+	struct sp_group *spg = p;
+	struct seq_file *seq = data;
+	struct sp_group_node *spg_node;
+	struct mm_struct *mm;
+	struct sp_group_master *master;
+	int tgid;
+	unsigned long anon, file, shmem, total_rss;
+
+	down_read(&spg->rw_lock);
+	list_for_each_entry(spg_node, &spg->proc_head, proc_node) {
+		master = spg_node->master;
+		mm = master->mm;
+		tgid = master->tgid;
+
+		get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
+
+		seq_printf(seq, "%-8d ", tgid);
+		seq_printf(seq, "%-8d ", id);
+		seq_printf(seq, "%-9ld %-9ld %-9ld %-8ld %-7ld %-7ld ",
+				meminfo_alloc_sum_byKB(&spg_node->meminfo),
+				meminfo_k2u_size(&spg_node->meminfo),
+				meminfo_alloc_sum_byKB(&spg_node->spg->meminfo),
+				page2kb(mm->total_vm), page2kb(total_rss),
+				page2kb(shmem));
+		print_process_prot(seq, spg_node->prot);
+		seq_putc(seq, '\n');
+	}
+	up_read(&spg->rw_lock);
+	cond_resched();
+
+	return 0;
+}
+
+static int proc_group_usage_show(struct seq_file *seq, void *offset)
+{
+	if (!should_show_statistics())
+		return -EPERM;
+
+	spg_overview_show(seq);
+	spa_overview_show(seq);
+
+	/* print the file header */
+	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-8s %-7s %-7s %-4s\n",
+			"PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES",
+			"VIRT", "RES", "Shm", "PROT");
+
+	down_read(&sp_global_sem);
+	idr_for_each(&sp_group_idr, proc_usage_by_group, seq);
+	up_read(&sp_global_sem);
+
+	return 0;
+}
+
+static int proc_usage_show(struct seq_file *seq, void *offset)
+{
+	struct sp_group_master *master = NULL;
+	unsigned long anon, file, shmem, total_rss;
+	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
+	struct sp_meminfo *meminfo;
+
+	if (!should_show_statistics())
+		return -EPERM;
+
+	seq_printf(seq, "%-8s %-16s %-9s %-9s %-9s %-10s %-10s %-8s\n",
+			"PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
+			"Non-SP_Shm", "VIRT");
+
+	down_read(&sp_global_sem);
+	mutex_lock(&master_list_lock);
+	list_for_each_entry(master, &master_list, list_node) {
+		meminfo = &master->meminfo;
+		get_mm_rss_info(master->mm, &anon, &file, &shmem, &total_rss);
+		get_process_sp_res(master, &sp_res, &sp_res_nsize);
+		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
+				&non_sp_res, &non_sp_shm);
+		seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
+				master->tgid, master->comm,
+				meminfo_alloc_sum_byKB(meminfo),
+				meminfo_k2u_size(meminfo),
+				sp_res, non_sp_res, non_sp_shm,
+				page2kb(master->mm->total_vm));
+	}
+	mutex_unlock(&master_list_lock);
+	up_read(&sp_global_sem);
+
+	return 0;
+}
+
+static void __init proc_sharepool_init(void)
+{
+	if (!proc_mkdir("sharepool", NULL))
+		return;
+
+	proc_create_single_data("sharepool/spa_stat", 0400, NULL, spa_stat_show, NULL);
+	proc_create_single_data("sharepool/proc_stat", 0400, NULL, proc_group_usage_show, NULL);
+	proc_create_single_data("sharepool/proc_overview", 0400, NULL, proc_usage_show, NULL);
+}
+
+/*** End of tatistical and maintenance functions ***/
 
 DEFINE_STATIC_KEY_FALSE(share_pool_enabled_key);
 
