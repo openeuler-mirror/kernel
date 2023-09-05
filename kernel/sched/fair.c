@@ -61,6 +61,10 @@
 #include <linux/resume_user_mode.h>
 #endif
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+#include <trace/events/ipi.h>
+#endif
+
 /*
  * Targeted preemption latency for CPU-bound tasks:
  *
@@ -188,6 +192,10 @@ static DEFINE_PER_CPU(int, qos_cpu_overload);
 unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
 unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
 static int unthrottle_qos_cfs_rqs(int cpu);
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static DEFINE_PER_CPU(int, qos_smt_status);
 #endif
 
 #ifdef CONFIG_CFS_BANDWIDTH
@@ -8523,6 +8531,132 @@ static void qos_schedule_throttle(struct task_struct *p)
 
 #endif
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static bool qos_smt_check_siblings_status(int this_cpu)
+{
+	int cpu;
+
+	if (!sched_smt_active())
+		return false;
+
+	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
+		if (cpu == this_cpu)
+			continue;
+
+		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE)
+			return true;
+	}
+
+	return false;
+}
+
+static bool qos_smt_expelled(int this_cpu)
+{
+	/*
+	 * The qos_smt_status of siblings cpu is online, and current cpu only has
+	 * offline tasks enqueued, there is not suitable task,
+	 * so pick_next_task_fair return null.
+	 */
+	if (qos_smt_check_siblings_status(this_cpu) && sched_idle_cpu(this_cpu))
+		return true;
+
+	return false;
+}
+
+static bool qos_smt_update_status(struct task_struct *p)
+{
+	int status = QOS_LEVEL_OFFLINE;
+
+	if (p != NULL && task_group(p)->qos_level >= QOS_LEVEL_ONLINE)
+		status = QOS_LEVEL_ONLINE;
+
+	if (__this_cpu_read(qos_smt_status) == status)
+		return false;
+
+	__this_cpu_write(qos_smt_status, status);
+
+	return true;
+}
+
+static void qos_smt_send_ipi(int this_cpu)
+{
+	int cpu;
+	struct rq *rq = NULL;
+
+	if (!sched_smt_active())
+		return;
+
+	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
+		if (cpu == this_cpu)
+			continue;
+
+		rq = cpu_rq(cpu);
+
+		/*
+		* There are two cases where current don't need to send scheduler_ipi:
+		* a) The qos_smt_status of siblings cpu is online;
+		* b) The cfs.h_nr_running of siblings cpu is 0.
+		*/
+		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE ||
+		    rq->cfs.h_nr_running == 0)
+			continue;
+
+		smp_send_reschedule(cpu);
+	}
+}
+
+static void qos_smt_expel(int this_cpu, struct task_struct *p)
+{
+	if (qos_smt_update_status(p))
+		qos_smt_send_ipi(this_cpu);
+}
+
+static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
+{
+	int cpu;
+
+	if (!sched_smt_active())
+		return false;
+
+	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
+		if (cpu == this_cpu)
+			continue;
+
+		/*
+		* There are two cases rely on the set need_resched to drive away
+		* offline task：
+		* a) The qos_smt_status of siblings cpu is online, the task of current
+		*    cpu is offline;
+		* b) The qos_smt_status of siblings cpu is offline, the task of current
+		*    cpu is idle, and current cpu only has SCHED_IDLE tasks enqueued.
+		*/
+		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE &&
+		    task_group(current)->qos_level < QOS_LEVEL_ONLINE)
+			return true;
+
+		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_OFFLINE &&
+		    rq->curr == rq->idle && sched_idle_cpu(this_cpu))
+			return true;
+	}
+
+	return false;
+}
+
+void qos_smt_check_need_resched(void)
+{
+	struct rq *rq = this_rq();
+	int this_cpu = rq->cpu;
+
+	if (test_tsk_need_resched(current))
+		return;
+
+	if (_qos_smt_check_need_resched(this_cpu, rq)) {
+		set_tsk_need_resched(current);
+		set_preempt_need_resched();
+	}
+}
+#endif
+
 #ifdef CONFIG_SMP
 static struct task_struct *pick_task_fair(struct rq *rq)
 {
@@ -8563,14 +8697,30 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	int this_cpu = rq->cpu;
+#endif
 
 again:
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	if (qos_smt_expelled(this_cpu)) {
+		__this_cpu_write(qos_smt_status, QOS_LEVEL_OFFLINE);
+		return NULL;
+	}
+#endif
+
 	if (!sched_fair_runnable(rq))
 		goto idle;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	if (!prev || prev->sched_class != &fair_sched_class)
-		goto simple;
+	if (!prev || prev->sched_class != &fair_sched_class) {
+#ifdef CONFIG_QOS_SCHED
+		if (cfs_rq->idle_h_nr_running != 0 && rq->online)
+			goto qos_simple;
+		else
+#endif
+			goto simple;
+	}
 
 	/*
 	 * Because of the set_next_buddy() in dequeue_task_fair() it is rather
@@ -8654,6 +8804,34 @@ again:
 	}
 
 	goto done;
+
+#ifdef CONFIG_QOS_SCHED
+qos_simple:
+	if (prev)
+		put_prev_task(rq, prev);
+
+	do {
+		se = pick_next_entity(cfs_rq, NULL);
+		if (check_qos_cfs_rq(group_cfs_rq(se))) {
+			cfs_rq = &rq->cfs;
+			if (!cfs_rq->nr_running)
+				goto idle;
+			continue;
+		}
+
+		cfs_rq = group_cfs_rq(se);
+	} while (cfs_rq);
+
+	p = task_of(se);
+
+	while (se) {
+		set_next_entity(cfs_rq_of(se), se);
+		se = parent_entity(se);
+	}
+
+	goto done;
+#endif
+
 simple:
 #endif
 	if (prev)
@@ -8684,6 +8862,10 @@ done: __maybe_unused;
 
 #ifdef CONFIG_QOS_SCHED
 	qos_schedule_throttle(p);
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_smt_expel(this_cpu, p);
 #endif
 
 	return p;
@@ -8718,6 +8900,10 @@ idle:
 	 * lost_idle_time of clock_pelt
 	 */
 	update_idle_rq_clock_pelt(rq);
+
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_smt_expel(this_cpu, NULL);
+#endif
 
 	return NULL;
 }

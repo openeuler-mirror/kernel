@@ -1412,6 +1412,11 @@ do {						\
 } while (0)
 
 #ifdef CONFIG_QOS_SCHED
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+	QOS_LEVEL_MAX
+};
 void init_qos_hrtimer(int cpu);
 #endif
 
