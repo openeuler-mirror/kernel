@@ -175,7 +175,7 @@ void __init sw64_memblock_init(void)
 
 	/* Make sure initrd is in memory range. */
 	if (sunway_boot_params->initrd_start) {
-		phys_addr_t base = __pa(sunway_boot_params->initrd_start);
+		phys_addr_t base = __boot_pa(sunway_boot_params->initrd_start);
 		phys_addr_t size = sunway_boot_params->initrd_size;
 
 		memblock_add(base, size);
