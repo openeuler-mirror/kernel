@@ -374,6 +374,12 @@ extern unsigned int kobjsize(const void *objp);
 # define VM_MTE_ALLOWED	VM_NONE
 #endif
 
+#if defined(CONFIG_SHARE_POOL)
+# define VM_SHARE_POOL VM_HIGH_ARCH_4
+#else
+# define VM_SHARE_POOL VM_NONE
+#endif
+
 #ifndef VM_GROWSUP
 # define VM_GROWSUP	VM_NONE
 #endif
@@ -3146,6 +3152,10 @@ extern unsigned long mmap_region(struct file *file, unsigned long addr,
 extern unsigned long do_mmap(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long prot, unsigned long flags,
 	unsigned long pgoff, unsigned long *populate, struct list_head *uf);
+extern unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file, unsigned long addr,
+			unsigned long len, unsigned long prot,
+			unsigned long flags, vm_flags_t vm_flags, unsigned long pgoff,
+			unsigned long *populate, struct list_head *uf);
 extern int do_vmi_munmap(struct vma_iterator *vmi, struct mm_struct *mm,
 			 unsigned long start, size_t len, struct list_head *uf,
 			 bool downgrade);
@@ -3159,6 +3169,8 @@ extern int do_vma_munmap(struct vma_iterator *vmi, struct vm_area_struct *vma,
 			 struct list_head *uf, bool downgrade);
 extern int __mm_populate(unsigned long addr, unsigned long len,
 			 int ignore_errors);
+extern int do_mm_populate(struct mm_struct *mm, unsigned long start, unsigned long len,
+			  int ignore_errors);
 static inline void mm_populate(unsigned long addr, unsigned long len)
 {
 	/* Ignore errors */
@@ -3166,6 +3178,11 @@ static inline void mm_populate(unsigned long addr, unsigned long len)
 }
 #else
 static inline void mm_populate(unsigned long addr, unsigned long len) {}
+static inline int do_mm_populate(struct mm_struct *mm, unsigned long start, unsigned long len,
+				 int ignore_errors)
+{
+	return -EPERM;
+}
 #endif
 
 /* These take the mm semaphore themselves */

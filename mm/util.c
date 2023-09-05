@@ -24,6 +24,7 @@
 #include <linux/sizes.h>
 #include <linux/compat.h>
 #include <linux/page-flags.h>
+#include <linux/share_pool.h>
 
 #include <linux/uaccess.h>
 
@@ -427,6 +428,9 @@ static unsigned long mmap_base(unsigned long rnd, struct rlimit *rlim_stack)
 		gap = MIN_GAP;
 	else if (gap > MAX_GAP)
 		gap = MAX_GAP;
+
+	if (sp_is_enabled())
+		return ALIGN_DOWN(MMAP_SHARE_POOL_START - rnd, PAGE_SIZE);
 
 	return PAGE_ALIGN(STACK_TOP - gap - rnd);
 }

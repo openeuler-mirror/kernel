@@ -184,6 +184,9 @@ static inline bool mpol_is_preferred_many(struct mempolicy *pol)
 
 extern bool apply_policy_zone(struct mempolicy *policy, enum zone_type zone);
 
+extern long __do_mbind(unsigned long start, unsigned long len,
+		     unsigned short mode, unsigned short mode_flags,
+		     nodemask_t *nmask, unsigned long flags, struct mm_struct *mm);
 #else
 
 struct mempolicy {};
@@ -292,6 +295,14 @@ static inline bool mpol_is_preferred_many(struct mempolicy *pol)
 {
 	return  false;
 }
+
+static inline long __do_mbind(unsigned long start, unsigned long len,
+		     unsigned short mode, unsigned short mode_flags,
+		     nodemask_t *nmask, unsigned long flags, struct mm_struct *mm)
+{
+	return 0;
+}
+
 
 #endif /* CONFIG_NUMA */
 #endif
