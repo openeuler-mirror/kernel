@@ -5115,6 +5115,55 @@ static ssize_t memory_low_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
+static int memory_high_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->memory.high));
+}
+
+static ssize_t memory_high_write(struct kernfs_open_file *of,
+				 char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned int nr_retries = MAX_RECLAIM_RETRIES;
+	bool drained = false;
+	unsigned long high;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &high);
+	if (err)
+		return err;
+
+	page_counter_set_high(&memcg->memory, high);
+
+	for (;;) {
+		unsigned long nr_pages = page_counter_read(&memcg->memory);
+		unsigned long reclaimed;
+
+		if (nr_pages <= high)
+			break;
+
+		if (signal_pending(current))
+			break;
+
+		if (!drained) {
+			drain_all_stock(memcg);
+			drained = true;
+			continue;
+		}
+
+		reclaimed = try_to_free_mem_cgroup_pages(memcg, nr_pages - high,
+							 GFP_KERNEL, true);
+
+		if (!reclaimed && !nr_retries--)
+			break;
+	}
+
+	memcg_wb_domain_size_changed(memcg);
+	return nbytes;
+}
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5252,6 +5301,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = memory_low_show,
 		.write = memory_low_write,
+	},
+	{
+		.name = "high",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_high_show,
+		.write = memory_high_write,
 	},
 	{ },	/* terminate */
 };
@@ -6510,55 +6565,6 @@ static u64 memory_peak_read(struct cgroup_subsys_state *css,
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
 	return (u64)memcg->memory.watermark * PAGE_SIZE;
-}
-
-static int memory_high_show(struct seq_file *m, void *v)
-{
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->memory.high));
-}
-
-static ssize_t memory_high_write(struct kernfs_open_file *of,
-				 char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	unsigned int nr_retries = MAX_RECLAIM_RETRIES;
-	bool drained = false;
-	unsigned long high;
-	int err;
-
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "max", &high);
-	if (err)
-		return err;
-
-	page_counter_set_high(&memcg->memory, high);
-
-	for (;;) {
-		unsigned long nr_pages = page_counter_read(&memcg->memory);
-		unsigned long reclaimed;
-
-		if (nr_pages <= high)
-			break;
-
-		if (signal_pending(current))
-			break;
-
-		if (!drained) {
-			drain_all_stock(memcg);
-			drained = true;
-			continue;
-		}
-
-		reclaimed = try_to_free_mem_cgroup_pages(memcg, nr_pages - high,
-					GFP_KERNEL, MEMCG_RECLAIM_MAY_SWAP);
-
-		if (!reclaimed && !nr_retries--)
-			break;
-	}
-
-	memcg_wb_domain_size_changed(memcg);
-	return nbytes;
 }
 
 static int memory_max_show(struct seq_file *m, void *v)
