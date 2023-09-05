@@ -707,6 +707,8 @@ class PrinterHelpers(Printer):
             'struct sched_entity',
             'struct cpumask',
             'struct cpumask_op_args',
+            'struct sched_migrate_ctx',
+            'struct sched_affine_ctx',
     ]
     known_types = {
             '...',
@@ -769,6 +771,8 @@ class PrinterHelpers(Printer):
             'struct sched_entity',
             'struct cpumask',
             'struct cpumask_op_args',
+            'struct sched_migrate_ctx',
+            'struct sched_affine_ctx',
     }
     mapped_types = {
             'u8': '__u8',

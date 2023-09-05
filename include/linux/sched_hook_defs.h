@@ -7,3 +7,6 @@ BPF_SCHED_HOOK(int, 0, cfs_tag_pick_next_entity, const struct sched_entity *curr
 	       const struct sched_entity *next)
 BPF_SCHED_HOOK(void, (void) 0, cfs_enqueue_task, struct rq *rq, struct task_struct *p)
 BPF_SCHED_HOOK(void, (void) 0, cfs_dequeue_task, struct rq *rq, struct task_struct *p)
+BPF_SCHED_HOOK(int, -1, cfs_select_rq, struct sched_migrate_ctx *ctx)
+BPF_SCHED_HOOK(int, -1, cfs_wake_affine, struct sched_affine_ctx *ctx)
+BPF_SCHED_HOOK(int, -1, cfs_select_rq_exit, struct sched_migrate_ctx *ctx)

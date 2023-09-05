@@ -77,6 +77,10 @@
 unsigned int sysctl_sched_latency			= 6000000ULL;
 static unsigned int normalized_sysctl_sched_latency	= 6000000ULL;
 
+#ifdef CONFIG_BPF_SCHED
+DEFINE_PER_CPU(cpumask_var_t, select_idle_mask);
+#endif
+
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -6739,6 +6743,22 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 {
 	int target = nr_cpumask_bits;
 
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		struct sched_affine_ctx ctx;
+		int ret;
+
+		ctx.task = p;
+		ctx.prev_cpu = prev_cpu;
+		ctx.curr_cpu = this_cpu;
+		ctx.is_sync = sync;
+
+		ret = bpf_sched_cfs_wake_affine(&ctx);
+		if (ret >= 0 && ret < nr_cpumask_bits)
+			return ret;
+	}
+#endif
+
 	if (sched_feat(WA_IDLE))
 		target = wake_affine_idle(this_cpu, prev_cpu, sync);
 
@@ -7857,6 +7877,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	int idlest_cpu = 0;
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+	struct sched_migrate_ctx ctx;
+	cpumask_t *cpus_prev = NULL;
+	cpumask_t *cpus;
+	int ret;
+#endif
+
 	/*
 	 * required for stable ->cpus_allowed
 	 */
@@ -7884,6 +7911,32 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	}
 
 	rcu_read_lock();
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		ctx.task = p;
+		ctx.prev_cpu = prev_cpu;
+		ctx.curr_cpu = cpu;
+		ctx.is_sync = sync;
+		ctx.wake_flags = wake_flags;
+		ctx.want_affine = want_affine;
+		ctx.sd_flag = sd_flag;
+		ctx.select_idle_mask = this_cpu_cpumask_var_ptr(select_idle_mask);
+
+		ret = bpf_sched_cfs_select_rq(&ctx);
+		if (ret >= 0) {
+			rcu_read_unlock();
+			return ret;
+		} else if (ret != -1) {
+			cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
+			if (cpumask_subset(cpus, p->cpus_ptr) &&
+			    !cpumask_empty(cpus)) {
+				cpus_prev = (void *)p->cpus_ptr;
+				p->cpus_ptr = cpus;
+			}
+		}
+	}
+#endif
+
 	for_each_domain(cpu, tmp) {
 		/*
 		 * If both 'cpu' and 'prev_cpu' are part of this domain,
@@ -7922,6 +7975,19 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		/* Fast path */
 		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
 	}
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		ctx.new_cpu = new_cpu;
+		ret = bpf_sched_cfs_select_rq_exit(&ctx);
+		if (ret >= 0)
+			new_cpu = ret;
+
+		if (cpus_prev)
+			p->cpus_ptr = cpus_prev;
+	}
+#endif
+
 	rcu_read_unlock();
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
