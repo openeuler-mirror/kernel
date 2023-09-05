@@ -37,19 +37,19 @@ static struct net_device *get_upper_dev_from_ndev(struct net_device *net_dev)
 	return upper_dev;
 }
 
-static bool is_netdev_bond_slave(struct net_device *net_dev,
-				 struct hns_roce_bond_group *bond_grp)
+static int get_netdev_bond_slave_id(struct net_device *net_dev,
+				    struct hns_roce_bond_group *bond_grp)
 {
 	int i;
 
 	if (!net_dev || !bond_grp)
-		return false;
+		return -ENODEV;
 
 	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++)
 		if (net_dev == bond_grp->bond_func_info[i].net_dev)
-			return true;
+			return i;
 
-	return false;
+	return -ENOENT;
 }
 
 static bool is_hrdev_bond_slave(struct hns_roce_dev *hr_dev,
@@ -92,7 +92,7 @@ struct hns_roce_bond_group *hns_roce_get_bond_grp(struct net_device *net_dev,
 		bond_grp = die_info->bgrps[i];
 		if (!bond_grp)
 			continue;
-		if (is_netdev_bond_slave(net_dev, bond_grp) ||
+		if (get_netdev_bond_slave_id(net_dev, bond_grp) >= 0 ||
 		    (bond_grp->upper_dev == get_upper_dev_from_ndev(net_dev)))
 			return bond_grp;
 	}
@@ -723,7 +723,7 @@ static enum bond_support_type
 	rcu_read_lock();
 	for_each_netdev_in_bond_rcu(*upper_dev, net_dev) {
 		if (!info->linking && bond_grp_exist) {
-			if (is_netdev_bond_slave(net_dev, bond_grp))
+			if (get_netdev_bond_slave_id(net_dev, bond_grp) >= 0)
 				slave_num++;
 		} else {
 			hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
@@ -761,6 +761,7 @@ int hns_roce_bond_event(struct notifier_block *self,
 	u8 bus_num = get_hr_bus_num(hr_dev);
 	struct net_device *upper_dev;
 	bool changed;
+	int slave_id;
 
 	if (event != NETDEV_CHANGEUPPER && event != NETDEV_CHANGELOWERSTATE)
 		return NOTIFY_DONE;
@@ -790,6 +791,15 @@ int hns_roce_bond_event(struct notifier_block *self,
 		} else if (hr_dev != bond_grp->main_hr_dev) {
 			return NOTIFY_DONE;
 		}
+		/* In the case of netdev being unregistered, the roce
+		 * instance shouldn't be inited.
+		 */
+		if (net_dev->reg_state >= NETREG_UNREGISTERING) {
+			slave_id = get_netdev_bond_slave_id(net_dev, bond_grp);
+			if (slave_id >= 0)
+				bond_grp->bond_func_info[slave_id].handle = NULL;
+		}
+
 		if (support == BOND_EXISTING_NOT_SUPPORT) {
 			bond_grp->bond_ready = false;
 			hns_roce_queue_bond_work(bond_grp, HZ);
