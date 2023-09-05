@@ -549,6 +549,12 @@ struct sched_statistics {
 	u64				nr_wakeups_preferred_cpus;
 	u64				nr_wakeups_force_preferred_cpus;
 #endif
+
+#if defined(CONFIG_QOS_SCHED_SMT_EXPELLER) && !defined(__GENKSYMS__)
+	u64				nr_qos_smt_send_ipi;
+	u64				nr_qos_smt_expelled;
+#endif
+
 #endif /* CONFIG_SCHEDSTATS */
 } ____cacheline_aligned;
 

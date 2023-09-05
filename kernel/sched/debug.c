@@ -1049,6 +1049,12 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 		}
 #endif
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+		P_SCHEDSTAT(nr_qos_smt_send_ipi);
+		P_SCHEDSTAT(nr_qos_smt_expelled);
+#endif
+
+
 		avg_atom = p->se.sum_exec_runtime;
 		if (nr_switches)
 			avg_atom = div64_ul(avg_atom, nr_switches);
