@@ -383,7 +383,8 @@ struct cgroup_subsys_state *mem_cgroup_css_from_folio(struct folio *folio)
 {
 	struct mem_cgroup *memcg = folio_memcg(folio);
 
-	if (!memcg || !cgroup_subsys_on_dfl(memory_cgrp_subsys))
+	if (!memcg || !(cgroup_subsys_on_dfl(memory_cgrp_subsys) ||
+	    cgroup1_writeback_enabled()))
 		memcg = root_mem_cgroup;
 
 	return &memcg->css;
@@ -5288,6 +5289,77 @@ static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
 }
 #endif
 
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+#include "../kernel/cgroup/cgroup-internal.h"
+
+static int wb_blkio_show(struct seq_file *m, void *v)
+{
+	char *path;
+	ino_t blkcg_id;
+	struct cgroup *blkcg_cgroup;
+	struct cgroup_subsys_state *blkcg_css;
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	if (!cgroup1_writeback_enabled())
+		return -EOPNOTSUPP;
+
+	path = kzalloc(PATH_MAX, GFP_KERNEL);
+	if (!path)
+		return -ENOMEM;
+
+	mutex_lock(&cgroup_mutex);
+	blkcg_css = memcg->wb_blk_css;
+	blkcg_cgroup = blkcg_css->cgroup;
+	blkcg_id = cgroup_ino(blkcg_cgroup);
+	cgroup_path(blkcg_cgroup, path, PATH_MAX);
+	mutex_unlock(&cgroup_mutex);
+	seq_printf(m, "wb_blkio_path:%s\n", path);
+	seq_printf(m, "wb_blkio_ino:%lu\n", blkcg_id);
+	kfree(path);
+
+	return 0;
+}
+
+static ssize_t wb_blkio_write(struct kernfs_open_file *of, char *buf,
+			      size_t nbytes, loff_t off)
+{
+	int ret = 0;
+	u64 cgrp_id;
+	struct cgroup_root *root;
+	struct cgroup *blk_cgroup;
+	struct cgroup_subsys_state *blkcg_css;
+	struct cgroup_subsys_state *memcg_css = of_css(of);
+
+	if (!cgroup1_writeback_enabled())
+		return -EOPNOTSUPP;
+
+	buf = strstrip(buf);
+	ret = kstrtou64(buf, 0, &cgrp_id);
+	if (ret)
+		return ret;
+
+	mutex_lock(&cgroup_mutex);
+	root = blkcg_root_css->cgroup->root;
+	blk_cgroup = cgroup1_get_from_id(root, cgrp_id);
+	if (IS_ERR(blk_cgroup)) {
+		mutex_unlock(&cgroup_mutex);
+		return -EINVAL;
+	}
+	blkcg_css = cgroup_tryget_css(blk_cgroup, &io_cgrp_subsys);
+	if (!blkcg_css)
+		goto out_unlock;
+	wb_attach_memcg_to_blkcg(memcg_css, blkcg_css);
+	css_put(blkcg_css);
+
+out_unlock:
+	cgroup_put(blk_cgroup);
+	mutex_unlock(&cgroup_mutex);
+
+	return ret < 0 ? ret : nbytes;
+}
+#endif
+
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5452,6 +5524,14 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = memcg_high_async_ratio_write,
 	},
 
+#endif
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+	{
+		.name = "wb_blkio_ino",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = wb_blkio_show,
+		.write = wb_blkio_write,
+	},
 #endif
 	{ },	/* terminate */
 };
@@ -5711,6 +5791,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		static_branch_inc(&memcg_bpf_enabled_key);
 #endif
 
+	wb_attach_memcg_to_blkcg(&memcg->css, blkcg_root_css);
 	return &memcg->css;
 }
 

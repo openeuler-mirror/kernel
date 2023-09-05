@@ -1348,6 +1348,9 @@ blkcg_css_alloc(struct cgroup_subsys_state *parent_css)
 #ifdef CONFIG_CGROUP_WRITEBACK
 	INIT_LIST_HEAD(&blkcg->cgwb_list);
 #endif
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+	INIT_LIST_HEAD(&blkcg->memcg_list);
+#endif
 	list_add_tail(&blkcg->all_blkcgs_node, &all_blkcgs);
 
 	mutex_unlock(&blkcg_pol_mutex);

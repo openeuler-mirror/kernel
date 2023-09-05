@@ -980,6 +980,11 @@ config CGROUP_WRITEBACK
 	depends on MEMCG && BLK_CGROUP
 	default y
 
+config CGROUP_V1_WRITEBACK
+	bool "Support Cgroup Writeback On Cgroupv1"
+	depends on CGROUP_WRITEBACK
+	default n
+
 menuconfig CGROUP_SCHED
 	bool "CPU controller"
 	default n

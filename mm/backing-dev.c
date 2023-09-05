@@ -569,6 +569,30 @@ static void cgwb_remove_from_bdi_list(struct bdi_writeback *wb)
 	spin_unlock_irq(&cgwb_lock);
 }
 
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+#include "../block/blk-cgroup.h"
+static struct cgroup_subsys_state *cgwbv1_get_blkcss(struct mem_cgroup *memcg)
+{
+	struct cgroup_subsys_state *blkcg_css;
+
+	rcu_read_lock();
+	blkcg_css = memcg->wb_blk_css;
+	if (!css_tryget_online(blkcg_css)) {
+		blkcg_css = blkcg_root_css;
+		css_get(blkcg_css);
+	}
+	rcu_read_unlock();
+
+	return blkcg_css;
+}
+#else
+static inline struct cgroup_subsys_state *
+cgwbv1_get_blkcss(struct mem_cgroup *memcg)
+{
+	return NULL;
+}
+#endif
+
 static int cgwb_create(struct backing_dev_info *bdi,
 		       struct cgroup_subsys_state *memcg_css, gfp_t gfp)
 {
@@ -580,7 +604,11 @@ static int cgwb_create(struct backing_dev_info *bdi,
 	int ret = 0;
 
 	memcg = mem_cgroup_from_css(memcg_css);
-	blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+	if (cgroup1_writeback_enabled())
+		blkcg_css = cgwbv1_get_blkcss(memcg);
+	else
+		blkcg_css = cgroup_get_e_css(memcg_css->cgroup,
+					     &io_cgrp_subsys);
 	memcg_cgwb_list = &memcg->cgwb_list;
 	blkcg_cgwb_list = blkcg_get_cgwb_list(blkcg_css);
 
@@ -699,9 +727,14 @@ struct bdi_writeback *wb_get_lookup(struct backing_dev_info *bdi,
 	wb = radix_tree_lookup(&bdi->cgwb_tree, memcg_css->id);
 	if (wb) {
 		struct cgroup_subsys_state *blkcg_css;
+		struct mem_cgroup *memcg = mem_cgroup_from_css(memcg_css);
 
 		/* see whether the blkcg association has changed */
-		blkcg_css = cgroup_get_e_css(memcg_css->cgroup, &io_cgrp_subsys);
+		if (cgroup1_writeback_enabled())
+			blkcg_css = cgwbv1_get_blkcss(memcg);
+		else
+			blkcg_css = cgroup_get_e_css(memcg_css->cgroup,
+						     &io_cgrp_subsys);
 		if (unlikely(wb->blkcg_css != blkcg_css || !wb_tryget(wb)))
 			wb = NULL;
 		css_put(blkcg_css);
@@ -1128,3 +1161,83 @@ const char *bdi_dev_name(struct backing_dev_info *bdi)
 	return bdi->dev_name;
 }
 EXPORT_SYMBOL_GPL(bdi_dev_name);
+
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+
+#include "../kernel/cgroup/cgroup-internal.h"
+
+static bool cgroup1_writeback __read_mostly;
+
+bool cgroup1_writeback_enabled(void)
+{
+	return !cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
+	       !cgroup_subsys_on_dfl(io_cgrp_subsys) && cgroup1_writeback;
+}
+
+static void wb_kill_memcg(struct cgroup_subsys_state *memcg_css)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(memcg_css);
+
+	list_del_init(&memcg->memcg_node);
+	css_put(memcg->wb_blk_css);
+}
+
+static void wb_kill_blkcg(struct cgroup_subsys_state *blkcg_css)
+{
+	struct mem_cgroup *memcg, *tmp;
+	struct blkcg *blkcg = css_to_blkcg(blkcg_css);
+	struct blkcg *root_blkcg = css_to_blkcg(blkcg_root_css);
+
+	list_for_each_entry_safe(memcg, tmp, &blkcg->memcg_list, memcg_node) {
+		css_get(blkcg_root_css);
+		memcg->wb_blk_css = blkcg_root_css;
+		list_move(&memcg->memcg_node, &root_blkcg->memcg_list);
+		css_put(blkcg_css);
+	}
+}
+
+void wb_kill_memcg_blkcg(struct cgroup_subsys_state *css)
+{
+	struct cgroup_subsys *ss = css->ss;
+
+	if (!cgroup1_writeback)
+		return;
+
+	lockdep_assert_held(&cgroup_mutex);
+
+	if (ss->id == io_cgrp_id)
+		wb_kill_blkcg(css);
+	else if (ss->id == memory_cgrp_id)
+		wb_kill_memcg(css);
+}
+
+void wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
+			      struct cgroup_subsys_state *blkcg_css)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(memcg_css);
+	struct cgroup_subsys_state *pre_blkcss = memcg->wb_blk_css;
+	struct blkcg *blkcg = css_to_blkcg(blkcg_css);
+
+	if (!cgroup1_writeback)
+		return;
+
+	lockdep_assert_held(&cgroup_mutex);
+
+	css_get(blkcg_css);
+	memcg->wb_blk_css = blkcg_css;
+	if (pre_blkcss == NULL)
+		list_add(&memcg->memcg_node, &blkcg->memcg_list);
+	else {
+		list_move(&memcg->memcg_node, &blkcg->memcg_list);
+		css_put(pre_blkcss);
+	}
+}
+
+static int __init enable_cgroup1_writeback(char *s)
+{
+	cgroup1_writeback = true;
+
+	return 1;
+}
+__setup("cgroup1_writeback", enable_cgroup1_writeback);
+#endif

@@ -313,6 +313,11 @@ struct mem_cgroup {
 	struct memcg_cgwb_frn cgwb_frn[MEMCG_CGWB_FRN_CNT];
 #endif
 
+#ifdef CONFIG_CGROUP_V1_WRITEBACK
+	struct cgroup_subsys_state	*wb_blk_css;
+	struct list_head		memcg_node;
+#endif
+
 	/* List of events which userspace want to receive */
 	struct list_head event_list;
 	spinlock_t event_list_lock;
