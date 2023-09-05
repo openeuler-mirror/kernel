@@ -374,6 +374,12 @@ extern unsigned int kobjsize(const void *objp);
 # define VM_MTE_ALLOWED	VM_NONE
 #endif
 
+#if defined(CONFIG_SHARE_POOL)
+# define VM_SHARE_POOL VM_HIGH_ARCH_4
+#else
+# define VM_SHARE_POOL VM_NONE
+#endif
+
 #ifndef VM_GROWSUP
 # define VM_GROWSUP	VM_NONE
 #endif

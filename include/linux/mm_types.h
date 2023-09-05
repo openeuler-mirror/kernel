@@ -616,6 +616,9 @@ struct vm_area_struct {
 #ifdef CONFIG_GMEM
 	struct vm_object *vm_obj;
 #endif
+#ifdef CONFIG_SHARE_POOL
+	struct sp_area *spa;
+#endif
 } __randomize_layout;
 
 #ifdef CONFIG_SCHED_MM_CID
@@ -852,6 +855,10 @@ struct mm_struct {
 #endif
 #if IS_ENABLED(CONFIG_KVM)
 	struct kvm *kvm;
+#endif
+
+#if IS_ENABLED(CONFIG_SHARE_POOL)
+		struct sp_group_master *sp_group_master;
 #endif
 	} __randomize_layout;
 

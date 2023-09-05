@@ -1244,6 +1244,7 @@ menuconfig ASCEND_FEATURES
 	depends on ARM64
 	select HUGETLB_INSERT_PAGE
 	select EXTEND_HUGEPAGE_MAPPING
+	select SHARE_POOL
 	help
 	  The Ascend chip use the Hisilicon DaVinci architecture, and mainly
 	  focus on AI and machine leanring area, contains many external features.
@@ -1261,6 +1262,16 @@ config EXTEND_HUGEPAGE_MAPPING
 	  Introduce vmalloc/vmap/remap interfaces that handle only hugepages.
 	  This allow the user to do huge vmalloc and remap those hugepage range
 	  into userspace.
+
+config SHARE_POOL
+	bool
+	depends on EXTEND_HUGEPAGE_MAPPING
+	select ARCH_USES_HIGH_VMA_FLAGS
+	help
+	  This feature allows multiple processes to share virtual memory both
+	  in kernel and user level, which is only enabled for ascend platform.
+	  To enable this feature, enable_ascend_share_pool bootarg is needed.
+
 
 source "mm/damon/Kconfig"
 
