@@ -7526,7 +7526,7 @@ static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
 		return;
 
 	for (phy_port = 0; phy_port < hr_dev->caps.num_ports; phy_port++)
-		if (netdev == hr_dev->iboe.netdevs[phy_port])
+		if (netdev == get_hr_netdev(hr_dev, phy_port))
 			break;
 
 	if (phy_port == hr_dev->caps.num_ports)
