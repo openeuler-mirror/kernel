@@ -507,9 +507,81 @@ static int sp_group_setup_mapping(struct mm_struct *mm, struct sp_group *spg)
 		return sp_group_setup_mapping_normal(mm, spg);
 }
 
+static struct sp_group *sp_group_create(int spg_id);
+static void sp_group_put_locked(struct sp_group *spg);
+static int sp_group_link_task(struct mm_struct *mm, struct sp_group *spg,
+			      unsigned long prot, struct sp_group_node **pnode);
+static int init_local_group(struct mm_struct *mm)
+{
+	int ret;
+	struct sp_group *spg;
+	struct sp_group_master *master = mm->sp_group_master;
+
+	spg = sp_group_create(SPG_ID_LOCAL);
+	if (IS_ERR(spg))
+		return PTR_ERR(spg);
+
+	ret = sp_group_link_task(mm, spg, PROT_READ | PROT_WRITE, NULL);
+	sp_group_put_locked(spg);
+	if (!ret)
+		master->local = spg;
+
+	return ret;
+}
+
+/* The caller must hold sp_global_sem and the input @mm cannot be freed */
+static int sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct *mm)
+{
+	int ret;
+	struct sp_group_master *master;
+
+	if (mm->sp_group_master)
+		return 0;
+
+	master = kmalloc(sizeof(struct sp_group_master), GFP_KERNEL);
+	if (!master)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&master->group_head);
+	master->group_num = 0;
+	master->mm = mm;
+	master->tgid = tsk->tgid;
+	get_task_comm(master->comm, current);
+	meminfo_init(&master->meminfo);
+	mm->sp_group_master = master;
+	sp_add_group_master(master);
+
+	ret = init_local_group(mm);
+	if (ret)
+		goto free_master;
+
+	return 0;
+
+free_master:
+	sp_del_group_master(master);
+	mm->sp_group_master = NULL;
+	kfree(master);
+
+	return ret;
+}
+
 static int sp_init_group_master(struct task_struct *tsk, struct mm_struct *mm)
 {
-	return -EOPNOTSUPP;
+	int ret;
+
+	down_read(&sp_global_sem);
+	/* The sp_group_master would never change once set */
+	if (mm->sp_group_master) {
+		up_read(&sp_global_sem);
+		return 0;
+	}
+	up_read(&sp_global_sem);
+
+	down_write(&sp_global_sem);
+	ret = sp_init_group_master_locked(tsk, mm);
+	up_write(&sp_global_sem);
+
+	return ret;
 }
 
 static void update_mem_usage_alloc(unsigned long size, bool inc,
@@ -1319,7 +1391,35 @@ EXPORT_SYMBOL_GPL(mg_sp_group_add_task);
 
 int mg_sp_id_of_current(void)
 {
-	return -EOPNOTSUPP;
+	int ret, spg_id;
+	struct sp_group_master *master;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	if ((current->flags & PF_KTHREAD) || !current->mm)
+		return -EINVAL;
+
+	down_read(&sp_global_sem);
+	master = current->mm->sp_group_master;
+	if (master) {
+		spg_id = master->local->id;
+		up_read(&sp_global_sem);
+		return spg_id;
+	}
+	up_read(&sp_global_sem);
+
+	down_write(&sp_global_sem);
+	ret = sp_init_group_master_locked(current, current->mm);
+	if (ret) {
+		up_write(&sp_global_sem);
+		return ret;
+	}
+	master = current->mm->sp_group_master;
+	spg_id = master->local->id;
+	up_write(&sp_global_sem);
+
+	return spg_id;
 }
 EXPORT_SYMBOL_GPL(mg_sp_id_of_current);
 
