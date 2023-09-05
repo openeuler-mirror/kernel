@@ -876,7 +876,61 @@ static struct sp_group *sp_group_get_from_mm(struct mm_struct *mm, int spg_id,
  */
 int mg_sp_group_id_by_pid(int tgid, int *spg_ids, int *num)
 {
-	return -EOPNOTSUPP;
+	int ret = 0, real_count;
+	struct sp_group_node *node;
+	struct sp_group_master *master = NULL;
+	struct task_struct *tsk;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	check_interrupt_context();
+
+	if (!spg_ids || !num || *num <= 0)
+		return -EINVAL;
+
+	ret = get_task(tgid, &tsk);
+	if (ret)
+		return ret;
+
+	down_read(&sp_global_sem);
+	task_lock(tsk);
+	if (tsk->mm)
+		master = tsk->mm->sp_group_master;
+	task_unlock(tsk);
+
+	if (!master) {
+		ret = -ENODEV;
+		goto out_up_read;
+	}
+
+	/*
+	 * There is a local group for each process which is used for
+	 * passthrough allocation. The local group is a internal
+	 * implementation for convenience and is not attempt to bother
+	 * the user.
+	 */
+	real_count = master->group_num - 1;
+	if (real_count <= 0) {
+		ret = -ENODEV;
+		goto out_up_read;
+	}
+	if ((unsigned int)*num < real_count) {
+		ret = -E2BIG;
+		goto out_up_read;
+	}
+	*num = real_count;
+
+	list_for_each_entry(node, &master->group_head, group_node) {
+		if (is_local_group(node->spg->id))
+			continue;
+		*(spg_ids++) = node->spg->id;
+	}
+
+out_up_read:
+	up_read(&sp_global_sem);
+	put_task_struct(tsk);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
 
