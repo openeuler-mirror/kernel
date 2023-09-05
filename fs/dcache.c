@@ -1835,6 +1835,18 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 	return dentry;
 }
 
+static inline bool d_forbid_overflow(struct dentry *dentry)
+{
+	if (unlikely(d_count(dentry) >= D_COUNT_MAX)) {
+		shrink_dcache_parent(dentry);
+
+		if (d_count(dentry) >= D_COUNT_MAX)
+			return false;
+	}
+
+	return true;
+}
+
 /**
  * d_alloc	-	allocate a dcache entry
  * @parent: parent of entry to allocate
@@ -1846,9 +1858,15 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
  */
 struct dentry *d_alloc(struct dentry * parent, const struct qstr *name)
 {
-	struct dentry *dentry = __d_alloc(parent->d_sb, name);
+	struct dentry *dentry = NULL;
+
+	if (unlikely(!d_forbid_overflow(parent)))
+		goto out;
+
+	dentry = __d_alloc(parent->d_sb, name);
 	if (!dentry)
-		return NULL;
+		goto out;
+
 	spin_lock(&parent->d_lock);
 	/*
 	 * don't need child lock because it is not subject
@@ -1858,7 +1876,7 @@ struct dentry *d_alloc(struct dentry * parent, const struct qstr *name)
 	dentry->d_parent = parent;
 	list_add(&dentry->d_child, &parent->d_subdirs);
 	spin_unlock(&parent->d_lock);
-
+out:
 	return dentry;
 }
 EXPORT_SYMBOL(d_alloc);
@@ -1871,11 +1889,17 @@ EXPORT_SYMBOL(d_alloc_anon);
 
 struct dentry *d_alloc_cursor(struct dentry * parent)
 {
-	struct dentry *dentry = d_alloc_anon(parent->d_sb);
+	struct dentry *dentry = NULL;
+
+	if (unlikely(!d_forbid_overflow(parent)))
+		goto out;
+
+	dentry = d_alloc_anon(parent->d_sb);
 	if (dentry) {
 		dentry->d_flags |= DCACHE_DENTRY_CURSOR;
 		dentry->d_parent = dget(parent);
 	}
+out:
 	return dentry;
 }
 
