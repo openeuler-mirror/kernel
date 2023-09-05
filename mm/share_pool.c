@@ -52,6 +52,625 @@
 #include <linux/pagewalk.h>
 #include <linux/workqueue.h>
 
+/* Use spa va address as mmap offset. This can work because spa_file
+ * is setup with 64-bit address space. So va shall be well covered.
+ */
+#define addr_offset(spa)	((spa)->va_start)
+
+#define byte2kb(size)		((size) >> 10)
+#define byte2mb(size)		((size) >> 20)
+#define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
+
+#define MAX_GROUP_FOR_SYSTEM	50000
+#define MAX_GROUP_FOR_TASK	3000
+#define MAX_PROC_PER_GROUP	1024
+
+#define GROUP_NONE		0
+
+#define SEC2US(sec)		((sec) * 1000000)
+#define NS2US(ns)		((ns) / 1000)
+
+#define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
+
+static int system_group_count;
+
+/* idr of all sp_groups */
+static DEFINE_IDR(sp_group_idr);
+/* rw semaphore for sp_group_idr and mm->sp_group_master */
+static DECLARE_RWSEM(sp_global_sem);
+
+/*** Statistical and maintenance tools ***/
+
+/* list of all sp_group_masters */
+static LIST_HEAD(master_list);
+/* mutex to protect insert/delete ops from master_list */
+static DEFINE_MUTEX(master_list_lock);
+
+/* list of all spm-dvpp */
+static LIST_HEAD(spm_dvpp_list);
+/* mutex to protect insert/delete ops from master_list */
+static DEFINE_MUTEX(spm_list_lock);
+
+#define SEQ_printf(m, x...)			\
+do {						\
+	if (m)					\
+		seq_printf(m, x);		\
+	else					\
+		pr_info(x);			\
+} while (0)
+
+struct sp_meminfo {
+	/* not huge page size from sp_alloc */
+	atomic64_t	alloc_nsize;
+	/* huge page size from sp_alloc */
+	atomic64_t	alloc_hsize;
+	/* total size from sp_k2u */
+	atomic64_t	k2u_size;
+};
+
+enum sp_mapping_type {
+	SP_MAPPING_START,
+	SP_MAPPING_DVPP		= SP_MAPPING_START,
+	SP_MAPPING_NORMAL,
+	SP_MAPPING_RO,
+	SP_MAPPING_END,
+};
+
+/*
+ * address space management
+ */
+struct sp_mapping {
+	unsigned long type;
+	atomic_t user;
+	unsigned long start[MAX_DEVID];
+	unsigned long end[MAX_DEVID];
+	struct rb_root area_root;
+
+	struct rb_node *free_area_cache;
+	unsigned long cached_hole_size;
+	unsigned long cached_vstart;
+
+	/* list head for all groups attached to this mapping, dvpp mapping only */
+	struct list_head group_head;
+	struct list_head spm_node;
+	spinlock_t sp_mapping_lock;
+};
+
+/* Processes in the same sp_group can share memory.
+ * Memory layout for share pool:
+ *
+ * |-------------------- 8T -------------------|---|------ 8T ------------|
+ * |		Device 0	   |  Device 1 |...|                      |
+ * |----------------------------------------------------------------------|
+ * |------------- 16G -------------|    16G    |   |                      |
+ * | DVPP GROUP0   | DVPP GROUP1   | ... | ... |...|  sp normal memory    |
+ * |     sp        |    sp         |     |     |   |                      |
+ * |----------------------------------------------------------------------|
+ *
+ * The host SVM feature reserves 8T virtual memory by mmap, and due to the
+ * restriction of DVPP, while SVM and share pool will both allocate memory
+ * for DVPP, the memory have to be in the same 32G range.
+ *
+ * Share pool reserves 16T memory, with 8T for normal uses and 8T for DVPP.
+ * Within this 8T DVPP memory, SVM will call sp_config_dvpp_range() to
+ * tell us which 16G memory range is reserved for share pool .
+ *
+ * In some scenarios where there is no host SVM feature, share pool uses
+ * the default 8G memory setting for DVPP.
+ */
+struct sp_group {
+	int		id;
+	struct file	*file;
+	struct file	*file_hugetlb;
+	/* number of process in this group */
+	int		proc_num;
+	/* list head of processes (sp_group_node, each represents a process) */
+	struct list_head proc_head;
+	/* it is protected by rw_lock of this spg */
+	struct rb_root	spa_root;
+	/* group statistics */
+	struct sp_meminfo meminfo;
+	atomic_t	use_count;
+	atomic_t	spa_num;
+	/* protect the group internal elements */
+	struct rw_semaphore	rw_lock;
+	/* list node for dvpp mapping */
+	struct list_head	mnode;
+	struct sp_mapping	*mapping[SP_MAPPING_END];
+};
+
+/* a per-process(per mm) struct which manages a sp_group_node list */
+struct sp_group_master {
+	pid_t tgid;
+	/*
+	 * number of sp groups the process belongs to,
+	 * a.k.a the number of sp_node in group_head
+	 */
+	unsigned int group_num;
+	/* list head of sp_node */
+	struct list_head group_head;
+	struct mm_struct *mm;
+	/*
+	 * Used to apply for the shared pool memory of the current process.
+	 * For example, sp_alloc non-share memory or k2task.
+	 */
+	struct sp_group *local;
+	struct sp_meminfo meminfo;
+	struct list_head list_node;
+	char comm[TASK_COMM_LEN];
+};
+
+/*
+ * each instance represents an sp group the process belongs to
+ * sp_group_master    : sp_group_node   = 1 : N
+ * sp_group_node->spg : sp_group        = 1 : 1
+ * sp_group_node      : sp_group->proc_head = N : 1
+ */
+struct sp_group_node {
+	/* list node in sp_group->proc_head */
+	struct list_head proc_node;
+	/* list node in sp_group_maseter->group_head */
+	struct list_head group_node;
+	struct sp_group_master *master;
+	struct sp_group *spg;
+	unsigned long prot;
+
+	/*
+	 * alloc amount minus free amount, may be negative when freed by
+	 * another task in the same sp group.
+	 */
+	struct sp_meminfo meminfo;
+};
+
+static inline void sp_add_group_master(struct sp_group_master *master)
+{
+	mutex_lock(&master_list_lock);
+	list_add_tail(&master->list_node, &master_list);
+	mutex_unlock(&master_list_lock);
+}
+
+static inline void sp_del_group_master(struct sp_group_master *master)
+{
+	mutex_lock(&master_list_lock);
+	list_del(&master->list_node);
+	mutex_unlock(&master_list_lock);
+}
+
+static void meminfo_init(struct sp_meminfo *meminfo)
+{
+	memset(meminfo, 0, sizeof(struct sp_meminfo));
+}
+
+static void meminfo_inc_usage(unsigned long size, bool huge, struct sp_meminfo *meminfo)
+{
+	if (huge)
+		atomic64_add(size, &meminfo->alloc_hsize);
+	else
+		atomic64_add(size, &meminfo->alloc_nsize);
+}
+
+static void meminfo_dec_usage(unsigned long size, bool huge, struct sp_meminfo *meminfo)
+{
+	if (huge)
+		atomic64_sub(size, &meminfo->alloc_hsize);
+	else
+		atomic64_sub(size, &meminfo->alloc_nsize);
+}
+
+static void meminfo_inc_k2u(unsigned long size, struct sp_meminfo *meminfo)
+{
+	atomic64_add(size, &meminfo->k2u_size);
+}
+
+static void meminfo_dec_k2u(unsigned long size, struct sp_meminfo *meminfo)
+{
+	atomic64_sub(size, &meminfo->k2u_size);
+}
+
+static inline long meminfo_alloc_sum(struct sp_meminfo *meminfo)
+{
+	return atomic64_read(&meminfo->alloc_nsize) +
+			atomic64_read(&meminfo->alloc_hsize);
+}
+
+static inline long meminfo_alloc_sum_byKB(struct sp_meminfo *meminfo)
+{
+	return byte2kb(meminfo_alloc_sum(meminfo));
+}
+
+static inline long meminfo_k2u_size(struct sp_meminfo *meminfo)
+{
+	return byte2kb(atomic64_read(&meminfo->k2u_size));
+}
+
+static inline long long meminfo_total_size(struct sp_meminfo *meminfo)
+{
+	return atomic64_read(&meminfo->alloc_nsize) +
+		atomic64_read(&meminfo->alloc_hsize) +
+		atomic64_read(&meminfo->k2u_size);
+}
+
+static unsigned long sp_mapping_type(struct sp_mapping *spm)
+{
+	return spm->type;
+}
+
+static void sp_mapping_set_type(struct sp_mapping *spm, unsigned long type)
+{
+	spm->type = type;
+}
+
+static struct sp_mapping *sp_mapping_normal;
+static struct sp_mapping *sp_mapping_ro;
+
+static void sp_mapping_add_to_list(struct sp_mapping *spm)
+{
+	mutex_lock(&spm_list_lock);
+	if (sp_mapping_type(spm) == SP_MAPPING_DVPP)
+		list_add_tail(&spm->spm_node, &spm_dvpp_list);
+	mutex_unlock(&spm_list_lock);
+}
+
+static void sp_mapping_remove_from_list(struct sp_mapping *spm)
+{
+	mutex_lock(&spm_list_lock);
+	if (sp_mapping_type(spm) == SP_MAPPING_DVPP)
+		list_del(&spm->spm_node);
+	mutex_unlock(&spm_list_lock);
+}
+
+static void sp_mapping_range_init(struct sp_mapping *spm)
+{
+	int i;
+
+	for (i = 0; i < MAX_DEVID; i++) {
+		switch (sp_mapping_type(spm)) {
+		case SP_MAPPING_RO:
+			spm->start[i] = MMAP_SHARE_POOL_RO_START;
+			spm->end[i]   = MMAP_SHARE_POOL_RO_END;
+			break;
+		case SP_MAPPING_NORMAL:
+			spm->start[i] = MMAP_SHARE_POOL_NORMAL_START;
+			spm->end[i]   = MMAP_SHARE_POOL_NORMAL_END;
+			break;
+		case SP_MAPPING_DVPP:
+			spm->start[i] = MMAP_SHARE_POOL_DVPP_START + i * MMAP_SHARE_POOL_16G_SIZE;
+			spm->end[i]   = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
+			break;
+		default:
+			pr_err("Invalid sp_mapping type [%lu]\n", sp_mapping_type(spm));
+			break;
+		}
+	}
+}
+
+static struct sp_mapping *sp_mapping_create(unsigned long type)
+{
+	struct sp_mapping *spm;
+
+	spm = kzalloc(sizeof(struct sp_mapping), GFP_KERNEL);
+	if (!spm)
+		return NULL;
+
+	sp_mapping_set_type(spm, type);
+	sp_mapping_range_init(spm);
+	atomic_set(&spm->user, 0);
+	spm->area_root = RB_ROOT;
+	INIT_LIST_HEAD(&spm->group_head);
+	spin_lock_init(&spm->sp_mapping_lock);
+	sp_mapping_add_to_list(spm);
+
+	return spm;
+}
+
+static void sp_mapping_destroy(struct sp_mapping *spm)
+{
+	sp_mapping_remove_from_list(spm);
+	kfree(spm);
+}
+
+static void sp_mapping_attach(struct sp_group *spg, struct sp_mapping *spm)
+{
+	unsigned long type = sp_mapping_type(spm);
+
+	atomic_inc(&spm->user);
+	spg->mapping[type] = spm;
+	if (type == SP_MAPPING_DVPP)
+		list_add_tail(&spg->mnode, &spm->group_head);
+}
+
+static void sp_mapping_detach(struct sp_group *spg, struct sp_mapping *spm)
+{
+	unsigned long type;
+
+	if (!spm)
+		return;
+
+	type = sp_mapping_type(spm);
+	if (type == SP_MAPPING_DVPP)
+		list_del(&spg->mnode);
+	if (atomic_dec_and_test(&spm->user))
+		sp_mapping_destroy(spm);
+
+	spg->mapping[type] = NULL;
+}
+
+/* merge old mapping to new, and the old mapping would be destroyed */
+static void sp_mapping_merge(struct sp_mapping *new, struct sp_mapping *old)
+{
+	struct sp_group *spg, *tmp;
+
+	if (new == old)
+		return;
+
+	list_for_each_entry_safe(spg, tmp, &old->group_head, mnode) {
+		list_move_tail(&spg->mnode, &new->group_head);
+		spg->mapping[SP_MAPPING_DVPP] = new;
+	}
+
+	atomic_add(atomic_read(&old->user), &new->user);
+	sp_mapping_destroy(old);
+}
+
+static bool is_mapping_empty(struct sp_mapping *spm)
+{
+	return RB_EMPTY_ROOT(&spm->area_root);
+}
+
+static bool can_mappings_merge(struct sp_mapping *m1, struct sp_mapping *m2)
+{
+	int i;
+
+	for (i = 0; i < MAX_DEVID; i++)
+		if (m1->start[i] != m2->start[i] || m1->end[i] != m2->end[i])
+			return false;
+
+	return true;
+}
+
+/*
+ * 1. The mappings of local group is set on creating.
+ * 2. This is used to setup the mapping for groups created during add_task.
+ * 3. The normal mapping exists for all groups.
+ * 4. The dvpp mappings for the new group and local group can merge _iff_ at
+ *    least one of the mapping is empty.
+ * the caller must hold sp_global_sem
+ * NOTE: undo the mergeing when the later process failed.
+ */
+static int sp_group_setup_mapping_normal(struct mm_struct *mm, struct sp_group *spg)
+{
+	struct sp_mapping *local_dvpp_mapping, *spg_dvpp_mapping;
+
+	local_dvpp_mapping = mm->sp_group_master->local->mapping[SP_MAPPING_DVPP];
+	spg_dvpp_mapping = spg->mapping[SP_MAPPING_DVPP];
+
+	if (!list_empty(&spg->proc_head)) {
+		/*
+		 * Don't return an error when the mappings' address range conflict.
+		 * As long as the mapping is unused, we can drop the empty mapping.
+		 * This may change the address range for the task or group implicitly,
+		 * give a warn for it.
+		 */
+		bool is_conflict = !can_mappings_merge(local_dvpp_mapping, spg_dvpp_mapping);
+
+		if (is_mapping_empty(local_dvpp_mapping)) {
+			sp_mapping_merge(spg_dvpp_mapping, local_dvpp_mapping);
+			if (is_conflict)
+				pr_warn_ratelimited("task address space conflict, spg_id=%d\n",
+						spg->id);
+		} else if (is_mapping_empty(spg_dvpp_mapping)) {
+			sp_mapping_merge(local_dvpp_mapping, spg_dvpp_mapping);
+			if (is_conflict)
+				pr_warn_ratelimited("group address space conflict, spg_id=%d\n",
+						spg->id);
+		} else {
+			pr_info_ratelimited("Duplicate address space, id=%d\n", spg->id);
+			return -EINVAL;
+		}
+	} else {
+		/* the mapping of local group is always set */
+		sp_mapping_attach(spg, local_dvpp_mapping);
+		if (!spg->mapping[SP_MAPPING_NORMAL])
+			sp_mapping_attach(spg, sp_mapping_normal);
+		if (!spg->mapping[SP_MAPPING_RO])
+			sp_mapping_attach(spg, sp_mapping_ro);
+	}
+
+	return 0;
+}
+
+static inline bool is_local_group(int spg_id)
+{
+	return spg_id >= SPG_ID_LOCAL_MIN && spg_id <= SPG_ID_LOCAL_MAX;
+}
+
+static void update_mem_usage_alloc(unsigned long size, bool inc,
+		bool is_hugepage, struct sp_group_node *spg_node)
+{
+	if (inc) {
+		meminfo_inc_usage(size, is_hugepage, &spg_node->meminfo);
+		meminfo_inc_usage(size, is_hugepage, &spg_node->master->meminfo);
+	} else {
+		meminfo_dec_usage(size, is_hugepage, &spg_node->meminfo);
+		meminfo_dec_usage(size, is_hugepage, &spg_node->master->meminfo);
+	}
+}
+
+static void update_mem_usage_k2u(unsigned long size, bool inc,
+		struct sp_group_node *spg_node)
+{
+	if (inc) {
+		meminfo_inc_k2u(size, &spg_node->meminfo);
+		meminfo_inc_k2u(size, &spg_node->master->meminfo);
+	} else {
+		meminfo_dec_k2u(size, &spg_node->meminfo);
+		meminfo_dec_k2u(size, &spg_node->master->meminfo);
+	}
+}
+
+struct sp_spa_stat {
+	atomic64_t alloc_num;
+	atomic64_t k2u_task_num;
+	atomic64_t k2u_spg_num;
+	atomic64_t alloc_size;
+	atomic64_t k2u_task_size;
+	atomic64_t k2u_spg_size;
+	atomic64_t dvpp_size;
+	atomic64_t dvpp_va_size;
+};
+
+static struct sp_spa_stat spa_stat;
+
+/* statistics of all sp group born from sp_alloc and k2u(spg) */
+struct sp_overall_stat {
+	atomic_t spa_total_num;
+	atomic64_t spa_total_size;
+};
+
+static struct sp_overall_stat sp_overall_stat;
+
+/*** Global share pool VA allocator ***/
+
+enum spa_type {
+	SPA_TYPE_ALLOC = 1,
+	SPA_TYPE_K2TASK,
+	SPA_TYPE_K2SPG,
+};
+
+/*
+ * The lifetime for a sp_area:
+ * 1. The sp_area was created from a sp_mapping with sp_mapping_lock held.
+ * 2. The sp_area was added into a sp_group (using rb_tree).
+ * 3. The sp_area was mapped to all tasks in the sp_group and we bump its
+ *    reference when each mmap succeeded.
+ * 4. When a new task was added into the sp_group, we map the sp_area into
+ *    the new task and increase its reference count.
+ * 5. When a task was deleted from the sp_group, we unmap the sp_area for
+ *    the task and decrease its reference count.
+ * 6. Also, we can use sp_free/sp_unshare to unmap the sp_area for all the
+ *    tasks in the sp_group. And the reference count was decreased for each
+ *    munmap.
+ * 7. When the refcount for sp_area reach zero:
+ *      a. the sp_area would firstly be deleted from the sp_group and then
+ *         deleted from sp_mapping.
+ *      b. no one should use the sp_area from the view of sp_group.
+ *      c. the spa->spg should not be used when the sp_area is not on a spg.
+ *
+ * The locking rules:
+ * 1. The newly created sp_area with a refcount of one. This is to distinct
+ *    the new sp_area from a dying sp_area.
+ * 2. Use spg->rw_lock to protect all the sp_area in the sp_group. And the
+ *    sp_area cannot be deleted without spg->rw_lock.
+ */
+struct sp_area {
+	unsigned long va_start;
+	unsigned long va_end;		/* va_end always align to hugepage */
+	unsigned long real_size;	/* real size with alignment */
+	unsigned long region_vstart;	/* belong to normal region or DVPP region */
+	unsigned long flags;
+	bool is_hugepage;
+	atomic_t use_count;		/* How many vmas use this VA region */
+	struct rb_node rb_node;		/* address sorted rbtree */
+	struct rb_node spg_link;	/* link to the spg->rb_root */
+	struct sp_group *spg;
+	struct sp_mapping *spm;		/* where spa born from */
+	enum spa_type type;
+	unsigned long kva;		/* shared kva */
+	pid_t applier;			/* the original applier process */
+	int preferred_node_id;		/* memory node */
+	struct work_struct work;
+};
+
+static unsigned long spa_size(struct sp_area *spa)
+{
+	return spa->real_size;
+}
+
+static struct file *spa_file(struct sp_area *spa)
+{
+	if (spa->is_hugepage)
+		return spa->spg->file_hugetlb;
+	else
+		return spa->spg->file;
+}
+
+/* the caller should hold sp_area_lock */
+static void spa_inc_usage(struct sp_area *spa)
+{
+	enum spa_type type = spa->type;
+	unsigned long size = spa->real_size;
+	bool is_dvpp = spa->flags & SP_DVPP;
+	bool is_huge = spa->is_hugepage;
+
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		atomic64_inc(&spa_stat.alloc_num);
+		atomic64_add(size, &spa_stat.alloc_size);
+		meminfo_inc_usage(size, is_huge, &spa->spg->meminfo);
+		break;
+	case SPA_TYPE_K2TASK:
+		atomic64_inc(&spa_stat.k2u_task_num);
+		atomic64_add(size, &spa_stat.k2u_task_size);
+		meminfo_inc_k2u(size, &spa->spg->meminfo);
+		break;
+	case SPA_TYPE_K2SPG:
+		atomic64_inc(&spa_stat.k2u_spg_num);
+		atomic64_add(size, &spa_stat.k2u_spg_size);
+		meminfo_inc_k2u(size, &spa->spg->meminfo);
+		break;
+	default:
+		WARN(1, "invalid spa type");
+	}
+
+	if (is_dvpp) {
+		atomic64_add(size, &spa_stat.dvpp_size);
+		atomic64_add(ALIGN(size, PMD_SIZE), &spa_stat.dvpp_va_size);
+	}
+
+	if (!is_local_group(spa->spg->id)) {
+		atomic_inc(&sp_overall_stat.spa_total_num);
+		atomic64_add(size, &sp_overall_stat.spa_total_size);
+	}
+}
+
+/* the caller should hold sp_area_lock */
+static void spa_dec_usage(struct sp_area *spa)
+{
+	enum spa_type type = spa->type;
+	unsigned long size = spa->real_size;
+	bool is_dvpp = spa->flags & SP_DVPP;
+	bool is_huge = spa->is_hugepage;
+
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		atomic64_dec(&spa_stat.alloc_num);
+		atomic64_sub(size, &spa_stat.alloc_size);
+		meminfo_dec_usage(size, is_huge, &spa->spg->meminfo);
+		break;
+	case SPA_TYPE_K2TASK:
+		atomic64_dec(&spa_stat.k2u_task_num);
+		atomic64_sub(size, &spa_stat.k2u_task_size);
+		meminfo_dec_k2u(size, &spa->spg->meminfo);
+		break;
+	case SPA_TYPE_K2SPG:
+		atomic64_dec(&spa_stat.k2u_spg_num);
+		atomic64_sub(size, &spa_stat.k2u_spg_size);
+		meminfo_dec_k2u(size, &spa->spg->meminfo);
+		break;
+	default:
+		WARN(1, "invalid spa type");
+	}
+
+	if (is_dvpp) {
+		atomic64_sub(size, &spa_stat.dvpp_size);
+		atomic64_sub(ALIGN(size, PMD_SIZE), &spa_stat.dvpp_va_size);
+	}
+
+	if (!is_local_group(spa->spg->id)) {
+		atomic_dec(&sp_overall_stat.spa_total_num);
+		atomic64_sub(spa->real_size, &sp_overall_stat.spa_total_size);
+	}
+}
 /**
  * mp_sp_group_id_by_pid() - Get the sp_group ID array of a process.
  * @tgid: tgid of target process.
@@ -107,6 +726,323 @@ int mg_sp_id_of_current(void)
 	return -EOPNOTSUPP;
 }
 EXPORT_SYMBOL_GPL(mg_sp_id_of_current);
+
+#define insert_sp_area(__root, __spa, node, rb_node_param)	\
+	do {							\
+		struct rb_node **p = &((__root)->rb_node);	\
+		struct rb_node *parent = NULL;			\
+		while (*p) {					\
+			struct sp_area *tmp;			\
+			parent = *p;				\
+			tmp = rb_entry(parent, struct sp_area, rb_node_param);\
+			if (__spa->va_start < tmp->va_end)	\
+				p = &(*p)->rb_left;		\
+			else if (__spa->va_end > tmp->va_start)	\
+				p = &(*p)->rb_right;		\
+			else					\
+				WARN(1, "duplicate spa of tree " #__root);\
+		}						\
+		rb_link_node((node), parent, p);		\
+		rb_insert_color((node), (__root));		\
+	} while (0)
+
+/* the caller must hold sp_mapping_lock */
+static void spm_insert_area(struct sp_mapping *spm, struct sp_area *spa)
+{
+	insert_sp_area(&spm->area_root, spa, &spa->rb_node, rb_node);
+}
+
+static void sp_group_insert_area(struct sp_group *spg, struct sp_area *spa)
+{
+	insert_sp_area(&spg->spa_root, spa, &spa->spg_link, spg_link);
+	atomic_inc(&spg->spa_num);
+	spa_inc_usage(spa);
+	if (atomic_read(&spg->spa_num) == 1)
+		atomic_inc(&spg->use_count);
+}
+
+/*
+ * The caller must hold spg->rw_lock.
+ * Return true to indicate that ths spa_num in the spg reaches zero and the caller
+ * should drop the extra spg->use_count added in sp_group_insert_area().
+ */
+static bool sp_group_delete_area(struct sp_group *spg, struct sp_area *spa)
+{
+	rb_erase(&spa->spg_link, &spg->spa_root);
+	spa_dec_usage(spa);
+	return atomic_dec_and_test(&spa->spg->spa_num);
+}
+
+/**
+ * sp_area_alloc() - Allocate a region of VA from the share pool.
+ * @size: the size of VA to allocate.
+ * @flags: how to allocate the memory.
+ * @spg: the share group that the memory is allocated to.
+ * @type: the type of the region.
+ * @applier: the tgid of the task which allocates the region.
+ *
+ * Return: a valid pointer for success, NULL on failure.
+ */
+static struct sp_area *sp_area_alloc(unsigned long size, unsigned long flags,
+				     struct sp_group *spg, enum spa_type type,
+				     pid_t applier, int node_id)
+{
+	int device_id;
+	struct sp_area *spa, *first, *err;
+	struct rb_node *n;
+	unsigned long vstart;
+	unsigned long vend;
+	unsigned long addr;
+	unsigned long size_align = ALIGN(size, PMD_SIZE); /* va aligned to 2M */
+	struct sp_mapping *mapping;
+
+	device_id = sp_flags_device_id(flags);
+	if (device_id < 0 || device_id >= MAX_DEVID) {
+		pr_err("invalid device id %d\n", device_id);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (flags & SP_PROT_FOCUS) {
+		if ((flags & (SP_DVPP | SP_PROT_RO)) != SP_PROT_RO) {
+			pr_err("invalid sp_flags [%lx]\n", flags);
+			return ERR_PTR(-EINVAL);
+		}
+		mapping = spg->mapping[SP_MAPPING_RO];
+	} else if (flags & SP_DVPP) {
+		mapping = spg->mapping[SP_MAPPING_DVPP];
+	} else {
+		mapping = spg->mapping[SP_MAPPING_NORMAL];
+	}
+
+	if (!mapping) {
+		pr_err_ratelimited("non DVPP spg, id %d\n", spg->id);
+		return ERR_PTR(-EINVAL);
+	}
+
+	vstart = mapping->start[device_id];
+	vend = mapping->end[device_id];
+	spa = kmalloc(sizeof(struct sp_area), GFP_KERNEL);
+	if (unlikely(!spa))
+		return ERR_PTR(-ENOMEM);
+
+	spin_lock(&mapping->sp_mapping_lock);
+
+	/*
+	 * Invalidate cache if we have more permissive parameters.
+	 * cached_hole_size notes the largest hole noticed _below_
+	 * the sp_area cached in free_area_cache: if size fits
+	 * into that hole, we want to scan from vstart to reuse
+	 * the hole instead of allocating above free_area_cache.
+	 * Note that sp_area_free may update free_area_cache
+	 * without updating cached_hole_size.
+	 */
+	if (!mapping->free_area_cache || size_align < mapping->cached_hole_size ||
+	    vstart != mapping->cached_vstart) {
+		mapping->cached_hole_size = 0;
+		mapping->free_area_cache = NULL;
+	}
+
+	/* record if we encounter less permissive parameters */
+	mapping->cached_vstart = vstart;
+
+	/* find starting point for our search */
+	if (mapping->free_area_cache) {
+		first = rb_entry(mapping->free_area_cache, struct sp_area, rb_node);
+		addr = first->va_end;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+	} else {
+		addr = vstart;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+
+		n = mapping->area_root.rb_node;
+		first = NULL;
+
+		while (n) {
+			struct sp_area *tmp;
+
+			tmp = rb_entry(n, struct sp_area, rb_node);
+			if (tmp->va_end >= addr) {
+				first = tmp;
+				if (tmp->va_start <= addr)
+					break;
+				n = n->rb_left;
+			} else
+				n = n->rb_right;
+		}
+
+		if (!first)
+			goto found;
+	}
+
+	/* from the starting point, traverse areas until a suitable hole is found */
+	while (addr + size_align > first->va_start && addr + size_align <= vend) {
+		if (addr + mapping->cached_hole_size < first->va_start)
+			mapping->cached_hole_size = first->va_start - addr;
+		addr = first->va_end;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+
+		n = rb_next(&first->rb_node);
+		if (n)
+			first = rb_entry(n, struct sp_area, rb_node);
+		else
+			goto found;
+	}
+
+found:
+	if (addr + size_align > vend) {
+		err = ERR_PTR(-EOVERFLOW);
+		goto error;
+	}
+
+	spa->va_start          = addr;
+	spa->va_end            = addr + size_align;
+	spa->real_size         = size;
+	spa->region_vstart     = vstart;
+	spa->flags             = flags;
+	spa->is_hugepage       = (flags & SP_HUGEPAGE);
+	spa->spg               = spg;
+	spa->spm               = mapping;
+	spa->type              = type;
+	spa->kva               = 0;   /* NULL pointer */
+	spa->applier           = applier;
+	spa->preferred_node_id = node_id;
+	atomic_set(&spa->use_count, 1);
+
+	/* the link location could be saved before, to be optimized */
+	spm_insert_area(mapping, spa);
+	mapping->free_area_cache = &spa->rb_node;
+
+	spin_unlock(&mapping->sp_mapping_lock);
+	sp_group_insert_area(spg, spa);
+
+	return spa;
+
+error:
+	spin_unlock(&mapping->sp_mapping_lock);
+	kfree(spa);
+	return err;
+}
+
+/*
+ * Find a spa with key @addr from @spg and increase its use_count.
+ * The caller should hold spg->rw_lock
+ */
+static struct sp_area *sp_area_get(struct sp_group *spg,
+		unsigned long addr)
+{
+	struct rb_node *n = spg->spa_root.rb_node;
+
+	while (n) {
+		struct sp_area *spa;
+
+		spa = rb_entry(n, struct sp_area, spg_link);
+		if (addr < spa->va_start) {
+			n = n->rb_left;
+		} else if (addr > spa->va_start) {
+			n = n->rb_right;
+		} else {
+			/* a spa without any user will die soon */
+			if (atomic_inc_not_zero(&spa->use_count))
+				return spa;
+			else
+				return NULL;
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ * Free the VA region starting from addr to the share pool
+ */
+static void sp_area_free(struct sp_area *spa)
+{
+	struct sp_mapping *spm = spa->spm;
+
+	spin_lock(&spm->sp_mapping_lock);
+	if (spm->free_area_cache) {
+		struct sp_area *cache;
+
+		cache = rb_entry(spm->free_area_cache, struct sp_area, rb_node);
+		if (spa->va_start <= cache->va_start) {
+			spm->free_area_cache = rb_prev(&spa->rb_node);
+			/*
+			 * the new cache node may be changed to another region,
+			 * i.e. from DVPP region to normal region
+			 */
+			if (spm->free_area_cache) {
+				cache = rb_entry(spm->free_area_cache,
+						 struct sp_area, rb_node);
+				spm->cached_vstart = cache->region_vstart;
+			}
+			/*
+			 * We don't try to update cached_hole_size,
+			 * but it won't go very wrong.
+			 */
+		}
+	}
+
+	rb_erase(&spa->rb_node, &spm->area_root);
+	spin_unlock(&spm->sp_mapping_lock);
+	RB_CLEAR_NODE(&spa->rb_node);
+	kfree(spa);
+}
+
+static void sp_area_put_locked(struct sp_area *spa)
+{
+	if (atomic_dec_and_test(&spa->use_count)) {
+		if (sp_group_delete_area(spa->spg, spa))
+			/* the caller must hold a refcount for spa->spg under spg->rw_lock */
+			atomic_dec(&spa->spg->use_count);
+		sp_area_free(spa);
+	}
+}
+
+static void sp_group_put(struct sp_group *spg) {}
+static void sp_area_drop_func(struct work_struct *work)
+{
+	bool spa_zero;
+	struct sp_area *spa = container_of(work, struct sp_area, work);
+	struct sp_group *spg = spa->spg;
+
+	down_write(&spg->rw_lock);
+	spa_zero = sp_group_delete_area(spg, spa);
+	up_write(&spg->rw_lock);
+	sp_area_free(spa);
+	if (spa_zero)
+		sp_group_put(spg);
+}
+
+void sp_area_drop(struct vm_area_struct *vma)
+{
+	struct sp_area *spa = vma->spa;
+
+	if (!(vma->vm_flags & VM_SHARE_POOL))
+		return;
+
+	/*
+	 * Considering a situation where task A and B are in the same spg.
+	 * A is exiting and calling remove_vma(). Before A calls this func,
+	 * B calls sp_free() to free the same spa. So spa maybe NULL when A
+	 * calls this func later.
+	 */
+	if (!spa)
+		return;
+
+	if (atomic_dec_and_test(&spa->use_count)) {
+		INIT_WORK(&spa->work, sp_area_drop_func);
+		schedule_work(&spa->work);
+	}
+}
 
 /**
  * mg_sp_free() - Free the memory allocated by mg_sp_alloc() or
@@ -308,8 +1244,25 @@ static int __init share_pool_init(void)
 	if (!sp_is_enabled())
 		return 0;
 
+	sp_mapping_normal = sp_mapping_create(SP_MAPPING_NORMAL);
+	if (!sp_mapping_normal)
+		goto fail;
+	atomic_inc(&sp_mapping_normal->user);
+
+	sp_mapping_ro = sp_mapping_create(SP_MAPPING_RO);
+	if (!sp_mapping_ro)
+		goto free_normal;
+	atomic_inc(&sp_mapping_ro->user);
+
 	proc_sharepool_init();
 
 	return 0;
+
+free_normal:
+	kfree(sp_mapping_normal);
+fail:
+	pr_err("Ascend share pool initialization failed\n");
+	static_branch_disable(&share_pool_enabled_key);
+	return 1;
 }
 late_initcall(share_pool_init);
