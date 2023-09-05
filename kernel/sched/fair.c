@@ -620,6 +620,15 @@ static inline u64 min_vruntime(u64 min_vruntime, u64 vruntime)
 static inline bool entity_before(const struct sched_entity *a,
 				 const struct sched_entity *b)
 {
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_tag_pick_next_entity(a, b);
+
+		if (ret == 1)
+			return 1;
+	}
+#endif
+
 	return (s64)(a->vruntime - b->vruntime) < 0;
 }
 
