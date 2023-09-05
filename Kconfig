@@ -30,3 +30,10 @@ source "lib/Kconfig"
 source "lib/Kconfig.debug"
 
 source "Documentation/Kconfig"
+
+config KABI_SIZE_ALIGN_CHECKS
+	bool "Enables more stringent kabi checks in the macros"
+	default y
+	help
+	  This option enables more stringent kabi checks. Those must be disable
+	  in case of a debug-build because they allow to change struct sizes.
