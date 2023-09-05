@@ -264,6 +264,26 @@ long hugetlb_change_protection(struct vm_area_struct *vma,
 bool is_hugetlb_entry_migration(pte_t pte);
 void hugetlb_unshare_all_pmds(struct vm_area_struct *vma);
 
+#ifdef CONFIG_HUGETLB_INSERT_PAGE
+int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, struct page *hpage);
+int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				unsigned long vir_addr,
+				pgprot_t prot, unsigned long phy_addr);
+#else /* CONFIG_HUGETLB_INSERT_PAGE */
+static inline int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, struct page *hpage)
+{
+	return -EPERM;
+}
+static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				unsigned long vir_addr,
+				pgprot_t prot, unsigned long phy_addr)
+{
+	return -EPERM;
+}
+#endif /* CONFIG_HUGETLB_INSERT_PAGE */
+
 #else /* !CONFIG_HUGETLB_PAGE */
 
 static inline void hugetlb_dup_vma_private(struct vm_area_struct *vma)
@@ -469,6 +489,18 @@ static inline vm_fault_t hugetlb_fault(struct mm_struct *mm,
 }
 
 static inline void hugetlb_unshare_all_pmds(struct vm_area_struct *vma) { }
+
+static inline int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, struct page *hpage)
+{
+	return -EPERM;
+}
+static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				unsigned long vir_addr,
+				pgprot_t prot, unsigned long phy_addr)
+{
+	return -EPERM;
+}
 
 #endif /* !CONFIG_HUGETLB_PAGE */
 /*

@@ -1239,6 +1239,21 @@ config ETMEM
 	  high-performance storage media to release memory space and reduce
 	  memory costs.
 
+menuconfig ASCEND_FEATURES
+	bool "Support Ascend Features"
+	depends on ARM64
+	select HUGETLB_INSERT_PAGE
+	help
+	  The Ascend chip use the Hisilicon DaVinci architecture, and mainly
+	  focus on AI and machine leanring area, contains many external features.
+	  Enable this config to enable selective list of these features.
+	  If unsure, say N
+
+config HUGETLB_INSERT_PAGE
+	bool
+	help
+	  This allowed a driver to insert hugetlb mapping into user address space.
+
 source "mm/damon/Kconfig"
 
 endmenu
