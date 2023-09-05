@@ -3,7 +3,6 @@
  * Copyright (c) 2022 Hisilicon Limited.
  */
 
-#include <linux/pci.h>
 #include "hnae3.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hw_v2.h"
@@ -64,7 +63,7 @@ static bool is_hrdev_bond_slave(struct hns_roce_dev *hr_dev,
 	if (!netif_is_lag_master(upper_dev))
 		return false;
 
-	if (upper_dev == get_upper_dev_from_ndev(hr_dev->iboe.netdevs[0]))
+	if (upper_dev == get_upper_dev_from_ndev(get_hr_netdev(hr_dev, 0)))
 		return true;
 
 	bond_grp = hns_roce_get_bond_grp(hr_dev);
@@ -77,7 +76,8 @@ static bool is_hrdev_bond_slave(struct hns_roce_dev *hr_dev,
 struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_die_info *die_info =
-		xa_load(&roce_bond_xa, hr_dev->pci_dev->bus->number);
+		xa_load(&roce_bond_xa, get_hr_bus_num(hr_dev));
+	struct net_device *net_dev = get_hr_netdev(hr_dev, 0);
 	struct hns_roce_bond_group *bond_grp;
 	int i;
 
@@ -88,9 +88,8 @@ struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev)
 		bond_grp = die_info->bgrps[i];
 		if (!bond_grp)
 			continue;
-		if (is_netdev_bond_slave(hr_dev->iboe.netdevs[0], bond_grp) ||
-		    bond_grp->upper_dev ==
-		    get_upper_dev_from_ndev(hr_dev->iboe.netdevs[0]))
+		if (is_netdev_bond_slave(net_dev, bond_grp) ||
+		    (bond_grp->upper_dev == get_upper_dev_from_ndev(net_dev)))
 			return bond_grp;
 	}
 
@@ -697,10 +696,10 @@ static enum bond_support_type
 			if (hr_dev) {
 				slave_num++;
 				if (bus_num == -1)
-					bus_num = hr_dev->pci_dev->bus->number;
+					bus_num = get_hr_bus_num(hr_dev);
 				if (hr_dev->is_vf ||
 				    pci_num_vf(hr_dev->pci_dev) > 0 ||
-				    bus_num != hr_dev->pci_dev->bus->number) {
+				    bus_num != get_hr_bus_num(hr_dev)) {
 					support = false;
 					break;
 				}
