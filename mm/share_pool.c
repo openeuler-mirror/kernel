@@ -484,6 +484,11 @@ static inline bool is_local_group(int spg_id)
 	return spg_id >= SPG_ID_LOCAL_MIN && spg_id <= SPG_ID_LOCAL_MAX;
 }
 
+static int sp_init_group_master(struct task_struct *tsk, struct mm_struct *mm)
+{
+	return -EOPNOTSUPP;
+}
+
 static void update_mem_usage_alloc(unsigned long size, bool inc,
 		bool is_hugepage, struct sp_group_node *spg_node)
 {
@@ -694,6 +699,16 @@ static inline void check_interrupt_context(void)
 		panic("function can't be used in interrupt context\n");
 }
 
+struct sp_alloc_context {
+	unsigned long size;
+	unsigned long size_aligned;
+	unsigned long sp_flags;
+	nodemask_t *nodemask;
+	int preferred_node_id;
+	bool have_mbind;
+	enum spa_type type;
+};
+
 /*
  * Get the sp_group from the mm and return the associated sp_group_node.
  * The caller should promise the @mm would not be deleted from the @spg.
@@ -752,6 +767,11 @@ int mg_sp_group_id_by_pid(int tgid, int *spg_ids, int *num)
 	return -EOPNOTSUPP;
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
+
+static bool is_online_node_id(int node_id)
+{
+	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
+}
 
 /**
  * mg_sp_group_add_task() - Add a process to an share group (sp_group).
@@ -1260,10 +1280,329 @@ static void __init proc_sharepool_init(void)
 		return;
 }
 
+/* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_lock). */
+static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
+			     struct sp_area *spa, unsigned long *populate,
+			     unsigned long prot)
+{
+	unsigned long addr = spa->va_start;
+	unsigned long size = spa_size(spa);
+	unsigned long flags = MAP_FIXED_NOREPLACE | MAP_SHARED | MAP_POPULATE |
+			      MAP_SHARE_POOL;
+	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
+	unsigned long pgoff = addr_offset(spa) >> PAGE_SHIFT;
+	struct vm_area_struct *vma;
+
+	if (spa->flags & SP_PROT_RO)
+		prot &= ~PROT_WRITE;
+
+	atomic_inc(&spa->use_count);
+	addr = __do_mmap_mm(mm, file, addr, size, prot, flags, vm_flags, pgoff,
+			 populate, NULL);
+	if (IS_ERR_VALUE(addr)) {
+		atomic_dec(&spa->use_count);
+		pr_err("do_mmap fails %ld\n", addr);
+		return addr;
+	}
+
+	vma = find_vma(mm, addr);
+	vma->spa = spa;
+
+	if (prot & PROT_WRITE)
+		/* clean PTE_RDONLY flags or trigger SMMU event */
+		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) |
+						PTE_DIRTY);
+	else
+		vm_flags_clear(vma, VM_MAYWRITE);
+
+	return addr;
+}
+
+static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
+	int spg_id, struct sp_alloc_context *ac)
+{
+	int device_id, node_id;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	check_interrupt_context();
+
+	device_id = sp_flags_device_id(sp_flags);
+	node_id = sp_flags & SP_SPEC_NODE_ID ? sp_flags_node_id(sp_flags) : device_id;
+	if (!is_online_node_id(node_id)) {
+		pr_err_ratelimited("invalid numa node id %d\n", node_id);
+		return -EINVAL;
+	}
+	ac->preferred_node_id = node_id;
+
+	if (current->flags & PF_KTHREAD) {
+		pr_err_ratelimited("allocation failed, task is kthread\n");
+		return -EINVAL;
+	}
+
+	if (unlikely(!size || (size >> PAGE_SHIFT) > totalram_pages())) {
+		pr_err_ratelimited("allocation failed, invalid size %lu\n", size);
+		return -EINVAL;
+	}
+
+	if (spg_id != SPG_ID_DEFAULT && (spg_id < SPG_ID_MIN || spg_id >= SPG_ID_AUTO)) {
+		pr_err_ratelimited("allocation failed, invalid group id %d\n", spg_id);
+		return -EINVAL;
+	}
+
+	if (sp_flags & (~SP_FLAG_MASK)) {
+		pr_err_ratelimited("allocation failed, invalid flag %lx\n", sp_flags);
+		return -EINVAL;
+	}
+
+	if (sp_flags & SP_HUGEPAGE_ONLY)
+		sp_flags |= SP_HUGEPAGE;
+
+	if (spg_id == SPG_ID_DEFAULT) {
+		/*
+		 * We should first init the group_master in pass through scene and
+		 * don't free it until we release the mm_struct.
+		 */
+		int ret = sp_init_group_master(current, current->mm);
+
+		if (ret) {
+			pr_err("sp_alloc init local mapping failed %d\n", ret);
+			return ret;
+		}
+	}
+
+	ac->type         = SPA_TYPE_ALLOC;
+	ac->size         = size;
+	ac->sp_flags     = sp_flags;
+	ac->have_mbind   = false;
+	ac->size_aligned = (sp_flags & SP_HUGEPAGE) ? ALIGN(size, PMD_SIZE) :
+						      ALIGN(size, PAGE_SIZE);
+
+	return 0;
+}
+
+static bool sp_alloc_fallback(struct sp_area *spa, struct sp_alloc_context *ac)
+{
+	/*
+	 * If hugepage allocation fails, this will transfer to normal page
+	 * and try again. (only if SP_HUGEPAGE_ONLY is not flagged
+	 */
+	if (!(ac->sp_flags & SP_HUGEPAGE) || (ac->sp_flags & SP_HUGEPAGE_ONLY))
+		return false;
+
+	ac->size_aligned = ALIGN(ac->size, PAGE_SIZE);
+	ac->sp_flags &= ~SP_HUGEPAGE;
+	/*
+	 * The mempolicy for shared memory is located at backend file, which varies
+	 * between normal pages and huge pages. So we should set the mbind policy again
+	 * when we retry using normal pages.
+	 */
+	ac->have_mbind = false;
+	sp_area_put_locked(spa);
+	return true;
+}
+
+static long sp_mbind(struct mm_struct *mm, unsigned long start, unsigned long len,
+		nodemask_t *nodemask)
+{
+	return __do_mbind(start, len, MPOL_BIND, MPOL_F_STATIC_NODES,
+			nodemask, MPOL_MF_STRICT, mm);
+}
+
+static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
+			     unsigned long populate, struct sp_alloc_context *ac)
+{
+	int ret;
+
+	if (ac && !ac->have_mbind) {
+		ret = sp_mbind(mm, spa->va_start, spa->real_size, ac->nodemask);
+		if (ret < 0) {
+			pr_err("cannot bind the memory range to node[%*pbl], err:%d\n",
+					nodemask_pr_args(ac->nodemask), ret);
+			return ret;
+		}
+		ac->have_mbind = true;
+	}
+
+	/*
+	 * We are not ignoring errors, so if we fail to allocate
+	 * physical memory we just return failure, so we won't encounter
+	 * page fault later on, and more importantly sp_make_share_u2k()
+	 * depends on this feature (and MAP_LOCKED) to work correctly.
+	 */
+	ret = do_mm_populate(mm, spa->va_start, populate, 0);
+	if (ret) {
+		if (unlikely(fatal_signal_pending(current)))
+			pr_warn("allocation failed, current thread is killed\n");
+		else
+			pr_warn("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
+					ret);
+	}
+
+	return ret;
+}
+
+static int sp_k2u_populate(struct mm_struct *mm, struct sp_area *spa)
+{
+	return -EOPNOTSUPP;
+}
+
+#define SP_SKIP_ERR 1
+/*
+ * The caller should increase the refcnt of the spa to prevent that we map
+ * a dead spa into a mm_struct.
+ */
+static int sp_map_spa_to_mm(struct mm_struct *mm, struct sp_area *spa,
+			    unsigned long prot, struct sp_alloc_context *ac,
+			    const char *str)
+{
+	int ret;
+	unsigned long mmap_addr;
+	unsigned long populate = 0;
+
+	down_write(&mm->mmap_lock);
+	if (unlikely(!mmget_not_zero(mm))) {
+		up_write(&mm->mmap_lock);
+		pr_warn("sp_map: target mm is exiting\n");
+		return SP_SKIP_ERR;
+	}
+
+	/* when success, mmap_addr == spa->va_start */
+	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
+	if (IS_ERR_VALUE(mmap_addr)) {
+		up_write(&mm->mmap_lock);
+		mmput_async(mm);
+		pr_err("%s, sp mmap failed %ld\n", str, mmap_addr);
+		return (int)mmap_addr;
+	}
+
+	if (spa->type == SPA_TYPE_ALLOC) {
+		up_write(&mm->mmap_lock);
+		ret = sp_alloc_populate(mm, spa, populate, ac);
+		if (ret) {
+			down_write(&mm->mmap_lock);
+			do_munmap(mm, mmap_addr, spa_size(spa), NULL);
+			up_write(&mm->mmap_lock);
+		}
+	} else {
+		ret = sp_k2u_populate(mm, spa);
+		if (ret) {
+			do_munmap(mm, mmap_addr, spa_size(spa), NULL);
+			pr_info("k2u populate failed, %d\n", ret);
+		}
+		up_write(&mm->mmap_lock);
+	}
+	mmput_async(mm);
+
+	return ret;
+}
+
+static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *ac)
+{
+	int ret = -EINVAL;
+	int mmap_ret = 0;
+	struct mm_struct *mm;
+	struct sp_group_node *spg_node;
+
+	/* create mapping for each process in the group */
+	list_for_each_entry(spg_node, &spa->spg->proc_head, proc_node) {
+		mm = spg_node->master->mm;
+		mmap_ret = sp_map_spa_to_mm(mm, spa, spg_node->prot, ac, "sp_alloc");
+		if (mmap_ret) {
+			/*
+			 * Goto fallback procedure upon ERR_VALUE,
+			 * but skip the coredump situation,
+			 * because we don't want one misbehaving process to affect others.
+			 */
+			if (mmap_ret != SP_SKIP_ERR)
+				goto unmap;
+
+			continue;
+		}
+		ret = mmap_ret;
+	}
+
+	return ret;
+
+unmap:
+	__sp_free(spa, mm);
+
+	/*
+	 * Sometimes do_mm_populate() allocates some memory and then failed to
+	 * allocate more. (e.g. memory use reaches cgroup limit.)
+	 * In this case, it will return enomem, but will not free the
+	 * memory which has already been allocated.
+	 *
+	 * So if sp_map_spa_to_mm fails, always call sp_fallocate()
+	 * to make sure backup physical memory of the shared file is freed.
+	 */
+	sp_fallocate(spa);
+
+	return mmap_ret;
+}
+
+void *__mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
+			     nodemask_t *nodemask)
+{
+	int ret = 0;
+	struct sp_area *spa;
+	struct sp_group *spg;
+	nodemask_t __nodemask;
+	struct sp_alloc_context ac;
+	struct sp_group_node *spg_node;
+
+	ret = sp_alloc_prepare(size, sp_flags, spg_id, &ac);
+	if (ret)
+		return ERR_PTR(ret);
+
+	if (!nodemask) { /* mg_sp_alloc */
+		nodes_clear(__nodemask);
+		node_set(ac.preferred_node_id, __nodemask);
+		ac.nodemask = &__nodemask;
+	} else /* mg_sp_alloc_nodemask */
+		ac.nodemask = nodemask;
+
+	spg = sp_group_get_from_mm(current->mm, spg_id, &spg_node);
+	if (!spg) {
+		pr_err("allocation failed, can't find group(%d)\n", spg_id);
+		return ERR_PTR(-ENODEV);
+	}
+
+	down_write(&spg->rw_lock);
+try_again:
+	spa = sp_area_alloc(ac.size_aligned, ac.sp_flags, spg,
+			    ac.type, current->tgid, ac.preferred_node_id);
+	if (IS_ERR(spa)) {
+		up_write(&spg->rw_lock);
+		pr_err("alloc spa failed in allocation(potential no enough virtual memory when -75): %ld\n",
+			PTR_ERR(spa));
+		ret = PTR_ERR(spa);
+		goto out;
+	}
+
+	ret = sp_alloc_mmap_populate(spa, &ac);
+	if (ret == -ENOMEM && sp_alloc_fallback(spa, &ac))
+		goto try_again;
+
+	if (!ret)
+		update_mem_usage(spa_size(spa), true, spa->is_hugepage, spg_node, spa->type);
+
+	sp_area_put_locked(spa);
+	up_write(&spg->rw_lock);
+
+out:
+	sp_group_put(spg);
+	if (ret)
+		return ERR_PTR(ret);
+	else
+		return (void *)(spa->va_start);
+}
+
 void *mg_sp_alloc_nodemask(unsigned long size, unsigned long sp_flags, int spg_id,
 		nodemask_t nodemask)
 {
-	return ERR_PTR(-EOPNOTSUPP);
+	return __mg_sp_alloc_nodemask(size, sp_flags, spg_id, &nodemask);
 }
 EXPORT_SYMBOL_GPL(mg_sp_alloc_nodemask);
 
@@ -1281,7 +1620,7 @@ EXPORT_SYMBOL_GPL(mg_sp_alloc_nodemask);
  */
 void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
-	return ERR_PTR(-EOPNOTSUPP);
+	return __mg_sp_alloc_nodemask(size, sp_flags, spg_id, NULL);
 }
 EXPORT_SYMBOL_GPL(mg_sp_alloc);
 
