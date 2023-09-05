@@ -57,6 +57,7 @@ struct hns_roce_bond_group {
 	u32 active_slave_map;
 	u32 slave_map_diff;
 	u8 bond_id;
+	u8 bus_num;
 	struct bonding *bond;
 	bool bond_ready;
 	enum hns_roce_bond_state bond_state;
@@ -77,7 +78,7 @@ struct hns_roce_die_info {
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev);
 int hns_roce_bond_event(struct notifier_block *self,
 			unsigned long event, void *ptr);
-void hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp);
+int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp);
 bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev);
 struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev);
 struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev);
