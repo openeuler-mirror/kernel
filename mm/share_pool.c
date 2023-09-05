@@ -672,10 +672,67 @@ static void spa_dec_usage(struct sp_area *spa)
 	}
 }
 
+static void update_mem_usage(unsigned long size, bool inc, bool is_hugepage,
+	struct sp_group_node *spg_node, enum spa_type type)
+{
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		update_mem_usage_alloc(size, inc, is_hugepage, spg_node);
+		break;
+	case SPA_TYPE_K2TASK:
+	case SPA_TYPE_K2SPG:
+		update_mem_usage_k2u(size, inc, spg_node);
+		break;
+	default:
+		WARN(1, "invalid stat type\n");
+	}
+}
+
 static inline void check_interrupt_context(void)
 {
 	if (unlikely(in_interrupt()))
 		panic("function can't be used in interrupt context\n");
+}
+
+/*
+ * Get the sp_group from the mm and return the associated sp_group_node.
+ * The caller should promise the @mm would not be deleted from the @spg.
+ */
+static struct sp_group *sp_group_get_from_mm(struct mm_struct *mm, int spg_id,
+					     struct sp_group_node **pnode)
+{
+	struct sp_group *spg = NULL;
+	struct sp_group_node *spg_node;
+	struct sp_group_master *master;
+
+	down_read(&sp_global_sem);
+
+	master = mm->sp_group_master;
+	if (!master) {
+		up_read(&sp_global_sem);
+		return NULL;
+	}
+
+	if (spg_id == SPG_ID_DEFAULT) {
+		atomic_inc(&master->local->use_count);
+		/* There is only one task in the local group */
+		*pnode = list_first_entry(&master->local->proc_head,
+					  struct sp_group_node, proc_node);
+		up_read(&sp_global_sem);
+		return master->local;
+	}
+
+	list_for_each_entry(spg_node, &master->group_head, group_node)
+		if (spg_node->spg->id == spg_id) {
+			if (atomic_inc_not_zero(&spg_node->spg->use_count)) {
+				spg = spg_node->spg;
+				*pnode = spg_node;
+			}
+			break;
+		}
+	up_read(&sp_global_sem);
+
+	return spg;
 }
 
 /**
@@ -1051,6 +1108,126 @@ void sp_area_drop(struct vm_area_struct *vma)
 	}
 }
 
+/*
+ * The function calls of do_munmap() won't change any non-atomic member
+ * of struct sp_group. Please review the following chain:
+ * do_munmap -> remove_vma_list -> remove_vma -> sp_area_drop ->
+ * sp_area_free
+ */
+static void sp_munmap(struct mm_struct *mm, unsigned long addr,
+			   unsigned long size)
+{
+	int err;
+
+	down_write(&mm->mmap_lock);
+	if (unlikely(!mmget_not_zero(mm))) {
+		up_write(&mm->mmap_lock);
+		pr_warn("munmap: target mm is exiting\n");
+		return;
+	}
+
+	err = do_munmap(mm, addr, size, NULL);
+	/* we are not supposed to fail */
+	if (err)
+		pr_err("failed to unmap VA %pK when sp munmap, %d\n", (void *)addr, err);
+
+	up_write(&mm->mmap_lock);
+	mmput_async(mm);
+}
+
+/* The caller should hold the write lock for spa->spg->rw_lock */
+static void __sp_free(struct sp_area *spa, struct mm_struct *stop)
+{
+	struct mm_struct *mm;
+	struct sp_group_node *spg_node = NULL;
+
+	list_for_each_entry(spg_node, &spa->spg->proc_head, proc_node) {
+		mm = spg_node->master->mm;
+		if (mm == stop)
+			break;
+		sp_munmap(mm, spa->va_start, spa_size(spa));
+	}
+}
+
+/* Free the memory of the backing shmem or hugetlbfs */
+static void sp_fallocate(struct sp_area *spa)
+{
+	int ret;
+	unsigned long mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
+	unsigned long offset = addr_offset(spa);
+
+	ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
+	if (ret)
+		WARN(1, "sp fallocate failed %d\n", ret);
+}
+
+static struct sp_group *sp_group_get_from_idr(int spg_id)
+{
+	struct sp_group *spg;
+
+	down_read(&sp_global_sem);
+	spg = idr_find(&sp_group_idr, spg_id);
+	if (!spg || !atomic_inc_not_zero(&spg->use_count))
+		spg = NULL;
+	up_read(&sp_global_sem);
+
+	return spg;
+}
+
+static int sp_free_inner(unsigned long addr, int spg_id, bool is_sp_free)
+{
+	int ret = 0;
+	struct sp_area *spa;
+	struct sp_group *spg;
+	struct sp_group_node *spg_node;
+	const char *str = is_sp_free ? "sp_free" : "unshare_uva";
+
+	if (!current->mm)
+		spg = sp_group_get_from_idr(spg_id);
+	else
+		spg = sp_group_get_from_mm(current->mm, spg_id, &spg_node);
+	if (!spg) {
+		pr_err("%s, get group failed %d\n", str, spg_id);
+		return -EINVAL;
+	}
+
+	down_write(&spg->rw_lock);
+	spa = sp_area_get(spg, addr);
+	if (!spa) {
+		pr_debug("%s, invalid input addr %lx\n", str, addr);
+		ret = -EINVAL;
+		goto drop_spg;
+	}
+
+	if ((is_sp_free && spa->type != SPA_TYPE_ALLOC) ||
+	    (!is_sp_free && spa->type == SPA_TYPE_ALLOC)) {
+		ret = -EINVAL;
+		pr_warn("%s failed, spa_type is not correct\n", str);
+		goto drop_spa;
+	}
+
+	if (!current->mm && spa->applier != current->tgid) {
+		ret = -EPERM;
+		pr_err("%s, free a spa allocated by other process(%d), current(%d)\n",
+			str, spa->applier, current->tgid);
+		goto drop_spa;
+	}
+
+	__sp_free(spa, NULL);
+	if (spa->type == SPA_TYPE_ALLOC)
+		sp_fallocate(spa);
+
+	if (current->mm)
+		update_mem_usage(spa_size(spa), false, spa->is_hugepage, spg_node, spa->type);
+
+drop_spa:
+	sp_area_put_locked(spa);
+drop_spg:
+	up_write(&spg->rw_lock);
+	sp_group_put(spg);
+	return ret;
+}
+
 /**
  * mg_sp_free() - Free the memory allocated by mg_sp_alloc() or
  * mg_sp_alloc_nodemask().
@@ -1065,7 +1242,15 @@ void sp_area_drop(struct vm_area_struct *vma)
  */
 int mg_sp_free(unsigned long addr, int id)
 {
-	return -EOPNOTSUPP;
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	check_interrupt_context();
+
+	if (current->flags & PF_KTHREAD)
+		return -EINVAL;
+
+	return sp_free_inner(addr, id, true);
 }
 EXPORT_SYMBOL_GPL(mg_sp_free);
 
@@ -1527,6 +1712,9 @@ int mg_sp_unshare(unsigned long va, unsigned long size, int spg_id)
 		return -EINVAL;
 
 	if (va < TASK_SIZE) {
+		/* All the spa are aligned to 2M. */
+		spg_id = (spg_id == SPG_ID_NONE) ? SPG_ID_DEFAULT : spg_id;
+		ret = sp_free_inner(ALIGN_DOWN(va, PMD_SIZE), spg_id, false);
 	} else if (va >= PAGE_OFFSET) {
 		/* kernel address */
 		ret = sp_unshare_kva(va, size);
