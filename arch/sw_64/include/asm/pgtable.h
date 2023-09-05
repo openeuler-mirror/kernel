@@ -149,8 +149,7 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define _PFN_MASK	(GENMASK(_PFN_BITS - 1, 0) << _PFN_SHIFT)
 
 #define _PAGE_TABLE	(_PAGE_VALID | __DIRTY_BITS | __ACCESS_BITS)
-#define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL)
-#define _HPAGE_CHG_MASK (_PAGE_CHG_MASK | _PAGE_LEAF | _PAGE_CONT)
+#define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL | _PAGE_LEAF | _PAGE_CONT)
 
 /*
  * All the normal masks have the "page accessed" bits on, as any time they are used,
@@ -237,7 +236,7 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 
 static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 {
-	pmd_val(pmd) = (pmd_val(pmd) & _HPAGE_CHG_MASK) | pgprot_val(newprot);
+	pmd_val(pmd) = (pmd_val(pmd) & _PAGE_CHG_MASK) | pgprot_val(newprot);
 	return pmd;
 }
 
