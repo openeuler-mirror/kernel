@@ -236,6 +236,7 @@ LIBBPF_0.2.0 {
 		perf_buffer__buffer_fd;
 		perf_buffer__epoll_fd;
 		perf_buffer__consume_buffer;
+		bpf_program__attach_sched;
 } LIBBPF_0.1.0;
 
 LIBBPF_0.3.0 {
