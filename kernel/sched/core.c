@@ -10425,6 +10425,13 @@ static void sched_unregister_group(struct task_group *tg)
 	call_rcu(&tg->rcu, sched_free_group_rcu);
 }
 
+#ifdef CONFIG_BPF_SCHED
+static inline void tg_init_tag(struct task_group *tg, struct task_group *ptg)
+{
+	tg->tag = ptg->tag;
+}
+#endif
+
 /* allocate runqueue etc for a new task group */
 struct task_group *sched_create_group(struct task_group *parent)
 {
@@ -10444,6 +10451,10 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
+
+#ifdef CONFIG_BPF_SCHED
+	tg_init_tag(tg, parent);
+#endif
 
 	alloc_uclamp_sched_group(tg, parent);
 
@@ -10530,6 +10541,14 @@ static void sched_change_group(struct task_struct *tsk, struct task_group *group
 
 #ifdef CONFIG_QOS_SCHED
 	sched_change_qos_group(tsk, group);
+#endif
+
+#ifdef CONFIG_BPF_SCHED
+	/*
+	 * This function has cleared and restored the task status,
+	 * so we do not need to dequeue and enqueue the task again.
+	 */
+	tsk->tag = group->tag;
 #endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

@@ -422,6 +422,9 @@ struct task_group {
 	struct uclamp_se	uclamp[UCLAMP_CNT];
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+	long tag;
+#endif
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
