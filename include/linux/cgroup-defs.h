@@ -762,6 +762,8 @@ static inline void cgroup_threadgroup_change_end(struct task_struct *tsk)
 	percpu_up_read(&cgroup_threadgroup_rwsem);
 }
 
+struct cgroup_subsys_state *cgroup_tryget_css(struct cgroup *cgrp,
+					      struct cgroup_subsys *ss);
 #else	/* CONFIG_CGROUPS */
 
 #define CGROUP_SUBSYS_COUNT 0
