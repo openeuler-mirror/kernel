@@ -5582,6 +5582,13 @@ union bpf_attr {
  *	Return
  *		Task group tag, if CONFIG_CGROUP_SCHED enabled, 0 as default tag, or
  *		a negative error in case of failure.
+ *
+ * long bpf_sched_task_tag_of(struct task_struct *tsk)
+ *	Description
+ *		Return task tag of *tsk*.The bpf prog obtains the tags to detect
+ *		different workloads.
+ *	Return
+ *		Task tag, if used, 0 as default tag, or a negative error in case of failure.
  */
 #define ___BPF_FUNC_MAPPER(FN, ctx...)			\
 	FN(unspec, 0, ##ctx)				\
@@ -5799,6 +5806,7 @@ union bpf_attr {
 	FN(get_sockops_uid_gid, 212, ##ctx)		\
 	FN(sk_original_addr, 213, ##ctx)		\
 	FN(sched_tg_tag_of, 214, ##ctx)			\
+	FN(sched_task_tag_of, 215, ##ctx)		\
 	/* */
 
 /* backwards-compatibility macros for users of __BPF_FUNC_MAPPER that don't
