@@ -10,32 +10,33 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
-#include "bpf_rlimit.h"
-
 #define READ_TP_NAME "fs_file_read"
 #define RELEASE_TP_NAME "fs_file_release"
 
 int main(int argc, char *argv[])
 {
-	const char *name = "./file_read_pattern_prog.o";
+	const char *name = "./file_read_pattern_prog.bpf.o";
 	struct bpf_object *obj;
-	const char *prog_name;
 	struct bpf_program *prog;
-	int unused;
-	int err;
+	int err = 0;
 	int read_fd;
 	int release_fd;
 
-	err = bpf_prog_load(name, BPF_PROG_TYPE_UNSPEC, &obj, &unused);
-	if (err) {
-		printf("Failed to load program\n");
+	obj = bpf_object__open_file(name, NULL);
+	if (!obj) {
+		printf("Failed to open program: %s\n", name);
 		return err;
 	}
 
-	prog_name = "raw_tracepoint.w/" READ_TP_NAME;
-	prog = bpf_object__find_program_by_title(obj, prog_name);
+	err = bpf_object__load(obj);
+	if (err) {
+		printf("failed to load program: %s\n", name);
+		goto out;
+	}
+
+	prog = bpf_object__find_program_by_name(obj, READ_TP_NAME);
 	if (!prog) {
-		printf("no prog %s\n", prog_name);
+		printf("no prog %s\n", READ_TP_NAME);
 		err = -EINVAL;
 		goto out;
 	}
@@ -47,10 +48,9 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
-	prog_name = "raw_tracepoint/" RELEASE_TP_NAME;
-	prog = bpf_object__find_program_by_title(obj, prog_name);
+	prog = bpf_object__find_program_by_name(obj, RELEASE_TP_NAME);
 	if (!prog) {
-		printf("no prog %s\n", prog_name);
+		printf("no prog %s\n", RELEASE_TP_NAME);
 		err = -EINVAL;
 		goto out;
 	}
