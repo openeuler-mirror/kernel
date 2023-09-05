@@ -4733,103 +4733,28 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool resume)
 
 static int arm_smmu_ecmdq_layout(struct arm_smmu_device *smmu)
 {
-	int cpu, node, nr_remain, nr_nodes = 0;
-	int *nr_ecmdqs;
-	struct arm_smmu_ecmdq *ecmdq, **ecmdqs;
+	int cpu, host_cpu;
+	struct arm_smmu_ecmdq *ecmdq;
 
 	ecmdq = devm_alloc_percpu(smmu->dev, *ecmdq);
 	if (!ecmdq)
 		return -ENOMEM;
 	smmu->ecmdq = ecmdq;
 
-	if (num_possible_cpus() <= smmu->nr_ecmdq) {
-		for_each_possible_cpu(cpu)
-			*per_cpu_ptr(smmu->ecmdqs, cpu) = per_cpu_ptr(ecmdq, cpu);
-
-		/* A core requires at most one ECMDQ */
+	/* A core requires at most one ECMDQ */
+	if (num_possible_cpus() < smmu->nr_ecmdq)
 		smmu->nr_ecmdq = num_possible_cpus();
 
-		return 0;
-	}
-
-	for_each_node(node)
-		if (nr_cpus_node(node))
-			nr_nodes++;
-
-	if (nr_nodes >= smmu->nr_ecmdq) {
-		dev_err(smmu->dev, "%d ECMDQs is less than %d nodes\n", smmu->nr_ecmdq, nr_nodes);
-		return -ENOSPC;
-	}
-
-	nr_ecmdqs = kcalloc(MAX_NUMNODES, sizeof(int), GFP_KERNEL);
-	if (!nr_ecmdqs)
-		return -ENOMEM;
-
-	ecmdqs = kcalloc(smmu->nr_ecmdq, sizeof(*ecmdqs), GFP_KERNEL);
-	if (!ecmdqs) {
-		kfree(nr_ecmdqs);
-		return -ENOMEM;
-	}
-
-	/* [1] Ensure that each node has at least one ECMDQ */
-	nr_remain = smmu->nr_ecmdq - nr_nodes;
-	for_each_node(node) {
-		/*
-		 * Calculate the number of ECMDQs to be allocated to this node.
-		 * NR_ECMDQS_PER_CPU = nr_remain / num_possible_cpus();
-		 * When nr_cpus_node(node) is not zero, less than one ECMDQ
-		 * may be left due to truncation rounding.
-		 */
-		nr_ecmdqs[node] = nr_cpus_node(node) * nr_remain / num_possible_cpus();
-	}
-
-	for_each_node(node) {
-		if (!nr_cpus_node(node))
-			continue;
-
-		nr_remain -= nr_ecmdqs[node];
-
-		/* An ECMDQ has been reserved for each node at above [1] */
-		nr_ecmdqs[node]++;
-	}
-
-	/* Divide the remaining ECMDQs */
-	while (nr_remain) {
-		for_each_node(node) {
-			if (!nr_remain)
-				break;
-
-			if (nr_ecmdqs[node] >= nr_cpus_node(node))
-				continue;
-
-			nr_ecmdqs[node]++;
-			nr_remain--;
+	for_each_possible_cpu(cpu) {
+		if (cpu < smmu->nr_ecmdq) {
+			*per_cpu_ptr(smmu->ecmdqs, cpu) = per_cpu_ptr(smmu->ecmdq, cpu);
+		} else {
+			host_cpu = cpu % smmu->nr_ecmdq;
+			ecmdq = per_cpu_ptr(smmu->ecmdq, host_cpu);
+			ecmdq->cmdq.shared = 1;
+			*per_cpu_ptr(smmu->ecmdqs, cpu) = ecmdq;
 		}
 	}
-
-	for_each_node(node) {
-		int i, round, shared;
-
-		if (!nr_cpus_node(node))
-			continue;
-
-		shared = 0;
-		if (nr_ecmdqs[node] < nr_cpus_node(node))
-			shared = 1;
-
-		i = 0;
-		for_each_cpu(cpu, cpumask_of_node(node)) {
-			round = i % nr_ecmdqs[node];
-			if (i++ < nr_ecmdqs[node])
-				ecmdqs[round] = per_cpu_ptr(ecmdq, cpu);
-			else
-				ecmdqs[round]->cmdq.shared = shared;
-			*per_cpu_ptr(smmu->ecmdqs, cpu) = ecmdqs[round];
-		}
-	}
-
-	kfree(nr_ecmdqs);
-	kfree(ecmdqs);
 
 	return 0;
 }
