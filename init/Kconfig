@@ -1939,6 +1939,22 @@ config BINDGEN_VERSION_TEXT
 config TRACEPOINTS
 	bool
 
+config KABI_RESERVE
+	bool "Enable KABI PADDING RESERVE"
+	default y
+	help
+	  This option enables KABI padding reserve.
+	  For some embedded system, KABI padding reserve may be not necessary.
+	  Disable it on demand.
+
+config KABI_SIZE_ALIGN_CHECKS
+	bool "Enables more stringent kabi checks in the macros"
+	default y
+	depends on KABI_RESERVE
+	help
+	  This option enables more stringent kabi checks. Those must be disable
+	  in case of a debug-build because they allow to change struct sizes.
+
 endmenu		# General setup
 
 source "arch/Kconfig"
