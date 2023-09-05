@@ -1101,6 +1101,36 @@ void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 EXPORT_SYMBOL_GPL(mg_sp_alloc);
 
 /**
+ * is_vmap_hugepage() - Check if a kernel address belongs to vmalloc family.
+ * @addr: the kernel space address to be checked.
+ *
+ * Return:
+ * * >0		- a vmalloc hugepage addr.
+ * * =0		- a normal vmalloc addr.
+ * * -errno	- failure.
+ */
+static int is_vmap_hugepage(unsigned long addr)
+{
+	struct vm_struct *area;
+
+	if (unlikely(!addr)) {
+		pr_err_ratelimited("null vmap addr pointer\n");
+		return -EINVAL;
+	}
+
+	area = find_vm_area((void *)addr);
+	if (unlikely(!area)) {
+		pr_debug("can't find vm area(%lx)\n", addr);
+		return -EINVAL;
+	}
+
+	if (area->flags & VM_HUGE_PAGES)
+		return 1;
+	else
+		return 0;
+}
+
+/**
  * mg_sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
  * @kva: the VA of shared kernel memory.
  * @size: the size of shared kernel memory.
@@ -1430,6 +1460,50 @@ void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int tgid)
 }
 EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
 
+/* No possible concurrent protection, take care when use */
+static int sp_unshare_kva(unsigned long kva, unsigned long size)
+{
+	unsigned long addr, kva_aligned;
+	struct page *page;
+	unsigned long size_aligned;
+	unsigned long step;
+	bool is_hugepage = true;
+	int ret;
+
+	ret = is_vmap_hugepage(kva);
+	if (ret > 0) {
+		kva_aligned = ALIGN_DOWN(kva, PMD_SIZE);
+		size_aligned = ALIGN(kva + size, PMD_SIZE) - kva_aligned;
+		step = PMD_SIZE;
+	} else if (ret == 0) {
+		kva_aligned = ALIGN_DOWN(kva, PAGE_SIZE);
+		size_aligned = ALIGN(kva + size, PAGE_SIZE) - kva_aligned;
+		step = PAGE_SIZE;
+		is_hugepage = false;
+	} else {
+		pr_err_ratelimited("check vmap hugepage failed %d\n", ret);
+		return -EINVAL;
+	}
+
+	if (kva_aligned + size_aligned < kva_aligned) {
+		pr_err_ratelimited("overflow happened in unshare kva\n");
+		return -EINVAL;
+	}
+
+	for (addr = kva_aligned; addr < (kva_aligned + size_aligned); addr += step) {
+		page = vmalloc_to_page((void *)addr);
+		if (page)
+			put_page(page);
+		else
+			WARN(1, "vmalloc %pK to page/hugepage failed\n",
+			       (void *)addr);
+	}
+
+	vunmap((void *)kva_aligned);
+
+	return 0;
+}
+
 /**
  * mg_sp_unshare() - Unshare the kernel or user memory which shared by calling
  *                sp_make_share_{k2u,u2k}().
@@ -1442,7 +1516,27 @@ EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
  */
 int mg_sp_unshare(unsigned long va, unsigned long size, int spg_id)
 {
-	return -EOPNOTSUPP;
+	int ret = 0;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	check_interrupt_context();
+
+	if (current->flags & PF_KTHREAD)
+		return -EINVAL;
+
+	if (va < TASK_SIZE) {
+	} else if (va >= PAGE_OFFSET) {
+		/* kernel address */
+		ret = sp_unshare_kva(va, size);
+	} else {
+		/* regard user and kernel address ranges as bad address */
+		pr_debug("unshare addr %lx is not a user or kernel addr\n", (unsigned long)va);
+		ret = -EFAULT;
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(mg_sp_unshare);
 
