@@ -1245,11 +1245,10 @@ static struct page *new_page(struct page *page, unsigned long start)
 }
 #endif
 
-static long do_mbind(unsigned long start, unsigned long len,
+long __do_mbind(unsigned long start, unsigned long len,
 		     unsigned short mode, unsigned short mode_flags,
-		     nodemask_t *nmask, unsigned long flags)
+		     nodemask_t *nmask, unsigned long flags, struct mm_struct *mm)
 {
-	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma, *prev;
 	struct vma_iterator vmi;
 	struct mempolicy *new;
@@ -1354,6 +1353,13 @@ mpol_out:
 	if (flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL))
 		lru_cache_enable();
 	return err;
+}
+
+static long do_mbind(unsigned long start, unsigned long len,
+		     unsigned short mode, unsigned short mode_flags,
+		     nodemask_t *nmask, unsigned long flags)
+{
+	return __do_mbind(start, len, mode, mode_flags, nmask, flags, current->mm);
 }
 
 /*

@@ -1264,16 +1264,18 @@ static inline bool file_mmap_ok(struct file *file, struct inode *inode,
 	return true;
 }
 
+static unsigned long __mmap_region(struct mm_struct *mm,
+				   struct file *file, unsigned long addr,
+				   unsigned long len, vm_flags_t vm_flags,
+				   unsigned long pgoff, struct list_head *uf);
 /*
  * The caller must write-lock current->mm->mmap_lock.
  */
-unsigned long do_mmap(struct file *file, unsigned long addr,
+unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file, unsigned long addr,
 			unsigned long len, unsigned long prot,
-			unsigned long flags, unsigned long pgoff,
+			unsigned long flags, vm_flags_t vm_flags, unsigned long pgoff,
 			unsigned long *populate, struct list_head *uf)
 {
-	struct mm_struct *mm = current->mm;
-	vm_flags_t vm_flags;
 	int pkey = 0;
 
 	validate_mm(mm);
@@ -1344,7 +1346,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 	 * to. we assume access permissions have been handled by the open
 	 * of the memory object, so we don't do any here.
 	 */
-	vm_flags = calc_vm_prot_bits(prot, pkey) | calc_vm_flag_bits(flags) |
+	vm_flags |= calc_vm_prot_bits(prot, pkey) | calc_vm_flag_bits(flags) |
 			mm->def_flags | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC;
 
 	if (flags & MAP_LOCKED)
@@ -1454,12 +1456,19 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 		vm_flags |= VM_PEER_SHARED;
 #endif
 
-	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
+	addr = __mmap_region(mm, file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
 	    ((vm_flags & VM_LOCKED) ||
 	     (flags & (MAP_POPULATE | MAP_NONBLOCK)) == MAP_POPULATE))
 		*populate = len;
 	return addr;
+}
+
+unsigned long do_mmap(struct file *file, unsigned long addr,
+	unsigned long len, unsigned long prot, unsigned long flags,
+	unsigned long pgoff, unsigned long *populate, struct list_head *uf)
+{
+	return __do_mmap_mm(current->mm, file, addr, len, prot, flags, 0, pgoff, populate, uf);
 }
 
 unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
@@ -2763,11 +2772,11 @@ static int alloc_va_in_peer_devices(struct mm_struct *mm,
 }
 #endif
 
-unsigned long mmap_region(struct file *file, unsigned long addr,
-		unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
-		struct list_head *uf)
+static unsigned long __mmap_region(struct mm_struct *mm,
+				   struct file *file, unsigned long addr,
+				   unsigned long len, vm_flags_t vm_flags,
+				   unsigned long pgoff, struct list_head *uf)
 {
-	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
 	struct vm_area_struct *next, *prev, *merge;
 	pgoff_t pglen = len >> PAGE_SHIFT;
@@ -3047,6 +3056,13 @@ unacct_error:
 #endif
 	validate_mm(mm);
 	return error;
+}
+
+unsigned long mmap_region(struct file *file, unsigned long addr,
+		unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
+		struct list_head *uf)
+{
+	return __mmap_region(current->mm, file, addr, len, vm_flags, pgoff, uf);
 }
 
 static int __vm_munmap(unsigned long start, size_t len, bool downgrade)

@@ -1604,16 +1604,9 @@ long faultin_vma_page_range(struct vm_area_struct *vma, unsigned long start,
 	return ret;
 }
 
-/*
- * __mm_populate - populate and/or mlock pages within a range of address space.
- *
- * This is used to implement mlock() and the MAP_POPULATE / MAP_LOCKED mmap
- * flags. VMAs must be already marked with the desired vm_flags, and
- * mmap_lock must not be held.
- */
-int __mm_populate(unsigned long start, unsigned long len, int ignore_errors)
+int do_mm_populate(struct mm_struct *mm, unsigned long start, unsigned long len,
+		   int ignore_errors)
 {
-	struct mm_struct *mm = current->mm;
 	unsigned long end, nstart, nend;
 	struct vm_area_struct *vma = NULL;
 	int locked = 0;
@@ -1663,6 +1656,18 @@ int __mm_populate(unsigned long start, unsigned long len, int ignore_errors)
 	if (locked)
 		mmap_read_unlock(mm);
 	return ret;	/* 0 or negative error code */
+}
+
+/*
+ * __mm_populate - populate and/or mlock pages within a range of address space.
+ *
+ * This is used to implement mlock() and the MAP_POPULATE / MAP_LOCKED mmap
+ * flags. VMAs must be already marked with the desired vm_flags, and
+ * mmap_lock must not be held.
+ */
+int __mm_populate(unsigned long start, unsigned long len, int ignore_errors)
+{
+	return do_mm_populate(current->mm, start, len, ignore_errors);
 }
 #else /* CONFIG_MMU */
 static long __get_user_pages_locked(struct mm_struct *mm, unsigned long start,
