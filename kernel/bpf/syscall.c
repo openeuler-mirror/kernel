@@ -2363,6 +2363,7 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		case BPF_PROG_TYPE_LSM:
 		case BPF_PROG_TYPE_STRUCT_OPS:
 		case BPF_PROG_TYPE_EXT:
+		case BPF_PROG_TYPE_SCHED:
 			break;
 		default:
 			return -EINVAL;
@@ -2490,6 +2491,7 @@ static bool is_perfmon_prog_type(enum bpf_prog_type prog_type)
 	case BPF_PROG_TYPE_LSM:
 	case BPF_PROG_TYPE_STRUCT_OPS: /* has access to struct sock */
 	case BPF_PROG_TYPE_EXT: /* extends any prog */
+	case BPF_PROG_TYPE_SCHED:
 		return true;
 	default:
 		return false;
@@ -3032,6 +3034,12 @@ static int bpf_tracing_prog_attach(struct bpf_prog *prog,
 			goto out_put_prog;
 		}
 		break;
+	case BPF_PROG_TYPE_SCHED:
+		if (prog->expected_attach_type != BPF_SCHED) {
+			err = -EINVAL;
+			goto out_put_prog;
+		}
+		break;
 	default:
 		err = -EINVAL;
 		goto out_put_prog;
@@ -3348,6 +3356,7 @@ static int bpf_raw_tp_link_attach(struct bpf_prog *prog,
 	case BPF_PROG_TYPE_TRACING:
 	case BPF_PROG_TYPE_EXT:
 	case BPF_PROG_TYPE_LSM:
+	case BPF_PROG_TYPE_SCHED:
 		if (user_tp_name)
 			/* The attach point for this category of programs
 			 * should be specified via btf_id during program load.
@@ -3508,6 +3517,8 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 		return BPF_PROG_TYPE_XDP;
 	case BPF_LSM_CGROUP:
 		return BPF_PROG_TYPE_LSM;
+	case BPF_SCHED:
+		return BPF_PROG_TYPE_SCHED;
 	default:
 		return BPF_PROG_TYPE_UNSPEC;
 	}
@@ -4599,6 +4610,7 @@ static int link_create(union bpf_attr *attr, bpfptr_t uattr)
 
 	switch (prog->type) {
 	case BPF_PROG_TYPE_EXT:
+	case BPF_PROG_TYPE_SCHED:
 		break;
 	case BPF_PROG_TYPE_NETFILTER:
 		if (attr->link_create.attach_type != BPF_NETFILTER) {
@@ -4640,6 +4652,7 @@ static int link_create(union bpf_attr *attr, bpfptr_t uattr)
 		ret = cgroup_bpf_link_attach(attr, prog);
 		break;
 	case BPF_PROG_TYPE_EXT:
+	case BPF_PROG_TYPE_SCHED:
 		ret = bpf_tracing_prog_attach(prog,
 					      attr->link_create.target_fd,
 					      attr->link_create.target_btf_id,
