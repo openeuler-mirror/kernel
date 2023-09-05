@@ -1555,7 +1555,36 @@ EXPORT_SYMBOL_GPL(mg_sp_unshare);
 int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
 	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
 {
-	return -EOPNOTSUPP;
+	struct mm_struct *mm;
+	int ret = 0;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
+	check_interrupt_context();
+
+	if (unlikely(!sp_walk_data)) {
+		pr_err_ratelimited("null pointer when walk page range\n");
+		return -EINVAL;
+	}
+	if (!tsk || (tsk->flags & PF_EXITING))
+		return -ESRCH;
+
+	get_task_struct(tsk);
+	mm = get_task_mm(tsk);
+	if (!mm) {
+		put_task_struct(tsk);
+		return -ESRCH;
+	}
+
+	down_write(&mm->mmap_lock);
+	ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);
+	up_write(&mm->mmap_lock);
+
+	mmput(mm);
+	put_task_struct(tsk);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(mg_sp_walk_page_range);
 
@@ -1565,6 +1594,15 @@ EXPORT_SYMBOL_GPL(mg_sp_walk_page_range);
  */
 void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
+	if (!sp_is_enabled())
+		return;
+
+	check_interrupt_context();
+
+	if (!sp_walk_data)
+		return;
+
+	__sp_walk_page_free(sp_walk_data);
 }
 EXPORT_SYMBOL_GPL(mg_sp_walk_page_free);
 
