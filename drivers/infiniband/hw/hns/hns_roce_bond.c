@@ -238,23 +238,26 @@ static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 	u8 main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
 	struct hns_roce_dev *hr_dev;
 	struct net_device *net_dev;
-	int i;
+	int i, ret;
 
 	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+	bond_grp->main_hr_dev = NULL;
 
 	hns_roce_bond_uninit_client(bond_grp, main_func_idx);
 
 	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
-		if (net_dev)
+		if (net_dev) {
 			hr_dev = hns_roce_bond_init_client(bond_grp, i);
+			if (hr_dev)
+				bond_grp->main_hr_dev = hr_dev;
+		}
 	}
-	if (!hr_dev)
-		return;
 
-	bond_grp->main_hr_dev = hr_dev;
-	hns_roce_cleanup_bond(bond_grp);
-	ibdev_info(&hr_dev->ib_dev, "RoCE clear bond finished!\n");
+	ret = hns_roce_cleanup_bond(bond_grp);
+	if (!ret)
+		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
+			   "RoCE clear bond finished!\n");
 }
 
 static void hns_roce_slave_changestate(struct hns_roce_bond_group *bond_grp)
@@ -444,7 +447,7 @@ static struct hns_roce_die_info *alloc_die_info(int bus_num)
 
 static int alloc_bond_id(struct hns_roce_bond_group *bond_grp)
 {
-	int bus_num = bond_grp->main_hr_dev->pci_dev->bus->number;
+	u8 bus_num = bond_grp->bus_num;
 	struct hns_roce_die_info *die_info = xa_load(&roce_bond_xa, bus_num);
 	int i;
 
@@ -491,23 +494,25 @@ static int remove_bond_id(int bus_num, u8 bond_id)
 	return 0;
 }
 
-void hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
+int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 {
 	int ret;
 
-	ret = hns_roce_cmd_bond(bond_grp, HNS_ROCE_CLEAR_BOND);
+	ret = bond_grp->main_hr_dev ?
+	      hns_roce_cmd_bond(bond_grp, HNS_ROCE_CLEAR_BOND) : -EIO;
 	if (ret)
 		ibdev_err(&bond_grp->main_hr_dev->ib_dev,
-			  "failed to clear RoCE bond!\n");
+			  "failed to clear RoCE bond, ret = %d.\n", ret);
 
 	cancel_delayed_work(&bond_grp->bond_work);
-	ret = remove_bond_id(bond_grp->main_hr_dev->pci_dev->bus->number,
-			     bond_grp->bond_id);
+	ret = remove_bond_id(bond_grp->bus_num, bond_grp->bond_id);
 	if (ret)
 		ibdev_err(&bond_grp->main_hr_dev->ib_dev,
 			  "failed to remove bond ID %d, ret = %d.\n",
 			  bond_grp->bond_id, ret);
 	kfree(bond_grp);
+
+	return ret;
 }
 
 static bool hns_roce_bond_lowerstate_event(struct hns_roce_dev *hr_dev,
@@ -640,6 +645,7 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 	bond_grp->main_hr_dev = main_hr_dev;
 	bond_grp->bond_ready = false;
 	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+	bond_grp->bus_num = main_hr_dev->pci_dev->bus->number;
 
 	ret = alloc_bond_id(bond_grp);
 	if (ret) {
