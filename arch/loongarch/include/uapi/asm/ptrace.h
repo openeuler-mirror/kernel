@@ -46,6 +46,16 @@ struct user_fp_state {
 	uint32_t    fcsr;
 };
 
+struct user_lsx_state {
+	/* 32 registers, 128 bits width per register. */
+	uint64_t vregs[32*2];
+};
+
+struct user_lasx_state {
+	/* 32 registers, 256 bits width per register. */
+	uint64_t vregs[32*4];
+};
+
 #define PTRACE_SYSEMU			0x1f
 #define PTRACE_SYSEMU_SINGLESTEP	0x20
 
