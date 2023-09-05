@@ -46,6 +46,10 @@ module_param(disable_msipolling, bool, 0444);
 MODULE_PARM_DESC(disable_msipolling,
 	"Disable MSI-based polling for CMD_SYNC completion.");
 
+static bool disable_ecmdq;
+module_param(disable_ecmdq, bool, 0444);
+MODULE_PARM_DESC(disable_ecmdq,	"Disable the use of ECMDQs");
+
 #ifdef CONFIG_SMMU_BYPASS_DEV
 struct smmu_bypass_device {
 	unsigned short vendor;
@@ -5129,7 +5133,7 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 	dev_info(smmu->dev, "ias %lu-bit, oas %lu-bit (features 0x%08x)\n",
 		 smmu->ias, smmu->oas, smmu->features);
 
-	if (smmu->features & ARM_SMMU_FEAT_ECMDQ) {
+	if (smmu->features & ARM_SMMU_FEAT_ECMDQ && !disable_ecmdq) {
 		int err;
 
 		err = arm_smmu_ecmdq_probe(smmu);
