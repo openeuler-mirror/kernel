@@ -5,6 +5,7 @@
 #include <linux/bpf_sched.h>
 #include <linux/btf_ids.h>
 #include <linux/cpuidle.h>
+#include <linux/bpf_topology.h>
 #include "sched.h"
 
 DEFINE_STATIC_KEY_FALSE(bpf_sched_enabled_key);
@@ -26,6 +27,9 @@ BTF_SET_START(bpf_sched_hooks)
 #include <linux/sched_hook_defs.h>
 #undef BPF_SCHED_HOOK
 BTF_SET_END(bpf_sched_hooks)
+
+const struct bpf_func_proto bpf_init_cpu_topology_proto __weak;
+const struct bpf_func_proto bpf_get_cpumask_info_proto __weak;
 
 int bpf_sched_verify_prog(struct bpf_verifier_log *vlog,
 			  const struct bpf_prog *prog)
@@ -121,6 +125,10 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return bpf_get_trace_printk_proto();
 	case BPF_FUNC_sched_cpu_stats_of:
 		return &bpf_sched_cpu_stats_of_proto;
+	case BPF_FUNC_init_cpu_topology:
+		return &bpf_init_cpu_topology_proto;
+	case BPF_FUNC_get_cpumask_info:
+		return &bpf_get_cpumask_info_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
