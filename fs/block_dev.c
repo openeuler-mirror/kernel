@@ -1136,6 +1136,12 @@ static struct gendisk *bdev_get_gendisk(struct block_device *bdev, int *partno)
 
 	if (!disk)
 		return NULL;
+
+	if (!test_bit(QUEUE_FLAG_REGISTER_DONE, &disk->queue->queue_flags)) {
+		put_disk_and_module(disk);
+		return NULL;
+	}
+
 	/*
 	 * Now that we hold gendisk reference we make sure bdev we looked up is
 	 * not stale. If it is, it means device got removed and created before
