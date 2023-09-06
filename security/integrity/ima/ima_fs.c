@@ -21,11 +21,15 @@
 #include <linux/rcupdate.h>
 #include <linux/parser.h>
 #include <linux/vmalloc.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include <linux/file.h>
+#endif
 #include <linux/ctype.h>
 
 #include "ima.h"
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include "ima_digest_list.h"
+#endif
 
 static DEFINE_MUTEX(ima_write_mutex);
 
@@ -36,9 +40,11 @@ static struct dentry *ascii_runtime_measurements;
 static struct dentry *runtime_measurements_count;
 static struct dentry *violations;
 static struct dentry *ima_policy;
+#ifdef CONFIG_IMA_DIGEST_LIST
 static struct dentry *digests_count;
 static struct dentry *digest_list_data;
 static struct dentry *digest_list_data_del;
+#endif
 
 bool ima_canonical_fmt;
 static int __init default_canonical_fmt_setup(char *str)
@@ -52,18 +58,24 @@ __setup("ima_canonical_fmt", default_canonical_fmt_setup);
 
 static int valid_policy = 1;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 				     size_t count, loff_t *ppos)
 {
 	atomic_long_t *val = NULL;
+#else
+static ssize_t ima_show_htable_value(char __user *buf, size_t count,
+				     loff_t *ppos, atomic_long_t *val)
+{
+#endif
 	char tmpbuf[32];	/* greater than largest 'long' string value */
 	ssize_t len;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (filp->f_path.dentry == violations)
 		val = &ima_htable.violations;
 	else if (filp->f_path.dentry == runtime_measurements_count)
 		val = &ima_htable.len;
-#ifdef CONFIG_IMA_DIGEST_LIST
 	else if (filp->f_path.dentry == digests_count)
 		val = &ima_digests_htable.len;
 #endif
@@ -72,10 +84,37 @@ static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 	return simple_read_from_buffer(buf, count, ppos, tmpbuf, len);
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static const struct file_operations ima_htable_value_ops = {
 	.read = ima_show_htable_value,
 	.llseek = generic_file_llseek,
 };
+#else
+static ssize_t ima_show_htable_violations(struct file *filp,
+					  char __user *buf,
+					  size_t count, loff_t *ppos)
+{
+	return ima_show_htable_value(buf, count, ppos, &ima_htable.violations);
+}
+
+static const struct file_operations ima_htable_violations_ops = {
+	.read = ima_show_htable_violations,
+	.llseek = generic_file_llseek,
+};
+
+static ssize_t ima_show_measurements_count(struct file *filp,
+					   char __user *buf,
+					   size_t count, loff_t *ppos)
+{
+	return ima_show_htable_value(buf, count, ppos, &ima_htable.len);
+
+}
+
+static const struct file_operations ima_measurements_count_ops = {
+	.read = ima_show_measurements_count,
+	.llseek = generic_file_llseek,
+};
+#endif /* CONFIG_IMA_DIGEST_LIST */
 
 /* returns pointer to hlist_node */
 static void *ima_measurements_start(struct seq_file *m, loff_t *pos)
@@ -275,14 +314,20 @@ static const struct file_operations ima_ascii_measurements_ops = {
 	.release = seq_release,
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static ssize_t ima_read_file(char *path, struct dentry *dentry)
+#else
+static ssize_t ima_read_policy(char *path)
+#endif
 {
 	void *data = NULL;
 	char *datap;
 	size_t size;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct file *file;
 	enum kernel_read_file_id file_id = READING_POLICY;
 	int op = DIGEST_LIST_OP_ADD;
+#endif
 	int rc, pathlen = strlen(path);
 
 	char *p;
@@ -291,6 +336,7 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 	datap = path;
 	strsep(&datap, "\n");
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (dentry == digest_list_data || dentry == digest_list_data_del)
 		file_id = READING_DIGEST_LIST;
 
@@ -301,26 +347,38 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 	}
 
 	rc = kernel_read_file(file, 0, &data, INT_MAX, NULL, file_id);
+#else
+	rc = kernel_read_file_from_path(path, 0, &data, INT_MAX, NULL,
+					READING_POLICY);
+#endif
 	if (rc < 0) {
+#ifdef CONFIG_IMA_DIGEST_LIST
 		pr_err("Unable to read file: %s (%d)", path, rc);
 		fput(file);
+#else
+		pr_err("Unable to open file: %s (%d)", path, rc);
+#endif
 		return rc;
 	}
 	size = rc;
 	rc = 0;
 
 	datap = data;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	while (size > 0) {
 		if (dentry == ima_policy) {
 			p = strsep(&datap, "\n");
 			if (p == NULL)
 				break;
 
+#else
+	while (size > 0 && (p = strsep(&datap, "\n"))) {
+#endif
 			pr_debug("rule: %s\n", p);
 			rc = ima_parse_add_rule(p);
+#ifdef CONFIG_IMA_DIGEST_LIST
 		} else if (dentry == digest_list_data ||
 			   dentry == digest_list_data_del) {
-#ifdef CONFIG_IMA_DIGEST_LIST
 			/* Only check size when adding digest lists */
 			if (dentry == digest_list_data &&
 			    size > ima_digest_db_max_size - ima_digest_db_size) {
@@ -328,7 +386,6 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 				rc = -ENOMEM;
 				break;
 			}
-#endif
 			/*
 			 * Disable usage of digest lists if not measured
 			 * or appraised.
@@ -340,7 +397,7 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 
 			rc = ima_parse_compact_list(size, data, op);
 		}
-
+#endif
 		if (rc < 0)
 			break;
 #ifdef CONFIG_IMA_DIGEST_LIST
@@ -353,7 +410,9 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 	}
 
 	vfree(data);
+#ifdef CONFIG_IMA_DIGEST_LIST
 	fput(file);
+#endif
 	if (rc < 0)
 		return rc;
 	else if (size)
@@ -362,19 +421,31 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 		return pathlen;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static ssize_t ima_write_data(struct file *file, const char __user *buf,
 			      size_t datalen, loff_t *ppos)
+#else
+static ssize_t ima_write_policy(struct file *file, const char __user *buf,
+			      size_t datalen, loff_t *ppos)
+#endif
 {
 	char *data;
 	ssize_t result;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct dentry *dentry = file_dentry(file);
 	int i;
+#else
+
+	if (datalen >= PAGE_SIZE)
+		datalen = PAGE_SIZE - 1;
+#endif
 
 	/* No partial writes. */
 	result = -EINVAL;
 	if (*ppos != 0)
 		goto out;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	result = -EFBIG;
 	if (datalen > 64 * 1024 * 1024 - 1)
 		goto out;
@@ -389,12 +460,20 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		goto out_free;
 
 	data[datalen] = '\0';
+#else
+	data = memdup_user_nul(buf, datalen);
+	if (IS_ERR(data)) {
+		result = PTR_ERR(data);
+		goto out;
+	}
+#endif
 
 	result = mutex_lock_interruptible(&ima_write_mutex);
 	if (result < 0)
 		goto out_free;
 
 	if (data[0] == '/') {
+#ifdef CONFIG_IMA_DIGEST_LIST
 		for (i = 0; data[i] != '\n' && data[i] != '\0'; i++) {
 			if (iscntrl(data[i])) {
 				pr_err_once("invalid path (control characters are not allowed)\n");
@@ -434,22 +513,45 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		pr_err("Unknown data type\n");
 		result = -EINVAL;
 	}
+#else
+		result = ima_read_policy(data);
+	} else if (ima_appraise & IMA_APPRAISE_POLICY) {
+		pr_err("signed policy file (specified as an absolute pathname) required\n");
+		integrity_audit_msg(AUDIT_INTEGRITY_STATUS, NULL, NULL,
+				    "policy_update", "signed policy required",
+				    1, 0);
+		result = -EACCES;
+	} else {
+		result = ima_parse_add_rule(data);
+	}
+#endif
 	mutex_unlock(&ima_write_mutex);
 out_free:
+#ifdef CONFIG_IMA_DIGEST_LIST
 	vfree(data);
+#else
+	kfree(data);
+#endif
 out:
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (dentry == ima_policy && result < 0)
+#else
+	if (result < 0)
+#endif
 		valid_policy = 0;
 
 	return result;
 }
 
 enum ima_fs_flags {
+#ifdef CONFIG_IMA_DIGEST_LIST
 	IMA_POLICY_BUSY,
 	IMA_DIGEST_LIST_DATA_BUSY,
+#endif
 	IMA_FS_BUSY,
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static enum ima_fs_flags ima_get_dentry_flag(struct dentry *dentry)
 {
 	enum ima_fs_flags flag = IMA_FS_BUSY;
@@ -461,6 +563,7 @@ static enum ima_fs_flags ima_get_dentry_flag(struct dentry *dentry)
 
 	return flag;
 }
+#endif
 
 static unsigned long ima_fs_flags;
 
@@ -473,11 +576,19 @@ static const struct seq_operations ima_policy_seqops = {
 };
 #endif
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 /*
  * ima_open_data_upload: sequentialize access to the data upload interface
  */
 static int ima_open_data_upload(struct inode *inode, struct file *filp)
+#else
+/*
+ * ima_open_policy: sequentialize access to the policy file
+ */
+static int ima_open_policy(struct inode *inode, struct file *filp)
+#endif
 {
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct dentry *dentry = file_dentry(filp);
 	const struct seq_operations *seq_ops = NULL;
 	enum ima_fs_flags flag = ima_get_dentry_flag(dentry);
@@ -489,8 +600,10 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
 		seq_ops = &ima_policy_seqops;
 #endif
 	}
+#endif
 
 	if (!(filp->f_flags & O_WRONLY)) {
+#ifdef CONFIG_IMA_DIGEST_LIST
 		if (!read_allowed)
 			return -EACCES;
 		if ((filp->f_flags & O_ACCMODE) != O_RDONLY)
@@ -498,17 +611,35 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
 		if (!capable(CAP_SYS_ADMIN))
 			return -EPERM;
 		return seq_open(filp, seq_ops);
+#else
+#ifndef	CONFIG_IMA_READ_POLICY
+		return -EACCES;
+#else
+		if ((filp->f_flags & O_ACCMODE) != O_RDONLY)
+			return -EACCES;
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		return seq_open(filp, &ima_policy_seqops);
+#endif /*CONFIG_IMA_READ_POLICY*/
+#endif /* CONFIG_IMA_DIGEST_LIST */
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (test_and_set_bit(flag, &ima_fs_flags))
+#else
+	if (test_and_set_bit(IMA_FS_BUSY, &ima_fs_flags))
+#endif
 		return -EBUSY;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (dentry == digest_list_data || dentry == digest_list_data_del)
 		if (ima_check_current_is_parser())
 			ima_set_parser();
+#endif
 
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 /*
  * ima_release_data_upload - start using the new measure policy rules.
  *
@@ -517,14 +648,29 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
  * assuming a valid policy.
  */
 static int ima_release_data_upload(struct inode *inode, struct file *file)
+#else
+/*
+ * ima_release_policy - start using the new measure policy rules.
+ *
+ * Initially, ima_measure points to the default policy rules, now
+ * point to the new policy rules, and remove the securityfs policy file,
+ * assuming a valid policy.
+ */
+static int ima_release_policy(struct inode *inode, struct file *file)
+#endif
 {
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct dentry *dentry = file_dentry(file);
+#endif
 	const char *cause = valid_policy ? "completed" : "failed";
+#ifdef CONFIG_IMA_DIGEST_LIST
 	enum ima_fs_flags flag = ima_get_dentry_flag(dentry);
+#endif
 
 	if ((file->f_flags & O_ACCMODE) == O_RDONLY)
 		return seq_release(inode, file);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (dentry == digest_list_data || dentry == digest_list_data_del)
 		ima_unset_parser();
 
@@ -532,6 +678,7 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 		clear_bit(flag, &ima_fs_flags);
 		return 0;
 	}
+#endif
 
 	if (valid_policy && ima_check_policy() < 0) {
 		cause = "failed";
@@ -545,7 +692,11 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 	if (!valid_policy) {
 		ima_delete_rules();
 		valid_policy = 1;
+#ifdef CONFIG_IMA_DIGEST_LIST
 		clear_bit(flag, &ima_fs_flags);
+#else
+		clear_bit(IMA_FS_BUSY, &ima_fs_flags);
+#endif
 		return 0;
 	}
 
@@ -554,18 +705,32 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 	securityfs_remove(ima_policy);
 	ima_policy = NULL;
 #elif defined(CONFIG_IMA_WRITE_POLICY)
+#ifdef CONFIG_IMA_DIGEST_LIST
 	clear_bit(flag, &ima_fs_flags);
+#else
+	clear_bit(IMA_FS_BUSY, &ima_fs_flags);
+#endif
 #elif defined(CONFIG_IMA_READ_POLICY)
 	inode->i_mode &= ~S_IWUSR;
 #endif
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static const struct file_operations ima_data_upload_ops = {
 	.open = ima_open_data_upload,
 	.write = ima_write_data,
+#else
+static const struct file_operations ima_measure_policy_ops = {
+	.open = ima_open_policy,
+	.write = ima_write_policy,
+#endif
 	.read = seq_read,
+#ifdef CONFIG_IMA_DIGEST_LIST
 	.release = ima_release_data_upload,
+#else
+	.release = ima_release_policy,
+#endif
 	.llseek = generic_file_llseek,
 };
 
@@ -597,19 +762,31 @@ int __init ima_fs_init(void)
 	runtime_measurements_count =
 	    securityfs_create_file("runtime_measurements_count",
 				   S_IRUSR | S_IRGRP, ima_dir, NULL,
+#ifdef CONFIG_IMA_DIGEST_LIST
 				   &ima_htable_value_ops);
+#else
+				   &ima_measurements_count_ops);
+#endif
 	if (IS_ERR(runtime_measurements_count))
 		goto out;
 
 	violations =
 	    securityfs_create_file("violations", S_IRUSR | S_IRGRP,
+#ifdef CONFIG_IMA_DIGEST_LIST
 				   ima_dir, NULL, &ima_htable_value_ops);
+#else
+				   ima_dir, NULL, &ima_htable_violations_ops);
+#endif
 	if (IS_ERR(violations))
 		goto out;
 
 	ima_policy = securityfs_create_file("policy", POLICY_FILE_FLAGS,
 					    ima_dir, NULL,
+#ifdef CONFIG_IMA_DIGEST_LIST
 					    &ima_data_upload_ops);
+#else
+						&ima_measure_policy_ops);
+#endif
 	if (IS_ERR(ima_policy))
 		goto out;
 
@@ -634,9 +811,11 @@ int __init ima_fs_init(void)
 #endif
 	return 0;
 out:
+#ifdef CONFIG_IMA_DIGEST_LIST
 	securityfs_remove(digest_list_data_del);
 	securityfs_remove(digest_list_data);
 	securityfs_remove(digests_count);
+#endif
 	securityfs_remove(ima_policy);
 	securityfs_remove(violations);
 	securityfs_remove(runtime_measurements_count);

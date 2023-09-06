@@ -209,10 +209,14 @@ void __init integrity_load_keys(void)
 {
 	ima_load_x509();
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (!IS_ENABLED(CONFIG_IMA_LOAD_X509))
+#endif
 		evm_load_x509();
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	ima_load_digest_lists();
+#endif
 }
 
 static int __init integrity_fs_init(void)

@@ -86,7 +86,11 @@ static int __init ima_add_boot_aggregate(void)
 
 	result = ima_store_template(entry, violation, NULL,
 				    boot_aggregate_name,
+#ifdef CONFIG_IMA_DIGEST_LIST
 				    CONFIG_IMA_MEASURE_PCR_IDX, NULL);
+#else
+				    CONFIG_IMA_MEASURE_PCR_IDX);
+#endif
 	if (result < 0) {
 		ima_free_template_entry(entry);
 		audit_cause = "store_entry";
@@ -107,8 +111,10 @@ void __init ima_load_x509(void)
 	ima_policy_flag &= ~unset_flags;
 	integrity_load_x509(INTEGRITY_KEYRING_IMA, CONFIG_IMA_X509_PATH);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	/* load also EVM key to avoid appraisal */
 	evm_load_x509();
+#endif
 
 	ima_policy_flag |= unset_flags;
 }

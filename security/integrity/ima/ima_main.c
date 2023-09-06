@@ -28,7 +28,9 @@
 #include <linux/fs.h>
 
 #include "ima.h"
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include "ima_digest_list.h"
+#endif
 
 #ifdef CONFIG_IMA_APPRAISE
 int ima_appraise = IMA_APPRAISE_ENFORCE;
@@ -38,12 +40,14 @@ int ima_appraise;
 
 int ima_hash_algo = HASH_ALGO_SHA1;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 /* Actions (measure/appraisal) for which digest lists can be used */
 int ima_digest_list_actions;
 /* PCR used for digest list measurements */
 int ima_digest_list_pcr = -1;
 /* Flag to include standard measurement if digest list PCR is specified */
 bool ima_plus_standard_pcr;
+#endif
 
 static int hash_setup_done;
 
@@ -156,6 +160,7 @@ static void ima_rdwr_violation_check(struct file *file,
 				  "invalid_pcr", "open_writers");
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static enum hash_algo ima_get_hash_algo(struct evm_ima_xattr_data *xattr_value,
 					int xattr_len)
 {
@@ -209,6 +214,7 @@ static int ima_read_xattr(struct dentry *dentry,
 		ret = 0;
 	return ret;
 }
+#endif /* CONFIG_IMA_DIGEST_LIST */
 
 static void ima_check_last_writer(struct integrity_iint_cache *iint,
 				  struct inode *inode, struct file *file)
@@ -268,7 +274,9 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	const char *pathname = NULL;
 	int rc = 0, action, must_appraise = 0;
 	int pcr = CONFIG_IMA_MEASURE_PCR_IDX;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct ima_digest *found_digest;
+#endif
 	struct evm_ima_xattr_data *xattr_value = NULL;
 	struct modsig *modsig = NULL;
 	int xattr_len = 0;
@@ -398,28 +406,39 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	if (!pathbuf)	/* ima_rdwr_violation possibly pre-fetched */
 		pathname = ima_d_path(&file->f_path, &pathbuf, filename);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (!pathname || strlen(pathname) > IMA_EVENT_NAME_LEN_MAX)
 		pathname = file->f_path.dentry->d_name.name;
 
 	found_digest = ima_lookup_digest(iint->ima_hash->digest, hash_algo,
 					 COMPACT_FILE);
+#endif
 
 	if (action & IMA_MEASURE)
 		ima_store_measurement(iint, file, pathname,
 				      xattr_value, xattr_len, modsig, pcr,
+#ifdef CONFIG_IMA_DIGEST_LIST
 				      template_desc,
 				      ima_digest_allow(found_digest,
 						       IMA_MEASURE));
+#else
+				      template_desc);
+#endif
 
 	if (rc == 0 && (action & IMA_APPRAISE_SUBMASK)) {
 		rc = ima_check_blacklist(iint, modsig, pcr);
 		if (rc != -EPERM) {
 			inode_lock(inode);
+
 			rc = ima_appraise_measurement(func, iint, file,
 					      pathname, xattr_value,
+#ifdef CONFIG_IMA_DIGEST_LIST
 					      xattr_len, modsig,
 					      ima_digest_allow(found_digest,
 							       IMA_APPRAISE));
+#else
+					      xattr_len, modsig);
+#endif
 			inode_unlock(inode);
 		}
 		if (!rc)
@@ -568,15 +587,23 @@ int ima_bprm_check(struct linux_binprm *bprm)
 int ima_file_check(struct file *file, int mask)
 {
 	u32 secid;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	int rc;
+#endif
 
 	security_task_getsecid(current, &secid);
+#ifdef CONFIG_IMA_DIGEST_LIST
 	rc = process_measurement(file, current_cred(), secid, NULL, 0,
 				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
 					 MAY_APPEND), FILE_CHECK);
 	if (ima_current_is_parser() && !rc)
 		ima_check_measured_appraised(file);
 	return rc;
+#else
+	return process_measurement(file, current_cred(), secid, NULL, 0,
+				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
+					 MAY_APPEND), FILE_CHECK);
+#endif
 }
 EXPORT_SYMBOL_GPL(ima_file_check);
 
@@ -739,7 +766,9 @@ const int read_idmap[READING_MAX_ID] = {
 	[READING_KEXEC_IMAGE] = KEXEC_KERNEL_CHECK,
 	[READING_KEXEC_INITRAMFS] = KEXEC_INITRAMFS_CHECK,
 	[READING_POLICY] = POLICY_CHECK,
+#ifdef CONFIG_IMA_DIGEST_LIST
 	[READING_DIGEST_LIST] = DIGEST_LIST_CHECK
+#endif
 };
 
 /**
@@ -942,7 +971,11 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 		goto out;
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	ret = ima_store_template(entry, violation, NULL, buf, pcr, NULL);
+#else
+	ret = ima_store_template(entry, violation, NULL, buf, pcr);
+#endif
 	if (ret < 0) {
 		audit_cause = "store_entry";
 		ima_free_template_entry(entry);

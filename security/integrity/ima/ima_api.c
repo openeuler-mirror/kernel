@@ -99,15 +99,23 @@ out:
  *
  * Returns 0 on success, error code otherwise
  */
+#ifdef CONFIG_IMA_DIGEST_LIST
 int ima_store_template(struct ima_template_entry *entry,
 		       int violation, struct inode *inode,
 		       const unsigned char *filename, int pcr,
 		       struct ima_digest *digest)
+#else
+int ima_store_template(struct ima_template_entry *entry,
+		       int violation, struct inode *inode,
+		       const unsigned char *filename, int pcr)
+#endif
 {
 	static const char op[] = "add_template_measure";
 	static const char audit_cause[] = "hashing_error";
 	char *template_name = entry->template_desc->name;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct ima_template_entry *duplicated_entry = NULL;
+#endif
 	int result;
 
 	if (!violation) {
@@ -121,6 +129,7 @@ int ima_store_template(struct ima_template_entry *entry,
 		}
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (ima_plus_standard_pcr && !digest) {
 		duplicated_entry = kmemdup(entry,
 			sizeof(*entry) + entry->template_desc->num_fields *
@@ -130,9 +139,11 @@ int ima_store_template(struct ima_template_entry *entry,
 	} else if (!ima_plus_standard_pcr && ima_digest_list_pcr >= 0) {
 		pcr = ima_digest_list_pcr;
 	}
+#endif
 
 	entry->pcr = pcr;
 	result = ima_add_template_entry(entry, violation, op, inode, filename);
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (result) {
 		kfree(duplicated_entry);
 	} else if (duplicated_entry) {
@@ -141,6 +152,7 @@ int ima_store_template(struct ima_template_entry *entry,
 		if (result < 0)
 			kfree(duplicated_entry);
 	}
+#endif
 
 	return result;
 }
@@ -173,8 +185,13 @@ void ima_add_violation(struct file *file, const unsigned char *filename,
 		result = -ENOMEM;
 		goto err_out;
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
 	result = ima_store_template(entry, violation, inode, filename,
 				    CONFIG_IMA_MEASURE_PCR_IDX, NULL);
+#else
+	result = ima_store_template(entry, violation, inode,
+				    filename, CONFIG_IMA_MEASURE_PCR_IDX);
+#endif
 	if (result < 0)
 		ima_free_template_entry(entry);
 err_out:
@@ -315,18 +332,30 @@ out:
  *
  * Must be called with iint->mutex held.
  */
+#ifdef CONFIG_IMA_DIGEST_LIST
 void ima_store_measurement(struct integrity_iint_cache *iint,
 			   struct file *file, const unsigned char *filename,
 			   struct evm_ima_xattr_data *xattr_value,
 			   int xattr_len, const struct modsig *modsig, int pcr,
 			   struct ima_template_desc *template_desc,
 			   struct ima_digest *digest)
+#else
+void ima_store_measurement(struct integrity_iint_cache *iint,
+			   struct file *file, const unsigned char *filename,
+			   struct evm_ima_xattr_data *xattr_value,
+			   int xattr_len, const struct modsig *modsig, int pcr,
+			   struct ima_template_desc *template_desc)
+#endif
 {
 	static const char op[] = "add_template_measure";
 	static const char audit_cause[] = "ENOMEM";
 	int result = -ENOMEM;
 	struct inode *inode = file_inode(file);
+#ifdef CONFIG_IMA_DIGEST_LIST
 	struct ima_template_entry *entry = NULL;
+#else
+	struct ima_template_entry *entry;
+#endif
 	struct ima_event_data event_data = { .iint = iint,
 					     .file = file,
 					     .filename = filename,
@@ -344,10 +373,12 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 	if (iint->measured_pcrs & (0x1 << pcr) && !modsig)
 		return;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (digest && !ima_plus_standard_pcr && ima_digest_list_pcr >= 0) {
 		result = -EEXIST;
 		goto out;
 	}
+#endif
 
 	result = ima_alloc_init_template(&event_data, &entry, template_desc);
 	if (result < 0) {
@@ -356,14 +387,22 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 		return;
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	result = ima_store_template(entry, violation, inode, filename, pcr,
 				    digest);
 out:
+#else
+	result = ima_store_template(entry, violation, inode, filename, pcr);
+#endif
 	if ((!result || result == -EEXIST) && !(file->f_flags & O_DIRECT)) {
 		iint->flags |= IMA_MEASURED;
 		iint->measured_pcrs |= (0x1 << pcr);
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (result < 0 && entry)
+#else
+	if (result < 0)
+#endif
 		ima_free_template_entry(entry);
 }
 

@@ -14,10 +14,13 @@
 
 #include <linux/types.h>
 #include <linux/integrity.h>
+#include <crypto/sha1.h>
 #include <crypto/sha2.h>
 #include <linux/key.h>
 #include <linux/audit.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include <linux/hash_info.h>
+#endif
 
 /* iint action cache flags */
 #define IMA_MEASURE		0x00000001
@@ -40,7 +43,9 @@
 #define IMA_FAIL_UNVERIFIABLE_SIGS	0x10000000
 #define IMA_MODSIG_ALLOWED	0x20000000
 #define IMA_CHECK_BLACKLIST	0x40000000
+#ifdef CONFIG_IMA_DIGEST_LIST
 #define IMA_META_IMMUTABLE_REQUIRED	0x80000000
+#endif
 
 #define IMA_DO_MASK		(IMA_MEASURE | IMA_APPRAISE | IMA_AUDIT | \
 				 IMA_HASH | IMA_APPRAISE_SUBMASK)
@@ -72,7 +77,9 @@
 #define IMA_CHANGE_ATTR		2
 #define IMA_DIGSIG		3
 #define IMA_MUST_MEASURE	4
+#ifdef CONFIG_IMA_DIGEST_LIST
 #define IMA_DIGEST_LIST		5
+#endif
 
 enum evm_ima_xattr_type {
 	IMA_XATTR_DIGEST = 0x01,
@@ -80,7 +87,9 @@ enum evm_ima_xattr_type {
 	EVM_IMA_XATTR_DIGSIG,
 	IMA_XATTR_DIGEST_NG,
 	EVM_XATTR_PORTABLE_DIGSIG,
+#ifdef CONFIG_IMA_DIGEST_LIST
 	EVM_IMA_XATTR_DIGEST_LIST,
+#endif
 	IMA_XATTR_LAST
 };
 
@@ -92,7 +101,11 @@ struct evm_ima_xattr_data {
 /* Only used in the EVM HMAC code. */
 struct evm_xattr {
 	struct evm_ima_xattr_data data;
+#ifdef CONFIG_IMA_DIGEST_LIST
 	u8 digest[SHA512_DIGEST_SIZE];
+#else
+	u8 digest[SHA1_DIGEST_SIZE];
+#endif
 } __packed;
 
 #define IMA_MAX_DIGEST_SIZE	64
@@ -144,6 +157,7 @@ struct integrity_iint_cache {
 	struct ima_digest_data *ima_hash;
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 enum compact_types { COMPACT_KEY, COMPACT_PARSER, COMPACT_FILE,
 		     COMPACT_METADATA, COMPACT__LAST };
 enum compact_modifiers { COMPACT_MOD_IMMUTABLE, COMPACT_MOD__LAST };
@@ -162,27 +176,11 @@ static inline bool ima_digest_is_immutable(struct ima_digest *digest)
 	return (digest->modifiers & (1 << COMPACT_MOD_IMMUTABLE));
 }
 
-#ifdef CONFIG_IMA_DIGEST_LIST
 struct ima_digest *ima_lookup_digest(u8 *digest, enum hash_algo algo,
 				     enum compact_types type);
 struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action);
 void __init ima_load_digest_lists(void);
-#else
-static inline struct ima_digest *ima_lookup_digest(u8 *digest,
-						   enum hash_algo algo,
-						   enum compact_types type)
-{
-	return NULL;
-}
-static inline struct ima_digest *ima_digest_allow(struct ima_digest *digest,
-						  int action)
-{
-	return NULL;
-}
-static inline void ima_load_digest_lists(void)
-{
-}
-#endif
+#endif  /* CONFIG_IMA_DIGEST_LIST */
 
 /* rbtree tree calls to lookup, insert, delete
  * integrity data associated with an inode.

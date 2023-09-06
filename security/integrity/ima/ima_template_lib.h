@@ -46,6 +46,8 @@ int ima_eventbuf_init(struct ima_event_data *event_data,
 		      struct ima_field_data *field_data);
 int ima_eventmodsig_init(struct ima_event_data *event_data,
 			 struct ima_field_data *field_data);
+#ifdef CONFIG_IMA_DIGEST_LIST
 int ima_eventevmsig_init(struct ima_event_data *event_data,
 			 struct ima_field_data *field_data);
+#endif /* CONFIG_IMA_DIGEST_LIST */
 #endif /* __LINUX_IMA_TEMPLATE_LIB_H */

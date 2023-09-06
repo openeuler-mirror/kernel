@@ -10,7 +10,9 @@
  */
 
 #include "ima_template_lib.h"
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include <linux/xattr.h>
+#endif
 
 static bool ima_template_hash_algo_allowed(u8 algo)
 {
@@ -439,7 +441,11 @@ int ima_eventsig_init(struct ima_event_data *event_data,
 	struct evm_ima_xattr_data *xattr_value = event_data->xattr_value;
 
 	if ((!xattr_value) || (xattr_value->type != EVM_IMA_XATTR_DIGSIG))
+#ifdef CONFIG_IMA_DIGEST_LIST
 		return ima_eventevmsig_init(event_data, field_data);
+#else
+		return 0;
+#endif
 
 	return ima_write_template_field_data(xattr_value, event_data->xattr_len,
 					     DATA_FMT_HEX, field_data);
@@ -486,6 +492,7 @@ int ima_eventmodsig_init(struct ima_event_data *event_data,
 					     field_data);
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 /*
  *  ima_eventevmsig_init - include the EVM portable signature as part of the
  *  template data
@@ -514,3 +521,4 @@ int ima_eventevmsig_init(struct ima_event_data *event_data,
 	kfree(xattr_data);
 	return rc;
 }
+#endif

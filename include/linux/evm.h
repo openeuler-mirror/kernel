@@ -35,7 +35,9 @@ extern void evm_inode_post_removexattr(struct dentry *dentry,
 extern int evm_inode_init_security(struct inode *inode,
 				   const struct xattr *xattr_array,
 				   struct xattr *evm);
+#ifdef CONFIG_IMA_DIGEST_LIST
 extern bool evm_status_revalidate(const char *xattr_name);
+#endif
 #ifdef CONFIG_FS_POSIX_ACL
 extern int posix_xattr_acl(const char *xattrname);
 #else
@@ -105,10 +107,11 @@ static inline int evm_inode_init_security(struct inode *inode,
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static inline bool evm_status_revalidate(const char *xattr_name)
 {
 	return false;
 }
-
+#endif /* CONFIG_IMA_DIGEST_LIST */
 #endif /* CONFIG_EVM */
 #endif /* LINUX_EVM_H */
