@@ -19,7 +19,7 @@
 int pmd_huge(pmd_t pmd)
 {
 	return !pmd_none(pmd) &&
-		(pmd_val(pmd) & (_PAGE_VALID | _PAGE_PSE)) != _PAGE_VALID;
+		(pmd_val(pmd) & (_PAGE_VALID | _PAGE_LEAF)) != _PAGE_VALID;
 }
 
 int pud_huge(pud_t pud)
@@ -49,7 +49,7 @@ pte_t *sw64_256m_hugepte_alloc(struct mm_struct *mm, pud_t *pud, unsigned long a
 		return NULL;
 
 	page = virt_to_page(pte);
-	pmd_val(*pmd) = pmd_val(*pmd) | _PAGE_PSE | _PAGE_PHU;
+	pmd_val(*pmd) = pmd_val(*pmd) | _PAGE_LEAF | _PAGE_CONT;
 	for (i = 1; i < 32; i++)
 		pmd_val(*(pmd+i)) = pmd_val(*pmd);
 	return pte;
@@ -101,7 +101,7 @@ pte_t *huge_pte_offset(struct mm_struct *mm, unsigned long addr,
 				pmd = pmd_offset(pud, addr);
 				if (!pmd_present(*pmd))
 					return NULL;
-				if (pmd_val(*pmd) & _PAGE_PHU)
+				if (pmd_val(*pmd) & _PAGE_CONT)
 					pte = pte_offset_map(pmd, addr);
 				else
 					pte = (pte_t *) pmd;
@@ -114,7 +114,7 @@ pte_t *huge_pte_offset(struct mm_struct *mm, unsigned long addr,
 static inline int sw64_huge_pmd_bad(pmd_t pmd)
 {
 	return !(((pmd_val(pmd) & ~_PFN_MASK) == _PAGE_TABLE) ||
-			((pmd_val(pmd) & _PAGE_PHU) == _PAGE_PHU));
+			((pmd_val(pmd) & _PAGE_CONT) == _PAGE_CONT));
 }
 
 static inline int sw64_huge_pmd_none_or_clear_bad(pmd_t *pmd)
@@ -132,7 +132,7 @@ static void sw64_huge_free_pte_range(struct mmu_gather *tlb, pmd_t *pmd,
 		unsigned long addr)
 {
 	if ((((unsigned long)pmd & 0xffUL) == 0) &&
-		((pmd_val(*pmd) & _PAGE_PHU) == _PAGE_PHU)) {
+		((pmd_val(*pmd) & _PAGE_CONT) == _PAGE_CONT)) {
 		pgtable_t token = pmd_pgtable(*pmd);
 
 		pmd_clear(pmd);

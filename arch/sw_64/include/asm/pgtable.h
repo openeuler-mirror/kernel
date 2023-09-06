@@ -104,8 +104,8 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define _PAGE_FOW	0x0004	/* used for page protection (fault on write) */
 #define _PAGE_FOE	0x0008	/* used for page protection (fault on exec) */
 #define _PAGE_ASM	0x0010
-#define _PAGE_PHU	0x0020  /* used for 256M page size bit */
-#define _PAGE_PSE	0x0040  /* used for 8M page size bit */
+#define _PAGE_CONT	0x0020  /* used for 256M page size bit */
+#define _PAGE_LEAF	0x0040  /* used for 8M page size bit */
 #define _PAGE_PROTNONE	0x0080  /* used for numa page balancing */
 #define _PAGE_SPECIAL	0x0100
 #define _PAGE_KRE	0x0400	/* xxx - see below on the "accessed" bit */
@@ -144,7 +144,7 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 
 #define _PAGE_TABLE	(_PAGE_VALID | __DIRTY_BITS | __ACCESS_BITS)
 #define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL)
-#define _HPAGE_CHG_MASK (_PAGE_CHG_MASK | _PAGE_PSE | _PAGE_PHU)
+#define _HPAGE_CHG_MASK (_PAGE_CHG_MASK | _PAGE_LEAF | _PAGE_CONT)
 
 /*
  * All the normal masks have the "page accessed" bits on, as any time they are used,
@@ -272,7 +272,7 @@ static inline int pte_present(pte_t pte)
 
 static inline int pte_huge(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_PSE;
+	return pte_val(pte) & _PAGE_LEAF;
 }
 
 static inline void pte_clear(struct mm_struct *mm,
@@ -307,12 +307,12 @@ static inline int pmd_bad(pmd_t pmd)
 static inline int pmd_present(pmd_t pmd)
 {
 	/*
-	 * Checking for _PAGE_PSE is needed too because
+	 * Checking for _PAGE_LEAF is needed too because
 	 * split_huge_page will temporarily clear the valid bit (but
-	 * the _PAGE_PSE flag will remain set at all times while the
+	 * the _PAGE_LEAF flag will remain set at all times while the
 	 * _PAGE_VALID bit is clear).
 	 */
-	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_PSE);
+	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_LEAF);
 }
 
 static inline void pmd_clear(pmd_t *pmdp)
@@ -388,7 +388,7 @@ static inline pmd_t pmd_mkyoung(pmd_t pmd)
 
 static inline pmd_t pmd_mkhuge(pmd_t pmd)
 {
-	pmd_val(pmd) |= _PAGE_PSE;
+	pmd_val(pmd) |= _PAGE_LEAF;
 	return pmd;
 }
 
@@ -495,7 +495,7 @@ static inline pte_t pte_mkyoung(pte_t pte)
 
 static inline pte_t pte_mkhuge(pte_t pte)
 {
-	pte_val(pte) |= _PAGE_PSE;
+	pte_val(pte) |= _PAGE_LEAF;
 	return pte;
 }
 
@@ -547,7 +547,7 @@ static inline int pmd_trans_splitting(pmd_t pmd)
 
 static inline int pmd_trans_huge(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_PSE;
+	return pmd_val(pmd) & _PAGE_LEAF;
 }
 
 static inline int has_transparent_hugepage(void)
@@ -630,7 +630,7 @@ extern pgd_t swapper_pg_dir[1024];
  *
  * Format of swap PTE:
  *	bit  0:		_PAGE_VALID (must be zero)
- *	bit  6:		_PAGE_PSE (must be zero)
+ *	bit  6:		_PAGE_LEAF (must be zero)
  *	bit  7:		_PAGE_PROTNONE (must be zero)
  *	bits 8-15:	swap type
  *	bits 16-63:	swap offset
