@@ -221,6 +221,13 @@ static inline pmd_t pfn_pmd(unsigned long pfn, pgprot_t prot)
 	pmd_val(pmd) = (pfn << _PFN_SHIFT) | pgprot_val(prot);
 	return pmd;
 }
+static inline pud_t pfn_pud(unsigned long pfn, pgprot_t pgprot)
+{
+	pud_t pud;
+
+	pud_val(pud) = (pfn << _PFN_SHIFT) | pgprot_val(pgprot);
+	return pud;
+}
 
 static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 {
@@ -445,6 +452,16 @@ static inline void p4d_clear(p4d_t *p4dp)
 	p4d_val(*p4dp) = 0;
 }
 
+static inline pte_t pmd_pte(pmd_t pmd)
+{
+	return __pte(pmd_val(pmd));
+}
+
+static inline pmd_t pte_pmd(pte_t pte)
+{
+	return __pmd(pte_val(pte));
+}
+
 /*
  * The following only work if pte_present() is true.
  * Undefined behaviour if not..
@@ -633,7 +650,6 @@ extern int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 #define __HAVE_ARCH_PMDP_CLEAR_YOUNG_FLUSH
 extern int pmdp_clear_flush_young(struct vm_area_struct *vma,
 				  unsigned long address, pmd_t *pmdp);
-
 
 #define __HAVE_ARCH_PMDP_SPLITTING_FLUSH
 extern void pmdp_splitting_flush(struct vm_area_struct *vma,
