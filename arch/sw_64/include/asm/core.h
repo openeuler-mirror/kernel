@@ -8,11 +8,21 @@
 #define II_WAKE			3
 #define II_NMII			6
 
-#ifdef CONFIG_SW64_CHIP3
 #define II_RESET		II_NMII
-#define CORES_PER_NODE_SHIFT	5
-#endif
-#define CORES_PER_NODE		(1UL << CORES_PER_NODE_SHIFT)
+
+#define DOMAIN_ID_BITS		2
+#define DOMAIN_ID_SHIFT		5
+#define DOMAIN_ID_MASK		(GENMASK(DOMAIN_ID_BITS - 1, 0) << DOMAIN_ID_SHIFT)
+
+#define THREAD_ID_BITS		1
+#define THREAD_ID_SHIFT		31
+#define THREAD_ID_MASK		(GENMASK(THREAD_ID_BITS - 1, 0) << THREAD_ID_SHIFT)
+
+#define CORE_ID_BITS		5
+#define CORE_ID_SHIFT		0
+#define CORE_ID_MASK		(GENMASK(CORE_ID_BITS - 1, 0) << CORE_ID_SHIFT)
+
+#define MAX_CORES_PER_CPU	(1 << CORE_ID_BITS)
 
 /*
  * 0x00 ~ 0xff for hardware mm fault

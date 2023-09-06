@@ -133,10 +133,10 @@ void store_cpu_topology(int cpu)
 		goto topology_populated;
 	}
 
-	cpu_topo->package_id = rcid_to_package(cpu_to_rcid(cpu));
-	cpu_topo->core_id = cpu_to_rcid(cpu) & CORE_ID_MASK;
-	cpu_topo->thread_id = (cpu_to_rcid(cpu) >> THREAD_ID_SHIFT) & THREAD_ID_MASK;
-	cpu_topo->llc_id = rcid_to_package(cpu_to_rcid(cpu));
+	cpu_topo->package_id = rcid_to_domain_id(cpu_to_rcid(cpu));
+	cpu_topo->core_id = rcid_to_core_id(cpu_to_rcid(cpu));
+	cpu_topo->thread_id = rcid_to_thread_id(cpu_to_rcid(cpu));
+	cpu_topo->llc_id = rcid_to_domain_id(cpu_to_rcid(cpu));
 
 	pr_debug("CPU%u: socket %d core %d thread %d llc %d\n",
 		 cpu, cpu_topo->package_id, cpu_topo->core_id,

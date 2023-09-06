@@ -95,7 +95,7 @@ void smp_callin(void)
 	notify_cpu_starting(cpuid);
 
 	per_cpu(cpu_state, cpuid) = CPU_ONLINE;
-	per_cpu(hard_node_id, cpuid) = cpu_to_rcid(cpuid) >> CORES_PER_NODE_SHIFT;
+	per_cpu(hard_node_id, cpuid) = rcid_to_domain_id(cpu_to_rcid(cpuid));
 
 	/* Must have completely accurate bogos.  */
 	local_irq_enable();
