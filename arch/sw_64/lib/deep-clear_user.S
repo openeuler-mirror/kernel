@@ -34,7 +34,11 @@ __clear_user:
 	bis	$31, $31, $7
 	mov	$17, $18
 	bis	$31, $31, $17
+#if defined(CONFIG_SUBARCH_C3B)
 #include "deep-set_template.S"
+#elif defined(CONFIG_SUBARCH_C4)
+#include "deep-set_template_c4.S"
+#endif
 $out:
 	bis	$31, $18, $0
 	beq	$7, $return

@@ -5,6 +5,7 @@
  * Copy an entire page.
  */
 #include <asm/export.h>
+#include <asm/csr.h>
 
 	.text
 	.align 4
@@ -19,6 +20,9 @@ copy_page:
 	stl	$4, 0($sp)
 	bic	$4, 0x1f, $4
 	vstd	$f16, 0($4)
+#ifdef CONFIG_SUBARCH_C4
+	csrr	$5, CSR_WR_FREGS
+#endif
 
 /* Optimize by GUOY from SOC 2013-06-04 */
 1:
@@ -46,6 +50,9 @@ copy_page:
 	ldi	$4, 0x40($sp)
 	bic	$4, 0x1f, $4
 	vldd	$f16, 0($4)
+#ifdef CONFIG_SUBARCH_C4
+	csrw	$5, CSR_WR_FREGS
+#endif
 	addl	$sp, 0x60, $sp
 	ret
 

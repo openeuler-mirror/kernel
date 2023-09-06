@@ -26,6 +26,7 @@
  */
 
 #include <asm/export.h>
+#include <asm/csr.h>
 
 #define FIXUP_LDST(x, y)	\
 	x, y
@@ -44,6 +45,9 @@ ___memset:
 	.frame $30, 0, $26, 0
 	.prologue 0
 
+#ifdef CONFIG_SUBARCH_C4
+	csrr	$6, CSR_WR_FREGS
+#endif
 /* expand 1 byte data to 8 bytes */
 	and	$17, 0xff, $17
 	sll	$17, 8, $4
@@ -56,8 +60,15 @@ ___memset:
 __constant_c_memset:
 	bis	$31, $31, $7
 	bis	$31, $16, $0
+#if defined(CONFIG_SUBARCH_C3B)
 #include "deep-set_template.S"
+#elif defined(CONFIG_SUBARCH_C4)
+#include "deep-set_template_c4.S"
+#endif
 $out:
+#ifdef CONFIG_SUBARCH_C4
+	csrw	$6, CSR_WR_FREGS
+#endif
 	ret
 
 	.end ___memset

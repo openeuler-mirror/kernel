@@ -11,7 +11,11 @@ memcpy:
 	.frame $30, 0, $26, 0
 	.prologue 0
 	mov	$16, $0
+#if defined(CONFIG_SUBARCH_C3B)
 #include "deep-copy_template.S"
+#elif defined(CONFIG_SUBARCH_C4)
+#include "deep-copy_template_c4.S"
+#endif
 $out:
 	ret
 	.end memcpy
