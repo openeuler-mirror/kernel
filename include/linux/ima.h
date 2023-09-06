@@ -144,13 +144,17 @@ extern bool is_ima_appraise_enabled(void);
 extern void ima_inode_post_setattr(struct dentry *dentry);
 extern int ima_inode_setxattr(struct dentry *dentry, const char *xattr_name,
 		       const void *xattr_value, size_t xattr_value_len);
+#ifdef CONFIG_IMA_DIGEST_LIST
 extern void ima_inode_post_setxattr(struct dentry *dentry,
 				    const char *xattr_name,
 				    const void *xattr_value,
 				    size_t xattr_value_len);
+#endif
 extern int ima_inode_removexattr(struct dentry *dentry, const char *xattr_name);
+#ifdef CONFIG_IMA_DIGEST_LIST
 extern void ima_inode_post_removexattr(struct dentry *dentry,
 				       const char *xattr_name);
+#endif
 #else
 static inline bool is_ima_appraise_enabled(void)
 {
@@ -170,12 +174,14 @@ static inline int ima_inode_setxattr(struct dentry *dentry,
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static inline void ima_inode_post_setxattr(struct dentry *dentry,
 					   const char *xattr_name,
 					   const void *xattr_value,
 					   size_t xattr_value_len)
 {
 }
+#endif
 
 static inline int ima_inode_removexattr(struct dentry *dentry,
 					const char *xattr_name)
@@ -183,10 +189,12 @@ static inline int ima_inode_removexattr(struct dentry *dentry,
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 static inline void ima_inode_post_removexattr(struct dentry *dentry,
 					      const char *xattr_name)
 {
 }
+#endif
 #endif /* CONFIG_IMA_APPRAISE */
 
 #if defined(CONFIG_IMA_APPRAISE) && defined(CONFIG_INTEGRITY_TRUSTED_KEYRING)

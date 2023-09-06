@@ -16,7 +16,9 @@
 #include <linux/namei.h>
 #include <linux/security.h>
 #include <linux/evm.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include <linux/ima.h>
+#endif
 #include <linux/syscalls.h>
 #include <linux/export.h>
 #include <linux/fsnotify.h>
@@ -475,7 +477,9 @@ __vfs_removexattr_locked(struct dentry *dentry, const char *name,
 
 	if (!error) {
 		fsnotify_xattr(dentry);
+#ifdef CONFIG_IMA_DIGEST_LIST
 		ima_inode_post_removexattr(dentry, name);
+#endif
 		evm_inode_post_removexattr(dentry, name);
 	}
 

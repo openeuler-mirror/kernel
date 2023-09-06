@@ -9,7 +9,9 @@
 #include <linux/err.h>
 #include <linux/ratelimit.h>
 #include <linux/key-type.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
 #include <linux/verification.h>
+#endif
 #include <crypto/public_key.h>
 #include <crypto/hash_info.h>
 #include <keys/asymmetric-type.h>
@@ -55,6 +57,7 @@ static struct key *request_asymmetric_key(struct key *keyring, uint32_t keyid)
 		key = request_key(&key_type_asymmetric, name, NULL);
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
 	if (IS_ERR(key)) {
 #ifdef CONFIG_IMA_KEYRINGS_PERMIT_SIGNED_BY_BUILTIN_OR_SECONDARY
 		keyring = VERIFY_USE_SECONDARY_KEYRING;
@@ -63,6 +66,7 @@ static struct key *request_asymmetric_key(struct key *keyring, uint32_t keyid)
 #endif
 		key = search_trusted_key(keyring, &key_type_asymmetric, name);
 	}
+#endif
 
 	if (IS_ERR(key)) {
 		if (keyring)

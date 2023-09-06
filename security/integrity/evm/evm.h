@@ -32,7 +32,9 @@ struct xattr_list {
 };
 
 extern int evm_initialized;
+#ifdef CONFIG_IMA_DIGEST_LIST
 extern enum hash_algo evm_hash_algo;
+#endif
 
 #define EVM_ATTR_FSUUID		0x0001
 
