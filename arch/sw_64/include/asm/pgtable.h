@@ -72,6 +72,11 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define PMD_SIZE	(1UL << PMD_SHIFT)
 #define PMD_MASK	(~(PMD_SIZE - 1))
 
+#define CONT_PMD_SHIFT		6
+#define CONT_PMDS		(1 << CONT_PMD_SHIFT)
+#define CONT_PMD_SIZE		(CONT_PMDS * PMD_SIZE)
+#define CONT_PMD_MASK		(~(CONT_PMD_SIZE - 1))
+
 /*
  * Entries per page directory level:  the sw64 is three-level, with
  * all levels having a one-page page table.
@@ -392,6 +397,12 @@ static inline pmd_t pmd_mkhuge(pmd_t pmd)
 	return pmd;
 }
 
+static inline pmd_t pmd_mkcont(pmd_t pmd)
+{
+	pmd_val(pmd) |= _PAGE_CONT;
+	return pmd;
+}
+
 static inline int pud_none(pud_t pud)
 {
 	return !pud_val(pud);
@@ -454,6 +465,11 @@ static inline int pte_young(pte_t pte)
 static inline int pte_special(pte_t pte)
 {
 	return pte_val(pte) & _PAGE_SPECIAL;
+}
+
+static inline int pte_cont(pte_t pte)
+{
+	return pte_val(pte) & _PAGE_CONT;
 }
 
 static inline pte_t pte_wrprotect(pte_t pte)
@@ -543,6 +559,11 @@ static inline int pte_devmap(pte_t a)
 static inline int pmd_trans_splitting(pmd_t pmd)
 {
 	return pmd_val(pmd) & _PAGE_SPLITTING;
+}
+
+static inline int pmd_trans_cont(pmd_t pmd)
+{
+	return pmd_val(pmd) & _PAGE_CONT;
 }
 
 static inline int pmd_trans_huge(pmd_t pmd)
