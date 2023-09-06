@@ -29,12 +29,6 @@ int smp_booted;
 #define DBGS(fmt, arg...) \
 	do { if (smp_debug) printk("SMP: " fmt, ## arg); } while (0)
 
-int __cpu_to_rcid[NR_CPUS];		/* Map logical to physical */
-EXPORT_SYMBOL(__cpu_to_rcid);
-
-int __rcid_to_cpu[NR_CPUS];		/* Map physical to logical */
-EXPORT_SYMBOL(__rcid_to_cpu);
-
 void *idle_task_pointer[NR_CPUS];
 
 /* State of each CPU */
@@ -192,29 +186,19 @@ void __init smp_rcb_init(void)
  */
 void __init setup_smp(void)
 {
-	int i = 0, num = 0; /* i: physical id, num: logical id */
+	int i = 0, num = 0;
 
 	init_cpu_possible(cpu_none_mask);
 
 	/* For unified kernel, NR_CPUS is the maximum possible value */
 	for (; i < NR_CPUS; i++) {
-		if (cpumask_test_cpu(i, &core_start)) {
-			__cpu_to_rcid[num] = i;
-			__rcid_to_cpu[i] = num;
+		if (cpu_to_rcid(i) != -1) {
 			set_cpu_possible(num, true);
 			store_cpu_data(num);
 			if (!cpumask_test_cpu(i, &cpu_offline))
 				set_cpu_present(num, true);
 			num++;
-		} else
-			__rcid_to_cpu[i] = -1;
-	}
-	/* for sw64, the BSP must be logical core 0 */
-	BUG_ON(cpu_to_rcid(0) != hard_smp_processor_id());
-
-	while (num < NR_CPUS) {
-		__cpu_to_rcid[num] = -1;
-		num++;
+		}
 	}
 
 	process_nr_cpu_ids();

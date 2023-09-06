@@ -44,6 +44,8 @@
 #define DBGDCONT(args...)
 #endif
 
+int __cpu_to_rcid[NR_CPUS];		/* Map logical to physical */
+EXPORT_SYMBOL(__cpu_to_rcid);
 
 DEFINE_PER_CPU(unsigned long, hard_node_id) = { 0 };
 
@@ -764,7 +766,7 @@ setup_arch(char **cmdline_p)
 	setup_chip_ops();
 	setup_socket_info();
 	show_socket_mem_layout();
-	sw64_chip_init->early_init.setup_core_start(&core_start);
+	sw64_chip_init->early_init.setup_core_map(&core_start);
 	if (is_guest_or_emul())
 		get_vt_smp_info();
 

@@ -41,26 +41,31 @@ static unsigned long __init get_node_mem(int nodeid)
 	return node_mem;
 }
 
-static void __init setup_core_start(struct cpumask *cpumask)
+static void __init setup_core_map(struct cpumask *cpumask)
 {
-	int i, j, cpus;
+	int i, j, cpu_num, cpuid, max_cores_per_cpu;
 	unsigned long coreonline;
 
-	if (is_guest_or_emul()) {
-		coreonline = sw64_io_read(0, CORE_ONLINE);
-		for (i = 0; i < 64 ; i++) {
-			if (coreonline & (1UL << i))
-				cpumask_set_cpu(i, cpumask);
-		}
-	} else {
-		cpus = get_cpu_nums();
-		for (i = 0; i < cpus; i++) {
-			coreonline = sw64_io_read(i, CORE_ONLINE);
-			for (j = 0; j < 32 ; j++) {
-				if (coreonline & (1UL << j))
-					cpumask_set_cpu(i * 32 + j, cpumask);
+	cpu_num = get_cpu_nums();
+	cpuid = 0;
+	for (i = 0; i < cpu_num; i++) {
+		coreonline = sw64_io_read(i, CORE_ONLINE);
+		max_cores_per_cpu = MAX_CORES_PER_CPU;
+
+		if (is_guest_or_emul())
+			max_cores_per_cpu = 64;
+
+		for (j = 0; j < max_cores_per_cpu; j++) {
+			if (coreonline & (1UL << j)) {
+				__cpu_to_rcid[cpuid] = (i << DOMAIN_ID_SHIFT) | (j << CORE_ID_SHIFT);
+				cpuid++;
 			}
 		}
+	}
+
+	while (cpuid < NR_CPUS) {
+		__cpu_to_rcid[cpuid] = -1;
+		cpuid++;
 	}
 }
 
@@ -218,7 +223,7 @@ static void io_resume(void)
 
 static struct sw64_chip_init_ops chip_init_ops = {
 	.early_init = {
-		.setup_core_start = setup_core_start,
+		.setup_core_map = setup_core_map,
 		.get_node_mem = get_node_mem,
 	},
 };

@@ -16,18 +16,6 @@
 
 extern cpumask_t core_start;
 
-static inline unsigned char
-__hard_smp_processor_id(void)
-{
-	register unsigned char __r0 __asm__("$0");
-	__asm__ __volatile__(
-		"sys_call %1 #whami"
-		: "=r"(__r0)
-		: "i" (HMC_whami)
-		: "$1", "$22", "$23", "$24", "$25");
-	return __r0;
-}
-
 static inline unsigned long
 read_vpcr(void)
 {
@@ -56,7 +44,6 @@ struct smp_rcb_struct {
 
 #define INIT_SMP_RCB ((struct smp_rcb_struct *) __va(0x820000UL))
 
-#define hard_smp_processor_id()	__hard_smp_processor_id()
 
 #ifdef GENERATING_ASM_OFFSETS
 #define raw_smp_processor_id() (0)
@@ -64,17 +51,11 @@ struct smp_rcb_struct {
 #include <asm/asm-offsets.h>
 #define raw_smp_processor_id() (*((unsigned int *)((void *)current + TASK_CPU)))
 #endif
+#define hard_smp_processor_id()	cpu_to_rcid(raw_smp_processor_id())
 
 /* The map from sequential logical cpu number to hard cid.  */
 extern int __cpu_to_rcid[NR_CPUS];
 #define cpu_to_rcid(cpu)  __cpu_to_rcid[cpu]
-
-/*
- * Map from hard cid to sequential logical cpu number.  This will only
- * not be idempotent when cpus failed to come on-line.
- */
-extern int __rcid_to_cpu[NR_CPUS];
-#define rcid_to_cpu(cpu)  __rcid_to_cpu[cpu]
 #define cpu_physical_id(cpu)    __cpu_to_rcid[cpu]
 
 extern unsigned long tidle_pcb[NR_CPUS];
@@ -89,8 +70,10 @@ void __cpu_die(unsigned int cpu);
 #else /* CONFIG_SMP */
 #define hard_smp_processor_id()		0
 #define smp_call_function_on_cpu(func, info, wait, cpu)    ({ 0; })
-#define cpu_to_rcid(cpu)	((int)whami())
-#define rcid_to_cpu(rcid)	0
+/* The map from sequential logical cpu number to hard cid.  */
+extern int __cpu_to_rcid[NR_CPUS];
+#define cpu_to_rcid(cpu)  __cpu_to_rcid[0]
+#define cpu_physical_id(cpu)    __cpu_to_rcid[0]
 #endif /* CONFIG_SMP */
 
 #define NO_PROC_ID	(-1)
