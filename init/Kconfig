@@ -1015,6 +1015,15 @@ config QOS_SCHED_SMT_EXPELLER
 	  This feature enable online tasks to expel offline tasks
 	  on the smt sibling cpus, and exclusively occupy CPU resources.
 
+config QOS_SCHED_MULTILEVEL
+	bool "Multiple qos level task scheduling"
+	depends on QOS_SCHED
+	default n
+	help
+	  This feature enable multiple qos level on task scheduling.
+	  Expand the qos_level to [-2,2] to distinguish the tasks expected
+	  to be with extremely high or low priority level.
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED
