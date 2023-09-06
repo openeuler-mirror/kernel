@@ -121,7 +121,7 @@ unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 	}
 	pte = pte_offset_map(pmd, addr);
 	if (pte_present(*pte)) {
-		ret = (unsigned long)pfn_to_virt(pte_val(*pte) >> _PFN_SHIFT);
+		ret = (unsigned long)pfn_to_virt(pte_pfn(*pte));
 		pr_debug("addr = %#lx, pgd = %#lx, pud = %#lx, pmd = %#lx, pte = %#lx, ret = %#lx\n",
 				addr, *(unsigned long *)pgd, *(unsigned long *)pud,
 				*(unsigned long *)pmd, *(unsigned long *)pte, ret);

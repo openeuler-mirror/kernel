@@ -15,6 +15,7 @@
 #include <linux/mmzone.h>
 #include <linux/mm_types.h>
 
+#include <asm/memory.h>
 #include <asm/page.h>
 #include <asm/processor.h>	/* For TASK_SIZE */
 #include <asm/setup.h>
@@ -143,9 +144,9 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define __DIRTY_BITS	(_PAGE_DIRTY | _PAGE_KWE | _PAGE_UWE)
 #define __ACCESS_BITS	(_PAGE_ACCESSED | _PAGE_KRE | _PAGE_URE)
 
-
 #define _PFN_SHIFT	28
-#define _PFN_MASK	((-1UL) << _PFN_SHIFT)
+#define _PFN_BITS	(MAX_PHYSMEM_BITS - PAGE_SHIFT)
+#define _PFN_MASK	(GENMASK(_PFN_BITS - 1, 0) << _PFN_SHIFT)
 
 #define _PAGE_TABLE	(_PAGE_VALID | __DIRTY_BITS | __ACCESS_BITS)
 #define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL)
@@ -233,36 +234,37 @@ static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 	return pmd;
 }
 
-static inline unsigned long pmd_page_vaddr(pmd_t pmd)
-{
-	return (unsigned long)pfn_to_virt(pmd_val(pmd) >> _PFN_SHIFT);
-}
-
 /*
  * Conversion functions:  convert a page and protection to a page entry,
  * and a page entry and page directory to the page they refer to.
  */
 #define page_to_pa(page)	(page_to_pfn(page) << PAGE_SHIFT)
 
-#define pud_pfn(pud)		(pud_val(pud) >> _PFN_SHIFT)
-#define pmd_pfn(pmd)		(pmd_val(pmd) >> _PFN_SHIFT)
-#define pte_pfn(pte)		(pte_val(pte) >> _PFN_SHIFT)
+#define p4d_pfn(p4d)		((p4d_val(p4d) & _PFN_MASK) >> _PFN_SHIFT)
+#define pud_pfn(pud)		((pud_val(pud) & _PFN_MASK) >> _PFN_SHIFT)
+#define pmd_pfn(pmd)		((pmd_val(pmd) & _PFN_MASK) >> _PFN_SHIFT)
+#define pte_pfn(pte)		((pte_val(pte) & _PFN_MASK) >> _PFN_SHIFT)
 
+#define p4d_page(p4d)		pfn_to_page(p4d_pfn(p4d))
+#define pud_page(pud)		pfn_to_page(pud_pfn(pud))
+#define pmd_page(pmd)		pfn_to_page(pmd_pfn(pmd))
 #define pte_page(pte)		pfn_to_page(pte_pfn(pte))
-#define mk_pte(page, prot)	pfn_pte(page_to_pfn(page), prot)
 
-#define pmd_page(pmd)		(pfn_to_page(pmd_val(pmd) >> _PFN_SHIFT))
-#define pud_page(pud)		(pfn_to_page(pud_val(pud) >> _PFN_SHIFT))
-#define p4d_page(p4d)		(pfn_to_page(p4d_val(p4d) >> _PFN_SHIFT))
+#define mk_pte(page, prot)	pfn_pte(page_to_pfn(page), prot)
 
 static inline pud_t *p4d_pgtable(p4d_t p4d)
 {
-	return (pud_t *)pfn_to_virt(p4d_val(p4d) >> _PFN_SHIFT);
+	return (pud_t *)pfn_to_virt(p4d_pfn(p4d));
 }
 
 static inline pmd_t *pud_pgtable(pud_t pud)
 {
-	return (pmd_t *)pfn_to_virt(pud_val(pud) >> _PFN_SHIFT);
+	return (pmd_t *)pfn_to_virt(pud_pfn(pud));
+}
+
+static inline unsigned long pmd_page_vaddr(pmd_t pmd)
+{
+	return (unsigned long)pfn_to_virt(pmd_pfn(pmd));
 }
 
 static inline int pte_none(pte_t pte)
