@@ -148,4 +148,14 @@ struct udma_create_ctx_resp {
 	uint32_t max_jfs_sge;
 };
 
+struct flush_cqe_param {
+	uint32_t qpn;
+	uint32_t sq_producer_idx;
+};
+
+enum udma_user_ctl_handlers {
+	UDMA_USER_CTL_FLUSH_CQE,
+	UDMA_OPCODE_NUM,
+};
+
 #endif /* _UDMA_ABI_H */

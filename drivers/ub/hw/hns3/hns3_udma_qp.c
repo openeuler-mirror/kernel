@@ -1628,6 +1628,45 @@ void udma_cleanup_qp_table(struct udma_dev *dev)
 	kfree(dev->qp_table.idx_table.spare_idx);
 }
 
+int udma_flush_cqe(struct udma_dev *udma_dev, struct udma_qp *udma_qp,
+		   uint32_t sq_pi)
+{
+	struct udma_qp_context *qp_context;
+	struct udma_cmd_mailbox *mailbox;
+	struct udma_qp_context *qpc_mask;
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+	int ret;
+
+	udma_qp->state = QPS_ERR;
+
+	mailbox = udma_alloc_cmd_mailbox(udma_dev);
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
+	qp_context = (struct udma_qp_context *)mailbox->buf;
+	qpc_mask = (struct udma_qp_context *)mailbox->buf + 1;
+	memset(qpc_mask, 0xff, sizeof(struct udma_qp_context));
+
+	udma_reg_write(qp_context, QPC_QP_ST, udma_qp->state);
+	udma_reg_clear(qpc_mask, QPC_QP_ST);
+
+	udma_reg_write(qp_context, QPC_SQ_PRODUCER_IDX, sq_pi);
+	udma_reg_clear(qpc_mask, QPC_SQ_PRODUCER_IDX);
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, mailbox->dma, 0, udma_qp->qpn, UDMA_CMD_MODIFY_QPC);
+
+	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret)
+		dev_err(udma_dev->dev, "flush cqe qp(0x%llx) cmd error(%d).\n",
+			udma_qp->qpn, ret);
+
+	udma_free_cmd_mailbox(udma_dev, mailbox);
+
+	return ret;
+}
+
 void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type)
 {
 	struct device *dev = udma_dev->dev;
@@ -1642,6 +1681,18 @@ void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type)
 	if (!qp) {
 		dev_warn(dev, "Async event for bogus QP 0x%08x\n", qpn);
 		return;
+	}
+
+	if (event_type == UDMA_EVENT_TYPE_JFR_LAST_WQE_REACH ||
+	    event_type == UDMA_EVENT_TYPE_WQ_CATAS_ERROR ||
+	    event_type == UDMA_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR ||
+	    event_type == UDMA_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR) {
+		qp->state = QPS_ERR;
+
+		if (qp->sdb.virt_addr)
+			qp->sq.head = *(int *)(qp->sdb.virt_addr);
+
+		udma_flush_cqe(udma_dev, qp, qp->sq.head);
 	}
 
 	if (qp->event)

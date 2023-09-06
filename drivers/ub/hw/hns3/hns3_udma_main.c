@@ -317,6 +317,72 @@ static int udma_query_device_status(const struct ubcore_device *dev,
 	return 0;
 }
 
+int udma_user_ctl_flush_cqe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			    struct ubcore_user_ctl_out *out,
+			    struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct flush_cqe_param fcp;
+	struct udma_qp *udma_qp;
+	uint32_t sq_pi;
+	uint32_t qpn;
+	int ret;
+
+	ret = (int)copy_from_user(&fcp, (void *)in->addr,
+				  sizeof(struct flush_cqe_param));
+	if (ret != 0) {
+		dev_err(udma_device->dev,
+			"copy_from_user failed in flush_cqe, ret:%d.\n", ret);
+		return -EFAULT;
+	}
+	sq_pi = fcp.sq_producer_idx;
+	qpn = fcp.qpn;
+
+	xa_lock(&udma_device->qp_table.xa);
+	udma_qp = (struct udma_qp *)xa_load(&udma_device->qp_table.xa, qpn);
+	if (!udma_qp) {
+		dev_err(udma_device->dev, "get qp(0x%x) error.\n", qpn);
+		xa_unlock(&udma_device->qp_table.xa);
+		return -EINVAL;
+	}
+	refcount_inc(&udma_qp->refcount);
+	xa_unlock(&udma_device->qp_table.xa);
+
+	ret = udma_flush_cqe(udma_device, udma_qp, sq_pi);
+
+	if (refcount_dec_and_test(&udma_qp->refcount))
+		complete(&udma_qp->free);
+
+	return ret;
+}
+
+typedef int (*udma_user_ctl_opcode)(struct ubcore_ucontext *uctx,
+				    struct ubcore_user_ctl_in *in,
+				    struct ubcore_user_ctl_out *out,
+				    struct ubcore_udrv_priv *udrv_data);
+
+static udma_user_ctl_opcode g_udma_user_ctl_opcodes[] = {
+	[UDMA_USER_CTL_FLUSH_CQE] = udma_user_ctl_flush_cqe,
+};
+
+int udma_user_ctl(struct ubcore_user_ctl *k_user_ctl)
+{
+	struct ubcore_udrv_priv udrv_data = k_user_ctl->udrv_data;
+	struct ubcore_user_ctl_out out = k_user_ctl->out;
+	struct ubcore_ucontext *uctx = k_user_ctl->uctx;
+	struct ubcore_user_ctl_in in = k_user_ctl->in;
+	struct udma_dev *udma_device;
+
+	udma_device = to_udma_dev(uctx->ub_dev);
+	if (in.opcode >= UDMA_OPCODE_NUM ||
+	    !g_udma_user_ctl_opcodes[in.opcode]) {
+		dev_err(udma_device->dev, "bad user_ctl opcode: 0x%x.\n",
+			(int)in.opcode);
+		return -EINVAL;
+	}
+	return g_udma_user_ctl_opcodes[in.opcode](uctx, &in, &out, &udrv_data);
+}
+
 static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
@@ -347,6 +413,7 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.create_tp = udma_create_tp,
 	.modify_tp = udma_modify_tp,
 	.destroy_tp = udma_destroy_tp,
+	.user_ctl = udma_user_ctl,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)
