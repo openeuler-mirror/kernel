@@ -7689,7 +7689,7 @@ change:
 	 * other than SCHED_IDLE, the online task preemption and cpu resource
 	 * isolation will be invalid, so return -EINVAL in this case.
 	 */
-	if (unlikely(task_group(p)->qos_level == -1 && !idle_policy(policy))) {
+	if (unlikely(is_offline_level(task_group(p)->qos_level) && !idle_policy(policy))) {
 		retval = -EINVAL;
 		goto unlock;
 	}
@@ -10356,7 +10356,7 @@ static void sched_change_qos_group(struct task_struct *tsk, struct task_group *t
 	 */
 	if (!(tsk->flags & PF_EXITING) &&
 	    !task_group_is_autogroup(tg) &&
-	    (tg->qos_level == -1)) {
+	    (is_offline_level(tg->qos_level))) {
 		attr.sched_priority = 0;
 		attr.sched_policy = SCHED_IDLE;
 		attr.sched_nice = PRIO_TO_NICE(tsk->static_prio);
@@ -10385,7 +10385,7 @@ void sched_move_offline_task(struct task_struct *p)
 {
 	struct offline_args *args;
 
-	if (unlikely(task_group(p)->qos_level != -1))
+	if (unlikely(!is_offline_level(task_group(p)->qos_level)))
 		return;
 
 	args = kmalloc(sizeof(struct offline_args), GFP_ATOMIC);
@@ -11275,7 +11275,7 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 	struct cgroup_subsys_state *css = &tg->css;
 
 	tg->qos_level = qos_level;
-	if (qos_level == -1)
+	if (is_offline_level(qos_level))
 		policy = SCHED_IDLE;
 	else
 		policy = SCHED_NORMAL;
@@ -11297,19 +11297,27 @@ static int cpu_qos_write(struct cgroup_subsys_state *css,
 	if (!tg->se[0])
 		return -EINVAL;
 
-	if (qos_level != -1 && qos_level != 0)
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+	if (qos_level > QOS_LEVEL_HIGH_EX || qos_level < QOS_LEVEL_OFFLINE_EX)
+#else
+	if (qos_level != QOS_LEVEL_OFFLINE && qos_level != QOS_LEVEL_ONLINE)
+#endif
 		return -EINVAL;
 
 	if (tg->qos_level == qos_level)
 		goto done;
 
-	if (tg->qos_level == -1 && qos_level == 0)
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+	if (!is_normal_level(tg->qos_level))
+#else
+	if (tg->qos_level == QOS_LEVEL_OFFLINE && qos_level == QOS_LEVEL_ONLINE)
+#endif
 		return -EINVAL;
 
 	cpus_read_lock();
-	if (qos_level == -1)
+	if (is_offline_level(qos_level))
 		cfs_bandwidth_usage_inc();
-	else
+	else if (is_offline_level(tg->qos_level) && !is_offline_level(qos_level))
 		cfs_bandwidth_usage_dec();
 	cpus_read_unlock();
 

@@ -2069,6 +2069,15 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_thousand,
 	},
 #endif
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+	{
+		.procname	= "qos_level_weights",
+		.data		= &sysctl_qos_level_weights,
+		.maxlen		= 5*sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
 	{
 		.procname	= "max_rcu_stall_to_panic",
 		.data		= &sysctl_max_rcu_stall_to_panic,
