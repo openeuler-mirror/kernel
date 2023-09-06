@@ -1733,8 +1733,9 @@ again:
 	}
 }
 
-void generic_start_io_acct(struct request_queue *q, int op,
-			   unsigned long sectors, struct hd_struct *part)
+static void __generic_start_io_acct(struct request_queue *q, int op,
+				    unsigned long sectors,
+				    struct hd_struct *part, bool precise)
 {
 	const int sgrp = op_stat_group(op);
 	int cpu = part_stat_lock();
@@ -1743,16 +1744,33 @@ void generic_start_io_acct(struct request_queue *q, int op,
 		part_round_stats(q, cpu, part);
 	else
 		update_io_ticks(cpu, part, jiffies, false);
-	part_stat_inc(cpu, part, ios[sgrp]);
-	part_stat_add(cpu, part, sectors[sgrp], sectors);
+	if (!precise) {
+		part_stat_inc(cpu, part, ios[sgrp]);
+		part_stat_add(cpu, part, sectors[sgrp], sectors);
+	}
 	part_inc_in_flight(q, part, op_is_write(op));
 
 	part_stat_unlock();
 }
+
+void generic_start_io_acct(struct request_queue *q, int op,
+			   unsigned long sectors, struct hd_struct *part)
+{
+	__generic_start_io_acct(q, op, sectors, part, false);
+}
 EXPORT_SYMBOL(generic_start_io_acct);
 
-void generic_end_io_acct(struct request_queue *q, int req_op,
-			 struct hd_struct *part, unsigned long start_time)
+void generic_start_precise_io_acct(struct request_queue *q, int op,
+				   struct hd_struct *part)
+{
+	__generic_start_io_acct(q, op, 0, part, true);
+}
+EXPORT_SYMBOL(generic_start_precise_io_acct);
+
+static void __generic_end_io_acct(struct request_queue *q, int req_op,
+				  struct hd_struct *part,
+				  unsigned long start_time,
+				  unsigned long sectors, bool precise)
 {
 	unsigned long now = jiffies;
 	unsigned long duration = now - start_time;
@@ -1765,12 +1783,31 @@ void generic_end_io_acct(struct request_queue *q, int req_op,
 		update_io_ticks(cpu, part, now, true);
 		part_stat_add(cpu, part, time_in_queue, duration);
 	}
+	if (precise) {
+		part_stat_inc(cpu, part, ios[sgrp]);
+		part_stat_add(cpu, part, sectors[sgrp], sectors);
+	}
 	part_stat_add(cpu, part, nsecs[sgrp], jiffies_to_nsecs(duration));
 	part_dec_in_flight(q, part, op_is_write(req_op));
 
 	part_stat_unlock();
 }
+
+void generic_end_io_acct(struct request_queue *q, int req_op,
+			 struct hd_struct *part, unsigned long start_time)
+{
+	__generic_end_io_acct(q, req_op, part, start_time, 0, false);
+}
 EXPORT_SYMBOL(generic_end_io_acct);
+
+void generic_end_precise_io_acct(struct request_queue *q, int req_op,
+				 struct hd_struct *part,
+				 unsigned long start_time,
+				 unsigned long sectors)
+{
+	__generic_end_io_acct(q, req_op, part, start_time, sectors, true);
+}
+EXPORT_SYMBOL(generic_end_precise_io_acct);
 
 #if ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE
 void bio_flush_dcache_pages(struct bio *bi)
