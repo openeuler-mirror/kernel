@@ -24,7 +24,7 @@ struct numa_node_desc_t numa_nodes_desc[1];
  * empty_zero_page is a special page that is used for
  * zero-initialized data and COW.
  */
-struct page *empty_zero_page;
+unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_bss;
 EXPORT_SYMBOL(empty_zero_page);
 pg_data_t *node_data[MAX_NUMNODES] __read_mostly;
 EXPORT_SYMBOL(node_data);
@@ -120,12 +120,6 @@ void __init zone_sizes_init(void)
  */
 void __init paging_init(void)
 {
-	void *zero_page;
-
-	zero_page = __va(memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE));
-	pr_info("zero page start: %p\n", zero_page);
-	memset(zero_page, 0, PAGE_SIZE);
-	empty_zero_page = virt_to_page(zero_page);
 }
 
 void __init mem_detect(void)
