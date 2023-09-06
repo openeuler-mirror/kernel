@@ -2226,8 +2226,7 @@ static void drain_all_stock(struct mem_cgroup *root_memcg)
 
 		rcu_read_lock();
 		memcg = stock->cached;
-		if (memcg && stock->nr_pages &&
-		    mem_cgroup_is_descendant(memcg, root_memcg))
+		if (memcg && mem_cgroup_is_descendant(memcg, root_memcg))
 			flush = true;
 		rcu_read_unlock();
 
