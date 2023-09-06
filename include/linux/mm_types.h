@@ -851,10 +851,10 @@ struct mm_struct {
 		} lru_gen;
 #endif /* CONFIG_LRU_GEN */
 #ifdef CONFIG_GMEM
-	gm_as_t *gm_as;
+		gm_as_t *gm_as;
 #endif
 #if IS_ENABLED(CONFIG_KVM)
-	struct kvm *kvm;
+		struct kvm *kvm;
 #endif
 
 #if IS_ENABLED(CONFIG_SHARE_POOL)
