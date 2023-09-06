@@ -31,7 +31,7 @@ extern "C" {
 #ifdef DRV_VERSION
 #define VETH_VERSION	MICRO_TO_STR(DRV_VERSION)
 #else
-#define VETH_VERSION	"0.3.5"
+#define VETH_VERSION	"0.3.6"
 #endif
 
 #define MODULE_NAME	"veth"
