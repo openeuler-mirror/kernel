@@ -14,7 +14,7 @@ void save_processor_state(void)
 
 	vcb->ksp = rdksp();
 	vcb->usp = rdusp();
-	vcb->tid = rtid();
+	vcb->soft_tid = rtid();
 	vcb->ptbr = rdptbr();
 }
 
@@ -24,7 +24,7 @@ void restore_processor_state(void)
 
 	wrksp(vcb->ksp);
 	wrusp(vcb->usp);
-	wrtp(vcb->tid);
+	wrtp(vcb->soft_tid);
 	wrptbr(vcb->ptbr);
 	sflush();
 	tbiv();

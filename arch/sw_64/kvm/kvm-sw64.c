@@ -119,7 +119,7 @@ static void sw64_kvm_switch_vpn(struct kvm_vcpu *vcpu)
 	/* Always update vpn */
 	/* Just setup vcb, hardware CSR will be changed later in HMcode */
 	vcpu->arch.vcb.vpcr = ((vcpu->arch.vcb.vpcr) & (~(HARDWARE_VPN_MASK << 44))) | (vpn << 44);
-	vcpu->arch.vcb.dtb_pcr = ((vcpu->arch.vcb.dtb_pcr) & (~(HARDWARE_VPN_MASK << VPN_SHIFT))) | (vpn << VPN_SHIFT);
+	vcpu->arch.vcb.dtb_vpcr = ((vcpu->arch.vcb.dtb_vpcr) & (~(HARDWARE_VPN_MASK << VPN_SHIFT))) | (vpn << VPN_SHIFT);
 
 	/*
 	 * If vcpu migrate to a new physical cpu, the new physical cpu may keep
@@ -514,7 +514,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	vcpu->arch.tsk = current;
 
 	/* For guest kernel "sys_call HMC_whami", indicate virtual cpu id */
-	vcpu->arch.vcb.whami = vcpu->vcpu_id;
+	vcpu->arch.vcb.soft_cid = vcpu->vcpu_id;
 	vcpu->arch.vcb.vcpu_irq_disabled = 1;
 	vcpu->arch.pcpu_id = -1; /* force flush tlb for the first time */
 
@@ -526,7 +526,7 @@ int kvm_arch_vcpu_reset(struct kvm_vcpu *vcpu)
 	unsigned long addr = vcpu->kvm->arch.host_phys_addr;
 
 	hrtimer_cancel(&vcpu->arch.hrt);
-	vcpu->arch.vcb.whami = vcpu->vcpu_id;
+	vcpu->arch.vcb.soft_cid = vcpu->vcpu_id;
 	vcpu->arch.vcb.vcpu_irq_disabled = 1;
 	vcpu->arch.pcpu_id = -1; /* force flush tlb for the first time */
 	vcpu->arch.power_off = 0;
@@ -816,7 +816,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 				= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
 
 			/* synchronize the longtime of source and destination */
-			if (vcpu->arch.vcb.whami == 0) {
+			if (vcpu->arch.vcb.soft_cid == 0) {
 				result = sw64_io_read(0, LONG_TIME);
 				vcpu->arch.vcb.guest_longtime_offset = vcpu->arch.vcb.guest_longtime - result;
 				longtime_offset = vcpu->arch.vcb.guest_longtime_offset;
