@@ -152,7 +152,7 @@ extern void __init reserve_mem_for_pci(void);
 extern int chip_pcie_configure(struct pci_controller *hose);
 
 #define PCI_VENDOR_ID_JN		0x5656
-#define PCI_DEVICE_ID_CHIP3		0x3231
+#define PCI_DEVICE_ID_SW64_ROOT_BRIDGE	0x3231
 #define PCI_DEVICE_ID_JN_PCIESW		0x1000
 #define PCI_DEVICE_ID_JN_PCIEUSIP	0x1200
 #define PCI_DEVICE_ID_JN_PCIE2PCI	0x1314

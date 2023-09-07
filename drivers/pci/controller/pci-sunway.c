@@ -195,7 +195,7 @@ static void set_rc_piu(unsigned long node, unsigned long index)
 	write_rc_conf(node, index, RC_MISC_CONTROL_1, rc_misc_ctrl | 0x1);
 
 	/* fix up DEVICE_ID_VENDOR_ID register */
-	value = (PCI_DEVICE_ID_CHIP3 << 16) | PCI_VENDOR_ID_JN;
+	value = (PCI_DEVICE_ID_SW64_ROOT_BRIDGE << 16) | PCI_VENDOR_ID_JN;
 	write_rc_conf(node, index, RC_VENDOR_ID, value);
 
 	/* set PCI-E root class code */

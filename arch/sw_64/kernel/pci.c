@@ -88,7 +88,7 @@ static void fixup_root_complex(struct pci_dev *dev)
 	dev->no_msi = 1;
 }
 
-DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_CHIP3, fixup_root_complex);
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_SW64_ROOT_BRIDGE, fixup_root_complex);
 
 /* Just declaring that the power-of-ten prefixes are actually the
  * power-of-two ones doesn't make it true :)
