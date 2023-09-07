@@ -34,6 +34,7 @@ int pud_huge(pud_t pud)
 	return !pud_none(pud) &&
 		(pud_val(pud) & (_PAGE_PRESENT|_PAGE_LEAF)) != _PAGE_PRESENT;
 }
+EXPORT_SYMBOL(pud_huge);
 
 #ifdef CONFIG_ARCH_WANT_HUGE_PMD_SHARE
 #define want_pmd_share()	(1)

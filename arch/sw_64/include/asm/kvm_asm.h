@@ -12,6 +12,7 @@
 #define SW64_KVM_EXIT_IPI		14
 #define SW64_KVM_EXIT_STOP		16
 #define SW64_KVM_EXIT_RESTART		17
+#define SW64_KVM_EXIT_APT_FAULT		18
 #define SW64_KVM_EXIT_FATAL_ERROR	22
 #define SW64_KVM_EXIT_DEBUG		24
 
@@ -28,8 +29,12 @@
 	{14, "IPI" },		\
 	{16, "STOP" },		\
 	{17, "RESTART" },	\
+	{18, "APT_FAULT" },	\
 	{22, "FATAL_ERROR" },	\
 	{23, "MEMHOTPLUG" },	\
 	{24, "DEBUG" }
+
+
+#include <asm/csr.h>
 
 #endif /* _ASM_SW64_KVM_ASM_H */
