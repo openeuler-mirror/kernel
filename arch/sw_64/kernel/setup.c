@@ -49,6 +49,7 @@ EXPORT_SYMBOL(__cpu_to_rcid);
 
 DEFINE_PER_CPU(unsigned long, hard_node_id) = { 0 };
 
+#ifdef CONFIG_SUBARCH_C3B
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
 struct cma *sw64_kvm_cma;
 EXPORT_SYMBOL(sw64_kvm_cma);
@@ -58,6 +59,7 @@ static phys_addr_t kvm_mem_base;
 
 struct gen_pool *sw64_kvm_pool;
 EXPORT_SYMBOL(sw64_kvm_pool);
+#endif
 #endif
 
 static inline int phys_addr_valid(unsigned long addr)
@@ -734,6 +736,7 @@ static void __init reserve_mem_for_initrd(void)
 }
 #endif /* CONFIG_BLK_DEV_INITRD */
 
+#ifdef CONFIG_SUBARCH_C3B
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
 static int __init early_kvm_reserved_mem(char *p)
 {
@@ -755,6 +758,7 @@ void __init sw64_kvm_reserve(void)
 	kvm_cma_declare_contiguous(kvm_mem_base, kvm_mem_size, 0,
 			PAGE_SIZE, 0, "sw64_kvm_cma", &sw64_kvm_cma);
 }
+#endif
 #endif
 
 void __init
@@ -823,8 +827,10 @@ setup_arch(char **cmdline_p)
 	reserve_crashkernel();
 
 	/* Reserve large chunks of memory for use by CMA for KVM. */
+#ifdef CONFIG_SUBARCH_C3B
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
 	sw64_kvm_reserve();
+#endif
 #endif
 
 	sw64_numa_init();
@@ -1003,6 +1009,7 @@ static int __init sw64_of_init(void)
 core_initcall(sw64_of_init);
 #endif
 
+#ifdef CONFIG_SUBARCH_C3B
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
 static int __init sw64_kvm_pool_init(void)
 {
@@ -1046,4 +1053,5 @@ out:
 	return -ENOMEM;
 }
 core_initcall_sync(sw64_kvm_pool_init);
+#endif
 #endif

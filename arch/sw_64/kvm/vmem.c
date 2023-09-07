@@ -70,6 +70,7 @@ static void vmem_vm_close(struct vm_area_struct *vma)
 	size_t size;
 	struct vmem_info *info;
 
+#ifdef CONFIG_SUBARCH_C3B
 	info = vma->vm_private_data;
 	addr = info->start;
 	size = round_up(info->size, 8 << 20);
@@ -82,6 +83,7 @@ static void vmem_vm_close(struct vm_area_struct *vma)
 		}
 		kfree(info);
 	}
+#endif
 }
 
 const struct vm_operations_struct vmem_vm_ops = {
@@ -165,7 +167,7 @@ static struct miscdevice vmem_dev = {
 	.fops  = &vmem_fops,
 };
 
-static int __init vmem_init(void)
+int __init vmem_init(void)
 {
 	int err;
 
@@ -177,7 +179,7 @@ static int __init vmem_init(void)
 	return 0;
 }
 
-static void vmem_exit(void)
+void vmem_exit(void)
 {
 	misc_deregister(&vmem_dev);
 }

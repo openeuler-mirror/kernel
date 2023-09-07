@@ -44,7 +44,7 @@ obj-y += pci-noop.o
 endif
 
 ifdef CONFIG_KVM
-obj-y += kvm_cma.o
+obj-$(CONFIG_SUBARCH_C3B) += kvm_cma.o
 endif
 
 # Core logic support
