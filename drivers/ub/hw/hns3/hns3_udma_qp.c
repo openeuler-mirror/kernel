@@ -205,12 +205,12 @@ static enum udma_mtu to_udma_mtu(enum ubcore_mtu core_mtu)
 }
 
 static inline enum ubcore_mtu get_mtu(struct udma_qp *qp,
-				      const struct udma_modify_tp_attr *attr)
+				      const struct ubcore_tp_attr *attr)
 {
-	if (qp->qp_type == QPT_UD)
+	if (qp->qp_type == QPT_UD || attr == NULL)
 		return UBCORE_MTU_4096;
 
-	return attr->path_mtu;
+	return attr->mtu;
 }
 
 static inline int udma_mtu_enum_to_int(enum ubcore_mtu mtu)
@@ -254,6 +254,7 @@ static void udma_free_reorder_cq_buf(struct udma_dev *udma_dev,
 }
 
 static void edit_qpc_for_inline(struct udma_qp_context *context,
+				struct udma_qp_context *context_mask,
 				struct udma_qp *qp)
 {
 	struct udma_dev *udma_dev = qp->udma_device;
@@ -262,163 +263,123 @@ static void edit_qpc_for_inline(struct udma_qp_context *context,
 		udma_reg_write(context, QPC_CQEIE,
 			       !!(udma_dev->caps.flags &
 				UDMA_CAP_FLAG_CQE_INLINE));
+		udma_reg_clear(context_mask, QPC_CQEIE);
 	}
 }
 
-static void edit_qpc_for_ext(struct udma_qp_context *context,
-			     struct udma_qp *qp,
-			     const struct udma_modify_tp_attr *attr)
-{
-	struct udma_dev *udma_dev = qp->udma_device;
-	uint16_t dus_regval;
-	uint16_t aus_regval;
-	uint16_t real_range;
-
-	if (udma_dev->caps.oor_en) {
-		udma_reg_enable(&context->ext, QPCEX_OOR_EN);
-		udma_reg_write(&context->ext, QPCEX_REORDER_CAP,
-			       udma_dev->caps.reorder_cap);
-		udma_reg_write(&context->ext, QPCEX_ON_FLIGHT_SIZE_L,
-			       udma_dev->caps.onflight_size);
-		udma_reg_write(&context->ext, QPCEX_ON_FLIGHT_SIZE_H,
-			       udma_dev->caps.onflight_size >>
-			       QPCEX_ON_FLIGHT_SIZE_H_SHIFT);
-		udma_reg_write(&context->ext, QPCEX_DYN_AT,
-			       udma_dev->caps.dynamic_ack_timeout);
-		if (udma_dev->caps.flags & UDMA_CAP_FLAG_AR) {
-			real_range = (attr->udp_range +
-				      UDP_SRCPORT_RANGE_BASE) &
-				      UDP_SRCPORT_RANGE_SIZE_MASK;
-			dus_regval = attr->data_udp_start &
-				     GENMASK(real_range, 0);
-			aus_regval = attr->ack_udp_start &
-				     GENMASK(real_range, 0);
-
-			udma_reg_write(&context->ext, QPCEX_AR_EN, attr->ar_en);
-			udma_reg_write(&context->ext, QPCEX_DATA_UDP_SRCPORT_L,
-				       dus_regval);
-			udma_reg_write(&context->ext, QPCEX_DATA_UDP_SRCPORT_H,
-				       dus_regval >>
-				       QPCEX_DATA_UDP_SRCPORT_H_SHIFT);
-			udma_reg_write(&context->ext, QPCEX_ACK_UDP_SRCPORT,
-				       aus_regval);
-			udma_reg_write(&context->ext, QPCEX_UDP_SRCPORT_RANGE,
-				       attr->udp_range);
-		}
-		if (udma_dev->caps.reorder_cq_buffer_en &&
-		    qp->qp_attr.reorder_cq_addr) {
-			udma_reg_enable(&context->ext, QPCEX_REORDER_CQ_EN);
-			udma_reg_write(&context->ext, QPCEX_REORDER_CQ_ADDR_L,
-				       lower_32_bits(qp->qp_attr.reorder_cq_addr) >>
-				       QPCEX_REORDER_CQ_ADDR_SHIFT);
-			udma_reg_write(&context->ext, QPCEX_REORDER_CQ_ADDR_H,
-				       upper_32_bits(qp->qp_attr.reorder_cq_addr));
-			udma_reg_write(&context->ext, QPCEX_REORDER_CQ_SHIFT,
-				       udma_dev->caps.reorder_cq_shift);
-		}
-	}
-	udma_reg_write(&context->ext, QPCEX_RTT, QPCEX_RTT_INIT);
-	udma_reg_write(&context->ext, QPCEX_P_TYPE, QPCEX_P_TYPE_UDMA);
-}
-
-static void edit_qpc_for_db(struct udma_qp_context *context,
+static void edit_qpc_for_db(struct udma_qp_context *context, struct udma_qp_context *context_mask,
 			    struct udma_qp *qp)
 {
-	if (qp->en_flags & UDMA_QP_CAP_RQ_RECORD_DB)
+	if (qp->en_flags & UDMA_QP_CAP_RQ_RECORD_DB) {
 		udma_reg_enable(context, QPC_RQ_RECORD_EN);
+		udma_reg_clear(context_mask, QPC_RQ_RECORD_EN);
+	}
 
-	if (qp->en_flags & UDMA_QP_CAP_OWNER_DB)
+	if (qp->en_flags & UDMA_QP_CAP_OWNER_DB) {
 		udma_reg_enable(context, QPC_OWNER_MODE);
+		udma_reg_clear(context_mask, QPC_OWNER_MODE);
+	}
 }
 
 static void edit_qpc_for_srqn(struct udma_qp *qp,
-			      struct udma_qp_context *context)
+			      struct udma_qp_context *context,
+			      struct udma_qp_context *context_mask)
 {
 	if (qp->qp_attr.jfr) {
 		udma_reg_enable(context, QPC_SRQ_EN);
+		udma_reg_clear(context_mask, QPC_SRQ_EN);
+
 		udma_reg_write(context, QPC_SRQN, qp->qp_attr.jfr->jfrn);
+		udma_reg_clear(context_mask, QPC_SRQN);
 	}
 }
 
 static void edit_qpc_for_rxcqn(struct udma_qp *qp,
-			       struct udma_qp_context *context)
+			       struct udma_qp_context *context,
+			       struct udma_qp_context *context_mask)
 {
-	if (qp->recv_jfc)
+	if (qp->recv_jfc) {
 		udma_reg_write(context, QPC_RX_CQN, qp->recv_jfc->cqn);
-}
-
-static void edit_qpc_for_psn(const struct udma_modify_tp_attr *attr,
-			     struct udma_qp_context *context)
-{
-	udma_reg_write(context, QPC_RX_REQ_EPSN, attr->rq_psn);
-	udma_reg_write(context, QPC_RAQ_PSN, attr->rq_psn - 1);
-	udma_reg_write(context, QPC_SQ_CUR_PSN, attr->sq_psn);
-	udma_reg_write(context, QPC_SQ_MAX_PSN, attr->sq_psn);
+		udma_reg_clear(context_mask, QPC_RX_CQN);
+	}
 }
 
 static void edit_qpc_for_retransmission_parm(struct udma_dev *udma_device,
 					     struct udma_qp *qp,
 					     const struct udma_modify_tp_attr *attr,
-					     struct udma_qp_context *context)
+					     struct udma_qp_context *context,
+					     struct udma_qp_context *context_mask)
 {
 	if (qp->qp_type != QPT_UD) {
 		udma_reg_write(context, QPC_MIN_RNR_TIME,
 			       attr->min_rnr_timer);
+		udma_reg_clear(context_mask, QPC_MIN_RNR_TIME);
+
 		udma_reg_write(context, QPC_RETRY_CNT,
 			       attr->retry_cnt);
+		udma_reg_clear(context_mask, QPC_RETRY_CNT);
+
 		udma_reg_write(context, QPC_RETRY_NUM_INIT,
 			       attr->retry_cnt);
+		udma_reg_clear(context_mask, QPC_RETRY_NUM_INIT);
+
 		udma_reg_write(context, QPC_RNR_CNT,
 			       attr->rnr_retry);
+		udma_reg_clear(context_mask, QPC_RNR_CNT);
+
 		udma_reg_write(context, QPC_RNR_NUM_INIT,
 			       attr->rnr_retry);
+		udma_reg_clear(context_mask, QPC_RNR_NUM_INIT);
 
-		if (check_qp_timeout_cfg_range(udma_device, &attr->ack_timeout))
+		if (check_qp_timeout_cfg_range(udma_device, &attr->ack_timeout)) {
 			udma_reg_write(context, QPC_AT, attr->ack_timeout);
+			udma_reg_clear(context_mask, QPC_AT);
+		}
 	}
 }
 
 static void edit_qpc_for_write(struct udma_qp *qp,
-			       struct udma_qp_context *context)
+			       struct udma_qp_context *context,
+			       struct udma_qp_context *context_mask)
 {
 	udma_reg_enable(context, QPC_FLUSH_EN);
+	udma_reg_clear(context_mask, QPC_FLUSH_EN);
+
 	udma_reg_enable(context, QPC_AW_EN);
+	udma_reg_clear(context_mask, QPC_AW_EN);
+
 	udma_reg_enable(context, QPC_WN_EN);
+	udma_reg_clear(context_mask, QPC_WN_EN);
+
 	udma_reg_enable(context, QPC_RMT_E2E);
+	udma_reg_clear(context_mask, QPC_RMT_E2E);
+
 	udma_reg_write(context, QPC_SIG_TYPE, SIGNAL_REQ_WR);
+	udma_reg_clear(context_mask, QPC_SIG_TYPE);
 }
 
 static void edit_qpc_for_receive(struct udma_qp *qp,
 				 const struct udma_modify_tp_attr *attr,
-				 struct udma_qp_context *context)
+				 struct udma_qp_context *context,
+				 struct udma_qp_context *context_mask)
 {
-	uint8_t lp_pktn_ini;
 	uint8_t *dmac;
-
-	udma_reg_write(context, QPC_DQPN, attr->dest_qp_num);
 
 	dmac = (uint8_t *)attr->dmac;
 	memcpy(&context->dmac, dmac, sizeof(uint32_t));
 	udma_reg_write(context, QPC_DMAC_L, *((uint32_t *)(&dmac[0])));
+	udma_reg_clear(context_mask, QPC_DMAC_L);
+
 	udma_reg_write(context, QPC_DMAC_H,
 			*((uint16_t *)(&dmac[QPC_DMAC_H_IDX])));
-
-	qp->ubcore_path_mtu = get_mtu(qp, attr);
-	qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
-	udma_reg_write(context, QPC_MTU, qp->path_mtu);
-
-	/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 16KB */
-	lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / udma_mtu_enum_to_int(qp->path_mtu));
-
-	udma_reg_write(context, QPC_LP_PKTN_INI, lp_pktn_ini);
-
-	/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
-	udma_reg_write(context, QPC_ACK_REQ_FREQ, lp_pktn_ini);
+	udma_reg_clear(context_mask, QPC_DMAC_H);
 
 	context->rq_rnr_timer = 0;
+	context_mask->rq_rnr_timer = 0;
 
 	/* rocee send 2^lp_sgen_ini segs every time */
 	udma_reg_write(context, QPC_LP_SGEN_INI, SGEN_INI_VALUE);
+	udma_reg_clear(context_mask, QPC_LP_SGEN_INI);
 }
 
 static int modify_qp_reset_to_rtr(struct udma_qp *qp,
@@ -429,37 +390,41 @@ static int modify_qp_reset_to_rtr(struct udma_qp *qp,
 	struct udma_dev *udma_device = qp->udma_device;
 
 	udma_reg_write(context, QPC_RRE, 1);
+	udma_reg_clear(context_mask, QPC_RRE);
+
 	udma_reg_write(context, QPC_RWE, 1);
+	udma_reg_clear(context_mask, QPC_RWE);
 
 	udma_reg_write(context, QPC_TST, qp->qp_type);
+	udma_reg_clear(context_mask, QPC_TST);
 
 	udma_reg_write(context, QPC_RQWS, ilog2(qp->rq.max_gs));
+	udma_reg_clear(context_mask, QPC_RQWS);
 
 	/* No VLAN need to set 0xFFF */
 	udma_reg_write(context, QPC_VLAN_ID, 0xfff);
+	udma_reg_clear(context_mask, QPC_VLAN_ID);
 
-	edit_qpc_for_db(context, qp);
+	edit_qpc_for_db(context, context_mask, qp);
 
-	edit_qpc_for_inline(context, qp);
+	edit_qpc_for_inline(context, context_mask, qp);
 
-	edit_qpc_for_ext(context, qp, attr);
+	udma_reg_write(&context->ext, QPCEX_P_TYPE, QPCEX_P_TYPE_UDMA);
+	udma_reg_clear(&context_mask->ext, QPCEX_P_TYPE);
 
-	edit_qpc_for_srqn(qp, context);
+	edit_qpc_for_srqn(qp, context, context_mask);
 
-	edit_qpc_for_psn(attr, context);
+	edit_qpc_for_retransmission_parm(udma_device, qp, attr, context, context_mask);
 
-	edit_qpc_for_retransmission_parm(udma_device, qp, attr, context);
-
-	edit_qpc_for_rxcqn(qp, context);
+	edit_qpc_for_rxcqn(qp, context, context_mask);
 
 	/*
 	 * Enable atomic WRITE and persistence WRITE and Write With Notify
 	 * operations in QPC when modify_qp_init_to_rtr.
 	 */
-	edit_qpc_for_write(qp, context);
+	edit_qpc_for_write(qp, context, context_mask);
 
-	edit_qpc_for_receive(qp, attr, context);
-
+	edit_qpc_for_receive(qp, attr, context, context_mask);
 	return 0;
 }
 
@@ -489,40 +454,161 @@ static int modify_qp_rtr_to_rts(struct udma_qp *qp,
 	return 0;
 }
 
-static int udma_set_opt_fields(struct udma_qp *qp,
-				const struct udma_modify_tp_attr *attr,
-				struct udma_qp_context *context,
-				struct udma_qp_context *context_mask)
+static void udma_set_spray_field(struct udma_qp *qp,
+				 const struct ubcore_tp_attr *attr,
+				 union ubcore_tp_attr_mask ubcore_mask,
+				 struct udma_qp_context *context,
+				 struct udma_qp_context *context_mask)
 {
-	int ret = 0;
+	struct udma_dev *udma_dev = qp->udma_device;
+	struct udma_modify_tp_attr *m_attr;
+	uint16_t dus_regval;
+	uint16_t aus_regval;
+	uint16_t real_range;
+
+	m_attr = qp->m_attr;
+	real_range = (m_attr->udp_range +
+			UDP_SRCPORT_RANGE_BASE) &
+			UDP_SRCPORT_RANGE_SIZE_MASK;
+	dus_regval = m_attr->data_udp_start &
+			GENMASK(real_range, 0);
+	aus_regval = m_attr->ack_udp_start &
+			GENMASK(real_range, 0);
+
+	udma_reg_enable(&context->ext, QPCEX_AR_EN);
+	udma_reg_clear(&context_mask->ext, QPCEX_AR_EN);
+
+	udma_reg_write(&context->ext, QPCEX_ACK_UDP_SRCPORT,
+			aus_regval);
+	udma_reg_clear(&context_mask->ext, QPCEX_ACK_UDP_SRCPORT);
+
+	udma_reg_write(&context->ext, QPCEX_DATA_UDP_SRCPORT_L,
+			dus_regval);
+	udma_reg_clear(&context_mask->ext, QPCEX_DATA_UDP_SRCPORT_L);
+
+	udma_reg_write(&context->ext, QPCEX_DATA_UDP_SRCPORT_H,
+			dus_regval >>
+			QPCEX_DATA_UDP_SRCPORT_H_SHIFT);
+	udma_reg_clear(&context_mask->ext, QPCEX_DATA_UDP_SRCPORT_H);
+
+	udma_reg_write(&context->ext, QPCEX_UDP_SRCPORT_RANGE,
+		m_attr->udp_range);
+	udma_reg_clear(&context_mask->ext, QPCEX_UDP_SRCPORT_RANGE);
+
+	if (udma_dev->caps.reorder_cq_buffer_en &&
+		qp->qp_attr.reorder_cq_addr) {
+		udma_reg_enable(&context->ext, QPCEX_REORDER_CQ_EN);
+		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_EN);
+
+		udma_reg_write(&context->ext, QPCEX_REORDER_CQ_ADDR_L,
+			lower_32_bits(qp->qp_attr.reorder_cq_addr) >>
+			QPCEX_REORDER_CQ_ADDR_SHIFT);
+		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_ADDR_L);
+
+		udma_reg_write(&context->ext, QPCEX_REORDER_CQ_ADDR_H,
+			upper_32_bits(qp->qp_attr.reorder_cq_addr));
+		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_ADDR_H);
+
+		udma_reg_write(&context->ext, QPCEX_REORDER_CQ_SHIFT,
+			udma_dev->caps.reorder_cq_shift);
+		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_SHIFT);
+	}
+}
+
+static void udma_set_oor_field(struct udma_qp *qp,
+			       const struct ubcore_tp_attr *attr,
+			       union ubcore_tp_attr_mask ubcore_mask,
+			       struct udma_qp_context *context,
+			       struct udma_qp_context *context_mask)
+{
+	struct udma_dev *udma_dev = qp->udma_device;
+
+	udma_reg_enable(&context->ext, QPCEX_OOR_EN);
+	udma_reg_clear(&context_mask->ext, QPCEX_OOR_EN);
+
+	udma_reg_write(&context->ext, QPCEX_REORDER_CAP,
+			udma_dev->caps.reorder_cap);
+	udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CAP);
+
+	udma_reg_write(&context->ext, QPCEX_ON_FLIGHT_SIZE_L,
+			udma_dev->caps.onflight_size);
+	udma_reg_clear(&context_mask->ext, QPCEX_ON_FLIGHT_SIZE_L);
+
+	udma_reg_write(&context->ext, QPCEX_ON_FLIGHT_SIZE_H,
+			udma_dev->caps.onflight_size >>
+			QPCEX_ON_FLIGHT_SIZE_H_SHIFT);
+	udma_reg_clear(&context_mask->ext, QPCEX_ON_FLIGHT_SIZE_H);
+
+	udma_reg_write(&context->ext, QPCEX_DYN_AT,
+			udma_dev->caps.dynamic_ack_timeout);
+	udma_reg_clear(&context_mask->ext, QPCEX_DYN_AT);
+}
+
+static void udma_set_opt_fields(struct udma_qp *qp,
+			       const struct ubcore_tp_attr *attr,
+			       union ubcore_tp_attr_mask ubcore_mask,
+			       struct udma_qp_context *context,
+			       struct udma_qp_context *context_mask)
+{
+	struct udma_dev *udma_dev = qp->udma_device;
+	uint8_t lp_pktn_ini;
 
 	if (attr == NULL)
-		goto out;
+		return;
 
-	if (attr->max_dest_rd_atomic) {
-		udma_reg_write(context, QPC_RR_MAX,
-			       fls(attr->max_dest_rd_atomic - 1));
-		udma_reg_clear(context_mask, QPC_RR_MAX);
+	if (ubcore_mask.bs.flag && attr->flag.bs.oor_en && udma_dev->caps.oor_en)
+		udma_set_oor_field(qp, attr, ubcore_mask, context, context_mask);
+
+	if (ubcore_mask.bs.flag && attr->flag.bs.spray_en &&
+		(udma_dev->caps.flags & UDMA_CAP_FLAG_AR))
+		udma_set_spray_field(qp, attr, ubcore_mask, context, context_mask);
+
+	if (ubcore_mask.bs.peer_tpn) {
+		udma_reg_write(context, QPC_DQPN, attr->peer_tpn);
+		udma_reg_clear(context_mask, QPC_DQPN);
 	}
 
-	if (attr->max_rd_atomic) {
-		udma_reg_write(context, QPC_SR_MAX,
-			       fls(attr->max_rd_atomic - 1));
-		udma_reg_clear(context_mask, QPC_SR_MAX);
+	if (ubcore_mask.bs.tx_psn) {
+		udma_reg_write(context, QPC_RX_ACK_EPSN, attr->tx_psn);
+		udma_reg_write(context, QPC_RETRY_MSG_PSN_L, attr->tx_psn);
+		udma_reg_write(context, QPC_RETRY_MSG_PSN_H,
+				attr->tx_psn >> RETRY_MSG_PSN_H_OFFSET);
+		udma_reg_write(context, QPC_RETRY_MSG_FPKT_PSN, attr->tx_psn);
+		udma_reg_write(context, QPC_SQ_CUR_PSN, attr->tx_psn);
+		udma_reg_write(context, QPC_SQ_MAX_PSN, attr->tx_psn);
+
+		udma_reg_clear(context_mask, QPC_RX_ACK_EPSN);
+		udma_reg_clear(context_mask, QPC_RETRY_MSG_PSN_L);
+		udma_reg_clear(context_mask, QPC_RETRY_MSG_PSN_H);
+		udma_reg_clear(context_mask, QPC_RETRY_MSG_FPKT_PSN);
+		udma_reg_clear(context_mask, QPC_SQ_CUR_PSN);
+		udma_reg_clear(context_mask, QPC_SQ_MAX_PSN);
 	}
 
-	udma_reg_write(context, QPC_RX_ACK_EPSN, attr->sq_psn);
-	udma_reg_write(context, QPC_RETRY_MSG_PSN_H, attr->sq_psn);
-	udma_reg_write(context, QPC_RETRY_NUM_INIT, attr->retry_cnt);
-	udma_reg_write(context, QPC_RETRY_MSG_FPKT_PSN, attr->sq_psn);
+	if (ubcore_mask.bs.rx_psn) {
+		udma_reg_write(context, QPC_RX_REQ_EPSN, attr->rx_psn);
+		udma_reg_write(context, QPC_RAQ_PSN, attr->rx_psn - 1);
 
-	udma_reg_clear(context_mask, QPC_RX_ACK_EPSN);
-	udma_reg_clear(context_mask, QPC_RETRY_MSG_PSN_H);
-	udma_reg_clear(context_mask, QPC_RETRY_NUM_INIT);
-	udma_reg_clear(context_mask, QPC_RETRY_MSG_FPKT_PSN);
+		udma_reg_clear(context_mask, QPC_RX_REQ_EPSN);
+		udma_reg_clear(context_mask, QPC_RAQ_PSN);
+	}
 
-out:
-	return ret;
+	if (ubcore_mask.bs.mtu) {
+		qp->ubcore_path_mtu = get_mtu(qp, attr);
+		qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
+		udma_reg_write(context, QPC_MTU, qp->path_mtu);
+		udma_reg_clear(context_mask, QPC_MTU);
+
+		/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 16KB */
+		lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / udma_mtu_enum_to_int(qp->path_mtu));
+
+		udma_reg_write(context, QPC_LP_PKTN_INI, lp_pktn_ini);
+		udma_reg_clear(context_mask, QPC_LP_PKTN_INI);
+
+		/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
+		udma_reg_write(context, QPC_ACK_REQ_FREQ, lp_pktn_ini);
+		udma_reg_clear(context_mask, QPC_ACK_REQ_FREQ);
+	}
 }
 
 static int udma_set_abs_fields(struct udma_qp *qp,
@@ -536,7 +622,6 @@ static int udma_set_abs_fields(struct udma_qp *qp,
 	int ret = 0;
 
 	if (curr_state == QPS_RESET && new_state == QPS_RTR) {
-		memset(context_mask, 0, udma_device->caps.qpc_sz);
 		ret = modify_qp_reset_to_rtr(qp, attr, context, context_mask);
 		if (ret) {
 			dev_err(udma_device->dev,
@@ -544,7 +629,6 @@ static int udma_set_abs_fields(struct udma_qp *qp,
 			goto out;
 		}
 	} else if (curr_state == QPS_RESET && new_state == QPS_RTS) {
-		memset(context_mask, 0, udma_device->caps.qpc_sz);
 		ret = modify_qp_reset_to_rtr(qp, attr, context, context_mask);
 		if (ret) {
 			dev_err(udma_device->dev,
@@ -570,8 +654,31 @@ out:
 	return ret;
 }
 
+static void udma_set_um_attr(struct udma_qp *qp,
+			    struct udma_qp_context *context,
+			    struct udma_qp_context *context_mask)
+{
+	uint8_t lp_pktn_ini;
+
+	qp->ubcore_path_mtu = get_mtu(qp, NULL);
+	qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
+	udma_reg_write(context, QPC_MTU, qp->path_mtu);
+	udma_reg_clear(context_mask, QPC_MTU);
+
+	/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 16KB */
+	lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / udma_mtu_enum_to_int(qp->path_mtu));
+
+	udma_reg_write(context, QPC_LP_PKTN_INI, lp_pktn_ini);
+	udma_reg_clear(context_mask, QPC_LP_PKTN_INI);
+
+	/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
+	udma_reg_write(context, QPC_ACK_REQ_FREQ, lp_pktn_ini);
+	udma_reg_clear(context_mask, QPC_ACK_REQ_FREQ);
+}
+
 int udma_modify_qp_common(struct udma_qp *qp,
-			  const struct udma_modify_tp_attr *attr,
+			  const struct ubcore_tp_attr *attr,
+			  union ubcore_tp_attr_mask ubcore_mask,
 			  enum udma_qp_state curr_state,
 			  enum udma_qp_state new_state)
 {
@@ -581,20 +688,19 @@ int udma_modify_qp_common(struct udma_qp *qp,
 	struct udma_qp_context *context_mask = ctx + 1;
 	int ret = 0;
 
+	memset(context, 0, udma_device->caps.qpc_sz);
 	memset(context_mask, 0xff, udma_device->caps.qpc_sz);
 	if (new_state != QPS_RESET) {
-		ret = udma_set_abs_fields(qp, attr, curr_state, new_state,
+		ret = udma_set_abs_fields(qp, qp->m_attr, curr_state, new_state,
 					  context, context_mask);
 		if (ret)
 			goto out;
 	}
 
-	ret = udma_set_opt_fields(qp, attr, context, context_mask);
-	if (ret) {
-		dev_err(udma_device->dev, "failed to set option fields, ret = %d.\n",
-			ret);
-		goto out;
-	}
+	if (qp->qp_type == QPT_UD)
+		udma_set_um_attr(qp, context, context_mask);
+
+	udma_set_opt_fields(qp, attr, ubcore_mask, context, context_mask);
 
 	udma_reg_write(context, QPC_INV_CREDIT, (!!qp->qp_attr.jfr) ? 1 : 0);
 	udma_reg_clear(context_mask, QPC_INV_CREDIT);
@@ -602,7 +708,7 @@ int udma_modify_qp_common(struct udma_qp *qp,
 	udma_reg_write(context, QPC_QP_ST, new_state);
 	udma_reg_clear(context_mask, QPC_QP_ST);
 
-	udma_set_path(attr, context, context_mask);
+	udma_set_path(qp->m_attr, context, context_mask);
 
 	udma_reg_write(&context->ext, QPCEX_P_TYPE, QPCEX_P_TYPE_UDMA);
 	udma_reg_clear(&context_mask->ext, QPCEX_P_TYPE);
@@ -1473,6 +1579,7 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata)
 {
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
+	struct udma_qp_context ctx[2] = {0};
 	struct device *dev = udma_dev->dev;
 	struct udma_create_tp_ucmd ucmd;
 	struct udma_create_tp_resp resp;
@@ -1553,6 +1660,12 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 
 	refcount_set(&qp->refcount, 1);
 	init_completion(&qp->free);
+
+	ret = udma_pass_qpc_to_hw(udma_dev, ctx, ctx+1, qp);
+	if (ret) {
+		dev_err(dev, "failed to pass QPC to HW, ret = %d.\n", ret);
+		goto err_copy;
+	}
 
 	return 0;
 

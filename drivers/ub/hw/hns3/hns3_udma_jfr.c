@@ -395,6 +395,7 @@ static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 static int udma_modify_jfr_um_qpc(struct udma_dev *dev, struct udma_jfr *jfr,
 				  enum udma_qp_state target_state)
 {
+	union ubcore_tp_attr_mask ubcore_attr_mask;
 	struct udma_modify_tp_attr attr = {};
 	struct udma_qp *qp = jfr->um_qp;
 	int ret;
@@ -404,7 +405,10 @@ static int udma_modify_jfr_um_qpc(struct udma_dev *dev, struct udma_jfr *jfr,
 	qp->qp_attr.jfr = jfr;
 	qp->recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
 	qp->send_jfc = NULL;
-	ret = udma_modify_qp_common(qp, &attr, jfr->um_qp->state, target_state);
+	ubcore_attr_mask.value = 0;
+	qp->m_attr = &attr;
+
+	ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, jfr->um_qp->state, target_state);
 	if (ret)
 		dev_err(dev->dev, "failed to modify qpc to RTR.\n");
 

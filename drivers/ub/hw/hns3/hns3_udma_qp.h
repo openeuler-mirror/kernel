@@ -27,6 +27,7 @@
 #define QPC_DMAC_H_IDX 4
 #define UDP_RANGE_BASE 8
 #define UDMA_SQ_WQE_SHIFT 6
+#define RETRY_MSG_PSN_H_OFFSET 16
 
 struct udma_qp_context_ex {
 	uint32_t data[64];
@@ -101,10 +102,10 @@ struct udma_qp_context {
 #define QPC_OWNER_MODE QPC_FIELD_LOC(1536, 1536)
 #define QPC_SQ_MAX_PSN QPC_FIELD_LOC(1567, 1544)
 #define QPC_RMT_E2E QPC_FIELD_LOC(1660, 1660)
-#define QPC_SR_MAX QPC_FIELD_LOC(1663, 1661)
 #define QPC_RETRY_NUM_INIT QPC_FIELD_LOC(1690, 1688)
 #define QPC_RETRY_CNT QPC_FIELD_LOC(1695, 1693)
 #define QPC_RETRY_MSG_MSN QPC_FIELD_LOC(1743, 1728)
+#define QPC_RETRY_MSG_PSN_L QPC_FIELD_LOC(1759, 1744)
 #define QPC_RETRY_MSG_PSN_H QPC_FIELD_LOC(1767, 1760)
 #define QPC_RETRY_MSG_FPKT_PSN QPC_FIELD_LOC(1791, 1768)
 #define QPC_RX_SQ_CUR_BLK_ADDR_L QPC_FIELD_LOC(1823, 1792)
@@ -266,12 +267,14 @@ struct udma_qp {
 	uint8_t			priority;
 	bool			no_free_wqe_buf;
 	bool			force_free_wqe_buf;
+	struct udma_modify_tp_attr *m_attr;
 };
 
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))
 
 int udma_modify_qp_common(struct udma_qp *qp,
-			  const struct udma_modify_tp_attr *attr,
+			  const struct ubcore_tp_attr *attr,
+			  union ubcore_tp_attr_mask ubcore_mask,
 			  enum udma_qp_state curr_state,
 			  enum udma_qp_state new_state);
 int udma_fill_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,

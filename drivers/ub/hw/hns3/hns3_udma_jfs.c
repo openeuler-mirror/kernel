@@ -39,6 +39,7 @@ static int init_jfs_cfg(struct udma_dev *dev, struct udma_jfs *jfs,
 static int udma_modify_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 				 enum udma_qp_state target_state)
 {
+	union ubcore_tp_attr_mask ubcore_attr_mask;
 	struct udma_modify_tp_attr m_attr = {};
 	struct udma_qp *qp;
 	int ret;
@@ -52,7 +53,10 @@ static int udma_modify_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 
 	m_attr.path_mtu = UBCORE_MTU_4096;
 	m_attr.hop_limit = MAX_HOP_LIMIT;
-	ret = udma_modify_qp_common(qp, &m_attr, qp->state, target_state);
+	ubcore_attr_mask.value = 0;
+	qp->m_attr = &m_attr;
+
+	ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, qp->state, target_state);
 	if (ret)
 		dev_err(dev->dev, "failed to modify qpc to RTS.\n");
 

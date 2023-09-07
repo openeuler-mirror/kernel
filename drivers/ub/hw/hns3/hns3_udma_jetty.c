@@ -67,6 +67,7 @@ static void udma_fill_jetty_um_qp_attr(struct udma_dev *dev,
 static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 				enum udma_qp_state target_state)
 {
+	union ubcore_tp_attr_mask ubcore_attr_mask;
 	struct udma_modify_tp_attr m_attr = {};
 	struct udma_qp *qp;
 	int ret;
@@ -78,8 +79,10 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 
 	m_attr.path_mtu = UBCORE_MTU_4096;
 	m_attr.hop_limit = MAX_HOP_LIMIT;
+	ubcore_attr_mask.value = 0;
+	qp->m_attr = &m_attr;
 
-	ret = udma_modify_qp_common(qp, &m_attr, jetty->qp.state, target_state);
+	ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, jetty->qp.state, target_state);
 	if (ret)
 		dev_err(dev->dev, "failed to modify qpc to RTS in Jetty.\n");
 

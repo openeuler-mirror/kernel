@@ -48,10 +48,9 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 		return NULL;
 
 	memcpy(m_attr->dmac, tp->peer_net_addr.mac, sizeof(m_attr->dmac));
-
-	m_attr->max_dest_rd_atomic = 0;
-	m_attr->max_rd_atomic = 0;
-	m_attr->rq_psn = tp->rx_psn;
+	m_attr->data_udp_start = tp->data_udp_start;
+	m_attr->ack_udp_start = tp->ack_udp_start;
+	m_attr->udp_range = tp->udp_range;
 	m_attr->hop_limit = MAX_HOP_LIMIT;
 	m_attr->sgid_index = 0;
 	*(uint32_t *)(&m_attr->dipv4) = *(uint32_t *)(tp->peer_eid.raw +
@@ -74,17 +73,6 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 			m_attr->priority = qp->priority;
 		}
 	}
-
-	if (mask.bs.peer_tpn)
-		m_attr->dest_qp_num = attr->peer_tpn;
-
-	if (mask.bs.tx_psn)
-		m_attr->sq_psn = attr->tx_psn;
-	else
-		m_attr->sq_psn = tp->tx_psn;
-
-	if (mask.bs.mtu)
-		m_attr->path_mtu = attr->mtu;
 
 	return m_attr;
 }
@@ -121,9 +109,10 @@ int udma_modify_tp(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
 	qp->udma_device = udma_device;
 	qp->send_jfc = qp->qp_attr.send_jfc;
 	qp->recv_jfc = qp->qp_attr.recv_jfc;
+	qp->m_attr = m_attr;
 	if (attr)
 		qp->ubcore_path_mtu = attr->mtu;
-	ret = udma_modify_qp_common(qp, m_attr, curr_state, target_state);
+	ret = udma_modify_qp_common(qp, attr, mask, curr_state, target_state);
 	kfree(m_attr);
 error:
 	return ret;
@@ -177,6 +166,7 @@ void *udma_erase_tp(struct udma_tp *udma_tp)
 int udma_destroy_tp(struct ubcore_tp *tp)
 {
 	struct udma_dev *udma_device = to_udma_dev(tp->ub_dev);
+	union ubcore_tp_attr_mask ubcore_attr_mask;
 	enum udma_qp_state curr_state;
 	struct udma_tp *udma_tp;
 	struct udma_qp *qp;
@@ -191,9 +181,11 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 
 	qp = &udma_tp->qp;
 	curr_state = to_udma_qp_state(tp->state);
+	ubcore_attr_mask.value = 0;
+	qp->m_attr = NULL;
 
 	if (qp->state != QPS_RESET) {
-		ret = udma_modify_qp_common(qp, NULL, curr_state, QPS_RESET);
+		ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, curr_state, QPS_RESET);
 		if (ret) {
 			dev_err(udma_device->dev,
 				"Modify QP 0x%06llx to Reset failed(%d).\n",
