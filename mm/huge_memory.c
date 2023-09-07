@@ -834,10 +834,8 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		}
 		xa_unlock(vma->vm_obj->logical_page_table);
 		mutex_lock(&gm_mapping->lock);
-		if (unlikely(!pmd_none(*vmf->pmd))) {
-			mutex_unlock(&gm_mapping->lock);
+		if (unlikely(!pmd_none(*vmf->pmd)))
 			goto gm_mapping_release;
-		}
 	}
 #endif
 
