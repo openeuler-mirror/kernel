@@ -497,6 +497,12 @@ void generic_start_io_acct(struct request_queue *q, int op,
 void generic_end_io_acct(struct request_queue *q, int op,
 				struct hd_struct *part,
 				unsigned long start_time);
+void generic_start_precise_io_acct(struct request_queue *q, int op,
+				   struct hd_struct *part);
+void generic_end_precise_io_acct(struct request_queue *q, int op,
+				 struct hd_struct *part,
+				 unsigned long start_time,
+				 unsigned long secotors);
 
 #ifndef ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE
 # error	"You should define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE for your platform"
