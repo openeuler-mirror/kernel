@@ -316,8 +316,12 @@ void sw64_update_clockevents(unsigned long cpu, u32 freq)
  */
 void sw64_setup_timer(void)
 {
+	unsigned long  min_delta;
 	int cpu = smp_processor_id();
 	struct clock_event_device *swevt = &per_cpu(timer_events, cpu);
+
+	/* min_delta ticks => 100ns */
+	min_delta = get_cpu_freq()/1000/1000/10;
 
 	if (is_in_guest()) {
 		memcpy(swevt, &vtimer_clockevent, sizeof(*swevt));
@@ -326,19 +330,13 @@ void sw64_setup_timer(void)
 		 * If it's too small, the timer will timeout when the IER
 		 * haven't been opened.
 		 */
-		swevt->min_delta_ns = 400;
+		min_delta *= 4;
 	} else {
 		memcpy(swevt, &timer_clockevent, sizeof(*swevt));
-		swevt->min_delta_ns = 100;
 	}
-
 	swevt->cpumask = cpumask_of(cpu);
-	swevt->mult = div_sc(get_cpu_freq(), NSEC_PER_SEC, swevt->shift);
-	swevt->max_delta_ns = clockevent_delta2ns(0xFFFFFFFFFFFFFFFF, swevt);
-
 	swevt->set_state_shutdown(swevt);
-
-	clockevents_register_device(swevt);
+	clockevents_config_and_register(swevt, get_cpu_freq(), min_delta, ULONG_MAX);
 }
 
 void sw64_timer_interrupt(void)
