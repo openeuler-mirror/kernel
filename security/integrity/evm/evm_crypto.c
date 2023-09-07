@@ -188,7 +188,7 @@ static void hmac_add_misc(struct shash_desc *desc, struct inode *inode,
 	    type != EVM_XATTR_PORTABLE_DIGSIG &&
 	    type != EVM_IMA_XATTR_DIGEST_LIST)
 #else
-	    type != EVM_IMA_XATTR_DIGEST_LIST)
+	    type != EVM_XATTR_PORTABLE_DIGSIG)
 #endif
 		crypto_shash_update(desc, (u8 *)&inode->i_sb->s_uuid, UUID_SIZE);
 	crypto_shash_final(desc, digest);
