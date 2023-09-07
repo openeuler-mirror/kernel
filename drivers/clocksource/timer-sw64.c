@@ -308,6 +308,11 @@ void sw64_update_clockevents(unsigned long cpu, u32 freq)
 
 	if (cpu == smp_processor_id())
 		clockevents_update_freq(swevt, freq);
+	else {
+		clockevents_calc_mult_shift(swevt, freq, 4);
+		swevt->min_delta_ns = clockevent_delta2ns(swevt->min_delta_ticks, swevt);
+		swevt->max_delta_ns = clockevent_delta2ns(swevt->max_delta_ticks, swevt);
+	}
 }
 
 /*
