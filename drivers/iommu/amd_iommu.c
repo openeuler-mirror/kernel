@@ -3807,6 +3807,7 @@ out:
 static int modify_irte_ga(u16 devid, int index, struct irte_ga *irte,
 			  struct amd_ir_data *data)
 {
+	bool ret;
 	struct irq_remap_table *table;
 	struct amd_iommu *iommu;
 	unsigned long flags;
@@ -3824,10 +3825,18 @@ static int modify_irte_ga(u16 devid, int index, struct irte_ga *irte,
 
 	entry = (struct irte_ga *)table->table;
 	entry = &entry[index];
-	entry->lo.fields_remap.valid = 0;
-	entry->hi.val = irte->hi.val;
-	entry->lo.val = irte->lo.val;
-	entry->lo.fields_remap.valid = 1;
+
+	ret = cmpxchg_double(&entry->lo.val, &entry->hi.val,
+			entry->lo.val, entry->hi.val,
+			irte->lo.val, irte->hi.val);
+	/*
+	 * We use cmpxchg16 to atomically update the 128-bit IRTE,
+	 * and it cannot be updated by the hardware or other processors
+	 * behind us, so the return value of cmpxchg16 should be the
+	 * same as the old value.
+	 */
+	WARN_ON(!ret);
+
 	if (data)
 		data->ref = entry;
 
@@ -4379,10 +4388,12 @@ static int amd_ir_set_vcpu_affinity(struct irq_data *data, void *vcpu_info)
 	} else {
 		/* Un-Setting */
 		struct irq_cfg *cfg = irqd_cfg(data);
+		u64 valid = irte->lo.fields_remap.valid;
 
 		irte->hi.val = 0;
 		irte->lo.val = 0;
 		irte->hi.fields.vector = cfg->vector;
+		irte->lo.fields_remap.valid = valid;
 		irte->lo.fields_remap.guest_mode = 0;
 		irte->lo.fields_remap.destination =
 				APICID_TO_IRTE_DEST_LO(cfg->dest_apicid);
