@@ -433,6 +433,7 @@
 #define X86_BUG_MMIO_STALE_DATA		X86_BUG(25) /* CPU is affected by Processor MMIO Stale Data vulnerabilities */
 #define X86_BUG_RETBLEED                X86_BUG(26) /* CPU is affected by RETBleed */
 #define X86_BUG_EIBRS_PBRSB            X86_BUG(28) /* EIBRS is vulnerable to Post Barrier RSB Pre dictions */
-#define X86_BUG_SMT_RSB            X86_BUG(29) /* CPU is vulnerable to Cross-Thread Return Address Predictions */
+#define X86_BUG_GDS			X86_BUG(29) /* CPU is affected by Gather Data Sampling */
+#define X86_BUG_SMT_RSB            X86_BUG(30) /* CPU is vulnerable to Cross-Thread Return Address Predictions */
 
 #endif /* _ASM_X86_CPUFEATURES_H */

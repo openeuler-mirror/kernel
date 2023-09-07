@@ -17,3 +17,4 @@ are configurable at compile, boot or run time.
    special-register-buffer-data-sampling.rst
    processor_mmio_stale_data.rst
    cross-thread-rsb.rst
+   gather_data_sampling.rst
