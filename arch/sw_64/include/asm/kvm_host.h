@@ -28,8 +28,22 @@
 
 #include <asm/kvm_mmio.h>
 
+#define last_vpn(cpu)	(cpu_data[cpu].last_vpn)
+
+#ifdef CONFIG_SUBARCH_C3B
+#define VPN_BITS	8
+#endif
+
+#ifdef CONFIG_SUBARCH_C4
+#define VPN_BITS	10
+#endif
+
+#define VPN_FIRST_VERSION	(1UL << VPN_BITS)
+#define VPN_MASK		((1UL << VPN_BITS) - 1)
+#define VPN_SHIFT		(64 - VPN_BITS)
+
 #define KVM_MAX_VCPUS 64
-#define KVM_USER_MEM_SLOTS 64
+#define KVM_USER_MEM_SLOTS 512
 
 #define KVM_HALT_POLL_NS_DEFAULT 0
 #define KVM_IRQCHIP_NUM_PINS     256
@@ -40,6 +54,13 @@
 #define KVM_HPAGE_SIZE(x)   (1UL << KVM_HPAGE_SHIFT(x))
 #define KVM_HPAGE_MASK(x)   (~(KVM_HPAGE_SIZE(x) - 1))
 #define KVM_PAGES_PER_HPAGE(x)  (KVM_HPAGE_SIZE(x) / PAGE_SIZE)
+
+/*
+ * The architecture supports 48-bit GPA as input to the addtional stage translations.
+ */
+#define KVM_PHYS_SHIFT	(48)
+#define KVM_PHYS_SIZE	(_AC(1, ULL) << KVM_PHYS_SHIFT)
+#define KVM_PHYS_MASK	(KVM_PHYS_SIZE - _AC(1, ULL))
 
 struct kvm_arch_memory_slot {
 	unsigned long host_phys_addr;
@@ -52,8 +73,43 @@ struct kvm_arch {
 
 	/* segment table */
 	unsigned long *seg_pgd;
+
+	struct swvm_mem mem;
+	/* Addtional stage page table*/
+	pgd_t *pgd;
 };
 
+struct kvm_sw64_ops {
+	unsigned long (*get_new_vpn_context)(struct kvm_vcpu *vcpu, long cpu);
+	void (*update_vpn)(struct kvm_vcpu *vcpu, unsigned long vpn);
+	int (*init_vm)(struct kvm *kvm);
+	void (*destroy_vm)(struct kvm *kvm);
+	int (*prepare_memory_region)(struct kvm *kvm, struct kvm_memory_slot *memslot,
+			const struct kvm_userspace_memory_region *mem, enum kvm_mr_change change);
+	void (*mmu_enable_log_dirty_pt_masked)(struct kvm *kvm, struct kvm_memory_slot *slot,
+			gfn_t gfn_offset, unsigned long mask);
+	void (*commit_memory_region)(struct kvm *kvm, const struct kvm_userspace_memory_region *mem,
+			const struct kvm_memory_slot *old, const struct kvm_memory_slot *new,
+			enum kvm_mr_change change);
+	void (*flush_shadow_memslot)(struct kvm *kvm, struct kvm_memory_slot *slot);
+	void (*flush_shadow_all)(struct kvm *kvm);
+	int (*vcpu_reset)(struct kvm_vcpu *vcpu);
+	int (*vcpu_run)(struct kvm_vcpu *vcpu, struct kvm_run *run);
+	void (*vcpu_free)(struct kvm_vcpu *vcpu);
+	long (*get_vcb)(struct file *filp, unsigned long arg);
+	long (*set_vcb)(struct file *filp, unsigned long arg);
+};
+
+#define KVM_NR_MEM_OBJS		40
+
+/*
+ * We don't want allocation failures within the mmu code, so we preallocate
+ * enough memory for a single page fault in a cache.
+ */
+struct kvm_mmu_memory_cache {
+	int nobjs;
+	void *objects[KVM_NR_MEM_OBJS];
+};
 
 struct kvm_vcpu_arch {
 	struct kvm_regs regs __attribute__((__aligned__(32)));
@@ -65,6 +121,7 @@ struct kvm_vcpu_arch {
 	struct hrtimer hrt;
 	unsigned long timer_next_event;
 	unsigned long vtimer_freq;
+
 	int first_run;
 	int halted;
 	int stopped;
@@ -73,6 +130,9 @@ struct kvm_vcpu_arch {
 	/* Pending virtual interrupts */
 	DECLARE_BITMAP(irqs_pending, SWVM_IRQS);
 	unsigned long vpnc[NR_CPUS];
+
+	/* Detect first run of a vcpu */
+	bool has_run_once;
 
 	/* WAIT executed */
 	int wait;
@@ -84,6 +144,13 @@ struct kvm_vcpu_arch {
 	bool pause;
 
 	struct kvm_decode mmio_decode;
+
+	/* Cache some mmu pages needed inside spinlock regions */
+	struct kvm_mmu_memory_cache mmu_page_cache;
+
+	/* guest live migration */
+	unsigned long migration_mark;
+	unsigned long shtclock;
 };
 
 struct vmem_info {
@@ -130,6 +197,21 @@ struct kvm_vcpu_stat {
 #ifdef CONFIG_KVM_MEMHOTPLUG
 void vcpu_mem_hotplug(struct kvm_vcpu *vcpu, unsigned long start_addr);
 #endif
+#ifdef CONFIG_SUBARCH_C4
+#define KVM_ARCH_WANT_MMU_NOTIFIER
+#endif
+int kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
+int kvm_unmap_hva_range(struct kvm *kvm, unsigned long start, unsigned long end, bool blockable);
+int kvm_age_hva(struct kvm *kvm, unsigned long start, unsigned long end);
+int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
+
+void update_vcpu_stat_time(struct kvm_vcpu_stat *vcpu_stat);
+void check_vcpu_requests(struct kvm_vcpu *vcpu);
+void sw64_kvm_switch_vpn(struct kvm_vcpu *vcpu);
+int vmem_init(void);
+void vmem_exit(void);
+int __sw64_vcpu_run(unsigned long vcb_pa, struct kvm_regs *regs,
+		struct hcall_args *args);
 int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		int exception_index, struct hcall_args *hargs);
 void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid, int type);
@@ -140,12 +222,11 @@ static inline void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu) {}
 static inline void kvm_arch_free_memslot(struct kvm *kvm,
 		struct kvm_memory_slot *slot) {}
 static inline void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen) {}
-static inline void kvm_arch_flush_shadow_all(struct kvm *kvm) {}
-static inline void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
-		struct kvm_memory_slot *slot) {}
 static inline void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu) {}
 static inline void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu) {}
 static inline void kvm_arch_vcpu_block_finish(struct kvm_vcpu *vcpu) {}
+
+void kvm_arch_vcpu_free(struct kvm_vcpu *vcpu);
 
 int kvm_sw64_perf_init(void);
 int kvm_sw64_perf_teardown(void);

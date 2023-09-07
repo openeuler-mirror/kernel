@@ -17,7 +17,6 @@ if VIRTUALIZATION
 
 config KVM
 	tristate "Kernel-based Virtual Machine (KVM) support"
-	select KVM_SW64_HOST
 	select PREEMPT_NOTIFIERS
 	select CMA
 	depends on NET
@@ -37,13 +36,6 @@ config KVM
 	  We don't support KVM with 3-level page tables yet.
 
 	  If unsure, say N.
-
-config KVM_SW64_HOST
-	tristate "KVM for SW64 processors support"
-	depends on KVM
-	help
-	  Provides host support for SW64 processors.
-	  To compile this as a module, choose M here.
 
 config KVM_MEMHOTPLUG
 	bool "Memory hotplug support for guest"
