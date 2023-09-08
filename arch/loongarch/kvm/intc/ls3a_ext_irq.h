@@ -98,7 +98,6 @@ typedef struct kvm_ls3a_extirq_state {
 struct ls3a_kvm_extirq {
 	spinlock_t lock;
 	struct kvm *kvm;
-	atomic64_t enabled;
 	struct kvm_io_device device;
 	struct kvm_ls3a_extirq_state ls3a_ext_irq;
 };
@@ -126,6 +125,5 @@ int kvm_set_ls3a_extirq(struct kvm *kvm,
 void kvm_destroy_ls3a_ext_irq(struct kvm *kvm);
 void msi_irq_handler(struct kvm *kvm, int irq, int level);
 int kvm_setup_ls3a_extirq(struct kvm *kvm);
-int kvm_enable_ls3a_extirq(struct kvm *kvm, bool enable);
 void kvm_dump_ls3a_extirq_state(struct seq_file *m, struct ls3a_kvm_extirq *irqchip);
 #endif

@@ -110,9 +110,6 @@ void msi_irq_handler(struct kvm *kvm, int irq, int level)
 	struct ls3a_kvm_extirq *s = ls3a_ext_irqchip(kvm);
 	struct kvm_ls3a_extirq_state *state = &(s->ls3a_ext_irq);
 
-	if (!atomic64_read(&s->enabled))
-		return;
-
 	kvm_debug("ext_irq_handler:irq = %d,level = %d\n", irq, level);
 
 	ls3a_ext_irq_lock(s, flags);
@@ -731,7 +728,6 @@ int kvm_create_ls3a_ext_irq(struct kvm *kvm)
 	memset((void *)&s->ls3a_ext_irq, 0x0, sizeof(struct kvm_ls3a_extirq_state));
 
 	spin_lock_init(&s->lock);
-	atomic64_set(&s->enabled, 0);
 	s->kvm = kvm;
 
 	/*
@@ -872,18 +868,6 @@ int kvm_setup_ls3a_extirq(struct kvm *kvm)
 	memset(extirq_state, 0,	sizeof(struct kvm_ls3a_extirq_state));
 	ls3a_ext_irq_unlock(v_extirq, flags);
 
-	atomic64_set(&v_extirq->enabled, 1);
-
-	return 0;
-}
-
-int kvm_enable_ls3a_extirq(struct kvm *kvm, bool enable)
-{
-	struct ls3a_kvm_extirq *v_extirq = ls3a_ext_irqchip(kvm);
-
-	if (v_extirq)
-		atomic64_set(&v_extirq->enabled, enable);
-
 	return 0;
 }
 
@@ -891,7 +875,7 @@ void kvm_dump_ls3a_extirq_state(struct seq_file *s,
 		struct ls3a_kvm_extirq *irqchip)
 {
 	struct kvm_ls3a_extirq_state *extirq;
-	int i = 0, j = 0;
+	int i, j = 0;
 	unsigned long flags;
 
 	seq_puts(s, "LS3A ext irqchip state:\n");
@@ -901,8 +885,7 @@ void kvm_dump_ls3a_extirq_state(struct seq_file *s,
 
 	extirq = &(irqchip->ls3a_ext_irq);
 	ls3a_ext_irq_lock(irqchip, flags);
-	i = (int)atomic64_read(&irqchip->enabled);
-	seq_printf(s, "ext irq enabled:%d", i);
+	seq_puts(s, "ext irq enabled");
 	seq_puts(s, "\nenabled:(Not Enabled)");
 	for (i = 0; i < EXTIOI_IRQS; i++) {
 		if (!test_bit(i, (void *)&extirq->ext_en))

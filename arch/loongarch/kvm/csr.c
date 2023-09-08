@@ -347,8 +347,6 @@ static int kvm_iocsr_common_set(struct kvm_run *run, struct kvm_vcpu *vcpu,
 static int kvm_misc_set(struct kvm_run *run, struct kvm_vcpu *vcpu, u32 addr,
 		u64 val)
 {
-	if ((val & KVM_IOCSRF_MISC_FUNC_EXT_IOI_EN) && vcpu->vcpu_id == 0)
-		kvm_setup_ls3a_extirq(vcpu->kvm);
 	return kvm_iocsr_common_set(run, vcpu, addr, val);
 }
 
@@ -652,9 +650,6 @@ int _kvm_set_iocsr(struct kvm *kvm, struct kvm_iocsr_entry *__user argp)
 		entry->data = tmp.data;
 	}
 	spin_unlock(&kvm->arch.iocsr_lock);
-
-	if (tmp.addr == KVM_IOCSR_MISC_FUNC)
-		kvm_enable_ls3a_extirq(kvm, tmp.data & KVM_IOCSRF_MISC_FUNC_EXT_IOI_EN);
 
 out:
 	return r;
