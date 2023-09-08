@@ -3,11 +3,16 @@
 #include <asm/asm-offsets.h>
 #include <asm/thread_info.h>
 #include <asm/regdef.h>
+#include <asm/csr.h>
 
 	.text
 	.set noat
 ENTRY(__fpstate_save)
 	/* a0: prev task */
+#ifdef CONFIG_SUBARCH_C4
+	csrr	$1, CSR_WR_FREGS
+	beq	$1, out
+#endif
 	vstd	$f0, TASK_THREAD_F0(a0)
 	vstd	$f1, TASK_THREAD_F1(a0)
 	vstd	$f2, TASK_THREAD_F2(a0)
@@ -42,6 +47,7 @@ ENTRY(__fpstate_save)
 	vstd	$f30, TASK_THREAD_F30(a0)
 	fstd	$f0, TASK_THREAD_FPCR(a0)
 	vldd	$f0, TASK_THREAD_F0(a0)
+out:
 	ret
 END(__fpstate_save)
 
@@ -98,5 +104,8 @@ $setfpec_over:
 	vldd	$f28, TASK_THREAD_F28(a0)
 	vldd	$f29, TASK_THREAD_F29(a0)
 	vldd	$f30, TASK_THREAD_F30(a0)
+#ifdef CONFIG_SUBARCH_C4
+	csrw	$31, CSR_WR_FREGS
+#endif
 	ret
 END(__fpstate_restore)
