@@ -76,20 +76,20 @@ EXPORT_SYMBOL(perf_irq);
 static void handle_fault_int(void)
 {
 	int node;
+	unsigned long value;
 
 	node = __this_cpu_read(hard_node_id);
 	pr_info("enter fault int, si_fault_stat = %#lx\n",
 			sw64_io_read(node, SI_FAULT_STAT));
 	sw64_io_write(node, SI_FAULT_INT_EN, 0);
 	sw64_io_write(node, DLI_RLTD_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG0_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG1_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG2_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG3_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG4_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG5_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG6_FAULT_INTEN, 0);
-	sw64_io_write(node, DUAL_CG7_FAULT_INTEN, 0);
+#if defined(CONFIG_UNCORE_XUELANG)
+	value = 0;
+#elif defined(CONFIG_UNCORE_JUNZHANG)
+	value = sw64_io_read(node, FAULT_INT_CONFIG);
+	value |= (1 << 8);
+#endif
+	__io_write_fault_int_en(node, value);
 }
 
 static void handle_mt_int(void)

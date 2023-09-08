@@ -30,4 +30,10 @@ static inline unsigned long __get_node_mem(int node)
 #define __io_write_longtime(node, data)			do { } while (0)
 #define __io_write_longtime_start_en(node, data)	do { } while (0)
 
+static inline void
+__io_write_fault_int_en(int node, unsigned long data)
+{
+	sw64_io_write(node, FAULT_INT_CONFIG, data);
+}
+
 #endif /* _ASM_SW64_UNCORE_IO_OPS_JUNZHANG_H */

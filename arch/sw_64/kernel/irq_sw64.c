@@ -16,6 +16,13 @@ init_IRQ(void)
 	 * Just in case the platform init_irq() causes interrupts/mchecks
 	 * (as is the case with RAWHIDE, at least).
 	 */
+	if (is_in_host()) {
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI0_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI1_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI2_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI3_INTEN);
+	}
+
 	wrent(entInt, 0);
 
 	sw64_init_irq();

@@ -74,6 +74,12 @@ void smp_callin(void)
 	trap_init();
 
 	/* Set interrupt vector.  */
+	if (is_in_host()) {
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI0_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI1_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI2_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI3_INTEN);
+	}
 	wrent(entInt, 0);
 
 	/* Get our local ticker going. */

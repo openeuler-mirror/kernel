@@ -49,4 +49,17 @@ __io_write_longtime_start_en(int node, unsigned long data)
 	sw64_io_write(node, LONG_TIME_START_EN, data);
 }
 
+static inline void
+__io_write_fault_int_en(int node, unsigned long data)
+{
+	sw64_io_write(node, DUAL_CG0_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG1_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG2_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG3_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG4_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG5_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG6_FAULT_INTEN, data);
+	sw64_io_write(node, DUAL_CG7_FAULT_INTEN, data);
+}
+
 #endif /* _ASM_SW64_UNCORE_IO_OPS_XUELANG_H */
