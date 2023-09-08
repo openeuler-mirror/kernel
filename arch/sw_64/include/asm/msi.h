@@ -40,9 +40,15 @@ extern void handle_pci_msi_interrupt(unsigned long type,
 #define MSI_ADDR_BASE_HI	0
 #define MSI_ADDR_BASE_LO	0x91abc0
 
+#define	MSI_ADDR_SHIFT		20
+#define	MSI_ADDR_DEST_ID_SHIFT	10
+
 struct sw64_msi_chip_data {
 	spinlock_t cdata_lock;
-	unsigned long msi_config;
+	union {
+		unsigned long msi_config;
+		unsigned long msiaddr;
+	};
 	unsigned long rc_node;
 	unsigned long rc_index;
 	unsigned int msi_config_index;
@@ -50,8 +56,20 @@ struct sw64_msi_chip_data {
 	unsigned int vector;
 	unsigned int prev_cpu;
 	unsigned int prev_vector;
+	unsigned int multi_msi;
 	bool move_in_progress;
 };
+
+static inline int rcid_to_msicid(int rcid)
+{
+	int msicid = 0;
+
+	msicid |= (rcid_to_domain_id(rcid) << 7);
+	msicid |= (rcid_to_thread_id(rcid) << 6);
+	msicid |= (rcid_to_core_id(rcid) << 0);
+
+	return msicid;
+}
 
 extern void arch_init_msi_domain(struct irq_domain *domain);
 enum irq_alloc_type {

@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/irq.h>
 #include <linux/msi.h>
+#include <asm/sw64io.h>
 
 int msi_compose_msg(unsigned int irq, struct msi_msg *msg)
 {

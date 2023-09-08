@@ -93,9 +93,11 @@ static void pcie_save(void)
 		piu_save->epdmabar = read_piu_ior0(node, index, EPDMABAR);
 		piu_save->msiaddr = read_piu_ior0(node, index, MSIADDR);
 
-		for (i = 0; i < 256; i++) {
-			piu_save->msiconfig[i] = read_piu_ior0(node, index,
-					MSICONFIG0 + (i << 7));
+		if (IS_ENABLED(CONFIG_UNCORE_XUELANG)) {
+			for (i = 0; i < 256; i++) {
+				piu_save->msiconfig[i] = read_piu_ior0(node, index,
+						MSICONFIG0 + (i << 7));
+			}
 		}
 
 		piu_save->iommuexcpt_ctrl = read_piu_ior0(node, index, IOMMUEXCPT_CTRL);
@@ -131,9 +133,11 @@ static void pcie_restore(void)
 		write_piu_ior0(node, index, EPDMABAR, piu_save->epdmabar);
 		write_piu_ior0(node, index, MSIADDR, piu_save->msiaddr);
 
-		for (i = 0; i < 256; i++) {
-			write_piu_ior0(node, index, MSICONFIG0 + (i << 7),
-					piu_save->msiconfig[i]);
+		if (IS_ENABLED(CONFIG_UNCORE_XUELANG)) {
+			for (i = 0; i < 256; i++) {
+				write_piu_ior0(node, index, MSICONFIG0 + (i << 7),
+						piu_save->msiconfig[i]);
+			}
 		}
 
 		write_piu_ior0(node, index, IOMMUEXCPT_CTRL, piu_save->iommuexcpt_ctrl);
