@@ -2,19 +2,143 @@
 
 #include <linux/clockchips.h>
 #include <linux/clocksource.h>
+#include <linux/kconfig.h>
+#include <linux/percpu-defs.h>
 #include <linux/sched_clock.h>
+#include <linux/types.h>
 
+#include <asm/csr.h>
 #include <asm/debug.h>
+#include <asm/hmcall.h>
 #include <asm/hw_init.h>
 #include <asm/sw64_init.h>
 
+#define SHTCLK_RATE	2500000
+#define SHTCLK_RATE_KHZ	2500
+
+#if defined(CONFIG_SUBARCH_C4)
+static u64 read_longtime(struct clocksource *cs)
+{
+	return read_csr(CSR_SHTCLOCK);
+}
+
+static struct clocksource clocksource_longtime = {
+	.name	= "longtime",
+	.rating	= 100,
+	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+	.mask	= CLOCKSOURCE_MASK(64),
+	.shift	= 0,
+	.mult	= 0,
+	.read	= read_longtime,
+};
+
+static u64 notrace read_sched_clock(void)
+{
+	return read_csr(CSR_SHTCLOCK);
+}
+
+void __init sw64_setup_clocksource(void)
+{
+	clocksource_register_khz(&clocksource_longtime, SHTCLK_RATE_KHZ);
+	sched_clock_register(read_sched_clock, BITS_PER_LONG, SHTCLK_RATE);
+}
+
+void __init setup_sched_clock(void) { }
+#elif defined(CONFIG_SUBARCH_C3B)
+#ifdef CONFIG_SMP
+static u64 read_longtime(struct clocksource *cs)
+{
+	unsigned long node;
+
+	node = __this_cpu_read(hard_node_id);
+	return __io_read_longtime(node);
+}
+
+static int longtime_enable(struct clocksource *cs)
+{
+	switch (cpu_desc.model) {
+	case CPU_SW3231:
+		sw64_io_write(0, GPIO_SWPORTA_DR, 0);
+		sw64_io_write(0, GPIO_SWPORTA_DDR, 0xff);
+		break;
+	case CPU_SW831:
+		__io_write_longtime_start_en(0, 0x1);
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static struct clocksource clocksource_longtime = {
+	.name	= "longtime",
+	.rating	= 100,
+	.enable	= longtime_enable,
+	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+	.mask	= CLOCKSOURCE_MASK(64),
+	.shift	= 0,
+	.mult	= 0,
+	.read	= read_longtime,
+};
+
+static u64 read_vtime(struct clocksource *cs)
+{
+	unsigned long vtime_addr;
+
+	vtime_addr = IO_BASE | LONG_TIME;
+	return rdio64(vtime_addr);
+}
+
+static int vtime_enable(struct clocksource *cs)
+{
+	return 0;
+}
+
+static struct clocksource clocksource_vtime = {
+	.name	= "vtime",
+	.rating	= 100,
+	.enable	= vtime_enable,
+	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+	.mask	= CLOCKSOURCE_MASK(64),
+	.shift	= 0,
+	.mult	= 0,
+	.read	= read_vtime,
+};
+#else /* !SMP */
+static u64 read_tc(struct clocksource *cs)
+{
+	return rdtc();
+}
+
+static struct clocksource clocksource_tc = {
+	.name		= "tc",
+	.rating		= 300,
+	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
+	.mask		= CLOCKSOURCE_MASK(64),
+	.shift		= 22,
+	.mult		= 0,  /* To be filled in */
+	.read		= read_tc,
+};
+#endif /* SMP */
+
+void __init sw64_setup_clocksource(void)
+{
+#ifdef CONFIG_SMP
+	if (is_in_host())
+		clocksource_register_khz(&clocksource_longtime, 25000);
+	else
+		clocksource_register_khz(&clocksource_vtime, 25000);
+#else
+	clocksource_register_hz(&clocksource_tc, get_cpu_freq());
+	pr_info("Setup clocksource TC, mult = %d\n", clocksource_tc.mult);
+#endif
+}
+
 DECLARE_PER_CPU(u64, tc_offset);
-
-static u64 sc_start;
-static u64 sc_shift;
-static u64 sc_multi;
-
+static u64 sc_start, sc_shift, sc_multi;
 DEFINE_STATIC_KEY_FALSE(use_tc_as_sched_clock);
+
 static int __init sched_clock_setup(char *opt)
 {
 	if (!opt)
@@ -47,11 +171,19 @@ void __init setup_sched_clock(void)
 }
 
 #ifdef CONFIG_GENERIC_SCHED_CLOCK
-static u64 notrace sched_clock_read(void)
+static u64 notrace read_sched_clock(void)
 {
 	return (rdtc() - sc_start) >> sc_shift;
 }
+
+void __init sw64_sched_clock_init(void)
+{
+	sched_clock_register(sched_clock_read, BITS_PER_LONG, get_cpu_freq() >> sc_shift);
+}
 #else /* !CONFIG_GENERIC_SCHED_CLOCK */
+/*
+ * scheduler clock - returns current time in nanoseconds.
+ */
 unsigned long long notrace sched_clock(void)
 {
 	if (static_branch_likely(&use_tc_as_sched_clock))
@@ -129,101 +261,9 @@ late_initcall(sched_clock_debug_init);
 #endif /* CONFIG_DEBUG_FS */
 #endif /* CONFIG_GENERIC_SCHED_CLOCK */
 
-static u64 read_tc(struct clocksource *cs)
-{
-	return rdtc();
-}
-
-static struct clocksource clocksource_tc = {
-	.name		= "tc",
-	.rating		= 300,
-	.flags		= CLOCK_SOURCE_IS_CONTINUOUS,
-	.mask		= CLOCKSOURCE_MASK(64),
-	.shift		= 22,
-	.mult		= 0,  /* To be filled in */
-	.read		= read_tc,
-};
-
-static u64 read_longtime(struct clocksource *cs)
-{
-	u64 result;
-	unsigned long node;
-
-	node = __this_cpu_read(hard_node_id);
-	result = __io_read_longtime(node);
-
-	return result;
-}
-
-static int longtime_enable(struct clocksource *cs)
-{
-	switch (cpu_desc.model) {
-	case CPU_SW3231:
-		sw64_io_write(0, GPIO_SWPORTA_DR, 0);
-		sw64_io_write(0, GPIO_SWPORTA_DDR, 0xff);
-		break;
-	case CPU_SW831:
-		__io_write_longtime_start_en(0, 0x1);
-		break;
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-static struct clocksource clocksource_longtime = {
-	.name	= "longtime",
-	.rating	= 100,
-	.enable	= longtime_enable,
-	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
-	.mask	= CLOCKSOURCE_MASK(64),
-	.shift	= 0,
-	.mult	= 0,
-	.read	= read_longtime,
-};
-
-static u64 read_vtime(struct clocksource *cs)
-{
-	u64 result;
-	unsigned long vtime_addr = IO_BASE | LONG_TIME;
-
-	result = rdio64(vtime_addr);
-	return result;
-}
-
-static int vtime_enable(struct clocksource *cs)
-{
-	return 0;
-}
-
-static struct clocksource clocksource_vtime = {
-	.name	= "vtime",
-	.rating	= 100,
-	.enable	= vtime_enable,
-	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
-	.mask	= CLOCKSOURCE_MASK(64),
-	.shift	= 0,
-	.mult	= 0,
-	.read	= read_vtime,
-};
-
-void __init sw64_setup_clocksource(void)
-{
-	if (!IS_ENABLED(CONFIG_SMP)) {
-		clocksource_register_hz(&clocksource_tc, get_cpu_freq());
-		pr_info("Setup clocksource TC, mult = %d\n", clocksource_tc.mult);
-	} else {
-		if (is_in_host())
-			clocksource_register_khz(&clocksource_longtime, 25000);
-		else
-			clocksource_register_khz(&clocksource_vtime, 25000);
-	}
-
-#ifdef CONFIG_GENERIC_SCHED_CLOCK
-	sched_clock_register(sched_clock_read, BITS_PER_LONG, get_cpu_freq() >> sc_shift);
 #endif
-}
+
+
 
 static int timer_next_event(unsigned long delta,
 		struct clock_event_device *evt);

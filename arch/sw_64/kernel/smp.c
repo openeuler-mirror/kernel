@@ -258,7 +258,10 @@ int vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
 	return cpu_online(cpu) ? 0 : -ENOSYS;
 }
 
+#ifdef CONFIG_SUBARCH_C3B
 DECLARE_STATIC_KEY_FALSE(use_tc_as_sched_clock);
+#endif
+
 int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
 	if (is_in_guest())
@@ -283,6 +286,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 	}
 	smp_boot_one_cpu(cpu, tidle);
 
+#ifdef CONFIG_SUBARCH_C3B
 #ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
 	if (static_branch_likely(&use_tc_as_sched_clock)) {
 		if (smp_booted) {
@@ -291,6 +295,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 			tc_sync_set();
 		}
 	}
+#endif
 #endif
 
 	return cpu_online(cpu) ? 0 : -ENOSYS;
