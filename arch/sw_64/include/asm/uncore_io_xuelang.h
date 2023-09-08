@@ -72,6 +72,8 @@
 #define PME_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
 #define AER_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
 
+#define PIUCONFIG0_INIT_VAL	0x38056
+
 /*-----------------------addr-----------------------*/
 /* CAB0 REG */
 enum {

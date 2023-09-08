@@ -68,6 +68,8 @@
 #define PME_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x8UL << 10)
 #define AER_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x8UL << 10)
 
+#define PIUCONFIG0_INIT_VAL	0x38016
+
 /*-----------------------addr-----------------------*/
 /* INTPU REG */
 enum {

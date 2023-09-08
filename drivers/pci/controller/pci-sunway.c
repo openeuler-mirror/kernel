@@ -12,6 +12,14 @@ void set_devint_wken(int node)
 	sw64_io_write(node, DEVINTWK_INTEN, val);
 }
 
+#ifdef CONFIG_UNCORE_JUNZHANG
+void set_adr_int(int node)
+{
+	sw64_io_write(node, ADR_INT_CONFIG, (0x0 << 16 | 0x3f));
+	sw64_io_write(node, ADR_CTL, 0xc);
+}
+#endif
+
 void set_pcieport_service_irq(int node, int index)
 {
 	if (IS_ENABLED(CONFIG_PCIE_PME))
@@ -172,12 +180,13 @@ static int check_pci_linkup(unsigned long node, unsigned long index)
 		rc_debug = read_piu_ior1(node, index, RCDEBUGINF1);
 	}
 
-	return !(rc_debug & 0x1);
+	return !(rc_debug == 0x111);
 }
 
 static void set_rc_piu(unsigned long node, unsigned long index)
 {
-	unsigned int i, value;
+	unsigned int i __maybe_unused;
+	unsigned int value;
 	u32 rc_misc_ctrl;
 
 	if (is_guest_or_emul())
@@ -206,7 +215,8 @@ static void set_rc_piu(unsigned long node, unsigned long index)
 	write_rc_conf(node, index, RC_MISC_CONTROL_1, rc_misc_ctrl);
 
 	write_rc_conf(node, index, RC_PRIMARY_BUS, 0xffffff);
-	write_piu_ior0(node, index, PIUCONFIG0, 0x38056);
+	write_piu_ior0(node, index, PIUCONFIG0, PIUCONFIG0_INIT_VAL);
+
 	write_piu_ior1(node, index, PIUCONFIG1, 0x2);
 	write_piu_ior1(node, index, ERRENABLE, -1);
 
@@ -214,8 +224,10 @@ static void set_rc_piu(unsigned long node, unsigned long index)
 	write_piu_ior0(node, index, EPDMABAR, PCITODMA_OFFSET);
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
 		write_piu_ior0(node, index, MSIADDR, MSIX_MSG_ADDR);
-		for (i = 0; i < 256; i++)
-			write_piu_ior0(node, index, MSICONFIG0 + (i << 7), 0);
+#ifdef CONFIG_UNCORE_XUELANG
+			for (i = 0; i < 256; i++)
+				write_piu_ior0(node, index, MSICONFIG0 + (i << 7), 0);
+#endif
 	}
 }
 
@@ -225,10 +237,17 @@ static void set_intx(unsigned long node, unsigned long index,
 	if (is_guest_or_emul())
 		return;
 
+#if defined(CONFIG_UNCORE_XUELANG)
 	write_piu_ior0(node, index, INTACONFIG, int_conf | (0x8UL << 10));
 	write_piu_ior0(node, index, INTBCONFIG, int_conf | (0x4UL << 10));
 	write_piu_ior0(node, index, INTCCONFIG, int_conf | (0x2UL << 10));
 	write_piu_ior0(node, index, INTDCONFIG, int_conf | (0x1UL << 10));
+#elif defined(CONFIG_UNCORE_JUNZHANG)
+	write_piu_ior0(node, index, INTACONFIG, int_conf | (0x1UL << 10));
+	write_piu_ior0(node, index, INTBCONFIG, int_conf | (0x2UL << 10));
+	write_piu_ior0(node, index, INTCCONFIG, int_conf | (0x4UL << 10));
+	write_piu_ior0(node, index, INTDCONFIG, int_conf | (0x8UL << 10));
+#endif
 }
 
 static unsigned long get_rc_enable(unsigned long node)

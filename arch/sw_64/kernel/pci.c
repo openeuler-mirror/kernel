@@ -634,6 +634,7 @@ sw64_init_host(unsigned long node, unsigned long index)
 }
 
 void __weak set_devint_wken(int node) {}
+void __weak set_adr_int(int node) {}
 
 void __init sw64_init_arch(void)
 {
@@ -647,8 +648,10 @@ void __init sw64_init_arch(void)
 		cpu_num = sw64_chip->get_cpu_num();
 
 		for (node = 0; node < cpu_num; node++) {
-			if (is_in_host())
+			if (is_in_host()) {
 				set_devint_wken(node);
+				set_adr_int(node);
+			}
 			rc_enable = sw64_chip_init->pci_init.get_rc_enable(node);
 			if (rc_enable == 0) {
 				printk("PCIe is disabled on node %ld\n", node);

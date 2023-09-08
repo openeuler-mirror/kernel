@@ -8,6 +8,7 @@
 #include <linux/pci.h>
 #include <linux/memblock.h>
 #include <linux/dma-mapping.h>
+#include <linux/dma-map-ops.h>
 
 /*
  * The PCI controller list.
