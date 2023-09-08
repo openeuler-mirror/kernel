@@ -4,6 +4,8 @@
 
 #ifndef __ASSEMBLY__
 
+#ifdef CONFIG_SUBARCH_C3B
+
 struct vcpucb {
 	unsigned long go_flag;
 	unsigned long pcbb;
@@ -52,6 +54,53 @@ struct vcpucb {
 	unsigned long guest_longtime_offset;
 	unsigned long reserved[3];
 };
+
+#else
+
+struct vcpucb {
+	unsigned long ktp;
+	unsigned long pcbb;
+	unsigned long ksp;
+	unsigned long usp;
+	unsigned long kgp;
+	unsigned long ent_arith;
+	unsigned long ent_if;
+	unsigned long ent_int;
+	unsigned long ent_mm;
+	unsigned long ent_sys;
+	unsigned long ent_una;
+	unsigned long stack_pc;
+	unsigned long new_a0;
+	unsigned long new_a1;
+	unsigned long new_a2;
+	unsigned long soft_cid;
+	unsigned long csr_save;
+	unsigned long wakeup_magic;
+	unsigned long host_vcpucb;
+	unsigned long upcr;
+	unsigned long vpcr;
+	unsigned long dtb_vpcr;
+	unsigned long dtb_upcr;
+	unsigned long guest_ksp;
+	unsigned long guest_usp;
+	unsigned long vcpu_irq_disabled;
+	unsigned long vcpu_irq;
+	unsigned long ptbr_usr;
+	unsigned long ptbr_sys;
+	unsigned long soft_tid;
+	unsigned long int_stat0;
+	unsigned long int_stat1;
+	unsigned long int_stat2;
+	unsigned long int_stat3;
+	unsigned long reset_entry;
+	unsigned long pvcpu;
+	unsigned long exit_reason;
+	unsigned long ipaddr;
+	unsigned long vcpu_pc_save;
+	unsigned long shtclock_offset;
+	unsigned long reserved[8];
+};
+#endif
 
 #endif /* __ASSEMBLY__ */
 #endif /* _ASM_SW64_VCPU_H */
