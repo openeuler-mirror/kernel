@@ -710,7 +710,15 @@ struct Scsi_Host {
 	 */
 	struct device *dma_dev;
 
+
+#ifndef __GENKSYMS__
+	union {
+		bool is_builtin;
+		KABI_RESERVE(1)
+	};
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
