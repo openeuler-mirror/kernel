@@ -37,6 +37,7 @@
 #include <asm/bug.h>
 #include <asm/cmpxchg.h>
 #include <asm/cpufeature.h>
+#include <asm/efi.h>
 #include <asm/exception.h>
 #include <asm/daifflags.h>
 #include <asm/debug-monitors.h>
@@ -331,6 +332,9 @@ static void __do_kernel_fault(unsigned long addr, unsigned int esr,
 	} else {
 		msg = "paging request";
 	}
+
+	if (efi_runtime_fixup_exception(regs, msg))
+		return;
 
 	die_kernel_fault(msg, addr, esr, regs);
 }
