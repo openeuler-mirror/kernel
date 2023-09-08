@@ -2346,7 +2346,6 @@ static int hns_roce_query_caps(struct hns_roce_dev *hr_dev)
 	caps->max_sq_inline = le16_to_cpu(resp_a->max_sq_inline);
 	caps->max_rq_sg = le16_to_cpu(resp_a->max_rq_sg);
 	caps->max_rq_sg = roundup_pow_of_two(caps->max_rq_sg);
-	caps->num_qpc_timer = le16_to_cpu(resp_a->num_qpc_timer);
 	caps->max_srq_sges = le16_to_cpu(resp_a->max_srq_sges);
 	caps->max_srq_sges = roundup_pow_of_two(caps->max_srq_sges);
 	caps->num_aeq_vectors = resp_a->num_aeq_vectors;
