@@ -11,7 +11,7 @@
  * The maximum ASID's the processor supports.
  */
 
-#ifdef CONFIG_SUBARCH_C3B
+#if defined(CONFIG_SUBARCH_C3B) || defined(CONFIG_SUBARCH_C4)
 #define ASID_BITS	10
 #endif
 

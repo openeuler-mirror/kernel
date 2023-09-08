@@ -23,21 +23,6 @@
 struct mm_struct;
 struct vm_area_struct;
 
-/* Certain architectures need to do special things when PTEs
- * within a page table are directly modified.  Thus, the following
- * hook is made available.
- */
-static inline void set_pte(pte_t *ptep, pte_t pteval)
-{
-	*ptep = pteval;
-}
-
-static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
-			      pte_t *ptep, pte_t pteval)
-{
-	set_pte(ptep, pteval);
-}
-
 static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
 {
 	*pmdp = pmd;
@@ -105,7 +90,10 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 /*
  * HMcode-imposed page table bits
  */
+#if defined(CONFIG_SUBARCH_C3B)
+
 #define _PAGE_VALID	0x0001
+#define _PAGE_PRESENT	_PAGE_VALID
 #define _PAGE_FOR	0x0002	/* used for page protection (fault on read) */
 #define _PAGE_FOW	0x0004	/* used for page protection (fault on write) */
 #define _PAGE_FOE	0x0008	/* used for page protection (fault on exec) */
@@ -145,11 +133,6 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define __ACCESS_BITS	(_PAGE_ACCESSED | _PAGE_KRE | _PAGE_URE)
 
 #define _PFN_SHIFT	28
-#define _PFN_BITS	(MAX_PHYSMEM_BITS - PAGE_SHIFT)
-#define _PFN_MASK	(GENMASK(_PFN_BITS - 1, 0) << _PFN_SHIFT)
-
-#define _PAGE_TABLE	(_PAGE_VALID | __DIRTY_BITS | __ACCESS_BITS)
-#define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL | _PAGE_LEAF | _PAGE_CONT)
 
 /*
  * All the normal masks have the "page accessed" bits on, as any time they are used,
@@ -161,6 +144,59 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define PAGE_READONLY	__pgprot(_PAGE_VALID | __ACCESS_BITS | _PAGE_FOW)
 #define PAGE_KERNEL	__pgprot(_PAGE_VALID | _PAGE_ASM | _PAGE_KRE | _PAGE_KWE)
 #define _PAGE_NORMAL(x)	__pgprot(_PAGE_VALID | __ACCESS_BITS | (x))
+
+#define page_valid_kern(x)	(0)
+
+#elif defined(CONFIG_SUBARCH_C4)
+
+#define _PAGE_VALID	0x0001
+#define _PAGE_PRESENT	_PAGE_VALID
+#define _PAGE_FOR	0x0002	/* used for page protection (fault on read) */
+#define _PAGE_FOW	0x0004	/* used for page protection (fault on write) */
+#define _PAGE_FOE	0x0008	/* used for page protection (fault on exec) */
+#define _PAGE_FIXED	0x0010
+#define _PAGE_CONT	0x0020	/* used for 512M page size bit*/
+#define _PAGE_LEAF	0x0040	/* used for huge page bit */
+#define _PAGE_PCD	0x0080	/* used for page cache disabled */
+
+/* and these are sw definition */
+#define _PAGE_WCD	0x0100
+#define _PAGE_ACCESSED	0x0200
+#define _PAGE_SPLITTING	0x0400	/* For Transparent Huge Page */
+#define _PAGE_SPECIAL	0x0800
+#define _PAGE_DEVMAP	0x1000	/* For ZONE DEVICE page */
+#define _PAGE_KERN	0x2000
+#define _PAGE_DIRTY	_BITUL(62)
+#define _PAGE_PROTNONE	_BITUL(63)
+#define _PAGE_BIT_FOW		2	/* bit of _PAGE_FOW */
+#define _PAGE_BIT_ACCESSED	9	/* bit of _PAGE_ACCESSED */
+#define _PAGE_BIT_SPLITTING	10	/* bit of _PAGE_SPLITTING */
+#define _PAGE_BIT_DEVMAP	12	/* bit of _PAGE_DEVMAP */
+
+#define __DIRTY_BITS		_PAGE_DIRTY
+#define __ACCESS_BITS		_PAGE_ACCESSED
+
+#define _PFN_SHIFT	24
+
+/*
+ * All the normal masks have the "page accessed" bits on, as any time they are used,
+ * the page is accessed. They are cleared only by the page-out routines
+ */
+#define PAGE_NONE		__pgprot(__ACCESS_BITS | _PAGE_FOR | _PAGE_FOW | _PAGE_FOE | _PAGE_LEAF | _PAGE_PROTNONE)
+#define PAGE_SHARED		__pgprot(_PAGE_VALID | __ACCESS_BITS | _PAGE_LEAF)
+#define PAGE_COPY		__pgprot(_PAGE_VALID | __ACCESS_BITS | _PAGE_FOW | _PAGE_LEAF)
+#define PAGE_READONLY		__pgprot(_PAGE_VALID | __ACCESS_BITS | _PAGE_FOW | _PAGE_LEAF)
+#define PAGE_KERNEL		__pgprot(_PAGE_VALID | _PAGE_KERN | _PAGE_LEAF)
+#define _PAGE_NORMAL(x)		__pgprot(_PAGE_VALID | __ACCESS_BITS | _PAGE_LEAF | (x))
+
+#define page_valid_kern(x)	((x & (_PAGE_VALID | _PAGE_KERN)) == (_PAGE_VALID | _PAGE_KERN))
+#endif
+
+#define _PFN_BITS	(MAX_PHYSMEM_BITS - PAGE_SHIFT)
+#define _PFN_MASK	(GENMASK(_PFN_BITS - 1, 0) << _PFN_SHIFT)
+
+#define _PAGE_TABLE	(_PAGE_VALID | __DIRTY_BITS | __ACCESS_BITS)
+#define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL | _PAGE_LEAF | _PAGE_CONT)
 
 #define _PAGE_P(x)	_PAGE_NORMAL((x) | _PAGE_FOW)
 #define _PAGE_S(x)	_PAGE_NORMAL(x)
@@ -203,6 +239,23 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
  */
 extern unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)];
 #define ZERO_PAGE(vaddr)	(virt_to_page(empty_zero_page))
+
+static inline void set_pte(pte_t *ptep, pte_t pteval)
+{
+	*ptep = pteval;
+
+	if (page_valid_kern(pte_val(pteval))) {
+		mb();
+		if ((pte_val(pteval) & _PAGE_FOE) == 0)
+			imemb();
+	}
+}
+
+static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
+			      pte_t *ptep, pte_t pteval)
+{
+	set_pte(ptep, pteval);
+}
 
 static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
@@ -428,6 +481,12 @@ static inline int pud_present(pud_t pud)
 static inline void pud_clear(pud_t *pudp)
 {
 	pud_val(*pudp) = 0;
+}
+
+static inline pud_t pud_mkhuge(pud_t pud)
+{
+	pud_val(pud) |= _PAGE_LEAF;
+	return pud;
 }
 
 static inline int p4d_none(p4d_t p4d)
@@ -662,6 +721,8 @@ extern pgd_t swapper_pg_dir[1024];
 #define update_mmu_cache(vma, address, ptep) do { } while (0)
 #define update_mmu_cache_pmd(vma, address, pmd) do { } while (0)
 
+#if defined(CONFIG_SUBARCH_C3B)
+
 /*
  * Encode and decode a swap entry:
  *
@@ -674,6 +735,23 @@ extern pgd_t swapper_pg_dir[1024];
  */
 #define __SWP_TYPE_SHIFT	8
 #define __SWP_TYPE_BITS		8
+
+#elif defined(CONFIG_SUBARCH_C4)
+
+/*
+ * Encode and decode a swap entry:
+ *
+ * Format of swap PTE:
+ *	bit  0:		_PAGE_VALID (must be zero)
+ *	bits 6-10:	swap type
+ *	bits 11-58:	swap offset
+ *	bit  63:	_PAGE_PROTNONE (must be zero)
+ */
+#define __SWP_TYPE_SHIFT	6
+#define __SWP_TYPE_BITS		5
+
+#endif
+
 #define __SWP_OFFSET_BITS	48
 #define __SWP_TYPE_MASK		((1UL << __SWP_TYPE_BITS) - 1)
 #define __SWP_OFFSET_SHIFT	(__SWP_TYPE_BITS + __SWP_TYPE_SHIFT)

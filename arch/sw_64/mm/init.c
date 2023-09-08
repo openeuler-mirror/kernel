@@ -65,6 +65,7 @@ static int __init setup_mem_size(char *p)
 }
 early_param("mem", setup_mem_size);
 
+#if defined(CONFIG_SUBARCH_C3B)
 pgd_t *
 pgd_alloc(struct mm_struct *mm)
 {
@@ -77,6 +78,17 @@ pgd_alloc(struct mm_struct *mm)
 
 	return ret;
 }
+#elif defined(CONFIG_SUBARCH_C4)
+pgd_t *
+pgd_alloc(struct mm_struct *mm)
+{
+	pgd_t *ret;
+
+	ret = (pgd_t *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+
+	return ret;
+}
+#endif
 
 /* Set up initial PCB, VPTB, and other such nicities.  */
 
@@ -84,7 +96,7 @@ static inline void
 switch_to_system_map(void)
 {
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
-	wrptbr(virt_to_phys(swapper_pg_dir));
+	update_ptbr_sys(virt_to_phys(swapper_pg_dir));
 	tbiv();
 }
 
