@@ -64,6 +64,7 @@ static void __init setup_core_start(struct cpumask *cpumask)
 	}
 }
 
+#ifdef CONFIG_PM
 static void i2c_srst(void)
 {
 	sw64_io_write(0, I2C0_SRST_L, 0x0);
@@ -213,6 +214,7 @@ static void io_resume(void)
 	intpu_restore();
 	spbu_restore();
 }
+#endif /* CONFIG_PM */
 
 static struct sw64_chip_init_ops chip_init_ops = {
 	.early_init = {
