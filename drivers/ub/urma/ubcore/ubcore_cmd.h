@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+ * for more details.
+ *
+ * Description: ubcore cmd header file
+ * Author: Qian Guoxin
+ * Create: 2023-2-28
+ * Note:
+ * History: 2023-2-28: Create file
+ */
+
+#ifndef UBCORE_CMD_H
+#define UBCORE_CMD_H
+
+#include <linux/types.h>
+#include <linux/uaccess.h>
+#include "ubcore_log.h"
+#include <urma/ubcore_types.h>
+
+struct ubcore_cmd_hdr {
+	uint32_t command;
+	uint32_t args_len;
+	uint64_t args_addr;
+};
+
+#define UBCORE_CMD_MAGIC 'C'
+#define UBCORE_CMD _IOWR(UBCORE_CMD_MAGIC, 1, struct ubcore_cmd_hdr)
+#define UBCORE_MAX_CMD_SIZE 4096
+#define UBCORE_CMD_EID_SIZE 16
+
+/* only for ubcore device ioctl */
+enum ubcore_cmd {
+	UBCORE_CMD_SET_UASID = 1,
+	UBCORE_CMD_PUT_UASID
+};
+
+struct ubcore_cmd_set_uasid {
+	struct {
+		uint64_t token;
+		uint32_t uasid;
+	} in;
+	struct {
+		uint32_t uasid;
+	} out;
+};
+
+struct ubcore_cmd_put_uasid {
+	struct {
+		uint32_t uasid;
+	} in;
+};
+
+/* copy from user_space addr to kernel args */
+static inline int ubcore_copy_from_user(void *args, const void *args_addr, unsigned long args_size)
+{
+	int ret = (int)copy_from_user(args, args_addr, args_size);
+
+	if (ret != 0)
+		ubcore_log_err("copy from user failed, ret:%d.\n", ret);
+	return ret;
+}
+
+/* copy kernel args to user_space addr */
+static inline int ubcore_copy_to_user(void *args_addr, const void *args, unsigned long args_size)
+{
+	int ret = (int)copy_to_user(args_addr, args, args_size);
+
+	if (ret != 0)
+		ubcore_log_err("copy to user failed ret:%d.\n", ret);
+	return ret;
+}
+#endif
