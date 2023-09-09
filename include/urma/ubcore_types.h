@@ -132,9 +132,28 @@ struct ubcore_device {
 	struct attribute_group *group[UBCORE_MAX_ATTR_GROUP]; /* driver may fill group [1] */
 	/* driver fills end */
 
+	/* For ubcore client */
+	spinlock_t client_ctx_lock;
+	struct list_head client_ctx_list;
+	struct list_head event_handler_list;
+	spinlock_t event_handler_lock;
+
 	/* protect from unregister device */
 	atomic_t use_cnt;
 	struct completion comp;
+};
+
+struct ubcore_client {
+	struct list_head list_node;
+	char *client_name;
+	int (*add)(struct ubcore_device *dev);
+	void (*remove)(struct ubcore_device *dev, void *client_ctx);
+};
+
+struct ubcore_client_ctx {
+	struct list_head list_node;
+	void *data; // Each ubep device create some data on the client, such as uburma_device.
+	struct ubcore_client *client;
 };
 
 #endif

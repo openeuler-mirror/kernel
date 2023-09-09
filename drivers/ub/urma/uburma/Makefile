@@ -3,5 +3,6 @@
 # Makefile for the Linux kernel UB device drivers.
 #
 
-obj-$(CONFIG_UB)		+= ubcore/
-obj-$(CONFIG_UB)		+= uburma/
+uburma-objs := uburma_main.o
+
+obj-$(CONFIG_UB) += uburma.o
