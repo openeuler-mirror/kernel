@@ -425,6 +425,43 @@ void ubcore_unregister_device(struct ubcore_device *dev)
 }
 EXPORT_SYMBOL(ubcore_unregister_device);
 
+struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t uasid,
+					      struct ubcore_udrv_priv *udrv_data)
+{
+	struct ubcore_ucontext *ucontext;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->alloc_ucontext == NULL) {
+		ubcore_log_err("alloc_ucontext not registered.\n");
+		return NULL;
+	}
+	ucontext = dev->ops->alloc_ucontext(dev, uasid, udrv_data);
+	if (ucontext == NULL) {
+		ubcore_log_err("failed to alloc ucontext.\n");
+		return NULL;
+	}
+	ucontext->uasid = uasid;
+	ucontext->ub_dev = dev;
+	ubcore_log_info("success to alloc ucontext with uasid = %u", uasid);
+	return ucontext;
+}
+EXPORT_SYMBOL(ubcore_alloc_ucontext);
+
+void ubcore_free_ucontext(const struct ubcore_device *dev, struct ubcore_ucontext *ucontext)
+{
+	int ret;
+
+	if (dev == NULL || ucontext == NULL || dev->ops == NULL ||
+	    dev->ops->free_ucontext == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	ret = dev->ops->free_ucontext(ucontext);
+	if (ret != 0)
+		ubcore_log_err("failed to free_adu, ret: %d.\n", ret);
+}
+EXPORT_SYMBOL(ubcore_free_ucontext);
+
 int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid)
 {
 	int ret;

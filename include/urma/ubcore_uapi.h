@@ -26,6 +26,25 @@
 #include <urma/ubcore_types.h>
 
 /**
+ * Application specifies the device to allocate an context.
+ * @param[in] dev: ubcore_device found by add ops in the client.
+ * @param[in] uasid: (deprecated)
+ * @param[in] udrv_data (optional): ucontext and user space driver data
+ * @return: ubcore_ucontext pointer on success, NULL on fail.
+ * Note: this API is called only by uburma representing user-space application,
+ * not by other kernel modules
+ */
+struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t uasid,
+					      struct ubcore_udrv_priv *udrv_data);
+/**
+ * Free the allocated context.
+ * @param[in] dev: device to free context.
+ * @param[in] ucontext: handle of the allocated context.
+ * Note: this API is called only by uburma representing user-space application,
+ * not by other kernel modules
+ */
+void ubcore_free_ucontext(const struct ubcore_device *dev, struct ubcore_ucontext *ucontext);
+/**
  * set function entity id for ub device. must be called before alloc context
  * @param[in] dev: the ubcore_device handle;
  * @param[in] eid: function entity id (eid) to set;

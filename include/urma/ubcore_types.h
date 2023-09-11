@@ -66,6 +66,25 @@ union ubcore_eid {
 	} in6;
 };
 
+struct ubcore_udrv_priv {
+	uint64_t in_addr;
+	uint32_t in_len;
+	uint64_t out_addr;
+	uint32_t out_len;
+};
+
+struct ubcore_ucontext {
+	struct ubcore_device *ub_dev;
+	uint32_t uasid;
+	void *jfae; /* jfae uobj */
+	atomic_t use_cnt;
+};
+
+struct ubcore_udata {
+	struct ubcore_ucontext *uctx;
+	struct ubcore_udrv_priv *udrv_data;
+};
+
 struct ubcore_device_attr {
 	union ubcore_eid eid; // RW
 	uint32_t max_eid_cnt;
@@ -188,6 +207,21 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*unset_net_addr)(struct ubcore_device *dev, const struct ubcore_net_addr *net_addr);
+	/**
+	 * allocate a context from ubep for a user process
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] uasid: uasid for the context to be allocated
+	 * @param[in] udrv_data: user space driver data
+	 * @return: pointer to user context on success, null or error,
+	 */
+	struct ubcore_ucontext *(*alloc_ucontext)(struct ubcore_device *dev, uint32_t uasid,
+						  struct ubcore_udrv_priv *udrv_data);
+	/**
+	 * free a context to ubep
+	 * @param[in] uctx: the user context created before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*free_ucontext)(struct ubcore_ucontext *uctx);
 	/**
 	 * query_stats. success to query and buffer length is enough
 	 * @param[in] dev: the ub device handle;
