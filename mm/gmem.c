@@ -77,6 +77,23 @@ void gmem_state_counter(enum gmem_stat_item item, int val)
 	percpu_counter_add(&g_gmem_stats[item], val);
 }
 
+static int gmem_stat_init(void)
+{
+	int i, rc;
+
+	for (i = 0; i < NR_GMEM_STAT_ITEMS; i++) {
+		rc = percpu_counter_init(&g_gmem_stats[i], 0, GFP_KERNEL);
+		if (rc) {
+			for (i--; i >= 0; i--)
+				percpu_counter_destroy(&g_gmem_stats[i]);
+
+			break;	/* break the initialization process */
+		}
+	}
+
+	return rc;
+}
+
 #ifdef CONFIG_PROC_FS
 static int gmemstat_show(struct seq_file *m, void *arg)
 {
@@ -118,6 +135,10 @@ static int __init gmem_init(void)
 		goto free_ctx;
 
 	err = vm_object_init();
+	if (err)
+		goto free_ctx;
+
+	err = gmem_stat_init();
 	if (err)
 		goto free_ctx;
 
