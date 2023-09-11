@@ -5,6 +5,7 @@
 
 ubcore-objs := ubcore_main.o \
 			ubcore_device.o	\
+			ubcore_umem.o \
 			ubcore_netlink.o
 
 obj-$(CONFIG_UB) += ubcore.o

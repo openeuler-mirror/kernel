@@ -210,4 +210,27 @@ struct ubcore_client_ctx {
 	struct ubcore_client *client;
 };
 
+union ubcore_umem_flag {
+	struct {
+		uint32_t non_pin : 1;	/* 0: pinned to physical memory.
+					 * 1: non pin.
+					 */
+		uint32_t writable : 1;	/* 0: read-only.
+					 * 1: writable.
+					 */
+		uint32_t reserved : 30;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_umem {
+	struct ubcore_device *ub_dev;
+	struct mm_struct *owning_mm;
+	uint64_t length;
+	uint64_t va;
+	union ubcore_umem_flag flag;
+	struct sg_table sg_head;
+	uint32_t nmap;
+};
+
 #endif

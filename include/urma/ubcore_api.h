@@ -35,4 +35,20 @@ int ubcore_register_device(struct ubcore_device *dev);
  */
 void ubcore_unregister_device(struct ubcore_device *dev);
 
+/**
+ * Allocate physical memory and do DMA mapping
+ * @param[in] dev: the ubcore device;
+ * @param[in] va: the VA address to be mapped.
+ * @param[in] len: Length of the address space to be allocated and mapped by DMA.
+ * @param[in] flag: Attribute flags
+ * Return: umem ptr on success, ERR_PTR on error
+ */
+struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va, uint64_t len,
+				    union ubcore_umem_flag flag);
+/**
+ * Release umem allocated
+ * @param[in] umem: the ubcore umem created before
+ */
+void ubcore_umem_release(struct ubcore_umem *umem);
+
 #endif
