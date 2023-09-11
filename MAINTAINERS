@@ -13813,6 +13813,12 @@ M:	Jan-Benedict Glaw <jbglaw@lug-owl.de>
 S:	Maintained
 F:	arch/alpha/kernel/srm_env.c
 
+SSSNIC Ethernet Controller DRIVERS
+M:	Steven Song <steven.song@3snic.com>
+S:	Maintained
+F:	Documentation/networking/sssnic.rst
+F:	drivers/net/ethernet/3snic/sssnic
+
 ST STM32 I2C/SMBUS DRIVER
 M:	Pierre-Yves MORDRET <pierre-yves.mordret@st.com>
 L:	linux-i2c@vger.kernel.org
