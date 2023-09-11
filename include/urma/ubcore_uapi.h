@@ -33,4 +33,14 @@
  */
 int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
 
+/**
+ * query stats
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] key: stats type and key;
+ * @param[in/out] val: addr and len of value
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+		       struct ubcore_stats_val *val);
+
 #endif

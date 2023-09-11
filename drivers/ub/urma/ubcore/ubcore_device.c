@@ -153,3 +153,23 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid)
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_set_eid);
+
+int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+		       struct ubcore_stats_val *val)
+{
+	int ret;
+
+	if (dev == NULL || key == NULL || val == NULL || dev->ops == NULL ||
+	    dev->ops->query_stats == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->query_stats(dev, key, val);
+	if (ret != 0) {
+		ubcore_log_err("Failed to query stats, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_query_stats);

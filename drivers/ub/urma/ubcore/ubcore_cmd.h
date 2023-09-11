@@ -40,7 +40,11 @@ struct ubcore_cmd_hdr {
 /* only for ubcore device ioctl */
 enum ubcore_cmd {
 	UBCORE_CMD_SET_UASID = 1,
-	UBCORE_CMD_PUT_UASID
+	UBCORE_CMD_PUT_UASID,
+	UBCORE_CMD_SET_UTP,
+	UBCORE_CMD_SHOW_UTP,
+	UBCORE_CMD_QUERY_STATS,
+	UBCORE_CMD_QUERY_RES
 };
 
 struct ubcore_cmd_set_uasid {
@@ -57,6 +61,24 @@ struct ubcore_cmd_put_uasid {
 	struct {
 		uint32_t uasid;
 	} in;
+};
+
+struct ubcore_cmd_query_stats {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t eid[UBCORE_CMD_EID_SIZE];
+		uint32_t tp_type;
+		uint32_t type;
+		uint32_t key;
+	} in;
+	struct {
+		uint64_t tx_pkt;
+		uint64_t rx_pkt;
+		uint64_t tx_bytes;
+		uint64_t rx_bytes;
+		uint64_t tx_pkt_err;
+		uint64_t rx_pkt_err;
+	} out;
 };
 
 /* copy from user_space addr to kernel args */

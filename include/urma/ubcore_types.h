@@ -88,6 +88,40 @@ struct ubcore_net_addr {
 	uint8_t mac[UBCORE_MAC_BYTES]; /* available for UBOE */
 };
 
+enum ubcore_stats_key_type {
+	UBCORE_STATS_KEY_TP = 1,
+	UBCORE_STATS_KEY_TPG = 2,
+	UBCORE_STATS_KEY_JFS = 3,
+	UBCORE_STATS_KEY_JFR = 4,
+	UBCORE_STATS_KEY_JETTY = 5,
+	UBCORE_STATS_KEY_JETTY_GROUP = 6
+};
+
+struct ubcore_stats_key {
+	uint8_t type; /* stats type, refer to enum ubcore_stats_key_type */
+	uint32_t key; /* key can be tpn/tpgn/jetty_id/token_id/ctx_id/etc */
+};
+
+struct ubcore_stats_com_val {
+	uint64_t tx_pkt;
+	uint64_t rx_pkt;
+	uint64_t tx_bytes;
+	uint64_t rx_bytes;
+	uint64_t tx_pkt_err;
+	uint64_t rx_pkt_err;
+};
+
+struct ubcore_stats_val {
+	uint64_t addr; /* this addr is alloc and free by ubcore,
+			* refer to struct ubcore_stats_com_val
+			*/
+
+	uint32_t len;	/* [in/out] real length filled when success
+			 * to query and buffer length enough;
+			 * expected length filled and return failure when buffer length not enough
+			 */
+};
+
 struct ubcore_device;
 struct ubcore_ops {
 	struct module *owner; /* kernel driver module */
@@ -114,6 +148,15 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*unset_net_addr)(struct ubcore_device *dev, const struct ubcore_net_addr *net_addr);
+	/**
+	 * query_stats. success to query and buffer length is enough
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] key: type and key value of the ub device to query;
+	 * @param[in/out] val: address and buffer length of query results
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_stats)(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+			   struct ubcore_stats_val *val);
 };
 
 struct ubcore_device {

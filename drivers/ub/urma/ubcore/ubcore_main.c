@@ -151,6 +151,49 @@ static int ubcore_cmd_put_uasid(struct ubcore_cmd_hdr *hdr)
 	ubcore_log_info("put uasid free success, uasid: %u.\n", arg.in.uasid);
 	return 0;
 }
+
+static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	struct ubcore_cmd_query_stats arg = { 0 };
+	struct ubcore_stats_com_val com_val;
+	struct ubcore_stats_key key = { 0 };
+	struct ubcore_stats_val val;
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_query_stats));
+	if (ret != 0)
+		return ret;
+
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = (enum ubcore_transport_type)arg.in.tp_type;
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	key.type = (uint8_t)arg.in.type;
+	key.key = arg.in.key;
+	val.addr = (uint64_t)&com_val;
+	val.len = sizeof(struct ubcore_stats_com_val);
+
+	ret = ubcore_query_stats(dev, &key, &val);
+	if (ret != 0) {
+		ubcore_put_device(dev);
+		return ret;
+	}
+
+	ubcore_put_device(dev);
+	(void)memcpy(&arg.out, &com_val, sizeof(struct ubcore_stats_com_val));
+	return ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				   sizeof(struct ubcore_cmd_query_stats));
+}
+
 static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 {
 	switch (hdr->command) {
@@ -158,6 +201,8 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 		return ubcore_cmd_set_uasid(hdr);
 	case UBCORE_CMD_PUT_UASID:
 		return ubcore_cmd_put_uasid(hdr);
+	case UBCORE_CMD_QUERY_STATS:
+		return ubcore_cmd_query_stats(hdr);
 	default:
 		ubcore_log_err("bad ubcore command: %d.\n", (int)hdr->command);
 		return -EINVAL;
