@@ -135,6 +135,13 @@ struct ubcore_ops {
 	 */
 	int (*set_eid)(struct ubcore_device *dev, union ubcore_eid eid);
 	/**
+	 * query device attributes
+	 * @param[in] dev: the ub device handle;
+	 * @param[out] attr: attributes for the driver to fill in
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_device_attr)(struct ubcore_device *dev, struct ubcore_device_attr *attr);
+	/**
 	 * set ub network address
 	 * @param[in] dev: the ub device handle;
 	 * @param[in] net_addr: net_addr to set
@@ -174,6 +181,10 @@ struct ubcore_device {
 	struct ubcore_device_attr attr;
 	struct attribute_group *group[UBCORE_MAX_ATTR_GROUP]; /* driver may fill group [1] */
 	/* driver fills end */
+
+	/* port management */
+	struct kobject *ports_parent; /* kobject parent of the ports in the port list */
+	struct list_head port_list;
 
 	/* For ubcore client */
 	spinlock_t client_ctx_lock;

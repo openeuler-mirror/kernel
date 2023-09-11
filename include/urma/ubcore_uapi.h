@@ -32,7 +32,13 @@
  * @return: 0 on success, other value on error
  */
 int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
-
+/**
+ * query device attributes
+ * @param[in] dev: the ubcore_device handle;
+ * @param[out] attr: attributes returned to client
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr);
 /**
  * query stats
  * @param[in] dev: the ubcore_device handle;
