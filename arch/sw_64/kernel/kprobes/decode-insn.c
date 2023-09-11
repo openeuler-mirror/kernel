@@ -90,10 +90,12 @@ bool __kprobes sw64_insn_can_kprobe(kprobe_opcode_t *addr)
 		printk("addr can't steppable\n");
 		return false;
 	}
+#ifdef CONFIG_SUBARCH_C3B
 	if (!is_probed_between_atomic(addr)) {
 		printk("addr between atomic cant probe\n");
 		return false;
 	}
+#endif
 	return true;
 }
 #endif
