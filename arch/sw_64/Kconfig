@@ -227,7 +227,15 @@ config PLATFORM_XUELANG
 	select SW64_INTC_V2
 	select I2C_SUNWAY if I2C
 	help
-	  Sunway chip3 board chipset
+	  Sunway board chipset for C3B
+
+config PLATFORM_JUNZHANG
+	bool "JunZhang"
+	depends on UNCORE_JUNZHANG
+	select SPARSE_IRQ
+	select SYS_HAS_EARLY_PRINTK
+	help
+	  Sunway board chipset for C4
 
 endchoice
 
