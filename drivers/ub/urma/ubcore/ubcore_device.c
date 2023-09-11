@@ -462,6 +462,24 @@ int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_att
 }
 EXPORT_SYMBOL(ubcore_query_device_attr);
 
+int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg)
+{
+	int ret;
+
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->config_device == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->config_device(dev, cfg);
+	if (ret != 0) {
+		ubcore_log_err("failed to config device, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_config_device);
+
 int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
 		       struct ubcore_stats_val *val)
 {

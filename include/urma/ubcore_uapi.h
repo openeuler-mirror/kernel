@@ -40,6 +40,14 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
  */
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr);
 /**
+ * config device
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] cfg: device configuration
+ * @return: 0 on success, other value on error
+ */
+int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg);
+
+/**
  * set ctx data of a client
  * @param[in] dev: the ubcore_device handle;
  * @param[in] client: ubcore client pointer

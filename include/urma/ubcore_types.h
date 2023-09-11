@@ -71,6 +71,32 @@ struct ubcore_device_attr {
 	uint32_t max_eid_cnt;
 };
 
+union ubcore_device_cfg_mask {
+	struct {
+		uint32_t port_ets : 1;
+		uint32_t port_fec : 1;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_congestion_control {
+	uint32_t data;
+};
+
+struct ubcore_port_ets {
+	uint32_t data;
+};
+
+struct ubcore_port_fec {
+	uint32_t data;
+};
+
+struct ubcore_device_cfg {
+	union ubcore_device_cfg_mask mask;
+	struct ubcore_port_fec fec;
+	struct ubcore_port_ets ets;
+};
+
 struct ubcore_net_addr {
 	union {
 		uint8_t raw[UBCORE_NET_ADDR_BYTES];
@@ -142,6 +168,13 @@ struct ubcore_ops {
 	 */
 	int (*query_device_attr)(struct ubcore_device *dev, struct ubcore_device_attr *attr);
 	/**
+	 * config device
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: device configuration
+	 * @return: 0 on success, other value on error
+	 */
+	int (*config_device)(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg);
+	/**
 	 * set ub network address
 	 * @param[in] dev: the ub device handle;
 	 * @param[in] net_addr: net_addr to set
@@ -182,6 +215,8 @@ struct ubcore_device {
 	struct attribute_group *group[UBCORE_MAX_ATTR_GROUP]; /* driver may fill group [1] */
 	/* driver fills end */
 
+	struct ubcore_device_cfg cfg;
+
 	/* port management */
 	struct kobject *ports_parent; /* kobject parent of the ports in the port list */
 	struct list_head port_list;
@@ -195,6 +230,13 @@ struct ubcore_device {
 	/* protect from unregister device */
 	atomic_t use_cnt;
 	struct completion comp;
+};
+
+struct ubcore_port {
+	struct kobject kobj; /* add to port list */
+	struct ubcore_device *ub_dev;
+	uint32_t port_no;
+	struct ubcore_net_addr net_addr;
 };
 
 struct ubcore_client {
