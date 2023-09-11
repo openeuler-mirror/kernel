@@ -171,6 +171,7 @@ static int uburma_add_device(struct ubcore_device *ubc_dev)
 		goto err;
 	}
 
+	ubcore_set_client_ctx_data(ubc_dev, &g_urma_client, ubu_dev);
 	return 0;
 
 err:

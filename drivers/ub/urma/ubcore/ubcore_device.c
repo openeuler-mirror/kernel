@@ -46,6 +46,53 @@ static LIST_HEAD(g_device_list);
 static DEFINE_MUTEX(g_device_mutex);
 static DECLARE_RWSEM(g_lists_rwsem);
 
+void ubcore_set_client_ctx_data(struct ubcore_device *dev, const struct ubcore_client *client,
+				void *data)
+{
+	struct ubcore_client_ctx *ctx;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev->client_ctx_lock, flags);
+	list_for_each_entry(ctx, &dev->client_ctx_list, list_node) {
+		if (ctx->client == client) {
+			ctx->data = data;
+			goto out;
+		}
+	}
+	ubcore_log_err("no client ctx found, device_name: %s, client_name: %s.\n", dev->dev_name,
+		       client->client_name);
+
+out:
+	spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
+}
+EXPORT_SYMBOL(ubcore_set_client_ctx_data);
+
+void *ubcore_get_client_ctx_data(struct ubcore_device *dev, const struct ubcore_client *client)
+{
+	struct ubcore_client_ctx *found_ctx = NULL;
+	struct ubcore_client_ctx *ctx, *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev->client_ctx_lock, flags);
+	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
+		if (ctx->client == client) {
+			found_ctx = ctx;
+			break;
+		}
+	}
+
+	if (found_ctx == NULL) {
+		spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
+		ubcore_log_warn("no client ctx found, dev_name: %s, client_name: %s.\n",
+				dev->dev_name, client->client_name);
+		return NULL;
+	}
+	spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
+
+	return found_ctx->data;
+}
+EXPORT_SYMBOL(ubcore_get_client_ctx_data);
+
 static struct ubcore_client_ctx *create_client_ctx(struct ubcore_device *dev,
 						   struct ubcore_client *client)
 {

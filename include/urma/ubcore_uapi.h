@@ -40,6 +40,22 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
  */
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr);
 /**
+ * set ctx data of a client
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] client: ubcore client pointer
+ * @param[in] data: client private data to be set
+ * @return: 0 on success, other value on error
+ */
+void ubcore_set_client_ctx_data(struct ubcore_device *dev, const struct ubcore_client *client,
+				void *data);
+/**
+ * get ctx data of a client
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] client: ubcore client pointer
+ * @return: client private data set before
+ */
+void *ubcore_get_client_ctx_data(struct ubcore_device *dev, const struct ubcore_client *client);
+/**
  * Register a new client to ubcore
  * @param[in] dev: the ubcore_device handle;
  * @param[in] new_client: ubcore client to be registered
