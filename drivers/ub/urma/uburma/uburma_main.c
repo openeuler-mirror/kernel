@@ -30,6 +30,7 @@
 #include <linux/version.h>
 
 #include <urma/ubcore_types.h>
+#include <urma/ubcore_uapi.h>
 
 #include "uburma_log.h"
 #include "uburma_types.h"
@@ -199,6 +200,23 @@ static void uburma_remove_device(struct ubcore_device *ubc_dev, void *client_ctx
 	kobject_put(&ubu_dev->kobj);
 }
 
+static void uburma_register_client(void)
+{
+	int ret;
+
+	ret = ubcore_register_client(&g_urma_client);
+	if (ret != 0)
+		uburma_log_err("register client failed, ret: %d.\n", ret);
+	else
+		uburma_log_info("register client succeed.\n");
+}
+
+static void uburma_unregister_client(void)
+{
+	ubcore_unregister_client(&g_urma_client);
+	uburma_log_info("unregister client succeed.\n");
+}
+
 static char *uburma_devnode(struct device *dev, umode_t *mode)
 {
 	if (mode)
@@ -271,12 +289,14 @@ static int __init uburma_init(void)
 		return ret;
 	}
 
+	uburma_register_client();
 	uburma_log_info("uburma module init success.\n");
 	return 0;
 }
 
 static void __exit uburma_exit(void)
 {
+	uburma_unregister_client();
 	uburma_class_destroy();
 	uburma_log_info("uburma module exits.\n");
 }
