@@ -1,0 +1,67 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+ * for more details.
+ *
+ * Description: ubcore netlink head file
+ * Author: Chen Wen
+ * Create: 2022-08-27
+ * Note:
+ * History: 2022-08-27: Create file
+ */
+
+#ifndef UBCORE_NETLINK_H
+#define UBCORE_NETLINK_H
+
+#include <linux/netlink.h>
+#include <urma/ubcore_types.h>
+
+enum ubcore_nl_resp_status { UBCORE_NL_RESP_FAIL = -1, UBCORE_NL_RESP_SUCCESS = 0 };
+
+enum ubcore_nlmsg_type {
+	UBCORE_NL_CREATE_TP_REQ = NLMSG_MIN_TYPE, /* 0x10 */
+	UBCORE_NL_CREATE_TP_RESP,
+	UBCORE_NL_DESTROY_TP_REQ,
+	UBCORE_NL_DESTROY_TP_RESP,
+	UBCORE_NL_QUERY_TP_REQ,
+	UBCORE_NL_QUERY_TP_RESP,
+	UBCORE_NL_RESTORE_TP_REQ,
+	UBCORE_NL_RESTORE_TP_RESP,
+	UBCORE_NL_SET_AGENT_PID
+};
+
+struct ubcore_nlmsg {
+	uint32_t nlmsg_seq;
+	enum ubcore_nlmsg_type msg_type;
+	enum ubcore_transport_type transport_type;
+	union ubcore_eid src_eid;
+	union ubcore_eid dst_eid;
+	uint32_t payload_len;
+	uint8_t payload[0];
+} __packed;
+
+struct ubcore_nl_session {
+	struct ubcore_nlmsg *req;
+	struct ubcore_nlmsg *resp;
+	struct list_head node;
+	struct kref kref;
+	struct completion comp; /* Synchronization event of timeout sleep and thread wakeup */
+};
+
+static inline uint32_t ubcore_nlmsg_len(struct ubcore_nlmsg *msg)
+{
+	return sizeof(struct ubcore_nlmsg) + msg->payload_len;
+}
+
+int ubcore_netlink_init(void);
+void ubcore_netlink_exit(void);
+
+#endif

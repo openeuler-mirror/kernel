@@ -30,6 +30,7 @@
 
 #include "ubcore_cmd.h"
 #include "ubcore_log.h"
+#include "ubcore_netlink.h"
 #include <urma/ubcore_types.h>
 #include <urma/ubcore_uapi.h>
 #include "ubcore_priv.h"
@@ -606,10 +607,16 @@ static int __init ubcore_init(void)
 	bitmap_zero(g_uasid_bitmap, UBCORE_MAX_UASID);
 	set_bit(0, g_uasid_bitmap);
 
+	if (ubcore_netlink_init() != 0) {
+		ubcore_unregister_sysfs();
+		return -1;
+	}
+
 	ret = ubcore_register_notifiers();
 	if (ret != 0) {
 		pr_err("Failed to register notifiers\n");
 		ubcore_unregister_sysfs();
+		ubcore_netlink_exit();
 		return -1;
 	}
 	ubcore_log_info("ubcore module init success.\n");
@@ -619,6 +626,7 @@ static int __init ubcore_init(void)
 static void __exit ubcore_exit(void)
 {
 	ubcore_unregister_notifiers();
+	ubcore_netlink_exit();
 	ubcore_unregister_sysfs();
 	ubcore_log_info("ubcore module exits.\n");
 }
