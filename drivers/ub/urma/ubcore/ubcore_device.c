@@ -83,6 +83,79 @@ static void destroy_client_ctx(struct ubcore_device *dev, struct ubcore_client_c
 	kfree(ctx);
 }
 
+int ubcore_register_client(struct ubcore_client *new_client)
+{
+	struct ubcore_device *dev;
+	struct ubcore_client_ctx *ctx = NULL;
+
+	mutex_lock(&g_device_mutex);
+
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		ctx = create_client_ctx(dev, new_client);
+		if (ctx == NULL)
+			continue;
+
+		if (new_client->add && new_client->add(dev) != 0) {
+			destroy_client_ctx(dev, ctx);
+			ubcore_log_err("ubcore client: %s register dev:%s failed.\n",
+				       new_client->client_name, dev->dev_name);
+		}
+	}
+	down_write(&g_lists_rwsem);
+	list_add_tail(&new_client->list_node, &g_client_list);
+	up_write(&g_lists_rwsem);
+
+	mutex_unlock(&g_device_mutex);
+
+	ubcore_log_info("ubcore client: %s register success.\n", new_client->client_name);
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_register_client);
+
+void ubcore_unregister_client(struct ubcore_client *rm_client)
+{
+	struct ubcore_client_ctx *ctx, *tmp;
+	struct ubcore_device *dev;
+	unsigned long flags;
+
+	mutex_lock(&g_device_mutex);
+
+	down_write(&g_lists_rwsem);
+	list_del(&rm_client->list_node);
+	up_write(&g_lists_rwsem);
+
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		struct ubcore_client_ctx *found_ctx = NULL;
+
+		down_write(&g_lists_rwsem);
+		spin_lock_irqsave(&dev->client_ctx_lock, flags);
+		list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
+			if (ctx->client == rm_client) {
+				found_ctx = ctx;
+				break;
+			}
+		}
+		spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
+		up_write(&g_lists_rwsem);
+
+		if (found_ctx == NULL) {
+			ubcore_log_warn("no client ctx found, dev_name: %s, client_name: %s.\n",
+					dev->dev_name, rm_client->client_name);
+			continue;
+		}
+		if (rm_client->remove)
+			rm_client->remove(dev, found_ctx->data);
+
+		destroy_client_ctx(dev, found_ctx);
+		ubcore_log_info("dev remove client, dev_name: %s, client_name: %s.\n",
+				dev->dev_name, rm_client->client_name);
+	}
+
+	mutex_unlock(&g_device_mutex);
+	ubcore_log_info("ubcore client: %s unregister success.\n", rm_client->client_name);
+}
+EXPORT_SYMBOL(ubcore_unregister_client);
+
 struct ubcore_device *ubcore_find_device(union ubcore_eid *eid, enum ubcore_transport_type type)
 {
 	struct ubcore_device *dev, *target = NULL;

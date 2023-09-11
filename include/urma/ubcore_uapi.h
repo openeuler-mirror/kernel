@@ -40,6 +40,18 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
  */
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr);
 /**
+ * Register a new client to ubcore
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] new_client: ubcore client to be registered
+ * @return: 0 on success, other value on error
+ */
+int ubcore_register_client(struct ubcore_client *new_client);
+/**
+ * Unregister a client from ubcore
+ * @param[in] rm_client: ubcore client to be unregistered
+ */
+void ubcore_unregister_client(struct ubcore_client *rm_client);
+/**
  * query stats
  * @param[in] dev: the ubcore_device handle;
  * @param[in] key: stats type and key;
