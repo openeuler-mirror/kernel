@@ -34,6 +34,7 @@
 
 #include "uburma_log.h"
 #include "uburma_types.h"
+#include "uburma_cdev_file.h"
 
 #define UBURMA_MAX_DEVICE 1024
 #define UBURMA_DYNAMIC_MINOR_NUM UBURMA_MAX_DEVICE
@@ -95,7 +96,16 @@ static int uburma_device_create(struct uburma_device *ubu_dev, struct ubcore_dev
 		return -ENOMEM;
 	}
 
+	if (uburma_create_dev_attr_files(ubu_dev) != 0) {
+		uburma_log_err("failed to fill attributes, device:%s.\n", ubc_dev->dev_name);
+		goto destroy_dev;
+	}
+
 	return 0;
+
+destroy_dev:
+	device_destroy(g_uburma_class, ubu_dev->cdev.dev);
+	return -EPERM;
 }
 
 static void uburma_device_destroy(struct uburma_device *ubu_dev,
