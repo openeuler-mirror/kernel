@@ -164,6 +164,10 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 	if (!user_mode(regs))
 		die("Arithmetic fault", regs, 0);
 
+	/*summary<39> means integer divide by zero in C4.*/
+	if ((summary >> 39) & 1)
+		si_code = FPE_INTDIV;
+
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc);
 }
 
