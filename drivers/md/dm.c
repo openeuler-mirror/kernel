@@ -587,7 +587,7 @@ static void start_io_acct(struct dm_io *io)
 	struct mapped_device *md = io->md;
 	struct bio *bio = io->orig_bio;
 
-	io->start_time = bio_start_io_acct(bio);
+	io->start_time = bio_start_precise_io_acct(bio);
 	if (unlikely(dm_stats_used(&md->stats)))
 		dm_stats_account_io(&md->stats, bio_data_dir(bio),
 				    bio->bi_iter.bi_sector, bio_sectors(bio),
@@ -606,7 +606,7 @@ static void end_io_acct(struct mapped_device *md, struct bio *bio,
 
 	smp_wmb();
 
-	bio_end_io_acct(bio, start_time);
+	bio_end_precise_io_acct(bio, start_time);
 
 	/* nudge anyone waiting on suspend queue */
 	if (unlikely(wq_has_sleeper(&md->wait)))
