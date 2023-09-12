@@ -52,6 +52,22 @@ void ubcore_free_ucontext(const struct ubcore_device *dev, struct ubcore_ucontex
  */
 int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
 /**
+ * add a function entity id (eid) to ub device, the upi of vf to which the eid belongs
+ * can be specified
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] eid: function entity id (eid) to be added;
+ * @param[in] upi: upi of vf;
+ * @return: the index of eid/upi, less than 0 indicating error
+ */
+int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid);
+/**
+ * remove a function entity id (eid) specified by idx from ub device
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] idx: the idx of function entity id (eid) to be deleted;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx);
+/**
  * query device attributes
  * @param[in] dev: the ubcore_device handle;
  * @param[out] attr: attributes returned to client

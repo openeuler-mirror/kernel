@@ -523,6 +523,42 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid)
 }
 EXPORT_SYMBOL(ubcore_set_eid);
 
+int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid)
+{
+	int ret;
+
+	if (dev == NULL || eid == NULL || dev->ops == NULL || dev->ops->add_eid == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->add_eid(dev, eid);
+	if (ret != 0) {
+		ubcore_log_err("failed to add eid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_add_eid);
+
+int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->delete_eid_by_idx == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->delete_eid_by_idx(dev, idx);
+	if (ret != 0) {
+		ubcore_log_err("failed to delete eid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_eid);
+
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr)
 {
 	int ret;
