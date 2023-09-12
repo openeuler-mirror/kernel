@@ -21,7 +21,11 @@
 # *******************************************************************/
 ######################################################################
 
+ifeq ($(CONFIG_PGO_KERNEL),y)
+ccflags-$(GCOV) := -fprofile-generate -ftest-coverage
+else
 ccflags-$(GCOV) := -fprofile-arcs -ftest-coverage
+endif
 ccflags-$(GCOV) += -O0
 
 ifdef WARNINGS_BECOME_ERRORS

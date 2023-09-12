@@ -167,3 +167,111 @@ static int __init gcov_init(void)
 }
 device_initcall(gcov_init);
 #endif /* CONFIG_MODULES */
+
+#ifdef CONFIG_PGO_KERNEL
+/*
+ * If VALUE is in interval <START, START + STEPS - 1>, then increases the
+ * corresponding counter in COUNTERS. If the VALUE is above or below
+ * the interval, COUNTERS[STEPS] or COUNTERS[STEPS + 1] is increased
+ * instead.
+ */
+void __gcov_interval_profiler(gcov_type *counters, gcov_type value,
+			      int start, unsigned int steps)
+{
+	gcov_type delta = value - start;
+
+	if (delta < 0)
+		counters[steps + 1]++;
+	else if (delta >= steps)
+		counters[steps]++;
+	else
+		counters[delta]++;
+}
+EXPORT_SYMBOL(__gcov_interval_profiler);
+
+/*
+ * If VALUE is a power of two, COUNTERS[1] is incremented. Otherwise
+ * COUNTERS[0] is incremented.
+ */
+void __gcov_pow2_profiler(gcov_type *counters, gcov_type value)
+{
+	if (value == 0 || (value & (value - 1)))
+		counters[0]++;
+	else
+		counters[1]++;
+}
+EXPORT_SYMBOL(__gcov_pow2_profiler);
+
+/*
+ * Tries to determine the most common value among its inputs. Checks if the
+ * value stored in COUNTERS[0] matches VALUE. If this is the case, COUNTERS[1]
+ * is incremented. If this is not the case and COUNTERS[1] is not zero,
+ * COUNTERS[1] is decremented. Otherwise COUNTERS[1] is set to one and
+ * VALUE is stored to COUNTERS[0]. This algorithm guarantees that if this
+ * function is called more than 50% of the time with one value, this value
+ * will be in COUNTERS[0] in the end.
+ *
+ * In any case, COUNTERS[2] is incremented.
+ */
+static inline void __gcov_one_value_profiler_body(gcov_type *counters,
+						  gcov_type value)
+{
+	if (value == counters[0])
+		counters[1]++;
+	else if (counters[1] == 0) {
+		counters[1] = 1;
+		counters[0] = value;
+	} else
+		counters[1]--;
+
+	counters[2]++;
+}
+
+void __gcov_one_value_profiler(gcov_type *counters, gcov_type value)
+{
+	__gcov_one_value_profiler_body(counters, value);
+}
+EXPORT_SYMBOL(__gcov_one_value_profiler);
+
+/*
+ * These two variables are used to actually track caller and callee.
+ * Discarded __thread keyword as kernel does not support TLS.
+ * The variables are set directly by GCC instrumented code, so declaration
+ * here must match one in tree-profile.c.
+ */
+void *__gcov_indirect_call_callee;
+EXPORT_SYMBOL(__gcov_indirect_call_callee);
+gcov_type *__gcov_indirect_call_counters;
+EXPORT_SYMBOL(__gcov_indirect_call_counters);
+
+/*
+ * Tries to determine the most common value among its inputs.
+ */
+void __gcov_indirect_call_profiler_v2(gcov_type value, void *cur_func)
+{
+	/* Removed the C++ virtual tables contents as kernel is written in C. */
+	if (cur_func == __gcov_indirect_call_callee)
+		__gcov_one_value_profiler_body(__gcov_indirect_call_counters,
+					       value);
+}
+EXPORT_SYMBOL(__gcov_indirect_call_profiler_v2);
+
+/* Counter for first visit of each function. */
+gcov_type __gcov_time_profiler_counter;
+EXPORT_SYMBOL(__gcov_time_profiler_counter);
+
+/* Increase corresponding COUNTER by VALUE. */
+void __gcov_average_profiler(gcov_type *counters, gcov_type value)
+{
+	counters[0] += value;
+	counters[1]++;
+}
+EXPORT_SYMBOL(__gcov_average_profiler);
+
+/* Bitwise-OR VALUE into COUNTER. */
+void __gcov_ior_profiler(gcov_type *counters, gcov_type value)
+{
+	*counters |= value;
+}
+EXPORT_SYMBOL(__gcov_ior_profiler);
+#endif

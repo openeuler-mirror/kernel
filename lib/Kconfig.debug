@@ -395,6 +395,18 @@ config DEBUG_FORCE_WEAK_PER_CPU
 	  To ensure that generic code follows the above rules, this
 	  option forces all percpu variables to be defined as weak.
 
+config PGO_KERNEL
+	bool "Enable profile guided optimization for kernel"
+	depends on CC_IS_GCC && GCC_VERSION > 70000 && GCC_VERSION < 80000
+	depends on !COMPILE_TEST && DEBUG_KERNEL && DEBUG_FS
+	select GCOV_KERNEL
+	select GCOV_PROFILE_ALL
+	default n
+	help
+	  This option enables profile guided optimization for kernel.
+
+	  If unsure, say N.
+
 endmenu # "Compiler options"
 
 config MAGIC_SYSRQ

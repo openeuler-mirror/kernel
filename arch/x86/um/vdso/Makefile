@@ -50,8 +50,13 @@ $(vobjs): KBUILD_CFLAGS += $(CFL)
 #
 # vDSO code runs in userspace and -pg doesn't help with profiling anyway.
 #
+ifeq ($(CONFIG_PGO_KERNEL),y)
+CFLAGS_REMOVE_vdso-note.o = -pg -fprofile-generate -ftest-coverage
+CFLAGS_REMOVE_um_vdso.o = -pg -fprofile-generate -ftest-coverage
+else
 CFLAGS_REMOVE_vdso-note.o = -pg -fprofile-arcs -ftest-coverage
 CFLAGS_REMOVE_um_vdso.o = -pg -fprofile-arcs -ftest-coverage
+endif
 
 #
 # The DSO images are built using a special linker script.

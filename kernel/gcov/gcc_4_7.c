@@ -297,14 +297,18 @@ struct gcov_info *gcov_info_dup(struct gcov_info *info)
 		for (ct_idx = 0; ct_idx < active; ct_idx++) {
 
 			cv_size = sizeof(gcov_type) * sci_ptr->num;
+			/* The situation may exist where cv_size=0 in value
+			profile. */
+			if (cv_size != 0) {
+				dci_ptr->values = vmalloc(cv_size);
 
-			dci_ptr->values = vmalloc(cv_size);
+				if (!dci_ptr->values)
+					goto err_free;
 
-			if (!dci_ptr->values)
-				goto err_free;
-
-			dci_ptr->num = sci_ptr->num;
-			memcpy(dci_ptr->values, sci_ptr->values, cv_size);
+				dci_ptr->num = sci_ptr->num;
+				memcpy(dci_ptr->values, sci_ptr->values,
+				       cv_size);
+			}
 
 			sci_ptr++;
 			dci_ptr++;
