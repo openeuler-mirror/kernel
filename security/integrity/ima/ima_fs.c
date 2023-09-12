@@ -50,16 +50,33 @@ __setup("ima_canonical_fmt", default_canonical_fmt_setup);
 
 static int valid_policy = 1;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
+				     size_t count, loff_t *ppos)
+{
+	atomic_long_t *val = NULL;
+#else
 static ssize_t ima_show_htable_value(char __user *buf, size_t count,
 				     loff_t *ppos, atomic_long_t *val)
 {
+#endif
 	char tmpbuf[32];	/* greater than largest 'long' string value */
 	ssize_t len;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (filp->f_path.dentry == violations)
+		val = &ima_htable.violations;
+	else if (filp->f_path.dentry == runtime_measurements_count)
+		val = &ima_htable.len;
+#endif
 	len = scnprintf(tmpbuf, sizeof(tmpbuf), "%li\n", atomic_long_read(val));
 	return simple_read_from_buffer(buf, count, ppos, tmpbuf, len);
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static const struct file_operations ima_htable_value_ops = {
+	.read = ima_show_htable_value,
+#else
 static ssize_t ima_show_htable_violations(struct file *filp,
 					  char __user *buf,
 					  size_t count, loff_t *ppos)
@@ -82,6 +99,7 @@ static ssize_t ima_show_measurements_count(struct file *filp,
 
 static const struct file_operations ima_measurements_count_ops = {
 	.read = ima_show_measurements_count,
+#endif
 	.llseek = generic_file_llseek,
 };
 
@@ -677,7 +695,11 @@ int __init ima_fs_init(void)
 	runtime_measurements_count =
 	    securityfs_create_file("runtime_measurements_count",
 				   S_IRUSR | S_IRGRP, ima_dir, NULL,
+#ifdef CONFIG_IMA_DIGEST_LIST
+				   &ima_htable_value_ops);
+#else
 				   &ima_measurements_count_ops);
+#endif
 	if (IS_ERR(runtime_measurements_count)) {
 		ret = PTR_ERR(runtime_measurements_count);
 		goto out;
@@ -685,7 +707,11 @@ int __init ima_fs_init(void)
 
 	violations =
 	    securityfs_create_file("violations", S_IRUSR | S_IRGRP,
+#ifdef CONFIG_IMA_DIGEST_LIST
+				   ima_dir, NULL, &ima_htable_value_ops);
+#else
 				   ima_dir, NULL, &ima_htable_violations_ops);
+#endif
 	if (IS_ERR(violations)) {
 		ret = PTR_ERR(violations);
 		goto out;
