@@ -369,6 +369,13 @@ static ssize_t ima_read_policy(char *path)
 			rc = ima_parse_add_rule(p);
 		} else if (dentry == digest_list_data ||
 			   dentry == digest_list_data_del) {
+			/* Only check size when adding digest lists */
+			if (dentry == digest_list_data &&
+			    size > ima_digest_db_max_size - ima_digest_db_size) {
+				pr_err("digest DB is full: %d\n", ima_digest_db_size);
+				rc = -ENOMEM;
+				break;
+			}
 			/*
 			 * Disable usage of digest lists if not measured
 			 * or appraised.
@@ -387,6 +394,12 @@ static ssize_t ima_read_policy(char *path)
 #endif
 		if (rc < 0)
 			break;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		else if (dentry == digest_list_data)
+			pr_debug("digest imported, current DB size: %d\n", ima_digest_db_size);
+		else if (dentry == digest_list_data_del)
+			pr_debug("digest deleted, current DB size: %d\n", ima_digest_db_size);
+#endif
 		size -= rc;
 	}
 
