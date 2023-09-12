@@ -138,3 +138,48 @@ void *ubcore_hash_table_lookup(struct ubcore_hash_table *ht, uint32_t hash, cons
 	spin_unlock(&ht->lock);
 	return obj;
 }
+
+/* Do not insert a new entry if an old entry with the same key exists */
+int ubcore_hash_table_find_add(struct ubcore_hash_table *ht, struct hlist_node *hnode,
+			       uint32_t hash)
+{
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return -1;
+	}
+	/* Old entry with the same key exists */
+	if (ubcore_hash_table_lookup_nolock(ht, hash, ubcore_ht_key(ht, hnode)) != NULL) {
+		spin_unlock(&ht->lock);
+		return -1;
+	}
+	ubcore_hash_table_add_nolock(ht, hnode, hash);
+	spin_unlock(&ht->lock);
+	return 0;
+}
+
+void *ubcore_hash_table_find_remove(struct ubcore_hash_table *ht, uint32_t hash, const void *key)
+{
+	struct hlist_node *pos = NULL, *next = NULL;
+	void *obj = NULL;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return NULL;
+	}
+	hlist_for_each_safe(pos, next, &ht->head[hash % ht->p.size]) {
+		obj = ubcore_ht_obj(ht, pos);
+		if (ht->p.cmp_f != NULL && ht->p.cmp_f(obj, key) == 0) {
+			hlist_del(pos);
+			break;
+		} else if (ht->p.key_size > 0 &&
+			   memcmp(ubcore_ht_key(ht, pos), key, ht->p.key_size) == 0) {
+			hlist_del(pos);
+			break;
+		}
+		obj = NULL;
+	}
+	spin_unlock(&ht->lock);
+	return obj;
+}

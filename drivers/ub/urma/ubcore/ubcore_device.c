@@ -32,6 +32,7 @@
 #include <urma/ubcore_uapi.h>
 #include <urma/ubcore_api.h>
 #include "ubcore_priv.h"
+#include "ubcore_hash_table.h"
 
 static LIST_HEAD(g_client_list);
 static LIST_HEAD(g_device_list);
@@ -309,6 +310,37 @@ void ubcore_put_device(struct ubcore_device *dev)
 		complete(&dev->comp);
 }
 
+static struct ubcore_ht_param g_ht_params[] = {
+};
+
+static int ubcore_alloc_hash_tables(struct ubcore_device *dev)
+{
+	uint32_t i, j;
+	int ret;
+
+	for (i = 0; i < ARRAY_SIZE(g_ht_params); i++) {
+		ret = ubcore_hash_table_alloc(&dev->ht[i], &g_ht_params[i]);
+		if (ret != 0) {
+			ubcore_log_err("alloc hash tables failed.\n");
+			goto free_tables;
+		}
+	}
+	return 0;
+
+free_tables:
+	for (j = 0; j < i; j++)
+		ubcore_hash_table_free(&dev->ht[j]);
+	return -1;
+}
+
+static void ubcore_free_hash_tables(struct ubcore_device *dev)
+{
+	uint32_t i;
+
+	for (i = 0; i < ARRAY_SIZE(g_ht_params); i++)
+		ubcore_hash_table_free(&dev->ht[i]);
+}
+
 static void ubcore_device_release(struct device *device)
 {
 }
@@ -336,12 +368,17 @@ static int init_ubcore_device(struct ubcore_device *dev)
 	init_completion(&dev->comp);
 	atomic_set(&dev->use_cnt, 1);
 
+	if (ubcore_alloc_hash_tables(dev) != 0) {
+		ubcore_log_err("alloc hash tables failed.\n");
+		return -1;
+	}
 	ubcore_set_default_eid(dev);
 	return 0;
 }
 
 static void uninit_ubcore_device(struct ubcore_device *dev)
 {
+	ubcore_free_hash_tables(dev);
 	put_device(&dev->dev);
 }
 
