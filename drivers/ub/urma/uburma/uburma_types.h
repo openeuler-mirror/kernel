@@ -30,6 +30,35 @@
 
 #include <urma/ubcore_types.h>
 
+enum uburma_remove_reason {
+	/* Userspace requested uobject deletion. Call could fail */
+	UBURMA_REMOVE_DESTROY,
+	/* Context deletion. This call should delete the actual object itself */
+	UBURMA_REMOVE_CLOSE,
+	/* Driver is being hot-unplugged. This call should delete the actual object itself */
+	UBURMA_REMOVE_DRIVER_REMOVE,
+	/* Context is being cleaned-up, but commit was just completed */
+	UBURMA_REMOVE_DURING_CLEANUP
+};
+
+struct uburma_file {
+	struct kref ref;
+	struct mutex mutex;
+	struct uburma_device *ubu_dev;
+	struct ubcore_ucontext *ucontext;
+
+	/* uobj */
+	struct mutex uobjects_lock;
+	struct list_head uobjects;
+	struct idr idr;
+	spinlock_t idr_lock;
+	struct rw_semaphore cleanup_rwsem;
+	enum uburma_remove_reason cleanup_reason;
+
+	struct list_head list;
+	int is_closed;
+};
+
 struct uburma_device {
 	atomic_t refcnt;
 	struct completion comp; /* When refcnt becomes 0, it will wake up */

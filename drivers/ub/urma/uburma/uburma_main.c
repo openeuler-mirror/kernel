@@ -34,7 +34,9 @@
 
 #include "uburma_log.h"
 #include "uburma_types.h"
+#include "uburma_file_ops.h"
 #include "uburma_cdev_file.h"
+#include "uburma_cmd.h"
 
 #define UBURMA_MAX_DEVICE 1024
 #define UBURMA_DYNAMIC_MINOR_NUM UBURMA_MAX_DEVICE
@@ -50,6 +52,8 @@ static const struct file_operations g_uburma_fops = {
 	.owner = THIS_MODULE,
 	// .write	 = uburma_write,
 	.llseek = no_llseek,
+	.unlocked_ioctl = uburma_ioctl,
+	.compat_ioctl = uburma_ioctl,
 };
 
 static int uburma_add_device(struct ubcore_device *ubc_dev);
@@ -208,6 +212,7 @@ static void uburma_remove_device(struct ubcore_device *ubc_dev, void *client_ctx
 		complete(&ubu_dev->comp);
 
 	/* do not wait_for_completion(&ubu_dev->comp) */
+	uburma_cmd_flush(ubu_dev);
 	kobject_put(&ubu_dev->kobj);
 }
 
