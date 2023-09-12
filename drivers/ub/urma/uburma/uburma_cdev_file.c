@@ -237,8 +237,51 @@ static ssize_t active_speed_show(struct uburma_port *p, struct uburma_port_attri
 
 static PORT_ATTR_RO(active_speed);
 
+static ssize_t active_width_show_cb(const struct ubcore_device *ubc_dev, char *buf,
+				    uint8_t port_num)
+{
+	struct ubcore_device_status status;
+
+	if (ubcore_query_device_status(ubc_dev, &status) != 0) {
+		uburma_log_err("query device status for active width failed.\n");
+		return -EPERM;
+	}
+
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n",
+			status.port_status[port_num].active_width);
+}
+
+static ssize_t active_width_show(struct uburma_port *p, struct uburma_port_attribute *attr,
+				 char *buf)
+{
+	return uburma_show_port_attr(p, attr, buf, active_width_show_cb);
+}
+
+static PORT_ATTR_RO(active_width);
+
+static ssize_t active_mtu_show_cb(const struct ubcore_device *ubc_dev, char *buf, uint8_t port_num)
+{
+	struct ubcore_device_status status;
+
+	if (ubcore_query_device_status(ubc_dev, &status) != 0) {
+		uburma_log_err("query device status for active mtu failed.\n");
+		return -EPERM;
+	}
+
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n",
+			(uint32_t)status.port_status[port_num].active_mtu);
+}
+
+static ssize_t active_mtu_show(struct uburma_port *p, struct uburma_port_attribute *attr, char *buf)
+{
+	return uburma_show_port_attr(p, attr, buf, active_mtu_show_cb);
+}
+
+static PORT_ATTR_RO(active_mtu);
+
 static struct attribute *uburma_port_attrs[] = {
 	&port_attr_max_mtu.attr,      &port_attr_state.attr,	  &port_attr_active_speed.attr,
+	&port_attr_active_width.attr, &port_attr_active_mtu.attr, NULL,
 };
 
 static ssize_t uburma_port_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
