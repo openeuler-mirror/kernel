@@ -665,6 +665,16 @@ int ima_appraise_measurement(enum ima_hooks func,
 	default:
 		WARN_ONCE(true, "Unexpected integrity status %d\n", status);
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if ((iint->flags & IMA_META_IMMUTABLE_REQUIRED) &&
+	    status != INTEGRITY_PASS_IMMUTABLE) {
+		status = INTEGRITY_FAIL;
+		cause = "metadata-modifiable";
+		integrity_audit_msg(AUDIT_INTEGRITY_DATA, inode,
+				    filename, op, cause, rc, 0);
+		goto out;
+	}
+#endif
 
 	if (xattr_value)
 		rc = xattr_verify(func, iint, xattr_value, xattr_len, &status,
