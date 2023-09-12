@@ -3547,18 +3547,14 @@ static void hns3_set_default_feature(struct net_device *netdev)
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 
+	netdev->gso_partial_features |= NETIF_F_GSO_GRE_CSUM;
+
 	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER |
 		NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX |
 		NETIF_F_RXCSUM | NETIF_F_SG | NETIF_F_GSO |
-		NETIF_F_GRO | NETIF_F_TSO | NETIF_F_TSO6 |
-		NETIF_F_GSO_UDP_TUNNEL |
+		NETIF_F_GRO | NETIF_F_TSO | NETIF_F_TSO6 | NETIF_F_GSO_GRE |
+		NETIF_F_GSO_GRE_CSUM | NETIF_F_GSO_UDP_TUNNEL |
 		NETIF_F_SCTP_CRC | NETIF_F_FRAGLIST;
-
-	if (pdev->revision == HNAE3_DEVICE_VERSION_V2) {
-		netdev->gso_partial_features |= NETIF_F_GSO_GRE_CSUM;
-		netdev->features |= NETIF_F_GSO_GRE_CSUM;
-		netdev->features |= NETIF_F_GSO_GRE;
-	}
 
 	if (hnae3_ae_dev_gro_supported(ae_dev))
 		netdev->features |= NETIF_F_GRO_HW;
