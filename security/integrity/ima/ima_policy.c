@@ -1258,7 +1258,12 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 
 	if (entry->action != APPRAISE &&
 	    entry->flags & (IMA_DIGSIG_REQUIRED | IMA_MODSIG_ALLOWED |
+#ifdef CONFIG_IMA_DIGEST_LIST
+			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS |
+				IMA_META_IMMUTABLE_REQUIRED))
+#else
 			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS))
+#endif
 		return false;
 
 	/*
@@ -1294,7 +1299,12 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 				     IMA_FSNAME | IMA_GID | IMA_EGID |
 				     IMA_FGROUP | IMA_DIGSIG_REQUIRED |
 				     IMA_PERMIT_DIRECTIO | IMA_VALIDATE_ALGOS |
+#ifdef CONFIG_IMA_DIGEST_LIST
+				     IMA_CHECK_BLACKLIST | IMA_VERITY_REQUIRED |
+				     IMA_META_IMMUTABLE_REQUIRED))
+#else
 				     IMA_CHECK_BLACKLIST | IMA_VERITY_REQUIRED))
+#endif
 			return false;
 
 		break;
@@ -1307,7 +1317,12 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 				     IMA_FSNAME | IMA_GID | IMA_EGID |
 				     IMA_FGROUP | IMA_DIGSIG_REQUIRED |
 				     IMA_PERMIT_DIRECTIO | IMA_MODSIG_ALLOWED |
+#ifdef CONFIG_IMA_DIGEST_LIST
+				     IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS |
+					 IMA_META_IMMUTABLE_REQUIRED))
+#else
 				     IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS))
+#endif
 			return false;
 
 		break;
@@ -1835,9 +1850,17 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				else
 					entry->flags |= IMA_DIGSIG_REQUIRED |
 						IMA_MODSIG_ALLOWED | IMA_CHECK_BLACKLIST;
+#ifdef CONFIG_IMA_DIGEST_LIST
+			} else if (strcmp(args[0].from, "meta_immutable") == 0) {
+				entry->flags |= IMA_META_IMMUTABLE_REQUIRED;
 			} else {
 				result = -EINVAL;
 			}
+#else
+			} else {
+				result = -EINVAL;
+			}
+#endif
 			break;
 		case Opt_appraise_flag:
 			ima_log_string(ab, "appraise_flag", args[0].from);
@@ -2289,6 +2312,10 @@ int ima_policy_show(struct seq_file *m, void *v)
 	}
 	if (entry->flags & IMA_VERITY_REQUIRED)
 		seq_puts(m, "digest_type=verity ");
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (entry->flags & IMA_META_IMMUTABLE_REQUIRED)
+		seq_puts(m, "appraise_type=meta_immutable ");
+#endif
 	if (entry->flags & IMA_PERMIT_DIRECTIO)
 		seq_puts(m, "permit_directio ");
 	rcu_read_unlock();
