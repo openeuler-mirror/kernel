@@ -51,6 +51,7 @@ static struct class *g_uburma_class;
 static const struct file_operations g_uburma_fops = {
 	.owner = THIS_MODULE,
 	// .write	 = uburma_write,
+	.mmap = uburma_mmap,
 	.open = uburma_open,
 	.release = uburma_close,
 	.llseek = no_llseek,

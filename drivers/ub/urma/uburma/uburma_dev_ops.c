@@ -29,6 +29,38 @@
 #include "uburma_types.h"
 #include "uburma_cmd.h"
 
+int uburma_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	struct uburma_file *file = filp->private_data;
+	struct uburma_device *ubu_dev;
+	struct ubcore_device *ubc_dev;
+	int srcu_idx;
+	int ret;
+
+	if (file == NULL || file->ucontext == NULL) {
+		uburma_log_err("can not find ucontext.\n");
+		return -EINVAL;
+	}
+
+	ubu_dev = file->ubu_dev;
+	uburma_cmd_inc(ubu_dev);
+
+	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
+	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
+	if (ubc_dev == NULL || ubc_dev->ops == NULL || ubc_dev->ops->mmap == NULL) {
+		uburma_log_err("can not find ubcore device.\n");
+		ret = -ENODEV;
+		goto out;
+	}
+
+	ret = ubc_dev->ops->mmap(file->ucontext, vma);
+
+out:
+	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+	uburma_cmd_dec(ubu_dev);
+	return ret;
+}
+
 void uburma_release_file(struct kref *ref)
 {
 	struct uburma_file *file = container_of(ref, struct uburma_file, ref);

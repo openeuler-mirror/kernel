@@ -26,6 +26,7 @@
 #include <linux/mm_types.h>
 
 void uburma_release_file(struct kref *ref);
+int uburma_mmap(struct file *filp, struct vm_area_struct *vma);
 int uburma_open(struct inode *inode, struct file *filp);
 int uburma_close(struct inode *inode, struct file *filp);
 long uburma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
