@@ -362,6 +362,29 @@ int verify_pkcs7_signature(const void *data, size_t len,
 }
 EXPORT_SYMBOL_GPL(verify_pkcs7_signature);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+struct key *search_trusted_key(struct key *trusted_keys, struct key_type *type,
+			       char *name)
+{
+	key_ref_t kref;
+
+	if (!trusted_keys) {
+		trusted_keys = builtin_trusted_keys;
+	} else if (trusted_keys == VERIFY_USE_SECONDARY_KEYRING) {
+#ifdef CONFIG_SECONDARY_TRUSTED_KEYRING
+		trusted_keys = secondary_trusted_keys;
+#else
+		trusted_keys = builtin_trusted_keys;
+#endif
+	}
+	kref = keyring_search(make_key_ref(trusted_keys, 1), type, name, true);
+	if (IS_ERR(kref))
+		return ERR_CAST(kref);
+
+	return key_ref_to_ptr(kref);
+}
+EXPORT_SYMBOL_GPL(search_trusted_key);
+#endif /* CONFIG_IMA_DIGEST_LIST */
 #endif /* CONFIG_SYSTEM_DATA_VERIFICATION */
 
 #ifdef CONFIG_INTEGRITY_PLATFORM_KEYRING
