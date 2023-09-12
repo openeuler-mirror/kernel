@@ -471,8 +471,23 @@ static struct dentry *ima_policy;
 #endif
 
 enum ima_fs_flags {
+#ifdef CONFIG_IMA_DIGEST_LIST
+	IMA_POLICY_BUSY,
+#endif
 	IMA_FS_BUSY,
 };
+
+#ifdef CONFIG_IMA_DIGEST_LIST
+static enum ima_fs_flags ima_get_dentry_flag(struct dentry *dentry)
+{
+	enum ima_fs_flags flag = IMA_FS_BUSY;
+
+	if (dentry == ima_policy)
+		flag = IMA_POLICY_BUSY;
+
+	return flag;
+}
+#endif
 
 static unsigned long ima_fs_flags;
 
@@ -485,12 +500,42 @@ static const struct seq_operations ima_policy_seqops = {
 };
 #endif
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+/*
+ * ima_open_data_upload: sequentialize access to the data upload interface
+ */
+static int ima_open_data_upload(struct inode *inode, struct file *filp)
+{
+	struct dentry *dentry = file_dentry(filp);
+	const struct seq_operations *seq_ops = NULL;
+	enum ima_fs_flags flag = ima_get_dentry_flag(dentry);
+	bool read_allowed = false;
+
+	if (dentry == ima_policy) {
+#ifdef	CONFIG_IMA_READ_POLICY
+		read_allowed = true;
+		seq_ops = &ima_policy_seqops;
+#endif
+	}
+#else
 /*
  * ima_open_policy: sequentialize access to the policy file
  */
 static int ima_open_policy(struct inode *inode, struct file *filp)
 {
+#endif /* CONFIG_IMA_DIGEST_LIST */
 	if (!(filp->f_flags & O_WRONLY)) {
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (!read_allowed)
+			return -EACCES;
+		if ((filp->f_flags & O_ACCMODE) != O_RDONLY)
+			return -EACCES;
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		return seq_open(filp, seq_ops);
+	}
+	if (test_and_set_bit(flag, &ima_fs_flags))
+#else
 #ifndef	CONFIG_IMA_READ_POLICY
 		return -EACCES;
 #else
@@ -502,10 +547,25 @@ static int ima_open_policy(struct inode *inode, struct file *filp)
 #endif
 	}
 	if (test_and_set_bit(IMA_FS_BUSY, &ima_fs_flags))
+#endif
 		return -EBUSY;
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+/*
+ * ima_release_data_upload - start using the new measure policy rules.
+ *
+ * Initially, ima_measure points to the default policy rules, now
+ * point to the new policy rules, and remove the securityfs policy file,
+ * assuming a valid policy.
+ */
+static int ima_release_data_upload(struct inode *inode, struct file *file)
+{
+	struct dentry *dentry = file_dentry(file);
+	const char *cause = valid_policy ? "completed" : "failed";
+	enum ima_fs_flags flag = ima_get_dentry_flag(dentry);
+#else
 /*
  * ima_release_policy - start using the new measure policy rules.
  *
@@ -516,9 +576,16 @@ static int ima_open_policy(struct inode *inode, struct file *filp)
 static int ima_release_policy(struct inode *inode, struct file *file)
 {
 	const char *cause = valid_policy ? "completed" : "failed";
+#endif
 
 	if ((file->f_flags & O_ACCMODE) == O_RDONLY)
 		return seq_release(inode, file);
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (dentry != ima_policy) {
+		clear_bit(flag, &ima_fs_flags);
+		return 0;
+	}
+#endif
 
 	if (valid_policy && ima_check_policy() < 0) {
 		cause = "failed";
@@ -532,7 +599,11 @@ static int ima_release_policy(struct inode *inode, struct file *file)
 	if (!valid_policy) {
 		ima_delete_rules();
 		valid_policy = 1;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		clear_bit(flag, &ima_fs_flags);
+#else
 		clear_bit(IMA_FS_BUSY, &ima_fs_flags);
+#endif
 		return 0;
 	}
 
@@ -541,22 +612,32 @@ static int ima_release_policy(struct inode *inode, struct file *file)
 	securityfs_remove(ima_policy);
 	ima_policy = NULL;
 #elif defined(CONFIG_IMA_WRITE_POLICY)
+#ifdef CONFIG_IMA_DIGEST_LIST
+	clear_bit(flag, &ima_fs_flags);
+#else
 	clear_bit(IMA_FS_BUSY, &ima_fs_flags);
+#endif
 #elif defined(CONFIG_IMA_READ_POLICY)
 	inode->i_mode &= ~S_IWUSR;
 #endif
 	return 0;
 }
 
-static const struct file_operations ima_measure_policy_ops = {
-	.open = ima_open_policy,
 #ifdef CONFIG_IMA_DIGEST_LIST
+static const struct file_operations ima_data_upload_ops = {
+	.open = ima_open_data_upload,
 	.write = ima_write_data,
 #else
+static const struct file_operations ima_measure_policy_ops = {
+	.open = ima_open_policy,
 	.write = ima_write_policy,
 #endif
 	.read = seq_read,
+#ifdef CONFIG_IMA_DIGEST_LIST
+	.release = ima_release_data_upload,
+#else
 	.release = ima_release_policy,
+#endif
 	.llseek = generic_file_llseek,
 };
 
@@ -612,7 +693,11 @@ int __init ima_fs_init(void)
 
 	ima_policy = securityfs_create_file("policy", POLICY_FILE_FLAGS,
 					    ima_dir, NULL,
+#ifdef CONFIG_IMA_DIGEST_LIST
+					    &ima_data_upload_ops);
+#else
 					    &ima_measure_policy_ops);
+#endif
 	if (IS_ERR(ima_policy)) {
 		ret = PTR_ERR(ima_policy);
 		goto out;
