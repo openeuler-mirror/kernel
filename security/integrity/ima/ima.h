@@ -189,6 +189,27 @@ static inline unsigned int ima_hash_key(u8 *digest)
 	return (digest[0] | digest[1] << 8) % IMA_MEASURE_HTABLE_SIZE;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+#define __ima_hooks(hook)				\
+	hook(NONE, none)				\
+	hook(FILE_CHECK, file)				\
+	hook(MMAP_CHECK, mmap)				\
+	hook(MMAP_CHECK_REQPROT, mmap_reqprot)		\
+	hook(BPRM_CHECK, bprm)				\
+	hook(CREDS_CHECK, creds)			\
+	hook(POST_SETATTR, post_setattr)		\
+	hook(MODULE_CHECK, module)			\
+	hook(FIRMWARE_CHECK, firmware)			\
+	hook(KEXEC_KERNEL_CHECK, kexec_kernel)		\
+	hook(KEXEC_INITRAMFS_CHECK, kexec_initramfs)	\
+	hook(POLICY_CHECK, policy)			\
+	hook(KEXEC_CMDLINE, kexec_cmdline)		\
+	hook(KEY_CHECK, key)				\
+	hook(CRITICAL_DATA, critical_data)		\
+	hook(SETXATTR_CHECK, setxattr_check)		\
+	hook(DIGEST_LIST_CHECK, digest_list)		\
+	hook(MAX_CHECK, none)
+#else
 #define __ima_hooks(hook)				\
 	hook(NONE, none)				\
 	hook(FILE_CHECK, file)				\
@@ -207,6 +228,7 @@ static inline unsigned int ima_hash_key(u8 *digest)
 	hook(CRITICAL_DATA, critical_data)		\
 	hook(SETXATTR_CHECK, setxattr_check)		\
 	hook(MAX_CHECK, none)
+#endif
 
 #define __ima_hook_enumify(ENUM, str)	ENUM,
 #define __ima_stringify(arg) (#arg)
@@ -313,6 +335,9 @@ int ima_policy_show(struct seq_file *m, void *v);
 #define IMA_APPRAISE_FIRMWARE	0x10
 #define IMA_APPRAISE_POLICY	0x20
 #define IMA_APPRAISE_KEXEC	0x40
+#ifdef CONFIG_IMA_DIGEST_LIST
+#define IMA_APPRAISE_DIGEST_LIST	0x80
+#endif
 
 #ifdef CONFIG_IMA_APPRAISE
 int ima_check_blacklist(struct integrity_iint_cache *iint,
