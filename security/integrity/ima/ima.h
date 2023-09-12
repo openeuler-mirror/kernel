@@ -324,10 +324,12 @@ int ima_must_appraise(struct mnt_idmap *idmap, struct inode *inode,
 void ima_update_xattr(struct integrity_iint_cache *iint, struct file *file);
 enum integrity_status ima_get_cache_status(struct integrity_iint_cache *iint,
 					   enum ima_hooks func);
+#ifndef CONFIG_IMA_DIGEST_LIST
 enum hash_algo ima_get_hash_algo(const struct evm_ima_xattr_data *xattr_value,
 				 int xattr_len);
 int ima_read_xattr(struct dentry *dentry,
 		   struct evm_ima_xattr_data **xattr_value, int xattr_len);
+#endif /* CONFIG_IMA_DIGEST_LIST */
 
 #else
 static inline int ima_check_blacklist(struct integrity_iint_cache *iint,
@@ -366,6 +368,7 @@ static inline enum integrity_status ima_get_cache_status(struct integrity_iint_c
 	return INTEGRITY_UNKNOWN;
 }
 
+#ifndef CONFIG_IMA_DIGEST_LIST
 static inline enum hash_algo
 ima_get_hash_algo(struct evm_ima_xattr_data *xattr_value, int xattr_len)
 {
@@ -378,6 +381,7 @@ static inline int ima_read_xattr(struct dentry *dentry,
 {
 	return 0;
 }
+#endif
 
 #endif /* CONFIG_IMA_APPRAISE */
 
