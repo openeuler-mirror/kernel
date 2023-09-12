@@ -75,6 +75,23 @@ int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx);
  */
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr);
 /**
+ * query device status
+ * @param[in] dev: the ubcore_device handle;
+ * @param[out] status: status returned to client
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_device_status(const struct ubcore_device *dev,
+			       struct ubcore_device_status *status);
+/**
+ * query stats
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] key: stats type and key;
+ * @param[in/out] val: addr and len of value
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+		       struct ubcore_stats_val *val);
+/**
  * config device
  * @param[in] dev: the ubcore_device handle;
  * @param[in] cfg: device configuration
@@ -110,14 +127,5 @@ int ubcore_register_client(struct ubcore_client *new_client);
  * @param[in] rm_client: ubcore client to be unregistered
  */
 void ubcore_unregister_client(struct ubcore_client *rm_client);
-/**
- * query stats
- * @param[in] dev: the ubcore_device handle;
- * @param[in] key: stats type and key;
- * @param[in/out] val: addr and len of value
- * @return: 0 on success, other value on error
- */
-int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
-		       struct ubcore_stats_val *val);
 
 #endif

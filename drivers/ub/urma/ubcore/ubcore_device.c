@@ -577,6 +577,24 @@ int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_att
 }
 EXPORT_SYMBOL(ubcore_query_device_attr);
 
+int ubcore_query_device_status(const struct ubcore_device *dev, struct ubcore_device_status *status)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->query_device_status == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->query_device_status(dev, status);
+	if (ret != 0) {
+		ubcore_log_err("failed to query device status, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_query_device_status);
+
 int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg)
 {
 	int ret;
