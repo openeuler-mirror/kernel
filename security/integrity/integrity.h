@@ -18,6 +18,10 @@
 #include <crypto/hash.h>
 #include <linux/key.h>
 #include <linux/audit.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include <crypto/sha2.h>
+#include <linux/hash_info.h>
+#endif
 
 /* iint action cache flags */
 #define IMA_MEASURE		0x00000001
@@ -172,6 +176,30 @@ struct integrity_iint_cache {
 	enum integrity_status evm_status:4;
 	struct ima_digest_data *ima_hash;
 };
+
+#ifdef CONFIG_IMA_DIGEST_LIST
+enum compact_types { COMPACT_KEY, COMPACT_PARSER, COMPACT_FILE,
+		     COMPACT_METADATA, COMPACT__LAST };
+enum compact_modifiers { COMPACT_MOD_IMMUTABLE, COMPACT_MOD__LAST };
+
+struct ima_digest {
+	struct hlist_node hnext;
+	enum hash_algo algo;
+	enum compact_types type;
+	u16 modifiers;
+	u16 count;
+	u8 digest[0];
+};
+
+static inline bool ima_digest_is_immutable(struct ima_digest *digest)
+{
+	return (digest->modifiers & (1 << COMPACT_MOD_IMMUTABLE));
+}
+
+struct ima_digest *ima_lookup_digest(u8 *digest, enum hash_algo algo,
+				     enum compact_types type);
+struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action);
+#endif /* CONFIG_IMA_DIGEST_LIST */
 
 /* rbtree tree calls to lookup, insert, delete
  * integrity data associated with an inode.
