@@ -5,6 +5,9 @@
 #include <stdbool.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include <sys/xattr.h>
+#endif
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
@@ -12,6 +15,9 @@
 #include <errno.h>
 #include <ctype.h>
 #include <limits.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include "../include/linux/initramfs.h"
+#endif
 
 /*
  * Original work by Jeff Garzik
@@ -28,6 +34,117 @@ static unsigned int offset;
 static unsigned int ino = 721;
 static time_t default_mtime;
 static bool do_csum = false;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static char metadata_path[] = "/tmp/cpio-metadata-XXXXXX";
+static int metadata_fd = -1;
+
+static enum metadata_types parse_metadata_type(char *arg)
+{
+	static char *metadata_type_str[TYPE__LAST] = {
+		[TYPE_NONE] = "none",
+		[TYPE_XATTR] = "xattr",
+	};
+	int i;
+
+	for (i = 0; i < TYPE__LAST; i++)
+		if (!strcmp(metadata_type_str[i], arg))
+			return i;
+
+	return TYPE_NONE;
+}
+
+static int cpio_mkfile(const char *name, const char *location,
+		       unsigned int mode, uid_t uid, gid_t gid,
+		       unsigned int nlinks);
+
+static int write_xattrs(const char *path)
+{
+	struct metadata_hdr hdr = { .c_version = 1, .c_type = TYPE_XATTR };
+	char str[sizeof(hdr.c_size) + 1];
+	char *xattr_list, *list_ptr, *xattr_value;
+	ssize_t list_len, name_len, value_len, len;
+	int ret = -EINVAL;
+
+	if (metadata_fd < 0)
+		return 0;
+
+	if (path == metadata_path)
+		return 0;
+
+	list_len = listxattr(path, NULL, 0);
+	if (list_len <= 0)
+		return 0;
+
+	list_ptr = xattr_list = malloc(list_len);
+	if (!list_ptr) {
+		fprintf(stderr, "out of memory\n");
+		return ret;
+	}
+
+	len = listxattr(path, xattr_list, list_len);
+	if (len != list_len)
+		goto out;
+
+	if (ftruncate(metadata_fd, 0))
+		goto out;
+
+	lseek(metadata_fd, 0, SEEK_SET);
+
+	while (list_ptr < xattr_list + list_len) {
+		name_len = strlen(list_ptr);
+
+		value_len = getxattr(path, list_ptr, NULL, 0);
+		if (value_len < 0) {
+			fprintf(stderr, "cannot get xattrs\n");
+			break;
+		}
+
+		if (value_len) {
+			xattr_value = malloc(value_len);
+			if (!xattr_value) {
+				fprintf(stderr, "out of memory\n");
+				break;
+			}
+		} else {
+			xattr_value = NULL;
+		}
+
+		len = getxattr(path, list_ptr, xattr_value, value_len);
+		if (len != value_len)
+			break;
+
+		snprintf(str, sizeof(str), "%.8lx",
+			 sizeof(hdr) + name_len + 1 + value_len);
+
+		memcpy(hdr.c_size, str, sizeof(hdr.c_size));
+
+		if (write(metadata_fd, &hdr, sizeof(hdr)) != sizeof(hdr))
+			break;
+
+		if (write(metadata_fd, list_ptr, name_len + 1) != name_len + 1)
+			break;
+
+		if (write(metadata_fd, xattr_value, value_len) != value_len)
+			break;
+
+		if (fsync(metadata_fd))
+			break;
+
+		list_ptr += name_len + 1;
+		free(xattr_value);
+		xattr_value = NULL;
+	}
+
+	free(xattr_value);
+out:
+	if (list_ptr != xattr_list + list_len)
+		return ret;
+
+	free(xattr_list);
+
+	return cpio_mkfile(METADATA_FILENAME, metadata_path, S_IFREG, 0, 0, 1);
+}
+#endif
 
 struct file_handler {
 	const char *type;
@@ -132,7 +249,11 @@ static int cpio_mkslink(const char *name, const char *target,
 	push_pad();
 	push_string(target);
 	push_pad();
+#ifdef CONFIG_IMA_DIGEST_LIST
+	return write_xattrs(name);
+#else
 	return 0;
+#endif
 }
 
 static int cpio_mkslink_line(const char *line)
@@ -178,7 +299,11 @@ static int cpio_mkgeneric(const char *name, unsigned int mode,
 		0);			/* chksum */
 	push_hdr(s);
 	push_rest(name);
+#ifdef CONFIG_IMA_DIGEST_LIST
+	return write_xattrs(name);
+#else
 	return 0;
+#endif
 }
 
 enum generic_types {
@@ -272,7 +397,11 @@ static int cpio_mknod(const char *name, unsigned int mode,
 		0);			/* chksum */
 	push_hdr(s);
 	push_rest(name);
+#ifdef CONFIG_IMA_DIGEST_LIST
+	return write_xattrs(name);
+#else
 	return 0;
+#endif
 }
 
 static int cpio_mknod_line(const char *line)
@@ -422,7 +551,11 @@ static int cpio_mkfile(const char *name, const char *location,
 		name += namesize;
 	}
 	ino++;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	rc = write_xattrs(location);
+#else
 	rc = 0;
+#endif
 
 error:
 	if (file >= 0)
@@ -577,10 +710,17 @@ int main (int argc, char *argv[])
 	int ec = 0;
 	int line_nr = 0;
 	const char *filename;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	enum metadata_types metadata_type = TYPE_NONE;
+#endif
 
 	default_mtime = time(NULL);
 	while (1) {
+#ifdef CONFIG_IMA_DIGEST_LIST
+		int opt = getopt(argc, argv, "t:e:ch");
+#else
 		int opt = getopt(argc, argv, "t:ch");
+#endif
 		char *invalid;
 
 		if (opt == -1)
@@ -595,6 +735,11 @@ int main (int argc, char *argv[])
 				exit(1);
 			}
 			break;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		case 'e':
+			metadata_type = parse_metadata_type(optarg);
+			break;
+#endif
 		case 'c':
 			do_csum = true;
 			break;
@@ -628,6 +773,15 @@ int main (int argc, char *argv[])
 		usage(argv[0]);
 		exit(1);
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (metadata_type != TYPE_NONE) {
+		metadata_fd = mkstemp(metadata_path);
+		if (metadata_fd < 0) {
+			fprintf(stderr, "cannot create temporary file\n");
+			exit(1);
+		}
+	}
+#endif
 
 	while (fgets(line, LINE_SIZE, cpio_list)) {
 		int type_idx;
@@ -684,5 +838,9 @@ int main (int argc, char *argv[])
 	if (ec == 0)
 		cpio_trailer();
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (metadata_type != TYPE_NONE)
+		close(metadata_fd);
+#endif
 	exit(ec);
 }

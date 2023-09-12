@@ -26,6 +26,7 @@ $0 [-o <file>] [-l <dep_list>] [-u <uid>] [-g <gid>] {-d | <cpio_source>} ...
 	<cpio_source>  File list or directory for cpio archive.
 		       If <cpio_source> is a .cpio file it will be used
 		       as direct input to initramfs.
+	-e <type>      File metadata type to include in the cpio archive.
 
 All options except -o and -l may be repeated and are interpreted
 sequentially and immediately.  -u and -g states are preserved across
@@ -218,6 +219,10 @@ while [ $# -gt 0 ]; do
 			[ "$root_gid" = "-1" ] && root_gid=$(id -g || echo 0)
 			shift
 			;;
+		"-e")   # file metadata type
+			metadata_arg="-e $1"
+			shift
+			;;
 		"-h")
 			usage
 			exit 0
@@ -244,4 +249,4 @@ if test -n "$KBUILD_BUILD_TIMESTAMP"; then
 		timestamp="-t $timestamp"
 	fi
 fi
-usr/gen_init_cpio $timestamp $cpio_list > $output
+usr/gen_init_cpio $metadata_arg $timestamp $cpio_list > $output
