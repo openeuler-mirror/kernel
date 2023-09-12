@@ -104,7 +104,11 @@ struct evm_ima_xattr_data {
 /* Only used in the EVM HMAC code. */
 struct evm_xattr {
 	struct evm_ima_xattr_data data;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	u8 digest[SHA512_DIGEST_SIZE];
+#else
 	u8 digest[SHA1_DIGEST_SIZE];
+#endif
 } __packed;
 
 #define IMA_MAX_DIGEST_SIZE	HASH_MAX_DIGESTSIZE

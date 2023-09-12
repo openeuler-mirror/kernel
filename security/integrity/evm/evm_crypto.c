@@ -35,7 +35,11 @@ static DEFINE_MUTEX(mutex);
 
 static unsigned long evm_set_key_flags;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+enum hash_algo evm_hash_algo __ro_after_init = HASH_ALGO_SHA1;
+#else
 static const char evm_hmac[] = "hmac(sha1)";
+#endif
 
 /**
  * evm_set_key() - set EVM HMAC key from the kernel
@@ -76,7 +80,14 @@ static struct shash_desc *init_desc(char type, uint8_t hash_algo)
 	long rc;
 	const char *algo;
 	struct crypto_shash **tfm, *tmp_tfm;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	char evm_hmac[CRYPTO_MAX_ALG_NAME];
+#endif
 	struct shash_desc *desc;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	snprintf(evm_hmac, sizeof(evm_hmac), "hmac(%s)",
+		 CONFIG_EVM_DEFAULT_HASH);
+#endif
 
 	if (type == EVM_XATTR_HMAC) {
 		if (!(evm_initialized & EVM_INIT_HMAC)) {
@@ -384,8 +395,11 @@ int evm_update_evmxattr(struct dentry *dentry, const char *xattr_name,
 		return rc;
 	if (rc)
 		return -EPERM;
-
+#ifdef CONFIG_IMA_DIGEST_LIST
+	data.hdr.algo = evm_hash_algo;
+#else
 	data.hdr.algo = HASH_ALGO_SHA1;
+#endif
 	rc = evm_calc_hmac(dentry, xattr_name, xattr_value,
 			   xattr_value_len, &data);
 	if (rc == 0) {
@@ -393,7 +407,12 @@ int evm_update_evmxattr(struct dentry *dentry, const char *xattr_name,
 		rc = __vfs_setxattr_noperm(&nop_mnt_idmap, dentry,
 					   XATTR_NAME_EVM,
 					   &data.hdr.xattr.data[1],
+#ifdef CONFIG_IMA_DIGEST_LIST
+					   hash_digest_size[evm_hash_algo] + 1,
+					   0);
+#else
 					   SHA1_DIGEST_SIZE + 1, 0);
+#endif
 	} else if (rc == -ENODATA && (inode->i_opflags & IOP_XATTR)) {
 		rc = __vfs_removexattr(&nop_mnt_idmap, dentry, XATTR_NAME_EVM);
 	}
@@ -405,7 +424,11 @@ int evm_init_hmac(struct inode *inode, const struct xattr *lsm_xattr,
 {
 	struct shash_desc *desc;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	desc = init_desc(EVM_XATTR_HMAC, evm_hash_algo);
+#else
 	desc = init_desc(EVM_XATTR_HMAC, HASH_ALGO_SHA1);
+#endif
 	if (IS_ERR(desc)) {
 		pr_info("init_desc failed\n");
 		return PTR_ERR(desc);
@@ -417,9 +440,15 @@ int evm_init_hmac(struct inode *inode, const struct xattr *lsm_xattr,
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+/*
+ * Get the key from the TPM for the HMAC
+ */
+#else
 /*
  * Get the key from the TPM for the SHA1-HMAC
  */
+#endif
 int evm_init_key(void)
 {
 	struct key *evm_key;
