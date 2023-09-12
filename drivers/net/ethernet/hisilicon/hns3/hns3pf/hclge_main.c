@@ -8629,16 +8629,16 @@ static int hclge_update_desc_vfid(struct hclge_desc *desc, int vfid, bool clr)
 		word_num = vfid / 32;
 		bit_num  = vfid % 32;
 		if (clr)
-			desc[0].data[word_num] &= cpu_to_le32(~(1 << bit_num));
+			desc[1].data[word_num] &= cpu_to_le32(~(1 << bit_num));
 		else
-			desc[0].data[word_num] |= cpu_to_le32(1 << bit_num);
+			desc[1].data[word_num] |= cpu_to_le32(1 << bit_num);
 	} else {
 		word_num = (vfid - HCLGE_VF_NUM_IN_FIRST_DESC) / 32;
 		bit_num  = vfid % 32;
 		if (clr)
-			desc[1].data[word_num] &= cpu_to_le32(~(1 << bit_num));
+			desc[2].data[word_num] &= cpu_to_le32(~(1 << bit_num));
 		else
-			desc[1].data[word_num] |= cpu_to_le32(1 << bit_num);
+			desc[2].data[word_num] |= cpu_to_le32(1 << bit_num);
 	}
 
 	return 0;
@@ -9151,7 +9151,7 @@ int hclge_add_mc_addr_common(struct hclge_vport *vport,
 		memset(desc[1].data, 0, sizeof(desc[0].data));
 		memset(desc[2].data, 0, sizeof(desc[0].data));
 	}
-	status = hclge_update_desc_vfid(&desc[1], vport->vport_id, false);
+	status = hclge_update_desc_vfid(desc, vport->vport_id, false);
 	if (status)
 		return status;
 	status = hclge_add_mac_vlan_tbl(vport, &req, desc);
@@ -9204,8 +9204,7 @@ int hclge_rm_mc_addr_common(struct hclge_vport *vport,
 	status = hclge_lookup_mac_vlan_tbl(vport, &req, desc, true);
 	if (!status) {
 		/* This mac addr exist, remove this handle's VFID for it */
-		status = hclge_update_desc_vfid(&desc[1], vport->vport_id,
-						true);
+		status = hclge_update_desc_vfid(desc, vport->vport_id, true);
 		if (status)
 			return status;
 
