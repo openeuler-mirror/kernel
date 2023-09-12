@@ -73,16 +73,32 @@ static struct xattr_list evm_config_default_xattrnames[] = {
 LIST_HEAD(evm_config_xattrnames);
 
 static int evm_fixmode __ro_after_init;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static int __init evm_set_param(char *str)
+#else
 static int __init evm_set_fixmode(char *str)
+#endif
 {
 	if (strncmp(str, "fix", 3) == 0)
 		evm_fixmode = 1;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	else if (strncmp(str, "x509", 4) == 0)
+		evm_initialized |= EVM_INIT_X509;
+	else if (strncmp(str, "allow_metadata_writes", 21) == 0)
+		evm_initialized |= EVM_ALLOW_METADATA_WRITES;
+	else if (strncmp(str, "complete", 8) == 0)
+		evm_initialized |= EVM_SETUP_COMPLETE;
+#endif
 	else
 		pr_err("invalid \"%s\" mode", str);
 
 	return 1;
 }
+#ifdef CONFIG_IMA_DIGEST_LIST
+__setup("evm=", evm_set_param);
+#else
 __setup("evm=", evm_set_fixmode);
+#endif
 
 static void __init evm_init_config(void)
 {

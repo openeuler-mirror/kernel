@@ -1476,9 +1476,13 @@
 			has equivalent usage. See its documentation for details.
 
 	evm=		[EVM]
-			Format: { "fix" }
-			Permit 'security.evm' to be updated regardless of
-			current integrity status.
+			Format: { "fix" | "x509" | "allow_metadata_writes" |
+				  "complete" }
+			fix: permit 'security.evm' to be updated regardless of
+			current integrity status;
+			x509: enable EVM by setting x509 flag;
+			allow_metadata_writes: permit metadata modificatons;
+			complete: don't allow further changes of the EVM status.
 
 	early_page_ext [KNL] Enforces page_ext initialization to earlier
 			stages so cover more early boot allocations.
