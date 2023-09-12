@@ -92,6 +92,15 @@ int ubcore_query_device_status(const struct ubcore_device *dev,
 int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
 		       struct ubcore_stats_val *val);
 /**
+ * query resource
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] key: resource type and key;
+ * @param[in/out] val: addr and len of value
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_resource(const struct ubcore_device *dev, struct ubcore_res_key *key,
+			  struct ubcore_res_val *val);
+/**
  * config device
  * @param[in] dev: the ubcore_device handle;
  * @param[in] cfg: device configuration

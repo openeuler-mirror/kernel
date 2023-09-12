@@ -595,6 +595,26 @@ int ubcore_query_device_status(const struct ubcore_device *dev, struct ubcore_de
 }
 EXPORT_SYMBOL(ubcore_query_device_status);
 
+int ubcore_query_resource(const struct ubcore_device *dev, struct ubcore_res_key *key,
+			  struct ubcore_res_val *val)
+{
+	int ret;
+
+	if (dev == NULL || key == NULL || val == NULL || dev->ops == NULL ||
+	    dev->ops->query_res == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->query_res(dev, key, val);
+	if (ret != 0) {
+		ubcore_log_err("failed to query res, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_query_resource);
+
 int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg)
 {
 	int ret;
