@@ -2453,6 +2453,9 @@ static void munmap_in_peer_devices(struct mm_struct *mm,
 	if (!obj)
 		return;
 
+	if (!mm->gm_as)
+		return;
+
 	do {
 		xa_lock(obj->logical_page_table);
 		gm_mapping = vm_object_lookup(obj, addr);
@@ -2479,9 +2482,6 @@ static void munmap_in_peer_devices(struct mm_struct *mm,
 		}
 		mutex_unlock(&gm_mapping->lock);
 	} while (addr += HPAGE_SIZE, addr != end);
-
-	if (!mm->gm_as)
-		return;
 
 	list_for_each_entry_safe(ctx, tmp, &mm->gm_as->gm_ctx_list, gm_as_link) {
 		if (!gm_dev_is_peer(ctx->dev))
@@ -2746,9 +2746,13 @@ static int alloc_va_in_peer_devices(struct mm_struct *mm,
 	gm_context_t *ctx, *tmp;
 	gm_ret_t ret;
 
+	if (!mm->gm_as) {
+		ret = gm_as_create(0, ULONG_MAX, GM_AS_ALLOC_DEFAULT, PAGE_SIZE,
+				   &mm->gm_as);
+		if (ret)
+			return ret;
+	}
 	pr_debug("gmem: start mmap, as %p\n", mm->gm_as);
-	if (!mm->gm_as)
-		return -ENODEV;
 
 	if (!vma->vm_obj)
 		vma->vm_obj = vm_object_create(vma);
