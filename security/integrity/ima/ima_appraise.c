@@ -231,6 +231,7 @@ enum hash_algo ima_get_hash_algo(const struct evm_ima_xattr_data *xattr_value,
 	return ima_hash_algo;
 }
 
+#ifndef CONFIG_IMA_DIGEST_LIST
 int ima_read_xattr(struct dentry *dentry,
 		   struct evm_ima_xattr_data **xattr_value, int xattr_len)
 {
@@ -242,6 +243,7 @@ int ima_read_xattr(struct dentry *dentry,
 		ret = 0;
 	return ret;
 }
+#endif /* CONFIG_IMA_DIGEST_LIST */
 
 /*
  * calc_file_id_hash - calculate the hash of the ima_file_id struct data
@@ -501,6 +503,11 @@ int ima_appraise_measurement(enum ima_hooks func,
 	if (!(inode->i_opflags & IOP_XATTR) && !try_modsig)
 		return INTEGRITY_UNKNOWN;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (xattr_value && xattr_value->type == EVM_IMA_XATTR_DIGSIG &&
+	    xattr_len == sizeof(struct signature_v2_hdr))
+		rc = -ENODATA;
+#endif
 	/* If reading the xattr failed and there's no modsig, error out. */
 	if (rc <= 0 && !try_modsig) {
 		if (rc && rc != -ENODATA)
