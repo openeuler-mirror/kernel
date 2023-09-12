@@ -356,3 +356,10 @@ config IMA_DIGEST_LISTS_DIR
 	help
 	   This option defines the path of the directory containing digest
 	   lists.
+
+config IMA_PARSER_BINARY_PATH
+	string "Path of the parser binary"
+	depends on IMA_DIGEST_LIST
+	default "/usr/bin/upload_digest_lists"
+	help
+	   This option defines the path of the parser binary.
