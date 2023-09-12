@@ -1950,7 +1950,8 @@
 			Set number of hash buckets for inode cache.
 
 	ima_appraise=	[IMA] appraise integrity measurements
-			Format: { "off" | "enforce" | "fix" | "log" }
+			Format: { "off" | "enforce" | "fix" | "log" |
+				  "enforce-evm" | "log-evm" }
 			default: "enforce"
 
 	ima_appraise_tcb [IMA] Deprecated.  Use ima_policy= instead.
