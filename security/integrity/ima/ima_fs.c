@@ -24,6 +24,7 @@
 
 #ifdef CONFIG_IMA_DIGEST_LIST
 #include <linux/file.h>
+#include <linux/ctype.h>
 #endif
 #include "ima.h"
 #ifdef CONFIG_IMA_DIGEST_LIST
@@ -427,6 +428,7 @@ static ssize_t ima_write_policy(struct file *file, const char __user *buf,
 	ssize_t result;
 #ifdef CONFIG_IMA_DIGEST_LIST
 	struct dentry *dentry = file_dentry(file);
+	int i;
 #endif
 
 #ifndef CONFIG_IMA_DIGEST_LIST
@@ -454,6 +456,14 @@ static ssize_t ima_write_policy(struct file *file, const char __user *buf,
 		goto out_free;
 
 	data[datalen] = '\0';
+
+	for (i = 0; data[i] != '\n' && data[i] != '\0'; i++) {
+		if (iscntrl(data[i])) {
+			pr_err_once("invalid path (control characters are not allowed)\n");
+			result = -EINVAL;
+			goto out_free;
+		}
+	}
 #else
 	data = memdup_user_nul(buf, datalen);
 	if (IS_ERR(data)) {
