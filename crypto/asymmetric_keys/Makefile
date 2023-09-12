@@ -81,3 +81,7 @@ $(obj)/mscode.asn1.o: $(obj)/mscode.asn1.c $(obj)/mscode.asn1.h
 # PGP handling
 #
 obj-$(CONFIG_PGP_LIBRARY) += pgp_library.o
+
+obj-$(CONFIG_PGP_KEY_PARSER) += pgp_key_parser.o
+pgp_key_parser-y := \
+	pgp_public_key.o
