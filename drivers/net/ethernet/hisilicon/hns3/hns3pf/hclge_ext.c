@@ -1366,12 +1366,13 @@ EXPORT_SYMBOL(nic_unregister_event);
 static int hclge_nic_call_event(struct hclge_dev *hdev, void *data,
 				size_t length)
 {
-#define ERROR_EVENT_TYPE_NUM 3
+#define ERROR_EVENT_TYPE_NUM 4
 
 	u32 event_type[ERROR_EVENT_TYPE_NUM] = {
 		HNAE3_PPU_POISON_CUSTOM,
 		HNAE3_IMP_RESET_CUSTOM,
-		HNAE3_IMP_RD_POISON_CUSTOM
+		HNAE3_IMP_RD_POISON_CUSTOM,
+		HNAE3_ROCEE_AXI_RESP_CUSTOM,
 	};
 	u32 *index = (u32 *)data;
 

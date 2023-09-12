@@ -214,6 +214,12 @@ struct hclge_tm_nodes_cmd {
 	__le16 queue_num;
 };
 
+struct hclge_tc_rate_limit_cmd {
+	__le32 speed;	/* Unit Mbps */
+	u8 tc_id;
+	u8 rsvd[19];
+};
+
 struct hclge_tm_shaper_para {
 	u32 rate;
 	u8 ir_b;
@@ -279,4 +285,7 @@ int hclge_tm_get_port_shaper(struct hclge_dev *hdev,
 int hclge_up_to_tc_map(struct hclge_dev *hdev);
 int hclge_dscp_to_tc_map(struct hclge_dev *hdev);
 int hclge_tm_flush_cfg(struct hclge_dev *hdev, bool enable);
+int hclge_tm_set_tc_rate_limit(struct hclge_dev *hdev,
+			       struct hnae3_tc_info *tc_info);
+u32 hclge_tm_rate_2_port_rate(u64 rate);
 #endif
