@@ -2010,6 +2010,11 @@
 			of files (eg. kexec kernel image, kernel modules,
 			firmware, policy, etc) based on file signatures.
 
+			The "appraise_exec_tcb" includes the "secure_boot"
+			policy and additionally includes all programs exec'd and
+			files mmap'd for exec. Files in the tmpfs filesystem are
+			not excluded from appraisal.
+
 			The "fail_securely" policy forces file signature
 			verification failure also on privileged mounted
 			filesystems with the SB_I_UNVERIFIABLE_SIGNATURE

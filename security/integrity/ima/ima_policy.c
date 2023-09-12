@@ -226,6 +226,14 @@ static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 #endif
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static struct ima_rule_entry appraise_exec_rules[] __ro_after_init = {
+	{.action = APPRAISE, .func = BPRM_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+	{.action = APPRAISE, .func = MMAP_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+};
+#endif
 static struct ima_rule_entry build_appraise_rules[] __ro_after_init = {
 #ifdef CONFIG_IMA_APPRAISE_REQUIRE_MODULE_SIGS
 	{.action = APPRAISE, .func = MODULE_CHECK,
@@ -285,6 +293,9 @@ static int __init default_measure_policy_setup(char *str)
 __setup("ima_tcb", default_measure_policy_setup);
 
 static bool ima_use_appraise_tcb __initdata;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static bool ima_use_appraise_exec_tcb __initdata;
+#endif
 static bool ima_use_secure_boot __initdata;
 static bool ima_use_critical_data __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
@@ -303,6 +314,10 @@ static int __init policy_setup(char *str)
 #endif
 		else if (strcmp(p, "appraise_tcb") == 0)
 			ima_use_appraise_tcb = true;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		else if (strcmp(p, "appraise_exec_tcb") == 0)
+			ima_use_appraise_exec_tcb = true;
+#endif
 		else if (strcmp(p, "secure_boot") == 0)
 			ima_use_secure_boot = true;
 		else if (strcmp(p, "critical_data") == 0)
@@ -901,6 +916,15 @@ static void add_rules(struct ima_rule_entry *entries, int count,
 				    entries[i].func == FILE_CHECK)
 					continue;
 		}
+		if (ima_use_appraise_exec_tcb) {
+			if (entries == default_appraise_rules) {
+				if (entries[i].action != DONT_APPRAISE)
+					continue;
+				if ((entries[i].flags & IMA_FSMAGIC) &&
+				    entries[i].fsmagic == TMPFS_MAGIC)
+					continue;
+			}
+		}
 #endif
 		if (policy_rule & IMA_DEFAULT_POLICY)
 			list_add_tail(&entries[i].list, &ima_default_rules);
@@ -1017,7 +1041,11 @@ void __init ima_init_policy(void)
 	 * Insert the builtin "secure_boot" policy rules requiring file
 	 * signatures, prior to other appraise rules.
 	 */
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_secure_boot || ima_use_appraise_exec_tcb)
+#else
 	if (ima_use_secure_boot)
+#endif
 		add_rules(secure_boot_rules, ARRAY_SIZE(secure_boot_rules),
 			  IMA_DEFAULT_POLICY);
 
@@ -1037,11 +1065,21 @@ void __init ima_init_policy(void)
 				  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_appraise_tcb || ima_use_appraise_exec_tcb)
+#else
 	if (ima_use_appraise_tcb)
+#endif
 		add_rules(default_appraise_rules,
 			  ARRAY_SIZE(default_appraise_rules),
 			  IMA_DEFAULT_POLICY);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_appraise_exec_tcb)
+		add_rules(appraise_exec_rules,
+			  ARRAY_SIZE(appraise_exec_rules),
+			  IMA_DEFAULT_POLICY);
+#endif
 	if (ima_use_critical_data)
 		add_rules(critical_data_rules,
 			  ARRAY_SIZE(critical_data_rules),
