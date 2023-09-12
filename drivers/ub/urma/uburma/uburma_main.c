@@ -95,6 +95,8 @@ static int uburma_get_devt(dev_t *devt)
 
 static int uburma_device_create(struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
 {
+	uint8_t i, j;
+
 	/* create /dev/uburma/<ubc_dev->dev_name> */
 	ubu_dev->dev = device_create(g_uburma_class, ubc_dev->dev.parent, ubu_dev->cdev.dev,
 				     ubu_dev, "%s", ubc_dev->dev_name);
@@ -108,8 +110,19 @@ static int uburma_device_create(struct uburma_device *ubu_dev, struct ubcore_dev
 		goto destroy_dev;
 	}
 
+	/* create /dev/uburma/<ubc_dev->dev_name>/port* */
+	for (i = 0; i < ubc_dev->attr.port_cnt; i++) {
+		if (uburma_create_port_attr_files(ubu_dev, i) != 0)
+			goto err_port_attr;
+	}
+
 	return 0;
 
+err_port_attr:
+	for (j = 0; j < i; j++)
+		uburma_remove_port_attr_files(ubu_dev, j);
+
+	uburma_remove_dev_attr_files(ubu_dev);
 destroy_dev:
 	device_destroy(g_uburma_class, ubu_dev->cdev.dev);
 	return -EPERM;

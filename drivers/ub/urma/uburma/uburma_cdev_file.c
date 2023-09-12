@@ -155,6 +155,62 @@ static const struct attribute_group uburma_dev_attr_group = {
 	.attrs = uburma_dev_attrs,
 };
 
+static struct attribute *uburma_port_attrs[] = {
+};
+
+static ssize_t uburma_port_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	struct uburma_port_attribute *port_attr =
+		container_of(attr, struct uburma_port_attribute, attr);
+	struct uburma_port *p = container_of(kobj, struct uburma_port, kobj);
+
+	if (!port_attr->show)
+		return -EIO;
+
+	return port_attr->show(p, port_attr, buf);
+}
+
+static ssize_t uburma_port_attr_store(struct kobject *kobj, struct attribute *attr, const char *buf,
+				      size_t count)
+{
+	struct uburma_port_attribute *port_attr =
+		container_of(attr, struct uburma_port_attribute, attr);
+	struct uburma_port *p = container_of(kobj, struct uburma_port, kobj);
+
+	if (!port_attr->store)
+		return -EIO;
+
+	return port_attr->store(p, port_attr, buf, count);
+}
+
+static const struct sysfs_ops uburma_port_sysfs_ops = { .show = uburma_port_attr_show,
+							.store = uburma_port_attr_store };
+
+static void uburma_port_release(struct kobject *kobj)
+{
+}
+
+static const struct attribute_group uburma_port_groups = {
+	.attrs = uburma_port_attrs,
+};
+
+static struct kobj_type uburma_port_type = { .release = uburma_port_release,
+					     .sysfs_ops = &uburma_port_sysfs_ops,
+					     .default_attrs = uburma_port_attrs
+};
+
+int uburma_create_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_num)
+{
+	struct uburma_port *p;
+
+	p = &ubu_dev->port[port_num];
+	p->ubu_dev = ubu_dev;
+	p->port_num = port_num;
+
+	return kobject_init_and_add(&p->kobj, &uburma_port_type, &ubu_dev->dev->kobj, "port%hhu",
+				    port_num);
+}
+
 int uburma_create_dev_attr_files(struct uburma_device *ubu_dev)
 {
 	int ret;
@@ -166,6 +222,11 @@ int uburma_create_dev_attr_files(struct uburma_device *ubu_dev)
 	}
 
 	return 0;
+}
+
+void uburma_remove_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_num)
+{
+	kobject_put(&ubu_dev->port[port_num].kobj);
 }
 
 void uburma_remove_dev_attr_files(struct uburma_device *ubu_dev)

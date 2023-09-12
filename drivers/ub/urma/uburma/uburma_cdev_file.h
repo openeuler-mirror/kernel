@@ -23,7 +23,21 @@
 
 #include "uburma_types.h"
 
+struct uburma_port_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct uburma_port *p, struct uburma_port_attribute *attr, char *buf);
+	ssize_t (*store)(struct uburma_port *p, struct uburma_port_attribute *attr, const char *buf,
+			 size_t count);
+};
+
+#define PORT_ATTR(_name, _mode, _show, _store)	\
+	struct uburma_port_attribute port_attr_##_name = __ATTR(_name, _mode, _show, _store)
+
+#define PORT_ATTR_RO(_name) struct uburma_port_attribute port_attr_##_name = __ATTR_RO(_name)
+
+int uburma_create_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_num);
 int uburma_create_dev_attr_files(struct uburma_device *ubu_dev);
+void uburma_remove_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_num);
 void uburma_remove_dev_attr_files(struct uburma_device *ubu_dev);
 
 #endif /* UBURMA_CDEV_FILE_H */

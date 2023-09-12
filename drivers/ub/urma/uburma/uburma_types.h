@@ -59,6 +59,12 @@ struct uburma_file {
 	int is_closed;
 };
 
+struct uburma_port {
+	struct kobject kobj;
+	struct uburma_device *ubu_dev;
+	uint8_t port_num;
+};
+
 struct uburma_device {
 	atomic_t refcnt;
 	struct completion comp; /* When refcnt becomes 0, it will wake up */
@@ -68,6 +74,7 @@ struct uburma_device {
 	unsigned int devnum;
 	struct cdev cdev;
 	struct device *dev;
+	struct uburma_port port[UBCORE_MAX_PORT_CNT];
 	struct ubcore_device *__rcu ubc_dev;
 	struct srcu_struct ubc_dev_srcu; /* protect ubc_dev */
 	struct kobject kobj; /* when equal to 0 , free uburma_device. */
