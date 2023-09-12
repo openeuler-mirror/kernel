@@ -147,9 +147,51 @@ static ssize_t eid_store(struct device *dev, struct device_attribute *attr, cons
 
 static DEVICE_ATTR_RW(eid); // 0644
 
+static ssize_t guid_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%llu\n", ubc_dev->attr.guid);
+}
+
+static ssize_t guid_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, guid_show_cb);
+}
+
+static DEVICE_ATTR_RO(guid);
+
+static ssize_t transport_type_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%d\n", (int)ubc_dev->transport_type);
+}
+
+static ssize_t transport_type_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, transport_type_show_cb);
+}
+
+static DEVICE_ATTR_RO(transport_type);
+
+static ssize_t driver_name_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	if (ubc_dev->ops == NULL)
+		return -EINVAL;
+
+	return snprintf(buf, UBCORE_MAX_DRIVER_NAME, "%s\n", ubc_dev->ops->driver_name);
+}
+
+static ssize_t driver_name_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, driver_name_show_cb);
+}
+
+static DEVICE_ATTR_RO(driver_name);
+
 static struct attribute *uburma_dev_attrs[] = {
 	&dev_attr_ubdev.attr,
 	&dev_attr_eid.attr,
+	&dev_attr_guid.attr,
+	&dev_attr_transport_type.attr,
+	&dev_attr_driver_name.attr,
 	NULL,
 };
 
