@@ -229,6 +229,8 @@ enum udma_opcode_type {
 	UDMA_QUERY_OOR_CAPS				= 0xA002,
 	UDMA_OPC_DEID_TBL_ADD				= 0xA110,
 	UDMA_OPC_CFG_GMV_TBL				= 0xA140,
+	UDMA_OPC_CFG_POE_ADDR				= 0x801B,
+	UDMA_OPC_CFG_POE_ATTR				= 0x801C,
 	UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
 };
 
@@ -480,6 +482,19 @@ union udma_eid {
 		uint32_t	eid_mh;
 		uint32_t	eid_h;
 	} bit32_data;
+};
+
+struct udma_poe_cfg_addr_cmq {
+	uint32_t channel_id;
+	uint32_t poe_addr_l;
+	uint32_t poe_addr_h;
+	uint32_t rsv[3];
+};
+
+struct udma_poe_cfg_attr_cmq {
+	uint32_t channel_id;
+	uint32_t rsv_en_outstd;
+	uint32_t rsv[4];
 };
 
 struct udma_port_info_cmq {

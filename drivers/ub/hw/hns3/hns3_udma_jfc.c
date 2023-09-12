@@ -56,6 +56,17 @@ static int check_jfc_cfg(struct udma_dev *udma_dev, const struct ubcore_jfc_cfg 
 	return 0;
 }
 
+static int check_poe_attr(struct udma_dev *udma_dev,
+			  struct udma_jfc_attr_ex *jfc_attr_ex)
+{
+	if (!(udma_dev->caps.flags & UDMA_CAP_FLAG_POE)) {
+		dev_err(udma_dev->dev, "Unsupport POE JFC.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int check_notify_attr(struct udma_dev *udma_dev,
 			     struct udma_jfc_attr_ex *jfc_attr_ex)
 {
@@ -94,6 +105,9 @@ static int check_jfc_attr_ex(struct udma_dev *udma_dev,
 	int ret;
 
 	switch (jfc_attr_ex->create_flags) {
+	case UDMA_JFC_CREATE_ENABLE_POE_MODE:
+		ret = check_poe_attr(udma_dev, jfc_attr_ex);
+		break;
 	case UDMA_JFC_CREATE_ENABLE_NOTIFY:
 		ret = check_notify_attr(udma_dev, jfc_attr_ex);
 		break;
@@ -132,7 +146,7 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	}
 
 	if (ucmd->jfc_attr_ex.jfc_ex_mask &
-	    UDMA_JFC_NOTIFY_CREATE_FLAGS) {
+	    UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS) {
 		ret = check_jfc_attr_ex(udma_dev, &ucmd->jfc_attr_ex);
 		if (ret) {
 			dev_err(udma_dev->dev,
@@ -155,7 +169,7 @@ static void init_jfc(struct udma_jfc *udma_jfc, struct udma_create_jfc_ucmd *ucm
 	spin_lock_init(&udma_jfc->lock);
 	INIT_LIST_HEAD(&udma_jfc->sq_list);
 	INIT_LIST_HEAD(&udma_jfc->rq_list);
-	if (ucmd->jfc_attr_ex.jfc_ex_mask & UDMA_JFC_NOTIFY_CREATE_FLAGS)
+	if (ucmd->jfc_attr_ex.jfc_ex_mask & UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS)
 		udma_jfc->jfc_attr_ex = ucmd->jfc_attr_ex;
 }
 
@@ -313,6 +327,13 @@ static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_
 			       DMA_DB_RECORD_SHIFT);
 		udma_reg_write(jfc_context, CQC_CQE_DB_RECORD_ADDR_H,
 			       upper_32_bits(udma_jfc->db.dma));
+	}
+
+	if (udma_jfc->jfc_attr_ex.create_flags ==
+	    UDMA_JFC_CREATE_ENABLE_POE_MODE) {
+		udma_reg_enable(jfc_context, CQC_POE_EN);
+		udma_reg_write(jfc_context, CQC_POE_NUM,
+			       udma_jfc->jfc_attr_ex.poe_channel);
 	}
 
 	if (udma_jfc->jfc_attr_ex.create_flags == UDMA_JFC_CREATE_ENABLE_NOTIFY)

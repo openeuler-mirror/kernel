@@ -85,6 +85,9 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.max_jfr_sge = dev->caps.max_srq_sges;
 	resp.max_jfs_wr = dev->caps.max_wqes;
 	resp.max_jfs_sge = dev->caps.max_sq_sg;
+	resp.poe_ch_num = dev->caps.poe_ch_num;
+	resp.db_addr = pci_resource_start(dev->pci_dev, UDMA_DEV_START_OFFSET) +
+		       UDMA_DB_ADDR_OFFSET;
 
 	ret = copy_to_user((void *)udrv_data->out_addr, &resp,
 			   min(udrv_data->out_len, (uint32_t)sizeof(resp)));
@@ -356,6 +359,202 @@ int udma_user_ctl_flush_cqe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	return ret;
 }
 
+static int config_poe_addr(struct udma_dev *udma_device, uint8_t id,
+			   uint64_t addr)
+{
+	struct udma_poe_cfg_addr_cmq *cmd;
+	struct udma_cmq_desc desc;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_POE_ADDR, false);
+	cmd = (struct udma_poe_cfg_addr_cmq *)desc.data;
+	cmd->channel_id = cpu_to_le32(id);
+	cmd->poe_addr_l = cpu_to_le32(lower_32_bits(addr));
+	cmd->poe_addr_h = cpu_to_le32(upper_32_bits(addr));
+
+	ret = udma_cmq_send(udma_device, &desc, 1);
+	if (ret)
+		dev_err(udma_device->dev,
+			"configure poe channel %u addr failed, ret = %d.\n",
+			id, ret);
+	return ret;
+}
+
+static int config_poe_attr(struct udma_dev *udma_device, uint8_t id, bool en)
+{
+	struct udma_poe_cfg_attr_cmq *cmd;
+	struct udma_cmq_desc desc;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_POE_ATTR, false);
+	cmd = (struct udma_poe_cfg_attr_cmq *)desc.data;
+	cmd->channel_id = cpu_to_le32(id);
+	cmd->rsv_en_outstd = en ? 1 : 0;
+
+	ret = udma_cmq_send(udma_device, &desc, 1);
+	if (ret)
+		dev_err(udma_device->dev,
+			"configure poe channel %u attr failed, ret = %d.\n",
+			id, ret);
+	return ret;
+}
+
+static int check_poe_channel(struct udma_dev *udma_device, uint8_t poe_ch)
+{
+	if (poe_ch >= udma_device->caps.poe_ch_num) {
+		dev_err(udma_device->dev, "invalid POE channel %u.\n", poe_ch);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int udma_user_ctl_config_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			     struct ubcore_user_ctl_out *out,
+			     struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_poe_info poe_info;
+	struct udma_dev *udma_device;
+	int ret;
+
+	udma_device = to_udma_dev(uctx->ub_dev);
+	ret = (int)copy_from_user(&poe_info,
+				  (void *)in->addr,
+				  sizeof(struct udma_poe_info));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in config poe, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	ret = check_poe_channel(udma_device, poe_info.poe_channel);
+	if (ret) {
+		dev_err(udma_device->dev, "check channel failed in config poe, ret:%d.\n",
+			ret);
+		return ret;
+	}
+
+	ret = config_poe_attr(udma_device, poe_info.poe_channel,
+			      !!poe_info.poe_addr);
+	if (ret) {
+		dev_err(udma_device->dev, "config attr failed in config poe, ret:%d.\n",
+			ret);
+		config_poe_addr(udma_device, poe_info.poe_channel, 0);
+		return ret;
+	}
+
+	ret = config_poe_addr(udma_device, poe_info.poe_channel,
+			      poe_info.poe_addr);
+	if (ret)
+		dev_err(udma_device->dev, "config addr failed in config poe, ret:%d.\n",
+		ret);
+
+	return ret;
+}
+
+static int query_poe_addr(struct udma_dev *udma_device, uint8_t id,
+			  uint64_t *addr)
+{
+#define POE_ADDR_H_SHIFT 32
+	struct udma_poe_cfg_addr_cmq *resp;
+	struct udma_cmq_desc desc;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_POE_ADDR, true);
+	resp = (struct udma_poe_cfg_addr_cmq *)desc.data;
+	resp->channel_id = cpu_to_le32(id);
+
+	ret = udma_cmq_send(udma_device, &desc, 1);
+	if (ret) {
+		dev_err(udma_device->dev,
+			"Query poe channel %u addr failed, ret = %d.\n",
+			id, ret);
+		return ret;
+	}
+
+	*addr = resp->poe_addr_l | ((uint64_t)resp->poe_addr_h <<
+				    POE_ADDR_H_SHIFT);
+
+	return ret;
+}
+
+static int query_poe_attr(struct udma_dev *udma_device, uint8_t id, bool *en)
+{
+	struct udma_poe_cfg_attr_cmq *resp;
+	struct udma_cmq_desc desc;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_POE_ATTR, true);
+	resp = (struct udma_poe_cfg_attr_cmq *)desc.data;
+	resp->channel_id = cpu_to_le32(id);
+
+	ret = udma_cmq_send(udma_device, &desc, 1);
+	if (ret) {
+		dev_err(udma_device->dev,
+			"Query poe channel %u attr failed, ret = %d.\n",
+			id, ret);
+		return ret;
+	}
+
+	*en = !!resp->rsv_en_outstd;
+
+	return ret;
+}
+
+int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			    struct ubcore_user_ctl_out *out,
+			    struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_poe_info poe_info_out;
+	struct udma_poe_info poe_info_in;
+	struct udma_dev *udma_device;
+	uint64_t poe_addr;
+	bool poe_en;
+	int ret;
+
+	udma_device = to_udma_dev(uctx->ub_dev);
+	ret = (int)copy_from_user(&poe_info_in, (void *)in->addr,
+				  sizeof(struct udma_poe_info));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in query poe, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	ret = check_poe_channel(udma_device, poe_info_in.poe_channel);
+	if (ret) {
+		dev_err(udma_device->dev, "check channel failed in query poe, ret:%d.\n",
+			ret);
+		return ret;
+	}
+
+	ret = query_poe_attr(udma_device, poe_info_in.poe_channel, &poe_en);
+	if (ret) {
+		dev_err(udma_device->dev, "query attr failed in query poe, ret:%d.\n",
+			ret);
+		return ret;
+	}
+
+	ret = query_poe_addr(udma_device, poe_info_in.poe_channel, &poe_addr);
+	if (ret) {
+		dev_err(udma_device->dev, "query addr failed in query poe, ret:%d.\n",
+			ret);
+		return ret;
+	}
+
+	poe_info_out.en = poe_en ? 1 : 0;
+	poe_info_out.poe_addr = poe_addr;
+	ret = (int)copy_to_user((void *)out->addr, &poe_info_out,
+			   min(out->len,
+			       (uint32_t)sizeof(struct udma_poe_info)));
+	if (ret != 0) {
+		dev_err(udma_device->dev, "cp to user failed in query poe, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+	return ret;
+}
+
 typedef int (*udma_user_ctl_opcode)(struct ubcore_ucontext *uctx,
 				    struct ubcore_user_ctl_in *in,
 				    struct ubcore_user_ctl_out *out,
@@ -363,6 +562,8 @@ typedef int (*udma_user_ctl_opcode)(struct ubcore_ucontext *uctx,
 
 static udma_user_ctl_opcode g_udma_user_ctl_opcodes[] = {
 	[UDMA_USER_CTL_FLUSH_CQE] = udma_user_ctl_flush_cqe,
+	[UDMA_CONFIG_POE_CHANNEL] = udma_user_ctl_config_poe,
+	[UDMA_QUERY_POE_CHANNEL] = udma_user_ctl_query_poe,
 };
 
 int udma_user_ctl(struct ubcore_user_ctl *k_user_ctl)
@@ -844,6 +1045,12 @@ static void udma_cleanup_hem(struct udma_dev *udma_dev)
 	udma_cleanup_common_hem(udma_dev);
 }
 
+void udma_set_poe_ch_num(struct udma_dev *dev)
+{
+#define UDMA_POE_CH_NUM 4
+
+	dev->caps.poe_ch_num = UDMA_POE_CH_NUM;
+}
 
 static void udma_set_devname(struct udma_dev *udma_dev,
 			     struct ubcore_device *ub_dev)
@@ -938,6 +1145,7 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_engine_init;
 	}
 
+	udma_set_poe_ch_num(udma_dev);
 	ret = udma_register_device(udma_dev);
 	if (ret) {
 		dev_err(dev, "udma register device failed!\n");

@@ -36,10 +36,11 @@ enum {
 };
 
 enum udma_jfc_init_attr_mask {
-	UDMA_JFC_NOTIFY_CREATE_FLAGS = 1 << 0,
+	UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS = 1 << 0,
 };
 
 enum udma_jfc_create_flags {
+	UDMA_JFC_CREATE_ENABLE_POE_MODE = 1 << 0,
 	UDMA_JFC_CREATE_ENABLE_NOTIFY = 1 << 1,
 };
 
@@ -67,6 +68,7 @@ struct udma_create_jfr_resp {
 struct udma_jfc_attr_ex {
 	uint64_t	jfc_ex_mask; /* Use enum udma_jfc_init_attr_mask */
 	uint64_t	create_flags; /* Use enum udma_jfc_create_flags */
+	uint8_t		poe_channel; /* poe channel to use */
 	uint64_t	notify_addr;
 	uint8_t		notify_mode; /* Use enum udma_jfc_notify_mode */
 };
@@ -146,6 +148,8 @@ struct udma_create_ctx_resp {
 	uint32_t max_jfr_sge;
 	uint32_t max_jfs_wr;
 	uint32_t max_jfs_sge;
+	uint32_t poe_ch_num;
+	uint64_t db_addr;
 };
 
 struct flush_cqe_param {
@@ -153,8 +157,16 @@ struct flush_cqe_param {
 	uint32_t sq_producer_idx;
 };
 
+struct udma_poe_info {
+	uint8_t		en;
+	uint8_t		poe_channel;
+	uint64_t	poe_addr;
+};
+
 enum udma_user_ctl_handlers {
 	UDMA_USER_CTL_FLUSH_CQE,
+	UDMA_CONFIG_POE_CHANNEL,
+	UDMA_QUERY_POE_CHANNEL,
 	UDMA_OPCODE_NUM,
 };
 
