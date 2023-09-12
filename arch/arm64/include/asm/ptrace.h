@@ -224,12 +224,16 @@ static inline void forget_syscall(struct pt_regs *regs)
 #define a32_thumb_mode(regs) (0)
 #endif
 
+#define compat_thumb_mode(regs) a32_thumb_mode(regs)
+
 #define user_mode(regs)	\
 	(((regs)->pstate & PSR_MODE_MASK) == PSR_MODE_EL0t)
 
 #define a32_user_mode(regs)	\
 	(((regs)->pstate & (PSR_MODE32_BIT | PSR_MODE_MASK)) == \
 	 (PSR_MODE32_BIT | PSR_MODE_EL0t))
+
+#define compat_user_mode(regs) a32_user_mode(regs)
 
 #define processor_mode(regs) \
 	((regs)->pstate & PSR_MODE_MASK)
