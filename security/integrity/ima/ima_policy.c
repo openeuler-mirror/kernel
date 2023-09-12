@@ -20,6 +20,9 @@
 #include <linux/ima.h>
 
 #include "ima.h"
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include "ima_digest_list.h"
+#endif
 
 /* flags definitions */
 #define IMA_FUNC	0x0001
@@ -34,6 +37,9 @@
 #define IMA_FSNAME	0x0200
 #define IMA_KEYRINGS	0x0400
 #define IMA_LABEL	0x0800
+#ifdef CONFIG_IMA_DIGEST_LIST
+#define IMA_PARSER	0x10000
+#endif
 #define IMA_VALIDATE_ALGOS	0x1000
 #define IMA_GID		0x2000
 #define IMA_EGID	0x4000
@@ -197,6 +203,12 @@ static struct ima_rule_entry default_measurement_rules[] __ro_after_init = {
 #endif
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static struct ima_rule_entry ima_parser_measure_rule __ro_after_init = {
+	.action = MEASURE, .flags = IMA_PARSER
+};
+#endif
+
 static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 	{.action = DONT_APPRAISE, .fsmagic = PROC_SUPER_MAGIC, .flags = IMA_FSMAGIC},
 	{.action = DONT_APPRAISE, .fsmagic = SYSFS_MAGIC, .flags = IMA_FSMAGIC},
@@ -267,6 +279,13 @@ static struct ima_rule_entry secure_boot_rules[] __ro_after_init = {
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 #endif
 };
+
+#ifdef CONFIG_IMA_DIGEST_LIST
+static struct ima_rule_entry ima_parser_appraise_rule __ro_after_init = {
+	.action = APPRAISE,
+	.flags = IMA_PARSER | IMA_DIGSIG_REQUIRED
+};
+#endif
 
 static struct ima_rule_entry critical_data_rules[] __ro_after_init = {
 	{.action = MEASURE, .func = CRITICAL_DATA, .flags = IMA_FUNC},
@@ -660,6 +679,11 @@ static bool ima_match_rules(struct ima_rule_entry *rule,
 	    !rule->fowner_op(i_uid_into_vfsuid(idmap, inode),
 			     rule->fowner))
 		return false;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if ((rule->flags & IMA_PARSER) &&
+	    !ima_current_is_parser())
+		return false;
+#endif
 	if ((rule->flags & IMA_FGROUP) &&
 	    !rule->fgroup_op(i_gid_into_vfsgid(idmap, inode),
 			     rule->fgroup))
@@ -1034,6 +1058,10 @@ void __init ima_init_policy(void)
 		break;
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_policy)
+		add_rules(&ima_parser_measure_rule, 1, IMA_DEFAULT_POLICY);
+#endif
 	/*
 	 * Based on runtime secure boot flags, insert arch specific measurement
 	 * and appraise rules requiring file signatures for both the initial
@@ -1097,6 +1125,11 @@ void __init ima_init_policy(void)
 
 	atomic_set(&ima_setxattr_allowed_hash_algorithms, 0);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_secure_boot || ima_use_appraise_tcb ||
+	    ima_use_appraise_exec_tcb)
+		add_rules(&ima_parser_appraise_rule, 1, IMA_DEFAULT_POLICY);
+#endif
 	ima_update_policy_flags();
 }
 
@@ -1160,7 +1193,11 @@ enum policy_opt {
 	Opt_digest_type,
 	Opt_appraise_type, Opt_appraise_flag, Opt_appraise_algos,
 	Opt_permit_directio, Opt_pcr, Opt_template, Opt_keyrings,
+#ifdef CONFIG_IMA_DIGEST_LIST
+	Opt_label, Opt_parser, Opt_err
+#else
 	Opt_label, Opt_err
+#endif
 };
 
 static const match_table_t policy_tokens = {
@@ -1209,6 +1246,9 @@ static const match_table_t policy_tokens = {
 	{Opt_template, "template=%s"},
 	{Opt_keyrings, "keyrings=%s"},
 	{Opt_label, "label=%s"},
+#ifdef CONFIG_IMA_DIGEST_LIST
+	{Opt_parser, "parser"},
+#endif
 	{Opt_err, NULL}
 };
 
@@ -1336,7 +1376,7 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 	    entry->flags & (IMA_DIGSIG_REQUIRED | IMA_MODSIG_ALLOWED |
 #ifdef CONFIG_IMA_DIGEST_LIST
 			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS |
-				IMA_META_IMMUTABLE_REQUIRED))
+				IMA_META_IMMUTABLE_REQUIRED | IMA_PARSER))
 #else
 			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS))
 #endif
@@ -2003,6 +2043,12 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 						 &(template_desc->num_fields));
 			entry->template = template_desc;
 			break;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		case Opt_parser:
+			audit_log_format(ab, "parser ");
+			entry->flags |= IMA_PARSER;
+			break;
+#endif
 		case Opt_err:
 			ima_log_string(ab, "UNKNOWN", p);
 			result = -EINVAL;
@@ -2348,6 +2394,10 @@ int ima_policy_show(struct seq_file *m, void *v)
 		seq_puts(m, " ");
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (entry->flags & IMA_PARSER)
+		seq_puts(m, "parser ");
+#endif
 	for (i = 0; i < MAX_LSM_RULES; i++) {
 		if (entry->lsm[i].rule) {
 			switch (i) {
