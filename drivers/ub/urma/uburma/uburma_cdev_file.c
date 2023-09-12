@@ -35,6 +35,8 @@
 /* callback information */
 typedef ssize_t (*uburma_show_attr_cb)(const struct ubcore_device *ubc_dev, char *buf);
 typedef ssize_t (*uburma_store_attr_cb)(struct ubcore_device *ubc_dev, const char *buf, size_t len);
+typedef ssize_t (*uburma_show_port_attr_cb)(const struct ubcore_device *ubc_dev, char *buf,
+					    uint8_t port_num);
 
 static ssize_t uburma_show_dev_attr(struct device *dev, struct device_attribute *attr, char *buf,
 				    uburma_show_attr_cb show_cb)
@@ -155,7 +157,88 @@ static const struct attribute_group uburma_dev_attr_group = {
 	.attrs = uburma_dev_attrs,
 };
 
+static ssize_t uburma_show_port_attr(struct uburma_port *p, struct uburma_port_attribute *attr,
+				     char *buf, uburma_show_port_attr_cb show_cb)
+{
+	struct uburma_device *ubu_dev = p->ubu_dev;
+	struct ubcore_device *ubc_dev;
+	ssize_t ret = -ENODEV;
+	int srcu_idx;
+
+	if (!ubu_dev || !buf) {
+		uburma_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
+	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
+	if (ubc_dev == NULL) {
+		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+		return -ENODEV;
+	}
+
+	ret = show_cb(ubc_dev, buf, p->port_num);
+	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+	return ret;
+}
+
+static ssize_t max_mtu_show_cb(const struct ubcore_device *ubc_dev, char *buf, uint8_t port_num)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%d\n",
+			(int)ubc_dev->attr.port_attr[port_num].max_mtu);
+}
+
+static ssize_t max_mtu_show(struct uburma_port *p, struct uburma_port_attribute *attr, char *buf)
+{
+	return uburma_show_port_attr(p, attr, buf, max_mtu_show_cb);
+}
+
+static PORT_ATTR_RO(max_mtu);
+
+static ssize_t state_show_cb(const struct ubcore_device *ubc_dev, char *buf, uint8_t port_num)
+{
+	struct ubcore_device_status status;
+
+	if (ubcore_query_device_status(ubc_dev, &status) != 0) {
+		uburma_log_err("query device status for state failed.\n");
+		return -EPERM;
+	}
+
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n",
+			(uint32_t)status.port_status[port_num].state);
+}
+
+static ssize_t state_show(struct uburma_port *p, struct uburma_port_attribute *attr, char *buf)
+{
+	return uburma_show_port_attr(p, attr, buf, state_show_cb);
+}
+
+static PORT_ATTR_RO(state);
+
+static ssize_t active_speed_show_cb(const struct ubcore_device *ubc_dev, char *buf,
+				    uint8_t port_num)
+{
+	struct ubcore_device_status status;
+
+	if (ubcore_query_device_status(ubc_dev, &status) != 0) {
+		uburma_log_err("query device status for active speed failed.\n");
+		return -EPERM;
+	}
+
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n",
+			status.port_status[port_num].active_speed);
+}
+
+static ssize_t active_speed_show(struct uburma_port *p, struct uburma_port_attribute *attr,
+				 char *buf)
+{
+	return uburma_show_port_attr(p, attr, buf, active_speed_show_cb);
+}
+
+static PORT_ATTR_RO(active_speed);
+
 static struct attribute *uburma_port_attrs[] = {
+	&port_attr_max_mtu.attr,      &port_attr_state.attr,	  &port_attr_active_speed.attr,
 };
 
 static ssize_t uburma_port_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
