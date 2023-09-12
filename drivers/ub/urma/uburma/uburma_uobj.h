@@ -70,6 +70,9 @@ struct uobj_class_def {
 struct uburma_uobj *uobj_alloc_begin(const struct uobj_type *type, struct uburma_file *ufile);
 int uobj_alloc_commit(struct uburma_uobj *uobj);
 void uobj_alloc_abort(struct uburma_uobj *uobj);
+struct uburma_uobj *uobj_lookup_get(const struct uobj_type *type, struct uburma_file *ufile, int id,
+				    enum uobj_access flag);
+void uobj_lookup_put(struct uburma_uobj *uobj, enum uobj_access flag);
 int __must_check uobj_remove_commit(struct uburma_uobj *uobj);
 void uobj_get(struct uburma_uobj *uobj);
 void uobj_put(struct uburma_uobj *uobj);
@@ -79,5 +82,23 @@ void uobj_put(struct uburma_uobj *uobj);
 #define uobj_get_type(class_id) uobj_class_name(class_id).type_attrs
 
 #define uobj_alloc(class_id, ufile) uobj_alloc_begin(uobj_get_type(class_id), ufile)
+
+#define uobj_get_read(class_id, _id, ufile)                                                        \
+	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_READ)
+
+#define uobj_put_read(uobj) uobj_lookup_put(uobj, UOBJ_ACCESS_READ)
+
+#define uobj_get_write(class_id, _id, ufile)                                                       \
+	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_WRITE)
+
+#define uobj_put_write(uobj) uobj_lookup_put(uobj, UOBJ_ACCESS_WRITE)
+
+/* Do not lock uobj without cleanup_rwsem locked */
+#define uobj_get_del(class_id, _id, ufile)                                                         \
+	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_NOLOCK)
+
+/* Do not lock uobj without cleanup_rwsem locked */
+#define uobj_get_del(class_id, _id, ufile)                                                         \
+	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_NOLOCK)
 
 #endif /* UBURMA_UOBJ_H */

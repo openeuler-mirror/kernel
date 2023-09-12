@@ -104,6 +104,19 @@ static int uobj_try_lock(struct uburma_uobj *uobj, bool exclusive)
 	return atomic_cmpxchg(&uobj->rcnt, 0, -1) == 0 ? 0 : -EBUSY;
 }
 
+static void uobj_unlock(struct uburma_uobj *uobj, bool exclusive)
+{
+	/*
+	 * In order to unlock an object, either decrease its rcnt for
+	 * read access or zero it in case of exclusive access. See
+	 * uverbs_try_lock_object for locking schema information.
+	 */
+	if (!exclusive)
+		atomic_dec(&uobj->rcnt);
+	else
+		atomic_set(&uobj->rcnt, 0);
+}
+
 static int __must_check uobj_remove_commit_internal(struct uburma_uobj *uobj,
 						    enum uburma_remove_reason why)
 {
@@ -124,6 +137,56 @@ static int __must_check uobj_remove_commit_internal(struct uburma_uobj *uobj,
 	}
 
 	return ret;
+}
+
+struct uburma_uobj *uobj_lookup_get(const struct uobj_type *type, struct uburma_file *ufile, int id,
+				    enum uobj_access flag)
+{
+	struct ubcore_device *ubc_dev;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	uobj = type->type_class->lookup_get(type, ufile, id, flag);
+	if (IS_ERR(uobj))
+		return uobj;
+
+	if (uobj->type != type) {
+		ret = -EINVAL;
+		goto free;
+	}
+
+	/* block read and write uobj if we are removing device */
+	ubc_dev = srcu_dereference(ufile->ubu_dev->ubc_dev, &ufile->ubu_dev->ubc_dev_srcu);
+	if (!ubc_dev) {
+		ret = -EIO;
+		goto free;
+	}
+
+	if (flag == UOBJ_ACCESS_NOLOCK)
+		return uobj;
+
+	ret = uobj_try_lock(uobj, flag == UOBJ_ACCESS_WRITE);
+	if (ret) {
+		WARN(ufile->cleanup_reason, "uburma: Trying to lookup_get while cleanup context\n");
+		goto free;
+	}
+
+	return uobj;
+free:
+	uobj->type->type_class->lookup_put(uobj, flag);
+	/* pair with uobj_get in uobj_fd_lookup_get */
+	uobj_put(uobj);
+	return ERR_PTR(ret);
+}
+
+void uobj_lookup_put(struct uburma_uobj *uobj, enum uobj_access flag)
+{
+	uobj->type->type_class->lookup_put(uobj, flag);
+
+	if (flag != UOBJ_ACCESS_NOLOCK)
+		uobj_unlock(uobj, flag == UOBJ_ACCESS_WRITE); /* match with uobj_try_lock */
+
+	uobj_put(uobj);
 }
 
 int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
