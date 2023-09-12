@@ -15,6 +15,10 @@
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/namei.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include <linux/xattr.h>
+#include <linux/initramfs.h>
+#endif
 #include <linux/init_syscalls.h>
 #include <linux/task_work.h>
 #include <linux/umh.h>
@@ -177,7 +181,11 @@ static __initdata time64_t mtime;
 
 static __initdata unsigned long ino, major, minor, nlink;
 static __initdata umode_t mode;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static __initdata unsigned long body_len, name_len, metadata_len;
+#else
 static __initdata unsigned long body_len, name_len;
+#endif
 static __initdata uid_t uid;
 static __initdata gid_t gid;
 static __initdata unsigned rdev;
@@ -250,7 +258,11 @@ static void __init read_into(char *buf, unsigned size, enum state next)
 	}
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static __initdata char *header_buf, *symlink_buf, *name_buf, *metadata_buf;
+#else
 static __initdata char *header_buf, *symlink_buf, *name_buf;
+#endif
 
 static int __init do_start(void)
 {
@@ -351,6 +363,89 @@ static int __init maybe_link(void)
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static int __init do_setxattrs(char *pathname, char *buf, size_t size)
+{
+	struct path path;
+	char *xattr_name, *xattr_value;
+	uint32_t xattr_name_size, xattr_value_size;
+	int ret;
+
+	xattr_name = buf;
+	xattr_name_size = strnlen(xattr_name, size);
+	if (xattr_name_size == size) {
+		error("malformed xattrs");
+		return -EINVAL;
+	}
+
+	xattr_value = xattr_name + xattr_name_size + 1;
+	xattr_value_size = buf + size - xattr_value;
+
+	ret = kern_path(pathname, 0, &path);
+	if (!ret) {
+		ret = vfs_setxattr(&nop_mnt_idmap, path.dentry, xattr_name, xattr_value,
+				   xattr_value_size, 0);
+
+		path_put(&path);
+	}
+
+	pr_debug("%s: %s size: %u val: %s (ret: %d)\n", pathname,
+		 xattr_name, xattr_value_size, xattr_value, ret);
+
+	return ret;
+}
+
+static int __init __maybe_unused do_parse_metadata(char *pathname)
+{
+	char *buf = metadata_buf;
+	char *bufend = metadata_buf + metadata_len;
+	struct metadata_hdr *hdr;
+	char str[sizeof(hdr->c_size) + 1];
+	uint32_t entry_size;
+
+	if (!metadata_len)
+		return 0;
+
+	str[sizeof(hdr->c_size)] = 0;
+
+	while (buf < bufend) {
+		int ret;
+
+		if (buf + sizeof(*hdr) > bufend) {
+			error("malformed metadata");
+			break;
+		}
+
+		hdr = (struct metadata_hdr *)buf;
+		if (hdr->c_version != 1) {
+			pr_debug("Unsupported header version\n");
+			break;
+		}
+
+		memcpy(str, hdr->c_size, sizeof(hdr->c_size));
+		ret = kstrtou32(str, 16, &entry_size);
+		if (ret || buf + entry_size > bufend ||
+		    entry_size < sizeof(*hdr)) {
+			error("malformed xattrs");
+			break;
+		}
+
+		switch (hdr->c_type) {
+		case TYPE_XATTR:
+			do_setxattrs(pathname, buf + sizeof(*hdr),
+				     entry_size - sizeof(*hdr));
+			break;
+		default:
+			pr_debug("Unsupported metadata type\n");
+			break;
+		}
+
+		buf += entry_size;
+	}
+
+	return 0;
+}
+#endif
 static __initdata struct file *wfile;
 static __initdata loff_t wfile_pos;
 
