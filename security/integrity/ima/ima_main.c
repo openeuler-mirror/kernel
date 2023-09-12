@@ -627,11 +627,23 @@ int ima_bprm_check(struct linux_binprm *bprm)
 int ima_file_check(struct file *file, int mask)
 {
 	u32 secid;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	int rc;
+#endif
 
 	security_current_getsecid_subj(&secid);
+#ifdef CONFIG_IMA_DIGEST_LIST
+	rc = process_measurement(file, current_cred(), secid, NULL, 0,
+								mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
+										MAY_APPEND), FILE_CHECK);
+	if (ima_current_is_parser() && !rc)
+			ima_check_measured_appraised(file);
+	return rc;
+#else
 	return process_measurement(file, current_cred(), secid, NULL, 0,
 				   mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
 					   MAY_APPEND), FILE_CHECK);
+#endif
 }
 EXPORT_SYMBOL_GPL(ima_file_check);
 

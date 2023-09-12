@@ -645,7 +645,7 @@ int ima_appraise_measurement(enum ima_hooks func,
 		/* Allow access to digest lists without metadata, only if they
 		 * are signed or found in a digest list (immutable)
 		 */
-		if (func == DIGEST_LIST_CHECK) {
+		if (func == DIGEST_LIST_CHECK || ima_current_is_parser()) {
 			if (xattr_value->type == EVM_IMA_XATTR_DIGSIG)
 				break;
 			if (found_digest &&
