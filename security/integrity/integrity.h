@@ -76,6 +76,9 @@
 #define IMA_CHANGE_ATTR		2
 #define IMA_DIGSIG		3
 #define IMA_MUST_MEASURE	4
+#ifdef CONFIG_IMA_DIGEST_LIST
+#define IMA_DIGEST_LIST		5
+#endif
 
 enum evm_ima_xattr_type {
 	IMA_XATTR_DIGEST = 0x01,

@@ -1954,6 +1954,15 @@
 				  "enforce-evm" | "log-evm" }
 			default: "enforce"
 
+	ima_appraise_digest_list= [IMA]
+			Format: { "digest" | "digest-nometadata" }
+
+			digest: enables appraisal of files with digest lists
+			until EVM is initialized.
+
+			digest-nometadata: enables appraisal of files with
+			digest lists even after EVM is initialized.
+
 	ima_appraise_tcb [IMA] Deprecated.  Use ima_policy= instead.
 			The builtin appraise policy appraises all files
 			owned by uid=0.
