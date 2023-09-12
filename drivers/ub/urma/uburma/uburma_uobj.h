@@ -61,6 +61,11 @@ struct uobj_type_class {
 	int __must_check (*remove_commit)(struct uburma_uobj *uobj, enum uburma_remove_reason why);
 };
 
+struct uobj_idr_type {
+	struct uobj_type type;
+	int __must_check (*destroy_func)(struct uburma_uobj *uobj, enum uburma_remove_reason why);
+};
+
 struct uobj_fd_type {
 	struct uobj_type type;
 	const char *name;
@@ -74,6 +79,7 @@ struct uobj_class_def {
 	const struct uobj_type *type_attrs;
 };
 
+extern const struct uobj_type_class uobj_idr_type_class;
 extern const struct uobj_type_class uobj_fd_type_class;
 
 /* uobj base ops */
@@ -90,6 +96,16 @@ void uobj_put(struct uburma_uobj *uobj);
 #define uobj_class_name(class_id) uobj_class_##class_id
 
 #define uobj_get_type(class_id) uobj_class_name(class_id).type_attrs
+
+#define uobj_type_alloc_idr(_size, _order, _destroy_func)                                          \
+	((&((const struct uobj_idr_type) {                          \
+			.type = {                                      \
+				.type_class = &uobj_idr_type_class,        \
+				.obj_size = (_size),                       \
+				.destroy_order = (_order),                 \
+			},                                             \
+			.destroy_func = (_destroy_func),               \
+		}))->type)
 
 #define uobj_type_alloc_fd(_order, _obj_size, _context_closed, _fops, _name, _flags)             \
 	((&((const struct uobj_fd_type) {                                                        \

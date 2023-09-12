@@ -108,6 +108,33 @@ static struct uburma_uobj *alloc_uobj(struct uburma_file *ufile, const struct uo
 	return uobj;
 }
 
+static int uobj_alloc_idr(struct uburma_uobj *uobj)
+{
+	int ret;
+
+	idr_preload(GFP_KERNEL);
+	spin_lock(&uobj->ufile->idr_lock);
+
+	/* Alloc idr pointing to NULL. Will replace it once we commit. */
+	ret = idr_alloc(&uobj->ufile->idr, NULL, 0, min_t(unsigned long, U32_MAX - 1U, INT_MAX),
+			GFP_NOWAIT);
+	if (ret >= 0)
+		uobj->id = ret;
+
+	spin_unlock(&uobj->ufile->idr_lock);
+	idr_preload_end();
+
+	return ret < 0 ? ret : 0;
+}
+
+static void uobj_remove_idr(struct uburma_uobj *uobj)
+{
+	spin_lock(&uobj->ufile->idr_lock);
+	idr_remove(&uobj->ufile->idr, uobj->id);
+	spin_unlock(&uobj->ufile->idr_lock);
+}
+
+
 static int uobj_try_lock(struct uburma_uobj *uobj, bool exclusive)
 {
 	/*
@@ -160,6 +187,81 @@ static int __must_check uobj_remove_commit_internal(struct uburma_uobj *uobj,
 		uobj_put(uobj);
 	}
 
+	return ret;
+}
+
+static struct uburma_uobj *uobj_idr_alloc_begin(const struct uobj_type *type,
+						struct uburma_file *ufile)
+{
+	struct uburma_uobj *uobj;
+	int ret;
+
+	uobj = alloc_uobj(ufile, type);
+	if (IS_ERR(uobj))
+		return uobj;
+
+	ret = uobj_alloc_idr(uobj);
+	if (ret) {
+		uobj_put(uobj);
+		return ERR_PTR(ret);
+	}
+
+	return uobj;
+}
+
+static void uobj_idr_alloc_commit(struct uburma_uobj *uobj)
+{
+	spin_lock(&uobj->ufile->idr_lock);
+	WARN_ON(idr_replace(&uobj->ufile->idr, uobj, uobj->id));
+	spin_unlock(&uobj->ufile->idr_lock);
+}
+
+static void uobj_idr_alloc_abort(struct uburma_uobj *uobj)
+{
+	uobj_remove_idr(uobj);
+	uobj_put(uobj);
+}
+
+static struct uburma_uobj *uobj_idr_lookup_get(const struct uobj_type *type,
+					       struct uburma_file *ufile, int id,
+					       enum uobj_access flag)
+{
+	struct uburma_uobj *uobj = NULL;
+
+	rcu_read_lock();
+	/* Object won't be released as we're protected in rcu. */
+	uobj = idr_find(&ufile->idr, id);
+	if (uobj == NULL) {
+		uobj = ERR_PTR(-ENOENT);
+		goto free;
+	}
+
+	/* Object associated with uobj may have been released. */
+	if (!kref_get_unless_zero(&uobj->ref))
+		uobj = ERR_PTR(-ENOENT);
+
+free:
+	rcu_read_unlock();
+	return uobj;
+}
+
+static void uobj_idr_lookup_put(struct uburma_uobj *uobj, enum uobj_access flag)
+{
+	/* Empty for now. */
+}
+
+static int __must_check uobj_idr_remove_commit(struct uburma_uobj *uobj,
+					       enum uburma_remove_reason why)
+{
+	const struct uobj_idr_type *idr_type = container_of(uobj->type, struct uobj_idr_type, type);
+	/* Call object destroy function. */
+	int ret = idr_type->destroy_func(uobj, why);
+
+	/* Only user req destroy may fail. */
+	if (why == UBURMA_REMOVE_DESTROY && ret)
+		return ret;
+
+	uobj_remove_idr(uobj);
 	return ret;
 }
 
@@ -347,6 +449,15 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
 	up_read(&ufile->cleanup_rwsem);
 	return ret;
 }
+
+const struct uobj_type_class uobj_idr_type_class = {
+	.alloc_begin = uobj_idr_alloc_begin,
+	.alloc_commit = uobj_idr_alloc_commit,
+	.alloc_abort = uobj_idr_alloc_abort,
+	.lookup_get = uobj_idr_lookup_get,
+	.lookup_put = uobj_idr_lookup_put,
+	.remove_commit = uobj_idr_remove_commit,
+};
 
 const struct uobj_type_class uobj_fd_type_class = {
 	.alloc_begin = uobj_fd_alloc_begin,
