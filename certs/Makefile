@@ -65,6 +65,13 @@ endif # CONFIG_MODULE_SIG_KEY
 
 $(obj)/system_certificates.o: $(obj)/signing_key.x509
 
+ifdef CONFIG_PGP_PRELOAD_PUBLIC_KEYS
+ifeq ($(shell ls $(srctree)/certs/pubring.gpg 2> /dev/null), $(srctree)/certs/pubring.gpg)
+system_certificates.o += -DHAVE_PUBRING_GPG
+$(obj)/system_certificates.o: $(srctree)/certs/pubring.gpg
+endif
+endif
+
 PKCS11_URI := $(filter pkcs11:%, $(CONFIG_MODULE_SIG_KEY))
 ifdef PKCS11_URI
 $(obj)/signing_key.x509: extract-cert-in := $(PKCS11_URI)

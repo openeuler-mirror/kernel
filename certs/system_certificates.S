@@ -44,3 +44,21 @@ module_cert_size:
 #else
 	.long __module_cert_end - __module_cert_start
 #endif
+
+	.align 8
+	.globl pgp_public_keys
+pgp_public_keys:
+__pgp_key_list_start:
+#ifdef HAVE_PUBRING_GPG
+	.incbin "certs/pubring.gpg"
+#endif
+__pgp_key_list_end:
+
+	.align 8
+	.globl pgp_public_keys_size
+pgp_public_keys_size:
+#ifdef CONFIG_64BIT
+	.quad __pgp_key_list_end - __pgp_key_list_start
+#else
+	.long __pgp_key_list_end - __pgp_key_list_start
+#endif
