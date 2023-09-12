@@ -6,6 +6,21 @@
 #include <linux/types.h>
 
 /* This is a list of *what* is being read, not *how* nor *where*. */
+#ifdef CONFIG_IMA_DIGEST_LIST
+#define __kernel_read_file_id(id) \
+	id(UNKNOWN, unknown)		\
+	id(FIRMWARE, firmware)		\
+	id(MODULE, kernel-module)		\
+	id(KEXEC_IMAGE, kexec-image)		\
+	id(KEXEC_INITRAMFS, kexec-initramfs)	\
+	id(POLICY, security-policy)		\
+	id(DIGEST_LIST, digest-list)		\
+	id(X509_CERTIFICATE, x509-certificate)	\
+	id(KABI_RESERVE1, KABI_RESERVE1)	\
+	id(KABI_RESERVE2, KABI_RESERVE2)	\
+	id(KABI_RESERVE3, KABI_RESERVE3)	\
+	id(MAX_ID, )
+#else
 #define __kernel_read_file_id(id) \
 	id(UNKNOWN, unknown)		\
 	id(FIRMWARE, firmware)		\
@@ -18,6 +33,7 @@
 	id(KABI_RESERVE2, KABI_RESERVE2)	\
 	id(KABI_RESERVE3, KABI_RESERVE3)	\
 	id(MAX_ID, )
+#endif
 
 #define __fid_enumify(ENUM, dummy) READING_ ## ENUM,
 #define __fid_stringify(dummy, str) #str,
