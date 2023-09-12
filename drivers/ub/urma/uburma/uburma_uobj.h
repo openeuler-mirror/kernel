@@ -93,9 +93,25 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj);
 void uobj_get(struct uburma_uobj *uobj);
 void uobj_put(struct uburma_uobj *uobj);
 
+/* internal api */
+void uburma_init_uobj_context(struct uburma_file *ufile);
+void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason why);
+
+void uburma_close_uobj_fd(struct file *f);
+
 #define uobj_class_name(class_id) uobj_class_##class_id
 
 #define uobj_get_type(class_id) uobj_class_name(class_id).type_attrs
+
+#define _uobj_class_set(_id, _type_attrs)                                                          \
+	((const struct uobj_class_def){ .id = (_id), .type_attrs = (_type_attrs) })
+
+#define _declare_uobj_class(_name, _id, _type_attrs)                                               \
+	const struct uobj_class_def _name = _uobj_class_set(_id, _type_attrs)
+
+#define declare_uobj_class(class_id, ...)                                                          \
+	_declare_uobj_class(uobj_class_name(class_id), class_id, ##__VA_ARGS__)
+
 
 #define uobj_type_alloc_idr(_size, _order, _destroy_func)                                          \
 	((&((const struct uobj_idr_type) {                          \
@@ -136,10 +152,6 @@ static inline bool uobj_type_is_fd(const struct uburma_uobj *uobj)
 	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_WRITE)
 
 #define uobj_put_write(uobj) uobj_lookup_put(uobj, UOBJ_ACCESS_WRITE)
-
-/* Do not lock uobj without cleanup_rwsem locked */
-#define uobj_get_del(class_id, _id, ufile)                                                         \
-	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_NOLOCK)
 
 /* Do not lock uobj without cleanup_rwsem locked */
 #define uobj_get_del(class_id, _id, ufile)                                                         \

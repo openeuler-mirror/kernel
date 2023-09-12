@@ -450,6 +450,86 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
 	return ret;
 }
 
+void uburma_init_uobj_context(struct uburma_file *ufile)
+{
+	ufile->cleanup_reason = 0;
+	idr_init(&ufile->idr);
+	spin_lock_init(&ufile->idr_lock);
+	INIT_LIST_HEAD(&ufile->uobjects);
+	mutex_init(&ufile->uobjects_lock);
+	init_rwsem(&ufile->cleanup_rwsem);
+}
+
+void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason why)
+{
+	unsigned int cur_order = 0;
+
+	ufile->cleanup_reason = why;
+	down_write(&ufile->cleanup_rwsem);
+
+	while (!list_empty(&ufile->uobjects)) {
+		struct uburma_uobj *obj, *next_obj;
+		unsigned int next_order = UINT_MAX;
+
+		mutex_lock(&ufile->uobjects_lock);
+		list_for_each_entry_safe(obj, next_obj, &ufile->uobjects, list) {
+			if (obj->type->destroy_order == cur_order) {
+				int ret;
+				/* if we hit this WARN_ON,
+				 * that means we are racing with a lookup_get.
+				 */
+				WARN_ON(uobj_try_lock(obj, true));
+				ret = obj->type->type_class->remove_commit(obj, why);
+				if (ret)
+					pr_warn("uburma: failed to remove uobject id %d order %u\n",
+						obj->id, cur_order);
+
+				list_del_init(&obj->list);
+
+				/* uburma_close_uobj_fd will also try lock the uobj for write */
+				if (uobj_type_is_fd(obj))
+					uobj_unlock(obj, true); /* match with uobj_try_lock */
+
+				/* put the ref we took when we created the object */
+				uobj_put(obj);
+			} else {
+				next_order = min(next_order, obj->type->destroy_order);
+			}
+		}
+		mutex_unlock(&ufile->uobjects_lock);
+		cur_order = next_order;
+	}
+
+	up_write(&ufile->cleanup_rwsem);
+}
+
+void uburma_close_uobj_fd(struct file *f)
+{
+	struct uburma_uobj *uobj = f->private_data;
+	struct uburma_file *ufile = uobj->ufile;
+	int ret;
+
+	if (down_read_trylock(&ufile->cleanup_rwsem)) {
+		/*
+		 * uobj_fd_lookup_get holds the kref on the struct file any
+		 * time a FD uobj is locked, which prevents this release
+		 * method from being invoked. Meaning we can always get the
+		 * write lock here, or we have a kernel bug.
+		 */
+		WARN_ON(uobj_try_lock(uobj, true));
+		ret = uobj_remove_commit_internal(uobj, UBURMA_REMOVE_CLOSE);
+		up_read(&ufile->cleanup_rwsem);
+		if (ret)
+			pr_warn("uburma: unable to clean up uobj file.\n");
+	}
+
+	/* Matches the get in alloc_begin_fd_uobject */
+	kref_put(&ufile->ref, uburma_release_file);
+
+	/* Pairs with filp->private_data in alloc_begin_fd_uobject */
+	uobj_put(uobj);
+}
+
 const struct uobj_type_class uobj_idr_type_class = {
 	.alloc_begin = uobj_idr_alloc_begin,
 	.alloc_commit = uobj_idr_alloc_commit,

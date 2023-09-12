@@ -27,6 +27,7 @@
 
 #include "uburma_log.h"
 #include "uburma_types.h"
+#include "uburma_uobj.h"
 #include "uburma_cmd.h"
 
 int uburma_mmap(struct file *filp, struct vm_area_struct *vma)
@@ -112,6 +113,7 @@ int uburma_open(struct inode *inode, struct file *filp)
 	file->ucontext = NULL;
 	kref_init(&file->ref);
 	mutex_init(&file->mutex);
+	uburma_init_uobj_context(file);
 	filp->private_data = file;
 
 	list_add_tail(&file->list, &ubu_dev->uburma_file_list);
@@ -136,6 +138,7 @@ int uburma_close(struct inode *inode, struct file *filp)
 	struct uburma_file *file = filp->private_data;
 
 	mutex_lock(&file->mutex);
+	uburma_cleanup_uobjs(file, UBURMA_REMOVE_CLOSE);
 	if (file->ucontext) {
 		ubcore_free_ucontext(file->ubu_dev->ubc_dev, file->ucontext);
 		file->ucontext = NULL;
