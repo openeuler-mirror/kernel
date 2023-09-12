@@ -14,7 +14,6 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-#define MIN_DB_SIZE (8 * 1024 * 1024)
 #define MAX_DB_SIZE (64 * 1024 * 1024)
 #define DEFAULT_DB_SIZE (CONFIG_IMA_DIGEST_DB_MEGABYTES * 1024 * 1024)
 
@@ -29,8 +28,8 @@
 #include "ima.h"
 #include "ima_digest_list.h"
 
-size_t ima_digest_db_max_size __ro_after_init = DEFAULT_DB_SIZE;
-size_t ima_digest_db_size;
+int ima_digest_db_max_size __ro_after_init = DEFAULT_DB_SIZE;
+int ima_digest_db_size;
 
 struct ima_h_table ima_digests_htable = {
 	.len = ATOMIC_LONG_INIT(0),
@@ -43,12 +42,13 @@ static int __init digest_db_max_size_setup(char *str)
 	char *retptr;
 
 	size = memparse(str, &retptr);
-	if (size < MIN_DB_SIZE || size > MAX_DB_SIZE || *retptr != '\0') {
-		pr_err("DB size should range from 8M to 64M\n");
+	if (size < 0 || size > MAX_DB_SIZE || *retptr != '\0') {
+		pr_err("digest DB size should range from 0M to 64M\n");
 		return 0;
 	}
 
 	ima_digest_db_max_size = size;
+	pr_info_once("parse reserve digest DB memory: %s\n", str);
 
 	return 1;
 }
@@ -118,6 +118,9 @@ static int ima_add_digest_data_entry(u8 *digest, enum hash_algo algo,
 	if (d == NULL)
 		return -ENOMEM;
 
+	ima_digest_db_size += sizeof(struct ima_digest);
+	ima_digest_db_size += digest_len;
+
 	d->algo = algo;
 	d->type = type;
 	d->modifiers = modifiers;
@@ -140,6 +143,9 @@ static void ima_del_digest_data_entry(u8 *digest, enum hash_algo algo,
 
 	if (--d->count > 0)
 		return;
+
+	ima_digest_db_size -= sizeof(struct ima_digest);
+	ima_digest_db_size -= hash_digest_size[algo];
 
 	hlist_del_rcu(&d->hnext);
 	atomic_long_dec(&ima_digests_htable.len);
@@ -348,6 +354,12 @@ static bool __init load_digest_list(struct dir_context *__ctx, const char *name,
 	}
 
 	size = ret;
+
+	if (size > ima_digest_db_max_size - ima_digest_db_size) {
+		pr_err_once("digest DB is full: %d\n", ima_digest_db_size);
+		vfree(datap);
+		goto out_fput;
+	}
 
 	ima_check_measured_appraised(file);
 
