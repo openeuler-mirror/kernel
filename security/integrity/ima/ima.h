@@ -57,6 +57,9 @@ extern int ima_extra_slots __ro_after_init;
 extern int ima_appraise;
 extern struct tpm_chip *ima_tpm_chip;
 extern const char boot_aggregate_name[];
+#ifdef CONFIG_IMA_DIGEST_LIST
+extern int ima_digest_list_actions;
+#endif
 
 /* IMA event related data */
 struct ima_event_data {
