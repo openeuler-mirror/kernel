@@ -120,6 +120,7 @@ static void ima_del_digest_data_entry(u8 *digest, enum hash_algo algo,
 
 	hlist_del_rcu(&d->hnext);
 	atomic_long_dec(&ima_digests_htable.len);
+	kfree(d);
 }
 
 /***********************
