@@ -1872,7 +1872,12 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 			ima_log_string(ab, "pcr", args[0].from);
 
 			result = kstrtoint(args[0].from, 10, &entry->pcr);
+#ifdef CONFIG_IMA_DIGEST_LIST
+			if (result || INVALID_PCR(entry->pcr) ||
+			    entry->pcr == ima_digest_list_pcr)
+#else
 			if (result || INVALID_PCR(entry->pcr))
+#endif
 				result = -EINVAL;
 			else
 				entry->flags |= IMA_PCR;

@@ -58,6 +58,8 @@ extern int ima_appraise;
 extern struct tpm_chip *ima_tpm_chip;
 extern const char boot_aggregate_name[];
 #ifdef CONFIG_IMA_DIGEST_LIST
+extern int ima_digest_list_pcr;
+extern bool ima_plus_standard_pcr;
 extern int ima_digest_list_actions;
 #endif
 
@@ -293,7 +295,12 @@ void ima_store_measurement(struct integrity_iint_cache *iint, struct file *file,
 			   const unsigned char *filename,
 			   struct evm_ima_xattr_data *xattr_value,
 			   int xattr_len, const struct modsig *modsig, int pcr,
+#ifdef CONFIG_IMA_DIGEST_LIST
+			   struct ima_template_desc *template_desc,
+			   struct ima_digest *digest);
+#else
 			   struct ima_template_desc *template_desc);
+#endif
 int process_buffer_measurement(struct mnt_idmap *idmap,
 			       struct inode *inode, const void *buf, int size,
 			       const char *eventname, enum ima_hooks func,
@@ -305,8 +312,13 @@ int ima_alloc_init_template(struct ima_event_data *event_data,
 			    struct ima_template_entry **entry,
 			    struct ima_template_desc *template_desc);
 int ima_store_template(struct ima_template_entry *entry, int violation,
+#ifdef CONFIG_IMA_DIGEST_LIST
+		       struct inode *inode, const unsigned char *filename,
+		       int pcr, struct ima_digest *digest);
+#else
 		       struct inode *inode,
 		       const unsigned char *filename, int pcr);
+#endif
 void ima_free_template_entry(struct ima_template_entry *entry);
 const char *ima_d_path(const struct path *path, char **pathbuf, char *filename);
 
