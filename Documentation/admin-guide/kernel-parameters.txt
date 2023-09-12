@@ -1998,6 +1998,11 @@
 			mode bit set by either the effective uid (euid=0) or
 			uid=0.
 
+			The "exec_tcb" policy is similar to the "tcb" policy
+			except for file open, which is not considered. Files
+			in the tmpfs filesystem are not excluded from
+			measurement.
+
 			The "appraise_tcb" policy appraises the integrity of
 			all files owned by root.
 
