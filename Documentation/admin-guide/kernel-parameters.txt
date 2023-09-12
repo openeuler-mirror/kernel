@@ -2015,6 +2015,10 @@
 			files mmap'd for exec. Files in the tmpfs filesystem are
 			not excluded from appraisal.
 
+			The "appraise_exec_immutable" policy requires immutable
+			metadata for executed files, if the "appraise_exec_tcb"
+			policy is selected.
+
 			The "fail_securely" policy forces file signature
 			verification failure also on privileged mounted
 			filesystems with the SB_I_UNVERIFIABLE_SIGNATURE
