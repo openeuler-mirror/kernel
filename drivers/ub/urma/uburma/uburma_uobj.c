@@ -84,6 +84,30 @@ void uobj_put(struct uburma_uobj *uobj)
 	kref_put(&uobj->ref, uobj_free);
 }
 
+/* Alloc buffer and init params. */
+static struct uburma_uobj *alloc_uobj(struct uburma_file *ufile, const struct uobj_type *type)
+{
+	struct ubcore_device *ubc_dev;
+	struct uburma_uobj *uobj;
+
+	/* block read and write uobj if we are removing device */
+	ubc_dev = srcu_dereference(ufile->ubu_dev->ubc_dev, &ufile->ubu_dev->ubc_dev_srcu);
+	if (!ubc_dev)
+		return ERR_PTR(-EIO);
+
+	uobj = kzalloc(type->obj_size, GFP_KERNEL);
+	if (uobj == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	uobj->ufile = ufile;
+	uobj->type = type;
+
+	atomic_set(&uobj->rcnt, -1);
+	kref_init(&uobj->ref);
+
+	return uobj;
+}
+
 static int uobj_try_lock(struct uburma_uobj *uobj, bool exclusive)
 {
 	/*
@@ -134,6 +158,117 @@ static int __must_check uobj_remove_commit_internal(struct uburma_uobj *uobj,
 		mutex_unlock(&ufile->uobjects_lock);
 		/* put the ref we took when we created the object */
 		uobj_put(uobj);
+	}
+
+	return ret;
+}
+
+static struct uburma_uobj *uobj_fd_alloc_begin(const struct uobj_type *type,
+					       struct uburma_file *ufile)
+{
+	const struct uobj_fd_type *fd_type = container_of(type, struct uobj_fd_type, type);
+	struct uburma_uobj *uobj;
+	struct file *filp;
+	int new_fd;
+
+	new_fd = get_unused_fd_flags(O_RDWR | O_CLOEXEC);
+	if (new_fd < 0)
+		return ERR_PTR(new_fd);
+
+	uobj = alloc_uobj(ufile, type);
+	if (IS_ERR(uobj)) {
+		put_unused_fd(new_fd);
+		return uobj;
+	}
+
+	filp = anon_inode_getfile(fd_type->name, fd_type->fops, uobj, fd_type->flags);
+	if (IS_ERR(filp)) {
+		put_unused_fd(new_fd);
+		uobj_put(uobj);
+		return (void *)filp;
+	}
+
+	uobj->id = new_fd;
+	uobj->object = filp;
+
+	kref_get(&ufile->ref);
+
+	return uobj;
+}
+
+static void uobj_fd_alloc_commit(struct uburma_uobj *uobj)
+{
+	struct file *filp = (struct file *)uobj->object;
+
+	fd_install(uobj->id, filp);
+
+	/* Do not set uobj->id = 0 as it may be read when remove uobj */
+
+	/* Get another reference as we export this to the fops */
+	uobj_get(uobj);
+}
+
+static void uobj_fd_alloc_abort(struct uburma_uobj *uobj)
+{
+	struct file *filp = uobj->object;
+
+	/* Unsuccessful NEW */
+	fput(filp);
+	put_unused_fd(uobj->id);
+}
+
+static struct uburma_uobj *uobj_fd_lookup_get(const struct uobj_type *type,
+					      struct uburma_file *ufile, int id,
+					      enum uobj_access flag)
+{
+	const struct uobj_fd_type *fd_type = container_of(type, struct uobj_fd_type, type);
+	struct uburma_uobj *uobj;
+	struct file *f;
+
+	if (flag != UOBJ_ACCESS_READ)
+		return ERR_PTR(-EOPNOTSUPP);
+
+	f = fget(id);
+	if (f == NULL)
+		return ERR_PTR(-EBADF);
+
+	uobj = f->private_data;
+	/*
+	 * fget(id) ensures we are not currently running close_fd,
+	 * and the caller is expected to ensure that close_fd is never
+	 * done while a call top lookup is possible.
+	 */
+	if (f->f_op != fd_type->fops) {
+		fput(f);
+		return ERR_PTR(-EBADF);
+	}
+
+	uobj_get(uobj);
+	return uobj;
+}
+
+static void uobj_fd_lookup_put(struct uburma_uobj *uobj, enum uobj_access flag)
+{
+	struct file *filp = uobj->object;
+
+	WARN_ON(flag != UOBJ_ACCESS_READ);
+	/* This indirectly calls close_fd and free the object */
+	fput(filp);
+}
+
+static int __must_check uobj_fd_remove_commit(struct uburma_uobj *uobj,
+					      enum uburma_remove_reason why)
+{
+	const struct uobj_fd_type *fd_type = container_of(uobj->type, struct uobj_fd_type, type);
+	/* Call user close function. */
+	int ret = fd_type->context_closed(uobj, why);
+
+	if (why == UBURMA_REMOVE_DESTROY && ret)
+		return ret;
+
+	if (why == UBURMA_REMOVE_DURING_CLEANUP) {
+		uobj_fd_alloc_abort(uobj);
+		return ret;
 	}
 
 	return ret;
@@ -212,3 +347,12 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
 	up_read(&ufile->cleanup_rwsem);
 	return ret;
 }
+
+const struct uobj_type_class uobj_fd_type_class = {
+	.alloc_begin = uobj_fd_alloc_begin,
+	.alloc_commit = uobj_fd_alloc_commit,
+	.alloc_abort = uobj_fd_alloc_abort,
+	.lookup_get = uobj_fd_lookup_get,
+	.lookup_put = uobj_fd_lookup_put,
+	.remove_commit = uobj_fd_remove_commit,
+};

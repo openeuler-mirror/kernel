@@ -61,10 +61,20 @@ struct uobj_type_class {
 	int __must_check (*remove_commit)(struct uburma_uobj *uobj, enum uburma_remove_reason why);
 };
 
+struct uobj_fd_type {
+	struct uobj_type type;
+	const char *name;
+	const struct file_operations *fops;
+	int flags;
+	int (*context_closed)(struct uburma_uobj *uobj, enum uburma_remove_reason why);
+};
+
 struct uobj_class_def {
 	uint16_t id;
 	const struct uobj_type *type_attrs;
 };
+
+extern const struct uobj_type_class uobj_fd_type_class;
 
 /* uobj base ops */
 struct uburma_uobj *uobj_alloc_begin(const struct uobj_type *type, struct uburma_file *ufile);
@@ -80,6 +90,24 @@ void uobj_put(struct uburma_uobj *uobj);
 #define uobj_class_name(class_id) uobj_class_##class_id
 
 #define uobj_get_type(class_id) uobj_class_name(class_id).type_attrs
+
+#define uobj_type_alloc_fd(_order, _obj_size, _context_closed, _fops, _name, _flags)             \
+	((&((const struct uobj_fd_type) {                                                        \
+			.type = {                                                                \
+				.destroy_order = (_order),                                       \
+				.type_class = &uobj_fd_type_class,                               \
+				.obj_size = (_obj_size),                                         \
+			},                                                                       \
+			.context_closed = (_context_closed),                                     \
+			.fops = (_fops),                                                         \
+			.name = (_name),                                                         \
+			.flags = (_flags)                                                        \
+		}))->type)
+
+static inline bool uobj_type_is_fd(const struct uburma_uobj *uobj)
+{
+	return uobj->type->type_class == &uobj_fd_type_class;
+}
 
 #define uobj_alloc(class_id, ufile) uobj_alloc_begin(uobj_get_type(class_id), ufile)
 
