@@ -2064,6 +2064,8 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
 	ret = do_mm_populate(mm, spa->va_start, populate, 0);
+	if (ac && (ac->sp_flags & SP_HUGEPAGE) && unlikely(ret == -EFAULT))
+		ret = -ENOMEM;
 	if (ret) {
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn("allocation failed, current thread is killed\n");
