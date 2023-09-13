@@ -743,6 +743,26 @@ struct udma_seg_table {
 	struct udma_hem_table	table;
 };
 
+#define UDMA_SCC_PARAM_SIZE 4
+
+struct udma_scc_param {
+	uint32_t		param[UDMA_SCC_PARAM_SIZE];
+	uint32_t		lifespan;
+	uint64_t		timestamp;
+	enum udma_cong_type	algo_type;
+	struct delayed_work	scc_cfg_dwork;
+	struct udma_dev		*udma_dev;
+	uint8_t			port_num;
+	bool			configured;
+};
+
+struct udma_port {
+	struct udma_dev		*udma_dev;
+	uint8_t			port_num;
+	struct kobject		kobj;
+	struct udma_scc_param	*scc_param;
+};
+
 struct udma_dev {
 	struct ubcore_device		ub_dev;
 	struct pci_dev			*pci_dev;
@@ -790,6 +810,7 @@ struct udma_dev {
 	spinlock_t			qp_list_lock;
 	struct list_head		dip_list;
 	spinlock_t			dip_list_lock;
+	struct udma_port		port_data[UDMA_MAX_PORTS];
 };
 
 struct udma_seg {

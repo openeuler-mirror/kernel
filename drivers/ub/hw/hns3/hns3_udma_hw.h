@@ -205,6 +205,10 @@ enum udma_cmd_return_status {
 /* CMQ command */
 enum udma_opcode_type {
 	UDMA_QUERY_FW_VER				= 0x0001,
+	UDMA_OPC_CFG_DCQCN_PARAM			= 0x1A80,
+	UDMA_OPC_CFG_LDCP_PARAM				= 0x1A81,
+	UDMA_OPC_CFG_HC3_PARAM				= 0x1A82,
+	UDMA_OPC_CFG_DIP_PARAM				= 0x1A83,
 	UDMA_OPC_QUERY_HW_ID				= 0x7032,
 	UDMA_OPC_QUERY_HW_VER				= 0x8000,
 	UDMA_OPC_CFG_GLOBAL_PARAM			= 0x8001,

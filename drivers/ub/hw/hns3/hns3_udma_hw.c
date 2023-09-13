@@ -22,6 +22,7 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_eq.h"
 #include "hns3_udma_qp.h"
+#include "hns3_udma_sysfs.h"
 
 static const struct pci_device_id udma_hw_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL),
@@ -1866,7 +1867,16 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 	}
 	handle->priv = udma_dev;
 
+	ret = udma_register_cc_sysfs(udma_dev);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"UDMA congest control init failed(%d)!\n", ret);
+		goto error_failed_cc_sysfs;
+	}
+
 	return 0;
+error_failed_cc_sysfs:
+	udma_hnae_client_exit(udma_dev);
 error_failed_get_cfg:
 	kfree(udma_dev->priv);
 error_failed_kzalloc:
@@ -1883,6 +1893,7 @@ static void __udma_uninit_instance(struct hnae3_handle *handle,
 	if (!udma_dev)
 		return;
 
+	udma_unregister_cc_sysfs(udma_dev);
 	handle->priv = NULL;
 
 	udma_hnae_client_exit(udma_dev);
