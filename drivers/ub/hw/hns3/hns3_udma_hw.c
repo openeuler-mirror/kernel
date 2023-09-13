@@ -1423,6 +1423,22 @@ static void udma_free_link_table(struct udma_dev *udma_dev)
 	free_link_table_buf(udma_dev, &priv->ext_llm);
 }
 
+static void free_dip_list(struct udma_dev *udma_dev)
+{
+	struct udma_dip *u_dip;
+	struct udma_dip *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&udma_dev->dip_list_lock, flags);
+
+	list_for_each_entry_safe(u_dip, tmp, &udma_dev->dip_list, node) {
+		list_del(&u_dip->node);
+		kfree(u_dip);
+	}
+
+	spin_unlock_irqrestore(&udma_dev->dip_list_lock, flags);
+}
+
 static int udma_get_reset_page(struct udma_dev *dev)
 {
 	dev->reset_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
@@ -1577,6 +1593,7 @@ static void udma_hw_exit(struct udma_dev *udma_dev)
 	udma_free_link_table(udma_dev);
 
 	put_hem_table(udma_dev);
+	free_dip_list(udma_dev);
 }
 
 static int get_op_for_set_hem(uint32_t type, int step_idx, uint16_t *mbox_op,

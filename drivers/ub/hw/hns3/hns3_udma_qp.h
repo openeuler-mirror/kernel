@@ -125,6 +125,8 @@ struct udma_qp_context {
 #define QPCEX_P_TYPE_UDMA 0x1
 #define MAX_SERVICE_LEVEL 0x7
 
+#define QPCEX_CONGEST_ALG_SEL QPCEX_FIELD_LOC(0, 0)
+#define QPCEX_CONGEST_ALG_SUB_SEL QPCEX_FIELD_LOC(1, 1)
 #define QPCEX_DIP_CTX_IDX_VLD QPCEX_FIELD_LOC(2, 2)
 #define QPCEX_DIP_CTX_IDX QPCEX_FIELD_LOC(22, 3)
 #define QPCEX_SQ_RQ_NOT_FORBID_EN QPCEX_FIELD_LOC(23, 23)
@@ -267,7 +269,52 @@ struct udma_qp {
 	uint8_t			priority;
 	bool			no_free_wqe_buf;
 	bool			force_free_wqe_buf;
+	int64_t			dip_idx;
 	struct udma_modify_tp_attr *m_attr;
+};
+
+struct udma_congestion_algorithm {
+	uint8_t congest_type;
+	uint8_t alg_sel;
+	uint8_t alg_sub_sel;
+	uint8_t dip_vld;
+	uint8_t wnd_mode_sel;
+};
+
+struct udma_dip {
+	uint8_t dgid[UDMA_GID_SIZE];
+	uint32_t dip_idx;
+	struct list_head node; /* all dips are on a list */
+};
+
+#define UDMA_CONGEST_SIZE 64
+#define UDMA_SCC_DIP_INVALID_IDX (-1)
+
+enum {
+	CONGEST_DCQCN,
+	CONGEST_LDCP,
+	CONGEST_HC3,
+	CONGEST_DIP,
+};
+
+enum {
+	DCQCN_ALG,
+	WINDOW_ALG,
+};
+
+enum {
+	UNSUPPORT_CONGEST_DEGREE,
+	SUPPORT_CONGEST_DEGREE,
+};
+
+enum {
+	DIP_INVALID,
+	DIP_VALID,
+};
+
+enum {
+	WND_LIMIT,
+	WND_UNLIMIT,
 };
 
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))

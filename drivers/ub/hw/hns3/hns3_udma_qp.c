@@ -454,6 +454,171 @@ static int modify_qp_rtr_to_rts(struct udma_qp *qp,
 	return 0;
 }
 
+static enum udma_cong_type to_udma_cong_type(uint32_t cc_alg)
+{
+	switch ((enum ubcore_tp_cc_alg)cc_alg) {
+	case UBCORE_TP_CC_DCQCN:
+		return UDMA_CONG_TYPE_DCQCN;
+	case UBCORE_TP_CC_LDCP:
+		return UDMA_CONG_TYPE_LDCP;
+	case UBCORE_TP_CC_HC3:
+		return UDMA_CONG_TYPE_HC3;
+	case UBCORE_TP_CC_DIP:
+		return UDMA_CONG_TYPE_DIP;
+	default:
+		return UDMA_CONG_TYPE_DCQCN;
+	}
+}
+
+static void fill_congest_type(struct udma_congestion_algorithm *congest_alg,
+			      enum udma_cong_type qp_cong_alg)
+{
+	switch (qp_cong_alg) {
+	case UDMA_CONG_TYPE_DCQCN:
+		congest_alg->congest_type = CONGEST_DCQCN;
+		congest_alg->alg_sel = DCQCN_ALG;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_DEGREE;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
+		break;
+	case UDMA_CONG_TYPE_LDCP:
+		congest_alg->congest_type = CONGEST_LDCP;
+		congest_alg->alg_sel = WINDOW_ALG;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_DEGREE;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_UNLIMIT;
+		break;
+	case UDMA_CONG_TYPE_HC3:
+		congest_alg->congest_type = CONGEST_HC3;
+		congest_alg->alg_sel = WINDOW_ALG;
+		congest_alg->alg_sub_sel = SUPPORT_CONGEST_DEGREE;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
+		break;
+	case UDMA_CONG_TYPE_DIP:
+		congest_alg->congest_type = CONGEST_DIP;
+		congest_alg->alg_sel = DCQCN_ALG;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_DEGREE;
+		congest_alg->dip_vld = DIP_VALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
+		break;
+	default:
+		congest_alg->congest_type = CONGEST_DCQCN;
+		congest_alg->alg_sel = DCQCN_ALG;
+		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_DEGREE;
+		congest_alg->dip_vld = DIP_INVALID;
+		congest_alg->wnd_mode_sel = WND_LIMIT;
+		break;
+	}
+}
+
+static int get_dip_ctx_idx(struct udma_qp *qp,
+			   uint32_t *dip_idx)
+{
+	struct udma_dev *udma_dev = qp->udma_device;
+	uint32_t *spare_idx = udma_dev->qp_table.idx_table.spare_idx;
+	uint32_t *head = &udma_dev->qp_table.idx_table.head;
+	uint32_t *tail = &udma_dev->qp_table.idx_table.tail;
+	struct udma_modify_tp_attr *attr;
+	struct udma_dip *udma_dip;
+	unsigned long flags;
+	int ret = 0;
+
+	attr = qp->m_attr;
+	spin_lock_irqsave(&udma_dev->dip_list_lock, flags);
+
+	spare_idx[*tail] = qp->qpn;
+	*tail = (*tail == udma_dev->caps.num_qps - 1) ? 0 : (*tail + 1);
+
+	list_for_each_entry(udma_dip, &udma_dev->dip_list, node) {
+		if (!memcmp(attr->dgid, udma_dip->dgid, UDMA_GID_SIZE)) {
+			*dip_idx = udma_dip->dip_idx;
+			goto out;
+		}
+	}
+
+	udma_dip = kzalloc(sizeof(*udma_dip), GFP_ATOMIC);
+	if (!udma_dip) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	memcpy(udma_dip->dgid, attr->dgid, sizeof(attr->dgid));
+	udma_dip->dip_idx = *dip_idx = spare_idx[*head];
+	*head = (*head == udma_dev->caps.num_qps - 1) ? 0 : (*head + 1);
+	list_add_tail(&udma_dip->node, &udma_dev->dip_list);
+
+out:
+	spin_unlock_irqrestore(&udma_dev->dip_list_lock, flags);
+	return ret;
+}
+
+static int udma_set_cong_fields(struct udma_qp_context *context,
+				struct udma_qp_context *context_mask,
+				struct udma_qp *qp,
+				const struct ubcore_tp_attr *attr)
+{
+	struct udma_congestion_algorithm congest_filed;
+	enum udma_cong_type qp_cong_alg;
+	uint32_t dip_idx = 0;
+	int ret = 0;
+
+	qp_cong_alg = to_udma_cong_type(attr->flag.bs.cc_alg);
+	fill_congest_type(&congest_filed, qp_cong_alg);
+
+	if (qp->qp_type == QPT_UD) {
+		congest_filed.congest_type = CONGEST_DCQCN;
+		congest_filed.alg_sel = DCQCN_ALG;
+		congest_filed.alg_sub_sel = UNSUPPORT_CONGEST_DEGREE;
+		congest_filed.dip_vld = DIP_INVALID;
+		congest_filed.wnd_mode_sel = WND_LIMIT;
+	}
+
+	udma_reg_write(context, QPC_CONGEST_ALGO_TMPL_ID,
+				   qp->udma_device->cong_algo_tmpl_id +
+				   congest_filed.congest_type * UDMA_CONGEST_SIZE);
+	udma_reg_clear(context_mask, QPC_CONGEST_ALGO_TMPL_ID);
+
+	udma_reg_write(&context->ext, QPCEX_CONGEST_ALG_SEL, congest_filed.alg_sel);
+	udma_reg_clear(&context_mask->ext, QPCEX_CONGEST_ALG_SEL);
+
+	udma_reg_write(&context->ext, QPCEX_CONGEST_ALG_SUB_SEL, congest_filed.alg_sub_sel);
+	udma_reg_clear(&context_mask->ext, QPCEX_CONGEST_ALG_SUB_SEL);
+
+	udma_reg_write(&context->ext, QPCEX_DIP_CTX_IDX_VLD, congest_filed.dip_vld);
+	udma_reg_clear(&context_mask->ext, QPCEX_DIP_CTX_IDX_VLD);
+
+	udma_reg_write(&context->ext, QPCEX_SQ_RQ_NOT_FORBID_EN, congest_filed.wnd_mode_sel);
+	udma_reg_clear(&context_mask->ext, QPCEX_SQ_RQ_NOT_FORBID_EN);
+
+	if (congest_filed.dip_vld == 0)
+		goto out;
+
+	ret = get_dip_ctx_idx(qp, &dip_idx);
+	if (ret) {
+		dev_err(qp->udma_device->dev,
+				"failed to fill congest, ret = %d.\n", ret);
+		goto out;
+	}
+	qp->dip_idx = (int64_t)dip_idx;
+	if (dip_idx != qp->qpn) {
+		ret = udma_table_get(qp->udma_device,
+				     &qp->udma_device->qp_table.sccc_table,
+				     dip_idx);
+		if (ret) {
+			dev_err(qp->udma_device->dev,
+				"Failed to get SCC CTX table\n");
+			goto out;
+		}
+	}
+
+	udma_reg_write(&context->ext, QPCEX_DIP_CTX_IDX, dip_idx);
+	udma_reg_clear(&context_mask->ext, QPCEX_DIP_CTX_IDX);
+
+out:
+	return ret;
+}
+
 static void udma_set_spray_field(struct udma_qp *qp,
 				 const struct ubcore_tp_attr *attr,
 				 union ubcore_tp_attr_mask ubcore_mask,
@@ -558,6 +723,9 @@ static void udma_set_opt_fields(struct udma_qp *qp,
 
 	if (ubcore_mask.bs.flag && attr->flag.bs.oor_en && udma_dev->caps.oor_en)
 		udma_set_oor_field(qp, attr, ubcore_mask, context, context_mask);
+
+	if (ubcore_mask.bs.flag)
+		udma_set_cong_fields(context, context_mask, qp, attr);
 
 	if (ubcore_mask.bs.flag && attr->flag.bs.spray_en &&
 		(udma_dev->caps.flags & UDMA_CAP_FLAG_AR))
@@ -1475,8 +1643,13 @@ static void free_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 	if (udma_dev->caps.reorder_cq_buffer_en)
 		udma_free_reorder_cq_buf(udma_dev, &qp->qp_attr);
 
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_QP_FLOW_CTRL)
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_QP_FLOW_CTRL) {
 		udma_table_put(udma_dev, &qp_table->sccc_table, qp->qpn);
+
+		if (qp->dip_idx != qp->qpn && qp->dip_idx >= 0)
+			udma_table_put(udma_dev, &qp_table->sccc_table,
+				       qp->dip_idx);
+	}
 
 	if (udma_dev->caps.trrl_entry_sz)
 		udma_table_put(udma_dev, &qp_table->trrl_table, qp->qpn);
@@ -1586,6 +1759,7 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 	int ret;
 
 	qp->state = QPS_RESET;
+	qp->dip_idx = UDMA_SCC_DIP_INVALID_IDX;
 
 	ret = set_qp_param(udma_dev, qp, udata, &ucmd);
 	if (ret) {
