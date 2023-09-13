@@ -311,6 +311,14 @@ void ubcore_put_device(struct ubcore_device *dev)
 }
 
 static struct ubcore_ht_param g_ht_params[] = {
+	[UBCORE_HT_JFS] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfs, hnode),
+			    offsetof(struct ubcore_jfs, id), sizeof(uint32_t), NULL, NULL },
+
+	[UBCORE_HT_JFR] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfr, hnode),
+			    offsetof(struct ubcore_jfr, id), sizeof(uint32_t), NULL, NULL },
+
+	[UBCORE_HT_JFC] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfc, hnode),
+			    offsetof(struct ubcore_jfc, id), sizeof(uint32_t), NULL, NULL },
 };
 
 static int ubcore_alloc_hash_tables(struct ubcore_device *dev)
