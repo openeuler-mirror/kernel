@@ -2129,16 +2129,28 @@ static int sp_map_spa_to_mm(struct mm_struct *mm, struct sp_area *spa,
 	return ret;
 }
 
-static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *ac)
+static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *ac,
+				  struct sp_group_node *spg_node)
 {
-	int ret = -EINVAL;
+	int ret = 0;
 	int mmap_ret = 0;
 	struct mm_struct *mm;
-	struct sp_group_node *spg_node;
+	bool reach_current = false;
+
+	mmap_ret = sp_map_spa_to_mm(current->mm, spa, spg_node->prot, ac, "sp_alloc");
+	if (mmap_ret) {
+		/* Don't skip error for current process */
+		mmap_ret = (mmap_ret == SP_SKIP_ERR) ? -EINVAL : mmap_ret;
+		goto fallocate;
+	}
 
 	/* create mapping for each process in the group */
 	list_for_each_entry(spg_node, &spa->spg->proc_head, proc_node) {
 		mm = spg_node->master->mm;
+		if (mm == current->mm) {
+			reach_current = true;
+			continue;
+		}
 		mmap_ret = sp_map_spa_to_mm(mm, spa, spg_node->prot, ac, "sp_alloc");
 		if (mmap_ret) {
 			/*
@@ -2158,7 +2170,9 @@ static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *
 
 unmap:
 	__sp_free(spa, mm);
-
+	if (!reach_current)
+		sp_munmap(current->mm, spa->va_start, spa_size(spa));
+fallocate:
 	/*
 	 * Sometimes do_mm_populate() allocates some memory and then failed to
 	 * allocate more. (e.g. memory use reaches cgroup limit.)
@@ -2212,7 +2226,7 @@ try_again:
 		goto out;
 	}
 
-	ret = sp_alloc_mmap_populate(spa, &ac);
+	ret = sp_alloc_mmap_populate(spa, &ac, spg_node);
 	if (ret == -ENOMEM && sp_alloc_fallback(spa, &ac))
 		goto try_again;
 
