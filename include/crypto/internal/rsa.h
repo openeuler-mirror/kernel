@@ -50,8 +50,18 @@ struct rsa_key {
 int rsa_parse_pub_key(struct rsa_key *rsa_key, const void *key,
 		      unsigned int key_len);
 
+#ifdef CONFIG_PGP_LIBRARY
+int rsa_parse_pub_key_raw(struct rsa_key *rsa_key, const void *key,
+			  unsigned int key_len);
+#endif
+
 int rsa_parse_priv_key(struct rsa_key *rsa_key, const void *key,
 		       unsigned int key_len);
+
+#ifdef CONFIG_PGP_LIBRARY
+int rsa_parse_priv_key_raw(struct rsa_key *rsa_key, const void *key,
+			   unsigned int key_len);
+#endif
 
 extern struct crypto_template rsa_pkcs1pad_tmpl;
 #endif

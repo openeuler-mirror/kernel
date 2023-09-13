@@ -90,6 +90,10 @@ enum gcry_mpi_format {
 };
 
 MPI mpi_read_raw_data(const void *xbuffer, size_t nbytes);
+#ifdef CONFIG_PGP_LIBRARY
+int mpi_key_length(const void *xbuffer, unsigned int ret_nread,
+		   unsigned int *nbits_arg, unsigned int *nbytes_arg);
+#endif
 MPI mpi_read_from_buffer(const void *buffer, unsigned *ret_nread);
 int mpi_fromstr(MPI val, const char *str);
 MPI mpi_scanval(const char *string);

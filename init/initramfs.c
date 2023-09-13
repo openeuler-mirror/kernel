@@ -15,6 +15,10 @@
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/namei.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include <linux/xattr.h>
+#include <linux/initramfs.h>
+#endif
 #include <linux/init_syscalls.h>
 #include <linux/task_work.h>
 #include <linux/umh.h>
@@ -177,7 +181,11 @@ static __initdata time64_t mtime;
 
 static __initdata unsigned long ino, major, minor, nlink;
 static __initdata umode_t mode;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static __initdata unsigned long body_len, name_len, metadata_len;
+#else
 static __initdata unsigned long body_len, name_len;
+#endif
 static __initdata uid_t uid;
 static __initdata gid_t gid;
 static __initdata unsigned rdev;
@@ -250,7 +258,12 @@ static void __init read_into(char *buf, unsigned size, enum state next)
 	}
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static __initdata char *header_buf, *symlink_buf, *name_buf, *metadata_buf;
+static __initdata char *metadata_buf_ptr, *previous_name_buf;
+#else
 static __initdata char *header_buf, *symlink_buf, *name_buf;
+#endif
 
 static int __init do_start(void)
 {
@@ -351,8 +364,94 @@ static int __init maybe_link(void)
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static int __init do_setxattrs(char *pathname, char *buf, size_t size)
+{
+	struct path path;
+	char *xattr_name, *xattr_value;
+	uint32_t xattr_name_size, xattr_value_size;
+	int ret;
+
+	xattr_name = buf;
+	xattr_name_size = strnlen(xattr_name, size);
+	if (xattr_name_size == size) {
+		error("malformed xattrs");
+		return -EINVAL;
+	}
+
+	xattr_value = xattr_name + xattr_name_size + 1;
+	xattr_value_size = buf + size - xattr_value;
+
+	ret = kern_path(pathname, 0, &path);
+	if (!ret) {
+		ret = vfs_setxattr(&nop_mnt_idmap, path.dentry, xattr_name, xattr_value,
+				   xattr_value_size, 0);
+
+		path_put(&path);
+	}
+
+	pr_debug("%s: %s size: %u val: %s (ret: %d)\n", pathname,
+		 xattr_name, xattr_value_size, xattr_value, ret);
+
+	return ret;
+}
+
+static int __init __maybe_unused do_parse_metadata(char *pathname)
+{
+	char *buf = metadata_buf;
+	char *bufend = metadata_buf + metadata_len;
+	struct metadata_hdr *hdr;
+	char str[sizeof(hdr->c_size) + 1];
+	uint32_t entry_size;
+
+	if (!metadata_len)
+		return 0;
+
+	str[sizeof(hdr->c_size)] = 0;
+
+	while (buf < bufend) {
+		int ret;
+
+		if (buf + sizeof(*hdr) > bufend) {
+			error("malformed metadata");
+			break;
+		}
+
+		hdr = (struct metadata_hdr *)buf;
+		if (hdr->c_version != 1) {
+			pr_debug("Unsupported header version\n");
+			break;
+		}
+
+		memcpy(str, hdr->c_size, sizeof(hdr->c_size));
+		ret = kstrtou32(str, 16, &entry_size);
+		if (ret || buf + entry_size > bufend ||
+		    entry_size < sizeof(*hdr)) {
+			error("malformed xattrs");
+			break;
+		}
+
+		switch (hdr->c_type) {
+		case TYPE_XATTR:
+			do_setxattrs(pathname, buf + sizeof(*hdr),
+				     entry_size - sizeof(*hdr));
+			break;
+		default:
+			pr_debug("Unsupported metadata type\n");
+			break;
+		}
+
+		buf += entry_size;
+	}
+
+	return 0;
+}
+#endif
 static __initdata struct file *wfile;
 static __initdata loff_t wfile_pos;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static int metadata __initdata;
+#endif
 
 static int __init do_name(void)
 {
@@ -361,6 +460,12 @@ static int __init do_name(void)
 	if (strcmp(collected, "TRAILER!!!") == 0) {
 		free_hash();
 		return 0;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	} else if (strcmp(collected, METADATA_FILENAME) == 0) {
+		metadata = 1;
+	} else {
+		memcpy(previous_name_buf, collected, strlen(collected) + 1);
+#endif
 	}
 	clean_path(collected, mode);
 	if (S_ISREG(mode)) {
@@ -398,11 +503,51 @@ static int __init do_name(void)
 	return 0;
 }
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static int __init do_process_metadata(char *buf, int len, bool last)
+{
+	int ret = 0;
+
+	if (!metadata_buf) {
+		metadata_buf_ptr = metadata_buf = kmalloc(body_len, GFP_KERNEL);
+		if (!metadata_buf_ptr) {
+			ret = -ENOMEM;
+			goto out;
+		}
+
+		metadata_len = body_len;
+	}
+
+	if (metadata_buf_ptr + len > metadata_buf + metadata_len) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	memcpy(metadata_buf_ptr, buf, len);
+	metadata_buf_ptr += len;
+
+	if (last)
+		do_parse_metadata(previous_name_buf);
+out:
+	if (ret < 0 || last) {
+		kfree(metadata_buf);
+		metadata_buf = NULL;
+		metadata = 0;
+	}
+
+	return ret;
+}
+#endif
+
 static int __init do_copy(void)
 {
 	if (byte_count >= body_len) {
 		if (xwrite(wfile, victim, body_len, &wfile_pos) != body_len)
 			error("write error");
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (metadata)
+			do_process_metadata(victim, body_len, true);
+#endif
 
 		do_utime_path(&wfile->f_path, mtime);
 		fput(wfile);
@@ -414,6 +559,10 @@ static int __init do_copy(void)
 	} else {
 		if (xwrite(wfile, victim, byte_count, &wfile_pos) != byte_count)
 			error("write error");
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (metadata)
+			do_process_metadata(victim, byte_count, false);
+#endif
 		body_len -= byte_count;
 		eat(byte_count);
 		return 1;
@@ -423,6 +572,9 @@ static int __init do_copy(void)
 static int __init do_symlink(void)
 {
 	collected[N_ALIGN(name_len) + body_len] = '\0';
+#ifdef CONFIG_IMA_DIGEST_LIST
+	memcpy(previous_name_buf, collected, strlen(collected) + 1);
+#endif
 	clean_path(collected, 0);
 	init_symlink(collected + N_ALIGN(name_len), collected);
 	init_chown(collected, uid, gid, AT_SYMLINK_NOFOLLOW);
@@ -490,8 +642,14 @@ static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 	header_buf = kmalloc(110, GFP_KERNEL);
 	symlink_buf = kmalloc(PATH_MAX + N_ALIGN(PATH_MAX) + 1, GFP_KERNEL);
 	name_buf = kmalloc(N_ALIGN(PATH_MAX), GFP_KERNEL);
+#ifdef CONFIG_IMA_DIGEST_LIST
+	previous_name_buf = kmalloc(PATH_MAX + N_ALIGN(PATH_MAX) + 1,
+				    GFP_KERNEL);
 
+	if (!header_buf || !symlink_buf || !name_buf || !previous_name_buf)
+#else
 	if (!header_buf || !symlink_buf || !name_buf)
+#endif
 		panic_show_mem("can't allocate buffers");
 
 	state = Start;
@@ -536,6 +694,9 @@ static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 		len -= my_inptr;
 	}
 	dir_utime();
+#ifdef CONFIG_IMA_DIGEST_LIST
+	kfree(previous_name_buf);
+#endif
 	kfree(name_buf);
 	kfree(symlink_buf);
 	kfree(header_buf);

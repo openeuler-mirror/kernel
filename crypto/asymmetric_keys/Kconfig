@@ -85,4 +85,29 @@ config FIPS_SIGNATURE_SELFTEST
 	depends on ASYMMETRIC_KEY_TYPE
 	depends on PKCS7_MESSAGE_PARSER=X509_CERTIFICATE_PARSER
 
+config PGP_LIBRARY
+	tristate "PGP parsing library"
+	help
+	  This option enables a library that provides a number of simple
+	  utility functions for parsing PGP (RFC 4880) packet-based messages.
+
+config PGP_KEY_PARSER
+	tristate "PGP key parser"
+	depends on ASYMMETRIC_PUBLIC_KEY_SUBTYPE
+	select PGP_LIBRARY
+	select MD5 # V3 fingerprint generation
+	select SHA1 # V4 fingerprint generation
+	help
+	  This option provides support for parsing PGP (RFC 4880) format blobs
+	  for key data and provides the ability to instantiate a crypto key
+	  from a public key packet found inside the blob.
+
+config PGP_PRELOAD
+	bool "PGP public key preloading facility"
+	select PGP_KEY_PARSER
+	help
+	  This option provides a facility for the kernel to preload PGP-wrapped
+	  bundles of keys during boot.  It is used by module signing to load
+	  the module signing keys for example.
+
 endif # ASYMMETRIC_KEY_TYPE

@@ -86,7 +86,11 @@ static ssize_t evm_write_key(struct file *file, const char __user *buf,
 	 * an HMAC key is loaded.
 	 */
 	if ((i & EVM_ALLOW_METADATA_WRITES) &&
+#ifdef CONFIG_IMA_DIGEST_LIST
+	    ((evm_initialized & EVM_KEY_MASK) != 0))
+#else
 	    (evm_initialized & EVM_INIT_HMAC) != 0)
+#endif
 		return -EPERM;
 
 	if (i & EVM_INIT_HMAC) {

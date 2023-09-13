@@ -69,8 +69,8 @@ Description:
 
 		and the resulting value will be 3.
 
-		Note that once an HMAC key has been loaded, it will no longer
-		be possible to enable metadata modification. Signaling that an
+		Note that once a key has been loaded, it will no longer be
+		possible to enable metadata modification. Signaling that an
 		HMAC key has been loaded will clear the corresponding flag.
 		For example, if the current value is 6 (2 and 4 set)::
 

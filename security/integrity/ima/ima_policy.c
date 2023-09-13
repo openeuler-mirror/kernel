@@ -20,6 +20,9 @@
 #include <linux/ima.h>
 
 #include "ima.h"
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include "ima_digest_list.h"
+#endif
 
 /* flags definitions */
 #define IMA_FUNC	0x0001
@@ -34,6 +37,9 @@
 #define IMA_FSNAME	0x0200
 #define IMA_KEYRINGS	0x0400
 #define IMA_LABEL	0x0800
+#ifdef CONFIG_IMA_DIGEST_LIST
+#define IMA_PARSER	0x10000
+#endif
 #define IMA_VALIDATE_ALGOS	0x1000
 #define IMA_GID		0x2000
 #define IMA_EGID	0x4000
@@ -62,7 +68,11 @@ enum lsm_rule_types { LSM_OBJ_USER, LSM_OBJ_ROLE, LSM_OBJ_TYPE,
 	LSM_SUBJ_USER, LSM_SUBJ_ROLE, LSM_SUBJ_TYPE
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+enum policy_types { ORIGINAL_TCB = 1, DEFAULT_TCB, EXEC_TCB };
+#else
 enum policy_types { ORIGINAL_TCB = 1, DEFAULT_TCB };
+#endif
 
 enum policy_rule_list { IMA_DEFAULT_POLICY = 1, IMA_CUSTOM_POLICY };
 
@@ -188,7 +198,16 @@ static struct ima_rule_entry default_measurement_rules[] __ro_after_init = {
 	{.action = MEASURE, .func = MODULE_CHECK, .flags = IMA_FUNC},
 	{.action = MEASURE, .func = FIRMWARE_CHECK, .flags = IMA_FUNC},
 	{.action = MEASURE, .func = POLICY_CHECK, .flags = IMA_FUNC},
+#ifdef CONFIG_IMA_DIGEST_LIST
+	{.action = MEASURE, .func = DIGEST_LIST_CHECK, .flags = IMA_FUNC},
+#endif
 };
+
+#ifdef CONFIG_IMA_DIGEST_LIST
+static struct ima_rule_entry ima_parser_measure_rule __ro_after_init = {
+	.action = MEASURE, .flags = IMA_PARSER
+};
+#endif
 
 static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 	{.action = DONT_APPRAISE, .fsmagic = PROC_SUPER_MAGIC, .flags = IMA_FSMAGIC},
@@ -219,6 +238,14 @@ static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 #endif
 };
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static struct ima_rule_entry appraise_exec_rules[] __ro_after_init = {
+	{.action = APPRAISE, .func = BPRM_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+	{.action = APPRAISE, .func = MMAP_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+};
+#endif
 static struct ima_rule_entry build_appraise_rules[] __ro_after_init = {
 #ifdef CONFIG_IMA_APPRAISE_REQUIRE_MODULE_SIGS
 	{.action = APPRAISE, .func = MODULE_CHECK,
@@ -247,7 +274,18 @@ static struct ima_rule_entry secure_boot_rules[] __ro_after_init = {
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 	{.action = APPRAISE, .func = POLICY_CHECK,
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+#ifdef CONFIG_IMA_DIGEST_LIST
+	{.action = APPRAISE, .func = DIGEST_LIST_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+#endif
 };
+
+#ifdef CONFIG_IMA_DIGEST_LIST
+static struct ima_rule_entry ima_parser_appraise_rule __ro_after_init = {
+	.action = APPRAISE,
+	.flags = IMA_PARSER | IMA_DIGSIG_REQUIRED
+};
+#endif
 
 static struct ima_rule_entry critical_data_rules[] __ro_after_init = {
 	{.action = MEASURE, .func = CRITICAL_DATA, .flags = IMA_FUNC},
@@ -274,6 +312,10 @@ static int __init default_measure_policy_setup(char *str)
 __setup("ima_tcb", default_measure_policy_setup);
 
 static bool ima_use_appraise_tcb __initdata;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static bool ima_use_appraise_exec_tcb __initdata;
+static bool ima_use_appraise_exec_immutable __initdata;
+#endif
 static bool ima_use_secure_boot __initdata;
 static bool ima_use_critical_data __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
@@ -286,8 +328,18 @@ static int __init policy_setup(char *str)
 			continue;
 		if ((strcmp(p, "tcb") == 0) && !ima_policy)
 			ima_policy = DEFAULT_TCB;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		else if ((strcmp(p, "exec_tcb") == 0) && !ima_policy)
+			ima_policy = EXEC_TCB;
+#endif
 		else if (strcmp(p, "appraise_tcb") == 0)
 			ima_use_appraise_tcb = true;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		else if (strcmp(p, "appraise_exec_tcb") == 0)
+			ima_use_appraise_exec_tcb = true;
+		else if (strcmp(p, "appraise_exec_immutable") == 0)
+			ima_use_appraise_exec_immutable = true;
+#endif
 		else if (strcmp(p, "secure_boot") == 0)
 			ima_use_secure_boot = true;
 		else if (strcmp(p, "critical_data") == 0)
@@ -627,6 +679,11 @@ static bool ima_match_rules(struct ima_rule_entry *rule,
 	    !rule->fowner_op(i_uid_into_vfsuid(idmap, inode),
 			     rule->fowner))
 		return false;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if ((rule->flags & IMA_PARSER) &&
+	    !ima_current_is_parser())
+		return false;
+#endif
 	if ((rule->flags & IMA_FGROUP) &&
 	    !rule->fgroup_op(i_gid_into_vfsgid(idmap, inode),
 			     rule->fgroup))
@@ -855,17 +912,54 @@ static int ima_appraise_flag(enum ima_hooks func)
 		return IMA_APPRAISE_POLICY;
 	else if (func == KEXEC_KERNEL_CHECK)
 		return IMA_APPRAISE_KEXEC;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	else if (func == DIGEST_LIST_CHECK)
+		return IMA_APPRAISE_DIGEST_LIST;
+#endif
 	return 0;
 }
 
-static void add_rules(struct ima_rule_entry *entries, int count,
+#ifdef CONFIG_IMA_DIGEST_LIST
+static void __init add_rules(struct ima_rule_entry *entries, int count,
 		      enum policy_rule_list policy_rule)
+#else
+static void add_rules(struct ima_rule_entry *entries, int count,
+			     enum policy_rule_list policy_rule)
+#endif
 {
 	int i = 0;
 
 	for (i = 0; i < count; i++) {
 		struct ima_rule_entry *entry;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (ima_policy == EXEC_TCB) {
+			if (entries == dont_measure_rules)
+				if ((entries[i].flags & IMA_FSMAGIC) &&
+				    entries[i].fsmagic == TMPFS_MAGIC)
+					continue;
 
+			if (entries == default_measurement_rules)
+				if ((entries[i].flags & IMA_FUNC) &&
+				    entries[i].func == FILE_CHECK)
+					continue;
+		}
+		if (ima_use_appraise_exec_tcb) {
+			if (entries == default_appraise_rules) {
+				if (entries[i].action != DONT_APPRAISE)
+					continue;
+				if ((entries[i].flags & IMA_FSMAGIC) &&
+				    entries[i].fsmagic == TMPFS_MAGIC)
+					continue;
+			}
+		}
+
+		if (ima_use_appraise_exec_immutable)
+			if (entries == appraise_exec_rules &&
+			    (entries[i].flags & IMA_FUNC) &&
+			    entries[i].func == BPRM_CHECK)
+				entries[i].flags |= IMA_META_IMMUTABLE_REQUIRED;
+
+#endif
 		if (policy_rule & IMA_DEFAULT_POLICY)
 			list_add_tail(&entries[i].list, &ima_default_rules);
 
@@ -951,6 +1045,10 @@ void __init ima_init_policy(void)
 			  ARRAY_SIZE(original_measurement_rules),
 			  IMA_DEFAULT_POLICY);
 		break;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	case EXEC_TCB:
+		fallthrough;
+#endif
 	case DEFAULT_TCB:
 		add_rules(default_measurement_rules,
 			  ARRAY_SIZE(default_measurement_rules),
@@ -960,6 +1058,10 @@ void __init ima_init_policy(void)
 		break;
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_policy)
+		add_rules(&ima_parser_measure_rule, 1, IMA_DEFAULT_POLICY);
+#endif
 	/*
 	 * Based on runtime secure boot flags, insert arch specific measurement
 	 * and appraise rules requiring file signatures for both the initial
@@ -977,7 +1079,11 @@ void __init ima_init_policy(void)
 	 * Insert the builtin "secure_boot" policy rules requiring file
 	 * signatures, prior to other appraise rules.
 	 */
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_secure_boot || ima_use_appraise_exec_tcb)
+#else
 	if (ima_use_secure_boot)
+#endif
 		add_rules(secure_boot_rules, ARRAY_SIZE(secure_boot_rules),
 			  IMA_DEFAULT_POLICY);
 
@@ -997,11 +1103,21 @@ void __init ima_init_policy(void)
 				  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_appraise_tcb || ima_use_appraise_exec_tcb)
+#else
 	if (ima_use_appraise_tcb)
+#endif
 		add_rules(default_appraise_rules,
 			  ARRAY_SIZE(default_appraise_rules),
 			  IMA_DEFAULT_POLICY);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_appraise_exec_tcb)
+		add_rules(appraise_exec_rules,
+			  ARRAY_SIZE(appraise_exec_rules),
+			  IMA_DEFAULT_POLICY);
+#endif
 	if (ima_use_critical_data)
 		add_rules(critical_data_rules,
 			  ARRAY_SIZE(critical_data_rules),
@@ -1009,6 +1125,11 @@ void __init ima_init_policy(void)
 
 	atomic_set(&ima_setxattr_allowed_hash_algorithms, 0);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ima_use_secure_boot || ima_use_appraise_tcb ||
+	    ima_use_appraise_exec_tcb)
+		add_rules(&ima_parser_appraise_rule, 1, IMA_DEFAULT_POLICY);
+#endif
 	ima_update_policy_flags();
 }
 
@@ -1072,7 +1193,11 @@ enum policy_opt {
 	Opt_digest_type,
 	Opt_appraise_type, Opt_appraise_flag, Opt_appraise_algos,
 	Opt_permit_directio, Opt_pcr, Opt_template, Opt_keyrings,
+#ifdef CONFIG_IMA_DIGEST_LIST
+	Opt_label, Opt_parser, Opt_err
+#else
 	Opt_label, Opt_err
+#endif
 };
 
 static const match_table_t policy_tokens = {
@@ -1121,6 +1246,9 @@ static const match_table_t policy_tokens = {
 	{Opt_template, "template=%s"},
 	{Opt_keyrings, "keyrings=%s"},
 	{Opt_label, "label=%s"},
+#ifdef CONFIG_IMA_DIGEST_LIST
+	{Opt_parser, "parser"},
+#endif
 	{Opt_err, NULL}
 };
 
@@ -1246,7 +1374,12 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 
 	if (entry->action != APPRAISE &&
 	    entry->flags & (IMA_DIGSIG_REQUIRED | IMA_MODSIG_ALLOWED |
+#ifdef CONFIG_IMA_DIGEST_LIST
+			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS |
+				IMA_META_IMMUTABLE_REQUIRED | IMA_PARSER))
+#else
 			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS))
+#endif
 		return false;
 
 	/*
@@ -1273,13 +1406,20 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 	case POST_SETATTR:
 	case FIRMWARE_CHECK:
 	case POLICY_CHECK:
+#ifdef CONFIG_IMA_DIGEST_LIST
+	case DIGEST_LIST_CHECK:
+#endif
 		if (entry->flags & ~(IMA_FUNC | IMA_MASK | IMA_FSMAGIC |
 				     IMA_UID | IMA_FOWNER | IMA_FSUUID |
 				     IMA_INMASK | IMA_EUID | IMA_PCR |
 				     IMA_FSNAME | IMA_GID | IMA_EGID |
 				     IMA_FGROUP | IMA_DIGSIG_REQUIRED |
 				     IMA_PERMIT_DIRECTIO | IMA_VALIDATE_ALGOS |
+#ifdef CONFIG_IMA_DIGEST_LIST
+				     IMA_VERITY_REQUIRED | IMA_META_IMMUTABLE_REQUIRED))
+#else
 				     IMA_VERITY_REQUIRED))
+#endif
 			return false;
 
 		break;
@@ -1292,7 +1432,12 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 				     IMA_FSNAME | IMA_GID | IMA_EGID |
 				     IMA_FGROUP | IMA_DIGSIG_REQUIRED |
 				     IMA_PERMIT_DIRECTIO | IMA_MODSIG_ALLOWED |
+#ifdef CONFIG_IMA_DIGEST_LIST
+				     IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS |
+					 IMA_META_IMMUTABLE_REQUIRED))
+#else
 				     IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS))
+#endif
 			return false;
 
 		break;
@@ -1529,6 +1674,10 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				entry->func = CRITICAL_DATA;
 			else if (strcmp(args[0].from, "SETXATTR_CHECK") == 0)
 				entry->func = SETXATTR_CHECK;
+#ifdef CONFIG_IMA_DIGEST_LIST
+			else if (strcmp(args[0].from, "DIGEST_LIST_CHECK") == 0)
+				entry->func = DIGEST_LIST_CHECK;
+#endif
 			else
 				result = -EINVAL;
 			if (!result)
@@ -1816,9 +1965,16 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				else
 					entry->flags |= IMA_DIGSIG_REQUIRED |
 						IMA_MODSIG_ALLOWED;
+#ifdef CONFIG_IMA_DIGEST_LIST
+			} else if (strcmp(args[0].from, "meta_immutable") == 0)
+				entry->flags |= IMA_META_IMMUTABLE_REQUIRED;
+			else
+				result = -EINVAL;
+#else
 			} else {
 				result = -EINVAL;
 			}
+#endif
 			break;
 		case Opt_appraise_flag:
 			ima_log_string(ab, "appraise_flag", args[0].from);
@@ -1854,7 +2010,12 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 			ima_log_string(ab, "pcr", args[0].from);
 
 			result = kstrtoint(args[0].from, 10, &entry->pcr);
+#ifdef CONFIG_IMA_DIGEST_LIST
+			if (result || INVALID_PCR(entry->pcr) ||
+			    entry->pcr == ima_digest_list_pcr)
+#else
 			if (result || INVALID_PCR(entry->pcr))
+#endif
 				result = -EINVAL;
 			else
 				entry->flags |= IMA_PCR;
@@ -1882,6 +2043,12 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 						 &(template_desc->num_fields));
 			entry->template = template_desc;
 			break;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		case Opt_parser:
+			audit_log_format(ab, "parser ");
+			entry->flags |= IMA_PARSER;
+			break;
+#endif
 		case Opt_err:
 			ima_log_string(ab, "UNKNOWN", p);
 			result = -EINVAL;
@@ -2227,6 +2394,10 @@ int ima_policy_show(struct seq_file *m, void *v)
 		seq_puts(m, " ");
 	}
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (entry->flags & IMA_PARSER)
+		seq_puts(m, "parser ");
+#endif
 	for (i = 0; i < MAX_LSM_RULES; i++) {
 		if (entry->lsm[i].rule) {
 			switch (i) {
@@ -2272,6 +2443,10 @@ int ima_policy_show(struct seq_file *m, void *v)
 		seq_puts(m, "digest_type=verity ");
 	if (entry->flags & IMA_CHECK_BLACKLIST)
 		seq_puts(m, "appraise_flag=check_blacklist ");
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (entry->flags & IMA_META_IMMUTABLE_REQUIRED)
+		seq_puts(m, "appraise_type=meta_immutable ");
+#endif
 	if (entry->flags & IMA_PERMIT_DIRECTIO)
 		seq_puts(m, "permit_directio ");
 	rcu_read_unlock();

@@ -1476,9 +1476,13 @@
 			has equivalent usage. See its documentation for details.
 
 	evm=		[EVM]
-			Format: { "fix" }
-			Permit 'security.evm' to be updated regardless of
-			current integrity status.
+			Format: { "fix" | "x509" | "allow_metadata_writes" |
+				  "complete" }
+			fix: permit 'security.evm' to be updated regardless of
+			current integrity status;
+			x509: enable EVM by setting x509 flag;
+			allow_metadata_writes: permit metadata modificatons;
+			complete: don't allow further changes of the EVM status.
 
 	early_page_ext [KNL] Enforces page_ext initialization to earlier
 			stages so cover more early boot allocations.
@@ -1950,8 +1954,18 @@
 			Set number of hash buckets for inode cache.
 
 	ima_appraise=	[IMA] appraise integrity measurements
-			Format: { "off" | "enforce" | "fix" | "log" }
+			Format: { "off" | "enforce" | "fix" | "log" |
+				  "enforce-evm" | "log-evm" }
 			default: "enforce"
+
+	ima_appraise_digest_list= [IMA]
+			Format: { "digest" | "digest-nometadata" }
+
+			digest: enables appraisal of files with digest lists
+			until EVM is initialized.
+
+			digest-nometadata: enables appraisal of files with
+			digest lists even after EVM is initialized.
 
 	ima_appraise_tcb [IMA] Deprecated.  Use ima_policy= instead.
 			The builtin appraise policy appraises all files
@@ -1960,6 +1974,19 @@
 	ima_canonical_fmt [IMA]
 			Use the canonical format for the binary runtime
 			measurements, instead of host native format.
+
+	ima_digest_list_pcr=
+			[IMA]
+			Specify which PCR is extended when file digests are
+			not found in the loaded digest lists. If '+' is not
+			specified, no measurement entry is created if the
+			digest is found. Otherwise, IMA creates also entries
+			with PCR 10, according to the existing behavior.
+			Format: { [+]<unsigned int> }
+
+	ima_digest_db_size=nn[M]
+			[IMA]
+			Sets the maximum data uploaded to IMA digest database.
 
 	ima_hash=	[IMA]
 			Format: { md5 | sha1 | rmd160 | sha256 | sha384
@@ -1979,12 +2006,26 @@
 			mode bit set by either the effective uid (euid=0) or
 			uid=0.
 
+			The "exec_tcb" policy is similar to the "tcb" policy
+			except for file open, which is not considered. Files
+			in the tmpfs filesystem are not excluded from
+			measurement.
+
 			The "appraise_tcb" policy appraises the integrity of
 			all files owned by root.
 
 			The "secure_boot" policy appraises the integrity
 			of files (eg. kexec kernel image, kernel modules,
 			firmware, policy, etc) based on file signatures.
+
+			The "appraise_exec_tcb" includes the "secure_boot"
+			policy and additionally includes all programs exec'd and
+			files mmap'd for exec. Files in the tmpfs filesystem are
+			not excluded from appraisal.
+
+			The "appraise_exec_immutable" policy requires immutable
+			metadata for executed files, if the "appraise_exec_tcb"
+			policy is selected.
 
 			The "fail_securely" policy forces file signature
 			verification failure also on privileged mounted

@@ -18,7 +18,13 @@
 #include <uapi/linux/fsverity.h>
 
 #include "ima.h"
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include "ima_digest_list.h"
+#endif
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+static bool ima_appraise_req_evm __ro_after_init;
+#endif
 #ifdef CONFIG_IMA_APPRAISE_BOOTPARAM
 static char *ima_appraise_cmdline_default __initdata;
 core_param(ima_appraise, ima_appraise_cmdline_default, charp, 0);
@@ -52,7 +58,28 @@ void __init ima_appraise_parse_cmdline(void)
 	} else {
 		ima_appraise = appraisal_state;
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (strcmp(str, "enforce-evm") == 0 ||
+	    strcmp(str, "log-evm") == 0)
+		ima_appraise_req_evm = true;
+#endif
 }
+#endif
+
+#ifdef CONFIG_IMA_DIGEST_LIST
+static bool ima_appraise_no_metadata __ro_after_init;
+static int __init appraise_digest_list_setup(char *str)
+{
+	if (!strncmp(str, "digest", 6)) {
+		ima_digest_list_actions |= IMA_APPRAISE;
+
+		if (!strcmp(str + 6, "-nometadata"))
+			ima_appraise_no_metadata = true;
+	}
+
+	return 1;
+}
+__setup("ima_appraise_digest_list=", appraise_digest_list_setup);
 #endif
 
 /*
@@ -96,6 +123,11 @@ static int ima_fix_xattr(struct dentry *dentry,
 	} else {
 		offset = 0;
 		iint->ima_hash->xattr.ng.type = IMA_XATTR_DIGEST_NG;
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (test_bit(IMA_DIGEST_LIST, &iint->atomic_flags))
+			iint->ima_hash->xattr.ng.type =
+						EVM_IMA_XATTR_DIGEST_LIST;
+#endif
 		iint->ima_hash->xattr.ng.algo = algo;
 	}
 	rc = __vfs_setxattr_noperm(&nop_mnt_idmap, dentry, XATTR_NAME_IMA,
@@ -223,6 +255,7 @@ enum hash_algo ima_get_hash_algo(const struct evm_ima_xattr_data *xattr_value,
 	return ima_hash_algo;
 }
 
+#ifndef CONFIG_IMA_DIGEST_LIST
 int ima_read_xattr(struct dentry *dentry,
 		   struct evm_ima_xattr_data **xattr_value, int xattr_len)
 {
@@ -234,6 +267,7 @@ int ima_read_xattr(struct dentry *dentry,
 		ret = 0;
 	return ret;
 }
+#endif /* CONFIG_IMA_DIGEST_LIST */
 
 /*
  * calc_file_id_hash - calculate the hash of the ima_file_id struct data
@@ -278,20 +312,46 @@ static int calc_file_id_hash(enum evm_ima_xattr_type type,
  */
 static int xattr_verify(enum ima_hooks func, struct integrity_iint_cache *iint,
 			struct evm_ima_xattr_data *xattr_value, int xattr_len,
+#ifdef CONFIG_IMA_DIGEST_LIST
+			enum integrity_status *status, const char **cause,
+			struct ima_digest *found_digest)
+#else
 			enum integrity_status *status, const char **cause)
+#endif
 {
 	struct ima_max_digest_data hash;
 	struct signature_v2_hdr *sig;
 	int rc = -EINVAL, hash_start = 0;
 	int mask;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (found_digest && *status != INTEGRITY_PASS &&
+	    *status != INTEGRITY_PASS_IMMUTABLE)
+		set_bit(IMA_DIGEST_LIST, &iint->atomic_flags);
+#endif
 	switch (xattr_value->type) {
+#ifdef CONFIG_IMA_DIGEST_LIST
+	case EVM_IMA_XATTR_DIGEST_LIST:
+		set_bit(IMA_DIGEST_LIST, &iint->atomic_flags);
+
+		if (!ima_appraise_no_metadata) {
+			*cause = "IMA-xattr-untrusted";
+			*status = INTEGRITY_FAIL;
+			break;
+		}
+		fallthrough;
+#endif
 	case IMA_XATTR_DIGEST_NG:
 		/* first byte contains algorithm id */
 		hash_start = 1;
 		fallthrough;
 	case IMA_XATTR_DIGEST:
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (*status != INTEGRITY_PASS_IMMUTABLE &&
+		    (!found_digest || !ima_digest_is_immutable(found_digest))) {
+#else
 		if (*status != INTEGRITY_PASS_IMMUTABLE) {
+#endif
 			if (iint->flags & IMA_DIGSIG_REQUIRED) {
 				if (iint->flags & IMA_VERITY_REQUIRED)
 					*cause = "verity-signature-required";
@@ -479,20 +539,56 @@ int ima_appraise_measurement(enum ima_hooks func,
 			     struct integrity_iint_cache *iint,
 			     struct file *file, const unsigned char *filename,
 			     struct evm_ima_xattr_data *xattr_value,
+#ifdef CONFIG_IMA_DIGEST_LIST
+			     int xattr_len, const struct modsig *modsig,
+			     struct ima_digest *found_digest)
+#else
 			     int xattr_len, const struct modsig *modsig)
+
+#endif
 {
 	static const char op[] = "appraise_data";
 	const char *cause = "unknown";
 	struct dentry *dentry = file_dentry(file);
 	struct inode *inode = d_backing_inode(dentry);
 	enum integrity_status status = INTEGRITY_UNKNOWN;
+#ifdef CONFIG_IMA_DIGEST_LIST
+	int rc = xattr_len, rc_evm;
+	char _buf[sizeof(struct evm_ima_xattr_data) + 1 + SHA512_DIGEST_SIZE];
+#else
 	int rc = xattr_len;
+#endif
 	bool try_modsig = iint->flags & IMA_MODSIG_ALLOWED && modsig;
 
 	/* If not appraising a modsig, we need an xattr. */
 	if (!(inode->i_opflags & IOP_XATTR) && !try_modsig)
 		return INTEGRITY_UNKNOWN;
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (xattr_value && xattr_value->type == EVM_IMA_XATTR_DIGSIG &&
+	    xattr_len == sizeof(struct signature_v2_hdr))
+		rc = -ENODATA;
+
+	if (rc == -ENODATA && found_digest &&
+	    !(file->f_mode & FMODE_CREATED)) {
+		struct evm_ima_xattr_data *xattr_data = NULL;
+
+		rc_evm = vfs_getxattr_alloc(&nop_mnt_idmap, dentry, XATTR_NAME_EVM,
+					(char **)&xattr_data, 0, GFP_NOFS);
+		if (rc_evm > 0) {
+			kfree(xattr_data);
+		} else {
+			xattr_value = (struct evm_ima_xattr_data *)_buf;
+			xattr_value->type = IMA_XATTR_DIGEST_NG;
+			xattr_value->data[0] = found_digest->algo;
+			memcpy(&xattr_value->data[1], found_digest->digest,
+			       hash_digest_size[found_digest->algo]);
+			xattr_len = hash_digest_size[found_digest->algo] + 2;
+			rc = xattr_len;
+		}
+	}
+
+#endif
 	/* If reading the xattr failed and there's no modsig, error out. */
 	if (rc <= 0 && !try_modsig) {
 		if (rc && rc != -ENODATA)
@@ -522,7 +618,15 @@ int ima_appraise_measurement(enum ima_hooks func,
 	switch (status) {
 	case INTEGRITY_PASS:
 	case INTEGRITY_PASS_IMMUTABLE:
+#ifdef CONFIG_IMA_DIGEST_LIST
+		break;
+#endif
 	case INTEGRITY_UNKNOWN:
+#ifdef CONFIG_IMA_DIGEST_LIST
+		if (ima_appraise_req_evm &&
+		    xattr_value->type != EVM_IMA_XATTR_DIGSIG && !found_digest)
+			goto out;
+#endif
 		break;
 	case INTEGRITY_NOXATTRS:	/* No EVM protected xattrs. */
 		/* It's fine not to have xattrs when using a modsig. */
@@ -530,6 +634,25 @@ int ima_appraise_measurement(enum ima_hooks func,
 			break;
 		fallthrough;
 	case INTEGRITY_NOLABEL:		/* No security.evm xattr. */
+#ifdef CONFIG_IMA_DIGEST_LIST
+		/*
+		 * If the digest-nometadata mode is selected, allow access
+		 * without metadata check. EVM will eventually create an HMAC
+		 * based on current xattr values.
+		 */
+		if (ima_appraise_no_metadata && found_digest)
+			break;
+		/* Allow access to digest lists without metadata, only if they
+		 * are signed or found in a digest list (immutable)
+		 */
+		if (func == DIGEST_LIST_CHECK || ima_current_is_parser()) {
+			if (xattr_value->type == EVM_IMA_XATTR_DIGSIG)
+				break;
+			if (found_digest &&
+			    ima_digest_is_immutable(found_digest))
+				break;
+		}
+#endif
 		cause = "missing-HMAC";
 		goto out;
 	case INTEGRITY_FAIL_IMMUTABLE:
@@ -542,10 +665,24 @@ int ima_appraise_measurement(enum ima_hooks func,
 	default:
 		WARN_ONCE(true, "Unexpected integrity status %d\n", status);
 	}
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if ((iint->flags & IMA_META_IMMUTABLE_REQUIRED) &&
+	    status != INTEGRITY_PASS_IMMUTABLE) {
+		status = INTEGRITY_FAIL;
+		cause = "metadata-modifiable";
+		integrity_audit_msg(AUDIT_INTEGRITY_DATA, inode,
+				    filename, op, cause, rc, 0);
+		goto out;
+	}
+#endif
 
 	if (xattr_value)
 		rc = xattr_verify(func, iint, xattr_value, xattr_len, &status,
+#ifdef CONFIG_IMA_DIGEST_LIST
+				  &cause, found_digest);
+#else
 				  &cause);
+#endif
 
 	/*
 	 * If we have a modsig and either no imasig or the imasig's key isn't

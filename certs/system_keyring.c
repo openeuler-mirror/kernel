@@ -11,6 +11,9 @@
 #include <linux/cred.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+#ifdef CONFIG_PGP_PRELOAD_PUBLIC_KEYS
+#include <linux/pgp.h>
+#endif
 #include <linux/uidgid.h>
 #include <linux/verification.h>
 #include <keys/asymmetric-type.h>
@@ -215,6 +218,26 @@ static __init int load_system_certificate_list(void)
 	return x509_load_certificate_list(p, size, builtin_trusted_keys);
 }
 late_initcall(load_system_certificate_list);
+#ifdef CONFIG_PGP_PRELOAD_PUBLIC_KEYS
+extern __initconst const u8 pgp_public_keys[];
+extern __initconst const unsigned long pgp_public_keys_size;
+
+/*
+ * Load a list of PGP keys.
+ */
+static __init int load_pgp_public_keyring(void)
+{
+	pr_notice("Load PGP public keys\n");
+
+	if (preload_pgp_keys(pgp_public_keys,
+			     pgp_public_keys_size,
+			     builtin_trusted_keys) < 0)
+		pr_err("Can't load PGP public keys\n");
+
+	return 0;
+}
+late_initcall(load_pgp_public_keyring);
+#endif /* CONFIG_PGP_PRELOAD_PUBLIC_KEYS */
 
 #ifdef CONFIG_SYSTEM_DATA_VERIFICATION
 
@@ -339,6 +362,29 @@ int verify_pkcs7_signature(const void *data, size_t len,
 }
 EXPORT_SYMBOL_GPL(verify_pkcs7_signature);
 
+#ifdef CONFIG_IMA_DIGEST_LIST
+struct key *search_trusted_key(struct key *trusted_keys, struct key_type *type,
+			       char *name)
+{
+	key_ref_t kref;
+
+	if (!trusted_keys) {
+		trusted_keys = builtin_trusted_keys;
+	} else if (trusted_keys == VERIFY_USE_SECONDARY_KEYRING) {
+#ifdef CONFIG_SECONDARY_TRUSTED_KEYRING
+		trusted_keys = secondary_trusted_keys;
+#else
+		trusted_keys = builtin_trusted_keys;
+#endif
+	}
+	kref = keyring_search(make_key_ref(trusted_keys, 1), type, name, true);
+	if (IS_ERR(kref))
+		return ERR_CAST(kref);
+
+	return key_ref_to_ptr(kref);
+}
+EXPORT_SYMBOL_GPL(search_trusted_key);
+#endif /* CONFIG_IMA_DIGEST_LIST */
 #endif /* CONFIG_SYSTEM_DATA_VERIFICATION */
 
 #ifdef CONFIG_INTEGRITY_PLATFORM_KEYRING
