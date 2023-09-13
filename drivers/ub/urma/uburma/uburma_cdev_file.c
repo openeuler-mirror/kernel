@@ -159,6 +159,66 @@ static ssize_t guid_show(struct device *dev, struct device_attribute *attr, char
 
 static DEVICE_ATTR_RO(guid);
 
+static ssize_t feature_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "0x%x\n", ubc_dev->attr.dev_cap.feature.value);
+}
+
+static ssize_t feature_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, feature_show_cb);
+}
+
+static DEVICE_ATTR_RO(feature);
+
+static ssize_t max_jfc_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.max_jfc);
+}
+
+static ssize_t max_jfc_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, max_jfc_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_jfc);
+
+static ssize_t max_jfs_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.max_jfs);
+}
+
+static ssize_t max_jfs_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, max_jfs_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_jfs);
+
+static ssize_t max_jfr_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.max_jfr);
+}
+
+static ssize_t max_jfr_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, max_jfr_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_jfr);
+
+static ssize_t max_jetty_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.max_jetty);
+}
+
+static ssize_t max_jetty_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, max_jetty_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_jetty);
+
 static ssize_t transport_type_show_cb(const struct ubcore_device *ubc_dev, char *buf)
 {
 	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%d\n", (int)ubc_dev->transport_type);
@@ -190,6 +250,11 @@ static struct attribute *uburma_dev_attrs[] = {
 	&dev_attr_ubdev.attr,
 	&dev_attr_eid.attr,
 	&dev_attr_guid.attr,
+	&dev_attr_feature.attr,
+	&dev_attr_max_jfc.attr,
+	&dev_attr_max_jfs.attr,
+	&dev_attr_max_jfr.attr,
+	&dev_attr_max_jetty.attr,
 	&dev_attr_transport_type.attr,
 	&dev_attr_driver_name.attr,
 	NULL,
