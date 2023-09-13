@@ -169,7 +169,8 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 static int __init
 pcibios_init(void)
 {
-	sw64_init_pci();
+	if (acpi_disabled)
+		sw64_init_pci();
 	return 0;
 }
 subsys_initcall(pcibios_init);
@@ -644,7 +645,6 @@ void __init sw64_init_arch(void)
 		char id[8], msg[64];
 		int i;
 
-		pr_info("SW arch PCI initialize!\n");
 		cpu_num = sw64_chip->get_cpu_num();
 
 		for (node = 0; node < cpu_num; node++) {
@@ -652,6 +652,13 @@ void __init sw64_init_arch(void)
 				set_devint_wken(node);
 				set_adr_int(node);
 			}
+		}
+
+		if (!acpi_disabled)
+			return;
+
+		pr_info("SW arch PCI initialize!\n");
+		for (node = 0; node < cpu_num; node++) {
 			rc_enable = sw64_chip_init->pci_init.get_rc_enable(node);
 			if (rc_enable == 0) {
 				printk("PCIe is disabled on node %ld\n", node);
