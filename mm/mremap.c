@@ -25,6 +25,7 @@
 #include <linux/uaccess.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/mempolicy.h>
+#include <linux/share_pool.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlb.h>
@@ -934,6 +935,9 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 
 
 	if (offset_in_page(addr))
+		return ret;
+
+	if (sp_check_addr(addr) || sp_check_addr(new_addr))
 		return ret;
 
 	old_len = PAGE_ALIGN(old_len);
