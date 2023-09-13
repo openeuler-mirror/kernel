@@ -827,6 +827,10 @@ static inline bool is_mergeable_vma(struct vm_area_struct *vma,
 		return false;
 	if (!anon_vma_name_eq(anon_vma_name(vma), anon_name))
 		return false;
+	/* don't merge this kind of vma as sp_area couldn't be merged */
+	if (sp_check_vm_share_pool(vm_flags))
+		return false;
+
 	return true;
 }
 
@@ -974,10 +978,6 @@ struct vm_area_struct *vma_merge(struct vma_iterator *vmi, struct mm_struct *mm,
 	 * so this tests vma->vm_flags & VM_SPECIAL, too.
 	 */
 	if (vm_flags & VM_SPECIAL)
-		return NULL;
-
-	/* don't merge this kind of vma as sp_area couldn't be merged */
-	if (sp_check_vm_share_pool(vm_flags))
 		return NULL;
 
 	/* Does the input range span an existing VMA? (cases 5 - 8) */
