@@ -81,6 +81,20 @@ struct ubcore_cmd_query_stats {
 	} out;
 };
 
+struct ubcore_cmd_query_res {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t eid[UBCORE_CMD_EID_SIZE];
+		uint32_t tp_type;
+		uint32_t type;
+		uint32_t key;
+	} in;
+	struct {
+		uint64_t addr;
+		uint32_t len;
+	} out;
+};
+
 /* copy from user_space addr to kernel args */
 static inline int ubcore_copy_from_user(void *args, const void *args_addr, unsigned long args_size)
 {

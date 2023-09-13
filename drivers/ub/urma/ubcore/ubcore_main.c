@@ -195,6 +195,132 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 				   sizeof(struct ubcore_cmd_query_stats));
 }
 
+static uint32_t ubcore_get_query_res_len(uint32_t type)
+{
+	return 0;
+}
+
+static void ubcore_dealloc_res_dev(struct ubcore_res_dev_val *ubcore_addr)
+{
+}
+
+static int ubcore_fill_res_addr(struct ubcore_res_dev_val *ubcore_addr)
+{
+	return 0;
+}
+
+static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
+				    struct ubcore_res_dev_val *ubcore_addr)
+{
+	return 0;
+}
+
+static int ubcore_query_res_dev(const struct ubcore_device *dev, struct ubcore_res_key *key,
+				struct ubcore_res_dev_val *dev_val)
+{
+	struct ubcore_res_dev_val ubcore_addr = { 0 };
+	struct ubcore_res_val val = { 0 };
+	int ret = 0;
+
+	(void)memcpy(&ubcore_addr, dev_val,
+		     sizeof(struct ubcore_res_dev_val)); // save
+
+	if (ubcore_fill_res_addr(&ubcore_addr) != 0) {
+		ubcore_log_err("Failed to fill dev dev_val.\n");
+		return -ENOMEM;
+	}
+
+	val.addr = (uint64_t)&ubcore_addr;
+	val.len = sizeof(struct ubcore_res_dev_val);
+
+	ret = ubcore_query_resource(dev, key, &val);
+	if (ret != 0)
+		goto ubcore_free_dev;
+
+	ret = ubcore_fill_user_res_dev(dev_val, &ubcore_addr);
+ubcore_free_dev:
+	ubcore_dealloc_res_dev(&ubcore_addr);
+	return ret;
+}
+
+static int ubcore_query_res_arg(const struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
+				uint32_t res_len)
+{
+	struct ubcore_res_key key = { 0 };
+	struct ubcore_res_val val = { 0 };
+	void *addr;
+	int ret;
+
+	addr = kzalloc(res_len, GFP_KERNEL);
+	if (addr == NULL)
+		return -1;
+
+	ret = ubcore_copy_from_user(addr, (void __user *)(uintptr_t)arg->out.addr, res_len);
+	if (ret != 0)
+		goto kfree_addr;
+
+	key.type = (uint8_t)arg->in.type;
+	key.key = arg->in.key;
+	val.addr = (uint64_t)addr;
+	val.len = res_len;
+
+	if (arg->in.type == UBCORE_RES_KEY_URMA_DEV)
+		ret = ubcore_query_res_dev(dev, &key, (struct ubcore_res_dev_val *)addr);
+	else
+		ret = ubcore_query_resource(dev, &key, &val);
+
+	if (ret != 0)
+		goto kfree_addr;
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, addr, res_len);
+
+kfree_addr:
+	kfree(addr);
+	return ret;
+}
+
+static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	struct ubcore_cmd_query_res arg = { 0 };
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	uint32_t res_len;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_query_res));
+	if (ret != 0)
+		return ret;
+
+	res_len = ubcore_get_query_res_len((uint32_t)arg.in.type);
+	if (res_len != arg.out.len) {
+		ubcore_log_err("Failed to check res len, type: %u, res_len: %u, len: %u.\n",
+			       (uint32_t)arg.in.type, res_len, arg.out.len);
+		return -1;
+	}
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = (enum ubcore_transport_type)arg.in.tp_type;
+
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	ret = ubcore_query_res_arg(dev, &arg, res_len);
+	if (ret != 0) {
+		ubcore_put_device(dev);
+		ubcore_log_err("Failed to query res by arg, tp_type: %d.\n", (int)trans_type);
+		return -1;
+	}
+
+	ubcore_put_device(dev);
+	return ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				   sizeof(struct ubcore_cmd_query_res));
+}
+
 static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 {
 	switch (hdr->command) {
@@ -204,6 +330,8 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 		return ubcore_cmd_put_uasid(hdr);
 	case UBCORE_CMD_QUERY_STATS:
 		return ubcore_cmd_query_stats(hdr);
+	case UBCORE_CMD_QUERY_RES:
+		return ubcore_cmd_query_res(hdr);
 	default:
 		ubcore_log_err("bad ubcore command: %d.\n", (int)hdr->command);
 		return -EINVAL;
