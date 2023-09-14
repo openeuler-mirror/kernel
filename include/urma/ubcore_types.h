@@ -626,6 +626,27 @@ struct ubcore_device_cfg {
 	struct ubcore_port_ets ets;
 };
 
+/* struct [struct ubcore_user_ctl_in] should be consistent with [urma_user_ctl_in_t] */
+struct ubcore_user_ctl_in {
+	uint64_t addr;
+	uint32_t len;
+	uint32_t opcode;
+};
+
+/* struct [struct ubcore_user_ctl_out] should be consistent with [urma_user_ctl_out_t] */
+struct ubcore_user_ctl_out {
+	uint64_t addr;
+	uint32_t len;
+	uint32_t rsv;
+};
+
+struct ubcore_user_ctl {
+	struct ubcore_ucontext *uctx;
+	struct ubcore_user_ctl_in in;
+	struct ubcore_user_ctl_out out;
+	struct ubcore_udrv_priv udrv_data;
+};
+
 struct ubcore_net_addr {
 	union {
 		uint8_t raw[UBCORE_NET_ADDR_BYTES];
@@ -779,6 +800,134 @@ struct ubcore_tp {
 	struct ubcore_tp_ext peer_ext; /* ubcore fill before modifying tp */
 	atomic_t use_cnt;
 	void *priv; /* ubcore private data for tp management */
+};
+
+enum ubcore_res_key_type {
+	UBCORE_RES_KEY_UPI = 1, // key id: UPI ID
+	UBCORE_RES_KEY_TP, // key id: TPN
+	UBCORE_RES_KEY_TPG, // key id: TPGN, currently not supported
+	UBCORE_RES_KEY_UTP, // key id: UTP ID
+	UBCORE_RES_KEY_JFS, // key id: JFS ID
+	UBCORE_RES_KEY_JFR, // key id: JFR ID
+	UBCORE_RES_KEY_JETTY, // key id: JETTY ID
+	UBCORE_RES_KEY_JETTY_GROUP, // key id: JETTY GROUP ID, currently not supported
+	UBCORE_RES_KEY_JFC, // key id: JFC ID
+	UBCORE_RES_KEY_SEG, // key id: UKEY ID
+	UBCORE_RES_KEY_URMA_DEV // key id: EID
+};
+
+struct ubcore_res_upi_val {
+	uint32_t upi;
+};
+
+struct ubcore_res_tp_val {
+	uint32_t tpn;
+	uint32_t psn;
+	uint8_t pri;
+	uint8_t oor;
+	uint8_t state;
+	uint16_t data_udp_start;
+	uint16_t ack_udp_start;
+	uint8_t udp_range;
+	uint32_t spray_en;
+};
+
+struct ubcore_res_tpg_val {
+	uint32_t tp_cnt;
+	uint8_t pri;
+	uint32_t *tp_list;
+};
+
+struct ubcore_res_utp_val {
+	uint8_t utp_id;
+	uint8_t spray_en;
+	uint16_t data_udp_start;
+	uint8_t udp_range;
+};
+
+struct ubcore_res_jfs_val {
+	uint32_t jfs_id;
+	uint8_t state;
+	uint32_t depth;
+	uint8_t pri;
+	uint32_t jfc_id;
+};
+
+struct ubcore_res_jfr_val {
+	uint32_t jfr_id;
+	uint8_t state;
+	uint32_t depth;
+	uint8_t pri;
+	uint32_t jfc_id;
+};
+
+struct ubcore_res_jetty_val {
+	uint32_t jetty_id;
+	uint32_t send_jfc_id;
+	uint32_t recv_jfc_id;
+	uint32_t jfr_id;
+	uint32_t jfs_depth;
+	uint32_t jfr_depth;
+	uint8_t state;
+	uint8_t pri;
+};
+
+struct ubcore_res_jetty_group_val {
+	uint16_t jetty_cnt;
+	uint32_t *jetty_list;
+};
+
+struct ubcore_res_jfc_val {
+	uint32_t jfc_id;
+	uint8_t state;
+	uint32_t depth;
+};
+
+struct ubcore_res_seg_val {
+	struct ubcore_ubva ubva;
+	uint64_t len;
+	uint32_t key_id;
+	struct ubcore_key ukey;
+};
+
+struct ubcore_seg_info {
+	struct ubcore_ubva ubva;
+	uint64_t len;
+	uint32_t key_id;
+};
+
+struct ubcore_res_dev_val {
+	uint32_t seg_cnt;
+	struct ubcore_seg_info *seg_list; // SEG key_id list
+	uint32_t jfs_cnt;
+	uint32_t *jfs_list; // JFS ID list
+	uint32_t jfr_cnt;
+	uint32_t *jfr_list; // JFR ID list
+	uint32_t jfc_cnt;
+	uint32_t *jfc_list; // JFC ID list
+	uint32_t jetty_cnt;
+	uint32_t *jetty_list; // Jetty ID list
+	uint32_t jetty_group_cnt;
+	uint32_t *jetty_group_list; // Jetty group ID list
+	uint32_t tp_cnt;
+	uint32_t *tp_list; // RC
+	uint32_t tpg_cnt;
+	uint32_t *tpg_list; // RM
+	uint32_t utp_cnt;
+	uint32_t *utp_list; // UM
+};
+
+struct ubcore_res_key {
+	uint8_t type; /* refer to enum struct ubcore_res_key_type */
+	uint32_t key; /* as UPI, key is vf_id */
+};
+
+struct ubcore_res_val {
+	uint64_t addr; /* allocated and free by ubcore */
+	uint32_t len;	/* in&out. As a input parameter,
+			 * it indicates the length allocated by the ubcore
+			 * As a output parameter, it indicates the actual data length.
+			 */
 };
 
 union ubcore_jfs_wr_flag {
@@ -1028,6 +1177,23 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*query_device_attr)(struct ubcore_device *dev, struct ubcore_device_attr *attr);
+	/**
+	 * query device status
+	 * @param[in] dev: the ub device handle;
+	 * @param[out] status: status for the driver to fill in
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_device_status)(const struct ubcore_device *dev,
+				   struct ubcore_device_status *status);
+	/**
+	 * query resource
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] key: resource type and key;
+	 * @param[in/out] val: addr and len of value
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_res)(const struct ubcore_device *dev, struct ubcore_res_key *key,
+			 struct ubcore_res_val *val);
 	/**
 	 * config device
 	 * @param[in] dev: the ub device handle;
@@ -1337,6 +1503,12 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*destroy_tp)(struct ubcore_tp *tp);
+	/**
+	 * operation of user ioctl cmd.
+	 * @param[in] user_ctl: kdrv user control command pointer;
+	 * Return: 0 on success, other value on error
+	 */
+	int (*user_ctl)(struct ubcore_user_ctl *user_ctl);
 
 	/** data path ops */
 	/**
@@ -1395,6 +1567,21 @@ struct ubcore_ops {
 			   struct ubcore_stats_val *val);
 };
 
+struct ubcore_bitmap {
+	unsigned long *bits;
+	uint32_t size;
+	spinlock_t lock;
+};
+
+enum ubcore_hash_table_type {
+	UBCORE_HT_JFS = 0, /* jfs hash table */
+	UBCORE_HT_JFR, /* jfr hash table */
+	UBCORE_HT_JFC, /* jfc hash table */
+	UBCORE_HT_JETTY, /* jetty hash table */
+	UBCORE_HT_TP, /* tp table */
+	UBCORE_HT_NUM
+};
+
 struct ubcore_device {
 	struct list_head list_node; /* add to device list */
 
@@ -1422,6 +1609,7 @@ struct ubcore_device {
 	struct list_head client_ctx_list;
 	struct list_head event_handler_list;
 	spinlock_t event_handler_lock;
+	struct ubcore_hash_table ht[UBCORE_HT_NUM]; /* to be replaced with uobj */
 
 	/* protect from unregister device */
 	atomic_t use_cnt;
