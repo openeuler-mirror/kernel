@@ -66,6 +66,12 @@ union ubcore_eid {
 	} in6;
 };
 
+struct ubcore_jetty_id {
+	union ubcore_eid eid;
+	uint32_t uasid;
+	uint32_t id;
+};
+
 struct ubcore_udrv_priv {
 	uint64_t in_addr;
 	uint32_t in_len;
@@ -83,6 +89,22 @@ struct ubcore_ucontext {
 struct ubcore_udata {
 	struct ubcore_ucontext *uctx;
 	struct ubcore_udrv_priv *udrv_data;
+};
+
+/* transport mode */
+enum ubcore_transport_mode {
+	UBCORE_TP_RM = 0x1, /* Reliable message */
+	UBCORE_TP_RC = 0x1 << 1, /* Reliable connection */
+	UBCORE_TP_UM = 0x1 << 2 /* Unreliable message */
+};
+
+enum ubcore_mtu {
+	UBCORE_MTU_256 = 1,
+	UBCORE_MTU_512,
+	UBCORE_MTU_1024,
+	UBCORE_MTU_2048,
+	UBCORE_MTU_4096,
+	UBCORE_MTU_8192
 };
 
 struct ubcore_device_attr {
@@ -131,6 +153,144 @@ struct ubcore_net_addr {
 	} net_addr;
 	uint64_t vlan; /* available for UBOE */
 	uint8_t mac[UBCORE_MAC_BYTES]; /* available for UBOE */
+};
+
+union ubcore_tp_cfg_flag {
+	struct {
+		uint32_t target : 1; /* 0: initiator, 1: target */
+		uint32_t oor_en : 1; /* out of order receive, 0: disable 1: enable */
+		uint32_t sr_en : 1; /* selective retransmission, 0: disable 1: enable */
+		uint32_t cc_en : 1; /* congestion control algorithm, 0: disable 1: enable */
+		uint32_t spray_en : 1; /* spray with src udp port, 0: disable 1: enable */
+		uint32_t reserved : 27;
+	} bs;
+	uint32_t value;
+};
+
+union ubcore_tp_mod_flag {
+	struct {
+		uint32_t oor_en : 1; /* out of order receive, 0: disable 1: enable */
+		uint32_t sr_en : 1; /* selective retransmission, 0: disable 1: enable */
+		uint32_t cc_en : 1; /* congestion control algorithm, 0: disable 1: enable */
+		uint32_t cc_alg : 4; /* The value is enum ubcore_tp_cc_alg */
+		uint32_t spray_en : 1; /* spray with src udp port, 0: disable 1: enable */
+		uint32_t reserved : 24;
+	} bs;
+	uint32_t value;
+};
+
+/* The first bits must be consistent with union ubcore_tp_cfg_flag */
+union ubcore_tp_flag {
+	struct {
+		uint32_t target : 1; /* 0: initiator, 1: target */
+		uint32_t oor_en : 1; /* out of order receive, 0: disable 1: enable */
+		uint32_t sr_en : 1; /* selective retransmission, 0: disable 1: enable */
+		uint32_t cc_en : 1; /* congestion control algorithm, 0: disable 1: enable */
+		uint32_t cc_alg : 4; /* The value is enum ubcore_tp_cc_alg */
+		uint32_t spray_en : 1; /* spray with src udp port, 0: disable 1: enable */
+		uint32_t reserved : 23;
+	} bs;
+	uint32_t value;
+};
+
+enum ubcore_tp_state {
+	UBCORE_TP_STATE_RESET = 0,
+	UBCORE_TP_STATE_RTR,
+	UBCORE_TP_STATE_RTS,
+	UBCORE_TP_STATE_ERROR
+};
+
+enum ubcore_ta_type {
+	UBCORE_TA_NONE = 0,
+	UBCORE_TA_JFS_TJFR,
+	UBCORE_TA_JETTY_TJETTY,
+	UBCORE_TA_VIRT /* virtualization */
+};
+
+struct ubcore_ta {
+	enum ubcore_ta_type type;
+	union {
+		struct ubcore_jfs *jfs;
+		struct ubcore_jfr *jfr;
+		struct ubcore_jetty *jetty;
+	};
+	struct ubcore_jetty_id tjetty_id; /* peer jetty id */
+};
+
+struct ubcore_tp_cfg {
+	struct ubcore_ta *ta; /* NULL for UB device */
+	union ubcore_tp_cfg_flag flag; /* indicate initiator or target, etc */
+	struct ubcore_net_addr local_net_addr;
+	struct ubcore_net_addr peer_net_addr;
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	enum ubcore_transport_mode trans_mode;
+	uint32_t rx_psn;
+	enum ubcore_mtu mtu;
+	uint16_t data_udp_start; /* src udp port start, for multipath data */
+	uint16_t ack_udp_start; /* src udp port start, for multipath ack */
+	uint8_t udp_range; /* src udp port range, for both multipath data and ack */
+	uint8_t retry_num;
+	uint8_t ack_timeout;
+	uint8_t tc; /* traffic class */
+};
+
+struct ubcore_tp_ext {
+	uint64_t addr;
+	uint32_t len;
+};
+
+union ubcore_tp_attr_mask {
+	struct {
+		uint32_t flag : 1;
+		uint32_t peer_tpn : 1;
+		uint32_t state : 1;
+		uint32_t tx_psn : 1;
+		uint32_t rx_psn : 1; /* modify both rx psn and tx psn when restore tp */
+		uint32_t mtu : 1;
+		uint32_t cc_pattern_idx : 1;
+		uint32_t peer_ext : 1;
+		uint32_t reserved : 24;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_tp_attr {
+	union ubcore_tp_mod_flag flag;
+	uint32_t peer_tpn;
+	enum ubcore_tp_state state;
+	uint32_t tx_psn;
+	uint32_t rx_psn; /* modify both rx psn and tx psn when restore tp */
+	enum ubcore_mtu mtu;
+	uint8_t cc_pattern_idx;
+	struct ubcore_tp_ext peer_ext;
+};
+
+struct ubcore_tp {
+	uint32_t tpn; /* driver assgined in creating tp */
+	uint32_t peer_tpn;
+	struct ubcore_device *ub_dev;
+	union ubcore_tp_flag flag; /* indicate initiator or target, etc */
+	struct ubcore_net_addr local_net_addr;
+	struct ubcore_net_addr peer_net_addr;
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	enum ubcore_transport_mode trans_mode;
+	enum ubcore_tp_state state;
+	uint32_t rx_psn;
+	uint32_t tx_psn;
+	enum ubcore_mtu mtu;
+	uint16_t data_udp_start; /* src udp port start, for multipath data */
+	uint16_t ack_udp_start; /* src udp port start, for multipath ack */
+	uint8_t udp_range; /* src udp port range, for both multipath data and ack */
+	uint8_t retry_num;
+	uint8_t ack_timeout;
+	uint8_t tc; /* traffic class */
+	uint8_t cc_pattern_idx;
+	struct ubcore_tp_ext tp_ext; /* driver fill in creating tp */
+	struct ubcore_tp_ext peer_ext; /* ubcore fill before modifying tp */
+	atomic_t use_cnt;
+	void *priv; /* ubcore private data for tp management */
 };
 
 enum ubcore_stats_key_type {
