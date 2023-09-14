@@ -31,6 +31,9 @@
 #include <linux/mm.h>
 #include <urma/ubcore_opcode.h>
 
+#define UBCORE_MAX_PORT_CNT 8
+#define UBCORE_MAX_VF_CNT 1024
+#define UBCORE_SEG_MAPPED 1
 #define UBCORE_MAX_DEV_NAME 64
 #define UBCORE_MAX_DRIVER_NAME 64
 #define UBCORE_HASH_TABLE_SIZE 64
@@ -45,6 +48,9 @@
 #define EID_RAW_ARGS(eid) EID_UNPACK(eid[0], eid[1], eid[2], eid[3], eid[4], eid[5], eid[6],	\
 	eid[7], eid[8], eid[9], eid[10], eid[11], eid[12], eid[13], eid[14], eid[15])
 #define EID_ARGS(eid) EID_RAW_ARGS((eid).raw)
+
+#define UBCORE_MAX_UPI_CNT 1000
+#define UBCORE_OWN_VF_ID (0xffff)
 
 enum ubcore_transport_type {
 	UBCORE_TRANSPORT_INVALID = -1,
@@ -472,9 +478,126 @@ enum ubcore_mtu {
 	UBCORE_MTU_8192
 };
 
+enum ubcore_tp_cc_alg {
+	UBCORE_TP_CC_PFC = 0,
+	UBCORE_TP_CC_DCQCN,
+	UBCORE_TP_CC_DCQCN_AND_NETWORK_CC,
+	UBCORE_TP_CC_LDCP,
+	UBCORE_TP_CC_LDCP_AND_CAQM,
+	UBCORE_TP_CC_LDCP_AND_OPEN_CC,
+	UBCORE_TP_CC_HC3,
+	UBCORE_TP_CC_DIP
+};
+
+enum ubcore_congestion_ctrl_alg {
+	UBCORE_CC_PFC = 0x1 << UBCORE_TP_CC_PFC,
+	UBCORE_CC_DCQCN = 0x1 << UBCORE_TP_CC_DCQCN,
+	UBCORE_CC_DCQCN_AND_NETWORK_CC = 0x1 << UBCORE_TP_CC_DCQCN_AND_NETWORK_CC,
+	UBCORE_CC_LDCP = 0x1 << UBCORE_TP_CC_LDCP,
+	UBCORE_CC_LDCP_AND_CAQM = 0x1 << UBCORE_TP_CC_LDCP_AND_CAQM,
+	UBCORE_CC_LDCP_AND_OPEN_CC = 0x1 << UBCORE_TP_CC_LDCP_AND_OPEN_CC,
+	UBCORE_CC_HC3 = 0x1 << UBCORE_TP_CC_HC3,
+	UBCORE_CC_DIP = 0x1 << UBCORE_TP_CC_DIP
+};
+
+enum ubcore_speed {
+	UBCORE_SP_10M = 0,
+	UBCORE_SP_100M,
+	UBCORE_SP_1G,
+	UBCORE_SP_2_5G,
+	UBCORE_SP_5G,
+	UBCORE_SP_10G,
+	UBCORE_SP_14G,
+	UBCORE_SP_25G,
+	UBCORE_SP_40G,
+	UBCORE_SP_50G,
+	UBCORE_SP_100G,
+	UBCORE_SP_200G,
+	UBCORE_SP_400G,
+	UBCORE_SP_800G
+};
+
+enum ubcore_link_width {
+	UBCORE_LINK_X1 = 0x1,
+	UBCORE_LINK_X2 = 0x1 << 1,
+	UBCORE_LINK_X4 = 0x1 << 2,
+	UBCORE_LINK_X8 = 0x1 << 3,
+	UBCORE_LINK_X16 = 0x1 << 4,
+	UBCORE_LINK_X32 = 0x1 << 5
+};
+
+enum ubcore_port_state {
+	UBCORE_PORT_NOP = 0,
+	UBCORE_PORT_DOWN,
+	UBCORE_PORT_INIT,
+	UBCORE_PORT_ARMED,
+	UBCORE_PORT_ACTIVE,
+	UBCORE_PORT_ACTIVE_DEFER
+};
+
+union ubcore_device_feat {
+	struct {
+		uint32_t oor : 1;
+		uint32_t jfc_per_wr : 1;
+		uint32_t stride_op : 1;
+		uint32_t load_store_op : 1;
+		uint32_t non_pin : 1;
+		uint32_t pmem : 1;
+		uint32_t jfc_inline : 1;
+		uint32_t spray_en : 1;
+		uint32_t selective_retrans : 1;
+		uint32_t reserved : 23;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_port_status {
+	enum ubcore_port_state state; /* PORT_DOWN, PORT_INIT, PORT_ACTIVE */
+	enum ubcore_speed active_speed; /* bandwidth */
+	enum ubcore_link_width active_width; /* link width: X1, X2, X4 */
+	enum ubcore_mtu active_mtu;
+};
+
+struct ubcore_device_status {
+	struct ubcore_port_status port_status[UBCORE_MAX_PORT_CNT];
+};
+
+struct ubcore_port_attr {
+	enum ubcore_mtu max_mtu; /* MTU_256, MTU_512, MTU_1024 */
+};
+
+struct ubcore_device_cap {
+	union ubcore_device_feat feature;
+	uint32_t max_jfc;
+	uint32_t max_jfs;
+	uint32_t max_jfr;
+	uint32_t max_jetty;
+	uint32_t max_jfc_depth;
+	uint32_t max_jfs_depth;
+	uint32_t max_jfr_depth;
+	uint32_t max_jfs_inline_size;
+	uint32_t max_jfs_sge;
+	uint32_t max_jfs_rsge;
+	uint32_t max_jfr_sge;
+	uint64_t max_msg_size;
+	uint64_t max_rc_outstd_cnt; /* max read command outstanding count in the function entity */
+	uint16_t trans_mode; /* one or more from enum ubcore_transport_mode */
+	uint16_t congestion_ctrl_alg; /* one or more mode from enum ubcore_congestion_ctrl_alg */
+	uint16_t comp_vector_cnt; /* completion vector count */
+	uint32_t utp_cnt;
+};
+
 struct ubcore_device_attr {
 	union ubcore_eid eid; // RW
 	uint32_t max_eid_cnt;
+	uint64_t guid;
+	uint32_t max_upi_cnt;
+	uint32_t upi[UBCORE_MAX_UPI_CNT]; // VF or PF own UPIs
+	struct ubcore_device_cap dev_cap;
+	uint8_t port_cnt;
+	struct ubcore_port_attr port_attr[UBCORE_MAX_PORT_CNT];
+	bool virtualization; /* In VM or not, must set by driver when register device */
+	uint16_t vf_cnt; /* PF: greater than or equal to 0; VF: must be 0 */
 };
 
 union ubcore_device_cfg_mask {
