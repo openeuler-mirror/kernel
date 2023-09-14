@@ -164,5 +164,23 @@ int ubcore_modify_jfc(struct ubcore_jfc *jfc, const struct ubcore_jfc_attr *attr
  * @return: 0 on success, other value on error
  */
 int ubcore_delete_jfc(struct ubcore_jfc *jfc);
+/**
+ * create jfs with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jfs configurations
+ * @param[in] jfae_handler (optional): jfs async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jfs pointer on success, NULL on error
+ */
+struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubcore_jfs_cfg *cfg,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata);
+
+/**
+ * destroy jfs from ubcore device.
+ * @param[in] jfs: the jfs created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jfs(struct ubcore_jfs *jfs);
 
 #endif

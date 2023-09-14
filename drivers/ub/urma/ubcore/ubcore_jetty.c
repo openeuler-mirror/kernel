@@ -138,3 +138,91 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jfc);
+
+static int check_and_fill_jfs_attr(struct ubcore_jfs_cfg *cfg, const struct ubcore_jfs_cfg *user)
+{
+	if (cfg->depth < user->depth || cfg->max_sge < user->max_sge ||
+	    cfg->max_rsge < user->max_rsge || cfg->max_inline_data < user->max_inline_data)
+		return -1;
+
+	/* store the immutable and skip the driver updated attributes including depth,
+	 * max_sge and max_inline_data
+	 */
+	cfg->flag = user->flag;
+	cfg->priority = user->priority;
+	cfg->retry_cnt = user->retry_cnt;
+	cfg->rnr_retry = user->rnr_retry;
+	cfg->err_timeout = user->err_timeout;
+	cfg->trans_mode = user->trans_mode;
+	cfg->jfs_context = user->jfs_context;
+	cfg->jfc = user->jfc;
+	return 0;
+}
+
+struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubcore_jfs_cfg *cfg,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata)
+{
+	struct ubcore_jfs *jfs;
+
+	if (dev == NULL || cfg == NULL || dev->ops->create_jfs == NULL ||
+	    dev->ops->destroy_jfs == NULL)
+		return NULL;
+
+	if (((uint16_t)cfg->trans_mode & dev->attr.dev_cap.trans_mode) == 0) {
+		ubcore_log_err("jfs cfg is not supported.\n");
+		return NULL;
+	}
+
+	jfs = dev->ops->create_jfs(dev, cfg, udata);
+	if (jfs == NULL) {
+		ubcore_log_err("failed to create jfs.\n");
+		return NULL;
+	}
+
+	/* Prevent ubcore private data from being modified */
+	if (check_and_fill_jfs_attr(&jfs->jfs_cfg, cfg) != 0) {
+		(void)dev->ops->destroy_jfs(jfs);
+		ubcore_log_err("jfs cfg is not qualified.\n");
+		return NULL;
+	}
+	jfs->ub_dev = dev;
+	jfs->uctx = ubcore_get_uctx(udata);
+	jfs->jfae_handler = jfae_handler;
+
+	atomic_set(&jfs->use_cnt, 0);
+
+	if (ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFS], &jfs->hnode, jfs->id) != 0) {
+		(void)dev->ops->destroy_jfs(jfs);
+		ubcore_log_err("Failed to add jfs.\n");
+		return NULL;
+	}
+
+	atomic_inc(&cfg->jfc->use_cnt);
+	return jfs;
+}
+EXPORT_SYMBOL(ubcore_create_jfs);
+
+int ubcore_delete_jfs(struct ubcore_jfs *jfs)
+{
+	struct ubcore_device *dev;
+	struct ubcore_jfc *jfc;
+	uint32_t jfs_id;
+	int ret;
+
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops->destroy_jfs == NULL)
+		return -EINVAL;
+
+	jfc = jfs->jfs_cfg.jfc;
+	jfs_id = jfs->id;
+	dev = jfs->ub_dev;
+	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFS], &jfs->hnode);
+	ret = dev->ops->destroy_jfs(jfs);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to destroy jfs, jfs_id:%u.\n", jfs_id);
+	else
+		atomic_dec(&jfc->use_cnt);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_jfs);
