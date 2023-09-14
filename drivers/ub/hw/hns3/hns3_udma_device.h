@@ -144,6 +144,9 @@
 
 #define UDMA_MIN_JFS_DEPTH 64
 
+#define UDMA_DCA_BITS_PER_STATUS 1
+#define DCA_BITS_HALF 2
+
 enum {
 	NO_ARMED = 0x0
 };
@@ -300,6 +303,8 @@ struct udma_buf_attr {
 	} region[UDMA_MAX_BT_REGION];
 	uint32_t		region_count; /* valid region count */
 	uint32_t		page_shift;  /* buffer page shift */
+	/* only alloc buffer-required MTT memory */
+	bool			mtt_only;
 };
 
 struct udma_buf_list {
@@ -389,10 +394,36 @@ struct udma_db {
 	void		*virt_addr;
 };
 
+struct udma_dca_ctx {
+	struct list_head	pool; /* all DCA mems link to @pool */
+	spinlock_t		pool_lock; /* protect @pool */
+	uint32_t		free_mems; /* free mem num in pool */
+	size_t			free_size; /* free mem size in pool */
+	size_t			total_size; /* total size in pool */
+	size_t			max_size; /* max size the pool can expand to */
+	size_t			min_size; /* shrink if @free_size > @min_size */
+	uint32_t		unit_size; /* unit size per DCA mem */
+
+	uint32_t		max_qps;
+	uint32_t		status_npage;
+	struct ida		ida;
+
+	uintptr_t		*buf_status;
+	uintptr_t		*sync_status;
+
+	bool			exit_aging;
+	struct list_head	aging_proc_list;
+	struct list_head	aging_new_list;
+	spinlock_t		aging_lock;
+	struct delayed_work	aging_dwork;
+};
+
 struct udma_ucontext {
 	struct ubcore_ucontext		uctx;
 	struct udma_uar			uar;
 	uint64_t			pdn;
+	struct udma_dca_ctx		dca_ctx;
+	void				*dca_dbgfs;
 };
 
 struct udma_cmd_context {

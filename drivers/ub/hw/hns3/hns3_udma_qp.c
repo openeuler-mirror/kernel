@@ -16,6 +16,7 @@
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
 #include "hns3_udma_abi.h"
+#include "hns3_udma_dca.h"
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_jfr.h"
 #include "hns3_udma_jfc.h"
@@ -174,6 +175,30 @@ static int udma_pass_qpc_to_hw(struct udma_dev *udma_device,
 	udma_free_cmd_mailbox(udma_device, mailbox);
 
 	return ret;
+}
+
+int udma_set_dca_buf(struct udma_dev *dev, struct udma_qp *qp)
+{
+	struct udma_qp_context ctx[2] = {};
+	struct udma_qp_context *msk = ctx + 1;
+	struct udma_qp_context *qpc = ctx;
+	int ret;
+
+	memset(msk, 0xff, dev->caps.qpc_sz);
+
+	ret = config_qp_sq_buf(dev, qp, qpc, msk);
+	if (ret) {
+		dev_err(dev->dev, "failed to config sq qpc, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = udma_pass_qpc_to_hw(dev, qpc, msk, qp);
+	if (ret) {
+		dev_err(dev->dev, "failed to modify DCA buf, ret = %d.\n", ret);
+		return ret;
+	}
+
+	return 0;
 }
 
 static bool check_qp_timeout_cfg_range(struct udma_dev *udma_device,
@@ -447,6 +472,11 @@ static int modify_qp_rtr_to_rts(struct udma_qp *qp,
 	if (qp->send_jfc) {
 		udma_reg_write(context, QPC_TX_CQN, qp->send_jfc->cqn);
 		udma_reg_clear(context_mask, QPC_TX_CQN);
+	}
+
+	if (qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH) {
+		udma_reg_enable(context, QPC_DCA_MODE);
+		udma_reg_clear(context_mask, QPC_DCA_MODE);
 	}
 
 	set_qpc_wqe_cnt(qp, context, context_mask);
@@ -889,6 +919,10 @@ int udma_modify_qp_common(struct udma_qp *qp,
 	}
 
 	qp->state = new_state;
+
+	if (qp->qp_type == QPT_RC &&
+	    qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)
+		udma_modify_dca(udma_device, qp);
 
 out:
 	return ret;
@@ -1334,7 +1368,7 @@ void clean_jetty_x_qpn_bitmap(struct udma_qpn_bitmap *qpn_map)
 }
 
 static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
-			    struct udma_buf_attr *buf_attr)
+			    struct udma_buf_attr *buf_attr, bool dca_en)
 {
 	uint32_t idx = 0;
 	int buf_size;
@@ -1368,27 +1402,58 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
-	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT + udma_dev->caps.mtt_buf_pg_sz;
+
+	if (dca_en) {
+		/* When enable DCA, there's no need to alloc buffer now, and
+		 * the page shift should be fixed to 4K.
+		 */
+		buf_attr->mtt_only = true;
+		buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
+	} else {
+		buf_attr->mtt_only = false;
+		buf_attr->page_shift = UDMA_HW_PAGE_SHIFT +
+				       udma_dev->caps.mtt_buf_pg_sz;
+	}
 
 	return 0;
 }
 
 static int alloc_wqe_buf(struct udma_dev *dev, struct udma_qp *qp,
-			 struct udma_buf_attr *buf_attr, uint64_t addr)
+			 struct udma_buf_attr *buf_attr, uint64_t addr,
+			 bool dca_en)
 {
 	int ret;
 
-	if ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
-	    (dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE) &&
-	    (qp->qpn < UDMA_DWQE_MMAP_QP_NUM))
+	if (dca_en) {
+		/* DCA must be enabled after the buffer attr is configured. */
+		udma_enable_dca(dev, qp);
+		qp->en_flags |= UDMA_QP_CAP_DYNAMIC_CTX_ATTACH;
+	} else if ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
+		   (dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE) &&
+		   (qp->qpn < UDMA_DWQE_MMAP_QP_NUM)) {
 		qp->en_flags |= UDMA_QP_CAP_DIRECT_WQE;
+	}
 
 	ret = udma_mtr_create(dev, &qp->mtr, buf_attr,
 			      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz, addr, true);
-	if (ret)
+	if (ret) {
 		dev_err(dev->dev, "failed to create WQE mtr, ret = %d.\n", ret);
+		if (dca_en)
+			udma_disable_dca(dev, qp);
+	}
 
 	return ret;
+}
+
+static bool check_dca_is_enable(struct udma_dev *udma_dev, struct udma_qp *qp,
+				uint64_t buf_addr)
+{
+	if (qp->qp_type != QPT_RC ||
+	    !(udma_dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE))
+		return false;
+
+	/* If the user QP's buffer addr is 0, the DCA mode should be enabled */
+	return !buf_addr;
 }
 
 static int alloc_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp,
@@ -1396,15 +1461,17 @@ static int alloc_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp,
 {
 	struct device *dev = udma_dev->dev;
 	struct udma_buf_attr buf_attr = {};
+	bool dca_en;
 	int ret;
 
-	ret = set_wqe_buf_attr(udma_dev, qp, &buf_attr);
+	dca_en = check_dca_is_enable(udma_dev, qp, buf_addr);
+	ret = set_wqe_buf_attr(udma_dev, qp, &buf_attr, dca_en);
 	if (ret) {
 		dev_err(dev, "failed to set WQE attr, ret = %d.\n", ret);
 		return ret;
 	}
 
-	ret = alloc_wqe_buf(udma_dev, qp, &buf_attr, buf_addr);
+	ret = alloc_wqe_buf(udma_dev, qp, &buf_attr, buf_addr, dca_en);
 	if (ret) {
 		dev_err(dev, "failed to alloc WQE buf, ret = %d.\n", ret);
 		return ret;
@@ -1659,7 +1726,9 @@ static void free_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 
 static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
-	if (is_rc_jetty(&qp->qp_attr) || qp->no_free_wqe_buf)
+	if ((is_rc_jetty(&qp->qp_attr) &&
+	    !(qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) ||
+	    qp->no_free_wqe_buf)
 		return;
 
 	if (qp->en_flags & UDMA_QP_CAP_SQ_RECORD_DB)
@@ -1668,10 +1737,14 @@ static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 
 static void free_wqe_buf(struct udma_dev *dev, struct udma_qp *qp)
 {
-	if (is_rc_jetty(&qp->qp_attr) || qp->no_free_wqe_buf)
+	if ((is_rc_jetty(&qp->qp_attr) &&
+	    !(qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) ||
+	    qp->no_free_wqe_buf)
 		return;
 
 	udma_mtr_destroy(dev, &qp->mtr);
+	if (qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)
+		udma_disable_dca(dev, qp);
 }
 
 static void free_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp)
@@ -1751,15 +1824,18 @@ static uint32_t udma_get_jetty_qpn(struct udma_qp *qp)
 int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata)
 {
+	struct udma_ucontext *uctx = to_udma_ucontext(udata->uctx);
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct udma_qp_context ctx[2] = {0};
 	struct device *dev = udma_dev->dev;
 	struct udma_create_tp_ucmd ucmd;
 	struct udma_create_tp_resp resp;
+	bool udma_alloc_sq_flag = false;
 	int ret;
 
 	qp->state = QPS_RESET;
 	qp->dip_idx = UDMA_SCC_DIP_INVALID_IDX;
+	qp->dca_ctx = udata->uctx ? &uctx->dca_ctx : qp->dca_ctx;
 
 	ret = set_qp_param(udma_dev, qp, udata, &ucmd);
 	if (ret) {
@@ -1779,7 +1855,8 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 	}
 
 	if (udma_qp_need_alloc_sq(qp_attr)) {
-		if (is_rc_jetty(qp_attr)) {
+		udma_alloc_sq_flag = is_rc_jetty(qp_attr) && (ucmd.buf_addr || qp_attr->is_tgt);
+		if (udma_alloc_sq_flag) {
 			qp->mtr = qp_attr->jetty->rc_node.mtr;
 			qp->sdb = qp_attr->jetty->rc_node.sdb;
 			qp->en_flags |= UDMA_QP_CAP_SQ_RECORD_DB;

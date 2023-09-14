@@ -202,6 +202,11 @@ enum udma_cmd_return_status {
 	CMD_NOT_EXIST		= 2,
 };
 
+enum {
+	QP_ST_RST	= 0,
+	QP_ST_ERR	= 6,
+};
+
 /* CMQ command */
 enum udma_opcode_type {
 	UDMA_QUERY_FW_VER				= 0x0001,

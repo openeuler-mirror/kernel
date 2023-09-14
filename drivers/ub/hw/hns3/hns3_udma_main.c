@@ -26,6 +26,7 @@
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_segment.h"
 #include "hns3_udma_jetty.h"
+#include "hns3_udma_dca.h"
 #include "hns3_udma_cmd.h"
 
 static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
@@ -69,7 +70,8 @@ static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 	return 0;
 }
 
-static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data)
+static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data,
+			      struct udma_dca_ctx *dca_ctx)
 {
 	struct udma_create_ctx_resp resp = {};
 	int ret;
@@ -88,6 +90,12 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.poe_ch_num = dev->caps.poe_ch_num;
 	resp.db_addr = pci_resource_start(dev->pci_dev, UDMA_DEV_START_OFFSET) +
 		       UDMA_DB_ADDR_OFFSET;
+
+	if (dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE) {
+		resp.dca_qps = dca_ctx->max_qps;
+		resp.dca_mmap_size = dca_ctx->status_npage * PAGE_SIZE;
+		resp.dca_mode = dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE;
+	}
 
 	ret = copy_to_user((void *)udrv_data->out_addr, &resp,
 			   min(udrv_data->out_len, (uint32_t)sizeof(resp)));
@@ -122,8 +130,14 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 		goto err_alloc_ucontext;
 	}
 
+	ret = udma_register_udca(udma_dev, context, udrv_data);
+	if (ret) {
+		dev_err(udma_dev->dev, "Register udca Failed.\n");
+		goto err_alloc_uar;
+	}
+
 	context->pdn = uasid; /* Use the UASID as pd number */
-	ret = udma_init_ctx_resp(udma_dev, udrv_data);
+	ret = udma_init_ctx_resp(udma_dev, udrv_data, &context->dca_ctx);
 	if (ret) {
 		dev_err(udma_dev->dev, "Init ctx resp failed.\n");
 		goto err_alloc_uar;
@@ -143,6 +157,9 @@ static int udma_free_ucontext(struct ubcore_ucontext *uctx)
 	struct udma_ucontext *context = to_udma_ucontext(uctx);
 	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
 
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE)
+		udma_unregister_udca(udma_dev, context);
+
 	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
 	kfree(context);
 	return 0;
@@ -156,6 +173,38 @@ static int get_mmap_cmd(struct vm_area_struct *vma)
 static uint64_t get_mmap_idx(struct vm_area_struct *vma)
 {
 	return ((vma->vm_pgoff >> MAP_INDEX_SHIFT) & MAP_INDEX_MASK);
+}
+
+static int mmap_dca(struct ubcore_ucontext *context, struct vm_area_struct *vma)
+{
+	struct udma_ucontext *uctx = to_udma_ucontext(context);
+	struct udma_dca_ctx *ctx = &uctx->dca_ctx;
+	struct page **pages;
+	unsigned long num;
+	int ret;
+
+	if (vma->vm_end - vma->vm_start != (ctx->status_npage * PAGE_SIZE))
+		return -EINVAL;
+
+	if (!(vma->vm_flags & VM_WRITE) ||
+	    !(vma->vm_flags & VM_SHARED) ||
+	    (vma->vm_flags & VM_EXEC))
+		return -EPERM;
+
+	if (!ctx->buf_status)
+		return -EOPNOTSUPP;
+
+	pages = kcalloc(ctx->status_npage, sizeof(struct page *), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	for (num = 0; num < ctx->status_npage; num++)
+		pages[num] = virt_to_page(ctx->buf_status + num * PAGE_SIZE);
+
+	ret = vm_insert_pages(vma, vma->vm_start, pages, &num);
+	kfree(pages);
+
+	return ret;
 }
 
 static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
@@ -196,6 +245,10 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 		if (remap_pfn_range(vma, vma->vm_start,
 				    page_to_pfn(udma_dev->reset_page),
 				    PAGE_SIZE, vma->vm_page_prot))
+			return -EAGAIN;
+		break;
+	case UDMA_MMAP_TYPE_DCA:
+		if (mmap_dca(uctx, vma))
 			return -EAGAIN;
 		break;
 	default:
@@ -555,6 +608,192 @@ int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	return ret;
 }
 
+int udma_user_ctl_dca_reg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			  struct ubcore_user_ctl_out *out, struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct udma_ucontext *context = to_udma_ucontext(uctx);
+	struct udma_dca_reg_attr attr = {};
+	int ret;
+
+	ret = (int)copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_reg_attr));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in dca reg, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	ret = udma_register_dca_mem(udma_device, context, &attr);
+	if (ret) {
+		dev_err(udma_device->dev,
+			"register dca mem failed, ret:%d.\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int udma_user_ctl_dca_dereg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			    struct ubcore_user_ctl_out *out,
+			    struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct udma_ucontext *context = to_udma_ucontext(uctx);
+	struct udma_dca_dereg_attr attr = {};
+	int ret;
+
+	ret = (int)copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_dereg_attr));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in dca dereg, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	attr.mem = NULL;
+	ret = udma_deregister_dca_mem(udma_device, context, &attr, true);
+	if (ret) {
+		dev_err(udma_device->dev, "deregister dca mem failed, ret:%d.\n", ret);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+int udma_user_ctl_dca_shrink(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			     struct ubcore_user_ctl_out *out,
+			     struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct udma_ucontext *context = to_udma_ucontext(uctx);
+	struct udma_dca_shrink_attr shrink_attr = {};
+	struct udma_dca_shrink_resp shrink_resp = {};
+	struct udma_dca_dereg_attr dereg_attr = {};
+	int ret;
+
+	ret = (int)copy_from_user(&shrink_attr, (void *)in->addr,
+				  sizeof(struct udma_dca_shrink_attr));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in dca shrink, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	udma_shrink_dca_mem(udma_device, context, &shrink_attr, &shrink_resp);
+
+	if (shrink_resp.free_mems >= 1) {
+		dereg_attr.mem = shrink_resp.mem;
+		udma_deregister_dca_mem(udma_device, context, &dereg_attr, false);
+		shrink_resp.mem = NULL;
+	}
+
+	ret = (int)copy_to_user((void *)out->addr, &shrink_resp,
+				min(out->len,
+				    (uint32_t)sizeof(struct udma_dca_shrink_resp)));
+	if (ret) {
+		dev_err(udma_device->dev, "cp to user failed in  dca_shrink, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+int udma_user_ctl_dca_attach(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			     struct ubcore_user_ctl_out *out,
+			     struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct udma_dca_attach_attr attr = {};
+	struct udma_dca_attach_resp resp = {};
+	int ret;
+
+	ret = (int)copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_attach_attr));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in dca attach, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	ret = udma_dca_attach(udma_device, &attr, &resp);
+	if (ret) {
+		dev_err(udma_device->dev, "attach dca mem failed, ret:%d.\n",
+			ret);
+		return ret;
+	}
+
+	ret = (int)copy_to_user((void *)out->addr, &resp,
+				min(out->len,
+				    (uint32_t)sizeof(struct udma_dca_attach_resp)));
+	if (ret) {
+		udma_dca_disattach(udma_device, &attr);
+		dev_err(udma_device->dev, "copy_to_user failed in dca_attach, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+int udma_user_ctl_dca_detach(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			     struct ubcore_user_ctl_out *out,
+			     struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct udma_dca_detach_attr attr = {};
+	int ret;
+
+	ret = (int)copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_detach_attr));
+	if (ret) {
+		dev_err(udma_device->dev, "cp from user failed in dca detach, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	udma_dca_detach(udma_device, &attr);
+
+	return 0;
+}
+
+int udma_user_ctl_dca_query(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
+			    struct ubcore_user_ctl_out *out,
+			    struct ubcore_udrv_priv *udrv_data)
+{
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
+	struct udma_dca_query_attr attr = {};
+	struct udma_dca_query_resp resp = {};
+	int ret;
+
+	ret = (int)copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_query_attr));
+	if (ret) {
+		dev_err(udma_device->dev, "copy_from_user failed in dca query, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	ret = udma_query_dca_mem(udma_device, &attr, &resp);
+	if (ret) {
+		dev_err(udma_device->dev, "query dca mem failed, ret:%d.\n",
+			ret);
+		return ret;
+	}
+
+	ret = (int)copy_to_user((void *)out->addr, &resp,
+				min(out->len,
+				    (uint32_t)sizeof(struct udma_dca_query_resp)));
+	if (ret) {
+		dev_err(udma_device->dev, "cp to user failed in dca_query, ret:%d.\n",
+			ret);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 typedef int (*udma_user_ctl_opcode)(struct ubcore_ucontext *uctx,
 				    struct ubcore_user_ctl_in *in,
 				    struct ubcore_user_ctl_out *out,
@@ -564,6 +803,12 @@ static udma_user_ctl_opcode g_udma_user_ctl_opcodes[] = {
 	[UDMA_USER_CTL_FLUSH_CQE] = udma_user_ctl_flush_cqe,
 	[UDMA_CONFIG_POE_CHANNEL] = udma_user_ctl_config_poe,
 	[UDMA_QUERY_POE_CHANNEL] = udma_user_ctl_query_poe,
+	[UDMA_DCA_MEM_REG] = udma_user_ctl_dca_reg,
+	[UDMA_DCA_MEM_DEREG] = udma_user_ctl_dca_dereg,
+	[UDMA_DCA_MEM_SHRINK] = udma_user_ctl_dca_shrink,
+	[UDMA_DCA_MEM_ATTACH] = udma_user_ctl_dca_attach,
+	[UDMA_DCA_MEM_DETACH] = udma_user_ctl_dca_detach,
+	[UDMA_DCA_MEM_QUERY] = udma_user_ctl_dca_query,
 };
 
 int udma_user_ctl(struct ubcore_user_ctl *k_user_ctl)

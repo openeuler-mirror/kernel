@@ -100,6 +100,7 @@ struct udma_qp_context {
 #define QPC_SQ_CUR_SGE_BLK_ADDR_L QPC_FIELD_LOC(1439, 1408)
 #define QPC_SQ_CUR_SGE_BLK_ADDR_H QPC_FIELD_LOC(1459, 1440)
 #define QPC_OWNER_MODE QPC_FIELD_LOC(1536, 1536)
+#define QPC_DCA_MODE QPC_FIELD_LOC(1542, 1542)
 #define QPC_SQ_MAX_PSN QPC_FIELD_LOC(1567, 1544)
 #define QPC_RMT_E2E QPC_FIELD_LOC(1660, 1660)
 #define QPC_RETRY_NUM_INIT QPC_FIELD_LOC(1690, 1688)
@@ -235,6 +236,18 @@ struct udma_qp_sge {
 	int			wqe_offset;
 };
 
+struct udma_dca_cfg {
+	spinlock_t		lock;
+	uint32_t		attach_count;
+	uint32_t		buf_id;
+	uint32_t		dcan;
+	void			**buf_list;
+	uint32_t		npages;
+	uint32_t		sq_idx;
+	bool			aging_enable;
+	struct list_head	aging_node;
+};
+
 struct udma_qp {
 	struct udma_dev		*udma_device;
 	enum udma_qp_type	qp_type;
@@ -246,6 +259,8 @@ struct udma_qp {
 	struct udma_jfc		*recv_jfc;
 	uint64_t		en_flags;
 	struct udma_mtr		mtr;
+	struct udma_dca_cfg	dca_cfg;
+	struct udma_dca_ctx	*dca_ctx;
 	uint32_t		buff_size;
 	enum udma_qp_state	state;
 	void (*event)(struct udma_qp *qp,
@@ -338,5 +353,6 @@ int udma_flush_cqe(struct udma_dev *udma_dev, struct udma_qp *udma_qp,
 		   uint32_t sq_pi);
 void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);
 void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp);
+int udma_set_dca_buf(struct udma_dev *dev, struct udma_qp *qp);
 
 #endif /* _UDMA_QP_H */

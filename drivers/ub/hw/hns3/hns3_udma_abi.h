@@ -28,11 +28,15 @@
 #define UDMA_JETTY_QPN_PREFIX		0x2
 #define UDMA_ADDR_4K_MASK		0xfffUL
 #define URMA_SEG_ACCESS_GUARD		(1UL << 5)
+#define UDMA_DCA_ATTACH_FLAGS_NEW_BUFFER BIT(0)
+#define UDMA_DCA_INVALID_DCA_NUM ~0U
 
 enum {
 	UDMA_MMAP_UAR_PAGE,
 	UDMA_MMAP_DWQE_PAGE,
+	UDMA_MMAP_DCA_PAGE,
 	UDMA_MMAP_RESET_PAGE,
+	UDMA_MMAP_TYPE_DCA
 };
 
 enum udma_jfc_init_attr_mask {
@@ -114,6 +118,7 @@ enum udma_qp_cap_flags {
 	UDMA_QP_CAP_RQ_RECORD_DB = 1 << 0,
 	UDMA_QP_CAP_SQ_RECORD_DB = 1 << 1,
 	UDMA_QP_CAP_OWNER_DB = 1 << 2,
+	UDMA_QP_CAP_DYNAMIC_CTX_ATTACH = 1 << 4,
 	UDMA_QP_CAP_DIRECT_WQE = 1 << 5,
 };
 
@@ -136,6 +141,19 @@ struct udma_create_jfs_resp {
 	struct udma_create_tp_resp create_tp_resp;
 };
 
+struct udma_create_ctx_ucmd {
+	uint32_t comp;
+	uint32_t dca_max_qps;
+	uint32_t dca_unit_size;
+};
+
+enum udma_context_comp_mask {
+	UDMA_CONTEXT_MASK_DCA_PRIME_QPS = 1 << 0,
+	UDMA_CONTEXT_MASK_DCA_UNIT_SIZE = 1 << 1,
+	UDMA_CONTEXT_MASK_DCA_MAX_SIZE = 1 << 2,
+	UDMA_CONTEXT_MASK_DCA_MIN_SIZE = 1 << 3,
+};
+
 struct udma_create_ctx_resp {
 	uint32_t num_comp_vectors;
 	uint32_t num_qps_shift;
@@ -150,6 +168,9 @@ struct udma_create_ctx_resp {
 	uint32_t max_jfs_sge;
 	uint32_t poe_ch_num;
 	uint64_t db_addr;
+	uint32_t dca_qps;
+	uint32_t dca_mmap_size;
+	uint32_t dca_mode;
 };
 
 struct flush_cqe_param {
@@ -163,10 +184,65 @@ struct udma_poe_info {
 	uint64_t	poe_addr;
 };
 
+struct udma_dca_reg_attr {
+	uintptr_t	key;
+	uintptr_t	addr;
+	uint32_t	size;
+};
+
+struct udma_dca_dereg_attr {
+	uintptr_t	free_key;
+	struct dca_mem	*mem;
+};
+
+struct udma_dca_shrink_attr {
+	uint64_t reserved_size;
+};
+
+struct udma_dca_shrink_resp {
+	struct dca_mem	*mem;
+	uintptr_t	free_key;
+	uint32_t	free_mems;
+};
+
+struct udma_dca_attach_attr {
+	uint64_t	qpn;
+	uint32_t	sq_offset;
+	uint32_t	sge_offset;
+};
+
+struct udma_dca_attach_resp {
+	uint32_t	alloc_flags;
+	uint32_t	alloc_pages;
+	uint32_t	dcan;
+};
+
+struct udma_dca_detach_attr {
+	uint64_t	qpn;
+	uint32_t	sq_idx;
+};
+
+struct udma_dca_query_attr {
+	uint64_t	qpn;
+	uint32_t	page_idx;
+};
+
+struct udma_dca_query_resp {
+	uintptr_t	mem_key;
+	uint32_t	mem_ofs;
+	uint32_t	page_count;
+};
+
 enum udma_user_ctl_handlers {
 	UDMA_USER_CTL_FLUSH_CQE,
 	UDMA_CONFIG_POE_CHANNEL,
 	UDMA_QUERY_POE_CHANNEL,
+	UDMA_DCA_MEM_REG,
+	UDMA_DCA_MEM_DEREG,
+	UDMA_DCA_MEM_SHRINK,
+	UDMA_DCA_MEM_ATTACH,
+	UDMA_DCA_MEM_DETACH,
+	UDMA_DCA_MEM_QUERY,
 	UDMA_OPCODE_NUM,
 };
 

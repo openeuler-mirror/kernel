@@ -43,5 +43,6 @@ struct ubcore_tp *udma_create_tp(struct ubcore_device *dev,
 int udma_destroy_tp(struct ubcore_tp *tp);
 int udma_modify_tp(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
 		   union ubcore_tp_attr_mask mask);
+struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn);
 
 #endif /* _UDMA_TP_H */

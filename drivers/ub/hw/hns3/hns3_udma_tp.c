@@ -19,7 +19,12 @@
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_dca.h"
 #include "hns3_udma_tp.h"
+struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn)
+{
+	return (struct udma_qp *)xa_load(&udma_device->qp_table.xa, qpn);
+}
 
 static enum udma_qp_state to_udma_qp_state(enum ubcore_tp_state state)
 {
@@ -229,7 +234,8 @@ static void udma_set_tp(struct ubcore_device *dev, const struct ubcore_tp_cfg *c
 	tp->ubcore_tp.state = UBCORE_TP_STATE_RESET;
 }
 
-static void copy_attr_to_pre_tp(struct udma_qp *from_qp, struct udma_qp *to_qp)
+static void copy_attr_to_pre_tp(struct udma_dev *udma_device, bool is_rm,
+				struct udma_qp *from_qp, struct udma_qp *to_qp)
 {
 	if (from_qp->qp_attr.is_tgt)
 		return;
@@ -238,11 +244,15 @@ static void copy_attr_to_pre_tp(struct udma_qp *from_qp, struct udma_qp *to_qp)
 	to_qp->sq = from_qp->sq;
 	to_qp->sdb = from_qp->sdb;
 	to_qp->priority = from_qp->priority;
+	to_qp->dca_ctx = from_qp->dca_ctx;
 	to_qp->en_flags = from_qp->en_flags;
 	to_qp->buff_size = from_qp->buff_size;
+	if (to_qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)
+		udma_enable_dca(udma_device, to_qp);
 
 	udma_mtr_move(&from_qp->mtr, &to_qp->mtr);
-	copy_send_jfc(from_qp, to_qp);
+	if (is_rm)
+		copy_send_jfc(from_qp, to_qp);
 
 	to_qp->qp_attr.cap.max_send_wr = from_qp->qp_attr.cap.max_send_wr;
 	to_qp->qp_attr.cap.max_send_sge = from_qp->qp_attr.cap.max_send_sge;
@@ -266,7 +276,8 @@ static int udma_store_jetty_tp(struct udma_dev *udma_device,
 	if (jetty->tp_mode == UBCORE_TP_RM) {
 		pre_tp = (struct udma_tp *)xa_load(&jetty->srm_node_table, hash);
 		if (pre_tp) {
-			copy_attr_to_pre_tp(&tp->qp, &pre_tp->qp);
+			copy_attr_to_pre_tp(udma_device, true, &tp->qp,
+					    &pre_tp->qp);
 			*fail_ret_tp = &pre_tp->ubcore_tp;
 			return 0;
 		}
@@ -284,7 +295,12 @@ static int udma_store_jetty_tp(struct udma_dev *udma_device,
 		} else {
 			tjetty_hash =
 				udma_get_jetty_hash(&jetty->rc_node.tjetty_id);
-			if (tjetty_hash == hash) {
+			if (tjetty_hash == hash &&
+			    (tp->qp.en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) {
+				copy_attr_to_pre_tp(udma_device, false, &tp->qp,
+						    &jetty->rc_node.tp->qp);
+				*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
+			} else if (tjetty_hash == hash) {
 				*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
 			} else {
 				dev_err(udma_device->dev,

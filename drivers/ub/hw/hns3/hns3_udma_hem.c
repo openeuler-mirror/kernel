@@ -1920,6 +1920,15 @@ int udma_mtr_create(struct udma_dev *udma_dev, struct udma_mtr *mtr,
 		return ret;
 	}
 
+	/* The caller has its own buffer list and invokes the udma_mtr_map()
+	 * to finish the MTT configuration.
+	 */
+	if (buf_attr->mtt_only) {
+		mtr->umem = NULL;
+		mtr->kmem = NULL;
+		return 0;
+	}
+
 	ret = mtr_alloc_bufs(udma_dev, mtr, buf_attr, user_addr, is_user);
 	if (ret) {
 		dev_err(dev, "failed to alloc mtr bufs, ret = %d.\n", ret);

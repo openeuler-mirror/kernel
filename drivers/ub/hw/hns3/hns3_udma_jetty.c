@@ -199,6 +199,7 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
+	buf_attr->mtt_only = false;
 	buf_attr->page_shift = PAGE_SHIFT + udma_dev->caps.mtt_buf_pg_sz;
 
 	return 0;
@@ -235,6 +236,11 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 		xa_init(&jetty->srm_node_table);
 	} else if (cfg->trans_mode == UBCORE_TP_RC) {
 		jetty->rc_node.buf_addr = ucmd.buf_addr;
+		if (!ucmd.buf_addr) {
+			jetty->dca_en = true;
+			return 0;
+		}
+
 		ret = set_jetty_buf_attr(dev, jetty, &buf_attr);
 		if (ret) {
 			dev_err(dev->dev,
@@ -355,7 +361,7 @@ int free_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty)
 				jetty->qp.qpn);
 
 		udma_destroy_qp_common(dev, &jetty->qp);
-	} else if (jetty->tp_mode == UBCORE_TP_RC) {
+	} else if (jetty->tp_mode == UBCORE_TP_RC && !jetty->dca_en) {
 		udma_db_unmap_user(dev, &jetty->rc_node.sdb);
 		udma_mtr_destroy(dev, &jetty->rc_node.mtr);
 	}

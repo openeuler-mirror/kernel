@@ -45,6 +45,7 @@ struct udma_jetty {
 	struct udma_qpn_bitmap	qpn_map;
 	uint32_t		jetty_id;
 	struct mutex		tp_mutex;
+	bool			dca_en;
 };
 
 static inline struct udma_jetty *to_udma_jetty(struct ubcore_jetty *ubcore_jetty)
