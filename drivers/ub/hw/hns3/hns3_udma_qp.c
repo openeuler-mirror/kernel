@@ -15,6 +15,7 @@
 
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
+#include <linux/module.h>
 #include "hns3_udma_abi.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_jfs.h"
@@ -26,6 +27,10 @@
 #include "hns3_udma_tp.h"
 #include "hns3_udma_db.h"
 #include "hns3_udma_qp.h"
+
+static bool um_spray_en;
+static ushort um_data_udp_start;
+static ushort um_udp_range;
 
 static void set_qpc_wqe_cnt(struct udma_qp *qp,
 			    struct udma_qp_context *context,
@@ -1900,6 +1905,10 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			resp.qpn = udma_get_jetty_qpn(qp);
 
 		resp.path_mtu = udma_dev->caps.max_mtu;
+		resp.um_srcport.um_spray_en = um_spray_en;
+		resp.um_srcport.um_data_udp_start = (uint16_t)um_data_udp_start;
+		resp.um_srcport.um_udp_range = (uint8_t)um_udp_range +
+					       UDP_RANGE_BASE;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
 				   min(udata->udrv_data->out_len,
 				       (uint32_t)sizeof(resp)));
@@ -2065,3 +2074,15 @@ void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type)
 	if (refcount_dec_and_test(&qp->refcount))
 		complete(&qp->free);
 }
+
+module_param(um_spray_en, bool, 0644);
+MODULE_PARM_DESC(um_spray_en,
+		 "Set whether to enable the multipath function for UM Jetty/Jfs, default: 0(0:off, 1:on)");
+
+module_param(um_data_udp_start, ushort, 0644);
+MODULE_PARM_DESC(um_data_udp_start,
+		 "Set the Initial source port number for UM Jetty/Jfs, valid when um_spray_en is set 1");
+
+module_param(um_udp_range, ushort, 0644);
+MODULE_PARM_DESC(um_udp_range,
+		 "Set the variable bits of source port number for UM Jetty/Jfs, valid when um_spray_en is set 1, range:0-8, default: 0. 0 ~ (7 + um_udp_range) bits of source port are variable");

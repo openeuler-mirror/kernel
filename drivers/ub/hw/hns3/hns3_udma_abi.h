@@ -122,11 +122,18 @@ enum udma_qp_cap_flags {
 	UDMA_QP_CAP_DIRECT_WQE = 1 << 5,
 };
 
+struct udp_srcport {
+	bool		um_spray_en;
+	uint16_t	um_data_udp_start;
+	uint8_t		um_udp_range;
+};
+
 struct udma_create_tp_resp {
 	uint64_t		cap_flags;
 	uint32_t		qpn;
 	uint32_t		path_mtu;
 	uint8_t			priority;
+	struct udp_srcport	um_srcport;
 };
 
 struct udma_create_jetty_resp {
