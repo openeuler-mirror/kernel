@@ -125,6 +125,50 @@ union ubcore_jfr_flag {
 	uint32_t value;
 };
 
+enum ubcore_jfc_attr_mask {
+	UBCORE_JFC_MODERATE_COUNT = 0x1,
+	UBCORE_JFC_MODERATE_PERIOD = 0x1 << 1
+};
+
+struct ubcore_jfc_attr {
+	uint32_t mask; /* mask value refer to enum ubcore_jfc_attr_mask */
+	uint16_t moderate_count;
+	uint16_t moderate_period; /* in micro seconds */
+};
+
+enum ubcore_jfc_state {
+	UBCORE_JFC_STATE_INVALID = 0,
+	UBCORE_JFC_STATE_VALID,
+	UBCORE_JFC_STATE_ERROR
+};
+
+enum ubcore_jetty_state {
+	UBCORE_JETTY_STATE_RESET = 0,
+	UBCORE_JETTY_STATE_READY,
+	UBCORE_JETTY_STATE_SUSPENDED,
+	UBCORE_JETTY_STATE_ERROR
+};
+
+struct ubcore_jfs_attr {
+	uint32_t mask; /* mask value refer to ubcore_jfs_attr_mask_t */
+	enum ubcore_jetty_state state;
+};
+
+enum ubcore_jfr_attr_mask { UBCORE_JFR_RX_THRESHOLD = 0x1 };
+
+struct ubcore_jfr_attr {
+	uint32_t mask; /* mask value refer to enum ubcore_jfr_attr_mask */
+	uint32_t rx_threshold;
+};
+
+enum ubcore_jetty_attr_mask { UBCORE_JETTY_RX_THRESHOLD = 0x1 };
+
+struct ubcore_jetty_attr {
+	uint32_t mask; /* mask value refer to enum ubcore_jetty_attr_mask */
+	uint32_t rx_threshold;
+	enum ubcore_jetty_state state;
+};
+
 struct ubcore_udrv_priv {
 	uint64_t in_addr;
 	uint32_t in_len;
@@ -610,6 +654,182 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*free_ucontext)(struct ubcore_ucontext *uctx);
+
+	/* jetty part */
+	/**
+	 * create jfc with ubep.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: jfc attributes and configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: jfc pointer on success, NULL on error
+	 */
+	struct ubcore_jfc *(*create_jfc)(struct ubcore_device *dev,
+					 const struct ubcore_jfc_cfg *cfg,
+					 struct ubcore_udata *udata);
+
+	/**
+	 * modify jfc from ubep.
+	 * @param[in] jfc: the jfc created before;
+	 * @param[in] attr: ubcore jfc attr;
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: 0 on success, other value on error
+	 */
+	int (*modify_jfc)(struct ubcore_jfc *jfc, const struct ubcore_jfc_attr *attr,
+			  struct ubcore_udata *udata);
+
+	/**
+	 * destroy jfc from ubep.
+	 * @param[in] jfc: the jfc created before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*destroy_jfc)(struct ubcore_jfc *jfc);
+
+	/**
+	 * rearm jfc.
+	 * @param[in] jfc: the jfc created before;
+	 * @param[in] solicited_only: rearm notify by message marked with solicited flag
+	 * @return: 0 on success, other value on error
+	 */
+	int (*rearm_jfc)(struct ubcore_jfc *jfc, bool solicited_only);
+
+	/**
+	 * create jfs with ubep.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: jfs attributes and configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: jfs pointer on success, NULL on error
+	 */
+	struct ubcore_jfs *(*create_jfs)(struct ubcore_device *dev,
+					 const struct ubcore_jfs_cfg *cfg,
+					 struct ubcore_udata *udata);
+	/**
+	 * modify jfs from ubep.
+	 * @param[in] jfs: the jfs created before;
+	 * @param[in] attr: ubcore jfs attr;
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: 0 on success, other value on error
+	 */
+	int (*modify_jfs)(struct ubcore_jfs *jfs, const struct ubcore_jfs_attr *attr,
+			  struct ubcore_udata *udata);
+	/**
+	 * query jfs from ubep.
+	 * @param[in] jfs: the jfs created before;
+	 * @param[out] cfg: jfs configurations;
+	 * @param[out] attr: ubcore jfs attributes;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_jfs)(struct ubcore_jfs *jfs, struct ubcore_jfs_cfg *cfg,
+			 struct ubcore_jfs_attr *attr);
+	/**
+	 * destroy jfs from ubep.
+	 * @param[in] jfs: the jfs created before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*destroy_jfs)(struct ubcore_jfs *jfs);
+
+	/**
+	 * create jfr with ubep.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: jfr attributes and configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: jfr pointer on success, NULL on error
+	 */
+	struct ubcore_jfr *(*create_jfr)(struct ubcore_device *dev,
+					 const struct ubcore_jfr_cfg *cfg,
+					 struct ubcore_udata *udata);
+	/**
+	 * modify jfr from ubep.
+	 * @param[in] jfr: the jfr created before;
+	 * @param[in] attr: ubcore jfr attr;
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: 0 on success, other value on error
+	 */
+	int (*modify_jfr)(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+			  struct ubcore_udata *udata);
+	/**
+	 * query jfr from ubep.
+	 * @param[in] jfr: the jfr created before;
+	 * @param[out] cfg: jfr configurations;
+	 * @param[out] attr: ubcore jfr attributes;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_jfr)(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
+			 struct ubcore_jfr_attr *attr);
+	/**
+	 * destroy jfr from ubep.
+	 * @param[in] jfr: the jfr created before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*destroy_jfr)(struct ubcore_jfr *jfr);
+
+	/**
+	 * import jfr to ubep.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: remote jfr attributes and import configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: target jfr pointer on success, NULL on error
+	 */
+	struct ubcore_tjetty *(*import_jfr)(struct ubcore_device *dev,
+					    const struct ubcore_tjetty_cfg *cfg,
+					    struct ubcore_udata *udata);
+	/**
+	 * unimport jfr from ubep.
+	 * @param[in] tjfr: the target jfr imported before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*unimport_jfr)(struct ubcore_tjetty *tjfr);
+
+	/**
+	 * create jetty with ubep.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: jetty attributes and configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: jetty pointer on success, NULL on error
+	 */
+	struct ubcore_jetty *(*create_jetty)(struct ubcore_device *dev,
+					     const struct ubcore_jetty_cfg *cfg,
+					     struct ubcore_udata *udata);
+	/**
+	 * modify jetty from ubep.
+	 * @param[in] jetty: the jetty created before;
+	 * @param[in] attr: ubcore jetty attr;
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: 0 on success, other value on error
+	 */
+	int (*modify_jetty)(struct ubcore_jetty *jetty, const struct ubcore_jetty_attr *attr,
+			    struct ubcore_udata *udata);
+	/**
+	 * query jetty from ubep.
+	 * @param[in] jetty: the jetty created before;
+	 * @param[out] cfg: jetty configurations;
+	 * @param[out] attr: ubcore jetty attributes;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_jetty)(struct ubcore_jetty *jetty, struct ubcore_jetty_cfg *cfg,
+			   struct ubcore_jetty_attr *attr);
+	/**
+	 * destroy jetty from ubep.
+	 * @param[in] jetty: the jetty created before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*destroy_jetty)(struct ubcore_jetty *jetty);
+
+	/**
+	 * import jetty to ubep.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: remote jetty attributes and import configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: target jetty pointer on success, NULL on error
+	 */
+	struct ubcore_tjetty *(*import_jetty)(struct ubcore_device *dev,
+					      const struct ubcore_tjetty_cfg *cfg,
+					      struct ubcore_udata *udata);
+	/**
+	 * unimport jetty from ubep.
+	 * @param[in] tjetty: the target jetty imported before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*unimport_jetty)(struct ubcore_tjetty *tjetty);
 	/**
 	 * query_stats. success to query and buffer length is enough
 	 * @param[in] dev: the ub device handle;

@@ -34,6 +34,11 @@ int ubcore_register_device(struct ubcore_device *dev);
  * @param[in] dev: the ubcore device;
  */
 void ubcore_unregister_device(struct ubcore_device *dev);
+/**
+ * Dispatch an asynchronous event to all registered handlers
+ * @param[in] event: asynchronous event;
+ */
+void ubcore_dispatch_async_event(struct ubcore_event *event);
 
 /**
  * Allocate physical memory and do DMA mapping

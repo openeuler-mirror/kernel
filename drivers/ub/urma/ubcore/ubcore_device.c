@@ -425,6 +425,11 @@ void ubcore_unregister_device(struct ubcore_device *dev)
 }
 EXPORT_SYMBOL(ubcore_unregister_device);
 
+void ubcore_dispatch_async_event(struct ubcore_event *event)
+{
+}
+EXPORT_SYMBOL(ubcore_dispatch_async_event);
+
 struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t uasid,
 					      struct ubcore_udrv_priv *udrv_data)
 {
