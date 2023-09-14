@@ -36,13 +36,6 @@ int raw_pci_write(unsigned int domain, unsigned int bus, unsigned int devfn,
 	return -EINVAL;
 }
 
-#ifdef CONFIG_ACPI
-struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
-{
-	return NULL;
-}
-#endif
-
 /*
  * The PCI controller list.
  */

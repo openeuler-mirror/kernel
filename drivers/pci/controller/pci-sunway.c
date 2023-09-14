@@ -579,7 +579,7 @@ static void __iomem *sw64_pcie_map_bus(struct pci_bus *bus,
 		return NULL;
 
 	/**
-	 * ECAM of sunway PCI host controller is slightly
+	 * ECAM of Sunway PCI host controller is slightly
 	 * different from the standrad:
 	 * [31:24]: bus number
 	 * [23:19]: device number
@@ -599,9 +599,173 @@ static void __iomem *sw64_pcie_map_bus(struct pci_bus *bus,
 }
 
 #ifdef CONFIG_ACPI
+int sw64_pci_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+{
+	return map_irq(dev, slot, pin);
+}
+
+static void setup_intx_irqs(struct pci_controller *hose)
+{
+	unsigned long int_conf, node, val_node;
+	unsigned long index, irq;
+	int rcid;
+
+	node = hose->node;
+	index = hose->index;
+
+	if (!node_online(node))
+		val_node = next_node_in(node, node_online_map);
+	else
+		val_node = node;
+	irq = irq_alloc_descs_from(NR_IRQS_LEGACY, 2, val_node);
+	WARN_ON(irq < 0);
+	irq_set_chip_and_handler(irq, &dummy_irq_chip, handle_level_irq);
+	irq_set_status_flags(irq, IRQ_LEVEL);
+	hose->int_irq = irq;
+	irq_set_chip_and_handler(irq + 1, &dummy_irq_chip, handle_level_irq);
+	hose->service_irq = irq + 1;
+	rcid = cpu_to_rcid(0);
+
+	printk_once(KERN_INFO "INTx are directed to node %d core %d.\n",
+			((rcid >> 6) & 0x3), (rcid & 0x1f));
+	int_conf = 1UL << 62 | rcid; /* rebase all intx on the first logical cpu */
+
+	set_intx(node, index, int_conf);
+
+	set_pcieport_service_irq(node, index);
+}
+
+static int sw64_pci_prepare_controller(struct pci_controller *hose,
+		struct acpi_device *adev)
+{
+	unsigned long long index, node;
+	unsigned long long rc_config_base_addr;
+	unsigned long long pci_io_base_addr;
+	unsigned long long ep_io_base_addr;
+	acpi_status rc;
+
+	/* Get node from ACPI namespace */
+	node = acpi_get_node(adev->handle);
+	if (node == NUMA_NO_NODE) {
+		dev_err(&adev->dev, "unable to get node ID\n");
+		return -EEXIST;
+	}
+
+	/* Get index from ACPI namespace */
+	rc = acpi_evaluate_integer(adev->handle, "INDX", NULL, &index);
+	if (rc != AE_OK) {
+		dev_err(&adev->dev, "unable to retrieve INDX\n");
+		return -EEXIST;
+	}
+
+	/**
+	 * Get Root Complex config space base address.
+	 *
+	 * For sw64, Root Complex config space base addr is different
+	 * from Endpoint config space base address. Use MCFG table to
+	 * pass Endpoint config space base address, and define Root Complex
+	 * config space base address("RCCB") separately in the ACPI namespace.
+	 */
+	rc = acpi_evaluate_integer(adev->handle, "RCCB", NULL, &rc_config_base_addr);
+	if (rc != AE_OK) {
+		dev_err(&adev->dev, "unable to retrieve RCCB\n");
+		return -EEXIST;
+	}
+
+	/* Get Root Complex I/O space base addr from ACPI namespace */
+	rc = acpi_evaluate_integer(adev->handle, "RCIO", NULL, &pci_io_base_addr);
+	if (rc != AE_OK) {
+		dev_err(&adev->dev, "unable to retrieve RCIO\n");
+		return -EEXIST;
+	}
+
+	/* Get Endpoint I/O space base addr from ACPI namespace */
+	rc = acpi_evaluate_integer(adev->handle, "EPIO", NULL, &ep_io_base_addr);
+	if (rc != AE_OK) {
+		dev_err(&adev->dev, "unable to retrieve EPIO\n");
+		return -EEXIST;
+	}
+
+	hose->iommu_enable = false;
+	hose->index = index;
+	hose->node = node;
+
+	hose->sparse_mem_base = 0;
+	hose->sparse_io_base  = 0;
+	hose->dense_mem_base  = pci_io_base_addr;
+	hose->dense_io_base   = ep_io_base_addr;
+
+	hose->rc_config_space_base = __va(rc_config_base_addr);
+
+	hose->first_busno = 0xff;
+	hose->last_busno  = 0xff;
+	hose->self_busno  = 0xff;
+
+	hose->need_domain_info = 0;
+
+#if IS_ENABLED(CONFIG_PCI_MSI)
+	if (is_in_host())
+		memset(hose->piu_msiconfig, 0, 256 / 8); /* 256 bits bitmap */
+#endif
+
+	/**
+	 * There are two prerequisites for Root Complex
+	 * of Sunway to work:
+	 * 1. Root Complex enable
+	 * 2. Root Complex link up
+	 */
+	set_rc_piu(hose->node, hose->index);
+	if (check_pci_linkup(hose->node, hose->index)) {
+		/**
+		 * Root Complex link up failed.
+		 * This usually means that no device on the slot.
+		 */
+		dev_info(&adev->dev, "<Node [%ld], RC [%ld]>: failed to link up\n",
+				hose->node, hose->index);
+	} else {
+		pci_mark_rc_linkup(hose->node, hose->index);
+		dev_info(&adev->dev, "<Node [%ld], RC [%ld]>: successfully link up\n",
+				hose->node, hose->index);
+	}
+
+	setup_intx_irqs(hose);
+
+	pci_link_controller(hose);
+
+	return 0;
+}
+
+/**
+ * Use the info from ACPI to init pci_controller
+ */
 static int sw64_pci_ecam_init(struct pci_config_window *cfg)
 {
 	struct pci_controller *hose = NULL;
+	struct device *dev = cfg->parent;
+	struct acpi_device *adev = to_acpi_device(dev);
+	phys_addr_t mcfg_addr;
+	int ret;
+
+	/**
+	 * First, check whether Root Complex is enabled.
+	 * If Root Complex disabled, there's no need to continue.
+	 *
+	 * In ACPI namespace, we use _STA method to indicate
+	 * whether Root Complex is enabled.
+	 *
+	 * The _STA has been checked when creating acpi_device.
+	 * Double check here to get the latest hardware status.
+	 */
+	ret = acpi_bus_get_status(adev);
+	if (ret) {
+		dev_err(dev, "unable to retrieve _STA\n");
+		return ret;
+	}
+
+	if (!adev->status.present) {
+		dev_err(dev, "RC is not enabled\n");
+		return -ENODEV;
+	}
 
 	hose = kzalloc(sizeof(*hose), GFP_KERNEL);
 	if (!hose) {
@@ -609,7 +773,23 @@ static int sw64_pci_ecam_init(struct pci_config_window *cfg)
 		return -ENOMEM;
 	}
 
-	pci_link_controller(hose);
+	/* Get Endpoint config space base address from MCFG table */
+	mcfg_addr = cfg->res.start - (cfg->busr.start << cfg->ops->bus_shift);
+
+	/**
+	 * "__va(mcfg_addr)" is equal to "cfg->win", so we can also use
+	 * "hose->ep_config_space_base = cfg->win" here
+	 */
+	hose->ep_config_space_base = __va(mcfg_addr);
+
+	/* Init pci_controller */
+	ret = sw64_pci_prepare_controller(hose, adev);
+	if (ret) {
+		kfree(hose);
+		dev_err(&adev->dev, "failed to init pci controller\n");
+		return ret;
+	}
+
 	cfg->priv = (void *)hose;
 
 	return 0;
