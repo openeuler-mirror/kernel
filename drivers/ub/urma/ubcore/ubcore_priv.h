@@ -24,6 +24,11 @@
 #include <linux/jhash.h>
 #include <urma/ubcore_types.h>
 
+static inline struct ubcore_ucontext *ubcore_get_uctx(struct ubcore_udata *udata)
+{
+	return udata == NULL ? NULL : udata->uctx;
+}
+
 static inline bool ubcore_check_dev_name_invalid(struct ubcore_device *dev, char *dev_name)
 {
 	return (strcmp(dev->dev_name, dev_name) != 0);

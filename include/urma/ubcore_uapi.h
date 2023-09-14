@@ -136,5 +136,33 @@ int ubcore_register_client(struct ubcore_client *new_client);
  * @param[in] rm_client: ubcore client to be unregistered
  */
 void ubcore_unregister_client(struct ubcore_client *rm_client);
+/**
+ * create jfc with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jfc attributes and configurations
+ * @param[in] jfce_handler (optional): completion event handler
+ * @param[in] jfae_handler (optional): jfc async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jfc pointer on success, NULL on error
+ */
+struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
+				     ubcore_comp_callback_t jfce_handler,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata);
+/**
+ * modify jfc from ubcore device.
+ * @param[in] jfc: the jfc created before;
+ * @param[in] attr: ubcore jfc attributes;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jfc(struct ubcore_jfc *jfc, const struct ubcore_jfc_attr *attr,
+		      struct ubcore_udata *udata);
+/**
+ * destroy jfc from ubcore device.
+ * @param[in] jfc: the jfc created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jfc(struct ubcore_jfc *jfc);
 
 #endif
