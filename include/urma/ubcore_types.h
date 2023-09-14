@@ -72,6 +72,12 @@ struct ubcore_jetty_id {
 	uint32_t id;
 };
 
+struct ubcore_ubva {
+	union ubcore_eid eid;
+	uint32_t uasid;
+	uint64_t va;
+} __packed;
+
 struct ubcore_ht_param {
 	uint32_t size;
 	uint32_t node_offset; /* offset of hlist node in the hash table object */
@@ -167,6 +173,29 @@ struct ubcore_jetty_attr {
 	uint32_t mask; /* mask value refer to enum ubcore_jetty_attr_mask */
 	uint32_t rx_threshold;
 	enum ubcore_jetty_state state;
+};
+
+union ubcore_import_seg_flag {
+	struct {
+		uint32_t cacheable : 1;
+		uint32_t access : 6;
+		uint32_t mapping : 1;
+		uint32_t reserved : 24;
+	} bs;
+	uint32_t value;
+};
+
+union ubcore_reg_seg_flag {
+	struct {
+		uint32_t key_policy : 3;
+		uint32_t cacheable : 1;
+		uint32_t dsva : 1;
+		uint32_t access : 6;
+		uint32_t non_pin : 1;
+		uint32_t user_iova : 1;
+		uint32_t reserved : 19;
+	} bs;
+	uint32_t value;
 };
 
 struct ubcore_udrv_priv {
@@ -368,6 +397,58 @@ struct ubcore_jetty {
 	struct hlist_node hnode;
 	atomic_t use_cnt;
 	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
+};
+
+struct ubcore_key_id {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	uint32_t key_id;
+	atomic_t use_cnt;
+};
+
+struct ubcore_seg_cfg {
+	uint64_t va;
+	uint64_t len;
+	struct ubcore_key_id *keyid;
+	struct ubcore_key ukey;
+	union ubcore_reg_seg_flag flag;
+	uint64_t iova;
+};
+
+union ubcore_seg_attr {
+	struct {
+		uint32_t key_policy : 3;
+		uint32_t cacheable : 1;
+		uint32_t dsva : 1;
+		uint32_t access : 6;
+		uint32_t non_pin : 1;
+		uint32_t user_iova : 1;
+		uint32_t reserved : 19;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_seg {
+	struct ubcore_ubva ubva;
+	uint64_t len;
+	union ubcore_seg_attr attr;
+	uint32_t key_id;
+};
+
+struct ubcore_target_seg_cfg {
+	struct ubcore_seg seg;
+	union ubcore_import_seg_flag flag;
+	uint64_t mva; /* optional */
+	struct ubcore_key ukey;
+};
+
+struct ubcore_target_seg {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	struct ubcore_seg seg;
+	uint64_t mva;
+	struct ubcore_key_id *keyid;
+	atomic_t use_cnt;
 };
 
 enum ubcore_mtu {
@@ -654,6 +735,60 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*free_ucontext)(struct ubcore_ucontext *uctx);
+	/**
+	 * mmap doorbell or jetty buffer, etc
+	 * @param[in] uctx: the user context created before;
+	 * @param[in] vma: linux vma including vm_start, vm_pgoff, etc;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*mmap)(struct ubcore_ucontext *ctx, struct vm_area_struct *vma);
+
+	/* segment part */
+	/** alloc key id to ubep
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: key id pointer on success, NULL on error
+	 */
+	struct ubcore_key_id *(*alloc_key_id)(struct ubcore_device *dev,
+					      struct ubcore_udata *udata);
+
+	/** free key id from ubep
+	 * @param[in] key_id: the key id alloced before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*free_key_id)(struct ubcore_key_id *key_id);
+
+	/** register segment to ubep
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: segment attributes and configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: target segment pointer on success, NULL on error
+	 */
+	struct ubcore_target_seg *(*register_seg)(struct ubcore_device *dev,
+						  const struct ubcore_seg_cfg *cfg,
+						  struct ubcore_udata *udata);
+
+	/** unregister segment from ubep
+	 * @param[in] tseg: the segment registered before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*unregister_seg)(struct ubcore_target_seg *tseg);
+
+	/** import a remote segment to ubep
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: segment attributes and import configurations
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: target segment handle on success, NULL on error
+	 */
+	struct ubcore_target_seg *(*import_seg)(struct ubcore_device *dev,
+						const struct ubcore_target_seg_cfg *cfg,
+						struct ubcore_udata *udata);
+
+	/** unimport seg from ubep
+	 * @param[in] tseg: the segment imported before;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*unimport_seg)(struct ubcore_target_seg *tseg);
 
 	/* jetty part */
 	/**
