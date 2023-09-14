@@ -29,6 +29,7 @@
 #include <linux/rcupdate.h>
 #include <linux/scatterlist.h>
 #include <linux/mm.h>
+#include <urma/ubcore_opcode.h>
 
 #define UBCORE_MAX_DEV_NAME 64
 #define UBCORE_MAX_DRIVER_NAME 64
@@ -52,6 +53,12 @@ enum ubcore_transport_type {
 	UBCORE_TRANSPORT_IP,
 	UBCORE_TRANSPORT_MAX
 };
+
+#define UBCORE_ACCESS_LOCAL_WRITE (0x1 << 0)
+#define UBCORE_ACCESS_REMOTE_READ (0x1 << 1)
+#define UBCORE_ACCESS_REMOTE_WRITE (0x1 << 2)
+#define UBCORE_ACCESS_REMOTE_ATOMIC (0x1 << 3)
+#define UBCORE_ACCESS_REMOTE_INVALIDATE (0x1 << 4)
 
 union ubcore_eid {
 	uint8_t raw[UBCORE_EID_SIZE];
@@ -646,6 +653,137 @@ struct ubcore_tp {
 	void *priv; /* ubcore private data for tp management */
 };
 
+union ubcore_jfs_wr_flag {
+	struct {
+		uint32_t place_order : 2;	/* 0: There is no order with other WR.
+						 * 1: relax order.
+						 * 2: strong order.
+						 * 3: reserve.
+						 */
+		uint32_t comp_order : 1;	/* 0: There is no completion order with other WR
+						 * 1: Completion order with previous WR.
+						 */
+
+		uint32_t fence : 1;		/* 0: There is no fence.
+						 * 1: Fence with previous read and atomic WR
+						 */
+		uint32_t solicited_enable : 1;	/* 0: not solicited.
+						 * 1: solicited. It will trigger an event
+						 * on remote side
+						 */
+		uint32_t complete_enable : 1;	/* 0: Do not notify local process
+						 * after the task is complete.
+						 * 1: Notify local process
+						 * after the task is completed.
+						 */
+		uint32_t inline_flag : 1;	/* 0: No inline.
+						 * 1: Inline data.
+						 */
+		uint32_t reserved : 25;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_sge {
+	uint64_t addr;
+	uint32_t len;
+	struct ubcore_target_seg *tseg;
+};
+
+struct ubcore_sg {
+	struct ubcore_sge *sge;
+	uint32_t num_sge;
+};
+
+struct ubcore_rw_wr {
+	struct ubcore_sg src;
+	struct ubcore_sg dst;
+	struct ubcore_tjetty *tjetty; /* For write imm */
+	uint64_t notify_data; /* notify data or immeditate data in host byte order */
+};
+
+struct ubcore_send_wr {
+	struct ubcore_sg src;
+	struct ubcore_tjetty *tjetty;
+	uint8_t target_hint; /* hint of jetty in a target jetty group */
+	uint64_t imm_data; /* immeditate data in host byte order */
+	struct ubcore_target_seg *tseg; /* Used only when send with invalidate */
+};
+
+struct ubcore_cas_wr {
+	struct ubcore_sge *dst; /* len must be less or equal to 8 Bytes */
+	struct ubcore_sge *src; /* Local address for destination original value written back */
+	uint64_t cmp_data; /* Value compared with destination value */
+	uint64_t swap_data;	/* If destination value is the same as cmp_data,
+				 * destination value will be change to swap_data
+				 */
+};
+
+struct ubcore_cas_mask_wr {
+	struct ubcore_cas_wr cas;
+	uint64_t cmp_msk;
+	uint64_t swap_msk;
+};
+
+struct ubcore_faa_wr {
+	struct ubcore_sge *dst; /* len in the sge is the length of faa at remote side */
+	struct ubcore_sge *src; /* Local address for destination original value written back */
+	uint64_t operand; /* Addend */
+};
+
+struct ubcore_faa_mask_wr {
+	struct ubcore_faa_wr faa;
+	uint64_t msk;
+};
+
+struct ubcore_jfs_wr {
+	enum ubcore_opcode opcode;
+	union ubcore_jfs_wr_flag flag;
+	uintptr_t user_ctx;
+	union {
+		struct ubcore_rw_wr rw;
+		struct ubcore_send_wr send;
+		struct ubcore_cas_wr cas;
+		struct ubcore_cas_mask_wr cas_mask;
+		struct ubcore_faa_wr faa;
+		struct ubcore_faa_mask_wr faa_mask;
+	};
+	struct ubcore_jfs_wr *next;
+};
+
+struct ubcore_jfr_wr {
+	struct ubcore_sg src;
+	uintptr_t user_ctx;
+	struct ubcore_jfr_wr *next;
+};
+
+union ubcore_cr_flag {
+	struct {
+		uint8_t inline_flag : 1; /* Indicate CR contains inline data or not */
+		uint8_t s_r : 1; /* Indicate CR stands for sending or receiving */
+		uint8_t jetty : 1;	/* Indicate local_id or remote_id
+					 * in the CR stands for jetty or JFS/JFR
+					 */
+	} bs;
+	uint8_t value;
+};
+
+struct ubcore_cr {
+	enum ubcore_cr_status status;
+	uintptr_t user_ctx;
+	enum ubcore_cr_opcode opcode;
+	union ubcore_cr_flag flag;
+	uint32_t completion_len; /* The number of bytes transferred */
+	uint32_t local_id; /* Local jetty ID, or JFS ID, or JFR ID, depending on flag */
+	struct ubcore_jetty_id remote_id;	/* Valid only for receiving CR.
+						 * The remote jetty where received msg comes from,
+						 * may be jetty ID or JFS ID, depending on flag
+						 */
+	uint64_t imm_data; /* Valid only for received CR */
+	uint32_t tpn;
+	uintptr_t user_data; /* Use as pointer to local jetty struct */
+};
+
 enum ubcore_stats_key_type {
 	UBCORE_STATS_KEY_TP = 1,
 	UBCORE_STATS_KEY_TPG = 2,
@@ -861,6 +999,15 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*destroy_jfs)(struct ubcore_jfs *jfs);
+	/**
+	 * flush jfs from ubep.
+	 * @param[in] jfs: the jfs created before;
+	 * @param[in] cr_cnt: the maximum number of CRs expected to be returned;
+	 * @param[out] cr: the addr of returned CRs;
+	 * @return: the number of completion record returned,
+	 * 0 means no completion record returned, -1 on error
+	 */
+	int (*flush_jfs)(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr);
 
 	/**
 	 * create jfr with ubep.
@@ -950,6 +1097,16 @@ struct ubcore_ops {
 	int (*destroy_jetty)(struct ubcore_jetty *jetty);
 
 	/**
+	 * flush jetty from ubep.
+	 * @param[in] jetty: the jetty created before;
+	 * @param[in] cr_cnt: the maximum number of CRs expected to be returned;
+	 * @param[out] cr: the addr of returned CRs;
+	 * @return: the number of completion record returned,
+	 * 0 means no completion record returned, -1 on error
+	 */
+	int (*flush_jetty)(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr *cr);
+
+	/**
 	 * import jetty to ubep.
 	 * @param[in] dev: the ub device handle;
 	 * @param[in] cfg: remote jetty attributes and import configurations
@@ -965,6 +1122,51 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*unimport_jetty)(struct ubcore_tjetty *tjetty);
+
+	/** data path ops */
+	/**
+	 * post jfs wr.
+	 * @param[in] jfs: the jfs created before;
+	 * @param[in] wr: the wr to be posted;
+	 * @param[out] bad_wr: the first failed wr;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*post_jfs_wr)(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
+			   struct ubcore_jfs_wr **bad_wr);
+	/**
+	 * post jfr wr.
+	 * @param[in] jfr: the jfr created before;
+	 * @param[in] wr: the wr to be posted;
+	 * @param[out] bad_wr: the first failed wr;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*post_jfr_wr)(struct ubcore_jfr *jfr, const struct ubcore_jfr_wr *wr,
+			   struct ubcore_jfr_wr **bad_wr);
+	/**
+	 * post jetty send wr.
+	 * @param[in] jetty: the jetty created before;
+	 * @param[in] wr: the wr to be posted;
+	 * @param[out] bad_wr: the first failed wr;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*post_jetty_send_wr)(struct ubcore_jetty *jetty, const struct ubcore_jfs_wr *wr,
+				  struct ubcore_jfs_wr **bad_wr);
+	/**
+	 * post jetty receive wr.
+	 * @param[in] jetty: the jetty created before;
+	 * @param[in] wr: the wr to be posted;
+	 * @param[out] bad_wr: the first failed wr;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*post_jetty_recv_wr)(struct ubcore_jetty *jetty, const struct ubcore_jfr_wr *wr,
+				  struct ubcore_jfr_wr **bad_wr);
+	/**
+	 * poll jfc.
+	 * @param[in] jfc: the jfc created before;
+	 * @param[in] cr_cnt: the maximum number of CRs expected to be polled;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*poll_jfc)(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
 	/**
 	 * query_stats. success to query and buffer length is enough
 	 * @param[in] dev: the ub device handle;
