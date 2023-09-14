@@ -197,21 +197,121 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 
 static uint32_t ubcore_get_query_res_len(uint32_t type)
 {
+	switch (type) {
+	case UBCORE_RES_KEY_JFS:
+		return (uint32_t)sizeof(struct ubcore_res_jfs_val);
+	case UBCORE_RES_KEY_JFR:
+		return (uint32_t)sizeof(struct ubcore_res_jfr_val);
+	case UBCORE_RES_KEY_JETTY:
+		return (uint32_t)sizeof(struct ubcore_res_jetty_val);
+	case UBCORE_RES_KEY_JETTY_GROUP:
+		return (uint32_t)sizeof(struct ubcore_res_jetty_group_val);
+	case UBCORE_RES_KEY_JFC:
+		return (uint32_t)sizeof(struct ubcore_res_jfc_val);
+	case UBCORE_RES_KEY_URMA_DEV:
+		return (uint32_t)sizeof(struct ubcore_res_dev_val);
+	default:
+		break;
+	}
 	return 0;
 }
 
 static void ubcore_dealloc_res_dev(struct ubcore_res_dev_val *ubcore_addr)
 {
+	if (ubcore_addr->jfs_list != NULL) {
+		vfree(ubcore_addr->jfs_list);
+		ubcore_addr->jfs_list = NULL;
+	}
+	if (ubcore_addr->jfr_list != NULL) {
+		vfree(ubcore_addr->jfr_list);
+		ubcore_addr->jfr_list = NULL;
+	}
+	if (ubcore_addr->jfc_list != NULL) {
+		vfree(ubcore_addr->jfc_list);
+		ubcore_addr->jfc_list = NULL;
+	}
+	if (ubcore_addr->jetty_list != NULL) {
+		vfree(ubcore_addr->jetty_list);
+		ubcore_addr->jetty_list = NULL;
+	}
+	if (ubcore_addr->jetty_group_list != NULL) {
+		vfree(ubcore_addr->jetty_group_list);
+		ubcore_addr->jetty_group_list = NULL;
+	}
 }
 
 static int ubcore_fill_res_addr(struct ubcore_res_dev_val *ubcore_addr)
 {
+	ubcore_addr->jfs_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfs_cnt);
+	if (ubcore_addr->jfs_list == NULL)
+		goto free_seg_list;
+
+	ubcore_addr->jfr_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfr_cnt);
+	if (ubcore_addr->jfr_list == NULL)
+		goto free_jfs_list;
+
+	ubcore_addr->jfc_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfc_cnt);
+	if (ubcore_addr->jfc_list == NULL)
+		goto free_jfr_list;
+
+	ubcore_addr->jetty_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jetty_cnt);
+	if (ubcore_addr->jetty_list == NULL)
+		goto free_jfc_list;
+
+	ubcore_addr->jetty_group_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jetty_group_cnt);
+	if (ubcore_addr->jetty_group_list == NULL)
+		goto free_jetty_list;
+
 	return 0;
+free_jetty_list:
+	vfree(ubcore_addr->jetty_list);
+free_jfc_list:
+	vfree(ubcore_addr->jfc_list);
+free_jfr_list:
+	vfree(ubcore_addr->jfr_list);
+free_jfs_list:
+	vfree(ubcore_addr->jfs_list);
+free_seg_list:
+	vfree(ubcore_addr->seg_list);
+	return -ENOMEM;
 }
 
 static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
 				    struct ubcore_res_dev_val *ubcore_addr)
 {
+	int ret;
+
+	dev_val->jfs_cnt = ubcore_addr->jfs_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfs_list,
+				  ubcore_addr->jfs_list, dev_val->jfs_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jfr_cnt = ubcore_addr->jfr_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfr_list,
+				  ubcore_addr->jfr_list, dev_val->jfr_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jfc_cnt = ubcore_addr->jfc_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfc_list,
+				  ubcore_addr->jfc_list, dev_val->jfc_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jetty_cnt = ubcore_addr->jetty_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_list,
+				  ubcore_addr->jetty_list, dev_val->jetty_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jetty_group_cnt = ubcore_addr->jetty_group_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_group_list,
+				  ubcore_addr->jetty_group_list,
+				  dev_val->jetty_group_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
 	return 0;
 }
 
