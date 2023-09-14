@@ -73,6 +73,11 @@ union ubcore_eid {
 	} in6;
 };
 
+struct ubcore_ueid_cfg {
+	union ubcore_eid eid;
+	uint32_t upi;
+};
+
 struct ubcore_jetty_id {
 	union ubcore_eid eid;
 	uint32_t uasid;
@@ -818,7 +823,31 @@ struct ubcore_stats_val {
 			 */
 };
 
-struct ubcore_device;
+union ubcore_utp_mod_flag {
+	struct {
+		uint32_t spray_en : 1;	// Whether to enable end-side port number hashing,
+			// 0 : disabled, 1 : enabled
+		uint32_t reserved : 31;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_utp_attr {
+	union ubcore_utp_mod_flag flag;
+	uint16_t data_udp_start;
+	uint8_t udp_range;
+};
+
+union ubcore_utp_attr_mask {
+	struct {
+		uint32_t flag : 1;
+		uint32_t udp_port : 1;
+		uint32_t udp_range : 1;
+		uint32_t reserved : 29;
+	} bs;
+	uint32_t value;
+};
+
 struct ubcore_ops {
 	struct module *owner; /* kernel driver module */
 	char driver_name[UBCORE_MAX_DRIVER_NAME]; /* user space driver name */
@@ -830,6 +859,45 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*set_eid)(struct ubcore_device *dev, union ubcore_eid eid);
+	/**
+	 * set upi
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] vf_id: vf_id;
+	 * @param[in] idx: idx of upi in vf;
+	 * @param[in] upi: upi of vf to set
+	 * @return: 0 on success, other value on error
+	 */
+	int (*set_upi)(const struct ubcore_device *dev, uint16_t vf_id, uint16_t idx, uint32_t upi);
+	/**
+	 * add a function entity id (eid) to ub device
+	 * @param[in] dev: the ubcore_device handle;
+	 * @param[in] eid: function entity id (eid) to be added;
+	 * @return: the index of eid, less than 0 indicating error
+	 */
+	int (*add_eid)(struct ubcore_device *dev, const union ubcore_eid *eid);
+	/**
+	 * remove a function entity id (eid) specified by idx from ub device
+	 * @param[in] dev: the ubcore_device handle;
+	 * @param[in] idx: the idx of function entity id (eid) to be deleted;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*delete_eid_by_idx)(struct ubcore_device *dev, uint16_t idx);
+	/**
+	 * add a function entity id (eid) to ub device (for uvs)
+	 * @param[in] dev: the ubcore_device handle;
+	 * @param[in] vf_id: vf_id;
+	 * @param[in] cfg: eid and the upi of vf to which the eid belongs can be specified;
+	 * @return: the index of eid/upi, less than 0 indicating error
+	 */
+	int (*add_ueid)(struct ubcore_device *dev, uint16_t vf_id, struct ubcore_ueid_cfg *cfg);
+	/**
+	 * remove a function entity id (eid) specified by idx from ub device (for uvs)
+	 * @param[in] dev: the ubcore_device handle;
+	 * @param[in] vf_id: vf_id;
+	 * @param[in] idx: the idx of function entity id (eid) to be deleted;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*delete_ueid_by_idx)(struct ubcore_device *dev, uint16_t vf_id, uint16_t idx);
 	/**
 	 * query device attributes
 	 * @param[in] dev: the ub device handle;
@@ -1122,6 +1190,30 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*unimport_jetty)(struct ubcore_tjetty *tjetty);
+	/**
+	 * create tp.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] cfg: tp init attributes
+	 * @param[in] udata: ucontext and user space driver data
+	 * @return: tp pointer on success, NULL on error
+	 */
+	struct ubcore_tp *(*create_tp)(struct ubcore_device *dev, const struct ubcore_tp_cfg *cfg,
+				       struct ubcore_udata *udata);
+	/**
+	 * modify tp.
+	 * @param[in] tp: tp pointer created before
+	 * @param[in] attr: tp attributes
+	 * @param[in] mask: attr mask indicating the attributes to be modified
+	 * @return: 0 on success, other value on error
+	 */
+	int (*modify_tp)(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
+			 union ubcore_tp_attr_mask mask);
+	/**
+	 * destroy tp.
+	 * @param[in] tp: tp pointer created before
+	 * @return: 0 on success, other value on error
+	 */
+	int (*destroy_tp)(struct ubcore_tp *tp);
 
 	/** data path ops */
 	/**
@@ -1167,6 +1259,8 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*poll_jfc)(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
+	int (*config_utp)(struct ubcore_device *dev, uint32_t utp_id,
+			  const struct ubcore_utp_attr *attr, union ubcore_utp_attr_mask mask);
 	/**
 	 * query_stats. success to query and buffer length is enough
 	 * @param[in] dev: the ub device handle;
