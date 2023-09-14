@@ -72,6 +72,59 @@ struct ubcore_jetty_id {
 	uint32_t id;
 };
 
+struct ubcore_ht_param {
+	uint32_t size;
+	uint32_t node_offset; /* offset of hlist node in the hash table object */
+	uint32_t key_offset;
+	uint32_t key_size;
+	int (*cmp_f)(void *obj, const void *key);
+	void (*free_f)(void *obj);
+};
+
+struct ubcore_hash_table {
+	struct ubcore_ht_param p;
+	struct hlist_head *head;
+	spinlock_t lock;
+	struct kref kref;
+};
+
+union ubcore_jfc_flag {
+	struct {
+		uint32_t lock_free : 1;
+		uint32_t jfc_inline : 1;
+		uint32_t reserved : 30;
+	} bs;
+	uint32_t value;
+};
+
+union ubcore_jfs_flag {
+	struct {
+		/* 0: IDC_MODE.
+		 * 1: DC_MODE.
+		 * 2: LS_MODE
+		 */
+		uint32_t mode : 2;
+		uint32_t lock_free : 1;
+		uint32_t reserved : 29;
+	} bs;
+	uint32_t value;
+};
+
+union ubcore_jfr_flag {
+	struct {
+		uint32_t key_policy : 3;	/* 0: UBCORE_KEY_NONE
+						 * 1: UBCORE_KEY_PLAIN_TEXT
+						 * 2: UBCORE_KEY_SIGNED
+						 * 3: UBCORE_KEY_ALL_ENCRYPTED
+						 * 4: UBCORE_KEY_RESERVED
+						 */
+		uint32_t tag_matching : 1;
+		uint32_t lock_free : 1;
+		uint32_t reserved : 27;
+	} bs;
+	uint32_t value;
+};
+
 struct ubcore_udrv_priv {
 	uint64_t in_addr;
 	uint32_t in_len;
@@ -91,11 +144,186 @@ struct ubcore_udata {
 	struct ubcore_udrv_priv *udrv_data;
 };
 
+struct ubcore_jfc;
+typedef void (*ubcore_comp_callback_t)(struct ubcore_jfc *jfc);
+
+enum ubcore_event_type {
+	UBCORE_EVENT_JFC_ERR,
+	UBCORE_EVENT_JFS_FATAL,
+	UBCORE_EVENT_JFS_ACCESS_ERR,
+	UBCORE_EVENT_JFR_FATAL,
+	UBCORE_EVENT_JFR_ACCESS_ERR,
+	UBCORE_EVENT_JETTY_FATAL,
+	UBCORE_EVENT_JETTY_ACCESS_ERR,
+	UBCORE_EVENT_PORT_ACTIVE,
+	UBCORE_EVENT_PORT_ERR,
+	UBCORE_EVENT_DEV_FATAL,
+	UBCORE_EVENT_ID_CHANGE,
+	UBCORE_EVENT_TP_ERR
+};
+
+struct ubcore_event {
+	struct ubcore_device *ub_dev;
+	union {
+		struct ubcore_jfc *jfc;
+		struct ubcore_jfs *jfs;
+		struct ubcore_jfr *jfr;
+		struct ubcore_jetty *jetty;
+		struct ubcore_tp *tp;
+		uint32_t port_id;
+	} element;
+	enum ubcore_event_type event_type;
+};
+
+typedef void (*ubcore_event_callback_t)(struct ubcore_event *event, struct ubcore_ucontext *ctx);
+
+struct ubcore_event_handler {
+	void (*event_callback)(struct ubcore_event *event, struct ubcore_event_handler *handler);
+	struct list_head node;
+};
+
+struct ubcore_jfc_cfg {
+	uint32_t depth;
+	union ubcore_jfc_flag flag;
+	void *jfc_context;
+	uint32_t eq_id;
+};
+
+struct ubcore_jfc {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	struct ubcore_jfc_cfg jfc_cfg;
+	uint32_t id; /* allocated by driver */
+	ubcore_comp_callback_t jfce_handler;
+	ubcore_event_callback_t jfae_handler;
+	uint64_t urma_jfc; /* user space jfc pointer */
+	struct hlist_node hnode;
+	atomic_t use_cnt;
+};
+
 /* transport mode */
 enum ubcore_transport_mode {
 	UBCORE_TP_RM = 0x1, /* Reliable message */
 	UBCORE_TP_RC = 0x1 << 1, /* Reliable connection */
 	UBCORE_TP_UM = 0x1 << 2 /* Unreliable message */
+};
+
+struct ubcore_jfs_cfg {
+	uint32_t depth;
+	union ubcore_jfs_flag flag;
+	uint8_t priority;
+	uint8_t max_sge;
+	uint8_t max_rsge;
+	uint32_t max_inline_data;
+	uint8_t retry_cnt;
+	uint8_t rnr_retry;
+	uint8_t err_timeout;
+	void *jfs_context;
+	struct ubcore_jfc *jfc;
+	enum ubcore_transport_mode trans_mode;
+};
+
+struct ubcore_jfs {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	struct ubcore_jfs_cfg jfs_cfg;
+	uint32_t id; /* allocted by driver */
+	ubcore_event_callback_t jfae_handler;
+	uint64_t urma_jfs; /* user space jfs pointer */
+	struct hlist_node hnode;
+	atomic_t use_cnt;
+	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
+};
+
+struct ubcore_key {
+	uint32_t key;
+};
+
+struct ubcore_jfr_cfg {
+	uint32_t id; /* user may assign id */
+	uint32_t depth;
+	union ubcore_jfr_flag flag;
+	uint8_t max_sge;
+	uint8_t min_rnr_timer;
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_jfc *jfc;
+	struct ubcore_key ukey;
+	void *jfr_context;
+};
+
+struct ubcore_jfr {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	struct ubcore_jfr_cfg jfr_cfg;
+	uint32_t id; /* allocted by driver */
+	ubcore_event_callback_t jfae_handler;
+	uint64_t urma_jfr; /* user space jfr pointer */
+	struct hlist_node hnode;
+	atomic_t use_cnt;
+	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
+};
+
+union ubcore_jetty_flag {
+	struct {
+		uint32_t share_jfr : 1; /* 0: URMA_NO_SHARE_JFR.
+					 * 1: URMA_SHARE_JFR.
+					 */
+		uint32_t reserved : 31;
+	} bs;
+	uint32_t value;
+};
+
+struct ubcore_jetty_cfg {
+	uint32_t id; /* user may assign id */
+	uint32_t jfs_depth;
+	uint32_t jfr_depth;
+	union ubcore_jetty_flag flag;
+	struct ubcore_jfc *send_jfc;
+	struct ubcore_jfc *recv_jfc;
+	struct ubcore_jfr *jfr; /* shared jfr */
+	uint8_t max_send_sge;
+	uint8_t max_send_rsge;
+	uint8_t max_recv_sge;
+	uint32_t max_inline_data;
+	uint8_t priority;
+	uint8_t retry_cnt;
+	uint8_t rnr_retry;
+	uint8_t err_timeout;
+	uint8_t min_rnr_timer;
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_key ukey;
+	void *jetty_context;
+};
+
+struct ubcore_tjetty_cfg {
+	struct ubcore_jetty_id id; /* jfr, jetty or jetty group id to be imported */
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_key ukey; /* jfr, jetty or jetty group ukey value to be imported */
+};
+
+enum ubcore_target_type { UBCORE_JFR = 0, UBCORE_JETTY, UBCORE_JFR_GROUP, UBCORE_JETTY_GROUP };
+
+struct ubcore_tjetty {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	enum ubcore_target_type type;
+	struct ubcore_tjetty_cfg cfg;
+	struct ubcore_tp *tp; /* for UB transport device  */
+	atomic_t use_cnt;
+	struct mutex lock;
+};
+
+struct ubcore_jetty {
+	struct ubcore_device *ub_dev;
+	struct ubcore_ucontext *uctx;
+	struct ubcore_jetty_cfg jetty_cfg;
+	uint32_t id; /* allocted by driver */
+	struct ubcore_tjetty *remote_jetty; // bind to remote jetty
+	ubcore_event_callback_t jfae_handler;
+	uint64_t urma_jetty; /* user space jetty pointer */
+	struct hlist_node hnode;
+	atomic_t use_cnt;
+	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
 };
 
 enum ubcore_mtu {
