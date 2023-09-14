@@ -1312,7 +1312,7 @@ uapi-asm-generic:
 # ---------------------------------------------------------------------------
 
 # openEuler version variables
-include Makefile.oever
+include $(srctree)/Makefile.oever
 
 # KERNELRELEASE can change from a few different places, meaning version.h
 # needs to be updated, so this check is forced on all builds
