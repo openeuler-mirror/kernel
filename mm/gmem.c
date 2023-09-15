@@ -622,11 +622,24 @@ static int hmadvise_do_prefetch(gm_dev_t *dev, unsigned long addr, size_t size)
 	struct prefetch_data *data;
 	struct vm_area_struct *vma;
 	int res = GM_RET_SUCCESS;
+	unsigned long old_start;
+
+	/* overflow */
+	if (check_add_overflow(addr, size, &end))
+		return -EINVAL;
+
+	old_start = end;
 
 	/* Align addr by rounding outward to make page cover addr. */
-	end = round_up(addr + size, page_size);
+	end = round_up(end, page_size);
 	start = round_down(addr, page_size);
 	size = end - start;
+
+	if (!end && old_start)
+		return -EINVAL;
+
+	if (size == 0)
+		return 0;
 
 	mmap_read_lock(current->mm);
 	vma = find_vma(current->mm, start);
@@ -675,19 +688,30 @@ static int hmadvise_do_eagerfree(unsigned long addr, size_t size)
 		.size = page_size,
 		.copy = false,
 	};
+	unsigned long old_start;
 	vm_object_t *obj;
 
+	/* overflow */
+	if (check_add_overflow(addr, size, &end))
+		return -EINVAL;
+
+	old_start = addr;
+
 	/* Align addr by rounding inward to avoid excessive page release. */
-	end = round_down(addr + size, page_size);
+	end = round_down(end, page_size);
 	start = round_up(addr, page_size);
 	if (start >= end)
 		return ret;
+
+	/* Check to see whether len was rounded up from small -ve to zero */
+	if (old_start && !start)
+		return -EINVAL;
 
 	mmap_read_lock(current->mm);
 	do {
 		vma = find_vma(current->mm, start);
 		if (!vma || !vma_is_peer_shared(vma)) {
-			pr_err("gmem: not peer-shared vma, skip dontneed\n");
+			pr_info_ratelimited("gmem: not peer-shared vma, skip dontneed\n");
 			continue;
 		}
 		obj = vma->vm_obj;
