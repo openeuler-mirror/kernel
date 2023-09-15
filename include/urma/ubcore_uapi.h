@@ -243,4 +243,22 @@ int ubcore_query_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
  * @return: 0 on success, other value on error
  */
 int ubcore_delete_jfr(struct ubcore_jfr *jfr);
+/**
+ * create jetty with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jetty attributes and configurations
+ * @param[in] jfae_handler (optional): jetty async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jetty pointer on success, NULL on error
+ */
+struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
+					 const struct ubcore_jetty_cfg *cfg,
+					 ubcore_event_callback_t jfae_handler,
+					 struct ubcore_udata *udata);
+/**
+ * destroy jetty from ubcore device.
+ * @param[in] jetty: the jetty created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jetty(struct ubcore_jetty *jetty);
 #endif

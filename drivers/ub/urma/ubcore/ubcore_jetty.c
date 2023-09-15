@@ -402,3 +402,105 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jfr);
+
+static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg,
+				     const struct ubcore_jetty_cfg *user)
+{
+	if (cfg->jfs_depth < user->jfs_depth || cfg->max_send_sge < user->max_send_sge ||
+	    cfg->max_send_rsge < user->max_send_rsge ||
+	    cfg->max_inline_data < user->max_inline_data) {
+		ubcore_log_err("send attributes are not qualified.\n");
+		return -1;
+	}
+	if (cfg->jfr_depth < user->jfr_depth || cfg->max_recv_sge < user->max_recv_sge) {
+		ubcore_log_err("recv attributes are not qualified.\n");
+		return -1;
+	}
+	/* store the immutable and skip the driver updated send and recv attributes */
+	cfg->flag = user->flag;
+	cfg->send_jfc = user->send_jfc;
+	cfg->recv_jfc = user->recv_jfc;
+	cfg->jfr = user->jfr;
+	cfg->priority = user->priority;
+	cfg->retry_cnt = user->retry_cnt;
+	cfg->rnr_retry = user->rnr_retry;
+	cfg->err_timeout = user->err_timeout;
+	cfg->min_rnr_timer = user->min_rnr_timer;
+	cfg->trans_mode = user->trans_mode;
+	cfg->jetty_context = user->jetty_context;
+	cfg->ukey = user->ukey;
+	return 0;
+}
+
+struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
+					 const struct ubcore_jetty_cfg *cfg,
+					 ubcore_event_callback_t jfae_handler,
+					 struct ubcore_udata *udata)
+{
+	struct ubcore_jetty *jetty;
+
+	if (dev == NULL || cfg == NULL || dev->ops->create_jetty == NULL ||
+	    dev->ops->destroy_jetty == NULL)
+		return NULL;
+
+	jetty = dev->ops->create_jetty(dev, cfg, udata);
+	if (jetty == NULL) {
+		ubcore_log_err("failed to create jetty.\n");
+		return NULL;
+	}
+	if (check_and_fill_jetty_attr(&jetty->jetty_cfg, cfg) != 0) {
+		ubcore_log_err("jetty cfg is not qualified.\n");
+		(void)dev->ops->destroy_jetty(jetty);
+		return NULL;
+	}
+	jetty->ub_dev = dev;
+	jetty->uctx = ubcore_get_uctx(udata);
+	jetty->jfae_handler = jfae_handler;
+	atomic_set(&jetty->use_cnt, 0);
+
+	if (ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JETTY], &jetty->hnode, jetty->id) != 0) {
+		ubcore_destroy_tptable(&jetty->tptable);
+		(void)dev->ops->destroy_jetty(jetty);
+		ubcore_log_err("Failed to add jetty.\n");
+	}
+
+	atomic_inc(&cfg->send_jfc->use_cnt);
+	atomic_inc(&cfg->recv_jfc->use_cnt);
+	if (cfg->jfr)
+		atomic_inc(&cfg->jfr->use_cnt);
+	return jetty;
+}
+EXPORT_SYMBOL(ubcore_create_jetty);
+
+int ubcore_delete_jetty(struct ubcore_jetty *jetty)
+{
+	struct ubcore_jfc *send_jfc;
+	struct ubcore_jfc *recv_jfc;
+	struct ubcore_device *dev;
+	struct ubcore_jfr *jfr;
+	uint32_t jetty_id;
+	int ret;
+
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->destroy_jetty == NULL)
+		return -1;
+
+	send_jfc = jetty->jetty_cfg.send_jfc;
+	recv_jfc = jetty->jetty_cfg.recv_jfc;
+	jfr = jetty->jetty_cfg.jfr;
+	jetty_id = jetty->id;
+	dev = jetty->ub_dev;
+	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JETTY], &jetty->hnode);
+	ret = dev->ops->destroy_jetty(jetty);
+	if (ret < 0) {
+		ubcore_log_err("UBEP failed to destroy jetty, jetty_id:%u.\n", jetty_id);
+	} else {
+		if (send_jfc)
+			atomic_dec(&send_jfc->use_cnt);
+		if (recv_jfc)
+			atomic_dec(&recv_jfc->use_cnt);
+		if (jfr)
+			atomic_dec(&jfr->use_cnt);
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_jetty);
