@@ -256,9 +256,36 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 					 ubcore_event_callback_t jfae_handler,
 					 struct ubcore_udata *udata);
 /**
+ * modify jetty attributes.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] attr: ubcore jetty attributes;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jetty(struct ubcore_jetty *jetty, const struct ubcore_jetty_attr *attr,
+			struct ubcore_udata *udata);
+/**
+ * query jetty from ubcore device.
+ * @param[in] jetty: the jetty created before;
+ * @param[out] cfg: jetty configurations;
+ * @param[out] attr: ubcore jetty attributes;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_cfg *cfg,
+		       struct ubcore_jetty_attr *attr);
+/**
  * destroy jetty from ubcore device.
  * @param[in] jetty: the jetty created before;
  * @return: 0 on success, other value on error
  */
 int ubcore_delete_jetty(struct ubcore_jetty *jetty);
+/**
+ * return the wrs in JETTY that is not consumed to the application through cr.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] cr_cnt: the maximum number of CRs expected to be returned;
+ * @param[out] cr: the addr of returned CRs;
+ * @return: the number of completion record returned, 0 means no completion record returned,
+ * -1 on error
+ */
+int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr *cr);
 #endif

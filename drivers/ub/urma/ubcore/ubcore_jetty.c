@@ -472,6 +472,48 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 }
 EXPORT_SYMBOL(ubcore_create_jetty);
 
+int ubcore_modify_jetty(struct ubcore_jetty *jetty, const struct ubcore_jetty_attr *attr,
+			struct ubcore_udata *udata)
+{
+	struct ubcore_device *dev;
+	uint32_t jetty_id;
+	int ret;
+
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->modify_jetty == NULL ||
+	    attr == NULL)
+		return -EINVAL;
+
+	jetty_id = jetty->id;
+	dev = jetty->ub_dev;
+
+	ret = dev->ops->modify_jetty(jetty, attr, udata);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to modify jetty, jetty_id:%u.\n", jetty_id);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_modify_jetty);
+
+int ubcore_query_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_cfg *cfg,
+		       struct ubcore_jetty_attr *attr)
+{
+	struct ubcore_device *dev;
+	uint32_t jetty_id;
+	int ret;
+
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->query_jetty == NULL)
+		return -EINVAL;
+
+	jetty_id = jetty->id;
+	dev = jetty->ub_dev;
+	ret = dev->ops->query_jetty(jetty, cfg, attr);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to query jetty, jetty_id:%u.\n", jetty_id);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_query_jetty);
+
 int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 {
 	struct ubcore_jfc *send_jfc;
@@ -504,3 +546,18 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jetty);
+
+int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr *cr)
+{
+	struct ubcore_ops *dev_ops;
+
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
+	    jetty->ub_dev->ops->flush_jetty == NULL || cr == NULL) {
+		ubcore_log_err("Invalid parameter");
+		return -EINVAL;
+	}
+
+	dev_ops = jetty->ub_dev->ops;
+	return dev_ops->flush_jetty(jetty, cr_cnt, cr);
+}
+EXPORT_SYMBOL(ubcore_flush_jetty);
