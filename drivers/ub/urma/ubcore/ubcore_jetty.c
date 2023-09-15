@@ -203,6 +203,46 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubc
 }
 EXPORT_SYMBOL(ubcore_create_jfs);
 
+int ubcore_modify_jfs(struct ubcore_jfs *jfs, const struct ubcore_jfs_attr *attr,
+		      struct ubcore_udata *udata)
+{
+	struct ubcore_device *dev;
+	uint32_t jfs_id;
+	int ret;
+
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops->modify_jfs == NULL)
+		return -EINVAL;
+
+	jfs_id = jfs->id;
+	dev = jfs->ub_dev;
+	ret = dev->ops->modify_jfs(jfs, attr, udata);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to modify jfs, jfs_id:%u.\n", jfs_id);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_modify_jfs);
+
+int ubcore_query_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_cfg *cfg,
+		     struct ubcore_jfs_attr *attr)
+{
+	struct ubcore_device *dev;
+	uint32_t jfs_id;
+	int ret;
+
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops->query_jfs == NULL)
+		return -EINVAL;
+
+	jfs_id = jfs->id;
+	dev = jfs->ub_dev;
+	ret = dev->ops->query_jfs(jfs, cfg, attr);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to query jfs, jfs_id:%u.\n", jfs_id);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_query_jfs);
+
 int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 {
 	struct ubcore_device *dev;
@@ -226,3 +266,18 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jfs);
+
+int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr)
+{
+	struct ubcore_ops *dev_ops;
+
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL ||
+	    jfs->ub_dev->ops->flush_jfs == NULL || cr == NULL) {
+		ubcore_log_err("Invalid parameter");
+		return -EINVAL;
+	}
+
+	dev_ops = jfs->ub_dev->ops;
+	return dev_ops->flush_jfs(jfs, cr_cnt, cr);
+}
+EXPORT_SYMBOL(ubcore_flush_jfs);

@@ -175,12 +175,38 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc);
 struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubcore_jfs_cfg *cfg,
 				     ubcore_event_callback_t jfae_handler,
 				     struct ubcore_udata *udata);
-
+/**
+ * modify jfs from ubcore device.
+ * @param[in] jfs: the jfs created before;
+ * @param[in] attr: ubcore jfs attributes;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jfs(struct ubcore_jfs *jfs, const struct ubcore_jfs_attr *attr,
+		      struct ubcore_udata *udata);
+/**
+ * query jfs from ubcore device.
+ * @param[in] jfs: the jfs created before;
+ * @param[out] cfg: jfs configurations;
+ * @param[out] attr: ubcore jfs attributes;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_cfg *cfg,
+		     struct ubcore_jfs_attr *attr);
 /**
  * destroy jfs from ubcore device.
  * @param[in] jfs: the jfs created before;
  * @return: 0 on success, other value on error
  */
 int ubcore_delete_jfs(struct ubcore_jfs *jfs);
+/**
+ * return the wrs in JFS that is not consumed to the application through cr.
+ * @param[in] jfs: the jfs created before;
+ * @param[in] cr_cnt: the maximum number of CRs expected to be returned;
+ * @param[out] cr: the addr of returned CRs;
+ * @return: the number of completion record returned, 0 means no completion record returned,
+ * -1 on error
+ */
+int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr);
 
 #endif
