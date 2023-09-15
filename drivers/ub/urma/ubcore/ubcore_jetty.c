@@ -29,6 +29,24 @@
 #include <urma/ubcore_uapi.h>
 #include "ubcore_priv.h"
 
+struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id)
+{
+	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JFC], jfc_id, &jfc_id);
+}
+EXPORT_SYMBOL(ubcore_find_jfc);
+
+struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id)
+{
+	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JFS], jfs_id, &jfs_id);
+}
+EXPORT_SYMBOL(ubcore_find_jfs);
+
+struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id)
+{
+	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JFR], jfr_id, &jfr_id);
+}
+EXPORT_SYMBOL(ubcore_find_jfr);
+
 static uint32_t ubcore_get_eq_id(const struct ubcore_device *dev)
 {
 	uint32_t eq_id = 0;
@@ -644,3 +662,9 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	return dev->ops->unimport_jetty(tjetty);
 }
 EXPORT_SYMBOL(ubcore_unimport_jetty);
+
+struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id)
+{
+	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JETTY], jetty_id, &jetty_id);
+}
+EXPORT_SYMBOL(ubcore_find_jetty);

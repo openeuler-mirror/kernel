@@ -320,4 +320,20 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
  * @return: 0 on success, other value on error
  */
 int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
+/**
+ * operation of user ioctl cmd.
+ * @param[in] k_user_ctl: kdrv user control command pointer;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl);
+
+/* The APIs below are deprecated, should not be called by driver or ubcore client */
+struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
+
+struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id);
+
+struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id);
+
+struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id);
+
 #endif
