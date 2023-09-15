@@ -473,8 +473,53 @@ void ubcore_unregister_device(struct ubcore_device *dev)
 }
 EXPORT_SYMBOL(ubcore_unregister_device);
 
+void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_event_handler *handler)
+{
+	unsigned long flags;
+
+	if (dev == NULL || handler == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	list_add_tail(&handler->node, &dev->event_handler_list);
+	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+}
+EXPORT_SYMBOL(ubcore_register_event_handler);
+
+void ubcore_unregister_event_handler(struct ubcore_device *dev,
+				     struct ubcore_event_handler *handler)
+{
+	unsigned long flags;
+
+	if (dev == NULL || handler == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	list_del(&handler->node);
+	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+}
+EXPORT_SYMBOL(ubcore_unregister_event_handler);
+
 void ubcore_dispatch_async_event(struct ubcore_event *event)
 {
+	struct ubcore_event_handler *handler;
+	struct ubcore_device *dev;
+	unsigned long flags;
+
+	if (event == NULL || event->ub_dev == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	dev = event->ub_dev;
+	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	list_for_each_entry(handler, &dev->event_handler_list, node)
+		handler->event_callback(event, handler);
+	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
 }
 EXPORT_SYMBOL(ubcore_dispatch_async_event);
 

@@ -165,6 +165,13 @@ int ubcore_modify_jfc(struct ubcore_jfc *jfc, const struct ubcore_jfc_attr *attr
  */
 int ubcore_delete_jfc(struct ubcore_jfc *jfc);
 /**
+ * rearm jfc.
+ * @param[in] jfc: the jfc created before;
+ * @param[in] solicited_only: rearm notify by message marked with solicited flag
+ * @return: 0 on success, other value on error
+ */
+int ubcore_rearm_jfc(struct ubcore_jfc *jfc, bool solicited_only);
+/**
  * create jfs with ubcore device.
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: jfs configurations
@@ -326,6 +333,21 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
  * @return: 0 on success, other value on error
  */
 int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl);
+/**
+ * Client register an async_event handler to ubcore
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] handler: async_event handler to be registered
+ * Note: the handler will be called when driver reports an async_event with
+ * ubcore_dispatch_async_event
+ */
+void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_event_handler *handler);
+/**
+ * Client unregister async_event handler from ubcore
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] handler: async_event handler to be unregistered
+ */
+void ubcore_unregister_event_handler(struct ubcore_device *dev,
+				     struct ubcore_event_handler *handler);
 
 /* The APIs below are deprecated, should not be called by driver or ubcore client */
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);

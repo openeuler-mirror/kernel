@@ -5,9 +5,11 @@
 
 ubcore-objs := ubcore_main.o \
 			ubcore_device.o	\
+			ubcore_jetty.o \
 			ubcore_umem.o \
 			ubcore_tp.o \
 			ubcore_hash_table.o \
-			ubcore_netlink.o
+			ubcore_netlink.o \
+			ubcore_dp.o
 
 obj-$(CONFIG_UB) += ubcore.o

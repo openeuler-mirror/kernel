@@ -28,6 +28,8 @@
 #include <urma/ubcore_types.h>
 #include <urma/ubcore_uapi.h>
 #include "ubcore_priv.h"
+#include "ubcore_hash_table.h"
+#include "ubcore_tp.h"
 
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id)
 {
@@ -339,14 +341,6 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubc
 	jfr->ub_dev = dev;
 	jfr->uctx = ubcore_get_uctx(udata);
 	jfr->jfae_handler = jfae_handler;
-	if (ubcore_jfr_need_advise(jfr)) {
-		jfr->tptable = ubcore_create_tptable();
-		if (jfr->tptable == NULL) {
-			(void)dev->ops->destroy_jfr(jfr);
-			ubcore_log_err("Failed to create tp table in the jfr.\n");
-			return NULL;
-		}
-	}
 	atomic_set(&jfr->use_cnt, 0);
 
 	atomic_inc(&cfg->jfc->use_cnt);
@@ -516,12 +510,6 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 	jetty->uctx = ubcore_get_uctx(udata);
 	jetty->jfae_handler = jfae_handler;
 	atomic_set(&jetty->use_cnt, 0);
-
-	if (ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JETTY], &jetty->hnode, jetty->id) != 0) {
-		ubcore_destroy_tptable(&jetty->tptable);
-		(void)dev->ops->destroy_jetty(jetty);
-		ubcore_log_err("Failed to add jetty.\n");
-	}
 
 	atomic_inc(&cfg->send_jfc->use_cnt);
 	atomic_inc(&cfg->recv_jfc->use_cnt);
