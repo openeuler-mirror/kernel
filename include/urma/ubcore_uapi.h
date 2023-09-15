@@ -208,5 +208,39 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs);
  * -1 on error
  */
 int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr);
-
+/**
+ * create jfr with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jfr configurations
+ * @param[in] jfae_handler (optional): jfr async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jfr pointer on success, NULL on error
+ */
+struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata);
+/**
+ * modify jfr from ubcore device.
+ * @param[in] jfr: the jfr created before;
+ * @param[in] attr: ubcore jfr attr;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+		      struct ubcore_udata *udata);
+/**
+ * query jfr from ubcore device.
+ * @param[in] jfr: the jfr created before;
+ * @param[out] cfg: jfr configurations;
+ * @param[out] attr: ubcore jfr attributes;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
+		     struct ubcore_jfr_attr *attr);
+/**
+ * destroy jfr from ubcore device.
+ * @param[in] jfr: the jfr created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jfr(struct ubcore_jfr *jfr);
 #endif

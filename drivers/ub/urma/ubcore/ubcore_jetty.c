@@ -281,3 +281,124 @@ int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr)
 	return dev_ops->flush_jfs(jfs, cr_cnt, cr);
 }
 EXPORT_SYMBOL(ubcore_flush_jfs);
+
+static int check_and_fill_jfr_attr(struct ubcore_jfr_cfg *cfg, const struct ubcore_jfr_cfg *user)
+{
+	if (cfg->depth < user->depth || cfg->max_sge < user->max_sge)
+		return -1;
+
+	/* store the immutable and skip the driver updated attributes including depth, max_sge */
+	cfg->flag = user->flag;
+	cfg->min_rnr_timer = user->min_rnr_timer;
+	cfg->trans_mode = user->trans_mode;
+	cfg->ukey = user->ukey;
+	cfg->jfr_context = user->jfr_context;
+	cfg->jfc = user->jfc;
+	return 0;
+}
+
+struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata)
+{
+	struct ubcore_jfr *jfr;
+
+	if (dev == NULL || cfg == NULL || dev->ops->create_jfr == NULL ||
+	    dev->ops->destroy_jfr == NULL)
+		return NULL;
+
+	jfr = dev->ops->create_jfr(dev, cfg, udata);
+	if (jfr == NULL) {
+		ubcore_log_err("failed to create jfr.\n");
+		return NULL;
+	}
+
+	if (check_and_fill_jfr_attr(&jfr->jfr_cfg, cfg) != 0) {
+		ubcore_log_err("jfr cfg is not qualified.\n");
+		(void)dev->ops->destroy_jfr(jfr);
+		return NULL;
+	}
+	jfr->ub_dev = dev;
+	jfr->uctx = ubcore_get_uctx(udata);
+	jfr->jfae_handler = jfae_handler;
+	if (ubcore_jfr_need_advise(jfr)) {
+		jfr->tptable = ubcore_create_tptable();
+		if (jfr->tptable == NULL) {
+			(void)dev->ops->destroy_jfr(jfr);
+			ubcore_log_err("Failed to create tp table in the jfr.\n");
+			return NULL;
+		}
+	}
+	atomic_set(&jfr->use_cnt, 0);
+
+	atomic_inc(&cfg->jfc->use_cnt);
+	return jfr;
+}
+EXPORT_SYMBOL(ubcore_create_jfr);
+
+int ubcore_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+		      struct ubcore_udata *udata)
+{
+	struct ubcore_device *dev;
+	uint32_t jfr_id;
+	int ret;
+
+	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops->modify_jfr == NULL)
+		return -EINVAL;
+
+	jfr_id = jfr->id;
+	dev = jfr->ub_dev;
+	ret = dev->ops->modify_jfr(jfr, attr, udata);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to modify jfr, jfr_id:%u.\n", jfr_id);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_modify_jfr);
+
+int ubcore_query_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
+		     struct ubcore_jfr_attr *attr)
+{
+	struct ubcore_device *dev;
+	uint32_t jfr_id;
+	int ret;
+
+	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops->query_jfr == NULL)
+		return -EINVAL;
+
+	jfr_id = jfr->id;
+	dev = jfr->ub_dev;
+	ret = dev->ops->query_jfr(jfr, cfg, attr);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to query jfr, jfr_id:%u.\n", jfr_id);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_query_jfr);
+
+int ubcore_delete_jfr(struct ubcore_jfr *jfr)
+{
+	struct ubcore_device *dev;
+	struct ubcore_jfc *jfc;
+	uint32_t jfr_id;
+	int ret;
+
+	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops->destroy_jfr == NULL)
+		return -EINVAL;
+
+	if (WARN_ON_ONCE(atomic_read(&jfr->use_cnt)))
+		return -EBUSY;
+
+	jfc = jfr->jfr_cfg.jfc;
+	jfr_id = jfr->id;
+	dev = jfr->ub_dev;
+	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFR], &jfr->hnode);
+	ret = dev->ops->destroy_jfr(jfr);
+	if (ret < 0)
+		ubcore_log_err("UBEP failed to destroy jfr, jfr_id:%u.\n", jfr_id);
+	else
+		atomic_dec(&jfc->use_cnt);
+
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_jfr);
