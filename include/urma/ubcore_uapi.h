@@ -288,4 +288,36 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty);
  * -1 on error
  */
 int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr *cr);
+/**
+ * import jfr to ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: remote jfr attributes and import configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target jfr pointer on success, NULL on error
+ */
+struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
+					const struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_udata *udata);
+/**
+ * unimport jfr from ubcore device.
+ * @param[in] tjfr: the target jfr imported before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr);
+/**
+ * import jetty to ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: remote jetty attributes and import configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target jetty pointer on success, NULL on error
+ */
+struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
+					  const struct ubcore_tjetty_cfg *cfg,
+					  struct ubcore_udata *udata);
+/**
+ * unimport jetty from ubcore device.
+ * @param[in] tjetty: the target jetty imported before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
 #endif

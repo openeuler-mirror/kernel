@@ -403,6 +403,47 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 }
 EXPORT_SYMBOL(ubcore_delete_jfr);
 
+struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
+					const struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_udata *udata)
+{
+	struct ubcore_tjetty *tjfr;
+
+	if (dev == NULL || cfg == NULL || dev->ops->import_jfr == NULL ||
+	    dev->ops->unimport_jfr == NULL || !ubcore_have_tp_ops(dev))
+		return NULL;
+
+	tjfr = dev->ops->import_jfr(dev, cfg, udata);
+	if (tjfr == NULL) {
+		ubcore_log_err("UBEP failed to import jfr, jfr_id:%u.\n", cfg->id.id);
+		return NULL;
+	}
+	tjfr->cfg = *cfg;
+	tjfr->ub_dev = dev;
+	tjfr->uctx = ubcore_get_uctx(udata);
+	tjfr->type = UBCORE_JFR;
+	atomic_set(&tjfr->use_cnt, 0);
+
+	tjfr->tp = NULL;
+
+	return tjfr;
+}
+EXPORT_SYMBOL(ubcore_import_jfr);
+
+int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
+{
+	struct ubcore_device *dev;
+
+	if (tjfr == NULL || tjfr->ub_dev == NULL || tjfr->ub_dev->ops->unimport_jfr == NULL ||
+	    !ubcore_have_tp_ops(tjfr->ub_dev))
+		return -1;
+
+	dev = tjfr->ub_dev;
+
+	return dev->ops->unimport_jfr(tjfr);
+}
+EXPORT_SYMBOL(ubcore_unimport_jfr);
+
 static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg,
 				     const struct ubcore_jetty_cfg *user)
 {
@@ -561,3 +602,45 @@ int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr 
 	return dev_ops->flush_jetty(jetty, cr_cnt, cr);
 }
 EXPORT_SYMBOL(ubcore_flush_jetty);
+
+struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
+					  const struct ubcore_tjetty_cfg *cfg,
+					  struct ubcore_udata *udata)
+{
+	struct ubcore_tjetty *tjetty;
+
+	if (dev == NULL || cfg == NULL || dev->ops->import_jetty == NULL ||
+	    dev->ops->unimport_jetty == NULL || !ubcore_have_tp_ops(dev))
+		return NULL;
+
+	tjetty = dev->ops->import_jetty(dev, cfg, udata);
+	if (tjetty == NULL) {
+		ubcore_log_err("UBEP failed to import jetty, jetty_id:%u.\n", cfg->id.id);
+		return NULL;
+	}
+	tjetty->cfg = *cfg;
+	tjetty->ub_dev = dev;
+	tjetty->uctx = ubcore_get_uctx(udata);
+	tjetty->type = UBCORE_JETTY;
+	atomic_set(&tjetty->use_cnt, 0);
+
+	mutex_init(&tjetty->lock);
+	tjetty->tp = NULL;
+
+	return tjetty;
+}
+EXPORT_SYMBOL(ubcore_import_jetty);
+
+int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
+{
+	struct ubcore_device *dev;
+
+	if (tjetty == NULL || tjetty->ub_dev == NULL ||
+	    tjetty->ub_dev->ops->unimport_jetty == NULL || !ubcore_have_tp_ops(tjetty->ub_dev))
+		return -1;
+
+	dev = tjetty->ub_dev;
+
+	return dev->ops->unimport_jetty(tjetty);
+}
+EXPORT_SYMBOL(ubcore_unimport_jetty);
