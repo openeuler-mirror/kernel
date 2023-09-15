@@ -25,6 +25,14 @@
 
 enum UOBJ_CLASS_ID {
 	UOBJ_CLASS_ROOT, /* used by framework */
+	UOBJ_CLASS_JFR,
+	UOBJ_CLASS_JFS,
+	UOBJ_CLASS_JFC,
+	UOBJ_CLASS_JFCE,
+	UOBJ_CLASS_JFAE,
+	UOBJ_CLASS_TARGET_JFR,
+	UOBJ_CLASS_JETTY,
+	UOBJ_CLASS_TARGET_JETTY
 };
 
 enum uobj_access {
@@ -77,6 +85,53 @@ struct uobj_fd_type {
 struct uobj_class_def {
 	uint16_t id;
 	const struct uobj_type *type_attrs;
+};
+
+struct uburma_jfe {
+	spinlock_t lock;
+	struct list_head event_list;
+	wait_queue_head_t poll_wait;
+
+	bool deleting;
+};
+
+struct uburma_jfce_uobj {
+	struct uburma_uobj uobj;
+	struct uburma_jfe jfe;
+};
+
+struct uburma_jfc_uobj {
+	struct uburma_uobj uobj; /* base uobj struct */
+	struct uburma_uobj *jfce; /* associated jfce uobj */
+	struct list_head comp_event_list;
+	struct list_head async_event_list;
+	uint32_t comp_events_reported;
+	uint32_t async_events_reported;
+};
+
+struct uburma_jfs_uobj {
+	struct uburma_uobj uobj; /* base uobj struct */
+	struct list_head async_event_list;
+	uint32_t async_events_reported;
+};
+
+struct uburma_jfr_uobj {
+	struct uburma_uobj uobj; /* base uobj struct */
+	struct list_head async_event_list;
+	uint32_t async_events_reported;
+};
+
+struct uburma_jetty_uobj {
+	struct uburma_uobj uobj; /* base uobj struct */
+	struct list_head async_event_list;
+	uint32_t async_events_reported;
+};
+
+struct uburma_jfae_uobj {
+	struct uburma_uobj uobj;
+	struct uburma_jfe jfe;
+	struct ubcore_event_handler event_handler;
+	struct ubcore_device *dev;
 };
 
 extern const struct uobj_type_class uobj_idr_type_class;
@@ -156,5 +211,17 @@ static inline bool uobj_type_is_fd(const struct uburma_uobj *uobj)
 /* Do not lock uobj without cleanup_rwsem locked */
 #define uobj_get_del(class_id, _id, ufile)                                                         \
 	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_NOLOCK)
+
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFCE;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFAE;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFC;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFR;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFS;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JETTY;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TARGET_JFR;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TARGET_JETTY;
+
+extern const struct file_operations uburma_jfce_fops;
+extern const struct file_operations uburma_jfae_fops;
 
 #endif /* UBURMA_UOBJ_H */
