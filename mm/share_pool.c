@@ -1777,9 +1777,9 @@ static void sp_munmap(struct mm_struct *mm, unsigned long addr,
 {
 	int err;
 
-	down_write(&mm->mmap_lock);
+	mmap_write_lock(mm);
 	if (unlikely(!mmget_not_zero(mm))) {
-		up_write(&mm->mmap_lock);
+		mmap_write_unlock(mm);
 		pr_warn("munmap: target mm is exiting\n");
 		return;
 	}
@@ -1789,7 +1789,7 @@ static void sp_munmap(struct mm_struct *mm, unsigned long addr,
 	if (err)
 		pr_err("failed to unmap VA %pK when sp munmap, %d\n", (void *)addr, err);
 
-	up_write(&mm->mmap_lock);
+	mmap_write_unlock(mm);
 	mmput_async(mm);
 }
 
@@ -2064,6 +2064,8 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 	 * depends on this feature (and MAP_LOCKED) to work correctly.
 	 */
 	ret = do_mm_populate(mm, spa->va_start, populate, 0);
+	if (ac && (ac->sp_flags & SP_HUGEPAGE) && unlikely(ret == -EFAULT))
+		ret = -ENOMEM;
 	if (ret) {
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn("allocation failed, current thread is killed\n");
@@ -2090,9 +2092,9 @@ static int sp_map_spa_to_mm(struct mm_struct *mm, struct sp_area *spa,
 	unsigned long mmap_addr;
 	unsigned long populate = 0;
 
-	down_write(&mm->mmap_lock);
+	mmap_write_lock(mm);
 	if (unlikely(!mmget_not_zero(mm))) {
-		up_write(&mm->mmap_lock);
+		mmap_write_unlock(mm);
 		pr_warn("sp_map: target mm is exiting\n");
 		return SP_SKIP_ERR;
 	}
@@ -2100,19 +2102,19 @@ static int sp_map_spa_to_mm(struct mm_struct *mm, struct sp_area *spa,
 	/* when success, mmap_addr == spa->va_start */
 	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
 	if (IS_ERR_VALUE(mmap_addr)) {
-		up_write(&mm->mmap_lock);
+		mmap_write_unlock(mm);
 		mmput_async(mm);
 		pr_err("%s, sp mmap failed %ld\n", str, mmap_addr);
 		return (int)mmap_addr;
 	}
 
 	if (spa->type == SPA_TYPE_ALLOC) {
-		up_write(&mm->mmap_lock);
+		mmap_write_unlock(mm);
 		ret = sp_alloc_populate(mm, spa, populate, ac);
 		if (ret) {
-			down_write(&mm->mmap_lock);
+			mmap_write_lock(mm);
 			do_munmap(mm, mmap_addr, spa_size(spa), NULL);
-			up_write(&mm->mmap_lock);
+			mmap_write_unlock(mm);
 		}
 	} else {
 		ret = sp_k2u_populate(mm, spa);
@@ -2120,23 +2122,35 @@ static int sp_map_spa_to_mm(struct mm_struct *mm, struct sp_area *spa,
 			do_munmap(mm, mmap_addr, spa_size(spa), NULL);
 			pr_info("k2u populate failed, %d\n", ret);
 		}
-		up_write(&mm->mmap_lock);
+		mmap_write_unlock(mm);
 	}
 	mmput_async(mm);
 
 	return ret;
 }
 
-static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *ac)
+static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *ac,
+				  struct sp_group_node *spg_node)
 {
-	int ret = -EINVAL;
+	int ret = 0;
 	int mmap_ret = 0;
 	struct mm_struct *mm;
-	struct sp_group_node *spg_node;
+	bool reach_current = false;
+
+	mmap_ret = sp_map_spa_to_mm(current->mm, spa, spg_node->prot, ac, "sp_alloc");
+	if (mmap_ret) {
+		/* Don't skip error for current process */
+		mmap_ret = (mmap_ret == SP_SKIP_ERR) ? -EINVAL : mmap_ret;
+		goto fallocate;
+	}
 
 	/* create mapping for each process in the group */
 	list_for_each_entry(spg_node, &spa->spg->proc_head, proc_node) {
 		mm = spg_node->master->mm;
+		if (mm == current->mm) {
+			reach_current = true;
+			continue;
+		}
 		mmap_ret = sp_map_spa_to_mm(mm, spa, spg_node->prot, ac, "sp_alloc");
 		if (mmap_ret) {
 			/*
@@ -2156,7 +2170,9 @@ static int sp_alloc_mmap_populate(struct sp_area *spa, struct sp_alloc_context *
 
 unmap:
 	__sp_free(spa, mm);
-
+	if (!reach_current)
+		sp_munmap(current->mm, spa->va_start, spa_size(spa));
+fallocate:
 	/*
 	 * Sometimes do_mm_populate() allocates some memory and then failed to
 	 * allocate more. (e.g. memory use reaches cgroup limit.)
@@ -2210,7 +2226,7 @@ try_again:
 		goto out;
 	}
 
-	ret = sp_alloc_mmap_populate(spa, &ac);
+	ret = sp_alloc_mmap_populate(spa, &ac, spg_node);
 	if (ret == -ENOMEM && sp_alloc_fallback(spa, &ac))
 		goto try_again;
 
@@ -2735,11 +2751,11 @@ void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int tgid)
 		return ERR_PTR(-EPERM);
 	}
 
-	down_write(&mm->mmap_lock);
+	mmap_write_lock(mm);
 	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
 	if (ret) {
 		pr_err_ratelimited("walk page range failed %d\n", ret);
-		up_write(&mm->mmap_lock);
+		mmap_write_unlock(mm);
 		return ERR_PTR(ret);
 	}
 
@@ -2749,7 +2765,7 @@ void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int tgid)
 	else
 		p = vmap(sp_walk_data.pages, sp_walk_data.page_count, VM_MAP,
 			 PAGE_KERNEL);
-	up_write(&mm->mmap_lock);
+	mmap_write_unlock(mm);
 
 	if (!p) {
 		pr_err("vmap(huge) in u2k failed\n");
@@ -2892,9 +2908,9 @@ int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
 		return -ESRCH;
 	}
 
-	down_write(&mm->mmap_lock);
+	mmap_write_lock(mm);
 	ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);
-	up_write(&mm->mmap_lock);
+	mmap_write_unlock(mm);
 
 	mmput(mm);
 	put_task_struct(tsk);

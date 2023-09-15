@@ -158,6 +158,23 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 	return false;
 }
 
+static inline bool sp_check_addr(unsigned long addr)
+{
+	if (sp_is_enabled() && mg_is_sharepool_addr(addr))
+		return true;
+	else
+		return false;
+}
+
+static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
+{
+	if (sp_is_enabled() && mg_is_sharepool_addr(addr) &&
+	    !(flags & MAP_SHARE_POOL))
+		return true;
+	else
+		return false;
+}
+
 #else /* CONFIG_SHARE_POOL */
 
 static inline int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
@@ -233,14 +250,6 @@ static inline bool mg_is_sharepool_addr(unsigned long addr)
 	return false;
 }
 
-static inline void spa_overview_show(struct seq_file *seq)
-{
-}
-
-static inline void spg_overview_show(struct seq_file *seq)
-{
-}
-
 static inline bool sp_is_enabled(void)
 {
 	return false;
@@ -255,14 +264,14 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 	return false;
 }
 
-static inline bool is_vm_huge_special(struct vm_area_struct *vma)
+static inline bool sp_check_addr(unsigned long addr)
 {
 	return false;
 }
 
-static inline int sp_node_id(struct vm_area_struct *vma)
+static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
 {
-	return numa_node_id();
+	return false;
 }
 
 #endif /* !CONFIG_SHARE_POOL */

@@ -827,6 +827,10 @@ static inline bool is_mergeable_vma(struct vm_area_struct *vma,
 		return false;
 	if (!anon_vma_name_eq(anon_vma_name(vma), anon_name))
 		return false;
+	/* don't merge this kind of vma as sp_area couldn't be merged */
+	if (sp_check_vm_share_pool(vm_flags))
+		return false;
+
 	return true;
 }
 
@@ -974,10 +978,6 @@ struct vm_area_struct *vma_merge(struct vma_iterator *vmi, struct mm_struct *mm,
 	 * so this tests vma->vm_flags & VM_SPECIAL, too.
 	 */
 	if (vm_flags & VM_SPECIAL)
-		return NULL;
-
-	/* don't merge this kind of vma as sp_area couldn't be merged */
-	if (sp_check_vm_share_pool(vm_flags))
 		return NULL;
 
 	/* Does the input range span an existing VMA? (cases 5 - 8) */
@@ -1765,6 +1765,9 @@ generic_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (len > mmap_end - mmap_min_addr)
 		return -ENOMEM;
 
+	if (sp_check_mmap_addr(addr, flags))
+		return -EINVAL;
+
 	if (flags & MAP_FIXED)
 		return addr;
 
@@ -1813,6 +1816,9 @@ generic_get_unmapped_area_topdown(struct file *filp, unsigned long addr,
 	/* requested length too big for entire address space */
 	if (len > mmap_end - mmap_min_addr)
 		return -ENOMEM;
+
+	if (sp_check_mmap_addr(addr, flags))
+		return -EINVAL;
 
 	if (flags & MAP_FIXED)
 		return addr;
@@ -3082,6 +3088,9 @@ static int __vm_munmap(unsigned long start, size_t len, bool downgrade)
 	struct mm_struct *mm = current->mm;
 	LIST_HEAD(uf);
 	VMA_ITERATOR(vmi, mm, start);
+
+	if (sp_check_addr(start))
+		return -EINVAL;
 
 	if (mmap_write_lock_killable(mm))
 		return -EINTR;
