@@ -29,6 +29,7 @@
 #include "uburma_types.h"
 #include "uburma_file_ops.h"
 #include "uburma_log.h"
+#include "uburma_event.h"
 #include "uburma_uobj.h"
 
 static void uobj_free(struct kref *ref)
@@ -530,6 +531,47 @@ void uburma_close_uobj_fd(struct file *f)
 	uobj_put(uobj);
 }
 
+static int uburma_hot_unplug_jfce(struct uburma_uobj *uobj, enum uburma_remove_reason why)
+{
+	struct uburma_jfce_uobj *jfce = container_of(uobj, struct uburma_jfce_uobj, uobj);
+	struct uburma_jfe *jfe = &jfce->jfe;
+
+	spin_lock_irq(&jfe->lock);
+	if (jfe->deleting == true) {
+		spin_unlock_irq(&jfe->lock);
+		return 0;
+	}
+	jfe->deleting = true;
+	spin_unlock_irq(&jfe->lock);
+
+	if (why == UBURMA_REMOVE_DRIVER_REMOVE)
+		wake_up_interruptible(&jfe->poll_wait);
+
+	uburma_uninit_jfe(jfe);
+	return 0;
+}
+
+static int uburma_hot_unplug_jfae(struct uburma_uobj *uobj, enum uburma_remove_reason why)
+{
+	struct uburma_jfae_uobj *jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+	struct uburma_jfe *jfe = &jfae->jfe;
+
+	spin_lock_irq(&jfe->lock);
+	if (jfe->deleting == true) {
+		spin_unlock_irq(&jfe->lock);
+		return 0;
+	}
+	jfe->deleting = true;
+	spin_unlock_irq(&jfe->lock);
+
+	ubcore_unregister_event_handler(jfae->dev, &jfae->event_handler);
+
+	if (why == UBURMA_REMOVE_DRIVER_REMOVE)
+		uburma_write_event(&jfae->jfe, 0, UBCORE_EVENT_DEV_FATAL, NULL, NULL);
+
+	return 0;
+}
+
 const struct uobj_type_class uobj_idr_type_class = {
 	.alloc_begin = uobj_idr_alloc_begin,
 	.alloc_commit = uobj_idr_alloc_commit,
@@ -547,3 +589,12 @@ const struct uobj_type_class uobj_fd_type_class = {
 	.lookup_put = uobj_fd_lookup_put,
 	.remove_commit = uobj_fd_remove_commit,
 };
+
+/* The destroy process start from order 0. */
+declare_uobj_class(UOBJ_CLASS_JFCE,
+		   &uobj_type_alloc_fd(3, sizeof(struct uburma_jfce_uobj), uburma_hot_unplug_jfce,
+				       &uburma_jfce_fops, "[jfce]", O_RDWR | O_CLOEXEC));
+
+declare_uobj_class(UOBJ_CLASS_JFAE,
+		   &uobj_type_alloc_fd(3, sizeof(struct uburma_jfae_uobj), uburma_hot_unplug_jfae,
+				       &uburma_jfae_fops, "[jfae]", O_RDWR | O_CLOEXEC));
