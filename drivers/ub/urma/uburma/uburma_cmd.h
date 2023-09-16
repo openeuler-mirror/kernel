@@ -40,6 +40,8 @@ struct uburma_cmd_hdr {
 enum uburma_cmd {
 	UBURMA_CMD_CREATE_CTX = 1,
 	UBURMA_CMD_DESTROY_CTX,
+	UBURMA_CMD_CREATE_JFS,
+	UBURMA_CMD_DELETE_JFS,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -48,6 +50,42 @@ struct uburma_cmd_udrv_priv {
 	uint32_t in_len;
 	uint64_t out_addr;
 	uint32_t out_len;
+};
+
+struct uburma_cmd_create_jfs {
+	struct {
+		uint32_t depth; /* in terms of WQEBB */
+		uint32_t flag;
+		uint32_t trans_mode;
+		uint8_t priority;
+		uint8_t max_sge;
+		uint8_t max_rsge;
+		uint32_t max_inline_data;
+		uint8_t retry_cnt;
+		uint8_t rnr_retry;
+		uint8_t err_timeout;
+		uint32_t jfc_id;
+		uint64_t jfc_handle;
+		uint64_t urma_jfs; /* urma jfs pointer */
+	} in;
+	struct {
+		uint32_t id;
+		uint32_t depth;
+		uint8_t max_sge;
+		uint8_t max_rsge;
+		uint32_t max_inline_data;
+		uint64_t handle; /* handle of the allocated jfs obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_delete_jfs {
+	struct {
+		uint64_t handle; /* handle of jfs, used to find jfs obj in kernel */
+	} in;
+	struct {
+		uint32_t async_events_reported;
+	} out;
 };
 
 struct uburma_cmd_create_ctx {

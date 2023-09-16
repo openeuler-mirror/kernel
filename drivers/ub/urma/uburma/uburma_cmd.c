@@ -25,6 +25,9 @@
 #include <urma/ubcore_types.h>
 #include "uburma_log.h"
 #include "uburma_types.h"
+#include "uburma_event.h"
+#include "uburma_file_ops.h"
+#include "uburma_uobj.h"
 #include "uburma_cmd.h"
 
 #define UBURMA_INVALID_TPN UINT_MAX
@@ -122,6 +125,156 @@ static int uburma_cmd_destroy_ctx(struct ubcore_device *ubc_dev, struct uburma_f
 	return 0;
 }
 
+static void uburma_write_async_event(struct ubcore_ucontext *ctx, uint64_t event_data,
+				     uint32_t event_type, struct list_head *obj_event_list,
+				     uint32_t *counter)
+{
+	struct uburma_jfae_uobj *jfae;
+
+	rcu_read_lock();
+	jfae = rcu_dereference(ctx->jfae);
+	if (jfae == NULL) {
+		rcu_read_unlock();
+		return;
+	}
+	uburma_write_event(&jfae->jfe, event_data, event_type, obj_event_list, counter);
+	rcu_read_unlock();
+}
+
+void uburma_jfs_event_cb(struct ubcore_event *event, struct ubcore_ucontext *ctx)
+{
+	struct uburma_jfs_uobj *jfs_uobj;
+
+	if (event->element.jfs == NULL)
+		return;
+
+	jfs_uobj = (struct uburma_jfs_uobj *)event->element.jfs->jfs_cfg.jfs_context;
+	uburma_write_async_event(ctx, event->element.jfs->urma_jfs, event->event_type,
+				 &jfs_uobj->async_event_list, &jfs_uobj->async_events_reported);
+}
+
+static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_create_jfs arg;
+	struct ubcore_jfs_cfg cfg = { 0 };
+	struct ubcore_udata udata;
+	struct uburma_jfs_uobj *jfs_uobj;
+	struct uburma_uobj *jfc_uobj;
+	struct ubcore_jfs *jfs;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_create_jfs));
+	if (ret != 0)
+		return ret;
+
+	cfg.depth = arg.in.depth;
+	cfg.flag.value = arg.in.flag;
+	cfg.trans_mode = arg.in.trans_mode;
+	cfg.max_sge = arg.in.max_sge;
+	cfg.max_rsge = arg.in.max_rsge;
+	cfg.max_inline_data = arg.in.max_inline_data;
+	cfg.retry_cnt = arg.in.retry_cnt;
+	cfg.rnr_retry = arg.in.rnr_retry;
+	cfg.err_timeout = arg.in.err_timeout;
+	cfg.priority = arg.in.priority;
+
+	jfs_uobj = (struct uburma_jfs_uobj *)uobj_alloc(UOBJ_CLASS_JFS, file);
+	if (IS_ERR(jfs_uobj)) {
+		uburma_log_err("UOBJ_CLASS_JFS alloc fail!\n");
+		return -ENOMEM;
+	}
+	jfs_uobj->async_events_reported = 0;
+	INIT_LIST_HEAD(&jfs_uobj->async_event_list);
+	cfg.jfs_context = jfs_uobj;
+
+	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
+	if (IS_ERR(jfc_uobj)) {
+		uburma_log_err("failed to find jfc, jfc_handle:%llu.\n", arg.in.jfc_handle);
+		ret = -EINVAL;
+		goto err_alloc_abort;
+	}
+	cfg.jfc = jfc_uobj->object;
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	jfs = ubcore_create_jfs(ubc_dev, &cfg, uburma_jfs_event_cb, &udata);
+	if (IS_ERR_OR_NULL(jfs)) {
+		uburma_log_err("create jfs or get jfs_id failed.\n");
+		ret = -EPERM;
+		goto err_put_jfc;
+	}
+	jfs_uobj->uobj.object = jfs;
+	jfs->urma_jfs = arg.in.urma_jfs;
+
+	/* Do not release jfae fd until jfs is destroyed */
+	ret = uburma_get_jfae(file);
+	if (ret != 0)
+		goto err_delete_jfs;
+
+	arg.out.id = jfs->id;
+	arg.out.depth = jfs->jfs_cfg.depth;
+	arg.out.max_sge = jfs->jfs_cfg.max_sge;
+	arg.out.max_rsge = jfs->jfs_cfg.max_rsge;
+	arg.out.max_inline_data = jfs->jfs_cfg.max_inline_data;
+	arg.out.handle = jfs_uobj->uobj.id;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_create_jfs));
+	if (ret != 0)
+		goto err_put_jfae;
+
+	uobj_put_read(jfc_uobj);
+	uobj_alloc_commit(&jfs_uobj->uobj);
+	return 0;
+
+err_put_jfae:
+	uburma_put_jfae(file);
+err_delete_jfs:
+	ubcore_delete_jfs(jfs);
+err_put_jfc:
+	uobj_put_read(jfc_uobj);
+err_alloc_abort:
+	uobj_alloc_abort(&jfs_uobj->uobj);
+	return ret;
+}
+
+static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_delete_jfs arg;
+	struct uburma_jfs_uobj *jfs_uobj;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_delete_jfs));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_JFS, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find jfs");
+		return -EINVAL;
+	}
+
+	/* To get async_events_reported after obj removed. */
+	uobj_get(uobj);
+	jfs_uobj = container_of(uobj, struct uburma_jfs_uobj, uobj);
+
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0) {
+		uburma_log_err("delete jfs failed, ret:%d.\n", ret);
+		uobj_put(uobj);
+		return ret;
+	}
+
+	arg.out.async_events_reported = jfs_uobj->async_events_reported;
+	uobj_put(uobj);
+	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				   sizeof(struct uburma_cmd_delete_jfs));
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -129,6 +282,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[0] = NULL,
 	[UBURMA_CMD_CREATE_CTX] = uburma_cmd_create_ctx,
 	[UBURMA_CMD_DESTROY_CTX] = uburma_cmd_destroy_ctx,
+	[UBURMA_CMD_CREATE_JFS] = uburma_cmd_create_jfs,
+	[UBURMA_CMD_DELETE_JFS] = uburma_cmd_delete_jfs,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
