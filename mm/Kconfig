@@ -815,6 +815,19 @@ config DEFERRED_STRUCT_PAGE_INIT
 	  lifetime of the system until these kthreads finish the
 	  initialisation.
 
+config KZEROD
+	bool "Support kzerod (EXPERIMENTAL)"
+	default n
+	depends on NEED_MULTIPLE_NODES
+	depends on X86 || ARM64
+	help
+	  Support kzerod kernel thread which does prezeroing of free pages.
+
+	  This is marked experimental because it is a new feature. This
+	  feature interacts heavily with anonymous pagefault(include
+	  anonymous thp) and will occupy some memory of system(unmovable),
+	  may cause unknown issues.
+
 config PAGE_IDLE_FLAG
 	bool
 	select PAGE_EXTENSION if !64BIT
