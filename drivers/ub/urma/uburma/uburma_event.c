@@ -137,8 +137,32 @@ void uburma_init_jfe(struct uburma_jfe *jfe)
 const struct file_operations uburma_jfae_fops = {
 };
 
+static void uburma_async_event_callback(struct ubcore_event *event,
+					struct ubcore_event_handler *handler)
+{
+	struct uburma_jfae_uobj *jfae =
+		container_of(handler, struct uburma_jfae_uobj, event_handler);
+
+	if (WARN_ON(IS_ERR_OR_NULL(jfae)))
+		return;
+
+	uburma_write_event(&jfae->jfe, event->element.port_id, event->event_type, NULL, NULL);
+}
+
+
+static inline void uburma_init_jfae_handler(struct ubcore_event_handler *handler)
+{
+	INIT_LIST_HEAD(&handler->node);
+	handler->event_callback = uburma_async_event_callback;
+}
+
+
 void uburma_init_jfae(struct uburma_jfae_uobj *jfae, struct ubcore_device *ubc_dev)
 {
+	uburma_init_jfe(&jfae->jfe);
+	uburma_init_jfae_handler(&jfae->event_handler);
+	ubcore_register_event_handler(ubc_dev, &jfae->event_handler);
+	jfae->dev = ubc_dev;
 }
 
 void uburma_release_comp_event(struct uburma_jfce_uobj *jfce, struct list_head *event_list)
@@ -156,13 +180,48 @@ void uburma_release_comp_event(struct uburma_jfce_uobj *jfce, struct list_head *
 
 void uburma_release_async_event(struct uburma_file *ufile, struct list_head *event_list)
 {
+	struct uburma_jfae_uobj *jfae = ufile->ucontext->jfae;
+	struct uburma_jfe *jfe = &jfae->jfe;
+	struct uburma_jfe_event *event, *tmp;
+
+	spin_lock_irq(&jfe->lock);
+	list_for_each_entry_safe(event, tmp, event_list, obj_node) {
+		list_del(&event->node);
+		kfree(event);
+	}
+	spin_unlock_irq(&jfe->lock);
+	uburma_put_jfae(ufile);
 }
 
 int uburma_get_jfae(struct uburma_file *ufile)
 {
+	struct uburma_jfae_uobj *jfae;
+
+	if (ufile->ucontext == NULL) {
+		uburma_log_err("ucontext is NULL");
+		return -ENODEV;
+	}
+
+	jfae = ufile->ucontext->jfae;
+	if (IS_ERR_OR_NULL(jfae)) {
+		uburma_log_err("Failed to get jfae");
+		return -EINVAL;
+	}
+
+	uobj_get(&jfae->uobj);
 	return 0;
 }
 
 void uburma_put_jfae(struct uburma_file *ufile)
 {
+	struct uburma_jfae_uobj *jfae;
+
+	if (ufile->ucontext == NULL)
+		return;
+
+	jfae = ufile->ucontext->jfae;
+	if (IS_ERR_OR_NULL(jfae))
+		return;
+
+	uobj_put(&jfae->uobj);
 }
