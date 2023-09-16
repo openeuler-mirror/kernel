@@ -135,6 +135,93 @@ static int uburma_delete_jfce(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+/* Read up to event_cnt events from jfe */
+static uint32_t uburma_read_jfe_event(struct uburma_jfe *jfe, uint32_t event_cnt,
+				      struct list_head *event_list)
+{
+	struct list_head *p, *next;
+	struct uburma_jfe_event *event;
+	uint32_t cnt = 0;
+
+	spin_lock_irq(&jfe->lock);
+	if (jfe->deleting) {
+		spin_unlock_irq(&jfe->lock);
+		return 0;
+	}
+	list_for_each_safe(p, next, &jfe->event_list) {
+		if (cnt == event_cnt)
+			break;
+		event = list_entry(p, struct uburma_jfe_event, node);
+		if (event->counter) {
+			++(*event->counter);
+			list_del(&event->obj_node);
+		}
+		list_del(p);
+		list_add_tail(p, event_list);
+		cnt++;
+	}
+	spin_unlock_irq(&jfe->lock);
+	return cnt;
+}
+
+static int uburma_wait_event_timeout(struct uburma_jfe *jfe, unsigned long max_timeout,
+				     uint32_t max_event_cnt, uint32_t *event_cnt,
+				     struct list_head *event_list)
+{
+	long timeout = (long)max_timeout;
+
+	*event_cnt = 0;
+	while (!jfe->deleting) {
+		asm volatile("" : : : "memory");
+		*event_cnt = uburma_read_jfe_event(jfe, max_event_cnt, event_list);
+		/* Stop waiting once we have read at least one event */
+		if (jfe->deleting)
+			return -EIO;
+		else if (*event_cnt > 0)
+			break;
+		/*
+		 * 0 if the @condition evaluated to %false after the @timeout elapsed,
+		 * 1 if the @condition evaluated to %true after the @timeout elapsed,
+		 * the remaining jiffies (at least 1) if the @condition evaluated to true
+		 * before the @timeout elapsed,
+		 * or -%ERESTARTSYS if it was interrupted by a signal.
+		 */
+		timeout = wait_event_interruptible_timeout(
+			jfe->poll_wait, (!list_empty(&jfe->event_list) || jfe->deleting), timeout);
+		if (timeout <= 0)
+			return timeout;
+	}
+
+	return 0;
+}
+
+static int uburma_wait_event(struct uburma_jfe *jfe, bool nonblock, uint32_t max_event_cnt,
+			     uint32_t *event_cnt, struct list_head *event_list)
+{
+	int ret;
+
+	*event_cnt = 0;
+	while (!jfe->deleting) {
+		asm volatile("" : : : "memory");
+		*event_cnt = uburma_read_jfe_event(jfe, max_event_cnt, event_list);
+		/* Stop waiting once we have read at least one event */
+		if (jfe->deleting)
+			return -EIO;
+		else if (nonblock && *event_cnt == 0)
+			return 0;
+		else if (*event_cnt > 0)
+			break;
+		/* The function will return -ERESTARTSYS if it was interrupted by a
+		 * signal and 0 if @condition evaluated to true.
+		 */
+		ret = wait_event_interruptible(jfe->poll_wait,
+					       (!list_empty(&jfe->event_list) || jfe->deleting));
+		if (ret != 0)
+			return ret;
+	}
+	return 0;
+}
+
 static __poll_t uburma_jfe_poll(struct uburma_jfe *jfe, struct file *filp,
 				struct poll_table_struct *wait)
 {
@@ -159,10 +246,81 @@ static __poll_t uburma_jfce_poll(struct file *filp, struct poll_table_struct *wa
 	return uburma_jfe_poll(&jfce->jfe, filp, wait);
 }
 
+static int uburma_jfce_wait(struct uburma_jfce_uobj *jfce, struct file *filp, unsigned long arg)
+{
+	struct uburma_cmd_jfce_wait we;
+	struct list_head event_list;
+	struct uburma_jfe_event *event;
+	uint32_t max_event_cnt;
+	uint32_t i = 0;
+	struct list_head *p, *next;
+	int ret;
+
+	if (arg == 0)
+		return -EINVAL;
+
+	if (copy_from_user(&we, (const void __user *)(uintptr_t)arg,
+			   sizeof(struct uburma_cmd_jfce_wait)) != 0)
+		return -EFAULT;
+
+	/* urma lib ensures that max_event_cnt > 0 */
+	max_event_cnt = (we.in.max_event_cnt < MAX_JFCE_EVENT_CNT ? we.in.max_event_cnt :
+									  MAX_JFCE_EVENT_CNT);
+	INIT_LIST_HEAD(&event_list);
+	if (we.in.time_out <= 0) {
+		ret = uburma_wait_event(&jfce->jfe,
+					(filp->f_flags & O_NONBLOCK) | (we.in.time_out == 0),
+					max_event_cnt, &we.out.event_cnt, &event_list);
+	} else {
+		ret = uburma_wait_event_timeout(&jfce->jfe, msecs_to_jiffies(we.in.time_out),
+						max_event_cnt, &we.out.event_cnt, &event_list);
+	}
+
+	if (ret < 0) {
+		uburma_log_err("Failed to wait jfce event");
+		return ret;
+	}
+
+	list_for_each_safe(p, next, &event_list) {
+		event = list_entry(p, struct uburma_jfe_event, node);
+		we.out.event_data[i++] = event->event_data;
+		list_del(p);
+		kfree(event);
+	}
+
+	if (we.out.event_cnt > 0 && copy_to_user((void *)arg, &we, sizeof(we)))
+		return -EFAULT;
+
+	return 0;
+}
+
+static long uburma_jfce_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	unsigned int nr;
+	int ret;
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfce_uobj *jfce = container_of(uobj, struct uburma_jfce_uobj, uobj);
+
+	if (_IOC_TYPE(cmd) != UBURMA_EVENT_CMD_MAGIC)
+		return -EINVAL;
+
+	nr = (unsigned int)_IOC_NR(cmd);
+	switch (nr) {
+	case JFCE_CMD_WAIT_EVENT:
+		ret = uburma_jfce_wait(jfce, filp, arg);
+		break;
+	default:
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+	return (long)ret;
+}
+
 const struct file_operations uburma_jfce_fops = {
 	.owner = THIS_MODULE,
 	.poll = uburma_jfce_poll,
 	.release = uburma_delete_jfce,
+	.unlocked_ioctl = uburma_jfce_ioctl,
 };
 
 void uburma_init_jfe(struct uburma_jfe *jfe)
