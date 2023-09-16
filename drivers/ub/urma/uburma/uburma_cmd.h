@@ -46,6 +46,8 @@ enum uburma_cmd {
 	UBURMA_CMD_MODIFY_JFR,
 	UBURMA_CMD_DELETE_JFR,
 	UBURMA_CMD_CREATE_JFC,
+	UBURMA_CMD_MODIFY_JFC,
+	UBURMA_CMD_DELETE_JFC,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -155,6 +157,26 @@ struct uburma_cmd_create_jfc {
 		uint64_t handle; /* handle of the allocated jfc obj in kernel */
 	} out;
 	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_modify_jfc {
+	struct {
+		uint64_t handle; /* handle of jfc, used to find jfc obj in kernel */
+		uint32_t mask; /* see urma_jfc_attr_mask_t */
+		uint16_t moderate_count;
+		uint16_t moderate_period; /* in micro seconds */
+	} in;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_delete_jfc {
+	struct {
+		uint64_t handle; /* handle of jfc, used to find jfc obj in kernel */
+	} in;
+	struct {
+		uint32_t comp_events_reported;
+		uint32_t async_events_reported;
+	} out;
 };
 
 /* only for event ioctl */
