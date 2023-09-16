@@ -352,10 +352,68 @@ static __poll_t uburma_jfae_poll(struct file *filp, struct poll_table_struct *wa
 	return uburma_jfe_poll(&jfae->jfe, filp, wait);
 }
 
+static inline void uburma_set_async_event(struct uburma_cmd_async_event *async_event,
+					  const struct uburma_jfe_event *event)
+{
+	async_event->event_data = event->event_data;
+	async_event->event_type = event->event_type;
+}
+
+static int uburma_get_async_event(struct uburma_jfae_uobj *jfae, struct file *filp,
+				  unsigned long arg)
+{
+	struct uburma_cmd_async_event async_event = { 0 };
+	struct list_head event_list;
+	struct uburma_jfe_event *event;
+	uint32_t event_cnt;
+	int ret;
+
+	if (arg == 0)
+		return -EINVAL;
+
+	INIT_LIST_HEAD(&event_list);
+	ret = uburma_wait_event(&jfae->jfe, filp->f_flags & O_NONBLOCK, 1, &event_cnt, &event_list);
+	if (ret < 0)
+		return ret;
+
+	event = list_first_entry(&event_list, struct uburma_jfe_event, node);
+	uburma_set_async_event(&async_event, event);
+	list_del(&event->node);
+	kfree(event);
+
+	if (event_cnt > 0 && copy_to_user((void *)arg, &async_event, sizeof(async_event)))
+		return -EFAULT;
+
+	return 0;
+}
+
+static long uburma_jfae_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfae_uobj *jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+	unsigned int nr;
+	int ret;
+
+	if (_IOC_TYPE(cmd) != UBURMA_EVENT_CMD_MAGIC)
+		return -EINVAL;
+
+	nr = (unsigned int)_IOC_NR(cmd);
+	switch (nr) {
+	case JFAE_CMD_GET_ASYNC_EVENT:
+		ret = uburma_get_async_event(jfae, filp, arg);
+		break;
+	default:
+		ret = -ENOIOCTLCMD;
+		break;
+	}
+	return (long)ret;
+}
+
 const struct file_operations uburma_jfae_fops = {
 	.owner = THIS_MODULE,
 	.poll = uburma_jfae_poll,
 	.release = uburma_delete_jfae,
+	.unlocked_ioctl = uburma_jfae_ioctl,
 };
 
 static void uburma_async_event_callback(struct ubcore_event *event,
