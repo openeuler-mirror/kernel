@@ -46,11 +46,89 @@ void uburma_cmd_flush(struct uburma_device *ubu_dev)
 	wait_for_completion(&ubu_dev->cmddone);
 }
 
+static inline void fill_udata(struct ubcore_udata *out, struct ubcore_ucontext *ctx,
+			      struct uburma_cmd_udrv_priv *udata)
+{
+	out->uctx = ctx;
+	out->udrv_data = (struct ubcore_udrv_priv *)(void *)udata;
+}
+
+static int uburma_cmd_create_ctx(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct ubcore_ucontext *ucontext;
+	struct uburma_cmd_create_ctx arg;
+	struct uburma_uobj *uobj;
+	struct uburma_jfae_uobj *jfae;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_create_ctx));
+	if (ret != 0)
+		return ret;
+
+	mutex_lock(&file->mutex);
+
+	ucontext = ubcore_alloc_ucontext(ubc_dev, arg.in.uasid,
+					 (struct ubcore_udrv_priv *)(void *)&arg.udata);
+	if (IS_ERR_OR_NULL(ucontext)) {
+		mutex_unlock(&file->mutex);
+		return -EPERM;
+	}
+
+	uobj = uobj_alloc(UOBJ_CLASS_JFAE, file);
+	if (IS_ERR(uobj)) {
+		ret = PTR_ERR(uobj);
+		goto free_ctx;
+	}
+
+	jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+	uburma_init_jfae(jfae, ubc_dev);
+	ucontext->jfae = uobj;
+	arg.out.async_fd = uobj->id;
+	file->ucontext = ucontext;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_create_ctx));
+	if (ret != 0)
+		goto free_jfae;
+
+	uobj_alloc_commit(uobj);
+	mutex_unlock(&file->mutex);
+	uburma_log_info("uburma create context success.\n");
+	return ret;
+
+free_jfae:
+	uobj_alloc_abort(uobj);
+free_ctx:
+	ubcore_free_ucontext(ubc_dev, ucontext);
+	mutex_unlock(&file->mutex);
+	return ret;
+}
+
+static int uburma_cmd_destroy_ctx(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				  struct uburma_cmd_hdr *hdr)
+{
+	mutex_lock(&file->mutex);
+	if (file->ucontext == NULL) {
+		mutex_unlock(&file->mutex);
+		return -EINVAL;
+	}
+	uburma_cleanup_uobjs(file, UBURMA_REMOVE_CLOSE);
+	ubcore_free_ucontext(ubc_dev, file->ucontext);
+	file->ucontext = NULL;
+	uburma_log_info("uburma destroy context success.\n");
+	mutex_unlock(&file->mutex);
+	return 0;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
 static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[0] = NULL,
+	[UBURMA_CMD_CREATE_CTX] = uburma_cmd_create_ctx,
+	[UBURMA_CMD_DESTROY_CTX] = uburma_cmd_destroy_ctx,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
