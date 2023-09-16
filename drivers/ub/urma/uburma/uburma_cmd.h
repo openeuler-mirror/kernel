@@ -53,6 +53,8 @@ enum uburma_cmd {
 	UBURMA_CMD_CREATE_JETTY,
 	UBURMA_CMD_MODIFY_JETTY,
 	UBURMA_CMD_DELETE_JETTY,
+	UBURMA_CMD_IMPORT_JETTY,
+	UBURMA_CMD_UNIMPORT_JETTY,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -262,6 +264,31 @@ struct uburma_cmd_delete_jetty {
 	struct {
 		uint32_t async_events_reported;
 	} out;
+};
+
+struct uburma_cmd_import_jetty {
+	struct {
+		/* correspond to urma_jetty_id */
+		uint8_t eid[UBCORE_EID_SIZE];
+		uint32_t uasid;
+		uint32_t id;
+		uint32_t flag;
+		/* correspond to urma_key_t */
+		uint32_t key;
+		uint32_t trans_mode;
+	} in;
+	struct {
+		uint8_t tp_type; /* TP or TPG */
+		uint32_t tpn;
+		uint64_t handle; /* handle of the allocated tjetty obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_unimport_jetty {
+	struct {
+		uint64_t handle; /* handle of tjetty, used to find tjetty obj in kernel */
+	} in;
 };
 
 /* only for event ioctl */
