@@ -748,6 +748,81 @@ err_put:
 	return ret;
 }
 
+static int uburma_cmd_modify_jetty(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_modify_jetty arg;
+	struct uburma_uobj *uobj;
+	struct ubcore_jetty_attr attr = { 0 };
+	struct ubcore_jetty *jetty;
+	struct ubcore_udata udata;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_modify_jetty));
+	if (ret != 0)
+		return ret;
+
+	attr.mask = arg.in.mask;
+	attr.rx_threshold = arg.in.rx_threshold;
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	uobj = uobj_get_write(UOBJ_CLASS_JETTY, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find jetty.\n");
+		return -EINVAL;
+	}
+
+	jetty = (struct ubcore_jetty *)uobj->object;
+	ret = ubcore_modify_jetty(jetty, &attr, &udata);
+	if (ret != 0) {
+		uobj_put_write(uobj);
+		uburma_log_err("modify jetty failed, ret:%d.\n", ret);
+		return ret;
+	}
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_modify_jetty));
+	uobj_put_write(uobj);
+	return ret;
+}
+
+static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_delete_jetty arg;
+	struct uburma_jetty_uobj *jetty_uobj;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_delete_jetty));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_JETTY, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find jetty");
+		return -EINVAL;
+	}
+
+	/* To get async_events_reported after obj removed. */
+	uobj_get(uobj);
+	jetty_uobj = container_of(uobj, struct uburma_jetty_uobj, uobj);
+
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0) {
+		uburma_log_err("delete jetty failed, ret:%d.\n", ret);
+		uobj_put(uobj);
+		return ret;
+	}
+
+	arg.out.async_events_reported = jetty_uobj->async_events_reported;
+	uobj_put(uobj);
+	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				   sizeof(struct uburma_cmd_delete_jetty));
+}
+
 static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
 {
@@ -844,6 +919,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_IMPORT_JFR] = uburma_cmd_import_jfr,
 	[UBURMA_CMD_UNIMPORT_JFR] = uburma_cmd_unimport_jfr,
 	[UBURMA_CMD_CREATE_JETTY] = uburma_cmd_create_jetty,
+	[UBURMA_CMD_MODIFY_JETTY] = uburma_cmd_modify_jetty,
+	[UBURMA_CMD_DELETE_JETTY] = uburma_cmd_delete_jetty,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,

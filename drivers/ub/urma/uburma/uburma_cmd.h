@@ -51,6 +51,8 @@ enum uburma_cmd {
 	UBURMA_CMD_IMPORT_JFR,
 	UBURMA_CMD_UNIMPORT_JFR,
 	UBURMA_CMD_CREATE_JETTY,
+	UBURMA_CMD_MODIFY_JETTY,
+	UBURMA_CMD_DELETE_JETTY,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -242,6 +244,24 @@ struct uburma_cmd_create_jetty {
 		uint32_t max_inline_data;
 	} out;
 	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_modify_jetty {
+	struct {
+		uint64_t handle; /* handle of jetty, used to find jetty obj in kernel */
+		uint32_t mask; /* see urma_jetty_attr_mask_t */
+		uint32_t rx_threshold;
+	} in;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_delete_jetty {
+	struct {
+		uint64_t handle; /* handle of jetty, used to find jetty obj in kernel */
+	} in;
+	struct {
+		uint32_t async_events_reported;
+	} out;
 };
 
 /* only for event ioctl */
