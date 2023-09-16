@@ -50,6 +50,7 @@ enum uburma_cmd {
 	UBURMA_CMD_DELETE_JFC,
 	UBURMA_CMD_IMPORT_JFR,
 	UBURMA_CMD_UNIMPORT_JFR,
+	UBURMA_CMD_CREATE_JETTY,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -203,6 +204,44 @@ struct uburma_cmd_unimport_jfr {
 	struct {
 		uint64_t handle; /* handle of tjfr, used to find tjfr obj in kernel */
 	} in;
+};
+
+struct uburma_cmd_create_jetty {
+	struct {
+		uint32_t id; /* user may assign id */
+		uint32_t jfs_depth;
+		uint32_t jfr_depth;
+		uint32_t flag;
+		uint32_t trans_mode;
+		uint32_t send_jfc_id;
+		uint32_t recv_jfc_id;
+		uint32_t jfr_id; /* shared jfr */
+		uint8_t max_send_sge;
+		uint8_t max_send_rsge;
+		uint8_t max_recv_sge;
+		uint32_t max_inline_data;
+		uint8_t priority;
+		uint8_t retry_cnt;
+		uint8_t rnr_retry;
+		uint8_t err_timeout;
+		uint8_t min_rnr_timer;
+		uint32_t key;
+		uint64_t send_jfc_handle; /* handle of the related send jfc */
+		uint64_t recv_jfc_handle; /* handle of the related recv jfc */
+		uint64_t jfr_handle; /* handle of the shared jfr */
+		uint64_t urma_jetty; /* urma jetty pointer */
+	} in;
+	struct {
+		uint32_t id; /* jetty id allocated by ubcore */
+		uint64_t handle; /* handle of the allocated jetty obj in kernel */
+		uint32_t jfs_depth;
+		uint32_t jfr_depth;
+		uint8_t max_send_sge;
+		uint8_t max_send_rsge;
+		uint8_t max_recv_sge;
+		uint32_t max_inline_data;
+	} out;
+	struct uburma_cmd_udrv_priv udata;
 };
 
 /* only for event ioctl */
