@@ -368,6 +368,81 @@ err_alloc_abort:
 	return ret;
 }
 
+static int uburma_cmd_modify_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_modify_jfr arg;
+	struct uburma_uobj *uobj;
+	struct ubcore_jfr_attr attr = { 0 };
+	struct ubcore_udata udata;
+	struct ubcore_jfr *jfr;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_modify_jfr));
+	if (ret != 0)
+		return ret;
+
+	attr.mask = arg.in.mask;
+	attr.rx_threshold = arg.in.rx_threshold;
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	uobj = uobj_get_write(UOBJ_CLASS_JFR, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find jfr.\n");
+		return -EINVAL;
+	}
+
+	jfr = (struct ubcore_jfr *)uobj->object;
+	ret = ubcore_modify_jfr(jfr, &attr, &udata);
+	if (ret != 0) {
+		uobj_put_write(uobj);
+		uburma_log_err("modify jfr failed, ret:%d.\n", ret);
+		return ret;
+	}
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_modify_jfr));
+	uobj_put_write(uobj);
+	return ret;
+}
+
+static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_delete_jfr arg;
+	struct uburma_jfr_uobj *jfr_uobj;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_delete_jfr));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_JFR, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find jfr");
+		return -EINVAL;
+	}
+
+	/* To get async_events_reported after obj removed. */
+	uobj_get(uobj);
+	jfr_uobj = container_of(uobj, struct uburma_jfr_uobj, uobj);
+
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0) {
+		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
+		uobj_put(uobj);
+		return ret;
+	}
+
+	arg.out.async_events_reported = jfr_uobj->async_events_reported;
+	uobj_put(uobj);
+	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				   sizeof(struct uburma_cmd_delete_jfr));
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -378,6 +453,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_CREATE_JFS] = uburma_cmd_create_jfs,
 	[UBURMA_CMD_DELETE_JFS] = uburma_cmd_delete_jfs,
 	[UBURMA_CMD_CREATE_JFR] = uburma_cmd_create_jfr,
+	[UBURMA_CMD_MODIFY_JFR] = uburma_cmd_modify_jfr,
+	[UBURMA_CMD_DELETE_JFR] = uburma_cmd_delete_jfr,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
