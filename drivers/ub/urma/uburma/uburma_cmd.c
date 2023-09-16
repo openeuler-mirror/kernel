@@ -153,6 +153,18 @@ void uburma_jfs_event_cb(struct ubcore_event *event, struct ubcore_ucontext *ctx
 				 &jfs_uobj->async_event_list, &jfs_uobj->async_events_reported);
 }
 
+void uburma_jfr_event_cb(struct ubcore_event *event, struct ubcore_ucontext *ctx)
+{
+	struct uburma_jfr_uobj *jfr_uobj;
+
+	if (event->element.jfr == NULL)
+		return;
+
+	jfr_uobj = (struct uburma_jfr_uobj *)event->element.jfr->jfr_cfg.jfr_context;
+	uburma_write_async_event(ctx, event->element.jfr->urma_jfr, event->event_type,
+				 &jfr_uobj->async_event_list, &jfr_uobj->async_events_reported);
+}
+
 static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
 {
@@ -275,6 +287,87 @@ static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev, struct uburma_fi
 				   sizeof(struct uburma_cmd_delete_jfs));
 }
 
+static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_create_jfr arg;
+	struct uburma_uobj *jfc_uobj;
+	struct uburma_jfr_uobj *jfr_uobj;
+	struct ubcore_jfr_cfg cfg = { 0 };
+	struct ubcore_udata udata;
+	struct ubcore_jfr *jfr;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_create_jfr));
+	if (ret != 0)
+		return ret;
+
+	cfg.id = arg.in.id;
+	cfg.flag.value = arg.in.flag;
+	cfg.trans_mode = arg.in.trans_mode;
+	cfg.depth = arg.in.depth;
+	cfg.max_sge = arg.in.max_sge;
+	cfg.min_rnr_timer = arg.in.min_rnr_timer;
+	cfg.ukey.key = arg.in.key;
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	jfr_uobj = (struct uburma_jfr_uobj *)uobj_alloc(UOBJ_CLASS_JFR, file);
+	if (IS_ERR(jfr_uobj)) {
+		uburma_log_err("UOBJ_CLASS_JFR alloc fail!\n");
+		return -ENOMEM;
+	}
+	jfr_uobj->async_events_reported = 0;
+	INIT_LIST_HEAD(&jfr_uobj->async_event_list);
+	cfg.jfr_context = jfr_uobj;
+
+	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
+	if (IS_ERR(jfc_uobj)) {
+		uburma_log_err("failed to find jfc, jfc_handle:%llu.\n", arg.in.jfc_handle);
+		ret = -EINVAL;
+		goto err_alloc_abort;
+	}
+	cfg.jfc = jfc_uobj->object;
+
+	jfr = ubcore_create_jfr(ubc_dev, &cfg, uburma_jfr_event_cb, &udata);
+	if (IS_ERR_OR_NULL(jfr)) {
+		uburma_log_err("create jfr or get jfr_id failed.\n");
+		ret = -EPERM;
+		goto err_put_jfc;
+	}
+	jfr_uobj->uobj.object = jfr;
+	jfr->urma_jfr = arg.in.urma_jfr;
+
+	/* Do not release jfae fd until jfr is destroyed */
+	ret = uburma_get_jfae(file);
+	if (ret != 0)
+		goto err_delete_jfr;
+
+	arg.out.id = jfr->id;
+	arg.out.depth = jfr->jfr_cfg.depth;
+	arg.out.max_sge = jfr->jfr_cfg.max_sge;
+	arg.out.handle = jfr_uobj->uobj.id;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_create_jfr));
+	if (ret != 0)
+		goto err_put_jfae;
+
+	uobj_put_read(jfc_uobj);
+	uobj_alloc_commit(&jfr_uobj->uobj);
+	return ret;
+
+err_put_jfae:
+	uburma_put_jfae(file);
+err_delete_jfr:
+	(void)ubcore_delete_jfr(jfr);
+err_put_jfc:
+	uobj_put_read(jfc_uobj);
+err_alloc_abort:
+	uobj_alloc_abort(&jfr_uobj->uobj);
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -284,6 +377,7 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_DESTROY_CTX] = uburma_cmd_destroy_ctx,
 	[UBURMA_CMD_CREATE_JFS] = uburma_cmd_create_jfs,
 	[UBURMA_CMD_DELETE_JFS] = uburma_cmd_delete_jfs,
+	[UBURMA_CMD_CREATE_JFR] = uburma_cmd_create_jfr,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,

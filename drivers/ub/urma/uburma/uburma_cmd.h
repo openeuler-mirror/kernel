@@ -42,6 +42,7 @@ enum uburma_cmd {
 	UBURMA_CMD_DESTROY_CTX,
 	UBURMA_CMD_CREATE_JFS,
 	UBURMA_CMD_DELETE_JFS,
+	UBURMA_CMD_CREATE_JFR,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -50,6 +51,38 @@ struct uburma_cmd_udrv_priv {
 	uint32_t in_len;
 	uint64_t out_addr;
 	uint32_t out_len;
+};
+
+struct uburma_cmd_create_ctx {
+	struct {
+		uint32_t uasid;
+	} in;
+	struct {
+		int async_fd;
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_create_jfr {
+	struct {
+		uint32_t depth; /* in terms of WQEBB */
+		uint32_t flag;
+		uint32_t trans_mode;
+		uint8_t max_sge;
+		uint8_t min_rnr_timer;
+		uint32_t jfc_id;
+		uint64_t jfc_handle;
+		uint32_t key;
+		uint32_t id;
+		uint64_t urma_jfr; /* urma jfr pointer */
+	} in;
+	struct {
+		uint32_t id;
+		uint32_t depth;
+		uint8_t max_sge;
+		uint64_t handle; /* handle of the allocated jfr obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
 };
 
 struct uburma_cmd_create_jfs {
@@ -86,16 +119,6 @@ struct uburma_cmd_delete_jfs {
 	struct {
 		uint32_t async_events_reported;
 	} out;
-};
-
-struct uburma_cmd_create_ctx {
-	struct {
-		uint32_t uasid;
-	} in;
-	struct {
-		int async_fd;
-	} out;
-	struct uburma_cmd_udrv_priv udata;
 };
 
 /* only for event ioctl */
