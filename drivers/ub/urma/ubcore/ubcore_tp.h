@@ -29,4 +29,7 @@ static inline bool ubcore_have_tp_ops(const struct ubcore_device *dev)
 	return (dev != NULL && dev->ops->create_tp != NULL && dev->ops->modify_tp != NULL &&
 		dev->ops->destroy_tp != NULL);
 }
+
+/* Called when clear tp table */
+int ubcore_destroy_tp(struct ubcore_tp *tp);
 #endif

@@ -33,6 +33,8 @@
 #include <urma/ubcore_api.h>
 #include "ubcore_priv.h"
 #include "ubcore_hash_table.h"
+#include "ubcore_tp.h"
+#include "ubcore_tp_table.h"
 
 static LIST_HEAD(g_client_list);
 static LIST_HEAD(g_device_list);
@@ -322,6 +324,9 @@ static struct ubcore_ht_param g_ht_params[] = {
 
 	[UBCORE_HT_JETTY] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jetty, hnode),
 			      offsetof(struct ubcore_jetty, id), sizeof(uint32_t), NULL, NULL },
+	[UBCORE_HT_TP] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_tp_node, hnode),
+			   offsetof(struct ubcore_tp_node, key), sizeof(struct ubcore_tp_key), NULL,
+			   NULL },
 };
 
 static int ubcore_alloc_hash_tables(struct ubcore_device *dev)

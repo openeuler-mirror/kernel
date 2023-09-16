@@ -22,8 +22,12 @@
 #include <linux/uaccess.h>
 #include <linux/random.h>
 #include <linux/netdevice.h>
-#include <urma/ubcore_api.h>
+#include "ubcore_log.h"
+#include "ubcore_netlink.h"
+#include "ubcore_priv.h"
 #include <urma/ubcore_uapi.h>
+#include "ubcore_tp_table.h"
+#include "ubcore_tp.h"
 
 #define UB_PROTOCOL_HEAD_BYTES 313
 #define UB_MTU_BITS_BASE_SHIFT 7
@@ -53,6 +57,20 @@ enum ubcore_mtu ubcore_get_mtu(int mtu)
 		return 0;
 }
 EXPORT_SYMBOL(ubcore_get_mtu);
+
+int ubcore_destroy_tp(struct ubcore_tp *tp)
+{
+	if (!ubcore_have_tp_ops(tp->ub_dev)) {
+		ubcore_log_err("TP ops is NULL");
+		return -1;
+	}
+
+	if (tp->peer_ext.len > 0 && tp->peer_ext.addr != 0)
+		kfree((void *)tp->peer_ext.addr);
+
+	return tp->ub_dev->ops->destroy_tp(tp);
+}
+EXPORT_SYMBOL(ubcore_destroy_tp);
 
 struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
 				    enum ubcore_transport_mode trans_mode,
