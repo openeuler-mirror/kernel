@@ -66,14 +66,62 @@ struct uburma_jfce_uobj *uburma_get_jfce_uobj(int fd, struct uburma_file *ufile)
 void uburma_write_event(struct uburma_jfe *jfe, uint64_t event_data, uint32_t event_type,
 			struct list_head *obj_event_list, uint32_t *counter)
 {
+	struct uburma_jfe_event *event;
+	unsigned long flags;
+
+	spin_lock_irqsave(&jfe->lock, flags);
+	if (jfe->deleting) {
+		spin_unlock_irqrestore(&jfe->lock, flags);
+		return;
+	}
+	event = kmalloc(sizeof(struct uburma_jfe_event), GFP_ATOMIC);
+	if (event == NULL) {
+		spin_unlock_irqrestore(&jfe->lock, flags);
+		return;
+	}
+	event->event_data = event_data;
+	event->event_type = event_type;
+	event->counter = counter;
+
+	list_add_tail(&event->node, &jfe->event_list);
+	if (obj_event_list)
+		list_add_tail(&event->obj_node, obj_event_list);
+	spin_unlock_irqrestore(&jfe->lock, flags);
+	wake_up_interruptible(&jfe->poll_wait);
 }
 
 void uburma_jfce_handler(struct ubcore_jfc *jfc)
 {
+	struct uburma_jfc_uobj *jfc_uobj;
+	struct uburma_jfce_uobj *jfce;
+
+	if (jfc == NULL)
+		return;
+
+	rcu_read_lock();
+	jfc_uobj = rcu_dereference(jfc->jfc_cfg.jfc_context);
+	if (jfc_uobj != NULL && !IS_ERR(jfc_uobj) && !IS_ERR(jfc_uobj->jfce)) {
+		jfce = container_of(jfc_uobj->jfce, struct uburma_jfce_uobj, uobj);
+		uburma_write_event(&jfce->jfe, jfc->urma_jfc, 0, &jfc_uobj->comp_event_list,
+				   &jfc_uobj->comp_events_reported);
+	}
+
+	rcu_read_unlock();
 }
 
 void uburma_uninit_jfe(struct uburma_jfe *jfe)
 {
+	struct list_head *p, *next;
+	struct uburma_jfe_event *event;
+
+	spin_lock_irq(&jfe->lock);
+	list_for_each_safe(p, next, &jfe->event_list) {
+		event = list_entry(p, struct uburma_jfe_event, node);
+		if (event->counter)
+			list_del(&event->obj_node);
+		kfree(event);
+	}
+	spin_unlock_irq(&jfe->lock);
 }
 
 const struct file_operations uburma_jfce_fops = {
@@ -81,6 +129,9 @@ const struct file_operations uburma_jfce_fops = {
 
 void uburma_init_jfe(struct uburma_jfe *jfe)
 {
+	spin_lock_init(&jfe->lock);
+	INIT_LIST_HEAD(&jfe->event_list);
+	init_waitqueue_head(&jfe->poll_wait);
 }
 
 const struct file_operations uburma_jfae_fops = {
@@ -92,6 +143,15 @@ void uburma_init_jfae(struct uburma_jfae_uobj *jfae, struct ubcore_device *ubc_d
 
 void uburma_release_comp_event(struct uburma_jfce_uobj *jfce, struct list_head *event_list)
 {
+	struct uburma_jfe *jfe = &jfce->jfe;
+	struct uburma_jfe_event *event, *tmp;
+
+	spin_lock_irq(&jfe->lock);
+	list_for_each_entry_safe(event, tmp, event_list, obj_node) {
+		list_del(&event->node);
+		kfree(event);
+	}
+	spin_unlock_irq(&jfe->lock);
 }
 
 void uburma_release_async_event(struct uburma_file *ufile, struct list_head *event_list)
