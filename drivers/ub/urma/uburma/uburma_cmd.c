@@ -141,6 +141,18 @@ static void uburma_write_async_event(struct ubcore_ucontext *ctx, uint64_t event
 	rcu_read_unlock();
 }
 
+void uburma_jfc_event_cb(struct ubcore_event *event, struct ubcore_ucontext *ctx)
+{
+	struct uburma_jfc_uobj *jfc_uobj;
+
+	if (event->element.jfc == NULL)
+		return;
+
+	jfc_uobj = (struct uburma_jfc_uobj *)event->element.jfc->jfc_cfg.jfc_context;
+	uburma_write_async_event(ctx, event->element.jfc->urma_jfc, event->event_type,
+				 &jfc_uobj->async_event_list, &jfc_uobj->async_events_reported);
+}
+
 void uburma_jfs_event_cb(struct ubcore_event *event, struct ubcore_ucontext *ctx)
 {
 	struct uburma_jfs_uobj *jfs_uobj;
@@ -443,6 +455,85 @@ static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev, struct uburma_fi
 				   sizeof(struct uburma_cmd_delete_jfr));
 }
 
+static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_create_jfc arg;
+	struct uburma_jfc_uobj *jfc_uobj;
+	struct uburma_jfce_uobj *jfce;
+	struct ubcore_jfc_cfg cfg = { 0 };
+	struct ubcore_udata udata;
+	struct ubcore_jfc *jfc;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_create_jfc));
+	if (ret != 0)
+		return ret;
+
+	cfg.depth = arg.in.depth;
+	cfg.flag.value = arg.in.flag;
+
+	/* jfce may be ERR_PTR */
+	jfce = uburma_get_jfce_uobj(arg.in.jfce_fd, file);
+	if (arg.in.jfce_fd >= 0 && IS_ERR(jfce)) {
+		uburma_log_err("Failed to get jfce.\n");
+		return -EINVAL;
+	}
+
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	jfc_uobj = (struct uburma_jfc_uobj *)uobj_alloc(UOBJ_CLASS_JFC, file);
+	if (IS_ERR(jfc_uobj)) {
+		uburma_log_err("UOBJ_CLASS_JFC alloc fail!\n");
+		ret = -1;
+		goto err_put_jfce;
+	}
+	jfc_uobj->comp_events_reported = 0;
+	jfc_uobj->async_events_reported = 0;
+	INIT_LIST_HEAD(&jfc_uobj->comp_event_list);
+	INIT_LIST_HEAD(&jfc_uobj->async_event_list);
+	cfg.jfc_context = jfc_uobj;
+
+	jfc = ubcore_create_jfc(ubc_dev, &cfg, uburma_jfce_handler, uburma_jfc_event_cb, &udata);
+	if (IS_ERR_OR_NULL(jfc)) {
+		uburma_log_err("create jfc or get jfc_id failed.\n");
+		ret = -EPERM;
+		goto err_alloc_abort;
+	}
+
+	jfc_uobj->jfce = (struct uburma_uobj *)jfce;
+	jfc_uobj->uobj.object = jfc;
+	jfc->urma_jfc = arg.in.urma_jfc;
+
+	/* Do not release jfae fd until jfc is destroyed */
+	ret = uburma_get_jfae(file);
+	if (ret != 0)
+		goto err_delete_jfc;
+
+	arg.out.id = jfc->id;
+	arg.out.depth = jfc->jfc_cfg.depth;
+	arg.out.handle = jfc_uobj->uobj.id;
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_create_jfc));
+	if (ret != 0)
+		goto err_put_jfae;
+
+	uobj_alloc_commit(&jfc_uobj->uobj);
+	return 0;
+
+err_put_jfae:
+	uburma_put_jfae(file);
+err_delete_jfc:
+	(void)ubcore_delete_jfc(jfc);
+err_alloc_abort:
+	uobj_alloc_abort(&jfc_uobj->uobj);
+err_put_jfce:
+	if (!IS_ERR(jfce))
+		uobj_put(&jfce->uobj);
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -455,6 +546,7 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_CREATE_JFR] = uburma_cmd_create_jfr,
 	[UBURMA_CMD_MODIFY_JFR] = uburma_cmd_modify_jfr,
 	[UBURMA_CMD_DELETE_JFR] = uburma_cmd_delete_jfr,
+	[UBURMA_CMD_CREATE_JFC] = uburma_cmd_create_jfc,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
