@@ -48,6 +48,8 @@ enum uburma_cmd {
 	UBURMA_CMD_CREATE_JFC,
 	UBURMA_CMD_MODIFY_JFC,
 	UBURMA_CMD_DELETE_JFC,
+	UBURMA_CMD_IMPORT_JFR,
+	UBURMA_CMD_UNIMPORT_JFR,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -177,6 +179,30 @@ struct uburma_cmd_delete_jfc {
 		uint32_t comp_events_reported;
 		uint32_t async_events_reported;
 	} out;
+};
+
+struct uburma_cmd_import_jfr {
+	struct {
+		/* correspond to urma_jfr_id */
+		uint8_t eid[UBCORE_EID_SIZE];
+		uint32_t uasid;
+		uint32_t id;
+		/* correspond to urma_key_t */
+		uint32_t key;
+		uint32_t trans_mode;
+	} in;
+	struct {
+		uint8_t tp_type; /* TP or TPG */
+		uint32_t tpn;
+		uint64_t handle; /* handle of the allocated tjfr obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_unimport_jfr {
+	struct {
+		uint64_t handle; /* handle of tjfr, used to find tjfr obj in kernel */
+	} in;
 };
 
 /* only for event ioctl */

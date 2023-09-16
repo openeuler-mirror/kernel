@@ -611,6 +611,84 @@ static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev, struct uburma_fi
 				   sizeof(struct uburma_cmd_delete_jfc));
 }
 
+static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_import_jfr arg;
+	struct ubcore_tjetty_cfg cfg = { 0 };
+	struct ubcore_udata udata;
+	struct ubcore_tjetty *tjfr;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_import_jfr));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_alloc(UOBJ_CLASS_TARGET_JFR, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("UOBJ_CLASS_TARGET_JFR alloc fail!\n");
+		return -ENOMEM;
+	}
+
+	(void)memcpy(cfg.id.eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	cfg.id.uasid = arg.in.uasid;
+	cfg.id.id = arg.in.id;
+	cfg.ukey.key = arg.in.key;
+	cfg.trans_mode = arg.in.trans_mode;
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	tjfr = ubcore_import_jfr(ubc_dev, &cfg, &udata);
+	if (IS_ERR_OR_NULL(tjfr)) {
+		uburma_log_err("ubcore_import_jfr failed.\n");
+		uobj_alloc_abort(uobj);
+		return -EPERM;
+	}
+
+	uobj->object = tjfr;
+	arg.out.handle = uobj->id;
+	if (tjfr->tp != NULL) {
+		arg.out.tp_type = 1;
+		arg.out.tpn = tjfr->tp->tpn;
+	} else {
+		arg.out.tpn = UBURMA_INVALID_TPN;
+	}
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_import_jfr));
+	if (ret != 0) {
+		ubcore_unimport_jfr(tjfr);
+		uobj_alloc_abort(uobj);
+		return ret;
+	}
+	uobj_alloc_commit(uobj);
+	return 0;
+}
+
+static int uburma_cmd_unimport_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_unimport_jfr arg;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_unimport_jfr));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_TARGET_JFR, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find tjfr");
+		return -EINVAL;
+	}
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0)
+		uburma_log_err("ubcore_unimport_jfr failed.\n");
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -626,6 +704,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_CREATE_JFC] = uburma_cmd_create_jfc,
 	[UBURMA_CMD_MODIFY_JFC] = uburma_cmd_modify_jfc,
 	[UBURMA_CMD_DELETE_JFC] = uburma_cmd_delete_jfc,
+	[UBURMA_CMD_IMPORT_JFR] = uburma_cmd_import_jfr,
+	[UBURMA_CMD_UNIMPORT_JFR] = uburma_cmd_unimport_jfr,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
