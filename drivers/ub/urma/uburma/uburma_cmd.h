@@ -48,6 +48,7 @@ enum uburma_cmd {
 	UBURMA_CMD_CREATE_JFC,
 	UBURMA_CMD_MODIFY_JFC,
 	UBURMA_CMD_DELETE_JFC,
+	UBURMA_CMD_CREATE_JFCE,
 	UBURMA_CMD_IMPORT_JFR,
 	UBURMA_CMD_UNIMPORT_JFR,
 	UBURMA_CMD_CREATE_JETTY,
@@ -183,6 +184,12 @@ struct uburma_cmd_delete_jfc {
 	struct {
 		uint32_t comp_events_reported;
 		uint32_t async_events_reported;
+	} out;
+};
+
+struct uburma_cmd_create_jfce {
+	struct {
+		int fd;
 	} out;
 };
 

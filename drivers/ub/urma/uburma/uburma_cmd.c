@@ -823,6 +823,38 @@ static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev, struct uburma_
 				   sizeof(struct uburma_cmd_delete_jetty));
 }
 
+static int uburma_cmd_create_jfce(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				  struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_create_jfce arg;
+	struct uburma_jfce_uobj *jfce;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_create_jfce));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_alloc(UOBJ_CLASS_JFCE, file);
+	if (IS_ERR(uobj))
+		return PTR_ERR(uobj);
+
+	jfce = container_of(uobj, struct uburma_jfce_uobj, uobj);
+	uburma_init_jfe(&jfce->jfe);
+
+	arg.out.fd = uobj->id; /* should get fd before commit uobj */
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_create_jfce));
+	if (ret != 0) {
+		uobj_alloc_abort(uobj);
+		return ret;
+	}
+
+	uobj_alloc_commit(uobj);
+	return ret;
+}
+
 static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
 {
@@ -994,6 +1026,7 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_CREATE_JFC] = uburma_cmd_create_jfc,
 	[UBURMA_CMD_MODIFY_JFC] = uburma_cmd_modify_jfc,
 	[UBURMA_CMD_DELETE_JFC] = uburma_cmd_delete_jfc,
+	[UBURMA_CMD_CREATE_JFCE] = uburma_cmd_create_jfce,
 	[UBURMA_CMD_IMPORT_JFR] = uburma_cmd_import_jfr,
 	[UBURMA_CMD_UNIMPORT_JFR] = uburma_cmd_unimport_jfr,
 	[UBURMA_CMD_CREATE_JETTY] = uburma_cmd_create_jetty,
