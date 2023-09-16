@@ -44,10 +44,22 @@ struct ubcore_tp_node {
 
 void ubcore_init_tp_key_jetty_id(struct ubcore_tp_key *key, const struct ubcore_jetty_id *jetty_id);
 
+/* Return old tp node if key already exists */
+struct ubcore_tp_node *ubcore_add_tp_node(struct ubcore_hash_table *ht, uint32_t hash,
+					  const struct ubcore_tp_key *key, struct ubcore_tp *tp,
+					  struct ubcore_ta *ta);
 void ubcore_remove_tp_node(struct ubcore_hash_table *ht, struct ubcore_tp_node *tp_node);
+/* Find and remove the tp from table only if it is unreferenced */
+struct ubcore_tp *ubcore_find_remove_tp(struct ubcore_hash_table *ht, uint32_t hash,
+					const struct ubcore_tp_key *key);
 
 /* TP table ops for devices that do not natively support RM */
 struct ubcore_hash_table *ubcore_create_tptable(void);
 void ubcore_destroy_tptable(struct ubcore_hash_table **pp_ht);
+struct ubcore_hash_table *ubcore_get_tptable(struct ubcore_hash_table *ht);
+void ubcore_put_tptable(struct ubcore_hash_table *ht);
+
+struct ubcore_tp_node *ubcore_add_tp_with_tpn(struct ubcore_device *dev, struct ubcore_tp *tp);
+struct ubcore_tp *ubcore_remove_tp_with_tpn(struct ubcore_device *dev, uint32_t tpn);
 
 #endif
