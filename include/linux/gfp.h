@@ -564,6 +564,13 @@ static inline struct page *alloc_pages_node(int nid, gfp_t gfp_mask,
 	return __alloc_pages_node(nid, gfp_mask, order);
 }
 
+#ifdef CONFIG_KZEROD
+struct page *alloc_prezeroed_page(unsigned int order, unsigned int cpuid);
+unsigned long kzerod_get_zeroed_size(unsigned int order);
+void drain_zerod_page(unsigned int order);
+void kzerod_enable_order(unsigned int order);
+#endif
+
 #ifdef CONFIG_NUMA
 struct page *alloc_pages(gfp_t gfp, unsigned int order);
 extern struct page *alloc_pages_vma(gfp_t gfp_mask, int order,
