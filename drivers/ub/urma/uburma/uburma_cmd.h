@@ -60,6 +60,33 @@ struct uburma_cmd_create_ctx {
 	struct uburma_cmd_udrv_priv udata;
 };
 
+/* only for event ioctl */
+#define MAX_JFCE_EVENT_CNT 16
+#define UBURMA_EVENT_CMD_MAGIC 'E'
+#define JFCE_CMD_WAIT_EVENT 0
+#define JFAE_CMD_GET_ASYNC_EVENT 0
+#define UBURMA_CMD_WAIT_JFC	\
+	_IOWR(UBURMA_EVENT_CMD_MAGIC, JFCE_CMD_WAIT_EVENT, struct uburma_cmd_jfce_wait)
+#define UBURMA_CMD_GET_ASYNC_EVENT	\
+	_IOWR(UBURMA_EVENT_CMD_MAGIC, JFAE_CMD_GET_ASYNC_EVENT, struct uburma_cmd_async_event)
+
+struct uburma_cmd_jfce_wait {
+	struct {
+		uint32_t max_event_cnt;
+		int time_out;
+	} in;
+	struct {
+		uint32_t event_cnt;
+		uint64_t event_data[MAX_JFCE_EVENT_CNT];
+	} out;
+};
+
+struct uburma_cmd_async_event {
+	uint32_t event_type;
+	uint64_t event_data;
+	uint32_t pad;
+};
+
 /* copy from user_space addr to kernel args */
 static inline int uburma_copy_from_user(void *args, const void *args_addr, unsigned long args_size)
 {

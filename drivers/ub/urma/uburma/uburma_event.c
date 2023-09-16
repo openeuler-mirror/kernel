@@ -124,7 +124,45 @@ void uburma_uninit_jfe(struct uburma_jfe *jfe)
 	spin_unlock_irq(&jfe->lock);
 }
 
+static int uburma_delete_jfce(struct inode *inode, struct file *filp)
+{
+	struct uburma_uobj *uobj = filp->private_data;
+
+	uobj_get(uobj);
+	/* will call uburma_hot_unplug_jfce if clean up is not going on */
+	uburma_close_uobj_fd(filp);
+	uobj_put(uobj);
+	return 0;
+}
+
+static __poll_t uburma_jfe_poll(struct uburma_jfe *jfe, struct file *filp,
+				struct poll_table_struct *wait)
+{
+	__poll_t flag = 0;
+
+	poll_wait(filp, &jfe->poll_wait, wait);
+
+	spin_lock_irq(&jfe->lock);
+	if (!list_empty(&jfe->event_list))
+		flag = EPOLLIN | EPOLLRDNORM;
+
+	spin_unlock_irq(&jfe->lock);
+
+	return flag;
+}
+
+static __poll_t uburma_jfce_poll(struct file *filp, struct poll_table_struct *wait)
+{
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfce_uobj *jfce = container_of(uobj, struct uburma_jfce_uobj, uobj);
+
+	return uburma_jfe_poll(&jfce->jfe, filp, wait);
+}
+
 const struct file_operations uburma_jfce_fops = {
+	.owner = THIS_MODULE,
+	.poll = uburma_jfce_poll,
+	.release = uburma_delete_jfce,
 };
 
 void uburma_init_jfe(struct uburma_jfe *jfe)
@@ -134,7 +172,32 @@ void uburma_init_jfe(struct uburma_jfe *jfe)
 	init_waitqueue_head(&jfe->poll_wait);
 }
 
+static int uburma_delete_jfae(struct inode *inode, struct file *filp)
+{
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfae_uobj *jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+
+	/* todonext: handle uobj == NULL */
+	uobj_get(uobj);
+	/* call uburma_hot_unplug_jfae when cleanup is not going on */
+	uburma_close_uobj_fd(filp);
+	uburma_uninit_jfe(&jfae->jfe);
+	uobj_put(uobj);
+	return 0;
+}
+
+static __poll_t uburma_jfae_poll(struct file *filp, struct poll_table_struct *wait)
+{
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfae_uobj *jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+
+	return uburma_jfe_poll(&jfae->jfe, filp, wait);
+}
+
 const struct file_operations uburma_jfae_fops = {
+	.owner = THIS_MODULE,
+	.poll = uburma_jfae_poll,
+	.release = uburma_delete_jfae,
 };
 
 static void uburma_async_event_callback(struct ubcore_event *event,
