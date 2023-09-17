@@ -64,6 +64,10 @@ struct ubcore_multipath_tp_cfg {
 	uint16_t congestion_alg;
 };
 
+struct ubcore_nl_query_tp_req {
+	enum ubcore_transport_mode trans_mode;
+};
+
 struct ubcore_nl_query_tp_resp {
 	enum ubcore_nl_resp_status ret;
 	bool tp_exist;

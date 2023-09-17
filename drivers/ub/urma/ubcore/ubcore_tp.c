@@ -86,12 +86,71 @@ static int ubcore_get_active_mtu(const struct ubcore_device *dev, uint8_t port_n
 	return 0;
 }
 
+static struct ubcore_nlmsg *ubcore_alloc_nlmsg(size_t payload_len, const union ubcore_eid *src_eid,
+					       const union ubcore_eid *dst_eid)
+{
+	struct ubcore_nlmsg *msg = kzalloc(sizeof(struct ubcore_nlmsg) + payload_len, GFP_KERNEL);
+
+	if (msg == NULL)
+		return NULL;
+
+	msg->src_eid = *src_eid;
+	msg->dst_eid = *dst_eid;
+	msg->payload_len = payload_len;
+	return msg;
+}
+
+static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
+						    const union ubcore_eid *remote_eid,
+						    enum ubcore_transport_mode trans_mode)
+{
+	uint32_t payload_len = sizeof(struct ubcore_nl_query_tp_req);
+	struct ubcore_nl_query_tp_req *query;
+	struct ubcore_nlmsg *req;
+
+	req = ubcore_alloc_nlmsg(payload_len, &dev->attr.eid, remote_eid);
+	if (req == NULL)
+		return NULL;
+
+	req->transport_type = dev->transport_type;
+	req->msg_type = UBCORE_NL_QUERY_TP_REQ;
+	query = (struct ubcore_nl_query_tp_req *)req->payload;
+	query->trans_mode = trans_mode;
+	return req;
+}
+
 static int ubcore_query_tp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
 			   enum ubcore_transport_mode trans_mode,
 			   struct ubcore_nl_query_tp_resp *query_tp_resp)
 {
+	struct ubcore_nlmsg *req_msg, *resp_msg;
+	struct ubcore_nl_query_tp_resp *resp;
 	int ret = 0;
 
+	req_msg = ubcore_get_query_tp_req(dev, remote_eid, trans_mode);
+	if (req_msg == NULL) {
+		ubcore_log_err("Failed to get query tp req");
+		return -1;
+	}
+
+	resp_msg = ubcore_nl_send_wait(req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to wait query response");
+		kfree(req_msg);
+		return -1;
+	}
+
+	resp = (struct ubcore_nl_query_tp_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != UBCORE_NL_QUERY_TP_RESP || resp == NULL ||
+	    resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ret = -1;
+		ubcore_log_err("Query tp request is rejected with type %d ret %d",
+			       resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+	} else {
+		(void)memcpy(query_tp_resp, resp, sizeof(struct ubcore_nl_query_tp_resp));
+	}
+	kfree(resp_msg);
+	kfree(req_msg);
 	return ret;
 }
 
@@ -109,12 +168,56 @@ int ubcore_destroy_tp(struct ubcore_tp *tp)
 }
 EXPORT_SYMBOL(ubcore_destroy_tp);
 
+static void ubcore_set_tp_flag(union ubcore_tp_flag *flag, const struct ubcore_tp_cfg *cfg,
+			       const struct ubcore_device *dev)
+{
+	flag->bs.target = cfg->flag.bs.target;
+	flag->bs.sr_en = cfg->flag.bs.sr_en;
+	flag->bs.spray_en = cfg->flag.bs.spray_en;
+	flag->bs.oor_en = cfg->flag.bs.oor_en;
+	flag->bs.cc_en = cfg->flag.bs.cc_en;
+}
+
+static void ubcore_set_tp_init_cfg(struct ubcore_tp *tp, const struct ubcore_tp_cfg *cfg)
+{
+	ubcore_set_tp_flag(&tp->flag, cfg, tp->ub_dev);
+	tp->local_net_addr = cfg->local_net_addr;
+	tp->peer_net_addr = cfg->peer_net_addr;
+	tp->local_eid = cfg->local_eid;
+	tp->peer_eid = cfg->peer_eid;
+	tp->trans_mode = cfg->trans_mode;
+	tp->rx_psn = cfg->rx_psn;
+	tp->tx_psn = 0;
+	tp->mtu = cfg->mtu;
+	tp->data_udp_start = cfg->data_udp_start;
+	tp->ack_udp_start = cfg->ack_udp_start;
+	tp->udp_range = cfg->udp_range;
+	tp->retry_num = cfg->retry_num;
+	tp->ack_timeout = cfg->ack_timeout;
+	tp->tc = cfg->tc;
+}
+
 static struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev,
 					  const struct ubcore_tp_cfg *cfg,
 					  struct ubcore_udata *udata)
 {
 	struct ubcore_tp *tp = NULL;
 
+	if (!ubcore_have_tp_ops(dev)) {
+		ubcore_log_err("Invalid parameter");
+		return NULL;
+	}
+
+	tp = dev->ops->create_tp(dev, cfg, udata);
+	if (tp == NULL) {
+		ubcore_log_err("Failed to create tp towards remote eid %pI6c", &cfg->peer_eid);
+		return NULL;
+	}
+	tp->ub_dev = dev;
+	ubcore_set_tp_init_cfg(tp, cfg);
+	tp->state = UBCORE_TP_STATE_RESET;
+	tp->priv = NULL;
+	atomic_set(&tp->use_cnt, 1);
 	return tp;
 }
 
