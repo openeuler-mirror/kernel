@@ -1227,6 +1227,49 @@ int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_e
 }
 EXPORT_SYMBOL(ubcore_advise_tp);
 
+static void ubcore_get_ta_from_tp(struct ubcore_ta *ta, struct ubcore_tp *tp)
+{
+	struct ubcore_tp_node *tp_node = (struct ubcore_tp_node *)tp->priv;
+
+	ta->type = UBCORE_TA_NONE;
+	switch (tp->trans_mode) {
+	case UBCORE_TP_RC:
+	case UBCORE_TP_RM:
+		/* ta is none for UB native device */
+		if (tp_node != NULL)
+			*ta = tp_node->ta;
+		break;
+	case UBCORE_TP_UM:
+	default:
+		break;
+	}
+}
+
+static struct ubcore_nlmsg *ubcore_get_restore_tp_req(struct ubcore_tp *tp)
+{
+	uint32_t payload_len = sizeof(struct ubcore_nl_restore_tp_req);
+	struct ubcore_nl_restore_tp_req *restore;
+	struct ubcore_ta ta;
+	struct ubcore_nlmsg *req;
+
+	req = ubcore_alloc_nlmsg(payload_len, &tp->local_eid, &tp->peer_eid);
+	if (req == NULL)
+		return NULL;
+
+	req->transport_type = tp->ub_dev->transport_type;
+	req->msg_type = UBCORE_NL_RESTORE_TP_REQ;
+	restore = (struct ubcore_nl_restore_tp_req *)(void *)req->payload;
+	restore->trans_mode = tp->trans_mode;
+	restore->tpn = tp->tpn;
+	restore->peer_tpn = tp->peer_tpn;
+	restore->rx_psn = get_random_u32();
+
+	ubcore_get_ta_from_tp(&ta, tp);
+	ubcore_get_ta_data_from_ta(&ta, &restore->ta);
+
+	return req;
+}
+
 static struct ubcore_nlmsg *ubcore_get_restore_tp_response(struct ubcore_nlmsg *req,
 							   struct ubcore_tp *tp)
 {
@@ -1281,6 +1324,54 @@ static int ubcore_restore_tp_to_rts(const struct ubcore_device *dev, struct ubco
 
 	return 0;
 }
+
+void ubcore_restore_tp(struct ubcore_device *dev, struct ubcore_tp *tp)
+{
+	struct ubcore_nlmsg *req_msg, *resp_msg;
+	struct ubcore_nl_restore_tp_resp *resp;
+	struct ubcore_nl_restore_tp_req *req;
+
+	/* Currently, only try to restore tp in the UBCORE_TRANSPORT_IB device,
+	 * Do not send retore tp req from target to inititor,
+	 * Do not restore UM TP, as it is only visable by the driver
+	 */
+	if (dev->transport_type != UBCORE_TRANSPORT_IB || tp->flag.bs.target || tp->priv == NULL ||
+	    tp->trans_mode == UBCORE_TP_UM || tp->state != UBCORE_TP_STATE_ERROR ||
+	    !ubcore_have_tp_ops(dev))
+		return;
+
+	req_msg = ubcore_get_restore_tp_req(tp);
+	if (req_msg == NULL) {
+		ubcore_log_err("Failed to get restore tp req");
+		return;
+	}
+
+	resp_msg = ubcore_nl_send_wait(req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to wait restore tp response %pI6c", &tp->peer_eid);
+		kfree(req_msg);
+		return;
+	}
+
+	req = (struct ubcore_nl_restore_tp_req *)(void *)req_msg->payload;
+	resp = (struct ubcore_nl_restore_tp_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != req_msg->msg_type + 1 || resp == NULL ||
+	    resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("Restore tp request is rejected with type %d ret %d",
+			       resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+		kfree(resp_msg);
+		kfree(req_msg);
+		return;
+	}
+
+	if (ubcore_restore_tp_to_rts(dev, tp, req->rx_psn, resp->peer_rx_psn) != 0)
+		ubcore_log_err("Failed to restore tp with tpn %u", tp->tpn);
+
+	kfree(req_msg);
+	kfree(resp_msg);
+	ubcore_log_info("Restored tp with tpn %u", tp->tpn);
+}
+EXPORT_SYMBOL(ubcore_restore_tp);
 
 /* restore target RM tp created by ubcore_advise_target_tp */
 static struct ubcore_tp *ubcore_restore_advised_target_tp(struct ubcore_device *dev,

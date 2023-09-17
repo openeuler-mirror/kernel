@@ -52,4 +52,7 @@ struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req);
 
 /* Called when clear tp table */
 int ubcore_destroy_tp(struct ubcore_tp *tp);
+
+/* restore tp from error state */
+void ubcore_restore_tp(struct ubcore_device *dev, struct ubcore_tp *tp);
 #endif
