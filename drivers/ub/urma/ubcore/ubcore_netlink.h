@@ -48,6 +48,26 @@ struct ubcore_nlmsg {
 	uint8_t payload[0];
 } __packed;
 
+struct ubcore_multipath_tp_cfg {
+	union ubcore_tp_flag flag;
+	uint16_t data_rctp_start;
+	uint16_t ack_rctp_start;
+	uint16_t data_rmtp_start;
+	uint16_t ack_rmtp_start;
+	uint8_t tp_range;
+	uint16_t congestion_alg;
+};
+
+struct ubcore_nl_query_tp_resp {
+	enum ubcore_nl_resp_status ret;
+	bool tp_exist;
+	uint32_t tpn; /* must set if tp exist is true */
+	union ubcore_eid dst_eid; /* underlay */
+	struct ubcore_net_addr src_addr; /* underlay */
+	struct ubcore_net_addr dst_addr; /* underlay */
+	struct ubcore_multipath_tp_cfg cfg;
+};
+
 struct ubcore_nl_session {
 	struct ubcore_nlmsg *req;
 	struct ubcore_nlmsg *resp;

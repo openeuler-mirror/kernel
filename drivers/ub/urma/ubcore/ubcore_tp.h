@@ -23,12 +23,28 @@
 
 #include <urma/ubcore_types.h>
 #include "ubcore_netlink.h"
+#include "ubcore_tp_table.h"
+
+struct ubcore_tp_meta {
+	struct ubcore_hash_table *ht;
+	uint32_t hash;
+	struct ubcore_tp_key key;
+};
+
+struct ubcore_tp_advice {
+	struct ubcore_ta ta;
+	struct ubcore_tp_meta meta;
+};
 
 static inline bool ubcore_have_tp_ops(const struct ubcore_device *dev)
 {
 	return (dev != NULL && dev->ops->create_tp != NULL && dev->ops->modify_tp != NULL &&
 		dev->ops->destroy_tp != NULL);
 }
+
+/* alpha */
+int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
+		     struct ubcore_tp_advice *advice, struct ubcore_udata *udata);
 
 /* Called when clear tp table */
 int ubcore_destroy_tp(struct ubcore_tp *tp);
