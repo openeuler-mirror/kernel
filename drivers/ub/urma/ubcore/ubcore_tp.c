@@ -32,6 +32,27 @@
 #define UB_PROTOCOL_HEAD_BYTES 313
 #define UB_MTU_BITS_BASE_SHIFT 7
 
+static inline uint32_t get_udrv_in_len(const struct ubcore_udata *udata)
+{
+	return ((udata == NULL || udata->udrv_data == NULL) ? 0 : udata->udrv_data->in_len);
+}
+
+static inline int get_udrv_in_data(uint8_t *dst, uint32_t dst_len, struct ubcore_udata *udata)
+{
+	if (udata == NULL || udata->udrv_data == NULL || udata->udrv_data->in_len == 0)
+		return 0;
+
+	if (udata->uctx != NULL) {
+		if (dst_len < udata->udrv_data->in_len)
+			return -1;
+		return (int)copy_from_user(dst, (void __user *)(uintptr_t)udata->udrv_data->in_addr,
+					   udata->udrv_data->in_len);
+	} else {
+		(void)memcpy(dst, (void *)udata->udrv_data->in_addr, udata->udrv_data->in_len);
+		return 0;
+	}
+}
+
 static inline void ubcore_set_net_addr_with_eid(struct ubcore_net_addr *net_addr,
 						const union ubcore_eid *eid)
 {
@@ -100,6 +121,85 @@ static struct ubcore_nlmsg *ubcore_alloc_nlmsg(size_t payload_len, const union u
 	return msg;
 }
 
+static struct ubcore_nlmsg *ubcore_get_destroy_tp_req(struct ubcore_tp *tp,
+						      const struct ubcore_ta_data *ta)
+{
+	struct ubcore_nl_destroy_tp_req *destroy;
+	struct ubcore_nlmsg *req;
+
+	req = ubcore_alloc_nlmsg(sizeof(struct ubcore_nl_destroy_tp_req), &tp->local_eid,
+				 &tp->peer_eid);
+	if (req == NULL)
+		return NULL;
+
+	req->msg_type = UBCORE_NL_DESTROY_TP_REQ;
+	req->transport_type = tp->ub_dev->transport_type;
+	destroy = (struct ubcore_nl_destroy_tp_req *)req->payload;
+	destroy->trans_mode = tp->trans_mode;
+	destroy->tpn = tp->tpn;
+	destroy->peer_tpn = tp->peer_tpn;
+	if (ta != NULL)
+		destroy->ta = *ta;
+	else
+		destroy->ta.type = UBCORE_TA_NONE;
+
+	return req;
+}
+
+static int ubcore_init_create_tp_req(struct ubcore_nl_create_tp_req *create, struct ubcore_tp *tp,
+				     const struct ubcore_ta_data *ta, struct ubcore_udata *udata)
+{
+	create->tpn = tp->tpn;
+	create->local_net_addr = tp->local_net_addr;
+	create->peer_net_addr = tp->peer_net_addr;
+	create->trans_mode = tp->trans_mode;
+	create->mtu = tp->mtu;
+	create->rx_psn = tp->rx_psn;
+	create->cfg.flag = tp->flag;
+	create->cfg.congestion_alg = tp->ub_dev->attr.dev_cap.congestion_ctrl_alg;
+
+	if (ta != NULL)
+		create->ta = *ta;
+	else
+		create->ta.type = UBCORE_TA_NONE;
+
+	create->ext_len = tp->tp_ext.len;
+	create->udrv_in_len = get_udrv_in_len(udata);
+	if (tp->tp_ext.len > 0)
+		(void)memcpy(create->ext_udrv, (void *)tp->tp_ext.addr, tp->tp_ext.len);
+
+	if (get_udrv_in_data(create->ext_udrv + tp->tp_ext.len, create->udrv_in_len, udata) != 0) {
+		ubcore_log_err("Failed to get udrv data");
+		return -1;
+	}
+
+	return 0;
+}
+
+static struct ubcore_nlmsg *ubcore_get_create_tp_req(struct ubcore_tp *tp,
+						     struct ubcore_ta_data *ta,
+						     struct ubcore_udata *udata)
+{
+	uint32_t payload_len =
+		sizeof(struct ubcore_nl_create_tp_req) + tp->tp_ext.len + get_udrv_in_len(udata);
+	struct ubcore_nlmsg *req;
+
+	req = ubcore_alloc_nlmsg(payload_len, &tp->local_eid, &tp->peer_eid);
+	if (req == NULL)
+		return NULL;
+
+	req->transport_type = tp->ub_dev->transport_type;
+	req->msg_type = UBCORE_NL_CREATE_TP_REQ;
+
+	if (ubcore_init_create_tp_req((struct ubcore_nl_create_tp_req *)req->payload, tp, ta,
+				      udata) != 0) {
+		kfree(req);
+		ubcore_log_err("Failed to init create tp req");
+		return NULL;
+	}
+	return req;
+}
+
 static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, const uint8_t *ext_addr,
 				  const uint32_t ext_len)
 {
@@ -137,6 +237,35 @@ static int ubcore_negotiate_optimal_cc_alg(uint16_t local_congestion_alg,
 			return i;
 	}
 	return -1;
+}
+
+static int ubcore_set_initiator_peer(const struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
+				     union ubcore_tp_attr_mask *mask,
+				     const struct ubcore_nl_create_tp_resp *resp)
+{
+	mask->value = 0;
+	mask->bs.flag = 1;
+	mask->bs.peer_tpn = 1;
+	mask->bs.mtu = 1;
+	mask->bs.tx_psn = 1;
+	mask->bs.state = 1;
+
+	memset(attr, 0, sizeof(*attr));
+	attr->flag.bs.oor_en = tp->flag.bs.oor_en & resp->flag.bs.oor_en;
+	attr->flag.bs.sr_en = tp->flag.bs.sr_en & resp->flag.bs.sr_en;
+	attr->flag.bs.spray_en = tp->flag.bs.spray_en & resp->flag.bs.spray_en;
+	attr->flag.bs.cc_en = tp->flag.bs.cc_en & resp->flag.bs.cc_en;
+	attr->flag.bs.cc_alg = resp->flag.bs.cc_alg; /* negotiated with the remote */
+	attr->peer_tpn = resp->peer_tpn;
+	attr->mtu = min(tp->mtu, resp->peer_mtu);
+	attr->tx_psn = resp->peer_rx_psn;
+	attr->state = UBCORE_TP_STATE_RTS;
+
+	if (tp->peer_ext.addr != 0)
+		return 0;
+
+	mask->bs.peer_ext = 1;
+	return ubcore_set_tp_peer_ext(attr, resp->peer_ext, resp->peer_ext_len);
 }
 
 static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
@@ -191,6 +320,73 @@ static int ubcore_query_tp(struct ubcore_device *dev, const union ubcore_eid *re
 	kfree(resp_msg);
 	kfree(req_msg);
 	return ret;
+}
+
+static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta, struct ubcore_ta_data *ta_data)
+{
+	struct ubcore_jetty *jetty;
+	struct ubcore_jfs *jfs;
+
+	ta_data->type = ta->type;
+	switch (ta->type) {
+	case UBCORE_TA_JFS_TJFR:
+		jfs = ta->jfs;
+		ta_data->jetty_id.eid = jfs->ub_dev->attr.eid;
+		if (jfs->uctx != NULL)
+			ta_data->jetty_id.uasid = jfs->uctx->uasid;
+		ta_data->jetty_id.id = jfs->id;
+		ta_data->tjetty_id = ta->tjetty_id;
+		break;
+	case UBCORE_TA_JETTY_TJETTY:
+		jetty = ta->jetty;
+		ta_data->jetty_id.eid = jetty->ub_dev->attr.eid;
+		if (jetty->uctx != NULL)
+			ta_data->jetty_id.uasid = jetty->uctx->uasid;
+		ta_data->jetty_id.id = jetty->id;
+		ta_data->tjetty_id = ta->tjetty_id;
+		break;
+	case UBCORE_TA_NONE:
+	case UBCORE_TA_VIRT:
+	default:
+		return;
+	}
+}
+
+static struct ubcore_nlmsg *ubcore_exchange_tp(struct ubcore_tp *tp, struct ubcore_ta *ta,
+					       struct ubcore_udata *udata)
+{
+	struct ubcore_nlmsg *req_msg, *resp_msg;
+
+	struct ubcore_nl_create_tp_resp *resp;
+	struct ubcore_ta_data ta_data = { 0 };
+
+	if (ta != NULL)
+		ubcore_get_ta_data_from_ta(ta, &ta_data);
+
+	req_msg = ubcore_get_create_tp_req(tp, &ta_data, udata);
+	if (req_msg == NULL) {
+		ubcore_log_err("Failed to get create tp req");
+		return NULL;
+	}
+
+	resp_msg = ubcore_nl_send_wait(req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to wait create_tp response %pI6c", &tp->peer_eid);
+		kfree(req_msg);
+		return NULL;
+	}
+
+	resp = (struct ubcore_nl_create_tp_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != req_msg->msg_type + 1 || resp == NULL ||
+	    resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("Create tp request is rejected with type %d ret %d",
+			       resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+		kfree(resp_msg);
+		resp_msg = NULL;
+	}
+
+	kfree(req_msg);
+	return resp_msg;
 }
 
 int ubcore_destroy_tp(struct ubcore_tp *tp)
@@ -258,6 +454,48 @@ static struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev,
 	tp->priv = NULL;
 	atomic_set(&tp->use_cnt, 1);
 	return tp;
+}
+
+/* send request to destroy remote peer tp */
+static int ubcore_destroy_peer_tp(struct ubcore_tp *tp, struct ubcore_ta *ta)
+{
+	struct ubcore_nlmsg *req_msg, *resp_msg;
+	struct ubcore_nl_destroy_tp_resp *resp;
+	struct ubcore_ta_data ta_data = { 0 };
+	int ret = 0;
+
+	if (tp == NULL) {
+		ubcore_log_err("Invalid parameter");
+		return -1;
+	}
+
+	if (ta != NULL)
+		ubcore_get_ta_data_from_ta(ta, &ta_data);
+
+	req_msg = ubcore_get_destroy_tp_req(tp, &ta_data);
+	if (req_msg == NULL) {
+		ubcore_log_err("Failed to get destroy tp req");
+		return -1;
+	}
+
+	resp_msg = ubcore_nl_send_wait(req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to get destroy tp response");
+		kfree(req_msg);
+		return -1;
+	}
+
+	resp = (struct ubcore_nl_destroy_tp_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != UBCORE_NL_DESTROY_TP_RESP || resp == NULL ||
+	    resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("Destroy tp request is rejected with type %d ret %d",
+			       resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+		ret = -1;
+	}
+
+	kfree(resp_msg);
+	kfree(req_msg);
+	return ret;
 }
 
 static void ubcore_abort_tp(struct ubcore_tp *tp, struct ubcore_tp_meta *meta)
@@ -390,6 +628,64 @@ static void ubcore_modify_tp_attr(struct ubcore_tp *tp, const struct ubcore_tp_a
 static int ubcore_enable_tp(const struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
 			    struct ubcore_ta *ta, struct ubcore_udata *udata)
 {
+	struct ubcore_tp *tp = tp_node->tp;
+	struct ubcore_nlmsg *resp_msg;
+	union ubcore_tp_attr_mask mask;
+	struct ubcore_tp_attr attr;
+	int ret;
+
+	/* Do not exchange tp with remote in the VM */
+	if (dev->attr.virtualization)
+		return 0;
+
+	mutex_lock(&tp_node->lock);
+	if (tp->state == UBCORE_TP_STATE_RTR) {
+		ret = ubcore_modify_tp_to_rts(dev, tp);
+		mutex_unlock(&tp_node->lock);
+		return ret;
+	}
+	mutex_unlock(&tp_node->lock);
+
+	/* send request to connection agent and set peer cfg and peer ext from response */
+	resp_msg = ubcore_exchange_tp(tp, ta, udata);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to exchange tp info");
+		return -1;
+	}
+
+	mutex_lock(&tp_node->lock);
+	if (tp->state == UBCORE_TP_STATE_RTS) {
+		mutex_unlock(&tp_node->lock);
+		kfree(resp_msg);
+		ubcore_log_info("TP %u is already at RTS", tp->tpn);
+		return 0;
+	}
+
+	ret = ubcore_set_initiator_peer(
+		tp, &attr, &mask,
+		(const struct ubcore_nl_create_tp_resp *)(void *)resp_msg->payload);
+
+	/* Here we can free resp msg after use */
+	kfree(resp_msg);
+
+	if (ret != 0) {
+		mutex_unlock(&tp_node->lock);
+		(void)ubcore_destroy_peer_tp(tp, ta);
+		ubcore_unset_tp_peer_ext(&attr);
+		ubcore_log_err("Failed to set initiator peer");
+		return -1;
+	}
+
+	ret = dev->ops->modify_tp(tp, &attr, mask);
+	if (ret != 0) {
+		mutex_unlock(&tp_node->lock);
+		(void)ubcore_destroy_peer_tp(tp, ta);
+		ubcore_unset_tp_peer_ext(&attr);
+		ubcore_log_err("Failed to modify tp");
+		return -1;
+	}
+	ubcore_modify_tp_attr(tp, &attr, mask);
+	mutex_unlock(&tp_node->lock);
 	return 0;
 }
 
