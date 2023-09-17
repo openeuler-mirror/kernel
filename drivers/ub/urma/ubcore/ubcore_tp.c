@@ -930,3 +930,141 @@ int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_e
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_advise_tp);
+
+static struct ubcore_nlmsg *ubcore_get_restore_tp_response(struct ubcore_nlmsg *req,
+							   struct ubcore_tp *tp)
+{
+	struct ubcore_nl_restore_tp_resp *restore_resp;
+	struct ubcore_nlmsg *resp = NULL;
+
+	resp = ubcore_alloc_nlmsg(sizeof(struct ubcore_nl_restore_tp_resp), &req->dst_eid,
+				  &req->src_eid);
+	if (resp == NULL) {
+		ubcore_log_err("Failed to alloc restore tp response");
+		return NULL;
+	}
+
+	resp->msg_type = UBCORE_NL_RESTORE_TP_RESP;
+	resp->nlmsg_seq = req->nlmsg_seq;
+	resp->transport_type = req->transport_type;
+	restore_resp = (struct ubcore_nl_restore_tp_resp *)resp->payload;
+
+	if (tp == NULL) {
+		restore_resp->ret = UBCORE_NL_RESP_FAIL;
+		return resp;
+	}
+
+	restore_resp->peer_rx_psn = tp->rx_psn;
+	return resp;
+}
+
+static int ubcore_restore_tp_to_rts(const struct ubcore_device *dev, struct ubcore_tp *tp,
+				    uint32_t rx_psn, uint32_t tx_psn)
+{
+	union ubcore_tp_attr_mask mask;
+	struct ubcore_tp_attr attr;
+
+	mask.value = 0;
+	mask.bs.state = 1;
+	mask.bs.rx_psn = 1;
+	mask.bs.tx_psn = 1;
+
+	attr.state = UBCORE_TP_STATE_RTS;
+	attr.rx_psn = rx_psn;
+	attr.tx_psn = tx_psn;
+
+	if (dev->ops->modify_tp(tp, &attr, mask) != 0) {
+		/* tp->peer_ext.addr will be freed when called ubcore_destroy_tp */
+		ubcore_log_err("Failed to modify tp");
+		return -1;
+	}
+
+	tp->state = UBCORE_TP_STATE_RTS;
+	tp->rx_psn = rx_psn;
+	tp->tx_psn = tx_psn;
+
+	return 0;
+}
+
+/* restore target RM tp created by ubcore_advise_target_tp */
+static struct ubcore_tp *ubcore_restore_advised_target_tp(struct ubcore_device *dev,
+							  struct ubcore_nl_restore_tp_req *restore)
+{
+	struct ubcore_tp_advice advice;
+	struct ubcore_tp_node *tp_node;
+	struct ubcore_tp_meta *meta;
+	struct ubcore_tp *tp;
+
+	meta = &advice.meta;
+	if (ubcore_parse_ta(dev, &restore->ta, &advice) != 0) {
+		ubcore_log_err("Failed to parse ta with type %u", restore->ta.type);
+		return NULL;
+	} else if (meta->ht == NULL) {
+		ubcore_log_err("tp table is already released");
+		return NULL;
+	}
+
+	tp_node = ubcore_hash_table_lookup(meta->ht, meta->hash, &meta->key);
+	/* pair with get_tptable in parse_ta */
+	ubcore_put_tptable(meta->ht);
+	if (tp_node == NULL) {
+		ubcore_log_err("tp is not found%u", restore->peer_tpn);
+		return NULL;
+	}
+
+	tp = tp_node->tp;
+	if (ubcore_restore_tp_to_rts(dev, tp, get_random_u32(), restore->rx_psn) != 0) {
+		ubcore_log_err("Failed to modify tp to rts %u", restore->rx_psn);
+		return NULL;
+	}
+	return tp;
+}
+
+static struct ubcore_tp *ubcore_restore_bound_target_tp(struct ubcore_device *dev,
+							struct ubcore_nl_restore_tp_req *restore)
+{
+	return ubcore_restore_advised_target_tp(dev, restore);
+}
+
+static struct ubcore_tp *ubcore_handle_restore_tp(struct ubcore_device *dev,
+						  struct ubcore_nl_restore_tp_req *restore)
+{
+	if (dev->transport_type != UBCORE_TRANSPORT_IB || restore->trans_mode == UBCORE_TP_UM ||
+	    restore->ta.type == UBCORE_TA_NONE || restore->ta.type >= UBCORE_TA_VIRT)
+		return NULL;
+
+	if (restore->trans_mode == UBCORE_TP_RM)
+		return ubcore_restore_advised_target_tp(dev, restore);
+	else
+		return ubcore_restore_bound_target_tp(dev, restore);
+}
+
+struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req)
+{
+	struct ubcore_nl_restore_tp_req *restore =
+		(struct ubcore_nl_restore_tp_req *)(void *)req->payload;
+	struct ubcore_device *dev;
+	struct ubcore_tp *tp;
+
+	if (req->payload_len != sizeof(struct ubcore_nl_restore_tp_req)) {
+		ubcore_log_err("Invalid restore req");
+		return NULL;
+	}
+
+	dev = ubcore_find_device(&req->dst_eid, req->transport_type);
+	if (dev == NULL || !ubcore_have_tp_ops(dev)) {
+		if (dev != NULL)
+			ubcore_put_device(dev);
+		ubcore_log_err("Failed to find device or device ops invalid");
+		return ubcore_get_restore_tp_response(req, NULL);
+	}
+
+	tp = ubcore_handle_restore_tp(dev, restore);
+	if (tp == NULL)
+		ubcore_log_err("Failed to restore target tp towards remote eid %pI6c",
+			       &req->src_eid);
+
+	ubcore_put_device(dev);
+	return ubcore_get_restore_tp_response(req, tp);
+}
+EXPORT_SYMBOL(ubcore_handle_restore_tp_req);

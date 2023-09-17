@@ -48,6 +48,8 @@ int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_e
 
 struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req);
 struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req);
+struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req);
+
 /* Called when clear tp table */
 int ubcore_destroy_tp(struct ubcore_tp *tp);
 #endif

@@ -113,6 +113,19 @@ struct ubcore_nl_query_tp_resp {
 	struct ubcore_multipath_tp_cfg cfg;
 };
 
+struct ubcore_nl_restore_tp_req {
+	enum ubcore_transport_mode trans_mode;
+	uint32_t tpn;
+	uint32_t peer_tpn;
+	uint32_t rx_psn;
+	struct ubcore_ta_data ta;
+};
+
+struct ubcore_nl_restore_tp_resp {
+	enum ubcore_nl_resp_status ret;
+	uint32_t peer_rx_psn;
+};
+
 struct ubcore_nl_session {
 	struct ubcore_nlmsg *req;
 	struct ubcore_nlmsg *resp;
