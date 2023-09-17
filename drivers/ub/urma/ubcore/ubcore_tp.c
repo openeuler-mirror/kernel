@@ -119,6 +119,45 @@ static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
 	return req;
 }
 
+static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, const uint8_t *ext_addr,
+				  const uint32_t ext_len)
+{
+	void *peer_ext = NULL;
+
+	if (ext_len == 0 || ext_addr == NULL)
+		return 0;
+
+	/* copy resp ext from req or response */
+	peer_ext = kzalloc(ext_len, GFP_KERNEL);
+	if (peer_ext == NULL)
+		return -ENOMEM;
+
+	(void)memcpy(peer_ext, ext_addr, ext_len);
+
+	attr->peer_ext.addr = (uint64_t)peer_ext;
+	attr->peer_ext.len = ext_len;
+	return 0;
+}
+
+static inline void ubcore_unset_tp_peer_ext(struct ubcore_tp_attr *attr)
+{
+	if (attr->peer_ext.addr != 0)
+		kfree((void *)attr->peer_ext.addr);
+}
+
+static int ubcore_negotiate_optimal_cc_alg(uint16_t local_congestion_alg,
+					   uint16_t peer_local_congestion_alg)
+{
+	int i;
+
+	/* TODO Configure congestion control priority based on UVS */
+	for (i = 0; i <= UBCORE_TP_CC_DIP; i++) {
+		if ((0x1 << (uint32_t)i) & local_congestion_alg & peer_local_congestion_alg)
+			return i;
+	}
+	return -1;
+}
+
 static int ubcore_query_tp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
 			   enum ubcore_transport_mode trans_mode,
 			   struct ubcore_nl_query_tp_resp *query_tp_resp)
@@ -311,10 +350,83 @@ static int ubcore_query_initiator_tp_cfg(struct ubcore_tp_cfg *cfg, struct ubcor
 	return ubcore_set_initiator_tp_cfg(cfg, dev, trans_mode, NULL, &query_tp_resp);
 }
 
+static int ubcore_modify_tp_to_rts(const struct ubcore_device *dev, struct ubcore_tp *tp)
+{
+	union ubcore_tp_attr_mask mask;
+	struct ubcore_tp_attr attr;
+
+	mask.value = 0;
+	mask.bs.state = 1;
+	attr.state = UBCORE_TP_STATE_RTS;
+
+	if (dev->ops->modify_tp(tp, &attr, mask) != 0) {
+		/* tp->peer_ext.addr will be freed when called ubcore_destroy_tp */
+		ubcore_log_err("Failed to modify tp");
+		return -1;
+	}
+	tp->state = UBCORE_TP_STATE_RTS;
+	return 0;
+}
+
+#define ubcore_mod_tp_attr_with_mask(tp, attr, field, mask)	\
+	(tp->field = mask.bs.field ? attr->field : tp->field)
+
+static void ubcore_modify_tp_attr(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
+				  union ubcore_tp_attr_mask mask)
+{
+	/* flag and mod flag must have the same layout */
+	if (mask.bs.flag)
+		tp->flag.value = tp->flag.bs.target | (attr->flag.value << 1);
+
+	ubcore_mod_tp_attr_with_mask(tp, attr, peer_tpn, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, state, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, tx_psn, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, rx_psn, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, mtu, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, cc_pattern_idx, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, peer_ext, mask);
+}
+
 static int ubcore_enable_tp(const struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
 			    struct ubcore_ta *ta, struct ubcore_udata *udata)
 {
 	return 0;
+}
+
+static int ubcore_set_target_peer(const struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
+				  union ubcore_tp_attr_mask *mask,
+				  const struct ubcore_nl_create_tp_req *create)
+{
+	int ret;
+
+	mask->value = 0;
+	mask->bs.peer_tpn = 1;
+	mask->bs.mtu = 1;
+	mask->bs.tx_psn = 1;
+	mask->bs.state = 1;
+	mask->bs.flag = 1;
+
+	memset(attr, 0, sizeof(*attr));
+	attr->peer_tpn = create->tpn;
+	attr->mtu = min(tp->mtu, create->mtu);
+	attr->tx_psn = create->rx_psn;
+	attr->state = UBCORE_TP_STATE_RTR;
+
+	/* Negotiate local and remote optimal algorithms */
+	ret = ubcore_negotiate_optimal_cc_alg(tp->ub_dev->attr.dev_cap.congestion_ctrl_alg,
+					      create->cfg.congestion_alg);
+	if (ret == -1) {
+		ubcore_log_err("No congestion control algorithm available");
+		return -1;
+	}
+	attr->flag.value = tp->flag.value >> 1;
+	attr->flag.bs.cc_alg = (enum ubcore_tp_cc_alg)ret;
+
+	if (tp->peer_ext.addr != 0)
+		return 0;
+
+	mask->bs.peer_ext = 1;
+	return ubcore_set_tp_peer_ext(attr, create->ext_udrv, create->ext_len);
 }
 
 static struct ubcore_nlmsg *ubcore_get_create_tp_response(struct ubcore_tp *tp,
@@ -435,10 +547,63 @@ static struct ubcore_tp *ubcore_create_target_tp(struct ubcore_device *dev,
 	return tp;
 }
 
+static int ubcore_modify_target_tp(const struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
+				   const struct ubcore_nl_create_tp_req *create)
+{
+	struct ubcore_tp *tp = tp_node->tp;
+	union ubcore_tp_attr_mask mask;
+	struct ubcore_tp_attr attr;
+	int ret = 0;
+
+	mutex_lock(&tp_node->lock);
+
+	switch (tp->state) {
+	case UBCORE_TP_STATE_RTS:
+		ubcore_log_info("Reuse existing tp with tpn %u", tp->tpn);
+		break;
+	case UBCORE_TP_STATE_RESET:
+		/* Modify target tp to RTR */
+		if (ubcore_set_target_peer(tp, &attr, &mask, create) != 0) {
+			ubcore_log_err("Failed to set target peer");
+			ret = -1;
+			break;
+		}
+		if (dev->ops->modify_tp(tp, &attr, mask) != 0) {
+			ubcore_unset_tp_peer_ext(&attr);
+			ubcore_log_err("Failed to modify tp");
+			ret = -1;
+			break;
+		}
+		ubcore_modify_tp_attr(tp, &attr, mask);
+		fallthrough;
+	case UBCORE_TP_STATE_RTR:
+		/* For RC target TP: modify to RTR only, to RTS when call bind_jetty;
+		 * For IB RM target TP: modify to RTR only, to RTS when call advise_jetty
+		 */
+		if (tp->trans_mode == UBCORE_TP_RC || (dev->transport_type == UBCORE_TRANSPORT_IB))
+			break;
+
+		/* TRANSPORT_UB: modify target tp to RTS when receive ACK from intiator,
+		 * currently, modify target tp to RTS immediately after target tp is modified to RTR
+		 */
+		ret = ubcore_modify_tp_to_rts(dev, tp);
+		break;
+	case UBCORE_TP_STATE_ERROR:
+	default:
+		ret = -1;
+		break;
+	}
+
+	mutex_unlock(&tp_node->lock);
+	return ret;
+}
+
 static struct ubcore_tp *ubcore_accept_target_tp(struct ubcore_device *dev,
 						 struct ubcore_nlmsg *req,
 						 struct ubcore_tp_advice *advice)
 {
+	struct ubcore_nl_create_tp_req *create =
+		(struct ubcore_nl_create_tp_req *)(void *)req->payload;
 	struct ubcore_tp_meta *meta = &advice->meta;
 	struct ubcore_tp *new_tp = NULL; /* new created target tp */
 	struct ubcore_tp_node *tp_node;
@@ -465,6 +630,11 @@ static struct ubcore_tp *ubcore_accept_target_tp(struct ubcore_device *dev,
 		}
 	}
 
+	if (ubcore_modify_target_tp(dev, tp_node, create) != 0) {
+		ubcore_abort_tp(new_tp, meta);
+		ubcore_log_err("Failed to modify tp");
+		return NULL;
+	}
 	return tp_node->tp;
 }
 
