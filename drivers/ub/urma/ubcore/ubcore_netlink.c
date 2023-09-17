@@ -30,7 +30,51 @@
 #define UBCORE_NL_INVALID_PORT 0
 
 struct sock *nl_sock;
+static LIST_HEAD(g_nl_session_list);
+static DEFINE_SPINLOCK(g_nl_session_lock);
+atomic_t g_nlmsg_seq;
 static uint32_t g_agent_port = UBCORE_NL_INVALID_PORT; /* get agent pid */
+
+static int ubcore_nl_send(struct ubcore_nlmsg *pbuf, uint16_t len);
+
+static uint32_t ubcore_get_nlmsg_seq(void)
+{
+	return atomic_inc_return(&g_nlmsg_seq);
+}
+
+static struct ubcore_nl_session *ubcore_create_nl_session(struct ubcore_nlmsg *req)
+{
+	struct ubcore_nl_session *s;
+	unsigned long flags;
+
+	s = kzalloc(sizeof(struct ubcore_nl_session), GFP_KERNEL);
+	if (s == NULL)
+		return NULL;
+
+	s->req = req;
+	spin_lock_irqsave(&g_nl_session_lock, flags);
+	list_add_tail(&s->node, &g_nl_session_list);
+	spin_unlock_irqrestore(&g_nl_session_lock, flags);
+	kref_init(&s->kref);
+	init_completion(&s->comp);
+	return s;
+}
+
+static void ubcore_free_nl_session(struct kref *kref)
+{
+	struct ubcore_nl_session *s = container_of(kref, struct ubcore_nl_session, kref);
+	unsigned long flags;
+
+	spin_lock_irqsave(&g_nl_session_lock, flags);
+	list_del(&s->node);
+	spin_unlock_irqrestore(&g_nl_session_lock, flags);
+	kfree(s);
+}
+
+static inline void ubcore_destroy_nl_session(struct ubcore_nl_session *s)
+{
+	kref_put(&s->kref, ubcore_free_nl_session);
+}
 
 static void ubcore_nl_cb_func(struct sk_buff *skb)
 {
@@ -50,6 +94,68 @@ static void ubcore_nl_cb_func(struct sk_buff *skb)
 		ubcore_log_err("Unexpected nl msg type: %d received\n", nlh->nlmsg_type);
 		break;
 	}
+}
+
+static int ubcore_nl_send(struct ubcore_nlmsg *pbuf, uint16_t len)
+{
+	struct sk_buff *nl_skb;
+	struct nlmsghdr *nlh;
+	int ret;
+
+	if (pbuf == NULL || g_agent_port == UBCORE_NL_INVALID_PORT) {
+		ubcore_log_err("There are illegal parameters.\n");
+		return -1;
+	}
+
+	/* create sk_buff */
+	nl_skb = nlmsg_new(len, GFP_ATOMIC);
+	if (nl_skb == NULL) {
+		ubcore_log_err("failed to alloc.\n");
+		return -1;
+	}
+	/* set netlink head */
+	nlh = nlmsg_put(nl_skb, 0, pbuf->nlmsg_seq, pbuf->msg_type, len, 0);
+	if (nlh == NULL) {
+		ubcore_log_err("Failed to nlmsg put.\n");
+		nlmsg_free(nl_skb);
+		return -1;
+	}
+	/* copy msg */
+	(void)memcpy(nlmsg_data(nlh), pbuf, len);
+	ret = netlink_unicast(nl_sock, nl_skb, g_agent_port, 0);
+	return ret < 0 ? ret : 0;
+}
+
+struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req)
+{
+	unsigned long leavetime;
+	struct ubcore_nl_session *s;
+	struct ubcore_nlmsg *resp;
+	int ret;
+
+	req->nlmsg_seq = ubcore_get_nlmsg_seq();
+	s = ubcore_create_nl_session(req);
+	if (s == NULL) {
+		ubcore_log_err("Failed to create nl session");
+		return NULL;
+	}
+
+	ret = ubcore_nl_send(req, ubcore_nlmsg_len(req));
+	if (ret != 0) {
+		ubcore_log_err("Failed to send nl msg %d", ret);
+		ubcore_destroy_nl_session(s);
+		return NULL;
+	}
+
+	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_NL_TIMEOUT));
+	if (leavetime == 0) {
+		ubcore_log_err("Failed to wait reply, ret: %d, leavetime: %lu\n", ret, leavetime);
+		ubcore_destroy_nl_session(s);
+		return NULL;
+	}
+	resp = s->resp;
+	ubcore_destroy_nl_session(s);
+	return resp;
 }
 
 int ubcore_netlink_init(void)

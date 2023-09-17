@@ -48,6 +48,12 @@ struct ubcore_nlmsg {
 	uint8_t payload[0];
 } __packed;
 
+struct ubcore_ta_data {
+	enum ubcore_ta_type type;
+	struct ubcore_jetty_id jetty_id; /* local jetty id */
+	struct ubcore_jetty_id tjetty_id; /* peer jetty id */
+};
+
 struct ubcore_multipath_tp_cfg {
 	union ubcore_tp_flag flag;
 	uint16_t data_rctp_start;
@@ -84,4 +90,6 @@ static inline uint32_t ubcore_nlmsg_len(struct ubcore_nlmsg *msg)
 int ubcore_netlink_init(void);
 void ubcore_netlink_exit(void);
 
+/* return response msg pointer, caller must release it */
+struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req);
 #endif
