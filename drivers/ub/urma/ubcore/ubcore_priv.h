@@ -44,4 +44,9 @@ struct ubcore_device **ubcore_get_devices_from_netdev(struct net_device *netdev,
 void ubcore_put_devices(struct ubcore_device **devices, uint32_t cnt);
 void ubcore_set_default_eid(struct ubcore_device *dev);
 
+static inline uint32_t ubcore_get_jetty_hash(const struct ubcore_jetty_id *jetty_id)
+{
+	return jhash(jetty_id, sizeof(struct ubcore_jetty_id), 0);
+}
+
 #endif

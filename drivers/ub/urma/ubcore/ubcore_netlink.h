@@ -64,6 +64,30 @@ struct ubcore_multipath_tp_cfg {
 	uint16_t congestion_alg;
 };
 
+struct ubcore_nl_create_tp_req {
+	uint32_t tpn;
+	struct ubcore_net_addr local_net_addr;
+	struct ubcore_net_addr peer_net_addr;
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_multipath_tp_cfg cfg;
+	uint32_t rx_psn;
+	enum ubcore_mtu mtu;
+	struct ubcore_ta_data ta;
+	uint32_t ext_len;
+	uint32_t udrv_in_len;
+	uint8_t ext_udrv[0]; /* struct ubcore_tp_ext->len + struct ubcore_udrv_priv->in_len */
+};
+
+struct ubcore_nl_create_tp_resp {
+	enum ubcore_nl_resp_status ret;
+	union ubcore_tp_flag flag;
+	uint32_t peer_tpn;
+	uint32_t peer_rx_psn;
+	enum ubcore_mtu peer_mtu;
+	uint32_t peer_ext_len;
+	uint8_t peer_ext[0]; /* struct ubcore_tp_ext->len */
+};
+
 struct ubcore_nl_query_tp_req {
 	enum ubcore_transport_mode trans_mode;
 };

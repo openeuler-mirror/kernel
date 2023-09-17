@@ -46,6 +46,7 @@ static inline bool ubcore_have_tp_ops(const struct ubcore_device *dev)
 int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
 		     struct ubcore_tp_advice *advice, struct ubcore_udata *udata);
 
+struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req);
 /* Called when clear tp table */
 int ubcore_destroy_tp(struct ubcore_tp *tp);
 #endif
