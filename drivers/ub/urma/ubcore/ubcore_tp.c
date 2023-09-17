@@ -100,25 +100,6 @@ static struct ubcore_nlmsg *ubcore_alloc_nlmsg(size_t payload_len, const union u
 	return msg;
 }
 
-static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
-						    const union ubcore_eid *remote_eid,
-						    enum ubcore_transport_mode trans_mode)
-{
-	uint32_t payload_len = sizeof(struct ubcore_nl_query_tp_req);
-	struct ubcore_nl_query_tp_req *query;
-	struct ubcore_nlmsg *req;
-
-	req = ubcore_alloc_nlmsg(payload_len, &dev->attr.eid, remote_eid);
-	if (req == NULL)
-		return NULL;
-
-	req->transport_type = dev->transport_type;
-	req->msg_type = UBCORE_NL_QUERY_TP_REQ;
-	query = (struct ubcore_nl_query_tp_req *)req->payload;
-	query->trans_mode = trans_mode;
-	return req;
-}
-
 static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, const uint8_t *ext_addr,
 				  const uint32_t ext_len)
 {
@@ -156,6 +137,25 @@ static int ubcore_negotiate_optimal_cc_alg(uint16_t local_congestion_alg,
 			return i;
 	}
 	return -1;
+}
+
+static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
+						    const union ubcore_eid *remote_eid,
+						    enum ubcore_transport_mode trans_mode)
+{
+	uint32_t payload_len = sizeof(struct ubcore_nl_query_tp_req);
+	struct ubcore_nl_query_tp_req *query;
+	struct ubcore_nlmsg *req;
+
+	req = ubcore_alloc_nlmsg(payload_len, &dev->attr.eid, remote_eid);
+	if (req == NULL)
+		return NULL;
+
+	req->transport_type = dev->transport_type;
+	req->msg_type = UBCORE_NL_QUERY_TP_REQ;
+	query = (struct ubcore_nl_query_tp_req *)req->payload;
+	query->trans_mode = trans_mode;
+	return req;
 }
 
 static int ubcore_query_tp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
@@ -427,6 +427,28 @@ static int ubcore_set_target_peer(const struct ubcore_tp *tp, struct ubcore_tp_a
 
 	mask->bs.peer_ext = 1;
 	return ubcore_set_tp_peer_ext(attr, create->ext_udrv, create->ext_len);
+}
+
+static struct ubcore_nlmsg *ubcore_get_destroy_tp_response(enum ubcore_nl_resp_status ret,
+							   struct ubcore_nlmsg *req)
+{
+	struct ubcore_nl_destroy_tp_resp *destroy_resp;
+	struct ubcore_nlmsg *resp = NULL;
+
+	resp = ubcore_alloc_nlmsg(sizeof(struct ubcore_nl_destroy_tp_resp), &req->dst_eid,
+				  &req->src_eid);
+	if (resp == NULL) {
+		ubcore_log_err("Failed to alloc destroy tp response");
+		return NULL;
+	}
+
+	resp->msg_type = UBCORE_NL_DESTROY_TP_RESP;
+	resp->nlmsg_seq = req->nlmsg_seq;
+	resp->transport_type = req->transport_type;
+	destroy_resp = (struct ubcore_nl_destroy_tp_resp *)resp->payload;
+	destroy_resp->ret = ret;
+
+	return resp;
 }
 
 static struct ubcore_nlmsg *ubcore_get_create_tp_response(struct ubcore_tp *tp,
@@ -751,6 +773,88 @@ struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req)
 	return ubcore_get_create_tp_response(tp, req);
 }
 EXPORT_SYMBOL(ubcore_handle_create_tp_req);
+
+/* destroy target vtp created by ubcore_accept_target_vtp */
+static int ubcore_unaccept_target_vtp(struct ubcore_device *dev,
+				      struct ubcore_nl_destroy_tp_req *destroy)
+{
+	struct ubcore_tp *tp = ubcore_remove_tp_with_tpn(dev, destroy->peer_tpn);
+
+	if (tp == NULL) {
+		ubcore_log_warn("tp is not found or already destroyed %u", destroy->peer_tpn);
+		return 0;
+	}
+	return ubcore_destroy_tp(tp);
+}
+
+/* destroy target RM tp created by ubcore_advise_target_tp */
+static int ubcore_unadvise_target_tp(struct ubcore_device *dev,
+				     struct ubcore_nl_destroy_tp_req *destroy)
+{
+	struct ubcore_tp_advice advice;
+	struct ubcore_tp_meta *meta;
+	struct ubcore_tp *tp = NULL;
+
+	meta = &advice.meta;
+	if (ubcore_parse_ta(dev, &destroy->ta, &advice) != 0) {
+		ubcore_log_err("Failed to parse ta with type %u", destroy->ta.type);
+		return -1;
+	} else if (meta->ht == NULL) {
+		ubcore_log_warn("tp table is already released");
+		return 0;
+	}
+
+	tp = ubcore_find_remove_tp(meta->ht, meta->hash, &meta->key);
+	/* pair with get_tptable in parse_ta */
+	ubcore_put_tptable(meta->ht);
+	if (tp == NULL) {
+		ubcore_log_warn("tp is not found, already destroyed or under use %u",
+				destroy->peer_tpn);
+		return 0;
+	}
+
+	return ubcore_destroy_tp(tp);
+}
+
+/* destroy target RC tp created by ubcore_bind_target_tp */
+static int ubcore_unbind_target_tp(struct ubcore_device *dev,
+				   struct ubcore_nl_destroy_tp_req *destroy)
+{
+	return ubcore_unadvise_target_tp(dev, destroy);
+}
+
+struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req)
+{
+	struct ubcore_nl_destroy_tp_req *destroy =
+		(struct ubcore_nl_destroy_tp_req *)(void *)req->payload;
+	struct ubcore_device *dev;
+	int ret = -1;
+
+	if (req->payload_len != sizeof(struct ubcore_nl_destroy_tp_req)) {
+		ubcore_log_err("Invalid destroy req");
+		return NULL;
+	}
+
+	dev = ubcore_find_device(&req->dst_eid, req->transport_type);
+	if (dev == NULL || !ubcore_have_tp_ops(dev)) {
+		if (dev != NULL)
+			ubcore_put_device(dev);
+		ubcore_log_err("Failed to find device or device ops invalid");
+		return ubcore_get_destroy_tp_response(UBCORE_NL_RESP_FAIL, req);
+	}
+
+	if (destroy->ta.type == UBCORE_TA_VIRT) {
+		ret = ubcore_unaccept_target_vtp(dev, destroy);
+	} else if (destroy->trans_mode == UBCORE_TP_RC) {
+		ret = ubcore_unbind_target_tp(dev, destroy);
+	} else if (destroy->trans_mode == UBCORE_TP_RM &&
+		   dev->transport_type == UBCORE_TRANSPORT_IB) {
+		ret = ubcore_unadvise_target_tp(dev, destroy);
+	}
+	ubcore_put_device(dev);
+	return ubcore_get_destroy_tp_response((enum ubcore_nl_resp_status)ret, req);
+}
+EXPORT_SYMBOL(ubcore_handle_destroy_tp_req);
 
 struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
 				    enum ubcore_transport_mode trans_mode,

@@ -88,6 +88,17 @@ struct ubcore_nl_create_tp_resp {
 	uint8_t peer_ext[0]; /* struct ubcore_tp_ext->len */
 };
 
+struct ubcore_nl_destroy_tp_req {
+	uint32_t tpn;
+	uint32_t peer_tpn;
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_ta_data ta;
+};
+
+struct ubcore_nl_destroy_tp_resp {
+	enum ubcore_nl_resp_status ret;
+};
+
 struct ubcore_nl_query_tp_req {
 	enum ubcore_transport_mode trans_mode;
 };
