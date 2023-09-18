@@ -163,6 +163,113 @@ static ssize_t guid_show(struct device *dev, struct device_attribute *attr, char
 
 static DEVICE_ATTR_RO(guid);
 
+static ssize_t max_upi_cnt_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.max_upi_cnt);
+}
+
+static ssize_t max_upi_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, max_upi_cnt_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_upi_cnt);
+
+static ssize_t uburma_query_upi(const struct ubcore_device *ubc_dev, char *buf, uint16_t vf_id)
+{
+	struct ubcore_res_key key = { 0 };
+	struct ubcore_res_val val = { 0 };
+	uint32_t upi;
+	uint32_t i;
+	ssize_t ret;
+
+	key.type = UBCORE_RES_KEY_UPI;
+	key.key = (uint32_t)vf_id;
+
+	val.len = sizeof(uint32_t) * UBCORE_MAX_UPI_CNT;
+	val.addr = (uint64_t)kcalloc(1, val.len, GFP_KERNEL);
+	if (val.addr == 0) {
+		uburma_log_err("kcalloc vf%u failed.\n", vf_id);
+		return -ENOMEM;
+	}
+
+	if (ubcore_query_resource(ubc_dev, &key, &val) != 0) {
+		uburma_log_err("query vf%u resource failed.\n", vf_id);
+		kfree((void *)val.addr);
+		return -EPERM;
+	}
+
+#define UBURMA_UPI_STR_LEN (9) /* 2^20 <= 8bit, add 1 bit space */
+	for (i = 0; i < (val.len / sizeof(upi)); i++) {
+		upi = *((uint32_t *)val.addr + i);
+		ret = snprintf(buf + (UBURMA_UPI_STR_LEN * i), UBURMA_UPI_STR_LEN + 1, "%8u ", upi);
+		if (ret <= 0) {
+			uburma_log_err("snprintf for vf%u upi failed %ld.\n", vf_id, ret);
+			kfree((void *)val.addr);
+			return ret;
+		}
+	}
+
+	buf[(UBURMA_UPI_STR_LEN * i) - 1] = '\n';
+
+	kfree((void *)val.addr);
+	return (ssize_t)(UBURMA_UPI_STR_LEN * i);
+}
+
+static int uburma_parse_upi_str(const char *buf, size_t len, uint16_t *idx, uint32_t *upi)
+{
+	int ret;
+
+	ret = sscanf(buf, "%hu=%u", idx, upi);
+	if (ret <= 1) // ret must be equal to 2
+		return -1;
+
+	return 0;
+}
+
+static ssize_t uburma_upi_store(struct ubcore_device *ubc_dev, const char *buf, size_t len,
+				uint16_t vf_id)
+{
+	ssize_t ret = -ENODEV;
+	uint16_t idx;
+	uint32_t upi;
+
+	ret = uburma_parse_upi_str(buf, len, &idx, &upi);
+	if (ret != 0) {
+		uburma_log_err("parse vf%u upi str:%s failed %ld.\n", vf_id, buf, ret);
+		return -EINVAL;
+	}
+
+	if (ubcore_set_upi(ubc_dev, vf_id, idx, upi) != 0) {
+		uburma_log_err("set vf%u idx:%u upi:%u failed.\n", vf_id, idx, upi);
+		return -EPERM;
+	}
+	return (ssize_t)len; // len is required for success return.
+}
+
+static ssize_t upi_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return uburma_query_upi(ubc_dev, buf, UBCORE_OWN_VF_ID);
+}
+
+static ssize_t upi_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, upi_show_cb);
+}
+
+static ssize_t upi_store_cb(struct ubcore_device *ubc_dev, const char *buf, size_t len)
+{
+	return uburma_upi_store(ubc_dev, buf, len, UBCORE_OWN_VF_ID);
+}
+
+static ssize_t upi_store(struct device *dev, struct device_attribute *attr, const char *buf,
+			 size_t len)
+{
+	return uburma_store_dev_attr(dev, attr, buf, len, upi_store_cb);
+}
+
+static DEVICE_ATTR_RW(upi);
+
 static ssize_t feature_show_cb(const struct ubcore_device *ubc_dev, char *buf)
 {
 	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "0x%x\n", ubc_dev->attr.dev_cap.feature.value);
@@ -377,6 +484,8 @@ static struct attribute *uburma_dev_attrs[] = {
 	&dev_attr_ubdev.attr,
 	&dev_attr_eid.attr,
 	&dev_attr_guid.attr,
+	&dev_attr_max_upi_cnt.attr,
+	&dev_attr_upi.attr,
 	&dev_attr_feature.attr,
 	&dev_attr_max_jfc.attr,
 	&dev_attr_max_jfs.attr,
@@ -569,7 +678,85 @@ static struct kobj_type uburma_port_type = { .release = uburma_port_release,
 					     .default_attrs = uburma_port_attrs
 };
 
+static ssize_t uburma_show_vf_attr(struct uburma_vf *vf, struct uburma_vf_attribute *attr,
+				   char *buf, uburma_show_vf_attr_cb show_cb)
+{
+	struct uburma_device *ubu_dev = vf->ubu_dev;
+	struct ubcore_device *ubc_dev;
+	int srcu_idx;
+	ssize_t ret;
+
+	if (!ubu_dev) {
+		uburma_log_err("Invalid argument in show_vf_attr.\n");
+		return -EINVAL;
+	}
+
+	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
+	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
+	if (ubc_dev == NULL) {
+		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+		return -ENODEV;
+	}
+
+	ret = show_cb(ubc_dev, buf, vf->vf_idx);
+	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+	return ret;
+}
+
+static ssize_t uburma_store_vf_attr(struct uburma_vf *vf, struct uburma_vf_attribute *attr,
+				    const char *buf, size_t len, uburma_store_vf_attr_cb store_cb)
+{
+	struct uburma_device *ubu_dev = vf->ubu_dev;
+	struct ubcore_device *ubc_dev;
+	int srcu_idx;
+	ssize_t ret;
+
+	if (!ubu_dev) {
+		uburma_log_err("Invalid argument in store_vf_attr.\n");
+		return -EINVAL;
+	}
+
+	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
+	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
+	if (ubc_dev == NULL) {
+		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+		return -ENODEV;
+	}
+
+	ret = store_cb(ubc_dev, buf, len, vf->vf_idx);
+	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+	return ret;
+}
+
+static ssize_t vf_upi_show_cb(const struct ubcore_device *ubc_dev, char *buf, uint16_t vf_id)
+{
+	return uburma_query_upi(ubc_dev, buf, vf_id);
+}
+
+static ssize_t vf_upi_show(struct uburma_vf *vf, struct uburma_vf_attribute *attr, char *buf)
+{
+	return uburma_show_vf_attr(vf, attr, buf, vf_upi_show_cb);
+}
+
+static ssize_t vf_upi_store_cb(struct ubcore_device *ubc_dev, const char *buf, size_t len,
+			       uint16_t vf_id)
+{
+	if (ubc_dev == NULL || buf == NULL)
+		return -EINVAL;
+
+	return uburma_upi_store(ubc_dev, buf, len, vf_id);
+}
+
+static ssize_t vf_upi_store(struct uburma_vf *vf, struct uburma_vf_attribute *attr, const char *buf,
+			    size_t len)
+{
+	return uburma_store_vf_attr(vf, attr, buf, len, vf_upi_store_cb);
+}
+
+static VF_ATTR(upi, 0644, vf_upi_show, vf_upi_store);
+
 static struct attribute *uburma_vf_attrs[] = {
+	&vf_attr_upi.attr,
 	NULL,
 };
 
