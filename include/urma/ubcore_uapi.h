@@ -445,6 +445,53 @@ void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_even
 void ubcore_unregister_event_handler(struct ubcore_device *dev,
 				     struct ubcore_event_handler *handler);
 
+/* data path API */
+/**
+ * post jfs wr.
+ * @param[in] jfs: the jfs created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
+		       struct ubcore_jfs_wr **bad_wr);
+/**
+ * post jfr wr.
+ * @param[in] jfr: the jfr created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, const struct ubcore_jfr_wr *wr,
+		       struct ubcore_jfr_wr **bad_wr);
+/**
+ * post jetty send wr.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, const struct ubcore_jfs_wr *wr,
+			      struct ubcore_jfs_wr **bad_wr);
+/**
+ * post jetty receive wr.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, const struct ubcore_jfr_wr *wr,
+			      struct ubcore_jfr_wr **bad_wr);
+/**
+ * poll jfc.
+ * @param[in] jfc: the jfc created before;
+ * @param[in] cr_cnt: the maximum number of CRs expected to be polled;
+ * @param[out] cr: the addr of returned CRs;
+ * @return: the number of completion record returned, 0 means no completion record returned,
+ * -1 on error
+ */
+int ubcore_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
+
 /* The APIs below are deprecated, should not be called by driver or ubcore client */
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
 
