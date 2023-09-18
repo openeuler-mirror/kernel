@@ -137,6 +137,19 @@ int ubcore_register_client(struct ubcore_client *new_client);
  */
 void ubcore_unregister_client(struct ubcore_client *rm_client);
 /**
+ * alloc key to ubcore device
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: key id pointer on success, NULL on error
+ */
+struct ubcore_key_id *ubcore_alloc_key_id(struct ubcore_device *dev, struct ubcore_udata *udata);
+/**
+ * free key id from ubcore device
+ * @param[in] key: the key id alloced before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_free_key_id(struct ubcore_key_id *key);
+/**
  * create jfc with ubcore device.
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: jfc attributes and configurations
