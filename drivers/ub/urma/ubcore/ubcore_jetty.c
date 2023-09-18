@@ -793,6 +793,71 @@ int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjet
 }
 EXPORT_SYMBOL(ubcore_unadvise_jetty);
 
+int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		      struct ubcore_udata *udata)
+{
+	struct ubcore_tp_advice advice;
+	int ret;
+
+	if (jetty == NULL || tjetty == NULL || !ubcore_have_tp_ops(jetty->ub_dev)) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
+	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
+		ubcore_log_err("trans mode is not rc type.\n");
+		return -1;
+	}
+	if (jetty->remote_jetty != NULL) {
+		ubcore_log_err("The same jetty, different tjetty, prevent duplicate bind.\n");
+		return -1;
+	}
+
+	ret = ubcore_advice_jetty_tjetty(&advice, jetty, tjetty);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_bind_tp(jetty, tjetty, &advice, udata);
+
+	ubcore_put_advice(&advice);
+	if (ret != 0) {
+		ubcore_log_err("Failed to setup tp connection.\n");
+		return ret;
+	}
+	jetty->remote_jetty = tjetty;
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_bind_jetty);
+
+int ubcore_unbind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty)
+{
+	struct ubcore_tp_advice advice;
+	int ret;
+
+	if (jetty == NULL || tjetty == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
+	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
+		ubcore_log_err("trans mode is not rc type.\n");
+		return -1;
+	}
+
+	ret = ubcore_advice_jetty_tjetty(&advice, jetty, tjetty);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_unbind_tp(jetty, tjetty, &advice);
+	ubcore_put_advice(&advice);
+	if (ret != 0)
+		ubcore_log_err("Failed to destroy jetty tp.\n");
+
+	jetty->remote_jetty = NULL;
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_unbind_jetty);
+
 struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id)
 {
 	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JETTY], jetty_id, &jetty_id);

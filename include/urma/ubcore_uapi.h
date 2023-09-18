@@ -360,6 +360,25 @@ int ubcore_advise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty
  */
 int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
 /**
+ * Bind jetty: Bind local jetty with remote jetty, and construct a transport channel between them.
+ * @param[in] jetty: local jetty to bind;
+ * @param[in] tjetty: target jetty imported before;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ * Note: A local jetty can be binded with only one remote jetty.
+ * Only supported by jetty with URMA_TM_RC.
+ */
+int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		      struct ubcore_udata *udata);
+/**
+ * Unbind jetty: Unbind local jetty with remote jetty,
+ * and tear down the transport channel between them.
+ * @param[in] jetty: local jetty to unbind;
+ * @param[in] tjetty: target jetty advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unbind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
+/**
  * operation of user ioctl cmd.
  * @param[in] k_user_ctl: kdrv user control command pointer;
  * @return: 0 on success, other value on error
