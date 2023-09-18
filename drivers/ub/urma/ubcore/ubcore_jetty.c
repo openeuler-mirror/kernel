@@ -670,6 +670,25 @@ static int ubcore_advice_jfs_tjfr(struct ubcore_tp_advice *advice, struct ubcore
 	return 0;
 }
 
+static int ubcore_advice_jetty_tjetty(struct ubcore_tp_advice *advice, struct ubcore_jetty *jetty,
+				      struct ubcore_tjetty *tjetty)
+{
+	(void)memset(advice, 0, sizeof(struct ubcore_tp_advice));
+	advice->meta.ht = ubcore_get_tptable(jetty->tptable);
+	if (advice->meta.ht == NULL) {
+		ubcore_log_err("tp table has already been destroyed");
+		return -1;
+	}
+
+	advice->ta.type = UBCORE_TA_JETTY_TJETTY;
+	advice->ta.jetty = jetty;
+	advice->ta.tjetty_id = tjetty->cfg.id;
+
+	ubcore_init_tp_key_jetty_id(&advice->meta.key, &tjetty->cfg.id);
+	advice->meta.hash = ubcore_get_jetty_hash(&tjetty->cfg.id);
+	return 0;
+}
+
 static inline void ubcore_put_advice(const struct ubcore_tp_advice *advice)
 {
 	ubcore_put_tptable(advice->meta.ht);
@@ -723,6 +742,56 @@ int ubcore_unadvise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_unadvise_jfr);
+
+int ubcore_advise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+			struct ubcore_udata *udata)
+{
+	struct ubcore_tp_advice advice;
+	int ret;
+
+	if (jetty == NULL || tjetty == NULL || !ubcore_have_tp_ops(jetty->ub_dev)) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if (!ubcore_jetty_tjetty_need_advise(jetty, tjetty)) {
+		ubcore_log_err("The transport mode is not rm.\n");
+		return -1;
+	}
+
+	ret = ubcore_advice_jetty_tjetty(&advice, jetty, tjetty);
+	if (ret != 0)
+		return ret;
+
+	/* alpha version, IB transport type and RM tp mode */
+	ret = ubcore_advise_tp(jetty->ub_dev, &tjetty->cfg.id.eid, &advice, udata);
+	ubcore_put_advice(&advice);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_advise_jetty);
+
+int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty)
+{
+	struct ubcore_tp_advice advice;
+	int ret;
+
+	if (jetty == NULL || tjetty == NULL || !ubcore_have_tp_ops(jetty->ub_dev)) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if (!ubcore_jetty_tjetty_need_advise(jetty, tjetty)) {
+		ubcore_log_err("The transport mode is not rm.\n");
+		return -1;
+	}
+
+	ret = ubcore_advice_jetty_tjetty(&advice, jetty, tjetty);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_unadvise_tp(jetty->ub_dev, &advice);
+	ubcore_put_advice(&advice);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_unadvise_jetty);
 
 struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id)
 {

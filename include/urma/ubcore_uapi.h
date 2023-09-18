@@ -344,6 +344,22 @@ int ubcore_advise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr,
  */
 int ubcore_unadvise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr);
 /**
+ * Advise jetty: construct the transport channel between local jetty and remote jetty.
+ * @param[in] jetty: local jetty to construct the transport channel;
+ * @param[in] tjetty: target jetty to reach imported before;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_advise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+			struct ubcore_udata *udata);
+/**
+ * Unadvise jetty: deconstruct the transport channel between local jetty and remote jetty.
+ * @param[in] jetty: local jetty to destruct the transport channel;
+ * @param[in] tjetty: target jetty advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
+/**
  * operation of user ioctl cmd.
  * @param[in] k_user_ctl: kdrv user control command pointer;
  * @return: 0 on success, other value on error

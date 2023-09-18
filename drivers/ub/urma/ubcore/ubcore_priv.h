@@ -60,4 +60,12 @@ static inline bool ubcore_jfs_tjfr_need_advise(const struct ubcore_jfs *jfs,
 	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM && tjfr->cfg.trans_mode == UBCORE_TP_RM;
 }
 
+static inline bool ubcore_jetty_tjetty_need_advise(const struct ubcore_jetty *jetty,
+						   const struct ubcore_tjetty *tjetty)
+{
+	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM &&
+	       tjetty->cfg.trans_mode == UBCORE_TP_RM;
+}
+
 #endif
