@@ -24,7 +24,6 @@
 #define UBCORE_UAPI_H
 
 #include <urma/ubcore_types.h>
-
 /**
  * Application specifies the device to allocate an context.
  * @param[in] dev: ubcore_device found by add ops in the client.
@@ -52,6 +51,15 @@ void ubcore_free_ucontext(const struct ubcore_device *dev, struct ubcore_ucontex
  */
 int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
 /**
+ * set upi
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] vf_id: vf_id;
+ * @param[in] idx: idx of upi in vf;
+ * @param[in] upi: upi of vf to set
+ * @return: 0 on success, other value on error
+ */
+int ubcore_set_upi(const struct ubcore_device *dev, uint16_t vf_id, uint16_t idx, uint32_t upi);
+/**
  * add a function entity id (eid) to ub device, the upi of vf to which the eid belongs
  * can be specified
  * @param[in] dev: the ubcore_device handle;
@@ -67,6 +75,22 @@ int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid);
  * @return: 0 on success, other value on error
  */
 int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx);
+/**
+ * add a function entity id (eid) to ub device (for uvs)
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] vf_id: vf_id;
+ * @param[in] cfg: eid and the upi of vf to which the eid belongs can be specified;
+ * @return: the index of eid/upi, less than 0 indicating error
+ */
+int ubcore_add_ueid(struct ubcore_device *dev, uint16_t vf_id, struct ubcore_ueid_cfg *cfg);
+/**
+ * remove a function entity id (eid) specified by idx from ub device (for uvs)
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] vf_id: vf_id;
+ * @param[in] idx: the idx of function entity id (eid) to be deleted;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t vf_id, uint16_t idx);
 /**
  * query device attributes
  * @param[in] dev: the ubcore_device handle;

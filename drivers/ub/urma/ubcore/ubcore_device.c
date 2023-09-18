@@ -324,6 +324,7 @@ static struct ubcore_ht_param g_ht_params[] = {
 
 	[UBCORE_HT_JETTY] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jetty, hnode),
 			      offsetof(struct ubcore_jetty, id), sizeof(uint32_t), NULL, NULL },
+
 	[UBCORE_HT_TP] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_tp_node, hnode),
 			   offsetof(struct ubcore_tp_node, key), sizeof(struct ubcore_tp_key), NULL,
 			   NULL },
@@ -589,6 +590,24 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid)
 }
 EXPORT_SYMBOL(ubcore_set_eid);
 
+int ubcore_set_upi(const struct ubcore_device *dev, uint16_t vf_id, uint16_t idx, uint32_t upi)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->set_upi == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->set_upi(dev, vf_id, idx, upi);
+	if (ret != 0) {
+		ubcore_log_err("failed to set vf%hu upi%hu, ret: %d.\n", vf_id, idx, ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_set_upi);
+
 int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid)
 {
 	int ret;
@@ -624,6 +643,42 @@ int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_eid);
+
+int ubcore_add_ueid(struct ubcore_device *dev, uint16_t vf_id, struct ubcore_ueid_cfg *cfg)
+{
+	int ret;
+
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->add_ueid == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->add_ueid(dev, vf_id, cfg);
+	if (ret != 0) {
+		ubcore_log_err("failed to add ueid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_add_ueid);
+
+int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t vf_id, uint16_t idx)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->delete_ueid_by_idx == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->delete_ueid_by_idx(dev, vf_id, idx);
+	if (ret != 0) {
+		ubcore_log_err("failed to delete eid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_ueid);
 
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr)
 {
