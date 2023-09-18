@@ -19,12 +19,6 @@ ENTRY(__efi_rt_asm_wrapper)
 	 */
 	stp	x1, x18, [sp, #16]
 
-	ldr_l	x16, efi_rt_stack_top
-	mov	sp, x16
-#ifdef CONFIG_SHADOW_CALL_STACK
-	str	x18, [sp, #-16]!
-#endif
-
 	/*
 	 * We are lucky enough that no EFI runtime services take more than
 	 * 5 arguments, so all are passed in registers rather than via the
@@ -38,7 +32,6 @@ ENTRY(__efi_rt_asm_wrapper)
 	mov	x4, x6
 	blr	x8
 
-	mov	sp, x29
 	ldp	x1, x2, [sp, #16]
 	cmp	x2, x18
 	ldp	x29, x30, [sp], #32
@@ -52,10 +45,6 @@ ENTRY(__efi_rt_asm_wrapper)
 	 * called with preemption disabled and a separate shadow stack is used
 	 * for interrupts.
 	 */
-#ifdef CONFIG_SHADOW_CALL_STACK
-	ldr_l	x18, efi_rt_stack_top
-	ldr	x18, [x18, #-16]
-#endif
-
+	mov	x18, x2
 	b	efi_handle_corrupted_x18	// tail call
 ENDPROC(__efi_rt_asm_wrapper)
