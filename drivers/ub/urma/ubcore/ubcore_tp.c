@@ -498,6 +498,23 @@ static int ubcore_destroy_peer_tp(struct ubcore_tp *tp, struct ubcore_ta *ta)
 	return ret;
 }
 
+/* Destroy both local tp and remote peer tp */
+static int ubcore_destroy_local_peer_tp(struct ubcore_tp *tp, struct ubcore_ta *ta)
+{
+	struct ubcore_device *dev = tp->ub_dev;
+	int ret;
+
+	/* Do not send destroy request to the remote if we are in the VM */
+	if (!dev->attr.virtualization) {
+		ret = ubcore_destroy_peer_tp(tp, ta);
+		if (ret != 0) {
+			ubcore_log_err("Failed to destroy peer tp");
+			return ret;
+		}
+	}
+	return ubcore_destroy_tp(tp);
+}
+
 static void ubcore_abort_tp(struct ubcore_tp *tp, struct ubcore_tp_meta *meta)
 {
 	struct ubcore_tp *target;
@@ -1226,6 +1243,19 @@ int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_e
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_advise_tp);
+
+int ubcore_unadvise_tp(struct ubcore_device *dev, struct ubcore_tp_advice *advice)
+{
+	struct ubcore_tp *tp =
+		ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
+	if (tp == NULL) {
+		ubcore_log_warn("TP is not found, already removed or under use\n");
+		return 0;
+	}
+
+	return ubcore_destroy_local_peer_tp(tp, &advice->ta);
+}
+EXPORT_SYMBOL(ubcore_unadvise_tp);
 
 static void ubcore_get_ta_from_tp(struct ubcore_ta *ta, struct ubcore_tp *tp)
 {
