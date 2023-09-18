@@ -50,3 +50,24 @@ SYM_FUNC_START(clear_page_erms)
 	ret
 SYM_FUNC_END(clear_page_erms)
 EXPORT_SYMBOL_GPL(clear_page_erms)
+
+SYM_FUNC_START(clear_page_nt)
+	xorl %eax,%eax
+	movl $4096/64,%ecx
+	.p2align 4
+.nt_loop:
+	decl %ecx
+	movnti %rax,(%rdi)
+	movnti %rax,8(%rdi)
+	movnti %rax,16(%rdi)
+	movnti %rax,24(%rdi)
+	movnti %rax,32(%rdi)
+	movnti %rax,40(%rdi)
+	movnti %rax,48(%rdi)
+	movnti %rax,56(%rdi)
+	leaq 64(%rdi),%rdi
+    jnz .nt_loop
+	sfence
+    RET
+SYM_FUNC_END(clear_page_nt)
+EXPORT_SYMBOL_GPL(clear_page_nt)
