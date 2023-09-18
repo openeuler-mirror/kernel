@@ -30,6 +30,7 @@
 #include "ubcore_priv.h"
 #include "ubcore_hash_table.h"
 #include "ubcore_tp.h"
+#include "ubcore_tp_table.h"
 
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id)
 {
@@ -209,10 +210,18 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubc
 	jfs->ub_dev = dev;
 	jfs->uctx = ubcore_get_uctx(udata);
 	jfs->jfae_handler = jfae_handler;
-
+	if (ubcore_jfs_need_advise(jfs)) {
+		jfs->tptable = ubcore_create_tptable();
+		if (jfs->tptable == NULL) {
+			(void)dev->ops->destroy_jfs(jfs);
+			ubcore_log_err("Failed to create tp table in the jfs.\n");
+			return NULL;
+		}
+	}
 	atomic_set(&jfs->use_cnt, 0);
 
 	if (ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFS], &jfs->hnode, jfs->id) != 0) {
+		ubcore_destroy_tptable(&jfs->tptable);
 		(void)dev->ops->destroy_jfs(jfs);
 		ubcore_log_err("Failed to add jfs.\n");
 		return NULL;
@@ -277,6 +286,7 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	jfs_id = jfs->id;
 	dev = jfs->ub_dev;
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFS], &jfs->hnode);
+	ubcore_destroy_tptable(&jfs->tptable);
 	ret = dev->ops->destroy_jfs(jfs);
 	if (ret < 0)
 		ubcore_log_err("UBEP failed to destroy jfs, jfs_id:%u.\n", jfs_id);
@@ -341,7 +351,22 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubc
 	jfr->ub_dev = dev;
 	jfr->uctx = ubcore_get_uctx(udata);
 	jfr->jfae_handler = jfae_handler;
+	if (ubcore_jfr_need_advise(jfr)) {
+		jfr->tptable = ubcore_create_tptable();
+		if (jfr->tptable == NULL) {
+			(void)dev->ops->destroy_jfr(jfr);
+			ubcore_log_err("Failed to create tp table in the jfr.\n");
+			return NULL;
+		}
+	}
 	atomic_set(&jfr->use_cnt, 0);
+
+	if (ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFR], &jfr->hnode, jfr->id) != 0) {
+		ubcore_destroy_tptable(&jfr->tptable);
+		(void)dev->ops->destroy_jfr(jfr);
+		ubcore_log_err("Failed to add jfr.\n");
+		return NULL;
+	}
 
 	atomic_inc(&cfg->jfc->use_cnt);
 	return jfr;
@@ -405,6 +430,7 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 	jfr_id = jfr->id;
 	dev = jfr->ub_dev;
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFR], &jfr->hnode);
+	ubcore_destroy_tptable(&jfr->tptable);
 	ret = dev->ops->destroy_jfr(jfr);
 	if (ret < 0)
 		ubcore_log_err("UBEP failed to destroy jfr, jfr_id:%u.\n", jfr_id);
@@ -509,7 +535,23 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 	jetty->ub_dev = dev;
 	jetty->uctx = ubcore_get_uctx(udata);
 	jetty->jfae_handler = jfae_handler;
+	if (ubcore_jetty_need_advise(jetty) || jetty->jetty_cfg.trans_mode == UBCORE_TP_RC) {
+		jetty->tptable = ubcore_create_tptable();
+		if (jetty->tptable == NULL) {
+			ubcore_log_err("Failed to create tp table in the jetty.\n");
+			(void)dev->ops->destroy_jetty(jetty);
+			return NULL;
+		}
+	} else {
+		jetty->tptable = NULL; /* To prevent kernel-mode drivers, malloc is not empty */
+	}
 	atomic_set(&jetty->use_cnt, 0);
+
+	if (ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JETTY], &jetty->hnode, jetty->id) != 0) {
+		ubcore_destroy_tptable(&jetty->tptable);
+		(void)dev->ops->destroy_jetty(jetty);
+		ubcore_log_err("Failed to add jetty.\n");
+	}
 
 	atomic_inc(&cfg->send_jfc->use_cnt);
 	atomic_inc(&cfg->recv_jfc->use_cnt);
@@ -579,6 +621,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	jetty_id = jetty->id;
 	dev = jetty->ub_dev;
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JETTY], &jetty->hnode);
+	ubcore_destroy_tptable(&jetty->tptable);
 	ret = dev->ops->destroy_jetty(jetty);
 	if (ret < 0) {
 		ubcore_log_err("UBEP failed to destroy jetty, jetty_id:%u.\n", jetty_id);

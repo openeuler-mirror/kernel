@@ -53,11 +53,33 @@ static inline uint32_t ubcore_get_jetty_hash(const struct ubcore_jetty_id *jetty
 	return jhash(jetty_id, sizeof(struct ubcore_jetty_id), 0);
 }
 
+static inline uint32_t ubcore_get_tseg_hash(const struct ubcore_ubva *ubva)
+{
+	return jhash(ubva, sizeof(struct ubcore_ubva), 0);
+}
+
+static inline uint32_t ubcore_get_eid_hash(const union ubcore_eid *eid)
+{
+	return jhash(eid, sizeof(union ubcore_eid), 0);
+}
+
+static inline bool ubcore_jfs_need_advise(const struct ubcore_jfs *jfs)
+{
+	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM;
+}
+
 static inline bool ubcore_jfs_tjfr_need_advise(const struct ubcore_jfs *jfs,
 					       const struct ubcore_tjetty *tjfr)
 {
 	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
 	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM && tjfr->cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_jetty_need_advise(const struct ubcore_jetty *jetty)
+{
+	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM;
 }
 
 static inline bool ubcore_jetty_tjetty_need_advise(const struct ubcore_jetty *jetty,
@@ -66,6 +88,12 @@ static inline bool ubcore_jetty_tjetty_need_advise(const struct ubcore_jetty *je
 	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
 	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM &&
 	       tjetty->cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_jfr_need_advise(const struct ubcore_jfr *jfr)
+{
+	return jfr->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jfr->jfr_cfg.trans_mode == UBCORE_TP_RM;
 }
 
 #endif
