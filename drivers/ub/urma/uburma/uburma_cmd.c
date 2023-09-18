@@ -125,6 +125,75 @@ static int uburma_cmd_destroy_ctx(struct ubcore_device *ubc_dev, struct uburma_f
 	return 0;
 }
 
+static int uburma_cmd_alloc_key_id(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_alloc_key_id arg;
+	struct ubcore_udata udata = { 0 };
+	struct ubcore_key_id *key;
+	struct uburma_uobj *uobj;
+
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_alloc_key_id));
+	if (ret != 0)
+		return ret;
+
+	fill_udata(&udata, file->ucontext, &arg.udata);
+	uobj = uobj_alloc(UOBJ_CLASS_KEY, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("UOBJ_CLASS_KEY alloc fail!\n");
+		return -ENOMEM;
+	}
+
+	key = ubcore_alloc_key_id(ubc_dev, &udata);
+	if (IS_ERR_OR_NULL(key)) {
+		uburma_log_err("ubcore alloc key id failed.\n");
+		ret = -EPERM;
+		goto err_free_uobj;
+	}
+	uobj->object = key;
+	arg.out.key_id = key->key_id;
+	arg.out.handle = uobj->id;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_alloc_key_id));
+	if (ret != 0)
+		goto err_free_key;
+
+	return uobj_alloc_commit(uobj);
+
+err_free_key:
+	(void)ubcore_free_key_id(key);
+err_free_uobj:
+	uobj_alloc_abort(uobj);
+	return ret;
+}
+
+static int uburma_cmd_free_key_id(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				  struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_free_key_id arg;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_free_key_id));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_KEY, (int)arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find key id.\n");
+		return -EINVAL;
+	}
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0)
+		uburma_log_err("ubcore remove commit keyid failed.\n");
+	return ret;
+}
+
 static void uburma_write_async_event(struct ubcore_ucontext *ctx, uint64_t event_data,
 				     uint32_t event_type, struct list_head *obj_event_list,
 				     uint32_t *counter)
@@ -1228,6 +1297,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[0] = NULL,
 	[UBURMA_CMD_CREATE_CTX] = uburma_cmd_create_ctx,
 	[UBURMA_CMD_DESTROY_CTX] = uburma_cmd_destroy_ctx,
+	[UBURMA_CMD_ALLOC_KEY_ID] = uburma_cmd_alloc_key_id,
+	[UBURMA_CMD_FREE_KEY_ID] = uburma_cmd_free_key_id,
 	[UBURMA_CMD_CREATE_JFR] = uburma_cmd_create_jfr,
 	[UBURMA_CMD_MODIFY_JFR] = uburma_cmd_modify_jfr,
 	[UBURMA_CMD_DELETE_JFR] = uburma_cmd_delete_jfr,

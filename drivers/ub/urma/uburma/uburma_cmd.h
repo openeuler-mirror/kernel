@@ -40,6 +40,8 @@ struct uburma_cmd_hdr {
 enum uburma_cmd {
 	UBURMA_CMD_CREATE_CTX = 1,
 	UBURMA_CMD_DESTROY_CTX,
+	UBURMA_CMD_ALLOC_KEY_ID,
+	UBURMA_CMD_FREE_KEY_ID,
 	UBURMA_CMD_CREATE_JFS,
 	UBURMA_CMD_DELETE_JFS,
 	UBURMA_CMD_CREATE_JFR,
@@ -80,6 +82,20 @@ struct uburma_cmd_create_ctx {
 		int async_fd;
 	} out;
 	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_alloc_key_id {
+	struct {
+		uint32_t key_id;
+		uint64_t handle; /* handle of the allocated key_id obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_free_key_id {
+	struct {
+		uint64_t handle; /* handle of the allocated key_id obj in kernel */
+	} in;
 };
 
 struct uburma_cmd_create_jfr {
