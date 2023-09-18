@@ -135,7 +135,6 @@ static void uobj_remove_idr(struct uburma_uobj *uobj)
 	spin_unlock(&uobj->ufile->idr_lock);
 }
 
-
 static int uobj_try_lock(struct uburma_uobj *uobj, bool exclusive)
 {
 	/*
@@ -580,6 +579,11 @@ static int uburma_free_tjetty(struct uburma_uobj *uobj, enum uburma_remove_reaso
 	return ubcore_unimport_jetty((struct ubcore_tjetty *)uobj->object);
 }
 
+static int uburma_free_tseg(struct uburma_uobj *uobj, enum uburma_remove_reason why)
+{
+	return ubcore_unimport_seg((struct ubcore_target_seg *)uobj->object);
+}
+
 void uburma_close_uobj_fd(struct file *f)
 {
 	struct uburma_uobj *uobj = f->private_data;
@@ -691,3 +695,5 @@ declare_uobj_class(UOBJ_CLASS_TARGET_JFR,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0, uburma_free_tjfr));
 declare_uobj_class(UOBJ_CLASS_TARGET_JETTY,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0, uburma_free_tjetty));
+declare_uobj_class(UOBJ_CLASS_TARGET_SEG,
+		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0, uburma_free_tseg));

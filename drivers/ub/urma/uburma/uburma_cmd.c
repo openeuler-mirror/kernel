@@ -472,6 +472,80 @@ static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev, struct uburma_fi
 				   sizeof(struct uburma_cmd_delete_jfs));
 }
 
+static int uburma_cmd_import_seg(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_import_seg arg;
+	struct ubcore_target_seg_cfg cfg = { 0 };
+	struct ubcore_udata udata;
+	struct ubcore_target_seg *tseg;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_import_seg));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_alloc(UOBJ_CLASS_TARGET_SEG, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("UOBJ_CLASS_TARGET_JFR alloc fail!\n");
+		return -ENOMEM;
+	}
+
+	(void)memcpy(cfg.seg.ubva.eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	cfg.seg.ubva.uasid = arg.in.uasid;
+	cfg.seg.ubva.va = arg.in.va;
+	cfg.seg.len = arg.in.len;
+	cfg.seg.attr.value = arg.in.flag;
+	cfg.seg.key_id = arg.in.key_id;
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	tseg = ubcore_import_seg(ubc_dev, &cfg, &udata);
+	if (IS_ERR_OR_NULL(tseg)) {
+		uburma_log_err("import seg failed.\n");
+		uobj_alloc_abort(uobj);
+		return -EPERM;
+	}
+
+	uobj->object = tseg;
+	arg.out.handle = uobj->id;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_import_seg));
+	if (ret != 0) {
+		(void)ubcore_unimport_seg(tseg);
+		uobj_alloc_abort(uobj);
+		return ret;
+	}
+	uobj_alloc_commit(uobj);
+	return ret;
+}
+
+static int uburma_cmd_unimport_seg(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_unimport_seg arg;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_unimport_seg));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_TARGET_SEG, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find imported target seg.\n");
+		return -EINVAL;
+	}
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0)
+		uburma_log_err("unimport seg failed.\n");
+
+	return ret;
+}
+
 static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				 struct uburma_cmd_hdr *hdr)
 {
@@ -1393,6 +1467,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_FREE_KEY_ID] = uburma_cmd_free_key_id,
 	[UBURMA_CMD_REGISTER_SEG] = uburma_cmd_register_seg,
 	[UBURMA_CMD_UNREGISTER_SEG] = uburma_cmd_unregister_seg,
+	[UBURMA_CMD_IMPORT_SEG] = uburma_cmd_import_seg,
+	[UBURMA_CMD_UNIMPORT_SEG] = uburma_cmd_unimport_seg,
 	[UBURMA_CMD_CREATE_JFR] = uburma_cmd_create_jfr,
 	[UBURMA_CMD_MODIFY_JFR] = uburma_cmd_modify_jfr,
 	[UBURMA_CMD_DELETE_JFR] = uburma_cmd_delete_jfr,

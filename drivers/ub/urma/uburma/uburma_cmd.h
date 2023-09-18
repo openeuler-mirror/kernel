@@ -44,6 +44,8 @@ enum uburma_cmd {
 	UBURMA_CMD_FREE_KEY_ID,
 	UBURMA_CMD_REGISTER_SEG,
 	UBURMA_CMD_UNREGISTER_SEG,
+	UBURMA_CMD_IMPORT_SEG,
+	UBURMA_CMD_UNIMPORT_SEG,
 	UBURMA_CMD_CREATE_JFS,
 	UBURMA_CMD_DELETE_JFS,
 	UBURMA_CMD_CREATE_JFR,
@@ -119,6 +121,29 @@ struct uburma_cmd_register_seg {
 struct uburma_cmd_unregister_seg {
 	struct {
 		uint64_t handle; /* handle of seg, used to find seg obj in kernel */
+	} in;
+};
+
+struct uburma_cmd_import_seg {
+	struct {
+		uint8_t eid[UBCORE_EID_SIZE];
+		uint32_t uasid;
+		uint64_t va;
+		uint64_t len;
+		uint32_t flag;
+		uint32_t key;
+		uint32_t key_id;
+		uint64_t mva;
+	} in;
+	struct {
+		uint64_t handle; /* handle of the allocated tseg obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_unimport_seg {
+	struct {
+		uint64_t handle; /* handle of the seg to be unimported */
 	} in;
 };
 
