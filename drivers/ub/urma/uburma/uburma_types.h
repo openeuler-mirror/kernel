@@ -65,6 +65,13 @@ struct uburma_port {
 	uint8_t port_num;
 };
 
+struct uburma_vf {
+	struct kobject kobj;
+	struct uburma_device *ubu_dev;
+	uint32_t vf_idx;
+};
+
+
 struct uburma_device {
 	atomic_t refcnt;
 	struct completion comp; /* When refcnt becomes 0, it will wake up */
@@ -75,6 +82,7 @@ struct uburma_device {
 	struct cdev cdev;
 	struct device *dev;
 	struct uburma_port port[UBCORE_MAX_PORT_CNT];
+	struct uburma_vf vf[UBCORE_MAX_VF_CNT];
 	struct ubcore_device *__rcu ubc_dev;
 	struct srcu_struct ubc_dev_srcu; /* protect ubc_dev */
 	struct kobject kobj; /* when equal to 0 , free uburma_device. */

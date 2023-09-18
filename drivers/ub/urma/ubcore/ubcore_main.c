@@ -32,6 +32,7 @@
 #include "ubcore_log.h"
 #include "ubcore_netlink.h"
 #include <urma/ubcore_types.h>
+#include <urma/ubcore_api.h>
 #include <urma/ubcore_uapi.h>
 #include "ubcore_priv.h"
 

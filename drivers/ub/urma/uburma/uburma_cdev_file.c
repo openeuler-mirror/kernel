@@ -37,6 +37,10 @@ typedef ssize_t (*uburma_show_attr_cb)(const struct ubcore_device *ubc_dev, char
 typedef ssize_t (*uburma_store_attr_cb)(struct ubcore_device *ubc_dev, const char *buf, size_t len);
 typedef ssize_t (*uburma_show_port_attr_cb)(const struct ubcore_device *ubc_dev, char *buf,
 					    uint8_t port_num);
+typedef ssize_t (*uburma_show_vf_attr_cb)(const struct ubcore_device *ubc_dev, char *buf,
+					  uint16_t vf_num);
+typedef ssize_t (*uburma_store_vf_attr_cb)(struct ubcore_device *ubc_dev, const char *buf,
+					   size_t len, uint16_t vf_num);
 
 static ssize_t uburma_show_dev_attr(struct device *dev, struct device_attribute *attr, char *buf,
 				    uburma_show_attr_cb show_cb)
@@ -565,6 +569,48 @@ static struct kobj_type uburma_port_type = { .release = uburma_port_release,
 					     .default_attrs = uburma_port_attrs
 };
 
+static struct attribute *uburma_vf_attrs[] = {
+	NULL,
+};
+
+static ssize_t uburma_vf_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	struct uburma_vf_attribute *vf_attr = container_of(attr, struct uburma_vf_attribute, attr);
+	struct uburma_vf *vf = container_of(kobj, struct uburma_vf, kobj);
+
+	if (!vf_attr->show)
+		return -EIO;
+
+	return vf_attr->show(vf, vf_attr, buf);
+}
+
+static ssize_t uburma_vf_attr_store(struct kobject *kobj, struct attribute *attr, const char *buf,
+				    size_t count)
+{
+	struct uburma_vf_attribute *vf_attr = container_of(attr, struct uburma_vf_attribute, attr);
+	struct uburma_vf *vf = container_of(kobj, struct uburma_vf, kobj);
+
+	if (!vf_attr->store)
+		return -EIO;
+	return vf_attr->store(vf, vf_attr, buf, count);
+}
+
+static const struct sysfs_ops uburma_vf_sysfs_ops = { .show = uburma_vf_attr_show,
+						      .store = uburma_vf_attr_store };
+
+static void uburma_vf_release(struct kobject *kobj)
+{
+}
+
+static const struct attribute_group uburma_vf_groups = {
+	.attrs = uburma_vf_attrs,
+};
+
+static struct kobj_type uburma_vf_type = { .release = uburma_vf_release,
+					   .sysfs_ops = &uburma_vf_sysfs_ops,
+					   .default_attrs = uburma_vf_attrs
+};
+
 int uburma_create_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_num)
 {
 	struct uburma_port *p;
@@ -575,6 +621,18 @@ int uburma_create_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_nu
 
 	return kobject_init_and_add(&p->kobj, &uburma_port_type, &ubu_dev->dev->kobj, "port%hhu",
 				    port_num);
+}
+
+int uburma_create_vf_attr_files(struct uburma_device *ubu_dev, uint32_t vf_num)
+{
+	struct uburma_vf *vf;
+
+	vf = &ubu_dev->vf[vf_num];
+	vf->ubu_dev = ubu_dev;
+	vf->vf_idx = vf_num;
+
+	return kobject_init_and_add(&vf->kobj, &uburma_vf_type, &ubu_dev->dev->kobj, "vf%u",
+				    vf_num);
 }
 
 int uburma_create_dev_attr_files(struct uburma_device *ubu_dev)
@@ -593,6 +651,11 @@ int uburma_create_dev_attr_files(struct uburma_device *ubu_dev)
 void uburma_remove_port_attr_files(struct uburma_device *ubu_dev, uint8_t port_num)
 {
 	kobject_put(&ubu_dev->port[port_num].kobj);
+}
+
+void uburma_remove_vf_attr_files(struct uburma_device *ubu_dev, uint32_t vf_num)
+{
+	kobject_put(&ubu_dev->vf[vf_num].kobj);
 }
 
 void uburma_remove_dev_attr_files(struct uburma_device *ubu_dev)
