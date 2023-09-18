@@ -2701,7 +2701,7 @@ int do_vmi_munmap(struct vma_iterator *vmi, struct mm_struct *mm,
 	struct vm_area_struct *vma;
 
 	if (gmem_is_enabled()) {
-		vma = find_vma(mm, start);
+		vma = find_vma_intersection(mm, start, start + len);
 		if (!vma)
 			return 0;
 		if (vma_is_peer_shared(vma)) {
