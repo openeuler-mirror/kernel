@@ -384,6 +384,25 @@ struct uburma_cmd_unadvise_jetty {
 	} in;
 };
 
+struct uburma_cmd_user_ctl {
+	struct {
+		uint64_t addr;
+		uint32_t len;
+		uint32_t opcode;
+	} in; /* struct [in] should be consistent with [urma_user_ctl_in_t] */
+	struct {
+		uint64_t addr;
+		uint32_t len;
+		uint32_t rsv;
+	} out; /* struct [out] should be consistent with [urma_user_ctl_out_t] */
+	struct {
+		uint64_t in_addr;
+		uint32_t in_len;
+		uint64_t out_addr;
+		uint32_t out_len;
+	} udrv; /* struct [udrv] should be consistent with [urma_udrv_t] */
+};
+
 /* only for event ioctl */
 #define MAX_JFCE_EVENT_CNT 16
 #define UBURMA_EVENT_CMD_MAGIC 'E'

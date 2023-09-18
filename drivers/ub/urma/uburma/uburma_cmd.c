@@ -1456,6 +1456,54 @@ static int uburma_cmd_unbind_jetty(struct ubcore_device *ubc_dev, struct uburma_
 	return ret;
 }
 
+static int uburma_fill_user_ctl_info(struct ubcore_ucontext *ctx,
+				     struct uburma_cmd_user_ctl *user_ctl,
+				     struct ubcore_user_ctl *k_user_ctl)
+{
+	if (ctx == NULL) {
+		uburma_log_err("parameter invalid with ctx nullptr.\n");
+		return -EINVAL;
+	}
+
+	k_user_ctl->uctx = ctx;
+	k_user_ctl->in.addr = user_ctl->in.addr;
+	k_user_ctl->in.len = user_ctl->in.len;
+	k_user_ctl->in.opcode = user_ctl->in.opcode;
+
+	k_user_ctl->out.addr = user_ctl->out.addr;
+	k_user_ctl->out.len = user_ctl->out.len;
+
+	k_user_ctl->udrv_data.in_addr = user_ctl->udrv.in_addr;
+	k_user_ctl->udrv_data.in_len = user_ctl->udrv.in_len;
+	k_user_ctl->udrv_data.out_addr = user_ctl->udrv.out_addr;
+	k_user_ctl->udrv_data.out_len = user_ctl->udrv.out_len;
+
+	return 0;
+}
+
+static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev, struct uburma_file *file,
+			       struct uburma_cmd_hdr *hdr)
+{
+	struct ubcore_user_ctl k_user_ctl = { 0 };
+	struct uburma_cmd_user_ctl user_ctl;
+	int ret;
+
+	ret = uburma_copy_from_user(&user_ctl, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_user_ctl));
+	if (ret != 0)
+		return ret;
+
+	ret = uburma_fill_user_ctl_info(file->ucontext, &user_ctl, &k_user_ctl);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_user_control(&k_user_ctl);
+	if (ret != 0)
+		return ret;
+
+	return 0;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -1491,6 +1539,7 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_UNADVISE_JETTY] = uburma_cmd_unadvise_jetty,
 	[UBURMA_CMD_BIND_JETTY] = uburma_cmd_bind_jetty,
 	[UBURMA_CMD_UNBIND_JETTY] = uburma_cmd_unbind_jetty,
+	[UBURMA_CMD_USER_CTL] = uburma_cmd_user_ctl
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
