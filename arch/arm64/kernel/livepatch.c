@@ -126,13 +126,18 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 	int ret;
 	struct klp_object *obj;
 	struct klp_func *func;
-	unsigned long func_addr, func_size;
+	unsigned long func_addr = 0;
+	unsigned long func_size;
 	struct klp_func_node *func_node;
 	struct klp_func_list *pcheck = NULL;
 
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
+			unsigned long old_func = (unsigned long)func->old_func;
+
 			if (enable) {
+				bool need_check_old = false;
+
 				if (func->patched || func->force == KLP_ENFORCEMENT)
 					continue;
 				/*
@@ -142,7 +147,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 				func_node = klp_find_func_node(func->old_func);
 				if (!func_node ||
 				    list_empty(&func_node->func_stack)) {
-					func_addr = (unsigned long)func->old_func;
+					func_addr = old_func;
 					func_size = func->old_size;
 				} else {
 					/*
@@ -173,6 +178,13 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 							func->old_name, func->force);
 					if (ret)
 						return ret;
+					need_check_old = (func_addr != old_func);
+				}
+				if (need_check_old) {
+					ret = add_func_to_list(check_funcs, &pcheck, old_func,
+						func->old_size, func->old_name, func->force);
+					if (ret)
+						return ret;
 				}
 			} else {
 				/*
@@ -193,7 +205,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 				 * the stack.
 				 */
 				if (list_is_singular(&func_node->func_stack)) {
-					func_addr = (unsigned long)func->old_func;
+					func_addr = old_func;
 					func_size = func->old_size;
 				} else {
 					struct klp_func *prev;
@@ -209,6 +221,12 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 						func->old_name, 0);
 				if (ret)
 					return ret;
+				if (func_addr != old_func) {
+					ret = add_func_to_list(check_funcs, &pcheck, old_func,
+						func->old_size, func->old_name, 0);
+					if (ret)
+						return ret;
+				}
 #endif
 
 				func_addr = (unsigned long)func->new_func;
