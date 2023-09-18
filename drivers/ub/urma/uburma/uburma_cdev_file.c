@@ -453,6 +453,101 @@ static ssize_t trans_mode_show(struct device *dev, struct device_attribute *attr
 
 static DEVICE_ATTR_RO(trans_mode);
 
+static ssize_t congestion_ctrl_alg_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n",
+			ubc_dev->attr.dev_cap.congestion_ctrl_alg);
+}
+
+static ssize_t congestion_ctrl_alg_show(struct device *dev, struct device_attribute *attr,
+					char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, congestion_ctrl_alg_show_cb);
+}
+
+static ssize_t congestion_ctrl_alg_store_cb(struct ubcore_device *ubc_dev, const char *buf,
+					    size_t len)
+{
+	uint16_t value;
+	int ret;
+
+	ret = kstrtou16(buf, 0, &value);
+	if (ret != 0)
+		return -EINVAL;
+
+	ubc_dev->attr.dev_cap.congestion_ctrl_alg = value;
+	return (ssize_t)len;
+}
+
+static ssize_t congestion_ctrl_alg_store(struct device *dev, struct device_attribute *attr,
+					 const char *buf, size_t len)
+{
+	return uburma_store_dev_attr(dev, attr, buf, len, congestion_ctrl_alg_store_cb);
+}
+
+static DEVICE_ATTR_RW(congestion_ctrl_alg); // 0644
+
+static ssize_t comp_vector_cnt_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.comp_vector_cnt);
+}
+
+static ssize_t comp_vector_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, comp_vector_cnt_show_cb);
+}
+
+static DEVICE_ATTR_RO(comp_vector_cnt);
+
+static ssize_t utp_cnt_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.utp_cnt);
+}
+
+static ssize_t utp_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, utp_cnt_show_cb);
+}
+
+static DEVICE_ATTR_RO(utp_cnt);
+
+static ssize_t port_count_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.port_cnt);
+}
+
+static ssize_t port_count_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, port_count_show_cb);
+}
+
+static DEVICE_ATTR_RO(port_count);
+
+static ssize_t virtualization_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%s\n",
+			ubc_dev->attr.virtualization ? "true" : "false");
+}
+
+static ssize_t virtualization_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, virtualization_show_cb);
+}
+
+static DEVICE_ATTR_RO(virtualization);
+
+static ssize_t vf_cnt_show_cb(const struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.vf_cnt);
+}
+
+static ssize_t vf_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, vf_cnt_show_cb);
+}
+
+static DEVICE_ATTR_RO(vf_cnt);
+
 static ssize_t transport_type_show_cb(const struct ubcore_device *ubc_dev, char *buf)
 {
 	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%d\n", (int)ubc_dev->transport_type);
@@ -501,6 +596,12 @@ static struct attribute *uburma_dev_attrs[] = {
 	&dev_attr_max_msg_size.attr,
 	&dev_attr_max_rc_outstd_cnt.attr,
 	&dev_attr_trans_mode.attr,
+	&dev_attr_congestion_ctrl_alg.attr,
+	&dev_attr_comp_vector_cnt.attr,
+	&dev_attr_utp_cnt.attr,
+	&dev_attr_port_count.attr,
+	&dev_attr_vf_cnt.attr,
+	&dev_attr_virtualization.attr,
 	&dev_attr_transport_type.attr,
 	&dev_attr_driver_name.attr,
 	NULL,
