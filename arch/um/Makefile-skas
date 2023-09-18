@@ -4,7 +4,12 @@
 #
 
 GPROF_OPT += -pg
+
+ifeq ($(CONFIG_PGO_KERNEL),y)
+GCOV_OPT += -fprofile-generate -ftest-coverage
+else
 GCOV_OPT += -fprofile-arcs -ftest-coverage
+endif
 
 CFLAGS-$(CONFIG_GCOV) += $(GCOV_OPT)
 CFLAGS-$(CONFIG_GPROF) += $(GPROF_OPT)
