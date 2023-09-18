@@ -122,3 +122,43 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg)
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_unregister_seg);
+
+struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
+					    const struct ubcore_target_seg_cfg *cfg,
+					    struct ubcore_udata *udata)
+{
+	struct ubcore_target_seg *tseg;
+
+	if (dev == NULL || cfg == NULL || dev->ops->import_seg == NULL ||
+	    dev->ops->unimport_seg == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return NULL;
+	}
+
+	tseg = dev->ops->import_seg(dev, cfg, udata);
+	if (tseg == NULL) {
+		ubcore_log_err("UBEP failed to import segment with va:%llu\n", cfg->seg.ubva.va);
+		return NULL;
+	}
+	tseg->ub_dev = dev;
+	tseg->uctx = ubcore_get_uctx(udata);
+	tseg->seg = cfg->seg;
+	atomic_set(&tseg->use_cnt, 0);
+
+	return tseg;
+}
+EXPORT_SYMBOL(ubcore_import_seg);
+
+int ubcore_unimport_seg(struct ubcore_target_seg *tseg)
+{
+	struct ubcore_device *dev;
+
+	if (tseg == NULL || tseg->ub_dev == NULL || tseg->ub_dev->ops->unimport_seg == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	dev = tseg->ub_dev;
+
+	return dev->ops->unimport_seg(tseg);
+}
+EXPORT_SYMBOL(ubcore_unimport_seg);

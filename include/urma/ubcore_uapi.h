@@ -166,6 +166,22 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
  */
 int ubcore_unregister_seg(struct ubcore_target_seg *tseg);
 /**
+ * import a remote segment to ubcore device
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: import configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target segment handle on success, NULL on error
+ */
+struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
+					    const struct ubcore_target_seg_cfg *cfg,
+					    struct ubcore_udata *udata);
+/**
+ * unimport seg from ubcore device
+ * @param[in] tseg: the segment imported before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unimport_seg(struct ubcore_target_seg *tseg);
+/**
  * create jfc with ubcore device.
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: jfc attributes and configurations
