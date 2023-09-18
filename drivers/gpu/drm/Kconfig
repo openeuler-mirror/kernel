@@ -438,3 +438,11 @@ config DRM_LIB_RANDOM
 config DRM_PRIVACY_SCREEN
 	bool
 	default n
+
+config HYDCU_FIXUP_HEADER
+	tristate "Enable fixup header support for HYDCU"
+	default y
+	depends on X86_64
+	help
+	  Choose this option if you want to use pci passthrough with HYDCU
+	  HYDCU cannot support pci reset, so enable this module to disable pci reset
