@@ -1376,7 +1376,7 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 	    entry->flags & (IMA_DIGSIG_REQUIRED | IMA_MODSIG_ALLOWED |
 #ifdef CONFIG_IMA_DIGEST_LIST
 			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS |
-				IMA_META_IMMUTABLE_REQUIRED | IMA_PARSER))
+			    IMA_META_IMMUTABLE_REQUIRED))
 #else
 			    IMA_CHECK_BLACKLIST | IMA_VALIDATE_ALGOS))
 #endif
@@ -1416,7 +1416,8 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 				     IMA_FGROUP | IMA_DIGSIG_REQUIRED |
 				     IMA_PERMIT_DIRECTIO | IMA_VALIDATE_ALGOS |
 #ifdef CONFIG_IMA_DIGEST_LIST
-				     IMA_VERITY_REQUIRED | IMA_META_IMMUTABLE_REQUIRED))
+				     IMA_VERITY_REQUIRED |
+				     IMA_META_IMMUTABLE_REQUIRED | IMA_PARSER))
 #else
 				     IMA_VERITY_REQUIRED))
 #endif
