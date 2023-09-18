@@ -8,8 +8,9 @@
 
 int acpi_disabled = 1;
 EXPORT_SYMBOL(acpi_disabled);
-int acpi_noirq;				/* skip ACPI IRQ initialization */
-int acpi_pci_disabled;		/* skip ACPI PCI scan and IRQ initialization */
+
+int acpi_noirq = 1;		/* skip ACPI IRQ initialization */
+int acpi_pci_disabled = 1;	/* skip ACPI PCI scan and IRQ initialization */
 EXPORT_SYMBOL(acpi_pci_disabled);
 int acpi_strict;
 u64 arch_acpi_wakeup_start;
