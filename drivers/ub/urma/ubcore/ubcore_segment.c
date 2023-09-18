@@ -62,3 +62,63 @@ int ubcore_free_key_id(struct ubcore_key_id *key)
 	return dev->ops->free_key_id(key);
 }
 EXPORT_SYMBOL(ubcore_free_key_id);
+
+struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
+					      const struct ubcore_seg_cfg *cfg,
+					      struct ubcore_udata *udata)
+{
+	struct ubcore_target_seg *tseg;
+
+	if (dev == NULL || cfg == NULL || dev->ops->register_seg == NULL ||
+	    dev->ops->unregister_seg == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return NULL;
+	}
+
+	if ((cfg->flag.bs.access & (UBCORE_ACCESS_REMOTE_WRITE | UBCORE_ACCESS_REMOTE_ATOMIC)) &&
+	    !(cfg->flag.bs.access & UBCORE_ACCESS_LOCAL_WRITE)) {
+		ubcore_log_err(
+			"Local write must be set when either remote write or remote atomic is declared.\n");
+		return NULL;
+	}
+
+	tseg = dev->ops->register_seg(dev, cfg, udata);
+	if (tseg == NULL) {
+		ubcore_log_err("UBEP failed to register segment with va:%llu\n", cfg->va);
+		return NULL;
+	}
+
+	tseg->ub_dev = dev;
+	tseg->uctx = ubcore_get_uctx(udata);
+	tseg->seg.len = cfg->len;
+	tseg->seg.ubva.va = cfg->va;
+	tseg->keyid = cfg->keyid;
+
+	(void)memcpy(tseg->seg.ubva.eid.raw, dev->attr.eid.raw, UBCORE_EID_SIZE);
+	(void)memcpy(&tseg->seg.attr, &cfg->flag, sizeof(union ubcore_reg_seg_flag));
+	atomic_set(&tseg->use_cnt, 0);
+	if (tseg->keyid != NULL)
+		atomic_inc(&tseg->keyid->use_cnt);
+
+	return tseg;
+}
+EXPORT_SYMBOL(ubcore_register_seg);
+
+int ubcore_unregister_seg(struct ubcore_target_seg *tseg)
+{
+	struct ubcore_device *dev;
+	int ret;
+
+	if (tseg == NULL || tseg->ub_dev == NULL || tseg->ub_dev->ops->unregister_seg == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	dev = tseg->ub_dev;
+
+	if (tseg->keyid != NULL)
+		atomic_dec(&tseg->keyid->use_cnt);
+
+	ret = dev->ops->unregister_seg(tseg);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_unregister_seg);

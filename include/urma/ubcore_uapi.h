@@ -150,6 +150,22 @@ struct ubcore_key_id *ubcore_alloc_key_id(struct ubcore_device *dev, struct ubco
  */
 int ubcore_free_key_id(struct ubcore_key_id *key);
 /**
+ * register segment to ubcore device
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: segment configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target segment pointer on success, NULL on error
+ */
+struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
+					      const struct ubcore_seg_cfg *cfg,
+					      struct ubcore_udata *udata);
+/**
+ * unregister segment from ubcore device
+ * @param[in] tseg: the segment registered before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unregister_seg(struct ubcore_target_seg *tseg);
+/**
  * create jfc with ubcore device.
  * @param[in] dev: the ubcore device handle;
  * @param[in] cfg: jfc attributes and configurations
