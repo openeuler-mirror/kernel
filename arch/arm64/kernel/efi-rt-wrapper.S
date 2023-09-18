@@ -9,7 +9,7 @@
 #include <linux/linkage.h>
 
 ENTRY(__efi_rt_asm_wrapper)
-	stp	x29, x30, [sp, #-112]!
+	stp	x29, x30, [sp, #-32]!
 	mov	x29, sp
 
 	/*
@@ -19,21 +19,11 @@ ENTRY(__efi_rt_asm_wrapper)
 	 */
 	stp	x1, x18, [sp, #16]
 
-	/*
-	 * Preserve all callee saved registers and preserve the stack pointer
-	 * value at the base of the EFI runtime stack so we can recover from
-	 * synchronous exceptions occurring while executing the firmware
-	 * routines.
-	 */
-	stp	x19, x20, [sp, #32]
-	stp	x21, x22, [sp, #48]
-	stp	x23, x24, [sp, #64]
-	stp	x25, x26, [sp, #80]
-	stp	x27, x28, [sp, #96]
-
 	ldr_l	x16, efi_rt_stack_top
 	mov	sp, x16
-	stp	x18, x29, [sp, #-16]!
+#ifdef CONFIG_SHADOW_CALL_STACK
+	str	x18, [sp, #-16]!
+#endif
 
 	/*
 	 * We are lucky enough that no EFI runtime services take more than
@@ -51,7 +41,7 @@ ENTRY(__efi_rt_asm_wrapper)
 	mov	sp, x29
 	ldp	x1, x2, [sp, #16]
 	cmp	x2, x18
-	ldp	x29, x30, [sp], #112
+	ldp	x29, x30, [sp], #32
 	b.ne	0f
 	ret
 0:
@@ -69,15 +59,3 @@ ENTRY(__efi_rt_asm_wrapper)
 
 	b	efi_handle_corrupted_x18	// tail call
 ENDPROC(__efi_rt_asm_wrapper)
-
-ENTRY(__efi_rt_asm_recover)
-	mov     sp, x30
-
-	ldp     x19, x20, [sp, #32]
-	ldp     x21, x22, [sp, #48]
-	ldp     x23, x24, [sp, #64]
-	ldp     x25, x26, [sp, #80]
-	ldp     x27, x28, [sp, #96]
-	ldp     x29, x30, [sp], #112
-	ret
-ENDPROC(__efi_rt_asm_recover)

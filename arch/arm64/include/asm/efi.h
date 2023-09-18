@@ -11,20 +11,11 @@
 #include <asm/neon.h>
 #include <asm/ptrace.h>
 #include <asm/tlbflush.h>
-#include <linux/efi.h>
 
 #ifdef CONFIG_EFI
 extern void efi_init(void);
-
-bool efi_runtime_fixup_exception(struct pt_regs *regs, const char *msg);
 #else
 #define efi_init()
-
-static inline
-bool efi_runtime_fixup_exception(struct pt_regs *regs, const char *msg)
-{
-	return false;
-}
 #endif
 
 int efi_create_mapping(struct mm_struct *mm, efi_memory_desc_t *md);
