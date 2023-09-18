@@ -531,6 +531,23 @@ static void ubcore_abort_tp(struct ubcore_tp *tp, struct ubcore_tp_meta *meta)
 	(void)ubcore_destroy_tp(tp);
 }
 
+/* destroy initiator and peer tp created by ubcore_connect_vtp, called by ubcore_destroy_vtp */
+static int ubcore_disconnect_vtp(struct ubcore_tp *tp)
+{
+	struct ubcore_tp_node *tp_node = tp->priv;
+	struct ubcore_device *dev = tp->ub_dev;
+
+	if (atomic_dec_return(&tp->use_cnt) == 0) {
+		struct ubcore_ta ta;
+
+		ta.type = UBCORE_TA_VIRT;
+
+		ubcore_remove_tp_node(&dev->ht[UBCORE_HT_TP], tp_node);
+		return ubcore_destroy_local_peer_tp(tp, &ta);
+	}
+	return 0;
+}
+
 static void ubcore_set_multipath_tp_cfg(struct ubcore_tp_cfg *cfg,
 					enum ubcore_transport_mode trans_mode,
 					struct ubcore_nl_query_tp_resp *query_tp_resp)
@@ -704,6 +721,46 @@ static int ubcore_enable_tp(const struct ubcore_device *dev, struct ubcore_tp_no
 	ubcore_modify_tp_attr(tp, &attr, mask);
 	mutex_unlock(&tp_node->lock);
 	return 0;
+}
+
+/* create vtp and connect to a remote vtp peer, called by ubcore_create_vtp */
+static struct ubcore_tp *ubcore_connect_vtp(struct ubcore_device *dev,
+					    const union ubcore_eid *remote_eid,
+					    enum ubcore_transport_mode trans_mode,
+					    struct ubcore_udata *udata)
+{
+	struct ubcore_tp_cfg cfg = { 0 };
+	struct ubcore_tp_node *tp_node;
+	struct ubcore_tp *tp = NULL;
+	struct ubcore_ta ta;
+
+	if (ubcore_query_initiator_tp_cfg(&cfg, dev, remote_eid, trans_mode) != 0) {
+		ubcore_log_err("Failed to init tp cfg");
+		return NULL;
+	}
+
+	tp = ubcore_create_tp(dev, &cfg, udata);
+	if (tp == NULL) {
+		ubcore_log_err("Failed to create tp");
+		return NULL;
+	}
+
+	tp_node = ubcore_add_tp_with_tpn(dev, tp);
+	if (tp_node == NULL) {
+		(void)ubcore_destroy_tp(tp);
+		ubcore_log_err("Failed to add vtp");
+		return NULL;
+	}
+
+	ta.type = UBCORE_TA_VIRT;
+	/* send request to connection agent and set peer cfg and peer ext from response */
+	if (ubcore_enable_tp(dev, tp_node, &ta, udata) != 0) {
+		ubcore_remove_tp_node(&dev->ht[UBCORE_HT_TP], tp_node);
+		(void)ubcore_destroy_tp(tp);
+		ubcore_log_err("Failed to enable tp");
+		return NULL;
+	}
+	return tp;
 }
 
 static int ubcore_set_target_peer(const struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
@@ -1046,6 +1103,40 @@ static struct ubcore_tp *ubcore_advise_target_tp(struct ubcore_device *dev,
 	return tp;
 }
 
+static struct ubcore_tp *ubcore_accept_target_vtp(struct ubcore_device *dev,
+						  struct ubcore_nlmsg *req)
+{
+	struct ubcore_nl_create_tp_req *create =
+		(struct ubcore_nl_create_tp_req *)(void *)req->payload;
+	struct ubcore_tp_node *tp_node;
+	struct ubcore_tp *tp = NULL;
+
+	tp = ubcore_create_target_tp(dev, req, NULL);
+	if (tp == NULL) {
+		ubcore_log_err("Failed to create tp");
+		return NULL;
+	}
+
+	tp_node = ubcore_add_tp_with_tpn(dev, tp);
+	if (tp_node == NULL) {
+		ubcore_log_err("Failed to add tp to the tp table in the device");
+		goto destroy_tp;
+	}
+
+	if (ubcore_modify_target_tp(dev, tp_node, create) != 0) {
+		ubcore_log_err("Failed to modify tp");
+		goto remove_tp_node;
+	}
+
+	return tp;
+
+remove_tp_node:
+	ubcore_remove_tp_node(&dev->ht[UBCORE_HT_TP], tp_node);
+destroy_tp:
+	(void)ubcore_destroy_tp(tp);
+	return NULL;
+}
+
 static struct ubcore_tp *ubcore_bind_target_tp(struct ubcore_device *dev, struct ubcore_nlmsg *req)
 {
 	return ubcore_advise_target_tp(dev, req);
@@ -1071,7 +1162,9 @@ struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req)
 		return ubcore_get_create_tp_response(NULL, req);
 	}
 
-	if (create->trans_mode == UBCORE_TP_RC) {
+	if (create->ta.type == UBCORE_TA_VIRT) {
+		tp = ubcore_accept_target_vtp(dev, req);
+	} else if (create->trans_mode == UBCORE_TP_RC) {
 		tp = ubcore_bind_target_tp(dev, req);
 	} else if (create->trans_mode == UBCORE_TP_RM &&
 		   dev->transport_type == UBCORE_TRANSPORT_IB) {
@@ -1173,12 +1266,52 @@ struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev, const union ubcor
 				    enum ubcore_transport_mode trans_mode,
 				    struct ubcore_udata *udata)
 {
+	if (dev == NULL || dev->attr.virtualization || remote_eid == NULL ||
+	    !ubcore_have_tp_ops(dev)) {
+		ubcore_log_err("Invalid parameter");
+		return NULL;
+	}
+
+	switch (dev->transport_type) {
+	case UBCORE_TRANSPORT_IB: /* alpha */
+		if (trans_mode == UBCORE_TP_RM || trans_mode == UBCORE_TP_RC)
+			return ubcore_connect_vtp(dev, remote_eid, trans_mode, udata);
+		break;
+	case UBCORE_TRANSPORT_UB: /* beta */
+	case UBCORE_TRANSPORT_IP:
+	case UBCORE_TRANSPORT_INVALID:
+	case UBCORE_TRANSPORT_MAX:
+	default:
+		break;
+	}
 	return NULL;
 }
 EXPORT_SYMBOL(ubcore_create_vtp);
 
 int ubcore_destroy_vtp(struct ubcore_tp *vtp)
 {
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_device *dev;
+
+	if (vtp == NULL || vtp->ub_dev == NULL || vtp->priv == NULL ||
+	    vtp->ub_dev->attr.virtualization) {
+		ubcore_log_err("Invalid para");
+		return -1;
+	}
+	dev = vtp->ub_dev;
+	trans_mode = vtp->trans_mode;
+	switch (dev->transport_type) {
+	case UBCORE_TRANSPORT_IB: /* alpha */
+		if (trans_mode == UBCORE_TP_RM || trans_mode == UBCORE_TP_RC)
+			return ubcore_disconnect_vtp(vtp);
+		break;
+	case UBCORE_TRANSPORT_UB: /* beta */
+	case UBCORE_TRANSPORT_IP:
+	case UBCORE_TRANSPORT_INVALID:
+	case UBCORE_TRANSPORT_MAX:
+	default:
+		break;
+	}
 	return -1;
 }
 EXPORT_SYMBOL(ubcore_destroy_vtp);
