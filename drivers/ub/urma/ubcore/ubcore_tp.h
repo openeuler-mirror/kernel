@@ -51,6 +51,12 @@ struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req);
 struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req);
 struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req);
 
+/* bind tp APIs */
+int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		   struct ubcore_tp_advice *advice, struct ubcore_udata *udata);
+int ubcore_unbind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		     struct ubcore_tp_advice *advice);
+
 /* Called when clear tp table */
 int ubcore_destroy_tp(struct ubcore_tp *tp);
 

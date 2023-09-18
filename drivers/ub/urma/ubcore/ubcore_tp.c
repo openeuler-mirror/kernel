@@ -1192,6 +1192,82 @@ static inline void ubcore_set_ta_for_tp_cfg(struct ubcore_device *dev, struct ub
 		cfg->ta = NULL;
 }
 
+int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		   struct ubcore_tp_advice *advice, struct ubcore_udata *udata)
+{
+	struct ubcore_device *dev = jetty->ub_dev;
+	struct ubcore_tp_cfg cfg = { 0 };
+	struct ubcore_tp_node *tp_node;
+	struct ubcore_tp *new_tp = NULL;
+
+	if (ubcore_query_initiator_tp_cfg(&cfg, dev, (union ubcore_eid *)&tjetty->cfg.id.eid,
+					  tjetty->cfg.trans_mode) != 0) {
+		ubcore_log_err("Failed to init tp cfg.\n");
+		return -1;
+	}
+
+	mutex_lock(&tjetty->lock);
+	if (tjetty->tp != NULL) {
+		mutex_unlock(&tjetty->lock);
+		ubcore_log_err("The same tjetty, different jetty, prevent duplicate bind.\n");
+		return -1;
+	}
+
+	ubcore_set_ta_for_tp_cfg(dev, &advice->ta, &cfg);
+
+	/* driver gurantee to return the same tp if we have created it as a target */
+	new_tp = ubcore_create_tp(dev, &cfg, udata);
+	if (new_tp == NULL) {
+		ubcore_log_err("Failed to create tp.\n");
+		mutex_unlock(&tjetty->lock);
+		return -1;
+	}
+
+	tp_node = ubcore_add_tp_node(advice->meta.ht, advice->meta.hash, &advice->meta.key, new_tp,
+				     &advice->ta);
+	if (tp_node == NULL) {
+		(void)ubcore_destroy_tp(new_tp);
+		mutex_unlock(&tjetty->lock);
+		ubcore_log_err("Failed to find and add tp\n");
+		return -1;
+	} else if (tp_node != NULL && tp_node->tp != new_tp) {
+		(void)ubcore_destroy_tp(new_tp);
+		new_tp = NULL;
+	}
+	tjetty->tp = tp_node->tp;
+	mutex_unlock(&tjetty->lock);
+
+	/* send request to connection agent and set peer cfg and peer ext from response */
+	if (ubcore_enable_tp(dev, tp_node, &advice->ta, udata) != 0) {
+		mutex_lock(&tjetty->lock);
+		tjetty->tp = NULL;
+		mutex_unlock(&tjetty->lock);
+		ubcore_abort_tp(new_tp, &advice->meta);
+		ubcore_log_err("Failed to enable tp.\n");
+		return -1;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_bind_tp);
+
+int ubcore_unbind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		     struct ubcore_tp_advice *advice)
+{
+	if (tjetty->tp == NULL) {
+		ubcore_log_warn("TP is not found, already removed or under use\n");
+		return 0;
+	}
+	if (ubcore_unadvise_tp(jetty->ub_dev, advice) != 0) {
+		ubcore_log_warn("failed to unbind tp\n");
+		return -1;
+	}
+	mutex_lock(&tjetty->lock);
+	tjetty->tp = NULL;
+	mutex_unlock(&tjetty->lock);
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_unbind_tp);
+
 int ubcore_advise_tp(struct ubcore_device *dev, const union ubcore_eid *remote_eid,
 		     struct ubcore_tp_advice *advice, struct ubcore_udata *udata)
 {
