@@ -1011,6 +1011,91 @@ static int uburma_cmd_unimport_jetty(struct ubcore_device *ubc_dev, struct uburm
 	return ret;
 }
 
+static inline void uburma_put_jetty_tjetty_objs(struct uburma_uobj *jetty_uobj,
+						struct uburma_uobj *tjetty_uobj)
+{
+	uobj_put_read(jetty_uobj);
+	uobj_put_read(tjetty_uobj);
+}
+
+static int uburma_get_jfs_tjfr_objs(struct uburma_file *file, uint64_t jetty_handle,
+				    uint64_t tjetty_handle, struct uburma_uobj **jetty_uobj,
+				    struct uburma_uobj **tjetty_uobj)
+{
+	*jetty_uobj = uobj_get_read(UOBJ_CLASS_JFS, jetty_handle, file);
+	if (IS_ERR(*jetty_uobj)) {
+		uburma_log_err("failed to find jfs with handle %llu", jetty_handle);
+		return -EINVAL;
+	}
+
+	*tjetty_uobj = uobj_get_read(UOBJ_CLASS_TARGET_JFR, tjetty_handle, file);
+	if (IS_ERR(*tjetty_uobj)) {
+		uobj_put_read(*jetty_uobj);
+		uburma_log_err("failed to find target jfr with handle %llu", tjetty_handle);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static inline void uburma_put_jfs_tjfr_objs(struct uburma_uobj *jetty_uobj,
+					    struct uburma_uobj *tjetty_uobj)
+{
+	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
+}
+
+static int uburma_cmd_advise_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_advise_jetty arg;
+	struct uburma_uobj *tjfr_uobj;
+	struct uburma_uobj *jfs_uobj;
+	struct ubcore_udata udata;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_advise_jetty));
+	if (ret != 0)
+		return ret;
+
+	if (uburma_get_jfs_tjfr_objs(file, arg.in.jetty_handle, arg.in.tjetty_handle, &jfs_uobj,
+				     &tjfr_uobj))
+		return -EINVAL;
+
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	ret = ubcore_advise_jfr(jfs_uobj->object, tjfr_uobj->object, &udata);
+	if (ret != 0)
+		uburma_log_err("advise jfr failed.\n");
+
+	uburma_put_jfs_tjfr_objs(jfs_uobj, tjfr_uobj);
+	return ret;
+}
+
+static int uburma_cmd_unadvise_jfr(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_unadvise_jetty arg;
+	struct uburma_uobj *tjfr_uobj;
+	struct uburma_uobj *jfs_uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_unadvise_jetty));
+	if (ret != 0)
+		return ret;
+
+	if (uburma_get_jfs_tjfr_objs(file, arg.in.jetty_handle, arg.in.tjetty_handle, &jfs_uobj,
+				     &tjfr_uobj))
+		return -EINVAL;
+
+	ret = ubcore_unadvise_jfr(jfs_uobj->object, tjfr_uobj->object);
+	if (ret != 0)
+		uburma_log_err("failed to unadvise jfr.\n");
+
+	uburma_put_jfs_tjfr_objs(jfs_uobj, tjfr_uobj);
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -1034,6 +1119,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_DELETE_JETTY] = uburma_cmd_delete_jetty,
 	[UBURMA_CMD_IMPORT_JETTY] = uburma_cmd_import_jetty,
 	[UBURMA_CMD_UNIMPORT_JETTY] = uburma_cmd_unimport_jetty,
+	[UBURMA_CMD_ADVISE_JFR] = uburma_cmd_advise_jfr,
+	[UBURMA_CMD_UNADVISE_JFR] = uburma_cmd_unadvise_jfr,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,

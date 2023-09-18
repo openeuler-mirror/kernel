@@ -56,6 +56,8 @@ enum uburma_cmd {
 	UBURMA_CMD_DELETE_JETTY,
 	UBURMA_CMD_IMPORT_JETTY,
 	UBURMA_CMD_UNIMPORT_JETTY,
+	UBURMA_CMD_ADVISE_JFR,
+	UBURMA_CMD_UNADVISE_JFR,
 	UBURMA_CMD_USER_CTL
 };
 
@@ -295,6 +297,21 @@ struct uburma_cmd_import_jetty {
 struct uburma_cmd_unimport_jetty {
 	struct {
 		uint64_t handle; /* handle of tjetty, used to find tjetty obj in kernel */
+	} in;
+};
+
+struct uburma_cmd_advise_jetty {
+	struct {
+		uint64_t jetty_handle; /* handle of jetty, used to find jetty obj in kernel */
+		uint64_t tjetty_handle; /* handle of tjetty, used to find tjetty obj in kernel */
+	} in;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_unadvise_jetty {
+	struct {
+		uint64_t jetty_handle; /* handle of jetty, used to find jetty obj in kernel */
+		uint64_t tjetty_handle; /* handle of tjetty, used to find tjetty obj in kernel */
 	} in;
 };
 
