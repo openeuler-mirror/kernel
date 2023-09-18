@@ -1168,6 +1168,59 @@ static int uburma_cmd_unadvise_jetty(struct ubcore_device *ubc_dev, struct uburm
 	return ret;
 }
 
+static int uburma_cmd_bind_jetty(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				 struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_advise_jetty arg;
+	struct uburma_uobj *tjetty_uobj;
+	struct uburma_uobj *jetty_uobj;
+	struct ubcore_udata udata;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_advise_jetty));
+	if (ret != 0)
+		return ret;
+
+	if (uburma_get_jetty_tjetty_objs(file, arg.in.jetty_handle, arg.in.tjetty_handle,
+					 &jetty_uobj, &tjetty_uobj))
+		return -EINVAL;
+
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	ret = ubcore_bind_jetty(jetty_uobj->object, tjetty_uobj->object, &udata);
+	if (ret != 0)
+		uburma_log_err("bind jetty failed.\n");
+
+	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
+	return ret;
+}
+
+static int uburma_cmd_unbind_jetty(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_unadvise_jetty arg;
+	struct uburma_uobj *tjetty_uobj;
+	struct uburma_uobj *jetty_uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_unadvise_jetty));
+	if (ret != 0)
+		return ret;
+
+	if (uburma_get_jetty_tjetty_objs(file, arg.in.jetty_handle, arg.in.tjetty_handle,
+					 &jetty_uobj, &tjetty_uobj))
+		return -EINVAL;
+
+	ret = ubcore_unbind_jetty(jetty_uobj->object, tjetty_uobj->object);
+	if (ret != 0)
+		uburma_log_err("failed to unbind jetty, ret: %d.\n", ret);
+
+	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
 
@@ -1195,6 +1248,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_UNADVISE_JFR] = uburma_cmd_unadvise_jfr,
 	[UBURMA_CMD_ADVISE_JETTY] = uburma_cmd_advise_jetty,
 	[UBURMA_CMD_UNADVISE_JETTY] = uburma_cmd_unadvise_jetty,
+	[UBURMA_CMD_BIND_JETTY] = uburma_cmd_bind_jetty,
+	[UBURMA_CMD_UNBIND_JETTY] = uburma_cmd_unbind_jetty,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
