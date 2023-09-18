@@ -7,7 +7,6 @@
  */
 
 #include <linux/linkage.h>
-#include <asm/assembler.h>
 
 ENTRY(__efi_rt_asm_wrapper)
 	stp	x29, x30, [sp, #-112]!
