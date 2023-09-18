@@ -1694,3 +1694,82 @@ struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req)
 	return ubcore_get_restore_tp_response(req, tp);
 }
 EXPORT_SYMBOL(ubcore_handle_restore_tp_req);
+
+int ubcore_config_utp(struct ubcore_device *dev, const union ubcore_eid *eid,
+		      const struct ubcore_utp_attr *attr, union ubcore_utp_attr_mask mask)
+{
+	struct ubcore_res_dev_val dev_val = { 0 };
+	struct ubcore_res_key key_val;
+	struct ubcore_res_val val;
+	uint32_t i;
+
+	if (dev == NULL || eid == NULL || attr == NULL || dev->ops == NULL ||
+	    dev->ops->query_res == NULL || dev->ops->config_utp == NULL) {
+		ubcore_log_err("dev ops has a null pointer.\n");
+		return -1;
+	}
+	if (dev->transport_type == UBCORE_TRANSPORT_IB) {
+		ubcore_log_err(
+			"The configuration modification of this version of utp is not supported.\n");
+		return -1;
+	}
+	// Query the utp_list under the device
+	val.addr = (uint64_t)&dev_val;
+	val.len = sizeof(struct ubcore_res_dev_val);
+	key_val.type = UBCORE_RES_KEY_URMA_DEV;
+	key_val.key = eid->in4.addr;
+	if (dev->ops->query_res(dev, &key_val, &val) != 0) {
+		ubcore_log_err("failed to query res.\n");
+		return -1;
+	}
+	for (i = 0; dev_val.utp_list != NULL && i < dev_val.utp_cnt; i++) {
+		if (dev->ops->config_utp(dev, dev_val.utp_list[i], attr, mask) != 0) {
+			ubcore_log_err("failed to config utp.\n");
+			return -1;
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_config_utp);
+
+int ubcore_show_utp(struct ubcore_device *dev, const union ubcore_eid *eid)
+{
+	struct ubcore_res_dev_val dev_val = { 0 };
+	struct ubcore_res_utp_val utp_val = { 0 };
+	struct ubcore_res_key key_val;
+	struct ubcore_res_val val;
+	uint32_t i;
+
+	if (dev == NULL || eid == NULL || dev->ops == NULL || dev->ops->query_res == NULL) {
+		ubcore_log_err("dev ops has a null pointer.\n");
+		return -1;
+	}
+	// Query the utp_list under the device
+	val.addr = (uint64_t)&dev_val;
+	val.len = sizeof(struct ubcore_res_dev_val);
+	key_val.type = UBCORE_RES_KEY_URMA_DEV;
+	key_val.key = eid->in4.addr;
+	if (dev->ops->query_res(dev, &key_val, &val) != 0) {
+		ubcore_log_err("failed to query res.\n");
+		return -1;
+	}
+	for (i = 0; dev_val.utp_list != NULL && i < dev_val.utp_cnt; i++) {
+		// Query the utp_val under the utp list
+		val.addr = (uint64_t)&utp_val;
+		val.len = sizeof(struct ubcore_res_utp_val);
+		key_val.type = UBCORE_RES_KEY_UTP;
+		key_val.key = dev_val.utp_list[i];
+		if (dev->ops->query_res(dev, &key_val, &val) != 0) {
+			ubcore_log_err("failed to query res.\n");
+			return -1;
+		}
+		ubcore_log_info("-----------utp_info---------\n");
+		ubcore_log_info("--utp_id:          %d\n", (int)utp_val.utp_id);
+		ubcore_log_info("--spray_en:        %d\n", (int)utp_val.spray_en);
+		ubcore_log_info("--data_udp_start:  %d\n", (int)utp_val.data_udp_start);
+		ubcore_log_info("--udp_range:       %d\n", (int)utp_val.udp_range);
+		ubcore_log_info("----------------------------\n");
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_show_utp);
