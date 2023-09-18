@@ -509,6 +509,11 @@ static int uburma_free_key(struct uburma_uobj *uobj, enum uburma_remove_reason w
 	return ubcore_free_key_id((struct ubcore_key_id *)uobj->object);
 }
 
+static int uburma_free_seg(struct uburma_uobj *uobj, enum uburma_remove_reason why)
+{
+	return ubcore_unregister_seg((struct ubcore_target_seg *)uobj->object);
+}
+
 static int uburma_free_jfc(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
 	struct uburma_jfc_uobj *jfc_uobj = container_of(uobj, struct uburma_jfc_uobj, uobj);
@@ -674,6 +679,8 @@ declare_uobj_class(UOBJ_CLASS_JFC,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_jfc_uobj), 2, uburma_free_jfc));
 declare_uobj_class(UOBJ_CLASS_KEY,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 1, uburma_free_key));
+declare_uobj_class(UOBJ_CLASS_SEG,
+		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 1, uburma_free_seg));
 declare_uobj_class(UOBJ_CLASS_JFS,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_jfs_uobj), 1, uburma_free_jfs));
 declare_uobj_class(UOBJ_CLASS_JFR,

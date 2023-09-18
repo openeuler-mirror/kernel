@@ -26,6 +26,7 @@
 enum UOBJ_CLASS_ID {
 	UOBJ_CLASS_ROOT, /* used by framework */
 	UOBJ_CLASS_KEY,
+	UOBJ_CLASS_SEG,
 	UOBJ_CLASS_JFR,
 	UOBJ_CLASS_JFS,
 	UOBJ_CLASS_JFC,
@@ -214,6 +215,7 @@ static inline bool uobj_type_is_fd(const struct uburma_uobj *uobj)
 	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_NOLOCK)
 
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_KEY;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_SEG;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFCE;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFAE;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JFC;

@@ -42,6 +42,8 @@ enum uburma_cmd {
 	UBURMA_CMD_DESTROY_CTX,
 	UBURMA_CMD_ALLOC_KEY_ID,
 	UBURMA_CMD_FREE_KEY_ID,
+	UBURMA_CMD_REGISTER_SEG,
+	UBURMA_CMD_UNREGISTER_SEG,
 	UBURMA_CMD_CREATE_JFS,
 	UBURMA_CMD_DELETE_JFS,
 	UBURMA_CMD_CREATE_JFR,
@@ -95,6 +97,28 @@ struct uburma_cmd_alloc_key_id {
 struct uburma_cmd_free_key_id {
 	struct {
 		uint64_t handle; /* handle of the allocated key_id obj in kernel */
+	} in;
+};
+
+struct uburma_cmd_register_seg {
+	struct {
+		uint64_t va;
+		uint64_t len;
+		uint32_t key_id;
+		uint64_t keyid_handle;
+		uint32_t key;
+		uint32_t flag;
+	} in;
+	struct {
+		uint32_t key_id;
+		uint64_t handle; /* handle of the allocated seg obj in kernel */
+	} out;
+	struct uburma_cmd_udrv_priv udata;
+};
+
+struct uburma_cmd_unregister_seg {
+	struct {
+		uint64_t handle; /* handle of seg, used to find seg obj in kernel */
 	} in;
 };
 

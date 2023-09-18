@@ -125,6 +125,15 @@ static int uburma_cmd_destroy_ctx(struct ubcore_device *ubc_dev, struct uburma_f
 	return 0;
 }
 
+static void uburma_fill_attr(struct ubcore_seg_cfg *cfg, struct uburma_cmd_register_seg *arg)
+{
+	cfg->va = arg->in.va;
+	cfg->len = arg->in.len;
+	cfg->flag.value = arg->in.flag;
+	cfg->ukey.key = arg->in.key;
+	cfg->iova = arg->in.va;
+}
+
 static int uburma_cmd_alloc_key_id(struct ubcore_device *ubc_dev, struct uburma_file *file,
 				   struct uburma_cmd_hdr *hdr)
 {
@@ -191,6 +200,89 @@ static int uburma_cmd_free_key_id(struct ubcore_device *ubc_dev, struct uburma_f
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0)
 		uburma_log_err("ubcore remove commit keyid failed.\n");
+	return ret;
+}
+
+static int uburma_cmd_register_seg(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				   struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_register_seg arg;
+	struct ubcore_seg_cfg cfg = { 0 };
+	struct ubcore_target_seg *seg;
+	struct ubcore_udata udata = { 0 };
+	struct uburma_uobj *uobj;
+	struct uburma_uobj *keyid_uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_register_seg));
+	if (ret != 0)
+		return ret;
+
+	keyid_uobj = uobj_get_read(UOBJ_CLASS_KEY, (int)arg.in.keyid_handle, file);
+	if (!IS_ERR(keyid_uobj))
+		cfg.keyid = (struct ubcore_key_id *)keyid_uobj->object;
+
+	uburma_fill_attr(&cfg, &arg);
+	fill_udata(&udata, file->ucontext, &arg.udata);
+
+	uobj = uobj_alloc(UOBJ_CLASS_SEG, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("UOBJ_CLASS_SEG alloc fail!\n");
+		ret = -ENOMEM;
+		goto err_put_keyid;
+	}
+
+	seg = ubcore_register_seg(ubc_dev, &cfg, &udata);
+	if (IS_ERR_OR_NULL(seg)) {
+		uburma_log_err("ubcore_register_seg failed.\n");
+		ret = -EPERM;
+		goto err_free_uobj;
+	}
+	uobj->object = seg;
+	arg.out.key_id = seg->seg.key_id;
+	arg.out.handle = uobj->id;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				  sizeof(struct uburma_cmd_register_seg));
+	if (ret != 0)
+		goto err_delete_seg;
+
+	if (!IS_ERR(keyid_uobj))
+		uobj_put_read(keyid_uobj);
+	uobj_alloc_commit(uobj);
+	return 0;
+
+err_delete_seg:
+	ubcore_unregister_seg(seg);
+err_free_uobj:
+	uobj_alloc_abort(uobj);
+err_put_keyid:
+	if (!IS_ERR(keyid_uobj))
+		uobj_put_read(keyid_uobj);
+	return ret;
+}
+
+static int uburma_cmd_unregister_seg(struct ubcore_device *ubc_dev, struct uburma_file *file,
+				     struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_unregister_seg arg;
+	struct uburma_uobj *uobj;
+	int ret;
+
+	ret = uburma_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_unregister_seg));
+	if (ret != 0)
+		return ret;
+
+	uobj = uobj_get_del(UOBJ_CLASS_SEG, arg.in.handle, file);
+	if (IS_ERR(uobj)) {
+		uburma_log_err("failed to find registered seg.\n");
+		return -EINVAL;
+	}
+	ret = uobj_remove_commit(uobj);
+	if (ret != 0)
+		uburma_log_err("ubcore_unregister_seg failed.\n");
 	return ret;
 }
 
@@ -1299,6 +1391,8 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_DESTROY_CTX] = uburma_cmd_destroy_ctx,
 	[UBURMA_CMD_ALLOC_KEY_ID] = uburma_cmd_alloc_key_id,
 	[UBURMA_CMD_FREE_KEY_ID] = uburma_cmd_free_key_id,
+	[UBURMA_CMD_REGISTER_SEG] = uburma_cmd_register_seg,
+	[UBURMA_CMD_UNREGISTER_SEG] = uburma_cmd_unregister_seg,
 	[UBURMA_CMD_CREATE_JFR] = uburma_cmd_create_jfr,
 	[UBURMA_CMD_MODIFY_JFR] = uburma_cmd_modify_jfr,
 	[UBURMA_CMD_DELETE_JFR] = uburma_cmd_delete_jfr,
