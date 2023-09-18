@@ -32,7 +32,6 @@
  */
 #include <linux/acpi.h>
 #include <linux/module.h>
-#include <linux/pci.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
@@ -61,7 +60,7 @@ static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
 	rcu_read_lock();
 
 	if (!ndev)
-		ndev = hr_dev->iboe.netdevs[port_num - 1];
+		ndev = get_hr_netdev(hr_dev, port_num - 1);
 
 	if (ndev)
 		dev_hold(ndev);
@@ -120,10 +119,12 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 
 static enum ib_port_state get_upper_port_state(struct hns_roce_dev *hr_dev)
 {
+	struct net_device *net_dev = get_hr_netdev(hr_dev, 0);
 	struct hns_roce_bond_group *bond_grp;
+	u8 bus_num = get_hr_bus_num(hr_dev);
 	struct net_device *upper;
 
-	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
 	upper = bond_grp ? bond_grp->upper_dev : NULL;
 	if (upper)
 		return get_port_state(upper);
@@ -198,7 +199,8 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 	hr_dev = container_of(self, struct hns_roce_dev, iboe.nb);
 	iboe = &hr_dev->iboe;
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
-		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		bond_grp = hns_roce_get_bond_grp(get_hr_netdev(hr_dev, 0),
+						 get_hr_bus_num(hr_dev));
 		upper = bond_grp ? bond_grp->upper_dev : NULL;
 	}
 
@@ -217,14 +219,14 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 
 static int hns_roce_setup_mtu_mac(struct hns_roce_dev *hr_dev)
 {
+	struct net_device *net_dev;
 	int ret;
 	u8 i;
 
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
 		hr_dev->iboe.port_state[i] = IB_PORT_DOWN;
-
-		ret = hns_roce_set_mac(hr_dev, i,
-				       hr_dev->iboe.netdevs[i]->dev_addr);
+		net_dev = get_hr_netdev(hr_dev, i);
+		ret = hns_roce_set_mac(hr_dev, i, net_dev->dev_addr);
 		if (ret)
 			return ret;
 	}
@@ -310,7 +312,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 
 	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
 	if (!net_dev)
-		net_dev = hr_dev->iboe.netdevs[port];
+		net_dev = get_hr_netdev(hr_dev, port);
 	if (!net_dev) {
 		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 		dev_err(dev, "Find netdev %u failed!\n", port);
@@ -851,22 +853,39 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 				       bool bond_cleanup)
 {
+	struct net_device *net_dev = get_hr_netdev(hr_dev, 0);
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hns_roce_bond_group *bond_grp;
+	u8 bus_num = get_hr_bus_num(hr_dev);
+	int i;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
-		unregister_netdevice_notifier(&hr_dev->bond_nb);
-		bond_grp = hns_roce_get_bond_grp(hr_dev);
-		if (bond_grp) {
-			if (bond_cleanup)
-				hns_roce_cleanup_bond(bond_grp);
-			else if (priv->handle->rinfo.reset_state ==
-				 HNS_ROCE_STATE_RST_UNINIT)
-				bond_grp->main_hr_dev = NULL;
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
+		goto normal_unregister;
+
+	unregister_netdevice_notifier(&hr_dev->bond_nb);
+	bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
+	if (!bond_grp)
+		goto normal_unregister;
+
+	if (bond_cleanup) {
+		/* To avoid the loss of other slave devices when main_hr_dev
+		 * is unregistered, re-initialized the remaining slaves before
+		 * the bond resources cleanup.
+		 */
+		bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
+			net_dev = bond_grp->bond_func_info[i].net_dev;
+			if (net_dev && net_dev != iboe->netdevs[0])
+				hns_roce_bond_init_client(bond_grp, i);
 		}
+		hns_roce_cleanup_bond(bond_grp);
+	} else if (priv->handle->rinfo.reset_state ==
+		   HNS_ROCE_STATE_RST_UNINIT) {
+		bond_grp->main_hr_dev = NULL;
 	}
 
+normal_unregister:
 	hr_dev->active = false;
 	unregister_netdevice_notifier(&iboe->nb);
 	ib_unregister_device(&hr_dev->ib_dev);
@@ -961,11 +980,12 @@ static const struct ib_device_ops hns_roce_dev_restrack_ops = {
 
 static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 {
-	int ret;
 	struct hns_roce_ib_iboe *iboe = NULL;
-	struct ib_device *ib_dev = NULL;
 	struct device *dev = hr_dev->dev;
+	struct ib_device *ib_dev = NULL;
+	struct net_device *net_dev;
 	unsigned int i;
+	int ret;
 
 	iboe = &hr_dev->iboe;
 	spin_lock_init(&iboe->lock);
@@ -1049,11 +1069,11 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		ib_dev->driver_def = hns_roce_uapi_defs;
 
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
-		if (!hr_dev->iboe.netdevs[i])
+		net_dev = get_hr_netdev(hr_dev, i);
+		if (!net_dev)
 			continue;
 
-		ret = ib_device_set_netdev(ib_dev, hr_dev->iboe.netdevs[i],
-					   i + 1);
+		ret = ib_device_set_netdev(ib_dev, net_dev, i + 1);
 		if (ret)
 			return ret;
 	}
