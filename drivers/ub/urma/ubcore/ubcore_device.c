@@ -520,6 +520,11 @@ void ubcore_dispatch_async_event(struct ubcore_event *event)
 		return;
 	}
 
+	if (event->event_type == UBCORE_EVENT_TP_ERR && event->element.tp != NULL) {
+		ubcore_restore_tp(event->ub_dev, event->element.tp);
+		return;
+	}
+
 	dev = event->ub_dev;
 	spin_lock_irqsave(&dev->event_handler_lock, flags);
 	list_for_each_entry(handler, &dev->event_handler_list, node)

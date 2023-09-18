@@ -95,6 +95,25 @@ struct ubcore_cmd_query_res {
 	} out;
 };
 
+struct ubcore_cmd_set_utp {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t eid[UBCORE_CMD_EID_SIZE];
+		uint32_t transport_type;
+		bool spray_en;
+		uint16_t data_udp_start;
+		uint8_t udp_range;
+	} in;
+};
+
+struct ubcore_cmd_show_utp {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t eid[UBCORE_CMD_EID_SIZE];
+		uint32_t transport_type;
+	} in;
+};
+
 /* copy from user_space addr to kernel args */
 static inline int ubcore_copy_from_user(void *args, const void *args_addr, unsigned long args_size)
 {

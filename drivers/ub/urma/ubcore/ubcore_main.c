@@ -153,6 +153,82 @@ static int ubcore_cmd_put_uasid(struct ubcore_cmd_hdr *hdr)
 	return 0;
 }
 
+static void ubcore_set_utp_cfg(struct ubcore_cmd_set_utp *arg, struct ubcore_utp_attr *attr,
+			       union ubcore_utp_attr_mask *mask)
+{
+	attr->flag.bs.spray_en = arg->in.spray_en;
+	attr->data_udp_start = arg->in.data_udp_start;
+	attr->udp_range = arg->in.udp_range;
+	mask->bs.flag = 1;
+	mask->bs.udp_port = 1;
+	mask->bs.udp_range = 1;
+}
+
+static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	union ubcore_utp_attr_mask mask = { 0 };
+	struct ubcore_cmd_set_utp arg;
+	struct ubcore_utp_attr attr;
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_set_utp));
+	if (ret != 0)
+		return -EPERM;
+
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = arg.in.transport_type;
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	ubcore_set_utp_cfg(&arg, &attr, &mask);
+	if (ubcore_config_utp(dev, &eid, &attr, mask) != 0) {
+		ubcore_log_err("config utp failed.\n");
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	ubcore_put_device(dev);
+	return 0;
+}
+
+static int ubcore_cmd_show_utp(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	struct ubcore_cmd_show_utp arg;
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_show_utp));
+	if (ret != 0)
+		return -EPERM;
+
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = arg.in.transport_type;
+
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+	if (ubcore_show_utp(dev, &eid) != 0) {
+		ubcore_log_err("show utp failed.\n");
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	ubcore_put_device(dev);
+	return 0;
+}
+
 static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 {
 	enum ubcore_transport_type trans_type;
@@ -428,6 +504,10 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 		return ubcore_cmd_set_uasid(hdr);
 	case UBCORE_CMD_PUT_UASID:
 		return ubcore_cmd_put_uasid(hdr);
+	case UBCORE_CMD_SET_UTP:
+		return ubcore_cmd_set_utp(hdr);
+	case UBCORE_CMD_SHOW_UTP:
+		return ubcore_cmd_show_utp(hdr);
 	case UBCORE_CMD_QUERY_STATS:
 		return ubcore_cmd_query_stats(hdr);
 	case UBCORE_CMD_QUERY_RES:
