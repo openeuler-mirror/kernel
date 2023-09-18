@@ -651,6 +651,79 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 }
 EXPORT_SYMBOL(ubcore_unimport_jetty);
 
+static int ubcore_advice_jfs_tjfr(struct ubcore_tp_advice *advice, struct ubcore_jfs *jfs,
+				  struct ubcore_tjetty *tjfr)
+{
+	(void)memset(advice, 0, sizeof(struct ubcore_tp_advice));
+	advice->meta.ht = ubcore_get_tptable(jfs->tptable);
+	if (advice->meta.ht == NULL) {
+		ubcore_log_err("tp table has already been destroyed");
+		return -1;
+	}
+
+	advice->ta.type = UBCORE_TA_JFS_TJFR;
+	advice->ta.jfs = jfs;
+	advice->ta.tjetty_id = tjfr->cfg.id;
+
+	ubcore_init_tp_key_jetty_id(&advice->meta.key, &tjfr->cfg.id);
+	advice->meta.hash = ubcore_get_jetty_hash(&tjfr->cfg.id);
+	return 0;
+}
+
+static inline void ubcore_put_advice(const struct ubcore_tp_advice *advice)
+{
+	ubcore_put_tptable(advice->meta.ht);
+}
+
+int ubcore_advise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr,
+		      struct ubcore_udata *udata)
+{
+	struct ubcore_tp_advice advice;
+	int ret;
+
+	if (jfs == NULL || tjfr == NULL || !ubcore_have_tp_ops(jfs->ub_dev)) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if (!ubcore_jfs_tjfr_need_advise(jfs, tjfr)) {
+		ubcore_log_err("The transport mode is not rm.\n");
+		return -1;
+	}
+
+	ret = ubcore_advice_jfs_tjfr(&advice, jfs, tjfr);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_advise_tp(jfs->ub_dev, &tjfr->cfg.id.eid, &advice, udata);
+	ubcore_put_advice(&advice);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_advise_jfr);
+
+int ubcore_unadvise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr)
+{
+	struct ubcore_tp_advice advice;
+	int ret;
+
+	if (jfs == NULL || tjfr == NULL || !ubcore_have_tp_ops(jfs->ub_dev)) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if (!ubcore_jfs_tjfr_need_advise(jfs, tjfr)) {
+		ubcore_log_err("The transport mode is not rm.\n");
+		return -1;
+	}
+
+	ret = ubcore_advice_jfs_tjfr(&advice, jfs, tjfr);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_unadvise_tp(jfs->ub_dev, &advice);
+	ubcore_put_advice(&advice);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_unadvise_jfr);
+
 struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id)
 {
 	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JETTY], jetty_id, &jetty_id);

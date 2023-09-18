@@ -53,4 +53,11 @@ static inline uint32_t ubcore_get_jetty_hash(const struct ubcore_jetty_id *jetty
 	return jhash(jetty_id, sizeof(struct ubcore_jetty_id), 0);
 }
 
+static inline bool ubcore_jfs_tjfr_need_advise(const struct ubcore_jfs *jfs,
+					       const struct ubcore_tjetty *tjfr)
+{
+	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM && tjfr->cfg.trans_mode == UBCORE_TP_RM;
+}
+
 #endif

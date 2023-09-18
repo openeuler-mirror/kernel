@@ -328,6 +328,22 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
  */
 int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
 /**
+ * Advise jfr: construct the transport channel for jfs and remote jfr.
+ * @param[in] jfs: jfs to use to construct the transport channel;
+ * @param[in] tjfr: target jfr to reach;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_advise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr,
+		      struct ubcore_udata *udata);
+/**
+ * Unadvise jfr: Tear down the transport channel from jfs to remote jfr.
+ * @param[in] jfs: jfs to use to destruct the transport channel;
+ * @param[in] tjfr: target jfr advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unadvise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr);
+/**
  * operation of user ioctl cmd.
  * @param[in] k_user_ctl: kdrv user control command pointer;
  * @return: 0 on success, other value on error
