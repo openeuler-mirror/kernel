@@ -540,6 +540,8 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 				qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
 				      qp->qp_status.cq_head, 0);
 				atomic_dec(&qp->qp_status.used);
+
+				cond_resched();
 			}
 			/* set c_flag */
 			qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
