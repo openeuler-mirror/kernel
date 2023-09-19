@@ -2772,6 +2772,8 @@ void hisi_qm_dev_shutdown(struct pci_dev *pdev)
 	ret = hisi_qm_stop(qm, QM_NORMAL);
 	if (ret)
 		dev_err(&pdev->dev, "Fail to stop qm in shutdown!\n");
+
+	hisi_qm_cache_wb(qm);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_dev_shutdown);
 
@@ -3718,12 +3720,16 @@ static int qm_vf_reset_prepare(struct pci_dev *pdev,
 			pci_save_state(dev);
 
 			ret = hisi_qm_stop(qm, stop_reason);
-			if (ret)
-				goto prepare_fail;
+			if (ret) {
+				hisi_qm_set_hw_reset(qm,
+						QM_RESET_STOP_TX_OFFSET);
+				hisi_qm_set_hw_reset(qm,
+						QM_RESET_STOP_RX_OFFSET);
+				atomic_set(&qm->status.flags, QM_STOP);
+			}
 		}
 	}
 
-prepare_fail:
 	mutex_unlock(&qm_list->lock);
 	return ret;
 }
@@ -4117,19 +4123,26 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev)
 
 	if (qm->vfs_num) {
 		ret = qm_vf_reset_prepare(pdev, qm->qm_list, QM_FLR);
-		if (ret) {
-			pci_err(pdev, "Fails to prepare reset!\n");
-			return;
-		}
+		if (ret)
+			pci_err(pdev, "Failed to stop vfs!\n");
 	}
 
 	ret = hisi_qm_stop(qm, QM_FLR);
 	if (ret) {
-		pci_err(pdev, "Fails to stop QM!\n");
-		return;
+		pci_err(pdev, "Failed to stop QM!\n");
+		goto err_prepare;
 	}
 
+	hisi_qm_cache_wb(qm);
 	pci_info(pdev, "FLR resetting...\n");
+	return;
+
+err_prepare:
+	pci_info(pdev, "FLR resetting prepare failed!\n");
+	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
+	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
+	atomic_set(&qm->status.flags, QM_STOP);
+	hisi_qm_cache_wb(qm);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_reset_prepare);
 
