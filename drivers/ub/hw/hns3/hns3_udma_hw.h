@@ -134,6 +134,11 @@ struct udma_query_oor_cmq {
 #define SPEED_100G  100000
 #define SPEED_200G  200000
 
+#define UDMA_QUERY_COUNTER 8
+#define UDMA_QX_RESP 1
+#define UDMA_TX_RESP 3
+#define UDMA_TX_ERR_RESP 4
+
 /* Fields of UDMA_OPC_EXT_CFG */
 #define EXT_CFG_VF_ID CMQ_REQ_FIELD_LOC(31, 0)
 #define EXT_CFG_QP_PI_INDEX CMQ_REQ_FIELD_LOC(45, 32)
@@ -242,6 +247,7 @@ enum udma_opcode_type {
 	UDMA_OPC_CFG_GMV_TBL				= 0xA140,
 	UDMA_OPC_CFG_POE_ADDR				= 0x801B,
 	UDMA_OPC_CFG_POE_ATTR				= 0x801C,
+	UDMA_OPC_QUERY_COUNTER				= 0x8206,
 	UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
 };
 
@@ -512,6 +518,22 @@ struct udma_port_info_cmq {
 	uint32_t speed;
 	uint8_t query_type;
 	uint8_t rsv[19];
+};
+
+struct udma_rx_cnt_cmd_data {
+	uint64_t rsv;
+	uint64_t pkt_rx_cnt;
+	uint64_t err_pkt_rx_cnt;
+};
+
+struct udma_tx_cnt_cmd_data {
+	uint64_t rsv[2];
+	uint64_t pkt_tx_cnt;
+};
+
+struct udma_tx_err_cnt_cmd_data {
+	uint64_t err_pkt_tx_cnt;
+	uint64_t rsv[2];
 };
 
 #endif /* _UDMA_HW_H */

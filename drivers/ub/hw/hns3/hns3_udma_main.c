@@ -260,6 +260,55 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 
 	return 0;
 }
+
+static int udma_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+			    struct ubcore_stats_val *val)
+{
+	struct ubcore_stats_com_val *com_val = (struct ubcore_stats_com_val *)val->addr;
+	struct udma_cmq_desc desc[UDMA_QUERY_COUNTER];
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct udma_tx_err_cnt_cmd_data *resp_tx_err;
+	struct udma_rx_cnt_cmd_data *resp_rx;
+	struct udma_tx_cnt_cmd_data *resp_tx;
+	int ret;
+	int i;
+
+	if (val->len != sizeof(struct ubcore_stats_com_val)) {
+		dev_err(udma_dev->dev, "The val len is err.\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < UDMA_QUERY_COUNTER; i++) {
+		udma_cmq_setup_basic_desc(&desc[i], UDMA_OPC_QUERY_COUNTER, true);
+		if (i < (UDMA_QUERY_COUNTER - 1))
+			desc[i].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+		else
+			desc[i].flag &= ~cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	}
+
+	ret = udma_cmq_send(udma_dev, desc, UDMA_QUERY_COUNTER);
+	if (ret) {
+		dev_err(udma_dev->dev, "Failed to query stats, ret = %d.\n", ret);
+		return ret;
+	}
+
+	resp_rx = (struct udma_rx_cnt_cmd_data *)desc[UDMA_QX_RESP].data;
+	resp_tx = (struct udma_tx_cnt_cmd_data *)desc[UDMA_TX_RESP].data;
+	resp_tx_err = (struct udma_tx_err_cnt_cmd_data *)desc[UDMA_TX_ERR_RESP].data;
+
+	com_val->tx_pkt = resp_tx->pkt_tx_cnt;
+	com_val->tx_pkt_err = resp_tx_err->err_pkt_tx_cnt;
+
+	com_val->rx_pkt = resp_rx->pkt_rx_cnt;
+	com_val->rx_pkt_err = resp_rx->err_pkt_rx_cnt;
+
+	/* tx_bytes and rx_bytes are not support now */
+	com_val->tx_bytes = 0;
+	com_val->rx_bytes = 0;
+
+	return ret;
+}
+
 static uint16_t query_congest_alg(uint8_t udma_cc_caps)
 {
 	uint16_t ubcore_cc_alg = 0;
@@ -862,6 +911,7 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.modify_tp = udma_modify_tp,
 	.destroy_tp = udma_destroy_tp,
 	.user_ctl = udma_user_ctl,
+	.query_stats = udma_query_stats,
 };
 
 static void udma_cleanup_uar_table(struct udma_dev *dev)
