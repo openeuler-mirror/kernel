@@ -4783,6 +4783,19 @@ static u64 distribute_cfs_runtime(struct cfs_bandwidth *cfs_b, u64 remaining)
 		if (!cfs_rq_throttled(cfs_rq))
 			goto next;
 
+		/*
+		 * CPU hotplug callbacks race against distribute_cfs_runtime()
+		 * when the QOS_SCHED feature is enabled, there may be
+		 * situations where the runtime_remaining > 0.
+		 * Qos_sched does not care whether the cfs_rq has time left,
+		 * so no longer allocate time to cfs_rq in this scenario.
+		 */
+#ifdef CONFIG_QOS_SCHED
+		if (cfs_rq->throttled == QOS_THROTTLED &&
+			cfs_rq->runtime_remaining > 0)
+			goto next;
+#endif
+
 		/* By the above check, this should never be true */
 		SCHED_WARN_ON(cfs_rq->runtime_remaining > 0);
 
@@ -7754,6 +7767,10 @@ static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
 		!sched_idle_cpu(smp_processor_id()) &&
 		cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
+
+		if (!rq_of(cfs_rq)->online)
+			return false;
+
 		throttle_qos_cfs_rq(cfs_rq);
 		return true;
 	}
