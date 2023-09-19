@@ -67,7 +67,7 @@ $(obj)/system_certificates.o: $(obj)/signing_key.x509
 
 ifdef CONFIG_PGP_PRELOAD_PUBLIC_KEYS
 ifeq ($(shell ls $(srctree)/certs/pubring.gpg 2> /dev/null), $(srctree)/certs/pubring.gpg)
-system_certificates.o += -DHAVE_PUBRING_GPG
+AFLAGS_system_certificates.o += -DHAVE_PUBRING_GPG
 $(obj)/system_certificates.o: $(srctree)/certs/pubring.gpg
 endif
 endif
