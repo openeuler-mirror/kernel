@@ -55,9 +55,11 @@
 #include "mballoc.h"
 #include "fsmap.h"
 
+#ifdef CONFIG_EXT4_ERROR_REPORT
 #include <uapi/linux/netlink.h>
 #include <net/sock.h>
 #include <net/net_namespace.h>
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/ext4.h>
@@ -90,8 +92,10 @@ static void ext4_unregister_li_request(struct super_block *sb);
 static void ext4_clear_request_list(void);
 static struct inode *ext4_get_journal_inode(struct super_block *sb,
 					    unsigned int journal_inum);
+#ifdef CONFIG_EXT4_ERROR_REPORT
 static void ext4_netlink_send_info(struct super_block *sb, int ext4_errno);
 static struct sock *ext4nl;
+#endif
 
 /*
  * Lock ordering
@@ -616,6 +620,7 @@ static void save_error_info(struct super_block *sb, int error,
 	spin_unlock(&sbi->s_error_lock);
 }
 
+#ifdef CONFIG_EXT4_ERROR_REPORT
 static void ext4_netlink_send_info(struct super_block *sb, int ext4_errno)
 {
 	int size;
@@ -651,6 +656,7 @@ nlmsg_failure:
 			kfree_skb(skb);
 	}
 }
+#endif
 
 /* Deal with the reporting of failure conditions on a filesystem such as
  * inconsistencies detected or read IO failures.
@@ -713,11 +719,16 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 			sb->s_id);
 	}
 
+#ifdef CONFIG_EXT4_ERROR_REPORT
 	if (sb_rdonly(sb))
 		return;
 
 	if (continue_fs)
 		goto out;
+#else
+	if (sb_rdonly(sb) || continue_fs)
+		return;
+#endif
 
 
 	ext4_msg(sb, KERN_CRIT, "Remounting filesystem read-only");
@@ -727,8 +738,10 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 	 */
 	smp_wmb();
 	sb->s_flags |= SB_RDONLY;
+#ifdef CONFIG_EXT4_ERROR_REPORT
 out:
 	ext4_netlink_send_info(sb, force_ro ? 2 : 1);
+#endif
 }
 
 static void flush_stashed_error_work(struct work_struct *work)
@@ -6855,7 +6868,9 @@ wait_queue_head_t ext4__ioend_wq[EXT4_WQ_HASH_SZ];
 static int __init ext4_init_fs(void)
 {
 	int i, err;
+#ifdef CONFIG_EXT4_ERROR_REPORT
 	struct netlink_kernel_cfg cfg = {.groups = NL_EXT4_ERROR_GROUP,};
+#endif
 
 	ratelimit_state_init(&ext4_mount_msg_ratelimit, 30 * HZ, 64);
 	ext4_li_info = NULL;
@@ -6908,9 +6923,11 @@ static int __init ext4_init_fs(void)
 	if (err)
 		goto out;
 
+#ifdef CONFIG_EXT4_ERROR_REPORT
 	ext4nl = netlink_kernel_create(&init_net, NETLINK_FILESYSTEM, &cfg);
 	if (!ext4nl)
 		printk(KERN_ERR "EXT4-fs: Cannot create netlink socket.\n");
+#endif
 	return 0;
 out:
 	unregister_as_ext2();
@@ -6951,7 +6968,9 @@ static void __exit ext4_exit_fs(void)
 	ext4_exit_post_read_processing();
 	ext4_exit_es();
 	ext4_exit_pending();
+#ifdef CONFIG_EXT4_ERROR_REPORT
 	netlink_kernel_release(ext4nl);
+#endif
 }
 
 MODULE_AUTHOR("Remy Card, Stephen Tweedie, Andrew Morton, Andreas Dilger, Theodore Ts'o and others");

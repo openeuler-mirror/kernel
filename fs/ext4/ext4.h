@@ -46,6 +46,7 @@
 
 #include <linux/compiler.h>
 
+#ifdef CONFIG_EXT4_ERROR_REPORT
 #define NL_EXT4_ERROR_GROUP    1
 #define EXT4_ERROR_MAGIC       0xAE32014U
 struct ext4_err_msg {
@@ -54,6 +55,7 @@ struct ext4_err_msg {
 	unsigned long s_flags;
 	int ext4_errno;
 };
+#endif
 
 /*
  * The fourth extended filesystem constants/structures
