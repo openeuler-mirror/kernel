@@ -80,24 +80,6 @@ struct extctx_layout {
 	struct _ctx_layout end;
 };
 
-/* LSX context */
-#define LSX_CTX_MAGIC		0x53580001
-#define LSX_CTX_ALIGN		16
-struct lsx_context {
-	__u64	regs[2*32];
-	__u64	fcc;
-	__u32	fcsr;
-};
-
-/* LASX context */
-#define LASX_CTX_MAGIC		0x41535801
-#define LASX_CTX_ALIGN		32
-struct lasx_context {
-	__u64	regs[4*32];
-	__u64	fcc;
-	__u32	fcsr;
-};
-
 static void __user *get_ctx_through_ctxinfo(struct sctx_info *info)
 {
 	return (void __user *)((char *)info + sizeof(struct sctx_info));
