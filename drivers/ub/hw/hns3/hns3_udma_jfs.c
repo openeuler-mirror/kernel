@@ -18,6 +18,7 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_tp.h"
 #include "hns3_udma_jfc.h"
+#include "hns3_udma_dfx.h"
 #include "hns3_udma_jfs.h"
 
 static int init_jfs_cfg(struct udma_dev *dev, struct udma_jfs *jfs,
@@ -187,6 +188,76 @@ static int alloc_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 	return ret;
 }
 
+static void store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
+{
+	struct jfs_list *jfs_new;
+	struct jfs_list *jfs_now;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return;
+
+	jfs_new = kzalloc(sizeof(struct jfs_list), GFP_KERNEL);
+	if (jfs_new == NULL)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->jfs_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry(jfs_now,
+			    &g_udma_dfx_list[i].dfx->jfs_list->node, node) {
+		if (jfs_now->jfs_id == jfs->jfs_id) {
+			jfs_now->depth = jfs->ubcore_jfs.jfs_cfg.depth;
+			jfs_now->pri = jfs->ubcore_jfs.jfs_cfg.priority;
+			jfs_now->jfc_id = jfs->ubcore_jfs.jfs_cfg.jfc->id;
+			goto found;
+		}
+	}
+
+	jfs_new->jfs_id = jfs->jfs_id;
+	jfs_new->depth = jfs->ubcore_jfs.jfs_cfg.depth;
+	jfs_new->pri = jfs->ubcore_jfs.jfs_cfg.priority;
+	jfs_new->jfc_id = jfs->ubcore_jfs.jfs_cfg.jfc->id;
+	list_add(&jfs_new->node, &g_udma_dfx_list[i].dfx->jfs_list->node);
+	spin_unlock_irqrestore(lock, flags);
+
+	return;
+
+found:
+	spin_unlock_irqrestore(lock, flags);
+	kfree(jfs_new);
+}
+
+static void delete_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
+{
+	struct jfs_list *jfs_now, *jfs_tmp;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->jfs_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry_safe(jfs_now, jfs_tmp,
+				 &g_udma_dfx_list[i].dfx->jfs_list->node,
+				 node) {
+		if (jfs_now->jfs_id == jfs->jfs_id) {
+			list_del(&jfs_now->node);
+			kfree(jfs_now);
+			spin_unlock_irqrestore(lock, flags);
+			return;
+		}
+	}
+	spin_unlock_irqrestore(lock, flags);
+}
+
 static void free_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 {
 	struct udma_jfs_table *jfs_table = &udma_dev->jfs_table;
@@ -225,6 +296,9 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, const struct ubcor
 		goto err_alloc_jfs_buf;
 	}
 
+	if (dfx_switch)
+		store_jfs_id(udma_dev, jfs);
+
 	return &jfs->ubcore_jfs;
 
 err_alloc_jfs_buf:
@@ -248,6 +322,10 @@ int udma_destroy_jfs(struct ubcore_jfs *jfs)
 
 	ret = destroy_jfs_qp(udma_dev, udma_jfs);
 	clean_jetty_x_qpn_bitmap(&udma_jfs->qpn_map);
+
+	if (dfx_switch)
+		delete_jfs_id(udma_dev, udma_jfs);
+
 	free_jfs_id(udma_dev, udma_jfs);
 	kfree(udma_jfs);
 

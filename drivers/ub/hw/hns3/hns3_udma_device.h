@@ -250,6 +250,12 @@ enum udma_qp_state {
 	QPS_ERR = 6,
 };
 
+enum udma_eq_dfx {
+	UDMA_DFX_AEQE,
+	UDMA_DFX_CEQE,
+	UDMA_DFX_EQ_TOTAL
+};
+
 enum {
 	UDMA_BUF_DIRECT = BIT(0),
 	UDMA_BUF_NOSLEEP = BIT(1),
@@ -837,6 +843,7 @@ struct udma_dev {
 	struct udma_hem_table		cqc_timer_table;
 	struct udma_hem_table		gmv_table;
 	uint64_t			dwqe_page;
+	uint64_t			dfx_cnt[UDMA_DFX_EQ_TOTAL];
 	struct list_head		qp_list;
 	spinlock_t			qp_list_lock;
 	struct list_head		dip_list;

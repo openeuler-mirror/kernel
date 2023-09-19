@@ -18,6 +18,7 @@
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_db.h"
 #include "hns3_udma_jfc.h"
+#include "hns3_udma_dfx.h"
 #include "hns3_udma_jfr.h"
 
 static int init_jfr_cfg(struct udma_dev *dev, struct udma_jfr *jfr,
@@ -363,6 +364,73 @@ static int udma_hw_destroy_srq(struct udma_dev *dev, uint64_t jfrn)
 	return udma_cmd_mbox(dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
 }
 
+static void store_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
+{
+	struct jfr_list *jfr_new;
+	struct jfr_list *jfr_now;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(dev, &i);
+	if (ret)
+		return;
+
+	jfr_new = kzalloc(sizeof(struct jfr_list), GFP_KERNEL);
+	if (jfr_new == NULL)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->jfr_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry(jfr_now,
+			    &g_udma_dfx_list[i].dfx->jfr_list->node,
+			    node) {
+		if (jfr_now->jfr_id == jfr->jfrn) {
+			jfr_now->jfc_id = jfr->ubcore_jfr.jfr_cfg.jfc->id;
+			goto found;
+		}
+	}
+
+	jfr_new->jfr_id = jfr->jfrn;
+	jfr_new->jfc_id = jfr->ubcore_jfr.jfr_cfg.jfc->id;
+	list_add(&jfr_new->node, &g_udma_dfx_list[i].dfx->jfr_list->node);
+	spin_unlock_irqrestore(lock, flags);
+
+	return;
+
+found:
+	spin_unlock_irqrestore(lock, flags);
+	kfree(jfr_new);
+}
+
+static void delete_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
+{
+	struct jfr_list *jfr_now, *jfr_tmp;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(dev, &i);
+	if (ret)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->jfr_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry_safe(jfr_now, jfr_tmp,
+				 &g_udma_dfx_list[i].dfx->jfr_list->node,
+				 node) {
+		if (jfr_now->jfr_id == jfr->jfrn) {
+			list_del(&jfr_now->node);
+			kfree(jfr_now);
+			spin_unlock_irqrestore(lock, flags);
+			return;
+		}
+	}
+	spin_unlock_irqrestore(lock, flags);
+}
+
 static void free_jfrc(struct udma_dev *dev, uint32_t jfrn)
 {
 	struct udma_jfr_table *jfr_table = &dev->jfr_table;
@@ -495,6 +563,10 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcor
 		if (ret)
 			goto err_alloc_jfrc;
 	}
+
+	if (dfx_switch)
+		store_jfr_id(udma_dev, jfr);
+
 	return &jfr->ubcore_jfr;
 
 err_alloc_jfrc:
@@ -516,6 +588,10 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 	if (udma_jfr->um_qp)
 		destroy_jfr_um_qp(dev, udma_jfr);
 	clean_jetty_x_qpn_bitmap(&udma_jfr->qpn_map);
+
+	if (dfx_switch)
+		delete_jfr_id(dev, udma_jfr);
+
 	free_jfrc(dev, udma_jfr->jfrn);
 	free_jfr_buf(dev, udma_jfr);
 	kfree(jfr);

@@ -22,7 +22,10 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_eq.h"
 #include "hns3_udma_qp.h"
+#include "hns3_udma_dfx.h"
 #include "hns3_udma_sysfs.h"
+
+bool dfx_switch;
 
 static const struct pci_device_id udma_hw_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL),
@@ -1867,6 +1870,15 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 	}
 	handle->priv = udma_dev;
 
+	if (dfx_switch) {
+		ret = udma_dfx_init(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev, "UDMA dfx init failed(%d)!\n",
+				ret);
+			goto error_failed_dfx_init;
+		}
+	}
+
 	ret = udma_register_cc_sysfs(udma_dev);
 	if (ret) {
 		dev_err(udma_dev->dev,
@@ -1876,6 +1888,9 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 
 	return 0;
 error_failed_cc_sysfs:
+	if (dfx_switch)
+		udma_dfx_uninit(udma_dev);
+error_failed_dfx_init:
 	udma_hnae_client_exit(udma_dev);
 error_failed_get_cfg:
 	kfree(udma_dev->priv);
@@ -1894,6 +1909,10 @@ static void __udma_uninit_instance(struct hnae3_handle *handle,
 		return;
 
 	udma_unregister_cc_sysfs(udma_dev);
+
+	if (dfx_switch)
+		udma_dfx_uninit(handle->priv);
+
 	handle->priv = NULL;
 
 	udma_hnae_client_exit(udma_dev);
@@ -2117,3 +2136,7 @@ module_exit(udma_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("UBUS UDMA Driver");
+
+module_param(dfx_switch, bool, 0444);
+MODULE_PARM_DESC(dfx_switch,
+		 "Set whether to enable the udma_dfx, default: 0(0:off, 1:on)");

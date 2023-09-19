@@ -17,6 +17,7 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_db.h"
+#include "hns3_udma_dfx.h"
 #include "hns3_udma_jfc.h"
 
 static int udma_hw_create_cq(struct udma_dev *dev,
@@ -411,6 +412,69 @@ err_put:
 	return ret;
 }
 
+static void store_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	struct jfc_list *jfc_new;
+	struct jfc_list *jfc_now;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return;
+
+	jfc_new = kzalloc(sizeof(struct jfc_list), GFP_KERNEL);
+	if (jfc_new == NULL)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->jfc_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry(jfc_now,
+			    &g_udma_dfx_list[i].dfx->jfc_list->node, node) {
+		if (jfc_now->jfc_id == udma_jfc->cqn)
+			goto found;
+	}
+
+	jfc_new->jfc_id = udma_jfc->cqn;
+	list_add(&jfc_new->node, &g_udma_dfx_list[i].dfx->jfc_list->node);
+	spin_unlock_irqrestore(lock, flags);
+
+	return;
+
+found:
+	spin_unlock_irqrestore(lock, flags);
+	kfree(jfc_new);
+}
+
+static void delete_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
+{
+	struct jfc_list *jfc_now, *jfc_tmp;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->jfc_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry_safe(jfc_now, jfc_tmp,
+				 &g_udma_dfx_list[i].dfx->jfc_list->node,
+				 node) {
+		if (jfc_now->jfc_id == udma_jfc->cqn) {
+			list_del(&jfc_now->node);
+			kfree(jfc_now);
+			spin_unlock_irqrestore(lock, flags);
+			return;
+		}
+	}
+	spin_unlock_irqrestore(lock, flags);
+}
+
 static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 {
 	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
@@ -528,6 +592,9 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, const struct ubcor
 	if (ret)
 		goto err_jfc_id;
 
+	if (dfx_switch)
+		store_jfc_id(udma_dev, udma_jfc);
+
 	return &udma_jfc->ubcore_jfc;
 
 err_jfc_id:
@@ -546,6 +613,10 @@ int udma_destroy_jfc(struct ubcore_jfc *jfc)
 	struct udma_jfc *udma_jfc = to_udma_jfc(jfc);
 
 	free_jfc_cqc(udma_dev, udma_jfc);
+
+	if (dfx_switch)
+		delete_jfc_id(udma_dev, udma_jfc);
+
 	free_jfc_id(udma_dev, udma_jfc);
 	free_jfc_buf(udma_dev, udma_jfc);
 	kfree(udma_jfc);

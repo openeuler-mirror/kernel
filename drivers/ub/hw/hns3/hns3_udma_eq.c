@@ -339,6 +339,7 @@ static int udma_aeq_int(struct udma_dev *udma_dev, struct udma_eq *eq)
 
 		++eq->cons_index;
 
+		udma_dev->dfx_cnt[UDMA_DFX_AEQE]++;
 		BUILD_BUG_ON(sizeof(struct udma_aeqe) > TRACE_AEQE_LEN_MAX);
 
 		udma_init_irq_work(udma_dev, eq, aeqe, queue_num);
@@ -381,6 +382,7 @@ static int udma_ceq_int(struct udma_dev *udma_dev,
 		udma_jfc_completion(udma_dev, cqn);
 
 		++eq->cons_index;
+		udma_dev->dfx_cnt[UDMA_DFX_CEQE]++;
 		ceqe_found = 1;
 
 		ceqe = next_ceqe_sw_v2(eq);

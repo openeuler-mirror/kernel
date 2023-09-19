@@ -20,6 +20,7 @@
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_dca.h"
+#include "hns3_udma_dfx.h"
 #include "hns3_udma_tp.h"
 struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn)
 {
@@ -168,6 +169,70 @@ void *udma_erase_tp(struct udma_tp *udma_tp)
 	return udma_tp;
 }
 
+static void store_tpn(struct udma_dev *udma_device, struct udma_tp *tp)
+{
+	struct tpn_list *tpn_new;
+	struct tpn_list *tpn_now;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_device, &i);
+	if (ret)
+		return;
+
+	tpn_new = kzalloc(sizeof(struct tpn_list), GFP_KERNEL);
+	if (tpn_new == NULL)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->tpn_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry(tpn_now,
+			    &g_udma_dfx_list[i].dfx->tpn_list->node, node) {
+		if (tpn_now->tpn == tp->ubcore_tp.tpn)
+			goto found;
+	}
+
+	tpn_new->tpn = tp->ubcore_tp.tpn;
+	list_add(&tpn_new->node, &g_udma_dfx_list[i].dfx->tpn_list->node);
+	spin_unlock_irqrestore(lock, flags);
+
+	return;
+
+found:
+	spin_unlock_irqrestore(lock, flags);
+	kfree(tpn_new);
+}
+
+static void delete_tpn(struct udma_dev *udma_device, struct ubcore_tp *tp)
+{
+	struct tpn_list *tpn_now, *tpn_tmp;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_device, &i);
+	if (ret)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->tpn_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry_safe(tpn_now, tpn_tmp,
+				 &g_udma_dfx_list[i].dfx->tpn_list->node,
+				 node) {
+		if (tpn_now->tpn == tp->tpn) {
+			list_del(&tpn_now->node);
+			kfree(tpn_now);
+			spin_unlock_irqrestore(lock, flags);
+			return;
+		}
+	}
+	spin_unlock_irqrestore(lock, flags);
+}
+
+
 int udma_destroy_tp(struct ubcore_tp *tp)
 {
 	struct udma_dev *udma_device = to_udma_dev(tp->ub_dev);
@@ -183,6 +248,9 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 			"failed to find tp, tpn = 0x%x\n", tp->tpn);
 		return 0;
 	}
+
+	if (dfx_switch)
+		delete_tpn(udma_device, tp);
 
 	qp = &udma_tp->qp;
 	curr_state = to_udma_qp_state(tp->state);
@@ -411,6 +479,9 @@ struct ubcore_tp *udma_create_tp(struct ubcore_device *dev, const struct ubcore_
 	unlock_jetty(&tp->qp.qp_attr);
 	if (ret || fail_ret_tp)
 		goto failed_create_qp;
+
+	if (dfx_switch)
+		store_tpn(udma_dev, tp);
 
 	return &tp->ubcore_tp;
 

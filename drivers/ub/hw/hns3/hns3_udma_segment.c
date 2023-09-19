@@ -17,6 +17,7 @@
 #include "hns3_udma_abi.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_cmd.h"
+#include "hns3_udma_dfx.h"
 #include "hns3_udma_segment.h"
 
 static uint32_t hw_index_to_key(int ind)
@@ -233,6 +234,76 @@ static void free_seg_key(struct udma_dev *udma_dev, struct udma_seg *seg)
 	ida_free(&udma_dev->seg_table.seg_ida.ida, (int)obj);
 }
 
+static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
+{
+	struct seg_list *seg_new;
+	struct seg_list *seg_now;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return;
+
+	seg_new = kzalloc(sizeof(struct seg_list), GFP_KERNEL);
+	if (seg_new == NULL)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->seg_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry(seg_now,
+			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
+		if (seg_now->key_id == seg->key) {
+			seg_now->pd = seg->pd;
+			seg_now->iova = seg->iova;
+			seg_now->len = seg->size;
+			goto found;
+		}
+	}
+
+	seg_new->pd = seg->pd;
+	seg_new->iova = seg->iova;
+	seg_new->len = seg->size;
+	seg_new->key_id = seg->key;
+	list_add(&seg_new->node, &g_udma_dfx_list[i].dfx->seg_list->node);
+	spin_unlock_irqrestore(lock, flags);
+
+	return;
+
+found:
+	spin_unlock_irqrestore(lock, flags);
+	kfree(seg_new);
+}
+
+static void delete_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
+{
+	struct seg_list *seg_now, *seg_tmp;
+	unsigned long flags;
+	spinlock_t *lock;
+	int ret;
+	int i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return;
+
+	lock = &g_udma_dfx_list[i].dfx->seg_list->node_lock;
+	spin_lock_irqsave(lock, flags);
+	list_for_each_entry_safe(seg_now, seg_tmp,
+				 &g_udma_dfx_list[i].dfx->seg_list->node,
+				 node) {
+		if (seg_now->key_id == seg->key) {
+			list_del(&seg_now->node);
+			kfree(seg_now);
+			spin_unlock_irqrestore(lock, flags);
+			return;
+		}
+	}
+	spin_unlock_irqrestore(lock, flags);
+}
+
 struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
 				 const struct ubcore_seg_cfg *cfg,
 				 struct ubcore_udata *udata)
@@ -272,6 +343,8 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
 	seg->enabled = 1;
 	seg->ubcore_seg.seg.key_id = seg->key;
 
+	if (dfx_switch)
+		store_seg_id(udma_dev, seg);
 
 	return &seg->ubcore_seg;
 
@@ -305,6 +378,9 @@ int udma_unregister_seg(struct ubcore_target_seg *seg)
 {
 	struct udma_dev *udma_dev = to_udma_dev(seg->ub_dev);
 	struct udma_seg *udma_seg = to_udma_seg(seg);
+
+	if (dfx_switch)
+		delete_seg_id(udma_dev, udma_seg);
 
 	udma_seg_free(udma_dev, udma_seg);
 	kfree(udma_seg);

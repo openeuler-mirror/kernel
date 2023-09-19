@@ -18,6 +18,8 @@
 
 #include "urma/ubcore_types.h"
 
+extern bool dfx_switch;
+
 struct udma_query_version {
 	uint16_t udma_vendor_id;
 	uint16_t udma_hw_version;

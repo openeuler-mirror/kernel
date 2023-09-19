@@ -28,6 +28,7 @@
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_cmd.h"
+#include "hns3_udma_dfx.h"
 
 static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
 {
@@ -835,6 +836,7 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.set_eid = udma_set_eid,
 	.query_device_attr = udma_query_device_attr,
 	.query_device_status = udma_query_device_status,
+	.query_res = udma_query_res,
 	.alloc_ucontext = udma_alloc_ucontext,
 	.free_ucontext = udma_free_ucontext,
 	.mmap = udma_mmap,
