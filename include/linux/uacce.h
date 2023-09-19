@@ -148,7 +148,6 @@ struct uacce_queue {
  * @mutex: protects uacce operation
  * @priv: private pointer of the uacce
  * @queues: list of queues
- * @ref: reference of the uacce
  */
 struct uacce_device {
 	const char *algs;
@@ -164,7 +163,6 @@ struct uacce_device {
 	struct device dev;
 	struct mutex mutex;
 	void *priv;
-	atomic_t ref;
 	struct uacce_err_isolate *isolate;
 	struct list_head queues;
 };

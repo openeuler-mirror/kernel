@@ -88,7 +88,6 @@ static int uacce_put_queue(struct uacce_queue *q)
 		uacce->ops->put_queue(q);
 
 	q->state = UACCE_Q_ZOMBIE;
-	atomic_dec(&uacce->ref);
 
 	return 0;
 }
@@ -348,7 +347,6 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 			goto out_with_bond;
 	}
 
-	atomic_inc(&uacce->ref);
 	init_waitqueue_head(&q->wait);
 	filep->private_data = q;
 	q->state = UACCE_Q_INIT;
@@ -820,9 +818,6 @@ static ssize_t isolate_strategy_store(struct device *dev, struct device_attribut
 
 	if (val > UACCE_MAX_ERR_THRESHOLD)
 		return -EINVAL;
-
-	if (atomic_read(&uacce->ref))
-		return -EBUSY;
 
 	ret = uacce->ops->isolate_err_threshold_write(uacce, val);
 	if (ret)
