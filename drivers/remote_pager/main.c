@@ -10,17 +10,10 @@
 #include "msg_chan/msg_layer/msg_layer.h"
 #include "msg_handler.h"
 
-#if IS_ENABLED(CONFIG_REMOTE_PAGER_SLAVE)
-#include "swap/device/swap_manager.h"
-#endif
-
 static int __init remote_pager_init(void)
 {
 	msg_handle_init();
 
-#if IS_ENABLED(CONFIG_REMOTE_PAGER_SLAVE)
-	init_swap_manager("list_lru");
-#endif
 	return 0;
 }
 

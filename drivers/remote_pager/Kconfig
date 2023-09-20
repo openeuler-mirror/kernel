@@ -16,4 +16,13 @@ config REMOTE_PAGER_MASTER
 	help
 		If unsure, say Y.
 
+config REMOTE_PAGER_SLAVE
+	tristate "remote pager slave"
+	default n
+	depends on ARM64
+	depends on REMOTE_PAGER
+	help
+		If you want to remote_pager driver to support the peer function,
+		say m.
+		If unsure, say N.
 endmenu

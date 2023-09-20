@@ -9,3 +9,4 @@ remote_pager-$(CONFIG_REMOTE_PAGER) :=	main.o \
 					svm_proc_mng.o
 
 remote_pager-$(CONFIG_REMOTE_PAGER_MASTER) += msg_handler_origin.o
+remote_pager-$(CONFIG_REMOTE_PAGER_SLAVE) +=  msg_handler_peer.o

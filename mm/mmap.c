@@ -1469,6 +1469,7 @@ unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file, unsigned lon
 		*populate = len;
 	return addr;
 }
+EXPORT_SYMBOL(__do_mmap_mm);
 
 unsigned long do_mmap(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long prot, unsigned long flags,
