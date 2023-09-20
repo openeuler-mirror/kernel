@@ -3159,6 +3159,10 @@ L:	linux-spi@vger.kernel.org
 S:	Maintained
 F:	Documentation/devicetree/bindings/spi/aspeed,ast2600-fmc.yaml
 F:	drivers/spi/spi-aspeed-smc.c
+F:	drivers/spi/spi-loongson-core.c
+F:	drivers/spi/spi-loongson-pci.c
+F:	drivers/spi/spi-loongson-plat.c
+F:	drivers/spi/spi-loongson.h
 
 ASPEED USB UDC DRIVER
 M:	Neal Liu <neal_liu@aspeedtech.com>
