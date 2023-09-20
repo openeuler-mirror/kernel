@@ -78,11 +78,13 @@ F:	include/linux/hisi_acc_qm.h
 
 HISILICON PMU DRIVER
 M:	Yang Shen <shenyang39@huawei.com>
+M:	Yicong Yang <yangyicong@hisilicon.com>
 S:	Supported
 W:	http://www.hisilicon.com
 F:	Documentation/admin-guide/perf/hisi-pcie-pmu.rst
 F:	Documentation/admin-guide/perf/hisi-pmu.rst
 F:	drivers/perf/hisilicon/
+F:	drivers/hwtracing/coresight/
 
 HISILICON NETWORK SUBSYSTEM 3 DRIVER (HNS3)
 M:	Jian Shen <shenjian15@huawei.com>
@@ -219,13 +221,13 @@ UB DRIVER
 M:	Chunzhi Hu <huchunzhi@huawei.com>
 M:	delong ouyang <ouyangdelong@huawei.com>
 M:	Lilijun (Jerry) <jerry.lilijun@huawei.com>
+M:	Yunsheng Lin <linyunsheng@huawei.com>
 S:	Maintained
-F:	drivers/net/ethernet/ub/
+F:	drivers/net/ub/dev
 F:	drivers/ub
 F:	drivers/iommu/hisilicon
-F:	drivers/ubus
-F:	drivers/vfio/ubus
-F:	net/ubl
+F:	drivers/ubc
+F:	drivers/vfio/ubc
 
 THE REST
 M:	xiexiuqi@huawei.com
