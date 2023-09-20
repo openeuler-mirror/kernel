@@ -117,3 +117,11 @@ config EXT4_KUNIT_TESTS
 	  to the KUnit documentation in Documentation/dev-tools/kunit/.
 
 	  If unsure, say N.
+
+config EXT4_ERROR_REPORT
+	bool "Ext4 error reporting by netlink"
+	depends on EXT4_FS && NET
+	default n
+	help
+	  Implement the ext3/ext4 file system error report. Report error to
+	  userspace by netlink
