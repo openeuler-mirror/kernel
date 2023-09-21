@@ -204,7 +204,7 @@ static struct debugfs_reg32 hzip_dfx_regs[] = {
 	{"HZIP_AVG_DELAY                 ",  0x28ull},
 	{"HZIP_MEM_VISIBLE_DATA          ",  0x30ull},
 	{"HZIP_MEM_VISIBLE_ADDR          ",  0x34ull},
-	{"HZIP_COMSUMED_BYTE             ",  0x38ull},
+	{"HZIP_CONSUMED_BYTE             ",  0x38ull},
 	{"HZIP_PRODUCED_BYTE             ",  0x40ull},
 	{"HZIP_COMP_INF                  ",  0x70ull},
 	{"HZIP_PRE_OUT                   ",  0x78ull},
@@ -755,6 +755,28 @@ static void hisi_zip_close_axi_master_ooo(struct hisi_qm *qm)
 	       qm->io_base + HZIP_CORE_INT_SET);
 }
 
+static void hisi_zip_err_ini_set(struct hisi_qm *qm)
+{
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	qm->err_ini.get_dev_hw_err_status = hisi_zip_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hisi_zip_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = HZIP_CORE_INT_STATUS_M_ECC;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "ZRST";
+	qm->err_ini.hw_err_disable = hisi_zip_hw_error_disable;
+	qm->err_ini.hw_err_enable = hisi_zip_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hisi_zip_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = hisi_zip_log_hw_error;
+	qm->err_ini.open_axi_master_ooo = hisi_zip_open_axi_master_ooo;
+	qm->err_ini.close_axi_master_ooo = hisi_zip_close_axi_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = HZIP_WR_PORT;
+}
+
 static int hisi_zip_pf_probe_init(struct hisi_qm *qm)
 {
 	struct hisi_zip *zip = container_of(qm, struct hisi_zip, qm);
@@ -781,23 +803,6 @@ static int hisi_zip_pf_probe_init(struct hisi_qm *qm)
 		return -EINVAL;
 	}
 
-	qm->err_ini.get_dev_hw_err_status = hisi_zip_get_hw_err_status;
-	qm->err_ini.clear_dev_hw_err_status = hisi_zip_clear_hw_err_status;
-	qm->err_ini.err_info.ecc_2bits_mask = HZIP_CORE_INT_STATUS_M_ECC;
-	qm->err_ini.err_info.ce = QM_BASE_CE;
-	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT;
-	qm->err_ini.err_info.fe = 0;
-	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
-	qm->err_ini.err_info.acpi_rst = "ZRST";
-	qm->err_ini.hw_err_disable = hisi_zip_hw_error_disable;
-	qm->err_ini.hw_err_enable = hisi_zip_hw_error_enable;
-	qm->err_ini.set_usr_domain_cache = hisi_zip_set_user_domain_and_cache;
-	qm->err_ini.log_dev_hw_err = hisi_zip_log_hw_error;
-	qm->err_ini.open_axi_master_ooo = hisi_zip_open_axi_master_ooo;
-	qm->err_ini.close_axi_master_ooo = hisi_zip_close_axi_master_ooo;
-
-	qm->err_ini.err_info.msi_wr_port = HZIP_WR_PORT;
-
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
 		return ret;
@@ -822,6 +827,7 @@ static int hisi_zip_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->sqe_size = HZIP_SQE_SIZE;
 	qm->dev_name = hisi_zip_name;
 	qm->qm_list = &zip_devices;
+	hisi_zip_err_ini_set(qm);
 
 	return 0;
 }

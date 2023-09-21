@@ -780,28 +780,6 @@ static void hpre_debugfs_exit(struct hisi_qm *qm)
 	debugfs_remove_recursive(qm->debug.debug_root);
 }
 
-static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
-{
-	int ret;
-
-	qm->algs = "rsa\ndh\n";
-	qm->uacce_mode = uacce_mode;
-	qm->pdev = pdev;
-	ret = hisi_qm_pre_init(qm, pf_q_num, HPRE_PF_DEF_Q_BASE);
-	if (ret)
-		return ret;
-	if (qm->ver == QM_HW_V1) {
-		pci_warn(pdev, "HPRE version 1 is not supported!\n");
-		return -EINVAL;
-	}
-
-	qm->qm_list = &hpre_devices;
-	qm->sqe_size = HPRE_SQE_SIZE;
-	qm->dev_name = hpre_name;
-
-	return 0;
-}
-
 static void hpre_log_hw_error(struct hisi_qm *qm, u32 err_sts)
 {
 	const struct hpre_hw_error *err = hpre_hw_errors;
@@ -836,6 +814,28 @@ static void hpre_open_axi_master_ooo(struct hisi_qm *qm)
 	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
 }
 
+static void hpre_err_ini_set(struct hisi_qm *qm)
+{
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	qm->err_ini.get_dev_hw_err_status = hpre_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hpre_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = HPRE_CORE_ECC_2BIT_ERR |
+					      HPRE_OOO_ECC_2BIT_ERR;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "HRST";
+	qm->err_ini.hw_err_disable = hpre_hw_error_disable;
+	qm->err_ini.hw_err_enable = hpre_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hpre_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
+	qm->err_ini.open_axi_master_ooo = hpre_open_axi_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = HPRE_WR_MSI_PORT;
+}
+
 static int hpre_pf_probe_init(struct hisi_qm *qm)
 {
 	int ret;
@@ -844,28 +844,36 @@ static int hpre_pf_probe_init(struct hisi_qm *qm)
 		return -EINVAL;
 
 	qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;
-	qm->err_ini.get_dev_hw_err_status = hpre_get_hw_err_status;
-	qm->err_ini.clear_dev_hw_err_status = hpre_clear_hw_err_status;
-	qm->err_ini.err_info.ecc_2bits_mask = HPRE_CORE_ECC_2BIT_ERR |
-				HPRE_OOO_ECC_2BIT_ERR;
-	qm->err_ini.err_info.ce = QM_BASE_CE;
-	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
-	qm->err_ini.err_info.fe = 0;
-	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
-	qm->err_ini.err_info.acpi_rst = "HRST";
-
-	qm->err_ini.hw_err_disable = hpre_hw_error_disable;
-	qm->err_ini.hw_err_enable = hpre_hw_error_enable;
-	qm->err_ini.set_usr_domain_cache = hpre_set_user_domain_and_cache;
-	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
-	qm->err_ini.open_axi_master_ooo = hpre_open_axi_master_ooo;
-	qm->err_ini.err_info.msi_wr_port = HPRE_WR_MSI_PORT;
 
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
 		return ret;
 
 	hisi_qm_dev_err_init(qm);
+
+	return 0;
+}
+
+static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
+{
+	int ret;
+
+	qm->algs = "rsa\ndh\n";
+	qm->uacce_mode = uacce_mode;
+	qm->pdev = pdev;
+	ret = hisi_qm_pre_init(qm, pf_q_num, HPRE_PF_DEF_Q_BASE);
+	if (ret)
+		return ret;
+
+	if (qm->ver == QM_HW_V1) {
+		pci_warn(pdev, "HPRE version 1 is not supported!\n");
+		return -EINVAL;
+	}
+
+	qm->qm_list = &hpre_devices;
+	qm->sqe_size = HPRE_SQE_SIZE;
+	qm->dev_name = hpre_name;
+	hpre_err_ini_set(qm);
 
 	return 0;
 }
