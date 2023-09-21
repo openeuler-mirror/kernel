@@ -1911,15 +1911,20 @@ static int mm_idle_open(struct inode *inode, struct file *file)
 	}
 
 	mm = proc_mem_open(inode, PTRACE_MODE_READ);
-	if (IS_ERR(mm))
+	if (IS_ERR(mm)) {
+		module_put(module);
 		return PTR_ERR(mm);
+	}
 
 	file->private_data = mm;
 
 	if (proc_page_scan_operations.open)
-		return proc_page_scan_operations.open(inode, file);
+		ret = proc_page_scan_operations.open(inode, file);
 
-	return 0;
+	if (ret != 0)
+		module_put(module);
+
+	return ret;
 }
 
 static int mm_idle_release(struct inode *inode, struct file *file)
@@ -2004,15 +2009,20 @@ static int mm_swap_open(struct inode *inode, struct file *file)
 	}
 
 	mm = proc_mem_open(inode, PTRACE_MODE_READ);
-	if (IS_ERR(mm))
+	if (IS_ERR(mm)) {
+		module_put(module);
 		return PTR_ERR(mm);
+	}
 
 	file->private_data = mm;
 
 	if (proc_swap_pages_operations.open)
-		return proc_swap_pages_operations.open(inode, file);
+		ret = proc_swap_pages_operations.open(inode, file);
 
-	return 0;
+	if (ret != 0)
+		module_put(module);
+
+	return ret;
 }
 
 static int mm_swap_release(struct inode *inode, struct file *file)
