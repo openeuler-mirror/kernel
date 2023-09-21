@@ -230,6 +230,7 @@
 #define QMC_ALIGN(sz) ALIGN(sz, 32)
 
 static int __hisi_qm_start(struct hisi_qm *qm);
+static int qm_reset_device(struct hisi_qm *qm);
 
 enum vft_type {
 	SQC_VFT = 0,
@@ -2584,6 +2585,30 @@ err_alloc_qp_array:
 	return ret;
 }
 
+static int qm_clear_device(struct hisi_qm *qm)
+{
+	u32 val;
+	int ret;
+
+	if (qm->fun_type == QM_HW_VF)
+		return 0;
+
+	/* OOO register set and check */
+	writel(MASTER_GLOBAL_CTRL_SHUTDOWN, qm->io_base + MASTER_GLOBAL_CTRL);
+
+	ret = readl_relaxed_poll_timeout(qm->io_base + MASTER_TRANS_RETURN,
+					 val, (val == MASTER_TRANS_RETURN_RW),
+					 QM_REG_RD_INTVRL_US,
+					 QM_REG_RD_TMOUT_US);
+	if (ret) {
+		pci_warn(qm->pdev, "Device is busy, can not clear device.\n");
+		writel(0x0, qm->io_base + MASTER_GLOBAL_CTRL);
+		return ret;
+	}
+
+	return qm_reset_device(qm);
+}
+
 static int hisi_qm_pci_init(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -2626,8 +2651,14 @@ static int hisi_qm_pci_init(struct hisi_qm *qm)
 		goto err_set_mask_and_coherent;
 	}
 
+	ret = qm_clear_device(qm);
+	if (ret)
+		goto err_free_vectors;
+
 	return 0;
 
+err_free_vectors:
+	pci_free_irq_vectors(pdev);
 err_set_mask_and_coherent:
 	devm_iounmap(dev, qm->io_base);
 err_ioremap:
@@ -3808,6 +3839,34 @@ static void qm_dev_ecc_mbit_handle(struct hisi_qm *qm)
 	}
 }
 
+static int qm_reset_device(struct hisi_qm *qm)
+{
+	struct pci_dev *pdev = qm->pdev;
+	unsigned long long value = 0;
+	acpi_status s;
+
+	/* The reset related sub-control registers are not in PCI BAR */
+	if (ACPI_HANDLE(&pdev->dev)) {
+		s = acpi_evaluate_integer(ACPI_HANDLE(&pdev->dev),
+					  qm->err_ini.err_info.acpi_rst,
+					  NULL, &value);
+		if (ACPI_FAILURE(s)) {
+			pci_err(pdev, "NO controller reset method!\n");
+			return -EIO;
+		}
+
+		if (value) {
+			pci_err(pdev, "Reset step %llu failed!\n", value);
+			return -EIO;
+		}
+
+		return 0;
+	}
+
+	pci_err(pdev, "No reset method!\n");
+	return -EINVAL;
+}
+
 static int qm_soft_reset(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -3853,29 +3912,7 @@ static int qm_soft_reset(struct hisi_qm *qm)
 		return ret;
 	}
 
-	/* The reset related sub-control registers are not in PCI BAR */
-	if (ACPI_HANDLE(&pdev->dev)) {
-		unsigned long long value = 0;
-		acpi_status s;
-
-		s = acpi_evaluate_integer(ACPI_HANDLE(&pdev->dev),
-					  qm->err_ini.err_info.acpi_rst,
-					  NULL, &value);
-		if (ACPI_FAILURE(s)) {
-			pci_err(pdev, "NO controller reset method!\n");
-			return -EIO;
-		}
-
-		if (value) {
-			pci_err(pdev, "Reset step %llu failed!\n", value);
-			return -EIO;
-		}
-	} else {
-		pci_err(pdev, "No reset method!\n");
-		return -EINVAL;
-	}
-
-	return 0;
+	return qm_reset_device(qm);
 }
 
 static int qm_vf_reset_done(struct pci_dev *pdev,

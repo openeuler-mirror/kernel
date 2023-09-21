@@ -712,6 +712,28 @@ static void sec_open_axi_master_ooo(struct hisi_qm *qm)
 	writel(val | SEC_AXI_SHUTDOWN_ENABLE, SEC_ADDR(qm, SEC_CONTROL_REG));
 }
 
+static void sec_err_ini_set(struct hisi_qm *qm)
+{
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	qm->err_ini.get_dev_hw_err_status = sec_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = sec_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = SEC_CORE_INT_STATUS_M_ECC;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT |
+				   QM_ACC_WB_NOT_READY_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "SRST";
+	qm->err_ini.hw_err_disable = sec_hw_error_disable;
+	qm->err_ini.hw_err_enable = sec_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = sec_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = sec_log_hw_error;
+	qm->err_ini.open_axi_master_ooo = sec_open_axi_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = SEC_WR_MSI_PORT;
+}
+
 static int sec_pf_probe_init(struct hisi_qm *qm)
 {
 	int ret;
@@ -728,22 +750,6 @@ static int sec_pf_probe_init(struct hisi_qm *qm)
 	default:
 		return -EINVAL;
 	}
-
-	qm->err_ini.get_dev_hw_err_status = sec_get_hw_err_status;
-	qm->err_ini.clear_dev_hw_err_status = sec_clear_hw_err_status;
-	qm->err_ini.err_info.ecc_2bits_mask = SEC_CORE_INT_STATUS_M_ECC;
-	qm->err_ini.err_info.ce = QM_BASE_CE;
-	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT |
-			QM_ACC_WB_NOT_READY_TIMEOUT;
-	qm->err_ini.err_info.fe = 0;
-	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
-	qm->err_ini.err_info.acpi_rst = "SRST";
-	qm->err_ini.hw_err_disable = sec_hw_error_disable;
-	qm->err_ini.hw_err_enable = sec_hw_error_enable;
-	qm->err_ini.set_usr_domain_cache = sec_set_user_domain_and_cache;
-	qm->err_ini.log_dev_hw_err = sec_log_hw_error;
-	qm->err_ini.open_axi_master_ooo = sec_open_axi_master_ooo;
-	qm->err_ini.err_info.msi_wr_port = SEC_WR_MSI_PORT;
 
 	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
@@ -807,6 +813,7 @@ static int sec_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->qm_list = &sec_devices;
 	qm->sqe_size = SEC_SQE_SIZE;
 	qm->dev_name = sec_name;
+	sec_err_ini_set(qm);
 
 	return 0;
 }
