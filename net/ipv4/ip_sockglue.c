@@ -1175,8 +1175,8 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 
 		if (!mreq.imr_ifindex) {
 			if (mreq.imr_address.s_addr == htonl(INADDR_ANY)) {
-				inet->mc_index = 0;
-				inet->mc_addr  = 0;
+				WRITE_ONCE(inet->mc_index, 0);
+				WRITE_ONCE(inet->mc_addr, 0);
 				err = 0;
 				break;
 			}
@@ -1201,8 +1201,8 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 		    midx != sk->sk_bound_dev_if)
 			break;
 
-		inet->mc_index = mreq.imr_ifindex;
-		inet->mc_addr  = mreq.imr_address.s_addr;
+		WRITE_ONCE(inet->mc_index, mreq.imr_ifindex);
+		WRITE_ONCE(inet->mc_addr, mreq.imr_address.s_addr);
 		err = 0;
 		break;
 	}
@@ -1682,19 +1682,11 @@ int do_ip_getsockopt(struct sock *sk, int level, int optname,
 	case IP_UNICAST_IF:
 		val = (__force int)htonl((__u32) READ_ONCE(inet->uc_index));
 		goto copyval;
-	}
-
-	if (needs_rtnl)
-		rtnl_lock();
-	sockopt_lock_sock(sk);
-
-	switch (optname) {
 	case IP_MULTICAST_IF:
 	{
 		struct in_addr addr;
 		len = min_t(unsigned int, len, sizeof(struct in_addr));
-		addr.s_addr = inet->mc_addr;
-		sockopt_release_sock(sk);
+		addr.s_addr = READ_ONCE(inet->mc_addr);
 
 		if (copy_to_sockptr(optlen, &len, sizeof(int)))
 			return -EFAULT;
@@ -1702,6 +1694,13 @@ int do_ip_getsockopt(struct sock *sk, int level, int optname,
 			return -EFAULT;
 		return 0;
 	}
+	}
+
+	if (needs_rtnl)
+		rtnl_lock();
+	sockopt_lock_sock(sk);
+
+	switch (optname) {
 	case IP_MSFILTER:
 	{
 		struct ip_msfilter msf;
