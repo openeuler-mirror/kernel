@@ -71,12 +71,17 @@
 #define HNAE3_UNIC_CLIENT_INITED_B		0x4
 #define HNAE3_ROCE_CLIENT_INITED_B		0x5
 #define HNAE3_ROH_CLIENT_INITED_B		0x6
+#define HNAE3_DEV_SUPPORT_ROH_B			0xA
 
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) | \
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
 
+#define HNAE3_DEV_SUPPORT_ROCE_ROH_DCB_BITS \
+		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_ROCE_B) | \
+		 BIT(HNAE3_DEV_SUPPORT_ROH_B))
+
 #define hnae3_dev_roh_supported(hdev) \
-	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_ROH_CLIENT_INITED_B)
+	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROH_B)
 
 #define hnae3_dev_roce_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROCE_B)
