@@ -78,7 +78,6 @@ static int sdei_watchdog_callback(u32 event,
 	if (delta < watchdog_thresh * (u64)NSEC_PER_SEC * 4 / 5) {
 		pr_err(FW_BUG "SDEI Watchdog event triggered too soon, "
 			"time to last check:%lld ns\n", delta);
-		WARN_ON(1);
 		return 0;
 	}
 
