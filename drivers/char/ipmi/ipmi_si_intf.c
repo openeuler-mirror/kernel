@@ -2099,6 +2099,8 @@ static int __init init_ipmi_si(void)
 
 	ipmi_si_platform_init();
 
+	ipmi_si_ls2k500_init();
+
 	ipmi_si_pci_init();
 
 	ipmi_si_parisc_init();
@@ -2283,6 +2285,8 @@ static void cleanup_ipmi_si(void)
 	ipmi_si_pci_shutdown();
 
 	ipmi_si_parisc_shutdown();
+
+	ipmi_si_ls2k500_shutdown();
 
 	ipmi_si_platform_shutdown();
 
