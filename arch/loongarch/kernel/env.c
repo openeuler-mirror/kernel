@@ -12,6 +12,7 @@
 #include <asm/bootinfo.h>
 #include <asm/loongson.h>
 #include <asm/setup.h>
+#include "legacy_boot.h"
 
 u64 efi_system_table;
 struct loongson_system_configuration loongson_sysconf;
@@ -21,6 +22,11 @@ void __init init_environ(void)
 {
 	int efi_boot = fw_arg0;
 	char *cmdline = early_memremap_ro(fw_arg1, COMMAND_LINE_SIZE);
+
+	legacy_boot_init(fw_arg0, fw_arg1, fw_arg2);
+
+	if (efi_bp)
+		return;
 
 	if (efi_boot)
 		set_bit(EFI_BOOT, &efi.flags);
