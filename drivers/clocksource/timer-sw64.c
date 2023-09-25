@@ -13,8 +13,8 @@
 #include <asm/hw_init.h>
 #include <asm/sw64_init.h>
 
-#define SHTCLK_RATE	2500000
-#define SHTCLK_RATE_KHZ	2500
+#define SHTCLK_RATE_KHZ	25000
+#define SHTCLK_RATE	(SHTCLK_RATE_KHZ * 1000)
 
 #if defined(CONFIG_SUBARCH_C4)
 static u64 read_longtime(struct clocksource *cs)
