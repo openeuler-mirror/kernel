@@ -82,12 +82,19 @@ struct page {
 	 */
 	union {
 		struct {	/* Page cache and anonymous pages */
+#if defined(CONFIG_KZEROD) && !defined(__GENKSYMS__)
+			union{
+				struct list_head lru;
+				struct llist_node kzerod_node;
+			};
+#else
 			/**
 			 * @lru: Pageout list, eg. active_list protected by
 			 * lruvec->lru_lock.  Sometimes used as a generic list
 			 * by the page owner.
 			 */
 			struct list_head lru;
+#endif
 			/* See page-flags.h for PAGE_MAPPING_FLAGS */
 			struct address_space *mapping;
 			pgoff_t index;		/* Our offset within mapping. */
