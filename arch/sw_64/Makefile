@@ -44,7 +44,7 @@ core-$(CONFIG_MATHEMU)		+= arch/sw_64/math-emu/
 drivers-$(CONFIG_OPROFILE)	+= arch/sw_64/oprofile/
 libs-y				+= arch/sw_64/lib/
 core-$(CONFIG_KVM)		+= arch/sw_64/kvm/
-core-$(CONFIG_SW64_BUILTIN_DTB)	+= arch/sw_64/boot/dts/
+core-$(CONFIG_BUILTIN_DTB)	+= arch/sw_64/boot/dts/
 core-$(CONFIG_NET)		+= arch/sw_64/net/
 
 # export what is needed by arch/sw_64/boot/Makefile

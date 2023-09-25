@@ -582,7 +582,7 @@ static void __init setup_machine_fdt(void)
 	const char *name;
 
 	/* Give a chance to select kernel builtin DTB firstly */
-	if (IS_ENABLED(CONFIG_SW64_BUILTIN_DTB))
+	if (IS_ENABLED(CONFIG_BUILTIN_DTB))
 		dt_virt = (void *)__dtb_start;
 	else {
 		dt_virt = (void *)sunway_boot_params->dtb_start;

@@ -504,16 +504,16 @@ config USE_OF
 	help
 	  Include support for flattened device tree machine descriptions.
 
-config SW64_BUILTIN_DTB
+config BUILTIN_DTB
 	bool "Embed DTB in kernel image"
 	depends on OF
 	default n
 	help
 	  Embeds a device tree binary in the kernel image.
 
-config SW64_BUILTIN_DTB_NAME
+config BUILTIN_DTB_NAME
 	string "Built in DTB"
-	depends on SW64_BUILTIN_DTB
+	depends on BUILTIN_DTB
 	help
 	  Set the name of the DTB to embed, leave blank to pick one
 	  automatically based on kernel configuration.
