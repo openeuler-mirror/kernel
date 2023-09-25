@@ -33,19 +33,11 @@ void sw64_suspend_enter(void)
 	/* boot processor will go to deep sleep mode from here
 	 * After wake up  boot processor, pc will go here
 	 */
-
-
 	disable_local_timer();
 	current_thread_info()->pcb.tp = rtid();
 
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_BOOTCORE
 	sw64_suspend_deep_sleep(&suspend_state);
-#else
-	mtinten();
-	asm("halt");
-#endif
 	wrtp(current_thread_info()->pcb.tp);
-
 
 	disable_local_timer();
 }

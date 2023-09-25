@@ -627,16 +627,6 @@ config ARCH_HIBERNATION_POSSIBLE
 	depends on SW64
 	def_bool y
 
-config SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
-	depends on SUSPEND
-	bool "SW64 non bootcore suspend into deep sleep mode"
-	default n
-
-config SW64_SUSPEND_DEEPSLEEP_BOOTCORE
-	depends on SUSPEND
-	bool "SW64 bootcore suspend into deep sleep mode"
-	default n
-
 source "drivers/cpuidle/Kconfig"
 
 source "drivers/idle/Kconfig"

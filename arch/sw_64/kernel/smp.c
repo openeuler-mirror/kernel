@@ -276,10 +276,8 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 	wmb();
 	smp_rcb->ready = 0;
 
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
 	/* send wake up signal */
 	send_wakeup_interrupt(cpu);
-#endif
 	/* send reset signal */
 	if (smp_booted) {
 		if (is_in_host()) {
@@ -293,7 +291,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 	smp_boot_one_cpu(cpu, tidle);
 
 #ifdef CONFIG_SUBARCH_C3B
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
 	if (static_branch_likely(&use_tc_as_sched_clock)) {
 		if (smp_booted) {
 			tc_sync_clear();
@@ -301,7 +298,6 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 			tc_sync_set();
 		}
 	}
-#endif
 #endif
 
 	return cpu_online(cpu) ? 0 : -ENOSYS;
@@ -581,19 +577,10 @@ void arch_cpu_idle_dead(void)
 	}
 
 #ifdef CONFIG_SUSPEND
-
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
 	sleepen();
 	send_sleep_interrupt(smp_processor_id());
 	while (1)
 		asm("nop");
-#else
-	asm volatile("halt");
-	while (1)
-		asm("nop");
-#endif /* SW64_SUSPEND_DEEPSLEEP */
-
-
 #else
 	asm volatile("memb");
 	asm volatile("halt");
