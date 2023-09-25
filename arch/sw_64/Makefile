@@ -38,14 +38,9 @@ KBUILD_DEFCONFIG = openeuler_defconfig
 
 head-y := arch/sw_64/kernel/head.o
 
-core-y				+= arch/sw_64/kernel/ arch/sw_64/mm/
-core-y				+= arch/sw_64/platform/
-core-$(CONFIG_MATHEMU)		+= arch/sw_64/math-emu/
+core-y				+= arch/sw_64/
 drivers-$(CONFIG_OPROFILE)	+= arch/sw_64/oprofile/
 libs-y				+= arch/sw_64/lib/
-core-$(CONFIG_KVM)		+= arch/sw_64/kvm/
-core-$(CONFIG_BUILTIN_DTB)	+= arch/sw_64/boot/dts/
-core-$(CONFIG_NET)		+= arch/sw_64/net/
 
 # export what is needed by arch/sw_64/boot/Makefile
 LIBS_Y := $(patsubst %/, %/lib.a, $(libs-y))
