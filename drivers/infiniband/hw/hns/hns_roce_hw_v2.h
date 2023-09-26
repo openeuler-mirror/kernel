@@ -1314,6 +1314,7 @@ struct hns_roce_link_table {
 
 struct hns_roce_v2_reset_state {
 	u32 reset_state; /* stored to use in user space */
+	u32 hw_ready;
 };
 
 struct hns_roce_v2_free_mr {
