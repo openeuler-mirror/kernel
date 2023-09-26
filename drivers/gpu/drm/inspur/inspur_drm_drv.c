@@ -376,7 +376,7 @@ static int inspur_pci_probe(struct pci_dev *pdev,
 			   const struct pci_device_id *ent)
 {
 	int ret = 0;
-	struct inspur_drm_private *priv;
+	struct inspur_drm_private __maybe_unused *priv;
 	struct drm_device *dev;
 
 	inspur_remove_framebuffers(pdev);
