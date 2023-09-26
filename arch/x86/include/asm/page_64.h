@@ -43,12 +43,22 @@ extern unsigned long __phys_addr_symbol(unsigned long);
 void clear_page_orig(void *page);
 void clear_page_rep(void *page);
 void clear_page_erms(void *page);
+void clear_page_nt(void *page);
 
 static inline void clear_page(void *page)
 {
 	alternative_call_2(clear_page_orig,
 			   clear_page_rep, X86_FEATURE_REP_GOOD,
 			   clear_page_erms, X86_FEATURE_ERMS,
+			   "=D" (page),
+			   "0" (page)
+			   : "cc", "memory", "rax", "rcx");
+}
+
+static inline void clear_page_nocache(void *page)
+{
+	alternative_call(clear_page,
+			   clear_page_nt, X86_FEATURE_XMM2,
 			   "=D" (page),
 			   "0" (page)
 			   : "cc", "memory", "rax", "rcx");

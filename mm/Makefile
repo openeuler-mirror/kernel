@@ -133,3 +133,4 @@ obj-$(CONFIG_MEMORY_RELIABLE) += mem_reliable.o
 obj-$(CONFIG_MEMCG_MEMFS_INFO) += memcg_memfs_info.o
 obj-$(CONFIG_CLEAR_FREELIST_PAGE) += clear_freelist_page.o
 obj-$(CONFIG_PAGE_CACHE_LIMIT) += page_cache_limit.o
+obj-$(CONFIG_KZEROD) += kzerod.o
