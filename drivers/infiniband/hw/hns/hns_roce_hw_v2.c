@@ -2609,6 +2609,8 @@ static void free_dip_list(struct hns_roce_dev *hr_dev)
 
 static int hns_roce_v2_get_reset_page(struct hns_roce_dev *hr_dev)
 {
+	struct hns_roce_v2_reset_state *state;
+
 	hr_dev->reset_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
 	if (!hr_dev->reset_page)
 		return -ENOMEM;
@@ -2616,6 +2618,9 @@ static int hns_roce_v2_get_reset_page(struct hns_roce_dev *hr_dev)
 	hr_dev->reset_kaddr = vmap(&hr_dev->reset_page, 1, VM_MAP, PAGE_KERNEL);
 	if (!hr_dev->reset_kaddr)
 		goto err_with_vmap;
+
+	state = hr_dev->reset_kaddr;
+	state->hw_ready = ~state->hw_ready;
 
 	return 0;
 
@@ -7209,6 +7214,7 @@ static void hns_roce_v2_reset_notify_user(struct hns_roce_dev *hr_dev)
 	state = (struct hns_roce_v2_reset_state *)hr_dev->reset_kaddr;
 
 	state->reset_state = HNS_ROCE_IS_RESETTING;
+	state->hw_ready = 0;
 	/* Ensure reset state was flushed in memory */
 	wmb();
 }
