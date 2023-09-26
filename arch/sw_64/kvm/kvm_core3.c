@@ -5,6 +5,7 @@
  * linhn <linhn@example.com>
  */
 
+#include <linux/debugfs.h>
 #include <linux/errno.h>
 #include <linux/kvm_host.h>
 #include <linux/module.h>
@@ -13,6 +14,7 @@
 #include <linux/kvm.h>
 #include <linux/uaccess.h>
 
+#include <asm/debug.h>
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
@@ -22,8 +24,36 @@
 #include "../kernel/pci_impl.h"
 #include "vmem.c"
 
+
+__read_mostly bool bind_vcpu_enabled;
+
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
-extern bool bind_vcpu_enabled;
+struct dentry *bindvcpu;
+
+static int __init bind_vcpu_init(void)
+{
+	if (!sw64_debugfs_dir)
+		return -ENODEV;
+	bindvcpu = debugfs_create_bool("bind_vcpu", 0644,
+			sw64_debugfs_dir, &bind_vcpu_enabled);
+	if (IS_ERR(bindvcpu))
+		return PTR_ERR(bindvcpu);
+	return 0;
+}
+
+static void bind_vcpu_exit(void)
+{
+	bind_vcpu_enabled = false;
+	debugfs_remove(bindvcpu);
+}
+#else
+static int __init bind_vcpu_init(void)
+{
+	return 0;
+}
+
+static void bind_vcpu_exit(void) { }
+
 #endif
 
 #define GUEST_RESET_PC		0xffffffff80011100
@@ -290,7 +320,6 @@ int kvm_core3_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 #ifndef CONFIG_KVM_MEMHOTPLUG
 		vcpu->arch.vcb.vpcr
 			= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
-#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 		if (unlikely(bind_vcpu_enabled)) {
 			int nid;
 			unsigned long end;
@@ -300,7 +329,6 @@ int kvm_core3_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 			if (pfn_to_nid(PHYS_PFN(end)) == nid)
 				set_cpus_allowed_ptr(vcpu->arch.tsk, cpumask_of_node(nid));
 		}
-#endif
 #else /* !CONFIG_KVM_MEMHOTPLUG */
 		unsigned long seg_base = virt_to_phys(vcpu->kvm->arch.seg_pgd);
 
@@ -477,8 +505,10 @@ static int __init kvm_core3_init(void)
 {
 	int i, ret;
 
+	bind_vcpu_init();
+
 	ret = vmem_init();
-	if (ret)
+	if (unlikely(ret))
 		goto out;
 
 	for (i = 0; i < NR_CPUS; i++)
@@ -486,12 +516,12 @@ static int __init kvm_core3_init(void)
 
 	ret = kvm_init(&core3_sw64_ops, sizeof(struct kvm_vcpu), 0, THIS_MODULE);
 
-	if (ret) {
-		vmem_exit();
-		goto out;
-	}
-	return 0;
+	if (likely(!ret))
+		return 0;
+
+	vmem_exit();
 out:
+	bind_vcpu_exit();
 	return ret;
 }
 
@@ -499,6 +529,7 @@ static void __exit kvm_core3_exit(void)
 {
 	kvm_exit();
 	vmem_exit();
+	bind_vcpu_exit();
 }
 
 module_init(kvm_core3_init);

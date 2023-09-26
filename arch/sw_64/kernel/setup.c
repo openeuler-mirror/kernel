@@ -987,6 +987,8 @@ device_initcall(add_pcspkr);
 
 #ifdef CONFIG_DEBUG_FS
 struct dentry *sw64_debugfs_dir;
+EXPORT_SYMBOL(sw64_debugfs_dir);
+
 static int __init debugfs_sw64(void)
 {
 	struct dentry *d;
