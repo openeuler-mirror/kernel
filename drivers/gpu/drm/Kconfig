@@ -314,6 +314,8 @@ source "drivers/gpu/drm/ast/Kconfig"
 
 source "drivers/gpu/drm/loongson/Kconfig"
 
+source "drivers/gpu/drm/inspur/Kconfig"
+
 source "drivers/gpu/drm/mgag200/Kconfig"
 
 source "drivers/gpu/drm/armada/Kconfig"
