@@ -129,7 +129,6 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 	err |= __get_user(regs->r28, sc->sc_regs+28);
 	err |= __get_user(regs->gp, sc->sc_regs+29);
 	err |= __get_user(regs->sp, sc->sc_regs+30);
-	wrusp(regs->sp);
 	/* simd-fp */
 	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
 				offsetof(struct user_fpsimd_state, fpcr));
@@ -305,7 +304,7 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 		regs->r17 = 0;
 		regs->r18 = (unsigned long) &frame->uc.uc_mcontext;
 	}
-	wrusp((unsigned long) frame);
+	regs->sp = (unsigned long) frame;
 
 #if DEBUG_SIG
 	printk("SIG deliver (%s:%d): sp=%p pc=%p ra=%p\n",

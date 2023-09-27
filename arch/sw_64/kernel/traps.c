@@ -1460,9 +1460,6 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		goto give_sigbus;
 	}
 
-	/* Only integer loads should get here; everyone else returns early. */
-	if (reg == 30)
-		wrusp(regs->sp);
 	return;
 
 give_sigsegv:

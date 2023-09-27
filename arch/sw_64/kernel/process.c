@@ -23,7 +23,6 @@ start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 	regs->pc = pc;
 	regs->ps = 8;
 	regs->sp = sp;
-	wrusp(sp);
 }
 EXPORT_SYMBOL(start_thread);
 

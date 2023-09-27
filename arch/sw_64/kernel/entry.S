@@ -70,7 +70,11 @@
 	.endm
 
 	.macro RESTORE_ALL
-	ldl	$1, PT_REGS_R16($sp)
+	ldl	$16, PT_REGS_SP($sp)
+	/* skip wrusp if returning to kernel */
+	blt	$16, 1f
+	sys_call HMC_wrusp
+1:	ldl	$1, PT_REGS_R16($sp)
 	ldl	$2, PT_REGS_R17($sp)
 	ldl	$3, PT_REGS_R18($sp)
 	ldl	$4, PT_REGS_GP($sp)
