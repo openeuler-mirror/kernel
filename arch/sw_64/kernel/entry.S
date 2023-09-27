@@ -124,9 +124,9 @@
 	.ent entInt
 entInt:
 	SAVE_ALL
-	ldi	$26, ret_from_sys_call
 	mov	$sp, $19
-	call	$31, do_entInt
+	call	$26, do_entInt
+	br	ret_from_sys_call
 	.end entInt
 
 	.align 4
@@ -134,9 +134,9 @@ entInt:
 	.ent entArith
 entArith:
 	SAVE_ALL
-	ldi	$26, ret_from_sys_call
 	mov	$sp, $18
-	call	$31, do_entArith
+	call	$26, do_entArith
+	br	ret_from_sys_call
 	.end entArith
 
 	.align 4
@@ -144,9 +144,9 @@ entArith:
 	.ent entMM
 entMM:
 	SAVE_ALL
-	ldi	$26, ret_from_sys_call
 	mov	$sp, $19
-	call	$31, do_page_fault
+	call	$26, do_page_fault
+	br	ret_from_sys_call
 	.end entMM
 
 	.align 4
@@ -154,9 +154,9 @@ entMM:
 	.ent entIF
 entIF:
 	SAVE_ALL
-	ldi	$26, ret_from_sys_call
 	mov	$sp, $18
-	call	$31, do_entIF
+	call	$26, do_entIF
+	br	ret_from_sys_call
 	.end entIF
 
 /*
@@ -174,8 +174,8 @@ entUna:
 	ldl	$0, PT_REGS_PS($sp)
 	and	$0, 8, $0		/* user mode ? */
 	beq	$0, 1f
-	ldi	$26, ret_from_sys_call
-	call	$31, do_entUnaUser	/* return to ret_from_syscall */
+	call	$26, do_entUnaUser	/* return to ret_from_syscall */
+	br	ret_from_sys_call
 1:	ldl	$9, PT_REGS_GP($sp)
 	call	$26, do_entUna
 	stl	$9, PT_REGS_GP($sp)
@@ -439,8 +439,8 @@ __switch_to:
 	.align 4
 	.ent ret_from_fork
 ret_from_fork:
-	ldi	$26, ret_from_sys_call
-	call	$31, schedule_tail
+	call	$26, schedule_tail
+	br	ret_from_sys_call
 	.end ret_from_fork
 
 /*
