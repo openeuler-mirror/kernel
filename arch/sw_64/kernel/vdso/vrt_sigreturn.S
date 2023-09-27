@@ -63,7 +63,6 @@
 
 	nop
 ENTRY(__vdso_rt_sigreturn)
-	mov		$sp, $16
 	ldi		$0, __NR_rt_sigreturn
 	sys_call	HMC_callsys
 ENDPROC(__vdso_rt_sigreturn)

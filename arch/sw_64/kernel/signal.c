@@ -96,8 +96,6 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 {
 	long err = __get_user(regs->pc, &sc->sc_pc);
 
-	current->restart_block.fn = do_no_restart_syscall;
-
 	err |= __copy_from_user(regs, sc->sc_regs, sizeof_field(struct pt_regs, regs));
 	/* simd-fp */
 	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
@@ -116,12 +114,16 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
  * registers and transfer control from userland.
  */
 
-asmlinkage void
-do_sigreturn(struct sigcontext __user *sc)
+asmlinkage void do_sigreturn(void)
 {
 	struct pt_regs *regs = current_pt_regs();
+	struct sigcontext __user *sc;
 	sigset_t set;
 
+	/* Always make any pending restarted system calls return -EINTR */
+	current->restart_block.fn = do_no_restart_syscall;
+
+	sc = (struct sigcontext __user *)regs->regs[30];
 	/* Verify that it's a good sigcontext before using it */
 	if (!access_ok(sc, sizeof(*sc)))
 		goto give_sigsegv;
@@ -144,12 +146,16 @@ give_sigsegv:
 	force_sig(SIGSEGV);
 }
 
-asmlinkage void
-do_rt_sigreturn(struct rt_sigframe __user *frame)
+asmlinkage void do_rt_sigreturn(void)
 {
 	struct pt_regs *regs = current_pt_regs();
+	struct rt_sigframe __user *frame;
 	sigset_t set;
 
+	/* Always make any pending restarted system calls return -EINTR */
+	current->restart_block.fn = do_no_restart_syscall;
+
+	frame = (struct rt_sigframe __user *)regs->regs[30];
 	/* Verify that it's a good ucontext_t before using it */
 	if (!access_ok(&frame->uc, sizeof(frame->uc)))
 		goto give_sigsegv;
