@@ -8,24 +8,7 @@ u64 perf_reg_value(struct pt_regs *regs, int idx)
 	if (WARN_ON_ONCE((u32)idx >= PERF_REG_SW64_MAX))
 		return 0;
 
-	switch (idx) {
-	case PERF_REG_SW64_R16:
-		return regs->r16;
-	case PERF_REG_SW64_R17:
-		return regs->r17;
-	case PERF_REG_SW64_R18:
-		return regs->r18;
-	case PERF_REG_SW64_R19 ... PERF_REG_SW64_R28:
-		return ((unsigned long *)regs)[idx - 3];
-	case PERF_REG_SW64_GP:
-		return regs->gp;
-	case PERF_REG_SW64_SP:
-		return (user_mode(regs) ? rdusp() : (u64)(regs + 1));
-	case PERF_REG_SW64_PC:
-		return regs->pc;
-	default:
-		return ((unsigned long *)regs)[idx];
-	}
+	return ((unsigned long *)regs)[idx];
 }
 
 #define REG_RESERVED (~((1ULL << PERF_REG_SW64_MAX) - 1))
