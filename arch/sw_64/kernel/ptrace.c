@@ -273,20 +273,7 @@ static int gpr_get(struct task_struct *target,
 			const struct user_regset *regset,
 			struct membuf to)
 {
-	struct pt_regs *regs;
-	struct user_pt_regs uregs;
-	int i, ret;
-
-	regs = task_pt_regs(target);
-	for (i = 0; i < 31; i++)
-		uregs.regs[i] = *(__u64 *)((void *)regs + regoffsets[i]);
-
-	uregs.pc = regs->pc;
-	uregs.pstate = regs->ps;
-
-	ret = membuf_write(&to, &uregs, sizeof(uregs));
-
-	return ret;
+	return membuf_write(&to, task_pt_regs(target), sizeof(struct user_pt_regs));
 }
 
 static int gpr_set(struct task_struct *target,
@@ -294,23 +281,8 @@ static int gpr_set(struct task_struct *target,
 			unsigned int pos, unsigned int count,
 			const void *kbuf, const void __user *ubuf)
 {
-	struct pt_regs *regs;
-	struct user_pt_regs uregs;
-	int i, ret;
-
-	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
-				&uregs, 0, sizeof(uregs));
-	if (ret)
-		return ret;
-
-	regs = task_pt_regs(target);
-	for (i = 0; i < 31; i++)
-		*(__u64 *)((void *)regs + regoffsets[i]) = uregs.regs[i];
-
-	regs->pc = uregs.pc;
-	regs->ps = uregs.pstate;
-
-	return 0;
+	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+				task_pt_regs(target), 0, sizeof(struct user_pt_regs));
 }
 
 static int fpr_get(struct task_struct *target,

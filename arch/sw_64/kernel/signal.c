@@ -98,37 +98,7 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 
 	current->restart_block.fn = do_no_restart_syscall;
 
-	err |= __get_user(regs->r0, sc->sc_regs+0);
-	err |= __get_user(regs->r1, sc->sc_regs+1);
-	err |= __get_user(regs->r2, sc->sc_regs+2);
-	err |= __get_user(regs->r3, sc->sc_regs+3);
-	err |= __get_user(regs->r4, sc->sc_regs+4);
-	err |= __get_user(regs->r5, sc->sc_regs+5);
-	err |= __get_user(regs->r6, sc->sc_regs+6);
-	err |= __get_user(regs->r7, sc->sc_regs+7);
-	err |= __get_user(regs->r8, sc->sc_regs+8);
-	err |= __get_user(regs->r9, sc->sc_regs+9);
-	err |= __get_user(regs->r10, sc->sc_regs+10);
-	err |= __get_user(regs->r11, sc->sc_regs+11);
-	err |= __get_user(regs->r12, sc->sc_regs+12);
-	err |= __get_user(regs->r13, sc->sc_regs+13);
-	err |= __get_user(regs->r14, sc->sc_regs+14);
-	err |= __get_user(regs->r15, sc->sc_regs+15);
-	err |= __get_user(regs->r16, sc->sc_regs+16);
-	err |= __get_user(regs->r17, sc->sc_regs+17);
-	err |= __get_user(regs->r18, sc->sc_regs+18);
-	err |= __get_user(regs->r19, sc->sc_regs+19);
-	err |= __get_user(regs->r20, sc->sc_regs+20);
-	err |= __get_user(regs->r21, sc->sc_regs+21);
-	err |= __get_user(regs->r22, sc->sc_regs+22);
-	err |= __get_user(regs->r23, sc->sc_regs+23);
-	err |= __get_user(regs->r24, sc->sc_regs+24);
-	err |= __get_user(regs->r25, sc->sc_regs+25);
-	err |= __get_user(regs->r26, sc->sc_regs+26);
-	err |= __get_user(regs->r27, sc->sc_regs+27);
-	err |= __get_user(regs->r28, sc->sc_regs+28);
-	err |= __get_user(regs->gp, sc->sc_regs+29);
-	err |= __get_user(regs->sp, sc->sc_regs+30);
+	err |= __copy_from_user(regs, sc->sc_regs, sizeof(unsigned long) * 31);
 	/* simd-fp */
 	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
 				offsetof(struct user_fpsimd_state, fpcr));
@@ -227,37 +197,7 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(regs->pc, &sc->sc_pc);
 	err |= __put_user(8, &sc->sc_ps);
 
-	err |= __put_user(regs->r0, sc->sc_regs+0);
-	err |= __put_user(regs->r1, sc->sc_regs+1);
-	err |= __put_user(regs->r2, sc->sc_regs+2);
-	err |= __put_user(regs->r3, sc->sc_regs+3);
-	err |= __put_user(regs->r4, sc->sc_regs+4);
-	err |= __put_user(regs->r5, sc->sc_regs+5);
-	err |= __put_user(regs->r6, sc->sc_regs+6);
-	err |= __put_user(regs->r7, sc->sc_regs+7);
-	err |= __put_user(regs->r8, sc->sc_regs+8);
-	err |= __put_user(regs->r9, sc->sc_regs+9);
-	err |= __put_user(regs->r10, sc->sc_regs+10);
-	err |= __put_user(regs->r11, sc->sc_regs+11);
-	err |= __put_user(regs->r12, sc->sc_regs+12);
-	err |= __put_user(regs->r13, sc->sc_regs+13);
-	err |= __put_user(regs->r14, sc->sc_regs+14);
-	err |= __put_user(regs->r15, sc->sc_regs+15);
-	err |= __put_user(regs->r16, sc->sc_regs+16);
-	err |= __put_user(regs->r17, sc->sc_regs+17);
-	err |= __put_user(regs->r18, sc->sc_regs+18);
-	err |= __put_user(regs->r19, sc->sc_regs+19);
-	err |= __put_user(regs->r20, sc->sc_regs+20);
-	err |= __put_user(regs->r21, sc->sc_regs+21);
-	err |= __put_user(regs->r22, sc->sc_regs+22);
-	err |= __put_user(regs->r23, sc->sc_regs+23);
-	err |= __put_user(regs->r24, sc->sc_regs+24);
-	err |= __put_user(regs->r25, sc->sc_regs+25);
-	err |= __put_user(regs->r26, sc->sc_regs+26);
-	err |= __put_user(regs->r27, sc->sc_regs+27);
-	err |= __put_user(regs->r28, sc->sc_regs+28);
-	err |= __put_user(regs->gp, sc->sc_regs+29);
-	err |= __put_user(regs->sp, sc->sc_regs+30);
+	err |= __copy_to_user(sc->sc_regs, regs, sizeof(unsigned long) * 31);
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
 	__fpstate_save(current);
