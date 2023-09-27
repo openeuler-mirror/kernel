@@ -47,14 +47,14 @@
  * zero have no stack-slot and need to be treated specially (see
  * get_reg/put_reg below).
  */
-#define R(x)	((size_t) &((struct pt_regs *)0)->x)
+#define R(x)	((size_t) &((struct pt_regs *)0)->regs[x])
 
 short regoffsets[32] = {
-	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
-	R(r9), R(r10), R(r11), R(r12), R(r13), R(r14), R(r15),
-	R(r16), R(r17), R(r18),
-	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
-	R(r27), R(r28), R(gp), R(sp), 0
+	R(0), R(1), R(2), R(3), R(4), R(5), R(6), R(7), R(8),
+	R(9), R(10), R(11), R(12), R(13), R(14), R(15),
+	R(16), R(17), R(18),
+	R(19), R(20), R(21), R(22), R(23), R(24), R(25), R(26),
+	R(27), R(28), R(29), R(30), 0
 };
 
 #undef R
@@ -103,7 +103,7 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 		addr = (void *)task_thread_info(task) + pcboff[regno];
 		break;
 	case PT_REG_BASE ... PT_REG_END:
-		addr = (void *)task_pt_regs(task) + regoffsets[regno];
+		addr = &task_pt_regs(task)->regs[regno];
 		break;
 	case PT_FPREG_BASE ... PT_FPREG_END:
 		fno = regno - PT_FPREG_BASE;
@@ -396,9 +396,9 @@ asmlinkage unsigned long syscall_trace_enter(void)
 #endif
 
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
-		trace_sys_enter(regs, regs->r0);
-	audit_syscall_entry(regs->r0, regs->r16, regs->r17, regs->r18, regs->r19);
-	return ret ?: current_pt_regs()->r0;
+		trace_sys_enter(regs, regs->regs[0]);
+	audit_syscall_entry(regs->regs[0], regs->regs[16], regs->regs[17], regs->regs[18], regs->regs[19]);
+	return ret ?: current_pt_regs()->regs[0];
 }
 
 asmlinkage void
@@ -776,6 +776,11 @@ struct pt_regs_offset {
 	int offset;
 };
 
+#define GPR_OFFSET_NAME(r) {					\
+	.name = "r" #r,						\
+	.offset = offsetof(struct pt_regs, regs[r])		\
+}
+
 #define REG_OFFSET_NAME(r) {					\
 	.name = #r,						\
 	.offset = offsetof(struct pt_regs, r)			\
@@ -787,37 +792,37 @@ struct pt_regs_offset {
 }
 
 static const struct pt_regs_offset regoffset_table[] = {
-	REG_OFFSET_NAME(r0),
-	REG_OFFSET_NAME(r1),
-	REG_OFFSET_NAME(r2),
-	REG_OFFSET_NAME(r3),
-	REG_OFFSET_NAME(r4),
-	REG_OFFSET_NAME(r5),
-	REG_OFFSET_NAME(r6),
-	REG_OFFSET_NAME(r7),
-	REG_OFFSET_NAME(r8),
-	REG_OFFSET_NAME(r9),
-	REG_OFFSET_NAME(r10),
-	REG_OFFSET_NAME(r11),
-	REG_OFFSET_NAME(r12),
-	REG_OFFSET_NAME(r13),
-	REG_OFFSET_NAME(r14),
-	REG_OFFSET_NAME(r15),
-	REG_OFFSET_NAME(r16),
-	REG_OFFSET_NAME(r17),
-	REG_OFFSET_NAME(r18),
-	REG_OFFSET_NAME(r19),
-	REG_OFFSET_NAME(r20),
-	REG_OFFSET_NAME(r21),
-	REG_OFFSET_NAME(r22),
-	REG_OFFSET_NAME(r23),
-	REG_OFFSET_NAME(r24),
-	REG_OFFSET_NAME(r25),
-	REG_OFFSET_NAME(r26),
-	REG_OFFSET_NAME(r27),
-	REG_OFFSET_NAME(r28),
-	REG_OFFSET_NAME(gp),
-	REG_OFFSET_NAME(sp),
+	GPR_OFFSET_NAME(0),
+	GPR_OFFSET_NAME(1),
+	GPR_OFFSET_NAME(2),
+	GPR_OFFSET_NAME(3),
+	GPR_OFFSET_NAME(4),
+	GPR_OFFSET_NAME(5),
+	GPR_OFFSET_NAME(6),
+	GPR_OFFSET_NAME(7),
+	GPR_OFFSET_NAME(8),
+	GPR_OFFSET_NAME(9),
+	GPR_OFFSET_NAME(10),
+	GPR_OFFSET_NAME(11),
+	GPR_OFFSET_NAME(12),
+	GPR_OFFSET_NAME(13),
+	GPR_OFFSET_NAME(14),
+	GPR_OFFSET_NAME(15),
+	GPR_OFFSET_NAME(16),
+	GPR_OFFSET_NAME(17),
+	GPR_OFFSET_NAME(18),
+	GPR_OFFSET_NAME(19),
+	GPR_OFFSET_NAME(20),
+	GPR_OFFSET_NAME(21),
+	GPR_OFFSET_NAME(22),
+	GPR_OFFSET_NAME(23),
+	GPR_OFFSET_NAME(24),
+	GPR_OFFSET_NAME(25),
+	GPR_OFFSET_NAME(26),
+	GPR_OFFSET_NAME(27),
+	GPR_OFFSET_NAME(28),
+	GPR_OFFSET_NAME(29),
+	GPR_OFFSET_NAME(30),
 	REG_OFFSET_NAME(pc),
 	REG_OFFSET_NAME(ps),
 	REG_OFFSET_END,

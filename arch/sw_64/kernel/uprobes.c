@@ -127,10 +127,10 @@ unsigned long arch_uretprobe_hijack_return_addr(
 {
 	unsigned long ra;
 
-	ra = regs->r26;
+	ra = regs->regs[26];
 
 	/* Replace the return address with the trampoline address */
-	regs->r26 = trampoline_vaddr;
+	regs->regs[26] = trampoline_vaddr;
 
 	return ra;
 }
@@ -178,5 +178,5 @@ void sw64_fix_uretprobe(struct pt_regs *regs, unsigned long exc_pc)
 	 * regs->pc has been changed to orig_ret_vaddr in handle_trampoline().
 	 */
 	if (exc_pc == get_trampoline_vaddr())
-		regs->r26 = regs->pc;
+		regs->regs[26] = regs->pc;
 }

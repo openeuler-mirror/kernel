@@ -121,19 +121,19 @@ SYSCALL_DEFINE2(odd_getpriority, int, which, int, who)
 
 SYSCALL_DEFINE0(getxuid)
 {
-	current_pt_regs()->r20 = sys_geteuid();
+	current_pt_regs()->regs[20] = sys_geteuid();
 	return sys_getuid();
 }
 
 SYSCALL_DEFINE0(getxgid)
 {
-	current_pt_regs()->r20 = sys_getegid();
+	current_pt_regs()->regs[20] = sys_getegid();
 	return sys_getgid();
 }
 
 SYSCALL_DEFINE0(getxpid)
 {
-	current_pt_regs()->r20 = sys_getppid();
+	current_pt_regs()->regs[20] = sys_getppid();
 	return sys_getpid();
 }
 
@@ -144,7 +144,7 @@ SYSCALL_DEFINE0(sw64_pipe)
 
 	if (!res) {
 		/* The return values are in $0 and $20.  */
-		current_pt_regs()->r20 = fd[1];
+		current_pt_regs()->regs[20] = fd[1];
 		res = fd[0];
 	}
 	return res;

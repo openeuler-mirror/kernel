@@ -15,8 +15,8 @@ static inline int klp_check_compiler_support(void)
 
 static inline void klp_arch_set_pc(struct pt_regs *regs, unsigned long ip)
 {
-	regs->r27 = ip;
-	regs->r28 = ip;
+	regs->regs[27] = ip;
+	regs->regs[28] = ip;
 }
 
 #endif /* _ASM_SW64_LIVEPATCH_H */

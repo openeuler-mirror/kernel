@@ -71,7 +71,7 @@ void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
 	if (regs) {
 		unsigned long offset;
 		pc = regs->pc;
-		fp = regs->r15;
+		fp = regs->regs[15];
 		if (kallsyms_lookup_size_offset(pc, NULL, &offset)
 				&& offset < 16) {
 			/* call stack has not been setup
@@ -79,7 +79,7 @@ void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
 			 */
 			if (fn(pc, data))
 				return;
-			pc = regs->r26;
+			pc = regs->regs[26];
 		}
 	} else if (tsk == current || tsk == NULL) {
 		fp = (unsigned long)__builtin_frame_address(0);

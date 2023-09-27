@@ -47,32 +47,32 @@ void show_regs(struct pt_regs *regs)
 	show_regs_print_info(KERN_DEFAULT);
 
 	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx    %s\n",
-	       regs->pc, regs->r26, regs->ps, print_tainted());
+	       regs->pc, regs->regs[26], regs->ps, print_tainted());
 	printk("pc is at %pSR\n", (void *)regs->pc);
-	printk("ra is at %pSR\n", (void *)regs->r26);
+	printk("ra is at %pSR\n", (void *)regs->regs[26]);
 	printk("v0 = %016lx  t0 = %016lx  t1 = %016lx\n",
-	       regs->r0, regs->r1, regs->r2);
+	       regs->regs[0], regs->regs[1], regs->regs[2]);
 	printk("t2 = %016lx  t3 = %016lx  t4 = %016lx\n",
-	       regs->r3, regs->r4, regs->r5);
+	       regs->regs[3], regs->regs[4], regs->regs[5]);
 	printk("t5 = %016lx  t6 = %016lx  t7 = %016lx\n",
-	       regs->r6, regs->r7, regs->r8);
+	       regs->regs[6], regs->regs[7], regs->regs[8]);
 
 	printk("s0 = %016lx  s1 = %016lx  s2 = %016lx\n",
-	       regs->r9, regs->r10, regs->r11);
+	       regs->regs[9], regs->regs[10], regs->regs[11]);
 	printk("s3 = %016lx  s4 = %016lx  s5 = %016lx\n",
-	       regs->r12, regs->r13, regs->r14);
+	       regs->regs[12], regs->regs[13], regs->regs[14]);
 	printk("s6 = %016lx\n",
-	       regs->r15);
+	       regs->regs[15]);
 
 	printk("a0 = %016lx  a1 = %016lx  a2 = %016lx\n",
-	       regs->r16, regs->r17, regs->r18);
+	       regs->regs[16], regs->regs[17], regs->regs[18]);
 	printk("a3 = %016lx  a4 = %016lx  a5 = %016lx\n",
-	       regs->r19, regs->r20, regs->r21);
+	       regs->regs[19], regs->regs[20], regs->regs[21]);
 	printk("t8 = %016lx  t9 = %016lx  t10 = %016lx\n",
-	       regs->r22, regs->r23, regs->r24);
+	       regs->regs[22], regs->regs[23], regs->regs[24]);
 	printk("t11= %016lx  pv = %016lx  at = %016lx\n",
-	       regs->r25, regs->r27, regs->r28);
-	printk("gp = %016lx  sp = %016lx\n", regs->gp, regs->sp);
+	       regs->regs[25], regs->regs[27], regs->regs[28]);
+	printk("gp = %016lx  sp = %016lx\n", regs->regs[29], regs->regs[30]);
 }
 
 static void show_code(unsigned int *pc)
@@ -225,7 +225,7 @@ do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 
 	case IF_GENTRAP:
 		regs->pc -= 4;
-		switch ((long)regs->r16) {
+		switch ((long)regs->regs[16]) {
 		case GEN_INTOVF:
 			signo = SIGFPE;
 			code = FPE_INTOVF;
@@ -361,7 +361,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		map_regs(reg) = tmp1 | tmp2;
+		regs->regs[reg] = tmp1 | tmp2;
 		return;
 
 	case 0x22:
@@ -382,7 +382,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		map_regs(reg) = (int)(tmp1 | tmp2);
+		regs->regs[reg] = (int)(tmp1 | tmp2);
 		return;
 
 	case 0x23: /* ldl */
@@ -403,7 +403,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		map_regs(reg) = tmp1 | tmp2;
+		regs->regs[reg] = tmp1 | tmp2;
 		return;
 
 	case 0x29: /* sth */
@@ -421,7 +421,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		"=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(map_regs(reg)), "0"(0));
+		: "r"(va), "r"(regs->regs[reg]), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -453,7 +453,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		  "=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(map_regs(reg)), "0"(0));
+		: "r"(va), "r"(regs->regs[reg]), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -505,7 +505,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2), "=&r"(tmp3),
 		"=&r"(tmp4), "=&r"(tmp5), "=&r"(tmp6), "=&r"(tmp7), "=&r"(tmp8)
-		: "r"(va), "r"(map_regs(reg)), "0"(0));
+		: "r"(va), "r"(regs->regs[reg]), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -626,8 +626,7 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 	if ((1L << opcode) & OP_INT_MASK) {
 		/* it's an integer load/store */
 		if (reg < 31) {
-			reg_addr = (unsigned long *)
-				((char *)regs + regoffsets[reg]);
+			reg_addr = &regs->regs[reg];
 		} else {
 			/* zero "register" */
 			fake_reg = 0;

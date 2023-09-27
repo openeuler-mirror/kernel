@@ -65,7 +65,7 @@ unsigned long get_wchan(struct task_struct *p);
 
 #define KSTK_EIP(tsk) (task_pt_regs(tsk)->pc)
 
-#define KSTK_ESP(tsk) (task_pt_regs(tsk)->sp)
+#define KSTK_ESP(tsk) (task_pt_regs(tsk)->regs[30])
 
 #define cpu_relax()	barrier()
 

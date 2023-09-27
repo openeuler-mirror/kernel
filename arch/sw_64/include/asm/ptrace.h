@@ -15,37 +15,7 @@ struct pt_regs {
 	union {
 		struct user_pt_regs user_regs;
 		struct {
-			unsigned long r0;
-			unsigned long r1;
-			unsigned long r2;
-			unsigned long r3;
-			unsigned long r4;
-			unsigned long r5;
-			unsigned long r6;
-			unsigned long r7;
-			unsigned long r8;
-			unsigned long r9;
-			unsigned long r10;
-			unsigned long r11;
-			unsigned long r12;
-			unsigned long r13;
-			unsigned long r14;
-			unsigned long r15;
-			unsigned long r16;
-			unsigned long r17;
-			unsigned long r18;
-			unsigned long r19;
-			unsigned long r20;
-			unsigned long r21;
-			unsigned long r22;
-			unsigned long r23;
-			unsigned long r24;
-			unsigned long r25;
-			unsigned long r26;
-			unsigned long r27;
-			unsigned long r28;
-			unsigned long gp;
-			unsigned long sp;
+			unsigned long regs[31];
 			unsigned long pc;
 			unsigned long ps;
 		};
@@ -63,11 +33,11 @@ struct pt_regs {
 #define user_mode(regs) (((regs)->ps & 8) != 0)
 #define instruction_pointer(regs) ((regs)->pc)
 #define profile_pc(regs) instruction_pointer(regs)
-#define user_stack_pointer(regs) (regs->sp)
+#define user_stack_pointer(pt_regs) ((pt_regs)->regs[30])
 #define kernel_stack_pointer(regs) ((unsigned long)((regs) + 1))
 #define instruction_pointer_set(regs, val) ((regs)->pc = val)
 
-#define force_successful_syscall_return() (current_pt_regs()->r0 = 0)
+#define force_successful_syscall_return() (current_pt_regs()->regs[0] = 0)
 
 #define MAX_REG_OFFSET (offsetof(struct pt_regs, ps))
 
@@ -95,14 +65,14 @@ extern unsigned long regs_get_kernel_stack_nth(struct pt_regs *regs,
 
 static inline int is_syscall_success(struct pt_regs *regs)
 {
-	return !regs->r19;
+	return !regs->regs[19];
 }
 
 static inline long regs_return_value(struct pt_regs *regs)
 {
 	if (is_syscall_success(regs) || !user_mode(regs))
-		return regs->r0;
+		return regs->regs[0];
 	else
-		return -regs->r0;
+		return -regs->regs[0];
 }
 #endif /* _ASM_SW64_PTRACE_H */

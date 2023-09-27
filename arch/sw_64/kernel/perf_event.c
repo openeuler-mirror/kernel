@@ -664,7 +664,7 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 
 	perf_callchain_store(entry, regs->pc);
 
-	fp = (unsigned long __user *)regs->r15;
+	fp = (unsigned long __user *)regs->regs[15];
 
 	while (entry->nr < entry->max_stack && (unsigned long)fp < current->mm->start_stack) {
 		if (!access_ok(fp, sizeof(frame)))

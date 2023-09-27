@@ -98,7 +98,7 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 
 	current->restart_block.fn = do_no_restart_syscall;
 
-	err |= __copy_from_user(regs, sc->sc_regs, sizeof(unsigned long) * 31);
+	err |= __copy_from_user(regs, sc->sc_regs, sizeof_field(struct pt_regs, regs));
 	/* simd-fp */
 	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
 				offsetof(struct user_fpsimd_state, fpcr));
@@ -197,7 +197,7 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(regs->pc, &sc->sc_pc);
 	err |= __put_user(8, &sc->sc_ps);
 
-	err |= __copy_to_user(sc->sc_regs, regs, sizeof(unsigned long) * 31);
+	err |= __copy_to_user(sc->sc_regs, regs, sizeof_field(struct pt_regs, regs));
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
 	__fpstate_save(current);
@@ -214,7 +214,7 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	unsigned long err = 0;
 	struct rt_sigframe __user *frame;
 
-	frame = get_sigframe(ksig, regs->sp, sizeof(*frame));
+	frame = get_sigframe(ksig, regs->regs[30], sizeof(*frame));
 	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
@@ -225,30 +225,30 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	err |= __put_user(0, &frame->uc.uc_flags);
 	err |= __put_user(0, &frame->uc.uc_link);
 	err |= __put_user(set->sig[0], &frame->uc.uc_old_sigmask);
-	err |= __save_altstack(&frame->uc.uc_stack, regs->sp);
+	err |= __save_altstack(&frame->uc.uc_stack, regs->regs[30]);
 	err |= setup_sigcontext(&frame->uc.uc_mcontext, regs, set->sig[0]);
 	err |= __copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set));
 	if (err)
 		return -EFAULT;
 
 	/* "Return" to the handler */
-	regs->r26 = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
-	regs->r27 = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
-	regs->r16 = ksig->sig;                    /* a0: signal number */
+	regs->regs[26] = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
+	regs->regs[27] = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
+	regs->regs[16] = ksig->sig;                    /* a0: signal number */
 	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
 		/* a1: siginfo pointer, a2: ucontext pointer */
-		regs->r17 = (unsigned long) &frame->info;
-		regs->r18 = (unsigned long) &frame->uc;
+		regs->regs[17] = (unsigned long) &frame->info;
+		regs->regs[18] = (unsigned long) &frame->uc;
 	} else {
 		/* a1: exception code, a2: sigcontext pointer */
-		regs->r17 = 0;
-		regs->r18 = (unsigned long) &frame->uc.uc_mcontext;
+		regs->regs[17] = 0;
+		regs->regs[18] = (unsigned long) &frame->uc.uc_mcontext;
 	}
-	regs->sp = (unsigned long) frame;
+	regs->regs[30] = (unsigned long) frame;
 
 #if DEBUG_SIG
 	printk("SIG deliver (%s:%d): sp=%p pc=%p ra=%p\n",
-			current->comm, current->pid, frame, regs->pc, regs->r26);
+			current->comm, current->pid, frame, regs->pc, regs->regs[26]);
 #endif
 
 	return 0;
@@ -274,23 +274,23 @@ static inline void
 syscall_restart(unsigned long r0, unsigned long r19,
 		struct pt_regs *regs, struct k_sigaction *ka)
 {
-	switch (regs->r0) {
+	switch (regs->regs[0]) {
 	case ERESTARTSYS:
 		if (!(ka->sa.sa_flags & SA_RESTART)) {
-			regs->r0 = EINTR;
+			regs->regs[0] = EINTR;
 			break;
 		}
 		fallthrough;
 	case ERESTARTNOINTR:
-		regs->r0 = r0;	/* reset v0 and a3 and replay syscall */
-		regs->r19 = r19;
+		regs->regs[0] = r0;	/* reset v0 and a3 and replay syscall */
+		regs->regs[19] = r19;
 		regs->pc -= 4;
 		break;
 	case ERESTART_RESTARTBLOCK:
-		regs->r0 = EINTR;
+		regs->regs[0] = EINTR;
 		break;
 	case ERESTARTNOHAND:
-		regs->r0 = EINTR;
+		regs->regs[0] = EINTR;
 		break;
 	}
 }
@@ -326,18 +326,18 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 	} else {
 		single_stepping |= ptrace_cancel_bpt(current);
 		if (r0) {
-			switch (regs->r0) {
+			switch (regs->regs[0]) {
 			case ERESTARTNOHAND:
 			case ERESTARTSYS:
 			case ERESTARTNOINTR:
 				/* Reset v0 and a3 and replay syscall.  */
-				regs->r0 = r0;
-				regs->r19 = r19;
+				regs->regs[0] = r0;
+				regs->regs[19] = r19;
 				regs->pc -= 4;
 				break;
 			case ERESTART_RESTARTBLOCK:
 				/* Set v0 to the restart_syscall and replay */
-				regs->r0 = __NR_restart_syscall;
+				regs->regs[0] = __NR_restart_syscall;
 				regs->pc -= 4;
 				break;
 			}
