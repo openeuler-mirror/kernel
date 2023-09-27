@@ -138,7 +138,6 @@ do_page_fault(unsigned long address, unsigned long mmcsr,
 {
 	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
-	const struct exception_table_entry *fixup;
 	int si_code = SEGV_MAPERR;
 	vm_fault_t fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
@@ -261,14 +260,8 @@ good_area:
 
  no_context:
 	/* Are we prepared to handle this fault as an exception?  */
-	fixup = search_exception_tables(regs->pc);
-	if (fixup != 0) {
-		unsigned long newpc;
-
-		newpc = fixup_exception(map_regs, fixup, regs->pc);
-		regs->pc = newpc;
+	if (fixup_exception(regs, regs->pc))
 		return;
-	}
 
 	/*
 	 * Oops. The kernel tried to access some bad page. We'll have to

@@ -334,7 +334,6 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 	long error;
 	unsigned long tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8;
 	unsigned long pc = regs->pc - 4;
-	const struct exception_table_entry *fixup;
 
 	/*
 	 * We don't want to use the generic get/put unaligned macros as
@@ -520,15 +519,9 @@ got_exception:
 	/* Ok, we caught the exception, but we don't want it. Is there
 	 * someone to pass it along to?
 	 */
-	fixup = search_exception_tables(pc);
-	if (fixup != 0) {
-		unsigned long newpc;
-
-		newpc = fixup_exception(map_regs, fixup, pc);
+	if (fixup_exception(regs, pc)) {
 		printk("Forwarding unaligned exception at %lx (%lx)\n",
-		       pc, newpc);
-
-		regs->pc = newpc;
+		       pc, regs->pc);
 		return;
 	}
 
