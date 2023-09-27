@@ -686,7 +686,7 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 		struct pt_regs *regs)
 {
-	unsigned long usp = current_user_stack_pointer();
+	unsigned long usp = rdusp();
 	unsigned long user_addr;
 	int err;
 

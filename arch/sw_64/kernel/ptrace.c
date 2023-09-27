@@ -54,7 +54,7 @@ short regoffsets[32] = {
 	R(r9), R(r10), R(r11), R(r12), R(r13), R(r14), R(r15),
 	R(r16), R(r17), R(r18),
 	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
-	R(r27), R(r28), R(gp), 0, 0
+	R(r27), R(r28), R(gp), R(sp), 0
 };
 
 #undef R
@@ -62,7 +62,6 @@ short regoffsets[32] = {
 #define PCB_OFF(var)	offsetof(struct pcb_struct, var)
 
 static int pcboff[] = {
-	[PT_USP] = PCB_OFF(usp),
 	[PT_TP] = PCB_OFF(tp),
 	[PT_DA_MATCH] = PCB_OFF(da_match),
 	[PT_DA_MASK] = PCB_OFF(da_mask),
@@ -90,7 +89,6 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 	int fno, vno;
 
 	switch (regno) {
-	case PT_USP:
 	case PT_UNIQUE:
 	case PT_DA_MATCH:
 	case PT_DA_MASK:
@@ -280,10 +278,9 @@ static int gpr_get(struct task_struct *target,
 	int i, ret;
 
 	regs = task_pt_regs(target);
-	for (i = 0; i < 30; i++)
+	for (i = 0; i < 31; i++)
 		uregs.regs[i] = *(__u64 *)((void *)regs + regoffsets[i]);
 
-	uregs.regs[30] = task_thread_info(target)->pcb.usp;
 	uregs.pc = regs->pc;
 	uregs.pstate = regs->ps;
 
@@ -307,10 +304,9 @@ static int gpr_set(struct task_struct *target,
 		return ret;
 
 	regs = task_pt_regs(target);
-	for (i = 0; i < 30; i++)
+	for (i = 0; i < 31; i++)
 		*(__u64 *)((void *)regs + regoffsets[i]) = uregs.regs[i];
 
-	task_thread_info(target)->pcb.usp = uregs.regs[30];
 	regs->pc = uregs.pc;
 	regs->ps = uregs.pstate;
 

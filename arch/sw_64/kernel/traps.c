@@ -72,8 +72,7 @@ void show_regs(struct pt_regs *regs)
 	       regs->r22, regs->r23, regs->r24);
 	printk("t11= %016lx  pv = %016lx  at = %016lx\n",
 	       regs->r25, regs->r27, regs->r28);
-	printk("gp = %016lx  sp = %px\n", regs->gp,
-	       user_mode(regs) ? (void *)rdusp() : (regs + 1));
+	printk("gp = %016lx  sp = %016lx\n", regs->gp, regs->sp);
 }
 
 static void show_code(unsigned int *pc)
@@ -626,12 +625,9 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 
 	if ((1L << opcode) & OP_INT_MASK) {
 		/* it's an integer load/store */
-		if (reg < 30) {
+		if (reg < 31) {
 			reg_addr = (unsigned long *)
 				((char *)regs + regoffsets[reg]);
-		} else if (reg == 30) {
-			/* usp in HMCODE regs */
-			fake_reg = rdusp();
 		} else {
 			/* zero "register" */
 			fake_reg = 0;
@@ -1466,7 +1462,7 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 
 	/* Only integer loads should get here; everyone else returns early. */
 	if (reg == 30)
-		wrusp(fake_reg);
+		wrusp(regs->sp);
 	return;
 
 give_sigsegv:

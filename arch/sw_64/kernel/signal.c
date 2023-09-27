@@ -94,7 +94,6 @@ extern char compile_time_assert
 static long
 restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 {
-	unsigned long usp;
 	long err = __get_user(regs->pc, &sc->sc_pc);
 
 	current->restart_block.fn = do_no_restart_syscall;
@@ -129,8 +128,8 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 	err |= __get_user(regs->r27, sc->sc_regs+27);
 	err |= __get_user(regs->r28, sc->sc_regs+28);
 	err |= __get_user(regs->gp, sc->sc_regs+29);
-	err |= __get_user(usp, sc->sc_regs+30);
-	wrusp(usp);
+	err |= __get_user(regs->sp, sc->sc_regs+30);
+	wrusp(regs->sp);
 	/* simd-fp */
 	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
 				offsetof(struct user_fpsimd_state, fpcr));
@@ -220,7 +219,7 @@ get_sigframe(struct ksignal *ksig, unsigned long sp, size_t frame_size)
 
 static long
 setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
-		 unsigned long mask, unsigned long sp)
+		 unsigned long mask)
 {
 	long err = 0;
 
@@ -259,7 +258,7 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(regs->r27, sc->sc_regs+27);
 	err |= __put_user(regs->r28, sc->sc_regs+28);
 	err |= __put_user(regs->gp, sc->sc_regs+29);
-	err |= __put_user(sp, sc->sc_regs+30);
+	err |= __put_user(regs->sp, sc->sc_regs+30);
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
 	__fpstate_save(current);
@@ -273,11 +272,10 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 static int
 setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 {
-	unsigned long oldsp, err = 0;
+	unsigned long err = 0;
 	struct rt_sigframe __user *frame;
 
-	oldsp = rdusp();
-	frame = get_sigframe(ksig, oldsp, sizeof(*frame));
+	frame = get_sigframe(ksig, regs->sp, sizeof(*frame));
 	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
@@ -288,9 +286,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	err |= __put_user(0, &frame->uc.uc_flags);
 	err |= __put_user(0, &frame->uc.uc_link);
 	err |= __put_user(set->sig[0], &frame->uc.uc_old_sigmask);
-	err |= __save_altstack(&frame->uc.uc_stack, oldsp);
-	err |= setup_sigcontext(&frame->uc.uc_mcontext, regs,
-			set->sig[0], oldsp);
+	err |= __save_altstack(&frame->uc.uc_stack, regs->sp);
+	err |= setup_sigcontext(&frame->uc.uc_mcontext, regs, set->sig[0]);
 	err |= __copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set));
 	if (err)
 		return -EFAULT;

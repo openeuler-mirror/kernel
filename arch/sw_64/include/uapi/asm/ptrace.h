@@ -30,8 +30,7 @@ struct user_fpsimd_state {
 /* PTRACE_DETACH is 17 */
 
 #define PT_REG_BASE		0
-#define PT_REG_END		29
-#define PT_USP			30
+#define PT_REG_END		30
 #define PT_FPREG_BASE		32
 #define PT_FPREG_END		62
 #define PT_FPCR			63

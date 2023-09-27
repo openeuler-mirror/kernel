@@ -63,8 +63,7 @@ struct pt_regs {
 #define user_mode(regs) (((regs)->ps & 8) != 0)
 #define instruction_pointer(regs) ((regs)->pc)
 #define profile_pc(regs) instruction_pointer(regs)
-#define current_user_stack_pointer() rdusp()
-#define user_stack_pointer(regs) rdusp()
+#define user_stack_pointer(regs) (regs->sp)
 #define kernel_stack_pointer(regs) ((unsigned long)((regs) + 1))
 #define instruction_pointer_set(regs, val) ((regs)->pc = val)
 

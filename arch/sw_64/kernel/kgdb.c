@@ -57,7 +57,7 @@ struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "r27", 8, offsetof(struct pt_regs, r27)},
 	{ "at", 8, offsetof(struct pt_regs, r28)},
 	{ "gp", 8, offsetof(struct pt_regs, gp)},
-	{ "sp", 8, -1 },
+	{ "sp", 8, offsetof(struct pt_regs, sp)},
 	{ "zero", 8, -1 },
 
 	{ "f0", 8, -1 },

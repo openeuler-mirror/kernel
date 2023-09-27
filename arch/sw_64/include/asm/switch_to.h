@@ -16,7 +16,6 @@ static inline void aux_save(struct task_struct *task)
 
 	if (likely(!(task->flags & PF_KTHREAD))) {
 		pcb = &task_thread_info(task)->pcb;
-		pcb->usp = rdusp();
 		pcb->tp = rtid();
 		__fpstate_save(task);
 	}
@@ -28,7 +27,7 @@ static inline void aux_restore(struct task_struct *task)
 
 	if (likely(!(task->flags & PF_KTHREAD))) {
 		pcb = &task_thread_info(task)->pcb;
-		wrusp(pcb->usp);
+		wrusp(task_pt_regs(task)->sp);
 		wrtp(pcb->tp);
 		__fpstate_restore(task);
 	}

@@ -22,6 +22,7 @@ start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 {
 	regs->pc = pc;
 	regs->ps = 8;
+	regs->sp = sp;
 	wrusp(sp);
 }
 EXPORT_SYMBOL(start_thread);
@@ -80,7 +81,6 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 		p->thread.ra = (unsigned long) ret_from_kernel_thread;
 		p->thread.s[0] = usp;	/* function */
 		p->thread.s[1] = kthread_arg;
-		childti->pcb.usp = 0;
 		return 0;
 	}
 
@@ -95,9 +95,9 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 		childti->pcb.tp = regs->r20;
 	else
 		regs->r20 = 0;
-	if (usp)
-		childti->pcb.usp = usp;
 	*childregs = *regs;
+	if (usp)
+		childregs->sp = usp;
 	childregs->r0 = 0;
 	childregs->r19 = 0;
 	p->thread.ra = (unsigned long) ret_from_fork;
@@ -115,9 +115,8 @@ void sw64_elf_core_copy_regs(elf_greg_t *dest, struct pt_regs *regs)
 
 	ti = (void *)((__u64)regs & ~(THREAD_SIZE - 1));
 
-	for (i = 0; i < 30; i++)
+	for (i = 0; i < 31; i++)
 		dest[i] = *(__u64 *)((void *)regs + regoffsets[i]);
-	dest[30] = ti == current_thread_info() ? rdusp() : ti->pcb.usp;
 	dest[31] = regs->pc;
 	dest[32] = ti->pcb.tp;
 }
