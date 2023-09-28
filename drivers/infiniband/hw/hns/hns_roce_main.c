@@ -675,10 +675,9 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 			goto out;
 		}
 
-		ret = remap_pfn_range(vma, vma->vm_start,
-				      page_to_pfn(hr_dev->reset_page),
-				      PAGE_SIZE, vma->vm_page_prot);
-		goto out;
+		prot = vma->vm_page_prot;
+		pfn = page_to_pfn(hr_dev->reset_page);
+		break;
 	default:
 		ret = -EINVAL;
 		goto out;
