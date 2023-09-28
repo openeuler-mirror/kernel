@@ -660,4 +660,10 @@ source "drivers/acpi/Kconfig"
 
 endmenu
 
+menu "CPU Power Management"
+
+source "drivers/cpufreq/Kconfig"
+
+endmenu
+
 source "drivers/firmware/Kconfig"

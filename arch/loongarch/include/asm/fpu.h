@@ -48,6 +48,10 @@ static inline void disable_lasx(void);
 static inline void save_lasx(struct task_struct *t);
 static inline void restore_lasx(struct task_struct *t);
 
+#ifdef CONFIG_LOONGSON3_ACPI_CPUFREQ
+DECLARE_PER_CPU(unsigned long, msa_count);
+DECLARE_PER_CPU(unsigned long, lasx_count);
+#endif
 /*
  * Mask the FCSR Cause bits according to the Enable bits, observing
  * that Unimplemented is always enabled.
@@ -196,6 +200,9 @@ static inline void enable_lsx(void)
 {
 	if (cpu_has_lsx)
 		csr_xchg32(CSR_EUEN_LSXEN, CSR_EUEN_LSXEN, LOONGARCH_CSR_EUEN);
+#ifdef CONFIG_LOONGSON3_ACPI_CPUFREQ
+		per_cpu(msa_count, raw_smp_processor_id())++;
+#endif
 }
 
 static inline void disable_lsx(void)
@@ -249,8 +256,12 @@ static inline void restore_lsx_upper(struct task_struct *t) {}
 static inline void enable_lasx(void)
 {
 
-	if (cpu_has_lasx)
+	if (cpu_has_lasx) {
 		csr_xchg32(CSR_EUEN_LASXEN, CSR_EUEN_LASXEN, LOONGARCH_CSR_EUEN);
+#ifdef CONFIG_LOONGSON3_ACPI_CPUFREQ
+		per_cpu(lasx_count, raw_smp_processor_id())++;
+#endif
+	}
 }
 
 static inline void disable_lasx(void)
