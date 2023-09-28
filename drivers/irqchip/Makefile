@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
+
+OBJECT_FILES_NON_STANDARD_irq-gic-v3.o := y
+
 obj-$(CONFIG_IRQCHIP)			+= irqchip.o
 
 obj-$(CONFIG_AL_FIC)			+= irq-al-fic.o

@@ -6,6 +6,7 @@
 #include <linux/linkage.h>
 #include <asm/asm-offsets.h>
 #include <asm/assembler.h>
+#include <asm/unwind_hints.h>
 
 	.text
 
@@ -62,6 +63,7 @@
 	.endm
 
 SYM_CODE_START(kretprobe_trampoline)
+	UNWIND_HINT_EMPTY
 	sub sp, sp, #S_FRAME_SIZE
 
 	save_all_base_regs

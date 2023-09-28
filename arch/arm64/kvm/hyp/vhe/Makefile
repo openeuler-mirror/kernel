@@ -3,6 +3,11 @@
 # Makefile for Kernel-based Virtual Machine module, HYP/nVHE part
 #
 
+OBJECT_FILES_NON_STANDARD_entry.o := y
+OBJECT_FILES_NON_STANDARD_hyp-entry.o := y
+OBJECT_FILES_NON_STANDARD_switch.o := y
+OBJECT_FILES_NON_STANDARD_vgic-v3-sr.o := y
+
 asflags-y := -D__KVM_VHE_HYPERVISOR__
 ccflags-y := -D__KVM_VHE_HYPERVISOR__
 
