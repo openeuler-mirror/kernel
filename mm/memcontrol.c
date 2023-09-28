@@ -5724,9 +5724,6 @@ static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
 	struct css_task_iter it;
 	int ret = 0;
 
-	if (enable == READ_ONCE(memcg->ksm_merge_any))
-		return 0;
-
 	css_task_iter_start(&memcg->css, CSS_TASK_ITER_PROCS, &it);
 	while (!ret && (task = css_task_iter_next(&it))) {
 		if (__task_is_dying(task))
@@ -5781,7 +5778,6 @@ static int memory_ksm_show(struct seq_file *m, void *v)
 	}
 	css_task_iter_end(&it);
 
-	seq_printf(m, "merge any state: %d\n", READ_ONCE(memcg->ksm_merge_any));
 	seq_printf(m, "merge any tasks: %u\n", tasks);
 	seq_printf(m, "ksm_rmap_items %lu\n", ksm_rmap_items);
 	seq_printf(m, "ksm_merging_pages %lu\n", ksm_merging_pages);
@@ -5807,8 +5803,6 @@ static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
 	err = memcg_set_ksm_for_tasks(memcg, enable);
 	if (err)
 		return err;
-
-	WRITE_ONCE(memcg->ksm_merge_any, enable);
 
 	return nbytes;
 }
@@ -6374,9 +6368,6 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		if (parent != root_mem_cgroup)
 			memory_cgrp_subsys.broken_hierarchy = true;
 	}
-#ifdef CONFIG_KSM
-	memcg->ksm_merge_any = false;
-#endif
 	/* The following stuff does not apply to the root */
 	if (!parent) {
 		root_mem_cgroup = memcg;
