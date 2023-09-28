@@ -14,11 +14,9 @@
 #define SW64_KVM_EXIT_RESTART		17
 #define SW64_KVM_EXIT_APT_FAULT		18
 #define SW64_KVM_EXIT_FATAL_ERROR	22
+#define SW64_KVM_EXIT_MEMHOTPLUG	23
 #define SW64_KVM_EXIT_DEBUG		24
 
-#ifdef CONFIG_KVM_MEMHOTPLUG
-#define SW64_KVM_EXIT_MEMHOTPLUG	23
-#endif
 
 #define kvm_sw64_exception_type	\
 	{0, "HOST_INTR" },	\

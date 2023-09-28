@@ -32,10 +32,12 @@
 
 #ifdef CONFIG_SUBARCH_C3B
 #define VPN_BITS	8
+#define GUEST_RESET_PC          0xffffffff80011100
 #endif
 
 #ifdef CONFIG_SUBARCH_C4
 #define VPN_BITS	10
+#define GUEST_RESET_PC          0xfff0000000011002
 #endif
 
 #define VPN_FIRST_VERSION	(1UL << VPN_BITS)
@@ -77,27 +79,6 @@ struct kvm_arch {
 	struct swvm_mem mem;
 	/* Addtional stage page table*/
 	pgd_t *pgd;
-};
-
-struct kvm_sw64_ops {
-	unsigned long (*get_new_vpn_context)(struct kvm_vcpu *vcpu, long cpu);
-	void (*update_vpn)(struct kvm_vcpu *vcpu, unsigned long vpn);
-	int (*init_vm)(struct kvm *kvm);
-	void (*destroy_vm)(struct kvm *kvm);
-	int (*prepare_memory_region)(struct kvm *kvm, struct kvm_memory_slot *memslot,
-			const struct kvm_userspace_memory_region *mem, enum kvm_mr_change change);
-	void (*mmu_enable_log_dirty_pt_masked)(struct kvm *kvm, struct kvm_memory_slot *slot,
-			gfn_t gfn_offset, unsigned long mask);
-	void (*commit_memory_region)(struct kvm *kvm, const struct kvm_userspace_memory_region *mem,
-			const struct kvm_memory_slot *old, const struct kvm_memory_slot *new,
-			enum kvm_mr_change change);
-	void (*flush_shadow_memslot)(struct kvm *kvm, struct kvm_memory_slot *slot);
-	void (*flush_shadow_all)(struct kvm *kvm);
-	int (*vcpu_reset)(struct kvm_vcpu *vcpu);
-	int (*vcpu_run)(struct kvm_vcpu *vcpu, struct kvm_run *run);
-	void (*vcpu_free)(struct kvm_vcpu *vcpu);
-	long (*get_vcb)(struct file *filp, unsigned long arg);
-	long (*set_vcb)(struct file *filp, unsigned long arg);
 };
 
 #define KVM_NR_MEM_OBJS		40
@@ -230,5 +211,14 @@ void kvm_arch_vcpu_free(struct kvm_vcpu *vcpu);
 
 int kvm_sw64_perf_init(void);
 int kvm_sw64_perf_teardown(void);
+void kvm_flush_tlb_all(void);
+void kvm_sw64_update_vpn(struct kvm_vcpu *vcpu, unsigned long vpn);
+int kvm_sw64_init_vm(struct kvm *kvm);
+void kvm_sw64_destroy_vm(struct kvm *kvm);
+int kvm_sw64_vcpu_reset(struct kvm_vcpu *vcpu);
+long kvm_sw64_set_vcb(struct file *filp, unsigned long arg);
+long kvm_sw64_get_vcb(struct file *filp, unsigned long arg);
 
+void update_aptp(unsigned long);
+void vcpu_set_numa_affinity(struct kvm_vcpu *vcpu);
 #endif /* _ASM_SW64_KVM_HOST_H */

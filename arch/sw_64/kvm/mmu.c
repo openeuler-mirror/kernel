@@ -544,9 +544,9 @@ void kvm_mark_migration(struct kvm *kvm, int mark)
 		vcpu->arch.migration_mark = mark;
 }
 
-void kvm_core4_commit_memory_region(struct kvm *kvm,
+void kvm_arch_commit_memory_region(struct kvm *kvm,
 		const struct kvm_userspace_memory_region *mem,
-		const struct kvm_memory_slot *old,
+		struct kvm_memory_slot *old,
 		const struct kvm_memory_slot *new,
 		enum kvm_mr_change change)
 {
@@ -570,7 +570,7 @@ void kvm_core4_commit_memory_region(struct kvm *kvm,
 	}
 }
 
-void kvm_core4_flush_shadow_memslot(struct kvm *kvm,
+void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 		struct kvm_memory_slot *slot)
 {
 	gpa_t gpa = slot->base_gfn << PAGE_SHIFT;
@@ -635,7 +635,7 @@ void kvm_free_apt_pgd(struct kvm *kvm)
 		free_pages_exact(pgd, PAGE_SIZE);
 }
 
-void kvm_core4_flush_shadow_all(struct kvm *kvm)
+void kvm_arch_flush_shadow_all(struct kvm *kvm)
 {
 	kvm_free_apt_pgd(kvm);
 }
@@ -1553,7 +1553,7 @@ static void kvm_mmu_write_protect_pt_masked(struct kvm *kvm,
  * It calls kvm_mmu_write_protect_pt_masked to write protect selected pages to
  * enable dirty logging for them.
  */
-void kvm_core4_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
+void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 		struct kvm_memory_slot *slot,
 		gfn_t gfn_offset, unsigned long mask)
 {
