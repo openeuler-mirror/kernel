@@ -15,11 +15,16 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/if_vlan.h>
+#include <linux/memory.h>
 
 #include <asm/cacheflush.h>
 #include <asm/hwcap.h>
 #include <asm/opcodes.h>
 #include <asm/system_info.h>
+#include <asm/insn.h>
+#include <asm/set_memory.h>
+#include <asm/patch.h>
+#include <asm/stacktrace.h>
 
 #include "bpf_jit_32.h"
 
@@ -213,6 +218,15 @@ struct jit_ctx {
 	u32 *imms;
 #endif
 };
+
+struct bpf_plt {
+    u32 insn_ldr; /* load target */
+    u32 insn_br; /* branch to target */
+    u32 target; /* target value */
+};
+
+#define PLT_TARGET_SIZE sizeof_field(struct bpf_plt, target)
+#define PLT_TARGET_OFFSET offsetof(struct bpf_plt, target)
 
 /*
  * Wrappers which handle both OABI and EABI and assures Thumb2 interworking
@@ -613,6 +627,14 @@ static inline void emit_a32_mov_i(const s8 dst, const u32 val,
 	} else {
 		emit_mov_i(dst, val, ctx);
 	}
+}
+
+static inline void emit_call(u32 target, struct jit_ctx *ctx)
+{
+    const s8 *tmp = bpf2a32[TMP_REG_1];
+    
+    emit_a32_mov_i(tmp[1], target, ctx);
+    emit_blx_r(tmp[1], ctx);
 }
 
 static void emit_a32_mov_i64(const s8 dst[], u64 val, struct jit_ctx *ctx)
@@ -1281,12 +1303,17 @@ static inline void emit_push_r64(const s8 src[], struct jit_ctx *ctx)
 	emit(ARM_PUSH(reg_set), ctx);
 }
 
+#define POKE_OFFSET 1
+
 static void build_prologue(struct jit_ctx *ctx)
 {
 	const s8 arm_r0 = bpf2a32[BPF_REG_0][1];
 	const s8 *bpf_r1 = bpf2a32[BPF_REG_1];
 	const s8 *bpf_fp = bpf2a32[BPF_REG_FP];
 	const s8 *tcc = bpf2a32[TCALL_CNT];
+	
+	emit(ARM_PUSH(1 << ARM_LR), ctx);
+	emit(ARM_ADD_I(ARM_SP, ARM_SP, 4), ctx);
 
 	/* Save callee saved registers. */
 #ifdef CONFIG_FRAME_POINTER
@@ -1298,6 +1325,7 @@ static void build_prologue(struct jit_ctx *ctx)
 	emit(ARM_PUSH(CALLEE_PUSH_MASK), ctx);
 	emit(ARM_MOV_R(ARM_FP, ARM_SP), ctx);
 #endif
+
 	/* mov r3, #0 */
 	/* sub r2, sp, #SCRATCH_SIZE */
 	emit(ARM_MOV_I(bpf_r1[0], 0), ctx);
@@ -1320,6 +1348,49 @@ static void build_prologue(struct jit_ctx *ctx)
 
 	/* end of prologue */
 }
+
+void dummy_tramp(void);
+
+asm (
+"    .pushsection .text, \"ax\" @progbits\n"
+"    .global dummy_tramp\n"
+"    .type dummy_tramp, %function\n"
+"dummy_tramp:\n"
+"    mov R8, lr\n"
+"    pop {lr}\n"
+"    bx R8\n"
+"    .size dummy_tramp, .-dummy_tramp\n"
+"    .popsection\n"
+);
+
+/* build a plt initialized like this:
+*
+* plt:
+*      ldr tmp, target
+*      bx tmp
+* target:
+*      .word dummy_tramp
+*
+* when a long jump trampoline is attached, target is filled with the
+* trampoline address, and when the trampoline is removed, target is
+* restored to dummy_tramp address.
+*/
+
+#define ARM_INSN_SIZE 4
+
+static void build_plt(struct jit_ctx *ctx)
+{
+    const s8 tmp = bpf2a32[TMP_REG_1][1];
+    struct bpf_plt *plt = NULL;
+    
+    plt = (struct bpf_plt *)(ctx->target + ctx->idx);
+    emit(ARM_LDR_I(tmp, ARM_PC, imm8m(2 * ARM_INSN_SIZE)), ctx);
+    emit_bx_r(tmp, ctx);
+    
+    if (ctx->target)
+        plt->target = (u32)&dummy_tramp;
+}
+
 
 /* restore callee saved registers. */
 static void build_epilogue(struct jit_ctx *ctx)
@@ -1603,6 +1674,10 @@ exit:
 	case BPF_LDX | BPF_MEM | BPF_H:
 	case BPF_LDX | BPF_MEM | BPF_B:
 	case BPF_LDX | BPF_MEM | BPF_DW:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_DW:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_W:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_H:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_B:
 		rn = arm_bpf_get_reg32(src_lo, tmp2[1], ctx);
 		emit_ldx_r(dst, rn, off, ctx, BPF_SIZE(code));
 		break;
@@ -1939,6 +2014,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	tmp_idx = ctx.idx;
 	build_epilogue(&ctx);
 	ctx.epilogue_bytes = (ctx.idx - tmp_idx) * 4;
+	build_plt(&ctx);
 
 	ctx.idx += ctx.imm_count;
 	if (ctx.imm_count) {
@@ -1951,6 +2027,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 #else
 	/* there's nothing about the epilogue on ARMv7 */
 	build_epilogue(&ctx);
+	build_plt(&ctx);
 #endif
 	/* Now we can get the actual image size of the JITed arm code.
 	 * Currently, we are not considering the THUMB-2 instructions
@@ -1989,6 +2066,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 		goto out_imms;
 	}
 	build_epilogue(&ctx);
+	build_plt(&ctx);
 
 	/* 3.) Extra pass to validate JITed Code */
 	if (validate_code(&ctx)) {
@@ -2020,5 +2098,547 @@ out:
 		bpf_jit_prog_release_other(prog, prog == orig_prog ?
 					   tmp : orig_prog);
 	return prog;
+}
+
+static void invoke_bpf_prog(struct jit_ctx *ctx, struct bpf_tramp_link *l,
+                int args_off, int retval_off, int run_ctx_off,
+                bool save_ret)
+{
+    u32 *branch;
+    u32 enter_prog;
+    u32 exit_prog;
+    struct bpf_prog *p = l->link.prog;
+    int cookie_off = offsetof(struct bpf_tramp_run_ctx, bpf_cookie);
+    
+    enter_prog = (u32)bpf_trampoline_enter(p);
+    exit_prog = (u32)bpf_trampoline_exit(p);
+
+    emit_mov_i(ARM_R4, (u32)l->cookie, ctx);
+    emit_mov_i(ARM_R5, l->cookie >> 32, ctx);
+    emit(ARM_STR_I(ARM_R4, ARM_SP, imm8m(run_ctx_off + cookie_off)), ctx);
+    emit(ARM_STR_I(ARM_R5, ARM_SP, imm8m(run_ctx_off + cookie_off + 4)), 
+            ctx);
+
+    /* arg1: prog */
+    emit_mov_i(ARM_R0, (const u32)p, ctx);
+    /* arg2: &run_ctx */
+    emit(ARM_ADD_I(ARM_R1, ARM_SP, run_ctx_off), ctx);
+
+    emit_call(enter_prog, ctx);
+
+    /* if (__bpf_prog_enter(prog) == 0)
+     *         goto skip_exec_of_prog;
+     */
+    branch = ctx->target + ctx->idx;
+    /* gen 3 nops. */
+    emit(ARM_MOV_R(ARM_R0, ARM_R0), ctx);
+    emit(ARM_MOV_R(ARM_R0, ARM_R0), ctx);
+    emit(ARM_MOV_R(ARM_R0, ARM_R0), ctx);
+    
+    /* save return value 'u64' to callee saved register r4, r5 */
+    emit(ARM_MOV_R(ARM_R4, ARM_R0), ctx);
+    emit(ARM_MOV_R(ARM_R5, ARM_R1), ctx);
+
+    emit(ARM_ADD_I(ARM_R0, ARM_SP, args_off), ctx);
+    if (!p->jited)
+       emit_mov_i(ARM_R1, (const u32)p->insnsi, ctx);
+
+    emit_call((const u32)p->bpf_func, ctx);
+
+    if (save_ret)
+        emit(ARM_STR_I(ARM_R0, ARM_SP, imm8m(retval_off)), ctx);
+    
+    if (ctx->target) {
+        int offset = &ctx->target[ctx->idx] - branch;
+        *branch++ = __opcode_to_mem_arm(ARM_ADD_R(ARM_R4, ARM_R0, ARM_R1) 
+        								| (ARM_COND_AL << 28));
+        *branch++ = __opcode_to_mem_arm(ARM_CMP_I(ARM_R4, 0) 
+        									| (ARM_COND_AL << 28));
+        *branch = __opcode_to_mem_arm(ARM_B(offset) | (ARM_COND_EQ << 28));
+    }
+    /* arg1: prog */
+    emit_mov_i(ARM_R0, (const u32)p, ctx);
+    /* arg2: start time, u64, need two regesters. */
+    emit(ARM_MOV_R(ARM_R2, ARM_R4), ctx);
+    emit(ARM_MOV_R(ARM_R3, ARM_R5), ctx);
+    /* arg3: &run_ctx */
+    emit(ARM_PUSH(1 << ARM_R8), ctx);
+    emit(ARM_ADD_I(ARM_R8, ARM_SP, run_ctx_off + 4), ctx);
+    emit(ARM_PUSH(1 << ARM_R8), ctx);
+    emit_call(exit_prog, ctx);
+    emit(ARM_ADD_I(ARM_SP, ARM_SP, 4), ctx);
+    emit(ARM_POP(1 << ARM_R8), ctx);
+}
+
+static void invoke_bpf_mod_ret(struct jit_ctx *ctx, struct bpf_tramp_links *tl,
+                   int args_off, int retval_off, int run_ctx_off,
+                   u32 **branches)
+{
+    int i;
+
+    /* The first fmod_ret program will receive a garbage return value.
+     * Set this to 0 to avoid confusing the program.
+     */
+
+    emit_mov_i(ARM_R8, 0, ctx);
+    emit(ARM_STR_I(ARM_R8, ARM_SP, imm8m(retval_off)), ctx);
+
+    for (i = 0; i < tl->nr_links; i++) {
+        invoke_bpf_prog(ctx, tl->links[i], args_off, retval_off,
+                run_ctx_off, true);
+        emit(ARM_LDR_I(ARM_R8, ARM_SP, imm8m(retval_off)), ctx);
+        /* Save the location of branch, and generate 3 nops.
+         * The nops will be replaced with a CMP and a BNE later.
+         */
+        branches[i] = ctx->target + ctx->idx;
+        emit(ARM_MOV_R(ARM_R0, ARM_R0), ctx);
+        emit(ARM_MOV_R(ARM_R0, ARM_R0), ctx);
+    }
+}
+
+static void save_args(struct jit_ctx *ctx, int args_off, 
+						const struct btf_func_model *m)
+{
+    int i, arg_regs, reg = 0;
+
+    for (i = 0; i < m->nr_args; i++) {
+    	arg_regs = (m->arg_size[i] + 3) / 4;
+    	if (arg_regs > 1) {
+    		if (reg == 1) 
+    			reg++;
+        	emit(ARM_STR_I(reg++, ARM_SP, imm8m(args_off)), ctx);
+        	emit(ARM_STR_I(reg++, ARM_SP, imm8m(args_off + 4)), ctx);
+        }
+        else {
+        	emit(ARM_STR_I(reg++, ARM_SP, imm8m(args_off)), ctx);
+        	emit_mov_i(ARM_R8, 0, ctx);
+        	emit(ARM_STR_I(ARM_R8, ARM_SP, imm8m(args_off + 4)), ctx);
+        }
+        args_off += 8;
+        if (reg == 4) 
+        	break;
+    }
+}
+
+static void restore_args(struct jit_ctx *ctx, int args_off, 
+						const struct btf_func_model *m)
+{
+    int i, arg_regs, reg = 0;
+
+    for (i = 0; i < m->nr_args; i++) {
+    	arg_regs = (m->arg_size[i] + 3) / 4;
+    	if (arg_regs > 1) {
+    		if (reg == 1) 
+    			reg++;
+        	emit(ARM_LDR_I(reg++, ARM_SP, imm8m(args_off)), ctx);
+        	emit(ARM_LDR_I(reg++, ARM_SP, imm8m(args_off + 4)), ctx);
+        }
+        else {
+        	emit(ARM_LDR_I(reg++, ARM_SP, imm8m(args_off)), ctx);
+        }
+        args_off += 8;
+        if (reg == 4) 
+        	break;
+    }
+}
+
+/* Based on the x86's implementation of arch_prepare_bpf_trampoline().
+*
+* bpf prog and function entry before bpf trampoline hooked:
+*   push {lr}
+*   add sp, #4
+*
+* bpf prog and function entry after bpf trampoline hooked:
+*   push {lr}
+*   bl  <bpf_trampoline or plt>
+*
+*/
+static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
+					const struct btf_func_model *m, struct bpf_tramp_links *tlinks, 
+					void *orig_call, int nregs, u32 flags)
+{
+    int i;
+    int stack_size;
+    int retaddr_off;
+//    int regs_off;
+    int retval_off;
+    int args_off;
+    int nregs_off;
+    int ip_off;
+    int run_ctx_off;
+    struct bpf_tramp_links *fentry = &tlinks[BPF_TRAMP_FENTRY];
+    struct bpf_tramp_links *fexit = &tlinks[BPF_TRAMP_FEXIT];
+    struct bpf_tramp_links *fmod_ret = &tlinks[BPF_TRAMP_MODIFY_RETURN];
+    bool save_ret;
+    u32 **branches = NULL;
+
+    /* trampoline stack layout:
+     *                  [ parent ip        ] not used by struct_ops
+     * SP + retaddr_off [ self ip          ]
+     *                  [ FP               ] callee saved reg fp
+     *                  [ r9               ] 
+     *                  [ r8               ] 
+     *                  [ r7               ] 
+     *                  [ r6               ] 
+     *                  [ r5               ] 
+     * SP + regs_off    [ r4               ] callee saved reg r4 ~ r9
+     *                  [ padding           ] align SP to multiples of 8
+     *
+     * SP + retval_off  [ return value      ] BPF_TRAMP_F_CALL_ORIG or
+     *                                        BPF_TRAMP_F_RET_FENTRY_RET
+     *
+     *                  [ arg reg N         ]
+     *                  [ ...               ]
+     * SP + args_off    [ arg reg 1         ]
+     *
+     * SP + nregs_off   [ arg regs count    ]
+     *
+     * SP + ip_off      [ traced function   ] BPF_TRAMP_F_IP_ARG flag
+     *
+     * SP + run_ctx_off [ bpf_tramp_run_ctx ]
+     */
+
+    stack_size = 0;
+    run_ctx_off = stack_size;
+    /* room for bpf_tramp_run_ctx */
+    stack_size += round_up(sizeof(struct bpf_tramp_run_ctx), 8);
+
+    ip_off = stack_size;
+    /* room for IP address argument */
+    if (flags & BPF_TRAMP_F_IP_ARG)
+        stack_size += 4;
+
+    nregs_off = stack_size;
+    /* room for args count */
+    stack_size += 4;
+
+    args_off = stack_size;
+    /* room for args */
+    stack_size += nregs * 8;
+
+    /* room for return value */
+    retval_off = stack_size;
+    save_ret = flags & (BPF_TRAMP_F_CALL_ORIG | BPF_TRAMP_F_RET_FENTRY_RET);
+    if (save_ret)
+        stack_size += 4;
+    
+    /* round up to multiples of 8 to avoid SPAlignmentFault */
+    if (flags & BPF_TRAMP_F_RET_FENTRY_RET) {
+    	/* bpf trampoline may be invoked by 3 instruction types:
+		 * 1. bl, attached to bpf prog or kernel function via short jump
+		 * 2. br, attached to bpf prog or kernel function via long jump
+		 * 3. blr, working as a function pointer, used by struct_ops.
+		 * case 1 and 2 have extra "push {lr}", case 3 doesn't. 
+		 */
+    	stack_size = round_up(stack_size, 8);
+    } else {
+    	stack_size = round_up(stack_size, 8) + 4;
+    }
+
+    /* return address locates above FP */
+    retaddr_off = stack_size + 28;
+    
+    stack_size = imm8m(stack_size);
+
+    /* callee saved registers. */
+    emit(ARM_PUSH(CALLEE_PUSH_MASK), ctx);
+	
+    /* allocate stack space */
+    emit(ARM_SUB_I(ARM_SP, ARM_SP, stack_size), ctx);
+
+    if (flags & BPF_TRAMP_F_IP_ARG) {
+        /* save ip address of the traced function */
+        emit_a32_mov_i(ARM_R8, (const u32)orig_call, ctx);
+        emit(ARM_STR_I(ARM_R8, ARM_SP, imm8m(ip_off)), ctx);
+    }
+
+    /* save arg regs count*/
+    emit_a32_mov_i(ARM_R8, nregs, ctx);
+    emit(ARM_STR_I(ARM_R8, ARM_SP, imm8m(nregs_off)), ctx);
+
+    /* save arg regs */
+    save_args(ctx, args_off, m);
+
+    if (flags & BPF_TRAMP_F_CALL_ORIG) {
+        emit_a32_mov_i(ARM_R0, (const u32)im, ctx);
+        emit_call((const u32)__bpf_tramp_enter, ctx);
+    }
+
+    for (i = 0; i < fentry->nr_links; i++)
+        invoke_bpf_prog(ctx, fentry->links[i], args_off,
+                retval_off, run_ctx_off,
+                flags & BPF_TRAMP_F_RET_FENTRY_RET);
+
+    if (fmod_ret->nr_links) {
+        branches = kcalloc(fmod_ret->nr_links, sizeof(u32 *),
+                   GFP_KERNEL);
+                   
+        if (!branches)
+            return -ENOMEM;
+            
+        invoke_bpf_mod_ret(ctx, fmod_ret, args_off, retval_off,
+                   run_ctx_off, branches);
+    }
+
+    if (flags & BPF_TRAMP_F_CALL_ORIG) {
+        restore_args(ctx, args_off, m);
+        /* call original func */
+        emit(ARM_LDR_I(ARM_R8, ARM_SP, imm8m(retaddr_off)), ctx);
+        emit_blx_r(ARM_R8, ctx);
+        /* store return value */
+        emit(ARM_STR_I(ARM_R0, ARM_SP, imm8m(retval_off)), ctx);
+        /* reserve a nop for bpf_tramp_image_put */
+        im->ip_after_call = ctx->target + ctx->idx;
+        emit(ARM_MOV_R(ARM_R0, ARM_R0), ctx);
+    }
+
+    /* update the branches saved in invoke_bpf_mod_ret with cbnz */
+    for (i = 0; i < fmod_ret->nr_links && ctx->target != NULL; i++) {
+        int offset = &ctx->target[ctx->idx] - branches[i];
+        *branches[i]++ = __opcode_to_mem_arm(ARM_CMP_I(ARM_R8, 0) 
+        									| (ARM_COND_AL << 28));
+        *branches[i] = __opcode_to_mem_arm(ARM_B(offset) | (ARM_COND_NE << 28));
+    }
+
+    for (i = 0; i < fexit->nr_links; i++)
+        invoke_bpf_prog(ctx, fexit->links[i], args_off, retval_off,
+                run_ctx_off, false);
+
+    if (flags & BPF_TRAMP_F_CALL_ORIG) {
+        im->ip_epilogue = ctx->target + ctx->idx;
+        emit_a32_mov_i(ARM_R0, (const u32)im, ctx);
+        emit_call((const u32)__bpf_tramp_exit, ctx);
+    }
+
+    if (flags & BPF_TRAMP_F_RESTORE_REGS)
+        restore_args(ctx, args_off, m);
+
+    if (save_ret)
+        emit(ARM_LDR_I(ARM_R0, ARM_SP, imm8m(retval_off)), ctx);
+
+    /* reset SP  */
+    emit(ARM_ADD_I(ARM_SP, ARM_SP, stack_size), ctx);
+    
+    if (flags & BPF_TRAMP_F_RET_FENTRY_RET) {
+    	emit(ARM_POP(CALLEE_POP_MASK), ctx);
+    } else {
+		if (flags & BPF_TRAMP_F_SKIP_FRAME) {
+		    /* skip patched function, return to parent 
+		     * no support for kernel function. 
+		     */
+		    emit(ARM_POP(CALLEE_PUSH_MASK), ctx);
+		    emit(ARM_POP(1 << ARM_LR), ctx);
+		    emit_bx_r(ARM_LR, ctx);
+		} else {
+		    /* return to patched function */
+		    emit(ARM_LDR_I(ARM_R8, ARM_SP, imm8m(28)), ctx);
+		    emit(ARM_LDR_I(ARM_R7, ARM_SP, imm8m(32)), ctx);
+		    emit(ARM_STR_I(ARM_R7, ARM_SP, imm8m(28)), ctx);
+		    emit(ARM_STR_I(ARM_R8, ARM_SP, imm8m(32)), ctx);
+		    emit(ARM_POP(CALLEE_PUSH_MASK), ctx);
+		    emit(ARM_POP(1 << ARM_PC), ctx);
+		}
+	}
+
+    if (ctx->target)
+        flush_icache_range((u32)ctx->target, (u32)(ctx->target + ctx->idx));
+
+    kfree(branches);
+
+    return ctx->idx;
+}
+
+int arch_prepare_bpf_trampoline(struct bpf_tramp_image *im, void *image,
+                void *image_end, const struct btf_func_model *m,
+                u32 flags, struct bpf_tramp_links *tlinks,
+                void *orig_call)
+{
+    int i, ret, regs;
+    int nregs = 0;
+    int max_insns = ((long)image_end - (long)image) / ARM_INSN_SIZE;
+    struct jit_ctx ctx = {
+        .target = NULL,
+        .idx = 0,
+    };
+	
+	/* get the count of the regs that are used to pass arguments */
+	for (i = 0; i < m->nr_args; i++) {
+			regs = (m->arg_size[i] + 3) / 4;
+			/* 64 bits arguments, the first reg to store it 
+			* should be even register. */
+			if (nregs == 1 && regs > 1) 
+				nregs++;
+			nregs += regs;
+	}
+	
+    /* the first 4 registers are used for arguments */
+    if (nregs > 4)
+    	return -ENOTSUPP;
+
+    ret = prepare_trampoline(&ctx, im, m, tlinks, orig_call, m->nr_args, flags);
+    if (ret < 0)
+        return ret;
+
+    if (ret > max_insns)
+        return -EFBIG;
+
+    ctx.target = image;
+    ctx.idx = 0;
+
+    jit_fill_hole(image, (unsigned int)(image_end - image));
+    ret = prepare_trampoline(&ctx, im, m, tlinks, orig_call, m->nr_args, flags);
+
+    if (ret > 0 && validate_code(&ctx) < 0)
+        ret = -EINVAL;
+
+    if (ret > 0)
+        ret *= ARM_INSN_SIZE;
+
+    return ret;
+}
+
+static bool is_long_jump(void *ip, void *target)
+{
+     long offset;
+    
+     /* NULL target means this is a NOP */
+     if (!target)
+          return false;
+
+     offset = (long)target - (long)ip;
+     return offset < -SZ_32M || offset >= SZ_32M;
+}
+
+static int gen_branch_or_nop(bool link, void *ip, 
+                			void *addr, void *plt, u32 *insn)
+{
+    void *target;
+    
+    if (!addr) {
+        *insn = ARM_ADD_I(ARM_SP, ARM_SP, 4) | (ARM_COND_AL << 28);
+        return 0;
+    }
+
+    if (is_long_jump(ip, addr))
+        target = plt;
+    else
+        target = addr;
+
+    if (link)
+        *insn = (ARM_COND_AL << 28) | arm_gen_branch_link((unsigned long)ip,
+                        								 (unsigned long)target,
+                        								 false);
+    else
+        *insn = (ARM_COND_AL << 28) | arm_gen_branch((unsigned long)ip,
+                    								 (unsigned long)target);
+
+    return *insn != 0 ? 0 : -EFAULT;
+}
+
+int bpf_arch_text_poke(void *ip, enum bpf_text_poke_type poke_type,
+               void *old_addr, void *new_addr)
+{
+    int ret;
+    u32 old_insn;
+    u32 new_insn;
+    u32 replaced;
+    struct bpf_plt *plt = NULL;
+    unsigned long size = 0UL;
+    unsigned long offset = ~0UL;
+    bool is_branch_link;
+    char namebuf[KSYM_NAME_LEN];
+    void *image = NULL;
+    u32 plt_target = 0UL;
+    bool poking_bpf_entry;
+    
+    if (!__bpf_address_lookup((unsigned long)ip, &size, &offset, namebuf))
+        /* Only poking bpf text is supported. Since kernel function
+         * entry is set up by ftrace, we reply on ftrace to poke kernel
+         * functions.
+         */
+        return -ENOTSUPP;
+        
+    image = ip - offset;
+    /* zero offset means we're poking bpf prog entry */
+    poking_bpf_entry = (offset == 0UL);
+    
+    /* bpf prog entry, find plt and the real patchsite */
+    if (poking_bpf_entry) {
+        /* plt locates at the end of bpf prog */
+        plt = image + size - PLT_TARGET_OFFSET;
+        /* skip to the nop instruction in bpf prog entry:
+         * push {lr}
+         * add sp, sp, #4 (nop)
+         */
+        ip = image + POKE_OFFSET * ARM_INSN_SIZE;
+    }
+    /* long jump is only possible at bpf prog entry */
+    if (WARN_ON((is_long_jump(ip, new_addr) || is_long_jump(ip, old_addr)) &&
+            !poking_bpf_entry))
+        return -EINVAL;
+        
+    if (poke_type == BPF_MOD_CALL)
+        is_branch_link = true;
+    else
+        is_branch_link = false;
+        
+    if (gen_branch_or_nop(is_branch_link, ip, old_addr, plt, &old_insn) < 0)
+        return -EFAULT;
+        
+    if (gen_branch_or_nop(is_branch_link, ip, new_addr, plt, &new_insn) < 0)
+        return -EFAULT;
+        
+    if (is_long_jump(ip, new_addr))
+        plt_target = (u32)new_addr;
+    else if (is_long_jump(ip, old_addr))
+        /* if the old target is a long jump and the new target is not,
+         * restore the plt target to dummy_tramp, so there is always a
+         * legal and harmless address stored in plt target, and we'll
+         * never jump from plt to an unknown place.
+         */
+        plt_target = (u32)&dummy_tramp;
+        
+    if (plt_target) {
+        /* non-zero plt_target indicates we're patching a bpf prog,
+         * which is read only.
+         */
+        if (set_memory_rw(PAGE_MASK & ((uintptr_t)&plt->target), 1))
+            return -EFAULT;
+        WRITE_ONCE(plt->target, plt_target);
+        set_memory_ro(PAGE_MASK & ((uintptr_t)&plt->target), 1);
+        /* since plt target points to either the new trampoline
+         * or dummy_tramp, even if another CPU reads the old plt
+         * target value before fetching the bl instruction to plt,
+         * it will be brought back by dummy_tramp, so no barrier is
+         * required here.
+         */
+    }
+    
+    /* if the old target and the new target are both long jumps, no
+     * patching is required
+     */
+    if (old_insn == new_insn)
+        return 0;
+        
+    mutex_lock(&text_mutex);
+    
+    old_insn = __opcode_to_mem_arm(old_insn);
+    
+	if (copy_from_kernel_nofault(&replaced, ip, 4)) {
+		ret = -EFAULT;
+		goto out;
+    }
+    
+    if (replaced != old_insn) {
+        ret = -EFAULT;
+        goto out;
+    }
+    
+    __patch_text(ip, new_insn);
+    ret = 0;
+out:
+	mutex_unlock(&text_mutex);
+	
+	return ret;
 }
 
