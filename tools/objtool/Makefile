@@ -46,6 +46,12 @@ ifeq ($(SRCARCH),x86)
 	SUBCMD_ORC := y
 endif
 
+ifeq ($(SRCARCH),arm64)
+	SUBCMD_CHECK := y
+	SUBCMD_ORC := y
+	CFLAGS  += -Wno-nested-externs
+endif
+
 ifeq ($(SUBCMD_ORC),y)
 	CFLAGS += -DINSN_USE_ORC
 endif

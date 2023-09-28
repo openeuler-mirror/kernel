@@ -258,7 +258,7 @@ static int decode_instructions(struct objtool_file *file)
 {
 	struct section *sec;
 	struct symbol *func;
-	unsigned long offset;
+	unsigned long offset, next_offset;
 	struct instruction *insn;
 	unsigned long nr_insns = 0;
 	int ret;
@@ -277,7 +277,15 @@ static int decode_instructions(struct objtool_file *file)
 		    !strcmp(sec->name, ".entry.text"))
 			sec->noinstr = true;
 
-		for (offset = 0; offset < sec->len; offset += insn->len) {
+		for (offset = 0; offset < sec->sh.sh_size; offset = next_offset) {
+			struct symbol *obj_sym = find_object_containing(sec, offset);
+
+			if (obj_sym) {
+				/* This is data in the middle of text section, skip it */
+				next_offset = obj_sym->offset + obj_sym->len;
+				continue;
+			}
+
 			insn = malloc(sizeof(*insn));
 			if (!insn) {
 				WARN("malloc failed");
@@ -302,6 +310,8 @@ static int decode_instructions(struct objtool_file *file)
 			hash_add(file->insn_hash, &insn->hash, sec_offset_hash(sec, insn->offset));
 			list_add_tail(&insn->list, &file->insn_list);
 			nr_insns++;
+
+			next_offset = offset + insn->len;
 		}
 
 		list_for_each_entry(func, &sec->symbol_list, list) {
@@ -321,6 +331,9 @@ static int decode_instructions(struct objtool_file *file)
 
 	if (stats)
 		printf("nr_insns: %lu\n", nr_insns);
+
+	if (arch_post_process_instructions(file))
+		return -1;
 
 	return 0;
 
@@ -1195,6 +1208,9 @@ static int add_special_section_alts(struct objtool_file *file)
 					  orig_insn->sec, orig_insn->offset);
 				continue;
 			}
+
+			if (special_alt->skip_alt && !special_alt->new_len)
+				continue;
 
 			ret = handle_group_alt(file, special_alt, orig_insn,
 					       &new_insn);
