@@ -101,6 +101,7 @@ void __init fixup_hmcall(void)
 	fixup_wrasid();
 	fixup_rdktp();
 	fixup_wrktp();
+	imemb();
 #endif
 }
 
