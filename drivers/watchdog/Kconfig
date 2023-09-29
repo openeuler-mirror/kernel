@@ -152,6 +152,16 @@ config SOFT_WATCHDOG
 	  To compile this driver as a module, choose M here: the
 	  module will be called softdog.
 
+config WATCHDOG_CFS
+	tristate "a module to detect cfs starvation"
+	help
+	  Support for monitoring of cfs threads
+	  being continuously preempted by high-priority threads.
+
+	  I put a limit on the alarm rate,
+	  so if it doesn't seem to be working after a while,
+	  it may be that the number of alarms has reached its limit.
+
 config SOFT_WATCHDOG_PRETIMEOUT
 	bool "Software watchdog pretimeout governor support"
 	depends on SOFT_WATCHDOG && WATCHDOG_PRETIMEOUT_GOV
