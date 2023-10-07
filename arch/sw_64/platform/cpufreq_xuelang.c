@@ -46,7 +46,7 @@ static int __init sw64_cpufreq_init(void)
 
 	max_rate = get_cpu_freq() / 1000;
 
-	external_clk = *((unsigned char *)__va(0x908011));
+	external_clk = *((unsigned char *)__va(MB_EXTCLK));
 
 	if (external_clk == 240)
 		freq_off = 60000;

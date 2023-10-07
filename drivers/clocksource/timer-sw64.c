@@ -126,7 +126,7 @@ static struct clocksource clocksource_tc = {
 
 void __init sw64_setup_clocksource(void)
 {
-	unsigned int mclk = *((unsigned char *)__va(0x908001));
+	unsigned int mclk = *((unsigned char *)__va(MB_MCLK));
 
 	if (!mclk)
 		mclk = DEFAULT_MCLK;

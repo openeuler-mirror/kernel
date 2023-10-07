@@ -38,6 +38,11 @@
 #define INITRD_START_OFF	(0x10000UL - 0xA100UL)
 #define INITRD_SIZE_OFF		(0x10000UL - 0xA108UL)
 
+/* Motherboard Configuration Tables */
+#define	MB_CONFIG_START		0x908000
+#define	MB_MCLK			(MB_CONFIG_START + 0x1)
+#define	MB_EXTCLK		(MB_CONFIG_START + 0x11)
+
 #ifndef __ASSEMBLY__
 #include <asm/bootparam.h>
 extern struct boot_params *sunway_boot_params;
