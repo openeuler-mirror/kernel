@@ -1202,6 +1202,8 @@ int hclge_check_mac_addr_valid(struct hclge_dev *hdev, u8 vf,
 int hclge_push_vf_link_status(struct hclge_vport *vport);
 int hclge_enable_vport_vlan_filter(struct hclge_vport *vport, bool request_en);
 int hclge_mac_update_stats(struct hclge_dev *hdev);
+struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
+int hclge_inform_vf_reset(struct hclge_vport *vport, u16 reset_type);
 int hclge_register_sysfs(struct hclge_dev *hdev);
 void hclge_unregister_sysfs(struct hclge_dev *hdev);
 int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,

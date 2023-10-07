@@ -94,6 +94,7 @@ enum hclge_opcode_type {
 	HCLGE_OPC_DFX_GEN_REG		= 0x7038,
 
 	HCLGE_OPC_QUERY_DEV_SPECS	= 0x0050,
+	HCLGE_OPC_GET_QUEUE_ERR_VF      = 0x0067,
 
 	/* MAC command */
 	HCLGE_OPC_CONFIG_MAC_MODE	= 0x0301,
