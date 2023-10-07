@@ -439,7 +439,9 @@
 #define X86_FEATURE_SPEC_CTRL_SSBD	(18*32+31) /* "" Speculative Store Bypass Disable */
 
 
+#define X86_FEATURE_SBPB		(19*32+27) /* "" Selective Branch Prediction Barrier */
 #define X86_FEATURE_IBPB_BRTYPE		(19*32+28) /* "" MSR_PRED_CMD[IBPB] flushes all branch type predictions */
+#define X86_FEATURE_SRSO_NO		(19*32+29) /* "" CPU is not affected by SRSO */
 
 /*
  * BUG word(s)
