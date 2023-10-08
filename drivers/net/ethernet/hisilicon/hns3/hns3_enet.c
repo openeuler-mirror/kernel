@@ -1288,7 +1288,7 @@ static void hns3_dhcp_cal_l4_csum(struct sk_buff *skb)
 {
 	union l3_hdr_info l3;
 	union l4_hdr_info l4;
-	__wsum csum = 0;
+	__wsum csum;
 	int offset;
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL)
