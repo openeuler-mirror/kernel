@@ -2970,7 +2970,8 @@ xfs_agf_verify(
 	 * Only the last AGF in the filesytsem is allowed to be shorter
 	 * than the AG size recorded in the superblock.
 	 */
-	if (agf_length != mp->m_sb.sb_agblocks) {
+	if (agf_length != mp->m_sb.sb_agblocks &&
+		!(bp->b_flags & _XBF_LOGRECOVERY)) {
 		/*
 		 * During growfs, the new last AGF can get here before we
 		 * have updated the superblock. Give it a pass on the seqno
