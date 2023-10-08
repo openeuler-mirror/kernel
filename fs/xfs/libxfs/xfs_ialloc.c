@@ -1989,7 +1989,11 @@ xfs_difree_inobt(
 	 */
 	off = agino - rec.ir_startino;
 	ASSERT(off >= 0 && off < XFS_INODES_PER_CHUNK);
-	ASSERT(!(rec.ir_free & XFS_INOBT_MASK(off)));
+
+	if (XFS_IS_CORRUPT(mp, rec.ir_free & XFS_INOBT_MASK(off))) {
+		error = -EFSCORRUPTED;
+		goto error0;
+	}
 	/*
 	 * Mark the inode free & increment the count.
 	 */
