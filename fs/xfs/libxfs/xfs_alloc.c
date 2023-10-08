@@ -2339,6 +2339,7 @@ xfs_alloc_min_freelist(
 static bool
 xfs_alloc_space_available(
 	struct xfs_alloc_arg	*args,
+	xfs_extlen_t		need,
 	xfs_extlen_t		min_free,
 	int			flags)
 {
@@ -2355,7 +2356,7 @@ xfs_alloc_space_available(
 
 	/* do we have enough contiguous free space for the allocation? */
 	alloc_len = args->minlen + (args->alignment - 1) + args->minalignslop;
-	longest = xfs_alloc_longest_free_extent(pag, min_free, reservation);
+	longest = xfs_alloc_longest_free_extent(pag, need, reservation);
 	if (longest < alloc_len)
 		return false;
 
@@ -2364,7 +2365,7 @@ xfs_alloc_space_available(
 	 * account extra agfl blocks because we are about to defer free them,
 	 * making them unavailable until the current transaction commits.
 	 */
-	agflcount = min_t(xfs_extlen_t, pag->pagf_flcount, min_free);
+	agflcount = min_t(xfs_extlen_t, pag->pagf_flcount, need);
 	available = (int)(pag->pagf_freeblks + agflcount -
 			  reservation - min_free - args->minleft);
 	if (available < (int)max(args->total, alloc_len))
@@ -2651,7 +2652,7 @@ xfs_alloc_fix_freelist(
 	if (args->postallocs)
 		minfree += xfs_ag_fixup_aside(mp);
 
-	if (!xfs_alloc_space_available(args, minfree, alloc_flags |
+	if (!xfs_alloc_space_available(args, need, minfree, alloc_flags |
 			XFS_ALLOC_FLAG_CHECK))
 		goto out_agbp_relse;
 
@@ -2678,7 +2679,7 @@ xfs_alloc_fix_freelist(
 	if (args->postallocs)
 		minfree += xfs_ag_fixup_aside(mp);
 
-	if (!xfs_alloc_space_available(args, minfree, alloc_flags))
+	if (!xfs_alloc_space_available(args, need, minfree, alloc_flags))
 		goto out_agbp_relse;
 
 	/*
