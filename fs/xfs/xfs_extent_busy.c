@@ -579,7 +579,7 @@ xfs_extent_busy_clear(
 /*
  * Flush out all busy extents for this AG.
  */
-int
+void
 xfs_extent_busy_flush(
 	struct xfs_mount	*mp,
 	struct xfs_perag	*pag,
@@ -590,7 +590,7 @@ xfs_extent_busy_flush(
 
 	error = xfs_log_force(mp, XFS_LOG_SYNC);
 	if (error)
-		return error;
+		return;
 
 	do {
 		prepare_to_wait(&pag->pagb_wait, &wait, TASK_KILLABLE);
@@ -600,8 +600,6 @@ xfs_extent_busy_flush(
 	} while (1);
 
 	finish_wait(&pag->pagb_wait, &wait);
-
-	return 0;
 }
 
 void
