@@ -2476,6 +2476,7 @@ xfs_defer_agfl_block(
 	new->xefi_startblock = XFS_AGB_TO_FSB(mp, agno, agbno);
 	new->xefi_blockcount = 1;
 	new->xefi_owner = oinfo->oi_owner;
+	new->xefi_agresv = XFS_AG_RESV_AGFL;
 
 	if (XFS_IS_CORRUPT(mp, !xfs_verify_fsbno(mp, new->xefi_startblock)))
 		return -EFSCORRUPTED;
@@ -2496,6 +2497,7 @@ __xfs_free_extent_later(
 	xfs_fsblock_t			bno,
 	xfs_filblks_t			len,
 	const struct xfs_owner_info	*oinfo,
+	enum xfs_ag_resv_type		type,
 	bool				skip_discard)
 {
 	struct xfs_extent_free_item	*new;		/* new element */
@@ -2516,6 +2518,7 @@ __xfs_free_extent_later(
 	ASSERT(agbno + len <= mp->m_sb.sb_agblocks);
 #endif
 	ASSERT(xfs_extfree_item_cache != NULL);
+	ASSERT(type != XFS_AG_RESV_AGFL);
 
 	if (XFS_IS_CORRUPT(mp, !xfs_verify_fsbext(mp, bno, len)))
 		return -EFSCORRUPTED;
@@ -2524,6 +2527,7 @@ __xfs_free_extent_later(
 			       GFP_KERNEL | __GFP_NOFAIL);
 	new->xefi_startblock = bno;
 	new->xefi_blockcount = (xfs_extlen_t)len;
+	new->xefi_agresv = type;
 	if (skip_discard)
 		new->xefi_flags |= XFS_EFI_SKIP_DISCARD;
 	if (oinfo) {
