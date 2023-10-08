@@ -3193,8 +3193,12 @@ xlog_do_recovery_pass(
 	 * Submit buffers that have been added from the last record processed,
 	 * regardless of error status.
 	 */
-	if (!list_empty(&buffer_list))
+	if (!list_empty(&buffer_list)) {
+		if (error)
+			xfs_force_shutdown(log->l_mp, SHUTDOWN_META_IO_ERROR);
+
 		error2 = xfs_buf_delwri_submit(&buffer_list);
+	}
 
 	if (error && first_bad)
 		*first_bad = rhead_blk;
