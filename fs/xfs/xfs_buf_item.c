@@ -715,7 +715,7 @@ xfs_buf_item_committed(
 
 	trace_xfs_buf_item_committed(bip);
 
-	if ((bip->bli_flags & XFS_BLI_INODE_ALLOC_BUF) && lip->li_lsn != 0)
+	if ((bip->bli_flags & XFS_BLI_KEEP_LSN) && lip->li_lsn != 0)
 		return lip->li_lsn;
 	return lsn;
 }
