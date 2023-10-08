@@ -12,7 +12,7 @@ struct xfs_mount;
 struct xfs_trans;
 struct xfs_ifork;
 
-extern struct kmem_cache	*xfs_btree_cur_zone;
+extern struct kmem_cache	*xfs_btree_cur_cache;
 
 /*
  * Generic key, ptr and record wrapper structures.

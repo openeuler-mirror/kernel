@@ -25,7 +25,7 @@
 #include "xfs_attr_leaf.h"
 #include "xfs_types.h"
 
-struct kmem_cache *xfs_ifork_zone;
+struct kmem_cache *xfs_ifork_cache;
 
 void
 xfs_init_local_fork(
@@ -688,7 +688,7 @@ xfs_ifork_init_cow(
 	if (ip->i_cowfp)
 		return;
 
-	ip->i_cowfp = kmem_cache_zalloc(xfs_ifork_zone,
+	ip->i_cowfp = kmem_cache_zalloc(xfs_ifork_cache,
 				       GFP_NOFS | __GFP_NOFAIL);
 	ip->i_cowfp->if_flags = XFS_IFEXTENTS;
 	ip->i_cowfp->if_format = XFS_DINODE_FMT_EXTENTS;
