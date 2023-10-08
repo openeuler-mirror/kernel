@@ -779,6 +779,15 @@ xfs_mountfs(
 	xfs_refcountbt_compute_maxlevels(mp);
 
 	/*
+	 * We now need m_ag_maxlevels/m_rmap_maxlevels to initialize
+	 * m_alloc_set_aside/m_ag_max_usable. And when we first do the
+	 * init in xfs_sb_mount_common, m_alloc_set_aside/m_ag_max_usable
+	 * still equals to 0. Redo it now.
+	 */
+	mp->m_alloc_set_aside = xfs_alloc_set_aside(mp);
+	mp->m_ag_max_usable = xfs_alloc_ag_max_usable(mp);
+
+	/*
 	 * Check if sb_agblocks is aligned at stripe boundary.  If sb_agblocks
 	 * is NOT aligned turn off m_dalign since allocator alignment is within
 	 * an ag, therefore ag has to be aligned at stripe boundary.  Note that
