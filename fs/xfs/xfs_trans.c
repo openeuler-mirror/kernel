@@ -985,7 +985,7 @@ xfs_trans_cancel(
 	 * progress, so we only need to check against the mount shutdown state
 	 * here.
 	 */
-	if (dirty && !xfs_is_shutdown(mp)) {
+	if (dirty && !(xfs_is_shutdown(mp) && xlog_is_shutdown(log))) {
 		XFS_ERROR_REPORT("xfs_trans_cancel", XFS_ERRLEVEL_LOW, mp);
 		xfs_force_shutdown(mp, SHUTDOWN_CORRUPT_INCORE);
 	}
