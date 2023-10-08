@@ -2684,19 +2684,22 @@ xlog_get_lowest_lsn(
 static void
 xlog_state_set_callback(
 	struct xlog		*log,
-	struct xlog_in_core	*iclog,
-	xfs_lsn_t		header_lsn)
+	struct xlog_in_core	*iclog)
 {
+	struct xfs_cil_ctx	*ctx;
+
 	trace_xlog_iclog_callback(iclog, _RET_IP_);
 	iclog->ic_state = XLOG_STATE_CALLBACK;
 
-	ASSERT(XFS_LSN_CMP(atomic64_read(&log->l_last_sync_lsn),
-			   header_lsn) <= 0);
-
-	if (list_empty_careful(&iclog->ic_callbacks))
+	ctx = list_first_entry_or_null(&iclog->ic_callbacks,
+			struct xfs_cil_ctx, iclog_entry);
+	if (!ctx)
 		return;
 
-	atomic64_set(&log->l_last_sync_lsn, header_lsn);
+	ASSERT(XFS_LSN_CMP(atomic64_read(&log->l_last_sync_lsn),
+			   ctx->start_lsn) <= 0);
+
+	atomic64_set(&log->l_last_sync_lsn, ctx->start_lsn);
 	xlog_grant_push_ail(log, 0);
 }
 
@@ -2731,7 +2734,7 @@ xlog_state_iodone_process_iclog(
 		lowest_lsn = xlog_get_lowest_lsn(log);
 		if (lowest_lsn && XFS_LSN_CMP(lowest_lsn, header_lsn) < 0)
 			return false;
-		xlog_state_set_callback(log, iclog, header_lsn);
+		xlog_state_set_callback(log, iclog);
 		return false;
 	default:
 		/*
