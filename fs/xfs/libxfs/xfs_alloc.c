@@ -82,6 +82,25 @@ xfs_prealloc_blocks(
 }
 
 /*
+ * Twice fixup for the same ag may happen within exact one tp, and the consume
+ * of agfl after first fixup may trigger second fixup's failure, then xfs will
+ * shutdown. To avoid that, we reserve blocks which can satisfy the second
+ * fixup.
+ */
+xfs_extlen_t
+xfs_ag_fixup_aside(
+	struct xfs_mount	*mp)
+{
+	xfs_extlen_t ret;
+
+	ret = 2 * mp->m_ag_maxlevels;
+	if (xfs_has_rmapbt(mp))
+		ret += mp->m_rmap_maxlevels;
+
+	return ret;
+}
+
+/*
  * In order to avoid ENOSPC-related deadlock caused by out-of-order locking of
  * AGF buffer (PV 947395), we place constraints on the relationship among
  * actual allocations for data blocks, freelist blocks, and potential file data
@@ -95,12 +114,15 @@ xfs_prealloc_blocks(
  *
  * We need to reserve 4 fsbs _per AG_ for the freelist and 4 more to handle a
  * potential split of the file's bmap btree.
+ *
+ * Besides, comment for xfs_ag_fixup_aside show why we reserve more blocks.
  */
 unsigned int
 xfs_alloc_set_aside(
 	struct xfs_mount	*mp)
 {
-	return mp->m_sb.sb_agcount * (XFS_ALLOC_AGFL_RESERVE + 4);
+	return mp->m_sb.sb_agcount * (XFS_ALLOC_AGFL_RESERVE +
+			4 + xfs_ag_fixup_aside(mp));
 }
 
 /*
@@ -132,6 +154,8 @@ xfs_alloc_ag_max_usable(
 		blocks++; 		/* rmap root block */
 	if (xfs_has_reflink(mp))
 		blocks++;		/* refcount root block */
+
+	blocks += xfs_ag_fixup_aside(mp);
 
 	return mp->m_sb.sb_agblocks - blocks;
 }
@@ -2591,6 +2615,7 @@ xfs_alloc_fix_freelist(
 	struct xfs_alloc_arg	targs;	/* local allocation arguments */
 	xfs_agblock_t		bno;	/* freelist block */
 	xfs_extlen_t		need;	/* total blocks needed in freelist */
+	xfs_extlen_t		minfree;
 	int			error = 0;
 
 	/* deferred ops (AGFL block frees) require permanent transactions */
@@ -2622,8 +2647,11 @@ xfs_alloc_fix_freelist(
 	 * blocks to perform multiple allocations from a single AG and
 	 * transaction if needed.
 	 */
-	need = xfs_alloc_min_freelist(mp, pag) * (1 + args->postallocs);
-	if (!xfs_alloc_space_available(args, need, alloc_flags |
+	minfree = need = xfs_alloc_min_freelist(mp, pag);
+	if (args->postallocs)
+		minfree += xfs_ag_fixup_aside(mp);
+
+	if (!xfs_alloc_space_available(args, minfree, alloc_flags |
 			XFS_ALLOC_FLAG_CHECK))
 		goto out_agbp_relse;
 
@@ -2646,8 +2674,11 @@ xfs_alloc_fix_freelist(
 		xfs_agfl_reset(tp, agbp, pag);
 
 	/* If there isn't enough total space or single-extent, reject it. */
-	need = xfs_alloc_min_freelist(mp, pag) * (1 + args->postallocs);
-	if (!xfs_alloc_space_available(args, need, alloc_flags))
+	minfree = need = xfs_alloc_min_freelist(mp, pag);
+	if (args->postallocs)
+		minfree += xfs_ag_fixup_aside(mp);
+
+	if (!xfs_alloc_space_available(args, minfree, alloc_flags))
 		goto out_agbp_relse;
 
 	/*
