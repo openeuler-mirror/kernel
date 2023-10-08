@@ -25,7 +25,7 @@
 /*
  * Cursor allocation zone.
  */
-struct kmem_cache	*xfs_btree_cur_zone;
+struct kmem_cache	*xfs_btree_cur_cache;
 
 /*
  * Btree magic numbers.
@@ -454,7 +454,7 @@ xfs_btree_del_cursor(
 	       xfs_is_shutdown(cur->bc_mp) || error != 0);
 	if (unlikely(cur->bc_flags & XFS_BTREE_STAGING))
 		kmem_free(cur->bc_ops);
-	kmem_cache_free(xfs_btree_cur_zone, cur);
+	kmem_cache_free(xfs_btree_cur_cache, cur);
 }
 
 /*
