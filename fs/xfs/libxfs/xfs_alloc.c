@@ -1629,11 +1629,8 @@ restart:
 	if (!acur.len) {
 		if (acur.busy) {
 			trace_xfs_alloc_near_busy(args);
-			error = xfs_extent_busy_flush(args->mp, args->pag,
+			xfs_extent_busy_flush(args->mp, args->pag,
 					      acur.busy_gen);
-			if (error)
-				goto out;
-
 			goto restart;
 		}
 		trace_xfs_alloc_size_neither(args);
@@ -1736,14 +1733,11 @@ restart:
 				 * Make it unbusy by forcing the log out and
 				 * retrying.
 				 */
-				trace_xfs_alloc_size_busy(args);
-				error = xfs_extent_busy_flush(args->mp,
-							args->pag, busy_gen);
-				if (error)
-					goto error0;
-
 				xfs_btree_del_cursor(cnt_cur,
 						     XFS_BTREE_NOERROR);
+				trace_xfs_alloc_size_busy(args);
+				xfs_extent_busy_flush(args->mp,
+							args->pag, busy_gen);
 				goto restart;
 			}
 		}
@@ -1825,13 +1819,9 @@ restart:
 	args->len = rlen;
 	if (rlen < args->minlen) {
 		if (busy) {
-			trace_xfs_alloc_size_busy(args);
-			error = xfs_extent_busy_flush(args->mp, args->pag,
-					busy_gen);
-			if (error)
-				goto error0;
-
 			xfs_btree_del_cursor(cnt_cur, XFS_BTREE_NOERROR);
+			trace_xfs_alloc_size_busy(args);
+			xfs_extent_busy_flush(args->mp, args->pag, busy_gen);
 			goto restart;
 		}
 		goto out_nominleft;
