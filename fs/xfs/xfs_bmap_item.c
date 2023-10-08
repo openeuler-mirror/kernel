@@ -26,8 +26,8 @@
 #include "xfs_log_recover.h"
 #include "xfs_quota.h"
 
-kmem_zone_t	*xfs_bui_zone;
-kmem_zone_t	*xfs_bud_zone;
+struct kmem_cache	*xfs_bui_zone;
+struct kmem_cache	*xfs_bud_zone;
 
 static const struct xfs_item_ops xfs_bui_item_ops;
 

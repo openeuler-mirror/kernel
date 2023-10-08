@@ -24,7 +24,7 @@
 #include "xfs_log_priv.h"
 
 
-kmem_zone_t	*xfs_buf_item_zone;
+struct kmem_cache	*xfs_buf_item_zone;
 
 static inline struct xfs_buf_log_item *BUF_ITEM(struct xfs_log_item *lip)
 {

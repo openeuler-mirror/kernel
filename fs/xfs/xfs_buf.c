@@ -21,7 +21,7 @@
 #include "xfs_errortag.h"
 #include "xfs_error.h"
 
-static kmem_zone_t *xfs_buf_zone;
+static struct kmem_cache *xfs_buf_zone;
 
 #define xb_to_gfp(flags) \
 	((((flags) & XBF_READ_AHEAD) ? __GFP_NORETRY : GFP_NOFS) | __GFP_NOWARN)
