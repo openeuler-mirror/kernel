@@ -6204,6 +6204,7 @@ CONFIG_TEE=m
 # CONFIG_MOST is not set
 CONFIG_ROH=m
 CONFIG_ROH_HNS=m
+CONFIG_UB=m
 # end of Device Drivers
 
 #

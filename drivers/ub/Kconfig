@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+
+menuconfig UB
+	tristate "Unified Bus (UB) support"
+	default m
+	help
+	  Core support for Unified Bus (UB).
+	  To compile UB core as module, choose M here.
