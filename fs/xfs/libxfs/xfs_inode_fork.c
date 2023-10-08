@@ -25,7 +25,7 @@
 #include "xfs_attr_leaf.h"
 #include "xfs_types.h"
 
-kmem_zone_t *xfs_ifork_zone;
+struct kmem_cache *xfs_ifork_zone;
 
 void
 xfs_init_local_fork(
