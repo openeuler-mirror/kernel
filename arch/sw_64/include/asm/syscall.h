@@ -4,7 +4,12 @@
 
 #include <uapi/linux/audit.h>
 
-extern void *sys_call_table[];
+#ifndef __ASSEMBLY__
+
+typedef long (*syscall_fn_t)(ulong, ulong, ulong, ulong, ulong, ulong);
+
+extern syscall_fn_t sys_call_table[];
+
 static inline int syscall_get_nr(struct task_struct *task,
 				 struct pt_regs *regs)
 {
@@ -71,5 +76,7 @@ static inline int syscall_get_arch(struct task_struct *task)
 {
 	return AUDIT_ARCH_SW64;
 }
+
+#endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_SW64_SYSCALL_H */

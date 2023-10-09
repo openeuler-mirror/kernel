@@ -199,40 +199,20 @@ entUna:
 
 	.align 4
 	.globl entSys
-	.globl ret_from_sys_call
 	.ent entSys
 entSys:
-
 	SAVE_ALL
-	ldl	$0, PT_REGS_R0($sp)
-	stl	$0, PT_REGS_ORIG_R0($sp)
-	stl	$19, PT_REGS_ORIG_R19($sp)
-	ldi	$4, NR_SYSCALLS($31)
 	stl	$16, PT_REGS_R16($sp)
-	ldi	$5, sys_call_table
-	ldi	$27, sys_ni_syscall
-	cmpult	$0, $4, $4
-	ldw	$3, TI_FLAGS($8)
 	stl	$17, PT_REGS_R17($sp)
-	s8addl	$0, $5, $5
 	stl	$18, PT_REGS_R18($sp)
-	ldi	$6, _TIF_SYSCALL_WORK
-	and	$3, $6, $3
-	bne	$3, strace
-
-	beq	$4, 1f
-	ldl	$27, 0($5)
-1:	call	$26, ($27), ni_syscall
-	ldgp	$gp, 0($26)
-	blt	$0, $syscall_error	/* the call failed */
-
-	ldi	$1, NO_SYSCALL
-	stl	$1, PT_REGS_ORIG_R0($sp)
-$syscall_success:
-	stl	$0, PT_REGS_R0($sp)
-	stl	$31, PT_REGS_R19($sp)	/* a3=0 => no error */
+	mov	$sp, $16
+	call	$26, do_entSys
+	br	ret_from_sys_call
+	.end entSys
 
 	.align 4
+	.globl ret_from_sys_call
+	.ent ret_from_sys_call
 ret_from_sys_call:
 #ifdef CONFIG_SUBARCH_C3B
 	fillcs	0($sp)			/* prefetch */
@@ -240,18 +220,14 @@ ret_from_sys_call:
 #endif
 	br	$27, 1f
 1:	ldgp	$29, 0($27)
-	ldl	$0, PT_REGS_PS($sp)
-	and	$0, 8, $0
-	beq	$0, ret_to_kernel
-ret_to_user:
-#ifdef CONFIG_DEBUG_RSEQ
-	mov	$sp, $16
-	call	$26, rseq_syscall
-#endif
 	/* Make sure need_resched and sigpending don't change between
 		sampling and the rti.  */
 	ldi	$16, 7
 	sys_call HMC_swpipl
+	ldl	$0, PT_REGS_PS($sp)
+	and	$0, 8, $0
+	beq	$0, restore_all
+ret_to_user:
 	ldw	$17, TI_FLAGS($8)
 	and	$17, _TIF_WORK_MASK, $2
 	beq	$2, restore_all
@@ -260,89 +236,7 @@ ret_to_user:
 restore_all:
 	RESTORE_ALL
 	sys_call HMC_rti
-
-ret_to_kernel:
-	ldi	$16, 7
-	sys_call HMC_swpipl
-	br restore_all
-
-	.align 3
-$syscall_error:
-	/*
-	 * Some system calls (e.g., ptrace) can return arbitrary
-	 * values which might normally be mistaken as error numbers.
-	 * Those functions must zero $0 (v0) directly in the stack
-	 * frame to indicate that a negative return value wasn't an
-	 * error number..
-	 */
-	ldl	$1, PT_REGS_ORIG_R0($sp)	/* old syscall nr (-1 if success) */
-	blt	$1, $syscall_success
-
-	subl	$31, $0, $0	/* with error in v0 */
-	addl	$31, 1, $1	/* set a3 for errno return */
-	stl	$0, PT_REGS_R0($sp)
-	stl	$1, PT_REGS_R19($sp)	/* a3 for return */
-	br	ret_from_sys_call
-	.end entSys
-
-/*
- * PTRACE syscall handler
- */
-
-	.align 4
-	.ent strace
-strace:
-	/* set up signal stack, call syscall_trace */
-	call	$26, syscall_trace_enter
-	blt	$0, $syscall_trace_failed
-
-	/* get the system call number and the arguments back.. */
-	stl	$0, PT_REGS_ORIG_R0($sp)
-	ldl	$16, PT_REGS_R16($sp)
-	ldl	$17, PT_REGS_R17($sp)
-	ldl	$18, PT_REGS_R18($sp)
-	ldl	$19, PT_REGS_R19($sp)
-	ldl	$20, PT_REGS_R20($sp)
-	ldl	$21, PT_REGS_R21($sp)
-
-	/* get the system call pointer.. */
-	ldi	$1, NR_SYSCALLS($31)
-	ldi	$2, sys_call_table
-	ldi	$27, ni_syscall
-
-	cmpult	$0, $1, $1
-	s8addl	$0, $2, $2
-	beq	$1, 1f
-	ldl	$27, 0($2)
-1:	call	$26, ($27), sys_gettimeofday
-ret_from_straced:
-	ldgp	$gp, 0($26)
-
-	/* check return.. */
-	blt	$0, $strace_error	/* the call failed */
-
-	ldi	$1, NO_SYSCALL
-	stl	$1, PT_REGS_ORIG_R0($sp)
-$strace_success:
-	stl	$0, PT_REGS_R0($sp)	/* save return value */
-	stl	$31, PT_REGS_R19($sp)	/* a3=0 => no error */
-	call	$26, syscall_trace_leave
-	br	ret_from_sys_call
-
-	.align 3
-$strace_error:
-	ldl	$1, PT_REGS_ORIG_R0($sp)	/* old syscall nr (-1 if success) */
-	blt	$1, $strace_success
-
-	subl	$31, $0, $0	/* with error in v0 */
-	addl	$31, 1, $1	/* set a3 for errno return */
-	stl	$0, PT_REGS_R0($sp)
-	stl	$1, PT_REGS_R19($sp)	/* a3 for return */
-
-$syscall_trace_failed:
-	call	$26, syscall_trace_leave
-	br	ret_from_sys_call
-	.end strace
+	.end ret_from_sys_call
 
 /*
  * Integer register context switch
@@ -410,44 +304,3 @@ ret_from_kernel_thread:
 	call	$26, ($9)
 	br	ret_to_user
 	.end ret_from_kernel_thread
-
-	.align 4
-	.globl sys_sigreturn
-	.ent sys_sigreturn
-sys_sigreturn:
-	.prologue 0
-	ldi	$9, ret_from_straced
-	cmpult	$26, $9, $9
-	call	$26, do_sigreturn
-	bne	$9, 1f
-	call	$26, syscall_trace_leave
-1:	br	ret_from_sys_call
-	.end sys_sigreturn
-
-	.align 4
-	.globl sys_rt_sigreturn
-	.ent sys_rt_sigreturn
-sys_rt_sigreturn:
-	.prologue 0
-	ldi	$9, ret_from_straced
-	cmpult	$26, $9, $9
-	call	$26, do_rt_sigreturn
-	bne	$9, 1f
-	call	$26, syscall_trace_leave
-1:	br	ret_from_sys_call
-	.end sys_rt_sigreturn
-
-	.align 4
-	.globl ni_syscall
-	.ent ni_syscall
-ni_syscall:
-	.prologue 0
-	/* Special because it also implements overflow handling via
-	 * syscall number 0.  And if you recall, zero is a special
-	 * trigger for "not an error".  Store large non-zero there.
-	 */
-	ldi	$0, -ENOSYS
-	unop
-	stl	$0, PT_REGS_R0($sp)
-	ret
-	.end ni_syscall

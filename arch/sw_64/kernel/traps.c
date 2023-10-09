@@ -19,6 +19,7 @@
 #include <linux/sched/debug.h>
 #include <linux/spinlock.h>
 #include <linux/module.h>
+#include <linux/syscalls.h>
 
 #include <asm/gentrap.h>
 #include <asm/mmu_context.h>
@@ -30,6 +31,8 @@
 #include <asm/ptrace.h>
 #include <asm/debug.h>
 #include <asm/efi.h>
+#include <asm/syscall.h>
+#include <asm/unistd.h>
 
 #include "proto.h"
 
@@ -1479,6 +1482,45 @@ give_sigsegv:
 give_sigbus:
 	regs->pc -= 4;
 	force_sig_fault(SIGBUS, BUS_ADRALN, va);
+}
+
+asmlinkage void do_entSys(struct pt_regs *regs)
+{
+	long ret = -ENOSYS;
+	unsigned long nr;
+	unsigned long ti_flags = current_thread_info()->flags;
+
+	regs->orig_r0 = regs->regs[0];
+	regs->orig_r19 = regs->regs[19];
+	nr = regs->regs[0];
+
+	if (ti_flags & _TIF_SYSCALL_WORK) {
+		nr = syscall_trace_enter();
+		if (nr == NO_SYSCALL)
+			goto syscall_out;
+		regs->orig_r0 = regs->regs[0];
+		regs->orig_r19 = regs->regs[19];
+	}
+
+	if (nr < __NR_syscalls) {
+		syscall_fn_t syscall_fn = sys_call_table[nr];
+
+		ret = syscall_fn(regs->regs[16], regs->regs[17], regs->regs[18],
+				regs->regs[19], regs->regs[20], regs->regs[21]);
+	}
+
+	if ((nr != __NR_sigreturn) && (nr != __NR_rt_sigreturn)) {
+		if (likely((ret >= 0) || regs->orig_r0 == NO_SYSCALL))
+			syscall_set_return_value(current, regs, 0, ret);
+		else
+			syscall_set_return_value(current, regs, ret, 0);
+	}
+
+syscall_out:
+	rseq_syscall(regs);
+
+	if (ti_flags & _TIF_SYSCALL_WORK)
+		syscall_trace_leave();
 }
 
 void

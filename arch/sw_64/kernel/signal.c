@@ -114,7 +114,7 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
  * registers and transfer control from userland.
  */
 
-asmlinkage void do_sigreturn(void)
+SYSCALL_DEFINE0(sigreturn)
 {
 	struct pt_regs *regs = current_pt_regs();
 	struct sigcontext __user *sc;
@@ -140,13 +140,14 @@ asmlinkage void do_sigreturn(void)
 		force_sig_fault(SIGTRAP, TRAP_BRKPT,
 				(void __user *)regs->pc);
 	}
-	return;
+	return regs->regs[0];
 
 give_sigsegv:
 	force_sig(SIGSEGV);
+	return 0;
 }
 
-asmlinkage void do_rt_sigreturn(void)
+SYSCALL_DEFINE0(rt_sigreturn)
 {
 	struct pt_regs *regs = current_pt_regs();
 	struct rt_sigframe __user *frame;
@@ -175,10 +176,11 @@ asmlinkage void do_rt_sigreturn(void)
 		force_sig_fault(SIGTRAP, TRAP_BRKPT,
 				(void __user *)regs->pc);
 	}
-	return;
+	return regs->regs[0];
 
 give_sigsegv:
 	force_sig(SIGSEGV);
+	return 0;
 }
 
 

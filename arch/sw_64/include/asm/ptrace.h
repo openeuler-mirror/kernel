@@ -50,6 +50,9 @@ struct pt_regs {
 
 extern short regoffsets[];
 
+extern unsigned long syscall_trace_enter(void);
+extern void syscall_trace_leave(void);
+
 /**
  * regs_get_register() - get register value from its offset
  * @regs:       pt_regs from which register value is gotten
