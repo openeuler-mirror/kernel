@@ -8163,6 +8163,9 @@ static void qos_smt_send_ipi(int this_cpu)
 
 		rq = cpu_rq(cpu);
 
+		if (unlikely(!rq->online))
+			continue;
+
 		/*
 		 * There are two cases where current don't need to send
 		 * scheduler_ipi:
@@ -8301,7 +8304,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 
 again:
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-	if (qos_smt_expelled(this_cpu) && !__this_cpu_read(qos_cpu_overload)) {
+	if (rq->online && qos_smt_expelled(this_cpu) && !__this_cpu_read(qos_cpu_overload)) {
 		__this_cpu_write(qos_smt_status, CPU_SMT_EXPELLED);
 
 		if (!qos_timer_is_activated(this_cpu))
