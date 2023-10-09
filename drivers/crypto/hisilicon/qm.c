@@ -2571,17 +2571,6 @@ static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
 	return -EINVAL;
 }
 
-static enum uacce_dev_state hisi_qm_get_state(struct uacce_device *uacce)
-{
-	struct hisi_qm *qm = uacce->priv;
-	enum qm_state curr;
-
-	curr = atomic_read(&qm->status.flags);
-	if (curr == QM_STOP)
-		return UACCE_DEV_ERR;
-
-	return UACCE_DEV_NORMAL;
-}
 static void qm_uacce_api_ver_init(struct hisi_qm *qm)
 {
 	struct uacce_device *uacce = qm->uacce;
@@ -2758,7 +2747,6 @@ static const struct uacce_ops uacce_qm_ops = {
 	.stop_queue = hisi_qm_uacce_stop_queue,
 	.mmap = hisi_qm_uacce_mmap,
 	.ioctl = hisi_qm_uacce_ioctl,
-	.get_dev_state = hisi_qm_get_state,
 	.is_q_updated = hisi_qm_is_q_updated,
 	.get_isolate_state = hisi_qm_get_isolate_state,
 	.isolate_err_threshold_write = hisi_qm_isolate_threshold_write,

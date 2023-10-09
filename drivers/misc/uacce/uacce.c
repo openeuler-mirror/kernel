@@ -795,14 +795,6 @@ static ssize_t isolate_strategy_store(struct device *dev, struct device_attribut
 	return count;
 }
 
-static ssize_t dev_state_show(struct device *dev,
-			      struct device_attribute *attr, char *buf)
-{
-	struct uacce_device *uacce = to_uacce_device(dev);
-
-	return sysfs_emit(buf, "%d\n", uacce->ops->get_dev_state(uacce));
-}
-
 static ssize_t node_id_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
@@ -839,7 +831,6 @@ static DEVICE_ATTR_RO(region_mmio_size);
 static DEVICE_ATTR_RO(region_dus_size);
 static DEVICE_ATTR_RO(isolate);
 static DEVICE_ATTR_RW(isolate_strategy);
-static DEVICE_ATTR_RO(dev_state);
 static DEVICE_ATTR_RO(numa_distance);
 
 static struct attribute *uacce_dev_attrs[] = {
@@ -852,7 +843,6 @@ static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_region_dus_size.attr,
 	&dev_attr_isolate.attr,
 	&dev_attr_isolate_strategy.attr,
-	&dev_attr_dev_state.attr,
 	&dev_attr_numa_distance.attr,
 	NULL,
 };

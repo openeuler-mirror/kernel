@@ -68,7 +68,6 @@ struct uacce_ops {
 	enum uacce_dev_state (*get_isolate_state)(struct uacce_device *uacce);
 	int (*isolate_err_threshold_write)(struct uacce_device *uacce, u32 num);
 	u32 (*isolate_err_threshold_read)(struct uacce_device *uacce);
-	enum uacce_dev_state (*get_dev_state)(struct uacce_device *uacce);
 };
 
 /**
