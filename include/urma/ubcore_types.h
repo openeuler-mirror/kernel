@@ -217,9 +217,9 @@ union ubcore_reg_seg_flag {
 };
 
 struct ubcore_udrv_priv {
-	uint64_t in_addr;
+	uintptr_t in_addr;
 	uint32_t in_len;
-	uint64_t out_addr;
+	uintptr_t out_addr;
 	uint32_t out_len;
 };
 
@@ -745,7 +745,7 @@ struct ubcore_tp_cfg {
 };
 
 struct ubcore_tp_ext {
-	uint64_t addr;
+	uintptr_t addr;
 	uint32_t len;
 };
 
@@ -923,7 +923,7 @@ struct ubcore_res_key {
 };
 
 struct ubcore_res_val {
-	uint64_t addr; /* allocated and free by ubcore */
+	uintptr_t addr; /* allocated and free by ubcore */
 	uint32_t len;	/* in&out. As a input parameter,
 			 * it indicates the length allocated by the ubcore
 			 * As a output parameter, it indicates the actual data length.

@@ -133,7 +133,7 @@ static ssize_t eid_store_cb(struct ubcore_device *ubc_dev, const char *buf, size
 	ssize_t ret;
 
 	if (str_to_eid(buf, len, &eid) != 0) {
-		uburma_log_err("failed to str_to_eid: %s, %lu.\n", buf, len);
+		uburma_log_err("failed to str_to_eid: %s, %zu.\n", buf, len);
 		return -EINVAL;
 	}
 
@@ -187,7 +187,7 @@ static ssize_t uburma_query_upi(const struct ubcore_device *ubc_dev, char *buf, 
 	key.key = (uint32_t)vf_id;
 
 	val.len = sizeof(uint32_t) * UBCORE_MAX_UPI_CNT;
-	val.addr = (uint64_t)kcalloc(1, val.len, GFP_KERNEL);
+	val.addr = (uintptr_t)kcalloc(1, val.len, GFP_KERNEL);
 	if (val.addr == 0) {
 		uburma_log_err("kcalloc vf%u failed.\n", vf_id);
 		return -ENOMEM;
@@ -204,7 +204,7 @@ static ssize_t uburma_query_upi(const struct ubcore_device *ubc_dev, char *buf, 
 		upi = *((uint32_t *)val.addr + i);
 		ret = snprintf(buf + (UBURMA_UPI_STR_LEN * i), UBURMA_UPI_STR_LEN + 1, "%8u ", upi);
 		if (ret <= 0) {
-			uburma_log_err("snprintf for vf%u upi failed %ld.\n", vf_id, ret);
+			uburma_log_err("snprintf for vf%u upi failed %zd.\n", vf_id, ret);
 			kfree((void *)val.addr);
 			return ret;
 		}
@@ -236,7 +236,7 @@ static ssize_t uburma_upi_store(struct ubcore_device *ubc_dev, const char *buf, 
 
 	ret = uburma_parse_upi_str(buf, len, &idx, &upi);
 	if (ret != 0) {
-		uburma_log_err("parse vf%u upi str:%s failed %ld.\n", vf_id, buf, ret);
+		uburma_log_err("parse vf%u upi str:%s failed %zd.\n", vf_id, buf, ret);
 		return -EINVAL;
 	}
 

@@ -257,7 +257,7 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 
 	key.type = (uint8_t)arg.in.type;
 	key.key = arg.in.key;
-	val.addr = (uint64_t)&com_val;
+	val.addr = (uintptr_t)&com_val;
 	val.len = sizeof(struct ubcore_stats_com_val);
 
 	ret = ubcore_query_stats(dev, &key, &val);
@@ -407,57 +407,57 @@ static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
 	int ret;
 
 	dev_val->seg_cnt = ubcore_addr->seg_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->seg_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->seg_list,
 				  ubcore_addr->seg_list,
 				  dev_val->seg_cnt * sizeof(struct ubcore_seg_info));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jfs_cnt = ubcore_addr->jfs_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfs_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfs_list,
 				  ubcore_addr->jfs_list, dev_val->jfs_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jfr_cnt = ubcore_addr->jfr_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfr_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfr_list,
 				  ubcore_addr->jfr_list, dev_val->jfr_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jfc_cnt = ubcore_addr->jfc_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfc_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfc_list,
 				  ubcore_addr->jfc_list, dev_val->jfc_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jetty_cnt = ubcore_addr->jetty_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jetty_list,
 				  ubcore_addr->jetty_list, dev_val->jetty_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jetty_group_cnt = ubcore_addr->jetty_group_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_group_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jetty_group_list,
 				  ubcore_addr->jetty_group_list,
 				  dev_val->jetty_group_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->tp_cnt = ubcore_addr->tp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->tp_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->tp_list,
 				  ubcore_addr->tp_list, dev_val->tp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->tpg_cnt = ubcore_addr->tpg_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->tpg_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->tpg_list,
 				  ubcore_addr->tpg_list, dev_val->tpg_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->utp_cnt = ubcore_addr->utp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->utp_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->utp_list,
 				  ubcore_addr->utp_list, dev_val->utp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
@@ -480,7 +480,7 @@ static int ubcore_query_res_dev(const struct ubcore_device *dev, struct ubcore_r
 		return -ENOMEM;
 	}
 
-	val.addr = (uint64_t)&ubcore_addr;
+	val.addr = (uintptr_t)&ubcore_addr;
 	val.len = sizeof(struct ubcore_res_dev_val);
 
 	ret = ubcore_query_resource(dev, key, &val);
@@ -511,7 +511,7 @@ static int ubcore_query_res_arg(const struct ubcore_device *dev, struct ubcore_c
 
 	key.type = (uint8_t)arg->in.type;
 	key.key = arg->in.key;
-	val.addr = (uint64_t)addr;
+	val.addr = (uintptr_t)addr;
 	val.len = res_len;
 
 	if (arg->in.type == UBCORE_RES_KEY_URMA_DEV)

@@ -215,7 +215,7 @@ static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, const uint8_t *ex
 
 	(void)memcpy(peer_ext, ext_addr, ext_len);
 
-	attr->peer_ext.addr = (uint64_t)peer_ext;
+	attr->peer_ext.addr = (uintptr_t)peer_ext;
 	attr->peer_ext.len = ext_len;
 	return 0;
 }
@@ -916,7 +916,7 @@ static struct ubcore_tp *ubcore_create_target_tp(struct ubcore_device *dev,
 	struct ubcore_nl_create_tp_req *create =
 		(struct ubcore_nl_create_tp_req *)(void *)req->payload;
 	/* create tp parameters */
-	struct ubcore_udrv_priv udrv_data = { .in_addr = (uint64_t)(create->ext_udrv +
+	struct ubcore_udrv_priv udrv_data = { .in_addr = (uintptr_t)(create->ext_udrv +
 								    create->ext_len),
 					      .in_len = create->udrv_in_len,
 					      .out_addr = 0,
@@ -1714,7 +1714,7 @@ int ubcore_config_utp(struct ubcore_device *dev, const union ubcore_eid *eid,
 		return -1;
 	}
 	// Query the utp_list under the device
-	val.addr = (uint64_t)&dev_val;
+	val.addr = (uintptr_t)&dev_val;
 	val.len = sizeof(struct ubcore_res_dev_val);
 	key_val.type = UBCORE_RES_KEY_URMA_DEV;
 	key_val.key = eid->in4.addr;
@@ -1745,7 +1745,7 @@ int ubcore_show_utp(struct ubcore_device *dev, const union ubcore_eid *eid)
 		return -1;
 	}
 	// Query the utp_list under the device
-	val.addr = (uint64_t)&dev_val;
+	val.addr = (uintptr_t)&dev_val;
 	val.len = sizeof(struct ubcore_res_dev_val);
 	key_val.type = UBCORE_RES_KEY_URMA_DEV;
 	key_val.key = eid->in4.addr;
@@ -1755,7 +1755,7 @@ int ubcore_show_utp(struct ubcore_device *dev, const union ubcore_eid *eid)
 	}
 	for (i = 0; dev_val.utp_list != NULL && i < dev_val.utp_cnt; i++) {
 		// Query the utp_val under the utp list
-		val.addr = (uint64_t)&utp_val;
+		val.addr = (uintptr_t)&utp_val;
 		val.len = sizeof(struct ubcore_res_utp_val);
 		key_val.type = UBCORE_RES_KEY_UTP;
 		key_val.key = dev_val.utp_list[i];
