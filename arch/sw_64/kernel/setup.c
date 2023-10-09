@@ -840,6 +840,11 @@ setup_arch(char **cmdline_p)
 #endif
 #endif
 
+	efi_init();
+
+	/* Parse the ACPI tables for possible boot-time configuration */
+	acpi_boot_table_init();
+
 	sw64_numa_init();
 
 	memblock_dump_all();
@@ -851,11 +856,6 @@ setup_arch(char **cmdline_p)
 	paging_init();
 
 	kexec_control_page_init();
-
-	efi_init();
-
-	/* Parse the ACPI tables for possible boot-time configuration */
-	acpi_boot_table_init();
 
 	/*
 	 * Initialize the machine. Usually has to do with setting up
