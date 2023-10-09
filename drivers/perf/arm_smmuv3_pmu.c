@@ -96,7 +96,6 @@
 #define SMMU_PMCG_PA_SHIFT              12
 
 #define SMMU_PMCG_EVCNTR_RDONLY         BIT(0)
-#define SMMU_PMCG_DISABLE_HARDEN        BIT(1)
 
 static int cpuhp_state_num;
 
@@ -141,25 +140,9 @@ static inline void smmu_pmu_enable(struct pmu *pmu)
 	writel(SMMU_PMCG_CR_ENABLE, smmu_pmu->reg_base + SMMU_PMCG_CR);
 }
 
-static inline void smmu_pmu_disable_harden(struct smmu_pmu *smmu_pmu)
-{
-	unsigned int idx;
-
-	/*
-	 * The global disable of PMU sometimes fail to stop the counting.
-	 * Harden this by writing an invalid event type to each used counter
-	 * to forcibly stop counting.
-	 */
-	for_each_set_bit(idx, smmu_pmu->used_counters, smmu_pmu->num_counters)
-		writel(0xffff, smmu_pmu->reg_base + SMMU_PMCG_EVTYPER(idx));
-}
-
 static inline void smmu_pmu_disable(struct pmu *pmu)
 {
 	struct smmu_pmu *smmu_pmu = to_smmu_pmu(pmu);
-
-	if (smmu_pmu->options & SMMU_PMCG_DISABLE_HARDEN)
-		smmu_pmu_disable_harden(smmu_pmu);
 
 	writel(0, smmu_pmu->reg_base + SMMU_PMCG_CR);
 	writel(0, smmu_pmu->reg_base + SMMU_PMCG_IRQ_CTRL);
@@ -773,10 +756,7 @@ static void smmu_pmu_get_acpi_options(struct smmu_pmu *smmu_pmu)
 	switch (model) {
 	case IORT_SMMU_V3_PMCG_HISI_HIP08:
 		/* HiSilicon Erratum 162001800 */
-		smmu_pmu->options |= SMMU_PMCG_EVCNTR_RDONLY | SMMU_PMCG_DISABLE_HARDEN;
-		break;
-	case IORT_SMMU_V3_PMCG_HISI_HIP09:
-		smmu_pmu->options |= SMMU_PMCG_DISABLE_HARDEN;
+		smmu_pmu->options |= SMMU_PMCG_EVCNTR_RDONLY;
 		break;
 	}
 
