@@ -374,19 +374,19 @@ asmlinkage unsigned long syscall_trace_enter(void)
 	struct pt_regs *regs = current_pt_regs();
 
 	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
-		tracehook_report_syscall_entry(current_pt_regs()))
-		ret = -1UL;
+		tracehook_report_syscall_entry(regs))
+		return NO_SYSCALL;
 
 #ifdef CONFIG_SECCOMP
 	/* Do seccomp after ptrace, to catch any tracer changes. */
 	if (secure_computing() == -1)
-		return -1;
+		return NO_SYSCALL;
 #endif
 
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
 		trace_sys_enter(regs, regs->regs[0]);
 	audit_syscall_entry(regs->regs[0], regs->regs[16], regs->regs[17], regs->regs[18], regs->regs[19]);
-	return ret ?: current_pt_regs()->regs[0];
+	return ret ?: regs->regs[0];
 }
 
 asmlinkage void
@@ -394,9 +394,9 @@ syscall_trace_leave(void)
 {
 	struct pt_regs *regs = current_pt_regs();
 
-	audit_syscall_exit(current_pt_regs());
+	audit_syscall_exit(regs);
 	if (test_thread_flag(TIF_SYSCALL_TRACE))
-		tracehook_report_syscall_exit(current_pt_regs(), 0);
+		tracehook_report_syscall_exit(regs, 0);
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
 		trace_sys_exit(regs, regs_return_value(regs));
 }

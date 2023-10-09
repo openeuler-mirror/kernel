@@ -276,32 +276,6 @@ handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	signal_setup_done(ret, ksig, 0);
 }
 
-static inline void
-syscall_restart(unsigned long r0, unsigned long r19,
-		struct pt_regs *regs, struct k_sigaction *ka)
-{
-	switch (regs->regs[0]) {
-	case ERESTARTSYS:
-		if (!(ka->sa.sa_flags & SA_RESTART)) {
-			regs->regs[0] = EINTR;
-			break;
-		}
-		fallthrough;
-	case ERESTARTNOINTR:
-		regs->regs[0] = r0;	/* reset v0 and a3 and replay syscall */
-		regs->regs[19] = r19;
-		regs->pc -= 4;
-		break;
-	case ERESTART_RESTARTBLOCK:
-		regs->regs[0] = EINTR;
-		break;
-	case ERESTARTNOHAND:
-		regs->regs[0] = EINTR;
-		break;
-	}
-}
-
-
 /*
  * Note that 'init' is a special process: it doesn't get signals it doesn't
  * want to handle. Thus you cannot kill init even with a SIGKILL even by
@@ -310,13 +284,9 @@ syscall_restart(unsigned long r0, unsigned long r19,
  * Note that we go through the signals twice: once to check the signals that
  * the kernel can handle, and then we build all the user-level signal handling
  * stack-frames in one go after that.
- *
- * "r0" and "r19" are the registers we need to restore for system call
- * restart. "r0" is also used as an indicator whether we can restart at
- * all (if we get here from anything but a syscall return, it will be 0)
  */
 static void
-do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
+do_signal(struct pt_regs *regs)
 {
 	unsigned long single_stepping = ptrace_cancel_bpt(current);
 	struct ksignal ksig;
@@ -326,19 +296,38 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 		/* ... so re-check the single stepping. */
 		single_stepping |= ptrace_cancel_bpt(current);
 		/* Whee!  Actually deliver the signal.  */
-		if (r0)
-			syscall_restart(r0, r19, regs, &ksig.ka);
+		if (regs->orig_r0 != NO_SYSCALL) {
+			switch (regs->regs[0]) {
+			case ERESTARTSYS:
+				if (!(ksig.ka.sa.sa_flags & SA_RESTART)) {
+					regs->regs[0] = EINTR;
+					break;
+				}
+				fallthrough;
+			case ERESTARTNOINTR:
+				/* reset v0 and a3 and replay syscall */
+				regs->regs[0] = regs->orig_r0;
+				regs->regs[19] = regs->orig_r19;
+				regs->pc -= 4;
+				break;
+			case ERESTARTNOHAND:
+			case ERESTART_RESTARTBLOCK:
+				regs->regs[0] = EINTR;
+				break;
+			}
+			regs->orig_r0 = NO_SYSCALL;
+		}
 		handle_signal(&ksig, regs);
 	} else {
 		single_stepping |= ptrace_cancel_bpt(current);
-		if (r0) {
+		if (regs->orig_r0 != NO_SYSCALL) {
 			switch (regs->regs[0]) {
-			case ERESTARTNOHAND:
 			case ERESTARTSYS:
 			case ERESTARTNOINTR:
+			case ERESTARTNOHAND:
 				/* Reset v0 and a3 and replay syscall.  */
-				regs->regs[0] = r0;
-				regs->regs[19] = r19;
+				regs->regs[0] = regs->orig_r0;
+				regs->regs[19] = regs->orig_r19;
 				regs->pc -= 4;
 				break;
 			case ERESTART_RESTARTBLOCK:
@@ -347,6 +336,7 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 				regs->pc -= 4;
 				break;
 			}
+			regs->orig_r0 = NO_SYSCALL;
 		}
 		restore_saved_sigmask();
 	}
@@ -354,36 +344,35 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 		ptrace_set_bpt(current);        /* re-set breakpoint */
 }
 
-void
-do_work_pending(struct pt_regs *regs, unsigned long thread_flags,
-		unsigned long r0, unsigned long r19)
+asmlinkage void
+do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 {
 	do {
-		if (thread_flags & _TIF_NEED_RESCHED) {
+		local_irq_enable();
+
+		if (thread_flags & _TIF_NEED_RESCHED)
 			schedule();
-		} else {
-			local_irq_enable();
 
-			if (thread_flags & _TIF_UPROBE) {
-				unsigned long pc = regs->pc;
+		if (thread_flags & _TIF_UPROBE) {
+			unsigned long pc = regs->pc;
 
-				uprobe_notify_resume(regs);
-				sw64_fix_uretprobe(regs, pc - 4);
-			}
-
-			if (thread_flags & _TIF_PATCH_PENDING)
-				klp_update_patch_state(current);
-
-			if (thread_flags & _TIF_SIGPENDING) {
-				do_signal(regs, r0, r19);
-				r0 = 0;
-			} else {
-				clear_thread_flag(TIF_NOTIFY_RESUME);
-				tracehook_notify_resume(regs);
-				rseq_handle_notify_resume(NULL, regs);
-			}
+			uprobe_notify_resume(regs);
+			sw64_fix_uretprobe(regs, pc - 4);
 		}
+
+		if (thread_flags & _TIF_PATCH_PENDING)
+			klp_update_patch_state(current);
+
+		if (thread_flags & _TIF_SIGPENDING)
+			do_signal(regs);
+
+		if (thread_flags & _TIF_NOTIFY_RESUME) {
+			clear_thread_flag(TIF_NOTIFY_RESUME);
+			tracehook_notify_resume(regs);
+			rseq_handle_notify_resume(NULL, regs);
+		}
+
 		local_irq_disable();
-		thread_flags = current_thread_info()->flags;
+		thread_flags = READ_ONCE(current_thread_info()->flags);
 	} while (thread_flags & _TIF_WORK_MASK);
 }

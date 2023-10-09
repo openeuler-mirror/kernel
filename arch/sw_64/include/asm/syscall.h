@@ -29,18 +29,18 @@ static inline void syscall_set_return_value(struct task_struct *task,
 {
 	if (error) {
 		regs->regs[0]  = -error;
-		regs->regs[19] = -1;
+		regs->regs[19] = 1;
 	} else {
 		regs->regs[0] = val;
 		regs->regs[19] = 0;
 	}
 }
 
-
 static inline void syscall_rollback(struct task_struct *task,
 				    struct pt_regs *regs)
 {
-	/* Do nothing */
+	regs->regs[0] = regs->orig_r0;
+	regs->regs[19] = regs->orig_r19;
 }
 
 static inline void syscall_get_arguments(struct task_struct *task,

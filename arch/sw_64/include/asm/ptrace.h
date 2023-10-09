@@ -6,6 +6,11 @@
 #include <asm/hmcall.h>
 #include <asm/page.h>
 
+#define NO_SYSCALL	(-1)
+
+#ifdef __KERNEL__
+#ifndef __ASSEMBLY__
+
 /*
  * This struct defines the way the registers are stored on the
  * kernel stack during a system call or other kernel entry
@@ -20,6 +25,8 @@ struct pt_regs {
 			unsigned long ps;
 		};
 	};
+	unsigned long orig_r0;
+	unsigned long orig_r19;
 	/* These are saved by HMcode: */
 	unsigned long hm_ps;
 	unsigned long hm_pc;
@@ -37,9 +44,9 @@ struct pt_regs {
 #define kernel_stack_pointer(regs) ((unsigned long)((regs) + 1))
 #define instruction_pointer_set(regs, val) ((regs)->pc = val)
 
-#define force_successful_syscall_return() (current_pt_regs()->regs[0] = 0)
+#define force_successful_syscall_return() (current_pt_regs()->orig_r0 = NO_SYSCALL)
 
-#define MAX_REG_OFFSET (offsetof(struct pt_regs, ps))
+#define MAX_REG_OFFSET (offsetof(struct pt_regs, orig_r0))
 
 extern short regoffsets[];
 
@@ -70,9 +77,13 @@ static inline int is_syscall_success(struct pt_regs *regs)
 
 static inline long regs_return_value(struct pt_regs *regs)
 {
-	if (is_syscall_success(regs) || !user_mode(regs))
+	if ((regs->orig_r0 == NO_SYSCALL) || is_syscall_success(regs))
 		return regs->regs[0];
 	else
 		return -regs->regs[0];
 }
+
+#endif /* !__ASSEMBLY__ */
+#endif /* __KERNEL__ */
+
 #endif /* _ASM_SW64_PTRACE_H */
