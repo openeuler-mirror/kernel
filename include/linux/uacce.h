@@ -17,11 +17,6 @@
 struct uacce_queue;
 struct uacce_device;
 
-struct uacce_err_isolate {
-	u32 hw_err_isolate_hz;	/* user cfg freq which triggers isolation */
-	atomic_t is_isolate;
-};
-
 struct uacce_dma_slice {
 	void *kaddr;	/* kernel address for ss */
 	dma_addr_t dma;	/* dma address, if created by dma api */
@@ -52,14 +47,11 @@ struct uacce_qfile_region {
  * @start_queue: make the queue start work after get_queue
  * @stop_queue: make the queue stop work before put_queue
  * @is_q_updated: check whether the task is finished
- * @mask_notify: mask the task irq of queue
  * @mmap: mmap addresses of queue to user space
  * @ioctl: ioctl for user space users of the queue
  * @get_isolate_state: get the device state after set the isolate strategy
  * @isolate_err_threshold_write: stored the isolate error threshold to the device
  * @isolate_err_threshold_read: read the isolate error threshold value from the device
- * @reset: reset the WD device
- * @reset_queue: reset the queue
  */
 struct uacce_ops {
 	int (*get_available_instances)(struct uacce_device *uacce);
@@ -68,7 +60,6 @@ struct uacce_ops {
 	void (*put_queue)(struct uacce_queue *q);
 	int (*start_queue)(struct uacce_queue *q);
 	void (*stop_queue)(struct uacce_queue *q);
-	void (*dump_queue)(const struct uacce_queue *q);
 	int (*is_q_updated)(struct uacce_queue *q);
 	int (*mmap)(struct uacce_queue *q, struct vm_area_struct *vma,
 		    struct uacce_qfile_region *qfr);
@@ -163,7 +154,6 @@ struct uacce_device {
 	struct device dev;
 	struct mutex mutex;
 	void *priv;
-	struct uacce_err_isolate *isolate;
 	struct list_head queues;
 };
 
@@ -173,7 +163,6 @@ struct uacce_device *uacce_alloc(struct device *parent,
 				 struct uacce_interface *interface);
 int uacce_register(struct uacce_device *uacce);
 void uacce_remove(struct uacce_device *uacce);
-struct uacce_device *dev_to_uacce(struct device *dev);
 void uacce_wake_up(struct uacce_queue *q);
 #else /* CONFIG_UACCE */
 
@@ -190,11 +179,6 @@ static inline int uacce_register(struct uacce_device *uacce)
 }
 
 static inline void uacce_remove(struct uacce_device *uacce) {}
-
-static inline struct uacce_device *dev_to_uacce(struct device *dev)
-{
-	return NULL;
-}
 static inline void uacce_wake_up(struct uacce_queue *q) {}
 #endif /* CONFIG_UACCE */
 

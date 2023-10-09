@@ -18,38 +18,6 @@ static struct uacce_qfile_region noiommu_ss_default_qfr = {
 	.type	=	UACCE_QFRT_SS,
 };
 
-static int cdev_get(struct device *dev, void *data)
-{
-	struct uacce_device *uacce;
-	struct device **t_dev = data;
-
-	uacce = container_of(dev, struct uacce_device, dev);
-	if (uacce->parent == *t_dev) {
-		*t_dev = dev;
-		return 1;
-	}
-
-	return 0;
-}
-
-/**
- * dev_to_uacce - Get structure uacce device from its parent device
- * @dev: the device
- */
-struct uacce_device *dev_to_uacce(struct device *dev)
-{
-	struct device **tdev = &dev;
-	int ret;
-
-	ret = class_for_each_device(uacce_class, NULL, tdev, cdev_get);
-	if (ret) {
-		dev = *tdev;
-		return container_of(dev, struct uacce_device, dev);
-	}
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(dev_to_uacce);
-
 /*
  * If the parent driver or the device disappears, the queue state is invalid and
  * ops are not usable anymore.
@@ -544,8 +512,8 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 			dev_err(pdev, "get dma slice(sz = %lu,slice num = %d) fail!\n",
 			size, i);
 			slice[0].total_num = i;
-			uacce_free_dma_buffers(q);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto free_buffer;
 		}
 		slice[i].size = (size + PAGE_SIZE - 1) & PAGE_MASK;
 		slice[i].total_num = ss_num;
@@ -556,11 +524,15 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 				      &slice[ss_num]);
 	if (ret) {
 		dev_err(pdev, "failed to sort dma buffers.\n");
-		uacce_free_dma_buffers(q);
-		return ret;
+		goto free_buffer;
 	}
 
 	return 0;
+
+free_buffer:
+	uacce_free_dma_buffers(q);
+
+	return ret;
 }
 
 static int uacce_mmap_dma_buffers(struct uacce_queue *q,
@@ -1099,12 +1071,8 @@ static int __init uacce_init(void)
 
 	ret = alloc_chrdev_region(&uacce_devt, 0, MINORMASK, UACCE_NAME);
 	if (ret)
-		goto destroy_class;
+		class_destroy(uacce_class);
 
-	return 0;
-
-destroy_class:
-	class_destroy(uacce_class);
 	return ret;
 }
 
