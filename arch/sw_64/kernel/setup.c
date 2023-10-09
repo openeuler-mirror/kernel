@@ -27,6 +27,7 @@
 #include <linux/of_platform.h>
 #include <linux/genalloc.h>
 #include <linux/acpi.h>
+#include <linux/cpu.h>
 
 #include <asm/efi.h>
 #include <asm/kvm_cma.h>
@@ -764,6 +765,12 @@ void __init sw64_kvm_reserve(void)
 void __init
 setup_arch(char **cmdline_p)
 {
+	/**
+	 * Work around the unaligned access exception to parse ACPI
+	 * tables in the following function acpi_boot_table_init().
+	 */
+	trap_init();
+
 	jump_label_init();
 	setup_cpu_info();
 	setup_run_mode();
