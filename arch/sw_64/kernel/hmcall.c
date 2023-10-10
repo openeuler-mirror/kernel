@@ -92,6 +92,22 @@ static inline void fixup_wrktp(void)
 	entry[1] = 0x1ee00000;	/* pri_ret $23 */
 }
 
+static inline void fixup_rdusp(void)
+{
+	unsigned int *entry = __va(HMCALL_ENTRY(rdusp));
+
+	entry[0] = 0x94161018;	/* pri_ldl/p $0, VC__USP(vcpucb) */
+	entry[1] = 0x1ee00000;	/* pri_ret $23 */
+}
+
+static inline void fixup_wrusp(void)
+{
+	unsigned int *entry = __va(HMCALL_ENTRY(wrusp));
+
+	entry[0] = 0xb6161018;	/* pri_stl/p $16, VC__USP(vcpucb) */
+	entry[1] = 0x1ee00000;	/* pri_ret $23 */
+}
+
 void __init fixup_hmcall(void)
 {
 #if defined(CONFIG_SUBARCH_C3B)
@@ -101,6 +117,8 @@ void __init fixup_hmcall(void)
 	fixup_wrasid();
 	fixup_rdktp();
 	fixup_wrktp();
+	fixup_rdusp();
+	fixup_wrusp();
 	imemb();
 #endif
 }
