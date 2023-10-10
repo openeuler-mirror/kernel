@@ -24,6 +24,11 @@
 #include <linux/jhash.h>
 #include <urma/ubcore_types.h>
 
+static inline struct ubcore_ucontext *ubcore_get_uctx(struct ubcore_udata *udata)
+{
+	return udata == NULL ? NULL : udata->uctx;
+}
+
 static inline bool ubcore_check_dev_name_invalid(struct ubcore_device *dev, char *dev_name)
 {
 	return (strcmp(dev->dev_name, dev_name) != 0);
@@ -38,5 +43,57 @@ void ubcore_put_device(struct ubcore_device *dev);
 struct ubcore_device **ubcore_get_devices_from_netdev(struct net_device *netdev, uint32_t *cnt);
 void ubcore_put_devices(struct ubcore_device **devices, uint32_t cnt);
 void ubcore_set_default_eid(struct ubcore_device *dev);
+
+int ubcore_config_utp(struct ubcore_device *dev, const union ubcore_eid *eid,
+		      const struct ubcore_utp_attr *attr, union ubcore_utp_attr_mask mask);
+int ubcore_show_utp(struct ubcore_device *dev, const union ubcore_eid *eid);
+
+static inline uint32_t ubcore_get_jetty_hash(const struct ubcore_jetty_id *jetty_id)
+{
+	return jhash(jetty_id, sizeof(struct ubcore_jetty_id), 0);
+}
+
+static inline uint32_t ubcore_get_tseg_hash(const struct ubcore_ubva *ubva)
+{
+	return jhash(ubva, sizeof(struct ubcore_ubva), 0);
+}
+
+static inline uint32_t ubcore_get_eid_hash(const union ubcore_eid *eid)
+{
+	return jhash(eid, sizeof(union ubcore_eid), 0);
+}
+
+static inline bool ubcore_jfs_need_advise(const struct ubcore_jfs *jfs)
+{
+	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_jfs_tjfr_need_advise(const struct ubcore_jfs *jfs,
+					       const struct ubcore_tjetty *tjfr)
+{
+	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM && tjfr->cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_jetty_need_advise(const struct ubcore_jetty *jetty)
+{
+	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_jetty_tjetty_need_advise(const struct ubcore_jetty *jetty,
+						   const struct ubcore_tjetty *tjetty)
+{
+	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM &&
+	       tjetty->cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_jfr_need_advise(const struct ubcore_jfr *jfr)
+{
+	return jfr->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	       jfr->jfr_cfg.trans_mode == UBCORE_TP_RM;
+}
 
 #endif

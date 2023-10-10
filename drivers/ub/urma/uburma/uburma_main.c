@@ -34,7 +34,10 @@
 
 #include "uburma_log.h"
 #include "uburma_types.h"
+#include "uburma_file_ops.h"
 #include "uburma_cdev_file.h"
+#include "uburma_uobj.h"
+#include "uburma_cmd.h"
 
 #define UBURMA_MAX_DEVICE 1024
 #define UBURMA_DYNAMIC_MINOR_NUM UBURMA_MAX_DEVICE
@@ -49,7 +52,12 @@ static struct class *g_uburma_class;
 static const struct file_operations g_uburma_fops = {
 	.owner = THIS_MODULE,
 	// .write	 = uburma_write,
+	.mmap = uburma_mmap,
+	.open = uburma_open,
+	.release = uburma_close,
 	.llseek = no_llseek,
+	.unlocked_ioctl = uburma_ioctl,
+	.compat_ioctl = uburma_ioctl,
 };
 
 static int uburma_add_device(struct ubcore_device *ubc_dev);
@@ -88,6 +96,8 @@ static int uburma_get_devt(dev_t *devt)
 
 static int uburma_device_create(struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
 {
+	uint8_t i, j, k;
+
 	/* create /dev/uburma/<ubc_dev->dev_name> */
 	ubu_dev->dev = device_create(g_uburma_class, ubc_dev->dev.parent, ubu_dev->cdev.dev,
 				     ubu_dev, "%s", ubc_dev->dev_name);
@@ -101,8 +111,28 @@ static int uburma_device_create(struct uburma_device *ubu_dev, struct ubcore_dev
 		goto destroy_dev;
 	}
 
+	/* create /dev/uburma/<ubc_dev->dev_name>/port* */
+	for (i = 0; i < ubc_dev->attr.port_cnt; i++) {
+		if (uburma_create_port_attr_files(ubu_dev, i) != 0)
+			goto err_port_attr;
+	}
+
+	/* create /dev/uburma/<ubc_dev->dev_name>/vf* */
+	for (k = 0; k < ubc_dev->attr.vf_cnt; k++) {
+		if (uburma_create_vf_attr_files(ubu_dev, k) != 0)
+			goto err_vf_attr;
+	}
+
 	return 0;
 
+err_vf_attr:
+	for (j = 0; j < k; j++)
+		uburma_remove_vf_attr_files(ubu_dev, j);
+err_port_attr:
+	for (j = 0; j < i; j++)
+		uburma_remove_port_attr_files(ubu_dev, j);
+
+	uburma_remove_dev_attr_files(ubu_dev);
 destroy_dev:
 	device_destroy(g_uburma_class, ubu_dev->cdev.dev);
 	return -EPERM;
@@ -111,6 +141,15 @@ destroy_dev:
 static void uburma_device_destroy(struct uburma_device *ubu_dev,
 				  const struct ubcore_device *ubc_dev)
 {
+	uint8_t i;
+
+	for (i = 0; i < ubc_dev->attr.vf_cnt; i++)
+		uburma_remove_vf_attr_files(ubu_dev, i);
+
+	for (i = 0; i < ubc_dev->attr.port_cnt; i++)
+		uburma_remove_port_attr_files(ubu_dev, i);
+
+	uburma_remove_dev_attr_files(ubu_dev);
 	device_destroy(g_uburma_class, ubu_dev->cdev.dev);
 }
 
@@ -193,6 +232,38 @@ err:
 	return -EPERM;
 }
 
+static void uburma_free_ucontext(struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
+{
+	struct uburma_file *file;
+
+	rcu_assign_pointer(ubu_dev->ubc_dev, NULL);
+	synchronize_srcu(&ubu_dev->ubc_dev_srcu);
+
+	mutex_lock(&ubu_dev->lists_mutex);
+	while (list_empty(&ubu_dev->uburma_file_list) == false) {
+		struct ubcore_ucontext *ucontext;
+
+		file = list_first_entry(&ubu_dev->uburma_file_list, struct uburma_file, list);
+		file->is_closed = true;
+		list_del(&file->list);
+		kref_get(&file->ref);
+		mutex_unlock(&ubu_dev->lists_mutex);
+
+		mutex_lock(&file->mutex);
+		uburma_cleanup_uobjs(file, UBURMA_REMOVE_DRIVER_REMOVE);
+		ucontext = file->ucontext;
+		file->ucontext = NULL;
+		if (ucontext != NULL)
+			ubcore_free_ucontext(ubc_dev, ucontext);
+
+		mutex_unlock(&file->mutex);
+
+		mutex_lock(&ubu_dev->lists_mutex);
+		(void)kref_put(&file->ref, uburma_release_file);
+	}
+	mutex_unlock(&ubu_dev->lists_mutex);
+}
+
 static void uburma_remove_device(struct ubcore_device *ubc_dev, void *client_ctx)
 {
 	struct uburma_device *ubu_dev = client_ctx;
@@ -204,10 +275,13 @@ static void uburma_remove_device(struct ubcore_device *ubc_dev, void *client_ctx
 	cdev_del(&ubu_dev->cdev);
 	clear_bit(ubu_dev->devnum, g_dev_bitmap);
 
+	uburma_free_ucontext(ubu_dev, ubc_dev);
+
 	if (atomic_dec_and_test(&ubu_dev->refcnt))
 		complete(&ubu_dev->comp);
 
 	/* do not wait_for_completion(&ubu_dev->comp) */
+	uburma_cmd_flush(ubu_dev);
 	kobject_put(&ubu_dev->kobj);
 }
 

@@ -32,6 +32,9 @@
 #include <urma/ubcore_uapi.h>
 #include <urma/ubcore_api.h>
 #include "ubcore_priv.h"
+#include "ubcore_hash_table.h"
+#include "ubcore_tp.h"
+#include "ubcore_tp_table.h"
 
 static LIST_HEAD(g_client_list);
 static LIST_HEAD(g_device_list);
@@ -309,6 +312,52 @@ void ubcore_put_device(struct ubcore_device *dev)
 		complete(&dev->comp);
 }
 
+static struct ubcore_ht_param g_ht_params[] = {
+	[UBCORE_HT_JFS] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfs, hnode),
+			    offsetof(struct ubcore_jfs, id), sizeof(uint32_t), NULL, NULL },
+
+	[UBCORE_HT_JFR] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfr, hnode),
+			    offsetof(struct ubcore_jfr, id), sizeof(uint32_t), NULL, NULL },
+
+	[UBCORE_HT_JFC] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfc, hnode),
+			    offsetof(struct ubcore_jfc, id), sizeof(uint32_t), NULL, NULL },
+
+	[UBCORE_HT_JETTY] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jetty, hnode),
+			      offsetof(struct ubcore_jetty, id), sizeof(uint32_t), NULL, NULL },
+
+	[UBCORE_HT_TP] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_tp_node, hnode),
+			   offsetof(struct ubcore_tp_node, key), sizeof(struct ubcore_tp_key), NULL,
+			   NULL },
+};
+
+static int ubcore_alloc_hash_tables(struct ubcore_device *dev)
+{
+	uint32_t i, j;
+	int ret;
+
+	for (i = 0; i < ARRAY_SIZE(g_ht_params); i++) {
+		ret = ubcore_hash_table_alloc(&dev->ht[i], &g_ht_params[i]);
+		if (ret != 0) {
+			ubcore_log_err("alloc hash tables failed.\n");
+			goto free_tables;
+		}
+	}
+	return 0;
+
+free_tables:
+	for (j = 0; j < i; j++)
+		ubcore_hash_table_free(&dev->ht[j]);
+	return -1;
+}
+
+static void ubcore_free_hash_tables(struct ubcore_device *dev)
+{
+	uint32_t i;
+
+	for (i = 0; i < ARRAY_SIZE(g_ht_params); i++)
+		ubcore_hash_table_free(&dev->ht[i]);
+}
+
 static void ubcore_device_release(struct device *device)
 {
 }
@@ -336,12 +385,17 @@ static int init_ubcore_device(struct ubcore_device *dev)
 	init_completion(&dev->comp);
 	atomic_set(&dev->use_cnt, 1);
 
+	if (ubcore_alloc_hash_tables(dev) != 0) {
+		ubcore_log_err("alloc hash tables failed.\n");
+		return -1;
+	}
 	ubcore_set_default_eid(dev);
 	return 0;
 }
 
 static void uninit_ubcore_device(struct ubcore_device *dev)
 {
+	ubcore_free_hash_tables(dev);
 	put_device(&dev->dev);
 }
 
@@ -425,8 +479,58 @@ void ubcore_unregister_device(struct ubcore_device *dev)
 }
 EXPORT_SYMBOL(ubcore_unregister_device);
 
+void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_event_handler *handler)
+{
+	unsigned long flags;
+
+	if (dev == NULL || handler == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	list_add_tail(&handler->node, &dev->event_handler_list);
+	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+}
+EXPORT_SYMBOL(ubcore_register_event_handler);
+
+void ubcore_unregister_event_handler(struct ubcore_device *dev,
+				     struct ubcore_event_handler *handler)
+{
+	unsigned long flags;
+
+	if (dev == NULL || handler == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	list_del(&handler->node);
+	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+}
+EXPORT_SYMBOL(ubcore_unregister_event_handler);
+
 void ubcore_dispatch_async_event(struct ubcore_event *event)
 {
+	struct ubcore_event_handler *handler;
+	struct ubcore_device *dev;
+	unsigned long flags;
+
+	if (event == NULL || event->ub_dev == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return;
+	}
+
+	if (event->event_type == UBCORE_EVENT_TP_ERR && event->element.tp != NULL) {
+		ubcore_restore_tp(event->ub_dev, event->element.tp);
+		return;
+	}
+
+	dev = event->ub_dev;
+	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	list_for_each_entry(handler, &dev->event_handler_list, node)
+		handler->event_callback(event, handler);
+	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
 }
 EXPORT_SYMBOL(ubcore_dispatch_async_event);
 
@@ -486,6 +590,96 @@ int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid)
 }
 EXPORT_SYMBOL(ubcore_set_eid);
 
+int ubcore_set_upi(const struct ubcore_device *dev, uint16_t vf_id, uint16_t idx, uint32_t upi)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->set_upi == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->set_upi(dev, vf_id, idx, upi);
+	if (ret != 0) {
+		ubcore_log_err("failed to set vf%hu upi%hu, ret: %d.\n", vf_id, idx, ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_set_upi);
+
+int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid)
+{
+	int ret;
+
+	if (dev == NULL || eid == NULL || dev->ops == NULL || dev->ops->add_eid == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->add_eid(dev, eid);
+	if (ret != 0) {
+		ubcore_log_err("failed to add eid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_add_eid);
+
+int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->delete_eid_by_idx == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->delete_eid_by_idx(dev, idx);
+	if (ret != 0) {
+		ubcore_log_err("failed to delete eid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_eid);
+
+int ubcore_add_ueid(struct ubcore_device *dev, uint16_t vf_id, struct ubcore_ueid_cfg *cfg)
+{
+	int ret;
+
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->add_ueid == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->add_ueid(dev, vf_id, cfg);
+	if (ret != 0) {
+		ubcore_log_err("failed to add ueid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_add_ueid);
+
+int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t vf_id, uint16_t idx)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->delete_ueid_by_idx == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->delete_ueid_by_idx(dev, vf_id, idx);
+	if (ret != 0) {
+		ubcore_log_err("failed to delete eid, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_delete_ueid);
+
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr)
 {
 	int ret;
@@ -504,6 +698,44 @@ int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_att
 }
 EXPORT_SYMBOL(ubcore_query_device_attr);
 
+int ubcore_query_device_status(const struct ubcore_device *dev, struct ubcore_device_status *status)
+{
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->query_device_status == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->query_device_status(dev, status);
+	if (ret != 0) {
+		ubcore_log_err("failed to query device status, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_query_device_status);
+
+int ubcore_query_resource(const struct ubcore_device *dev, struct ubcore_res_key *key,
+			  struct ubcore_res_val *val)
+{
+	int ret;
+
+	if (dev == NULL || key == NULL || val == NULL || dev->ops == NULL ||
+	    dev->ops->query_res == NULL) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	ret = dev->ops->query_res(dev, key, val);
+	if (ret != 0) {
+		ubcore_log_err("failed to query res, ret: %d.\n", ret);
+		return -EPERM;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_query_resource);
+
 int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg)
 {
 	int ret;
@@ -521,6 +753,32 @@ int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_c
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_config_device);
+
+int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl)
+{
+	struct ubcore_device *dev;
+	int ret;
+
+	if (k_user_ctl == NULL || k_user_ctl->uctx == NULL) {
+		ubcore_log_err("invalid parameter with input nullptr.\n");
+		return -1;
+	}
+
+	dev = k_user_ctl->uctx->ub_dev;
+	if (dev == NULL || dev->ops == NULL || dev->ops->user_ctl == NULL) {
+		ubcore_log_err("invalid parameter with dev nullptr.\n");
+		return -1;
+	}
+
+	ret = dev->ops->user_ctl(k_user_ctl);
+	if (ret != 0) {
+		ubcore_log_err("failed to exec kdrv_user_ctl in %s.\n", __func__);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_user_control);
 
 int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
 		       struct ubcore_stats_val *val)

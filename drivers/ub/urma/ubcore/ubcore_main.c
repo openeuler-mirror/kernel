@@ -32,6 +32,7 @@
 #include "ubcore_log.h"
 #include "ubcore_netlink.h"
 #include <urma/ubcore_types.h>
+#include <urma/ubcore_api.h>
 #include <urma/ubcore_uapi.h>
 #include "ubcore_priv.h"
 
@@ -153,6 +154,82 @@ static int ubcore_cmd_put_uasid(struct ubcore_cmd_hdr *hdr)
 	return 0;
 }
 
+static void ubcore_set_utp_cfg(struct ubcore_cmd_set_utp *arg, struct ubcore_utp_attr *attr,
+			       union ubcore_utp_attr_mask *mask)
+{
+	attr->flag.bs.spray_en = arg->in.spray_en;
+	attr->data_udp_start = arg->in.data_udp_start;
+	attr->udp_range = arg->in.udp_range;
+	mask->bs.flag = 1;
+	mask->bs.udp_port = 1;
+	mask->bs.udp_range = 1;
+}
+
+static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	union ubcore_utp_attr_mask mask = { 0 };
+	struct ubcore_cmd_set_utp arg;
+	struct ubcore_utp_attr attr;
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_set_utp));
+	if (ret != 0)
+		return -EPERM;
+
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = arg.in.transport_type;
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	ubcore_set_utp_cfg(&arg, &attr, &mask);
+	if (ubcore_config_utp(dev, &eid, &attr, mask) != 0) {
+		ubcore_log_err("config utp failed.\n");
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	ubcore_put_device(dev);
+	return 0;
+}
+
+static int ubcore_cmd_show_utp(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	struct ubcore_cmd_show_utp arg;
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_show_utp));
+	if (ret != 0)
+		return -EPERM;
+
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = arg.in.transport_type;
+
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+	if (ubcore_show_utp(dev, &eid) != 0) {
+		ubcore_log_err("show utp failed.\n");
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	ubcore_put_device(dev);
+	return 0;
+}
+
 static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 {
 	enum ubcore_transport_type trans_type;
@@ -180,7 +257,7 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 
 	key.type = (uint8_t)arg.in.type;
 	key.key = arg.in.key;
-	val.addr = (uint64_t)&com_val;
+	val.addr = (uintptr_t)&com_val;
 	val.len = sizeof(struct ubcore_stats_com_val);
 
 	ret = ubcore_query_stats(dev, &key, &val);
@@ -195,6 +272,305 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 				   sizeof(struct ubcore_cmd_query_stats));
 }
 
+static uint32_t ubcore_get_query_res_len(uint32_t type)
+{
+	switch (type) {
+	case UBCORE_RES_KEY_UPI:
+		return (uint32_t)sizeof(struct ubcore_res_upi_val);
+	case UBCORE_RES_KEY_TP:
+		return (uint32_t)sizeof(struct ubcore_res_tp_val);
+	case UBCORE_RES_KEY_TPG:
+		return (uint32_t)sizeof(struct ubcore_res_tpg_val);
+	case UBCORE_RES_KEY_UTP:
+		return (uint32_t)sizeof(struct ubcore_res_utp_val);
+	case UBCORE_RES_KEY_JFS:
+		return (uint32_t)sizeof(struct ubcore_res_jfs_val);
+	case UBCORE_RES_KEY_JFR:
+		return (uint32_t)sizeof(struct ubcore_res_jfr_val);
+	case UBCORE_RES_KEY_JETTY:
+		return (uint32_t)sizeof(struct ubcore_res_jetty_val);
+	case UBCORE_RES_KEY_JETTY_GROUP:
+		return (uint32_t)sizeof(struct ubcore_res_jetty_group_val);
+	case UBCORE_RES_KEY_JFC:
+		return (uint32_t)sizeof(struct ubcore_res_jfc_val);
+	case UBCORE_RES_KEY_SEG:
+		return (uint32_t)sizeof(struct ubcore_res_seg_val);
+	case UBCORE_RES_KEY_URMA_DEV:
+		return (uint32_t)sizeof(struct ubcore_res_dev_val);
+	default:
+		break;
+	}
+	return 0;
+}
+
+static void ubcore_dealloc_res_dev(struct ubcore_res_dev_val *ubcore_addr)
+{
+	if (ubcore_addr->seg_list != NULL) {
+		vfree(ubcore_addr->seg_list);
+		ubcore_addr->seg_list = NULL;
+	}
+	if (ubcore_addr->jfs_list != NULL) {
+		vfree(ubcore_addr->jfs_list);
+		ubcore_addr->jfs_list = NULL;
+	}
+	if (ubcore_addr->jfr_list != NULL) {
+		vfree(ubcore_addr->jfr_list);
+		ubcore_addr->jfr_list = NULL;
+	}
+	if (ubcore_addr->jfc_list != NULL) {
+		vfree(ubcore_addr->jfc_list);
+		ubcore_addr->jfc_list = NULL;
+	}
+	if (ubcore_addr->jetty_list != NULL) {
+		vfree(ubcore_addr->jetty_list);
+		ubcore_addr->jetty_list = NULL;
+	}
+	if (ubcore_addr->jetty_group_list != NULL) {
+		vfree(ubcore_addr->jetty_group_list);
+		ubcore_addr->jetty_group_list = NULL;
+	}
+	if (ubcore_addr->tp_list != NULL) {
+		vfree(ubcore_addr->tp_list);
+		ubcore_addr->tp_list = NULL;
+	}
+	if (ubcore_addr->tpg_list != NULL) {
+		vfree(ubcore_addr->tpg_list);
+		ubcore_addr->tpg_list = NULL;
+	}
+	if (ubcore_addr->utp_list != NULL) {
+		vfree(ubcore_addr->utp_list);
+		ubcore_addr->utp_list = NULL;
+	}
+}
+
+static int ubcore_fill_res_addr(struct ubcore_res_dev_val *ubcore_addr)
+{
+	ubcore_addr->seg_list = vmalloc(sizeof(struct ubcore_seg_info) * ubcore_addr->seg_cnt);
+	if (ubcore_addr->seg_list == NULL)
+		return -ENOMEM;
+
+	ubcore_addr->jfs_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfs_cnt);
+	if (ubcore_addr->jfs_list == NULL)
+		goto free_seg_list;
+
+	ubcore_addr->jfr_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfr_cnt);
+	if (ubcore_addr->jfr_list == NULL)
+		goto free_jfs_list;
+
+	ubcore_addr->jfc_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfc_cnt);
+	if (ubcore_addr->jfc_list == NULL)
+		goto free_jfr_list;
+
+	ubcore_addr->jetty_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jetty_cnt);
+	if (ubcore_addr->jetty_list == NULL)
+		goto free_jfc_list;
+
+	ubcore_addr->jetty_group_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jetty_group_cnt);
+	if (ubcore_addr->jetty_group_list == NULL)
+		goto free_jetty_list;
+
+	ubcore_addr->tp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->tp_cnt);
+	if (ubcore_addr->tp_list == NULL)
+		goto free_jetty_group_list;
+
+	ubcore_addr->tpg_list = vmalloc(sizeof(uint32_t) * ubcore_addr->tpg_cnt);
+	if (ubcore_addr->tpg_list == NULL)
+		goto free_tp_list;
+
+	ubcore_addr->utp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->utp_cnt);
+	if (ubcore_addr->utp_list == NULL)
+		goto free_tpg_list;
+
+	return 0;
+free_tpg_list:
+	vfree(ubcore_addr->tpg_list);
+free_tp_list:
+	vfree(ubcore_addr->tp_list);
+free_jetty_group_list:
+	vfree(ubcore_addr->jetty_group_list);
+free_jetty_list:
+	vfree(ubcore_addr->jetty_list);
+free_jfc_list:
+	vfree(ubcore_addr->jfc_list);
+free_jfr_list:
+	vfree(ubcore_addr->jfr_list);
+free_jfs_list:
+	vfree(ubcore_addr->jfs_list);
+free_seg_list:
+	vfree(ubcore_addr->seg_list);
+	return -ENOMEM;
+}
+
+static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
+				    struct ubcore_res_dev_val *ubcore_addr)
+{
+	int ret;
+
+	dev_val->seg_cnt = ubcore_addr->seg_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->seg_list,
+				  ubcore_addr->seg_list,
+				  dev_val->seg_cnt * sizeof(struct ubcore_seg_info));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jfs_cnt = ubcore_addr->jfs_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfs_list,
+				  ubcore_addr->jfs_list, dev_val->jfs_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jfr_cnt = ubcore_addr->jfr_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfr_list,
+				  ubcore_addr->jfr_list, dev_val->jfr_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jfc_cnt = ubcore_addr->jfc_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfc_list,
+				  ubcore_addr->jfc_list, dev_val->jfc_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jetty_cnt = ubcore_addr->jetty_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jetty_list,
+				  ubcore_addr->jetty_list, dev_val->jetty_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->jetty_group_cnt = ubcore_addr->jetty_group_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jetty_group_list,
+				  ubcore_addr->jetty_group_list,
+				  dev_val->jetty_group_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->tp_cnt = ubcore_addr->tp_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->tp_list,
+				  ubcore_addr->tp_list, dev_val->tp_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->tpg_cnt = ubcore_addr->tpg_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->tpg_list,
+				  ubcore_addr->tpg_list, dev_val->tpg_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->utp_cnt = ubcore_addr->utp_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->utp_list,
+				  ubcore_addr->utp_list, dev_val->utp_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	return 0;
+}
+
+static int ubcore_query_res_dev(const struct ubcore_device *dev, struct ubcore_res_key *key,
+				struct ubcore_res_dev_val *dev_val)
+{
+	struct ubcore_res_dev_val ubcore_addr = { 0 };
+	struct ubcore_res_val val = { 0 };
+	int ret = 0;
+
+	(void)memcpy(&ubcore_addr, dev_val,
+		     sizeof(struct ubcore_res_dev_val)); // save
+
+	if (ubcore_fill_res_addr(&ubcore_addr) != 0) {
+		ubcore_log_err("Failed to fill dev dev_val.\n");
+		return -ENOMEM;
+	}
+
+	val.addr = (uintptr_t)&ubcore_addr;
+	val.len = sizeof(struct ubcore_res_dev_val);
+
+	ret = ubcore_query_resource(dev, key, &val);
+	if (ret != 0)
+		goto ubcore_free_dev;
+
+	ret = ubcore_fill_user_res_dev(dev_val, &ubcore_addr);
+ubcore_free_dev:
+	ubcore_dealloc_res_dev(&ubcore_addr);
+	return ret;
+}
+
+static int ubcore_query_res_arg(const struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
+				uint32_t res_len)
+{
+	struct ubcore_res_key key = { 0 };
+	struct ubcore_res_val val = { 0 };
+	void *addr;
+	int ret;
+
+	addr = kzalloc(res_len, GFP_KERNEL);
+	if (addr == NULL)
+		return -1;
+
+	ret = ubcore_copy_from_user(addr, (void __user *)(uintptr_t)arg->out.addr, res_len);
+	if (ret != 0)
+		goto kfree_addr;
+
+	key.type = (uint8_t)arg->in.type;
+	key.key = arg->in.key;
+	val.addr = (uintptr_t)addr;
+	val.len = res_len;
+
+	if (arg->in.type == UBCORE_RES_KEY_URMA_DEV)
+		ret = ubcore_query_res_dev(dev, &key, (struct ubcore_res_dev_val *)addr);
+	else
+		ret = ubcore_query_resource(dev, &key, &val);
+
+	if (ret != 0)
+		goto kfree_addr;
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, addr, res_len);
+
+kfree_addr:
+	kfree(addr);
+	return ret;
+}
+
+static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
+{
+	enum ubcore_transport_type trans_type;
+	struct ubcore_cmd_query_res arg = { 0 };
+	struct ubcore_device *dev;
+	union ubcore_eid eid;
+	uint32_t res_len;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct ubcore_cmd_query_res));
+	if (ret != 0)
+		return ret;
+
+	res_len = ubcore_get_query_res_len((uint32_t)arg.in.type);
+	if (res_len != arg.out.len) {
+		ubcore_log_err("Failed to check res len, type: %u, res_len: %u, len: %u.\n",
+			       (uint32_t)arg.in.type, res_len, arg.out.len);
+		return -1;
+	}
+	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
+	trans_type = (enum ubcore_transport_type)arg.in.tp_type;
+
+	dev = ubcore_find_device(&eid, trans_type);
+	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
+		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
+			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	ret = ubcore_query_res_arg(dev, &arg, res_len);
+	if (ret != 0) {
+		ubcore_put_device(dev);
+		ubcore_log_err("Failed to query res by arg, tp_type: %d.\n", (int)trans_type);
+		return -1;
+	}
+
+	ubcore_put_device(dev);
+	return ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+				   sizeof(struct ubcore_cmd_query_res));
+}
+
 static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 {
 	switch (hdr->command) {
@@ -202,8 +578,14 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 		return ubcore_cmd_set_uasid(hdr);
 	case UBCORE_CMD_PUT_UASID:
 		return ubcore_cmd_put_uasid(hdr);
+	case UBCORE_CMD_SET_UTP:
+		return ubcore_cmd_set_utp(hdr);
+	case UBCORE_CMD_SHOW_UTP:
+		return ubcore_cmd_show_utp(hdr);
 	case UBCORE_CMD_QUERY_STATS:
 		return ubcore_cmd_query_stats(hdr);
+	case UBCORE_CMD_QUERY_RES:
+		return ubcore_cmd_query_res(hdr);
 	default:
 		ubcore_log_err("bad ubcore command: %d.\n", (int)hdr->command);
 		return -EINVAL;

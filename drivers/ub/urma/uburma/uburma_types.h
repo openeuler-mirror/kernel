@@ -30,6 +30,48 @@
 
 #include <urma/ubcore_types.h>
 
+enum uburma_remove_reason {
+	/* Userspace requested uobject deletion. Call could fail */
+	UBURMA_REMOVE_DESTROY,
+	/* Context deletion. This call should delete the actual object itself */
+	UBURMA_REMOVE_CLOSE,
+	/* Driver is being hot-unplugged. This call should delete the actual object itself */
+	UBURMA_REMOVE_DRIVER_REMOVE,
+	/* Context is being cleaned-up, but commit was just completed */
+	UBURMA_REMOVE_DURING_CLEANUP
+};
+
+struct uburma_file {
+	struct kref ref;
+	struct mutex mutex;
+	struct uburma_device *ubu_dev;
+	struct ubcore_ucontext *ucontext;
+
+	/* uobj */
+	struct mutex uobjects_lock;
+	struct list_head uobjects;
+	struct idr idr;
+	spinlock_t idr_lock;
+	struct rw_semaphore cleanup_rwsem;
+	enum uburma_remove_reason cleanup_reason;
+
+	struct list_head list;
+	int is_closed;
+};
+
+struct uburma_port {
+	struct kobject kobj;
+	struct uburma_device *ubu_dev;
+	uint8_t port_num;
+};
+
+struct uburma_vf {
+	struct kobject kobj;
+	struct uburma_device *ubu_dev;
+	uint32_t vf_idx;
+};
+
+
 struct uburma_device {
 	atomic_t refcnt;
 	struct completion comp; /* When refcnt becomes 0, it will wake up */
@@ -39,6 +81,8 @@ struct uburma_device {
 	unsigned int devnum;
 	struct cdev cdev;
 	struct device *dev;
+	struct uburma_port port[UBCORE_MAX_PORT_CNT];
+	struct uburma_vf vf[UBCORE_MAX_VF_CNT];
 	struct ubcore_device *__rcu ubc_dev;
 	struct srcu_struct ubc_dev_srcu; /* protect ubc_dev */
 	struct kobject kobj; /* when equal to 0 , free uburma_device. */

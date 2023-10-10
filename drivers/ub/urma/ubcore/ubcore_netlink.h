@@ -48,6 +48,84 @@ struct ubcore_nlmsg {
 	uint8_t payload[0];
 } __packed;
 
+struct ubcore_ta_data {
+	enum ubcore_ta_type type;
+	struct ubcore_jetty_id jetty_id; /* local jetty id */
+	struct ubcore_jetty_id tjetty_id; /* peer jetty id */
+};
+
+struct ubcore_multipath_tp_cfg {
+	union ubcore_tp_flag flag;
+	uint16_t data_rctp_start;
+	uint16_t ack_rctp_start;
+	uint16_t data_rmtp_start;
+	uint16_t ack_rmtp_start;
+	uint8_t tp_range;
+	uint16_t congestion_alg;
+};
+
+struct ubcore_nl_create_tp_req {
+	uint32_t tpn;
+	struct ubcore_net_addr local_net_addr;
+	struct ubcore_net_addr peer_net_addr;
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_multipath_tp_cfg cfg;
+	uint32_t rx_psn;
+	enum ubcore_mtu mtu;
+	struct ubcore_ta_data ta;
+	uint32_t ext_len;
+	uint32_t udrv_in_len;
+	uint8_t ext_udrv[0]; /* struct ubcore_tp_ext->len + struct ubcore_udrv_priv->in_len */
+};
+
+struct ubcore_nl_create_tp_resp {
+	enum ubcore_nl_resp_status ret;
+	union ubcore_tp_flag flag;
+	uint32_t peer_tpn;
+	uint32_t peer_rx_psn;
+	enum ubcore_mtu peer_mtu;
+	uint32_t peer_ext_len;
+	uint8_t peer_ext[0]; /* struct ubcore_tp_ext->len */
+};
+
+struct ubcore_nl_destroy_tp_req {
+	uint32_t tpn;
+	uint32_t peer_tpn;
+	enum ubcore_transport_mode trans_mode;
+	struct ubcore_ta_data ta;
+};
+
+struct ubcore_nl_destroy_tp_resp {
+	enum ubcore_nl_resp_status ret;
+};
+
+struct ubcore_nl_query_tp_req {
+	enum ubcore_transport_mode trans_mode;
+};
+
+struct ubcore_nl_query_tp_resp {
+	enum ubcore_nl_resp_status ret;
+	bool tp_exist;
+	uint32_t tpn; /* must set if tp exist is true */
+	union ubcore_eid dst_eid; /* underlay */
+	struct ubcore_net_addr src_addr; /* underlay */
+	struct ubcore_net_addr dst_addr; /* underlay */
+	struct ubcore_multipath_tp_cfg cfg;
+};
+
+struct ubcore_nl_restore_tp_req {
+	enum ubcore_transport_mode trans_mode;
+	uint32_t tpn;
+	uint32_t peer_tpn;
+	uint32_t rx_psn;
+	struct ubcore_ta_data ta;
+};
+
+struct ubcore_nl_restore_tp_resp {
+	enum ubcore_nl_resp_status ret;
+	uint32_t peer_rx_psn;
+};
+
 struct ubcore_nl_session {
 	struct ubcore_nlmsg *req;
 	struct ubcore_nlmsg *resp;
@@ -64,4 +142,6 @@ static inline uint32_t ubcore_nlmsg_len(struct ubcore_nlmsg *msg)
 int ubcore_netlink_init(void);
 void ubcore_netlink_exit(void);
 
+/* return response msg pointer, caller must release it */
+struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req);
 #endif

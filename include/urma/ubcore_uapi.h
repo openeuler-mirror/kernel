@@ -24,7 +24,6 @@
 #define UBCORE_UAPI_H
 
 #include <urma/ubcore_types.h>
-
 /**
  * Application specifies the device to allocate an context.
  * @param[in] dev: ubcore_device found by add ops in the client.
@@ -52,12 +51,79 @@ void ubcore_free_ucontext(const struct ubcore_device *dev, struct ubcore_ucontex
  */
 int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
 /**
+ * set upi
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] vf_id: vf_id;
+ * @param[in] idx: idx of upi in vf;
+ * @param[in] upi: upi of vf to set
+ * @return: 0 on success, other value on error
+ */
+int ubcore_set_upi(const struct ubcore_device *dev, uint16_t vf_id, uint16_t idx, uint32_t upi);
+/**
+ * add a function entity id (eid) to ub device, the upi of vf to which the eid belongs
+ * can be specified
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] eid: function entity id (eid) to be added;
+ * @param[in] upi: upi of vf;
+ * @return: the index of eid/upi, less than 0 indicating error
+ */
+int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid);
+/**
+ * remove a function entity id (eid) specified by idx from ub device
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] idx: the idx of function entity id (eid) to be deleted;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx);
+/**
+ * add a function entity id (eid) to ub device (for uvs)
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] vf_id: vf_id;
+ * @param[in] cfg: eid and the upi of vf to which the eid belongs can be specified;
+ * @return: the index of eid/upi, less than 0 indicating error
+ */
+int ubcore_add_ueid(struct ubcore_device *dev, uint16_t vf_id, struct ubcore_ueid_cfg *cfg);
+/**
+ * remove a function entity id (eid) specified by idx from ub device (for uvs)
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] vf_id: vf_id;
+ * @param[in] idx: the idx of function entity id (eid) to be deleted;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t vf_id, uint16_t idx);
+/**
  * query device attributes
  * @param[in] dev: the ubcore_device handle;
  * @param[out] attr: attributes returned to client
  * @return: 0 on success, other value on error
  */
 int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_attr *attr);
+/**
+ * query device status
+ * @param[in] dev: the ubcore_device handle;
+ * @param[out] status: status returned to client
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_device_status(const struct ubcore_device *dev,
+			       struct ubcore_device_status *status);
+/**
+ * query stats
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] key: stats type and key;
+ * @param[in/out] val: addr and len of value
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+		       struct ubcore_stats_val *val);
+/**
+ * query resource
+ * @param[in] dev: the ubcore_device handle;
+ * @param[in] key: resource type and key;
+ * @param[in/out] val: addr and len of value
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_resource(const struct ubcore_device *dev, struct ubcore_res_key *key,
+			  struct ubcore_res_val *val);
 /**
  * config device
  * @param[in] dev: the ubcore_device handle;
@@ -95,13 +161,368 @@ int ubcore_register_client(struct ubcore_client *new_client);
  */
 void ubcore_unregister_client(struct ubcore_client *rm_client);
 /**
- * query stats
- * @param[in] dev: the ubcore_device handle;
- * @param[in] key: stats type and key;
- * @param[in/out] val: addr and len of value
+ * alloc key to ubcore device
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: key id pointer on success, NULL on error
+ */
+struct ubcore_key_id *ubcore_alloc_key_id(struct ubcore_device *dev, struct ubcore_udata *udata);
+/**
+ * free key id from ubcore device
+ * @param[in] key: the key id alloced before;
  * @return: 0 on success, other value on error
  */
-int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
-		       struct ubcore_stats_val *val);
+int ubcore_free_key_id(struct ubcore_key_id *key);
+/**
+ * register segment to ubcore device
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: segment configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target segment pointer on success, NULL on error
+ */
+struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
+					      const struct ubcore_seg_cfg *cfg,
+					      struct ubcore_udata *udata);
+/**
+ * unregister segment from ubcore device
+ * @param[in] tseg: the segment registered before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unregister_seg(struct ubcore_target_seg *tseg);
+/**
+ * import a remote segment to ubcore device
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: import configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target segment handle on success, NULL on error
+ */
+struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
+					    const struct ubcore_target_seg_cfg *cfg,
+					    struct ubcore_udata *udata);
+/**
+ * unimport seg from ubcore device
+ * @param[in] tseg: the segment imported before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unimport_seg(struct ubcore_target_seg *tseg);
+/**
+ * create jfc with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jfc attributes and configurations
+ * @param[in] jfce_handler (optional): completion event handler
+ * @param[in] jfae_handler (optional): jfc async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jfc pointer on success, NULL on error
+ */
+struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
+				     ubcore_comp_callback_t jfce_handler,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata);
+/**
+ * modify jfc from ubcore device.
+ * @param[in] jfc: the jfc created before;
+ * @param[in] attr: ubcore jfc attributes;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jfc(struct ubcore_jfc *jfc, const struct ubcore_jfc_attr *attr,
+		      struct ubcore_udata *udata);
+/**
+ * destroy jfc from ubcore device.
+ * @param[in] jfc: the jfc created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jfc(struct ubcore_jfc *jfc);
+/**
+ * rearm jfc.
+ * @param[in] jfc: the jfc created before;
+ * @param[in] solicited_only: rearm notify by message marked with solicited flag
+ * @return: 0 on success, other value on error
+ */
+int ubcore_rearm_jfc(struct ubcore_jfc *jfc, bool solicited_only);
+/**
+ * create jfs with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jfs configurations
+ * @param[in] jfae_handler (optional): jfs async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jfs pointer on success, NULL on error
+ */
+struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubcore_jfs_cfg *cfg,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata);
+/**
+ * modify jfs from ubcore device.
+ * @param[in] jfs: the jfs created before;
+ * @param[in] attr: ubcore jfs attributes;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jfs(struct ubcore_jfs *jfs, const struct ubcore_jfs_attr *attr,
+		      struct ubcore_udata *udata);
+/**
+ * query jfs from ubcore device.
+ * @param[in] jfs: the jfs created before;
+ * @param[out] cfg: jfs configurations;
+ * @param[out] attr: ubcore jfs attributes;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_cfg *cfg,
+		     struct ubcore_jfs_attr *attr);
+/**
+ * destroy jfs from ubcore device.
+ * @param[in] jfs: the jfs created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jfs(struct ubcore_jfs *jfs);
+/**
+ * return the wrs in JFS that is not consumed to the application through cr.
+ * @param[in] jfs: the jfs created before;
+ * @param[in] cr_cnt: the maximum number of CRs expected to be returned;
+ * @param[out] cr: the addr of returned CRs;
+ * @return: the number of completion record returned, 0 means no completion record returned,
+ * -1 on error
+ */
+int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr);
+/**
+ * create jfr with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jfr configurations
+ * @param[in] jfae_handler (optional): jfr async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jfr pointer on success, NULL on error
+ */
+struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
+				     ubcore_event_callback_t jfae_handler,
+				     struct ubcore_udata *udata);
+/**
+ * modify jfr from ubcore device.
+ * @param[in] jfr: the jfr created before;
+ * @param[in] attr: ubcore jfr attr;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+		      struct ubcore_udata *udata);
+/**
+ * query jfr from ubcore device.
+ * @param[in] jfr: the jfr created before;
+ * @param[out] cfg: jfr configurations;
+ * @param[out] attr: ubcore jfr attributes;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
+		     struct ubcore_jfr_attr *attr);
+/**
+ * destroy jfr from ubcore device.
+ * @param[in] jfr: the jfr created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jfr(struct ubcore_jfr *jfr);
+/**
+ * create jetty with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jetty attributes and configurations
+ * @param[in] jfae_handler (optional): jetty async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jetty pointer on success, NULL on error
+ */
+struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
+					 const struct ubcore_jetty_cfg *cfg,
+					 ubcore_event_callback_t jfae_handler,
+					 struct ubcore_udata *udata);
+/**
+ * modify jetty attributes.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] attr: ubcore jetty attributes;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_modify_jetty(struct ubcore_jetty *jetty, const struct ubcore_jetty_attr *attr,
+			struct ubcore_udata *udata);
+/**
+ * query jetty from ubcore device.
+ * @param[in] jetty: the jetty created before;
+ * @param[out] cfg: jetty configurations;
+ * @param[out] attr: ubcore jetty attributes;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_cfg *cfg,
+		       struct ubcore_jetty_attr *attr);
+/**
+ * destroy jetty from ubcore device.
+ * @param[in] jetty: the jetty created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jetty(struct ubcore_jetty *jetty);
+/**
+ * return the wrs in JETTY that is not consumed to the application through cr.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] cr_cnt: the maximum number of CRs expected to be returned;
+ * @param[out] cr: the addr of returned CRs;
+ * @return: the number of completion record returned, 0 means no completion record returned,
+ * -1 on error
+ */
+int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr *cr);
+/**
+ * import jfr to ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: remote jfr attributes and import configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target jfr pointer on success, NULL on error
+ */
+struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
+					const struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_udata *udata);
+/**
+ * unimport jfr from ubcore device.
+ * @param[in] tjfr: the target jfr imported before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr);
+/**
+ * import jetty to ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: remote jetty attributes and import configurations
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target jetty pointer on success, NULL on error
+ */
+struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
+					  const struct ubcore_tjetty_cfg *cfg,
+					  struct ubcore_udata *udata);
+/**
+ * unimport jetty from ubcore device.
+ * @param[in] tjetty: the target jetty imported before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
+/**
+ * Advise jfr: construct the transport channel for jfs and remote jfr.
+ * @param[in] jfs: jfs to use to construct the transport channel;
+ * @param[in] tjfr: target jfr to reach;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_advise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr,
+		      struct ubcore_udata *udata);
+/**
+ * Unadvise jfr: Tear down the transport channel from jfs to remote jfr.
+ * @param[in] jfs: jfs to use to destruct the transport channel;
+ * @param[in] tjfr: target jfr advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unadvise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr);
+/**
+ * Advise jetty: construct the transport channel between local jetty and remote jetty.
+ * @param[in] jetty: local jetty to construct the transport channel;
+ * @param[in] tjetty: target jetty to reach imported before;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_advise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+			struct ubcore_udata *udata);
+/**
+ * Unadvise jetty: deconstruct the transport channel between local jetty and remote jetty.
+ * @param[in] jetty: local jetty to destruct the transport channel;
+ * @param[in] tjetty: target jetty advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
+/**
+ * Bind jetty: Bind local jetty with remote jetty, and construct a transport channel between them.
+ * @param[in] jetty: local jetty to bind;
+ * @param[in] tjetty: target jetty imported before;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ * Note: A local jetty can be binded with only one remote jetty.
+ * Only supported by jetty with URMA_TM_RC.
+ */
+int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		      struct ubcore_udata *udata);
+/**
+ * Unbind jetty: Unbind local jetty with remote jetty,
+ * and tear down the transport channel between them.
+ * @param[in] jetty: local jetty to unbind;
+ * @param[in] tjetty: target jetty advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unbind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
+/**
+ * operation of user ioctl cmd.
+ * @param[in] k_user_ctl: kdrv user control command pointer;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl);
+/**
+ * Client register an async_event handler to ubcore
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] handler: async_event handler to be registered
+ * Note: the handler will be called when driver reports an async_event with
+ * ubcore_dispatch_async_event
+ */
+void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_event_handler *handler);
+/**
+ * Client unregister async_event handler from ubcore
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] handler: async_event handler to be unregistered
+ */
+void ubcore_unregister_event_handler(struct ubcore_device *dev,
+				     struct ubcore_event_handler *handler);
+
+/* data path API */
+/**
+ * post jfs wr.
+ * @param[in] jfs: the jfs created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
+		       struct ubcore_jfs_wr **bad_wr);
+/**
+ * post jfr wr.
+ * @param[in] jfr: the jfr created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, const struct ubcore_jfr_wr *wr,
+		       struct ubcore_jfr_wr **bad_wr);
+/**
+ * post jetty send wr.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, const struct ubcore_jfs_wr *wr,
+			      struct ubcore_jfs_wr **bad_wr);
+/**
+ * post jetty receive wr.
+ * @param[in] jetty: the jetty created before;
+ * @param[in] wr: the wr to be posted;
+ * @param[out] bad_wr: the first failed wr;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, const struct ubcore_jfr_wr *wr,
+			      struct ubcore_jfr_wr **bad_wr);
+/**
+ * poll jfc.
+ * @param[in] jfc: the jfc created before;
+ * @param[in] cr_cnt: the maximum number of CRs expected to be polled;
+ * @param[out] cr: the addr of returned CRs;
+ * @return: the number of completion record returned, 0 means no completion record returned,
+ * -1 on error
+ */
+int ubcore_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
+
+/* The APIs below are deprecated, should not be called by driver or ubcore client */
+struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
+
+struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id);
+
+struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id);
+
+struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id);
 
 #endif
