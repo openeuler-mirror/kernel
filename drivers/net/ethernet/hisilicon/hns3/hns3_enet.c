@@ -103,9 +103,13 @@ static const struct pci_device_id hns3_pci_tbl[] = {
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_400G_ROH),
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA),
+	 HNAE3_DEV_SUPPORT_UDMA_DCB_BITS},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_VF), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_DCB_PFC_VF),
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_VF),
+	 HNAE3_DEV_SUPPORT_UDMA_DCB_BITS},
 #ifdef CONFIG_HNS3_UBL
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL),
 	 HNAE3_DEV_SUPPORT_UDMA_OVER_UBL_DCB_BITS},
@@ -3310,6 +3314,7 @@ bool hns3_is_phys_func(struct pci_dev *pdev)
 	case HNAE3_DEV_ID_UDMA_OVER_UBL:
 	case HNAE3_DEV_ID_RDMA_OVER_UBL:
 #endif
+	case HNAE3_DEV_ID_UDMA:
 		return true;
 	case HNAE3_DEV_ID_VF:
 	case HNAE3_DEV_ID_RDMA_DCB_PFC_VF:
@@ -3317,6 +3322,7 @@ bool hns3_is_phys_func(struct pci_dev *pdev)
 	case HNAE3_DEV_ID_UDMA_OVER_UBL_VF:
 	case HNAE3_DEV_ID_RDMA_OVER_UBL_VF:
 #endif
+	case HNAE3_DEV_ID_UDMA_VF:
 		return false;
 	default:
 		dev_warn(&pdev->dev, "un-recognized pci device-id %u",
