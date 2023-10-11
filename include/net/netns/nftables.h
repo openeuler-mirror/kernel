@@ -6,14 +6,14 @@
 #include <linux/kabi.h>
 
 struct netns_nftables {
-	struct list_head	tables;
-	struct list_head	commit_list;
-	struct list_head	module_list;
-	struct list_head	notify_list;
-	struct mutex		commit_mutex;
-	unsigned int		base_seq;
+	KABI_DEPRECATE(struct list_head, tables)
+	KABI_DEPRECATE(struct list_head, commit_list)
+	KABI_DEPRECATE(struct list_head, module_list)
+	KABI_DEPRECATE(struct list_head, notify_list)
+	KABI_DEPRECATE(struct mutex, commit_mutex)
+	KABI_DEPRECATE(unsigned int, base_seq)
 	u8			gencursor;
-	u8			validate_state;
+	KABI_DEPRECATE(u8, validate_state)
 
 	KABI_RESERVE(1)
 };
