@@ -385,14 +385,6 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 	return 0;
 }
 
-static vm_fault_t uacce_vma_fault(struct vm_fault *vmf)
-{
-	if (vmf->flags & (FAULT_FLAG_MKWRITE | FAULT_FLAG_WRITE))
-		return VM_FAULT_SIGBUS;
-
-	return 0;
-}
-
 static void uacce_vma_close(struct vm_area_struct *vma)
 {
 	struct uacce_queue *q = vma->vm_private_data;
@@ -423,7 +415,6 @@ static void uacce_vma_close(struct vm_area_struct *vma)
 }
 
 static const struct vm_operations_struct uacce_vm_ops = {
-	.fault = uacce_vma_fault,
 	.close = uacce_vma_close,
 };
 
@@ -738,7 +729,7 @@ static ssize_t api_show(struct device *dev,
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	return sprintf(buf, "%s\n", uacce->api_ver);
+	return sysfs_emit(buf, "%s\n", uacce->api_ver);
 }
 
 static ssize_t flags_show(struct device *dev,
@@ -746,7 +737,7 @@ static ssize_t flags_show(struct device *dev,
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	return sprintf(buf, "%u\n", uacce->flags);
+	return sysfs_emit(buf, "%u\n", uacce->flags);
 }
 
 static ssize_t available_instances_show(struct device *dev,
@@ -758,7 +749,7 @@ static ssize_t available_instances_show(struct device *dev,
 	if (!uacce->ops->get_available_instances)
 		return -ENODEV;
 
-	return sprintf(buf, "%d\n",
+	return sysfs_emit(buf, "%d\n",
 		       uacce->ops->get_available_instances(uacce));
 }
 
@@ -767,7 +758,7 @@ static ssize_t algorithms_show(struct device *dev,
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	return sprintf(buf, "%s\n", uacce->algs);
+	return sysfs_emit(buf, "%s\n", uacce->algs);
 }
 
 static ssize_t region_mmio_size_show(struct device *dev,
@@ -775,7 +766,7 @@ static ssize_t region_mmio_size_show(struct device *dev,
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	return sprintf(buf, "%lu\n",
+	return sysfs_emit(buf, "%lu\n",
 		       uacce->qf_pg_num[UACCE_QFRT_MMIO] << PAGE_SHIFT);
 }
 
@@ -784,7 +775,7 @@ static ssize_t region_dus_size_show(struct device *dev,
 {
 	struct uacce_device *uacce = to_uacce_device(dev);
 
-	return sprintf(buf, "%lu\n",
+	return sysfs_emit(buf, "%lu\n",
 		       uacce->qf_pg_num[UACCE_QFRT_DUS] << PAGE_SHIFT);
 }
 
