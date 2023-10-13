@@ -1512,6 +1512,7 @@ __event_trigger_test_discard(struct trace_event_file *file,
 
 	if (likely(!(file->flags & (EVENT_FILE_FL_SOFT_DISABLED |
 				    EVENT_FILE_FL_FILTERED |
+				    EVENT_FILE_FL_STACK_FILTER |
 				    EVENT_FILE_FL_PID_FILTER))))
 		return false;
 
@@ -1520,6 +1521,11 @@ __event_trigger_test_discard(struct trace_event_file *file,
 
 	if (file->flags & EVENT_FILE_FL_FILTERED &&
 	    !filter_match_preds(file->filter, entry))
+		goto discard;
+
+	if (IS_ENABLED(CONFIG_TRACE_EVENT_STACK_FILTER) &&
+	    (file->flags & EVENT_FILE_FL_STACK_FILTER) &&
+	    !stack_filter_match(get_stack_filter(file)))
 		goto discard;
 
 	if ((file->flags & EVENT_FILE_FL_PID_FILTER) &&
@@ -1693,6 +1699,10 @@ static inline void *event_file_data(struct file *filp)
 
 extern struct mutex event_mutex;
 extern struct list_head ftrace_events;
+
+#ifdef CONFIG_TRACE_EVENT_STACK_FILTER
+extern const struct file_operations event_stack_filter_fops;
+#endif
 
 extern const struct file_operations event_trigger_fops;
 extern const struct file_operations event_hist_fops;

@@ -932,6 +932,14 @@ config HIST_TRIGGERS_DEBUG
 
           If unsure, say N.
 
+config TRACE_EVENT_STACK_FILTER
+	bool "Enable call stack filter for trace events"
+	default n
+	depends on STACKTRACE
+	help
+	  This option enables call stack filter for trace events.
+	  See Documentation/trace/events.rst for details.
+
 endif # FTRACE
 
 endif # TRACING_SUPPORT
