@@ -845,6 +845,12 @@ setup_arch(char **cmdline_p)
 	/* Parse the ACPI tables for possible boot-time configuration */
 	acpi_boot_table_init();
 
+#ifdef CONFIG_SMP
+	setup_smp();
+#else
+	store_cpu_data(0);
+#endif
+
 	sw64_numa_init();
 
 	memblock_dump_all();
@@ -881,12 +887,6 @@ setup_arch(char **cmdline_p)
 
 	/* Default root filesystem to sda2.  */
 	ROOT_DEV = Root_SDA2;
-
-#ifdef CONFIG_SMP
-	setup_smp();
-#else
-	store_cpu_data(0);
-#endif
 
 #ifdef CONFIG_NUMA
 	cpu_set_node();
