@@ -2,7 +2,10 @@
 
 menuconfig UB
 	tristate "Unified Bus (UB) support"
-	default m
+	depends on ARM64
+	default n
 	help
 	  Core support for Unified Bus (UB).
+	  Currently it only support arm64 structure.
+	  Default option is close.
 	  To compile UB core as module, choose M here.
