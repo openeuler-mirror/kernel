@@ -189,6 +189,13 @@ F:	drivers/firmware/efi/libstub/loongarch-stub.c
 F:	drivers/net/ethernet/stmicro/stmmac/dwmac-loongson.c
 F:	drivers/platform/loongarch/loongson_generic_laptop.c
 
+HISILICON HIBMC GPU DRIVER
+M:      Shi Yongbang <shiyongbang@huawei.com>
+S:      Maintained
+W:      http://www.hisilicon.com
+T:      git git://github.com/hisilicon/linux-hisi.git
+F:      drivers/gpu/drm/hisilicon/hibmc/
+
 PGO KERNEL
 M:	Yancheng Li <liyancheng@huawei.com>
 M:	Zhiheng Xie <xiezhiheng@huawei.com>
