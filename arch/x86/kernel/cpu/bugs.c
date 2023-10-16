@@ -49,6 +49,7 @@ static void __init taa_select_mitigation(void);
 static void __init mmio_select_mitigation(void);
 static void __init srbds_select_mitigation(void);
 static void __init gds_select_mitigation(void);
+static void __init srso_select_mitigation(void);
 
 /* The base value of the SPEC_CTRL MSR without task-specific bits set */
 u64 x86_spec_ctrl_base;
@@ -58,7 +59,12 @@ EXPORT_SYMBOL_GPL(x86_spec_ctrl_base);
 DEFINE_PER_CPU(u64, x86_spec_ctrl_current);
 EXPORT_SYMBOL_GPL(x86_spec_ctrl_current);
 
+u64 x86_pred_cmd __ro_after_init = PRED_CMD_IBPB;
+EXPORT_SYMBOL_GPL(x86_pred_cmd);
+
 static DEFINE_MUTEX(spec_ctrl_mutex);
+
+void (*x86_return_thunk)(void) __ro_after_init = &__x86_return_thunk;
 
 /* Update SPEC_CTRL MSR and its cached copy unconditionally */
 static void update_spec_ctrl(u64 val)
@@ -167,6 +173,12 @@ void __init check_bugs(void)
 	l1tf_select_mitigation();
 	md_clear_select_mitigation();
 	srbds_select_mitigation();
+
+	/*
+	 * srso_select_mitigation() depends and must run after
+	 * retbleed_select_mitigation().
+	 */
+	srso_select_mitigation();
 	gds_select_mitigation();
 
 	arch_smt_update();
@@ -1019,6 +1031,9 @@ do_cmd_auto:
 	case RETBLEED_MITIGATION_UNRET:
 		setup_force_cpu_cap(X86_FEATURE_RETHUNK);
 		setup_force_cpu_cap(X86_FEATURE_UNRET);
+
+		if (IS_ENABLED(CONFIG_RETHUNK))
+			x86_return_thunk = retbleed_return_thunk;
 
 		if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD &&
 		    boot_cpu_data.x86_vendor != X86_VENDOR_HYGON)
@@ -2283,6 +2298,170 @@ static int __init l1tf_cmdline(char *str)
 early_param("l1tf", l1tf_cmdline);
 
 #undef pr_fmt
+#define pr_fmt(fmt)	"Speculative Return Stack Overflow: " fmt
+
+enum srso_mitigation {
+	SRSO_MITIGATION_NONE,
+	SRSO_MITIGATION_MICROCODE,
+	SRSO_MITIGATION_SAFE_RET,
+	SRSO_MITIGATION_IBPB,
+	SRSO_MITIGATION_IBPB_ON_VMEXIT,
+};
+
+enum srso_mitigation_cmd {
+	SRSO_CMD_OFF,
+	SRSO_CMD_MICROCODE,
+	SRSO_CMD_SAFE_RET,
+	SRSO_CMD_IBPB,
+	SRSO_CMD_IBPB_ON_VMEXIT,
+};
+
+static const char * const srso_strings[] = {
+	[SRSO_MITIGATION_NONE]           = "Vulnerable",
+	[SRSO_MITIGATION_MICROCODE]      = "Mitigation: microcode",
+	[SRSO_MITIGATION_SAFE_RET]	 = "Mitigation: safe RET",
+	[SRSO_MITIGATION_IBPB]		 = "Mitigation: IBPB",
+	[SRSO_MITIGATION_IBPB_ON_VMEXIT] = "Mitigation: IBPB on VMEXIT only"
+};
+
+static enum srso_mitigation srso_mitigation __ro_after_init = SRSO_MITIGATION_NONE;
+static enum srso_mitigation_cmd srso_cmd __ro_after_init = SRSO_CMD_SAFE_RET;
+
+static int __init srso_parse_cmdline(char *str)
+{
+	if (!str)
+		return -EINVAL;
+
+	if (!strcmp(str, "off"))
+		srso_cmd = SRSO_CMD_OFF;
+	else if (!strcmp(str, "microcode"))
+		srso_cmd = SRSO_CMD_MICROCODE;
+	else if (!strcmp(str, "safe-ret"))
+		srso_cmd = SRSO_CMD_SAFE_RET;
+	else if (!strcmp(str, "ibpb"))
+		srso_cmd = SRSO_CMD_IBPB;
+	else if (!strcmp(str, "ibpb-vmexit"))
+		srso_cmd = SRSO_CMD_IBPB_ON_VMEXIT;
+	else
+		pr_err("Ignoring unknown SRSO option (%s).", str);
+
+	return 0;
+}
+early_param("spec_rstack_overflow", srso_parse_cmdline);
+
+#define SRSO_NOTICE "WARNING: See https://kernel.org/doc/html/latest/admin-guide/hw-vuln/srso.html for mitigation options."
+
+static void __init srso_select_mitigation(void)
+{
+	bool has_microcode;
+
+	if (!boot_cpu_has_bug(X86_BUG_SRSO) || cpu_mitigations_off())
+		goto pred_cmd;
+
+	/*
+	 * The first check is for the kernel running as a guest in order
+	 * for guests to verify whether IBPB is a viable mitigation.
+	 */
+	has_microcode = boot_cpu_has(X86_FEATURE_IBPB_BRTYPE) || cpu_has_ibpb_brtype_microcode();
+	if (!has_microcode) {
+		pr_warn("IBPB-extending microcode not applied!\n");
+		pr_warn(SRSO_NOTICE);
+	} else {
+		/*
+		 * Enable the synthetic (even if in a real CPUID leaf)
+		 * flags for guests.
+		 */
+		setup_force_cpu_cap(X86_FEATURE_IBPB_BRTYPE);
+
+		/*
+		 * Zen1/2 with SMT off aren't vulnerable after the right
+		 * IBPB microcode has been applied.
+		 */
+		if (boot_cpu_data.x86 < 0x19 && !cpu_smt_possible()) {
+			setup_force_cpu_cap(X86_FEATURE_SRSO_NO);
+			return;
+		}
+	}
+
+	if (retbleed_mitigation == RETBLEED_MITIGATION_IBPB) {
+		if (has_microcode) {
+			pr_err("Retbleed IBPB mitigation enabled, using same for SRSO\n");
+			srso_mitigation = SRSO_MITIGATION_IBPB;
+			goto pred_cmd;
+		}
+	}
+
+	switch (srso_cmd) {
+	case SRSO_CMD_OFF:
+		return;
+
+	case SRSO_CMD_MICROCODE:
+		if (has_microcode) {
+			srso_mitigation = SRSO_MITIGATION_MICROCODE;
+			pr_warn(SRSO_NOTICE);
+		}
+		break;
+
+	case SRSO_CMD_SAFE_RET:
+		if (IS_ENABLED(CONFIG_CPU_SRSO)) {
+			/*
+			 * Enable the return thunk for generated code
+			 * like ftrace, static_call, etc.
+			 */
+			setup_force_cpu_cap(X86_FEATURE_RETHUNK);
+			setup_force_cpu_cap(X86_FEATURE_UNRET);
+
+			if (boot_cpu_data.x86 == 0x19) {
+				setup_force_cpu_cap(X86_FEATURE_SRSO_ALIAS);
+				x86_return_thunk = srso_alias_return_thunk;
+			} else {
+				setup_force_cpu_cap(X86_FEATURE_SRSO);
+				x86_return_thunk = srso_return_thunk;
+			}
+			srso_mitigation = SRSO_MITIGATION_SAFE_RET;
+		} else {
+			pr_err("WARNING: kernel not compiled with CPU_SRSO.\n");
+			goto pred_cmd;
+		}
+		break;
+
+	case SRSO_CMD_IBPB:
+		if (IS_ENABLED(CONFIG_CPU_IBPB_ENTRY)) {
+			if (has_microcode) {
+				setup_force_cpu_cap(X86_FEATURE_ENTRY_IBPB);
+				srso_mitigation = SRSO_MITIGATION_IBPB;
+			}
+		} else {
+			pr_err("WARNING: kernel not compiled with CPU_IBPB_ENTRY.\n");
+			goto pred_cmd;
+		}
+		break;
+
+	case SRSO_CMD_IBPB_ON_VMEXIT:
+		if (IS_ENABLED(CONFIG_CPU_SRSO)) {
+			if (!boot_cpu_has(X86_FEATURE_ENTRY_IBPB) && has_microcode) {
+				setup_force_cpu_cap(X86_FEATURE_IBPB_ON_VMEXIT);
+				srso_mitigation = SRSO_MITIGATION_IBPB_ON_VMEXIT;
+			}
+		} else {
+			pr_err("WARNING: kernel not compiled with CPU_SRSO.\n");
+			goto pred_cmd;
+                }
+		break;
+
+	default:
+		break;
+	}
+
+	pr_info("%s%s\n", srso_strings[srso_mitigation], (has_microcode ? "" : ", no microcode"));
+
+pred_cmd:
+	if ((boot_cpu_has(X86_FEATURE_SRSO_NO) || srso_cmd == SRSO_CMD_OFF) &&
+	     boot_cpu_has(X86_FEATURE_SBPB))
+		x86_pred_cmd = PRED_CMD_SBPB;
+}
+
+#undef pr_fmt
 #define pr_fmt(fmt) fmt
 
 #ifdef CONFIG_SYSFS
@@ -2485,6 +2664,16 @@ static ssize_t gds_show_state(char *buf)
 	return sysfs_emit(buf, "%s\n", gds_strings[gds_mitigation]);
 }
 
+static ssize_t srso_show_state(char *buf)
+{
+	if (boot_cpu_has(X86_FEATURE_SRSO_NO))
+		return sysfs_emit(buf, "Mitigation: SMT disabled\n");
+
+	return sysfs_emit(buf, "%s%s\n",
+			  srso_strings[srso_mitigation],
+			  (cpu_has_ibpb_brtype_microcode() ? "" : ", no microcode"));
+}
+
 static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
 			       char *buf, unsigned int bug)
 {
@@ -2536,6 +2725,9 @@ static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr
 
 	case X86_BUG_GDS:
 		return gds_show_state(buf);
+
+	case X86_BUG_SRSO:
+		return srso_show_state(buf);
 
 	default:
 		break;
@@ -2605,5 +2797,10 @@ ssize_t cpu_show_retbleed(struct device *dev, struct device_attribute *attr, cha
 ssize_t cpu_show_gds(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return cpu_show_common(dev, attr, buf, X86_BUG_GDS);
+}
+
+ssize_t cpu_show_spec_rstack_overflow(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return cpu_show_common(dev, attr, buf, X86_BUG_SRSO);
 }
 #endif

@@ -141,6 +141,9 @@ struct cpuinfo_x86 {
 	/* Address space bits used by the cache internally */
 	u8			x86_cache_bits;
 	unsigned		initialized : 1;
+#ifndef __GENKSYMS__
+	__u32		x86_ext_capability[NEXTBUGINTS];
+#endif
 } __randomize_layout;
 
 struct extra_cpuinfo_x86 {
@@ -182,7 +185,7 @@ extern struct cpuinfo_x86	new_cpu_data;
 extern struct extra_cpuinfo_x86	extra_boot_cpu_data;
 
 extern __u32			cpu_caps_cleared[NCAPINTS + NBUGINTS];
-extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS];
+extern __u32			cpu_caps_set[NCAPINTS + NBUGINTS + NEXTBUGINTS];
 
 #ifdef CONFIG_SMP
 DECLARE_PER_CPU_READ_MOSTLY(struct cpuinfo_x86, cpu_info);
@@ -836,10 +839,12 @@ extern u16 get_llc_id(unsigned int cpu);
 extern u16 amd_get_nb_id(int cpu);
 extern u32 amd_get_nodes_per_socket(void);
 extern void amd_clear_divider(void);
+extern bool cpu_has_ibpb_brtype_microcode(void);
 #else
 static inline u16 amd_get_nb_id(int cpu)		{ return 0; }
 static inline u32 amd_get_nodes_per_socket(void)	{ return 0; }
 static inline void amd_clear_divider(void)		{ }
+static inline bool cpu_has_ibpb_brtype_microcode(void)	{ return false; }
 #endif
 
 static inline uint32_t hypervisor_cpuid_base(const char *sig, uint32_t leaves)
