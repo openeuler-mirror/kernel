@@ -206,7 +206,7 @@ int __init srat_disabled(void)
 	return acpi_numa < 0;
 }
 
-#if defined(CONFIG_X86) || defined(CONFIG_ARM64) || defined(CONFIG_LOONGARCH)
+#if defined(CONFIG_X86) || defined(CONFIG_ARM64) || defined(CONFIG_LOONGARCH) || defined(CONFIG_SW64)
 /*
  * Callback for SLIT parsing.  pxm_to_node() returns NUMA_NO_NODE for
  * I/O localities since SRAT does not list them.  I/O localities are
@@ -303,7 +303,7 @@ out_err_bad_srat:
 out_err:
 	return -EINVAL;
 }
-#endif /* defined(CONFIG_X86) || defined (CONFIG_ARM64) */
+#endif /* defined(CONFIG_X86) || defined (CONFIG_ARM64) || defined (CONFIG_SW64) */
 
 static int __init acpi_parse_slit(struct acpi_table_header *table)
 {

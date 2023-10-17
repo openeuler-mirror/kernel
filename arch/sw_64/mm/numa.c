@@ -347,12 +347,6 @@ static int __init manual_numa_init(void)
 	return 0;
 }
 
-/* We do not have acpi support. */
-int acpi_numa_init(void)
-{
-	return -1;
-}
-
 void __init sw64_numa_init(void)
 {
 	if (!numa_off) {
