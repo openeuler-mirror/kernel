@@ -24,8 +24,9 @@
 #include "xfs_dquot_item.h"
 #include "xfs_dquot.h"
 #include "xfs_icache.h"
+#include "xfs_buf_item.h"
 
-kmem_zone_t	*xfs_trans_zone;
+struct kmem_cache	*xfs_trans_cache;
 
 #if defined(CONFIG_TRACEPOINTS)
 static void
@@ -76,7 +77,7 @@ xfs_trans_free(
 	if (!(tp->t_flags & XFS_TRANS_NO_WRITECOUNT))
 		sb_end_intwrite(tp->t_mountp->m_super);
 	xfs_trans_free_dqinfo(tp);
-	kmem_cache_free(xfs_trans_zone, tp);
+	kmem_cache_free(xfs_trans_cache, tp);
 }
 
 /*
@@ -95,7 +96,7 @@ xfs_trans_dup(
 
 	trace_xfs_trans_dup(tp, _RET_IP_);
 
-	ntp = kmem_cache_zalloc(xfs_trans_zone, GFP_KERNEL | __GFP_NOFAIL);
+	ntp = kmem_cache_zalloc(xfs_trans_cache, GFP_KERNEL | __GFP_NOFAIL);
 
 	/*
 	 * Initialize the new transaction structure.
@@ -263,7 +264,7 @@ xfs_trans_alloc(
 	 * by doing GFP_KERNEL allocations inside sb_start_intwrite().
 	 */
 retry:
-	tp = kmem_cache_zalloc(xfs_trans_zone, GFP_KERNEL | __GFP_NOFAIL);
+	tp = kmem_cache_zalloc(xfs_trans_cache, GFP_KERNEL | __GFP_NOFAIL);
 	if (!(flags & XFS_TRANS_NO_WRITECOUNT))
 		sb_start_intwrite(mp->m_super);
 	xfs_trans_set_context(tp);
@@ -478,11 +479,14 @@ STATIC void
 xfs_trans_apply_sb_deltas(
 	xfs_trans_t	*tp)
 {
-	xfs_dsb_t	*sbp;
-	xfs_buf_t	*bp;
-	int		whole = 0;
+	xfs_dsb_t		*sbp;
+	xfs_buf_t		*bp;
+	struct xfs_buf_log_item	*bip;
+	int			whole = 0;
+	int			grow = 0;
 
 	bp = xfs_trans_getsb(tp);
+	bip = bp->b_log_item;
 	sbp = bp->b_addr;
 
 	/*
@@ -507,10 +511,12 @@ xfs_trans_apply_sb_deltas(
 	if (tp->t_dblocks_delta) {
 		be64_add_cpu(&sbp->sb_dblocks, tp->t_dblocks_delta);
 		whole = 1;
+		grow = 1;
 	}
 	if (tp->t_agcount_delta) {
 		be32_add_cpu(&sbp->sb_agcount, tp->t_agcount_delta);
 		whole = 1;
+		grow = 1;
 	}
 	if (tp->t_imaxpct_delta) {
 		sbp->sb_imax_pct += tp->t_imaxpct_delta;
@@ -538,6 +544,8 @@ xfs_trans_apply_sb_deltas(
 	}
 
 	xfs_trans_buf_set_type(tp, bp, XFS_BLFT_SB_BUF);
+	if (grow)
+		bip->bli_flags |= XFS_BLI_GROW_SB_BUF;
 	if (whole)
 		/*
 		 * Log the whole thing, the fields are noncontiguous.
@@ -977,7 +985,7 @@ xfs_trans_cancel(
 	 * progress, so we only need to check against the mount shutdown state
 	 * here.
 	 */
-	if (dirty && !xfs_is_shutdown(mp)) {
+	if (dirty && !(xfs_is_shutdown(mp) && xlog_is_shutdown(log))) {
 		XFS_ERROR_REPORT("xfs_trans_cancel", XFS_ERRLEVEL_LOW, mp);
 		xfs_force_shutdown(mp, SHUTDOWN_CORRUPT_INCORE);
 	}
