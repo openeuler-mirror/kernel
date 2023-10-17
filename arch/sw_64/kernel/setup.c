@@ -888,11 +888,12 @@ setup_arch(char **cmdline_p)
 	/* Default root filesystem to sda2.  */
 	ROOT_DEV = Root_SDA2;
 
+	if (acpi_disabled) {
 #ifdef CONFIG_NUMA
-	cpu_set_node();
+		cpu_set_node();
 #endif
-	if (acpi_disabled)
 		device_tree_init();
+	}
 }
 
 
