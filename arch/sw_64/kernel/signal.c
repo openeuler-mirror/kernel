@@ -114,16 +114,14 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
  * registers and transfer control from userland.
  */
 
-SYSCALL_DEFINE0(sigreturn)
+SYSCALL_DEFINE1(sigreturn, struct sigcontext __user *, sc)
 {
 	struct pt_regs *regs = current_pt_regs();
-	struct sigcontext __user *sc;
 	sigset_t set;
 
 	/* Always make any pending restarted system calls return -EINTR */
 	current->restart_block.fn = do_no_restart_syscall;
 
-	sc = (struct sigcontext __user *)regs->regs[30];
 	/* Verify that it's a good sigcontext before using it */
 	if (!access_ok(sc, sizeof(*sc)))
 		goto give_sigsegv;
@@ -147,16 +145,14 @@ give_sigsegv:
 	return 0;
 }
 
-SYSCALL_DEFINE0(rt_sigreturn)
+SYSCALL_DEFINE1(rt_sigreturn, struct rt_sigframe __user *, frame)
 {
 	struct pt_regs *regs = current_pt_regs();
-	struct rt_sigframe __user *frame;
 	sigset_t set;
 
 	/* Always make any pending restarted system calls return -EINTR */
 	current->restart_block.fn = do_no_restart_syscall;
 
-	frame = (struct rt_sigframe __user *)regs->regs[30];
 	/* Verify that it's a good ucontext_t before using it */
 	if (!access_ok(&frame->uc, sizeof(frame->uc)))
 		goto give_sigsegv;
