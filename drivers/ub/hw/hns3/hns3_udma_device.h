@@ -22,8 +22,27 @@
 #include "hns3_udma_common.h"
 
 #define UDMA_MAX_PORTS				6
+
+#define BA_BYTE_LEN				8
+
 #define UDMA_INVALID_ID				0xffff
+
+/* Configure to HW for PAGE_SIZE larger than 4KB */
+#define PG_SHIFT_OFFSET				(PAGE_SHIFT - 12)
 #define UDMA_MAX_IRQ_NUM			128
+#define UDMA_QP_BANK_NUM			8
+#define UDMA_QPC_SZ				512
+#define UDMA_CQE_SZ				64
+#define UDMA_SCCC_SZ				64
+#define UDMA_GMV_ENTRY_SZ			32
+
+#define UDMA_CQ_BANK_NUM			4
+/* The minimum page size is 4K for hardware */
+#define UDMA_HW_PAGE_SHIFT			12
+#define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
+#define udma_hw_page_align(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
+
+#define UDMA_HOP_NUM_0				0xff
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
 
 #define UDMA_CMQ_TX_TIMEOUT			30000
@@ -50,10 +69,59 @@ enum udma_instance_state {
 	UDMA_STATE_UNINIT,
 };
 
+
+enum {
+	/* discard BIT(2), reserved for compatibility */
+	UDMA_CAP_FLAG_CQ_RECORD_DB		= BIT(3),
+	UDMA_CAP_FLAG_QP_RECORD_DB		= BIT(4),
+	UDMA_CAP_FLAG_SRQ			= BIT(5),
+	UDMA_CAP_FLAG_QP_FLOW_CTRL		= BIT(9),
+	UDMA_CAP_FLAG_DIRECT_WQE		= BIT(12),
+	UDMA_CAP_FLAG_SDI_MODE			= BIT(14),
+	UDMA_CAP_FLAG_DCA_MODE			= BIT(15),
+	UDMA_CAP_FLAG_WRITE_NOTIFY		= BIT(16),
+	UDMA_CAP_FLAG_STASH			= BIT(17),
+	UDMA_CAP_FLAG_CQE_INLINE		= BIT(19),
+	UDMA_CAP_FLAG_SRQ_RECORD_DB		= BIT(22),
+	UDMA_CAP_FLAG_OOR			= BIT(25),
+	UDMA_CAP_FLAG_AR			= BIT(26),
+	UDMA_CAP_FLAG_POE			= BIT(27),
+};
+
 enum {
 	TYPE_CSQ = 1
 };
 
+
+enum {
+	UDMA_BUF_DIRECT = BIT(0),
+	UDMA_BUF_NOSLEEP = BIT(1),
+	UDMA_BUF_NOFAIL = BIT(2),
+};
+
+struct udma_ida {
+	struct ida	ida;
+	uint32_t	min; /* Lowest ID to allocate.  */
+	uint32_t	max; /* Highest ID to allocate. */
+};
+struct udma_buf_list {
+	void		*buf;
+	dma_addr_t	map;
+};
+
+struct udma_buf {
+	struct udma_buf_list		*trunk_list;
+	uint32_t			ntrunks;
+	uint32_t			npages;
+	uint32_t			trunk_shift;
+	uint32_t			page_shift;
+};
+
+struct udma_link_table {
+	struct udma_buf_list	table;
+	struct udma_buf		*buf;
+};
+struct udma_dev;
 struct udma_cmd_context {
 	struct completion	done;
 	int			result;
@@ -127,9 +195,25 @@ struct udma_cmq {
 struct udma_priv {
 	struct hnae3_handle	*handle;
 	struct udma_cmq		cmq;
+	struct udma_link_table	ext_llm;
 };
 
-struct udma_dev;
+struct udma_hem_table {
+	/* HEM type: 0 = qpc, 1 = mtt, 2 = cqc, 3 = srq, 4 = other */
+	uint32_t		type;
+	/* HEM array elment num */
+	uint64_t		num_hem;
+	/* Single obj size */
+	uint64_t		obj_size;
+	uint64_t		table_chunk_size;
+	struct mutex		mutex;
+	struct udma_hem		**hem;
+	uint64_t		**bt_l1;
+	dma_addr_t		*bt_l1_dma_addr;
+	uint64_t		**bt_l0;
+	dma_addr_t		*bt_l0_dma_addr;
+};
+
 struct udma_hw {
 	int (*cmq_init)(struct udma_dev *udma_dev);
 	void (*cmq_exit)(struct udma_dev *udma_dev);
@@ -140,6 +224,11 @@ struct udma_hw {
 			 uint16_t token, int event);
 	int (*poll_mbox_done)(struct udma_dev *udma_dev,
 			      uint32_t timeout);
+	int (*set_hem)(struct udma_dev *udma_dev,
+		       struct udma_hem_table *table, int obj, int step_idx);
+	int (*clear_hem)(struct udma_dev *udma_dev,
+			 struct udma_hem_table *table, int obj,
+			 int step_idx);
 };
 
 struct udma_caps {
@@ -290,6 +379,54 @@ struct udma_caps {
 	uint8_t			poe_ch_num;
 };
 
+struct udma_idx_table {
+	uint32_t *spare_idx;
+	uint32_t head;
+	uint32_t tail;
+};
+
+struct udma_bank {
+	struct ida ida;
+	uint32_t inuse; /* Number of IDs allocated */
+	uint32_t min; /* Lowest ID to allocate.  */
+	uint32_t max; /* Highest ID to allocate. */
+	uint32_t next; /* Next ID to allocate. */
+};
+
+struct udma_qp_table {
+	struct xarray		xa;
+	struct udma_hem_table	qp_table;
+	struct udma_hem_table	irrl_table;
+	struct udma_hem_table	trrl_table;
+	struct udma_hem_table	sccc_table;
+	struct udma_bank	bank[UDMA_QP_BANK_NUM];
+	struct mutex		bank_mutex;
+	struct udma_idx_table	idx_table;
+};
+
+struct udma_jfc_table {
+	struct xarray		xa;
+	struct udma_hem_table	table;
+	struct udma_bank	bank[UDMA_CQ_BANK_NUM];
+	struct mutex		bank_mutex;
+};
+
+struct udma_jfs_table {
+	struct xarray		xa;
+	struct udma_ida		jfs_ida;
+};
+
+struct udma_jfr_table {
+	struct xarray		xa;
+	struct udma_hem_table	table;
+	struct udma_ida		jfr_ida;
+};
+
+struct udma_seg_table {
+	struct udma_ida		seg_ida;
+	struct udma_hem_table	table;
+};
+
 struct udma_dev {
 	struct ubcore_device		ub_dev;
 	struct pci_dev			*pci_dev;
@@ -313,7 +450,45 @@ struct udma_dev {
 	uint16_t			func_id;
 	uint32_t			func_num;
 	uint32_t			cong_algo_tmpl_id;
+	struct udma_jfs_table		jfs_table;
+	struct udma_jfr_table		jfr_table;
+	struct udma_seg_table		seg_table;
+	struct udma_jfc_table		jfc_table;
+	struct udma_qp_table		qp_table;
+	struct udma_hem_table		qpc_timer_table;
+	struct udma_hem_table		cqc_timer_table;
+	struct udma_hem_table		gmv_table;
 };
+
+static inline uint64_t to_hr_hw_page_addr(uint64_t addr)
+{
+	return addr >> UDMA_HW_PAGE_SHIFT;
+}
+
+static inline uint32_t to_hr_hw_page_shift(uint32_t page_shift)
+{
+	return page_shift - UDMA_HW_PAGE_SHIFT;
+}
+
+static inline uint32_t to_udma_hem_hopnum(uint32_t hopnum, uint32_t count)
+{
+	if (count > 0)
+		return hopnum == UDMA_HOP_NUM_0 ? 0 : hopnum;
+
+	return 0;
+}
+
+static inline dma_addr_t udma_buf_dma_addr(struct udma_buf *buf,
+					   uint32_t offset)
+{
+	return buf->trunk_list[offset >> buf->trunk_shift].map +
+			(offset & ((1 << buf->trunk_shift) - 1));
+}
+
+static inline dma_addr_t udma_buf_page(struct udma_buf *buf, uint32_t idx)
+{
+	return udma_buf_dma_addr(buf, idx << buf->page_shift);
+}
 
 int udma_cmd_init(struct udma_dev *udma_dev);
 void udma_cmd_cleanup(struct udma_dev *udma_dev);
@@ -323,5 +498,7 @@ int udma_cmq_send(struct udma_dev *udma_dev,
 		  struct udma_cmq_desc *desc, int num);
 int udma_hnae_client_init(struct udma_dev *udma_dev);
 void udma_hnae_client_exit(struct udma_dev *udma_dev);
+void udma_cleanup_common_hem(struct udma_dev *udma_dev);
+int udma_init_common_hem(struct udma_dev *udma_dev);
 
 #endif /* _UDMA_DEVICE_H */

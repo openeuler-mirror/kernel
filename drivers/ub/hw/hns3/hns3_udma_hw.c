@@ -18,6 +18,7 @@
 #include <linux/inetdevice.h>
 #include "hnae3.h"
 #include "hns3_udma_cmd.h"
+#include "hns3_udma_hem.h"
 
 static const struct pci_device_id udma_hw_pci_tbl[] = {
 	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL),
@@ -339,6 +340,500 @@ static int udma_query_caps(struct udma_dev *udma_dev)
 	return 0;
 }
 
+static int load_func_res_caps(struct udma_dev *udma_dev)
+{
+	struct udma_cmq_desc desc[2];
+	struct udma_cmq_req *r_a = (struct udma_cmq_req *)desc[0].data;
+	struct udma_cmq_req *r_b = (struct udma_cmq_req *)desc[1].data;
+	struct udma_caps *caps = &udma_dev->caps;
+	enum udma_opcode_type opcode;
+	uint32_t func_num;
+	int ret;
+
+	opcode = UDMA_OPC_QUERY_PF_RES;
+	func_num = udma_dev->func_num;
+
+	udma_cmq_setup_basic_desc(&desc[0], opcode, true);
+	desc[0].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	udma_cmq_setup_basic_desc(&desc[1], opcode, true);
+
+	ret = udma_cmq_send(udma_dev, desc, 2);
+	if (ret)
+		return ret;
+
+	caps->qpc_bt_num = udma_reg_read(r_a, FUNC_RES_A_QPC_BT_NUM) / func_num;
+	caps->srqc_bt_num =
+		udma_reg_read(r_a, FUNC_RES_A_SRQC_BT_NUM) / func_num;
+	caps->cqc_bt_num = udma_reg_read(r_a, FUNC_RES_A_CQC_BT_NUM) / func_num;
+	caps->mpt_bt_num = udma_reg_read(r_a, FUNC_RES_A_MPT_BT_NUM) / func_num;
+	caps->eqc_bt_num = udma_reg_read(r_a, FUNC_RES_A_EQC_BT_NUM) / func_num;
+	caps->smac_bt_num = udma_reg_read(r_b, FUNC_RES_B_SMAC_NUM) / func_num;
+	caps->sgid_bt_num = udma_reg_read(r_b, FUNC_RES_B_SGID_NUM) / func_num;
+	caps->sccc_bt_num =
+		udma_reg_read(r_b, FUNC_RES_B_SCCC_BT_NUM) / func_num;
+
+
+	caps->sl_num =
+		udma_reg_read(r_b, FUNC_RES_B_QID_NUM) / func_num;
+	caps->gmv_bt_num =
+		udma_reg_read(r_b, FUNC_RES_B_GMV_BT_NUM) / func_num;
+
+	return 0;
+}
+
+static void setup_default_ext_caps(struct udma_dev *udma_dev)
+{
+	struct udma_caps *caps = &udma_dev->caps;
+
+	caps->num_pi_qps = caps->num_qps;
+	caps->llm_ba_idx = 0;
+	caps->llm_ba_num = UDMA_EXT_LLM_MAX_DEPTH;
+
+}
+
+static int load_ext_cfg_caps(struct udma_dev *udma_dev)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	struct udma_caps *caps = &udma_dev->caps;
+	uint32_t func_num, qp_num;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_EXT_CFG, true);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret)
+		return ret;
+
+	func_num = max_t(uint32_t, 1, udma_dev->func_num);
+	qp_num = udma_reg_read(req, EXT_CFG_QP_PI_NUM) / func_num;
+	caps->num_pi_qps = round_down(qp_num, UDMA_QP_BANK_NUM);
+
+	qp_num = udma_reg_read(req, EXT_CFG_QP_NUM) / func_num;
+	caps->num_qps = round_down(qp_num, UDMA_QP_BANK_NUM);
+	caps->num_qps_shift = ilog2(caps->num_qps);
+
+	/* The extend doorbell memory on the PF is shared by all its VFs. */
+	caps->llm_ba_idx = udma_reg_read(req, EXT_CFG_LLM_IDX);
+	caps->llm_ba_num = udma_reg_read(req, EXT_CFG_LLM_NUM);
+
+	return 0;
+}
+
+static int query_func_resource_caps(struct udma_dev *udma_dev)
+{
+	struct device *dev = udma_dev->dev;
+	int ret;
+
+	ret = load_func_res_caps(udma_dev);
+	if (ret) {
+		dev_err(dev, "failed to load res caps, ret = %d (pf).\n",
+			ret);
+		return ret;
+	}
+
+	setup_default_ext_caps(udma_dev);
+
+	ret = load_ext_cfg_caps(udma_dev);
+	if (ret)
+		dev_err(dev, "failed to load ext cfg, ret = %d (pf).\n",
+			ret);
+	return ret;
+}
+
+static int load_pf_timer_res_caps(struct udma_dev *udma_dev)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	struct udma_caps *caps = &udma_dev->caps;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_QUERY_PF_TIMER_RES,
+				  true);
+
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret)
+		return ret;
+
+	caps->qpc_timer_bt_num = udma_reg_read(req, PF_TIMER_RES_QPC_ITEM_NUM);
+	caps->cqc_timer_bt_num = udma_reg_read(req, PF_TIMER_RES_CQC_ITEM_NUM);
+
+	return 0;
+}
+
+static int query_func_oor_caps(struct udma_dev *udma_dev)
+{
+	struct udma_caps *caps = &udma_dev->caps;
+	struct udma_query_oor_cmq *resp;
+	struct udma_cmq_desc desc;
+	int ret = 0;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_QUERY_OOR_CAPS, true);
+
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to func oor caps, ret = %d.\n", ret);
+		return ret;
+	}
+
+	resp = (struct udma_query_oor_cmq *)desc.data;
+
+	caps->oor_en = resp->oor_en;
+	caps->reorder_cq_buffer_en = resp->reorder_cq_buffer_en;
+	caps->reorder_cap = resp->reorder_cap;
+	caps->reorder_cq_shift = resp->reorder_cq_shift;
+	caps->onflight_size = resp->on_flight_size;
+	caps->dynamic_ack_timeout = resp->dynamic_ack_timeout;
+
+	return ret;
+}
+
+static int udma_query_pf_resource(struct udma_dev *udma_dev)
+{
+	struct device *dev = udma_dev->dev;
+	int ret;
+
+	ret = query_func_resource_caps(udma_dev);
+	if (ret)
+		return ret;
+
+	ret = load_pf_timer_res_caps(udma_dev);
+	if (ret) {
+		dev_err(dev, "failed to load pf timer resource, ret = %d.\n",
+			ret);
+		return ret;
+	}
+
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_OOR)
+		ret = query_func_oor_caps(udma_dev);
+
+	return ret;
+}
+
+static void calc_pg_sz(uint32_t obj_num, uint32_t obj_size, uint32_t hop_num,
+		       uint32_t ctx_bt_num, uint32_t *buf_page_size,
+		       uint32_t *bt_page_size, uint32_t hem_type)
+{
+	uint64_t buf_chunk_size = PAGE_SIZE;
+	uint64_t bt_chunk_size = PAGE_SIZE;
+	uint64_t obj_per_chunk_default;
+	uint64_t obj_per_chunk;
+
+	obj_per_chunk_default = buf_chunk_size / obj_size;
+	*buf_page_size = 0;
+	*bt_page_size = 0;
+
+	switch (hop_num) {
+	case 3:
+		obj_per_chunk = ctx_bt_num * (bt_chunk_size / BA_BYTE_LEN) *
+				(bt_chunk_size / BA_BYTE_LEN) *
+				(bt_chunk_size / BA_BYTE_LEN) *
+				 obj_per_chunk_default;
+		break;
+	case 2:
+		obj_per_chunk = ctx_bt_num * (bt_chunk_size / BA_BYTE_LEN) *
+				(bt_chunk_size / BA_BYTE_LEN) *
+				 obj_per_chunk_default;
+		break;
+	case 1:
+		obj_per_chunk = ctx_bt_num * (bt_chunk_size / BA_BYTE_LEN) *
+				obj_per_chunk_default;
+		break;
+	case UDMA_HOP_NUM_0:
+		obj_per_chunk = ctx_bt_num * obj_per_chunk_default;
+		break;
+	default:
+		pr_err("table %u not support hop_num = %u!\n", hem_type,
+		       hop_num);
+		return;
+	}
+
+	if (hem_type >= HEM_TYPE_MTT)
+		*bt_page_size = ilog2(DIV_ROUND_UP(obj_num, obj_per_chunk));
+	else
+		*buf_page_size = ilog2(DIV_ROUND_UP(obj_num, obj_per_chunk));
+}
+
+static void set_hem_page_size(struct udma_dev *udma_dev)
+{
+	struct udma_caps *caps = &udma_dev->caps;
+
+	/* EQ */
+	caps->eqe_ba_pg_sz = 0;
+	caps->eqe_buf_pg_sz = 0;
+
+	/* Link Table */
+	caps->llm_buf_pg_sz = 0;
+
+	/* MR */
+	caps->mpt_ba_pg_sz = 0;
+	caps->mpt_buf_pg_sz = 0;
+	caps->pbl_ba_pg_sz = UDMA_BA_PG_SZ_SUPPORTED_16K;
+	caps->pbl_buf_pg_sz = 0;
+	calc_pg_sz(caps->num_mtpts, caps->mtpt_entry_sz, caps->mpt_hop_num,
+		   caps->mpt_bt_num, &caps->mpt_buf_pg_sz, &caps->mpt_ba_pg_sz,
+		   HEM_TYPE_MTPT);
+
+	/* QP */
+	caps->qpc_ba_pg_sz = 0;
+	caps->qpc_buf_pg_sz = 0;
+	caps->qpc_timer_ba_pg_sz = 0;
+	caps->qpc_timer_buf_pg_sz = 0;
+	caps->sccc_ba_pg_sz = 0;
+	caps->sccc_buf_pg_sz = 0;
+	caps->mtt_ba_pg_sz = 0;
+	caps->mtt_buf_pg_sz = 0;
+	calc_pg_sz(caps->num_qps, caps->qpc_sz, caps->qpc_hop_num,
+		   caps->qpc_bt_num, &caps->qpc_buf_pg_sz, &caps->qpc_ba_pg_sz,
+		   HEM_TYPE_QPC);
+
+	if (caps->flags & UDMA_CAP_FLAG_QP_FLOW_CTRL)
+		calc_pg_sz(caps->num_qps, caps->scc_ctx_sz, caps->sccc_hop_num,
+			   caps->sccc_bt_num, &caps->sccc_buf_pg_sz,
+			   &caps->sccc_ba_pg_sz, HEM_TYPE_SCCC);
+
+	/* CQ */
+	caps->cqc_ba_pg_sz = 0;
+	caps->cqc_buf_pg_sz = 0;
+	caps->cqc_timer_ba_pg_sz = 0;
+	caps->cqc_timer_buf_pg_sz = 0;
+	caps->cqe_ba_pg_sz = UDMA_BA_PG_SZ_SUPPORTED_256K;
+	caps->cqe_buf_pg_sz = 0;
+	calc_pg_sz(caps->num_cqs, caps->cqc_entry_sz, caps->cqc_hop_num,
+		   caps->cqc_bt_num, &caps->cqc_buf_pg_sz, &caps->cqc_ba_pg_sz,
+		   HEM_TYPE_CQC);
+	calc_pg_sz(caps->max_cqes, caps->cqe_sz, caps->cqe_hop_num,
+		   1, &caps->cqe_buf_pg_sz, &caps->cqe_ba_pg_sz, HEM_TYPE_CQE);
+
+	/* SRQ */
+	if (caps->flags & UDMA_CAP_FLAG_SRQ) {
+		caps->srqc_ba_pg_sz = 0;
+		caps->srqc_buf_pg_sz = 0;
+		caps->srqwqe_ba_pg_sz = 0;
+		caps->srqwqe_buf_pg_sz = 0;
+		caps->idx_ba_pg_sz = 0;
+		caps->idx_buf_pg_sz = 0;
+		calc_pg_sz(caps->num_srqs, caps->srqc_entry_sz,
+			   caps->srqc_hop_num, caps->srqc_bt_num,
+			   &caps->srqc_buf_pg_sz, &caps->srqc_ba_pg_sz,
+			   HEM_TYPE_SRQC);
+		calc_pg_sz(caps->num_srqwqe_segs, caps->mtt_entry_sz,
+			   caps->srqwqe_hop_num, 1, &caps->srqwqe_buf_pg_sz,
+			   &caps->srqwqe_ba_pg_sz, HEM_TYPE_SRQWQE);
+		calc_pg_sz(caps->num_idx_segs, caps->idx_entry_sz,
+			   caps->idx_hop_num, 1, &caps->idx_buf_pg_sz,
+			   &caps->idx_ba_pg_sz, HEM_TYPE_INDEX);
+	}
+
+	/* GMV */
+	caps->gmv_ba_pg_sz = 0;
+	caps->gmv_buf_pg_sz = 0;
+}
+
+/* Apply all loaded caps before setting to hardware */
+static void apply_func_caps(struct udma_dev *udma_dev)
+{
+	struct udma_caps *caps = &udma_dev->caps;
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+
+	caps->qpc_timer_entry_sz = UDMA_QPC_TIMER_ENTRY_SZ;
+	caps->cqc_timer_entry_sz = UDMA_CQC_TIMER_ENTRY_SZ;
+	caps->mtt_entry_sz = UDMA_MTT_ENTRY_SZ;
+	caps->eqe_hop_num = UDMA_EQE_HOP_NUM;
+	caps->pbl_hop_num = UDMA_PBL_HOP_NUM;
+	caps->qpc_timer_hop_num = UDMA_HOP_NUM_0;
+	caps->cqc_timer_hop_num = UDMA_HOP_NUM_0;
+	caps->ceqe_size = UDMA_EQE_SIZE;
+	caps->aeqe_size = UDMA_EQE_SIZE;
+	caps->num_mtt_segs = UDMA_MAX_MTT_SEGS;
+	caps->num_srqwqe_segs = UDMA_MAX_SRQWQE_SEGS;
+	caps->num_idx_segs = UDMA_MAX_IDX_SEGS;
+
+	/* num_vector = comp_vector + aeq_vector + abn_vector */
+	if (!caps->num_comp_vectors) {
+		caps->num_comp_vectors =
+			min_t(uint32_t, caps->eqc_bt_num - 1,
+			      (uint32_t)priv->handle->udmainfo.num_vectors -
+			      UDMA_FUNC_IRQ_RSV);
+	}
+	caps->qpc_sz = UDMA_QPC_SZ;
+	caps->cqe_sz = UDMA_CQE_SZ;
+	caps->scc_ctx_sz = UDMA_SCCC_SZ;
+
+	/* The following caps are not in ncl config */
+	caps->gmv_entry_sz = UDMA_GMV_ENTRY_SZ;
+
+	caps->gmv_hop_num = UDMA_HOP_NUM_0;
+	caps->gid_table_len[0] = caps->gmv_bt_num *
+				(UDMA_PAGE_SIZE / caps->gmv_entry_sz);
+
+	caps->gmv_entry_num = caps->gmv_bt_num * (PAGE_SIZE /
+						  caps->gmv_entry_sz);
+
+	set_hem_page_size(udma_dev);
+}
+
+static int config_vf_ext_resource(struct udma_dev *udma_dev, uint32_t vf_id)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	struct udma_caps *caps = &udma_dev->caps;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_EXT_CFG, false);
+
+	udma_reg_write(req, EXT_CFG_VF_ID, vf_id);
+
+	udma_reg_write(req, EXT_CFG_QP_PI_NUM, caps->num_pi_qps);
+	udma_reg_write(req, EXT_CFG_QP_PI_INDEX, vf_id * caps->num_pi_qps);
+	udma_reg_write(req, EXT_CFG_QP_NUM, caps->num_qps);
+	udma_reg_write(req, EXT_CFG_QP_INDEX, vf_id * caps->num_qps);
+
+	return udma_cmq_send(udma_dev, &desc, 1);
+}
+
+static int config_vf_hem_resource(struct udma_dev *udma_dev, int vf_id)
+{
+	struct udma_cmq_desc desc[2];
+	struct udma_cmq_req *r_a = (struct udma_cmq_req *)desc[0].data;
+	struct udma_cmq_req *r_b = (struct udma_cmq_req *)desc[1].data;
+	struct udma_caps *caps = &udma_dev->caps;
+
+	udma_cmq_setup_basic_desc(&desc[0], UDMA_OPC_ALLOC_VF_RES, false);
+	desc[0].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	udma_cmq_setup_basic_desc(&desc[1], UDMA_OPC_ALLOC_VF_RES, false);
+
+	udma_reg_write(r_a, FUNC_RES_A_VF_ID, vf_id);
+
+	udma_reg_write(r_a, FUNC_RES_A_QPC_BT_NUM, caps->qpc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_QPC_BT_INDEX, vf_id * caps->qpc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_SRQC_BT_NUM, caps->srqc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_SRQC_BT_INDEX, vf_id * caps->srqc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_CQC_BT_NUM, caps->cqc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_CQC_BT_INDEX, vf_id * caps->cqc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_MPT_BT_NUM, caps->mpt_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_MPT_BT_INDEX, vf_id * caps->mpt_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_EQC_BT_NUM, caps->eqc_bt_num);
+	udma_reg_write(r_a, FUNC_RES_A_EQC_BT_INDEX, vf_id * caps->eqc_bt_num);
+	udma_reg_write(r_b, FUNC_RES_V_QID_NUM, caps->sl_num);
+	udma_reg_write(r_b, FUNC_RES_B_QID_INDEX, vf_id * caps->sl_num);
+	udma_reg_write(r_b, FUNC_RES_B_SCCC_BT_NUM, caps->sccc_bt_num);
+	udma_reg_write(r_b, FUNC_RES_B_SCCC_BT_INDEX, vf_id * caps->sccc_bt_num);
+	udma_reg_write(r_b, FUNC_RES_V_GMV_BT_NUM, caps->gmv_bt_num);
+	udma_reg_write(r_b, FUNC_RES_B_GMV_BT_INDEX,
+		       vf_id * caps->gmv_bt_num);
+
+	return udma_cmq_send(udma_dev, desc, 2);
+}
+
+static int udma_alloc_vf_resource(struct udma_dev *udma_dev)
+{
+	uint32_t vf_id;
+	int ret;
+
+	for (vf_id = 0; vf_id < udma_dev->func_num; vf_id++) {
+		ret = config_vf_hem_resource(udma_dev, vf_id);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to config vf-%u hem res, ret = %d.\n",
+				vf_id, ret);
+			return ret;
+		}
+
+		ret = config_vf_ext_resource(udma_dev, vf_id);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to config vf-%u ext res, ret = %d.\n",
+				vf_id, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int udma_set_bt(struct udma_dev *udma_dev)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	struct udma_caps *caps = &udma_dev->caps;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_BT_ATTR, false);
+
+	udma_reg_write(req, CFG_BT_QPC_BA_PGSZ,
+		       caps->qpc_ba_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_QPC_BUF_PGSZ,
+		       caps->qpc_buf_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_QPC_HOPNUM,
+		       to_udma_hem_hopnum(caps->qpc_hop_num, caps->num_qps));
+
+	udma_reg_write(req, CFG_BT_SRQC_BA_PGSZ,
+		       caps->srqc_ba_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_SRQC_BUF_PGSZ,
+		       caps->srqc_buf_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_SRQC_HOPNUM,
+		       to_udma_hem_hopnum(caps->srqc_hop_num, caps->num_srqs));
+
+	udma_reg_write(req, CFG_BT_CQC_BA_PGSZ,
+		       caps->cqc_ba_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_CQC_BUF_PGSZ,
+		       caps->cqc_buf_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_CQC_HOPNUM,
+		       to_udma_hem_hopnum(caps->cqc_hop_num, caps->num_cqs));
+
+	udma_reg_write(req, CFG_BT_MPT_BA_PGSZ,
+		       caps->mpt_ba_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_MPT_BUF_PGSZ,
+		       caps->mpt_buf_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_MPT_HOPNUM,
+		       to_udma_hem_hopnum(caps->mpt_hop_num, caps->num_mtpts));
+
+	udma_reg_write(req, CFG_BT_SCCC_BA_PGSZ,
+		       caps->sccc_ba_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_SCCC_BUF_PGSZ,
+		       caps->sccc_buf_pg_sz + PG_SHIFT_OFFSET);
+	udma_reg_write(req, CFG_BT_SCCC_HOPNUM,
+		       to_udma_hem_hopnum(caps->sccc_hop_num, caps->num_qps));
+
+	return udma_cmq_send(udma_dev, &desc, 1);
+}
+
+static int config_hem_entry_size(struct udma_dev *udma_dev, uint32_t type,
+				 uint32_t val)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_ENTRY_SIZE,
+				  false);
+
+	udma_reg_write(req, CFG_HEM_ENTRY_SIZE_TYPE, type);
+	udma_reg_write(req, CFG_HEM_ENTRY_SIZE_VALUE, val);
+
+	return udma_cmq_send(udma_dev, &desc, 1);
+}
+
+static int udma_config_entry_size(struct udma_dev *udma_dev)
+{
+	struct udma_caps *caps = &udma_dev->caps;
+	int ret;
+
+	ret = config_hem_entry_size(udma_dev, UDMA_CFG_QPC_SIZE,
+				    caps->qpc_sz);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"failed to cfg qpc sz, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = config_hem_entry_size(udma_dev, UDMA_CFG_SCCC_SIZE,
+				    caps->scc_ctx_sz);
+	if (ret)
+		dev_err(udma_dev->dev,
+			"failed to cfg sccc sz, ret = %d.\n", ret);
+
+	return ret;
+}
+
 static int udma_pf_profile(struct udma_dev *udma_dev)
 {
 	struct device *dev = udma_dev->dev;
@@ -368,7 +863,27 @@ static int udma_pf_profile(struct udma_dev *udma_dev)
 		return ret;
 	}
 
-	return 0;
+	ret = udma_query_pf_resource(udma_dev);
+	if (ret) {
+		dev_err(dev, "failed to query pf resource, ret = %d.\n", ret);
+		return ret;
+	}
+
+	apply_func_caps(udma_dev);
+	ret = udma_alloc_vf_resource(udma_dev);
+	if (ret) {
+		dev_err(dev, "failed to alloc vf resource, ret = %d.\n", ret);
+		return ret;
+	}
+
+	ret = udma_set_bt(udma_dev);
+	if (ret) {
+		dev_err(dev, "failed to config BA table, ret = %d.\n", ret);
+		return ret;
+	}
+
+	/* Configure the size of QPC, SCCC, etc. */
+	return udma_config_entry_size(udma_dev);
 }
 
 static int udma_profile(struct udma_dev *udma_dev)
@@ -478,14 +993,444 @@ static void udma_cmq_exit(struct udma_dev *udma_dev)
 	udma_free_cmq_desc(udma_dev, &priv->cmq.csq);
 }
 
+
+static void config_llm_table(struct udma_buf *data_buf, void *cfg_buf)
+{
+	uint64_t *entry = (uint64_t *)cfg_buf;
+	uint32_t i, next_ptr, page_num;
+	dma_addr_t addr;
+	uint64_t val;
+
+	page_num = data_buf->npages;
+	for (i = 0; i < page_num; i++) {
+		addr = udma_buf_page(data_buf, i);
+		if (i == (page_num - 1))
+			next_ptr = 0;
+		else
+			next_ptr = i + 1;
+
+		val = UDMA_EXT_LLM_ENTRY(addr, (uint64_t)next_ptr);
+		entry[i] = cpu_to_le64(val);
+	}
+}
+
+static int set_llm_cfg_to_hw(struct udma_dev *udma_dev,
+			     struct udma_link_table *table)
+{
+	struct udma_cmq_desc desc[2];
+	struct udma_cmq_req *r_a = (struct udma_cmq_req *)desc[0].data;
+	struct udma_cmq_req *r_b = (struct udma_cmq_req *)desc[1].data;
+	struct udma_buf *buf = table->buf;
+	enum udma_opcode_type opcode;
+	dma_addr_t addr;
+
+	opcode = UDMA_OPC_CFG_EXT_LLM;
+	udma_cmq_setup_basic_desc(&desc[0], opcode, false);
+	desc[0].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	udma_cmq_setup_basic_desc(&desc[1], opcode, false);
+
+	udma_reg_write(r_a, CFG_LLM_A_BA_L, lower_32_bits(table->table.map));
+	udma_reg_write(r_a, CFG_LLM_A_BA_H, upper_32_bits(table->table.map));
+	udma_reg_write(r_a, CFG_LLM_A_DEPTH, buf->npages);
+	udma_reg_write(r_a, CFG_LLM_A_PG_SZ,
+		       to_hr_hw_page_shift(buf->page_shift));
+	udma_reg_enable(r_a, CFG_LLM_A_INIT_EN);
+
+	addr = to_hr_hw_page_addr(udma_buf_page(buf, 0));
+	udma_reg_write(r_a, CFG_LLM_A_HEAD_BA_L, lower_32_bits(addr));
+	udma_reg_write(r_a, CFG_LLM_A_HEAD_BA_H, upper_32_bits(addr));
+	udma_reg_write(r_a, CFG_LLM_A_HEAD_NXT_PTR, 1);
+	udma_reg_write(r_a, CFG_LLM_A_HEAD_PTR, 0);
+
+	addr = to_hr_hw_page_addr(udma_buf_page(buf, buf->npages - 1));
+	udma_reg_write(r_b, CFG_LLM_B_TAIL_BA_L, lower_32_bits(addr));
+	udma_reg_write(r_b, CFG_LLM_B_TAIL_BA_H, upper_32_bits(addr));
+	udma_reg_write(r_b, CFG_LLM_B_TAIL_PTR, buf->npages - 1);
+
+	return udma_cmq_send(udma_dev, desc, 2);
+}
+
+static struct udma_link_table *
+alloc_link_table_buf(struct udma_dev *udma_dev)
+{
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+	uint32_t pg_shift, size, min_size;
+	struct udma_link_table *link_tbl;
+
+	link_tbl = &priv->ext_llm;
+	pg_shift = udma_dev->caps.llm_buf_pg_sz + PAGE_SHIFT;
+	size = udma_dev->caps.num_qps * UDMA_EXT_LLM_ENTRY_SZ;
+	min_size = UDMA_EXT_LLM_MIN_PAGES(udma_dev->caps.sl_num) << pg_shift;
+
+	/* Alloc data table */
+	size = max(size, min_size);
+	link_tbl->buf = udma_buf_alloc(udma_dev, size, pg_shift, 0);
+	if (IS_ERR(link_tbl->buf))
+		return ERR_PTR(-ENOMEM);
+
+	/* Alloc config table */
+	size = link_tbl->buf->npages * sizeof(uint64_t);
+	link_tbl->table.buf = dma_alloc_coherent(udma_dev->dev, size,
+						 &link_tbl->table.map,
+						 GFP_KERNEL);
+	if (!link_tbl->table.buf) {
+		udma_buf_free(udma_dev, link_tbl->buf);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	return link_tbl;
+}
+
+static void free_link_table_buf(struct udma_dev *udma_dev,
+				struct udma_link_table *tbl)
+{
+	if (tbl->buf) {
+		uint32_t size = tbl->buf->npages * sizeof(uint64_t);
+
+		dma_free_coherent(udma_dev->dev, size, tbl->table.buf,
+				  tbl->table.map);
+	}
+
+	udma_buf_free(udma_dev, tbl->buf);
+}
+
+static int udma_init_link_table(struct udma_dev *udma_dev)
+{
+	struct udma_link_table *link_tbl;
+	int ret;
+
+	link_tbl = alloc_link_table_buf(udma_dev);
+	if (IS_ERR(link_tbl))
+		return -ENOMEM;
+
+	if (WARN_ON(link_tbl->buf->npages > UDMA_EXT_LLM_MAX_DEPTH)) {
+		ret = -EINVAL;
+		goto err_alloc;
+	}
+
+	config_llm_table(link_tbl->buf, link_tbl->table.buf);
+	ret = set_llm_cfg_to_hw(udma_dev, link_tbl);
+	if (ret)
+		goto err_alloc;
+
+	return 0;
+
+err_alloc:
+	free_link_table_buf(udma_dev, link_tbl);
+	return ret;
+}
+
+static void udma_free_link_table(struct udma_dev *udma_dev)
+{
+	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+
+	free_link_table_buf(udma_dev, &priv->ext_llm);
+}
+
+static int udma_clear_extdb_list_info(struct udma_dev *udma_dev)
+{
+	struct udma_cmq_desc desc;
+	int ret;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CLEAR_EXTDB_LIST_INFO,
+				  false);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret)
+		dev_err(udma_dev->dev,
+			"failed to clear extended doorbell info, ret = %d.\n",
+			ret);
+
+	return ret;
+}
+
+int get_hem_table(struct udma_dev *udma_dev)
+{
+	uint32_t qpc_count;
+	uint32_t cqc_count;
+	uint32_t gmv_count;
+	uint32_t i;
+	int ret;
+
+	/* Alloc memory for source address table buffer space chunk */
+	for (gmv_count = 0; gmv_count < udma_dev->caps.gmv_entry_num;
+	     gmv_count++) {
+		ret = udma_table_get(udma_dev, &udma_dev->gmv_table, gmv_count);
+		if (ret)
+			goto err_gmv_failed;
+	}
+
+	/* Alloc memory for QPC Timer buffer space chunk */
+	for (qpc_count = 0; qpc_count < udma_dev->caps.qpc_timer_bt_num;
+	     qpc_count++) {
+		ret = udma_table_get(udma_dev, &udma_dev->qpc_timer_table,
+				     qpc_count);
+		if (ret) {
+			dev_err(udma_dev->dev, "QPC Timer get failed\n");
+			goto err_qpc_timer_failed;
+		}
+	}
+
+	/* Alloc memory for CQC Timer buffer space chunk */
+	for (cqc_count = 0; cqc_count < udma_dev->caps.cqc_timer_bt_num;
+	     cqc_count++) {
+		ret = udma_table_get(udma_dev, &udma_dev->cqc_timer_table,
+				     cqc_count);
+		if (ret) {
+			dev_err(udma_dev->dev, "CQC Timer get failed\n");
+			goto err_cqc_timer_failed;
+		}
+	}
+
+	return 0;
+
+err_cqc_timer_failed:
+	for (i = 0; i < cqc_count; i++)
+		udma_table_put(udma_dev, &udma_dev->cqc_timer_table, i);
+
+err_qpc_timer_failed:
+	for (i = 0; i < qpc_count; i++)
+		udma_table_put(udma_dev, &udma_dev->qpc_timer_table, i);
+
+err_gmv_failed:
+	for (i = 0; i < gmv_count; i++)
+		udma_table_put(udma_dev, &udma_dev->gmv_table, i);
+
+	return ret;
+}
+
+void put_hem_table(struct udma_dev *udma_dev)
+{
+	uint32_t i;
+
+	for (i = 0; i < udma_dev->caps.gmv_entry_num; i++)
+		udma_table_put(udma_dev, &udma_dev->gmv_table, i);
+
+
+	for (i = 0; i < udma_dev->caps.qpc_timer_bt_num; i++)
+		udma_table_put(udma_dev, &udma_dev->qpc_timer_table, i);
+
+	for (i = 0; i < udma_dev->caps.cqc_timer_bt_num; i++)
+		udma_table_put(udma_dev, &udma_dev->cqc_timer_table, i);
+}
+
 static int udma_hw_init(struct udma_dev *udma_dev)
 {
+	int ret;
+
+	/* UDMA requires the extdb info to be cleared before using */
+	ret = udma_clear_extdb_list_info(udma_dev);
+	if (ret)
+		goto err_clear_extdb_failed;
+
+	ret = get_hem_table(udma_dev);
+	if (ret)
+		goto err_clear_extdb_failed;
+
+	ret = udma_init_link_table(udma_dev);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to init llm, ret = %d.\n", ret);
+		goto err_llm_init_failed;
+	}
+
 	return 0;
+
+err_llm_init_failed:
+	put_hem_table(udma_dev);
+err_clear_extdb_failed:
+
+	return ret;
 }
 
 static void udma_hw_exit(struct udma_dev *udma_dev)
 {
+	udma_free_link_table(udma_dev);
 
+	put_hem_table(udma_dev);
+}
+
+static int get_op_for_set_hem(uint32_t type, int step_idx, uint16_t *mbox_op,
+			      bool is_create)
+{
+	uint16_t op;
+
+	switch (type) {
+	case HEM_TYPE_QPC:
+		op = is_create ? UDMA_CMD_WRITE_QPC_BT0 :
+		     UDMA_CMD_DESTROY_QPC_BT0;
+		break;
+	case HEM_TYPE_MTPT:
+		op = is_create ? UDMA_CMD_WRITE_MPT_BT0 :
+		     UDMA_CMD_DESTROY_MPT_BT0;
+		break;
+	case HEM_TYPE_CQC:
+		op = is_create ? UDMA_CMD_WRITE_CQC_BT0 :
+		     UDMA_CMD_DESTROY_CQC_BT0;
+		break;
+	case HEM_TYPE_SRQC:
+		op = is_create ? UDMA_CMD_WRITE_SRQC_BT0 :
+		     UDMA_CMD_DESTROY_SRQC_BT0;
+		break;
+	case HEM_TYPE_SCCC:
+		op = is_create ? UDMA_CMD_WRITE_SCCC_BT0 : UDMA_CMD_RESERVED;
+		break;
+	case HEM_TYPE_QPC_TIMER:
+		op = is_create ? UDMA_CMD_WRITE_QPC_TIMER_BT0 :
+		     UDMA_CMD_RESERVED;
+		break;
+	case HEM_TYPE_CQC_TIMER:
+		op = is_create ? UDMA_CMD_WRITE_CQC_TIMER_BT0 :
+		     UDMA_CMD_RESERVED;
+		break;
+	case HEM_TYPE_GMV:
+		op = is_create ? UDMA_CMD_RESERVED : UDMA_CMD_RESERVED;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (op != UDMA_CMD_RESERVED)
+		*mbox_op = op + step_idx;
+
+	return 0;
+}
+
+static int config_gmv_ba_to_hw(struct udma_dev *udma_dev, uint64_t obj,
+			       dma_addr_t base_addr)
+{
+	struct udma_cmq_desc desc;
+	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	uint32_t idx = obj / (UDMA_PAGE_SIZE / udma_dev->caps.gmv_entry_sz);
+	uint64_t addr = to_hr_hw_page_addr(base_addr);
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_GMV_BT, false);
+
+	udma_reg_write(req, CFG_GMV_BT_BA_L, lower_32_bits(addr));
+	udma_reg_write(req, CFG_GMV_BT_BA_H, upper_32_bits(addr));
+	udma_reg_write(req, CFG_GMV_BT_IDX, idx);
+	udma_reg_write(req, CFG_GMV_BT_VF_ID, 0);
+
+	return udma_cmq_send(udma_dev, &desc, 1);
+}
+
+static int config_hem_ba_to_hw(struct udma_dev *udma_dev, uint64_t obj,
+			       uint64_t base_addr, uint16_t op)
+{
+	struct udma_cmd_mailbox *mbox = udma_alloc_cmd_mailbox(udma_dev);
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+	int ret;
+
+	if (IS_ERR_OR_NULL(mbox))
+		return -ENOMEM;
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	mbox_desc_init(mb, base_addr, mbox->dma, obj, op);
+	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret)
+		dev_err(udma_dev->dev, "[mailbox cmd] config hem ba failed.\n");
+
+	udma_free_cmd_mailbox(udma_dev, mbox);
+
+	return ret;
+}
+
+static int set_hem_to_hw(struct udma_dev *udma_dev, int obj,
+			 dma_addr_t base_addr,
+			 uint32_t hem_type, int step_idx)
+{
+	bool is_create = true;
+	uint16_t op;
+	int ret;
+
+	if (unlikely(hem_type == HEM_TYPE_GMV))
+		return config_gmv_ba_to_hw(udma_dev, obj, base_addr);
+
+	if (unlikely(hem_type == HEM_TYPE_SCCC && step_idx))
+		return 0;
+
+	ret = get_op_for_set_hem(hem_type, step_idx, &op, is_create);
+	if (ret < 0)
+		return ret;
+
+	return config_hem_ba_to_hw(udma_dev, obj, base_addr, op);
+}
+
+static int udma_set_hem(struct udma_dev *udma_dev, struct udma_hem_table *table,
+			int obj, int step_idx)
+{
+	struct udma_hem_iter iter;
+	struct udma_hem_mhop mhop;
+	uint64_t mhop_obj = obj;
+	uint32_t chunk_ba_num;
+	struct udma_hem *hem;
+	uint64_t hem_idx = 0;
+	uint64_t l1_idx = 0;
+	uint64_t bt_ba = 0;
+	uint32_t hop_num;
+	int i, j, k;
+	int ret;
+
+	if (!udma_check_whether_mhop(udma_dev, table->type))
+		return 0;
+
+	udma_calc_hem_mhop(udma_dev, table, &mhop_obj, &mhop);
+	i = mhop.l0_idx;
+	j = mhop.l1_idx;
+	k = mhop.l2_idx;
+	hop_num = mhop.hop_num;
+	chunk_ba_num = mhop.bt_chunk_size / BA_BYTE_LEN;
+
+	if (hop_num == 2) {
+		hem_idx = i * chunk_ba_num * chunk_ba_num + j * chunk_ba_num +
+			  k;
+		l1_idx = i * chunk_ba_num + j;
+	} else if (hop_num == 1) {
+		hem_idx = i * chunk_ba_num + j;
+	} else if (hop_num == UDMA_HOP_NUM_0) {
+		hem_idx = i;
+	}
+
+	if (table->type == HEM_TYPE_SCCC)
+		obj = mhop.l0_idx;
+
+	if (check_whether_last_step(hop_num, step_idx)) {
+		hem = table->hem[hem_idx];
+		for (udma_hem_first(hem, &iter);
+		     !udma_hem_last(&iter); udma_hem_next(&iter)) {
+			bt_ba = udma_hem_addr(&iter);
+			ret = set_hem_to_hw(udma_dev, obj, bt_ba, table->type,
+					    step_idx);
+		}
+	} else {
+		if (step_idx == 0)
+			bt_ba = table->bt_l0_dma_addr[i];
+		else if (step_idx == 1 && hop_num == 2)
+			bt_ba = table->bt_l1_dma_addr[l1_idx];
+
+		ret = set_hem_to_hw(udma_dev, obj, bt_ba, table->type,
+				    step_idx);
+	}
+
+	return ret;
+}
+
+static int udma_clear_hem(struct udma_dev *udma_dev,
+			  struct udma_hem_table *table,
+			  int obj, int step_idx)
+{
+	uint16_t op = UDMA_CMD_RESERVED;
+	bool is_create = false;
+	int ret;
+
+	if (!udma_check_whether_mhop(udma_dev, table->type))
+		return 0;
+
+	ret = get_op_for_set_hem(table->type, step_idx, &op, is_create);
+	if (ret < 0 || op == UDMA_CMD_RESERVED)
+		return ret;
+
+	return config_hem_ba_to_hw(udma_dev, obj, 0, op);
 }
 
 static const struct udma_hw udma_hw = {
@@ -496,7 +1441,27 @@ static const struct udma_hw udma_hw = {
 	.hw_exit = udma_hw_exit,
 	.post_mbox = udma_post_mbox,
 	.poll_mbox_done = udma_poll_mbox_done,
+	.set_hem = udma_set_hem,
+	.clear_hem = udma_clear_hem,
 };
+
+bool udma_is_virtual_func(struct pci_dev *pdev)
+{
+	uint32_t dev_id = pdev->device;
+
+	switch (dev_id) {
+	case HNAE3_DEV_ID_UDMA_OVER_UBL:
+	case HNAE3_DEV_ID_UDMA:
+		return false;
+	case HNAE3_DEV_ID_UDMA_OVER_UBL_VF:
+		return true;
+	default:
+		dev_warn(&pdev->dev, "un-recognized pci deviced-id %x.\n",
+			 dev_id);
+	}
+
+	return false;
+}
 
 static void udma_get_cfg(struct udma_dev *udma_dev,
 			 struct hnae3_handle *handle)

@@ -35,6 +35,15 @@
 #define udma_set_bit(origin, shift, val)                                       \
 	udma_set_field((origin), (1ul << (shift)), (shift), (val))
 
+#define _udma_reg_enable(ptr, field)                    \
+	({                                                                     \
+		const uint32_t *_ptr = (uint32_t *)(ptr);                                  \
+		*((uint32_t *)_ptr + ((field) >> 32) / 32) |= cpu_to_le32(           \
+			BIT((((field) << 32) >> 32) % 32));            \
+	})
+
+#define udma_reg_enable(ptr, field) _udma_reg_enable(ptr, field)
+
 #define _udma_reg_clear(ptr, field)                     \
 	({                                                                     \
 		const uint32_t *_ptr = (uint32_t *)(ptr);                                  \
@@ -55,5 +64,15 @@
 	})
 
 #define udma_reg_write(ptr, field, val) _udma_reg_write(ptr, field, val)
+
+#define _udma_reg_read(ptr, field)                      \
+	({                                                                     \
+		const uint32_t *_ptr = (uint32_t *)(ptr);                                  \
+		BUILD_BUG_ON((((field) >> 32) / 32) != ((((field) << 32) >> 32) / 32));            \
+		FIELD_GET(GENMASK(((field) >> 32) % 32, (((field) << 32) >> 32) % 32),             \
+			  le32_to_cpu(*((uint32_t *)_ptr + ((field) >> 32) / 32)));  \
+	})
+
+#define udma_reg_read(ptr, field) _udma_reg_read(ptr, field)
 
 #endif /* _UDMA_COMMON_H */
