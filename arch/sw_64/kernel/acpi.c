@@ -3,6 +3,7 @@
 #include <linux/init.h>
 #include <linux/acpi.h>
 #include <linux/irqdomain.h>
+#include <linux/memblock.h>
 
 #include <asm/early_ioremap.h>
 
@@ -150,11 +151,25 @@ int __acpi_release_global_lock(unsigned int *lock)
 }
 
 #ifdef CONFIG_ACPI_NUMA
+static int rcid_to_cpu(int physical_id)
+{
+	int i;
+
+	for (i = 0; i < NR_CPUS; ++i) {
+		if (__cpu_to_rcid[i] == physical_id)
+			return i;
+	}
+
+	/* physical id not found */
+	return -1;
+}
+
 /* Callback for Proximity Domain -> CPUID mapping */
 void __init
 acpi_numa_processor_affinity_init(struct acpi_srat_cpu_affinity *pa)
 {
 	int pxm, node;
+	int cpu; // logical core id
 
 	if (srat_disabled())
 		return;
@@ -170,7 +185,8 @@ acpi_numa_processor_affinity_init(struct acpi_srat_cpu_affinity *pa)
 		pxm |= (pa->proximity_domain_hi[1] << 16);
 		pxm |= (pa->proximity_domain_hi[2] << 24);
 	}
-	node = setup_node(pxm);
+
+	node = acpi_map_pxm_to_node(pxm);
 	if (node < 0) {
 		pr_err("SRAT: Too many proximity domains %x\n", pxm);
 		bad_srat();
@@ -182,16 +198,17 @@ acpi_numa_processor_affinity_init(struct acpi_srat_cpu_affinity *pa)
 		return;
 	}
 
-	if (!cpu_guestmode)
-		numa_add_cpu(__cpu_number_map[pa->apic_id], node);
-	else
-		numa_add_cpu(pa->apic_id, node);
+	/* Record the mapping from logical core id to node id */
+	cpu = rcid_to_cpu(pa->apic_id);
+	if (cpu < 0) {
+		pr_err("SRAT: Can not find the logical id for physical Core 0x%02x\n", pa->apic_id);
+		return;
+	}
 
-	set_cpuid_to_node(pa->apic_id, node);
+	early_map_cpu_to_node(cpu, node);
+
 	node_set(node, numa_nodes_parsed);
-	acpi_numa = 1;
-	pr_err("SRAT: PXM %u -> CPU 0x%02x -> Node %u\n",
-		pxm, pa->apic_id, node);
+	pr_info("SRAT: PXM %u -> CPU 0x%02x -> Node %u\n", pxm, pa->apic_id, node);
 }
 
 #ifdef CONFIG_MEMORY_HOTPLUG

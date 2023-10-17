@@ -19,7 +19,7 @@ nodemask_t numa_nodes_parsed __initdata;
 
 static int numa_distance_cnt;
 static u8 *numa_distance;
-static bool numa_off;
+int numa_off;
 
 static __init int numa_setup(char *opt)
 {
@@ -393,6 +393,23 @@ void cpu_set_node(void)
 void numa_store_cpu_info(unsigned int cpu)
 {
 	set_cpu_numa_node(cpu, cpu_to_node_map[cpu]);
+}
+
+void __init early_map_cpu_to_node(unsigned int cpu, int nid)
+{
+	/* fallback to node 0 */
+	if (nid < 0 || nid >= MAX_NUMNODES || numa_off)
+		nid = 0;
+
+	cpu_to_node_map[cpu] = nid;
+
+	/*
+	 * We should set the numa node of cpu0 as soon as possible, because it
+	 * has already been set up online before. cpu_to_node(0) will soon be
+	 * called.
+	 */
+	if (!cpu)
+		set_cpu_numa_node(cpu, nid);
 }
 
 #ifdef CONFIG_DEBUG_PER_CPU_MAPS
