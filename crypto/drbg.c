@@ -1573,7 +1573,7 @@ static int drbg_instantiate(struct drbg_state *drbg, struct drbg_string *pers,
 		if (IS_ERR(drbg->jent)) {
 			ret = PTR_ERR(drbg->jent);
 			drbg->jent = NULL;
-			if (fips_enabled || ret != -ENOENT)
+			if (fips_enabled)
 				goto free_everything;
 			pr_info("DRBG: Continuing without Jitter RNG\n");
 		}
