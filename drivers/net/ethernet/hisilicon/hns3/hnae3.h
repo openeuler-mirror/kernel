@@ -58,6 +58,12 @@
 #define HNAE3_DEV_ID_400G_ROH			0xA22D
 #define HNAE3_DEV_ID_VF				0xA22E
 #define HNAE3_DEV_ID_RDMA_DCB_PFC_VF		0xA22F
+#define HNAE3_DEV_ID_UDMA_OVER_UBL		0xA260
+#define HNAE3_DEV_ID_UDMA			0xA261
+#define HNAE3_DEV_ID_RDMA_OVER_UBL		0xA262
+#define HNAE3_DEV_ID_UDMA_OVER_UBL_VF		0xA268
+#define HNAE3_DEV_ID_UDMA_VF			0xA269
+#define HNAE3_DEV_ID_RDMA_OVER_UBL_VF		0xA26A
 
 #define HNAE3_CLASS_NAME_SIZE 16
 
@@ -68,9 +74,29 @@
 #define HNAE3_UNIC_CLIENT_INITED_B		0x4
 #define HNAE3_ROCE_CLIENT_INITED_B		0x5
 #define HNAE3_ROH_CLIENT_INITED_B		0x6
+#define HNAE3_UDMA_CLIENT_INITED_B		0x7
+#define HNAE3_DEV_SUPPORT_UDMA_B		0x8
+#define HNAE3_DEV_SUPPORT_UBL_B			0x9
 
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) | \
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
+
+#define HNAE3_DEV_SUPPORT_UDMA_OVER_UBL_DCB_BITS \
+		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_UDMA_B) | \
+		 BIT(HNAE3_DEV_SUPPORT_UBL_B))
+
+#define HNAE3_DEV_SUPPORT_ROCE_OVER_UBL_DCB_BITS \
+		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_ROCE_B) | \
+		 BIT(HNAE3_DEV_SUPPORT_UBL_B))
+
+#define HNAE3_DEV_SUPPORT_UDMA_DCB_BITS \
+		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_UDMA_B))
+
+#define hnae3_dev_udma_supported(ae_dev) \
+	hnae3_get_bit((ae_dev)->flag, HNAE3_DEV_SUPPORT_UDMA_B)
+
+#define hnae3_dev_ubl_supported(ae_dev) \
+	hnae3_get_bit((ae_dev)->flag, HNAE3_DEV_SUPPORT_UBL_B)
 
 #define hnae3_dev_roh_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_ROH_CLIENT_INITED_B)
@@ -226,6 +252,7 @@ enum hnae3_client_type {
 	HNAE3_CLIENT_KNIC,
 	HNAE3_CLIENT_ROCE,
 	HNAE3_CLIENT_ROH,
+	HNAE3_CLIENT_UDMA,
 };
 
 enum hnae3_mac_type {
@@ -344,6 +371,10 @@ enum hnae3_dbg_cmd {
 	HNAE3_DBG_CMD_PAGE_POOL_INFO,
 	HNAE3_DBG_CMD_COAL_INFO,
 	HNAE3_DBG_CMD_WOL_INFO,
+	HNAE3_DBG_CMD_IP_SPEC,
+	HNAE3_DBG_CMD_GUID_SPEC,
+	HNAE3_DBG_CMD_IP_LIST,
+	HNAE3_DBG_CMD_GUID_LIST,
 	HNAE3_DBG_CMD_UNKNOWN,
 };
 
@@ -409,6 +440,8 @@ struct hnae3_dev_specs {
 	u16 mc_mac_size;
 	u32 mac_stats_num;
 	u8 tnl_num;
+	u16 guid_tbl_space;
+	u16 ip_tbl_space;
 };
 
 struct hnae3_client_ops {
@@ -441,6 +474,11 @@ struct hnae3_ae_dev {
 	u32 dev_version;
 	DECLARE_BITMAP(caps, HNAE3_DEV_CAPS_MAX_NUM);
 	void *priv;
+};
+
+enum hnae3_unic_addr_type {
+	HNAE3_UNIC_IP_ADDR,
+	HNAE3_UNIC_MCGUID_ADDR
 };
 
 /* This struct defines the operation on the handle.
@@ -808,6 +846,14 @@ struct hnae3_ae_ops {
 		       struct ethtool_wolinfo *wol);
 	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
 			void *data, size_t length);
+	int (*add_addr)(struct hnae3_handle *handle,
+			const unsigned char *addr,
+			enum hnae3_unic_addr_type addr_type);
+	int (*rm_addr)(struct hnae3_handle *handle,
+		       const unsigned char *addr,
+		       enum hnae3_unic_addr_type addr_type);
+	int (*get_func_guid)(struct hnae3_handle *handle, u8 *guid);
+	int (*set_func_guid)(struct hnae3_handle *handle, u8 *guid);
 };
 
 struct hnae3_dcb_ops {
@@ -896,6 +942,17 @@ struct hnae3_roh_private_info {
 	unsigned long reset_state;
 };
 
+struct hnae3_udma_private_info {
+	struct net_device *netdev;
+	void __iomem *udma_io_base;
+	void __iomem *udma_mem_base;
+	int base_vector;
+	int num_vectors;
+	unsigned long reset_state;
+	unsigned long instance_state;
+	unsigned long state;
+};
+
 #define HNAE3_SUPPORT_APP_LOOPBACK    BIT(0)
 #define HNAE3_SUPPORT_PHY_LOOPBACK    BIT(1)
 #define HNAE3_SUPPORT_SERDES_SERIAL_LOOPBACK	BIT(2)
@@ -908,7 +965,8 @@ struct hnae3_roh_private_info {
 #define HNAE3_BPE		BIT(2)	/* broadcast promisc enable */
 #define HNAE3_OVERFLOW_UPE	BIT(3)	/* unicast mac vlan overflow */
 #define HNAE3_OVERFLOW_MPE	BIT(4)	/* multicast mac vlan overflow */
-#define HNAE3_UPE		(HNAE3_USER_UPE | HNAE3_OVERFLOW_UPE)
+#define HNAE3_OVERFLOW_MGP	BIT(5)	/* multicast guid overflow */
+#define HNAE3_UPE		(HNAE3_USER_UPE | HNAE3_OVERFLOW_UPE | HNAE3_OVERFLOW_MGP)
 #define HNAE3_MPE		(HNAE3_USER_MPE | HNAE3_OVERFLOW_MPE)
 
 enum hnae3_pflag {
@@ -930,6 +988,7 @@ struct hnae3_handle {
 		struct hnae3_knic_private_info kinfo;
 		struct hnae3_roce_private_info rinfo;
 		struct hnae3_roh_private_info rohinfo;
+		struct hnae3_udma_private_info udmainfo;
 	};
 
 	u32 numa_node_mask;	/* for multi-chip support */
@@ -941,6 +1000,7 @@ struct hnae3_handle {
 	/* protects concurrent contention between debugfs commands */
 	struct mutex dbgfs_lock;
 	char **dbgfs_buf;
+	char **ub_dbgfs_buf;
 
 	/* Network interface message level enabled bits */
 	u32 msg_enable;

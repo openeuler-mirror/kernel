@@ -139,6 +139,16 @@ config HNS3_ENET
 	  family of SoCs. This module depends upon HNAE3 driver to access the HNAE3
 	  devices and their associated operations.
 
+config HNS3_UBL
+	bool "Hisilicon HNS3 UB Link Device Support"
+	default n
+	depends on UBL
+	help
+	  This selects the HNS UBL support which depends upon configuration UBL.
+	  It is needed by Hisilicon Network Subsystem 3 to use the UB Link and
+	  its associated operations.
+	  Say N if using non-UB device and network.
+
 endif #HNS3
 
 endif # NET_VENDOR_HISILICON

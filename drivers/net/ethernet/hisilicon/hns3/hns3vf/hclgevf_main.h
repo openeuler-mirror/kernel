@@ -128,6 +128,7 @@ enum hclgevf_states {
 	HCLGEVF_STATE_REMOVING,
 	HCLGEVF_STATE_NIC_REGISTERED,
 	HCLGEVF_STATE_ROCE_REGISTERED,
+	HCLGEVF_STATE_UDMA_REGISTERED,
 	HCLGEVF_STATE_SERVICE_INITED,
 	/* task states */
 	HCLGEVF_STATE_RST_SERVICE_SCHED,
@@ -206,6 +207,11 @@ struct hclgevf_mac_table_cfg {
 	struct list_head mc_mac_list;
 };
 
+struct hclgevf_ip_table_cfg {
+	spinlock_t ip_list_lock; /* protect ip address need to add/detele */
+	struct list_head ip_list;
+};
+
 struct hclgevf_qb_cfg {
 	bool pf_support_qb;
 	bool hw_qb_en;
@@ -252,6 +258,7 @@ struct hclgevf_dev {
 	u16 num_msi_used;
 	u16 num_nic_msix;	/* Num of nic vectors for this VF */
 	u16 num_roce_msix;	/* Num of roce vectors for this VF */
+	u16 num_udma_msix;	/* Num of udma vectors for this VF */
 	u16 roce_base_msix_offset;
 	u16 *vector_status;
 	int *vector_irq;
@@ -262,6 +269,8 @@ struct hclgevf_dev {
 
 	struct hclgevf_mac_table_cfg mac_table;
 
+	struct hclgevf_ip_table_cfg ip_table;
+
 	struct hclgevf_mbx_resp_status mbx_resp; /* mailbox response */
 	struct hclgevf_mbx_arq_ring arq; /* mailbox async rx queue */
 
@@ -271,15 +280,20 @@ struct hclgevf_dev {
 
 	struct hnae3_handle nic;
 	struct hnae3_handle roce;
+	struct hnae3_handle udma;
 
 	struct hnae3_client *nic_client;
 	struct hnae3_client *roce_client;
+	struct hnae3_client *udma_client;
 	u32 flag;
 	unsigned long serv_processed_cnt;
 	unsigned long last_serv_processed;
 
 	struct hclgevf_qb_cfg qb_cfg;
 	struct devlink *devlink;
+
+	spinlock_t mguid_list_lock;     /* protect mc guid need to add/detele */
+	struct list_head mc_guid_list;  /* Store VF mc guid table */
 };
 
 static inline bool hclgevf_is_reset_pending(struct hclgevf_dev *hdev)
@@ -301,4 +315,6 @@ void hclgevf_mbx_task_schedule(struct hclgevf_dev *hdev);
 void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
 			struct hclge_mbx_port_base_vlan *port_base_vlan);
 struct hclgevf_dev *hclgevf_ae_get_hdev(struct hnae3_handle *handle);
+void hclgevf_build_send_msg(struct hclge_vf_to_pf_msg *msg, u8 code,
+			    u8 subcode);
 #endif

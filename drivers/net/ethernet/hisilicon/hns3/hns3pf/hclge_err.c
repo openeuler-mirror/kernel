@@ -2,6 +2,7 @@
 /* Copyright (c) 2016-2017 Hisilicon Limited. */
 
 #include "hclge_err.h"
+#include "hclge_udma.h"
 
 static const struct hclge_hw_error hclge_imp_tcm_ecc_int[] = {
 	{
@@ -1245,6 +1246,12 @@ static const struct hclge_hw_module_id hclge_hw_module_id_st[] = {
 	}, {
 		.module_id = MODULE_HIMAC,
 		.msg = "MODULE_HIMAC"
+	}, {
+		.module_id = MODULE_PFA,
+		.msg = "MODULE_PFA"
+	}, {
+		.module_id = MODULE_TXPM,
+		.msg = "MODULE_TXPM"
 	}, {
 		.module_id = MODULE_ROCEE_TOP,
 		.msg = "MODULE_ROCEE_TOP"
@@ -2751,7 +2758,7 @@ msi_error:
 
 bool hclge_find_error_source(struct hclge_dev *hdev)
 {
-	u32 msix_src_flag, hw_err_src_flag;
+	u32 msix_src_flag, hw_err_src_flag, udma_err_src_flag;
 
 	msix_src_flag = hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS) &
 			HCLGE_VECTOR0_REG_MSIX_MASK;
@@ -2759,8 +2766,10 @@ bool hclge_find_error_source(struct hclge_dev *hdev)
 	hw_err_src_flag = hclge_read_dev(&hdev->hw,
 					 HCLGE_RAS_PF_OTHER_INT_STS_REG) &
 			  HCLGE_RAS_REG_ERR_MASK;
+	udma_err_src_flag = hclge_get_udma_error_reg(hdev) &
+			   HCLGE_RAS_REG_ERR_MASK_UB;
 
-	return msix_src_flag || hw_err_src_flag;
+	return msix_src_flag || hw_err_src_flag || udma_err_src_flag;
 }
 
 void hclge_handle_occurred_error(struct hclge_dev *hdev)

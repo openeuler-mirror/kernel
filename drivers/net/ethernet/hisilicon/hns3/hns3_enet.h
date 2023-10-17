@@ -746,6 +746,9 @@ static inline unsigned int hns3_page_order(struct hns3_enet_ring *ring)
 	return 0;
 }
 
+#define hns3_ubl_supported(handle) \
+	hnae3_dev_ubl_supported((struct hnae3_ae_dev *)pci_get_drvdata((handle)->pdev))
+
 #define hns3_page_size(_ring) (PAGE_SIZE << hns3_page_order(_ring))
 
 /* iterator for handling rings in ring group */
@@ -771,11 +774,13 @@ void hns3_ethtool_set_ops(struct net_device *netdev);
 int hns3_set_channels(struct net_device *netdev,
 		      struct ethtool_channels *ch);
 
+u32 hns3_get_l3_type(struct hns3_nic_priv *priv, u32 l234info, u32 ol_info);
 void hns3_clean_tx_ring(struct hns3_enet_ring *ring, int budget);
 int hns3_init_all_ring(struct hns3_nic_priv *priv);
 int hns3_nic_reset_all_ring(struct hnae3_handle *h);
 void hns3_fini_ring(struct hns3_enet_ring *ring);
 netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev);
+bool hns3_unic_port_dev_check(const struct net_device *dev);
 bool hns3_is_phys_func(struct pci_dev *pdev);
 int hns3_clean_rx_ring(
 		struct hns3_enet_ring *ring, int budget,

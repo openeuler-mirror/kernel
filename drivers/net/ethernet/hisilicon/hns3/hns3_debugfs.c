@@ -7,6 +7,7 @@
 #include "hnae3.h"
 #include "hns3_debugfs.h"
 #include "hns3_enet.h"
+#include "hns3_unic_debugfs.h"
 
 static struct dentry *hns3_dbgfs_root;
 
@@ -1415,6 +1416,13 @@ int hns3_dbg_init(struct hnae3_handle *handle)
 			goto out;
 		}
 	}
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle)) {
+		ret = hns3_unic_dbg_init(handle, handle->hnae3_dbgfs);
+		if (ret)
+			goto out;
+	}
+#endif
 
 	return 0;
 
@@ -1431,6 +1439,11 @@ void hns3_dbg_uninit(struct hnae3_handle *handle)
 
 	debugfs_remove_recursive(handle->hnae3_dbgfs);
 	handle->hnae3_dbgfs = NULL;
+
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_dbg_uninit(handle);
+#endif
 
 	for (i = 0; i < ARRAY_SIZE(hns3_dbg_cmd); i++)
 		if (handle->dbgfs_buf[i]) {

@@ -43,6 +43,8 @@
 #define ARPHRD_EUI64	27		/* EUI-64                       */
 #define ARPHRD_INFINIBAND 32		/* InfiniBand			*/
 
+#define ARPHRD_UB	38		/* Unified bus			*/
+
 /* Dummy types for non ARP hardware */
 #define ARPHRD_SLIP	256
 #define ARPHRD_CSLIP	257

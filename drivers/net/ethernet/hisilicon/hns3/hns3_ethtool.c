@@ -8,6 +8,7 @@
 
 #include "hns3_enet.h"
 #include "hns3_ethtool.h"
+#include "hns3_unic.h"
 
 /* tqp related stats */
 #define HNS3_TQP_STAT(_string, _member)	{			\
@@ -178,6 +179,32 @@ static void hns3_lp_setup_skb(struct sk_buff *skb)
 		packet[i] = (unsigned char)(i & 0xff);
 }
 
+static struct sk_buff *hns3_lp_skb_prepare(struct net_device *ndev)
+{
+	unsigned int size = hns3_ubl_supported(hns3_get_handle(ndev)) ?
+		HNS3_NIC_LB_TEST_PACKET_SIZE + 1 + NET_IP_ALIGN :
+		HNS3_NIC_LB_TEST_PACKET_SIZE + ETH_HLEN + NET_IP_ALIGN;
+	struct sk_buff *skb;
+
+	skb = alloc_skb(size, GFP_KERNEL);
+	if (!skb)
+		return NULL;
+
+	skb->dev = ndev;
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(ndev))) {
+		skb->protocol = htons(ETH_P_UB);
+		hns3_unic_lp_setup_skb(skb);
+	} else {
+		hns3_lp_setup_skb(skb);
+	}
+#else
+	hns3_lp_setup_skb(skb);
+#endif
+	skb->queue_mapping = HNS3_NIC_LB_TEST_RING_ID;
+	return skb;
+}
+
 static void hns3_lb_check_skb_data(struct hns3_enet_ring *ring,
 				   struct sk_buff *skb)
 {
@@ -218,7 +245,16 @@ static u32 hns3_lb_check_rx_ring(struct hns3_nic_priv *priv, u32 budget)
 		pre_rx_pkt = rx_group->total_packets;
 
 		preempt_disable();
+#ifdef CONFIG_HNS3_UBL
+		if (hns3_ubl_supported(hns3_get_handle(priv->netdev)))
+			hns3_clean_rx_ring(ring, budget,
+					   hns3_unic_lb_check_skb_data);
+		else
+			hns3_clean_rx_ring(ring, budget,
+					   hns3_lb_check_skb_data);
+#else
 		hns3_clean_rx_ring(ring, budget, hns3_lb_check_skb_data);
+#endif
 		preempt_enable();
 
 		rcv_good_pkt_total += (rx_group->total_packets - pre_rx_pkt);
@@ -253,14 +289,9 @@ static int hns3_lp_run_test(struct net_device *ndev, enum hnae3_loop mode)
 	u32 i, good_cnt;
 	int ret_val = 0;
 
-	skb = alloc_skb(HNS3_NIC_LB_TEST_PACKET_SIZE + ETH_HLEN + NET_IP_ALIGN,
-			GFP_KERNEL);
+	skb = hns3_lp_skb_prepare(ndev);
 	if (!skb)
 		return HNS3_NIC_LB_TEST_NO_MEM_ERR;
-
-	skb->dev = ndev;
-	hns3_lp_setup_skb(skb);
-	skb->queue_mapping = HNS3_NIC_LB_TEST_RING_ID;
 
 	good_cnt = 0;
 	for (i = 0; i < HNS3_NIC_LB_TEST_PKT_NUM; i++) {
@@ -2101,6 +2132,48 @@ static const struct ethtool_ops hns3vf_ethtool_ops = {
 	.reset = hns3_set_reset,
 };
 
+static const struct ethtool_ops hns3_unic_ethtool_ops = {
+	.supported_coalesce_params = HNS3_ETHTOOL_COALESCE,
+	.supported_ring_params = HNS3_ETHTOOL_RING,
+	.self_test = hns3_self_test,
+	.get_drvinfo = hns3_get_drvinfo,
+	.get_link = hns3_get_link,
+	.get_ringparam = hns3_get_ringparam,
+	.set_ringparam = hns3_set_ringparam,
+	.get_strings = hns3_get_strings,
+	.get_ethtool_stats = hns3_get_stats,
+	.get_sset_count = hns3_get_sset_count,
+	.get_channels = hns3_get_channels,
+	.set_channels = hns3_set_channels,
+	.get_rxnfc = hns3_get_rxnfc,
+	.set_rxnfc = hns3_set_rxnfc,
+	.get_rxfh_key_size = hns3_get_rss_key_size,
+	.get_rxfh_indir_size = hns3_get_rss_indir_size,
+	.get_rxfh = hns3_get_rss,
+	.set_rxfh = hns3_set_rss,
+	.get_link_ksettings = hns3_get_link_ksettings,
+	.set_link_ksettings = hns3_set_link_ksettings,
+	.nway_reset = hns3_nway_reset,
+	.get_coalesce = hns3_get_coalesce,
+	.set_coalesce = hns3_set_coalesce,
+	.get_regs_len = hns3_get_regs_len,
+	.get_regs = hns3_get_regs,
+	.set_phys_id = hns3_set_phys_id,
+	.get_msglevel = hns3_get_msglevel,
+	.set_msglevel = hns3_set_msglevel,
+	.get_fecparam = hns3_get_fecparam,
+	.set_fecparam = hns3_set_fecparam,
+	.get_module_info = hns3_get_module_info,
+	.get_module_eeprom = hns3_get_module_eeprom,
+	.get_priv_flags = hns3_get_priv_flags,
+	.set_priv_flags = hns3_set_priv_flags,
+	.get_ts_info = hns3_get_ts_info,
+	.get_tunable = hns3_get_tunable,
+	.set_tunable = hns3_set_tunable,
+	.reset = hns3_set_reset,
+	.get_link_ext_state = hns3_get_link_ext_state,
+};
+
 static const struct ethtool_ops hns3_ethtool_ops = {
 	.supported_coalesce_params = HNS3_ETHTOOL_COALESCE,
 	.supported_ring_params = HNS3_ETHTOOL_RING,
@@ -2153,6 +2226,10 @@ void hns3_ethtool_set_ops(struct net_device *netdev)
 
 	if (h->flags & HNAE3_SUPPORT_VF)
 		netdev->ethtool_ops = &hns3vf_ethtool_ops;
+#ifdef CONFIG_HNS3_UBL
+	else if (hns3_ubl_supported(h))
+		netdev->ethtool_ops = &hns3_unic_ethtool_ops;
+#endif
 	else
 		netdev->ethtool_ops = &hns3_ethtool_ops;
 }

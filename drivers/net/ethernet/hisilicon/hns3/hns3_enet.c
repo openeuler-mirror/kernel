@@ -23,9 +23,11 @@
 #include <net/vxlan.h>
 #include <net/geneve.h>
 
+#include "ubl.h"
 #include "hnae3.h"
 #include "hnae3_ext.h"
 #include "hns3_enet.h"
+#include "hns3_unic.h"
 /* All hns3 tracepoints are defined by the include below, which
  * must be included exactly once across the whole kernel with
  * CREATE_TRACE_POINTS defined
@@ -103,9 +105,23 @@ static const struct pci_device_id hns3_pci_tbl[] = {
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_400G_ROH),
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA),
+	 HNAE3_DEV_SUPPORT_UDMA_DCB_BITS},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_VF), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_DCB_PFC_VF),
 	 HNAE3_DEV_SUPPORT_ROCE_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_VF),
+	 HNAE3_DEV_SUPPORT_UDMA_DCB_BITS},
+#ifdef CONFIG_HNS3_UBL
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL),
+	 HNAE3_DEV_SUPPORT_UDMA_OVER_UBL_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_OVER_UBL),
+	 HNAE3_DEV_SUPPORT_ROCE_OVER_UBL_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_UDMA_OVER_UBL_VF),
+	 HNAE3_DEV_SUPPORT_UDMA_OVER_UBL_DCB_BITS},
+	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_OVER_UBL_VF),
+	 HNAE3_DEV_SUPPORT_ROCE_OVER_UBL_DCB_BITS},
+#endif
 	/* required last entry */
 	{0,}
 };
@@ -1901,6 +1917,10 @@ static int hns3_fill_skb_desc(struct hns3_nic_priv *priv,
 	}
 
 	/* Set txbd */
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(priv->ae_handle))
+		hns3_unic_set_l3_type(skb, &param.type_cs_vlan_tso);
+#endif
 	desc->tx.ol_type_vlan_len_msec =
 		cpu_to_le32(param.ol_type_vlan_len_msec);
 	desc->tx.type_cs_vlan_tso_len = cpu_to_le32(param.type_cs_vlan_tso);
@@ -2562,7 +2582,12 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		hns3_rl_err(netdev, "xmit error: %d!\n", ret);
 		goto out_err_tx_ok;
 	}
-
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev))) {
+		ubl_rmv_sw_ctype(skb);
+		hns3_unic_set_default_cc(skb);
+	}
+#endif
 	ret = hns3_handle_skb_desc(priv, ring, skb, desc_cb, ring->next_to_use);
 	if (unlikely(ret <= 0))
 		goto out_err_tx_ok;
@@ -3252,6 +3277,30 @@ out:
 	return netdev_pick_tx(netdev, skb, sb_dev);
 }
 
+const struct net_device_ops hns3_unic_netdev_ops = {
+	.ndo_open		= hns3_nic_net_open,
+	.ndo_stop		= hns3_nic_net_stop,
+	.ndo_start_xmit		= hns3_nic_net_xmit,
+	.ndo_tx_timeout		= hns3_nic_net_timeout,
+	.ndo_do_ioctl		= hns3_nic_do_ioctl,
+	.ndo_change_mtu		= hns3_nic_change_mtu,
+	.ndo_set_features	= hns3_nic_set_features,
+	.ndo_features_check	= hns3_features_check,
+	.ndo_get_stats64	= hns3_nic_get_stats64,
+	.ndo_setup_tc		= hns3_nic_setup_tc,
+#ifdef CONFIG_HNS3_UBL
+	.ndo_set_rx_mode	= hns3_unic_set_rx_mode,
+#endif
+	.ndo_set_vf_trust	= hns3_set_vf_trust,
+#ifdef CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	= hns3_rx_flow_steer,
+#endif
+	.ndo_get_vf_config	= hns3_nic_get_vf_config,
+	.ndo_set_vf_link_state	= hns3_nic_set_vf_link_state,
+	.ndo_set_vf_rate	= hns3_nic_set_vf_rate,
+	.ndo_select_queue	= hns3_nic_select_queue,
+};
+
 static const struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_open		= hns3_nic_net_open,
 	.ndo_stop		= hns3_nic_net_stop,
@@ -3280,6 +3329,11 @@ static const struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_select_queue	= hns3_nic_select_queue,
 };
 
+bool hns3_unic_port_dev_check(const struct net_device *dev)
+{
+	return dev->netdev_ops == &hns3_unic_netdev_ops;
+}
+
 bool hns3_is_phys_func(struct pci_dev *pdev)
 {
 	u32 dev_id = pdev->device;
@@ -3296,9 +3350,19 @@ bool hns3_is_phys_func(struct pci_dev *pdev)
 	case HNAE3_DEV_ID_200G_RDMA:
 	case HNAE3_DEV_ID_200G_ROH:
 	case HNAE3_DEV_ID_400G_ROH:
+#ifdef CONFIG_HNS3_UBL
+	case HNAE3_DEV_ID_UDMA_OVER_UBL:
+	case HNAE3_DEV_ID_RDMA_OVER_UBL:
+#endif
+	case HNAE3_DEV_ID_UDMA:
 		return true;
 	case HNAE3_DEV_ID_VF:
 	case HNAE3_DEV_ID_RDMA_DCB_PFC_VF:
+#ifdef CONFIG_HNS3_UBL
+	case HNAE3_DEV_ID_UDMA_OVER_UBL_VF:
+	case HNAE3_DEV_ID_RDMA_OVER_UBL_VF:
+#endif
+	case HNAE3_DEV_ID_UDMA_VF:
 		return false;
 	default:
 		dev_warn(&pdev->dev, "un-recognized pci device-id %u",
@@ -4311,8 +4375,14 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 		skb_mark_for_recycle(skb);
 
 	hns3_ring_stats_update(ring, seg_pkt_cnt);
-
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev)))
+		ring->pull_len = HNS3_RX_HEAD_SIZE;
+	else
+		ring->pull_len = eth_get_headlen(netdev, va, HNS3_RX_HEAD_SIZE);
+#else
 	ring->pull_len = eth_get_headlen(netdev, va, HNS3_RX_HEAD_SIZE);
+#endif
 	__skb_put(skb, ring->pull_len);
 	hns3_nic_reuse_page(skb, ring->frag_num++, ring, ring->pull_len,
 			    desc_cb);
@@ -4382,6 +4452,23 @@ static int hns3_add_frag(struct hns3_enet_ring *ring)
 	return 0;
 }
 
+u32 hns3_get_l3_type(struct hns3_nic_priv *priv, u32 l234info, u32 ol_info)
+{
+	u32 l3_type;
+
+	if (test_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state)) {
+		u32 ptype = hnae3_get_field(ol_info, HNS3_RXD_PTYPE_M,
+					    HNS3_RXD_PTYPE_S);
+
+		l3_type = hns3_rx_ptype_tbl[ptype].l3_type;
+	} else {
+		l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
+					  HNS3_RXD_L3ID_S);
+	}
+
+	return l3_type;
+}
+
 static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 				     struct sk_buff *skb, u32 l234info,
 				     u32 bd_base_info, u32 ol_info, u16 csum)
@@ -4404,15 +4491,7 @@ static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 						  HNS3_RXD_GRO_COUNT_M,
 						  HNS3_RXD_GRO_COUNT_S);
 
-	if (test_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state)) {
-		u32 ptype = hnae3_get_field(ol_info, HNS3_RXD_PTYPE_M,
-					    HNS3_RXD_PTYPE_S);
-
-		l3_type = hns3_rx_ptype_tbl[ptype].l3_type;
-	} else {
-		l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
-					  HNS3_RXD_L3ID_S);
-	}
+	l3_type = hns3_get_l3_type(priv, l234info, ol_info);
 
 	if (l3_type == HNS3_L3_TYPE_IPV4)
 		skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
@@ -4532,7 +4611,17 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 	len = skb->len;
 
 	/* Do update ip stack process */
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev)))
+		skb->protocol = ubl_type_trans(skb, netdev,
+					       hns3_unic_get_l3_type(netdev,
+								     ol_info,
+								     l234info));
+	else
+		skb->protocol = eth_type_trans(skb, netdev);
+#else
 	skb->protocol = eth_type_trans(skb, netdev);
+#endif
 
 	/* This is needed in order to enable forwarding support */
 	ret = hns3_set_gro_and_checksum(ring, skb, l234info,
@@ -5382,6 +5471,9 @@ static int hns3_init_mac_addr(struct net_device *netdev)
 	u8 mac_addr_temp[ETH_ALEN];
 	int ret = 0;
 
+	if (hns3_ubl_supported(h))
+		return 0;
+
 	if (h->ae_algo->ops->get_mac_addr)
 		h->ae_algo->ops->get_mac_addr(h, mac_addr_temp);
 
@@ -5542,7 +5634,14 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	handle->ae_algo->ops->get_tqps_and_rss_info(handle, &alloc_tqps,
 						    &max_rss_size);
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		netdev = alloc_ubndev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+	else
+		netdev = alloc_etherdev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+#else
 	netdev = alloc_etherdev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+#endif
 	if (!netdev)
 		return -ENOMEM;
 
@@ -5566,7 +5665,16 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	netdev->watchdog_timeo = HNS3_TX_TIMEOUT;
 	netdev->priv_flags |= IFF_UNICAST_FLT;
+
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		netdev->netdev_ops = &hns3_unic_netdev_ops;
+	else
+		netdev->netdev_ops = &hns3_nic_netdev_ops;
+#else
 	netdev->netdev_ops = &hns3_nic_netdev_ops;
+#endif
+
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	hns3_ethtool_set_ops(netdev);
 
@@ -5634,6 +5742,10 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	}
 
 	netdev->max_mtu = HNS3_MAX_MTU(ae_dev->dev_specs.max_frm_size);
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_init(netdev);
+#endif
 
 	hns3_state_init(handle);
 
@@ -5950,6 +6062,10 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 		dev_err(priv->dev, "hns3_client_start fail! ret=%d\n", ret);
 		goto err_client_start_fail;
 	}
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_init_guid(netdev);
+#endif
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
@@ -6239,6 +6355,9 @@ static int __init hns3_init_module(void)
 	if (ret)
 		goto err_reg_driver;
 
+#ifdef CONFIG_HNS3_UBL
+	register_ipaddr_notifier();
+#endif
 	return ret;
 
 err_reg_driver:
@@ -6255,6 +6374,9 @@ module_init(hns3_init_module);
  */
 static void __exit hns3_exit_module(void)
 {
+#ifdef CONFIG_HNS3_UBL
+	unregister_ipaddr_notifier();
+#endif
 	pci_unregister_driver(&hns3_driver);
 	hnae3_unregister_client(&client);
 	hns3_dbg_unregister_debugfs();
