@@ -1752,13 +1752,17 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_QUERY)(
 	struct uverbs_attr_bundle *attrs)
 {
 	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
-	struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
-	struct hns_roce_dca_ctx *ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
 	struct dca_page_query_active_attr active_attr = {};
+	struct hns_roce_dca_ctx *ctx = NULL;
+	struct hns_roce_dev *hr_dev = NULL;
 	u32 page_idx, page_ofs;
 	int ret;
 
-	if (!hr_qp)
+	if (hr_qp)
+		hr_dev = to_hr_dev(hr_qp->ibqp.device);
+	if (hr_dev)
+		ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
+	if (!ctx)
 		return -EINVAL;
 
 	ret = uverbs_copy_from(&page_idx, attrs,
