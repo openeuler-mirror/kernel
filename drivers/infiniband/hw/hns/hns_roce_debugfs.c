@@ -508,7 +508,7 @@ void hns_roce_register_uctx_debugfs(struct hns_roce_dev *hr_dev,
 		return;
 
 	dca_dbgfs = dev_dbgfs->dca_root;
-	if (dca_dbgfs) {
+	if (dca_dbgfs && (uctx->config & HNS_ROCE_UCTX_CONFIG_DCA)) {
 		uctx->dca_dbgfs = kzalloc(sizeof(struct hns_dca_ctx_debugfs),
 					  GFP_KERNEL);
 		if (!uctx->dca_dbgfs)
