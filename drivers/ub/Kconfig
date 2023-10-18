@@ -1,11 +1,26 @@
 # SPDX-License-Identifier: GPL-2.0
 
 menuconfig UB
-	tristate "Unified Bus (UB) support"
-	depends on ARM64
+	tristate "Unified Bus (UB) core support"
+	depends on ARM64 || X86_64 || COMPILE_TEST
 	default n
 	help
 	  Core support for Unified Bus (UB).
-	  Currently it only support arm64 structure.
-	  Default option is close.
+	  If you have a hardware that support ub protocol,
+	  Say m here. By Default this option is closed.
 	  To compile UB core as module, choose M here.
+
+if UB
+
+config UB_URMA
+	tristate "Unified Bus (UB) urma support"
+	depends on UB
+	default m
+	help
+	  Unified remote memory access(URMA) support. This
+	  is the kernel side of the userspace urma support, which allows
+	  userspace processes to send and receive urma cmd. You will also
+	  need liburma from umdk
+	  <https://gitee.com/openeuler/umdk>.
+
+endif # UB

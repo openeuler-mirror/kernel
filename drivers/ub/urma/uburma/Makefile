@@ -10,4 +10,4 @@ uburma-objs := uburma_main.o \
 			uburma_event.o \
 			uburma_uobj.o
 
-obj-$(CONFIG_UB) += uburma.o
+obj-$(CONFIG_UB_URMA) += uburma.o
