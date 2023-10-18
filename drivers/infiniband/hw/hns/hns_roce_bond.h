@@ -87,5 +87,6 @@ bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev);
 struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev);
 struct hns_roce_bond_group *hns_roce_get_bond_grp(struct net_device *net_dev,
 						  u8 bus_num);
+bool is_bond_slave_in_reset(struct hns_roce_bond_group *bond_grp);
 
 #endif
