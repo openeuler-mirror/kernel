@@ -74,6 +74,7 @@
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
 #include <linux/userswap.h>
+#include <linux/pbha.h>
 
 #include <trace/events/kmem.h>
 
@@ -2969,6 +2970,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		entry = mk_pte(new_page, vma->vm_page_prot);
 		entry = pte_sw_mkyoung(entry);
 		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+		entry = maybe_mk_pbha_bit0(entry, vma);
 		/*
 		 * Clear the pte entry and flush it first, before updating the
 		 * pte with the new entry. This will avoid a race condition
@@ -3709,6 +3711,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	__SetPageUptodate(page);
 
 	entry = mk_pte(page, vma->vm_page_prot);
+	entry = maybe_mk_pbha_bit0(entry, vma);
 	entry = pte_sw_mkyoung(entry);
 	if (vma->vm_flags & VM_WRITE)
 		entry = pte_mkwrite(pte_mkdirty(entry));
@@ -4016,6 +4019,7 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct page *page)
 		inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
 		page_add_file_rmap(page, false);
 	}
+	entry = maybe_mk_pbha_bit0(entry, vma);
 	set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 
 	/* no need to invalidate: a not-present page won't be cached */

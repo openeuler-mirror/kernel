@@ -527,6 +527,11 @@ static inline unsigned long __pbha_check_perf_only(unsigned long pbha_val)
 #define pgprot_pbha(prot, pbha_val) \
 	__pgprot_modify(prot, PTE_PBHA_MASK, __pbha_check_perf_only(pbha_val))
 
+static inline pte_t pte_mkpbha(pte_t pte, unsigned long pbha_val)
+{
+	return set_pte_bit(pte, __pgprot(__pbha_check_perf_only(pbha_val)));
+}
+
 #define __HAVE_PHYS_MEM_ACCESS_PROT
 struct file;
 extern pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,

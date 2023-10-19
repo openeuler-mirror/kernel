@@ -5,6 +5,7 @@
 #ifndef __LINUX_PBHA_H
 #define __LINUX_PBHA_H
 
+#include <linux/mm.h>
 #include <linux/libfdt.h>
 #include <linux/pgtable.h>
 
@@ -33,9 +34,24 @@ static inline pgprot_t pgprot_pbha_bit0(pgprot_t prot)
 
 	return pgprot_pbha(prot, PBHA_VAL_BIT0);
 }
+
+static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
+{
+	if (!system_support_pbha_bit0())
+		return pte;
+
+	if (vma->vm_flags & VM_PBHA_BIT0)
+		pte = pte_mkpbha(pte, PBHA_VAL_BIT0);
+
+	return pte;
+}
 #else
 static inline bool system_support_pbha_bit0(void) { return false; }
 static inline pgprot_t pgprot_pbha_bit0(pgprot_t prot) { return prot; }
+static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
+{
+	return pte;
+}
 #endif
 
 #endif
