@@ -21,4 +21,7 @@ static inline bool arch_parse_debug_rodata(char *arg)
 }
 #define arch_parse_debug_rodata arch_parse_debug_rodata
 
+void *get_early_fdt_ptr(void);
+void early_fdt_map(u64 dt_phys);
+
 #endif
