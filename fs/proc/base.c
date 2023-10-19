@@ -98,6 +98,7 @@
 #include <linux/resctrl.h>
 #include <linux/share_pool.h>
 #include <linux/ksm.h>
+#include <linux/pbha.h>
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
@@ -1347,6 +1348,102 @@ out:
 static const struct file_operations proc_reliable_operations = {
 	.read       = reliable_read,
 	.write      = reliable_write,
+	.llseek     = generic_file_llseek,
+};
+#endif
+
+#ifdef CONFIG_ARM64_PBHA
+static inline int pbha_bit0_check(struct task_struct *task, struct pid *pid)
+{
+	if (!system_support_pbha_bit0())
+		return -EACCES;
+
+	if (is_global_init(task))
+		return -EACCES;
+
+	if (!task->mm || (task->flags & PF_KTHREAD) ||
+	    (task->flags & PF_EXITING))
+		return -EACCES;
+
+	return 0;
+}
+
+static ssize_t pbha_bit0_read(struct file *file, char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	struct task_struct *task = get_proc_task(file_inode(file));
+	struct pid *pid = proc_pid(file_inode(file));
+	char buffer[PROC_NUMBUF];
+	size_t len;
+	short val;
+	int err;
+
+	if (!task)
+		return -ESRCH;
+
+	err = pbha_bit0_check(task, pid);
+	if (err) {
+		put_task_struct(task);
+		return err;
+	}
+
+	val = task->mm->def_flags & VM_PBHA_BIT0 ? 1 : 0;
+	put_task_struct(task);
+	len = snprintf(buffer, sizeof(buffer), "%hd\n", val);
+	return simple_read_from_buffer(buf, count, ppos, buffer, len);
+}
+
+static ssize_t pbha_bit0_write(struct file *file, const char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	struct task_struct *task = get_proc_task(file_inode(file));
+	struct pid *pid = proc_pid(file_inode(file));
+	char buffer[PROC_NUMBUF];
+	struct mm_struct *mm;
+	int val, err;
+
+	if (!task)
+		return -ESRCH;
+
+	err = pbha_bit0_check(task, pid);
+	if (err)
+		goto out;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoint(strstrip(buffer), 0, &val);
+	if (err)
+		goto out;
+	if (val != 0 && val != 1) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	mm = get_task_mm(task);
+	if (!mm) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	err = pbha_bit0_update_vma(mm, val);
+	if (err)
+		count = -EINTR;
+
+	mmput(mm);
+out:
+	put_task_struct(task);
+	return err < 0 ? err : count;
+}
+
+static const struct file_operations proc_pbha_bit0_ops = {
+	.read       = pbha_bit0_read,
+	.write      = pbha_bit0_write,
 	.llseek     = generic_file_llseek,
 };
 #endif
@@ -3483,6 +3580,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_MEMORY_RELIABLE
 	REG("reliable", S_IRUGO|S_IWUSR, proc_reliable_operations),
 #endif
+#ifdef CONFIG_ARM64_PBHA
+	REG("pbha_bit0", 0644, proc_pbha_bit0_ops),
+#endif
 #ifdef CONFIG_AUDIT
 	REG("loginuid",   S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -3901,6 +4001,9 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
 #ifdef CONFIG_MEMORY_RELIABLE
 	REG("reliable", S_IRUGO|S_IWUSR, proc_reliable_operations),
+#endif
+#ifdef CONFIG_ARM64_PBHA
+	REG("pbha_bit0", 0644, proc_pbha_bit0_ops),
 #endif
 #ifdef CONFIG_AUDIT
 	REG("loginuid",  S_IWUSR|S_IRUGO, proc_loginuid_operations),

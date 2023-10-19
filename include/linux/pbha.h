@@ -10,6 +10,7 @@
 #include <linux/pgtable.h>
 
 #define PBHA_VAL_BIT0 1UL
+#define PBHA_BITS_SHIFT 59
 
 #define EFI_OEMCONFIG_VARIABLE_GUID                                            \
 	EFI_GUID(0x21f3b3c5, 0x946d, 0x41c1, 0x83, 0x8c, 0x19, 0x4e, 0x48,     \
@@ -20,7 +21,9 @@
 
 #ifdef CONFIG_ARM64_PBHA
 extern bool __ro_after_init pbha_bit0_enabled;
+extern struct mm_walk_ops pbha_bit0_walk_ops;
 extern void __init early_pbha_bit0_init(void);
+extern int pbha_bit0_update_vma(struct mm_struct *mm, int val);
 
 static inline bool system_support_pbha_bit0(void)
 {
