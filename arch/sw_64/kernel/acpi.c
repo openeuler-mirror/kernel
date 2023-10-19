@@ -219,6 +219,10 @@ static inline int save_add_info(void) { return 0; }
 
 #endif
 
+void __init arch_reserve_mem_area(acpi_physical_address addr, size_t size)
+{
+}
+
 #ifdef CONFIG_ACPI_HOTPLUG_CPU
 #include <acpi/processor.h>
 static int acpi_map_cpu2node(acpi_handle handle, int cpu, int physid)

@@ -842,6 +842,9 @@ setup_arch(char **cmdline_p)
 
 	efi_init();
 
+	/* Try to upgrade ACPI tables via initrd */
+	acpi_table_upgrade();
+
 	/* Parse the ACPI tables for possible boot-time configuration */
 	acpi_boot_table_init();
 
