@@ -43,6 +43,10 @@ static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
 	if (!system_support_pbha_bit0())
 		return pte;
 
+	if (unlikely(is_global_init(current)) &&
+	    !(vma->vm_flags & VM_PBHA_BIT0))
+		vma->vm_flags |= VM_PBHA_BIT0;
+
 	if (vma->vm_flags & VM_PBHA_BIT0)
 		pte = pte_mkpbha(pte, PBHA_VAL_BIT0);
 
