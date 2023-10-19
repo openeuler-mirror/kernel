@@ -474,6 +474,15 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 	 */
 	vtcr |= VTCR_EL2_HA;
 
+	/*
+	 * Enable PBHA for stage2 on systems that support it. The configured
+	 * value will always be 0, which is defined as the safe default
+	 * setting. On Cortex cores, enabling PBHA for stage2 effectively
+	 * disables it for stage1.
+	 */
+	if (cpus_have_final_cap(ARM64_HAS_PBHA))
+		vtcr |= FIELD_PREP(VTCR_EL2_PBHA_MASK, 0xf);
+
 	/* Set the vmid bits */
 	vtcr |= (kvm_get_vmid_bits() == 16) ?
 		VTCR_EL2_VS_16BIT :

@@ -35,6 +35,10 @@ struct kvm_pgtable {
  * @KVM_PGTABLE_PROT_W:		Write permission.
  * @KVM_PGTABLE_PROT_R:		Read permission.
  * @KVM_PGTABLE_PROT_DEVICE:	Device attributes.
+ * @KVM_PGTABLE_PROT_PBHA0:	Page-Based Hardware Attribute 0.
+ * @KVM_PGTABLE_PROT_PBHA1:	Page-Based Hardware Attribute 1.
+ * @KVM_PGTABLE_PROT_PBHA2:	Page-Based Hardware Attribute 2.
+ * @KVM_PGTABLE_PROT_PBHA3:	Page-Based Hardware Attribute 3.
  */
 enum kvm_pgtable_prot {
 	KVM_PGTABLE_PROT_X			= BIT(0),
@@ -42,6 +46,11 @@ enum kvm_pgtable_prot {
 	KVM_PGTABLE_PROT_R			= BIT(2),
 
 	KVM_PGTABLE_PROT_DEVICE			= BIT(3),
+
+	KVM_PGTABLE_PROT_PBHA0			= BIT(59),
+	KVM_PGTABLE_PROT_PBHA1			= BIT(60),
+	KVM_PGTABLE_PROT_PBHA2			= BIT(61),
+	KVM_PGTABLE_PROT_PBHA3			= BIT(62),
 };
 
 #define PAGE_HYP		(KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W)

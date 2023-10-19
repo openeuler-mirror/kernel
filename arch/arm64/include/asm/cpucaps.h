@@ -76,6 +76,7 @@
 #define ARM64_HAS_WFXT				68
 #define ARM64_WORKAROUND_HISILICON_ERRATUM_162100125	69
 #define ARM64_HAS_LDAPR                         70
+#define ARM64_HAS_PBHA				71
 
 #define ARM64_NCAPS				80
 
