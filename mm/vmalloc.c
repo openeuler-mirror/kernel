@@ -38,6 +38,7 @@
 #include <linux/uaccess.h>
 #include <linux/hugetlb.h>
 #include <linux/share_pool.h>
+#include <linux/pbha.h>
 #include <asm/io.h>
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
@@ -307,6 +308,8 @@ int vmap_range(unsigned long addr, unsigned long end,
 {
 	int err;
 
+	prot = pgprot_pbha_bit0(prot);
+
 	err = vmap_range_noflush(addr, end, phys_addr, prot, max_page_shift);
 	flush_cache_vmap(addr, end);
 
@@ -548,6 +551,8 @@ static int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 	unsigned int i, nr = (end - addr) >> PAGE_SHIFT;
 
 	WARN_ON(page_shift < PAGE_SHIFT);
+
+	prot = pgprot_pbha_bit0(prot);
 
 	if (!IS_ENABLED(CONFIG_HAVE_ARCH_HUGE_VMALLOC) ||
 			page_shift == PAGE_SHIFT)

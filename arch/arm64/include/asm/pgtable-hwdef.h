@@ -147,6 +147,7 @@
 #define PTE_PXN			(_AT(pteval_t, 1) << 53)	/* Privileged XN */
 #define PTE_UXN			(_AT(pteval_t, 1) << 54)	/* User XN */
 #define PTE_PBHA_MASK		(_AT(pteval_t, 0xf) << 59)	/* Page Base Hardware Attributes */
+#define PTE_PBHA0		(_AT(pteval_t, 1) << 59)	/* PBHA 59 bit */
 
 #define PTE_ADDR_LOW		(((_AT(pteval_t, 1) << (48 - PAGE_SHIFT)) - 1) << PAGE_SHIFT)
 #ifdef CONFIG_ARM64_PA_BITS_52

@@ -23,6 +23,7 @@
 #include <linux/io.h>
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
+#include <linux/pbha.h>
 
 #include <asm/barrier.h>
 #include <asm/cputype.h>
@@ -125,6 +126,10 @@ static bool pgattr_change_is_safe(u64 old, u64 new)
 	 * kernel mappings without the need for break-before-make.
 	 */
 	pteval_t mask = PTE_PXN | PTE_RDONLY | PTE_WRITE | PTE_NG;
+
+#ifdef CONFIG_ARM64_PBHA
+	mask |= PTE_PBHA0;
+#endif
 
 	/* creating or taking down mappings is always safe */
 	if (old == 0 || new == 0)
@@ -371,6 +376,8 @@ static void __create_pgd_mapping(pgd_t *pgdir, phys_addr_t phys,
 	 */
 	if (WARN_ON((phys ^ virt) & ~PAGE_MASK))
 		return;
+
+	prot = pgprot_pbha_bit0(prot);
 
 	phys &= PAGE_MASK;
 	addr = virt & PAGE_MASK;
@@ -1152,6 +1159,7 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node,
 {
 	unsigned long addr = start;
 	unsigned long next;
+	pgprot_t prot;
 	pgd_t *pgdp;
 	p4d_t *p4dp;
 	pud_t *pudp;
@@ -1180,7 +1188,10 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node,
 			if (!p)
 				return -ENOMEM;
 
-			pmd_set_huge(pmdp, __pa(p), __pgprot(PROT_SECT_NORMAL));
+			prot = __pgprot(PROT_SECT_NORMAL);
+			prot = pgprot_pbha_bit0(prot);
+
+			pmd_set_huge(pmdp, __pa(p), prot);
 		} else
 			vmemmap_verify((pte_t *)pmdp, node, addr, next);
 	} while (addr = next, addr != end);
@@ -1300,6 +1311,7 @@ void __set_fixmap(enum fixed_addresses idx,
 	ptep = fixmap_pte(addr);
 
 	if (pgprot_val(flags)) {
+		flags = pgprot_pbha_bit0(flags);
 		set_pte(ptep, pfn_pte(phys >> PAGE_SHIFT, flags));
 	} else {
 		pte_clear(&init_mm, addr, ptep);
