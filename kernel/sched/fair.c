@@ -7585,6 +7585,30 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 		}
 	}
 
+	if (static_branch_unlikely(&sched_cluster_active)) {
+		struct sched_group *sg = sd->groups;
+
+		if (sg->flags & SD_CLUSTER) {
+			for_each_cpu_wrap(cpu, sched_group_span(sg), target + 1) {
+				if (!cpumask_test_cpu(cpu, cpus))
+					continue;
+
+				if (has_idle_core) {
+					i = select_idle_core(p, cpu, cpus, &idle_cpu);
+					if ((unsigned int)i < nr_cpumask_bits)
+						return i;
+				} else {
+					if (--nr <= 0)
+						return -1;
+					idle_cpu = __select_idle_cpu(cpu, p);
+					if ((unsigned int)idle_cpu < nr_cpumask_bits)
+						return idle_cpu;
+				}
+			}
+			cpumask_andnot(cpus, cpus, sched_group_span(sg));
+		}
+	}
+
 	for_each_cpu_wrap(cpu, cpus, target + 1) {
 		if (has_idle_core) {
 			i = select_idle_core(p, cpu, cpus, &idle_cpu);
@@ -7592,7 +7616,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 				return i;
 
 		} else {
-			if (!--nr)
+			if (--nr <= 0)
 				return -1;
 			idle_cpu = __select_idle_cpu(cpu, p);
 			if ((unsigned int)idle_cpu < nr_cpumask_bits)
@@ -7744,8 +7768,11 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    cpumask_test_cpu(prev, p->select_cpus) &&
 #endif
 	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
-		SET_STAT(found_idle_cpu_easy);
-		return prev;
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(prev, target)) {
+			SET_STAT(found_idle_cpu_easy);
+			return prev;
+		}
 	}
 
 	/*
@@ -7778,12 +7805,15 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    cpumask_test_cpu(recent_used_cpu, p->cpus_ptr) &&
 #endif
 	    asym_fits_cpu(task_util, util_min, util_max, recent_used_cpu)) {
-		/*
-		 * Replace recent_used_cpu with prev as it is a potential
-		 * candidate for the next wake:
-		 */
-		SET_STAT(found_idle_cpu_easy);
-		return recent_used_cpu;
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(recent_used_cpu, target)) {
+			/*
+			 * Replace recent_used_cpu with prev as it is a potential
+			 * candidate for the next wake:
+			 */
+			SET_STAT(found_idle_cpu_easy);
+			return recent_used_cpu;
+		}
 	}
 
 	/*
