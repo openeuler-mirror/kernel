@@ -1691,6 +1691,19 @@ config ARM64_CNP
 	  at runtime, and does not affect PEs that do not implement
 	  this feature.
 
+config ARM64_PBHA
+	bool "Enable support for Page Based Hardware Attributes (PBHA)"
+	default n
+	help
+	  Page Based Hardware Attributes (PBHA) allow the SoC hardware to
+	  change behaviour depending on which mapping was used to access
+	  a page of memory. e.g. access via one mapping may always result
+	  in the data being cached, whereas using another mapping of the same
+	  physical memory.
+
+	  The behaviour of each PBHA bit is not defined. Say no unless you
+	  are very sure you want this
+
 endmenu
 
 menu "ARMv8.3 architectural features"

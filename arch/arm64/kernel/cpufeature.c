@@ -70,6 +70,7 @@
 #include <linux/stop_machine.h>
 #include <linux/types.h>
 #include <linux/mm.h>
+#include <linux/of.h>
 #include <linux/cpu.h>
 
 #include <asm/cpu.h>
@@ -109,6 +110,8 @@ bool arm64_use_ng_mappings = false;
 EXPORT_SYMBOL(arm64_use_ng_mappings);
 
 DEFINE_PER_CPU_READ_MOSTLY(const char *, this_cpu_vector) = vectors;
+
+unsigned long __ro_after_init arm64_pbha_perf_only_values;
 
 /*
  * Flag to indicate if we have computed the system wide
@@ -1574,6 +1577,71 @@ static bool has_hw_dbm(const struct arm64_cpu_capabilities *cap,
 
 #endif
 
+#ifdef CONFIG_ARM64_PBHA
+static u8 pbha_stage1_enable_bits;
+
+static bool plat_can_use_pbha_stage1(const struct arm64_cpu_capabilities *cap,
+				     int scope)
+{
+	u8 val;
+	struct device_node *cpus;
+	const u8 *perf_only_vals;
+	int num_perf_only_vals, i;
+
+	if (!has_cpuid_feature(cap, scope))
+		return false;
+
+	/*
+	 * Calls with scope == SCOPE_LOCAL_CPU need only testing whether this
+	 * cpu has the feature. A later 'system' scope call will check for a
+	 * firmware description.
+	 */
+	if (scope == SCOPE_LOCAL_CPU)
+		return true;
+
+	cpus = of_find_node_by_path("/cpus");
+	if (!cpus)
+		goto done;
+
+	perf_only_vals = of_get_property(cpus, "arm,pbha-performance-only",
+					 &num_perf_only_vals);
+	if (!perf_only_vals)
+		goto done;
+
+	/* any listed value is usable at stage 1 */
+	for (i = 0 ; i < num_perf_only_vals; i++) {
+		val = perf_only_vals[i];
+		if (val > 0xf)
+			continue;
+
+		pbha_stage1_enable_bits |= val;
+		set_bit(val, &arm64_pbha_perf_only_values);
+	}
+
+done:
+	of_node_put(cpus);
+
+	return !!pbha_stage1_enable_bits;
+}
+
+static void cpu_enable_pbha(struct arm64_cpu_capabilities const *cap)
+{
+	u64 tcr;
+
+	if (!pbha_stage1_enable_bits)
+		return;
+
+	tcr = read_sysreg(tcr_el1);
+	tcr |= FIELD_PREP(TCR_HWU0nn_MASK, pbha_stage1_enable_bits);
+	tcr |= FIELD_PREP(TCR_HWU1nn_MASK, pbha_stage1_enable_bits);
+	tcr |= FIELD_PREP(TCR_HPD0, 1) | FIELD_PREP(TCR_HPD1, 1);
+
+	write_sysreg(tcr, tcr_el1);
+	isb();
+	local_flush_tlb_all();
+}
+#endif /* CONFIG_ARM64_PBHA */
+
 #ifdef CONFIG_ARM64_AMU_EXTN
 
 /*
@@ -2304,6 +2372,19 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.matches = has_cpuid_feature,
 		.min_field_value = 2,
 	},
+#ifdef CONFIG_ARM64_PBHA
+	{
+		.desc = "Page Based Hardware Attributes (PBHA)",
+		.capability = ARM64_HAS_PBHA_STAGE1,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.sys_reg = SYS_ID_AA64MMFR1_EL1,
+		.sign = FTR_UNSIGNED,
+		.field_pos = ID_AA64MMFR1_HPD_SHIFT,
+		.matches = plat_can_use_pbha_stage1,
+		.min_field_value = 2,
+		.cpu_enable = cpu_enable_pbha,
+	},
+#endif
 	{},
 };
 
