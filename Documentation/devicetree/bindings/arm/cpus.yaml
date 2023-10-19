@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: "http://devicetree.org/schemas/arm/cpus.yaml#"
+$schema: "http://devicetree.org/meta-schemas/core.yaml#"
+
+title: CPUS, a container for CPU subnodes
+
+description: |
+  The device tree allows to describe the layout of CPUs in a system through
+  the "cpus" node, which in turn contains a number of subnodes (ie "cpu")
+  defining properties for every CPU.
+
+  Properties of the CPU integration that are common to all CPUs can be described
+  in the cpus node.
+
+  ARM CPUs with the FEAT_HPDS2 feature allow an IMPLEMENTATION DEFINED
+  hardware attribute to be encoded in the leaf page table entries and
+  sent with any transaction that makes an access via that entry.
+
+  Four bits are used in the page-tables. It is likely the individual bits will
+  be combined and used a a four bit value. The impact of any particular value is
+  up to the implementation.
+
+  0 is defined as a 'safe default setting' that behaves as if the feature
+  were not implemented. Other values may be unsafe, having coherency or
+  correctness issues leading to data-corruption or deadlock.
+
+  This binding lists the additional values that only have a performance cost
+  (or benefit), and values that can only be used if all mappings have the same
+  PBHA value.
+  For both cases, all affected values should be listed. If setting bit-2
+  requires no aliases, then the values 2, 4, 6 etc should be listed.
+
+  A hypervisor can only control individual bits, and may choose to only enable
+  bits that can only be used to build other performance-only values.
+  e.g. the value 5 is listed, but enabling bit-0 and bit-2 would allow a guest
+  to configure the values 1 or 4 too. If these 'decomposed' values only
+  affected performance, they should also be listed.
+
+  The list does not need to be in numeric order, but a hypervisor may make use
+  of the order when enabling bits.
+
+  The presence of a 'arm,pbha-no-aliases' property indicates that higher
+  exception levels and secure-world firmware do not have a mapping of any memory
+  in the memory node or UEFI memory map, other than those with a reserved-memory
+  entry or EFIReserved memory attribute.
+  Firmware mappings created based on requests from the normal world do not use
+  any of the arm,pbha-no-aliases values, or take the PBHA value to use as an
+  argument.
+
+properties:
+  $nodename:
+    const: cpus
+
+  arm,pbha-performance-only:
+    $ref: /schemas/types.yaml#/definitions/uint8-array
+    description: PBHA values that only affect performance
+    minItems: 1
+    maxItems: 15
+    items:
+      maximum: 15
+
+  arm,pbha-no-aliases:
+    $ref: /schemas/types.yaml#/definitions/uint8-array
+    description: PBHA values that must only be used if all mappings have the
+                   same value.
+    minItems: 1
+    maxItems: 15
+    items:
+      maximum: 15
+
+
+additionalProperties: true
+
+examples:
+  -|
+  /{
+    cpus {
+      arm,pbha-performance-only = /bits/ 8 <0x01 0x05 0x09>;
+      arm,pbha-no-aliases = /bits/ 8 <0x02 0x04 0x06 0x08>;
+
+      cpu@0 {
+        device_type = "cpu";
+        compatible = "arm,cortex-a57";
+        ...
+      };
+
+    };
+  };
+...
