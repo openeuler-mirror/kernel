@@ -768,6 +768,20 @@ static inline bool system_supports_tlb_range(void)
 		cpus_have_const_cap(ARM64_HAS_TLB_RANGE);
 }
 
+#ifdef CONFIG_ARM64_PBHA
+extern bool pbha_enabled;
+
+static inline bool system_supports_pbha(void)
+{
+	return pbha_enabled;
+}
+#else
+static inline bool system_supports_pbha(void)
+{
+	return false;
+}
+#endif
+
 extern int do_emulate_mrs(struct pt_regs *regs, u32 sys_reg, u32 rt);
 
 static inline u32 id_aa64mmfr0_parange_to_phys_shift(int parange)

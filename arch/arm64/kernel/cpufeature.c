@@ -72,6 +72,8 @@
 #include <linux/mm.h>
 #include <linux/of.h>
 #include <linux/cpu.h>
+#include <linux/init.h>
+#include <linux/libfdt.h>
 
 #include <asm/cpu.h>
 #include <asm/cpufeature.h>
@@ -86,6 +88,7 @@
 #include <asm/traps.h>
 #include <asm/vectors.h>
 #include <asm/virt.h>
+#include <asm/setup.h>
 
 /* Kernel representation of AT_HWCAP and AT_HWCAP2 */
 static unsigned long elf_hwcap __read_mostly;
@@ -1585,6 +1588,8 @@ static bool has_hw_dbm(const struct arm64_cpu_capabilities *cap,
 static u8 pbha_stage1_enable_bits;
 static DEFINE_SPINLOCK(pbha_dt_lock);
 
+bool pbha_enabled;
+
 /* For the value 5, return a bitmap with bits 5, 4, and 1 set. */
 static unsigned long decompose_pbha_values(u8 val)
 {
@@ -1619,11 +1624,26 @@ static void stage2_test_pbha_value(u8 val)
 		arm64_pbha_stage2_safe_bits |= val;
 }
 
+void update_pbha_perf_only_bit(const u8 *bits, int cnt)
+{
+	u8 val;
+	int i;
+
+	/* any listed value is usable at stage 1 */
+	for (i = 0 ; i < cnt; i++) {
+		val = bits[i];
+		if (val > 0xf)
+			continue;
+
+		pbha_stage1_enable_bits |= val;
+		set_bit(val, &arm64_pbha_perf_only_values);
+	}
+}
+
 static bool plat_can_use_pbha_stage1(const struct arm64_cpu_capabilities *cap,
 				     int scope)
 {
 	u8 val;
-	static bool dt_check_done;
 	struct device_node *cpus;
 	const u8 *perf_only_vals;
 	int num_perf_only_vals, i;
@@ -1640,7 +1660,7 @@ static bool plat_can_use_pbha_stage1(const struct arm64_cpu_capabilities *cap,
 		return true;
 
 	spin_lock(&pbha_dt_lock);
-	if (dt_check_done)
+	if (pbha_enabled)
 		goto out_unlock;
 
 	cpus = of_find_node_by_path("/cpus");
@@ -1652,15 +1672,7 @@ static bool plat_can_use_pbha_stage1(const struct arm64_cpu_capabilities *cap,
 	if (!perf_only_vals)
 		goto done;
 
-	/* any listed value is usable at stage 1 */
-	for (i = 0 ; i < num_perf_only_vals; i++) {
-		val = perf_only_vals[i];
-		if (val > 0xf)
-			continue;
-
-		pbha_stage1_enable_bits |= val;
-		set_bit(val, &arm64_pbha_perf_only_values);
-	}
+	update_pbha_perf_only_bit(perf_only_vals, num_perf_only_vals);
 
 	/*
 	 * for stage2 the values are collapsed back to 4 bits that can only
@@ -1676,14 +1688,14 @@ static bool plat_can_use_pbha_stage1(const struct arm64_cpu_capabilities *cap,
 
 done:
 	of_node_put(cpus);
-	dt_check_done = true;
+	pbha_enabled = true;
 
 out_unlock:
 	spin_unlock(&pbha_dt_lock);
 	return !!pbha_stage1_enable_bits;
 }
 
-static void cpu_enable_pbha(struct arm64_cpu_capabilities const *cap)
+static void enable_pbha_inner(void)
 {
 	u64 tcr;
 
@@ -1698,6 +1710,53 @@ static void cpu_enable_pbha(struct arm64_cpu_capabilities const *cap)
 	write_sysreg(tcr, tcr_el1);
 	isb();
 	local_flush_tlb_all();
+}
+
+static void cpu_enable_pbha(struct arm64_cpu_capabilities const *cap)
+{
+	enable_pbha_inner();
+}
+
+static inline bool cpu_has_pbha(void)
+{
+	u64 mmfr1 = read_cpuid(ID_AA64MMFR1_EL1);
+	int val = cpuid_feature_extract_unsigned_field(mmfr1,
+						       ID_AA64MMFR1_HPD_SHIFT);
+
+	return val == 2;
+}
+
+void __init early_pbha_init(void)
+{
+	void *fdt;
+	int node;
+	const u8 *prop;
+	int size;
+
+	spin_lock(&pbha_dt_lock);
+
+	fdt = get_early_fdt_ptr();
+	if (!fdt)
+		goto unlock;
+
+	node = fdt_path_offset(fdt, "/cpus");
+	if (node < 0)
+		goto unlock;
+
+	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
+	if (!prop)
+		goto unlock;
+
+	if (!cpu_has_pbha())
+		goto unlock;
+
+	update_pbha_perf_only_bit(prop, size);
+	enable_pbha_inner();
+
+	pbha_enabled = true;
+
+unlock:
+	spin_unlock(&pbha_dt_lock);
 }
 
 /*
