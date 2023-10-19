@@ -513,19 +513,9 @@ static bool irq_may_run(struct irq_desc *desc)
 	if (!irqd_has_set(&desc->irq_data, mask))
 		return true;
 
-	if (irqd_get(&desc->irq_data) & IRQD_IRQ_INPROGRESS) {
-		const char *name = NULL;
-
-		if (desc->name)
-			name = desc->name;
-		else if (desc->action)
-			name = desc->action->name;
-
-		printk_safe_enter();
-		pr_warn("irq %u(%s) may be reentrant in multiple cpus.\n",
-			desc->irq_data.irq, name == NULL ? "NULL" : name);
-		printk_safe_exit();
-	}
+	if (irqd_get(&desc->irq_data) & IRQD_IRQ_INPROGRESS)
+		pr_warn_ratelimited("irq %u(%lu) may be reentrant in multiple cpus.\n",
+				    desc->irq_data.irq, desc->irq_data.hwirq);
 
 	/*
 	 * If the interrupt is an armed wakeup source, mark it pending
