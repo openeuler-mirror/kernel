@@ -18,6 +18,8 @@
 #define HBM_MODE_CACHE	1
 
 bool __ro_after_init pbha_bit0_enabled;
+bool __ro_after_init pbha_bit0_kernel_enabled;
+static bool pbha_enabled_phase_1;
 
 void __init early_pbha_bit0_init(void)
 {
@@ -41,7 +43,7 @@ void __init early_pbha_bit0_init(void)
 	if (!prop)
 		return;
 	if (*prop == HBM_MODE_CACHE)
-		pbha_bit0_enabled = true;
+		pbha_enabled_phase_1 = true;
 }
 
 #define pte_pbha_bit0(pte)                                                     \
@@ -185,3 +187,21 @@ int pbha_bit0_update_vma(struct mm_struct *mm, int val)
 	mmap_write_unlock(mm);
 	return 0;
 }
+
+static int __init setup_pbha(char *str)
+{
+	if (!pbha_enabled_phase_1)
+		return 0;
+
+	if (strcmp(str, "enable") == 0) {
+		pbha_bit0_enabled = true;
+		pbha_bit0_kernel_enabled = true;
+	} else if (strcmp(str, "user") == 0) {
+		pbha_bit0_enabled = true;
+	}
+
+	pr_info("pbha bit_0 enabled, kernel: %d\n", pbha_bit0_kernel_enabled);
+
+	return 0;
+}
+early_param("pbha", setup_pbha);

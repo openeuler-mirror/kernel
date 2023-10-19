@@ -21,6 +21,7 @@
 
 #ifdef CONFIG_ARM64_PBHA
 extern bool __ro_after_init pbha_bit0_enabled;
+extern bool __ro_after_init pbha_bit0_kernel_enabled;
 extern struct mm_walk_ops pbha_bit0_walk_ops;
 extern void __init early_pbha_bit0_init(void);
 extern int pbha_bit0_update_vma(struct mm_struct *mm, int val);
@@ -32,7 +33,7 @@ static inline bool system_support_pbha_bit0(void)
 
 static inline pgprot_t pgprot_pbha_bit0(pgprot_t prot)
 {
-	if (!system_support_pbha_bit0())
+	if (!system_support_pbha_bit0() || !pbha_bit0_kernel_enabled)
 		return prot;
 
 	return pgprot_pbha(prot, PBHA_VAL_BIT0);
@@ -43,7 +44,8 @@ static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
 	if (!system_support_pbha_bit0())
 		return pte;
 
-	if (unlikely(is_global_init(current)) &&
+	/* global init task will update pbha bit0 iff kernel can do this */
+	if (unlikely(is_global_init(current)) && pbha_bit0_kernel_enabled &&
 	    !(vma->vm_flags & VM_PBHA_BIT0))
 		vma->vm_flags |= VM_PBHA_BIT0;
 

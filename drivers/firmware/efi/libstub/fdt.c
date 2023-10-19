@@ -29,6 +29,8 @@ static void fdt_update_cell_size(void *fdt)
 }
 
 #ifdef CONFIG_ARM64_PBHA
+extern bool efi_pbha;
+
 static efi_status_t fdt_init_hbm_mode(void *fdt, int node)
 {
 	efi_guid_t oem_config_guid = EFI_OEMCONFIG_VARIABLE_GUID;
@@ -38,6 +40,9 @@ static efi_status_t fdt_init_hbm_mode(void *fdt, int node)
 	int status;
 	u8 fdt_val32;
 	u8 arr[16] = { 0x1 };
+
+	if (!efi_pbha)
+		goto out;
 
 	efi_status = get_efi_var(L"HBMMode", &oem_config_guid, NULL, &size,
 				 &hbm_mode);

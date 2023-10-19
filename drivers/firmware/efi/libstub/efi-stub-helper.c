@@ -23,6 +23,7 @@ bool efi_nokaslr = !IS_ENABLED(CONFIG_RANDOMIZE_BASE);
 bool efi_noinitrd;
 int efi_loglevel = CONSOLE_LOGLEVEL_DEFAULT;
 bool efi_novamap = IS_ENABLED(CONFIG_LOONGARCH); /* LoongArch call svam() in kernel */;
+bool efi_pbha;
 
 static bool efi_nosoftreserve;
 static bool efi_disable_pci_dma = IS_ENABLED(CONFIG_EFI_DISABLE_PCI_DMA);
@@ -234,6 +235,8 @@ efi_status_t efi_parse_options(char const *cmdline)
 			efi_parse_option_graphics(val + strlen("efifb:"));
 		} else if (!strcmp(param, "memmap") && val) {
 			efi_parse_option_memmap(val);
+		} else if (!strcmp(param, "pbha")) {
+			efi_pbha = true;
 		}
 	}
 	efi_bs_call(free_pool, buf);
