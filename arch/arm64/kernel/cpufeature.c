@@ -112,6 +112,7 @@ EXPORT_SYMBOL(arm64_use_ng_mappings);
 DEFINE_PER_CPU_READ_MOSTLY(const char *, this_cpu_vector) = vectors;
 
 unsigned long __ro_after_init arm64_pbha_perf_only_values;
+EXPORT_SYMBOL(arm64_pbha_perf_only_values);
 
 /*
  * Flag to indicate if we have computed the system wide
