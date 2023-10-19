@@ -4,3 +4,4 @@
 #
 
 obj-$(CONFIG_UB)		+= urma/
+obj-$(CONFIG_UB_UDMA_HNS3)	+= hw/hns3/

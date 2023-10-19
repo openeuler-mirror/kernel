@@ -23,4 +23,5 @@ config UB_URMA
 	  need liburma from umdk
 	  <https://gitee.com/openeuler/umdk>.
 
+source "drivers/ub/hw/hns3/Kconfig"
 endif # UB
