@@ -5,6 +5,7 @@
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <uapi/asm/mman.h>
+#include <linux/pbha.h>
 
 static inline unsigned long arch_calc_vm_prot_bits(unsigned long prot,
 	unsigned long pkey __always_unused)
@@ -16,6 +17,9 @@ static inline unsigned long arch_calc_vm_prot_bits(unsigned long prot,
 
 	if (system_supports_mte() && (prot & PROT_MTE))
 		ret |= VM_MTE;
+
+	if (system_support_pbha_bit0() && (prot & PROT_PBHA_BIT0))
+		ret |= VM_PBHA_BIT0;
 
 	return ret;
 }
@@ -55,6 +59,9 @@ static inline pgprot_t arch_vm_get_page_prot(unsigned long vm_flags)
 	if (vm_flags & VM_MTE)
 		prot |= PTE_ATTRINDX(MT_NORMAL_TAGGED);
 
+	if (vm_flags & VM_PBHA_BIT0)
+		prot |= PROT_PBHA_BIT0;  /* select PBHA BIT 0 for pbha */
+
 	return __pgprot(prot);
 }
 #define arch_vm_get_page_prot(vm_flags) arch_vm_get_page_prot(vm_flags)
@@ -69,6 +76,9 @@ static inline bool arch_validate_prot(unsigned long prot,
 
 	if (system_supports_mte())
 		supported |= PROT_MTE;
+
+	if (system_support_pbha_bit0())
+		supported |= PROT_PBHA_BIT0;
 
 	return (prot & ~supported) == 0;
 }
