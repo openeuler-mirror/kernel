@@ -17,6 +17,7 @@
 #include <asm/uprobes.h>
 #include <asm/vdso.h>
 #include <asm/switch_to.h>
+#include <asm/syscall.h>
 
 #include "proto.h"
 
@@ -119,6 +120,8 @@ SYSCALL_DEFINE1(sigreturn, struct sigcontext __user *, sc)
 	struct pt_regs *regs = current_pt_regs();
 	sigset_t set;
 
+	force_successful_syscall_return();
+
 	/* Always make any pending restarted system calls return -EINTR */
 	current->restart_block.fn = do_no_restart_syscall;
 
@@ -149,6 +152,8 @@ SYSCALL_DEFINE1(rt_sigreturn, struct rt_sigframe __user *, frame)
 {
 	struct pt_regs *regs = current_pt_regs();
 	sigset_t set;
+
+	force_successful_syscall_return();
 
 	/* Always make any pending restarted system calls return -EINTR */
 	current->restart_block.fn = do_no_restart_syscall;
@@ -295,21 +300,21 @@ do_signal(struct pt_regs *regs)
 		single_stepping |= ptrace_cancel_bpt(current);
 		/* Whee!  Actually deliver the signal.  */
 		if (regs->orig_r0 != NO_SYSCALL) {
-			switch (regs->regs[0]) {
-			case ERESTARTSYS:
+			switch (syscall_get_error(current, regs)) {
+			case -ERESTARTSYS:
 				if (!(ksig.ka.sa.sa_flags & SA_RESTART)) {
 					regs->regs[0] = EINTR;
 					break;
 				}
 				fallthrough;
-			case ERESTARTNOINTR:
+			case -ERESTARTNOINTR:
 				/* reset v0 and a3 and replay syscall */
 				regs->regs[0] = regs->orig_r0;
 				regs->regs[19] = regs->orig_r19;
 				regs->pc -= 4;
 				break;
-			case ERESTARTNOHAND:
-			case ERESTART_RESTARTBLOCK:
+			case -ERESTARTNOHAND:
+			case -ERESTART_RESTARTBLOCK:
 				regs->regs[0] = EINTR;
 				break;
 			}
@@ -319,16 +324,16 @@ do_signal(struct pt_regs *regs)
 	} else {
 		single_stepping |= ptrace_cancel_bpt(current);
 		if (regs->orig_r0 != NO_SYSCALL) {
-			switch (regs->regs[0]) {
-			case ERESTARTSYS:
-			case ERESTARTNOINTR:
-			case ERESTARTNOHAND:
+			switch (syscall_get_error(current, regs)) {
+			case -ERESTARTSYS:
+			case -ERESTARTNOINTR:
+			case -ERESTARTNOHAND:
 				/* Reset v0 and a3 and replay syscall.  */
 				regs->regs[0] = regs->orig_r0;
 				regs->regs[19] = regs->orig_r19;
 				regs->pc -= 4;
 				break;
-			case ERESTART_RESTARTBLOCK:
+			case -ERESTART_RESTARTBLOCK:
 				/* Set v0 to the restart_syscall and replay */
 				regs->regs[0] = __NR_restart_syscall;
 				regs->pc -= 4;
