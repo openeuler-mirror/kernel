@@ -21,7 +21,6 @@ struct sunway_iommu {
 	int node;			/* NUMA node */
 
 	struct pci_controller *hose_pt;
-	struct pci_dev *pdev;		/* PCI device to this IOMMU */
 	struct iommu_device iommu;	/* IOMMU core code handle */
 };
 

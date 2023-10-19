@@ -1683,6 +1683,9 @@ const struct iommu_ops sunway_iommu_ops = {
 /*****************************************************************************
  *
  * Boot param handle
+ * Each bit of iommu_enable bitmap represents an rc enable, and every 8 bits
+ * represents one cpu node. For example, iommu_enable=0x0100 means enabling
+ * rc0 for cpu node 1.
  *
  *****************************************************************************/
 static int __init iommu_enable_setup(char *str)
