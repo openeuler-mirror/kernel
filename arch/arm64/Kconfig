@@ -1704,6 +1704,12 @@ config ARM64_PBHA
 	  The behaviour of each PBHA bit is not defined. Say no unless you
 	  are very sure you want this
 
+	  For PBHA_BIT0: It has the following features:
+	  a) kernel pte entry will be set PBHA 59 bit during pagetable startup
+	  b) Introduce VM_PBHA_BIT0 for feature use.
+	  c) User pte entry will be set PBHA 59 bit for vma with VM_PBHA_BIT0.
+	  d) Introduce /proc/<pid>/pbha_bit0 to update whole user task.
+
 endmenu
 
 menu "ARMv8.3 architectural features"

@@ -74,6 +74,7 @@
 #include <linux/cpu.h>
 #include <linux/init.h>
 #include <linux/libfdt.h>
+#include <linux/pbha.h>
 
 #include <asm/cpu.h>
 #include <asm/cpufeature.h>
@@ -1754,6 +1755,8 @@ void __init early_pbha_init(void)
 	enable_pbha_inner();
 
 	pbha_enabled = true;
+
+	early_pbha_bit0_init();
 
 unlock:
 	spin_unlock(&pbha_dt_lock);
