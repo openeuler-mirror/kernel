@@ -518,7 +518,8 @@ xfs_inode_item_push(
 	uint			rval = XFS_ITEM_SUCCESS;
 	int			error;
 
-	if (!bp || (ip->i_flags & XFS_ISTALE)) {
+	if (!bp || ((ip->i_flags & XFS_ISTALE) &&
+		   !(lip->li_flags & XFS_LI_ABORTED))) {
 		/*
 		 * Inode item/buffer is being being aborted due to cluster
 		 * buffer deletion. Trigger a log force to have that operation
@@ -534,8 +535,13 @@ xfs_inode_item_push(
 	if (xfs_iflags_test(ip, XFS_IFLUSHING))
 		return XFS_ITEM_FLUSHING;
 
-	if (!xfs_buf_trylock(bp))
+	if (!xfs_ilock_nowait(ip, XFS_ILOCK_SHARED))
 		return XFS_ITEM_LOCKED;
+
+	if (!xfs_buf_trylock(bp)) {
+		xfs_iunlock(ip, XFS_ILOCK_SHARED);
+		return XFS_ITEM_LOCKED;
+	}
 
 	spin_unlock(&lip->li_ailp->ail_lock);
 
@@ -562,6 +568,7 @@ xfs_inode_item_push(
 	}
 
 	spin_lock(&lip->li_ailp->ail_lock);
+	xfs_iunlock(ip, XFS_ILOCK_SHARED);
 	return rval;
 }
 

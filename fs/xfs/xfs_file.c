@@ -95,8 +95,6 @@ xfs_update_prealloc_flags(
 		ip->i_d.di_flags &= ~XFS_DIFLAG_PREALLOC;
 
 	xfs_trans_log_inode(tp, ip, XFS_ILOG_CORE);
-	if (flags & XFS_PREALLOC_SYNC)
-		xfs_trans_set_sync(tp);
 	return xfs_trans_commit(tp);
 }
 
@@ -176,7 +174,7 @@ xfs_file_fsync(
 {
 	struct xfs_inode	*ip = XFS_I(file->f_mapping->host);
 	struct xfs_mount	*mp = ip->i_mount;
-	int			error = 0;
+	int			error, err2;
 	int			log_flushed = 0;
 
 	trace_xfs_file_fsync(ip);
@@ -197,18 +195,21 @@ xfs_file_fsync(
 	 * inode size in case of an extending write.
 	 */
 	if (XFS_IS_REALTIME_INODE(ip))
-		xfs_blkdev_issue_flush(mp->m_rtdev_targp);
+		error = blkdev_issue_flush(mp->m_rtdev_targp->bt_bdev, GFP_NOFS);
 	else if (mp->m_logdev_targp != mp->m_ddev_targp)
-		xfs_blkdev_issue_flush(mp->m_ddev_targp);
+		error = blkdev_issue_flush(mp->m_ddev_targp->bt_bdev, GFP_NOFS);
 
 	/*
 	 * Any inode that has dirty modifications in the log is pinned.  The
-	 * racy check here for a pinned inode while not catch modifications
+	 * racy check here for a pinned inode will not catch modifications
 	 * that happen concurrently to the fsync call, but fsync semantics
 	 * only require to sync previously completed I/O.
 	 */
-	if (xfs_ipincount(ip))
-		error = xfs_fsync_flush_log(ip, datasync, &log_flushed);
+	if (xfs_ipincount(ip)) {
+		err2 = xfs_fsync_flush_log(ip, datasync, &log_flushed);
+		if (err2 && !error)
+			error = err2;
+	}
 
 	/*
 	 * If we only have a single device, and the log force about was
@@ -218,9 +219,11 @@ xfs_file_fsync(
 	 * commit.
 	 */
 	if (!log_flushed && !XFS_IS_REALTIME_INODE(ip) &&
-	    mp->m_logdev_targp == mp->m_ddev_targp)
-		xfs_blkdev_issue_flush(mp->m_ddev_targp);
-
+	    mp->m_logdev_targp == mp->m_ddev_targp) {
+		err2 = blkdev_issue_flush(mp->m_ddev_targp->bt_bdev, GFP_NOFS);
+		if (err2 && !error)
+			error = err2;
+	}
 	return error;
 }
 
@@ -936,6 +939,10 @@ xfs_file_fallocate(
 			goto out_unlock;
 	}
 
+	error = file_modified(file);
+	if (error)
+		goto out_unlock;
+
 	if (mode & FALLOC_FL_PUNCH_HOLE) {
 		error = xfs_free_file_space(ip, offset, len);
 		if (error)
@@ -1037,14 +1044,12 @@ xfs_file_fallocate(
 			if (error)
 				goto out_unlock;
 		}
+
+		error = xfs_update_prealloc_flags(ip, XFS_PREALLOC_SET);
+		if (error)
+			goto out_unlock;
+
 	}
-
-	if (file->f_flags & O_DSYNC)
-		flags |= XFS_PREALLOC_SYNC;
-
-	error = xfs_update_prealloc_flags(ip, flags);
-	if (error)
-		goto out_unlock;
 
 	/* Change file size if needed */
 	if (new_size) {
@@ -1063,8 +1068,14 @@ xfs_file_fallocate(
 	 * leave shifted extents past EOF and hence losing access to
 	 * the data that is contained within them.
 	 */
-	if (do_file_insert)
+	if (do_file_insert) {
 		error = xfs_insert_file_space(ip, offset, len);
+		if (error)
+			goto out_unlock;
+	}
+
+	if (file->f_flags & O_DSYNC)
+		error = xfs_log_force_inode(ip);
 
 out_unlock:
 	xfs_iunlock(ip, iolock);
@@ -1316,7 +1327,7 @@ __xfs_filemap_fault(
 	} else {
 		if (write_fault)
 			ret = iomap_page_mkwrite(vmf,
-					&xfs_buffered_write_iomap_ops);
+					&xfs_page_mkwrite_iomap_ops);
 		else
 			ret = filemap_fault(vmf);
 	}
