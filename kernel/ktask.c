@@ -572,6 +572,10 @@ void __init ktask_init(void)
 
 	ktask_works = kmalloc_array(ktask_rlim_max, sizeof(struct ktask_work),
 				    GFP_KERNEL);
+	if (!ktask_works) {
+		pr_warn("disabled (failed to alloc ktask_works)");
+		goto out;
+	}
 	for (i = 0; i < ktask_rlim_max; ++i)
 		list_add_tail(&ktask_works[i].kw_list, &ktask_free_works);
 
