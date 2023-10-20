@@ -6208,6 +6208,7 @@ CONFIG_TEE=m
 CONFIG_ROH=m
 CONFIG_ROH_HNS=m
 CONFIG_UB=m
+CONFIG_UB_URMA=m
 # end of Device Drivers
 
 #
