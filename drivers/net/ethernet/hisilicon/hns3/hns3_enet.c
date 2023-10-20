@@ -28,6 +28,7 @@
 #include "hnae3_ext.h"
 #include "hns3_enet.h"
 #include "hns3_unic.h"
+#include "hns3_roh.h"
 /* All hns3 tracepoints are defined by the include below, which
  * must be included exactly once across the whole kernel with
  * CREATE_TRACE_POINTS defined
@@ -2588,6 +2589,9 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		hns3_unic_set_default_cc(skb);
 	}
 #endif
+	if (hns3_need_to_handle_roh_arp_req(skb))
+		return hns3_handle_roh_arp_req(skb, priv);
+
 	ret = hns3_handle_skb_desc(priv, ring, skb, desc_cb, ring->next_to_use);
 	if (unlikely(ret <= 0))
 		goto out_err_tx_ok;
@@ -4820,6 +4824,8 @@ static int hns3_nic_common_poll(struct napi_struct *napi, int budget)
 	/* make sure rx ring budget not smaller than 1 */
 	if (tqp_vector->num_tqps > 1)
 		rx_budget = max(budget / tqp_vector->num_tqps, 1);
+
+	hns3_handle_roh_arp_reply(tqp_vector, priv);
 
 	hns3_for_each_ring(ring, tqp_vector->rx_group) {
 		int rx_cleaned = hns3_clean_rx_ring(ring, rx_budget,
