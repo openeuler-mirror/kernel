@@ -31,6 +31,10 @@
 #include <asm/msr.h>
 #include <asm/cmdline.h>
 
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+#include <asm/kvm_para.h>
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
+
 #include "mm_internal.h"
 
 #include <asm/processor-hygon.h>
@@ -227,6 +231,17 @@ static unsigned long pg_level_to_pfn(int level, pte_t *kpte, pgprot_t *ret_prot)
 
 	return pfn;
 }
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+bool page_enc_status_kvm_hypercall_enable;
+
+static inline void notify_page_enc_status_changed(unsigned long pfn,
+						  int npages, bool enc)
+{
+	if (page_enc_status_kvm_hypercall_enable == true)
+		kvm_sev_hc_page_enc_status(pfn, npages, enc);
+}
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
 
 void notify_range_enc_status_changed(unsigned long vaddr, int npages, bool enc)
 {

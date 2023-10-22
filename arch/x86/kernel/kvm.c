@@ -875,7 +875,7 @@ static bool __init kvm_msi_ext_dest_id(void)
 	return kvm_para_has_feature(KVM_FEATURE_MSI_EXT_DEST_ID);
 }
 
-static void kvm_sev_hc_page_enc_status(unsigned long pfn, int npages, bool enc)
+void kvm_sev_hc_page_enc_status(unsigned long pfn, int npages, bool enc)
 {
 	kvm_sev_hypercall3(KVM_HC_MAP_GPA_RANGE, pfn << PAGE_SHIFT, npages,
 			   KVM_MAP_GPA_RANGE_ENC_STAT(enc) | KVM_MAP_GPA_RANGE_PAGE_SZ_4K);
@@ -888,8 +888,9 @@ static void __init kvm_init_platform(void)
 		unsigned long nr_pages;
 		int i;
 
-		pv_ops.mmu.notify_page_enc_status_changed =
-			kvm_sev_hc_page_enc_status;
+		/* HYGON added to avoid kabi breakage of pv_ops (start) */
+		ENABLE_PAGE_ENC_STATUS_KVM_HYPERCALL;
+		/* HYGON added to avoid kabi breakage of pv_ops (end) */
 
 		/*
 		 * Reset the host's shared pages list related to kernel

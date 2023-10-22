@@ -57,6 +57,14 @@ void __init mem_encrypt_init(void);
 
 #define __bss_decrypted __section(".bss..decrypted")
 
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+extern bool page_enc_status_kvm_hypercall_enable;
+#define ENABLE_PAGE_ENC_STATUS_KVM_HYPERCALL		\
+({							\
+	page_enc_status_kvm_hypercall_enable = true;	\
+})
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
+
 #else	/* !CONFIG_AMD_MEM_ENCRYPT */
 
 #define sme_me_mask	0ULL
@@ -91,6 +99,10 @@ static inline void mem_encrypt_free_decrypted_mem(void) { }
 static inline void mem_encrypt_init(void) { }
 
 #define __bss_decrypted
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+#define ENABLE_PAGE_ENC_STATUS_KVM_HYPERCALL
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
 
 #endif	/* CONFIG_AMD_MEM_ENCRYPT */
 
