@@ -676,20 +676,63 @@ static int hmadvise_do_prefetch(gm_dev_t *dev, unsigned long addr, size_t size)
 	return res;
 }
 
-static int hmadvise_do_eagerfree(unsigned long addr, size_t size)
+static int gmem_unmap_vma_pages(struct vm_area_struct *vma, unsigned long start,
+				unsigned long end, int page_size)
 {
-	int page_size = HPAGE_SIZE;
-	struct vm_area_struct *vma;
-	int ret = GM_RET_SUCCESS;
-	unsigned long start, end;
-	gm_mapping_t *gm_mapping;
 	struct gm_fault_t gmf = {
 		.mm = current->mm,
 		.size = page_size,
 		.copy = false,
 	};
-	unsigned long old_start;
+	gm_mapping_t *gm_mapping;
 	vm_object_t *obj;
+	int ret;
+
+	obj = vma->vm_obj;
+	if (!obj) {
+		pr_err("gmem: peer-shared vma should have vm_object\n");
+		return -EINVAL;
+	}
+
+	for (; start < end; start += page_size) {
+		xa_lock(obj->logical_page_table);
+		gm_mapping = vm_object_lookup(obj, start);
+		if (!gm_mapping) {
+			xa_unlock(obj->logical_page_table);
+			continue;
+		}
+		xa_unlock(obj->logical_page_table);
+		mutex_lock(&gm_mapping->lock);
+		if (gm_mapping_nomap(gm_mapping)) {
+			mutex_unlock(&gm_mapping->lock);
+			continue;
+		} else if (gm_mapping_cpu(gm_mapping)) {
+			zap_page_range_single(vma, start, page_size, NULL);
+		} else {
+			gmf.va = start;
+			gmf.dev = gm_mapping->dev;
+			ret = gm_mapping->dev->mmu->peer_unmap(&gmf);
+			if (ret) {
+				pr_err("gmem: peer_unmap failed. ret %d\n",
+				       ret);
+				mutex_unlock(&gm_mapping->lock);
+				continue;
+			}
+		}
+		gm_mapping_flags_set(gm_mapping, GM_PAGE_NOMAP);
+		mutex_unlock(&gm_mapping->lock);
+	}
+
+	return 0;
+}
+
+static int hmadvise_do_eagerfree(unsigned long addr, size_t size)
+{
+	unsigned long start, end, i_start, i_end;
+	int page_size = HPAGE_SIZE;
+	struct vm_area_struct *vma;
+	int ret = GM_RET_SUCCESS;
+	unsigned long old_start;
 
 	/* overflow */
 	if (check_add_overflow(addr, size, &end))
@@ -709,43 +752,26 @@ static int hmadvise_do_eagerfree(unsigned long addr, size_t size)
 
 	mmap_read_lock(current->mm);
 	do {
-		vma = find_vma(current->mm, start);
-		if (!vma || !vma_is_peer_shared(vma)) {
-			pr_info_ratelimited("gmem: not peer-shared vma, skip dontneed\n");
+		vma = find_vma_intersection(current->mm, start, end);
+		if (!vma) {
+			pr_info("gmem: there is no valid vma\n");
+			break;
+		}
+
+		if (!vma_is_peer_shared(vma)) {
+			pr_debug("gmem: not peer-shared vma, skip dontneed\n");
+			start = vma->vm_end;
 			continue;
 		}
-		obj = vma->vm_obj;
-		if (!obj) {
-			pr_err("gmem: peer-shared vma should have vm_object\n");
-			mmap_read_unlock(current->mm);
-			return -EINVAL;
-		}
-		xa_lock(obj->logical_page_table);
-		gm_mapping = vm_object_lookup(obj, start);
-		if (!gm_mapping) {
-			xa_unlock(obj->logical_page_table);
-			continue;
-		}
-		xa_unlock(obj->logical_page_table);
-		mutex_lock(&gm_mapping->lock);
-		if (gm_mapping_nomap(gm_mapping)) {
-			mutex_unlock(&gm_mapping->lock);
-			continue;
-		} else if (gm_mapping_cpu(gm_mapping)) {
-			zap_page_range_single(vma, start, page_size, NULL);
-		} else {
-			gmf.va = start;
-			gmf.dev = gm_mapping->dev;
-			ret = gm_mapping->dev->mmu->peer_unmap(&gmf);
-			if (ret) {
-				pr_err("gmem: peer_unmap failed. ret %d\n", ret);
-				mutex_unlock(&gm_mapping->lock);
-				continue;
-			}
-		}
-		gm_mapping_flags_set(gm_mapping, GM_PAGE_NOMAP);
-		mutex_unlock(&gm_mapping->lock);
-	} while (start += page_size, start != end);
+
+		i_start = start > vma->vm_start ? start : vma->vm_start;
+		i_end = end < vma->vm_end ? end : vma->vm_end;
+		ret = gmem_unmap_vma_pages(vma, i_start, i_end, page_size);
+		if (ret)
+			break;
+
+		start = vma->vm_end;
+	} while (start < end);
 
 	mmap_read_unlock(current->mm);
 	return ret;
