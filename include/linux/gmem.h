@@ -327,13 +327,14 @@ extern struct hnode *hnodes[];
 
 static inline bool is_hnode(int node)
 {
-	return !node_isset(node, node_possible_map)
-		&& node_isset(node, hnode_map);
+	return (node < MAX_NUMNODES) && !node_isset(node, node_possible_map) &&
+	       node_isset(node, hnode_map);
 }
 
 static inline bool is_hnode_allowed(int node)
 {
-	return is_hnode(node) && node_isset(node, current->mems_allowed);
+	return (node < MAX_NUMNODES) && is_hnode(node) &&
+	       node_isset(node, current->mems_allowed);
 }
 
 static inline struct hnode *get_hnode(unsigned int hnid)
