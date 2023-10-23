@@ -5354,6 +5354,12 @@ static void hns3_state_init(struct hnae3_handle *handle)
 
 	if (hnae3_ae_dev_rxd_adv_layout_supported(ae_dev))
 		set_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state);
+
+	if (hnae3_check_roh_mac_type(handle)) {
+		set_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE,
+			&handle->supported_pflags);
+		set_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE, &handle->priv_flags);
+	}
 }
 
 static void hns3_state_uninit(struct hnae3_handle *handle)

@@ -477,9 +477,17 @@ static void hns3_update_fd_qb_state(struct net_device *netdev, bool enable)
 	handle->ae_algo->ops->request_flush_qb_config(handle);
 }
 
+static void hns3_update_roh_arp_proxy_enable(struct net_device *netdev,
+					     bool enable)
+{
+	netdev_info(netdev, "%s roh arp proxy\n",
+		    enable ? "enable" : "disable");
+}
+
 static const struct hns3_pflag_desc hns3_priv_flags[HNAE3_PFLAG_MAX] = {
 	{ "limit_promisc",	hns3_update_limit_promisc_mode },
 	{ "qb_enable",		hns3_update_fd_qb_state },
+	{ "roh_arp_proxy_enable",	hns3_update_roh_arp_proxy_enable },
 };
 
 static int hns3_get_sset_count(struct net_device *netdev, int stringset)
