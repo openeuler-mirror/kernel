@@ -2589,7 +2589,9 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		hns3_unic_set_default_cc(skb);
 	}
 #endif
-	if (hns3_need_to_handle_roh_arp_req(skb))
+	if (test_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE,
+		     &priv->ae_handle->priv_flags) &&
+	    hns3_need_to_handle_roh_arp_req(skb))
 		return hns3_handle_roh_arp_req(skb, priv);
 
 	ret = hns3_handle_skb_desc(priv, ring, skb, desc_cb, ring->next_to_use);
@@ -4825,7 +4827,8 @@ static int hns3_nic_common_poll(struct napi_struct *napi, int budget)
 	if (tqp_vector->num_tqps > 1)
 		rx_budget = max(budget / tqp_vector->num_tqps, 1);
 
-	hns3_handle_roh_arp_reply(tqp_vector, priv);
+	if (hnae3_check_roh_mac_type(priv->ae_handle))
+		hns3_handle_roh_arp_reply(tqp_vector, priv);
 
 	hns3_for_each_ring(ring, tqp_vector->rx_group) {
 		int rx_cleaned = hns3_clean_rx_ring(ring, rx_budget,
@@ -5627,6 +5630,12 @@ static void hns3_state_init(struct hnae3_handle *handle)
 
 	if (hnae3_ae_dev_rxd_adv_layout_supported(ae_dev))
 		set_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state);
+
+	if (hnae3_check_roh_mac_type(handle)) {
+		set_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE,
+			&handle->supported_pflags);
+		set_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE, &handle->priv_flags);
+	}
 }
 
 static void hns3_state_uninit(struct hnae3_handle *handle)
