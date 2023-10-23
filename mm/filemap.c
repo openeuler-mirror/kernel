@@ -2759,6 +2759,7 @@ unlock:
 		return end;
 	return start;
 }
+EXPORT_SYMBOL(mapping_seek_hole_data);
 
 #ifdef CONFIG_MMU
 #define MMAP_LOTSAMISS  (100)

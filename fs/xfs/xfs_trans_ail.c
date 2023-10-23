@@ -730,11 +730,10 @@ void
 xfs_ail_push_all_sync(
 	struct xfs_ail  *ailp)
 {
-	struct xfs_log_item	*lip;
 	DEFINE_WAIT(wait);
 
 	spin_lock(&ailp->ail_lock);
-	while ((lip = xfs_ail_max(ailp)) != NULL) {
+	while (xfs_ail_max(ailp) != NULL) {
 		prepare_to_wait(&ailp->ail_empty, &wait, TASK_UNINTERRUPTIBLE);
 		wake_up_process(ailp->ail_task);
 		spin_unlock(&ailp->ail_lock);
@@ -822,7 +821,7 @@ xfs_trans_ail_update_bulk(
 			trace_xfs_ail_insert(lip, 0, lsn);
 		}
 		lip->li_lsn = lsn;
-		list_add(&lip->li_ail, &tmp);
+		list_add_tail(&lip->li_ail, &tmp);
 	}
 
 	if (!list_empty(&tmp))

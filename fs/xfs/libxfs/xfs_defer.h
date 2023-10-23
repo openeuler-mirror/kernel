@@ -101,4 +101,7 @@ void xfs_defer_ops_continue(struct xfs_defer_capture *d, struct xfs_trans *tp,
 		struct xfs_inode **captured_ipp);
 void xfs_defer_ops_release(struct xfs_mount *mp, struct xfs_defer_capture *d);
 
+int __init xfs_defer_init_item_caches(void);
+void xfs_defer_destroy_item_caches(void);
+
 #endif /* __XFS_DEFER_H__ */
