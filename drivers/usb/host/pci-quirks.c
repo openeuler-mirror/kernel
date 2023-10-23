@@ -1288,12 +1288,11 @@ DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_ANY_ID, PCI_ANY_ID,
 
 #ifdef CONFIG_SW64
 #include <asm/sw64io.h>
-
-#define xhci_find_next_ext_cap	xhci_find_next_ext_cap_2	// avoid redefinition
-#include "xhci.h"
-#undef xhci_find_next_ext_cap
-
-#define STS_RW1C_BITS		(STS_FATAL | STS_EINT | STS_PORT | STS_SRE)
+#define XHCI_STS_FATAL	(1 << 2)
+#define XHCI_STS_EINT	(1 << 3)
+#define XHCI_STS_PORT	(1 << 4)
+#define XHCI_STS_SRE	(1 << 10)
+#define STS_RW1C_BITS	(XHCI_STS_FATAL | XHCI_STS_EINT | XHCI_STS_PORT | XHCI_STS_SRE)
 
 static void
 fixup_usb_xhci_reset(struct pci_dev *dev)
