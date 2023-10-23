@@ -15,7 +15,25 @@
 #include <linux/pgtable.h>
 
 #include CONFIG_UNCOMPRESS_INCLUDE
+#define puthex32(val)	__puthex32(#val, (val))
+static noinline void __puthex32(const char *name, u32 val)
+{
+	int i;
 
+	while (*name)
+		putc(*name++);
+	putc(':');
+	for (i = 28; i >= 0; i -= 4) {
+		char c = (val >> i) & 0xf;
+
+		if (c < 10)
+			putc(c + '0');
+		else
+			putc(c + 'a' - 10);
+	}
+	putc('\r');
+	putc('\n');
+}
 struct regions {
 	u32 pa_start;
 	u32 pa_end;
@@ -84,27 +102,46 @@ static u32 __memparse(const char *val, const char **retptr)
 	return ret;
 }
 
-static bool regions_intersect(u32 s1, u32 e1, u32 s2, u32 e2)
+#define ALIGN2MDOWN(x) ((x) & ~(SZ_2M - 1))
+#define ALIGN2MUP(x) (((x) & ~(SZ_2M - 1)) + ((((x) & 0x1FFFFF) != 0) << 21))
+#define BITINDEX(x) (((x) & 0xfff00000) >> 21)
+
+
+static u32 set_occupied_region(const void *fdt, struct regions *regions,
+			       u32 start, u32 size, u32 *bitmap)
 {
-	return e1 >= s2 && e2 >= s1;
+	u32 pa, img_start, img_end, i, ret = 0;
+
+	if (regions->image_size <= start
+		&& start - regions->image_size > regions->pa_start)
+		img_start = ALIGN2MUP(start - regions->image_size);
+	else
+		img_start = regions->pa_start;
+	img_end = min((u64)start + (u64)size, (u64)U32_MAX);
+	i = BITINDEX(img_start - regions->pa_start);
+	for (pa = img_start; pa < img_end; pa += SZ_2M, i++) {
+		/* set 'occupied' bit */
+		bitmap[i >> 5] |= BIT(i & 0x1f);
+		++ret;
+	}
+	return ret;
 }
 
-static bool intersects_reserved_region(const void *fdt, u32 start,
-				       u32 end, struct regions *regions)
+static u32 set_fdt_reserved_region(const void *fdt, struct regions *regions,
+				   u32 *bitmap)
 {
-	int subnode, len, i;
+	int subnode, len, i, ret = 0;
 	u64 base, size;
 
 	/* check for overlap with /memreserve/ entries */
 	for (i = 0; i < fdt_num_mem_rsv(fdt); i++) {
 		if (fdt_get_mem_rsv(fdt, i, &base, &size) < 0)
 			continue;
-		if (regions_intersect(start, end, base, base + size))
-			return true;
+		ret += set_occupied_region(fdt, regions, base, size, bitmap);
 	}
 
 	if (regions->reserved_mem < 0)
-		return false;
+		return ret;
 
 	/* check for overlap with static reservations in /reserved-memory */
 	for (subnode = fdt_first_subnode(fdt, regions->reserved_mem);
@@ -134,47 +171,35 @@ static bool intersects_reserved_region(const void *fdt, u32 start,
 			if (base >= regions->pa_end)
 				continue;
 
-			if (regions_intersect(start, end, base,
-					      min(base + size, (u64)U32_MAX)))
-				return true;
+			ret += set_occupied_region(fdt, regions, base,
+					size, bitmap);
 		}
 	}
-	return false;
+	return ret;
 }
 
-static bool intersects_occupied_region(const void *fdt, u32 start,
-				       u32 end, struct regions *regions)
+static noinline u32 set_occupied_regions(const void *fdt,
+					 struct regions *regions, u32 *bitmap)
 {
-	if (regions_intersect(start, end, regions->zimage_start,
-			      regions->zimage_start + regions->zimage_size))
-		return true;
+	int ret = (ALIGN2MDOWN(regions->pa_end) -
+				ALIGN2MUP(regions->pa_start)) / SZ_2M;
 
-	if (regions_intersect(start, end, regions->initrd_start,
-			      regions->initrd_start + regions->initrd_size))
-		return true;
-
-	if (regions_intersect(start, end, regions->dtb_start,
-			      regions->dtb_start + regions->dtb_size))
-		return true;
-
-	return intersects_reserved_region(fdt, start, end, regions);
-}
-
-static u32 count_suitable_regions(const void *fdt, struct regions *regions,
-				  u32 *bitmap)
-{
-	u32 pa, i = 0, ret = 0;
-
-	for (pa = regions->pa_start; pa < regions->pa_end; pa += SZ_2M, i++) {
-		if (!intersects_occupied_region(fdt, pa,
-						pa + regions->image_size,
-						regions)) {
-			ret++;
-		} else {
-			/* set 'occupied' bit */
-			bitmap[i >> 5] |= BIT(i & 0x1f);
-		}
+	if (regions->pa_end -
+			ALIGN2MDOWN(regions->pa_end > regions->image_size)) {
+		/* still possible for an image */
+		ret++;
 	}
+	if (regions->pa_start & (SZ_2M - 1)) {
+		/* still possible for an image start */
+		ret++;
+	}
+	ret -= set_occupied_region(fdt, regions, regions->zimage_start,
+			regions->zimage_size, bitmap);
+	ret -= set_occupied_region(fdt, regions, regions->initrd_start,
+			regions->initrd_size, bitmap);
+	ret -= set_occupied_region(fdt, regions, regions->dtb_start,
+			regions->dtb_size, bitmap);
+	ret -= set_fdt_reserved_region(fdt, regions, bitmap);
 	return ret;
 }
 
@@ -230,7 +255,7 @@ static u32 get_memory_end(const void *fdt, u32 zimage_start)
 
 	get_cell_sizes(fdt, 0, &address_cells, &size_cells);
 
-	while(mem_node >= 0) {
+	while (mem_node >= 0) {
 		/*
 		 * Now find the 'reg' property of the /memory node, and iterate over
 		 * the base/size pairs.
@@ -239,6 +264,7 @@ static u32 get_memory_end(const void *fdt, u32 zimage_start)
 		reg = fdt_getprop(fdt, mem_node, "reg", &len);
 		while (len >= 4 * (address_cells + size_cells)) {
 			u64 base, size;
+
 			base = fdt32_to_cpu(reg[0]);
 			if (address_cells == 2)
 				base = (base << 32) | fdt32_to_cpu(reg[1]);
@@ -301,25 +327,8 @@ static const char *get_cmdline_param(const char *cmdline, const char *param,
 	return NULL;
 }
 
-static void __puthex32(const char *name, u32 val)
-{
-	int i;
 
-	while (*name)
-		putc(*name++);
-	putc(':');
-	for (i = 28; i >= 0; i -= 4) {
-		char c = (val >> i) & 0xf;
 
-		if (c < 10)
-			putc(c + '0');
-		else
-			putc(c + 'a' - 10);
-	}
-	putc('\r');
-	putc('\n');
-}
-#define puthex32(val)	__puthex32(#val, (val))
 
 u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 		     u32 seed, u32 zimage_start, const void *fdt,
@@ -452,9 +461,10 @@ u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 	 * until we counted enough iterations, and return the offset we ended
 	 * up at.
 	 */
-	count = count_suitable_regions(fdt, &regions, bitmap);
-	puthex32(count);
+	count = set_occupied_regions(fdt, &regions, bitmap);
 
+
+	puthex32(count);
 	num = ((u16)seed * count) >> 16;
 	puthex32(num);
 
