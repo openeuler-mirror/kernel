@@ -27,7 +27,7 @@
 #include "xfs_ag_resv.h"
 #include "xfs_bmap.h"
 
-extern kmem_zone_t	*xfs_bmap_free_item_zone;
+struct kmem_cache	*xfs_extfree_item_cache;
 
 struct workqueue_struct *xfs_alloc_wq;
 
@@ -37,8 +37,8 @@ struct workqueue_struct *xfs_alloc_wq;
 #define	XFSA_FIXUP_CNT_OK	2
 
 STATIC int xfs_alloc_ag_vextent_exact(xfs_alloc_arg_t *);
-STATIC int xfs_alloc_ag_vextent_near(xfs_alloc_arg_t *);
-STATIC int xfs_alloc_ag_vextent_size(xfs_alloc_arg_t *);
+STATIC int xfs_alloc_ag_vextent_near(xfs_alloc_arg_t *, uint32_t);
+STATIC int xfs_alloc_ag_vextent_size(xfs_alloc_arg_t *, uint32_t);
 
 /*
  * Size of the AGFL.  For CRC-enabled filesystes we steal a couple of slots in
@@ -82,6 +82,25 @@ xfs_prealloc_blocks(
 }
 
 /*
+ * Twice fixup for the same ag may happen within exact one tp, and the consume
+ * of agfl after first fixup may trigger second fixup's failure, then xfs will
+ * shutdown. To avoid that, we reserve blocks which can satisfy the second
+ * fixup.
+ */
+xfs_extlen_t
+xfs_ag_fixup_aside(
+	struct xfs_mount	*mp)
+{
+	xfs_extlen_t ret;
+
+	ret = 2 * mp->m_ag_maxlevels;
+	if (xfs_has_rmapbt(mp))
+		ret += mp->m_rmap_maxlevels;
+
+	return ret;
+}
+
+/*
  * In order to avoid ENOSPC-related deadlock caused by out-of-order locking of
  * AGF buffer (PV 947395), we place constraints on the relationship among
  * actual allocations for data blocks, freelist blocks, and potential file data
@@ -95,12 +114,15 @@ xfs_prealloc_blocks(
  *
  * We need to reserve 4 fsbs _per AG_ for the freelist and 4 more to handle a
  * potential split of the file's bmap btree.
+ *
+ * Besides, comment for xfs_ag_fixup_aside show why we reserve more blocks.
  */
 unsigned int
 xfs_alloc_set_aside(
 	struct xfs_mount	*mp)
 {
-	return mp->m_sb.sb_agcount * (XFS_ALLOC_AGFL_RESERVE + 4);
+	return mp->m_sb.sb_agcount * (XFS_ALLOC_AGFL_RESERVE +
+			4 + xfs_ag_fixup_aside(mp));
 }
 
 /*
@@ -132,6 +154,8 @@ xfs_alloc_ag_max_usable(
 		blocks++; 		/* rmap root block */
 	if (xfs_has_reflink(mp))
 		blocks++;		/* refcount root block */
+
+	blocks += xfs_ag_fixup_aside(mp);
 
 	return mp->m_sb.sb_agblocks - blocks;
 }
@@ -1127,7 +1151,8 @@ error:
  */
 STATIC int			/* error */
 xfs_alloc_ag_vextent(
-	xfs_alloc_arg_t	*args)	/* argument structure for allocation */
+	xfs_alloc_arg_t	*args,	/* argument structure for allocation */
+	uint32_t	alloc_flags)
 {
 	int		error=0;
 
@@ -1143,10 +1168,10 @@ xfs_alloc_ag_vextent(
 	args->wasfromfl = 0;
 	switch (args->type) {
 	case XFS_ALLOCTYPE_THIS_AG:
-		error = xfs_alloc_ag_vextent_size(args);
+		error = xfs_alloc_ag_vextent_size(args, alloc_flags);
 		break;
 	case XFS_ALLOCTYPE_NEAR_BNO:
-		error = xfs_alloc_ag_vextent_near(args);
+		error = xfs_alloc_ag_vextent_near(args, alloc_flags);
 		break;
 	case XFS_ALLOCTYPE_THIS_BNO:
 		error = xfs_alloc_ag_vextent_exact(args);
@@ -1554,7 +1579,8 @@ xfs_alloc_ag_vextent_lastblock(
  */
 STATIC int
 xfs_alloc_ag_vextent_near(
-	struct xfs_alloc_arg	*args)
+	struct xfs_alloc_arg	*args,
+	uint32_t		alloc_flags)
 {
 	struct xfs_alloc_cur	acur = {};
 	int			error;		/* error code */
@@ -1573,6 +1599,8 @@ xfs_alloc_ag_vextent_near(
 	if (args->agbno > args->max_agbno)
 		args->agbno = args->max_agbno;
 
+	/* Retry once quickly if we find busy extents before blocking. */
+	alloc_flags |= XFS_ALLOC_FLAG_TRYFLUSH;
 restart:
 	len = 0;
 
@@ -1628,9 +1656,20 @@ restart:
 	 */
 	if (!acur.len) {
 		if (acur.busy) {
+			/*
+			 * Our only valid extents must have been busy. Flush and
+			 * retry the allocation again. If we get an -EAGAIN
+			 * error, we're being told that a deadlock was avoided
+			 * and the current transaction needs committing before
+			 * the allocation can be retried.
+			 */
 			trace_xfs_alloc_near_busy(args);
-			xfs_extent_busy_flush(args->mp, args->pag,
-					      acur.busy_gen);
+			error = xfs_extent_busy_flush(args->tp, args->pag,
+					acur.busy_gen, alloc_flags);
+			if (error)
+				goto out;
+
+			alloc_flags &= ~XFS_ALLOC_FLAG_TRYFLUSH;
 			goto restart;
 		}
 		trace_xfs_alloc_size_neither(args);
@@ -1653,22 +1692,25 @@ out:
  * and of the form k * prod + mod unless there's nothing that large.
  * Return the starting a.g. block, or NULLAGBLOCK if we can't do it.
  */
-STATIC int				/* error */
+static int
 xfs_alloc_ag_vextent_size(
-	xfs_alloc_arg_t	*args)		/* allocation argument structure */
+	struct xfs_alloc_arg	*args,
+	uint32_t		alloc_flags)
 {
-	struct xfs_agf	*agf = args->agbp->b_addr;
-	xfs_btree_cur_t	*bno_cur;	/* cursor for bno btree */
-	xfs_btree_cur_t	*cnt_cur;	/* cursor for cnt btree */
-	int		error;		/* error result */
-	xfs_agblock_t	fbno;		/* start of found freespace */
-	xfs_extlen_t	flen;		/* length of found freespace */
-	int		i;		/* temp status variable */
-	xfs_agblock_t	rbno;		/* returned block number */
-	xfs_extlen_t	rlen;		/* length of returned extent */
-	bool		busy;
-	unsigned	busy_gen;
+	struct xfs_agf		*agf = args->agbp->b_addr;
+	struct xfs_btree_cur	*bno_cur;
+	struct xfs_btree_cur	*cnt_cur;
+	xfs_agblock_t		fbno;		/* start of found freespace */
+	xfs_extlen_t		flen;		/* length of found freespace */
+	xfs_agblock_t		rbno;		/* returned block number */
+	xfs_extlen_t		rlen;		/* length of returned extent */
+	bool			busy;
+	unsigned		busy_gen;
+	int			error;
+	int			i;
 
+	/* Retry once quickly if we find busy extents before blocking. */
+	alloc_flags |= XFS_ALLOC_FLAG_TRYFLUSH;
 restart:
 	/*
 	 * Allocate and initialize a cursor for the by-size btree.
@@ -1676,7 +1718,6 @@ restart:
 	cnt_cur = xfs_allocbt_init_cursor(args->mp, args->tp, args->agbp,
 		args->agno, XFS_BTNUM_CNT);
 	bno_cur = NULL;
-	busy = false;
 
 	/*
 	 * Look for an entry >= maxlen+alignment-1 blocks.
@@ -1727,19 +1768,25 @@ restart:
 			error = xfs_btree_increment(cnt_cur, 0, &i);
 			if (error)
 				goto error0;
-			if (i == 0) {
-				/*
-				 * Our only valid extents must have been busy.
-				 * Make it unbusy by forcing the log out and
-				 * retrying.
-				 */
-				xfs_btree_del_cursor(cnt_cur,
-						     XFS_BTREE_NOERROR);
-				trace_xfs_alloc_size_busy(args);
-				xfs_extent_busy_flush(args->mp,
-							args->pag, busy_gen);
-				goto restart;
-			}
+			if (i)
+				continue;
+
+			/*
+			 * Our only valid extents must have been busy. Flush and
+			 * retry the allocation again. If we get an -EAGAIN
+			 * error, we're being told that a deadlock was avoided
+			 * and the current transaction needs committing before
+			 * the allocation can be retried.
+			 */
+			trace_xfs_alloc_size_busy(args);
+			error = xfs_extent_busy_flush(args->tp, args->pag,
+					busy_gen, alloc_flags);
+			if (error)
+				goto error0;
+
+			alloc_flags &= ~XFS_ALLOC_FLAG_TRYFLUSH;
+			xfs_btree_del_cursor(cnt_cur, XFS_BTREE_NOERROR);
+			goto restart;
 		}
 	}
 
@@ -1819,9 +1866,21 @@ restart:
 	args->len = rlen;
 	if (rlen < args->minlen) {
 		if (busy) {
-			xfs_btree_del_cursor(cnt_cur, XFS_BTREE_NOERROR);
+			/*
+			 * Our only valid extents must have been busy. Flush and
+			 * retry the allocation again. If we get an -EAGAIN
+			 * error, we're being told that a deadlock was avoided
+			 * and the current transaction needs committing before
+			 * the allocation can be retried.
+			 */
 			trace_xfs_alloc_size_busy(args);
-			xfs_extent_busy_flush(args->mp, args->pag, busy_gen);
+			error = xfs_extent_busy_flush(args->tp, args->pag,
+					busy_gen, alloc_flags);
+			if (error)
+				goto error0;
+
+			alloc_flags &= ~XFS_ALLOC_FLAG_TRYFLUSH;
+			xfs_btree_del_cursor(cnt_cur, XFS_BTREE_NOERROR);
 			goto restart;
 		}
 		goto out_nominleft;
@@ -2280,6 +2339,7 @@ xfs_alloc_min_freelist(
 static bool
 xfs_alloc_space_available(
 	struct xfs_alloc_arg	*args,
+	xfs_extlen_t		need,
 	xfs_extlen_t		min_free,
 	int			flags)
 {
@@ -2296,7 +2356,7 @@ xfs_alloc_space_available(
 
 	/* do we have enough contiguous free space for the allocation? */
 	alloc_len = args->minlen + (args->alignment - 1) + args->minalignslop;
-	longest = xfs_alloc_longest_free_extent(pag, min_free, reservation);
+	longest = xfs_alloc_longest_free_extent(pag, need, reservation);
 	if (longest < alloc_len)
 		return false;
 
@@ -2305,7 +2365,7 @@ xfs_alloc_space_available(
 	 * account extra agfl blocks because we are about to defer free them,
 	 * making them unavailable until the current transaction commits.
 	 */
-	agflcount = min_t(xfs_extlen_t, pag->pagf_flcount, min_free);
+	agflcount = min_t(xfs_extlen_t, pag->pagf_flcount, need);
 	available = (int)(pag->pagf_freeblks + agflcount -
 			  reservation - min_free - args->minleft);
 	if (available < (int)max(args->total, alloc_len))
@@ -2439,7 +2499,7 @@ xfs_agfl_reset(
 
 /*
  * Defer an AGFL block free. This is effectively equivalent to
- * xfs_bmap_add_free() with some special handling particular to AGFL blocks.
+ * xfs_free_extent_later() with some special handling particular to AGFL blocks.
  *
  * Deferring AGFL frees helps prevent log reservation overruns due to too many
  * allocation operations in a transaction. AGFL frees are prone to this problem
@@ -2448,29 +2508,95 @@ xfs_agfl_reset(
  * the real allocation can proceed. Deferring the free disconnects freeing up
  * the AGFL slot from freeing the block.
  */
-STATIC void
+static int
 xfs_defer_agfl_block(
 	struct xfs_trans		*tp,
 	xfs_agnumber_t			agno,
-	xfs_fsblock_t			agbno,
+	xfs_agblock_t			agbno,
 	struct xfs_owner_info		*oinfo)
 {
 	struct xfs_mount		*mp = tp->t_mountp;
 	struct xfs_extent_free_item	*new;		/* new element */
+	xfs_fsblock_t			fsbno = XFS_AGB_TO_FSB(mp, agno, agbno);
 
-	ASSERT(xfs_bmap_free_item_zone != NULL);
+	ASSERT(xfs_extfree_item_cache != NULL);
 	ASSERT(oinfo != NULL);
 
-	new = kmem_cache_alloc(xfs_bmap_free_item_zone,
+	if (XFS_IS_CORRUPT(mp, !xfs_verify_fsbno(mp, fsbno)))
+		return -EFSCORRUPTED;
+
+	new = kmem_cache_zalloc(xfs_extfree_item_cache,
 			       GFP_KERNEL | __GFP_NOFAIL);
-	new->xefi_startblock = XFS_AGB_TO_FSB(mp, agno, agbno);
+	new->xefi_startblock = fsbno;
 	new->xefi_blockcount = 1;
-	new->xefi_oinfo = *oinfo;
-	new->xefi_skip_discard = false;
+	new->xefi_owner = oinfo->oi_owner;
+	new->xefi_agresv = XFS_AG_RESV_AGFL;
 
 	trace_xfs_agfl_free_defer(mp, agno, 0, agbno, 1);
 
 	xfs_defer_add(tp, XFS_DEFER_OPS_TYPE_AGFL_FREE, &new->xefi_list);
+	return 0;
+}
+
+/*
+ * Add the extent to the list of extents to be free at transaction end.
+ * The list is maintained sorted (by block number).
+ */
+int
+__xfs_free_extent_later(
+	struct xfs_trans		*tp,
+	xfs_fsblock_t			bno,
+	xfs_filblks_t			len,
+	const struct xfs_owner_info	*oinfo,
+	enum xfs_ag_resv_type		type,
+	bool				skip_discard)
+{
+	struct xfs_extent_free_item	*new;		/* new element */
+	struct xfs_mount		*mp = tp->t_mountp;
+#ifdef DEBUG
+	xfs_agnumber_t			agno;
+	xfs_agblock_t			agbno;
+
+	ASSERT(bno != NULLFSBLOCK);
+	ASSERT(len > 0);
+	ASSERT(len <= MAXEXTLEN);
+	ASSERT(!isnullstartblock(bno));
+	agno = XFS_FSB_TO_AGNO(mp, bno);
+	agbno = XFS_FSB_TO_AGBNO(mp, bno);
+	ASSERT(agno < mp->m_sb.sb_agcount);
+	ASSERT(agbno < mp->m_sb.sb_agblocks);
+	ASSERT(len < mp->m_sb.sb_agblocks);
+	ASSERT(agbno + len <= mp->m_sb.sb_agblocks);
+#endif
+	ASSERT(xfs_extfree_item_cache != NULL);
+	ASSERT(type != XFS_AG_RESV_AGFL);
+
+	if (XFS_IS_CORRUPT(mp, !xfs_verify_fsbext(mp, bno, len)))
+		return -EFSCORRUPTED;
+
+	new = kmem_cache_zalloc(xfs_extfree_item_cache,
+			       GFP_KERNEL | __GFP_NOFAIL);
+	new->xefi_startblock = bno;
+	new->xefi_blockcount = (xfs_extlen_t)len;
+	new->xefi_agresv = type;
+	if (skip_discard)
+		new->xefi_flags |= XFS_EFI_SKIP_DISCARD;
+	if (oinfo) {
+		ASSERT(oinfo->oi_offset == 0);
+
+		if (oinfo->oi_flags & XFS_OWNER_INFO_ATTR_FORK)
+			new->xefi_flags |= XFS_EFI_ATTR_FORK;
+		if (oinfo->oi_flags & XFS_OWNER_INFO_BMBT_BLOCK)
+			new->xefi_flags |= XFS_EFI_BMBT_BLOCK;
+		new->xefi_owner = oinfo->oi_owner;
+	} else {
+		new->xefi_owner = XFS_RMAP_OWN_NULL;
+	}
+	trace_xfs_bmap_free_defer(tp->t_mountp,
+			XFS_FSB_TO_AGNO(tp->t_mountp, bno), 0,
+			XFS_FSB_TO_AGBNO(tp->t_mountp, bno), len);
+	xfs_defer_add(tp, XFS_DEFER_OPS_TYPE_FREE, &new->xefi_list);
+	return 0;
 }
 
 /*
@@ -2480,7 +2606,7 @@ xfs_defer_agfl_block(
 int			/* error */
 xfs_alloc_fix_freelist(
 	struct xfs_alloc_arg	*args,	/* allocation argument structure */
-	int			flags)	/* XFS_ALLOC_FLAG_... */
+	uint32_t		alloc_flags)
 {
 	struct xfs_mount	*mp = args->mp;
 	struct xfs_perag	*pag = args->pag;
@@ -2490,13 +2616,14 @@ xfs_alloc_fix_freelist(
 	struct xfs_alloc_arg	targs;	/* local allocation arguments */
 	xfs_agblock_t		bno;	/* freelist block */
 	xfs_extlen_t		need;	/* total blocks needed in freelist */
+	xfs_extlen_t		minfree;
 	int			error = 0;
 
 	/* deferred ops (AGFL block frees) require permanent transactions */
 	ASSERT(tp->t_flags & XFS_TRANS_PERM_LOG_RES);
 
 	if (!pag->pagf_init) {
-		error = xfs_alloc_read_agf(mp, tp, args->agno, flags, &agbp);
+		error = xfs_alloc_read_agf(mp, tp, args->agno, alloc_flags, &agbp);
 		if (error) {
 			/* Couldn't lock the AGF so skip this AG. */
 			if (error == -EAGAIN)
@@ -2511,8 +2638,8 @@ xfs_alloc_fix_freelist(
 	 * point
 	 */
 	if (pag->pagf_metadata && (args->datatype & XFS_ALLOC_USERDATA) &&
-	    (flags & XFS_ALLOC_FLAG_TRYLOCK)) {
-		ASSERT(!(flags & XFS_ALLOC_FLAG_FREEING));
+	    (alloc_flags & XFS_ALLOC_FLAG_TRYLOCK)) {
+		ASSERT(!(alloc_flags & XFS_ALLOC_FLAG_FREEING));
 		goto out_agbp_relse;
 	}
 
@@ -2521,8 +2648,11 @@ xfs_alloc_fix_freelist(
 	 * blocks to perform multiple allocations from a single AG and
 	 * transaction if needed.
 	 */
-	need = xfs_alloc_min_freelist(mp, pag) * (1 + args->postallocs);
-	if (!xfs_alloc_space_available(args, need, flags |
+	minfree = need = xfs_alloc_min_freelist(mp, pag);
+	if (args->postallocs)
+		minfree += xfs_ag_fixup_aside(mp);
+
+	if (!xfs_alloc_space_available(args, need, minfree, alloc_flags |
 			XFS_ALLOC_FLAG_CHECK))
 		goto out_agbp_relse;
 
@@ -2531,7 +2661,7 @@ xfs_alloc_fix_freelist(
 	 * Can fail if we're not blocking on locks, and it's held.
 	 */
 	if (!agbp) {
-		error = xfs_alloc_read_agf(mp, tp, args->agno, flags, &agbp);
+		error = xfs_alloc_read_agf(mp, tp, args->agno, alloc_flags, &agbp);
 		if (error) {
 			/* Couldn't lock the AGF so skip this AG. */
 			if (error == -EAGAIN)
@@ -2545,8 +2675,11 @@ xfs_alloc_fix_freelist(
 		xfs_agfl_reset(tp, agbp, pag);
 
 	/* If there isn't enough total space or single-extent, reject it. */
-	need = xfs_alloc_min_freelist(mp, pag) * (1 + args->postallocs);
-	if (!xfs_alloc_space_available(args, need, flags))
+	minfree = need = xfs_alloc_min_freelist(mp, pag);
+	if (args->postallocs)
+		minfree += xfs_ag_fixup_aside(mp);
+
+	if (!xfs_alloc_space_available(args, need, minfree, alloc_flags))
 		goto out_agbp_relse;
 
 	/*
@@ -2575,17 +2708,20 @@ xfs_alloc_fix_freelist(
 	 */
 	memset(&targs, 0, sizeof(targs));
 	/* struct copy below */
-	if (flags & XFS_ALLOC_FLAG_NORMAP)
+	if (alloc_flags & XFS_ALLOC_FLAG_NORMAP)
 		targs.oinfo = XFS_RMAP_OINFO_SKIP_UPDATE;
 	else
 		targs.oinfo = XFS_RMAP_OINFO_AG;
-	while (!(flags & XFS_ALLOC_FLAG_NOSHRINK) && pag->pagf_flcount > need) {
+	while (!(alloc_flags & XFS_ALLOC_FLAG_NOSHRINK) &&
+			pag->pagf_flcount > need) {
 		error = xfs_alloc_get_freelist(tp, agbp, &bno, 0);
 		if (error)
 			goto out_agbp_relse;
 
 		/* defer agfl frees */
-		xfs_defer_agfl_block(tp, args->agno, bno, &targs.oinfo);
+		error = xfs_defer_agfl_block(tp, args->agno, bno, &targs.oinfo);
+		if (error)
+			goto out_agbp_relse;
 	}
 
 	targs.tp = tp;
@@ -2606,7 +2742,7 @@ xfs_alloc_fix_freelist(
 		targs.resv = XFS_AG_RESV_AGFL;
 
 		/* Allocate as many blocks as possible at once. */
-		error = xfs_alloc_ag_vextent(&targs);
+		error = xfs_alloc_ag_vextent(&targs, alloc_flags);
 		if (error)
 			goto out_agflbp_relse;
 
@@ -2616,7 +2752,7 @@ xfs_alloc_fix_freelist(
 		 * on a completely full ag.
 		 */
 		if (targs.agbno == NULLAGBLOCK) {
-			if (flags & XFS_ALLOC_FLAG_FREEING)
+			if (alloc_flags & XFS_ALLOC_FLAG_FREEING)
 				break;
 			goto out_agflbp_relse;
 		}
@@ -2685,6 +2821,10 @@ xfs_alloc_get_freelist(
 	 */
 	agfl_bno = xfs_buf_to_agfl_bno(agflbp);
 	bno = be32_to_cpu(agfl_bno[be32_to_cpu(agf->agf_flfirst)]);
+	if (XFS_IS_CORRUPT(tp->t_mountp,
+		!xfs_verify_agbno(mp, be32_to_cpu(agf->agf_seqno), bno)))
+		return -EFSCORRUPTED;
+
 	be32_add_cpu(&agf->agf_flfirst, 1);
 	xfs_trans_brelse(tp, agflbp);
 	if (be32_to_cpu(agf->agf_flfirst) == xfs_agfl_size(mp))
@@ -2831,6 +2971,7 @@ xfs_agf_verify(
 {
 	struct xfs_mount	*mp = bp->b_mount;
 	struct xfs_agf		*agf = bp->b_addr;
+	uint32_t		agf_length = be32_to_cpu(agf->agf_length);
 
 	if (xfs_has_crc(mp)) {
 		if (!uuid_equal(&agf->agf_uuid, &mp->m_sb.sb_meta_uuid))
@@ -2842,18 +2983,50 @@ xfs_agf_verify(
 	if (!xfs_verify_magic(bp, agf->agf_magicnum))
 		return __this_address;
 
-	if (!(XFS_AGF_GOOD_VERSION(be32_to_cpu(agf->agf_versionnum)) &&
-	      be32_to_cpu(agf->agf_freeblks) <= be32_to_cpu(agf->agf_length) &&
-	      be32_to_cpu(agf->agf_flfirst) < xfs_agfl_size(mp) &&
-	      be32_to_cpu(agf->agf_fllast) < xfs_agfl_size(mp) &&
-	      be32_to_cpu(agf->agf_flcount) <= xfs_agfl_size(mp)))
+	if (!XFS_AGF_GOOD_VERSION(be32_to_cpu(agf->agf_versionnum)))
 		return __this_address;
 
-	if (be32_to_cpu(agf->agf_length) > mp->m_sb.sb_dblocks)
+	/*
+	 * Both agf_seqno and agf_length need to validated before anything else
+	 * block number related in the AGF or AGFL can be checked.
+	 *
+	 * During growfs operations, the perag is not fully initialised,
+	 * so we can't use it for any useful checking. growfs ensures we can't
+	 * use it by using uncached buffers that don't have the perag attached
+	 * so we can detect and avoid this problem.
+	 */
+	if (bp->b_pag && be32_to_cpu(agf->agf_seqno) != bp->b_pag->pag_agno)
+		return __this_address;
+
+	/*
+	 * Only the last AGF in the filesytsem is allowed to be shorter
+	 * than the AG size recorded in the superblock.
+	 */
+	if (agf_length != mp->m_sb.sb_agblocks &&
+		!(bp->b_flags & _XBF_LOGRECOVERY)) {
+		/*
+		 * During growfs, the new last AGF can get here before we
+		 * have updated the superblock. Give it a pass on the seqno
+		 * check.
+		 */
+		if (bp->b_pag &&
+		    be32_to_cpu(agf->agf_seqno) != mp->m_sb.sb_agcount - 1)
+			return __this_address;
+		if (agf_length < XFS_MIN_AG_BLOCKS)
+			return __this_address;
+		if (agf_length > mp->m_sb.sb_agblocks)
+			return __this_address;
+	}
+
+	if (be32_to_cpu(agf->agf_flfirst) >= xfs_agfl_size(mp))
+		return __this_address;
+	if (be32_to_cpu(agf->agf_fllast) >= xfs_agfl_size(mp))
+		return __this_address;
+	if (be32_to_cpu(agf->agf_flcount) > xfs_agfl_size(mp))
 		return __this_address;
 
 	if (be32_to_cpu(agf->agf_freeblks) < be32_to_cpu(agf->agf_longest) ||
-	    be32_to_cpu(agf->agf_freeblks) > be32_to_cpu(agf->agf_length))
+	    be32_to_cpu(agf->agf_freeblks) > agf_length)
 		return __this_address;
 
 	if (be32_to_cpu(agf->agf_levels[XFS_BTNUM_BNO]) < 1 ||
@@ -2862,37 +3035,28 @@ xfs_agf_verify(
 	    be32_to_cpu(agf->agf_levels[XFS_BTNUM_CNT]) > XFS_BTREE_MAXLEVELS)
 		return __this_address;
 
-	if (xfs_has_rmapbt(mp) &&
-	    (be32_to_cpu(agf->agf_levels[XFS_BTNUM_RMAP]) < 1 ||
-	     be32_to_cpu(agf->agf_levels[XFS_BTNUM_RMAP]) > XFS_BTREE_MAXLEVELS))
-		return __this_address;
-
-	if (xfs_has_rmapbt(mp) &&
-	    be32_to_cpu(agf->agf_rmap_blocks) > be32_to_cpu(agf->agf_length))
-		return __this_address;
-
-	/*
-	 * during growfs operations, the perag is not fully initialised,
-	 * so we can't use it for any useful checking. growfs ensures we can't
-	 * use it by using uncached buffers that don't have the perag attached
-	 * so we can detect and avoid this problem.
-	 */
-	if (bp->b_pag && be32_to_cpu(agf->agf_seqno) != bp->b_pag->pag_agno)
-		return __this_address;
-
 	if (xfs_has_lazysbcount(mp) &&
-	    be32_to_cpu(agf->agf_btreeblks) > be32_to_cpu(agf->agf_length))
+	    be32_to_cpu(agf->agf_btreeblks) > agf_length)
 		return __this_address;
 
-	if (xfs_has_reflink(mp) &&
-	    be32_to_cpu(agf->agf_refcount_blocks) >
-	    be32_to_cpu(agf->agf_length))
-		return __this_address;
+	if (xfs_has_rmapbt(mp)) {
+		if (be32_to_cpu(agf->agf_rmap_blocks) > agf_length)
+			return __this_address;
 
-	if (xfs_has_reflink(mp) &&
-	    (be32_to_cpu(agf->agf_refcount_level) < 1 ||
-	     be32_to_cpu(agf->agf_refcount_level) > XFS_BTREE_MAXLEVELS))
-		return __this_address;
+		if (be32_to_cpu(agf->agf_levels[XFS_BTNUM_RMAP]) < 1 ||
+		    be32_to_cpu(agf->agf_levels[XFS_BTNUM_RMAP]) >
+							mp->m_rmap_maxlevels)
+			return __this_address;
+	}
+
+	if (xfs_has_reflink(mp)) {
+		if (be32_to_cpu(agf->agf_refcount_blocks) > agf_length)
+			return __this_address;
+
+		if (be32_to_cpu(agf->agf_refcount_level) < 1 ||
+		    be32_to_cpu(agf->agf_refcount_level) > mp->m_refc_maxlevels)
+			return __this_address;
+	}
 
 	return NULL;
 
@@ -3059,7 +3223,7 @@ xfs_alloc_vextent(
 {
 	xfs_agblock_t		agsize;	/* allocation group size */
 	int			error;
-	int			flags;	/* XFS_ALLOC_FLAG_... locking flags */
+	uint32_t		alloc_flags; /* XFS_ALLOC_FLAG_... locking flags */
 	struct xfs_mount	*mp;	/* mount structure pointer */
 	xfs_agnumber_t		sagno;	/* starting allocation group number */
 	xfs_alloctype_t		type;	/* input allocation type */
@@ -3112,7 +3276,7 @@ xfs_alloc_vextent(
 			break;
 		}
 		args->agbno = XFS_FSB_TO_AGBNO(mp, args->fsbno);
-		if ((error = xfs_alloc_ag_vextent(args)))
+		if ((error = xfs_alloc_ag_vextent(args, 0)))
 			goto error0;
 		break;
 	case XFS_ALLOCTYPE_START_BNO:
@@ -3141,13 +3305,13 @@ xfs_alloc_vextent(
 			args->agno = XFS_FSB_TO_AGNO(mp, args->fsbno);
 			args->type = XFS_ALLOCTYPE_THIS_AG;
 			sagno = 0;
-			flags = 0;
+			alloc_flags = 0;
 		} else {
 			/*
 			 * Start with the given allocation group.
 			 */
 			args->agno = sagno = XFS_FSB_TO_AGNO(mp, args->fsbno);
-			flags = XFS_ALLOC_FLAG_TRYLOCK;
+			alloc_flags = XFS_ALLOC_FLAG_TRYLOCK;
 		}
 		/*
 		 * Loop over allocation groups twice; first time with
@@ -3155,7 +3319,7 @@ xfs_alloc_vextent(
 		 */
 		for (;;) {
 			args->pag = xfs_perag_get(mp, args->agno);
-			error = xfs_alloc_fix_freelist(args, flags);
+			error = xfs_alloc_fix_freelist(args, alloc_flags);
 			if (error) {
 				trace_xfs_alloc_vextent_nofix(args);
 				goto error0;
@@ -3164,7 +3328,8 @@ xfs_alloc_vextent(
 			 * If we get a buffer back then the allocation will fly.
 			 */
 			if (args->agbp) {
-				if ((error = xfs_alloc_ag_vextent(args)))
+				if ((error = xfs_alloc_ag_vextent(args,
+						alloc_flags)))
 					goto error0;
 				break;
 			}
@@ -3195,13 +3360,13 @@ xfs_alloc_vextent(
 			 * or switch to non-trylock mode.
 			 */
 			if (args->agno == sagno) {
-				if (flags == 0) {
+				if (alloc_flags == 0) {
 					args->agbno = NULLAGBLOCK;
 					trace_xfs_alloc_vextent_allfailed(args);
 					break;
 				}
 
-				flags = 0;
+				alloc_flags = 0;
 				if (type == XFS_ALLOCTYPE_START_BNO) {
 					args->agbno = XFS_FSB_TO_AGBNO(mp,
 						args->fsbno);
@@ -3448,4 +3613,21 @@ xfs_agfl_walk(
 	}
 
 	return 0;
+}
+
+int __init
+xfs_extfree_intent_init_cache(void)
+{
+	xfs_extfree_item_cache = kmem_cache_create("xfs_extfree_intent",
+			sizeof(struct xfs_extent_free_item),
+			0, 0, NULL);
+
+	return xfs_extfree_item_cache != NULL ? 0 : -ENOMEM;
+}
+
+void
+xfs_extfree_intent_destroy_cache(void)
+{
+	kmem_cache_destroy(xfs_extfree_item_cache);
+	xfs_extfree_item_cache = NULL;
 }

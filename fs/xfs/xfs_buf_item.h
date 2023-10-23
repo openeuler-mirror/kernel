@@ -17,6 +17,12 @@
 #define XFS_BLI_STALE_INODE	0x20
 #define	XFS_BLI_INODE_BUF	0x40
 #define	XFS_BLI_ORDERED		0x80
+#define	XFS_BLI_GROW_SB_BUF	0x100
+
+#define XFS_BLI_KEEP_LSN	\
+	(XFS_BLI_INODE_ALLOC_BUF | \
+	 XFS_BLI_GROW_SB_BUF)
+
 
 #define XFS_BLI_FLAGS \
 	{ XFS_BLI_HOLD,		"HOLD" }, \
@@ -26,7 +32,8 @@
 	{ XFS_BLI_INODE_ALLOC_BUF, "INODE_ALLOC" }, \
 	{ XFS_BLI_STALE_INODE,	"STALE_INODE" }, \
 	{ XFS_BLI_INODE_BUF,	"INODE_BUF" }, \
-	{ XFS_BLI_ORDERED,	"ORDERED" }
+	{ XFS_BLI_ORDERED,	"ORDERED" }, \
+	{ XFS_BLI_GROW_SB_BUF,	"GROW_SB" }
 
 
 struct xfs_buf;
@@ -71,6 +78,6 @@ static inline void xfs_buf_dquot_io_fail(struct xfs_buf *bp)
 void	xfs_buf_iodone(struct xfs_buf *);
 bool	xfs_buf_log_check_iovec(struct xfs_log_iovec *iovec);
 
-extern kmem_zone_t	*xfs_buf_item_zone;
+extern struct kmem_cache	*xfs_buf_item_cache;
 
 #endif	/* __XFS_BUF_ITEM_H__ */

@@ -480,7 +480,7 @@ xfs_allocbt_init_common(
 
 	ASSERT(btnum == XFS_BTNUM_BNO || btnum == XFS_BTNUM_CNT);
 
-	cur = kmem_cache_zalloc(xfs_btree_cur_zone, GFP_NOFS | __GFP_NOFAIL);
+	cur = kmem_cache_zalloc(xfs_btree_cur_cache, GFP_NOFS | __GFP_NOFAIL);
 
 	cur->bc_tp = tp;
 	cur->bc_mp = mp;
