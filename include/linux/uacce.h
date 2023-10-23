@@ -115,7 +115,7 @@ enum uacce_q_state {
  * @state: queue state machine
  * @pasid: pasid associated to the mm
  * @handle: iommu_sva handle returned by iommu_sva_bind_device()
- * @private_data: private data for saving filep
+ * @mapping: user space mapping of the queue
  */
 struct uacce_queue {
 	struct uacce_device *uacce;
@@ -130,7 +130,7 @@ struct uacce_queue {
 	enum uacce_q_state state;
 	u32 pasid;
 	struct iommu_sva *handle;
-	void *private_data;
+	struct address_space *mapping;
 };
 
 /**
