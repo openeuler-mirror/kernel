@@ -11840,8 +11840,10 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 
 		break;
 	case HNAE3_CLIENT_ROH:
-		hdev->roh_client = client;
-		vport->roh.client = client;
+		if (hnae3_dev_roh_supported(hdev)) {
+			hdev->roh_client = client;
+			vport->roh.client = client;
+		}
 
 		ret = hclge_init_roh_client_instance(ae_dev, vport);
 		if (ret)

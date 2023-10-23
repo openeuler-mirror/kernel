@@ -77,9 +77,14 @@
 #define HNAE3_UDMA_CLIENT_INITED_B		0x7
 #define HNAE3_DEV_SUPPORT_UDMA_B		0x8
 #define HNAE3_DEV_SUPPORT_UBL_B			0x9
+#define HNAE3_DEV_SUPPORT_ROH_B			0xA
 
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) | \
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
+
+#define HNAE3_DEV_SUPPORT_ROCE_ROH_DCB_BITS \
+		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_ROCE_B) | \
+		 BIT(HNAE3_DEV_SUPPORT_ROH_B))
 
 #define HNAE3_DEV_SUPPORT_UDMA_OVER_UBL_DCB_BITS \
 		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_UDMA_B) | \
@@ -99,7 +104,7 @@
 	hnae3_get_bit((ae_dev)->flag, HNAE3_DEV_SUPPORT_UBL_B)
 
 #define hnae3_dev_roh_supported(hdev) \
-	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_ROH_CLIENT_INITED_B)
+	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROH_B)
 
 #define hnae3_dev_roce_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROCE_B)
