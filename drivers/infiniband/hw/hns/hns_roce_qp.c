@@ -672,17 +672,24 @@ static bool check_dca_is_enable(struct hns_roce_dev *hr_dev,
 
 static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp, bool dca_en,
-			    struct hns_roce_buf_attr *buf_attr)
+			    u8 page_shift, struct hns_roce_buf_attr *buf_attr)
 {
+	unsigned int page_size = BIT(page_shift);
 	int buf_size;
 	int idx = 0;
 
 	hr_qp->buff_size = 0;
-
+	if (page_shift > PAGE_SHIFT || page_shift < HNS_HW_PAGE_SHIFT)
+		return -EOPNOTSUPP;
+	/*
+	 * When enable DCA, there's no need to alloc buffer now, and
+	 * the page shift should be fixed to 4K.
+	 */
+	if (dca_en && page_shift != HNS_HW_PAGE_SHIFT)
+		return -EOPNOTSUPP;
 	/* SQ WQE */
 	hr_qp->sq.offset = 0;
-	buf_size = to_hr_hem_entries_size(hr_qp->sq.wqe_cnt,
-					  hr_qp->sq.wqe_shift);
+	buf_size = ALIGN(hr_qp->sq.wqe_cnt << hr_qp->sq.wqe_shift, page_size);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = hr_dev->caps.wqe_sq_hop_num;
@@ -692,8 +699,7 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 
 	/* extend SGE WQE in SQ */
 	hr_qp->sge.offset = hr_qp->buff_size;
-	buf_size = to_hr_hem_entries_size(hr_qp->sge.sge_cnt,
-					  hr_qp->sge.sge_shift);
+	buf_size = ALIGN(hr_qp->sge.sge_cnt << hr_qp->sge.sge_shift, page_size);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = hr_dev->caps.wqe_sge_hop_num;
@@ -703,8 +709,7 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 
 	/* RQ WQE */
 	hr_qp->rq.offset = hr_qp->buff_size;
-	buf_size = to_hr_hem_entries_size(hr_qp->rq.wqe_cnt,
-					  hr_qp->rq.wqe_shift);
+	buf_size = ALIGN(hr_qp->rq.wqe_cnt << hr_qp->rq.wqe_shift, page_size);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = hr_dev->caps.wqe_rq_hop_num;
@@ -716,19 +721,8 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
-
-	if (dca_en) {
-		/*
-		 * When enable DCA, there's no need to alloc buffer now, and
-		 * the page shift should be fixed to 4K.
-		 */
-		buf_attr->mtt_only = true;
-		buf_attr->page_shift = HNS_HW_PAGE_SHIFT;
-	} else {
-		buf_attr->mtt_only = false;
-		buf_attr->page_shift = HNS_HW_PAGE_SHIFT +
-				       hr_dev->caps.mtt_buf_pg_sz;
-	}
+	buf_attr->mtt_only = dca_en;
+	buf_attr->page_shift = page_shift;
 
 	return 0;
 }
@@ -834,21 +828,30 @@ static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
-			struct ib_udata *udata, unsigned long addr)
+			struct ib_udata *udata,
+			struct hns_roce_ib_create_qp *ucmd)
 {
+	struct hns_roce_ucontext *uctx = rdma_udata_to_drv_context(udata,
+					 struct hns_roce_ucontext, ibucontext);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
+	u8 page_shift = HNS_HW_PAGE_SHIFT;
 	bool dca_en;
 	int ret;
 
-	dca_en = check_dca_is_enable(hr_dev, hr_qp, init_attr, !!udata, addr);
-	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, &buf_attr);
+	if (uctx && (uctx->config & HNS_ROCE_UCTX_DYN_QP_PGSZ))
+		page_shift = ucmd->pageshift;
+
+	dca_en = check_dca_is_enable(hr_dev, hr_qp, init_attr,
+				     !!udata, ucmd->buf_addr);
+	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, page_shift, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
 		return ret;
 	}
 
-	ret = alloc_wqe_buf(hr_dev, hr_qp, dca_en, &buf_attr, udata, addr);
+	ret = alloc_wqe_buf(hr_dev, hr_qp, dca_en,
+			    &buf_attr, udata, ucmd->buf_addr);
 	if (ret)
 		ibdev_err(ibdev, "failed to alloc WQE buf, ret = %d.\n", ret);
 
@@ -1237,7 +1240,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		goto err_qpn;
 	}
 
-	ret = alloc_qp_wqe(hr_dev, hr_qp, init_attr, udata, ucmd.buf_addr);
+	ret = alloc_qp_wqe(hr_dev, hr_qp, init_attr, udata, &ucmd);
 	if (ret) {
 		ibdev_err(ibdev, "failed to alloc QP buffer, ret = %d.\n", ret);
 		goto err_buf;

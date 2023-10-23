@@ -529,6 +529,11 @@ static void hns_roce_get_uctx_config(struct hns_roce_dev *hr_dev,
 		if (context->config & HNS_ROCE_UCTX_CONFIG_DCA)
 			resp->config |= HNS_ROCE_UCTX_RSP_DCA_FLAGS;
 	}
+
+	if (ucmd->config & HNS_ROCE_UCTX_DYN_QP_PGSZ) {
+		context->config |= HNS_ROCE_UCTX_DYN_QP_PGSZ;
+		resp->config |=  HNS_ROCE_UCTX_RSP_DYN_QP_PGSZ;
+	}
 }
 
 static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
