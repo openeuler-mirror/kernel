@@ -508,7 +508,7 @@ void hns_roce_register_uctx_debugfs(struct hns_roce_dev *hr_dev,
 		return;
 
 	dca_dbgfs = dev_dbgfs->dca_root;
-	if (dca_dbgfs) {
+	if (dca_dbgfs && (uctx->config & HNS_ROCE_UCTX_CONFIG_DCA)) {
 		uctx->dca_dbgfs = kzalloc(sizeof(struct hns_dca_ctx_debugfs),
 					  GFP_KERNEL);
 		if (!uctx->dca_dbgfs)
@@ -525,8 +525,8 @@ void hns_roce_unregister_uctx_debugfs(struct hns_roce_dev *hr_dev,
 	struct hns_dca_ctx_debugfs *dbgfs = uctx->dca_dbgfs;
 
 	if (dbgfs) {
-		uctx->dca_dbgfs = NULL;
 		cleanup_dca_ctx_debugfs(dbgfs);
+		uctx->dca_dbgfs = NULL;
 		kfree(dbgfs);
 	}
 }
@@ -567,14 +567,13 @@ void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)
 	if (!dbgfs)
 		return;
 
-	hr_dev->dbgfs = NULL;
-
 	if (dbgfs->dca_root) {
 		destroy_dca_debugfs(dbgfs->dca_root);
 		dbgfs->dca_root = NULL;
 	}
 
 	debugfs_remove_recursive(dbgfs->root);
+	hr_dev->dbgfs = NULL;
 	kfree(dbgfs);
 }
 

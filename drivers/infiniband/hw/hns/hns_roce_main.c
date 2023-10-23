@@ -541,7 +541,8 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE) {
 		context->config |= ucmd.config & HNS_ROCE_UCTX_CONFIG_DCA;
-		resp.config |= HNS_ROCE_UCTX_RSP_DCA_FLAGS;
+		if (context->config & HNS_ROCE_UCTX_CONFIG_DCA)
+			resp.config |= HNS_ROCE_UCTX_RSP_DCA_FLAGS;
 	}
 
 	ret = hns_roce_uar_alloc(hr_dev, &context->uar);

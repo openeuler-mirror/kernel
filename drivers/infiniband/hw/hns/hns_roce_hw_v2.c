@@ -282,7 +282,7 @@ static bool check_inl_data_len(struct hns_roce_qp *qp, unsigned int len)
 	struct hns_roce_dev *hr_dev = to_hr_dev(qp->ibqp.device);
 	int mtu = ib_mtu_enum_to_int(qp->path_mtu);
 
-	if (len > qp->max_inline_data || len > mtu) {
+	if (mtu < 0 || len > qp->max_inline_data || len > mtu) {
 		ibdev_err(&hr_dev->ib_dev,
 			  "invalid length of data, data len = %u, max inline len = %u, path mtu = %d.\n",
 			  len, qp->max_inline_data, mtu);
@@ -6240,7 +6240,7 @@ static void hns_roce_irq_work_handle(struct work_struct *work)
 	case HNS_ROCE_EVENT_TYPE_COMM_EST:
 		break;
 	case HNS_ROCE_EVENT_TYPE_SQ_DRAINED:
-		ibdev_warn(ibdev, "Send queue drained.\n");
+		ibdev_dbg(ibdev, "Send queue drained.\n");
 		break;
 	case HNS_ROCE_EVENT_TYPE_WQ_CATAS_ERROR:
 		ibdev_err(ibdev, "Local work queue 0x%x catast error, sub_event type is: %d\n",
@@ -6255,10 +6255,10 @@ static void hns_roce_irq_work_handle(struct work_struct *work)
 			  irq_work->queue_num, irq_work->sub_type);
 		break;
 	case HNS_ROCE_EVENT_TYPE_SRQ_LIMIT_REACH:
-		ibdev_warn(ibdev, "SRQ limit reach.\n");
+		ibdev_dbg(ibdev, "SRQ limit reach.\n");
 		break;
 	case HNS_ROCE_EVENT_TYPE_SRQ_LAST_WQE_REACH:
-		ibdev_warn(ibdev, "SRQ last wqe reach.\n");
+		ibdev_dbg(ibdev, "SRQ last wqe reach.\n");
 		break;
 	case HNS_ROCE_EVENT_TYPE_SRQ_CATAS_ERROR:
 		ibdev_err(ibdev, "SRQ catas error.\n");
@@ -7401,6 +7401,9 @@ struct hns_roce_dev
 	if (!handle || !handle->client)
 		return NULL;
 
+	if (is_bond_slave_in_reset(bond_grp))
+		return NULL;
+
 	ret = hns_roce_hw_v2_init_instance(handle);
 	if (ret)
 		return NULL;
@@ -7408,19 +7411,24 @@ struct hns_roce_dev
 	return handle->priv;
 }
 
-void hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
-				 int func_idx)
+int hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
+				int func_idx)
 {
 	struct hnae3_handle *handle = bond_grp->bond_func_info[func_idx].handle;
 
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
-		return;
+		return -EPERM;
+
+	if (is_bond_slave_in_reset(bond_grp))
+		return -EBUSY;
 
 	handle->rinfo.instance_state = HNS_ROCE_STATE_BOND_UNINIT;
 
 	__hns_roce_hw_v2_uninit_instance(handle, false, false);
 
 	handle->rinfo.instance_state = HNS_ROCE_STATE_NON_INIT;
+
+	return 0;
 }
 
 static void hns_roce_v2_reset_notify_user(struct hns_roce_dev *hr_dev)
