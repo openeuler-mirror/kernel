@@ -22,6 +22,8 @@
 #include "xfs_error.h"
 #include "xfs_inode.h"
 
+struct kmem_cache	*xfs_rmap_intent_cache;
+
 /*
  * Lookup the first record less than or equal to [bno, len, owner, offset]
  * in the btree given by cur.
@@ -2487,7 +2489,7 @@ __xfs_rmap_add(
 			bmap->br_blockcount,
 			bmap->br_state);
 
-	ri = kmem_alloc(sizeof(struct xfs_rmap_intent), KM_NOFS);
+	ri = kmem_cache_alloc(xfs_rmap_intent_cache, GFP_NOFS | __GFP_NOFAIL);
 	INIT_LIST_HEAD(&ri->ri_list);
 	ri->ri_type = type;
 	ri->ri_owner = owner;
@@ -2781,3 +2783,20 @@ const struct xfs_owner_info XFS_RMAP_OINFO_REFC = {
 const struct xfs_owner_info XFS_RMAP_OINFO_COW = {
 	.oi_owner = XFS_RMAP_OWN_COW,
 };
+
+int __init
+xfs_rmap_intent_init_cache(void)
+{
+	xfs_rmap_intent_cache = kmem_cache_create("xfs_rmap_intent",
+			sizeof(struct xfs_rmap_intent),
+			0, 0, NULL);
+
+	return xfs_rmap_intent_cache != NULL ? 0 : -ENOMEM;
+}
+
+void
+xfs_rmap_intent_destroy_cache(void)
+{
+	kmem_cache_destroy(xfs_rmap_intent_cache);
+	xfs_rmap_intent_cache = NULL;
+}
