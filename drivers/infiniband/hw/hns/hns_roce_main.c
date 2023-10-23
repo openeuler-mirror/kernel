@@ -473,6 +473,11 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
 		resp.congest_type = hr_dev->caps.cong_cap;
 
+	if (ucmd.config & HNS_ROCE_UCTX_DYN_QP_PGSZ) {
+		context->config |= HNS_ROCE_UCTX_DYN_QP_PGSZ;
+		resp.config |=  HNS_ROCE_UCTX_RSP_DYN_QP_PGSZ;
+	}
+
 	ret = hns_roce_uar_alloc(hr_dev, &context->uar);
 	if (ret)
 		goto error_out;
