@@ -499,6 +499,43 @@ static u32 get_udca_max_qps(struct hns_roce_dev *hr_dev,
 	return qp_num;
 }
 
+static void hns_roce_get_uctx_config(struct hns_roce_dev *hr_dev,
+				struct hns_roce_ucontext *context,
+				struct hns_roce_ib_alloc_ucontext *ucmd,
+				struct hns_roce_ib_alloc_ucontext_resp *resp)
+{
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		context->config = ucmd->config & HNS_ROCE_EXSGE_FLAGS;
+
+	if (context->config & HNS_ROCE_EXSGE_FLAGS) {
+		resp->config |= HNS_ROCE_RSP_EXSGE_FLAGS;
+		resp->max_inline_data = hr_dev->caps.max_sq_inline;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
+		context->config |= ucmd->config & HNS_ROCE_RQ_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
+			resp->config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
+		context->config |= ucmd->config & HNS_ROCE_CQE_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
+			resp->config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE) {
+		context->config |= ucmd->config & HNS_ROCE_UCTX_CONFIG_DCA;
+		if (context->config & HNS_ROCE_UCTX_CONFIG_DCA)
+			resp->config |= HNS_ROCE_UCTX_RSP_DCA_FLAGS;
+	}
+
+	if (ucmd->config & HNS_ROCE_UCTX_DYN_QP_PGSZ) {
+		context->config |= HNS_ROCE_UCTX_DYN_QP_PGSZ;
+		resp->config |=  HNS_ROCE_UCTX_RSP_DYN_QP_PGSZ;
+	}
+}
+
 static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 				   struct ib_udata *udata)
 {
@@ -519,31 +556,7 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	if (ret)
 		goto error_fail_uar_alloc;
 
-	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
-		context->config = ucmd.config & HNS_ROCE_EXSGE_FLAGS;
-
-	if (context->config & HNS_ROCE_EXSGE_FLAGS) {
-		resp.config |= HNS_ROCE_RSP_EXSGE_FLAGS;
-		resp.max_inline_data = hr_dev->caps.max_sq_inline;
-	}
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
-		context->config |= ucmd.config & HNS_ROCE_RQ_INLINE_FLAGS;
-		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
-			resp.config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
-	}
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
-		context->config |= ucmd.config & HNS_ROCE_CQE_INLINE_FLAGS;
-		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
-			resp.config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
-	}
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE) {
-		context->config |= ucmd.config & HNS_ROCE_UCTX_CONFIG_DCA;
-		if (context->config & HNS_ROCE_UCTX_CONFIG_DCA)
-			resp.config |= HNS_ROCE_UCTX_RSP_DCA_FLAGS;
-	}
+	hns_roce_get_uctx_config(hr_dev, context, &ucmd, &resp);
 
 	ret = hns_roce_uar_alloc(hr_dev, &context->uar);
 	if (ret)
