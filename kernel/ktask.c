@@ -582,6 +582,7 @@ void __init ktask_init(void)
 	ktask_wq = alloc_workqueue("ktask_wq", WQ_UNBOUND, 0);
 	if (!ktask_wq) {
 		pr_warn("disabled (failed to alloc ktask_wq)");
+		kfree(ktask_works);
 		goto out;
 	}
 
@@ -633,6 +634,7 @@ alloc_fail:
 		destroy_workqueue(ktask_wq);
 	if (ktask_nonuma_wq)
 		destroy_workqueue(ktask_nonuma_wq);
+	kfree(ktask_works);
 	ktask_wq = NULL;
 	ktask_nonuma_wq = NULL;
 }
