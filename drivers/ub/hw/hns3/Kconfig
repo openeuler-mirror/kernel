@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# UDMA_HNS configuration
+#
+
+config UB_UDMA_HNS3
+	default n
+        tristate "HNS3 UB UDMA Driver"
+        depends on UB && UB_URMA
+        depends on ARM64
+        depends on UBL && PCI
+        help
+          This is a UB_UDMA_HNS3 driver for the Hisilicon UDMA engine.
+          This driver depands on ubcore and uburma.
+          This driver depands on UBL(UB link). The UDMA_HNS3 is a PCI device.
+          To compile UB_UDMA driver as module, choose M here.
+          module will be called hns3_udma.
