@@ -87,6 +87,7 @@ static __always_inline u64 rtid(void)
 #define TIF_SYSCALL_AUDIT	4       /* syscall audit active */
 #define TIF_UPROBE		5       /* uprobe breakpoint or singlestep */
 #define TIF_PATCH_PENDING       6       /* pending live patching update */
+#define TIF_NOTIFY_SIGNAL	7	/* signal notifications exist */
 #define TIF_DIE_IF_KERNEL	9	/* dik recursion lock */
 #define TIF_SYSCALL_TRACEPOINT	10
 #define TIF_SECCOMP		11	/* secure computing */
@@ -101,13 +102,14 @@ static __always_inline u64 rtid(void)
 #define _TIF_SYSCALL_AUDIT	(1 << TIF_SYSCALL_AUDIT)
 #define _TIF_POLLING_NRFLAG	(1 << TIF_POLLING_NRFLAG)
 #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
+#define _TIF_NOTIFY_SIGNAL	(1 << TIF_NOTIFY_SIGNAL)
 #define _TIF_SYSCALL_TRACEPOINT	(1 << TIF_SYSCALL_TRACEPOINT)
 #define _TIF_UPROBE		(1 << TIF_UPROBE)
 
 /* Work to do on interrupt/exception return.  */
 #define _TIF_WORK_MASK		(_TIF_SIGPENDING | _TIF_NEED_RESCHED | \
 				 _TIF_NOTIFY_RESUME | _TIF_UPROBE | \
-				 _TIF_PATCH_PENDING)
+				 _TIF_PATCH_PENDING | _TIF_NOTIFY_SIGNAL)
 
 #define _TIF_SYSCALL_WORK	(_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | \
 				 _TIF_SYSCALL_TRACEPOINT | _TIF_SECCOMP)
