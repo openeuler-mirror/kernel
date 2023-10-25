@@ -130,7 +130,7 @@ void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
 	while (!kstack_end(ksp)) {
 		if (__kernel_text_address(pc) && fn(pc, data))
 			break;
-		pc = (*ksp++) - 0x4;
+		pc = *ksp++;
 	}
 }
 EXPORT_SYMBOL_GPL(walk_stackframe);
