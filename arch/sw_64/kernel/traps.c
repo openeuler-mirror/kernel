@@ -1536,6 +1536,7 @@ trap_init(void)
 	wrent(entUna, 4);
 	wrent(entSys, 5);
 #ifdef CONFIG_EFI
-	wrent((void *)entSuspend, 6);
+	if (smp_processor_id() == 0)
+		wrent((void *)entSuspend, 6);
 #endif
 }
