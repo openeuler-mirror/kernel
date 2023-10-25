@@ -9,3 +9,5 @@ config UBL
 	help
 	  This enables UB link support. Say 'Y' or 'm' if your
 	  device works in UB.
+
+source "drivers/net/ub/dev/network_mgmt/Kconfig"
