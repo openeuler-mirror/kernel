@@ -25,7 +25,9 @@
 #include <linux/io.h>
 #include <linux/security.h>
 #include <linux/efi.h>
+#if CONFIG_X86
 #include <asm/cacheflush.h>
+#endif
 
 #define EFI_SECRET_NUM_FILES 64
 
@@ -158,12 +160,12 @@ static int efi_secret_map_area(struct platform_device *dev)
 	struct efi_secret *s = efi_secret_get();
 	struct linux_efi_coco_secret_area *secret_area;
 
-	if (efi.coco_secret == EFI_INVALID_TABLE_ADDR) {
+	if (efi_coco.coco_secret == EFI_INVALID_TABLE_ADDR) {
 		dev_err(&dev->dev, "Secret area address is not available\n");
 		return -EINVAL;
 	}
 
-	secret_area = memremap(efi.coco_secret, sizeof(*secret_area), MEMREMAP_WB);
+	secret_area = memremap(efi_coco.coco_secret, sizeof(*secret_area), MEMREMAP_WB);
 	if (secret_area == NULL) {
 		dev_err(&dev->dev, "Could not map secret area EFI config entry\n");
 		return -ENOMEM;

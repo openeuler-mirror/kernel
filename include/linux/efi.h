@@ -558,7 +558,6 @@ extern struct efi {
 	unsigned long			tpm_log;		/* TPM2 Event Log table */
 	unsigned long			tpm_final_log;		/* TPM2 Final Events Log table */
 	unsigned long			mokvar_table;		/* MOK variable config table */
-	unsigned long			coco_secret;		/* Confidential computing secret table */
 
 	efi_get_time_t			*get_time;
 	efi_set_time_t			*set_time;
@@ -578,6 +577,12 @@ extern struct efi {
 	struct efi_memory_map		memmap;
 	unsigned long			flags;
 } efi;
+
+/* HYGON added to avoid kabi breakage of efi (start) */
+extern struct efi_coco {
+	unsigned long			coco_secret;		/* Confidential computing secret table */
+} efi_coco;
+/* HYGON added to avoid kabi breakage of efi (end) */
 
 #define EFI_RT_SUPPORTED_GET_TIME 				0x0001
 #define EFI_RT_SUPPORTED_SET_TIME 				0x0002

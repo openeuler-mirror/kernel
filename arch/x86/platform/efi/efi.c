@@ -94,7 +94,7 @@ static const unsigned long * const efi_tables[] = {
 	&efi.mokvar_table,
 #endif
 #ifdef CONFIG_EFI_COCO_SECRET
-	&efi.coco_secret,
+	&efi_coco.coco_secret,
 #endif
 };
 
