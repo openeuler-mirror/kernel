@@ -3406,7 +3406,9 @@ static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, int gid_index,
 			else
 				sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV6;
 		} else if (attr->gid_type == IB_GID_TYPE_ROCE) {
-			if (hr_dev->mac_type == HNAE3_MAC_ROH)
+			if (hr_dev->mac_type == HNAE3_MAC_ROH ||
+			    hr_dev->pci_dev->device ==
+				HNAE3_DEV_ID_RDMA_OVER_UBL_VF)
 				return -EPERM;
 			sgid_type = GID_TYPE_FLAG_ROCE_V1;
 		}
@@ -7191,6 +7193,27 @@ static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
 
 MODULE_DEVICE_TABLE(pci, hns_roce_hw_v2_pci_tbl);
 
+static const struct pci_device_id hns_roce_ubl_tbl[] = {
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_RDMA_OVER_UBL_VF),
+	  HNAE3_DEV_SUPPORT_ROCE_DCB_BITS },
+
+	/* required last entry */
+	{0, }
+};
+
+MODULE_DEVICE_TABLE(pci, hns_roce_ubl_tbl);
+
+static const struct pci_device_id *get_pci_device_id(struct pci_dev *pci_dev)
+{
+	const struct pci_device_id *id;
+
+	id = pci_match_id(hns_roce_hw_v2_pci_tbl, pci_dev);
+	if (id)
+		return id;
+
+	return pci_match_id(hns_roce_ubl_tbl, pci_dev);
+}
+
 static void hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 				  struct hnae3_handle *handle)
 {
@@ -7199,7 +7222,7 @@ static void hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 	int i;
 
 	hr_dev->pci_dev = handle->pdev;
-	id = pci_match_id(hns_roce_hw_v2_pci_tbl, hr_dev->pci_dev);
+	id = get_pci_device_id(hr_dev->pci_dev);
 	hr_dev->is_vf = id->driver_data;
 	hr_dev->dev = &handle->pdev->dev;
 	hr_dev->hw = &hns_roce_hw_v2;
@@ -7246,8 +7269,9 @@ static bool check_vf_support(struct pci_dev *vf)
 	handle = &hdev->vport[0].roce;
 	hr_dev = handle->priv;
 
+	/* In UB link vf can not find the pf device */
 	if (!hr_dev)
-		return false;
+		return true;
 
 	bond_grp = hns_roce_get_bond_grp(get_hr_netdev(hr_dev, 0),
 					 pf->bus->number);
@@ -7344,7 +7368,7 @@ static int hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 		goto reset_chk_err;
 	}
 
-	id = pci_match_id(hns_roce_hw_v2_pci_tbl, handle->pdev);
+	id = get_pci_device_id(handle->pdev);
 	if (!id)
 		return 0;
 

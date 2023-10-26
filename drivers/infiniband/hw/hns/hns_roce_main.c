@@ -732,6 +732,8 @@ static int hns_roce_port_immutable(struct ib_device *ib_dev, u8 port_num,
 
 	if (to_hr_dev(ib_dev)->mac_type == HNAE3_MAC_ROH)
 		immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
+	else if (to_hr_dev(ib_dev)->pci_dev->device == HNAE3_DEV_ID_RDMA_OVER_UBL_VF)
+		immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
 	else if (to_hr_dev(ib_dev)->caps.flags & HNS_ROCE_CAP_FLAG_ROCE_V1_V2)
 		immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE |
 					    RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
