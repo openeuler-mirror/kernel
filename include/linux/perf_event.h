@@ -622,7 +622,6 @@ struct perf_event {
 	/* The cumulative AND of all event_caps for events in this group. */
 	int				group_caps;
 
-	unsigned int			group_generation;
 	struct perf_event		*group_leader;
 	struct pmu			*pmu;
 	void				*pmu_private;
@@ -735,6 +734,10 @@ struct perf_event {
 #endif
 
 	struct list_head		sb_list;
+
+#ifndef __GENKSYMS__
+	unsigned int			group_generation;
+#endif
 #endif /* CONFIG_PERF_EVENTS */
 };
 
