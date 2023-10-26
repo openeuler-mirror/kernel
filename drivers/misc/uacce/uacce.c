@@ -18,38 +18,6 @@ static struct uacce_qfile_region noiommu_ss_default_qfr = {
 	.type	=	UACCE_QFRT_SS,
 };
 
-static int cdev_get(struct device *dev, void *data)
-{
-	struct uacce_device *uacce;
-	struct device **t_dev = data;
-
-	uacce = container_of(dev, struct uacce_device, dev);
-	if (uacce->parent == *t_dev) {
-		*t_dev = dev;
-		return 1;
-	}
-
-	return 0;
-}
-
-/**
- * dev_to_uacce - Get structure uacce device from its parent device
- * @dev: the device
- */
-struct uacce_device *dev_to_uacce(struct device *dev)
-{
-	struct device **tdev = &dev;
-	int ret;
-
-	ret = class_for_each_device(uacce_class, NULL, tdev, cdev_get);
-	if (ret) {
-		dev = *tdev;
-		return container_of(dev, struct uacce_device, dev);
-	}
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(dev_to_uacce);
-
 /*
  * If the parent driver or the device disappears, the queue state is invalid and
  * ops are not usable anymore.
@@ -199,11 +167,9 @@ static void uacce_free_dma_buffers(struct uacce_queue *q)
 	struct device *pdev = q->uacce->parent;
 	int i = 0;
 
-	if (module_refcount(pdev->driver->owner) > 0)
-		module_put(pdev->driver->owner);
-
 	if (!qfr->dma_list)
 		return;
+
 	while (i < qfr->dma_list[0].total_num) {
 		WARN_ON(!qfr->dma_list[i].size || !qfr->dma_list[i].dma);
 		dev_dbg(pdev, "free dma qfr (index = %d)\n", i);
@@ -368,18 +334,19 @@ out_with_mem:
 static int uacce_fops_release(struct inode *inode, struct file *filep)
 {
 	struct uacce_queue *q = filep->private_data;
-	struct uacce_qfile_region *ss = q->qfrs[UACCE_QFRT_SS];
 	struct uacce_device *uacce = q->uacce;
+	struct uacce_qfile_region *ss;
 
 	mutex_lock(&uacce->mutex);
 	uacce_put_queue(q);
 	uacce_unbind_queue(q);
-	list_del(&q->list);
-	mutex_unlock(&uacce->mutex);
+	ss = q->qfrs[UACCE_QFRT_SS];
 	if (ss && ss != &noiommu_ss_default_qfr) {
 		uacce_free_dma_buffers(q);
 		kfree(ss);
 	}
+	list_del(&q->list);
+	mutex_unlock(&uacce->mutex);
 	kfree(q);
 
 	return 0;
@@ -403,14 +370,22 @@ static void uacce_vma_close(struct vm_area_struct *vma)
 
 	if (qfr->type == UACCE_QFRT_SS &&
 	    atomic_read(&current->active_mm->mm_users) > 0) {
+		/*
+		 * uacce_vma_close() and uacce_remove() may be executed concurrently.
+		 * To avoid accessing the same address at the same time, takes the uacce->mutex.
+		 */
+		mutex_lock(&uacce->mutex);
 		if ((q->state == UACCE_Q_STARTED) && uacce->ops->stop_queue)
 			uacce->ops->stop_queue(q);
 		uacce_free_dma_buffers(q);
-		kfree(qfr);
 		q->qfrs[vma->vm_pgoff] = NULL;
+		mutex_unlock(&uacce->mutex);
+		kfree(qfr);
 	} else if (qfr->type != UACCE_QFRT_SS) {
-		kfree(qfr);
+		mutex_lock(&q->mutex);
 		q->qfrs[vma->vm_pgoff] = NULL;
+		mutex_unlock(&q->mutex);
+		kfree(qfr);
 	}
 }
 
@@ -522,7 +497,6 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 	if (!slice)
 		return -ENOMEM;
 
-	(void)try_module_get(pdev->driver->owner);
 	qfr->dma_list = slice;
 	for (i = 0; i < ss_num; i++) {
 		if (start + max_size > vma->vm_end)
@@ -538,8 +512,8 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 			dev_err(pdev, "get dma slice(sz = %lu,slice num = %d) fail!\n",
 			size, i);
 			slice[0].total_num = i;
-			uacce_free_dma_buffers(q);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto free_buffer;
 		}
 		slice[i].size = (size + PAGE_SIZE - 1) & PAGE_MASK;
 		slice[i].total_num = ss_num;
@@ -550,11 +524,15 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 				      &slice[ss_num]);
 	if (ret) {
 		dev_err(pdev, "failed to sort dma buffers.\n");
-		uacce_free_dma_buffers(q);
-		return ret;
+		goto free_buffer;
 	}
 
 	return 0;
+
+free_buffer:
+	uacce_free_dma_buffers(q);
+
+	return ret;
 }
 
 static int uacce_mmap_dma_buffers(struct uacce_queue *q,
@@ -817,14 +795,6 @@ static ssize_t isolate_strategy_store(struct device *dev, struct device_attribut
 	return count;
 }
 
-static ssize_t dev_state_show(struct device *dev,
-			      struct device_attribute *attr, char *buf)
-{
-	struct uacce_device *uacce = to_uacce_device(dev);
-
-	return sysfs_emit(buf, "%d\n", uacce->ops->get_dev_state(uacce));
-}
-
 static ssize_t node_id_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
@@ -861,7 +831,6 @@ static DEVICE_ATTR_RO(region_mmio_size);
 static DEVICE_ATTR_RO(region_dus_size);
 static DEVICE_ATTR_RO(isolate);
 static DEVICE_ATTR_RW(isolate_strategy);
-static DEVICE_ATTR_RO(dev_state);
 static DEVICE_ATTR_RO(numa_distance);
 
 static struct attribute *uacce_dev_attrs[] = {
@@ -874,7 +843,6 @@ static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_region_dus_size.attr,
 	&dev_attr_isolate.attr,
 	&dev_attr_isolate_strategy.attr,
-	&dev_attr_dev_state.attr,
 	&dev_attr_numa_distance.attr,
 	NULL,
 };
@@ -1047,6 +1015,7 @@ void uacce_remove(struct uacce_device *uacce)
 	mutex_lock(&uacce->mutex);
 	/* ensure no open queue remains */
 	list_for_each_entry_safe(q, next_q, &uacce->queues, list) {
+		struct uacce_qfile_region *ss = q->qfrs[UACCE_QFRT_SS];
 		/*
 		 * Taking q->mutex ensures that fops do not use the defunct
 		 * uacce->ops after the queue is disabled.
@@ -1061,6 +1030,8 @@ void uacce_remove(struct uacce_device *uacce)
 		 * access the mmaped area while parent device is already removed
 		 */
 		unmap_mapping_range(q->mapping, 0, 0, 1);
+		if (ss && ss != &noiommu_ss_default_qfr)
+			uacce_free_dma_buffers(q);
 	}
 
 	/* disable sva now since no opened queues */
@@ -1090,12 +1061,8 @@ static int __init uacce_init(void)
 
 	ret = alloc_chrdev_region(&uacce_devt, 0, MINORMASK, UACCE_NAME);
 	if (ret)
-		goto destroy_class;
+		class_destroy(uacce_class);
 
-	return 0;
-
-destroy_class:
-	class_destroy(uacce_class);
 	return ret;
 }
 
