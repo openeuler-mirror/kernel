@@ -1691,6 +1691,26 @@ config ARM64_CNP
 	  at runtime, and does not affect PEs that do not implement
 	  this feature.
 
+config ARM64_PBHA
+	bool "Enable support for Page Based Hardware Attributes (PBHA)"
+	default n
+	select ARCH_USES_HIGH_VMA_FLAGS
+	help
+	  Page Based Hardware Attributes (PBHA) allow the SoC hardware to
+	  change behaviour depending on which mapping was used to access
+	  a page of memory. e.g. access via one mapping may always result
+	  in the data being cached, whereas using another mapping of the same
+	  physical memory.
+
+	  The behaviour of each PBHA bit is not defined. Say no unless you
+	  are very sure you want this
+
+	  For PBHA_BIT0: It has the following features:
+	  a) kernel pte entry will be set PBHA 59 bit during pagetable startup
+	  b) Introduce VM_PBHA_BIT0 for feature use.
+	  c) User pte entry will be set PBHA 59 bit for vma with VM_PBHA_BIT0.
+	  d) Introduce /proc/<pid>/pbha_bit0 to update whole user task.
+
 endmenu
 
 menu "ARMv8.3 architectural features"

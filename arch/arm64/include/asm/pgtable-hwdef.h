@@ -146,6 +146,8 @@
 #define PTE_CONT		(_AT(pteval_t, 1) << 52)	/* Contiguous range */
 #define PTE_PXN			(_AT(pteval_t, 1) << 53)	/* Privileged XN */
 #define PTE_UXN			(_AT(pteval_t, 1) << 54)	/* User XN */
+#define PTE_PBHA_MASK		(_AT(pteval_t, 0xf) << 59)	/* Page Base Hardware Attributes */
+#define PTE_PBHA0		(_AT(pteval_t, 1) << 59)	/* PBHA 59 bit */
 
 #define PTE_ADDR_LOW		(((_AT(pteval_t, 1) << (48 - PAGE_SHIFT)) - 1) << PAGE_SHIFT)
 #ifdef CONFIG_ARM64_PA_BITS_52
@@ -260,6 +262,10 @@
 #define TCR_TBI1		(UL(1) << 38)
 #define TCR_HA			(UL(1) << 39)
 #define TCR_HD			(UL(1) << 40)
+#define TCR_HPD0		(UL(1) << 41)
+#define TCR_HPD1		(UL(1) << 42)
+#define TCR_HWU0nn_MASK		(UL(0xf) << 43)
+#define TCR_HWU1nn_MASK		(UL(0xf) << 47)
 #define TCR_NFD0		(UL(1) << 53)
 #define TCR_NFD1		(UL(1) << 54)
 #define TCR_E0PD0		(UL(1) << 55)

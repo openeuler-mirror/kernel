@@ -515,6 +515,32 @@ static inline pmd_t pmd_mkdevmap(pmd_t pmd)
 	__pgprot_modify(prot, PTE_ATTRINDX_MASK, \
 			PTE_ATTRINDX(MT_NORMAL_NC) | PTE_PXN | PTE_UXN)
 
+
+extern unsigned long arm64_pbha_perf_only_values;
+static inline unsigned long __pbha_check_perf_only(unsigned long pbha_val)
+{
+	if (test_bit(pbha_val, &arm64_pbha_perf_only_values))
+		return FIELD_PREP(PTE_PBHA_MASK, pbha_val);
+	return 0;
+}
+
+#define pgprot_pbha(prot, pbha_val) \
+	__pgprot_modify(prot, PTE_PBHA_MASK, __pbha_check_perf_only(pbha_val))
+
+static inline pte_t pte_mkpbha(pte_t pte, unsigned long pbha_val)
+{
+	return set_pte_bit(pte, __pgprot(__pbha_check_perf_only(pbha_val)));
+}
+
+#define pmd_mkpbha(pmd, pbha_val)	pte_pmd(pte_mkpbha(pmd_pte(pmd), pbha_val))
+
+static inline pte_t pte_rmpbha(pte_t pte, unsigned long pbha_val)
+{
+	return clear_pte_bit(pte, __pgprot(__pbha_check_perf_only(pbha_val)));
+}
+
+#define pmd_rmpbha(pmd, pbha_val)	pte_pmd(pte_rmpbha(pmd_pte(pmd), pbha_val))
+
 #define __HAVE_PHYS_MEM_ACCESS_PROT
 struct file;
 extern pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,

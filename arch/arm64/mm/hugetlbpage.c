@@ -224,6 +224,8 @@ void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
 	 */
 	WARN_ON(!pte_present(pte));
 
+	pte = maybe_mk_pbha_bit0(pte, find_vma(mm, addr));
+
 	if (!pte_cont(pte)) {
 		set_pte_at(mm, addr, ptep, pte);
 		return;

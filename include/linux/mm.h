@@ -392,6 +392,12 @@ extern unsigned int kobjsize(const void *objp);
 # define VM_SHARE_POOL VM_NONE
 #endif
 
+#if defined(CONFIG_ARM64_PBHA)
+# define VM_PBHA_BIT0	VM_HIGH_ARCH_2	/* Page Base Hardware Attributes 4 bit*/
+#else
+# define VM_PBHA_BIT0	VM_NONE
+#endif
+
 #ifndef VM_GROWSUP
 # define VM_GROWSUP	VM_NONE
 #endif
@@ -451,7 +457,7 @@ static inline bool arch_is_platform_page(u64 paddr)
 #define VM_NO_KHUGEPAGED (VM_SPECIAL | VM_HUGETLB)
 
 /* This mask defines which mm->def_flags a process can inherit its parent */
-#define VM_INIT_DEF_MASK	VM_NOHUGEPAGE
+#define VM_INIT_DEF_MASK	(VM_NOHUGEPAGE | VM_PBHA_BIT0)
 
 /* This mask is used to clear all the VMA flags used by mlock */
 #define VM_LOCKED_CLEAR_MASK	(~(VM_LOCKED | VM_LOCKONFAULT))

@@ -431,7 +431,7 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 {
 	u64 vtcr = VTCR_EL2_FLAGS, mmfr0;
 	u32 parange, phys_shift;
-	u8 lvls;
+	u8 lvls, pbha = 0xf;
 
 	if (type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK)
 		return -EINVAL;
@@ -473,6 +473,19 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 	 * and must be ignored by the CPUs.
 	 */
 	vtcr |= VTCR_EL2_HA;
+
+	/*
+	 * Enable PBHA for stage2 on systems that support it. The configured
+	 * value will always be 0, which is defined as the safe default
+	 * setting. On Cortex cores, enabling PBHA for stage2 effectively
+	 * disables it for stage1.
+	 * When the HAS_PBHA_STAGE2 feature is supported, clear the 'safe'
+	 * bits to allow the guest's stage1 to use these bits.
+	 */
+	if (cpus_have_final_cap(ARM64_HAS_PBHA_STAGE2))
+		pbha = pbha ^ arm64_pbha_stage2_safe_bits;
+	if (cpus_have_final_cap(ARM64_HAS_PBHA))
+		vtcr |= FIELD_PREP(VTCR_EL2_PBHA_MASK, pbha);
 
 	/* Set the vmid bits */
 	vtcr |= (kvm_get_vmid_bits() == 16) ?

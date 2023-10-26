@@ -78,6 +78,7 @@ struct arm64_ftr_reg {
 };
 
 extern struct arm64_ftr_reg arm64_ftr_reg_ctrel0;
+extern unsigned long arm64_pbha_stage2_safe_bits;
 
 int arm64_cpu_ftr_regs_traverse(int (*op)(u32, u64, void *), void *argp);
 
@@ -766,6 +767,20 @@ static inline bool system_supports_tlb_range(void)
 	return IS_ENABLED(CONFIG_ARM64_TLB_RANGE) &&
 		cpus_have_const_cap(ARM64_HAS_TLB_RANGE);
 }
+
+#ifdef CONFIG_ARM64_PBHA
+extern bool pbha_enabled;
+
+static inline bool system_supports_pbha(void)
+{
+	return pbha_enabled;
+}
+#else
+static inline bool system_supports_pbha(void)
+{
+	return false;
+}
+#endif
 
 extern int do_emulate_mrs(struct pt_regs *regs, u32 sys_reg, u32 rt);
 

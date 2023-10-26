@@ -6457,3 +6457,11 @@
 				memory, and other data can't be written using
 				xmon commands.
 			off	xmon is disabled.
+
+	pbha=		[ARM64]
+			Format: { enable | user }
+			Enabled PBHA bit0.
+			enable	kernel and user will update PBHA bit0 for their
+				pte entry.
+			user	only select user task will update PBHA bit0 for
+				their pte entry.
