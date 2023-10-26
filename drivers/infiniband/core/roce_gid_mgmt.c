@@ -754,7 +754,7 @@ static int netdevice_event(struct notifier_block *this, unsigned long event,
 	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
 	struct netdev_event_work_cmd cmds[ROCE_NETDEV_CALLBACK_SZ] = { {NULL} };
 
-	if (ndev->type != ARPHRD_ETHER)
+	if (ndev->type != ARPHRD_ETHER && ndev->type != ARPHRD_UB)
 		return NOTIFY_DONE;
 
 	switch (event) {
@@ -820,7 +820,7 @@ static int addr_event(struct notifier_block *this, unsigned long event,
 	struct update_gid_event_work *work;
 	enum gid_op_type gid_op;
 
-	if (ndev->type != ARPHRD_ETHER)
+	if (ndev->type != ARPHRD_ETHER && ndev->type != ARPHRD_UB)
 		return NOTIFY_DONE;
 
 	switch (event) {
