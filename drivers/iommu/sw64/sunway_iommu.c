@@ -16,6 +16,7 @@
 #include <linux/log2.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-map-ops.h>
+#include <linux/dma-direct.h>
 #include <linux/dma-iommu.h>
 #include <linux/iommu.h>
 #include <linux/iommu-helper.h>
@@ -1298,14 +1299,6 @@ sunway_unmap_sg(struct device *dev, struct scatterlist *sgl,
 	}
 }
 
-static int sunway_supported(struct device *dev, u64 mask)
-{
-	if (MAX_DMA_ADDRESS - PAGE_OFFSET - 1 <= mask)
-		return 1;
-
-	return 0;
-}
-
 static const struct dma_map_ops sunway_dma_ops = {
 	.alloc = sunway_alloc_coherent,
 	.free = sunway_free_coherent,
@@ -1313,7 +1306,7 @@ static const struct dma_map_ops sunway_dma_ops = {
 	.unmap_sg = sunway_unmap_sg,
 	.map_page = sunway_map_page,
 	.unmap_page = sunway_unmap_page,
-	.dma_supported = sunway_supported,
+	.dma_supported = dma_direct_supported,
 };
 
 /**********************************************************************
