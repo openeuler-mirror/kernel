@@ -2157,19 +2157,12 @@ static const struct of_device_id etm4_sysreg_match[] = {
 	{}
 };
 
-static const struct acpi_device_id static_ete_ids[] = {
-	{"HISI0461", 0},
-	{}
-};
-MODULE_DEVICE_TABLE(acpi, static_ete_ids);
-
 static struct platform_driver etm4_platform_driver = {
 	.probe		= etm4_probe_platform_dev,
 	.remove		= etm4_remove_platform_dev,
 	.driver			= {
 		.name			= "coresight-etm4x",
 		.of_match_table		= etm4_sysreg_match,
-		.acpi_match_table       = static_ete_ids,
 		.suppress_bind_attrs	= true,
 	},
 };
