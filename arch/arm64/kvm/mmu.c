@@ -2389,7 +2389,7 @@ int kvm_mmu_mark_touched_log(struct kvm *kvm)
 
 	while (has_next) {
 		has_next = false;
-		for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+		for (i = 0; i < kvm_arch_nr_memslot_as_ids(kvm); i++) {
 			slots = __kvm_memslots(kvm, i);
 			kvm_for_each_memslot(memslot, bkt, slots) {
 				gfn_t start, end;
