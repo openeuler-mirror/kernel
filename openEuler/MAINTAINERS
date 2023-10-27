@@ -249,6 +249,12 @@ S:	Maintained
 F:	drivers/vdpa
 F:	drivers/vhost/vdpa.c
 
+YUNSILICON XSC DRIVERS
+M:	Weihonggang <weihg@yunsilicon.com>
+S:	Maintained
+F:	drivers/infiniband/hw/xsc
+F:	drivers/net/ethernet/yunsilicon/xsc
+
 THE REST
 M:	xiexiuqi@huawei.com
 M:	zhengzengkai@huawei.com

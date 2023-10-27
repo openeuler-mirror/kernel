@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+# All rights reserved.
+
+config INFINIBAND_XSC
+	tristate "Yunsilicon XSC RDMA driver"
+	default n
+	depends on NETDEVICES && ETHERNET && PCI && INET
+	depends on YUNSILICON_XSC_PCI && YUNSILICON_XSC_ETH
+	help
+	  This driver provides RDMA support for
+	  Yunsilicon XSC devices.
