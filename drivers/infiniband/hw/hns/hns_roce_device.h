@@ -1020,6 +1020,7 @@ struct hns_roce_hw {
 	int (*query_cqc)(struct hns_roce_dev *hr_dev, u32 cqn, void *buffer);
 	int (*query_qpc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
 	int (*query_mpt)(struct hns_roce_dev *hr_dev, u32 key, void *buffer);
+	int (*query_sccc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
 	int (*get_dscp)(struct hns_roce_dev *hr_dev, u8 dscp,
 			u8 *tc_mode, u8 *priority);
 	int (*query_hw_counter)(struct hns_roce_dev *hr_dev,
