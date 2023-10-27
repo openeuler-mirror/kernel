@@ -1,0 +1,23 @@
+* Phytium Display Engine
+
+Required properties:
+  - compatible : value should be "phytium,dc".
+  - reg : first reg: Physical base address of the registers and length of memory
+	  mapped region.
+	  second reg (optional): Physical base address and length of video memory which is reserved system memory.
+  - interrupts : interrupt number.
+  - pipe_mask : specify which pipe is enabled, each bit corresponds to a pipe.
+  - edp_mask : specify which pipe is edp port, each bit corresponds to a pipe (0:dp, 1:edp).
+
+Example:
+	/memreserve/ 0xf4000000 0x4000000; // (optional)
+
+	dc0@32000000 {
+		compatible = "phytium,dc";
+		reg = <0x0 0x32000000 0x0 0x8000>,
+		      <0x0 0xf4000000 0x0 0x4000000>; // (optional)
+		interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
+		pipe_mask = 0x3
+		edp_mask = 0x0;
+	};
+
