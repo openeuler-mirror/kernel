@@ -1249,6 +1249,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_ARM_SUPPORTED_REG_MASK_RANGES 230
 #define KVM_CAP_USER_MEMORY2 231
 #define KVM_CAP_MEMORY_FAULT_INFO 232
+#define KVM_CAP_MEMORY_ATTRIBUTES 233
 
 #define KVM_CAP_ARM_WRITABLE_IMP_ID_REGS 239
 
@@ -2447,6 +2448,18 @@ struct kvm_csv_init {
 /* ioctls for control vm during system reset, currently only for CSV */
 #define KVM_CONTROL_PRE_SYSTEM_RESET	 _IO(KVMIO, 0xe8)
 #define KVM_CONTROL_POST_SYSTEM_RESET	 _IO(KVMIO, 0xe9)
+
+/* Available with KVM_CAP_MEMORY_ATTRIBUTES */
+#define KVM_SET_MEMORY_ATTRIBUTES              _IOW(KVMIO,  0xd2, struct kvm_memory_attributes)
+
+struct kvm_memory_attributes {
+	__u64 address;
+	__u64 size;
+	__u64 attributes;
+	__u64 flags;
+};
+
+#define KVM_MEMORY_ATTRIBUTE_PRIVATE           (1ULL << 3)
 
 /* CSV3 command */
 enum csv3_cmd_id {
