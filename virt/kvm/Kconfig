@@ -95,3 +95,7 @@ config KVM_GENERIC_HARDWARE_ENABLING
 
 config HAVE_KVM_PINNED_VMID
        bool
+
+config KVM_GENERIC_MMU_NOTIFIER
+       select MMU_NOTIFIER
+       bool
