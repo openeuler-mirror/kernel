@@ -18,7 +18,6 @@
 #include <linux/page-flags.h>
 #include <linux/mm.h> /* for __put_page() */
 #include <linux/poison.h>
-#include <linux/ethtool.h>
 
 #include <trace/events/page_pool.h>
 
@@ -29,21 +28,25 @@
 
 #ifdef CONFIG_PAGE_POOL_STATS
 /* alloc_stat_inc is intended to be used in softirq context */
-#define alloc_stat_inc(pool, __stat)	(pool->alloc_stats.__stat++)
+#define alloc_stat_inc(pool, __stat)	(pool->stats->alloc_stats.__stat++)
 /* recycle_stat_inc is safe to use when preemption is possible. */
 #define recycle_stat_inc(pool, __stat)							\
 	do {										\
-		struct page_pool_recycle_stats __percpu *s = pool->recycle_stats;	\
+		struct page_pool_recycle_stats __percpu *s = pool->stats->recycle_stats;\
 		this_cpu_inc(s->__stat);						\
 	} while (0)
 
 #define recycle_stat_add(pool, __stat, val)						\
 	do {										\
-		struct page_pool_recycle_stats __percpu *s = pool->recycle_stats;	\
+		struct page_pool_recycle_stats __percpu *s = pool->stats->recycle_stats;\
 		this_cpu_add(s->__stat, val);						\
 	} while (0)
 
-static const char pp_stats[][ETH_GSTRING_LEN] = {
+/* workaround for macro ETH_GSTRING_LEN, for include the header file ethtool.h
+ * will cause KABI issue, so define a new one to replace it.
+ */
+#define PP_ETH_GSTRING_LEN 32
+static const char pp_stats[][PP_ETH_GSTRING_LEN] = {
 	"rx_pp_alloc_fast",
 	"rx_pp_alloc_slow",
 	"rx_pp_alloc_slow_ho",
@@ -66,16 +69,16 @@ bool page_pool_get_stats(struct page_pool *pool,
 		return false;
 
 	/* The caller is responsible to initialize stats. */
-	stats->alloc_stats.fast += pool->alloc_stats.fast;
-	stats->alloc_stats.slow += pool->alloc_stats.slow;
-	stats->alloc_stats.slow_high_order += pool->alloc_stats.slow_high_order;
-	stats->alloc_stats.empty += pool->alloc_stats.empty;
-	stats->alloc_stats.refill += pool->alloc_stats.refill;
-	stats->alloc_stats.waive += pool->alloc_stats.waive;
+	stats->alloc_stats.fast += pool->stats->alloc_stats.fast;
+	stats->alloc_stats.slow += pool->stats->alloc_stats.slow;
+	stats->alloc_stats.slow_high_order += pool->stats->alloc_stats.slow_high_order;
+	stats->alloc_stats.empty += pool->stats->alloc_stats.empty;
+	stats->alloc_stats.refill += pool->stats->alloc_stats.refill;
+	stats->alloc_stats.waive += pool->stats->alloc_stats.waive;
 
 	for_each_possible_cpu(cpu) {
 		const struct page_pool_recycle_stats *pcpu =
-			per_cpu_ptr(pool->recycle_stats, cpu);
+			per_cpu_ptr(pool->stats->recycle_stats, cpu);
 
 		stats->recycle_stats.cached += pcpu->cached;
 		stats->recycle_stats.cache_full += pcpu->cache_full;
@@ -93,8 +96,8 @@ u8 *page_pool_ethtool_stats_get_strings(u8 *data)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(pp_stats); i++) {
-		memcpy(data, pp_stats[i], ETH_GSTRING_LEN);
-		data += ETH_GSTRING_LEN;
+		memcpy(data, pp_stats[i], PP_ETH_GSTRING_LEN);
+		data += PP_ETH_GSTRING_LEN;
 	}
 
 	return data;
@@ -183,13 +186,16 @@ static int page_pool_init(struct page_pool *pool,
 	}
 
 #ifdef CONFIG_PAGE_POOL_STATS
-	pool->recycle_stats = alloc_percpu(struct page_pool_recycle_stats);
-	if (!pool->recycle_stats)
+	pool->stats = kzalloc_node(sizeof(*pool->stats), GFP_KERNEL, params->nid);
+	if (!pool->stats)
 		return -ENOMEM;
+	pool->stats->recycle_stats = alloc_percpu(struct page_pool_recycle_stats);
+	if (!pool->stats->recycle_stats)
+		goto out;
 #endif
 
 	if (ptr_ring_init(&pool->ring, ring_qsize, GFP_KERNEL) < 0)
-		return -ENOMEM;
+		goto out;
 
 	atomic_set(&pool->pages_state_release_cnt, 0);
 
@@ -200,6 +206,13 @@ static int page_pool_init(struct page_pool *pool,
 		get_device(pool->p.dev);
 
 	return 0;
+out:
+#ifdef CONFIG_PAGE_POOL_STATS
+	free_percpu(pool->stats->recycle_stats);
+	kfree(pool->stats);
+	pool->stats = NULL;
+#endif
+	return -ENOMEM;
 }
 
 struct page_pool *page_pool_create(const struct page_pool_params *params)
@@ -767,7 +780,8 @@ static void page_pool_free(struct page_pool *pool)
 		put_device(pool->p.dev);
 
 #ifdef CONFIG_PAGE_POOL_STATS
-	free_percpu(pool->recycle_stats);
+	free_percpu(pool->stats->recycle_stats);
+	kfree(pool->stats);
 #endif
 	kfree(pool);
 }

@@ -116,6 +116,16 @@ struct page_pool_stats {
 	struct page_pool_recycle_stats recycle_stats;
 };
 
+/* To solve the KABI issue, introduce the new statistics structure
+ * to store the member alloc_stats and recycle_stats.
+ */
+struct page_pool_raw_stats {
+	/* these stats are incremented while in softirq context */
+	struct page_pool_alloc_stats alloc_stats;
+	/* recycle stats are per-cpu to avoid locking */
+	struct page_pool_recycle_stats __percpu *recycle_stats;
+};
+
 int page_pool_ethtool_stats_get_count(void);
 u8 *page_pool_ethtool_stats_get_strings(u8 *data);
 u64 *page_pool_ethtool_stats_get(u64 *data, void *stats);
@@ -159,11 +169,6 @@ struct page_pool {
 	struct page *frag_page;
 	long frag_users;
 
-#ifdef CONFIG_PAGE_POOL_STATS
-	/* these stats are incremented while in softirq context */
-	struct page_pool_alloc_stats alloc_stats;
-#endif
-
 	/*
 	 * Data structure for allocation side
 	 *
@@ -192,10 +197,6 @@ struct page_pool {
 	 */
 	struct ptr_ring ring;
 
-#ifdef CONFIG_PAGE_POOL_STATS
-	/* recycle stats are per-cpu to avoid locking */
-	struct page_pool_recycle_stats __percpu *recycle_stats;
-#endif
 	atomic_t pages_state_release_cnt;
 
 	/* A page_pool is strictly tied to a single RX-queue being
@@ -206,7 +207,11 @@ struct page_pool {
 
 	u64 destroy_cnt;
 
+#ifdef CONFIG_PAGE_POOL_STATS
+	KABI_USE(1, struct page_pool_raw_stats *stats)
+#else
 	KABI_RESERVE(1)
+#endif
 };
 
 struct page *page_pool_alloc_pages(struct page_pool *pool, gfp_t gfp);
