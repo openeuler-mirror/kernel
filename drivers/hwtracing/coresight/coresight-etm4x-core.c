@@ -358,14 +358,22 @@ static void etm4_disable_arch_specific(struct etmv4_drvdata *drvdata)
 }
 
 static void etm4_check_arch_features(struct etmv4_drvdata *drvdata,
-				      unsigned int id)
+				     struct csdev_access *csa)
 {
-	if (etm4_hisi_match_pid(id)) {
+	/*
+	 * TRCPIDR* registers are not required for ETMs with system
+	 * instructions. They must be identified by the MIDR+REVIDRs.
+	 * Skip the TRCPID checks for now.
+	 */
+	if (!csa->io_mem)
+		return;
+
+	if (etm4_hisi_match_pid(coresight_get_pid(csa))) {
 		set_bit(ETM4_IMPDEF_HISI_CORE_COMMIT, drvdata->arch_features);
 		set_bit(ETM4_IMPDEF_HISI_SET_AUXCTRLR, drvdata->arch_features);
 	}
 
-	if (etm4_hisi_hip09_match_pid(id))
+	if (etm4_hisi_hip09_match_pid(coresight_get_pid(csa)))
 		set_bit(ETM4_IMPDEF_HISI_SET_AUXCTRLR, drvdata->arch_features);
 }
 #else
@@ -381,7 +389,7 @@ static void etm4_disable_arch_specific(struct etmv4_drvdata *drvdata)
 }
 
 static void etm4_check_arch_features(struct etmv4_drvdata *drvdata,
-				     unsigned int id)
+				     struct csdev_access *csa)
 {
 }
 #endif /* CONFIG_ETM4X_IMPDEF_FEATURE */
@@ -1911,7 +1919,7 @@ static void etm4_pm_clear(void)
 	}
 }
 
-static int etm4_probe(struct device *dev, u32 etm_pid)
+static int etm4_probe(struct device *dev)
 {
 	int ret;
 	struct coresight_platform_data *pdata = NULL;
@@ -2007,7 +2015,7 @@ static int etm4_probe(struct device *dev, u32 etm_pid)
 		drvdata->boot_enable = true;
 	}
 
-	etm4_check_arch_features(drvdata, etm_pid);
+	etm4_check_arch_features(drvdata, &desc.access);
 
 	return 0;
 }
@@ -2031,7 +2039,7 @@ static int etm4_probe_amba(struct amba_device *adev, const struct amba_id *id)
 
 	drvdata->base = base;
 	dev_set_drvdata(dev, drvdata);
-	ret = etm4_probe(dev, id->id);
+	ret = etm4_probe(dev);
 	if (!ret)
 		pm_runtime_put(&adev->dev);
 
@@ -2053,12 +2061,7 @@ static int etm4_probe_platform_dev(struct platform_device *pdev)
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 
-	/*
-	 * System register based devices could match the
-	 * HW by reading appropriate registers on the HW
-	 * and thus we could skip the PID.
-	 */
-	ret = etm4_probe(&pdev->dev, 0);
+	ret = etm4_probe(&pdev->dev);
 
 	pm_runtime_put(&pdev->dev);
 	return ret;
