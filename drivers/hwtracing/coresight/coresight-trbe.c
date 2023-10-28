@@ -1188,14 +1188,7 @@ static const struct of_device_id arm_trbe_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, arm_trbe_of_match);
 
-static const struct platform_device_id arm_trbe_match[] = {
-	{ ARMV9_TRBE_PDEV_NAME, 0},
-	{}
-};
-MODULE_DEVICE_TABLE(platform, arm_trbe_match);
-
 static struct platform_driver arm_trbe_driver = {
-	.id_table = arm_trbe_match,
 	.driver	= {
 		.name = DRVNAME,
 		.of_match_table = of_match_ptr(arm_trbe_of_match),
