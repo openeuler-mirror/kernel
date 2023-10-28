@@ -611,7 +611,8 @@ static int tmc_etr_alloc_flat_buf(struct tmc_drvdata *drvdata,
 
 	flat_buf->vaddr = dma_alloc_noncoherent(real_dev, etr_buf->size,
 						&flat_buf->daddr,
-						DMA_FROM_DEVICE, GFP_KERNEL);
+						DMA_FROM_DEVICE,
+						GFP_KERNEL | __GFP_NOWARN);
 	if (!flat_buf->vaddr) {
 		kfree(flat_buf);
 		return -ENOMEM;
@@ -1192,16 +1193,6 @@ static int tmc_enable_etr_sink_sysfs(struct coresight_device *csdev)
 	}
 
 	/*
-	 * In sysFS mode we can have multiple writers per sink.  Since this
-	 * sink is already enabled no memory is needed and the HW need not be
-	 * touched, even if the buffer size has changed.
-	 */
-	if (drvdata->mode == CS_MODE_SYSFS) {
-		atomic_inc(csdev->refcnt);
-		goto out;
-	}
-
-	/*
 	 * If we don't have a buffer or it doesn't match the requested size,
 	 * use the buffer allocated above. Otherwise reuse the existing buffer.
 	 */
@@ -1209,6 +1200,16 @@ static int tmc_enable_etr_sink_sysfs(struct coresight_device *csdev)
 	if (!sysfs_buf || (new_buf && sysfs_buf->size != new_buf->size)) {
 		free_buf = sysfs_buf;
 		drvdata->sysfs_buf = new_buf;
+	}
+
+	/*
+	 * In sysFS mode we can have multiple writers per sink.  Since this
+	 * sink is already enabled no memory is needed and the HW need not be
+	 * touched, even if the buffer size has changed.
+	 */
+	if (drvdata->mode == CS_MODE_SYSFS) {
+		atomic_inc(csdev->refcnt);
+		goto out;
 	}
 
 	ret = tmc_etr_enable_hw(drvdata, drvdata->sysfs_buf);
