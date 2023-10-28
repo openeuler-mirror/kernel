@@ -862,14 +862,14 @@ coresight_get_platform_data(struct device *dev)
 	struct coresight_platform_data *pdata = NULL;
 	struct fwnode_handle *fwnode = dev_fwnode(dev);
 
+	if (IS_ERR_OR_NULL(fwnode))
+		goto error;
+
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
 		ret = -ENOMEM;
 		goto error;
 	}
-
-	if (IS_ERR_OR_NULL(fwnode))
-		return pdata;
 
 	if (is_of_node(fwnode))
 		ret = of_get_coresight_platform_data(dev, pdata);
