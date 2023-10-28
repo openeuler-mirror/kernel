@@ -787,6 +787,8 @@ struct perf_event {
 	void *security;
 #endif
 	struct list_head		sb_list;
+
+	KABI_EXTEND(unsigned int group_generation)
 #endif /* CONFIG_PERF_EVENTS */
 };
 
