@@ -35,8 +35,6 @@
 
 #define CORESIGHT_UNLOCK	0xc5acce55
 
-#define ARMV9_TRBE_PDEV_NAME "arm,trbe-v1"
-
 extern struct bus_type coresight_bustype;
 
 enum coresight_dev_type {
