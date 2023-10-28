@@ -363,8 +363,6 @@ static int hisi_pcie_pmu_event_init(struct perf_event *event)
 	if (event->attr.type != event->pmu->type)
 		return -ENOENT;
 
-	event->cpu = pcie_pmu->on_cpu;
-
 	if (EXT_COUNTER_IS_USED(hisi_pcie_get_event(event)))
 		hwc->event_base = HISI_PCIE_EXT_CNT;
 	else
@@ -379,6 +377,8 @@ static int hisi_pcie_pmu_event_init(struct perf_event *event)
 
 	if (!hisi_pcie_pmu_validate_event_group(event))
 		return -EINVAL;
+
+	event->cpu = pcie_pmu->on_cpu;
 
 	return 0;
 }
