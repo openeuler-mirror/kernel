@@ -40,4 +40,27 @@ u64 rdma_query_qp_db(struct ib_device *ib_dev, int qp_index);
  */
 int rdma_query_hw_id(struct ib_device *ib_dev, u32 *chip_id,
 		     u32 *die_id, u32 *func_id);
+/**
+ * struct rdma_notify_mem
+ * @base_addr - The memory region base addr for write with notify operation.
+ * @size - size of the notify memory region
+ */
+struct rdma_notify_mem {
+	u64 base_addr;
+	u32 size;
+};
+
+/**
+ * rdma_register_notify_addr - Register an memory region which will be used by
+ * write with notify operation.
+ * @num - How many elements in array
+ * @notify_mem - Notify memory array.
+ *
+ * If notify_mem has already been registered, re-registration
+ * will not be allowed.
+ */
+int rdma_register_notify_addr(struct ib_device *ib_dev,
+			      size_t num, struct rdma_notify_mem *notify_mem);
+int rdma_unregister_notify_addr(struct ib_device *ib_dev);
+
 #endif

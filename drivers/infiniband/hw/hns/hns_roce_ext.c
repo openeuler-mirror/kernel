@@ -26,7 +26,7 @@ bool rdma_support_stars(struct ib_device *ib_dev)
 	if (!is_hns_roce(ib_dev) || is_hns_roce_vf(hr_dev))
 		return false;
 
-	if (poe_is_supported(hr_dev))
+	if (poe_is_supported(hr_dev) && is_write_notify_supported(hr_dev))
 		return true;
 
 	return false;
@@ -91,3 +91,53 @@ int rdma_query_hw_id(struct ib_device *ib_dev, u32 *chip_id,
 }
 EXPORT_SYMBOL(rdma_query_hw_id);
 
+int rdma_register_notify_addr(struct ib_device *ib_dev,
+			      size_t num, struct rdma_notify_mem *notify_mem)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+	size_t i;
+
+	if (!is_hns_roce(ib_dev) || !is_write_notify_supported(hr_dev))
+		return -EOPNOTSUPP;
+
+	if (hr_dev->notify_tbl)
+		return -EBUSY;
+
+	if (!num || !notify_mem)
+		return -EINVAL;
+
+	for (i = 0; i < num; i++) {
+		if (!notify_mem[i].size ||
+		    notify_mem[i].size > MAX_NOTIFY_MEM_SIZE)
+			return -EINVAL;
+		if (!notify_mem[i].base_addr)
+			return -EINVAL;
+	}
+
+	hr_dev->notify_tbl = kvmalloc_array(num, sizeof(*notify_mem),
+					    GFP_KERNEL);
+	if (!hr_dev->notify_tbl)
+		return -ENOMEM;
+
+	hr_dev->notify_num = num;
+	memcpy(hr_dev->notify_tbl, notify_mem, sizeof(*notify_mem) * num);
+
+	return 0;
+}
+EXPORT_SYMBOL(rdma_register_notify_addr);
+
+int rdma_unregister_notify_addr(struct ib_device *ib_dev)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+
+	if (!is_hns_roce(ib_dev) || !is_write_notify_supported(hr_dev))
+		return -EOPNOTSUPP;
+
+	if (hr_dev->notify_tbl)
+		kvfree(hr_dev->notify_tbl);
+
+	hr_dev->notify_tbl = NULL;
+
+	return 0;
+}
+EXPORT_SYMBOL(rdma_unregister_notify_addr);

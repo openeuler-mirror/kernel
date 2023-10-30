@@ -3850,6 +3850,44 @@ static void hns_roce_v2_cq_clean(struct hns_roce_cq *hr_cq, u32 qpn,
 	spin_unlock_irq(&hr_cq->lock);
 }
 
+static void enable_write_notify(struct hns_roce_cq *hr_cq,
+				struct hns_roce_v2_cq_context *cq_context)
+{
+	hr_reg_enable(cq_context, CQC_NOTIFY_EN);
+	hr_reg_write(cq_context, CQC_NOTIFY_DEVICE_EN,
+		     hr_cq->write_notify.notify_device_en);
+	hr_reg_write(cq_context, CQC_NOTIFY_MODE,
+		     hr_cq->write_notify.notify_mode);
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_0,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_0_M,
+					   CQC_NOTIFY_ADDR_0_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_1,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_1_M,
+					   CQC_NOTIFY_ADDR_1_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_2,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_2_M,
+					   CQC_NOTIFY_ADDR_2_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_3,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_3_M,
+					   CQC_NOTIFY_ADDR_3_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_4,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_4_M,
+					   CQC_NOTIFY_ADDR_4_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_5,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_5_M,
+					   CQC_NOTIFY_ADDR_5_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_6,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_6_M,
+					   CQC_NOTIFY_ADDR_6_S));
+}
+
 static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 				  struct hns_roce_cq *hr_cq, void *mb_buf,
 				  u64 *mtts, dma_addr_t dma_handle)
@@ -3870,11 +3908,13 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 		hr_reg_write(cq_context, CQC_POE_NUM, hr_cq->poe_channel);
 	}
 
+	if (hr_cq->flags & HNS_ROCE_CQ_FLAG_NOTIFY_EN)
+		enable_write_notify(hr_cq, cq_context);
+	else if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH)
+		hr_reg_enable(cq_context, CQC_STASH);
+
 	if (hr_cq->cqe_size == HNS_ROCE_V3_CQE_SIZE)
 		hr_reg_write(cq_context, CQC_CQE_SIZE, CQE_SIZE_64B);
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH)
-		hr_reg_enable(cq_context, CQC_STASH);
 
 	hr_reg_write(cq_context, CQC_CQE_CUR_BLK_ADDR_L,
 		     to_hr_hw_page_addr(mtts[0]));
@@ -4541,6 +4581,12 @@ static void set_access_flags(struct hns_roce_qp *hr_qp,
 	hr_reg_write_bool(context, QPC_EXT_ATE,
 			  access_flags & IB_ACCESS_REMOTE_ATOMIC);
 	hr_reg_clear(qpc_mask, QPC_EXT_ATE);
+
+	if ((hr_qp->en_flags & HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY) &&
+		(access_flags & IB_ACCESS_REMOTE_WRITE)) {
+		hr_reg_enable(context, QPC_WN_EN);
+		hr_reg_clear(qpc_mask, QPC_WN_EN);
+	}
 }
 
 static void set_qpc_wqe_cnt(struct hns_roce_qp *hr_qp,
@@ -4623,7 +4669,8 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	if (hr_dev->caps.qpc_sz < HNS_ROCE_V3_QPC_SZ)
 		return;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH)
+	if (!(hr_qp->en_flags & HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY) &&
+	    (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH))
 		hr_reg_enable(&context->ext, QPCEX_STASH);
 }
 

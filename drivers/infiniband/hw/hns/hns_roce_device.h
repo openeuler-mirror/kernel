@@ -37,9 +37,11 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/hns-abi.h>
 #include "hns_roce_bond.h"
+#include "hns_roce_ext.h"
 
 #define PCI_REVISION_ID_HIP08			0x21
 #define PCI_REVISION_ID_HIP09			0x30
+#define PCI_REVISION_ID_HIP10			0x32
 
 #define HNS_ROCE_MAX_MSG_LEN			0x80000000
 
@@ -104,6 +106,8 @@
 #define CQ_BANKID_SHIFT 2
 #define CQ_BANKID_MASK GENMASK(1, 0)
 
+#define MAX_NOTIFY_MEM_SIZE BIT(24)
+
 #define HNS_ROCE_MEM_BAR 2
 
 enum {
@@ -162,6 +166,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_SVE_DIRECT_WQE	= BIT(13),
 	HNS_ROCE_CAP_FLAG_SDI_MODE		= BIT(14),
 	HNS_ROCE_CAP_FLAG_DCA_MODE		= BIT(15),
+	HNS_ROCE_CAP_FLAG_WRITE_NOTIFY          = BIT(16),
 	HNS_ROCE_CAP_FLAG_STASH			= BIT(17),
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
@@ -488,6 +493,22 @@ struct hns_roce_db {
 	unsigned long	order;
 };
 
+enum hns_roce_notify_mode {
+	HNS_ROCE_NOTIFY_MODE_64B_ALIGN = 0,
+	HNS_ROCE_NOTIFY_MODE_4B_ALIGN = 1,
+};
+
+enum hns_roce_notify_device_en {
+	HNS_ROCE_NOTIFY_DEV = 0,
+	HNS_ROCE_NOTIFY_DDR = 1,
+};
+
+struct hns_roce_notify_conf {
+	u64 notify_addr; /* should be aligned to 4k */
+	u8 notify_mode; /* use enum hns_roce_notify_mode */
+	u8 notify_device_en; /* use enum hns_roce_notify_device_en */
+};
+
 struct hns_roce_cq {
 	struct ib_cq			ib_cq;
 	struct hns_roce_mtr		mtr;
@@ -509,6 +530,7 @@ struct hns_roce_cq {
 	int				is_armed; /* cq is armed */
 	struct list_head		node; /* all armed cqs are on a list */
 	u8				poe_channel;
+	struct hns_roce_notify_conf	write_notify;
 };
 
 struct hns_roce_idx_que {
@@ -1154,6 +1176,9 @@ struct hns_roce_dev {
 	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
 	atomic64_t *dfx_cnt;
 	struct hns_roce_poe_ctx poe_ctx; /* poe ch array */
+
+	struct rdma_notify_mem *notify_tbl;
+	size_t notify_num;
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
@@ -1314,6 +1339,11 @@ static inline u8 get_hr_bus_num(struct hns_roce_dev *hr_dev)
 static inline bool poe_is_supported(struct hns_roce_dev *hr_dev)
 {
 	return !!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_POE);
+}
+
+static inline bool is_write_notify_supported(struct hns_roce_dev *dev)
+{
+	return !!(dev->caps.flags & HNS_ROCE_CAP_FLAG_WRITE_NOTIFY);
 }
 
 void hns_roce_init_uar_table(struct hns_roce_dev *dev);

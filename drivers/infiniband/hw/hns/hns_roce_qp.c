@@ -1133,6 +1133,20 @@ static void set_congest_param(struct hns_roce_dev *hr_dev,
 	default_congest_type(hr_dev, hr_qp);
 }
 
+static void set_qp_notify_param(struct hns_roce_qp *hr_qp,
+				struct ib_cq *ib_cq)
+{
+	struct hns_roce_cq *hr_cq = ib_cq ? to_hr_cq(ib_cq) : NULL;
+
+	/*
+	 * Always enable write with notify for XRC TGT since no flag
+	 * could be passed to kernel for this type of QP
+	 */
+	if ((hr_cq && hr_cq->flags & HNS_ROCE_CQ_FLAG_NOTIFY_EN) ||
+	    (hr_qp->ibqp.qp_type == IB_QPT_XRC_TGT))
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY;
+}
+
 static bool check_cq_poe_en(struct ib_cq *ib_cq)
 {
 	struct hns_roce_cq *hr_cq = ib_cq ? to_hr_cq(ib_cq) : NULL;
@@ -1198,6 +1212,8 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 	if (init_attr->qp_type == IB_QPT_XRC_TGT)
 		default_congest_type(hr_dev, hr_qp);
+
+	set_qp_notify_param(hr_qp, init_attr->recv_cq);
 
 	if (udata) {
 		ret = ib_copy_from_udata(ucmd, udata,

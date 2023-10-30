@@ -332,6 +332,58 @@ static int set_poe_param(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+static bool is_notify_support(struct hns_roce_dev *hr_dev,
+			      enum hns_roce_notify_mode notify_mode,
+			      enum hns_roce_notify_device_en device_en)
+{
+	if (!is_write_notify_supported(hr_dev))
+		return false;
+
+	/* some configuration is not supported in HIP10 */
+	if (hr_dev->pci_dev->revision != PCI_REVISION_ID_HIP10)
+		return true;
+
+	if (notify_mode == HNS_ROCE_NOTIFY_MODE_64B_ALIGN ||
+	    device_en == HNS_ROCE_NOTIFY_DDR) {
+		ibdev_err(&hr_dev->ib_dev, "Unsupported notify_mode.\n");
+		return false;
+	}
+
+	return true;
+}
+
+static int set_write_notify_param(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_cq *hr_cq,
+				  struct hns_roce_ib_create_cq *ucmd)
+{
+#define NOTIFY_MODE_MASK 0x3
+	const struct {
+		u8 mode;
+		u8 mem_type;
+	} notify_attr[] = {
+		{HNS_ROCE_NOTIFY_MODE_64B_ALIGN, HNS_ROCE_NOTIFY_DEV},
+		{HNS_ROCE_NOTIFY_MODE_4B_ALIGN, HNS_ROCE_NOTIFY_DEV},
+		{HNS_ROCE_NOTIFY_MODE_64B_ALIGN, HNS_ROCE_NOTIFY_DDR},
+		{HNS_ROCE_NOTIFY_MODE_4B_ALIGN, HNS_ROCE_NOTIFY_DDR},
+	};
+	u8 attr = ucmd->notify_mode & NOTIFY_MODE_MASK;
+
+	if (!(ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_WRITE_WITH_NOTIFY))
+		return 0;
+
+	if (!is_notify_support(hr_dev, notify_attr[attr].mode,
+			       notify_attr[attr].mem_type))
+		return -EOPNOTSUPP;
+
+	hr_cq->flags |= HNS_ROCE_CQ_FLAG_NOTIFY_EN;
+	hr_cq->write_notify.notify_addr =
+		hr_dev->notify_tbl[ucmd->notify_idx].base_addr;
+	hr_cq->write_notify.notify_mode = notify_attr[attr].mode;
+	hr_cq->write_notify.notify_device_en = notify_attr[attr].mem_type;
+
+	return 0;
+}
+
 static int set_cq_param(struct hns_roce_cq *hr_cq, u32 cq_entries, int vector,
 			 struct hns_roce_ib_create_cq *ucmd)
 {
@@ -348,14 +400,18 @@ static int set_cq_param(struct hns_roce_cq *hr_cq, u32 cq_entries, int vector,
 	INIT_LIST_HEAD(&hr_cq->sq_list);
 	INIT_LIST_HEAD(&hr_cq->rq_list);
 
-	if (!(ucmd->create_flags))
+	if (!ucmd->create_flags)
 		return 0;
+
+	if ((ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_POE_MODE) &&
+	    (ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_WRITE_WITH_NOTIFY))
+		return -EINVAL;
 
 	ret = set_poe_param(hr_dev, hr_cq, ucmd);
 	if (ret)
 		return ret;
 
-	return 0;
+	return set_write_notify_param(hr_dev, hr_cq, ucmd);
 }
 
 static int set_cqe_size(struct hns_roce_cq *hr_cq, struct ib_udata *udata,

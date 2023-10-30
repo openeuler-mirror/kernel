@@ -38,6 +38,7 @@
 
 enum hns_roce_create_cq_create_flags {
 	HNS_ROCE_CREATE_CQ_FLAGS_POE_MODE = 1 << 0,
+	HNS_ROCE_CREATE_CQ_FLAGS_WRITE_WITH_NOTIFY = 1 << 1,
 };
 
 struct hns_roce_ib_create_cq {
@@ -47,12 +48,15 @@ struct hns_roce_ib_create_cq {
 	__u32 reserved;
 	__aligned_u64 create_flags; /* Use enum hns_roce_create_cq_create_flags */
 	__u8 poe_channel;
-	__u8 rsv[7];
+	__u8 notify_mode;
+	__u16 notify_idx;
+	__u16 rsv[2];
 };
 
 enum hns_roce_cq_cap_flags {
 	HNS_ROCE_CQ_FLAG_RECORD_DB = 1 << 0,
 	HNS_ROCE_CQ_FLAG_POE_EN = 1 << 2,
+	HNS_ROCE_CQ_FLAG_NOTIFY_EN = 1 << 3,
 };
 
 struct hns_roce_ib_create_cq_resp {
@@ -120,6 +124,7 @@ enum hns_roce_qp_cap_flags {
 	HNS_ROCE_QP_CAP_DIRECT_WQE = 1 << 5,
 	HNS_ROCE_QP_CAP_DYNAMIC_CTX_DETACH = 1 << 6,
 	HNS_ROCE_QP_CAP_STARS_SQ_MODE = 1 << 7,
+	HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY = 1 << 8,
 };
 
 struct hns_roce_ib_create_qp_resp {

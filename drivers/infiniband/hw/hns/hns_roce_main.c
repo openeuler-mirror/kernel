@@ -1594,6 +1594,8 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 	if (hr_dev->hw->cmq_exit)
 		hr_dev->hw->cmq_exit(hr_dev);
 	hns_roce_dealloc_dfx_cnt(hr_dev);
+	if (hr_dev->notify_tbl)
+		kvfree(hr_dev->notify_tbl);
 }
 
 MODULE_LICENSE("Dual BSD/GPL");
