@@ -201,7 +201,3 @@ config ULTRASOC_SMB
          called ultrasoc-smb.
 
 endif
-
-config ACPI_TRBE
-	depends on ARM64 && ACPI
-	def_bool y
