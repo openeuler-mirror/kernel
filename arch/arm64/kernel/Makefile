@@ -3,6 +3,19 @@
 # Makefile for the linux kernel.
 #
 
+OBJECT_FILES_NON_STANDARD_cpu-park.o := y
+OBJECT_FILES_NON_STANDARD_efi-rt-wrapper.o := y
+OBJECT_FILES_NON_STANDARD_efi-entry.o := y
+OBJECT_FILES_NON_STANDARD_entry.o := y
+OBJECT_FILES_NON_STANDARD_entry-fpsimd.o := y
+OBJECT_FILES_NON_STANDARD_entry-ftrace.o := y
+OBJECT_FILES_NON_STANDARD_head.o := y
+OBJECT_FILES_NON_STANDARD_hibernate-asm.o := y
+OBJECT_FILES_NON_STANDARD_hyp-stub.o := y
+OBJECT_FILES_NON_STANDARD_proton-pack.o := y
+OBJECT_FILES_NON_STANDARD_relocate_kernel.o := y
+OBJECT_FILES_NON_STANDARD_sleep.o := y
+
 CFLAGS_armv8_deprecated.o := -I$(src)
 
 CFLAGS_REMOVE_ftrace.o = $(CC_FLAGS_FTRACE)

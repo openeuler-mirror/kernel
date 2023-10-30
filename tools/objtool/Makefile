@@ -46,6 +46,12 @@ ifeq ($(SRCARCH),x86)
 	SUBCMD_ORC := y
 endif
 
+ifeq ($(SRCARCH),arm64)
+	SUBCMD_CHECK := y
+	SUBCMD_ORC := y
+	CFLAGS  += -Wno-nested-externs
+endif
+
 ifeq ($(SUBCMD_ORC),y)
 	CFLAGS += -DINSN_USE_ORC
 endif
@@ -63,7 +69,7 @@ $(OBJTOOL): $(LIBSUBCMD) $(OBJTOOL_IN)
 
 
 $(LIBSUBCMD): fixdep FORCE
-	$(Q)$(MAKE) -C $(SUBCMD_SRCDIR) OUTPUT=$(LIBSUBCMD_OUTPUT)
+	$(Q)$(MAKE) -C $(SUBCMD_SRCDIR) OUTPUT=$(LIBSUBCMD_OUTPUT) AR=$(AR) CC=$(CC) LD=$(LD)
 
 clean:
 	$(call QUIET_CLEAN, objtool) $(RM) $(OBJTOOL)

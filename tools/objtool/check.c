@@ -258,7 +258,7 @@ static int decode_instructions(struct objtool_file *file)
 {
 	struct section *sec;
 	struct symbol *func;
-	unsigned long offset;
+	unsigned long offset, next_offset;
 	struct instruction *insn;
 	unsigned long nr_insns = 0;
 	int ret;
@@ -277,7 +277,15 @@ static int decode_instructions(struct objtool_file *file)
 		    !strcmp(sec->name, ".entry.text"))
 			sec->noinstr = true;
 
-		for (offset = 0; offset < sec->len; offset += insn->len) {
+		for (offset = 0; offset < sec->sh.sh_size; offset = next_offset) {
+			struct symbol *obj_sym = find_object_containing(sec, offset);
+
+			if (obj_sym) {
+				/* This is data in the middle of text section, skip it */
+				next_offset = obj_sym->offset + obj_sym->len;
+				continue;
+			}
+
 			insn = malloc(sizeof(*insn));
 			if (!insn) {
 				WARN("malloc failed");
@@ -302,6 +310,8 @@ static int decode_instructions(struct objtool_file *file)
 			hash_add(file->insn_hash, &insn->hash, sec_offset_hash(sec, insn->offset));
 			list_add_tail(&insn->list, &file->insn_list);
 			nr_insns++;
+
+			next_offset = offset + insn->len;
 		}
 
 		list_for_each_entry(func, &sec->symbol_list, list) {
@@ -321,6 +331,9 @@ static int decode_instructions(struct objtool_file *file)
 
 	if (stats)
 		printf("nr_insns: %lu\n", nr_insns);
+
+	if (arch_post_process_instructions(file))
+		return -1;
 
 	return 0;
 
@@ -1196,6 +1209,9 @@ static int add_special_section_alts(struct objtool_file *file)
 				continue;
 			}
 
+			if (special_alt->skip_alt && !special_alt->new_len)
+				continue;
+
 			ret = handle_group_alt(file, special_alt, orig_insn,
 					       &new_insn);
 			if (ret)
@@ -1766,7 +1782,7 @@ static bool has_valid_stack_frame(struct insn_state *state)
 	struct cfi_state *cfi = &state->cfi;
 
 	if (cfi->cfa.base == CFI_BP && cfi->regs[CFI_BP].base == CFI_CFA &&
-	    cfi->regs[CFI_BP].offset == -16)
+	    cfi->regs[CFI_BP].offset == -cfi->cfa.offset)
 		return true;
 
 	if (cfi->drap && cfi->regs[CFI_BP].base == CFI_BP)
@@ -1893,6 +1909,7 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
 		switch (op->src.type) {
 
 		case OP_SRC_REG:
+
 			if (op->src.reg == CFI_SP && op->dest.reg == CFI_BP &&
 			    cfa->base == CFI_SP &&
 			    regs[CFI_BP].base == CFI_CFA &&
@@ -1978,6 +1995,14 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
 
 				/* lea disp(%rbp), %rsp */
 				cfi->stack_size = -(op->src.offset + regs[CFI_BP].offset);
+				break;
+			}
+
+			if (op->dest.reg == CFI_BP && op->src.reg == CFI_SP) {
+
+				/* add x29, sp, #0x40 */
+				cfa->base = op->dest.reg;
+				cfa->offset -= op->src.offset;
 				break;
 			}
 
@@ -2075,6 +2100,14 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
 			break;
 
 		case OP_SRC_REG_INDIRECT:
+			if (!cfi->drap && op->dest.reg == cfa->base &&
+			    op->dest.reg == CFI_BP) {
+
+				/* mov disp(%rsp), %rbp */
+				cfa->base = CFI_SP;
+				cfa->offset = cfi->stack_size;
+			}
+
 			if (cfi->drap && op->src.reg == CFI_BP &&
 			    op->src.offset == cfi->drap_offset) {
 

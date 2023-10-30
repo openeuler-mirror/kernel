@@ -19,7 +19,15 @@
 	unreachable();					\
 } while (0)
 
+#ifdef CONFIG_STACK_VALIDATION
+#define __WARN_FLAGS(flags)			\
+do {						\
+	__BUG_FLAGS(BUGFLAG_WARNING|(flags));	\
+	annotate_reachable();			\
+} while (0)
+#else
 #define __WARN_FLAGS(flags) __BUG_FLAGS(BUGFLAG_WARNING|(flags))
+#endif
 
 #define HAVE_ARCH_BUG
 

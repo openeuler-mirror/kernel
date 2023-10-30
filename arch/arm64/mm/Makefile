@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
+
+OBJECT_FILES_NON_STANDARD_trans_pgd-asm.o := y
+
 obj-y				:= dma-mapping.o extable.o fault.o init.o \
 				   cache.o copypage.o flush.o \
 				   ioremap.o mmap.o pgd.o mmu.o \

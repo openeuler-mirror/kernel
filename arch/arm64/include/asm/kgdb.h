@@ -19,6 +19,10 @@
 static inline void arch_kgdb_breakpoint(void)
 {
 	asm ("brk %0" : : "I" (KGDB_COMPILED_DBG_BRK_IMM));
+	#ifdef CONFIG_STACK_VALIDATION
+	annotate_reachable();
+	#else
+	#endif
 }
 
 extern void kgdb_handle_bus_error(void);
