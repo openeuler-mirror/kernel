@@ -1570,6 +1570,39 @@ static int hns_roce_cmq_query_hw_info(struct hns_roce_dev *hr_dev)
 	return 0;
 }
 
+static void hns_roce_cmq_query_hw_id(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_hw_id_query_cmq *resp;
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	if (hr_dev->is_vf)
+		goto invalid_val;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_HW_ID, true);
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret) {
+		if (desc.retval != CMD_NOT_EXIST)
+			ibdev_warn(&hr_dev->ib_dev,
+				   "failed to query hw id, ret = %d.\n", ret);
+
+		goto invalid_val;
+	}
+
+	resp = (struct hns_roce_hw_id_query_cmq *)desc.data;
+	hr_dev->chip_id = resp->chip_id;
+	hr_dev->die_id = resp->die_id;
+	hr_dev->mac_id = resp->mac_id;
+	hr_dev->func_id = (u16)le32_to_cpu(resp->func_id);
+	return;
+
+invalid_val:
+	hr_dev->func_id = HNS_IB_INVALID_ID;
+	hr_dev->mac_id = HNS_IB_INVALID_ID;
+	hr_dev->die_id = HNS_IB_INVALID_ID;
+	hr_dev->chip_id = HNS_IB_INVALID_ID;
+}
+
 static void func_clr_hw_resetting_state(struct hns_roce_dev *hr_dev,
 					struct hnae3_handle *handle)
 {
@@ -2585,6 +2618,8 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		dev_err(dev, "failed to query firmware info, ret = %d.\n", ret);
 		return ret;
 	}
+
+	hns_roce_cmq_query_hw_id(hr_dev);
 
 	hr_dev->vendor_part_id = hr_dev->pci_dev->device;
 	hr_dev->sys_image_guid = be64_to_cpu(hr_dev->ib_dev.node_guid);

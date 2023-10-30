@@ -1092,6 +1092,10 @@ struct hns_roce_dev {
 	u32                     vendor_id;
 	u32                     vendor_part_id;
 	u32                     hw_rev;
+	u16 chip_id;
+	u16 die_id;
+	u16 mac_id;
+	u16 func_id;
 	void __iomem            *priv_addr;
 
 	struct hns_roce_cmdq	cmd;

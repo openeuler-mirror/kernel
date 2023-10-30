@@ -234,6 +234,32 @@ static int hns_roce_setup_mtu_mac(struct hns_roce_dev *hr_dev)
 	return 0;
 }
 
+static int set_attrx(struct hns_roce_dev *hr_dev, struct ib_udata *uhw)
+{
+	struct hns_roce_ib_query_device_resp resp = {};
+	size_t uhw_outlen;
+
+	if (!uhw || !uhw->outlen)
+		return 0;
+
+	uhw_outlen = uhw->outlen;
+	resp.len = sizeof(resp.comp_mask) + sizeof(resp.len);
+	if (uhw_outlen < resp.len)
+		return -EINVAL;
+
+	if (uhw->inlen && !ib_is_udata_cleared(uhw, 0, uhw->inlen))
+		return -EINVAL;
+
+	if (uhw_outlen >= offsetofend(typeof(resp), hw_id)) {
+		resp.len += sizeof(resp.hw_id);
+		resp.hw_id.chip_id = hr_dev->chip_id;
+		resp.hw_id.die_id = hr_dev->die_id;
+		resp.hw_id.func_id = hr_dev->func_id;
+	}
+
+	return ib_copy_to_udata(uhw, &resp, resp.len);
+}
+
 static int hns_roce_query_device(struct ib_device *ib_dev,
 				 struct ib_device_attr *props,
 				 struct ib_udata *uhw)
@@ -281,7 +307,7 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC)
 		props->device_cap_flags |= IB_DEVICE_XRC;
 
-	return 0;
+	return set_attrx(hr_dev, uhw);
 }
 
 static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,

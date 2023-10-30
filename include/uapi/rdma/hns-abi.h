@@ -232,4 +232,17 @@ enum hns_ib_dca_mem_query_attrs {
 	HNS_IB_ATTR_DCA_MEM_QUERY_OUT_PAGE_COUNT,
 };
 
+#define HNS_IB_INVALID_ID 0XFFFF
+struct hns_roce_ib_hw_id {
+	__u16 chip_id;
+	__u16 die_id;
+	__u16 func_id;
+	__u16 reserved;
+};
+
+struct hns_roce_ib_query_device_resp {
+	__u32   comp_mask;
+	__u32   len;
+	struct hns_roce_ib_hw_id hw_id;
+};
 #endif /* HNS_ABI_USER_H */

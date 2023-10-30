@@ -200,6 +200,7 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_CFG_LDCP_PARAM			= 0x1A81,
 	HNS_ROCE_OPC_CFG_HC3_PARAM			= 0x1A82,
 	HNS_ROCE_OPC_CFG_DIP_PARAM			= 0x1A83,
+	HNS_ROCE_OPC_QUERY_HW_ID			= 0x7032,
 	HNS_ROCE_OPC_QUERY_HW_VER			= 0x8000,
 	HNS_ROCE_OPC_CFG_GLOBAL_PARAM			= 0x8001,
 	HNS_ROCE_OPC_ALLOC_PF_RES			= 0x8004,
@@ -943,6 +944,15 @@ struct hns_roce_v2_wqe_data_seg {
 	__le32    len;
 	__le32    lkey;
 	__le64    addr;
+};
+
+struct hns_roce_hw_id_query_cmq {
+	__u8 chip_id;
+	__u8 die_id;
+	__u8 mac_id;
+	__u8 reserved;
+	__le32 func_id;
+	__le32 rsv[4];
 };
 
 struct hns_roce_query_version {
