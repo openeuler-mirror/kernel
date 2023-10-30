@@ -70,3 +70,24 @@ u64 rdma_query_qp_db(struct ib_device *ib_dev, int qp_index)
 }
 EXPORT_SYMBOL(rdma_query_qp_db);
 
+int rdma_query_hw_id(struct ib_device *ib_dev, u32 *chip_id,
+		     u32 *die_id, u32 *func_id)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+
+	if (!is_hns_roce(ib_dev) || is_hns_roce_vf(hr_dev))
+		return -EOPNOTSUPP;
+
+	if (!chip_id || !die_id || !func_id)
+		return -EINVAL;
+
+	if (hr_dev->chip_id == HNS_IB_INVALID_ID)
+		return -EINVAL;
+
+	*chip_id = hr_dev->chip_id;
+	*die_id = hr_dev->die_id;
+	*func_id = hr_dev->func_id;
+	return 0;
+}
+EXPORT_SYMBOL(rdma_query_hw_id);
+

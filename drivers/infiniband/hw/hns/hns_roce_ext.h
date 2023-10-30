@@ -32,4 +32,12 @@ bool rdma_support_stars(struct ib_device *ib_dev);
  */
 u64 rdma_query_qp_db(struct ib_device *ib_dev, int qp_index);
 
+/**
+ * rdma_query_hw_id - Get the relevant hardware ID of the current device.
+ * @chip_id - The ID of the chip where the current device is located.
+ * @die_id - The ID of the IO DIE where the current device is located.
+ * @func_id - The function ID of this device.
+ */
+int rdma_query_hw_id(struct ib_device *ib_dev, u32 *chip_id,
+		     u32 *die_id, u32 *func_id);
 #endif
