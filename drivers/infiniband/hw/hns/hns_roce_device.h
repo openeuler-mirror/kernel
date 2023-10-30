@@ -164,6 +164,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
 	HNS_ROCE_CAP_FLAG_SRQ_RECORD_DB		= BIT(22),
+	HNS_ROCE_CAP_FLAG_POE                   = BIT(27),
 };
 
 #define HNS_ROCE_DB_TYPE_COUNT			2
@@ -219,6 +220,18 @@ struct hns_user_mmap_entry {
 	struct rdma_user_mmap_entry rdma_entry;
 	enum hns_roce_mmap_type mmap_type;
 	u64 address;
+};
+
+struct hns_roce_poe_ch {
+	uint8_t en;
+	refcount_t ref_cnt;
+	uint64_t addr;
+	void *poe_ch_debugfs;
+};
+
+struct hns_roce_poe_ctx {
+	uint8_t poe_num;
+	struct hns_roce_poe_ch *poe_ch;
 };
 
 struct hns_roce_dca_ctx {
@@ -493,6 +506,7 @@ struct hns_roce_cq {
 	struct list_head		rq_list; /* all qps on this recv cq */
 	int				is_armed; /* cq is armed */
 	struct list_head		node; /* all armed cqs are on a list */
+	u8				poe_channel;
 };
 
 struct hns_roce_idx_que {
@@ -788,6 +802,8 @@ enum congest_type {
 	HNS_ROCE_CONGEST_TYPE_DIP = 1 << HNS_ROCE_SCC_ALGO_DIP,
 };
 
+#define HNS_ROCE_POE_CH_NUM 4
+
 struct hns_roce_caps {
 	u64		fw_ver;
 	u8		num_ports;
@@ -919,6 +935,7 @@ struct hns_roce_caps {
 	u16		default_ceq_arm_st;
 	u8		congest_type;
 	u8		default_congest_type;
+	u8              poe_ch_num;
 };
 
 enum hns_roce_device_state {
@@ -1034,6 +1051,7 @@ struct hns_roce_hw {
 				enum hns_roce_scc_algo algo);
 	int (*query_scc_param)(struct hns_roce_dev *hr_dev, u8 port_num,
 			       enum hns_roce_scc_algo alog);
+	int (*cfg_poe_ch)(struct hns_roce_dev *hr_dev, u32 index, u64 poe_addr);
 };
 
 #define HNS_ROCE_SCC_PARAM_SIZE 4
@@ -1133,6 +1151,7 @@ struct hns_roce_dev {
 	struct notifier_block bond_nb;
 	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
 	atomic64_t *dfx_cnt;
+	struct hns_roce_poe_ctx poe_ctx; /* poe ch array */
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
@@ -1290,6 +1309,11 @@ static inline u8 get_hr_bus_num(struct hns_roce_dev *hr_dev)
 	return hr_dev->pci_dev->bus->number;
 }
 
+static inline bool poe_is_supported(struct hns_roce_dev *hr_dev)
+{
+	return !!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_POE);
+}
+
 void hns_roce_init_uar_table(struct hns_roce_dev *dev);
 int hns_roce_uar_alloc(struct hns_roce_dev *dev, struct hns_roce_uar *uar);
 
@@ -1431,4 +1455,7 @@ hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 int hns_roce_create_port_files(struct ib_device *ibdev, u8 port_num,
 			       struct kobject *kobj);
 void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
+int hns_roce_register_poe_channel(struct hns_roce_dev *hr_dev, u8 channel,
+				  u64 poe_addr);
+int hns_roce_unregister_poe_channel(struct hns_roce_dev *hr_dev, u8 channel);
 #endif /* _HNS_ROCE_DEVICE_H */

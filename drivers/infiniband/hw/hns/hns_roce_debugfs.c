@@ -74,10 +74,22 @@ struct hns_dca_debugfs {
 	struct hns_dca_ctx_debugfs kctx; /* kDCA context */
 };
 
+struct hns_poe_ch_debugfs {
+	struct dentry *root; /* dev debugfs entry */
+	struct hns_debugfs_seqfile en; /* enable stats fir this ch */
+	struct hns_debugfs_seqfile addr; /* addr of this ch */
+	struct hns_debugfs_seqfile ref_cnt; /* ref_cnt for this ch */
+};
+
+struct hns_poe_debugfs {
+	struct dentry *root; /* dev debugfs entry */
+};
+
 /* Debugfs for device */
 struct hns_roce_dev_debugfs {
 	struct dentry *root;
 	struct hns_dca_debugfs *dca_root;
+	struct hns_poe_debugfs *poe_root;
 };
 
 struct dca_mem_stats {
@@ -497,6 +509,97 @@ static void destroy_dca_debugfs(struct hns_dca_debugfs *dca_dbgfs)
 	kfree(dca_dbgfs);
 }
 
+static int poe_debugfs_en_show(struct seq_file *file, void *offset)
+{
+	struct hns_roce_poe_ch *poe_ch = file->private;
+
+	seq_printf(file, "%-10s\n", poe_ch->en ? "enable" : "disable");
+	return 0;
+}
+
+static int poe_debugfs_addr_show(struct seq_file *file, void *offset)
+{
+#define POE_ADDR_OFFSET_MASK GENMASK(31, 0)
+	struct hns_roce_poe_ch *poe_ch = file->private;
+
+	seq_printf(file, "0x%llx\n", poe_ch->addr & POE_ADDR_OFFSET_MASK);
+	return 0;
+}
+
+static int poe_debugfs_ref_cnt_show(struct seq_file *file, void *offset)
+{
+	struct hns_roce_poe_ch *poe_ch = file->private;
+
+	seq_printf(file, "0x%-10u\n", refcount_read(&poe_ch->ref_cnt));
+	return 0;
+}
+
+static void init_poe_ch_debugfs(struct hns_roce_dev *hr_dev, uint8_t index,
+				struct dentry *parent)
+{
+#define POE_CH_NAME_LEN 10
+	struct hns_roce_poe_ch *poe_ch = &hr_dev->poe_ctx.poe_ch[index];
+	struct hns_poe_ch_debugfs *dbgfs;
+	char name[POE_CH_NAME_LEN];
+
+	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
+	if (!dbgfs)
+		return;
+
+	snprintf(name, sizeof(name), "poe_%u", index);
+	dbgfs->root = debugfs_create_dir(name, parent);
+
+	init_debugfs_seqfile(&dbgfs->en, "en", dbgfs->root,
+			     poe_debugfs_en_show, poe_ch);
+	init_debugfs_seqfile(&dbgfs->addr, "addr", dbgfs->root,
+			     poe_debugfs_addr_show, poe_ch);
+	init_debugfs_seqfile(&dbgfs->ref_cnt, "ref_cnt", dbgfs->root,
+			     poe_debugfs_ref_cnt_show, poe_ch);
+	poe_ch->poe_ch_debugfs = dbgfs;
+}
+
+static void cleanup_poe_ch_debugfs(struct hns_roce_dev *hr_dev, uint8_t index)
+{
+	struct hns_roce_poe_ch *poe_ch = &hr_dev->poe_ctx.poe_ch[index];
+	struct hns_poe_ch_debugfs *dbgfs = poe_ch->poe_ch_debugfs;
+
+	cleanup_debugfs_seqfile(&dbgfs->en);
+	cleanup_debugfs_seqfile(&dbgfs->addr);
+	cleanup_debugfs_seqfile(&dbgfs->ref_cnt);
+	debugfs_remove_recursive(dbgfs->root);
+	kvfree(dbgfs);
+}
+
+static struct hns_poe_debugfs *
+create_poe_debugfs(struct hns_roce_dev *hr_dev, struct dentry *parent)
+{
+	struct hns_poe_debugfs *dbgfs;
+	int i;
+
+	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
+	if (!dbgfs)
+		return NULL;
+
+	dbgfs->root = debugfs_create_dir("poe", parent);
+
+	for (i = 0; i < hr_dev->poe_ctx.poe_num; i++)
+		init_poe_ch_debugfs(hr_dev, i, dbgfs->root);
+
+	return dbgfs;
+}
+
+static void destroy_poe_debugfs(struct hns_roce_dev *hr_dev,
+				struct hns_poe_debugfs *poe_dbgfs)
+{
+	int i;
+
+	for (i = 0; i < hr_dev->poe_ctx.poe_num; i++)
+		cleanup_poe_ch_debugfs(hr_dev, i);
+
+	debugfs_remove_recursive(poe_dbgfs->root);
+	kvfree(poe_dbgfs);
+}
+
 /* debugfs for ucontext */
 void hns_roce_register_uctx_debugfs(struct hns_roce_dev *hr_dev,
 				    struct hns_roce_ucontext *uctx)
@@ -553,6 +656,9 @@ void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
 		dbgfs->dca_root = create_dca_debugfs(hr_dev, dbgfs->root);
 
+	if (poe_is_supported(hr_dev))
+		dbgfs->poe_root = create_poe_debugfs(hr_dev, dbgfs->root);
+
 	hr_dev->dbgfs = dbgfs;
 }
 
@@ -570,6 +676,11 @@ void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)
 	if (dbgfs->dca_root) {
 		destroy_dca_debugfs(dbgfs->dca_root);
 		dbgfs->dca_root = NULL;
+	}
+
+	if (dbgfs->poe_root) {
+		destroy_poe_debugfs(hr_dev, dbgfs->poe_root);
+		dbgfs->poe_root = NULL;
 	}
 
 	debugfs_remove_recursive(dbgfs->root);

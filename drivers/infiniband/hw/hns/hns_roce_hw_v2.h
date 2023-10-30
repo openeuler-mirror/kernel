@@ -204,6 +204,8 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_QUERY_HW_VER			= 0x8000,
 	HNS_ROCE_OPC_CFG_GLOBAL_PARAM			= 0x8001,
 	HNS_ROCE_OPC_ALLOC_PF_RES			= 0x8004,
+	HNS_ROCE_OPC_CFG_POE_ADDR			= 0x801B,
+	HNS_ROCE_OPC_CFG_POE_ATTR			= 0x801C,
 	HNS_ROCE_OPC_QUERY_COUNTER                      = 0x8206,
 	HNS_ROCE_OPC_QUERY_PF_RES			= 0x8400,
 	HNS_ROCE_OPC_ALLOC_VF_RES			= 0x8401,
@@ -1286,6 +1288,21 @@ struct hns_roce_query_pf_caps_e {
 
 struct hns_roce_cmq_req {
 	__le32 data[6];
+};
+
+struct hns_roce_poe_cfg_addr_cmq {
+	__le32 channel_id;
+	__le32 poe_addr_l;
+	__le32 poe_addr_h;
+	__le32 rsv[3];
+};
+
+#define V2_POE_ATTR_EN V2_POE_ATTR_FIELD_LOC(40, 40)
+#define V2_POE_ATTR_FIELD_LOC(h, l) FIELD_LOC(struct hns_roce_poe_cfg_attr_cmq, h, l)
+struct hns_roce_poe_cfg_attr_cmq {
+	__le32 channel_id;
+	__le32 rsv_en_outstd;
+	__le32 rsv[4];
 };
 
 #define CMQ_REQ_FIELD_LOC(h, l) FIELD_LOC(struct hns_roce_cmq_req, h, l)

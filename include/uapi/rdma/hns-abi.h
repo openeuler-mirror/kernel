@@ -36,15 +36,23 @@
 
 #include <linux/types.h>
 
+enum hns_roce_create_cq_create_flags {
+	HNS_ROCE_CREATE_CQ_FLAGS_POE_MODE = 1 << 0,
+};
+
 struct hns_roce_ib_create_cq {
 	__aligned_u64 buf_addr;
 	__aligned_u64 db_addr;
 	__u32 cqe_size;
 	__u32 reserved;
+	__aligned_u64 create_flags; /* Use enum hns_roce_create_cq_create_flags */
+	__u8 poe_channel;
+	__u8 rsv[7];
 };
 
 enum hns_roce_cq_cap_flags {
 	HNS_ROCE_CQ_FLAG_RECORD_DB = 1 << 0,
+	HNS_ROCE_CQ_FLAG_POE_EN = 1 << 2,
 };
 
 struct hns_roce_ib_create_cq_resp {

@@ -1427,6 +1427,36 @@ void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 	spin_unlock_irqrestore(&hr_dev->qp_list_lock, flags);
 }
 
+static void hns_roce_register_poe_ch(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_poe_ch *poe_ch;
+
+	if (!poe_is_supported(hr_dev) || hr_dev->caps.poe_ch_num <= 0)
+		goto out;
+
+	poe_ch = kvcalloc(hr_dev->caps.poe_ch_num,
+			  sizeof(struct hns_roce_poe_ch), GFP_KERNEL);
+	if (!poe_ch)
+		goto out;
+
+	hr_dev->poe_ctx.poe_num = hr_dev->caps.poe_ch_num;
+	hr_dev->poe_ctx.poe_ch = poe_ch;
+	return;
+
+out:
+	hr_dev->poe_ctx.poe_num = 0;
+	hr_dev->poe_ctx.poe_ch = NULL;
+
+}
+
+static void hns_roce_unregister_poe_ch(struct hns_roce_dev *hr_dev)
+{
+	if (!poe_is_supported(hr_dev) || hr_dev->caps.poe_ch_num <= 0)
+		return;
+
+	kvfree(hr_dev->poe_ctx.poe_ch);
+}
+
 static int hns_roce_alloc_dfx_cnt(struct hns_roce_dev *hr_dev)
 {
 	hr_dev->dfx_cnt = kcalloc(HNS_ROCE_DFX_CNT_TOTAL, sizeof(atomic64_t),
@@ -1511,6 +1541,7 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	if (ret)
 		goto error_failed_register_device;
 
+	hns_roce_register_poe_ch(hr_dev);
 	hns_roce_register_debugfs(hr_dev);
 
 	return 0;
@@ -1548,6 +1579,7 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 	hns_roce_unregister_sysfs(hr_dev);
 	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_debugfs(hr_dev);
+	hns_roce_unregister_poe_ch(hr_dev);
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
