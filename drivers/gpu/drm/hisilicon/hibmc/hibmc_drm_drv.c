@@ -66,7 +66,7 @@ static int __maybe_unused hibmc_pm_suspend(struct device *dev)
 	return drm_mode_config_helper_suspend(drm_dev);
 }
 
-static int  __maybe_unused hibmc_pm_resume(struct device *dev)
+static int __maybe_unused hibmc_pm_resume(struct device *dev)
 {
 	struct drm_device *drm_dev = dev_get_drvdata(dev);
 
@@ -229,6 +229,21 @@ static int hibmc_hw_map(struct hibmc_drm_private *priv)
 	return 0;
 }
 
+static void hibmc_hw_unmap(struct hibmc_drm_private *priv)
+{
+	struct drm_device *dev = priv->dev;
+
+	if (priv->fb_map) {
+		devm_iounmap(dev->dev, priv->fb_map);
+		priv->fb_map = NULL;
+	}
+
+	if (priv->mmio) {
+		devm_iounmap(dev->dev, priv->mmio);
+		priv->mmio = NULL;
+	}
+}
+
 static int hibmc_hw_init(struct hibmc_drm_private *priv)
 {
 	int ret;
@@ -254,6 +269,7 @@ static int hibmc_unload(struct drm_device *dev)
 	pci_disable_msi(dev->pdev);
 	hibmc_kms_fini(priv);
 	hibmc_mm_fini(priv);
+	hibmc_hw_unmap(priv);
 	dev->dev_private = NULL;
 	return 0;
 }
@@ -368,6 +384,13 @@ static void hibmc_pci_remove(struct pci_dev *pdev)
 
 	drm_dev_unregister(dev);
 	hibmc_unload(dev);
+	pci_disable_device(pdev);
+	drm_dev_put(dev);
+}
+
+static void hibmc_pci_shutdown(struct pci_dev *pdev)
+{
+	hibmc_pci_remove(pdev);
 }
 
 static struct pci_device_id hibmc_pci_table[] = {
@@ -380,7 +403,8 @@ static struct pci_driver hibmc_pci_driver = {
 	.id_table =	hibmc_pci_table,
 	.probe =	hibmc_pci_probe,
 	.remove =	hibmc_pci_remove,
-	.driver.pm =    &hibmc_pm_ops,
+	.shutdown = hibmc_pci_shutdown,
+	.driver.pm = &hibmc_pm_ops,
 };
 
 module_pci_driver(hibmc_pci_driver);
