@@ -1436,9 +1436,11 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			if (likely(desc_ret == CMD_EXEC_SUCCESS))
 				continue;
 
-			dev_err_ratelimited(hr_dev->dev,
-					    "Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
-					    desc->opcode, desc_ret);
+			if (desc->opcode != HNS_ROCE_OPC_QUERY_HW_ID &&
+			    desc_ret != CMD_NOT_EXIST)
+				dev_err_ratelimited(hr_dev->dev,
+					"Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
+					desc->opcode, desc_ret);
 			ret = hns_roce_cmd_err_convert_errno(desc_ret);
 		}
 	} else {
