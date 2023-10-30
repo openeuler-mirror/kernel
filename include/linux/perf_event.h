@@ -734,6 +734,10 @@ struct perf_event {
 #endif
 
 	struct list_head		sb_list;
+
+#ifndef __GENKSYMS__
+	unsigned int			group_generation;
+#endif
 #endif /* CONFIG_PERF_EVENTS */
 };
 
