@@ -104,6 +104,8 @@
 #define CQ_BANKID_SHIFT 2
 #define CQ_BANKID_MASK GENMASK(1, 0)
 
+#define HNS_ROCE_MEM_BAR 2
+
 enum {
 	SERV_TYPE_RC,
 	SERV_TYPE_UC,

@@ -14,6 +14,25 @@ static bool is_hns_roce(struct ib_device *ib_dev)
 	return false;
 }
 
+static bool is_hns_roce_vf(struct hns_roce_dev *hr_dev)
+{
+	return hr_dev->is_vf;
+}
+
+bool rdma_support_stars(struct ib_device *ib_dev)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+
+	if (!is_hns_roce(ib_dev) || is_hns_roce_vf(hr_dev))
+		return false;
+
+	if (poe_is_supported(hr_dev))
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL(rdma_support_stars);
+
 int rdma_register_poe_channel(struct ib_device *ib_dev, u8 channel,
 			      u64 poe_addr)
 {
@@ -36,4 +55,18 @@ int rdma_unregister_poe_channel(struct ib_device *ib_dev, u8 channel)
 	return hns_roce_unregister_poe_channel(hr_dev, channel);
 }
 EXPORT_SYMBOL(rdma_unregister_poe_channel);
+
+u64 rdma_query_qp_db(struct ib_device *ib_dev, int qp_index)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+	u64 bar_addr;
+
+	if (!rdma_support_stars(ib_dev))
+		return 0;
+
+	bar_addr = pci_resource_start(hr_dev->pci_dev, HNS_ROCE_MEM_BAR);
+	return bar_addr + hr_dev->sdb_offset +
+		DB_REG_OFFSET * hr_dev->priv_uar.index;
+}
+EXPORT_SYMBOL(rdma_query_qp_db);
 

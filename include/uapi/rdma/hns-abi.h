@@ -86,6 +86,10 @@ enum hns_roce_create_qp_comp_mask {
 	HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE = 1 << 1,
 };
 
+enum hns_roce_create_qp_flags {
+	HNS_ROCE_CREATE_QP_FLAGS_STARS_MODE = 1 << 0,
+};
+
 enum hns_roce_congest_type_flags {
 	HNS_ROCE_CREATE_QP_FLAGS_DCQCN = 1 << 0,
 	HNS_ROCE_CREATE_QP_FLAGS_LDCP = 1 << 1,
@@ -102,8 +106,8 @@ struct hns_roce_ib_create_qp {
 	__u8    reserved[4];
 	__u8    pageshift;
 	__aligned_u64 sdb_addr;
-	__aligned_u64 comp_mask;
-	__aligned_u64 create_flags;
+	__aligned_u64 comp_mask; /* Use enum hns_roce_create_qp_comp_mask */
+	__aligned_u64 create_flags; /* Use enum hns_roce_create_qp_flags */
 	__aligned_u64 congest_type_flags;
 };
 
@@ -115,10 +119,11 @@ enum hns_roce_qp_cap_flags {
 	HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH = 1 << 4,
 	HNS_ROCE_QP_CAP_DIRECT_WQE = 1 << 5,
 	HNS_ROCE_QP_CAP_DYNAMIC_CTX_DETACH = 1 << 6,
+	HNS_ROCE_QP_CAP_STARS_SQ_MODE = 1 << 7,
 };
 
 struct hns_roce_ib_create_qp_resp {
-	__aligned_u64 cap_flags;
+	__aligned_u64 cap_flags; /* Use enum hns_roce_qp_cap_flags */
 	__aligned_u64 dwqe_mmap_key;
 };
 
