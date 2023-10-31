@@ -372,6 +372,15 @@ static int apply_r_larch_got_pc(struct module *mod, u32 *location, Elf_Addr v,
 	return apply_r_larch_pcala(mod, location, got, rela_stack, rela_stack_top, type);
 }
 
+static int apply_r_larch_32_pcrel(struct module *mod, u32 *location, Elf_Addr v,
+				  s64 *rela_stack, size_t *rela_stack_top, unsigned int type)
+{
+	ptrdiff_t offset = (void *)v - (void *)location;
+
+	*(u32 *)location = offset;
+	return 0;
+}
+
 /*
  * reloc_handlers_rela() - Apply a particular relocation to a module
  * @mod: the module to apply the reloc to
@@ -404,6 +413,7 @@ static reloc_rela_handler reloc_rela_handlers[] = {
 	[R_LARCH_B26]					     = apply_r_larch_b26,
 	[R_LARCH_PCALA_HI20...R_LARCH_PCALA64_HI12]	     = apply_r_larch_pcala,
 	[R_LARCH_GOT_PC_HI20...R_LARCH_GOT_PC_LO12]	     = apply_r_larch_got_pc,
+	[R_LARCH_32_PCREL]				     = apply_r_larch_32_pcrel,
 };
 
 int apply_relocate_add(Elf_Shdr *sechdrs, const char *strtab,
