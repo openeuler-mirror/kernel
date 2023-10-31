@@ -848,7 +848,7 @@ int cgroup_bpf_prog_attach(const union bpf_attr *attr,
 	struct cgroup *cgrp;
 	int ret;
 
-	cgrp = cgroup_get_from_fd(attr->target_fd);
+	cgrp = cgroup_get_from_fd_v2(attr->target_fd);
 	if (IS_ERR(cgrp))
 		return PTR_ERR(cgrp);
 
@@ -876,7 +876,7 @@ int cgroup_bpf_prog_detach(const union bpf_attr *attr, enum bpf_prog_type ptype)
 	struct cgroup *cgrp;
 	int ret;
 
-	cgrp = cgroup_get_from_fd(attr->target_fd);
+	cgrp = cgroup_get_from_fd_v2(attr->target_fd);
 	if (IS_ERR(cgrp))
 		return PTR_ERR(cgrp);
 
@@ -993,7 +993,7 @@ int cgroup_bpf_link_attach(const union bpf_attr *attr, struct bpf_prog *prog)
 	if (attr->link_create.flags)
 		return -EINVAL;
 
-	cgrp = cgroup_get_from_fd(attr->link_create.target_fd);
+	cgrp = cgroup_get_from_fd_v2(attr->link_create.target_fd);
 	if (IS_ERR(cgrp))
 		return PTR_ERR(cgrp);
 
@@ -1033,7 +1033,7 @@ int cgroup_bpf_prog_query(const union bpf_attr *attr,
 	struct cgroup *cgrp;
 	int ret;
 
-	cgrp = cgroup_get_from_fd(attr->query.target_fd);
+	cgrp = cgroup_get_from_fd_v2(attr->query.target_fd);
 	if (IS_ERR(cgrp))
 		return PTR_ERR(cgrp);
 

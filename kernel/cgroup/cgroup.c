@@ -6727,6 +6727,28 @@ struct cgroup *cgroup_get_from_fd(int fd)
 }
 EXPORT_SYMBOL_GPL(cgroup_get_from_fd);
 
+/**
+ * same with cgroup_get_from_fd, only add cgrp_dfl_visible check
+ */
+struct cgroup *cgroup_get_from_fd_v2(int fd)
+{
+	struct cgroup *cgrp = cgroup_v1v2_get_from_fd(fd);
+
+	if (IS_ERR(cgrp))
+		return ERR_CAST(cgrp);
+
+	if (!cgroup_on_dfl(cgrp)) {
+		cgroup_put(cgrp);
+		if (cgrp_dfl_visible)
+			return ERR_PTR(-EBADF);
+
+		cgrp = &cgrp_dfl_root.cgrp;
+		cgroup_get(cgrp);
+	}
+	return cgrp;
+}
+EXPORT_SYMBOL_GPL(cgroup_get_from_fd_v2);
+
 static u64 power_of_ten(int power)
 {
 	u64 v = 1;
