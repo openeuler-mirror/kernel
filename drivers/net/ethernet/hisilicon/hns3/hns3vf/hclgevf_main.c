@@ -16,6 +16,7 @@
 #include "hclgevf_unic_ip.h"
 #include "hclgevf_unic_guid.h"
 #include "hclgevf_unic_addr.h"
+#include "hclgevf_trace.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -58,6 +59,37 @@ MODULE_DEVICE_TABLE(pci, ae_algovf_pci_tbl);
 int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclge_desc *desc, int num)
 {
 	return hclge_comm_cmd_send(&hw->hw, desc, num);
+}
+
+void trace_hclge_comm_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
+			       int num, int is_special)
+{
+	int i;
+
+	trace_hclge_vf_cmd_send(hw, desc, 0, num);
+
+	if (is_special)
+		return;
+
+	for (i = 1; i < num; i++)
+		trace_hclge_vf_cmd_send(hw, &desc[i], i, num);
+}
+
+void trace_hclge_comm_cmd_get(struct hclge_comm_hw *hw, struct hclge_desc *desc,
+			      int num, int is_special)
+{
+	int i;
+
+	if (!HCLGE_COMM_SEND_SYNC(le16_to_cpu(desc->flag)))
+		return;
+
+	trace_hclge_vf_cmd_get(hw, desc, 0, num);
+
+	if (is_special)
+		return;
+
+	for (i = 1; i < num; i++)
+		trace_hclge_vf_cmd_get(hw, &desc[i], i, num);
 }
 
 void hclgevf_arq_init(struct hclgevf_dev *hdev)
