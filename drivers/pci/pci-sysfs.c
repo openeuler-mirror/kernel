@@ -31,6 +31,8 @@
 
 static int sysfs_initialized;	/* = 0 */
 
+static DEFINE_MUTEX(pci_sriov_numvfs_lock);
+
 /* show configuration fields */
 #define pci_config_attr(field, format_string)				\
 static ssize_t								\
@@ -604,6 +606,7 @@ static ssize_t sriov_numvfs_store(struct device *dev,
 	if (num_vfs > pci_sriov_get_totalvfs(pdev))
 		return -ERANGE;
 
+	mutex_lock(&pci_sriov_numvfs_lock);
 	device_lock(&pdev->dev);
 
 	if (num_vfs == pdev->sriov->num_VFs)
@@ -640,6 +643,7 @@ static ssize_t sriov_numvfs_store(struct device *dev,
 
 exit:
 	device_unlock(&pdev->dev);
+	mutex_unlock(&pci_sriov_numvfs_lock);
 
 	if (ret < 0)
 		return ret;
