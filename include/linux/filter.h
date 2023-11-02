@@ -1284,6 +1284,7 @@ struct bpf_sock_ops_kern {
 	u8	op;
 	u8	is_fullsock;
 	u8	remaining_opt_len;
+	u8	local_skb;
 	u64	temp;			/* temp and everything after is not
 					 * initialized to 0 before calling
 					 * the BPF program. New fields that

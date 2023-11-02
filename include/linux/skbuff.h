@@ -923,7 +923,7 @@ struct sk_buff {
 	__u32			headers_end[0];
 	/* public: */
 
-	KABI_USE(1, __u8 scm_io_uring:1)
+	KABI_USE2(1, __u8 scm_io_uring:1, __u8 local_skb:1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
