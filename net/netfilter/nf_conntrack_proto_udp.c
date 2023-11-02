@@ -37,6 +37,18 @@ static unsigned int *udp_get_timeouts(struct net *net)
 	return nf_udp_pernet(net)->timeouts;
 }
 
+static void nf_conntrack_udp_refresh_unreplied(struct nf_conn *ct,
+					       struct sk_buff *skb,
+					       enum ip_conntrack_info ctinfo,
+					       u32 extra_jiffies)
+{
+	if (unlikely(ctinfo == IP_CT_ESTABLISHED_REPLY &&
+		     ct->status & IPS_NAT_CLASH))
+		nf_ct_kill(ct);
+	else
+		nf_ct_refresh_acct(ct, ctinfo, skb, extra_jiffies);
+}
+
 /* Returns verdict for packet, and may modify conntracktype */
 static int udp_packet(struct nf_conn *ct,
 		      const struct sk_buff *skb,
@@ -58,8 +70,8 @@ static int udp_packet(struct nf_conn *ct,
 		if (!test_and_set_bit(IPS_ASSURED_BIT, &ct->status))
 			nf_conntrack_event_cache(IPCT_ASSURED, ct);
 	} else {
-		nf_ct_refresh_acct(ct, ctinfo, skb,
-				   timeouts[UDP_CT_UNREPLIED]);
+		nf_conntrack_udp_refresh_unreplied(ct, skb, ctinfo,
+						   timeouts[UDP_CT_UNREPLIED]);
 	}
 	return NF_ACCEPT;
 }
