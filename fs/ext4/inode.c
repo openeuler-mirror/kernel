@@ -1891,6 +1891,13 @@ static int __ext4_journalled_writepage(struct page *page,
 		goto out;
 	}
 
+	if (!page_has_buffers(page)) {
+		/* Check buffer valid since we ever unlock this page */
+		ext4_journal_stop(handle);
+		ClearPageDirty(page);
+		goto out;
+	}
+
 	if (inline_data) {
 		ret = ext4_mark_inode_dirty(handle, inode);
 	} else {
