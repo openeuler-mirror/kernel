@@ -71,6 +71,7 @@
 
 #define QM_AEQE_PHASE(aeqe)		((le32_to_cpu((aeqe)->dw0) >> 16) & 0x1)
 #define QM_AEQE_TYPE_SHIFT		17
+#define QM_AEQE_TYPE_MASK		0xf
 #define QM_AEQE_CQN_MASK		GENMASK(15, 0)
 #define QM_CQ_OVERFLOW			0
 #define QM_EQ_OVERFLOW			1
@@ -90,6 +91,8 @@
 #define QM_DB_PRIORITY_SHIFT_V1		48
 #define QM_PAGE_SIZE			0x0034
 #define QM_QP_DB_INTERVAL		0x10000
+#define QM_DB_TIMEOUT_CFG		0x100074
+#define QM_DB_TIMEOUT_SET		0x1fffff
 
 #define QM_MEM_START_INIT		0x100040
 #define QM_MEM_INIT_DONE		0x100044
@@ -1186,7 +1189,8 @@ static irqreturn_t qm_aeq_thread(int irq, void *data)
 	atomic64_inc(&qm->debug.dfx.aeq_irq_cnt);
 
 	while (QM_AEQE_PHASE(aeqe) == qm->status.aeqc_phase) {
-		type = le32_to_cpu(aeqe->dw0) >> QM_AEQE_TYPE_SHIFT;
+		type = (le32_to_cpu(aeqe->dw0) >> QM_AEQE_TYPE_SHIFT) &
+			QM_AEQE_TYPE_MASK;
 		qp_id = le32_to_cpu(aeqe->dw0) & QM_AEQE_CQN_MASK;
 
 		switch (type) {
@@ -5626,6 +5630,8 @@ int hisi_qm_init(struct hisi_qm *qm)
 		goto err_pci_init;
 
 	if (qm->fun_type == QM_HW_PF) {
+		/* Set the doorbell timeout to QM_DB_TIMEOUT_CFG ns. */
+		writel(QM_DB_TIMEOUT_SET, qm->io_base + QM_DB_TIMEOUT_CFG);
 		qm_disable_clock_gate(qm);
 		ret = qm_dev_mem_reset(qm);
 		if (ret) {
@@ -5793,6 +5799,8 @@ static int qm_rebuild_for_resume(struct hisi_qm *qm)
 
 	qm_cmd_init(qm);
 	hisi_qm_dev_err_init(qm);
+	/* Set the doorbell timeout to QM_DB_TIMEOUT_CFG ns. */
+	writel(QM_DB_TIMEOUT_SET, qm->io_base + QM_DB_TIMEOUT_CFG);
 	qm_disable_clock_gate(qm);
 	ret = qm_dev_mem_reset(qm);
 	if (ret)
