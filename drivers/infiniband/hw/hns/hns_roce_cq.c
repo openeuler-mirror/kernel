@@ -311,10 +311,84 @@ static int get_cq_ucmd(struct hns_roce_cq *hr_cq, struct ib_udata *udata,
 	return 0;
 }
 
-static void set_cq_param(struct hns_roce_cq *hr_cq, u32 cq_entries, int vector,
+static int set_poe_param(struct hns_roce_dev *hr_dev,
+			 struct hns_roce_cq *hr_cq,
+			 struct hns_roce_ib_create_cq *ucmd)
+{
+	if (!(ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_POE_MODE))
+		return 0;
+
+	if (!poe_is_supported(hr_dev))
+		return -EOPNOTSUPP;
+
+	if (ucmd->poe_channel >= hr_dev->poe_ctx.poe_num)
+		return -EINVAL;
+
+	if (!hr_dev->poe_ctx.poe_ch[ucmd->poe_channel].en)
+		return -EFAULT;
+
+	hr_cq->flags |= HNS_ROCE_CQ_FLAG_POE_EN;
+	hr_cq->poe_channel = ucmd->poe_channel;
+	return 0;
+}
+
+static bool is_notify_support(struct hns_roce_dev *hr_dev,
+			      enum hns_roce_notify_mode notify_mode,
+			      enum hns_roce_notify_device_en device_en)
+{
+	if (!is_write_notify_supported(hr_dev))
+		return false;
+
+	/* some configuration is not supported in HIP10 */
+	if (hr_dev->pci_dev->revision != PCI_REVISION_ID_HIP10)
+		return true;
+
+	if (notify_mode == HNS_ROCE_NOTIFY_MODE_64B_ALIGN ||
+	    device_en == HNS_ROCE_NOTIFY_DDR) {
+		ibdev_err(&hr_dev->ib_dev, "Unsupported notify_mode.\n");
+		return false;
+	}
+
+	return true;
+}
+
+static int set_write_notify_param(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_cq *hr_cq,
+				  struct hns_roce_ib_create_cq *ucmd)
+{
+#define NOTIFY_MODE_MASK 0x3
+	const struct {
+		u8 mode;
+		u8 mem_type;
+	} notify_attr[] = {
+		{HNS_ROCE_NOTIFY_MODE_64B_ALIGN, HNS_ROCE_NOTIFY_DEV},
+		{HNS_ROCE_NOTIFY_MODE_4B_ALIGN, HNS_ROCE_NOTIFY_DEV},
+		{HNS_ROCE_NOTIFY_MODE_64B_ALIGN, HNS_ROCE_NOTIFY_DDR},
+		{HNS_ROCE_NOTIFY_MODE_4B_ALIGN, HNS_ROCE_NOTIFY_DDR},
+	};
+	u8 attr = ucmd->notify_mode & NOTIFY_MODE_MASK;
+
+	if (!(ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_WRITE_WITH_NOTIFY))
+		return 0;
+
+	if (!is_notify_support(hr_dev, notify_attr[attr].mode,
+			       notify_attr[attr].mem_type))
+		return -EOPNOTSUPP;
+
+	hr_cq->flags |= HNS_ROCE_CQ_FLAG_NOTIFY_EN;
+	hr_cq->write_notify.notify_addr =
+		hr_dev->notify_tbl[ucmd->notify_idx].base_addr;
+	hr_cq->write_notify.notify_mode = notify_attr[attr].mode;
+	hr_cq->write_notify.notify_device_en = notify_attr[attr].mem_type;
+
+	return 0;
+}
+
+static int set_cq_param(struct hns_roce_cq *hr_cq, u32 cq_entries, int vector,
 			 struct hns_roce_ib_create_cq *ucmd)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(hr_cq->ib_cq.device);
+	int ret;
 
 	cq_entries = max(cq_entries, hr_dev->caps.min_cqes);
 	cq_entries = roundup_pow_of_two(cq_entries);
@@ -325,6 +399,19 @@ static void set_cq_param(struct hns_roce_cq *hr_cq, u32 cq_entries, int vector,
 	spin_lock_init(&hr_cq->lock);
 	INIT_LIST_HEAD(&hr_cq->sq_list);
 	INIT_LIST_HEAD(&hr_cq->rq_list);
+
+	if (!ucmd->create_flags)
+		return 0;
+
+	if ((ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_POE_MODE) &&
+	    (ucmd->create_flags & HNS_ROCE_CREATE_CQ_FLAGS_WRITE_WITH_NOTIFY))
+		return -EINVAL;
+
+	ret = set_poe_param(hr_dev, hr_cq, ucmd);
+	if (ret)
+		return ret;
+
+	return set_write_notify_param(hr_dev, hr_cq, ucmd);
 }
 
 static int set_cqe_size(struct hns_roce_cq *hr_cq, struct ib_udata *udata,
@@ -353,6 +440,22 @@ static int set_cqe_size(struct hns_roce_cq *hr_cq, struct ib_udata *udata,
 	return 0;
 }
 
+static void poe_ch_ref_cnt_inc(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_cq *hr_cq)
+{
+	struct hns_roce_poe_ch *poe_ch =
+		&hr_dev->poe_ctx.poe_ch[hr_cq->poe_channel];
+	refcount_inc(&poe_ch->ref_cnt);
+}
+
+static void poe_ch_ref_cnt_dec(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_cq *hr_cq)
+{
+	struct hns_roce_poe_ch *poe_ch =
+		&hr_dev->poe_ctx.poe_ch[hr_cq->poe_channel];
+	refcount_dec(&poe_ch->ref_cnt);
+}
+
 int hns_roce_create_cq(struct ib_cq *ib_cq, const struct ib_cq_init_attr *attr,
 		       struct ib_udata *udata)
 {
@@ -379,7 +482,9 @@ int hns_roce_create_cq(struct ib_cq *ib_cq, const struct ib_cq_init_attr *attr,
 
 	}
 
-	set_cq_param(hr_cq, attr->cqe, attr->comp_vector, &ucmd);
+	ret = set_cq_param(hr_cq, attr->cqe, attr->comp_vector, &ucmd);
+	if (ret)
+		goto err_out;
 
 	ret = set_cqe_size(hr_cq, udata, &ucmd);
 	if (ret)
@@ -412,6 +517,9 @@ int hns_roce_create_cq(struct ib_cq *ib_cq, const struct ib_cq_init_attr *attr,
 
 	if (udata) {
 		resp.cqn = hr_cq->cqn;
+		resp.cap_flags = hr_cq->flags;
+		if (hr_cq->flags & HNS_ROCE_CQ_FLAG_POE_EN)
+			poe_ch_ref_cnt_inc(hr_dev, hr_cq);
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
 		if (ret)
@@ -444,6 +552,8 @@ int hns_roce_destroy_cq(struct ib_cq *ib_cq, struct ib_udata *udata)
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_cq->device);
 	struct hns_roce_cq *hr_cq = to_hr_cq(ib_cq);
 
+	if (hr_cq->flags & HNS_ROCE_CQ_FLAG_POE_EN)
+		poe_ch_ref_cnt_dec(hr_dev, hr_cq);
 	free_cqc(hr_dev, hr_cq);
 	free_cqn(hr_dev, hr_cq->cqn);
 	free_cq_db(hr_dev, hr_cq, udata);

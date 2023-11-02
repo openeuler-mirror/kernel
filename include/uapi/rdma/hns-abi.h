@@ -36,15 +36,27 @@
 
 #include <linux/types.h>
 
+enum hns_roce_create_cq_create_flags {
+	HNS_ROCE_CREATE_CQ_FLAGS_POE_MODE = 1 << 0,
+	HNS_ROCE_CREATE_CQ_FLAGS_WRITE_WITH_NOTIFY = 1 << 1,
+};
+
 struct hns_roce_ib_create_cq {
 	__aligned_u64 buf_addr;
 	__aligned_u64 db_addr;
 	__u32 cqe_size;
 	__u32 reserved;
+	__aligned_u64 create_flags; /* Use enum hns_roce_create_cq_create_flags */
+	__u8 poe_channel;
+	__u8 notify_mode;
+	__u16 notify_idx;
+	__u16 rsv[2];
 };
 
 enum hns_roce_cq_cap_flags {
 	HNS_ROCE_CQ_FLAG_RECORD_DB = 1 << 0,
+	HNS_ROCE_CQ_FLAG_POE_EN = 1 << 2,
+	HNS_ROCE_CQ_FLAG_NOTIFY_EN = 1 << 3,
 };
 
 struct hns_roce_ib_create_cq_resp {
@@ -78,6 +90,10 @@ enum hns_roce_create_qp_comp_mask {
 	HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE = 1 << 1,
 };
 
+enum hns_roce_create_qp_flags {
+	HNS_ROCE_CREATE_QP_FLAGS_STARS_MODE = 1 << 0,
+};
+
 enum hns_roce_congest_type_flags {
 	HNS_ROCE_CREATE_QP_FLAGS_DCQCN = 1 << 0,
 	HNS_ROCE_CREATE_QP_FLAGS_LDCP = 1 << 1,
@@ -94,8 +110,8 @@ struct hns_roce_ib_create_qp {
 	__u8    reserved[4];
 	__u8    pageshift;
 	__aligned_u64 sdb_addr;
-	__aligned_u64 comp_mask;
-	__aligned_u64 create_flags;
+	__aligned_u64 comp_mask; /* Use enum hns_roce_create_qp_comp_mask */
+	__aligned_u64 create_flags; /* Use enum hns_roce_create_qp_flags */
 	__aligned_u64 congest_type_flags;
 };
 
@@ -107,10 +123,12 @@ enum hns_roce_qp_cap_flags {
 	HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH = 1 << 4,
 	HNS_ROCE_QP_CAP_DIRECT_WQE = 1 << 5,
 	HNS_ROCE_QP_CAP_DYNAMIC_CTX_DETACH = 1 << 6,
+	HNS_ROCE_QP_CAP_STARS_SQ_MODE = 1 << 7,
+	HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY = 1 << 8,
 };
 
 struct hns_roce_ib_create_qp_resp {
-	__aligned_u64 cap_flags;
+	__aligned_u64 cap_flags; /* Use enum hns_roce_qp_cap_flags */
 	__aligned_u64 dwqe_mmap_key;
 };
 
@@ -232,4 +250,17 @@ enum hns_ib_dca_mem_query_attrs {
 	HNS_IB_ATTR_DCA_MEM_QUERY_OUT_PAGE_COUNT,
 };
 
+#define HNS_IB_INVALID_ID 0XFFFF
+struct hns_roce_ib_hw_id {
+	__u16 chip_id;
+	__u16 die_id;
+	__u16 func_id;
+	__u16 reserved;
+};
+
+struct hns_roce_ib_query_device_resp {
+	__u32   comp_mask;
+	__u32   len;
+	struct hns_roce_ib_hw_id hw_id;
+};
 #endif /* HNS_ABI_USER_H */

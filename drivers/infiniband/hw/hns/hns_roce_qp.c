@@ -1133,6 +1133,59 @@ static void set_congest_param(struct hns_roce_dev *hr_dev,
 	default_congest_type(hr_dev, hr_qp);
 }
 
+static void set_qp_notify_param(struct hns_roce_qp *hr_qp,
+				struct ib_cq *ib_cq)
+{
+	struct hns_roce_cq *hr_cq = ib_cq ? to_hr_cq(ib_cq) : NULL;
+
+	/*
+	 * Always enable write with notify for XRC TGT since no flag
+	 * could be passed to kernel for this type of QP
+	 */
+	if ((hr_cq && hr_cq->flags & HNS_ROCE_CQ_FLAG_NOTIFY_EN) ||
+	    (hr_qp->ibqp.qp_type == IB_QPT_XRC_TGT))
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY;
+}
+
+static bool check_cq_poe_en(struct ib_cq *ib_cq)
+{
+	struct hns_roce_cq *hr_cq = ib_cq ? to_hr_cq(ib_cq) : NULL;
+
+	return hr_cq && hr_cq->flags & HNS_ROCE_CQ_FLAG_POE_EN;
+}
+
+static int set_uqp_create_flag_param(struct hns_roce_dev *hr_dev,
+				     struct hns_roce_qp *hr_qp,
+				     struct ib_qp_init_attr *init_attr,
+				     struct hns_roce_ib_create_qp *ucmd)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+
+	if (check_cq_poe_en(init_attr->recv_cq) ||
+			check_cq_poe_en(init_attr->send_cq)) {
+		if (!(ucmd->create_flags &
+					HNS_ROCE_CREATE_QP_FLAGS_STARS_MODE)) {
+			ibdev_err(ibdev,
+				  "POE CQ only support STARS QP.\n");
+			return -EINVAL;
+		}
+	}
+
+	if (!(ucmd->comp_mask & HNS_ROCE_CREATE_QP_MASK_CREATE_FLAGS))
+		return 0;
+
+	if (ucmd->create_flags & HNS_ROCE_CREATE_QP_FLAGS_STARS_MODE) {
+		if (!check_cq_poe_en(init_attr->send_cq)) {
+			ibdev_err(ibdev,
+				  "STARS QP SQ should be bound with POE CQ.\n");
+			return -EINVAL;
+		}
+
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_STARS_SQ_MODE;
+	}
+	return 0;
+}
+
 static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
 			struct ib_udata *udata,
@@ -1160,6 +1213,8 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	if (init_attr->qp_type == IB_QPT_XRC_TGT)
 		default_congest_type(hr_dev, hr_qp);
 
+	set_qp_notify_param(hr_qp, init_attr->recv_cq);
+
 	if (udata) {
 		ret = ib_copy_from_udata(ucmd, udata,
 					 min(udata->inlen, sizeof(*ucmd)));
@@ -1173,10 +1228,13 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 						ibucontext);
 		hr_qp->config = uctx->config;
 		ret = set_user_sq_size(hr_dev, &init_attr->cap, hr_qp, ucmd);
-
 		if (ret)
 			ibdev_err(ibdev, "Failed to set user SQ size, ret = %d\n",
 				  ret);
+
+		ret = set_uqp_create_flag_param(hr_dev, hr_qp, init_attr, ucmd);
+		if (ret)
+			return ret;
 		set_congest_param(hr_dev, hr_qp, ucmd);
 	} else {
 		if (init_attr->create_flags &
@@ -1209,7 +1267,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_ib_create_qp_resp resp = {};
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	struct hns_roce_ib_create_qp ucmd;
+	struct hns_roce_ib_create_qp ucmd = {};
 	int ret;
 
 	mutex_init(&hr_qp->mutex);

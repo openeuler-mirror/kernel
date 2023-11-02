@@ -42,6 +42,9 @@
 #define roce_get_field(origin, mask, shift)                                    \
 	((le32_to_cpu(origin) & (mask)) >> (u32)(shift))
 
+#define roce_get_field64(origin, mask, shift)                                    \
+	((le64_to_cpu(origin) & (mask)) >> (u32)(shift))
+
 #define roce_get_bit(origin, shift) \
 	roce_get_field((origin), (1ul << (shift)), (shift))
 

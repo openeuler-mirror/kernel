@@ -1436,9 +1436,11 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			if (likely(desc_ret == CMD_EXEC_SUCCESS))
 				continue;
 
-			dev_err_ratelimited(hr_dev->dev,
-					    "Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
-					    desc->opcode, desc_ret);
+			if (desc->opcode != HNS_ROCE_OPC_QUERY_HW_ID &&
+			    desc_ret != CMD_NOT_EXIST)
+				dev_err_ratelimited(hr_dev->dev,
+					"Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
+					desc->opcode, desc_ret);
 			ret = hns_roce_cmd_err_convert_errno(desc_ret);
 		}
 	} else {
@@ -1568,6 +1570,39 @@ static int hns_roce_cmq_query_hw_info(struct hns_roce_dev *hr_dev)
 	hr_dev->vendor_id = hr_dev->pci_dev->vendor;
 
 	return 0;
+}
+
+static void hns_roce_cmq_query_hw_id(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_hw_id_query_cmq *resp;
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	if (hr_dev->is_vf)
+		goto invalid_val;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_HW_ID, true);
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret) {
+		if (desc.retval != CMD_NOT_EXIST)
+			ibdev_warn(&hr_dev->ib_dev,
+				   "failed to query hw id, ret = %d.\n", ret);
+
+		goto invalid_val;
+	}
+
+	resp = (struct hns_roce_hw_id_query_cmq *)desc.data;
+	hr_dev->chip_id = resp->chip_id;
+	hr_dev->die_id = resp->die_id;
+	hr_dev->mac_id = resp->mac_id;
+	hr_dev->func_id = (u16)le32_to_cpu(resp->func_id);
+	return;
+
+invalid_val:
+	hr_dev->func_id = HNS_IB_INVALID_ID;
+	hr_dev->mac_id = HNS_IB_INVALID_ID;
+	hr_dev->die_id = HNS_IB_INVALID_ID;
+	hr_dev->chip_id = HNS_IB_INVALID_ID;
 }
 
 static void func_clr_hw_resetting_state(struct hns_roce_dev *hr_dev,
@@ -2413,6 +2448,9 @@ static int hns_roce_query_caps(struct hns_roce_dev *hr_dev)
 	if (!(caps->page_size_cap & PAGE_SIZE))
 		caps->page_size_cap = HNS_ROCE_V2_PAGE_SIZE_SUPPORTED;
 
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		caps->poe_ch_num = HNS_ROCE_POE_CH_NUM;
+
 	if (!hr_dev->is_vf) {
 		caps->cqe_sz = resp_a->cqe_sz;
 		caps->qpc_sz = le16_to_cpu(resp_b->qpc_sz);
@@ -2585,6 +2623,8 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		dev_err(dev, "failed to query firmware info, ret = %d.\n", ret);
 		return ret;
 	}
+
+	hns_roce_cmq_query_hw_id(hr_dev);
 
 	hr_dev->vendor_part_id = hr_dev->pci_dev->device;
 	hr_dev->sys_image_guid = be64_to_cpu(hr_dev->ib_dev.node_guid);
@@ -3810,6 +3850,44 @@ static void hns_roce_v2_cq_clean(struct hns_roce_cq *hr_cq, u32 qpn,
 	spin_unlock_irq(&hr_cq->lock);
 }
 
+static void enable_write_notify(struct hns_roce_cq *hr_cq,
+				struct hns_roce_v2_cq_context *cq_context)
+{
+	hr_reg_enable(cq_context, CQC_NOTIFY_EN);
+	hr_reg_write(cq_context, CQC_NOTIFY_DEVICE_EN,
+		     hr_cq->write_notify.notify_device_en);
+	hr_reg_write(cq_context, CQC_NOTIFY_MODE,
+		     hr_cq->write_notify.notify_mode);
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_0,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_0_M,
+					   CQC_NOTIFY_ADDR_0_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_1,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_1_M,
+					   CQC_NOTIFY_ADDR_1_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_2,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_2_M,
+					   CQC_NOTIFY_ADDR_2_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_3,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_3_M,
+					   CQC_NOTIFY_ADDR_3_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_4,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_4_M,
+					   CQC_NOTIFY_ADDR_4_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_5,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_5_M,
+					   CQC_NOTIFY_ADDR_5_S));
+	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_6,
+		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+					   CQC_NOTIFY_ADDR_6_M,
+					   CQC_NOTIFY_ADDR_6_S));
+}
+
 static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 				  struct hns_roce_cq *hr_cq, void *mb_buf,
 				  u64 *mtts, dma_addr_t dma_handle)
@@ -3825,11 +3903,18 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 	hr_reg_write(cq_context, CQC_CEQN, hr_cq->vector);
 	hr_reg_write(cq_context, CQC_CQN, hr_cq->cqn);
 
+	if (hr_cq->flags & HNS_ROCE_CQ_FLAG_POE_EN) {
+		hr_reg_enable(cq_context, CQC_POE_EN);
+		hr_reg_write(cq_context, CQC_POE_NUM, hr_cq->poe_channel);
+	}
+
+	if (hr_cq->flags & HNS_ROCE_CQ_FLAG_NOTIFY_EN)
+		enable_write_notify(hr_cq, cq_context);
+	else if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH)
+		hr_reg_enable(cq_context, CQC_STASH);
+
 	if (hr_cq->cqe_size == HNS_ROCE_V3_CQE_SIZE)
 		hr_reg_write(cq_context, CQC_CQE_SIZE, CQE_SIZE_64B);
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH)
-		hr_reg_enable(cq_context, CQC_STASH);
 
 	hr_reg_write(cq_context, CQC_CQE_CUR_BLK_ADDR_L,
 		     to_hr_hw_page_addr(mtts[0]));
@@ -4496,6 +4581,12 @@ static void set_access_flags(struct hns_roce_qp *hr_qp,
 	hr_reg_write_bool(context, QPC_EXT_ATE,
 			  access_flags & IB_ACCESS_REMOTE_ATOMIC);
 	hr_reg_clear(qpc_mask, QPC_EXT_ATE);
+
+	if ((hr_qp->en_flags & HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY) &&
+		(access_flags & IB_ACCESS_REMOTE_WRITE)) {
+		hr_reg_enable(context, QPC_WN_EN);
+		hr_reg_clear(qpc_mask, QPC_WN_EN);
+	}
 }
 
 static void set_qpc_wqe_cnt(struct hns_roce_qp *hr_qp,
@@ -4578,7 +4669,8 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	if (hr_dev->caps.qpc_sz < HNS_ROCE_V3_QPC_SZ)
 		return;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH)
+	if (!(hr_qp->en_flags & HNS_ROCE_QP_CAP_WRITE_WITH_NOTIFY) &&
+	    (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_STASH))
 		hr_reg_enable(&context->ext, QPCEX_STASH);
 }
 
@@ -7141,6 +7233,68 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+static int config_poe_addr(struct hns_roce_dev *hr_dev,
+				      u32 channel_id, u64 addr)
+{
+	struct hns_roce_poe_cfg_addr_cmq *cmd;
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_POE_ADDR, false);
+	cmd = (struct hns_roce_poe_cfg_addr_cmq *)desc.data;
+	cmd->channel_id = cpu_to_le32(channel_id);
+	cmd->poe_addr_l = cpu_to_le32(lower_32_bits(addr));
+	cmd->poe_addr_h = cpu_to_le32(upper_32_bits(addr));
+
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret)
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"configure poe channel %u addr failed, ret = %d.\n",
+			channel_id, ret);
+	return ret;
+}
+
+static int config_poe_attr(struct hns_roce_dev *hr_dev, u32 channel_id, bool en)
+{
+	struct hns_roce_poe_cfg_attr_cmq *cmd;
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_POE_ATTR, false);
+	cmd = (struct hns_roce_poe_cfg_attr_cmq *)desc.data;
+	cmd->channel_id = cpu_to_le32(channel_id);
+	cmd->rsv_en_outstd = en ? 1 : 0;
+
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret)
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"configure poe channel %u attr failed, ret = %d.\n",
+			channel_id, ret);
+	return ret;
+}
+
+static int hns_roce_cfg_poe_ch(struct hns_roce_dev *hr_dev, u32 index,
+			       u64 poe_addr)
+{
+	int ret;
+
+	if (index >= hr_dev->caps.poe_ch_num) {
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+				      "invalid POE channel %u.\n", index);
+		return -EINVAL;
+	}
+
+	ret = config_poe_addr(hr_dev, index, poe_addr);
+	if (ret)
+		return ret;
+
+	ret = config_poe_attr(hr_dev, index, !!poe_addr);
+	if (ret)
+		config_poe_addr(hr_dev, index, 0);
+
+	return ret;
+}
+
 static const struct ib_device_ops hns_roce_v2_dev_ops = {
 	.destroy_qp = hns_roce_v2_destroy_qp,
 	.modify_cq = hns_roce_v2_modify_cq,
@@ -7196,6 +7350,7 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.query_hw_counter = hns_roce_hw_v2_query_counter,
 	.config_scc_param = hns_roce_v2_config_scc_param,
 	.query_scc_param = hns_roce_v2_query_scc_param,
+	.cfg_poe_ch = hns_roce_cfg_poe_ch,
 };
 
 static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
