@@ -1,0 +1,40 @@
+* Phytium Quad Serial Peripheral Interface (QSPI)
+
+Required properties:
+- compatible: should be "phytium,qspi"
+- reg: the first contains the register
+       the second contains the memory mapping region
+- reg-names: should contain the reg names "qspi" "qspi_mm"
+- clocks: the phandle of the clock needed by the QSPI controller
+
+Optional property:
+- reg: chip-Select number
+- spi-max-frequency: max frequency of spi bus
+- spi-rx-bus-width: see ../spi/spi-bus.txt for the description
+
+Example:
+
+qspi@28014000 {
+	compatible = "phytium,qspi";
+	reg = <0x0 0x28014000 0x0 0x1000 0x0 0x0 0x0 0x10000000>;
+	reg-names = "qspi", "qspi_mm";
+	clocks = <0x4>;
+	status = "ok";
+
+	flash0@0 {
+		spi-rx-bus-width = <0x1>;
+		spi-max-frequency = <0x23c34600>;
+	};
+
+	flash1@0 {
+		reg = <0x1>;
+		spi-rx-bus-width = <0x1>;
+		spi-max-frequency = <0x23c34600>;
+	};
+
+	flash2@0 {
+		reg = <0x2>;
+		spi-rx-bus-width = <0x1>;
+		spi-max-frequency = <0x23c34600>;
+	};
+};
