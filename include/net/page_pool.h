@@ -83,6 +83,79 @@ struct page_pool_params {
 	unsigned int	offset;  /* DMA addr offset */
 };
 
+#ifdef CONFIG_PAGE_POOL_STATS
+struct page_pool_alloc_stats {
+	u64 fast; /* fast path allocations */
+	u64 slow; /* slow-path order 0 allocations */
+	u64 slow_high_order; /* slow-path high order allocations */
+	u64 empty; /* failed refills due to empty ptr ring, forcing
+		    * slow path allocation
+		    */
+	u64 refill; /* allocations via successful refill */
+	u64 waive;  /* failed refills due to numa zone mismatch */
+};
+
+struct page_pool_recycle_stats {
+	u64 cached;	/* recycling placed page in the cache. */
+	u64 cache_full; /* cache was full */
+	u64 ring;	/* recycling placed page back into ptr ring */
+	u64 ring_full;	/* page was released from page-pool because
+			 * PTR ring was full.
+			 */
+	u64 released_refcnt; /* page released because of elevated
+			      * refcnt
+			      */
+};
+
+/* This struct wraps the above stats structs so users of the
+ * page_pool_get_stats API can pass a single argument when requesting the
+ * stats for the page pool.
+ */
+struct page_pool_stats {
+	struct page_pool_alloc_stats alloc_stats;
+	struct page_pool_recycle_stats recycle_stats;
+};
+
+/* To solve the KABI issue, introduce the new statistics structure
+ * to store the member alloc_stats and recycle_stats.
+ */
+struct page_pool_raw_stats {
+	/* these stats are incremented while in softirq context */
+	struct page_pool_alloc_stats alloc_stats;
+	/* recycle stats are per-cpu to avoid locking */
+	struct page_pool_recycle_stats __percpu *recycle_stats;
+};
+
+int page_pool_ethtool_stats_get_count(void);
+u8 *page_pool_ethtool_stats_get_strings(u8 *data);
+u64 *page_pool_ethtool_stats_get(u64 *data, void *stats);
+
+/*
+ * Drivers that wish to harvest page pool stats and report them to users
+ * (perhaps via ethtool, debugfs, or another mechanism) can allocate a
+ * struct page_pool_stats call page_pool_get_stats to get stats for the specified pool.
+ */
+bool page_pool_get_stats(struct page_pool *pool,
+			 struct page_pool_stats *stats);
+#else
+
+static inline int page_pool_ethtool_stats_get_count(void)
+{
+	return 0;
+}
+
+static inline u8 *page_pool_ethtool_stats_get_strings(u8 *data)
+{
+	return data;
+}
+
+static inline u64 *page_pool_ethtool_stats_get(u64 *data, void *stats)
+{
+	return data;
+}
+
+#endif
+
 struct page_pool {
 	struct page_pool_params p;
 
@@ -134,7 +207,11 @@ struct page_pool {
 
 	u64 destroy_cnt;
 
+#ifdef CONFIG_PAGE_POOL_STATS
+	KABI_USE(1, struct page_pool_raw_stats *stats)
+#else
 	KABI_RESERVE(1)
+#endif
 };
 
 struct page *page_pool_alloc_pages(struct page_pool *pool, gfp_t gfp);
