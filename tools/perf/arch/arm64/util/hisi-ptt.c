@@ -113,6 +113,7 @@ static int hisi_ptt_recording_options(struct auxtrace_record *itr,
 			}
 			evsel->core.attr.freq = 0;
 			evsel->core.attr.sample_period = 1;
+			evsel->needs_auxtrace_mmap = true;
 			hisi_ptt_evsel = evsel;
 			opts->full_auxtrace = true;
 		}
