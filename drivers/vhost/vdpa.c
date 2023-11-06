@@ -1488,6 +1488,9 @@ static int vhost_vdpa_open(struct inode *inode, struct file *filep)
 	opened = atomic_cmpxchg(&v->opened, 0, 1);
 	if (opened)
 		return -EBUSY;
+	r = vhost_vdpa_alloc_domain(v);
+	if (r)
+		return r;
 
 	nvqs = v->nvqs;
 	r = vhost_vdpa_reset(v);
@@ -1508,19 +1511,14 @@ static int vhost_vdpa_open(struct inode *inode, struct file *filep)
 	vhost_dev_init(dev, vqs, nvqs, 0, 0, 0, false,
 		       vhost_vdpa_process_iotlb_msg);
 
-	r = vhost_vdpa_alloc_domain(v);
-	if (r)
-		goto err_alloc_domain;
-
 	vhost_vdpa_set_iova_range(v);
 
 	filep->private_data = v;
 
 	return 0;
 
-err_alloc_domain:
-	vhost_vdpa_cleanup(v);
 err:
+	vhost_vdpa_free_domain(v);
 	atomic_dec(&v->opened);
 	return r;
 }
@@ -1546,7 +1544,6 @@ static int vhost_vdpa_release(struct inode *inode, struct file *filep)
 	vhost_vdpa_unbind_mm(v);
 	vhost_vdpa_config_put(v);
 	vhost_vdpa_cleanup(v);
-	vhost_iotlb_reset(&v->resv_iotlb);
 	mutex_unlock(&d->mutex);
 
 	atomic_dec(&v->opened);
