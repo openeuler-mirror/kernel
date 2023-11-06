@@ -302,6 +302,19 @@ struct vdpa_map_file {
  * @log_sync			Synchronize logging buffer from kernel space to
  *				user space. (optional)
  *				@vdev: vdpa device
+ * @get_dev_buffer_size		Get device state buffer size. (optional)
+ *				@vdev: vdpa device
+ *				Return device status buffer size of vdpa device.
+ * @get_dev_buffer		Get device state buffer. (optional)
+ *				@vdev: vdpa device
+ *				@offset: offset of dest for saving device state.
+ *				@dest: userspace address for saving device state.
+ *				@len: device state buffer length.
+ * @set_dev_buffer		Set device state buffer. (opetional)
+ *				@vdev: vdpa device
+ *				@offset: offset of src addr of device state.
+ *				@src: userspace addr of device state
+ *				@len: device state buffer length.
  * @free:			Free resources that belongs to vDPA (optional)
  *				@vdev: vdpa device
  */
@@ -370,6 +383,13 @@ struct vdpa_config_ops {
 	int (*set_log_base)(struct vdpa_device *vdev, uint64_t base);
 	int (*set_log_size)(struct vdpa_device *vdev, uint64_t size);
 	int (*log_sync)(struct vdpa_device *vdev);
+
+	/* device state ops */
+	uint32_t (*get_dev_buffer_size)(struct vdpa_device *vdpa);
+	int (*get_dev_buffer)(struct vdpa_device *vdev, unsigned int offset,
+			      void __user *dest, unsigned int len);
+	int (*set_dev_buffer)(struct vdpa_device *vdev, unsigned int offset,
+			      const void __user *src, unsigned int len);
 
 	/* Free device resources */
 	void (*free)(struct vdpa_device *vdev);
