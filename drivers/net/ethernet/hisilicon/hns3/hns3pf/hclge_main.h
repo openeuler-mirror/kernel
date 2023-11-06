@@ -1208,7 +1208,6 @@ int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,
 			       u8 lane_num);
 int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported);
 int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode);
-struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
 void hclge_reset_task_schedule(struct hclge_dev *hdev);
 void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle);
 void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
