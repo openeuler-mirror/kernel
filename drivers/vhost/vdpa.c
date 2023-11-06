@@ -629,6 +629,21 @@ static int vhost_vdpa_set_dev_buffer(struct vhost_vdpa *v,
 	return ret;
 }
 
+static int vhost_vdpa_set_mig_state(struct vhost_vdpa *v, u8 __user *c)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+	u8 state;
+
+	if (!ops->set_mig_state)
+		return -EOPNOTSUPP;
+
+	if (get_user(state, c))
+		return -EFAULT;
+
+	return ops->set_mig_state(vdpa, state);
+}
+
 static long vhost_vdpa_set_log_base(struct vhost_vdpa *v, u64 __user *argp)
 {
 	struct vdpa_device *vdpa = v->vdpa;
@@ -888,6 +903,9 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 		break;
 	case VHOST_SET_DEV_BUFFER:
 		r = vhost_vdpa_set_dev_buffer(v, argp);
+		break;
+	case VHOST_VDPA_SET_MIG_STATE:
+		r = vhost_vdpa_set_mig_state(v, argp);
 		break;
 	default:
 		r = vhost_dev_ioctl(&v->vdev, cmd, argp);

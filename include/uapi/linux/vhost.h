@@ -197,4 +197,7 @@
 #define VHOST_SET_DEV_BUFFER _IOW(VHOST_VIRTIO, 0xb1, struct vhost_vdpa_config)
 #define VHOST_GET_DEV_BUFFER_SIZE _IOR(VHOST_VIRTIO, 0xb3, __u32)
 
+/* set device migtration state */
+#define VHOST_VDPA_SET_MIG_STATE _IOW(VHOST_VIRTIO, 0xb2, __u8)
+
 #endif
