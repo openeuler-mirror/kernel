@@ -315,6 +315,9 @@ struct vdpa_map_file {
  *				@offset: offset of src addr of device state.
  *				@src: userspace addr of device state
  *				@len: device state buffer length.
+ * @set_mig_state		Set device migration status. (optional)
+ *				@vdev: vdpa device
+ *				@status: migration status
  * @free:			Free resources that belongs to vDPA (optional)
  *				@vdev: vdpa device
  */
@@ -390,6 +393,9 @@ struct vdpa_config_ops {
 			      void __user *dest, unsigned int len);
 	int (*set_dev_buffer)(struct vdpa_device *vdev, unsigned int offset,
 			      const void __user *src, unsigned int len);
+
+	/* device mig state ops */
+	int (*set_mig_state)(struct vdpa_device *v, u8 state);
 
 	/* Free device resources */
 	void (*free)(struct vdpa_device *vdev);
