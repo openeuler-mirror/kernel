@@ -182,4 +182,7 @@ enum {
 /* Device can be resumed */
 #define VHOST_BACKEND_F_RESUME  0x5
 
+/* Device can use bytemap to deal log */
+#define VHOST_BACKEND_F_BYTEMAPLOG  0x3f
+
 #endif
