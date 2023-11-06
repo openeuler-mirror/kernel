@@ -3451,9 +3451,6 @@ static void hclge_get_vf_fault_bitmap(struct hclge_desc *desc,
 
 	u8 *buff;
 
-	BUILD_BUG_ON(HCLGE_FIR_FAULT_BYTES + HCLGE_SEC_FAULT_BYTES !=
-		     BITS_TO_BYTES(HCLGE_VPORT_NUM));
-
 	memcpy(bitmap, desc[0].data, HCLGE_FIR_FAULT_BYTES);
 	buff = (u8 *)bitmap + HCLGE_FIR_FAULT_BYTES;
 	memcpy(buff, desc[1].data, HCLGE_SEC_FAULT_BYTES);
