@@ -1,0 +1,24 @@
+* Phytium I2C/SMBus controller
+
+Required properties :
+
+ - compatible : should be "phytium,i2c"
+ - reg : Offset and length of the register set for the device
+ - interrupts : <IRQ> where IRQ is the interrupt number.
+ - clock-frequency : desired I2C bus clock frequency in Hz.
+
+Optional properties:
+
+ - interrupt-names: should be "smbus_alert" if SMBus alert
+		    interrupt is supported.
+
+Examples :
+
+	i2c0: i2c@28011000 {
+		compatible = "phytium,i2c";
+		reg = <0x0 0x28011000 0x0 0x1000>;
+		interrupts = <GIC_SPI 89 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "smbus_alert";
+		clocks = <&sysclk_48mhz>;
+	};
+
