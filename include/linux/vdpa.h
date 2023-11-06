@@ -293,6 +293,15 @@ struct vdpa_map_file {
  * @unbind_mm:			Unbind the device from the address space
  *				bound using the bind_mm callback. (optional)
  *				@vdev: vdpa device
+ * @set_log_base		Set base address for logging. (optional)
+ *				@vdev: vdpa device
+ *				@base: base address
+ * @set_log_size		Set buffer size for logging. (optional)
+ *				@vdev: vdpa device
+ *				@size: logging buffer size
+ * @log_sync			Synchronize logging buffer from kernel space to
+ *				user space. (optional)
+ *				@vdev: vdpa device
  * @free:			Free resources that belongs to vDPA (optional)
  *				@vdev: vdpa device
  */
@@ -356,6 +365,11 @@ struct vdpa_config_ops {
 			      unsigned int asid);
 	int (*bind_mm)(struct vdpa_device *vdev, struct mm_struct *mm);
 	void (*unbind_mm)(struct vdpa_device *vdev);
+
+	/* Log ops */
+	int (*set_log_base)(struct vdpa_device *vdev, uint64_t base);
+	int (*set_log_size)(struct vdpa_device *vdev, uint64_t size);
+	int (*log_sync)(struct vdpa_device *vdev);
 
 	/* Free device resources */
 	void (*free)(struct vdpa_device *vdev);
