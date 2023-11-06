@@ -43,6 +43,10 @@
  * The bit is set using an atomic 32 bit operation. */
 /* Set base address for logging. */
 #define VHOST_SET_LOG_BASE _IOW(VHOST_VIRTIO, 0x04, __u64)
+/* Set buffer size for logging */
+#define VHOST_SET_LOG_SIZE _IOW(VHOST_VIRTIO, 0x05, __u64)
+/* Synchronize logging buffer from kernel space to user space */
+#define VHOST_LOG_SYNC _IO(VHOST_VIRTIO, 0x06)
 /* Specify an eventfd file descriptor to signal on log write. */
 #define VHOST_SET_LOG_FD _IOW(VHOST_VIRTIO, 0x07, int)
 
