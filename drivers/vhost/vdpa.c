@@ -567,6 +567,68 @@ static long vhost_vdpa_resume(struct vhost_vdpa *v)
 	return ops->resume(vdpa);
 }
 
+static int vhost_vdpa_get_dev_buffer_size(struct vhost_vdpa *v,
+					  uint32_t __user *argp)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+	uint32_t size;
+
+	if (!ops->get_dev_buffer_size)
+		return -EOPNOTSUPP;
+
+	size = ops->get_dev_buffer_size(vdpa);
+
+	if (copy_to_user(argp, &size, sizeof(size)))
+		return -EFAULT;
+
+	return 0;
+}
+
+static int vhost_vdpa_get_dev_buffer(struct vhost_vdpa *v,
+				     struct vhost_vdpa_config __user *c)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+	struct vhost_vdpa_config config;
+	int ret;
+	unsigned long size = offsetof(struct vhost_vdpa_config, buf);
+
+	if (copy_from_user(&config, c, size))
+		return -EFAULT;
+
+	if (!ops->get_dev_buffer)
+		return -EOPNOTSUPP;
+
+	down_read(&vdpa->cf_lock);
+	ret = ops->get_dev_buffer(vdpa, config.off, c->buf, config.len);
+	up_read(&vdpa->cf_lock);
+
+	return ret;
+}
+
+static int vhost_vdpa_set_dev_buffer(struct vhost_vdpa *v,
+				     struct vhost_vdpa_config __user *c)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+	struct vhost_vdpa_config config;
+	int ret;
+	unsigned long size = offsetof(struct vhost_vdpa_config, buf);
+
+	if (copy_from_user(&config, c, size))
+		return -EFAULT;
+
+	if (!ops->set_dev_buffer)
+		return -EOPNOTSUPP;
+
+	down_write(&vdpa->cf_lock);
+	ret = ops->set_dev_buffer(vdpa, config.off, c->buf, config.len);
+	up_write(&vdpa->cf_lock);
+
+	return ret;
+}
+
 static long vhost_vdpa_set_log_base(struct vhost_vdpa *v, u64 __user *argp)
 {
 	struct vdpa_device *vdpa = v->vdpa;
@@ -817,6 +879,15 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 		break;
 	case VHOST_VDPA_RESUME:
 		r = vhost_vdpa_resume(v);
+		break;
+	case VHOST_GET_DEV_BUFFER_SIZE:
+		r = vhost_vdpa_get_dev_buffer_size(v, argp);
+		break;
+	case VHOST_GET_DEV_BUFFER:
+		r = vhost_vdpa_get_dev_buffer(v, argp);
+		break;
+	case VHOST_SET_DEV_BUFFER:
+		r = vhost_vdpa_set_dev_buffer(v, argp);
 		break;
 	default:
 		r = vhost_dev_ioctl(&v->vdev, cmd, argp);
