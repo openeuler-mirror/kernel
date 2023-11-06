@@ -567,6 +567,47 @@ static long vhost_vdpa_resume(struct vhost_vdpa *v)
 	return ops->resume(vdpa);
 }
 
+static long vhost_vdpa_set_log_base(struct vhost_vdpa *v, u64 __user *argp)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+	u64 log;
+
+	if (!ops->set_log_base)
+		return -EOPNOTSUPP;
+
+	if (copy_from_user(&log, argp, sizeof(uint64_t)))
+		return -EFAULT;
+
+	return ops->set_log_base(vdpa, log);
+}
+
+static long vhost_vdpa_set_log_size(struct vhost_vdpa *v, u64 __user *sizep)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+	u64 log_size;
+
+	if (!ops->set_log_size)
+		return -EOPNOTSUPP;
+
+	if (copy_from_user(&log_size, sizep, sizeof(log_size)))
+		return -EFAULT;
+
+	return ops->set_log_size(vdpa, log_size);
+}
+
+static long vhost_vdpa_log_sync(struct vhost_vdpa *v)
+{
+	struct vdpa_device *vdpa = v->vdpa;
+	const struct vdpa_config_ops *ops = vdpa->config;
+
+	if (!ops->log_sync)
+		return -EOPNOTSUPP;
+
+	return ops->log_sync(vdpa);
+}
+
 static long vhost_vdpa_vring_ioctl(struct vhost_vdpa *v, unsigned int cmd,
 				   void __user *argp)
 {
@@ -738,6 +779,14 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 			r = -EFAULT;
 		break;
 	case VHOST_SET_LOG_BASE:
+		r = vhost_vdpa_set_log_base(v, argp);
+		break;
+	case VHOST_SET_LOG_SIZE:
+		r = vhost_vdpa_set_log_size(v, argp);
+		break;
+	case VHOST_LOG_SYNC:
+		r = vhost_vdpa_log_sync(v);
+		break;
 	case VHOST_SET_LOG_FD:
 		r = -ENOIOCTLCMD;
 		break;
