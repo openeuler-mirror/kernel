@@ -44,6 +44,12 @@ static struct ctl_table smc_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &min_rcvbuf,
 	},
+	{
+		.procname	= "tcp2smc",
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 	{  }
 };
 
@@ -84,6 +90,8 @@ int __net_init smc_sysctl_net_init(struct net *net)
 	table[idx++].data = &net->smc->sysctl_wmem;
 	WRITE_ONCE(net->smc->sysctl_rmem, READ_ONCE(net->ipv4.sysctl_tcp_rmem[1]));
 	table[idx++].data = &net->smc->sysctl_rmem;
+	net->smc->sysctl_tcp2smc = 0;
+	table[idx++].data = &net->smc->sysctl_tcp2smc;
 
 	net->smc->smc_hdr = register_net_sysctl(net, "net/smc", table);
 	if (!net->smc->smc_hdr)
