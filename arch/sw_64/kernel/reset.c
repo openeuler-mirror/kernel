@@ -26,7 +26,7 @@ void fix_jm585_reset(void)
 	pdev = pci_get_device(PCI_VENDOR_ID_JMICRON,
 				0x0585, NULL);
 	if (pdev) {
-		hose = (struct pci_controller *)pdev->sysdata;
+		hose = pci_bus_to_pci_controller(pdev->bus);
 		val = read_rc_conf(hose->node, hose->index,
 				RC_PORT_LINK_CTL);
 		write_rc_conf(hose->node, hose->index,

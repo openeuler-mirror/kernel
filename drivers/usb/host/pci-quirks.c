@@ -1302,7 +1302,7 @@ fixup_usb_xhci_reset(struct pci_dev *dev)
 	u32 xhci_command;
 	u32 tmp, val;
 	void __iomem *base;
-	struct pci_controller *hose = dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 	unsigned long offset;
 	int ext_cap_offset;
 	int retries = 3;

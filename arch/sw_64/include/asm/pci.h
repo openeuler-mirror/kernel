@@ -104,7 +104,7 @@ extern struct syscore_ops iommu_cpu_syscore_ops;
 #ifdef CONFIG_PCI_DOMAINS
 static inline int pci_proc_domain(struct pci_bus *bus)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	return hose->need_domain_info;
 }
@@ -115,7 +115,7 @@ static inline int __pcibus_to_node(const struct pci_bus *bus)
 {
 	struct pci_controller *hose;
 
-	hose = bus->sysdata;
+	hose = pci_bus_to_pci_controller(bus);
 	if (!node_online(hose->node))
 		return next_node_in(hose->node, node_online_map);
 	else

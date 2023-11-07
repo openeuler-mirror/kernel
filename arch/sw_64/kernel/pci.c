@@ -64,7 +64,7 @@ static void fixup_root_complex(struct pci_dev *dev)
 {
 	int i;
 	struct pci_bus *bus = dev->bus;
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	hose->self_busno = hose->busn_space->start;
 
@@ -109,7 +109,7 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 		resource_size_t size, resource_size_t align)
 {
 	struct pci_dev *dev = data;
-	struct pci_controller *hose = dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 	unsigned long alignto;
 	resource_size_t start = res->start;
 
@@ -183,7 +183,7 @@ char *pcibios_setup(char *str)
 void pcibios_fixup_bus(struct pci_bus *bus)
 {
 	/* Propagate hose info into the subordinate devices.  */
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	struct pci_dev *dev = bus->self;
 
 	if (!dev || bus->number == hose->first_busno) {
@@ -399,7 +399,7 @@ EXPORT_SYMBOL(pci_iounmap);
 
 static void __init pcibios_reserve_legacy_regions(struct pci_bus *bus)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	resource_size_t offset;
 	struct resource *res;
 
@@ -431,7 +431,7 @@ int sw6_pcie_read_rc_cfg(struct pci_bus *bus, unsigned int devfn,
 		int where, int size, u32 *val)
 {
 	u32 data;
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	void __iomem *cfg_iobase = hose->rc_config_space_base;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
@@ -473,7 +473,7 @@ int sw6_pcie_write_rc_cfg(struct pci_bus *bus, unsigned int devfn,
 {
 	u32 data;
 	u32 shift = 8 * (where & 3);
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	void __iomem *cfg_iobase = (void *)hose->rc_config_space_base;
 
 	if ((uintptr_t)where & (size - 1))
@@ -507,7 +507,7 @@ int sw6_pcie_write_rc_cfg(struct pci_bus *bus, unsigned int devfn,
 int sw6_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
 		int where, int size, u32 *val)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	int ret = PCIBIOS_DEVICE_NOT_FOUND;
 
 	if (is_guest_or_emul())
@@ -530,7 +530,7 @@ int sw6_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
 int sw6_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
 		int where, int size, u32 val)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	if (is_guest_or_emul())
 		return pci_generic_config_write(bus, devfn, where, size, val);
@@ -552,7 +552,7 @@ int sw6_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
  */
 static bool sw6_pcie_valid_device(struct pci_bus *bus, unsigned int devfn)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	if (is_in_host()) {
 		/* Only one device down on each root complex */
@@ -575,7 +575,7 @@ static bool sw6_pcie_valid_device(struct pci_bus *bus, unsigned int devfn)
 static void __iomem *sw6_pcie_map_bus(struct pci_bus *bus,
 		unsigned int devfn, int where)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	void __iomem *cfg_iobase;
 	unsigned long relbus;
 
@@ -772,7 +772,7 @@ EXPORT_SYMBOL(dma_ops);
 #ifdef CONFIG_DCA
 static void enable_sw_dca(struct pci_dev *dev)
 {
-	struct pci_controller *hose = (struct pci_controller *)dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 	unsigned long node, rc_index, dca_ctl, dca_conf;
 	int i;
 

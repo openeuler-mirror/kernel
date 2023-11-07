@@ -90,7 +90,7 @@ int chip_setup_vt_msix_irq(struct pci_dev *dev, struct msi_desc *desc)
 	int virq, val_node = 0;
 	struct irq_data *irq_data;
 	struct sw64_msi_chip_data *cdata;
-	struct pci_controller *hose = (struct pci_controller *)dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 	unsigned long flags, node, rc_index;
 	const struct cpumask *mask;
 
@@ -158,7 +158,7 @@ EXPORT_SYMBOL(chip_setup_vt_msix_irq);
 int chip_setup_vt_msi_irqs(struct pci_dev *dev, int nvec, int type)
 {
 	struct msi_desc *desc;
-	struct pci_controller *hose = (struct pci_controller *)dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 	struct irq_data *irq_data;
 	struct sw64_msi_chip_data *cdata;
 	unsigned long node, rc_index;

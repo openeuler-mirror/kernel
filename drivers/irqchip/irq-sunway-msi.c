@@ -138,7 +138,7 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 
 	/* update new setting */
 	entry = irq_get_msi_desc(irqd->irq);
-	hose = (struct pci_controller *)msi_desc_to_pci_sysdata(entry);
+	hose = pci_bus_to_pci_controller(msi_desc_to_pci_dev(entry)->bus);
 	spin_lock(&cdata->cdata_lock);
 	per_cpu(vector_irq, cpu)[vector] = irqd->irq;
 	msi_config = set_piu_msi_config(hose, cpu, cdata->msi_config_index, vector);
@@ -273,7 +273,7 @@ static void sw64_vector_free_irqs(struct irq_domain *domain,
 			cdata = irq_data->chip_data;
 			entry = irq_get_msi_desc(virq + i);
 			if (entry) {
-				hose = (struct pci_controller *)msi_desc_to_pci_sysdata(entry);
+				hose = pci_bus_to_pci_controller(msi_desc_to_pci_dev(entry)->bus);
 				clear_bit(cdata->msi_config_index, hose->piu_msiconfig);
 			}
 			irq_domain_reset_irq_data(irq_data);
@@ -317,7 +317,8 @@ static int sw64_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 
 	if (arg == NULL)
 		return -ENODEV;
-	hose = info->msi_dev->sysdata;
+
+	hose = pci_bus_to_pci_controller(info->msi_dev->bus);
 	err = assign_irq_vector(virq, nr_irqs, domain, hose);
 	if (err)
 		goto error;

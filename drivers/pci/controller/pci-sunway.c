@@ -268,7 +268,7 @@ static unsigned long get_rc_enable(unsigned long node)
 
 static int map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-	struct pci_controller *hose = dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 
 	if (pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT)
 		return hose->service_irq;
