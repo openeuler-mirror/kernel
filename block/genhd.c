@@ -786,6 +786,7 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 	if (register_queue)
 		elevator_init_mq(disk->queue);
 
+	retval = -EINVAL;
 	/* minors == 0 indicates to use ext devt from part0 and should
 	 * be accompanied with EXT_DEVT flag.  Make sure all
 	 * parameters make sense.
@@ -796,7 +797,7 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 
 	retval = blk_alloc_devt(&disk->part0, &devt);
 	if (retval)
-		return retval;
+		goto out_exit_elevator;
 	disk->major = MAJOR(devt);
 	disk->first_minor = MINOR(devt);
 
@@ -922,7 +923,14 @@ out_unregister_bdi:
 		bdi_unregister(disk->queue->backing_dev_info);
 out_free_ext_minor:
 	blk_free_devt(devt);
-	return WARN_ON_ONCE(retval); /* keep until all callers handle errors */
+out_exit_elevator:
+	if (register_queue && disk->queue->elevator) {
+		mutex_lock(&disk->queue->sysfs_lock);
+		elevator_exit(disk->queue, disk->queue->elevator);
+		mutex_unlock(&disk->queue->sysfs_lock);
+	}
+	WARN_ON_ONCE(retval); /* keep until all callers handle errors */
+	return retval;
 }
 
 void device_add_disk(struct device *parent, struct gendisk *disk,
