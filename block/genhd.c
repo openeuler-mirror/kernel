@@ -917,6 +917,11 @@ out_del_integrity:
 out_del_block_link:
 	if (!sysfs_deprecated)
 		sysfs_remove_link(block_depr, kobject_name(&ddev->kobj));
+	/*
+	 * The error path needs to set memalloc_noio to false
+	 * consistent with del_gendisk.
+	 */
+	 pm_runtime_set_memalloc_noio(ddev, false);
 out_device_del:
 	device_del(ddev);
 out_unregister_region:
