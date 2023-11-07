@@ -687,55 +687,6 @@ static int exact_lock(dev_t devt, void *data)
 	return 0;
 }
 
-static void register_disk(struct device *parent, struct gendisk *disk,
-			  const struct attribute_group **groups)
-{
-	struct device *ddev = disk_to_dev(disk);
-	int err;
-
-	ddev->parent = parent;
-
-	dev_set_name(ddev, "%s", disk->disk_name);
-
-	/* delay uevents, until we scanned partition table */
-	dev_set_uevent_suppress(ddev, 1);
-
-	if (groups) {
-		WARN_ON(ddev->groups);
-		ddev->groups = groups;
-	}
-	if (device_add(ddev))
-		return;
-	if (!sysfs_deprecated) {
-		err = sysfs_create_link(block_depr, &ddev->kobj,
-					kobject_name(&ddev->kobj));
-		if (err) {
-			device_del(ddev);
-			return;
-		}
-	}
-
-	/*
-	 * avoid probable deadlock caused by allocating memory with
-	 * GFP_KERNEL in runtime_resume callback of its all ancestor
-	 * devices
-	 */
-	pm_runtime_set_memalloc_noio(ddev, true);
-
-	disk->part0.holder_dir = kobject_create_and_add("holders", &ddev->kobj);
-	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
-
-	if (disk->flags & GENHD_FL_HIDDEN)
-		return;
-
-	if (disk->queue->backing_dev_info->dev) {
-		err = sysfs_create_link(&ddev->kobj,
-			  &disk->queue->backing_dev_info->dev->kobj,
-			  "bdi");
-		WARN_ON(err);
-	}
-}
-
 int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
 {
 	struct block_device *bdev;
@@ -820,6 +771,7 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 			      const struct attribute_group **groups,
 			      bool register_queue)
 {
+	struct device *ddev = disk_to_dev(disk);
 	dev_t devt;
 	int retval;
 
@@ -859,18 +811,57 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 		disk->flags |= GENHD_FL_NO_PART_SCAN;
 	} else {
 		struct backing_dev_info *bdi = disk->queue->backing_dev_info;
-		struct device *dev = disk_to_dev(disk);
 		int ret;
 
 		/* Register BDI before referencing it from bdev */
-		dev->devt = devt;
+		ddev->devt = devt;
 		ret = bdi_register(bdi, "%u:%u", MAJOR(devt), MINOR(devt));
 		WARN_ON(ret);
-		bdi_set_owner(bdi, dev);
+		bdi_set_owner(bdi, ddev);
 		blk_register_region(disk_devt(disk), disk->minors, NULL,
 				    exact_match, exact_lock, disk);
 	}
-	register_disk(parent, disk, groups);
+
+	/* delay uevents, until we scanned partition table */
+	dev_set_uevent_suppress(ddev, 1);
+
+	ddev->parent = parent;
+	if (groups) {
+		WARN_ON(ddev->groups);
+		ddev->groups = groups;
+	}
+	dev_set_name(ddev, "%s", disk->disk_name);
+	if (device_add(ddev))
+		return;
+	if (!sysfs_deprecated) {
+		retval = sysfs_create_link(block_depr, &ddev->kobj,
+					kobject_name(&ddev->kobj));
+		if (retval) {
+			device_del(ddev);
+			return;
+		}
+	}
+
+	/*
+	 * avoid probable deadlock caused by allocating memory with
+	 * GFP_KERNEL in runtime_resume callback of its all ancestor
+	 * devices
+	 */
+	pm_runtime_set_memalloc_noio(ddev, true);
+
+	disk->part0.holder_dir =
+		kobject_create_and_add("holders", &ddev->kobj);
+	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
+
+	if (!(disk->flags & GENHD_FL_HIDDEN)) {
+		if (disk->queue->backing_dev_info->dev) {
+			retval = sysfs_create_link(&ddev->kobj,
+				&disk->queue->backing_dev_info->dev->kobj,
+				"bdi");
+			WARN_ON(retval);
+		}
+	}
+
 	if (register_queue)
 		blk_register_queue(disk);
 
