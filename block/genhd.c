@@ -925,19 +925,36 @@ out_free_ext_minor:
 	return WARN_ON_ONCE(retval); /* keep until all callers handle errors */
 }
 
-int device_add_disk(struct device *parent, struct gendisk *disk,
+void device_add_disk(struct device *parent, struct gendisk *disk,
+		     const struct attribute_group **groups)
+
+{
+	__device_add_disk(parent, disk, groups, true);
+}
+EXPORT_SYMBOL(device_add_disk);
+
+
+int __must_check device_add_disk_safe(struct device *parent,
+		     struct gendisk *disk,
 		     const struct attribute_group **groups)
 
 {
 	return __device_add_disk(parent, disk, groups, true);
 }
-EXPORT_SYMBOL(device_add_disk);
+EXPORT_SYMBOL(device_add_disk_safe);
 
 void device_add_disk_no_queue_reg(struct device *parent, struct gendisk *disk)
 {
 	__device_add_disk(parent, disk, NULL, false);
 }
 EXPORT_SYMBOL(device_add_disk_no_queue_reg);
+
+int __must_check device_add_disk_no_queue_reg_safe(struct device *parent,
+						   struct gendisk *disk)
+{
+	return __device_add_disk(parent, disk, NULL, false);
+}
+EXPORT_SYMBOL(device_add_disk_no_queue_reg_safe);
 
 static void invalidate_partition(struct gendisk *disk, int partno)
 {
