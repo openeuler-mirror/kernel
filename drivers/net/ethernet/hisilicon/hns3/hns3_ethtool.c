@@ -303,6 +303,7 @@ static int hns3_lp_run_test(struct net_device *ndev, enum hnae3_loop mode)
 			good_cnt++;
 		} else {
 			kfree_skb(skb);
+			skb = NULL;
 			netdev_err(ndev, "hns3_lb_run_test xmit failed: %d\n",
 				   tx_ret);
 		}

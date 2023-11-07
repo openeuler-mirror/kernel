@@ -5441,6 +5441,7 @@ static void hclge_fd_free_node(struct hclge_dev *hdev,
 {
 	hlist_del(&rule->rule_node);
 	kfree(rule);
+	rule = NULL;
 	hclge_sync_fd_state(hdev);
 }
 
@@ -5465,6 +5466,7 @@ static void hclge_update_fd_rule_node(struct hclge_dev *hdev,
 		new_rule->rule_node.pprev = old_rule->rule_node.pprev;
 		memcpy(old_rule, new_rule, sizeof(*old_rule));
 		kfree(new_rule);
+		new_rule = NULL;
 		break;
 	case HCLGE_FD_DELETED:
 		hclge_fd_dec_rule_cnt(hdev, old_rule->location);
@@ -9031,6 +9033,7 @@ static void hclge_update_mac_node(struct hclge_mac_node *mac_node,
 		if (mac_node->state == HCLGE_MAC_TO_ADD) {
 			list_del(&mac_node->node);
 			kfree(mac_node);
+			mac_node = NULL;
 		} else {
 			mac_node->state = HCLGE_MAC_TO_DEL;
 		}
@@ -9661,6 +9664,7 @@ static void hclge_uninit_vport_mac_list(struct hclge_vport *vport,
 		case HCLGE_MAC_TO_ADD:
 			list_del(&mac_node->node);
 			kfree(mac_node);
+			mac_node = NULL;
 			break;
 		}
 	}
