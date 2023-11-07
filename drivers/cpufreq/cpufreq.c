@@ -1200,12 +1200,12 @@ static int cpufreq_online(unsigned int cpu)
 		down_write(&policy->rwsem);
 		policy->cpu = cpu;
 		policy->governor = NULL;
-		up_write(&policy->rwsem);
 	} else {
 		new_policy = true;
 		policy = cpufreq_policy_alloc(cpu);
 		if (!policy)
 			return -ENOMEM;
+		down_write(&policy->rwsem);
 	}
 
 	cpumask_copy(policy->cpus, cpumask_of(cpu));
@@ -1222,8 +1222,6 @@ static int cpufreq_online(unsigned int cpu)
 	ret = cpufreq_table_validate_and_sort(policy);
 	if (ret)
 		goto out_exit_policy;
-
-	down_write(&policy->rwsem);
 
 	if (new_policy) {
 		/* related_cpus should at least include policy->cpus. */
@@ -1335,13 +1333,14 @@ out_destroy_policy:
 		remove_cpu_dev_symlink(policy, get_cpu_device(j));
 
 	cpumask_clear(policy->cpus);
-	up_write(&policy->rwsem);
 
 out_exit_policy:
 	if (cpufreq_driver->exit)
 		cpufreq_driver->exit(policy);
 
 out_free_policy:
+	up_write(&policy->rwsem);
+
 	cpufreq_policy_free(policy);
 	return ret;
 }
