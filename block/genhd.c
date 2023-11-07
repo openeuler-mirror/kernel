@@ -651,11 +651,11 @@ static char *bdevt_str(dev_t devt, char *buf)
  * The hash chain is sorted on range, so that subranges can override.
  * Add error handling.
  */
-int blk_register_region(dev_t devt, unsigned long range, struct module *module,
+void blk_register_region(dev_t devt, unsigned long range, struct module *module,
 			 struct kobject *(*probe)(dev_t, int *, void *),
 			 int (*lock)(dev_t, void *), void *data)
 {
-	return kobj_map(bdev_map, devt, range, module, probe, lock, data);
+	kobj_map(bdev_map, devt, range, module, probe, lock, data);
 }
 
 EXPORT_SYMBOL(blk_register_region);
@@ -816,8 +816,8 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 		if (retval)
 			goto out_free_ext_minor;
 		bdi_set_owner(bdi, ddev);
-		retval = blk_register_region(disk_devt(disk), disk->minors,
-				NULL, exact_match, exact_lock, disk);
+		retval = kobj_map(bdev_map, disk_devt(disk), disk->minors, NULL,
+				  exact_match, exact_lock, disk);
 		if (retval)
 			goto out_unregister_bdi;
 	}
