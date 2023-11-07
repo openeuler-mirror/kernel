@@ -858,11 +858,15 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 
 	disk->part0.holder_dir =
 		kobject_create_and_add("holders", &ddev->kobj);
-	if (!disk->part0.holder_dir)
+	if (!disk->part0.holder_dir) {
+		retval = -ENOMEM;
 		goto out_del_integrity;
+	}
 	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
-	if (!disk->slave_dir)
+	if (!disk->slave_dir) {
+		retval = -ENOMEM;
 		goto out_put_holder_dir;
+	}
 
 	if (!(disk->flags & GENHD_FL_HIDDEN)) {
 		retval = sysfs_create_link(&ddev->kobj,
