@@ -849,6 +849,8 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	 */
 	pm_runtime_set_memalloc_noio(ddev, true);
 
+	blk_integrity_add(disk);
+
 	disk->part0.holder_dir =
 		kobject_create_and_add("holders", &ddev->kobj);
 	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
@@ -872,7 +874,6 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	WARN_ON_ONCE(!blk_get_queue(disk->queue));
 
 	disk_add_events(disk);
-	blk_integrity_add(disk);
 
 	/* Make sure the first partition scan will be proceed */
 	if (get_capacity(disk) && disk_part_scan_enabled(disk))
