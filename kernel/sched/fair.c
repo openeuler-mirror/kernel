@@ -7413,7 +7413,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int ret;
 #endif
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	int idlest_cpu = 0;
+	int idlest_cpu = -1;
 #endif
 
 	time = schedstat_start_time();
@@ -7526,7 +7526,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	rcu_read_unlock();
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	if (!cpumask_test_cpu(new_cpu, p->select_cpus)) {
+	if (idlest_cpu != -1 && !cpumask_test_cpu(new_cpu, p->select_cpus)) {
 		new_cpu = idlest_cpu;
 		schedstat_inc(p->se.statistics.nr_wakeups_force_preferred_cpus);
 	}
