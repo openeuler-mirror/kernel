@@ -255,6 +255,11 @@ S:	Maintained
 F:	drivers/infiniband/hw/xsc
 F:	drivers/net/ethernet/yunsilicon/xsc
 
+MUCSE Ethernet Controller DRIVERS
+M:      Yibo Dong <dong100@mucse.com>
+S:      Maintained
+F:      drivers/net/ethernet/mucse/
+
 THE REST
 M:	xiexiuqi@huawei.com
 M:	zhengzengkai@huawei.com
