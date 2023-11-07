@@ -204,8 +204,8 @@ struct iommu_iotlb_gather {
 	unsigned long		start;
 	unsigned long		end;
 	size_t			pgsize;
-	struct page		*freelist;
-	bool			queued;
+	KABI_EXTEND(struct page	*freelist)
+	KABI_EXTEND(bool	queued)
 };
 
 /**
