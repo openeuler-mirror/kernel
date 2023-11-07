@@ -305,11 +305,11 @@ extern bool disk_has_partitions(struct gendisk *disk);
 
 /* block/genhd.c */
 extern unsigned int part_in_flight(struct hd_struct *part);
-extern void device_add_disk(struct device *parent, struct gendisk *disk,
+extern int device_add_disk(struct device *parent, struct gendisk *disk,
 			    const struct attribute_group **groups);
-static inline void add_disk(struct gendisk *disk)
+static inline int add_disk(struct gendisk *disk)
 {
-	device_add_disk(NULL, disk, NULL);
+	return device_add_disk(NULL, disk, NULL);
 }
 extern void device_add_disk_no_queue_reg(struct device *parent, struct gendisk *disk);
 static inline void add_disk_no_queue_reg(struct gendisk *disk)
