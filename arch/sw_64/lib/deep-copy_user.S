@@ -25,6 +25,7 @@
 	.ent __copy_user
 __copy_user:
 	.prologue 0
+	.set noreorder
 	bis	$31, $31, $7
 #if defined(CONFIG_SUBARCH_C3B)
 #include "deep-copy_template.S"
