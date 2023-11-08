@@ -17,9 +17,8 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/barrier.h>
+#include <asm/pci_impl.h>
 #include "trace.h"
-
-#include "../kernel/pci_impl.h"
 
 static unsigned long shtclock_offset;
 

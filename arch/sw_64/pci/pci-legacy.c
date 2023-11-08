@@ -6,8 +6,7 @@
 #include <linux/syscore_ops.h>
 
 #include <asm/sw64_init.h>
-
-#include "pci_impl.h"
+#include <asm/pci_impl.h>
 
 unsigned long rc_linkup;
 

@@ -14,11 +14,10 @@
 #include <asm/kvm_mmu.h>
 #include <asm/barrier.h>
 #include <asm/core.h>
+#include <asm/pci_impl.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
-
-#include "../kernel/pci_impl.h"
 
 bool set_msi_flag;
 

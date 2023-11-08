@@ -19,11 +19,10 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/barrier.h>
+#include <asm/pci_impl.h>
+
 #include "trace.h"
-
-#include "../kernel/pci_impl.h"
 #include "vmem.c"
-
 
 __read_mostly bool bind_vcpu_enabled;
 

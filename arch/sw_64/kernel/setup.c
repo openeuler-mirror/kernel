@@ -34,9 +34,9 @@
 #include <asm/mmu_context.h>
 #include <asm/sw64_init.h>
 #include <asm/timer.h>
+#include <asm/pci_impl.h>
 
 #include "proto.h"
-#include "pci_impl.h"
 
 #undef DEBUG_DISCONTIG
 #ifdef DEBUG_DISCONTIG

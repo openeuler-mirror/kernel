@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * arch/sw_64/kernel/pci-sysfs.c
- *
- * Copyright (C) 2009 Ivan Kokshaysky
- *
+/**
  * Sw_64 PCI resource files.
  *
  * Loosely based on generic HAVE_PCI_MMAP implementation in
