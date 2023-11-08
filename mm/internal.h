@@ -614,4 +614,6 @@ extern int is_pagecache_reading_kernel_recovery_enable(void);
 extern int is_get_user_kernel_recovery_enable(void);
 #endif
 
+DECLARE_PER_CPU(struct per_cpu_nodestat, boot_nodestats);
+
 #endif	/* __MM_INTERNAL_H */

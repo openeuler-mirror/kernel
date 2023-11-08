@@ -920,18 +920,20 @@ static void reset_node_present_pages(pg_data_t *pgdat)
 }
 
 /* we are OK calling __meminit stuff here - we have CONFIG_MEMORY_HOTPLUG */
-static pg_data_t __ref *hotadd_new_pgdat(int nid, u64 start)
+static pg_data_t __ref *hotadd_init_pgdat(int nid, u64 start)
 {
 	struct pglist_data *pgdat;
 	unsigned long start_pfn = PFN_DOWN(start);
 
 	pgdat = NODE_DATA(nid);
-	if (!pgdat) {
-		pgdat = arch_alloc_nodedata(nid);
-		if (!pgdat)
-			return NULL;
 
-		arch_refresh_nodedata(nid, pgdat);
+	/*
+	 * NODE_DATA is preallocated (free_area_init) but its internal
+	 * state is not allocated completely. Add missing pieces.
+	 * Completely offline nodes stay around and they just need
+	 * reintialization.
+	 */
+	if (pgdat->per_cpu_nodestats == &boot_nodestats) {
 	} else {
 		/*
 		 * Reset the nr_zones, order and classzone_idx before reuse.
@@ -943,10 +945,7 @@ static pg_data_t __ref *hotadd_new_pgdat(int nid, u64 start)
 		pgdat->kswapd_classzone_idx = 0;
 	}
 
-	/* we can use NODE_DATA(nid) from here */
-
-	pgdat->node_id = nid;
-	pgdat->node_start_pfn = start_pfn;
+	pgdat->node_start_pfn = 0;
 
 	/* init node's zones as empty zones, we don't have any present pages.*/
 	free_area_init_core_hotplug(nid);
@@ -1000,7 +999,7 @@ static int __try_online_node(int nid, u64 start, bool set_node_online)
 	if (node_online(nid))
 		return 0;
 
-	pgdat = hotadd_new_pgdat(nid, start);
+	pgdat = hotadd_init_pgdat(nid, start);
 	if (!pgdat) {
 		pr_err("Cannot online node %d due to NULL pgdat\n", nid);
 		ret = -ENOMEM;
@@ -1123,9 +1122,6 @@ int __ref add_memory_resource(int nid, struct resource *res)
 
 	return ret;
 error:
-	/* rollback pgdat allocation and others */
-	if (new_node)
-		rollback_node_hotadd(nid);
 	memblock_remove(start, size);
 	mem_hotplug_done();
 	return ret;
