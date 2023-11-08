@@ -110,6 +110,14 @@
 #define SYS_DC_ISW			sys_insn(1, 0, 7, 6, 2)
 #define SYS_DC_CSW			sys_insn(1, 0, 7, 10, 2)
 #define SYS_DC_CISW			sys_insn(1, 0, 7, 14, 2)
+#define SYS_BRB_IALL			sys_insn(1, 1, 7, 2, 4)
+#define SYS_BRB_INJ			sys_insn(1, 1, 7, 2, 5)
+
+/*
+ * BRBE Instructions
+ */
+#define BRB_IALL_INSN			__emit_inst(0xd5000000 | SYS_BRB_IALL | (0x1f))
+#define BRB_INJ_INSN			__emit_inst(0xd5000000 | SYS_BRB_INJ  | (0x1f))
 
 /*
  * System registers, organised loosely by encoding but grouped together

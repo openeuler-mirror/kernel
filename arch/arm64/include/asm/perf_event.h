@@ -250,6 +250,18 @@ extern unsigned long perf_misc_flags(struct pt_regs *regs);
 #define perf_misc_flags(regs)	perf_misc_flags(regs)
 #define perf_arch_bpf_user_pt_regs(regs) &regs->user_regs
 
+#ifdef CONFIG_ARM64_BRBE
+void armv8pmu_branch_reset(void);
+void armv8pmu_branch_probe(struct arm_pmu *arm_pmu);
+bool armv8pmu_branch_attr_valid(struct perf_event *event);
+void armv8pmu_branch_enable(struct perf_event *event);
+void armv8pmu_branch_disable(struct perf_event *event);
+void armv8pmu_branch_read(struct pmu_hw_events *cpuc,
+			  struct perf_event *event);
+void armv8pmu_branch_save(struct arm_pmu *arm_pmu, void *ctx);
+int armv8pmu_task_ctx_cache_alloc(struct arm_pmu *arm_pmu);
+void armv8pmu_task_ctx_cache_free(struct arm_pmu *arm_pmu);
+#else  /* !CONFIG_ARM64_BRBE */
 static inline void armv8pmu_branch_reset(void)
 {
 }
@@ -288,6 +300,7 @@ static inline int armv8pmu_task_ctx_cache_alloc(struct arm_pmu *arm_pmu)
 static inline void armv8pmu_task_ctx_cache_free(struct arm_pmu *arm_pmu)
 {
 }
+#endif /* CONFIG_ARM64_BRBE */
 #endif
 
 #define perf_arch_fetch_caller_regs(regs, __ip) { \
