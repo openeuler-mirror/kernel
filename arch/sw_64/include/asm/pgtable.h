@@ -83,7 +83,7 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 #define VMALLOC_END	(-PGDIR_SIZE)
 #else
 #define VMEMMAP_END	(-PGDIR_SIZE)
-#define vmemmap		((struct page *)VMEMMAP_END - (1UL << (3 * (PAGE_SHIFT - 3))))
+#define vmemmap		((struct page *)VMEMMAP_END - (1UL << (MAX_PHYSMEM_BITS - PAGE_SHIFT)))
 #define VMALLOC_END	((unsigned long)vmemmap)
 #endif
 
