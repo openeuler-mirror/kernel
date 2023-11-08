@@ -790,7 +790,7 @@ static int sunway_iommu_init(void)
 
 	return 1;
 }
-device_initcall(sunway_iommu_init);
+subsys_initcall_sync(sunway_iommu_init);
 
 /*******************************************************************************
  *
