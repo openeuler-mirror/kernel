@@ -40,10 +40,13 @@ static DEFINE_IDR(ext_devt_idr);
 
 static void disk_check_events(struct disk_events *ev,
 			      unsigned int *clearing_ptr);
-static void disk_alloc_events(struct gendisk *disk);
+static int disk_alloc_events(struct gendisk *disk);
 static void disk_add_events(struct gendisk *disk);
 static void disk_del_events(struct gendisk *disk);
 static void disk_release_events(struct gendisk *disk);
+static struct device_attribute dev_attr_events;
+static struct device_attribute dev_attr_events_async;
+static struct device_attribute dev_attr_events_poll_msecs;
 
 /*
  * Set disk capacity and notify if the size is not currently
@@ -646,6 +649,7 @@ static char *bdevt_str(dev_t devt, char *buf)
  * Register device numbers dev..(dev+range-1)
  * range must be nonzero
  * The hash chain is sorted on range, so that subranges can override.
+ * Add error handling.
  */
 void blk_register_region(dev_t devt, unsigned long range, struct module *module,
 			 struct kobject *(*probe)(dev_t, int *, void *),
@@ -685,55 +689,6 @@ static int exact_lock(dev_t devt, void *data)
 	if (!get_disk_and_module(p))
 		return -1;
 	return 0;
-}
-
-static void register_disk(struct device *parent, struct gendisk *disk,
-			  const struct attribute_group **groups)
-{
-	struct device *ddev = disk_to_dev(disk);
-	int err;
-
-	ddev->parent = parent;
-
-	dev_set_name(ddev, "%s", disk->disk_name);
-
-	/* delay uevents, until we scanned partition table */
-	dev_set_uevent_suppress(ddev, 1);
-
-	if (groups) {
-		WARN_ON(ddev->groups);
-		ddev->groups = groups;
-	}
-	if (device_add(ddev))
-		return;
-	if (!sysfs_deprecated) {
-		err = sysfs_create_link(block_depr, &ddev->kobj,
-					kobject_name(&ddev->kobj));
-		if (err) {
-			device_del(ddev);
-			return;
-		}
-	}
-
-	/*
-	 * avoid probable deadlock caused by allocating memory with
-	 * GFP_KERNEL in runtime_resume callback of its all ancestor
-	 * devices
-	 */
-	pm_runtime_set_memalloc_noio(ddev, true);
-
-	disk->part0.holder_dir = kobject_create_and_add("holders", &ddev->kobj);
-	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
-
-	if (disk->flags & GENHD_FL_HIDDEN)
-		return;
-
-	if (disk->queue->backing_dev_info->dev) {
-		err = sysfs_create_link(&ddev->kobj,
-			  &disk->queue->backing_dev_info->dev->kobj,
-			  "bdi");
-		WARN_ON(err);
-	}
 }
 
 int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
@@ -813,16 +768,20 @@ static void disk_init_partition(struct gendisk *disk)
  *
  * This function registers the partitioning information in @disk
  * with the kernel.
- *
- * FIXME: error handling
  */
-static void __device_add_disk(struct device *parent, struct gendisk *disk,
+static int __device_add_disk(struct device *parent, struct gendisk *disk,
 			      const struct attribute_group **groups,
 			      bool register_queue)
 {
+	struct device *ddev = disk_to_dev(disk);
 	dev_t devt;
 	int retval;
 
+	/*
+	 * Take an extra ref on queue which will be put on disk_release()
+	 * so that it sticks around as long as @disk is there.
+	 */
+	WARN_ON_ONCE(!blk_get_queue(disk->queue));
 	/*
 	 * The disk queue should now be all set with enough information about
 	 * the device for the elevator code to pick an adequate default
@@ -832,6 +791,7 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	if (register_queue)
 		elevator_init_mq(disk->queue);
 
+	retval = -EINVAL;
 	/* minors == 0 indicates to use ext devt from part0 and should
 	 * be accompanied with EXT_DEVT flag.  Make sure all
 	 * parameters make sense.
@@ -840,15 +800,15 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	WARN_ON(!disk->minors &&
 		!(disk->flags & (GENHD_FL_EXT_DEVT | GENHD_FL_HIDDEN)));
 
+	if (disk->minors != 0 && (disk->first_minor > MINORMASK ||
+		disk->minors > (1U << MINORBITS) ||
+		disk->first_minor + disk->minors > (1U << MINORBITS)))
+		goto out_exit_elevator;
 	retval = blk_alloc_devt(&disk->part0, &devt);
-	if (retval) {
-		WARN_ON(1);
-		return;
-	}
+	if (retval)
+		goto out_exit_elevator;
 	disk->major = MAJOR(devt);
 	disk->first_minor = MINOR(devt);
-
-	disk_alloc_events(disk);
 
 	if (disk->flags & GENHD_FL_HIDDEN) {
 		/*
@@ -859,29 +819,78 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 		disk->flags |= GENHD_FL_NO_PART_SCAN;
 	} else {
 		struct backing_dev_info *bdi = disk->queue->backing_dev_info;
-		struct device *dev = disk_to_dev(disk);
-		int ret;
 
 		/* Register BDI before referencing it from bdev */
-		dev->devt = devt;
-		ret = bdi_register(bdi, "%u:%u", MAJOR(devt), MINOR(devt));
-		WARN_ON(ret);
-		bdi_set_owner(bdi, dev);
-		blk_register_region(disk_devt(disk), disk->minors, NULL,
-				    exact_match, exact_lock, disk);
+		ddev->devt = devt;
+		retval = bdi_register(bdi, "%u:%u", MAJOR(devt), MINOR(devt));
+		if (retval)
+			goto out_free_ext_minor;
+		bdi_set_owner(bdi, ddev);
+		retval = kobj_map(bdev_map, disk_devt(disk), disk->minors, NULL,
+				  exact_match, exact_lock, disk);
+		if (retval)
+			goto out_unregister_bdi;
 	}
-	register_disk(parent, disk, groups);
-	if (register_queue)
-		blk_register_queue(disk);
+
+	/* delay uevents, until we scanned partition table */
+	dev_set_uevent_suppress(ddev, 1);
+
+	ddev->parent = parent;
+	if (groups) {
+		WARN_ON(ddev->groups);
+		ddev->groups = groups;
+	}
+	dev_set_name(ddev, "%s", disk->disk_name);
+	retval = device_add(ddev);
+	if (retval)
+		goto out_unregister_region;
+	retval = disk_alloc_events(disk);
+	if (retval)
+		goto out_device_del;
+	if (!sysfs_deprecated) {
+		retval = sysfs_create_link(block_depr, &ddev->kobj,
+					   kobject_name(&ddev->kobj));
+		if (retval)
+			goto out_device_del;
+	}
 
 	/*
-	 * Take an extra ref on queue which will be put on disk_release()
-	 * so that it sticks around as long as @disk is there.
+	 * avoid probable deadlock caused by allocating memory with
+	 * GFP_KERNEL in runtime_resume callback of its all ancestor
+	 * devices
 	 */
-	WARN_ON_ONCE(!blk_get_queue(disk->queue));
+	pm_runtime_set_memalloc_noio(ddev, true);
+
+	retval = blk_integrity_add(disk);
+	if (retval)
+		goto out_del_block_link;
+
+	disk->part0.holder_dir =
+		kobject_create_and_add("holders", &ddev->kobj);
+	if (!disk->part0.holder_dir) {
+		retval = -ENOMEM;
+		goto out_del_integrity;
+	}
+	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
+	if (!disk->slave_dir) {
+		retval = -ENOMEM;
+		goto out_put_holder_dir;
+	}
+
+	if (!(disk->flags & GENHD_FL_HIDDEN)) {
+		retval = sysfs_create_link(&ddev->kobj,
+			&disk->queue->backing_dev_info->dev->kobj, "bdi");
+		if (retval)
+			goto out_put_slave_dir;
+	}
+
+	if (register_queue) {
+		retval = blk_register_queue(disk);
+		if (retval)
+			goto out_del_bdi_sysfs_link;
+	}
 
 	disk_add_events(disk);
-	blk_integrity_add(disk);
 
 	/* Make sure the first partition scan will be proceed */
 	if (get_capacity(disk) && disk_part_scan_enabled(disk))
@@ -893,6 +902,44 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	 */
 	disk->flags |= GENHD_FL_UP;
 	disk_init_partition(disk);
+	return 0;
+
+out_del_bdi_sysfs_link:
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		sysfs_remove_link(&ddev->kobj, "bdi");
+out_put_slave_dir:
+	kobject_put(disk->slave_dir);
+	disk->slave_dir = NULL;
+out_put_holder_dir:
+	kobject_put(disk->part0.holder_dir);
+out_del_integrity:
+	blk_integrity_del(disk);
+out_del_block_link:
+	if (!sysfs_deprecated)
+		sysfs_remove_link(block_depr, kobject_name(&ddev->kobj));
+	/*
+	 * The error path needs to set memalloc_noio to false
+	 * consistent with del_gendisk.
+	 */
+	 pm_runtime_set_memalloc_noio(ddev, false);
+out_device_del:
+	device_del(ddev);
+out_unregister_region:
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		blk_unregister_region(disk_devt(disk), disk->minors);
+out_unregister_bdi:
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		bdi_unregister(disk->queue->backing_dev_info);
+out_free_ext_minor:
+	blk_free_devt(devt);
+out_exit_elevator:
+	if (register_queue && disk->queue->elevator) {
+		mutex_lock(&disk->queue->sysfs_lock);
+		elevator_exit(disk->queue, disk->queue->elevator);
+		mutex_unlock(&disk->queue->sysfs_lock);
+	}
+	WARN_ON_ONCE(retval); /* keep until all callers handle errors */
+	return retval;
 }
 
 void device_add_disk(struct device *parent, struct gendisk *disk,
@@ -903,11 +950,28 @@ void device_add_disk(struct device *parent, struct gendisk *disk,
 }
 EXPORT_SYMBOL(device_add_disk);
 
+
+int __must_check device_add_disk_safe(struct device *parent,
+		     struct gendisk *disk,
+		     const struct attribute_group **groups)
+
+{
+	return __device_add_disk(parent, disk, groups, true);
+}
+EXPORT_SYMBOL(device_add_disk_safe);
+
 void device_add_disk_no_queue_reg(struct device *parent, struct gendisk *disk)
 {
 	__device_add_disk(parent, disk, NULL, false);
 }
 EXPORT_SYMBOL(device_add_disk_no_queue_reg);
+
+int __must_check device_add_disk_no_queue_reg_safe(struct device *parent,
+						   struct gendisk *disk)
+{
+	return __device_add_disk(parent, disk, NULL, false);
+}
+EXPORT_SYMBOL(device_add_disk_no_queue_reg_safe);
 
 static void invalidate_partition(struct gendisk *disk, int partno)
 {
@@ -1002,6 +1066,7 @@ void del_gendisk(struct gendisk *disk)
 
 	kobject_put(disk->part0.holder_dir);
 	kobject_put(disk->slave_dir);
+	disk->slave_dir = NULL;
 
 	part_stat_set_all(&disk->part0, 0);
 	disk->part0.stamp = 0;
@@ -1521,6 +1586,9 @@ static struct attribute *disk_attrs[] = {
 	&dev_attr_stat.attr,
 	&dev_attr_inflight.attr,
 	&dev_attr_badblocks.attr,
+	&dev_attr_events.attr,
+	&dev_attr_events_async.attr,
+	&dev_attr_events_poll_msecs.attr,
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	&dev_attr_fail.attr,
 #endif
@@ -2351,18 +2419,10 @@ static ssize_t disk_events_poll_msecs_store(struct device *dev,
 	return count;
 }
 
-static const DEVICE_ATTR(events, 0444, disk_events_show, NULL);
-static const DEVICE_ATTR(events_async, 0444, disk_events_async_show, NULL);
-static const DEVICE_ATTR(events_poll_msecs, 0644,
-			 disk_events_poll_msecs_show,
-			 disk_events_poll_msecs_store);
-
-static const struct attribute *disk_events_attrs[] = {
-	&dev_attr_events.attr,
-	&dev_attr_events_async.attr,
-	&dev_attr_events_poll_msecs.attr,
-	NULL,
-};
+static DEVICE_ATTR(events, 0444, disk_events_show, NULL);
+static DEVICE_ATTR(events_async, 0444, disk_events_async_show, NULL);
+static DEVICE_ATTR(events_poll_msecs, 0644, disk_events_poll_msecs_show,
+		   disk_events_poll_msecs_store);
 
 /*
  * The default polling interval can be specified by the kernel
@@ -2404,17 +2464,17 @@ module_param_cb(events_dfl_poll_msecs, &disk_events_dfl_poll_msecs_param_ops,
 /*
  * disk_{alloc|add|del|release}_events - initialize and destroy disk_events.
  */
-static void disk_alloc_events(struct gendisk *disk)
+static int disk_alloc_events(struct gendisk *disk)
 {
 	struct disk_events *ev;
 
 	if (!disk->fops->check_events || !disk->events)
-		return;
+		return 0;
 
 	ev = kzalloc(sizeof(*ev), GFP_KERNEL);
 	if (!ev) {
 		pr_warn("%s: failed to initialize events\n", disk->disk_name);
-		return;
+		return -ENOMEM;
 	}
 
 	INIT_LIST_HEAD(&ev->node);
@@ -2426,15 +2486,11 @@ static void disk_alloc_events(struct gendisk *disk)
 	INIT_DELAYED_WORK(&ev->dwork, disk_events_workfn);
 
 	disk->ev = ev;
+	return 0;
 }
 
 static void disk_add_events(struct gendisk *disk)
 {
-	/* FIXME: error handling */
-	if (sysfs_create_files(&disk_to_dev(disk)->kobj, disk_events_attrs) < 0)
-		pr_warn("%s: failed to create sysfs files for events\n",
-			disk->disk_name);
-
 	if (!disk->ev)
 		return;
 
@@ -2458,8 +2514,6 @@ static void disk_del_events(struct gendisk *disk)
 		list_del_init(&disk->ev->node);
 		mutex_unlock(&disk_events_mutex);
 	}
-
-	sysfs_remove_files(&disk_to_dev(disk)->kobj, disk_events_attrs);
 }
 
 static void disk_release_events(struct gendisk *disk)
