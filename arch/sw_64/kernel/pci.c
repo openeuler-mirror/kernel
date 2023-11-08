@@ -308,9 +308,6 @@ void __init common_init_pci(void)
 	}
 
 	pcibios_claim_console_setup();
-#ifdef CONFIG_SUNWAY_IOMMU
-	register_syscore_ops(&iommu_cpu_syscore_ops);
-#endif
 
 	if (is_in_host()) {
 		list_for_each_entry(bus, &pci_root_buses, node)

@@ -725,9 +725,25 @@ static bool is_iommu_enable(struct pci_controller *hose)
 	return false;
 }
 
+/* iommu cpu syscore ops */
+static int iommu_cpu_suspend(void)
+{
+	return 0;
+}
+
+static void iommu_cpu_resume(void)
+{
+
+}
+
+struct syscore_ops iommu_cpu_syscore_ops = {
+	.suspend = iommu_cpu_suspend,
+	.resume = iommu_cpu_resume,
+};
+
 static struct iommu_domain *sunway_iommu_domain_alloc(unsigned int type);
 
-int sunway_iommu_init(void)
+static int sunway_iommu_init(void)
 {
 	struct pci_controller *hose;
 	struct sunway_iommu *iommu;
@@ -770,25 +786,11 @@ int sunway_iommu_init(void)
 		if (hose->iommu_enable)
 			piu_flush_all(hose);
 
+	register_syscore_ops(&iommu_cpu_syscore_ops);
+
 	return 1;
 }
 device_initcall(sunway_iommu_init);
-
-/* iommu cpu syscore ops */
-static int iommu_cpu_suspend(void)
-{
-	return 0;
-}
-
-static void iommu_cpu_resume(void)
-{
-
-}
-
-struct syscore_ops iommu_cpu_syscore_ops = {
-	.suspend = iommu_cpu_suspend,
-	.resume = iommu_cpu_resume,
-};
 
 /*******************************************************************************
  *
