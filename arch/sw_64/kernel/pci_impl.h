@@ -20,7 +20,6 @@ extern struct resource *alloc_resource(void);
 
 extern unsigned long size_for_memory(unsigned long max);
 
-extern struct pci_dev *sw64_gendev_to_pci(struct device *dev);
 extern const struct dma_map_ops sw64_dma_direct_ops;
 
 extern struct cma *sw64_kvm_cma;

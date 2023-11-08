@@ -6,6 +6,267 @@
 #include <asm/pci.h>
 #include <asm/sw64_init.h>
 
+/*
+ * raw_pci_read/write - Platform-specific PCI config space access.
+ */
+int raw_pci_read(unsigned int domain, unsigned int bus, unsigned int devfn,
+			int reg, int len, u32 *val)
+{
+	struct pci_bus *bus_tmp = pci_find_bus(domain, bus);
+
+	if (bus_tmp)
+		return bus_tmp->ops->read(bus_tmp, devfn, reg, len, val);
+
+	return -EINVAL;
+}
+
+int raw_pci_write(unsigned int domain, unsigned int bus, unsigned int devfn,
+			int reg, int len, u32 val)
+{
+	struct pci_bus *bus_tmp = pci_find_bus(domain, bus);
+
+	if (bus_tmp)
+		return bus_tmp->ops->write(bus_tmp, devfn, reg, len, val);
+
+	return -EINVAL;
+}
+
+resource_size_t pcibios_default_alignment(void)
+{
+	if (is_in_guest())
+		return PAGE_SIZE;
+	else
+		return 0;
+}
+
+/**
+ * Just declaring that the power-of-ten prefixes are actually the
+ * power-of-two ones doesn't make it true :)
+ */
+#define KB			1024
+#define MB			(1024*KB)
+#define GB			(1024*MB)
+
+resource_size_t pcibios_align_resource(void *data, const struct resource *res,
+		resource_size_t size, resource_size_t align)
+{
+	struct pci_dev *dev = data;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
+	unsigned long alignto;
+	resource_size_t start = res->start;
+
+	if (res->flags & IORESOURCE_IO) {
+		/* Make sure we start at our min on all hoses */
+		if (start - hose->io_space->start < PCIBIOS_MIN_IO)
+			start = PCIBIOS_MIN_IO + hose->io_space->start;
+		/*
+		 * Put everything into 0x00-0xff region modulo 0x400
+		 */
+		if (start & 0x300)
+			start = (start + 0x3ff) & ~0x3ff;
+	} else if (res->flags & IORESOURCE_MEM) {
+		/* Make sure we start at our min on all hoses */
+		if (start - hose->mem_space->start < PCIBIOS_MIN_MEM)
+			start = PCIBIOS_MIN_MEM + hose->mem_space->start;
+		/*
+		 * The following holds at least for the Low Cost
+		 * SW64 implementation of the PCI interface:
+		 *
+		 * In sparse memory address space, the first
+		 * octant (16MB) of every 128MB segment is
+		 * aliased to the very first 16 MB of the
+		 * address space (i.e., it aliases the ISA
+		 * memory address space).  Thus, we try to
+		 * avoid allocating PCI devices in that range.
+		 * Can be allocated in 2nd-7th octant only.
+		 * Devices that need more than 112MB of
+		 * address space must be accessed through
+		 * dense memory space only!
+		 */
+
+		/* Align to multiple of size of minimum base.  */
+		alignto = max_t(resource_size_t, 0x1000UL, align);
+		start = ALIGN(start, alignto);
+		if (hose->sparse_mem_base && size <= 7 * 16*MB) {
+			if (((start / (16*MB)) & 0x7) == 0) {
+				start &= ~(128*MB - 1);
+				start += 16*MB;
+				start  = ALIGN(start, alignto);
+			}
+			if (start/(128*MB) != (start + size - 1)/(128*MB)) {
+				start &= ~(128*MB - 1);
+				start += (128 + 16)*MB;
+				start  = ALIGN(start, alignto);
+			}
+		}
+	}
+
+	return start;
+}
+
+#undef KB
+#undef MB
+#undef GB
+
+char *pcibios_setup(char *str)
+{
+	return str;
+}
+
+void pcibios_fixup_bus(struct pci_bus *bus)
+{
+	/* Propagate hose info into the subordinate devices.  */
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+	struct pci_dev *dev = bus->self;
+
+	if (!dev || bus->number == hose->first_busno) {
+		bus->resource[0] = hose->io_space;
+		bus->resource[1] = hose->mem_space;
+		bus->resource[2] = hose->pre_mem_space;
+	}
+}
+
+/**
+ * Provide information on locations of various I/O regions in physical
+ * memory.  Do this on a per-card basis so that we choose the right hose.
+ */
+asmlinkage long sys_pciconfig_iobase(long which, unsigned long bus, unsigned long dfn)
+{
+	struct pci_controller *hose;
+
+	hose = bus_num_to_pci_controller(bus);
+	if (hose == NULL)
+		return -ENODEV;
+
+	switch (which & ~IOBASE_FROM_HOSE) {
+	case IOBASE_HOSE:
+		return hose->index;
+	case IOBASE_SPARSE_MEM:
+		return hose->sparse_mem_base;
+	case IOBASE_DENSE_MEM:
+		return hose->dense_mem_base;
+	case IOBASE_SPARSE_IO:
+		return hose->sparse_io_base;
+	case IOBASE_DENSE_IO:
+		return hose->dense_io_base;
+	case IOBASE_ROOT_BUS:
+		return hose->bus->number;
+	}
+
+	return -EOPNOTSUPP;
+}
+
+void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
+{
+}
+EXPORT_SYMBOL(pci_iounmap);
+
+void __init reserve_mem_for_pci(void)
+{
+	int ret;
+	unsigned long base = PCI_32BIT_MEMIO;
+
+	ret = add_memmap_region(base, PCI_32BIT_MEMIO_SIZE, memmap_pci);
+	if (ret) {
+		pr_err("reserved pages for pcie memory space failed\n");
+		return;
+	}
+
+	pr_info("reserved pages for pcie memory space %lx:%lx\n", base >> PAGE_SHIFT,
+			(base + PCI_32BIT_MEMIO_SIZE) >> PAGE_SHIFT);
+}
+
+const struct dma_map_ops *dma_ops;
+EXPORT_SYMBOL(dma_ops);
+
+/* Quirks */
+static void quirk_isa_bridge(struct pci_dev *dev)
+{
+	dev->class = PCI_CLASS_BRIDGE_ISA << 8;
+}
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82378, quirk_isa_bridge);
+
+/*
+ * Early fix up the Root Complex settings
+ */
+static void fixup_root_complex(struct pci_dev *dev)
+{
+	int i;
+	struct pci_bus *bus = dev->bus;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+
+	hose->self_busno = hose->busn_space->start;
+
+	if (likely(bus->number == hose->self_busno)) {
+		if (IS_ENABLED(CONFIG_HOTPLUG_PCI_PCIE)) {
+			/* Check Root Complex port again */
+			dev->is_hotplug_bridge = 0;
+			dev->current_state = PCI_D0;
+		}
+
+		dev->class &= 0xff;
+		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
+		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
+			dev->resource[i].start = 0;
+			dev->resource[i].end   = 0;
+			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
+		}
+	}
+	atomic_inc(&dev->enable_cnt);
+
+	dev->no_msi = 1;
+}
+
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_SW64_ROOT_BRIDGE, fixup_root_complex);
+
+static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
+{
+	pdev->dev.bus_dma_limit = DMA_BIT_MASK(32);
+	return 0;
+}
+
+static void fix_bus_dma_limit(struct pci_dev *dev)
+{
+	pci_walk_bus(dev->subordinate, setup_bus_dma_cb, NULL);
+	pr_info("Set zx200 bus_dma_limit to 32-bit\n");
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x071f, fix_bus_dma_limit);
+
+#ifdef CONFIG_DCA
+static void enable_sw_dca(struct pci_dev *dev)
+{
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
+	unsigned long node, rc_index, dca_ctl, dca_conf;
+	int i;
+
+	if (dev->class >> 8 != PCI_CLASS_NETWORK_ETHERNET)
+		return;
+
+	node = hose->node;
+	rc_index = hose->index;
+
+	for (i = 0; i < 256; i++) {
+		dca_conf = read_piu_ior1(node, rc_index, DEVICEID0 + (i << 7));
+		if (dca_conf >> 63)
+			continue;
+		else {
+			dca_conf = (1UL << 63) | (dev->bus->number << 8) | dev->devfn;
+			pr_info("dca device index %d, dca_conf = %#lx\n", i, dca_conf);
+			write_piu_ior1(node, rc_index, DEVICEID0 + (i << 7), dca_conf);
+			break;
+		}
+	}
+
+	dca_ctl = read_piu_ior1(node, rc_index, DCACONTROL);
+	if (dca_ctl & 0x1) {
+		dca_ctl = 0x2;
+		write_piu_ior1(node, rc_index, DCACONTROL, dca_ctl);
+		pr_info("Node %ld RC %ld enable DCA 1.0\n", node, rc_index);
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, enable_sw_dca);
+#endif
+
 /**
  * There are some special aspects to the Root Complex of Sunway:
  * 1. Root Complex config space base addr is different
