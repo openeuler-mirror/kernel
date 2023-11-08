@@ -695,7 +695,7 @@ static int tcm_tis_spi_probe(struct spi_device *spi)
 	/* regiter tcm hw */
 	chip = tcm_register_hardware(&spi->dev, &tcm_tis);
 	if (!chip) {
-		dev_err(chip->dev, "tcm register hardware err\n");
+		dev_err(&spi->dev, "tcm tis register hardware err\n");
 		return -ENODEV;
 	}
 
