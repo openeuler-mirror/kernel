@@ -1341,10 +1341,14 @@ struct perf_branch_entry {
 		abort:1,    /* transaction abort */
 		cycles:16,  /* cycle count to last branch */
 		type:4,     /* branch type */
+#ifdef __GENKSYMS__
+		reserved:40;
+#else
 		spec:2,     /* branch speculation info */
 		new_type:4, /* additional branch type */
 		priv:3,     /* privilege level */
 		reserved:31;
+#endif
 };
 
 union perf_sample_weight {
