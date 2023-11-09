@@ -204,6 +204,7 @@ struct gendisk {
 	int flags;
 	unsigned long state;
 #define GD_NEED_PART_SCAN		0
+#define GD_QUEUE_REF			1
 	struct rw_semaphore lookup_sem;
 	struct kobject *slave_dir;
 
