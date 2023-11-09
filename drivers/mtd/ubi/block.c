@@ -462,7 +462,7 @@ out_destroy_wq:
 out_remove_minor:
 	idr_remove(&ubiblock_minor_idr, gd->first_minor);
 out_cleanup_disk:
-	blk_cleanup_disk(dev->gd);
+	blk_cleanup_disk(gd);
 out_free_tags:
 	blk_mq_free_tag_set(&dev->tag_set);
 out_free_dev:
