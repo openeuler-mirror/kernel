@@ -66,7 +66,8 @@
 		_udma_reg_clear((ptr), field);          \
 		*((uint32_t *)(ptr) + ((field) >> 32) / 32) |=                       \
 			cpu_to_le32(FIELD_PREP(GENMASK(((field) >> 32) % 32,         \
-				(((field) << 32) >> 32) % 32), _val));                       \
+				(((field) << 32) >> 32) % 32), _val &                \
+				GENMASK((((field) >> 32) - (((field) << 32) >> 32)), 0))); \
 	})
 
 #define udma_reg_write(ptr, field, val) _udma_reg_write(ptr, field, val)
