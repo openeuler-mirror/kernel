@@ -90,6 +90,8 @@ static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 
 	policy->clk = cpuclk;
 
+	sw64_store_policy(policy);
+
 	cpufreq_generic_init(policy, freq_table, 0);
 
 	return 0;
