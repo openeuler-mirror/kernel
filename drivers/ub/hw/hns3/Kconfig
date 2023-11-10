@@ -8,7 +8,7 @@ config UB_UDMA_HNS3
         tristate "HNS3 UB UDMA Driver"
         depends on UB && UB_URMA
         depends on ARM64
-        depends on UBL && PCI
+        depends on HNS3 && UBL && PCI
         help
           This is a UB_UDMA_HNS3 driver for the Hisilicon UDMA engine.
           This driver depands on ubcore and uburma.
