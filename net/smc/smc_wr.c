@@ -488,9 +488,10 @@ void smc_wr_remember_qp_attr(struct smc_link *lnk)
 static void smc_wr_init_sge(struct smc_link *lnk)
 {
 	u32 i;
+	bool send_inline = (lnk->qp_attr.cap.max_inline_data > SMC_WR_TX_SIZE);
 
 	for (i = 0; i < lnk->wr_tx_cnt; i++) {
-		lnk->wr_tx_sges[i].addr =
+		lnk->wr_tx_sges[i].addr = send_inline ? (uintptr_t)(&lnk->wr_tx_bufs[i]) :
 			lnk->wr_tx_dma_addr + i * SMC_WR_BUF_SIZE;
 		lnk->wr_tx_sges[i].length = SMC_WR_TX_SIZE;
 		lnk->wr_tx_sges[i].lkey = lnk->roce_pd->local_dma_lkey;
@@ -508,6 +509,8 @@ static void smc_wr_init_sge(struct smc_link *lnk)
 		lnk->wr_tx_ibs[i].opcode = IB_WR_SEND;
 		lnk->wr_tx_ibs[i].send_flags =
 			IB_SEND_SIGNALED | IB_SEND_SOLICITED;
+		if (send_inline)
+			lnk->wr_tx_ibs[i].send_flags |= IB_SEND_INLINE;
 		lnk->wr_tx_rdmas[i].wr_tx_rdma[0].wr.opcode = IB_WR_RDMA_WRITE;
 		lnk->wr_tx_rdmas[i].wr_tx_rdma[1].wr.opcode = IB_WR_RDMA_WRITE;
 		lnk->wr_tx_rdmas[i].wr_tx_rdma[0].wr.sg_list =

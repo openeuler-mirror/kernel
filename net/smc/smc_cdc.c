@@ -360,7 +360,8 @@ static void smc_cdc_msg_recv_action(struct smc_sock *smc,
 	}
 
 	/* trigger sndbuf consumer: RDMA write into peer RMBE and CDC */
-	if ((diff_cons && smc_tx_prepared_sends(conn)) ||
+	if ((diff_cons && smc_tx_prepared_sends(conn) &&
+	     conn->local_tx_ctrl.prod_flags.write_blocked) ||
 	    conn->local_rx_ctrl.prod_flags.cons_curs_upd_req ||
 	    conn->local_rx_ctrl.prod_flags.urg_data_pending) {
 		if (!sock_owned_by_user(&smc->sk))
