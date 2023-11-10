@@ -45,6 +45,32 @@ static __be16 ubl_type_to_proto(u8 type)
 }
 
 /**
+ * ubl_add_sw_ctype - add software packet type for skb->data
+ * @skb: buffer to alter
+ * @ctype: indicates the packet type
+ *
+ * The packet type cannot be known by parsing packe from user,
+ * which leads to restrictions on the use of socket.
+ * Add cs_type field to indicate the packet type. And sw_ctype
+ * exists only during software prcessing.
+ * +----------+----+-----+-----------+
+ * | sw_ctype | CC | NPI | L3 Packet |
+ * +----------+----+-----+-----------+
+ */
+int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype)
+{
+	u8 *pkt_cfg;
+
+	if (skb_cow_head(skb, sizeof(u8)))
+		return -ENOMEM;
+
+	pkt_cfg = (u8 *)skb_push(skb, sizeof(u8));
+	*pkt_cfg = ctype;
+
+	return 0;
+}
+
+/**
  * ubl_create_header - create the ubl header
  * @skb:	buffer to alter
  * @dev:	source device
@@ -72,7 +98,9 @@ int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
 		/* if type is ETH_P_UB, then do nothing. */
 		ret = 0;
 	}
-	ubl_add_sw_ctype(skb, ctype);
+
+	if (ubl_add_sw_ctype(skb, ctype))
+		ret = -ENOMEM;
 
 	return ret;
 }
