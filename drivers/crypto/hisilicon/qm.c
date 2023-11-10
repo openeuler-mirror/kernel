@@ -3053,13 +3053,6 @@ static void hisi_qm_pci_uninit(struct hisi_qm *qm)
 	pci_disable_device(pdev);
 }
 
-static void hisi_qm_set_state(struct hisi_qm *qm, enum vf_state state)
-{
-	/* set vf driver state */
-	if (qm->ver > QM_HW_V2)
-		writel(state, qm->io_base + QM_VF_STATE);
-}
-
 static void hisi_qm_unint_work(struct hisi_qm *qm)
 {
 	destroy_workqueue(qm->wq);
@@ -3110,7 +3103,6 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	up_write(&qm->qps_lock);
 
 	hisi_qm_memory_uninit(qm);
-	hisi_qm_set_state(qm, VF_NOT_READY);
 
 	qm_remove_uacce(qm);
 	qm_irqs_unregister(qm);
@@ -3295,8 +3287,6 @@ int hisi_qm_start(struct hisi_qm *qm)
 	if (!ret)
 		atomic_set(&qm->status.flags, QM_START);
 
-	hisi_qm_set_state(qm, VF_READY);
-
 err_unlock:
 	up_write(&qm->qps_lock);
 	return ret;
@@ -3389,8 +3379,6 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 {
 	struct device *dev = &qm->pdev->dev;
 	int ret = 0;
-
-	hisi_qm_set_state(qm, VF_PREPARE);
 
 	down_write(&qm->qps_lock);
 
@@ -5431,8 +5419,6 @@ static int hisi_qm_pci_init(struct hisi_qm *qm)
 	if (ret < 0)
 		goto err_get_pci_res;
 	pci_set_master(pdev);
-
-	hisi_qm_set_state(qm, VF_PREPARE);
 
 	num_vec = qm_get_irq_num(qm);
 	ret = pci_alloc_irq_vectors(pdev, num_vec, num_vec, PCI_IRQ_MSI);

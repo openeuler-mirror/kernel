@@ -91,7 +91,6 @@
 #define QM_SHAPER_CFG			0x100164
 #define QM_SHAPER_ENABLE		BIT(30)
 #define QM_SHAPER_TYPE1_OFFSET		10
-#define QM_VF_STATE			0x0060
 
 /* page number for queue file region */
 #define QM_DOORBELL_PAGE_NR		1
@@ -137,12 +136,6 @@ enum qm_debug_file {
 	CURRENT_Q,
 	CLEAR_ENABLE,
 	DEBUG_FILE_NUM,
-};
-
-enum vf_state {
-	VF_READY = 0x0,
-	VF_NOT_READY,
-	VF_PREPARE,
 };
 
 enum qm_mist_ctl_bits {
