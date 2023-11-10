@@ -814,7 +814,6 @@ static int smc_connect_rdma(struct smc_sock *smc,
 			goto connect_abort;
 		}
 	}
-	smc_rmb_sync_sg_for_device(&smc->conn);
 
 	reason_code = smc_clc_send_confirm(smc, ini->first_contact_local,
 					   SMC_V1);
@@ -1598,7 +1597,6 @@ static int smc_listen_rdma_reg(struct smc_sock *new_smc, bool local_first)
 		if (smcr_lgr_reg_rmbs(conn->lnk, conn->rmb_desc))
 			return SMC_CLC_DECL_ERR_REGRMB;
 	}
-	smc_rmb_sync_sg_for_device(&new_smc->conn);
 
 	return 0;
 }

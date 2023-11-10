@@ -1453,6 +1453,9 @@ static int smcr_buf_map_link(struct smc_buf_desc *buf_desc, bool is_rmb,
 		goto free_table;
 	}
 
+	buf_desc->is_dma_need_sync |=
+		smc_ib_is_sg_need_sync(lnk, buf_desc) << lnk->link_idx;
+
 	/* create a new memory region for the RMB */
 	if (is_rmb) {
 		rc = smc_ib_get_memory_region(lnk->roce_pd,
@@ -1681,6 +1684,7 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 		/* check for reusable slot in the link group */
 		buf_desc = smc_buf_get_slot(bufsize_short, lock, buf_list);
 		if (buf_desc) {
+			buf_desc->is_dma_need_sync = 0;
 			memset(buf_desc->cpu_addr, 0, bufsize);
 			break; /* found reusable slot */
 		}
@@ -1729,15 +1733,10 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 	return 0;
 }
 
-void smc_sndbuf_sync_sg_for_cpu(struct smc_connection *conn)
-{
-	if (!conn->lgr || conn->lgr->is_smcd || !smc_link_active(conn->lnk))
-		return;
-	smc_ib_sync_sg_for_cpu(conn->lnk, conn->sndbuf_desc, DMA_TO_DEVICE);
-}
-
 void smc_sndbuf_sync_sg_for_device(struct smc_connection *conn)
 {
+	if (!conn->sndbuf_desc->is_dma_need_sync)
+		return;
 	if (!conn->lgr || conn->lgr->is_smcd || !smc_link_active(conn->lnk))
 		return;
 	smc_ib_sync_sg_for_device(conn->lnk, conn->sndbuf_desc, DMA_TO_DEVICE);
@@ -1747,6 +1746,8 @@ void smc_rmb_sync_sg_for_cpu(struct smc_connection *conn)
 {
 	int i;
 
+	if (!conn->rmb_desc->is_dma_need_sync)
+		return;
 	if (!conn->lgr || conn->lgr->is_smcd)
 		return;
 	for (i = 0; i < SMC_LINKS_PER_LGR_MAX; i++) {
@@ -1754,20 +1755,6 @@ void smc_rmb_sync_sg_for_cpu(struct smc_connection *conn)
 			continue;
 		smc_ib_sync_sg_for_cpu(&conn->lgr->lnk[i], conn->rmb_desc,
 				       DMA_FROM_DEVICE);
-	}
-}
-
-void smc_rmb_sync_sg_for_device(struct smc_connection *conn)
-{
-	int i;
-
-	if (!conn->lgr || conn->lgr->is_smcd)
-		return;
-	for (i = 0; i < SMC_LINKS_PER_LGR_MAX; i++) {
-		if (!smc_link_active(&conn->lgr->lnk[i]))
-			continue;
-		smc_ib_sync_sg_for_device(&conn->lgr->lnk[i], conn->rmb_desc,
-					  DMA_FROM_DEVICE);
 	}
 }
 
