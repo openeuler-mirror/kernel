@@ -156,6 +156,7 @@ struct hclgevf_hw {
 	struct hclge_comm_hw hw;
 	int num_vec;
 	struct hclgevf_mac mac;
+	u8 *func_guid;
 };
 
 struct hclgevf_cfg {

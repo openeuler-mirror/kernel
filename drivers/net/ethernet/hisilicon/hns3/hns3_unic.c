@@ -354,12 +354,7 @@ int hns3_unic_init_guid(struct net_device *netdev)
 	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
 	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
 
-	ret = h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
-	if (ret) {
-		netdev_err(netdev, "set function guid fail, ret = %d\n", ret);
-		hns3_unic_del_mc_guid(netdev, bc_guid);
-		return ret;
-	}
+	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
 
 	return 0;
 }

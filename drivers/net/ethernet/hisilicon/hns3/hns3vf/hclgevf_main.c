@@ -2004,6 +2004,7 @@ static void hclgevf_periodic_service_task(struct hclgevf_dev *hdev)
 	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 		hclgevf_unic_sync_mc_guid_list(hdev);
 		hclgevf_unic_sync_ip_list(hdev);
+		hclge_comm_unic_set_func_guid(&hdev->hw.hw, &hdev->hw.func_guid);
 	}
 #endif
 	hclgevf_sync_promisc_mode(hdev);

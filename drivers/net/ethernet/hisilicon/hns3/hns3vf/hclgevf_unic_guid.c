@@ -103,11 +103,11 @@ void hclgevf_unic_uninit_mc_guid_list(struct hclgevf_dev *hdev)
 	spin_unlock_bh(&hdev->mguid_list_lock);
 }
 
-int hclgevf_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid)
+void hclgevf_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
-	return hclge_comm_unic_set_func_guid(&hdev->hw.hw, guid);
+	hdev->hw.func_guid = guid;
 }
 
 int hclgevf_unic_get_func_guid(struct hnae3_handle *handle, u8 *guid)

@@ -4775,6 +4775,7 @@ static void hclge_periodic_service_task(struct hclge_dev *hdev)
 	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 		hclge_unic_sync_mguid_table(hdev);
 		hclge_unic_sync_ip_table(hdev);
+		hclge_comm_unic_set_func_guid(&hdev->hw.hw, &hdev->hw.func_guid);
 	}
 #endif
 	hclge_sync_promisc_mode(hdev);

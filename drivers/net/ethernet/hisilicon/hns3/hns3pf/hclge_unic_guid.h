@@ -37,7 +37,7 @@ void hclge_unic_del_vport_all_mc_guid_table(struct hclge_vport *vport,
 int hclge_unic_update_guid_list(struct hclge_vport *vport,
 				enum HCLGE_COMM_ADDR_NODE_STATE state,
 				const unsigned char *addr);
-int hclge_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid);
+void hclge_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid);
 int hclge_unic_get_func_guid(struct hnae3_handle *handle, u8 *guid);
 void hclge_unic_rm_func_guid(struct hclge_dev *hdev);
 

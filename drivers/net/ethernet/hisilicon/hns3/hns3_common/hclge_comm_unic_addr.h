@@ -100,8 +100,8 @@ bool hclge_comm_unic_sync_addr_table(struct hnae3_handle *handle,
 						    struct list_head *));
 int hclge_comm_unic_convert_ip_addr(const struct sockaddr *addr,
 				    struct in6_addr *ip_addr);
-int hclge_comm_unic_set_func_guid(struct hclge_comm_hw *hw, u8 *guid);
+void hclge_comm_unic_set_func_guid(struct hclge_comm_hw *hw, u8 **guid);
 int hclge_comm_unic_get_func_guid(struct hclge_comm_hw *hw, u8 *guid);
-void hclge_comm_unic_rm_func_guid(struct hclge_comm_hw *hw);
+void hclge_comm_unic_rm_func_guid(struct hclge_comm_hw *hw, u8 **guid);
 
 #endif

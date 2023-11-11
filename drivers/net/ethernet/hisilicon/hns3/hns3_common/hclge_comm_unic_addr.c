@@ -248,31 +248,37 @@ hclge_comm_unic_func_guid_cmd_prepare(u8 *guid,
 	memcpy(req->guid, guid, UBL_ALEN);
 }
 
-int hclge_comm_unic_set_func_guid(struct hclge_comm_hw *hw, u8 *guid)
+void hclge_comm_unic_set_func_guid(struct hclge_comm_hw *hw, u8 **guid)
 {
 	struct hclge_comm_func_guid_cmd *req;
 	struct hclge_desc desc;
 	int ret;
+
+	if (!*guid)
+		return;
 
 	req = (struct hclge_comm_func_guid_cmd *)desc.data;
 
 	hclge_comm_cmd_setup_basic_desc(&desc, HCLGE_OPC_COMM_CFG_FUNC_GUID,
 					false);
-	hclge_comm_unic_func_guid_cmd_prepare(guid, req);
+	hclge_comm_unic_func_guid_cmd_prepare(*guid, req);
 
 	ret = hclge_comm_cmd_send(hw, &desc, 1);
 	if (ret)
-		dev_err(&hw->cmq.csq.pdev->dev,
-			"failed to set guid for cmd_send, ret = %d\n", ret);
-
-	return ret;
+		dev_warn(&hw->cmq.csq.pdev->dev,
+			 "set guid failed for cmd_send, ret = %d.\n", ret);
+	else
+		*guid = NULL;
 }
 
-void hclge_comm_unic_rm_func_guid(struct hclge_comm_hw *hw)
+void hclge_comm_unic_rm_func_guid(struct hclge_comm_hw *hw, u8 **guid)
 {
 	struct hclge_comm_func_guid_cmd *req;
 	struct hclge_desc desc;
 	int ret;
+
+	if (*guid)
+		return;
 
 	req = (struct hclge_comm_func_guid_cmd *)desc.data;
 
