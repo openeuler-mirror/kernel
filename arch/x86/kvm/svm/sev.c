@@ -2240,6 +2240,9 @@ void sev_free_vcpu(struct kvm_vcpu *vcpu)
 		sev_flush_guest_memory(svm, svm->vmsa, PAGE_SIZE);
 	__free_page(virt_to_page(svm->vmsa));
 
+	if (svm->ghcb)
+		kvm_vcpu_unmap(&svm->vcpu, &svm->ghcb_map, false);
+
 	if (svm->ghcb_sa_free)
 		kfree(svm->ghcb_sa);
 }
