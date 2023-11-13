@@ -176,7 +176,7 @@ static u8 get_affinity_cq_bank(u8 qp_bank)
 }
 
 static u8 get_least_load_bankid_for_qp(struct ib_qp_init_attr *init_attr,
-				       struct hns_roce_bank *bank)
+					struct hns_roce_bank *bank)
 {
 #define INVALID_LOAD_QPNUM 0xFFFFFFFF
 	struct ib_cq *scq = init_attr->send_cq;
@@ -224,7 +224,6 @@ static int alloc_qpn_with_bankid(struct hns_roce_bank *bank, u8 bankid,
 
 	return 0;
 }
-
 static int alloc_qpn(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		     struct ib_qp_init_attr *init_attr)
 {
