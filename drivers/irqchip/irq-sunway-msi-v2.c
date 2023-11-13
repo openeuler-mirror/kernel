@@ -3,6 +3,7 @@
 #include <linux/module.h>
 #include <linux/msi.h>
 #include <linux/irqdomain.h>
+#include <linux/smp.h>
 
 #include <asm/irq_impl.h>
 #include <asm/kvm_emulate.h>
@@ -29,12 +30,15 @@ static struct sw64_msi_chip_data *alloc_sw_msi_chip_data(struct irq_data *irq_da
 static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
 {
 	struct sw64_msi_chip_data *chip_data;
+	int rcid;
 
 	chip_data = irq_data_get_irq_chip_data(data->parent_data);
-
+	rcid = cpu_to_rcid(chip_data->dst_cpu);
 	msg->address_hi = MSI_ADDR_BASE_HI;
-	msg->address_lo = MSI_ADDR_BASE_LO;
-	msg->data = chip_data->msi_config_index;
+	msg->address_lo =
+		(unsigned int)chip_data->msiaddr |
+		(rcid_to_msicid(rcid) << MSI_ADDR_DEST_ID_SHIFT);
+	msg->data = chip_data->vector;
 }
 
 bool find_free_cpu_vector(const struct cpumask *search_mask,
@@ -80,33 +84,54 @@ try_again:
 	return true;
 }
 
-static unsigned long set_piu_msi_config(struct pci_controller *hose, int cpu,
-		int msiconf_index, int vector)
+static bool find_free_cpu_vectors(const struct cpumask *search_mask, int *found_cpu, int *found_vector, unsigned int nr_irqs)
 {
-	unsigned int reg;
-	unsigned long msi_config;
-	int phy_cpu;
+	int i, vector, cpu;
+	bool found = false, find_once_global = false;
 
-	msi_config = (1UL << 62) | ((unsigned long)vector << 10);
-	phy_cpu = cpu_to_rcid(cpu);
-	msi_config |= ((phy_cpu >> 5) << 6) | (phy_cpu & 0x1f);
-	reg = MSICONFIG0 + (unsigned long)(msiconf_index << 7);
-	write_piu_ior0(hose->node, hose->index, reg, msi_config);
-	msi_config = read_piu_ior0(hose->node, hose->index, reg);
-	set_bit(msiconf_index, hose->piu_msiconfig);
+	cpu = cpumask_first(search_mask);
+try_again:
+	for (vector = 0; vector < 256; vector++) {
+		for (i = 0; i < nr_irqs; i++)
+			if (per_cpu(vector_irq, cpu)[vector + i])
+				break;
 
-	return msi_config;
+		if (i == nr_irqs) {
+			found = true;
+			*found_cpu = cpu;
+			*found_vector = vector;
+			return found;
+		}
+
+		vector += i;
+	}
+
+	cpu = cpumask_next(cpu, search_mask);
+	if (cpu < nr_cpu_ids)
+		goto try_again;
+	else {
+		if (find_once_global) {
+			printk("No global free vectors\n");
+			return found;
+		}
+		printk("No local free vectors\n");
+		search_mask = cpu_online_mask;
+		cpu = cpumask_first(search_mask);
+		find_once_global = true;
+		goto try_again;
+	}
 }
 
 static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, bool force)
 {
 	struct sw64_msi_chip_data *cdata;
-	struct pci_controller *hose;
 	struct irq_data *irqd;
 	struct msi_desc *entry;
 	struct cpumask searchmask;
-	unsigned long flags, msi_config;
+	unsigned long flags;
 	int vector, cpu;
+	int i;
+	struct msi_msg msg;
 
 	/* Is this valid ? */
 	if (cpumask_any_and(cpumask, cpu_online_mask) >= nr_cpu_ids)
@@ -131,22 +156,30 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 	raw_spin_lock_irqsave(&vector_lock, flags);
 
 	cpumask_and(&searchmask, cpumask, cpu_online_mask);
-	if (!find_free_cpu_vector(&searchmask, &cpu, &vector)) {
-		raw_spin_unlock_irqrestore(&vector_lock, flags);
-		return -ENOSPC;
+	if (cdata->multi_msi > 1) {
+		if (!find_free_cpu_vectors(&searchmask, &cpu,
+					&vector, cdata->multi_msi)) {
+			raw_spin_unlock_irqrestore(&vector_lock, flags);
+			return -ENOSPC;
+		}
+	} else {
+		if (!find_free_cpu_vector(&searchmask, &cpu, &vector)) {
+			raw_spin_unlock_irqrestore(&vector_lock, flags);
+			return -ENOSPC;
+		}
 	}
 
 	/* update new setting */
 	entry = irq_get_msi_desc(irqd->irq);
-	hose = (struct pci_controller *)msi_desc_to_pci_sysdata(entry);
 	spin_lock(&cdata->cdata_lock);
-	per_cpu(vector_irq, cpu)[vector] = irqd->irq;
-	msi_config = set_piu_msi_config(hose, cpu, cdata->msi_config_index, vector);
+	for (i = 0; i < cdata->multi_msi; i++)
+		per_cpu(vector_irq, cpu)[vector + i] = entry->irq + i;
+	BUG_ON(irq_chip_compose_msi_msg(irqd, &msg));
+	__pci_write_msi_msg(entry, &msg);
 	cdata->prev_vector = cdata->vector;
 	cdata->prev_cpu = cdata->dst_cpu;
 	cdata->dst_cpu = cpu;
 	cdata->vector = vector;
-	cdata->msi_config = msi_config;
 	cdata->move_in_progress = true;
 	spin_unlock(&cdata->cdata_lock);
 	cpumask_copy(irq_data_get_affinity_mask(irqd), &searchmask);
@@ -171,29 +204,19 @@ static struct irq_chip pci_msi_controller = {
 };
 
 static int __assign_irq_vector(int virq, unsigned int nr_irqs,
-		struct irq_domain *domain, struct pci_controller *hose)
+		struct irq_domain *domain, enum irq_alloc_type type)
 {
 	struct irq_data *irq_data;
 	const struct cpumask *mask;
 	struct cpumask searchmask;
 	struct sw64_msi_chip_data *cdata;
-	int msiconf_index, node;
+	int node;
 	int i, vector, cpu;
-	unsigned long msi_config;
-	int start_index;
+	unsigned long msiaddr;
 
 	if (unlikely((nr_irqs > 1) && (!is_power_of_2(nr_irqs))))
 		nr_irqs = __roundup_pow_of_two(nr_irqs);
 
-	msiconf_index = bitmap_find_next_zero_area(hose->piu_msiconfig, 256, 0,
-			nr_irqs, nr_irqs - 1);
-
-	if (msiconf_index >= 256) {
-		printk("No free msi on PIU!\n");
-		return -ENOSPC;
-	}
-
-	start_index = msiconf_index;
 	irq_data = irq_domain_get_irq_data(domain, virq);
 	BUG_ON(!irq_data);
 	irq_data->chip = &pci_msi_controller;
@@ -209,16 +232,10 @@ static int __assign_irq_vector(int virq, unsigned int nr_irqs,
 	if (cpumask_first(&searchmask) >= nr_cpu_ids)
 		cpumask_copy(&searchmask, cpu_online_mask);
 
-	for (i = 0; i < nr_irqs; i++) {
-		if (!find_free_cpu_vector(&searchmask, &cpu, &vector))
+	if (type == IRQ_ALLOC_TYPE_MSI && nr_irqs > 1) {
+		if (!find_free_cpu_vectors(&searchmask, &cpu,
+					&vector, nr_irqs))
 			return -ENOSPC;
-
-		per_cpu(vector_irq, cpu)[vector] = virq + i;
-
-		if (i) {
-			irq_data = irq_domain_get_irq_data(domain, virq + i);
-			irq_data->chip = &pci_msi_controller;
-		}
 
 		cdata = alloc_sw_msi_chip_data(irq_data);
 		if (!cdata) {
@@ -226,31 +243,64 @@ static int __assign_irq_vector(int virq, unsigned int nr_irqs,
 			return -ENOMEM;
 		}
 
-		irq_data->chip_data = cdata;
-		msiconf_index = start_index + i;
-		msi_config = set_piu_msi_config(hose, cpu, msiconf_index, vector);
+		for (i = 0; i < nr_irqs; i++) {
+			per_cpu(vector_irq, cpu)[vector + i] = virq + i;
+
+			if (i) {
+				irq_data = irq_domain_get_irq_data(domain, virq + i);
+				irq_data->chip = &pci_msi_controller;
+			}
+
+			irq_data->chip_data = cdata;
+		}
 
 		cdata->dst_cpu = cpu;
 		cdata->vector = vector;
-		cdata->rc_index = hose->index;
-		cdata->rc_node = hose->node;
-		cdata->msi_config = msi_config;
-		cdata->msi_config_index = msiconf_index;
+		cdata->msiaddr = MSIX_MSG_ADDR;
 		cdata->prev_cpu = cpu;
 		cdata->prev_vector = vector;
+		cdata->multi_msi = nr_irqs;
 		cdata->move_in_progress = false;
+	} else {
+		for (i = 0; i < nr_irqs; i++) {
+			if (!find_free_cpu_vector(&searchmask, &cpu, &vector))
+				return -ENOSPC;
+
+			per_cpu(vector_irq, cpu)[vector] = virq + i;
+
+			if (i) {
+				irq_data = irq_domain_get_irq_data(domain, virq + i);
+				irq_data->chip = &pci_msi_controller;
+			}
+
+			cdata = alloc_sw_msi_chip_data(irq_data);
+			if (!cdata) {
+				printk("error alloc irq chip data\n");
+				return -ENOMEM;
+			}
+
+			irq_data->chip_data = cdata;
+
+			cdata->dst_cpu = cpu;
+			cdata->vector = vector;
+			cdata->msiaddr = MSIX_MSG_ADDR;
+			cdata->prev_cpu = cpu;
+			cdata->prev_vector = vector;
+			cdata->multi_msi = 1;
+			cdata->move_in_progress = false;
+		}
 	}
 	return 0;
 }
 
 static int assign_irq_vector(int irq, unsigned int nr_irqs,
-		struct irq_domain *domain, struct pci_controller *hose)
+		struct irq_domain *domain, enum irq_alloc_type type)
 {
 	int err;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&vector_lock, flags);
-	err = __assign_irq_vector(irq, nr_irqs, domain, hose);
+	err = __assign_irq_vector(irq, nr_irqs, domain, type);
 	raw_spin_unlock_irqrestore(&vector_lock, flags);
 	return err;
 }
@@ -258,28 +308,26 @@ static int assign_irq_vector(int irq, unsigned int nr_irqs,
 static void sw64_vector_free_irqs(struct irq_domain *domain,
 		unsigned int virq, unsigned int nr_irqs)
 {
-	int i;
+	int i, j;
 	struct irq_data *irq_data;
 	unsigned long flags;
+	unsigned int multi_msi;
 
 	for (i = 0; i < nr_irqs; i++) {
 		irq_data = irq_domain_get_irq_data(domain, virq + i);
 		if (irq_data && irq_data->chip_data) {
 			struct sw64_msi_chip_data *cdata;
-			struct msi_desc *entry;
-			struct pci_controller *hose;
 
 			raw_spin_lock_irqsave(&vector_lock, flags);
 			cdata = irq_data->chip_data;
-			entry = irq_get_msi_desc(virq + i);
-			if (entry) {
-				hose = (struct pci_controller *)msi_desc_to_pci_sysdata(entry);
-				clear_bit(cdata->msi_config_index, hose->piu_msiconfig);
-			}
 			irq_domain_reset_irq_data(irq_data);
-			per_cpu(vector_irq, cdata->dst_cpu)[cdata->vector] = 0;
+			multi_msi = cdata->multi_msi;
+			for (j = 0; j < multi_msi; j++)
+				per_cpu(vector_irq, cdata->dst_cpu)[cdata->vector + j] = 0;
 			kfree(cdata);
 			raw_spin_unlock_irqrestore(&vector_lock, flags);
+			if (multi_msi > 1)
+				break;
 		}
 	}
 }
@@ -313,12 +361,12 @@ static int sw64_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 {
 	int err;
 	struct irq_alloc_info *info = arg;
-	struct pci_controller *hose;
+	enum irq_alloc_type msi_type;
 
 	if (arg == NULL)
 		return -ENODEV;
-	hose = info->msi_dev->sysdata;
-	err = assign_irq_vector(virq, nr_irqs, domain, hose);
+	msi_type = info->type;
+	err = assign_irq_vector(virq, nr_irqs, domain, msi_type);
 	if (err)
 		goto error;
 	return 0;
@@ -403,19 +451,24 @@ static void irq_move_complete(struct sw64_msi_chip_data *cdata, int cpu, int vec
 {
 	if (likely(!cdata->move_in_progress))
 		return;
-	if (vector == cdata->vector && cdata->dst_cpu == cpu) {
-		raw_spin_lock(&vector_lock);
-		cdata->move_in_progress = 0;
-		per_cpu(vector_irq, cdata->prev_cpu)[cdata->prev_vector] = 0;
-		raw_spin_unlock(&vector_lock);
+	if (cdata->dst_cpu == cpu) {
+		if (vector >= cdata->vector &&
+				vector < cdata->vector + cdata->multi_msi) {
+			int i;
+
+			raw_spin_lock(&vector_lock);
+			cdata->move_in_progress = false;
+			for (i = 0; i < cdata->multi_msi; i++)
+				per_cpu(vector_irq, cdata->prev_cpu)[cdata->prev_vector + i] = 0;
+			raw_spin_unlock(&vector_lock);
+		}
 	}
 }
 
 void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned long pci_msi1_addr)
 {
-	int i, irq, piu_index, msi_index = 0;
+	int i, irq, msi_index = 0;
 	int cpu, vector_index = 0;
-	unsigned long value = 0;
 	unsigned long int_pci_msi[3];
 	unsigned long *ptr;
 	struct irq_data *irq_data;
@@ -438,6 +491,8 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 	for (i = 0; i < 4; i++) {
 		vector_index = i * 64;
 		while (vector != 0) {
+			int irq = 0;
+
 			msi_index = find_next_bit(&vector, 64, msi_index);
 			if (msi_index == 64) {
 				msi_index = 0;
@@ -449,9 +504,6 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 			cdata = irq_data_get_irq_chip_data(irq_data);
 			spin_lock(&cdata->cdata_lock);
 			irq_move_complete(cdata, cpu, vector_index + msi_index);
-			piu_index = cdata->msi_config_index;
-			value = cdata->msi_config | (1UL << 63);
-			write_piu_ior0(cdata->rc_node, cdata->rc_index, MSICONFIG0 + (piu_index << 7), value);
 			spin_unlock(&cdata->cdata_lock);
 			handle_irq(irq);
 
