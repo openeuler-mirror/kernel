@@ -3498,7 +3498,13 @@ static int sd_probe(struct device *dev)
 		pm_runtime_set_autosuspend_delay(dev,
 			sdp->host->hostt->rpm_autosuspend_delay);
 	}
-	device_add_disk(dev, gd, NULL);
+
+	error = device_add_disk_safe(dev, gd, NULL);
+	if (error) {
+		device_unregister(&sdkp->dev);
+		goto out;
+	}
+
 	blk_delete_region(disk_devt(sdkp->disk), SD_MINORS, sd_default_probe);
 	if (sdkp->security) {
 		sdkp->opal_dev = init_opal_dev(sdkp, &sd_sec_submit);
