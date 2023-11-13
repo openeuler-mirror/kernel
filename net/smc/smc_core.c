@@ -1432,7 +1432,7 @@ int smc_uncompress_bufsize(u8 compressed)
 /* try to reuse a sndbuf or rmb description slot for a certain
  * buffer size; if not available, return NULL
  */
-static struct smc_buf_desc *smc_buf_get_slot(int compressed_bufsize,
+static struct smc_buf_desc *smc_buf_get_slot(int bufsize,
 					     struct rw_semaphore *lock,
 					     struct list_head *buf_list)
 {
@@ -1440,7 +1440,7 @@ static struct smc_buf_desc *smc_buf_get_slot(int compressed_bufsize,
 
 	down_read(lock);
 	list_for_each_entry(buf_slot, buf_list, list) {
-		if (cmpxchg(&buf_slot->used, 0, 1) == 0) {
+		if (buf_slot->len == bufsize && (cmpxchg(&buf_slot->used, 0, 1) == 0)) {
 			up_read(lock);
 			return buf_slot;
 		}
@@ -1773,7 +1773,7 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 		bufsize = smc_uncompress_bufsize(bufsize_short);
 
 		/* check for reusable slot in the link group */
-		buf_desc = smc_buf_get_slot(bufsize_short, lock, buf_list);
+		buf_desc = smc_buf_get_slot(bufsize, lock, buf_list);
 		if (buf_desc) {
 			break; /* found reusable slot */
 		}
