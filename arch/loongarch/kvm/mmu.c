@@ -27,6 +27,18 @@
 #define KVM_MMU_CACHE_MIN_PAGES 2
 #endif
 
+static inline int kvm_pte_huge(pte_t pte) { return pte_val(pte) & _PAGE_HUGE; }
+static inline pte_t kvm_pte_mksmall(pte_t pte)
+{
+	pte_val(pte) &= ~_PAGE_HUGE;
+	return pte;
+}
+
+static inline void kvm_set_pte(pte_t *ptep, pte_t val)
+{
+	WRITE_ONCE(*ptep, val);
+}
+
 static int kvm_tlb_flush_gpa(struct kvm_vcpu *vcpu, unsigned long gpa)
 {
 	preempt_disable();
@@ -893,7 +905,7 @@ retry:
 		pmd_clear(pmd);
 	}
 
-	kvm_tlb_flush_gpa(vcpu, addr & PMD_MASK);
+	kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
 	set_pmd(pmd, *new_pmd);
 	return 0;
 }
@@ -950,14 +962,16 @@ static bool transparent_hugepage_adjust(kvm_pfn_t *pfnp, unsigned long *gpap)
 }
 
 static bool fault_supports_huge_mapping(struct kvm_memory_slot *memslot,
-					       unsigned long hva,
-					       unsigned long map_size)
+					unsigned long hva, bool write)
 {
 	gpa_t gpa_start;
 	hva_t uaddr_start, uaddr_end;
+	unsigned long map_size;
 	size_t size;
 
-	if (memslot->arch.flags & KVM_MEMSLOT_DISABLE_THP)
+	map_size = PMD_SIZE;
+	/* Disable dirty logging on HugePages */
+	if ((memslot->flags & KVM_MEM_LOG_DIRTY_PAGES) && write)
 		return false;
 
 	size = memslot->npages * PAGE_SIZE;
@@ -1012,9 +1026,6 @@ static bool fault_supports_huge_mapping(struct kvm_memory_slot *memslot,
  * @vcpu:		VCPU pointer.
  * @gpa:		Guest physical address of fault.
  * @write:	Whether the fault was due to a write.
- * @out_entry:		New PTE for @gpa (written on success unless NULL).
- * @out_buddy:		New PTE for @gpa's buddy (written on success unless
- *			NULL).
  *
  * Perform fast path GPA fault handling, doing all that can be done without
  * calling into KVM. This handles marking old pages young (for idle page
@@ -1026,8 +1037,7 @@ static bool fault_supports_huge_mapping(struct kvm_memory_slot *memslot,
  *		read-only page, in which case KVM must be consulted.
  */
 static int kvm_map_page_fast(struct kvm_vcpu *vcpu, unsigned long gpa,
-				   bool write,
-				   pte_t *out_entry, pte_t *out_buddy)
+				   bool write)
 {
 	struct kvm *kvm = vcpu->kvm;
 	gfn_t gfn = gpa >> PAGE_SHIFT;
@@ -1035,6 +1045,7 @@ static int kvm_map_page_fast(struct kvm_vcpu *vcpu, unsigned long gpa,
 	kvm_pfn_t pfn = 0;	/* silence bogus GCC warning */
 	bool pfn_valid = false;
 	int ret = 0;
+	struct kvm_memory_slot *slot;
 
 	spin_lock(&kvm->mmu_lock);
 
@@ -1058,6 +1069,18 @@ static int kvm_map_page_fast(struct kvm_vcpu *vcpu, unsigned long gpa,
 			goto out;
 		}
 
+		if (kvm_pte_huge(*ptep)) {
+			/*
+			 * Do not set write permission when dirty logging is
+			 * enabled for HugePages
+			 */
+			slot = gfn_to_memslot(kvm, gfn);
+			if (slot->flags & KVM_MEM_LOG_DIRTY_PAGES) {
+				ret = -EFAULT;
+				goto out;
+			}
+		}
+
 		/* Track dirtying of writeable pages */
 		set_pte(ptep, pte_mkdirty(*ptep));
 		pfn = pte_pfn(*ptep);
@@ -1072,11 +1095,6 @@ static int kvm_map_page_fast(struct kvm_vcpu *vcpu, unsigned long gpa,
 		kvm_set_pfn_dirty(pfn);
 	}
 
-	if (out_entry)
-		*out_entry = *ptep;
-	if (out_buddy)
-		*out_buddy = *ptep_buddy(ptep);
-
 out:
 	spin_unlock(&kvm->mmu_lock);
 	if (pfn_valid)
@@ -1084,14 +1102,35 @@ out:
 	return ret;
 }
 
+/*
+ * Split huge page
+ */
+static pte_t *kvm_split_huge(struct kvm_vcpu *vcpu, pte_t *ptep, gfn_t gfn,
+		struct vm_area_struct *vma, unsigned long hva)
+{
+	int i;
+	pte_t val, *child;
+	struct kvm_mmu_memory_cache *memcache;
+
+	memcache = &vcpu->arch.mmu_page_cache;
+	child = kvm_mmu_memory_cache_alloc(memcache);
+	val = kvm_pte_mksmall(*ptep);
+	for (i = 0; i < PTRS_PER_PTE; i++) {
+		kvm_set_pte(child + i, val);
+		pte_val(val) += PAGE_SIZE;
+	}
+
+	/* The later kvm_flush_tlb_gpa() will flush hugepage tlb */
+	pte_val(val) = (unsigned long)child;
+	kvm_set_pte(ptep, val);
+	return child + (gfn & (PTRS_PER_PTE - 1));
+}
+
 /**
  * kvm_map_page() - Map a guest physical page.
  * @vcpu:		VCPU pointer.
  * @gpa:		Guest physical address of fault.
  * @write:	Whether the fault was due to a write.
- * @out_entry:		New PTE for @gpa (written on success unless NULL).
- * @out_buddy:		New PTE for @gpa's buddy (written on success unless
- *			NULL).
  *
  * Handle GPA faults by creating a new GPA mapping (or updating an existing
  * one).
@@ -1109,8 +1148,7 @@ out:
  *		as an MMIO access.
  */
 static int kvm_map_page(struct kvm_vcpu *vcpu, unsigned long gpa,
-			     bool write,
-			     pte_t *out_entry, pte_t *out_buddy)
+			     bool write)
 {
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
@@ -1134,8 +1172,7 @@ static int kvm_map_page(struct kvm_vcpu *vcpu, unsigned long gpa,
 	/* Try the fast path to handle old / clean pages */
 	srcu_idx = srcu_read_lock(&kvm->srcu);
 	if ((exccode != KVM_EXCCODE_TLBRI) && (exccode != KVM_EXCCODE_TLBXI)) {
-		err = kvm_map_page_fast(vcpu, gpa, write, out_entry,
-					      out_buddy);
+		err = kvm_map_page_fast(vcpu, gpa, write);
 		if (!err)
 			goto out;
 	}
@@ -1156,8 +1193,9 @@ static int kvm_map_page(struct kvm_vcpu *vcpu, unsigned long gpa,
 	}
 
 	vma_pagesize = vma_kernel_pagesize(vma);
+	if ((vma_pagesize == PMD_SIZE) &&
+		!fault_supports_huge_mapping(memslot, hva, write)) {
 
-	if (fault_supports_huge_mapping(memslot, hva, vma_pagesize)) {
 		force_pte = true;
 		vma_pagesize = PAGE_SIZE;
 		++vcpu->stat.huge_dec_exits;
@@ -1227,7 +1265,7 @@ retry:
 		 * aligned and that the block is contained within the memslot.
 		 */
 		++vcpu->stat.huge_thp_exits;
-		if (fault_supports_huge_mapping(memslot, hva, PMD_SIZE) &&
+		if (fault_supports_huge_mapping(memslot, hva, write) &&
 		    transparent_hugepage_adjust(&pfn, &gpa)) {
 			++vcpu->stat.huge_adjust_exits;
 			vma_pagesize = PMD_SIZE;
@@ -1272,13 +1310,12 @@ retry:
 
 		/* Ensure page tables are allocated */
 		ptep = kvm_pte_for_gpa(kvm, memcache, vma, hva, gpa);
+		if (ptep && kvm_pte_huge(*ptep) && write)
+			ptep = kvm_split_huge(vcpu, ptep, gfn, vma, hva);
+
 		set_pte(ptep, new_pte);
 
 		err = 0;
-		if (out_entry)
-			*out_entry = new_pte;
-		if (out_buddy)
-			*out_buddy = *ptep_buddy(&new_pte);
 	}
 
 	spin_unlock(&kvm->mmu_lock);
@@ -1294,7 +1331,7 @@ int kvm_handle_mm_fault(struct kvm_vcpu *vcpu, unsigned long badv,
 {
 	int ret;
 
-	ret = kvm_map_page(vcpu, badv, write, NULL, NULL);
+	ret = kvm_map_page(vcpu, badv, write);
 	if (ret)
 		return ret;
 
