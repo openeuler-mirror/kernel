@@ -246,7 +246,6 @@ int kvm_arch_hardware_enable(void)
 	 */
 	gcfg |= KVM_GCFG_GCI_SECURE;
 	gcfg |= KVM_GCFG_MATC_ROOT;
-	gcfg |= KVM_GCFG_TIT;
 	kvm_write_csr_gcfg(gcfg);
 	kvm_flush_tlb_all();
 
@@ -457,9 +456,6 @@ static int _kvm_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 
 	local_irq_disable();
 
-	if (ret == RESUME_GUEST)
-		kvm_acquire_timer(vcpu);
-
 	if (!(ret & RESUME_HOST)) {
 		_kvm_deliver_intr(vcpu);
 		/* Only check for signals if not already exiting to userspace */
@@ -652,7 +648,6 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	smp_store_mb(vcpu->mode, IN_GUEST_MODE);
 
 	cpu = smp_processor_id();
-	kvm_acquire_timer(vcpu);
 	/* Check if we have any exceptions/interrupts pending */
 	_kvm_deliver_intr(vcpu);
 
@@ -696,23 +691,6 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
 				    struct kvm_mp_state *mp_state)
 {
 	return -ENOIOCTLCMD;
-}
-
-/**
- * kvm_migrate_count() - Migrate timer.
- * @vcpu:       Virtual CPU.
- *
- * Migrate hrtimer to the current CPU by cancelling and restarting it
- * if it was running prior to being cancelled.
- *
- * Must be called when the VCPU is migrated to a different CPU to ensure that
- * timer expiry during guest execution interrupts the guest and causes the
- * interrupt to be delivered in a timely manner.
- */
-static void kvm_migrate_count(struct kvm_vcpu *vcpu)
-{
-	if (hrtimer_cancel(&vcpu->arch.swtimer))
-		hrtimer_restart(&vcpu->arch.swtimer);
 }
 
 static int _kvm_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
@@ -822,20 +800,20 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 
 	local_irq_save(flags);
 	vcpu->cpu = cpu;
-	if (vcpu->arch.last_sched_cpu != cpu) {
-		kvm_debug("[%d->%d]KVM VCPU[%d] switch\n",
-				vcpu->arch.last_sched_cpu, cpu, vcpu->vcpu_id);
-		/*
-		 * Migrate the timer interrupt to the current CPU so that it
-		 * always interrupts the guest and synchronously triggers a
-		 * guest timer interrupt.
-		 */
-		kvm_migrate_count(vcpu);
-	}
 
 	/* restore guest state to registers */
 	_kvm_vcpu_load(vcpu, cpu);
 	local_irq_restore(flags);
+}
+
+void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu)
+{
+	vcpu->arch.blocking = 1;
+}
+
+void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu)
+{
+	vcpu->arch.blocking = 0;
 }
 
 static int _kvm_vcpu_put(struct kvm_vcpu *vcpu, int cpu)
@@ -1712,9 +1690,15 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 
 int kvm_cpu_has_pending_timer(struct kvm_vcpu *vcpu)
 {
-	return _kvm_pending_timer(vcpu) ||
+	int ret;
+
+	/* protect from TOD sync and vcpu_load/put */
+	preempt_disable();
+	ret = _kvm_pending_timer(vcpu) ||
 		kvm_read_hw_gcsr(KVM_CSR_ESTAT) &
 			(1 << (KVM_INT_TIMER - KVM_INT_START));
+	preempt_enable();
+	return ret;
 }
 
 int kvm_arch_vcpu_dump_regs(struct kvm_vcpu *vcpu)

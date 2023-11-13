@@ -99,7 +99,6 @@ void kvm_restore_lasx_upper(struct kvm_vcpu *cpu);
 void kvm_lose_hw_perf(struct kvm_vcpu *vcpu);
 void kvm_restore_hw_perf(struct kvm_vcpu *vcpu);
 
-void kvm_acquire_timer(struct kvm_vcpu *vcpu);
 void kvm_reset_timer(struct kvm_vcpu *vcpu);
 void kvm_init_timer(struct kvm_vcpu *vcpu, unsigned long hz);
 void kvm_restore_timer(struct kvm_vcpu *vcpu);
