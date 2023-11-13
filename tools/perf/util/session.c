@@ -1129,14 +1129,15 @@ static void branch_stack__printf(struct perf_sample *sample, bool callstack)
 		struct branch_entry *e = &entries[i];
 
 		if (!callstack) {
-			printf("..... %2"PRIu64": %016" PRIx64 " -> %016" PRIx64 " %hu cycles %s%s%s%s %x\n",
+			printf("..... %2"PRIu64": %016" PRIx64 " -> %016" PRIx64 " %hu cycles %s%s%s%s %x %s\n",
 				i, e->from, e->to,
 				(unsigned short)e->flags.cycles,
 				e->flags.mispred ? "M" : " ",
 				e->flags.predicted ? "P" : " ",
 				e->flags.abort ? "A" : " ",
 				e->flags.in_tx ? "T" : " ",
-				(unsigned)e->flags.reserved);
+				(unsigned)e->flags.reserved,
+				get_branch_type(e));
 		} else {
 			printf("..... %2"PRIu64": %016" PRIx64 "\n",
 				i, i > 0 ? e->from : e->to);
