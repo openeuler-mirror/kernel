@@ -102,7 +102,10 @@ struct kvm_userspace_memory_region2 {
 	__u64 guest_phys_addr;
 	__u64 memory_size;
 	__u64 userspace_addr;
-	__u64 pad[16];
+	__u64 guest_memfd_offset;
+	__u32 guest_memfd;
+	__u32 pad1;
+	__u64 pad2[14];
 };
 
 /*
@@ -113,6 +116,7 @@ struct kvm_userspace_memory_region2 {
 #define KVM_MEM_LOG_DIRTY_PAGES	(1UL << 0)
 #define KVM_MEM_READONLY	(1UL << 1)
 #define KVM_MEM_HUGE_POD	(1UL << 9)
+#define KVM_MEM_GUEST_MEMFD	(1UL << 2)
 
 /* for KVM_IRQ_LINE */
 struct kvm_irq_level {
@@ -1250,6 +1254,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_USER_MEMORY2 231
 #define KVM_CAP_MEMORY_FAULT_INFO 232
 #define KVM_CAP_MEMORY_ATTRIBUTES 233
+#define KVM_CAP_GUEST_MEMFD 234
 
 #define KVM_CAP_ARM_WRITABLE_IMP_ID_REGS 239
 
@@ -2610,5 +2615,13 @@ struct kvm_arm_rmm_psci_complete {
 };
 
 #define KVM_ARM_VCPU_RMM_PSCI_COMPLETE	_IOW(KVMIO, 0xd6, struct kvm_arm_rmm_psci_complete)
+
+#define KVM_CREATE_GUEST_MEMFD	_IOWR(KVMIO,  0xd4, struct kvm_create_guest_memfd)
+
+struct kvm_create_guest_memfd {
+	__u64 size;
+	__u64 flags;
+	__u64 reserved[6];
+};
 
 #endif /* __LINUX_KVM_H */
