@@ -341,20 +341,27 @@ static void do_autoplug_timer(struct work_struct *work)
 	int nr_cur_cpus = num_online_cpus();
 	int nr_all_cpus = num_possible_cpus();
 	int inc_req = 1, dec_req = 2;
+	struct cpufreq_policy *policy = cpufreq_cpu_get_raw(smp_processor_id());
+
+	if (!policy || IS_ERR(policy->clk)) {
+		pr_err("%s: No %s associated to cpu: %d\n",
+			__func__, policy ? "clk" : "policy", 0);
+		return;
+	}
 
 	ap_info.maxcpus =
 		setup_max_cpus > nr_cpu_ids ? nr_cpu_ids : setup_max_cpus;
 	ap_info.mincpus = ap_info.maxcpus / 4;
 
-	if (strcmp(curruent_policy, "performance") == 0) {
+	if (strcmp(policy->governor->name, "performance") == 0) {
 		ap_info.mincpus = ap_info.maxcpus;
-	} else if (strcmp(curruent_policy, "powersave") == 0) {
+	} else if (strcmp(policy->governor->name, "powersave") == 0) {
 		ap_info.maxcpus = ap_info.mincpus;
-	} else if (strcmp(curruent_policy, "ondemand") == 0) {
+	} else if (strcmp(policy->governor->name, "ondemand") == 0) {
 		ap_info.sampling_rate = 500;
 		inc_req = 0;
 		dec_req = 2;
-	} else if (strcmp(curruent_policy, "conservative") == 0) {
+	} else if (strcmp(policy->governor->name, "conservative") == 0) {
 		inc_req = 1;
 		dec_req = 3;
 		ap_info.sampling_rate = 1000;  /* 1s */

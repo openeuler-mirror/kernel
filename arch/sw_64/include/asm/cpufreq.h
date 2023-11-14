@@ -62,7 +62,5 @@ struct clk *sw64_clk_get(struct device *dev, const char *id);
 
 void sw64_update_clockevents(unsigned long cpu, u32 freq);
 
-void sw64_store_policy(struct cpufreq_policy *policy);
-
 unsigned int __sw64_cpufreq_get(struct cpufreq_policy *policy);
 #endif /* _ASM_SW64_CPUFREQ_H */
