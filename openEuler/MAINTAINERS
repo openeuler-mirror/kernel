@@ -243,6 +243,12 @@ F:	drivers/iommu/hisilicon
 F:	drivers/ubc
 F:	drivers/vfio/ubc
 
+VDPA DRIVER
+M:	jiangdongxu <jiangdongxu1@huawei.com>
+S:	Maintained
+F:	drivers/vdpa
+F:	drivers/vhost/vdpa.c
+
 THE REST
 M:	xiexiuqi@huawei.com
 M:	zhengzengkai@huawei.com
