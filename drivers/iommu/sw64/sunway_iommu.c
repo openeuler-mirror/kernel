@@ -1464,7 +1464,7 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	unsigned long paddr, grn;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return iova;
 
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL2_VAL);
@@ -1501,7 +1501,7 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	 * and pci device BAR, check should be introduced manually
 	 * to avoid VFIO trying to map pci config space.
 	 */
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return 0;
 
 	mutex_lock(&sdomain->api_lock);
@@ -1519,7 +1519,7 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	size_t unmap_size;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return page_size;
 
 	mutex_lock(&sdomain->api_lock);
