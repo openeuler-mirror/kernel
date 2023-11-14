@@ -22,15 +22,13 @@ struct numa_meminfo {
 	struct numa_memblk	blk[NR_NODE_MEMBLKS];
 };
 extern int __init numa_add_memblk(int nodeid, u64 start, u64 end);
-static inline void numa_clear_node(int cpu)
-{
-}
-
+extern void numa_clear_node(unsigned int cpu);
 extern void __init numa_set_distance(int from, int to, int distance);
-void __init early_map_cpu_to_node(unsigned int cpu, int nid);
+extern void __init early_map_cpu_to_node(unsigned int cpu, int nid);
 
 #else  /* CONFIG_NUMA */
 
+static inline void numa_clear_node(unsigned int cpu) { }
 static inline void early_map_cpu_to_node(unsigned int cpu, int nid) { }
 
 #endif /* CONFIG_NUMA */

@@ -461,3 +461,9 @@ void numa_remove_cpu(unsigned int cpu)
 {
 	numa_update_cpu(cpu, true);
 }
+
+void numa_clear_node(unsigned int cpu)
+{
+	numa_remove_cpu(cpu);
+	set_cpu_numa_node(cpu, NUMA_NO_NODE);
+}
