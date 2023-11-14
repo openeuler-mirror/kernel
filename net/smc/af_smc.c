@@ -267,8 +267,8 @@ static struct sock *smc_sock_alloc(struct net *net, struct socket *sock,
 	sk->sk_state = SMC_INIT;
 	sk->sk_destruct = smc_destruct;
 	sk->sk_protocol = protocol;
-	WRITE_ONCE(sk->sk_sndbuf, sysctl_smcr_wmem(net));
-	WRITE_ONCE(sk->sk_rcvbuf, sysctl_smcr_rmem(net));
+	WRITE_ONCE(sk->sk_sndbuf, 2 * sysctl_smcr_wmem(net));
+	WRITE_ONCE(sk->sk_rcvbuf, 2 * sysctl_smcr_rmem(net));
 	smc = smc_sk(sk);
 	for (i = 0; i < SMC_MAX_TCP_LISTEN_WORKS; i++) {
 		smc->tcp_listen_works[i].smc = smc;

@@ -20,6 +20,10 @@
 static int two = 2;
 static int min_sndbuf = SMC_BUF_MIN_SIZE;
 static int min_rcvbuf = SMC_BUF_MIN_SIZE;
+static int max_sndbuf = INT_MAX / 2;
+static int max_rcvbuf = INT_MAX / 2;
+static const int net_smc_wmem_init = (64 * 1024);
+static const int net_smc_rmem_init = (64 * 1024);
 
 static struct ctl_table smc_table[] = {
 	{
@@ -36,6 +40,7 @@ static struct ctl_table smc_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &min_sndbuf,
+		.extra2		= &max_sndbuf,
 	},
 	{
 		.procname	= "rmem",
@@ -43,6 +48,7 @@ static struct ctl_table smc_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &min_rcvbuf,
+		.extra2		= &max_rcvbuf,
 	},
 	{
 		.procname	= "tcp2smc",
@@ -86,9 +92,9 @@ int __net_init smc_sysctl_net_init(struct net *net)
 	idx = 0;
 	net->smc->sysctl_smcr_buf_type = SMCR_PHYS_CONT_BUFS;
 	table[idx++].data = &net->smc->sysctl_smcr_buf_type;
-	WRITE_ONCE(net->smc->sysctl_wmem, READ_ONCE(net->ipv4.sysctl_tcp_wmem[1]));
+	WRITE_ONCE(net->smc->sysctl_wmem, net_smc_wmem_init);
 	table[idx++].data = &net->smc->sysctl_wmem;
-	WRITE_ONCE(net->smc->sysctl_rmem, READ_ONCE(net->ipv4.sysctl_tcp_rmem[1]));
+	WRITE_ONCE(net->smc->sysctl_rmem, net_smc_rmem_init);
 	table[idx++].data = &net->smc->sysctl_rmem;
 	net->smc->sysctl_tcp2smc = 0;
 	table[idx++].data = &net->smc->sysctl_tcp2smc;
