@@ -1417,13 +1417,11 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 
 	ret = check_qp_type(hr_dev, init_attr->qp_type, !!udata);
 	if (ret)
-		goto err_out;
+		return ERR_PTR(ret);
 
 	hr_qp = kzalloc(sizeof(*hr_qp), GFP_KERNEL);
-	if (!hr_qp) {
-		ret = -ENOMEM;
-		goto err_out;
-	}
+	if (!hr_qp)
+		return ERR_PTR(-ENOMEM);
 
 	if (init_attr->qp_type == IB_QPT_XRC_TGT)
 		hr_qp->xrcdn = to_hr_xrcd(init_attr->xrcd)->xrcdn;
@@ -1439,14 +1437,10 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 			  init_attr->qp_type, ret);
 
 		kfree(hr_qp);
-		goto err_out;
+		return ERR_PTR(ret);
 	}
 
 	return &hr_qp->ibqp;
-
-err_out:
-	atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_QP_CREATE_ERR_CNT]);
-	return ERR_PTR(ret);
 }
 
 int to_hr_qp_type(int qp_type)
@@ -1615,8 +1609,6 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 
 out:
 	mutex_unlock(&hr_qp->mutex);
-	if (ret)
-		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_QP_MODIFY_ERR_CNT]);
 
 	return ret;
 }

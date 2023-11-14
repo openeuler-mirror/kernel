@@ -146,18 +146,16 @@ int hns_roce_alloc_xrcd(struct ib_xrcd *ib_xrcd, struct ib_udata *udata)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_xrcd->device);
 	struct hns_roce_xrcd *xrcd = to_hr_xrcd(ib_xrcd);
-	int ret = -EINVAL;
+	int ret;
 
 	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC))
-		goto err_out;
+		return -EINVAL;
 
 	ret = hns_roce_xrcd_alloc(hr_dev, &xrcd->xrcdn);
-
-err_out:
 	if (ret)
-		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_XRCD_ALLOC_ERR_CNT]);
+		return ret;
 
-	return ret;
+	return 0;
 }
 
 int hns_roce_dealloc_xrcd(struct ib_xrcd *ib_xrcd, struct ib_udata *udata)

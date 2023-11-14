@@ -994,27 +994,6 @@ enum hns_roce_hw_pkt_stat_index {
 	HNS_ROCE_HW_CNT_TOTAL,
 };
 
-enum hns_roce_hw_dfx_stat_index {
-	HNS_ROCE_DFX_AEQE_CNT,
-	HNS_ROCE_DFX_CEQE_CNT,
-	HNS_ROCE_DFX_CMDS_CNT,
-	HNS_ROCE_DFX_CMDS_ERR_CNT,
-	HNS_ROCE_DFX_MBX_POSTED_CNT,
-	HNS_ROCE_DFX_MBX_POLLED_CNT,
-	HNS_ROCE_DFX_MBX_EVENT_CNT,
-	HNS_ROCE_DFX_QP_CREATE_ERR_CNT,
-	HNS_ROCE_DFX_QP_MODIFY_ERR_CNT,
-	HNS_ROCE_DFX_CQ_CREATE_ERR_CNT,
-	HNS_ROCE_DFX_SRQ_CREATE_ERR_CNT,
-	HNS_ROCE_DFX_XRCD_ALLOC_ERR_CNT,
-	HNS_ROCE_DFX_MR_REG_ERR_CNT,
-	HNS_ROCE_DFX_MR_REREG_ERR_CNT,
-	HNS_ROCE_DFX_AH_CREATE_ERR_CNT,
-	HNS_ROCE_DFX_MMAP_ERR_CNT,
-	HNS_ROCE_DFX_UCTX_ALLOC_ERR_CNT,
-	HNS_ROCE_DFX_CNT_TOTAL
-};
-
 struct hns_roce_hw {
 	int (*cmq_init)(struct hns_roce_dev *hr_dev);
 	void (*cmq_exit)(struct hns_roce_dev *hr_dev);
@@ -1174,7 +1153,6 @@ struct hns_roce_dev {
 
 	struct notifier_block bond_nb;
 	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
-	atomic64_t *dfx_cnt;
 	struct hns_roce_poe_ctx poe_ctx; /* poe ch array */
 
 	struct rdma_notify_mem *notify_tbl;
