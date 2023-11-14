@@ -46,8 +46,6 @@ static void init_debugfs_seqfile(struct hns_debugfs_seqfile *seq,
 
 	entry = debugfs_create_file(name, 0400, parent, seq,
 				    &hns_debugfs_seqfile_fops);
-	if (IS_ERR(entry))
-		return;
 
 	seq->read = read_fn;
 	seq->data = data;
@@ -85,11 +83,17 @@ struct hns_poe_debugfs {
 	struct dentry *root; /* dev debugfs entry */
 };
 
+struct hns_sw_stat_debugfs {
+	struct dentry *root;
+	struct hns_debugfs_seqfile sw_stat;
+};
+
 /* Debugfs for device */
 struct hns_roce_dev_debugfs {
 	struct dentry *root;
 	struct hns_dca_debugfs *dca_root;
 	struct hns_poe_debugfs *poe_root;
+	struct hns_sw_stat_debugfs *sw_stat_root;
 };
 
 struct dca_mem_stats {
@@ -444,13 +448,8 @@ static void init_dca_ctx_debugfs(struct hns_dca_ctx_debugfs *dbgfs,
 {
 	char name[DCA_CTX_PID_LEN];
 
-	if (IS_ERR_OR_NULL(parent))
-		return;
-
 	dca_setup_pool_name(uctx ? uctx->pid : 0, !uctx, name, sizeof(name));
 	dbgfs->root = debugfs_create_dir(name, parent);
-	if (IS_ERR_OR_NULL(dbgfs->root))
-		return;
 
 	if (uctx) {
 		init_debugfs_seqfile(&dbgfs->mem, "mstats", dbgfs->root,
@@ -477,18 +476,11 @@ create_dca_debugfs(struct hns_roce_dev *hr_dev, struct dentry *parent)
 {
 	struct hns_dca_debugfs *dbgfs;
 
-	if (IS_ERR(parent))
-		return NULL;
-
 	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
 		return NULL;
 
 	dbgfs->root = debugfs_create_dir("dca", parent);
-	if (IS_ERR_OR_NULL(dbgfs->root)) {
-		kfree(dbgfs);
-		return NULL;
-	}
 
 	init_debugfs_seqfile(&dbgfs->pool, "pool", dbgfs->root,
 			     dca_debugfs_pool_show, hr_dev);
@@ -634,13 +626,68 @@ void hns_roce_unregister_uctx_debugfs(struct hns_roce_dev *hr_dev,
 	}
 }
 
+static const char * const sw_stat_info[] = {
+	[HNS_ROCE_DFX_AEQE_CNT] = "aeqe",
+	[HNS_ROCE_DFX_CEQE_CNT] = "ceqe",
+	[HNS_ROCE_DFX_CMDS_CNT] = "cmds",
+	[HNS_ROCE_DFX_CMDS_ERR_CNT] = "cmds_err",
+	[HNS_ROCE_DFX_MBX_POSTED_CNT] = "posted_mbx",
+	[HNS_ROCE_DFX_MBX_POLLED_CNT] = "polled_mbx",
+	[HNS_ROCE_DFX_MBX_EVENT_CNT] = "mbx_event",
+	[HNS_ROCE_DFX_QP_CREATE_ERR_CNT] = "qp_create_err",
+	[HNS_ROCE_DFX_QP_MODIFY_ERR_CNT] = "qp_modify_err",
+	[HNS_ROCE_DFX_CQ_CREATE_ERR_CNT] = "cq_create_err",
+	[HNS_ROCE_DFX_CQ_MODIFY_ERR_CNT] = "cq_modify_err",
+	[HNS_ROCE_DFX_SRQ_CREATE_ERR_CNT] = "srq_create_err",
+	[HNS_ROCE_DFX_SRQ_MODIFY_ERR_CNT] = "srq_modify_err",
+	[HNS_ROCE_DFX_XRCD_ALLOC_ERR_CNT] = "xrcd_alloc_err",
+	[HNS_ROCE_DFX_MR_REG_ERR_CNT] = "mr_reg_err",
+	[HNS_ROCE_DFX_MR_REREG_ERR_CNT] = "mr_rereg_err",
+	[HNS_ROCE_DFX_AH_CREATE_ERR_CNT] = "ah_create_err",
+	[HNS_ROCE_DFX_MMAP_ERR_CNT] = "mmap_err",
+	[HNS_ROCE_DFX_UCTX_ALLOC_ERR_CNT] = "uctx_alloc_err",
+};
+
+static int sw_stat_debugfs_show(struct seq_file *file, void *offset)
+{
+	struct hns_roce_dev *hr_dev = file->private;
+	int i;
+
+	for (i = 0; i < HNS_ROCE_DFX_CNT_TOTAL; i++)
+		seq_printf(file, "%-20s --- %lld\n", sw_stat_info[i],
+			   atomic64_read(&hr_dev->dfx_cnt[i]));
+
+	return 0;
+}
+
+static struct hns_sw_stat_debugfs
+	*create_sw_stat_debugfs(struct hns_roce_dev *hr_dev,
+				struct dentry *parent)
+{
+	struct hns_sw_stat_debugfs *dbgfs;
+
+	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
+	if (!dbgfs)
+		return NULL;
+
+	dbgfs->root = debugfs_create_dir("sw_stat", parent);
+
+	init_debugfs_seqfile(&dbgfs->sw_stat, "sw_stat", dbgfs->root,
+			     sw_stat_debugfs_show, hr_dev);
+	return dbgfs;
+}
+
+static void destroy_sw_stat_debugfs(struct hns_sw_stat_debugfs *sw_stat_dbgfs)
+{
+	cleanup_debugfs_seqfile(&sw_stat_dbgfs->sw_stat);
+	debugfs_remove_recursive(sw_stat_dbgfs->root);
+	kvfree(sw_stat_dbgfs);
+}
+
 /* debugfs for device */
 void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_dev_debugfs *dbgfs;
-
-	if (IS_ERR_OR_NULL(hns_roce_dbgfs_root))
-		return;
 
 	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
@@ -648,10 +695,6 @@ void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 
 	dbgfs->root = debugfs_create_dir(dev_name(&hr_dev->ib_dev.dev),
 					 hns_roce_dbgfs_root);
-	if (IS_ERR(dbgfs->root)) {
-		kfree(dbgfs);
-		return;
-	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
 		dbgfs->dca_root = create_dca_debugfs(hr_dev, dbgfs->root);
@@ -659,15 +702,14 @@ void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 	if (poe_is_supported(hr_dev))
 		dbgfs->poe_root = create_poe_debugfs(hr_dev, dbgfs->root);
 
+	dbgfs->sw_stat_root = create_sw_stat_debugfs(hr_dev, dbgfs->root);
+
 	hr_dev->dbgfs = dbgfs;
 }
 
 void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_dev_debugfs *dbgfs;
-
-	if (IS_ERR_OR_NULL(hns_roce_dbgfs_root))
-		return;
 
 	dbgfs = hr_dev->dbgfs;
 	if (!dbgfs)
@@ -681,6 +723,11 @@ void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)
 	if (dbgfs->poe_root) {
 		destroy_poe_debugfs(hr_dev, dbgfs->poe_root);
 		dbgfs->poe_root = NULL;
+	}
+
+	if (dbgfs->sw_stat_root) {
+		destroy_sw_stat_debugfs(dbgfs->sw_stat_root);
+		dbgfs->sw_stat_root = NULL;
 	}
 
 	debugfs_remove_recursive(dbgfs->root);

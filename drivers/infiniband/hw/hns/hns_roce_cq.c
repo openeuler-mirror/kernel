@@ -464,12 +464,10 @@ int hns_roce_create_cq(struct ib_cq *ib_cq, const struct ib_cq_init_attr *attr,
 	struct hns_roce_cq *hr_cq = to_hr_cq(ib_cq);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_ib_create_cq ucmd = {};
-	int ret;
+	int ret = -EOPNOTSUPP;
 
-	if (attr->flags) {
-		ret = -EOPNOTSUPP;
+	if (attr->flags)
 		goto err_out;
-	}
 
 	ret = verify_cq_create_attr(hr_dev, attr);
 	if (ret)
