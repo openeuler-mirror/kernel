@@ -220,6 +220,13 @@ struct smc_connection {
 	u8			out_of_sync : 1; /* out of sync with peer */
 };
 
+#define SMC_MAX_TCP_LISTEN_WORKS 2
+
+struct smc_tcp_listen_work {
+	struct smc_sock *smc;
+	struct work_struct	work;
+};
+
 struct smc_sock {				/* smc sock container */
 	struct sock		sk;
 	struct socket		*clcsock;	/* internal tcp socket */
@@ -228,7 +235,9 @@ struct smc_sock {				/* smc sock container */
 	struct smc_connection	conn;		/* smc connection */
 	struct smc_sock		*listen_smc;	/* listen parent */
 	struct work_struct	connect_work;	/* handle non-blocking connect*/
-	struct work_struct	tcp_listen_work;/* handle tcp socket accepts */
+	struct smc_tcp_listen_work	tcp_listen_works[SMC_MAX_TCP_LISTEN_WORKS];
+						/* handle tcp socket accepts */
+	atomic_t		tcp_listen_work_seq;/* used to select tcp_listen_works */
 	struct work_struct	smc_listen_work;/* prepare new accept socket */
 	struct list_head	accept_q;	/* sockets to be accepted */
 	spinlock_t		accept_q_lock;	/* protects accept_q */

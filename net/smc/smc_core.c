@@ -630,19 +630,26 @@ static void smcr_buf_unuse(struct smc_buf_desc *rmb_desc,
 
 		smc_buf_free(lgr, true, rmb_desc);
 	} else {
-		rmb_desc->used = 0;
+		/* memzero_explicit provides potential memory barrier semantics */
+		memzero_explicit(rmb_desc->cpu_addr, rmb_desc->len);
+		WRITE_ONCE(rmb_desc->used, 0);
 	}
 }
 
 static void smc_buf_unuse(struct smc_connection *conn,
 			  struct smc_link_group *lgr)
 {
-	if (conn->sndbuf_desc)
-		conn->sndbuf_desc->used = 0;
-	if (conn->rmb_desc && lgr->is_smcd)
-		conn->rmb_desc->used = 0;
-	else if (conn->rmb_desc)
+	if (conn->sndbuf_desc) {
+		memzero_explicit(conn->sndbuf_desc->cpu_addr, conn->sndbuf_desc->len);
+		WRITE_ONCE(conn->sndbuf_desc->used, 0);
+	}
+	if (conn->rmb_desc && lgr->is_smcd) {
+		memzero_explicit(conn->rmb_desc->cpu_addr,
+				 conn->rmb_desc->len + sizeof(struct smcd_cdc_msg));
+		WRITE_ONCE(conn->rmb_desc->used, 0);
+	} else if (conn->rmb_desc) {
 		smcr_buf_unuse(conn->rmb_desc, lgr);
+	}
 }
 
 /* remove a finished connection from its link group */
@@ -1684,8 +1691,6 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 		/* check for reusable slot in the link group */
 		buf_desc = smc_buf_get_slot(bufsize_short, lock, buf_list);
 		if (buf_desc) {
-			buf_desc->is_dma_need_sync = 0;
-			memset(buf_desc->cpu_addr, 0, bufsize);
 			break; /* found reusable slot */
 		}
 

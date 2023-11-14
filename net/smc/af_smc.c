@@ -56,6 +56,7 @@ static DEFINE_MUTEX(smc_client_lgr_pending);	/* serialize link group
 						 * creation on client
 						 */
 
+static struct workqueue_struct	*smc_tcp_ls_wq;	/* wq for tcp listen work */
 struct workqueue_struct	*smc_hs_wq;	/* wq for handshake work */
 struct workqueue_struct	*smc_close_wq;	/* wq for close work */
 
@@ -254,6 +255,7 @@ static struct sock *smc_sock_alloc(struct net *net, struct socket *sock,
 	struct smc_sock *smc;
 	struct proto *prot;
 	struct sock *sk;
+	int i = 0;
 
 	prot = (protocol == SMCPROTO_SMC6) ? &smc_proto6 : &smc_proto;
 	sk = sk_alloc(net, PF_SMC, GFP_KERNEL, prot, 0);
@@ -265,7 +267,11 @@ static struct sock *smc_sock_alloc(struct net *net, struct socket *sock,
 	sk->sk_destruct = smc_destruct;
 	sk->sk_protocol = protocol;
 	smc = smc_sk(sk);
-	INIT_WORK(&smc->tcp_listen_work, smc_tcp_listen_work);
+	for (i = 0; i < SMC_MAX_TCP_LISTEN_WORKS; i++) {
+		smc->tcp_listen_works[i].smc = smc;
+		INIT_WORK(&smc->tcp_listen_works[i].work, smc_tcp_listen_work);
+	}
+	atomic_set(&smc->tcp_listen_work_seq, 0);
 	INIT_WORK(&smc->connect_work, smc_connect_work);
 	INIT_DELAYED_WORK(&smc->conn.tx_work, smc_tx_work);
 	INIT_LIST_HEAD(&smc->accept_q);
@@ -1249,6 +1255,11 @@ static void smc_accept_unlink(struct sock *sk)
 	sock_put(sk); /* sock_hold in smc_accept_enqueue */
 }
 
+static inline bool smc_accept_queue_empty(struct sock *sk)
+{
+	return list_empty(&smc_sk(sk)->accept_q);
+}
+
 /* remove a sock from the accept queue to bind it to a new socket created
  * for a socket accept call from user space
  */
@@ -1844,8 +1855,9 @@ out_free:
 
 static void smc_tcp_listen_work(struct work_struct *work)
 {
-	struct smc_sock *lsmc = container_of(work, struct smc_sock,
-					     tcp_listen_work);
+	struct smc_tcp_listen_work *twork =
+		container_of(work, struct smc_tcp_listen_work, work);
+	struct smc_sock *lsmc = twork->smc;
 	struct sock *lsk = &lsmc->sk;
 	struct smc_sock *new_smc;
 	int rc = 0;
@@ -1886,8 +1898,10 @@ static void smc_clcsock_data_ready(struct sock *listen_clcsock)
 		return;
 	lsmc->clcsk_data_ready(listen_clcsock);
 	if (lsmc->sk.sk_state == SMC_LISTEN) {
+		int idx = atomic_fetch_inc(&lsmc->tcp_listen_work_seq) %
+				  SMC_MAX_TCP_LISTEN_WORKS;
 		sock_hold(&lsmc->sk); /* sock_put in smc_tcp_listen_work() */
-		if (!queue_work(smc_hs_wq, &lsmc->tcp_listen_work))
+		if (!queue_work(smc_tcp_ls_wq, &lsmc->tcp_listen_works[idx].work))
 			sock_put(&lsmc->sk);
 	}
 }
@@ -1968,7 +1982,8 @@ static int smc_accept(struct socket *sock, struct socket *new_sock,
 			break;
 		}
 		release_sock(sk);
-		timeo = schedule_timeout(timeo);
+		if (smc_accept_queue_empty(sk))
+			timeo = schedule_timeout(timeo);
 		/* wakeup by sk_data_ready in smc_listen_work() */
 		sched_annotate_sleep();
 		lock_sock(sk);
@@ -2094,17 +2109,12 @@ out:
 	return rc;
 }
 
-static __poll_t smc_accept_poll(struct sock *parent)
+static inline __poll_t smc_accept_poll(struct sock *parent)
 {
-	struct smc_sock *isk = smc_sk(parent);
-	__poll_t mask = 0;
+	if (!smc_accept_queue_empty(parent))
+		return EPOLLIN | EPOLLRDNORM;
 
-	spin_lock(&isk->accept_q_lock);
-	if (!list_empty(&isk->accept_q))
-		mask = EPOLLIN | EPOLLRDNORM;
-	spin_unlock(&isk->accept_q_lock);
-
-	return mask;
+	return 0;
 }
 
 static __poll_t smc_poll(struct file *file, struct socket *sock,
@@ -2589,9 +2599,13 @@ static int __init smc_init(void)
 		goto out_pernet_subsys;
 
 	rc = -ENOMEM;
+
+	smc_tcp_ls_wq = alloc_workqueue("smc_tcp_ls_wq", WQ_UNBOUND | WQ_HIGHPRI, 0);
+	if (!smc_tcp_ls_wq)
+		goto out_pnet;
 	smc_hs_wq = alloc_workqueue("smc_hs_wq", 0, 0);
 	if (!smc_hs_wq)
-		goto out_pnet;
+		goto out_alloc_tcp_ls_wq;
 
 	smc_close_wq = alloc_workqueue("smc_close_wq", 0, 0);
 	if (!smc_close_wq)
@@ -2656,6 +2670,8 @@ out_alloc_wqs:
 	destroy_workqueue(smc_close_wq);
 out_alloc_hs_wq:
 	destroy_workqueue(smc_hs_wq);
+out_alloc_tcp_ls_wq:
+	destroy_workqueue(smc_tcp_ls_wq);
 out_pnet:
 	smc_pnet_exit();
 out_pernet_subsys:
@@ -2671,6 +2687,7 @@ static void __exit smc_exit(void)
 	smc_core_exit();
 	smc_ib_unregister_client();
 	destroy_workqueue(smc_close_wq);
+	destroy_workqueue(smc_tcp_ls_wq);
 	destroy_workqueue(smc_hs_wq);
 	proto_unregister(&smc_proto6);
 	proto_unregister(&smc_proto);
