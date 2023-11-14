@@ -46,8 +46,6 @@ static void init_debugfs_seqfile(struct hns_debugfs_seqfile *seq,
 
 	entry = debugfs_create_file(name, 0400, parent, seq,
 				    &hns_debugfs_seqfile_fops);
-	if (IS_ERR(entry))
-		return;
 
 	seq->read = read_fn;
 	seq->data = data;
@@ -450,13 +448,8 @@ static void init_dca_ctx_debugfs(struct hns_dca_ctx_debugfs *dbgfs,
 {
 	char name[DCA_CTX_PID_LEN];
 
-	if (IS_ERR_OR_NULL(parent))
-		return;
-
 	dca_setup_pool_name(uctx ? uctx->pid : 0, !uctx, name, sizeof(name));
 	dbgfs->root = debugfs_create_dir(name, parent);
-	if (IS_ERR_OR_NULL(dbgfs->root))
-		return;
 
 	if (uctx) {
 		init_debugfs_seqfile(&dbgfs->mem, "mstats", dbgfs->root,
@@ -483,18 +476,11 @@ create_dca_debugfs(struct hns_roce_dev *hr_dev, struct dentry *parent)
 {
 	struct hns_dca_debugfs *dbgfs;
 
-	if (IS_ERR(parent))
-		return NULL;
-
 	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
 		return NULL;
 
 	dbgfs->root = debugfs_create_dir("dca", parent);
-	if (IS_ERR_OR_NULL(dbgfs->root)) {
-		kfree(dbgfs);
-		return NULL;
-	}
 
 	init_debugfs_seqfile(&dbgfs->pool, "pool", dbgfs->root,
 			     dca_debugfs_pool_show, hr_dev);
@@ -680,18 +666,11 @@ static struct hns_sw_stat_debugfs
 {
 	struct hns_sw_stat_debugfs *dbgfs;
 
-	if (IS_ERR(parent))
-		return NULL;
-
 	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
 		return NULL;
 
 	dbgfs->root = debugfs_create_dir("sw_stat", parent);
-	if (IS_ERR_OR_NULL(dbgfs->root)) {
-		kvfree(dbgfs);
-		return NULL;
-	}
 
 	init_debugfs_seqfile(&dbgfs->sw_stat, "sw_stat", dbgfs->root,
 			     sw_stat_debugfs_show, hr_dev);
@@ -710,19 +689,12 @@ void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_dev_debugfs *dbgfs;
 
-	if (IS_ERR_OR_NULL(hns_roce_dbgfs_root))
-		return;
-
 	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
 		return;
 
 	dbgfs->root = debugfs_create_dir(dev_name(&hr_dev->ib_dev.dev),
 					 hns_roce_dbgfs_root);
-	if (IS_ERR(dbgfs->root)) {
-		kfree(dbgfs);
-		return;
-	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
 		dbgfs->dca_root = create_dca_debugfs(hr_dev, dbgfs->root);
@@ -738,9 +710,6 @@ void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_dev_debugfs *dbgfs;
-
-	if (IS_ERR_OR_NULL(hns_roce_dbgfs_root))
-		return;
 
 	dbgfs = hr_dev->dbgfs;
 	if (!dbgfs)
