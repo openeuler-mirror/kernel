@@ -660,7 +660,7 @@ int tcm_open(struct inode *inode, struct file *file)
 
 	spin_unlock(&driver_lock);
 
-	chip->data_buffer = kmalloc(TCM_BUFSIZE * sizeof(u8), GFP_KERNEL);
+	chip->data_buffer = kzalloc(TCM_BUFSIZE, GFP_KERNEL);
 	if (chip->data_buffer == NULL) {
 		chip->num_opens--;
 		put_device(chip->dev);
@@ -739,6 +739,7 @@ ssize_t tcm_read(struct file *file, char __user *buf,
 {
 	struct tcm_chip *chip = file->private_data;
 	int ret_size = 0;
+	int rc;
 
 	del_singleshot_timer_sync(&chip->user_read_timer);
 	flush_work(&chip->work);
@@ -749,7 +750,9 @@ ssize_t tcm_read(struct file *file, char __user *buf,
 			ret_size = size;
 
 		mutex_lock(&chip->buffer_mutex);
-		if (copy_to_user(buf, chip->data_buffer, ret_size))
+		rc = copy_to_user(buf, chip->data_buffer, ret_size);
+		memset(chip->data_buffer, 0, ret_size);
+		if (rc)
 			ret_size = -EFAULT;
 		mutex_unlock(&chip->buffer_mutex);
 	}
