@@ -134,7 +134,7 @@ EXPORT_SYMBOL(ubl_setup);
 struct net_device *alloc_ubndev_mqs(int sizeof_priv, unsigned int txqs,
 				    unsigned int rxqs)
 {
-	return alloc_netdev_mqs(sizeof_priv, "ubn%d", NET_NAME_UNKNOWN,
+	return alloc_netdev_mqs(sizeof_priv, "ubl%d", NET_NAME_UNKNOWN,
 				ubl_setup, txqs, rxqs);
 }
 EXPORT_SYMBOL(alloc_ubndev_mqs);
