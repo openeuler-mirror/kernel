@@ -42,12 +42,20 @@ struct hns_sw_stat_debugfs {
 	struct hns_debugfs_seqfile sw_stat;
 };
 
+struct hns_srq_debugfs {
+	struct dentry *root;
+	struct hns_debugfs_seqfile srqc;
+	struct hns_debugfs_seqfile srqn;
+	atomic_t atomic_srqn;
+};
+
 /* Debugfs for device */
 struct hns_roce_dev_debugfs {
 	struct dentry *root;
 	struct hns_dca_debugfs dca_root;
 	struct hns_poe_debugfs poe_root;
 	struct hns_sw_stat_debugfs sw_stat_root;
+	struct hns_srq_debugfs srq_root;
 };
 
 struct hns_roce_dev;

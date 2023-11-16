@@ -14,12 +14,115 @@ static struct dentry *hns_roce_dbgfs_root;
 
 #define KB 1024
 
+#define SRQN_BUF_SIZE 12
+
 static int hns_debugfs_seqfile_open(struct inode *inode, struct file *f)
 {
 	struct hns_debugfs_seqfile *seqfile = inode->i_private;
 
 	return single_open(f, seqfile->read, seqfile->data);
 }
+
+static ssize_t srqn_debugfs_store(struct file *file, const char __user *user_buf,
+				  size_t size, loff_t *ppos)
+{
+	struct hns_roce_dev *hr_dev = file->private_data;
+	struct hns_srq_debugfs *dbgfs = &hr_dev->dbgfs.srq_root;
+	atomic_t *atomic_srqn = &dbgfs->atomic_srqn;
+	u32 max = hr_dev->srq_table.srq_ida.max;
+	u32 num;
+	int ret;
+
+	if (size > SRQN_BUF_SIZE)
+		return -EINVAL;
+
+	ret = kstrtou32_from_user(user_buf, size, 0, &num);
+	if (ret)
+		return ret;
+
+	if (num > max)
+		return -ERANGE;
+
+	atomic_set(atomic_srqn, (int)num);
+
+	return size;
+}
+
+static ssize_t srqn_debugfs_show(struct file *file, char __user *user_buf,
+				 size_t size, loff_t *ppos)
+{
+	struct hns_roce_dev *hr_dev = file->private_data;
+	struct hns_srq_debugfs *dbgfs = &hr_dev->dbgfs.srq_root;
+	u32 srqn = (u32)atomic_read(&dbgfs->atomic_srqn);
+	char buf[SRQN_BUF_SIZE];
+	int ret;
+
+	ret = snprintf(buf, sizeof(buf), "%u\n", srqn);
+	if (ret < 0)
+		return ret;
+
+	return simple_read_from_buffer(user_buf, size, ppos, buf, ret);
+}
+
+static void print_json_srqc(struct ib_device *device,
+			    struct seq_file *file,
+			    uint8_t *data,
+			    u32 srqn,
+			    int size)
+{
+	int i = 0;
+
+	seq_puts(file, "[ {\n");
+	seq_printf(file, "\t\"srqn\": %u,\n", srqn);
+	seq_printf(file, "\t\"ifindex\": %u,\n", device->index);
+	seq_printf(file, "\t\"ifname\": \"%s\",\n", dev_name(&device->dev));
+	seq_puts(file, "\t\"data\": [ ");
+	while (i < size - 1) {
+		seq_printf(file, "%d,", data[i]);
+		i++;
+	}
+	seq_printf(file, "%d", data[i]);
+	seq_puts(file, " ]\n");
+	seq_puts(file, "} ]\n");
+}
+
+static int srqc_debugfs_show(struct seq_file *file, void *offset)
+{
+	struct hns_roce_dev *hr_dev = file->private;
+	struct hns_srq_debugfs *dbgfs = &hr_dev->dbgfs.srq_root;
+	int srqc_size = hr_dev->caps.srqc_entry_sz;
+	u32 srqn = (u32)atomic_read(&dbgfs->atomic_srqn);
+	void *data;
+	int ret;
+
+	if (!hns_roce_is_srq_exist(hr_dev, srqn))
+		return -EINVAL;
+
+	if (!hr_dev->hw->query_srqc)
+		return -EOPNOTSUPP;
+
+	data = kvcalloc(1, srqc_size, GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	ret = hr_dev->hw->query_srqc(hr_dev, srqn, data);
+	if (ret)
+		goto out;
+
+	print_json_srqc(&hr_dev->ib_dev, file, data, srqn, srqc_size);
+
+out:
+	kvfree(data);
+
+	return ret;
+}
+
+static const struct file_operations hns_srqn_fops = {
+	.owner = THIS_MODULE,
+	.open	= simple_open,
+	.write	= srqn_debugfs_store,
+	.read = srqn_debugfs_show,
+};
 
 static const struct file_operations hns_debugfs_seqfile_fops = {
 	.owner = THIS_MODULE,
@@ -555,6 +658,22 @@ static void create_sw_stat_debugfs(struct hns_roce_dev *hr_dev,
 			     sw_stat_debugfs_show, hr_dev);
 }
 
+static void create_srq_debugfs(struct hns_roce_dev *hr_dev,
+				struct dentry *parent)
+{
+	struct hns_srq_debugfs *dbgfs = &hr_dev->dbgfs.srq_root;
+
+	atomic_set(&dbgfs->atomic_srqn, 0);
+
+	dbgfs->root = debugfs_create_dir("srq", parent);
+
+	dbgfs->srqn.entry = debugfs_create_file("srqn", 0600, dbgfs->root,
+						hr_dev, &hns_srqn_fops);
+
+	init_debugfs_seqfile(&dbgfs->srqc, "srqc", dbgfs->root,
+			     srqc_debugfs_show, hr_dev);
+}
+
 /* debugfs for device */
 void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 {
@@ -570,6 +689,7 @@ void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 		create_poe_debugfs(hr_dev, dbgfs->root);
 
 	create_sw_stat_debugfs(hr_dev, dbgfs->root);
+	create_srq_debugfs(hr_dev, dbgfs->root);
 }
 
 void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)

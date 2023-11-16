@@ -1063,6 +1063,7 @@ struct hns_roce_hw {
 	int (*write_srqc)(struct hns_roce_srq *srq, void *mb_buf);
 	int (*query_cqc)(struct hns_roce_dev *hr_dev, u32 cqn, void *buffer);
 	int (*query_qpc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
+	int (*query_srqc)(struct hns_roce_dev *hr_dev, u32 srqn, void *buffer);
 	int (*query_mpt)(struct hns_roce_dev *hr_dev, u32 key, void *buffer);
 	int (*query_sccc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
 	int (*get_dscp)(struct hns_roce_dev *hr_dev, u8 dscp,
@@ -1493,4 +1494,5 @@ void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
 int hns_roce_register_poe_channel(struct hns_roce_dev *hr_dev, u8 channel,
 				  u64 poe_addr);
 int hns_roce_unregister_poe_channel(struct hns_roce_dev *hr_dev, u8 channel);
+bool hns_roce_is_srq_exist(struct hns_roce_dev *hr_dev, u32 srqn);
 #endif /* _HNS_ROCE_DEVICE_H */
