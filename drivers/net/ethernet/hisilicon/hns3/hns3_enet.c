@@ -3132,8 +3132,10 @@ static bool hns3_get_tx_timeo_queue_info(struct net_device *ndev)
 		struct hns3_mac_stats mac_stats;
 
 		h->ae_algo->ops->get_mac_stats(h, &mac_stats);
-		netdev_info(ndev, "tx_pause_cnt: %llu, rx_pause_cnt: %llu\n",
-			    mac_stats.tx_pause_cnt, mac_stats.rx_pause_cnt);
+		netdev_info(ndev,
+			    "tx_pause_cnt: %llu, rx_pause_cnt: %llu, tx_pfc_cnt: %llu, rx_pfc_cnt: %llu\n",
+			    mac_stats.tx_pause_cnt, mac_stats.rx_pause_cnt,
+			    mac_stats.tx_pfc_cnt, mac_stats.rx_pfc_cnt);
 	}
 
 	hns3_dump_queue_reg(ndev, tx_ring);
@@ -5286,6 +5288,11 @@ static void hns3_alloc_page_pool(struct hns3_enet_ring *ring)
 			 PTR_ERR(ring->page_pool));
 		ring->page_pool = NULL;
 	}
+}
+
+bool hns3_is_page_pool_enabled(void)
+{
+	return page_pool_enabled;
 }
 
 static int hns3_alloc_ring_memory(struct hns3_enet_ring *ring)

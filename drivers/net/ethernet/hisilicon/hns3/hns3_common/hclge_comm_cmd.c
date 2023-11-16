@@ -158,6 +158,7 @@ static const struct hclge_comm_caps_bit_map hclge_pf_cmd_caps[] = {
 	{HCLGE_COMM_CAP_VF_FAULT_B, HNAE3_DEV_SUPPORT_VF_FAULT_B},
 	{HCLGE_COMM_CAP_NOTIFY_PKT_B, HNAE3_DEV_SUPPORT_NOTIFY_PKT_B},
 	{HCLGE_COMM_CAP_TM_FLUSH_B, HNAE3_DEV_SUPPORT_TM_FLUSH_B},
+	{HCLGE_COMM_CAP_ERR_MOD_GEN_REG_B, HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B},
 };
 
 static const struct hclge_comm_caps_bit_map hclge_vf_cmd_caps[] = {
@@ -473,6 +474,8 @@ int hclge_comm_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
 	struct hclge_comm_cmq_ring *csq = &hw->cmq.csq;
 	int ret;
 	int ntc;
+	trace_hclge_comm_cmd_send(hw, desc, num,
+				  hclge_comm_is_special_opcode(desc->opcode));
 
 	spin_lock_bh(&hw->cmq.csq.lock);
 
@@ -507,6 +510,8 @@ int hclge_comm_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
 
 	spin_unlock_bh(&hw->cmq.csq.lock);
 
+	trace_hclge_comm_cmd_get(hw, desc, num,
+				 hclge_comm_is_special_opcode(desc->opcode));
 	return ret;
 }
 

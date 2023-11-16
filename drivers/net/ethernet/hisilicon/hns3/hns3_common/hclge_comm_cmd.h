@@ -91,6 +91,7 @@ enum hclge_opcode_type {
 	HCLGE_OPC_DFX_RCB_REG		= 0x004D,
 	HCLGE_OPC_DFX_TQP_REG		= 0x004E,
 	HCLGE_OPC_DFX_SSU_REG_2		= 0x004F,
+	HCLGE_OPC_DFX_GEN_REG		= 0x7038,
 
 	HCLGE_OPC_QUERY_DEV_SPECS	= 0x0050,
 	HCLGE_OPC_GET_QUEUE_ERR_VF      = 0x0067,
@@ -363,6 +364,7 @@ enum HCLGE_COMM_CAP_BITS {
 	HCLGE_COMM_CAP_WOL_B = 28,
 	HCLGE_COMM_CAP_NOTIFY_PKT_B = 29,
 	HCLGE_COMM_CAP_TM_FLUSH_B = 31,
+	HCLGE_COMM_CAP_ERR_MOD_GEN_REG_B = 32,
 };
 
 enum HCLGE_COMM_API_CAP_BITS {
@@ -489,5 +491,11 @@ int hclge_comm_cmd_queue_init(struct pci_dev *pdev, struct hclge_comm_hw *hw);
 int hclge_comm_cmd_init(struct hnae3_ae_dev *ae_dev, struct hclge_comm_hw *hw,
 			u32 *fw_version, bool is_pf,
 			unsigned long reset_pending);
+void trace_hclge_comm_cmd_send(struct hclge_comm_hw *hw,
+			       struct hclge_desc *desc,
+			       int num, int is_special);
+void trace_hclge_comm_cmd_get(struct hclge_comm_hw *hw,
+			      struct hclge_desc *desc,
+			      int num, int is_special);
 
 #endif

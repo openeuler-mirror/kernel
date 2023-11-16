@@ -140,6 +140,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_VF_FAULT_B,
 	HNAE3_DEV_SUPPORT_NOTIFY_PKT_B,
 	HNAE3_DEV_SUPPORT_TM_FLUSH_B,
+	HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -217,6 +218,9 @@ enum HNAE3_DEV_CAP_BITS {
 #define hnae3_ae_dev_tm_flush_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_TM_FLUSH_B, (hdev)->ae_dev->caps)
 
+#define hnae3_ae_dev_gen_reg_dfx_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B, (hdev)->ae_dev->caps)
+
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
 };
@@ -241,6 +245,8 @@ struct hnae3_queue {
 struct hns3_mac_stats {
 	u64 tx_pause_cnt;
 	u64 rx_pause_cnt;
+	u64 tx_pfc_cnt;
+	u64 rx_pfc_cnt;
 };
 
 /* hnae3 loop mode */
