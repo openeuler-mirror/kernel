@@ -26,7 +26,13 @@ struct kvm_mmu_page {
 	struct list_head lpage_disallowed_link;
 
 	bool unsync;
-	u8 mmu_valid_gen;
+
+	union {
+		u8 mmu_valid_gen;
+
+		/* Only accessed under slots_lock.  */
+		bool tdp_mmu_scheduled_root_to_zap;
+	};
 	bool mmio_cached;
 	bool lpage_disallowed; /* Can't be replaced by an equiv large page */
 

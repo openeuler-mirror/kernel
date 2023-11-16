@@ -853,6 +853,11 @@ void kvm_tdp_mmu_zap_invalidated_roots(struct kvm *kvm)
 	while (root) {
 		next_root = next_invalidated_root(kvm, root);
 
+		if (!root->tdp_mmu_scheduled_root_to_zap)
+			goto next;
+
+		root->tdp_mmu_scheduled_root_to_zap = false;
+
 		rcu_read_unlock();
 
 		flush = zap_gfn_range(kvm, root, 0, max_gfn, true, flush,
@@ -860,10 +865,11 @@ void kvm_tdp_mmu_zap_invalidated_roots(struct kvm *kvm)
 
 		/*
 		 * Put the reference acquired in
-		 * kvm_tdp_mmu_invalidate_roots
+		 * kvm_tdp_mmu_invalidate_all_roots
 		 */
 		kvm_tdp_mmu_put_root(kvm, root, true);
 
+next:
 		root = next_root;
 
 		rcu_read_lock();
@@ -905,8 +911,11 @@ void kvm_tdp_mmu_invalidate_all_roots(struct kvm *kvm)
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
 	list_for_each_entry(root, &kvm->arch.tdp_mmu_roots, link) {
-		if (!WARN_ON_ONCE(!kvm_tdp_mmu_get_root(kvm, root)))
+		if (!root ->role.invalid &&
+		    !WARN_ON_ONCE(!kvm_tdp_mmu_get_root(kvm, root))) {
+			root->tdp_mmu_scheduled_root_to_zap = true;
 			root->role.invalid = true;
+		}
 	}
 }
 
