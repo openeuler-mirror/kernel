@@ -93,6 +93,8 @@ obj-$(CONFIG_VIDEO_QCOM_CAMSS)		+= qcom/camss/
 
 obj-$(CONFIG_VIDEO_QCOM_VENUS)		+= qcom/venus/
 
+obj-$(CONFIG_VIDEO_PHYTIUM_JPEG)	+= phytium-jpeg/
+
 obj-y					+= meson/
 
 obj-y					+= cros-ec-cec/
