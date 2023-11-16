@@ -31,6 +31,18 @@ void hns_roce_srq_event(struct hns_roce_dev *hr_dev, u32 srqn, int event_type)
 		complete(&srq->free);
 }
 
+bool hns_roce_is_srq_exist(struct hns_roce_dev *hr_dev, u32 srqn)
+{
+	struct hns_roce_srq_table *srq_table = &hr_dev->srq_table;
+	struct hns_roce_srq *srq;
+
+	xa_lock(&srq_table->xa);
+	srq = xa_load(&srq_table->xa, srqn);
+	xa_unlock(&srq_table->xa);
+
+	return srq != NULL;
+}
+
 static void hns_roce_ib_srq_event(struct hns_roce_srq *srq,
 				  enum hns_roce_event event_type)
 {

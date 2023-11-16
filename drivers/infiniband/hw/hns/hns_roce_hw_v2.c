@@ -50,7 +50,6 @@
 #include "hns_roce_hem.h"
 #include "hns_roce_dca.h"
 #include "hns_roce_hw_v2.h"
-#include "hns_roce_debugfs.h"
 
 enum {
 	CMD_RST_PRC_OTHERS,
@@ -5774,6 +5773,30 @@ out:
 	return ret;
 }
 
+static int hns_roce_v2_query_srqc(struct hns_roce_dev *hr_dev, u32 srqn,
+				 void *buffer)
+{
+	struct hns_roce_srq_context *context;
+	struct hns_roce_cmd_mailbox *mailbox;
+	int ret;
+
+	mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
+
+	context  = mailbox->buf;
+	ret = hns_roce_cmd_mbox(hr_dev, 0, mailbox->dma, HNS_ROCE_CMD_QUERY_SRQC,
+				srqn);
+	if (ret)
+		goto out;
+
+	memcpy(buffer, context, sizeof(*context));
+
+out:
+	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
+	return ret;
+}
+
 static int hns_roce_v2_query_sccc(struct hns_roce_dev *hr_dev, u32 qpn,
 				  void *buffer)
 {
@@ -7351,6 +7374,7 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.query_cqc = hns_roce_v2_query_cqc,
 	.query_qpc = hns_roce_v2_query_qpc,
 	.query_mpt = hns_roce_v2_query_mpt,
+	.query_srqc = hns_roce_v2_query_srqc,
 	.query_sccc = hns_roce_v2_query_sccc,
 	.get_dscp = hns_roce_hw_v2_get_dscp,
 	.hns_roce_dev_ops = &hns_roce_v2_dev_ops,

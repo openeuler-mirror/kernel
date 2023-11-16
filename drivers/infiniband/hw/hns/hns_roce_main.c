@@ -44,7 +44,6 @@
 #include "hns_roce_hem.h"
 #include "hns_roce_hw_v2.h"
 #include "hns_roce_dca.h"
-#include "hns_roce_debugfs.h"
 
 static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
 					      u8 port_num)

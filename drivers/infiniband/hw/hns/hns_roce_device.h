@@ -38,6 +38,7 @@
 #include <rdma/hns-abi.h>
 #include "hns_roce_bond.h"
 #include "hns_roce_ext.h"
+#include "hns_roce_debugfs.h"
 
 #define PCI_REVISION_ID_HIP08			0x21
 #define PCI_REVISION_ID_HIP09			0x30
@@ -278,7 +279,7 @@ struct hns_roce_ucontext {
 	struct hns_user_mmap_entry *reset_mmap_entry;
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
-	void *dca_dbgfs;
+	struct hns_dca_ctx_debugfs dca_dbgfs;
 };
 
 struct hns_roce_pd {
@@ -1062,6 +1063,7 @@ struct hns_roce_hw {
 	int (*write_srqc)(struct hns_roce_srq *srq, void *mb_buf);
 	int (*query_cqc)(struct hns_roce_dev *hr_dev, u32 cqn, void *buffer);
 	int (*query_qpc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
+	int (*query_srqc)(struct hns_roce_dev *hr_dev, u32 srqn, void *buffer);
 	int (*query_mpt)(struct hns_roce_dev *hr_dev, u32 key, void *buffer);
 	int (*query_sccc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
 	int (*get_dscp)(struct hns_roce_dev *hr_dev, u8 dscp,
@@ -1102,7 +1104,7 @@ struct hns_roce_dev {
 	struct ib_device	ib_dev;
 	struct pci_dev		*pci_dev;
 	struct device		*dev;
-	void			*dbgfs; /* debugfs for this dev */
+	struct hns_roce_dev_debugfs dbgfs; /* debugfs for this dev */
 
 	struct list_head	uctx_list; /* list of all uctx on this dev */
 	spinlock_t		uctx_list_lock; /* protect @uctx_list */
@@ -1492,4 +1494,5 @@ void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
 int hns_roce_register_poe_channel(struct hns_roce_dev *hr_dev, u8 channel,
 				  u64 poe_addr);
 int hns_roce_unregister_poe_channel(struct hns_roce_dev *hr_dev, u8 channel);
+bool hns_roce_is_srq_exist(struct hns_roce_dev *hr_dev, u32 srqn);
 #endif /* _HNS_ROCE_DEVICE_H */
