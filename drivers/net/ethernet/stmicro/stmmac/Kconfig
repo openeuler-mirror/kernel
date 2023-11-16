@@ -108,6 +108,15 @@ config DWMAC_ROCKCHIP
 	  This selects the Rockchip RK3288 SoC glue layer support for
 	  the stmmac device driver.
 
+config DWMAC_PHYTIUM
+	tristate "Phytium dwmac support"
+	depends on (OF || ACPI) && (ARCH_PHYTIUM || COMPILE_TEST)
+	help
+	  Support for GMAC controller on Phytium SoCs.
+
+	  This selects the Phytium GMAC glue layer support for the
+	  stmmac device driver.
+
 config DWMAC_SOCFPGA
 	tristate "SOCFPGA dwmac support"
 	default (ARCH_SOCFPGA || ARCH_STRATIX10)

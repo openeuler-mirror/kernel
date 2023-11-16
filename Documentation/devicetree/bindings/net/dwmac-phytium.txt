@@ -1,0 +1,28 @@
+Phytium 10/100/1000 Ethernet driver(GMAC)
+
+The device node has following properties.
+
+Required properties:
+ - compatible: should be "phytium,gmac"
+ - reg: addresses and length of the register sets for the device.
+ - interrupts: Should contain the GMAC interrupts.
+ - phy-mode: See ethernet.txt file in the same directory.
+ - clock-frequency: the frequecy of the clock.
+
+Example:
+gmac0: eth@2820c000 {
+	compatible = "phytium,gmac";
+	reg = <0x0 0x2820c000 0x0 0x2000>;
+	interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
+	status = "disabled";
+	phy-mode = "rgmii-txid";
+	clock-frequency = <250000000>;
+
+	snps,pbl = <16>;
+	snps,fixed-burst;
+	snps,multicast-filter-bins = <64>;
+	snps,perfect-filter-entries = <128>;
+	tx-fifo-depth = <4096>;
+	rx-fifo-depth = <4096>;
+	max-frame-size = <9000>;
+};
