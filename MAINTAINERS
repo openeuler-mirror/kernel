@@ -8070,6 +8070,13 @@ M:	Yonglong Liu <liuyonglong@huawei.com>
 S:	Supported
 F:	drivers/ptp/ptp_hisi.c
 
+HISI_RAID SCSI RAID DRIVERS
+M:	Zhang Lei <zhanglei48@huawei.com>
+L:	linux-scsi@vger.kernel.org
+S:	Maintained
+F:	Documentation/scsi/hisi_raid.rst
+F:	drivers/scsi/hisi_raid/
+
 HMM - Heterogeneous Memory Management
 M:	Jérôme Glisse <jglisse@redhat.com>
 L:	linux-mm@kvack.org
