@@ -9,18 +9,10 @@
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_dca.h"
-#include "hns_roce_debugfs.h"
 
 static struct dentry *hns_roce_dbgfs_root;
 
 #define KB 1024
-
-/* debugfs seqfile */
-struct hns_debugfs_seqfile {
-	struct dentry *entry;
-	int (*read)(struct seq_file *seq, void *data);
-	void *data;
-};
 
 static int hns_debugfs_seqfile_open(struct inode *inode, struct file *f)
 {
@@ -51,50 +43,6 @@ static void init_debugfs_seqfile(struct hns_debugfs_seqfile *seq,
 	seq->data = data;
 	seq->entry = entry;
 }
-
-static void cleanup_debugfs_seqfile(struct hns_debugfs_seqfile *seq)
-{
-	debugfs_remove(seq->entry);
-	seq->entry = NULL;
-}
-
-/* DCA debugfs */
-struct hns_dca_ctx_debugfs {
-	struct dentry *root; /* pool debugfs entry */
-	struct hns_debugfs_seqfile mem; /* mems in pool */
-	struct hns_debugfs_seqfile qp; /* QPs stats in pool */
-};
-
-struct hns_dca_debugfs {
-	struct dentry *root; /* dev debugfs entry */
-	struct hns_debugfs_seqfile pool; /* pools stats on device */
-	struct hns_debugfs_seqfile qp; /* QPs stats on device */
-	struct hns_dca_ctx_debugfs kctx; /* kDCA context */
-};
-
-struct hns_poe_ch_debugfs {
-	struct dentry *root; /* dev debugfs entry */
-	struct hns_debugfs_seqfile en; /* enable stats fir this ch */
-	struct hns_debugfs_seqfile addr; /* addr of this ch */
-	struct hns_debugfs_seqfile ref_cnt; /* ref_cnt for this ch */
-};
-
-struct hns_poe_debugfs {
-	struct dentry *root; /* dev debugfs entry */
-};
-
-struct hns_sw_stat_debugfs {
-	struct dentry *root;
-	struct hns_debugfs_seqfile sw_stat;
-};
-
-/* Debugfs for device */
-struct hns_roce_dev_debugfs {
-	struct dentry *root;
-	struct hns_dca_debugfs *dca_root;
-	struct hns_poe_debugfs *poe_root;
-	struct hns_sw_stat_debugfs *sw_stat_root;
-};
 
 struct dca_mem_stats {
 	unsigned int total_mems;
@@ -464,21 +412,11 @@ static void init_dca_ctx_debugfs(struct hns_dca_ctx_debugfs *dbgfs,
 	}
 }
 
-static void cleanup_dca_ctx_debugfs(struct hns_dca_ctx_debugfs *ctx_dbgfs)
+static void create_dca_debugfs(struct hns_roce_dev *hr_dev,
+			       struct dentry *parent)
 {
-	cleanup_debugfs_seqfile(&ctx_dbgfs->qp);
-	cleanup_debugfs_seqfile(&ctx_dbgfs->mem);
-	debugfs_remove_recursive(ctx_dbgfs->root);
-}
 
-static struct hns_dca_debugfs *
-create_dca_debugfs(struct hns_roce_dev *hr_dev, struct dentry *parent)
-{
-	struct hns_dca_debugfs *dbgfs;
-
-	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
-	if (!dbgfs)
-		return NULL;
+	struct hns_dca_debugfs *dbgfs = &hr_dev->dbgfs.dca_root;
 
 	dbgfs->root = debugfs_create_dir("dca", parent);
 
@@ -488,17 +426,6 @@ create_dca_debugfs(struct hns_roce_dev *hr_dev, struct dentry *parent)
 			     dca_debugfs_qp_show, hr_dev);
 
 	init_dca_ctx_debugfs(&dbgfs->kctx, dbgfs->root, hr_dev, NULL);
-
-	return dbgfs;
-}
-
-static void destroy_dca_debugfs(struct hns_dca_debugfs *dca_dbgfs)
-{
-	cleanup_dca_ctx_debugfs(&dca_dbgfs->kctx);
-	cleanup_debugfs_seqfile(&dca_dbgfs->pool);
-	cleanup_debugfs_seqfile(&dca_dbgfs->qp);
-	debugfs_remove_recursive(dca_dbgfs->root);
-	kfree(dca_dbgfs);
 }
 
 static int poe_debugfs_en_show(struct seq_file *file, void *offset)
@@ -547,83 +474,40 @@ static void init_poe_ch_debugfs(struct hns_roce_dev *hr_dev, uint8_t index,
 			     poe_debugfs_addr_show, poe_ch);
 	init_debugfs_seqfile(&dbgfs->ref_cnt, "ref_cnt", dbgfs->root,
 			     poe_debugfs_ref_cnt_show, poe_ch);
-	poe_ch->poe_ch_debugfs = dbgfs;
 }
 
-static void cleanup_poe_ch_debugfs(struct hns_roce_dev *hr_dev, uint8_t index)
+static void create_poe_debugfs(struct hns_roce_dev *hr_dev,
+			       struct dentry *parent)
 {
-	struct hns_roce_poe_ch *poe_ch = &hr_dev->poe_ctx.poe_ch[index];
-	struct hns_poe_ch_debugfs *dbgfs = poe_ch->poe_ch_debugfs;
-
-	cleanup_debugfs_seqfile(&dbgfs->en);
-	cleanup_debugfs_seqfile(&dbgfs->addr);
-	cleanup_debugfs_seqfile(&dbgfs->ref_cnt);
-	debugfs_remove_recursive(dbgfs->root);
-	kvfree(dbgfs);
-}
-
-static struct hns_poe_debugfs *
-create_poe_debugfs(struct hns_roce_dev *hr_dev, struct dentry *parent)
-{
-	struct hns_poe_debugfs *dbgfs;
+	struct hns_poe_debugfs *dbgfs = &hr_dev->dbgfs.poe_root;
+	u8 poe_num = hr_dev->poe_ctx.poe_num;
 	int i;
 
-	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
-	if (!dbgfs)
-		return NULL;
+	dbgfs->poe_ch = kvcalloc(poe_num, sizeof(*dbgfs->poe_ch), GFP_KERNEL);
+	if (!dbgfs->poe_ch)
+		return;
 
 	dbgfs->root = debugfs_create_dir("poe", parent);
 
-	for (i = 0; i < hr_dev->poe_ctx.poe_num; i++)
+	for (i = 0; i < poe_num; i++)
 		init_poe_ch_debugfs(hr_dev, i, dbgfs->root);
-
-	return dbgfs;
-}
-
-static void destroy_poe_debugfs(struct hns_roce_dev *hr_dev,
-				struct hns_poe_debugfs *poe_dbgfs)
-{
-	int i;
-
-	for (i = 0; i < hr_dev->poe_ctx.poe_num; i++)
-		cleanup_poe_ch_debugfs(hr_dev, i);
-
-	debugfs_remove_recursive(poe_dbgfs->root);
-	kvfree(poe_dbgfs);
 }
 
 /* debugfs for ucontext */
 void hns_roce_register_uctx_debugfs(struct hns_roce_dev *hr_dev,
 				    struct hns_roce_ucontext *uctx)
 {
-	struct hns_roce_dev_debugfs *dev_dbgfs = hr_dev->dbgfs;
-	struct hns_dca_debugfs *dca_dbgfs;
+	struct hns_dca_debugfs *dca_dbgfs = &hr_dev->dbgfs.dca_root;
 
-	if (!dev_dbgfs)
-		return;
-
-	dca_dbgfs = dev_dbgfs->dca_root;
-	if (dca_dbgfs && (uctx->config & HNS_ROCE_UCTX_CONFIG_DCA)) {
-		uctx->dca_dbgfs = kzalloc(sizeof(struct hns_dca_ctx_debugfs),
-					  GFP_KERNEL);
-		if (!uctx->dca_dbgfs)
-			return;
-
-		init_dca_ctx_debugfs(uctx->dca_dbgfs, dca_dbgfs->root,
+	if (uctx->config & HNS_ROCE_UCTX_CONFIG_DCA)
+		init_dca_ctx_debugfs(&uctx->dca_dbgfs, dca_dbgfs->root,
 				     hr_dev, uctx);
-	}
 }
 
 void hns_roce_unregister_uctx_debugfs(struct hns_roce_dev *hr_dev,
 				      struct hns_roce_ucontext *uctx)
 {
-	struct hns_dca_ctx_debugfs *dbgfs = uctx->dca_dbgfs;
-
-	if (dbgfs) {
-		cleanup_dca_ctx_debugfs(dbgfs);
-		uctx->dca_dbgfs = NULL;
-		kfree(dbgfs);
-	}
+	debugfs_remove_recursive(uctx->dca_dbgfs.root);
 }
 
 static const char * const sw_stat_info[] = {
@@ -660,79 +544,43 @@ static int sw_stat_debugfs_show(struct seq_file *file, void *offset)
 	return 0;
 }
 
-static struct hns_sw_stat_debugfs
-	*create_sw_stat_debugfs(struct hns_roce_dev *hr_dev,
-				struct dentry *parent)
+static void create_sw_stat_debugfs(struct hns_roce_dev *hr_dev,
+				   struct dentry *parent)
 {
-	struct hns_sw_stat_debugfs *dbgfs;
-
-	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
-	if (!dbgfs)
-		return NULL;
+	struct hns_sw_stat_debugfs *dbgfs = &hr_dev->dbgfs.sw_stat_root;
 
 	dbgfs->root = debugfs_create_dir("sw_stat", parent);
 
 	init_debugfs_seqfile(&dbgfs->sw_stat, "sw_stat", dbgfs->root,
 			     sw_stat_debugfs_show, hr_dev);
-	return dbgfs;
-}
-
-static void destroy_sw_stat_debugfs(struct hns_sw_stat_debugfs *sw_stat_dbgfs)
-{
-	cleanup_debugfs_seqfile(&sw_stat_dbgfs->sw_stat);
-	debugfs_remove_recursive(sw_stat_dbgfs->root);
-	kvfree(sw_stat_dbgfs);
 }
 
 /* debugfs for device */
 void hns_roce_register_debugfs(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_dev_debugfs *dbgfs;
-
-	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
-	if (!dbgfs)
-		return;
+	struct hns_roce_dev_debugfs *dbgfs = &hr_dev->dbgfs;
 
 	dbgfs->root = debugfs_create_dir(dev_name(&hr_dev->ib_dev.dev),
 					 hns_roce_dbgfs_root);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
-		dbgfs->dca_root = create_dca_debugfs(hr_dev, dbgfs->root);
+		create_dca_debugfs(hr_dev, dbgfs->root);
 
 	if (poe_is_supported(hr_dev))
-		dbgfs->poe_root = create_poe_debugfs(hr_dev, dbgfs->root);
+		create_poe_debugfs(hr_dev, dbgfs->root);
 
-	dbgfs->sw_stat_root = create_sw_stat_debugfs(hr_dev, dbgfs->root);
-
-	hr_dev->dbgfs = dbgfs;
+	create_sw_stat_debugfs(hr_dev, dbgfs->root);
 }
 
 void hns_roce_unregister_debugfs(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_dev_debugfs *dbgfs;
+	debugfs_remove_recursive(hr_dev->dbgfs.root);
 
-	dbgfs = hr_dev->dbgfs;
-	if (!dbgfs)
-		return;
-
-	if (dbgfs->dca_root) {
-		destroy_dca_debugfs(dbgfs->dca_root);
-		dbgfs->dca_root = NULL;
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_POE &&
+	    hr_dev->dbgfs.poe_root.poe_ch) {
+		kvfree(hr_dev->dbgfs.poe_root.poe_ch);
+		hr_dev->dbgfs.poe_root.poe_ch = NULL;
 	}
-
-	if (dbgfs->poe_root) {
-		destroy_poe_debugfs(hr_dev, dbgfs->poe_root);
-		dbgfs->poe_root = NULL;
-	}
-
-	if (dbgfs->sw_stat_root) {
-		destroy_sw_stat_debugfs(dbgfs->sw_stat_root);
-		dbgfs->sw_stat_root = NULL;
-	}
-
-	debugfs_remove_recursive(dbgfs->root);
-	hr_dev->dbgfs = NULL;
-	kfree(dbgfs);
 }
 
 /* debugfs for hns module */

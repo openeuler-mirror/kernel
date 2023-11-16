@@ -50,7 +50,6 @@
 #include "hns_roce_hem.h"
 #include "hns_roce_dca.h"
 #include "hns_roce_hw_v2.h"
-#include "hns_roce_debugfs.h"
 
 enum {
 	CMD_RST_PRC_OTHERS,

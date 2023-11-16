@@ -38,6 +38,7 @@
 #include <rdma/hns-abi.h>
 #include "hns_roce_bond.h"
 #include "hns_roce_ext.h"
+#include "hns_roce_debugfs.h"
 
 #define PCI_REVISION_ID_HIP08			0x21
 #define PCI_REVISION_ID_HIP09			0x30
@@ -278,7 +279,7 @@ struct hns_roce_ucontext {
 	struct hns_user_mmap_entry *reset_mmap_entry;
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
-	void *dca_dbgfs;
+	struct hns_dca_ctx_debugfs dca_dbgfs;
 };
 
 struct hns_roce_pd {
@@ -1102,7 +1103,7 @@ struct hns_roce_dev {
 	struct ib_device	ib_dev;
 	struct pci_dev		*pci_dev;
 	struct device		*dev;
-	void			*dbgfs; /* debugfs for this dev */
+	struct hns_roce_dev_debugfs dbgfs; /* debugfs for this dev */
 
 	struct list_head	uctx_list; /* list of all uctx on this dev */
 	spinlock_t		uctx_list_lock; /* protect @uctx_list */
