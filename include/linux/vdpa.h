@@ -185,6 +185,9 @@ struct vdpa_map_file {
  *				@vdev: vdpa device
  *				Returns the virtio features support by the
  *				device
+ * @get_backend_features:	Get parent-specific backend features (optional)
+ *				Returns the vdpa features supported by the
+ *				device.
  * @set_driver_features:	Set virtio features supported by the driver
  *				@vdev: vdpa device
  *				@features: feature support by the driver
@@ -216,7 +219,10 @@ struct vdpa_map_file {
  * @reset:			Reset device
  *				@vdev: vdpa device
  *				Returns integer: success (0) or error (< 0)
- * @suspend:			Suspend or resume the device (optional)
+ * @suspend:			Suspend the device (optional)
+ *				@vdev: vdpa device
+ *				Returns integer: success (0) or error (< 0)
+ * @resume:			Resume the device (optional)
  *				@vdev: vdpa device
  *				Returns integer: success (0) or error (< 0)
  * @get_config_size:		Get the size of the configuration space includes
@@ -279,6 +285,39 @@ struct vdpa_map_file {
  *				@iova: iova to be unmapped
  *				@size: size of the area
  *				Returns integer: success (0) or error (< 0)
+ * @bind_mm:			Bind the device to a specific address space
+ *				so the vDPA framework can use VA when this
+ *				callback is implemented. (optional)
+ *				@vdev: vdpa device
+ *				@mm: address space to bind
+ * @unbind_mm:			Unbind the device from the address space
+ *				bound using the bind_mm callback. (optional)
+ *				@vdev: vdpa device
+ * @set_log_base		Set base address for logging. (optional)
+ *				@vdev: vdpa device
+ *				@base: base address
+ * @set_log_size		Set buffer size for logging. (optional)
+ *				@vdev: vdpa device
+ *				@size: logging buffer size
+ * @log_sync			Synchronize logging buffer from kernel space to
+ *				user space. (optional)
+ *				@vdev: vdpa device
+ * @get_dev_buffer_size		Get device state buffer size. (optional)
+ *				@vdev: vdpa device
+ *				Return device status buffer size of vdpa device.
+ * @get_dev_buffer		Get device state buffer. (optional)
+ *				@vdev: vdpa device
+ *				@offset: offset of dest for saving device state.
+ *				@dest: userspace address for saving device state.
+ *				@len: device state buffer length.
+ * @set_dev_buffer		Set device state buffer. (opetional)
+ *				@vdev: vdpa device
+ *				@offset: offset of src addr of device state.
+ *				@src: userspace addr of device state
+ *				@len: device state buffer length.
+ * @set_mig_state		Set device migration status. (optional)
+ *				@vdev: vdpa device
+ *				@status: migration status
  * @free:			Free resources that belongs to vDPA (optional)
  *				@vdev: vdpa device
  */
@@ -309,6 +348,7 @@ struct vdpa_config_ops {
 	u32 (*get_vq_align)(struct vdpa_device *vdev);
 	u32 (*get_vq_group)(struct vdpa_device *vdev, u16 idx);
 	u64 (*get_device_features)(struct vdpa_device *vdev);
+	u64 (*get_backend_features)(const struct vdpa_device *vdev);
 	int (*set_driver_features)(struct vdpa_device *vdev, u64 features);
 	u64 (*get_driver_features)(struct vdpa_device *vdev);
 	void (*set_config_cb)(struct vdpa_device *vdev,
@@ -321,6 +361,7 @@ struct vdpa_config_ops {
 	void (*set_status)(struct vdpa_device *vdev, u8 status);
 	int (*reset)(struct vdpa_device *vdev);
 	int (*suspend)(struct vdpa_device *vdev);
+	int (*resume)(struct vdpa_device *vdev);
 	size_t (*get_config_size)(struct vdpa_device *vdev);
 	void (*get_config)(struct vdpa_device *vdev, unsigned int offset,
 			   void *buf, unsigned int len);
@@ -338,6 +379,23 @@ struct vdpa_config_ops {
 			 u64 iova, u64 size);
 	int (*set_group_asid)(struct vdpa_device *vdev, unsigned int group,
 			      unsigned int asid);
+	int (*bind_mm)(struct vdpa_device *vdev, struct mm_struct *mm);
+	void (*unbind_mm)(struct vdpa_device *vdev);
+
+	/* Log ops */
+	int (*set_log_base)(struct vdpa_device *vdev, uint64_t base);
+	int (*set_log_size)(struct vdpa_device *vdev, uint64_t size);
+	int (*log_sync)(struct vdpa_device *vdev);
+
+	/* device state ops */
+	uint32_t (*get_dev_buffer_size)(struct vdpa_device *vdpa);
+	int (*get_dev_buffer)(struct vdpa_device *vdev, unsigned int offset,
+			      void __user *dest, unsigned int len);
+	int (*set_dev_buffer)(struct vdpa_device *vdev, unsigned int offset,
+			      const void __user *src, unsigned int len);
+
+	/* device mig state ops */
+	int (*set_mig_state)(struct vdpa_device *v, u8 state);
 
 	/* Free device resources */
 	void (*free)(struct vdpa_device *vdev);
