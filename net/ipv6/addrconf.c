@@ -2268,6 +2268,21 @@ static int addrconf_ifid_infiniband(u8 *eui, struct net_device *dev)
 	return 0;
 }
 
+static int addrconf_ifid_ub(u8 *eui, struct net_device *dev)
+{
+#define GUID_LEN 16
+#define OUI_LEN 3
+#define SEQ_NUM_OFFSET 11
+#define SEQ_NUM_LEN 5
+
+	if (dev->addr_len != GUID_LEN)
+		return -1;
+	memcpy(eui, dev->dev_addr, OUI_LEN);
+	memcpy(eui + OUI_LEN, dev->dev_addr + SEQ_NUM_OFFSET, SEQ_NUM_LEN);
+	eui[0] |= 2;
+	return 0;
+}
+
 static int __ipv6_isatap_ifid(u8 *eui, __be32 addr)
 {
 	if (addr == 0)
@@ -2330,6 +2345,8 @@ static int ipv6_generate_eui64(u8 *eui, struct net_device *dev)
 	case ARPHRD_IP6GRE:
 	case ARPHRD_RAWIP:
 		return addrconf_ifid_ip6tnl(eui, dev);
+	case ARPHRD_UB:
+		return addrconf_ifid_ub(eui, dev);
 	}
 	return -1;
 }
@@ -3362,7 +3379,8 @@ static void addrconf_dev_config(struct net_device *dev)
 	    (dev->type != ARPHRD_IPGRE) &&
 	    (dev->type != ARPHRD_TUNNEL) &&
 	    (dev->type != ARPHRD_NONE) &&
-	    (dev->type != ARPHRD_RAWIP)) {
+	    (dev->type != ARPHRD_RAWIP) &&
+	    (dev->type != ARPHRD_UB)) {
 		/* Alas, we support only Ethernet autoconfiguration. */
 		idev = __in6_dev_get(dev);
 		if (!IS_ERR_OR_NULL(idev) && dev->flags & IFF_UP &&
