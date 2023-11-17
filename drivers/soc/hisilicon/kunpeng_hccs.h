@@ -51,12 +51,14 @@ struct hccs_mbox_client_info {
 	struct pcc_mbox_chan *pcc_chan;
 	u64 deadline_us;
 	void __iomem *pcc_comm_addr;
+	struct completion done;
 };
 
 struct hccs_dev {
 	struct device *dev;
 	struct acpi_device *acpi_dev;
 	u64 caps;
+	u8 dev_ver;
 	u8 chip_num;
 	struct hccs_chip_info *chips;
 	u8 chan_id;
