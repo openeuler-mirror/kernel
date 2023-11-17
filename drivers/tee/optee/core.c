@@ -14,6 +14,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/acpi.h>
 #include <linux/arm-smccc.h>
 #include <linux/errno.h>
 #include <linux/io.h>
@@ -529,6 +530,14 @@ static void optee_smccc_hvc(unsigned long a0, unsigned long a1,
 	arm_smccc_hvc(a0, a1, a2, a3, a4, a5, a6, a7, res);
 }
 
+#if defined(CONFIG_OPTEE_DEFAULT_METHOD_HVC)
+#define DEFAULT_CONDUIT_METHOD optee_smccc_hvc
+#elif defined(CONFIG_OPTEE_DEFAULT_METHOD_SMC)
+#define DEFAULT_CONDUIT_METHOD optee_smccc_hvc
+#else
+#define DEFAULT_CONDUIT_METHOD ERR_PTR(-ENXIO)
+#endif
+
 static optee_invoke_fn *get_invoke_func(struct device *dev)
 {
 	const char *method;
@@ -537,7 +546,7 @@ static optee_invoke_fn *get_invoke_func(struct device *dev)
 
 	if (device_property_read_string(dev, "method", &method)) {
 		pr_warn("missing \"method\" property\n");
-		return ERR_PTR(-ENXIO);
+		return DEFAULT_CONDUIT_METHOD;
 	}
 
 	if (!strcmp("hvc", method))
@@ -689,12 +698,21 @@ static const struct of_device_id optee_dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, optee_dt_match);
 
+#ifdef CONFIG_ACPI
+static const struct acpi_device_id optee_acpi_match[] = {
+	{ "PHYT8003" },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, optee_acpi_match);
+#endif
+
 static struct platform_driver optee_driver = {
 	.probe  = optee_probe,
 	.remove = optee_remove,
 	.driver = {
 		.name = "optee",
 		.of_match_table = optee_dt_match,
+		.acpi_match_table = ACPI_PTR(optee_acpi_match),
 	},
 };
 module_platform_driver(optee_driver);
