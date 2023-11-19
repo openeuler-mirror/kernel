@@ -5,6 +5,7 @@
 #include <linux/jump_label.h>
 
 #define MMSIZE		__va(0x2040)
+#define VPCR_SHIFT	44
 
 /*
  * Descriptor for a cache
