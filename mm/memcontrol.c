@@ -1506,12 +1506,9 @@ static int __init memory_stats_init(void)
 }
 pure_initcall(memory_stats_init);
 
-static void memory_stat_format(struct mem_cgroup *memcg, char *buf, int bufsize)
+static void memcg_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
 {
-	struct seq_buf s;
 	int i;
-
-	seq_buf_init(&s, buf, bufsize);
 
 	/*
 	 * Provide statistics on the state of the memory subsystem as
@@ -1530,47 +1527,58 @@ static void memory_stat_format(struct mem_cgroup *memcg, char *buf, int bufsize)
 
 		size = memcg_page_state(memcg, memory_stats[i].idx);
 		size *= memory_stats[i].ratio;
-		seq_buf_printf(&s, "%s %llu\n", memory_stats[i].name, size);
+		seq_buf_printf(s, "%s %llu\n", memory_stats[i].name, size);
 
 		if (unlikely(memory_stats[i].idx == NR_SLAB_UNRECLAIMABLE_B)) {
 			size = memcg_page_state(memcg, NR_SLAB_RECLAIMABLE_B) +
 			       memcg_page_state(memcg, NR_SLAB_UNRECLAIMABLE_B);
-			seq_buf_printf(&s, "slab %llu\n", size);
+			seq_buf_printf(s, "slab %llu\n", size);
 		}
 	}
 
 	/* Accumulated memory events */
 
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(PGFAULT),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(PGFAULT),
 		       memcg_events(memcg, PGFAULT));
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(PGMAJFAULT),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(PGMAJFAULT),
 		       memcg_events(memcg, PGMAJFAULT));
-	seq_buf_printf(&s, "%s %lu\n",  vm_event_name(PGREFILL),
+	seq_buf_printf(s, "%s %lu\n",  vm_event_name(PGREFILL),
 		       memcg_events(memcg, PGREFILL));
-	seq_buf_printf(&s, "pgscan %lu\n",
+	seq_buf_printf(s, "pgscan %lu\n",
 		       memcg_events(memcg, PGSCAN_KSWAPD) +
 		       memcg_events(memcg, PGSCAN_DIRECT));
-	seq_buf_printf(&s, "pgsteal %lu\n",
+	seq_buf_printf(s, "pgsteal %lu\n",
 		       memcg_events(memcg, PGSTEAL_KSWAPD) +
 		       memcg_events(memcg, PGSTEAL_DIRECT));
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(PGACTIVATE),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(PGACTIVATE),
 		       memcg_events(memcg, PGACTIVATE));
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(PGDEACTIVATE),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(PGDEACTIVATE),
 		       memcg_events(memcg, PGDEACTIVATE));
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(PGLAZYFREE),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(PGLAZYFREE),
 		       memcg_events(memcg, PGLAZYFREE));
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(PGLAZYFREED),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(PGLAZYFREED),
 		       memcg_events(memcg, PGLAZYFREED));
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(THP_FAULT_ALLOC),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(THP_FAULT_ALLOC),
 		       memcg_events(memcg, THP_FAULT_ALLOC));
-	seq_buf_printf(&s, "%s %lu\n", vm_event_name(THP_COLLAPSE_ALLOC),
+	seq_buf_printf(s, "%s %lu\n", vm_event_name(THP_COLLAPSE_ALLOC),
 		       memcg_events(memcg, THP_COLLAPSE_ALLOC));
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
 	/* The above should easily fit into one page */
-	WARN_ON_ONCE(seq_buf_has_overflowed(&s));
+	WARN_ON_ONCE(seq_buf_has_overflowed(s));
+}
+
+static void memcg1_stat_format(struct mem_cgroup *memcg, struct seq_buf *s);
+
+static void memory_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
+{
+	if (cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		memcg_stat_format(memcg, s);
+	else
+		memcg1_stat_format(memcg, s);
+	WARN_ON_ONCE(seq_buf_has_overflowed(s));
 }
 
 #define K(x) ((x) << (PAGE_SHIFT-10))
@@ -1609,6 +1617,7 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 	/* Use static buffer, for the caller is holding oom_lock. */
 	static char buf[PAGE_SIZE];
 	static char pathbuf[PATH_MAX];
+	struct seq_buf s;
 
 	lockdep_assert_held(&oom_lock);
 
@@ -1631,8 +1640,9 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 	pr_info("Memory cgroup stats for ");
 	pr_cont_cgroup_path(memcg->css.cgroup);
 	pr_cont(":");
-	memory_stat_format(memcg, buf, sizeof(buf));
-	pr_info("%s", buf);
+	seq_buf_init(&s, buf, sizeof(buf));
+	memory_stat_format(memcg, &s);
+	seq_buf_do_printk(&s, KERN_INFO);
 
 	mem_cgroup_print_memfs_info(memcg, pathbuf, NULL);
 }
@@ -4170,9 +4180,8 @@ static const unsigned int memcg1_events[] = {
 	PGMAJFAULT,
 };
 
-static int memcg_stat_show(struct seq_file *m, void *v)
+static void memcg1_stat_format(struct mem_cgroup *memcg, struct seq_buf *s)
 {
-	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
 	unsigned long memory, memsw;
 	struct mem_cgroup *mi;
 	unsigned int i;
@@ -4191,15 +4200,15 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		if (memcg1_stats[i] == NR_ANON_THPS)
 			nr *= HPAGE_PMD_NR;
 #endif
-		seq_printf(m, "%s %lu\n", memcg1_stat_names[i], nr * PAGE_SIZE);
+		seq_buf_printf(s, "%s %lu\n", memcg1_stat_names[i], nr * PAGE_SIZE);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
-		seq_printf(m, "%s %lu\n", vm_event_name(memcg1_events[i]),
+		seq_buf_printf(s, "%s %lu\n", vm_event_name(memcg1_events[i]),
 			   memcg_events_local(memcg, memcg1_events[i]));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
-		seq_printf(m, "%s %lu\n", lru_list_name(i),
+		seq_buf_printf(s, "%s %lu\n", lru_list_name(i),
 			   memcg_page_state_local(memcg, NR_LRU_BASE + i) *
 			   PAGE_SIZE);
 
@@ -4209,11 +4218,11 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		memory = min(memory, READ_ONCE(mi->memory.max));
 		memsw = min(memsw, READ_ONCE(mi->memsw.max));
 	}
-	seq_printf(m, "hierarchical_memory_limit %llu\n",
-		   (u64)memory * PAGE_SIZE);
+	seq_buf_printf(s, "hierarchical_memory_limit %llu\n",
+		       (u64)memory * PAGE_SIZE);
 	if (do_memsw_account())
-		seq_printf(m, "hierarchical_memsw_limit %llu\n",
-			   (u64)memsw * PAGE_SIZE);
+		seq_buf_printf(s, "hierarchical_memsw_limit %llu\n",
+			       (u64)memsw * PAGE_SIZE);
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_stats); i++) {
 		unsigned long nr;
@@ -4225,17 +4234,17 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		if (memcg1_stats[i] == NR_ANON_THPS)
 			nr *= HPAGE_PMD_NR;
 #endif
-		seq_printf(m, "total_%s %llu\n", memcg1_stat_names[i],
+		seq_buf_printf(s, "total_%s %llu\n", memcg1_stat_names[i],
 						(u64)nr * PAGE_SIZE);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(memcg1_events); i++)
-		seq_printf(m, "total_%s %llu\n",
+		seq_buf_printf(s, "total_%s %llu\n",
 			   vm_event_name(memcg1_events[i]),
 			   (u64)memcg_events(memcg, memcg1_events[i]));
 
 	for (i = 0; i < NR_LRU_LISTS; i++)
-		seq_printf(m, "total_%s %llu\n", lru_list_name(i),
+		seq_buf_printf(s, "total_%s %llu\n", lru_list_name(i),
 			   (u64)memcg_page_state(memcg, NR_LRU_BASE + i) *
 			   PAGE_SIZE);
 
@@ -4252,12 +4261,10 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 			anon_cost += mz->lruvec.anon_cost;
 			file_cost += mz->lruvec.file_cost;
 		}
-		seq_printf(m, "anon_cost %lu\n", anon_cost);
-		seq_printf(m, "file_cost %lu\n", file_cost);
+		seq_buf_printf(s, "anon_cost %lu\n", anon_cost);
+		seq_buf_printf(s, "file_cost %lu\n", file_cost);
 	}
 #endif
-
-	return 0;
 }
 
 static u64 mem_cgroup_swappiness_read(struct cgroup_subsys_state *css,
@@ -5403,6 +5410,8 @@ out_unlock:
 }
 #endif
 
+static int memory_stat_show(struct seq_file *m, void *v);
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5435,7 +5444,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	},
 	{
 		.name = "stat",
-		.seq_show = memcg_stat_show,
+		.seq_show = memory_stat_show,
 	},
 	{
 		.name = "force_empty",
@@ -6911,10 +6920,12 @@ static int memory_stat_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
 	char *buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	struct seq_buf s;
 
 	if (!buf)
 		return -ENOMEM;
-	memory_stat_format(memcg, buf, PAGE_SIZE);
+	seq_buf_init(&s, buf, PAGE_SIZE);
+	memory_stat_format(memcg, &s);
 	seq_puts(m, buf);
 	kfree(buf);
 	return 0;
