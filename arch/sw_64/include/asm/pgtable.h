@@ -257,6 +257,12 @@ static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 	set_pte(ptep, pteval);
 }
 
+#define pud_write pud_write
+static inline int pud_write(pud_t pud)
+{
+	return !(pud_val(pud) & _PAGE_FOW);
+}
+
 static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
 	pte_t pte;
