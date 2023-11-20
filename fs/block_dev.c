@@ -1669,11 +1669,11 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 #ifdef CONFIG_BLK_DEV_DUMPINFO
 		/*
 		 * Open an write opened block device exclusively, the
-		 * writing process may probability corrupt the device,
+		 * writing process may probably corrupt the device,
 		 * such as a mounted file system, give a hint here.
 		 */
 		if (is_conflict_excl_open(bdev, claiming, mode))
-			blkdev_dump_conflict_opener(bdev, "VFS: Open an write opened "
+			blkdev_dump_conflict_opener(bdev, "VFS: Open a write opened "
 				"block device exclusively");
 #endif
 		bd_finish_claiming(bdev, claiming, holder);
