@@ -45,7 +45,7 @@ static int udma_hw_destroy_cq(struct udma_dev *dev, uint32_t cqn)
 	return udma_cmd_mbox(dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
 }
 
-static int check_jfc_cfg(struct udma_dev *udma_dev, const struct ubcore_jfc_cfg *cfg)
+static int check_jfc_cfg(struct udma_dev *udma_dev, struct ubcore_jfc_cfg *cfg)
 {
 	if (!cfg->depth || cfg->depth > udma_dev->caps.max_cqes) {
 		dev_err(udma_dev->dev,
@@ -122,7 +122,7 @@ static int check_jfc_attr_ex(struct udma_dev *udma_dev,
 }
 
 static int check_create_jfc(struct udma_dev *udma_dev,
-			    const struct ubcore_jfc_cfg *cfg,
+			    struct ubcore_jfc_cfg *cfg,
 			    struct udma_create_jfc_ucmd *ucmd,
 			    struct ubcore_udata *udata)
 {
@@ -159,7 +159,7 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	return 0;
 }
 
-void set_jfc_param(struct udma_jfc *udma_jfc, const struct ubcore_jfc_cfg *cfg)
+void set_jfc_param(struct udma_jfc *udma_jfc, struct ubcore_jfc_cfg *cfg)
 {
 	udma_jfc->jfc_depth = roundup_pow_of_two(cfg->depth);
 	memcpy(&udma_jfc->ubcore_jfc.jfc_cfg, cfg, sizeof(struct ubcore_jfc_cfg));
@@ -558,8 +558,8 @@ static void free_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 	mutex_unlock(&jfc_table->bank_mutex);
 }
 
-struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
-			      struct ubcore_udata *udata)
+struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, struct ubcore_jfc_cfg *cfg,
+				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_create_jfc_ucmd ucmd = {};
@@ -624,7 +624,7 @@ int udma_destroy_jfc(struct ubcore_jfc *jfc)
 	return 0;
 }
 
-int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, const struct ubcore_jfc_attr *attr,
+int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_jfc_attr *attr,
 		    struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_device = to_udma_dev(ubcore_jfc->ub_dev);

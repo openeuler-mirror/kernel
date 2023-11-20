@@ -76,12 +76,12 @@ struct udma_mpt_entry {
 #define UDMA_MAX_INNER_MTPT_NUM 2
 
 struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
-				 const struct ubcore_seg_cfg *cfg,
-				 struct ubcore_udata *udata);
+					    struct ubcore_seg_cfg *cfg,
+					    struct ubcore_udata *udata);
 int udma_unregister_seg(struct ubcore_target_seg *seg);
 struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
-			       const struct ubcore_target_seg_cfg *cfg,
-			       struct ubcore_udata *udata);
+					  struct ubcore_target_seg_cfg *cfg,
+					  struct ubcore_udata *udata);
 int udma_unimport_seg(struct ubcore_target_seg *tseg);
 uint64_t key_to_hw_index(uint32_t key);
 

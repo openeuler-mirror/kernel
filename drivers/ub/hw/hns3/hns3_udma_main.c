@@ -29,17 +29,7 @@
 #include "hns3_udma_dca.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_dfx.h"
-
-static int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
-{
-	struct udma_dev *udma_dev = to_udma_dev(dev);
-	uint8_t port = 0;
-
-	if (port >= udma_dev->caps.num_ports)
-		return -EINVAL;
-
-	return udma_dev->hw->set_eid(udma_dev, eid);
-}
+#include "hns3_udma_eid.h"
 
 static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 {
@@ -114,16 +104,30 @@ static void udma_uar_free(struct udma_dev *udma_dev,
 }
 
 static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
-						   uint32_t uasid,
+						   uint32_t eid_index,
 						   struct ubcore_udrv_priv *udrv_data)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_ucontext *context;
+	struct udma_eid *udma_eid;
 	int ret;
 
 	context = kzalloc(sizeof(struct udma_ucontext), GFP_KERNEL);
 	if (!context)
 		return NULL;
+
+	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table, eid_index);
+	if (IS_ERR_OR_NULL(udma_eid)) {
+		dev_err(udma_dev->dev, "Failed to find eid, index = %d\n.",
+			eid_index);
+		goto err_alloc_ucontext;
+	}
+	if (udma_eid->type != SGID_TYPE_IPV4) {
+		dev_err(udma_dev->dev, "Failed to check type, index = %d\n.",
+			eid_index);
+		goto err_alloc_ucontext;
+	}
+	context->eid_index = eid_index;
 
 	ret = udma_uar_alloc(udma_dev, &context->uar);
 	if (ret) {
@@ -137,7 +141,6 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 		goto err_alloc_uar;
 	}
 
-	context->pdn = uasid; /* Use the UASID as pd number */
 	ret = udma_init_ctx_resp(udma_dev, udrv_data, &context->dca_ctx);
 	if (ret) {
 		dev_err(udma_dev->dev, "Init ctx resp failed.\n");
@@ -261,7 +264,7 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 	return 0;
 }
 
-static int udma_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+static int udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *key,
 			    struct ubcore_stats_val *val)
 {
 	struct ubcore_stats_com_val *com_val = (struct ubcore_stats_com_val *)val->addr;
@@ -333,7 +336,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	struct net_device *net_dev;
 	int i;
 
-	attr->guid = udma_dev->sys_image_guid;
+	attr->max_eid_cnt = udma_dev->caps.max_eid_cnt;
 	attr->dev_cap.max_jfc = (1 << udma_dev->caps.num_jfc_shift);
 	attr->dev_cap.max_jfs = (1 << udma_dev->caps.num_jfs_shift);
 	attr->dev_cap.max_jfr = (1 << udma_dev->caps.num_jfr_shift);
@@ -347,13 +350,14 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->dev_cap.max_msg_size = UDMA_MAX_MSG_LEN;
 	attr->dev_cap.trans_mode = UBCORE_TP_RM | UBCORE_TP_UM;
 	attr->dev_cap.feature.bs.oor = udma_dev->caps.oor_en;
-	attr->port_cnt = udma_dev->caps.num_ports;
-	attr->dev_cap.comp_vector_cnt = udma_dev->caps.num_comp_vectors;
-	attr->vf_cnt = udma_dev->func_num - 1;
+	attr->dev_cap.ceq_cnt = udma_dev->caps.num_comp_vectors;
 	attr->dev_cap.feature.bs.jfc_inline = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_CQE_INLINE);
 	attr->dev_cap.feature.bs.spray_en = 1;
 	attr->dev_cap.max_jfs_rsge = udma_dev->caps.max_sq_sg;
 	attr->dev_cap.congestion_ctrl_alg = query_congest_alg(udma_dev->caps.cong_type);
+	attr->fe_cnt = udma_dev->func_num - 1;
+	attr->port_cnt = udma_dev->caps.num_ports;
+	attr->tp_maintainer = true;
 
 	for (i = 0; i < udma_dev->caps.num_ports; i++) {
 		net_dev = udma_dev->uboe.netdevs[i];
@@ -383,7 +387,7 @@ static int udma_get_active_speed(uint32_t speed, struct ubcore_port_status *port
 	return 0;
 }
 
-static int udma_query_device_status(const struct ubcore_device *dev,
+static int udma_query_device_status(struct ubcore_device *dev,
 				    struct ubcore_device_status *dev_status)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
@@ -421,6 +425,23 @@ static int udma_query_device_status(const struct ubcore_device *dev,
 	}
 
 	return 0;
+}
+
+int udma_send_msg(struct ubcore_device *dev, struct ubcore_msg *msg)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	int ret;
+
+	if (msg == NULL) {
+		dev_err(udma_dev->dev, "The message to be sent is empty.\n");
+		return -EINVAL;
+	}
+
+	ret = ubcore_recv_msg(dev, msg);
+	if (ret)
+		dev_err(udma_dev->dev, "Fail to recv msg, ret = %d.\n", ret);
+
+	return ret;
 }
 
 int udma_user_ctl_flush_cqe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
@@ -779,7 +800,7 @@ int udma_user_ctl_dca_attach(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 				    (uint32_t)sizeof(struct udma_dca_attach_resp)));
 	if (ret) {
 		udma_dca_disattach(udma_device, &attr);
-		dev_err(udma_device->dev, "copy_to_user failed in dca_attach, ret:%d.\n",
+		dev_err(udma_device->dev, "cp to user failed in dca_attach, ret:%d.\n",
 			ret);
 		return -EFAULT;
 	}
@@ -820,7 +841,7 @@ int udma_user_ctl_dca_query(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	ret = (int)copy_from_user(&attr, (void *)in->addr,
 				  sizeof(struct udma_dca_query_attr));
 	if (ret) {
-		dev_err(udma_device->dev, "copy_from_user failed in dca query, ret:%d.\n",
+		dev_err(udma_device->dev, "cp from user failed in dca query, ret:%d.\n",
 			ret);
 		return -EFAULT;
 	}
@@ -883,6 +904,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
 	.set_eid = udma_set_eid,
+	.add_ueid = udma_add_ueid,
+	.delete_ueid = udma_delete_ueid,
 	.query_device_attr = udma_query_device_attr,
 	.query_device_status = udma_query_device_status,
 	.query_res = udma_query_res,
@@ -910,6 +933,7 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.create_tp = udma_create_tp,
 	.modify_tp = udma_modify_tp,
 	.destroy_tp = udma_destroy_tp,
+	.send_msg = udma_send_msg,
 	.user_ctl = udma_user_ctl,
 	.query_stats = udma_query_stats,
 };
@@ -1079,6 +1103,18 @@ static void udma_init_jetty_table(struct udma_dev *dev)
 	jetty_ida->min = 1;
 }
 
+static void udma_cleanup_eid_table(struct udma_dev *dev)
+{
+	if (!xa_empty(&dev->eid_table))
+		dev_err(dev->dev, "EID table not empty.\n");
+	xa_destroy(&dev->eid_table);
+}
+
+static void udma_init_eid_table(struct udma_dev *dev)
+{
+	xa_init(&dev->eid_table);
+}
+
 int udma_init_eq_idx_table(struct udma_dev *udma_dev)
 {
 	uint32_t eq_num;
@@ -1122,6 +1158,7 @@ int udma_setup_hca(struct udma_dev *udma_dev)
 	udma_init_jfr_table(udma_dev);
 	udma_init_jfs_table(udma_dev);
 	udma_init_jetty_table(udma_dev);
+	udma_init_eid_table(udma_dev);
 	ret = udma_init_eq_idx_table(udma_dev);
 	if (ret) {
 		dev_err(dev, "Failed to init eq_table.\n");
@@ -1130,6 +1167,7 @@ int udma_setup_hca(struct udma_dev *udma_dev)
 
 	return 0;
 err_eq_table:
+	udma_cleanup_eid_table(udma_dev);
 	udma_cleanup_jetty_table(udma_dev);
 	udma_cleanup_jfs_table(udma_dev);
 	udma_cleanup_jfr_table(udma_dev);
@@ -1145,6 +1183,7 @@ err_uar_table_free:
 void udma_teardown_hca(struct udma_dev *udma_dev)
 {
 	kfree(udma_dev->eq_table.idx_table);
+	udma_cleanup_eid_table(udma_dev);
 	udma_cleanup_jetty_table(udma_dev);
 	udma_cleanup_jfs_table(udma_dev);
 	udma_cleanup_jfr_table(udma_dev);
@@ -1373,7 +1412,6 @@ static int udma_register_device(struct udma_dev *udma_dev)
 	ub_dev->netdev = udma_dev->uboe.netdevs[0];
 	scnprintf(ub_dev->ops->driver_name, UBCORE_MAX_DRIVER_NAME, "udma_v1");
 	udma_set_devname(udma_dev, ub_dev);
-	ub_dev->num_comp_vectors = udma_dev->irq_num;
 
 	return ubcore_register_device(ub_dev);
 }

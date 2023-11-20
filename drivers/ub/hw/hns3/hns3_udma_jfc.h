@@ -67,10 +67,10 @@ static inline struct udma_jfc *to_udma_jfc(struct ubcore_jfc *jfc)
 	return container_of(jfc, struct udma_jfc, ubcore_jfc);
 }
 
-struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
-			      struct ubcore_udata *udata);
+struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, struct ubcore_jfc_cfg *cfg,
+				   struct ubcore_udata *udata);
 int udma_destroy_jfc(struct ubcore_jfc *jfc);
-int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, const struct ubcore_jfc_attr *attr,
+int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_jfc_attr *attr,
 		    struct ubcore_udata *udata);
 void udma_jfc_completion(struct udma_dev *udma_dev, uint32_t cqn);
 void udma_jfc_event(struct udma_dev *udma_dev, uint32_t cqn, int event_type);

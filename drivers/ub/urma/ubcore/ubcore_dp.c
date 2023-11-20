@@ -17,13 +17,12 @@
  * Note:
  * History: 2023-05-09
  */
-#include <stddef.h>
 #include "ubcore_log.h"
 #include <urma/ubcore_api.h>
 #include <urma/ubcore_opcode.h>
 #include <urma/ubcore_types.h>
 
-int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, const struct ubcore_jfs_wr *wr,
+int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, struct ubcore_jfs_wr *wr,
 			      struct ubcore_jfs_wr **bad_wr)
 {
 	struct ubcore_ops *dev_ops;
@@ -39,7 +38,7 @@ int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, const struct ubcore_jf
 }
 EXPORT_SYMBOL(ubcore_post_jetty_send_wr);
 
-int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, const struct ubcore_jfr_wr *wr,
+int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, struct ubcore_jfr_wr *wr,
 			      struct ubcore_jfr_wr **bad_wr)
 {
 	struct ubcore_ops *dev_ops;
@@ -55,7 +54,7 @@ int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, const struct ubcore_jf
 }
 EXPORT_SYMBOL(ubcore_post_jetty_recv_wr);
 
-int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
+int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, struct ubcore_jfs_wr *wr,
 		       struct ubcore_jfs_wr **bad_wr)
 {
 	struct ubcore_ops *dev_ops;
@@ -71,7 +70,7 @@ int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
 }
 EXPORT_SYMBOL(ubcore_post_jfs_wr);
 
-int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, const struct ubcore_jfr_wr *wr,
+int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, struct ubcore_jfr_wr *wr,
 		       struct ubcore_jfr_wr **bad_wr)
 {
 	struct ubcore_ops *dev_ops;

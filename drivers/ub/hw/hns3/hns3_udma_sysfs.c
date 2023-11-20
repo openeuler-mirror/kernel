@@ -85,7 +85,7 @@ static int udma_query_scc_param(struct udma_dev *udma_dev,
 	ret = udma_cmq_send(udma_dev, &desc, 1);
 	if (ret) {
 		dev_err_ratelimited(udma_dev->dev,
-				    "failed to query scc param, opecode: 0x%x, ret = %d.\n",
+				    "failed to query scc param, opcode: 0x%x, ret = %d.\n",
 				    le16_to_cpu(desc.opcode), ret);
 		return ret;
 	}
@@ -442,7 +442,13 @@ static ssize_t udma_port_attr_store(struct kobject *kobj,
 
 static void udma_port_release(struct kobject *kobj)
 {
-	struct udma_port *pdata = container_of(kobj, struct udma_port, kobj);
+	struct udma_port *pdata;
+	int i;
+
+	pdata = container_of(kobj, struct udma_port, kobj);
+
+	for (i = 0; i < UDMA_CONG_TYPE_TOTAL; i++)
+		cancel_delayed_work_sync(&pdata->scc_param[i].scc_cfg_dwork);
 
 	kfree(pdata->scc_param);
 	pdata->scc_param = NULL;

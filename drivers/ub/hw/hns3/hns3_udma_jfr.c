@@ -22,7 +22,7 @@
 #include "hns3_udma_jfr.h"
 
 static int init_jfr_cfg(struct udma_dev *dev, struct udma_jfr *jfr,
-			const struct ubcore_jfr_cfg *cfg)
+			struct ubcore_jfr_cfg *cfg)
 {
 	if (!cfg->max_sge ||
 	    cfg->depth > dev->caps.max_srq_wrs ||
@@ -468,7 +468,7 @@ static int udma_modify_jfr_um_qpc(struct udma_dev *dev, struct udma_jfr *jfr,
 	struct udma_qp *qp = jfr->um_qp;
 	int ret;
 
-	attr.path_mtu = UBCORE_MTU_4096;
+	attr.sgid_index = qp->qp_attr.eid_index;
 	qp->udma_device = dev;
 	qp->qp_attr.jfr = jfr;
 	qp->recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
@@ -495,10 +495,13 @@ static int alloc_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 		return -ENOMEM;
 
 	qp->qp_type = QPT_UD;
+	qp->qp_attr.is_tgt = true;
 	qp->qp_attr.qp_type = QPT_UD;
 	qp->qp_attr.qpn_map = &jfr->qpn_map;
 	qp->qp_attr.recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
 	qp->qp_attr.send_jfc = NULL;
+	qp->qp_attr.eid_index =
+		to_udma_ucontext(jfr->ubcore_jfr.uctx)->eid_index;
 	udata.uctx = NULL;
 	ret = udma_create_qp_common(dev, qp, &udata);
 	if (ret) {
@@ -531,8 +534,8 @@ void destroy_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 	kfree(jfr->um_qp);
 }
 
-struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
-			      struct ubcore_udata *udata)
+struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
+				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_jfr *jfr;
@@ -559,6 +562,7 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcor
 				udma_dev->caps.num_jfr_shift,
 				UDMA_JFR_QPN_PREFIX, jfr->jfrn);
 	if (cfg->trans_mode == UBCORE_TP_UM) {
+		jfr->ubcore_jfr.uctx = udata->uctx;
 		ret = alloc_jfr_um_qp(udma_dev, jfr);
 		if (ret)
 			goto err_alloc_jfrc;
@@ -614,8 +618,8 @@ struct udma_jfr *get_udma_jfr(struct ubcore_device *dev, uint32_t jfr_id)
 }
 
 struct ubcore_tjetty *udma_import_jfr(struct ubcore_device *dev,
-				 const struct ubcore_tjetty_cfg *cfg,
-				 struct ubcore_udata *udata)
+				      struct ubcore_tjetty_cfg *cfg,
+				      struct ubcore_udata *udata)
 {
 	struct ubcore_tjetty *tjfr;
 
@@ -665,7 +669,7 @@ static int udma_hw_modify_srq(struct udma_dev *dev, uint32_t jfrn,
 	return ret;
 }
 
-int udma_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+int udma_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 		    struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(jfr->ub_dev);
@@ -711,7 +715,7 @@ void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type)
 		return;
 	}
 
-	event.event_type = UBCORE_EVENT_JFR_ACCESS_ERR;
+	event.event_type = UBCORE_EVENT_JFR_LIMIT_REACHED;
 
 	refcount_inc(&jfr->refcount);
 	ubcore_jfr = &jfr->ubcore_jfr;

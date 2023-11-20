@@ -61,6 +61,7 @@ struct udma_qp_context {
 #define QPC_SQ_SHIFT QPC_FIELD_LOC(139, 136)
 #define QPC_GMV_IDX QPC_FIELD_LOC(159, 144)
 #define QPC_HOPLIMIT QPC_FIELD_LOC(167, 160)
+#define QPC_DSCP QPC_FIELD_LOC(172, 168)
 #define QPC_VLAN_ID QPC_FIELD_LOC(187, 176)
 #define QPC_MTU QPC_FIELD_LOC(191, 188)
 #define QPC_FL QPC_FIELD_LOC(211, 192)
@@ -68,6 +69,7 @@ struct udma_qp_context {
 #define QPC_AT QPC_FIELD_LOC(223, 219)
 #define QPC_DMAC_L QPC_FIELD_LOC(383, 352)
 #define QPC_DMAC_H QPC_FIELD_LOC(399, 384)
+#define QPC_UDPSPN QPC_FIELD_LOC(415, 400)
 #define QPC_DQPN QPC_FIELD_LOC(439, 416)
 #define QPC_LP_PKTN_INI QPC_FIELD_LOC(447, 444)
 #define QPC_CONGEST_ALGO_TMPL_ID QPC_FIELD_LOC(455, 448)
@@ -165,8 +167,6 @@ struct udma_modify_tp_attr {
 	int				qp_access_flags;
 	uint8_t				min_rnr_timer;
 	uint32_t			qkey;
-	enum ubcore_mtu			path_mtu;
-	uint8_t				hop_limit;
 	uint8_t				dgid[UDMA_GID_SIZE];
 	uint8_t				dipv4[4];
 	uint8_t				sgid_index;
@@ -218,6 +218,8 @@ struct udma_qp_attr {
 	union ubcore_eid		local_eid;
 	int			tgt_id;
 	uint8_t			priority;
+	uint32_t		eid_index;
+	enum ubcore_transport_mode	tp_mode;
 };
 
 struct udma_wq {
@@ -258,11 +260,13 @@ struct udma_qp {
 	struct udma_jfc		*send_jfc;
 	struct udma_jfc		*recv_jfc;
 	uint64_t		en_flags;
+	enum udma_sig_type	sq_signal_bits;
 	struct udma_mtr		mtr;
 	struct udma_dca_cfg	dca_cfg;
 	struct udma_dca_ctx	*dca_ctx;
 	uint32_t		buff_size;
 	enum udma_qp_state	state;
+	uint32_t		atomic_rd_en;
 	void (*event)(struct udma_qp *qp,
 		      enum udma_event event_type);
 	uint64_t		qpn;
@@ -277,7 +281,6 @@ struct udma_qp {
 	struct list_head	node; /* all qps are on a list */
 	struct list_head	rq_node; /* all recv qps are on a list */
 	struct list_head	sq_node; /* all send qps are on a list */
-	uint8_t			retry_cnt;
 	uint8_t			rnr_retry;
 	uint8_t			ack_timeout;
 	uint8_t			min_rnr_timer;
@@ -301,6 +304,8 @@ struct udma_dip {
 	uint32_t dip_idx;
 	struct list_head node; /* all dips are on a list */
 };
+
+#define UDMA_INVALID_LOAD_QPNUM 0xFFFFFFFF
 
 #define UDMA_CONGEST_SIZE 64
 #define UDMA_SCC_DIP_INVALID_IDX (-1)
@@ -328,19 +333,29 @@ enum {
 };
 
 enum {
+	SUB_ALG_LDCP,
+	SUB_ALG_HC3,
+};
+
+enum {
 	WND_LIMIT,
 	WND_UNLIMIT,
+};
+
+enum {
+	QP_IS_USER = 1 << 0,
+	QP_DCA_EN = 1 << 1,
 };
 
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))
 
 int udma_modify_qp_common(struct udma_qp *qp,
-			  const struct ubcore_tp_attr *attr,
+			  struct ubcore_tp_attr *attr,
 			  union ubcore_tp_attr_mask ubcore_mask,
 			  enum udma_qp_state curr_state,
 			  enum udma_qp_state new_state);
 int udma_fill_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
-		      const struct ubcore_tp_cfg *cfg, struct ubcore_udata *udata);
+		      struct ubcore_tp_cfg *cfg, struct ubcore_udata *udata);
 int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata);
 void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp);
@@ -354,5 +369,10 @@ int udma_flush_cqe(struct udma_dev *udma_dev, struct udma_qp *udma_qp,
 void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);
 void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp);
 int udma_set_dca_buf(struct udma_dev *dev, struct udma_qp *qp);
+
+static inline uint8_t get_affinity_cq_bank(uint8_t qp_bank)
+{
+	return (qp_bank >> 1) & CQ_BANKID_MASK;
+}
 
 #endif /* _UDMA_QP_H */

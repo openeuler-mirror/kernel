@@ -32,6 +32,8 @@
 #include "uburma_event.h"
 #include "uburma_uobj.h"
 
+static bool g_is_zero_fd;
+
 static void uobj_free(struct kref *ref)
 {
 	kfree_rcu(container_of(ref, struct uburma_uobj, ref), rcu);
@@ -117,8 +119,8 @@ static int uobj_alloc_idr(struct uburma_uobj *uobj)
 	spin_lock(&uobj->ufile->idr_lock);
 
 	/* Alloc idr pointing to NULL. Will replace it once we commit. */
-	ret = idr_alloc(&uobj->ufile->idr, NULL, 0, min_t(unsigned long, U32_MAX - 1U, INT_MAX),
-			GFP_NOWAIT);
+	ret = idr_alloc(&uobj->ufile->idr, NULL, 1,
+		min_t(unsigned long, U32_MAX - 1U, INT_MAX), GFP_NOWAIT);
 	if (ret >= 0)
 		uobj->id = ret;
 
@@ -277,6 +279,13 @@ static struct uburma_uobj *uobj_fd_alloc_begin(const struct uobj_type *type,
 	if (new_fd < 0)
 		return ERR_PTR(new_fd);
 
+	if (new_fd == 0) {
+		new_fd = get_unused_fd_flags(O_RDWR | O_CLOEXEC);
+		if (new_fd < 0)
+			return ERR_PTR(new_fd);
+		g_is_zero_fd = true;
+	}
+
 	uobj = alloc_uobj(ufile, type);
 	if (IS_ERR(uobj)) {
 		put_unused_fd(new_fd);
@@ -320,8 +329,7 @@ static void uobj_fd_alloc_abort(struct uburma_uobj *uobj)
 }
 
 static struct uburma_uobj *uobj_fd_lookup_get(const struct uobj_type *type,
-					      struct uburma_file *ufile, int id,
-					      enum uobj_access flag)
+	struct uburma_file *ufile, int id, enum uobj_access flag)
 {
 	const struct uobj_fd_type *fd_type = container_of(type, struct uobj_fd_type, type);
 	struct uburma_uobj *uobj;
@@ -376,8 +384,8 @@ static int __must_check uobj_fd_remove_commit(struct uburma_uobj *uobj,
 	return ret;
 }
 
-struct uburma_uobj *uobj_lookup_get(const struct uobj_type *type, struct uburma_file *ufile, int id,
-				    enum uobj_access flag)
+struct uburma_uobj *uobj_lookup_get(const struct uobj_type *type,
+	struct uburma_file *ufile, int id, enum uobj_access flag)
 {
 	struct ubcore_device *ubc_dev;
 	struct uburma_uobj *uobj;
@@ -452,6 +460,7 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
 
 void uburma_init_uobj_context(struct uburma_file *ufile)
 {
+	g_is_zero_fd = false;
 	ufile->cleanup_reason = 0;
 	idr_init(&ufile->idr);
 	spin_lock_init(&ufile->idr_lock);
@@ -499,13 +508,16 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason w
 		mutex_unlock(&ufile->uobjects_lock);
 		cur_order = next_order;
 	}
-
+	if (g_is_zero_fd == true) {
+		put_unused_fd(0);
+		g_is_zero_fd = false;
+	}
 	up_write(&ufile->cleanup_rwsem);
 }
 
-static int uburma_free_key(struct uburma_uobj *uobj, enum uburma_remove_reason why)
+static int uburma_free_token_id(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
-	return ubcore_free_key_id((struct ubcore_key_id *)uobj->object);
+	return ubcore_free_token_id((struct ubcore_token_id *)uobj->object);
 }
 
 static int uburma_free_seg(struct uburma_uobj *uobj, enum uburma_remove_reason why)
@@ -518,8 +530,9 @@ static int uburma_free_jfc(struct uburma_uobj *uobj, enum uburma_remove_reason w
 	struct uburma_jfc_uobj *jfc_uobj = container_of(uobj, struct uburma_jfc_uobj, uobj);
 	struct ubcore_jfc *jfc = (struct ubcore_jfc *)uobj->object;
 	struct uburma_jfce_uobj *jfce_uobj;
-	int ret = ubcore_delete_jfc(jfc);
+	int ret;
 
+	ret = ubcore_delete_jfc(jfc);
 	if (ret)
 		return ret;
 
@@ -536,8 +549,9 @@ static int uburma_free_jfc(struct uburma_uobj *uobj, enum uburma_remove_reason w
 static int uburma_free_jfs(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
 	struct uburma_jfs_uobj *jfs_uobj = container_of(uobj, struct uburma_jfs_uobj, uobj);
-	int ret = ubcore_delete_jfs((struct ubcore_jfs *)uobj->object);
+	int ret;
 
+	ret = ubcore_delete_jfs((struct ubcore_jfs *)uobj->object);
 	if (ret)
 		return ret;
 
@@ -548,8 +562,9 @@ static int uburma_free_jfs(struct uburma_uobj *uobj, enum uburma_remove_reason w
 static int uburma_free_jfr(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
 	struct uburma_jfr_uobj *jfr_uobj = container_of(uobj, struct uburma_jfr_uobj, uobj);
-	int ret = ubcore_delete_jfr((struct ubcore_jfr *)uobj->object);
+	int ret;
 
+	ret = ubcore_delete_jfr((struct ubcore_jfr *)uobj->object);
 	if (ret)
 		return ret;
 
@@ -560,12 +575,27 @@ static int uburma_free_jfr(struct uburma_uobj *uobj, enum uburma_remove_reason w
 static int uburma_free_jetty(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
 	struct uburma_jetty_uobj *jetty_uobj = container_of(uobj, struct uburma_jetty_uobj, uobj);
-	int ret = ubcore_delete_jetty((struct ubcore_jetty *)uobj->object);
+	int ret;
 
+	ret = ubcore_delete_jetty((struct ubcore_jetty *)uobj->object);
 	if (ret)
 		return ret;
 
 	uburma_release_async_event(uobj->ufile, &jetty_uobj->async_event_list);
+	return ret;
+}
+
+static int uburma_free_jetty_grp(struct uburma_uobj *uobj, enum uburma_remove_reason why)
+{
+	struct uburma_jetty_grp_uobj *jetty_grp_uobj =
+		container_of(uobj, struct uburma_jetty_grp_uobj, uobj);
+	int ret;
+
+	ret = ubcore_delete_jetty_grp((struct ubcore_jetty_group *)uobj->object);
+	if (ret)
+		return ret;
+
+	uburma_release_async_event(uobj->ufile, &jetty_grp_uobj->async_event_list);
 	return ret;
 }
 
@@ -641,13 +671,15 @@ static int uburma_hot_unplug_jfae(struct uburma_uobj *uobj, enum uburma_remove_r
 		spin_unlock_irq(&jfe->lock);
 		return 0;
 	}
-	jfe->deleting = true;
 	spin_unlock_irq(&jfe->lock);
-
-	ubcore_unregister_event_handler(jfae->dev, &jfae->event_handler);
 
 	if (why == UBURMA_REMOVE_DRIVER_REMOVE)
 		uburma_write_event(&jfae->jfe, 0, UBCORE_EVENT_DEV_FATAL, NULL, NULL);
+
+	spin_lock_irq(&jfe->lock);
+	jfe->deleting = true;
+	ubcore_unregister_event_handler(jfae->dev, &jfae->event_handler);
+	spin_unlock_irq(&jfe->lock);
 
 	return 0;
 }
@@ -676,24 +708,26 @@ declare_uobj_class(UOBJ_CLASS_JFCE,
 				       &uburma_jfce_fops, "[jfce]", O_RDWR | O_CLOEXEC));
 
 declare_uobj_class(UOBJ_CLASS_JFAE,
-		   &uobj_type_alloc_fd(3, sizeof(struct uburma_jfae_uobj), uburma_hot_unplug_jfae,
-				       &uburma_jfae_fops, "[jfae]", O_RDWR | O_CLOEXEC));
+	&uobj_type_alloc_fd(3, sizeof(struct uburma_jfae_uobj), uburma_hot_unplug_jfae,
+						&uburma_jfae_fops, "[jfae]", O_RDWR | O_CLOEXEC));
 
-declare_uobj_class(UOBJ_CLASS_JFC,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_jfc_uobj), 2, uburma_free_jfc));
-declare_uobj_class(UOBJ_CLASS_KEY,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 1, uburma_free_key));
-declare_uobj_class(UOBJ_CLASS_SEG,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 1, uburma_free_seg));
-declare_uobj_class(UOBJ_CLASS_JFS,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_jfs_uobj), 1, uburma_free_jfs));
-declare_uobj_class(UOBJ_CLASS_JFR,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_jfr_uobj), 1, uburma_free_jfr));
-declare_uobj_class(UOBJ_CLASS_JETTY,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_jetty_uobj), 1, uburma_free_jetty));
-declare_uobj_class(UOBJ_CLASS_TARGET_JFR,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0, uburma_free_tjfr));
-declare_uobj_class(UOBJ_CLASS_TARGET_JETTY,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0, uburma_free_tjetty));
-declare_uobj_class(UOBJ_CLASS_TARGET_SEG,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0, uburma_free_tseg));
+declare_uobj_class(UOBJ_CLASS_JFC, &uobj_type_alloc_idr(sizeof(struct uburma_jfc_uobj), 2,
+	uburma_free_jfc));
+declare_uobj_class(UOBJ_CLASS_TOKEN, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 1,
+	uburma_free_token_id));
+declare_uobj_class(UOBJ_CLASS_SEG, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 1,
+	uburma_free_seg));
+declare_uobj_class(UOBJ_CLASS_JFS, &uobj_type_alloc_idr(sizeof(struct uburma_jfs_uobj), 1,
+	uburma_free_jfs));
+declare_uobj_class(UOBJ_CLASS_JFR, &uobj_type_alloc_idr(sizeof(struct uburma_jfr_uobj), 1,
+	uburma_free_jfr));
+declare_uobj_class(UOBJ_CLASS_JETTY, &uobj_type_alloc_idr(sizeof(struct uburma_jetty_uobj), 1,
+	uburma_free_jetty));
+declare_uobj_class(UOBJ_CLASS_JETTY_GRP, &uobj_type_alloc_idr(
+	sizeof(struct uburma_jetty_grp_uobj), 1, uburma_free_jetty_grp));
+declare_uobj_class(UOBJ_CLASS_TARGET_JFR, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
+	uburma_free_tjfr));
+declare_uobj_class(UOBJ_CLASS_TARGET_JETTY, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
+	uburma_free_tjetty));
+declare_uobj_class(UOBJ_CLASS_TARGET_SEG, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
+	uburma_free_tseg));

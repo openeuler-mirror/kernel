@@ -34,40 +34,24 @@ struct ubcore_cmd_hdr {
 
 #define UBCORE_CMD_MAGIC 'C'
 #define UBCORE_CMD _IOWR(UBCORE_CMD_MAGIC, 1, struct ubcore_cmd_hdr)
-#define UBCORE_MAX_CMD_SIZE 4096
+#define UBCORE_MAX_CMD_SIZE 8192
 #define UBCORE_CMD_EID_SIZE 16
+#define UBCORE_CMD_DEV_MAX 64
 
 /* only for ubcore device ioctl */
 enum ubcore_cmd {
-	UBCORE_CMD_SET_UASID = 1,
-	UBCORE_CMD_PUT_UASID,
-	UBCORE_CMD_SET_UTP,
+	UBCORE_CMD_SET_UTP = 1,
 	UBCORE_CMD_SHOW_UTP,
 	UBCORE_CMD_QUERY_STATS,
-	UBCORE_CMD_QUERY_RES
-};
-
-struct ubcore_cmd_set_uasid {
-	struct {
-		uint64_t token;
-		uint32_t uasid;
-	} in;
-	struct {
-		uint32_t uasid;
-	} out;
-};
-
-struct ubcore_cmd_put_uasid {
-	struct {
-		uint32_t uasid;
-	} in;
+	UBCORE_CMD_QUERY_RES,
+	UBCORE_CMD_ADD_EID,
+	UBCORE_CMD_DEL_EID,
+	UBCORE_CMD_SET_EID_MODE
 };
 
 struct ubcore_cmd_query_stats {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
-		uint8_t eid[UBCORE_CMD_EID_SIZE];
-		uint32_t tp_type;
 		uint32_t type;
 		uint32_t key;
 	} in;
@@ -84,10 +68,10 @@ struct ubcore_cmd_query_stats {
 struct ubcore_cmd_query_res {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
-		uint8_t eid[UBCORE_CMD_EID_SIZE];
-		uint32_t tp_type;
 		uint32_t type;
 		uint32_t key;
+		uint32_t key_ext;
+		uint32_t key_cnt;
 	} in;
 	struct {
 		uint64_t addr;
@@ -98,8 +82,7 @@ struct ubcore_cmd_query_res {
 struct ubcore_cmd_set_utp {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
-		uint8_t eid[UBCORE_CMD_EID_SIZE];
-		uint32_t transport_type;
+		uint8_t utp_id;
 		bool spray_en;
 		uint16_t data_udp_start;
 		uint8_t udp_range;
@@ -109,16 +92,34 @@ struct ubcore_cmd_set_utp {
 struct ubcore_cmd_show_utp {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
-		uint8_t eid[UBCORE_CMD_EID_SIZE];
-		uint32_t transport_type;
+		uint8_t utp_id;
+	} in;
+	struct {
+		uint64_t addr;
+		uint32_t len;
+	} out;
+};
+
+struct ubcore_cmd_add_ueid {
+	struct {
+		char dev_name[UBCORE_CMD_DEV_MAX];
+		uint32_t eid_index;
+	} in;
+};
+
+struct ubcore_cmd_set_eid_mode {
+	struct {
+		char dev_name[UBCORE_CMD_DEV_MAX];
+		bool eid_mode;
 	} in;
 };
 
 /* copy from user_space addr to kernel args */
 static inline int ubcore_copy_from_user(void *args, const void *args_addr, unsigned long args_size)
 {
-	int ret = (int)copy_from_user(args, args_addr, args_size);
+	int ret;
 
+	ret = (int)copy_from_user(args, args_addr, args_size);
 	if (ret != 0)
 		ubcore_log_err("copy from user failed, ret:%d.\n", ret);
 	return ret;
@@ -127,8 +128,9 @@ static inline int ubcore_copy_from_user(void *args, const void *args_addr, unsig
 /* copy kernel args to user_space addr */
 static inline int ubcore_copy_to_user(void *args_addr, const void *args, unsigned long args_size)
 {
-	int ret = (int)copy_to_user(args_addr, args, args_size);
+	int ret;
 
+	ret = (int)copy_to_user(args_addr, args, args_size);
 	if (ret != 0)
 		ubcore_log_err("copy to user failed ret:%d.\n", ret);
 	return ret;

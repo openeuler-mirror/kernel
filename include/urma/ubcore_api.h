@@ -21,7 +21,7 @@
 #ifndef UBCORE_API_H
 #define UBCORE_API_H
 
-#include <urma/ubcore_types.h>
+#include "ubcore_types.h"
 
 /**
  * Register a device to ubcore
@@ -65,7 +65,7 @@ void ubcore_umem_release(struct ubcore_umem *umem);
  * @return: tp pointer on success, NULL on error
  */
 struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev,
-				    const union ubcore_eid *remote_eid,
+				    union ubcore_eid *remote_eid,
 				    enum ubcore_transport_mode trans_mode,
 				    struct ubcore_udata *udata);
 
@@ -83,5 +83,62 @@ int ubcore_destroy_vtp(struct ubcore_tp *vtp);
  * transport layer, transaction layer header and ICRC.
  */
 enum ubcore_mtu ubcore_get_mtu(int mtu);
+
+/**
+ * Invoke create virtual tp on a PF device, called only by driver
+ * @param[in] dev: the ubcore device;
+ * @param[in] msg: received msg
+ * @return: 0 on success, other value on error
+ */
+int ubcore_recv_msg(struct ubcore_device *dev, struct ubcore_msg *msg);
+
+/**
+ * Invoke ndev bind port_id, called only by driver
+ * @param[in] dev: the ubcore device;
+ * @param[in] ndev: The netdev corresponding to the initial port
+ * @param[in] port_id: The physical port_id is the same as the port_id presented in the sysfs file,
+ * and port_id is configured in TP during link establishment.
+ * @return: 0 on success, other value on error
+ */
+int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
+	unsigned int port_id);
+
+/**
+ * Invoke ndev unbind port_id, called only by driver
+ * @param[in] dev: the ubcore device;
+ * @return: void
+ */
+void ubcore_put_port_netdev(struct ubcore_device *dev);
+
+/**
+ * Invoke The management system calls ubcore interface through uvs_admin to set the device name
+ * and add sip information used for link establishment.
+ * @param[in] sip: Specify the sip information used to establish the link, including device name,
+ * sip, mac, vlan, physical port list.
+ * @return: 0 on success, other value on error
+ */
+int ubcore_add_sip(struct ubcore_sip_info *sip);
+
+/**
+ * Invoke The management system calls ubcore interface through UVS to delete the sip information.
+ * @param[in] sip: Specify the sip information used to establish the link, including device name,
+ * sip, mac, vlan, physical port list.
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_sip(struct ubcore_sip_info *sip);
+
+/**
+ * Invoke get eid list
+ * @param[in] dev: the ubcore device;
+ * @param[out] cnt: eid cnt
+ * @return: eid info on success, NULL on error
+ */
+struct ubcore_eid_info *ubcore_get_eid_list(struct ubcore_device *dev, uint32_t *cnt);
+
+/**
+ * Release umem allocated
+ * @param[in] eid_list: the eid list to be freed
+ */
+void ubcore_free_eid_list(struct ubcore_eid_info *eid_list);
 
 #endif

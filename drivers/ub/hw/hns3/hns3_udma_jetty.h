@@ -30,6 +30,7 @@ struct rc_node {
 	uint32_t		sge_shift;
 	struct udma_db		sdb;
 	struct ubcore_jetty_id	tjetty_id;
+	struct udma_ucontext	*context;
 };
 
 struct udma_jetty {
@@ -54,12 +55,12 @@ static inline struct udma_jetty *to_udma_jetty(struct ubcore_jetty *ubcore_jetty
 }
 
 struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
-				  const struct ubcore_jetty_cfg *cfg,
-				  struct ubcore_udata *udata);
+				       struct ubcore_jetty_cfg *cfg,
+				       struct ubcore_udata *udata);
 int udma_destroy_jetty(struct ubcore_jetty *jetty);
 struct ubcore_tjetty *udma_import_jetty(struct ubcore_device *dev,
-				   const struct ubcore_tjetty_cfg *cfg,
-				   struct ubcore_udata *udata);
+					struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_udata *udata);
 int udma_unimport_jetty(struct ubcore_tjetty *tjetty);
 
 #endif /* _UDMA_JETTY_H */

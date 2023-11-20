@@ -96,14 +96,18 @@ void ubcore_hash_table_add(struct ubcore_hash_table *ht, struct hlist_node *hnod
 	spin_unlock(&ht->lock);
 }
 
+void ubcore_hash_table_remove_nolock(struct ubcore_hash_table *ht, struct hlist_node *hnode)
+{
+	if (ht->head == NULL)
+		return;
+
+	hlist_del(hnode);
+}
+
 void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *hnode)
 {
 	spin_lock(&ht->lock);
-	if (ht->head == NULL) {
-		spin_unlock(&ht->lock);
-		return;
-	}
-	hlist_del(hnode);
+	ubcore_hash_table_remove_nolock(ht, hnode);
 	spin_unlock(&ht->lock);
 }
 

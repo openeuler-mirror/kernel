@@ -23,18 +23,18 @@
 #ifndef UBCORE_UAPI_H
 #define UBCORE_UAPI_H
 
-#include <urma/ubcore_types.h>
+#include "ubcore_types.h"
 /**
  * Application specifies the device to allocate an context.
  * @param[in] dev: ubcore_device found by add ops in the client.
- * @param[in] uasid: (deprecated)
+ * @param[in] eid_index: function entity id (eid) index to set;
  * @param[in] udrv_data (optional): ucontext and user space driver data
  * @return: ubcore_ucontext pointer on success, NULL on fail.
  * Note: this API is called only by uburma representing user-space application,
- * not by other kernel modules
+ *       not by other kernel modules
  */
-struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t uasid,
-					      struct ubcore_udrv_priv *udrv_data);
+struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
+	struct ubcore_udrv_priv *udrv_data);
 /**
  * Free the allocated context.
  * @param[in] dev: device to free context.
@@ -42,55 +42,32 @@ struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_
  * Note: this API is called only by uburma representing user-space application,
  * not by other kernel modules
  */
-void ubcore_free_ucontext(const struct ubcore_device *dev, struct ubcore_ucontext *ucontext);
-/**
- * set function entity id for ub device. must be called before alloc context
- * @param[in] dev: the ubcore_device handle;
- * @param[in] eid: function entity id (eid) to set;
- * @return: 0 on success, other value on error
- */
-int ubcore_set_eid(struct ubcore_device *dev, union ubcore_eid *eid);
+void ubcore_free_ucontext(struct ubcore_device *dev, struct ubcore_ucontext *ucontext);
 /**
  * set upi
  * @param[in] dev: the ubcore_device handle;
- * @param[in] vf_id: vf_id;
- * @param[in] idx: idx of upi in vf;
- * @param[in] upi: upi of vf to set
+ * @param[in] fe_idx: fe_idx;
+ * @param[in] idx: idx of upi in fe;
+ * @param[in] upi: upi of fe to set
  * @return: 0 on success, other value on error
  */
-int ubcore_set_upi(const struct ubcore_device *dev, uint16_t vf_id, uint16_t idx, uint32_t upi);
-/**
- * add a function entity id (eid) to ub device, the upi of vf to which the eid belongs
- * can be specified
- * @param[in] dev: the ubcore_device handle;
- * @param[in] eid: function entity id (eid) to be added;
- * @param[in] upi: upi of vf;
- * @return: the index of eid/upi, less than 0 indicating error
- */
-int ubcore_add_eid(struct ubcore_device *dev, union ubcore_eid *eid);
-/**
- * remove a function entity id (eid) specified by idx from ub device
- * @param[in] dev: the ubcore_device handle;
- * @param[in] idx: the idx of function entity id (eid) to be deleted;
- * @return: 0 on success, other value on error
- */
-int ubcore_delete_eid(struct ubcore_device *dev, uint16_t idx);
+int ubcore_set_upi(struct ubcore_device *dev, uint16_t fe_idx, uint16_t idx, uint32_t upi);
 /**
  * add a function entity id (eid) to ub device (for uvs)
  * @param[in] dev: the ubcore_device handle;
- * @param[in] vf_id: vf_id;
- * @param[in] cfg: eid and the upi of vf to which the eid belongs can be specified;
+ * @param[in] fe_idx: fe_idx;
+ * @param[in] cfg: eid and the upi of fe to which the eid belongs can be specified;
  * @return: the index of eid/upi, less than 0 indicating error
  */
-int ubcore_add_ueid(struct ubcore_device *dev, uint16_t vf_id, struct ubcore_ueid_cfg *cfg);
+int ubcore_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg);
 /**
  * remove a function entity id (eid) specified by idx from ub device (for uvs)
  * @param[in] dev: the ubcore_device handle;
- * @param[in] vf_id: vf_id;
- * @param[in] idx: the idx of function entity id (eid) to be deleted;
+ * @param[in] fe_idx: fe_idx;
+ * @param[in] cfg: eid and the upi of fe to which the eid belongs can be specified;
  * @return: 0 on success, other value on error
  */
-int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t vf_id, uint16_t idx);
+int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg);
 /**
  * query device attributes
  * @param[in] dev: the ubcore_device handle;
@@ -104,7 +81,7 @@ int ubcore_query_device_attr(struct ubcore_device *dev, struct ubcore_device_att
  * @param[out] status: status returned to client
  * @return: 0 on success, other value on error
  */
-int ubcore_query_device_status(const struct ubcore_device *dev,
+int ubcore_query_device_status(struct ubcore_device *dev,
 			       struct ubcore_device_status *status);
 /**
  * query stats
@@ -113,7 +90,7 @@ int ubcore_query_device_status(const struct ubcore_device *dev,
  * @param[in/out] val: addr and len of value
  * @return: 0 on success, other value on error
  */
-int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key *key,
+int ubcore_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *key,
 		       struct ubcore_stats_val *val);
 /**
  * query resource
@@ -122,7 +99,7 @@ int ubcore_query_stats(const struct ubcore_device *dev, struct ubcore_stats_key 
  * @param[in/out] val: addr and len of value
  * @return: 0 on success, other value on error
  */
-int ubcore_query_resource(const struct ubcore_device *dev, struct ubcore_res_key *key,
+int ubcore_query_resource(struct ubcore_device *dev, struct ubcore_res_key *key,
 			  struct ubcore_res_val *val);
 /**
  * config device
@@ -130,7 +107,7 @@ int ubcore_query_resource(const struct ubcore_device *dev, struct ubcore_res_key
  * @param[in] cfg: device configuration
  * @return: 0 on success, other value on error
  */
-int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_cfg *cfg);
+int ubcore_config_device(struct ubcore_device *dev, struct ubcore_device_cfg *cfg);
 
 /**
  * set ctx data of a client
@@ -139,7 +116,7 @@ int ubcore_config_device(struct ubcore_device *dev, const struct ubcore_device_c
  * @param[in] data: client private data to be set
  * @return: 0 on success, other value on error
  */
-void ubcore_set_client_ctx_data(struct ubcore_device *dev, const struct ubcore_client *client,
+void ubcore_set_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client,
 				void *data);
 /**
  * get ctx data of a client
@@ -147,7 +124,7 @@ void ubcore_set_client_ctx_data(struct ubcore_device *dev, const struct ubcore_c
  * @param[in] client: ubcore client pointer
  * @return: client private data set before
  */
-void *ubcore_get_client_ctx_data(struct ubcore_device *dev, const struct ubcore_client *client);
+void *ubcore_get_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client);
 /**
  * Register a new client to ubcore
  * @param[in] dev: the ubcore_device handle;
@@ -161,18 +138,20 @@ int ubcore_register_client(struct ubcore_client *new_client);
  */
 void ubcore_unregister_client(struct ubcore_client *rm_client);
 /**
- * alloc key to ubcore device
+ * alloc token to ubcore device
  * @param[in] dev: the ubcore device handle;
  * @param[in] udata (optional): ucontext and user space driver data
- * @return: key id pointer on success, NULL on error
+ * @return: token id pointer on success, NULL on error
  */
-struct ubcore_key_id *ubcore_alloc_key_id(struct ubcore_device *dev, struct ubcore_udata *udata);
+struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
+	struct ubcore_udata *udata);
 /**
- * free key id from ubcore device
- * @param[in] key: the key id alloced before;
+ * free token id from ubcore device
+ * @param[in] token: the token id alloced before;
  * @return: 0 on success, other value on error
  */
-int ubcore_free_key_id(struct ubcore_key_id *key);
+int ubcore_free_token_id(struct ubcore_token_id *key);
+
 /**
  * register segment to ubcore device
  * @param[in] dev: the ubcore device handle;
@@ -181,7 +160,7 @@ int ubcore_free_key_id(struct ubcore_key_id *key);
  * @return: target segment pointer on success, NULL on error
  */
 struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
-					      const struct ubcore_seg_cfg *cfg,
+					      struct ubcore_seg_cfg *cfg,
 					      struct ubcore_udata *udata);
 /**
  * unregister segment from ubcore device
@@ -197,7 +176,7 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg);
  * @return: target segment handle on success, NULL on error
  */
 struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
-					    const struct ubcore_target_seg_cfg *cfg,
+					    struct ubcore_target_seg_cfg *cfg,
 					    struct ubcore_udata *udata);
 /**
  * unimport seg from ubcore device
@@ -214,10 +193,9 @@ int ubcore_unimport_seg(struct ubcore_target_seg *tseg);
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: jfc pointer on success, NULL on error
  */
-struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, const struct ubcore_jfc_cfg *cfg,
-				     ubcore_comp_callback_t jfce_handler,
-				     ubcore_event_callback_t jfae_handler,
-				     struct ubcore_udata *udata);
+struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, struct ubcore_jfc_cfg *cfg,
+	ubcore_comp_callback_t jfce_handler, ubcore_event_callback_t jfae_handler,
+	struct ubcore_udata *udata);
 /**
  * modify jfc from ubcore device.
  * @param[in] jfc: the jfc created before;
@@ -225,7 +203,7 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, const struct ubc
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: 0 on success, other value on error
  */
-int ubcore_modify_jfc(struct ubcore_jfc *jfc, const struct ubcore_jfc_attr *attr,
+int ubcore_modify_jfc(struct ubcore_jfc *jfc, struct ubcore_jfc_attr *attr,
 		      struct ubcore_udata *udata);
 /**
  * destroy jfc from ubcore device.
@@ -248,9 +226,8 @@ int ubcore_rearm_jfc(struct ubcore_jfc *jfc, bool solicited_only);
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: jfs pointer on success, NULL on error
  */
-struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubcore_jfs_cfg *cfg,
-				     ubcore_event_callback_t jfae_handler,
-				     struct ubcore_udata *udata);
+struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
+	ubcore_event_callback_t jfae_handler, struct ubcore_udata *udata);
 /**
  * modify jfs from ubcore device.
  * @param[in] jfs: the jfs created before;
@@ -258,7 +235,7 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, const struct ubc
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: 0 on success, other value on error
  */
-int ubcore_modify_jfs(struct ubcore_jfs *jfs, const struct ubcore_jfs_attr *attr,
+int ubcore_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 		      struct ubcore_udata *udata);
 /**
  * query jfs from ubcore device.
@@ -292,9 +269,8 @@ int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr);
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: jfr pointer on success, NULL on error
  */
-struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
-				     ubcore_event_callback_t jfae_handler,
-				     struct ubcore_udata *udata);
+struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
+	ubcore_event_callback_t jfae_handler, struct ubcore_udata *udata);
 /**
  * modify jfr from ubcore device.
  * @param[in] jfr: the jfr created before;
@@ -302,7 +278,7 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, const struct ubc
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: 0 on success, other value on error
  */
-int ubcore_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+int ubcore_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 		      struct ubcore_udata *udata);
 /**
  * query jfr from ubcore device.
@@ -328,7 +304,7 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr);
  * @return: jetty pointer on success, NULL on error
  */
 struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
-					 const struct ubcore_jetty_cfg *cfg,
+					 struct ubcore_jetty_cfg *cfg,
 					 ubcore_event_callback_t jfae_handler,
 					 struct ubcore_udata *udata);
 /**
@@ -338,7 +314,7 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: 0 on success, other value on error
  */
-int ubcore_modify_jetty(struct ubcore_jetty *jetty, const struct ubcore_jetty_attr *attr,
+int ubcore_modify_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_attr *attr,
 			struct ubcore_udata *udata);
 /**
  * query jetty from ubcore device.
@@ -372,8 +348,7 @@ int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr 
  * @return: target jfr pointer on success, NULL on error
  */
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
-					const struct ubcore_tjetty_cfg *cfg,
-					struct ubcore_udata *udata);
+	struct ubcore_tjetty_cfg *cfg, struct ubcore_udata *udata);
 /**
  * unimport jfr from ubcore device.
  * @param[in] tjfr: the target jfr imported before;
@@ -388,8 +363,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr);
  * @return: target jetty pointer on success, NULL on error
  */
 struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
-					  const struct ubcore_tjetty_cfg *cfg,
-					  struct ubcore_udata *udata);
+	struct ubcore_tjetty_cfg *cfg, struct ubcore_udata *udata);
 /**
  * unimport jetty from ubcore device.
  * @param[in] tjetty: the target jetty imported before;
@@ -443,10 +417,26 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
  * Unbind jetty: Unbind local jetty with remote jetty,
  * and tear down the transport channel between them.
  * @param[in] jetty: local jetty to unbind;
- * @param[in] tjetty: target jetty advised before;
  * @return: 0 on success, other value on error
  */
-int ubcore_unbind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
+int ubcore_unbind_jetty(struct ubcore_jetty *jetty);
+/**
+ * create jetty group with ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: jetty group  configurations
+ * @param[in] jfae_handler (optional): jetty async_event handler
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: jetty group pointer on success, NULL on error
+ */
+struct ubcore_jetty_group *ubcore_create_jetty_grp(struct ubcore_device *dev,
+	struct ubcore_jetty_grp_cfg *cfg, ubcore_event_callback_t jfae_handler,
+	struct ubcore_udata *udata);
+/**
+ * destroy jetty group from ubcore device.
+ * @param[in] jetty_grp: the jetty group created before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp);
 /**
  * operation of user ioctl cmd.
  * @param[in] k_user_ctl: kdrv user control command pointer;
@@ -460,7 +450,8 @@ int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl);
  * Note: the handler will be called when driver reports an async_event with
  * ubcore_dispatch_async_event
  */
-void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_event_handler *handler);
+void ubcore_register_event_handler(struct ubcore_device *dev,
+	struct ubcore_event_handler *handler);
 /**
  * Client unregister async_event handler from ubcore
  * @param[in] dev: the ubcore device handle;
@@ -477,7 +468,7 @@ void ubcore_unregister_event_handler(struct ubcore_device *dev,
  * @param[out] bad_wr: the first failed wr;
  * @return: 0 on success, other value on error
  */
-int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
+int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, struct ubcore_jfs_wr *wr,
 		       struct ubcore_jfs_wr **bad_wr);
 /**
  * post jfr wr.
@@ -486,7 +477,7 @@ int ubcore_post_jfs_wr(struct ubcore_jfs *jfs, const struct ubcore_jfs_wr *wr,
  * @param[out] bad_wr: the first failed wr;
  * @return: 0 on success, other value on error
  */
-int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, const struct ubcore_jfr_wr *wr,
+int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, struct ubcore_jfr_wr *wr,
 		       struct ubcore_jfr_wr **bad_wr);
 /**
  * post jetty send wr.
@@ -495,7 +486,7 @@ int ubcore_post_jfr_wr(struct ubcore_jfr *jfr, const struct ubcore_jfr_wr *wr,
  * @param[out] bad_wr: the first failed wr;
  * @return: 0 on success, other value on error
  */
-int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, const struct ubcore_jfs_wr *wr,
+int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, struct ubcore_jfs_wr *wr,
 			      struct ubcore_jfs_wr **bad_wr);
 /**
  * post jetty receive wr.
@@ -504,7 +495,7 @@ int ubcore_post_jetty_send_wr(struct ubcore_jetty *jetty, const struct ubcore_jf
  * @param[out] bad_wr: the first failed wr;
  * @return: 0 on success, other value on error
  */
-int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, const struct ubcore_jfr_wr *wr,
+int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, struct ubcore_jfr_wr *wr,
 			      struct ubcore_jfr_wr **bad_wr);
 /**
  * poll jfc.

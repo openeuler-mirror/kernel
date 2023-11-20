@@ -12,6 +12,13 @@ ubcore-objs := ubcore_main.o \
 			ubcore_tp.o \
 			ubcore_tp_table.o \
 			ubcore_netlink.o \
-			ubcore_dp.o
+			ubcore_dp.o \
+			ubcore_ctp.o \
+			ubcore_msg.o \
+			ubcore_netdev.o \
+			ubcore_tpg.o \
+			ubcore_utp.o \
+			ubcore_uvs_cmd.o \
+			ubcore_vtp.o
 
 obj-$(CONFIG_UB) += ubcore.o
