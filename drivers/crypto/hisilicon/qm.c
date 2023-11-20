@@ -1062,12 +1062,13 @@ static void qm_get_complete_eqe_num(struct hisi_qm *qm)
 	u16 cqn, eqe_num = 0;
 
 	if (QM_EQE_PHASE(eqe) != qm->status.eqc_phase) {
+		atomic64_inc(&qm->debug.dfx.err_irq_cnt);
 		qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
 		return;
 	}
 
 	cqn = le32_to_cpu(eqe->dw0) & QM_EQE_CQN_MASK;
-	if (cqn >= qm->qp_num)
+	if (unlikely(cqn >= qm->qp_num))
 		return;
 	poll_data = &qm->poll_data[cqn];
 
@@ -1089,12 +1090,9 @@ static void qm_get_complete_eqe_num(struct hisi_qm *qm)
 			break;
 	}
 
+	poll_data->eqe_num = eqe_num;
+	queue_work(qm->wq, &poll_data->work);
 	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
-
-	if (poll_data) {
-		poll_data->eqe_num = eqe_num;
-		queue_work(qm->wq, &poll_data->work);
-	}
 }
 
 static irqreturn_t qm_eq_irq(int irq, void *data)
@@ -3053,10 +3051,9 @@ static void hisi_qm_pci_uninit(struct hisi_qm *qm)
 	pci_disable_device(pdev);
 }
 
-static void hisi_qm_set_state(struct hisi_qm *qm, enum vf_state state)
+static void hisi_qm_set_state(struct hisi_qm *qm, u8 state)
 {
-	/* set vf driver state */
-	if (qm->ver > QM_HW_V2)
+	if (qm->ver > QM_HW_V2 && qm->fun_type == QM_HW_VF)
 		writel(state, qm->io_base + QM_VF_STATE);
 }
 
@@ -3109,7 +3106,7 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	}
 
 	hisi_qm_memory_uninit(qm);
-	hisi_qm_set_state(qm, VF_NOT_READY);
+	hisi_qm_set_state(qm, QM_NOT_READY);
 	up_write(&qm->qps_lock);
 
 	qm_remove_uacce(qm);
@@ -3125,6 +3122,7 @@ EXPORT_SYMBOL_GPL(hisi_qm_uninit);
  * @number: The number of queues in vft.
  *
  * We can allocate multiple queues to a qm by configuring virtual function
+ * table. We get related configures by this function. Normally, we call this
  * function in VF driver to get the queue information.
  *
  * qm hw v1 does not support this interface.
@@ -3294,8 +3292,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 	if (!ret)
 		atomic_set(&qm->status.flags, QM_START);
 
-	hisi_qm_set_state(qm, VF_READY);
-
+	hisi_qm_set_state(qm, QM_READY);
 err_unlock:
 	up_write(&qm->qps_lock);
 	return ret;
@@ -3388,8 +3385,6 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 {
 	struct device *dev = &qm->pdev->dev;
 	int ret = 0;
-
-	hisi_qm_set_state(qm, VF_PREPARE);
 
 	down_write(&qm->qps_lock);
 
@@ -5430,8 +5425,6 @@ static int hisi_qm_pci_init(struct hisi_qm *qm)
 	if (ret < 0)
 		goto err_get_pci_res;
 	pci_set_master(pdev);
-
-	hisi_qm_set_state(qm, VF_PREPARE);
 
 	num_vec = qm_get_irq_num(qm);
 	ret = pci_alloc_irq_vectors(pdev, num_vec, num_vec, PCI_IRQ_MSI);

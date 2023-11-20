@@ -543,7 +543,7 @@ static void vf_qm_fun_restart(struct hisi_qm *qm,
 	 * normally at this time. so if Guest acc driver have removed,
 	 * don't need to restart QP.
 	 */
-	if (vf_data->vf_state != VF_READY) {
+	if (vf_data->vf_state != QM_READY) {
 		dev_err(dev, "failed to restart VF!\n");
 		return;
 	}
@@ -1251,7 +1251,7 @@ static void acc_vf_reset(void *device_data)
 		vfio_pci_vendor_data(device_data);
 	struct hisi_qm *qm = acc_vf_dev->vf_qm;
 	struct device *dev = &qm->pdev->dev;
-	u32 vf_state = VF_NOT_READY;
+	u32 vf_state = QM_NOT_READY;
 	int ret;
 
 	dev_info(dev, "QEMU prepare to Reset Guest!\n");
