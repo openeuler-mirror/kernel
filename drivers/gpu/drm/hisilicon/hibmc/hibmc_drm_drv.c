@@ -288,21 +288,27 @@ static int hibmc_load(struct drm_device *dev)
 	priv->dev = dev;
 
 	ret = hibmc_hw_init(priv);
-	if (ret)
-		goto err;
+	if (ret) {
+		drm_err(dev, "failed to initialize hardware: %d\n", ret);
+		goto err_alloc;
+	}
 
 	ret = hibmc_mm_init(priv);
-	if (ret)
-		goto err;
+	if (ret) {
+		drm_err(dev, "failed to initialize mm: %d\n", ret);
+		goto err_hw;
+	}
 
 	ret = hibmc_kms_init(priv);
-	if (ret)
-		goto err;
+	if (ret) {
+		drm_err(dev, "failed to initialize kms: %d\n", ret);
+		goto err_mm;
+	}
 
 	ret = drm_vblank_init(dev, dev->mode_config.num_crtc);
 	if (ret) {
 		drm_err(dev, "failed to initialize vblank: %d\n", ret);
-		goto err;
+		goto err_kms;
 	}
 
 	ret = pci_enable_msi(dev->pdev);
@@ -319,9 +325,15 @@ static int hibmc_load(struct drm_device *dev)
 
 	return 0;
 
-err:
-	hibmc_unload(dev);
-	drm_err(dev, "failed to initialize drm driver: %d\n", ret);
+err_kms:
+	hibmc_kms_fini(priv);
+err_mm:
+	hibmc_mm_fini(priv);
+err_hw:
+	hibmc_hw_unmap(priv);
+err_alloc:
+	dev->dev_private = NULL;
+
 	return ret;
 }
 
