@@ -310,16 +310,29 @@ void play_dead(void)
 	register void (*init_fn)(void);
 
 	idle_task_exit();
-	local_irq_enable();
+	/*
+	 * vcpu can be woken up from idle emulation in vm if irq is disabled
+	 */
+	if (!cpu_has_hypervisor)
+		local_irq_enable();
 	set_csr_ecfg(ECFGF_IPI);
 	__this_cpu_write(cpu_state, CPU_DEAD);
 
 	__smp_mb();
 	do {
 		__asm__ __volatile__("idle 0\n\t");
-		addr = iocsr_read64(LOONGARCH_IOCSR_MBUF0);
+		/*
+		 * mailbox info is wroten from other CPU with IPI send method
+		 * in function csr_mail_send, only 4 bytes can be wroten with
+		 * IPI send method in one time.
+		 *
+		 * High 4 bytes is sent and then low 4 bytes for 8 bytes mail
+		 * sending method. Here low 4 bytes is read by the first.
+		 */
+		addr = iocsr_read32(LOONGARCH_IOCSR_MBUF0);
 	} while (addr == 0);
 
+	addr = iocsr_read64(LOONGARCH_IOCSR_MBUF0);
 	init_fn = (void *)TO_CACHE(addr);
 	iocsr_write32(0xffffffff, LOONGARCH_IOCSR_IPI_CLEAR);
 
