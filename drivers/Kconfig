@@ -242,4 +242,6 @@ source "drivers/roh/Kconfig"
 
 source "drivers/ub/Kconfig"
 
+source "drivers/cpuinspect/Kconfig"
+
 endmenu
