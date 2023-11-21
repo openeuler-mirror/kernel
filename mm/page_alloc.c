@@ -7738,6 +7738,11 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 		bool has_unmirrored_mem = false;
 		unsigned long mirrored_sz = 0;
 
+		if (!memblock_has_mirror()) {
+			pr_warn("The system has no mirror memory, ignore kernelcore=mirror.\n");
+			goto out;
+		}
+
 		for_each_mem_region(r) {
 			if (memblock_is_mirror(r)) {
 				mirrored_sz += r->size;
