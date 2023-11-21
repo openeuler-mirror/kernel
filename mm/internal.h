@@ -671,4 +671,6 @@ struct migration_target_control {
 	gfp_t gfp_mask;
 };
 
+DECLARE_PER_CPU(struct per_cpu_nodestat, boot_nodestats);
+
 #endif	/* __MM_INTERNAL_H */
