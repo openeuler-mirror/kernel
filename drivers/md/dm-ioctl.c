@@ -327,6 +327,9 @@ static struct dm_table *__hash_remove(struct hash_cell *hc)
 	table = NULL;
 	if (hc->new_map)
 		table = hc->new_map;
+
+	DMINFO("%s[%i]: %s (%s) is removed successfully",
+		current->comm, current->pid, hc->md->disk->disk_name, hc->name);
 	dm_put(hc->md);
 	free_cell(hc);
 
@@ -880,6 +883,7 @@ static int dev_create(struct file *filp, struct dm_ioctl *param, size_t param_si
 {
 	int r, m = DM_ANY_MINOR;
 	struct mapped_device *md;
+	struct hash_cell *hc;
 
 	r = check_name(param->name);
 	if (r)
@@ -903,6 +907,13 @@ static int dev_create(struct file *filp, struct dm_ioctl *param, size_t param_si
 
 	__dev_status(md, param);
 
+	mutex_lock(&dm_hash_cells_mutex);
+	hc = dm_get_mdptr(md);
+	if (hc)
+		DMINFO("%s[%i]: %s (%s) is created successfully",
+			current->comm, current->pid, md->disk->disk_name, hc->name);
+
+	mutex_unlock(&dm_hash_cells_mutex);
 	dm_put(md);
 
 	return 0;
