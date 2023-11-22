@@ -5147,6 +5147,7 @@ static int hns_roce_set_sl(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	u32 sl_num;
 	int ret;
 
 	ret = hns_roce_hw_v2_get_dscp(hr_dev, get_tclass(&attr->ah_attr.grh),
@@ -5163,10 +5164,11 @@ static int hns_roce_set_sl(struct ib_qp *ibqp,
 	else
 		hr_qp->sl = rdma_ah_get_sl(&attr->ah_attr);
 
-	if (unlikely(hr_qp->sl > MAX_SERVICE_LEVEL)) {
-		ibdev_err(ibdev,
-			  "failed to fill QPC, sl (%u) shouldn't be larger than %d.\n",
-			  hr_qp->sl, MAX_SERVICE_LEVEL);
+	sl_num = min_t(u32, MAX_SERVICE_LEVEL, hr_dev->caps.sl_num - 1);
+	if (unlikely(hr_qp->sl > sl_num)) {
+		ibdev_err_ratelimited(ibdev,
+			  "failed to fill QPC, sl (%u) shouldn't be larger than %u.\n",
+			  hr_qp->sl, sl_num);
 		return -EINVAL;
 	}
 
