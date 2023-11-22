@@ -35,8 +35,6 @@
 #include "hclge_unic_guid.h"
 #include "hclge_unic_addr.h"
 
-#include "hclge_trace.h"
-
 #define HCLGE_NAME			"hclge"
 
 #define HCLGE_BUF_SIZE_UNIT	256U
@@ -408,43 +406,6 @@ static const struct key_info tuple_key_info[] = {
 int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num)
 {
 	return hclge_comm_cmd_send(&hw->hw, desc, num);
-}
-
-void trace_hclge_comm_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
-			       int num, int is_special)
-{
-	int i;
-
-	trace_hclge_pf_cmd_send(hw, desc, 0, num);
-
-	if (!is_special) {
-		for (i = 1; i < num; i++)
-			trace_hclge_pf_cmd_send(hw, &desc[i], i, num);
-	} else {
-		for (i = 1; i < num; i++)
-			trace_hclge_pf_special_cmd_send(hw, (u32 *)&desc[i],
-							i, num);
-	}
-}
-
-void trace_hclge_comm_cmd_get(struct hclge_comm_hw *hw, struct hclge_desc *desc,
-			      int num, int is_special)
-{
-	int i;
-
-	if (!HCLGE_COMM_SEND_SYNC(le16_to_cpu(desc->flag)))
-		return;
-
-	trace_hclge_pf_cmd_get(hw, desc, 0, num);
-
-	if (!is_special) {
-		for (i = 1; i < num; i++)
-			trace_hclge_pf_cmd_get(hw, &desc[i], i, num);
-	} else {
-		for (i = 1; i < num; i++)
-			trace_hclge_pf_special_cmd_get(hw, (u32 *)&desc[i],
-						       i, num);
-	}
 }
 
 static int hclge_mac_update_stats_defective(struct hclge_dev *hdev)
