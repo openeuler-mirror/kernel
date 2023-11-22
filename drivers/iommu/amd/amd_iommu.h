@@ -66,7 +66,8 @@ int amd_iommu_complete_ppr(struct pci_dev *pdev, u32 pasid,
 void amd_iommu_update_and_flush_device_table(struct protection_domain *domain);
 void amd_iommu_domain_update(struct protection_domain *domain);
 void amd_iommu_domain_flush_complete(struct protection_domain *domain);
-void amd_iommu_domain_flush_tlb_pde(struct protection_domain *domain);
+void amd_iommu_domain_flush_pages(struct protection_domain *domain,
+				  u64 address, size_t size);
 int amd_iommu_flush_tlb(struct iommu_domain *dom, u32 pasid);
 int amd_iommu_domain_set_gcr3(struct iommu_domain *dom, u32 pasid,
 			      unsigned long cr3);
