@@ -5153,6 +5153,7 @@ static int check_congest_type(struct ib_qp *ibqp,
 		congest_alg->wnd_mode_sel = WND_LIMIT;
 		break;
 	default:
+		hr_qp->congest_type = HNS_ROCE_CONGEST_TYPE_DCQCN;
 		congest_alg->alg_sel = CONGEST_DCQCN;
 		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_LEVEL;
 		congest_alg->dip_vld = DIP_INVALID;
