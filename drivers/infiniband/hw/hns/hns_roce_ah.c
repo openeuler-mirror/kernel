@@ -62,6 +62,7 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	struct hns_roce_ah *ah = to_hr_ah(ibah);
 	u8 priority = 0;
 	u8 tc_mode = 0;
+	u32 sl_num;
 	int ret;
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08 && udata)
@@ -91,6 +92,14 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 		ah->av.sl = priority;
 	else
 		ah->av.sl = rdma_ah_get_sl(ah_attr);
+
+	sl_num = min_t(u32, MAX_SERVICE_LEVEL, hr_dev->caps.sl_num - 1);
+	if (unlikely(ah->av.sl > sl_num)) {
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			  "failed to set sl, sl (%u) shouldn't be larger than %u.\n",
+			  ah->av.sl, sl_num);
+		return -EINVAL;
+	}
 
 	memcpy(ah->av.dgid, grh->dgid.raw, HNS_ROCE_GID_SIZE);
 	memcpy(ah->av.mac, ah_attr->roce.dmac, ETH_ALEN);
