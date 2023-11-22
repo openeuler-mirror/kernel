@@ -256,7 +256,7 @@ set_err:
 static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 {
 	u8 main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
-	struct hns_roce_dev *hr_dev;
+	struct hns_roce_dev *hr_dev = NULL;
 	struct net_device *net_dev;
 	int i, ret;
 
@@ -676,8 +676,8 @@ static void hns_roce_bond_info_update(struct hns_roce_bond_group *bond_grp,
 			net_dev = bond_grp->bond_func_info[i].net_dev;
 			if (net_dev && upper_dev !=
 				get_upper_dev_from_ndev(net_dev)) {
-				bond_grp->slave_map_diff |= (1 << i);
-				bond_grp->slave_map &= ~(1 << i);
+				bond_grp->slave_map_diff |= (1U << i);
+				bond_grp->slave_map &= ~(1U << i);
 			}
 		}
 		return;
@@ -689,8 +689,8 @@ static void hns_roce_bond_info_update(struct hns_roce_bond_group *bond_grp,
 		if (hr_dev) {
 			func_idx = PCI_FUNC(hr_dev->pci_dev->devfn);
 			if (!bond_grp->bond_func_info[func_idx].net_dev) {
-				bond_grp->slave_map_diff |= (1 << func_idx);
-				bond_grp->slave_map |= (1 << func_idx);
+				bond_grp->slave_map_diff |= (1U << func_idx);
+				bond_grp->slave_map |= (1U << func_idx);
 				priv = hr_dev->priv;
 
 				bond_grp->bond_func_info[func_idx].net_dev =
