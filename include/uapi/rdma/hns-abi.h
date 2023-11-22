@@ -135,7 +135,7 @@ struct hns_roce_ib_create_qp_resp {
 struct hns_roce_ib_create_ah_resp {
 	__u8    priority;
 	__u8    tc_mode;
-	__u8    reserved[6];
+	__u8    dmac[6];
 };
 
 struct hns_roce_ib_modify_qp_resp {
