@@ -34,8 +34,8 @@ static inline struct udma_jfs *to_udma_jfs(struct ubcore_jfs *jfs)
 }
 
 struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev,
-			      const struct ubcore_jfs_cfg *cfg,
-			      struct ubcore_udata *udata);
+				   struct ubcore_jfs_cfg *cfg,
+				   struct ubcore_udata *udata);
 int udma_destroy_jfs(struct ubcore_jfs *ubcore_jfs);
 
 #endif /* _UDMA_JFS_H */

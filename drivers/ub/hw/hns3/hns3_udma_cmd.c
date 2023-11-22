@@ -161,6 +161,7 @@ static uint32_t udma_cmd_hw_resetting(struct udma_dev *dev,
 	ret = read_poll_timeout_atomic(ops->ae_dev_reset_cnt, val,
 				       val > dev->reset_cnt, HW_RESET_DELAY_US,
 				       HW_RESET_TIMEOUT_US, false, handle);
+	cond_resched();
 	if (!ret)
 		dev->is_reset = true;
 
@@ -298,9 +299,10 @@ static int __udma_cmq_send(struct udma_dev *dev, struct udma_cmq_desc *desc,
 	int ret = 0;
 	int i;
 
-	tail = csq->head;
 
 	mutex_lock(&csq->lock);
+
+	tail = csq->head;
 
 	for (i = 0; i < num; i++) {
 		csq->desc[csq->head++] = desc[i];

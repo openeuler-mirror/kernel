@@ -41,12 +41,14 @@ void ubcore_hash_table_free(struct ubcore_hash_table *ht);
 void ubcore_hash_table_free_with_cb(struct ubcore_hash_table *ht, void (*free_cb)(void *));
 void ubcore_hash_table_add(struct ubcore_hash_table *ht, struct hlist_node *hnode, uint32_t hash);
 void ubcore_hash_table_add_nolock(struct ubcore_hash_table *ht, struct hlist_node *hnode,
-				  uint32_t hash);
+	uint32_t hash);
 void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *hnode);
+void ubcore_hash_table_remove_nolock(struct ubcore_hash_table *ht, struct hlist_node *hnode);
 void *ubcore_hash_table_lookup(struct ubcore_hash_table *ht, uint32_t hash, const void *key);
-void *ubcore_hash_table_lookup_nolock(struct ubcore_hash_table *ht, uint32_t hash, const void *key);
+void *ubcore_hash_table_lookup_nolock(struct ubcore_hash_table *ht, uint32_t hash,
+	const void *key);
 void *ubcore_hash_table_find_remove(struct ubcore_hash_table *ht, uint32_t hash, const void *key);
 /* Do not insert a new entry if an old entry with the same key exists */
 int ubcore_hash_table_find_add(struct ubcore_hash_table *ht, struct hlist_node *hnode,
-			       uint32_t hash);
+	uint32_t hash);
 #endif

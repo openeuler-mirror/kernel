@@ -19,10 +19,8 @@
 #include <linux/jhash.h>
 #include "hns3_udma_qp.h"
 
-#define MAX_HOP_LIMIT 255
-
 struct udma_tp {
-	struct ubcore_tp		ubcore_tp;
+	struct ubcore_tp	ubcore_tp;
 	struct udma_qp		qp;
 	struct ubcore_jetty_id	tjetty_id;
 };
@@ -32,16 +30,16 @@ static inline struct udma_tp *to_udma_tp(struct ubcore_tp *ubcore_tp)
 	return container_of(ubcore_tp, struct udma_tp, ubcore_tp);
 }
 
-static inline uint32_t udma_get_jetty_hash(const struct ubcore_jetty_id *jetty_id)
+static inline uint32_t udma_get_jetty_hash(struct ubcore_jetty_id *jetty_id)
 {
 	return jhash(jetty_id, sizeof(struct ubcore_jetty_id), 0);
 }
 
 struct ubcore_tp *udma_create_tp(struct ubcore_device *dev,
-			    const struct ubcore_tp_cfg *cfg,
-			    struct ubcore_udata *udata);
+				 struct ubcore_tp_cfg *cfg,
+				 struct ubcore_udata *udata);
 int udma_destroy_tp(struct ubcore_tp *tp);
-int udma_modify_tp(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
+int udma_modify_tp(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 		   union ubcore_tp_attr_mask mask);
 struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn);
 

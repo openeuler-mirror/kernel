@@ -101,6 +101,7 @@ enum {
 	UDMA_CMD_DESTROY_CEQC		= 0x93,
 
 	/* SCC CTX BT commands */
+	UDMA_CMD_QUERY_SCCC		= 0xa2,
 	UDMA_CMD_READ_SCCC_BT0		= 0xa4,
 	UDMA_CMD_WRITE_SCCC_BT0		= 0xa5,
 

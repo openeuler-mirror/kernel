@@ -2,7 +2,7 @@
 
 menuconfig UB
 	tristate "Unified Bus (UB) core support"
-	depends on ARM64 || X86_64 || COMPILE_TEST
+	depends on ARM64 || X86_64
 	default n
 	help
 	  Core support for Unified Bus (UB).

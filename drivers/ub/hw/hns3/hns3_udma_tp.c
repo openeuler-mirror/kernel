@@ -36,7 +36,7 @@ static enum udma_qp_state to_udma_qp_state(enum ubcore_tp_state state)
 		return QPS_RTR;
 	case UBCORE_TP_STATE_RTS:
 		return QPS_RTS;
-	case UBCORE_TP_STATE_ERROR:
+	case UBCORE_TP_STATE_ERR:
 		return QPS_ERR;
 	default:
 		return QPS_ERR;
@@ -44,7 +44,7 @@ static enum udma_qp_state to_udma_qp_state(enum ubcore_tp_state state)
 }
 
 struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp *qp,
-					    const struct ubcore_tp_attr *attr,
+					    struct ubcore_tp_attr *attr,
 					    union ubcore_tp_attr_mask mask)
 {
 	struct udma_modify_tp_attr *m_attr;
@@ -57,15 +57,14 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 	m_attr->data_udp_start = tp->data_udp_start;
 	m_attr->ack_udp_start = tp->ack_udp_start;
 	m_attr->udp_range = tp->udp_range;
-	m_attr->hop_limit = MAX_HOP_LIMIT;
-	m_attr->sgid_index = 0;
+	m_attr->sgid_index = qp->qp_attr.eid_index;
 	*(uint32_t *)(&m_attr->dipv4) = *(uint32_t *)(tp->peer_eid.raw +
 						      SGID_H_SHIFT);
 	memcpy(m_attr->dgid, tp->peer_eid.raw, sizeof(tp->peer_eid.raw));
 
 	if (!qp->qp_attr.is_tgt) {
-		m_attr->retry_cnt = qp->retry_cnt;
-		m_attr->ack_timeout = qp->ack_timeout;
+		m_attr->retry_cnt = tp->retry_num;
+		m_attr->ack_timeout = tp->ack_timeout;
 		m_attr->rnr_retry = qp->rnr_retry;
 		m_attr->priority = qp->priority;
 		if (qp->qp_attr.is_jetty)
@@ -73,8 +72,8 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 	} else {
 		m_attr->min_rnr_timer = qp->min_rnr_timer;
 		if (qp->qp_attr.is_jetty) {
-			m_attr->retry_cnt = qp->retry_cnt;
-			m_attr->ack_timeout = qp->ack_timeout;
+			m_attr->retry_cnt = tp->retry_num;
+			m_attr->ack_timeout = tp->ack_timeout;
 			m_attr->rnr_retry = qp->rnr_retry;
 			m_attr->priority = qp->priority;
 		}
@@ -83,7 +82,7 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 	return m_attr;
 }
 
-int udma_modify_tp(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
+int udma_modify_tp(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 		   union ubcore_tp_attr_mask mask)
 {
 	struct udma_modify_tp_attr *m_attr;
@@ -120,6 +119,7 @@ int udma_modify_tp(struct ubcore_tp *tp, const struct ubcore_tp_attr *attr,
 		qp->ubcore_path_mtu = attr->mtu;
 	ret = udma_modify_qp_common(qp, attr, mask, curr_state, target_state);
 	kfree(m_attr);
+	qp->m_attr = NULL;
 error:
 	return ret;
 }
@@ -232,7 +232,6 @@ static void delete_tpn(struct udma_dev *udma_device, struct ubcore_tp *tp)
 	spin_unlock_irqrestore(lock, flags);
 }
 
-
 int udma_destroy_tp(struct ubcore_tp *tp)
 {
 	struct udma_dev *udma_device = to_udma_dev(tp->ub_dev);
@@ -298,7 +297,7 @@ static void udma_set_tp(struct ubcore_device *dev, const struct ubcore_tp_cfg *c
 	tp->ubcore_tp.udp_range = cfg->udp_range;
 	tp->ubcore_tp.retry_num = cfg->retry_num;
 	tp->ubcore_tp.ack_timeout = cfg->ack_timeout;
-	tp->ubcore_tp.tc = cfg->tc;
+	tp->ubcore_tp.dscp = cfg->dscp;
 	tp->ubcore_tp.state = UBCORE_TP_STATE_RESET;
 }
 
@@ -444,8 +443,8 @@ static void unlock_jetty(struct udma_qp_attr *qp_attr)
 		mutex_unlock(&jetty->tp_mutex);
 }
 
-struct ubcore_tp *udma_create_tp(struct ubcore_device *dev, const struct ubcore_tp_cfg *cfg,
-			    struct ubcore_udata *udata)
+struct ubcore_tp *udma_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg *cfg,
+				 struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct ubcore_tp *fail_ret_tp = NULL;

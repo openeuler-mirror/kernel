@@ -27,14 +27,18 @@
 #include <linux/inetdevice.h>
 #include <linux/version.h>
 #include <linux/list.h>
+#include <linux/if_vlan.h>
 
 #include "ubcore_cmd.h"
+#include "ubcore_uvs_cmd.h"
 #include "ubcore_log.h"
 #include "ubcore_netlink.h"
 #include <urma/ubcore_types.h>
 #include <urma/ubcore_api.h>
 #include <urma/ubcore_uapi.h>
 #include "ubcore_priv.h"
+#include "ubcore_netdev.h"
+#include "ubcore_msg.h"
 
 /* ubcore create independent cdev and ioctl channels
  * to handle public work.
@@ -42,6 +46,7 @@
 #define UBCORE_DEVICE_NAME "ubcore"
 #define UBCORE_CLASS_NAME "ubus"
 #define UBCORE_IPV4_MAP_IPV6_PREFIX 0x0000ffff
+#define UBCORE_LOCAL_SHUNET (0xfe80000000000000ULL)
 
 struct ubcore_ctx {
 	dev_t ubcore_devno;
@@ -51,13 +56,11 @@ struct ubcore_ctx {
 };
 
 static struct ubcore_ctx g_ubcore_ctx;
-#define UBCORE_MAX_UASID (1 << 24)
-static DECLARE_BITMAP(g_uasid_bitmap, UBCORE_MAX_UASID);
-static DEFINE_SPINLOCK(g_uasid_spinlock);
 
 struct ubcore_net_addr_node {
 	struct list_head node;
 	struct ubcore_net_addr addr;
+	uint32_t prefix_len;
 };
 
 int ubcore_open(struct inode *i_node, struct file *filp)
@@ -65,97 +68,8 @@ int ubcore_open(struct inode *i_node, struct file *filp)
 	return 0;
 }
 
-static uint32_t ubcore_uasid_alloc(uint32_t uasid)
-{
-	spin_lock(&g_uasid_spinlock);
-	if (uasid > 0) {
-		uint32_t ret = 0;
-
-		if (test_bit(uasid, g_uasid_bitmap) == 0) {
-			set_bit(uasid, g_uasid_bitmap);
-			spin_unlock(&g_uasid_spinlock);
-			ret = uasid;
-		} else {
-			spin_unlock(&g_uasid_spinlock);
-			ubcore_log_err("uasid allocation failed.\n");
-			return 0;
-		}
-		if (ret != 0)
-			return ret;
-	}
-	uasid = (uint32_t)find_first_zero_bit(g_uasid_bitmap, UBCORE_MAX_UASID);
-	if (uasid >= UBCORE_MAX_UASID) {
-		ubcore_log_err("uasid allocation failed.\n");
-		spin_unlock(&g_uasid_spinlock);
-		return 0;
-	}
-	set_bit(uasid, g_uasid_bitmap);
-	spin_unlock(&g_uasid_spinlock);
-	return uasid;
-}
-
-static int ubcore_uasid_free(uint32_t uasid)
-{
-	spin_lock(&g_uasid_spinlock);
-	if (uasid == 0) {
-		spin_unlock(&g_uasid_spinlock);
-		ubcore_log_err("uasid is zero.\n");
-		return -EINVAL;
-	}
-	if (test_bit(uasid, g_uasid_bitmap) == false) {
-		spin_unlock(&g_uasid_spinlock);
-		ubcore_log_err("uasid is used.\n");
-		return -EINVAL;
-	}
-	clear_bit(uasid, g_uasid_bitmap);
-	spin_unlock(&g_uasid_spinlock);
-	return 0;
-}
-
-static int ubcore_cmd_set_uasid(struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_set_uasid arg;
-	int ret;
-
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-				    sizeof(struct ubcore_cmd_set_uasid));
-	if (ret != 0)
-		return -EPERM;
-
-	arg.out.uasid = ubcore_uasid_alloc(arg.in.uasid);
-	if (arg.out.uasid == 0) {
-		ubcore_log_err("set uasid allocation failed, in_uasid: %u.\n", arg.in.uasid);
-		return -ENOMEM;
-	}
-	ubcore_log_info("set uasid allocation success, uasid: %u.\n", arg.out.uasid);
-
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
-				  sizeof(struct ubcore_cmd_set_uasid));
-	if (ret != 0)
-		return -EPERM;
-
-	return 0;
-}
-
-static int ubcore_cmd_put_uasid(struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_put_uasid arg;
-	int ret;
-
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-				    sizeof(struct ubcore_cmd_put_uasid));
-	if (ret != 0)
-		return -EPERM;
-
-	if (ubcore_uasid_free(arg.in.uasid) != 0)
-		return -EINVAL;
-
-	ubcore_log_info("put uasid free success, uasid: %u.\n", arg.in.uasid);
-	return 0;
-}
-
-static void ubcore_set_utp_cfg(struct ubcore_cmd_set_utp *arg, struct ubcore_utp_attr *attr,
-			       union ubcore_utp_attr_mask *mask)
+static void ubcore_set_utp_cfg(struct ubcore_cmd_set_utp *arg,
+	struct ubcore_utp_attr *attr, union ubcore_utp_attr_mask *mask)
 {
 	attr->flag.bs.spray_en = arg->in.spray_en;
 	attr->data_udp_start = arg->in.data_udp_start;
@@ -167,12 +81,10 @@ static void ubcore_set_utp_cfg(struct ubcore_cmd_set_utp *arg, struct ubcore_utp
 
 static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
 {
-	enum ubcore_transport_type trans_type;
-	union ubcore_utp_attr_mask mask = { 0 };
+	union ubcore_utp_attr_mask mask = {0};
 	struct ubcore_cmd_set_utp arg;
 	struct ubcore_utp_attr attr;
 	struct ubcore_device *dev;
-	union ubcore_eid eid;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
@@ -180,9 +92,7 @@ static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		return -EPERM;
 
-	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
-	trans_type = arg.in.transport_type;
-	dev = ubcore_find_device(&eid, trans_type);
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
 		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
 			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
@@ -190,7 +100,7 @@ static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
 	}
 
 	ubcore_set_utp_cfg(&arg, &attr, &mask);
-	if (ubcore_config_utp(dev, &eid, &attr, mask) != 0) {
+	if (ubcore_config_utp(dev, arg.in.utp_id, &attr, mask) != 0) {
 		ubcore_log_err("config utp failed.\n");
 		ubcore_put_device(dev);
 		return -EPERM;
@@ -201,10 +111,11 @@ static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
 
 static int ubcore_cmd_show_utp(struct ubcore_cmd_hdr *hdr)
 {
-	enum ubcore_transport_type trans_type;
+	struct ubcore_res_utp_val utp_info = {0};
+	struct ubcore_res_key key = {0};
+	struct ubcore_res_val val = {0};
 	struct ubcore_cmd_show_utp arg;
 	struct ubcore_device *dev;
-	union ubcore_eid eid;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
@@ -212,33 +123,37 @@ static int ubcore_cmd_show_utp(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		return -EPERM;
 
-	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
-	trans_type = arg.in.transport_type;
-
-	dev = ubcore_find_device(&eid, trans_type);
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
 		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
 			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
 		return -EINVAL;
 	}
-	if (ubcore_show_utp(dev, &eid) != 0) {
-		ubcore_log_err("show utp failed.\n");
+
+	key.type = UBCORE_RES_KEY_UTP;
+	key.key = arg.in.utp_id;
+	val.addr = (uint64_t)&utp_info;
+	val.len = (uint32_t)sizeof(struct ubcore_res_utp_val);
+	if (dev->ops != NULL && dev->ops->query_res != NULL &&
+		dev->ops->query_res(dev, &key, &val) != 0) {
 		ubcore_put_device(dev);
-		return -EPERM;
+		ubcore_log_err("failed to query res.\n");
+		return -1;
 	}
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)arg.out.addr, &utp_info,
+		sizeof(struct ubcore_res_utp_val));
+
 	ubcore_put_device(dev);
-	return 0;
+	return ret;
 }
 
 static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 {
-	enum ubcore_transport_type trans_type;
-	struct ubcore_cmd_query_stats arg = { 0 };
+	struct ubcore_cmd_query_stats arg = {0};
 	struct ubcore_stats_com_val com_val;
-	struct ubcore_stats_key key = { 0 };
+	struct ubcore_stats_key key = {0};
 	struct ubcore_stats_val val;
 	struct ubcore_device *dev;
-	union ubcore_eid eid;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
@@ -246,9 +161,7 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		return ret;
 
-	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
-	trans_type = (enum ubcore_transport_type)arg.in.tp_type;
-	dev = ubcore_find_device(&eid, trans_type);
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
 		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
 			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
@@ -257,8 +170,8 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 
 	key.type = (uint8_t)arg.in.type;
 	key.key = arg.in.key;
-	val.addr = (uintptr_t)&com_val;
-	val.len = sizeof(struct ubcore_stats_com_val);
+	val.addr = (uint64_t)&com_val;
+	val.len = (uint32_t)sizeof(struct ubcore_stats_com_val);
 
 	ret = ubcore_query_stats(dev, &key, &val);
 	if (ret != 0) {
@@ -272,11 +185,177 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 				   sizeof(struct ubcore_cmd_query_stats));
 }
 
+static int ubcore_cmd_add_ueid(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_add_ueid arg;
+	struct ubcore_device *dev;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct ubcore_cmd_add_ueid));
+	if (ret != 0)
+		return -EPERM;
+
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
+		return -EPERM;
+	}
+	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1 || dev->dynamic_eid) {
+		ubcore_log_err("The dynamic mode of pf does not support eid change\n");
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	if (dev->attr.tp_maintainer && ubcore_get_netlink_valid() == false) {
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, UBCORE_MSG_ALLOC_EID) != 0) {
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+
+	ubcore_put_device(dev);
+	return 0;
+}
+
+static int ubcore_cmd_del_ueid(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_add_ueid arg;
+	struct ubcore_device *dev;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct ubcore_cmd_add_ueid));
+	if (ret != 0)
+		return -EPERM;
+
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
+		return -EPERM;
+	}
+	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1 || dev->dynamic_eid) {
+		ubcore_put_device(dev);
+		ubcore_log_err("The dynamic mode of pf does not support eid change\n");
+		return -EPERM;
+	}
+	if (dev->attr.tp_maintainer && ubcore_get_netlink_valid() == false) {
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, UBCORE_MSG_DEALLOC_EID) != 0) {
+		ubcore_put_device(dev);
+		return -EPERM;
+	}
+
+	ubcore_put_device(dev);
+	return 0;
+}
+
+static void ubcore_update_pattern1_eid(struct ubcore_device *dev,
+	union ubcore_eid *eid, bool is_add)
+{
+	struct ubcore_ueid_cfg cfg;
+	uint32_t eid_idx = 0;
+
+	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
+		return;
+
+	cfg.eid = *eid;
+	cfg.eid_index = eid_idx;
+	cfg.upi = 0;
+	if (is_add)
+		(void)ubcore_add_ueid(dev, (uint16_t)UBCORE_NON_VIRTUALIZATION_FE_IDX, &cfg);
+	else
+		(void)ubcore_delete_ueid(dev, (uint16_t)UBCORE_NON_VIRTUALIZATION_FE_IDX, &cfg);
+}
+
+static void ubcore_update_pattern3_eid(struct ubcore_device *dev,
+	union ubcore_eid *eid, bool is_add)
+{
+	uint32_t pattern3_upi = 0;
+	struct ubcore_ueid_cfg cfg;
+	uint32_t eid_idx = 0;
+
+	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
+		return;
+
+	if (dev->attr.virtualization ||
+		ubcore_find_upi_with_dev_name(dev->dev_name, &pattern3_upi) == NULL)
+		return;
+
+	if (pattern3_upi != (uint32_t)UCBORE_INVALID_UPI) {
+		cfg.eid = *eid;
+		cfg.eid_index = eid_idx;
+		cfg.upi = pattern3_upi;
+		if (is_add)
+			(void)ubcore_add_ueid(dev,
+				(uint16_t)UBCORE_NON_VIRTUALIZATION_FE_IDX, &cfg);
+		else
+			(void)ubcore_delete_ueid(dev,
+				(uint16_t)UBCORE_NON_VIRTUALIZATION_FE_IDX, &cfg);
+	} else {
+		ubcore_log_err("upi not configured\n");
+	}
+}
+
+static int ubcore_cmd_set_eid_mode(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_set_eid_mode arg;
+	struct ubcore_event event;
+	struct ubcore_device *dev;
+	union ubcore_eid eid = {0};
+	uint32_t i;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg,
+		(void __user *)(uintptr_t)hdr->args_addr, sizeof(struct ubcore_cmd_set_eid_mode));
+	if (ret != 0)
+		return -EPERM;
+
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
+		return -EPERM;
+	}
+	if (dev->dynamic_eid == arg.in.eid_mode) {
+		ubcore_put_device(dev);
+		return 0;
+	}
+
+	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1 && arg.in.eid_mode == 0) {
+		ubcore_put_device(dev);
+		ubcore_log_err("pattern1 not support static mode");
+		return -1;
+	}
+
+	/* change eid mode, need to flush eids */
+	event.ub_dev = dev;
+	event.event_type = UBCORE_EVENT_EID_CHANGE;
+	for (i = 0; i < dev->attr.max_eid_cnt; i++) {
+		if (dev->eid_table.eid_entries[i].valid == true) {
+			eid = dev->eid_table.eid_entries[i].eid;
+			if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1)
+				ubcore_update_pattern1_eid(dev, &eid, false);
+			else
+				ubcore_update_pattern3_eid(dev, &eid, false);
+			event.element.eid_idx = i;
+			ubcore_dispatch_async_event(&event);
+		}
+	}
+	dev->dynamic_eid = arg.in.eid_mode;
+	ubcore_put_device(dev);
+	return 0;
+}
+
 static uint32_t ubcore_get_query_res_len(uint32_t type)
 {
 	switch (type) {
 	case UBCORE_RES_KEY_UPI:
 		return (uint32_t)sizeof(struct ubcore_res_upi_val);
+	case UBCORE_RES_KEY_VTP:
+		return (uint32_t)sizeof(struct ubcore_res_vtp_val);
 	case UBCORE_RES_KEY_TP:
 		return (uint32_t)sizeof(struct ubcore_res_tp_val);
 	case UBCORE_RES_KEY_TPG:
@@ -293,6 +372,8 @@ static uint32_t ubcore_get_query_res_len(uint32_t type)
 		return (uint32_t)sizeof(struct ubcore_res_jetty_group_val);
 	case UBCORE_RES_KEY_JFC:
 		return (uint32_t)sizeof(struct ubcore_res_jfc_val);
+	case UBCORE_RES_KEY_RC:
+		return (uint32_t)sizeof(struct ubcore_res_rc_val);
 	case UBCORE_RES_KEY_SEG:
 		return (uint32_t)sizeof(struct ubcore_res_seg_val);
 	case UBCORE_RES_KEY_URMA_DEV:
@@ -328,6 +409,14 @@ static void ubcore_dealloc_res_dev(struct ubcore_res_dev_val *ubcore_addr)
 	if (ubcore_addr->jetty_group_list != NULL) {
 		vfree(ubcore_addr->jetty_group_list);
 		ubcore_addr->jetty_group_list = NULL;
+	}
+	if (ubcore_addr->rc_list != NULL) {
+		vfree(ubcore_addr->rc_list);
+		ubcore_addr->rc_list = NULL;
+	}
+	if (ubcore_addr->vtp_list != NULL) {
+		vfree(ubcore_addr->vtp_list);
+		ubcore_addr->vtp_list = NULL;
 	}
 	if (ubcore_addr->tp_list != NULL) {
 		vfree(ubcore_addr->tp_list);
@@ -369,9 +458,17 @@ static int ubcore_fill_res_addr(struct ubcore_res_dev_val *ubcore_addr)
 	if (ubcore_addr->jetty_group_list == NULL)
 		goto free_jetty_list;
 
+	ubcore_addr->rc_list = vmalloc(sizeof(uint32_t) * ubcore_addr->rc_cnt);
+	if (ubcore_addr->rc_list == NULL)
+		goto free_jetty_group_list;
+
+	ubcore_addr->vtp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->vtp_cnt);
+	if (ubcore_addr->vtp_list == NULL)
+		goto free_rc_list;
+
 	ubcore_addr->tp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->tp_cnt);
 	if (ubcore_addr->tp_list == NULL)
-		goto free_jetty_group_list;
+		goto free_vtp_list;
 
 	ubcore_addr->tpg_list = vmalloc(sizeof(uint32_t) * ubcore_addr->tpg_cnt);
 	if (ubcore_addr->tpg_list == NULL)
@@ -386,6 +483,10 @@ free_tpg_list:
 	vfree(ubcore_addr->tpg_list);
 free_tp_list:
 	vfree(ubcore_addr->tp_list);
+free_vtp_list:
+	vfree(ubcore_addr->vtp_list);
+free_rc_list:
+	vfree(ubcore_addr->rc_list);
 free_jetty_group_list:
 	vfree(ubcore_addr->jetty_group_list);
 free_jetty_list:
@@ -407,57 +508,71 @@ static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
 	int ret;
 
 	dev_val->seg_cnt = ubcore_addr->seg_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->seg_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->seg_list,
 				  ubcore_addr->seg_list,
 				  dev_val->seg_cnt * sizeof(struct ubcore_seg_info));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jfs_cnt = ubcore_addr->jfs_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfs_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfs_list,
 				  ubcore_addr->jfs_list, dev_val->jfs_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jfr_cnt = ubcore_addr->jfr_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfr_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfr_list,
 				  ubcore_addr->jfr_list, dev_val->jfr_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jfc_cnt = ubcore_addr->jfc_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jfc_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfc_list,
 				  ubcore_addr->jfc_list, dev_val->jfc_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jetty_cnt = ubcore_addr->jetty_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jetty_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_list,
 				  ubcore_addr->jetty_list, dev_val->jetty_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->jetty_group_cnt = ubcore_addr->jetty_group_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->jetty_group_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_group_list,
 				  ubcore_addr->jetty_group_list,
 				  dev_val->jetty_group_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
+	dev_val->rc_cnt = ubcore_addr->rc_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->rc_list,
+		ubcore_addr->rc_list,
+		dev_val->rc_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
+	dev_val->vtp_cnt = ubcore_addr->vtp_cnt;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->vtp_list,
+		ubcore_addr->vtp_list,
+		dev_val->vtp_cnt * sizeof(uint32_t));
+	if (ret != 0)
+		return ret;
+
 	dev_val->tp_cnt = ubcore_addr->tp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->tp_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->tp_list,
 				  ubcore_addr->tp_list, dev_val->tp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->tpg_cnt = ubcore_addr->tpg_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->tpg_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->tpg_list,
 				  ubcore_addr->tpg_list, dev_val->tpg_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	dev_val->utp_cnt = ubcore_addr->utp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)dev_val->utp_list,
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->utp_list,
 				  ubcore_addr->utp_list, dev_val->utp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
@@ -465,23 +580,22 @@ static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
 	return 0;
 }
 
-static int ubcore_query_res_dev(const struct ubcore_device *dev, struct ubcore_res_key *key,
+static int ubcore_query_res_dev(struct ubcore_device *dev, struct ubcore_res_key *key,
 				struct ubcore_res_dev_val *dev_val)
 {
 	struct ubcore_res_dev_val ubcore_addr = { 0 };
 	struct ubcore_res_val val = { 0 };
 	int ret = 0;
 
-	(void)memcpy(&ubcore_addr, dev_val,
-		     sizeof(struct ubcore_res_dev_val)); // save
+	(void)memcpy(&ubcore_addr, dev_val, sizeof(struct ubcore_res_dev_val));  // save
 
 	if (ubcore_fill_res_addr(&ubcore_addr) != 0) {
 		ubcore_log_err("Failed to fill dev dev_val.\n");
 		return -ENOMEM;
 	}
 
-	val.addr = (uintptr_t)&ubcore_addr;
-	val.len = sizeof(struct ubcore_res_dev_val);
+	val.addr = (uint64_t)&ubcore_addr;
+	val.len = (uint32_t)sizeof(struct ubcore_res_dev_val);
 
 	ret = ubcore_query_resource(dev, key, &val);
 	if (ret != 0)
@@ -493,48 +607,131 @@ ubcore_free_dev:
 	return ret;
 }
 
-static int ubcore_query_res_arg(const struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
-				uint32_t res_len)
+static void ubcore_dealloc_res_tp_list(uint64_t user_tp_list, struct ubcore_res_val *val)
 {
-	struct ubcore_res_key key = { 0 };
-	struct ubcore_res_val val = { 0 };
-	void *addr;
+	struct ubcore_res_tpg_val *tpg = (struct ubcore_res_tpg_val *)val->addr;
+
+	if (ubcore_copy_to_user((void __user *)(uintptr_t)user_tp_list,
+		tpg->tp_list, sizeof(uint32_t) * tpg->tp_cnt) != 0)
+		ubcore_log_err("ubcore_copy_to_user failed.\n");
+
+	kfree(tpg->tp_list);
+}
+
+static int ubcore_alloc_res_tp_list(struct ubcore_res_val *val)
+{
+	struct ubcore_res_tpg_val *tpg;
+
+	tpg = (struct ubcore_res_tpg_val *)val->addr;
+	tpg->tp_list = kzalloc(sizeof(uint32_t) * UBCORE_MAX_TP_CNT_IN_GRP, GFP_KERNEL);
+	if (tpg->tp_list == NULL)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static void ubcore_dealloc_res_jetty_list(uint64_t user_jetty_list, struct ubcore_res_val *val)
+{
+	struct ubcore_res_jetty_group_val *tpg;
+
+	tpg = (struct ubcore_res_jetty_group_val *)val->addr;
+
+	if (ubcore_copy_to_user((void __user *)(uintptr_t)user_jetty_list, tpg->jetty_list,
+		sizeof(uint32_t) * tpg->jetty_cnt) != 0)
+		ubcore_log_err("ubcore_copy_to_user failed.\n");
+
+	kfree(tpg->jetty_list);
+}
+
+static int ubcore_alloc_res_jetty_list(struct ubcore_device *dev, struct ubcore_res_val *val)
+{
+	struct ubcore_res_jetty_group_val *tpg;
+
+	tpg = (struct ubcore_res_jetty_group_val *)val->addr;
+	tpg->jetty_list = kcalloc(1, sizeof(uint32_t) * dev->attr.dev_cap.max_jetty_in_jetty_grp,
+		GFP_KERNEL);
+	if (tpg->jetty_list == NULL)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static int ubcore_query_res_arg(struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
+	uint32_t res_len)
+{
+	struct ubcore_res_key key = {0};
+	struct ubcore_res_val val = {0};
+	uint64_t user_tp_list_addr = 0;      // to saves and restores user-mode addresses
+	uint64_t user_jetty_list_addr = 0;   // to saves and restores user-mode addresses
+	void *k_res_val;
 	int ret;
 
-	addr = kzalloc(res_len, GFP_KERNEL);
-	if (addr == NULL)
+	k_res_val = kzalloc(res_len, GFP_KERNEL);
+	if (k_res_val == NULL)
 		return -1;
 
-	ret = ubcore_copy_from_user(addr, (void __user *)(uintptr_t)arg->out.addr, res_len);
+	ret = ubcore_copy_from_user(k_res_val, (void __user *)(uintptr_t)arg->out.addr, res_len);
 	if (ret != 0)
 		goto kfree_addr;
+	if (arg->in.type == (uint32_t)UBCORE_RES_KEY_VTP && dev->attr.virtualization == true) {
+		ubcore_log_warn("FE device do not support query VTP, dev: %s, type: %u.\n",
+			dev->dev_name, arg->in.type);
+		goto kfree_addr;
+	}
 
 	key.type = (uint8_t)arg->in.type;
 	key.key = arg->in.key;
-	val.addr = (uintptr_t)addr;
+	key.key_ext = arg->in.key_ext;
+	key.key_cnt = arg->in.key_cnt;
+	val.addr = (uint64_t)k_res_val;
 	val.len = res_len;
 
+	if (arg->in.type == UBCORE_RES_KEY_TPG) {
+		user_tp_list_addr =
+			(uint64_t)(((struct ubcore_res_tpg_val *)k_res_val)->tp_list);  // save
+		if (ubcore_alloc_res_tp_list(&val) != 0)
+			goto kfree_addr;
+	}
+
+	if (arg->in.type == UBCORE_RES_KEY_JETTY_GROUP) {
+		// save
+		user_jetty_list_addr =
+			(uint64_t)(((struct ubcore_res_jetty_group_val *)k_res_val)->jetty_list);
+		if (ubcore_alloc_res_jetty_list(dev, &val) != 0)
+			goto kfree_addr;
+	}
+
 	if (arg->in.type == UBCORE_RES_KEY_URMA_DEV)
-		ret = ubcore_query_res_dev(dev, &key, (struct ubcore_res_dev_val *)addr);
+		ret = ubcore_query_res_dev(dev, &key, (struct ubcore_res_dev_val *)k_res_val);
 	else
 		ret = ubcore_query_resource(dev, &key, &val);
+
+	if (arg->in.type == UBCORE_RES_KEY_TPG) {
+		ubcore_dealloc_res_tp_list(user_tp_list_addr, &val);
+		/* recover after use */
+		((struct ubcore_res_tpg_val *)k_res_val)->tp_list = (uint32_t *)user_tp_list_addr;
+	}
+
+	if (arg->in.type == UBCORE_RES_KEY_JETTY_GROUP) {
+		ubcore_dealloc_res_jetty_list(user_jetty_list_addr, &val);
+		((struct ubcore_res_jetty_group_val *)k_res_val)->jetty_list =
+			(uint32_t *)user_jetty_list_addr;  // recover after use
+	}
 
 	if (ret != 0)
 		goto kfree_addr;
 
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, addr, res_len);
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, k_res_val, res_len);
 
 kfree_addr:
-	kfree(addr);
+	kfree(k_res_val);
 	return ret;
 }
 
 static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 {
-	enum ubcore_transport_type trans_type;
-	struct ubcore_cmd_query_res arg = { 0 };
+	struct ubcore_cmd_query_res arg = {0};
 	struct ubcore_device *dev;
-	union ubcore_eid eid;
 	uint32_t res_len;
 	int ret;
 
@@ -549,10 +746,7 @@ static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 			       (uint32_t)arg.in.type, res_len, arg.out.len);
 		return -1;
 	}
-	(void)memcpy(eid.raw, arg.in.eid, UBCORE_EID_SIZE);
-	trans_type = (enum ubcore_transport_type)arg.in.tp_type;
-
-	dev = ubcore_find_device(&eid, trans_type);
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
 		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
 			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
@@ -562,7 +756,7 @@ static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 	ret = ubcore_query_res_arg(dev, &arg, res_len);
 	if (ret != 0) {
 		ubcore_put_device(dev);
-		ubcore_log_err("Failed to query res by arg, tp_type: %d.\n", (int)trans_type);
+		ubcore_log_err("Failed to query res by arg\n");
 		return -1;
 	}
 
@@ -574,10 +768,6 @@ static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 {
 	switch (hdr->command) {
-	case UBCORE_CMD_SET_UASID:
-		return ubcore_cmd_set_uasid(hdr);
-	case UBCORE_CMD_PUT_UASID:
-		return ubcore_cmd_put_uasid(hdr);
 	case UBCORE_CMD_SET_UTP:
 		return ubcore_cmd_set_utp(hdr);
 	case UBCORE_CMD_SHOW_UTP:
@@ -586,6 +776,12 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 		return ubcore_cmd_query_stats(hdr);
 	case UBCORE_CMD_QUERY_RES:
 		return ubcore_cmd_query_res(hdr);
+	case UBCORE_CMD_ADD_EID:
+		return ubcore_cmd_add_ueid(hdr);
+	case UBCORE_CMD_DEL_EID:
+		return ubcore_cmd_del_ueid(hdr);
+	case UBCORE_CMD_SET_EID_MODE:
+		return ubcore_cmd_set_eid_mode(hdr);
 	default:
 		ubcore_log_err("bad ubcore command: %d.\n", (int)hdr->command);
 		return -EINVAL;
@@ -603,11 +799,21 @@ static long ubcore_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			ubcore_log_err("length of ioctl input parameter is out of range.\n");
 			return -EINVAL;
 		}
-	} else {
-		ubcore_log_err("bad ioctl command.\n");
-		return -ENOIOCTLCMD;
+
+		return ubcore_cmd_parse(&hdr);
 	}
-	return ubcore_cmd_parse(&hdr);
+
+	if (cmd == UBCORE_UVS_CMD) {
+		ret = ubcore_copy_from_user(&hdr, (void *)arg, sizeof(struct ubcore_cmd_hdr));
+		if ((ret != 0) || (hdr.args_len > UBCORE_MAX_CMD_SIZE)) {
+			ubcore_log_err("length of ioctl input parameter is out of range.\n");
+			return -EINVAL;
+		}
+		return ubcore_uvs_cmd_parse(&hdr);
+	}
+
+	ubcore_log_err("bad ioctl command.\n");
+	return -ENOIOCTLCMD;
 }
 
 static int ubcore_close(struct inode *i_node, struct file *filp)
@@ -680,68 +886,161 @@ static void ubcore_unregister_sysfs(void)
 
 static void ubcore_ipv4_to_netaddr(struct ubcore_net_addr *netaddr, __be32 ipv4)
 {
-	netaddr->net_addr.in4.resv1 = 0;
-	netaddr->net_addr.in4.resv2 = htonl(UBCORE_IPV4_MAP_IPV6_PREFIX);
+	netaddr->net_addr.in4.reserved1 = 0;
+	netaddr->net_addr.in4.reserved2 = htonl(UBCORE_IPV4_MAP_IPV6_PREFIX);
 	netaddr->net_addr.in4.addr = ipv4;
 }
 
-static void ubcore_set_net_addr(struct ubcore_device *dev, const struct ubcore_net_addr *netaddr)
+static void ubcore_sip_init(struct ubcore_sip_info *sip, struct ubcore_device *pf_dev,
+	const struct ubcore_net_addr *netaddr, uint32_t port_id, uint32_t prefix_len, uint32_t mtu)
 {
-	if (dev->ops->set_net_addr != NULL && dev->ops->set_net_addr(dev, netaddr) != 0)
+	(void)memcpy(sip->dev_name, pf_dev->dev_name, UBCORE_MAX_DEV_NAME);
+	(void)memcpy(&sip->addr, netaddr, sizeof(struct ubcore_net_addr));
+	sip->port_id[0] = (uint8_t)port_id;
+	sip->port_cnt = 1;
+	sip->prefix_len = prefix_len;
+	sip->mtu = mtu;
+}
+
+static void ubcore_add_net_addr(struct ubcore_device *tpf_dev, struct ubcore_device *pf_dev,
+	struct ubcore_net_addr *netaddr, struct net_device *netdev, uint32_t prefix_len)
+{
+	struct ubcore_sip_info sip = {0};
+	uint32_t index;
+	uint32_t port_id;
+	int ret;
+
+	/* get driver set nedev port */
+	port_id = ubcore_find_port_netdev(pf_dev, netdev);
+
+	ubcore_sip_init(&sip, pf_dev,
+		netaddr, port_id, prefix_len, (uint32_t)netdev->mtu);
+
+	ret = ubcore_lookup_sip_idx(&sip, &index);
+	if (ret == 0) {
+		ubcore_log_err("sip already exists\n");
+		return;
+	}
+	index = ubcore_sip_idx_alloc(0);
+
+	if (tpf_dev->ops->add_net_addr != NULL &&
+		tpf_dev->ops->add_net_addr(tpf_dev, netaddr, index) != 0)
 		ubcore_log_err("Failed to set net addr");
+
+	/* add net_addr entry, record idx -> netaddr mapping */
+	(void)ubcore_add_sip_entry(&sip, index);
+
+	/* nodify uvs add sip info */
+	if (ubcore_get_netlink_valid() == true)
+		(void)ubcore_notify_uvs_add_sip(tpf_dev, &sip, index);
+
+	/* The ubcore sip table and up/down events are updated synchronously, and the uvs
+	 * is abnormally disconnected. After waiting for the pull-up,
+	 * the sip table in the kernel state is actively synchronized.
+	 */
 }
 
-static void ubcore_unset_net_addr(struct ubcore_device *dev, const struct ubcore_net_addr *netaddr)
+static void ubcore_delete_net_addr(struct ubcore_device *tpf_dev, struct ubcore_device *pf_dev,
+	struct ubcore_net_addr *netaddr, struct net_device *netdev, uint32_t prefix_len)
 {
-	if (dev->ops->unset_net_addr != NULL && dev->ops->unset_net_addr(dev, netaddr) != 0)
-		ubcore_log_err("Failed to unset net addr");
-}
+	struct ubcore_sip_info sip = {0};
+	uint32_t port_id;
+	uint32_t index;
 
-static void ubcore_update_eid(struct ubcore_device *dev, struct ubcore_net_addr *netaddr)
-{
-	if (dev->transport_type <= UBCORE_TRANSPORT_INVALID ||
-	    dev->transport_type >= UBCORE_TRANSPORT_MAX)
+	port_id = ubcore_find_port_netdev(pf_dev, netdev);
+	ubcore_sip_init(&sip, pf_dev,
+		netaddr, port_id, prefix_len, (uint32_t)netdev->mtu);
+	if (ubcore_lookup_sip_idx(&sip, &index) != 0)
 		return;
 
-	if (ubcore_set_eid(dev, (union ubcore_eid *)(void *)&netaddr->net_addr) != 0)
-		ubcore_log_warn("Failed to update eid");
+	if (tpf_dev->ops->delete_net_addr != NULL &&
+		tpf_dev->ops->delete_net_addr(tpf_dev, index) != 0)
+		ubcore_log_err("Failed to delete net addr");
+
+	(void)ubcore_del_sip_entry(index);
+	(void)ubcore_sip_idx_free(index);
+	/* nodify uvs delete sip info */
+	if (ubcore_get_netlink_valid() == true)
+		(void)ubcore_notify_uvs_del_sip(tpf_dev, &sip, index);
+
+	/* The ubcore sip table and up/down events are updated synchronously,
+	 * and the uvs is abnormally disconnected. After waiting for the pull-up,
+	 * the sip table in the kernel state is actively synchronized
+	 */
+}
+
+static void ubcore_update_eid(struct ubcore_device *dev,
+	struct ubcore_net_addr *netaddr, bool is_add)
+{
+	union ubcore_eid *eid;
+
+	if (dev->transport_type <= UBCORE_TRANSPORT_INVALID ||
+		dev->transport_type >= UBCORE_TRANSPORT_MAX)
+		return;
+
+	if (!dev->dynamic_eid) {
+		ubcore_log_err("static mode does not allow modify of eid");
+		return;
+	}
+	eid = (union ubcore_eid *)(void *)&netaddr->net_addr;
+	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1)
+		ubcore_update_pattern1_eid(dev, eid, is_add);
+	else
+		ubcore_update_pattern3_eid(dev, eid, is_add);
 }
 
 static int ubcore_handle_inetaddr_event(struct net_device *netdev, unsigned long event,
-					struct ubcore_net_addr *netaddr)
+					struct ubcore_net_addr *netaddr, uint32_t prefix_len)
 {
+	struct net_device *real_netdev;
+	struct ubcore_net_addr real_netaddr;
 	struct ubcore_device **devices;
-	struct ubcore_device *dev;
 	uint32_t num_devices = 0;
+	struct ubcore_device *tpf_dev;
+	struct ubcore_device *dev;
+
 	uint32_t i;
 
 	if (netdev == NULL || netdev->reg_state >= NETREG_UNREGISTERING)
 		return NOTIFY_DONE;
 
-	devices = ubcore_get_devices_from_netdev(netdev, &num_devices);
-	if (devices == NULL)
+	if (is_vlan_dev(netdev)) {
+		real_netdev = vlan_dev_real_dev(netdev);
+		(void)ubcore_fill_netaddr_macvlan(&real_netaddr, real_netdev, netaddr->type);
+	} else {
+		real_netdev = netdev;
+		real_netaddr = *netaddr;
+	}
+	tpf_dev = ubcore_find_tpf_device(&real_netaddr, UBCORE_TRANSPORT_UB);
+	devices = ubcore_get_devices_from_netdev(real_netdev, &num_devices);
+	if (devices == NULL) {
+		ubcore_put_device(tpf_dev);
 		return NOTIFY_DONE;
-
+	}
 	for (i = 0; i < num_devices; i++) {
 		dev = devices[i];
 		switch (event) {
 		case NETDEV_UP:
-			ubcore_set_net_addr(dev, netaddr);
-			ubcore_update_eid(dev, netaddr);
+			if (tpf_dev)
+				ubcore_add_net_addr(tpf_dev, dev, netaddr, netdev, prefix_len);
+			ubcore_update_eid(dev, netaddr, true);
 			break;
 		case NETDEV_DOWN:
-			ubcore_unset_net_addr(dev, netaddr);
+			if (tpf_dev)
+				ubcore_delete_net_addr(tpf_dev, dev, netaddr, netdev, prefix_len);
+			ubcore_update_eid(dev, netaddr, false);
 			break;
 		default:
 			break;
 		}
 	}
-
+	ubcore_put_device(tpf_dev);
 	ubcore_put_devices(devices, num_devices);
 	return NOTIFY_OK;
 }
 
-static int ubcore_ipv6_notifier_call(struct notifier_block *nb, unsigned long event, void *arg)
+static int ubcore_ipv6_notifier_call(struct notifier_block *nb,
+	unsigned long event, void *arg)
 {
 	struct inet6_ifaddr *ifa = (struct inet6_ifaddr *)arg;
 	struct ubcore_net_addr netaddr;
@@ -751,11 +1050,18 @@ static int ubcore_ipv6_notifier_call(struct notifier_block *nb, unsigned long ev
 		return NOTIFY_DONE;
 
 	netdev = ifa->idev->dev;
-	ubcore_log_info("Get a ipv6 event %s from netdev %s%s ip %pI6c", netdev_cmd_to_name(event),
-			netdev_name(netdev), netdev_reg_state(netdev), &ifa->addr);
+	ubcore_log_info("Get a ipv6 event %s from netdev %s%s ip %pI6c prefixlen %u",
+		netdev_cmd_to_name(event), netdev_name(netdev), netdev_reg_state(netdev),
+		&ifa->addr, ifa->prefix_len);
 
+	memset(&netaddr, 0, sizeof(struct ubcore_net_addr));
 	(void)memcpy(&netaddr.net_addr, &ifa->addr, sizeof(struct in6_addr));
-	return ubcore_handle_inetaddr_event(netdev, event, &netaddr);
+	(void)ubcore_fill_netaddr_macvlan(&netaddr, netdev, UBCORE_NET_ADDR_TYPE_IPV6);
+
+	if (netaddr.net_addr.in6.subnet_prefix == cpu_to_be64(UBCORE_LOCAL_SHUNET))
+		/* When mtu changes, intercept the ipv6 address up/down that triggers fe80 */
+		return NOTIFY_DONE;
+	return ubcore_handle_inetaddr_event(netdev, event, &netaddr, ifa->prefix_len);
 }
 
 static int ubcore_ipv4_notifier_call(struct notifier_block *nb, unsigned long event, void *arg)
@@ -768,25 +1074,33 @@ static int ubcore_ipv4_notifier_call(struct notifier_block *nb, unsigned long ev
 		return NOTIFY_DONE;
 
 	netdev = ifa->ifa_dev->dev;
-	ubcore_log_info("Get a ipv4 event %s netdev %s%s ip %pI4", netdev_cmd_to_name(event),
-			netdev_name(netdev), netdev_reg_state(netdev), &ifa->ifa_address);
+	ubcore_log_info("Get a ipv4 event %s netdev %s%s ip %pI4 prefixlen %hhu",
+		netdev_cmd_to_name(event), netdev_name(netdev), netdev_reg_state(netdev),
+		&ifa->ifa_address, ifa->ifa_prefixlen);
 
 	memset(&netaddr, 0, sizeof(struct ubcore_net_addr));
 	ubcore_ipv4_to_netaddr(&netaddr, ifa->ifa_address);
-	return ubcore_handle_inetaddr_event(netdev, event, &netaddr);
+	(void)ubcore_fill_netaddr_macvlan(&netaddr, netdev, UBCORE_NET_ADDR_TYPE_IPV4);
+	return ubcore_handle_inetaddr_event(netdev, event, &netaddr, (uint32_t)ifa->ifa_prefixlen);
 }
 
-static void ubcore_add_ipv4_entry(struct list_head *list, __be32 ipv4)
+static void ubcore_add_ipv4_entry(struct list_head *list, __be32 ipv4, uint32_t prefix_len,
+	struct net_device *netdev)
 {
 	struct ubcore_net_addr_node *na_entry;
 
 	na_entry = kzalloc(sizeof(struct ubcore_net_addr_node), GFP_ATOMIC);
+	if (na_entry == NULL)
+		return;
 
 	ubcore_ipv4_to_netaddr(&na_entry->addr, ipv4);
+	(void)ubcore_fill_netaddr_macvlan(&na_entry->addr, netdev, UBCORE_NET_ADDR_TYPE_IPV4);
+	na_entry->prefix_len = prefix_len;
 	list_add_tail(&na_entry->node, list);
 }
 
-static void ubcore_add_ipv6_entry(struct list_head *list, const struct in6_addr *ipv6)
+static void ubcore_add_ipv6_entry(struct list_head *list, struct in6_addr *ipv6,
+	uint32_t prefix_len, struct net_device *netdev)
 {
 	struct ubcore_net_addr_node *na_entry;
 
@@ -795,12 +1109,14 @@ static void ubcore_add_ipv6_entry(struct list_head *list, const struct in6_addr 
 		return;
 
 	(void)memcpy(&na_entry->addr.net_addr, ipv6, sizeof(struct in6_addr));
+	(void)ubcore_fill_netaddr_macvlan(&na_entry->addr, netdev, UBCORE_NET_ADDR_TYPE_IPV6);
+	na_entry->prefix_len = prefix_len;
 	list_add_tail(&na_entry->node, list);
 }
 
 static void ubcore_netdev_get_ipv4(struct net_device *netdev, struct list_head *list)
 {
-	const struct in_ifaddr *ifa;
+	struct in_ifaddr *ifa;
 	struct in_device *in_dev;
 
 	rcu_read_lock();
@@ -811,16 +1127,14 @@ static void ubcore_netdev_get_ipv4(struct net_device *netdev, struct list_head *
 	}
 
 	in_dev_for_each_ifa_rcu(ifa, in_dev) {
-		if (ifa->ifa_flags & IFA_F_SECONDARY)
-			continue;
-		ubcore_add_ipv4_entry(list, ifa->ifa_address);
+		ubcore_add_ipv4_entry(list, ifa->ifa_address, ifa->ifa_prefixlen, netdev);
 	}
 	rcu_read_unlock();
 }
 
 static void ubcore_netdev_get_ipv6(struct net_device *netdev, struct list_head *list)
 {
-	const struct inet6_ifaddr *ifa;
+	struct inet6_ifaddr *ifa;
 	struct inet6_dev *in_dev;
 
 	in_dev = in6_dev_get(netdev);
@@ -829,35 +1143,46 @@ static void ubcore_netdev_get_ipv6(struct net_device *netdev, struct list_head *
 
 	read_lock_bh(&in_dev->lock);
 	list_for_each_entry(ifa, &in_dev->addr_list, if_list) {
-		if (ifa->flags & IFA_F_SECONDARY)
-			continue;
-		ubcore_add_ipv6_entry(list, (const struct in6_addr *)&ifa->addr);
+		ubcore_add_ipv6_entry(list, (struct in6_addr *)&ifa->addr, ifa->prefix_len, netdev);
 	}
 	read_unlock_bh(&in_dev->lock);
 	in6_dev_put(in_dev);
 }
 
-void ubcore_set_default_eid(struct ubcore_device *dev)
+void ubcore_update_default_eid(struct ubcore_device *dev, bool is_add)
 {
 	struct net_device *netdev = dev->netdev;
 	struct ubcore_net_addr_node *na_entry;
+	struct ubcore_device *tpf_dev = NULL;
 	struct ubcore_net_addr_node *next;
 	LIST_HEAD(na_list);
 
 	/* Do not modify eid if the driver already set default eid other than 0 */
-	if (netdev == NULL ||
-	    !(dev->attr.eid.in6.interface_id == 0 && dev->attr.eid.in6.subnet_prefix == 0))
+	if (netdev == NULL || !(dev->eid_table.eid_entries[0].eid.in6.interface_id == 0 &&
+		dev->eid_table.eid_entries[0].eid.in6.subnet_prefix == 0))
 		return;
 
 	ubcore_netdev_get_ipv4(netdev, &na_list);
+	ubcore_netdev_get_ipv6(netdev, &na_list);
 	list_for_each_entry_safe(na_entry, next, &na_list, node) {
-		ubcore_update_eid(dev, &na_entry->addr);
+		if (na_entry->addr.net_addr.in6.subnet_prefix == cpu_to_be64(UBCORE_LOCAL_SHUNET))
+			continue;
+		tpf_dev = ubcore_find_tpf_device(&na_entry->addr, UBCORE_TRANSPORT_UB);
+		if (tpf_dev)
+			is_add == true ?
+				ubcore_add_net_addr(tpf_dev, dev, &na_entry->addr,
+					netdev, na_entry->prefix_len) :
+				ubcore_delete_net_addr(tpf_dev, dev, &na_entry->addr,
+					netdev, na_entry->prefix_len);
+		if (tpf_dev)
+			ubcore_put_device(tpf_dev);
+		ubcore_update_eid(dev, &na_entry->addr, is_add);
 		list_del(&na_entry->node);
 		kfree(na_entry);
 	}
 }
 
-static void ubcore_update_netaddr(struct ubcore_device *dev, struct net_device *netdev, bool add)
+void ubcore_update_netaddr(struct ubcore_device *dev, struct net_device *netdev, bool add)
 {
 	struct ubcore_net_addr_node *na_entry;
 	struct ubcore_net_addr_node *next;
@@ -868,11 +1193,15 @@ static void ubcore_update_netaddr(struct ubcore_device *dev, struct net_device *
 	ubcore_netdev_get_ipv6(netdev, &na_list);
 
 	list_for_each_entry_safe(na_entry, next, &na_list, node) {
-		if (add)
-			ubcore_set_net_addr(dev, &na_entry->addr);
-		else
-			ubcore_unset_net_addr(dev, &na_entry->addr);
-
+		if (add) {
+			if (dev->ops->add_net_addr != NULL &&
+				dev->ops->add_net_addr(dev, &na_entry->addr, 0) != 0)
+				ubcore_log_err("Failed to add net addr");
+		} else {
+			if (dev->ops->delete_net_addr != NULL &&
+				dev->ops->delete_net_addr(dev, 0) != 0)
+				ubcore_log_err("Failed to delete net addr");
+		}
 		list_del(&na_entry->node);
 		kfree(na_entry);
 	}
@@ -896,10 +1225,45 @@ static int ubcore_remove_netaddr(struct ubcore_device *dev, struct net_device *n
 	return NOTIFY_OK;
 }
 
+static void ubcore_chang_mtu(struct ubcore_device *dev, struct net_device *netdev)
+{
+	struct ubcore_device *tpf_dev;
+	struct ubcore_sip_info *old_sip;
+	struct ubcore_sip_info new_sip;
+	uint32_t max_cnt;
+	uint32_t i;
+
+	if (ubcore_get_netlink_valid() == false)
+		return;
+
+	tpf_dev = ubcore_find_tpf_device(NULL, UBCORE_TRANSPORT_UB);
+	max_cnt = ubcore_get_sip_max_cnt();
+
+	for (i = 0; i < max_cnt; i++) {
+		if (tpf_dev) {
+			old_sip = ubcore_lookup_sip_info(i);
+			if (old_sip == NULL)
+				continue;
+			new_sip = *old_sip;
+			new_sip.mtu = netdev->mtu;
+			if (memcmp(old_sip->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME) == 0) {
+				(void)ubcore_notify_uvs_del_sip(tpf_dev, old_sip, i);
+				(void)ubcore_notify_uvs_add_sip(tpf_dev, &new_sip, i);
+				ubcore_log_info("dev_name: %s, mtu: %u change mtu: %u\n",
+					dev->dev_name, old_sip->mtu, new_sip.mtu);
+				old_sip->mtu = netdev->mtu;
+			}
+		}
+	}
+	if (tpf_dev)
+		ubcore_put_device(tpf_dev);
+}
+
 static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long event, void *arg)
 {
 	struct net_device *netdev = netdev_notifier_info_to_dev(arg);
 	struct ubcore_device **devices;
+	struct net_device *real_netdev;
 	struct ubcore_device *dev;
 	uint32_t num_devices = 0;
 	uint32_t i;
@@ -907,7 +1271,12 @@ static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long eve
 	if (netdev == NULL)
 		return NOTIFY_DONE;
 
-	devices = ubcore_get_devices_from_netdev(netdev, &num_devices);
+	if (is_vlan_dev(netdev))
+		real_netdev = vlan_dev_real_dev(netdev);
+	else
+		real_netdev = netdev;
+
+	devices = ubcore_get_devices_from_netdev(real_netdev, &num_devices);
 	if (devices == NULL)
 		return NOTIFY_DONE;
 
@@ -919,11 +1288,23 @@ static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long eve
 		switch (event) {
 		case NETDEV_REGISTER:
 		case NETDEV_UP:
-			ubcore_add_netaddr(dev, netdev);
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				ubcore_add_netaddr(dev, netdev);
 			break;
 		case NETDEV_UNREGISTER:
 		case NETDEV_DOWN:
-			ubcore_remove_netaddr(dev, netdev);
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				ubcore_remove_netaddr(dev, netdev);
+			break;
+		case NETDEV_CHANGEADDR:
+			if (dev->transport_type != UBCORE_TRANSPORT_UB) {
+				ubcore_remove_netaddr(dev, netdev);
+				ubcore_add_netaddr(dev, netdev);
+			}
+			break;
+		case NETDEV_CHANGEMTU:
+			if (dev->transport_type == UBCORE_TRANSPORT_UB)
+				ubcore_chang_mtu(dev, netdev);
 			break;
 		default:
 			break;
@@ -941,7 +1322,9 @@ static struct notifier_block ubcore_ipv4_notifier = {
 	.notifier_call = ubcore_ipv4_notifier_call,
 };
 
-static struct notifier_block ubcore_net_notifier = { .notifier_call = ubcore_net_notifier_call };
+static struct notifier_block ubcore_net_notifier = {
+	.notifier_call = ubcore_net_notifier_call,
+};
 
 static int ubcore_register_notifiers(void)
 {
@@ -983,13 +1366,10 @@ static int __init ubcore_init(void)
 	if (ret != 0)
 		return ret;
 
-	/* uasid is assigned from 1, and 0 means random value.
-	 * so 0 consumed here first.
-	 */
-	bitmap_zero(g_uasid_bitmap, UBCORE_MAX_UASID);
-	set_bit(0, g_uasid_bitmap);
+	(void)ubcore_sip_table_init();
 
 	if (ubcore_netlink_init() != 0) {
+		ubcore_sip_table_uninit();
 		ubcore_unregister_sysfs();
 		return -1;
 	}
@@ -997,10 +1377,12 @@ static int __init ubcore_init(void)
 	ret = ubcore_register_notifiers();
 	if (ret != 0) {
 		pr_err("Failed to register notifiers\n");
-		ubcore_unregister_sysfs();
 		ubcore_netlink_exit();
+		ubcore_sip_table_uninit();
+		ubcore_unregister_sysfs();
 		return -1;
 	}
+
 	ubcore_log_info("ubcore module init success.\n");
 	return 0;
 }
@@ -1008,6 +1390,7 @@ static int __init ubcore_init(void)
 static void __exit ubcore_exit(void)
 {
 	ubcore_unregister_notifiers();
+	ubcore_sip_table_uninit();
 	ubcore_netlink_exit();
 	ubcore_unregister_sysfs();
 	ubcore_log_info("ubcore module exits.\n");

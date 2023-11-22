@@ -61,6 +61,8 @@
 #define UDMA_HOP_NUM_0				0xff
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
 
+#define UDMA_MAX_EID_NUM			1024
+
 #define UDMA_CMQ_TX_TIMEOUT			30000
 #define UDMA_CMQ_DESC_NUM_S			3
 #define UDMA_CMD_CSQ_DESC_NUM			1024
@@ -75,6 +77,8 @@
 
 #define UDMA_MAX_BT_REGION			3
 #define UDMA_MAX_BT_LEVEL			3
+
+#define CQ_BANKID_MASK GENMASK(1, 0)
 
 #define CQC_FIELD_LOC(h, l) ((uint64_t)(h) << 32 | (l))
 
@@ -430,6 +434,7 @@ struct udma_ucontext {
 	uint64_t			pdn;
 	struct udma_dca_ctx		dca_ctx;
 	void				*dca_dbgfs;
+	uint32_t			eid_index;
 };
 
 struct udma_cmd_context {
@@ -544,7 +549,6 @@ struct udma_hw {
 	int (*clear_hem)(struct udma_dev *udma_dev,
 			 struct udma_hem_table *table, int obj,
 			 int step_idx);
-	int (*set_eid)(struct udma_dev *udma_dev, union ubcore_eid eid);
 	int (*init_eq)(struct udma_dev *udma_dev);
 	void (*cleanup_eq)(struct udma_dev *udma_dev);
 };
@@ -552,7 +556,6 @@ struct udma_hw {
 struct udma_caps {
 	uint64_t		fw_ver;
 	uint8_t			num_ports;
-	int			gid_table_len[UDMA_MAX_PORTS];
 	int			pkey_table_len[UDMA_MAX_PORTS];
 	int			local_ca_ack_delay;
 	int			num_uars;
@@ -696,6 +699,7 @@ struct udma_caps {
 	uint32_t		num_jetty_shift;
 	uint8_t			poe_ch_num;
 	uint32_t		speed;
+	uint32_t		max_eid_cnt;
 };
 
 struct udma_idx_table {
@@ -819,7 +823,6 @@ struct udma_dev {
 	int				irq[UDMA_MAX_IRQ_NUM];
 	const char			*irq_names[UDMA_MAX_IRQ_NUM];
 	char				dev_name[UBCORE_MAX_DEV_NAME];
-	uint64_t			sys_image_guid;
 	struct udma_cmdq		cmd;
 	int				cmd_mod;
 	struct page			*reset_page; /* store reset state */
@@ -842,6 +845,7 @@ struct udma_dev {
 	struct udma_hem_table		qpc_timer_table;
 	struct udma_hem_table		cqc_timer_table;
 	struct udma_hem_table		gmv_table;
+	struct xarray			eid_table;
 	uint64_t			dwqe_page;
 	uint64_t			dfx_cnt[UDMA_DFX_EQ_TOTAL];
 	struct list_head		qp_list;
@@ -862,6 +866,7 @@ struct udma_seg {
 	uint32_t		pbl_hop_num;
 	struct udma_mtr		pbl_mtr;
 	uint32_t		npages;
+	struct udma_ucontext	*ctx;
 };
 
 static inline void *udma_buf_offset(struct udma_buf *buf,
@@ -895,7 +900,7 @@ static inline struct udma_ucontext
 	return container_of(uctx, struct udma_ucontext, uctx);
 }
 
-static inline struct udma_dev *to_udma_dev(const struct ubcore_device *ubcore_dev)
+static inline struct udma_dev *to_udma_dev(struct ubcore_device *ubcore_dev)
 {
 	return container_of(ubcore_dev, struct udma_dev, ub_dev);
 }

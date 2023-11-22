@@ -23,7 +23,7 @@
 #include "hns3_udma_jetty.h"
 
 static void init_jetty_cfg(struct udma_jetty *jetty,
-			   const struct ubcore_jetty_cfg *cfg)
+			   struct ubcore_jetty_cfg *cfg)
 {
 	jetty->shared_jfr = cfg->flag.bs.share_jfr;
 	jetty->tp_mode = cfg->trans_mode;
@@ -33,11 +33,12 @@ static void init_jetty_cfg(struct udma_jetty *jetty,
 static void udma_fill_jetty_um_qp_attr(struct udma_dev *dev,
 				       struct udma_jetty *jetty,
 				       struct ubcore_ucontext *uctx,
-				       const struct ubcore_jetty_cfg *cfg)
+				       struct ubcore_jetty_cfg *cfg)
 {
 	struct udma_ucontext *udma_ctx = to_udma_ucontext(uctx);
 	struct udma_qp_attr *qp_attr = &jetty->qp.qp_attr;
 
+	qp_attr->is_tgt = false;
 	qp_attr->is_jetty = true;
 	qp_attr->uctx = uctx;
 	qp_attr->pdn = udma_ctx->pdn;
@@ -46,7 +47,6 @@ static void udma_fill_jetty_um_qp_attr(struct udma_dev *dev,
 	qp_attr->cap.max_send_wr = cfg->jfs_depth;
 	qp_attr->cap.max_send_sge = cfg->max_send_sge;
 	qp_attr->cap.max_inline_data = cfg->max_inline_data;
-	qp_attr->cap.retry_cnt = cfg->retry_cnt;
 	qp_attr->cap.rnr_retry = cfg->rnr_retry;
 	qp_attr->cap.ack_timeout = cfg->err_timeout;
 	qp_attr->qp_type = QPT_UD;
@@ -54,6 +54,7 @@ static void udma_fill_jetty_um_qp_attr(struct udma_dev *dev,
 	qp_attr->jfr = jetty->udma_jfr;
 	qp_attr->qpn_map = &jetty->qpn_map;
 	qp_attr->recv_jfc = to_udma_jfc(cfg->recv_jfc);
+	qp_attr->eid_index = udma_ctx->eid_index;
 	if (jetty->ubcore_jetty.jetty_cfg.priority >= dev->caps.sl_num) {
 		qp_attr->priority =
 			dev->caps.sl_num > 0 ? dev->caps.sl_num - 1 : 0;
@@ -78,8 +79,7 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 	qp->send_jfc = qp->qp_attr.send_jfc;
 	qp->recv_jfc = qp->qp_attr.recv_jfc;
 
-	m_attr.path_mtu = UBCORE_MTU_4096;
-	m_attr.hop_limit = MAX_HOP_LIMIT;
+	m_attr.sgid_index = qp->qp_attr.eid_index;
 	ubcore_attr_mask.value = 0;
 	qp->m_attr = &m_attr;
 
@@ -92,7 +92,7 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 }
 
 static int set_jetty_jfr(struct udma_dev *dev, struct udma_jetty *jetty,
-			 const struct ubcore_jetty_cfg *cfg, uint32_t jfr_id)
+			 struct ubcore_jetty_cfg *cfg, uint32_t jfr_id)
 {
 	if (cfg->jfr) {
 		jetty->shared_jfr = true;
@@ -111,7 +111,7 @@ static int set_jetty_jfr(struct udma_dev *dev, struct udma_jetty *jetty,
 }
 
 static int alloc_jetty_um_qp(struct udma_dev *dev, struct udma_jetty *jetty,
-			     const struct ubcore_jetty_cfg *cfg,
+			     struct ubcore_jetty_cfg *cfg,
 			     struct ubcore_udata *udata)
 {
 	int ret;
@@ -207,22 +207,23 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 }
 
 static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
-			   const struct ubcore_jetty_cfg *cfg, struct ubcore_udata *udata)
+			   struct ubcore_jetty_cfg *cfg, struct ubcore_udata *udata)
 {
 	struct udma_create_jetty_ucmd ucmd = {};
 	struct udma_buf_attr buf_attr = {};
 	int ret;
 
-	if (udata) {
-		ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(ucmd)));
-		if (ret) {
-			dev_err(dev->dev,
-				"failed to copy jetty udata, ret = %d.\n",
-				ret);
-			return -EFAULT;
-		}
+	if (!udata)
+		return -EINVAL;
+
+	ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
+			     min(udata->udrv_data->in_len,
+				 (uint32_t)sizeof(ucmd)));
+	if (ret) {
+		dev_err(dev->dev,
+			"failed to copy jetty udata, ret = %d.\n",
+			ret);
+		return -EFAULT;
 	}
 
 	ret = set_jetty_jfr(dev, jetty, cfg, ucmd.jfr_id);
@@ -236,7 +237,16 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 	} else if (cfg->trans_mode == UBCORE_TP_RM) {
 		xa_init(&jetty->srm_node_table);
 	} else if (cfg->trans_mode == UBCORE_TP_RC) {
+		ret = udma_db_map_user(dev, ucmd.sdb_addr, &jetty->rc_node.sdb);
+		if (ret) {
+			dev_err(dev->dev,
+				"failed to map user sdb_addr, ret = %d.\n",
+				ret);
+			return ret;
+		}
+
 		jetty->rc_node.buf_addr = ucmd.buf_addr;
+		jetty->rc_node.context = to_udma_ucontext(udata->uctx);
 		if (!ucmd.buf_addr) {
 			jetty->dca_en = true;
 			return 0;
@@ -257,15 +267,7 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 			dev_err(dev->dev,
 				"failed to create WQE mtr for RC Jetty, ret = %d.\n",
 				ret);
-			return ret;
-		}
-
-		ret = udma_db_map_user(dev, ucmd.sdb_addr, &jetty->rc_node.sdb);
-		if (ret) {
-			dev_err(dev->dev,
-				"failed to map user sdb_addr, ret = %d.\n",
-				ret);
-			udma_mtr_destroy(dev, &jetty->rc_node.mtr);
+			udma_db_unmap_user(dev, &jetty->rc_node.sdb);
 			return ret;
 		}
 	}
@@ -390,8 +392,8 @@ static void free_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 }
 
 struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
-				  const struct ubcore_jetty_cfg *cfg,
-				  struct ubcore_udata *udata)
+				       struct ubcore_jetty_cfg *cfg,
+				       struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_jetty *jetty;
@@ -474,8 +476,8 @@ int udma_destroy_jetty(struct ubcore_jetty *jetty)
 }
 
 struct ubcore_tjetty *udma_import_jetty(struct ubcore_device *dev,
-				   const struct ubcore_tjetty_cfg *cfg,
-				   struct ubcore_udata *udata)
+					struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_udata *udata)
 {
 	struct ubcore_tjetty *tjetty;
 

@@ -153,12 +153,42 @@ static void udma_dfx_qpc_print(struct udma_dev *udma_dev, uint32_t qpn,
 		 "*********************************************************\n");
 }
 
+static void udma_dfx_query_sccc(struct udma_dev *udma_dev, uint32_t sccc_id)
+{
+	uint32_t *sccc, *temp;
+	int ret, i, loop_cnt;
+
+	sccc = kzalloc(udma_dev->caps.scc_ctx_sz, GFP_KERNEL);
+	if (!sccc)
+		return;
+
+	ret = udma_dfx_query_context(udma_dev, sccc_id, (void *)sccc,
+				     udma_dev->caps.scc_ctx_sz,
+				     UDMA_CMD_QUERY_SCCC);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"query sccc failed, ret = %d\n", ret);
+		kfree(sccc);
+		return;
+	}
+
+	dev_info(udma_dev->dev, "************ SCC(0x%8x) CONTEXT INFO *************\n", sccc_id);
+	temp = sccc;
+	loop_cnt = udma_dev->caps.scc_ctx_sz / sizeof(uint32_t);
+	for (i = 0; i < loop_cnt; i++) {
+		pr_info("SCCC(byte%4lu): 0x%08x\n", (i + 1) * sizeof(uint32_t), *temp);
+		temp++;
+	}
+	dev_info(udma_dev->dev, "*********************************************************\n");
+	kfree(sccc);
+}
+
 static int udma_dfx_tp_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 {
 	struct udma_dev *udma_dev = (struct udma_dev *)udma_dfx->priv;
 	struct udma_qp_context qp_context;
 	char str[UDMA_DFX_STR_LEN_MAX];
-	uint32_t tpn;
+	uint32_t tpn, sccc_id;
 	int ret;
 
 	ret = udma_dfx_read_buf(str, p_buf);
@@ -181,6 +211,14 @@ static int udma_dfx_tp_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	}
 
 	udma_dfx_qpc_print(udma_dev, tpn, &qp_context);
+	if ((udma_dev->caps.flags & UDMA_CAP_FLAG_QP_FLOW_CTRL) &&
+	    udma_reg_read(&qp_context, QPC_QP_ST)) {
+		sccc_id = tpn;
+		if (udma_reg_read(&qp_context.ext, QPCEX_DIP_CTX_IDX_VLD))
+			sccc_id = udma_reg_read(&qp_context.ext, QPCEX_DIP_CTX_IDX);
+		udma_dfx_query_sccc(udma_dev, sccc_id);
+	}
+
 	return 0;
 }
 
@@ -322,9 +360,9 @@ static int udma_query_res_tp(struct udma_dev *udma_dev,
 	}
 
 	tp->tpn = key->key;
-	tp->psn = udma_reg_read(&qp_context, QPC_SQ_CUR_PSN);
-	tp->pri = udma_reg_read(&qp_context, QPC_SL);
-	tp->oor = udma_reg_read(&qp_context.ext, QPCEX_OOR_EN);
+	tp->tx_psn = udma_reg_read(&qp_context, QPC_SQ_CUR_PSN);
+	tp->dscp = udma_reg_read(&qp_context, QPC_DSCP);
+	tp->oor_en = udma_reg_read(&qp_context.ext, QPCEX_OOR_EN);
 	tp->state = udma_reg_read(&qp_context, QPC_QP_ST);
 	tp->data_udp_start = udma_reg_read(&qp_context.ext, QPCEX_DATA_UDP_SRCPORT_L) |
 			     udma_reg_read(&qp_context.ext, QPCEX_DATA_UDP_SRCPORT_H) <<
@@ -449,7 +487,6 @@ static int udma_query_res_jetty(struct udma_dev *udma_dev,
 			jetty->jetty_id = jetty_now->jetty_id;
 			jetty->state = jetty_now->state;
 			jetty->jfs_depth = jetty_now->jfs_depth;
-			jetty->jfr_depth = jetty_now->jfr_depth;
 			jetty->pri = jetty_now->pri;
 			jetty->jfr_id = jetty_now->jfr_id;
 			jetty->send_jfc_id  = jetty_now->jfc_s_id;
@@ -502,8 +539,13 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 {
 	struct ubcore_res_seg_val *seg = (struct ubcore_res_seg_val *)val->addr;
 	struct udma_mpt_entry mpt_entry;
+	struct seg_list *seg_now;
 	uint32_t mpt_index;
-	int ret;
+	int ret, i;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
 
 	if (val->len < sizeof(struct ubcore_res_seg_val)) {
 		dev_err(udma_dev->dev,
@@ -522,15 +564,20 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 		return ret;
 	}
 
-	seg->ubva.eid = udma_dev->ub_dev.attr.eid;
-	seg->ubva.uasid = udma_reg_read(&mpt_entry, MPT_PD);
 	seg->ubva.va = udma_reg_read(&mpt_entry, MPT_VA_L) |
 		       udma_reg_read(&mpt_entry, MPT_VA_H) <<
 		       MPT_VA_H_SHIFT;
 	seg->len = udma_reg_read(&mpt_entry, MPT_LEN_L) |
 		   udma_reg_read(&mpt_entry, MPT_LEN_H) <<
 		   MPT_LEN_H_SHIFT;
-	seg->key_id = udma_reg_read(&mpt_entry, MPT_LKEY);
+	seg->token_id = udma_reg_read(&mpt_entry, MPT_LKEY);
+	list_for_each_entry(seg_now,
+			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
+		if (seg_now->key_id == seg->token_id) {
+			memcpy(&seg->ubva.eid, &seg_now->eid, sizeof(union ubcore_eid));
+			break;
+		}
+	}
 
 	val->len = sizeof(struct ubcore_res_seg_val);
 
@@ -679,11 +726,10 @@ static int udma_query_res_dev_seg(struct udma_dev *udma_dev,
 
 	list_for_each_entry(seg_now,
 			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
-		seg_list_ptr->ubva.eid = udma_dev->ub_dev.attr.eid;
-		seg_list_ptr->ubva.uasid = seg_now->pd;
+		memcpy(&seg_list_ptr->ubva.eid, &seg_now->eid, sizeof(union ubcore_eid));
 		seg_list_ptr->ubva.va = seg_now->iova;
 		seg_list_ptr->len = seg_now->len;
-		seg_list_ptr->key_id = seg_now->key_id;
+		seg_list_ptr->token_id = seg_now->key_id;
 		seg_list_ptr++;
 		dev->seg_cnt++;
 		if (dev->seg_cnt == MAX_SEG_CNT)
@@ -763,7 +809,7 @@ static int udma_check_key_type(struct udma_dev *udma_dev,
 	return 0;
 }
 
-int udma_query_res(const struct ubcore_device *dev,
+int udma_query_res(struct ubcore_device *dev,
 		   struct ubcore_res_key *key, struct ubcore_res_val *val)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);

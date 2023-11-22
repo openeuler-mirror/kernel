@@ -22,10 +22,9 @@
 #include "hns3_udma_jfs.h"
 
 static int init_jfs_cfg(struct udma_dev *dev, struct udma_jfs *jfs,
-			const struct ubcore_jfs_cfg *cfg)
+			struct ubcore_jfs_cfg *cfg)
 {
-	if (!cfg->max_sge ||
-	    cfg->depth > dev->caps.max_wqes ||
+	if (!cfg->depth || cfg->depth > dev->caps.max_wqes ||
 	    cfg->max_sge > dev->caps.max_sq_sg) {
 		dev_err(dev->dev, "invalid jfs cfg, depth = %u, sge = %u.\n",
 			cfg->depth, cfg->max_sge);
@@ -49,11 +48,8 @@ static int udma_modify_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 	qp->udma_device = dev;
 	qp->send_jfc = qp->qp_attr.send_jfc;
 	qp->recv_jfc = qp->qp_attr.recv_jfc;
-	qp->ubcore_path_mtu = UBCORE_MTU_4096;
-	qp->path_mtu = UDMA_MTU_4096;
 
-	m_attr.path_mtu = UBCORE_MTU_4096;
-	m_attr.hop_limit = MAX_HOP_LIMIT;
+	m_attr.sgid_index = qp->qp_attr.eid_index;
 	ubcore_attr_mask.value = 0;
 	qp->m_attr = &m_attr;
 
@@ -69,10 +65,11 @@ static int udma_modify_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 static void udma_fill_jfs_um_qp_attr(struct udma_dev *dev, struct udma_jfs *jfs,
 				     struct udma_qp_attr *qp_attr,
 				     struct ubcore_ucontext *uctx,
-				     const struct ubcore_jfs_cfg *cfg)
+				     struct ubcore_jfs_cfg *cfg)
 {
 	struct udma_ucontext *udma_ctx = to_udma_ucontext(uctx);
 
+	qp_attr->is_tgt = false;
 	qp_attr->is_jetty = false;
 	qp_attr->jfs = jfs;
 	qp_attr->uctx = uctx;
@@ -80,12 +77,12 @@ static void udma_fill_jfs_um_qp_attr(struct udma_dev *dev, struct udma_jfs *jfs,
 	qp_attr->cap.max_send_wr = cfg->depth;
 	qp_attr->cap.max_send_sge = cfg->max_sge;
 	qp_attr->cap.max_inline_data = cfg->max_inline_data;
-	qp_attr->cap.retry_cnt = cfg->retry_cnt;
 	qp_attr->cap.rnr_retry = cfg->rnr_retry;
 	qp_attr->cap.ack_timeout = cfg->err_timeout;
 	qp_attr->qp_type = QPT_UD;
 	qp_attr->recv_jfc = NULL;
 	qp_attr->send_jfc = to_udma_jfc(cfg->jfc);
+	qp_attr->eid_index = udma_ctx->eid_index;
 	if (jfs->ubcore_jfs.jfs_cfg.priority >= dev->caps.sl_num) {
 		qp_attr->priority = dev->caps.sl_num > 0 ?
 				    dev->caps.sl_num - 1 : 0;
@@ -99,7 +96,7 @@ static void udma_fill_jfs_um_qp_attr(struct udma_dev *dev, struct udma_jfs *jfs,
 }
 
 static int create_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
-			    const struct ubcore_jfs_cfg *cfg, struct ubcore_udata *udata)
+			    struct ubcore_jfs_cfg *cfg, struct ubcore_udata *udata)
 {
 	int ret;
 
@@ -130,7 +127,7 @@ int destroy_jfs_qp(struct udma_dev *dev, struct udma_jfs *jfs)
 }
 
 static int alloc_jfs_buf(struct udma_dev *udma_dev, struct udma_jfs *jfs,
-			 const struct ubcore_jfs_cfg *cfg,
+			 struct ubcore_jfs_cfg *cfg,
 			 struct ubcore_udata *udata)
 {
 	struct udma_create_jfs_ucmd ucmd = {};
@@ -267,8 +264,8 @@ static void free_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 	ida_free(&jfs_ida->ida, (int)jfs->jfs_id);
 }
 
-struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, const struct ubcore_jfs_cfg *cfg,
-			      struct ubcore_udata *udata)
+struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
+				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_jfs *jfs;

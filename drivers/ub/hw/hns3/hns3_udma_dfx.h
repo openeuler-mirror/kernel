@@ -107,6 +107,7 @@ struct seg_list {
 	uint32_t		key_id;
 	struct list_head	node;
 	spinlock_t		node_lock;
+	union ubcore_eid	eid;
 };
 
 struct udma_dfx_info {
@@ -133,7 +134,7 @@ extern struct udma_dfx_dev g_udma_dfx_list[MAX_UDMA_DEV];
 int udma_dfx_init(struct udma_dev *udma_dev);
 void udma_dfx_uninit(struct udma_dev *udma_dev);
 int udma_find_dfx_dev(struct udma_dev *udma_dev, int *num);
-int udma_query_res(const struct ubcore_device *dev, struct ubcore_res_key *key,
+int udma_query_res(struct ubcore_device *dev, struct ubcore_res_key *key,
 		   struct ubcore_res_val *val);
 
 #endif /* _UDMA_DFX_H */

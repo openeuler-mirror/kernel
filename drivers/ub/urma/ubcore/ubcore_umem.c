@@ -35,7 +35,6 @@ static void umem_unpin_pages(struct ubcore_umem *umem, uint64_t nents)
 
 	for_each_sg(umem->sg_head.sgl, sg, nents, i) {
 		struct page *page = sg_page(sg);
-
 		unpin_user_page(page);
 	}
 	sg_free_table(&umem->sg_head);
@@ -103,8 +102,8 @@ static int umem_add_new_pinned(struct ubcore_umem *umem, uint64_t npages)
 	return 0;
 }
 
-static uint64_t umem_pin_all_pages(struct ubcore_umem *umem, uint64_t npages, uint32_t gup_flags,
-				   struct page **page_list)
+static uint64_t umem_pin_all_pages(struct ubcore_umem *umem, uint64_t npages,
+	uint32_t gup_flags, struct page **page_list)
 {
 	struct scatterlist *sg_list_start = umem->sg_head.sgl;
 	uint64_t cur_base = umem->va & PAGE_MASK;
@@ -127,11 +126,12 @@ static uint64_t umem_pin_all_pages(struct ubcore_umem *umem, uint64_t npages, ui
 	return npages;
 }
 
-static int umem_verify_input(const struct ubcore_device *ub_dev, uint64_t va, uint64_t len,
+static int umem_verify_input(struct ubcore_device *ub_dev, uint64_t va, uint64_t len,
 			     union ubcore_umem_flag flag)
 {
-	if (ub_dev == NULL || ((va + len) < va) || PAGE_ALIGN(va + len) < (va + len)) {
-		ubcore_log_err("Invalid parameter.\n");
+	if (ub_dev == NULL || ((va + len) < va) ||
+		PAGE_ALIGN(va + len) < (va + len)) {
+		ubcore_log_err("Invalid parameter, va: %llx, len: %llx.\n", va, len);
 		return -EINVAL;
 	}
 	if (flag.bs.non_pin == 1) {
@@ -147,8 +147,8 @@ static int umem_dma_map(struct ubcore_umem *umem, uint64_t npages, unsigned long
 {
 	int ret;
 
-	ret = dma_map_sg_attrs(umem->ub_dev->dma_dev, umem->sg_head.sgl, npages, DMA_BIDIRECTIONAL,
-			       dma_attrs);
+	ret = dma_map_sg_attrs(umem->ub_dev->dma_dev, umem->sg_head.sgl, npages,
+		DMA_BIDIRECTIONAL, dma_attrs);
 	if (ret == 0) {
 		ubcore_log_err("Dma map failed, ret: %d\n", ret);
 		return -ENOMEM;
@@ -224,8 +224,8 @@ out:
 	return ret != 0 ? ERR_PTR(ret) : umem;
 }
 
-struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va, uint64_t len,
-				    union ubcore_umem_flag flag)
+struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va,
+	uint64_t len, union ubcore_umem_flag flag)
 {
 	struct page **page_list;
 	int ret;

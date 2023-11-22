@@ -24,7 +24,8 @@
 #include "ubcore_tp.h"
 #include "ubcore_tp_table.h"
 
-void ubcore_init_tp_key_jetty_id(struct ubcore_tp_key *key, const struct ubcore_jetty_id *jetty_id)
+void ubcore_init_tp_key_jetty_id(struct ubcore_tp_key *key,
+	const struct ubcore_jetty_id *jetty_id)
 {
 	memset(key, 0, sizeof(struct ubcore_tp_key));
 	key->key_type = UBCORE_TP_KEY_JETTY_ID;
@@ -69,24 +70,26 @@ struct ubcore_tp *ubcore_find_remove_tp(struct ubcore_hash_table *ht, uint32_t h
 
 struct ubcore_hash_table *ubcore_create_tptable(void)
 {
-	struct ubcore_ht_param p = { .size = UBCORE_HASH_TABLE_SIZE,
-				     .node_offset = offsetof(struct ubcore_tp_node, hnode),
-				     .key_offset = offsetof(struct ubcore_tp_node, key),
-				     .key_size = sizeof(struct ubcore_tp_key),
-				     .cmp_f = NULL,
-				     .free_f = NULL };
-	struct ubcore_hash_table *ht;
+	struct ubcore_ht_param p = {
+		.size = UBCORE_HASH_TABLE_SIZE,
+		.node_offset = offsetof(struct ubcore_tp_node, hnode),
+		.key_offset = offsetof(struct ubcore_tp_node, key),
+		.key_size = (uint32_t)sizeof(struct ubcore_tp_key),
+		.cmp_f = NULL,
+		.free_f = NULL
+	};
+	struct ubcore_hash_table *htable;
 
-	ht = kcalloc(1, sizeof(struct ubcore_hash_table), GFP_KERNEL);
-	if (ht == NULL)
+	htable = kcalloc(1, sizeof(struct ubcore_hash_table), GFP_KERNEL);
+	if (htable == NULL)
 		return NULL;
 
-	if (ubcore_hash_table_alloc(ht, &p) != 0) {
-		kfree(ht);
+	if (ubcore_hash_table_alloc(htable, &p) != 0) {
+		kfree(htable);
 		ubcore_log_err("Failed to calloc jfs tp hash table");
 		return NULL;
 	}
-	return ht;
+	return htable;
 }
 
 static void ubcore_free_tp_node(void *obj)
@@ -144,7 +147,6 @@ struct ubcore_tp_node *ubcore_add_tp_node(struct ubcore_hash_table *ht, uint32_t
 	new_tp_node = kzalloc(sizeof(struct ubcore_tp_node), GFP_KERNEL);
 	if (new_tp_node == NULL)
 		return NULL;
-
 
 	new_tp_node->key = *key;
 	new_tp_node->tp = tp;

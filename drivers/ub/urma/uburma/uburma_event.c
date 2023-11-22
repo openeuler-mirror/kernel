@@ -144,10 +144,7 @@ static uint32_t uburma_read_jfe_event(struct uburma_jfe *jfe, uint32_t event_cnt
 	uint32_t cnt = 0;
 
 	spin_lock_irq(&jfe->lock);
-	if (jfe->deleting) {
-		spin_unlock_irq(&jfe->lock);
-		return 0;
-	}
+
 	list_for_each_safe(p, next, &jfe->event_list) {
 		if (cnt == event_cnt)
 			break;
@@ -165,8 +162,7 @@ static uint32_t uburma_read_jfe_event(struct uburma_jfe *jfe, uint32_t event_cnt
 }
 
 static int uburma_wait_event_timeout(struct uburma_jfe *jfe, unsigned long max_timeout,
-				     uint32_t max_event_cnt, uint32_t *event_cnt,
-				     struct list_head *event_list)
+	uint32_t max_event_cnt, uint32_t *event_cnt, struct list_head *event_list)
 {
 	long timeout = (long)max_timeout;
 
@@ -201,16 +197,12 @@ static int uburma_wait_event(struct uburma_jfe *jfe, bool nonblock, uint32_t max
 	int ret;
 
 	*event_cnt = 0;
-	while (!jfe->deleting) {
-		asm volatile("" : : : "memory");
-		*event_cnt = uburma_read_jfe_event(jfe, max_event_cnt, event_list);
-		/* Stop waiting once we have read at least one event */
-		if (jfe->deleting)
-			return -EIO;
-		else if (nonblock && *event_cnt == 0)
-			return 0;
-		else if (*event_cnt > 0)
-			break;
+	spin_lock_irq(&jfe->lock);
+	while (list_empty(&jfe->event_list)) {
+		spin_unlock_irq(&jfe->lock);
+		if (nonblock)
+			return -EAGAIN;
+
 		/* The function will return -ERESTARTSYS if it was interrupted by a
 		 * signal and 0 if @condition evaluated to true.
 		 */
@@ -218,7 +210,16 @@ static int uburma_wait_event(struct uburma_jfe *jfe, bool nonblock, uint32_t max
 					       (!list_empty(&jfe->event_list) || jfe->deleting));
 		if (ret != 0)
 			return ret;
+
+		spin_lock_irq(&jfe->lock);
+		if (list_empty(&jfe->event_list) && jfe->deleting) {
+			spin_unlock_irq(&jfe->lock);
+			return -EIO;
+		}
 	}
+	spin_unlock_irq(&jfe->lock);
+	*event_cnt = uburma_read_jfe_event(jfe, max_event_cnt, event_list);
+
 	return 0;
 }
 
@@ -364,7 +365,7 @@ static int uburma_get_async_event(struct uburma_jfae_uobj *jfae, struct file *fi
 {
 	struct uburma_cmd_async_event async_event = { 0 };
 	struct list_head event_list;
-	struct uburma_jfe_event *event;
+	struct uburma_jfe_event *event = NULL;
 	uint32_t event_cnt;
 	int ret;
 
@@ -377,6 +378,9 @@ static int uburma_get_async_event(struct uburma_jfae_uobj *jfae, struct file *fi
 		return ret;
 
 	event = list_first_entry(&event_list, struct uburma_jfe_event, node);
+	if (event == NULL)
+		return -EIO;
+
 	uburma_set_async_event(&async_event, event);
 	list_del(&event->node);
 	kfree(event);
@@ -428,13 +432,11 @@ static void uburma_async_event_callback(struct ubcore_event *event,
 	uburma_write_event(&jfae->jfe, event->element.port_id, event->event_type, NULL, NULL);
 }
 
-
 static inline void uburma_init_jfae_handler(struct ubcore_event_handler *handler)
 {
 	INIT_LIST_HEAD(&handler->node);
 	handler->event_callback = uburma_async_event_callback;
 }
-
 
 void uburma_init_jfae(struct uburma_jfae_uobj *jfae, struct ubcore_device *ubc_dev)
 {

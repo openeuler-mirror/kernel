@@ -18,6 +18,7 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_dfx.h"
+#include "hns3_udma_eid.h"
 #include "hns3_udma_segment.h"
 
 static uint32_t hw_index_to_key(int ind)
@@ -236,6 +237,7 @@ static void free_seg_key(struct udma_dev *udma_dev, struct udma_seg *seg)
 
 static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 {
+	struct udma_eid *udma_eid;
 	struct seg_list *seg_new;
 	struct seg_list *seg_now;
 	unsigned long flags;
@@ -247,6 +249,14 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 	if (ret)
 		return;
 
+	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table,
+					      seg->ctx->eid_index);
+	if (IS_ERR_OR_NULL(udma_eid)) {
+		dev_err(udma_dev->dev, "Failed to find eid, index = %d\n.",
+			seg->ctx->eid_index);
+		return;
+	}
+
 	seg_new = kzalloc(sizeof(struct seg_list), GFP_KERNEL);
 	if (seg_new == NULL)
 		return;
@@ -256,6 +266,8 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 	list_for_each_entry(seg_now,
 			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
 		if (seg_now->key_id == seg->key) {
+			memcpy(&seg_now->eid, &udma_eid->eid,
+			       sizeof(union ubcore_eid));
 			seg_now->pd = seg->pd;
 			seg_now->iova = seg->iova;
 			seg_now->len = seg->size;
@@ -263,6 +275,7 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 		}
 	}
 
+	memcpy(&seg_new->eid, &udma_eid->eid, sizeof(union ubcore_eid));
 	seg_new->pd = seg->pd;
 	seg_new->iova = seg->iova;
 	seg_new->len = seg->size;
@@ -305,8 +318,8 @@ static void delete_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 }
 
 struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
-				 const struct ubcore_seg_cfg *cfg,
-				 struct ubcore_udata *udata)
+					    struct ubcore_seg_cfg *cfg,
+					    struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_ucontext *udma_ctx;
@@ -328,6 +341,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
 	seg->size = cfg->len;
 	seg->pd = udma_ctx->pdn;
 	seg->access = cfg->flag.bs.access;
+	seg->ctx = udma_ctx;
 
 	ret = alloc_seg_key(udma_dev, seg);
 	if (ret)
@@ -341,7 +355,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
 	if (ret)
 		goto err_enable_seg;
 	seg->enabled = 1;
-	seg->ubcore_seg.seg.key_id = seg->key;
+	seg->ubcore_seg.seg.token_id = seg->key;
 
 	if (dfx_switch)
 		store_seg_id(udma_dev, seg);
@@ -389,8 +403,8 @@ int udma_unregister_seg(struct ubcore_target_seg *seg)
 }
 
 struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
-			       const struct ubcore_target_seg_cfg *cfg,
-			       struct ubcore_udata *udata)
+					  struct ubcore_target_seg_cfg *cfg,
+					  struct ubcore_udata *udata)
 {
 	struct ubcore_target_seg *tseg;
 

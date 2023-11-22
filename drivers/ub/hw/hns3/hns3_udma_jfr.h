@@ -84,15 +84,15 @@ static inline struct udma_jfr *to_udma_jfr(struct ubcore_jfr *ubcore_jfr)
 	return container_of(ubcore_jfr, struct udma_jfr, ubcore_jfr);
 }
 
-struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, const struct ubcore_jfr_cfg *cfg,
-			      struct ubcore_udata *udata);
+struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
+				   struct ubcore_udata *udata);
 int udma_destroy_jfr(struct ubcore_jfr *jfr);
 struct udma_jfr *get_udma_jfr(struct ubcore_device *dev, uint32_t jfr_id);
 struct ubcore_tjetty *udma_import_jfr(struct ubcore_device *dev,
-				 const struct ubcore_tjetty_cfg *cfg,
-				 struct ubcore_udata *udata);
+				      struct ubcore_tjetty_cfg *cfg,
+				      struct ubcore_udata *udata);
 int udma_unimport_jfr(struct ubcore_tjetty *tjfr);
-int udma_modify_jfr(struct ubcore_jfr *jfr, const struct ubcore_jfr_attr *attr,
+int udma_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 		    struct ubcore_udata *udata);
 void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type);
 
