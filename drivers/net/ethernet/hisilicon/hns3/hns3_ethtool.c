@@ -681,6 +681,9 @@ static u64 *hns3_ethtool_pp_stats(struct hnae3_handle *handle, u64 *data)
 	struct page_pool *page_pool;
 	int i;
 
+	if (!hns3_is_page_pool_enabled())
+		return data;
+
 	for (i = 0; i < ring_num; i++) {
 		page_pool = priv->ring[i + ring_num].page_pool;
 		if (page_pool)
