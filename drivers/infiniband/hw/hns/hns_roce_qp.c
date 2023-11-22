@@ -1114,13 +1114,27 @@ static inline void default_congest_type(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_caps *caps = &hr_dev->caps;
 
-	hr_qp->congest_type = 1 << caps->default_congest_type;
+	if (hr_qp->ibqp.qp_type == IB_QPT_UD)
+		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_DCQCN;
+	else
+		hr_qp->congest_type = 1 << caps->default_congest_type;
 }
 
 static int set_congest_type(struct hns_roce_qp *hr_qp,
 			    struct hns_roce_ib_create_qp *ucmd)
 {
 	int ret = 0;
+
+	if (hr_qp->ibqp.qp_type == IB_QPT_UD &&
+	    !(ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_DCQCN)) {
+		struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
+
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"UD just support DCQCN. unsupported congest type 0x%llx.\n",
+			ucmd->congest_type_flags);
+
+		return -EINVAL;
+	}
 
 	if (ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_DCQCN)
 		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_DCQCN;
@@ -1136,19 +1150,16 @@ static int set_congest_type(struct hns_roce_qp *hr_qp,
 	return ret;
 }
 
-static void set_congest_param(struct hns_roce_dev *hr_dev,
+static int set_congest_param(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_qp *hr_qp,
 			      struct hns_roce_ib_create_qp *ucmd)
 {
-	int ret;
-
-	if (ucmd->comp_mask & HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE) {
-		ret = set_congest_type(hr_qp, ucmd);
-		if (ret == 0)
-			return;
-	}
+	if (ucmd->comp_mask & HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE)
+		return set_congest_type(hr_qp, ucmd);
 
 	default_congest_type(hr_dev, hr_qp);
+
+	return 0;
 }
 
 static void set_qp_notify_param(struct hns_roce_qp *hr_qp,
@@ -1253,7 +1264,10 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		ret = set_uqp_create_flag_param(hr_dev, hr_qp, init_attr, ucmd);
 		if (ret)
 			return ret;
-		set_congest_param(hr_dev, hr_qp, ucmd);
+
+		ret = set_congest_param(hr_dev, hr_qp, ucmd);
+		if (ret)
+			return ret;
 	} else {
 		if (init_attr->create_flags &
 		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {
