@@ -24,7 +24,7 @@ int hns_roce_db_map_user(struct hns_roce_ucontext *context, unsigned long virt,
 	page = kmalloc(sizeof(*page), GFP_KERNEL);
 	if (!page) {
 		ret = -ENOMEM;
-		goto out;
+		goto err_out;
 	}
 
 	refcount_set(&page->refcount, 1);
@@ -33,8 +33,12 @@ int hns_roce_db_map_user(struct hns_roce_ucontext *context, unsigned long virt,
 				 PAGE_SIZE, 0);
 	if (IS_ERR(page->umem)) {
 		ret = PTR_ERR(page->umem);
-		kfree(page);
-		goto out;
+		goto err_page;
+	}
+	page->umem_node = kvmalloc(sizeof(*page->umem_node), GFP_KERNEL);
+	if (!page->umem_node) {
+		ret = -ENOMEM;
+		goto err_umem;
 	}
 
 	list_add(&page->list, &context->page_list);
@@ -45,22 +49,36 @@ found:
 	db->virt_addr = sg_virt(page->umem->sg_head.sgl) + offset;
 	db->u.user_page = page;
 	refcount_inc(&page->refcount);
+	mutex_unlock(&context->page_mutex);
+	return 0;
 
-out:
+err_umem:
+	ib_umem_release(page->umem);
+err_page:
+	kvfree(page);
+err_out:
 	mutex_unlock(&context->page_mutex);
 
 	return ret;
 }
 
 void hns_roce_db_unmap_user(struct hns_roce_ucontext *context,
-			    struct hns_roce_db *db)
+			    struct hns_roce_db *db,
+			    bool delayed_unmap_flag)
 {
+	struct hns_roce_dev *hr_dev = to_hr_dev(context->ibucontext.device);
+
 	mutex_lock(&context->page_mutex);
 
 	refcount_dec(&db->u.user_page->refcount);
 	if (refcount_dec_if_one(&db->u.user_page->refcount)) {
 		list_del(&db->u.user_page->list);
-		ib_umem_release(db->u.user_page->umem);
+		if (delayed_unmap_flag) {
+			hns_roce_add_unfree_umem(db->u.user_page, hr_dev);
+		} else {
+			ib_umem_release(db->u.user_page->umem);
+			kvfree(db->u.user_page->umem_node);
+		}
 		kfree(db->u.user_page);
 	}
 

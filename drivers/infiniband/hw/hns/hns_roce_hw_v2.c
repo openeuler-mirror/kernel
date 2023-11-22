@@ -6038,6 +6038,9 @@ int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 			  "failed to destroy QP, QPN = 0x%06lx, ret = %d.\n",
 			  hr_qp->qpn, ret);
 
+	if (ret == -EBUSY)
+		hr_qp->delayed_destroy_flag = true;
+
 	hns_roce_qp_destroy(hr_dev, hr_qp, udata);
 
 	return 0;
