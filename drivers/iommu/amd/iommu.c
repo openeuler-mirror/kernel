@@ -88,6 +88,11 @@ static struct iommu_dev_data *find_dev_data(struct amd_iommu *iommu, u16 devid);
  *
  ****************************************************************************/
 
+static inline bool pdom_is_v2_pgtbl_mode(struct protection_domain *pdom)
+{
+	return (pdom && (pdom->flags & PD_IOMMUV2_MASK));
+}
+
 static __always_inline void amd_iommu_atomic128_set(__int128 *ptr, __int128 val)
 {
 	/*
@@ -1390,8 +1395,8 @@ void iommu_flush_all_caches(struct amd_iommu *iommu)
 /*
  * Command send function for flushing on-device TLB
  */
-static int device_flush_iotlb(struct iommu_dev_data *dev_data,
-			      u64 address, size_t size)
+static int device_flush_iotlb(struct iommu_dev_data *dev_data, u64 address,
+			      size_t size, ioasid_t pasid, bool gn)
 {
 	struct amd_iommu *iommu;
 	struct iommu_cmd cmd;
@@ -1403,7 +1408,7 @@ static int device_flush_iotlb(struct iommu_dev_data *dev_data,
 		return -EINVAL;
 
 	build_inv_iotlb_pages(&cmd, dev_data->devid, qdep, address,
-			      size, IOMMU_NO_PASID, false);
+			      size, pasid, gn);
 
 	return iommu_queue_command(iommu, &cmd);
 }
@@ -1449,8 +1454,11 @@ static int device_flush_dte(struct iommu_dev_data *dev_data)
 			return ret;
 	}
 
-	if (dev_data->ats_enabled)
-		ret = device_flush_iotlb(dev_data, 0, ~0UL);
+	if (dev_data->ats_enabled) {
+		/* Invalidate the entire contents of an IOTLB */
+		ret = device_flush_iotlb(dev_data, 0, ~0UL,
+					 IOMMU_NO_PASID, false);
+	}
 
 	return ret;
 }
@@ -1466,9 +1474,13 @@ static void __domain_flush_pages(struct protection_domain *domain,
 	struct iommu_dev_data *dev_data;
 	struct iommu_cmd cmd;
 	int ret = 0, i;
+	ioasid_t pasid = IOMMU_NO_PASID;
+	bool gn = false;
 
-	build_inv_iommu_pages(&cmd, address, size, domain->id,
-			      IOMMU_NO_PASID, false);
+	if (pdom_is_v2_pgtbl_mode(domain))
+		gn = true;
+
+	build_inv_iommu_pages(&cmd, address, size, domain->id, pasid, gn);
 
 	for (i = 0; i < amd_iommu_get_num_iommus(); ++i) {
 		if (!domain->dev_iommu[i])
@@ -1486,7 +1498,7 @@ static void __domain_flush_pages(struct protection_domain *domain,
 		if (!dev_data->ats_enabled)
 			continue;
 
-		ret |= device_flush_iotlb(dev_data, address, size);
+		ret |= device_flush_iotlb(dev_data, address, size, pasid, gn);
 	}
 
 	WARN_ON(ret);
