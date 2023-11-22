@@ -5171,6 +5171,7 @@ static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 	struct hns_roce_congestion_algorithm congest_field;
 	struct ib_device *ibdev = ibqp->device;
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibdev);
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	u32 dip_idx = 0;
 	int ret;
 
@@ -5184,7 +5185,7 @@ static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 
 	hr_reg_write(context, QPC_CONGEST_ALGO_TMPL_ID,
 		     hr_dev->congest_algo_tmpl_id +
-		     hr_dev->caps.congest_type * HNS_ROCE_CONGEST_SIZE);
+		     ilog2(hr_qp->congest_type) * HNS_ROCE_CONGEST_SIZE);
 	hr_reg_clear(qpc_mask, QPC_CONGEST_ALGO_TMPL_ID);
 	hr_reg_write(&context->ext, QPCEX_CONGEST_ALG_SEL,
 		     congest_field.alg_sel);
