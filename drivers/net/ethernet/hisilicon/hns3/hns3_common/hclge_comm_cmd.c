@@ -474,8 +474,6 @@ int hclge_comm_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
 	struct hclge_comm_cmq_ring *csq = &hw->cmq.csq;
 	int ret;
 	int ntc;
-	trace_hclge_comm_cmd_send(hw, desc, num,
-				  hclge_comm_is_special_opcode(desc->opcode));
 
 	spin_lock_bh(&hw->cmq.csq.lock);
 
@@ -510,8 +508,6 @@ int hclge_comm_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
 
 	spin_unlock_bh(&hw->cmq.csq.lock);
 
-	trace_hclge_comm_cmd_get(hw, desc, num,
-				 hclge_comm_is_special_opcode(desc->opcode));
 	return ret;
 }
 

@@ -491,11 +491,5 @@ int hclge_comm_cmd_queue_init(struct pci_dev *pdev, struct hclge_comm_hw *hw);
 int hclge_comm_cmd_init(struct hnae3_ae_dev *ae_dev, struct hclge_comm_hw *hw,
 			u32 *fw_version, bool is_pf,
 			unsigned long reset_pending);
-void trace_hclge_comm_cmd_send(struct hclge_comm_hw *hw,
-			       struct hclge_desc *desc,
-			       int num, int is_special);
-void trace_hclge_comm_cmd_get(struct hclge_comm_hw *hw,
-			      struct hclge_desc *desc,
-			      int num, int is_special);
 
 #endif
