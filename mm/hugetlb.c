@@ -2713,10 +2713,10 @@ static void *__init __alloc_bootmem_huge_page_inner(phys_addr_t size,
 						    int nid)
 {
 	if (!mem_reliable_is_enabled())
-		return memblock_alloc_try_nid_raw(size, align, max_addr,
+		return memblock_alloc_try_nid_raw(size, align, min_addr,
 						  max_addr, nid);
 
-	return memblock_alloc_try_nid_raw_flags(size, align, max_addr, max_addr,
+	return memblock_alloc_try_nid_raw_flags(size, align, min_addr, max_addr,
 						nid, MEMBLOCK_NOMIRROR);
 }
 
