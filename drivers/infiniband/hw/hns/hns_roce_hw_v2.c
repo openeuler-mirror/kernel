@@ -2268,6 +2268,7 @@ static void set_hem_page_size(struct hns_roce_dev *hr_dev)
 /* Apply all loaded caps before setting to hardware */
 static void apply_func_caps(struct hns_roce_dev *hr_dev)
 {
+#define MAX_GID_TBL_LEN 256
 	struct hns_roce_caps *caps = &hr_dev->caps;
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 
@@ -2303,9 +2304,14 @@ static void apply_func_caps(struct hns_roce_dev *hr_dev)
 		caps->gmv_entry_sz = HNS_ROCE_V3_GMV_ENTRY_SZ;
 
 		caps->gmv_hop_num = HNS_ROCE_HOP_NUM_0;
-		caps->gid_table_len[0] = caps->gmv_bt_num *
-					(HNS_HW_PAGE_SIZE / caps->gmv_entry_sz);
 
+		/* It's meaningless to support excessively large gid_table_len,
+		 * as the type of sgid_index in kernel struct ib_global_route
+		 * and userspace struct ibv_global_route are u8/uint8_t (0-255).
+		 */
+		caps->gid_table_len[0] = min_t(u32, MAX_GID_TBL_LEN,
+					caps->gmv_bt_num *
+					(HNS_HW_PAGE_SIZE / caps->gmv_entry_sz));
 		caps->gmv_entry_num = caps->gmv_bt_num * (PAGE_SIZE /
 							  caps->gmv_entry_sz);
 	} else {
@@ -5153,6 +5159,7 @@ static int check_congest_type(struct ib_qp *ibqp,
 		congest_alg->wnd_mode_sel = WND_LIMIT;
 		break;
 	default:
+		hr_qp->congest_type = HNS_ROCE_CONGEST_TYPE_DCQCN;
 		congest_alg->alg_sel = CONGEST_DCQCN;
 		congest_alg->alg_sub_sel = UNSUPPORT_CONGEST_LEVEL;
 		congest_alg->dip_vld = DIP_INVALID;
@@ -5171,6 +5178,7 @@ static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 	struct hns_roce_congestion_algorithm congest_field;
 	struct ib_device *ibdev = ibqp->device;
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibdev);
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	u32 dip_idx = 0;
 	int ret;
 
@@ -5184,7 +5192,7 @@ static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 
 	hr_reg_write(context, QPC_CONGEST_ALGO_TMPL_ID,
 		     hr_dev->congest_algo_tmpl_id +
-		     hr_dev->caps.congest_type * HNS_ROCE_CONGEST_SIZE);
+		     ilog2(hr_qp->congest_type) * HNS_ROCE_CONGEST_SIZE);
 	hr_reg_clear(qpc_mask, QPC_CONGEST_ALGO_TMPL_ID);
 	hr_reg_write(&context->ext, QPCEX_CONGEST_ALG_SEL,
 		     congest_field.alg_sel);
@@ -5243,6 +5251,7 @@ static int hns_roce_set_sl(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	u32 sl_num;
 	int ret;
 
 	ret = hns_roce_hw_v2_get_dscp(hr_dev, get_tclass(&attr->ah_attr.grh),
@@ -5259,10 +5268,11 @@ static int hns_roce_set_sl(struct ib_qp *ibqp,
 	else
 		hr_qp->sl = rdma_ah_get_sl(&attr->ah_attr);
 
-	if (unlikely(hr_qp->sl > MAX_SERVICE_LEVEL)) {
-		ibdev_err(ibdev,
-			  "failed to fill QPC, sl (%u) shouldn't be larger than %d.\n",
-			  hr_qp->sl, MAX_SERVICE_LEVEL);
+	sl_num = min_t(u32, MAX_SERVICE_LEVEL, hr_dev->caps.sl_num - 1);
+	if (unlikely(hr_qp->sl > sl_num)) {
+		ibdev_err_ratelimited(ibdev,
+			  "failed to fill QPC, sl (%u) shouldn't be larger than %u.\n",
+			  hr_qp->sl, sl_num);
 		return -EINVAL;
 	}
 
@@ -6033,6 +6043,9 @@ int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 		ibdev_err(&hr_dev->ib_dev,
 			  "failed to destroy QP, QPN = 0x%06lx, ret = %d.\n",
 			  hr_qp->qpn, ret);
+
+	if (ret == -EBUSY)
+		hr_qp->delayed_destroy_flag = true;
 
 	hns_roce_qp_destroy(hr_dev, hr_qp, udata);
 

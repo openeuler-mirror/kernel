@@ -182,6 +182,8 @@ static void free_cqc(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	if (ret)
 		dev_err(dev, "DESTROY_CQ failed (%d) for CQN %06lx\n", ret,
 			hr_cq->cqn);
+	if (ret == -EBUSY)
+		hr_cq->delayed_destroy_flag = true;
 
 	xa_erase(&cq_table->array, hr_cq->cqn);
 
@@ -193,7 +195,11 @@ static void free_cqc(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 		complete(&hr_cq->free);
 	wait_for_completion(&hr_cq->free);
 
-	hns_roce_table_put(hr_dev, &cq_table->table, hr_cq->cqn);
+	/* this resource will be freed when the driver is uninstalled, so
+	 * no memory leak will occur.
+	 */
+	if (!hr_cq->delayed_destroy_flag)
+		hns_roce_table_put(hr_dev, &cq_table->table, hr_cq->cqn);
 }
 
 static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
@@ -203,6 +209,10 @@ static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 	struct hns_roce_buf_attr buf_attr = {};
 	int ret;
 
+	hr_cq->mtr_node = kvmalloc(sizeof(*hr_cq->mtr_node), GFP_KERNEL);
+	if (!hr_cq->mtr_node)
+		return -ENOMEM;
+
 	buf_attr.page_shift = hr_dev->caps.cqe_buf_pg_sz + PAGE_SHIFT;
 	buf_attr.region[0].size = hr_cq->cq_depth * hr_cq->cqe_size;
 	buf_attr.region[0].hopnum = hr_dev->caps.cqe_hop_num;
@@ -211,15 +221,22 @@ static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 	ret = hns_roce_mtr_create(hr_dev, &hr_cq->mtr, &buf_attr,
 				  hr_dev->caps.cqe_ba_pg_sz + PAGE_SHIFT,
 				  udata, addr);
-	if (ret)
+	if (ret) {
 		ibdev_err(ibdev, "Failed to alloc CQ mtr, ret = %d\n", ret);
+		kvfree(hr_cq->mtr_node);
+	}
 
 	return ret;
 }
 
 static void free_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 {
-	hns_roce_mtr_destroy(hr_dev, &hr_cq->mtr);
+	if (hr_cq->delayed_destroy_flag) {
+		hns_roce_add_unfree_mtr(hr_cq->mtr_node, hr_dev, &hr_cq->mtr);
+	} else {
+		hns_roce_mtr_destroy(hr_dev, &hr_cq->mtr);
+		kvfree(hr_cq->mtr_node);
+	}
 }
 
 static int alloc_cq_db(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
@@ -270,7 +287,8 @@ static void free_cq_db(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 		uctx = rdma_udata_to_drv_context(udata,
 						 struct hns_roce_ucontext,
 						 ibucontext);
-		hns_roce_db_unmap_user(uctx, &hr_cq->db);
+		hns_roce_db_unmap_user(uctx, &hr_cq->db,
+				       hr_cq->delayed_destroy_flag);
 	} else {
 		hns_roce_free_db(hr_dev, &hr_cq->db);
 	}

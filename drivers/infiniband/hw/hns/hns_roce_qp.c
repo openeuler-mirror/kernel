@@ -387,6 +387,12 @@ static void free_qpc(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 {
 	struct hns_roce_qp_table *qp_table = &hr_dev->qp_table;
 
+	if (hr_qp->delayed_destroy_flag)
+		return;
+
+	/* this resource will be freed when the driver is uninstalled, so
+	 * no memory leak will occur.
+	 */
 	if (hr_dev->caps.trrl_entry_sz)
 		hns_roce_table_put(hr_dev, &qp_table->trrl_table, hr_qp->qpn);
 	hns_roce_table_put(hr_dev, &qp_table->irrl_table, hr_qp->qpn);
@@ -782,12 +788,17 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	int ret;
 
+	hr_qp->mtr_node = kvmalloc(sizeof(*hr_qp->mtr_node), GFP_KERNEL);
+	if (!hr_qp->mtr_node)
+		return -ENOMEM;
+
 	if (dca_en) {
 		/* DCA must be enabled after the buffer attr is configured. */
 		ret = hns_roce_enable_dca(hr_dev, hr_qp, udata);
 		if (ret) {
 			ibdev_err(ibdev, "failed to enable DCA, ret = %d.\n",
 				  ret);
+			kvfree(hr_qp->mtr_node);
 			return ret;
 		}
 
@@ -811,6 +822,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
 		if (dca_en)
 			hns_roce_disable_dca(hr_dev, hr_qp, udata);
+		kvfree(hr_qp->mtr_node);
 	}
 
 	return ret;
@@ -819,7 +831,12 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			 struct ib_udata *udata)
 {
-	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
+	if (hr_qp->delayed_destroy_flag) {
+		hns_roce_add_unfree_mtr(hr_qp->mtr_node, hr_dev, &hr_qp->mtr);
+	} else {
+		hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
+		kvfree(hr_qp->mtr_node);
+	}
 
 	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
 		hns_roce_disable_dca(hr_dev, hr_qp, udata);
@@ -959,7 +976,7 @@ static int alloc_user_qp_db(struct hns_roce_dev *hr_dev,
 
 err_sdb:
 	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_SQ_RECORD_DB)
-		hns_roce_db_unmap_user(uctx, &hr_qp->sdb);
+		hns_roce_db_unmap_user(uctx, &hr_qp->sdb, false);
 err_out:
 	return ret;
 }
@@ -1041,9 +1058,11 @@ static void free_qp_db(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 	if (udata) {
 		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_RQ_RECORD_DB)
-			hns_roce_db_unmap_user(uctx, &hr_qp->rdb);
+			hns_roce_db_unmap_user(uctx, &hr_qp->rdb,
+					       hr_qp->delayed_destroy_flag);
 		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_SQ_RECORD_DB)
-			hns_roce_db_unmap_user(uctx, &hr_qp->sdb);
+			hns_roce_db_unmap_user(uctx, &hr_qp->sdb,
+					       hr_qp->delayed_destroy_flag);
 		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DIRECT_WQE)
 			qp_user_mmap_entry_remove(hr_qp);
 	} else {
@@ -1095,13 +1114,27 @@ static inline void default_congest_type(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_caps *caps = &hr_dev->caps;
 
-	hr_qp->congest_type = 1 << caps->default_congest_type;
+	if (hr_qp->ibqp.qp_type == IB_QPT_UD)
+		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_DCQCN;
+	else
+		hr_qp->congest_type = 1 << caps->default_congest_type;
 }
 
 static int set_congest_type(struct hns_roce_qp *hr_qp,
 			    struct hns_roce_ib_create_qp *ucmd)
 {
 	int ret = 0;
+
+	if (hr_qp->ibqp.qp_type == IB_QPT_UD &&
+	    !(ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_DCQCN)) {
+		struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
+
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"UD just support DCQCN. unsupported congest type 0x%llx.\n",
+			ucmd->congest_type_flags);
+
+		return -EINVAL;
+	}
 
 	if (ucmd->congest_type_flags & HNS_ROCE_CREATE_QP_FLAGS_DCQCN)
 		hr_qp->congest_type = HNS_ROCE_CREATE_QP_FLAGS_DCQCN;
@@ -1117,19 +1150,16 @@ static int set_congest_type(struct hns_roce_qp *hr_qp,
 	return ret;
 }
 
-static void set_congest_param(struct hns_roce_dev *hr_dev,
+static int set_congest_param(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_qp *hr_qp,
 			      struct hns_roce_ib_create_qp *ucmd)
 {
-	int ret;
-
-	if (ucmd->comp_mask & HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE) {
-		ret = set_congest_type(hr_qp, ucmd);
-		if (ret == 0)
-			return;
-	}
+	if (ucmd->comp_mask & HNS_ROCE_CREATE_QP_MASK_CONGEST_TYPE)
+		return set_congest_type(hr_qp, ucmd);
 
 	default_congest_type(hr_dev, hr_qp);
+
+	return 0;
 }
 
 static void set_qp_notify_param(struct hns_roce_qp *hr_qp,
@@ -1234,7 +1264,10 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		ret = set_uqp_create_flag_param(hr_dev, hr_qp, init_attr, ucmd);
 		if (ret)
 			return ret;
-		set_congest_param(hr_dev, hr_qp, ucmd);
+
+		ret = set_congest_param(hr_dev, hr_qp, ucmd);
+		if (ret)
+			return ret;
 	} else {
 		if (init_attr->create_flags &
 		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {

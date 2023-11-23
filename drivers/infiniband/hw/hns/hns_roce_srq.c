@@ -164,14 +164,16 @@ static void free_srqc(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
 	if (ret)
 		dev_err(hr_dev->dev, "DESTROY_SRQ failed (%d) for SRQN %06lx\n",
 			ret, srq->srqn);
+	if (ret == -EBUSY)
+		srq->delayed_destroy_flag = true;
 
 	xa_erase(&srq_table->xa, srq->srqn);
 
 	if (refcount_dec_and_test(&srq->refcount))
 		complete(&srq->free);
 	wait_for_completion(&srq->free);
-
-	hns_roce_table_put(hr_dev, &srq_table->table, srq->srqn);
+	if (!srq->delayed_destroy_flag)
+		hns_roce_table_put(hr_dev, &srq_table->table, srq->srqn);
 }
 
 static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
@@ -181,6 +183,10 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
 	int ret;
+
+	idx_que->mtr_node = kvmalloc(sizeof(*idx_que->mtr_node), GFP_KERNEL);
+	if (!idx_que->mtr_node)
+		return -ENOMEM;
 
 	srq->idx_que.entry_shift = ilog2(HNS_ROCE_IDX_QUE_ENTRY_SZ);
 
@@ -195,7 +201,7 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 				  udata, addr);
 	if (ret) {
 		ibdev_err(ibdev, "Failed to alloc SRQ idx mtr, ret = %d.\n", ret);
-		return ret;
+		goto err_kvmalloc;
 	}
 
 	if (!udata) {
@@ -213,6 +219,8 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	return 0;
 err_idx_mtr:
 	hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
+err_kvmalloc:
+	kvfree(idx_que->mtr_node);
 
 	return ret;
 }
@@ -223,7 +231,12 @@ static void free_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
 
 	bitmap_free(idx_que->bitmap);
 	idx_que->bitmap = NULL;
-	hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
+	if (srq->delayed_destroy_flag) {
+		hns_roce_add_unfree_mtr(idx_que->mtr_node, hr_dev, &idx_que->mtr);
+	} else {
+		hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
+		kvfree(idx_que->mtr_node);
+	}
 }
 
 static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
@@ -233,6 +246,10 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
 	int ret;
+
+	srq->mtr_node = kvmalloc(sizeof(*srq->mtr_node), GFP_KERNEL);
+	if (!srq->mtr_node)
+		return -ENOMEM;
 
 	srq->wqe_shift = ilog2(roundup_pow_of_two(max(HNS_ROCE_SGE_SIZE,
 						      HNS_ROCE_SGE_SIZE *
@@ -247,9 +264,11 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 	ret = hns_roce_mtr_create(hr_dev, &srq->buf_mtr, &buf_attr,
 				  hr_dev->caps.srqwqe_ba_pg_sz + PAGE_SHIFT,
 				  udata, addr);
-	if (ret)
+	if (ret) {
 		ibdev_err(ibdev,
 			  "failed to alloc SRQ buf mtr, ret = %d.\n", ret);
+		kvfree(srq->mtr_node);
+	}
 
 	return ret;
 }
@@ -257,7 +276,12 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 static void free_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 			     struct hns_roce_srq *srq)
 {
-	hns_roce_mtr_destroy(hr_dev, &srq->buf_mtr);
+	if (srq->delayed_destroy_flag) {
+		hns_roce_add_unfree_mtr(srq->mtr_node, hr_dev, &srq->buf_mtr);
+	} else {
+		hns_roce_mtr_destroy(hr_dev, &srq->buf_mtr);
+		kvfree(srq->mtr_node);
+	}
 }
 
 static int alloc_srq_wrid(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
@@ -427,7 +451,8 @@ static void free_srq_db(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 		uctx = rdma_udata_to_drv_context(udata,
 						 struct hns_roce_ucontext,
 						 ibucontext);
-		hns_roce_db_unmap_user(uctx, &srq->rdb);
+		hns_roce_db_unmap_user(uctx, &srq->rdb,
+				       srq->delayed_destroy_flag);
 	} else {
 		hns_roce_free_db(hr_dev, &srq->rdb);
 	}
