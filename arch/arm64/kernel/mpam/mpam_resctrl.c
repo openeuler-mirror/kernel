@@ -919,7 +919,7 @@ static int is_rmid_remap_bmp_full(unsigned long *bmp)
 			bitmap_full(bmp, rmid_remap_matrix.rows));
 }
 
-static int rmid_remap_bmp_find_step_entry(int partid)
+static int rmid_remap_bmp_find_step_entry(int partid, bool exclusive)
 {
 	int x, y;
 	unsigned long **bmp;
@@ -931,7 +931,7 @@ static int rmid_remap_bmp_find_step_entry(int partid)
 	/* step entry should be non-occupied and aligned */
 	bmp = __rmid_remap_bmp(partid);
 	if (bmp)
-		return (is_rmid_remap_bmp_occ(*bmp) ||
+		return ((exclusive && is_rmid_remap_bmp_occ(*bmp)) ||
 			!__step_align(partid)) ? -ENOSPC : partid;
 
 	for_each_rmid_transform_point_from(bmp, x, y, 0) {
@@ -1024,7 +1024,7 @@ static int rmid_to_partid_pmg(int rmid, int *partid, int *pmg)
 	return 0;
 }
 
-static int __rmid_alloc(int partid, int pmg)
+static int __rmid_alloc(int partid, int pmg, bool exclusive)
 {
 	int x, y, step, ret, rmid;
 	bool checkpmg = false;
@@ -1034,7 +1034,7 @@ static int __rmid_alloc(int partid, int pmg)
 		checkpmg = true;
 
 	/* traverse from first non-occupied and step-aligned entry */
-	ret = rmid_remap_bmp_find_step_entry(partid);
+	ret = rmid_remap_bmp_find_step_entry(partid, exclusive);
 	if (ret < 0)
 		goto out;
 	partid = ret;
@@ -1084,7 +1084,7 @@ out:
 
 int rmid_alloc(int partid)
 {
-	return __rmid_alloc(partid, -1);
+	return __rmid_alloc(partid, -1, false);
 }
 
 void rmid_free(int rmid)
@@ -1914,6 +1914,7 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	struct rdtgroup *rdtgrp;
 	int ret = 0;
 	int partid;
+	bool exclusive;
 	int pmg;
 	int rmid;
 	int old_rmid;
@@ -1954,14 +1955,15 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 		goto unlock;
 	}
 
-	ret = __rmid_alloc(partid, pmg);
+	old_rmid = rdtgrp->mon.rmid;
+	old_reqpartid = rdtgrp->closid.reqpartid;
+
+	exclusive = (partid == old_reqpartid) ? false : true;
+	ret = __rmid_alloc(partid, pmg, exclusive);
 	if (ret < 0) {
 		rdt_last_cmd_puts("set rmid failed\n");
 		goto unlock;
 	}
-
-	old_rmid = rdtgrp->mon.rmid;
-	old_reqpartid = rdtgrp->closid.reqpartid;
 
 	/*
 	 * we use intpartid as group control, use reqpartid for config
