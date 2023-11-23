@@ -577,12 +577,12 @@ void hclge_unic_reset_mc_guid_space(struct hclge_dev *hdev)
 	bitmap_zero(hdev->mc_guid_tbl_bmap, HCLGE_UNIC_MC_GUID_NUM);
 }
 
-int hclge_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid)
+void hclge_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	return hclge_comm_unic_set_func_guid(&hdev->hw.hw, guid);
+	hdev->hw.func_guid = guid;
 }
 
 int hclge_unic_get_func_guid(struct hnae3_handle *handle, u8 *guid)
@@ -595,5 +595,5 @@ int hclge_unic_get_func_guid(struct hnae3_handle *handle, u8 *guid)
 
 void hclge_unic_rm_func_guid(struct hclge_dev *hdev)
 {
-	hclge_comm_unic_rm_func_guid(&hdev->hw.hw);
+	hclge_comm_unic_rm_func_guid(&hdev->hw.hw, &hdev->hw.func_guid);
 }

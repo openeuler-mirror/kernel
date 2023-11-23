@@ -1819,7 +1819,9 @@ int hclge_dbg_dump_rst_info(struct hclge_dev *hdev, char *buf, int len)
 				 hclge_read_dev(&hdev->hw, offset));
 	}
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	hclge_dbg_dump_udma_rst_info(hdev, buf, len, &pos);
+#endif
 
 	pos += scnprintf(buf + pos, len - pos, "hdev state: 0x%lx\n",
 			 hdev->state);

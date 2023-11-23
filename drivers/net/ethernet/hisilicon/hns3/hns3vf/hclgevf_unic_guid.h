@@ -13,7 +13,7 @@ void hclgevf_unic_uninit_mc_guid_list(struct hclgevf_dev *hdev);
 int hclgevf_unic_update_guid_list(struct hnae3_handle *handle,
 				  enum HCLGE_COMM_ADDR_NODE_STATE state,
 				  const unsigned char *addr);
-int hclgevf_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid);
+void hclgevf_unic_set_func_guid(struct hnae3_handle *handle, u8 *guid);
 int hclgevf_unic_get_func_guid(struct hnae3_handle *handle, u8 *guid);
 
 #endif

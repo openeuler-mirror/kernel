@@ -36,7 +36,7 @@ void hns3_unic_set_default_cc(struct sk_buff *skb)
 		ubl->h_cc = htons(UNIC_CC_DEFAULT_FECN_MODE);
 }
 
-void hns3_unic_init(struct net_device *netdev)
+int hns3_unic_init(struct net_device *netdev)
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	struct pci_dev *pdev = h->pdev;
@@ -53,7 +53,7 @@ void hns3_unic_init(struct net_device *netdev)
 	netdev->flags &= ~(IFF_BROADCAST | IFF_MULTICAST);
 	netdev->max_mtu = ae_dev->dev_specs.max_frm_size;
 
-	hns3_unic_init_guid(netdev);
+	return hns3_unic_init_guid(netdev);
 }
 
 /**
@@ -324,7 +324,7 @@ void hns3_unic_set_rx_mode(struct net_device *netdev)
 	hns3_request_update_promisc_mode(h);
 }
 
-void hns3_unic_init_guid(struct net_device *netdev)
+int hns3_unic_init_guid(struct net_device *netdev)
 {
 	const u8 bc_guid[HNS3_SIMPLE_GUID_LEN] = {0xff, 0xff, 0xff, 0xff,
 						  0xff, 0xff};
@@ -336,23 +336,25 @@ void hns3_unic_init_guid(struct net_device *netdev)
 	if (!h->ae_algo->ops->get_func_guid ||
 	    !h->ae_algo->ops->set_func_guid) {
 		netdev_err(netdev, "the guid handlers may not exist\n");
-		return;
+		return -EOPNOTSUPP;
 	}
 
 	ret = h->ae_algo->ops->get_func_guid(h, temp_guid_addr);
 	if (ret) {
 		netdev_err(netdev, "get function guid fail, ret = %d!\n", ret);
-		return;
+		return ret;
+	}
+
+	ret = hns3_unic_add_mc_guid(netdev, bc_guid);
+	if (ret) {
+		netdev_err(netdev, "add mc guid fail, ret = %d!\n", ret);
+		return ret;
 	}
 
 	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
 	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
 
-	ret = h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
-	if (ret) {
-		netdev_err(netdev, "set function guid fail, ret = %d\n", ret);
-		return;
-	}
+	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
 
-	hns3_unic_add_mc_guid(netdev, bc_guid);
+	return 0;
 }

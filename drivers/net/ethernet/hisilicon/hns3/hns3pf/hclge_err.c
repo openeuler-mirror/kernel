@@ -3180,7 +3180,10 @@ msi_error:
 
 bool hclge_find_error_source(struct hclge_dev *hdev)
 {
-	u32 msix_src_flag, hw_err_src_flag, udma_err_src_flag;
+	u32 msix_src_flag, hw_err_src_flag;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	u32 udma_err_src_flag;
+#endif
 
 	msix_src_flag = hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS) &
 			HCLGE_VECTOR0_REG_MSIX_MASK;
@@ -3188,10 +3191,14 @@ bool hclge_find_error_source(struct hclge_dev *hdev)
 	hw_err_src_flag = hclge_read_dev(&hdev->hw,
 					 HCLGE_RAS_PF_OTHER_INT_STS_REG) &
 			  HCLGE_RAS_REG_ERR_MASK;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	udma_err_src_flag = hclge_get_udma_error_reg(hdev) &
 			   HCLGE_RAS_REG_ERR_MASK_UB;
 
 	return msix_src_flag || hw_err_src_flag || udma_err_src_flag;
+#else
+	return msix_src_flag || hw_err_src_flag;
+#endif
 }
 
 void hclge_handle_occurred_error(struct hclge_dev *hdev)

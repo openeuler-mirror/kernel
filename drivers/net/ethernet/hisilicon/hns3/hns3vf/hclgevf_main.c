@@ -79,8 +79,10 @@ struct hclgevf_dev *hclgevf_ae_get_hdev(struct hnae3_handle *handle)
 		return container_of(handle, struct hclgevf_dev, nic);
 	else if (handle->client->type == HNAE3_CLIENT_ROCE)
 		return container_of(handle, struct hclgevf_dev, roce);
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	else if (handle->client->type == HNAE3_CLIENT_UDMA)
 		return container_of(handle, struct hclgevf_dev, udma);
+#endif
 	else
 		return container_of(handle, struct hclgevf_dev, nic);
 }
@@ -452,7 +454,9 @@ static void hclgevf_request_link_info(struct hclgevf_dev *hdev)
 void hclgevf_update_link_status(struct hclgevf_dev *hdev, int link_state)
 {
 	struct hnae3_handle *rhandle = &hdev->roce;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	struct hnae3_handle *uhandle = &hdev->udma;
+#endif
 	struct hnae3_handle *handle = &hdev->nic;
 	struct hnae3_client *rclient;
 	struct hnae3_client *uclient;
@@ -472,8 +476,10 @@ void hclgevf_update_link_status(struct hclgevf_dev *hdev, int link_state)
 		client->ops->link_status_change(handle, !!link_state);
 		if (rclient && rclient->ops->link_status_change)
 			rclient->ops->link_status_change(rhandle, !!link_state);
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 		if (uclient && uclient->ops->link_status_change)
 			uclient->ops->link_status_change(uhandle, !!link_state);
+#endif
 	}
 
 	clear_bit(HCLGEVF_STATE_LINK_UPDATING, &hdev->state);
@@ -1616,9 +1622,11 @@ static int hclgevf_reset_prepare(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclgevf_notify_udma_client(hdev, HNAE3_DOWN_CLIENT);
 	if (ret)
 		return ret;
+#endif
 
 	rtnl_lock();
 	/* bring down the nic to stop any ongoing TX/RX */
@@ -1639,9 +1647,11 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclgevf_notify_udma_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
 		return ret;
+#endif
 
 	rtnl_lock();
 	/* now, re-initialize the nic client and ae device */
@@ -1664,6 +1674,7 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclgevf_notify_udma_client(hdev, HNAE3_INIT_CLIENT);
 	/* ignore UDMA notify error if it fails HCLGEVF_RESET_MAX_FAIL_CNT - 1
 	 * times
@@ -1675,6 +1686,7 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 	ret = hclgevf_notify_udma_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
+#endif
 
 	hdev->last_reset_time = jiffies;
 	hdev->rst_stats.rst_done_cnt++;
@@ -2011,6 +2023,7 @@ static void hclgevf_periodic_service_task(struct hclgevf_dev *hdev)
 	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 		hclgevf_unic_sync_mc_guid_list(hdev);
 		hclgevf_unic_sync_ip_list(hdev);
+		hclge_comm_unic_set_func_guid(&hdev->hw.hw, &hdev->hw.func_guid);
 	}
 #endif
 	hclgevf_sync_promisc_mode(hdev);
@@ -2582,10 +2595,12 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 		if (ret)
 			goto clear_roce;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 		ret = hclgevf_init_udma_client_instance(ae_dev,
 							hdev->udma_client);
 		if (ret)
 			goto clear_udma;
+#endif
 
 		break;
 	case HNAE3_CLIENT_ROCE:
@@ -2599,6 +2614,7 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 			goto clear_roce;
 
 		break;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	case HNAE3_CLIENT_UDMA:
 		if (hnae3_dev_udma_supported(ae_dev)) {
 			hdev->udma_client = client;
@@ -2610,6 +2626,7 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 			goto clear_udma;
 
 		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -2624,10 +2641,12 @@ clear_roce:
 	hdev->roce_client = NULL;
 	hdev->roce.client = NULL;
 	return ret;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 clear_udma:
 	hdev->udma_client = NULL;
 	hdev->udma.client = NULL;
 	return ret;
+#endif
 }
 
 static void hclgevf_uninit_client_instance(struct hnae3_client *client,
@@ -2635,6 +2654,7 @@ static void hclgevf_uninit_client_instance(struct hnae3_client *client,
 {
 	struct hclgevf_dev *hdev = ae_dev->priv;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	/* un-init udma, if it exists and called by nic or udma client */
 	if (hdev->udma_client && (client->type == HNAE3_CLIENT_UDMA ||
 				  client->type == HNAE3_CLIENT_KNIC)) {
@@ -2648,6 +2668,7 @@ static void hclgevf_uninit_client_instance(struct hnae3_client *client,
 	}
 	if (client->type == HNAE3_CLIENT_UDMA)
 		return;
+#endif
 
 	/* un-init roce, if it exists */
 	if (hdev->roce_client) {
@@ -2759,7 +2780,9 @@ static void hclgevf_pci_uninit(struct hclgevf_dev *hdev)
 
 static int hclgevf_query_vf_resource(struct hclgevf_dev *hdev)
 {
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+#endif
 	struct hclgevf_query_res_cmd *req;
 	struct hclge_desc desc;
 	int ret;
@@ -2791,6 +2814,7 @@ static int hclgevf_query_vf_resource(struct hclgevf_dev *hdev)
 		 */
 		hdev->num_msi = hdev->num_roce_msix +
 				hdev->roce_base_msix_offset;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	} else if (hnae3_dev_udma_supported(ae_dev)) {
 		hdev->roce_base_msix_offset =
 		hnae3_get_field(le16_to_cpu(req->msixcap_localid_ba_rocee),
@@ -2808,6 +2832,7 @@ static int hclgevf_query_vf_resource(struct hclgevf_dev *hdev)
 		 */
 		hdev->num_msi = hdev->num_udma_msix +
 				hdev->roce_base_msix_offset;
+#endif
 	} else {
 		hdev->num_msi =
 		hnae3_get_field(le16_to_cpu(req->vf_intr_vector_number),

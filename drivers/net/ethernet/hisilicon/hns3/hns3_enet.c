@@ -2585,7 +2585,9 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 	}
 #ifdef CONFIG_HNS3_UBL
 	if (hns3_ubl_supported(hns3_get_handle(netdev))) {
-		ubl_rmv_sw_ctype(skb);
+		if (!ubl_rmv_sw_ctype(skb))
+			goto out_err_tx_ok;
+
 		hns3_unic_set_default_cc(skb);
 	}
 #endif
@@ -5765,8 +5767,14 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	netdev->max_mtu = HNS3_MAX_MTU(ae_dev->dev_specs.max_frm_size);
 #ifdef CONFIG_HNS3_UBL
-	if (hns3_ubl_supported(handle))
-		hns3_unic_init(netdev);
+	if (hns3_ubl_supported(handle)) {
+		ret = hns3_unic_init(netdev);
+		if (ret) {
+			dev_err(priv->dev, "failed to init unic, ret = %d\n",
+				ret);
+			goto out_dbg_init;
+		}
+	}
 #endif
 
 	hns3_state_init(handle);
@@ -5787,6 +5795,7 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 out_reg_netdev_fail:
 	hns3_state_uninit(handle);
+out_dbg_init:
 	hns3_dbg_uninit(handle);
 	hns3_client_stop(handle);
 out_client_start:
@@ -6085,14 +6094,21 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 		goto err_client_start_fail;
 	}
 #ifdef CONFIG_HNS3_UBL
-	if (hns3_ubl_supported(handle))
-		hns3_unic_init_guid(netdev);
+	if (hns3_ubl_supported(handle)) {
+		ret = hns3_unic_init_guid(netdev);
+		if (ret) {
+			dev_err(priv->dev, "init guid failed! ret=%d\n", ret);
+			goto err_init_guid_fail;
+		}
+	}
 #endif
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
 	return ret;
 
+err_init_guid_fail:
+	hns3_client_stop(handle);
 err_client_start_fail:
 	hns3_free_rx_cpu_rmap(netdev);
 	hns3_nic_uninit_irq(priv);

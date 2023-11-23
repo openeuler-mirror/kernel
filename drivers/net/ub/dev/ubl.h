@@ -60,35 +60,15 @@ struct ublhdr {
 } __packed;
 
 /**
- * ubl_add_sw_ctype - add software packet type for skb->data
- * @skb: buffer to alter
- * @ctype: indicates the packet type
- *
- * The packet type cannot be known by parsing packe from user,
- * which leads to restrictions on the use of socket.
- * Add cs_type field to indicate the packet type. And sw_ctype
- * exists only during software prcessing.
- * +----------+----+-----+-----------+
- * | sw_ctype | CC | NPI | L3 Packet |
- * +----------+----+-----+-----------+
- */
-static inline void ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype)
-{
-	u8 *pkt_cfg = (u8 *)skb_push(skb, sizeof(u8));
-
-	*pkt_cfg = ctype;
-}
-
-/**
  * ubl_rmv_sw_ctype - delete software packet type for skb->data
  * @skb: buffer to alter
  *
  * Before the packet is sent to the hardware, remove sw_ctype field
  * and restore the original packet.
  */
-static inline void ubl_rmv_sw_ctype(struct sk_buff *skb)
+static inline void *ubl_rmv_sw_ctype(struct sk_buff *skb)
 {
-	skb_pull_inline(skb, sizeof(u8));
+	return pskb_pull(skb, sizeof(u8));
 }
 
 int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
@@ -98,6 +78,7 @@ void ubl_setup(struct net_device *dev);
 __be16 ubl_type_trans(struct sk_buff *skb, struct net_device *dev, u8 type);
 struct net_device *alloc_ubndev_mqs(int sizeof_priv, unsigned int txqs,
 				    unsigned int rxqs);
+int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype);
 #define alloc_ubndev_mq(sizeof_priv, count) \
 	alloc_ubndev_mqs((sizeof_priv), (count), (count))
 

@@ -304,6 +304,7 @@ struct hclge_hw {
 	struct hclge_comm_hw hw;
 	struct hclge_mac mac;
 	int num_vec;
+	u8 *func_guid;
 };
 
 enum hclge_fc_mode {

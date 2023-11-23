@@ -864,7 +864,7 @@ struct hnae3_ae_ops {
 		       const unsigned char *addr,
 		       enum hnae3_unic_addr_type addr_type);
 	int (*get_func_guid)(struct hnae3_handle *handle, u8 *guid);
-	int (*set_func_guid)(struct hnae3_handle *handle, u8 *guid);
+	void (*set_func_guid)(struct hnae3_handle *handle, u8 *guid);
 };
 
 struct hnae3_dcb_ops {

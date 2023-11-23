@@ -799,7 +799,9 @@ static int hclge_query_function_status(struct hclge_dev *hdev)
 
 static int hclge_query_pf_resource(struct hclge_dev *hdev)
 {
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+#endif
 	struct hclge_pf_res_cmd *req;
 	struct hclge_desc desc;
 	int ret;
@@ -852,11 +854,13 @@ static int hclge_query_pf_resource(struct hclge_dev *hdev)
 		 */
 		hdev->num_msi = hdev->num_nic_msi + hdev->num_roce_msi +
 				hdev->num_roh_msi;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	} else if (hnae3_dev_udma_supported(ae_dev)) {
 		hdev->num_udma_msi =
 			le16_to_cpu(req->pf_intr_vector_number_roce);
 
 		hdev->num_msi = hdev->num_nic_msi + hdev->num_udma_msi;
+#endif
 	} else {
 		hdev->num_msi = hdev->num_nic_msi;
 	}
@@ -2983,11 +2987,13 @@ static void hclge_push_link_status(struct hclge_dev *hdev)
 static void hclge_update_link_status(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *rhandle = &hdev->vport[0].roce;
-	struct hnae3_handle *uhandle = &hdev->vport[0].udma;
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	struct hnae3_client *rclient = hdev->roce_client;
-	struct hnae3_client *uclient = hdev->udma_client;
 	struct hnae3_client *client = hdev->nic_client;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	struct hnae3_handle *uhandle = &hdev->vport[0].udma;
+	struct hnae3_client *uclient = hdev->udma_client;
+#endif
 	int state;
 	int ret;
 
@@ -3012,8 +3018,10 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 		hclge_config_mac_tnl_int(hdev, state);
 		if (rclient && rclient->ops->link_status_change)
 			rclient->ops->link_status_change(rhandle, state);
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 		if (uclient && uclient->ops->link_status_change)
 			uclient->ops->link_status_change(uhandle, state);
+#endif
 
 		hclge_push_link_status(hdev);
 	}
@@ -3468,14 +3476,16 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 
 static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 {
-	u32 cmdq_src_reg, msix_src_reg, hw_err_src_reg, udma_err_src_reg;
+	u32 cmdq_src_reg, msix_src_reg, hw_err_src_reg;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	u32 udma_err_src_reg = hclge_get_udma_error_reg(hdev);
+#endif
 
 	/* fetch the events from their corresponding regs */
 	cmdq_src_reg = hclge_read_dev(&hdev->hw, HCLGE_VECTOR0_CMDQ_SRC_REG);
 	msix_src_reg = hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS);
 	hw_err_src_reg = hclge_read_dev(&hdev->hw,
 					HCLGE_RAS_PF_OTHER_INT_STS_REG);
-	udma_err_src_reg = hclge_get_udma_error_reg(hdev);
 
 	/* Assumption: If by any chance reset and mailbox events are reported
 	 * together then we will only process reset event in this go and will
@@ -3504,10 +3514,16 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	}
 
 	/* check for vector0 msix event and hardware error event source */
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK ||
 	    hw_err_src_reg & HCLGE_RAS_REG_ERR_MASK ||
 	    udma_err_src_reg & HCLGE_RAS_REG_ERR_MASK_UB)
 		return HCLGE_VECTOR0_EVENT_ERR;
+#else
+	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK ||
+	    hw_err_src_reg & HCLGE_RAS_REG_ERR_MASK)
+		return HCLGE_VECTOR0_EVENT_ERR;
+#endif
 
 	/* check for vector0 ptp event source */
 	if (BIT(HCLGE_VECTOR0_REG_PTP_INT_B) & msix_src_reg) {
@@ -3523,10 +3539,16 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	}
 
 	/* print other vector0 event source */
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	dev_info(&hdev->pdev->dev,
 		 "INT status: CMDQ(%#x) HW errors(%#x, %#x) other(%#x)\n",
 		 cmdq_src_reg, hw_err_src_reg, udma_err_src_reg,
 		 msix_src_reg);
+#else
+	dev_info(&hdev->pdev->dev,
+		 "INT status: CMDQ(%#x) HW errors(%#x) other(%#x)\n",
+		 cmdq_src_reg, hw_err_src_reg, msix_src_reg);
+#endif
 
 	return HCLGE_VECTOR0_EVENT_OTHER;
 }
@@ -4266,9 +4288,11 @@ static int hclge_reset_prepare(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclge_notify_udma_client(hdev, HNAE3_DOWN_CLIENT);
 	if (ret)
 		return ret;
+#endif
 
 	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
@@ -4294,9 +4318,11 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclge_notify_udma_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
 		return ret;
+#endif
 
 	rtnl_lock();
 	ret = hclge_reset_stack(hdev);
@@ -4322,6 +4348,7 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclge_notify_udma_client(hdev, HNAE3_INIT_CLIENT);
 	/* ignore udma notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
 	 * times
@@ -4329,6 +4356,7 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (ret &&
 	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
 		return ret;
+#endif
 
 	ret = hclge_reset_prepare_up(hdev);
 	if (ret)
@@ -4348,9 +4376,11 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclge_notify_udma_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
+#endif
 
 	hdev->last_reset_time = jiffies;
 	hdev->rst_stats.reset_fail_cnt = 0;
@@ -4779,6 +4809,7 @@ static void hclge_periodic_service_task(struct hclge_dev *hdev)
 	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 		hclge_unic_sync_mguid_table(hdev);
 		hclge_unic_sync_ip_table(hdev);
+		hclge_comm_unic_set_func_guid(&hdev->hw.hw, &hdev->hw.func_guid);
 	}
 #endif
 	hclge_sync_promisc_mode(hdev);
@@ -4867,8 +4898,10 @@ struct hclge_vport *hclge_get_vport(struct hnae3_handle *handle)
 		return container_of(handle, struct hclge_vport, roce);
 	else if (handle->client->type == HNAE3_CLIENT_ROH)
 		return container_of(handle, struct hclge_vport, roh);
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	else if (handle->client->type == HNAE3_CLIENT_UDMA)
 		return container_of(handle, struct hclge_vport, udma);
+#endif
 	else
 		return container_of(handle, struct hclge_vport, nic);
 }
@@ -11839,9 +11872,11 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 		if (ret)
 			goto clear_roce;
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 		ret = hclge_init_udma_client_instance(ae_dev, vport);
 		if (ret)
 			goto clear_udma;
+#endif
 
 		break;
 	case HNAE3_CLIENT_ROCE:
@@ -11866,6 +11901,7 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 			goto clear_roh;
 
 		break;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	case HNAE3_CLIENT_UDMA:
 		if (hnae3_dev_udma_supported(ae_dev)) {
 			hdev->udma_client = client;
@@ -11877,6 +11913,7 @@ static int hclge_init_client_instance(struct hnae3_client *client,
 			goto clear_udma;
 
 		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -11895,10 +11932,12 @@ clear_roh:
 	hdev->roh_client = NULL;
 	vport->roh.client = NULL;
 	return ret;
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 clear_udma:
 	hdev->udma_client = NULL;
 	vport->udma.client = NULL;
 	return ret;
+#endif
 }
 
 static void hclge_uninit_client_instance(struct hnae3_client *client,
@@ -11907,6 +11946,7 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_vport *vport = &hdev->vport[0];
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	if (hdev->udma_client && (client->type == HNAE3_CLIENT_UDMA ||
 				  client->type == HNAE3_CLIENT_KNIC)) {
 		clear_bit(HCLGE_STATE_UDMA_REGISTERED, &hdev->state);
@@ -11919,6 +11959,7 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 	}
 	if (client->type == HNAE3_CLIENT_UDMA)
 		return;
+#endif
 
 	if (hdev->roh_client && (client->type == HNAE3_CLIENT_ROH ||
 				 client->type == HNAE3_CLIENT_KNIC)) {
