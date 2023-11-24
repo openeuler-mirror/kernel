@@ -71,22 +71,35 @@ static void crypto_free_instance(struct crypto_instance *inst)
 
 static void crypto_destroy_instance_workfn(struct work_struct *w)
 {
-	struct crypto_instance *inst = container_of(w, struct crypto_instance,
-						    free_work);
+	struct crypto_instance_freework *work = container_of(w,
+			struct crypto_instance_freework, free_work);
+	struct crypto_instance *inst = work->instance;
 	struct crypto_template *tmpl = inst->tmpl;
 
 	crypto_free_instance(inst);
 	crypto_tmpl_put(tmpl);
+
+	kfree(work);
 }
 
 static void crypto_destroy_instance(struct crypto_alg *alg)
 {
+	struct crypto_instance_freework *work;
 	struct crypto_instance *inst = container_of(alg,
 						    struct crypto_instance,
 						    alg);
+	struct crypto_template *tmpl = inst->tmpl;
 
-	INIT_WORK(&inst->free_work, crypto_destroy_instance_workfn);
-	schedule_work(&inst->free_work);
+	work = kzalloc(sizeof(*work), GFP_ATOMIC);
+	if (!work) {
+		crypto_free_instance(inst);
+		crypto_tmpl_put(tmpl);
+		return;
+	}
+	work->instance = inst;
+
+	INIT_WORK(&work->free_work, crypto_destroy_instance_workfn);
+	schedule_work(&work->free_work);
 }
 
 /*
