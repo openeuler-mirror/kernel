@@ -115,11 +115,6 @@ static int del_eid_entry(struct udma_dev *udma_dev, uint32_t eid_index)
 	return clear_gmv_table(udma_dev, eid_index);
 }
 
-int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid)
-{
-	return 0;
-}
-
 static int udma_check_ueid_cfg(struct udma_dev *dev, uint16_t fe_idx,
 			       uint32_t eid_index)
 {

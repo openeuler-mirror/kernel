@@ -62,6 +62,7 @@ struct ubcore_tp *ubcore_find_remove_tp(struct ubcore_hash_table *ht, uint32_t h
 	if (atomic_dec_return(&tp_node->tp->use_cnt) == 0) {
 		tp = tp_node->tp;
 		hlist_del(&tp_node->hnode);
+		mutex_destroy(&tp_node->lock);
 		kfree(tp_node);
 	}
 	spin_unlock(&ht->lock);
@@ -156,12 +157,14 @@ struct ubcore_tp_node *ubcore_add_tp_node(struct ubcore_hash_table *ht, uint32_t
 	spin_lock(&ht->lock);
 	if (ht->head == NULL) {
 		spin_unlock(&ht->lock);
+		mutex_destroy(&new_tp_node->lock);
 		kfree(new_tp_node);
 		return NULL;
 	}
 	tp_node = ubcore_hash_table_lookup_nolock(ht, hash, key);
 	if (tp_node != NULL) {
 		spin_unlock(&ht->lock);
+		mutex_destroy(&new_tp_node->lock);
 		kfree(new_tp_node);
 		return tp_node;
 	}
@@ -190,6 +193,7 @@ struct ubcore_tp_node *ubcore_add_tp_with_tpn(struct ubcore_device *dev, struct 
 	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_TP], &tp_node->hnode, tp->tpn);
 	if (ret != 0) {
 		ubcore_log_err("Failed to add tp with tpn %u to tp table", tp->tpn);
+		mutex_destroy(&tp_node->lock);
 		kfree(tp_node);
 		return NULL;
 	}

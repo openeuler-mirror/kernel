@@ -144,6 +144,7 @@ int uburma_close(struct inode *inode, struct file *filp)
 		file->ucontext = NULL;
 	}
 	mutex_unlock(&file->mutex);
+	mutex_destroy(&file->mutex);
 
 	mutex_lock(&file->ubu_dev->lists_mutex);
 	if (file->is_closed == 0) {

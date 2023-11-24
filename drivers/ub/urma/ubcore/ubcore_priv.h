@@ -93,8 +93,6 @@ static inline bool ubcore_check_trans_mode_valid(enum ubcore_transport_mode tran
 
 /* Caller must put device */
 struct ubcore_device *ubcore_find_device(union ubcore_eid *eid, enum ubcore_transport_type type);
-struct ubcore_device *ubcore_find_device_with_eid_index(union ubcore_eid *eid,
-	enum ubcore_transport_type type, uint32_t eid_index);
 struct ubcore_device *ubcore_find_device_with_name(const char *dev_name);
 void ubcore_get_device(struct ubcore_device *dev);
 void ubcore_put_device(struct ubcore_device *dev);
@@ -102,7 +100,7 @@ struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
 	enum ubcore_transport_type type);
 int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg);
 int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev, union ubcore_eid *eid,
-	uint32_t eid_idx, bool is_alloc_eid);
+	uint32_t eid_idx, bool is_alloc_eid, struct net *net);
 int ubcore_update_eidtbl_by_eid(struct ubcore_device *dev, union ubcore_eid *eid,
 	uint32_t *eid_idx, bool is_alloc_eid);
 
@@ -120,15 +118,12 @@ int ubcore_fill_netaddr_macvlan(struct ubcore_net_addr *netaddr, struct net_devi
 void ubcore_sync_sip_table(void);
 int ubcore_query_all_device_tpf_dev_info(void);
 
-int ubcore_config_utp(struct ubcore_device *dev, uint8_t utp_id, struct ubcore_utp_attr *attr,
-	union ubcore_utp_attr_mask mask);
-
 void ubcore_set_tp_init_cfg(struct ubcore_tp *tp, struct ubcore_tp_cfg *cfg);
 struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg *cfg,
 	struct ubcore_udata *udata);
 void ubcore_abort_tp(struct ubcore_tp *tp, struct ubcore_tp_meta *meta);
 int ubcore_modify_tp(struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
-	struct ubcore_tp_attr *arg_tp_attr, struct ubcore_udata udata);
+	struct ubcore_tp_attr *tp_attr, struct ubcore_udata udata);
 
 static inline uint32_t ubcore_get_jetty_hash(struct ubcore_jetty_id *jetty_id)
 {

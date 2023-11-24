@@ -427,19 +427,51 @@ static int udma_query_device_status(struct ubcore_device *dev,
 	return 0;
 }
 
-int udma_send_msg(struct ubcore_device *dev, struct ubcore_msg *msg)
+int udma_send_req(struct ubcore_device *dev, struct ubcore_req *msg)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct ubcore_req_host *req_host_msg;
 	int ret;
 
 	if (msg == NULL) {
-		dev_err(udma_dev->dev, "The message to be sent is empty.\n");
+		dev_err(udma_dev->dev, "The req message to be sent is empty.\n");
 		return -EINVAL;
 	}
 
-	ret = ubcore_recv_msg(dev, msg);
+	req_host_msg = kzalloc(sizeof(struct ubcore_req_host) + msg->len, GFP_KERNEL);
+	if (!req_host_msg)
+		return -ENOMEM;
+
+	req_host_msg->src_fe_idx = 0;
+	memcpy(&req_host_msg->req, msg, sizeof(struct ubcore_req_host) + msg->len);
+	ret = ubcore_recv_req(dev, req_host_msg);
 	if (ret)
-		dev_err(udma_dev->dev, "Fail to recv msg, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "Fail to recv req msg, ret = %d.\n", ret);
+	kfree(req_host_msg);
+
+	return ret;
+}
+
+int udma_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *msg)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct ubcore_resp *resp_msg;
+	int ret;
+
+	if (msg == NULL) {
+		dev_err(udma_dev->dev, "The resp message to be sent is empty.\n");
+		return -EINVAL;
+	}
+
+	resp_msg = kzalloc(sizeof(struct ubcore_resp) + msg->resp.len, GFP_KERNEL);
+	if (!resp_msg)
+		return -ENOMEM;
+
+	memcpy(resp_msg, &msg->resp, sizeof(struct ubcore_resp) + msg->resp.len);
+	ret = ubcore_recv_resp(dev, resp_msg);
+	if (ret)
+		dev_err(udma_dev->dev, "Fail to recv resp msg, ret = %d.\n", ret);
+	kfree(resp_msg);
 
 	return ret;
 }
@@ -903,7 +935,6 @@ int udma_user_ctl(struct ubcore_user_ctl *k_user_ctl)
 static struct ubcore_ops g_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
-	.set_eid = udma_set_eid,
 	.add_ueid = udma_add_ueid,
 	.delete_ueid = udma_delete_ueid,
 	.query_device_attr = udma_query_device_attr,
@@ -933,7 +964,8 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.create_tp = udma_create_tp,
 	.modify_tp = udma_modify_tp,
 	.destroy_tp = udma_destroy_tp,
-	.send_msg = udma_send_msg,
+	.send_req = udma_send_req,
+	.send_resp = udma_send_resp,
 	.user_ctl = udma_user_ctl,
 	.query_stats = udma_query_stats,
 };
@@ -1391,8 +1423,13 @@ void udma_set_poe_ch_num(struct udma_dev *dev)
 static void udma_set_devname(struct udma_dev *udma_dev,
 			     struct ubcore_device *ub_dev)
 {
-	scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma%d",
-		  udma_dev->func_id);
+	if (strncasecmp(ub_dev->netdev->name, UB_DEV_BASE_NAME, UB_DEV_NAME_SHIFT))
+		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma_c%ud%uf%u",
+			  udma_dev->chip_id, udma_dev->die_id, udma_dev->func_id);
+	else
+		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma%s",
+			  ub_dev->netdev->name + UB_DEV_NAME_SHIFT);
+
 	dev_info(udma_dev->dev, "Set dev_name %s\n", udma_dev->dev_name);
 	strlcpy(ub_dev->dev_name, udma_dev->dev_name, UBCORE_MAX_DEV_NAME);
 }

@@ -87,6 +87,8 @@ static int udma_query_func_id(struct udma_dev *udma_dev)
 	}
 
 	resp = (struct udma_hw_id_query_cmq *)desc.data;
+	udma_dev->chip_id = resp->chip_id;
+	udma_dev->die_id = resp->die_id;
 	udma_dev->func_id = (uint16_t)le32_to_cpu(resp->func_id);
 	return 0;
 

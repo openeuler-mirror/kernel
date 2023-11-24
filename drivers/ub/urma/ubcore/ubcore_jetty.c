@@ -77,15 +77,14 @@ static int check_and_fill_jfc_attr(struct ubcore_jfc_cfg *cfg, struct ubcore_jfc
 }
 
 struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, struct ubcore_jfc_cfg *cfg,
-				     ubcore_comp_callback_t jfce_handler,
-				     ubcore_event_callback_t jfae_handler,
-				     struct ubcore_udata *udata)
+	ubcore_comp_callback_t jfce_handler, ubcore_event_callback_t jfae_handler,
+	struct ubcore_udata *udata)
 {
 	struct ubcore_jfc *jfc;
 	uint32_t ceqn;
 
 	if (dev == NULL || cfg == NULL || dev->ops->create_jfc == NULL ||
-	    dev->ops->destroy_jfc == NULL)
+		dev->ops->destroy_jfc == NULL)
 		return NULL;
 
 	ceqn = ubcore_get_ceqn(dev);
@@ -119,7 +118,7 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, struct ubcore_jf
 EXPORT_SYMBOL(ubcore_create_jfc);
 
 int ubcore_modify_jfc(struct ubcore_jfc *jfc, struct ubcore_jfc_attr *attr,
-		      struct ubcore_udata *udata)
+	struct ubcore_udata *udata)
 {
 	struct ubcore_device *dev;
 	uint32_t jfc_id;
@@ -199,7 +198,7 @@ static int check_jfs_cfg(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg)
 static int check_and_fill_jfs_attr(struct ubcore_jfs_cfg *cfg, struct ubcore_jfs_cfg *user)
 {
 	if (cfg->depth < user->depth || cfg->max_sge < user->max_sge ||
-	    cfg->max_rsge < user->max_rsge || cfg->max_inline_data < user->max_inline_data)
+		cfg->max_rsge < user->max_rsge || cfg->max_inline_data < user->max_inline_data)
 		return -1;
 
 	/* store the immutable and skip the driver updated attributes including depth,
@@ -217,13 +216,12 @@ static int check_and_fill_jfs_attr(struct ubcore_jfs_cfg *cfg, struct ubcore_jfs
 }
 
 struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
-				     ubcore_event_callback_t jfae_handler,
-				     struct ubcore_udata *udata)
+	ubcore_event_callback_t jfae_handler, struct ubcore_udata *udata)
 {
 	struct ubcore_jfs *jfs;
 
 	if (dev == NULL || cfg == NULL || dev->ops->create_jfs == NULL ||
-	    dev->ops->destroy_jfs == NULL)
+		dev->ops->destroy_jfs == NULL)
 		return NULL;
 
 	if (((uint16_t)cfg->trans_mode & dev->attr.dev_cap.trans_mode) == 0) {
@@ -271,7 +269,7 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, struct ubcore_jf
 EXPORT_SYMBOL(ubcore_create_jfs);
 
 int ubcore_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
-		      struct ubcore_udata *udata)
+	struct ubcore_udata *udata)
 {
 	struct ubcore_device *dev;
 	uint32_t jfs_id;
@@ -291,7 +289,7 @@ int ubcore_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 EXPORT_SYMBOL(ubcore_modify_jfs);
 
 int ubcore_query_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_cfg *cfg,
-		     struct ubcore_jfs_attr *attr)
+	struct ubcore_jfs_attr *attr)
 {
 	struct ubcore_device *dev;
 	uint32_t jfs_id;
@@ -348,7 +346,7 @@ int ubcore_flush_jfs(struct ubcore_jfs *jfs, int cr_cnt, struct ubcore_cr *cr)
 	struct ubcore_ops *dev_ops;
 
 	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL ||
-	    jfs->ub_dev->ops->flush_jfs == NULL || cr == NULL) {
+		jfs->ub_dev->ops->flush_jfs == NULL || cr == NULL) {
 		ubcore_log_err("Invalid parameter");
 		return -EINVAL;
 	}
@@ -375,8 +373,7 @@ static int check_and_fill_jfr_attr(struct ubcore_jfr_cfg *cfg, struct ubcore_jfr
 }
 
 struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
-				     ubcore_event_callback_t jfae_handler,
-				     struct ubcore_udata *udata)
+	ubcore_event_callback_t jfae_handler, struct ubcore_udata *udata)
 {
 	struct ubcore_jfr *jfr;
 
@@ -421,7 +418,7 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, struct ubcore_jf
 EXPORT_SYMBOL(ubcore_create_jfr);
 
 int ubcore_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
-		      struct ubcore_udata *udata)
+	struct ubcore_udata *udata)
 {
 	struct ubcore_device *dev;
 	uint32_t jfr_id;
@@ -441,7 +438,7 @@ int ubcore_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 EXPORT_SYMBOL(ubcore_modify_jfr);
 
 int ubcore_query_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
-		     struct ubcore_jfr_attr *attr)
+	struct ubcore_jfr_attr *attr)
 {
 	struct ubcore_device *dev;
 	uint32_t jfr_id;
@@ -499,14 +496,13 @@ rollback:
 EXPORT_SYMBOL(ubcore_delete_jfr);
 
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
-					struct ubcore_tjetty_cfg *cfg,
-					struct ubcore_udata *udata)
+	struct ubcore_tjetty_cfg *cfg, struct ubcore_udata *udata)
 {
 	struct ubcore_vtp_param vtp_param;
 	struct ubcore_tjetty *tjfr;
 
 	if (dev == NULL || cfg == NULL || dev->ops->import_jfr == NULL ||
-	    dev->ops->unimport_jfr == NULL || !ubcore_have_tp_ops(dev))
+		dev->ops->unimport_jfr == NULL || !ubcore_have_tp_ops(dev))
 		return NULL;
 
 	tjfr = dev->ops->import_jfr(dev, cfg, udata);
@@ -528,8 +524,9 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 		mutex_lock(&tjfr->lock);
 		tjfr->vtpn = ubcore_connect_vtp(dev, &vtp_param);
 		if (tjfr->vtpn == NULL) {
-			(void)dev->ops->unimport_jfr(tjfr);
 			mutex_unlock(&tjfr->lock);
+			mutex_destroy(&tjfr->lock);
+			(void)dev->ops->unimport_jfr(tjfr);
 			ubcore_log_err("Failed to setup tp connection.\n");
 			return NULL;
 		}
@@ -564,17 +561,17 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 		}
 		tjfr->vtpn = NULL;
 		mutex_unlock(&tjfr->lock);
+		mutex_destroy(&tjfr->lock);
 	}
 	return dev->ops->unimport_jfr(tjfr);
 }
 EXPORT_SYMBOL(ubcore_unimport_jfr);
 
-static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg,
-				     struct ubcore_jetty_cfg *user)
+static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg, struct ubcore_jetty_cfg *user)
 {
 	if (cfg->jfs_depth < user->jfs_depth || cfg->max_send_sge < user->max_send_sge ||
-	    cfg->max_send_rsge < user->max_send_rsge ||
-	    cfg->max_inline_data < user->max_inline_data) {
+		cfg->max_send_rsge < user->max_send_rsge ||
+		cfg->max_inline_data < user->max_inline_data) {
 		ubcore_log_err("send attributes are not qualified.\n");
 		return -1;
 	}
@@ -739,7 +736,7 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev, struct ubcor
 	struct ubcore_jetty *jetty;
 
 	if (dev == NULL || cfg == NULL || dev->ops->create_jetty == NULL ||
-	    dev->ops->destroy_jetty == NULL)
+		dev->ops->destroy_jetty == NULL)
 		return NULL;
 
 	if (check_jetty_cfg(cfg) != 0) {
@@ -813,14 +810,14 @@ destroy_jetty:
 EXPORT_SYMBOL(ubcore_create_jetty);
 
 int ubcore_modify_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_attr *attr,
-			struct ubcore_udata *udata)
+	struct ubcore_udata *udata)
 {
 	struct ubcore_device *dev;
 	uint32_t jetty_id;
 	int ret;
 
 	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->modify_jetty == NULL ||
-	    attr == NULL)
+		attr == NULL)
 		return -EINVAL;
 
 	jetty_id = jetty->id;
@@ -835,7 +832,7 @@ int ubcore_modify_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_attr *at
 EXPORT_SYMBOL(ubcore_modify_jetty);
 
 int ubcore_query_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_cfg *cfg,
-		       struct ubcore_jetty_attr *attr)
+	struct ubcore_jetty_attr *attr)
 {
 	struct ubcore_device *dev;
 	uint32_t jetty_id;
@@ -917,7 +914,7 @@ int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr 
 	struct ubcore_ops *dev_ops;
 
 	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
-	    jetty->ub_dev->ops->flush_jetty == NULL || cr == NULL) {
+		jetty->ub_dev->ops->flush_jetty == NULL || cr == NULL) {
 		ubcore_log_err("Invalid parameter");
 		return -EINVAL;
 	}
@@ -928,14 +925,13 @@ int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr 
 EXPORT_SYMBOL(ubcore_flush_jetty);
 
 struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
-					  struct ubcore_tjetty_cfg *cfg,
-					  struct ubcore_udata *udata)
+	struct ubcore_tjetty_cfg *cfg, struct ubcore_udata *udata)
 {
 	struct ubcore_vtp_param vtp_param;
 	struct ubcore_tjetty *tjetty;
 
 	if (dev == NULL || cfg == NULL || dev->ops->import_jetty == NULL ||
-	    dev->ops->unimport_jetty == NULL || !ubcore_have_tp_ops(dev))
+		dev->ops->unimport_jetty == NULL || !ubcore_have_tp_ops(dev))
 		return NULL;
 
 	tjetty = dev->ops->import_jetty(dev, cfg, udata);
@@ -958,8 +954,9 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 		mutex_lock(&tjetty->lock);
 		tjetty->vtpn = ubcore_connect_vtp(dev, &vtp_param);
 		if (tjetty->vtpn == NULL) {
-			(void)dev->ops->unimport_jetty(tjetty);
 			mutex_unlock(&tjetty->lock);
+			mutex_destroy(&tjetty->lock);
+			(void)dev->ops->unimport_jetty(tjetty);
 			ubcore_log_err("Failed to setup tp connection.\n");
 			return NULL;
 		}
@@ -996,6 +993,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 		}
 		tjetty->vtpn = NULL;
 		mutex_unlock(&tjetty->lock);
+		mutex_destroy(&tjetty->lock);
 	}
 
 	if (tjetty->cfg.trans_mode == UBCORE_TP_RC && atomic_read(&tjetty->use_cnt))
@@ -1176,7 +1174,7 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		return -1;
 	}
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
-	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
+		(tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
 		ubcore_log_err("trans mode is not rc type.\n");
 		return -1;
 	}

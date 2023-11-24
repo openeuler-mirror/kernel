@@ -59,7 +59,6 @@ struct udma_eid {
 	enum udma_sgid_type type;
 };
 
-int udma_set_eid(struct ubcore_device *dev, union ubcore_eid eid);
 int udma_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg);
 int udma_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx,
 		     struct ubcore_ueid_cfg *cfg);

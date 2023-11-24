@@ -75,7 +75,7 @@ struct uburma_fe {
 
 struct uburma_eid {
 	struct kobject kobj;
-	struct uburma_device *ubu_dev;
+	struct uburma_logic_device *ldev;
 	uint32_t eid_idx;
 };
 

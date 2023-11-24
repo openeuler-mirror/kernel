@@ -44,26 +44,23 @@ typedef ssize_t (*uburma_show_fe_attr_cb)(struct ubcore_device *ubc_dev,
 typedef ssize_t (*uburma_store_fe_attr_cb)(struct ubcore_device *ubc_dev,
 	const char *buf, size_t len, uint16_t fe_num);
 typedef ssize_t (*uburma_show_eid_attr_cb)(struct ubcore_device *ubc_dev,
-	char *buf, uint16_t idx);
-typedef ssize_t (*uburma_store_eid_attr_cb)(struct ubcore_device *ubc_dev,
-	const char *buf, size_t len, uint16_t idx);
+	char *buf, uint16_t idx, struct net *net);
+
+static inline struct uburma_device *get_uburma_device(struct uburma_logic_device *ldev)
+{
+	return ldev == NULL ? NULL : ldev->ubu_dev;
+}
 
 static ssize_t uburma_show_dev_attr(struct device *dev, struct device_attribute *attr,
 	char *buf, uburma_show_attr_cb show_cb)
 {
 	struct uburma_logic_device *ldev = dev_get_drvdata(dev);
-	struct uburma_device *ubu_dev = NULL;
+	struct uburma_device *ubu_dev = get_uburma_device(ldev);
 	struct ubcore_device *ubc_dev;
 	ssize_t ret = -ENODEV;
 	int srcu_idx;
 
-	if (!ldev || !buf) {
-		uburma_log_err("Invalid argument.\n");
-		return -EINVAL;
-	}
-
-	ubu_dev = ldev->ubu_dev;
-	if (!ubu_dev) {
+	if (!ldev || !ubu_dev || !buf) {
 		uburma_log_err("Invalid argument.\n");
 		return -EINVAL;
 	}
@@ -81,19 +78,13 @@ static ssize_t uburma_store_dev_attr(struct device *dev, struct device_attribute
 				     const char *buf, size_t len, uburma_store_attr_cb store_cb)
 {
 	struct uburma_logic_device *ldev = dev_get_drvdata(dev);
-	struct uburma_device *ubu_dev = NULL;
+	struct uburma_device *ubu_dev = get_uburma_device(ldev);
 	struct ubcore_device *ubc_dev;
 	ssize_t ret = -ENODEV;
 	int srcu_idx;
 
-	if (!ldev || !buf) {
-		uburma_log_err("Invalid argument with ubcore device nullptr.\n");
-		return -EINVAL;
-	}
-
-	ubu_dev = ldev->ubu_dev;
-	if (!ubu_dev) {
-		uburma_log_err("Invalid argument with ubcore device nullptr.\n");
+	if (!ldev || !ubu_dev || !buf) {
+		uburma_log_err("Invalid argument.\n");
 		return -EINVAL;
 	}
 
@@ -209,7 +200,7 @@ static ssize_t uburma_set_upi(struct ubcore_device *ubc_dev, const char *buf,
 	}
 
 	if (ubcore_set_upi(ubc_dev, fe_idx, idx, upi) != 0) {
-		uburma_log_err("set fe%hu idx:%u upi:%u failed.\n", fe_idx, idx, upi);
+		uburma_log_err("set fe%hu idx:%hu upi:%u failed.\n", fe_idx, idx, upi);
 		return -EPERM;
 	}
 	return (ssize_t)len; // len is required for success return.
@@ -806,13 +797,11 @@ static void uburma_port_release(struct kobject *kobj)
 }
 
 // ATTRIBUTE_GROUPS defined in 3.11, but must be consistent with kobj_type->default_groups
-static const struct attribute_group uburma_port_groups = {
-	.attrs = uburma_port_attrs,
-};
+ATTRIBUTE_GROUPS(uburma_port);
 
 static struct kobj_type uburma_port_type = { .release = uburma_port_release,
 					     .sysfs_ops = &uburma_port_sysfs_ops,
-					     .default_attrs = uburma_port_attrs
+					     .default_groups = uburma_port_groups
 };
 
 static ssize_t uburma_show_fe_attr(struct uburma_fe *fe, struct uburma_fe_attribute *attr,
@@ -929,25 +918,24 @@ static void uburma_fe_release(struct kobject *kobj)
 }
 
 // ATTRIBUTE_GROUPS defined in 3.11, but must be consistent with kobj_type->default_groups
-static const struct attribute_group uburma_fe_groups = {
-	.attrs = uburma_fe_attrs,
-};
+ATTRIBUTE_GROUPS(uburma_fe);
 
 static struct kobj_type uburma_fe_type = {
 	.release       = uburma_fe_release,
 	.sysfs_ops     = &uburma_fe_sysfs_ops,
-	.default_attrs = uburma_fe_attrs
+	.default_groups = uburma_fe_groups
 };
 
 static ssize_t uburma_show_eid_attr(struct uburma_eid *eid, struct uburma_eid_attribute *attr,
 	char *buf, uburma_show_eid_attr_cb show_cb)
 {
-	struct uburma_device *ubu_dev = eid->ubu_dev;
+	struct uburma_logic_device *ldev = eid->ldev;
+	struct uburma_device *ubu_dev = get_uburma_device(ldev);
 	struct ubcore_device *ubc_dev;
 	int srcu_idx;
 	ssize_t ret;
 
-	if (!ubu_dev) {
+	if (!ldev || !ubu_dev) {
 		uburma_log_err("Invalid argument in show_fe_attr.\n");
 		return -EINVAL;
 	}
@@ -959,15 +947,23 @@ static ssize_t uburma_show_eid_attr(struct uburma_eid *eid, struct uburma_eid_at
 		return -ENODEV;
 	}
 
-	ret = show_cb(ubc_dev, buf, eid->eid_idx);
+	ret = show_cb(ubc_dev, buf, eid->eid_idx, read_pnet(&ldev->net));
 	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
 	return ret;
 }
 
-static ssize_t show_eid_cb(struct ubcore_device *ubc_dev, char *buf, uint16_t idx)
+static ssize_t show_eid_cb(struct ubcore_device *ubc_dev, char *buf, uint16_t idx, struct net *net)
 {
-	return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
-		EID_ARGS(ubc_dev->eid_table.eid_entries[idx].eid));
+	union ubcore_eid eid;
+
+	if (ubc_dev->eid_table.eid_entries[idx].net == net) {
+		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
+			EID_ARGS(ubc_dev->eid_table.eid_entries[idx].eid));
+	} else {
+		memset(&eid, 0, sizeof(union ubcore_eid));
+		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
+			EID_ARGS(eid));
+	}
 }
 
 static ssize_t eid_show(struct uburma_eid *eid, struct uburma_eid_attribute *attr, char *buf)
@@ -1016,14 +1012,12 @@ static void uburma_eid_release(struct kobject *kobj)
 }
 
 // ATTRIBUTE_GROUPS defined in 3.11, but must be consistent with kobj_type->default_groups
-static const struct attribute_group uburma_eid_groups = {
-	.attrs = uburma_eid_attrs,
-};
+ATTRIBUTE_GROUPS(uburma_eid);
 
 static struct kobj_type uburma_eid_type = {
 	.release       = uburma_eid_release,
 	.sysfs_ops     = &uburma_eid_sysfs_ops,
-	.default_attrs = uburma_eid_attrs
+	.default_groups = uburma_eid_groups
 };
 
 int uburma_create_port_attr_files(struct uburma_logic_device *ldev,
@@ -1052,13 +1046,12 @@ int uburma_create_fe_attr_files(struct uburma_logic_device *ldev,
 		"fe%hu", fe_num);
 }
 
-int uburma_create_eid_attr_files(struct uburma_logic_device *ldev,
-	struct uburma_device *ubu_dev, uint32_t eid_num)
+int uburma_create_eid_attr_files(struct uburma_logic_device *ldev, uint32_t eid_num)
 {
 	struct uburma_eid *eid;
 
 	eid = &ldev->eid[eid_num];
-	eid->ubu_dev = ubu_dev;
+	eid->ldev = ldev;
 	eid->eid_idx = eid_num;
 
 	return kobject_init_and_add(&eid->kobj, &uburma_eid_type, &ldev->dev->kobj,

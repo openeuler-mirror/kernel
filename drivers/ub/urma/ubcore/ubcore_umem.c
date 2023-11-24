@@ -147,7 +147,7 @@ static int umem_dma_map(struct ubcore_umem *umem, uint64_t npages, unsigned long
 {
 	int ret;
 
-	ret = dma_map_sg_attrs(umem->ub_dev->dma_dev, umem->sg_head.sgl, npages,
+	ret = dma_map_sg_attrs(umem->ub_dev->dma_dev, umem->sg_head.sgl, (int)npages,
 		DMA_BIDIRECTIONAL, dma_attrs);
 	if (ret == 0) {
 		ubcore_log_err("Dma map failed, ret: %d\n", ret);
@@ -250,7 +250,7 @@ void ubcore_umem_release(struct ubcore_umem *umem)
 		return;
 
 	npages = umem_cal_npages(umem->va, umem->length);
-	dma_unmap_sg(umem->ub_dev->dma_dev, umem->sg_head.sgl, umem->nmap, DMA_BIDIRECTIONAL);
+	dma_unmap_sg(umem->ub_dev->dma_dev, umem->sg_head.sgl, (int)umem->nmap, DMA_BIDIRECTIONAL);
 	umem_free_sgt(umem);
 	umem_atomic_sub(npages, umem->owning_mm);
 	mmdrop(umem->owning_mm);

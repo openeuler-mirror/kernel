@@ -1453,8 +1453,7 @@ static int alloc_wqe_buf(struct udma_dev *dev, struct udma_qp *qp,
 		udma_enable_dca(dev, qp);
 		qp->en_flags |= UDMA_QP_CAP_DYNAMIC_CTX_ATTACH;
 	} else if ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
-		   (dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE) &&
-		   (qp->qpn < UDMA_DWQE_MMAP_QP_NUM)) {
+		   (dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE)) {
 		qp->en_flags |= UDMA_QP_CAP_DIRECT_WQE;
 	}
 

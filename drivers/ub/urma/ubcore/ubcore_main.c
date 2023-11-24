@@ -68,47 +68,6 @@ int ubcore_open(struct inode *i_node, struct file *filp)
 	return 0;
 }
 
-static void ubcore_set_utp_cfg(struct ubcore_cmd_set_utp *arg,
-	struct ubcore_utp_attr *attr, union ubcore_utp_attr_mask *mask)
-{
-	attr->flag.bs.spray_en = arg->in.spray_en;
-	attr->data_udp_start = arg->in.data_udp_start;
-	attr->udp_range = arg->in.udp_range;
-	mask->bs.flag = 1;
-	mask->bs.udp_port = 1;
-	mask->bs.udp_range = 1;
-}
-
-static int ubcore_cmd_set_utp(struct ubcore_cmd_hdr *hdr)
-{
-	union ubcore_utp_attr_mask mask = {0};
-	struct ubcore_cmd_set_utp arg;
-	struct ubcore_utp_attr attr;
-	struct ubcore_device *dev;
-	int ret;
-
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-				    sizeof(struct ubcore_cmd_set_utp));
-	if (ret != 0)
-		return -EPERM;
-
-	dev = ubcore_find_device_with_name(arg.in.dev_name);
-	if (dev == NULL || ubcore_check_dev_name_invalid(dev, arg.in.dev_name)) {
-		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
-			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
-		return -EINVAL;
-	}
-
-	ubcore_set_utp_cfg(&arg, &attr, &mask);
-	if (ubcore_config_utp(dev, arg.in.utp_id, &attr, mask) != 0) {
-		ubcore_log_err("config utp failed.\n");
-		ubcore_put_device(dev);
-		return -EPERM;
-	}
-	ubcore_put_device(dev);
-	return 0;
-}
-
 static int ubcore_cmd_show_utp(struct ubcore_cmd_hdr *hdr)
 {
 	struct ubcore_res_utp_val utp_info = {0};
@@ -131,7 +90,7 @@ static int ubcore_cmd_show_utp(struct ubcore_cmd_hdr *hdr)
 	}
 
 	key.type = UBCORE_RES_KEY_UTP;
-	key.key = arg.in.utp_id;
+	key.key = arg.in.utpn;
 	val.addr = (uint64_t)&utp_info;
 	val.len = (uint32_t)sizeof(struct ubcore_res_utp_val);
 	if (dev->ops != NULL && dev->ops->query_res != NULL &&
@@ -185,14 +144,15 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 				   sizeof(struct ubcore_cmd_query_stats));
 }
 
-static int ubcore_cmd_add_ueid(struct ubcore_cmd_hdr *hdr)
+static int ubcore_cmd_updata_ueid(struct ubcore_cmd_hdr *hdr, enum ubcore_msg_opcode op)
 {
-	struct ubcore_cmd_add_ueid arg;
+	struct net *net = current->nsproxy->net_ns;
+	struct ubcore_cmd_updata_ueid arg;
 	struct ubcore_device *dev;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-		sizeof(struct ubcore_cmd_add_ueid));
+		sizeof(struct ubcore_cmd_updata_ueid));
 	if (ret != 0)
 		return -EPERM;
 
@@ -200,6 +160,11 @@ static int ubcore_cmd_add_ueid(struct ubcore_cmd_hdr *hdr)
 	if (dev == NULL) {
 		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
 		return -EPERM;
+	}
+	if (!dev->attr.virtualization && dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1) {
+		ubcore_put_device(dev);
+		ubcore_log_err("pattern1 does not support static mode\n");
+		return -1;
 	}
 	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1 || dev->dynamic_eid) {
 		ubcore_log_err("The dynamic mode of pf does not support eid change\n");
@@ -210,41 +175,7 @@ static int ubcore_cmd_add_ueid(struct ubcore_cmd_hdr *hdr)
 		ubcore_put_device(dev);
 		return -EPERM;
 	}
-	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, UBCORE_MSG_ALLOC_EID) != 0) {
-		ubcore_put_device(dev);
-		return -EPERM;
-	}
-
-	ubcore_put_device(dev);
-	return 0;
-}
-
-static int ubcore_cmd_del_ueid(struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_add_ueid arg;
-	struct ubcore_device *dev;
-	int ret;
-
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-		sizeof(struct ubcore_cmd_add_ueid));
-	if (ret != 0)
-		return -EPERM;
-
-	dev = ubcore_find_device_with_name(arg.in.dev_name);
-	if (dev == NULL) {
-		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
-		return -EPERM;
-	}
-	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1 || dev->dynamic_eid) {
-		ubcore_put_device(dev);
-		ubcore_log_err("The dynamic mode of pf does not support eid change\n");
-		return -EPERM;
-	}
-	if (dev->attr.tp_maintainer && ubcore_get_netlink_valid() == false) {
-		ubcore_put_device(dev);
-		return -EPERM;
-	}
-	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, UBCORE_MSG_DEALLOC_EID) != 0) {
+	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, op, net) != 0) {
 		ubcore_put_device(dev);
 		return -EPERM;
 	}
@@ -768,8 +699,6 @@ static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 {
 	switch (hdr->command) {
-	case UBCORE_CMD_SET_UTP:
-		return ubcore_cmd_set_utp(hdr);
 	case UBCORE_CMD_SHOW_UTP:
 		return ubcore_cmd_show_utp(hdr);
 	case UBCORE_CMD_QUERY_STATS:
@@ -777,9 +706,9 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 	case UBCORE_CMD_QUERY_RES:
 		return ubcore_cmd_query_res(hdr);
 	case UBCORE_CMD_ADD_EID:
-		return ubcore_cmd_add_ueid(hdr);
+		return ubcore_cmd_updata_ueid(hdr, UBCORE_MSG_ALLOC_EID);
 	case UBCORE_CMD_DEL_EID:
-		return ubcore_cmd_del_ueid(hdr);
+		return ubcore_cmd_updata_ueid(hdr, UBCORE_MSG_DEALLOC_EID);
 	case UBCORE_CMD_SET_EID_MODE:
 		return ubcore_cmd_set_eid_mode(hdr);
 	default:
@@ -892,12 +821,17 @@ static void ubcore_ipv4_to_netaddr(struct ubcore_net_addr *netaddr, __be32 ipv4)
 }
 
 static void ubcore_sip_init(struct ubcore_sip_info *sip, struct ubcore_device *pf_dev,
-	const struct ubcore_net_addr *netaddr, uint32_t port_id, uint32_t prefix_len, uint32_t mtu)
+	const struct ubcore_net_addr *netaddr, uint8_t *port_list,
+	uint8_t port_cnt, uint32_t prefix_len, uint32_t mtu)
 {
 	(void)memcpy(sip->dev_name, pf_dev->dev_name, UBCORE_MAX_DEV_NAME);
 	(void)memcpy(&sip->addr, netaddr, sizeof(struct ubcore_net_addr));
-	sip->port_id[0] = (uint8_t)port_id;
-	sip->port_cnt = 1;
+	if (port_list != NULL)
+		(void)memcpy(sip->port_id, port_list, UBCORE_MAX_PORT_CNT);
+	else
+		ubcore_log_warn("no one set port_list\n");
+
+	sip->port_cnt = port_cnt;
 	sip->prefix_len = prefix_len;
 	sip->mtu = mtu;
 }
@@ -906,15 +840,16 @@ static void ubcore_add_net_addr(struct ubcore_device *tpf_dev, struct ubcore_dev
 	struct ubcore_net_addr *netaddr, struct net_device *netdev, uint32_t prefix_len)
 {
 	struct ubcore_sip_info sip = {0};
+	uint8_t *port_list = NULL;
+	uint8_t port_cnt = 0;
 	uint32_t index;
-	uint32_t port_id;
 	int ret;
 
 	/* get driver set nedev port */
-	port_id = ubcore_find_port_netdev(pf_dev, netdev);
+	ubcore_find_port_netdev(pf_dev, netdev, &port_list, &port_cnt);
 
 	ubcore_sip_init(&sip, pf_dev,
-		netaddr, port_id, prefix_len, (uint32_t)netdev->mtu);
+		netaddr, port_list, port_cnt, prefix_len, (uint32_t)netdev->mtu);
 
 	ret = ubcore_lookup_sip_idx(&sip, &index);
 	if (ret == 0) {
@@ -944,12 +879,14 @@ static void ubcore_delete_net_addr(struct ubcore_device *tpf_dev, struct ubcore_
 	struct ubcore_net_addr *netaddr, struct net_device *netdev, uint32_t prefix_len)
 {
 	struct ubcore_sip_info sip = {0};
-	uint32_t port_id;
+	uint8_t *port_list = NULL;
+	uint8_t port_cnt = 0;
 	uint32_t index;
 
-	port_id = ubcore_find_port_netdev(pf_dev, netdev);
+	ubcore_find_port_netdev(pf_dev, netdev, &port_list, &port_cnt);
+
 	ubcore_sip_init(&sip, pf_dev,
-		netaddr, port_id, prefix_len, (uint32_t)netdev->mtu);
+		netaddr, port_list, port_cnt, prefix_len, (uint32_t)netdev->mtu);
 	if (ubcore_lookup_sip_idx(&sip, &index) != 0)
 		return;
 
@@ -1259,6 +1196,94 @@ static void ubcore_chang_mtu(struct ubcore_device *dev, struct net_device *netde
 		ubcore_put_device(tpf_dev);
 }
 
+static int ubcore_netdev_event_change_upper(struct ubcore_device *dev,
+	struct net_device *slave,
+	struct netdev_notifier_changeupper_info *info)
+{
+	struct netdev_lag_upper_info *lag_upper_info = NULL;
+	struct net_device *bond = info->upper_dev;
+	int ret;
+
+	if (dev == NULL || dev->ops->bond_add == NULL ||
+		dev->ops->bond_remove == NULL) {
+		ubcore_log_err("Invalid parameter!\n");
+		ubcore_put_device(dev);
+		return -EINVAL;
+	}
+
+	ubcore_log_info("Event with master netdev %s and slave netdev %s",
+		netdev_name(bond), netdev_name(slave));
+
+	/* dev may be unregistered so it has to be put_device here */
+	ubcore_put_device(dev);
+
+	if (info->linking) {
+		lag_upper_info = info->upper_info;
+		ret = dev->ops->bond_add(bond, slave, lag_upper_info);
+		if (ret != 0) {
+			ubcore_log_err("Failed to bond_add and ret value is %d", ret);
+			return -EIO;
+		}
+	} else {
+		ret = dev->ops->bond_remove(bond, slave);
+		if (ret != 0) {
+			ubcore_log_err("Failed to bond_remove and ret value is %d", ret);
+			return -EIO;
+		}
+	}
+	ubcore_log_info("Success to deal with event NETDEV_CHANGEUPPER");
+	return 0;
+}
+
+static int ubcore_netdev_event_change_lower_state(struct ubcore_device *dev,
+	struct net_device *slave,
+	struct netdev_notifier_changelowerstate_info *info)
+{
+	struct netdev_lag_lower_state_info *lag_lower_info = NULL;
+	struct net_device *bond = NULL;
+	int ret;
+
+	if (dev == NULL || dev->ops->slave_update == NULL) {
+		ubcore_log_err("Invalid parameter!\n");
+		return -EINVAL;
+	}
+
+	bond = netdev_master_upper_dev_get_rcu(slave);
+	if (bond)
+		ubcore_log_info("Event with master netdev %s and slave netdev %s",
+			netdev_name(bond), netdev_name(slave));
+	else
+		ubcore_log_info("Event with master netdev NULL and slave netdev %s",
+			netdev_name(slave));
+
+	lag_lower_info = info->lower_state_info;
+	ret = dev->ops->slave_update(bond, slave, lag_lower_info);
+	if (ret != 0) {
+		ubcore_log_err("Failed to slave_update and ret value is %d", ret);
+		return -EIO;
+	}
+	ubcore_log_info("Success to deal with event NETDEV_CHANGELOWERSTATE");
+	return 0;
+}
+
+static struct net_device *ubcore_find_master_netdev(unsigned long event,
+	struct netdev_notifier_changeupper_info *info,
+	struct net_device *slave)
+{
+	/* When we need to remove slaves from the bond device,
+	 * we cannot find the ubcore dev by the netdev provided by unlink NETDEV_CHANGEUPPER.
+	 * It has been unregistered. We need to find ubcore dev by the master netdev
+	 */
+	struct net_device *bond = NULL;
+
+	if (event == NETDEV_CHANGEUPPER && !info->linking)
+		bond = info->upper_dev;
+	else if (event == NETDEV_CHANGELOWERSTATE)
+		bond = netdev_master_upper_dev_get_rcu(slave);
+
+	return bond;
+}
+
 static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long event, void *arg)
 {
 	struct net_device *netdev = netdev_notifier_info_to_dev(arg);
@@ -1276,12 +1301,28 @@ static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long eve
 	else
 		real_netdev = netdev;
 
-	devices = ubcore_get_devices_from_netdev(real_netdev, &num_devices);
-	if (devices == NULL)
-		return NOTIFY_DONE;
-
 	ubcore_log_info("Get a net event %s from ubcore_dev %s%s", netdev_cmd_to_name(event),
 			netdev_name(netdev), netdev_reg_state(netdev));
+
+	devices = ubcore_get_devices_from_netdev(real_netdev, &num_devices);
+	if (devices == NULL) {
+		if (event != NETDEV_CHANGEUPPER && event != NETDEV_CHANGELOWERSTATE)
+			return NOTIFY_DONE;
+		real_netdev = ubcore_find_master_netdev(event, arg, netdev);
+		if (real_netdev == NULL) {
+			ubcore_log_warn("Can not find master netdev by slave netdev %s",
+				netdev_name(netdev));
+			return NOTIFY_DONE;
+		}
+		ubcore_log_info("Success to find master netdev %s",
+			netdev_name(real_netdev));
+		devices = ubcore_get_devices_from_netdev(real_netdev, &num_devices);
+		if (devices == NULL) {
+			ubcore_log_warn("Can not find devices from master netdev %s",
+				netdev_name(real_netdev));
+			return NOTIFY_DONE;
+		}
+	}
 
 	for (i = 0; i < num_devices; i++) {
 		dev = devices[i];
@@ -1306,11 +1347,20 @@ static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long eve
 			if (dev->transport_type == UBCORE_TRANSPORT_UB)
 				ubcore_chang_mtu(dev, netdev);
 			break;
+		case NETDEV_CHANGEUPPER:
+			if (dev->transport_type == UBCORE_TRANSPORT_UB)
+				(void)ubcore_netdev_event_change_upper(dev, netdev, arg);
+			break;
+		case NETDEV_CHANGELOWERSTATE:
+			if (dev->transport_type == UBCORE_TRANSPORT_UB)
+				(void)ubcore_netdev_event_change_lower_state(dev, netdev, arg);
+			break;
 		default:
 			break;
 		}
 	}
-	ubcore_put_devices(devices, num_devices);
+	if (event != NETDEV_CHANGEUPPER)
+		ubcore_put_devices(devices, num_devices);
 	return NOTIFY_OK;
 }
 

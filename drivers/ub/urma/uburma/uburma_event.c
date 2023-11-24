@@ -183,7 +183,8 @@ static int uburma_wait_event_timeout(struct uburma_jfe *jfe, unsigned long max_t
 		 * or -%ERESTARTSYS if it was interrupted by a signal.
 		 */
 		timeout = wait_event_interruptible_timeout(
-			jfe->poll_wait, (!list_empty(&jfe->event_list) || jfe->deleting), timeout);
+			jfe->poll_wait, (!list_empty(&jfe->event_list) || jfe->deleting), (timeout)
+		);
 		if (timeout <= 0)
 			return timeout;
 	}

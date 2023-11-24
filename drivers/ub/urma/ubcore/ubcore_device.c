@@ -258,44 +258,6 @@ struct ubcore_device *ubcore_find_device_with_name(const char *dev_name)
 	return target;
 }
 
-struct ubcore_device *ubcore_find_device_with_eid_index(union ubcore_eid *eid,
-	enum ubcore_transport_type type, uint32_t eid_index)
-{
-	struct ubcore_device *dev, *target = NULL;
-	int ret;
-
-	mutex_lock(&g_device_mutex);
-	list_for_each_entry(dev, &g_device_list, list_node) {
-		if (eid_index >= dev->attr.max_eid_cnt)
-			continue;
-
-		/* use idx == eid_index to compare
-		 * because eid list order is followed by device order
-		 */
-		/* so use the idx of device list is the same as use the idx of eid list */
-		ret = memcmp(&dev->eid_table.eid_entries[eid_index].eid,
-			eid, sizeof(union ubcore_eid));
-		if (ret == 0 && dev->transport_type == type) {
-			target = dev;
-			ubcore_log_info(
-				"find dev:%s with eid = "EID_FMT", trans_type = %u, eid_idx = %u",
-				dev->dev_name, EID_ARGS(*eid), (uint32_t)type, eid_index
-			);
-			ubcore_get_device(target);
-			break;
-		}
-		if (target != NULL)
-			break;
-	}
-	if (target == NULL)
-		ubcore_log_warn(
-			"cannot find dev with eid = "EID_FMT", trans_type = %u, eid_idx = %u",
-			EID_ARGS(*eid), (uint32_t)type, eid_index
-		);
-	mutex_unlock(&g_device_mutex);
-	return target;
-}
-
 struct ubcore_device *ubcore_find_upi_with_dev_name(const char *dev_name, uint32_t *upi)
 {
 	struct ubcore_upi_entry *entry = NULL;
@@ -565,7 +527,7 @@ static int ubcore_create_eidtable(struct ubcore_device *dev)
 
 	dev->eid_table.eid_entries = entry_list;
 	spin_lock_init(&dev->eid_table.lock);
-	dev->eid_table.max_valid_pos = 0;
+	dev->eid_table.eid_cnt = dev->attr.max_eid_cnt;
 	dev->dynamic_eid = 1;
 	return 0;
 }
@@ -739,7 +701,7 @@ static void uninit_ubcore_device(struct ubcore_device *dev)
 }
 
 static int ubcore_config_device_rsp_msg_cb(struct ubcore_device *dev,
-	struct ubcore_msg *msg, void *msg_ctx)
+	struct ubcore_resp *resp, void *msg_ctx)
 {
 	struct ubcore_msg_config_device_resp *data;
 	struct ubcore_device_cfg cfg = {0};
@@ -749,14 +711,13 @@ static int ubcore_config_device_rsp_msg_cb(struct ubcore_device *dev,
 		return -EINVAL;
 	}
 
-	if (msg == NULL || msg->hdr.type != UBCORE_MSG_TYPE_TPF2FE ||
-		msg->hdr.len != sizeof(struct ubcore_msg_config_device_resp) ||
-		msg->hdr.opcode != UBCORE_MSG_CONFIG_DEVICE) {
+	if (resp == NULL || resp->len != sizeof(struct ubcore_msg_config_device_resp) ||
+		resp->opcode != UBCORE_MSG_CONFIG_DEVICE) {
 		ubcore_log_err("Failed to query data from the UVS. Use the default value.\n");
 		return -EINVAL;
 	}
 
-	data = (struct ubcore_msg_config_device_resp *)msg->data;
+	data = (struct ubcore_msg_config_device_resp *)resp->data;
 	cfg.fe_idx = dev->attr.fe_idx;
 	cfg.mask.bs.rc_cnt = 1;
 	cfg.mask.bs.rc_depth = 1;
@@ -803,7 +764,7 @@ static int ubcore_config_device_default(struct ubcore_device *dev)
 static int ubcore_config_device_in_register(struct ubcore_device *dev)
 {
 	struct ubcore_msg_config_device_req *data;
-	struct ubcore_msg *req_msg;
+	struct ubcore_req *req_msg;
 	struct ubcore_resp_cb cb = {
 		.callback = ubcore_config_device_rsp_msg_cb,
 		.user_arg = NULL
@@ -819,14 +780,13 @@ static int ubcore_config_device_in_register(struct ubcore_device *dev)
 		return ubcore_config_device_default(dev);
 	}
 
-	req_msg = kcalloc(1, sizeof(struct ubcore_msg) +
+	req_msg = kcalloc(1, sizeof(struct ubcore_req) +
 		sizeof(struct ubcore_msg_config_device_req), GFP_KERNEL);
 	if (req_msg == NULL)
 		return -ENOMEM;
 
-	req_msg->hdr.type = UBCORE_MSG_TYPE_FE2TPF;
-	req_msg->hdr.opcode = UBCORE_MSG_CONFIG_DEVICE;
-	req_msg->hdr.len = (uint32_t)sizeof(struct ubcore_msg_config_device_req);
+	req_msg->opcode = UBCORE_MSG_CONFIG_DEVICE;
+	req_msg->len = (uint32_t)sizeof(struct ubcore_msg_config_device_req);
 
 	data = (struct ubcore_msg_config_device_req *)req_msg->data;
 	(void)memcpy(data->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME);

@@ -180,7 +180,7 @@ static int __must_check uobj_remove_commit_internal(struct uburma_uobj *uobj,
 	if (ret && why == UBURMA_REMOVE_DESTROY) {
 		/* We couldn't remove the object, so just unlock the uobject */
 		atomic_set(&uobj->rcnt, 0);
-		uobj->type->type_class->lookup_put(uobj, true);
+		uobj->type->type_class->lookup_put(uobj, UOBJ_ACCESS_NOLOCK);
 	} else if (!list_empty(&uobj->list)) {
 		mutex_lock(&ufile->uobjects_lock);
 		list_del_init(&uobj->list);

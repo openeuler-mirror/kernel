@@ -65,8 +65,7 @@ int uburma_create_port_attr_files(struct uburma_logic_device *ldev,
 	struct uburma_device *ubu_dev, uint8_t port_num);
 int uburma_create_fe_attr_files(struct uburma_logic_device *ldev,
 	struct uburma_device *ubu_dev, uint16_t fe_num);
-int uburma_create_eid_attr_files(struct uburma_logic_device *ldev,
-	struct uburma_device *ubu_dev, uint32_t eid_num);
+int uburma_create_eid_attr_files(struct uburma_logic_device *ldev, uint32_t eid_num);
 int uburma_create_dev_attr_files(struct uburma_logic_device *ldev);
 
 void uburma_remove_port_attr_files(struct uburma_logic_device *ldev, uint8_t port_num);

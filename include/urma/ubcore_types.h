@@ -30,6 +30,7 @@
 #include <linux/scatterlist.h>
 #include <linux/libfdt_env.h>
 #include <linux/mm.h>
+#include <linux/netdevice.h>
 #include "ubcore_opcode.h"
 
 #define UBCORE_GET_VERSION(a, b) (((a) << 16) + ((b) > 65535 ? 65535 : (b)))
@@ -91,7 +92,7 @@ union ubcore_eid {
 
 struct ubcore_eid_info {
 	union ubcore_eid eid;
-	uint32_t eid_index;
+	uint32_t eid_index; /* 0~MAX_EID_CNT -1 */
 };
 
 struct ubcore_ueid_cfg {
@@ -507,8 +508,6 @@ struct ubcore_device_cap {
 	uint64_t max_msg_size;
 	/* max read command outstanding count in the function entity */
 	uint64_t max_rc_outstd_cnt;
-	uint32_t max_atomic_size;     /* in terms of bytes, e.g. 8 or 64 */
-	union ubcore_atomic_feat atomic_feat;
 	uint32_t max_sip_cnt_per_fe;
 	uint32_t max_dip_cnt_per_fe;
 	uint32_t max_seid_cnt_per_fe;
@@ -517,8 +516,11 @@ struct ubcore_device_cap {
 	uint16_t ceq_cnt;     /* completion vector count */
 	uint32_t utp_cnt;
 	uint32_t max_oor_cnt;         /* max OOR window size by packet */
+	uint32_t mn;
 	uint32_t min_slice;           /* 32K (1823), 64K (1650) */
 	uint32_t max_slice;           /* 256K (1823), 64K (1650) */
+	uint32_t max_atomic_size;     /* in terms of bytes, e.g. 8 or 64 */
+	union ubcore_atomic_feat atomic_feat;
 };
 
 struct ubcore_device_attr {
@@ -623,14 +625,7 @@ struct ubcore_net_addr {
 
 union ubcore_tp_cfg_flag {
 	struct {
-		uint32_t target : 1;   /* 0: initiator, 1: target */
-		/* todo: delete start */
-		uint32_t oor_en : 1;   /* out of order receive, 0: disable 1: enable */
-		uint32_t sr_en : 1;    /* selective retransmission, 0: disable 1: enable */
-		uint32_t cc_en : 1;    /* congestion control algorithm, 0: disable 1: enable */
-		uint32_t cc_alg : 4;   /* ubcore_tp_cc_alg_t */
-		uint32_t spray_en : 1; /* spray with src udp port, 0: disable 1: enable */
-		/* todo: delete end */
+		uint32_t target : 1;          /* 0: initiator, 1: target */
 		uint32_t loopback : 1;
 		uint32_t ack_resp : 1;
 		uint32_t dca_enable : 1;
@@ -652,7 +647,6 @@ union ubcore_tp_mod_flag {
 		uint32_t cc_en       : 1; /* congestion control algorithm, 0: disable 1: enable */
 		uint32_t cc_alg      : 4; /* The value is ubcore_tp_cc_alg_t */
 		uint32_t spray_en    : 1; /* spray with src udp port, 0: disable 1: enable */
-		uint32_t dca_enable  : 1; /* admin dynamic connection, * 0: disable 1: enable */
 		uint32_t reserved    : 23;
 	} bs;
 	uint32_t value;
@@ -669,7 +663,7 @@ union ubcore_tp_flag {
 		uint32_t spray_en : 1; /* spray with src udp port, 0: disable 1: enable */
 		uint32_t loopback : 1;
 		uint32_t ack_resp : 1;
-		uint32_t dca_enable : 1;
+		uint32_t dca_enable : 1;     /* dynamic connection, 0: disable 1: enable */
 		uint32_t bonding : 1;
 		uint32_t reserved : 19;
 	} bs;
@@ -705,8 +699,6 @@ struct ubcore_tpg;
 struct ubcore_tp_cfg {
 	union ubcore_tp_cfg_flag flag; /* flag of initial tp */
 	/* transaction layer attributes */
-	struct ubcore_net_addr local_net_addr; /* todo: delete */
-	struct ubcore_net_addr peer_net_addr;  /* todo: delete */
 	union {
 		union ubcore_eid local_eid;
 		struct ubcore_jetty_id local_jetty;
@@ -718,12 +710,6 @@ struct ubcore_tp_cfg {
 	};
 	/* tranport layer attributes */
 	enum ubcore_transport_mode trans_mode;
-	uint16_t data_udp_start;   /* todo: delete */
-	uint16_t ack_udp_start;    /* todo: delete */
-	uint8_t udp_range;         /* todo: delete */
-	uint32_t rx_psn;           /* todo: delete */
-	uint32_t tx_psn;           /* todo: delete */
-	enum ubcore_mtu mtu;          /* todo: delete */
 	uint8_t retry_num;
 	uint8_t retry_factor;      /* for calculate the time slot to retry */
 	uint8_t ack_timeout;
@@ -789,7 +775,6 @@ struct ubcore_tp {
 	struct ubcore_device *ub_dev;
 	union ubcore_tp_flag flag;   /* indicate initiator or target, etc */
 	uint32_t local_net_addr_idx;
-	struct ubcore_net_addr local_net_addr; /* todo: delete */
 	struct ubcore_net_addr peer_net_addr;
 	union {
 		union ubcore_eid local_eid;
@@ -807,6 +792,7 @@ struct ubcore_tp {
 	uint16_t data_udp_start;  /* src udp port start, for multipath data */
 	uint16_t ack_udp_start;   /* src udp port start, for multipath ack */
 	uint8_t udp_range;        /* src udp port range, for both multipath data and ack */
+	uint8_t port_id;          /* optional, physical port, only for non-bonding */
 	uint8_t retry_num;
 	uint8_t retry_factor;
 	uint8_t ack_timeout;
@@ -980,9 +966,9 @@ union ubcore_vtp_attr_mask {
 enum ubcore_msg_opcode {
 	UBCORE_MSG_CREATE_VTP = 0,
 	UBCORE_MSG_DESTROY_VTP,
-	UBCORE_MSG_CONFIG_DEVICE,
 	UBCORE_MSG_ALLOC_EID,
 	UBCORE_MSG_DEALLOC_EID,
+	UBCORE_MSG_CONFIG_DEVICE,
 	UBCORE_MSG_STOP_PROC_VTP_MSG = 0x10, /* should be all migrate op after this opcode */
 	UBCORE_MSG_QUERY_VTP_MIG_STATUS,
 	UBCORE_MSG_FLOW_STOPPED,
@@ -990,34 +976,33 @@ enum ubcore_msg_opcode {
 	UBCORE_MSG_MIG_VM_START
 };
 
-enum ubcore_msg_type {
-	UBCORE_MSG_TYPE_FE2TPF = 0,     // for create/delete vtp
-	UBCORE_MSG_TYPE_MPF2TPF,        // for live migration
-	UBCORE_MSG_TYPE_TPF2FE,         // for create/delete vtp
-	UBCORE_MSG_TYPE_TPF2MPF         // for live migration
-};
-
 enum ubcore_pattern {
 	UBCORE_PATTERN_1 = 0,
 	UBCORE_PATTERN_3
 };
 
-union ubcore_msg_ep {
-	uint16_t src_function_id;
-	uint16_t dst_function_id;
-};
-
-struct ubcore_msg_hdr {
-	enum ubcore_msg_type type;
-	union ubcore_msg_ep ep;
-	uint32_t len;    // data len
+struct ubcore_req {
 	uint32_t msg_id;
 	enum ubcore_msg_opcode opcode;
+	uint32_t len;
+	uint8_t data[0];
 };
 
-struct ubcore_msg {
-	struct ubcore_msg_hdr hdr;
+struct ubcore_req_host {
+	uint16_t src_fe_idx;
+	struct ubcore_req req;
+};
+
+struct ubcore_resp {
+	uint32_t msg_id;
+	enum ubcore_msg_opcode opcode;
+	uint32_t len;
 	uint8_t data[0];
+};
+
+struct ubcore_resp_host {
+	uint16_t dst_fe_idx;
+	struct ubcore_resp resp;
 };
 
 struct ubcore_event {
@@ -1048,8 +1033,8 @@ typedef void (*ubcore_comp_callback_t)(struct ubcore_jfc *jfc);
 struct ubcore_jfc_cfg {
 	uint32_t depth;
 	union ubcore_jfc_flag flag;
-	void *jfc_context;
 	uint32_t ceqn;
+	void *jfc_context;
 };
 
 struct ubcore_jfc {
@@ -1067,6 +1052,7 @@ struct ubcore_jfc {
 struct ubcore_jfs_cfg {
 	uint32_t depth;
 	union ubcore_jfs_flag flag;
+	enum ubcore_transport_mode trans_mode;
 	uint32_t eid_index;
 	uint8_t priority;
 	uint8_t max_sge;
@@ -1076,7 +1062,6 @@ struct ubcore_jfs_cfg {
 	uint8_t err_timeout;
 	void *jfs_context;
 	struct ubcore_jfc *jfc;
-	enum ubcore_transport_mode trans_mode;
 };
 
 struct ubcore_jfs {
@@ -1094,13 +1079,13 @@ struct ubcore_jfs {
 struct ubcore_jfr_cfg {
 	uint32_t id; /* user may assign id */
 	uint32_t depth;
-	uint32_t eid_index;
 	union ubcore_jfr_flag flag;
+	enum ubcore_transport_mode trans_mode;
+	uint32_t eid_index;
 	uint8_t max_sge;
 	uint8_t min_rnr_timer;
-	enum ubcore_transport_mode trans_mode;
-	struct ubcore_jfc *jfc;
 	struct ubcore_token token_value;
+	struct ubcore_jfc *jfc;
 	void *jfr_context;
 };
 
@@ -1160,11 +1145,11 @@ union ubcore_import_jetty_flag {
 
 struct ubcore_tjetty_cfg {
 	struct ubcore_jetty_id id; /* jfr, jetty or jetty group id to be imported */
-	uint32_t eid_index;
-	enum ubcore_transport_mode trans_mode;
-	enum ubcore_jetty_grp_policy policy;
-	enum ubcore_target_type type;
 	union ubcore_import_jetty_flag flag;
+	enum ubcore_transport_mode trans_mode;
+	uint32_t eid_index;
+	enum ubcore_target_type type;
+	enum ubcore_jetty_grp_policy policy;
 	struct ubcore_token token_value; /* jfr, jetty or jetty group token_value to be imported */
 };
 
@@ -1270,10 +1255,10 @@ struct ubcore_res_tpg_val {
 };
 
 struct ubcore_res_utp_val {
-	uint8_t utp_id;
-	uint8_t spray_en;
+	uint32_t utpn;
 	uint16_t data_udp_start;
 	uint8_t udp_range;
+	uint8_t spray_en;
 };
 
 struct ubcore_res_jfs_val {
@@ -1593,13 +1578,6 @@ struct ubcore_ops {
 	struct module *owner; /* kernel driver module */
 	char driver_name[UBCORE_MAX_DRIVER_NAME]; /* user space driver name */
 	uint32_t abi_version; /* abi version of kernel driver */
-	/**
-	 * set function entity id for ub device. must be called before alloc context
-	 * @param[in] dev: the ub device handle;
-	 * @param[in] eid: function entity id (eid) to set;
-	 * @return: 0 on success, other value on error
-	 */
-	int (*set_eid)(struct ubcore_device *dev, union ubcore_eid eid);
 
 	/**
 	 * set upi
@@ -1884,8 +1862,8 @@ struct ubcore_ops {
 	 * @return: target jfr pointer on success, NULL on error
 	 */
 	struct ubcore_tjetty *(*import_jfr)(struct ubcore_device *dev,
-					    struct ubcore_tjetty_cfg *cfg,
-					    struct ubcore_udata *udata);
+						struct ubcore_tjetty_cfg *cfg,
+						struct ubcore_udata *udata);
 	/**
 	 * unimport jfr from ubep.
 	 * @param[in] tjfr: the target jfr imported before;
@@ -1901,8 +1879,8 @@ struct ubcore_ops {
 	 * @return: jetty pointer on success, NULL on error
 	 */
 	struct ubcore_jetty *(*create_jetty)(struct ubcore_device *dev,
-					     struct ubcore_jetty_cfg *cfg,
-					     struct ubcore_udata *udata);
+						 struct ubcore_jetty_cfg *cfg,
+						 struct ubcore_udata *udata);
 	/**
 	 * modify jetty from ubep.
 	 * @param[in] jetty: the jetty created before;
@@ -1911,7 +1889,7 @@ struct ubcore_ops {
 	 * @return: 0 on success, other value on error
 	 */
 	int (*modify_jetty)(struct ubcore_jetty *jetty, struct ubcore_jetty_attr *attr,
-			    struct ubcore_udata *udata);
+				struct ubcore_udata *udata);
 	/**
 	 * query jetty from ubep.
 	 * @param[in] jetty: the jetty created before;
@@ -1944,8 +1922,8 @@ struct ubcore_ops {
 	 * @return: target jetty pointer on success, NULL on error
 	 */
 	struct ubcore_tjetty *(*import_jetty)(struct ubcore_device *dev,
-					      struct ubcore_tjetty_cfg *cfg,
-					      struct ubcore_udata *udata);
+						  struct ubcore_tjetty_cfg *cfg,
+						  struct ubcore_udata *udata);
 	/**
 	 * unimport jetty from ubep.
 	 * @param[in] tjetty: the target jetty imported before;
@@ -2118,12 +2096,20 @@ struct ubcore_ops {
 	int (*destroy_ctp)(struct ubcore_ctp *ctp);
 
 	/**
-	 * send msg to ubep device.
-	 * @param[in] dev: the ub device handle;
+	 * VF send msg to TPF device.
+	 * @param[in] dev: VF or PF device;
 	 * @param[in] msg: msg to send;
 	 * @return: 0 on success, other value on error
 	 */
-	int (*send_msg)(struct ubcore_device *dev,  struct ubcore_msg *msg);
+	int (*send_req)(struct ubcore_device *dev,  struct ubcore_req *msg);
+
+	/**
+	 * TPF send msg to vf device.
+	 * @param[in] dev: TPF device;
+	 * @param[in] msg: msg to send;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*send_resp)(struct ubcore_device *dev,  struct ubcore_resp_host *msg);
 
 	/**
 	 * query cc table to get cc pattern idx
@@ -2132,6 +2118,34 @@ struct ubcore_ops {
 	 * @return: return NULL on fail, otherwise, return cc entry array
 	 */
 	struct ubcore_cc_entry *(*query_cc)(struct ubcore_device *dev, uint32_t *cc_entry_cnt);
+
+	/**
+	 * bond slave net device
+	 * @param[in] bond: bond netdev;
+	 * @param[in] slave: slave netdev;
+	 * @param[in] upper_info: change upper event info;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*bond_add)(struct net_device *bond, struct net_device *slave,
+		struct netdev_lag_upper_info *upper_info);
+
+	/**
+	 * unbond slave net device
+	 * @param[in] bond: bond netdev;
+	 * @param[in] slave: slave netdev;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*bond_remove)(struct net_device *bond, struct net_device *slave);
+
+	/**
+	 * update slave net device
+	 * @param[in] bond: bond netdev;
+	 * @param[in] slave: slave netdev;
+	 * @param[in] lower_info: change lower state event info;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*slave_update)(struct net_device *bond, struct net_device *slave,
+		struct netdev_lag_lower_state_info *lower_info);
 
 	/**
 	 * operation of user ioctl cmd.
@@ -2185,8 +2199,6 @@ struct ubcore_ops {
 	 */
 	int (*poll_jfc)(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
 
-	int (*config_utp)(struct ubcore_device *dev, uint32_t utp_id, struct ubcore_utp_attr *attr,
-		union ubcore_utp_attr_mask mask);
 	/**
 	 * query_stats. success to query and buffer length is enough
 	 * @param[in] dev: the ub device handle;
@@ -2244,11 +2256,12 @@ enum ubcore_hash_table_type {
 struct ubcore_eid_entry {
 	union ubcore_eid eid;
 	uint32_t eid_index;
+	struct net *net;
 	bool valid;
 };
 
 struct ubcore_eid_table {
-	uint32_t max_valid_pos;
+	uint32_t eid_cnt;
 	struct ubcore_eid_entry *eid_entries;
 	spinlock_t lock;
 };
@@ -2267,7 +2280,7 @@ struct ubcore_device {
 	struct ubcore_device_attr attr;
 	struct attribute_group *group[UBCORE_MAX_ATTR_GROUP]; /* driver may fill group [1] */
 	/* driver fills end */
-	struct ubcore_eid_table eid_table;
+
 	struct ubcore_device_cfg cfg;
 
 	/* port management */
@@ -2285,6 +2298,7 @@ struct ubcore_device {
 	atomic_t use_cnt;
 	struct completion comp;
 	bool dynamic_eid; /* Assign eid dynamically with netdev notifier */
+	struct ubcore_eid_table eid_table;
 };
 
 struct ubcore_port {
