@@ -28,7 +28,7 @@
 #ifdef DRV_VERSION
 #define CDEV_VERSION		MICRO_TO_STR(DRV_VERSION)
 #else
-#define CDEV_VERSION		"0.3.5"
+#define CDEV_VERSION		"0.3.6"
 #endif
 
 #define CDEV_DEFAULT_NUM	4
