@@ -65,7 +65,7 @@ static int mpam_resctrl_setup_domain(unsigned int cpu,
 	struct mpam_component *comp_iter, *comp;
 	u32 num_partid;
 	u32 **ctrlval_ptr;
-	enum resctrl_ctrl_type type;
+	enum resctrl_ctrl_type type, type_free;
 	struct list_head *tmp;
 
 	num_partid = mpam_sysprops_num_partid();
@@ -96,6 +96,12 @@ static int mpam_resctrl_setup_domain(unsigned int cpu,
 		*ctrlval_ptr = kmalloc_array(num_partid,
 			sizeof(**ctrlval_ptr), GFP_KERNEL);
 		if (!*ctrlval_ptr) {
+			for_each_ctrl_type(type_free) {
+				if (type_free == type)
+					break;
+				ctrlval_ptr = &dom->resctrl_dom.ctrl_val[type_free];
+				kfree(*ctrlval_ptr);
+			}
 			kfree(dom);
 			return -ENOMEM;
 		}
@@ -156,6 +162,8 @@ int mpam_resctrl_cpu_offline(unsigned int cpu)
 	struct rdt_domain *d;
 	struct mpam_resctrl_res *res;
 	struct mpam_resctrl_dom *dom;
+	u32 **ctrlval_ptr;
+	enum resctrl_ctrl_type type;
 
 	for_each_supported_resctrl_exports(res) {
 		 d = resctrl_get_domain_from_cpu(cpu, &res->resctrl_res);
@@ -171,6 +179,11 @@ int mpam_resctrl_cpu_offline(unsigned int cpu)
 
 		list_del(&d->list);
 		dom = container_of(d, struct mpam_resctrl_dom, resctrl_dom);
+		for_each_ctrl_type(type) {
+			ctrlval_ptr = &dom->resctrl_dom.ctrl_val[type];
+			kfree(*ctrlval_ptr);
+		}
+
 		kfree(dom);
 
 		res->resctrl_res.dom_num--;
