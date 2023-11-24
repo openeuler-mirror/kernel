@@ -1915,9 +1915,26 @@ static void cpu_clear_disr(const struct arm64_cpu_capabilities *__unused)
 #endif /* CONFIG_ARM64_RAS_EXTN */
 
 #ifdef CONFIG_ARM64_PTR_AUTH
+/*
+ * PAuth is enabled by default, and should be explicitly shut down by
+ * `arm64.nopauth` if needed.
+ */
+static int arm64_nopauth __ro_after_init;
+
+static int __init parse_arm64_nopauth(char *str)
+{
+	arm64_nopauth = 1;
+
+	return 0;
+}
+early_param("arm64.nopauth", parse_arm64_nopauth);
+
 static bool has_address_auth_cpucap(const struct arm64_cpu_capabilities *entry, int scope)
 {
 	int boot_val, sec_val;
+
+	if (arm64_nopauth)
+		return false;
 
 	/* We don't expect to be called with SCOPE_SYSTEM */
 	WARN_ON(scope == SCOPE_SYSTEM);
@@ -1946,6 +1963,12 @@ static bool has_address_auth_metacap(const struct arm64_cpu_capabilities *entry,
 {
 	return has_address_auth_cpucap(cpu_hwcaps_ptrs[ARM64_HAS_ADDRESS_AUTH_ARCH], scope) ||
 	       has_address_auth_cpucap(cpu_hwcaps_ptrs[ARM64_HAS_ADDRESS_AUTH_IMP_DEF], scope);
+}
+
+static bool has_ptr_auth_cpucap(const struct arm64_cpu_capabilities *entry,
+				int scope)
+{
+	return !arm64_nopauth && has_cpuid_feature(entry, scope);
 }
 
 static bool has_generic_auth(const struct arm64_cpu_capabilities *entry,
@@ -2399,7 +2422,7 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.sign = FTR_UNSIGNED,
 		.field_pos = ID_AA64ISAR1_GPA_SHIFT,
 		.min_field_value = ID_AA64ISAR1_GPA_ARCHITECTED,
-		.matches = has_cpuid_feature,
+		.matches = has_ptr_auth_cpucap,
 	},
 	{
 		.desc = "Generic authentication (IMP DEF algorithm)",
@@ -2409,7 +2432,7 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.sign = FTR_UNSIGNED,
 		.field_pos = ID_AA64ISAR1_GPI_SHIFT,
 		.min_field_value = ID_AA64ISAR1_GPI_IMP_DEF,
-		.matches = has_cpuid_feature,
+		.matches = has_ptr_auth_cpucap,
 	},
 	{
 		.capability = ARM64_HAS_GENERIC_AUTH,
@@ -2563,6 +2586,13 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.sign = s,							\
 		.min_field_value = min_value,
 
+#define HWCAP_CPUID_MATCH_SELF_DEFINED(match, reg, field, s, min_value)		\
+		.matches = match,					\
+		.sys_reg = reg,							\
+		.field_pos = field,						\
+		.sign = s,							\
+		.min_field_value = min_value,
+
 #define __HWCAP_CAP(name, cap_type, cap)					\
 		.desc = name,							\
 		.type = ARM64_CPUCAP_SYSTEM_FEATURE,				\
@@ -2591,24 +2621,28 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 #ifdef CONFIG_ARM64_PTR_AUTH
 static const struct arm64_cpu_capabilities ptr_auth_hwcap_addr_matches[] = {
 	{
-		HWCAP_CPUID_MATCH(SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_APA_SHIFT,
-				  FTR_UNSIGNED, ID_AA64ISAR1_APA_ARCHITECTED)
+		HWCAP_CPUID_MATCH_SELF_DEFINED(has_ptr_auth_cpucap,
+				SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_APA_SHIFT,
+				FTR_UNSIGNED, ID_AA64ISAR1_APA_ARCHITECTED)
 	},
 	{
-		HWCAP_CPUID_MATCH(SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_API_SHIFT,
-				  FTR_UNSIGNED, ID_AA64ISAR1_API_IMP_DEF)
+		HWCAP_CPUID_MATCH_SELF_DEFINED(has_ptr_auth_cpucap,
+				SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_API_SHIFT,
+				FTR_UNSIGNED, ID_AA64ISAR1_API_IMP_DEF)
 	},
 	{},
 };
 
 static const struct arm64_cpu_capabilities ptr_auth_hwcap_gen_matches[] = {
 	{
-		HWCAP_CPUID_MATCH(SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_GPA_SHIFT,
-				  FTR_UNSIGNED, ID_AA64ISAR1_GPA_ARCHITECTED)
+		HWCAP_CPUID_MATCH_SELF_DEFINED(has_ptr_auth_cpucap,
+				SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_GPA_SHIFT,
+				FTR_UNSIGNED, ID_AA64ISAR1_GPA_ARCHITECTED)
 	},
 	{
-		HWCAP_CPUID_MATCH(SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_GPI_SHIFT,
-				  FTR_UNSIGNED, ID_AA64ISAR1_GPI_IMP_DEF)
+		HWCAP_CPUID_MATCH_SELF_DEFINED(has_ptr_auth_cpucap,
+				SYS_ID_AA64ISAR1_EL1, ID_AA64ISAR1_GPI_SHIFT,
+				FTR_UNSIGNED, ID_AA64ISAR1_GPI_IMP_DEF)
 	},
 	{},
 };
