@@ -125,3 +125,12 @@ config EXT4_ERROR_REPORT
 	help
 	  Implement the ext3/ext4 file system error report. Report error to
 	  userspace by netlink
+
+config EXT4_MITIGATION_FALSE_SHARING
+	bool "mitigation false sharing in ext4 inode"
+	depends on EXT4_FS
+	default n
+	help
+	  Enable this to mitigation cacheline false sharing in ext4 inode info.
+
+	  If unsure, say N.
