@@ -2440,6 +2440,9 @@ int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr)
 			left--;
 			break;
 		}
+		/* to avoid doing too much in one submit round */
+		if (left > IORING_MAX_ENTRIES / 2)
+			cond_resched();
 	} while (--left);
 
 	if (unlikely(left)) {
