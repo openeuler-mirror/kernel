@@ -800,10 +800,6 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 	disk->major = MAJOR(devt);
 	disk->first_minor = MINOR(devt);
 
-	retval = disk_alloc_events(disk);
-	if (retval)
-		goto out_free_ext_minor;
-
 	if (disk->flags & GENHD_FL_HIDDEN) {
 		/*
 		 * Don't let hidden disks show up in /proc/partitions,
@@ -818,7 +814,7 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 		ddev->devt = devt;
 		retval = bdi_register(bdi, "%u:%u", MAJOR(devt), MINOR(devt));
 		if (retval)
-			goto out_disk_release_events;
+			goto out_free_ext_minor;
 		bdi_set_owner(bdi, ddev);
 		retval = blk_register_region(disk_devt(disk), disk->minors,
 				NULL, exact_match, exact_lock, disk);
@@ -838,6 +834,9 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 	retval = device_add(ddev);
 	if (retval)
 		goto out_unregister_region;
+	retval = disk_alloc_events(disk);
+	if (retval)
+		goto out_device_del;
 	if (!sysfs_deprecated) {
 		retval = sysfs_create_link(block_depr, &ddev->kobj,
 					   kobject_name(&ddev->kobj));
@@ -921,8 +920,6 @@ out_unregister_region:
 out_unregister_bdi:
 	if (!(disk->flags & GENHD_FL_HIDDEN))
 		bdi_unregister(disk->queue->backing_dev_info);
-out_disk_release_events:
-	disk_release_events(disk);
 out_free_ext_minor:
 	blk_free_devt(devt);
 	return WARN_ON_ONCE(retval); /* keep until all callers handle errors */
