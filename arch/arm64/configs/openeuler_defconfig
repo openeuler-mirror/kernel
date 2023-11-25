@@ -6218,6 +6218,13 @@ CONFIG_ROH_HNS=m
 CONFIG_UB=m
 CONFIG_UB_URMA=m
 CONFIG_UB_UDMA_HNS3=m
+
+#
+# CPU Inspect
+#
+CONFIG_CPU_INSPECT=m
+CONFIG_CPU_INSPECTOR_ATF=m
+# end of CPU Inspect
 # end of Device Drivers
 
 #
