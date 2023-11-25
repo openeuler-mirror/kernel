@@ -2688,6 +2688,13 @@ static void migrate_vma_insert_page(struct migrate_vma *migrate,
 			if (vma->vm_flags & VM_WRITE)
 				entry = pte_mkwrite(pte_mkdirty(entry));
 			entry = pte_mkdevmap(entry);
+		} else {
+			/*
+			 * For now we not support migrating to MEMORY_DEVICE_FS_DAX
+			 * and MEMORY_DEVICE_PCI_P2PDMA device memory.
+			 */
+			pr_warn_once("Unsupported ZONE_DEVICE page type.\n");
+			goto abort;
 		}
 	} else {
 		entry = mk_pte(page, vma->vm_page_prot);
