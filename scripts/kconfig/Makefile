@@ -75,14 +75,6 @@ PHONY += savedefconfig defconfig
 savedefconfig: $(obj)/conf
 	$(Q)$< $(silent) --$@=defconfig $(Kconfig)
 
-update_oedefconfig: $(obj)/conf
-	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/openeuler_defconfig $(Kconfig)
-	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/makeconfig.sh $(SRCARCH)
-
-save_oedefconfig: $(obj)/conf
-	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/makeconfig.sh $(SRCARCH)
-
-
 defconfig: $(obj)/conf
 ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG)),)
 	@$(kecho) "*** Default configuration is based on '$(KBUILD_DEFCONFIG)'"
