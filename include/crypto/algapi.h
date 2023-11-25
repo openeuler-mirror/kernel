@@ -47,13 +47,16 @@ struct crypto_type {
 	unsigned int tfmsize;
 };
 
+struct crypto_instance_freework {
+	struct crypto_instance *instance;
+	struct work_struct free_work;
+};
+
 struct crypto_instance {
 	struct crypto_alg alg;
 
 	struct crypto_template *tmpl;
 	struct hlist_node list;
-
-	struct work_struct free_work;
 
 	void *__ctx[] CRYPTO_MINALIGN_ATTR;
 };
