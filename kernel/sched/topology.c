@@ -647,8 +647,7 @@ static void destroy_sched_domains(struct sched_domain *sd)
 DEFINE_PER_CPU(struct sched_domain __rcu *, sd_llc);
 DEFINE_PER_CPU(int, sd_llc_size);
 DEFINE_PER_CPU(int, sd_llc_id);
-DEFINE_PER_CPU(int, sd_lowest_cache_id);
-DEFINE_PER_CPU(struct sched_domain __rcu *, sd_cluster);
+DEFINE_PER_CPU(int, sd_share_id);
 DEFINE_PER_CPU(struct sched_domain_shared __rcu *, sd_llc_shared);
 DEFINE_PER_CPU(struct sched_domain __rcu *, sd_numa);
 DEFINE_PER_CPU(struct sched_domain __rcu *, sd_asym_packing);
@@ -689,14 +688,13 @@ static void update_top_cache_domain(int cpu)
 	sd = lowest_flag_domain(cpu, SD_CLUSTER);
 	if (sd)
 		id = cpumask_first(sched_domain_span(sd));
-	rcu_assign_pointer(per_cpu(sd_cluster, cpu), sd);
 
 	/*
 	 * This assignment should be placed after the sd_llc_id as
 	 * we want this id equals to cluster id on cluster machines
 	 * but equals to LLC id on non-Cluster machines.
 	 */
-	per_cpu(sd_lowest_cache_id, cpu) = id;
+	per_cpu(sd_share_id, cpu) = id;
 
 	sd = lowest_flag_domain(cpu, SD_NUMA);
 	rcu_assign_pointer(per_cpu(sd_numa, cpu), sd);
@@ -727,8 +725,12 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 
 		if (sd_parent_degenerate(tmp, parent)) {
 			tmp->parent = parent->parent;
-			if (parent->parent)
+
+			if (parent->parent) {
 				parent->parent->child = tmp;
+				parent->parent->groups->flags = tmp->flags;
+			}
+
 			/*
 			 * Transfer SD_PREFER_SIBLING down in case of a
 			 * degenerate parent; the spans match for this
@@ -745,8 +747,20 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 		tmp = sd;
 		sd = sd->parent;
 		destroy_sched_domain(tmp);
-		if (sd)
+		if (sd) {
+			struct sched_group *sg = sd->groups;
+
+			/*
+			 * sched groups hold the flags of the child sched
+			 * domain for convenience. Clear such flags since
+			 * the child is being destroyed.
+			 */
+			do {
+				sg->flags = 0;
+			} while (sg != sd->groups);
+
 			sd->child = NULL;
+		}
 	}
 
 	for (tmp = sd; tmp; tmp = tmp->parent)
@@ -945,10 +959,12 @@ build_group_from_child_sched_domain(struct sched_domain *sd, int cpu)
 		return NULL;
 
 	sg_span = sched_group_span(sg);
-	if (sd->child)
+	if (sd->child) {
 		cpumask_copy(sg_span, sched_domain_span(sd->child));
-	else
+		sg->flags = sd->child->flags;
+	} else {
 		cpumask_copy(sg_span, sched_domain_span(sd));
+	}
 
 	atomic_inc(&sg->ref);
 	return sg;
@@ -1198,6 +1214,7 @@ static struct sched_group *get_group(int cpu, struct sd_data *sdd)
 	if (child) {
 		cpumask_copy(sched_group_span(sg), sched_domain_span(child));
 		cpumask_copy(group_balance_mask(sg), sched_group_span(sg));
+		sg->flags = child->flags;
 	} else {
 		cpumask_set_cpu(cpu, sched_group_span(sg));
 		cpumask_set_cpu(cpu, group_balance_mask(sg));
@@ -2366,7 +2383,6 @@ build_sched_domains(const struct cpumask *cpu_map, struct sched_domain_attr *att
 			sd = build_sched_domain(tl, cpu_map, attr, sd, i);
 
 			has_asym |= sd->flags & SD_ASYM_CPUCAPACITY;
-			has_cluster |= sd->flags & SD_CLUSTER;
 
 			if (tl == sched_domain_topology)
 				*per_cpu_ptr(d.sd, i) = sd;
@@ -2474,6 +2490,9 @@ build_sched_domains(const struct cpumask *cpu_map, struct sched_domain_attr *att
 			WRITE_ONCE(d.rd->max_cpu_capacity, rq->cpu_capacity_orig);
 
 		cpu_attach_domain(sd, d.rd, i);
+
+		if (lowest_flag_domain(i, SD_CLUSTER))
+			has_cluster = true;
 	}
 	rcu_read_unlock();
 
@@ -2583,7 +2602,7 @@ static void detach_destroy_domains(const struct cpumask *cpu_map)
 	if (rcu_access_pointer(per_cpu(sd_asym_cpucapacity, cpu)))
 		static_branch_dec_cpuslocked(&sched_asym_cpucapacity);
 
-	if (rcu_access_pointer(per_cpu(sd_cluster, cpu)))
+	if (static_branch_unlikely(&sched_cluster_active))
 		static_branch_dec_cpuslocked(&sched_cluster_active);
 
 	rcu_read_lock();

@@ -6664,10 +6664,10 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	}
 
 	if (static_branch_unlikely(&sched_cluster_active)) {
-		struct sched_domain *sdc = rcu_dereference(per_cpu(sd_cluster, target));
+		struct sched_group *sg = sd->groups;
 
-		if (sdc) {
-			for_each_cpu_wrap(cpu, sched_domain_span(sdc), target) {
+		if (sg->flags & SD_CLUSTER) {
+			for_each_cpu_wrap(cpu, sched_group_span(sg), target) {
 				if (!cpumask_test_cpu(cpu, cpus))
 					continue;
 
@@ -6683,7 +6683,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 						return idle_cpu;
 				}
 			}
-			cpumask_andnot(cpus, cpus, sched_domain_span(sdc));
+			cpumask_andnot(cpus, cpus, sched_group_span(sg));
 		}
 	}
 
@@ -6778,7 +6778,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 {
 	struct sched_domain *sd;
 	unsigned long task_util;
-	int i, recent_used_cpu;
+	int i, recent_used_cpu, prev_aff = -1;
 
 	/*
 	 * On asymmetric system, update task utilization because we will check
@@ -6806,14 +6806,19 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	/*
 	 * If the previous CPU is cache affine and idle, don't be stupid:
 	 */
-	if (prev != target && cpus_share_lowest_cache(prev, target) &&
+	if (prev != target && cpus_share_cache(prev, target) &&
 	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	    cpumask_test_cpu(prev, p->select_cpus) &&
 #endif
 	    asym_fits_capacity(task_util, prev)) {
 		SET_STAT(found_idle_cpu_easy);
-		return prev;
+
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(prev, target))
+			return prev;
+
+		prev_aff = prev;
 	}
 
 	/*
@@ -6837,7 +6842,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	recent_used_cpu = p->recent_used_cpu;
 	if (recent_used_cpu != prev &&
 	    recent_used_cpu != target &&
-	    cpus_share_lowest_cache(recent_used_cpu, target) &&
+	    cpus_share_cache(recent_used_cpu, target) &&
 	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	    cpumask_test_cpu(p->recent_used_cpu, p->select_cpus) &&
@@ -6851,7 +6856,13 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		 */
 		SET_STAT(found_idle_cpu_easy);
 		p->recent_used_cpu = prev;
-		return recent_used_cpu;
+
+		if (!static_branch_unlikely(&sched_cluster_active) ||
+		    cpus_share_resources(recent_used_cpu, target))
+			return recent_used_cpu;
+
+	} else {
+		recent_used_cpu = -1;
 	}
 
 	/*
@@ -6888,6 +6899,18 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	}
 
 	SET_STAT(nofound_idle_cpu);
+
+	/*
+	 * For cluster machines which have lower sharing cache like L2 or
+	 * LLC Tag, we tend to find an idle CPU in the target's cluster
+	 * first. But prev_cpu or recent_used_cpu may also be a good candidate,
+	 * use them if possible when no idle CPU found in select_idle_cpu().
+	 */
+	if ((unsigned int)prev_aff < nr_cpumask_bits)
+		return prev_aff;
+	if ((unsigned int)recent_used_cpu < nr_cpumask_bits)
+		return recent_used_cpu;
+
 	return target;
 }
 
