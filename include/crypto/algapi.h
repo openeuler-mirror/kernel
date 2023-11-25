@@ -16,6 +16,7 @@
 #include <linux/list.h>
 #include <linux/kernel.h>
 #include <linux/skbuff.h>
+#include <linux/workqueue.h>
 
 /*
  * Maximum values for blocksize and alignmask, used to allocate
@@ -51,6 +52,8 @@ struct crypto_instance {
 
 	struct crypto_template *tmpl;
 	struct hlist_node list;
+
+	struct work_struct free_work;
 
 	void *__ctx[] CRYPTO_MINALIGN_ATTR;
 };
