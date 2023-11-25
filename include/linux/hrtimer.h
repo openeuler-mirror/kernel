@@ -545,7 +545,7 @@ int hrtimers_prepare_cpu(unsigned int cpu);
 #ifdef CONFIG_HOTPLUG_CPU
 int hrtimers_cpu_dying(unsigned int cpu);
 #else
-#define hrtimers_cpu_dying	NULL
+static inline int hrtimers_cpu_dying(unsigned int cpu) { return 0; }
 #endif
 
 #endif

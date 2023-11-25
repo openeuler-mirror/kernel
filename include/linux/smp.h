@@ -278,5 +278,6 @@ int smp_call_on_cpu(unsigned int cpu, int (*func)(void *), void *par,
 int smpcfd_prepare_cpu(unsigned int cpu);
 int smpcfd_dead_cpu(unsigned int cpu);
 int smpcfd_dying_cpu(unsigned int cpu);
+int smpcfd_and_hrtimer_dying_cpu(unsigned int cpu);
 
 #endif /* __LINUX_SMP_H */
