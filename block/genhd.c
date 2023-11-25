@@ -768,10 +768,8 @@ static void disk_init_partition(struct gendisk *disk)
  *
  * This function registers the partitioning information in @disk
  * with the kernel.
- *
- * FIXME: error handling
  */
-static void __device_add_disk(struct device *parent, struct gendisk *disk,
+static int __device_add_disk(struct device *parent, struct gendisk *disk,
 			      const struct attribute_group **groups,
 			      bool register_queue)
 {
@@ -797,14 +795,14 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 		!(disk->flags & (GENHD_FL_EXT_DEVT | GENHD_FL_HIDDEN)));
 
 	retval = blk_alloc_devt(&disk->part0, &devt);
-	if (retval) {
-		WARN_ON(1);
-		return;
-	}
+	if (retval)
+		return retval;
 	disk->major = MAJOR(devt);
 	disk->first_minor = MINOR(devt);
 
-	disk_alloc_events(disk);
+	retval = disk_alloc_events(disk);
+	if (retval)
+		goto out_free_ext_minor;
 
 	if (disk->flags & GENHD_FL_HIDDEN) {
 		/*
@@ -815,15 +813,17 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 		disk->flags |= GENHD_FL_NO_PART_SCAN;
 	} else {
 		struct backing_dev_info *bdi = disk->queue->backing_dev_info;
-		int ret;
 
 		/* Register BDI before referencing it from bdev */
 		ddev->devt = devt;
-		ret = bdi_register(bdi, "%u:%u", MAJOR(devt), MINOR(devt));
-		WARN_ON(ret);
+		retval = bdi_register(bdi, "%u:%u", MAJOR(devt), MINOR(devt));
+		if (retval)
+			goto out_disk_release_events;
 		bdi_set_owner(bdi, ddev);
-		blk_register_region(disk_devt(disk), disk->minors, NULL,
-				    exact_match, exact_lock, disk);
+		retval = blk_register_region(disk_devt(disk), disk->minors,
+				NULL, exact_match, exact_lock, disk);
+		if (retval)
+			goto out_unregister_bdi;
 	}
 
 	/* delay uevents, until we scanned partition table */
@@ -835,15 +835,14 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 		ddev->groups = groups;
 	}
 	dev_set_name(ddev, "%s", disk->disk_name);
-	if (device_add(ddev))
-		return;
+	retval = device_add(ddev);
+	if (retval)
+		goto out_unregister_region;
 	if (!sysfs_deprecated) {
 		retval = sysfs_create_link(block_depr, &ddev->kobj,
-					kobject_name(&ddev->kobj));
-		if (retval) {
-			device_del(ddev);
-			return;
-		}
+					   kobject_name(&ddev->kobj));
+		if (retval)
+			goto out_device_del;
 	}
 
 	/*
@@ -853,23 +852,30 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	 */
 	pm_runtime_set_memalloc_noio(ddev, true);
 
-	blk_integrity_add(disk);
+	retval = blk_integrity_add(disk);
+	if (retval)
+		goto out_del_block_link;
 
 	disk->part0.holder_dir =
 		kobject_create_and_add("holders", &ddev->kobj);
+	if (!disk->part0.holder_dir)
+		goto out_del_integrity;
 	disk->slave_dir = kobject_create_and_add("slaves", &ddev->kobj);
+	if (!disk->slave_dir)
+		goto out_put_holder_dir;
 
 	if (!(disk->flags & GENHD_FL_HIDDEN)) {
-		if (disk->queue->backing_dev_info->dev) {
-			retval = sysfs_create_link(&ddev->kobj,
-				&disk->queue->backing_dev_info->dev->kobj,
-				"bdi");
-			WARN_ON(retval);
-		}
+		retval = sysfs_create_link(&ddev->kobj,
+			&disk->queue->backing_dev_info->dev->kobj, "bdi");
+		if (retval)
+			goto out_put_slave_dir;
 	}
 
-	if (register_queue)
-		blk_register_queue(disk);
+	if (register_queue) {
+		retval = blk_register_queue(disk);
+		if (retval)
+			goto out_del_bdi_sysfs_link;
+	}
 
 	/*
 	 * Take an extra ref on queue which will be put on disk_release()
@@ -889,13 +895,40 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	 */
 	disk->flags |= GENHD_FL_UP;
 	disk_init_partition(disk);
+	return 0;
+
+out_del_bdi_sysfs_link:
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		sysfs_remove_link(&ddev->kobj, "bdi");
+out_put_slave_dir:
+	kobject_put(disk->slave_dir);
+out_put_holder_dir:
+	kobject_put(disk->part0.holder_dir);
+out_del_integrity:
+	blk_integrity_del(disk);
+out_del_block_link:
+	if (!sysfs_deprecated)
+		sysfs_remove_link(block_depr, kobject_name(&ddev->kobj));
+out_device_del:
+	device_del(ddev);
+out_unregister_region:
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		blk_unregister_region(disk_devt(disk), disk->minors);
+out_unregister_bdi:
+	if (!(disk->flags & GENHD_FL_HIDDEN))
+		bdi_unregister(disk->queue->backing_dev_info);
+out_disk_release_events:
+	disk_release_events(disk);
+out_free_ext_minor:
+	blk_free_devt(devt);
+	return WARN_ON_ONCE(retval); /* keep until all callers handle errors */
 }
 
-void device_add_disk(struct device *parent, struct gendisk *disk,
+int device_add_disk(struct device *parent, struct gendisk *disk,
 		     const struct attribute_group **groups)
 
 {
-	__device_add_disk(parent, disk, groups, true);
+	return __device_add_disk(parent, disk, groups, true);
 }
 EXPORT_SYMBOL(device_add_disk);
 
