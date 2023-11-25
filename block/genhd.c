@@ -800,8 +800,9 @@ static int __device_add_disk(struct device *parent, struct gendisk *disk,
 	WARN_ON(!disk->minors &&
 		!(disk->flags & (GENHD_FL_EXT_DEVT | GENHD_FL_HIDDEN)));
 
-	if (disk->minors != 0 &&
-		disk->first_minor + disk->minors > MINORMASK + 1)
+	if (disk->minors != 0 && (disk->first_minor > MINORMASK ||
+		disk->minors > (1U << MINORBITS) ||
+		disk->first_minor + disk->minors > (1U << MINORBITS)))
 		goto out_exit_elevator;
 	retval = blk_alloc_devt(&disk->part0, &devt);
 	if (retval)
