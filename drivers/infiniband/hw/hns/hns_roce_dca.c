@@ -1657,10 +1657,9 @@ DECLARE_UVERBS_NAMED_METHOD(
 			    UVERBS_ATTR_TYPE(u32), UA_MANDATORY));
 
 static inline struct hns_roce_qp *
-uverbs_attr_to_hr_qp(struct uverbs_attr_bundle *attrs)
+uverbs_attr_to_hr_qp(struct uverbs_attr_bundle *attrs, u16 idx)
 {
-	struct ib_uobject *uobj =
-		uverbs_attr_get_uobject(attrs, 1U << UVERBS_ID_NS_SHIFT);
+	struct ib_uobject *uobj = uverbs_attr_get_uobject(attrs, idx);
 
 	if (IS_ERR(uobj))
 		return ERR_CAST(uobj);
@@ -1671,7 +1670,8 @@ uverbs_attr_to_hr_qp(struct uverbs_attr_bundle *attrs)
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_ATTACH)(
 	struct uverbs_attr_bundle *attrs)
 {
-	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs,
+					HNS_IB_ATTR_DCA_MEM_ATTACH_HANDLE);
 	struct hns_dca_attach_attr attr = {};
 	struct hns_dca_attach_resp resp = {};
 	int ret;
@@ -1724,7 +1724,8 @@ DECLARE_UVERBS_NAMED_METHOD(
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_DETACH)(
 	struct uverbs_attr_bundle *attrs)
 {
-	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs,
+					HNS_IB_ATTR_DCA_MEM_DETACH_HANDLE);
 	struct hns_dca_detach_attr attr = {};
 	int ret;
 
@@ -1751,7 +1752,8 @@ DECLARE_UVERBS_NAMED_METHOD(
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_QUERY)(
 	struct uverbs_attr_bundle *attrs)
 {
-	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs);
+	struct hns_roce_qp *hr_qp = uverbs_attr_to_hr_qp(attrs,
+					HNS_IB_ATTR_DCA_MEM_QUERY_HANDLE);
 	struct dca_page_query_active_attr active_attr = {};
 	struct hns_roce_dca_ctx *ctx = NULL;
 	struct hns_roce_dev *hr_dev = NULL;
