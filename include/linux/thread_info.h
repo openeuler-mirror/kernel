@@ -13,29 +13,9 @@
 #include <linux/bug.h>
 #include <linux/restart_block.h>
 #include <linux/errno.h>
-
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-/*
- * For CONFIG_THREAD_INFO_IN_TASK kernels we need <asm/current.h> for the
- * definition of current, but for !CONFIG_THREAD_INFO_IN_TASK kernels,
- * including <asm/current.h> can cause a circular dependency on some platforms.
- */
-#include <asm/current.h>
-#define current_thread_info() ((struct thread_info *)current)
-#endif
+#include <linux/thread_bits.h>
 
 #include <linux/bitops.h>
-
-/*
- * For per-arch arch_within_stack_frames() implementations, defined in
- * asm/thread_info.h.
- */
-enum {
-	BAD_STACK = -1,
-	NOT_STACK = 0,
-	GOOD_FRAME,
-	GOOD_STACK,
-};
 
 #ifdef CONFIG_GENERIC_ENTRY
 enum syscall_work_bit {
@@ -80,45 +60,6 @@ static inline long set_restart_fn(struct restart_block *restart,
 #define THREADINFO_GFP		(GFP_KERNEL_ACCOUNT | __GFP_ZERO)
 
 /*
- * flag set/clear/test wrappers
- * - pass TIF_xxxx constants to these functions
- */
-
-static inline void set_ti_thread_flag(struct thread_info *ti, int flag)
-{
-	set_bit(flag, (unsigned long *)&ti->flags);
-}
-
-static inline void clear_ti_thread_flag(struct thread_info *ti, int flag)
-{
-	clear_bit(flag, (unsigned long *)&ti->flags);
-}
-
-static inline void update_ti_thread_flag(struct thread_info *ti, int flag,
-					 bool value)
-{
-	if (value)
-		set_ti_thread_flag(ti, flag);
-	else
-		clear_ti_thread_flag(ti, flag);
-}
-
-static inline int test_and_set_ti_thread_flag(struct thread_info *ti, int flag)
-{
-	return test_and_set_bit(flag, (unsigned long *)&ti->flags);
-}
-
-static inline int test_and_clear_ti_thread_flag(struct thread_info *ti, int flag)
-{
-	return test_and_clear_bit(flag, (unsigned long *)&ti->flags);
-}
-
-static inline int test_ti_thread_flag(struct thread_info *ti, int flag)
-{
-	return test_bit(flag, (unsigned long *)&ti->flags);
-}
-
-/*
  * This may be used in noinstr code, and needs to be __always_inline to prevent
  * inadvertent instrumentation.
  */
@@ -127,18 +68,6 @@ static __always_inline unsigned long read_ti_thread_flags(struct thread_info *ti
 	return READ_ONCE(ti->flags);
 }
 
-#define set_thread_flag(flag) \
-	set_ti_thread_flag(current_thread_info(), flag)
-#define clear_thread_flag(flag) \
-	clear_ti_thread_flag(current_thread_info(), flag)
-#define update_thread_flag(flag, value) \
-	update_ti_thread_flag(current_thread_info(), flag, value)
-#define test_and_set_thread_flag(flag) \
-	test_and_set_ti_thread_flag(current_thread_info(), flag)
-#define test_and_clear_thread_flag(flag) \
-	test_and_clear_ti_thread_flag(current_thread_info(), flag)
-#define test_thread_flag(flag) \
-	test_ti_thread_flag(current_thread_info(), flag)
 #define read_thread_flags() \
 	read_ti_thread_flags(current_thread_info())
 
