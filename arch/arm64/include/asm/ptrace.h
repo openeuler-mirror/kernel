@@ -217,7 +217,7 @@ static inline void forget_syscall(struct pt_regs *regs)
 
 #define arch_has_single_step()	(1)
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 #define compat_thumb_mode(regs) \
 	(((regs)->pstate & PSR_AA32_T_BIT))
 #else
