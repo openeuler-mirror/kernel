@@ -620,7 +620,7 @@ int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 	cancel_delayed_work(&bond_grp->bond_work);
 	ret = remove_bond_id(bond_grp->bus_num, bond_grp->bond_id);
 	if (ret)
-		BOND_ERR_LOG("failed to remove bond id %d, ret = %d.\n",
+		BOND_ERR_LOG("failed to remove bond id %u, ret = %d.\n",
 			     bond_grp->bond_id, ret);
 
 	completion_no_waiter = completion_done(&bond_grp->bond_work_done);
