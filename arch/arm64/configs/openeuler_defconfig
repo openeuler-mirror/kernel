@@ -1683,7 +1683,9 @@ CONFIG_CAN_CC770_PLATFORM=m
 # CONFIG_CAN_IFI_CANFD is not set
 # CONFIG_CAN_M_CAN is not set
 # CONFIG_CAN_PEAK_PCIEFD is not set
-# CONFIG_CAN_PHYTIUM is not set
+CONFIG_CAN_PHYTIUM=m
+CONFIG_CAN_PHYTIUM_PLATFORM=m
+CONFIG_CAN_PHYTIUM_PCI=m
 CONFIG_CAN_SJA1000=m
 # CONFIG_CAN_SJA1000_ISA is not set
 CONFIG_CAN_SJA1000_PLATFORM=m
@@ -1924,7 +1926,7 @@ CONFIG_MTD_BLOCK2MTD=m
 #
 # CONFIG_MTD_LPDDR is not set
 CONFIG_MTD_SPI_NOR=m
-# CONFIG_SPI_PHYTIUM_QUADSPI is not set
+CONFIG_SPI_PHYTIUM_QUADSPI=m
 CONFIG_MTD_MT81xx_NOR=m
 CONFIG_MTD_SPI_NOR_USE_4K_SECTORS=y
 # CONFIG_SPI_CADENCE_QUADSPI is not set
@@ -2614,7 +2616,14 @@ CONFIG_EPIC100=m
 CONFIG_SMSC911X=m
 CONFIG_SMSC9420=m
 # CONFIG_NET_VENDOR_SOCIONEXT is not set
-# CONFIG_NET_VENDOR_STMICRO is not set
+CONFIG_NET_VENDOR_STMICRO=y
+CONFIG_STMMAC_ETH=m
+CONFIG_STMMAC_PLATFORM=m
+# CONFIG_DWMAC_DWC_QOS_ETH is not set
+CONFIG_DWMAC_GENERIC=m
+CONFIG_DWMAC_IPQ806X=m
+CONFIG_DWMAC_PHYTIUM=m
+# CONFIG_STMMAC_PCI is not set
 # CONFIG_NET_VENDOR_SUN is not set
 # CONFIG_NET_VENDOR_SYNOPSYS is not set
 # CONFIG_NET_VENDOR_TEHUTI is not set
@@ -2840,7 +2849,7 @@ CONFIG_INPUT_LEDS=y
 CONFIG_INPUT_FF_MEMLESS=m
 CONFIG_INPUT_POLLDEV=m
 CONFIG_INPUT_SPARSEKMAP=m
-# CONFIG_INPUT_MATRIXKMAP is not set
+CONFIG_INPUT_MATRIXKMAP=m
 
 #
 # Userland interfaces
@@ -2857,6 +2866,7 @@ CONFIG_INPUT_EVDEV=y
 # Input Device Drivers
 #
 CONFIG_INPUT_KEYBOARD=y
+# CONFIG_KEYBOARD_ADC is not set
 # CONFIG_KEYBOARD_ADP5588 is not set
 # CONFIG_KEYBOARD_ADP5589 is not set
 CONFIG_KEYBOARD_ATKBD=y
@@ -2884,7 +2894,7 @@ CONFIG_KEYBOARD_ATKBD=y
 # CONFIG_KEYBOARD_XTKBD is not set
 # CONFIG_KEYBOARD_CAP11XX is not set
 # CONFIG_KEYBOARD_BCM is not set
-# CONFIG_KEYBOARD_PHYTIUM is not set
+CONFIG_KEYBOARD_PHYTIUM=m
 CONFIG_INPUT_MOUSE=y
 CONFIG_MOUSE_PS2=y
 CONFIG_MOUSE_PS2_ALPS=y
@@ -3070,7 +3080,7 @@ CONFIG_HW_RANDOM_HISI=y
 CONFIG_HW_RANDOM_HISI_V2=y
 CONFIG_HW_RANDOM_XGENE=y
 CONFIG_HW_RANDOM_CAVIUM=y
-# CONFIG_HW_RANDOM_PHYTIUM is not set
+CONFIG_HW_RANDOM_PHYTIUM=m
 # CONFIG_APPLICOM is not set
 CONFIG_RAW_DRIVER=y
 CONFIG_MAX_RAW_DEVS=8192
@@ -3164,8 +3174,9 @@ CONFIG_I2C_DESIGNWARE_CORE=m
 CONFIG_I2C_DESIGNWARE_PLATFORM=m
 # CONFIG_I2C_DESIGNWARE_SLAVE is not set
 # CONFIG_I2C_DESIGNWARE_PCI is not set
-# CONFIG_I2C_PHYTIUM_PCI is not set
-# CONFIG_I2C_PHYTIUM_PLATFORM is not set
+CONFIG_I2C_PHYTIUM_CORE=m
+CONFIG_I2C_PHYTIUM_PCI=m
+CONFIG_I2C_PHYTIUM_PLATFORM=m
 # CONFIG_I2C_EMEV2 is not set
 CONFIG_I2C_GPIO=m
 # CONFIG_I2C_GPIO_FAULT_INJECTOR is not set
@@ -3219,8 +3230,9 @@ CONFIG_SPI_DW_MMIO=m
 # CONFIG_SPI_GPIO is not set
 # CONFIG_SPI_FSL_SPI is not set
 # CONFIG_SPI_OC_TINY is not set
-# CONFIG_SPI_PHYTIUM_PLAT is not set
-# CONFIG_SPI_PHYTIUM_PCI is not set
+CONFIG_SPI_PHYTIUM=m
+CONFIG_SPI_PHYTIUM_PLAT=m
+CONFIG_SPI_PHYTIUM_PCI=m
 CONFIG_SPI_PL022=y
 # CONFIG_SPI_PXA2XX is not set
 # CONFIG_SPI_ROCKCHIP is not set
@@ -3295,6 +3307,7 @@ CONFIG_GPIOLIB_IRQCHIP=y
 # CONFIG_DEBUG_GPIO is not set
 CONFIG_GPIO_SYSFS=y
 CONFIG_GPIO_GENERIC=y
+CONFIG_GPIO_PHYTIUM_CORE=m
 
 #
 # Memory mapped GPIO drivers
@@ -3311,8 +3324,8 @@ CONFIG_GPIO_HISI=m
 # CONFIG_GPIO_HLWD is not set
 # CONFIG_GPIO_MB86S7X is not set
 # CONFIG_GPIO_MOCKUP is not set
-# CONFIG_GPIO_PHYTIUM_PLAT is not set
-# CONFIG_GPIO_PHYTIUM_SGPIO is not set
+CONFIG_GPIO_PHYTIUM_PLAT=m
+CONFIG_GPIO_PHYTIUM_SGPIO=m
 CONFIG_GPIO_PL061=y
 # CONFIG_GPIO_SYSCON is not set
 # CONFIG_GPIO_THUNDERX is not set
@@ -3342,7 +3355,7 @@ CONFIG_GPIO_XLP=m
 # CONFIG_GPIO_BT8XX is not set
 # CONFIG_GPIO_PCI_IDIO_16 is not set
 # CONFIG_GPIO_PCIE_IDIO_24 is not set
-# CONFIG_GPIO_PHYTIUM_PCI is not set
+CONFIG_GPIO_PHYTIUM_PCI=m
 # CONFIG_GPIO_RDC321X is not set
 
 #
@@ -3358,7 +3371,37 @@ CONFIG_GPIO_XLP=m
 #
 # USB GPIO expanders
 #
-# CONFIG_W1 is not set
+CONFIG_W1=m
+CONFIG_W1_CON=y
+
+#
+# 1-wire Bus Masters
+#
+# CONFIG_W1_MASTER_MATROX is not set
+# CONFIG_W1_MASTER_DS2490 is not set
+# CONFIG_W1_MASTER_DS2482 is not set
+# CONFIG_W1_MASTER_DS1WM is not set
+# CONFIG_W1_MASTER_GPIO is not set
+CONFIG_W1_MASTER_PHYTIUM=m
+
+#
+# 1-wire Slaves
+#
+CONFIG_W1_SLAVE_THERM=m
+CONFIG_W1_SLAVE_SMEM=m
+# CONFIG_W1_SLAVE_DS2405 is not set
+# CONFIG_W1_SLAVE_DS2408 is not set
+# CONFIG_W1_SLAVE_DS2413 is not set
+# CONFIG_W1_SLAVE_DS2406 is not set
+# CONFIG_W1_SLAVE_DS2423 is not set
+# CONFIG_W1_SLAVE_DS2805 is not set
+# CONFIG_W1_SLAVE_DS2431 is not set
+# CONFIG_W1_SLAVE_DS2433 is not set
+# CONFIG_W1_SLAVE_DS2438 is not set
+# CONFIG_W1_SLAVE_DS2780 is not set
+# CONFIG_W1_SLAVE_DS2781 is not set
+# CONFIG_W1_SLAVE_DS28E04 is not set
+# CONFIG_W1_SLAVE_DS28E17 is not set
 # CONFIG_POWER_AVS is not set
 CONFIG_POWER_RESET=y
 # CONFIG_POWER_RESET_BRCMSTB is not set
@@ -3376,17 +3419,21 @@ CONFIG_POWER_RESET_SYSCON=y
 CONFIG_POWER_SUPPLY=y
 # CONFIG_POWER_SUPPLY_DEBUG is not set
 # CONFIG_PDA_POWER is not set
+# CONFIG_GENERIC_ADC_BATTERY is not set
 # CONFIG_TEST_POWER is not set
 # CONFIG_CHARGER_ADP5061 is not set
+# CONFIG_BATTERY_DS2760 is not set
 # CONFIG_BATTERY_DS2780 is not set
 # CONFIG_BATTERY_DS2781 is not set
 # CONFIG_BATTERY_DS2782 is not set
+# CONFIG_BATTERY_LEGO_EV3 is not set
 # CONFIG_BATTERY_SBS is not set
 # CONFIG_CHARGER_SBS is not set
 # CONFIG_MANAGER_SBS is not set
 # CONFIG_BATTERY_BQ27XXX is not set
 # CONFIG_BATTERY_MAX17040 is not set
 # CONFIG_BATTERY_MAX17042 is not set
+# CONFIG_BATTERY_MAX1721X is not set
 # CONFIG_CHARGER_MAX8903 is not set
 # CONFIG_CHARGER_LP8727 is not set
 # CONFIG_CHARGER_GPIO is not set
@@ -3442,6 +3489,7 @@ CONFIG_SENSORS_G762=m
 # CONFIG_SENSORS_HIH6130 is not set
 CONFIG_SENSORS_IBMAEM=m
 CONFIG_SENSORS_IBMPEX=m
+# CONFIG_SENSORS_IIO_HWMON is not set
 CONFIG_SENSORS_IT87=m
 CONFIG_SENSORS_JC42=m
 CONFIG_SENSORS_POWR1220=m
@@ -3589,6 +3637,7 @@ CONFIG_HISI_THERMAL=y
 #
 # ACPI INT340X thermal drivers
 #
+# CONFIG_GENERIC_ADC_THERMAL is not set
 
 #
 # Qualcomm thermal drivers
@@ -3764,6 +3813,7 @@ CONFIG_VIDEO_V4L2_SUBDEV_API=y
 CONFIG_VIDEO_V4L2=m
 # CONFIG_VIDEO_ADV_DEBUG is not set
 CONFIG_VIDEO_FIXED_MINOR_RANGES=y
+# CONFIG_VIDEO_PCI_SKELETON is not set
 # CONFIG_V4L2_FLASH_LED_CLASS is not set
 
 #
@@ -3781,13 +3831,21 @@ CONFIG_USB_VIDEO_CLASS_INPUT_EVDEV=y
 # CONFIG_VIDEO_CPIA2 is not set
 # CONFIG_USB_STKWEBCAM is not set
 # CONFIG_USB_S2255 is not set
+# CONFIG_VIDEO_USBTV is not set
 
 #
 # Webcam, TV (analog/digital) USB devices
 #
 # CONFIG_VIDEO_EM28XX is not set
 # CONFIG_MEDIA_PCI_SUPPORT is not set
-# CONFIG_V4L_PLATFORM_DRIVERS is not set
+CONFIG_V4L_PLATFORM_DRIVERS=y
+# CONFIG_VIDEO_CAFE_CCIC is not set
+# CONFIG_VIDEO_CADENCE is not set
+# CONFIG_VIDEO_MUX is not set
+# CONFIG_VIDEO_QCOM_CAMSS is not set
+# CONFIG_SOC_CAMERA is not set
+# CONFIG_VIDEO_XILINX is not set
+CONFIG_VIDEO_PHYTIUM_JPEG=m
 # CONFIG_V4L_MEM2MEM_DRIVERS is not set
 # CONFIG_V4L_TEST_DRIVERS is not set
 
@@ -3798,6 +3856,7 @@ CONFIG_USB_VIDEO_CLASS_INPUT_EVDEV=y
 CONFIG_VIDEOBUF2_CORE=m
 CONFIG_VIDEOBUF2_V4L2=m
 CONFIG_VIDEOBUF2_MEMOPS=m
+CONFIG_VIDEOBUF2_DMA_CONTIG=m
 CONFIG_VIDEOBUF2_VMALLOC=m
 
 #
@@ -4087,7 +4146,7 @@ CONFIG_DRM_HISI_HIBMC=y
 # CONFIG_DRM_MXSFB is not set
 # CONFIG_DRM_TINYDRM is not set
 # CONFIG_DRM_PL111 is not set
-# CONFIG_DRM_PHYTIUM is not set
+CONFIG_DRM_PHYTIUM=m
 # CONFIG_DRM_LEGACY is not set
 CONFIG_DRM_PANEL_ORIENTATION_QUIRKS=y
 
@@ -4200,7 +4259,120 @@ CONFIG_LOGO=y
 # CONFIG_LOGO_LINUX_VGA16 is not set
 CONFIG_LOGO_LINUX_CLUT224=y
 CONFIG_SOUND=m
-# CONFIG_SND is not set
+CONFIG_SND=m
+CONFIG_SND_TIMER=m
+CONFIG_SND_PCM=m
+CONFIG_SND_JACK=y
+CONFIG_SND_JACK_INPUT_DEV=y
+# CONFIG_SND_OSSEMUL is not set
+CONFIG_SND_PCM_TIMER=y
+# CONFIG_SND_HRTIMER is not set
+# CONFIG_SND_DYNAMIC_MINORS is not set
+CONFIG_SND_SUPPORT_OLD_API=y
+CONFIG_SND_PROC_FS=y
+CONFIG_SND_VERBOSE_PROCFS=y
+# CONFIG_SND_VERBOSE_PRINTK is not set
+# CONFIG_SND_DEBUG is not set
+CONFIG_SND_VMASTER=y
+# CONFIG_SND_SEQUENCER is not set
+CONFIG_SND_DRIVERS=y
+# CONFIG_SND_DUMMY is not set
+# CONFIG_SND_ALOOP is not set
+# CONFIG_SND_MTPAV is not set
+# CONFIG_SND_SERIAL_U16550 is not set
+# CONFIG_SND_MPU401 is not set
+CONFIG_SND_PCI=y
+# CONFIG_SND_AD1889 is not set
+# CONFIG_SND_ATIIXP is not set
+# CONFIG_SND_ATIIXP_MODEM is not set
+# CONFIG_SND_AU8810 is not set
+# CONFIG_SND_AU8820 is not set
+# CONFIG_SND_AU8830 is not set
+# CONFIG_SND_AW2 is not set
+# CONFIG_SND_BT87X is not set
+# CONFIG_SND_CA0106 is not set
+# CONFIG_SND_CMIPCI is not set
+# CONFIG_SND_OXYGEN is not set
+# CONFIG_SND_CS4281 is not set
+# CONFIG_SND_CS46XX is not set
+# CONFIG_SND_CTXFI is not set
+# CONFIG_SND_DARLA20 is not set
+# CONFIG_SND_GINA20 is not set
+# CONFIG_SND_LAYLA20 is not set
+# CONFIG_SND_DARLA24 is not set
+# CONFIG_SND_GINA24 is not set
+# CONFIG_SND_LAYLA24 is not set
+# CONFIG_SND_MONA is not set
+# CONFIG_SND_MIA is not set
+# CONFIG_SND_ECHO3G is not set
+# CONFIG_SND_INDIGO is not set
+# CONFIG_SND_INDIGOIO is not set
+# CONFIG_SND_INDIGODJ is not set
+# CONFIG_SND_INDIGOIOX is not set
+# CONFIG_SND_INDIGODJX is not set
+# CONFIG_SND_ENS1370 is not set
+# CONFIG_SND_ENS1371 is not set
+# CONFIG_SND_FM801 is not set
+# CONFIG_SND_HDSP is not set
+# CONFIG_SND_HDSPM is not set
+# CONFIG_SND_ICE1724 is not set
+# CONFIG_SND_INTEL8X0 is not set
+# CONFIG_SND_INTEL8X0M is not set
+# CONFIG_SND_KORG1212 is not set
+# CONFIG_SND_LOLA is not set
+# CONFIG_SND_LX6464ES is not set
+# CONFIG_SND_MIXART is not set
+# CONFIG_SND_NM256 is not set
+# CONFIG_SND_PCXHR is not set
+# CONFIG_SND_RIPTIDE is not set
+# CONFIG_SND_RME32 is not set
+# CONFIG_SND_RME96 is not set
+# CONFIG_SND_RME9652 is not set
+# CONFIG_SND_SE6X is not set
+# CONFIG_SND_VIA82XX is not set
+# CONFIG_SND_VIA82XX_MODEM is not set
+# CONFIG_SND_VIRTUOSO is not set
+# CONFIG_SND_VX222 is not set
+# CONFIG_SND_YMFPCI is not set
+
+#
+# HD-Audio
+#
+CONFIG_SND_HDA=m
+# CONFIG_SND_HDA_INTEL is not set
+CONFIG_SND_HDA_PHYTIUM=m
+# CONFIG_SND_HDA_HWDEP is not set
+# CONFIG_SND_HDA_RECONFIG is not set
+# CONFIG_SND_HDA_INPUT_BEEP is not set
+# CONFIG_SND_HDA_PATCH_LOADER is not set
+CONFIG_SND_HDA_CODEC_REALTEK=m
+# CONFIG_SND_HDA_CODEC_ANALOG is not set
+# CONFIG_SND_HDA_CODEC_SIGMATEL is not set
+# CONFIG_SND_HDA_CODEC_VIA is not set
+# CONFIG_SND_HDA_CODEC_HDMI is not set
+# CONFIG_SND_HDA_CODEC_CIRRUS is not set
+# CONFIG_SND_HDA_CODEC_CONEXANT is not set
+# CONFIG_SND_HDA_CODEC_CA0110 is not set
+# CONFIG_SND_HDA_CODEC_CA0132 is not set
+# CONFIG_SND_HDA_CODEC_CMEDIA is not set
+# CONFIG_SND_HDA_CODEC_SI3054 is not set
+CONFIG_SND_HDA_GENERIC=m
+CONFIG_SND_HDA_POWER_SAVE_DEFAULT=0
+CONFIG_SND_HDA_CORE=m
+CONFIG_SND_HDA_PREALLOC_SIZE=64
+CONFIG_SND_SPI=y
+CONFIG_SND_USB=y
+# CONFIG_SND_USB_AUDIO is not set
+# CONFIG_SND_USB_UA101 is not set
+# CONFIG_SND_USB_CAIAQ is not set
+# CONFIG_SND_USB_6FIRE is not set
+# CONFIG_SND_USB_HIFACE is not set
+# CONFIG_SND_BCD2000 is not set
+# CONFIG_SND_USB_POD is not set
+# CONFIG_SND_USB_PODHD is not set
+# CONFIG_SND_USB_TONEPORT is not set
+# CONFIG_SND_USB_VARIAX is not set
+# CONFIG_SND_SOC is not set
 
 #
 # HID support
@@ -4228,6 +4400,7 @@ CONFIG_HID_CHERRY=y
 CONFIG_HID_CHICONY=y
 CONFIG_HID_CORSAIR=m
 # CONFIG_HID_COUGAR is not set
+# CONFIG_HID_PRODIKEYS is not set
 # CONFIG_HID_CMEDIA is not set
 # CONFIG_HID_CP2112 is not set
 CONFIG_HID_CYPRESS=y
@@ -4590,9 +4763,9 @@ CONFIG_MMC_TOSHIBA_PCI=m
 CONFIG_MMC_MTK=m
 CONFIG_MMC_SDHCI_XENON=m
 # CONFIG_MMC_SDHCI_OMAP is not set
-# CONFIG_MMC_PHYTIUM_SDCI is not set
-# CONFIG_MMC_PHYTIUM_MCI_PCI is not set
-# CONFIG_MMC_PHYTIUM_MCI_PLTFM is not set
+CONFIG_MMC_PHYTIUM_SDCI=m
+CONFIG_MMC_PHYTIUM_MCI_PCI=m
+CONFIG_MMC_PHYTIUM_MCI_PLTFM=m
 CONFIG_MEMSTICK=m
 # CONFIG_MEMSTICK_DEBUG is not set
 
@@ -4832,7 +5005,7 @@ CONFIG_RTC_DRV_PL031=y
 # CONFIG_RTC_DRV_SNVS is not set
 # CONFIG_RTC_DRV_XGENE is not set
 # CONFIG_RTC_DRV_R7301 is not set
-# CONFIG_RTC_DRV_PHYTIUM is not set
+CONFIG_RTC_DRV_PHYTIUM=m
 
 #
 # HID Sensor RTC drivers
@@ -4929,6 +5102,59 @@ CONFIG_STAGING=y
 # CONFIG_RTS5208 is not set
 # CONFIG_VT6655 is not set
 # CONFIG_VT6656 is not set
+
+#
+# IIO staging drivers
+#
+
+#
+# Accelerometers
+#
+# CONFIG_ADIS16203 is not set
+# CONFIG_ADIS16240 is not set
+
+#
+# Analog to digital converters
+#
+# CONFIG_AD7606 is not set
+# CONFIG_AD7780 is not set
+# CONFIG_AD7816 is not set
+# CONFIG_AD7192 is not set
+# CONFIG_AD7280 is not set
+
+#
+# Analog digital bi-direction converters
+#
+# CONFIG_ADT7316 is not set
+
+#
+# Capacitance to digital converters
+#
+# CONFIG_AD7150 is not set
+# CONFIG_AD7152 is not set
+# CONFIG_AD7746 is not set
+
+#
+# Direct Digital Synthesis
+#
+# CONFIG_AD9832 is not set
+# CONFIG_AD9834 is not set
+
+#
+# Network Analyzer, Impedance Converters
+#
+# CONFIG_AD5933 is not set
+
+#
+# Active energy metering IC
+#
+# CONFIG_ADE7854 is not set
+
+#
+# Resolver to digital converters
+#
+# CONFIG_AD2S90 is not set
+# CONFIG_AD2S1210 is not set
 # CONFIG_FB_SM750 is not set
 # CONFIG_FB_XGI is not set
 
@@ -5024,7 +5250,7 @@ CONFIG_ARM64_ERRATUM_858921=y
 CONFIG_ARM_TIMER_SP804=y
 CONFIG_MAILBOX=y
 CONFIG_ARM_MHU=m
-# CONFIG_PHYTIUM_MBOX is not set
+CONFIG_PHYTIUM_MBOX=m
 # CONFIG_PLATFORM_MHU is not set
 # CONFIG_PL320_MBOX is not set
 CONFIG_PCC=y
@@ -5117,6 +5343,7 @@ CONFIG_EXTCON=y
 #
 # Extcon Device Drivers
 #
+# CONFIG_EXTCON_ADC_JACK is not set
 CONFIG_EXTCON_GPIO=m
 # CONFIG_EXTCON_MAX3355 is not set
 # CONFIG_EXTCON_QCOM_SPMI_MISC is not set
@@ -5124,7 +5351,370 @@ CONFIG_EXTCON_GPIO=m
 # CONFIG_EXTCON_SM5502 is not set
 # CONFIG_EXTCON_USB_GPIO is not set
 # CONFIG_MEMORY is not set
-# CONFIG_IIO is not set
+CONFIG_IIO=m
+CONFIG_IIO_BUFFER=y
+# CONFIG_IIO_BUFFER_CB is not set
+# CONFIG_IIO_BUFFER_HW_CONSUMER is not set
+CONFIG_IIO_KFIFO_BUF=m
+CONFIG_IIO_TRIGGERED_BUFFER=m
+# CONFIG_IIO_CONFIGFS is not set
+CONFIG_IIO_TRIGGER=y
+CONFIG_IIO_CONSUMERS_PER_TRIGGER=2
+# CONFIG_IIO_SW_DEVICE is not set
+# CONFIG_IIO_SW_TRIGGER is not set
+
+#
+# Accelerometers
+#
+# CONFIG_ADIS16201 is not set
+# CONFIG_ADIS16209 is not set
+# CONFIG_ADXL345_I2C is not set
+# CONFIG_ADXL345_SPI is not set
+# CONFIG_BMA180 is not set
+# CONFIG_BMA220 is not set
+# CONFIG_BMC150_ACCEL is not set
+# CONFIG_DA280 is not set
+# CONFIG_DA311 is not set
+# CONFIG_DMARD06 is not set
+# CONFIG_DMARD09 is not set
+# CONFIG_DMARD10 is not set
+# CONFIG_HID_SENSOR_ACCEL_3D is not set
+# CONFIG_IIO_CROS_EC_ACCEL_LEGACY is not set
+# CONFIG_IIO_ST_ACCEL_3AXIS is not set
+# CONFIG_KXSD9 is not set
+# CONFIG_KXCJK1013 is not set
+# CONFIG_MC3230 is not set
+# CONFIG_MMA7455_I2C is not set
+# CONFIG_MMA7455_SPI is not set
+# CONFIG_MMA7660 is not set
+# CONFIG_MMA8452 is not set
+# CONFIG_MMA9551 is not set
+# CONFIG_MMA9553 is not set
+# CONFIG_MXC4005 is not set
+# CONFIG_MXC6255 is not set
+# CONFIG_SCA3000 is not set
+# CONFIG_STK8312 is not set
+# CONFIG_STK8BA50 is not set
+
+#
+# Analog to digital converters
+#
+# CONFIG_AD7266 is not set
+# CONFIG_AD7291 is not set
+# CONFIG_AD7298 is not set
+# CONFIG_AD7476 is not set
+# CONFIG_AD7766 is not set
+# CONFIG_AD7791 is not set
+# CONFIG_AD7793 is not set
+# CONFIG_AD7887 is not set
+# CONFIG_AD7923 is not set
+# CONFIG_AD799X is not set
+# CONFIG_ENVELOPE_DETECTOR is not set
+# CONFIG_HI8435 is not set
+# CONFIG_HX711 is not set
+# CONFIG_INA2XX_ADC is not set
+# CONFIG_LTC2471 is not set
+# CONFIG_LTC2485 is not set
+# CONFIG_LTC2497 is not set
+# CONFIG_MAX1027 is not set
+# CONFIG_MAX11100 is not set
+# CONFIG_MAX1118 is not set
+# CONFIG_MAX1363 is not set
+# CONFIG_MAX9611 is not set
+# CONFIG_MCP320X is not set
+# CONFIG_MCP3422 is not set
+# CONFIG_NAU7802 is not set
+# CONFIG_SD_ADC_MODULATOR is not set
+# CONFIG_TI_ADC081C is not set
+# CONFIG_TI_ADC0832 is not set
+# CONFIG_TI_ADC084S021 is not set
+# CONFIG_TI_ADC12138 is not set
+# CONFIG_TI_ADC108S102 is not set
+# CONFIG_TI_ADC128S052 is not set
+# CONFIG_TI_ADC161S626 is not set
+# CONFIG_TI_ADS1015 is not set
+# CONFIG_TI_ADS7950 is not set
+# CONFIG_TI_ADS8688 is not set
+# CONFIG_TI_TLC4541 is not set
+# CONFIG_VF610_ADC is not set
+CONFIG_PHYTIUM_ADC=m
+
+#
+# Analog Front Ends
+#
+# CONFIG_IIO_RESCALE is not set
+
+#
+# Amplifiers
+#
+# CONFIG_AD8366 is not set
+
+#
+# Chemical Sensors
+#
+# CONFIG_ATLAS_PH_SENSOR is not set
+# CONFIG_BME680 is not set
+# CONFIG_CCS811 is not set
+# CONFIG_IAQCORE is not set
+# CONFIG_VZ89X is not set
+
+#
+# Hid Sensor IIO Common
+#
+# CONFIG_HID_SENSOR_IIO_COMMON is not set
+
+#
+# SSP Sensor Common
+#
+# CONFIG_IIO_SSP_SENSORHUB is not set
+
+#
+# Counters
+#
+
+#
+# Digital to analog converters
+#
+# CONFIG_AD5064 is not set
+# CONFIG_AD5360 is not set
+# CONFIG_AD5380 is not set
+# CONFIG_AD5421 is not set
+# CONFIG_AD5446 is not set
+# CONFIG_AD5449 is not set
+# CONFIG_AD5592R is not set
+# CONFIG_AD5593R is not set
+# CONFIG_AD5504 is not set
+# CONFIG_AD5624R_SPI is not set
+# CONFIG_LTC2632 is not set
+# CONFIG_AD5686_SPI is not set
+# CONFIG_AD5696_I2C is not set
+# CONFIG_AD5755 is not set
+# CONFIG_AD5758 is not set
+# CONFIG_AD5761 is not set
+# CONFIG_AD5764 is not set
+# CONFIG_AD5791 is not set
+# CONFIG_AD7303 is not set
+# CONFIG_AD8801 is not set
+# CONFIG_DPOT_DAC is not set
+# CONFIG_DS4424 is not set
+# CONFIG_M62332 is not set
+# CONFIG_MAX517 is not set
+# CONFIG_MAX5821 is not set
+# CONFIG_MCP4725 is not set
+# CONFIG_MCP4922 is not set
+# CONFIG_TI_DAC082S085 is not set
+# CONFIG_TI_DAC5571 is not set
+# CONFIG_VF610_DAC is not set
+
+#
+# IIO dummy driver
+#
+
+#
+# Frequency Synthesizers DDS/PLL
+#
+
+#
+# Clock Generator/Distribution
+#
+# CONFIG_AD9523 is not set
+
+#
+# Phase-Locked Loop (PLL) frequency synthesizers
+#
+# CONFIG_ADF4350 is not set
+
+#
+# Digital gyroscope sensors
+#
+# CONFIG_ADIS16080 is not set
+# CONFIG_ADIS16130 is not set
+# CONFIG_ADIS16136 is not set
+# CONFIG_ADIS16260 is not set
+# CONFIG_ADXRS450 is not set
+# CONFIG_BMG160 is not set
+# CONFIG_HID_SENSOR_GYRO_3D is not set
+# CONFIG_MPU3050_I2C is not set
+# CONFIG_IIO_ST_GYRO_3AXIS is not set
+# CONFIG_ITG3200 is not set
+
+#
+# Health Sensors
+#
+
+#
+# Heart Rate Monitors
+#
+# CONFIG_AFE4403 is not set
+# CONFIG_AFE4404 is not set
+# CONFIG_MAX30100 is not set
+# CONFIG_MAX30102 is not set
+
+#
+# Humidity sensors
+#
+# CONFIG_AM2315 is not set
+# CONFIG_DHT11 is not set
+# CONFIG_HDC100X is not set
+# CONFIG_HID_SENSOR_HUMIDITY is not set
+# CONFIG_HTS221 is not set
+# CONFIG_HTU21 is not set
+# CONFIG_SI7005 is not set
+# CONFIG_SI7020 is not set
+
+#
+# Inertial measurement units
+#
+# CONFIG_ADIS16400 is not set
+# CONFIG_ADIS16480 is not set
+# CONFIG_BMI160_I2C is not set
+# CONFIG_BMI160_SPI is not set
+# CONFIG_KMX61 is not set
+# CONFIG_INV_MPU6050_I2C is not set
+# CONFIG_INV_MPU6050_SPI is not set
+# CONFIG_IIO_ST_LSM6DSX is not set
+
+#
+# Light sensors
+#
+# CONFIG_ACPI_ALS is not set
+# CONFIG_ADJD_S311 is not set
+# CONFIG_AL3320A is not set
+# CONFIG_APDS9300 is not set
+# CONFIG_APDS9960 is not set
+# CONFIG_BH1750 is not set
+# CONFIG_BH1780 is not set
+# CONFIG_CM32181 is not set
+# CONFIG_CM3232 is not set
+# CONFIG_CM3323 is not set
+# CONFIG_CM3605 is not set
+# CONFIG_CM36651 is not set
+# CONFIG_GP2AP020A00F is not set
+# CONFIG_SENSORS_ISL29018 is not set
+# CONFIG_SENSORS_ISL29028 is not set
+# CONFIG_ISL29125 is not set
+# CONFIG_HID_SENSOR_ALS is not set
+# CONFIG_HID_SENSOR_PROX is not set
+# CONFIG_JSA1212 is not set
+# CONFIG_RPR0521 is not set
+# CONFIG_LTR501 is not set
+# CONFIG_LV0104CS is not set
+# CONFIG_MAX44000 is not set
+# CONFIG_OPT3001 is not set
+# CONFIG_PA12203001 is not set
+# CONFIG_SI1133 is not set
+# CONFIG_SI1145 is not set
+# CONFIG_STK3310 is not set
+# CONFIG_ST_UVIS25 is not set
+# CONFIG_TCS3414 is not set
+# CONFIG_TCS3472 is not set
+# CONFIG_SENSORS_TSL2563 is not set
+# CONFIG_TSL2583 is not set
+# CONFIG_TSL2772 is not set
+# CONFIG_TSL4531 is not set
+# CONFIG_US5182D is not set
+# CONFIG_VCNL4000 is not set
+# CONFIG_VEML6070 is not set
+# CONFIG_VL6180 is not set
+# CONFIG_ZOPT2201 is not set
+
+#
+# Magnetometer sensors
+#
+# CONFIG_AK8974 is not set
+# CONFIG_AK8975 is not set
+# CONFIG_AK09911 is not set
+# CONFIG_BMC150_MAGN_I2C is not set
+# CONFIG_BMC150_MAGN_SPI is not set
+# CONFIG_MAG3110 is not set
+# CONFIG_HID_SENSOR_MAGNETOMETER_3D is not set
+# CONFIG_MMC35240 is not set
+# CONFIG_IIO_ST_MAGN_3AXIS is not set
+# CONFIG_SENSORS_HMC5843_I2C is not set
+# CONFIG_SENSORS_HMC5843_SPI is not set
+
+#
+# Multiplexers
+#
+# CONFIG_IIO_MUX is not set
+
+#
+# Inclinometer sensors
+#
+# CONFIG_HID_SENSOR_INCLINOMETER_3D is not set
+# CONFIG_HID_SENSOR_DEVICE_ROTATION is not set
+
+#
+# Triggers - standalone
+#
+# CONFIG_IIO_INTERRUPT_TRIGGER is not set
+# CONFIG_IIO_SYSFS_TRIGGER is not set
+
+#
+# Digital potentiometers
+#
+# CONFIG_AD5272 is not set
+# CONFIG_DS1803 is not set
+# CONFIG_MAX5481 is not set
+# CONFIG_MAX5487 is not set
+# CONFIG_MCP4018 is not set
+# CONFIG_MCP4131 is not set
+# CONFIG_MCP4531 is not set
+# CONFIG_TPL0102 is not set
+
+#
+# Digital potentiostats
+#
+# CONFIG_LMP91000 is not set
+
+#
+# Pressure sensors
+#
+# CONFIG_ABP060MG is not set
+# CONFIG_BMP280 is not set
+# CONFIG_HID_SENSOR_PRESS is not set
+# CONFIG_HP03 is not set
+# CONFIG_MPL115_I2C is not set
+# CONFIG_MPL115_SPI is not set
+# CONFIG_MPL3115 is not set
+# CONFIG_MS5611 is not set
+# CONFIG_MS5637 is not set
+# CONFIG_IIO_ST_PRESS is not set
+# CONFIG_T5403 is not set
+# CONFIG_HP206C is not set
+# CONFIG_ZPA2326 is not set
+
+#
+# Lightning sensors
+#
+# CONFIG_AS3935 is not set
+
+#
+# Proximity and distance sensors
+#
+# CONFIG_ISL29501 is not set
+# CONFIG_LIDAR_LITE_V2 is not set
+# CONFIG_RFD77402 is not set
+# CONFIG_SRF04 is not set
+# CONFIG_SX9500 is not set
+# CONFIG_SRF08 is not set
+
+#
+# Resolver to digital converters
+#
+# CONFIG_AD2S1200 is not set
+
+#
+# Temperature sensors
+#
+# CONFIG_MAXIM_THERMOCOUPLE is not set
+# CONFIG_HID_SENSOR_TEMP is not set
+# CONFIG_MLX90614 is not set
+# CONFIG_MLX90632 is not set
+# CONFIG_TMP006 is not set
+# CONFIG_TMP007 is not set
+# CONFIG_TSYS01 is not set
+# CONFIG_TSYS02D is not set
 # CONFIG_NTB is not set
 # CONFIG_VME_BUS is not set
 CONFIG_PWM=y
@@ -5171,6 +5761,7 @@ CONFIG_PHY_HI6220_USB=m
 # CONFIG_PHY_HISI_INNO_USB2 is not set
 # CONFIG_PHY_PXA_28NM_HSIC is not set
 # CONFIG_PHY_PXA_28NM_USB2 is not set
+# CONFIG_PHY_CPCAP_USB is not set
 # CONFIG_PHY_MAPPHONE_MDM6600 is not set
 # CONFIG_PHY_QCOM_APQ8064_SATA is not set
 # CONFIG_PHY_QCOM_IPQ806X_SATA is not set
@@ -5229,7 +5820,11 @@ CONFIG_TEE=m
 #
 # TEE drivers
 #
-# CONFIG_OPTEE is not set
+CONFIG_OPTEE=m
+CONFIG_OPTEE_SHM_NUM_PRIV_PAGES=1
+CONFIG_OPTEE_DEFAULT_METHOD_NONE=y
+# CONFIG_OPTEE_DEFAULT_METHOD_HVC is not set
+# CONFIG_OPTEE_DEFAULT_METHOD_SMC is not set
 # CONFIG_SIOX is not set
 # CONFIG_SLIMBUS is not set
 
@@ -5922,6 +6517,7 @@ CONFIG_DEBUG_MEMORY_INIT=y
 CONFIG_HAVE_ARCH_KASAN=y
 # CONFIG_KASAN is not set
 CONFIG_ARCH_HAS_KCOV=y
+# CONFIG_KCOV is not set
 # CONFIG_DEBUG_SHIRQ is not set
 
 #
