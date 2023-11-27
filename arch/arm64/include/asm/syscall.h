@@ -38,7 +38,7 @@ static inline long syscall_get_return_value(struct task_struct *task,
 {
 	unsigned long val = regs->regs[0];
 
-	if (is_compat_thread(task_thread_info(task)))
+	if (is_a32_compat_thread(task_thread_info(task)))
 		val = sign_extend64(val, 31);
 
 	return val;
@@ -59,7 +59,7 @@ static inline void syscall_set_return_value(struct task_struct *task,
 	if (error)
 		val = error;
 
-	if (is_compat_thread(task_thread_info(task)))
+	if (is_a32_compat_thread(task_thread_info(task)))
 		val = lower_32_bits(val);
 
 	regs->regs[0] = val;
