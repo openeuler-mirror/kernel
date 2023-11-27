@@ -346,7 +346,7 @@ static int setup_dca_buf_to_hw(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* alloc a tmp array to store buffer's dma address */
-	pages = kvcalloc(count, sizeof(dma_addr_t), GFP_ATOMIC);
+	pages = kcalloc(count, sizeof(dma_addr_t), GFP_ATOMIC);
 	if (!pages)
 		return -ENOMEM;
 
@@ -369,7 +369,7 @@ static int setup_dca_buf_to_hw(struct hns_roce_dev *hr_dev,
 	ret = config_dca_qpc(hr_dev, hr_qp, pages, count);
 err_get_pages:
 	/* drop tmp array */
-	kvfree(pages);
+	kfree(pages);
 
 	return ret;
 }
