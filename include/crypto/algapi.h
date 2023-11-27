@@ -10,6 +10,7 @@
 #include <linux/crypto.h>
 #include <linux/list.h>
 #include <linux/kernel.h>
+#include <linux/workqueue.h>
 
 /*
  * Maximum values for blocksize and alignmask, used to allocate
@@ -41,6 +42,11 @@ struct crypto_type {
 	unsigned int maskclear;
 	unsigned int maskset;
 	unsigned int tfmsize;
+};
+
+struct crypto_instance_freework {
+	struct crypto_instance *instance;
+	struct work_struct free_work;
 };
 
 struct crypto_instance {
