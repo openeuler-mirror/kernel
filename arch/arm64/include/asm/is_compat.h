@@ -63,7 +63,12 @@ static inline int is_ilp32_compat_thread(struct thread_info *thread)
 
 static inline int is_compat_task(void)
 {
+#if defined(CONFIG_ARM64_ILP32) && defined(CONFIG_AARCH32_EL0)
+	return READ_ONCE(current_thread_info()->flags) &
+		(_TIF_32BIT | _TIF_32BIT_AARCH64);
+#else
 	return is_a32_compat_task() || is_ilp32_compat_task();
+#endif
 }
 
 #endif /* CONFIG_COMPAT */
