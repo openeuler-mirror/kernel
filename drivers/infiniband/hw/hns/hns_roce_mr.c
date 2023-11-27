@@ -990,8 +990,6 @@ static int get_best_hop_num(struct hns_roce_dev *hr_dev,
 	if (!buf_attr->adaptive)
 		return 0;
 
-	hop_num = INVALID_HOPNUM;
-	unit = MIN_BA_CNT;
 	/* Caculating the number of buf pages, each buf page needs a BA */
 	if (mtr->umem)
 		ba_cnt = ib_umem_num_dma_blocks(mtr->umem, buf_pg_sz);
