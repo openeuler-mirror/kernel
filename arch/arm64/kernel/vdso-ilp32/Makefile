@@ -55,6 +55,9 @@ endif
 
 # Disable gcov profiling for VDSO code
 GCOV_PROFILE := n
+KASAN_SANITIZE := n
+UBSAN_SANITIZE := n
+KCOV_INSTRUMENT := n
 
 obj-y += vdso-ilp32.o
 extra-y += vdso-ilp32.lds
