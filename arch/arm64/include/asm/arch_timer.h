@@ -218,7 +218,7 @@ static inline void arch_timer_set_evtstrm_feature(void)
 {
 	cpu_set_named_feature(EVTSTRM);
 #ifdef CONFIG_AARCH32_EL0
-	compat_elf_hwcap |= COMPAT_HWCAP_EVTSTRM;
+	a32_elf_hwcap |= COMPAT_HWCAP_EVTSTRM;
 #endif
 }
 
