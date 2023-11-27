@@ -14,7 +14,7 @@ typedef long (*syscall_fn_t)(const struct pt_regs *regs);
 extern const syscall_fn_t sys_call_table[];
 
 #ifdef CONFIG_AARCH32_EL0
-extern const syscall_fn_t compat_sys_call_table[];
+extern const syscall_fn_t a32_sys_call_table[];
 #endif
 
 static inline int syscall_get_nr(struct task_struct *task,

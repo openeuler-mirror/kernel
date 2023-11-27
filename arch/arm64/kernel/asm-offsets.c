@@ -100,8 +100,8 @@ int main(void)
   BLANK();
 #endif
 #ifdef CONFIG_AARCH32_EL0
-  DEFINE(COMPAT_SIGFRAME_REGS_OFFSET,		offsetof(struct compat_sigframe, uc.uc_mcontext.arm_r0));
-  DEFINE(COMPAT_RT_SIGFRAME_REGS_OFFSET,	offsetof(struct compat_rt_sigframe, sig.uc.uc_mcontext.arm_r0));
+  DEFINE(COMPAT_SIGFRAME_REGS_OFFSET,		offsetof(struct a32_sigframe, uc.uc_mcontext.arm_r0));
+  DEFINE(COMPAT_RT_SIGFRAME_REGS_OFFSET,	offsetof(struct a32_rt_sigframe, sig.uc.uc_mcontext.arm_r0));
   BLANK();
 #endif
   DEFINE(MM_CONTEXT_ID,		offsetof(struct mm_struct, context.id.counter));
