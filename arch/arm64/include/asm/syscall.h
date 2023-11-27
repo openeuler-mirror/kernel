@@ -79,7 +79,7 @@ static inline void syscall_get_arguments(struct task_struct *task,
  */
 static inline int syscall_get_arch(struct task_struct *task)
 {
-	if (is_compat_thread(task_thread_info(task)))
+	if (is_a32_compat_thread(task_thread_info(task)))
 		return AUDIT_ARCH_ARM;
 
 	return AUDIT_ARCH_AARCH64;

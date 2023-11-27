@@ -8,6 +8,7 @@
 
 #include <linux/bug.h>
 #include <linux/context_tracking.h>
+#include <linux/compat.h>
 #include <linux/signal.h>
 #include <linux/kallsyms.h>
 #include <linux/kprobes.h>
