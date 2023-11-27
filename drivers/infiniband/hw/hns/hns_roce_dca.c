@@ -1662,10 +1662,10 @@ uverbs_attr_to_hr_qp(struct uverbs_attr_bundle *attrs)
 	struct ib_uobject *uobj =
 		uverbs_attr_get_uobject(attrs, 1U << UVERBS_ID_NS_SHIFT);
 
-	if (uobj_get_object_id(uobj) == UVERBS_OBJECT_QP)
-		return to_hr_qp(uobj->object);
+	if (IS_ERR(uobj))
+		return ERR_CAST(uobj);
 
-	return NULL;
+	return to_hr_qp(uobj->object);
 }
 
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_ATTACH)(
@@ -1676,8 +1676,8 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_ATTACH)(
 	struct hns_dca_attach_resp resp = {};
 	int ret;
 
-	if (!hr_qp)
-		return -EINVAL;
+	if (IS_ERR(hr_qp))
+		return PTR_ERR(hr_qp);
 
 	ret = uverbs_copy_from(&attr.sq_offset, attrs,
 			     HNS_IB_ATTR_DCA_MEM_ATTACH_SQ_OFFSET);
@@ -1728,8 +1728,8 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_DETACH)(
 	struct hns_dca_detach_attr attr = {};
 	int ret;
 
-	if (!hr_qp)
-		return -EINVAL;
+	if (IS_ERR(hr_qp))
+		return PTR_ERR(hr_qp);
 
 	ret = uverbs_copy_from(&attr.sq_idx, attrs,
 			       HNS_IB_ATTR_DCA_MEM_DETACH_SQ_INDEX);
@@ -1758,12 +1758,13 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_QUERY)(
 	u32 page_idx, page_ofs;
 	int ret;
 
-	if (hr_qp)
-		hr_dev = to_hr_dev(hr_qp->ibqp.device);
-	if (hr_dev)
-		ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
+	if (IS_ERR(hr_qp))
+		return PTR_ERR(hr_qp);
+
+	hr_dev = to_hr_dev(hr_qp->ibqp.device);
+	ctx = hr_qp_to_dca_ctx(hr_dev, hr_qp);
 	if (!ctx)
-		return -EINVAL;
+		return -ENOENT;
 
 	ret = uverbs_copy_from(&page_idx, attrs,
 			       HNS_IB_ATTR_DCA_MEM_QUERY_PAGE_INDEX);
