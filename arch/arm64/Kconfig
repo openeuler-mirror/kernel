@@ -1675,6 +1675,13 @@ config THUMB2_COMPAT_VDSO
 config COMPAT_ALIGNMENT_FIXUPS
 	bool "Fix up misaligned multi-word loads and stores in user space"
 
+config COMPAT_TASK_SIZE
+	bool "Set 32-bit compatible task size"
+	default n
+	help
+	  Set the task size with 32-bit limit, to be compatible with
+	  32-bit EL0 tasks.
+
 menuconfig ARMV8_DEPRECATED
 	bool "Emulate deprecated/obsolete ARMv8 instructions"
 	depends on AARCH32_EL0
