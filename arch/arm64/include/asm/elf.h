@@ -164,6 +164,7 @@ typedef struct user_fpsimd_state elf_fpregset_t;
 
 #define SET_PERSONALITY(ex)						\
 ({									\
+	clear_thread_flag(TIF_32BIT_AARCH64);				\
 	clear_thread_flag(TIF_32BIT);					\
 	current->personality &= ~READ_IMPLIES_EXEC;			\
 })
@@ -223,6 +224,7 @@ int compat_elf_check_arch(const struct elf32_hdr *);
  */
 #define COMPAT_SET_PERSONALITY(ex)					\
 ({									\
+	clear_thread_flag(TIF_32BIT_AARCH64);				\
 	set_thread_flag(TIF_32BIT);					\
  })
 #ifdef CONFIG_COMPAT_VDSO
