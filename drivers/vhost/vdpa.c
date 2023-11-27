@@ -425,15 +425,18 @@ static long vhost_vdpa_set_features(struct vhost_vdpa *v, u64 __user *featurep)
 	u64 features;
 	int i;
 
-	/*
-	 * It's not allowed to change the features after they have
-	 * been negotiated.
-	 */
-	if (ops->get_status(vdpa) & VIRTIO_CONFIG_S_FEATURES_OK)
-		return -EBUSY;
-
 	if (copy_from_user(&features, featurep, sizeof(features)))
 		return -EFAULT;
+
+	actual_features = ops->get_driver_features(vdpa);
+
+	/*
+	 * It's not allowed to change the features after they have
+	 * been negotiated. But log start/end is allowed.
+	 */
+	if ((ops->get_status(vdpa) & VIRTIO_CONFIG_S_FEATURES_OK) &&
+	    (features & ~(BIT_ULL(VHOST_F_LOG_ALL))) != actual_features)
+		return -EBUSY;
 
 	if (vdpa_set_features(vdpa, features))
 		return -EINVAL;
