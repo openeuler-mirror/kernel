@@ -16,6 +16,7 @@
 #include <asm/fpsimd.h>
 #include <asm/signal32.h>
 #include <asm/traps.h>
+#include <asm/signal32_common.h>
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 #include <asm/vdso.h>
@@ -45,28 +46,6 @@ struct a32_aux_sigframe {
 	/* Something that isn't a valid magic number for any coprocessor.  */
 	unsigned long			end_magic;
 } __attribute__((__aligned__(8)));
-
-static inline int put_sigset_t(compat_sigset_t __user *uset, sigset_t *set)
-{
-	compat_sigset_t	cset;
-
-	cset.sig[0] = set->sig[0] & 0xffffffffull;
-	cset.sig[1] = set->sig[0] >> 32;
-
-	return copy_to_user(uset, &cset, sizeof(*uset));
-}
-
-static inline int get_sigset_t(sigset_t *set,
-			       const compat_sigset_t __user *uset)
-{
-	compat_sigset_t s32;
-
-	if (copy_from_user(&s32, uset, sizeof(*uset)))
-		return -EFAULT;
-
-	set->sig[0] = s32.sig[0] | (((long)s32.sig[1]) << 32);
-	return 0;
-}
 
 /*
  * VFP save/restore code.
