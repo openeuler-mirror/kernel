@@ -244,6 +244,7 @@ struct kvm_vcpu_arch {
 	u64 perf_ctrl[4];
 	u64 perf_cntr[4];
 
+	int blocking;
 };
 
 static inline unsigned long readl_sw_gcsr(struct loongarch_csrs *csr, int reg)
@@ -325,8 +326,6 @@ static inline void kvm_arch_free_memslot(struct kvm *kvm,
 					struct kvm_memory_slot *slot) {}
 static inline void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen) {}
 static inline void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu) {}
-static inline void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu) {}
-static inline void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu) {}
 static inline void kvm_arch_vcpu_block_finish(struct kvm_vcpu *vcpu) {}
 
 extern int kvm_enter_guest(struct kvm_run *run, struct kvm_vcpu *vcpu);

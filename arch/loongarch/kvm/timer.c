@@ -84,6 +84,7 @@ void kvm_restore_timer(struct kvm_vcpu *vcpu)
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 	ktime_t expire, now;
 	unsigned long cfg, delta, period;
+	unsigned long ticks, estat;
 
 	/*
 	 * Set guest stable timer cfg csr
@@ -98,53 +99,57 @@ void kvm_restore_timer(struct kvm_vcpu *vcpu)
 	}
 
 	/*
+	 * Freeze the soft-timer and sync the guest stable timer with it. We do
+	 * this with interrupts disabled to avoid latency.
+	 */
+	hrtimer_cancel(&vcpu->arch.swtimer);
+
+	/*
+	 * From LoongArch Reference Manual Volume 1 Chapter 7.6.2
+	 * If oneshot timer is fired, CSR TVAL will be -1, there are two
+	 * conditions:
+	 *  a) timer is fired during exiting to host
+	 *  b) timer is fired and vm is handling timer irq, host should not
+	 *     inject timer irq to avoid spurious timer interrupt
+	 */
+	ticks = kvm_read_sw_gcsr(csr, LOONGARCH_CSR_TVAL);
+	estat = kvm_read_sw_gcsr(csr, LOONGARCH_CSR_ESTAT);
+	if (!(cfg & CSR_TCFG_PERIOD) && (ticks > cfg)) {
+		/*
+		 * Writing 0 to LOONGARCH_CSR_TVAL will inject timer irq
+		 * and set CSR TVAL with -1
+		 *
+		 * Writing CSR_TINTCLR_TI to LOONGARCH_CSR_TINTCLR will clear
+		 * timer interrupt, and set CSR TVAL keeps unchanged with -1,
+		 * it avoids spurious timer interrupt
+		 */
+		kvm_write_gcsr_timertick(0);
+		if ((estat & CPU_TIMER) == 0)
+			kvm_gcsr_write(CSR_TINTCLR_TI, LOONGARCH_CSR_TINTCLR);
+		return;
+	}
+
+	/*
 	 * set remainder tick value if not expired
 	 */
 	now = ktime_get();
 	expire = vcpu->arch.expire;
+	delta = 0;
 	if (ktime_before(now, expire))
 		delta = ktime_to_tick(vcpu, ktime_sub(expire, now));
-	else {
-		if (cfg & CSR_TCFG_PERIOD) {
-			period = cfg & CSR_TCFG_VAL;
-			delta = ktime_to_tick(vcpu, ktime_sub(now, expire));
-			delta = period - (delta % period);
-		} else
-			delta = 0;
+	else if (cfg & CSR_TCFG_PERIOD) {
+		period = cfg & CSR_TCFG_VAL;
+		delta = ktime_to_tick(vcpu, ktime_sub(now, expire));
+		delta = period - (delta % period);
+
 		/*
 		 * inject timer here though sw timer should inject timer
-		 * interrupt async already, since sw timer may be cancelled
-		 * during injecting intr async in function kvm_acquire_timer
+		 * interrupt async already
 		 */
 		_kvm_queue_irq(vcpu, LARCH_INT_TIMER);
 	}
 
 	kvm_write_gcsr_timertick(delta);
-}
-
-/*
- *
- * Restore hard timer state and enable guest to access timer registers
- * without trap
- *
- * it is called with irq disabled
- */
-void kvm_acquire_timer(struct kvm_vcpu *vcpu)
-{
-	unsigned long cfg;
-
-	cfg = kvm_read_csr_gcfg();
-	if (!(cfg & CSR_GCFG_TIT))
-		return;
-
-	/* enable guest access to hard timer */
-	kvm_write_csr_gcfg(cfg & ~CSR_GCFG_TIT);
-
-	/*
-	 * Freeze the soft-timer and sync the guest stable timer with it. We do
-	 * this with interrupts disabled to avoid latency.
-	 */
-	hrtimer_cancel(&vcpu->arch.swtimer);
 }
 
 /*
@@ -154,28 +159,40 @@ void kvm_acquire_timer(struct kvm_vcpu *vcpu)
  */
 static void _kvm_save_timer(struct kvm_vcpu *vcpu)
 {
-	unsigned long ticks, delta;
+	unsigned long ticks, delta, cfg;
 	ktime_t expire;
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 
 	ticks = kvm_read_sw_gcsr(csr, LOONGARCH_CSR_TVAL);
-	delta = tick_to_ns(vcpu, ticks);
-	expire = ktime_add_ns(ktime_get(), delta);
-	vcpu->arch.expire = expire;
-	if (ticks) {
+	cfg = kvm_read_sw_gcsr(csr, LOONGARCH_CSR_TCFG);
+
+	/*
+	 * From LoongArch Reference Manual Volume 1 Chapter 7.6.2
+	 * If period timer is fired, CSR TVAL will be reloaded from CSR TCFG
+	 * If oneshot timer is fired, CSR TVAL will be -1
+	 * Here judge one shot timer fired by checking whether TVAL is larger
+	 * than TCFG
+	 */
+	if (ticks < cfg) {
 		/*
 		 * Update hrtimer to use new timeout
 		 * HRTIMER_MODE_PINNED is suggested since vcpu may run in
 		 * the same physical cpu in next time
 		 */
-		hrtimer_cancel(&vcpu->arch.swtimer);
+		delta = tick_to_ns(vcpu, ticks);
+		expire = ktime_add_ns(ktime_get(), delta);
+		vcpu->arch.expire = expire;
 		hrtimer_start(&vcpu->arch.swtimer, expire, HRTIMER_MODE_ABS_PINNED);
-	} else
+	} else if (vcpu->arch.blocking) {
 		/*
-		 * inject timer interrupt so that hall polling can dectect
-		 * and exit
+		 * Inject timer interrupt so that hall polling can dectect and exit
+		 * kvm_queue_irq is not enough, hrtimer had better be used since vcpu
+		 * is halt-polling and scheduled out already
 		 */
-		_kvm_queue_irq(vcpu, LARCH_INT_TIMER);
+		expire = ktime_add_ns(ktime_get(), 10);  // 10ns is enough here
+		vcpu->arch.expire = expire;
+		hrtimer_start(&vcpu->arch.swtimer, expire, HRTIMER_MODE_ABS_PINNED);
+	}
 }
 
 /*
@@ -185,20 +202,14 @@ static void _kvm_save_timer(struct kvm_vcpu *vcpu)
 void kvm_save_timer(struct kvm_vcpu *vcpu)
 {
 	struct loongarch_csrs *csr = vcpu->arch.csr;
-	unsigned long cfg;
 
 	preempt_disable();
-	cfg = kvm_read_csr_gcfg();
-	if (!(cfg & CSR_GCFG_TIT)) {
-		/* disable guest use of hard timer */
-		kvm_write_csr_gcfg(cfg | CSR_GCFG_TIT);
 
-		/* save hard timer state */
-		kvm_save_hw_gcsr(csr, LOONGARCH_CSR_TCFG);
-		kvm_save_hw_gcsr(csr, LOONGARCH_CSR_TVAL);
-		if (kvm_read_sw_gcsr(csr, LOONGARCH_CSR_TCFG) & CSR_TCFG_EN)
-			_kvm_save_timer(vcpu);
-	}
+	/* save hard timer state */
+	kvm_save_hw_gcsr(csr, LOONGARCH_CSR_TCFG);
+	kvm_save_hw_gcsr(csr, LOONGARCH_CSR_TVAL);
+	if (kvm_read_sw_gcsr(csr, LOONGARCH_CSR_TCFG) & CSR_TCFG_EN)
+		_kvm_save_timer(vcpu);
 
 	/* save timer-related state to vCPU context */
 	kvm_save_hw_gcsr(csr, LOONGARCH_CSR_ESTAT);
