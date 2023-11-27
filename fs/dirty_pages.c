@@ -159,6 +159,7 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 		if (m->size <= m->count) {
 			seq_set_overflow(m);
 			strncpy(m->buf+m->count-12, "terminated\n\0", 12);
+			iput(inode);
 			goto done;
 		}
 		seq_printf(m, "FSType: %s, Dev ID: %u(%u:%u) ino %lu, dirty pages %lu, path %s\n",
