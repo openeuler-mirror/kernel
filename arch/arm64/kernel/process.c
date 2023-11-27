@@ -484,7 +484,7 @@ static void erratum_1418040_thread_switch(struct task_struct *next)
 	    !this_cpu_has_cap(ARM64_WORKAROUND_1418040))
 		return;
 
-	if (is_compat_thread(task_thread_info(next)))
+	if (is_a32_compat_thread(task_thread_info(next)))
 		sysreg_clear_set(cntkctl_el1, ARCH_TIMER_USR_VCT_ACCESS_EN, 0);
 	else
 		sysreg_clear_set(cntkctl_el1, 0, ARCH_TIMER_USR_VCT_ACCESS_EN);
