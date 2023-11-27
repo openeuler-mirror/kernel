@@ -2942,14 +2942,14 @@ static void free_mr_exit(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hns_roce_v2_free_mr *free_mr = &priv->free_mr;
-	struct hns_roce_qp *hr_qp;
+	struct ib_qp *qp;
 	int ret;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(free_mr->rsv_qp); i++) {
 		if (free_mr->rsv_qp[i]) {
-			hr_qp = to_hr_qp(&free_mr->rsv_qp[i]->ibqp);
-			ret = hns_roce_v2_destroy_qp_common(hr_dev, hr_qp, NULL);
+			qp = &free_mr->rsv_qp[i]->ibqp;
+			ret = hns_roce_v2_destroy_qp(qp, NULL);
 			if (ret)
 				ibdev_err(&hr_dev->ib_dev,
 					  "failed to destroy qp in free mr.\n");
@@ -2994,6 +2994,8 @@ static int free_mr_alloc_res(struct hns_roce_dev *hr_dev)
 	return 0;
 
 create_failed_qp:
+	for (i--; i >= 0; i--)
+		hns_roce_v2_destroy_qp(&free_mr->rsv_qp[i]->ibqp, NULL);
 	free_mr_uninit_cq(hr_dev);
 
 create_failed_cq:
