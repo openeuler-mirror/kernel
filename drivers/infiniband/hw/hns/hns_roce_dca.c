@@ -882,7 +882,7 @@ static int free_buffer_pages_proc(struct dca_mem *mem, int index, void *param)
 	}
 
 	for (; changed && i < mem->page_count; i++)
-		if (dca_page_is_free(state))
+		if (dca_page_is_free(&mem->states[i]))
 			free_pages++;
 
 	if (changed && free_pages == mem->page_count)
