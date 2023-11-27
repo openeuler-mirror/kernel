@@ -53,9 +53,10 @@
 
 #define DEFAULT_MAP_WINDOW_64	(UL(1) << VA_BITS_MIN)
 #define TASK_SIZE_64		(UL(1) << vabits_actual)
-#define TASK_SIZE_MAX		(UL(1) << VA_BITS)
 
 #ifdef CONFIG_COMPAT
+#define TASK_SIZE_MAX		(is_compat_task() ? \
+				UL(0x100000000) : (UL(1) << VA_BITS))
 #if defined(CONFIG_ARM64_64K_PAGES) && defined(CONFIG_KUSER_HELPERS)
 /*
  * With CONFIG_ARM64_64K_PAGES enabled, the last page is occupied
@@ -72,6 +73,7 @@
 #define DEFAULT_MAP_WINDOW	(is_compat_task() ? \
 				TASK_SIZE_32 : DEFAULT_MAP_WINDOW_64)
 #else
+#define TASK_SIZE_MAX		(UL(1) << VA_BITS)
 #define TASK_SIZE		TASK_SIZE_64
 #define DEFAULT_MAP_WINDOW	DEFAULT_MAP_WINDOW_64
 #endif /* CONFIG_COMPAT */
