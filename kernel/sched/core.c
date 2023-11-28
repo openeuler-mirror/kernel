@@ -23,7 +23,7 @@
 #include "../workqueue_internal.h"
 #include "../../io_uring/io-wq.h"
 #include "../smpboot.h"
-
+#include <linux/sched/grid_qos.h>
 #include "pelt.h"
 #include "smp.h"
 
@@ -8143,6 +8143,7 @@ void __init sched_init_smp(void)
 
 	sched_smp_initialized = true;
 
+	sched_grid_zone_init();
 	init_auto_affinity(&root_task_group);
 }
 
@@ -9635,6 +9636,10 @@ static int cpu_affinity_stat_show(struct seq_file *sf, void *v)
 	seq_printf(sf, "dcount %d\n", ad->dcount);
 	seq_printf(sf, "domain_mask 0x%x\n", ad->domain_mask);
 	seq_printf(sf, "curr_level %d\n", ad->curr_level);
+	seq_printf(sf, "zone hot %*pbl\n",
+			cpumask_pr_args(sched_grid_zone_cpumask(SMART_GRID_ZONE_HOT)));
+	seq_printf(sf, "zone warm %*pbl\n",
+			cpumask_pr_args(sched_grid_zone_cpumask(SMART_GRID_ZONE_WARM)));
 	for (i = 0; i < ad->dcount; i++)
 		seq_printf(sf, "sd_level %d, cpu list %*pbl, stay_cnt %llu\n",
 			i, cpumask_pr_args(ad->domains[i]),

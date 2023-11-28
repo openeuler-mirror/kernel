@@ -23,6 +23,7 @@
 #include <linux/numa.h>
 #include <linux/sched/grid_qos.h>
 #include "internal.h"
+#include <../kernel/sched/sched.h>
 
 static inline int qos_affinity_set(struct task_struct *p)
 {
@@ -152,4 +153,86 @@ int sched_grid_preferred_nid(int preferred_nid, nodemask_t *nodemask)
 		nd = first_node(nmask);
 
 	return nd;
+}
+
+static struct sched_grid_zone sg_zone;
+
+int __init sched_grid_zone_init(void)
+{
+	int index;
+
+	for (index = 0; index < SMART_GRID_ZONE_NR; index++)
+		cpumask_clear(&sg_zone.cpus[index]);
+
+	raw_spin_lock_init(&sg_zone.lock);
+	INIT_LIST_HEAD(&sg_zone.af_list_head);
+	return 0;
+}
+
+int sched_grid_zone_update(bool is_locked)
+{
+	struct list_head *pos;
+	struct auto_affinity *af_pos;
+	unsigned long flags;
+
+	if (!is_locked)
+		raw_spin_lock_irqsave(&sg_zone.lock, flags);
+
+	cpumask_clear(&sg_zone.cpus[SMART_GRID_ZONE_HOT]);
+
+	list_for_each(pos, &sg_zone.af_list_head) {
+		af_pos = list_entry(pos, struct auto_affinity, af_list);
+
+		/* when smart_grid not used we need calculate all task_group */
+		/* when smart_grid used we only calculate enabled task_group */
+		if (smart_grid_used() && af_pos->mode == 0)
+			continue;
+
+		cpumask_or(&sg_zone.cpus[SMART_GRID_ZONE_HOT], &sg_zone.cpus[SMART_GRID_ZONE_HOT],
+			   af_pos->ad.domains[af_pos->ad.curr_level]);
+	}
+
+	cpumask_complement(&sg_zone.cpus[SMART_GRID_ZONE_WARM],
+			   &sg_zone.cpus[SMART_GRID_ZONE_HOT]);
+
+	if (!is_locked)
+		raw_spin_unlock_irqrestore(&sg_zone.lock, flags);
+
+	return 0;
+}
+
+int sched_grid_zone_add_af(struct auto_affinity *af)
+{
+	unsigned long flags;
+
+	if (af == NULL)
+		return -1;
+
+	raw_spin_lock_irqsave(&sg_zone.lock, flags);
+	list_add_tail(&af->af_list, &sg_zone.af_list_head);
+	sched_grid_zone_update(true);
+	raw_spin_unlock_irqrestore(&sg_zone.lock, flags);
+	return 0;
+}
+
+int sched_grid_zone_del_af(struct auto_affinity *af)
+{
+	unsigned long flags;
+
+	if (af == NULL)
+		return -1;
+
+	raw_spin_lock_irqsave(&sg_zone.lock, flags);
+	list_del(&af->af_list);
+	sched_grid_zone_update(true);
+	raw_spin_unlock_irqrestore(&sg_zone.lock, flags);
+	return 0;
+}
+
+struct cpumask *sched_grid_zone_cpumask(enum sg_zone_type zone)
+{
+	if (zone >= SMART_GRID_ZONE_NR)
+		return NULL;
+
+	return &sg_zone.cpus[zone];
 }

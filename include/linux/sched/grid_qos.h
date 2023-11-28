@@ -84,7 +84,28 @@ void sched_grid_qos_free(struct task_struct *p);
 
 int sched_grid_preferred_interleave_nid(struct mempolicy *policy);
 int sched_grid_preferred_nid(int preferred_nid, nodemask_t *nodemask);
+
+enum sg_zone_type {
+	SMART_GRID_ZONE_HOT = 0,
+	SMART_GRID_ZONE_WARM,
+	SMART_GRID_ZONE_NR
+};
+
+struct auto_affinity;
+struct sched_grid_zone {
+	raw_spinlock_t lock;
+	struct cpumask cpus[SMART_GRID_ZONE_NR];
+	struct list_head af_list_head;	/* struct auto_affinity list head */
+};
+
+int __init sched_grid_zone_init(void);
+int sched_grid_zone_update(bool is_locked);
+int sched_grid_zone_add_af(struct auto_affinity *af);
+int sched_grid_zone_del_af(struct auto_affinity *af);
+struct cpumask *sched_grid_zone_cpumask(enum sg_zone_type zone);
 #else
+static inline int __init sched_grid_zone_init(void) { return 0; }
+
 static inline int
 sched_grid_preferred_interleave_nid(struct mempolicy *policy)
 {
