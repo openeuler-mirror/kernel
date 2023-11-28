@@ -2805,6 +2805,15 @@ static struct ctl_table kern_table[] = {
 #endif
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 	{
+		.procname	= "smart_grid_strategy_ctrl",
+		.data		= &sysctl_smart_grid_strategy_ctrl,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
 		.procname	= "affinity_adjust_delay_ms",
 		.data		= &sysctl_affinity_adjust_delay_ms,
 		.maxlen		= sizeof(unsigned int),
