@@ -1114,14 +1114,24 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
 		ret = hr_dev->hw->bond_init(hr_dev);
-		if (ret)
+		if (ret) {
 			dev_err(dev, "roce bond init failed, ret = %d\n", ret);
+			/* For non-bond devices, the failure of bond_init does
+			 * not affect other functions.
+			 */
+			if (hr_dev->hw->bond_is_active(hr_dev))
+				goto error_bond_init;
+			else
+				ret = 0;
+		}
 	}
 
 	hr_dev->active = true;
 
 	return ret;
 
+error_bond_init:
+	unregister_netdevice_notifier(&iboe->nb);
 error_failed_setup_mtu_mac:
 	ib_unregister_device(ib_dev);
 

@@ -699,7 +699,7 @@ static int mtr_alloc_bufs(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 		mtr->kmem = NULL;
 		mtr->umem = ib_umem_get(ibdev, user_addr, total_size,
 					buf_attr->user_access);
-		if (IS_ERR_OR_NULL(mtr->umem)) {
+		if (IS_ERR(mtr->umem)) {
 			ibdev_err(ibdev, "failed to get umem, ret = %ld.\n",
 				  PTR_ERR(mtr->umem));
 			return -ENOMEM;
@@ -990,8 +990,6 @@ static int get_best_hop_num(struct hns_roce_dev *hr_dev,
 	if (!buf_attr->adaptive)
 		return 0;
 
-	hop_num = INVALID_HOPNUM;
-	unit = MIN_BA_CNT;
 	/* Caculating the number of buf pages, each buf page needs a BA */
 	if (mtr->umem)
 		ba_cnt = ib_umem_num_dma_blocks(mtr->umem, buf_pg_sz);

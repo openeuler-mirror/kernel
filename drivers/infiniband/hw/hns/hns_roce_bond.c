@@ -284,7 +284,8 @@ static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 out:
 	ret = hns_roce_cleanup_bond(bond_grp);
 	if (!ret)
-		ibdev_info(&hr_dev->ib_dev, "RoCE clear bond finished!\n");
+		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
+			   "RoCE clear bond finished!\n");
 }
 
 static void hns_roce_slave_changestate(struct hns_roce_bond_group *bond_grp)
@@ -558,6 +559,12 @@ static struct hns_roce_die_info *alloc_die_info(int bus_num)
 	return die_info;
 }
 
+static void dealloc_die_info(struct hns_roce_die_info *die_info, u8 bus_num)
+{
+	xa_erase(&roce_bond_xa, bus_num);
+	kvfree(die_info);
+}
+
 static int alloc_bond_id(struct hns_roce_bond_group *bond_grp)
 {
 	u8 bus_num = bond_grp->bus_num;
@@ -599,10 +606,8 @@ static int remove_bond_id(int bus_num, u8 bond_id)
 
 	die_info->bond_id_mask &= ~BOND_ID(bond_id);
 	die_info->bgrps[bond_id] = NULL;
-	if (!die_info->bond_id_mask) {
-		kfree(die_info);
-		xa_erase(&roce_bond_xa, bus_num);
-	}
+	if (!die_info->bond_id_mask)
+		dealloc_die_info(die_info, bus_num);
 
 	return 0;
 }
@@ -620,7 +625,7 @@ int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 	cancel_delayed_work(&bond_grp->bond_work);
 	ret = remove_bond_id(bond_grp->bus_num, bond_grp->bond_id);
 	if (ret)
-		BOND_ERR_LOG("failed to remove bond id %d, ret = %d.\n",
+		BOND_ERR_LOG("failed to remove bond id %u, ret = %d.\n",
 			     bond_grp->bond_id, ret);
 
 	completion_no_waiter = completion_done(&bond_grp->bond_work_done);

@@ -463,7 +463,7 @@ static int check_send_valid(struct hns_roce_dev *hr_dev,
 	if (check_dca_attach_enable(hr_qp)) {
 		ret = dca_attach_qp_buf(hr_dev, hr_qp);
 		if (unlikely(ret)) {
-			ibdev_err(&hr_dev->ib_dev,
+			ibdev_err(ibdev,
 				  "failed to attach DCA for QP-%ld send!\n",
 				  hr_qp->qpn);
 			return ret;
@@ -2850,6 +2850,19 @@ static struct ib_pd *free_mr_init_pd(struct hns_roce_dev *hr_dev)
 	return pd;
 }
 
+static void free_mr_uninit_pd(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_v2_priv *priv = hr_dev->priv;
+	struct hns_roce_v2_free_mr *free_mr = &priv->free_mr;
+
+	if (!free_mr->rsv_pd)
+		return;
+
+	hns_roce_dealloc_pd(&free_mr->rsv_pd->ibpd, NULL);
+	kvfree(free_mr->rsv_pd);
+	free_mr->rsv_pd = NULL;
+}
+
 static struct ib_cq *free_mr_init_cq(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
@@ -2887,6 +2900,19 @@ static struct ib_cq *free_mr_init_cq(struct hns_roce_dev *hr_dev)
 	return cq;
 }
 
+static void free_mr_uninit_cq(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_v2_priv *priv = hr_dev->priv;
+	struct hns_roce_v2_free_mr *free_mr = &priv->free_mr;
+
+	if (!free_mr->rsv_cq)
+		return;
+
+	hns_roce_destroy_cq(&free_mr->rsv_cq->ib_cq, NULL);
+	kvfree(free_mr->rsv_cq);
+	free_mr->rsv_cq = NULL;
+}
+
 static struct hns_roce_qp *create_free_mr_qp(struct hns_roce_dev *hr_dev,
 					     struct ib_pd *pd, struct ib_cq *cq)
 {
@@ -2916,14 +2942,14 @@ static void free_mr_exit(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hns_roce_v2_free_mr *free_mr = &priv->free_mr;
-	struct hns_roce_qp *hr_qp;
+	struct ib_qp *qp;
 	int ret;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(free_mr->rsv_qp); i++) {
 		if (free_mr->rsv_qp[i]) {
-			hr_qp = to_hr_qp(&free_mr->rsv_qp[i]->ibqp);
-			ret = hns_roce_v2_destroy_qp_common(hr_dev, hr_qp, NULL);
+			qp = &free_mr->rsv_qp[i]->ibqp;
+			ret = hns_roce_v2_destroy_qp(qp, NULL);
 			if (ret)
 				ibdev_err(&hr_dev->ib_dev,
 					  "failed to destroy qp in free mr.\n");
@@ -2932,16 +2958,8 @@ static void free_mr_exit(struct hns_roce_dev *hr_dev)
 		}
 	}
 
-	if (free_mr->rsv_cq) {
-		hns_roce_destroy_cq(&free_mr->rsv_cq->ib_cq, NULL);
-		kfree(free_mr->rsv_cq);
-	}
-
-	if (free_mr->rsv_pd) {
-		hns_roce_dealloc_pd(&free_mr->rsv_pd->ibpd, NULL);
-		free_mr->rsv_pd = NULL;
-		kfree(free_mr->rsv_pd);
-	}
+	free_mr_uninit_cq(hr_dev);
+	free_mr_uninit_pd(hr_dev);
 }
 
 static int free_mr_alloc_res(struct hns_roce_dev *hr_dev)
@@ -2976,12 +2994,12 @@ static int free_mr_alloc_res(struct hns_roce_dev *hr_dev)
 	return 0;
 
 create_failed_qp:
-	hns_roce_destroy_cq(cq, NULL);
-	kfree(cq);
+	for (i--; i >= 0; i--)
+		hns_roce_v2_destroy_qp(&free_mr->rsv_qp[i]->ibqp, NULL);
+	free_mr_uninit_cq(hr_dev);
 
 create_failed_cq:
-	hns_roce_dealloc_pd(pd, NULL);
-	kfree(pd);
+	free_mr_uninit_pd(hr_dev);
 
 	return ret;
 }
