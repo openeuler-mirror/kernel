@@ -180,7 +180,7 @@ int preserve_sve_context(struct sve_context __user *ctx)
 {
 	int err = 0;
 	u16 reserved[ARRAY_SIZE(ctx->__reserved)];
-	unsigned int vl = current->thread.sve_vl;
+	unsigned int vl = task_get_sve_vl(current);
 	unsigned int vq = 0;
 
 	if (test_thread_flag(TIF_SVE))
@@ -219,7 +219,7 @@ int restore_sve_fpsimd_context(struct user_ctxs *user)
 	if (__copy_from_user(&sve, user->sve, sizeof(sve)))
 		return -EFAULT;
 
-	if (sve.vl != current->thread.sve_vl)
+	if (sve.vl != task_get_sve_vl(current))
 		return -EINVAL;
 
 	if (sve.head.size <= sizeof(*user->sve)) {
@@ -474,7 +474,7 @@ int setup_sigframe_layout(struct rt_sigframe_user_layout *user, bool add_all)
 			int vl = sve_max_vl;
 
 			if (!add_all)
-				vl = current->thread.sve_vl;
+				vl = task_get_sve_vl(current);
 
 			vq = sve_vq_from_vl(vl);
 		}
