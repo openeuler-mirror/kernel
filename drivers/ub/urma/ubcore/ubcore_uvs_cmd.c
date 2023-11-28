@@ -18,6 +18,7 @@
  * History: 2023-07-03: create file
  */
 
+#include <net/net_namespace.h>
 #include <linux/slab.h>
 #include <urma/ubcore_api.h>
 #include "ubcore_priv.h"
@@ -1025,6 +1026,7 @@ static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *
 			dev->eid_table.eid_entries[i].eid = *eid;
 			dev->eid_table.eid_entries[i].valid = true;
 			dev->eid_table.eid_entries[i].eid_index = i;
+			dev->eid_table.eid_entries[i].net = &init_net;
 			*eid_idx = i;
 			ubcore_log_info("add eid: %pI6c, idx: %u\n", eid, i);
 			break;
@@ -1059,7 +1061,7 @@ static int ubcore_eidtbl_del_entry(struct ubcore_device *dev, union ubcore_eid *
 }
 
 static int ubcore_eidtbl_update_entry(struct ubcore_device *dev, union ubcore_eid *eid,
-	uint32_t eid_idx, bool is_add)
+	uint32_t eid_idx, bool is_add, struct net *net)
 {
 	if (eid_idx >= dev->attr.max_eid_cnt) {
 		ubcore_log_err("eid table is full\n");
@@ -1072,6 +1074,7 @@ static int ubcore_eidtbl_update_entry(struct ubcore_device *dev, union ubcore_ei
 
 	dev->eid_table.eid_entries[eid_idx].valid = is_add;
 	dev->eid_table.eid_entries[eid_idx].eid_index = eid_idx;
+	dev->eid_table.eid_entries[eid_idx].net = net;
 	ubcore_log_info("%s eid: %pI6c, idx: %u\n", is_add == true ? "add" : "del", eid, eid_idx);
 	return 0;
 }
@@ -1092,55 +1095,13 @@ int ubcore_update_eidtbl_by_eid(struct ubcore_device *dev, union ubcore_eid *eid
 }
 
 int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev, union ubcore_eid *eid,
-	uint32_t eid_idx, bool is_alloc_eid)
+	uint32_t eid_idx, bool is_alloc_eid, struct net *net)
 {
 	int ret;
 
 	spin_lock(&dev->eid_table.lock);
-	ret = ubcore_eidtbl_update_entry(dev, eid, eid_idx, is_alloc_eid);
+	ret = ubcore_eidtbl_update_entry(dev, eid, eid_idx, is_alloc_eid, net);
 	spin_unlock(&dev->eid_table.lock);
-	return ret;
-}
-
-static int ubcore_cmd_opt_update_eid(struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_opt_eid arg;
-	struct ubcore_ueid_cfg cfg;
-	struct ubcore_device *dev;
-	bool is_alloc_eid;
-	int ret;
-
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-		sizeof(struct ubcore_cmd_opt_eid));
-	if (ret != 0)
-		return ret;
-
-	cfg.eid = arg.in.eid;
-	cfg.eid_index = arg.in.eid_index;
-	cfg.upi = arg.in.upi;
-
-	dev = ubcore_find_device_with_name(arg.in.dev_name);
-	if (dev == NULL)
-		return -1;
-
-	if (!dev->attr.virtualization && dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1) {
-		ubcore_put_device(dev);
-		ubcore_log_err("pattern1 does not support static mode\n");
-		return -1;
-	}
-	is_alloc_eid = hdr->command == UBCORE_CMD_ALLOC_EID ? true : false;
-	ret = ubcore_update_eidtbl_by_idx(dev, &cfg.eid, arg.in.eid_index, is_alloc_eid);
-	if (ret != 0) {
-		ubcore_put_device(dev);
-		return ret;
-	}
-
-	if (hdr->command == UBCORE_CMD_ALLOC_EID)
-		ret = ubcore_add_ueid(dev, arg.in.fe_idx, &cfg);
-	else
-		ret = ubcore_delete_ueid(dev, arg.in.fe_idx, &cfg);
-
-	ubcore_put_device(dev);
 	return ret;
 }
 
@@ -1307,7 +1268,6 @@ static int ubcore_cmd_get_dev_info(struct ubcore_cmd_hdr *hdr)
 {
 	struct ubcore_cmd_get_dev_info arg;
 	struct ubcore_device *tpf_dev;
-	struct ubcore_device *pf_dev;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
@@ -1315,7 +1275,7 @@ static int ubcore_cmd_get_dev_info(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		return ret;
 
-	tpf_dev = ubcore_find_tpf_device(&arg.in.tpf.netaddr, arg.in.tpf.trans_type);
+	tpf_dev = ubcore_find_device_with_name(arg.in.target_tpf_name);
 	if (tpf_dev == NULL) {
 		ubcore_log_err("failed to find tpf device");
 		return -1;
@@ -1323,30 +1283,13 @@ static int ubcore_cmd_get_dev_info(struct ubcore_cmd_hdr *hdr)
 
 	ubcore_log_info("get tpf device name %s", tpf_dev->dev_name);
 
-	(void)strcpy(arg.out.target_tpf_name, tpf_dev->dev_name);
-
-	ubcore_put_device(tpf_dev);
-
-	pf_dev = ubcore_find_device_with_eid_index(&arg.in.peer_eid, arg.in.tpf.trans_type,
-		arg.in.eid_index);
-	if (pf_dev != NULL) {
-		ubcore_log_info("pf_dev %s has been found by eid_index %u and eid: "EID_FMT"\n",
-			pf_dev->dev_name, arg.in.eid_index, EID_ARGS(arg.in.peer_eid));
-	} else {
-		ubcore_put_device(pf_dev);
-		ubcore_log_err("pf_dev cannot be found by eid_index %u and eid: "EID_FMT"\n",
-			arg.in.eid_index, EID_ARGS(arg.in.peer_eid));
-		return -1;
-	}
-
 	arg.out.port_is_active = true;
-	if (ubcore_check_port_state(pf_dev, 0) != 0) {
+	if (ubcore_check_port_state(tpf_dev, 0) != 0) {
 		arg.out.port_is_active = false;
-		ubcore_log_warn("port status unactive on target side, pf_dev: %s",
-			pf_dev->dev_name);
+		ubcore_log_warn("port status unactive on target side, tpf_dev: %s",
+			tpf_dev->dev_name);
 	}
-	(void)strcpy(arg.out.target_pf_name, pf_dev->dev_name);
-	ubcore_put_device(pf_dev);
+	ubcore_put_device(tpf_dev);
 
 	if (ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct ubcore_cmd_get_dev_info)) != 0)
@@ -1404,7 +1347,7 @@ static int ubcore_cmd_destroy_tp(struct ubcore_cmd_hdr *hdr, struct ubcore_cmd_d
 		return -ENODEV;
 
 	if (ubcore_para_ta(dev, &advice, &arg->ta_data) != 0) {
-		ubcore_log_err("Failed to parse ta with type %u", advice.ta.type);
+		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)advice.ta.type);
 		ret = -1;
 		goto put_device;
 	} else if (advice.meta.ht == NULL) {
@@ -2114,8 +2057,6 @@ static ubcore_uvs_cmd_handler g_ubcore_uvs_cmd_handlers[] = {
 	[UBCORE_CMD_DESTROY_TPG] = ubcore_cmd_destroy_tpg,
 	[UBCORE_CMD_ADD_SIP] = ubcore_cmd_opt_sip,
 	[UBCORE_CMD_DEL_SIP] = ubcore_cmd_opt_sip,
-	[UBCORE_CMD_ALLOC_EID] = ubcore_cmd_opt_update_eid,
-	[UBCORE_CMD_DEALLOC_EID] = ubcore_cmd_opt_update_eid,
 	[UBCORE_CMD_MAP_VTP] = ubcore_cmd_map_vtp,
 	[UBCORE_CMD_CREATE_UTP] = ubcore_cmd_create_utp,
 	[UBCORE_CMD_DESTROY_UTP] = ubcore_cmd_destroy_utp,

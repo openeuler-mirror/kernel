@@ -28,23 +28,23 @@
 #include "ubcore_vtp.h"
 
 static int ubcore_handle_create_vtp_resp(struct ubcore_device *dev,
-	struct ubcore_msg *msg, void *user_arg)
+	struct ubcore_resp *resp, void *user_arg)
 {
-	struct ubcore_create_vtp_resp *resp = (struct ubcore_create_vtp_resp *)msg->data;
+	struct ubcore_create_vtp_resp *vtp_resp = (struct ubcore_create_vtp_resp *)resp->data;
 	struct ubcore_vtpn *vtpn = (struct ubcore_vtpn *)user_arg;
 
-	if (resp->ret == UBCORE_MSG_RESP_FAIL) {
+	if (vtp_resp->ret == UBCORE_MSG_RESP_FAIL) {
 		ubcore_log_err("failed to create vtp: response error");
 		return -1;
-	} else if (resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
+	} else if (vtp_resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
 		ubcore_log_err("failed: try to create vtp which is being created. Try again later");
 		return -1;
-	} else if (resp->ret == UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND) {
+	} else if (vtp_resp->ret == UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND) {
 		ubcore_log_err("failed: rc jetty already bind by other jetty");
 		return -1;
 	}
 	/* tpf may return a new vtpn */
-	vtpn->vtpn = resp->vtpn;
+	vtpn->vtpn = vtp_resp->vtpn;
 	atomic_set(&vtpn->state, (int)UBCORE_VTPS_READY);
 	return 0;
 }
@@ -54,14 +54,13 @@ static int ubcore_send_create_vtp_req(struct ubcore_device *dev,
 {
 	uint32_t data_len = (uint32_t)sizeof(struct ubcore_create_vtp_req);
 	struct ubcore_create_vtp_req *create;
-	struct ubcore_msg *req;
+	struct ubcore_req *req;
 	struct ubcore_resp_cb cb;
 	int ret;
 
-	req = kzalloc(sizeof(struct ubcore_msg) + data_len, GFP_KERNEL);
-	req->hdr.type = UBCORE_MSG_TYPE_FE2TPF;
-	req->hdr.opcode = UBCORE_MSG_CREATE_VTP;
-	req->hdr.len = data_len;
+	req = kzalloc(sizeof(struct ubcore_req) + data_len, GFP_KERNEL);
+	req->opcode = UBCORE_MSG_CREATE_VTP;
+	req->len = data_len;
 
 	create = (struct ubcore_create_vtp_req *)req->data;
 	create->vtpn = vtpn->vtpn;
@@ -82,15 +81,15 @@ static int ubcore_send_create_vtp_req(struct ubcore_device *dev,
 }
 
 static int ubcore_handle_del_vtp_resp(struct ubcore_device *dev,
-	struct ubcore_msg *msg, void *user_arg)
+	struct ubcore_resp *resp, void *user_arg)
 {
-	struct ubcore_destroy_vtp_resp *resp = (struct ubcore_destroy_vtp_resp *)msg->data;
+	struct ubcore_destroy_vtp_resp *vtp_resp = (struct ubcore_destroy_vtp_resp *)resp->data;
 	struct ubcore_vtpn *vtpn = (struct ubcore_vtpn *)user_arg;
 
-	if (resp->ret == UBCORE_MSG_RESP_FAIL) {
+	if (vtp_resp->ret == UBCORE_MSG_RESP_FAIL) {
 		ubcore_log_err("failed to destroy vtp: response error");
 		return -1;
-	} else if (resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
+	} else if (vtp_resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
 		ubcore_log_err("failed: try to del vtp which is being created. Try again later");
 		return -1;
 	}
@@ -102,14 +101,13 @@ static int ubcore_send_del_vtp_req(struct ubcore_vtpn *vtpn)
 {
 	uint32_t data_len = (uint32_t)sizeof(struct ubcore_create_vtp_req);
 	struct ubcore_create_vtp_req *destroy;
-	struct ubcore_msg *req;
+	struct ubcore_req *req;
 	struct ubcore_resp_cb cb;
 	int ret;
 
-	req = kzalloc(sizeof(struct ubcore_msg) + data_len, GFP_KERNEL);
-	req->hdr.type = UBCORE_MSG_TYPE_FE2TPF;
-	req->hdr.opcode = UBCORE_MSG_DESTROY_VTP;
-	req->hdr.len = data_len;
+	req = kzalloc(sizeof(struct ubcore_req) + data_len, GFP_KERNEL);
+	req->opcode = UBCORE_MSG_DESTROY_VTP;
+	req->len = data_len;
 
 	destroy = (struct ubcore_create_vtp_req *)req->data;
 	destroy->vtpn = vtpn->vtpn;

@@ -295,7 +295,7 @@ static void ubcore_nl_cb_func(struct sk_buff *skb)
 	struct nlmsghdr *nlh;
 
 	nlh = nlmsg_hdr(skb);
-	if (nlmsg_len(nlh) < sizeof(struct ubcore_nlmsg) || skb->len < nlh->nlmsg_len) {
+	if (nlmsg_len(nlh) < (int)sizeof(struct ubcore_nlmsg) || skb->len < nlh->nlmsg_len) {
 		ubcore_log_err("Invalid nl msg received");
 		return;
 	}
@@ -463,7 +463,9 @@ static struct notifier_block ubcore_netlink_notifier = {
 int ubcore_netlink_init(void)
 {
 	/* create netlink socket */
-	struct netlink_kernel_cfg cfg = { .input = ubcore_nl_cb_func };
+	struct netlink_kernel_cfg cfg = {0};
+
+	cfg.input = ubcore_nl_cb_func;
 
 	nl_sock = (struct sock *)netlink_kernel_create(&init_net, UBCORE_NL_TYPE, &cfg);
 	if (nl_sock == NULL) {

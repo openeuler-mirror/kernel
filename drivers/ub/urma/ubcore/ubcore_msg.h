@@ -30,9 +30,9 @@ enum ubcore_msg_resp_status {
 	UBCORE_MSG_RESP_SUCCESS = 0
 };
 
-typedef int (*ubcore_req_handler)(struct ubcore_device *dev, struct ubcore_msg *msg);
+typedef int (*ubcore_req_handler)(struct ubcore_device *dev, struct ubcore_req_host *req);
 typedef int (*ubcore_resp_handler)(struct ubcore_device *dev,
-	struct ubcore_msg *msg, void *msg_ctx);
+	struct ubcore_resp *msg, void *msg_ctx);
 
 struct ubcore_resp_cb {
 	void *user_arg;
@@ -40,8 +40,8 @@ struct ubcore_resp_cb {
 };
 
 struct ubcore_msg_session {
-	struct ubcore_msg *req;
-	struct ubcore_msg *resp;
+	struct ubcore_req *req;
+	struct ubcore_resp *resp;
 	struct list_head node;
 	struct kref kref;
 	struct completion comp; /* Synchronization event of timeout sleep and thread wakeup */
@@ -82,15 +82,22 @@ struct ubcore_msg_discover_eid_resp {
 	union ubcore_eid eid;
 	uint32_t eid_index;
 	uint32_t upi;
+	uint16_t fe_idx;
 };
 
 struct ubcore_function_mig_req {
 	uint16_t mig_fe_idx;
 };
 
-int ubcore_send_msg(struct ubcore_device *dev, struct ubcore_msg *msg);
-int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_msg *req,
+struct ubcore_function_mig_resp {
+	uint16_t mig_fe_idx;
+	enum ubcore_mig_resp_status status;
+};
+
+int ubcore_send_req(struct ubcore_device *dev, struct ubcore_req *req);
+int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp);
+int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
 	bool wait, struct ubcore_resp_cb *cb);
 int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
-	enum ubcore_msg_opcode op);
+	enum ubcore_msg_opcode op, struct net *net);
 #endif

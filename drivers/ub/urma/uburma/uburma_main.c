@@ -195,7 +195,7 @@ static int uburma_fill_logic_device_attr(struct uburma_logic_device *ldev,
 		goto err_fe_attr;
 
 	for (e1 = 0; e1 < ubc_dev->attr.max_eid_cnt; e1++) {
-		if (uburma_create_eid_attr_files(ldev, ubu_dev, e1) != 0)
+		if (uburma_create_eid_attr_files(ldev, e1) != 0)
 			goto err_eid_attr;
 	}
 	return 0;
@@ -504,6 +504,8 @@ err:
 		complete(&ubu_dev->comp);
 
 	wait_for_completion(&ubu_dev->comp);
+	mutex_destroy(&ubu_dev->ldev_mutex);
+	mutex_destroy(&ubu_dev->lists_mutex);
 	kfree(ubu_dev);
 	return -EPERM;
 }

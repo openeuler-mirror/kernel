@@ -21,6 +21,9 @@
 #include "hns3_udma_hw.h"
 #include "hns3_udma_common.h"
 
+#define UB_DEV_BASE_NAME "ubl"
+#define UB_DEV_NAME_SHIFT 3
+
 #define UDMA_MAX_PORTS				6
 
 #define BA_BYTE_LEN				8
@@ -56,7 +59,6 @@
 #define udma_hw_page_align(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
 
 #define UDMA_DWQE_SIZE				65536
-#define UDMA_DWQE_MMAP_QP_NUM			1024
 
 #define UDMA_HOP_NUM_0				0xff
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
@@ -831,6 +833,8 @@ struct udma_dev {
 	void				*priv;
 	struct workqueue_struct		*irq_workq;
 	struct work_struct		ecc_work;
+	uint8_t				chip_id;
+	uint8_t				die_id;
 	uint16_t			func_id;
 	uint32_t			func_num;
 	uint32_t			cong_algo_tmpl_id;

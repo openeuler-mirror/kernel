@@ -29,12 +29,13 @@
 #include "ubcore_priv.h"
 #include <urma/ubcore_uapi.h>
 #include "ubcore_tp_table.h"
-#include "ubcore_tp.h"
 #include "ubcore_msg.h"
 #include "ubcore_vtp.h"
+#include "ubcore_tp.h"
 
 #define UB_PROTOCOL_HEAD_BYTES 313
 #define UB_MTU_BITS_BASE_SHIFT 7
+#define UBCORE_TP_ATTR_MASK 0x7FFFF
 
 struct ubcore_resp_args {
 	struct ubcore_udata *udata;
@@ -174,22 +175,22 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 	ta_data->trans_type = trans_type;
 }
 
-static int ubcore_nl_handle_create_tp_resp_cb(struct ubcore_device *dev, struct ubcore_msg *msg,
-	void *user_arg)
+static int ubcore_nl_handle_create_tp_resp_cb(struct ubcore_device *dev,
+	struct ubcore_resp *resp, void *user_arg)
 {
-	struct ubcore_create_vtp_resp *resp;
+	struct ubcore_create_vtp_resp *vtp_resp;
 	struct ubcore_resp_args *input;
 	struct ubcore_udata *udata;
 	int ret = -1;
 
-	resp = (struct ubcore_create_vtp_resp *)msg->data;
-	if (resp->ret == UBCORE_MSG_RESP_FAIL) {
+	vtp_resp = (struct ubcore_create_vtp_resp *)resp->data;
+	if (vtp_resp->ret == UBCORE_MSG_RESP_FAIL) {
 		ubcore_log_err("failed to create vtp: response error");
 		return -1;
-	} else if (resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
+	} else if (vtp_resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
 		ubcore_log_err("failed: try to create vtp which is being created. Try again later");
 		return -1;
-	} else if (resp->ret == UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND) {
+	} else if (vtp_resp->ret == UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND) {
 		ubcore_log_err("failed: rc jetty already bind by other jetty");
 		return -1;
 	}
@@ -200,14 +201,17 @@ static int ubcore_nl_handle_create_tp_resp_cb(struct ubcore_device *dev, struct 
 		return 0;
 
 	udata = (struct ubcore_udata *)input->udata;
-	if (udata == NULL || udata->udrv_data->out_len < resp->udrv_out_len) {
+	if (udata == NULL)
+		return 0;
+
+	if (udata->udrv_data->out_len < vtp_resp->udrv_out_len) {
 		ubcore_log_err(
-			"udata user mode len length is too small,udata->udrv_data->out_len: %d, resp_len: %d",
-			udata->udrv_data->out_len, resp->udrv_out_len);
+			"udata user mode len length is too small,udata->udrv_data->out_len: %u, resp_len: %u",
+			udata->udrv_data->out_len, vtp_resp->udrv_out_len);
 		return -1;
 	}
 	ret = (int)copy_to_user((void __user *)(uintptr_t)udata->udrv_data->out_addr,
-		(char *)resp->udrv_out_data, resp->udrv_out_len);
+		(char *)vtp_resp->udrv_out_data, vtp_resp->udrv_out_len);
 
 	return ret;
 }
@@ -218,7 +222,6 @@ int ubcore_destroy_tp(struct ubcore_tp *tp)
 		ubcore_log_err("TP ops is NULL");
 		return -1;
 	}
-
 	if (tp->peer_ext.len > 0 && tp->peer_ext.addr != 0)
 		kfree((void *)tp->peer_ext.addr);
 
@@ -430,6 +433,7 @@ void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	ubcore_mod_tp_attr_with_mask(tp, attr, cc_pattern_idx, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, peer_ext, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, local_net_addr_idx, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, port_id, mask);
 }
 
 /* create vtp and connect to a remote vtp peer, called by ubcore_create_vtp */
@@ -446,29 +450,16 @@ static int ubcore_set_target_peer(struct ubcore_tp *tp, struct ubcore_tp_attr *a
 	union ubcore_tp_attr_mask *mask, struct ubcore_tp_attr *tp_attr, struct ubcore_udata udata)
 {
 	mask->value = 0;
-	mask->bs.peer_tpn = 1;
-	mask->bs.mtu = 1;
-	mask->bs.tx_psn = 1;
-	mask->bs.state = 1;
-	mask->bs.flag = 1;
-	mask->bs.data_udp_start = 1;
-	mask->bs.ack_udp_start = 1;
-	mask->bs.udp_range = 1;
+	mask->value = UBCORE_TP_ATTR_MASK;
 
 	memset(attr, 0, sizeof(*attr));
-	attr->peer_tpn = tp_attr->peer_tpn;
-	attr->mtu = tp_attr->mtu;
+	(void)memcpy(attr, tp_attr, sizeof(struct ubcore_tp_attr));
 	attr->tx_psn = tp_attr->rx_psn;
-	attr->state = tp_attr->state;
-	attr->flag.value = tp_attr->flag.value;
-	attr->data_udp_start = tp_attr->data_udp_start;
-	attr->ack_udp_start = tp_attr->ack_udp_start;
-	attr->udp_range = tp_attr->udp_range;
+	attr->state = UBCORE_TP_STATE_RTR;
 
 	if (tp->peer_ext.addr != 0)
 		return 0;
 
-	mask->bs.peer_ext = 1;
 	return ubcore_set_tp_peer_ext(attr, udata.udrv_data->in_addr, udata.udrv_data->in_len);
 }
 
@@ -630,6 +621,9 @@ int ubcore_modify_tp(struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
 		ubcore_log_info(
 			"tp state:(RTR to RTS) with tpn %u, peer_tpn %u", tp->tpn, tp->peer_tpn);
 		break;
+	case UBCORE_TP_STATE_SUSPENDED:
+		ubcore_log_info("tp state: TP_STATE_SUSPENDED\n");
+		fallthrough;
 	case UBCORE_TP_STATE_ERR:
 		ubcore_log_info("tp state: TP_STATE_ERR\n");
 		fallthrough;
@@ -734,7 +728,7 @@ static struct ubcore_tp *ubcore_advise_target_tp(struct ubcore_device *dev,
 
 	meta = &advice.meta;
 	if (ubcore_parse_ta(dev, &create->ta, &advice) != 0) {
-		ubcore_log_err("Failed to parse ta with type %u", create->ta.ta_type);
+		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)create->ta.ta_type);
 		return NULL;
 	} else if (meta->ht == NULL) {
 		ubcore_log_err("tp table is already released");
@@ -838,7 +832,7 @@ static int ubcore_unadvise_target_tp(struct ubcore_device *dev,
 
 	meta = &advice.meta;
 	if (ubcore_parse_ta(dev, &destroy->ta, &advice) != 0) {
-		ubcore_log_err("Failed to parse ta with type %u", destroy->ta.ta_type);
+		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)destroy->ta.ta_type);
 		return -1;
 	} else if (meta->ht == NULL) {
 		ubcore_log_warn("tp table is already released");
@@ -956,20 +950,19 @@ static int ubcore_send_create_tp_req(struct ubcore_device *dev, struct ubcore_vt
 {
 	struct ubcore_create_vtp_req *data;
 	struct ubcore_resp_args user_arg;
-	struct ubcore_msg *req_msg;
+	struct ubcore_req *req_msg;
 	struct ubcore_resp_cb cb;
 	uint32_t payload_len;
 	int ret;
 
 	payload_len = (uint32_t)sizeof(struct ubcore_create_vtp_req) + get_udrv_in_len(udata);
 
-	req_msg = kcalloc(1, sizeof(struct ubcore_msg) + payload_len, GFP_KERNEL);
+	req_msg = kcalloc(1, sizeof(struct ubcore_req) + payload_len, GFP_KERNEL);
 	if (req_msg == NULL)
 		return -ENOMEM;
 
-	req_msg->hdr.type = UBCORE_MSG_TYPE_FE2TPF;
-	req_msg->hdr.opcode = UBCORE_MSG_CREATE_VTP;
-	req_msg->hdr.len = payload_len;
+	req_msg->opcode = UBCORE_MSG_CREATE_VTP;
+	req_msg->len = payload_len;
 	data = (struct ubcore_create_vtp_req *)req_msg->data;
 	data->trans_mode = tp_param->trans_mode;
 	data->local_eid = tp_param->local_eid;
@@ -1099,15 +1092,15 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 }
 EXPORT_SYMBOL(ubcore_advise_tp);
 
-static int ubcore_handle_del_tp_resp(struct ubcore_device *dev, struct ubcore_msg *msg,
+static int ubcore_handle_del_tp_resp(struct ubcore_device *dev, struct ubcore_resp *resp,
 	void *user_arg)
 {
-	struct ubcore_destroy_vtp_resp *resp = (struct ubcore_destroy_vtp_resp *)msg->data;
+	struct ubcore_destroy_vtp_resp *vtp_resp = (struct ubcore_destroy_vtp_resp *)resp->data;
 
-	if (resp->ret == UBCORE_MSG_RESP_FAIL) {
+	if (vtp_resp->ret == UBCORE_MSG_RESP_FAIL) {
 		ubcore_log_err("failed to destroy vtp: response error");
 		return -1;
-	} else if (resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
+	} else if (vtp_resp->ret == UBCORE_MSG_RESP_IN_PROGRESS) {
 		ubcore_log_err("failed: try to del vtp which is being created. Try again later");
 		return -1;
 	}
@@ -1117,18 +1110,17 @@ static int ubcore_handle_del_tp_resp(struct ubcore_device *dev, struct ubcore_ms
 static int ubcore_send_del_tp_req(struct ubcore_device *dev, struct ubcore_vtp_param *tp_param)
 {
 	struct ubcore_create_vtp_req *data;
-	struct ubcore_msg *req_msg;
+	struct ubcore_req *req_msg;
 	struct ubcore_resp_cb cb;
 	int ret;
 
-	req_msg = kcalloc(1, sizeof(struct ubcore_msg) +
+	req_msg = kcalloc(1, sizeof(struct ubcore_req) +
 		sizeof(struct ubcore_create_vtp_req), GFP_KERNEL);
 	if (req_msg == NULL)
 		return -ENOMEM;
 
-	req_msg->hdr.type = UBCORE_MSG_TYPE_FE2TPF;
-	req_msg->hdr.opcode = UBCORE_MSG_DESTROY_VTP;
-	req_msg->hdr.len = sizeof(struct ubcore_create_vtp_req);
+	req_msg->opcode = UBCORE_MSG_DESTROY_VTP;
+	req_msg->len = sizeof(struct ubcore_create_vtp_req);
 	data = (struct ubcore_create_vtp_req *)req_msg->data;
 	data->trans_mode = tp_param->trans_mode;
 	data->local_eid = tp_param->local_eid;
@@ -1493,7 +1485,7 @@ static struct ubcore_nlmsg *ubcore_get_tp_suspend_req(struct ubcore_tp *tp)
 	suspend_req->data_udp_start = tp->data_udp_start;
 	suspend_req->ack_udp_start = tp->ack_udp_start;
 	suspend_req->sip_idx = tp->local_net_addr_idx;
-	ubcore_log_info("report tp suspend: data_udp_start: %u, ack_udp_start: %u",
+	ubcore_log_info("report tp suspend: data_udp_start: %hu, ack_udp_start: %hu",
 		tp->data_udp_start, tp->ack_udp_start);
 
 	return req;
@@ -1531,7 +1523,7 @@ static struct ubcore_tp *ubcore_restore_advised_target_tp(struct ubcore_device *
 
 	meta = &advice.meta;
 	if (ubcore_parse_ta(dev, &restore->ta, &advice) != 0) {
-		ubcore_log_err("Failed to parse ta with type %u", restore->ta.ta_type);
+		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)restore->ta.ta_type);
 		return NULL;
 	} else if (meta->ht == NULL) {
 		ubcore_log_err("tp table is already released");
@@ -1602,20 +1594,3 @@ struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req)
 	return ubcore_get_restore_tp_response(req, tp);
 }
 EXPORT_SYMBOL(ubcore_handle_restore_tp_req);
-
-int ubcore_config_utp(struct ubcore_device *dev, uint8_t utp_id, struct ubcore_utp_attr *attr,
-	union ubcore_utp_attr_mask mask)
-{
-	if (dev == NULL || attr == NULL || dev->ops == NULL ||
-		dev->ops->config_utp == NULL) {
-		ubcore_log_err("dev ops has a null pointer.\n");
-		return -1;
-	}
-	if (dev->transport_type == UBCORE_TRANSPORT_IB) {
-		ubcore_log_err(
-			"The configuration modification of this version of utp is not supported.\n");
-		return -1;
-	}
-	return dev->ops->config_utp(dev, utp_id, attr, mask);
-}
-EXPORT_SYMBOL(ubcore_config_utp);

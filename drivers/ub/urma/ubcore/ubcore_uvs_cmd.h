@@ -49,8 +49,6 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_DESTROY_TPG, /* initiator or target */
 	UBCORE_CMD_ADD_SIP,
 	UBCORE_CMD_DEL_SIP,
-	UBCORE_CMD_ALLOC_EID,
-	UBCORE_CMD_DEALLOC_EID,
 	UBCORE_CMD_MAP_VTP,
 	UBCORE_CMD_CREATE_UTP,
 	UBCORE_CMD_DESTROY_UTP,
@@ -345,16 +343,6 @@ struct ubcore_cmd_change_tp_to_error {
 	} in;
 };
 
-struct ubcore_cmd_opt_eid {
-	struct {
-		char dev_name[UBCORE_UVS_CMD_DEV_MAX];
-		uint32_t upi;
-		uint16_t fe_idx;
-		union ubcore_eid eid;
-		uint32_t eid_index;
-	} in;
-};
-
 struct ubcore_cmd_set_upi {
 	struct {
 		char dev_name[UBCORE_UVS_CMD_DEV_MAX];
@@ -373,13 +361,9 @@ struct ubcore_cmd_show_upi {
 
 struct ubcore_cmd_get_dev_info {
 	struct {
-		struct ubcore_cmd_tpf tpf;
-		union ubcore_eid peer_eid;
-		uint32_t eid_index;
+		char target_tpf_name[UBCORE_UVS_CMD_DEV_MAX];
 	} in;
 	struct {
-		char target_tpf_name[UBCORE_UVS_CMD_DEV_MAX];
-		char target_pf_name[UBCORE_UVS_CMD_DEV_MAX];
 		bool port_is_active;
 	} out;
 };

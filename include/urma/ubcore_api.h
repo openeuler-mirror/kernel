@@ -85,12 +85,20 @@ int ubcore_destroy_vtp(struct ubcore_tp *vtp);
 enum ubcore_mtu ubcore_get_mtu(int mtu);
 
 /**
- * Invoke create virtual tp on a PF device, called only by driver
- * @param[in] dev: the ubcore device;
- * @param[in] msg: received msg
+ * TPF receives msg from VF or PF, called only by driver.
+ * @param[in] dev: TPF device;
+ * @param[in] msg: received msg;
  * @return: 0 on success, other value on error
  */
-int ubcore_recv_msg(struct ubcore_device *dev, struct ubcore_msg *msg);
+int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *msg);
+
+/**
+ * VF or PF receives msg from TPF, called only by driver.
+ * @param[in] dev: VF or PF device;
+ * @param[in] msg: received msg;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_recv_resp(struct ubcore_device *dev, struct ubcore_resp *msg);
 
 /**
  * Invoke ndev bind port_id, called only by driver
@@ -101,6 +109,17 @@ int ubcore_recv_msg(struct ubcore_device *dev, struct ubcore_msg *msg);
  * @return: 0 on success, other value on error
  */
 int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
+	unsigned int port_id);
+
+/**
+ * Invoke ndev unbind port_id, called only by driver
+ * @param[in] dev: the ubcore device;
+ * @param[in] ndev: The netdev corresponding to the initial port
+ * @param[in] port_id: The physical port_id is the same as the port_id presented in the sysfs file,
+ * and port_id is configured in TP during link establishment.
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unset_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 	unsigned int port_id);
 
 /**

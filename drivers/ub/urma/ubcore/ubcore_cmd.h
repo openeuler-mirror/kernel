@@ -40,8 +40,7 @@ struct ubcore_cmd_hdr {
 
 /* only for ubcore device ioctl */
 enum ubcore_cmd {
-	UBCORE_CMD_SET_UTP = 1,
-	UBCORE_CMD_SHOW_UTP,
+	UBCORE_CMD_SHOW_UTP = 1,
 	UBCORE_CMD_QUERY_STATS,
 	UBCORE_CMD_QUERY_RES,
 	UBCORE_CMD_ADD_EID,
@@ -79,20 +78,10 @@ struct ubcore_cmd_query_res {
 	} out;
 };
 
-struct ubcore_cmd_set_utp {
-	struct {
-		char dev_name[UBCORE_MAX_DEV_NAME];
-		uint8_t utp_id;
-		bool spray_en;
-		uint16_t data_udp_start;
-		uint8_t udp_range;
-	} in;
-};
-
 struct ubcore_cmd_show_utp {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
-		uint8_t utp_id;
+		uint32_t utpn;
 	} in;
 	struct {
 		uint64_t addr;
@@ -100,7 +89,7 @@ struct ubcore_cmd_show_utp {
 	} out;
 };
 
-struct ubcore_cmd_add_ueid {
+struct ubcore_cmd_updata_ueid {
 	struct {
 		char dev_name[UBCORE_CMD_DEV_MAX];
 		uint32_t eid_index;

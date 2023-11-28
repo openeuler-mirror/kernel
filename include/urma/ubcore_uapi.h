@@ -147,10 +147,10 @@ struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
 	struct ubcore_udata *udata);
 /**
  * free token id from ubcore device
- * @param[in] token: the token id alloced before;
+ * @param[in] token_id: the token_id id alloced before;
  * @return: 0 on success, other value on error
  */
-int ubcore_free_token_id(struct ubcore_token_id *key);
+int ubcore_free_token_id(struct ubcore_token_id *token_id);
 
 /**
  * register segment to ubcore device
