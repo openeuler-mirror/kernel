@@ -5828,12 +5828,12 @@ struct static_key __smart_grid_used;
 
 static void smart_grid_usage_inc(void)
 {
-	static_key_slow_inc_cpuslocked(&__smart_grid_used);
+	static_key_slow_inc(&__smart_grid_used);
 }
 
 static void smart_grid_usage_dec(void)
 {
-	static_key_slow_dec_cpuslocked(&__smart_grid_used);
+	static_key_slow_dec(&__smart_grid_used);
 }
 
 static void tg_update_task_prefer_cpus(struct task_group *tg)
