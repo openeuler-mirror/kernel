@@ -1446,6 +1446,9 @@ static int do_cpu_nanosleep(const clockid_t which_clock, int flags,
 			spin_lock_irq(&timer.it_lock);
 			error = posix_cpu_timer_del(&timer);
 			spin_unlock_irq(&timer.it_lock);
+#ifdef CONFIG_POSIX_CPU_TIMERS_TASK_WORK
+			cond_resched();
+#endif
 		}
 
 		if ((it.it_value.tv_sec | it.it_value.tv_nsec) == 0) {
@@ -1546,6 +1549,18 @@ static int thread_cpu_timer_create(struct k_itimer *timer)
 	return posix_cpu_timer_create(timer);
 }
 
+static void posix_cpu_timer_wait_running(struct k_itimer *timr)
+{
+#ifdef CONFIG_POSIX_CPU_TIMERS_TASK_WORK
+	rcu_read_unlock();
+	cond_resched();
+	rcu_read_lock();
+#else
+	cpu_relax();
+#endif
+}
+
+
 const struct k_clock clock_posix_cpu = {
 	.clock_getres		= posix_cpu_clock_getres,
 	.clock_set		= posix_cpu_clock_set,
@@ -1556,6 +1571,7 @@ const struct k_clock clock_posix_cpu = {
 	.timer_del		= posix_cpu_timer_del,
 	.timer_get		= posix_cpu_timer_get,
 	.timer_rearm		= posix_cpu_timer_rearm,
+	.timer_wait_running	= posix_cpu_timer_wait_running,
 };
 
 const struct k_clock clock_process = {
