@@ -5,12 +5,12 @@
 #ifndef __ASM_SPINLOCK_H
 #define __ASM_SPINLOCK_H
 
-#include <asm/qrwlock.h>
 #include <asm/qspinlock.h>
 #include <asm/paravirt.h>
 
 /* How long a lock should spin before we consider blocking */
 #define SPIN_THRESHOLD			(1 << 15)
+#include <asm/qrwlock.h>
 
 /* See include/linux/spinlock.h */
 #define smp_mb__after_spinlock()	smp_mb()

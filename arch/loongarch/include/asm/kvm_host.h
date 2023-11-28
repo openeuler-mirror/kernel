@@ -29,7 +29,6 @@
 
 #define LOONGSON_VIRT_REG_BASE	0x1f000000
 #define KVM_MAX_VCPUS		256
-#define KVM_USER_MEM_SLOTS	256
 /* memory slots that does not exposed to userspace */
 #define KVM_PRIVATE_MEM_SLOTS	0
 
@@ -299,11 +298,6 @@ enum _kvm_fault_result {
 };
 
 #define KVM_ARCH_WANT_MMU_NOTIFIER
-int kvm_unmap_hva_range(struct kvm *kvm,
-			unsigned long start, unsigned long end, bool blockable);
-int kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
-int kvm_age_hva(struct kvm *kvm, unsigned long start, unsigned long end);
-int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
 
 static inline void update_pc(struct kvm_vcpu_arch *arch)
 {

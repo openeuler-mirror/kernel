@@ -20,7 +20,6 @@
 #define KVM_MAX_VCPUS			(1U << 9)
 #endif
 
-#define KVM_USER_MEM_SLOTS		512
 #define KVM_HALT_POLL_NS_DEFAULT	500000
 
 #define KVM_VCPU_MAX_FEATURES		0
@@ -219,11 +218,7 @@ static inline void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu) {}
 static inline void kvm_arch_vcpu_block_finish(struct kvm_vcpu *vcpu) {}
 
 #define KVM_ARCH_WANT_MMU_NOTIFIER
-int kvm_unmap_hva_range(struct kvm *kvm, unsigned long start,
-			unsigned long end, unsigned int flags);
-int kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
-int kvm_age_hva(struct kvm *kvm, unsigned long start, unsigned long end);
-int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
+#define KVM_ARCH_WANT_NEW_MMU_NOTIFIER_APIS
 
 void __kvm_riscv_hfence_gvma_vmid_gpa(unsigned long gpa, unsigned long vmid);
 void __kvm_riscv_hfence_gvma_vmid(unsigned long vmid);
