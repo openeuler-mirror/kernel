@@ -439,10 +439,11 @@ struct ubcore_jetty_group *ubcore_create_jetty_grp(struct ubcore_device *dev,
 int ubcore_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp);
 /**
  * operation of user ioctl cmd.
+ * @param[in] dev: the ubcore device handle;
  * @param[in] k_user_ctl: kdrv user control command pointer;
  * @return: 0 on success, other value on error
  */
-int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl);
+int ubcore_user_control(struct ubcore_device *dev, struct ubcore_user_ctl *k_user_ctl);
 /**
  * Client register an async_event handler to ubcore
  * @param[in] dev: the ubcore device handle;

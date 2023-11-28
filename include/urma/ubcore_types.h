@@ -2149,10 +2149,11 @@ struct ubcore_ops {
 
 	/**
 	 * operation of user ioctl cmd.
+	 * @param[in] dev: the ub device handle;
 	 * @param[in] user_ctl: kdrv user control command pointer;
 	 * Return: 0 on success, other value on error
 	 */
-	int (*user_ctl)(struct ubcore_user_ctl *user_ctl);
+	int (*user_ctl)(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl);
 
 	/** data path ops */
 	/**

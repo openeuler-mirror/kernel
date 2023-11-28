@@ -857,6 +857,7 @@ struct udma_dev {
 	struct list_head		dip_list;
 	spinlock_t			dip_list_lock;
 	struct udma_port		port_data[UDMA_MAX_PORTS];
+	uint64_t			notify_addr;
 };
 
 struct udma_seg {

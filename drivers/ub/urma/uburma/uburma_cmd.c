@@ -1848,7 +1848,7 @@ static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		return ret;
 
-	ret = ubcore_user_control(&k_user_ctl);
+	ret = ubcore_user_control(ubc_dev, &k_user_ctl);
 	if (ret != 0)
 		return ret;
 
