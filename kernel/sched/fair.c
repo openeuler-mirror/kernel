@@ -6110,7 +6110,7 @@ void free_affinity_domains(struct affinity_domain *ad)
 {
 	int i;
 
-	for (i = 0; i < ad->dcount; i++) {
+	for (i = 0; i < AD_LEVEL_MAX; i++) {
 		kfree(ad->domains[i]);
 		kfree(ad->domains_orig[i]);
 		ad->domains[i] = NULL;
@@ -6149,6 +6149,12 @@ static int init_affinity_domains(struct affinity_domain *ad)
 	int i = 0;
 	int cpu;
 
+	for (i = 0; i < AD_LEVEL_MAX; i++) {
+		ad->domains[i] = kmalloc(sizeof(cpumask_t), GFP_KERNEL);
+		if (!ad->domains[i])
+			goto err;
+	}
+
 	rcu_read_lock();
 	cpu = cpumask_first_and(cpu_active_mask,
 				housekeeping_cpumask(HK_FLAG_DOMAIN));
@@ -6157,21 +6163,12 @@ static int init_affinity_domains(struct affinity_domain *ad)
 		dcount++;
 	}
 
-	if (!sd) {
+	if (!sd || dcount > AD_LEVEL_MAX) {
 		rcu_read_unlock();
-		return -EINVAL;
-	}
-	rcu_read_unlock();
-
-	for (i = 0; i < dcount; i++) {
-		ad->domains[i] = kmalloc(sizeof(cpumask_t), GFP_KERNEL);
-		if (!ad->domains[i]) {
-			ad->dcount = i;
-			goto err;
-		}
+		ret = -EINVAL;
+		goto err;
 	}
 
-	rcu_read_lock();
 	idlest = sd_find_idlest_group(sd);
 	cpu = group_find_idlest_cpu(idlest);
 	i = 0;
@@ -6216,6 +6213,8 @@ int init_auto_affinity(struct task_group *tg)
 	ret = init_affinity_domains(&auto_affi->ad);
 	if (ret) {
 		kfree(auto_affi);
+		if (ret == -EINVAL)
+			ret = 0;
 		return ret;
 	}
 
