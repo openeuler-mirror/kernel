@@ -1449,7 +1449,16 @@ struct task_struct {
 	KABI_RESERVE(10)
 	KABI_RESERVE(11)
 #endif
+
+#if !defined(__GENKSYMS__)
+#if defined(CONFIG_QOS_SCHED_SMART_GRID)
+	struct sched_grid_qos *grid_qos;
+#else
 	KABI_RESERVE(12)
+#endif
+#else
+	KABI_RESERVE(12)
+#endif
 	KABI_RESERVE(13)
 	KABI_RESERVE(14)
 	KABI_RESERVE(15)

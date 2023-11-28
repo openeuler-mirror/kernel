@@ -39,3 +39,4 @@ obj-$(CONFIG_PSI) += psi.o
 obj-$(CONFIG_SCHED_CORE) += core_sched.o
 obj-$(CONFIG_BPF_SCHED) += bpf_sched.o
 obj-$(CONFIG_BPF_SCHED) += bpf_topology.o
+obj-$(CONFIG_QOS_SCHED_SMART_GRID) += grid/

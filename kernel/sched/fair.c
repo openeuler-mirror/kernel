@@ -28,6 +28,9 @@
 #include <linux/delay.h>
 #include <linux/tracehook.h>
 #endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+#include <linux/sched/grid_qos.h>
+#endif
 #include <linux/bpf_sched.h>
 
 /*
@@ -5845,6 +5848,8 @@ static void tg_update_task_prefer_cpus(struct task_group *tg)
 			continue;
 
 		set_prefer_cpus_ptr(task, ad->domains[ad->curr_level]);
+		/* grid_qos must not be NULL */
+		task->grid_qos->affinity_set(task);
 	}
 	css_task_iter_end(&it);
 }
