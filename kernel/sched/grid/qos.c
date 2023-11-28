@@ -198,6 +198,7 @@ int sched_grid_zone_update(bool is_locked)
 	if (!is_locked)
 		raw_spin_unlock_irqrestore(&sg_zone.lock, flags);
 
+	cpufreq_smart_grid_start_sync();
 	return 0;
 }
 
