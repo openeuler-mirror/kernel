@@ -79,6 +79,7 @@
 #include <linux/sched/mm.h>
 #include <linux/sched/numa_balancing.h>
 #include <linux/sched/task.h>
+#include <linux/sched/grid_qos.h>
 #include <linux/nodemask.h>
 #include <linux/cpuset.h>
 #include <linux/slab.h>
@@ -2373,7 +2374,14 @@ struct page *alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 	if (pol->mode == MPOL_INTERLEAVE) {
 		unsigned nid;
 
-		nid = interleave_nid(pol, vma, addr, PAGE_SHIFT + order);
+		if (smart_grid_used()) {
+			nid = sched_grid_preferred_interleave_nid(pol);
+			nid = (nid == NUMA_NO_NODE) ?
+				interleave_nid(pol, vma, addr, PAGE_SHIFT + order) : nid;
+		} else {
+			nid = interleave_nid(pol, vma, addr, PAGE_SHIFT + order);
+		}
+
 		mpol_cond_put(pol);
 		page = alloc_page_interleave(gfp, order, nid);
 		goto out;
@@ -2427,6 +2435,8 @@ struct page *alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 
 	nmask = policy_nodemask(gfp, pol);
 	preferred_nid = policy_node(gfp, pol, node);
+	if (smart_grid_used())
+		preferred_nid = sched_grid_preferred_nid(preferred_nid, nmask);
 	page = __alloc_pages(gfp, order, preferred_nid, nmask);
 	mark_vma_cdm(nmask, page, vma);
 	mpol_cond_put(pol);

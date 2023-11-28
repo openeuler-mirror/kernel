@@ -1078,6 +1078,19 @@ config UCLAMP_TASK_GROUP
 
 	  If in doubt, say N.
 
+config QOS_SCHED_SMART_GRID
+	bool "qos smart grid scheduler"
+	depends on FAIR_GROUP_SCHED && QOS_SCHED_DYNAMIC_AFFINITY
+	default n
+	help
+	 This feature is used for power consumption tuning in server scenario.
+	 This can be divided into the following aspects:
+	  1. User interface, manage user needs.
+	  2. Collect tasks' features to ensure key tasks' QOS.
+	  3. Weaken the influence the impact of CPU frequency and cpuidle
+	     adjustment on tasks.
+	  4. Docking EAS (Energy Aware Scheduling) model.
+
 config CGROUP_PIDS
 	bool "PIDs controller"
 	help

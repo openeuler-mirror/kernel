@@ -97,7 +97,9 @@
 #include <linux/scs.h>
 #include <linux/io_uring.h>
 #include <linux/sched/mm.h>
-
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+#include <linux/sched/grid_qos.h>
+#endif
 #include <linux/share_pool.h>
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
@@ -470,6 +472,9 @@ void free_task(struct task_struct *tsk)
 		free_kthread_struct(tsk);
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	sched_prefer_cpus_free(tsk);
+#endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	sched_grid_qos_free(tsk);
 #endif
 	free_task_struct(tsk);
 }
@@ -2063,7 +2068,7 @@ static __latent_entropy struct task_struct *copy_process(
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	retval = sched_prefer_cpus_fork(p, current->prefer_cpus);
 	if (retval)
-		goto bad_fork_free;
+		goto bad_fork_cleanup_count;
 #endif
 
 	lockdep_assert_irqs_enabled();
@@ -2082,6 +2087,12 @@ static __latent_entropy struct task_struct *copy_process(
 	retval = copy_creds(p, clone_flags);
 	if (retval < 0)
 		goto bad_fork_free;
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	retval = sched_grid_qos_fork(p, current);
+	if (retval)
+		goto bad_fork_cleanup_count;
+#endif
 
 	/*
 	 * If multiple threads are within copy_process(), then this check

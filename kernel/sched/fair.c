@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/tracehook.h>
 #endif
+#include <linux/sched/grid_qos.h>
 #include <linux/bpf_sched.h>
 
 /*
@@ -5810,6 +5811,463 @@ static inline void unthrottle_offline_cfs_rqs(struct rq *rq) {}
 
 #endif /* CONFIG_CFS_BANDWIDTH */
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+#define AUTO_AFFINITY_DEFAULT_PERIOD_MS 2000
+#define IS_DOMAIN_SET(level, mask)	((1 << (level)) & (mask))
+
+static DEFINE_MUTEX(smart_grid_used_mutex);
+
+static inline unsigned long cpu_util(int cpu);
+static unsigned long capacity_of(int cpu);
+static int sched_idle_cpu(int cpu);
+static unsigned long cpu_runnable(struct rq *rq);
+static inline bool prefer_cpus_valid(struct task_struct *p);
+
+int sysctl_affinity_adjust_delay_ms = 5000;
+
+struct static_key __smart_grid_used;
+
+static void smart_grid_usage_inc(void)
+{
+	static_key_slow_inc(&__smart_grid_used);
+}
+
+static void smart_grid_usage_dec(void)
+{
+	static_key_slow_dec(&__smart_grid_used);
+}
+
+static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
+{
+	if (!smart_grid_used())
+		return p->prefer_cpus;
+
+	if (task_group(p)->auto_affinity->mode == 0)
+		return (void *)p->cpus_ptr;
+
+	return sched_grid_prefer_cpus(p);
+}
+
+static inline int dynamic_affinity_mode(struct task_struct *p)
+{
+	if (!prefer_cpus_valid(p))
+		return -1;
+
+	if (smart_grid_used())
+		return task_group(p)->auto_affinity->mode == 0 ? -1 : 1;
+
+	return 0;
+}
+
+static void affinity_domain_up(struct task_group *tg)
+{
+	struct affinity_domain *ad = &tg->auto_affinity->ad;
+	u16 level = ad->curr_level;
+
+	if (ad->curr_level >= ad->dcount - 1)
+		return;
+
+	while (level < ad->dcount) {
+		if (IS_DOMAIN_SET(level + 1, ad->domain_mask) &&
+		    cpumask_weight(ad->domains[level + 1]) > 0) {
+			ad->curr_level = level + 1;
+			sched_grid_zone_update(false);
+			return;
+		}
+		level++;
+	}
+}
+
+static void affinity_domain_down(struct task_group *tg)
+{
+	struct affinity_domain *ad = &tg->auto_affinity->ad;
+	u16 level = ad->curr_level;
+
+	if (ad->curr_level <= 0)
+		return;
+
+	while (level > 0) {
+		if (!cpumask_weight(ad->domains[level - 1]))
+			return;
+
+		if (IS_DOMAIN_SET(level - 1, ad->domain_mask)) {
+			ad->curr_level = level - 1;
+			sched_grid_zone_update(false);
+			return;
+		}
+		level--;
+	}
+}
+
+static enum hrtimer_restart sched_auto_affi_period_timer(struct hrtimer *timer)
+{
+	struct auto_affinity *auto_affi =
+		container_of(timer, struct auto_affinity, period_timer);
+	struct task_group *tg = auto_affi->tg;
+	struct affinity_domain *ad = &auto_affi->ad;
+	struct cpumask *span = ad->domains[ad->curr_level];
+	unsigned long util_avg_sum = 0;
+	unsigned long tg_capacity = 0;
+	unsigned long flags;
+	int cpu;
+
+	for_each_cpu(cpu, span) {
+		util_avg_sum += cpu_util(cpu);
+		tg_capacity += capacity_of(cpu);
+	}
+
+	raw_spin_lock_irqsave(&auto_affi->lock, flags);
+	/* May be re-entrant by stop_auto_affinity, So check again. */
+	if (auto_affi->period_active == 0) {
+		raw_spin_unlock_irqrestore(&auto_affi->lock, flags);
+		return HRTIMER_NORESTART;
+	}
+
+	if (util_avg_sum * 100 >= tg_capacity * sysctl_sched_util_low_pct) {
+		affinity_domain_up(tg);
+	} else if (util_avg_sum * 100 < tg_capacity *
+		   sysctl_sched_util_low_pct / 2) {
+		affinity_domain_down(tg);
+	}
+
+	schedstat_inc(ad->stay_cnt[ad->curr_level]);
+	hrtimer_forward_now(timer, auto_affi->period);
+	raw_spin_unlock_irqrestore(&auto_affi->lock, flags);
+	return HRTIMER_RESTART;
+}
+
+static int tg_update_affinity_domain_down(struct task_group *tg, void *data)
+{
+	struct auto_affinity *auto_affi = tg->auto_affinity;
+	struct affinity_domain *ad;
+	int *cpu_state = data;
+	unsigned long flags;
+	int i;
+
+	if (!auto_affi)
+		return 0;
+
+	ad = &tg->auto_affinity->ad;
+	raw_spin_lock_irqsave(&auto_affi->lock, flags);
+
+	for (i = 0; i < ad->dcount; i++) {
+		if (!cpumask_test_cpu(cpu_state[0], ad->domains_orig[i]))
+			continue;
+
+		/* online */
+		if (cpu_state[1]) {
+			cpumask_set_cpu(cpu_state[0], ad->domains[i]);
+		} else {
+			cpumask_clear_cpu(cpu_state[0], ad->domains[i]);
+			if (!cpumask_weight(ad->domains[i]))
+				affinity_domain_up(tg);
+		}
+
+	}
+	sched_grid_zone_update(false);
+	raw_spin_unlock_irqrestore(&auto_affi->lock, flags);
+
+	return 0;
+}
+
+void tg_update_affinity_domains(int cpu, int online)
+{
+	int cpu_state[2];
+
+	cpu_state[0] = cpu;
+	cpu_state[1] = online;
+
+	rcu_read_lock();
+	walk_tg_tree(tg_update_affinity_domain_down, tg_nop, cpu_state);
+	rcu_read_unlock();
+}
+
+void start_auto_affinity(struct auto_affinity *auto_affi)
+{
+	ktime_t delay_ms;
+
+	mutex_lock(&smart_grid_used_mutex);
+	raw_spin_lock_irq(&auto_affi->lock);
+	if (auto_affi->period_active == 1) {
+		raw_spin_unlock_irq(&auto_affi->lock);
+		mutex_unlock(&smart_grid_used_mutex);
+		return;
+	}
+
+	auto_affi->period_active = 1;
+	auto_affi->mode = 1;
+	delay_ms = ms_to_ktime(sysctl_affinity_adjust_delay_ms);
+	hrtimer_forward_now(&auto_affi->period_timer, delay_ms);
+	hrtimer_start_expires(&auto_affi->period_timer,
+				HRTIMER_MODE_ABS_PINNED);
+	raw_spin_unlock_irq(&auto_affi->lock);
+
+	smart_grid_usage_inc();
+	mutex_unlock(&smart_grid_used_mutex);
+}
+
+void stop_auto_affinity(struct auto_affinity *auto_affi)
+{
+	struct affinity_domain *ad = &auto_affi->ad;
+
+	mutex_lock(&smart_grid_used_mutex);
+	raw_spin_lock_irq(&auto_affi->lock);
+	if (auto_affi->period_active == 0) {
+		raw_spin_unlock_irq(&auto_affi->lock);
+		mutex_unlock(&smart_grid_used_mutex);
+		return;
+	}
+	auto_affi->period_active = 0;
+	auto_affi->mode = 0;
+	ad->curr_level = ad->dcount > 0 ? ad->dcount - 1 : 0;
+	raw_spin_unlock_irq(&auto_affi->lock);
+
+	smart_grid_usage_dec();
+	sched_grid_zone_update(false);
+	mutex_unlock(&smart_grid_used_mutex);
+}
+
+static struct sched_group *sd_find_idlest_group(struct sched_domain *sd)
+{
+	struct sched_group *idlest = NULL, *group = sd->groups;
+	unsigned long min_runnable_load = ULONG_MAX;
+	unsigned long min_avg_load = ULONG_MAX;
+	int imbalance_scale = 100 + (sd->imbalance_pct-100)/2;
+	unsigned long imbalance = scale_load_down(NICE_0_LOAD) *
+				(sd->imbalance_pct-100) / 100;
+
+	do {
+		unsigned long load, avg_load, runnable_load;
+		int i;
+
+		avg_load = 0;
+		runnable_load = 0;
+
+		for_each_cpu(i, sched_group_span(group)) {
+			load = cpu_runnable(cpu_rq(i));
+			runnable_load += load;
+			avg_load += cfs_rq_load_avg(&cpu_rq(i)->cfs);
+		}
+
+		avg_load = (avg_load * SCHED_CAPACITY_SCALE) /
+					group->sgc->capacity;
+		runnable_load = (runnable_load * SCHED_CAPACITY_SCALE) /
+					group->sgc->capacity;
+
+		if (min_runnable_load > (runnable_load + imbalance)) {
+			min_runnable_load = runnable_load;
+			min_avg_load = avg_load;
+			idlest = group;
+		} else if ((runnable_load < (min_runnable_load + imbalance)) &&
+			   (100*min_avg_load > imbalance_scale*avg_load)) {
+			min_avg_load = avg_load;
+			idlest = group;
+		}
+	} while (group = group->next, group != sd->groups);
+
+	return idlest ? idlest : group;
+}
+
+static int group_find_idlest_cpu(struct sched_group *group)
+{
+	int least_loaded_cpu = cpumask_first(sched_group_span(group));
+	unsigned long load, min_load = ULONG_MAX;
+	unsigned int min_exit_latency = UINT_MAX;
+	u64 latest_idle_timestamp = 0;
+	int shallowest_idle_cpu = -1;
+	int i;
+
+	if (group->group_weight == 1)
+		return least_loaded_cpu;
+
+	for_each_cpu(i, sched_group_span(group)) {
+		if (sched_idle_cpu(i))
+			return i;
+
+		if (available_idle_cpu(i)) {
+			struct rq *rq = cpu_rq(i);
+			struct cpuidle_state *idle = idle_get_state(rq);
+
+			if (idle && idle->exit_latency < min_exit_latency) {
+				min_exit_latency = idle->exit_latency;
+				latest_idle_timestamp = rq->idle_stamp;
+				shallowest_idle_cpu = i;
+			} else if ((!idle ||
+				   idle->exit_latency == min_exit_latency) &&
+				   rq->idle_stamp > latest_idle_timestamp) {
+				latest_idle_timestamp = rq->idle_stamp;
+				shallowest_idle_cpu = i;
+			}
+		} else if (shallowest_idle_cpu == -1) {
+			load = cpu_runnable(cpu_rq(i));
+			if (load < min_load) {
+				min_load = load;
+				least_loaded_cpu = i;
+			}
+		}
+	}
+
+	return shallowest_idle_cpu != -1 ? shallowest_idle_cpu :
+			least_loaded_cpu;
+}
+
+void free_affinity_domains(struct affinity_domain *ad)
+{
+	int i;
+
+	for (i = 0; i < AD_LEVEL_MAX; i++) {
+		kfree(ad->domains[i]);
+		kfree(ad->domains_orig[i]);
+		ad->domains[i] = NULL;
+		ad->domains_orig[i] = NULL;
+	}
+	ad->dcount = 0;
+}
+
+static int init_affinity_domains_orig(struct affinity_domain *ad)
+{
+	int i, j;
+
+	for (i = 0; i < ad->dcount; i++) {
+		ad->domains_orig[i] = kmalloc(sizeof(cpumask_t), GFP_KERNEL);
+		if (!ad->domains_orig[i])
+			goto err;
+
+		cpumask_copy(ad->domains_orig[i], ad->domains[i]);
+	}
+
+	return 0;
+err:
+	for (j = 0; j < i; j++) {
+		kfree(ad->domains_orig[j]);
+		ad->domains_orig[j] = NULL;
+	}
+	return -ENOMEM;
+}
+
+static int init_affinity_domains(struct affinity_domain *ad)
+{
+	struct sched_domain *sd = NULL, *tmp;
+	struct sched_group *idlest = NULL;
+	int ret = -ENOMEM;
+	int dcount = 0;
+	int i = 0;
+	int cpu;
+
+	for (i = 0; i < AD_LEVEL_MAX; i++) {
+		ad->domains[i] = kmalloc(sizeof(cpumask_t), GFP_KERNEL);
+		if (!ad->domains[i])
+			goto err;
+	}
+
+	rcu_read_lock();
+	cpu = cpumask_first_and(cpu_active_mask,
+				housekeeping_cpumask(HK_FLAG_DOMAIN));
+	for_each_domain(cpu, tmp) {
+		sd = tmp;
+		dcount++;
+	}
+
+	if (!sd || dcount > AD_LEVEL_MAX) {
+		rcu_read_unlock();
+		ret = -EINVAL;
+		goto err;
+	}
+
+	idlest = sd_find_idlest_group(sd);
+	cpu = group_find_idlest_cpu(idlest);
+	i = 0;
+	for_each_domain(cpu, tmp) {
+		cpumask_copy(ad->domains[i], sched_domain_span(tmp));
+		__schedstat_set(ad->stay_cnt[i], 0);
+		i++;
+	}
+	rcu_read_unlock();
+
+	ad->dcount = dcount;
+	ad->curr_level = ad->dcount > 0 ? ad->dcount - 1 : 0;
+	ad->domain_mask = (1 << ad->dcount) - 1;
+
+	ret = init_affinity_domains_orig(ad);
+	if (ret)
+		goto err;
+
+	return 0;
+err:
+	free_affinity_domains(ad);
+	return ret;
+}
+
+int init_auto_affinity(struct task_group *tg)
+{
+	struct auto_affinity *auto_affi;
+	int ret;
+
+	auto_affi = kzalloc(sizeof(*auto_affi), GFP_KERNEL);
+	if (!auto_affi)
+		return -ENOMEM;
+
+	raw_spin_lock_init(&auto_affi->lock);
+	auto_affi->mode = 0;
+	auto_affi->period_active = 0;
+	auto_affi->period = ms_to_ktime(AUTO_AFFINITY_DEFAULT_PERIOD_MS);
+	hrtimer_init(&auto_affi->period_timer, CLOCK_MONOTONIC,
+		HRTIMER_MODE_ABS_PINNED);
+	auto_affi->period_timer.function = sched_auto_affi_period_timer;
+
+	ret = init_affinity_domains(&auto_affi->ad);
+	if (ret) {
+		kfree(auto_affi);
+		if (ret == -EINVAL)
+			ret = 0;
+		return ret;
+	}
+
+	auto_affi->tg = tg;
+	tg->auto_affinity = auto_affi;
+	INIT_LIST_HEAD(&auto_affi->af_list);
+	sched_grid_zone_add_af(auto_affi);
+	return 0;
+}
+
+static void destroy_auto_affinity(struct task_group *tg)
+{
+	struct auto_affinity *auto_affi = tg->auto_affinity;
+
+	if (unlikely(!auto_affi))
+		return;
+
+	if (auto_affi->period_active)
+		smart_grid_usage_dec();
+
+	hrtimer_cancel(&auto_affi->period_timer);
+	sched_grid_zone_del_af(auto_affi);
+	free_affinity_domains(&auto_affi->ad);
+
+	kfree(tg->auto_affinity);
+	tg->auto_affinity = NULL;
+}
+#else
+static void destroy_auto_affinity(struct task_group *tg) {}
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+static inline bool prefer_cpus_valid(struct task_struct *p);
+
+static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
+{
+	return p->prefer_cpus;
+}
+
+static inline int dynamic_affinity_mode(struct task_struct *p)
+{
+	if (!prefer_cpus_valid(p))
+		return -1;
+
+	return 0;
+}
+#endif
+#endif
+
 /**************************************************
  * CFS operations on tasks:
  */
@@ -7330,10 +7788,11 @@ int sysctl_sched_util_low_pct = 85;
 
 static inline bool prefer_cpus_valid(struct task_struct *p)
 {
-	return p->prefer_cpus &&
-	       !cpumask_empty(p->prefer_cpus) &&
-	       !cpumask_equal(p->prefer_cpus, p->cpus_ptr) &&
-	       cpumask_subset(p->prefer_cpus, p->cpus_ptr);
+	struct cpumask *prefer_cpus = task_prefer_cpus(p);
+
+	return !cpumask_empty(prefer_cpus) &&
+	       !cpumask_equal(prefer_cpus, p->cpus_ptr) &&
+	       cpumask_subset(prefer_cpus, p->cpus_ptr);
 }
 
 static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
@@ -7350,7 +7809,7 @@ static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
 /*
  * set_task_select_cpus: select the cpu range for task
  * @p: the task whose available cpu range will to set
- * @idlest_cpu: the cpu which is the idlest in prefer cpus
+ *uto_affinity_used @idlest_cpu: the cpu which is the idlest in prefer cpus
  *
  * If sum of 'util_avg' among 'preferred_cpus' lower than the percentage
  * 'sysctl_sched_util_low_pct' of 'preferred_cpus' capacity, select
@@ -7368,13 +7827,23 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	long min_util = INT_MIN;
 	struct task_group *tg;
 	long spare;
-	int cpu;
-
-	p->select_cpus = p->cpus_ptr;
-	if (!prefer_cpus_valid(p))
-		return;
+	int cpu, mode;
 
 	rcu_read_lock();
+	mode = dynamic_affinity_mode(p);
+	if (mode == -1) {
+		rcu_read_unlock();
+		return;
+	} else if (mode == 1) {
+		p->select_cpus = task_prefer_cpus(p);
+		if (idlest_cpu)
+			*idlest_cpu = cpumask_first(p->select_cpus);
+		sched_qos_affinity_set(p);
+		rcu_read_unlock();
+		return;
+	}
+
+	/* manual mode */
 	tg = task_group(p);
 	for_each_cpu(cpu, p->prefer_cpus) {
 		if (idlest_cpu && (available_idle_cpu(cpu) || sched_idle_cpu(cpu))) {
@@ -7442,13 +7911,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	time = schedstat_start_time();
 
 	/*
-	 * required for stable ->cpus_allowed
+	 * required for stable ->cpus_ptr
 	 */
 	lockdep_assert_held(&p->pi_lock);
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	p->select_cpus = p->cpus_ptr;
-	if (dynamic_affinity_used())
+	if (dynamic_affinity_used() || smart_grid_used())
 		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
 
@@ -9039,7 +9508,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	p->select_cpus = p->cpus_ptr;
-	if (dynamic_affinity_used())
+	if (dynamic_affinity_used() || smart_grid_used())
 		set_task_select_cpus(p, NULL, 0);
 	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
 #else
@@ -12949,6 +13418,7 @@ void free_fair_sched_group(struct task_group *tg)
 	int i;
 
 	destroy_cfs_bandwidth(tg_cfs_bandwidth(tg));
+	destroy_auto_affinity(tg);
 
 	for_each_possible_cpu(i) {
 #ifdef CONFIG_QOS_SCHED
@@ -12972,7 +13442,7 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 {
 	struct sched_entity *se;
 	struct cfs_rq *cfs_rq;
-	int i;
+	int i, ret;
 
 	tg->cfs_rq = kcalloc(nr_cpu_ids, sizeof(cfs_rq), GFP_KERNEL);
 	if (!tg->cfs_rq)
@@ -12984,6 +13454,9 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 	tg->shares = NICE_0_LOAD;
 
 	init_cfs_bandwidth(tg_cfs_bandwidth(tg));
+	ret = init_auto_affinity(tg);
+	if (ret)
+		goto err;
 
 	for_each_possible_cpu(i) {
 		cfs_rq = kzalloc_node(sizeof(struct cfs_rq),
@@ -13006,6 +13479,7 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 err_free_rq:
 	kfree(cfs_rq);
 err:
+	destroy_auto_affinity(tg);
 	return 0;
 }
 

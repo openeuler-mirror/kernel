@@ -16,6 +16,9 @@
 #include <linux/pm_qos.h>
 #include <linux/spinlock.h>
 #include <linux/sysfs.h>
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+#include <linux/sched/grid_qos.h>
+#endif
 
 /*********************************************************************
  *                        CPUFREQ INTERFACE                          *
@@ -606,6 +609,14 @@ int cpufreq_register_governor(struct cpufreq_governor *governor);
 void cpufreq_unregister_governor(struct cpufreq_governor *governor);
 int cpufreq_start_governor(struct cpufreq_policy *policy);
 void cpufreq_stop_governor(struct cpufreq_policy *policy);
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+/* Implement in cpufreq.c */
+#ifdef CONFIG_CPU_FREQ
+void cpufreq_smart_grid_start_sync(void);
+#else
+static inline void cpufreq_smart_grid_start_sync(void) { return; }
+#endif
+#endif
 
 #define cpufreq_governor_init(__governor)			\
 static int __init __governor##_init(void)			\

@@ -2689,6 +2689,235 @@ int cpufreq_boost_enabled(void)
 }
 EXPORT_SYMBOL_GPL(cpufreq_boost_enabled);
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+
+struct smart_grid_zone {
+	char governor_name[SMART_GRID_ZONE_NR][CPUFREQ_NAME_LEN];
+	unsigned int enable;
+	struct irq_work irq_work;
+	struct work_struct work;
+	unsigned int is_init;
+};
+
+static struct smart_grid_zone sg_zone;
+static DEFINE_MUTEX(sg_zone_lock);
+
+#define SG_WRITE_BUFF_LEN	30
+
+void cpufreq_smart_grid_start_sync(void)
+{
+	if (likely(sg_zone.is_init))
+		irq_work_queue(&sg_zone.irq_work);
+}
+
+static ssize_t show_smart_grid_governor(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	int len = 0;
+	int gov_index;
+
+	mutex_lock(&sg_zone_lock);
+	if (!sg_zone.enable) {
+		mutex_unlock(&sg_zone_lock);
+		return sprintf(buf, "smart_grid governor disable\n");
+	}
+
+	for (gov_index = 0; gov_index < SMART_GRID_ZONE_NR; gov_index++)
+		len += sprintf(buf + len, "smart_grid-%d: %s\n", gov_index,
+								 sg_zone.governor_name[gov_index]);
+
+	mutex_unlock(&sg_zone_lock);
+	return len;
+}
+
+static ssize_t store_smart_grid_governor(struct kobject *kobj, struct kobj_attribute *attr,
+					 const char *buf, size_t count)
+{
+	struct cpufreq_governor *target_gov = NULL;
+	unsigned int current_level;
+	char *level_string = NULL;
+	char buf_string[SG_WRITE_BUFF_LEN];
+	char *gov_string = buf_string;
+	char save_string[CPUFREQ_NAME_LEN];
+	int ret;
+
+	mutex_lock(&sg_zone_lock);
+	if (!sg_zone.enable) {
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	if (strscpy(buf_string, buf, SG_WRITE_BUFF_LEN) <= 0) {
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	level_string = strsep(&gov_string, "-");
+	if (level_string == NULL) {
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	if (kstrtouint(level_string, 10, &current_level)) {
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	if (current_level >= SMART_GRID_ZONE_NR) {
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	if (sscanf(gov_string, "%15s", save_string) != 1) {
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	target_gov = cpufreq_parse_governor(save_string);
+	if (target_gov == NULL) {
+		ret = -EINVAL;
+		goto fail;
+	}
+	module_put(target_gov->owner);
+
+	strscpy(sg_zone.governor_name[current_level], save_string, CPUFREQ_NAME_LEN);
+	cpufreq_smart_grid_start_sync();
+	mutex_unlock(&sg_zone_lock);
+	return count;
+
+fail:
+	mutex_unlock(&sg_zone_lock);
+	return ret;
+}
+define_one_global_rw(smart_grid_governor);
+
+static ssize_t show_smart_grid_governor_enable(struct kobject *kobj,
+					       struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sg_zone.enable);
+}
+
+static void smart_grid_irq_work(struct irq_work *irq_work)
+{
+	struct smart_grid_zone *zone;
+
+	zone = container_of(irq_work, struct smart_grid_zone, irq_work);
+	schedule_work_on(smp_processor_id(), &zone->work);
+}
+
+static void smart_grid_work_handler(struct work_struct *work)
+{
+	struct smart_grid_zone *zone;
+	struct cpufreq_governor *target_gov = NULL;
+	struct cpufreq_policy *policy = NULL;
+	unsigned int cpu;
+	int gov_index;
+
+	zone = container_of(work, struct smart_grid_zone, work);
+
+	mutex_lock(&sg_zone_lock);
+	if (!sg_zone.enable) {
+		mutex_unlock(&sg_zone_lock);
+		return;
+	}
+
+	for (gov_index = 0; gov_index < SMART_GRID_ZONE_NR; gov_index++) {
+		target_gov = cpufreq_parse_governor(sg_zone.governor_name[gov_index]);
+		if (target_gov == NULL)
+			continue;
+
+		for_each_cpu(cpu, sched_grid_zone_cpumask(gov_index)) {
+			if (cpu_is_offline(cpu))
+				continue;
+
+			policy = cpufreq_cpu_acquire(cpu);
+			if (policy == NULL)
+				continue;
+
+			if (policy->governor == target_gov) {
+				cpufreq_cpu_release(policy);
+				continue;
+			}
+			/*Try to switch governor */
+			store_scaling_governor(policy, sg_zone.governor_name[gov_index],
+					       CPUFREQ_NAME_LEN);
+			cpufreq_cpu_release(policy);
+		}
+		module_put(target_gov->owner);
+	}
+	mutex_unlock(&sg_zone_lock);
+}
+
+static void sg_zone_set_enable(void)
+{
+	int gov_index;
+
+	/* Set default smart_grid governor */
+	for (gov_index = 0; gov_index < SMART_GRID_ZONE_NR; gov_index++) {
+		if (!gov_index)
+			strscpy(sg_zone.governor_name[gov_index], "performance", CPUFREQ_NAME_LEN);
+		else
+			strscpy(sg_zone.governor_name[gov_index], "powersave", CPUFREQ_NAME_LEN);
+	}
+
+	sg_zone.enable = 1;
+	cpufreq_smart_grid_start_sync();
+}
+
+static void sg_zone_set_disable(void)
+{
+	sg_zone.enable = 0;
+}
+
+static ssize_t store_smart_grid_governor_enable(struct kobject *kobj, struct kobj_attribute *attr,
+						const char *buf, size_t count)
+{
+	unsigned int enable;
+
+	if (kstrtouint(buf, 10, &enable))
+		return -EINVAL;
+
+	if (enable > 1)
+		return -EINVAL;
+
+	mutex_lock(&sg_zone_lock);
+	if (sg_zone.enable == enable) {
+		mutex_unlock(&sg_zone_lock);
+		return -EINVAL;
+	}
+
+	if (enable)
+		sg_zone_set_enable();
+	else
+		sg_zone_set_disable();
+
+	mutex_unlock(&sg_zone_lock);
+	return count;
+}
+define_one_global_rw(smart_grid_governor_enable);
+
+static int create_smart_grid_sysfs_file(void)
+{
+	int ret;
+
+	ret = sysfs_create_file(cpufreq_global_kobject, &smart_grid_governor.attr);
+	if (ret)
+		pr_err("%s: cannot register global smart_grid_governor sysfs file\n",
+		       __func__);
+
+	ret = sysfs_create_file(cpufreq_global_kobject, &smart_grid_governor_enable.attr);
+	if (ret)
+		pr_err("%s: cannot register global smart_grid_governor_enable sysfs file\n",
+		       __func__);
+
+	init_irq_work(&sg_zone.irq_work, smart_grid_irq_work);
+	INIT_WORK(&sg_zone.work, smart_grid_work_handler);
+	sg_zone.enable = 0;
+	sg_zone.is_init = 1;
+	return ret;
+}
+#endif
+
 /*********************************************************************
  *               REGISTER / UNREGISTER CPUFREQ DRIVER                *
  *********************************************************************/
@@ -2861,6 +3090,9 @@ static int __init cpufreq_core_init(void)
 	if (!strlen(default_governor))
 		strncpy(default_governor, gov->name, CPUFREQ_NAME_LEN);
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	create_smart_grid_sysfs_file();
+#endif
 	return 0;
 }
 module_param(off, int, 0444);
