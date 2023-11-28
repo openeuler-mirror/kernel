@@ -5871,15 +5871,13 @@ static void affinity_domain_up(struct task_group *tg)
 		return;
 
 	while (level < ad->dcount) {
-		if (IS_DOMAIN_SET(level + 1, ad->domain_mask)) {
+		if (IS_DOMAIN_SET(level + 1, ad->domain_mask) &&
+		    cpumask_weight(ad->domains[level + 1]) > 0) {
 			ad->curr_level = level + 1;
-			break;
+			return;
 		}
 		level++;
 	}
-
-	if (level == ad->dcount)
-		return;
 }
 
 static void affinity_domain_down(struct task_group *tg)
@@ -5891,15 +5889,15 @@ static void affinity_domain_down(struct task_group *tg)
 		return;
 
 	while (level > 0) {
+		if (!cpumask_weight(ad->domains[level - 1]))
+			return;
+
 		if (IS_DOMAIN_SET(level - 1, ad->domain_mask)) {
 			ad->curr_level = level - 1;
-			break;
+			return;
 		}
 		level--;
 	}
-
-	if (!level)
-		return;
 }
 
 static enum hrtimer_restart sched_auto_affi_period_timer(struct hrtimer *timer)
@@ -5919,11 +5917,8 @@ static enum hrtimer_restart sched_auto_affi_period_timer(struct hrtimer *timer)
 		tg_capacity += capacity_of(cpu);
 	}
 
-	if (unlikely(!tg_capacity))
-		return HRTIMER_RESTART;
-
 	raw_spin_lock_irqsave(&auto_affi->lock, flags);
-	if (util_avg_sum * 100 > tg_capacity * sysctl_sched_util_low_pct) {
+	if (util_avg_sum * 100 >= tg_capacity * sysctl_sched_util_low_pct) {
 		affinity_domain_up(tg);
 	} else if (util_avg_sum * 100 < tg_capacity *
 		   sysctl_sched_util_low_pct / 2) {
@@ -5955,15 +5950,16 @@ static int tg_update_affinity_domain_down(struct task_group *tg, void *data)
 			continue;
 
 		/* online */
-		if (cpu_state[1])
+		if (cpu_state[1]) {
 			cpumask_set_cpu(cpu_state[0], ad->domains[i]);
-		else
+		} else {
 			cpumask_clear_cpu(cpu_state[0], ad->domains[i]);
+			if (!cpumask_weight(ad->domains[i]))
+				affinity_domain_up(tg);
+		}
+
 	}
 	raw_spin_unlock_irqrestore(&auto_affi->lock, flags);
-
-	if (!smart_grid_used())
-		return 0;
 
 	return 0;
 }
