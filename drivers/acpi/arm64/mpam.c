@@ -219,7 +219,7 @@ int __init acpi_mpam_parse_version(void)
 {
 	struct acpi_table_header *mpam, *pptt;
 	acpi_status status;
-	int ret;
+	int ret = -EINVAL;
 
 	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
 		return 0;
