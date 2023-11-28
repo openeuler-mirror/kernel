@@ -5815,6 +5815,8 @@ static inline void unthrottle_offline_cfs_rqs(struct rq *rq) {}
 #define AUTO_AFFINITY_DEFAULT_PERIOD_MS 2000
 #define IS_DOMAIN_SET(level, mask)	((1 << (level)) & (mask))
 
+static DEFINE_MUTEX(smart_grid_used_mutex);
+
 static inline unsigned long cpu_util(int cpu);
 static unsigned long capacity_of(int cpu);
 static int sched_idle_cpu(int cpu);
@@ -5982,9 +5984,11 @@ void start_auto_affinity(struct auto_affinity *auto_affi)
 {
 	ktime_t delay_ms;
 
+	mutex_lock(&smart_grid_used_mutex);
 	raw_spin_lock_irq(&auto_affi->lock);
 	if (auto_affi->period_active == 1) {
 		raw_spin_unlock_irq(&auto_affi->lock);
+		mutex_unlock(&smart_grid_used_mutex);
 		return;
 	}
 
@@ -5997,15 +6001,18 @@ void start_auto_affinity(struct auto_affinity *auto_affi)
 	raw_spin_unlock_irq(&auto_affi->lock);
 
 	smart_grid_usage_inc();
+	mutex_unlock(&smart_grid_used_mutex);
 }
 
 void stop_auto_affinity(struct auto_affinity *auto_affi)
 {
 	struct affinity_domain *ad = &auto_affi->ad;
 
+	mutex_lock(&smart_grid_used_mutex);
 	raw_spin_lock_irq(&auto_affi->lock);
 	if (auto_affi->period_active == 0) {
 		raw_spin_unlock_irq(&auto_affi->lock);
+		mutex_unlock(&smart_grid_used_mutex);
 		return;
 	}
 
@@ -6016,6 +6023,7 @@ void stop_auto_affinity(struct auto_affinity *auto_affi)
 	raw_spin_unlock_irq(&auto_affi->lock);
 
 	smart_grid_usage_dec();
+	mutex_unlock(&smart_grid_used_mutex);
 }
 
 static struct sched_group *sd_find_idlest_group(struct sched_domain *sd)
@@ -6221,7 +6229,7 @@ static void destroy_auto_affinity(struct task_group *tg)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
 
-	if (auto_affi->mode)
+	if (auto_affi->period_active)
 		smart_grid_usage_dec();
 
 	hrtimer_cancel(&auto_affi->period_timer);
