@@ -6156,7 +6156,6 @@ static int init_affinity_domains(struct affinity_domain *ad)
 	}
 
 	if (!sd) {
-		ad->dcount = 0;
 		rcu_read_unlock();
 		return -EINVAL;
 	}
@@ -6164,8 +6163,10 @@ static int init_affinity_domains(struct affinity_domain *ad)
 
 	for (i = 0; i < dcount; i++) {
 		ad->domains[i] = kmalloc(sizeof(cpumask_t), GFP_KERNEL);
-		if (!ad->domains[i])
+		if (!ad->domains[i]) {
+			ad->dcount = i;
 			goto err;
+		}
 	}
 
 	rcu_read_lock();
