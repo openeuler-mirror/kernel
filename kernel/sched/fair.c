@@ -6215,6 +6215,9 @@ static void destroy_auto_affinity(struct task_group *tg)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
 
+	if (auto_affi->mode)
+		smart_grid_usage_dec();
+
 	hrtimer_cancel(&auto_affi->period_timer);
 	free_affinity_domains(&auto_affi->ad);
 
