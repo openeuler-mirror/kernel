@@ -133,7 +133,8 @@ int smc_cdc_msg_send(struct smc_connection *conn,
 	} else {
 		conn->tx_cdc_seq--;
 		conn->local_tx_ctrl.seqno = conn->tx_cdc_seq;
-		atomic_dec(&conn->cdc_pend_tx_wr);
+		if (atomic_dec_and_test(&conn->cdc_pend_tx_wr) || smc_link_usable(conn->lnk))
+			wake_up(&conn->cdc_pend_tx_wq);
 	}
 
 	return rc;
@@ -165,8 +166,10 @@ int smcr_cdc_msg_send_validation(struct smc_connection *conn,
 	smp_mb__after_atomic(); /* Make sure cdc_pend_tx_wr added before post */
 
 	rc = smc_wr_tx_send(link, (struct smc_wr_tx_pend_priv *)pend);
-	if (unlikely(rc))
-		atomic_dec(&conn->cdc_pend_tx_wr);
+	if (unlikely(rc)) {
+		if (atomic_dec_and_test(&conn->cdc_pend_tx_wr) || smc_link_usable(conn->lnk))
+			wake_up(&conn->cdc_pend_tx_wq);
+	}
 
 	return rc;
 }
@@ -226,7 +229,8 @@ int smc_cdc_get_slot_and_msg_send(struct smc_connection *conn)
 
 void smc_cdc_wait_pend_tx_wr(struct smc_connection *conn)
 {
-	wait_event(conn->cdc_pend_tx_wq, !atomic_read(&conn->cdc_pend_tx_wr));
+	wait_event(conn->cdc_pend_tx_wq, !atomic_read(&conn->cdc_pend_tx_wr) ||
+		   !smc_link_usable(conn->lnk) || conn->lgr->terminating);
 }
 
 /* Send a SMC-D CDC header.

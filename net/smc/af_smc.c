@@ -805,7 +805,7 @@ static int smc_connect_rdma(struct smc_sock *smc,
 			reason_code = SMC_CLC_DECL_NOSRVLINK;
 			goto connect_abort;
 		}
-		smc->conn.lnk = link;
+		smc_switch_link_and_count(&smc->conn, link);
 	}
 
 	/* create send buffer and rmb */
@@ -1149,6 +1149,11 @@ static int smc_connect(struct socket *sock, struct sockaddr *addr,
 		break;
 	}
 
+	if (!smc->clcsock ||
+	    (smc->clcsock && !smc->clcsock->sk)) {
+		rc = -EBADF;
+		goto out;
+	}
 	smc_copy_sock_settings_to_clc(smc);
 	tcp_sk(smc->clcsock->sk)->syn_smc = 1;
 	if (smc->connect_nonblock) {
@@ -1211,10 +1216,12 @@ static int smc_clcsock_accept(struct smc_sock *lsmc, struct smc_sock **new_smc)
 		lsk->sk_err = -rc;
 	if (rc < 0 || lsk->sk_state == SMC_CLOSED) {
 		new_sk->sk_prot->unhash(new_sk);
+		mutex_lock(&lsmc->clcsock_release_lock);
 		if (new_clcsock)
 			sock_release(new_clcsock);
 		new_sk->sk_state = SMC_CLOSED;
 		sock_set_flag(new_sk, SOCK_DEAD);
+		mutex_unlock(&lsmc->clcsock_release_lock);
 		sock_put(new_sk); /* final */
 		*new_smc = NULL;
 		goto out;
@@ -1239,8 +1246,8 @@ static void smc_accept_enqueue(struct sock *parent, struct sock *sk)
 	sock_hold(sk); /* sock_put in smc_accept_unlink () */
 	spin_lock(&par->accept_q_lock);
 	list_add_tail(&smc_sk(sk)->accept_q, &par->accept_q);
-	spin_unlock(&par->accept_q_lock);
 	sk_acceptq_added(parent);
+	spin_unlock(&par->accept_q_lock);
 }
 
 /* remove a socket from the accept queue of its parental listening socket */
@@ -1250,8 +1257,8 @@ static void smc_accept_unlink(struct sock *sk)
 
 	spin_lock(&par->accept_q_lock);
 	list_del_init(&smc_sk(sk)->accept_q);
-	spin_unlock(&par->accept_q_lock);
 	sk_acceptq_removed(&smc_sk(sk)->listen_smc->sk);
+	spin_unlock(&par->accept_q_lock);
 	sock_put(sk); /* sock_hold in smc_accept_enqueue */
 }
 
