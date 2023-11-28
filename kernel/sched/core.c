@@ -9568,7 +9568,7 @@ int tg_set_affinity_period(struct task_group *tg, u64 period_ms)
 	if (unlikely(!tg->auto_affinity))
 		return -EPERM;
 
-	if (period_ms > U64_MAX / NSEC_PER_MSEC)
+	if (!period_ms || period_ms > U64_MAX / NSEC_PER_MSEC)
 		return -EINVAL;
 
 	raw_spin_lock_irq(&tg->auto_affinity->lock);
