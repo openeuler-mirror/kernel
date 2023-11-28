@@ -28,9 +28,7 @@
 #include <linux/delay.h>
 #include <linux/tracehook.h>
 #endif
-#ifdef CONFIG_QOS_SCHED_SMART_GRID
 #include <linux/sched/grid_qos.h>
-#endif
 #include <linux/bpf_sched.h>
 
 /*
@@ -5821,6 +5819,7 @@ static inline unsigned long cpu_util(int cpu);
 static unsigned long capacity_of(int cpu);
 static int sched_idle_cpu(int cpu);
 static unsigned long cpu_runnable(struct rq *rq);
+static inline bool prefer_cpus_valid(struct task_struct *p);
 
 int sysctl_affinity_adjust_delay_ms = 5000;
 
@@ -5836,22 +5835,29 @@ static void smart_grid_usage_dec(void)
 	static_key_slow_dec(&__smart_grid_used);
 }
 
-static void tg_update_task_prefer_cpus(struct task_group *tg)
+static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
 {
-	struct affinity_domain *ad = &tg->auto_affinity->ad;
-	struct task_struct *task;
-	struct css_task_iter it;
+	struct affinity_domain *ad;
 
-	css_task_iter_start(&tg->css, 0, &it);
-	while ((task = css_task_iter_next(&it))) {
-		if (tg == &root_task_group && !task->mm)
-			continue;
+	if (!smart_grid_used())
+		return p->prefer_cpus;
 
-		set_prefer_cpus_ptr(task, ad->domains[ad->curr_level]);
-		/* grid_qos must not be NULL */
-		task->grid_qos->affinity_set(task);
-	}
-	css_task_iter_end(&it);
+	if (task_group(p)->auto_affinity->mode == 0)
+		return (void *)p->cpus_ptr;
+
+	ad = &task_group(p)->auto_affinity->ad;
+	return ad->domains[ad->curr_level];
+}
+
+static inline int dynamic_affinity_mode(struct task_struct *p)
+{
+	if (!prefer_cpus_valid(p))
+		return -1;
+
+	if (smart_grid_used())
+		return task_group(p)->auto_affinity->mode == 0 ? -1 : 1;
+
+	return 0;
 }
 
 static void affinity_domain_up(struct task_group *tg)
@@ -5872,8 +5878,6 @@ static void affinity_domain_up(struct task_group *tg)
 
 	if (level == ad->dcount)
 		return;
-
-	tg_update_task_prefer_cpus(tg);
 }
 
 static void affinity_domain_down(struct task_group *tg)
@@ -5894,8 +5898,6 @@ static void affinity_domain_down(struct task_group *tg)
 
 	if (!level)
 		return;
-
-	tg_update_task_prefer_cpus(tg);
 }
 
 static enum hrtimer_restart sched_auto_affi_period_timer(struct hrtimer *timer)
@@ -5961,8 +5963,6 @@ static int tg_update_affinity_domain_down(struct task_group *tg, void *data)
 	if (!smart_grid_used())
 		return 0;
 
-	if (auto_affi->mode)
-		tg_update_task_prefer_cpus(tg);
 	return 0;
 }
 
@@ -5980,35 +5980,41 @@ void tg_update_affinity_domains(int cpu, int online)
 
 void start_auto_affinity(struct auto_affinity *auto_affi)
 {
-	struct task_group *tg = auto_affi->tg;
 	ktime_t delay_ms;
 
-	if (auto_affi->period_active == 1)
+	raw_spin_lock_irq(&auto_affi->lock);
+	if (auto_affi->period_active == 1) {
+		raw_spin_unlock_irq(&auto_affi->lock);
 		return;
-
-	tg_update_task_prefer_cpus(tg);
+	}
 
 	auto_affi->period_active = 1;
+	auto_affi->mode = 1;
 	delay_ms = ms_to_ktime(sysctl_affinity_adjust_delay_ms);
 	hrtimer_forward_now(&auto_affi->period_timer, delay_ms);
 	hrtimer_start_expires(&auto_affi->period_timer,
 				HRTIMER_MODE_ABS_PINNED);
+	raw_spin_unlock_irq(&auto_affi->lock);
+
 	smart_grid_usage_inc();
 }
 
 void stop_auto_affinity(struct auto_affinity *auto_affi)
 {
-	struct task_group *tg = auto_affi->tg;
 	struct affinity_domain *ad = &auto_affi->ad;
 
-	if (auto_affi->period_active == 0)
+	raw_spin_lock_irq(&auto_affi->lock);
+	if (auto_affi->period_active == 0) {
+		raw_spin_unlock_irq(&auto_affi->lock);
 		return;
+	}
 
 	hrtimer_cancel(&auto_affi->period_timer);
 	auto_affi->period_active = 0;
+	auto_affi->mode = 0;
 	ad->curr_level = ad->dcount > 0 ? ad->dcount - 1 : 0;
+	raw_spin_unlock_irq(&auto_affi->lock);
 
-	tg_update_task_prefer_cpus(tg);
 	smart_grid_usage_dec();
 }
 
@@ -6226,6 +6232,19 @@ static void destroy_auto_affinity(struct task_group *tg)
 }
 #else
 static void destroy_auto_affinity(struct task_group *tg) {}
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
+{
+	return p->prefer_cpus;
+}
+#endif
+
+static inline int dynamic_affinity_mode(struct task_struct *p)
+{
+	return 0;
+}
+
 #endif
 
 /**************************************************
@@ -7748,10 +7767,11 @@ int sysctl_sched_util_low_pct = 85;
 
 static inline bool prefer_cpus_valid(struct task_struct *p)
 {
-	return p->prefer_cpus &&
-	       !cpumask_empty(p->prefer_cpus) &&
-	       !cpumask_equal(p->prefer_cpus, p->cpus_ptr) &&
-	       cpumask_subset(p->prefer_cpus, p->cpus_ptr);
+	struct cpumask *prefer_cpus = task_prefer_cpus(p);
+
+	return !cpumask_empty(prefer_cpus) &&
+	       !cpumask_equal(prefer_cpus, p->cpus_ptr) &&
+	       cpumask_subset(prefer_cpus, p->cpus_ptr);
 }
 
 static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
@@ -7786,20 +7806,23 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	long min_util = INT_MIN;
 	struct task_group *tg;
 	long spare;
-	int cpu;
+	int cpu, mode;
 
-	p->select_cpus = p->cpus_ptr;
-	if (!prefer_cpus_valid(p))
+	rcu_read_lock();
+	mode = dynamic_affinity_mode(p);
+	if (mode == -1) {
+		rcu_read_unlock();
 		return;
-
-	if (smart_grid_used()) {
-		p->select_cpus = p->prefer_cpus;
+	} else if (mode == 1) {
+		p->select_cpus = task_prefer_cpus(p);
 		if (idlest_cpu)
 			*idlest_cpu = cpumask_first(p->select_cpus);
+		sched_qos_affinity_set(p);
+		rcu_read_unlock();
 		return;
 	}
 
-	rcu_read_lock();
+	/* manual mode */
 	tg = task_group(p);
 	for_each_cpu(cpu, p->prefer_cpus) {
 		if (idlest_cpu && (available_idle_cpu(cpu) || sched_idle_cpu(cpu))) {
@@ -7867,13 +7890,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	time = schedstat_start_time();
 
 	/*
-	 * required for stable ->cpus_allowed
+	 * required for stable ->cpus_ptr
 	 */
 	lockdep_assert_held(&p->pi_lock);
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	p->select_cpus = p->cpus_ptr;
-	if (dynamic_affinity_used())
+	if (dynamic_affinity_used() || smart_grid_used())
 		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
 
@@ -9464,7 +9487,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	p->select_cpus = p->cpus_ptr;
-	if (dynamic_affinity_used())
+	if (dynamic_affinity_used() || smart_grid_used())
 		set_task_select_cpus(p, NULL, 0);
 	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
 #else
