@@ -293,7 +293,7 @@ static int sss_init_ctrlq(struct sss_hwdev *hwdev)
 {
 	u8 i;
 	u8 q_type;
-	int ret;
+	int ret = -ENOMEM;
 	struct sss_ctrlq_info *ctrlq_info = NULL;
 
 	ctrlq_info = kzalloc(sizeof(*ctrlq_info), GFP_KERNEL);

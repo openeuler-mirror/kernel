@@ -217,7 +217,7 @@ static unsigned char sss_get_pci_bus_id(struct sss_pci_adapter *adapter)
 	return bus_id;
 }
 
-static bool sss_alloc_card_id(void)
+static bool sss_alloc_card_id(u8 *id)
 {
 	unsigned char i;
 
@@ -225,6 +225,7 @@ static bool sss_alloc_card_id(void)
 	for (i = 0; i < SSS_CARD_CNT_MAX; i++) {
 		if (test_and_set_bit(i, &g_index_bit_map) == 0) {
 			sss_chip_node_unlock();
+			*id = i;
 			return true;
 		}
 	}
@@ -233,10 +234,15 @@ static bool sss_alloc_card_id(void)
 	return false;
 }
 
+static void sss_free_card_id(u8 id)
+{
+	clear_bit(id, &g_index_bit_map);
+}
+
 int sss_alloc_chip_node(struct sss_pci_adapter *adapter)
 {
 	struct sss_card_node *chip_node = NULL;
-	unsigned char i;
+	unsigned char card_id;
 	unsigned char bus_id;
 
 	bus_id = sss_get_pci_bus_id(adapter);
@@ -250,14 +256,15 @@ int sss_alloc_chip_node(struct sss_pci_adapter *adapter)
 
 	chip_node->bus_id = bus_id;
 
-	if (snprintf(chip_node->chip_name, IFNAMSIZ, "%s%u", SSS_CHIP_NAME, i) < 0) {
+	if (!sss_alloc_card_id(&card_id)) {
 		kfree(chip_node);
+		sdk_err(&adapter->pcidev->dev, "chip node is exceed\n");
 		return -EINVAL;
 	}
 
-	if (!sss_alloc_card_id()) {
+	if (snprintf(chip_node->chip_name, IFNAMSIZ, "%s%u", SSS_CHIP_NAME, card_id) < 0) {
+		sss_free_card_id(card_id);
 		kfree(chip_node);
-		sdk_err(&adapter->pcidev->dev, "chip node is exceed\n");
 		return -EINVAL;
 	}
 
