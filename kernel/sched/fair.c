@@ -6225,6 +6225,9 @@ static void destroy_auto_affinity(struct task_group *tg)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
 
+	if (unlikely(!auto_affi))
+		return;
+
 	if (auto_affi->period_active)
 		smart_grid_usage_dec();
 
