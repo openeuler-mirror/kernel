@@ -593,7 +593,7 @@ int setup_sigframe_layout(struct rt_sigframe_user_layout *user, bool add_all)
 			return err;
 	}
 
-	if (system_supports_sve()) {
+	if (system_supports_sve() || system_supports_sme()) {
 		unsigned int vq = 0;
 
 		if (add_all || test_thread_flag(TIF_SVE) ||
