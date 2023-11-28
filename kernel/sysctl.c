@@ -2803,6 +2803,15 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_hundred,
 	},
 #endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	{
+		.procname	= "affinity_adjust_delay_ms",
+		.data		= &sysctl_affinity_adjust_delay_ms,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
 	{ }
 };
 

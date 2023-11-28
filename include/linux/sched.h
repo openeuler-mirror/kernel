@@ -2255,6 +2255,19 @@ void sched_prefer_cpus_free(struct task_struct *p);
 void dynamic_affinity_enable(void);
 #endif
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+extern struct static_key __smart_grid_used;
+static inline bool smart_grid_used(void)
+{
+	return static_key_false(&__smart_grid_used);
+}
+#else
+static inline bool smart_grid_used(void)
+{
+	return false;
+}
+#endif
+
 #ifdef CONFIG_BPF_SCHED
 extern void sched_settag(struct task_struct *tsk, s64 tag);
 
