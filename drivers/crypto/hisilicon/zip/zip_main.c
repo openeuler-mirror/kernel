@@ -106,6 +106,14 @@
 #define HZIP_CLOCK_GATED_EN		(HZIP_CORE_GATED_EN | \
 					 HZIP_CORE_GATED_OOO_EN)
 
+/* zip comp high performance */
+#define HZIP_HIGH_PERF_OFFSET		0x301208
+
+enum {
+	HZIP_HIGH_COMP_RATE,
+	HZIP_HIGH_COMP_PERF,
+};
+
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
 
@@ -284,28 +292,28 @@ static const u64 core_offsets[] = {
 };
 
 static const struct debugfs_reg32 hzip_dfx_regs[] = {
-	{"HZIP_GET_BD_NUM                ",  0x00ull},
-	{"HZIP_GET_RIGHT_BD              ",  0x04ull},
-	{"HZIP_GET_ERROR_BD              ",  0x08ull},
-	{"HZIP_DONE_BD_NUM               ",  0x0cull},
-	{"HZIP_WORK_CYCLE                ",  0x10ull},
-	{"HZIP_IDLE_CYCLE                ",  0x18ull},
-	{"HZIP_MAX_DELAY                 ",  0x20ull},
-	{"HZIP_MIN_DELAY                 ",  0x24ull},
-	{"HZIP_AVG_DELAY                 ",  0x28ull},
-	{"HZIP_MEM_VISIBLE_DATA          ",  0x30ull},
-	{"HZIP_MEM_VISIBLE_ADDR          ",  0x34ull},
-	{"HZIP_CONSUMED_BYTE             ",  0x38ull},
-	{"HZIP_PRODUCED_BYTE             ",  0x40ull},
-	{"HZIP_COMP_INF                  ",  0x70ull},
-	{"HZIP_PRE_OUT                   ",  0x78ull},
-	{"HZIP_BD_RD                     ",  0x7cull},
-	{"HZIP_BD_WR                     ",  0x80ull},
-	{"HZIP_GET_BD_AXI_ERR_NUM        ",  0x84ull},
-	{"HZIP_GET_BD_PARSE_ERR_NUM      ",  0x88ull},
-	{"HZIP_ADD_BD_AXI_ERR_NUM        ",  0x8cull},
-	{"HZIP_DECOMP_STF_RELOAD_CURR_ST ",  0x94ull},
-	{"HZIP_DECOMP_LZ77_CURR_ST       ",  0x9cull},
+	{"HZIP_GET_BD_NUM                ",  0x00},
+	{"HZIP_GET_RIGHT_BD              ",  0x04},
+	{"HZIP_GET_ERROR_BD              ",  0x08},
+	{"HZIP_DONE_BD_NUM               ",  0x0c},
+	{"HZIP_WORK_CYCLE                ",  0x10},
+	{"HZIP_IDLE_CYCLE                ",  0x18},
+	{"HZIP_MAX_DELAY                 ",  0x20},
+	{"HZIP_MIN_DELAY                 ",  0x24},
+	{"HZIP_AVG_DELAY                 ",  0x28},
+	{"HZIP_MEM_VISIBLE_DATA          ",  0x30},
+	{"HZIP_MEM_VISIBLE_ADDR          ",  0x34},
+	{"HZIP_CONSUMED_BYTE             ",  0x38},
+	{"HZIP_PRODUCED_BYTE             ",  0x40},
+	{"HZIP_COMP_INF                  ",  0x70},
+	{"HZIP_PRE_OUT                   ",  0x78},
+	{"HZIP_BD_RD                     ",  0x7c},
+	{"HZIP_BD_WR                     ",  0x80},
+	{"HZIP_GET_BD_AXI_ERR_NUM        ",  0x84},
+	{"HZIP_GET_BD_PARSE_ERR_NUM      ",  0x88},
+	{"HZIP_ADD_BD_AXI_ERR_NUM        ",  0x8c},
+	{"HZIP_DECOMP_STF_RELOAD_CURR_ST ",  0x94},
+	{"HZIP_DECOMP_LZ77_CURR_ST       ",  0x9c},
 };
 
 static const struct debugfs_reg32 hzip_com_dfx_regs[] = {
@@ -317,11 +325,11 @@ static const struct debugfs_reg32 hzip_com_dfx_regs[] = {
 };
 
 static const struct debugfs_reg32 hzip_dump_dfx_regs[] = {
-	{"HZIP_GET_BD_NUM                ",  0x00ull},
-	{"HZIP_GET_RIGHT_BD              ",  0x04ull},
-	{"HZIP_GET_ERROR_BD              ",  0x08ull},
-	{"HZIP_DONE_BD_NUM               ",  0x0cull},
-	{"HZIP_MAX_DELAY                 ",  0x20ull},
+	{"HZIP_GET_BD_NUM                ",  0x00},
+	{"HZIP_GET_RIGHT_BD              ",  0x04},
+	{"HZIP_GET_ERROR_BD              ",  0x08},
+	{"HZIP_DONE_BD_NUM               ",  0x0c},
+	{"HZIP_MAX_DELAY                 ",  0x20},
 };
 
 /* define the ZIP's dfx regs region and region length */
@@ -366,6 +374,37 @@ static int hzip_diff_regs_show(struct seq_file *s, void *unused)
 	return 0;
 }
 DEFINE_SHOW_ATTRIBUTE(hzip_diff_regs);
+
+static int perf_mode_set(const char *val, const struct kernel_param *kp)
+{
+	int ret;
+	u32 n;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, 10, &n);
+	if (ret != 0 || (n != HZIP_HIGH_COMP_PERF &&
+			 n != HZIP_HIGH_COMP_RATE))
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops zip_com_perf_ops = {
+	.set = perf_mode_set,
+	.get = param_get_int,
+};
+
+/*
+ * perf_mode = 0 means enable high compression rate mode,
+ * perf_mode = 1 means enable high compression performance mode.
+ * These two modes only apply to the compression direction.
+ */
+static u32 perf_mode = HZIP_HIGH_COMP_RATE;
+module_param_cb(perf_mode, &zip_com_perf_ops, &perf_mode, 0444);
+MODULE_PARM_DESC(perf_mode, "ZIP high perf mode 0(default), 1(enable)");
+
 static const struct kernel_param_ops zip_uacce_mode_ops = {
 	.set = uacce_mode_set,
 	.get = param_get_int,
@@ -429,6 +468,28 @@ bool hisi_zip_alg_support(struct hisi_qm *qm, u32 alg)
 		return true;
 
 	return false;
+}
+
+static int hisi_zip_set_high_perf(struct hisi_qm *qm)
+{
+	u32 val;
+	int ret;
+
+	val = readl_relaxed(qm->io_base + HZIP_HIGH_PERF_OFFSET);
+	if (perf_mode == HZIP_HIGH_COMP_PERF)
+		val |= HZIP_HIGH_COMP_PERF;
+	else
+		val &= ~HZIP_HIGH_COMP_PERF;
+
+	/* Set perf mode */
+	writel(val, qm->io_base + HZIP_HIGH_PERF_OFFSET);
+	ret = readl_relaxed_poll_timeout(qm->io_base + HZIP_HIGH_PERF_OFFSET,
+					 val, val == perf_mode, HZIP_DELAY_1_US,
+					 HZIP_POLL_TIMEOUT_US);
+	if (ret)
+		pci_err(qm->pdev, "failed to set perf mode\n");
+
+	return ret;
 }
 
 static void hisi_zip_open_sva_prefetch(struct hisi_qm *qm)
@@ -1110,6 +1171,10 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 	qm->err_ini->err_info_init(qm);
 
 	ret = hisi_zip_set_user_domain_and_cache(qm);
+	if (ret)
+		return ret;
+
+	ret = hisi_zip_set_high_perf(qm);
 	if (ret)
 		return ret;
 
