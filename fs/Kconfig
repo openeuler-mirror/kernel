@@ -156,6 +156,19 @@ source "fs/proc/Kconfig"
 source "fs/kernfs/Kconfig"
 source "fs/sysfs/Kconfig"
 
+config DIRTY_PAGES
+	bool "Dumps the number of dirty pages of each file"
+	depends on PROC_FS
+	default y
+	help
+	  This config supports the rendering of dirty page data to the user,
+	  which may be useful to analyze the IO performance when using buffer
+	  IO.
+
+	  It create 3 interfaces by using procfs. /proc/dirty/buffer_size for
+	  buffer allocation and release; /proc/dirty/page_threshold to filter
+	  result; /proc/dirty/dirty_list to get dirty pages.
+
 config TMPFS
 	bool "Tmpfs virtual memory file system support (former shm fs)"
 	depends on SHMEM
