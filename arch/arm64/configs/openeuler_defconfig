@@ -6178,6 +6178,7 @@ CONFIG_HISI_LPDDRC_PMU=m
 # end of Performance monitor support
 
 CONFIG_RAS=y
+CONFIG_PAGE_EJECT=m
 CONFIG_USB4=m
 # CONFIG_USB4_DEBUGFS_WRITE is not set
 
