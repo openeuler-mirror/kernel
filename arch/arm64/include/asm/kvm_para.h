@@ -2,7 +2,7 @@
 #ifndef _ASM_ARM64_KVM_PARA_H
 #define _ASM_ARM64_KVM_PARA_H
 
-#define KVM_HINTS_REALTIME      0
+#include <uapi/asm/kvm_para.h>
 
 static inline bool kvm_check_and_clear_guest_paused(void)
 {
