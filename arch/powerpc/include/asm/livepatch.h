@@ -121,9 +121,20 @@ struct arch_klp_data {
 #define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
 
 struct stackframe {
+	/* stack frame to be unwinded */
 	unsigned long sp;
+	/* link register saved in last stack frame */
 	unsigned long pc;
+	/* instruction register saved in pt_regs */
 	unsigned long nip;
+	/* link register saved in pt_regs */
+	unsigned long link;
+	/* stack frame pointer (r1 register) saved in pt_regs */
+	unsigned long sfp;
+	/* check if nip and link are in same function */
+	unsigned int nip_link_in_same_func;
+	/* check if it is top frame before interrupt */
+	unsigned int is_top_frame;
 };
 
 #ifdef PPC64_ELF_ABI_v1
