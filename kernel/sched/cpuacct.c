@@ -383,8 +383,8 @@ static int __init setup_psi_v1(char *str)
 	int ret;
 
 	ret = kstrtobool(str, &psi_v1_enable);
-	if (!psi_v1_enable)
-		static_branch_enable(&psi_v1_disabled);
+	if (psi_v1_enable)
+		static_branch_disable(&psi_v1_disabled);
 
 	return ret == 0;
 }

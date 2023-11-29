@@ -156,7 +156,7 @@
 static int psi_bug __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(psi_disabled);
-DEFINE_STATIC_KEY_FALSE(psi_v1_disabled);
+DEFINE_STATIC_KEY_TRUE(psi_v1_disabled);
 
 #ifdef CONFIG_PSI_DEFAULT_DISABLED
 static bool psi_enable;
