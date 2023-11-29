@@ -14,7 +14,9 @@ struct css_set;
 extern struct static_key_false psi_disabled;
 extern struct psi_group psi_system;
 
+#ifdef CONFIG_PSI_CGROUP_V1
 extern struct static_key_true psi_v1_disabled;
+#endif
 
 void psi_init(void);
 

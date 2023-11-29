@@ -156,7 +156,10 @@
 static int psi_bug __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(psi_disabled);
+
+#ifdef CONFIG_PSI_CGROUP_V1
 DEFINE_STATIC_KEY_TRUE(psi_v1_disabled);
+#endif
 
 #ifdef CONFIG_PSI_DEFAULT_DISABLED
 static bool psi_enable;
@@ -785,21 +788,23 @@ static struct psi_group *iterate_groups(struct task_struct *task, void **iter)
 	struct cgroup *cgroup = NULL;
 
 	if (!*iter) {
-		if (static_branch_likely(&psi_v1_disabled))
-			cgroup = task->cgroups->dfl_cgrp;
-		else {
+#ifndef CONFIG_PSI_CGROUP_V1
+		cgroup = task->cgroups->dfl_cgrp;
+#else
 #ifdef CONFIG_CGROUP_CPUACCT
-			if (!cgroup_subsys_on_dfl(cpuacct_cgrp_subsys)) {
+		if (!cgroup_subsys_on_dfl(cpuacct_cgrp_subsys)) {
+			if (!static_branch_likely(&psi_v1_disabled)) {
 				rcu_read_lock();
 				cgroup = task_cgroup(task, cpuacct_cgrp_id);
 				rcu_read_unlock();
-			} else {
-				cgroup = task->cgroups->dfl_cgrp;
 			}
-#else
-			cgroup = NULL;
-#endif
+		} else {
+			cgroup = task->cgroups->dfl_cgrp;
 		}
+#else
+		cgroup = NULL;
+#endif
+#endif
 	} else if (*iter == &psi_system)
 		return NULL;
 	else
@@ -1009,6 +1014,7 @@ void psi_memstall_leave(unsigned long *flags)
 		return;
 
 	trace_psi_memstall_leave(_RET_IP_);
+
 	/*
 	 * in_memstall clearing & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we could

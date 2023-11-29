@@ -375,7 +375,7 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 	.early_init	= true,
 };
 
-#ifdef CONFIG_PSI
+#ifdef CONFIG_PSI_CGROUP_V1
 
 static bool psi_v1_enable;
 static int __init setup_psi_v1(char *str)

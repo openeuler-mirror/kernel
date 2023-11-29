@@ -3783,6 +3783,7 @@ static void cgroup_pressure_release(struct kernfs_open_file *of)
 	psi_trigger_destroy(ctx->psi.trigger);
 }
 
+#ifdef CONFIG_PSI_CGROUP_V1
 struct cftype cgroup_v1_psi_files[] = {
 	{
 		.name = "io.pressure",
@@ -3820,6 +3821,8 @@ struct cftype cgroup_v1_psi_files[] = {
 #endif
 	{ } /* terminate */
 };
+#endif
+
 #endif /* CONFIG_PSI */
 
 static int cgroup_freeze_show(struct seq_file *seq, void *v)
