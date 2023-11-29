@@ -153,9 +153,11 @@ struct smc_buf_desc {
 		struct { /* SMC-R */
 			struct sg_table	sgt[SMC_LINKS_PER_LGR_MAX];
 					/* virtual buffer */
-			struct ib_mr	*mr_rx[SMC_LINKS_PER_LGR_MAX];
-					/* for rmb only: memory region
+			struct ib_mr	*mr[SMC_LINKS_PER_LGR_MAX];
+					/* memory region: for rmb and
+					 * vzalloced sndbuf
 					 * incl. rkey provided to peer
+					 * and lkey provided to local
 					 */
 			u32		order;	/* allocation order */
 
@@ -168,6 +170,8 @@ struct smc_buf_desc {
 			u8		is_dma_need_sync;
 			u8		is_reg_err;
 					/* buffer registration err */
+			u8		is_vm;
+					/* virtually contiguous */
 		};
 		struct { /* SMC-D */
 			unsigned short	sba_idx;
@@ -186,6 +190,7 @@ struct smc_rtoken {				/* address/key of remote RMB */
 };
 
 #define SMC_BUF_MIN_SIZE	16384	/* minimum size of an RMB */
+#define SMC_RMB_DEF_SIZE	131072	/* default size of an RMB */
 #define SMC_RMBE_SIZES		16	/* number of distinct RMBE sizes */
 /* theoretically, the RFC states that largest size would be 512K,
  * i.e. compressed 5 and thus 6 sizes (0..5), despite
@@ -200,6 +205,12 @@ enum smc_lgr_type {				/* redundancy state of lgr */
 	SMC_LGR_SYMMETRIC,		/* 2 active RNICs on each peer */
 	SMC_LGR_ASYMMETRIC_PEER,	/* local has 2, peer 1 active RNICs */
 	SMC_LGR_ASYMMETRIC_LOCAL,	/* local has 1, peer 2 active RNICs */
+};
+
+enum smcr_buf_type {		/* types of SMC-R sndbufs and RMBs */
+	SMCR_PHYS_CONT_BUFS	= 0,
+	SMCR_VIRT_CONT_BUFS	= 1,
+	SMCR_MIXED_BUFS		= 2,
 };
 
 enum smc_llc_flowtype {
@@ -258,6 +269,7 @@ struct smc_link_group {
 						/* used rtoken elements */
 			u8			next_link_id;
 			enum smc_lgr_type	type;
+			enum smcr_buf_type	buf_type;
 						/* redundancy state */
 			u8			pnet_id[SMC_MAX_PNETID_LEN + 1];
 						/* pnet id of this lgr */
@@ -421,7 +433,7 @@ int smcr_buf_reg_lgr(struct smc_link *lnk);
 void smcr_lgr_set_type(struct smc_link_group *lgr, enum smc_lgr_type new_type);
 void smcr_lgr_set_type_asym(struct smc_link_group *lgr,
 			    enum smc_lgr_type new_type, int asym_lnk_idx);
-int smcr_link_reg_rmb(struct smc_link *link, struct smc_buf_desc *rmb_desc);
+int smcr_link_reg_buf(struct smc_link *link, struct smc_buf_desc *rmb_desc);
 struct smc_link *smc_switch_conns(struct smc_link_group *lgr,
 				  struct smc_link *from_lnk, bool is_dev_err);
 void smcr_link_down_cond(struct smc_link *lnk);

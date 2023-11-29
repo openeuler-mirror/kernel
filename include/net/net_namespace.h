@@ -33,6 +33,7 @@
 #include <net/netns/mpls.h>
 #include <net/netns/can.h>
 #include <net/netns/xdp.h>
+#include <net/netns/smc.h>
 #include <net/netns/bpf.h>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
@@ -190,8 +191,11 @@ struct net {
 	struct sock		*crypto_nlsk;
 #endif
 	struct sock		*diag_nlsk;
-
+#if IS_ENABLED(CONFIG_SMC)
+	KABI_USE(1, struct netns_smc *smc)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
