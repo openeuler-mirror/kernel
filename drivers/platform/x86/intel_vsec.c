@@ -187,7 +187,7 @@ static int intel_vsec_add_dev(struct pci_dev *pdev, struct intel_vsec_header *he
 	intel_vsec_dev->pcidev = pdev;
 	intel_vsec_dev->resource = res;
 	intel_vsec_dev->num_resources = header->num_entries;
-	intel_vsec_dev->info = info;
+	intel_vsec_dev->quirks = info->quirks;
 	intel_vsec_dev->ida = &intel_vsec_ida;
 
 	return intel_vsec_add_aux(pdev, NULL, intel_vsec_dev,
