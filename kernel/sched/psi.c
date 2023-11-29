@@ -276,6 +276,10 @@ static void get_recent_times(struct psi_group *group, int cpu,
 			     enum psi_aggregators aggregator, u32 *times,
 			     u32 *pchanged_states)
 {
+#ifdef CONFIG_PSI_FINE_GRAINED
+	struct psi_group_ext *psi_ext = to_psi_group_ext(group);
+	struct psi_group_stat_cpu *ext_groupc = per_cpu_ptr(psi_ext->pcpu, cpu);
+#endif
 	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
 	u64 now, state_start;
 	enum psi_states s;
@@ -315,6 +319,9 @@ static void get_recent_times(struct psi_group *group, int cpu,
 		if (delta)
 			*pchanged_states |= (1 << s);
 	}
+#ifdef CONFIG_PSI_FINE_GRAINED
+	ext_groupc->times_delta = now - state_start;
+#endif
 }
 
 static void calc_avgs(unsigned long avg[3], int missed_periods,
@@ -429,6 +436,39 @@ static void psi_stat_flags_change(struct task_struct *task, int *stat_set,
 		task->memstall_type = 0;
 }
 
+static void get_recent_stat_times(struct psi_group *group, int cpu,
+				  enum psi_aggregators aggregator, u32 *times)
+{
+	struct psi_group_ext *psi_ext = to_psi_group_ext(group);
+	struct psi_group_stat_cpu *ext_groupc = per_cpu_ptr(psi_ext->pcpu, cpu);
+	enum psi_stat_states s;
+	u32 delta;
+
+	memcpy(times, ext_groupc->times, sizeof(ext_groupc->times));
+	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+		if (ext_groupc->state_mask & (1 << s))
+			times[s] += ext_groupc->times_delta;
+		delta = times[s] - ext_groupc->times_prev[aggregator][s];
+		ext_groupc->times_prev[aggregator][s] = times[s];
+		times[s] = delta;
+	}
+}
+
+static void update_stat_averages(struct psi_group_ext *psi_ext,
+				 unsigned long missed_periods, u64 period)
+{
+	int s;
+
+	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+		u32 sample;
+
+		sample = psi_ext->total[PSI_AVGS][s] - psi_ext->avg_total[s];
+		if (sample > period)
+			sample = period;
+		psi_ext->avg_total[s] += sample;
+		calc_avgs(psi_ext->avg[s], missed_periods, sample, period);
+	}
+}
 #else
 static inline void psi_group_stat_change(struct psi_group *group, int cpu,
 					 int clear, int set) {}
@@ -438,12 +478,20 @@ static inline void psi_stat_flags_change(struct task_struct *task,
 					 int *stat_set, int *stat_clear,
 					 int set, int clear) {}
 static inline void record_stat_times(struct psi_group_ext *psi_ext, int cpu) {}
+static inline void update_stat_averages(struct psi_group_ext *psi_ext,
+					unsigned long missed_periods,
+					u64 period) {}
 #endif
 
 static void collect_percpu_times(struct psi_group *group,
 				 enum psi_aggregators aggregator,
 				 u32 *pchanged_states)
 {
+#ifdef CONFIG_PSI_FINE_GRAINED
+	u64 stat_delta[NR_PSI_STAT_STATES] = { 0 };
+	u32 stat_times[NR_PSI_STAT_STATES] = { 0 };
+	struct psi_group_ext *psi_ext = to_psi_group_ext(group);
+#endif
 	u64 deltas[NR_PSI_STATES - 1] = { 0, };
 	unsigned long nonidle_total = 0;
 	u32 changed_states = 0;
@@ -472,6 +520,11 @@ static void collect_percpu_times(struct psi_group *group,
 
 		for (s = 0; s < PSI_NONIDLE; s++)
 			deltas[s] += (u64)times[s] * nonidle;
+#ifdef CONFIG_PSI_FINE_GRAINED
+		get_recent_stat_times(group, cpu, aggregator, stat_times);
+		for (s = 0; s < NR_PSI_STAT_STATES; s++)
+			stat_delta[s] += (u64)stat_times[s] * nonidle;
+#endif
 	}
 
 	/*
@@ -491,12 +544,19 @@ static void collect_percpu_times(struct psi_group *group,
 		group->total[aggregator][s] +=
 				div_u64(deltas[s], max(nonidle_total, 1UL));
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+		psi_ext->total[aggregator][s] +=
+				div_u64(stat_delta[s], max(nonidle_total, 1UL));
+#endif
+
 	if (pchanged_states)
 		*pchanged_states = changed_states;
 }
 
 static u64 update_averages(struct psi_group *group, u64 now)
 {
+	struct psi_group_ext *psi_ext = to_psi_group_ext(group);
 	unsigned long missed_periods = 0;
 	u64 expires, period;
 	u64 avg_next_update;
@@ -545,6 +605,7 @@ static u64 update_averages(struct psi_group *group, u64 now)
 		calc_avgs(group->avg[s], missed_periods, sample, period);
 	}
 
+	update_stat_averages(psi_ext, missed_periods, period);
 	return avg_next_update;
 }
 

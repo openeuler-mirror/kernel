@@ -250,11 +250,18 @@ struct psi_group_stat_cpu {
 	u32 times[NR_PSI_STAT_STATES];
 	u32 psi_delta;
 	unsigned int tasks[NR_PSI_STAT_TASK_COUNTS];
+	u32 times_delta;
+	u32 times_prev[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
 };
 
 struct psi_group_ext {
 	struct psi_group psi;
 	struct psi_group_stat_cpu __percpu *pcpu;
+	/* Running fine grained pressure averages */
+	u64 avg_total[NR_PSI_STAT_STATES];
+	/* Total fine grained stall times and sampled pressure averages */
+	u64 total[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	unsigned long avg[NR_PSI_STAT_STATES][3];
 };
 #else
 struct psi_group_ext { };
