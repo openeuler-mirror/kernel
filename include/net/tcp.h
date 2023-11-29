@@ -258,6 +258,7 @@ DECLARE_PER_CPU(int, tcp_memory_per_cpu_fw_alloc);
 
 extern struct percpu_counter tcp_sockets_allocated;
 extern unsigned long tcp_memory_pressure;
+extern int sysctl_local_port_allocation;
 
 /* optimized version of sk_under_memory_pressure() for TCP sockets */
 static inline bool tcp_under_memory_pressure(const struct sock *sk)

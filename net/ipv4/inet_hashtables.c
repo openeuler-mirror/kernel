@@ -1011,7 +1011,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 	struct inet_bind_bucket *tb;
 	bool tb_created = false;
 	u32 remaining, offset;
-	int ret, i, low, high;
+	int ret, i, low, high, span_size;
 	int l3mdev;
 	u32 index;
 
@@ -1021,6 +1021,11 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 		local_bh_enable();
 		return ret;
 	}
+	/* local_port_allocation 0 means even and odd port allocation strategy
+	 * will be applied, so span size is 2; otherwise sequential allocation
+	 * will be used and span size is 1. Default value is 0.
+	 */
+	span_size = sysctl_local_port_allocation ? 1 : 2;
 
 	l3mdev = inet_sk_bound_l3mdev(sk);
 
@@ -1043,7 +1048,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 	offset &= ~1U;
 other_parity_scan:
 	port = low + offset;
-	for (i = 0; i < remaining; i += 2, port += 2) {
+	for (i = 0; i < remaining; i += span_size, port += span_size) {
 		if (unlikely(port >= high))
 			port -= remaining;
 		if (inet_is_local_reserved_port(net, port))
@@ -1084,7 +1089,7 @@ next_port:
 	}
 
 	offset++;
-	if ((offset & 1) && remaining > 1)
+	if ((offset & 1) && remaining > 1 && span_size == 2)
 		goto other_parity_scan;
 
 	return -EADDRNOTAVAIL;
