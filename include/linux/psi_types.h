@@ -63,7 +63,10 @@ enum psi_res {
 	PSI_IO,
 	PSI_MEM,
 	PSI_CPU,
-	NR_PSI_RESOURCES = 3,
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	PSI_IRQ,
+#endif
+	NR_PSI_RESOURCES,
 };
 
 /*
@@ -98,9 +101,12 @@ enum psi_states {
 	PSI_MEM_FULL,
 	PSI_CPU_SOME,
 	PSI_CPU_FULL,
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	PSI_IRQ_FULL,
+#endif
 	/* Only per-CPU, to weigh the CPU in the global average: */
 	PSI_NONIDLE,
-	NR_PSI_STATES = 7,
+	NR_PSI_STATES,
 };
 #endif
 
