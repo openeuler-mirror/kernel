@@ -75,6 +75,14 @@ static inline void rq_sched_info_depart  (struct rq *rq, unsigned long long delt
 # define   schedstat_end_time(rq, t)	do { } while (0)
 #endif /* CONFIG_SCHEDSTATS */
 
+#ifdef CONFIG_QOS_SCHED
+/*
+ * To distinguish cfs bw, use QOS_THROTTLED mark cfs_rq->throttled
+ * when qos throttled(and cfs bw throttle mark cfs_rq->throttled as 1).
+ */
+#define QOS_THROTTLED	2
+#endif
+
 #ifdef CONFIG_PSI
 /*
  * PSI tracks state that persists across sleeps, such as iowaits and

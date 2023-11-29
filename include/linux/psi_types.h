@@ -244,6 +244,10 @@ enum psi_stat_states {
 	PSI_ASYNC_MEMCG_RECLAIM_FULL,
 	PSI_SWAP_SOME,
 	PSI_SWAP_FULL,
+	PSI_CPU_CFS_BANDWIDTH_FULL,
+#ifdef CONFIG_QOS_SCHED
+	PSI_CPU_QOS_FULL,
+#endif
 	NR_PSI_STAT_STATES,
 };
 
@@ -261,6 +265,8 @@ enum psi_stat_task_count {
 	NR_PSI_STAT_TASK_COUNTS,
 };
 
+#define CPU_CFS_BANDWIDTH		1
+
 struct psi_group_stat_cpu {
 	u32 state_mask;
 	u32 times[NR_PSI_STAT_STATES];
@@ -268,6 +274,8 @@ struct psi_group_stat_cpu {
 	unsigned int tasks[NR_PSI_STAT_TASK_COUNTS];
 	u32 times_delta;
 	u32 times_prev[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	int prev_throttle;
+	int cur_throttle;
 };
 
 struct psi_group_ext {

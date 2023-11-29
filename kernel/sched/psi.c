@@ -433,7 +433,7 @@ static void psi_group_stat_change(struct psi_group *group, int cpu,
 	for (t = 0; set; set &= ~(1 << t), t++)
 		if (set & (1 << t))
 			ext_groupc->tasks[t]++;
-	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+	for (s = 0; s < PSI_CPU_CFS_BANDWIDTH_FULL; s++)
 		if (test_fine_grained_stat(ext_groupc->tasks,
 					   groupc->tasks[NR_RUNNING], s))
 			state_mask |= (1 << s);
@@ -521,6 +521,52 @@ static inline void record_stat_times(struct psi_group_ext *psi_ext, int cpu) {}
 static inline void update_stat_averages(struct psi_group_ext *psi_ext,
 					unsigned long missed_periods,
 					u64 period) {}
+#endif
+
+#if defined(CONFIG_CFS_BANDWIDTH) && defined(CONFIG_CGROUP_CPUACCT) && \
+	defined(CONFIG_PSI_FINE_GRAINED)
+static void record_cpu_stat_times(struct psi_group *group, int cpu)
+{
+	struct psi_group_ext *psi_ext = to_psi_group_ext(group);
+	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
+	struct psi_group_stat_cpu *ext_groupc = per_cpu_ptr(psi_ext->pcpu, cpu);
+	u32 delta = ext_groupc->psi_delta;
+
+	if (groupc->state_mask & (1 << PSI_CPU_FULL)) {
+		if (ext_groupc->prev_throttle == CPU_CFS_BANDWIDTH)
+			ext_groupc->times[PSI_CPU_CFS_BANDWIDTH_FULL] += delta;
+#ifdef CONFIG_QOS_SCHED
+		else if (ext_groupc->prev_throttle == QOS_THROTTLED)
+			ext_groupc->times[PSI_CPU_QOS_FULL] += delta;
+#endif
+	}
+}
+
+static void update_throttle_type(struct task_struct *task, int cpu, bool next)
+{
+	struct cgroup *cpuacct_cgrp;
+	struct psi_group_ext *psi_ext;
+	struct psi_group_stat_cpu *groupc;
+	struct task_group *tsk_grp;
+
+	if (!cgroup_subsys_on_dfl(cpuacct_cgrp_subsys)) {
+		rcu_read_lock();
+		cpuacct_cgrp = task_cgroup(task, cpuacct_cgrp_id);
+		if (cgroup_parent(cpuacct_cgrp)) {
+			psi_ext = to_psi_group_ext(cgroup_psi(cpuacct_cgrp));
+			groupc = per_cpu_ptr(psi_ext->pcpu, cpu);
+			tsk_grp = task_group(task);
+			if (next)
+				groupc->prev_throttle = groupc->cur_throttle;
+			groupc->cur_throttle = tsk_grp->cfs_rq[cpu]->throttled;
+		}
+		rcu_read_unlock();
+	}
+}
+#else
+static inline void record_cpu_stat_times(struct psi_group *group, int cpu) {}
+static inline void update_throttle_type(struct task_struct *task, int cpu,
+					bool next) {}
 #endif
 
 static void collect_percpu_times(struct psi_group *group,
@@ -937,6 +983,7 @@ static void psi_group_change(struct psi_group *group, int cpu,
 	write_seqcount_begin(&groupc->seq);
 
 	record_times(groupc, now);
+	record_cpu_stat_times(group, cpu);
 
 	/*
 	 * Start with TSK_ONCPU, which doesn't have a corresponding
@@ -1091,6 +1138,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 	u64 now = cpu_clock(cpu);
 
 	if (next->pid) {
+		update_throttle_type(next, cpu, true);
 		psi_flags_change(next, 0, TSK_ONCPU);
 		/*
 		 * Set TSK_ONCPU on @next's cgroups. If @next shares any
@@ -1118,6 +1166,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		int stat_clear = 0;
 		bool memstall_type_change = false;
 
+		update_throttle_type(prev, cpu, false);
 		/*
 		 * When we're going to sleep, psi_dequeue() lets us
 		 * handle TSK_RUNNING, TSK_MEMSTALL_RUNNING and
@@ -1199,6 +1248,7 @@ void psi_account_irqtime(struct task_struct *task, u32 delta)
 		update_psi_stat_delta(group, cpu, now);
 		record_stat_times(to_psi_group_ext(group), cpu);
 		record_times(groupc, now);
+		record_cpu_stat_times(group, cpu);
 		groupc->times[PSI_IRQ_FULL] += delta;
 
 		write_seqcount_end(&groupc->seq);
@@ -1765,7 +1815,21 @@ static const char *const psi_stat_names[] = {
 	"compact",
 	"cgroup_async_memory_reclaim",
 	"swap",
+	"cpu_cfs_bandwidth",
+	"cpu_qos",
 };
+
+static void get_stat_names(struct seq_file *m, int i, bool is_full)
+{
+	if (i <= PSI_SWAP_FULL && !is_full)
+		return seq_printf(m, "%s\n", psi_stat_names[i / 2]);
+	else if (i == PSI_CPU_CFS_BANDWIDTH_FULL)
+		return seq_printf(m, "%s\n", "cpu_cfs_bandwidth");
+#ifdef CONFIG_QOS_SCHED
+	else if (i == PSI_CPU_QOS_FULL)
+		return seq_printf(m, "%s\n", "cpu_qos");
+#endif
+}
 
 int psi_stat_show(struct seq_file *m, struct psi_group *group)
 {
@@ -1786,12 +1850,11 @@ int psi_stat_show(struct seq_file *m, struct psi_group *group)
 		group->avg_next_update = update_averages(group, now);
 	mutex_unlock(&group->avgs_lock);
 	for (i = 0; i < NR_PSI_STAT_STATES; i++) {
-		is_full = i % 2;
+		is_full = i % 2 || i > PSI_SWAP_FULL;
 		for (w = 0; w < 3; w++)
 			avg[w] = psi_ext->avg[i][w];
 		total = div_u64(psi_ext->total[PSI_AVGS][i], NSEC_PER_USEC);
-		if (!is_full)
-			seq_printf(m, "%s\n", psi_stat_names[i / 2]);
+		get_stat_names(m, i, is_full);
 		seq_printf(m, "%s avg10=%lu.%02lu avg60=%lu.%02lu avg300=%lu.%02lu total=%llu\n",
 			   is_full ? "full" : "some",
 			   LOAD_INT(avg[0]), LOAD_FRAC(avg[0]),
