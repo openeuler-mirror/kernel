@@ -114,6 +114,11 @@ static inline int page_order(struct ring_buffer *rb)
 }
 #endif
 
+static inline int data_page_nr(struct ring_buffer *rb)
+{
+	return rb->nr_pages << page_order(rb);
+}
+
 static inline unsigned long perf_data_size(struct ring_buffer *rb)
 {
 	return rb->nr_pages << (PAGE_SHIFT + page_order(rb));
