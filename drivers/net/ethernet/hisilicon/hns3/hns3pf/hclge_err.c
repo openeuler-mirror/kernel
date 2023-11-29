@@ -3473,9 +3473,9 @@ int hclge_handle_vf_queue_err_ras(struct hclge_dev *hdev)
 	bool cause_by_vf = false;
 	int ret;
 
-	if (!hnae3_ae_dev_vf_fault_supported(hdev->ae_dev) ||
-	    !test_and_clear_bit(HNAE3_VF_EXP_RESET,
-				&hdev->ae_dev->hw_err_reset_req))
+	if (!test_and_clear_bit(HNAE3_VF_EXP_RESET,
+				&hdev->ae_dev->hw_err_reset_req) ||
+	    !hnae3_ae_dev_vf_fault_supported(hdev->ae_dev))
 		return 0;
 
 	hclge_comm_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_GET_QUEUE_ERR_VF,

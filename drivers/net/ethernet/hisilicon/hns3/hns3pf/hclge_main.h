@@ -1203,14 +1203,14 @@ int hclge_check_mac_addr_valid(struct hclge_dev *hdev, u8 vf,
 int hclge_push_vf_link_status(struct hclge_vport *vport);
 int hclge_enable_vport_vlan_filter(struct hclge_vport *vport, bool request_en);
 int hclge_mac_update_stats(struct hclge_dev *hdev);
+struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
+int hclge_inform_vf_reset(struct hclge_vport *vport, u16 reset_type);
 int hclge_register_sysfs(struct hclge_dev *hdev);
 void hclge_unregister_sysfs(struct hclge_dev *hdev);
 int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed, u8 duplex,
 			       u8 lane_num);
 int hclge_get_wol_supported_mode(struct hclge_dev *hdev, u32 *wol_supported);
 int hclge_get_wol_cfg(struct hclge_dev *hdev, u32 *mode);
-struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
-int hclge_inform_vf_reset(struct hclge_vport *vport, u16 reset_type);
 void hclge_reset_task_schedule(struct hclge_dev *hdev);
 void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle);
 void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
