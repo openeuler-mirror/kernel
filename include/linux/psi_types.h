@@ -232,8 +232,29 @@ struct psi_group {
 };
 
 #ifdef CONFIG_PSI_FINE_GRAINED
+
+enum psi_stat_states {
+	PSI_MEMCG_RECLAIM_SOME,
+	PSI_MEMCG_RECLAIM_FULL,
+	NR_PSI_STAT_STATES,
+};
+
+enum psi_stat_task_count {
+	NR_MEMCG_RECLAIM,
+	NR_MEMCG_RECLAIM_RUNNING,
+	NR_PSI_STAT_TASK_COUNTS,
+};
+
+struct psi_group_stat_cpu {
+	u32 state_mask;
+	u32 times[NR_PSI_STAT_STATES];
+	u32 psi_delta;
+	unsigned int tasks[NR_PSI_STAT_TASK_COUNTS];
+};
+
 struct psi_group_ext {
 	struct psi_group psi;
+	struct psi_group_stat_cpu __percpu *pcpu;
 };
 #else
 struct psi_group_ext { };
@@ -244,5 +265,18 @@ struct psi_group_ext { };
 struct psi_group { };
 
 #endif /* CONFIG_PSI */
+
+/*
+ * one type should have two task stats: regular running and memstall
+ * threads. The reason is the same as NR_MEMSTALL_RUNNING.
+ * Because of the psi_memstall_type is start with 1, the correspondence
+ * between psi_memstall_type and psi_stat_task_count should be as below:
+ *
+ * memstall : psi_memstall_type * 2 - 2;
+ * running  : psi_memstall_type * 2 - 1;
+ */
+enum psi_memstall_type {
+	PSI_MEMCG_RECLAIM = 1,
+};
 
 #endif /* _LINUX_PSI_TYPES_H */
