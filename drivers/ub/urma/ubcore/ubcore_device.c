@@ -1156,23 +1156,21 @@ int ubcore_config_device(struct ubcore_device *dev, struct ubcore_device_cfg *cf
 }
 EXPORT_SYMBOL(ubcore_config_device);
 
-int ubcore_user_control(struct ubcore_user_ctl *k_user_ctl)
+int ubcore_user_control(struct ubcore_device *dev, struct ubcore_user_ctl *k_user_ctl)
 {
-	struct ubcore_device *dev;
 	int ret;
 
-	if (k_user_ctl == NULL || k_user_ctl->uctx == NULL) {
+	if (k_user_ctl == NULL) {
 		ubcore_log_err("invalid parameter with input nullptr.\n");
 		return -1;
 	}
 
-	dev = k_user_ctl->uctx->ub_dev;
 	if (dev == NULL || dev->ops == NULL || dev->ops->user_ctl == NULL) {
 		ubcore_log_err("invalid parameter with dev nullptr.\n");
 		return -1;
 	}
 
-	ret = dev->ops->user_ctl(k_user_ctl);
+	ret = dev->ops->user_ctl(dev, k_user_ctl);
 	if (ret != 0) {
 		ubcore_log_err("failed to exec kdrv_user_ctl in %s.\n", __func__);
 		return ret;

@@ -148,6 +148,8 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 
 	if (ucmd->jfc_attr_ex.jfc_ex_mask &
 	    UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS) {
+		if (udma_dev->notify_addr)
+			ucmd->jfc_attr_ex.notify_addr = udma_dev->notify_addr;
 		ret = check_jfc_attr_ex(udma_dev, &ucmd->jfc_attr_ex);
 		if (ret) {
 			dev_err(udma_dev->dev,
