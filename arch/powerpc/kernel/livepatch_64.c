@@ -273,13 +273,21 @@ static int klp_check_jump_func(struct stackframe *frame, void *data)
 	struct walk_stackframe_args *args = data;
 	struct klp_func_list *check_funcs = args->check_funcs;
 
-	/* check the PC first */
-	if (!check_func_list(check_funcs, &args->ret, frame->pc))
-		return args->ret;
-
 	/* check NIP when the exception stack switching */
 	if (frame->nip && !check_func_list(check_funcs, &args->ret, frame->nip))
 		return args->ret;
+	if (frame->link && !frame->nip_link_in_same_func &&
+	    !check_func_list(check_funcs, &args->ret, frame->link))
+		return args->ret;
+	/*
+	 * There are two cases that frame->pc is reliable:
+	 *   1. frame->pc is not in top frame before interrupt;
+	 *   2. nip and link are in same function;
+	 */
+	if (!frame->is_top_frame || frame->nip_link_in_same_func) {
+		if (!check_func_list(check_funcs, &args->ret, frame->pc))
+			return args->ret;
+	}
 
 	return 0;
 }
@@ -299,10 +307,11 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 			      int (*fn)(struct stackframe *, void *))
 {
 	struct task_struct *g, *t;
-	struct stackframe frame;
 	unsigned long *stack;
 
 	for_each_process_thread(g, t) {
+		struct stackframe frame = { 0 };
+
 		if (t == current) {
 			/*
 			 * Handle the current carefully on each CPUs,
@@ -332,7 +341,6 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 
 		frame.sp = (unsigned long)stack;
 		frame.pc = stack[STACK_FRAME_LR_SAVE];
-		frame.nip = 0;
 		klp_walk_stackframe(&frame, fn, t, args);
 		if (args->ret) {
 			pr_debug("%s FAILED when %s\n", __func__,
@@ -373,13 +381,16 @@ static int check_module_calltrace(struct stackframe *frame, void *data)
 {
 	struct walk_stackframe_args *args = data;
 
-	/* check the PC first */
-	if (within_module_core(frame->pc, args->mod))
-		goto err_out;
-
 	/* check NIP when the exception stack switching */
 	if (frame->nip && within_module_core(frame->nip, args->mod))
 		goto err_out;
+	if (frame->link && !frame->nip_link_in_same_func &&
+	    within_module_core(frame->link, args->mod))
+		goto err_out;
+	if (!frame->is_top_frame || frame->nip_link_in_same_func) {
+		if (within_module_core(frame->pc, args->mod))
+			goto err_out;
+	}
 
 	return 0;
 

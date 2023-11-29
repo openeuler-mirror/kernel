@@ -23,6 +23,7 @@
 #include <linux/module.h>
 #include <linux/ftrace.h>
 #include <linux/livepatch.h>
+#include <linux/kallsyms.h>
 #include <asm/probes.h>
 #include <asm/livepatch.h>
 #include <asm/code-patching.h>
@@ -67,6 +68,22 @@ int klp_brk_handler(struct pt_regs *regs)
 	return 1;
 }
 
+static int check_addr_in_same_func(unsigned long addr1, unsigned long addr2)
+{
+	unsigned long size = 0;
+	unsigned long offset = 0;
+	unsigned long start;
+
+	if (addr1 == 0 || addr2 == 0)
+		return 0;
+	if (addr1 == addr2)
+		return 1;
+	if (!kallsyms_lookup_size_offset(addr1, &size, &offset))
+		return 0;
+	start = addr1 - offset;
+	return (addr2 >= start) && (addr2 - start < size);
+}
+
 int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 {
 	unsigned long *stack;
@@ -79,7 +96,10 @@ int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 
 	if (frame->nip != 0)
 		frame->nip = 0;
+	if (frame->link != 0)
+		frame->link = 0;
 
+	frame->is_top_frame = (frame->sfp == frame->sp);
 	stack = (unsigned long *)frame->sp;
 
 	/*
@@ -94,10 +114,14 @@ int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 		struct pt_regs *regs = (struct pt_regs *)
 			(frame->sp + STACK_FRAME_OVERHEAD);
 		frame->nip = regs->nip;
-		pr_debug("--- interrupt: task = %d/%s, trap %lx at NIP=x%lx/%pS, LR=0x%lx/%pS\n",
+		frame->link = regs->link;
+		frame->sfp = regs->gpr[PT_R1];
+		frame->nip_link_in_same_func = check_addr_in_same_func(frame->nip, frame->link);
+		pr_debug("--- interrupt: task = %d/%s, trap %lx at NIP=0x%lx/%pS, LR=0x%lx/%pS, SFP=0x%lx, nip_link_in_same_func=%u\n",
 			tsk->pid, tsk->comm, regs->trap,
 			regs->nip, (void *)regs->nip,
-			regs->link, (void *)regs->link);
+			regs->link, (void *)regs->link,
+			frame->sfp, frame->nip_link_in_same_func);
 	}
 
 	frame->sp = stack[0];
