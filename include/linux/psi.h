@@ -37,6 +37,10 @@ void psi_trigger_destroy(struct psi_trigger *t);
 __poll_t psi_trigger_poll(void **trigger_ptr, struct file *file,
 			poll_table *wait);
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+int psi_stat_show(struct seq_file *s, struct psi_group *group);
+#endif
+
 #ifdef CONFIG_CGROUPS
 int psi_cgroup_alloc(struct cgroup *cgrp);
 void psi_cgroup_free(struct cgroup *cgrp);

@@ -1718,6 +1718,63 @@ static const struct proc_ops psi_cpu_proc_ops = {
 	.proc_release	= psi_fop_release,
 };
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+static const char *const psi_stat_names[] = {
+	"cgroup_memory_reclaim",
+};
+
+int psi_stat_show(struct seq_file *m, struct psi_group *group)
+{
+	struct psi_group_ext *psi_ext;
+	unsigned long avg[3] = {0, };
+	int i, w;
+	bool is_full;
+	u64 now, total;
+
+	if (static_branch_likely(&psi_disabled))
+		return -EOPNOTSUPP;
+
+	psi_ext = to_psi_group_ext(group);
+	mutex_lock(&group->avgs_lock);
+	now = sched_clock();
+	collect_percpu_times(group, PSI_AVGS, NULL);
+	if (now >= group->avg_next_update)
+		group->avg_next_update = update_averages(group, now);
+	mutex_unlock(&group->avgs_lock);
+	for (i = 0; i < NR_PSI_STAT_STATES; i++) {
+		is_full = i % 2;
+		for (w = 0; w < 3; w++)
+			avg[w] = psi_ext->avg[i][w];
+		total = div_u64(psi_ext->total[PSI_AVGS][i], NSEC_PER_USEC);
+		if (!is_full)
+			seq_printf(m, "%s\n", psi_stat_names[i / 2]);
+		seq_printf(m, "%s avg10=%lu.%02lu avg60=%lu.%02lu avg300=%lu.%02lu total=%llu\n",
+			   is_full ? "full" : "some",
+			   LOAD_INT(avg[0]), LOAD_FRAC(avg[0]),
+			   LOAD_INT(avg[1]), LOAD_FRAC(avg[1]),
+			   LOAD_INT(avg[2]), LOAD_FRAC(avg[2]),
+			   total);
+	}
+	return 0;
+}
+static int system_psi_stat_show(struct seq_file *m, void *v)
+{
+	return psi_stat_show(m, &psi_system);
+}
+
+static int psi_stat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, system_psi_stat_show, NULL);
+}
+
+static const struct proc_ops psi_stat_proc_ops = {
+	.proc_open	= psi_stat_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= psi_fop_release,
+};
+#endif
+
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 static int psi_irq_show(struct seq_file *m, void *v)
 {
@@ -1754,8 +1811,11 @@ static int __init psi_proc_init(void)
 		proc_create("pressure/cpu", 0, NULL, &psi_cpu_proc_ops);
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 		proc_create("pressure/irq", 0, NULL, &psi_irq_proc_ops);
-	}
 #endif
+#ifdef CONFIG_PSI_FINE_GRAINED
+		proc_create("pressure/stat", 0, NULL, &psi_stat_proc_ops);
+#endif
+	}
 	return 0;
 }
 module_init(psi_proc_init);
