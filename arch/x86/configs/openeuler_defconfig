@@ -7254,6 +7254,7 @@ CONFIG_INTEL_RAPL=m
 # end of Performance monitor support
 
 CONFIG_RAS=y
+# CONFIG_PAGE_EJECT is not set
 # CONFIG_RAS_CEC is not set
 CONFIG_USB4=m
 # CONFIG_USB4_DEBUGFS_WRITE is not set
