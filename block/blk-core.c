@@ -1116,7 +1116,7 @@ blk_qc_t submit_bio(struct bio *bio)
 	 */
 	if (unlikely(bio_op(bio) == REQ_OP_READ &&
 	    bio_flagged(bio, BIO_WORKINGSET))) {
-		unsigned long pflags;
+		unsigned long pflags = 0;
 		blk_qc_t ret;
 
 		psi_memstall_enter(&pflags);
