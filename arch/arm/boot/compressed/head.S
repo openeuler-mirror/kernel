@@ -814,20 +814,24 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 		teq	r0, r2
 		bne	1b
 /*
- * If ever we are running from Flash, then we surely want the cache
- * to be enabled also for our execution instance...  We map 2MB of it
- * so there is no map overlap problem for up to 1 MB compressed kernel.
- * If the execution is in RAM then we would only be duplicating the above.
+ * Make sure our entire executable image (including payload) is mapped
+ * cacheable, in case it is located outside the region we covered above.
+ * (This may be the case if running from flash or with randomization enabled)
+ * If the regions happen to overlap, we just duplicate some of the above.
  */
 		orr	r1, r6, #0x04		@ ensure B is set for this
 		orr	r1, r1, #3 << 10
 		mov	r2, pc
+		adr_l	r9, _end
 		mov	r2, r2, lsr #20
+		mov	r9, r9, lsr #20
 		orr	r1, r1, r2, lsl #20
 		add	r0, r3, r2, lsl #2
-		str	r1, [r0], #4
+		add	r9, r3, r9, lsl #2
+0:		str	r1, [r0], #4
 		add	r1, r1, #1048576
-		str	r1, [r0]
+		cmp	r0, r9
+		bls	0b
 		mov	pc, lr
 ENDPROC(__setup_mmu)
 
