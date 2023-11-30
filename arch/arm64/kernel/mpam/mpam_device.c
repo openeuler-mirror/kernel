@@ -439,7 +439,7 @@ static irqreturn_t mpam_handle_error_irq(int irq, void *data)
 		return IRQ_NONE;
 
 	/* No-one expects MPAM errors! */
-	if (device_errcode <= _MPAM_NUM_ERRCODE)
+	if (device_errcode < _MPAM_NUM_ERRCODE)
 		pr_err_ratelimited("unexpected error '%s' [esr:%x]\n",
 					mpam_msc_err_str[device_errcode],
 					device_esr);
