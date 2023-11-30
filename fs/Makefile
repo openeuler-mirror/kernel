@@ -50,7 +50,7 @@ obj-$(CONFIG_FS_POSIX_ACL)	+= posix_acl.o
 obj-$(CONFIG_NFS_COMMON)	+= nfs_common/
 obj-$(CONFIG_COREDUMP)		+= coredump.o
 obj-$(CONFIG_SYSCTL)		+= drop_caches.o
-obj-$(CONFIG_SYSCTL)		+= dirty_pages.o
+obj-$(CONFIG_DIRTY_PAGES)	+= dirty_pages.o
 
 obj-$(CONFIG_FHANDLE)		+= fhandle.o
 obj-$(CONFIG_CGROUP_FILES)	+= filescontrol.o
