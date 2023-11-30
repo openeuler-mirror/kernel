@@ -951,6 +951,12 @@ All cgroup core files are prefixed with "cgroup."
 	it's possible to delete a frozen (and empty) cgroup, as well as
 	create new sub-cgroups.
 
+irq.pressure
+        A read-write nested-keyed file.
+
+        Shows pressure stall information for IRQ/SOFTIRQ. See
+        :ref:`Documentation/accounting/psi.rst <psi>` for details.
+
 Controllers
 ===========
 

@@ -37,13 +37,6 @@ enum psi_task_count {
 	NR_MEMSTALL,
 	NR_RUNNING,
 	/*
-	 * This can't have values other than 0 or 1 and could be
-	 * implemented as a bit flag. But for now we still have room
-	 * in the first cacheline of psi_group_cpu, and this way we
-	 * don't have to special case any state tracking for it.
-	 */
-	NR_ONCPU,
-	/*
 	 * For IO and CPU stalls the presence of running/oncpu tasks
 	 * in the domain means a partial rather than a full stall.
 	 * For memory it's not so simple because of page reclaimers:
@@ -53,7 +46,7 @@ enum psi_task_count {
 	 * threads and memstall ones.
 	 */
 	NR_MEMSTALL_RUNNING,
-	NR_PSI_TASK_COUNTS = 5,
+	NR_PSI_TASK_COUNTS = 4,
 };
 #endif
 
@@ -61,15 +54,19 @@ enum psi_task_count {
 #define TSK_IOWAIT	(1 << NR_IOWAIT)
 #define TSK_MEMSTALL	(1 << NR_MEMSTALL)
 #define TSK_RUNNING	(1 << NR_RUNNING)
-#define TSK_ONCPU	(1 << NR_ONCPU)
 #define TSK_MEMSTALL_RUNNING	(1 << NR_MEMSTALL_RUNNING)
+/* Only one task can be scheduled, no corresponding task count */
+#define TSK_ONCPU	(1 << NR_PSI_TASK_COUNTS)
 
 /* Resources that workloads could be stalled on */
 enum psi_res {
 	PSI_IO,
 	PSI_MEM,
 	PSI_CPU,
-	NR_PSI_RESOURCES = 3,
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	PSI_IRQ,
+#endif
+	NR_PSI_RESOURCES,
 };
 
 /*
@@ -104,12 +101,17 @@ enum psi_states {
 	PSI_MEM_FULL,
 	PSI_CPU_SOME,
 	PSI_CPU_FULL,
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	PSI_IRQ_FULL,
+#endif
 	/* Only per-CPU, to weigh the CPU in the global average: */
 	PSI_NONIDLE,
-	NR_PSI_STATES = 7,
+	NR_PSI_STATES,
 };
 #endif
 
+/* Use one bit in the state mask to track TSK_ONCPU */
+#define PSI_ONCPU	(1 << NR_PSI_STATES)
 
 enum psi_aggregators {
 	PSI_AVGS = 0,
@@ -229,10 +231,87 @@ struct psi_group {
 	u64 polling_until;
 };
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+
+enum psi_stat_states {
+	PSI_MEMCG_RECLAIM_SOME,
+	PSI_MEMCG_RECLAIM_FULL,
+	PSI_GLOBAL_RECLAIM_SOME,
+	PSI_GLOBAL_RECLAIM_FULL,
+	PSI_COMPACT_SOME,
+	PSI_COMPACT_FULL,
+	PSI_ASYNC_MEMCG_RECLAIM_SOME,
+	PSI_ASYNC_MEMCG_RECLAIM_FULL,
+	PSI_SWAP_SOME,
+	PSI_SWAP_FULL,
+	PSI_CPU_CFS_BANDWIDTH_FULL,
+#ifdef CONFIG_QOS_SCHED
+	PSI_CPU_QOS_FULL,
+#endif
+	NR_PSI_STAT_STATES,
+};
+
+enum psi_stat_task_count {
+	NR_MEMCG_RECLAIM,
+	NR_MEMCG_RECLAIM_RUNNING,
+	NR_GLOBAL_RECLAIM,
+	NR_GLOBAL_RECLAIM_RUNNING,
+	NR_COMPACT,
+	NR_COMPACT_RUNNING,
+	NR_ASYNC_MEMCG_RECLAIM,
+	NR_ASYNC_MEMCG_RECLAIM_RUNNING,
+	NR_SWAP,
+	NR_SWAP_RUNNING,
+	NR_PSI_STAT_TASK_COUNTS,
+};
+
+#define CPU_CFS_BANDWIDTH		1
+
+struct psi_group_stat_cpu {
+	u32 state_mask;
+	u32 times[NR_PSI_STAT_STATES];
+	u32 psi_delta;
+	unsigned int tasks[NR_PSI_STAT_TASK_COUNTS];
+	u32 times_delta;
+	u32 times_prev[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	int prev_throttle;
+	int cur_throttle;
+};
+
+struct psi_group_ext {
+	struct psi_group psi;
+	struct psi_group_stat_cpu __percpu *pcpu;
+	/* Running fine grained pressure averages */
+	u64 avg_total[NR_PSI_STAT_STATES];
+	/* Total fine grained stall times and sampled pressure averages */
+	u64 total[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	unsigned long avg[NR_PSI_STAT_STATES][3];
+};
+#else
+struct psi_group_ext { };
+#endif /* CONFIG_PSI_FINE_GRAINED */
+
 #else /* CONFIG_PSI */
 
 struct psi_group { };
 
 #endif /* CONFIG_PSI */
+
+/*
+ * one type should have two task stats: regular running and memstall
+ * threads. The reason is the same as NR_MEMSTALL_RUNNING.
+ * Because of the psi_memstall_type is start with 1, the correspondence
+ * between psi_memstall_type and psi_stat_task_count should be as below:
+ *
+ * memstall : psi_memstall_type * 2 - 2;
+ * running  : psi_memstall_type * 2 - 1;
+ */
+enum psi_memstall_type {
+	PSI_MEMCG_RECLAIM = 1,
+	PSI_GLOBAL_RECLAIM,
+	PSI_COMPACT,
+	PSI_ASYNC_MEMCG_RECLAIM,
+	PSI_SWAP,
+};
 
 #endif /* _LINUX_PSI_TYPES_H */

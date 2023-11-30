@@ -4178,6 +4178,9 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	if (!order)
 		return NULL;
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_COMPACT;
+#endif
 	psi_memstall_enter(&pflags);
 	noreclaim_flag = memalloc_noreclaim_save();
 
@@ -4447,6 +4450,9 @@ __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
 	unsigned long pflags;
 	bool drained = false;
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_GLOBAL_RECLAIM;
+#endif
 	psi_memstall_enter(&pflags);
 	*did_some_progress = __perform_reclaim(gfp_mask, order, ac);
 	if (unlikely(!(*did_some_progress)))

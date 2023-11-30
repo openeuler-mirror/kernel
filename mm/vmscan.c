@@ -3802,7 +3802,7 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int highest_zoneidx)
 	int i;
 	unsigned long nr_soft_reclaimed;
 	unsigned long nr_soft_scanned;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	unsigned long nr_boost_reclaim;
 	unsigned long zone_boosts[MAX_NR_ZONES] = { 0, };
 	bool boosted;
@@ -4448,6 +4448,9 @@ static int __node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned in
 					   sc.gfp_mask);
 
 	cond_resched();
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_GLOBAL_RECLAIM;
+#endif
 	psi_memstall_enter(&pflags);
 	fs_reclaim_acquire(sc.gfp_mask);
 

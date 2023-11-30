@@ -341,6 +341,9 @@ int swap_readpage(struct page *page, bool synchronous)
 	 * or the submitting cgroup IO-throttled, submission can be a
 	 * significant part of overall IO time.
 	 */
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_SWAP;
+#endif
 	psi_memstall_enter(&pflags);
 
 	if (frontswap_load(page) == 0) {

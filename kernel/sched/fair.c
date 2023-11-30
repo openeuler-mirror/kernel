@@ -126,12 +126,6 @@ int __weak arch_asym_cpu_priority(int cpu)
 
 #ifdef CONFIG_QOS_SCHED
 
-/*
- * To distinguish cfs bw, use QOS_THROTTLED mark cfs_rq->throttled
- * when qos throttled(and cfs bw throttle mark cfs_rq->throttled as 1).
- */
-#define QOS_THROTTLED	2
-
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct list_head, qos_throttled_cfs_rq);
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
 static DEFINE_PER_CPU(int, qos_cpu_overload);

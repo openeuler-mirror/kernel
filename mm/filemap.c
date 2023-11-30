@@ -1194,7 +1194,7 @@ static inline int wait_on_page_bit_common(wait_queue_head_t *q,
 	wait_queue_entry_t *wait = &wait_page.wait;
 	bool thrashing = false;
 	bool delayacct = false;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 
 	if (bit_nr == PG_locked &&
 	    !PageUptodate(page) && PageWorkingset(page)) {
@@ -1351,7 +1351,7 @@ void migration_entry_wait_on_locked(swp_entry_t entry, pte_t *ptep,
 	wait_queue_entry_t *wait = &wait_page.wait;
 	bool thrashing = false;
 	bool delayacct = false;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	wait_queue_head_t *q;
 	struct page *page = compound_head(migration_entry_to_page(entry));
 

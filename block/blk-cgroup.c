@@ -1689,7 +1689,7 @@ static void blkcg_scale_delay(struct blkcg_gq *blkg, u64 now)
  */
 static void blkcg_maybe_throttle_blkg(struct blkcg_gq *blkg, bool use_memdelay)
 {
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	bool clamp;
 	u64 now = ktime_to_ns(ktime_get());
 	u64 exp;

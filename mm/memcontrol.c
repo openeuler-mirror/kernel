@@ -110,18 +110,14 @@ static bool do_memsw_account(void)
 #define SOFTLIMIT_EVENTS_TARGET 1024
 
 /*
- * when memcg->high_async_ratio is HIGH_ASYNC_RATIO_DEFAULT, memcg async
+ * memcg warning watermark = memory.high * memcg->high_async_ratio /
+ * HIGH_ASYNC_RATIO_BASE.
+ * when memcg usage is larger than warning watermark, but smaller than
+ * memory.high, start memcg async reclaim;
+ * when memcg->high_async_ratio is HIGH_ASYNC_RATIO_BASE, memcg async
  * relcaim is disabled;
- * when mem_usage is larger than memory.high * memcg->high_async_ratio/
- * HIGH_ASYNC_RATIO_BASE, start async reclaim;
- * if mem_usage is larger than memory.high * (memcg->high_async_ratio -
- * HIGH_ASYNC_RATIO_GAP) / HIGH_ASYNC_RATIO_BASE, the aim reclaim page is
- * the diff of mem_usage and memory.high * (memcg->high_async_ratio -
- * HIGH_ASYNC_RATIO_GAP) / HIGH_ASYNC_RATIO_BASE else the aim reclaim
- * page is MEMCG_CHARGE_BATCH;
- */
+ * */
 
-#define HIGH_ASYNC_RATIO_DEFAULT		0
 #define HIGH_ASYNC_RATIO_BASE			100
 #define HIGH_ASYNC_RATIO_GAP			10
 
@@ -2367,44 +2363,24 @@ static int memcg_hotplug_cpu_dead(unsigned int cpu)
 	return 0;
 }
 
-static bool is_high_async_reclaim(struct mem_cgroup *memcg)
-{
-	int ratio = READ_ONCE(memcg->high_async_ratio);
-
-	if (ratio == HIGH_ASYNC_RATIO_DEFAULT)
-		return false;
-
-	if (READ_ONCE(memcg->memory.high) == PAGE_COUNTER_MAX)
-		return false;
-
-	return page_counter_read(&memcg->memory) >
-	       (READ_ONCE(memcg->memory.high) * ratio / HIGH_ASYNC_RATIO_BASE);
-}
-
 static unsigned long reclaim_high(struct mem_cgroup *memcg,
 				  unsigned int nr_pages,
 				  gfp_t gfp_mask)
 {
 	unsigned long nr_reclaimed = 0;
-	bool high_async_reclaim = READ_ONCE(memcg->high_async_reclaim);
-
-	if (high_async_reclaim)
-		WRITE_ONCE(memcg->high_async_reclaim, false);
 
 	do {
 		unsigned long pflags;
 
-		if (high_async_reclaim) {
-			if (!is_high_async_reclaim(memcg))
-				continue;
-		} else {
-			if (page_counter_read(&memcg->memory) <=
-			    READ_ONCE(memcg->memory.high))
-				continue;
-		}
+		if (page_counter_read(&memcg->memory) <=
+		    READ_ONCE(memcg->memory.high))
+			continue;
 
 		memcg_memory_event(memcg, MEMCG_HIGH);
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+		pflags = PSI_MEMCG_RECLAIM;
+#endif
 		psi_memstall_enter(&pflags);
 		nr_reclaimed += try_to_free_mem_cgroup_pages(memcg, nr_pages,
 							gfp_mask,
@@ -2416,27 +2392,49 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 	return nr_reclaimed;
 }
 
-static unsigned long get_reclaim_pages(struct mem_cgroup *memcg)
+static bool is_high_async_reclaim(struct mem_cgroup *memcg)
 {
-	unsigned long nr_pages = page_counter_read(&memcg->memory);
 	int ratio = READ_ONCE(memcg->high_async_ratio);
-	unsigned long safe_pages;
+	unsigned long memcg_high = READ_ONCE(memcg->memory.high);
 
-	ratio = ratio < HIGH_ASYNC_RATIO_GAP ? 0 : ratio - HIGH_ASYNC_RATIO_GAP;
-	safe_pages = READ_ONCE(memcg->memory.high) * ratio /
-		     HIGH_ASYNC_RATIO_BASE;
+	if (ratio == HIGH_ASYNC_RATIO_BASE || memcg_high == PAGE_COUNTER_MAX)
+		return false;
 
-	return (nr_pages > safe_pages) ? (nr_pages - safe_pages) :
-		MEMCG_CHARGE_BATCH;
+	return page_counter_read(&memcg->memory) >
+	       memcg_high * ratio / HIGH_ASYNC_RATIO_BASE;
+}
+
+static void async_reclaim_high(struct mem_cgroup *memcg)
+{
+	unsigned long nr_pages, pflags;
+	unsigned long memcg_high = READ_ONCE(memcg->memory.high);
+	unsigned long memcg_usage = page_counter_read(&memcg->memory);
+	int ratio = READ_ONCE(memcg->high_async_ratio) - HIGH_ASYNC_RATIO_GAP;
+	unsigned long safe_pages = memcg_high * ratio / HIGH_ASYNC_RATIO_BASE;
+
+	if (!is_high_async_reclaim(memcg)) {
+		WRITE_ONCE(memcg->high_async_reclaim, false);
+		return;
+	}
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_ASYNC_MEMCG_RECLAIM;
+#endif
+	psi_memstall_enter(&pflags);
+	nr_pages = memcg_usage > safe_pages ? memcg_usage - safe_pages :
+		   MEMCG_CHARGE_BATCH;
+	try_to_free_mem_cgroup_pages(memcg, nr_pages, GFP_KERNEL, true);
+	psi_memstall_leave(&pflags);
+	WRITE_ONCE(memcg->high_async_reclaim, false);
 }
 
 static void high_work_func(struct work_struct *work)
 {
-	struct mem_cgroup *memcg;
+	struct mem_cgroup *memcg = container_of(work, struct mem_cgroup,
+						high_work);
 
-	memcg = container_of(work, struct mem_cgroup, high_work);
-	if (memcg->high_async_reclaim)
-		reclaim_high(memcg, get_reclaim_pages(memcg), GFP_KERNEL);
+	if (READ_ONCE(memcg->high_async_reclaim))
+		async_reclaim_high(memcg);
 	else
 		reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
 }
@@ -2653,6 +2651,9 @@ retry_reclaim:
 	 * schedule_timeout_killable sets TASK_KILLABLE). This means we don't
 	 * need to account for any ill-begotten jiffies to pay them off later.
 	 */
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_MEMCG_RECLAIM;
+#endif
 	psi_memstall_enter(&pflags);
 	schedule_timeout_killable(penalty_jiffies);
 	psi_memstall_leave(&pflags);
@@ -2723,7 +2724,9 @@ retry:
 		goto nomem;
 
 	memcg_memory_event(mem_over_limit, MEMCG_MAX);
-
+#ifdef CONFIG_PSI_FINE_GRAINED
+	pflags = PSI_MEMCG_RECLAIM;
+#endif
 	psi_memstall_enter(&pflags);
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, reclaim_options);
@@ -2825,9 +2828,10 @@ done_restock:
 			continue;
 		}
 
-		if (is_high_async_reclaim(memcg)) {
+		if (is_high_async_reclaim(memcg) && !mem_high) {
 			WRITE_ONCE(memcg->high_async_reclaim, true);
 			schedule_work(&memcg->high_work);
+			break;
 		}
 
 		if (mem_high || swap_high) {
@@ -5579,11 +5583,6 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 
 	page_counter_set_high(&memcg->memory, high);
 
-	if (is_high_async_reclaim(memcg)) {
-		WRITE_ONCE(memcg->high_async_reclaim, true);
-		schedule_work(&memcg->high_work);
-	}
-
 	for (;;) {
 		unsigned long nr_pages = page_counter_read(&memcg->memory);
 		unsigned long reclaimed;
@@ -5736,14 +5735,11 @@ static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
 	if (ret)
 		return ret;
 
-	if (high_async_ratio >= HIGH_ASYNC_RATIO_BASE ||
-	    high_async_ratio < HIGH_ASYNC_RATIO_DEFAULT)
+	if (high_async_ratio >  HIGH_ASYNC_RATIO_BASE ||
+	    high_async_ratio <= HIGH_ASYNC_RATIO_GAP)
 		return -EINVAL;
 
 	WRITE_ONCE(memcg->high_async_ratio, high_async_ratio);
-
-	if (is_high_async_reclaim(memcg))
-		schedule_work(&memcg->high_work);
 
 	return nbytes;
 }
@@ -6359,7 +6355,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 
 	page_counter_set_high(&memcg->memory, PAGE_COUNTER_MAX);
 	memcg->soft_limit = PAGE_COUNTER_MAX;
-	memcg->high_async_ratio = HIGH_ASYNC_RATIO_DEFAULT;
+	memcg->high_async_ratio = HIGH_ASYNC_RATIO_BASE;
 	page_counter_set_high(&memcg->swap, PAGE_COUNTER_MAX);
 	if (parent) {
 		memcg->swappiness = mem_cgroup_swappiness(parent);

@@ -492,9 +492,9 @@ struct cgroup {
 	/*
 	 * It is accessed only the cgroup core code and so changes made to
 	 * the cgroup structure should not affect third-party kernel modules.
+	 * The member is unused now.
 	 */
-	struct psi_group psi;
-
+	KABI_DEPRECATE(struct psi_group, psi)
 	/* used to store eBPF programs */
 	struct cgroup_bpf bpf;
 
@@ -504,7 +504,7 @@ struct cgroup {
 	/* Used to store internal freezer state */
 	struct cgroup_freezer_state freezer;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct psi_group *psi)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 
