@@ -218,12 +218,12 @@ static ssize_t seq_read_dirty(
 	}
 
 	n = min(m->count - m->from, size);
-	err = simple_read_from_buffer(buf, n,
-		(loff_t *) &m->from, m->buf, m->count);
-	if (err < 0) {
+	n -= copy_to_user(buf, m->buf + m->from, n);
+	if (unlikely(!n)) {
 		err = -EFAULT;
 		goto done;
 	}
+	m->from += n;
 	copied += n;
 done:
 	if (!copied)
