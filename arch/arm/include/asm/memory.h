@@ -171,6 +171,20 @@ extern unsigned long vectors_base;
 extern u64 kernel_sec_start;
 extern u64 kernel_sec_end;
 
+#ifdef CONFIG_RANDOMIZE_BASE
+extern unsigned long __kaslr_offset;
+
+static inline unsigned long kaslr_offset(void)
+{
+	return __kaslr_offset;
+}
+#else
+static inline unsigned long kaslr_offset(void)
+{
+	return 0;
+}
+#endif
+
 /*
  * Physical vs virtual RAM address space conversion.  These are
  * private definitions which should NOT be used outside memory.h

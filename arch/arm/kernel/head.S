@@ -119,11 +119,11 @@ ENTRY(stext)
 #ifdef CONFIG_RANDOMIZE_BASE
 	str_l	r3, __kaslr_offset, r9	@ offset in r3 if entered via kaslr ep
 
-	.section ".bss", "aw", %nobits
+	.pushsection .data		@ data in bss will be cleared
 	.align	2
-__kaslr_offset:
+ENTRY(__kaslr_offset)
 	.long	0			@ will be wiped before entering C code
-	.previous
+	.popsection
 #endif
 
 #ifdef CONFIG_ARM_VIRT_EXT
