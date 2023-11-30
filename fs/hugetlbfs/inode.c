@@ -836,7 +836,7 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 	 * as well as being converted to page offsets.
 	 */
 	start = offset >> hpage_shift;
-	end = (offset + len + hpage_size - 1) >> hpage_shift;
+	end = DIV_ROUND_UP_ULL(offset + len, hpage_size);
 
 	inode_lock(inode);
 
