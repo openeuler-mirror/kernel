@@ -341,10 +341,18 @@ static inline void __d_set_inode_and_type(struct dentry *dentry,
 					  unsigned type_flags)
 {
 	unsigned flags;
+	struct dentry *parent;
+
+	parent = dentry->d_parent;
+	if ((dentry->d_flags & DCACHE_NEGATIVE_ACCOUNT) && parent) {
+		WARN_ON(!inode);
+		atomic_dec(&parent->d_neg_dnum);
+	}
 
 	dentry->d_inode = inode;
 	flags = READ_ONCE(dentry->d_flags);
-	flags &= ~(DCACHE_ENTRY_TYPE | DCACHE_FALLTHRU);
+	flags &= ~(DCACHE_ENTRY_TYPE | DCACHE_FALLTHRU |
+			DCACHE_NEGATIVE_ACCOUNT);
 	flags |= type_flags;
 	smp_store_release(&dentry->d_flags, flags);
 }
@@ -363,6 +371,7 @@ static inline void __d_clear_type_and_inode(struct dentry *dentry)
 static void dentry_free(struct dentry *dentry)
 {
 	WARN_ON(!hlist_unhashed(&dentry->d_u.d_alias));
+	WARN_ON(dentry->d_flags & DCACHE_NEGATIVE_ACCOUNT);
 	if (unlikely(dname_external(dentry))) {
 		struct external_name *p = external_name(dentry);
 		if (likely(atomic_dec_and_test(&p->u.count))) {
@@ -601,8 +610,14 @@ static void __dentry_kill(struct dentry *dentry)
 	/* if it was on the hash then remove it */
 	__d_drop(dentry);
 	dentry_unlist(dentry, parent);
-	if (parent)
+	if (parent) {
+		if (dentry->d_flags & DCACHE_NEGATIVE_ACCOUNT) {
+			atomic_dec(&parent->d_neg_dnum);
+			dentry->d_flags &= ~DCACHE_NEGATIVE_ACCOUNT;
+		}
+
 		spin_unlock(&parent->d_lock);
+	}
 	if (dentry->d_inode)
 		dentry_unlink_inode(dentry);
 	else
@@ -662,6 +677,8 @@ static inline struct dentry *lock_parent(struct dentry *dentry)
 
 static inline bool retain_dentry(struct dentry *dentry)
 {
+	struct dentry *parent;
+
 	WARN_ON(d_in_lookup(dentry));
 
 	/* Unreachable? Get rid of it */
@@ -679,6 +696,27 @@ static inline bool retain_dentry(struct dentry *dentry)
 	if (unlikely(dentry->d_flags & DCACHE_DONTCACHE))
 		return false;
 
+	if (unlikely(!dentry->d_parent))
+		goto noparent;
+
+	parent = dentry->d_parent;
+	/* Return false if it's negative */
+	WARN_ON((atomic_read(&parent->d_neg_dnum) < 0));
+	if (!dentry->d_inode) {
+		if (!(dentry->d_flags & DCACHE_NEGATIVE_ACCOUNT)) {
+			unsigned int flags = READ_ONCE(dentry->d_flags);
+
+			flags |= DCACHE_NEGATIVE_ACCOUNT;
+			WRITE_ONCE(dentry->d_flags, flags);
+			atomic_inc(&parent->d_neg_dnum);
+		}
+	}
+
+	if (!dentry->d_inode &&
+	    atomic_read(&parent->d_neg_dnum) >= NEG_DENTRY_LIMIT)
+		return false;
+
+noparent:
 	/* retain; LRU fodder */
 	dentry->d_lockref.count--;
 	if (unlikely(!(dentry->d_flags & DCACHE_LRU_LIST)))
@@ -1809,6 +1847,7 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 	seqcount_spinlock_init(&dentry->d_seq, &dentry->d_lock);
 	dentry->d_inode = NULL;
 	dentry->d_parent = dentry;
+	atomic_set(&dentry->d_neg_dnum, 0);
 	dentry->d_sb = sb;
 	dentry->d_op = NULL;
 	dentry->d_fsdata = NULL;
