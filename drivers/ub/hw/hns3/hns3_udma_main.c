@@ -29,6 +29,7 @@
 #include "hns3_udma_dca.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_dfx.h"
+#include "hns3_udma_debugfs.h"
 #include "hns3_udma_eid.h"
 #include "hns3_udma_user_ctl.h"
 
@@ -147,6 +148,10 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 		dev_err(udma_dev->dev, "Init ctx resp failed.\n");
 		goto err_alloc_uar;
 	}
+
+	if (context->dca_ctx.unit_size > 0 && udma_dev->caps.flags &
+	    UDMA_CAP_FLAG_DCA_MODE)
+		udma_register_uctx_debugfs(udma_dev, context);
 
 	return &context->uctx;
 
@@ -1069,6 +1074,8 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_register_device;
 	}
 
+	udma_register_debugfs(udma_dev);
+
 	return 0;
 
 error_failed_register_device:
@@ -1100,6 +1107,7 @@ error_failed_cmq_init:
 void udma_hnae_client_exit(struct udma_dev *udma_dev)
 {
 	udma_unregister_device(udma_dev);
+	udma_unregister_debugfs(udma_dev);
 
 	if (udma_dev->hw->hw_exit)
 		udma_dev->hw->hw_exit(udma_dev);
