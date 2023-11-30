@@ -150,10 +150,8 @@
 		*(.stubs)						\
 	}								\
 	ARM_LMA(__stubs, .stubs);					\
-	. = __stubs_lma + SIZEOF(.stubs);				\
+	. = __stubs_lma + SIZEOF(.stubs);
 									\
-	PROVIDE(vector_fiq_offset = vector_fiq - ADDR(.vectors));
-
 #define ARM_TCM								\
 	__itcm_start = ALIGN(4);					\
 	.text_itcm ITCM_OFFSET : AT(__itcm_start - LOAD_OFFSET) {	\
