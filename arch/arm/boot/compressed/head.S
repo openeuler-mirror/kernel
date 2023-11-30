@@ -154,7 +154,7 @@
 		 * in little-endian form.
 		 */
 		.macro	get_inflated_image_size, res:req, tmp1:req, tmp2:req
-		adr	\res, .Linflated_image_size_offset
+		adr_l	\res, .Linflated_image_size_offset
 		ldr	\tmp1, [\res]
 		add	\tmp1, \tmp1, \res	@ address of inflated image size
 
@@ -348,7 +348,7 @@ not_angel:
 		orrcc	r4, r4, #1		@ remember we skipped cache_on
 		blcs	cache_on
 
-restart:	adr	r0, LC1
+restart:	adr_l	r0, LC1
 		ldr	sp, [r0]
 		ldr	r6, [r0, #4]
 		add	sp, sp, r0
