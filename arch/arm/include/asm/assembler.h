@@ -625,12 +625,12 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	 * mov_l - move a constant value or [relocated] address into a register
 	 */
 	.macro		mov_l, dst:req, imm:req, cond
-	.if		__LINUX_ARM_ARCH__ < 7
+#if	defined(CONFIG_RELOCATABLE) || __LINUX_ARM_ARCH__ < 7
 	ldr\cond	\dst, =\imm
-	.else
+#else
 	movw\cond	\dst, #:lower16:\imm
 	movt\cond	\dst, #:upper16:\imm
-	.endif
+#endif
 	.endm
 
 	/*

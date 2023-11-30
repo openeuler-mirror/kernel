@@ -114,6 +114,12 @@ SECTIONS
 		__smpalt_end = .;
 	}
 #endif
+	.rel.dyn : ALIGN(8) {
+		__rel_begin = .;
+		*(.rel .rel.* .rel.dyn)
+	}
+	__rel_end = ADDR(.rel.dyn) + SIZEOF(.rel.dyn);
+
 	.init.pv_table : {
 		__pv_table_begin = .;
 		*(.pv_table)

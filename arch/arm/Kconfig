@@ -1452,6 +1452,11 @@ config STACKPROTECTOR_PER_TASK
 	  Enable this option to switch to a different method that uses a
 	  different canary value for each task.
 
+config RELOCATABLE
+	bool
+	depends on !XIP_KERNEL && !JUMP_LABEL
+	select HAVE_ARCH_PREL32_RELOCATIONS
+
 endmenu
 
 menu "Boot options"
