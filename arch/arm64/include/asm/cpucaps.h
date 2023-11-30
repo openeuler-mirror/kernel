@@ -79,6 +79,8 @@
 #define ARM64_HAS_PBHA				71
 #define ARM64_HAS_PBHA_STAGE1			72
 #define ARM64_HAS_PBHA_STAGE2			73
+#define ARM64_SME				74
+#define ARM64_SME_FA64				75
 
 #define ARM64_NCAPS				80
 
