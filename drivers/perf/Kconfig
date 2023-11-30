@@ -133,7 +133,6 @@ config ARM_SPE_PMU
 config ARM64_BRBE
 	bool "Enable support for Branch Record Buffer Extension (BRBE)"
 	depends on PERF_EVENTS && ARM64 && ARM_PMU
-	default y
 	help
 	  Enable perf support for Branch Record Buffer Extension (BRBE) which
 	  records all branches taken in an execution path. This supports some
