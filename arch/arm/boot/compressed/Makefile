@@ -84,10 +84,17 @@ compress-$(CONFIG_KERNEL_LZ4)  = lz4_with_size
 
 libfdt_objs := fdt_rw.o fdt_ro.o fdt_wip.o fdt.o
 
+ifneq ($(CONFIG_ARM_ATAG_DTB_COMPAT)$(CONFIG_RANDOMIZE_BASE),)
+OBJS	+= $(libfdt_objs)
 ifeq ($(CONFIG_ARM_ATAG_DTB_COMPAT),y)
 CFLAGS_REMOVE_atags_to_fdt.o += -Wframe-larger-than=${CONFIG_FRAME_WARN}
 CFLAGS_atags_to_fdt.o += -Wframe-larger-than=1280
-OBJS	+= $(libfdt_objs) atags_to_fdt.o
+OBJS	+= atags_to_fdt.o
+endif
+ifeq ($(CONFIG_RANDOMIZE_BASE),y)
+OBJS	+= kaslr.o
+CFLAGS_kaslr.o := -I $(srctree)/scripts/dtc/libfdt
+endif
 endif
 ifeq ($(CONFIG_USE_OF),y)
 OBJS	+= $(libfdt_objs) fdt_check_mem_start.o

@@ -174,6 +174,25 @@
 #endif
 		.endm
 
+		.macro  record_seed
+#ifdef CONFIG_RANDOMIZE_BASE
+		sub	ip, r1, ip, ror #1	@ poor man's kaslr seed, will
+		sub	ip, r2, ip, ror #2	@ be superseded by kaslr-seed
+		sub	ip, r3, ip, ror #3	@ from /chosen if present
+		sub	ip, r4, ip, ror #5
+		sub	ip, r5, ip, ror #8
+		sub	ip, r6, ip, ror #13
+		sub	ip, r7, ip, ror #21
+		sub	ip, r8, ip, ror #3
+		sub	ip, r9, ip, ror #24
+		sub	ip, r10, ip, ror #27
+		sub	ip, r11, ip, ror #19
+		sub	ip, r13, ip, ror #14
+		sub	ip, r14, ip, ror #2
+		str_l	ip, __kaslr_seed, r9
+#endif
+		.endm
+
 		.section ".start", "ax"
 /*
  * sort out different calling conventions
@@ -222,6 +241,7 @@ start:
 		__EFI_HEADER
 1:
  ARM_BE8(	setend	be		)	@ go BE8 if compiled for BE8
+		record_seed
  AR_CLASS(	mrs	r9, cpsr	)
 #ifdef CONFIG_ARM_VIRT_EXT
 		bl	__hyp_stub_install	@ get into SVC mode, reversibly
@@ -444,6 +464,38 @@ restart:	adr	r0, LC1
 		add	r10, r10, r5
 		add	sp, sp, r5
 dtb_check_done:
+#endif
+
+#ifdef CONFIG_RANDOMIZE_BASE
+		ldr	r1, __kaslr_offset	@ check if the kaslr_offset is
+		cmp	r1, #0			@ already set
+		bne	1f
+
+		stmfd	sp!, {r0-r3, ip, lr}
+		adr_l	r2, _text		@ start of zImage
+		stmfd	sp!, {r2, r8, r10}	@ pass stack arguments
+
+		ldr_l	r3, __kaslr_seed
+#if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_V6K) || defined(CONFIG_CPU_V7)
+		/*
+		 * Get some pseudo-entropy from the low bits of the generic
+		 * timer if it is implemented.
+		 */
+		mrc	p15, 0, r1, c0, c1, 1	@ read ID_PFR1 register
+		tst	r1, #0x10000		@ have generic timer?
+		mrrcne	p15, 1, r3, r1, c14	@ read CNTVCT
+#endif
+		adr_l	r0, __kaslr_offset	@ pass &__kaslr_offset in r0
+		mov	r1, r4			@ pass base address
+		mov	r2, r9			@ pass decompressed image size
+		eor	r3, r3, r3, ror #16	@ pass pseudorandom seed
+		bl	kaslr_early_init
+		add	sp, sp, #12
+		cmp	r0, #0
+		addne	r4, r4, r0		@ add offset to base address
+		ldmfd	sp!, {r0-r3, ip, lr}
+		bne	restart
+1:
 #endif
 
 /*
@@ -1439,9 +1491,45 @@ __enter_kernel:
 		mov	r0, #0			@ must be 0
 		mov	r1, r7			@ restore architecture number
 		mov	r2, r8			@ restore atags pointer
+#ifdef CONFIG_RANDOMIZE_BASE
+		ldr	r3, __kaslr_offset
+		add	r4, r4, #4		@ skip first instruction
+#endif
  ARM(		mov	pc, r4		)	@ call kernel
  M_CLASS(	add	r4, r4, #1	)	@ enter in Thumb mode for M class
  THUMB(		bx	r4		)	@ entry point is always ARM for A/R classes
+
+#ifdef CONFIG_RANDOMIZE_BASE
+		/*
+		 * Minimal implementation of CRC-16 that does not use a
+		 * lookup table and uses 32-bit wide loads, so it still
+		 * performs reasonably well with the D-cache off. Equivalent
+		 * to lib/crc16.c for input sizes that are 4 byte multiples.
+		 */
+ENTRY(__crc16)
+		push	{r4, lr}
+		ldr	r3, =0xa001     @ CRC-16 polynomial
+0:		subs	r2, r2, #4
+		popmi	{r4, pc}
+		ldr	r4, [r1], #4
+#ifdef __ARMEB__
+		eor	ip, r4, r4, ror #16     @ endian swap
+		bic	ip, ip, #0x00ff0000
+		mov	r4, r4, ror #8
+		eor	r4, r4, ip, lsr #8
+#endif
+		eor	r0, r0, r4
+		.rept	32
+		lsrs	r0, r0, #1
+		eorcs	r0, r0, r3
+		.endr
+		b	0b
+ENDPROC(__crc16)
+
+		.align	2
+__kaslr_seed:	.long	0
+__kaslr_offset:	.long	0
+#endif
 
 reloc_code_end:
 
