@@ -50,6 +50,7 @@ extern struct page *empty_zero_page;
 #define VMALLOC_OFFSET		(8*1024*1024)
 #define VMALLOC_START		(((unsigned long)high_memory + VMALLOC_OFFSET) & ~(VMALLOC_OFFSET-1))
 #define VMALLOC_END		0xff800000UL
+#define VMALLOC_DEFAULT_BASE	(VMALLOC_END - (240 << 20) - VMALLOC_OFFSET)
 
 #define LIBRARY_TEXT_START	0x0c000000
 
