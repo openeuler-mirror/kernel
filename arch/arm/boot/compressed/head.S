@@ -472,6 +472,29 @@ dtb_check_done:
 		bne	1f
 
 		stmfd	sp!, {r0-r3, ip, lr}
+#ifdef CONFIG_ARCH_HISI
+#ifdef CONFIG_ARM_APPENDED_DTB
+#ifdef CONFIG_START_MEM_2M_ALIGN
+		mov r0, r4
+#ifdef CONFIG_CORTEX_A9
+		lsr r0, r0, #20
+		lsl r0, r0, #20
+#else
+		lsr r0, r0, #21
+		lsl r0, r0, #21
+#endif
+		add r0, r0, #0x1000
+		ldr r1, [r0]
+#ifndef __ARMEB__
+		ldr r2, =0xedfe0dd0    @ sig is 0xd00dfeed big endian
+#else
+		ldr r2, =0xd00dfeed
+#endif
+		cmp  r1, r2
+		moveq r8, r0
+#endif
+#endif
+#endif
 		adr_l	r2, _text		@ start of zImage
 		stmfd	sp!, {r2, r8, r10}	@ pass stack arguments
 
@@ -493,6 +516,14 @@ dtb_check_done:
 		add	sp, sp, #12
 		cmp	r0, #0
 		addne	r4, r4, r0		@ add offset to base address
+#ifdef CONFIG_VXBOOT
+#ifdef CONFIG_START_MEM_2M_ALIGN
+#ifdef CONFIG_CORTEX_A9
+		adr r1, vx_edata
+		strne   r6, [r1]
+#endif
+#endif
+#endif
 		ldmfd	sp!, {r0-r3, ip, lr}
 		bne	restart
 1:
