@@ -455,4 +455,6 @@ struct sss_nic_mag_cfg {
 	struct mutex sfp_mutex; /* mutex used for copy sfp info */
 };
 
+#define SSSNIC_PF_LIMIT_BW_MAX 100
+
 #endif

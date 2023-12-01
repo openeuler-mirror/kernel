@@ -85,6 +85,8 @@ bool sss_get_nic_capability(void *hwdev, struct sss_nic_service_cap *capability)
  */
 bool sss_support_nic(void *hwdev);
 
+bool sss_support_ppa(void *hwdev, struct sss_ppa_service_cap *cap);
+
 /* *
  * @brief sss_get_max_sq_num - get max queue number
  * @param hwdev: device pointer to hwdev
@@ -162,6 +164,8 @@ int sss_get_dev_present_flag(const void *hwdev);
  * @brief sss_get_max_pf_num - get global max pf number
  */
 u8 sss_get_max_pf_num(void *hwdev);
+
+u16 sss_nic_intr_num(void *hwdev);
 
 /* *
  * @brief sss_get_chip_present_state - get card present state

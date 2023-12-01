@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (c) 2023 3SNIC
 #
+SYS_TIME=$(shell date +%Y-%m-%d_%H:%M:%S)
+ccflags-y += -D __TIME_STR__=\"$(SYS_TIME)\"
 
 ccflags-y += -I$(srctree)/drivers/net/ethernet/3snic/sssnic/hw
+ccflags-y += -I$(srctree)/drivers/net/ethernet/3snic/sssnic/hw/tool
 ccflags-y += -I$(srctree)/drivers/net/ethernet/3snic/sssnic/include
 ccflags-y += -I$(srctree)/drivers/net/ethernet/3snic/sssnic/include/hw
 ccflags-y += -I$(srctree)/drivers/net/ethernet/3snic/sssnic/include/kernel
@@ -45,4 +48,8 @@ sssdk-y := sss_hw_main.o \
 			sss_common.o \
 			sss_wq.o \
 			sss_hwif_ceq.o \
-			sss_adapter_mgmt.o
+			sss_adapter_mgmt.o \
+			./tool/sss_tool_main.o \
+			./tool/sss_tool_chip.o \
+			./tool/sss_tool_sdk.o \
+			./tool/sss_tool_sm.o

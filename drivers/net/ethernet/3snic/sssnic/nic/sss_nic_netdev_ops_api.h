@@ -64,4 +64,6 @@ void sss_nic_get_tx_stats(struct sss_nic_dev *nic_dev,
 void sss_nic_get_rx_stats(struct sss_nic_dev *nic_dev,
 			  struct rtnl_link_stats64 *stats);
 
+u32 sss_nic_get_io_stats_size(const struct sss_nic_dev *nic_dev);
+
 #endif

@@ -318,10 +318,10 @@ static void sss_print_chip_fault(struct sss_hwdev *hwdev,
 		level_str = SSS_FAULT_LEVEL_STR_UNKNOWN;
 
 	if (err_level == SSS_FAULT_LEVEL_SERIOUS_FLR)
-		dev_err(hwdev->dev_hdl, "Err_level: %u [%s], func_id: %u\n",
+		sdk_err(hwdev->dev_hdl, "Err_level: %u [%s], func_id: %u\n",
 			err_level, level_str, fault_event->info.chip.func_id);
 
-	dev_err(hwdev->dev_hdl, "Node_id: 0x%x, err_type: 0x%x, err_level: %u[%s], err_csr_addr: 0x%08x, err_csr_value: 0x%08x\n",
+	sdk_err(hwdev->dev_hdl, "Node_id: 0x%x, err_type: 0x%x, err_level: %u[%s], err_csr_addr: 0x%08x, err_csr_value: 0x%08x\n",
 		fault_event->info.chip.node_id, fault_event->info.chip.err_type,
 		err_level, level_str,
 		fault_event->info.chip.err_csr_addr, fault_event->info.chip.err_csr_value);
@@ -362,7 +362,7 @@ static void sss_print_phy_err(struct sss_hwdev *hwdev,
 static void sss_print_fault_info(struct sss_hwdev *hwdev,
 				 struct sss_fault_event *fault_event)
 {
-	struct sss_fault_event_stats *event_stats = &hwdev->hw_stats.sss_fault_event_stats;
+	struct sss_fault_event_stats *event_stats = &hwdev->hw_stats.fault_event_stats;
 	char *type = NULL;
 	char *fault_type[SSS_FAULT_TYPE_MAX] = {
 		SSS_FAULT_TYPE_STR_CHIP, SSS_FAULT_TYPE_STR_NPU,

@@ -26,6 +26,7 @@
 #include "sss_hwdev_api.h"
 #include "sss_hwif_mgmt_init.h"
 #include "sss_pci_global.h"
+#include "sss_tool.h"
 
 #define SSS_WAIT_SRIOV_CFG_TIMEOUT	15000
 #define SSS_EVENT_PROCESS_TIMEOUT	10000
@@ -184,6 +185,10 @@ void sss_deinit_function(struct pci_dev *pdev)
 	sss_flush_mgmt_workq(adapter->hwdev);
 
 	sss_del_func_list(adapter);
+
+	sss_chip_node_lock();
+	sss_tool_uninit(adapter->hwdev, adapter->chip_node);
+	sss_chip_node_unlock();
 
 	sss_dettach_uld_dev(adapter);
 

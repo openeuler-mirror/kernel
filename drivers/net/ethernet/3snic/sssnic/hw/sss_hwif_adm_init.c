@@ -310,9 +310,28 @@ static void sss_init_ctx_buf_reply_addr(struct sss_adm_msg *adm_msg,
 	elem->read.hw_msg_paddr = cpu_to_be64(buf_paddr);
 }
 
+static void sss_alloc_reply_buf(struct sss_adm_msg *adm_msg,
+				struct sss_adm_msg_elem *elem, u32 cell_idx)
+{
+	struct sss_adm_msg_elem_ctx *ctx = NULL;
+	void *resp_vaddr;
+	u64 resp_paddr;
+
+	resp_vaddr = (u8 *)((u64)adm_msg->reply_vaddr_base +
+		adm_msg->reply_size_align * cell_idx);
+	resp_paddr = adm_msg->reply_paddr_base +
+		adm_msg->reply_size_align * cell_idx;
+
+	ctx = &adm_msg->elem_ctx[cell_idx];
+
+	ctx->reply_fmt = resp_vaddr;
+	elem->read.hw_wb_reply_paddr = cpu_to_be64(resp_paddr);
+}
+
 static int sss_init_elem_ctx(struct sss_adm_msg *adm_msg, u32 elem_id)
 {
 	struct sss_adm_msg_elem_ctx *ctx = NULL;
+	struct sss_adm_msg_elem *elem;
 	sss_alloc_elem_buf_handler_t handler[] = {
 		NULL,
 		NULL,
@@ -322,6 +341,11 @@ static int sss_init_elem_ctx(struct sss_adm_msg *adm_msg, u32 elem_id)
 		sss_init_ctx_buf_reply_addr,
 		sss_init_ctx_buf_addr
 	};
+	elem = (struct sss_adm_msg_elem *)SSS_GET_ADM_MSG_ELEM_VADDR(adm_msg, elem_id);
+
+	if (adm_msg->msg_type == SSS_ADM_MSG_MULTI_READ ||
+	    adm_msg->msg_type == SSS_ADM_MSG_POLL_READ)
+		sss_alloc_reply_buf(adm_msg, elem, elem_id);
 
 	ctx = &adm_msg->elem_ctx[elem_id];
 	ctx->elem_vaddr =
@@ -377,17 +401,6 @@ static int sss_init_adm_msg_elem(struct sss_adm_msg *adm_msg)
 	adm_msg->now_node = adm_msg->head_node;
 
 	return 0;
-}
-
-static void sss_init_adm_msg_param(struct sss_adm_msg *adm_msg,
-				   struct sss_hwdev *hwdev)
-{
-	adm_msg->hwdev = hwdev;
-	adm_msg->elem_num = SSS_ADM_MSG_ELEM_NUM;
-	adm_msg->reply_size = SSS_ADM_MSG_REPLY_DATA_SIZE;
-	adm_msg->elem_size = SSS_ADM_MSG_ELEM_SIZE;
-	adm_msg->msg_type = SSS_ADM_MSG_WRITE_TO_MGMT_MODULE;
-	sema_init(&adm_msg->sem, 1);
 }
 
 static int sss_alloc_adm_msg_ctx(struct sss_adm_msg *adm_msg)
@@ -512,46 +525,105 @@ static void sss_free_adm_msg_buf(struct sss_adm_msg *adm_msg)
 	sss_free_adm_msg_ctx(adm_msg);
 }
 
-static int sss_init_adm_msg(struct sss_hwdev *hwdev,
-			    struct sss_adm_msg *adm_msg)
+static void sss_init_adm_msg_param(struct sss_adm_msg *adm_msg,
+				   struct sss_hwdev *hwdev, u8 msg_type)
 {
+	adm_msg->hwdev = hwdev;
+	adm_msg->elem_num = SSS_ADM_MSG_ELEM_NUM;
+	adm_msg->reply_size = SSS_ADM_MSG_REPLY_DATA_SIZE;
+	adm_msg->elem_size = SSS_ADM_MSG_ELEM_SIZE;
+	adm_msg->msg_type = msg_type;
+	adm_msg->pi = 0;
+	adm_msg->ci = 0;
+	if (adm_msg->msg_type == SSS_ADM_MSG_WRITE_ASYNC_TO_MGMT_MODULE)
+		spin_lock_init(&adm_msg->async_lock);
+	else
+		sema_init(&adm_msg->sem, 1);
+}
+
+static int create_adm_msg(struct sss_hwdev *hwdev, struct sss_adm_msg **adm_msg, u8 msg_type)
+{
+	struct sss_adm_msg *msg;
 	int ret;
 
-	if (!SSS_SUPPORT_ADM_MSG(hwdev))
-		return 0;
+	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
 
-	sss_init_adm_msg_param(adm_msg, hwdev);
+	sss_init_adm_msg_param(msg, hwdev, msg_type);
 
-	ret = sss_alloc_adm_msg_buf(adm_msg);
+	ret = sss_alloc_adm_msg_buf(msg);
 	if (ret != 0) {
 		sdk_err(hwdev->dev_hdl, "Fail to init adm msg buf\n");
 		return ret;
 	}
 
-	ret = sss_init_adm_msg_elem(adm_msg);
+	ret = sss_init_adm_msg_elem(msg);
 	if (ret != 0) {
 		sdk_err(hwdev->dev_hdl, "Fail to init adm msg elem\n");
-		sss_free_adm_msg_buf(adm_msg);
+		sss_free_adm_msg_buf(msg);
 		return ret;
 	}
 
-	ret = sss_chip_init_adm_msg(adm_msg);
+	ret = sss_chip_init_adm_msg(msg);
 	if (ret != 0) {
 		sdk_err(hwdev->dev_hdl, "Fail to init adm msg\n");
-		sss_free_adm_msg_buf(adm_msg);
+		sss_free_adm_msg_buf(msg);
 		return ret;
 	}
+
+	*adm_msg = msg;
 
 	return 0;
 }
 
-static void sss_deinit_adm_msg(const struct sss_hwdev *hwdev,
-			       struct sss_adm_msg *adm_msg)
+void sss_destroy_adm_msg(struct sss_adm_msg *adm_msg)
 {
+	sss_free_adm_msg_buf(adm_msg);
+	kfree(adm_msg);
+}
+
+static int sss_init_adm_msg(struct sss_hwdev *hwdev,
+			    struct sss_adm_msg **adm_msg)
+{
+	int ret;
+	u8 i;
+	u8 adm_msg_type;
+	void *dev = ((struct sss_hwdev *)hwdev)->dev_hdl;
+
+	if (!SSS_SUPPORT_ADM_MSG(hwdev))
+		return 0;
+
+	for (adm_msg_type = SSS_ADM_MSG_WRITE_TO_MGMT_MODULE;
+	     adm_msg_type < SSS_ADM_MSG_MAX; adm_msg_type++) {
+		ret = create_adm_msg(hwdev, &adm_msg[adm_msg_type], adm_msg_type);
+		if (ret) {
+			sdk_err(dev, "Failed to create adm msg %d\n", adm_msg_type);
+			goto create_adm_msg_err;
+		}
+	}
+
+	return 0;
+
+create_adm_msg_err:
+	for (i = SSS_ADM_MSG_WRITE_TO_MGMT_MODULE; i < adm_msg_type; i++)
+		sss_destroy_adm_msg(hwdev->pf_to_mgmt->adm_msg[adm_msg_type]);
+
+	return ret;
+}
+
+static void sss_deinit_adm_msg(const struct sss_hwdev *hwdev,
+			       struct sss_adm_msg **adm_msg)
+{
+	u8 adm_msg_type;
+
 	if (!SSS_SUPPORT_ADM_MSG(hwdev))
 		return;
 
-	sss_free_adm_msg_buf(adm_msg);
+	for (adm_msg_type = SSS_ADM_MSG_WRITE_TO_MGMT_MODULE;
+	     adm_msg_type < SSS_ADM_MSG_MAX; adm_msg_type++)
+		sss_destroy_adm_msg(adm_msg[adm_msg_type]);
+
 }
 
 static int sss_alloc_msg_buf(struct sss_msg_pf_to_mgmt *mgmt_msg)
@@ -578,8 +650,15 @@ static int sss_alloc_msg_buf(struct sss_msg_pf_to_mgmt *mgmt_msg)
 	if (!mgmt_msg->sync_buf)
 		goto alloc_sync_buf_err;
 
+	mgmt_msg->async_msg_buf = kzalloc(SSS_PF_MGMT_BUF_LEN_MAX, GFP_KERNEL);
+	if (!mgmt_msg->async_msg_buf)
+		goto alloc_async_msg_buf_err;
+
 	return 0;
 
+alloc_async_msg_buf_err:
+	kfree(mgmt_msg->sync_buf);
+	mgmt_msg->sync_buf = NULL;
 alloc_sync_buf_err:
 	kfree(mgmt_msg->ack_buf);
 	mgmt_msg->ack_buf = NULL;
@@ -600,6 +679,7 @@ static void sss_free_msg_buf(struct sss_msg_pf_to_mgmt *mgmt_msg)
 	struct sss_recv_msg *recv_msg = &mgmt_msg->recv_msg;
 	struct sss_recv_msg *resp_msg = &mgmt_msg->recv_resp_msg;
 
+	kfree(mgmt_msg->async_msg_buf);
 	kfree(mgmt_msg->sync_buf);
 	kfree(mgmt_msg->ack_buf);
 	kfree(resp_msg->buf);
@@ -615,6 +695,7 @@ int sss_hwif_init_adm(struct sss_hwdev *hwdev)
 	if (!mgmt_msg)
 		return -ENOMEM;
 
+	spin_lock_init(&mgmt_msg->async_msg_lock);
 	spin_lock_init(&mgmt_msg->sync_event_lock);
 	sema_init(&mgmt_msg->sync_lock, 1);
 	mgmt_msg->hwdev = hwdev;
@@ -633,7 +714,7 @@ int sss_hwif_init_adm(struct sss_hwdev *hwdev)
 		goto alloc_msg_buf_err;
 	}
 
-	ret = sss_init_adm_msg(hwdev, &mgmt_msg->adm_msg);
+	ret = sss_init_adm_msg(hwdev, mgmt_msg->adm_msg);
 	if (ret != 0) {
 		sdk_err(hwdev->dev_hdl, "Fail to init adm msg\n");
 		goto init_all_adm_err;
@@ -660,7 +741,7 @@ void sss_hwif_deinit_adm(struct sss_hwdev *hwdev)
 
 	destroy_workqueue(mgmt_msg->workq);
 
-	sss_deinit_adm_msg(hwdev, &mgmt_msg->adm_msg);
+	sss_deinit_adm_msg(hwdev, mgmt_msg->adm_msg);
 
 	sss_free_msg_buf(mgmt_msg);
 

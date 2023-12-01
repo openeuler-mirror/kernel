@@ -45,9 +45,9 @@ struct sss_nic_sq_stats {
 	u64	dma_map_err;
 	u64	unknown_tunnel_proto;
 	u64	frag_size_zero;
+	u64	frag_len_overflow;
 	u64	rsvd1;
 	u64	rsvd2;
-	u64	rsvd3;
 
 #ifdef HAVE_NDO_GET_STATS64
 	struct u64_stats_sync	stats_sync;

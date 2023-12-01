@@ -119,6 +119,15 @@ enum sss_func_type sss_get_func_type(void *hwdev)
 }
 EXPORT_SYMBOL(sss_get_func_type);
 
+enum sss_func_type sss_get_func_id(void *hwdev)
+{
+	if (!hwdev)
+		return 0;
+
+	return SSS_GET_FUNC_ID((struct sss_hwdev *)hwdev);
+}
+EXPORT_SYMBOL(sss_get_func_id);
+
 u16 sss_get_glb_pf_vf_offset(void *hwdev)
 {
 	if (!hwdev)

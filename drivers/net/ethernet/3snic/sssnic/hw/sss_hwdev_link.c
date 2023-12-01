@@ -12,6 +12,7 @@
 #include "sss_hw_common.h"
 #include "sss_hwdev_api.h"
 #include "sss_hwif_adm.h"
+#include "sss_hwif_adm_common.h"
 
 #define SSS_FW_MAGIC_NUM           0x5a5a1100
 #define SSS_FW_IMAGE_HEAD_SIZE     4096

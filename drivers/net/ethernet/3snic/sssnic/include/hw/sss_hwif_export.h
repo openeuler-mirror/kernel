@@ -71,6 +71,8 @@ u8 sss_get_pcie_itf_id(void *hwdev);
  */
 enum sss_func_type sss_get_func_type(void *hwdev);
 
+enum sss_func_type sss_get_func_id(void *hwdev);
+
 /* *
  * @brief sss_get_glb_pf_vf_offset - get vf offset id of pf
  * @param hwdev: device pointer to hwdev

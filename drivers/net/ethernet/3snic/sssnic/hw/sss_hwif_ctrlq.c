@@ -261,7 +261,7 @@ struct sss_ctrlq_wqe {
 	};
 };
 
-typedef void (*sss_ctrlq_type_handler_t)(struct sss_ctrlq *ctrlq,
+typedef int (*sss_ctrlq_type_handler_t)(struct sss_ctrlq *ctrlq,
 				struct sss_ctrlq_wqe *wqe, u16 ci);
 
 void *sss_ctrlq_read_wqe(struct sss_wq *wq, u16 *ci)
@@ -801,58 +801,66 @@ static void sss_ctrlq_update_cmd_info(struct sss_ctrlq *ctrlq,
 	spin_unlock(&ctrlq->ctrlq_lock);
 }
 
-static void sss_ctrlq_arm_ceq_handler(struct sss_ctrlq *ctrlq,
-				      struct sss_ctrlq_wqe *wqe, u16 ci)
+static int sss_ctrlq_arm_ceq_handler(struct sss_ctrlq *ctrlq,
+				     struct sss_ctrlq_wqe *wqe, u16 ci)
 {
 	struct sss_wqe_ctrl *ctrl = &wqe->inline_wqe.wqe_scmd.ctrl;
 	u32 info = sss_hw_cpu32((ctrl)->info);
 
 	if (!SSS_WQE_COMPLETE(info))
-		return;
+		return -EBUSY;
 
 	sss_erase_wqe_complete_bit(ctrlq, wqe, ci);
+
+	return 0;
 }
 
-static void sss_ctrlq_default_handler(struct sss_ctrlq *ctrlq,
-				      struct sss_ctrlq_wqe *wqe, u16 ci)
+static int sss_ctrlq_default_handler(struct sss_ctrlq *ctrlq,
+				     struct sss_ctrlq_wqe *wqe, u16 ci)
 {
 	struct sss_wqe_ctrl *ctrl = &wqe->wqe_lcmd.ctrl;
 	u32 info = sss_hw_cpu32((ctrl)->info);
 
 	if (!SSS_WQE_COMPLETE(info))
-		return;
+		return -EBUSY;
 
 	dma_rmb();
 
 	sss_ctrlq_update_cmd_info(ctrlq, wqe, ci);
 	sss_free_ctrlq_cmd_buf(SSS_TO_HWDEV(ctrlq), &ctrlq->cmd_info[ci]);
 	sss_erase_wqe_complete_bit(ctrlq, wqe, ci);
+
+	return 0;
 }
 
-static void sss_ctrlq_async_cmd_handler(struct sss_ctrlq *ctrlq,
-					struct sss_ctrlq_wqe *wqe, u16 ci)
+static int sss_ctrlq_async_cmd_handler(struct sss_ctrlq *ctrlq,
+				       struct sss_ctrlq_wqe *wqe, u16 ci)
 {
 	struct sss_wqe_ctrl *ctrl = &wqe->wqe_lcmd.ctrl;
 	u32 info = sss_hw_cpu32((ctrl)->info);
 
 	if (!SSS_WQE_COMPLETE(info))
-		return;
+		return -EBUSY;
 
 	dma_rmb();
 
 	sss_free_ctrlq_cmd_buf(SSS_TO_HWDEV(ctrlq), &ctrlq->cmd_info[ci]);
 	sss_erase_wqe_complete_bit(ctrlq, wqe, ci);
+
+	return 0;
 }
 
-static void sss_ctrlq_pseudo_timeout_handler(struct sss_ctrlq *ctrlq,
-					     struct sss_ctrlq_wqe *wqe, u16 ci)
+static int sss_ctrlq_pseudo_timeout_handler(struct sss_ctrlq *ctrlq,
+					    struct sss_ctrlq_wqe *wqe, u16 ci)
 {
 	sss_free_ctrlq_cmd_buf(SSS_TO_HWDEV(ctrlq), &ctrlq->cmd_info[ci]);
 	sss_erase_wqe_complete_bit(ctrlq, wqe, ci);
+
+	return 0;
 }
 
-static void sss_ctrlq_timeout_handler(struct sss_ctrlq *ctrlq,
-				      struct sss_ctrlq_wqe *wqe, u16 ci)
+static int sss_ctrlq_timeout_handler(struct sss_ctrlq *ctrlq,
+				     struct sss_ctrlq_wqe *wqe, u16 ci)
 {
 	u32 i;
 	u32 *data = (u32 *)wqe;
@@ -868,17 +876,20 @@ static void sss_ctrlq_timeout_handler(struct sss_ctrlq *ctrlq,
 
 	sss_free_ctrlq_cmd_buf(SSS_TO_HWDEV(ctrlq), &ctrlq->cmd_info[ci]);
 	sss_erase_wqe_complete_bit(ctrlq, wqe, ci);
+
+	return 0;
 }
 
-static void sss_ctrlq_force_stop_handler(struct sss_ctrlq *ctrlq,
-					 struct sss_ctrlq_wqe *wqe, u16 ci)
+static int sss_ctrlq_force_stop_handler(struct sss_ctrlq *ctrlq,
+					struct sss_ctrlq_wqe *wqe, u16 ci)
 {
-	sss_ctrlq_async_cmd_handler(ctrlq, wqe, ci);
+	return sss_ctrlq_async_cmd_handler(ctrlq, wqe, ci);
 }
 
 void sss_ctrlq_ceq_handler(void *dev, u32 data)
 {
 	u16 ci;
+	int ret;
 	enum sss_ctrlq_type type = SSS_GET_CEQE_CTRLQ(data, TYPE);
 	struct sss_ctrlq *ctrlq = &SSS_TO_CTRLQ_INFO(dev)->ctrlq[type];
 	struct sss_ctrlq_wqe *ctrlq_wqe = NULL;
@@ -895,17 +906,23 @@ void sss_ctrlq_ceq_handler(void *dev, u32 data)
 		sss_ctrlq_force_stop_handler,
 	};
 
-	ctrlq_wqe = sss_ctrlq_read_wqe(&ctrlq->wq, &ci);
-	if (!ctrlq_wqe)
-		return;
+	while ((ctrlq_wqe = sss_ctrlq_read_wqe(&ctrlq->wq, &ci)) != NULL) {
+		info = &ctrlq->cmd_info[ci];
 
-	info = &ctrlq->cmd_info[ci];
-	if (info->msg_type < SSS_MSG_TYPE_NONE ||
-	    info->msg_type >= SSS_MSG_TYPE_MAX) {
-		sss_ctrlq_default_handler(ctrlq, ctrlq_wqe, ci);
-		return;
+		if (info->msg_type < SSS_MSG_TYPE_NONE ||
+		    info->msg_type >= SSS_MSG_TYPE_MAX) {
+			ret = sss_ctrlq_default_handler(ctrlq, ctrlq_wqe, ci);
+			if (ret)
+				break;
+
+			continue;
+		}
+
+		if (!handler[info->msg_type])
+			break;
+
+		ret = handler[info->msg_type](ctrlq, ctrlq_wqe, ci);
+		if (ret)
+			break;
 	}
-
-	if (handler[info->msg_type])
-		handler[info->msg_type](ctrlq, ctrlq_wqe, ci);
 }

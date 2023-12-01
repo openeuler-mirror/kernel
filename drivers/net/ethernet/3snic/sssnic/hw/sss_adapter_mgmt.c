@@ -17,21 +17,31 @@
 
 #include "sss_kernel.h"
 #include "sss_hw.h"
+#include "sss_hwdev.h"
 #include "sss_pci_sriov.h"
 #include "sss_pci_id_tbl.h"
+#include "sss_adapter.h"
 #include "sss_adapter_mgmt.h"
 #include "sss_pci_global.h"
+#include "sss_tool_comm.h"
+#include "sss_hw_export.h"
+#include "sss_tool_hw.h"
+#include "sss_tool.h"
+
+#ifndef SSS_PF_NUM_MAX
+#define SSS_PF_NUM_MAX (16)
+#endif
 
 #define SSS_ADAPTER_CNT_TIMEOUT		10000
 #define SSS_WAIT_ADAPTER_USLEEP_MIN	9900
 #define SSS_WAIT_ADAPTER_USLEEP_MAX	10000
 
-#define SSS_CHIP_NODE_HOLD_TIMEOUT		(10 * 60 * 1000)
-#define SSS_WAIT_CHIP_NODE_CHANGED			(10 * 60 * 1000)
-#define SSS_PRINT_TIMEOUT_INTERVAL			10000
-#define SSS_MICRO_SECOND					1000
-#define SSS_CHIP_NODE_USLEEP_MIN		900
-#define SSS_CHIP_NODE_USLEEP_MAX		1000
+#define SSS_CHIP_NODE_HOLD_TIMEOUT	(10 * 60 * 1000)
+#define SSS_WAIT_CHIP_NODE_CHANGED	(10 * 60 * 1000)
+#define SSS_PRINT_TIMEOUT_INTERVAL	10000
+#define SSS_MICRO_SECOND		1000
+#define SSS_CHIP_NODE_USLEEP_MIN	900
+#define SSS_CHIP_NODE_USLEEP_MAX	1000
 
 #define SSS_CARD_CNT_MAX	64
 
@@ -42,10 +52,9 @@ enum sss_node_state {
 };
 
 struct sss_chip_node_lock {
-	/* lock for chip list */
-	struct mutex		chip_mutex;
-	unsigned long		state;
-	atomic_t		ref_cnt;
+	struct mutex	chip_mutex; /* lock for chip list */
+	unsigned long	state;
+	atomic_t	ref_cnt;
 };
 
 static struct sss_chip_node_lock g_chip_node_lock;
@@ -59,7 +68,21 @@ struct list_head *sss_get_chip_list(void)
 	return &g_chip_list;
 }
 
-static void sss_chip_node_lock(void)
+void lld_dev_hold(struct sss_hal_dev *dev)
+{
+	struct sss_pci_adapter *pci_adapter = pci_get_drvdata(dev->pdev);
+
+	atomic_inc(&pci_adapter->ref_cnt);
+}
+
+void lld_dev_put(struct sss_hal_dev *dev)
+{
+	struct sss_pci_adapter *pci_adapter = pci_get_drvdata(dev->pdev);
+
+	atomic_dec(&pci_adapter->ref_cnt);
+}
+
+void sss_chip_node_lock(void)
 {
 	unsigned long end;
 	bool timeout = true;
@@ -81,8 +104,7 @@ static void sss_chip_node_lock(void)
 				loop_cnt / SSS_MICRO_SECOND);
 
 		/* if sleep 1ms, use usleep_range to be more precise */
-		usleep_range(SSS_CHIP_NODE_USLEEP_MIN,
-			     SSS_CHIP_NODE_USLEEP_MAX);
+		usleep_range(SSS_CHIP_NODE_USLEEP_MIN, SSS_CHIP_NODE_USLEEP_MAX);
 	} while (time_before(jiffies, end));
 
 	if (timeout && test_and_set_bit(SSS_NODE_CHANGE, &g_chip_node_lock.state))
@@ -113,7 +135,7 @@ static void sss_chip_node_lock(void)
 	mutex_unlock(&g_chip_node_lock.chip_mutex);
 }
 
-static void sss_chip_node_unlock(void)
+void sss_chip_node_unlock(void)
 {
 	clear_bit(SSS_NODE_CHANGE, &g_chip_node_lock.state);
 }
@@ -136,8 +158,7 @@ void sss_hold_chip_node(void)
 			pr_warn("Wait adapter change complete for %us\n",
 				loop_cnt / SSS_MICRO_SECOND);
 		/* if sleep 1ms, use usleep_range to be more precise */
-		usleep_range(SSS_CHIP_NODE_USLEEP_MIN,
-			     SSS_CHIP_NODE_USLEEP_MAX);
+		usleep_range(SSS_CHIP_NODE_USLEEP_MIN, SSS_CHIP_NODE_USLEEP_MAX);
 	} while (time_before(jiffies, end));
 
 	if (test_bit(SSS_NODE_CHANGE, &g_chip_node_lock.state))
@@ -295,8 +316,7 @@ void sss_free_chip_node(struct sss_pci_adapter *adapter)
 		if (ret < 0)
 			sdk_err(&adapter->pcidev->dev, "Fail to get nic id\n");
 
-		clear_bit(id, &g_index_bit_map);
-
+		sss_free_card_id(id);
 		kfree(chip_node);
 	}
 	sss_chip_node_unlock();
@@ -315,3 +335,390 @@ void sss_del_func_list(struct sss_pci_adapter *adapter)
 	list_del(&adapter->node);
 	sss_chip_node_unlock();
 }
+
+static struct sss_card_node *sss_get_chip_node_by_hwdev(const void *hwdev)
+{
+	struct sss_card_node *chip_node = NULL;
+	struct sss_card_node *node_tmp = NULL;
+	struct sss_pci_adapter *dev = NULL;
+
+	if (!hwdev)
+		return NULL;
+
+	sss_hold_chip_node();
+
+	list_for_each_entry(node_tmp, &g_chip_list, node) {
+		if (!chip_node) {
+			list_for_each_entry(dev, &node_tmp->func_list, node) {
+				if (dev->hwdev == hwdev) {
+					chip_node = node_tmp;
+					break;
+				}
+			}
+		}
+	}
+
+	sss_put_chip_node();
+
+	return chip_node;
+}
+
+static bool sss_is_func_valid(struct sss_pci_adapter *dev)
+{
+	if (sss_get_func_type(dev->hwdev) == SSS_FUNC_TYPE_VF)
+		return false;
+
+	return true;
+}
+
+static int sss_get_dynamic_uld_dev_name(struct sss_pci_adapter *dev, enum sss_service_type type,
+					char *ifname)
+{
+	u32 out_size = IFNAMSIZ;
+	struct sss_uld_info *uld_info = sss_get_uld_info();
+
+	if (!uld_info[type].ioctl)
+		return -EFAULT;
+
+	return uld_info[type].ioctl(dev->uld_dev[type], SSS_TOOL_GET_ULD_DEV_NAME,
+				    NULL, 0, ifname, &out_size);
+}
+
+static bool sss_support_service_type(void *hwdev)
+{
+	struct sss_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	return !dev->mgmt_info->svc_cap.chip_svc_type;
+}
+
+void sss_get_card_info(const void *hwdev, void *bufin)
+{
+	struct sss_card_node *chip_node = NULL;
+	struct sss_tool_card_info *info = (struct sss_tool_card_info *)bufin;
+	struct sss_pci_adapter *dev = NULL;
+	void *fun_hwdev = NULL;
+	u32 i = 0;
+
+	info->pf_num = 0;
+
+	chip_node = sss_get_chip_node_by_hwdev(hwdev);
+	if (!chip_node)
+		return;
+
+	sss_hold_chip_node();
+
+	list_for_each_entry(dev, &chip_node->func_list, node) {
+		if (!sss_is_func_valid(dev))
+			continue;
+
+		fun_hwdev = dev->hwdev;
+
+		if (sss_support_nic(fun_hwdev)) {
+			if (dev->uld_dev[SSS_SERVICE_TYPE_NIC]) {
+				info->pf[i].pf_type |= (u32)BIT(SSS_SERVICE_TYPE_NIC);
+				sss_get_dynamic_uld_dev_name(dev, SSS_SERVICE_TYPE_NIC,
+							     info->pf[i].name);
+			}
+		}
+
+		if (sss_support_ppa(fun_hwdev, NULL)) {
+			if (dev->uld_dev[SSS_SERVICE_TYPE_PPA]) {
+				info->pf[i].pf_type |= (u32)BIT(SSS_SERVICE_TYPE_PPA);
+				sss_get_dynamic_uld_dev_name(dev, SSS_SERVICE_TYPE_PPA,
+							     info->pf[i].name);
+			}
+		}
+
+		if (sss_support_service_type(fun_hwdev))
+			strlcpy(info->pf[i].name, "FOR_MGMT", IFNAMSIZ);
+
+		strlcpy(info->pf[i].bus_info, pci_name(dev->pcidev),
+			sizeof(info->pf[i].bus_info));
+		info->pf_num++;
+		i = info->pf_num;
+	}
+
+	sss_put_chip_node();
+}
+
+bool sss_is_in_host(void)
+{
+	struct sss_card_node *node = NULL;
+	struct sss_pci_adapter *adapter = NULL;
+
+	sss_hold_chip_node();
+	list_for_each_entry(node, &g_chip_list, node) {
+		list_for_each_entry(adapter, &node->func_list, node) {
+			if (sss_get_func_type(adapter->hwdev) != SSS_FUNC_TYPE_VF) {
+				sss_put_chip_node();
+				return true;
+			}
+		}
+	}
+	sss_put_chip_node();
+
+	return false;
+}
+
+void sss_get_all_chip_id(void *id_info)
+{
+	int i = 0;
+	int id;
+	int ret;
+	struct sss_card_id *card_id = (struct sss_card_id *)id_info;
+	struct sss_card_node *node = NULL;
+
+	sss_hold_chip_node();
+	list_for_each_entry(node, &g_chip_list, node) {
+		ret = sscanf(node->chip_name, SSS_CHIP_NAME "%d", &id);
+		if (ret < 0) {
+			pr_err("Fail to get chip id\n");
+			continue;
+		}
+		card_id->id[i] = (u32)id;
+		i++;
+	}
+	sss_put_chip_node();
+
+	card_id->num = (u32)i;
+}
+
+void *sss_get_pcidev_hdl(void *hwdev)
+{
+	struct sss_hwdev *dev = (struct sss_hwdev *)hwdev;
+
+	if (!hwdev)
+		return NULL;
+
+	return dev->pcidev_hdl;
+}
+
+struct sss_card_node *sss_get_card_node(struct sss_hal_dev *hal_dev)
+{
+	struct sss_pci_adapter *adapter = pci_get_drvdata(hal_dev->pdev);
+
+	return adapter->chip_node;
+}
+
+void sss_get_card_func_info(const char *chip_name, struct sss_card_func_info *card_func)
+{
+	struct sss_card_node *card_node = NULL;
+	struct sss_pci_adapter *adapter = NULL;
+	struct sss_func_pdev_info *info = NULL;
+
+	card_func->pf_num = 0;
+
+	sss_hold_chip_node();
+
+	list_for_each_entry(card_node, &g_chip_list, node) {
+		if (strncmp(card_node->chip_name, chip_name, IFNAMSIZ))
+			continue;
+
+		list_for_each_entry(adapter, &card_node->func_list, node) {
+			if (sss_get_func_type(adapter->hwdev) == SSS_FUNC_TYPE_VF)
+				continue;
+
+			info = &card_func->pdev_info[card_func->pf_num];
+			info->bar1_size =
+				pci_resource_len(adapter->pcidev, SSS_PF_PCI_CFG_REG_BAR);
+			info->bar1_pa =
+				pci_resource_start(adapter->pcidev, SSS_PF_PCI_CFG_REG_BAR);
+
+			info->bar3_size =
+				pci_resource_len(adapter->pcidev, SSS_PCI_MGMT_REG_BAR);
+			info->bar3_pa =
+				pci_resource_start(adapter->pcidev, SSS_PCI_MGMT_REG_BAR);
+
+			card_func->pf_num++;
+			if (card_func->pf_num >= SSS_PF_NUM_MAX) {
+				sss_put_chip_node();
+				return;
+			}
+		}
+	}
+
+	sss_put_chip_node();
+}
+
+int sss_get_pf_id(struct sss_card_node *card_node, u32 port_id, u32 *pf_id, u32 *valid)
+{
+	struct sss_pci_adapter *adapter = NULL;
+
+	sss_hold_chip_node();
+	list_for_each_entry(adapter, &card_node->func_list, node) {
+		if (sss_get_func_type(adapter->hwdev) == SSS_FUNC_TYPE_VF)
+			continue;
+
+		if (SSS_TO_PHY_PORT_ID(adapter->hwdev) == port_id) {
+			*pf_id = sss_get_func_id(adapter->hwdev);
+			*valid = 1;
+			break;
+		}
+	}
+	sss_put_chip_node();
+
+	return 0;
+}
+
+void *sss_get_uld_dev(struct sss_hal_dev *hal_dev, enum sss_service_type type)
+{
+	struct sss_pci_adapter *dev = NULL;
+	void *uld = NULL;
+
+	if (!hal_dev)
+		return NULL;
+
+	dev = pci_get_drvdata(hal_dev->pdev);
+	if (!dev)
+		return NULL;
+
+	spin_lock_bh(&dev->uld_lock);
+	if (!dev->uld_dev[type] || !test_bit(type, &dev->uld_attach_state)) {
+		spin_unlock_bh(&dev->uld_lock);
+		return NULL;
+	}
+	uld = dev->uld_dev[type];
+
+	atomic_inc(&dev->uld_ref_cnt[type]);
+	spin_unlock_bh(&dev->uld_lock);
+
+	return uld;
+}
+
+void sss_uld_dev_put(struct sss_hal_dev *hal_dev, enum sss_service_type type)
+{
+	struct sss_pci_adapter *pci_adapter = pci_get_drvdata(hal_dev->pdev);
+
+	atomic_dec(&pci_adapter->uld_ref_cnt[type]);
+}
+
+static bool sss_is_pcidev_match_dev_name(const char *dev_name, struct sss_pci_adapter *dev,
+					 enum sss_service_type type)
+{
+	enum sss_service_type i;
+	char nic_uld_name[IFNAMSIZ] = {0};
+	int err;
+
+	if (type > SSS_SERVICE_TYPE_MAX)
+		return false;
+
+	if (type == SSS_SERVICE_TYPE_MAX) {
+		for (i = SSS_SERVICE_TYPE_OVS; i < SSS_SERVICE_TYPE_MAX; i++) {
+			if (!strncmp(dev->uld_dev_name[i], dev_name, IFNAMSIZ))
+				return true;
+		}
+	} else {
+		if (!strncmp(dev->uld_dev_name[type], dev_name, IFNAMSIZ))
+			return true;
+	}
+
+	err = sss_get_dynamic_uld_dev_name(dev, SSS_SERVICE_TYPE_NIC, (char *)nic_uld_name);
+	if (err == 0) {
+		if (!strncmp(nic_uld_name, dev_name, IFNAMSIZ))
+			return true;
+	}
+
+	return false;
+}
+
+struct sss_hal_dev *sss_get_lld_dev_by_dev_name(const char *dev_name, enum sss_service_type type)
+{
+	struct sss_card_node *chip_node = NULL;
+	struct sss_pci_adapter *dev = NULL;
+
+	sss_hold_chip_node();
+
+	list_for_each_entry(chip_node, &g_chip_list, node) {
+		list_for_each_entry(dev, &chip_node->func_list, node) {
+			if (sss_is_pcidev_match_dev_name(dev_name, dev, type)) {
+				lld_dev_hold(&dev->hal_dev);
+				sss_put_chip_node();
+				return &dev->hal_dev;
+			}
+		}
+	}
+
+	sss_put_chip_node();
+
+	return NULL;
+}
+
+static bool sss_is_pcidev_match_chip_name(const char *ifname, struct sss_pci_adapter *dev,
+					  struct sss_card_node *chip_node, enum sss_func_type type)
+{
+	if (!strncmp(chip_node->chip_name, ifname, IFNAMSIZ)) {
+		if (sss_get_func_type(dev->hwdev) != type)
+			return false;
+		return true;
+	}
+
+	return false;
+}
+
+static struct sss_hal_dev *sss_get_dst_type_lld_dev_by_chip_name(const char *ifname,
+								 enum sss_func_type type)
+{
+	struct sss_card_node *chip_node = NULL;
+	struct sss_pci_adapter *dev = NULL;
+
+	list_for_each_entry(chip_node, &g_chip_list, node) {
+		list_for_each_entry(dev, &chip_node->func_list, node) {
+			if (sss_is_pcidev_match_chip_name(ifname, dev, chip_node, type))
+				return &dev->hal_dev;
+		}
+	}
+
+	return NULL;
+}
+
+struct sss_hal_dev *sss_get_lld_dev_by_chip_name(const char *chip_name)
+{
+	struct sss_hal_dev *dev = NULL;
+
+	sss_hold_chip_node();
+
+	dev = sss_get_dst_type_lld_dev_by_chip_name(chip_name, SSS_FUNC_TYPE_PPF);
+	if (dev)
+		goto out;
+
+	dev = sss_get_dst_type_lld_dev_by_chip_name(chip_name, SSS_FUNC_TYPE_PF);
+	if (dev)
+		goto out;
+
+	dev = sss_get_dst_type_lld_dev_by_chip_name(chip_name, SSS_FUNC_TYPE_VF);
+out:
+	if (dev)
+		lld_dev_hold(dev);
+	sss_put_chip_node();
+
+	return dev;
+}
+
+struct sss_hal_dev *sss_get_lld_dev_by_chip_and_port(const char *chip_name, u8 port_id)
+{
+	struct sss_card_node *chip_node = NULL;
+	struct sss_pci_adapter *dev = NULL;
+
+	sss_hold_chip_node();
+	list_for_each_entry(chip_node, &g_chip_list, node) {
+		list_for_each_entry(dev, &chip_node->func_list, node) {
+			if (sss_get_func_type(dev->hwdev) == SSS_FUNC_TYPE_VF)
+				continue;
+
+			if (SSS_TO_PHY_PORT_ID(dev->hwdev) == port_id &&
+			    !strncmp(chip_node->chip_name, chip_name, IFNAMSIZ)) {
+				lld_dev_hold(&dev->hal_dev);
+				sss_put_chip_node();
+
+				return &dev->hal_dev;
+			}
+		}
+	}
+	sss_put_chip_node();
+
+	return NULL;
+}
+

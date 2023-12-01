@@ -27,7 +27,6 @@
 #include "sss_pci_shutdown.h"
 #include "sss_pci_error.h"
 
-#define SSS_DRV_VERSION SSS_VERSION_STR
 #define SSS_DRV_DESC "Intelligent Network Interface Card Driver"
 
 MODULE_AUTHOR("steven.song@3snic.com");

@@ -26,6 +26,7 @@
 #include "sss_hwdev_api.h"
 #include "sss_pci_remove.h"
 #include "sss_pci_global.h"
+#include "sss_tool.h"
 
 #define SSS_SYNC_YEAR_OFFSET		1900
 #define SSS_SYNC_MONTH_OFFSET		1
@@ -448,6 +449,15 @@ static int sss_init_function(struct pci_dev *pdev, struct sss_pci_adapter *adapt
 		sss_sync_time_to_chip(adapter);
 	}
 
+	sss_chip_node_lock();
+	ret = sss_tool_init(adapter->hwdev, adapter->chip_node);
+	if (ret) {
+		sss_chip_node_unlock();
+		sdk_err(&pdev->dev, "Failed to initialize dbgtool\n");
+		goto nictool_init_err;
+	}
+	sss_chip_node_unlock();
+
 	sss_add_func_list(adapter);
 
 	ret = sss_attach_uld_dev(adapter);
@@ -461,6 +471,10 @@ static int sss_init_function(struct pci_dev *pdev, struct sss_pci_adapter *adapt
 attach_uld_err:
 	sss_del_func_list(adapter);
 
+	sss_chip_node_lock();
+	sss_tool_uninit(adapter->hwdev, adapter->chip_node);
+	sss_chip_node_unlock();
+nictool_init_err:
 	sss_unregister_dev_event(adapter->hwdev);
 
 	sss_deinit_hwdev(adapter->hwdev);

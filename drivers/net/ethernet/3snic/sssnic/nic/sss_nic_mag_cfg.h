@@ -69,4 +69,11 @@ int sss_nic_pf_mag_mbx_handler(void *hwdev,
 			       u16 vf_id, u16 cmd, void *buf_in, u16 in_size,
 			       void *buf_out, u16 *out_size);
 
+int sss_nic_get_sfp_info(struct sss_nic_dev *nic_dev,
+			 struct sss_nic_mbx_get_xsfp_info *xsfp_info);
+
+bool sss_nic_if_sfp_absent(struct sss_nic_dev *nic_dev);
+
+int sss_nic_get_loopback_mode(struct sss_nic_dev *nic_dev, u8 *mode, u8 *enable);
+
 #endif

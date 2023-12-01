@@ -12,6 +12,7 @@
 #include "sss_hwdev.h"
 #include "sss_csr.h"
 #include "sss_hwif_api.h"
+#include "sss_hw_svc_cap.h"
 
 #define SSS_DEFAULT_RX_BUF_SIZE_LEVEL	((u16)0xB)
 
@@ -287,6 +288,23 @@ bool sss_support_nic(void *hwdev)
 }
 EXPORT_SYMBOL(sss_support_nic);
 
+bool sss_support_ppa(void *hwdev, struct sss_ppa_service_cap *cap)
+{
+	struct sss_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	if (!SSS_IS_PPA_TYPE(dev))
+		return false;
+
+	if (cap)
+		memcpy(cap, &dev->mgmt_info->svc_cap.ppa_cap, sizeof(*cap));
+
+	return true;
+}
+EXPORT_SYMBOL(sss_support_ppa);
+
 u16 sss_get_max_sq_num(void *hwdev)
 {
 	if (!hwdev) {
@@ -319,6 +337,19 @@ u16 sss_get_max_vf_num(void *hwdev)
 	return SSS_TO_MAX_VF_NUM(hwdev);
 }
 EXPORT_SYMBOL(sss_get_max_vf_num);
+
+u16 sss_nic_intr_num(void *hwdev)
+{
+	struct sss_hwif *hwif = NULL;
+
+	if (!hwdev)
+		return 0;
+
+	hwif = ((struct sss_hwdev *)hwdev)->hwif;
+
+	return hwif->attr.irq_num;
+}
+EXPORT_SYMBOL(sss_nic_intr_num);
 
 int sss_get_cos_valid_bitmap(void *hwdev, u8 *func_cos_bitmap, u8 *port_cos_bitmap)
 {
@@ -561,8 +592,8 @@ void sss_update_link_stats(void *hwdev, bool link_state)
 		return;
 
 	if (link_state)
-		atomic_inc(&dev->hw_stats.sss_link_event_stats.link_up_stats);
+		atomic_inc(&dev->hw_stats.link_event_stats.link_up_stats);
 	else
-		atomic_inc(&dev->hw_stats.sss_link_event_stats.link_down_stats);
+		atomic_inc(&dev->hw_stats.link_event_stats.link_down_stats);
 }
 EXPORT_SYMBOL(sss_update_link_stats);

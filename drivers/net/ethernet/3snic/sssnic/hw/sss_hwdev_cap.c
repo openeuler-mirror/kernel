@@ -280,7 +280,7 @@ static void sss_print_pubic_cap(void *dev_hdl, const struct sss_service_cap *svc
 		 svc_cap->pseudo_vf_bfilter_start_addr, svc_cap->pseudo_vf_bfilter_len);
 }
 
-static void sss_parse_cqm_cap(struct sss_hwdev *hwdev,
+static void sss_parse_qmm_cap(struct sss_hwdev *hwdev,
 			      struct sss_service_cap *svc_cap, struct sss_cmd_dev_cap_cfg *cmd_cap)
 {
 	struct sss_dev_sf_svc_attr *sf_svc_attr = &svc_cap->sf_svc_attr;
@@ -346,7 +346,7 @@ static void sss_parse_pubic_cap(struct sss_hwdev *hwdev,
 	svc_cap->sf_en = (type == SSS_FUNC_TYPE_PPF) ?
 			 (!!cmd_cap->host_sf_en) : (!!cmd_cap->func_sf_en);
 
-	sss_parse_cqm_cap(hwdev, svc_cap, cmd_cap);
+	sss_parse_qmm_cap(hwdev, svc_cap, cmd_cap);
 	sss_print_pubic_cap(hwdev->dev_hdl, svc_cap);
 }
 

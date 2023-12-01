@@ -158,8 +158,8 @@ static u8 sss_nic_get_cos_num(u8 cos_bitmap)
 	return cos_count;
 }
 
-static void sss_nic_sync_dcb_cfg(struct sss_nic_dev *nic_dev,
-				 const struct sss_nic_dcb_config *dcb_config)
+void sss_nic_sync_dcb_cfg(struct sss_nic_dev *nic_dev,
+			  const struct sss_nic_dcb_config *dcb_config)
 {
 	struct sss_nic_dcb_config *hw_config = &nic_dev->hw_dcb_cfg;
 
