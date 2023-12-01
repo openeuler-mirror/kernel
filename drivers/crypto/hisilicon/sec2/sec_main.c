@@ -168,13 +168,6 @@ static const struct hisi_qm_cap_info sec_basic_info[] = {
 	{SEC_CORE4_ALG_BITMAP_HIGH, 0x3170, 0, GENMASK(31, 0), 0x3FFF, 0x3FFF, 0x3FFF},
 };
 
-static struct hisi_qm_cap_record sec_cap_reg_record[] = {
-	{SEC_DRV_ALG_BITMAP_LOW,	0x187F0FF},
-	{SEC_DRV_ALG_BITMAP_HIGH,	0x395C},
-	{SEC_DEV_ALG_BITMAP_LOW,	0xFFFFFFFF},
-	{SEC_DEV_ALG_BITMAP_HIGH,	0x3FFF},
-};
-
 static const struct qm_dev_alg sec_dev_algs[] = { {
 		.alg_msk = SEC_CIPHER_BITMAP,
 		.alg = "cipher\n",
@@ -401,8 +394,8 @@ u64 sec_get_alg_bitmap(struct hisi_qm *qm, u32 high, u32 low)
 {
 	u32 cap_val_h, cap_val_l;
 
-	cap_val_h = sec_cap_reg_record[high].cap_val;
-	cap_val_l = sec_cap_reg_record[low].cap_val;
+	cap_val_h = hisi_qm_get_hw_info(qm, sec_basic_info, high, qm->cap_ver);
+	cap_val_l = hisi_qm_get_hw_info(qm, sec_basic_info, low, qm->cap_ver);
 
 	return ((u64)cap_val_h << SEC_ALG_BITMAP_SHIFT) | (u64)cap_val_l;
 }
@@ -1051,13 +1044,13 @@ static void sec_err_info_init(struct hisi_qm *qm)
 	err_info->nfe = hisi_qm_get_hw_info(qm, sec_basic_info, SEC_QM_NFE_MASK_CAP, qm->cap_ver);
 	err_info->ecc_2bits_mask = SEC_CORE_INT_STATUS_M_ECC;
 	err_info->qm_shutdown_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-							 SEC_QM_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
+				     SEC_QM_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
 	err_info->dev_shutdown_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-							  SEC_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
+			SEC_OOO_SHUTDOWN_MASK_CAP, qm->cap_ver);
 	err_info->qm_reset_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-						      SEC_QM_RESET_MASK_CAP, qm->cap_ver);
+			SEC_QM_RESET_MASK_CAP, qm->cap_ver);
 	err_info->dev_reset_mask = hisi_qm_get_hw_info(qm, sec_basic_info,
-						       SEC_RESET_MASK_CAP, qm->cap_ver);
+			SEC_RESET_MASK_CAP, qm->cap_ver);
 	err_info->msi_wr_port = BIT(0);
 	err_info->acpi_rst = "SRST";
 }
@@ -1100,17 +1093,6 @@ static int sec_pf_probe_init(struct sec_dev *sec)
 	return ret;
 }
 
-static void sec_pre_store_cap_reg(struct hisi_qm *qm)
-{
-	int i, size;
-
-	size = ARRAY_SIZE(sec_cap_reg_record);
-	for (i = 0; i < size; i++) {
-		sec_cap_reg_record[i].cap_val = hisi_qm_get_hw_info(qm, sec_basic_info,
-						sec_cap_reg_record[i].type, qm->cap_ver);
-	}
-}
-
 static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	u64 alg_msk;
@@ -1148,10 +1130,7 @@ static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		return ret;
 	}
 
-	/* Fetch and save the value of capability registers */
-	sec_pre_store_cap_reg(qm);
-
-	alg_msk = sec_get_alg_bitmap(qm, SEC_DEV_ALG_BITMAP_HIGH_IDX, SEC_DEV_ALG_BITMAP_LOW_IDX);
+	alg_msk = sec_get_alg_bitmap(qm, SEC_DEV_ALG_BITMAP_HIGH, SEC_DEV_ALG_BITMAP_LOW);
 	ret = hisi_qm_set_algs(qm, alg_msk, sec_dev_algs, ARRAY_SIZE(sec_dev_algs));
 	if (ret) {
 		pci_err(qm->pdev, "Failed to set sec algs!\n");
