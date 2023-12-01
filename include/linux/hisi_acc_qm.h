@@ -285,11 +285,6 @@ struct hisi_qm_cap_info {
 	u32 v3_val;
 };
 
-struct hisi_qm_cap_record {
-	u32 type;
-	u32 cap_val;
-};
-
 struct hisi_qm_list {
 	struct mutex lock;
 	struct list_head list;
