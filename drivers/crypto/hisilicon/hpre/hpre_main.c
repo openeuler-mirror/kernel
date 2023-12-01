@@ -225,16 +225,6 @@ static const struct hisi_qm_cap_info hpre_basic_info[] = {
 	{HPRE_CORE10_ALG_BITMAP_CAP, 0x3170, 0, GENMASK(31, 0), 0x0, 0x10, 0x10}
 };
 
-enum hpre_cap_reg_record_idx {
-	HPRE_DRV_ALG_BITMAP_CAP_IDX,
-	HPRE_DEV_ALG_BITMAP_CAP_IDX,
-};
-
-static struct hisi_qm_cap_record hpre_cap_reg_record[] = {
-	{HPRE_DRV_ALG_BITMAP_CAP,	0x27},
-	{HPRE_DEV_ALG_BITMAP_CAP,	0x7F},
-};
-
 static const struct hpre_hw_error hpre_hw_errors[] = {
 	{
 		.int_msk = BIT(0),
@@ -357,7 +347,7 @@ bool hpre_check_alg_support(struct hisi_qm *qm, u32 alg)
 {
 	u32 cap_val;
 
-	cap_val = hpre_cap_reg_record[HPRE_DRV_ALG_BITMAP_CAP_IDX].cap_val;
+	cap_val = hisi_qm_get_hw_info(qm, hpre_basic_info, HPRE_DRV_ALG_BITMAP_CAP, qm->cap_ver);
 	if (alg & cap_val)
 		return true;
 
@@ -1112,17 +1102,6 @@ static void hpre_debugfs_exit(struct hisi_qm *qm)
 	debugfs_remove_recursive(qm->debug.debug_root);
 }
 
-static void hpre_pre_store_cap_reg(struct hisi_qm *qm)
-{
-	int i, size;
-
-	size = ARRAY_SIZE(hpre_cap_reg_record);
-	for (i = 0; i < size; i++) {
-		hpre_cap_reg_record[i].cap_val = hisi_qm_get_hw_info(qm, hpre_basic_info,
-						 hpre_cap_reg_record[i].type, qm->cap_ver);
-	}
-}
-
 static int hpre_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	u64 alg_msk;
@@ -1156,10 +1135,7 @@ static int hpre_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		return ret;
 	}
 
-	/* Fetch and save the value of capability registers */
-	hpre_pre_store_cap_reg(qm);
-
-	alg_msk = hpre_cap_reg_record[HPRE_DEV_ALG_BITMAP_CAP_IDX].cap_val;
+	alg_msk = hisi_qm_get_hw_info(qm, hpre_basic_info, HPRE_DEV_ALG_BITMAP_CAP, qm->cap_ver);
 	ret = hisi_qm_set_algs(qm, alg_msk, hpre_dev_algs, ARRAY_SIZE(hpre_dev_algs));
 	if (ret) {
 		pci_err(pdev, "Failed to set hpre algs!\n");
