@@ -769,7 +769,7 @@ int resctrl_mkdir_mondata_all_subdir(struct kernfs_node *parent_kn,
 {
 	struct resctrl_schema *s;
 	struct resctrl_resource *r;
-	int ret;
+	int ret = 0;
 
 	/*
 	 * Create the subdirectories for each domain. Note that all events
