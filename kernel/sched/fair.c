@@ -5403,6 +5403,12 @@ static enum hrtimer_restart sched_auto_affi_period_timer(struct hrtimer *timer)
 	}
 
 	raw_spin_lock_irqsave(&auto_affi->lock, flags);
+	/* May be re-entrant by stop_auto_affinity, So check again. */
+	if (auto_affi->period_active == 0) {
+		raw_spin_unlock_irqrestore(&auto_affi->lock, flags);
+		return HRTIMER_NORESTART;
+	}
+
 	if (util_avg_sum * 100 >= tg_capacity * sysctl_sched_util_low_pct) {
 		affinity_domain_up(tg);
 	} else if (util_avg_sum * 100 < tg_capacity *
@@ -5496,8 +5502,6 @@ void stop_auto_affinity(struct auto_affinity *auto_affi)
 		mutex_unlock(&smart_grid_used_mutex);
 		return;
 	}
-
-	hrtimer_cancel(&auto_affi->period_timer);
 	auto_affi->period_active = 0;
 	auto_affi->mode = 0;
 	ad->curr_level = ad->dcount > 0 ? ad->dcount - 1 : 0;
