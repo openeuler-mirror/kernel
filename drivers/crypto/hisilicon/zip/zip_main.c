@@ -249,26 +249,6 @@ static struct hisi_qm_cap_info zip_basic_cap_info[] = {
 	{ZIP_CAP_MAX, 0x317c, 0, GENMASK(0, 0), 0x0, 0x0, 0x0}
 };
 
-enum zip_cap_reg_record_idx {
-	ZIP_CORE_NUM_CAP_IDX,
-	ZIP_CLUSTER_COMP_NUM_CAP_IDX,
-	ZIP_CLUSTER_DECOMP_NUM_CAP_IDX,
-	ZIP_DECOMP_ENABLE_BITMAP_IDX,
-	ZIP_COMP_ENABLE_BITMAP_IDX,
-	ZIP_DRV_ALG_BITMAP_IDX,
-	ZIP_DEV_ALG_BITMAP_IDX,
-};
-
-static struct hisi_qm_cap_record zip_cap_reg_record[] = {
-	{ZIP_CORE_NUM_CAP,		0x5},
-	{ZIP_CLUSTER_COMP_NUM_CAP,	0x2},
-	{ZIP_CLUSTER_DECOMP_NUM_CAP,	0x3},
-	{ZIP_DECOMP_ENABLE_BITMAP,	0x1C},
-	{ZIP_COMP_ENABLE_BITMAP,	0x3},
-	{ZIP_DRV_ALG_BITMAP,		0xF},
-	{ZIP_DEV_ALG_BITMAP,		0xFF},
-};
-
 enum {
 	HZIP_COMP_CORE0,
 	HZIP_COMP_CORE1,
@@ -463,7 +443,7 @@ bool hisi_zip_alg_support(struct hisi_qm *qm, u32 alg)
 {
 	u32 cap_val;
 
-	cap_val = zip_cap_reg_record[ZIP_DRV_ALG_BITMAP_IDX].cap_val;
+	cap_val = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_DRV_ALG_BITMAP, qm->cap_ver);
 	if ((alg & cap_val) == alg)
 		return true;
 
@@ -588,8 +568,10 @@ static int hisi_zip_set_user_domain_and_cache(struct hisi_qm *qm)
 	}
 
 	/* let's open all compression/decompression cores */
-	dcomp_bm = zip_cap_reg_record[ZIP_DECOMP_ENABLE_BITMAP_IDX].cap_val;
-	comp_bm = zip_cap_reg_record[ZIP_COMP_ENABLE_BITMAP_IDX].cap_val;
+	dcomp_bm = hisi_qm_get_hw_info(qm, zip_basic_cap_info,
+				       ZIP_DECOMP_ENABLE_BITMAP, qm->cap_ver);
+	comp_bm = hisi_qm_get_hw_info(qm, zip_basic_cap_info,
+				      ZIP_COMP_ENABLE_BITMAP, qm->cap_ver);
 	writel(HZIP_DECOMP_CHECK_ENABLE | dcomp_bm | comp_bm, base + HZIP_CLOCK_GATE_CTRL);
 
 	/* enable sqc,cqc writeback */
@@ -816,8 +798,9 @@ static int hisi_zip_core_debug_init(struct hisi_qm *qm)
 	char buf[HZIP_BUF_SIZE];
 	int i;
 
-	zip_core_num = zip_cap_reg_record[ZIP_CORE_NUM_CAP_IDX].cap_val;
-	zip_comp_core_num = zip_cap_reg_record[ZIP_CLUSTER_COMP_NUM_CAP_IDX].cap_val;
+	zip_core_num = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_CORE_NUM_CAP, qm->cap_ver);
+	zip_comp_core_num = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_CLUSTER_COMP_NUM_CAP,
+						qm->cap_ver);
 
 	for (i = 0; i < zip_core_num; i++) {
 		if (i < zip_comp_core_num)
@@ -959,7 +942,7 @@ static int hisi_zip_show_last_regs_init(struct hisi_qm *qm)
 	u32 zip_core_num;
 	int i, j, idx;
 
-	zip_core_num = zip_cap_reg_record[ZIP_CORE_NUM_CAP_IDX].cap_val;
+	zip_core_num = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_CORE_NUM_CAP, qm->cap_ver);
 
 	debug->last_words = kcalloc(core_dfx_regs_num * zip_core_num + com_dfx_regs_num,
 				    sizeof(unsigned int), GFP_KERNEL);
@@ -1015,9 +998,9 @@ static void hisi_zip_show_last_dfx_regs(struct hisi_qm *qm)
 				 hzip_com_dfx_regs[i].name, debug->last_words[i], val);
 	}
 
-	zip_core_num = zip_cap_reg_record[ZIP_CORE_NUM_CAP_IDX].cap_val;
-	zip_comp_core_num = zip_cap_reg_record[ZIP_CLUSTER_COMP_NUM_CAP_IDX].cap_val;
-
+	zip_core_num = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_CORE_NUM_CAP, qm->cap_ver);
+	zip_comp_core_num = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_CLUSTER_COMP_NUM_CAP,
+						qm->cap_ver);
 	for (i = 0; i < zip_core_num; i++) {
 		if (i < zip_comp_core_num)
 			scnprintf(buf, sizeof(buf), "Comp_core-%d", i);
@@ -1189,17 +1172,6 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 	return ret;
 }
 
-static void zip_pre_store_cap_reg(struct hisi_qm *qm)
-{
-	int i, size;
-
-	size = ARRAY_SIZE(zip_cap_reg_record);
-	for (i = 0; i < size; i++) {
-		zip_cap_reg_record[i].cap_val = hisi_qm_get_hw_info(qm, zip_basic_cap_info,
-						zip_cap_reg_record[i].type, qm->cap_ver);
-	}
-}
-
 static int hisi_zip_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	u64 alg_msk;
@@ -1238,10 +1210,7 @@ static int hisi_zip_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		return ret;
 	}
 
-	/* Fetch and save the value of capability registers */
-	zip_pre_store_cap_reg(qm);
-
-	alg_msk = zip_cap_reg_record[ZIP_DEV_ALG_BITMAP_IDX].cap_val;
+	alg_msk = hisi_qm_get_hw_info(qm, zip_basic_cap_info, ZIP_DEV_ALG_BITMAP, qm->cap_ver);
 	ret = hisi_qm_set_algs(qm, alg_msk, zip_dev_algs, ARRAY_SIZE(zip_dev_algs));
 	if (ret) {
 		pci_err(qm->pdev, "Failed to set zip algs!\n");
