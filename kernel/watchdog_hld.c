@@ -306,13 +306,13 @@ void watchdog_hardlockup_check(struct pt_regs *regs)
 	}
 #endif
 
+	if (!watchdog_check_timestamp())
+		return;
+
 	if (__this_cpu_read(watchdog_nmi_touch) == true) {
 		__this_cpu_write(watchdog_nmi_touch, false);
 		return;
 	}
-
-	if (!watchdog_check_timestamp())
-		return;
 
 	/* check for a hardlockup
 	 * This is done by making sure our timer interrupt
