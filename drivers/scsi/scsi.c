@@ -530,7 +530,7 @@ int scsi_device_get(struct scsi_device *sdev)
 		goto fail;
 
 	module = sdev->host->hostt->module;
-	if (!module || !try_module_get(module))
+	if ((!module && !sdev->host->is_builtin) || !try_module_get(module))
 		goto fail_put_device;
 	return 0;
 
