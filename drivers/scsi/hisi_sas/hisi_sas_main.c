@@ -1672,7 +1672,7 @@ static int hisi_sas_controller_prereset(struct hisi_hba *hisi_hba)
 		return -1;
 	}
 
-	if (hisi_sas_debugfs_enable && hisi_hba->debugfs_itct[0].itct)
+	if (hisi_sas_debugfs_enable)
 		hisi_hba->hw->debugfs_snapshot_regs(hisi_hba);
 
 	return 0;
@@ -2210,7 +2210,7 @@ _hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
 
 	/* Internal abort timed out */
 	if ((task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
-		if (hisi_sas_debugfs_enable && hisi_hba->debugfs_itct[0].itct) {
+		if (hisi_sas_debugfs_enable) {
 			down(&hisi_hba->sem);
 			hisi_hba->hw->debugfs_snapshot_regs(hisi_hba);
 			up(&hisi_hba->sem);
