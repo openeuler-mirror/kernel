@@ -2214,9 +2214,18 @@ _hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
 	/* Internal abort timed out */
 	if ((task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
 		if (hisi_sas_debugfs_enable) {
-			down(&hisi_hba->sem);
+			/*
+			 * If timeout occurs in device gone scenario, to avoid
+			 * circular dependency like:
+			 * hisi_sas_dev_gone() -> down() -> ... ->
+			 * hisi_sas_internal_abort_timeout() -> down().
+			 */
+			if (!rst_to_recover)
+				down(&hisi_hba->sem);
+
 			hisi_hba->hw->debugfs_snapshot_regs(hisi_hba);
-			up(&hisi_hba->sem);
+			if (!rst_to_recover)
+				up(&hisi_hba->sem);
 		}
 
 		if (!(task->task_state_flags & SAS_TASK_STATE_DONE)) {
