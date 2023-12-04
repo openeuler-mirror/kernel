@@ -220,7 +220,7 @@ static void vp_vdpa_set_status(struct vdpa_device *vdpa, u8 status)
 	vp_modern_set_status(mdev, status);
 }
 
-static int vp_vdpa_reset(struct vdpa_device *vdpa)
+static int vp_vdpa_reset(struct vdpa_device *vdpa, int state)
 {
 	struct vp_vdpa *vp_vdpa = vdpa_to_vp(vdpa);
 	struct virtio_pci_modern_device *mdev = vp_vdpa_to_mdev(vp_vdpa);
