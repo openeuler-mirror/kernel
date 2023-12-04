@@ -522,11 +522,15 @@ EXPORT_SYMBOL(scsi_report_opcode);
  */
 int scsi_device_get(struct scsi_device *sdev)
 {
+	struct module *module;
+
 	if (sdev->sdev_state == SDEV_DEL || sdev->sdev_state == SDEV_CANCEL)
 		goto fail;
 	if (!get_device(&sdev->sdev_gendev))
 		goto fail;
-	if (!try_module_get(sdev->host->hostt->module))
+
+	module = sdev->host->hostt->module;
+	if (!module || !try_module_get(module))
 		goto fail_put_device;
 	return 0;
 
