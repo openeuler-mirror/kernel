@@ -120,6 +120,12 @@ struct vdpa_map_file {
 	u64 offset;
 };
 
+enum vdpa_reset_state {
+	VDPA_DEV_RESET_VIRTIO = 0,
+	VDPA_DEV_RESET_OPEN = 1,
+	VDPA_DEV_RESET_CLOSE = 2,
+};
+
 /**
  * struct vdpa_config_ops - operations for configuring a vDPA device.
  * Note: vDPA device drivers are required to implement all of the
@@ -218,6 +224,10 @@ struct vdpa_map_file {
  *				@status: virtio device status
  * @reset:			Reset device
  *				@vdev: vdpa device
+ *				@state: state for reset
+ *					VDPA_DEV_RESET_VIRTIO for virtio reset
+ *					VDPA_DEV_RESET_OPEN for vhost-vdpa device open
+ *					VDPA_DEV_RESET_CLOSE for vhost-vdpa device close
  *				Returns integer: success (0) or error (< 0)
  * @suspend:			Suspend the device (optional)
  *				@vdev: vdpa device
@@ -359,7 +369,7 @@ struct vdpa_config_ops {
 	u32 (*get_vendor_id)(struct vdpa_device *vdev);
 	u8 (*get_status)(struct vdpa_device *vdev);
 	void (*set_status)(struct vdpa_device *vdev, u8 status);
-	int (*reset)(struct vdpa_device *vdev);
+	int (*reset)(struct vdpa_device *vdev, int state);
 	int (*suspend)(struct vdpa_device *vdev);
 	int (*resume)(struct vdpa_device *vdev);
 	size_t (*get_config_size)(struct vdpa_device *vdev);
@@ -482,14 +492,14 @@ static inline struct device *vdpa_get_dma_dev(struct vdpa_device *vdev)
 	return vdev->dma_dev;
 }
 
-static inline int vdpa_reset(struct vdpa_device *vdev)
+static inline int vdpa_reset(struct vdpa_device *vdev, int state)
 {
 	const struct vdpa_config_ops *ops = vdev->config;
 	int ret;
 
 	down_write(&vdev->cf_lock);
 	vdev->features_valid = false;
-	ret = ops->reset(vdev);
+	ret = ops->reset(vdev, state);
 	up_write(&vdev->cf_lock);
 	return ret;
 }
