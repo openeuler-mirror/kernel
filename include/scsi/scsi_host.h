@@ -698,9 +698,7 @@ struct Scsi_Host {
 	 */
 	struct device *dma_dev;
 
-	bool is_builtin;
-
-	KABI_RESERVE(1)
+	KABI_USE(1, bool is_builtin)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
