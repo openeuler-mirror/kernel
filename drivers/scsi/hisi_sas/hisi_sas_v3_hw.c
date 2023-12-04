@@ -4969,7 +4969,8 @@ err_out_hw_init:
 err_out_register_ha:
 	scsi_remove_host(shost);
 err_out_debugfs:
-	debugfs_exit_v3_hw(hisi_hba);
+	if (hisi_sas_debugfs_enable)
+		debugfs_exit_v3_hw(hisi_hba);
 err_out_ha:
 	hisi_sas_free(hisi_hba);
 	scsi_host_put(shost);
@@ -5016,7 +5017,8 @@ static void hisi_sas_v3_remove(struct pci_dev *pdev)
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
 	hisi_sas_free(hisi_hba);
-	debugfs_exit_v3_hw(hisi_hba);
+	if (hisi_sas_debugfs_enable)
+		debugfs_exit_v3_hw(hisi_hba);
 	scsi_host_put(shost);
 }
 
