@@ -212,13 +212,13 @@ static void vhost_vdpa_unsetup_vq_irq(struct vhost_vdpa *v, u16 qid)
 	irq_bypass_unregister_producer(&vq->call_ctx.producer);
 }
 
-static int vhost_vdpa_reset(struct vhost_vdpa *v)
+static int vhost_vdpa_reset(struct vhost_vdpa *v, int state)
 {
 	struct vdpa_device *vdpa = v->vdpa;
 
 	v->in_batch = 0;
 
-	return vdpa_reset(vdpa);
+	return vdpa_reset(vdpa, state);
 }
 
 static long vhost_vdpa_bind_mm(struct vhost_vdpa *v)
@@ -297,7 +297,7 @@ static long vhost_vdpa_set_status(struct vhost_vdpa *v, u8 __user *statusp)
 			vhost_vdpa_unsetup_vq_irq(v, i);
 
 	if (status == 0) {
-		ret = vdpa_reset(vdpa);
+		ret = vdpa_reset(vdpa, VDPA_DEV_RESET_VIRTIO);
 		if (ret)
 			return ret;
 	} else
@@ -1496,7 +1496,7 @@ static int vhost_vdpa_open(struct inode *inode, struct file *filep)
 		return r;
 
 	nvqs = v->nvqs;
-	r = vhost_vdpa_reset(v);
+	r = vhost_vdpa_reset(v, VDPA_DEV_RESET_OPEN);
 	if (r)
 		goto err;
 
@@ -1542,7 +1542,7 @@ static int vhost_vdpa_release(struct inode *inode, struct file *filep)
 	mutex_lock(&d->mutex);
 	filep->private_data = NULL;
 	vhost_vdpa_clean_irq(v);
-	vhost_vdpa_reset(v);
+	vhost_vdpa_reset(v, VDPA_DEV_RESET_CLOSE);
 	vhost_dev_stop(&v->vdev);
 	vhost_vdpa_unbind_mm(v);
 	vhost_vdpa_config_put(v);
