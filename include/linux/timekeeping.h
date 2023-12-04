@@ -248,9 +248,11 @@ struct system_time_snapshot {
 	u64			cycles;
 	ktime_t			real;
 	ktime_t			raw;
-	enum clocksource_ids	cs_id;
 	unsigned int		clock_was_set_seq;
 	u8			cs_was_changed_seq;
+#ifndef __GENKSYMS__
+	short			cs_id;
+#endif
 };
 
 /**

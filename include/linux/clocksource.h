@@ -98,6 +98,7 @@ struct clocksource {
 	u32			shift;
 	u64			max_idle_ns;
 	u32			maxadj;
+	KABI_FILL_HOLE(enum clocksource_ids	id)
 #ifdef CONFIG_ARCH_CLOCKSOURCE_DATA
 	struct arch_clocksource_data archdata;
 #endif
@@ -105,7 +106,6 @@ struct clocksource {
 	const char		*name;
 	struct list_head	list;
 	int			rating;
-	enum clocksource_ids	id;
 	enum vdso_clock_mode	vdso_clock_mode;
 	u16			vdso_fix;
 	u16			vdso_shift;

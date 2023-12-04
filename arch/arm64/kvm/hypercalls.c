@@ -26,7 +26,7 @@ static void kvm_ptp_get_time(struct kvm_vcpu *vcpu, u64 *val)
 	 * architected counter, as this is the only one the guest
 	 * can see.
 	 */
-	if (systime_snapshot.cs_id != CSID_ARM_ARCH_COUNTER)
+	if (systime_snapshot.cs_id != (short)CSID_ARM_ARCH_COUNTER)
 		return;
 
 	/*
