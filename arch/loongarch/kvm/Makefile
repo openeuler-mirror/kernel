@@ -10,7 +10,7 @@ common-objs-y = $(addprefix ../../../virt/kvm/, kvm_main.o coalesced_mmio.o \
 KVM := ../../../virt/kvm
 common-objs-$(CONFIG_KVM_VFIO) += $(KVM)/vfio.o
 
-EXTRA_CFLAGS += -Ivirt/kvm -Iarch/loongarch/kvm
+ccflags-y += -Ivirt/kvm -Iarch/loongarch/kvm
 
 kvm-objs := $(common-objs-y) loongarch.o emulate.o interrupt.o
 kvm-objs += hypcall.o

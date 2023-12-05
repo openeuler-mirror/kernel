@@ -9,7 +9,7 @@
 /*
  * Hypcall code field
  */
-#define KVM_HC_CODE_SERIVCE     0x0
+#define KVM_HC_CODE_SERVICE     0x0
 #define KVM_HC_CODE_SWDBG       0x5
 /*
  *	function id

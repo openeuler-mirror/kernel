@@ -30,7 +30,7 @@ int _kvm_emu_idle(struct kvm_vcpu *vcpu)
 	return EMULATE_DONE;
 }
 
-int _kvm_emu_mmio_write(struct kvm_vcpu *vcpu, larch_inst inst)
+int _kvm_emu_mmio_write(struct kvm_vcpu *vcpu, union loongarch_instruction inst)
 {
 	struct kvm_run *run = vcpu->run;
 	unsigned int rd, op8, opcode;
@@ -152,8 +152,7 @@ out_fail:
 	return EMULATE_FAIL;
 }
 
-
-int _kvm_emu_mmio_read(struct kvm_vcpu *vcpu, larch_inst inst)
+int _kvm_emu_mmio_read(struct kvm_vcpu *vcpu, union loongarch_instruction inst)
 {
 	unsigned int op8, opcode, rd;
 	int ret = 0;
@@ -290,9 +289,9 @@ int _kvm_complete_mmio_read(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		break;
 
 	case 4:
-		if (vcpu->mmio_needed == 2) {
+		if (vcpu->mmio_needed == 2)
 			*gpr = *(int *)run->mmio.data;
-		} else
+		else
 			*gpr = *(unsigned int *)run->mmio.data;
 		break;
 

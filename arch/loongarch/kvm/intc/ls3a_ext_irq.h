@@ -51,7 +51,7 @@
 #define EXTIOI_IRQS_COREMAP_SIZE	(EXTIOI_IRQS)
 #define EXTIOI_IRQS_NODETYPE_SIZE	KVM_EXTIOI_IRQS_NODETYPE_SIZE
 
-typedef struct kvm_ls3a_extirq_state {
+struct kvm_ls3a_extirq_state {
 	union ext_en {
 		uint64_t reg_u64[EXTIOI_IRQS_BITMAP_SIZE / 8];
 		uint32_t reg_u32[EXTIOI_IRQS_BITMAP_SIZE / 4];
@@ -93,7 +93,7 @@ typedef struct kvm_ls3a_extirq_state {
 	uint8_t ext_sw_ipmap[EXTIOI_IRQS];
 	uint8_t ext_sw_coremap[EXTIOI_IRQS];
 	uint8_t ext_sw_ipisr[KVM_MAX_VCPUS][LS3A_INTC_IP][EXTIOI_IRQS_BITMAP_SIZE];
-} LS3AExtirqState;
+};
 
 struct ls3a_kvm_extirq {
 	spinlock_t lock;

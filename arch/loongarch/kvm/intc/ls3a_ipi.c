@@ -17,7 +17,7 @@ int kvm_helper_send_ipi(struct kvm_vcpu *vcpu, unsigned int cpu, unsigned int ac
 {
 	struct kvm *kvm = vcpu->kvm;
 	struct ls3a_kvm_ipi *ipi = ls3a_ipi_irqchip(kvm);
-	gipiState *s = &(ipi->ls3a_gipistate);
+	struct gipiState *s = &(ipi->ls3a_gipistate);
 	unsigned long flags;
 	struct kvm_loongarch_interrupt irq;
 
@@ -41,7 +41,7 @@ static int ls3a_gipi_writel(struct ls3a_kvm_ipi *ipi, gpa_t addr,
 {
 	uint64_t data, offset;
 	struct kvm_loongarch_interrupt irq;
-	gipiState *s = &(ipi->ls3a_gipistate);
+	struct gipiState *s = &(ipi->ls3a_gipistate);
 	uint32_t cpu, action_data;
 	struct kvm *kvm;
 	void *pbuf;
@@ -57,7 +57,7 @@ static int ls3a_gipi_writel(struct ls3a_kvm_ipi *ipi, gpa_t addr,
 
 	switch (offset) {
 	case CORE0_STATUS_OFF:
-		printk("CORE0_SET_OFF Can't be write\n");
+		pr_info("CORE0_SET_OFF Can't be write\n");
 
 		break;
 	case CORE0_EN_OFF:
@@ -73,9 +73,8 @@ static int ls3a_gipi_writel(struct ls3a_kvm_ipi *ipi, gpa_t addr,
 			irq.cpu = cpu;
 			irq.irq = LARCH_INT_IPI;
 
-			if (likely(kvm->vcpus[cpu])) {
+			if (likely(kvm->vcpus[cpu]))
 				kvm_vcpu_ioctl_interrupt(kvm->vcpus[cpu], &irq);
-			}
 		}
 		s->core[cpu].status |= action_data;
 		break;
@@ -114,7 +113,7 @@ static int ls3a_gipi_writel(struct ls3a_kvm_ipi *ipi, gpa_t addr,
 
 		break;
 	default:
-		printk("ls3a_gipi_writel with unknown addr %llx \n", addr);
+		pr_info("%s with unknown addr %llx\n", __func__, addr);
 		break;
 	}
 	return 0;
@@ -126,7 +125,7 @@ static uint64_t ls3a_gipi_readl(struct ls3a_kvm_ipi *ipi,
 	uint64_t offset;
 	uint64_t ret = 0;
 
-	gipiState *s = &(ipi->ls3a_gipistate);
+	struct gipiState *s = &(ipi->ls3a_gipistate);
 	uint32_t cpu;
 	void *pbuf;
 
@@ -160,7 +159,7 @@ static uint64_t ls3a_gipi_readl(struct ls3a_kvm_ipi *ipi,
 			ret = *(unsigned long *)pbuf;
 		break;
 	default:
-		printk("ls3a_gipi_readl with unknown addr %llx \n", addr);
+		pr_info("%s with unknown addr %llx\n", __func__, addr);
 		break;
 	}
 
@@ -174,10 +173,10 @@ static int kvm_ls3a_ipi_write(struct kvm_vcpu *vcpu,
 			      gpa_t addr, int len, const void *val)
 {
 	struct ls3a_kvm_ipi *ipi;
-	ipi_io_device *ipi_device;
+	struct ipi_io_device *ipi_device;
 	unsigned long flags;
 
-	ipi_device = container_of(dev, ipi_io_device, device);
+	ipi_device = container_of(dev, struct ipi_io_device, device);
 	ipi = ipi_device->ipi;
 	ipi->kvm->stat.pip_write_exits++;
 
@@ -193,10 +192,10 @@ static int kvm_ls3a_ipi_read(struct kvm_vcpu *vcpu,
 			     gpa_t addr, int len, void *val)
 {
 	struct ls3a_kvm_ipi *ipi;
-	ipi_io_device *ipi_device;
+	struct ipi_io_device *ipi_device;
 	unsigned long flags;
 
-	ipi_device = container_of(dev, ipi_io_device, device);
+	ipi_device = container_of(dev, struct ipi_io_device, device);
 	ipi = ipi_device->ipi;
 	ipi->kvm->stat.pip_read_exits++;
 
@@ -265,11 +264,11 @@ err:
 int kvm_get_ls3a_ipi(struct kvm *kvm, struct loongarch_gipiState *state)
 {
 	struct ls3a_kvm_ipi *ipi = ls3a_ipi_irqchip(kvm);
-	gipiState *ipi_state =  &(ipi->ls3a_gipistate);
+	struct gipiState *ipi_state =  &(ipi->ls3a_gipistate);
 	unsigned long flags;
 
 	ls3a_gipi_lock(ipi, flags);
-	memcpy(state, ipi_state, sizeof(gipiState));
+	memcpy(state, ipi_state, sizeof(struct gipiState));
 	ls3a_gipi_unlock(ipi, flags);
 	return 0;
 }
@@ -277,14 +276,14 @@ int kvm_get_ls3a_ipi(struct kvm *kvm, struct loongarch_gipiState *state)
 int kvm_set_ls3a_ipi(struct kvm *kvm, struct loongarch_gipiState *state)
 {
 	struct ls3a_kvm_ipi *ipi = ls3a_ipi_irqchip(kvm);
-	gipiState *ipi_state =  &(ipi->ls3a_gipistate);
+	struct gipiState *ipi_state =  &(ipi->ls3a_gipistate);
 	unsigned long flags;
 
 	if (!ipi)
 		return -EINVAL;
 
 	ls3a_gipi_lock(ipi, flags);
-	memcpy(ipi_state, state, sizeof(gipiState));
+	memcpy(ipi_state, state, sizeof(struct gipiState));
 	ls3a_gipi_unlock(ipi, flags);
 	return 0;
 }

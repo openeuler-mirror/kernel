@@ -51,7 +51,7 @@
 .macro kvm_switch_to_guest KVM_ARCH GPRNUM tmp tmp1
 	/* set host excfg.VS=0, all exceptions share one exception entry */
 	csrrd	\tmp, KVM_CSR_ECFG
-	bstrins.w	\tmp, zero, (KVM_ECFG_VS_SHIFT + KVM_ECFG_VS_WIDTH - 1), KVM_ECFG_VS_SHIFT
+	bstrins.w	\tmp, zero, KEVS_KEVW, KVM_ECFG_VS_SHIFT
 	csrwr	\tmp, KVM_CSR_ECFG
 
 	/* Load up the new EENTRY */
@@ -77,9 +77,9 @@
 
 	/* Mix GID and RID */
 	csrrd	\tmp1, KVM_CSR_GSTAT
-	bstrpick.w	\tmp1, \tmp1, (KVM_GSTAT_GID_SHIFT + KVM_GSTAT_GID_WIDTH - 1), KVM_GSTAT_GID_SHIFT
+	bstrpick.w	\tmp1, \tmp1, KGGS_KGGW, KVM_GSTAT_GID_SHIFT
 	csrrd	\tmp, KVM_CSR_GTLBC
-	bstrins.w	\tmp, \tmp1, (KVM_GTLBC_TGID_SHIFT + KVM_GTLBC_TGID_WIDTH - 1), KVM_GTLBC_TGID_SHIFT
+	bstrins.w	\tmp, \tmp1, KGTS_KGTW, KVM_GTLBC_TGID_SHIFT
 	csrwr	\tmp, KVM_CSR_GTLBC
 
 	/*
@@ -196,11 +196,11 @@ SYM_FUNC_START(kvm_exit_entry)
 
 	/* Clear GTLBC.TGID field */
 	csrrd	t0, KVM_CSR_GTLBC
-	bstrins.w	t0, zero, KVM_GTLBC_TGID_SHIFT + KVM_GTLBC_TGID_WIDTH - 1, KVM_GTLBC_TGID_SHIFT
+	bstrins.w	t0, zero, KGTS_KGTW, KVM_GTLBC_TGID_SHIFT
 	csrwr	t0, KVM_CSR_GTLBC
 
 	/* Enable Address Map mode */
-	ori	t0, zero, (1 << KVM_CRMD_DACM_SHIFT)|(1 << KVM_CRMD_DACF_SHIFT) | KVM_CRMD_PG |PLV_KERN
+	ori	t0, zero, KCDS_PK
 	csrwr	t0, KVM_CSR_CRMD
 
 	KVM_LONG_L	tp, a2, KVM_ARCH_HGP
@@ -325,4 +325,3 @@ SYM_FUNC_START(__kvm_restore_lasx)
 	jirl    zero, ra, 0
 SYM_FUNC_END(__kvm_restore_lasx)
 #endif
-

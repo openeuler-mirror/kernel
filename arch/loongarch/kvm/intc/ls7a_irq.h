@@ -36,7 +36,7 @@
 
 #define LS7A_IOAPIC_NUM_PINS			32
 
-typedef struct kvm_ls7a_ioapic_state {
+struct kvm_ls7a_ioapic_state {
 	u64 int_id;
 	/* 0x020 interrupt mask register */
 	u64 int_mask;
@@ -68,7 +68,7 @@ typedef struct kvm_ls7a_ioapic_state {
 	 * 0 for high level tirgger
 	 */
 	u64 int_polarity;
-} LS7AApicState;
+};
 
 struct ls7a_kvm_ioapic {
 	spinlock_t lock;

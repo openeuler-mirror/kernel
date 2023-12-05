@@ -6,11 +6,7 @@
 #else
 #define _ULCAST_ (unsigned long)
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
-#include <loongson.h>
-#else
 #include <asm/loongarch.h>
-#endif
 #endif
 
 #define KVM_REG_A0		0x4
@@ -121,6 +117,12 @@
 #define KVM_ESTAT_IS_SHIFT		0
 #define KVM_ESTAT_IS_WIDTH		15
 #define KVM_ESTAT_IS			(_ULCAST_(0x7fff) << KVM_ESTAT_IS_SHIFT)
+
+#define KEVS_KEVW	(KVM_ECFG_VS_SHIFT + KVM_ECFG_VS_WIDTH - 1)
+#define KGGS_KGGW	(KVM_GSTAT_GID_SHIFT + KVM_GSTAT_GID_WIDTH - 1)
+#define KGTS_KGTW	(KVM_GTLBC_TGID_SHIFT + KVM_GTLBC_TGID_WIDTH - 1)
+#define KCP_PK		(KVM_CRMD_PG | PLV_KERN)
+#define KCDS_PK		((1 << KVM_CRMD_DACM_SHIFT) | (1 << KVM_CRMD_DACF_SHIFT) | KCP_PK)
 
 #define KVM_CSR_ERA			0x6	/* ERA */
 #define KVM_CSR_BADV			0x7	/* Bad virtual address */
@@ -312,7 +314,7 @@
 #define KVM_IOCSR_MISC_FUNC			0x420
 #define KVM_IOCSRF_MISC_FUNC_EXT_IOI_EN		BIT_ULL(48)
 
-/* PerCore CSR, only accessable by local cores */
+/* PerCore CSR, only accessible by local cores */
 #define KVM_IOCSR_IPI_STATUS			0x1000
 #define KVM_IOCSR_IPI_SEND			0x1040
 #define KVM_IOCSR_MBUF_SEND			0x1048
@@ -331,7 +333,7 @@ static inline u32 kvm_csr_readl(u32 reg)
 	u32 val;
 
 	asm volatile (
-		"csrrd %[val], %[reg] \n"
+		"csrrd %[val], %[reg]\n"
 		: [val] "=r" (val)
 		: [reg] "i" (reg)
 		: "memory");
@@ -343,7 +345,7 @@ static inline u64 kvm_csr_readq(u32 reg)
 	u64 val;
 
 	asm volatile (
-		"csrrd %[val], %[reg] \n"
+		"csrrd %[val], %[reg]\n"
 		: [val] "=r" (val)
 		: [reg] "i" (reg)
 		: "memory");
@@ -353,7 +355,7 @@ static inline u64 kvm_csr_readq(u32 reg)
 static inline void kvm_csr_writel(u32 val, u32 reg)
 {
 	asm volatile (
-		"csrwr %[val], %[reg] \n"
+		"csrwr %[val], %[reg]\n"
 		: [val] "+r" (val)
 		: [reg] "i" (reg)
 		: "memory");
@@ -362,7 +364,7 @@ static inline void kvm_csr_writel(u32 val, u32 reg)
 static inline void kvm_csr_writeq(u64 val, u32 reg)
 {
 	asm volatile (
-		"csrwr %[val], %[reg] \n"
+		"csrwr %[val], %[reg]\n"
 		: [val] "+r" (val)
 		: [reg] "i" (reg)
 		: "memory");
@@ -371,7 +373,7 @@ static inline void kvm_csr_writeq(u64 val, u32 reg)
 static inline u32 kvm_csr_xchgl(u32 val, u32 mask, u32 reg)
 {
 	asm volatile (
-		"csrxchg %[val], %[mask], %[reg] \n"
+		"csrxchg %[val], %[mask], %[reg]\n"
 		: [val] "+r" (val)
 		: [mask] "r" (mask), [reg] "i" (reg)
 		: "memory");
@@ -381,7 +383,7 @@ static inline u32 kvm_csr_xchgl(u32 val, u32 mask, u32 reg)
 static inline u64 kvm_csr_xchgq(u64 val, u64 mask, u32 reg)
 {
 	asm volatile (
-		"csrxchg %[val], %[mask], %[reg] \n"
+		"csrxchg %[val], %[mask], %[reg]\n"
 		: [val] "+r" (val)
 		: [mask] "r" (mask), [reg] "i" (reg)
 		: "memory");
@@ -395,7 +397,7 @@ static inline u32 kvm_iocsr_readl(u32 reg)
 	u32 val;
 
 	asm volatile (
-		"iocsrrd.w %[val], %[reg] \n"
+		"iocsrrd.w %[val], %[reg]\n"
 		: [val] "=r" (val)
 		: [reg] "r" (reg)
 		: "memory");
@@ -407,7 +409,7 @@ static inline u64 kvm_iocsr_readq(u32 reg)
 	u64 val;
 
 	asm volatile (
-		"iocsrrd.d %[val], %[reg] \n"
+		"iocsrrd.d %[val], %[reg]\n"
 		: [val] "=r" (val)
 		: [reg] "r" (reg)
 		: "memory");
@@ -417,7 +419,7 @@ static inline u64 kvm_iocsr_readq(u32 reg)
 static inline void kvm_iocsr_writeb(u8 val, u32 reg)
 {
 	asm volatile (
-		"iocsrwr.b %[val], %[reg] \n"
+		"iocsrwr.b %[val], %[reg]\n"
 		:
 		: [val] "r" (val), [reg] "r" (reg)
 		: "memory");
@@ -426,7 +428,7 @@ static inline void kvm_iocsr_writeb(u8 val, u32 reg)
 static inline void kvm_iocsr_writel(u32 val, u32 reg)
 {
 	asm volatile (
-		"iocsrwr.w %[val], %[reg] \n"
+		"iocsrwr.w %[val], %[reg]\n"
 		:
 		: [val] "r" (val), [reg] "r" (reg)
 		: "memory");
@@ -435,7 +437,7 @@ static inline void kvm_iocsr_writel(u32 val, u32 reg)
 static inline void kvm_iocsr_writeq(u64 val, u32 reg)
 {
 	asm volatile (
-		"iocsrwr.d %[val], %[reg] \n"
+		"iocsrwr.d %[val], %[reg]\n"
 		:
 		: [val] "r" (val), [reg] "r" (reg)
 		: "memory");
@@ -448,8 +450,8 @@ static inline u64 kvm_gcsr_read(u32 reg)
 	u64 val = 0;
 
 	asm volatile (
-	"parse_r __reg, %[val]	\n"
-	".word 0x5 << 24 | %[reg] << 10 | 0 << 5 | __reg	\n"
+	"parse_r __reg, %[val]\n"
+	".word 0x5 << 24 | %[reg] << 10 | 0 << 5 | __reg\n"
 	: [val] "+r" (val)
 	: [reg] "i" (reg)
 	: "memory");
@@ -459,8 +461,8 @@ static inline u64 kvm_gcsr_read(u32 reg)
 static inline void kvm_gcsr_write(u64 val, u32 reg)
 {
 	asm volatile (
-	"parse_r __reg, %[val]	\n"
-	".word 0x5 << 24 | %[reg] << 10 | 1 << 5 | __reg	\n"
+	"parse_r __reg, %[val]\n"
+	".word 0x5 << 24 | %[reg] << 10 | 1 << 5 | __reg\n"
 	: [val] "+r" (val)
 	: [reg] "i" (reg)
 	: "memory");
@@ -469,9 +471,9 @@ static inline void kvm_gcsr_write(u64 val, u32 reg)
 static inline u64 kvm_gcsr_xchg(u64 val, u64 mask, u32 reg)
 {
 	asm volatile (
-	"parse_r __rd, %[val]	\n"
-	"parse_r __rj, %[mask]	\n"
-	".word 0x5 << 24 | %[reg] << 10 | __rj << 5 | __rd	\n"
+	"parse_r __rd, %[val]\n"
+	"parse_r __rj, %[mask]\n"
+	".word 0x5 << 24 | %[reg] << 10 | __rj << 5 | __rd\n"
 	: [val] "+r" (val)
 	: [mask] "r" (mask), [reg] "i" (reg)
 	: "memory");

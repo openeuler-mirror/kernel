@@ -82,4 +82,3 @@ EXPORT_SYMBOL_GPL(kvm_restore_lasx_upper);
 
 EXPORT_SYMBOL_GPL(kvm_enter_guest);
 EXPORT_SYMBOL_GPL(kvm_exception_entry);
-

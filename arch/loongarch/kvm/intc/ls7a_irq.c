@@ -139,7 +139,7 @@ static int ls7a_ioapic_reg_write(struct ls7a_kvm_ioapic *s,
 	struct kvm_ls7a_ioapic_state *state;
 	int64_t offset_tmp;
 	uint64_t offset;
-	uint64_t data, old, himask, lowmask;;
+	uint64_t data, old, himask, lowmask;
 
 	offset = addr & 0xfff;
 	kvm = s->kvm;
@@ -148,12 +148,12 @@ static int ls7a_ioapic_reg_write(struct ls7a_kvm_ioapic *s,
 	himask = lowmask << 32;
 
 	if (offset & (len - 1)) {
-		printk("%s(%d):unaligned address access %llx size %d \n",
-			__FUNCTION__, __LINE__, addr, len);
+		pr_info("%s(%d):unaligned address access %llx size %d\n",
+			__func__, __LINE__, addr, len);
 		return 0;
 	}
 
-	if (8 == len) {
+	if (len == 8) {
 		data = *(uint64_t *)val;
 		switch (offset) {
 		case LS7A_INT_MASK_OFFSET:
@@ -193,7 +193,7 @@ static int ls7a_ioapic_reg_write(struct ls7a_kvm_ioapic *s,
 			WARN_ONCE(1, "Abnormal address access:addr 0x%llx,len %d\n", addr, len);
 			break;
 		}
-	} else if (4 == len) {
+	} else if (len == 4) {
 		data = *(uint32_t *)val;
 		switch (offset) {
 		case LS7A_INT_MASK_OFFSET:
@@ -267,7 +267,7 @@ static int ls7a_ioapic_reg_write(struct ls7a_kvm_ioapic *s,
 			WARN_ONCE(1, "Abnormal address access:addr 0x%llx,len %d\n", addr, len);
 			break;
 		}
-	} else if (1 == len) {
+	} else if (len == 1) {
 		data = *(unsigned char *)val;
 		if (offset >= LS7A_HTMSI_VEC_OFFSET) {
 			offset_tmp = offset - LS7A_HTMSI_VEC_OFFSET;
@@ -324,12 +324,12 @@ static int ls7a_ioapic_reg_read(struct ls7a_kvm_ioapic *s,
 	lowmask = 0xFFFFFFFFUL;
 	himask = lowmask << 32;
 	if (offset & (len - 1)) {
-		printk("%s(%d):unaligned address access %llx size %d \n",
-			__FUNCTION__, __LINE__, addr, len);
+		pr_info("%s(%d):unaligned address access %llx size %d\n",
+			__func__, __LINE__, addr, len);
 		return 0;
 	}
 
-	if (8 == len) {
+	if (len == 8) {
 		switch (offset) {
 		case LS7A_INT_MASK_OFFSET:
 			result = state->int_mask;
@@ -359,7 +359,7 @@ static int ls7a_ioapic_reg_read(struct ls7a_kvm_ioapic *s,
 		}
 		if (val != NULL)
 			*(uint64_t *)val = result;
-	} else if (4 == len) {
+	} else if (len == 4) {
 		switch (offset) {
 		case LS7A_INT_MASK_OFFSET:
 			result = state->int_mask & lowmask;
@@ -413,17 +413,15 @@ static int ls7a_ioapic_reg_read(struct ls7a_kvm_ioapic *s,
 		}
 		if (val != NULL)
 			*(uint32_t *)val = result;
-	} else if (1 == len) {
+	} else if (len == 1) {
 		if (offset >= LS7A_HTMSI_VEC_OFFSET) {
 			offset_tmp = offset - LS7A_HTMSI_VEC_OFFSET;
-			if (offset_tmp >= 0 && offset_tmp < 64) {
+			if (offset_tmp >= 0 && offset_tmp < 64)
 				result = state->htmsi_vector[offset_tmp];
-			}
 		} else if (offset >=  LS7A_ROUTE_ENTRY_OFFSET) {
 			offset_tmp = offset - LS7A_ROUTE_ENTRY_OFFSET;
-			if (offset_tmp >= 0 && offset_tmp < 64) {
+			if (offset_tmp >= 0 && offset_tmp < 64)
 				result = state->route_entry[offset_tmp];
-			}
 		} else {
 			WARN_ONCE(1, "Abnormal address access:addr 0x%llx,len %d\n", addr, len);
 		}
