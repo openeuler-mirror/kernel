@@ -738,6 +738,12 @@ int migrate_page_extra(struct address_space *mapping,
 
 	BUG_ON(PageWriteback(page));	/* Writeback must be complete */
 
+	if (unlikely(IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) &&
+		     (current->flags & PF_MCS) &&
+		     (mode != MIGRATE_SYNC_NO_COPY)))
+		return migrate_page_mc_extra(mapping, newpage, page, mode,
+					     extra_count);
+
 	rc = migrate_page_move_mapping(mapping, newpage, page, extra_count);
 
 	if (rc != MIGRATEPAGE_SUCCESS)

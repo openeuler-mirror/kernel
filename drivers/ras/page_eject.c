@@ -77,8 +77,13 @@ static int page_eject_offline_page(unsigned long pfn)
 	 * if soft_offline_page return 0 because PageHWPoison, this pfn
 	 * will add to list and this add will be removed during online
 	 * since it is poisoned.
+	 *
+	 * Update task flag with PF_MCS to enable mc support during page
+	 * migration.
 	 */
+	current->flags |= PF_MCS;
 	ret = soft_offline_page(pfn, 0);
+	current->flags &= ~PF_MCS;
 	if (ret) {
 		pr_err("page fail to be offlined, soft_offline_page failed(%d), pfn=%#lx\n",
 		       ret, pfn);
