@@ -148,9 +148,6 @@ static int qm_config_set(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr,
 {
 	struct qm_mailbox mailbox;
 
-	dev_dbg(&qm->pdev->dev, "QM mailbox request to q%u: %u-0x%llx\n",
-		queue, cmd, (unsigned long long)dma_addr);
-
 	qm_mb_pre_init(&mailbox, cmd, dma_addr, queue, op);
 
 	return qm_mb(qm, &mailbox);
