@@ -639,6 +639,10 @@ static int kvm_vcpu_first_run_init(struct kvm_vcpu *vcpu)
 
 	kvm_arm_vcpu_init_debug(vcpu);
 
+	ret = kvm_vtimer_config(vcpu);
+	if (ret)
+		return ret;
+
 	if (likely(irqchip_in_kernel(kvm))) {
 		/*
 		 * Map the VGIC hardware resources before running a vcpu the
