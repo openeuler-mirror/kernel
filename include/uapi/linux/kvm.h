@@ -1095,6 +1095,7 @@ struct kvm_ppc_resize_hpt {
 
 #define KVM_CAP_ARM_CPU_FEATURE 555
 
+#define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
 #define KVM_CAP_LOONGARCH_FPU 800
 #define KVM_CAP_LOONGARCH_LSX 801
 #define KVM_CAP_LOONGARCH_VZ 802
@@ -1347,6 +1348,11 @@ struct id_registers {
 	__u64 num;
 };
 
+struct kvm_master_dev_info {
+	__u32 nvectors;
+	struct kvm_msi msi[0];
+};
+
 /*
  * ioctls for VM fds
  */
@@ -1463,6 +1469,9 @@ struct kvm_s390_ucas_mapping {
 #define KVM_SET_DEVICE_ATTR	  _IOW(KVMIO,  0xe1, struct kvm_device_attr)
 #define KVM_GET_DEVICE_ATTR	  _IOW(KVMIO,  0xe2, struct kvm_device_attr)
 #define KVM_HAS_DEVICE_ATTR	  _IOW(KVMIO,  0xe3, struct kvm_device_attr)
+
+#define KVM_CREATE_SHADOW_DEV	  _IOW(KVMIO,  0xf0, struct kvm_master_dev_info)
+#define KVM_DEL_SHADOW_DEV	  _IOW(KVMIO,  0xf1, __u32)
 
 /*
  * ioctls for vcpu fds

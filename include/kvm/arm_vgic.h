@@ -33,6 +33,21 @@
 #define irq_is_spi(irq) ((irq) >= VGIC_NR_PRIVATE_IRQS && \
 			 (irq) <= VGIC_MAX_SPI)
 
+struct shadow_dev {
+	struct kvm              *kvm;
+	struct list_head        entry;
+
+	u32                     devid;  /* guest visible device id */
+	u32                     nvecs;
+	unsigned long           *enable;
+	int                     *host_irq;
+	struct kvm_msi          *msi;
+
+	struct platform_device  *pdev;
+
+	struct work_struct      destroy;
+};
+
 /* Information about HiSilicon implementation of vtimer (GICv4.1-based) */
 struct vtimer_info {
 	u32 intid;
@@ -297,6 +312,9 @@ struct vgic_dist {
 	 * else.
 	 */
 	struct its_vm		its_vm;
+
+	raw_spinlock_t		sdev_list_lock;
+	struct list_head	sdev_list_head;
 };
 
 struct vgic_v2_cpu_if {
@@ -448,4 +466,10 @@ int kvm_vgic_config_vtimer_irqbypass(struct kvm_vcpu *vcpu, u32 vintid,
 		bool (*get_as)(struct kvm_vcpu *, int),
 		void (*set_as)(struct kvm_vcpu *, int, bool));
 
+extern bool sdev_enable;
+
+void kvm_shadow_dev_init(void);
+int kvm_shadow_dev_create(struct kvm *kvm, struct kvm_master_dev_info *mdi);
+void kvm_shadow_dev_delete(struct kvm *kvm, u32 devid);
+void kvm_shadow_dev_delete_all(struct kvm *kvm);
 #endif /* __KVM_ARM_VGIC_H */
