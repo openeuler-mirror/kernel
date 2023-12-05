@@ -218,6 +218,9 @@ static ssize_t seq_read_dirty(
 	}
 
 	n = min(m->count - m->from, size);
+	/* check if this is the last read */
+	if (n == 0)
+		goto done;
 	n -= copy_to_user(buf, m->buf + m->from, n);
 	if (unlikely(!n)) {
 		err = -EFAULT;
