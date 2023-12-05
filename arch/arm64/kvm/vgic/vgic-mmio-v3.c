@@ -365,6 +365,19 @@ static int vgic_v3_uaccess_write_pending(struct kvm_vcpu *vcpu,
 			irq->pending_latch = true;
 			vgic_queue_irq_unlock(vcpu->kvm, irq, flags);
 		} else {
+			/**
+			 * workaround: On reset, userspace clears pending status
+			 * for all PPIs and SGIs by writing all 0's to
+			 * GICR_ISPENDR0. The pending state of vtimer interrupt
+			 * is somehow staying in redistributor and we have to
+			 * explicitly clear it...
+			 *
+			 * P.S., irq->vtimer_info is NULL on restore.
+			 */
+			if (irq->vtimer_info)
+				WARN_ON_ONCE(irq_set_irqchip_state(irq->host_irq,
+							IRQCHIP_STATE_PENDING,
+							false));
 			irq->pending_latch = false;
 			raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
 		}
