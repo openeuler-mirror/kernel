@@ -838,6 +838,12 @@ int hisi_qm_set_algs(struct hisi_qm *qm, u64 alg_msk, const struct qm_dev_alg *d
 	if (!qm->use_uacce)
 		return 0;
 
+	if (dev_algs_size >= QM_DEV_ALG_MAX_LEN) {
+		dev_err(dev, "algs size %u is equal or larger than %d.\n",
+			dev_algs_size, QM_DEV_ALG_MAX_LEN);
+		return -EINVAL;
+	}
+
 	algs = devm_kzalloc(dev, QM_DEV_ALG_MAX_LEN * sizeof(char), GFP_KERNEL);
 	if (!algs)
 		return -ENOMEM;
@@ -847,10 +853,10 @@ int hisi_qm_set_algs(struct hisi_qm *qm, u64 alg_msk, const struct qm_dev_alg *d
 			strcat(algs, dev_algs[i].alg);
 
 	ptr = strrchr(algs, '\n');
-	if (ptr)
+	if (ptr) {
 		*ptr = '\0';
-
-	qm->uacce->algs = algs;
+		qm->uacce->algs = algs;
+	}
 
 	return 0;
 }
@@ -2546,7 +2552,6 @@ static void qm_uacce_base_init(struct hisi_qm *qm)
 
 	uacce->is_vf = pdev->is_virtfn;
 	uacce->priv = qm;
-	uacce->algs = qm->algs;
 	uacce->parent = &pdev->dev;
 	qm_get_xqc_depth(qm, &sq_depth, &cq_depth, QM_QP_DEPTH_CAP);
 

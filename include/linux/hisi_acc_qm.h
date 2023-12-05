@@ -395,7 +395,6 @@ struct hisi_qm {
 	struct work_struct rst_work;
 	struct work_struct cmd_process;
 
-	const char *algs;
 	bool use_uacce;
 	bool use_sva;
 	bool use_iommu;
