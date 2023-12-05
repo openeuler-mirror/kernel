@@ -396,4 +396,32 @@ static inline void memcpy_to_page(struct page *page, size_t offset,
 	kunmap_atomic(to);
 }
 
+#ifdef copy_mc_to_kernel
+/*
+ * If architecture supports machine check exception handling, define the
+ * #MC versions of copy_user_highpage and copy_highpage. They copy a memory
+ * page with #MC in source page (@from) handled, and return the number
+ * of bytes not copied if there was a #MC, otherwise 0 for success.
+ */
+static inline int copy_mc_highpage(struct page *to, struct page *from)
+{
+	char *vfrom, *vto;
+	int ret;
+
+	vfrom = kmap_atomic(from);
+	vto = kmap_atomic(to);
+	ret = copy_mc_to_kernel(vto, vfrom, PAGE_SIZE);
+	kunmap_atomic(vto);
+	kunmap_atomic(vfrom);
+
+	return ret;
+}
+#else
+static inline int copy_mc_highpage(struct page *to, struct page *from)
+{
+	copy_highpage(to, from);
+	return 0;
+}
+#endif
+
 #endif /* _LINUX_HIGHMEM_H */
