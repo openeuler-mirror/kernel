@@ -553,8 +553,6 @@ void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
 int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs);
 int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen);
 int hisi_qm_sriov_configure(struct pci_dev *pdev, int num_vfs);
-void hisi_qm_dev_err_init(struct hisi_qm *qm);
-void hisi_qm_dev_err_uninit(struct hisi_qm *qm);
 int hisi_qm_regs_debugfs_init(struct hisi_qm *qm,
 			  struct dfx_diff_registers *dregs, u32 reg_len);
 void hisi_qm_regs_debugfs_uninit(struct hisi_qm *qm, u32 reg_len);

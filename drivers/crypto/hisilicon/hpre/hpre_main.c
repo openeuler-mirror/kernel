@@ -358,6 +358,8 @@ static struct dfx_diff_registers hpre_diff_regs[] = {
 	},
 };
 
+static const struct hisi_qm_err_ini hpre_err_ini;
+
 bool hpre_check_alg_support(struct hisi_qm *qm, u32 alg)
 {
 	u32 cap_val;
@@ -1162,6 +1164,7 @@ static int hpre_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->qp_num = pf_q_num;
 		qm->debug.curr_qm_qp_num = pf_q_num;
 		qm->qm_list = &hpre_devices;
+		qm->err_ini = &hpre_err_ini;
 		if (pf_q_num_flag)
 			set_bit(QM_MODULE_PARAM, &qm->misc_ctl);
 	}
@@ -1367,10 +1370,6 @@ static int hpre_pf_probe_init(struct hpre *hpre)
 		return ret;
 
 	hpre_open_sva_prefetch(qm);
-
-	qm->err_ini = &hpre_err_ini;
-	qm->err_ini->err_info_init(qm);
-	hisi_qm_dev_err_init(qm);
 	ret = hpre_show_last_regs_init(qm);
 	if (ret)
 		pci_err(qm->pdev, "Failed to init last word regs!\n");
@@ -1462,7 +1461,6 @@ err_qm_del_list:
 
 err_with_err_init:
 	hpre_show_last_regs_uninit(qm);
-	hisi_qm_dev_err_uninit(qm);
 
 err_with_qm_init:
 	hisi_qm_uninit(qm);
@@ -1488,7 +1486,6 @@ static void hpre_remove(struct pci_dev *pdev)
 		hpre_cnt_regs_clear(qm);
 		qm->debug.curr_qm_qp_num = 0;
 		hpre_show_last_regs_uninit(qm);
-		hisi_qm_dev_err_uninit(qm);
 	}
 
 	hisi_qm_uninit(qm);

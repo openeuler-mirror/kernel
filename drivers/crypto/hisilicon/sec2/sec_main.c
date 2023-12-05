@@ -1083,15 +1083,11 @@ static int sec_pf_probe_init(struct sec_dev *sec)
 	struct hisi_qm *qm = &sec->qm;
 	int ret;
 
-	qm->err_ini = &sec_err_ini;
-	qm->err_ini->err_info_init(qm);
-
 	ret = sec_set_user_domain_and_cache(qm);
 	if (ret)
 		return ret;
 
 	sec_open_sva_prefetch(qm);
-	hisi_qm_dev_err_init(qm);
 	sec_debug_regs_clear(qm);
 	ret = sec_show_last_regs_init(qm);
 	if (ret)
@@ -1140,6 +1136,7 @@ static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->qp_num = pf_q_num;
 		qm->debug.curr_qm_qp_num = pf_q_num;
 		qm->qm_list = &sec_devices;
+		qm->err_ini = &sec_err_ini;
 		if (pf_q_num_flag)
 			set_bit(QM_MODULE_PARAM, &qm->misc_ctl);
 	} else if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V1) {
@@ -1200,11 +1197,6 @@ static int sec_probe_init(struct sec_dev *sec)
 	}
 
 	return 0;
-}
-
-static void sec_probe_uninit(struct hisi_qm *qm)
-{
-	hisi_qm_dev_err_uninit(qm);
 }
 
 static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -1275,7 +1267,6 @@ err_qm_del_list:
 	hisi_qm_stop(qm, QM_NORMAL);
 err_probe_uninit:
 	sec_show_last_regs_uninit(qm);
-	sec_probe_uninit(qm);
 err_qm_uninit:
 	sec_qm_uninit(qm);
 	return ret;
@@ -1300,8 +1291,6 @@ static void sec_remove(struct pci_dev *pdev)
 	if (qm->fun_type == QM_HW_PF)
 		sec_debug_regs_clear(qm);
 	sec_show_last_regs_uninit(qm);
-
-	sec_probe_uninit(qm);
 
 	sec_qm_uninit(qm);
 }

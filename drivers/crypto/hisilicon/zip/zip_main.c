@@ -1168,8 +1168,6 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 
 	hisi_zip->ctrl = ctrl;
 	ctrl->hisi_zip = hisi_zip;
-	qm->err_ini = &hisi_zip_err_ini;
-	qm->err_ini->err_info_init(qm);
 
 	ret = hisi_zip_set_user_domain_and_cache(qm);
 	if (ret)
@@ -1180,7 +1178,6 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 		return ret;
 
 	hisi_zip_open_sva_prefetch(qm);
-	hisi_qm_dev_err_init(qm);
 	hisi_zip_debug_regs_clear(qm);
 
 	ret = hisi_zip_show_last_regs_init(qm);
@@ -1230,6 +1227,7 @@ static int hisi_zip_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->qp_num = pf_q_num;
 		qm->debug.curr_qm_qp_num = pf_q_num;
 		qm->qm_list = &zip_devices;
+		qm->err_ini = &hisi_zip_err_ini;
 		if (pf_q_num_flag)
 			set_bit(QM_MODULE_PARAM, &qm->misc_ctl);
 	} else if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V1) {
@@ -1363,7 +1361,6 @@ err_qm_del_list:
 
 err_dev_err_uninit:
 	hisi_zip_show_last_regs_uninit(qm);
-	hisi_qm_dev_err_uninit(qm);
 
 err_qm_uninit:
 	hisi_zip_qm_uninit(qm);
@@ -1386,7 +1383,6 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 	hisi_zip_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 	hisi_zip_show_last_regs_uninit(qm);
-	hisi_qm_dev_err_uninit(qm);
 	hisi_zip_qm_uninit(qm);
 }
 
