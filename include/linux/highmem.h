@@ -418,10 +418,32 @@ static inline int copy_mc_highpage(struct page *to, struct page *from)
 	return ret;
 }
 #endif
+
+/* Return -EFAULT if there was a #MC during copy, otherwise 0 for success. */
+static inline int copy_mc_highpages(struct page *to, struct page *from, int nr_pages)
+{
+	int ret = 0;
+	int i;
+
+	for (i = 0; i < nr_pages; i++) {
+		cond_resched();
+		ret = copy_mc_highpage(to + i, from + i);
+		if (ret)
+			return -EFAULT;
+	}
+
+	return ret;
+}
 #else
 static inline int copy_mc_highpage(struct page *to, struct page *from)
 {
 	copy_highpage(to, from);
+	return 0;
+}
+
+static inline int copy_mc_highpages(struct page *to, struct page *from, int nr_pages)
+{
+	copy_highpages(to, from, nr_pages);
 	return 0;
 }
 #endif
