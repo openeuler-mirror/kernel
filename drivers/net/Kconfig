@@ -191,6 +191,13 @@ config MACVTAP
 	  To compile this driver as a module, choose M here: the module
 	  will be called macvtap.
 
+config IPVLAN_L2E
+	bool "IP-VLAN L2E mode support"
+	depends on IPVLAN
+	default n
+	help
+	  Support IP-VLAN L2E mode.
+
 config IPVLAN_L3S
 	depends on NETFILTER
 	depends on IPVLAN

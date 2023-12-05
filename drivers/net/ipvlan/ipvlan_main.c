@@ -6,6 +6,12 @@
 
 #include "ipvlan.h"
 
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+static int ipvlan_default_mode = IPVLAN_MODE_L3;
+module_param(ipvlan_default_mode, int, 0400);
+MODULE_PARM_DESC(ipvlan_default_mode, "set ipvlan default mode: 0 for l2, 1 for l3, 2 for l3s, 3 for l2e, others invalid now");
+#endif
+
 static int ipvlan_set_port_mode(struct ipvl_port *port, u16 nval,
 				struct netlink_ext_ack *extack)
 {
@@ -538,7 +544,11 @@ int ipvlan_link_new(struct net *src_net, struct net_device *dev,
 	struct ipvl_port *port;
 	struct net_device *phy_dev;
 	int err;
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+	u16 mode = ipvlan_default_mode;
+#else
 	u16 mode = IPVLAN_MODE_L3;
+#endif
 
 	if (!tb[IFLA_LINK])
 		return -EINVAL;
@@ -1025,6 +1035,12 @@ static struct notifier_block ipvlan_addr6_vtor_notifier_block __read_mostly = {
 static int __init ipvlan_init_module(void)
 {
 	int err;
+
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+	if (ipvlan_default_mode >= IPVLAN_MODE_MAX ||
+	    ipvlan_default_mode < IPVLAN_MODE_L2)
+		return -EINVAL;
+#endif
 
 	ipvlan_init_secret();
 	register_netdevice_notifier(&ipvlan_notifier_block);
