@@ -1901,6 +1901,98 @@ static int hns_roce_config_global_param(struct hns_roce_dev *hr_dev)
 	return hns_roce_cmq_send(hr_dev, &desc, 1);
 }
 
+static const struct hns_roce_bt_num {
+	u32 res_offset;
+	u32 min;
+	u32 max;
+	enum hns_roce_res_invalid_flag invalid_flag;
+	enum hns_roce_res_revision revision;
+	bool vf_support;
+} bt_num_table[] = {
+	{RES_OFFSET_IN_CAPS(qpc_bt_num), 1,
+	 MAX_QPC_BT_NUM, QPC_BT_NUM_INVALID_FLAG, RES_FOR_ALL, true},
+	{RES_OFFSET_IN_CAPS(srqc_bt_num), 1,
+	 MAX_SRQC_BT_NUM, SRQC_BT_NUM_INVALID_FLAG, RES_FOR_ALL, true},
+	{RES_OFFSET_IN_CAPS(cqc_bt_num), 1,
+	 MAX_CQC_BT_NUM, CQC_BT_NUM_INVALID_FLAG, RES_FOR_ALL, true},
+	{RES_OFFSET_IN_CAPS(mpt_bt_num), 1,
+	 MAX_MPT_BT_NUM, MPT_BT_NUM_INVALID_FLAG, RES_FOR_ALL, true},
+	{RES_OFFSET_IN_CAPS(sl_num), 1,
+	 MAX_SL_NUM, QID_NUM_INVALID_FLAG, RES_FOR_ALL, true},
+	{RES_OFFSET_IN_CAPS(sccc_bt_num), 1,
+	 MAX_SCCC_BT_NUM, SCCC_BT_NUM_INVALID_FLAG, RES_FOR_ALL, true},
+	{RES_OFFSET_IN_CAPS(qpc_timer_bt_num), 1,
+	 MAX_QPC_TIMER_BT_NUM, QPC_TIMER_BT_NUM_INVALID_FLAG,
+	 RES_FOR_ALL, false},
+	{RES_OFFSET_IN_CAPS(cqc_timer_bt_num), 1,
+	 MAX_CQC_TIMER_BT_NUM, CQC_TIMER_BT_NUM_INVALID_FLAG,
+	 RES_FOR_ALL, false},
+	{RES_OFFSET_IN_CAPS(gmv_bt_num), 1,
+	 MAX_GMV_BT_NUM, GMV_BT_NUM_INVALID_FLAG,
+	 RES_FOR_HIP09, true},
+	{RES_OFFSET_IN_CAPS(smac_bt_num), 1,
+	 MAX_SMAC_BT_NUM, SMAC_BT_NUM_INVALID_FLAG,
+	 RES_FOR_HIP08, true},
+	{RES_OFFSET_IN_CAPS(sgid_bt_num), 1,
+	 MAX_SGID_BT_NUM, SGID_BT_NUM_INVALID_FLAG,
+	 RES_FOR_HIP08, true},
+};
+
+static inline bool check_res_is_supported(struct hns_roce_dev *hr_dev,
+				const struct hns_roce_bt_num *bt_num_entry)
+{
+	if (!bt_num_entry->vf_support && hr_dev->is_vf)
+		return false;
+
+	if (bt_num_entry->revision == RES_FOR_HIP09 &&
+	    hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08)
+		return false;
+
+	if (bt_num_entry->revision == RES_FOR_HIP08 &&
+	    hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		return false;
+
+	return true;
+}
+
+static inline void adjust_eqc_bt_num(struct hns_roce_caps *caps,
+				     u16 *invalid_flag)
+{
+	if (caps->eqc_bt_num < caps->num_comp_vectors + caps->num_aeq_vectors ||
+	    caps->eqc_bt_num > MAX_EQC_BT_NUM) {
+		caps->eqc_bt_num = caps->eqc_bt_num > MAX_EQC_BT_NUM ?
+				   MAX_EQC_BT_NUM : caps->num_comp_vectors +
+						    caps->num_aeq_vectors;
+		*invalid_flag |= 1 << EQC_BT_NUM_INVALID_FLAG;
+	}
+}
+
+static u16 adjust_res_caps(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_caps *caps = &hr_dev->caps;
+	u16 invalid_flag = 0;
+	u32 min, max;
+	u32 *res;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(bt_num_table); i++) {
+		if (!check_res_is_supported(hr_dev, &bt_num_table[i]))
+			continue;
+
+		res = (u32 *)((void *)caps + bt_num_table[i].res_offset);
+		min = bt_num_table[i].min;
+		max = bt_num_table[i].max;
+		if (*res < min || *res > max) {
+			*res = *res < min ? min : max;
+			invalid_flag |= 1 << bt_num_table[i].invalid_flag;
+		}
+	}
+
+	adjust_eqc_bt_num(caps, &invalid_flag);
+
+	return invalid_flag;
+}
+
 static int load_func_res_caps(struct hns_roce_dev *hr_dev, bool is_vf)
 {
 	struct hns_roce_cmq_desc desc[2];
@@ -1981,11 +2073,19 @@ static int hns_roce_query_pf_resource(struct hns_roce_dev *hr_dev)
 	}
 
 	ret = load_pf_timer_res_caps(hr_dev);
-	if (ret)
+	if (ret) {
 		dev_err(dev, "failed to load pf timer resource, ret = %d.\n",
 			ret);
+		return ret;
+	}
 
-	return ret;
+	ret = adjust_res_caps(hr_dev);
+	if (ret)
+		dev_warn(dev,
+			 "invalid resource values have been adjusted, invalid_flag = 0x%x.\n",
+			 ret);
+
+	return 0;
 }
 
 static int hns_roce_query_vf_resource(struct hns_roce_dev *hr_dev)
@@ -1994,10 +2094,18 @@ static int hns_roce_query_vf_resource(struct hns_roce_dev *hr_dev)
 	int ret;
 
 	ret = load_func_res_caps(hr_dev, true);
-	if (ret)
+	if (ret) {
 		dev_err(dev, "failed to load vf res caps, ret = %d.\n", ret);
+		return ret;
+	}
 
-	return ret;
+	ret = adjust_res_caps(hr_dev);
+	if (ret)
+		dev_warn(dev,
+			 "invalid resource values have been adjusted, invalid_flag = 0x%x.\n",
+			 ret);
+
+	return 0;
 }
 
 static int __hns_roce_set_vf_switch_param(struct hns_roce_dev *hr_dev,
@@ -7043,15 +7151,16 @@ static int __hns_roce_request_irq(struct hns_roce_dev *hr_dev, int irq_num,
 	/* irq contains: abnormal + AEQ + CEQ */
 	for (j = 0; j < other_num; j++)
 		snprintf((char *)hr_dev->irq_names[j], HNS_ROCE_INT_NAME_LEN,
-			 "hns-abn-%d", j);
+			 "hns-%s-abn-%d", pci_name(hr_dev->pci_dev), j);
 
 	for (j = other_num; j < (other_num + aeq_num); j++)
 		snprintf((char *)hr_dev->irq_names[j], HNS_ROCE_INT_NAME_LEN,
-			 "hns-aeq-%d", j - other_num);
+			 "hns-%s-aeq-%d", pci_name(hr_dev->pci_dev), j - other_num);
 
 	for (j = (other_num + aeq_num); j < irq_num; j++)
 		snprintf((char *)hr_dev->irq_names[j], HNS_ROCE_INT_NAME_LEN,
-			 "hns-ceq-%d", j - other_num - aeq_num);
+			 "hns-%s-ceq-%d", pci_name(hr_dev->pci_dev),
+			 j - other_num - aeq_num);
 
 	for (j = 0; j < irq_num; j++) {
 		if (j < other_num)
