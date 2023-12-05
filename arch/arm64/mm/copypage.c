@@ -61,4 +61,17 @@ void copy_user_highpage_mc(struct page *to, struct page *from,
 	flush_dcache_page(to);
 }
 EXPORT_SYMBOL_GPL(copy_user_highpage_mc);
+
+int copy_mc_highpage(struct page *to, struct page *from)
+{
+	void *kto = page_address(to);
+	void *kfrom = page_address(from);
+	int ret;
+
+	ret = copy_mc_to_kernel(kto, kfrom, PAGE_SIZE);
+	if (!ret)
+		do_mte(to, from, kto, kfrom, true);
+
+	return ret;
+}
 #endif

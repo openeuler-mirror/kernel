@@ -397,6 +397,7 @@ static inline void memcpy_to_page(struct page *page, size_t offset,
 }
 
 #ifdef copy_mc_to_kernel
+#ifndef __HAVE_ARCH_COPY_USER_HIGHPAGE_MC
 /*
  * If architecture supports machine check exception handling, define the
  * #MC versions of copy_user_highpage and copy_highpage. They copy a memory
@@ -416,6 +417,7 @@ static inline int copy_mc_highpage(struct page *to, struct page *from)
 
 	return ret;
 }
+#endif
 #else
 static inline int copy_mc_highpage(struct page *to, struct page *from)
 {
