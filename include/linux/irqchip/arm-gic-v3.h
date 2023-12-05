@@ -698,6 +698,8 @@ int its_init(struct fwnode_handle *handle, struct rdists *rdists,
 	     struct irq_domain *domain);
 int mbi_init(struct fwnode_handle *fwnode, struct irq_domain *parent);
 
+phys_addr_t get_gicr_paddr(int cpu);
+
 static inline bool gic_enable_sre(void)
 {
 	u32 val;

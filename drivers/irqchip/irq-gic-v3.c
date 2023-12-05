@@ -166,6 +166,11 @@ static enum gic_intid_range __get_intid_range(irq_hw_number_t hwirq)
 	}
 }
 
+phys_addr_t get_gicr_paddr(int cpu)
+{
+	return (per_cpu_ptr(gic_data.rdists.rdist, cpu))->phys_base;
+}
+
 static enum gic_intid_range get_intid_range(struct irq_data *d)
 {
 	return __get_intid_range(d->hwirq);
