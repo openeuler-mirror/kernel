@@ -639,7 +639,7 @@ static int kvm_vcpu_first_run_init(struct kvm_vcpu *vcpu)
 
 	kvm_arm_vcpu_init_debug(vcpu);
 
-	ret = kvm_vtimer_config(vcpu);
+	ret = kvm_vtimer_config(kvm);
 	if (ret)
 		return ret;
 
