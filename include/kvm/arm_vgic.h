@@ -41,6 +41,8 @@ struct vtimer_info {
 	void (*set_active_stat)(struct kvm_vcpu *vcpu, int vintid, bool active);
 };
 
+u16 kvm_vgic_get_vcpu_vpeid(struct kvm_vcpu *vcpu);
+
 /*The number of lpi translation cache lists*/
 #define LPI_TRANS_CACHES_NUM 8
 

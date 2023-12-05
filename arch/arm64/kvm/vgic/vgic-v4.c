@@ -249,6 +249,16 @@ void vgic_v4_configure_vtimer(struct kvm *kvm)
 		vgic_v4_enable_vtimer(vcpu);
 }
 
+/**
+ * kvm_vgic_get_vcpu_vpeid - Get the VCPU's vpeid
+ *
+ * The vtimer mbigen needs the vcpu vpeid info which will resident.
+ */
+u16 kvm_vgic_get_vcpu_vpeid(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.vgic_cpu.vgic_v3.its_vpe.vpe_id;
+}
+
 /*
  * Must be called with GICv4.1 and the vPE unmapped, which
  * indicates the invalidation of any VPT caches associated
