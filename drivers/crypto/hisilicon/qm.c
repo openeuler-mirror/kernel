@@ -33,7 +33,7 @@
 #define QM_MB_CMD_DATA_SHIFT		32
 #define QM_MB_CMD_DATA_MASK		GENMASK(31, 0)
 #define QM_MB_STATUS_MASK		GENMASK(12, 9)
-#define QM_MB_MAX_WAIT_CNT		6000
+#define QM_MB_MAX_WAIT_CNT		20000
 #define QM_MB_WAIT_READY_CNT		10
 
 /* sqc shift */
