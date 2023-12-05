@@ -1350,6 +1350,17 @@ static const struct hisi_qm_err_ini hpre_err_ini = {
 	.err_info_init		= hpre_err_info_init,
 };
 
+static void hpre_probe_uninit(struct hisi_qm *qm)
+{
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	hpre_cnt_regs_clear(qm);
+	qm->debug.curr_qm_qp_num = 0;
+	hpre_show_last_regs_uninit(qm);
+	hpre_close_sva_prefetch(qm);
+}
+
 static int hpre_pf_probe_init(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
@@ -1398,6 +1409,7 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 
 	qm = &hpre->qm;
+	set_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 	ret = hpre_qm_init(qm, pdev);
 	if (ret) {
 		pci_err(pdev, "Failed to init HPRE QM (%d)!\n", ret);
@@ -1413,6 +1425,9 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = hisi_qm_start(qm);
 	if (ret)
 		goto err_with_err_init;
+
+	/* Device is enabled, clear the flag. */
+	clear_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 
 	ret = hpre_debugfs_init(qm);
 	if (ret)
@@ -1446,12 +1461,12 @@ err_with_alg_register:
 
 err_qm_del_list:
 	hisi_qm_del_list(qm, &hpre_devices);
+	hisi_qm_wait_task_finish(qm, &hpre_devices);
 	hpre_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 
 err_with_err_init:
-	hpre_show_last_regs_uninit(qm);
-
+	hpre_probe_uninit(qm);
 err_with_qm_init:
 	hisi_qm_uninit(qm);
 
@@ -1471,13 +1486,7 @@ static void hpre_remove(struct pci_dev *pdev)
 
 	hpre_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
-
-	if (qm->fun_type == QM_HW_PF) {
-		hpre_cnt_regs_clear(qm);
-		qm->debug.curr_qm_qp_num = 0;
-		hpre_show_last_regs_uninit(qm);
-	}
-
+	hpre_probe_uninit(qm);
 	hisi_qm_uninit(qm);
 }
 
