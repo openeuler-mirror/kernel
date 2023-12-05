@@ -378,12 +378,15 @@
 #define GITS_TRANSLATER			0x10040
 
 #define GITS_SGIR			0x20020
+/* HiSilicon IMP DEF register to set vPPI pending. */
+#define GITS_PPIR			0x200A8
 
 /* HiSilicon IMP DEF register */
 #define GITS_VERSION			0xC000
 
 #define GITS_SGIR_VPEID			GENMASK_ULL(47, 32)
-#define GITS_SGIR_VINTID		GENMASK_ULL(3, 0)
+/* Hackish... Extend it to [4:0] to support vPPI. */
+#define GITS_SGIR_VINTID		GENMASK_ULL(4, 0)
 
 #define GITS_CTLR_ENABLE		(1U << 0)
 #define GITS_CTLR_ImDe			(1U << 1)
