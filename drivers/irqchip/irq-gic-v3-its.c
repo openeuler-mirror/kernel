@@ -5776,8 +5776,10 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
 		rdists->has_rvpeid = false;
 
 	/* vtimer irqbypass depends on rvpeid support */
-	if (WARN_ON(!has_v4_1 && has_vtimer_irqbypass))
+	if (WARN_ON(!has_v4_1 && has_vtimer_irqbypass)) {
 		has_vtimer_irqbypass = false;
+		rdists->has_vtimer = false;
+	}
 
 	if (has_v4 & rdists->has_vlpis) {
 		const struct irq_domain_ops *sgi_ops;

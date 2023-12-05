@@ -932,6 +932,9 @@ static int __gic_update_rdist_properties(struct redist_region *region,
 		gic_data.rdists.has_rvpeid = false;
 	}
 
+	/* HiSilicon implement: if GICv4.1 is supported, vtimer irqbypass is supported */
+	gic_data.rdists.has_vtimer = gic_data.rdists.has_rvpeid;
+
 	gic_data.ppi_nr = min(GICR_TYPER_NR_PPIS(typer), gic_data.ppi_nr);
 
 	return 1;
@@ -1849,6 +1852,7 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	gic_data.rdists.has_vlpis = true;
 	gic_data.rdists.has_direct_lpi = true;
 	gic_data.rdists.has_vpend_valid_dirty = true;
+	gic_data.rdists.has_vtimer = false;
 	gic_compute_nr_gicr();
 
 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
@@ -2028,6 +2032,7 @@ static void __init gic_of_setup_kvm_info(struct device_node *node)
 
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
+	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
 	gic_set_kvm_info(&gic_v3_kvm_info);
 }
 
@@ -2344,6 +2349,7 @@ static void __init gic_acpi_setup_kvm_info(void)
 
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
+	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
 	gic_set_kvm_info(&gic_v3_kvm_info);
 }
 

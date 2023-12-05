@@ -698,6 +698,7 @@ struct rdists {
 	bool			has_rvpeid;
 	bool			has_direct_lpi;
 	bool			has_vpend_valid_dirty;
+	bool			has_vtimer;
 };
 
 struct irq_domain;
