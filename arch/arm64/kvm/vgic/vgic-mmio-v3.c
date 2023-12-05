@@ -326,7 +326,7 @@ static unsigned long vgic_v3_uaccess_read_pending(struct kvm_vcpu *vcpu,
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
 		bool state = irq->pending_latch;
 
-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
+		if (vgic_direct_sgi_or_ppi(irq)) {
 			int err;
 
 			err = irq_get_irqchip_state(irq->host_irq,

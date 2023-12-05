@@ -78,7 +78,7 @@ void vgic_mmio_write_group(struct kvm_vcpu *vcpu, gpa_t addr,
 
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
 		irq->group = !!(val & BIT(i));
-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
+		if (vgic_direct_sgi_or_ppi(irq)) {
 			vgic_update_vsgi(irq);
 			raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
 		} else {
@@ -125,7 +125,7 @@ void vgic_mmio_write_senable(struct kvm_vcpu *vcpu,
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
 
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
+		if (vgic_direct_sgi_or_ppi(irq)) {
 			if (!irq->enabled) {
 				struct irq_data *data;
 
@@ -174,7 +174,7 @@ void vgic_mmio_write_cenable(struct kvm_vcpu *vcpu,
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
 
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
-		if (irq->hw && vgic_irq_is_sgi(irq->intid) && irq->enabled)
+		if (vgic_direct_sgi_or_ppi(irq) && irq->enabled)
 			disable_irq_nosync(irq->host_irq);
 
 		irq->enabled = false;
@@ -241,7 +241,7 @@ static unsigned long __read_pending(struct kvm_vcpu *vcpu,
 		bool val;
 
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
+		if (vgic_direct_sgi_or_ppi(irq)) {
 			int err;
 
 			val = false;
@@ -301,7 +301,7 @@ void vgic_mmio_write_spending(struct kvm_vcpu *vcpu,
 
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
 
-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
+		if (vgic_direct_sgi_or_ppi(irq)) {
 			/* HW SGI? Ask the GIC to inject it */
 			int err;
 			err = irq_set_irqchip_state(irq->host_irq,
@@ -394,7 +394,7 @@ void vgic_mmio_write_cpending(struct kvm_vcpu *vcpu,
 
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
 
-		if (irq->hw && vgic_irq_is_sgi(irq->intid)) {
+		if (vgic_direct_sgi_or_ppi(irq)) {
 			/* HW SGI? Ask the GIC to clear its pending bit */
 			int err;
 			err = irq_set_irqchip_state(irq->host_irq,
@@ -488,12 +488,17 @@ static unsigned long __vgic_mmio_read_active(struct kvm_vcpu *vcpu,
 	/* Loop over all IRQs affected by this read */
 	for (i = 0; i < len * 8; i++) {
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
+		struct vtimer_info *vtimer = irq->vtimer_info;
+		bool state = irq->active;
+
+		if (vtimer)
+			state = vtimer->get_active_stat(vcpu, irq->intid);
 
 		/*
 		 * Even for HW interrupts, don't evaluate the HW state as
 		 * all the guest is interested in is the virtual state.
 		 */
-		if (irq->active)
+		if (state)
 			value |= (1U << i);
 
 		vgic_put_irq(vcpu->kvm, irq);
@@ -553,6 +558,9 @@ static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
 		 * do here.
 		 */
 		irq->active = false;
+	} else if (irq->vtimer_info) {
+		/* MMIO trap only */
+		irq->vtimer_info->set_active_stat(vcpu, irq->intid, active);
 	} else {
 		u32 model = vcpu->kvm->arch.vgic.vgic_model;
 		u8 active_source;
@@ -696,7 +704,7 @@ void vgic_mmio_write_priority(struct kvm_vcpu *vcpu,
 		raw_spin_lock_irqsave(&irq->irq_lock, flags);
 		/* Narrow the priority range to what we actually support */
 		irq->priority = (val >> (i * 8)) & GENMASK(7, 8 - VGIC_PRI_BITS);
-		if (irq->hw && vgic_irq_is_sgi(irq->intid))
+		if (vgic_direct_sgi_or_ppi(irq))
 			vgic_update_vsgi(irq);
 		raw_spin_unlock_irqrestore(&irq->irq_lock, flags);
 

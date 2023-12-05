@@ -126,6 +126,16 @@ static inline bool vgic_irq_is_multi_sgi(struct vgic_irq *irq)
 	return vgic_irq_get_lr_count(irq) > 1;
 }
 
+static inline bool vgic_direct_sgi_or_ppi(struct vgic_irq *irq)
+{
+	bool direct_sgi, direct_ppi;
+
+	direct_sgi = irq->hw && vgic_irq_is_sgi(irq->intid);
+	direct_ppi = !!(irq->vtimer_info);
+
+	return direct_sgi || direct_ppi;
+}
+
 /*
  * This struct provides an intermediate representation of the fields contained
  * in the GICH_VMCR and ICH_VMCR registers, such that code exporting the GIC
