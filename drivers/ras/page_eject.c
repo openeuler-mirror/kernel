@@ -20,18 +20,19 @@ struct ejected_pfn {
 
 static struct ejected_pfn *page_eject_remove_pfn_locked(unsigned long pfn)
 {
-	struct ejected_pfn *item = NULL, *next;
+	struct ejected_pfn *item, *next, *ret = NULL;
 
 	mutex_lock(&eject_page_mutex);
 	list_for_each_entry_safe(item, next, &eject_page_list, list) {
 		if (pfn == item->pfn) {
 			list_del(&item->list);
+			ret = item;
 			break;
 		}
 	}
 	mutex_unlock(&eject_page_mutex);
 
-	return item;
+	return ret;
 }
 
 static void page_eject_add_pfn_locked(struct ejected_pfn *item)
@@ -76,8 +77,13 @@ static int page_eject_offline_page(unsigned long pfn)
 	 * if soft_offline_page return 0 because PageHWPoison, this pfn
 	 * will add to list and this add will be removed during online
 	 * since it is poisoned.
+	 *
+	 * Update task flag with PF_MCS to enable mc support during page
+	 * migration.
 	 */
+	current->flags |= PF_MCS;
 	ret = soft_offline_page(pfn, 0);
+	current->flags &= ~PF_MCS;
 	if (ret) {
 		pr_err("page fail to be offlined, soft_offline_page failed(%d), pfn=%#lx\n",
 		       ret, pfn);

@@ -31,6 +31,7 @@ void copy_highpage(struct page *to, struct page *from);
 #ifdef CONFIG_ARCH_HAS_COPY_MC
 extern void copy_page_mc(void *to, const void *from);
 void copy_highpage_mc(struct page *to, struct page *from);
+int copy_mc_highpage(struct page *to, struct page *from);
 #define __HAVE_ARCH_COPY_HIGHPAGE_MC
 
 void copy_user_highpage_mc(struct page *to, struct page *from,

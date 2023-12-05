@@ -752,7 +752,7 @@ EXPORT_SYMBOL_GPL(_copy_mc_to_iter);
 
 static void *memcpy_iter(void *to, const void *from, __kernel_size_t size)
 {
-	if (IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) && current->flags & PF_COREDUMP_MCS)
+	if (IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) && current->flags & PF_MCS)
 		return (void *)copy_mc_to_kernel(to, from, size);
 	else
 		return memcpy(to, from, size);
