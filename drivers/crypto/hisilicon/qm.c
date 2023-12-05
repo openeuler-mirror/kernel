@@ -1924,7 +1924,6 @@ static struct hisi_qp *qm_create_qp_nolock(struct hisi_qm *qm, u8 alg_type)
 
 	qp->event_cb = NULL;
 	qp->req_cb = NULL;
-	qp->qp_id = qp_id;
 	qp->alg_type = alg_type;
 	qp->is_in_kernel = true;
 	qm->qp_in_used++;
@@ -1991,15 +1990,15 @@ static int qm_sq_ctx_cfg(struct hisi_qp *qp, int qp_id, u32 pasid)
 		sqc.dw3 = cpu_to_le32(QM_MK_SQC_DW3_V2(qm->sqe_size, qp->sq_depth));
 		sqc.w8 = 0; /* rand_qc */
 	}
-	sqc.cq_num = cpu_to_le16(qp_id);
 	sqc.w13 = cpu_to_le16(QM_MK_SQC_W13(0, 1, qp->alg_type));
 	sqc.base_l = cpu_to_le32(lower_32_bits(qp->sqe_dma));
 	sqc.base_h = cpu_to_le32(upper_32_bits(qp->sqe_dma));
+	sqc.cq_num = cpu_to_le16(qp_id);
 	sqc.pasid = cpu_to_le16(pasid);
 
 	if (ver >= QM_HW_V3 && qm->use_sva && !qp->is_in_kernel)
 		sqc.w11 = cpu_to_le16(QM_QC_PASID_ENABLE <<
-				       QM_QC_PASID_ENABLE_SHIFT);
+				      QM_QC_PASID_ENABLE_SHIFT);
 
 	return qm_set_and_get_xqc(qm, QM_MB_CMD_SQC, &sqc, qp_id, 0);
 }
@@ -2010,12 +2009,8 @@ static int qm_cq_ctx_cfg(struct hisi_qp *qp, int qp_id, u32 pasid)
 	enum qm_hw_ver ver = qm->ver;
 	struct qm_cqc cqc = {0};
 
-	cqc.base_l = cpu_to_le32(lower_32_bits(qp->cqe_dma));
-	cqc.base_h = cpu_to_le32(upper_32_bits(qp->cqe_dma));
-	cqc.pasid = cpu_to_le16(pasid);
 	if (ver == QM_HW_V1) {
-		cqc.dw3 = cpu_to_le32(QM_MK_CQC_DW3_V1(0, 0, 0,
-							QM_QC_CQE_SIZE));
+		cqc.dw3 = cpu_to_le32(QM_MK_CQC_DW3_V1(0, 0, 0, QM_QC_CQE_SIZE));
 		cqc.w8 = cpu_to_le16(qp->cq_depth - 1);
 	} else {
 		cqc.dw3 = cpu_to_le32(QM_MK_CQC_DW3_V2(QM_QC_CQE_SIZE, qp->cq_depth));
