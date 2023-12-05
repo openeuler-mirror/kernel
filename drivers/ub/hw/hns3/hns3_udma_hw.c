@@ -24,6 +24,7 @@
 #include "hns3_udma_qp.h"
 #include "hns3_udma_dfx.h"
 #include "hns3_udma_sysfs.h"
+#include "hns3_udma_debugfs.h"
 
 bool dfx_switch;
 
@@ -2034,11 +2035,13 @@ static struct hnae3_client udma_client = {
 
 static int __init udma_init(void)
 {
+	udma_init_debugfs();
 	return hnae3_register_client(&udma_client);
 }
 
 static void __exit udma_exit(void)
 {
+	udma_cleanup_debugfs();
 	hnae3_unregister_client(&udma_client);
 }
 

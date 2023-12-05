@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include "urma/ubcore_api.h"
 #include "hns3_udma_cmd.h"
+#include "hns3_udma_debugfs.h"
 #include "hns3_udma_dca.h"
 
 static void travel_dca_pages(struct udma_dca_ctx *ctx, void *param,
@@ -659,6 +660,7 @@ void udma_unregister_udca(struct udma_dev *udma_dev,
 
 	if (dca_ctx->unit_size == 0)
 		return;
+	udma_unregister_uctx_debugfs(context);
 
 	cleanup_dca_context(dca_ctx);
 	if (dca_ctx->buf_status) {
