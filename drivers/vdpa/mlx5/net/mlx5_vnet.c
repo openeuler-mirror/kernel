@@ -1800,7 +1800,7 @@ err_setup:
 	ndev->mvdev.status |= VIRTIO_CONFIG_S_FAILED;
 }
 
-static int mlx5_vdpa_reset(struct vdpa_device *vdev)
+static int mlx5_vdpa_reset(struct vdpa_device *vdev, int state)
 {
 	struct mlx5_vdpa_dev *mvdev = to_mvdev(vdev);
 	struct mlx5_vdpa_net *ndev = to_mlx5_vdpa_ndev(mvdev);
