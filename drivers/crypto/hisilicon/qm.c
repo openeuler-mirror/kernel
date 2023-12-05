@@ -638,9 +638,6 @@ static int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16
 	struct qm_mailbox mailbox;
 	int ret;
 
-	dev_dbg(&qm->pdev->dev, "QM mailbox request to q%u: %u-0x%llx\n",
-		queue, cmd, (unsigned long long)dma_addr);
-
 	/* No need to judge if master OOO is blocked. */
 	if (qm_check_dev_error(pf_qm)) {
 		dev_err(&qm->pdev->dev, "QM mailbox operation failed since qm is stop!\n");
