@@ -1822,8 +1822,9 @@ int ib_get_eth_speed(struct ib_device *dev, u8 port_num, u16 *speed, u8 *width)
 		netdev_speed = lksettings.base.speed;
 	} else {
 		netdev_speed = SPEED_1000;
-		pr_warn("%s speed is unknown, defaulting to %d\n", netdev->name,
-			netdev_speed);
+		if (rc)
+			pr_warn("%s speed is unknown, defaulting to %d\n",
+				netdev->name, netdev_speed);
 	}
 
 	if (netdev_speed <= SPEED_1000) {
@@ -1841,9 +1842,15 @@ int ib_get_eth_speed(struct ib_device *dev, u8 port_num, u16 *speed, u8 *width)
 	} else if (netdev_speed <= SPEED_40000) {
 		*width = IB_WIDTH_4X;
 		*speed = IB_SPEED_FDR10;
-	} else {
+	} else if (netdev_speed <= SPEED_100000) {
 		*width = IB_WIDTH_4X;
 		*speed = IB_SPEED_EDR;
+	} else if (netdev_speed <= SPEED_200000) {
+		*width = IB_WIDTH_4X;
+		*speed = IB_SPEED_HDR;
+	} else {
+		*width = IB_WIDTH_4X;
+		*speed = IB_SPEED_NDR;
 	}
 
 	return 0;
