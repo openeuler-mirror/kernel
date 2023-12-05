@@ -287,10 +287,38 @@ static u64 hisi_uc_pmu_read_counter(struct hisi_pmu *uc_pmu,
 	return readq(uc_pmu->base + HISI_UC_CNTR_REGn(hwc->idx));
 }
 
+static bool hisi_uc_pmu_get_glb_en_state(struct hisi_pmu *uc_pmu)
+{
+	u32 val;
+
+	val = readl(uc_pmu->base + HISI_UC_EVENT_CTRL_REG);
+	return !!FIELD_GET(HISI_UC_EVENT_GLB_EN, val);
+}
+
 static void hisi_uc_pmu_write_counter(struct hisi_pmu *uc_pmu,
 				      struct hw_perf_event *hwc, u64 val)
 {
+	bool enable = hisi_uc_pmu_get_glb_en_state(uc_pmu);
+
+	/*
+	 * If the PMU is not enabled, the UC power management system will
+	 * turn off the clock of the counters register and we cannot write
+	 * values to the counters register. Set the UC PMU enable to turn
+	 * on the clock.
+	 */
+	if (!enable)
+		hisi_uc_pmu_start_counters(uc_pmu);
+
 	writeq(val, uc_pmu->base + HISI_UC_CNTR_REGn(hwc->idx));
+
+	/*
+	 * Restore the UC PMU configuration. The Perf schedule will enable PMU
+	 * at appropriate time.
+	 * The irq handler will also call the function to set period. At this
+	 * time, PMU is still enabled and we cannot directly disable the PMU.
+	 */
+	if (!enable)
+		hisi_uc_pmu_stop_counters(uc_pmu);
 }
 
 static void hisi_uc_pmu_enable_counter_int(struct hisi_pmu *uc_pmu,
