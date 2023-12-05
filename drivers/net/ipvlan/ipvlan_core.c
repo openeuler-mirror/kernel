@@ -766,9 +766,37 @@ static int ipvlan_xmit_mode_l2(struct sk_buff *skb, struct net_device *dev)
 }
 
 #if IS_ENABLED(CONFIG_IPVLAN_L2E)
+static int ipvlan_l2e_local_xmit_event(struct ipvl_dev *ipvlan,
+				       struct sk_buff **pskb)
+{
+	struct sk_buff *nskb, *tskb;
+
+	while ((ipvlan->local_packets_cached >= sysctl_ipvlan_loop_qlen) &&
+	       (tskb = skb_dequeue(&ipvlan->local_xmit_queue))) {
+		ipvlan->local_packets_cached -= tskb->truesize;
+		if (ipvlan->local_packets_cached < 0 ||
+		    skb_queue_empty(&ipvlan->local_xmit_queue))
+			ipvlan->local_packets_cached = 0;
+		kfree_skb(tskb);
+	}
+
+	nskb = skb_clone(*pskb, GFP_ATOMIC);
+	if (!nskb)
+		return NET_XMIT_DROP;
+
+	ipvlan->local_timeout = jiffies
+				+ (sysctl_ipvlan_loop_delay * HZ) / 1000;
+	mod_timer(&ipvlan->local_free_timer, ipvlan->local_timeout);
+	skb_queue_tail(&ipvlan->local_xmit_queue, *pskb);
+	ipvlan->local_packets_cached += (*pskb)->truesize;
+	*pskb = nskb;
+
+	return 0;
+}
+
 static int ipvlan_xmit_mode_l2e(struct sk_buff *skb, struct net_device *dev)
 {
-	const struct ipvl_dev *ipvlan = netdev_priv(dev);
+	struct ipvl_dev *ipvlan = netdev_priv(dev);
 	struct ethhdr *eth = eth_hdr(skb);
 	struct ipvl_addr *addr;
 	void *lyr3h;
@@ -785,6 +813,10 @@ static int ipvlan_xmit_mode_l2e(struct sk_buff *skb, struct net_device *dev)
 					consume_skb(skb);
 					return NET_XMIT_DROP;
 				}
+
+				if (unlikely(ipvlan_l2e_local_xmit_event(ipvlan,
+									 &skb)))
+					return NET_XMIT_DROP;
 				return ipvlan_rcv_frame(addr, &skb, true);
 			}
 		}
