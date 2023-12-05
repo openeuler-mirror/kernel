@@ -474,4 +474,6 @@ void kvm_shadow_dev_delete(struct kvm *kvm, u32 devid);
 void kvm_shadow_dev_delete_all(struct kvm *kvm);
 struct shadow_dev *kvm_shadow_dev_get(struct kvm *kvm, struct kvm_msi *msi);
 
+int shadow_dev_virq_bypass_inject(struct kvm *kvm,
+				  struct kvm_kernel_irq_routing_entry *e);
 #endif /* __KVM_ARM_VGIC_H */
