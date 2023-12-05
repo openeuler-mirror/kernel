@@ -20,18 +20,19 @@ struct ejected_pfn {
 
 static struct ejected_pfn *page_eject_remove_pfn_locked(unsigned long pfn)
 {
-	struct ejected_pfn *item = NULL, *next;
+	struct ejected_pfn *item, *next, *ret = NULL;
 
 	mutex_lock(&eject_page_mutex);
 	list_for_each_entry_safe(item, next, &eject_page_list, list) {
 		if (pfn == item->pfn) {
 			list_del(&item->list);
+			ret = item;
 			break;
 		}
 	}
 	mutex_unlock(&eject_page_mutex);
 
-	return item;
+	return ret;
 }
 
 static void page_eject_add_pfn_locked(struct ejected_pfn *item)
