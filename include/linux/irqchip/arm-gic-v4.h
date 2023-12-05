@@ -57,7 +57,8 @@ struct its_vpe {
 				u8	priority;
 				bool	enabled;
 				bool	group;
-			}			sgi_config[16];
+			}			sgi_config[32];
+			int nr_irqs;
 			atomic_t vmapp_count;
 		};
 	};
@@ -143,6 +144,7 @@ int its_prop_update_vsgi(int irq, u8 priority, bool group);
 struct irq_domain_ops;
 int its_init_v4(struct irq_domain *domain,
 		const struct irq_domain_ops *vpe_ops,
-		const struct irq_domain_ops *sgi_ops);
+		const struct irq_domain_ops *sgi_ops,
+		bool has_vtimer_irqbypass);
 
 #endif
