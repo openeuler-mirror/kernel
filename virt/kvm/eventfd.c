@@ -38,6 +38,12 @@ kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args)
 	return true;
 }
 
+void __attribute__((weak))
+kire_arch_cached_data_update(struct kvm *kvm,
+			     struct kvm_kernel_irq_routing_entry *e)
+{
+}
+
 static void
 irqfd_inject(struct work_struct *work)
 {
@@ -255,6 +261,8 @@ static void irqfd_update(struct kvm *kvm, struct kvm_kernel_irqfd *irqfd)
 		irqfd->irq_entry = *e;
 	else
 		irqfd->irq_entry.type = 0;
+
+	kire_arch_cached_data_update(kvm, &irqfd->irq_entry);
 
 	write_seqcount_end(&irqfd->irq_entry_sc);
 }
