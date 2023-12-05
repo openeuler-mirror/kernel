@@ -27,6 +27,19 @@ static unsigned int host_ptimer_irq;
 static u32 host_vtimer_irq_flags;
 static u32 host_ptimer_irq_flags;
 
+static bool vtimer_irqbypass;
+
+static int __init early_vtimer_irqbypass(char *buf)
+{
+	return strtobool(buf, &vtimer_irqbypass);
+}
+early_param("kvm-arm.vtimer_irqbypass", early_vtimer_irqbypass);
+
+static inline bool vtimer_is_irqbypass(void)
+{
+	return !!vtimer_irqbypass && kvm_vgic_vtimer_irqbypass_support();
+}
+
 static DEFINE_STATIC_KEY_FALSE(has_gic_active_state);
 
 static const struct kvm_irq_level default_ptimer_irq = {
@@ -813,6 +826,11 @@ void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu)
 
 static void kvm_timer_init_interrupt(void *info)
 {
+	if (vtimer_is_irqbypass()) {
+		enable_percpu_irq(host_ptimer_irq, host_ptimer_irq_flags);
+		return;
+	}
+
 	enable_percpu_irq(host_vtimer_irq, host_vtimer_irq_flags);
 	enable_percpu_irq(host_ptimer_irq, host_ptimer_irq_flags);
 }
@@ -984,6 +1002,9 @@ static int kvm_timer_starting_cpu(unsigned int cpu)
 
 static int kvm_timer_dying_cpu(unsigned int cpu)
 {
+	if (vtimer_is_irqbypass())
+		return 0;
+
 	disable_percpu_irq(host_vtimer_irq);
 	return 0;
 }
@@ -1002,6 +1023,26 @@ int kvm_timer_hyp_init(bool has_gic)
 	}
 
 	/* First, do the virtual EL1 timer irq */
+
+	/*
+	 * vtimer-irqbypass depends on:
+	 *
+	 * - HW support at mbigen level (vtimer_irqbypass_hw_support)
+	 * - HW support at GIC level (kvm_vgic_vtimer_irqbypass_support)
+	 * - in_kernel irqchip support
+	 * - "kvm-arm.vtimer_irqbypass=1"
+	 */
+	vtimer_irqbypass &= vtimer_irqbypass_hw_support(info);
+	vtimer_irqbypass &= has_gic;
+	if (vtimer_is_irqbypass()) {
+		kvm_info("vtimer-irqbypass enabled\n");
+
+		/*
+		 * If vtimer irqbypass is enabled, there's no need to use the
+		 * vtimer forwarded irq inject.
+		 */
+		goto ptimer_irq_init;
+	}
 
 	if (info->virtual_irq <= 0) {
 		kvm_err("kvm_arch_timer: invalid virtual timer IRQ: %d\n",
@@ -1039,6 +1080,7 @@ int kvm_timer_hyp_init(bool has_gic)
 
 	kvm_debug("virtual timer IRQ%d\n", host_vtimer_irq);
 
+ptimer_irq_init:
 	/* Now let's do the physical EL1 timer irq */
 
 	if (info->physical_irq > 0) {
