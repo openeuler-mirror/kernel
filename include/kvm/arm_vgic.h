@@ -75,6 +75,12 @@ struct vgic_global {
 	bool			has_gicv4;
 	bool			has_gicv4_1;
 
+	/*
+	 * Hardware (HiSilicon implementation) has vtimer interrupt
+	 * direct injection support?
+	 */
+	bool			has_direct_vtimer;
+
 	/* GIC system register CPU interface */
 	struct static_key_false gicv3_cpuif;
 
@@ -382,6 +388,14 @@ void kvm_vgic_flush_hwstate(struct kvm_vcpu *vcpu);
 void kvm_vgic_reset_mapped_irq(struct kvm_vcpu *vcpu, u32 vintid);
 
 void vgic_v3_dispatch_sgi(struct kvm_vcpu *vcpu, u64 reg, bool allow_group1);
+
+/**
+ * kvm_vgic_vtimer_irqbypass_support - Get the vtimer irqbypass HW capability
+ */
+static inline bool kvm_vgic_vtimer_irqbypass_support(void)
+{
+	return kvm_vgic_global_state.has_direct_vtimer;
+}
 
 /**
  * kvm_vgic_get_max_vcpus - Get the maximum number of VCPUs allowed by HW
