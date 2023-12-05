@@ -290,6 +290,11 @@ struct hisi_qm_cap_record {
 	u32 cap_val;
 };
 
+struct hisi_qm_cap_tables {
+	struct hisi_qm_cap_record *qm_cap_table;
+	struct hisi_qm_cap_record *dev_cap_table;
+};
+
 struct hisi_qm_list {
 	struct mutex lock;
 	struct list_head list;
@@ -403,6 +408,8 @@ struct hisi_qm {
 	u32 mb_qos;
 	u32 type_rate;
 	struct qm_err_isolate isolate_data;
+
+	struct hisi_qm_cap_tables cap_tables;
 };
 
 struct hisi_qp_status {
@@ -520,6 +527,20 @@ static inline void hisi_qm_init_list(struct hisi_qm_list *qm_list)
 	mutex_init(&qm_list->lock);
 }
 
+static inline void hisi_qm_add_list(struct hisi_qm *qm, struct hisi_qm_list *qm_list)
+{
+	mutex_lock(&qm_list->lock);
+	list_add_tail(&qm->list, &qm_list->list);
+	mutex_unlock(&qm_list->lock);
+}
+
+static inline void hisi_qm_del_list(struct hisi_qm *qm, struct hisi_qm_list *qm_list)
+{
+	mutex_lock(&qm_list->lock);
+	list_del(&qm->list);
+	mutex_unlock(&qm_list->lock);
+}
+
 int qm_register_uacce(struct hisi_qm *qm);
 int hisi_qm_init(struct hisi_qm *qm);
 void hisi_qm_uninit(struct hisi_qm *qm);
@@ -562,8 +583,8 @@ int hisi_qm_alloc_qps_node(struct hisi_qm_list *qm_list, int qp_num,
 void hisi_qm_free_qps(struct hisi_qp **qps, int qp_num);
 void hisi_qm_dev_shutdown(struct pci_dev *pdev);
 void hisi_qm_wait_task_finish(struct hisi_qm *qm, struct hisi_qm_list *qm_list);
-int hisi_qm_alg_register(struct hisi_qm *qm, struct hisi_qm_list *qm_list);
-void hisi_qm_alg_unregister(struct hisi_qm *qm, struct hisi_qm_list *qm_list);
+int hisi_qm_alg_register(struct hisi_qm *qm, struct hisi_qm_list *qm_list, int guard);
+void hisi_qm_alg_unregister(struct hisi_qm *qm, struct hisi_qm_list *qm_list, int guard);
 int hisi_qm_resume(struct device *dev);
 int hisi_qm_suspend(struct device *dev);
 void hisi_qm_pm_uninit(struct hisi_qm *qm);

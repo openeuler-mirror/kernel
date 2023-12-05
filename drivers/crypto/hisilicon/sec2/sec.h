@@ -220,7 +220,7 @@ enum sec_cap_type {
 };
 
 enum sec_cap_reg_record_idx {
-	SEC_DRV_ALG_BITMAP_LOW_IDX,
+	SEC_DRV_ALG_BITMAP_LOW_IDX = 0x0,
 	SEC_DRV_ALG_BITMAP_HIGH_IDX,
 	SEC_DEV_ALG_BITMAP_LOW_IDX,
 	SEC_DEV_ALG_BITMAP_HIGH_IDX,

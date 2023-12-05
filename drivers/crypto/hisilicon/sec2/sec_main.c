@@ -168,11 +168,11 @@ static const struct hisi_qm_cap_info sec_basic_info[] = {
 	{SEC_CORE4_ALG_BITMAP_HIGH, 0x3170, 0, GENMASK(31, 0), 0x3FFF, 0x3FFF, 0x3FFF},
 };
 
-static struct hisi_qm_cap_record sec_cap_reg_record[] = {
-	{SEC_DRV_ALG_BITMAP_LOW,	0x187F0FF},
-	{SEC_DRV_ALG_BITMAP_HIGH,	0x395C},
-	{SEC_DEV_ALG_BITMAP_LOW,	0xFFFFFFFF},
-	{SEC_DEV_ALG_BITMAP_HIGH,	0x3FFF},
+static const u32 sec_pre_store_caps[] = {
+	SEC_DRV_ALG_BITMAP_LOW,
+	SEC_DRV_ALG_BITMAP_HIGH,
+	SEC_DEV_ALG_BITMAP_LOW,
+	SEC_DEV_ALG_BITMAP_HIGH,
 };
 
 static const struct qm_dev_alg sec_dev_algs[] = { {
@@ -401,8 +401,8 @@ u64 sec_get_alg_bitmap(struct hisi_qm *qm, u32 high, u32 low)
 {
 	u32 cap_val_h, cap_val_l;
 
-	cap_val_h = sec_cap_reg_record[high].cap_val;
-	cap_val_l = sec_cap_reg_record[low].cap_val;
+	cap_val_h = qm->cap_tables.dev_cap_table[high].cap_val;
+	cap_val_l = qm->cap_tables.dev_cap_table[low].cap_val;
 
 	return ((u64)cap_val_h << SEC_ALG_BITMAP_SHIFT) | (u64)cap_val_l;
 }
@@ -1100,15 +1100,26 @@ static int sec_pf_probe_init(struct sec_dev *sec)
 	return ret;
 }
 
-static void sec_pre_store_cap_reg(struct hisi_qm *qm)
+static int sec_pre_store_cap_reg(struct hisi_qm *qm)
 {
-	int i, size;
+	struct hisi_qm_cap_record *sec_cap;
+	struct pci_dev *pdev = qm->pdev;
+	size_t i, size;
 
-	size = ARRAY_SIZE(sec_cap_reg_record);
+	size = ARRAY_SIZE(sec_pre_store_caps);
+	sec_cap = devm_kzalloc(&pdev->dev, sizeof(*sec_cap) * size, GFP_KERNEL);
+	if (!sec_cap)
+		return -ENOMEM;
+
 	for (i = 0; i < size; i++) {
-		sec_cap_reg_record[i].cap_val = hisi_qm_get_hw_info(qm, sec_basic_info,
-						sec_cap_reg_record[i].type, qm->cap_ver);
+		sec_cap[i].type = sec_pre_store_caps[i];
+		sec_cap[i].cap_val = hisi_qm_get_hw_info(qm, sec_basic_info,
+				     sec_pre_store_caps[i], qm->cap_ver);
 	}
+
+	qm->cap_tables.dev_cap_table = sec_cap;
+
+	return 0;
 }
 
 static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
@@ -1149,7 +1160,12 @@ static int sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	}
 
 	/* Fetch and save the value of capability registers */
-	sec_pre_store_cap_reg(qm);
+	ret = sec_pre_store_cap_reg(qm);
+	if (ret) {
+		pci_err(qm->pdev, "Failed to pre-store capability registers!\n");
+		hisi_qm_uninit(qm);
+		return ret;
+	}
 
 	alg_msk = sec_get_alg_bitmap(qm, SEC_DEV_ALG_BITMAP_HIGH_IDX, SEC_DEV_ALG_BITMAP_LOW_IDX);
 	ret = hisi_qm_set_algs(qm, alg_msk, sec_dev_algs, ARRAY_SIZE(sec_dev_algs));
@@ -1226,15 +1242,11 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		pci_warn(pdev, "Failed to init debugfs!\n");
 
-	if (qm->qp_num >= ctx_q_num) {
-		ret = hisi_qm_alg_register(qm, &sec_devices);
-		if (ret < 0) {
-			pr_err("Failed to register driver to crypto.\n");
-			goto err_qm_stop;
-		}
-	} else {
-		pci_warn(qm->pdev,
-			"Failed to use kernel mode, qp not enough!\n");
+	hisi_qm_add_list(qm, &sec_devices);
+	ret = hisi_qm_alg_register(qm, &sec_devices, ctx_q_num);
+	if (ret < 0) {
+		pr_err("Failed to register driver to crypto.\n");
+		goto err_qm_del_list;
 	}
 
 	if (qm->uacce) {
@@ -1256,9 +1268,9 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	return 0;
 
 err_alg_unregister:
-	if (qm->qp_num >= ctx_q_num)
-		hisi_qm_alg_unregister(qm, &sec_devices);
-err_qm_stop:
+	hisi_qm_alg_unregister(qm, &sec_devices, ctx_q_num);
+err_qm_del_list:
+	hisi_qm_del_list(qm, &sec_devices);
 	sec_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 err_probe_uninit:
@@ -1275,8 +1287,8 @@ static void sec_remove(struct pci_dev *pdev)
 
 	hisi_qm_pm_uninit(qm);
 	hisi_qm_wait_task_finish(qm, &sec_devices);
-	if (qm->qp_num >= ctx_q_num)
-		hisi_qm_alg_unregister(qm, &sec_devices);
+	hisi_qm_alg_unregister(qm, &sec_devices, ctx_q_num);
+	hisi_qm_del_list(qm, &sec_devices);
 
 	if (qm->fun_type == QM_HW_PF && qm->vfs_num)
 		hisi_qm_sriov_disable(pdev, true);
