@@ -119,12 +119,15 @@ struct its_node {
 	int			numa_node;
 	unsigned int		msi_domain_flags;
 	u32			pre_its_base; /* for Socionext Synquacer */
+	u32			version;
 	int			vlpi_redist_offset;
 };
 
 #define is_v4(its)		(!!((its)->typer & GITS_TYPER_VLPIS))
 #define is_v4_1(its)		(!!((its)->typer & GITS_TYPER_VMAPP))
 #define device_ids(its)		(FIELD_GET(GITS_TYPER_DEVBITS, (its)->typer) + 1)
+
+#define is_vtimer_irqbypass(its)	(!!((its)->version & GITS_VERSION_VTIMER))
 
 #define ITS_ITT_ALIGN		SZ_256
 
@@ -5292,6 +5295,8 @@ static int __init its_probe_one(struct resource *res,
 	INIT_LIST_HEAD(&its->its_device_list);
 	typer = gic_read_typer(its_base + GITS_TYPER);
 	its->typer = typer;
+	if (readl_relaxed(its_base + GITS_IIDR) == 0x00051736)
+		its->version = readl_relaxed(its_base + GITS_VERSION);
 	its->base = its_base;
 	its->phys_base = res->start;
 	if (is_v4(its)) {

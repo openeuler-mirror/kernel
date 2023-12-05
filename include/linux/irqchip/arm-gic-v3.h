@@ -379,6 +379,9 @@
 
 #define GITS_SGIR			0x20020
 
+/* HiSilicon IMP DEF register */
+#define GITS_VERSION			0xC000
+
 #define GITS_SGIR_VPEID			GENMASK_ULL(47, 32)
 #define GITS_SGIR_VINTID		GENMASK_ULL(3, 0)
 
@@ -401,6 +404,14 @@
 #define GITS_TYPER_VMOVP		(1ULL << 37)
 #define GITS_TYPER_VMAPP		(1ULL << 40)
 #define GITS_TYPER_SVPET		GENMASK_ULL(42, 41)
+
+/**
+ * HiSilicon IMP DEF field which indicates if the vPPI direct injection
+ * is supported.
+ * - 0: not supported
+ * - 1: supported
+ */
+#define GITS_VERSION_VTIMER		(1ULL << 12)
 
 #define GITS_IIDR_REV_SHIFT		12
 #define GITS_IIDR_REV_MASK		(0xf << GITS_IIDR_REV_SHIFT)
