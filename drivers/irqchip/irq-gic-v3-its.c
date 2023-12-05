@@ -129,6 +129,21 @@ struct its_node {
 
 #define is_vtimer_irqbypass(its)	(!!((its)->version & GITS_VERSION_VTIMER))
 
+/* Fetch it from gtdt->virtual_timer_interrupt. */
+#define is_vtimer_irq(irq)	((irq) == 27)
+
+static inline bool is_its_vsgi_cmd_valid(struct its_node *its, u8 hwirq)
+{
+	if (__get_intid_range(hwirq) == SGI_RANGE)
+		return true;
+
+	/* For PPI range, only vtimer interrupt is supported atm. */
+	if (is_vtimer_irq(hwirq) && is_vtimer_irqbypass(its))
+		return true;
+
+	return false;
+}
+
 #define ITS_ITT_ALIGN		SZ_256
 
 /* The maximum number of VPEID bits supported by VLPI commands */
@@ -574,6 +589,16 @@ static void its_encode_sgi_intid(struct its_cmd_block *cmd, u8 sgi)
 	its_mask_encode(&cmd->raw_cmd[0], sgi, 35, 32);
 }
 
+static void its_encode_sgi_intid_extension(struct its_cmd_block *cmd, u8 sgi)
+{
+	/*
+	 * We reuse the VSGI command in this implementation to configure
+	 * the vPPI or clear its pending state. The vINTID field has been
+	 * therefore extended to [36:32].
+	 */
+	its_mask_encode(&cmd->raw_cmd[0], sgi, 36, 32);
+}
+
 static void its_encode_sgi_priority(struct its_cmd_block *cmd, u8 prio)
 {
 	its_mask_encode(&cmd->raw_cmd[0], prio >> 4, 23, 20);
@@ -973,7 +998,10 @@ static struct its_vpe *its_build_vsgi_cmd(struct its_node *its,
 
 	its_encode_cmd(cmd, GITS_CMD_VSGI);
 	its_encode_vpeid(cmd, desc->its_vsgi_cmd.vpe->vpe_id);
-	its_encode_sgi_intid(cmd, desc->its_vsgi_cmd.sgi);
+	if (!is_vtimer_irqbypass(its))
+		its_encode_sgi_intid(cmd, desc->its_vsgi_cmd.sgi);
+	else
+		its_encode_sgi_intid_extension(cmd, desc->its_vsgi_cmd.sgi);
 	its_encode_sgi_priority(cmd, desc->its_vsgi_cmd.priority);
 	its_encode_sgi_group(cmd, desc->its_vsgi_cmd.group);
 	its_encode_sgi_clear(cmd, desc->its_vsgi_cmd.clear);
@@ -4439,7 +4467,13 @@ static struct irq_chip its_vpe_4_1_irq_chip = {
 static void its_configure_sgi(struct irq_data *d, bool clear)
 {
 	struct its_vpe *vpe = irq_data_get_irq_chip_data(d);
+	struct its_node *its = find_4_1_its();
 	struct its_cmd_desc desc;
+
+	if (!its || !is_its_vsgi_cmd_valid(its, d->hwirq)) {
+		pr_err("ITS: its_configure_sgi failed\n");
+		return;
+	}
 
 	desc.its_vsgi_cmd.vpe = vpe;
 	desc.its_vsgi_cmd.sgi = d->hwirq;
@@ -4453,7 +4487,7 @@ static void its_configure_sgi(struct irq_data *d, bool clear)
 	 * destination VPE is mapped there. Since we map them eagerly at
 	 * activation time, we're pretty sure the first GICv4.1 ITS will do.
 	 */
-	its_send_single_vcommand(find_4_1_its(), its_build_vsgi_cmd, &desc);
+	its_send_single_vcommand(its, its_build_vsgi_cmd, &desc);
 }
 
 static void its_sgi_mask_irq(struct irq_data *d)
