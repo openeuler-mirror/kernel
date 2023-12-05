@@ -89,6 +89,13 @@ Description:	Dump the stop queue status of the QM. The default value is 0,
 		will return non-zero value. Available for both PF and VF,
 		and take no other effect on SEC.
 
+What:		/sys/kernel/debug/hisi_sec2/<bdf>/qm/qm_state
+Date:		Dec 2023
+Contact:	qianweili@huawei.com
+Description:	Dump the status of the device.
+		0: busy, 1: idle.
+		Only available for PF, and take no other effect on SEC.
+
 What:           /sys/kernel/debug/hisi_sec2/<bdf>/sec_dfx/send_cnt
 Date:           Apr 2020
 Contact:        linux-crypto@vger.kernel.org
