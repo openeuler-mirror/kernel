@@ -122,7 +122,7 @@ static inline struct swap_slots_cache *get_slots_cache(int swap_type)
 	if (swap_type == SWAP_TYPE_ALL)
 		return raw_cpu_ptr(&swp_slots);
 	else
-		return raw_cpu_ptr(&swp_type_slots)[swap_type];
+		return raw_cpu_ptr(&swp_type_slots[swap_type]);
 }
 
 static inline struct swap_slots_cache *get_slots_cache_cpu(unsigned int cpu,
