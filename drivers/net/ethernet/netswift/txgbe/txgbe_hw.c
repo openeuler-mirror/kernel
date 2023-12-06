@@ -6925,6 +6925,7 @@ s32 txgbe_calc_eeprom_checksum(struct txgbe_hw *hw)
 						     eeprom_ptrs);
 		if (status) {
 			DEBUGOUT("Failed to read EEPROM image\n");
+			kvfree(eeprom_ptrs);
 			return status;
 		}
 		local_buffer = eeprom_ptrs;
