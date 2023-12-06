@@ -44,6 +44,13 @@ struct arch_timer_context {
 	u32				host_timer_irq_flags;
 };
 
+struct vtimer_mbigen_context {
+		/* Active state in vtimer mbigen */
+		bool active;
+
+		bool loaded;
+};
+
 struct timer_map {
 	struct arch_timer_context *direct_vtimer;
 	struct arch_timer_context *direct_ptimer;
@@ -58,10 +65,14 @@ struct arch_timer_cpu {
 
 	/* Is the timer enabled */
 	bool			enabled;
+
+	/* Info for vtimer mbigen device */
+	struct vtimer_mbigen_context mbigen_ctx;
 };
 
 int kvm_timer_hyp_init(bool);
 int kvm_timer_enable(struct kvm_vcpu *vcpu);
+int kvm_vtimer_config(struct kvm *kvm);
 int kvm_timer_vcpu_reset(struct kvm_vcpu *vcpu);
 void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu);
 void kvm_timer_sync_user(struct kvm_vcpu *vcpu);
@@ -89,6 +100,8 @@ bool kvm_arch_timer_get_input_level(int vintid);
 #define vcpu_get_timer(v,t)	(&vcpu_timer(v)->timers[(t)])
 #define vcpu_vtimer(v)	(&(v)->arch.timer_cpu.timers[TIMER_VTIMER])
 #define vcpu_ptimer(v)	(&(v)->arch.timer_cpu.timers[TIMER_PTIMER])
+
+#define vcpu_vtimer_mbigen(v)	(&(v)->arch.timer_cpu.mbigen_ctx)
 
 #define arch_timer_ctx_index(ctx)	((ctx) - vcpu_timer((ctx)->vcpu)->timers)
 

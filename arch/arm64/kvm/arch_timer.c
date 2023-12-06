@@ -27,6 +27,19 @@ static unsigned int host_ptimer_irq;
 static u32 host_vtimer_irq_flags;
 static u32 host_ptimer_irq_flags;
 
+bool vtimer_irqbypass;
+
+static int __init early_vtimer_irqbypass(char *buf)
+{
+	return strtobool(buf, &vtimer_irqbypass);
+}
+early_param("kvm-arm.vtimer_irqbypass", early_vtimer_irqbypass);
+
+static inline bool vtimer_is_irqbypass(void)
+{
+	return !!vtimer_irqbypass && kvm_vgic_vtimer_irqbypass_support();
+}
+
 static DEFINE_STATIC_KEY_FALSE(has_gic_active_state);
 
 static const struct kvm_irq_level default_ptimer_irq = {
@@ -612,6 +625,43 @@ static void kvm_timer_vcpu_load_nogic(struct kvm_vcpu *vcpu)
 		enable_percpu_irq(host_vtimer_irq, host_vtimer_irq_flags);
 }
 
+static void kvm_vtimer_mbigen_auto_clr_set(struct kvm_vcpu *vcpu, bool set)
+{
+	BUG_ON(!vtimer_is_irqbypass());
+
+	vtimer_mbigen_set_auto_clr(vcpu->cpu, set);
+}
+
+static void kvm_vtimer_gic_auto_clr_set(struct kvm_vcpu *vcpu, bool set)
+{
+	BUG_ON(!vtimer_is_irqbypass());
+
+	vtimer_gic_set_auto_clr(vcpu->cpu, set);
+}
+
+static void kvm_vtimer_mbigen_restore_stat(struct kvm_vcpu *vcpu)
+{
+	struct vtimer_mbigen_context *mbigen_ctx = vcpu_vtimer_mbigen(vcpu);
+	u16 vpeid = kvm_vgic_get_vcpu_vpeid(vcpu);
+	unsigned long flags;
+
+	WARN_ON(!vtimer_is_irqbypass());
+
+	local_irq_save(flags);
+
+	if (mbigen_ctx->loaded)
+		goto out;
+
+	vtimer_mbigen_set_vector(vcpu->cpu, vpeid);
+
+	if (mbigen_ctx->active)
+		vtimer_mbigen_set_active(vcpu->cpu, true);
+
+	mbigen_ctx->loaded = true;
+out:
+	local_irq_restore(flags);
+}
+
 void kvm_timer_vcpu_load(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
@@ -622,19 +672,33 @@ void kvm_timer_vcpu_load(struct kvm_vcpu *vcpu)
 
 	get_timer_map(vcpu, &map);
 
-	if (static_branch_likely(&has_gic_active_state)) {
-		kvm_timer_vcpu_load_gic(map.direct_vtimer);
-		if (map.direct_ptimer)
-			kvm_timer_vcpu_load_gic(map.direct_ptimer);
-	} else {
-		kvm_timer_vcpu_load_nogic(vcpu);
+	if (vtimer_is_irqbypass()) {
+		kvm_vtimer_mbigen_auto_clr_set(vcpu, false);
+		kvm_vtimer_mbigen_restore_stat(vcpu);
+
+		goto skip_load_vtimer;
 	}
+
+	if (static_branch_likely(&has_gic_active_state))
+		kvm_timer_vcpu_load_gic(map.direct_vtimer);
+	else
+		kvm_timer_vcpu_load_nogic(vcpu);
+
+skip_load_vtimer:
+	if (static_branch_likely(&has_gic_active_state) && map.direct_ptimer)
+		kvm_timer_vcpu_load_gic(map.direct_ptimer);
 
 	set_cntvoff(timer_get_offset(map.direct_vtimer));
 
 	kvm_timer_unblocking(vcpu);
 
 	timer_restore_state(map.direct_vtimer);
+
+	if (vtimer_is_irqbypass()) {
+		kvm_vtimer_mbigen_auto_clr_set(vcpu, true);
+		kvm_vtimer_gic_auto_clr_set(vcpu, true);
+	}
+
 	if (map.direct_ptimer)
 		timer_restore_state(map.direct_ptimer);
 
@@ -659,6 +723,29 @@ bool kvm_timer_should_notify_user(struct kvm_vcpu *vcpu)
 	       kvm_timer_should_fire(ptimer) != plevel;
 }
 
+static void kvm_vtimer_mbigen_save_stat(struct kvm_vcpu *vcpu)
+{
+	struct vtimer_mbigen_context *mbigen_ctx = vcpu_vtimer_mbigen(vcpu);
+	unsigned long flags;
+
+	WARN_ON(!vtimer_is_irqbypass());
+
+	local_irq_save(flags);
+
+	if (!mbigen_ctx->loaded)
+		goto out;
+
+	mbigen_ctx->active = vtimer_mbigen_get_active(vcpu->cpu);
+
+	/* Clear active state in MBIGEN now that we've saved everything. */
+	if (mbigen_ctx->active)
+		vtimer_mbigen_set_active(vcpu->cpu, false);
+
+	mbigen_ctx->loaded = false;
+out:
+	local_irq_restore(flags);
+}
+
 void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
@@ -670,7 +757,18 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 
 	get_timer_map(vcpu, &map);
 
+	if (vtimer_is_irqbypass()) {
+		kvm_vtimer_mbigen_auto_clr_set(vcpu, false);
+		kvm_vtimer_gic_auto_clr_set(vcpu, false);
+	}
+
 	timer_save_state(map.direct_vtimer);
+
+	if (vtimer_is_irqbypass()) {
+		kvm_vtimer_mbigen_save_stat(vcpu);
+		kvm_vtimer_mbigen_auto_clr_set(vcpu, true);
+	}
+
 	if (map.direct_ptimer)
 		timer_save_state(map.direct_ptimer);
 
@@ -745,6 +843,15 @@ int kvm_timer_vcpu_reset(struct kvm_vcpu *vcpu)
 	timer_set_ctl(vcpu_ptimer(vcpu), 0);
 
 	if (timer->enabled) {
+		if (vtimer_is_irqbypass()) {
+			kvm_timer_update_irq(vcpu, false, vcpu_ptimer(vcpu));
+
+			if (irqchip_in_kernel(vcpu->kvm) && map.direct_ptimer)
+				kvm_vgic_reset_mapped_irq(vcpu, map.direct_ptimer->irq.irq);
+
+			goto skip_reset_vtimer;
+		}
+
 		kvm_timer_update_irq(vcpu, false, vcpu_vtimer(vcpu));
 		kvm_timer_update_irq(vcpu, false, vcpu_ptimer(vcpu));
 
@@ -755,6 +862,7 @@ int kvm_timer_vcpu_reset(struct kvm_vcpu *vcpu)
 		}
 	}
 
+skip_reset_vtimer:
 	if (map.emul_ptimer)
 		soft_timer_cancel(&map.emul_ptimer->hrtimer);
 
@@ -813,6 +921,11 @@ void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu)
 
 static void kvm_timer_init_interrupt(void *info)
 {
+	if (vtimer_is_irqbypass()) {
+		enable_percpu_irq(host_ptimer_irq, host_ptimer_irq_flags);
+		return;
+	}
+
 	enable_percpu_irq(host_vtimer_irq, host_vtimer_irq_flags);
 	enable_percpu_irq(host_ptimer_irq, host_ptimer_irq_flags);
 }
@@ -984,6 +1097,9 @@ static int kvm_timer_starting_cpu(unsigned int cpu)
 
 static int kvm_timer_dying_cpu(unsigned int cpu)
 {
+	if (vtimer_is_irqbypass())
+		return 0;
+
 	disable_percpu_irq(host_vtimer_irq);
 	return 0;
 }
@@ -1002,6 +1118,26 @@ int kvm_timer_hyp_init(bool has_gic)
 	}
 
 	/* First, do the virtual EL1 timer irq */
+
+	/*
+	 * vtimer-irqbypass depends on:
+	 *
+	 * - HW support at mbigen level (vtimer_irqbypass_hw_support)
+	 * - HW support at GIC level (kvm_vgic_vtimer_irqbypass_support)
+	 * - in_kernel irqchip support
+	 * - "kvm-arm.vtimer_irqbypass=1"
+	 */
+	vtimer_irqbypass &= vtimer_irqbypass_hw_support(info);
+	vtimer_irqbypass &= has_gic;
+	if (vtimer_is_irqbypass()) {
+		kvm_info("vtimer-irqbypass enabled\n");
+
+		/*
+		 * If vtimer irqbypass is enabled, there's no need to use the
+		 * vtimer forwarded irq inject.
+		 */
+		goto ptimer_irq_init;
+	}
 
 	if (info->virtual_irq <= 0) {
 		kvm_err("kvm_arch_timer: invalid virtual timer IRQ: %d\n",
@@ -1039,6 +1175,7 @@ int kvm_timer_hyp_init(bool has_gic)
 
 	kvm_debug("virtual timer IRQ%d\n", host_vtimer_irq);
 
+ptimer_irq_init:
 	/* Now let's do the physical EL1 timer irq */
 
 	if (info->physical_irq > 0) {
@@ -1131,6 +1268,70 @@ bool kvm_arch_timer_get_input_level(int vintid)
 	return kvm_timer_should_fire(timer);
 }
 
+static void vtimer_set_active_stat(struct kvm_vcpu *vcpu, int vintid, bool set)
+{
+	struct vtimer_mbigen_context *mbigen_ctx = vcpu_vtimer_mbigen(vcpu);
+	int hwirq = vcpu_vtimer(vcpu)->irq.irq;
+
+	WARN_ON(!vtimer_is_irqbypass() || hwirq != vintid);
+
+	if (!mbigen_ctx->loaded)
+		mbigen_ctx->active = set;
+	else
+		vtimer_mbigen_set_active(vcpu->cpu, set);
+}
+
+static bool vtimer_get_active_stat(struct kvm_vcpu *vcpu, int vintid)
+{
+	struct vtimer_mbigen_context *mbigen_ctx = vcpu_vtimer_mbigen(vcpu);
+	int hwirq = vcpu_vtimer(vcpu)->irq.irq;
+
+	WARN_ON(!vtimer_is_irqbypass() || hwirq != vintid);
+
+	if (!mbigen_ctx->loaded)
+		return mbigen_ctx->active;
+	else
+		return vtimer_mbigen_get_active(vcpu->cpu);
+}
+
+int kvm_vtimer_config(struct kvm *kvm)
+{
+	struct vgic_dist *dist = &kvm->arch.vgic;
+	struct kvm_vcpu *vcpu;
+	int ret = 0;
+	int c;
+
+	if (!vtimer_is_irqbypass())
+		return 0;
+
+	if (!irqchip_in_kernel(kvm))
+		return -EINVAL;
+
+	mutex_lock(&kvm->lock);
+	if (dist->vtimer_irqbypass)
+		goto out;
+
+	kvm_for_each_vcpu(c, vcpu, kvm) {
+		struct arch_timer_cpu *timer = &vcpu->arch.timer_cpu;
+		int intid;
+
+		WARN_ON(timer->enabled);
+
+		intid = vcpu_vtimer(vcpu)->irq.irq;
+		ret = kvm_vgic_config_vtimer_irqbypass(vcpu, intid,
+						       vtimer_get_active_stat,
+						       vtimer_set_active_stat);
+		if (ret)
+			goto out;
+	}
+
+	dist->vtimer_irqbypass = true;
+
+out:
+	mutex_unlock(&kvm->lock);
+	return ret;
+}
+
 int kvm_timer_enable(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
@@ -1139,6 +1340,9 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 
 	if (timer->enabled)
 		return 0;
+
+	if (!irqchip_in_kernel(vcpu->kvm) && vtimer_is_irqbypass())
+		return -EINVAL;
 
 	/* Without a VGIC we do not map virtual IRQs to physical IRQs */
 	if (!irqchip_in_kernel(vcpu->kvm))
@@ -1154,6 +1358,9 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 
 	get_timer_map(vcpu, &map);
 
+	if (vtimer_is_irqbypass())
+		goto skip_map_vtimer;
+
 	ret = kvm_vgic_map_phys_irq(vcpu,
 				    map.direct_vtimer->host_timer_irq,
 				    map.direct_vtimer->irq.irq,
@@ -1161,6 +1368,7 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 	if (ret)
 		return ret;
 
+skip_map_vtimer:
 	if (map.direct_ptimer) {
 		ret = kvm_vgic_map_phys_irq(vcpu,
 					    map.direct_ptimer->host_timer_irq,

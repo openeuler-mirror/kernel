@@ -34,6 +34,9 @@ struct gic_kvm_info {
 	bool		has_v4;
 	/* rvpeid support */
 	bool		has_v4_1;
+	/* vtimer irqbypass support */
+	bool		has_vtimer;
+
 };
 
 const struct gic_kvm_info *gic_get_kvm_info(void);

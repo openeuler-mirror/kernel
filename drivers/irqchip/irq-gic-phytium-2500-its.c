@@ -5547,7 +5547,7 @@ int __init phytium_its_init(struct fwnode_handle *handle, struct rdists *rdists,
 			sgi_ops = NULL;
 
 		if (its_init_vpe_domain() ||
-		    its_init_v4(parent_domain, &its_vpe_domain_ops, sgi_ops)) {
+		    its_init_v4(parent_domain, &its_vpe_domain_ops, sgi_ops, false)) {
 			rdists->has_vlpis = false;
 			pr_err("ITS: Disabling GICv4 support\n");
 		}

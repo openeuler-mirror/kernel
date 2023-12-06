@@ -402,6 +402,11 @@ struct kvm_hv_sint {
 	u32 sint;
 };
 
+struct kire_data {
+	bool	valid;
+	void	*data;
+};
+
 struct kvm_kernel_irq_routing_entry {
 	u32 gsi;
 	u32 type;
@@ -424,6 +429,8 @@ struct kvm_kernel_irq_routing_entry {
 		struct kvm_hv_sint hv_sint;
 	};
 	struct hlist_node link;
+
+	struct kire_data cache;
 };
 
 #ifdef CONFIG_HAVE_KVM_IRQ_ROUTING
@@ -1121,6 +1128,8 @@ int kvm_request_irq_source_id(struct kvm *kvm);
 void kvm_free_irq_source_id(struct kvm *kvm, int irq_source_id);
 bool kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args);
 
+void kire_arch_cached_data_update(struct kvm *kvm,
+				  struct kvm_kernel_irq_routing_entry *e);
 /*
  * search_memslots() and __gfn_to_memslot() are here because they are
  * used in non-modular code in arch/powerpc/kvm/book3s_hv_rm_mmu.c.

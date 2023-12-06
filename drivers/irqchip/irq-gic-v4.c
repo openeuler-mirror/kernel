@@ -86,19 +86,29 @@
 static struct irq_domain *gic_domain;
 static const struct irq_domain_ops *vpe_domain_ops;
 static const struct irq_domain_ops *sgi_domain_ops;
+static bool vtimer_irqbypass;
 
 static bool has_v4_1(void)
 {
 	return !!sgi_domain_ops;
 }
 
+static bool has_v4_1_vsgi_extend(void)
+{
+	return has_v4_1() && vtimer_irqbypass;
+}
+
 static int its_alloc_vcpu_sgis(struct its_vpe *vpe, int idx)
 {
 	char *name;
 	int sgi_base;
+	int nr_irqs = 16;
 
 	if (!has_v4_1())
 		return 0;
+
+	if (has_v4_1_vsgi_extend())
+		nr_irqs = 32;
 
 	name = kasprintf(GFP_KERNEL, "GICv4-sgi-%d", task_pid_nr(current));
 	if (!name)
@@ -111,12 +121,13 @@ static int its_alloc_vcpu_sgis(struct its_vpe *vpe, int idx)
 	kfree(name);
 	name = NULL;
 
-	vpe->sgi_domain = irq_domain_create_linear(vpe->fwnode, 16,
+	vpe->sgi_domain = irq_domain_create_linear(vpe->fwnode, nr_irqs,
 						   sgi_domain_ops, vpe);
 	if (!vpe->sgi_domain)
 		goto err;
 
-	sgi_base = __irq_domain_alloc_irqs(vpe->sgi_domain, -1, 16,
+	vpe->nr_irqs = nr_irqs;
+	sgi_base = __irq_domain_alloc_irqs(vpe->sgi_domain, -1, nr_irqs,
 					       NUMA_NO_NODE, vpe,
 					       false, NULL);
 	if (sgi_base <= 0)
@@ -125,6 +136,7 @@ static int its_alloc_vcpu_sgis(struct its_vpe *vpe, int idx)
 	return 0;
 
 err:
+	vpe->nr_irqs = 0;
 	if (vpe->sgi_domain)
 		irq_domain_remove(vpe->sgi_domain);
 	if (vpe->fwnode)
@@ -191,7 +203,7 @@ static void its_free_sgi_irqs(struct its_vm *vm)
 		if (WARN_ON(!irq))
 			continue;
 
-		irq_domain_free_irqs(irq, 16);
+		irq_domain_free_irqs(irq, vm->vpes[i]->nr_irqs);
 		irq_domain_remove(vm->vpes[i]->sgi_domain);
 		irq_domain_free_fwnode(vm->vpes[i]->fwnode);
 	}
@@ -354,13 +366,16 @@ int its_prop_update_vsgi(int irq, u8 priority, bool group)
 
 int its_init_v4(struct irq_domain *domain,
 		const struct irq_domain_ops *vpe_ops,
-		const struct irq_domain_ops *sgi_ops)
+		const struct irq_domain_ops *sgi_ops,
+		bool has_vtimer_irqbypass)
 {
 	if (domain) {
 		pr_info("ITS: Enabling GICv4 support\n");
 		gic_domain = domain;
 		vpe_domain_ops = vpe_ops;
 		sgi_domain_ops = sgi_ops;
+		vtimer_irqbypass = has_vtimer_irqbypass;
+
 		return 0;
 	}
 
