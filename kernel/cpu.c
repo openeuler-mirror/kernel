@@ -1614,7 +1614,7 @@ static struct cpuhp_step cpuhp_hp_states[] = {
 	[CPUHP_HRTIMERS_PREPARE] = {
 		.name			= "hrtimers:prepare",
 		.startup.single		= hrtimers_prepare_cpu,
-		.teardown.single	= hrtimers_dead_cpu,
+		.teardown.single	= NULL,
 	},
 	[CPUHP_SMPCFD_PREPARE] = {
 		.name			= "smpcfd:prepare",
@@ -1676,11 +1676,24 @@ static struct cpuhp_step cpuhp_hp_states[] = {
 		.startup.single		= NULL,
 		.teardown.single	= rcutree_dying_cpu,
 	},
+	/*
+	 * In order to fix the kabi breakage, we had to move the hrtimers:dying
+	 * step into smpcfd:dying and create a new function smpcfd_and_hrtimer_dying_cpu().
+	 * Please ensure that there are no other steps with teardown handler
+	 * between smpcfd:dying and cpu:teardown.
+	 */
 	[CPUHP_AP_SMPCFD_DYING] = {
 		.name			= "smpcfd:dying",
 		.startup.single		= NULL,
-		.teardown.single	= smpcfd_dying_cpu,
+		.teardown.single	= smpcfd_and_hrtimer_dying_cpu,
 	},
+
+	/*
+	 * Attention: Please do not add steps between smpcfd:dying
+	 * and ap:online. Please refer to the above for specific
+	 * reasons.
+	 */
+
 	/* Entry state on starting. Interrupts enabled from here on. Transient
 	 * state for synchronsization */
 	[CPUHP_AP_ONLINE] = {
