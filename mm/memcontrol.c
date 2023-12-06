@@ -4159,12 +4159,18 @@ static int mem_cgroup_task_swapin(struct task_struct *task, void *arg)
 	struct vm_area_struct *vma;
 	struct blk_plug plug;
 
+	if (__task_is_dying(task))
+		return 0;
+	if (!mm || !mmget_not_zero(mm))
+		return 0;
+
 	mmap_read_lock(mm);
 	blk_start_plug(&plug);
 	for (vma = mm->mmap; vma; vma = vma->vm_next)
 		force_swapin_vma(vma);
 	blk_finish_plug(&plug);
 	mmap_read_unlock(mm);
+	mmput(mm);
 
 	return 0;
 }
