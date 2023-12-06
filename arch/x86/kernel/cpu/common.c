@@ -24,7 +24,9 @@
 #include <linux/io.h>
 #include <linux/syscore_ops.h>
 #include <linux/pgtable.h>
+#ifndef __GENKSYMS__
 #include <linux/utsname.h>
+#endif
 
 #include <asm/alternative.h>
 #include <asm/cmdline.h>
