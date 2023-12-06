@@ -142,16 +142,6 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	if (IS_ERR(file))
 		goto out;
 
-	/*
-	 * may_open() has already checked for this, so it should be
-	 * impossible to trip now. But we need to be extra cautious
-	 * and check again at the very end too.
-	 */
-	error = -EACCES;
-	if (WARN_ON_ONCE(!S_ISREG(file_inode(file)->i_mode) ||
-			 path_noexec(&file->f_path)))
-		goto exit;
-
 	error = -ENOEXEC;
 
 	read_lock(&binfmt_lock);
@@ -168,7 +158,7 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 			break;
 	}
 	read_unlock(&binfmt_lock);
-exit:
+
 	fput(file);
 out:
 	return error;
@@ -924,16 +914,6 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
 	file = do_filp_open(fd, name, &open_exec_flags);
 	if (IS_ERR(file))
 		goto out;
-
-	/*
-	 * may_open() has already checked for this, so it should be
-	 * impossible to trip now. But we need to be extra cautious
-	 * and check again at the very end too.
-	 */
-	err = -EACCES;
-	if (WARN_ON_ONCE(!S_ISREG(file_inode(file)->i_mode) ||
-			 path_noexec(&file->f_path)))
-		goto exit;
 
 	err = deny_write_access(file);
 	if (err)
