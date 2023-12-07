@@ -1100,7 +1100,8 @@ void add_interrupt_randomness(int irq)
 	if (new_count & MIX_INFLIGHT)
 		return;
 
-	if (new_count < 1024 && !time_is_before_jiffies(fast_pool->last + HZ))
+	if (new_count < 1024 && !time_is_before_jiffies(fast_pool->last + HZ) &&
+			crng_ready())
 		return;
 
 	fast_pool->count |= MIX_INFLIGHT;
