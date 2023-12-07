@@ -61,8 +61,7 @@ static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
 	if (!ndev)
 		ndev = get_hr_netdev(hr_dev, port_num - 1);
 
-	if (ndev)
-		dev_hold(ndev);
+	dev_hold(ndev);
 
 	rcu_read_unlock();
 
