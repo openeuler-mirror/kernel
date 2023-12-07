@@ -6,7 +6,6 @@
 
 /* debugfs seqfile */
 struct hns_debugfs_seqfile {
-	struct dentry *entry;
 	int (*read)(struct seq_file *seq, void *data);
 	void *data;
 };
