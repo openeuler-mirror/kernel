@@ -658,10 +658,17 @@ static bool hns_roce_bond_lowerstate_event(struct hns_roce_dev *hr_dev,
 	return true;
 }
 
-static inline bool hns_roce_bond_mode_is_supported(enum netdev_lag_tx_type tx_type)
+static bool is_bond_setting_supported(struct netdev_lag_upper_info *bond_info)
 {
-	if (tx_type != NETDEV_LAG_TX_TYPE_ACTIVEBACKUP &&
-	    tx_type != NETDEV_LAG_TX_TYPE_HASH)
+	if (!bond_info)
+		return false;
+
+	if (bond_info->tx_type != NETDEV_LAG_TX_TYPE_ACTIVEBACKUP &&
+	    bond_info->tx_type != NETDEV_LAG_TX_TYPE_HASH)
+		return false;
+
+	if (bond_info->tx_type == NETDEV_LAG_TX_TYPE_HASH &&
+	    bond_info->hash_type > NETDEV_LAG_HASH_L23)
 		return false;
 
 	return true;
@@ -783,9 +790,9 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 	return bond_grp;
 }
 
-static bool is_dev_bond_supported(struct hns_roce_dev *hr_dev, int *bus_num)
+static bool is_dev_bond_supported(struct hns_roce_dev *hr_dev, int bus_num)
 {
-	if (!hr_dev)
+	if (!hr_dev || !(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
 		return false;
 
 	if (hr_dev->is_vf || pci_num_vf(hr_dev->pci_dev) > 0)
@@ -820,7 +827,7 @@ static bool check_linking_bond_support(struct netdev_lag_upper_info *bond_info,
 	struct net_device *net_dev;
 	u8 slave_num = 0;
 
-	if (!hns_roce_bond_mode_is_supported(bond_info->tx_type))
+	if (!is_bond_setting_supported(bond_info))
 		return false;
 
 	rcu_read_lock();
