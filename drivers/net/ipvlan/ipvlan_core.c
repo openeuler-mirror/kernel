@@ -547,6 +547,124 @@ out:
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+static int ipvlan_process_v4_forward(struct sk_buff *skb)
+{
+	const struct iphdr *ip4h = ip_hdr(skb);
+	struct net_device *dev = skb->dev;
+	struct net *net = dev_net(dev);
+	struct rtable *rt;
+	int err, ret = NET_XMIT_DROP;
+	struct flowi4 fl4 = {
+		.flowi4_tos = RT_TOS(ip4h->tos),
+		.flowi4_flags = FLOWI_FLAG_ANYSRC,
+		.flowi4_mark = skb->mark,
+		.daddr = ip4h->daddr,
+		.saddr = ip4h->saddr,
+	};
+
+	rt = ip_route_output_flow(net, &fl4, NULL);
+	if (IS_ERR(rt))
+		goto err;
+
+	if (rt->rt_type != RTN_UNICAST && rt->rt_type != RTN_LOCAL) {
+		ip_rt_put(rt);
+		goto err;
+	}
+	skb_dst_set(skb, &rt->dst);
+	err = ip_local_out(net, skb->sk, skb);
+	if (unlikely(net_xmit_eval(err)))
+		dev->stats.tx_errors++;
+	else
+		ret = NET_XMIT_SUCCESS;
+	goto out;
+err:
+	dev->stats.tx_errors++;
+	kfree_skb(skb);
+out:
+	return ret;
+}
+
+#if IS_ENABLED(CONFIG_IPV6)
+static int ipvlan_process_v6_forward(struct sk_buff *skb)
+{
+	const struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	struct net_device *dev = skb->dev;
+	struct net *net = dev_net(dev);
+	struct dst_entry *dst;
+	int err, ret = NET_XMIT_DROP;
+	struct flowi6 fl6 = {
+		.daddr = ip6h->daddr,
+		.saddr = ip6h->saddr,
+		.flowi6_flags = FLOWI_FLAG_ANYSRC,
+		.flowlabel = ip6_flowinfo(ip6h),
+		.flowi6_mark = skb->mark,
+		.flowi6_proto = ip6h->nexthdr,
+	};
+
+	dst = ip6_route_output(net, NULL, &fl6);
+	if (dst->error) {
+		ret = dst->error;
+		dst_release(dst);
+		goto err;
+	}
+	skb_dst_set(skb, dst);
+	err = ip6_local_out(net, skb->sk, skb);
+	if (unlikely(net_xmit_eval(err)))
+		dev->stats.tx_errors++;
+	else
+		ret = NET_XMIT_SUCCESS;
+	goto out;
+err:
+	dev->stats.tx_errors++;
+	kfree_skb(skb);
+out:
+	return ret;
+}
+#else
+static int ipvlan_process_v6_forward(struct sk_buff *skb)
+{
+	return NET_XMIT_DROP;
+}
+#endif
+
+static int ipvlan_process_forward(struct sk_buff *skb)
+{
+	struct ethhdr *ethh = eth_hdr(skb);
+	int ret = NET_XMIT_DROP;
+
+	/* In this mode we dont care about multicast and broadcast traffic */
+	if (is_multicast_ether_addr(ethh->h_dest)) {
+		pr_debug_ratelimited("Dropped {multi|broad}cast of type=[%x]\n",
+				     ntohs(skb->protocol));
+		kfree_skb(skb);
+		goto out;
+	}
+
+	/* The ipvlan is a pseudo-L2 device, so the packets that we receive
+	 * will have L2; which need to discarded and processed further
+	 * in the net-ns of the main-device.
+	 */
+	if (skb_mac_header_was_set(skb)) {
+		skb_pull(skb, sizeof(*ethh));
+		skb->mac_header = (typeof(skb->mac_header))~0U;
+		skb_reset_network_header(skb);
+	}
+
+	if (skb->protocol == htons(ETH_P_IPV6)) {
+		ret = ipvlan_process_v6_forward(skb);
+	} else if (skb->protocol == htons(ETH_P_IP)) {
+		ret = ipvlan_process_v4_forward(skb);
+	} else {
+		pr_warn_ratelimited("Dropped outbound packet type=%x\n",
+				    ntohs(skb->protocol));
+		kfree_skb(skb);
+	}
+out:
+	return ret;
+}
+#endif
+
 static void ipvlan_multicast_enqueue(struct ipvl_port *port,
 				     struct sk_buff *skb, bool tx_pkt)
 {
@@ -647,6 +765,80 @@ static int ipvlan_xmit_mode_l2(struct sk_buff *skb, struct net_device *dev)
 	return dev_queue_xmit(skb);
 }
 
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+static int ipvlan_l2e_local_xmit_event(struct ipvl_dev *ipvlan,
+				       struct sk_buff **pskb)
+{
+	struct sk_buff *nskb, *tskb;
+
+	while ((ipvlan->local_packets_cached >= sysctl_ipvlan_loop_qlen) &&
+	       (tskb = skb_dequeue(&ipvlan->local_xmit_queue))) {
+		ipvlan->local_packets_cached -= tskb->truesize;
+		if (ipvlan->local_packets_cached < 0 ||
+		    skb_queue_empty(&ipvlan->local_xmit_queue))
+			ipvlan->local_packets_cached = 0;
+		kfree_skb(tskb);
+	}
+
+	nskb = skb_clone(*pskb, GFP_ATOMIC);
+	if (!nskb)
+		return NET_XMIT_DROP;
+
+	ipvlan->local_timeout = jiffies
+				+ (sysctl_ipvlan_loop_delay * HZ) / 1000;
+	mod_timer(&ipvlan->local_free_timer, ipvlan->local_timeout);
+	skb_queue_tail(&ipvlan->local_xmit_queue, *pskb);
+	ipvlan->local_packets_cached += (*pskb)->truesize;
+	*pskb = nskb;
+
+	return 0;
+}
+
+static int ipvlan_xmit_mode_l2e(struct sk_buff *skb, struct net_device *dev)
+{
+	struct ipvl_dev *ipvlan = netdev_priv(dev);
+	struct ethhdr *eth = eth_hdr(skb);
+	struct ipvl_addr *addr;
+	void *lyr3h;
+	int addr_type;
+
+	if (!ipvlan_is_vepa(ipvlan->port) &&
+	    ether_addr_equal(eth->h_dest, eth->h_source)) {
+		lyr3h = ipvlan_get_L3_hdr(ipvlan->port, skb, &addr_type);
+		if (lyr3h) {
+			addr = ipvlan_addr_lookup(ipvlan->port, lyr3h,
+						  addr_type, true);
+			if (addr) {
+				if (ipvlan_is_private(ipvlan->port)) {
+					consume_skb(skb);
+					return NET_XMIT_DROP;
+				}
+
+				if (unlikely(ipvlan_l2e_local_xmit_event(ipvlan,
+									 &skb)))
+					return NET_XMIT_DROP;
+				return ipvlan_rcv_frame(addr, &skb, true);
+			}
+		}
+		skb = skb_share_check(skb, GFP_ATOMIC);
+		if (!skb)
+			return NET_XMIT_DROP;
+
+		/* maybe the packet need been forward */
+		skb->dev = ipvlan->phy_dev;
+		ipvlan_skb_crossing_ns(skb, ipvlan->phy_dev);
+		return ipvlan_process_forward(skb);
+	} else if (is_multicast_ether_addr(eth->h_dest)) {
+		ipvlan_skb_crossing_ns(skb, NULL);
+		ipvlan_multicast_enqueue(ipvlan->port, skb, true);
+		return NET_XMIT_SUCCESS;
+	}
+
+	skb->dev = ipvlan->phy_dev;
+	return dev_queue_xmit(skb);
+}
+#endif
+
 int ipvlan_queue_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct ipvl_dev *ipvlan = netdev_priv(dev);
@@ -666,6 +858,10 @@ int ipvlan_queue_xmit(struct sk_buff *skb, struct net_device *dev)
 	case IPVLAN_MODE_L3S:
 #endif
 		return ipvlan_xmit_mode_l3(skb, dev);
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+	case IPVLAN_MODE_L2E:
+		return ipvlan_xmit_mode_l2e(skb, dev);
+#endif
 	}
 
 	/* Should not reach here */
@@ -746,6 +942,38 @@ static rx_handler_result_t ipvlan_handle_mode_l2(struct sk_buff **pskb,
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+static rx_handler_result_t ipvlan_handle_mode_l2e(struct sk_buff **pskb,
+						  struct ipvl_port *port)
+{
+	struct sk_buff *skb = *pskb;
+	struct ethhdr *eth = eth_hdr(skb);
+	rx_handler_result_t ret = RX_HANDLER_PASS;
+
+	if (is_multicast_ether_addr(eth->h_dest)) {
+		if (ipvlan_external_frame(skb, port)) {
+			struct sk_buff *nskb = skb_clone(skb, GFP_ATOMIC);
+
+			/* External frames are queued for device local
+			 * distribution, but a copy is given to master
+			 * straight away to avoid sending duplicates later
+			 * when work-queue processes this frame. This is
+			 * achieved by returning RX_HANDLER_PASS.
+			 */
+			if (nskb) {
+				ipvlan_skb_crossing_ns(nskb, NULL);
+				ipvlan_multicast_enqueue(port, nskb, false);
+			}
+		}
+	} else {
+		/* Perform like l3 mode for non-multicast packet */
+		ret = ipvlan_handle_mode_l3(pskb, port);
+	}
+
+	return ret;
+}
+#endif
+
 rx_handler_result_t ipvlan_handle_frame(struct sk_buff **pskb)
 {
 	struct sk_buff *skb = *pskb;
@@ -762,6 +990,10 @@ rx_handler_result_t ipvlan_handle_frame(struct sk_buff **pskb)
 #ifdef CONFIG_IPVLAN_L3S
 	case IPVLAN_MODE_L3S:
 		return RX_HANDLER_PASS;
+#endif
+#if IS_ENABLED(CONFIG_IPVLAN_L2E)
+	case IPVLAN_MODE_L2E:
+		return ipvlan_handle_mode_l2e(pskb, port);
 #endif
 	}
 
