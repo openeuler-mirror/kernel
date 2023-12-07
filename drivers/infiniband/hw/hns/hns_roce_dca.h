@@ -61,8 +61,7 @@ void hns_roce_register_udca(struct hns_roce_dev *hr_dev, int max_qps,
 void hns_roce_unregister_udca(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_ucontext *uctx);
 
-int hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
-			struct ib_udata *udata);
+int hns_roce_enable_dca(struct hns_roce_qp *hr_qp, struct ib_udata *udata);
 void hns_roce_disable_dca(struct hns_roce_dev *hr_dev,
 			  struct hns_roce_qp *hr_qp, struct ib_udata *udata);
 

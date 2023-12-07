@@ -61,8 +61,7 @@ static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
 	if (!ndev)
 		ndev = get_hr_netdev(hr_dev, port_num - 1);
 
-	if (ndev)
-		dev_hold(ndev);
+	dev_hold(ndev);
 
 	rcu_read_unlock();
 
@@ -645,7 +644,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	list_del(&context->list);
 	spin_unlock(&hr_dev->uctx_list_lock);
 
-	hns_roce_unregister_uctx_debugfs(hr_dev, context);
+	hns_roce_unregister_uctx_debugfs(context);
 
 	hns_roce_unregister_udca(hr_dev, context);
 

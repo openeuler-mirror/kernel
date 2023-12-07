@@ -149,8 +149,7 @@ static void *alloc_dca_pages(struct hns_roce_dev *hr_dev, bool is_user,
 
 }
 
-static void init_dca_kmem_states(struct hns_roce_dev *hr_dev,
-				 struct hns_dca_page_state *states, int count,
+static void init_dca_kmem_states(struct hns_dca_page_state *states, int count,
 				 struct hns_roce_buf *kmem)
 {
 	dma_addr_t cur_addr;
@@ -167,8 +166,7 @@ static void init_dca_kmem_states(struct hns_roce_dev *hr_dev,
 	}
 }
 
-static void init_dca_umem_states(struct hns_roce_dev *hr_dev,
-				 struct hns_dca_page_state *states, int count,
+static void init_dca_umem_states(struct hns_dca_page_state *states, int count,
 				 struct ib_umem *umem)
 {
 	struct ib_block_iter biter;
@@ -201,9 +199,9 @@ static struct hns_dca_page_state *alloc_dca_states(struct hns_roce_dev *hr_dev,
 		return NULL;
 
 	if (is_user)
-		init_dca_umem_states(hr_dev, states, count, pages);
+		init_dca_umem_states(states, count, pages);
 	else
-		init_dca_kmem_states(hr_dev, states, count, pages);
+		init_dca_kmem_states(states, count, pages);
 
 	return states;
 }
@@ -1482,8 +1480,7 @@ static void teardown_kdca(struct hns_roce_dca_cfg *cfg)
 	cfg->buf_list = NULL;
 }
 
-int hns_roce_enable_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
-			struct ib_udata *udata)
+int hns_roce_enable_dca(struct hns_roce_qp *hr_qp, struct ib_udata *udata)
 {
 	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
 

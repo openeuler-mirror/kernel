@@ -137,14 +137,11 @@ static void init_debugfs_seqfile(struct hns_debugfs_seqfile *seq,
 				 int (*read_fn)(struct seq_file *, void *),
 				 void *data)
 {
-	struct dentry *entry;
-
-	entry = debugfs_create_file(name, 0400, parent, seq,
-				    &hns_debugfs_seqfile_fops);
+	debugfs_create_file(name, 0400, parent, seq,
+			    &hns_debugfs_seqfile_fops);
 
 	seq->read = read_fn;
 	seq->data = data;
-	seq->entry = entry;
 }
 
 struct dca_mem_stats {
@@ -607,8 +604,7 @@ void hns_roce_register_uctx_debugfs(struct hns_roce_dev *hr_dev,
 				     hr_dev, uctx);
 }
 
-void hns_roce_unregister_uctx_debugfs(struct hns_roce_dev *hr_dev,
-				      struct hns_roce_ucontext *uctx)
+void hns_roce_unregister_uctx_debugfs(struct hns_roce_ucontext *uctx)
 {
 	debugfs_remove_recursive(uctx->dca_dbgfs.root);
 }
@@ -667,8 +663,8 @@ static void create_srq_debugfs(struct hns_roce_dev *hr_dev,
 
 	dbgfs->root = debugfs_create_dir("srq", parent);
 
-	dbgfs->srqn.entry = debugfs_create_file("srqn", 0600, dbgfs->root,
-						hr_dev, &hns_srqn_fops);
+	debugfs_create_file("srqn", 0600, dbgfs->root,
+			    hr_dev, &hns_srqn_fops);
 
 	init_debugfs_seqfile(&dbgfs->srqc, "srqc", dbgfs->root,
 			     srqc_debugfs_show, hr_dev);
