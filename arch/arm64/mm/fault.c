@@ -25,6 +25,7 @@
 #include <linux/perf_event.h>
 #include <linux/preempt.h>
 #include <linux/hugetlb.h>
+#include <linux/sysctl.h>
 
 #include <asm/acpi.h>
 #include <asm/bug.h>
@@ -42,6 +43,31 @@
 #include <asm/system_misc.h>
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
+
+static int sysctl_machine_check_safe = IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC);
+
+#ifdef CONFIG_ARCH_HAS_COPY_MC
+static struct ctl_table machine_check_safe_sysctl_table[] = {
+	{
+		.procname       = "machine_check_safe",
+		.data           = &sysctl_machine_check_safe,
+		.maxlen         = sizeof(sysctl_machine_check_safe),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+};
+
+static int __init machine_check_safe_sysctl_init(void)
+{
+	if (!register_sysctl("kernel", machine_check_safe_sysctl_table))
+		return -EINVAL;
+	return 0;
+}
+
+core_initcall(machine_check_safe_sysctl_init);
+#endif
 
 struct fault_info {
 	int	(*fn)(unsigned long far, unsigned long esr,
@@ -732,6 +758,9 @@ static bool arm64_do_kernel_sea(unsigned long addr, unsigned int esr,
 				     struct pt_regs *regs, int sig, int code)
 {
 	if (!IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC))
+		return false;
+
+	if (!sysctl_machine_check_safe)
 		return false;
 
 	if (user_mode(regs))
