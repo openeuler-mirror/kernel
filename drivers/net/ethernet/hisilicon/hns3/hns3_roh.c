@@ -66,7 +66,7 @@ int hns3_handle_roh_arp_req(struct sk_buff *skb, struct hns3_nic_priv *priv)
 	/* use same queue num in rx */
 	ring = &priv->ring[skb->queue_mapping + h->kinfo.num_tqps];
 	reply_idx = ring->arp_reply_tail;
-	hns3_roh_arp_reply_idx_move_fd(reply_idx);
+	reply_idx = hns3_roh_arp_reply_idx_move_fd(reply_idx);
 	/* This smp_load_acquire() pairs with smp_store_release() in
 	 * hns3_handle_roh_arp_reply().
 	 */
@@ -150,7 +150,7 @@ void hns3_handle_roh_arp_reply(struct hns3_enet_tqp_vector *tqp_vector,
 		while (smp_load_acquire(&ring->arp_reply_tail) !=
 		       ring->arp_reply_head) {
 			reply_idx = ring->arp_reply_head;
-			hns3_roh_arp_reply_idx_move_fd(reply_idx);
+			reply_idx = hns3_roh_arp_reply_idx_move_fd(reply_idx);
 			arp_reply = &ring->arp_reply[reply_idx];
 			skb = setup_arp_reply_skb(arp_reply, priv);
 			/* This smp_store_release() pairs with
