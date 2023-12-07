@@ -1330,5 +1330,5 @@ void hns_roce_free_unfree_umem(struct hns_roce_dev *hr_dev)
 		ib_umem_release(pos->umem);
 		kvfree(pos);
 	}
-	spin_unlock(&hr_dev->mtr_unfree_list_lock);
+	spin_unlock(&hr_dev->umem_unfree_list_lock);
 }
