@@ -108,6 +108,7 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	if (udata) {
 		resp.priority = ah->av.sl;
 		resp.tc_mode = tc_mode;
+		memcpy(resp.dmac, ah_attr->roce.dmac, ETH_ALEN);
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
 	}
