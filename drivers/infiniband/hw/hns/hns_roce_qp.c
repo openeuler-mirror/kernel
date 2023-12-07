@@ -655,7 +655,6 @@ static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 }
 
 static bool check_dca_is_enable(struct hns_roce_dev *hr_dev,
-				struct hns_roce_qp *hr_qp,
 				struct ib_qp_init_attr *init_attr, bool is_user,
 				unsigned long addr)
 {
@@ -794,7 +793,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 	if (dca_en) {
 		/* DCA must be enabled after the buffer attr is configured. */
-		ret = hns_roce_enable_dca(hr_dev, hr_qp, udata);
+		ret = hns_roce_enable_dca(hr_qp, udata);
 		if (ret) {
 			ibdev_err(ibdev, "failed to enable DCA, ret = %d.\n",
 				  ret);
@@ -858,8 +857,7 @@ static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	if (uctx && (uctx->config & HNS_ROCE_UCTX_DYN_QP_PGSZ))
 		page_shift = ucmd->pageshift;
 
-	dca_en = check_dca_is_enable(hr_dev, hr_qp, init_attr,
-				     !!udata, ucmd->buf_addr);
+	dca_en = check_dca_is_enable(hr_dev, init_attr, !!udata, ucmd->buf_addr);
 	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, page_shift, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
@@ -1292,7 +1290,6 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 }
 
 static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
-				     struct ib_pd *ib_pd,
 				     struct ib_qp_init_attr *init_attr,
 				     struct ib_udata *udata,
 				     struct hns_roce_qp *hr_qp)
@@ -1466,7 +1463,7 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 		hr_qp->phy_port = hr_dev->iboe.phy_port[hr_qp->port];
 	}
 
-	ret = hns_roce_create_qp_common(hr_dev, pd, init_attr, udata, hr_qp);
+	ret = hns_roce_create_qp_common(hr_dev, init_attr, udata, hr_qp);
 	if (ret) {
 		ibdev_err(ibdev, "Create QP type 0x%x failed(%d)\n",
 			  init_attr->qp_type, ret);

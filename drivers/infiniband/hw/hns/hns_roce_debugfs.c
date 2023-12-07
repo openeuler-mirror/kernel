@@ -607,8 +607,7 @@ void hns_roce_register_uctx_debugfs(struct hns_roce_dev *hr_dev,
 				     hr_dev, uctx);
 }
 
-void hns_roce_unregister_uctx_debugfs(struct hns_roce_dev *hr_dev,
-				      struct hns_roce_ucontext *uctx)
+void hns_roce_unregister_uctx_debugfs(struct hns_roce_ucontext *uctx)
 {
 	debugfs_remove_recursive(uctx->dca_dbgfs.root);
 }

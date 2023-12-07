@@ -645,7 +645,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	list_del(&context->list);
 	spin_unlock(&hr_dev->uctx_list_lock);
 
-	hns_roce_unregister_uctx_debugfs(hr_dev, context);
+	hns_roce_unregister_uctx_debugfs(context);
 
 	hns_roce_unregister_udca(hr_dev, context);
 
