@@ -44,6 +44,7 @@
 #define QM_MB_CMD_CQC_BT                0x5
 #define QM_MB_CMD_SQC_VFT_V2            0x6
 #define QM_MB_CMD_STOP_QP               0x8
+#define QM_MB_CMD_FLUSH_QM				0x9
 #define QM_MB_CMD_SRC                   0xc
 #define QM_MB_CMD_DST                   0xd
 
@@ -152,6 +153,7 @@ enum qm_cap_bits {
 	QM_SUPPORT_DB_ISOLATION = 0x0,
 	QM_SUPPORT_FUNC_QOS,
 	QM_SUPPORT_STOP_QP,
+	QM_SUPPORT_STOP_FUNC,
 	QM_SUPPORT_MB_COMMAND,
 	QM_SUPPORT_SVA_PREFETCH,
 	QM_SUPPORT_RPM,
@@ -395,7 +397,6 @@ struct hisi_qm {
 	struct work_struct rst_work;
 	struct work_struct cmd_process;
 
-	const char *algs;
 	bool use_uacce;
 	bool use_sva;
 	bool use_iommu;
@@ -554,8 +555,6 @@ void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
 int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs);
 int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen);
 int hisi_qm_sriov_configure(struct pci_dev *pdev, int num_vfs);
-void hisi_qm_dev_err_init(struct hisi_qm *qm);
-void hisi_qm_dev_err_uninit(struct hisi_qm *qm);
 int hisi_qm_regs_debugfs_init(struct hisi_qm *qm,
 			  struct dfx_diff_registers *dregs, u32 reg_len);
 void hisi_qm_regs_debugfs_uninit(struct hisi_qm *qm, u32 reg_len);

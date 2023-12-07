@@ -55,7 +55,6 @@ struct sec_req {
 	dma_addr_t in_dma;
 	struct sec_cipher_req c_req;
 	struct sec_aead_req aead_req;
-	struct list_head backlog_head;
 
 	int err_type;
 	int req_id;
@@ -121,7 +120,6 @@ struct sec_qp_ctx {
 	struct sec_alg_res *res;
 	struct sec_ctx *ctx;
 	spinlock_t req_lock;
-	struct list_head backlog;
 	struct hisi_acc_sgl_pool *c_in_pool;
 	struct hisi_acc_sgl_pool *c_out_pool;
 };

@@ -288,10 +288,10 @@ static int sec_bd_send(struct sec_ctx *ctx, struct sec_req *req)
 	ret = hisi_qp_send(qp_ctx->qp, &req->sec_sqe);
 	if (ctx->fake_req_limit <=
 	    atomic_read(&qp_ctx->qp->qp_status.used) && !ret) {
-		list_add_tail(&req->backlog_head, &qp_ctx->backlog);
+		req->fake_busy = true;
+		spin_unlock_bh(&qp_ctx->req_lock);
 		atomic64_inc(&ctx->sec->debug.dfx.send_cnt);
 		atomic64_inc(&ctx->sec->debug.dfx.send_busy_cnt);
-		spin_unlock_bh(&qp_ctx->req_lock);
 		return -EBUSY;
 	}
 	spin_unlock_bh(&qp_ctx->req_lock);
@@ -557,7 +557,6 @@ static int sec_create_qp_ctx(struct sec_ctx *ctx, int qp_ctx_id)
 
 	spin_lock_init(&qp_ctx->req_lock);
 	idr_init(&qp_ctx->req_idr);
-	INIT_LIST_HEAD(&qp_ctx->backlog);
 
 	ret = sec_alloc_qp_ctx_resource(ctx, qp_ctx);
 	if (ret)
@@ -1149,7 +1148,8 @@ static int sec_aead_setkey(struct crypto_aead *tfm, const u8 *key,
 		return 0;
 	}
 
-	if (crypto_authenc_extractkeys(&keys, key, keylen))
+	ret = crypto_authenc_extractkeys(&keys, key, keylen);
+	if (ret)
 		goto bad_key;
 
 	ret = sec_aead_aes_set_key(c_ctx, &keys);
@@ -1166,6 +1166,7 @@ static int sec_aead_setkey(struct crypto_aead *tfm, const u8 *key,
 
 	if ((ctx->a_ctx.mac_len & SEC_SQE_LEN_RATE_MASK)  ||
 	    (ctx->a_ctx.a_key_len & SEC_SQE_LEN_RATE_MASK)) {
+		ret = -EINVAL;
 		dev_err(dev, "MAC or AUTH key length error!\n");
 		goto bad_key;
 	}
@@ -1174,7 +1175,7 @@ static int sec_aead_setkey(struct crypto_aead *tfm, const u8 *key,
 
 bad_key:
 	memzero_explicit(&keys, sizeof(struct crypto_authenc_keys));
-	return -EINVAL;
+	return ret;
 }
 
 
@@ -1397,31 +1398,10 @@ static void sec_update_iv(struct sec_req *req, enum sec_alg_type alg_type)
 	}
 }
 
-static struct sec_req *sec_back_req_clear(struct sec_ctx *ctx,
-				struct sec_qp_ctx *qp_ctx)
-{
-	struct sec_req *backlog_req = NULL;
-
-	spin_lock_bh(&qp_ctx->req_lock);
-	if (ctx->fake_req_limit >=
-	    atomic_read(&qp_ctx->qp->qp_status.used) &&
-	    !list_empty(&qp_ctx->backlog)) {
-		backlog_req = list_first_entry(&qp_ctx->backlog,
-				typeof(*backlog_req), backlog_head);
-		list_del(&backlog_req->backlog_head);
-	}
-	spin_unlock_bh(&qp_ctx->req_lock);
-
-	return backlog_req;
-}
-
 static void sec_skcipher_callback(struct sec_ctx *ctx, struct sec_req *req,
 				  int err)
 {
 	struct skcipher_request *sk_req = req->c_req.sk_req;
-	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
-	struct skcipher_request *backlog_sk_req;
-	struct sec_req *backlog_req;
 
 	sec_free_req_id(req);
 
@@ -1430,14 +1410,8 @@ static void sec_skcipher_callback(struct sec_ctx *ctx, struct sec_req *req,
 	    ctx->c_ctx.c_mode == SEC_CMODE_CTR) && req->c_req.encrypt)
 		sec_update_iv(req, SEC_SKCIPHER);
 
-	while (1) {
-		backlog_req = sec_back_req_clear(ctx, qp_ctx);
-		if (!backlog_req)
-			break;
-
-		backlog_sk_req = backlog_req->c_req.sk_req;
-		backlog_sk_req->base.complete(&backlog_sk_req->base,
-						-EINPROGRESS);
+	if (req->fake_busy) {
+		sk_req->base.complete(&sk_req->base, -EINPROGRESS);
 		atomic64_inc(&ctx->sec->debug.dfx.recv_busy_cnt);
 	}
 
@@ -1683,9 +1657,6 @@ static void sec_aead_callback(struct sec_ctx *c, struct sec_req *req, int err)
 	struct sec_aead_req *aead_req = &req->aead_req;
 	struct sec_cipher_req *c_req = &req->c_req;
 	size_t authsize = crypto_aead_authsize(tfm);
-	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
-	struct aead_request *backlog_aead_req;
-	struct sec_req *backlog_req;
 	size_t sz;
 
 	if (!err && c->c_ctx.c_mode == SEC_CMODE_CBC && c_req->encrypt)
@@ -1707,14 +1678,8 @@ static void sec_aead_callback(struct sec_ctx *c, struct sec_req *req, int err)
 
 	sec_free_req_id(req);
 
-	while (1) {
-		backlog_req = sec_back_req_clear(c, qp_ctx);
-		if (!backlog_req)
-			break;
-
-		backlog_aead_req = backlog_req->aead_req.aead_req;
-		backlog_aead_req->base.complete(&backlog_aead_req->base,
-						-EINPROGRESS);
+	if (req->fake_busy) {
+		a_req->base.complete(&a_req->base, -EINPROGRESS);
 		atomic64_inc(&c->sec->debug.dfx.recv_busy_cnt);
 	}
 
@@ -2102,6 +2067,7 @@ static int sec_skcipher_crypto(struct skcipher_request *sk_req, bool encrypt)
 	req->c_req.sk_req = sk_req;
 	req->c_req.encrypt = encrypt;
 	req->ctx = ctx;
+	req->fake_busy = false;
 
 	ret = sec_skcipher_param_check(ctx, req);
 	if (unlikely(ret))
@@ -2383,6 +2349,7 @@ static int sec_aead_crypto(struct aead_request *a_req, bool encrypt)
 	req->aead_req.aead_req = a_req;
 	req->c_req.encrypt = encrypt;
 	req->ctx = ctx;
+	req->fake_busy = false;
 
 	ret = sec_aead_param_check(ctx, req);
 	if (unlikely(ret)) {
