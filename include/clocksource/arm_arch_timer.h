@@ -115,10 +115,28 @@ static inline bool vtimer_irqbypass_hw_support(struct arch_timer_kvm_info *info)
 	return info->irqbypass_flag & VT_EXPANDDEV_PROBED;
 }
 
+#ifdef CONFIG_HISILICON_IRQ_MBIGEN
+
 void vtimer_mbigen_set_vector(int cpu_id, u16 vpeid);
 bool vtimer_mbigen_get_active(int cpu_id);
 void vtimer_mbigen_set_auto_clr(int cpu_id, bool set);
 void vtimer_gic_set_auto_clr(int cpu_id, bool set);
 void vtimer_mbigen_set_active(int cpu_id, bool set);
+
+#else
+
+static inline void vtimer_mbigen_set_vector(int cpu_id, u16 vpeid) {}
+
+static inline bool vtimer_mbigen_get_active(int cpu_id)
+{
+	/* You really shouldn't get here.. */
+	return false;
+}
+
+static inline void vtimer_mbigen_set_auto_clr(int cpu_id, bool set) {}
+static inline void vtimer_gic_set_auto_clr(int cpu_id, bool set) {}
+static inline void vtimer_mbigen_set_active(int cpu_id, bool set) {}
+
+#endif
 
 #endif
