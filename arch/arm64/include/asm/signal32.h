@@ -5,10 +5,10 @@
 #ifndef __ASM_SIGNAL32_H
 #define __ASM_SIGNAL32_H
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 #include <linux/compat.h>
 
-struct compat_sigcontext {
+struct a32_sigcontext {
 	/* We always set these two fields to 0 */
 	compat_ulong_t			trap_no;
 	compat_ulong_t			error_code;
@@ -34,48 +34,49 @@ struct compat_sigcontext {
 	compat_ulong_t			fault_address;
 };
 
-struct compat_ucontext {
+struct a32_ucontext {
 	compat_ulong_t			uc_flags;
 	compat_uptr_t			uc_link;
 	compat_stack_t			uc_stack;
-	struct compat_sigcontext	uc_mcontext;
+	struct a32_sigcontext	uc_mcontext;
 	compat_sigset_t			uc_sigmask;
 	int 				__unused[32 - (sizeof(compat_sigset_t) / sizeof(int))];
 	compat_ulong_t			uc_regspace[128] __attribute__((__aligned__(8)));
 };
 
-struct compat_sigframe {
-	struct compat_ucontext	uc;
+struct a32_sigframe {
+	struct a32_ucontext	uc;
 	compat_ulong_t		retcode[2];
 };
 
-struct compat_rt_sigframe {
+struct a32_rt_sigframe {
 	struct compat_siginfo info;
-	struct compat_sigframe sig;
+	struct a32_sigframe sig;
 };
 
-int compat_setup_frame(int usig, struct ksignal *ksig, sigset_t *set,
+int a32_setup_frame(int usig, struct ksignal *ksig, sigset_t *set,
 		       struct pt_regs *regs);
-int compat_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
+
+int a32_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
 			  struct pt_regs *regs);
 
-void compat_setup_restart_syscall(struct pt_regs *regs);
+void a32_setup_restart_syscall(struct pt_regs *regs);
 #else
 
-static inline int compat_setup_frame(int usid, struct ksignal *ksig,
+static inline int a32_setup_frame(int usid, struct ksignal *ksig,
 				     sigset_t *set, struct pt_regs *regs)
 {
 	return -ENOSYS;
 }
 
-static inline int compat_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
+static inline int a32_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
 					struct pt_regs *regs)
 {
 	return -ENOSYS;
 }
 
-static inline void compat_setup_restart_syscall(struct pt_regs *regs)
+static inline void a32_setup_restart_syscall(struct pt_regs *regs)
 {
 }
-#endif /* CONFIG_COMPAT */
+#endif /* CONFIG_AARCH32_EL0 */
 #endif /* __ASM_SIGNAL32_H */

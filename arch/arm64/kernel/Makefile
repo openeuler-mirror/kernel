@@ -36,11 +36,14 @@ obj-y			:= debug-monitors.o entry.o irq.o fpsimd.o		\
 			   syscall.o proton-pack.o idreg-override.o idle.o	\
 			   patching.o
 
-obj-$(CONFIG_COMPAT)			+= sys32.o signal32.o			\
+obj-$(CONFIG_AARCH32_EL0)		+= binfmt_elf32.o sys32.o signal32.o			\
 					   sys_compat.o
-obj-$(CONFIG_COMPAT)			+= sigreturn32.o
+obj-$(CONFIG_AARCH32_EL0)		+= sigreturn32.o
 obj-$(CONFIG_COMPAT_ALIGNMENT_FIXUPS)	+= compat_alignment.o
 obj-$(CONFIG_KUSER_HELPERS)		+= kuser32.o
+obj-$(CONFIG_ARM64_ILP32)		+= binfmt_ilp32.o sys_ilp32.o		\
+					   signal_ilp32.o
+obj-$(CONFIG_COMPAT)			+= sys32_common.o signal32_common.o
 obj-$(CONFIG_FUNCTION_TRACER)		+= ftrace.o entry-ftrace.o
 obj-$(CONFIG_MODULES)			+= module.o module-plts.o
 obj-$(CONFIG_PERF_EVENTS)		+= perf_regs.o perf_callchain.o
@@ -72,6 +75,7 @@ obj-$(CONFIG_ARM64_PTR_AUTH)		+= pointer_auth.o
 obj-$(CONFIG_ARM64_MTE)			+= mte.o
 obj-y					+= vdso-wrap.o
 obj-$(CONFIG_COMPAT_VDSO)		+= vdso32-wrap.o
+obj-$(CONFIG_ARM64_ILP32)		+= vdso-ilp32/
 obj-$(CONFIG_UNWIND_PATCH_PAC_INTO_SCS)	+= patch-scs.o
 CFLAGS_patch-scs.o			+= -mbranch-protection=none
 
