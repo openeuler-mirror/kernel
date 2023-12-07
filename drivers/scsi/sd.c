@@ -3501,7 +3501,7 @@ static int sd_probe(struct device *dev)
 
 	error = device_add_disk_safe(dev, gd, NULL);
 	if (error) {
-		put_device(&sdkp->dev);
+		device_unregister(&sdkp->dev);
 		goto out;
 	}
 
