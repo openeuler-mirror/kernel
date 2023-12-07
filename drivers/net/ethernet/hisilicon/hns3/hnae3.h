@@ -453,6 +453,7 @@ struct hnae3_dev_specs {
 	u8 tnl_num;
 	u16 guid_tbl_space;
 	u16 ip_tbl_space;
+	u8 hilink_version;
 };
 
 struct hnae3_client_ops {
