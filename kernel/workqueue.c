@@ -5293,8 +5293,11 @@ static int workqueue_apply_unbound_cpumask(void)
 		if (!(wq->flags & WQ_UNBOUND))
 			continue;
 		/* creating multiple pwqs breaks ordering guarantee */
-		if ((wq->flags & __WQ_ORDERED) && !(wq->flags & __WQ_DYNAMIC))
-			continue;
+		if (!list_empty(&wq->pwqs)) {
+			if ((wq->flags & __WQ_ORDERED_EXPLICIT) && !(wq->flags & __WQ_DYNAMIC))
+				continue;
+			wq->flags &= ~__WQ_ORDERED;
+		}
 
 		ctx = apply_wqattrs_prepare(wq, wq->unbound_attrs);
 		if (!ctx) {
