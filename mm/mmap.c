@@ -1197,16 +1197,19 @@ static inline bool file_mmap_ok(struct file *file, struct inode *inode,
 	return true;
 }
 
+static unsigned long __mmap_region(struct mm_struct *mm,
+				   struct file *file, unsigned long addr,
+				   unsigned long len, vm_flags_t vm_flags,
+				   unsigned long pgoff, struct list_head *uf);
 /*
  * The caller must write-lock current->mm->mmap_lock.
  */
-unsigned long do_mmap(struct file *file, unsigned long addr,
+unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file, unsigned long addr,
 			unsigned long len, unsigned long prot,
 			unsigned long flags, vm_flags_t vm_flags,
 			unsigned long pgoff, unsigned long *populate,
 			struct list_head *uf)
 {
-	struct mm_struct *mm = current->mm;
 	int pkey = 0;
 
 	*populate = 0;
@@ -1371,12 +1374,22 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			vm_flags |= VM_NORESERVE;
 	}
 
-	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
+	addr = __mmap_region(mm, file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
 	    ((vm_flags & VM_LOCKED) ||
 	     (flags & (MAP_POPULATE | MAP_NONBLOCK)) == MAP_POPULATE))
 		*populate = len;
 	return addr;
+}
+
+unsigned long do_mmap(struct file *file, unsigned long addr,
+		      unsigned long len, unsigned long prot,
+		      unsigned long flags, vm_flags_t vm_flags,
+		      unsigned long pgoff, unsigned long *populate,
+		      struct list_head *uf)
+{
+	return __do_mmap_mm(current->mm, file, addr, len, prot, flags,
+			    vm_flags, pgoff, populate, uf);
 }
 
 unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
@@ -2659,11 +2672,11 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	return do_vmi_munmap(&vmi, mm, start, len, uf, false);
 }
 
-unsigned long mmap_region(struct file *file, unsigned long addr,
-		unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
-		struct list_head *uf)
+static unsigned long __mmap_region(struct mm_struct *mm,
+				   struct file *file, unsigned long addr,
+				   unsigned long len, vm_flags_t vm_flags,
+				   unsigned long pgoff, struct list_head *uf)
 {
-	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
 	struct vm_area_struct *next, *prev, *merge;
 	pgoff_t pglen = len >> PAGE_SHIFT;
@@ -2913,6 +2926,13 @@ unacct_error:
 		vm_unacct_memory(charged);
 	validate_mm(mm);
 	return error;
+}
+
+unsigned long mmap_region(struct file *file, unsigned long addr,
+		unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
+		struct list_head *uf)
+{
+	return __mmap_region(current->mm, file, addr, len, vm_flags, pgoff, uf);
 }
 
 static int __vm_munmap(unsigned long start, size_t len, bool unlock)
