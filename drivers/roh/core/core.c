@@ -3,6 +3,7 @@
 
 #include <linux/pci.h>
 #include <linux/inetdevice.h>
+#include <linux/if_vlan.h>
 
 #include "core_priv.h"
 #include "core.h"
@@ -245,12 +246,26 @@ static int roh_ipv4_event(struct notifier_block *this, unsigned long event, void
 	struct in_ifaddr *ifa = ptr;
 	struct roh_device *device;
 	struct net_device *ndev;
+	struct sockaddr s_addr;
 	struct sockaddr_in in;
 	int ret;
 
+	if (event != NETDEV_UP)
+		return NOTIFY_DONE;
+
 	device = container_of(this, struct roh_device, nb);
 	ndev = ifa->ifa_dev->dev;
-	if (device->netdev != ndev || event != NETDEV_UP)
+
+	if (is_vlan_dev(ndev)) {
+		if (vlan_dev_real_dev(ndev) == device->netdev) {
+			s_addr.sa_family = ndev->type;
+			u64_to_ether_addr(be32_to_cpu(ifa->ifa_address) & 0xffffff, s_addr.sa_data);
+			dev_set_mac_address(ndev, &s_addr, NULL);
+		}
+		return NOTIFY_DONE;
+	}
+
+	if (device->netdev != ndev)
 		return NOTIFY_DONE;
 
 	in.sin_addr.s_addr = ifa->ifa_address;
