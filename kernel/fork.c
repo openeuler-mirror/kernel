@@ -99,6 +99,7 @@
 #include <linux/stackprotector.h>
 #include <linux/user_events.h>
 #include <linux/iommu.h>
+#include <linux/share_pool.h>
 
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
@@ -1308,6 +1309,7 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 				     NR_MM_COUNTERS))
 		goto fail_pcpu;
 
+	sp_init_mm(mm);
 	mm->user_ns = get_user_ns(user_ns);
 	lru_gen_init_mm(mm);
 	return mm;
@@ -1347,6 +1349,7 @@ static inline void __mmput(struct mm_struct *mm)
 	ksm_exit(mm);
 	khugepaged_exit(mm); /* must run before exit_mmap */
 	exit_mmap(mm);
+	sp_mm_clean(mm);
 	mm_put_huge_zero_page(mm);
 	set_mm_exe_file(mm, NULL);
 	if (!list_empty(&mm->mmlist)) {

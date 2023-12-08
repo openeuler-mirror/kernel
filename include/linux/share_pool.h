@@ -124,6 +124,13 @@ static inline bool sp_is_enabled(void)
 	return static_branch_likely(&share_pool_enabled_key);
 }
 
+extern void __sp_mm_clean(struct mm_struct *mm);
+static inline void sp_mm_clean(struct mm_struct *mm)
+{
+	if (sp_is_enabled())
+		__sp_mm_clean(mm);
+}
+
 static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
 {
 	if (sp_is_enabled())
@@ -140,6 +147,11 @@ static inline void sp_area_drop(struct vm_area_struct *vma)
 static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 {
 	return sp_is_enabled() && (vm_flags & VM_SHARE_POOL);
+}
+
+static inline void sp_init_mm(struct mm_struct *mm)
+{
+	mm->sp_group_master = NULL;
 }
 
 #else /* CONFIG_SHARE_POOL */
@@ -185,7 +197,15 @@ static inline int mg_sp_id_of_current(void)
 	return -EPERM;
 }
 
+static inline void sp_mm_clean(struct mm_struct *mm)
+{
+}
+
 static inline void sp_area_drop(struct vm_area_struct *vma)
+{
+}
+
+static inline void sp_init_mm(struct mm_struct *mm)
 {
 }
 
@@ -222,7 +242,6 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 {
 	return false;
 }
-
 #endif /* !CONFIG_SHARE_POOL */
 
 #endif /* LINUX_SHARE_POOL_H */
