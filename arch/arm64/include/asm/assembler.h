@@ -154,6 +154,10 @@ lr	.req	x30		// link register
 #define CPU_LE(code...) code
 #endif
 
+#define CPY_MC(l, x...)		\
+9999:   x;			\
+	_asm_extable_copy_mc_page    9999b, l
+
 /*
  * Define a macro that constructs a 64-bit value by concatenating two
  * 32-bit registers. Note that on big endian systems the order of the

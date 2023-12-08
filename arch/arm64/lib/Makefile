@@ -3,7 +3,7 @@ lib-y		:= clear_user.o delay.o copy_from_user.o		\
 		   copy_to_user.o copy_page.o				\
 		   clear_page.o csum.o insn.o memchr.o memcpy.o		\
 		   memset.o memcmp.o strcmp.o strncmp.o strlen.o	\
-		   strnlen.o strchr.o strrchr.o tishift.o
+		   strnlen.o strchr.o strrchr.o tishift.o memcpy_mc.o
 
 ifeq ($(CONFIG_KERNEL_MODE_NEON), y)
 obj-$(CONFIG_XOR_BLOCKS)	+= xor-neon.o
@@ -14,6 +14,8 @@ CFLAGS_xor-neon.o		+= -isystem $(shell $(CC) -print-file-name=include)
 endif
 
 lib-$(CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE) += uaccess_flushcache.o
+
+lib-$(CONFIG_ARCH_HAS_COPY_MC) += copy_mc_page.o
 
 obj-$(CONFIG_CRC32) += crc32.o
 
