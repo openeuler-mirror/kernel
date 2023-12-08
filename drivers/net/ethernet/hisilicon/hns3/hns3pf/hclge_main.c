@@ -11222,6 +11222,10 @@ static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps)
 	req = (struct hclge_config_max_frm_size_cmd *)desc.data;
 	req->max_frm_size = cpu_to_le16(new_mps);
 	req->min_frm_size = HCLGE_MAC_MIN_FRAME;
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		req->min_frm_size = UB_MIN_MTU;
+#endif
 
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
@@ -12411,6 +12415,10 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	/* HW supprt 2 layer vlan */
 	hdev->mps = ETH_FRAME_LEN + ETH_FCS_LEN + 2 * VLAN_HLEN;
+#ifdef CONFIG_HNS3_UBL
+	if (hnae3_dev_ubl_supported(ae_dev))
+		hdev->mps = UB_DATA_LEN;
+#endif
 
 	mutex_init(&hdev->vport_lock);
 	spin_lock_init(&hdev->fd_rule_lock);
