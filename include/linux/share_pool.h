@@ -154,6 +154,16 @@ static inline void sp_init_mm(struct mm_struct *mm)
 	mm->sp_group_master = NULL;
 }
 
+static inline bool sp_check_addr(unsigned long addr)
+{
+	return sp_is_enabled() && mg_is_sharepool_addr(addr);
+}
+
+static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
+{
+	return sp_is_enabled() && mg_is_sharepool_addr(addr) && !(flags & MAP_SHARE_POOL);
+}
+
 #else /* CONFIG_SHARE_POOL */
 
 static inline int mg_sp_group_add_task(int tgid, unsigned long prot, int spg_id)
@@ -239,6 +249,16 @@ static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
 }
 
 static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
+{
+	return false;
+}
+
+static inline bool sp_check_addr(unsigned long addr)
+{
+	return false;
+}
+
+static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
 {
 	return false;
 }
