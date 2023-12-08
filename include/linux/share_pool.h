@@ -130,6 +130,13 @@ static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
 		info->high_limit = min(info->high_limit, MMAP_SHARE_POOL_START);
 }
 
+extern void __sp_area_drop(struct vm_area_struct *vma);
+static inline void sp_area_drop(struct vm_area_struct *vma)
+{
+	if (sp_is_enabled())
+		__sp_area_drop(vma);
+}
+
 static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 {
 	return sp_is_enabled() && (vm_flags & VM_SHARE_POOL);
@@ -176,6 +183,10 @@ static inline int mg_sp_unshare(unsigned long va, unsigned long size, int id)
 static inline int mg_sp_id_of_current(void)
 {
 	return -EPERM;
+}
+
+static inline void sp_area_drop(struct vm_area_struct *vma)
+{
 }
 
 static inline int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
