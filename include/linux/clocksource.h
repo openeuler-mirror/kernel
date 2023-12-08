@@ -110,6 +110,10 @@ struct clocksource {
 	int			rating;
 	enum clocksource_ids	id;
 	enum vdso_clock_mode	vdso_clock_mode;
+#ifdef CONFIG_ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
+	u16			vdso_fix;
+	u16			vdso_shift;
+#endif
 	unsigned long		flags;
 
 	int			(*enable)(struct clocksource *cs);

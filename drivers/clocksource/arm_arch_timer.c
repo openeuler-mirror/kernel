@@ -92,6 +92,10 @@ static enum vdso_clock_mode vdso_default = VDSO_CLOCKMODE_ARCHTIMER;
 #else
 static enum vdso_clock_mode vdso_default = VDSO_CLOCKMODE_NONE;
 #endif /* CONFIG_GENERIC_GETTIMEOFDAY */
+#ifdef CONFIG_ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
+static bool vdso_fix;
+static u16 vdso_shift;
+#endif
 
 static cpumask_t evtstrm_available = CPU_MASK_NONE;
 static bool evtstrm_enable __ro_after_init = IS_ENABLED(CONFIG_ARM_ARCH_TIMER_EVTSTREAM);
@@ -599,8 +603,23 @@ void arch_timer_enable_workaround(const struct arch_timer_erratum_workaround *wa
 	 * change both the default value and the vdso itself.
 	 */
 	if (wa->read_cntvct_el0) {
+#ifdef CONFIG_ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
+		if (!strncmp(wa->desc, "HiSilicon erratum 161010101",
+			     strlen("HiSilicon erratum 161010101"))) {
+			vdso_fix = true;
+			vdso_shift = 5;
+		} else if (!strncmp(wa->desc, "Freescale erratum a005858",
+				    strlen("Freescale erratum a005858"))) {
+			vdso_fix = true;
+			vdso_shift = 0;
+		} else {
+			clocksource_counter.vdso_clock_mode = VDSO_CLOCKMODE_NONE;
+			vdso_default = VDSO_CLOCKMODE_NONE;
+		}
+#else
 		clocksource_counter.vdso_clock_mode = VDSO_CLOCKMODE_NONE;
 		vdso_default = VDSO_CLOCKMODE_NONE;
+#endif
 	} else if (wa->disable_compat_vdso && vdso_default != VDSO_CLOCKMODE_NONE) {
 		vdso_default = VDSO_CLOCKMODE_ARCHTIMER_NOCOMPAT;
 		clocksource_counter.vdso_clock_mode = vdso_default;
@@ -973,7 +992,11 @@ static void arch_counter_set_user_access(void)
 	 * need to be workaround. The vdso may have been already
 	 * disabled though.
 	 */
+#ifdef CONFIG_ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
+	if (arch_timer_this_cpu_has_cntvct_wa() && !vdso_fix)
+#else
 	if (arch_timer_this_cpu_has_cntvct_wa())
+#endif
 		pr_info("CPU%d: Trapping CNTVCT access\n", smp_processor_id());
 	else
 		cntkctl |= ARCH_TIMER_USR_VCT_ACCESS_EN;
@@ -1129,6 +1152,10 @@ static void __init arch_counter_register(unsigned type)
 
 		arch_timer_read_counter = rd;
 		clocksource_counter.vdso_clock_mode = vdso_default;
+#ifdef CONFIG_ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
+		clocksource_counter.vdso_fix = vdso_fix;
+		clocksource_counter.vdso_shift = vdso_shift;
+#endif
 	} else {
 		arch_timer_read_counter = arch_counter_get_cntvct_mem;
 		scr = arch_counter_get_cntvct_mem;
