@@ -36,6 +36,12 @@ struct iov_iter;		/* in uio.h */
 #define VM_DEFER_KMEMLEAK	0
 #endif
 
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
+#define VM_HUGE_PAGES		0x00004000      /* vmalloc hugepage mapping only */
+#else
+#define VM_HUGE_PAGES		0
+#endif
+
 /* bits [20..32] reserved for arch specific ioremap internals */
 
 /*
@@ -172,6 +178,18 @@ extern int remap_vmalloc_range_partial(struct vm_area_struct *vma,
 
 extern int remap_vmalloc_range(struct vm_area_struct *vma, void *addr,
 							unsigned long pgoff);
+
+#ifdef CONFIG_EXTEND_HUGEPAGE_MAPPING
+extern void *vmalloc_hugepage(unsigned long size);
+extern void *vmalloc_hugepage_user(unsigned long size);
+extern void *vmap_hugepage(struct page **pages, unsigned int count,
+			unsigned long flags, pgprot_t prot);
+extern int remap_vmalloc_hugepage_range_partial(struct vm_area_struct *vma,
+						unsigned long uaddr, void *kaddr,
+						unsigned long pgoff, unsigned long size);
+extern int remap_vmalloc_hugepage_range(struct vm_area_struct *vma,
+					void *addr, unsigned long pgoff);
+#endif
 
 /*
  * Architectures can set this mask to a combination of PGTBL_P?D_MODIFIED values
