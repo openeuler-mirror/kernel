@@ -393,6 +393,8 @@
 # define __KABI_CHECK_SIZE(_item, _size)
 #endif
 
+#define KABI_UNIQUE_ID __PASTE(kabi_hidden_, __LINE__)
+
 # define _KABI_DEPRECATE(_type, _orig)	_type kabi_reserved_##_orig
 # define _KABI_DEPRECATE_FN(_type, _orig, _args...)  \
 	_type (* kabi_reserved_##_orig)(_args)
@@ -402,7 +404,7 @@
 		_new;					  \
 		struct {				  \
 			_orig;				  \
-		} __UNIQUE_ID(kabi_hide);		  \
+		} KABI_UNIQUE_ID;			  \
 		__KABI_CHECK_SIZE_ALIGN(_orig, _new);  \
 	}
 #else
