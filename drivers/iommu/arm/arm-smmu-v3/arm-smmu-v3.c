@@ -2941,6 +2941,23 @@ static void arm_smmu_iotlb_sync(struct iommu_domain *domain,
 			       gather->pgsize, true, smmu_domain);
 }
 
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+static void arm_smmu_iotlb_sync_map(struct iommu_domain *domain,
+				unsigned long iova, size_t size)
+{
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	size_t granule_size;
+
+	if (!cpus_have_const_cap(ARM64_WORKAROUND_HISILICON_ERRATUM_162100602))
+		return;
+
+	granule_size = 1 <<  __ffs(smmu_domain->domain.pgsize_bitmap);
+
+	/* Add a SYNC command to sync io-pgtale to avoid errors in pgtable prefetch*/
+	arm_smmu_tlb_inv_range_domain(iova, granule_size, granule_size, true, smmu_domain);
+}
+#endif
+
 static phys_addr_t
 arm_smmu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)
 {
@@ -3970,6 +3987,9 @@ static struct iommu_ops arm_smmu_ops = {
 	.unmap			= arm_smmu_unmap,
 	.flush_iotlb_all	= arm_smmu_flush_iotlb_all,
 	.iotlb_sync		= arm_smmu_iotlb_sync,
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+	.iotlb_sync_map		= arm_smmu_iotlb_sync_map,
+#endif
 	.iova_to_phys		= arm_smmu_iova_to_phys,
 	.probe_device		= arm_smmu_probe_device,
 	.release_device		= arm_smmu_release_device,
