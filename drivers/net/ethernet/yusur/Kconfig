@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Yusur network device configuration
+#
+
+config NET_VENDOR_YUSUR
+        bool "Yusur devices"
+        default n
+        help
+          If you have a network (Ethernet) card belonging to this class, say Y.
+
+	  Note that the answer to this question doesn't directly affect the
+	  kernel: saying N will just cause the configurator to skip all
+	  the questions about Yusur cards. If you say Y, you will be asked for
+	  your specific card in the following questions.
+
+if NET_VENDOR_YUSUR
+
+config YUSUR_K2
+        tristate "Yusur KPU FLEXFLOW-2100P PCI Express adapters support"
+	depends on PCI_MSI
+        depends on PCI
+	select AUXILIARY_BUS
+        help
+	  This driver supports Yusur KPU FLEXFLOW-2100P PCI Express
+          family of adapters.
+          To compile this driver as a module, choose M here. The module
+          will be called ysnic_k2.
+
+endif # NET_VENDOR_YUSUR
