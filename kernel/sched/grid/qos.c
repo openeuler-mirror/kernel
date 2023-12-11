@@ -179,6 +179,7 @@ int sched_grid_zone_update(bool is_locked)
 		raw_spin_lock_irqsave(&sg_zone.lock, flags);
 
 	cpumask_clear(&sg_zone.cpus[SMART_GRID_ZONE_HOT]);
+	cpumask_clear(&sg_zone.cpus[SMART_GRID_ZONE_WARM]);
 
 	list_for_each(pos, &sg_zone.af_list_head) {
 		af_pos = list_entry(pos, struct auto_affinity, af_list);
@@ -190,10 +191,14 @@ int sched_grid_zone_update(bool is_locked)
 
 		cpumask_or(&sg_zone.cpus[SMART_GRID_ZONE_HOT], &sg_zone.cpus[SMART_GRID_ZONE_HOT],
 			   af_pos->ad.domains[af_pos->ad.curr_level]);
+		/* Update warm zone CPUs to max level first */
+		cpumask_or(&sg_zone.cpus[SMART_GRID_ZONE_WARM], &sg_zone.cpus[SMART_GRID_ZONE_WARM],
+			   af_pos->ad.domains[af_pos->ad.dcount - 1]);
 	}
 
-	cpumask_complement(&sg_zone.cpus[SMART_GRID_ZONE_WARM],
-			   &sg_zone.cpus[SMART_GRID_ZONE_HOT]);
+	/* Then reset warm zone CPUs without hot zone CPUs */
+	cpumask_andnot(&sg_zone.cpus[SMART_GRID_ZONE_WARM], &sg_zone.cpus[SMART_GRID_ZONE_WARM],
+		       &sg_zone.cpus[SMART_GRID_ZONE_HOT]);
 
 	if (!is_locked)
 		raw_spin_unlock_irqrestore(&sg_zone.lock, flags);
