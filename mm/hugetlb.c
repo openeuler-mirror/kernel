@@ -35,6 +35,7 @@
 #include <linux/delayacct.h>
 #include <linux/memory.h>
 #include <linux/mm_inline.h>
+#include <linux/share_pool.h>
 
 #include <asm/page.h>
 #include <asm/pgalloc.h>
@@ -5449,6 +5450,13 @@ void __unmap_hugepage_range(struct mmu_gather *tlb, struct vm_area_struct *vma,
 
 		pte = huge_ptep_get_and_clear(mm, address, ptep);
 		tlb_remove_huge_tlb_entry(h, tlb, ptep, address);
+
+		/* sharepool k2u mapped pages are marked special */
+		if (sp_check_vm_share_pool(vma->vm_flags) && pte_special(pte)) {
+			spin_unlock(ptl);
+			continue;
+		}
+
 		if (huge_pte_dirty(pte))
 			set_page_dirty(page);
 		/* Leave a uffd-wp pte marker if needed */
@@ -7552,3 +7560,76 @@ static void __init hugetlb_cma_check(void)
 }
 
 #endif /* CONFIG_CMA */
+
+#ifdef CONFIG_HUGETLB_INSERT_PAGE
+static pte_t *hugetlb_huge_pte_alloc(struct mm_struct *mm, unsigned long addr,
+				     unsigned long size)
+{
+	pgd_t *pgdp;
+	p4d_t *p4dp;
+	pud_t *pudp;
+	pte_t *ptep = NULL;
+
+	pgdp = pgd_offset(mm, addr);
+	p4dp = p4d_offset(pgdp, addr);
+	pudp = pud_alloc(mm, p4dp, addr);
+	if (!pudp)
+		return NULL;
+
+	ptep = (pte_t *)pmd_alloc(mm, pudp, addr);
+	if (ptep) {
+		pte_t pteval = ptep_get_lockless(ptep);
+
+		if (WARN_ON(!pte_none(pteval) && !pmd_huge(pte_pmd(pteval))))
+			return NULL;
+	}
+
+	return ptep;
+}
+
+static int __hugetlb_insert_pfn(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, unsigned long pfn)
+{
+	int ret = 0;
+	pte_t *ptep, entry;
+	struct hstate *h;
+	spinlock_t *ptl;
+
+	h = size_to_hstate(PMD_SIZE);
+	if (!h)
+		return -EINVAL;
+
+	ptep = hugetlb_huge_pte_alloc(mm, addr, huge_page_size(h));
+	if (!ptep)
+		return -ENOMEM;
+
+	entry = pfn_pte(pfn, prot);
+	entry = huge_pte_mkdirty(entry);
+	if (!(pgprot_val(prot) & PTE_RDONLY))
+		entry = huge_pte_mkwrite(entry);
+	entry = pte_mkyoung(entry);
+	entry = pte_mkhuge(entry);
+	entry = pte_mkspecial(entry);
+
+	ptl = huge_pte_lockptr(h, mm, ptep);
+	spin_lock(ptl);
+	set_huge_pte_at(mm, addr, ptep, entry, PMD_SIZE);
+	spin_unlock(ptl);
+
+	return ret;
+}
+
+int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, struct page *hpage)
+{
+	return __hugetlb_insert_pfn(mm, addr, prot, page_to_pfn(hpage));
+}
+EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte);
+
+int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm, unsigned long addr,
+				      pgprot_t prot, unsigned long phy_addr)
+{
+	return __hugetlb_insert_pfn(mm, addr, prot, phy_addr >> PAGE_SHIFT);
+}
+EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
+#endif /* CONFIG_HUGETLB_INSERT_PAGE */
