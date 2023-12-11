@@ -9180,3 +9180,4 @@ CONFIG_ARCH_USE_MEMTEST=y
 # end of Rust hacking
 # end of Kernel hacking
 CONFIG_KABI_SIZE_ALIGN_CHECKS=y
+CONFIG_KABI_RESERVE=y
