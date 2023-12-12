@@ -456,8 +456,12 @@ static inline int pte_none_mostly(pte_t pte)
 }
 
 #ifdef CONFIG_USERSWAP
+extern struct static_key_false userswap_enabled;
+
 static inline int is_userswap_entry(swp_entry_t entry)
 {
+	if (!static_branch_unlikely(&userswap_enabled))
+		return 0;
 	return unlikely(swp_type(entry) == SWP_USERSWAP_ENTRY);
 }
 #else
