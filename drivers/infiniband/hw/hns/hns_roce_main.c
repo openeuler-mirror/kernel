@@ -293,6 +293,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	unsigned long flags;
 	enum ib_mtu mtu;
 	u8 port;
+	int ret;
 
 	port = port_num - 1;
 
@@ -305,8 +306,10 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 				IB_PORT_BOOT_MGMT_SUP;
 	props->max_msg_sz = HNS_ROCE_MAX_MSG_LEN;
 	props->pkey_tbl_len = 1;
-	props->active_width = IB_WIDTH_4X;
-	props->active_speed = 1;
+	ret = ib_get_eth_speed(ib_dev, port_num, &props->active_speed,
+			       &props->active_width);
+	if (ret)
+		ibdev_warn(ib_dev, "failed to get speed, ret = %d.\n", ret);
 
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
