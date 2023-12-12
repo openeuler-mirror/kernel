@@ -389,6 +389,76 @@ out:
 	return ret;
 }
 
+bool uswap_register(struct uffdio_register *uffdio_register, bool *uswap_mode)
+{
+	if (!static_branch_unlikely(&userswap_enabled))
+		return true;
+	if (!(uffdio_register->mode & UFFDIO_REGISTER_MODE_USWAP))
+		return true;
+	uffdio_register->mode &= ~UFFDIO_REGISTER_MODE_USWAP;
+	if (uffdio_register->mode != UFFDIO_REGISTER_MODE_MISSING)
+		return false;
+	*uswap_mode = true;
+	return true;
+}
+
+/*
+ * register the whole vma overlapping with the address range to avoid splitting
+ * the vma which could reduce fragmentation.
+ */
+bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
+			     unsigned long *vm_flags, struct mm_struct *mm)
+{
+	struct vm_area_struct *vma, *cur;
+	unsigned long end;
+	bool ret = false;
+
+	VMA_ITERATOR(vmi, mm, uffdio_register->range.start);
+
+	end = uffdio_register->range.start + uffdio_register->range.len - 1;
+
+	mmap_read_lock(mm);
+	vma = find_vma(mm, uffdio_register->range.start);
+	if (!vma || vma->vm_start >= end)
+		goto out_unlock;
+	for_each_vma_range(vmi, cur, end)
+		if (!vma_uswap_compatible(cur))
+			goto out_unlock;
+
+	uffdio_register->range.start = vma->vm_start;
+	vma = find_vma(mm, end);
+	if (vma && end >= vma->vm_start)
+		uffdio_register->range.len = vma->vm_end - uffdio_register->range.start;
+
+	*vm_flags |= VM_USWAP;
+
+	ret = true;
+out_unlock:
+	mmap_read_unlock(mm);
+	return ret;
+}
+
+vm_fault_t do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
+			 struct vm_area_struct *vma)
+{
+	const char *process_prefix = "uswap";
+
+	/* print error if we come across a nested fault */
+	if (!strncmp(current->comm, process_prefix, strlen(process_prefix))) {
+		pr_err("USWAP: fault %lx is triggered by %s\n", vmf->address,
+			current->comm);
+		return VM_FAULT_SIGBUS;
+	}
+
+	if (!(vma->vm_flags & VM_UFFD_MISSING)) {
+		pr_err("USWAP: addr %lx flags %lx is not a user swap page",
+			vmf->address, vma->vm_flags);
+		return VM_FAULT_SIGBUS;
+	}
+
+	return handle_userfault(vmf, VM_UFFD_MISSING);
+}
+
 static int __init enable_userswap_setup(char *str)
 {
 	static_branch_enable(&userswap_enabled);

@@ -77,6 +77,7 @@
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
 #include <linux/sched/sysctl.h>
+#include <linux/userswap.h>
 
 #include <trace/events/kmem.h>
 
@@ -3778,6 +3779,10 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 		goto out;
 
 	entry = pte_to_swp_entry(vmf->orig_pte);
+#ifdef CONFIG_USERSWAP
+	if (is_userswap_entry(entry))
+		return do_uswap_page(entry, vmf, vma);
+#endif
 	if (unlikely(non_swap_entry(entry))) {
 		if (is_migration_entry(entry)) {
 			migration_entry_wait(vma->vm_mm, vmf->pmd,
