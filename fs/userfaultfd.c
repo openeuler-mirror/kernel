@@ -1797,10 +1797,16 @@ static int userfaultfd_copy(struct userfaultfd_ctx *ctx,
 		goto out;
 
 	ret = -EINVAL;
-	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE|UFFDIO_COPY_MODE_WP))
+	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE |
+				 UFFDIO_COPY_MODE_WP |
+				 IS_ENABLED(CONFIG_USERSWAP) ?
+				 UFFDIO_COPY_MODE_DIRECT_MAP : 0))
 		goto out;
 	if (uffdio_copy.mode & UFFDIO_COPY_MODE_WP)
 		flags |= MFILL_ATOMIC_WP;
+	if (IS_ENABLED(CONFIG_USERSWAP) &&
+	    (uffdio_copy.mode & UFFDIO_COPY_MODE_DIRECT_MAP))
+		flags |= MFILL_ATOMIC_DIRECT_MAP;
 	if (mmget_not_zero(ctx->mm)) {
 		ret = mfill_atomic_copy(ctx->mm, uffdio_copy.dst, uffdio_copy.src,
 					uffdio_copy.len, &ctx->mmap_changing,

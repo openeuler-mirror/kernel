@@ -29,12 +29,25 @@ bool uswap_adjust_uffd_range(struct uffdio_register *uffdio_register,
 vm_fault_t do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
 			 struct vm_area_struct *vma);
 
+int mfill_atomic_pte_nocopy(struct mm_struct *dst_mm, pmd_t *dst_pmd,
+			    struct vm_area_struct *dst_vma,
+			    unsigned long dst_addr, unsigned long src_addr);
+
 static inline void uswap_must_wait(unsigned long reason, pte_t pte, bool *ret)
 {
 	if (!static_branch_unlikely(&userswap_enabled))
 		return;
 	if ((reason & VM_USWAP) && (!pte_present(pte)))
 		*ret = true;
+}
+
+static inline bool uswap_check_copy(struct vm_area_struct *vma,
+				    uffd_flags_t flags)
+{
+	if (!!uffd_flags_mode_is(flags, MFILL_ATOMIC_DIRECT_MAP) ^
+	    !!(vma->vm_flags & VM_USWAP))
+		return false;
+	return true;
 }
 
 #endif /* CONFIG_USERSWAP */

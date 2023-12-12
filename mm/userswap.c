@@ -459,6 +459,91 @@ vm_fault_t do_uswap_page(swp_entry_t entry, struct vm_fault *vmf,
 	return handle_userfault(vmf, VM_UFFD_MISSING);
 }
 
+int mfill_atomic_pte_nocopy(struct mm_struct *mm, pmd_t *dst_pmd,
+			    struct vm_area_struct *dst_vma,
+			    unsigned long dst_addr, unsigned long src_addr)
+{
+	struct vm_area_struct *src_vma;
+	pte_t dst_pte, *pte, src_pte;
+	struct page *page;
+	spinlock_t *ptl;
+	pmd_t *src_pmd;
+	int ret;
+
+	src_vma = find_vma(mm, src_addr);
+	if (!src_vma || src_addr < src_vma->vm_start)
+		return -EINVAL;
+
+	if (!vma_uswap_compatible(src_vma))
+		return -EINVAL;
+
+	page = follow_page(src_vma, src_addr, FOLL_GET | FOLL_DUMP);
+	if (IS_ERR_OR_NULL(page))
+		return -ENODEV;
+
+	ret = -ENXIO;
+	src_pmd = mm_find_pmd(mm, src_addr);
+	if (!src_pmd)
+		goto out_put_page;
+
+	if (!PageLRU(page))
+		lru_add_drain_all();
+
+	ret = -EBUSY;
+	if (page_mapcount(page) > 1 ||
+	    page_mapcount(page) + 1 != page_count(page))
+		goto out_put_page;
+
+	ret = uswap_unmap_anon_page(mm, src_vma, src_addr, page, src_pmd,
+				    &src_pte, false);
+	if (ret)
+		goto out_put_page;
+	if (dst_vma->vm_flags & VM_USWAP)
+		ClearPageDirty(page);
+	/*
+	 * The memory barrier inside __SetPageUptodate makes sure that
+	 * preceding stores to the page contents become visible before
+	 * the set_pte_at() write.
+	 */
+	__SetPageUptodate(page);
+
+	dst_pte = mk_pte(page, dst_vma->vm_page_prot);
+	if (dst_vma->vm_flags & VM_WRITE)
+		dst_pte = pte_mkwrite_novma(pte_mkdirty(dst_pte));
+	if (dst_vma->vm_flags & VM_USWAP)
+		dst_pte = pte_mkclean(dst_pte);
+
+	pte = pte_offset_map_lock(mm, dst_pmd, dst_addr, &ptl);
+	/*
+	 * The userspace may swap in a large area. Part of the area is not
+	 * swapped out. If concurrent execution, PTE may be present. Skip those
+	 * pages (pte_present).
+	 * No other scenes should be handled except first pagefault (pte_none)
+	 * and after userswap out (SWP_USERSWAP_ENTRY).
+	 */
+	if (pte_present(*pte) || (!pte_none(*pte) &&
+	    !is_userswap_entry(pte_to_swp_entry(*pte)))) {
+		pte_unmap_unlock(pte, ptl);
+		uswap_map_anon_page(mm, src_vma, src_addr, page, src_pmd,
+				    src_pte);
+		ret = -EEXIST;
+		goto out_put_page;
+	}
+
+	inc_mm_counter(mm, MM_ANONPAGES);
+	page_add_new_anon_rmap(page, dst_vma, dst_addr);
+	set_pte_at(mm, dst_addr, pte, dst_pte);
+
+	/* No need to invalidate - it was non-present before */
+	update_mmu_cache(dst_vma, dst_addr, pte);
+	pte_unmap_unlock(pte, ptl);
+	ret = 0;
+
+out_put_page:
+	put_page(page);
+	return ret;
+}
+
 static int __init enable_userswap_setup(char *str)
 {
 	static_branch_enable(&userswap_enabled);
