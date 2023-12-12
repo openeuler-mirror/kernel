@@ -554,6 +554,11 @@ xfs_buf_find_lock(
 		XFS_STATS_INC(bp->b_mount, xb_get_locked_waited);
 	}
 
+	if (xlog_is_shutdown(bp->b_mount->m_log)) {
+		xfs_buf_unlock(bp);
+		return -EIO;
+	}
+
 	/*
 	 * if the buffer is stale, clear all the external state associated with
 	 * it. We need to keep flags such as how we allocated the buffer memory
