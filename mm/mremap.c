@@ -26,6 +26,7 @@
 #include <linux/userfaultfd_k.h>
 #include <linux/mempolicy.h>
 #include <linux/share_pool.h>
+#include <linux/userswap.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlb.h>
@@ -33,7 +34,7 @@
 
 #include "internal.h"
 
-static pud_t *get_old_pud(struct mm_struct *mm, unsigned long addr)
+pud_t *get_old_pud(struct mm_struct *mm, unsigned long addr)
 {
 	pgd_t *pgd;
 	p4d_t *p4d;
@@ -930,6 +931,11 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	 * information.
 	 */
 	addr = untagged_addr(addr);
+
+#ifdef CONFIG_USERSWAP
+	if (flags == MREMAP_USWAP_SET_PTE)
+		return uswap_mremap(addr, old_len, new_addr, new_len);
+#endif
 
 	if (flags & ~(MREMAP_FIXED | MREMAP_MAYMOVE | MREMAP_DONTUNMAP))
 		return ret;
