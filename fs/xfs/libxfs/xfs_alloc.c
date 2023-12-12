@@ -2980,7 +2980,8 @@ xfs_validate_ag_length(
 	 * Only the last AG in the filesystem is allowed to be shorter
 	 * than the AG size recorded in the superblock.
 	 */
-	if (length != mp->m_sb.sb_agblocks) {
+	if (length != mp->m_sb.sb_agblocks &&
+		!(bp->b_flags & _XBF_LOGRECOVERY)) {
 		/*
 		 * During growfs, the new last AG can get here before we
 		 * have updated the superblock. Give it a pass on the seqno
