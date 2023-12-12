@@ -1516,6 +1516,9 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			   is_poisoned_swp_entry(entry)) {
 			if (!should_zap_cows(details))
 				continue;
+		} else if (is_userswap_entry(entry)) {
+			if (!should_zap_cows(details))
+				continue;
 		} else {
 			/* We should have covered all the swap entry types */
 			WARN_ON_ONCE(1);

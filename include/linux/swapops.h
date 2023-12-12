@@ -455,6 +455,18 @@ static inline int pte_none_mostly(pte_t pte)
 	return pte_none(pte) || is_pte_marker(pte);
 }
 
+#ifdef CONFIG_USERSWAP
+static inline int is_userswap_entry(swp_entry_t entry)
+{
+	return unlikely(swp_type(entry) == SWP_USERSWAP_ENTRY);
+}
+#else
+static inline int is_userswap_entry(swp_entry_t entry)
+{
+	return 0;
+}
+#endif
+
 static inline struct page *pfn_swap_entry_to_page(swp_entry_t entry)
 {
 	struct page *p = pfn_to_page(swp_offset_pfn(entry));
