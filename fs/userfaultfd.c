@@ -269,6 +269,9 @@ static inline struct uffd_msg userfault_msg(unsigned long address,
 		msg.arg.pagefault.flags |= UFFD_PAGEFAULT_FLAG_MINOR;
 	if (features & UFFD_FEATURE_THREAD_ID)
 		msg.arg.pagefault.feat.ptid = task_pid_vnr(current);
+#ifdef CONFIG_USERSWAP
+	uswap_get_cpu_id(reason, &msg);
+#endif
 	return msg;
 }
 
