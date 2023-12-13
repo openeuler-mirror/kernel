@@ -2701,8 +2701,6 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		break;
 
 	case MPOL_PREFERRED:
-		if (node_isset(curnid, pol->v.nodes))
-			goto out;
 		polnid = pol->v.preferred_node;
 		break;
 
