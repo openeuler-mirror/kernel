@@ -732,4 +732,9 @@ config GOLDFISH_TIMER
 	help
 	  Support for the timer/counter of goldfish-rtc
 
+config ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
+	bool "Enable arch timer workaround in vdso"
+	default y
+	depends on ARM_ARCH_TIMER_OOL_WORKAROUND
+
 endmenu
