@@ -33,19 +33,23 @@ typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
  */
 #define cpumask_pr_args(maskp)		nr_cpu_ids, cpumask_bits(maskp)
 
-#if NR_CPUS == 1
-#define nr_cpu_ids		1U
+#if (NR_CPUS == 1) || defined(CONFIG_FORCE_NR_CPUS)
+#define nr_cpu_ids ((unsigned int)NR_CPUS)
 #else
 extern unsigned int nr_cpu_ids;
 #endif
 
-#ifdef CONFIG_CPUMASK_OFFSTACK
-/* Assuming NR_CPUS is huge, a runtime limit is more efficient.  Also,
- * not all bits may be allocated. */
-#define nr_cpumask_bits	nr_cpu_ids
+static inline void set_nr_cpu_ids(unsigned int nr)
+{
+#if (NR_CPUS == 1) || defined(CONFIG_FORCE_NR_CPUS)
+	WARN_ON(nr != nr_cpu_ids);
 #else
-#define nr_cpumask_bits	((unsigned int)NR_CPUS)
+	nr_cpu_ids = nr;
 #endif
+}
+
+/* Deprecated. Always use nr_cpu_ids. */
+#define nr_cpumask_bits	nr_cpu_ids
 
 /*
  * The following particular system cpumasks and operations manage
@@ -64,10 +68,6 @@ extern unsigned int nr_cpu_ids;
  *  representing which CPUs are currently plugged in.  And
  *  cpu_online_mask is the dynamic subset of cpu_present_mask,
  *  indicating those CPUs available for scheduling.
- *
- *  If HOTPLUG is enabled, then cpu_possible_mask is forced to have
- *  all NR_CPUS bits set, otherwise it is just the set of CPUs that
- *  ACPI reports present at boot.
  *
  *  If HOTPLUG is enabled, then cpu_present_mask varies dynamically,
  *  depending on what ACPI reports as currently plugged in, otherwise
