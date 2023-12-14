@@ -30,8 +30,6 @@
  * This is for sw64
  */
 
-#define IEEE_E_STATUS_MASK IEEE_STATUS_MASK
-#define IEEE_E_STATUS_TO_EXCSUM_SHIFT 0
 #define SW64_FP_DENOMAL	1		/* A denormal data */
 #define SW64_FP_NORMAL	0		/* A denormal data */
 #define SW64_FP_NAN	2
@@ -601,9 +599,9 @@ done_d:
 done:
 	if (_fex) {
 		/* Record exceptions in software control word.  */
-		swcr |= (_fex << IEEE_STATUS_TO_EXCSUM_SHIFT);
+		swcr |= fex_to_swcr_status(_fex, 0);
 		current_thread_info()->ieee_state
-			|= (_fex << IEEE_STATUS_TO_EXCSUM_SHIFT);
+			|= fex_to_swcr_status(_fex, 0);
 
 		/* Update hardware control register.  */
 		fpcr &= (~FPCR_MASK | FPCR_DYN_MASK);
@@ -860,9 +858,9 @@ done:
 		swcr_p0 = swcr_p1 = swcr_p2 = swcr_p3 = swcr;
 		/* manage fpcr_p0 */
 		if (fex_p0) {
-			swcr_p0 |= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+			swcr_p0 |= fex_to_swcr_status(fex_p0, 0);
 			current_thread_info()->ieee_state
-				|= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p0, 0);
 
 			/* Update hardware control register.  */
 			fpcr_p0 = fpcr;
@@ -871,9 +869,9 @@ done:
 		}
 
 		if (fex_p1) {
-			swcr_p1 |= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+			swcr_p1 |= fex_to_swcr_status(fex_p1, 1);
 			current_thread_info()->ieee_state
-				|= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p1, 1);
 
 			/* Update hardware control register.  */
 			fpcr_p1 = fpcr;
@@ -882,9 +880,9 @@ done:
 		}
 
 		if (fex_p2) {
-			swcr_p2 |= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+			swcr_p2 |= fex_to_swcr_status(fex_p2, 2);
 			current_thread_info()->ieee_state
-				|= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p2, 2);
 
 			/* Update hardware control register.  */
 			fpcr_p2 = fpcr;
@@ -893,9 +891,9 @@ done:
 		}
 
 		if (fex_p3) {
-			swcr_p3 |= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+			swcr_p3 |= fex_to_swcr_status(fex_p3, 3);
 			current_thread_info()->ieee_state
-				|= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p3, 3);
 
 			/* Update hardware control register.  */
 			fpcr_p3 = fpcr;
@@ -1127,9 +1125,9 @@ done:
 		swcr_p0 = swcr_p1 = swcr_p2 = swcr_p3 = swcr;
 		/* manage fpcr_p0 */
 		if (fex_p0) {
-			swcr_p0 |= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+			swcr_p0 |= fex_to_swcr_status(fex_p0, 0);
 			current_thread_info()->ieee_state
-				|= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p0, 0);
 
 			/* Update hardware control register.  */
 			fpcr_p0 = fpcr;
@@ -1138,9 +1136,9 @@ done:
 		}
 
 		if (fex_p1) {
-			swcr_p1 |= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+			swcr_p1 |= fex_to_swcr_status(fex_p1, 1);
 			current_thread_info()->ieee_state
-				|= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p1, 1);
 
 			/* Update hardware control register.  */
 			fpcr_p1 = fpcr;
@@ -1149,9 +1147,9 @@ done:
 		}
 
 		if (fex_p2) {
-			swcr_p2 |= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+			swcr_p2 |= fex_to_swcr_status(fex_p2, 2);
 			current_thread_info()->ieee_state
-				|= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p2, 2);
 
 			/* Update hardware control register.  */
 			fpcr_p2 = fpcr;
@@ -1160,9 +1158,9 @@ done:
 		}
 
 		if (fex_p3) {
-			swcr_p3 |= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+			swcr_p3 |= fex_to_swcr_status(fex_p3, 3);
 			current_thread_info()->ieee_state
-				|= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p3, 3);
 
 			/* Update hardware control register.  */
 			fpcr_p3 = fpcr;
@@ -1393,9 +1391,9 @@ done:
 		swcr_p0 = swcr_p1 = swcr_p2 = swcr_p3 = swcr;
 		/* manage fpcr_p0 */
 		if (fex_p0) {
-			swcr_p0 |= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+			swcr_p0 |= fex_to_swcr_status(fex_p0, 0);
 			current_thread_info()->ieee_state
-				|= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p0, 0);
 
 			/* Update hardware control register.  */
 			fpcr_p0 = fpcr;
@@ -1405,9 +1403,9 @@ done:
 		}
 
 		if (fex_p1) {
-			swcr_p1 |= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+			swcr_p1 |= fex_to_swcr_status(fex_p1, 1);
 			current_thread_info()->ieee_state
-				|= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p1, 1);
 
 			/* Update hardware control register.  */
 			fpcr_p1 = fpcr;
@@ -1417,9 +1415,9 @@ done:
 		}
 
 		if (fex_p2) {
-			swcr_p2 |= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+			swcr_p2 |= fex_to_swcr_status(fex_p2, 2);
 			current_thread_info()->ieee_state
-				|= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p2, 2);
 
 			/* Update hardware control register.  */
 			fpcr_p2 = fpcr;
@@ -1429,9 +1427,9 @@ done:
 		}
 
 		if (fex_p3) {
-			swcr_p3 |= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+			swcr_p3 |= fex_to_swcr_status(fex_p3, 3);
 			current_thread_info()->ieee_state
-				|= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p3, 3);
 
 			/* Update hardware control register.  */
 			fpcr_p3 = fpcr;
@@ -1606,9 +1604,9 @@ done:
 	DEBUG_INFO("vd = %#lx\n", vd);
 	if (_fex) {
 		/* Record exceptions in software control word.  */
-		swcr |= (_fex << IEEE_STATUS_TO_EXCSUM_SHIFT);
+		swcr |= fex_to_swcr_status(_fex, 0);
 		current_thread_info()->ieee_state
-			|= (_fex << IEEE_STATUS_TO_EXCSUM_SHIFT);
+			|= fex_to_swcr_status(_fex, 0);
 
 		/* Update hardware control register.  */
 		fpcr &= (~FPCR_MASK | FPCR_DYN_MASK);
@@ -1851,9 +1849,9 @@ done:
 		swcr_p0 = swcr_p1 = swcr_p2 = swcr_p3 = swcr;
 		/* manage fpcr_p0 */
 		if (fex_p0) {
-			swcr_p0 |= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+			swcr_p0 |= fex_to_swcr_status(fex_p0, 0);
 			current_thread_info()->ieee_state
-				|= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p0, 0);
 
 			/* Update hardware control register.  */
 			fpcr_p0 = fpcr;
@@ -1862,9 +1860,9 @@ done:
 		}
 
 		if (fex_p1) {
-			swcr_p1 |= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+			swcr_p1 |= fex_to_swcr_status(fex_p1, 1);
 			current_thread_info()->ieee_state
-				|= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p1, 1);
 
 			/* Update hardware control register.  */
 			fpcr_p1 = fpcr;
@@ -1873,9 +1871,9 @@ done:
 		}
 
 		if (fex_p2) {
-			swcr_p2 |= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+			swcr_p2 |= fex_to_swcr_status(fex_p2, 2);
 			current_thread_info()->ieee_state
-				|= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p2, 2);
 
 			/* Update hardware control register.  */
 			fpcr_p2 = fpcr;
@@ -1884,9 +1882,9 @@ done:
 		}
 
 		if (fex_p3) {
-			swcr_p3 |= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+			swcr_p3 |= fex_to_swcr_status(fex_p3, 3);
 			current_thread_info()->ieee_state
-				|= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p3, 3);
 
 			/* Update hardware control register.  */
 			fpcr_p3 = fpcr;
@@ -2139,9 +2137,9 @@ done:
 		swcr_p0 = swcr_p1 = swcr_p2 = swcr_p3 = swcr;
 		/* manage fpcr_p0 */
 		if (fex_p0) {
-			swcr_p0 |= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+			swcr_p0 |= fex_to_swcr_status(fex_p0, 0);
 			current_thread_info()->ieee_state
-				|= (fex_p0 << IEEE_STATUS0_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p0, 0);
 
 			/* Update hardware control register.  */
 			fpcr_p0 = fpcr;
@@ -2150,9 +2148,9 @@ done:
 		}
 
 		if (fex_p1) {
-			swcr_p1 |= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+			swcr_p1 |= fex_to_swcr_status(fex_p1, 1);
 			current_thread_info()->ieee_state
-				|= (fex_p1 << IEEE_STATUS1_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p1, 1);
 
 			/* Update hardware control register.  */
 			fpcr_p1 = fpcr;
@@ -2161,9 +2159,9 @@ done:
 		}
 
 		if (fex_p2) {
-			swcr_p2 |= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+			swcr_p2 |= fex_to_swcr_status(fex_p2, 2);
 			current_thread_info()->ieee_state
-				|= (fex_p2 << IEEE_STATUS2_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p2, 2);
 
 			/* Update hardware control register.  */
 			fpcr_p2 = fpcr;
@@ -2172,9 +2170,9 @@ done:
 		}
 
 		if (fex_p3) {
-			swcr_p3 |= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+			swcr_p3 |= fex_to_swcr_status(fex_p3, 3);
 			current_thread_info()->ieee_state
-				|= (fex_p3 << IEEE_STATUS3_TO_EXCSUM_SHIFT);
+				|= fex_to_swcr_status(fex_p3, 3);
 
 			/* Update hardware control register.  */
 			fpcr_p3 = fpcr;
