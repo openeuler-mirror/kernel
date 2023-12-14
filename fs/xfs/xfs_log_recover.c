@@ -1900,6 +1900,9 @@ xlog_recover_reorder_trans(
 		case XLOG_REORDER_BUFFER_LIST:
 			list_move_tail(&item->ri_list, &buffer_list);
 			break;
+		case XLOG_REORDER_SB_BUFFER_LIST:
+			list_move(&item->ri_list, &buffer_list);
+			break;
 		case XLOG_REORDER_CANCEL_LIST:
 			trace_xfs_log_recover_item_reorder_head(log,
 					trans, item, pass);
@@ -1963,6 +1966,25 @@ xlog_recover_items_pass2(
 	return error;
 }
 
+#define XLOG_RECOVER_COMMIT_QUEUE_MAX 100
+static inline bool
+xlog_recover_should_pass2(
+	struct xlog_recover_item	*item,
+	int				items_queued)
+{
+	struct xfs_buf_log_format	*buf_f;
+
+	if (items_queued >= XLOG_RECOVER_COMMIT_QUEUE_MAX)
+		return true;
+	if (ITEM_TYPE(item) == XFS_LI_BUF) {
+		buf_f = item->ri_buf[0].i_addr;
+		if (buf_f->blf_blkno == XFS_SB_DADDR)
+			return true;
+	}
+
+	return false;
+}
+
 /*
  * Perform the transaction.
  *
@@ -1983,8 +2005,6 @@ xlog_recover_commit_trans(
 	LIST_HEAD			(ra_list);
 	LIST_HEAD			(done_list);
 
-	#define XLOG_RECOVER_COMMIT_QUEUE_MAX 100
-
 	hlist_del_init(&trans->r_list);
 
 	error = xlog_recover_reorder_trans(log, trans, pass);
@@ -2004,7 +2024,7 @@ xlog_recover_commit_trans(
 				item->ri_ops->ra_pass2(log, item);
 			list_move_tail(&item->ri_list, &ra_list);
 			items_queued++;
-			if (items_queued >= XLOG_RECOVER_COMMIT_QUEUE_MAX) {
+			if (xlog_recover_should_pass2(item, items_queued)) {
 				error = xlog_recover_items_pass2(log, trans,
 						buffer_list, &ra_list);
 				list_splice_tail_init(&ra_list, &done_list);
