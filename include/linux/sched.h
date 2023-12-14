@@ -2458,4 +2458,8 @@ static inline int sched_core_idle_cpu(int cpu) { return idle_cpu(cpu); }
 
 extern void sched_set_stop_task(int cpu, struct task_struct *stop);
 
+#ifdef CONFIG_QOS_SCHED
+void sched_move_offline_task(struct task_struct *p);
+#endif
+
 #endif
