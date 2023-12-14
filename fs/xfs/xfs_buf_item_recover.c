@@ -950,13 +950,10 @@ xlog_recover_buf_commit_pass2(
 
 		/*
 		 * We're skipping replay of this buffer log item due to the log
-		 * item LSN being behind the ondisk buffer.  Verify the buffer
-		 * contents since we aren't going to run the write verifier.
+		 * item LSN being behind the ondisk buffer.  clear XBF_DONE flag
+		 * of the buffer to prevent buffer from being used without verify.
 		 */
-		if (bp->b_ops) {
-			bp->b_ops->verify_read(bp);
-			error = bp->b_error;
-		}
+		bp->b_flags &= ~XBF_DONE;
 		goto out_release;
 	}
 
