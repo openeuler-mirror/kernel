@@ -57,6 +57,11 @@
 #include "stats.h"
 #include "autogroup.h"
 
+#ifdef CONFIG_QOS_SCHED
+#include <linux/delay.h>
+#include <linux/resume_user_mode.h>
+#endif
+
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -133,6 +138,12 @@ int __weak arch_asym_cpu_priority(int cpu)
 #define QOS_THROTTLED	2
 
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct list_head, qos_throttled_cfs_rq);
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
+static DEFINE_PER_CPU(int, qos_cpu_overload);
+unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
+unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
+static int one_thousand = 1000;
+static int hundred_thousand = 100000;
 static int unthrottle_qos_cfs_rqs(int cpu);
 #endif
 
@@ -184,6 +195,26 @@ static struct ctl_table sched_fair_sysctls[] = {
 		.extra1		= SYSCTL_ZERO,
 	},
 #endif /* CONFIG_NUMA_BALANCING */
+#ifdef CONFIG_QOS_SCHED
+	{
+		.procname	= "qos_overload_detect_period_ms",
+		.data		= &sysctl_overload_detect_period,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= &hundred_thousand,
+	},
+	{
+		.procname	= "qos_offline_wait_interval_ms",
+		.data		= &sysctl_offline_wait_interval,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= &one_thousand,
+	},
+#endif
 	{}
 };
 
@@ -8303,7 +8334,7 @@ unthrottle_throttle:
 		resched_curr(rq);
 }
 
-static int unthrottle_qos_cfs_rqs(int cpu)
+static int __unthrottle_qos_cfs_rqs(int cpu)
 {
 	struct cfs_rq *cfs_rq, *tmp_rq;
 	int res = 0;
@@ -8319,8 +8350,22 @@ static int unthrottle_qos_cfs_rqs(int cpu)
 	return res;
 }
 
+static int unthrottle_qos_cfs_rqs(int cpu)
+{
+	int res;
+
+	res = __unthrottle_qos_cfs_rqs(cpu);
+	if (res)
+		hrtimer_cancel(&(per_cpu(qos_overload_timer, cpu)));
+
+	return res;
+}
+
 static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	if (unlikely(__this_cpu_read(qos_cpu_overload)))
+		return false;
+
 	if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
 		     !sched_idle_cpu(smp_processor_id()) &&
 		     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
@@ -8345,6 +8390,74 @@ static inline void unthrottle_qos_sched_group(struct cfs_rq *cfs_rq)
 		unthrottle_qos_cfs_rq(cfs_rq);
 	rq_unlock_irqrestore(rq, &rf);
 }
+
+void sched_qos_offline_wait(void)
+{
+	long qos_level;
+
+	while (unlikely(this_cpu_read(qos_cpu_overload))) {
+		rcu_read_lock();
+		qos_level = task_group(current)->qos_level;
+		rcu_read_unlock();
+		if (qos_level != -1 || fatal_signal_pending(current))
+			break;
+
+		schedule_timeout_killable(msecs_to_jiffies(sysctl_offline_wait_interval));
+	}
+}
+
+int sched_qos_cpu_overload(void)
+{
+	return __this_cpu_read(qos_cpu_overload);
+}
+
+static enum hrtimer_restart qos_overload_timer_handler(struct hrtimer *timer)
+{
+	struct rq_flags rf;
+	struct rq *rq = this_rq();
+
+	rq_lock_irqsave(rq, &rf);
+	if (__unthrottle_qos_cfs_rqs(smp_processor_id()))
+		__this_cpu_write(qos_cpu_overload, 1);
+	rq_unlock_irqrestore(rq, &rf);
+
+	return HRTIMER_NORESTART;
+}
+
+static void start_qos_hrtimer(int cpu)
+{
+	ktime_t time;
+	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	time = ktime_add_ms(hrtimer->base->get_time(), (u64)sysctl_overload_detect_period);
+	hrtimer_set_expires(hrtimer, time);
+	hrtimer_start_expires(hrtimer, HRTIMER_MODE_ABS_PINNED);
+}
+
+void init_qos_hrtimer(int cpu)
+{
+	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
+	hrtimer->function = qos_overload_timer_handler;
+}
+
+/*
+ * To avoid Priority inversion issues, when this cpu is qos_cpu_overload,
+ * we should schedule offline tasks to run so that they can leave kernel
+ * critical sections, and throttle them before returning to user mode.
+ */
+static void qos_schedule_throttle(struct task_struct *p)
+{
+	if (unlikely(current->flags & PF_KTHREAD))
+		return;
+
+	if (unlikely(this_cpu_read(qos_cpu_overload))) {
+		if (is_offline_task(p))
+			set_notify_resume(p);
+	}
+}
+
 #endif
 
 #ifdef CONFIG_SMP
@@ -8507,6 +8620,10 @@ done: __maybe_unused;
 	update_misfit_status(p, rq);
 	sched_fair_update_stop_tick(rq, p);
 
+#ifdef CONFIG_QOS_SCHED
+	qos_schedule_throttle(p);
+#endif
+
 	return p;
 
 idle:
@@ -8531,6 +8648,8 @@ idle:
 		rq->idle_stamp = 0;
 		goto again;
 	}
+
+	__this_cpu_write(qos_cpu_overload, 0);
 #endif
 	/*
 	 * rq is about to be idle, check if we need to update the

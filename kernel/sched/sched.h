@@ -1411,6 +1411,10 @@ do {						\
 	flags = _raw_spin_rq_lock_irqsave(rq);	\
 } while (0)
 
+#ifdef CONFIG_QOS_SCHED
+void init_qos_hrtimer(int cpu);
+#endif
+
 #ifdef CONFIG_SCHED_SMT
 extern void __update_idle_core(struct rq *rq);
 
