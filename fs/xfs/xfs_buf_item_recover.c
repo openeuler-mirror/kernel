@@ -22,6 +22,8 @@
 #include "xfs_inode.h"
 #include "xfs_dir2.h"
 #include "xfs_quota.h"
+#include "xfs_sb.h"
+#include "xfs_ag.h"
 
 /*
  * This is the number of entries in the l_buf_cancel_table used during
@@ -969,6 +971,29 @@ xlog_recover_buf_commit_pass2(
 			goto out_release;
 	} else {
 		xlog_recover_do_reg_buffer(mp, item, bp, buf_f, current_lsn);
+		/*
+		 * If the superblock buffer is modified, we also need to modify the
+		 * content of the mp.
+		 */
+		if (bp->b_maps[0].bm_bn == XFS_SB_DADDR && bp->b_ops) {
+			struct xfs_dsb *sb = bp->b_addr;
+
+			bp->b_ops->verify_write(bp);
+			error = bp->b_error;
+			if (error)
+				goto out_release;
+
+			if (be32_to_cpu(sb->sb_agcount) > mp->m_sb.sb_agcount) {
+				error = xfs_initialize_perag(mp,
+						be32_to_cpu(sb->sb_agcount),
+						be64_to_cpu(sb->sb_dblocks),
+						&mp->m_maxagi);
+				if (error)
+					goto out_release;
+			}
+
+			xfs_sb_from_disk(&mp->m_sb, sb);
+		}
 	}
 
 	/*
