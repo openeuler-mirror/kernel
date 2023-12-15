@@ -790,9 +790,20 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 	return bond_grp;
 }
 
-static bool is_dev_bond_supported(struct hns_roce_dev *hr_dev, int bus_num)
+static bool is_dev_bond_supported(struct hns_roce_bond_group *bond_grp,
+				  struct net_device *net_dev, int bus_num)
 {
-	if (!hr_dev || !(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
+	struct hns_roce_dev *hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
+
+	if (!hr_dev) {
+		if (bond_grp &&
+		    get_netdev_bond_slave_id(net_dev, bond_grp) >= 0)
+			return true;
+		else
+			return false;
+	}
+
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
 		return false;
 
 	if (hr_dev->is_vf || pci_num_vf(hr_dev->pci_dev) > 0)
@@ -820,10 +831,10 @@ static bool check_unlinking_bond_support(struct hns_roce_bond_group *bond_grp)
 }
 
 static bool check_linking_bond_support(struct netdev_lag_upper_info *bond_info,
+				       struct hns_roce_bond_group *bond_grp,
 				       struct net_device *upper_dev,
 				       int bus_num)
 {
-	struct hns_roce_dev *hr_dev;
 	struct net_device *net_dev;
 	u8 slave_num = 0;
 
@@ -832,8 +843,7 @@ static bool check_linking_bond_support(struct netdev_lag_upper_info *bond_info,
 
 	rcu_read_lock();
 	for_each_netdev_in_bond_rcu(upper_dev, net_dev) {
-		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
-		if (is_dev_bond_supported(hr_dev, bus_num)) {
+		if (is_dev_bond_supported(bond_grp, net_dev, bus_num)) {
 			slave_num++;
 		} else {
 			rcu_read_unlock();
@@ -865,7 +875,7 @@ static enum bond_support_type
 		return BOND_NOT_SUPPORT;
 
 	if (info->linking)
-		support = check_linking_bond_support(info->upper_info,
+		support = check_linking_bond_support(info->upper_info, bond_grp,
 						     *upper_dev, bus_num);
 	else
 		support = check_unlinking_bond_support(bond_grp);

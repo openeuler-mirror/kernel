@@ -557,13 +557,9 @@ static void init_poe_ch_debugfs(struct hns_roce_dev *hr_dev, uint8_t index,
 				struct dentry *parent)
 {
 #define POE_CH_NAME_LEN 10
+	struct hns_poe_ch_debugfs *dbgfs = &hr_dev->dbgfs.poe_root.poe_ch[index];
 	struct hns_roce_poe_ch *poe_ch = &hr_dev->poe_ctx.poe_ch[index];
-	struct hns_poe_ch_debugfs *dbgfs;
 	char name[POE_CH_NAME_LEN];
-
-	dbgfs = kvzalloc(sizeof(*dbgfs), GFP_KERNEL);
-	if (!dbgfs)
-		return;
 
 	snprintf(name, sizeof(name), "poe_%u", index);
 	dbgfs->root = debugfs_create_dir(name, parent);

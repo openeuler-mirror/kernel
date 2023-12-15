@@ -392,6 +392,9 @@ static int set_write_notify_param(struct hns_roce_dev *hr_dev,
 			       notify_attr[attr].mem_type))
 		return -EOPNOTSUPP;
 
+	if (!hr_dev->notify_tbl || ucmd->notify_idx >= hr_dev->notify_num)
+		return -EINVAL;
+
 	hr_cq->flags |= HNS_ROCE_CQ_FLAG_NOTIFY_EN;
 	hr_cq->write_notify.notify_addr =
 		hr_dev->notify_tbl[ucmd->notify_idx].base_addr;
