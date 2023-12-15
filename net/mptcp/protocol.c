@@ -39,7 +39,7 @@ struct mptcp_skb_cb {
 
 #define MPTCP_SKB_CB(__skb)	((struct mptcp_skb_cb *)&((__skb)->cb[0]))
 
-static struct percpu_counter mptcp_sockets_allocated;
+static struct percpu_counter mptcp_sockets_allocated ____cacheline_aligned_in_smp;
 
 /* If msk has an initial subflow socket, and the MP_CAPABLE handshake has not
  * completed yet or has failed, return the subflow socket.
