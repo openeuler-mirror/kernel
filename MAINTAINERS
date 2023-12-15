@@ -6694,6 +6694,12 @@ S:	Supported
 F:	drivers/scsi/hisi_sas/
 F:	Documentation/devicetree/bindings/scsi/hisilicon-sas.txt
 
+HISI_RAID SCSI RAID DRIVERS
+M:	Zhang Lei <zhanglei48@huawei.com>
+S:	Maintained
+F:	Documentation/scsi/hisi_raid.rst
+F:	drivers/scsi/hisi_raid/
+
 HMM - Heterogeneous Memory Management
 M:	Jérôme Glisse <jglisse@redhat.com>
 L:	linux-mm@kvack.org
