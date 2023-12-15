@@ -7650,7 +7650,8 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 
 	hns_roce_hw_v2_get_cfg(hr_dev, handle);
 
-	if (hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND &&
+	    hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
 		ret = -EOPNOTSUPP;
 		goto error_failed_roce_init;
 	}
