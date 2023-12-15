@@ -77,6 +77,7 @@
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
 #include <linux/sched/sysctl.h>
+#include <linux/userswap.h>
 
 #include <trace/events/kmem.h>
 
@@ -1514,6 +1515,9 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 				continue;
 		} else if (is_hwpoison_entry(entry) ||
 			   is_poisoned_swp_entry(entry)) {
+			if (!should_zap_cows(details))
+				continue;
+		} else if (is_userswap_entry(entry)) {
 			if (!should_zap_cows(details))
 				continue;
 		} else {
@@ -3775,6 +3779,10 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 		goto out;
 
 	entry = pte_to_swp_entry(vmf->orig_pte);
+#ifdef CONFIG_USERSWAP
+	if (is_userswap_entry(entry))
+		return do_uswap_page(entry, vmf, vma);
+#endif
 	if (unlikely(non_swap_entry(entry))) {
 		if (is_migration_entry(entry)) {
 			migration_entry_wait(vma->vm_mm, vmf->pmd,

@@ -152,6 +152,7 @@ struct uffd_msg {
 #define UFFD_PAGEFAULT_FLAG_WRITE	(1<<0)	/* If this was a write fault */
 #define UFFD_PAGEFAULT_FLAG_WP		(1<<1)	/* If reason is VM_UFFD_WP */
 #define UFFD_PAGEFAULT_FLAG_MINOR	(1<<2)	/* If reason is VM_UFFD_MINOR */
+#define UFFD_PAGEFAULT_FLAG_FIRST	(1<<10) /* USWAP first page fault */
 
 struct uffdio_api {
 	/* userland asks for an API number and the features to enable */
@@ -247,6 +248,7 @@ struct uffdio_register {
 #define UFFDIO_REGISTER_MODE_MISSING	((__u64)1<<0)
 #define UFFDIO_REGISTER_MODE_WP		((__u64)1<<1)
 #define UFFDIO_REGISTER_MODE_MINOR	((__u64)1<<2)
+#define UFFDIO_REGISTER_MODE_USWAP	((__u64)1<<10)
 	__u64 mode;
 
 	/*
@@ -268,6 +270,7 @@ struct uffdio_copy {
 	 * according to the uffdio_register.ioctls.
 	 */
 #define UFFDIO_COPY_MODE_WP			((__u64)1<<1)
+#define UFFDIO_COPY_MODE_DIRECT_MAP		((__u64)1<<10)
 	__u64 mode;
 
 	/*

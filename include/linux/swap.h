@@ -56,6 +56,18 @@ static inline int current_is_kswapd(void)
  */
 
 /*
+ * Userswap entry type
+ */
+#ifdef CONFIG_USERSWAP
+#define SWP_USERSWAP_NUM 1
+#define SWP_USERSWAP_ENTRY (MAX_SWAPFILES + SWP_HWPOISON_NUM + \
+			    SWP_MIGRATION_NUM + SWP_DEVICE_NUM + \
+			    SWP_PTE_MARKER_NUM)
+#else
+#define SWP_USERSWAP_NUM 0
+#endif
+
+/*
  * PTE markers are used to persist information onto PTEs that otherwise
  * should be a none pte.  As its name "PTE" hints, it should only be
  * applied to the leaves of pgtables.
@@ -117,7 +129,7 @@ static inline int current_is_kswapd(void)
 #define MAX_SWAPFILES \
 	((1 << MAX_SWAPFILES_SHIFT) - SWP_DEVICE_NUM - \
 	SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - \
-	SWP_PTE_MARKER_NUM)
+	SWP_PTE_MARKER_NUM - SWP_USERSWAP_NUM)
 
 /*
  * Magic header for a swap area. The first part of the union is

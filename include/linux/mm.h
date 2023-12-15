@@ -313,6 +313,13 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_NOHUGEPAGE	0x40000000	/* MADV_NOHUGEPAGE marked this vma */
 #define VM_MERGEABLE	0x80000000	/* KSM may merge identical pages */
 
+#ifdef CONFIG_USERSWAP
+# define VM_USWAP_BIT	62
+#define VM_USWAP	BIT(VM_USWAP_BIT)
+#else /* !CONFIG_USERSWAP */
+#define VM_USWAP	VM_NONE
+#endif /* CONFIG_USERSWAP */
+
 #ifdef CONFIG_ARCH_USES_HIGH_VMA_FLAGS
 #define VM_HIGH_ARCH_BIT_0	32	/* bit only usable on 64-bit architectures */
 #define VM_HIGH_ARCH_BIT_1	33	/* bit only usable on 64-bit architectures */
@@ -2485,6 +2492,7 @@ int set_page_dirty_lock(struct page *page);
 
 int get_cmdline(struct task_struct *task, char *buffer, int buflen);
 
+extern pud_t *get_old_pud(struct mm_struct *mm, unsigned long addr);
 extern unsigned long move_page_tables(struct vm_area_struct *vma,
 		unsigned long old_addr, struct vm_area_struct *new_vma,
 		unsigned long new_addr, unsigned long len,

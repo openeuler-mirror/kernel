@@ -47,6 +47,7 @@ enum mfill_atomic_mode {
 	MFILL_ATOMIC_ZEROPAGE,
 	MFILL_ATOMIC_CONTINUE,
 	MFILL_ATOMIC_POISON,
+	MFILL_ATOMIC_DIRECT_MAP,
 	NR_MFILL_ATOMIC_MODES,
 };
 
@@ -62,6 +63,10 @@ static inline bool uffd_flags_mode_is(uffd_flags_t flags, enum mfill_atomic_mode
 
 static inline uffd_flags_t uffd_flags_set_mode(uffd_flags_t flags, enum mfill_atomic_mode mode)
 {
+	if (IS_ENABLED(CONFIG_USERSWAP) && (flags & MFILL_ATOMIC_DIRECT_MAP) &&
+	    uffd_flags_mode_is(mode, MFILL_ATOMIC_COPY))
+		mode = MFILL_ATOMIC_DIRECT_MAP;
+
 	flags &= ~MFILL_ATOMIC_MODE_MASK;
 	return flags | ((__force uffd_flags_t) mode);
 }

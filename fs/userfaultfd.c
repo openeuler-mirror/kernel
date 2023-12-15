@@ -31,6 +31,7 @@
 #include <linux/hugetlb.h>
 #include <linux/swapops.h>
 #include <linux/miscdevice.h>
+#include <linux/userswap.h>
 
 static int sysctl_unprivileged_userfaultfd __read_mostly;
 
@@ -268,6 +269,9 @@ static inline struct uffd_msg userfault_msg(unsigned long address,
 		msg.arg.pagefault.flags |= UFFD_PAGEFAULT_FLAG_MINOR;
 	if (features & UFFD_FEATURE_THREAD_ID)
 		msg.arg.pagefault.feat.ptid = task_pid_vnr(current);
+#ifdef CONFIG_USERSWAP
+	uswap_get_cpu_id(reason, &msg);
+#endif
 	return msg;
 }
 
@@ -373,6 +377,9 @@ again:
 	 * ptes here.
 	 */
 	ptent = ptep_get(pte);
+#ifdef CONFIG_USERSWAP
+	uswap_must_wait(reason, ptent, &ret);
+#endif
 	if (pte_none_mostly(ptent))
 		ret = true;
 	if (!pte_write(ptent) && (reason & VM_UFFD_WP))
@@ -442,9 +449,13 @@ vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason)
 	BUG_ON(ctx->mm != mm);
 
 	/* Any unrecognized flag is a bug. */
-	VM_BUG_ON(reason & ~__VM_UFFD_FLAGS);
+	VM_BUG_ON(reason & ~(__VM_UFFD_FLAGS | VM_USWAP));
 	/* 0 or > 1 flags set is a bug; we expect exactly 1. */
 	VM_BUG_ON(!reason || (reason & (reason - 1)));
+
+	if (IS_ENABLED(CONFIG_USERSWAP) && (reason == VM_UFFD_MISSING) &&
+	    (vma->vm_flags & VM_USWAP))
+		reason |= VM_USWAP;
 
 	if (ctx->features & UFFD_FEATURE_SIGBUS)
 		goto out;
@@ -520,6 +531,10 @@ vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason)
 	uwq.wq.private = current;
 	uwq.msg = userfault_msg(vmf->address, vmf->real_address, vmf->flags,
 				reason, ctx->features);
+#ifdef CONFIG_USERSWAP
+	if ((reason & VM_USWAP) && pte_none(vmf->orig_pte))
+		uwq.msg.arg.pagefault.flags |= UFFD_PAGEFAULT_FLAG_FIRST;
+#endif
 	uwq.ctx = ctx;
 	uwq.waken = false;
 
@@ -921,7 +936,7 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 			prev = vma;
 			continue;
 		}
-		new_flags = vma->vm_flags & ~__VM_UFFD_FLAGS;
+		new_flags = vma->vm_flags & ~(__VM_UFFD_FLAGS | VM_USWAP);
 		prev = vma_merge(&vmi, mm, prev, vma->vm_start, vma->vm_end,
 				 new_flags, vma->anon_vma,
 				 vma->vm_file, vma->vm_pgoff,
@@ -1326,6 +1341,9 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	unsigned long start, end, vma_end;
 	struct vma_iterator vmi;
 	pgoff_t pgoff;
+#ifdef CONFIG_USERSWAP
+	bool uswap_mode = false;
+#endif
 
 	user_uffdio_register = (struct uffdio_register __user *) arg;
 
@@ -1337,6 +1355,10 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	ret = -EINVAL;
 	if (!uffdio_register.mode)
 		goto out;
+#ifdef CONFIG_USERSWAP
+	if (!uswap_register(&uffdio_register, &uswap_mode))
+		goto out;
+#endif
 	if (uffdio_register.mode & ~UFFD_API_REGISTER_MODES)
 		goto out;
 	vm_flags = 0;
@@ -1359,6 +1381,13 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 			     uffdio_register.range.len);
 	if (ret)
 		goto out;
+#ifdef CONFIG_USERSWAP
+	if (unlikely(uswap_mode)) {
+		ret = -EINVAL;
+		if (!uswap_adjust_uffd_range(&uffdio_register, &vm_flags, mm))
+			goto out;
+	}
+#endif
 
 	start = uffdio_register.range.start;
 	end = start + uffdio_register.range.len;
@@ -1663,7 +1692,7 @@ static int userfaultfd_unregister(struct userfaultfd_ctx *ctx,
 		if (userfaultfd_wp(vma))
 			uffd_wp_range(vma, start, vma_end - start, false);
 
-		new_flags = vma->vm_flags & ~__VM_UFFD_FLAGS;
+		new_flags = vma->vm_flags & ~(__VM_UFFD_FLAGS | VM_USWAP);
 		pgoff = vma->vm_pgoff + ((start - vma->vm_start) >> PAGE_SHIFT);
 		prev = vma_merge(&vmi, mm, prev, start, vma_end, new_flags,
 				 vma->anon_vma, vma->vm_file, pgoff,
@@ -1771,10 +1800,16 @@ static int userfaultfd_copy(struct userfaultfd_ctx *ctx,
 		goto out;
 
 	ret = -EINVAL;
-	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE|UFFDIO_COPY_MODE_WP))
+	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE |
+				 UFFDIO_COPY_MODE_WP |
+				 IS_ENABLED(CONFIG_USERSWAP) ?
+				 UFFDIO_COPY_MODE_DIRECT_MAP : 0))
 		goto out;
 	if (uffdio_copy.mode & UFFDIO_COPY_MODE_WP)
 		flags |= MFILL_ATOMIC_WP;
+	if (IS_ENABLED(CONFIG_USERSWAP) &&
+	    (uffdio_copy.mode & UFFDIO_COPY_MODE_DIRECT_MAP))
+		flags |= MFILL_ATOMIC_DIRECT_MAP;
 	if (mmget_not_zero(ctx->mm)) {
 		ret = mfill_atomic_copy(ctx->mm, uffdio_copy.dst, uffdio_copy.src,
 					uffdio_copy.len, &ctx->mmap_changing,

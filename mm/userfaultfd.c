@@ -15,6 +15,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/hugetlb.h>
 #include <linux/shmem_fs.h>
+#include <linux/userswap.h>
 #include <asm/tlbflush.h>
 #include <asm/tlb.h>
 #include "internal.h"
@@ -603,6 +604,10 @@ retry:
 		goto out_unlock;
 
 	err = -EINVAL;
+#ifdef CONFIG_USERSWAP
+	if (!uswap_check_copy(dst_vma, flags))
+		goto out_unlock;
+#endif
 	/*
 	 * shmem_zero_setup is invoked in mmap for MAP_ANONYMOUS|MAP_SHARED but
 	 * it will overwrite vm_ops, so vma_is_anonymous must return false.
@@ -675,6 +680,13 @@ retry:
 		BUG_ON(pmd_none(*dst_pmd));
 		BUG_ON(pmd_trans_huge(*dst_pmd));
 
+#ifdef CONFIG_USERSWAP
+		if (static_branch_unlikely(&userswap_enabled) &&
+		    uffd_flags_mode_is(flags, MFILL_ATOMIC_DIRECT_MAP))
+			err = mfill_atomic_pte_nocopy(dst_mm, dst_pmd, dst_vma,
+						      dst_addr, src_addr);
+		else
+#endif
 		err = mfill_atomic_pte(dst_pmd, dst_vma, dst_addr,
 				       src_addr, flags, &folio);
 		cond_resched();
