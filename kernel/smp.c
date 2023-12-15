@@ -71,14 +71,6 @@ int smpcfd_dead_cpu(unsigned int cpu)
 	return 0;
 }
 
-int smpcfd_and_hrtimer_dying_cpu(unsigned int cpu)
-{
-	hrtimers_cpu_dying(cpu);
-	smpcfd_dying_cpu(cpu);
-
-	return 0;
-}
-
 int smpcfd_dying_cpu(unsigned int cpu)
 {
 	/*
