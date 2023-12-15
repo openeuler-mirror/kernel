@@ -57,6 +57,11 @@
 #include "stats.h"
 #include "autogroup.h"
 
+#ifdef CONFIG_QOS_SCHED
+#include <linux/delay.h>
+#include <linux/resume_user_mode.h>
+#endif
+
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -124,6 +129,24 @@ int __weak arch_asym_cpu_priority(int cpu)
 #define capacity_greater(cap1, cap2) ((cap1) * 1024 > (cap2) * 1078)
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+
+/*
+ * To distinguish cfs bw, use QOS_THROTTLED mark cfs_rq->throttled
+ * when qos throttled(and cfs bw throttle mark cfs_rq->throttled as 1).
+ */
+#define QOS_THROTTLED	2
+
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct list_head, qos_throttled_cfs_rq);
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
+static DEFINE_PER_CPU(int, qos_cpu_overload);
+unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
+unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
+static int one_thousand = 1000;
+static int hundred_thousand = 100000;
+static int unthrottle_qos_cfs_rqs(int cpu);
+#endif
+
 #ifdef CONFIG_CFS_BANDWIDTH
 /*
  * Amount of runtime to allocate from global (tg) to local (per-cfs_rq) pool
@@ -172,6 +195,26 @@ static struct ctl_table sched_fair_sysctls[] = {
 		.extra1		= SYSCTL_ZERO,
 	},
 #endif /* CONFIG_NUMA_BALANCING */
+#ifdef CONFIG_QOS_SCHED
+	{
+		.procname	= "qos_overload_detect_period_ms",
+		.data		= &sysctl_overload_detect_period,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= &hundred_thousand,
+	},
+	{
+		.procname	= "qos_offline_wait_interval_ms",
+		.data		= &sysctl_offline_wait_interval,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ONE_HUNDRED,
+		.extra2		= &one_thousand,
+	},
+#endif
 	{}
 };
 
@@ -5639,6 +5682,14 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
 
+#ifdef CONFIG_QOS_SCHED
+	/*
+	 * if this cfs_rq throttled by qos, not need unthrottle it.
+	 */
+	if (cfs_rq->throttled == QOS_THROTTLED)
+		return;
+#endif
+
 	cfs_rq->throttled = 0;
 
 	update_rq_clock(rq);
@@ -5823,7 +5874,20 @@ static bool distribute_cfs_runtime(struct cfs_bandwidth *cfs_b)
 			goto next;
 #endif
 
-		/* By the above checks, this should never be true */
+		/*
+		 * CPU hotplug callbacks race against distribute_cfs_runtime()
+		 * when the QOS_SCHED feature is enabled, there may be
+		 * situations where the runtime_remaining > 0.
+		 * Qos_sched does not care whether the cfs_rq has time left,
+		 * so no longer allocate time to cfs_rq in this scenario.
+		 */
+#ifdef CONFIG_QOS_SCHED
+		if (cfs_rq->throttled == QOS_THROTTLED &&
+			cfs_rq->runtime_remaining > 0)
+			goto next;
+#endif
+
+		/* By the above check, this should never be true */
 		SCHED_WARN_ON(cfs_rq->runtime_remaining > 0);
 
 		raw_spin_lock(&cfs_b->lock);
@@ -6191,6 +6255,9 @@ static void init_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_SMP
 	INIT_LIST_HEAD(&cfs_rq->throttled_csd_list);
 #endif
+#ifdef CONFIG_QOS_SCHED
+	INIT_LIST_HEAD(&cfs_rq->qos_throttled_list);
+#endif
 }
 
 void start_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
@@ -6280,6 +6347,9 @@ static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 	 * the rq clock again in unthrottle_cfs_rq().
 	 */
 	rq_clock_start_loop_update(rq);
+#ifdef CONFIG_QOS_SCHED
+	unthrottle_qos_cfs_rqs(cpu_of(rq));
+#endif
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(tg, &task_groups, list) {
@@ -6305,6 +6375,9 @@ static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 	rcu_read_unlock();
 
 	rq_clock_stop_loop_update(rq);
+#ifdef CONFIG_QOS_SCHED
+	unthrottle_qos_cfs_rqs(cpu_of(rq));
+#endif
 }
 
 bool cfs_task_bw_constrained(struct task_struct *p)
@@ -8115,6 +8188,278 @@ preempt:
 	resched_curr(rq);
 }
 
+#ifdef CONFIG_QOS_SCHED
+static inline bool is_offline_task(struct task_struct *p)
+{
+	return task_group(p)->qos_level == -1;
+}
+
+static void start_qos_hrtimer(int cpu);
+
+static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct sched_entity *se;
+	long task_delta, idle_task_delta;
+
+	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
+
+	/* freeze hierarchy runnable averages while throttled */
+	rcu_read_lock();
+	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
+	rcu_read_unlock();
+
+	task_delta = cfs_rq->h_nr_running;
+	idle_task_delta = cfs_rq->idle_h_nr_running;
+	for_each_sched_entity(se) {
+		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
+		/* throttled entity or throttle-on-deactivate */
+		if (!se->on_rq)
+			goto done;
+
+		dequeue_entity(qcfs_rq, se, DEQUEUE_SLEEP);
+
+		qcfs_rq->h_nr_running -= task_delta;
+		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+
+		if (qcfs_rq->load.weight) {
+			/* Avoid re-evaluating load for this entity: */
+			se = parent_entity(se);
+			break;
+		}
+	}
+
+	for_each_sched_entity(se) {
+		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
+		/* throttled entity or throttle-on-deactivate */
+		if (!se->on_rq)
+			goto done;
+
+		update_load_avg(qcfs_rq, se, 0);
+		se_update_runnable(se);
+
+		if (cfs_rq_is_idle(group_cfs_rq(se)))
+			idle_task_delta = cfs_rq->h_nr_running;
+
+		qcfs_rq->h_nr_running -= task_delta;
+		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+	}
+
+	/* At this point se is NULL and we are at root level*/
+	sub_nr_running(rq, task_delta);
+
+done:
+	if (list_empty(&per_cpu(qos_throttled_cfs_rq, cpu_of(rq))))
+		start_qos_hrtimer(cpu_of(rq));
+
+	cfs_rq->throttled = QOS_THROTTLED;
+
+	list_add(&cfs_rq->qos_throttled_list,
+		 &per_cpu(qos_throttled_cfs_rq, cpu_of(rq)));
+}
+
+static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct sched_entity *se;
+	long task_delta, idle_task_delta;
+
+	se = cfs_rq->tg->se[cpu_of(rq)];
+
+	if (cfs_rq->throttled != QOS_THROTTLED)
+		return;
+
+	cfs_rq->throttled = 0;
+
+	update_rq_clock(rq);
+	list_del_init(&cfs_rq->qos_throttled_list);
+
+	/* update hierarchical throttle state */
+	rcu_read_lock();
+	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
+	rcu_read_unlock();
+
+	if (!cfs_rq->load.weight) {
+		if (!cfs_rq->on_list)
+			return;
+		/*
+		 * Nothing to run but something to decay (on_list)?
+		 * Complete the branch.
+		 */
+		for_each_sched_entity(se) {
+			if (list_add_leaf_cfs_rq(cfs_rq_of(se)))
+				break;
+		}
+		goto unthrottle_throttle;
+	}
+
+	task_delta = cfs_rq->h_nr_running;
+	idle_task_delta = cfs_rq->idle_h_nr_running;
+	for_each_sched_entity(se) {
+		if (se->on_rq)
+			break;
+
+		cfs_rq = cfs_rq_of(se);
+		enqueue_entity(cfs_rq, se, ENQUEUE_WAKEUP);
+
+		cfs_rq->h_nr_running += task_delta;
+		cfs_rq->idle_h_nr_running += idle_task_delta;
+
+		if (cfs_rq_throttled(cfs_rq))
+			goto unthrottle_throttle;
+	}
+
+	for_each_sched_entity(se) {
+		cfs_rq = cfs_rq_of(se);
+
+		update_load_avg(cfs_rq, se, UPDATE_TG);
+		se_update_runnable(se);
+
+		cfs_rq->h_nr_running += task_delta;
+		cfs_rq->idle_h_nr_running += idle_task_delta;
+
+		/* end evaluation on encountering a throttled cfs_rq */
+		if (cfs_rq_throttled(cfs_rq))
+			goto unthrottle_throttle;
+	}
+
+	add_nr_running(rq, task_delta);
+
+unthrottle_throttle:
+
+	assert_list_leaf_cfs_rq(rq);
+
+	/* Determine whether we need to wake up potentially idle CPU: */
+	if (rq->curr == rq->idle && rq->cfs.nr_running)
+		resched_curr(rq);
+}
+
+static int __unthrottle_qos_cfs_rqs(int cpu)
+{
+	struct cfs_rq *cfs_rq, *tmp_rq;
+	int res = 0;
+
+	list_for_each_entry_safe(cfs_rq, tmp_rq, &per_cpu(qos_throttled_cfs_rq, cpu),
+				 qos_throttled_list) {
+		if (cfs_rq_throttled(cfs_rq)) {
+			unthrottle_qos_cfs_rq(cfs_rq);
+			res++;
+		}
+	}
+
+	return res;
+}
+
+static int unthrottle_qos_cfs_rqs(int cpu)
+{
+	int res;
+
+	res = __unthrottle_qos_cfs_rqs(cpu);
+	if (res)
+		hrtimer_cancel(&(per_cpu(qos_overload_timer, cpu)));
+
+	return res;
+}
+
+static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	if (unlikely(__this_cpu_read(qos_cpu_overload)))
+		return false;
+
+	if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
+		     !sched_idle_cpu(smp_processor_id()) &&
+		     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
+
+		if (!rq_of(cfs_rq)->online)
+			return false;
+
+		throttle_qos_cfs_rq(cfs_rq);
+		return true;
+	}
+
+	return false;
+}
+
+static inline void unthrottle_qos_sched_group(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct rq_flags rf;
+
+	rq_lock_irqsave(rq, &rf);
+	if (cfs_rq->tg->qos_level == -1 && cfs_rq_throttled(cfs_rq))
+		unthrottle_qos_cfs_rq(cfs_rq);
+	rq_unlock_irqrestore(rq, &rf);
+}
+
+void sched_qos_offline_wait(void)
+{
+	long qos_level;
+
+	while (unlikely(this_cpu_read(qos_cpu_overload))) {
+		rcu_read_lock();
+		qos_level = task_group(current)->qos_level;
+		rcu_read_unlock();
+		if (qos_level != -1 || fatal_signal_pending(current))
+			break;
+
+		schedule_timeout_killable(msecs_to_jiffies(sysctl_offline_wait_interval));
+	}
+}
+
+int sched_qos_cpu_overload(void)
+{
+	return __this_cpu_read(qos_cpu_overload);
+}
+
+static enum hrtimer_restart qos_overload_timer_handler(struct hrtimer *timer)
+{
+	struct rq_flags rf;
+	struct rq *rq = this_rq();
+
+	rq_lock_irqsave(rq, &rf);
+	if (__unthrottle_qos_cfs_rqs(smp_processor_id()))
+		__this_cpu_write(qos_cpu_overload, 1);
+	rq_unlock_irqrestore(rq, &rf);
+
+	return HRTIMER_NORESTART;
+}
+
+static void start_qos_hrtimer(int cpu)
+{
+	ktime_t time;
+	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	time = ktime_add_ms(hrtimer->base->get_time(), (u64)sysctl_overload_detect_period);
+	hrtimer_set_expires(hrtimer, time);
+	hrtimer_start_expires(hrtimer, HRTIMER_MODE_ABS_PINNED);
+}
+
+void init_qos_hrtimer(int cpu)
+{
+	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
+	hrtimer->function = qos_overload_timer_handler;
+}
+
+/*
+ * To avoid Priority inversion issues, when this cpu is qos_cpu_overload,
+ * we should schedule offline tasks to run so that they can leave kernel
+ * critical sections, and throttle them before returning to user mode.
+ */
+static void qos_schedule_throttle(struct task_struct *p)
+{
+	if (unlikely(current->flags & PF_KTHREAD))
+		return;
+
+	if (unlikely(this_cpu_read(qos_cpu_overload))) {
+		if (is_offline_task(p))
+			set_notify_resume(p);
+	}
+}
+
+#endif
+
 #ifdef CONFIG_SMP
 static struct task_struct *pick_task_fair(struct rq *rq)
 {
@@ -8205,6 +8550,16 @@ again:
 
 		se = pick_next_entity(cfs_rq, curr);
 		cfs_rq = group_cfs_rq(se);
+#ifdef CONFIG_QOS_SCHED
+		if (check_qos_cfs_rq(cfs_rq)) {
+			cfs_rq = &rq->cfs;
+			WARN(cfs_rq->nr_running == 0,
+			    "rq->nr_running=%u, cfs_rq->idle_h_nr_running=%u\n",
+			    rq->nr_running, cfs_rq->idle_h_nr_running);
+			if (unlikely(!cfs_rq->nr_running))
+				return NULL;
+		}
+#endif
 	} while (cfs_rq);
 
 	p = task_of(se);
@@ -8265,6 +8620,10 @@ done: __maybe_unused;
 	update_misfit_status(p, rq);
 	sched_fair_update_stop_tick(rq, p);
 
+#ifdef CONFIG_QOS_SCHED
+	qos_schedule_throttle(p);
+#endif
+
 	return p;
 
 idle:
@@ -8284,6 +8643,14 @@ idle:
 	if (new_tasks > 0)
 		goto again;
 
+#ifdef CONFIG_QOS_SCHED
+	if (unthrottle_qos_cfs_rqs(cpu_of(rq))) {
+		rq->idle_stamp = 0;
+		goto again;
+	}
+
+	__this_cpu_write(qos_cpu_overload, 0);
+#endif
 	/*
 	 * rq is about to be idle, check if we need to update the
 	 * lost_idle_time of clock_pelt
@@ -12600,6 +12967,10 @@ void free_fair_sched_group(struct task_group *tg)
 	int i;
 
 	for_each_possible_cpu(i) {
+#ifdef CONFIG_QOS_SCHED
+		if (tg->cfs_rq && tg->cfs_rq[i])
+			unthrottle_qos_sched_group(tg->cfs_rq[i]);
+#endif
 		if (tg->cfs_rq)
 			kfree(tg->cfs_rq[i]);
 		if (tg->se)
@@ -12988,6 +13359,11 @@ __init void init_sched_fair_class(void)
 		INIT_LIST_HEAD(&cpu_rq(i)->cfsb_csd_list);
 #endif
 	}
+
+#ifdef CONFIG_QOS_SCHED
+	for_each_possible_cpu(i)
+		INIT_LIST_HEAD(&per_cpu(qos_throttled_cfs_rq, i));
+#endif
 
 	open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);
 

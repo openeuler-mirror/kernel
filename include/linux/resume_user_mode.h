@@ -59,6 +59,11 @@ static inline void resume_user_mode_work(struct pt_regs *regs)
 	blkcg_maybe_throttle_current();
 
 	rseq_handle_notify_resume(NULL, regs);
+
+#ifdef CONFIG_QOS_SCHED
+	sched_qos_offline_wait();
+#endif
+
 }
 
 #endif /* LINUX_RESUME_USER_MODE_H */
