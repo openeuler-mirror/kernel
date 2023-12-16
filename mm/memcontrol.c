@@ -4528,8 +4528,19 @@ static int mem_cgroup_oom_control_read(struct seq_file *sf, void *v)
 
 	seq_printf(sf, "oom_kill_disable %d\n", READ_ONCE(memcg->oom_kill_disable));
 	seq_printf(sf, "under_oom %d\n", (bool)memcg->under_oom);
+/*
+ * When CONFIG_MEMCG_V1_RECLAIM=n, memory_events[MEMCG_OOM_KILL] equals
+ * memory_events_local[MEMCG_OOM_KILL]. When CONFIG_MEMCG_V1_RECLAIM=y,memory_events
+ * will contain sub cgroup counts. Therefore, oom_kill will show
+ * memory_events_local[MEMCG_OOM_KILL]
+ */
 	seq_printf(sf, "oom_kill %lu\n",
+#ifdef CONFIG_MEMCG_V1_RECLAIM
+		   atomic_long_read(&memcg->memory_events_local[MEMCG_OOM_KILL]));
+#else
 		   atomic_long_read(&memcg->memory_events[MEMCG_OOM_KILL]));
+#endif
+
 	return 0;
 }
 
@@ -5022,6 +5033,30 @@ static ssize_t memory_low_write(struct kernfs_open_file *of,
 static int memory_high_show(struct seq_file *m, void *v);
 static ssize_t memory_high_write(struct kernfs_open_file *of,
 				 char *buf, size_t nbytes, loff_t off);
+static void __memcg_events_show(struct seq_file *m, atomic_long_t *events)
+{
+	seq_printf(m, "low %lu\n", atomic_long_read(&events[MEMCG_LOW]));
+	seq_printf(m, "high %lu\n", atomic_long_read(&events[MEMCG_HIGH]));
+	seq_printf(m, "limit_in_bytes %lu\n",
+		   atomic_long_read(&events[MEMCG_MAX]));
+	seq_printf(m, "oom %lu\n", atomic_long_read(&events[MEMCG_OOM]));
+}
+
+static int memcg_events_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	__memcg_events_show(m, memcg->memory_events);
+	return 0;
+}
+
+static int memcg_events_local_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	__memcg_events_show(m, memcg->memory_events_local);
+	return 0;
+}
 #endif
 
 static struct cftype mem_cgroup_legacy_files[] = {
@@ -5168,6 +5203,18 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = memory_high_show,
 		.write = memory_high_write,
+	},
+	{
+		.name = "events",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, events_file),
+		.seq_show = memcg_events_show,
+	},
+	{
+		.name = "events.local",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, events_local_file),
+		.seq_show = memcg_events_local_show,
 	},
 #endif
 	{ },	/* terminate */
