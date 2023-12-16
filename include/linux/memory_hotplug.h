@@ -67,6 +67,10 @@ static inline void arch_refresh_nodedata(int nid, pg_data_t *pgdat)
 #ifdef CONFIG_MEMORY_HOTPLUG
 struct page *pfn_to_online_page(unsigned long pfn);
 
+#if IS_ENABLED(CONFIG_HISI_HBMDEV)
+extern struct acpi_device *hotplug_mdev[MAX_NUMNODES];
+#endif
+
 /* Types for control the zone type of onlined and offlined memory */
 enum {
 	/* Offline the memory. */
