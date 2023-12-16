@@ -249,5 +249,11 @@ config LSM
 
 source "security/Kconfig.hardening"
 
+config SECURITY_BOOT_INIT
+       bool "Disable init & rdinit parameters in cmdline"
+       default n
+       help
+         No support init and rdinit parameters in cmdline
+
 endmenu
 

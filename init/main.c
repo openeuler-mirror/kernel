@@ -573,6 +573,7 @@ static int __init unknown_bootoption(char *param, char *val,
 	return 0;
 }
 
+#ifndef CONFIG_SECURITY_BOOT_INIT
 static int __init init_setup(char *str)
 {
 	unsigned int i;
@@ -601,6 +602,7 @@ static int __init rdinit_setup(char *str)
 	return 1;
 }
 __setup("rdinit=", rdinit_setup);
+#endif
 
 #ifndef CONFIG_SMP
 static const unsigned int setup_max_cpus = NR_CPUS;
