@@ -281,6 +281,9 @@ static int hclge_set_torus_param(struct hclge_dev *hdev, void *data,
 	struct hnae3_torus_param *param = (struct hnae3_torus_param *)data;
 	int ret;
 
+	if (hdev->ae_dev->dev_version == HNAE3_DEVICE_VERSION_V4)
+		return -EOPNOTSUPP;
+
 	if (length != sizeof(struct hnae3_torus_param))
 		return -EINVAL;
 
@@ -317,6 +320,9 @@ static int hclge_get_torus_param(struct hclge_dev *hdev, void *data,
 	struct hclge_torus_cfg_cmd *req;
 	struct hclge_desc desc;
 	int ret;
+
+	if (hdev->ae_dev->dev_version == HNAE3_DEVICE_VERSION_V4)
+		return -EOPNOTSUPP;
 
 	if (length != sizeof(struct hnae3_torus_param))
 		return -EINVAL;

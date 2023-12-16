@@ -41,6 +41,7 @@
 #define HNAE3_DEVICE_VERSION_V1   0x00020
 #define HNAE3_DEVICE_VERSION_V2   0x00021
 #define HNAE3_DEVICE_VERSION_V3   0x00030
+#define HNAE3_DEVICE_VERSION_V4   0x00032
 
 #define HNAE3_PCI_REVISION_BIT_SIZE		8
 
@@ -453,6 +454,7 @@ struct hnae3_dev_specs {
 	u8 tnl_num;
 	u16 guid_tbl_space;
 	u16 ip_tbl_space;
+	u8 hilink_version;
 };
 
 struct hnae3_client_ops {
