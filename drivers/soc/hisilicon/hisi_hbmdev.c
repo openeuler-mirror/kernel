@@ -11,6 +11,7 @@
 #include <linux/node.h>
 #include <linux/arch_topology.h>
 #include <linux/memory_hotplug.h>
+#include <linux/mm.h>
 
 #include "hisi_internal.h"
 
@@ -25,6 +26,9 @@ struct cdev_node {
 struct memory_dev {
 	struct kobject *memdev_kobj;
 	struct kobject *topo_kobj;
+#ifdef CONFIG_HISI_HBMDEV_ACLS
+	struct kobject *acls_kobj;
+#endif
 	struct cdev_node cdev_list;
 	nodemask_t cluster_cpumask[MAX_NUMNODES];
 };
@@ -84,6 +88,134 @@ static void memory_topo_init(void)
 	if (ret)
 		kobject_put(mdev->topo_kobj);
 }
+
+#ifdef CONFIG_HISI_HBMDEV_ACLS
+static struct acpi_device *paddr_to_acpi_device(u64 paddr)
+{
+	unsigned long pfn;
+	int nid;
+
+	pfn = __phys_to_pfn(paddr);
+	if (!pfn_valid(pfn))
+		return NULL;
+
+	nid = pfn_to_nid(pfn);
+	if (nid < 0 && nid >= MAX_NUMNODES)
+		return NULL;
+
+	return hotplug_mdev[nid];
+}
+
+static ssize_t acls_query_store(struct kobject *kobj,
+				struct kobj_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct acpi_object_list arg_list;
+	struct acpi_device *adev;
+	union acpi_object obj;
+	acpi_status status;
+	u64 paddr, res;
+
+	if (kstrtoull(buf, 16, &paddr))
+		return -EINVAL;
+
+	adev = paddr_to_acpi_device(paddr);
+	if (!adev)
+		return -EINVAL;
+
+	obj.type = ACPI_TYPE_INTEGER;
+	obj.integer.value = paddr;
+	arg_list.count = 1;
+	arg_list.pointer = &obj;
+
+	status = acpi_evaluate_integer(adev->handle, "AQRY", &arg_list, &res);
+	if (ACPI_FAILURE(status))
+		return -ENODEV;
+
+	/* AQRY will return a positive error code to represent error status */
+	if (IS_ERR_VALUE(-res))
+		return -res;
+	else if (res)
+		return -ENODEV;
+
+	return count;
+}
+
+static struct kobj_attribute acls_query_store_attribute =
+	__ATTR(acls_query, 0200, NULL, acls_query_store);
+
+static ssize_t acls_repair_store(struct kobject *kobj,
+				struct kobj_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct acpi_object_list arg_list;
+	struct acpi_device *adev;
+	union acpi_object obj;
+	acpi_status status;
+	u64 paddr, res;
+
+	if (kstrtoull(buf, 16, &paddr))
+		return -EINVAL;
+
+	adev = paddr_to_acpi_device(paddr);
+	if (!adev)
+		return -EINVAL;
+
+	obj.type = ACPI_TYPE_INTEGER;
+	obj.integer.value = paddr;
+	arg_list.count = 1;
+	arg_list.pointer = &obj;
+
+	status = acpi_evaluate_integer(adev->handle, "AREP", &arg_list, &res);
+	if (ACPI_FAILURE(status))
+		return -ENODEV;
+
+	/* AREP will return a positive error code to represent error status */
+	if (IS_ERR_VALUE(-res))
+		return -res;
+	else if (res)
+		return -ENODEV;
+
+	return count;
+}
+static struct kobj_attribute acls_repair_store_attribute =
+	__ATTR(acls_repair, 0200, NULL, acls_repair_store);
+
+static struct attribute *acls_attrs[] = {
+	&acls_query_store_attribute.attr,
+	&acls_repair_store_attribute.attr,
+	NULL,
+};
+
+static struct attribute_group acls_attr_group = {
+	.attrs = acls_attrs,
+};
+
+static void acls_init(void)
+{
+	int ret = -ENOMEM;
+
+	mdev->acls_kobj = kobject_create_and_add("acls", mdev->memdev_kobj);
+	if (!mdev->acls_kobj)
+		goto out;
+
+	ret = sysfs_create_group(mdev->acls_kobj, &acls_attr_group);
+	if (ret)
+		kobject_put(mdev->acls_kobj);
+
+out:
+	if (ret)
+		pr_err("ACLS hot repair is not enabled\n");
+}
+
+static void acls_remove(void)
+{
+	kobject_put(mdev->acls_kobj);
+}
+#else
+static void acls_init(void) {}
+static void acls_remove(void) {}
+#endif
 
 static int get_pxm(struct acpi_device *acpi_device, void *arg)
 {
@@ -284,6 +416,7 @@ static int __init mdev_init(void)
 	}
 
 	memory_topo_init();
+	acls_init();
 	return ret;
 }
 module_init(mdev_init);
@@ -293,6 +426,7 @@ static void __exit mdev_exit(void)
 	container_remove();
 	kobject_put(mdev->memdev_kobj);
 	kobject_put(mdev->topo_kobj);
+	acls_remove();
 	kfree(mdev);
 }
 module_exit(mdev_exit);

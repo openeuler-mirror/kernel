@@ -29,6 +29,16 @@ config HISI_HBMCACHE
 	  To compile the driver as a module, choose M here:
 	  the module will be called hisi_hbmcache.
 
+config HISI_HBMDEV_ACLS
+	bool "Add support for HISI ACLS repair"
+	depends on HISI_HBMDEV
+	help
+	  Add ACLS support for hbm device, which can be used to query and
+	  repair hardware error in HBM devices. This feature need to work with
+	  hardware firmwares.
+
+	  If not sure say no.
+
 config KUNPENG_HCCS
 	tristate "HCCS driver on Kunpeng SoC"
 	depends on ACPI
