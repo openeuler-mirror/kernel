@@ -1312,6 +1312,16 @@ config SHARE_POOL
 	  in kernel and user level, which is only enabled for ascend platform.
 	  To enable this feature, enable_ascend_share_pool bootarg is needed.
 
+config ASCEND_OOM
+	bool "Enable support for disable oom killer"
+	default n
+	help
+	  In some cases we hopes that the oom will not kill the process when it occurs,
+	  be able to notify the black box to report the event, and be able to trigger
+	  the panic to locate the problem.
+	  vm.enable_oom_killer:
+		0: disable oom killer
+		1: enable oom killer (default,compatible with mainline)
 
 source "mm/damon/Kconfig"
 

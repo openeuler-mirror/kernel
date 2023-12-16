@@ -55,6 +55,7 @@
 static int sysctl_panic_on_oom;
 static int sysctl_oom_kill_allocating_task;
 static int sysctl_oom_dump_tasks = 1;
+static int sysctl_enable_oom_killer = 1;
 
 /*
  * Serializes oom killer invocations (out_of_memory()) from all contexts to
@@ -724,6 +725,17 @@ static struct ctl_table vm_oom_kill_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#ifdef CONFIG_ASCEND_OOM
+	{
+		.procname	= "enable_oom_killer",
+		.data		= &sysctl_enable_oom_killer,
+		.maxlen		= sizeof(sysctl_enable_oom_killer),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
 	{}
 };
 #endif
@@ -1073,6 +1085,7 @@ static void check_panic_on_oom(struct oom_control *oc)
 	if (is_sysrq_oom(oc))
 		return;
 	dump_header(oc, NULL);
+	oom_type_notifier_call(OOM_TYPE_NOMEM, oc);
 	panic("Out of memory: %s panic_on_oom is enabled\n",
 		sysctl_panic_on_oom == 2 ? "compulsory" : "system-wide");
 }
@@ -1091,6 +1104,45 @@ int unregister_oom_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_oom_notifier);
 
+#ifdef CONFIG_ASCEND_OOM
+static BLOCKING_NOTIFIER_HEAD(oom_type_notify_list);
+
+int register_hisi_oom_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&oom_type_notify_list, nb);
+}
+EXPORT_SYMBOL_GPL(register_hisi_oom_notifier);
+
+int unregister_hisi_oom_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&oom_type_notify_list, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_hisi_oom_notifier);
+
+int oom_type_notifier_call(unsigned int type, struct oom_control *oc)
+{
+	struct oom_control oc_tmp = { 0 };
+	static unsigned long caller_jiffies;
+
+	if (sysctl_enable_oom_killer)
+		return -EINVAL;
+
+	if (oc)
+		type = is_memcg_oom(oc) ? OOM_TYPE_CGROUP : OOM_TYPE_NOMEM;
+	else
+		oc = &oc_tmp;
+
+	if (printk_timed_ratelimit(&caller_jiffies, 10000)) {
+		pr_err("OOM_NOTIFIER: oom type %u\n", type);
+		dump_stack();
+		show_mem();
+		dump_tasks(oc);
+	}
+
+	return blocking_notifier_call_chain(&oom_type_notify_list, type, NULL);
+}
+#endif
+
 /**
  * out_of_memory - kill the "best" process when we run out of memory
  * @oc: pointer to struct oom_control
@@ -1106,6 +1158,11 @@ bool out_of_memory(struct oom_control *oc)
 
 	if (oom_killer_disabled)
 		return false;
+
+	if (!sysctl_enable_oom_killer) {
+		oom_type_notifier_call(OOM_TYPE_NOMEM, oc);
+		return false;
+	}
 
 	if (!is_memcg_oom(oc)) {
 		blocking_notifier_call_chain(&oom_notify_list, 0, &freed);

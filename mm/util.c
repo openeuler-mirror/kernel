@@ -26,6 +26,7 @@
 #include <linux/share_pool.h>
 
 #include <linux/uaccess.h>
+#include <linux/oom.h>
 
 #include "internal.h"
 #include "swap.h"
@@ -981,6 +982,7 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 error:
 	pr_warn_ratelimited("%s: pid: %d, comm: %s, not enough memory for the allocation\n",
 			    __func__, current->pid, current->comm);
+	oom_type_notifier_call(OOM_TYPE_OVERCOMMIT, NULL);
 	vm_unacct_memory(pages);
 
 	return -ENOMEM;
