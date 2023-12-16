@@ -18,6 +18,17 @@ config HISI_HBMDEV
 	  To compile this driver as a module, choose M here:
 	  the module will be called hisi_hbmdev.
 
+config HISI_HBMCACHE
+	tristate "HBM cache memory device"
+	depends on ACPI
+	help
+	  This driver provids methods to control the power of hbm cache device
+	  in hisi soc. Use hbm as a cache can take advantage of hbm's high
+	  bandwidth in normal memory access.
+
+	  To compile the driver as a module, choose M here:
+	  the module will be called hisi_hbmcache.
+
 config KUNPENG_HCCS
 	tristate "HCCS driver on Kunpeng SoC"
 	depends on ACPI
