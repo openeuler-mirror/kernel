@@ -8,9 +8,12 @@ config HISI_HBMDEV
 	depends on ACPI_HOTPLUG_MEMORY
 	select ACPI_CONTAINER
 	help
-	  This driver add extra supports for memory devices. The driver
-	  provides methods for userpace to control the power of memory
-	  devices in a container.
+	  This driver add two extra supports for memory devices. The driver
+	  provides methods for userpace to control the power of memory devices
+	  in a container. Besides, it provides extra locality information
+	  between cpus and memory devices for userspace, which can take
+	  advantage of this functionality to select the closet memory device
+	  to a certain cpu.
 
 	  To compile this driver as a module, choose M here:
 	  the module will be called hisi_hbmdev.
