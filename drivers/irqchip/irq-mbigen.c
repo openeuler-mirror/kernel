@@ -687,9 +687,6 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 	u32 val;
 	struct vtimer_mbigen_device *chip;
 
-	if (!vtimer_irqbypass)
-		return 0;
-
 	addr = mgn_chip->base + MBIGEN_CTLR;
 	val = readl_relaxed(addr);
 	mpidr_aff3 = (val & MBIGEN_AFF3_MASK) >> MBIGEN_AFF3_SHIFT;
@@ -766,6 +763,9 @@ static int vtimer_mbigen_device_probe(struct platform_device *pdev)
 	struct mbigen_device *mgn_chip = platform_get_drvdata(pdev);
 	struct vtimer_mbigen_device *vtimer_mgn_chip;
 	int err;
+
+	if (!vtimer_irqbypass)
+		return 0;
 
 	err = vtimer_mbigen_set_regs(pdev);
 	if (err)
