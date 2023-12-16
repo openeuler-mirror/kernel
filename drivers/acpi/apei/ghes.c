@@ -692,12 +692,18 @@ static bool ghes_do_proc(struct ghes *ghes,
 			queued = ghes_handle_arm_hw_error(gdata, sev);
 		} else {
 			void *err = acpi_hest_get_payload(gdata);
-
+#ifndef CONFIG_ACPI_APEI_GHES_NOTIFY_ALL_RAS_ERR
 			ghes_defer_non_standard_event(gdata, sev);
+#endif
 			log_non_standard_event(sec_type, fru_id, fru_text,
 					       sec_sev, err,
 					       gdata->error_data_length);
 		}
+
+#ifdef CONFIG_ACPI_APEI_GHES_NOTIFY_ALL_RAS_ERR
+		/* Customization deliver all types error to driver. */
+		ghes_defer_non_standard_event(gdata, sev);
+#endif
 	}
 
 	return queued;

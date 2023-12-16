@@ -33,6 +33,13 @@ config ACPI_APEI_GHES
 	  by firmware to produce more valuable hardware error
 	  information for Linux.
 
+config ACPI_APEI_GHES_NOTIFY_ALL_RAS_ERR
+	bool "Notify all ras err to driver"
+	depends on ARM64 && ACPI_APEI_GHES
+	default n
+	help
+	  Deliver all types of error to driver.
+
 config ACPI_APEI_PCIEAER
 	bool "APEI PCIe AER logging/recovering support"
 	depends on ACPI_APEI && PCIEAER
