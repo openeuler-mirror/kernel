@@ -944,6 +944,11 @@ config MEMCG
 	help
 	  Provides control over the memory footprint of tasks in a cgroup.
 
+config MEMCG_V1_RECLAIM
+	bool "Enable Per Memory Cgroup Qos Reclaim in Cgroup V1"
+	depends on MEMCG
+	default n
+
 config MEMCG_KMEM
 	bool
 	depends on MEMCG
