@@ -3,6 +3,18 @@
 menu "Hisilicon SoC drivers"
 	depends on ARCH_HISI || COMPILE_TEST
 
+config HISI_HBMDEV
+	tristate "add extra support for hbm memory device"
+	depends on ACPI_HOTPLUG_MEMORY
+	select ACPI_CONTAINER
+	help
+	  This driver add extra supports for memory devices. The driver
+	  provides methods for userpace to control the power of memory
+	  devices in a container.
+
+	  To compile this driver as a module, choose M here:
+	  the module will be called hisi_hbmdev.
+
 config KUNPENG_HCCS
 	tristate "HCCS driver on Kunpeng SoC"
 	depends on ACPI
