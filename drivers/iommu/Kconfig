@@ -412,6 +412,13 @@ config ARM_SMMU_V3_SVA
 	  Say Y here if your system supports SVA extensions such as PCIe PASID
 	  and PRI.
 
+config ARM_SMMU_V3_PM
+	bool "Add arm_smmu_v3  suspend and resume support"
+	depends on ARM_SMMU_V3 && PM_SLEEP
+	default n
+	help
+	  Add support for suspend and resume support for arm smmu v3.
+
 config S390_IOMMU
 	def_bool y if S390 && PCI
 	depends on S390 && PCI
