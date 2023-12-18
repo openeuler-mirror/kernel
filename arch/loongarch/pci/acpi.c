@@ -26,16 +26,17 @@ void pcibios_add_bus(struct pci_bus *bus)
 
 int pcibios_root_bridge_prepare(struct pci_host_bridge *bridge)
 {
-	struct acpi_device *adev = NULL;
-	struct device *bus_dev = &bridge->bus->dev;
-	struct pci_config_window *cfg = bridge->bus->sysdata;
 
-	if (!acpi_disabled)
+	if (!acpi_disabled) {
+		struct acpi_device *adev = NULL;
+		struct device *bus_dev = &bridge->bus->dev;
+		struct pci_config_window *cfg = bridge->bus->sysdata;
+
 		adev = to_acpi_device(cfg->parent);
 
-	ACPI_COMPANION_SET(&bridge->dev, adev);
-	set_dev_node(bus_dev, pa_to_nid(cfg->res.start));
-
+		ACPI_COMPANION_SET(&bridge->dev, adev);
+		set_dev_node(bus_dev, pa_to_nid(cfg->res.start));
+	}
 	return 0;
 }
 
