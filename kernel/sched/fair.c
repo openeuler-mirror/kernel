@@ -7869,6 +7869,8 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 		p->select_cpus = p->prefer_cpus;
 		if (sd_flag & SD_BALANCE_WAKE)
 			schedstat_inc(p->se.statistics.nr_wakeups_preferred_cpus);
+	} else if (idlest_cpu) {
+		*idlest_cpu = -1;
 	}
 }
 #endif
