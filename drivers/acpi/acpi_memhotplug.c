@@ -57,6 +57,11 @@ struct acpi_memory_device {
 	int mgid;
 };
 
+#if IS_ENABLED(CONFIG_HISI_HBMDEV)
+struct acpi_device *hotplug_mdev[MAX_NUMNODES];
+EXPORT_SYMBOL_GPL(hotplug_mdev);
+#endif
+
 static acpi_status
 acpi_memory_get_resource(struct acpi_resource *resource, void *context)
 {
@@ -167,6 +172,27 @@ static void acpi_unbind_memory_blocks(struct acpi_memory_info *info)
 			   acpi_unbind_memblk);
 }
 
+#if IS_ENABLED(CONFIG_HISI_HBMDEV)
+static void hotplug_mdev_set(struct acpi_memory_device *mem_device)
+{
+	acpi_handle handle = mem_device->device->handle;
+	int nid = acpi_get_node(handle);
+
+	hotplug_mdev[nid] = mem_device->device;
+}
+
+static void hotplug_mdev_clear(struct acpi_memory_device *mem_device)
+{
+	acpi_handle handle = mem_device->device->handle;
+	int nid = acpi_get_node(handle);
+
+	hotplug_mdev[nid] = NULL;
+}
+#else
+static void hotplug_mdev_set(struct acpi_memory_device *mem_device) {}
+static void hotplug_mdev_clear(struct acpi_memory_device *mem_device) {}
+#endif
+
 static int acpi_memory_enable_device(struct acpi_memory_device *mem_device)
 {
 	acpi_handle handle = mem_device->device->handle;
@@ -235,6 +261,8 @@ static int acpi_memory_enable_device(struct acpi_memory_device *mem_device)
 		 * Add num_enable even if add_memory() returns -EEXIST, so the
 		 * device is bound to this driver.
 		 */
+
+		hotplug_mdev_set(mem_device);
 		num_enabled++;
 	}
 	if (!num_enabled) {
@@ -256,6 +284,7 @@ static void acpi_memory_remove_memory(struct acpi_memory_device *mem_device)
 {
 	struct acpi_memory_info *info, *n;
 
+	hotplug_mdev_clear(mem_device);
 	list_for_each_entry_safe(info, n, &mem_device->res_list, list) {
 		if (!info->enabled)
 			continue;

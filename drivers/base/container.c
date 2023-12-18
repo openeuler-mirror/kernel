@@ -30,6 +30,9 @@ struct bus_type container_subsys = {
 	.online = trivial_online,
 	.offline = container_offline,
 };
+#if IS_ENABLED(CONFIG_HISI_HBMDEV)
+EXPORT_SYMBOL_GPL(container_subsys);
+#endif
 
 void __init container_dev_init(void)
 {
