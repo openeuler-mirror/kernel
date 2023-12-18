@@ -2115,6 +2115,19 @@ config STACKPROTECTOR_PER_TASK
 	def_bool y
 	depends on STACKPROTECTOR && CC_HAVE_STACKPROTECTOR_SYSREG
 
+config ARCH_CUSTOM_NUMA_DISTANCE
+	bool "Support custom node relaim distance"
+	depends on ARM64 && ARCH_HISI && NUMA
+	default n
+	help
+	  Allow arch to adjust node_reclaim_distance.
+
+	  Some machines may have a specific node distance to achieve optimal
+	  system performance. You can set a specific node_reclaim_distance based
+	  on the system topology.
+
+	  If unsure, say N.
+
 menuconfig ASCEND_FEATURES
 	bool "Support Ascend Features"
 	depends on ARM64
