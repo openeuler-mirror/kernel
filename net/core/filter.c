@@ -8215,6 +8215,10 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_tcp_sock:
 		return &bpf_tcp_sock_proto;
 #endif /* CONFIG_INET */
+#if IS_ENABLED(CONFIG_NETACC_BPF)
+	case BPF_FUNC_get_current_comm:
+		return &bpf_get_current_comm_proto;
+#endif
 	default:
 		return bpf_sk_base_func_proto(func_id);
 	}

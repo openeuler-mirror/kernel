@@ -508,4 +508,10 @@ config NETDEV_ADDR_LIST_TEST
 	default KUNIT_ALL_TESTS
 	depends on KUNIT
 
+config NETACC_BPF
+	bool "Network acceleration"
+	default y
+	help
+	  Network acceleration in bpf.
+
 endif   # if NET
