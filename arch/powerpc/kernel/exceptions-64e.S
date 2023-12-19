@@ -1576,4 +1576,8 @@ _GLOBAL(reloc_kernel_entry)
 
 	mtspr	SPRN_SRR0,r4
 	mtspr	SPRN_SRR1,r7
+#ifdef CONFIG_RANDOMIZE_BASE
+	LOAD_REG_ADDR_PIC(r19, __is_prom)
+	lwz	r5,0(r19)
+#endif
 	rfi

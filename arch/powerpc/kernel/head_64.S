@@ -120,6 +120,9 @@ __secondary_hold_acknowledge:
 	.globl	__kaslr_offset
 __kaslr_offset:
 	.8byte	0x0
+	.globl	__is_prom
+__is_prom:
+	.8byte	0x0
 #endif
 
 	/* This flag is set to 1 by a loader if the kernel should run
@@ -540,6 +543,12 @@ __start_initialization_multiplatform:
 
 	/* Poison TOC */
 	li	r2,-1
+
+#ifdef CONFIG_RANDOMIZE_BASE
+	/* Store value in r5 for relocation */
+	LOAD_REG_ADDR_PIC(r19, __is_prom)
+	stw r5,0(r19)
+#endif
 
 	/*
 	 * Are we booted from a PROM Of-type client-interface ?
