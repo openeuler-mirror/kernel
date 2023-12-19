@@ -1,0 +1,45 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+
+orig_cgrp_path="/sys/fs/cgroup/unified"
+function usage() {
+	echo ""
+	echo "Usage:"
+	echo "    $0 [enable | disable]"
+	echo ""
+}
+
+function get_cgrp_path() {
+	local KERNEL_CGRP=`cat /proc/filesystems | grep cgroup2`
+	if [[ "$KERNEL_CGRP="X == "X" ]]; then
+		echo "kernel not support cgroupv2"
+		exit 1
+	fi
+	local CGRP=`mount | grep cgroup2 | head -n 1`
+	if [[ "$CGRP"X == "X" ]]; then
+		mount -o rw,remount  /sys/fs/cgroup
+		mkdir -p ${orig_cgrp_path}
+		mount -t cgroup2 -o nosuid,nodev,noexec none ${orig_cgrp_path}
+		mount -o ro,remount  /sys/fs/cgroup
+		CGRP=`mount | grep cgroup2 | head -n 1`
+	fi
+	cgrp_path=`echo $CGRP | awk '{print $3}'`
+}
+
+CMD=$1
+
+get_cgrp_path
+if [[ "$cgrp_path"X == "X" ]]; then
+	echo "Failed to obtain a valid cgroup mount point."
+	usage;
+	exit 1
+fi
+
+if [[ "$CMD"X == "enableX" ]]; then
+	/usr/sbin/tuned_acc/netacc enable ${cgrp_path}
+elif [[ "$CMD"X == "disableX" ]]; then
+	/usr/sbin/tuned_acc/netacc disable ${cgrp_path}
+	exit 0
+else
+	usage;
+fi

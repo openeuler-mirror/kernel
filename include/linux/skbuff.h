@@ -1046,6 +1046,11 @@ struct sk_buff {
 	u64			kcov_handle;
 #endif
 
+#if IS_ENABLED(CONFIG_NETACC_BPF)
+	__u8			local_skb;
+	__u8			pad0;
+	__u16			pad1;
+#endif
 	); /* end headers group */
 
 	/* These elements must be at the end, see alloc_skb() for details.  */
