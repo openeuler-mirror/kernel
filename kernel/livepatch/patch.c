@@ -315,7 +315,9 @@ int klp_patch_object(struct klp_object *obj, bool rollback)
 	if (obj->patched)
 		return 0;
 
+	WARN_ON(obj->dynamic);
 	klp_for_each_func(obj, func) {
+		WARN_ON(func->nop);
 		ret = klp_patch_func(func);
 		if (ret && klp_need_rollback(ret, rollback)) {
 			klp_unpatch_object(obj);
