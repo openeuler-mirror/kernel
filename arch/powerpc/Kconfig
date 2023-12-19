@@ -660,14 +660,15 @@ config RELOCATABLE
 
 config RANDOMIZE_BASE
 	bool "Randomize the address of the kernel image"
-	depends on PPC_85xx && FLATMEM
+	depends on PPC_E500 && FLATMEM
 	depends on RELOCATABLE
+	default n
 	help
 	  Randomizes the virtual address at which the kernel image is
 	  loaded, as a security feature that deters exploit attempts
 	  relying on knowledge of the location of kernel internals.
 
-	  If unsure, say Y.
+	  If unsure, say N.
 
 config RELOCATABLE_TEST
 	bool "Test relocatable kernel"
