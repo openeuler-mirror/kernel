@@ -9055,6 +9055,11 @@ static bool sock_ops_is_valid_access(int off, int size,
 	if (off % size != 0)
 		return false;
 
+#if !(IS_ENABLED(CONFIG_NETACC_BPF))
+	if (off == offsetof(struct bpf_sock_ops, local_skb))
+		return false;
+#endif
+
 	if (type == BPF_WRITE) {
 		switch (off) {
 		case offsetof(struct bpf_sock_ops, reply):
@@ -10594,6 +10599,15 @@ static u32 sock_ops_convert_ctx_access(enum bpf_access_type type,
 					       insn - jmp_on_null_skb - 1);
 		break;
 	}
+#if IS_ENABLED(CONFIG_NETACC_BPF)
+	case offsetof(struct bpf_sock_ops, local_skb):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_sock_ops_kern,
+						       local_skb),
+				      si->dst_reg, si->src_reg,
+				      offsetof(struct bpf_sock_ops_kern,
+					       local_skb));
+		break;
+#endif
 	}
 	return insn - insn_buf;
 }

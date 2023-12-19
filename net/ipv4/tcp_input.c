@@ -186,8 +186,12 @@ static void bpf_skops_established(struct sock *sk, int bpf_op,
 	sock_ops.is_fullsock = 1;
 	sock_ops.sk = sk;
 	/* sk with TCP_REPAIR_ON does not have skb in tcp_finish_connect */
-	if (skb)
+	if (skb) {
 		bpf_skops_init_skb(&sock_ops, skb, tcp_hdrlen(skb));
+#if IS_ENABLED(CONFIG_NETACC_BPF)
+		sock_ops.local_skb = skb->local_skb;
+#endif
+	}
 
 	BPF_CGROUP_RUN_PROG_SOCK_OPS(&sock_ops);
 }

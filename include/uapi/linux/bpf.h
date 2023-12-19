@@ -6666,6 +6666,7 @@ struct bpf_sock_ops {
 				 * been written yet.
 				 */
 	__u64 skb_hwtstamp;
+	__u32 local_skb;
 };
 
 /* Definitions for bpf_sock_ops_cb_flags */
