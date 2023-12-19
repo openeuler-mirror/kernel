@@ -958,6 +958,13 @@ start_here_multiplatform:
 	/* Adjust TOC for moved kernel. Could adjust when moving it instead. */
 	bl	relative_toc
 
+	/* Do not clear the BSS for the second pass if randomized */
+	LOAD_REG_ADDR(r3, kernstart_virt_addr)
+	ld	r3,0(r3)
+	LOAD_REG_IMMEDIATE(r4, KERNELBASE)
+	cmpd	r3,r4
+	bne	4f
+
 	/* Clear out the BSS. It may have been done in prom_init,
 	 * already but that's irrelevant since prom_init will soon
 	 * be detached from the kernel completely. Besides, we need
