@@ -17,11 +17,6 @@ config ARCH_CLOCKSOURCE_DATA
 config ARCH_CLOCKSOURCE_INIT
 	bool
 
-# Clocksources require validation of the clocksource against the last
-# cycle update - x86/TSC misfeature
-config CLOCKSOURCE_VALIDATE_LAST_CYCLE
-	bool
-
 # Timekeeping vsyscall support
 config GENERIC_TIME_VSYSCALL
 	bool
@@ -208,6 +203,14 @@ config CLOCKSOURCE_WATCHDOG_MAX_SKEW_US
 	  interval and NTP's maximum frequency drift of 500 parts
 	  per million.	If the clocksource is good enough for NTP,
 	  it is good enough for the clocksource watchdog!
+
+# Clocksources require validation of the clocksource against the last
+# cycle update - x86/TSC misfeature
+config CLOCKSOURCE_VALIDATE_LAST_CYCLE
+	bool "Validate last cycle of clocksource"
+	help
+	  Enable this option to validate the last cycle to prevent issues
+	  caused by clocksource going backwards.
 
 endmenu
 endif
