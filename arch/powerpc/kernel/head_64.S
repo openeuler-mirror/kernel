@@ -116,6 +116,15 @@ __secondary_hold_acknowledge:
 	.8byte	0x0
 
 #ifdef CONFIG_RELOCATABLE
+#ifdef CONFIG_RANDOMIZE_BASE
+	.globl	__kaslr_offset
+__kaslr_offset:
+	.8byte	0x0
+	.globl	__is_prom
+__is_prom:
+	.8byte	0x0
+#endif
+
 	/* This flag is set to 1 by a loader if the kernel should run
 	 * at the loaded address instead of the linked address.  This
 	 * is used by kexec-tools to keep the kdump kernel in the
@@ -535,6 +544,12 @@ __start_initialization_multiplatform:
 	/* Poison TOC */
 	li	r2,-1
 
+#ifdef CONFIG_RANDOMIZE_BASE
+	/* Store value in r5 for relocation */
+	LOAD_REG_ADDR_PIC(r19, __is_prom)
+	stw r5,0(r19)
+#endif
+
 	/*
 	 * Are we booted from a PROM Of-type client-interface ?
 	 */
@@ -951,6 +966,13 @@ __REF
 start_here_multiplatform:
 	/* Adjust TOC for moved kernel. Could adjust when moving it instead. */
 	bl	relative_toc
+
+	/* Do not clear the BSS for the second pass if randomized */
+	LOAD_REG_ADDR(r3, kernstart_virt_addr)
+	ld	r3,0(r3)
+	LOAD_REG_IMMEDIATE(r4, KERNELBASE)
+	cmpd	r3,r4
+	bne	4f
 
 	/* Clear out the BSS. It may have been done in prom_init,
 	 * already but that's irrelevant since prom_init will soon

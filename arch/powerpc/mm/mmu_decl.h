@@ -119,21 +119,16 @@ extern unsigned long map_mem_in_cams(unsigned long ram, int max_cam_idx,
 extern void adjust_total_lowmem(void);
 extern int switch_to_as1(void);
 extern void restore_to_as0(int esel, int offset, void *dt_ptr, int bootcpu);
-void create_kaslr_tlb_entry(int entry, unsigned long virt, phys_addr_t phys);
-void reloc_kernel_entry(void *fdt, int addr);
 void relocate_init(u64 dt_ptr, phys_addr_t start);
-extern int is_second_reloc;
 #endif
+void create_kaslr_tlb_entry(int entry, unsigned long virt, phys_addr_t phys);
+extern int is_second_reloc;
+extern unsigned long __kaslr_offset;
+extern unsigned int __run_at_load;
+
+void reloc_kernel_entry(void *fdt, long addr);
 extern void loadcam_entry(unsigned int index);
 extern void loadcam_multi(int first_idx, int num, int tmp_idx);
-
-#ifdef CONFIG_RANDOMIZE_BASE
-void kaslr_early_init(void *dt_ptr, phys_addr_t size);
-void kaslr_late_init(void);
-#else
-static inline void kaslr_early_init(void *dt_ptr, phys_addr_t size) {}
-static inline void kaslr_late_init(void) {}
-#endif
 
 struct tlbcam {
 	u32	MAS0;
@@ -146,6 +141,14 @@ struct tlbcam {
 #define NUM_TLBCAMS	64
 
 extern struct tlbcam TLBCAM[NUM_TLBCAMS];
+#endif
+
+#ifdef CONFIG_RANDOMIZE_BASE
+void kaslr_early_init(void *dt_ptr, phys_addr_t size);
+void kaslr_late_init(void);
+#else
+static inline void kaslr_early_init(void *dt_ptr, phys_addr_t size) {}
+static inline void kaslr_late_init(void) {}
 #endif
 
 #if defined(CONFIG_PPC_BOOK3S_32) || defined(CONFIG_PPC_85xx) || defined(CONFIG_PPC_8xx)
