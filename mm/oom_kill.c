@@ -1141,6 +1141,7 @@ int oom_type_notifier_call(unsigned int type, struct oom_control *oc)
 
 	return blocking_notifier_call_chain(&oom_type_notify_list, type, NULL);
 }
+EXPORT_SYMBOL_GPL(oom_type_notifier_call);
 #endif
 
 /**
