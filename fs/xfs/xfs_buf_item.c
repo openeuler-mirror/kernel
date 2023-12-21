@@ -645,8 +645,12 @@ xfs_buf_item_put(
 	struct xfs_buf_log_item	*bip)
 {
 	struct xfs_log_item	*lip = &bip->bli_item;
+	struct xfs_buf		*bp = bip->bli_buf;
+	struct xfs_log_item	*lp, *n;
+	struct xfs_inode_log_item *iip;
 	bool			aborted;
 	bool			dirty;
+	bool			stale = bip->bli_flags & XFS_BLI_STALE_INODE;
 
 	/* drop the bli ref and return if it wasn't the last one */
 	if (!atomic_dec_and_test(&bip->bli_refcount))
@@ -673,6 +677,22 @@ xfs_buf_item_put(
 	if (aborted)
 		xfs_trans_ail_delete(lip, 0);
 	xfs_buf_item_relse(bip->bli_buf);
+
+	/*
+	 * If it is an inode buffer and item marked as stale, abort flushing
+	 * inodes associated with the buf, prevent inode item left in AIL.
+	 */
+	if (aborted && stale) {
+		list_for_each_entry_safe(lp, n, &bp->b_li_list, li_bio_list) {
+			iip = container_of(lp, struct xfs_inode_log_item,
+					ili_item);
+			if (xfs_iflags_test(iip->ili_inode, XFS_ISTALE)) {
+				set_bit(XFS_LI_ABORTED, &lp->li_flags);
+				xfs_iflags_clear(iip->ili_inode, XFS_IFLUSHING);
+			}
+		}
+	}
+
 	return true;
 }
 
