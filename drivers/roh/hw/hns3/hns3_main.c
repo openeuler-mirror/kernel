@@ -388,6 +388,9 @@ static int hns3_roh_reset_notify(struct hnae3_handle *handle,
 	case HNAE3_UNINIT_CLIENT:
 		ret = hns3_roh_reset_notify_uninit(handle);
 		break;
+	case HNAE3_DOWN_CLIENT:
+		set_bit(HNS3_ROH_STATE_CMD_DISABLE, &handle->rohinfo.reset_state);
+		break;
 	default:
 		break;
 	}
