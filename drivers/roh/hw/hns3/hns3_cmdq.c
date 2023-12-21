@@ -141,6 +141,8 @@ int hns3_roh_cmdq_init(struct hns3_roh_device *hroh_dev)
 	/* Init CRQ REG */
 	hns3_roh_cmdq_init_regs(hroh_dev, HNS3_ROH_CMDQ_CRQ);
 
+	clear_bit(HNS3_ROH_STATE_CMD_DISABLE, &priv->handle->rohinfo.reset_state);
+
 	return 0;
 
 err_crq:
@@ -339,6 +341,9 @@ int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *d
 	int handle = 0;
 	int ntc = 0;
 	int ret = 0;
+
+	if (test_bit(HNS3_ROH_STATE_CMD_DISABLE, &priv->handle->rohinfo.reset_state))
+		return -EIO;
 
 	spin_lock_bh(&csq->lock);
 	ret = hns3_roh_cmdq_build(hroh_dev, desc, num, &ntc);
