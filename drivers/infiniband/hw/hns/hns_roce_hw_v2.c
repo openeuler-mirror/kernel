@@ -7621,9 +7621,8 @@ static bool check_vf_support(struct pci_dev *vf)
 	handle = &hdev->vport[0].roce;
 	hr_dev = handle->priv;
 
-	/* In UB link vf can not find the pf device */
 	if (!hr_dev)
-		return true;
+		return false;
 
 	bond_grp = hns_roce_get_bond_grp(get_hr_netdev(hr_dev, 0),
 					 pf->bus->number);
@@ -7636,6 +7635,7 @@ static bool check_vf_support(struct pci_dev *vf)
 static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 {
 	struct hns_roce_dev *hr_dev;
+	struct pci_dev *pdev;
 	int ret;
 
 	hr_dev = ib_alloc_device(hns_roce_dev, ib_dev);
@@ -7650,7 +7650,9 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 
 	hns_roce_hw_v2_get_cfg(hr_dev, handle);
 
-	if (hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
+	pdev = hr_dev->pci_dev;
+	if (pdev->device != HNAE3_DEV_ID_RDMA_OVER_UBL_VF &&
+	    hr_dev->is_vf && !check_vf_support(pdev)) {
 		ret = -EOPNOTSUPP;
 		goto error_failed_roce_init;
 	}
@@ -7661,7 +7663,7 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 		goto error_failed_roce_init;
 	}
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08) {
+	if (pdev->revision == PCI_REVISION_ID_HIP08) {
 		ret = free_mr_init(hr_dev);
 		if (ret) {
 			dev_err(hr_dev->dev, "failed to init free mr!\n");
