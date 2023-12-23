@@ -282,3 +282,43 @@ int klp_patch_text(u32 *dst, const u32 *src, int len)
 	barrier();
 	return patch_instruction(dst, ppc_inst(src[0]));
 }
+
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	ppc_inst_t insn = ppc_inst_read((const u32 *)old_func);
+
+	arch_data->saved_opcode = ppc_inst_val(insn);
+	patch_instruction((u32 *)old_func, ppc_inst(BREAKPOINT_INSTRUCTION));
+	return 0;
+}
+
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	patch_instruction((u32 *)old_func, ppc_inst(arch_data->saved_opcode));
+}
+
+int klp_brk_handler(struct pt_regs *regs)
+{
+	void *brk_func = NULL;
+	unsigned long addr = regs->nip;
+
+	if (user_mode(regs))
+		return 0;
+
+	brk_func = klp_get_brk_func((void *)addr);
+	if (!brk_func)
+		return 0;
+
+#ifdef CONFIG_PPC64
+	/*
+	 * Only static trampoline can be used here to prevent
+	 * resource release caused by rollback.
+	 */
+	regs->gpr[PT_R11] = (unsigned long)brk_func;
+	regs->nip = ppc_function_entry((void *)livepatch_brk_trampoline);
+#else
+	regs->nip = (unsigned long)brk_func;
+#endif
+
+	return 1;
+}

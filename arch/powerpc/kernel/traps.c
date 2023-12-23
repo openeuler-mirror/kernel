@@ -70,6 +70,10 @@
 #include <asm/disassemble.h>
 #include <asm/udbg.h>
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+#include <asm/livepatch.h>
+#endif
+
 #if defined(CONFIG_DEBUGGER) || defined(CONFIG_KEXEC_CORE)
 int (*__debugger)(struct pt_regs *regs) __read_mostly;
 int (*__debugger_ipi)(struct pt_regs *regs) __read_mostly;
@@ -1496,6 +1500,10 @@ static void do_program_check(struct pt_regs *regs)
 		if (kprobe_handler(regs))
 			return;
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+		if (klp_brk_handler(regs))
+			return;
+#endif
 		/* trap exception */
 		if (notify_die(DIE_BPT, "breakpoint", regs, 5, 5, SIGTRAP)
 				== NOTIFY_STOP)

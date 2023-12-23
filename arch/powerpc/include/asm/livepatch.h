@@ -58,6 +58,7 @@ void livepatch_branch_stub(void);
 void livepatch_branch_stub_end(void);
 void livepatch_branch_trampoline(void);
 void livepatch_branch_trampoline_end(void);
+void livepatch_brk_trampoline(void);
 
 int livepatch_create_branch(unsigned long pc, unsigned long trampoline,
 			    unsigned long addr, struct module *me);
@@ -75,6 +76,11 @@ struct arch_klp_data {
 #ifdef CONFIG_PPC64
 	struct ppc64_klp_btramp_entry trampoline;
 #endif
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	u32 saved_opcode;
 };
 
 #define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
@@ -87,6 +93,9 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data);
 bool arch_check_jump_insn(unsigned long func_addr);
 int klp_patch_text(u32 *dst, const u32 *src, int len);
+int klp_brk_handler(struct pt_regs *regs);
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 
 #endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
