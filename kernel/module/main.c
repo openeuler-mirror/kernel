@@ -745,6 +745,12 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 		}
 	}
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	ret = klp_module_delete_safety_check(mod);
+	if (ret != 0)
+		goto out;
+#endif
+
 	ret = try_stop_module(mod, flags, &forced);
 	if (ret != 0)
 		goto out;

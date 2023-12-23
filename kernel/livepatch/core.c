@@ -2026,6 +2026,42 @@ void __weak arch_klp_set_brk_func(struct klp_func_node *func_node, void *new_fun
 	func_node->brk_func = new_func;
 }
 
+int __weak arch_klp_module_check_calltrace(void *data)
+{
+	return 0;
+}
+
+/**
+ * klp_module_delete_safety_check() - safety check in livepatch scenario when delete a module
+ * @mod:	Module to be deleted
+ *
+ * Module refcnt ensures that there is no rare case between enable_patch and delete_module:
+ * 1. safety_check -> try_enable_patch -> try_release_module_ref:
+ *    try_enable_patch would increase module refcnt, which cause try_release_module_ref fails.
+ * 2. safety_check -> try_release_module_ref -> try_enable_patch:
+ *    after release module ref, try_enable_patch would fail because try_module_get fails.
+ * So the problem that release resources unsafely when enable livepatch after safety_check is
+ * passed during module deletion does not exist, complex synchronization protection is not
+ * required.
+
+ * Return: 0 on success, otherwise error
+ */
+int klp_module_delete_safety_check(struct module *mod)
+{
+	int ret;
+
+	if (!mod || !is_livepatch_module(mod))
+		return 0;
+
+	ret = stop_machine(arch_klp_module_check_calltrace, (void *)mod, NULL);
+	if (ret) {
+		pr_debug("failed to check klp module calltrace: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 static struct klp_func_node *func_node_alloc(struct klp_func *func)
 {
 	long ret;
