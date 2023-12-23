@@ -50,6 +50,7 @@ bool arch_check_jump_insn(unsigned long func_addr);
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data);
 int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+int arch_klp_module_check_calltrace(void *data);
 #endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 #endif /* _ASM_ARM64_LIVEPATCH_H */
