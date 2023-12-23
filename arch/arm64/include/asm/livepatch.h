@@ -31,6 +31,11 @@
 
 struct arch_klp_data {
 	u32 old_insns[LJMP_INSN_SIZE];
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	u32 saved_opcode;
 };
 
 #define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
@@ -43,6 +48,8 @@ void arch_klp_unpatch_func(struct klp_func *func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 bool arch_check_jump_insn(unsigned long func_addr);
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data);
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 #endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 #endif /* _ASM_ARM64_LIVEPATCH_H */
