@@ -258,7 +258,17 @@ struct klp_func_node {
 	struct list_head func_stack;
 	void *old_func;
 	struct arch_klp_data arch_data;
+	/*
+	 * Used in breakpoint exception handling functions.
+	 * If 'brk_func' is NULL, no breakpoint is inserted into the entry of
+	 * the old function.
+	 * If it is not NULL, the value is the new function that will jump to
+	 * when the breakpoint exception is triggered.
+	 */
+	void *brk_func;
 };
+
+void *klp_get_brk_func(void *addr);
 
 static inline
 int klp_compare_address(unsigned long pc, unsigned long func_addr,
