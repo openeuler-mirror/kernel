@@ -202,6 +202,23 @@ int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), v
 	return do_check_calltrace(check_func, data);
 }
 
+static bool check_module_calltrace(void *data, int *ret, unsigned long pc)
+{
+	struct module *mod = (struct module *)data;
+
+	if (within_module_core(pc, mod)) {
+		pr_err("module %s is in use!\n", mod->name);
+		*ret = -EBUSY;
+		return false;
+	}
+	return true;
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	return do_check_calltrace(check_module_calltrace, data);
+}
+
 int arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func)
 {
 	int ret;
