@@ -398,6 +398,19 @@ source "fs/unicode/Kconfig"
 config IO_WQ
 	bool
 
+config FILE_MITIGATION_FALSE_SHARING
+       bool "mitigation false sharing in file struct"
+       depends on ARCH_LLC_128_LINE_SIZE
+       default n
+       help
+         Enable this to mitigation cacheline false sharing in file struct.
+
+         Cache false share might cause performance decrease. So adjust alignment
+         of file struct. This would waste ~192 bytes at worst case for each file
+         struct.
+
+
+         If unsure, say N.
 endmenu
 
 config RESCTRL
