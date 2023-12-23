@@ -315,6 +315,18 @@ static inline bool klp_is_migration_thread(const char *task_name)
 			sizeof(KLP_MIGRATION_NAME_PREFIX) - 1);
 }
 
+/*
+ * When the thread become zombie or dead, it's stack memory may have
+ * been freed, we can not check calltrace for it.
+ */
+static inline bool klp_is_thread_dead(const struct task_struct *t)
+{
+	int exit_state = READ_ONCE(t->exit_state);
+
+	return ((exit_state & EXIT_ZOMBIE) == EXIT_ZOMBIE) ||
+		((exit_state & EXIT_DEAD) == EXIT_DEAD);
+}
+
 int klp_register_patch(struct klp_patch *patch);
 int klp_unregister_patch(struct klp_patch *patch);
 static inline int klp_module_coming(struct module *mod) { return 0; }

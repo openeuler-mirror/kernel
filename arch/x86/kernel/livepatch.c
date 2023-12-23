@@ -184,6 +184,8 @@ static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *da
 	for_each_process_thread(g, t) {
 		if (klp_is_migration_thread(t->comm))
 			continue;
+		if (klp_is_thread_dead(t))
+			continue;
 
 		ret = check_task_calltrace(t, fn, data);
 		if (ret)

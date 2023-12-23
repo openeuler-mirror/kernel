@@ -214,6 +214,8 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 	for_each_process_thread(g, t) {
 		if (klp_is_migration_thread(t->comm))
 			continue;
+		if (klp_is_thread_dead(t))
+			continue;
 		ret = check_task_calltrace(t, args, fn);
 		if (ret)
 			return ret;
