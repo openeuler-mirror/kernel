@@ -16,6 +16,7 @@ Config
 Set these config options and their prerequisites:
 
 CONFIG_LIVEPATCH=y
+CONFIG_LIVEPATCH_FTRACE=y
 CONFIG_TEST_LIVEPATCH=m
 
 

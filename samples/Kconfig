@@ -130,7 +130,7 @@ config SAMPLE_RPMSG_CLIENT
 
 config SAMPLE_LIVEPATCH
 	tristate "Build live patching samples -- loadable modules only"
-	depends on LIVEPATCH && m
+	depends on LIVEPATCH_FTRACE && m
 	help
 	  Build sample live patch demonstrations.
 
