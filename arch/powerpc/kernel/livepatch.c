@@ -261,6 +261,39 @@ int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), v
 	return do_check_calltrace(&args, klp_check_jump_func);
 }
 
+static int klp_check_module_calltrace(struct stackframe *frame, void *ws_args)
+{
+	struct walk_stackframe_args *args = ws_args;
+	struct module *mod = args->data;
+
+	/* check NIP when the exception stack switching */
+	if (frame->nip && within_module_core(frame->nip, mod))
+		goto err_out;
+	if (frame->link && !frame->nip_link_in_same_func &&
+	    within_module_core(frame->link, mod))
+		goto err_out;
+	if (!frame->is_top_frame || frame->nip_link_in_same_func) {
+		if (within_module_core(frame->pc, mod))
+			goto err_out;
+	}
+
+	return 0;
+
+err_out:
+	pr_err("module %s is in use!\n", mod->name);
+	return (args->ret = -EBUSY);
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	struct walk_stackframe_args args = {
+		.data = data,
+		.ret = 0
+	};
+
+	return do_check_calltrace(&args, klp_check_module_calltrace);
+}
+
 int klp_patch_text(u32 *dst, const u32 *src, int len)
 {
 	int i;
