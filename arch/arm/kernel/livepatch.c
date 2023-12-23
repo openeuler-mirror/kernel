@@ -142,6 +142,28 @@ int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), v
 	return do_check_calltrace(&args, klp_check_jump_func);
 }
 
+static bool check_module_calltrace(void *ws_args, unsigned long pc)
+{
+	struct walk_stackframe_args *args = ws_args;
+	struct module *mod = args->data;
+
+	if (within_module_core(pc, mod)) {
+		pr_err("module %s is in use!\n", mod->name);
+		return (args->ret = -EBUSY);
+	}
+	return 0;
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	struct walk_stackframe_args args = {
+		.data = data,
+		.ret = 0
+	};
+
+	return do_check_calltrace(&args, check_module_calltrace);
+}
+
 int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
 {
 	u32 *addr = (u32 *)old_func;
