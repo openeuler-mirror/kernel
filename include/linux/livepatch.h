@@ -282,6 +282,8 @@ int klp_compare_address(unsigned long pc, unsigned long func_addr,
 	return 0;
 }
 
+void arch_klp_init(void);
+
 typedef int (*klp_add_func_t)(struct list_head *func_list,
 			       unsigned long func_addr, unsigned long func_size,
 			       const char *func_name, int force);

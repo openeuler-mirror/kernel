@@ -2003,6 +2003,10 @@ long __weak arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_fu
 	return -EINVAL;
 }
 
+void __weak arch_klp_init(void)
+{
+}
+
 int __weak arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func)
 {
 	return 0;
@@ -2793,6 +2797,8 @@ static int __init klp_init(void)
 	klp_root_kobj = kobject_create_and_add("livepatch", kernel_kobj);
 	if (!klp_root_kobj)
 		goto error_remove_state;
+
+	arch_klp_init();
 
 	return 0;
 
