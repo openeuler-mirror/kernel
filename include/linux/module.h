@@ -383,6 +383,12 @@ struct mod_kallsyms {
 };
 
 #ifdef CONFIG_LIVEPATCH
+enum MODULE_KLP_REL_STATE {
+	MODULE_KLP_REL_NONE = 0,
+	MODULE_KLP_REL_UNDO,
+	MODULE_KLP_REL_DONE,
+};
+
 /**
  * struct klp_modinfo - ELF information preserved from the livepatch module
  *
@@ -551,6 +557,19 @@ struct module {
 
 	/* ELF information */
 	struct klp_modinfo *klp_info;
+	/*
+	 * livepatch should relocate the key of jump_label by
+	 * using klp_apply_section_relocs. So it's necessary to
+	 * do jump_label_apply_nops() and jump_label_add_module()
+	 * later after livepatch relocation finised.
+	 *
+	 * for normal module :
+	 *	always MODULE_KLP_REL_DONE.
+	 * for livepatch module :
+	 *	init as MODULE_KLP_REL_UNDO,
+	 *	set to MODULE_KLP_REL_DONE when relocate completed.
+	 */
+	enum MODULE_KLP_REL_STATE klp_rel_state; /* Only used in the solution without ftrace */
 #endif
 
 #ifdef CONFIG_PRINTK_INDEX
@@ -749,6 +768,20 @@ static inline bool is_livepatch_module(struct module *mod)
 	return false;
 #endif
 }
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+static inline void set_mod_klp_rel_state(struct module *mod,
+			enum MODULE_KLP_REL_STATE state)
+{
+	mod->klp_rel_state = state;
+}
+
+static inline bool mod_klp_rel_completed(struct module *mod)
+{
+	return mod->klp_rel_state == MODULE_KLP_REL_NONE ||
+		mod->klp_rel_state == MODULE_KLP_REL_DONE;
+}
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 void set_module_sig_enforced(void);
 
