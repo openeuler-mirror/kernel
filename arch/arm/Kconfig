@@ -139,6 +139,7 @@ config ARM
 	select RTC_LIB
 	select SPARSE_IRQ if !(ARCH_FOOTBRIDGE || ARCH_RPC)
 	select SYS_SUPPORTS_APM_EMULATION
+	select HAVE_LIVEPATCH_WO_FTRACE
 	select THREAD_INFO_IN_TASK
 	select TIMER_OF if OF
 	select HAVE_ARCH_VMAP_STACK if MMU && ARM_HAS_GROUP_RELOCS
@@ -1811,3 +1812,5 @@ config ARCH_HIBERNATION_POSSIBLE
 endmenu
 
 source "arch/arm/Kconfig.assembler"
+
+source "kernel/livepatch/Kconfig"
