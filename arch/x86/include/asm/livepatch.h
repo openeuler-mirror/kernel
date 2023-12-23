@@ -13,6 +13,11 @@
 #define JMP_E9_INSN_SIZE 5
 struct arch_klp_data {
 	unsigned char old_insns[JMP_E9_INSN_SIZE];
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	unsigned char saved_opcode;
 };
 
 #define KLP_MAX_REPLACE_SIZE sizeof_field(struct arch_klp_data, old_insns)
@@ -27,6 +32,10 @@ bool arch_check_jump_insn(unsigned long func_addr);
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data);
 void arch_klp_code_modify_prepare(void);
 void arch_klp_code_modify_post_process(void);
+int arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+int klp_int3_handler(struct pt_regs *regs);
 
 #endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 

@@ -66,6 +66,10 @@
 #include <asm/tdx.h>
 #include <asm/cfi.h>
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+#include <asm/livepatch.h>
+#endif
+
 #ifdef CONFIG_X86_64
 #include <asm/x86_init.h>
 #else
@@ -74,6 +78,7 @@
 #endif
 
 #include <asm/proto.h>
+
 
 DECLARE_BITMAP(system_vectors, NR_VECTORS);
 
@@ -712,6 +717,11 @@ static bool do_int3(struct pt_regs *regs)
 
 #ifdef CONFIG_KPROBES
 	if (kprobe_int3_handler(regs))
+		return true;
+#endif
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	if (klp_int3_handler(regs))
 		return true;
 #endif
 	res = notify_die(DIE_INT3, "int3", regs, 0, X86_TRAP_BP, SIGTRAP);
