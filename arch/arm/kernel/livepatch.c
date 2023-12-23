@@ -142,6 +142,48 @@ int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), v
 	return do_check_calltrace(&args, klp_check_jump_func);
 }
 
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	u32 *addr = (u32 *)old_func;
+
+	arch_data->saved_opcode = le32_to_cpu(*addr);
+	patch_text(old_func, KLP_ARM_BREAKPOINT_INSTRUCTION);
+	return 0;
+}
+
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	patch_text(old_func, arch_data->saved_opcode);
+}
+
+static int klp_trap_handler(struct pt_regs *regs, unsigned int instr)
+{
+	void *brk_func = NULL;
+	unsigned long addr = regs->ARM_pc;
+
+	brk_func = klp_get_brk_func((void *)addr);
+	if (!brk_func) {
+		pr_warn("Unrecoverable livepatch detected.\n");
+		BUG();
+	}
+
+	regs->ARM_pc = (unsigned long)brk_func;
+	return 0;
+}
+
+static struct undef_hook klp_arm_break_hook = {
+	.instr_mask	= 0x0fffffff,
+	.instr_val	= (KLP_ARM_BREAKPOINT_INSTRUCTION & 0x0fffffff),
+	.cpsr_mask	= MODE_MASK,
+	.cpsr_val	= SVC_MODE,
+	.fn		= klp_trap_handler,
+};
+
+void arch_klp_init(void)
+{
+	register_undef_hook(&klp_arm_break_hook);
+}
+
 static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 				   long range)
 {
