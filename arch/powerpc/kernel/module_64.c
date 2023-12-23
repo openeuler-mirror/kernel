@@ -1046,6 +1046,9 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 		}
 	}
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	me->arch.toc = my_r2(sechdrs, me);
+#endif
 	return 0;
 }
 
@@ -1103,6 +1106,112 @@ int module_finalize_ftrace(struct module *mod, const Elf_Shdr *sechdrs)
 
 	if (!mod->arch.tramp)
 		return -ENOENT;
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+#include <asm/livepatch.h>
+#include <asm/cacheflush.h>
+
+#define PPC_LIVEPATCH_BITMASK(v, n)	(((v) >> (n)) & 0xffff)
+#define PPC_LIVEPATCH_HIGHEST(v)	PPC_LIVEPATCH_BITMASK(v, 48)
+#define PPC_LIVEPATCH_HIGHER(v)		PPC_LIVEPATCH_BITMASK(v, 32)
+#define PPC_LIVEPATCH_HIGH(v)		PPC_LIVEPATCH_BITMASK(v, 16)
+#define PPC_LIVEPATCH_LOW(v)		PPC_LIVEPATCH_BITMASK(v, 0)
+
+/*
+ * Patch jump stub to reference trampoline
+ * without saved the old R2 and load the new R2.
+ */
+static int livepatch_create_bstub(void *pc, unsigned long addr, struct module *me)
+{
+	long reladdr;
+	unsigned long my_r2;
+	unsigned long stub_start, stub_end, stub_size;
+	struct ppc64_klp_bstub_entry entry;
+
+	/* Stub uses address relative to r2. */
+	my_r2 = me ? me->arch.toc : kernel_toc_addr();
+	reladdr = (unsigned long)pc - my_r2;
+	if (reladdr > 0x7FFFFFFF || reladdr < -(0x80000000L)) {
+		pr_err("%s: Address %p of jump stub out of range of %p.\n",
+		       me ? me->name : "kernel",
+		       (void *)reladdr, (void *)my_r2);
+		return 0;
+	}
+
+
+	stub_start = ppc_function_entry((void *)livepatch_branch_stub);
+	stub_end = ppc_function_entry((void *)livepatch_branch_stub_end);
+	stub_size = stub_end - stub_start;
+	memcpy(entry.jump, (u32 *)stub_start, stub_size);
+
+	entry.jump[0] |= PPC_HA(reladdr);
+	entry.jump[1] |= PPC_LO(reladdr);
+	entry.magic = BRANCH_STUB_MAGIC;
+	entry.trampoline = addr;
+
+
+	/* skip breakpoint at first */
+	memcpy(pc + PPC64_INSN_SIZE, (void *)&entry + PPC64_INSN_SIZE,
+	       sizeof(entry) - PPC64_INSN_SIZE);
+	/*
+	 * Avoid compile optimization, make sure that instructions
+	 * except first breakpoint has been patched.
+	 */
+	barrier();
+	memcpy(pc, (void *)&entry, PPC64_INSN_SIZE);
+	pr_debug("Create livepatch branch stub 0x%p with reladdr 0x%lx r2 0x%lx to trampoline 0x%lx\n",
+		pc, reladdr, my_r2, addr);
+
+	return 1;
+}
+
+static void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry,
+				    unsigned long addr)
+{
+	unsigned long reladdr, tramp_start, tramp_end, tramp_size;
+
+	tramp_start = ppc_function_entry((void *)livepatch_branch_trampoline);
+	tramp_end = ppc_function_entry((void *)livepatch_branch_trampoline_end);
+	tramp_size = tramp_end - tramp_start;
+
+	if (entry->magic != BRANCH_TRAMPOLINE_MAGIC) {
+		reladdr = (unsigned long)entry->saved_entry;
+
+		memcpy(entry->jump, (u32 *)tramp_start, tramp_size);
+
+		entry->jump[4] |= PPC_LIVEPATCH_HIGHEST(reladdr);
+		entry->jump[5] |= PPC_LIVEPATCH_HIGHER(reladdr);
+		entry->jump[7] |= PPC_LIVEPATCH_HIGH(reladdr);
+		entry->jump[8] |= PPC_LIVEPATCH_LOW(reladdr);
+
+		entry->magic = BRANCH_TRAMPOLINE_MAGIC;
+	}
+	entry->funcdata = func_desc(addr);
+
+	flush_icache_range((unsigned long)entry, (unsigned long)entry + tramp_size);
+
+	pr_debug("Create livepatch trampoline 0x%p+%lu/0x%lx to 0x%lx/0x%lx/%pS\n",
+		(void *)entry, tramp_size, (unsigned long)entry->saved_entry,
+		addr, ppc_function_entry((void *)addr),
+		(void *)ppc_function_entry((void *)addr));
+}
+
+int livepatch_create_branch(unsigned long pc,
+			    unsigned long trampoline,
+			    unsigned long addr,
+			    struct module *me)
+{
+
+	/* Create trampoline to addr(new func) */
+	livepatch_create_btramp((struct ppc64_klp_btramp_entry *)trampoline, addr);
+
+	/* Create stub to trampoline */
+	if (!livepatch_create_bstub((void *)pc, trampoline, me))
+		return -EINVAL;
 
 	return 0;
 }

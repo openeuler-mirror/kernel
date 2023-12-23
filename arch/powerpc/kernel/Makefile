@@ -211,6 +211,7 @@ obj-$(CONFIG_ALTIVEC)		+= vector.o
 obj-$(CONFIG_PPC_OF_BOOT_TRAMPOLINE) += prom_init.o
 obj64-$(CONFIG_PPC_OF_BOOT_TRAMPOLINE) += prom_entry_64.o
 extra-$(CONFIG_PPC_OF_BOOT_TRAMPOLINE) += prom_init_check
+obj64-$(CONFIG_LIVEPATCH_WO_FTRACE) += livepatch_tramp.o
 
 obj-$(CONFIG_PPC64)		+= $(obj64-y)
 obj-$(CONFIG_PPC32)		+= $(obj32-y)

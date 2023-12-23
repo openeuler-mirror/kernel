@@ -84,6 +84,11 @@ struct klp_func {
 #ifdef CONFIG_LIVEPATCH_FTRACE
 	bool transition;
 #endif
+#if defined(CONFIG_LIVEPATCH_WO_FTRACE) && defined(CONFIG_PPC64)
+	struct module *old_mod;
+	struct module *this_mod;
+	struct func_desc new_func_descr;
+#endif
 	void *func_node; /* Only used in the solution without ftrace */
 };
 

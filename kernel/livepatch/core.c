@@ -93,6 +93,11 @@ static void klp_find_object_module(struct klp_object *obj)
 }
 #else /* !CONFIG_LIVEPATCH_FTRACE */
 static int klp_find_object_module(struct klp_object *obj);
+
+int __weak arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
+{
+	return 0;
+}
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
 static bool klp_initialized(void)
@@ -850,6 +855,9 @@ void klp_free_replaced_patches_async(struct klp_patch *new_patch)
 
 static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
+#ifndef CONFIG_LIVEPATCH_FTRACE
+	int ret;
+#endif
 	if (!func->old_name)
 		return -EINVAL;
 
@@ -872,6 +880,16 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 	func->patched = false;
 #ifdef CONFIG_LIVEPATCH_FTRACE
 	func->transition = false;
+#else
+#ifdef CONFIG_PPC64
+	if (klp_is_module(obj))
+		func->old_mod = obj->mod;
+	else
+		func->old_mod = NULL;
+#endif
+	ret = arch_klp_init_func(obj, func);
+	if (ret)
+		return ret;
 #endif
 
 	/* The format for the sysfs directory is <function,sympos> where sympos
@@ -952,6 +970,16 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 		if (ret)
 			return ret;
 
+#ifdef CONFIG_PPC64
+		/*
+		 * PPC64 big endian binary format is 'elfv1' defaultly, actual
+		 * symbol name of old function need a prefix '.' (related
+		 * feature 'function descriptor'), otherwise size found by
+		 * 'kallsyms_lookup_size_offset' may be abnormal.
+		 */
+		if (func->old_name[0] !=  '.')
+			pr_warn("old_name '%s' may miss the prefix '.'\n", func->old_name);
+#endif
 		ret = kallsyms_lookup_size_offset((unsigned long)func->old_func,
 						  &func->old_size, NULL);
 #ifdef CONFIG_LIVEPATCH_FTRACE
