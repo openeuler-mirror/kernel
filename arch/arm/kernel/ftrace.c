@@ -158,7 +158,7 @@ int ftrace_make_call(struct dyn_ftrace *rec, unsigned long addr)
 	new = ftrace_call_replace(ip, aaddr, !mod);
 #ifdef CONFIG_ARM_MODULE_PLTS
 	if (!new && mod) {
-		aaddr = get_module_plt(mod, ip, aaddr);
+		aaddr = get_module_plt(mod, NULL, ip, aaddr);
 		new = ftrace_call_replace(ip, aaddr, true);
 	}
 #endif
@@ -204,7 +204,7 @@ int ftrace_make_nop(struct module *mod,
 				  !IS_ENABLED(CONFIG_ARM_MODULE_PLTS) || !mod);
 #ifdef CONFIG_ARM_MODULE_PLTS
 	if (!old && mod) {
-		aaddr = get_module_plt(mod, ip, aaddr);
+		aaddr = get_module_plt(mod, NULL, ip, aaddr);
 		old = ftrace_call_replace(ip, aaddr, true);
 	}
 #endif

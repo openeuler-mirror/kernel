@@ -43,16 +43,19 @@ static void prealloc_fixed(struct mod_plt_sec *pltsec, struct plt_entries *plt)
 	memcpy(plt->lit, fixed_plts, sizeof(fixed_plts));
 }
 
-u32 get_module_plt(struct module *mod, unsigned long loc, Elf32_Addr val)
+u32 get_module_plt(struct module *mod, Elf32_Shdr *sechdrs,
+		   unsigned long loc, Elf32_Addr val)
 {
 	struct mod_plt_sec *pltsec = !within_module_init(loc, mod) ?
 						&mod->arch.core : &mod->arch.init;
+	Elf32_Shdr *plt_shdr = sechdrs ? &sechdrs[pltsec->plt_shndx] :
+					 pltsec->plt;
 	struct plt_entries *plt;
 	int idx;
 
 	/* cache the address, ELF header is available only during module load */
 	if (!pltsec->plt_ent)
-		pltsec->plt_ent = (struct plt_entries *)pltsec->plt->sh_addr;
+		pltsec->plt_ent = (struct plt_entries *)plt_shdr->sh_addr;
 	plt = pltsec->plt_ent;
 
 	prealloc_fixed(pltsec, plt);
@@ -80,7 +83,7 @@ u32 get_module_plt(struct module *mod, unsigned long loc, Elf32_Addr val)
 	}
 
 	pltsec->plt_count++;
-	BUG_ON(pltsec->plt_count * PLT_ENT_SIZE > pltsec->plt->sh_size);
+	BUG_ON(pltsec->plt_count * PLT_ENT_SIZE > plt_shdr->sh_size);
 
 	if (!idx)
 		/* Populate a new set of entries */
@@ -213,21 +216,24 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 	unsigned long init_plts = ARRAY_SIZE(fixed_plts);
 	Elf32_Shdr *s, *sechdrs_end = sechdrs + ehdr->e_shnum;
 	Elf32_Sym *syms = NULL;
+	int i = 0;
 
 	/*
 	 * To store the PLTs, we expand the .text section for core module code
 	 * and for initialization code.
 	 */
-	for (s = sechdrs; s < sechdrs_end; ++s) {
-		if (strcmp(".plt", secstrings + s->sh_name) == 0)
+	for (s = sechdrs; s < sechdrs_end; ++s, ++i) {
+		if (strcmp(".plt", secstrings + s->sh_name) == 0) {
 			mod->arch.core.plt = s;
-		else if (strcmp(".init.plt", secstrings + s->sh_name) == 0)
+			mod->arch.core.plt_shndx = i;
+		} else if (strcmp(".init.plt", secstrings + s->sh_name) == 0) {
 			mod->arch.init.plt = s;
-		else if (s->sh_type == SHT_SYMTAB)
+			mod->arch.init.plt_shndx = i;
+		} else if (s->sh_type == SHT_SYMTAB)
 			syms = (Elf32_Sym *)s->sh_addr;
 	}
 
-	if (!mod->arch.core.plt || !mod->arch.init.plt) {
+	if (!mod->arch.core.plt_shndx || !mod->arch.init.plt_shndx) {
 		pr_err("%s: module PLT section(s) missing\n", mod->name);
 		return -ENOEXEC;
 	}

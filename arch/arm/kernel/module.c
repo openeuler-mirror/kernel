@@ -182,7 +182,7 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 			if (IS_ENABLED(CONFIG_ARM_MODULE_PLTS) &&
 			    (offset <= (s32)0xfe000000 ||
 			     offset >= (s32)0x02000000))
-				offset = get_module_plt(module, loc,
+				offset = get_module_plt(module, sechdrs, loc,
 							offset + loc + 8)
 					 - loc - 8;
 
@@ -353,7 +353,7 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 			if (IS_ENABLED(CONFIG_ARM_MODULE_PLTS) &&
 			    (offset <= (s32)0xff000000 ||
 			     offset >= (s32)0x01000000))
-				offset = get_module_plt(module, loc,
+				offset = get_module_plt(module, sechdrs, loc,
 							offset + loc + 4)
 					 - loc - 4;
 
