@@ -310,6 +310,8 @@ static inline bool klp_patch_pending(struct task_struct *task) { return false; }
 static inline void klp_update_patch_state(struct task_struct *task) {}
 static inline void klp_copy_process(struct task_struct *child) {}
 static inline bool klp_have_reliable_stack(void) { return true; }
+extern void module_enable_ro(const struct module *mod, bool after_init);
+extern void module_disable_ro(const struct module *mod);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
