@@ -170,7 +170,7 @@ struct klp_patch {
 	struct module *mod;
 	struct klp_object *objs;
 	struct klp_state *states; /* Not used in the solution without ftrace */
-	bool replace; /* Not used in the solution without ftrace */
+	bool replace; /* Not supported in the solution without ftrace */
 
 	/* internal */
 	struct list_head list;

@@ -1037,13 +1037,16 @@ static int klp_init_patch(struct klp_patch *patch)
 	if (ret)
 		return ret;
 
-#ifdef CONFIG_LIVEPATCH_FTRACE
 	if (patch->replace) {
+#ifdef CONFIG_LIVEPATCH_FTRACE
 		ret = klp_add_nops(patch);
 		if (ret)
 			return ret;
-	}
+#else
+		pr_err("Replacing is not supported\n");
+		return -EINVAL;
 #endif
+	}
 
 	klp_for_each_object(patch, obj) {
 		ret = klp_init_object(patch, obj);
