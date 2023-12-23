@@ -343,4 +343,10 @@ static inline int static_call_text_reserved(void *start, void *end)
 
 #endif /* CONFIG_HAVE_STATIC_CALL */
 
+#if defined(CONFIG_HAVE_STATIC_CALL_INLINE) && defined(CONFIG_LIVEPATCH_WO_FTRACE)
+int klp_static_call_register(struct module *mod);
+#else
+static inline int klp_static_call_register(struct module *mod) { return 0; }
+#endif
+
 #endif /* _LINUX_STATIC_CALL_H */
