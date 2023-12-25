@@ -74,6 +74,7 @@
 #include <linux/uaccess.h>
 
 #include <trace/events/vmscan.h>
+#include <linux/ksm.h>
 
 struct cgroup_subsys memory_cgrp_subsys __read_mostly;
 EXPORT_SYMBOL(memory_cgrp_subsys);
@@ -243,10 +244,15 @@ enum res_type {
 	     iter != NULL;				\
 	     iter = mem_cgroup_iter(NULL, iter, NULL))
 
+static inline bool __task_is_dying(struct task_struct *task)
+{
+	return tsk_is_oom_victim(task) || fatal_signal_pending(task) ||
+		(task->flags & PF_EXITING);
+}
+
 static inline bool task_is_dying(void)
 {
-	return tsk_is_oom_victim(current) || fatal_signal_pending(current) ||
-		(current->flags & PF_EXITING);
+	return __task_is_dying(current);
 }
 
 /* Some nice accessors for the vmpressure. */
@@ -5105,6 +5111,98 @@ static int mem_cgroup_slab_show(struct seq_file *m, void *p)
 }
 #endif
 
+#ifdef CONFIG_KSM
+static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
+{
+	struct task_struct *task;
+	struct mm_struct *mm;
+	struct css_task_iter it;
+	int ret = 0;
+
+	css_task_iter_start(&memcg->css, CSS_TASK_ITER_PROCS, &it);
+	while (!ret && (task = css_task_iter_next(&it))) {
+		if (__task_is_dying(task))
+			continue;
+
+		mm = get_task_mm(task);
+		if (!mm)
+			continue;
+
+		if (mmap_write_lock_killable(mm)) {
+			mmput(mm);
+			continue;
+		}
+
+		if (enable)
+			ret = ksm_enable_merge_any(mm);
+		else
+			ret = ksm_disable_merge_any(mm);
+
+		mmap_write_unlock(mm);
+		mmput(mm);
+	}
+	css_task_iter_end(&it);
+
+	return ret;
+}
+
+static int memory_ksm_show(struct seq_file *m, void *v)
+{
+	unsigned long ksm_merging_pages = 0;
+	unsigned long ksm_rmap_items = 0;
+	long ksm_process_profits = 0;
+	unsigned int tasks = 0;
+	struct task_struct *task;
+	struct mm_struct *mm;
+	struct css_task_iter it;
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	css_task_iter_start(&memcg->css, CSS_TASK_ITER_PROCS, &it);
+	while ((task = css_task_iter_next(&it))) {
+		mm = get_task_mm(task);
+		if (!mm)
+			continue;
+
+		if (test_bit(MMF_VM_MERGE_ANY, &mm->flags))
+			tasks++;
+
+		ksm_rmap_items += mm->ksm_rmap_items;
+		ksm_merging_pages += mm->ksm_merging_pages;
+		ksm_process_profits += ksm_process_profit(mm);
+		mmput(mm);
+	}
+	css_task_iter_end(&it);
+
+	seq_printf(m, "merge any tasks: %u\n", tasks);
+	seq_printf(m, "ksm_rmap_items %lu\n", ksm_rmap_items);
+	seq_printf(m, "ksm_merging_pages %lu\n", ksm_merging_pages);
+	seq_printf(m, "ksm_process_profits %ld\n", ksm_process_profits);
+	return 0;
+}
+
+static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
+					size_t nbytes, loff_t off)
+{
+	bool enable;
+	int err;
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	buf = strstrip(buf);
+	if (!buf)
+		return -EINVAL;
+
+	err = kstrtobool(buf, &enable);
+	if (err)
+		return err;
+
+	err = memcg_set_ksm_for_tasks(memcg, enable);
+	if (err)
+		return err;
+
+	return nbytes;
+}
+#endif /* CONFIG_KSM */
+
 static int memory_stat_show(struct seq_file *m, void *v);
 
 #ifdef CONFIG_MEMCG_V1_RECLAIM
@@ -5426,6 +5524,14 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = wb_blkio_show,
 		.write = wb_blkio_write,
+	},
+#endif
+#ifdef CONFIG_KSM
+	{
+		.name = "ksm",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memory_ksm_write,
+		.seq_show = memory_ksm_show,
 	},
 #endif
 	{ },	/* terminate */
