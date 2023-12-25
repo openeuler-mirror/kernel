@@ -109,6 +109,7 @@ Brief summary of control files.
  memory.kmem.tcp.failcnt             show the number of tcp buf memory usage
 				     hits limits
  memory.kmem.tcp.max_usage_in_bytes  show max tcp buf memory usage recorded
+ memory.ksm                          set/show ksm merge any mode
 ==================================== ==========================================
 
 1. History
