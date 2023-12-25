@@ -4,8 +4,9 @@ PATCHLEVEL = 10
 SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Kleptomaniac Octopus
+OPENEULER_LTS = 1
 OPENEULER_MAJOR = 2203
-OPENEULER_MINOR = 1
+OPENEULER_MINOR = 3
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
@@ -1308,6 +1309,7 @@ define filechk_version.h
 	fi;                                                              \
 	echo '#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) +  \
 	((c) > 255 ? 255 : (c)))';                                       \
+	echo '#define OPENEULER_LTS $(OPENEULER_LTS)';                 	 \
 	echo '#define OPENEULER_MAJOR $(OPENEULER_MAJOR)';               \
 	echo '#define OPENEULER_MINOR $(OPENEULER_MINOR)';               \
 	echo '#define OPENEULER_VERSION(a,b) (((a) << 8) + (b))';        \
