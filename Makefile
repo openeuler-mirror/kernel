@@ -5,7 +5,7 @@ SUBLEVEL = 0
 EXTRAVERSION =
 NAME = Kleptomaniac Octopus
 OPENEULER_MAJOR = 2203
-OPENEULER_MINOR = 1
+OPENEULER_MINOR = 3
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
