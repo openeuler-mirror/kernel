@@ -84,10 +84,17 @@ compress-$(CONFIG_KERNEL_LZ4)  = lz4_with_size
 
 libfdt_objs := fdt_rw.o fdt_ro.o fdt_wip.o fdt.o
 
+ifneq ($(CONFIG_ARM_ATAG_DTB_COMPAT)$(CONFIG_RANDOMIZE_BASE),)
+OBJS	+= $(libfdt_objs)
 ifeq ($(CONFIG_ARM_ATAG_DTB_COMPAT),y)
 CFLAGS_REMOVE_atags_to_fdt.o += -Wframe-larger-than=${CONFIG_FRAME_WARN}
 CFLAGS_atags_to_fdt.o += -Wframe-larger-than=1280
-OBJS	+= $(libfdt_objs) atags_to_fdt.o
+OBJS	+= atags_to_fdt.o
+endif
+ifeq ($(CONFIG_RANDOMIZE_BASE),y)
+OBJS	+= kaslr.o
+CFLAGS_kaslr.o := -I $(srctree)/scripts/dtc/libfdt
+endif
 endif
 ifeq ($(CONFIG_USE_OF),y)
 OBJS	+= $(libfdt_objs) fdt_check_mem_start.o
@@ -97,6 +104,10 @@ OBJS	+= lib1funcs.o ashldi3.o bswapsdi2.o
 
 targets       := vmlinux vmlinux.lds piggy_data piggy.o \
 		 head.o $(OBJS)
+ifeq ($(CONFIG_RELOCATABLE),y)
+HIDDEN_STR := -include $(srctree)/include/linux/hidden.h
+KBUILD_CFLAGS := $(subst $(HIDDEN_STR), , $(KBUILD_CFLAGS))
+endif
 
 KBUILD_CFLAGS += -DDISABLE_BRANCH_PROFILING
 
@@ -108,8 +119,8 @@ asflags-y := -DZIMAGE
 
 # Supply kernel BSS size to the decompressor via a linker symbol.
 KBSS_SZ = $(shell echo $$(($$($(NM) vmlinux | \
-		sed -n -e 's/^\([^ ]*\) [ABD] __bss_start$$/-0x\1/p' \
-		       -e 's/^\([^ ]*\) [ABD] __bss_stop$$/+0x\1/p') )) )
+		sed -n -e 's/^\([^ ]*\) [ABDb] __bss_start$$/-0x\1/p' \
+		       -e 's/^\([^ ]*\) [ABDb] __bss_stop$$/+0x\1/p') )) )
 LDFLAGS_vmlinux = --defsym _kernel_bss_size=$(KBSS_SZ)
 # Supply ZRELADDR to the decompressor via a linker symbol.
 ifneq ($(CONFIG_AUTO_ZRELADDR),y)

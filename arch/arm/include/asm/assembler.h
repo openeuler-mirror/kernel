@@ -18,6 +18,7 @@
 #endif
 
 #include <asm/ptrace.h>
+#include <asm/extable.h>
 #include <asm/opcodes-virt.h>
 #include <asm/asm-offsets.h>
 #include <asm/page.h>
@@ -246,10 +247,7 @@ THUMB(	fpreg	.req	r7	)
 
 #define USERL(l, x...)				\
 9999:	x;					\
-	.pushsection __ex_table,"a";		\
-	.align	3;				\
-	.long	9999b,l;			\
-	.popsection
+	ex_entry	9999b, l;
 
 #define USER(x...)	USERL(9001f, x)
 
@@ -476,10 +474,7 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	.error	"Unsupported inc macro argument"
 	.endif
 
-	.pushsection __ex_table,"a"
-	.align	3
-	.long	9999b, \abort
-	.popsection
+	ex_entry	9999b, \abort
 	.endm
 
 	.macro	usracc, instr, reg, ptr, inc, cond, rept, abort
@@ -517,10 +512,7 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	.error	"Unsupported inc macro argument"
 	.endif
 
-	.pushsection __ex_table,"a"
-	.align	3
-	.long	9999b, \abort
-	.popsection
+	ex_entry	9999b, \abort
 	.endr
 	.endm
 
@@ -633,12 +625,12 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	 * mov_l - move a constant value or [relocated] address into a register
 	 */
 	.macro		mov_l, dst:req, imm:req, cond
-	.if		__LINUX_ARM_ARCH__ < 7
+#if	defined(CONFIG_RELOCATABLE) || __LINUX_ARM_ARCH__ < 7
 	ldr\cond	\dst, =\imm
-	.else
+#else
 	movw\cond	\dst, #:lower16:\imm
 	movt\cond	\dst, #:upper16:\imm
-	.endif
+#endif
 	.endm
 
 	/*

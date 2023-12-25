@@ -49,10 +49,17 @@
 #include <asm/irq.h>
 #include <asm/traps.h>
 
+#ifdef CONFIG_RANDOMIZE_BASE
+#define FIQ_OFFSET ({					\
+		extern void *vector_fiq_offset;		\
+		(unsigned)&vector_fiq_offset - kaslr_offset(); \
+	})
+#else
 #define FIQ_OFFSET ({					\
 		extern void *vector_fiq_offset;		\
 		(unsigned)&vector_fiq_offset;		\
 	})
+#endif
 
 static unsigned long dfl_fiq_insn;
 static struct pt_regs dfl_fiq_regs;

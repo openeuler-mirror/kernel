@@ -1452,6 +1452,23 @@ config STACKPROTECTOR_PER_TASK
 	  Enable this option to switch to a different method that uses a
 	  different canary value for each task.
 
+config RELOCATABLE
+	bool
+	depends on !XIP_KERNEL && !JUMP_LABEL
+	select HAVE_ARCH_PREL32_RELOCATIONS
+
+config RANDOMIZE_BASE
+	bool "Randomize the address of the kernel image"
+	depends on MMU && AUTO_ZRELADDR
+	depends on !XIP_KERNEL && !ZBOOT_ROM && !JUMP_LABEL
+	select RELOCATABLE
+	select ARM_MODULE_PLTS if MODULES
+	select MODULE_REL_CRCS if MODVERSIONS
+	help
+	  Randomizes the virtual and physical address at which the kernel
+	  image is loaded, as a security feature that deters exploit attempts
+	  relying on knowledge of the location of kernel internals.
+
 endmenu
 
 menu "Boot options"

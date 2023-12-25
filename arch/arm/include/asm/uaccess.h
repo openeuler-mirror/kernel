@@ -288,10 +288,7 @@ do {									\
 	"	mov	%1, #0\n"				\
 	"	b	2b\n"					\
 	"	.popsection\n"					\
-	"	.pushsection __ex_table,\"a\"\n"		\
-	"	.align	3\n"					\
-	"	.long	1b, 3b\n"				\
-	"	.popsection"					\
+	"	ex_entry	1b, 3b\n"			\
 	: "+r" (err), "=&r" (x)					\
 	: "r" (addr), "i" (-EFAULT)				\
 	: "cc")
@@ -390,10 +387,7 @@ do {									\
 	"3:	mov	%0, %3\n"				\
 	"	b	2b\n"					\
 	"	.popsection\n"					\
-	"	.pushsection __ex_table,\"a\"\n"		\
-	"	.align	3\n"					\
-	"	.long	1b, 3b\n"				\
-	"	.popsection"					\
+	"	ex_entry	1b, 3b\n"			\
 	: "+r" (err)						\
 	: "r" (x), "r" (__pu_addr), "i" (-EFAULT)		\
 	: "cc")
@@ -449,11 +443,8 @@ do {									\
 	"4:	mov	%0, %3\n"				\
 	"	b	3b\n"					\
 	"	.popsection\n"					\
-	"	.pushsection __ex_table,\"a\"\n"		\
-	"	.align	3\n"					\
-	"	.long	1b, 4b\n"				\
-	"	.long	2b, 4b\n"				\
-	"	.popsection"					\
+	"	ex_entry	1b, 4b\n"			\
+	"	ex_entry	2b, 4b\n"			\
 	: "+r" (err), "+r" (__pu_addr)				\
 	: "r" (x), "i" (-EFAULT)				\
 	: "cc")
