@@ -949,6 +949,16 @@ config MEMCG_V1_RECLAIM
 	depends on MEMCG
 	default n
 
+config MEMCG_MEMFS_INFO
+	bool "Show memfs files that have pages charged in given memory cgroup"
+	depends on MEMCG
+	default n
+	help
+	  Support to print rootfs files and tmpfs files that having pages
+	  charged in given memory cgroup. The files infomations can be printed
+	  through interface "memory.memfs_files_info" or printed when OOM is
+	  triggered.
+
 config MEMCG_KMEM
 	bool
 	depends on MEMCG
