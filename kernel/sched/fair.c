@@ -8185,7 +8185,7 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	rcu_read_lock();
 	tg = task_group(p);
 	for_each_cpu(cpu, p->prefer_cpus) {
-		if (idlest_cpu && available_idle_cpu(cpu)) {
+		if (idlest_cpu && (available_idle_cpu(cpu) || sched_idle_cpu(cpu))) {
 			*idlest_cpu = cpu;
 		} else if (idlest_cpu) {
 			spare = (long)(capacity_of(cpu) -
@@ -8196,7 +8196,7 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 			}
 		}
 
-		if (available_idle_cpu(cpu)) {
+		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu)) {
 			rcu_read_unlock();
 			p->select_cpus = p->prefer_cpus;
 			if (sd_flag & SD_BALANCE_WAKE)
