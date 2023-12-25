@@ -8239,7 +8239,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	/* SD_flags and WF_flags share the first nibble */
 	int sd_flag = wake_flags & 0xF;
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	int idlest_cpu = 0;
+	int idlest_cpu = -1;
 #endif
 
 	/*
@@ -8314,7 +8314,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	rcu_read_unlock();
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	if (!cpumask_test_cpu(new_cpu, p->select_cpus)) {
+	if (idlest_cpu != -1 && !cpumask_test_cpu(new_cpu, p->select_cpus)) {
 		new_cpu = idlest_cpu;
 		schedstat_inc(p->stats.nr_wakeups_force_preferred_cpus);
 	}
