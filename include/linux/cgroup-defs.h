@@ -556,6 +556,9 @@ struct cgroup_root {
 	/* Number of cgroups in the hierarchy, used only for /proc/cgroups */
 	atomic_t nr_cgrps;
 
+	/* Wait while cgroups are being destroyed */
+	wait_queue_head_t wait;
+
 	/* A list running through the active hierarchies */
 	struct list_head root_list;
 
