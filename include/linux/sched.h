@@ -1537,6 +1537,10 @@ struct task_struct {
 	struct user_event_mm		*user_event_mm;
 #endif
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_t			*prefer_cpus;
+#endif
+
 	/*
 	 * New fields for task_struct should be added above here, so that
 	 * they are included in the randomized portion of task_struct.
@@ -2469,4 +2473,10 @@ static inline int sched_qos_cpu_overload(void)
 }
 #endif
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+int set_prefer_cpus_ptr(struct task_struct *p,
+			const struct cpumask *new_mask);
+int sched_prefer_cpus_fork(struct task_struct *p, struct cpumask *mask);
+void sched_prefer_cpus_free(struct task_struct *p);
+#endif
 #endif
