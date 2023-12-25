@@ -8124,8 +8124,21 @@ unlock:
 }
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+
+DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_switch);
+
+static int __init dynamic_affinity_switch_setup(char *__unused)
+{
+	static_branch_enable(&__dynamic_affinity_switch);
+	return 1;
+}
+__setup("dynamic_affinity", dynamic_affinity_switch_setup);
+
 static inline bool prefer_cpus_valid(struct task_struct *p)
 {
+	if (!dynamic_affinity_enabled())
+		return false;
+
 	return p->prefer_cpus &&
 	       !cpumask_empty(p->prefer_cpus) &&
 	       !cpumask_equal(p->prefer_cpus, p->cpus_ptr) &&
