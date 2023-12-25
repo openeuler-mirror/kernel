@@ -1539,6 +1539,7 @@ struct task_struct {
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	cpumask_t			*prefer_cpus;
+	const cpumask_t			*select_cpus;
 #endif
 
 	/*
