@@ -565,9 +565,10 @@
 			- if foo is an optional feature then the feature is
 			  disabled and corresponding cgroup files are not
 			  created
-			{Currently only "memory" controller deal with this and
-			cut the overhead, others just disable the usage. So
-			only cgroup_disable=memory is actually worthy}
+			{Currently only "memory" and and "files" controller
+			deal with this and cut the overhead, others just
+			disable the usage. So only cgroup_disable=memory and
+			cgroup_disable=files are actually worthy}
 			Specifying "pressure" disables per-cgroup pressure
 			stall information accounting feature
 
