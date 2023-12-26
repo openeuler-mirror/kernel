@@ -91,6 +91,10 @@ efi_status_t efi_parse_options(char const *cmdline)
 		} else if (!strcmp(param, "video") &&
 			   val && strstarts(val, "efifb:")) {
 			efi_parse_option_graphics(val + strlen("efifb:"));
+#if defined (CONFIG_KASLR_SKIP_MEM_RANGE) && defined (CONFIG_ARM64)
+		} else if (!strcmp(param, "memmap") && val) {
+			mem_avoid_memmap(val);
+#endif
 		}
 	}
 	efi_bs_call(free_pool, buf);

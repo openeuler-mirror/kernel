@@ -13,7 +13,11 @@
 #define CAL_SLOTS_NUMBER	 0
 #define CAL_SLOTS_PHYADDR	 1
 
+#define MAX_MEMMAP_REGIONS 32
+
 enum mem_avoid_index {
+	MAX_MEMMAP_REGIONS_BEGIN = 0,
+	MAX_MEMMAP_REGIONS_END = MAX_MEMMAP_REGIONS_BEGIN + MAX_MEMMAP_REGIONS - 1,
 	MEM_AVOID_MAX,
 };
 
@@ -98,6 +102,38 @@ static unsigned long cal_slots_avoid_overlap(efi_memory_desc_t *md, unsigned lon
 	}
 
 	return total_slots;
+}
+
+void mem_avoid_memmap(char *str)
+{
+	static int i;
+
+	while (str && (i < MAX_MEMMAP_REGIONS)) {
+		char *oldstr;
+		u64 start, size;
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		oldstr = str;
+		size = memparse(str, &str);
+		if (str == oldstr || *str != '$') {
+			efi_warn("memap values error.\n");
+			break;
+		}
+
+		start = memparse(str + 1, &str);
+		if (size <= 0) {
+			efi_warn("memap values error, size should be more than 0.\n");
+			break;
+		}
+
+		mem_avoid[MAX_MEMMAP_REGIONS_BEGIN + i].start = start;
+		mem_avoid[MAX_MEMMAP_REGIONS_BEGIN + i].size = size;
+		str = k;
+		i++;
+	}
 }
 #endif
 /*
