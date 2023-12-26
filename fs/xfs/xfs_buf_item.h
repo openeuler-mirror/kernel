@@ -20,6 +20,11 @@ struct xfs_mount;
 #define XFS_BLI_STALE_INODE	(1u << 5)
 #define	XFS_BLI_INODE_BUF	(1u << 6)
 #define	XFS_BLI_ORDERED		(1u << 7)
+#define	XFS_BLI_GROW_SB_BUF	(1u << 8)
+
+#define XFS_BLI_KEEP_LSN	\
+	(XFS_BLI_INODE_ALLOC_BUF | \
+	 XFS_BLI_GROW_SB_BUF)
 
 #define XFS_BLI_FLAGS \
 	{ XFS_BLI_HOLD,		"HOLD" }, \
@@ -29,7 +34,8 @@ struct xfs_mount;
 	{ XFS_BLI_INODE_ALLOC_BUF, "INODE_ALLOC" }, \
 	{ XFS_BLI_STALE_INODE,	"STALE_INODE" }, \
 	{ XFS_BLI_INODE_BUF,	"INODE_BUF" }, \
-	{ XFS_BLI_ORDERED,	"ORDERED" }
+	{ XFS_BLI_ORDERED,	"ORDERED" }, \
+	{ XFS_BLI_GROW_SB_BUF,  "GROW_SB" }
 
 /*
  * This is the in core log item structure used to track information

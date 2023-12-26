@@ -24,6 +24,7 @@
 #include "xfs_dquot_item.h"
 #include "xfs_dquot.h"
 #include "xfs_icache.h"
+#include "xfs_buf_item.h"
 
 struct kmem_cache	*xfs_trans_cache;
 
@@ -476,9 +477,12 @@ xfs_trans_apply_sb_deltas(
 {
 	struct xfs_dsb	*sbp;
 	struct xfs_buf	*bp;
+	struct xfs_buf_log_item *bip;
 	int		whole = 0;
+	int		grow = 0;
 
 	bp = xfs_trans_getsb(tp);
+	bip = bp->b_log_item;
 	sbp = bp->b_addr;
 
 	/*
@@ -524,10 +528,12 @@ xfs_trans_apply_sb_deltas(
 	if (tp->t_dblocks_delta) {
 		be64_add_cpu(&sbp->sb_dblocks, tp->t_dblocks_delta);
 		whole = 1;
+		grow = 1;
 	}
 	if (tp->t_agcount_delta) {
 		be32_add_cpu(&sbp->sb_agcount, tp->t_agcount_delta);
 		whole = 1;
+		grow = 1;
 	}
 	if (tp->t_imaxpct_delta) {
 		sbp->sb_imax_pct += tp->t_imaxpct_delta;
@@ -555,6 +561,8 @@ xfs_trans_apply_sb_deltas(
 	}
 
 	xfs_trans_buf_set_type(tp, bp, XFS_BLFT_SB_BUF);
+	if (grow)
+		bip->bli_flags |= XFS_BLI_GROW_SB_BUF;
 	if (whole)
 		/*
 		 * Log the whole thing, the fields are noncontiguous.
