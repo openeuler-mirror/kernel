@@ -23,6 +23,7 @@
 #include "xfs_quota.h"
 #include "xfs_dir2.h"
 #include "xfs_error.h"
+#include "xfs_defer.h"
 
 /*
  * Invalidate any incore buffers associated with this remote attribute value
@@ -139,7 +140,8 @@ xfs_attr3_node_inactive(
 	xfs_daddr_t		parent_blkno, child_blkno;
 	struct xfs_buf		*child_bp;
 	struct xfs_da3_icnode_hdr ichdr;
-	int			error, i;
+	int			error, i, done;
+	xfs_filblks_t		count = mp->m_attr_geo->fsbcount;
 
 	/*
 	 * Since this code is recursive (gasp!) we must protect ourselves.
@@ -172,10 +174,13 @@ xfs_attr3_node_inactive(
 		 * traversal of the tree so we may deal with many blocks
 		 * before we come back to this one.
 		 */
-		error = xfs_da3_node_read(*trans, dp, child_fsb, &child_bp,
-					  XFS_ATTR_FORK);
+		error = __xfs_da3_node_read(*trans, dp, child_fsb,
+					    XFS_DABUF_MAP_HOLE_OK, &child_bp,
+					    XFS_ATTR_FORK);
 		if (error)
 			return error;
+		if (!child_bp)
+			goto next_entry;
 
 		/* save for re-read later */
 		child_blkno = xfs_buf_daddr(child_bp);
@@ -207,14 +212,32 @@ xfs_attr3_node_inactive(
 		 * Remove the subsidiary block from the cache and from the log.
 		 */
 		error = xfs_trans_get_buf(*trans, mp->m_ddev_targp,
-				child_blkno,
-				XFS_FSB_TO_BB(mp, mp->m_attr_geo->fsbcount), 0,
-				&child_bp);
+					  child_blkno, XFS_FSB_TO_BB(mp, count),
+					  0, &child_bp);
 		if (error)
 			return error;
+
+		error = xfs_bunmapi(*trans, dp, child_fsb, count,
+				    XFS_BMAPI_ATTRFORK, 0, &done);
+		if (error) {
+			xfs_trans_brelse(*trans, child_bp);
+			return error;
+		}
 		xfs_trans_binval(*trans, child_bp);
+
+		error = xfs_defer_finish(trans);
+		if (error)
+			return error;
 		child_bp = NULL;
 
+		/*
+		 * Atomically commit the whole invalidate stuff.
+		 */
+		error = xfs_trans_roll_inode(trans, dp);
+		if (error)
+			return  error;
+
+next_entry:
 		/*
 		 * If we're not done, re-read the parent to get the next
 		 * child block number.
@@ -232,12 +255,6 @@ xfs_attr3_node_inactive(
 			xfs_trans_brelse(*trans, bp);
 			bp = NULL;
 		}
-		/*
-		 * Atomically commit the whole invalidate stuff.
-		 */
-		error = xfs_trans_roll_inode(trans, dp);
-		if (error)
-			return  error;
 	}
 
 	return 0;
@@ -258,7 +275,8 @@ xfs_attr3_root_inactive(
 	struct xfs_da_blkinfo	*info;
 	struct xfs_buf		*bp;
 	xfs_daddr_t		blkno;
-	int			error;
+	xfs_filblks_t		count = mp->m_attr_geo->fsbcount;
+	int			error, done;
 
 	/*
 	 * Read block 0 to see what we have to work with.
@@ -266,8 +284,9 @@ xfs_attr3_root_inactive(
 	 * the extents in reverse order the extent containing
 	 * block 0 must still be there.
 	 */
-	error = xfs_da3_node_read(*trans, dp, 0, &bp, XFS_ATTR_FORK);
-	if (error)
+	error = __xfs_da3_node_read(*trans, dp, 0, XFS_DABUF_MAP_HOLE_OK,
+				    &bp, XFS_ATTR_FORK);
+	if (error || !bp)
 		return error;
 	blkno = xfs_buf_daddr(bp);
 
@@ -298,7 +317,7 @@ xfs_attr3_root_inactive(
 	 * Invalidate the incore copy of the root block.
 	 */
 	error = xfs_trans_get_buf(*trans, mp->m_ddev_targp, blkno,
-			XFS_FSB_TO_BB(mp, mp->m_attr_geo->fsbcount), 0, &bp);
+				  XFS_FSB_TO_BB(mp, count), 0, &bp);
 	if (error)
 		return error;
 	error = bp->b_error;
@@ -306,7 +325,17 @@ xfs_attr3_root_inactive(
 		xfs_trans_brelse(*trans, bp);
 		return error;
 	}
+
+	error = xfs_bunmapi(*trans, dp, 0, count, XFS_BMAPI_ATTRFORK, 0, &done);
+	if (error) {
+		xfs_trans_brelse(*trans, bp);
+		return error;
+	}
 	xfs_trans_binval(*trans, bp);	/* remove from cache */
+
+	error = xfs_defer_finish(trans);
+	if (error)
+		return error;
 	/*
 	 * Commit the invalidate and start the next transaction.
 	 */
@@ -368,6 +397,7 @@ xfs_attr_inactive(
 		if (error)
 			goto out_shutdown;
 
+		/* Remove the potential leftover remote attr blocks. */
 		error = xfs_itruncate_extents(&trans, dp, XFS_ATTR_FORK, 0);
 		if (error)
 			goto out_cancel;
