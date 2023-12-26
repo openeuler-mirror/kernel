@@ -695,7 +695,8 @@ xfs_inode_item_push(
 	uint			rval = XFS_ITEM_SUCCESS;
 	int			error;
 
-	if (!bp || (ip->i_flags & XFS_ISTALE)) {
+	if (!bp || ((ip->i_flags & XFS_ISTALE) &&
+		   !(lip->li_flags & XFS_LI_ABORTED))) {
 		/*
 		 * Inode item/buffer is being aborted due to cluster
 		 * buffer deletion. Trigger a log force to have that operation

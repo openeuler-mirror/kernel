@@ -3368,7 +3368,8 @@ xfs_iflush_cluster(
 		 * once we drop the i_flags_lock.
 		 */
 		spin_lock(&ip->i_flags_lock);
-		ASSERT(!__xfs_iflags_test(ip, XFS_ISTALE));
+		ASSERT(!__xfs_iflags_test(ip, XFS_ISTALE) ||
+				test_bit(XFS_LI_ABORTED, &lip->li_flags));
 		if (__xfs_iflags_test(ip, XFS_IRECLAIM | XFS_IFLUSHING)) {
 			spin_unlock(&ip->i_flags_lock);
 			continue;

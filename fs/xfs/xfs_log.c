@@ -817,7 +817,9 @@ xfs_log_mount_finish(
 	} else {
 		xfs_info(mp, "Ending clean mount");
 	}
-	xfs_buftarg_drain(mp->m_ddev_targp);
+
+	if (!error)
+		xfs_buftarg_drain(mp->m_ddev_targp);
 
 	clear_bit(XLOG_RECOVERY_NEEDED, &log->l_opstate);
 
