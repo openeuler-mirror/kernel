@@ -7880,6 +7880,45 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 }
 #endif /* CONFIG_HIBERNATION */
 
+#ifdef CONFIG_PAGE_CACHE_LIMIT
+unsigned long shrink_memory(unsigned long nr_to_reclaim, bool may_swap)
+{
+	unsigned long nr_reclaimed;
+	unsigned int noreclaim_flag;
+	int nid = numa_node_id();
+	struct scan_control sc = {
+		.gfp_mask = GFP_HIGHUSER_MOVABLE,
+		.reclaim_idx = ZONE_MOVABLE,
+		.may_writepage = !laptop_mode,
+		.nr_to_reclaim = nr_to_reclaim / 2,
+		.may_unmap = 1,
+		.may_swap = may_swap,
+		.priority = DEF_PRIORITY,
+	};
+
+	struct zonelist *zonelist = node_zonelist(nid, sc.gfp_mask);
+	struct scan_control orig_sc = sc;
+
+	fs_reclaim_acquire(sc.gfp_mask);
+	noreclaim_flag = memalloc_noreclaim_save();
+	set_task_reclaim_state(current, &sc.reclaim_state);
+
+	/* Start with ZONE_MOVABLE and try to reclaim half of the target memory */
+	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
+	sc = orig_sc;
+	sc.reclaim_idx--;
+
+	/* Then try to reclaim remain half memory starting from ZONE_NORMAL */
+	nr_reclaimed += do_try_to_free_pages(zonelist, &sc);
+
+	set_task_reclaim_state(current, NULL);
+	memalloc_noreclaim_restore(noreclaim_flag);
+	fs_reclaim_release(sc.gfp_mask);
+
+	return nr_reclaimed;
+}
+#endif /* CONFIG_PAGE_CACHE_LIMIT */
+
 /*
  * This kswapd start function will be called by init and node-hot-add.
  */

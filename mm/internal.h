@@ -1157,4 +1157,8 @@ struct vma_prepare {
 
 void __meminit __init_single_page(struct page *page, unsigned long pfn,
 				unsigned long zone, int nid);
+
+#ifdef CONFIG_PAGE_CACHE_LIMIT
+unsigned long shrink_memory(unsigned long nr_to_reclaim, bool may_swap);
+#endif /* CONFIG_PAGE_CACHE_LIMIT */
 #endif	/* __MM_INTERNAL_H */

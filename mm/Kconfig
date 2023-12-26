@@ -1323,6 +1323,19 @@ config ASCEND_OOM
 		0: disable oom killer
 		1: enable oom killer (default,compatible with mainline)
 
+config PAGE_CACHE_LIMIT
+	bool "Support page cache limit"
+	depends on MMU && SYSCTL
+	default n
+	help
+	  Keeping a number of page cache can improve the performance of system,
+	  but if there is a lot fo page cache in system, that will result in
+	  short of memory, subsequent memory reclamation operations may lead
+	  to performance degradation, so add periodical memory relciam to
+	  avoid too many page cache.
+
+	  if unsure, say N to disable the PAGE_CACHE_LIMIT.
+
 source "mm/damon/Kconfig"
 
 endmenu
