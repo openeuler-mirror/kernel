@@ -1446,6 +1446,12 @@ static void ravb_tx_timeout_work(struct work_struct *work)
 						 work);
 	struct net_device *ndev = priv->ndev;
 
+	if (!rtnl_trylock()) {
+		usleep_range(1000, 2000);
+		schedule_work(&priv->work);
+		return;
+	}
+
 	netif_tx_stop_all_queues(ndev);
 
 	/* Stop PTP Clock driver */
@@ -1467,6 +1473,8 @@ static void ravb_tx_timeout_work(struct work_struct *work)
 		ravb_ptp_init(ndev, priv->pdev);
 
 	netif_tx_start_all_queues(ndev);
+
+	rtnl_unlock();
 }
 
 /* Packet transmit function for Ethernet AVB */
