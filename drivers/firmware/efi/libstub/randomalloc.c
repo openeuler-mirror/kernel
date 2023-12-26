@@ -9,6 +9,97 @@
 
 #include "efistub.h"
 
+#if defined (CONFIG_KASLR_SKIP_MEM_RANGE) && defined (CONFIG_ARM64)
+#define CAL_SLOTS_NUMBER	 0
+#define CAL_SLOTS_PHYADDR	 1
+
+enum mem_avoid_index {
+	MEM_AVOID_MAX,
+};
+
+struct mem_vector {
+	unsigned long long start;
+	unsigned long long size;
+};
+
+static struct mem_vector mem_avoid[MEM_AVOID_MAX];
+
+static bool mem_overlaps(struct mem_vector *one, struct mem_vector *two)
+{
+	if (one->start + one->size <= two->start)
+		return false;
+	if (one->start >= two->start + two->size)
+		return false;
+	return true;
+}
+
+static bool mem_avoid_overlap(struct mem_vector *region, struct mem_vector *overlap)
+{
+	int i;
+	u64 earliest = region->start + region->size;
+	bool is_overlapping = false;
+
+	for (i = 0; i < MEM_AVOID_MAX; i++) {
+		if (mem_overlaps(region, &mem_avoid[i]) &&
+		    mem_avoid[i].start < earliest) {
+			*overlap = mem_avoid[i];
+			earliest = overlap->start;
+			is_overlapping = true;
+		}
+	}
+	return is_overlapping;
+}
+
+static unsigned long cal_slots_avoid_overlap(efi_memory_desc_t *md, unsigned long size, u8 cal_type,
+					  unsigned long align_shift, unsigned long target)
+{
+	struct mem_vector region, overlap;
+	unsigned long region_end, first, last;
+	unsigned long align = 1UL << align_shift;
+	unsigned long total_slots = 0, slots;
+
+	region.start = md->phys_addr;
+	region_end = min(md->phys_addr + md->num_pages * EFI_PAGE_SIZE - 1, (u64)ULONG_MAX);
+
+	while (region.start < region_end) {
+		first = round_up(region.start, align);
+		last = round_down(region_end - size + 1, align);
+
+		if (first > last)
+			break;
+
+		region.size = region_end - region.start + 1;
+
+		if (!mem_avoid_overlap(&region, &overlap)) {
+			slots = ((last - first) >> align_shift) + 1;
+			total_slots += slots;
+
+			if (cal_type == CAL_SLOTS_PHYADDR)
+				return first + target * align;
+
+			break;
+		}
+
+		if (overlap.start >= region.start + size) {
+			slots = ((round_up(overlap.start - size + 1, align) - first) >>
+				align_shift) + 1;
+			total_slots += slots;
+
+			if (cal_type == CAL_SLOTS_PHYADDR) {
+				if (target > slots)
+					target -= slots;
+				else
+					return first + target * align;
+			}
+		}
+
+		/* Clip off the overlapping region and start over. */
+		region.start = overlap.start + overlap.size;
+	}
+
+	return total_slots;
+}
+#endif
 /*
  * Return the number of slots covered by this entry, i.e., the number of
  * addresses it covers that are suitably aligned and supply enough room
@@ -39,8 +130,11 @@ static unsigned long get_entry_num_slots(efi_memory_desc_t *md,
 
 	if (first_slot > last_slot)
 		return 0;
-
+#if defined (CONFIG_KASLR_SKIP_MEM_RANGE) && defined (CONFIG_ARM64)
+	return cal_slots_avoid_overlap(md, size, CAL_SLOTS_NUMBER, align_shift, 0);
+#else
 	return ((unsigned long)(last_slot - first_slot) >> align_shift) + 1;
+#endif
 }
 
 /*
@@ -117,8 +211,12 @@ efi_status_t efi_random_alloc(unsigned long size,
 			target_slot -= MD_NUM_SLOTS(md);
 			continue;
 		}
-
+#if defined (CONFIG_KASLR_SKIP_MEM_RANGE) && defined (CONFIG_ARM64)
+		target = cal_slots_avoid_overlap(md, size, CAL_SLOTS_PHYADDR, ilog2(align),
+			target_slot);
+#else
 		target = round_up(md->phys_addr, align) + target_slot * align;
+#endif
 		pages = size / EFI_PAGE_SIZE;
 
 		status = efi_bs_call(allocate_pages, EFI_ALLOCATE_ADDRESS,
