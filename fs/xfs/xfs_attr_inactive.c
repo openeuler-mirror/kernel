@@ -366,7 +366,7 @@ xfs_attr_inactive(
 	if (dp->i_af.if_nextents > 0) {
 		error = xfs_attr3_root_inactive(&trans, dp);
 		if (error)
-			goto out_cancel;
+			goto out_shutdown;
 
 		error = xfs_itruncate_extents(&trans, dp, XFS_ATTR_FORK, 0);
 		if (error)
@@ -380,6 +380,8 @@ xfs_attr_inactive(
 	xfs_iunlock(dp, lock_mode);
 	return error;
 
+out_shutdown:
+	xfs_force_shutdown(mp, SHUTDOWN_META_IO_ERROR);
 out_cancel:
 	xfs_trans_cancel(trans);
 out_destroy_fork:
