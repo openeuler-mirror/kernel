@@ -1002,6 +1002,7 @@ void efi_parse_option_graphics(char *option);
 
 #if defined (CONFIG_KASLR_SKIP_MEM_RANGE) && defined (CONFIG_ARM64)
 void mem_avoid_memmap(char *str);
+void mem_avoid_mem_nokaslr(char *str);
 #endif
 
 efi_status_t efi_setup_gop(struct screen_info *si, efi_guid_t *proto,

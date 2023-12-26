@@ -14,10 +14,13 @@
 #define CAL_SLOTS_PHYADDR	 1
 
 #define MAX_MEMMAP_REGIONS 32
+#define MAX_MEM_NOKASLR_REGIONS	4
 
 enum mem_avoid_index {
 	MAX_MEMMAP_REGIONS_BEGIN = 0,
 	MAX_MEMMAP_REGIONS_END = MAX_MEMMAP_REGIONS_BEGIN + MAX_MEMMAP_REGIONS - 1,
+	MEM_AVOID_MEM_NOKASLR_BEGIN,
+	MEM_AVOID_MEM_NOKASLR_END = MEM_AVOID_MEM_NOKASLR_BEGIN + MAX_MEM_NOKASLR_REGIONS - 1,
 	MEM_AVOID_MAX,
 };
 
@@ -131,6 +134,38 @@ void mem_avoid_memmap(char *str)
 
 		mem_avoid[MAX_MEMMAP_REGIONS_BEGIN + i].start = start;
 		mem_avoid[MAX_MEMMAP_REGIONS_BEGIN + i].size = size;
+		str = k;
+		i++;
+	}
+}
+
+void mem_avoid_mem_nokaslr(char *str)
+{
+	int i = 0;
+
+	while (str && (i < MAX_MEM_NOKASLR_REGIONS)) {
+		char *oldstr;
+		u64 start, end;
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		oldstr = str;
+		start = memparse(str, &str);
+		if (str == oldstr || *str != '-') {
+			efi_warn("nokaslr values error.\n");
+			break;
+		}
+
+		end = memparse(str + 1, &str);
+		if (start >= end) {
+			efi_warn("nokaslr values error, start should be less than end.\n");
+			break;
+		}
+
+		mem_avoid[MEM_AVOID_MEM_NOKASLR_BEGIN + i].start = start;
+		mem_avoid[MEM_AVOID_MEM_NOKASLR_BEGIN + i].size = end - start;
 		str = k;
 		i++;
 	}

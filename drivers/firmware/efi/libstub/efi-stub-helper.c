@@ -68,7 +68,12 @@ efi_status_t efi_parse_options(char const *cmdline)
 			break;
 
 		if (!strcmp(param, "nokaslr")) {
-			efi_nokaslr = true;
+#if defined (CONFIG_KASLR_SKIP_MEM_RANGE) && defined (CONFIG_ARM64)
+			if (val)
+				mem_avoid_mem_nokaslr(val);
+			else
+#endif
+				efi_nokaslr = true;
 		} else if (!strcmp(param, "quiet")) {
 			efi_loglevel = CONSOLE_LOGLEVEL_QUIET;
 		} else if (!strcmp(param, "noinitrd")) {
