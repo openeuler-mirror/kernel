@@ -1180,6 +1180,19 @@ config HISILICON_ERRATUM_1980005
 
 	  If unsure, say N.
 
+config HISILICON_ERRATUM_162100602
+	bool "Hisilicon erratum 162100602"
+	depends on ARM_SMMU_V3
+	default y
+	help
+	  On Hisilicon LINXICORE9100 cores, SMMU pagetable prefetch features may
+	  prefetch and use a invalid PTE even the PTE is valid at that time. This
+	  will cause the device trigger fake pagefaults. If the SMMU works in
+	  terminate mode, transactions which occur fake pagefaults will be aborted,
+	  and could result in unexpected errors.
+
+	  If unsure, say Y.
+
 config QCOM_FALKOR_ERRATUM_1003
 	bool "Falkor E1003: Incorrect translation due to ASID change"
 	default y
