@@ -360,6 +360,7 @@ struct mem_cgroup {
 bool memcg_oom_prio_scan_tasks(int (*fn)(struct task_struct *, void *),
 				   void *arg);
 void memcg_print_bad_task(struct oom_control *oc);
+bool memcg_oom_prio_disabled(void);
 #else
 static inline void memcg_print_bad_task(struct oom_control *oc)
 {

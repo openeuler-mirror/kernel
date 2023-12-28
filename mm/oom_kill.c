@@ -318,6 +318,9 @@ static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
 	struct mem_cgroup *oc_memcg;
 	int cur_memcg_prio, oc_memcg_prio;
 
+	if (memcg_oom_prio_disabled())
+		return points == LONG_MIN || points < oc->chosen_points;
+
 	if (points == LONG_MIN)
 		return true;
 
