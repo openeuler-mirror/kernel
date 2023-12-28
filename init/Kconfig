@@ -959,6 +959,20 @@ config MEMCG_MEMFS_INFO
 	  through interface "memory.memfs_files_info" or printed when OOM is
 	  triggered.
 
+config MEMCG_OOM_PRIORITY
+	bool "Enable Memory Cgroup OOM Priority"
+	depends on MEMCG
+	depends on X86 || ARM64
+	default n
+	help
+	  Prefer to kill the process from the low priority memcg when OOM occurs.
+
+	  When OOM occurs, this feature first selects the low priority memcg that
+	  uses most memory, and then kill the process that uses most memory in the
+	  memcg. If the process is not found, then fallback to normal processing.
+
+	  If unsure, say "n".
+
 config MEMCG_KMEM
 	bool
 	depends on MEMCG

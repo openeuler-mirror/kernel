@@ -27,6 +27,7 @@ struct obj_cgroup;
 struct page;
 struct mm_struct;
 struct kmem_cache;
+struct oom_control;
 
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
@@ -297,6 +298,12 @@ struct mem_cgroup {
 	bool			tcpmem_active;
 	int			tcpmem_pressure;
 
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+	/* Currently support 0 and -1.
+	 * in the future it can expand to other value.
+	 */
+	int	oom_prio;
+#endif
 #ifdef CONFIG_MEMCG_KMEM
 	int kmemcg_id;
 	struct obj_cgroup __rcu *objcg;
@@ -345,6 +352,20 @@ struct mem_cgroup {
 
 	struct mem_cgroup_per_node *nodeinfo[];
 };
+
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+#define MEMCG_LOW_OOM_PRIORITY -1
+#define MEMCG_HIGH_OOM_PRIORITY 0
+
+bool memcg_oom_prio_scan_tasks(int (*fn)(struct task_struct *, void *),
+				   void *arg);
+void memcg_print_bad_task(struct oom_control *oc);
+bool memcg_oom_prio_disabled(void);
+#else
+static inline void memcg_print_bad_task(struct oom_control *oc)
+{
+}
+#endif
 
 /*
  * size of first charge trial.
@@ -1601,6 +1622,10 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 					    unsigned long *total_scanned)
 {
 	return 0;
+}
+
+static inline void memcg_print_bad_task(struct oom_control *oc)
+{
 }
 #endif /* CONFIG_MEMCG */
 

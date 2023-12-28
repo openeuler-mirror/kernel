@@ -306,6 +306,51 @@ static enum oom_constraint constrained_alloc(struct oom_control *oc)
 	return CONSTRAINT_NONE;
 }
 
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+/**
+ * We choose the task in low-priority memcg firstly. For the same state, we
+ * choose the task with the highest number of 'points'.
+ */
+static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
+			long points)
+{
+	struct mem_cgroup *cur_memcg;
+	struct mem_cgroup *oc_memcg;
+	int cur_memcg_prio, oc_memcg_prio;
+
+	if (memcg_oom_prio_disabled())
+		return points == LONG_MIN || points < oc->chosen_points;
+
+	if (points == LONG_MIN)
+		return true;
+
+	if (!oc->chosen)
+		return false;
+
+	rcu_read_lock();
+	oc_memcg = mem_cgroup_from_task(oc->chosen);
+	cur_memcg = mem_cgroup_from_task(task);
+	oc_memcg_prio = READ_ONCE(oc_memcg->oom_prio);
+	cur_memcg_prio = READ_ONCE(cur_memcg->oom_prio);
+	rcu_read_unlock();
+
+	if (cur_memcg_prio == oc_memcg_prio)
+		return points < oc->chosen_points;
+
+	/* if oc is low-priority, so skip the task */
+	if (oc_memcg_prio == MEMCG_LOW_OOM_PRIORITY)
+		return true;
+
+	return false;
+}
+#else
+static inline bool oom_next_task(struct task_struct *task,
+				struct oom_control *oc, long points)
+{
+	return points == LONG_MIN || points < oc->chosen_points;
+}
+#endif
+
 static int oom_evaluate_task(struct task_struct *task, void *arg)
 {
 	struct oom_control *oc = arg;
@@ -340,7 +385,7 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 	}
 
 	points = oom_badness(task, oc->totalpages);
-	if (points == LONG_MIN || points < oc->chosen_points)
+	if (oom_next_task(task, oc, points))
 		goto next;
 
 select:
@@ -366,11 +411,16 @@ static void select_bad_process(struct oom_control *oc)
 {
 	oc->chosen_points = LONG_MIN;
 
-	if (is_memcg_oom(oc))
+	if (is_memcg_oom(oc)) {
 		mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc);
-	else {
+		memcg_print_bad_task(oc);
+	} else {
 		struct task_struct *p;
 
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+		if (memcg_oom_prio_scan_tasks(oom_evaluate_task, oc))
+			return;
+#endif
 		rcu_read_lock();
 		for_each_process(p)
 			if (oom_evaluate_task(p, oc))
@@ -426,9 +476,10 @@ static void dump_tasks(struct oom_control *oc)
 	pr_info("Tasks state (memory values in pages):\n");
 	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
 
-	if (is_memcg_oom(oc))
+	if (is_memcg_oom(oc)) {
 		mem_cgroup_scan_tasks(oc->memcg, dump_task, oc);
-	else {
+		memcg_print_bad_task(oc);
+	} else {
 		struct task_struct *p;
 
 		rcu_read_lock();
