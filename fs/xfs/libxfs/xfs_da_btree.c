@@ -378,16 +378,17 @@ xfs_da3_node_set_type(
 }
 
 int
-xfs_da3_node_read(
+__xfs_da3_node_read(
 	struct xfs_trans	*tp,
 	struct xfs_inode	*dp,
 	xfs_dablk_t		bno,
+	unsigned int		flags,
 	struct xfs_buf		**bpp,
 	int			whichfork)
 {
 	int			error;
 
-	error = xfs_da_read_buf(tp, dp, bno, 0, bpp, whichfork,
+	error = xfs_da_read_buf(tp, dp, bno, flags, bpp, whichfork,
 			&xfs_da3_node_buf_ops);
 	if (error || !*bpp || !tp)
 		return error;
