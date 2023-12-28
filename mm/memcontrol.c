@@ -4055,6 +4055,134 @@ static int mem_cgroup_move_charge_write(struct cgroup_subsys_state *css,
 }
 #endif
 
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+static void memcg_oom_prio_init(struct mem_cgroup *memcg)
+{
+	struct mem_cgroup *parent = parent_mem_cgroup(memcg);
+	int oom_prio;
+
+	if (!parent)
+		return;
+
+	oom_prio = READ_ONCE(parent->oom_prio);
+	WRITE_ONCE(memcg->oom_prio, oom_prio);
+}
+
+static s64 memcg_oom_prio_read(struct cgroup_subsys_state *css,
+				      struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return READ_ONCE(memcg->oom_prio);
+}
+
+static int memcg_oom_prio_write(struct cgroup_subsys_state *css,
+				       struct cftype *cft, s64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	struct mem_cgroup *iter_memcg;
+	struct cgroup_subsys_state *iter_css;
+
+	if (mem_cgroup_is_root(memcg))
+		return -EINVAL;
+
+	if (val != MEMCG_LOW_OOM_PRIORITY && val != MEMCG_HIGH_OOM_PRIORITY)
+		return -EINVAL;
+
+	rcu_read_lock();
+	css_for_each_descendant_pre(iter_css, &memcg->css) {
+		iter_memcg = mem_cgroup_from_css(iter_css);
+
+		WRITE_ONCE(iter_memcg->oom_prio, val);
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static struct mem_cgroup *memcg_find_max_usage(struct mem_cgroup *last)
+{
+	struct mem_cgroup *iter, *max_memcg = NULL;
+	struct cgroup_subsys_state *css;
+	unsigned long usage, max_usage = 0;
+	int oom_prio;
+
+	rcu_read_lock();
+	css_for_each_descendant_pre(css, &root_mem_cgroup->css) {
+		iter = mem_cgroup_from_css(css);
+		oom_prio = READ_ONCE(iter->oom_prio);
+
+		if (oom_prio == MEMCG_HIGH_OOM_PRIORITY ||
+			iter == root_mem_cgroup ||
+			iter == last)
+			continue;
+
+		usage = mem_cgroup_usage(iter, false);
+		if (usage > max_usage) {
+			max_usage = usage;
+			max_memcg = iter;
+		}
+	}
+	rcu_read_unlock();
+
+	return max_memcg;
+}
+
+bool memcg_oom_prio_scan_tasks(int (*fn)(struct task_struct *, void *),
+				   void *arg)
+{
+	struct mem_cgroup *max, *last = NULL;
+	struct oom_control *oc = arg;
+	struct css_task_iter it;
+	struct task_struct *task;
+	int ret = 0;
+	bool retry = true;
+
+retry:
+	max = memcg_find_max_usage(last);
+	if (!max)
+		return false;
+
+	css_task_iter_start(&max->css, 0, &it);
+	while (!ret && (task = css_task_iter_next(&it))) {
+		if (test_tsk_thread_flag(task, TIF_MEMDIE))
+			continue;
+
+		ret = fn(task, arg);
+	}
+	css_task_iter_end(&it);
+
+	if (ret)
+		return false;
+
+	if (!oc->chosen && retry) {
+		last = max;
+		retry = false;
+		goto retry;
+	}
+
+	if (oc->chosen)
+		pr_info("The bad task [%d:%s] is from low-priority memcg.\n",
+				oc->chosen->pid, oc->chosen->comm);
+
+	return oc->chosen ? true : false;
+}
+
+void memcg_print_bad_task(struct oom_control *oc)
+{
+	if (oc->chosen) {
+		struct mem_cgroup *memcg;
+
+		rcu_read_lock();
+		memcg = mem_cgroup_from_task(oc->chosen);
+		if (READ_ONCE(memcg->oom_prio) == MEMCG_LOW_OOM_PRIORITY)
+			pr_info("The bad task [%d:%s] is from low-priority memcg.\n",
+				oc->chosen->pid, oc->chosen->comm);
+		rcu_read_unlock();
+	}
+}
+#endif
+
 #ifdef CONFIG_NUMA
 
 #define LRU_ALL_FILE (BIT(LRU_INACTIVE_FILE) | BIT(LRU_ACTIVE_FILE))
@@ -5417,6 +5545,17 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = mem_cgroup_memfs_files_show,
 	},
 #endif
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+	{
+		/*
+		 * This interface is used to control the oom priority
+		 * of the memcg. The interface name is for compatibility.
+		 */
+		.name = "qos_level",
+		.read_s64 = memcg_oom_prio_read,
+		.write_s64 = memcg_oom_prio_write,
+	},
+#endif
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -5815,6 +5954,10 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 		queue_delayed_work(system_unbound_wq, &stats_flush_dwork,
 				   FLUSH_TIME);
 	lru_gen_online_memcg(memcg);
+
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+	memcg_oom_prio_init(memcg);
+#endif
 
 	/* Online state pins memcg ID, memcg ID pins CSS */
 	refcount_set(&memcg->id.ref, 1);
