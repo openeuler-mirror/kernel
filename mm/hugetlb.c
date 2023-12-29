@@ -7633,3 +7633,30 @@ int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm, unsigned long addr,
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
 #endif /* CONFIG_HUGETLB_INSERT_PAGE */
+
+#ifdef CONFIG_ASCEND_FEATURES
+struct folio *alloc_hugetlb_folio_size(int nid, unsigned long size)
+{
+	gfp_t gfp_mask;
+	struct hstate *h;
+	nodemask_t nodemask;
+	unsigned long flags;
+	struct folio *folio = NULL;
+
+	nodes_clear(nodemask);
+	node_set(nid, nodemask);
+
+	h = size_to_hstate(size);
+	if (!h)
+		return NULL;
+
+	gfp_mask = htlb_alloc_mask(h);
+	spin_lock_irqsave(&hugetlb_lock, flags);
+	if (h->free_huge_pages - h->resv_huge_pages > 0)
+		folio = dequeue_hugetlb_folio_nodemask(h, gfp_mask, nid, &nodemask);
+	spin_unlock_irqrestore(&hugetlb_lock, flags);
+
+	return folio;
+}
+EXPORT_SYMBOL(alloc_hugetlb_folio_size);
+#endif

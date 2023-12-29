@@ -302,6 +302,15 @@ static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
 }
 #endif /* CONFIG_HUGETLB_INSERT_PAGE */
 
+#ifdef CONFIG_ASCEND_FEATURES
+struct folio *alloc_hugetlb_folio_size(int nid, unsigned long size);
+#else
+static inline struct folio *alloc_hugetlb_folio_size(int nid, unsigned long size)
+{
+	return NULL;
+}
+#endif
+
 #else /* !CONFIG_HUGETLB_PAGE */
 
 static inline void hugetlb_dup_vma_private(struct vm_area_struct *vma)
@@ -521,6 +530,11 @@ static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
 				pgprot_t prot, unsigned long phy_addr)
 {
 	return -EPERM;
+}
+
+static inline struct folio *alloc_hugetlb_folio_size(int nid, unsigned long size)
+{
+	return NULL;
 }
 
 #endif /* !CONFIG_HUGETLB_PAGE */
