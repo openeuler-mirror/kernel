@@ -248,8 +248,10 @@ smb2_dump_detail(void *buf, struct TCP_Server_Info *server)
 	cifs_dbg(VFS, "Cmd: %d Err: 0x%x Flags: 0x%x Mid: %llu Pid: %d\n",
 		 shdr->Command, shdr->Status, shdr->Flags, shdr->MessageId,
 		 shdr->ProcessId);
-	cifs_dbg(VFS, "smb buf %p len %u\n", buf,
-		 server->ops->calc_smb_size(buf, server));
+	if (!server->ops->check_message(buf, server->total_read, server)) {
+		cifs_dbg(VFS, "smb buf %p len %u\n", buf,
+			 server->ops->calc_smb_size(buf, server));
+	}
 #endif
 }
 
