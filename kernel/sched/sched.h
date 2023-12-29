@@ -1075,6 +1075,9 @@ struct rq {
 	int			online;
 
 	struct list_head cfs_tasks;
+#ifdef CONFIG_QOS_SCHED_PRIO_LB
+	struct list_head cfs_offline_tasks;
+#endif
 
 	struct sched_avg	avg_rt;
 	struct sched_avg	avg_dl;
