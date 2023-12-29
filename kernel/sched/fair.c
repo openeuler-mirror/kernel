@@ -166,6 +166,15 @@ static unsigned int sysctl_sched_cfs_bandwidth_slice		= 5000UL;
 static unsigned int sysctl_numa_balancing_promote_rate_limit = 65536;
 #endif
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+/*
+ * Low utilization threshold for CPU
+ *
+ * (default: 85%), units: percentage of CPU utilization)
+ */
+int sysctl_sched_util_low_pct = 85;
+#endif
+
 #ifdef CONFIG_SYSCTL
 static struct ctl_table sched_fair_sysctls[] = {
 	{
@@ -213,6 +222,17 @@ static struct ctl_table sched_fair_sysctls[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE_HUNDRED,
 		.extra2		= &one_thousand,
+	},
+#endif
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	{
+		.procname       = "sched_util_low_pct",
+		.data           = &sysctl_sched_util_low_pct,
+		.maxlen         = sizeof(sysctl_sched_util_low_pct),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE_HUNDRED,
 	},
 #endif
 	{}
@@ -7086,7 +7106,11 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 		return cpumask_first(sched_group_span(group));
 
 	/* Traverse only the allowed CPUs */
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	for_each_cpu_and(i, sched_group_span(group), p->select_cpus) {
+#else
 	for_each_cpu_and(i, sched_group_span(group), p->cpus_ptr) {
+#endif
 		struct rq *rq = cpu_rq(i);
 
 		if (!sched_core_cookie_match(rq, p))
@@ -7133,7 +7157,11 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
 {
 	int new_cpu = cpu;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_intersects(sched_domain_span(sd), p->select_cpus))
+#else
 	if (!cpumask_intersects(sched_domain_span(sd), p->cpus_ptr))
+#endif
 		return prev_cpu;
 
 	/*
@@ -7257,7 +7285,11 @@ static int select_idle_core(struct task_struct *p, int core, struct cpumask *cpu
 		if (!available_idle_cpu(cpu)) {
 			idle = false;
 			if (*idle_cpu == -1) {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->select_cpus)) {
+#else
 				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->cpus_ptr)) {
+#endif
 					*idle_cpu = cpu;
 					break;
 				}
@@ -7283,7 +7315,11 @@ static int select_idle_smt(struct task_struct *p, int target)
 {
 	int cpu;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	for_each_cpu_and(cpu, cpu_smt_mask(target), p->select_cpus) {
+#else
 	for_each_cpu_and(cpu, cpu_smt_mask(target), p->cpus_ptr) {
+#endif
 		if (cpu == target)
 			continue;
 		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
@@ -7331,7 +7367,11 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 	struct sched_domain *this_sd = NULL;
 	u64 time = 0;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_and(cpus, sched_domain_span(sd), p->select_cpus);
+#else
 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
+#endif
 
 	if (sched_feat(SIS_PROP) && !has_idle_core) {
 		u64 avg_cost, avg_idle, span_avg;
@@ -7504,6 +7544,9 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	lockdep_assert_irqs_disabled();
 
 	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	    cpumask_test_cpu(target, p->select_cpus) &&
+#endif
 	    asym_fits_cpu(task_util, util_min, util_max, target))
 		return target;
 
@@ -7512,6 +7555,9 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
 	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	    cpumask_test_cpu(prev, p->select_cpus) &&
+#endif
 	    asym_fits_cpu(task_util, util_min, util_max, prev))
 		return prev;
 
@@ -7538,7 +7584,11 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
 	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	    cpumask_test_cpu(recent_used_cpu, p->select_cpus) &&
+#else
 	    cpumask_test_cpu(recent_used_cpu, p->cpus_ptr) &&
+#endif
 	    asym_fits_cpu(task_util, util_min, util_max, recent_used_cpu)) {
 		return recent_used_cpu;
 	}
@@ -8073,6 +8123,101 @@ unlock:
 	return target;
 }
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+
+DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_switch);
+
+static int __init dynamic_affinity_switch_setup(char *__unused)
+{
+	static_branch_enable(&__dynamic_affinity_switch);
+	return 1;
+}
+__setup("dynamic_affinity", dynamic_affinity_switch_setup);
+
+static inline bool prefer_cpus_valid(struct task_struct *p)
+{
+	if (!dynamic_affinity_enabled())
+		return false;
+
+	return p->prefer_cpus &&
+	       !cpumask_empty(p->prefer_cpus) &&
+	       !cpumask_equal(p->prefer_cpus, p->cpus_ptr) &&
+	       cpumask_subset(p->prefer_cpus, p->cpus_ptr);
+}
+
+static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
+					       int cpu)
+{
+#ifdef CONFIG_FAIR_GROUP_SCHED
+	if (tg->se[cpu] && sched_feat(DA_UTIL_TASKGROUP))
+		return tg->se[cpu]->avg.util_avg;
+#endif
+	return cpu_util_cfs(cpu);
+}
+
+/*
+ * set_task_select_cpus: select the cpu range for task
+ * @p: the task whose available cpu range will to set
+ * @idlest_cpu: the cpu which is the idlest in prefer cpus
+ *
+ * If sum of 'util_avg' among 'prefer_cpus' lower than the percentage
+ * 'sysctl_sched_util_low_pct' of 'prefer_cpus' capacity, select
+ * 'prefer_cpus' range for task, otherwise select 'cpus_ptr' for task.
+ *
+ * The available cpu range set to p->select_cpus. Idlest cpu in preferred cpus
+ * set to @idlest_cpu, which is set to wakeup cpu when fast path wakeup cpu
+ * without p->select_cpus.
+ */
+static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
+				 int sd_flag)
+{
+	unsigned long util_avg_sum = 0;
+	unsigned long tg_capacity = 0;
+	long min_util = INT_MIN;
+	struct task_group *tg;
+	long spare;
+	int cpu;
+
+	p->select_cpus = p->cpus_ptr;
+	if (!prefer_cpus_valid(p))
+		return;
+
+	rcu_read_lock();
+	tg = task_group(p);
+	for_each_cpu(cpu, p->prefer_cpus) {
+		if (idlest_cpu && (available_idle_cpu(cpu) || sched_idle_cpu(cpu))) {
+			*idlest_cpu = cpu;
+		} else if (idlest_cpu) {
+			spare = (long)(capacity_of(cpu) -
+				taskgroup_cpu_util(tg, cpu));
+			if (spare > min_util) {
+				min_util = spare;
+				*idlest_cpu = cpu;
+			}
+		}
+
+		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu)) {
+			rcu_read_unlock();
+			p->select_cpus = p->prefer_cpus;
+			if (sd_flag & SD_BALANCE_WAKE)
+				schedstat_inc(p->stats.nr_wakeups_preferred_cpus);
+			return;
+		}
+
+		util_avg_sum += taskgroup_cpu_util(tg, cpu);
+		tg_capacity += capacity_of(cpu);
+	}
+	rcu_read_unlock();
+
+	if (tg_capacity > cpumask_weight(p->prefer_cpus) &&
+	    util_avg_sum * 100 <= tg_capacity * sysctl_sched_util_low_pct) {
+		p->select_cpus = p->prefer_cpus;
+		if (sd_flag & SD_BALANCE_WAKE)
+			schedstat_inc(p->stats.nr_wakeups_preferred_cpus);
+	}
+}
+#endif
+
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the relevant SD flag set. In practice, this is SD_BALANCE_WAKE,
@@ -8093,11 +8238,19 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	int want_affine = 0;
 	/* SD_flags and WF_flags share the first nibble */
 	int sd_flag = wake_flags & 0xF;
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	int idlest_cpu = -1;
+#endif
 
 	/*
 	 * required for stable ->cpus_allowed
 	 */
 	lockdep_assert_held(&p->pi_lock);
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	set_task_select_cpus(p, &idlest_cpu, sd_flag);
+#endif
+
 	if (wake_flags & WF_TTWU) {
 		record_wakee(p);
 
@@ -8112,7 +8265,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 			new_cpu = prev_cpu;
 		}
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->select_cpus);
+#else
 		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr);
+#endif
 	}
 
 	rcu_read_lock();
@@ -8123,7 +8280,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		 */
 		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
 		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+			new_cpu = cpu;
+			if (cpu != prev_cpu &&
+			    cpumask_test_cpu(prev_cpu, p->select_cpus))
+#else
 			if (cpu != prev_cpu)
+#endif
 				new_cpu = wake_affine(tmp, p, cpu, prev_cpu, sync);
 
 			sd = NULL; /* Prefer wake_affine over balance flags */
@@ -8150,6 +8313,12 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	}
 	rcu_read_unlock();
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (idlest_cpu != -1 && !cpumask_test_cpu(new_cpu, p->select_cpus)) {
+		new_cpu = idlest_cpu;
+		schedstat_inc(p->stats.nr_wakeups_force_preferred_cpus);
+	}
+#endif
 	return new_cpu;
 }
 
@@ -9166,7 +9335,12 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	if (kthread_is_per_cpu(p))
 		return 0;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	set_task_select_cpus(p, NULL, 0);
+	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
+#else
 	if (!cpumask_test_cpu(env->dst_cpu, p->cpus_ptr)) {
+#endif
 		int cpu;
 
 		schedstat_inc(p->stats.nr_failed_migrations_affine);
@@ -9189,7 +9363,11 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 		/* Prevent to re-select dst_cpu via env's CPUs: */
 		for_each_cpu_and(cpu, env->dst_grpmask, env->cpus) {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+			if (cpumask_test_cpu(cpu, p->select_cpus)) {
+#else
 			if (cpumask_test_cpu(cpu, p->cpus_ptr)) {
+#endif
 				env->flags |= LBF_DST_PINNED;
 				env->new_dst_cpu = cpu;
 				break;
@@ -10573,8 +10751,13 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu)
 		int local_group;
 
 		/* Skip over this group if it has no CPUs allowed */
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		if (!cpumask_intersects(sched_group_span(group),
+					p->select_cpus))
+#else
 		if (!cpumask_intersects(sched_group_span(group),
 					p->cpus_ptr))
+#endif
 			continue;
 
 		/* Skip over this group if no cookie matched */
