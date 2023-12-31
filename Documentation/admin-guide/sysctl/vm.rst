@@ -25,6 +25,7 @@ files can be found in mm/swap.c.
 Currently, these files are in /proc/sys/vm:
 
 - admin_reserve_kbytes
+- clear_freelist_pages
 - compact_memory
 - compaction_proactiveness
 - compact_unevictable_allowed
@@ -108,6 +109,16 @@ and add the sum of their RSS.
 On x86_64 this is about 128MB.
 
 Changing this takes effect whenever an application requests memory.
+
+
+clear_freelist_pages
+====================
+
+Available only when CONFIG_CLEAR_FREELIST_PAGE is set. When 1 is written to the
+file, all pages in free lists will be written with 0.
+
+For each NUMA node, clear_freelist_pages is performed on a "random" CPU of the
+NUMA node. The time consuming is related to the hardware.
 
 
 compact_memory
