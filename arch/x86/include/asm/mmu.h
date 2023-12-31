@@ -17,6 +17,9 @@
 /* Allow LAM and SVA coexisting */
 #define MM_CONTEXT_FORCE_TAGGED_SVA	3
 
+struct mm_context_resvd {
+};
+
 /*
  * x86 has arch-specific MMU state beyond what lives in mm_struct.
  */
@@ -56,7 +59,7 @@ typedef struct {
 
 	struct mutex lock;
 	void __user *vdso;			/* vdso base address */
-	const struct vdso_image *vdso_image;	/* vdso image in use */
+	KABI_EXCLUDE(const struct vdso_image *vdso_image)	/* vdso image in use */
 
 	atomic_t perf_rdpmc_allowed;	/* nonzero if rdpmc is allowed */
 #ifdef CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS
@@ -67,6 +70,7 @@ typedef struct {
 	u16 pkey_allocation_map;
 	s16 execute_only_pkey;
 #endif
+	KABI_AUX_EMBED(mm_context)
 } mm_context_t;
 
 #define INIT_MM_CONTEXT(mm)						\
