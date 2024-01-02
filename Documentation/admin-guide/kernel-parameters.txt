@@ -620,6 +620,9 @@
 			Also note the kernel might malfunction if you disable
 			some critical bits.
 
+	clear_freelist
+			Enable clear_freelist feature.
+
 	clk_ignore_unused
 			[CLK]
 			Prevents the clock framework from automatically gating

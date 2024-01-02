@@ -1336,6 +1336,18 @@ config PAGE_CACHE_LIMIT
 
 	  if unsure, say N to disable the PAGE_CACHE_LIMIT.
 
+config CLEAR_FREELIST_PAGE
+	bool "Support for clear free list pages"
+	depends on ARM64 && SYSCTL
+	default n
+	help
+	  Say y here to enable the clear free list pages feature. When
+	  writing to clear_freelist, trigger to clean up the free memory
+	  of the buddy system.
+
+	  To enable this feature, kernel parameter "clear_freelist" also
+	  needs to be added.
+
 source "mm/damon/Kconfig"
 
 endmenu
