@@ -5104,29 +5104,35 @@ static inline bool steal_enabled(void)
 static void overload_clear(struct rq *rq)
 {
 	struct sparsemask *overload_cpus;
+	unsigned long time;
 
 	if (!steal_enabled())
 		return;
 
+	time = schedstat_start_time();
 	rcu_read_lock();
 	overload_cpus = rcu_dereference(rq->cfs_overload_cpus);
 	if (overload_cpus)
 		sparsemask_clear_elem(overload_cpus, rq->cpu);
 	rcu_read_unlock();
+	schedstat_end_time(rq->find_time, time);
 }
 
 static void overload_set(struct rq *rq)
 {
 	struct sparsemask *overload_cpus;
+	unsigned long time;
 
 	if (!steal_enabled())
 		return;
 
+	time = schedstat_start_time();
 	rcu_read_lock();
 	overload_cpus = rcu_dereference(rq->cfs_overload_cpus);
 	if (overload_cpus)
 		sparsemask_set_elem(overload_cpus, rq->cpu);
 	rcu_read_unlock();
+	schedstat_end_time(rq->find_time, time);
 }
 
 static int try_steal(struct rq *this_rq, struct rq_flags *rf);
@@ -7586,6 +7592,16 @@ static inline bool asym_fits_cpu(unsigned long util,
 	return true;
 }
 
+#define SET_STAT(STAT)							\
+	do {								\
+		if (schedstat_enabled()) {				\
+			struct rq *rq = this_rq();			\
+									\
+			if (rq)						\
+				__schedstat_inc(rq->STAT);		\
+		}							\
+	} while (0)
+
 /*
  * Try and locate an idle core/thread in the LLC cache domain.
  */
@@ -7616,8 +7632,10 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	    cpumask_test_cpu(target, p->select_cpus) &&
 #endif
-	    asym_fits_cpu(task_util, util_min, util_max, target))
+	    asym_fits_cpu(task_util, util_min, util_max, target)) {
+		SET_STAT(found_idle_cpu_easy);
 		return target;
+	}
 
 	/*
 	 * If the previous CPU is cache affine and idle, don't be stupid:
@@ -7627,8 +7645,10 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	    cpumask_test_cpu(prev, p->select_cpus) &&
 #endif
-	    asym_fits_cpu(task_util, util_min, util_max, prev))
+	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+		SET_STAT(found_idle_cpu_easy);
 		return prev;
+	}
 
 	/*
 	 * Allow a per-cpu kthread to stack with the wakee if the
@@ -7643,6 +7663,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    prev == smp_processor_id() &&
 	    this_rq()->nr_running <= 1 &&
 	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+		SET_STAT(found_idle_cpu_easy);
 		return prev;
 	}
 
@@ -7659,6 +7680,11 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    cpumask_test_cpu(recent_used_cpu, p->cpus_ptr) &&
 #endif
 	    asym_fits_cpu(task_util, util_min, util_max, recent_used_cpu)) {
+		/*
+		 * Replace recent_used_cpu with prev as it is a potential
+		 * candidate for the next wake:
+		 */
+		SET_STAT(found_idle_cpu_easy);
 		return recent_used_cpu;
 	}
 
@@ -7678,13 +7704,16 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		 */
 		if (sd) {
 			i = select_idle_capacity(p, sd, target);
+			SET_STAT(found_idle_cpu_capacity);
 			return ((unsigned)i < nr_cpumask_bits) ? i : target;
 		}
 	}
 
 	sd = rcu_dereference(per_cpu(sd_llc, target));
-	if (!sd)
+	if (!sd) {
+		SET_STAT(nofound_idle_cpu);
 		return target;
+	}
 
 	if (sched_smt_active()) {
 		has_idle_core = test_idle_cores(target);
@@ -7697,9 +7726,12 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	}
 
 	i = select_idle_cpu(p, sd, has_idle_core, target);
-	if ((unsigned)i < nr_cpumask_bits)
+	if ((unsigned)i < nr_cpumask_bits) {
+		SET_STAT(found_idle_cpu);
 		return i;
+	}
 
+	SET_STAT(nofound_idle_cpu);
 	return target;
 }
 
@@ -8301,6 +8333,7 @@ static int
 select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 {
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+	unsigned long time;
 	struct sched_domain *tmp, *sd = NULL;
 	int cpu = smp_processor_id();
 	int new_cpu = prev_cpu;
@@ -8310,6 +8343,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	int idlest_cpu = -1;
 #endif
+
+	time = schedstat_start_time();
 
 	/*
 	 * required for stable ->cpus_allowed
@@ -8381,6 +8416,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
 	}
 	rcu_read_unlock();
+	schedstat_end_time(cpu_rq(cpu)->find_time, time);
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	if (idlest_cpu != -1 && !cpumask_test_cpu(new_cpu, p->select_cpus)) {
@@ -8849,6 +8885,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
+	unsigned long time;
 
 again:
 	if (!sched_fair_runnable(rq))
@@ -8979,6 +9016,8 @@ idle:
 	if (!rf)
 		return NULL;
 
+	time = schedstat_start_time();
+
 	/*
 	 * We must set idle_stamp _before_ calling try_steal() or
 	 * idle_balance(), such that we measure the duration as idle time.
@@ -8991,6 +9030,8 @@ idle:
 
 	if (new_tasks)
 		rq_idle_stamp_clear(rq);
+
+	schedstat_end_time(rq->find_time, time);
 
 
 	/*
@@ -13190,6 +13231,7 @@ static int steal_from(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
 		update_rq_clock(dst_rq);
 		attach_task(dst_rq, p);
 		stolen = 1;
+		schedstat_inc(dst_rq->steal);
 	}
 	local_irq_restore(rf.flags);
 
@@ -13214,6 +13256,7 @@ static int try_steal(struct rq *dst_rq, struct rq_flags *dst_rf)
 	int dst_cpu = dst_rq->cpu;
 	bool locked = true;
 	int stolen = 0;
+	bool any_overload = false;
 	struct sparsemask *overload_cpus;
 
 	if (!steal_enabled())
@@ -13256,6 +13299,7 @@ static int try_steal(struct rq *dst_rq, struct rq_flags *dst_rf)
 			stolen = 1;
 			goto out;
 		}
+		any_overload = true;
 	}
 
 out:
@@ -13267,6 +13311,8 @@ out:
 	stolen |= (dst_rq->cfs.h_nr_running > 0);
 	if (dst_rq->nr_running != dst_rq->cfs.h_nr_running)
 		stolen = -1;
+	if (!stolen && any_overload)
+		schedstat_inc(dst_rq->steal_fail);
 	return stolen;
 }
 

@@ -1138,6 +1138,15 @@ struct rq {
 	/* try_to_wake_up() stats */
 	unsigned int		ttwu_count;
 	unsigned int		ttwu_local;
+
+	/* Idle search stats */
+	unsigned int		found_idle_cpu_capacity;
+	unsigned int		found_idle_cpu;
+	unsigned int		found_idle_cpu_easy;
+	unsigned int		nofound_idle_cpu;
+	unsigned long		find_time;
+	unsigned int		steal;
+	unsigned int		steal_fail;
 #endif
 
 #ifdef CONFIG_CPU_IDLE
