@@ -1831,6 +1831,29 @@ static void init_numa_topology_type(int offline_node)
 	sched_numa_topology_type = NUMA_DIRECT;
 }
 
+DEFINE_STATIC_KEY_TRUE(sched_steal_allow);
+static int sched_steal_node_limit;
+#define SCHED_STEAL_NODE_LIMIT_DEFAULT 2
+
+static int __init steal_node_limit_setup(char *buf)
+{
+	get_option(&buf, &sched_steal_node_limit);
+	return 0;
+}
+
+early_param("sched_steal_node_limit", steal_node_limit_setup);
+
+static void check_node_limit(void)
+{
+	int n = num_possible_nodes();
+
+	if (sched_steal_node_limit == 0)
+		sched_steal_node_limit = SCHED_STEAL_NODE_LIMIT_DEFAULT;
+	if (n > sched_steal_node_limit) {
+		static_branch_disable(&sched_steal_allow);
+		pr_debug("Suppressing sched STEAL. To enable, reboot with sched_steal_node_limit=%d", n);
+	}
+}
 
 #define NR_DISTANCE_VALUES (1 << DISTANCE_BITS)
 
@@ -1981,6 +2004,7 @@ void sched_init_numa(int offline_node)
 	WRITE_ONCE(sched_max_numa_distance, sched_domains_numa_distance[nr_levels - 1]);
 
 	init_numa_topology_type(offline_node);
+	check_node_limit();
 }
 
 
