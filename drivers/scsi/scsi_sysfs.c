@@ -403,6 +403,44 @@ show_nr_hw_queues(struct device *dev, struct device_attribute *attr, char *buf)
 }
 static DEVICE_ATTR(nr_hw_queues, S_IRUGO, show_nr_hw_queues, NULL);
 
+static ssize_t
+fair_sharing_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+
+	return sprintf(buf, "%d\n",
+		       !(tag_set->flags & BLK_MQ_F_DISABLE_FAIR_TAG_SHARING));
+}
+
+static ssize_t
+fair_sharing_store(struct device *dev, struct device_attribute *attr,
+		   const char *buf, size_t count)
+{
+	struct Scsi_Host *shost = class_to_shost(dev);
+	struct blk_mq_tag_set *tag_set = &shost->tag_set;
+	bool enable;
+	int res = kstrtobool(buf, &enable);
+
+	if (res < 0)
+		return res;
+
+	if (!(tag_set->flags & BLK_MQ_F_DISABLE_FAIR_TAG_SHARING) == enable)
+		return count;
+
+	mutex_lock(&tag_set->tag_list_lock);
+	if (!(tag_set->flags & BLK_MQ_F_DISABLE_FAIR_TAG_SHARING) == enable)
+		goto out_unlock;
+
+	tag_set->flags ^= BLK_MQ_F_DISABLE_FAIR_TAG_SHARING;
+	blk_mq_update_fair_tag_sharing(tag_set);
+
+out_unlock:
+	mutex_unlock(&tag_set->tag_list_lock);
+	return count;
+}
+static DEVICE_ATTR_RW(fair_sharing);
+
 static struct attribute *scsi_sysfs_shost_attrs[] = {
 	&dev_attr_use_blk_mq.attr,
 	&dev_attr_unique_id.attr,
@@ -421,6 +459,7 @@ static struct attribute *scsi_sysfs_shost_attrs[] = {
 	&dev_attr_host_reset.attr,
 	&dev_attr_eh_deadline.attr,
 	&dev_attr_nr_hw_queues.attr,
+	&dev_attr_fair_sharing.attr,
 	NULL
 };
 
