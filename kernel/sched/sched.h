@@ -99,7 +99,9 @@
 
 struct rq;
 struct cpuidle_state;
+#ifdef CONFIG_SCHED_STEAL
 struct sparsemask;
+#endif
 
 /* task_struct::on_rq states: */
 #define TASK_ON_RQ_QUEUED	1
@@ -1007,7 +1009,9 @@ struct rq {
 	struct cfs_rq		cfs;
 	struct rt_rq		rt;
 	struct dl_rq		dl;
+#ifdef CONFIG_SCHED_STEAL
 	struct sparsemask	*cfs_overload_cpus;
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this CPU: */
@@ -1139,6 +1143,7 @@ struct rq {
 	unsigned int		ttwu_count;
 	unsigned int		ttwu_local;
 
+#ifdef CONFIG_SCHED_STEAL
 	/* Idle search stats */
 	unsigned int		found_idle_cpu_capacity;
 	unsigned int		found_idle_cpu;
@@ -1147,6 +1152,7 @@ struct rq {
 	unsigned long		find_time;
 	unsigned int		steal;
 	unsigned int		steal_fail;
+#endif /* CONFIG_SCHED_STEAL */
 #endif
 
 #ifdef CONFIG_CPU_IDLE
@@ -1757,7 +1763,9 @@ this_rq_lock_irq(struct rq_flags *rf)
 }
 
 #ifdef CONFIG_NUMA
+#ifdef CONFIG_SCHED_STEAL
 extern struct static_key_true sched_steal_allow;
+#endif
 
 enum numa_topology_type {
 	NUMA_DIRECT,

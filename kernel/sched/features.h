@@ -52,11 +52,13 @@ SCHED_FEAT(TTWU_QUEUE, true)
 SCHED_FEAT(SIS_PROP, false)
 SCHED_FEAT(SIS_UTIL, true)
 
+#ifdef CONFIG_SCHED_STEAL
 /*
  * Steal a CFS task from another CPU when going idle.
  * Improves CPU utilization.
  */
 SCHED_FEAT(STEAL, false)
+#endif
 
 /*
  * Issue a WARN when we do multiple update_rq_clock() calls

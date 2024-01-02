@@ -62,7 +62,10 @@
 #include <linux/resume_user_mode.h>
 #endif
 
+#ifdef CONFIG_SCHED_STEAL
 #include "sparsemask.h"
+#endif
+
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -5091,6 +5094,8 @@ static inline void rq_idle_stamp_clear(struct rq *rq)
 	rq->idle_stamp = 0;
 }
 
+#ifdef CONFIG_SCHED_STEAL
+
 static inline bool steal_enabled(void)
 {
 #ifdef CONFIG_NUMA
@@ -5115,7 +5120,7 @@ static void overload_clear(struct rq *rq)
 	if (overload_cpus)
 		sparsemask_clear_elem(overload_cpus, rq->cpu);
 	rcu_read_unlock();
-	schedstat_end_time(rq->find_time, time);
+	schedstat_end_time(rq, time);
 }
 
 static void overload_set(struct rq *rq)
@@ -5132,10 +5137,15 @@ static void overload_set(struct rq *rq)
 	if (overload_cpus)
 		sparsemask_set_elem(overload_cpus, rq->cpu);
 	rcu_read_unlock();
-	schedstat_end_time(rq->find_time, time);
+	schedstat_end_time(rq, time);
 }
 
 static int try_steal(struct rq *this_rq, struct rq_flags *rf);
+#else
+static inline int try_steal(struct rq *this_rq, struct rq_flags *rf) { return 0; }
+static inline void overload_clear(struct rq *rq) {}
+static inline void overload_set(struct rq *rq) {}
+#endif
 
 #else /* CONFIG_SMP */
 
@@ -7592,6 +7602,7 @@ static inline bool asym_fits_cpu(unsigned long util,
 	return true;
 }
 
+#ifdef CONFIG_SCHED_STEAL
 #define SET_STAT(STAT)							\
 	do {								\
 		if (schedstat_enabled()) {				\
@@ -7601,6 +7612,9 @@ static inline bool asym_fits_cpu(unsigned long util,
 				__schedstat_inc(rq->STAT);		\
 		}							\
 	} while (0)
+#else
+#define SET_STAT(STAT)
+#endif
 
 /*
  * Try and locate an idle core/thread in the LLC cache domain.
@@ -8416,7 +8430,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
 	}
 	rcu_read_unlock();
-	schedstat_end_time(cpu_rq(cpu)->find_time, time);
+	schedstat_end_time(cpu_rq(cpu), time);
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	if (idlest_cpu != -1 && !cpumask_test_cpu(new_cpu, p->select_cpus)) {
@@ -9027,11 +9041,10 @@ idle:
 	new_tasks = newidle_balance(rq, rf);
 	if (new_tasks == 0)
 		new_tasks = try_steal(rq, rf);
+	schedstat_end_time(rq, time);
 
 	if (new_tasks)
 		rq_idle_stamp_clear(rq);
-
-	schedstat_end_time(rq->find_time, time);
 
 
 	/*
@@ -9540,6 +9553,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	return 0;
 }
 
+#ifdef CONFIG_SCHED_STEAL
 /*
  * Return true if task @p can migrate from @rq to @dst_rq in the same LLC.
  * No need to test for co-locality, and no need to test task_hot(), as sharing
@@ -9567,6 +9581,7 @@ can_migrate_task_llc(struct task_struct *p, struct rq *rq, struct rq *dst_rq)
 
 	return true;
 }
+#endif
 
 /*
  * detach_task() -- detach the task for the migration from @src_rq to @dst_cpu.
@@ -13167,6 +13182,7 @@ static int task_is_throttled_fair(struct task_struct *p, int cpu)
 static inline void task_tick_core(struct rq *rq, struct task_struct *curr) {}
 #endif
 
+#ifdef CONFIG_SCHED_STEAL
 /*
  * Search the runnable tasks in @cfs_rq in order of next to run, and find
  * the first one that can be migrated to @dst_rq.  @cfs_rq is locked on entry.
@@ -13315,6 +13331,7 @@ out:
 		schedstat_inc(dst_rq->steal_fail);
 	return stolen;
 }
+#endif
 
 /*
  * scheduler tick hitting a task of our scheduling class.

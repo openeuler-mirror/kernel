@@ -1315,6 +1315,21 @@ config NET_NS
 
 endif # NAMESPACES
 
+config SCHED_STEAL
+	bool "Steal tasks to improve CPU utilization"
+	depends on SMP
+	default n
+	help
+	  When a CPU has no more CFS tasks to run, and idle_balance() fails
+	  to find a task, then attempt to steal a task from an overloaded
+	  CPU in the same LLC. Maintain and use a bitmap of overloaded CPUs
+	  to efficiently identify candidates.  To minimize search time, steal
+	  the first migratable task that is found when the bitmap is traversed.
+	  For fairness, search for migratable tasks on an overloaded CPU in
+	  order of next to run.
+
+	  If unsure, say N here.
+
 config CHECKPOINT_RESTORE
 	bool "Checkpoint/restore support"
 	depends on PROC_FS
