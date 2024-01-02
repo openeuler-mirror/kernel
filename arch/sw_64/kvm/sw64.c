@@ -125,9 +125,6 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT("ipi_exits", ipi_exits),
 	VCPU_STAT("timer_exits", timer_exits),
 	VCPU_STAT("debug_exits", debug_exits),
-#ifdef CONFIG_KVM_MEMHOTPLUG
-	VCPU_STAT("memhotplug_exits", memhotplug_exits),
-#endif
 	VCPU_STAT("fatal_error_exits", fatal_error_exits),
 	VCPU_STAT("halt_exits", halt_exits),
 	VCPU_STAT("halt_successful_poll", halt_successful_poll),
