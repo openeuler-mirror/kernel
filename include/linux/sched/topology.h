@@ -82,6 +82,7 @@ struct sched_domain_shared {
 	atomic_t	nr_busy_cpus;
 	int		has_idle_cores;
 	int		nr_idle_scan;
+	struct sparsemask *cfs_overload_cpus;
 };
 
 struct sched_domain {

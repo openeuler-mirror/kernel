@@ -4,6 +4,8 @@
  */
 
 #include <linux/bsearch.h>
+#include "sched.h"
+#include "sparsemask.h"
 
 DEFINE_MUTEX(sched_domains_mutex);
 
@@ -682,7 +684,9 @@ DEFINE_STATIC_KEY_FALSE(sched_asym_cpucapacity);
 
 static void update_top_cache_domain(int cpu)
 {
+	struct sparsemask *cfs_overload_cpus = NULL;
 	struct sched_domain_shared *sds = NULL;
+	struct rq *rq = cpu_rq(cpu);
 	struct sched_domain *sd;
 	int id = cpu;
 	int size = 1;
@@ -692,8 +696,10 @@ static void update_top_cache_domain(int cpu)
 		id = cpumask_first(sched_domain_span(sd));
 		size = cpumask_weight(sched_domain_span(sd));
 		sds = sd->shared;
+		cfs_overload_cpus = sds->cfs_overload_cpus;
 	}
 
+	rcu_assign_pointer(rq->cfs_overload_cpus, cfs_overload_cpus);
 	rcu_assign_pointer(per_cpu(sd_llc, cpu), sd);
 	per_cpu(sd_llc_size, cpu) = size;
 	per_cpu(sd_llc_id, cpu) = id;
@@ -2298,7 +2304,22 @@ static void __sdt_free(const struct cpumask *cpu_map)
 
 static int sd_llc_alloc(struct sched_domain *sd)
 {
-	/* Allocate sd->shared data here. Empty for now. */
+	struct sched_domain_shared *sds = sd->shared;
+	struct cpumask *span = sched_domain_span(sd);
+	int nid = cpu_to_node(cpumask_first(span));
+	int flags = __GFP_ZERO | GFP_KERNEL;
+	struct sparsemask *mask;
+
+	/*
+	 * Allocate the bitmap if not already allocated.  This is called for
+	 * every CPU in the LLC but only allocates once per sd_llc_shared.
+	 */
+	if (!sds->cfs_overload_cpus) {
+		mask = sparsemask_alloc_node(nr_cpu_ids, 3, flags, nid);
+		if (!mask)
+			return 1;
+		sds->cfs_overload_cpus = mask;
+	}
 
 	return 0;
 }
@@ -2310,7 +2331,8 @@ static void sd_llc_free(struct sched_domain *sd)
 	if (!sds)
 		return;
 
-	/* Free data here. Empty for now. */
+	sparsemask_free(sds->cfs_overload_cpus);
+	sds->cfs_overload_cpus = NULL;
 }
 
 static int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d)
