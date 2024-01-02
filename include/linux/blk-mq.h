@@ -656,6 +656,7 @@ enum {
 	 */
 	BLK_MQ_F_STACKING	= 1 << 2,
 	BLK_MQ_F_TAG_HCTX_SHARED = 1 << 3,
+	BLK_MQ_F_DISABLE_FAIR_TAG_SHARING = 1 << 4,
 	BLK_MQ_F_BLOCKING	= 1 << 5,
 	/* Do not allow an I/O scheduler to be configured. */
 	BLK_MQ_F_NO_SCHED	= 1 << 6,
@@ -998,6 +999,7 @@ int blk_rq_append_bio(struct request *rq, struct bio *bio);
 void blk_execute_rq_nowait(struct request *rq, bool at_head);
 blk_status_t blk_execute_rq(struct request *rq, bool at_head);
 bool blk_rq_is_poll(struct request *rq);
+void blk_mq_update_fair_tag_sharing(struct blk_mq_tag_set *set);
 
 struct req_iterator {
 	struct bvec_iter iter;
