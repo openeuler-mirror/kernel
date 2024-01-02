@@ -46,6 +46,8 @@
 #include <asm/alternative.h>
 #include <asm/xen/swiotlb-xen.h>
 
+#include "internal.h"
+
 /*
  * We need to be able to catch inadvertent references to memstart_addr
  * that occur (potentially in generic code) before arm64_memblock_init()
@@ -309,6 +311,114 @@ static int __init early_mem(char *p)
 }
 early_param("mem", early_mem);
 
+struct memblock_region mbk_memmap_regions[MAX_RES_REGIONS] __initdata_memblock;
+int mbk_memmap_cnt __initdata;
+
+static void __init setup_mbk_memmap_regions(phys_addr_t base, phys_addr_t size)
+{
+	if (mbk_memmap_cnt >= MAX_RES_REGIONS) {
+		pr_err("Too many memmap specified, exceed %d\n", MAX_RES_REGIONS);
+		return;
+	}
+
+	mbk_memmap_regions[mbk_memmap_cnt].base = base;
+	mbk_memmap_regions[mbk_memmap_cnt].size = size;
+	mbk_memmap_cnt++;
+}
+
+static void __init reserve_memmap_regions(void)
+{
+	phys_addr_t base, size;
+	const char *str;
+	int i;
+
+	for (i = 0; i < mbk_memmap_cnt; i++) {
+		base = mbk_memmap_regions[i].base;
+		size = mbk_memmap_regions[i].size;
+		if (!memblock_is_region_memory(base, size)) {
+			str = "is not a memory region - ignore";
+			goto err;
+		}
+
+		if (memblock_is_region_reserved(base, size)) {
+			str = "overlaps in-use memory region - ignore";
+			goto err;
+		}
+
+		if (memblock_reserve(base, size)) {
+			str = "failed";
+			goto err;
+		}
+
+		pr_info("memmap reserved: 0x%08llx - 0x%08llx (%lld MB)",
+			base, base + size - 1, size >> 20);
+		continue;
+err:
+		mbk_memmap_regions[i].size = 0;
+		pr_warn("memmap reserve: 0x%08llx - 0x%08llx %s\n",
+			base, base + size - 1, str);
+	}
+}
+
+static int need_remove_real_memblock __initdata;
+
+static int __init parse_memmap_one(char *p)
+{
+	char *oldp;
+	u64 start_at, mem_size;
+
+	if (!p)
+		return -EINVAL;
+
+	if (!strncmp(p, "exactmap", 8)) {
+		need_remove_real_memblock = 1;
+		return -EINVAL;
+	}
+
+	oldp = p;
+	mem_size = memparse(p, &p);
+	if (p == oldp)
+		return -EINVAL;
+
+	if (!mem_size)
+		return -EINVAL;
+
+	if (*p == '@') {
+		start_at = memparse(p + 1, &p);
+		/*
+		 * use the exactmap defined by nn[KMG]@ss[KMG], remove
+		 * memblock populated by DT etc.
+		 */
+		if (need_remove_real_memblock) {
+			need_remove_real_memblock = 0;
+			memblock_remove(0, ULLONG_MAX);
+		}
+		memblock_add(start_at, mem_size);
+	} else if (*p == '$') {
+		start_at = memparse(p + 1, &p);
+		setup_mbk_memmap_regions(start_at, mem_size);
+	} else
+		pr_info("Unrecognized memmap option, please check the parameter.\n");
+
+	return *p == '\0' ? 0 : -EINVAL;
+}
+
+static int __init parse_memmap_opt(char *str)
+{
+	while (str) {
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		parse_memmap_one(str);
+		str = k;
+	}
+
+	return 0;
+}
+early_param("memmap", parse_memmap_opt);
+
 void __init arm64_memblock_init(void)
 {
 	s64 linear_region_size = PAGE_END - _PAGE_OFFSET(vabits_actual);
@@ -480,6 +590,8 @@ void __init bootmem_init(void)
 	 * reserved, so do it here.
 	 */
 	reserve_crashkernel();
+
+	reserve_memmap_regions();
 
 	memblock_dump_all();
 }
