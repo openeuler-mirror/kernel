@@ -542,7 +542,7 @@ void kvm_mark_migration(struct kvm *kvm, int mark)
 	int cpu;
 
 	kvm_for_each_vcpu(cpu, vcpu, kvm)
-		vcpu->arch.migration_mark = mark;
+		vcpu->arch.vcb.migration_mark = mark;
 }
 
 void kvm_arch_commit_memory_region(struct kvm *kvm,

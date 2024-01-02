@@ -98,7 +98,9 @@ struct vcpucb {
 	unsigned long ipaddr;
 	unsigned long vcpu_pc_save;
 	unsigned long shtclock_offset;
-	unsigned long reserved[8];
+	unsigned long migration_mark;
+	unsigned long shtclock;
+	unsigned long reserved[6];
 };
 #endif
 
