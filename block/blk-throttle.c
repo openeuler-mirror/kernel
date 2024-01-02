@@ -41,6 +41,31 @@
 /* A workqueue to queue throttle related work */
 static struct workqueue_struct *kthrotld_workqueue;
 
+#ifdef CONFIG_BLK_DEV_SUPPORT_LEGACY_GLOBAL_LIMIT
+/* True if global limit is enabled in cgroup v1 */
+static bool global_limit;
+
+static inline bool blkcg_global_limit_enabled(void)
+{
+	return global_limit;
+}
+
+static int __init setup_global_limit(char *str)
+{
+	if (!strcmp(str, "1") || !strcmp(str, "Y") || !strcmp(str, "y"))
+		global_limit = true;
+
+	return 1;
+}
+
+__setup("blkcg_global_limit=", setup_global_limit);
+
+#else
+static inline bool blkcg_global_limit_enabled(void)
+{
+	return false;
+}
+#endif
 #define rb_entry_tg(node)	rb_entry((node), struct throtl_grp, rb_node)
 
 /* We measure latency for request size from <= 4k to >= 1M */
@@ -405,7 +430,8 @@ static void throtl_pd_init(struct blkg_policy_data *pd)
 	 * regardless of the position of the group in the hierarchy.
 	 */
 	sq->parent_sq = &td->service_queue;
-	if (cgroup_subsys_on_dfl(io_cgrp_subsys) && blkg->parent)
+	if ((cgroup_subsys_on_dfl(io_cgrp_subsys) ||
+	     blkcg_global_limit_enabled()) && blkg->parent)
 		sq->parent_sq = &blkg_to_tg(blkg->parent)->service_queue;
 	tg->td = td;
 }

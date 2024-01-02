@@ -131,6 +131,17 @@ config BLK_DEV_THROTTLING_LOW
 
 	Note, this is an experimental interface and could be changed someday.
 
+config BLK_DEV_SUPPORT_LEGACY_GLOBAL_LIMIT
+	bool "Block layer global limit in cgroup v1"
+	depends on BLK_DEV_THROTTLING
+	default n
+	help
+	Blkio subsytem is not under default hierarchy in cgroup v1 by default,
+	enabling this will support globlal limit in cgroup v1.
+
+	Note, a cmdline "blkcg_global_limit=1" is still required to enabled this
+	feature.
+
 config BLK_WBT
 	bool "Enable support for block device writeback throttling"
 	help
