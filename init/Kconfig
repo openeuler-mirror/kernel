@@ -1031,6 +1031,15 @@ config QOS_SCHED
 
 	  If in doubt, say N.
 
+config QOS_SCHED_PRIO_LB
+	bool "Priority load balance for Qos scheduler"
+	depends on QOS_SCHED
+	default n
+	help
+	  This feature enable priority load balance
+	  for Qos scheduler, which prefer migrating online tasks
+	  and migrating offline tasks secondly between CPUs.
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED
