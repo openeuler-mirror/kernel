@@ -36,6 +36,7 @@ static inline void harden_branch_predictor(void)
 #define UDBG_BUS	(1 << 4)
 
 extern unsigned int user_debug;
+extern int nospectre_v2;
 
 #endif /* !__ASSEMBLY__ */
 

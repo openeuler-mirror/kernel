@@ -113,14 +113,23 @@ ENTRY(cpu_v7_hvc_switch_mm)
 	b	cpu_v7_switch_mm
 ENDPROC(cpu_v7_hvc_switch_mm)
 #endif
+
 ENTRY(cpu_v7_iciallu_switch_mm)
+	ldr_l r3, nospectre_v2
+	cmp r3, #1
+	beq 1f
 	mov	r3, #0
 	mcr	p15, 0, r3, c7, c5, 0		@ ICIALLU
+1:
 	b	cpu_v7_switch_mm
 ENDPROC(cpu_v7_iciallu_switch_mm)
 ENTRY(cpu_v7_bpiall_switch_mm)
+	ldr_l r3, nospectre_v2
+	cmp r3, #1
+	beq 1f
 	mov	r3, #0
 	mcr	p15, 0, r3, c7, c5, 6		@ flush BTAC/BTB
+1:
 	b	cpu_v7_switch_mm
 ENDPROC(cpu_v7_bpiall_switch_mm)
 
