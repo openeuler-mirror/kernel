@@ -925,6 +925,14 @@ void nmi_shootdown_cpus(nmi_shootdown_cb callback)
 
 	msecs = 1000; /* Wait at most a second for the other cpus to stop */
 	while ((atomic_read(&waiting_for_crash_ipi) > 0) && msecs) {
+		/*
+		 * If other cpus offline before handle the crash NMI, the
+		 * waiting_for_crash_ipi can not be decreased to 0, and
+		 * current cpu will wait 1 second. So break if all other
+		 * cpus offline.
+		 */
+		if (num_online_cpus() == 1)
+			break;
 		mdelay(1);
 		msecs--;
 	}
