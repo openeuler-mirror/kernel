@@ -4,12 +4,28 @@
  */
 
 #include <linux/bsearch.h>
+#include "sched.h"
+#ifdef CONFIG_SCHED_STEAL
+#include "sparsemask.h"
+#endif
 
 DEFINE_MUTEX(sched_domains_mutex);
 
 /* Protected by sched_domains_mutex: */
 static cpumask_var_t sched_domains_tmpmask;
 static cpumask_var_t sched_domains_tmpmask2;
+
+struct s_data;
+#ifdef CONFIG_SCHED_STEAL
+static int sd_llc_alloc(struct sched_domain *sd);
+static void sd_llc_free(struct sched_domain *sd);
+static int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d);
+static void sd_llc_free_all(const struct cpumask *cpu_map);
+#else
+static inline void sd_llc_free(struct sched_domain *sd) {}
+static inline int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d) { return 0; }
+static inline void sd_llc_free_all(const struct cpumask *cpu_map) {}
+#endif
 
 #ifdef CONFIG_SCHED_DEBUG
 
@@ -632,8 +648,10 @@ static void destroy_sched_domain(struct sched_domain *sd)
 	 */
 	free_sched_groups(sd->groups, 1);
 
-	if (sd->shared && atomic_dec_and_test(&sd->shared->ref))
+	if (sd->shared && atomic_dec_and_test(&sd->shared->ref)) {
+		sd_llc_free(sd);
 		kfree(sd->shared);
+	}
 	kfree(sd);
 }
 
@@ -674,6 +692,10 @@ DEFINE_STATIC_KEY_FALSE(sched_asym_cpucapacity);
 
 static void update_top_cache_domain(int cpu)
 {
+#ifdef CONFIG_SCHED_STEAL
+	struct rq *rq = cpu_rq(cpu);
+	struct sparsemask *cfs_overload_cpus = NULL;
+#endif
 	struct sched_domain_shared *sds = NULL;
 	struct sched_domain *sd;
 	int id = cpu;
@@ -684,8 +706,14 @@ static void update_top_cache_domain(int cpu)
 		id = cpumask_first(sched_domain_span(sd));
 		size = cpumask_weight(sched_domain_span(sd));
 		sds = sd->shared;
+#ifdef CONFIG_SCHED_STEAL
+		cfs_overload_cpus = sds->cfs_overload_cpus;
+#endif
 	}
 
+#ifdef CONFIG_SCHED_STEAL
+	rcu_assign_pointer(rq->cfs_overload_cpus, cfs_overload_cpus);
+#endif
 	rcu_assign_pointer(per_cpu(sd_llc, cpu), sd);
 	per_cpu(sd_llc_size, cpu) = size;
 	per_cpu(sd_llc_id, cpu) = id;
@@ -1473,6 +1501,7 @@ static void __free_domain_allocs(struct s_data *d, enum s_alloc what,
 		free_percpu(d->sd);
 		fallthrough;
 	case sa_sd_storage:
+		sd_llc_free_all(cpu_map);
 		__sdt_free(cpu_map);
 		fallthrough;
 	case sa_none:
@@ -1816,6 +1845,33 @@ static void init_numa_topology_type(int offline_node)
 	sched_numa_topology_type = NUMA_DIRECT;
 }
 
+#ifdef CONFIG_SCHED_STEAL
+DEFINE_STATIC_KEY_TRUE(sched_steal_allow);
+static int sched_steal_node_limit;
+#define SCHED_STEAL_NODE_LIMIT_DEFAULT 2
+
+static int __init steal_node_limit_setup(char *buf)
+{
+	get_option(&buf, &sched_steal_node_limit);
+	return 0;
+}
+
+early_param("sched_steal_node_limit", steal_node_limit_setup);
+
+static void check_node_limit(void)
+{
+	int n = num_possible_nodes();
+
+	if (sched_steal_node_limit == 0)
+		sched_steal_node_limit = SCHED_STEAL_NODE_LIMIT_DEFAULT;
+	if (n > sched_steal_node_limit) {
+		static_branch_disable(&sched_steal_allow);
+		pr_debug("Suppressing sched STEAL. To enable, reboot with sched_steal_node_limit=%d", n);
+	}
+}
+#else
+static inline void check_node_limit(void) { }
+#endif /* CONFIG_SCHED_STEAL */
 
 #define NR_DISTANCE_VALUES (1 << DISTANCE_BITS)
 
@@ -1966,6 +2022,7 @@ void sched_init_numa(int offline_node)
 	WRITE_ONCE(sched_max_numa_distance, sched_domains_numa_distance[nr_levels - 1]);
 
 	init_numa_topology_type(offline_node);
+	check_node_limit();
 }
 
 
@@ -2287,6 +2344,80 @@ static void __sdt_free(const struct cpumask *cpu_map)
 	}
 }
 
+#ifdef CONFIG_SCHED_STEAL
+static int sd_llc_alloc(struct sched_domain *sd)
+{
+	struct sched_domain_shared *sds = sd->shared;
+	struct cpumask *span = sched_domain_span(sd);
+	int nid = cpu_to_node(cpumask_first(span));
+	int flags = __GFP_ZERO | GFP_KERNEL;
+	struct sparsemask *mask;
+
+	/*
+	 * Allocate the bitmap if not already allocated.  This is called for
+	 * every CPU in the LLC but only allocates once per sd_llc_shared.
+	 */
+	if (!sds->cfs_overload_cpus) {
+		mask = sparsemask_alloc_node(nr_cpu_ids, 3, flags, nid);
+		if (!mask)
+			return 1;
+		sds->cfs_overload_cpus = mask;
+	}
+
+	return 0;
+}
+
+static void sd_llc_free(struct sched_domain *sd)
+{
+	struct sched_domain_shared *sds = sd->shared;
+
+	if (!sds)
+		return;
+
+	sparsemask_free(sds->cfs_overload_cpus);
+	sds->cfs_overload_cpus = NULL;
+}
+
+static int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d)
+{
+	struct sched_domain *sd, *hsd;
+	int i;
+
+	for_each_cpu(i, cpu_map) {
+		/* Find highest domain that shares resources */
+		hsd = NULL;
+		for (sd = *per_cpu_ptr(d->sd, i); sd; sd = sd->parent) {
+			if (!(sd->flags & SD_SHARE_PKG_RESOURCES))
+				break;
+			hsd = sd;
+		}
+		if (hsd && sd_llc_alloc(hsd))
+			return 1;
+	}
+
+	return 0;
+}
+
+static void sd_llc_free_all(const struct cpumask *cpu_map)
+{
+	struct sched_domain_topology_level *tl;
+	struct sched_domain *sd;
+	struct sd_data *sdd;
+	int j;
+
+	for_each_sd_topology(tl) {
+		sdd = &tl->data;
+		if (!sdd || !sdd->sd)
+			continue;
+		for_each_cpu(j, cpu_map) {
+			sd = *per_cpu_ptr(sdd->sd, j);
+			if (sd)
+				sd_llc_free(sd);
+		}
+	}
+}
+#endif
+
 static struct sched_domain *build_sched_domain(struct sched_domain_topology_level *tl,
 		const struct cpumask *cpu_map, struct sched_domain_attr *attr,
 		struct sched_domain *child, int cpu)
@@ -2479,6 +2610,14 @@ build_sched_domains(const struct cpumask *cpu_map, struct sched_domain_attr *att
 			init_sched_groups_capacity(i, sd);
 		}
 	}
+
+	/*
+	 * Allocate shared sd data at last level cache.  Must be done after
+	 * domains are built above, but before the data is used in
+	 * cpu_attach_domain and descendants below.
+	 */
+	if (sd_llc_alloc_all(cpu_map, &d))
+		goto error;
 
 	/* Attach the domains */
 	rcu_read_lock();

@@ -43,6 +43,24 @@ rq_sched_info_dequeue(struct rq *rq, unsigned long long delta)
 #define   schedstat_set(var, val)	do { if (schedstat_enabled()) { var = (val); } } while (0)
 #define   schedstat_val(var)		(var)
 #define   schedstat_val_or_zero(var)	((schedstat_enabled()) ? (var) : 0)
+#ifdef CONFIG_SCHED_STEAL
+#define   schedstat_start_time()	schedstat_val_or_zero(local_clock())
+#define   __schedstat_end_time(stat, time)			\
+	do {							\
+		unsigned long endtime;				\
+								\
+		if (schedstat_enabled() && (time)) {		\
+			endtime = local_clock() - (time) - schedstat_skid; \
+			schedstat_add((stat), endtime);		\
+		}						\
+	} while (0)
+#define   schedstat_end_time(rq, time)				\
+	__schedstat_end_time(((rq)->find_time), time)
+extern unsigned long schedstat_skid;
+#else /* !CONFIG_SCHED_STEAL */
+# define   schedstat_start_time()	0
+# define   schedstat_end_time(rq, t)	do { } while (0)
+#endif /* CONFIG_SCHED_STEAL */
 
 void __update_stats_wait_start(struct rq *rq, struct task_struct *p,
 			       struct sched_statistics *stats);
@@ -87,6 +105,8 @@ static inline void rq_sched_info_depart  (struct rq *rq, unsigned long long delt
 # define __update_stats_enqueue_sleeper(rq, p, stats)  do { } while (0)
 # define check_schedstat_required()                    do { } while (0)
 
+# define   schedstat_start_time()	0
+# define   schedstat_end_time(rq, t)	do { } while (0)
 #endif /* CONFIG_SCHEDSTATS */
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

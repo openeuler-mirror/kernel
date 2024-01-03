@@ -4609,17 +4609,48 @@ static int sysctl_numa_balancing(struct ctl_table *table, int write,
 
 DEFINE_STATIC_KEY_FALSE(sched_schedstats);
 
+#ifdef CONFIG_SCHED_STEAL
+unsigned long schedstat_skid;
+
+static void compute_skid(void)
+{
+	int i, n = 0;
+	s64 t;
+	int skid = 0;
+
+	for (i = 0; i < 100; i++) {
+		t = local_clock();
+		t = local_clock() - t;
+		if (t > 0 && t < 1000) {	/* only use sane samples */
+			skid += (int) t;
+			n++;
+		}
+	}
+
+	if (n > 0)
+		schedstat_skid = skid / n;
+	else
+		schedstat_skid = 0;
+	pr_info("schedstat_skid = %lu\n", schedstat_skid);
+}
+#else
+static inline void compute_skid(void) {}
+#endif
+
 static void set_schedstats(bool enabled)
 {
-	if (enabled)
+	if (enabled) {
+		compute_skid();
 		static_branch_enable(&sched_schedstats);
-	else
+	} else {
 		static_branch_disable(&sched_schedstats);
+	}
 }
 
 void force_schedstat_enabled(void)
 {
 	if (!schedstat_enabled()) {
+		compute_skid();
 		pr_info("kernel profiling enabled schedstats, disable via kernel.sched_schedstats.\n");
 		static_branch_enable(&sched_schedstats);
 	}

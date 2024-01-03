@@ -62,6 +62,10 @@
 #include <linux/resume_user_mode.h>
 #endif
 
+#ifdef CONFIG_SCHED_STEAL
+#include "sparsemask.h"
+#endif
+
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -5080,6 +5084,69 @@ static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
 	rq->misfit_task_load = max_t(unsigned long, task_h_load(p), 1);
 }
 
+static inline void rq_idle_stamp_update(struct rq *rq)
+{
+	rq->idle_stamp = rq_clock(rq);
+}
+
+static inline void rq_idle_stamp_clear(struct rq *rq)
+{
+	rq->idle_stamp = 0;
+}
+
+#ifdef CONFIG_SCHED_STEAL
+
+static inline bool steal_enabled(void)
+{
+#ifdef CONFIG_NUMA
+	bool allow = static_branch_likely(&sched_steal_allow);
+#else
+	bool allow = true;
+#endif
+	return sched_feat(STEAL) && allow;
+}
+
+static void overload_clear(struct rq *rq)
+{
+	struct sparsemask *overload_cpus;
+	unsigned long time;
+
+	if (!steal_enabled())
+		return;
+
+	time = schedstat_start_time();
+	rcu_read_lock();
+	overload_cpus = rcu_dereference(rq->cfs_overload_cpus);
+	if (overload_cpus)
+		sparsemask_clear_elem(overload_cpus, rq->cpu);
+	rcu_read_unlock();
+	schedstat_end_time(rq, time);
+}
+
+static void overload_set(struct rq *rq)
+{
+	struct sparsemask *overload_cpus;
+	unsigned long time;
+
+	if (!steal_enabled())
+		return;
+
+	time = schedstat_start_time();
+	rcu_read_lock();
+	overload_cpus = rcu_dereference(rq->cfs_overload_cpus);
+	if (overload_cpus)
+		sparsemask_set_elem(overload_cpus, rq->cpu);
+	rcu_read_unlock();
+	schedstat_end_time(rq, time);
+}
+
+static int try_steal(struct rq *this_rq, struct rq_flags *rf);
+#else
+static inline int try_steal(struct rq *this_rq, struct rq_flags *rf) { return 0; }
+static inline void overload_clear(struct rq *rq) {}
+static inline void overload_set(struct rq *rq) {}
+#endif
+
 #else /* CONFIG_SMP */
 
 static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
@@ -5108,6 +5175,12 @@ static inline int newidle_balance(struct rq *rq, struct rq_flags *rf)
 {
 	return 0;
 }
+
+static inline void rq_idle_stamp_update(struct rq *rq) {}
+static inline void rq_idle_stamp_clear(struct rq *rq) {}
+static inline int try_steal(struct rq *this_rq, struct rq_flags *rf) { return 0; }
+static inline void overload_clear(struct rq *rq) {}
+static inline void overload_set(struct rq *rq) {}
 
 static inline void
 util_est_enqueue(struct cfs_rq *cfs_rq, struct task_struct *p) {}
@@ -5712,6 +5785,7 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
+	unsigned int prev_nr = rq->cfs.h_nr_running;
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta, dequeue = 1;
@@ -5785,6 +5859,8 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* At this point se is NULL and we are at root level*/
 	sub_nr_running(rq, task_delta);
+	if (prev_nr >= 2 && prev_nr - task_delta < 2)
+		overload_clear(rq);
 
 done:
 	/*
@@ -5801,6 +5877,7 @@ done:
 void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
+	unsigned int prev_nr = rq->cfs.h_nr_running;
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
@@ -5883,6 +5960,8 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* At this point se is NULL and we are at root level*/
 	add_nr_running(rq, task_delta);
+	if (prev_nr < 2 && prev_nr + task_delta >= 2)
+		overload_set(rq);
 
 unthrottle_throttle:
 	assert_list_leaf_cfs_rq(rq);
@@ -6695,6 +6774,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int idle_h_nr_running = task_has_idle_policy(p);
 	int task_new = !(flags & ENQUEUE_WAKEUP);
+	unsigned int prev_nr = rq->cfs.h_nr_running;
 
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
@@ -6751,6 +6831,8 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	/* At this point se is NULL and we are at root level*/
 	add_nr_running(rq, 1);
+	if (prev_nr == 1)
+		overload_set(rq);
 
 	/*
 	 * Since new tasks are assigned an initial util_avg equal to
@@ -6788,6 +6870,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	struct sched_entity *se = &p->se;
 	int task_sleep = flags & DEQUEUE_SLEEP;
 	int idle_h_nr_running = task_has_idle_policy(p);
+	unsigned int prev_nr = rq->cfs.h_nr_running;
 	bool was_sched_idle = sched_idle_rq(rq);
 
 	util_est_dequeue(&rq->cfs, p);
@@ -6842,6 +6925,8 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	/* At this point se is NULL and we are at root level*/
 	sub_nr_running(rq, 1);
+	if (prev_nr == 2)
+		overload_clear(rq);
 
 	/* balance early to pull high priority tasks */
 	if (unlikely(!was_sched_idle && sched_idle_rq(rq)))
@@ -7517,6 +7602,20 @@ static inline bool asym_fits_cpu(unsigned long util,
 	return true;
 }
 
+#ifdef CONFIG_SCHED_STEAL
+#define SET_STAT(STAT)							\
+	do {								\
+		if (schedstat_enabled()) {				\
+			struct rq *rq = this_rq();			\
+									\
+			if (rq)						\
+				__schedstat_inc(rq->STAT);		\
+		}							\
+	} while (0)
+#else
+#define SET_STAT(STAT)
+#endif
+
 /*
  * Try and locate an idle core/thread in the LLC cache domain.
  */
@@ -7547,8 +7646,10 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	    cpumask_test_cpu(target, p->select_cpus) &&
 #endif
-	    asym_fits_cpu(task_util, util_min, util_max, target))
+	    asym_fits_cpu(task_util, util_min, util_max, target)) {
+		SET_STAT(found_idle_cpu_easy);
 		return target;
+	}
 
 	/*
 	 * If the previous CPU is cache affine and idle, don't be stupid:
@@ -7558,8 +7659,10 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	    cpumask_test_cpu(prev, p->select_cpus) &&
 #endif
-	    asym_fits_cpu(task_util, util_min, util_max, prev))
+	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+		SET_STAT(found_idle_cpu_easy);
 		return prev;
+	}
 
 	/*
 	 * Allow a per-cpu kthread to stack with the wakee if the
@@ -7574,6 +7677,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    prev == smp_processor_id() &&
 	    this_rq()->nr_running <= 1 &&
 	    asym_fits_cpu(task_util, util_min, util_max, prev)) {
+		SET_STAT(found_idle_cpu_easy);
 		return prev;
 	}
 
@@ -7590,6 +7694,11 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    cpumask_test_cpu(recent_used_cpu, p->cpus_ptr) &&
 #endif
 	    asym_fits_cpu(task_util, util_min, util_max, recent_used_cpu)) {
+		/*
+		 * Replace recent_used_cpu with prev as it is a potential
+		 * candidate for the next wake:
+		 */
+		SET_STAT(found_idle_cpu_easy);
 		return recent_used_cpu;
 	}
 
@@ -7609,13 +7718,16 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		 */
 		if (sd) {
 			i = select_idle_capacity(p, sd, target);
+			SET_STAT(found_idle_cpu_capacity);
 			return ((unsigned)i < nr_cpumask_bits) ? i : target;
 		}
 	}
 
 	sd = rcu_dereference(per_cpu(sd_llc, target));
-	if (!sd)
+	if (!sd) {
+		SET_STAT(nofound_idle_cpu);
 		return target;
+	}
 
 	if (sched_smt_active()) {
 		has_idle_core = test_idle_cores(target);
@@ -7628,9 +7740,12 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	}
 
 	i = select_idle_cpu(p, sd, has_idle_core, target);
-	if ((unsigned)i < nr_cpumask_bits)
+	if ((unsigned)i < nr_cpumask_bits) {
+		SET_STAT(found_idle_cpu);
 		return i;
+	}
 
+	SET_STAT(nofound_idle_cpu);
 	return target;
 }
 
@@ -8232,6 +8347,7 @@ static int
 select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 {
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+	unsigned long time;
 	struct sched_domain *tmp, *sd = NULL;
 	int cpu = smp_processor_id();
 	int new_cpu = prev_cpu;
@@ -8241,6 +8357,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	int idlest_cpu = -1;
 #endif
+
+	time = schedstat_start_time();
 
 	/*
 	 * required for stable ->cpus_allowed
@@ -8312,6 +8430,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		new_cpu = select_idle_sibling(p, prev_cpu, new_cpu);
 	}
 	rcu_read_unlock();
+	schedstat_end_time(cpu_rq(cpu), time);
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	if (idlest_cpu != -1 && !cpumask_test_cpu(new_cpu, p->select_cpus)) {
@@ -8475,6 +8594,7 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
+	unsigned int prev_nr = cfs_rq->h_nr_running;
 
 	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
 
@@ -8521,6 +8641,8 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* At this point se is NULL and we are at root level*/
 	sub_nr_running(rq, task_delta);
+	if (prev_nr >= 2 && prev_nr - task_delta < 2)
+		overload_clear(rq);
 
 done:
 	if (list_empty(&per_cpu(qos_throttled_cfs_rq, cpu_of(rq))))
@@ -8536,6 +8658,7 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
+	unsigned int prev_nr = cfs_rq->h_nr_running;
 	long task_delta, idle_task_delta;
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
@@ -8598,6 +8721,8 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	}
 
 	add_nr_running(rq, task_delta);
+	if (prev_nr < 2 && prev_nr + task_delta >= 2)
+		overload_set(rq);
 
 unthrottle_throttle:
 
@@ -8774,6 +8899,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
+	unsigned long time;
 
 again:
 	if (!sched_fair_runnable(rq))
@@ -8904,12 +9030,27 @@ idle:
 	if (!rf)
 		return NULL;
 
-	new_tasks = newidle_balance(rq, rf);
+	time = schedstat_start_time();
 
 	/*
-	 * Because newidle_balance() releases (and re-acquires) rq->lock, it is
-	 * possible for any higher priority task to appear. In that case we
-	 * must re-start the pick_next_entity() loop.
+	 * We must set idle_stamp _before_ calling try_steal() or
+	 * idle_balance(), such that we measure the duration as idle time.
+	 */
+	rq_idle_stamp_update(rq);
+
+	new_tasks = newidle_balance(rq, rf);
+	if (new_tasks == 0)
+		new_tasks = try_steal(rq, rf);
+	schedstat_end_time(rq, time);
+
+	if (new_tasks)
+		rq_idle_stamp_clear(rq);
+
+
+	/*
+	 * Because try_steal() and idle_balance() release (and re-acquire)
+	 * rq->lock, it is possible for any higher priority task to appear.
+	 * In that case we must re-start the pick_next_entity() loop.
 	 */
 	if (new_tasks < 0)
 		return RETRY_TASK;
@@ -9412,15 +9553,45 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	return 0;
 }
 
+#ifdef CONFIG_SCHED_STEAL
 /*
- * detach_task() -- detach the task for the migration specified in env
+ * Return true if task @p can migrate from @rq to @dst_rq in the same LLC.
+ * No need to test for co-locality, and no need to test task_hot(), as sharing
+ * LLC provides cache warmth at that level.
  */
-static void detach_task(struct task_struct *p, struct lb_env *env)
+static bool
+can_migrate_task_llc(struct task_struct *p, struct rq *rq, struct rq *dst_rq)
 {
-	lockdep_assert_rq_held(env->src_rq);
+	int dst_cpu = dst_rq->cpu;
 
-	deactivate_task(env->src_rq, p, DEQUEUE_NOCLOCK);
-	set_task_cpu(p, env->dst_cpu);
+	lockdep_assert_rq_held(rq);
+
+	if (throttled_lb_pair(task_group(p), cpu_of(rq), dst_cpu))
+		return false;
+
+	if (!cpumask_test_cpu(dst_cpu, p->cpus_ptr)) {
+		schedstat_inc(p->stats.nr_failed_migrations_affine);
+		return false;
+	}
+
+	if (task_on_cpu(rq, p)) {
+		schedstat_inc(p->stats.nr_failed_migrations_running);
+		return false;
+	}
+
+	return true;
+}
+#endif
+
+/*
+ * detach_task() -- detach the task for the migration from @src_rq to @dst_cpu.
+ */
+static void detach_task(struct task_struct *p, struct rq *src_rq, int dst_cpu)
+{
+	lockdep_assert_rq_held(src_rq);
+
+	deactivate_task(src_rq, p, DEQUEUE_NOCLOCK);
+	set_task_cpu(p, dst_cpu);
 }
 
 /*
@@ -9440,7 +9611,7 @@ static struct task_struct *detach_one_task(struct lb_env *env)
 		if (!can_migrate_task(p, env))
 			continue;
 
-		detach_task(p, env);
+		detach_task(p, env->src_rq, env->dst_cpu);
 
 		/*
 		 * Right now, this is only the second place where
@@ -9559,7 +9730,7 @@ static int detach_tasks(struct lb_env *env)
 			break;
 		}
 
-		detach_task(p, env);
+		detach_task(p, env->src_rq, env->dst_cpu);
 		list_add(&p->se.group_node, &env->tasks);
 
 		detached++;
@@ -12727,12 +12898,6 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 		return 0;
 
 	/*
-	 * We must set idle_stamp _before_ calling idle_balance(), such that we
-	 * measure the duration of idle_balance() as idle time.
-	 */
-	this_rq->idle_stamp = rq_clock(this_rq);
-
-	/*
 	 * Do not pull tasks towards !active CPUs...
 	 */
 	if (!cpu_active(this_cpu))
@@ -12821,9 +12986,7 @@ out:
 	if (time_after(this_rq->next_balance, next_balance))
 		this_rq->next_balance = next_balance;
 
-	if (pulled_task)
-		this_rq->idle_stamp = 0;
-	else
+	if (!pulled_task)
 		nohz_newidle_balance(this_rq);
 
 	rq_repin_lock(this_rq, rf);
@@ -13017,6 +13180,157 @@ static int task_is_throttled_fair(struct task_struct *p, int cpu)
 }
 #else
 static inline void task_tick_core(struct rq *rq, struct task_struct *curr) {}
+#endif
+
+#ifdef CONFIG_SCHED_STEAL
+/*
+ * Search the runnable tasks in @cfs_rq in order of next to run, and find
+ * the first one that can be migrated to @dst_rq.  @cfs_rq is locked on entry.
+ * On success, dequeue the task from @cfs_rq and return it, else return NULL.
+ */
+static struct task_struct *
+detach_next_task(struct cfs_rq *cfs_rq, struct rq *dst_rq)
+{
+	int dst_cpu = dst_rq->cpu;
+	struct task_struct *p;
+	struct rq *rq = rq_of(cfs_rq);
+
+	lockdep_assert_rq_held(rq);
+
+	list_for_each_entry_reverse(p, &rq->cfs_tasks, se.group_node) {
+		if (can_migrate_task_llc(p, rq, dst_rq)) {
+			detach_task(p, rq, dst_cpu);
+			return p;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Attempt to migrate a CFS task from @src_cpu to @dst_rq.  @locked indicates
+ * whether @dst_rq is already locked on entry.  This function may lock or
+ * unlock @dst_rq, and updates @locked to indicate the locked state on return.
+ * The locking protocol is based on idle_balance().
+ * Returns 1 on success and 0 on failure.
+ */
+static int steal_from(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
+		      int src_cpu)
+{
+	struct task_struct *p;
+	struct rq_flags rf;
+	int stolen = 0;
+	int dst_cpu = dst_rq->cpu;
+	struct rq *src_rq = cpu_rq(src_cpu);
+
+	if (dst_cpu == src_cpu || src_rq->cfs.h_nr_running < 2)
+		return 0;
+
+	if (*locked) {
+		rq_unpin_lock(dst_rq, dst_rf);
+		raw_spin_rq_unlock(dst_rq);
+		*locked = false;
+	}
+	rq_lock_irqsave(src_rq, &rf);
+	update_rq_clock(src_rq);
+
+	if (src_rq->cfs.h_nr_running < 2 || !cpu_active(src_cpu))
+		p = NULL;
+	else
+		p = detach_next_task(&src_rq->cfs, dst_rq);
+
+	rq_unlock(src_rq, &rf);
+
+	if (p) {
+		raw_spin_rq_lock(dst_rq);
+		rq_repin_lock(dst_rq, dst_rf);
+		*locked = true;
+		update_rq_clock(dst_rq);
+		attach_task(dst_rq, p);
+		stolen = 1;
+		schedstat_inc(dst_rq->steal);
+	}
+	local_irq_restore(rf.flags);
+
+	return stolen;
+}
+
+/*
+ * Conservative upper bound on the max cost of a steal, in nsecs (the typical
+ * cost is 1-2 microsec).  Do not steal if average idle time is less.
+ */
+#define SCHED_STEAL_COST 10000
+
+/*
+ * Try to steal a runnable CFS task from a CPU in the same LLC as @dst_rq,
+ * and migrate it to @dst_rq.  rq_lock is held on entry and return, but
+ * may be dropped in between.  Return 1 on success, 0 on failure, and -1
+ * if a task in a different scheduling class has become runnable on @dst_rq.
+ */
+static int try_steal(struct rq *dst_rq, struct rq_flags *dst_rf)
+{
+	int src_cpu;
+	int dst_cpu = dst_rq->cpu;
+	bool locked = true;
+	int stolen = 0;
+	bool any_overload = false;
+	struct sparsemask *overload_cpus;
+
+	if (!steal_enabled())
+		return 0;
+
+	if (!cpu_active(dst_cpu))
+		return 0;
+
+	if (dst_rq->avg_idle < SCHED_STEAL_COST)
+		return 0;
+
+	/* Get bitmap of overloaded CPUs in the same LLC as @dst_rq */
+
+	rcu_read_lock();
+	overload_cpus = rcu_dereference(dst_rq->cfs_overload_cpus);
+	if (!overload_cpus) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+#ifdef CONFIG_SCHED_SMT
+	/*
+	 * First try overloaded CPUs on the same core to preserve cache warmth.
+	 */
+	if (static_branch_likely(&sched_smt_present)) {
+		for_each_cpu(src_cpu, cpu_smt_mask(dst_cpu)) {
+			if (sparsemask_test_elem(overload_cpus, src_cpu) &&
+			    steal_from(dst_rq, dst_rf, &locked, src_cpu)) {
+				stolen = 1;
+				goto out;
+			}
+		}
+	}
+#endif	/* CONFIG_SCHED_SMT */
+
+	/* Accept any suitable task in the LLC */
+
+	sparsemask_for_each(overload_cpus, dst_cpu, src_cpu) {
+		if (steal_from(dst_rq, dst_rf, &locked, src_cpu)) {
+			stolen = 1;
+			goto out;
+		}
+		any_overload = true;
+	}
+
+out:
+	rcu_read_unlock();
+	if (!locked) {
+		raw_spin_rq_lock(dst_rq);
+		rq_repin_lock(dst_rq, dst_rf);
+	}
+	stolen |= (dst_rq->cfs.h_nr_running > 0);
+	if (dst_rq->nr_running != dst_rq->cfs.h_nr_running)
+		stolen = -1;
+	if (!stolen && any_overload)
+		schedstat_inc(dst_rq->steal_fail);
+	return stolen;
+}
 #endif
 
 /*
