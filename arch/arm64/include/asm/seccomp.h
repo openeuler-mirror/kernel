@@ -52,10 +52,10 @@ static inline const int *get_compat_mode1_syscalls(void)
 #define SECCOMP_ARCH_NATIVE		AUDIT_ARCH_AARCH64
 #define SECCOMP_ARCH_NATIVE_NR		NR_syscalls
 #define SECCOMP_ARCH_NATIVE_NAME	"aarch64"
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 # define SECCOMP_ARCH_COMPAT		AUDIT_ARCH_ARM
 # define SECCOMP_ARCH_COMPAT_NR	__NR_compat_syscalls
 # define SECCOMP_ARCH_COMPAT_NAME	"arm"
-#endif
+#endif /* CONFIG_AARCH32_EL0 */
 
 #endif /* _ASM_SECCOMP_H */
