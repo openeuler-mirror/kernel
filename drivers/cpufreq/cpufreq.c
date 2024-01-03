@@ -2821,7 +2821,11 @@ static void smart_grid_work_handler(struct work_struct *work)
 		return;
 	}
 
-	for (gov_index = 0; gov_index < SMART_GRID_ZONE_NR; gov_index++) {
+	/*
+	 * Because of the policy may be shared between hot and warm zone.
+	 * We need to make sure hot zone have the highest priority.
+	 */
+	for (gov_index = SMART_GRID_ZONE_NR - 1; gov_index >= 0; gov_index--) {
 		target_gov = cpufreq_parse_governor(sg_zone.governor_name[gov_index]);
 		if (target_gov == NULL)
 			continue;
