@@ -5,7 +5,7 @@
 #include <linux/jump_label.h>
 #include <linux/static_call_types.h>
 
-#ifdef CONFIG_LIVEPATCH
+#ifdef CONFIG_LIVEPATCH_FTRACE
 
 void __klp_sched_try_switch(void);
 
@@ -21,9 +21,9 @@ static __always_inline void klp_sched_try_switch(void)
 
 #endif /* !CONFIG_PREEMPT_DYNAMIC || !CONFIG_HAVE_PREEMPT_DYNAMIC_CALL */
 
-#else /* !CONFIG_LIVEPATCH */
+#else /* !CONFIG_LIVEPATCH_FTRACE */
 static inline void klp_sched_try_switch(void) {}
 static inline void __klp_sched_try_switch(void) {}
-#endif /* CONFIG_LIVEPATCH */
+#endif /* CONFIG_LIVEPATCH_FTRACE */
 
 #endif /* _LINUX_LIVEPATCH_SCHED_H_ */

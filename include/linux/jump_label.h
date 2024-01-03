@@ -235,6 +235,9 @@ extern void static_key_disable(struct static_key *key);
 extern void static_key_enable_cpuslocked(struct static_key *key);
 extern void static_key_disable_cpuslocked(struct static_key *key);
 extern enum jump_label_type jump_label_init_type(struct jump_entry *entry);
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+extern int jump_label_register(struct module *mod);
+#endif
 
 /*
  * We should be using ATOMIC_INIT() for initializing .enabled, but
@@ -313,6 +316,13 @@ static inline int jump_label_text_reserved(void *start, void *end)
 
 static inline void jump_label_lock(void) {}
 static inline void jump_label_unlock(void) {}
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+static inline int jump_label_register(struct module *mod)
+{
+	return 0;
+}
+#endif
 
 static inline void static_key_enable(struct static_key *key)
 {

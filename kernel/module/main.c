@@ -745,6 +745,12 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 		}
 	}
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	ret = klp_module_delete_safety_check(mod);
+	if (ret != 0)
+		goto out;
+#endif
+
 	ret = try_stop_module(mod, flags, &forced);
 	if (ret != 0)
 		goto out;
@@ -1918,9 +1924,17 @@ static int copy_chunked_from_user(void *dst, const void __user *usrc, unsigned l
 
 static int check_modinfo_livepatch(struct module *mod, struct load_info *info)
 {
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	if (!get_modinfo(info, "livepatch")) {
+		set_mod_klp_rel_state(mod, MODULE_KLP_REL_NONE);
+		return 0;
+	}
+	set_mod_klp_rel_state(mod, MODULE_KLP_REL_UNDO);
+#else /* !CONFIG_LIVEPATCH_WO_FTRACE */
 	if (!get_modinfo(info, "livepatch"))
 		/* Nothing more to do */
 		return 0;
+#endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
 	if (set_livepatch_module(mod))
 		return 0;
@@ -2309,7 +2323,7 @@ static int check_export_symbol_versions(struct module *mod)
 	return 0;
 }
 
-static void flush_module_icache(const struct module *mod)
+void flush_module_icache(const struct module *mod)
 {
 	/*
 	 * Flush the instruction cache, since we've played with text.
