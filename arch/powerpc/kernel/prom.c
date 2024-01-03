@@ -812,9 +812,13 @@ void __init early_init_devtree(void *params)
 	/* Reserve MEMBLOCK regions used by kernel, initrd, dt, etc... */
 	memblock_reserve(PHYSICAL_START, __pa(_end) - PHYSICAL_START);
 	/* If relocatable, reserve at least 32k for interrupt vectors etc. */
+#ifdef CONFIG_PPC64
 	int_vector_size = (size_t)((uintptr_t)__end_interrupts -
 				   (uintptr_t)_stext);
 	int_vector_size = max_t(size_t, 0x8000, int_vector_size);
+#else
+	int_vector_size = 0x8000;
+#endif
 	if (PHYSICAL_START > MEMORY_START)
 		memblock_reserve(MEMORY_START, int_vector_size);
 	reserve_kdump_trampoline();
