@@ -39,7 +39,11 @@ static unsigned long get_entry_num_slots(efi_memory_desc_t *md,
 	if (first_slot > last_slot)
 		return 0;
 
+#if defined(CONFIG_NOKASLR_MEM_RANGE) && defined(CONFIG_ARM64)
+	return cal_slots_avoid_overlap(md, size, CAL_SLOTS_NUMBER, align_shift, 0);
+#else
 	return ((unsigned long)(last_slot - first_slot) >> align_shift) + 1;
+#endif
 }
 
 /*
@@ -88,6 +92,14 @@ efi_status_t efi_random_alloc(unsigned long size,
 		total_slots += slots;
 	}
 
+#if defined(CONFIG_NOKASLR_MEM_RANGE) && defined(CONFIG_ARM64)
+	if (total_slots == 0) {
+		efi_info("Physical KASLR disabled: no suitable momory region!\n");
+		efi_bs_call(free_pool, memory_map);
+		return EFI_OUT_OF_RESOURCES;
+	}
+#endif
+
 	/* find a random number between 0 and total_slots */
 	target_slot = (total_slots * (u64)(random_seed & U32_MAX)) >> 32;
 
@@ -112,7 +124,12 @@ efi_status_t efi_random_alloc(unsigned long size,
 			continue;
 		}
 
+#if defined(CONFIG_NOKASLR_MEM_RANGE) && defined(CONFIG_ARM64)
+		target = cal_slots_avoid_overlap(md, size, CAL_SLOTS_PHYADDR, ilog2(align),
+			target_slot);
+#else
 		target = round_up(md->phys_addr, align) + target_slot * align;
+#endif
 		pages = size / EFI_PAGE_SIZE;
 
 		status = efi_bs_call(allocate_pages, EFI_ALLOCATE_ADDRESS,

@@ -104,6 +104,124 @@ void free_avoid_memmap(void)
 	}
 }
 
+#ifdef CONFIG_NOKASLR_MEM_RANGE
+#define MAX_MEM_NOKASLR_REGIONS 4
+
+struct mem_region {
+	unsigned long long start;
+	unsigned long long size;
+};
+
+static struct mem_region mem_nokaslr[MAX_MEM_NOKASLR_REGIONS];
+
+void efi_parse_option_nokaslr_ranges(char *str)
+{
+	int i = 0;
+
+	while (str && (i < MAX_MEM_NOKASLR_REGIONS)) {
+		char *oldstr;
+		u64 start, end;
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		oldstr = str;
+		start = memparse(str, &str);
+		if (str == oldstr || *str != '-') {
+			efi_warn("Nokaslr values \"%s\" error.\n", oldstr);
+			break;
+		}
+		end = memparse(str + 1, &str);
+		if (start >= end) {
+			efi_warn("Nokaslr values \"%s\" error, start >= end.\n", oldstr);
+			break;
+		}
+
+		mem_nokaslr[i].start = start;
+		mem_nokaslr[i].size = end - start;
+		str = k;
+		i++;
+	}
+}
+
+static bool mem_overlaps(struct mem_region *one, struct mem_region *two)
+{
+	if (one->start + one->size <= two->start)
+		return false;
+	if (one->start >= two->start + two->size)
+		return false;
+	return true;
+}
+
+static bool mem_avoid_overlap(struct mem_region *region, struct mem_region *overlap)
+{
+	int i;
+	u64 earliest = region->start + region->size;
+	bool is_overlapping = false;
+
+	for (i = 0; i < MAX_MEM_NOKASLR_REGIONS; i++) {
+		if (mem_overlaps(region, &mem_nokaslr[i]) &&
+		    mem_nokaslr[i].start < earliest) {
+			*overlap = mem_nokaslr[i];
+			earliest = overlap->start;
+			is_overlapping = true;
+		}
+	}
+	return is_overlapping;
+}
+
+unsigned long cal_slots_avoid_overlap(efi_memory_desc_t *md, unsigned long size, u8 cal_type,
+					  unsigned long align_shift, unsigned long target)
+{
+	struct mem_region region, overlap;
+	unsigned long region_end, first, last;
+	unsigned long align = 1UL << align_shift;
+	unsigned long total_slots = 0, slots;
+
+	region.start = md->phys_addr;
+	region_end = min(md->phys_addr + md->num_pages * EFI_PAGE_SIZE - 1, (u64)ULONG_MAX);
+
+	while (region.start < region_end) {
+		first = round_up(region.start, align);
+		last = round_down(region_end - size + 1, align);
+
+		if (first > last)
+			break;
+
+		region.size = region_end - region.start + 1;
+
+		if (!mem_avoid_overlap(&region, &overlap)) {
+			slots = ((last - first) >> align_shift) + 1;
+			total_slots += slots;
+
+			if (cal_type == CAL_SLOTS_PHYADDR)
+				return first + target * align;
+
+			break;
+		}
+
+		if (overlap.start >= region.start + size) {
+			slots = ((round_up(overlap.start - size + 1, align) - first) >>
+				align_shift) + 1;
+			total_slots += slots;
+
+			if (cal_type == CAL_SLOTS_PHYADDR) {
+				if (target > slots)
+					target -= slots;
+				else
+					return first + target * align;
+			}
+		}
+
+		/* Clip off the overlapping region and start over. */
+		region.start = overlap.start + overlap.size;
+	}
+
+	return total_slots;
+}
+#endif
+
 efi_status_t check_platform_features(void)
 {
 	u64 tg;
