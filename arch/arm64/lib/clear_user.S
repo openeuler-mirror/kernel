@@ -24,6 +24,9 @@ SYM_FUNC_START(__arch_clear_user)
 	add	x2, x0, x1
 	subs	x1, x1, #8
 	b.mi	2f
+#ifdef CONFIG_CLEAR_USER_WORKAROUND
+	.align 5
+#endif
 1:
 USER(9f, sttr	xzr, [x0])
 	add	x0, x0, #8

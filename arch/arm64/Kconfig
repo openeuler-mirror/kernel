@@ -2303,6 +2303,13 @@ config UNWIND_PATCH_PAC_INTO_SCS
 	select UNWIND_TABLES
 	select DYNAMIC_SCS
 
+config CLEAR_USER_WORKAROUND
+	bool "Enable clear user workaround"
+	depends on ARCH_HISI
+	default n
+	help
+	  It has better performance while make sttr instruction 32-aligned in __arch_clear_user().
+
 endmenu # "Kernel Features"
 
 menu "Boot options"
