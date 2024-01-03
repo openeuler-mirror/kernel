@@ -3154,8 +3154,11 @@
 			option.
 			See Documentation/admin-guide/mm/memory-hotplug.rst.
 
-	memmap=exactmap	[KNL,X86] Enable setting of an exact
-			E820 memory map, as specified by the user.
+	memmap=exactmap	[KNL,X86,ARM64] Enable setting of an exact
+			E820 and ARM64 memory map, as specified by the user.
+			For ARM64, this setting is limited to dt boot mode as
+			exact mapping must be done after initializing membloc,
+			just for debugging purposes.
 			Such memmap=exactmap lines can be constructed based on
 			BIOS output or other requirements. See the memmap=nn@ss
 			option description.
@@ -3166,7 +3169,8 @@
 			If @ss[KMG] is omitted, it is equivalent to mem=nn[KMG],
 			which limits max address to nn[KMG].
 			Multiple different regions can be specified,
-			comma delimited.
+			comma delimited, example as follows is not supported to
+			ARM64.
 			Example:
 				memmap=100M@2G,100M#3G,1G!1024G
 
@@ -3177,6 +3181,10 @@
 	memmap=nn[KMG]$ss[KMG]
 			[KNL,ACPI] Mark specific memory as reserved.
 			Region of memory to be reserved is from ss to ss+nn.
+			For ARM64, reserved memory must be in the range of
+			existed memory and do not overlap in-use memory region,
+			otherwise request will be ignored, just for debugging
+			purposes.
 			Example: Exclude memory from 0x18690000-0x1869ffff
 			         memmap=64K$0x18690000
 			         or

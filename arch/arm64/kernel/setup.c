@@ -54,6 +54,8 @@
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
 
+#include "../mm/internal.h"
+
 static int num_standard_resources;
 static struct resource *standard_resources;
 
@@ -230,6 +232,35 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 	dump_stack_set_arch_desc("%s (DT)", name);
 }
 
+static void __init request_memmap_resources(struct resource *res)
+{
+	struct resource *memmap_res;
+	phys_addr_t base, size;
+	int i;
+
+	for (i = 0; i < MAX_RES_REGIONS; i++) {
+		base = mbk_memmap_regions[i].base;
+		size = mbk_memmap_regions[i].size;
+		if (!size)
+			continue;
+
+		if ((base < res->start) || (base + size - 1 > res->end))
+			continue;
+		memmap_res = memblock_alloc(sizeof(*memmap_res), SMP_CACHE_BYTES);
+		if (!memmap_res)
+			panic("%s: Failed to allocate memmap_res\n", __func__);
+		memmap_res->name = "memmap reserved";
+		memmap_res->flags = IORESOURCE_MEM;
+		memmap_res->start = base;
+		memmap_res->end = base + size - 1;
+		if (request_resource(res, memmap_res)) {
+			pr_warn("memmap reserve: [%llx, %llx] request resource fail\n",
+				memmap_res->start, memmap_res->end);
+			memblock_free(memmap_res, sizeof(*memmap_res));
+		}
+	}
+}
+
 static void __init request_standard_resources(void)
 {
 	struct memblock_region *region;
@@ -265,6 +296,7 @@ static void __init request_standard_resources(void)
 		}
 
 		insert_resource(&iomem_resource, res);
+		request_memmap_resources(res);
 	}
 }
 
