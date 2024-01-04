@@ -81,6 +81,20 @@ enum psi_aggregators {
 	NR_PSI_AGGREGATORS,
 };
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+enum psi_stat_states {
+	PSI_MEMCG_RECLAIM_SOME,
+	PSI_MEMCG_RECLAIM_FULL,
+	NR_PSI_STAT_STATES,
+};
+
+enum psi_stat_task_count {
+	NR_MEMCG_RECLAIM,
+	NR_MEMCG_RECLAIM_RUNNING,
+	NR_PSI_STAT_TASK_COUNTS,
+};
+#endif /* CONFIG_PSI_FINE_GRAINED */
+
 struct psi_group_cpu {
 	/* 1st cacheline updated by the scheduler */
 
@@ -104,6 +118,13 @@ struct psi_group_cpu {
 	/* Delta detection against the sampling buckets */
 	u32 times_prev[NR_PSI_AGGREGATORS][NR_PSI_STATES]
 			____cacheline_aligned_in_smp;
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	CACHELINE_PADDING(_pad1_);
+	u32 fine_grained_state_mask;
+	u32 fine_grained_times[NR_PSI_STAT_STATES];
+	unsigned int fine_grained_tasks[NR_PSI_STAT_TASK_COUNTS];
+#endif
 };
 
 /* PSI growth tracking window */
@@ -214,5 +235,22 @@ struct psi_group {
 struct psi_group { };
 
 #endif /* CONFIG_PSI */
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+/*
+ * one type should have two task stats: regular running and memstall
+ * threads. The reason is the same as NR_MEMSTALL_RUNNING.
+ * Because of the psi_memstall_type is start with 1, the correspondence
+ * between psi_memstall_type and psi_stat_task_count should be as below:
+ *
+ * memstall : psi_memstall_type * 2 - 2;
+ * running  : psi_memstall_type * 2 - 1;
+ */
+enum psi_memstall_type {
+	PSI_MEMCG_RECLAIM = 1,
+};
+#else
+#define PSI_MEMCG_RECLAIM		0
+#endif /* CONFIG_PSI_FINE_GRAINED */
 
 #endif /* _LINUX_PSI_TYPES_H */

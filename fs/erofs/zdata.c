@@ -1636,7 +1636,7 @@ static void z_erofs_submit_queue(struct z_erofs_decompress_frontend *f,
 	struct block_device *last_bdev;
 	unsigned int nr_bios = 0;
 	struct bio *bio = NULL;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	int memstall = 0;
 
 	/*

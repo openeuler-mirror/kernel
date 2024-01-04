@@ -336,6 +336,90 @@ static void calc_avgs(unsigned long avg[3], int missed_periods,
 	avg[2] = calc_load(avg[2], EXP_300s, pct);
 }
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+
+static void record_stat_times(struct psi_group_cpu *groupc, u32 delta)
+{
+	if (groupc->fine_grained_state_mask & (1 << PSI_MEMCG_RECLAIM_SOME)) {
+		groupc->fine_grained_times[PSI_MEMCG_RECLAIM_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_MEMCG_RECLAIM_FULL))
+			groupc->fine_grained_times[PSI_MEMCG_RECLAIM_FULL] += delta;
+	}
+}
+
+static bool test_fine_grained_stat(unsigned int *stat_tasks,
+				   unsigned int nr_running,
+				   enum psi_stat_states state)
+{
+	switch (state) {
+	case PSI_MEMCG_RECLAIM_SOME:
+		return unlikely(stat_tasks[NR_MEMCG_RECLAIM]);
+	case PSI_MEMCG_RECLAIM_FULL:
+		return unlikely(stat_tasks[NR_MEMCG_RECLAIM] &&
+		       nr_running == stat_tasks[NR_MEMCG_RECLAIM_RUNNING]);
+	default:
+		return false;
+	}
+}
+
+static void psi_group_stat_change(struct psi_group *group, int cpu,
+				  int clear, int set)
+{
+	int t;
+	u32 state_mask = 0;
+	enum psi_stat_states s;
+	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
+
+	write_seqcount_begin(&groupc->seq);
+
+	for (t = 0; clear; clear &= ~(1 << t), t++)
+		if (clear & (1 << t))
+			groupc->fine_grained_tasks[t]--;
+	for (t = 0; set; set &= ~(1 << t), t++)
+		if (set & (1 << t))
+			groupc->fine_grained_tasks[t]++;
+	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+		if (test_fine_grained_stat(groupc->fine_grained_tasks,
+					   groupc->tasks[NR_RUNNING], s))
+			state_mask |= (1 << s);
+	if (unlikely(groupc->state_mask & PSI_ONCPU) &&
+		     cpu_curr(cpu)->memstall_type)
+		state_mask |= (1 << (cpu_curr(cpu)->memstall_type * 2 - 1));
+
+	groupc->fine_grained_state_mask = state_mask;
+	write_seqcount_end(&groupc->seq);
+}
+
+static void psi_stat_flags_change(struct task_struct *task, int *stat_set,
+				  int *stat_clear, int set, int clear)
+{
+	if (!task->memstall_type)
+		return;
+
+	if (clear) {
+		if (clear & TSK_MEMSTALL)
+			*stat_clear |= 1 << (2 * task->memstall_type - 2);
+		if (clear & TSK_MEMSTALL_RUNNING)
+			*stat_clear |= 1 << (2 * task->memstall_type - 1);
+	}
+	if (set) {
+		if (set & TSK_MEMSTALL)
+			*stat_set |= 1 << (2 * task->memstall_type - 2);
+		if (set & TSK_MEMSTALL_RUNNING)
+			*stat_set |= 1 << (2 * task->memstall_type - 1);
+	}
+	if (!task->in_memstall)
+		task->memstall_type = 0;
+}
+
+#else
+static inline void psi_group_stat_change(struct psi_group *group, int cpu,
+					 int clear, int set) {}
+static inline void psi_stat_flags_change(struct task_struct *task,
+					 int *stat_set, int *stat_clear,
+					 int set, int clear) {}
+#endif
+
 static void collect_percpu_times(struct psi_group *group,
 				 enum psi_aggregators aggregator,
 				 u32 *pchanged_states)
@@ -776,6 +860,10 @@ static void record_times(struct psi_group_cpu *groupc, u64 now)
 
 	if (groupc->state_mask & (1 << PSI_NONIDLE))
 		groupc->times[PSI_NONIDLE] += delta;
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	record_stat_times(groupc, delta);
+#endif
 }
 
 static void psi_group_change(struct psi_group *group, int cpu,
@@ -937,17 +1025,21 @@ void psi_task_change(struct task_struct *task, int clear, int set)
 	int cpu = task_cpu(task);
 	struct psi_group *group;
 	u64 now;
+	int stat_set = 0;
+	int stat_clear = 0;
 
 	if (!task->pid)
 		return;
 
 	psi_flags_change(task, clear, set);
+	psi_stat_flags_change(task, &stat_set, &stat_clear, set, clear);
 
 	now = cpu_clock(cpu);
 
 	group = task_psi_group(task);
 	do {
 		psi_group_change(group, cpu, clear, set, now, true);
+		psi_group_stat_change(group, cpu, stat_clear, stat_set);
 	} while ((group = group->parent));
 }
 
@@ -974,12 +1066,16 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 			}
 
 			psi_group_change(group, cpu, 0, TSK_ONCPU, now, true);
+			psi_group_stat_change(group, cpu, 0, 0);
 		} while ((group = group->parent));
 	}
 
 	if (prev->pid) {
 		int clear = TSK_ONCPU, set = 0;
 		bool wake_clock = true;
+		int stat_set = 0;
+		int stat_clear = 0;
+		bool memstall_type_change = false;
 
 		/*
 		 * When we're going to sleep, psi_dequeue() lets us
@@ -1006,13 +1102,20 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		}
 
 		psi_flags_change(prev, clear, set);
+		psi_stat_flags_change(prev, &stat_set, &stat_clear, set, clear);
 
 		group = task_psi_group(prev);
 		do {
 			if (group == common)
 				break;
 			psi_group_change(group, cpu, clear, set, now, wake_clock);
+			psi_group_stat_change(group, cpu, stat_clear, stat_set);
 		} while ((group = group->parent));
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+		if (next->memstall_type != prev->memstall_type)
+			memstall_type_change = true;
+#endif
 
 		/*
 		 * TSK_ONCPU is handled up to the common ancestor. If there are
@@ -1020,10 +1123,13 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		 * to sleep, or only one task is memstall), finish propagating
 		 * those differences all the way up to the root.
 		 */
-		if ((prev->psi_flags ^ next->psi_flags) & ~TSK_ONCPU) {
+		if ((prev->psi_flags ^ next->psi_flags) & ~TSK_ONCPU ||
+		     memstall_type_change) {
 			clear &= ~TSK_ONCPU;
-			for (; group; group = group->parent)
+			for (; group; group = group->parent) {
 				psi_group_change(group, cpu, clear, set, now, wake_clock);
+				psi_group_stat_change(group, cpu, stat_clear, stat_set);
+			}
 		}
 	}
 }
@@ -1066,7 +1172,9 @@ void psi_account_irqtime(struct task_struct *task, u32 delta)
 
 /**
  * psi_memstall_enter - mark the beginning of a memory stall section
- * @flags: flags to handle nested sections
+ * @flags: flags to handle nested sections. When the memory pressure
+ * is stalled in pressure_stat, the flags will be the pressure source,
+ * Otherwise, the init flags should be zero.
  *
  * Marks the calling task as being stalled due to a lack of memory,
  * such as waiting for a refault or performing reclaim.
@@ -1075,6 +1183,9 @@ void psi_memstall_enter(unsigned long *flags)
 {
 	struct rq_flags rf;
 	struct rq *rq;
+#ifdef CONFIG_PSI_FINE_GRAINED
+	unsigned long stat_flags = *flags;
+#endif
 
 	if (static_branch_likely(&psi_disabled))
 		return;
@@ -1092,6 +1203,10 @@ void psi_memstall_enter(unsigned long *flags)
 	rq = this_rq_lock_irq(&rf);
 
 	current->in_memstall = 1;
+#ifdef CONFIG_PSI_FINE_GRAINED
+	if (stat_flags)
+		current->memstall_type = stat_flags;
+#endif
 	psi_task_change(current, 0, TSK_MEMSTALL | TSK_MEMSTALL_RUNNING);
 
 	rq_unlock_irq(rq, &rf);

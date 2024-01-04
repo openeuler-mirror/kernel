@@ -677,6 +677,16 @@ config PSI_CGROUP_V1
 
          Say N if unsure.
 
+config PSI_FINE_GRAINED
+	bool "Support fine grained psi under cgroup v1 and system"
+	default n
+	depends on PSI
+	help
+	  If set, fine grained pressure stall information tracking will
+	  be used for cgroup v1 and system, such as memory reclaim,
+	  memory compact and so on.
+	  Say N if unsure.
+
 endmenu # "CPU/Task time and stats accounting"
 
 config CPU_ISOLATION

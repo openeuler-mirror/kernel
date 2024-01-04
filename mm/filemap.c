@@ -1227,7 +1227,7 @@ static inline int folio_wait_bit_common(struct folio *folio, int bit_nr,
 	struct wait_page_queue wait_page;
 	wait_queue_entry_t *wait = &wait_page.wait;
 	bool thrashing = false;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	bool in_thrashing;
 
 	if (bit_nr == PG_locked &&
@@ -1378,7 +1378,7 @@ void migration_entry_wait_on_locked(swp_entry_t entry, spinlock_t *ptl)
 	struct wait_page_queue wait_page;
 	wait_queue_entry_t *wait = &wait_page.wait;
 	bool thrashing = false;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	bool in_thrashing;
 	wait_queue_head_t *q;
 	struct folio *folio = page_folio(pfn_swap_entry_to_page(entry));
@@ -2366,7 +2366,7 @@ static int filemap_read_folio(struct file *file, filler_t filler,
 		struct folio *folio)
 {
 	bool workingset = folio_test_workingset(folio);
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	int error;
 
 	/*

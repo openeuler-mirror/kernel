@@ -3061,7 +3061,7 @@ static int kcompactd(void *p)
 	pgdat->kcompactd_highest_zoneidx = pgdat->nr_zones - 1;
 
 	while (!kthread_should_stop()) {
-		unsigned long pflags;
+		unsigned long pflags = 0;
 
 		/*
 		 * Avoid the unnecessary wakeup for proactive compaction

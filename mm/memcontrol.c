@@ -2421,6 +2421,7 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 
 		memcg_memory_event(memcg, MEMCG_HIGH);
 
+		pflags = PSI_MEMCG_RECLAIM;
 		psi_memstall_enter(&pflags);
 		nr_reclaimed += try_to_free_mem_cgroup_pages(memcg, nr_pages,
 							gfp_mask,
@@ -2458,6 +2459,7 @@ static void async_reclaim_high(struct mem_cgroup *memcg)
 		return;
 	}
 
+	pflags = 0;
 	psi_memstall_enter(&pflags);
 	nr_pages = memcg_usage > safe_pages ? memcg_usage - safe_pages :
 		   MEMCG_CHARGE_BATCH;
@@ -2692,6 +2694,7 @@ retry_reclaim:
 	 * schedule_timeout_killable sets TASK_KILLABLE). This means we don't
 	 * need to account for any ill-begotten jiffies to pay them off later.
 	 */
+	pflags = PSI_MEMCG_RECLAIM;
 	psi_memstall_enter(&pflags);
 	schedule_timeout_killable(penalty_jiffies);
 	psi_memstall_leave(&pflags);
@@ -2753,6 +2756,7 @@ retry:
 	memcg_memory_event(mem_over_limit, MEMCG_MAX);
 	raised_max_event = true;
 
+	pflags = PSI_MEMCG_RECLAIM;
 	psi_memstall_enter(&pflags);
 	nr_reclaimed = try_to_free_mem_cgroup_pages(mem_over_limit, nr_pages,
 						    gfp_mask, reclaim_options);
