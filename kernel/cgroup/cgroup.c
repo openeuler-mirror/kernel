@@ -3919,6 +3919,45 @@ bool cgroup_psi_enabled(void)
 	return (cgroup_feature_disable_mask & (1 << OPT_FEATURE_PRESSURE)) == 0;
 }
 
+#ifdef CONFIG_PSI_CGROUP_V1
+struct cftype cgroup_v1_psi_files[] = {
+	{
+		.name = "io.pressure",
+		.flags = CFTYPE_NO_PREFIX,
+		.seq_show = cgroup_io_pressure_show,
+		.write = cgroup_io_pressure_write,
+		.poll = cgroup_pressure_poll,
+		.release = cgroup_pressure_release,
+	},
+	{
+		.name = "memory.pressure",
+		.flags = CFTYPE_NO_PREFIX,
+		.seq_show = cgroup_memory_pressure_show,
+		.write = cgroup_memory_pressure_write,
+		.poll = cgroup_pressure_poll,
+		.release = cgroup_pressure_release,
+	},
+	{
+		.name = "cpu.pressure",
+		.flags = CFTYPE_NO_PREFIX,
+		.seq_show = cgroup_cpu_pressure_show,
+		.write = cgroup_cpu_pressure_write,
+		.poll = cgroup_pressure_poll,
+		.release = cgroup_pressure_release,
+	},
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	{
+		.name = "irq.pressure",
+		.flags = CFTYPE_NO_PREFIX,
+		.seq_show = cgroup_irq_pressure_show,
+		.write = cgroup_irq_pressure_write,
+		.poll = cgroup_pressure_poll,
+		.release = cgroup_pressure_release,
+	},
+#endif
+	{ }	/* terminate */
+};
+#endif
 #else /* CONFIG_PSI */
 bool cgroup_psi_enabled(void)
 {
