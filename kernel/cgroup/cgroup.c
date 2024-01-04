@@ -3920,6 +3920,13 @@ bool cgroup_psi_enabled(void)
 }
 
 #ifdef CONFIG_PSI_CGROUP_V1
+#ifdef CONFIG_PSI_FINE_GRAINED
+static int cgroup_psi_stat_show(struct seq_file *seq, void *v)
+{
+	return psi_stat_show(seq, cgroup_psi(seq_css(seq)->cgroup));
+}
+#endif
+
 struct cftype cgroup_v1_psi_files[] = {
 	{
 		.name = "io.pressure",
@@ -3955,6 +3962,11 @@ struct cftype cgroup_v1_psi_files[] = {
 		.release = cgroup_pressure_release,
 	},
 #endif
+	{
+		.name = "pressure.stat",
+		.flags = CFTYPE_NO_PREFIX,
+		.seq_show = cgroup_psi_stat_show,
+	},
 	{ }	/* terminate */
 };
 #endif
