@@ -87,6 +87,9 @@ struct inet_request_sock {
 				ecn_ok	   : 1,
 				acked	   : 1,
 				no_srccheck: 1,
+#if IS_ENABLED(CONFIG_TCP_COMP)
+				comp_ok	   : 1,
+#endif
 				smc_ok	   : 1;
 	u32                     ir_mark;
 	union {
