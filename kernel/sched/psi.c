@@ -293,6 +293,10 @@ static void get_recent_times(struct psi_group *group, int cpu,
 			*pchanged_states |= (1 << s);
 	}
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+	groupc->fine_grained_times_delta = now - state_start;
+#endif
+
 	/*
 	 * When collect_percpu_times() from the avgs_work, we don't want to
 	 * re-arm avgs_work when all CPUs are IDLE. But the current CPU running
@@ -412,6 +416,23 @@ static void psi_stat_flags_change(struct task_struct *task, int *stat_set,
 		task->memstall_type = 0;
 }
 
+static void get_recent_stat_times(struct psi_group *group, int cpu,
+				  enum psi_aggregators aggregator, u64 *stat_delta, u64 nonidle)
+{
+	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
+	u32 times[NR_PSI_STAT_STATES] = {0};
+	enum psi_stat_states s;
+	u32 delta;
+
+	memcpy(times, groupc->fine_grained_times, sizeof(groupc->fine_grained_times));
+	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+		if (groupc->fine_grained_state_mask & (1 << s))
+			times[s] += groupc->fine_grained_times_delta;
+		delta = times[s] - groupc->fine_grained_times_prev[aggregator][s];
+		groupc->fine_grained_times_prev[aggregator][s] = times[s];
+		stat_delta[s] += (u64)delta * nonidle;
+	}
+}
 #else
 static inline void psi_group_stat_change(struct psi_group *group, int cpu,
 					 int clear, int set) {}
@@ -424,6 +445,9 @@ static void collect_percpu_times(struct psi_group *group,
 				 enum psi_aggregators aggregator,
 				 u32 *pchanged_states)
 {
+#ifdef CONFIG_PSI_FINE_GRAINED
+	u64 stat_delta[NR_PSI_STAT_STATES] = { 0 };
+#endif
 	u64 deltas[NR_PSI_STATES - 1] = { 0, };
 	unsigned long nonidle_total = 0;
 	u32 changed_states = 0;
@@ -452,6 +476,9 @@ static void collect_percpu_times(struct psi_group *group,
 
 		for (s = 0; s < PSI_NONIDLE; s++)
 			deltas[s] += (u64)times[s] * nonidle;
+#ifdef CONFIG_PSI_FINE_GRAINED
+		get_recent_stat_times(group, cpu, aggregator, stat_delta, nonidle);
+#endif
 	}
 
 	/*
@@ -470,6 +497,12 @@ static void collect_percpu_times(struct psi_group *group,
 	for (s = 0; s < NR_PSI_STATES - 1; s++)
 		group->total[aggregator][s] +=
 				div_u64(deltas[s], max(nonidle_total, 1UL));
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+		group->fine_grained_total[aggregator][s] +=
+			div_u64(stat_delta[s], max(nonidle_total, 1UL));
+#endif
 
 	if (pchanged_states)
 		*pchanged_states = changed_states;
@@ -643,6 +676,18 @@ static u64 update_averages(struct psi_group *group, u64 now)
 		group->avg_total[s] += sample;
 		calc_avgs(group->avg[s], missed_periods, sample, period);
 	}
+#ifdef CONFIG_PSI_FINE_GRAINED
+	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+		u32 stat_sample;
+
+		stat_sample = group->fine_grained_total[PSI_AVGS][s] -
+			      group->fine_grained_avg_total[s];
+		if (stat_sample > period)
+			stat_sample = period;
+		group->fine_grained_avg_total[s] += stat_sample;
+		calc_avgs(group->fine_grained_avg[s], missed_periods, stat_sample, period);
+	}
+#endif
 
 	return avg_next_update;
 }

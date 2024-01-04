@@ -124,6 +124,8 @@ struct psi_group_cpu {
 	u32 fine_grained_state_mask;
 	u32 fine_grained_times[NR_PSI_STAT_STATES];
 	unsigned int fine_grained_tasks[NR_PSI_STAT_TASK_COUNTS];
+	u32 fine_grained_times_delta;
+	u32 fine_grained_times_prev[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
 #endif
 };
 
@@ -226,8 +228,14 @@ struct psi_group {
 	u64 rtpoll_total[NR_PSI_STATES - 1];
 	u64 rtpoll_next_update;
 	u64 rtpoll_until;
+#ifdef CONFIG_PSI_FINE_GRAINED
+	/* Running fine grained pressure averages */
+	u64 fine_grained_avg_total[NR_PSI_STAT_STATES];
+	/* Total fine grained stall times and sampled pressure averages */
+	u64 fine_grained_total[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	unsigned long fine_grained_avg[NR_PSI_STAT_STATES][3];
+#endif
 };
-
 #else /* CONFIG_PSI */
 
 #define NR_PSI_RESOURCES	0
