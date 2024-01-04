@@ -369,6 +369,16 @@ static void record_stat_times(struct psi_group_cpu *groupc, u32 delta)
 		if (groupc->fine_grained_state_mask & (1 << PSI_SWAP_FULL))
 			groupc->fine_grained_times[PSI_SWAP_FULL] += delta;
 	}
+#ifdef CONFIG_CFS_BANDWIDTH
+	if (groupc->state_mask & (1 << PSI_CPU_FULL)) {
+		if (groupc->prev_throttle == CPU_CFS_BANDWIDTH)
+			groupc->fine_grained_times[PSI_CPU_CFS_BANDWIDTH_FULL] += delta;
+#ifdef CONFIG_QOS_SCHED
+		else if (groupc->prev_throttle == QOS_THROTTLED)
+			groupc->fine_grained_times[PSI_CPU_QOS_FULL] += delta;
+	}
+#endif
+#endif
 }
 
 static bool test_fine_grained_stat(unsigned int *stat_tasks,
@@ -422,7 +432,7 @@ static void psi_group_stat_change(struct psi_group *group, int cpu,
 	for (t = 0; set; set &= ~(1 << t), t++)
 		if (set & (1 << t))
 			groupc->fine_grained_tasks[t]++;
-	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+	for (s = 0; s < PSI_CPU_CFS_BANDWIDTH_FULL; s++)
 		if (test_fine_grained_stat(groupc->fine_grained_tasks,
 					   groupc->tasks[NR_RUNNING], s))
 			state_mask |= (1 << s);
@@ -479,6 +489,32 @@ static inline void psi_group_stat_change(struct psi_group *group, int cpu,
 static inline void psi_stat_flags_change(struct task_struct *task,
 					 int *stat_set, int *stat_clear,
 					 int set, int clear) {}
+#endif
+
+#if defined(CONFIG_CFS_BANDWIDTH) && defined(CONFIG_CGROUP_CPUACCT) && \
+	defined(CONFIG_PSI_FINE_GRAINED)
+static void update_throttle_type(struct task_struct *task, int cpu, bool next)
+{
+	if (!cgroup_subsys_on_dfl(cpuacct_cgrp_subsys)) {
+		struct cgroup *cpuacct_cgrp;
+		struct psi_group_cpu *groupc;
+		struct task_group *tsk_grp;
+
+		rcu_read_lock();
+		cpuacct_cgrp = task_cgroup(task, cpuacct_cgrp_id);
+		if (cgroup_parent(cpuacct_cgrp)) {
+			groupc = per_cpu_ptr(cgroup_psi(cpuacct_cgrp)->pcpu, cpu);
+			tsk_grp = task_group(task);
+			if (next)
+				groupc->prev_throttle = groupc->cur_throttle;
+			groupc->cur_throttle = tsk_grp->cfs_rq[cpu]->throttled;
+		}
+		rcu_read_unlock();
+	}
+}
+#else
+static inline void update_throttle_type(struct task_struct *task, int cpu,
+					bool next) {}
 #endif
 
 static void collect_percpu_times(struct psi_group *group,
@@ -1019,8 +1055,9 @@ static void psi_group_change(struct psi_group *group, int cpu,
 		 * may have already incorporated the live state into times_prev;
 		 * avoid a delta sample underflow when PSI is later re-enabled.
 		 */
-		if (unlikely(groupc->state_mask & (1 << PSI_NONIDLE)))
+		if (unlikely(groupc->state_mask & (1 << PSI_NONIDLE))) {
 			record_times(groupc, now);
+		}
 
 		groupc->state_mask = state_mask;
 
@@ -1136,6 +1173,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 	u64 now = cpu_clock(cpu);
 
 	if (next->pid) {
+		update_throttle_type(next, cpu, true);
 		psi_flags_change(next, 0, TSK_ONCPU);
 		/*
 		 * Set TSK_ONCPU on @next's cgroups. If @next shares any
@@ -1162,6 +1200,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		int stat_clear = 0;
 		bool memstall_type_change = false;
 
+		update_throttle_type(prev, cpu, false);
 		/*
 		 * When we're going to sleep, psi_dequeue() lets us
 		 * handle TSK_RUNNING, TSK_MEMSTALL_RUNNING and
@@ -1861,7 +1900,21 @@ static const char *const psi_stat_names[] = {
 	"compact",
 	"cgroup_async_memory_reclaim",
 	"swap",
+	"cpu_cfs_bandwidth",
+	"cpu_qos",
 };
+
+static void get_stat_names(struct seq_file *m, int i, bool is_full)
+{
+	if (i <= PSI_SWAP_FULL && !is_full)
+		return seq_printf(m, "%s\n", psi_stat_names[i / 2]);
+	else if (i == PSI_CPU_CFS_BANDWIDTH_FULL)
+		return seq_printf(m, "%s\n", "cpu_cfs_bandwidth");
+#ifdef CONFIG_QOS_SCHED
+	else if (i == PSI_CPU_QOS_FULL)
+		return seq_printf(m, "%s\n", "cpu_qos");
+#endif
+}
 
 int psi_stat_show(struct seq_file *m, struct psi_group *group)
 {
@@ -1882,13 +1935,12 @@ int psi_stat_show(struct seq_file *m, struct psi_group *group)
 		unsigned long avg[3] = {0, };
 		int w;
 		u64 total;
-		bool is_full = i % 2;
+		bool is_full = i % 2 || i > PSI_SWAP_FULL;
 
 		for (w = 0; w < 3; w++)
 			avg[w] = group->fine_grained_avg[i][w];
 		total = div_u64(group->fine_grained_total[PSI_AVGS][i], NSEC_PER_USEC);
-		if (!is_full)
-			seq_printf(m, "%s\n", psi_stat_names[i / 2]);
+		get_stat_names(m, i, is_full);
 		seq_printf(m, "%s avg10=%lu.%02lu avg60=%lu.%02lu avg300=%lu.%02lu total=%llu\n",
 			   is_full ? "full" : "some",
 			   LOAD_INT(avg[0]), LOAD_FRAC(avg[0]),

@@ -82,6 +82,8 @@ enum psi_aggregators {
 };
 
 #ifdef CONFIG_PSI_FINE_GRAINED
+#define CPU_CFS_BANDWIDTH		1
+
 enum psi_stat_states {
 	PSI_MEMCG_RECLAIM_SOME,
 	PSI_MEMCG_RECLAIM_FULL,
@@ -93,6 +95,10 @@ enum psi_stat_states {
 	PSI_ASYNC_MEMCG_RECLAIM_FULL,
 	PSI_SWAP_SOME,
 	PSI_SWAP_FULL,
+	PSI_CPU_CFS_BANDWIDTH_FULL,
+#ifdef CONFIG_QOS_SCHED
+	PSI_CPU_QOS_FULL,
+#endif
 	NR_PSI_STAT_STATES,
 };
 
@@ -142,6 +148,8 @@ struct psi_group_cpu {
 	unsigned int fine_grained_tasks[NR_PSI_STAT_TASK_COUNTS];
 	u32 fine_grained_times_delta;
 	u32 fine_grained_times_prev[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	int prev_throttle;
+	int cur_throttle;
 #endif
 };
 
