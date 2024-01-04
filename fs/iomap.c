@@ -121,8 +121,8 @@ iomap_page_create(struct inode *inode, struct page *page)
 	iop = kmalloc(sizeof(*iop), GFP_NOFS | __GFP_NOFAIL);
 	atomic_set(&iop->read_count, 0);
 	atomic_set(&iop->write_count, 0);
-	spin_lock_init(&iop->uptodate_lock);
-	bitmap_zero(iop->uptodate, PAGE_SIZE / SECTOR_SIZE);
+	spin_lock_init(&iop->state_lock);
+	bitmap_zero(iop->state, IOMAP_STATE_ARRAY_SIZE);
 
 	/*
 	 * migrate_page_move_mapping() assumes that pages with private data have
@@ -175,7 +175,7 @@ iomap_adjust_read_range(struct inode *inode, struct iomap_page *iop,
 
 		/* move forward for each leading block marked uptodate */
 		for (i = first; i <= last; i++) {
-			if (!test_bit(i, iop->uptodate))
+			if (!test_bit(i, iop->state))
 				break;
 			*pos += block_size;
 			poff += block_size;
@@ -185,7 +185,7 @@ iomap_adjust_read_range(struct inode *inode, struct iomap_page *iop,
 
 		/* truncate len if we find any trailing uptodate block(s) */
 		for ( ; i <= last; i++) {
-			if (test_bit(i, iop->uptodate)) {
+			if (test_bit(i, iop->state)) {
 				plen -= (last - i + 1) * block_size;
 				last = i - 1;
 				break;
@@ -210,6 +210,54 @@ iomap_adjust_read_range(struct inode *inode, struct iomap_page *iop,
 }
 
 static void
+iomap_set_range_dirty(struct page *page, unsigned int off,
+		unsigned int len)
+{
+	struct inode *inode = page->mapping->host;
+	unsigned int first = DIRTY_BITS(off >> inode->i_blkbits);
+	unsigned int last = DIRTY_BITS((off + len - 1) >> inode->i_blkbits);
+	unsigned long flags;
+	struct iomap_page *iop;
+
+	if (PageError(page))
+		return;
+
+	if (len)
+		iomap_set_page_dirty(page);
+
+	if (!page_has_private(page))
+		return;
+
+	iop = to_iomap_page(page);
+	spin_lock_irqsave(&iop->state_lock, flags);
+	bitmap_set(iop->state, first, last - first + 1);
+	spin_unlock_irqrestore(&iop->state_lock, flags);
+}
+
+void
+iomap_clear_range_dirty(struct page *page, unsigned int off,
+		unsigned int len)
+{
+	struct inode *inode = page->mapping->host;
+	unsigned int first = DIRTY_BITS(off >> inode->i_blkbits);
+	unsigned int last = DIRTY_BITS((off + len - 1) >> inode->i_blkbits);
+	unsigned long flags;
+	struct iomap_page *iop;
+
+	if (PageError(page))
+		return;
+
+	if (!page_has_private(page))
+		return;
+
+	iop = to_iomap_page(page);
+	spin_lock_irqsave(&iop->state_lock, flags);
+	bitmap_clear(iop->state, first, last - first + 1);
+	spin_unlock_irqrestore(&iop->state_lock, flags);
+}
+EXPORT_SYMBOL_GPL(iomap_clear_range_dirty);
+
+static void
 iomap_iop_set_range_uptodate(struct page *page, unsigned off, unsigned len)
 {
 	struct iomap_page *iop = to_iomap_page(page);
@@ -220,17 +268,17 @@ iomap_iop_set_range_uptodate(struct page *page, unsigned off, unsigned len)
 	unsigned long flags;
 	unsigned int i;
 
-	spin_lock_irqsave(&iop->uptodate_lock, flags);
+	spin_lock_irqsave(&iop->state_lock, flags);
 	for (i = 0; i < PAGE_SIZE / i_blocksize(inode); i++) {
 		if (i >= first && i <= last)
-			set_bit(i, iop->uptodate);
-		else if (!test_bit(i, iop->uptodate))
+			set_bit(i, iop->state);
+		else if (!test_bit(i, iop->state))
 			uptodate = false;
 	}
 
 	if (uptodate)
 		SetPageUptodate(page);
-	spin_unlock_irqrestore(&iop->uptodate_lock, flags);
+	spin_unlock_irqrestore(&iop->state_lock, flags);
 }
 
 static void
@@ -544,7 +592,7 @@ iomap_is_partially_uptodate(struct page *page, unsigned long from,
 
 	if (iop) {
 		for (i = first; i <= last; i++)
-			if (!test_bit(i, iop->uptodate))
+			if (!test_bit(i, iop->state))
 				return 0;
 		return 1;
 	}
@@ -760,7 +808,7 @@ __iomap_write_end(struct inode *inode, loff_t pos, unsigned len,
 	if (unlikely(copied < len && !PageUptodate(page)))
 		return 0;
 	iomap_set_range_uptodate(page, offset_in_page(pos), len);
-	iomap_set_page_dirty(page);
+	iomap_set_range_dirty(page, offset_in_page(pos), len);
 	return copied;
 }
 
@@ -1096,7 +1144,7 @@ iomap_page_mkwrite_actor(struct inode *inode, loff_t pos, loff_t length,
 	} else {
 		WARN_ON_ONCE(!PageUptodate(page));
 		iomap_page_create(inode, page);
-		set_page_dirty(page);
+		iomap_set_range_dirty(page, offset_in_page(pos), length);
 	}
 
 	return length;

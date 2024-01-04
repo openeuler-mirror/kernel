@@ -7,6 +7,7 @@
 #include <linux/bitmap.h>
 #include <linux/mm.h>
 #include <linux/types.h>
+#include <linux/blkdev.h>
 
 struct address_space;
 struct fiemap_extent_info;
@@ -52,6 +53,9 @@ struct vm_fault;
  * Magic value for addr:
  */
 #define IOMAP_NULL_ADDR -1ULL	/* addr is not valid */
+
+#define DIRTY_BITS(x)	((x) + PAGE_SIZE / SECTOR_SIZE)
+#define IOMAP_STATE_ARRAY_SIZE	(PAGE_SIZE * 2 / SECTOR_SIZE)
 
 struct iomap {
 	u64			addr; /* disk offset of mapping, bytes */
@@ -114,8 +118,12 @@ struct iomap_ops {
 struct iomap_page {
 	atomic_t		read_count;
 	atomic_t		write_count;
-	spinlock_t              uptodate_lock;
-	DECLARE_BITMAP(uptodate, PAGE_SIZE / 512);
+	spinlock_t              state_lock;
+	/*
+	 * The first half bits are used to track sub-page uptodate status,
+	 * the second half bits are for dirty status.
+	 */
+	DECLARE_BITMAP(state, IOMAP_STATE_ARRAY_SIZE);
 };
 
 static inline struct iomap_page *to_iomap_page(struct page *page)
@@ -136,6 +144,9 @@ int iomap_is_partially_uptodate(struct page *page, unsigned long from,
 int iomap_releasepage(struct page *page, gfp_t gfp_mask);
 void iomap_invalidatepage(struct page *page, unsigned int offset,
 		unsigned int len);
+void iomap_clear_range_dirty(struct page *page, unsigned int off,
+		unsigned int len);
+
 #ifdef CONFIG_MIGRATION
 int iomap_migrate_page(struct address_space *mapping, struct page *newpage,
 		struct page *page, enum migrate_mode mode);
