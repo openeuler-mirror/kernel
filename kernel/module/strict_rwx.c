@@ -46,6 +46,7 @@ void module_disable_ro(const struct module *mod)
 	module_set_memory(mod, MOD_INIT_TEXT, set_memory_rw);
 	module_set_memory(mod, MOD_RODATA, set_memory_rw);
 	module_set_memory(mod, MOD_INIT_RODATA, set_memory_rw);
+	module_set_memory(mod, MOD_RO_AFTER_INIT, set_memory_rw);
 }
 #endif /* CONFIG_LIVEPATCH_WO_FTRACE */
 
