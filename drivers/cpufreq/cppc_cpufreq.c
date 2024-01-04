@@ -57,6 +57,12 @@ static struct cppc_workaround_oem_info wa_info[] = {
 	}
 };
 
+struct fb_ctr_pair {
+	u32 cpu;
+	struct cppc_perf_fb_ctrs fb_ctrs_t0;
+	struct cppc_perf_fb_ctrs fb_ctrs_t1;
+};
+
 /* Callback function used to retrieve the max frequency from DMI */
 static void cppc_find_dmi_mhz(const struct dmi_header *dm, void *private)
 {
@@ -352,35 +358,37 @@ static int cppc_get_rate_from_fbctrs(struct cppc_cpudata *cpu,
 
 static int cppc_get_perf_ctrs_sample(void *val)
 {
-	int cpunum = smp_processor_id();
-	struct cppc_perf_fb_ctrs *fb_ctrs = val;
+	struct fb_ctr_pair *fb_ctrs = val;
+	int cpu = fb_ctrs->cpu;
 	int ret;
 
-	ret = cppc_get_perf_ctrs(cpunum, fb_ctrs);
+	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t0);
 	if (ret)
 		return ret;
 
 	udelay(2); /* 2usec delay between sampling */
 
-	return cppc_get_perf_ctrs(cpunum, fb_ctrs + 1);
+	return cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t1);
 }
 
 static unsigned int cppc_cpufreq_get_rate(unsigned int cpunum)
 {
-	struct cppc_perf_fb_ctrs fb_ctrs[2] = {0};
+	struct fb_ctr_pair fb_ctrs = { .cpu = cpunum, };
 	struct cppc_cpudata *cpu = all_cpu_data[cpunum];
 	int ret;
 
 	if (cpu_has_amu_feat(cpunum))
 		ret = smp_call_on_cpu(cpunum, cppc_get_perf_ctrs_sample,
-				      fb_ctrs, false);
+				      &fb_ctrs, false);
 	else
-		ret = cppc_get_perf_ctrs_sample(fb_ctrs);
+		ret = cppc_get_perf_ctrs_sample(&fb_ctrs);
 
 	if (ret)
 		return ret;
 
-	return cppc_get_rate_from_fbctrs(cpu, fb_ctrs[0], fb_ctrs[1]);
+	return cppc_get_rate_from_fbctrs(cpu,
+					 fb_ctrs.fb_ctrs_t0,
+					 fb_ctrs.fb_ctrs_t1);
 }
 
 static int cppc_cpufreq_set_boost(struct cpufreq_policy *policy, int state)
