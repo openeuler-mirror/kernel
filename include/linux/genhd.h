@@ -69,6 +69,7 @@ struct hd_struct {
 	struct device __dev;
 	struct kobject *holder_dir;
 	bool read_only;
+	KABI_FILL_HOLE(bool ro_warned)
 	int partno;
 	struct partition_meta_info *info;
 #ifdef CONFIG_FAIL_MAKE_REQUEST
