@@ -2459,7 +2459,7 @@ static void async_reclaim_high(struct mem_cgroup *memcg)
 		return;
 	}
 
-	pflags = 0;
+	pflags = PSI_ASYNC_MEMCG_RECLAIM;
 	psi_memstall_enter(&pflags);
 	nr_pages = memcg_usage > safe_pages ? memcg_usage - safe_pages :
 		   MEMCG_CHARGE_BATCH;

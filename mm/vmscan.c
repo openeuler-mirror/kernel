@@ -8064,7 +8064,7 @@ static int __node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned in
 					   sc.gfp_mask);
 
 	cond_resched();
-	pflags = 0;
+	pflags = PSI_GLOBAL_RECLAIM;
 	psi_memstall_enter(&pflags);
 	fs_reclaim_acquire(sc.gfp_mask);
 	/*

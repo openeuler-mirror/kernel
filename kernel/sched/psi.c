@@ -349,6 +349,26 @@ static void record_stat_times(struct psi_group_cpu *groupc, u32 delta)
 		if (groupc->fine_grained_state_mask & (1 << PSI_MEMCG_RECLAIM_FULL))
 			groupc->fine_grained_times[PSI_MEMCG_RECLAIM_FULL] += delta;
 	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_GLOBAL_RECLAIM_SOME)) {
+		groupc->fine_grained_times[PSI_GLOBAL_RECLAIM_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_GLOBAL_RECLAIM_FULL))
+			groupc->fine_grained_times[PSI_GLOBAL_RECLAIM_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_COMPACT_SOME)) {
+		groupc->fine_grained_times[PSI_COMPACT_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_COMPACT_FULL))
+			groupc->fine_grained_times[PSI_COMPACT_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_ASYNC_MEMCG_RECLAIM_SOME)) {
+		groupc->fine_grained_times[PSI_ASYNC_MEMCG_RECLAIM_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_ASYNC_MEMCG_RECLAIM_FULL))
+			groupc->fine_grained_times[PSI_ASYNC_MEMCG_RECLAIM_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_SWAP_SOME)) {
+		groupc->fine_grained_times[PSI_SWAP_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_SWAP_FULL))
+			groupc->fine_grained_times[PSI_SWAP_FULL] += delta;
+	}
 }
 
 static bool test_fine_grained_stat(unsigned int *stat_tasks,
@@ -361,6 +381,26 @@ static bool test_fine_grained_stat(unsigned int *stat_tasks,
 	case PSI_MEMCG_RECLAIM_FULL:
 		return unlikely(stat_tasks[NR_MEMCG_RECLAIM] &&
 		       nr_running == stat_tasks[NR_MEMCG_RECLAIM_RUNNING]);
+	case PSI_GLOBAL_RECLAIM_SOME:
+		return unlikely(stat_tasks[NR_GLOBAL_RECLAIM]);
+	case PSI_GLOBAL_RECLAIM_FULL:
+		return unlikely(stat_tasks[NR_GLOBAL_RECLAIM] &&
+		       nr_running == stat_tasks[NR_GLOBAL_RECLAIM_RUNNING]);
+	case PSI_COMPACT_SOME:
+		return unlikely(stat_tasks[NR_COMPACT]);
+	case PSI_COMPACT_FULL:
+		return unlikely(stat_tasks[NR_COMPACT] &&
+		       nr_running == stat_tasks[NR_COMPACT_RUNNING]);
+	case PSI_ASYNC_MEMCG_RECLAIM_SOME:
+		return unlikely(stat_tasks[NR_ASYNC_MEMCG_RECLAIM]);
+	case PSI_ASYNC_MEMCG_RECLAIM_FULL:
+		return unlikely(stat_tasks[NR_ASYNC_MEMCG_RECLAIM] &&
+		      nr_running == stat_tasks[NR_ASYNC_MEMCG_RECLAIM_RUNNING]);
+	case PSI_SWAP_SOME:
+		return unlikely(stat_tasks[NR_SWAP]);
+	case PSI_SWAP_FULL:
+		return unlikely(stat_tasks[NR_SWAP] &&
+		       nr_running == stat_tasks[NR_SWAP_RUNNING]);
 	default:
 		return false;
 	}
@@ -1817,6 +1857,10 @@ static const struct proc_ops psi_cpu_proc_ops = {
 #ifdef CONFIG_PSI_FINE_GRAINED
 static const char *const psi_stat_names[] = {
 	"cgroup_memory_reclaim",
+	"global_memory_reclaim",
+	"compact",
+	"cgroup_async_memory_reclaim",
+	"swap",
 };
 
 int psi_stat_show(struct seq_file *m, struct psi_group *group)
