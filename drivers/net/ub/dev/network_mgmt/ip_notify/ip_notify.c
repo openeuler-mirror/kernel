@@ -218,7 +218,7 @@ static int ip_notify_init_ipv4(struct kobject *kobj,
 	return 0;
 
 err_bad_ipv4_notify_tx_cnt:
-	sysfs_remove_file(kobj, &ipn_attrs->bad_ipv4_notify_tx_cnt.attr);
+	sysfs_remove_file(kobj, &ipn_attrs->good_ipv4_notify_tx_cnt.attr);
 	return ret;
 }
 
@@ -244,7 +244,7 @@ static int ip_notify_init_ipv6(struct kobject *kobj,
 	return 0;
 
 err_bad_ipv6_notify_tx_cnt:
-	sysfs_remove_file(kobj, &ipn_attrs->bad_ipv6_notify_tx_cnt.attr);
+	sysfs_remove_file(kobj, &ipn_attrs->good_ipv6_notify_tx_cnt.attr);
 	return ret;
 }
 
