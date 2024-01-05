@@ -2290,6 +2290,20 @@ config RANDOMIZE_MODULE_REGION_FULL
 	  the region is exhausted. In this particular case of region
 	  exhaustion, modules might be able to fall back to a larger 2GB area.
 
+config KASLR_SKIP_MEM_RANGE
+	bool "Skip specified memory range when randomize the kernel image"
+	depends on RANDOMIZE_BASE
+	default n
+	help
+	  Skip specified memory range when randomize the kernel image. This
+	  feature support memmap and nokalsr kernel parameter in arm64.
+	  Memmap kernel parameter are described by the memmap=nn[KMG]$ss[KMG],
+	  Region of memory to be reserved is from ss to ss+nn. Nokaslr
+	  kernel parameters are described by the nokaslr=nn[KMG]-ss[KMG].
+	  Region of memory to be reserved is from nn to ss. The region must
+	  be in the range of existed memory, otherwise will be ignored.This
+	  feature support up to 32 memmap regions and 4 nokaslr regions.
+
 config CC_HAVE_STACKPROTECTOR_SYSREG
 	def_bool $(cc-option,-mstack-protector-guard=sysreg -mstack-protector-guard-reg=sp_el0 -mstack-protector-guard-offset=0)
 

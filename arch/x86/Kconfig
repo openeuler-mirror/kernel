@@ -2156,6 +2156,18 @@ config RANDOMIZE_BASE
 
 	  If unsure, say Y.
 
+config KASLR_SKIP_MEM_RANGE
+	bool "Skip specified memory range when randomize the kernel image"
+	depends on RANDOMIZE_BASE
+	default n
+	help
+	  Skip specified memory range when randomize the kernel image. This
+	  feature support nokalsr kernel parameter in x86. Nokaslr kernel
+	  parameters are described by the nokaslr=nn[KMG]-ss[KMG].
+	  Region of memory to be reserved is from nn to ss. The region must
+	  be in the range of existed memory, otherwise will be ignored.This
+	  feature support up to 4 nokaslr regions.
+
 # Relocation on x86 needs some additional build support
 config X86_NEED_RELOCS
 	def_bool y
