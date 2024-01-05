@@ -6773,6 +6773,13 @@ CONFIG_TEE=m
 # CONFIG_PECI is not set
 # CONFIG_HTE is not set
 # CONFIG_CDX_BUS is not set
+
+#
+# CPU Inspect
+#
+CONFIG_CPU_INSPECT=m
+CONFIG_CPU_INSPECTOR_ATF=m
+# end of CPU Inspect
 # end of Device Drivers
 
 #
