@@ -39,7 +39,7 @@ config BINFMT_ELF_KUNIT_TEST
 	  compat_binfmt_elf KUnit test is also created.
 
 config COMPAT_BINFMT_ELF
-	def_bool y
+	bool
 	depends on COMPAT && BINFMT_ELF
 	select ELFCORE
 
