@@ -573,6 +573,15 @@ static struct jffs2_xattr_ref *create_xattr_ref(struct jffs2_sb_info *c, struct 
 	return ref; /* success */
 }
 
+static void move_xattr_ref_to_dead_list(struct jffs2_sb_info *c,
+		struct jffs2_xattr_ref *ref)
+{
+	spin_lock(&c->erase_completion_lock);
+	ref->next = c->xref_dead_list;
+	c->xref_dead_list = ref;
+	spin_unlock(&c->erase_completion_lock);
+}
+
 static void delete_xattr_ref(struct jffs2_sb_info *c, struct jffs2_xattr_ref *ref)
 {
 	/* must be called under down_write(xattr_sem) */
@@ -582,10 +591,7 @@ static void delete_xattr_ref(struct jffs2_sb_info *c, struct jffs2_xattr_ref *re
 	ref->xseqno |= XREF_DELETE_MARKER;
 	ref->ino = ref->ic->ino;
 	ref->xid = ref->xd->xid;
-	spin_lock(&c->erase_completion_lock);
-	ref->next = c->xref_dead_list;
-	c->xref_dead_list = ref;
-	spin_unlock(&c->erase_completion_lock);
+	move_xattr_ref_to_dead_list(c, ref);
 
 	dbg_xattr("xref(ino=%u, xid=%u, xseqno=%u) was removed.\n",
 		  ref->ino, ref->xid, ref->xseqno);
@@ -1094,6 +1100,40 @@ int do_jffs2_getxattr(struct inode *inode, int xprefix, const char *xname,
 	return rc;
 }
 
+static void do_jffs2_delete_xattr_ref(struct jffs2_sb_info *c,
+		struct jffs2_xattr_ref *ref)
+{
+	uint32_t request, length;
+	int err;
+	struct jffs2_xattr_datum *xd;
+
+	request = PAD(sizeof(struct jffs2_raw_xref));
+	err = jffs2_reserve_space(c, request, &length,
+			ALLOC_NORMAL, JFFS2_SUMMARY_XREF_SIZE);
+	down_write(&c->xattr_sem);
+	if (err) {
+		JFFS2_WARNING("jffs2_reserve_space()=%d, request=%u\n",
+				err, request);
+		delete_xattr_ref(c, ref);
+		up_write(&c->xattr_sem);
+		return;
+	}
+
+	xd = ref->xd;
+	ref->ino = ref->ic->ino;
+	ref->xid = xd->xid;
+	ref->xseqno |= XREF_DELETE_MARKER;
+	save_xattr_ref(c, ref);
+
+	move_xattr_ref_to_dead_list(c, ref);
+	dbg_xattr("xref(ino=%u, xid=%u, xseqno=%u) was removed.\n",
+		  ref->ino, ref->xid, ref->xseqno);
+	unrefer_xattr_datum(c, xd);
+
+	up_write(&c->xattr_sem);
+	jffs2_complete_reservation(c);
+}
+
 int do_jffs2_setxattr(struct inode *inode, int xprefix, const char *xname,
 		      const char *buffer, size_t size, int flags)
 {
@@ -1101,7 +1141,7 @@ int do_jffs2_setxattr(struct inode *inode, int xprefix, const char *xname,
 	struct jffs2_sb_info *c = JFFS2_SB_INFO(inode->i_sb);
 	struct jffs2_inode_cache *ic = f->inocache;
 	struct jffs2_xattr_datum *xd;
-	struct jffs2_xattr_ref *ref, *newref, **pref;
+	struct jffs2_xattr_ref *ref, *newref, *oldref, **pref;
 	uint32_t length, request;
 	int rc;
 
@@ -1117,6 +1157,7 @@ int do_jffs2_setxattr(struct inode *inode, int xprefix, const char *xname,
 		return rc;
 	}
 
+	oldref = NULL;
 	/* Find existing xattr */
 	down_write(&c->xattr_sem);
  retry:
@@ -1200,11 +1241,13 @@ int do_jffs2_setxattr(struct inode *inode, int xprefix, const char *xname,
 		rc = PTR_ERR(newref);
 		unrefer_xattr_datum(c, xd);
 	} else if (ref) {
-		delete_xattr_ref(c, ref);
+		oldref = ref;
 	}
  out:
 	up_write(&c->xattr_sem);
 	jffs2_complete_reservation(c);
+	if (oldref)
+		do_jffs2_delete_xattr_ref(c, oldref);
 	return rc;
 }
 
