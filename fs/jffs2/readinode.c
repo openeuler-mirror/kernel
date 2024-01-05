@@ -1344,6 +1344,7 @@ int jffs2_do_read_inode(struct jffs2_sb_info *c, struct jffs2_inode_info *f,
 
 		case INO_STATE_CHECKING:
 		case INO_STATE_GC:
+		case INO_STATE_CLEARING:
 			/* If it's in either of these states, we need
 			   to wait for whoever's got it to finish and
 			   put it back. */
