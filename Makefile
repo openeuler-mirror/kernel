@@ -1226,6 +1226,9 @@ uapi-asm-generic:
 # Generate some files
 # ---------------------------------------------------------------------------
 
+# openEuler version variables
+include $(srctree)/Makefile.oever
+
 # KERNELRELEASE can change from a few different places, meaning version.h
 # needs to be updated, so this check is forced on all builds
 
@@ -1250,7 +1253,13 @@ define filechk_version.h
 	((c) > 255 ? 255 : (c)))';                                       \
 	echo \#define LINUX_VERSION_MAJOR $(VERSION);                    \
 	echo \#define LINUX_VERSION_PATCHLEVEL $(PATCHLEVEL);            \
-	echo \#define LINUX_VERSION_SUBLEVEL $(SUBLEVEL)
+	echo \#define LINUX_VERSION_SUBLEVEL $(SUBLEVEL);                \
+	echo \#define OPENEULER_LTS $(OPENEULER_LTS);                    \
+	echo \#define OPENEULER_MAJOR $(OPENEULER_MAJOR);                \
+	echo \#define OPENEULER_MINOR $(OPENEULER_MINOR);                \
+	echo '#define OPENEULER_VERSION(a,b) (((a) << 8) + (b))';        \
+	echo \#define OPENEULER_VERSION_CODE $(shell                     \
+	expr $(OPENEULER_MAJOR) \* 256 + $(OPENEULER_MINOR))
 endef
 
 $(version_h): PATCHLEVEL := $(or $(PATCHLEVEL), 0)
