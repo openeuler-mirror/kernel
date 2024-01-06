@@ -248,6 +248,13 @@ amd_f17h_uncore_is_visible(struct kobject *kobj, struct attribute *attr, int i)
 }
 
 static umode_t
+hygon_f18h_m6h_uncore_is_visible(struct kobject *kobj, struct attribute *attr, int i)
+{
+	return boot_cpu_data.x86 == 0x18 && boot_cpu_data.x86_model == 0x6 ?
+	       attr->mode : 0;
+}
+
+static umode_t
 amd_f19h_uncore_is_visible(struct kobject *kobj, struct attribute *attr, int i)
 {
 	return boot_cpu_data.x86 >= 0x19 ? attr->mode : 0;
@@ -298,6 +305,8 @@ DEFINE_UNCORE_FORMAT_ATTR(enallslices,	enallslices,	"config:46");		   /* F19h L3
 DEFINE_UNCORE_FORMAT_ATTR(enallcores,	enallcores,	"config:47");		   /* F19h L3 */
 DEFINE_UNCORE_FORMAT_ATTR(sliceid,	sliceid,	"config:48-50");	   /* F19h L3 */
 DEFINE_UNCORE_FORMAT_ATTR(rdwrmask,	rdwrmask,	"config:8-9");		   /* PerfMonV2 UMC */
+DEFINE_UNCORE_FORMAT_ATTR(slicemask4,	slicemask,	"config:28-31");	   /* F18h L3 */
+DEFINE_UNCORE_FORMAT_ATTR(threadmask32,	threadmask,	"config:32-63");	   /* F18h L3 */
 
 /* Common DF and NB attributes */
 static struct attribute *amd_uncore_df_format_attr[] = {
@@ -327,6 +336,12 @@ static struct attribute *amd_f17h_uncore_l3_format_attr[] = {
 	NULL,
 };
 
+/* F18h M06h unique L3 attributes */
+static struct attribute *hygon_f18h_m6h_uncore_l3_format_attr[] = {
+	&format_attr_slicemask4.attr,	/* slicemask */
+	NULL,
+};
+
 /* F19h unique L3 attributes */
 static struct attribute *amd_f19h_uncore_l3_format_attr[] = {
 	&format_attr_coreid.attr,	/* coreid */
@@ -350,6 +365,12 @@ static struct attribute_group amd_f17h_uncore_l3_format_group = {
 	.name = "format",
 	.attrs = amd_f17h_uncore_l3_format_attr,
 	.is_visible = amd_f17h_uncore_is_visible,
+};
+
+static struct attribute_group hygon_f18h_m6h_uncore_l3_format_group = {
+	.name = "format",
+	.attrs = hygon_f18h_m6h_uncore_l3_format_attr,
+	.is_visible = hygon_f18h_m6h_uncore_is_visible,
 };
 
 static struct attribute_group amd_f19h_uncore_l3_format_group = {
@@ -378,6 +399,11 @@ static const struct attribute_group *amd_uncore_l3_attr_groups[] = {
 static const struct attribute_group *amd_uncore_l3_attr_update[] = {
 	&amd_f17h_uncore_l3_format_group,
 	&amd_f19h_uncore_l3_format_group,
+	NULL,
+};
+
+static const struct attribute_group *hygon_uncore_l3_attr_update[] = {
+	&hygon_f18h_m6h_uncore_l3_format_group,
 	NULL,
 };
 
@@ -742,9 +768,19 @@ static int amd_uncore_l3_event_init(struct perf_event *event)
 			 AMD64_L3_EN_ALL_CORES | AMD64_L3_EN_ALL_SLICES |
 			 AMD64_L3_COREID_MASK);
 
-	if (boot_cpu_data.x86 <= 0x18)
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD &&
+	    boot_cpu_data.x86 <= 0x18)
 		mask = ((config & AMD64_L3_SLICE_MASK) ? : AMD64_L3_SLICE_MASK) |
 		       ((config & AMD64_L3_THREAD_MASK) ? : AMD64_L3_THREAD_MASK);
+	else if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+		 boot_cpu_data.x86 == 0x18) {
+		if (boot_cpu_data.x86_model == 0x6)
+			return ((config & HYGON_L3_SLICE_MASK) ? : HYGON_L3_SLICE_MASK) |
+			       ((config & HYGON_L3_THREAD_MASK) ? : HYGON_L3_THREAD_MASK);
+		else
+			return ((config & AMD64_L3_SLICE_MASK) ? : AMD64_L3_SLICE_MASK) |
+			       ((config & AMD64_L3_THREAD_MASK) ? : AMD64_L3_THREAD_MASK);
+	}
 
 	/*
 	 * If the user doesn't specify a ThreadMask, they're not trying to
@@ -836,6 +872,18 @@ int amd_uncore_l3_ctx_init(struct amd_uncore *uncore, unsigned int cpu)
 		.capabilities	= PERF_PMU_CAP_NO_EXCLUDE | PERF_PMU_CAP_NO_INTERRUPT,
 		.module		= THIS_MODULE,
 	};
+
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+	    boot_cpu_data.x86 == 0x18) {
+		*l3_attr++ = &format_attr_event8.attr;
+		*l3_attr++ = &format_attr_umask8.attr;
+		if (boot_cpu_data.x86_model == 0x6) {
+			*l3_attr++ = &format_attr_threadmask32.attr;
+			pmu->pmu.attr_update = hygon_uncore_l3_attr_update;
+		} else {
+			*l3_attr++ = &format_attr_threadmask8.attr;
+		}
+	}
 
 	if (perf_pmu_register(&pmu->pmu, pmu->pmu.name, -1)) {
 		free_percpu(pmu->ctx);
