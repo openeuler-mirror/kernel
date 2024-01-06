@@ -165,8 +165,11 @@ static unsigned long calc_range_end(unsigned long start, unsigned long end)
 	return range_end;
 }
 
-static void feroceon_l2_inv_range(unsigned long start, unsigned long end)
+static void feroceon_l2_inv_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
+
 	/*
 	 * Clean and invalidate partial first cache line.
 	 */
@@ -195,8 +198,11 @@ static void feroceon_l2_inv_range(unsigned long start, unsigned long end)
 	dsb();
 }
 
-static void feroceon_l2_clean_range(unsigned long start, unsigned long end)
+static void feroceon_l2_clean_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
+
 	/*
 	 * If L2 is forced to WT, the L2 will always be clean and we
 	 * don't need to do anything here.
@@ -214,8 +220,11 @@ static void feroceon_l2_clean_range(unsigned long start, unsigned long end)
 	dsb();
 }
 
-static void feroceon_l2_flush_range(unsigned long start, unsigned long end)
+static void feroceon_l2_flush_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
+
 	start &= ~(CACHE_LINE_SIZE - 1);
 	end = (end + CACHE_LINE_SIZE - 1) & ~(CACHE_LINE_SIZE - 1);
 	while (start != end) {
