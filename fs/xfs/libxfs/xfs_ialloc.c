@@ -652,6 +652,7 @@ xfs_ialloc_ag_alloc(
 	int			do_sparse = 0;
 
 	memset(&args, 0, sizeof(args));
+	args.postallocs = 1;
 	args.tp = tp;
 	args.mp = tp->t_mountp;
 	args.fsbno = NULLFSBLOCK;

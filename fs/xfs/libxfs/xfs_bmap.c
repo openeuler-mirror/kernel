@@ -3692,6 +3692,7 @@ xfs_bmap_btalloc(
 		.datatype	= ap->datatype,
 		.alignment	= 1,
 		.minalignslop	= 0,
+		.postallocs	= 1,
 	};
 	xfs_fileoff_t		orig_offset;
 	xfs_extlen_t		orig_length;
