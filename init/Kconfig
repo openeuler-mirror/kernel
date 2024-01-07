@@ -1254,6 +1254,11 @@ config CGROUP_V1_KILL
 	default n
 	depends on CGROUPS
 
+config CGROUP_V1_STAT
+	bool "Getting Cgroup Stat in Cgroup V1"
+	default n
+	depends on CGROUPS
+
 config CGROUP_FILES
 	bool "Files Resource Controller for Control Groups"
 	select PAGE_COUNTER
