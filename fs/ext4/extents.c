@@ -568,13 +568,24 @@ __read_extent_tree_block(const char *function, unsigned int line,
 		if (err < 0)
 			goto errout;
 	}
-	if (buffer_verified(bh) && !(flags & EXT4_EX_FORCE_CACHE))
-		return bh;
-	err = __ext4_ext_check(function, line, inode, ext_block_hdr(bh),
-			       depth, pblk, le32_to_cpu(idx->ei_block));
-	if (err)
-		goto errout;
-	set_buffer_verified(bh);
+	if (buffer_verified(bh)) {
+		if (unlikely(ext_block_hdr(bh)->eh_magic != EXT4_EXT_MAGIC)) {
+			err = -EFSCORRUPTED;
+			ext4_error_inode(inode, function, line, 0,
+				"invalid magic for verified extent block %llu",
+				(unsigned long long)bh->b_blocknr);
+			goto errout;
+		}
+
+		if (!(flags & EXT4_EX_FORCE_CACHE))
+			return bh;
+	} else {
+		err = __ext4_ext_check(function, line, inode, ext_block_hdr(bh),
+				       depth, pblk, le32_to_cpu(idx->ei_block));
+		if (err)
+			goto errout;
+		set_buffer_verified(bh);
+	}
 	/*
 	 * If this is a leaf block, cache all of its entries
 	 */
