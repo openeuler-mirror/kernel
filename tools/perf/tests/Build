@@ -67,7 +67,7 @@ perf-y += sigtrap.o
 perf-y += event_groups.o
 perf-y += symbols.o
 
-ifeq ($(SRCARCH),$(filter $(SRCARCH),x86 arm arm64 powerpc))
+ifeq ($(SRCARCH),$(filter $(SRCARCH),x86 arm arm64 powerpc sw_64))
 perf-$(CONFIG_DWARF_UNWIND) += dwarf-unwind.o
 endif
 
