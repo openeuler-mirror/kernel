@@ -1825,6 +1825,16 @@
 			feature is enabled.  Other vmemmap pages not allocated from
 			the added memory block itself do not be affected.
 
+	hugepage_prohibit_sz=
+			[KNL] HugeTLB pages should not alloc page when the rest
+			of the normal pages less than hugepage_prohibit_sz when
+			system booting. This setting is to make sure a system
+			can start successfully even part of physical memory is
+			broken or wrong hugepage configration, admin users can
+			adjust this according to typical environment.
+
+			Requires CONFIG_HUGETLB_ALLOC_LIMIT
+
 	hung_task_panic=
 			[KNL] Should the hung task detector generate panics.
 			Format: 0 | 1
