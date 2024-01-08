@@ -94,6 +94,8 @@ F:	drivers/perf/hisilicon/hns3_pmu.c
 
 HISILICON ROCE DRIVER
 M:	Chengchang Tang <tangchengchang@huawei.com>
+M:	Youming Luo <luoyouming@huawei.com>
+M:	Junxian Huang <huangjunxian6@hisilicon.com>
 S:	Maintained
 F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
 F:	include/uapi/rdma/hns-abi.h
