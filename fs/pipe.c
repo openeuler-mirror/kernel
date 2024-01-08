@@ -672,8 +672,10 @@ pipe_poll(struct file *filp, poll_table *wait)
 	 * if something changes and you got it wrong, the poll
 	 * table entry will wake you up and fix it.
 	 */
+	spin_lock_irq(&pipe->rd_wait.lock);
 	head = READ_ONCE(pipe->head);
 	tail = READ_ONCE(pipe->tail);
+	spin_unlock_irq(&pipe->rd_wait.lock);
 
 	mask = 0;
 	if (filp->f_mode & FMODE_READ) {
