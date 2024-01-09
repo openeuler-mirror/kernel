@@ -4246,14 +4246,15 @@ DEFINE_STATIC_KEY_FALSE(memcg_swap_qos_key);
 
 #ifdef CONFIG_SYSCTL
 static int sysctl_memcg_swap_qos_stat;
+static int swap_qos_type_max = MAX_MEMCG_SWAP_TYPE;
 
-static void memcg_swap_qos_reset(void)
+static void memcg_swap_qos_reset(int type)
 {
 	struct mem_cgroup *memcg;
 
 	for_each_mem_cgroup(memcg) {
 		WRITE_ONCE(memcg->swap_dev->max, PAGE_COUNTER_MAX);
-		WRITE_ONCE(memcg->swap_dev->type, SWAP_TYPE_ALL);
+		WRITE_ONCE(memcg->swap_dev->type, type);
 	}
 }
 
@@ -4262,6 +4263,7 @@ static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
 {
 	int ret;
 	int qos_stat_old = sysctl_memcg_swap_qos_stat;
+	int swap_type;
 
 	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
 	if (ret)
@@ -4271,12 +4273,24 @@ static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
 		if (qos_stat_old == sysctl_memcg_swap_qos_stat)
 			return 0;
 
-		if (sysctl_memcg_swap_qos_stat) {
-			memcg_swap_qos_reset();
+		switch (sysctl_memcg_swap_qos_stat) {
+		case MEMCG_SWAP_STAT_DISABLE:
+			static_branch_disable(&memcg_swap_qos_key);
+			return 0;
+		case MEMCG_SWAP_STAT_ALL:
+			swap_type = SWAP_TYPE_ALL;
+			break;
+		case MEMCG_SWAP_STAT_NONE:
+			swap_type = SWAP_TYPE_NONE;
+			break;
+		}
+
+		if (qos_stat_old == MEMCG_SWAP_STAT_DISABLE) {
+			memcg_swap_qos_reset(swap_type);
 			static_branch_enable(&memcg_swap_qos_key);
 			enable_swap_slots_cache_max();
 		} else {
-			static_branch_disable(&memcg_swap_qos_key);
+			return -EINVAL;
 		}
 	}
 
@@ -8383,7 +8397,7 @@ static struct ctl_table mem_cgroup_sysctls[] = {
 		.mode		= 0644,
 		.proc_handler	= sysctl_memcg_swap_qos_handler,
 		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
+		.extra2		= &swap_qos_type_max,
 	},
 #endif
 };

@@ -383,6 +383,11 @@ static inline void memcg_print_bad_task(struct oom_control *oc)
 
 #ifdef CONFIG_MEMCG_SWAP_QOS
 DECLARE_STATIC_KEY_FALSE(memcg_swap_qos_key);
+
+#define MEMCG_SWAP_STAT_DISABLE		0
+#define MEMCG_SWAP_STAT_ALL		1
+#define MEMCG_SWAP_STAT_NONE		2
+#define MAX_MEMCG_SWAP_TYPE		MEMCG_SWAP_STAT_NONE
 #endif
 
 /*
