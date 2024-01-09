@@ -667,6 +667,12 @@ struct cftype cgroup1_base_files[] = {
 		.write = cgroup_kill_write,
 	},
 #endif
+#ifdef CONFIG_CGROUP_V1_STAT
+	{
+		.name = "cgroup.stat",
+		.seq_show = cgroup_stat_show,
+	},
+#endif
 	{ }	/* terminate */
 };
 

@@ -3657,7 +3657,7 @@ static int cgroup_events_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int cgroup_stat_show(struct seq_file *seq, void *v)
+int cgroup_stat_show(struct seq_file *seq, void *v)
 {
 	struct cgroup *cgroup = seq_css(seq)->cgroup;
 

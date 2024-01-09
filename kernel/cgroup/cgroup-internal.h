@@ -266,6 +266,7 @@ int cgroup_task_count(const struct cgroup *cgrp);
 
 ssize_t cgroup_kill_write(struct kernfs_open_file *of, char *buf, size_t nbytes,
 			  loff_t off);
+int cgroup_stat_show(struct seq_file *seq, void *v);
 
 /*
  * rstat.c
