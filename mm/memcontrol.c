@@ -4203,6 +4203,7 @@ void memcg_print_bad_task(struct oom_control *oc)
 	}
 }
 
+#ifdef CONFIG_SYSCTL
 static void memcg_oom_prio_reset(void)
 {
 	struct mem_cgroup *iter;
@@ -4232,34 +4233,7 @@ static int sysctl_memcg_oom_prio_handler(struct ctl_table *table, int write,
 
 	return ret;
 }
-
-static struct ctl_table memcg_oom_prio_sysctls[] = {
-	{
-		/*
-		 * This sysctl is used to control memcg oom priority
-		 * feature, the sysctl name is for compatibility.
-		 */
-		.procname	= "memcg_qos_enable",
-		.data		= &sysctl_memcg_oom_prio,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= sysctl_memcg_oom_prio_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-};
-
-static __init int memcg_oom_prio_sysctls_init(void)
-{
-	register_sysctl_init("vm", memcg_oom_prio_sysctls);
-	return 0;
-}
-#else
-static inline int memcg_oom_prio_sysctls_init(void)
-{
-	return 0;
-}
-
+#endif
 #endif
 
 #ifdef CONFIG_NUMA
@@ -8031,6 +8005,40 @@ void mem_cgroup_uncharge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages)
 	refill_stock(memcg, nr_pages);
 }
 
+#ifdef CONFIG_SYSCTL
+static struct ctl_table mem_cgroup_sysctls[] = {
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+	{
+		/*
+		 * This sysctl is used to control memcg oom priority
+		 * feature, the sysctl name is for compatibility.
+		 */
+		.procname	= "memcg_qos_enable",
+		.data		= &sysctl_memcg_oom_prio,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_memcg_oom_prio_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
+};
+
+static __init int mem_cgroup_sysctls_init(void)
+{
+	if (mem_cgroup_disabled())
+		return 0;
+
+	register_sysctl_init("vm", mem_cgroup_sysctls);
+	return 0;
+}
+#else
+static __init int mem_cgroup_sysctls_init(void)
+{
+	return 0;
+}
+#endif
+
 static int __init cgroup_memory(char *s)
 {
 	char *token;
@@ -8090,7 +8098,7 @@ static int __init mem_cgroup_init(void)
 	}
 
 	mem_cgroup_memfs_info_init();
-	memcg_oom_prio_sysctls_init();
+	mem_cgroup_sysctls_init();
 
 	return 0;
 }
