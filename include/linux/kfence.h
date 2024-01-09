@@ -19,6 +19,10 @@
 
 extern unsigned long kfence_sample_interval;
 
+#if IS_ENABLED(CONFIG_KFENCE_MUST_EARLY_INIT)
+extern bool __ro_after_init kfence_must_early_init;
+#endif
+
 #ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
 extern int kfence_num_objects;
 #define KFENCE_NR_OBJECTS kfence_num_objects

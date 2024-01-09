@@ -520,6 +520,11 @@ static int __init parse_kfence_early_init(char *arg)
 
 	if (get_option(&arg, &val))
 		kfence_early_init = !!val;
+
+#if IS_ENABLED(CONFIG_KFENCE_MUST_EARLY_INIT)
+	kfence_must_early_init = (val == -1) ? true : false;
+#endif
+
 	return 0;
 }
 early_param("kfence.sample_interval", parse_kfence_early_init);

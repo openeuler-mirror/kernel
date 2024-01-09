@@ -50,6 +50,11 @@
 
 static bool kfence_enabled __read_mostly;
 static bool disabled_by_warn __read_mostly;
+#if IS_ENABLED(CONFIG_KFENCE_MUST_EARLY_INIT)
+bool __ro_after_init kfence_must_early_init;
+#else
+#define kfence_must_early_init 0
+#endif
 
 unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 EXPORT_SYMBOL_GPL(kfence_sample_interval); /* Export for test modules. */
@@ -62,11 +67,20 @@ EXPORT_SYMBOL_GPL(kfence_sample_interval); /* Export for test modules. */
 static int kfence_enable_late(void);
 static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
 {
-	unsigned long num;
-	int ret = kstrtoul(val, 0, &num);
+	long num;
+	int ret = kstrtol(val, 0, &num);
 
 	if (ret < 0)
 		return ret;
+
+	if (num < -1)
+		return -ERANGE;
+
+	/*
+	 * For architecture that don't require early allocation, always support
+	 * re-enabling. So only need to set num to 0 if num < 0.
+	 */
+	num = max_t(long, 0, num);
 
 	/* Using 0 to indicate KFENCE is disabled. */
 	if (!num && READ_ONCE(kfence_enabled)) {
@@ -74,7 +88,7 @@ static int param_set_sample_interval(const char *val, const struct kernel_param 
 		WRITE_ONCE(kfence_enabled, false);
 	}
 
-	*((unsigned long *)kp->arg) = num;
+	*((unsigned long *)kp->arg) = (unsigned long)num;
 
 	if (num && !READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING)
 		return disabled_by_warn ? -EINVAL : kfence_enable_late();
@@ -861,7 +875,7 @@ static int kfence_debugfs_init(void)
 {
 	struct dentry *kfence_dir;
 
-	if (!READ_ONCE(kfence_enabled))
+	if (!READ_ONCE(kfence_enabled) && !kfence_must_early_init)
 		return 0;
 
 	kfence_dir = debugfs_create_dir("kfence", NULL);
@@ -946,7 +960,7 @@ static void toggle_allocation_gate(struct work_struct *work)
 
 void __init kfence_alloc_pool_and_metadata(void)
 {
-	if (!kfence_sample_interval)
+	if (!kfence_sample_interval && !kfence_must_early_init)
 		return;
 
 	if (kfence_dynamic_init())
@@ -987,12 +1001,13 @@ static void kfence_init_enable(void)
 	if (kfence_check_on_panic)
 		atomic_notifier_chain_register(&panic_notifier_list, &kfence_check_canary_notifier);
 
-	WRITE_ONCE(kfence_enabled, true);
-	queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
-
-	pr_info("initialized - using %lu bytes for %d objects at 0x%p-0x%p\n", KFENCE_POOL_SIZE,
-		KFENCE_NR_OBJECTS, (void *)__kfence_pool,
-		(void *)(__kfence_pool + KFENCE_POOL_SIZE));
+	if (!kfence_must_early_init) {
+		WRITE_ONCE(kfence_enabled, true);
+		queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
+		pr_info("initialized - using %lu bytes for %d objects at 0x%p-0x%p\n", KFENCE_POOL_SIZE,
+			KFENCE_NR_OBJECTS, (void *)__kfence_pool,
+			(void *)(__kfence_pool + KFENCE_POOL_SIZE));
+	}
 }
 
 void __init kfence_init(void)
@@ -1000,7 +1015,7 @@ void __init kfence_init(void)
 	stack_hash_seed = get_random_u32();
 
 	/* Setting kfence_sample_interval to 0 on boot disables KFENCE. */
-	if (!kfence_sample_interval)
+	if (!kfence_sample_interval && !kfence_must_early_init)
 		return;
 
 	if (!kfence_init_pool_early()) {
@@ -1089,8 +1104,12 @@ free_pool:
 
 static int kfence_enable_late(void)
 {
-	if (!__kfence_pool)
+	if (!__kfence_pool) {
+		if (IS_ENABLED(CONFIG_KFENCE_MUST_EARLY_INIT))
+			return 0;
+
 		return kfence_init_late();
+	}
 
 	WRITE_ONCE(kfence_enabled, true);
 	queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
