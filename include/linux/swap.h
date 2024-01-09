@@ -488,7 +488,8 @@ swp_entry_t folio_alloc_swap(struct folio *folio);
 bool folio_free_swap(struct folio *folio);
 void put_swap_folio(struct folio *folio, swp_entry_t entry);
 extern swp_entry_t get_swap_page_of_type(int);
-extern int get_swap_pages(int n, swp_entry_t swp_entries[], int entry_size);
+extern int get_swap_pages(int n, swp_entry_t swp_entries[], int entry_size,
+			  int type);
 extern int add_swap_count_continuation(swp_entry_t, gfp_t);
 extern void swap_shmem_alloc(swp_entry_t);
 extern int swap_duplicate(swp_entry_t);
@@ -515,6 +516,13 @@ static inline void put_swap_device(struct swap_info_struct *si)
 {
 	percpu_ref_put(&si->users);
 }
+
+#ifdef CONFIG_MEMCG_SWAP_QOS
+extern int write_swapfile_for_memcg(struct address_space *mapping,
+				    int *swap_type);
+extern void read_swapfile_for_memcg(struct seq_file *m, int type);
+extern long get_nr_swap_pages_type(int type);
+#endif
 
 #else /* CONFIG_SWAP */
 static inline struct swap_info_struct *swp_swap_info(swp_entry_t entry)
