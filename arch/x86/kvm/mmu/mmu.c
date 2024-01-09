@@ -3464,6 +3464,7 @@ static int mmu_alloc_special_roots(struct kvm_vcpu *vcpu)
 		return -ENOMEM;
 
 #ifdef CONFIG_X86_64
+	pml4_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
 	if (!pml4_root)
 		goto err_pml4;
 
