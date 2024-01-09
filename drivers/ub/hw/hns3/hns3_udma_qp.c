@@ -1856,6 +1856,9 @@ static int udma_alloc_qp_sq(struct udma_dev *udma_dev, struct udma_qp *qp,
 		qp->dca_ctx = &qp_attr->jetty->rc_node.context->dca_ctx;
 		if (qp_attr->jetty->rc_node.buf_addr) {
 			qp->mtr = qp_attr->jetty->rc_node.mtr;
+			if ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
+			    (udma_dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE))
+				qp->en_flags |= UDMA_QP_CAP_DIRECT_WQE;
 		} else {
 			ret = alloc_qp_wqe(udma_dev, qp, qp_attr->jetty->rc_node.buf_addr);
 			if (ret)
