@@ -201,6 +201,10 @@ struct obj_cgroup {
 	};
 };
 
+struct swap_device {
+	unsigned long max;
+};
+
 /*
  * The memory controller data structure. The memory controller controls both
  * page cache and RSS per cgroup. We would eventually like to provide
@@ -348,6 +352,10 @@ struct mem_cgroup {
 #ifdef CONFIG_MEMCG_V1_RECLAIM
 	int high_async_ratio;
 	bool high_async_reclaim;
+#endif
+
+#ifdef CONFIG_MEMCG_SWAP_QOS
+	struct swap_device *swap_dev;
 #endif
 
 	struct mem_cgroup_per_node *nodeinfo[];

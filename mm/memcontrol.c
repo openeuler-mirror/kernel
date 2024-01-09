@@ -4249,6 +4249,10 @@ static int sysctl_memcg_swap_qos_stat;
 
 static void memcg_swap_qos_reset(void)
 {
+	struct mem_cgroup *memcg;
+
+	for_each_mem_cgroup(memcg)
+		WRITE_ONCE(memcg->swap_dev->max, PAGE_COUNTER_MAX);
 }
 
 static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
@@ -4308,6 +4312,122 @@ static ssize_t memory_swapin(struct kernfs_open_file *of, char *buf,
 	mem_cgroup_scan_tasks(memcg, mem_cgroup_task_swapin, NULL);
 
 	return nbytes;
+}
+
+static int memcg_alloc_swap_device(struct mem_cgroup *memcg)
+{
+	memcg->swap_dev = kmalloc(sizeof(struct swap_device), GFP_KERNEL);
+	if (!memcg->swap_dev)
+		return -ENOMEM;
+	return 0;
+}
+
+static void memcg_free_swap_device(struct mem_cgroup *memcg)
+{
+	if (!memcg->swap_dev)
+		return;
+
+	kfree(memcg->swap_dev);
+	memcg->swap_dev = NULL;
+}
+
+static void memcg_swap_device_init(struct mem_cgroup *memcg,
+				   struct mem_cgroup *parent)
+{
+	if (!static_branch_likely(&memcg_swap_qos_key) || !parent)
+		WRITE_ONCE(memcg->swap_dev->max, PAGE_COUNTER_MAX);
+	else
+		WRITE_ONCE(memcg->swap_dev->max,
+			   READ_ONCE(parent->swap_dev->max));
+}
+
+u64 memcg_swapmax_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return PAGE_COUNTER_MAX * PAGE_SIZE;
+
+	return READ_ONCE(memcg->swap_dev->max) * PAGE_SIZE;
+}
+
+static ssize_t memcg_swapmax_write(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long max;
+	int err;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return -EACCES;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &max);
+	if (err)
+		return err;
+
+	WRITE_ONCE(memcg->swap_dev->max, max);
+
+	return nbytes;
+}
+
+static int mem_cgroup_check_swap_for_v1(struct folio *folio, swp_entry_t entry)
+{
+	struct mem_cgroup *memcg, *target_memcg;
+	unsigned long swap_usage;
+	unsigned long swap_limit;
+	long nr_swap_pages = PAGE_COUNTER_MAX;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return 0;
+
+	if (!entry.val)
+		return 0;
+
+	rcu_read_lock();
+	target_memcg = folio_memcg(folio);
+	if (!target_memcg || mem_cgroup_is_root(target_memcg) ||
+		!css_tryget_online(&target_memcg->css)) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	rcu_read_unlock();
+
+	for (memcg = target_memcg; memcg != root_mem_cgroup;
+	     memcg = parent_mem_cgroup(memcg)) {
+		swap_limit = READ_ONCE(memcg->swap_dev->max);
+		swap_usage = page_counter_read(&memcg->memsw) -
+			     page_counter_read(&memcg->memory);
+		nr_swap_pages = min_t(long, nr_swap_pages,
+				      swap_limit - swap_usage);
+	}
+	css_put(&target_memcg->css);
+
+	if (folio_nr_pages(folio) > nr_swap_pages)
+		return -ENOMEM;
+
+	return 0;
+}
+
+#else
+static int memcg_alloc_swap_device(struct mem_cgroup *memcg)
+{
+	return 0;
+}
+
+static void memcg_free_swap_device(struct mem_cgroup *memcg)
+{
+}
+
+static void memcg_swap_device_init(struct mem_cgroup *memcg,
+				   struct mem_cgroup *parent)
+{
+}
+
+static int mem_cgroup_check_swap_for_v1(struct folio *folio, swp_entry_t entry)
+{
+	return 0;
 }
 #endif
 
@@ -5807,6 +5927,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.write = memory_swapin,
 	},
+	{
+		.name = "swap.max",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memcg_swapmax_write,
+		.read_u64 = memcg_swapmax_read,
+	},
 #endif
 	{ },	/* terminate */
 };
@@ -5943,6 +6069,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 		free_mem_cgroup_per_node_info(memcg, node);
 	kfree(memcg->vmstats);
 	free_percpu(memcg->vmstats_percpu);
+	memcg_free_swap_device(memcg);
 	kfree(memcg);
 }
 
@@ -5963,6 +6090,9 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	memcg = kzalloc(struct_size(memcg, nodeinfo, nr_node_ids), GFP_KERNEL);
 	if (!memcg)
 		return ERR_PTR(error);
+
+	if (memcg_alloc_swap_device(memcg))
+		goto fail;
 
 	memcg->id.id = idr_alloc(&mem_cgroup_idr, NULL,
 				 1, MEM_CGROUP_ID_MAX + 1, GFP_KERNEL);
@@ -6047,12 +6177,14 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		page_counter_init(&memcg->swap, &parent->swap);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->tcpmem, &parent->tcpmem);
+		memcg_swap_device_init(memcg, parent);
 	} else {
 		init_memcg_events();
 		page_counter_init(&memcg->memory, NULL);
 		page_counter_init(&memcg->swap, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->tcpmem, NULL);
+		memcg_swap_device_init(memcg, NULL);
 
 		root_mem_cgroup = memcg;
 		return &memcg->css;
@@ -8301,7 +8433,7 @@ int __mem_cgroup_try_charge_swap(struct folio *folio, swp_entry_t entry)
 	unsigned short oldid;
 
 	if (do_memsw_account())
-		return 0;
+		return mem_cgroup_check_swap_for_v1(folio, entry);
 
 	memcg = folio_memcg(folio);
 

@@ -84,6 +84,8 @@ Brief summary of control files.
                                      used.
  memory.force_empty		     trigger forced page reclaim
  memory.force_swapin		     trigger forced swapin anon page
+ memory.swap.max		     set/show limit for the difference between memsw.usage
+				     and memory.usage
  memory.pressure_level		     set memory pressure notifications
  memory.swappiness		     set/show swappiness parameter of vmscan
 				     (See sysctl's vm.swappiness)
