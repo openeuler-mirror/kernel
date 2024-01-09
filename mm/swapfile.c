@@ -3325,7 +3325,7 @@ out:
 	if (inode)
 		inode_unlock(inode);
 	if (!error)
-		enable_swap_slots_cache();
+		enable_swap_slots_cache(p->type);
 	return error;
 }
 

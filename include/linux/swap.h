@@ -522,6 +522,7 @@ extern int write_swapfile_for_memcg(struct address_space *mapping,
 				    int *swap_type);
 extern void read_swapfile_for_memcg(struct seq_file *m, int type);
 extern long get_nr_swap_pages_type(int type);
+void enable_swap_slots_cache_max(void);
 #endif
 
 #else /* CONFIG_SWAP */
