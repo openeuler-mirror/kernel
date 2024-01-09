@@ -43,12 +43,12 @@ struct file_rd_hist {
 	__u32 tot_nr;
 };
 
-struct bpf_map_def SEC("maps") htab = {
-	.type = BPF_MAP_TYPE_HASH,
-	.key_size = sizeof(long),
-	.value_size = sizeof(struct file_rd_hist),
-	.max_entries = 10000,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__type(key, __u64);
+	__type(value, struct file_rd_hist);
+	__uint(max_entries, 10000);
+} htab SEC(".maps");
 
 static bool is_expected_file(void *name)
 {
@@ -135,4 +135,3 @@ int fs_file_release(struct fs_file_release_args *args)
 }
 
 char _license[] SEC("license") = "GPL";
-__u32 _version SEC("version") = 1;
