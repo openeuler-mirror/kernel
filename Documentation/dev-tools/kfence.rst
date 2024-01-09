@@ -53,12 +53,18 @@ configurable via the Kconfig option ``CONFIG_KFENCE_DEFERRABLE``.
    The KUnit test suite is very likely to fail when using a deferrable timer
    since it currently causes very unpredictable sample intervals.
 
-The KFENCE memory pool is of fixed size, and if the pool is exhausted, no
+If ``CONFIG_KFENCE_DYNAMIC_OBJECTS`` is disabled,
+the KFENCE memory pool is of fixed size, and if the pool is exhausted, no
 further KFENCE allocations occur. With ``CONFIG_KFENCE_NUM_OBJECTS`` (default
 255), the number of available guarded objects can be controlled. Each object
 requires 2 pages, one for the object itself and the other one used as a guard
 page; object pages are interleaved with guard pages, and every object page is
 therefore surrounded by two guard pages.
+
+If ``CONFIG_KFENCE_DYNAMIC_OBJECTS`` is enabled,
+the KFENCE memory pool size could be set via the kernel boot parameter
+``kfence.num_objects``. Note, the performance will degrade due to additional
+instructions(eg, load) added to the fast path of the memory allocation.
 
 The total memory dedicated to the KFENCE memory pool can be computed as::
 

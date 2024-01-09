@@ -19,12 +19,19 @@
 
 extern unsigned long kfence_sample_interval;
 
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+extern int kfence_num_objects;
+#define KFENCE_NR_OBJECTS kfence_num_objects
+#else
+#define KFENCE_NR_OBJECTS CONFIG_KFENCE_NUM_OBJECTS
+#endif
+
 /*
  * We allocate an even number of pages, as it simplifies calculations to map
  * address to metadata indices; effectively, the very first page serves as an
  * extended guard page, but otherwise has no special purpose.
  */
-#define KFENCE_POOL_SIZE ((CONFIG_KFENCE_NUM_OBJECTS + 1) * 2 * PAGE_SIZE)
+#define KFENCE_POOL_SIZE ((KFENCE_NR_OBJECTS + 1) * 2 * PAGE_SIZE)
 extern char *__kfence_pool;
 
 DECLARE_STATIC_KEY_FALSE(kfence_allocation_key);
