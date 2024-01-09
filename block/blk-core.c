@@ -71,6 +71,21 @@ static struct kmem_cache *blk_requestq_cachep;
  */
 static struct workqueue_struct *kblockd_workqueue;
 
+static bool precise_iostat;
+
+static int __init precise_iostat_setup(char *str)
+{
+	bool precise;
+
+	if (!kstrtobool(str, &precise)) {
+		precise_iostat = precise;
+		pr_info("precise iostat %d\n", precise_iostat);
+	}
+
+	return 1;
+}
+__setup("precise_iostat=", precise_iostat_setup);
+
 /**
  * blk_queue_flag_set - atomically set a queue flag
  * @flag: flag to be set
@@ -441,6 +456,8 @@ struct request_queue *blk_alloc_queue(int node_id)
 
 	blk_set_default_limits(&q->limits);
 	q->nr_requests = BLKDEV_DEFAULT_RQ;
+	if (precise_iostat)
+		blk_queue_flag_set(QUEUE_FLAG_PRECISE_IO_STAT, q);
 
 	return q;
 
@@ -938,11 +955,15 @@ EXPORT_SYMBOL_GPL(iocb_bio_iopoll);
 void update_io_ticks(struct block_device *part, unsigned long now, bool end)
 {
 	unsigned long stamp;
+	bool precise = blk_queue_precise_io_stat(part->bd_queue);
 again:
 	stamp = READ_ONCE(part->bd_stamp);
-	if (unlikely(time_after(now, stamp))) {
-		if (likely(try_cmpxchg(&part->bd_stamp, &stamp, now)))
-			__part_stat_add(part, io_ticks, end ? now - stamp : 1);
+	if (unlikely(time_after(now, stamp)) &&
+	    likely(try_cmpxchg(&part->bd_stamp, &stamp, now))) {
+		if (end || (precise && part_in_flight(part)))
+			__part_stat_add(part, io_ticks, now - stamp);
+		else if (!precise)
+			__part_stat_add(part, io_ticks, 1);
 	}
 	if (part->bd_partno) {
 		part = bdev_whole(part);
