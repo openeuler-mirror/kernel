@@ -756,7 +756,7 @@ static ssize_t hisi_ptp_dbg_read_state(struct file *filp, char __user *buf,
 
 	if (*ppos < 0)
 		return -EINVAL;
-	if (cnt <= 0)
+	if (cnt == 0)
 		return 0;
 	if (!access_ok(buf, cnt))
 		return -EFAULT;
@@ -914,7 +914,7 @@ static ssize_t hisi_ptp_dbg_read_reg(struct file *filp, char __user *buf,
 
 	if (*ppos < 0)
 		return -EINVAL;
-	if (cnt <= 0)
+	if (cnt == 0)
 		return 0;
 	if (!access_ok(buf, cnt))
 		return -EFAULT;

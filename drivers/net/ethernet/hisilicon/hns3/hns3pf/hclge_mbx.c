@@ -1165,7 +1165,7 @@ static const hclge_mbx_ops_fn hclge_mbx_ops_list[HCLGE_MBX_OPCODE_MAX] = {
 
 static void hclge_mbx_request_handling(struct hclge_mbx_ops_param *param)
 {
-	hclge_mbx_ops_fn cmd_func = NULL;
+	hclge_mbx_ops_fn cmd_func;
 	struct hclge_dev *hdev;
 	int ret = 0;
 
