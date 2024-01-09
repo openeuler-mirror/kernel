@@ -1958,6 +1958,7 @@ static const struct blk_mq_ops scsi_mq_ops = {
 	.get_rq_budget_token = scsi_mq_get_rq_budget_token,
 };
 
+#define FAIR_TAG_SHARING_THRESHOLD 128
 int scsi_mq_setup_tags(struct Scsi_Host *shost)
 {
 	unsigned int cmd_size, sgl_size;
@@ -1983,6 +1984,8 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 	tag_set->flags = BLK_MQ_F_SHOULD_MERGE;
 	tag_set->flags |=
 		BLK_ALLOC_POLICY_TO_MQ_FLAG(shost->hostt->tag_alloc_policy);
+	if (tag_set->queue_depth <= FAIR_TAG_SHARING_THRESHOLD)
+		tag_set->flags |= BLK_MQ_F_DISABLE_FAIR_TAG_SHARING;
 	if (shost->queuecommand_may_block)
 		tag_set->flags |= BLK_MQ_F_BLOCKING;
 	tag_set->driver_data = shost;
