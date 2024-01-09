@@ -3313,6 +3313,10 @@ extern int do_munmap(struct mm_struct *, unsigned long, size_t,
 		     struct list_head *uf);
 extern int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int behavior);
 
+#ifdef CONFIG_MEMCG_SWAP_QOS
+extern void force_swapin_vma(struct vm_area_struct *vma);
+#endif
+
 #ifdef CONFIG_MMU
 extern int do_vma_munmap(struct vma_iterator *vmi, struct vm_area_struct *vma,
 			 unsigned long start, unsigned long end,
