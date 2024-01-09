@@ -303,7 +303,6 @@ queue_##name##_store(struct request_queue *q, const char *page, size_t count) \
 
 QUEUE_SYSFS_BIT_FNS(nonrot, NONROT, 1);
 QUEUE_SYSFS_BIT_FNS(random, ADD_RANDOM, 0);
-QUEUE_SYSFS_BIT_FNS(iostats, IO_STAT, 0);
 QUEUE_SYSFS_BIT_FNS(stable_writes, STABLE_WRITES, 0);
 #undef QUEUE_SYSFS_BIT_FNS
 
@@ -473,6 +472,45 @@ static ssize_t queue_dax_show(struct request_queue *q, char *page)
 	return queue_var_show(blk_queue_dax(q), page);
 }
 
+static ssize_t queue_iostats_show(struct request_queue *q, char *page)
+{
+	int val = 0;
+
+	if (blk_queue_io_stat(q))
+		val = blk_queue_precise_io_stat(q) ? 2 : 1;
+
+	return queue_var_show(val, page);
+}
+
+static ssize_t
+queue_iostats_store(struct request_queue *q, const char *page, size_t count)
+{
+	unsigned long nr;
+	int ret = queue_var_store(&nr, page, count);
+
+	if (ret < 0)
+		return ret;
+
+	switch (nr) {
+	case 0:
+		blk_queue_flag_clear(QUEUE_FLAG_IO_STAT, q);
+		blk_queue_flag_clear(QUEUE_FLAG_PRECISE_IO_STAT, q);
+		break;
+	case 1:
+		blk_queue_flag_set(QUEUE_FLAG_IO_STAT, q);
+		blk_queue_flag_clear(QUEUE_FLAG_PRECISE_IO_STAT, q);
+		break;
+	case 2:
+		blk_queue_flag_set(QUEUE_FLAG_IO_STAT, q);
+		blk_queue_flag_set(QUEUE_FLAG_PRECISE_IO_STAT, q);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return count;
+}
+
 #define QUEUE_RO_ENTRY(_prefix, _name)			\
 static struct queue_sysfs_entry _prefix##_entry = {	\
 	.attr	= { .name = _name, .mode = 0444 },	\
@@ -494,6 +532,7 @@ QUEUE_RO_ENTRY(queue_max_segments, "max_segments");
 QUEUE_RO_ENTRY(queue_max_integrity_segments, "max_integrity_segments");
 QUEUE_RO_ENTRY(queue_max_segment_size, "max_segment_size");
 QUEUE_RW_ENTRY(elv_iosched, "scheduler");
+QUEUE_RW_ENTRY(queue_iostats, "iostats");
 
 QUEUE_RO_ENTRY(queue_logical_block_size, "logical_block_size");
 QUEUE_RO_ENTRY(queue_physical_block_size, "physical_block_size");
@@ -539,7 +578,6 @@ static struct queue_sysfs_entry queue_hw_sector_size_entry = {
 };
 
 QUEUE_RW_ENTRY(queue_nonrot, "rotational");
-QUEUE_RW_ENTRY(queue_iostats, "iostats");
 QUEUE_RW_ENTRY(queue_random, "add_random");
 QUEUE_RW_ENTRY(queue_stable_writes, "stable_writes");
 

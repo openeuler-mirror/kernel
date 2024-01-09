@@ -358,8 +358,12 @@ What:		/sys/block/<disk>/queue/iostats
 Date:		January 2009
 Contact:	linux-block@vger.kernel.org
 Description:
-		[RW] This file is used to control (on/off) the iostats
-		accounting of the disk.
+		[RW] This file is used to control the iostats accounting of the
+		disk. If this value is 0, iostats accounting is disabled; If
+		this value is 1, iostats accounting is enabled, but io_ticks is
+		accounted by sampling and the result is not accurate; If this
+		value is 2, iostats accounting is enabled and io_ticks is
+		accounted precisely, but there will be slightly more overhead.
 
 
 What:		/sys/block/<disk>/queue/logical_block_size
