@@ -751,7 +751,7 @@ xfs_writepage_map(
 	for (i = 0, file_offset = page_offset(page);
 	     i < (PAGE_SIZE >> inode->i_blkbits) && file_offset < end_offset;
 	     i++, file_offset += len) {
-		if (iop && !test_bit(i, iop->uptodate))
+		if (iop && !test_bit(DIRTY_BITS(i), iop->state))
 			continue;
 
 		error = xfs_map_blocks(wpc, inode, file_offset);
@@ -800,6 +800,7 @@ xfs_writepage_map(
 		 */
 		set_page_writeback_keepwrite(page);
 	} else {
+		iomap_clear_range_dirty(page, 0, PAGE_SIZE);
 		clear_page_dirty_for_io(page);
 		set_page_writeback(page);
 	}
