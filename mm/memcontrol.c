@@ -65,6 +65,7 @@
 #include <linux/seq_buf.h>
 #include <linux/memcg_memfs_info.h>
 #include <linux/sched/isolation.h>
+#include <linux/parser.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -7308,6 +7309,62 @@ static ssize_t memory_oom_group_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
+enum {
+	MEMORY_RECLAIM_TYPE = 0,
+	MEMORY_RECLAIM_NULL,
+};
+
+static const match_table_t tokens = {
+	{ MEMORY_RECLAIM_TYPE, "type=%s"},
+	{ MEMORY_RECLAIM_NULL, NULL },
+};
+
+#define RECLAIM_TYPE_SIZE 8
+
+static int reclaim_param_parse(char *buf, unsigned long *nr_pages,
+			       unsigned int *reclaim_options)
+{
+	char *old_buf, *start;
+	char type[RECLAIM_TYPE_SIZE];
+	substring_t args[MAX_OPT_ARGS];
+	u64 bytes;
+
+	buf = strstrip(buf);
+	if (!strcmp(buf, "")) {
+		*nr_pages = PAGE_COUNTER_MAX;
+		return 0;
+	}
+
+	old_buf = buf;
+	bytes = memparse(buf, &buf);
+	if (buf == old_buf)
+		return -EINVAL;
+
+	*nr_pages = min(bytes / PAGE_SIZE, (u64)PAGE_COUNTER_MAX);
+
+	buf = strstrip(buf);
+	while ((start = strsep(&buf, " ")) != NULL) {
+		if (!strlen(start))
+			continue;
+
+		switch (match_token(start, tokens, args)) {
+		case MEMORY_RECLAIM_TYPE:
+			match_strlcpy(type, &args[0], RECLAIM_TYPE_SIZE);
+			if (!strcmp(type, "anon"))
+				*reclaim_options |= MEMCG_RECLAIM_NOT_FILE;
+			else if (!strcmp(type, "file"))
+				*reclaim_options &= ~MEMCG_RECLAIM_MAY_SWAP;
+			else
+				return -EINVAL;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 			      size_t nbytes, loff_t off)
 {
@@ -7317,17 +7374,21 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 	unsigned int reclaim_options;
 	int err;
 
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "", &nr_to_reclaim);
+	reclaim_options = MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
+	err = reclaim_param_parse(buf, &nr_to_reclaim, &reclaim_options);
 	if (err)
 		return err;
 
-	reclaim_options	= MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
 	while (nr_reclaimed < nr_to_reclaim) {
 		unsigned long reclaimed;
 
 		if (signal_pending(current))
 			return -EINTR;
+
+		/* If only reclaim swap pages, check swap space at first. */
+		if ((reclaim_options & MEMCG_RECLAIM_NOT_FILE) &&
+		    (mem_cgroup_get_nr_swap_pages(memcg) <= 0))
+			return -EAGAIN;
 
 		/*
 		 * This is the final attempt, drain percpu lru caches in the
