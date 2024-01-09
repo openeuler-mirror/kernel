@@ -24,6 +24,8 @@
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/fs.h>
 
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
@@ -1718,3 +1720,6 @@ int generic_file_rw_checks(struct file *file_in, struct file *file_out)
 
 	return 0;
 }
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_read);
+EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_release);
