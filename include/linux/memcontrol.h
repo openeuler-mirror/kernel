@@ -367,6 +367,10 @@ static inline void memcg_print_bad_task(struct oom_control *oc)
 }
 #endif
 
+#ifdef CONFIG_MEMCG_SWAP_QOS
+DECLARE_STATIC_KEY_FALSE(memcg_swap_qos_key);
+#endif
+
 /*
  * size of first charge trial.
  * TODO: maybe necessary to use big numbers in big irons or dynamic based of the

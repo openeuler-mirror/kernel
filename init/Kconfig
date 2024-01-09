@@ -973,6 +973,15 @@ config MEMCG_OOM_PRIORITY
 
 	  If unsure, say "n".
 
+config MEMCG_SWAP_QOS
+	bool "Enable Memory Cgroup Swap Control"
+	depends on MEMCG && SWAP
+	depends on X86 || ARM64
+	default n
+	help
+	  memcg swap control include memory force swapin, swapfile control
+	  and swap limit.
+
 config MEMCG_KMEM
 	bool
 	depends on MEMCG
