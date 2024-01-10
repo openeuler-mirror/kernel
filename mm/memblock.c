@@ -1038,6 +1038,10 @@ static bool should_skip_region(struct memblock_type *type,
 	if ((flags & MEMBLOCK_MIRROR) && !memblock_is_mirror(m))
 		return true;
 
+	/* skip mirror memory regions with MEMBLOCK_NOMIRROR  */
+	if ((flags & MEMBLOCK_NOMIRROR) && memblock_is_mirror(m))
+		return true;
+
 	/* skip nomap memory unless we were asked for it explicitly */
 	if (!(flags & MEMBLOCK_NOMAP) && memblock_is_nomap(m))
 		return true;
@@ -1381,13 +1385,14 @@ __next_mem_pfn_range_in_zone(u64 *idx, struct zone *zone,
 #endif /* CONFIG_DEFERRED_STRUCT_PAGE_INIT */
 
 /**
- * memblock_alloc_range_nid - allocate boot memory block
+ * memblock_alloc_range_nid_flags - allocate boot memory block with specify flag
  * @size: size of memory block to be allocated in bytes
  * @align: alignment of the region and block's size
  * @start: the lower bound of the memory region to allocate (phys address)
  * @end: the upper bound of the memory region to allocate (phys address)
  * @nid: nid of the free area to find, %NUMA_NO_NODE for any node
  * @exact_nid: control the allocation fall back to other nodes
+ * @flags: alloc memory from specify memblock flag
  *
  * The allocation is performed from memory region limited by
  * memblock.current_limit if @end == %MEMBLOCK_ALLOC_ACCESSIBLE.
@@ -1395,22 +1400,18 @@ __next_mem_pfn_range_in_zone(u64 *idx, struct zone *zone,
  * If the specified node can not hold the requested memory and @exact_nid
  * is false, the allocation falls back to any node in the system.
  *
- * For systems with memory mirroring, the allocation is attempted first
- * from the regions with mirroring enabled and then retried from any
- * memory region.
- *
- * In addition, function using kmemleak_alloc_phys for allocated boot
- * memory block, it is never reported as leaks.
+ * In addition, function sets the min_count to 0 using kmemleak_alloc_phys for
+ * allocated boot memory block, so that it is never reported as leaks.
  *
  * Return:
  * Physical address of allocated memory block on success, %0 on failure.
  */
-phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
+phys_addr_t __init memblock_alloc_range_nid_flags(phys_addr_t size,
 					phys_addr_t align, phys_addr_t start,
 					phys_addr_t end, int nid,
-					bool exact_nid)
+					bool exact_nid,
+					enum memblock_flags flags)
 {
-	enum memblock_flags flags = choose_memblock_flags();
 	phys_addr_t found;
 
 	if (WARN_ONCE(nid == MAX_NUMNODES, "Usage of MAX_NUMNODES is deprecated. Use NUMA_NO_NODE instead\n"))
@@ -1472,6 +1473,41 @@ done:
 }
 
 /**
+ * memblock_alloc_range_nid - allocate boot memory block
+ * @size: size of memory block to be allocated in bytes
+ * @align: alignment of the region and block's size
+ * @start: the lower bound of the memory region to allocate (phys address)
+ * @end: the upper bound of the memory region to allocate (phys address)
+ * @nid: nid of the free area to find, %NUMA_NO_NODE for any node
+ * @exact_nid: control the allocation fall back to other nodes
+ *
+ * The allocation is performed from memory region limited by
+ * memblock.current_limit if @end == %MEMBLOCK_ALLOC_ACCESSIBLE.
+ *
+ * If the specified node can not hold the requested memory and @exact_nid
+ * is false, the allocation falls back to any node in the system.
+ *
+ * For systems with memory mirroring, the allocation is attempted first
+ * from the regions with mirroring enabled and then retried from any
+ * memory region.
+ *
+ * In addition, function using kmemleak_alloc_phys for allocated boot
+ * memory block, it is never reported as leaks.
+ *
+ * Return:
+ * Physical address of allocated memory block on success, %0 on failure.
+ */
+phys_addr_t __init memblock_alloc_range_nid(phys_addr_t size,
+					phys_addr_t align, phys_addr_t start,
+					phys_addr_t end, int nid,
+					bool exact_nid)
+{
+	return memblock_alloc_range_nid_flags(size, align, start, end, nid,
+					      exact_nid,
+					      choose_memblock_flags());
+}
+
+/**
  * memblock_phys_alloc_range - allocate a memory block inside specified range
  * @size: size of memory block to be allocated in bytes
  * @align: alignment of the region and block's size
@@ -1522,6 +1558,7 @@ phys_addr_t __init memblock_phys_alloc_try_nid(phys_addr_t size, phys_addr_t ali
  * @max_addr: the upper bound of the memory region to allocate (phys address)
  * @nid: nid of the free area to find, %NUMA_NO_NODE for any node
  * @exact_nid: control the allocation fall back to other nodes
+ * @flags: alloc memory from specify memblock flag
  *
  * Allocates memory block using memblock_alloc_range_nid() and
  * converts the returned physical address to virtual.
@@ -1534,10 +1571,11 @@ phys_addr_t __init memblock_phys_alloc_try_nid(phys_addr_t size, phys_addr_t ali
  * Return:
  * Virtual address of allocated memory block on success, NULL on failure.
  */
-static void * __init memblock_alloc_internal(
+static void * __init __memblock_alloc_internal(
 				phys_addr_t size, phys_addr_t align,
 				phys_addr_t min_addr, phys_addr_t max_addr,
-				int nid, bool exact_nid)
+				int nid, bool exact_nid,
+				enum memblock_flags flags)
 {
 	phys_addr_t alloc;
 
@@ -1552,18 +1590,27 @@ static void * __init memblock_alloc_internal(
 	if (max_addr > memblock.current_limit)
 		max_addr = memblock.current_limit;
 
-	alloc = memblock_alloc_range_nid(size, align, min_addr, max_addr, nid,
-					exact_nid);
+	alloc = memblock_alloc_range_nid_flags(size, align, min_addr, max_addr, nid,
+					exact_nid, flags);
 
 	/* retry allocation without lower limit */
 	if (!alloc && min_addr)
-		alloc = memblock_alloc_range_nid(size, align, 0, max_addr, nid,
-						exact_nid);
+		alloc = memblock_alloc_range_nid_flags(size, align, 0, max_addr, nid,
+						exact_nid, flags);
 
 	if (!alloc)
 		return NULL;
 
 	return phys_to_virt(alloc);
+}
+
+static void * __init memblock_alloc_internal(
+				phys_addr_t size, phys_addr_t align,
+				phys_addr_t min_addr, phys_addr_t max_addr,
+				int nid, bool exact_nid)
+{
+	return __memblock_alloc_internal(size, align, min_addr, max_addr, nid,
+					 exact_nid, choose_memblock_flags());
 }
 
 /**
@@ -1627,6 +1674,19 @@ void * __init memblock_alloc_try_nid_raw(
 
 	return memblock_alloc_internal(size, align, min_addr, max_addr, nid,
 				       false);
+}
+
+void * __init memblock_alloc_try_nid_raw_flags(
+			phys_addr_t size, phys_addr_t align,
+			phys_addr_t min_addr, phys_addr_t max_addr,
+			int nid, enum memblock_flags flags)
+{
+	memblock_dbg("%s: %llu bytes align=0x%llx nid=%d from=%pa max_addr=%pa %pS\n",
+		     __func__, (u64)size, (u64)align, nid, &min_addr,
+		     &max_addr, (void *)_RET_IP_);
+
+	return __memblock_alloc_internal(size, align, min_addr, max_addr, nid,
+				       false, flags);
 }
 
 /**

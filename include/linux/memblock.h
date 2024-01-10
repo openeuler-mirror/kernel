@@ -42,6 +42,7 @@ extern unsigned long long max_possible_pfn;
  * kernel resource tree.
  * @MEMBLOCK_RSRV_NOINIT: memory region for which struct pages are
  * not initialized (only for reserved regions).
+ * @MEMBLOCK_NOMIRROR: memory region for non-mirrored memory
  */
 enum memblock_flags {
 	MEMBLOCK_NONE		= 0x0,	/* No special request */
@@ -50,6 +51,7 @@ enum memblock_flags {
 	MEMBLOCK_NOMAP		= 0x4,	/* don't add to kernel direct mapping */
 	MEMBLOCK_DRIVER_MANAGED = 0x8,	/* always detected via a driver */
 	MEMBLOCK_RSRV_NOINIT	= 0x10,	/* don't initialize struct pages */
+	MEMBLOCK_NOMIRROR	= 0x100,	/* alloc from non-mirrored region */
 };
 
 /**
@@ -428,6 +430,10 @@ void *memblock_alloc_try_nid_raw(phys_addr_t size, phys_addr_t align,
 void *memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
 			     phys_addr_t min_addr, phys_addr_t max_addr,
 			     int nid);
+void *memblock_alloc_try_nid_raw_flags(phys_addr_t size, phys_addr_t align,
+				       phys_addr_t min_addr,
+				       phys_addr_t max_addr, int nid,
+				       enum memblock_flags flags);
 
 static __always_inline void *memblock_alloc(phys_addr_t size, phys_addr_t align)
 {
