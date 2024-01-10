@@ -346,26 +346,49 @@ static void mem_reliable_feature_disable(int idx)
 	pr_info("%s is disabled\n", str);
 }
 
+#define TO_KB(bytes)		((bytes) >> 10)
 #define PAGES_TO_KB(n_pages)	((n_pages) << (PAGE_SHIFT - 10))
+
+#define SEQ_printf(m, x...)			\
+do {						\
+	if (m)					\
+		seq_printf(m, x);		\
+	else					\
+		pr_info(x);			\
+} while (0)
+
+static void reliable_show_limits(void)
+{
+	SEQ_printf(NULL, "ReliableTaskLimit: %lu kB\n",
+		   TO_KB(task_reliable_limit));
+
+	if (shmem_reliable_is_enabled())
+		SEQ_printf(NULL, "ReliableShmemLimit: %lu kB\n",
+			   TO_KB(shmem_reliable_limit));
+
+	if (filemap_reliable_is_enabled())
+		SEQ_printf(NULL, "ReliableFileCacheLimit: %lu kB\n",
+			   TO_KB(pagecache_reliable_limit));
+}
 
 void reliable_report_meminfo(struct seq_file *m)
 {
 	if (!mem_reliable_is_enabled())
 		return;
 
-	seq_printf(m, "ReliableTotal:    %8lu kB\n",
+	SEQ_printf(m, "ReliableTotal:    %8lu kB\n",
 		   PAGES_TO_KB(total_reliable_pages()));
-	seq_printf(m, "ReliableUsed:     %8lu kB\n",
+	SEQ_printf(m, "ReliableUsed:     %8lu kB\n",
 		   PAGES_TO_KB(used_reliable_pages()));
-	seq_printf(m, "ReliableTaskUsed: %8lu kB\n",
+	SEQ_printf(m, "ReliableTaskUsed: %8lu kB\n",
 		   PAGES_TO_KB(task_reliable_used_pages()));
-	seq_printf(m, "ReliableBuddyMem: %8lu kB\n",
+	SEQ_printf(m, "ReliableBuddyMem: %8lu kB\n",
 		   PAGES_TO_KB(free_reliable_pages()));
 
 	if (shmem_reliable_is_enabled()) {
 		unsigned long shmem_pages = (unsigned long)percpu_counter_sum(
 			&shmem_reliable_pages);
-		seq_printf(m, "ReliableShmem:    %8lu kB\n",
+		SEQ_printf(m, "ReliableShmem:    %8lu kB\n",
 			   PAGES_TO_KB(shmem_pages));
 	}
 
@@ -375,13 +398,17 @@ void reliable_report_meminfo(struct seq_file *m)
 
 		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
 		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
-		seq_printf(m, "FileCache:        %8lu kB\n", PAGES_TO_KB(num));
+		SEQ_printf(m, "FileCache:        %8lu kB\n", PAGES_TO_KB(num));
 
 		nr_reliable_pages =
 			percpu_counter_sum_positive(&pagecache_reliable_pages);
-		seq_printf(m, "ReliableFileCache: %8lu kB\n",
+		SEQ_printf(m, "ReliableFileCache: %8lu kB\n",
 			   PAGES_TO_KB(nr_reliable_pages));
 	}
+
+	/* show limit info during oom */
+	if (!m)
+		reliable_show_limits();
 }
 
 void mem_reliable_out_of_memory(gfp_t gfp, unsigned int order,
