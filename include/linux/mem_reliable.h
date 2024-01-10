@@ -18,6 +18,7 @@ extern bool shmem_reliable;
 extern bool pagecache_reliable;
 extern struct percpu_counter pagecache_reliable_pages;
 extern struct percpu_counter anon_reliable_pages;
+extern struct percpu_counter shmem_reliable_pages;
 
 void mem_reliable_init(bool has_unmirrored_mem, unsigned long mirrored_sz);
 bool mem_reliable_status(void);
@@ -113,6 +114,13 @@ static inline unsigned long task_reliable_used_pages(void)
 
 	return nr_pages;
 }
+
+static inline void shmem_reliable_folio_add(struct folio *folio, int nr_page)
+{
+	if (shmem_reliable_is_enabled() && folio_reliable(folio))
+		percpu_counter_add(&shmem_reliable_pages, nr_page);
+}
+
 #else
 #define reliable_enabled 0
 
@@ -136,6 +144,8 @@ static inline void reliable_lru_add(enum lru_list lru, struct folio *folio,
 static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
 					  int val) {}
 static inline bool mem_reliable_counter_initialized(void) { return false; }
+static inline void shmem_reliable_folio_add(struct folio *folio,
+					    int nr_page) {}
 #endif
 
 #endif

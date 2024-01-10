@@ -19,6 +19,7 @@ bool shmem_reliable __read_mostly = true;
 bool pagecache_reliable __read_mostly = true;
 struct percpu_counter pagecache_reliable_pages;
 struct percpu_counter anon_reliable_pages;
+struct percpu_counter shmem_reliable_pages;
 
 bool mem_reliable_counter_initialized(void)
 {
@@ -78,8 +79,12 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long mirrored_sz)
 
 void shmem_reliable_init(void)
 {
-	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled())
+	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled()) {
 		shmem_reliable = false;
+		return;
+	}
+
+	percpu_counter_init(&shmem_reliable_pages, 0, GFP_KERNEL);
 }
 
 void reliable_lru_add_batch(int zid, enum lru_list lru, int val)

@@ -465,6 +465,11 @@ int folio_migrate_mapping(struct address_space *mapping,
 	xas_unlock(&xas);
 	/* Leave irq disabled to prevent preemption while updating stats */
 
+	if (folio_test_swapbacked(folio) && !folio_test_swapcache(folio)) {
+		shmem_reliable_folio_add(folio, -nr);
+		shmem_reliable_folio_add(newfolio, nr);
+	}
+
 	/*
 	 * If moved to a different zone then also account
 	 * the page for that zone. Other VM counters will be
