@@ -57,6 +57,34 @@ config KFENCE_DEFERRABLE
 
 	  Say N if you are unsure.
 
+config KFENCE_DYNAMIC_OBJECTS
+	bool "Support dynamic configuration of the number of guarded objects"
+	default n
+	help
+	  Enable dynamic configuration of the number of KFENCE guarded objects.
+	  If this config is enabled, the number of KFENCE guarded objects could
+	  be overridden via boot parameter "kfence.num_objects". Note that the
+	  performance will degrade due to additional instructions(eg, load)
+	  added to the fast path of the memory allocation.
+
+	  Say N if you are unsure.
+
+config KFENCE_MUST_EARLY_INIT
+	bool "Require kfence_pool to be pre-allocated on arm64."
+	depends on ARM64
+	help
+	  To support KFENCE late init, arm64 will convert block mapping to
+	  page-level mappings, which leads to performance degradation and
+	  increased memory consumption.
+
+	  If this config is enabled, only KFENCE memory early init for arm64
+	  is supported, extending sample_interval to implement late enable. When
+	  "kfence.sample_interval" is set to -1 or 0, KFENCE will not be enabled.
+	  Only when "kfence.sample_interval" is set to -1, it can be enabled by
+	  setting it to a non-zero value.
+
+	  Say N if you are unsure.
+
 config KFENCE_STATIC_KEYS
 	bool "Use static keys to set up allocations" if EXPERT
 	depends on JUMP_LABEL

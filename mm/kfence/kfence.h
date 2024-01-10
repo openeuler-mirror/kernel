@@ -103,7 +103,7 @@ struct kfence_metadata {
 };
 
 #define KFENCE_METADATA_SIZE PAGE_ALIGN(sizeof(struct kfence_metadata) * \
-					CONFIG_KFENCE_NUM_OBJECTS)
+					KFENCE_NR_OBJECTS)
 
 extern struct kfence_metadata *kfence_metadata;
 
@@ -122,7 +122,7 @@ static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 	 * error.
 	 */
 	index = (addr - (unsigned long)__kfence_pool) / (PAGE_SIZE * 2) - 1;
-	if (index < 0 || index >= CONFIG_KFENCE_NUM_OBJECTS)
+	if (index < 0 || index >= KFENCE_NR_OBJECTS)
 		return NULL;
 
 	return &kfence_metadata[index];
