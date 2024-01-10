@@ -1027,6 +1027,13 @@ Example output. You may not have all of these fields.
     DirectMap4k:      401152 kB
     DirectMap2M:    10008576 kB
     DirectMap1G:    24117248 kB
+    ReliableTotal:     8190696 kB
+    ReliableUsed:       252912 kB
+    ReliableTaskUsed:   108136 kB
+    ReliableBuddyMem:  7937784 kB
+    ReliableShmem:         840 kB
+    FileCache:          104944 kB
+    ReliableFileCache:   102688 kB
 
 MemTotal
               Total usable RAM (i.e. physical RAM minus a few reserved
@@ -1191,6 +1198,21 @@ HugePages_Total, HugePages_Free, HugePages_Rsvd, HugePages_Surp, Hugepagesize, H
 DirectMap4k, DirectMap2M, DirectMap1G
               Breakdown of page table sizes used in the kernel's
               identity mapping of RAM
+ReliableTotal
+              Total reliable memory size
+ReliableUsed
+              The used amount of reliable memory
+ReliableTaskUsed
+              Size of mirrored memory used by user task
+ReliableBuddyMem
+              Size of unused mirrored memory in buddy system
+ReliableShmem
+              Total reliable memory used by share memory
+FileCache
+              Memory usage of page cache
+ReliableFileCache
+              Reliable memory usage of page cache
+
 
 vmallocinfo
 ~~~~~~~~~~~

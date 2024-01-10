@@ -129,6 +129,44 @@ static int __init reliable_sysctl_init(void)
 }
 arch_initcall(reliable_sysctl_init);
 
+#define PAGES_TO_KB(n_pages)	((n_pages) << (PAGE_SHIFT - 10))
+
+void reliable_report_meminfo(struct seq_file *m)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	seq_printf(m, "ReliableTotal:    %8lu kB\n",
+		   PAGES_TO_KB(total_reliable_pages()));
+	seq_printf(m, "ReliableUsed:     %8lu kB\n",
+		   PAGES_TO_KB(used_reliable_pages()));
+	seq_printf(m, "ReliableTaskUsed: %8lu kB\n",
+		   PAGES_TO_KB(task_reliable_used_pages()));
+	seq_printf(m, "ReliableBuddyMem: %8lu kB\n",
+		   PAGES_TO_KB(free_reliable_pages()));
+
+	if (shmem_reliable_is_enabled()) {
+		unsigned long shmem_pages = (unsigned long)percpu_counter_sum(
+			&shmem_reliable_pages);
+		seq_printf(m, "ReliableShmem:    %8lu kB\n",
+			   PAGES_TO_KB(shmem_pages));
+	}
+
+	if (filemap_reliable_is_enabled()) {
+		unsigned long nr_reliable_pages = 0;
+		unsigned long num = 0;
+
+		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
+		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
+		seq_printf(m, "FileCache:        %8lu kB\n", PAGES_TO_KB(num));
+
+		nr_reliable_pages =
+			percpu_counter_sum_positive(&pagecache_reliable_pages);
+		seq_printf(m, "ReliableFileCache: %8lu kB\n",
+			   PAGES_TO_KB(nr_reliable_pages));
+	}
+}
+
 static int __init setup_reliable_debug(char *str)
 {
 	if (*str++ != '=' || !*str)

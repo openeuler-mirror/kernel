@@ -27,6 +27,7 @@ void shmem_reliable_init(void);
 void reliable_lru_add(enum lru_list lru, struct folio *folio, int val);
 void reliable_lru_add_batch(int zid, enum lru_list lru, int val);
 bool mem_reliable_counter_initialized(void);
+void reliable_report_meminfo(struct seq_file *m);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -146,6 +147,7 @@ static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
 static inline bool mem_reliable_counter_initialized(void) { return false; }
 static inline void shmem_reliable_folio_add(struct folio *folio,
 					    int nr_page) {}
+static inline void reliable_report_meminfo(struct seq_file *m) {}
 #endif
 
 #endif
