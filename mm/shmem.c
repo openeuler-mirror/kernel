@@ -1679,7 +1679,8 @@ static struct folio *shmem_alloc_and_acct_folio(gfp_t gfp, struct inode *inode,
 	if (err)
 		goto failed;
 
-	shmem_prepare_alloc(&gfp);
+	if (!shmem_prepare_alloc(&gfp))
+		goto no_mem;
 
 	if (huge)
 		folio = shmem_alloc_hugefolio(gfp, info, index);
@@ -1691,6 +1692,7 @@ static struct folio *shmem_alloc_and_acct_folio(gfp_t gfp, struct inode *inode,
 		return folio;
 	}
 
+no_mem:
 	err = -ENOMEM;
 	shmem_inode_unacct_blocks(inode, nr);
 failed:
