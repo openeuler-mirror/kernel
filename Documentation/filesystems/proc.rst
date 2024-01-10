@@ -163,6 +163,8 @@ usually fail with ESRCH.
 		can be derived from smaps, but is faster and more convenient
  numa_maps	An extension based on maps, showing the memory locality and
 		binding policy as well as mem usage (in pages) of each mapping.
+ reliable	Present with CONFIG_MEMORY_RELIABLE=y. Task reliable status
+		information
  =============  ===============================================================
 
 For example, to get the status information of a process, all you have to do is
@@ -673,6 +675,10 @@ Where:
 "mapping details" summarizes mapping data such as mapping type, page usage counters,
 node locality page counters (N0 == node0, N1 == node1, ...) and the kernel page
 size, in KB, that is backing the mapping up.
+
+The /proc/pid/reliable is used to control user task's reliable status.
+Task with this flag can only alloc memory from mirrored region. Global
+init task's reliable flag can not be accessed.
 
 1.2 Kernel data
 ---------------

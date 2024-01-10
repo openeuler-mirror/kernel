@@ -4530,6 +4530,33 @@ failed:
 }
 EXPORT_SYMBOL_GPL(__alloc_pages_bulk);
 
+static inline void prepare_before_alloc(gfp_t *gfp_mask)
+{
+	bool zone_movable;
+
+	if (!mem_reliable_is_enabled())
+		return;
+
+	/*
+	 * memory reliable only handle memory allocation from movable zone
+	 * (force alloc from non-movable zone or force alloc from movable
+	 * zone) to get total isolation.
+	 */
+	zone_movable = gfp_zone(*gfp_mask & ~GFP_RELIABLE) == ZONE_MOVABLE;
+	if (!zone_movable)
+		goto clear_flag;
+
+	if (!in_task())
+		return;
+
+	if ((current->flags & PF_RELIABLE) || is_global_init(current))
+		*gfp_mask |= GFP_RELIABLE;
+
+	return;
+clear_flag:
+	*gfp_mask &= ~GFP_RELIABLE;
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -4549,6 +4576,9 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 		return NULL;
 
 	gfp &= gfp_allowed_mask;
+
+	prepare_before_alloc(&gfp);
+
 	/*
 	 * Apply scoped allocation constraints. This is mainly about GFP_NOFS
 	 * resp. GFP_NOIO which has to be inherited for all allocation requests

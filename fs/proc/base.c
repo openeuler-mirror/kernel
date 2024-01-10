@@ -2659,6 +2659,9 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 
 static bool proc_hide_pidents(const struct pid_entry *p)
 {
+	if (mem_reliable_hide_file(p->name))
+		return true;
+
 	return false;
 }
 
@@ -3390,6 +3393,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("oom_score",  S_IRUGO, proc_oom_score),
 	REG("oom_adj",    S_IRUGO|S_IWUSR, proc_oom_adj_operations),
 	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
+#ifdef CONFIG_MEMORY_RELIABLE
+	REG("reliable", S_IRUGO|S_IWUSR, proc_reliable_operations),
+#endif
 #ifdef CONFIG_AUDIT
 	REG("loginuid",   S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -3739,6 +3745,9 @@ static const struct pid_entry tid_base_stuff[] = {
 	ONE("oom_score", S_IRUGO, proc_oom_score),
 	REG("oom_adj",   S_IRUGO|S_IWUSR, proc_oom_adj_operations),
 	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
+#ifdef CONFIG_MEMORY_RELIABLE
+	REG("reliable", S_IRUGO|S_IWUSR, proc_reliable_operations),
+#endif
 #ifdef CONFIG_AUDIT
 	REG("loginuid",  S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),

@@ -13,9 +13,11 @@
 DECLARE_STATIC_KEY_FALSE(mem_reliable);
 
 extern bool reliable_enabled;
+extern struct file_operations proc_reliable_operations;
 
 void mem_reliable_init(bool has_unmirrored_mem, unsigned long mirrored_sz);
 bool mem_reliable_status(void);
+bool mem_reliable_hide_file(const char *name);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -74,6 +76,7 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 	return false;
 }
 static inline bool mem_reliable_status(void) { return false; }
+static inline bool mem_reliable_hide_file(const char *name) { return false; }
 #endif
 
 #endif
