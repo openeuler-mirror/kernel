@@ -316,3 +316,14 @@ out:
 	return 1;
 }
 __setup("reliable_debug", setup_reliable_debug);
+
+#define SEQ_PUT_DEC(str, val) \
+	seq_put_decimal_ull_width(m, str, (val) << (PAGE_SHIFT-10), 8)
+void reliable_report_usage(struct seq_file *m, struct mm_struct *mm)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	SEQ_PUT_DEC("Reliable:\t", atomic_long_read(&mm->reliable_nr_page));
+	seq_puts(m, " kB\n");
+}

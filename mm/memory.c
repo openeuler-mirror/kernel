@@ -963,6 +963,7 @@ copy_present_pte(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
 		folio_get(folio);
 		page_dup_file_rmap(page, false);
 		rss[mm_counter_file(page)]++;
+		add_reliable_folio_counter(folio, dst_vma->vm_mm, 1);
 	}
 
 	/*
@@ -1463,6 +1464,7 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 					mark_page_accessed(page);
 			}
 			rss[mm_counter(page)]--;
+			add_reliable_page_counter(page, mm, -1);
 			if (!delay_rmap) {
 				page_remove_rmap(page, vma, false);
 				if (unlikely(page_mapcount(page) < 0))
@@ -1490,6 +1492,7 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			 */
 			WARN_ON_ONCE(!vma_is_anonymous(vma));
 			rss[mm_counter(page)]--;
+			add_reliable_page_counter(page, mm, -1);
 			if (is_device_private_entry(entry))
 				page_remove_rmap(page, vma, false);
 			put_page(page);
@@ -3166,10 +3169,13 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 				dec_mm_counter(mm, mm_counter_file(&old_folio->page));
 				inc_mm_counter(mm, MM_ANONPAGES);
 			}
+			add_reliable_folio_counter(old_folio, mm, -1);
 		} else {
 			ksm_might_unmap_zero_page(mm, vmf->orig_pte);
 			inc_mm_counter(mm, MM_ANONPAGES);
 		}
+
+		add_reliable_folio_counter(new_folio, mm, 1);
 		flush_cache_page(vma, vmf->address, pte_pfn(vmf->orig_pte));
 		entry = mk_pte(&new_folio->page, vma->vm_page_prot);
 		entry = pte_sw_mkyoung(entry);
@@ -4023,6 +4029,7 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 		folio_free_swap(folio);
 
 	inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+	add_reliable_folio_counter(folio, vma->vm_mm, 1);
 	dec_mm_counter(vma->vm_mm, MM_SWAPENTS);
 	pte = mk_pte(page, vma->vm_page_prot);
 
@@ -4198,6 +4205,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	}
 
 	inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+	add_reliable_folio_counter(folio, vma->vm_mm, 1);
 	folio_add_new_anon_rmap(folio, vma, vmf->address);
 	folio_add_lru_vma(folio, vma);
 setpte:
@@ -4340,6 +4348,7 @@ vm_fault_t do_set_pmd(struct vm_fault *vmf, struct page *page)
 		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
 
 	add_mm_counter(vma->vm_mm, mm_counter_file(page), HPAGE_PMD_NR);
+	add_reliable_page_counter(page, vma->vm_mm, HPAGE_PMD_NR);
 	page_add_file_rmap(page, vma, true);
 
 	/*
@@ -4396,6 +4405,7 @@ void set_pte_range(struct vm_fault *vmf, struct folio *folio,
 	if (unlikely(uffd_wp))
 		entry = pte_mkuffd_wp(entry);
 	/* copy-on-write page */
+	add_reliable_folio_counter(folio, vma->vm_mm, nr);
 	if (write && !(vma->vm_flags & VM_SHARED)) {
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, nr);
 		VM_BUG_ON_FOLIO(nr != 1, folio);

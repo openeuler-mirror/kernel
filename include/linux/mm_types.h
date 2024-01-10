@@ -937,6 +937,10 @@ struct mm_struct {
 #ifdef CONFIG_SHARE_POOL
 		struct sp_group_master *sp_group_master;
 #endif
+#ifdef CONFIG_MEMORY_RELIABLE
+		/* total used reliable pages */
+		atomic_long_t reliable_nr_page;
+#endif
 	} __randomize_layout;
 
 	/*

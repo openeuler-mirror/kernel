@@ -181,6 +181,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 
 	if (new_page) {
 		folio_get(new_folio);
+		add_reliable_folio_counter(new_folio, mm, folio_nr_pages(new_folio));
 		page_add_new_anon_rmap(new_page, vma, addr);
 		folio_add_lru_vma(new_folio, vma);
 	} else
@@ -198,6 +199,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 		set_pte_at_notify(mm, addr, pvmw.pte,
 				  mk_pte(new_page, vma->vm_page_prot));
 
+	add_reliable_page_counter(old_page, mm, -1);
 	page_remove_rmap(old_page, vma, false);
 	if (!folio_mapped(old_folio))
 		folio_free_swap(old_folio);

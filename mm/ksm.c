@@ -1233,6 +1233,7 @@ static int replace_page(struct vm_area_struct *vma, struct page *page,
 	 */
 	if (!is_zero_pfn(page_to_pfn(kpage))) {
 		get_page(kpage);
+		add_reliable_page_counter(kpage, mm, 1);
 		page_add_anon_rmap(kpage, vma, addr, RMAP_NONE);
 		newpte = mk_pte(kpage, vma->vm_page_prot);
 	} else {
@@ -1262,6 +1263,7 @@ static int replace_page(struct vm_area_struct *vma, struct page *page,
 	 */
 	ptep_clear_flush(vma, addr, ptep);
 	set_pte_at_notify(mm, addr, ptep, newpte);
+	add_reliable_page_counter(page, mm, -1);
 
 	folio = page_folio(page);
 	page_remove_rmap(page, vma, false);

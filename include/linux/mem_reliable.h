@@ -36,6 +36,7 @@ bool mem_reliable_counter_initialized(void);
 void reliable_report_meminfo(struct seq_file *m);
 void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				int preferred_nid, nodemask_t *nodemask);
+void reliable_report_usage(struct seq_file *m, struct mm_struct *mm);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -180,6 +181,38 @@ static inline bool mem_reliable_should_reclaim(void)
 
 	return false;
 }
+
+static inline void reliable_page_counter_inner(struct mm_struct *mm, int val)
+{
+	atomic_long_add(val, &mm->reliable_nr_page);
+
+	/*
+	 * Update reliable page counter to zero if underflows.
+	 *
+	 * Since reliable page counter is used for debug purpose only,
+	 * there is no real function problem by doing this.
+	 */
+	if (unlikely(atomic_long_read(&mm->reliable_nr_page) < 0))
+		atomic_long_set(&mm->reliable_nr_page, 0);
+}
+
+static inline void add_reliable_folio_counter(struct folio *folio,
+		struct mm_struct *mm, int val)
+{
+	if (!folio_reliable(folio))
+		return;
+
+	reliable_page_counter_inner(mm, val);
+}
+
+static inline void add_reliable_page_counter(struct page *page,
+		struct mm_struct *mm, int val)
+{
+	if (!page_reliable(page))
+		return;
+
+	reliable_page_counter_inner(mm, val);
+}
 #else
 #define reliable_enabled 0
 
@@ -217,6 +250,12 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
 static inline bool reliable_allow_fb_enabled(void) { return false; }
+static inline void add_reliable_page_counter(struct page *page,
+		struct mm_struct *mm, int val) {}
+static inline void add_reliable_folio_counter(struct folio *folio,
+		struct mm_struct *mm, int val) {}
+static inline void reliable_report_usage(struct seq_file *m,
+		struct mm_struct *mm) {}
 #endif
 
 #endif

@@ -717,6 +717,7 @@ static void __collapse_huge_page_copy_succeeded(pte_t *pte,
 			 */
 			spin_lock(ptl);
 			ptep_clear(vma->vm_mm, address, _pte);
+			add_reliable_page_counter(src_page, vma->vm_mm, 1);
 			page_remove_rmap(src_page, vma, false);
 			spin_unlock(ptl);
 			free_page_and_swap_cache(src_page);
@@ -1224,6 +1225,7 @@ static int collapse_huge_page(struct mm_struct *mm, unsigned long address,
 
 	spin_lock(pmd_ptl);
 	BUG_ON(!pmd_none(*pmd));
+	add_reliable_page_counter(hpage, vma->vm_mm, HPAGE_PMD_NR);
 	page_add_new_anon_rmap(hpage, vma, address);
 	lru_cache_add_inactive_or_unevictable(hpage, vma);
 	pgtable_trans_huge_deposit(mm, pmd, pgtable);
@@ -1631,6 +1633,7 @@ int collapse_pte_mapped_thp(struct mm_struct *mm, unsigned long addr,
 		 */
 		ptep_clear(mm, addr, pte);
 		page_remove_rmap(page, vma, false);
+		add_reliable_page_counter(page, mm, -1);
 		nr_ptes++;
 	}
 
