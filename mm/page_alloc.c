@@ -4041,6 +4041,52 @@ check_retry_cpuset(int cpuset_mems_cookie, struct alloc_context *ac)
 	return false;
 }
 
+#ifdef CONFIG_MEMORY_RELIABLE
+/*
+ * if fallback is enabled, fallback to movable zone if no dma/normal zone
+ * found
+ */
+static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
+						      struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return NULL;
+
+	if (!(gfp_mask & GFP_RELIABLE))
+		return NULL;
+
+	ac->highest_zoneidx = gfp_zone(gfp_mask & ~GFP_RELIABLE);
+	ac->preferred_zoneref = first_zones_zonelist(
+		ac->zonelist, ac->highest_zoneidx, ac->nodemask);
+	return ac->preferred_zoneref->zone;
+}
+
+static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
+						  struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return;
+
+	if (gfp_mask & __GFP_NOFAIL)
+		return;
+
+	if ((ac->highest_zoneidx == ZONE_NORMAL) && (gfp_mask & GFP_RELIABLE)) {
+		ac->highest_zoneidx = gfp_zone(gfp_mask & ~GFP_RELIABLE);
+		ac->preferred_zoneref = first_zones_zonelist(
+			ac->zonelist, ac->highest_zoneidx, ac->nodemask);
+		return;
+	}
+}
+#else
+static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
+						      struct alloc_context *ac)
+{
+	return NULL;
+}
+static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
+						  struct alloc_context *ac) {}
+#endif
+
 static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
@@ -4080,8 +4126,10 @@ restart:
 	 */
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->highest_zoneidx, ac->nodemask);
-	if (!ac->preferred_zoneref->zone)
-		goto nopage;
+	if (!ac->preferred_zoneref->zone) {
+		if (!mem_reliable_fallback_zone(gfp_mask, ac))
+			goto nopage;
+	}
 
 	/*
 	 * Check for insane configurations where the cpuset doesn't contain
@@ -4098,6 +4146,8 @@ restart:
 
 	if (alloc_flags & ALLOC_KSWAPD)
 		wake_all_kswapds(order, gfp_mask, ac);
+
+	mem_reliable_fallback_slowpath(gfp_mask, ac);
 
 	/*
 	 * The adjusted alloc_flags might result in immediate success, so try
@@ -4619,7 +4669,7 @@ out_free_page:
 	*_page = NULL;
 
 out_retry:
-	if (is_global_init(current)) {
+	if (reliable_allow_fb_enabled() || is_global_init(current)) {
 		*gfp &= ~GFP_RELIABLE;
 		return true;
 	}

@@ -24,6 +24,7 @@ unsigned long pagecache_reliable_limit = ULONG_MAX;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
 unsigned long shmem_reliable_limit = ULONG_MAX;
+bool reliable_allow_fallback __read_mostly = true;
 
 bool mem_reliable_counter_initialized(void)
 {
@@ -300,6 +301,10 @@ static int __init setup_reliable_debug(char *str)
 		case 'S':
 			shmem_reliable = false;
 			pr_info("disable shmem use reliable memory\n");
+			break;
+		case 'F':
+			reliable_allow_fallback = false;
+			pr_info("disable memory reliable fallback\n");
 			break;
 		default:
 			pr_err("reliable_debug option '%c' unknown. skipped\n",

@@ -17,6 +17,7 @@ DECLARE_STATIC_KEY_FALSE(mem_reliable);
 extern bool reliable_enabled;
 extern struct file_operations proc_reliable_operations;
 extern bool shmem_reliable;
+extern bool reliable_allow_fallback;
 extern bool pagecache_reliable;
 extern struct percpu_counter pagecache_reliable_pages;
 extern struct percpu_counter anon_reliable_pages;
@@ -91,6 +92,11 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 	return false;
 }
 
+static inline bool reliable_allow_fb_enabled(void)
+{
+	return reliable_allow_fallback;
+}
+
 static inline bool mem_reliable_shmem_limit_check(void)
 {
 	return percpu_counter_read_positive(&shmem_reliable_pages) <
@@ -115,6 +121,9 @@ static inline bool shmem_prepare_alloc(gfp_t *gfp_mask)
 		*gfp_mask |= GFP_RELIABLE;
 		return true;
 	}
+
+	if (reliable_allow_fb_enabled())
+		return true;
 
 	return false;
 }
@@ -207,6 +216,7 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      unsigned int order,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
+static inline bool reliable_allow_fb_enabled(void) { return false; }
 #endif
 
 #endif
