@@ -4627,6 +4627,9 @@ void __init shmem_init(void)
 	else
 		shmem_huge = SHMEM_HUGE_NEVER; /* just in case it was patched */
 #endif
+
+	shmem_reliable_init();
+
 	return;
 
 out1:

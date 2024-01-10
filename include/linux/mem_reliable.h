@@ -14,10 +14,13 @@ DECLARE_STATIC_KEY_FALSE(mem_reliable);
 
 extern bool reliable_enabled;
 extern struct file_operations proc_reliable_operations;
+extern bool shmem_reliable;
+extern bool pagecache_reliable;
 
 void mem_reliable_init(bool has_unmirrored_mem, unsigned long mirrored_sz);
 bool mem_reliable_status(void);
 bool mem_reliable_hide_file(const char *name);
+void shmem_reliable_init(void);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -46,6 +49,16 @@ static inline bool folio_reliable(struct folio *folio)
 	return folio_zonenum(folio) < ZONE_MOVABLE;
 }
 
+static inline bool shmem_reliable_is_enabled(void)
+{
+	return shmem_reliable;
+}
+
+static inline bool filemap_reliable_is_enabled(void)
+{
+	return pagecache_reliable;
+}
+
 static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 {
 	if (!mem_reliable_is_enabled())
@@ -66,19 +79,30 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 
 static inline void shmem_prepare_alloc(gfp_t *gfp_mask)
 {
-	if (mem_reliable_is_enabled())
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (shmem_reliable_is_enabled())
 		*gfp_mask |= GFP_RELIABLE;
+	else
+		*gfp_mask &= ~GFP_RELIABLE;
 }
 
 static inline void filemap_prepare_alloc(gfp_t *gfp_mask)
 {
-	if (mem_reliable_is_enabled())
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (filemap_reliable_is_enabled())
 		*gfp_mask |= GFP_RELIABLE;
+	else
+		*gfp_mask &= ~GFP_RELIABLE;
 }
 #else
 #define reliable_enabled 0
 
 static inline bool mem_reliable_is_enabled(void) { return false; }
+static inline bool filemap_reliable_is_enabled(void) { return false; }
 static inline void mem_reliable_init(bool has_unmirrored_mem,
 				     unsigned long mirrored_sz) {}
 static inline bool page_reliable(struct page *page) { return false; }
@@ -91,6 +115,7 @@ static inline bool mem_reliable_status(void) { return false; }
 static inline bool mem_reliable_hide_file(const char *name) { return false; }
 static inline void shmem_prepare_alloc(gfp_t *gfp_mask) {}
 static inline void filemap_prepare_alloc(gfp_t *gfp_mask) {}
+static inline void shmem_reliable_init(void) {}
 #endif
 
 #endif

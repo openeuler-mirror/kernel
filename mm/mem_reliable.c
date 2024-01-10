@@ -13,6 +13,8 @@ DEFINE_STATIC_KEY_FALSE(mem_reliable);
 EXPORT_SYMBOL_GPL(mem_reliable);
 
 bool reliable_enabled;
+bool shmem_reliable __read_mostly = true;
+bool pagecache_reliable __read_mostly = true;
 
 bool mem_reliable_status(void)
 {
@@ -63,3 +65,41 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long mirrored_sz)
 
 	pr_info("init succeed, mirrored memory size(%lu)\n", mirrored_sz);
 }
+
+void shmem_reliable_init(void)
+{
+	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled())
+		shmem_reliable = false;
+}
+
+static int __init setup_reliable_debug(char *str)
+{
+	if (*str++ != '=' || !*str)
+		/*
+		 * No options specified.
+		 */
+		goto out;
+
+	/*
+	 * Determine which debug features should be switched on
+	 */
+	for (; *str && *str != ','; str++) {
+		switch (*str) {
+		case 'P':
+			pagecache_reliable = false;
+			pr_info("disable page cache use reliable memory\n");
+			break;
+		case 'S':
+			shmem_reliable = false;
+			pr_info("disable shmem use reliable memory\n");
+			break;
+		default:
+			pr_err("reliable_debug option '%c' unknown. skipped\n",
+			       *str);
+		}
+	}
+
+out:
+	return 1;
+}
+__setup("reliable_debug", setup_reliable_debug);
