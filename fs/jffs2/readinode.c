@@ -1344,6 +1344,7 @@ int jffs2_do_read_inode(struct jffs2_sb_info *c, struct jffs2_inode_info *f,
 
 		case INO_STATE_CHECKING:
 		case INO_STATE_GC:
+		case INO_STATE_CLEARING:
 			/* If it's in either of these states, we need
 			   to wait for whoever's got it to finish and
 			   put it back. */
@@ -1438,8 +1439,16 @@ void jffs2_do_clear_inode(struct jffs2_sb_info *c, struct jffs2_inode_info *f)
 	}
 
 	if (f->inocache && f->inocache->state != INO_STATE_CHECKING) {
-		jffs2_set_inocache_state(c, f->inocache, INO_STATE_CHECKEDABSENT);
+		bool need_del = false;
+
+		spin_lock(&c->erase_completion_lock);
 		if (f->inocache->nodes == (void *)f->inocache)
+			need_del = true;
+		jffs2_set_inocache_state(c, f->inocache,
+					 INO_STATE_CHECKEDABSENT);
+		spin_unlock(&c->erase_completion_lock);
+
+		if (need_del)
 			jffs2_del_ino_cache(c, f->inocache);
 	}
 
