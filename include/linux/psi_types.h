@@ -81,6 +81,42 @@ enum psi_aggregators {
 	NR_PSI_AGGREGATORS,
 };
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+#define CPU_CFS_BANDWIDTH		1
+
+enum psi_stat_states {
+	PSI_MEMCG_RECLAIM_SOME,
+	PSI_MEMCG_RECLAIM_FULL,
+	PSI_GLOBAL_RECLAIM_SOME,
+	PSI_GLOBAL_RECLAIM_FULL,
+	PSI_COMPACT_SOME,
+	PSI_COMPACT_FULL,
+	PSI_ASYNC_MEMCG_RECLAIM_SOME,
+	PSI_ASYNC_MEMCG_RECLAIM_FULL,
+	PSI_SWAP_SOME,
+	PSI_SWAP_FULL,
+	PSI_CPU_CFS_BANDWIDTH_FULL,
+#ifdef CONFIG_QOS_SCHED
+	PSI_CPU_QOS_FULL,
+#endif
+	NR_PSI_STAT_STATES,
+};
+
+enum psi_stat_task_count {
+	NR_MEMCG_RECLAIM,
+	NR_MEMCG_RECLAIM_RUNNING,
+	NR_GLOBAL_RECLAIM,
+	NR_GLOBAL_RECLAIM_RUNNING,
+	NR_COMPACT,
+	NR_COMPACT_RUNNING,
+	NR_ASYNC_MEMCG_RECLAIM,
+	NR_ASYNC_MEMCG_RECLAIM_RUNNING,
+	NR_SWAP,
+	NR_SWAP_RUNNING,
+	NR_PSI_STAT_TASK_COUNTS,
+};
+#endif /* CONFIG_PSI_FINE_GRAINED */
+
 struct psi_group_cpu {
 	/* 1st cacheline updated by the scheduler */
 
@@ -104,6 +140,17 @@ struct psi_group_cpu {
 	/* Delta detection against the sampling buckets */
 	u32 times_prev[NR_PSI_AGGREGATORS][NR_PSI_STATES]
 			____cacheline_aligned_in_smp;
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	CACHELINE_PADDING(_pad1_);
+	u32 fine_grained_state_mask;
+	u32 fine_grained_times[NR_PSI_STAT_STATES];
+	unsigned int fine_grained_tasks[NR_PSI_STAT_TASK_COUNTS];
+	u32 fine_grained_times_delta;
+	u32 fine_grained_times_prev[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	int prev_throttle;
+	int cur_throttle;
+#endif
 };
 
 /* PSI growth tracking window */
@@ -205,8 +252,14 @@ struct psi_group {
 	u64 rtpoll_total[NR_PSI_STATES - 1];
 	u64 rtpoll_next_update;
 	u64 rtpoll_until;
+#ifdef CONFIG_PSI_FINE_GRAINED
+	/* Running fine grained pressure averages */
+	u64 fine_grained_avg_total[NR_PSI_STAT_STATES];
+	/* Total fine grained stall times and sampled pressure averages */
+	u64 fine_grained_total[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
+	unsigned long fine_grained_avg[NR_PSI_STAT_STATES][3];
+#endif
 };
-
 #else /* CONFIG_PSI */
 
 #define NR_PSI_RESOURCES	0
@@ -214,5 +267,30 @@ struct psi_group {
 struct psi_group { };
 
 #endif /* CONFIG_PSI */
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+/*
+ * one type should have two task stats: regular running and memstall
+ * threads. The reason is the same as NR_MEMSTALL_RUNNING.
+ * Because of the psi_memstall_type is start with 1, the correspondence
+ * between psi_memstall_type and psi_stat_task_count should be as below:
+ *
+ * memstall : psi_memstall_type * 2 - 2;
+ * running  : psi_memstall_type * 2 - 1;
+ */
+enum psi_memstall_type {
+	PSI_MEMCG_RECLAIM = 1,
+	PSI_GLOBAL_RECLAIM,
+	PSI_COMPACT,
+	PSI_ASYNC_MEMCG_RECLAIM,
+	PSI_SWAP,
+};
+#else
+#define PSI_MEMCG_RECLAIM		0
+#define PSI_GLOBAL_RECLAIM		0
+#define PSI_COMPACT			0
+#define PSI_ASYNC_MEMCG_RECLAIM		0
+#define PSI_SWAP			0
+#endif /* CONFIG_PSI_FINE_GRAINED */
 
 #endif /* _LINUX_PSI_TYPES_H */

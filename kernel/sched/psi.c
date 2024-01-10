@@ -137,9 +137,12 @@
  * sampling of the aggregate task states would be.
  */
 
+#include <trace/events/sched.h>
+
 static int psi_bug __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(psi_disabled);
+DEFINE_STATIC_KEY_TRUE(psi_v1_disabled);
 static DEFINE_STATIC_KEY_TRUE(psi_cgroups_enabled);
 
 #ifdef CONFIG_PSI_DEFAULT_DISABLED
@@ -290,6 +293,10 @@ static void get_recent_times(struct psi_group *group, int cpu,
 			*pchanged_states |= (1 << s);
 	}
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+	groupc->fine_grained_times_delta = now - state_start;
+#endif
+
 	/*
 	 * When collect_percpu_times() from the avgs_work, we don't want to
 	 * re-arm avgs_work when all CPUs are IDLE. But the current CPU running
@@ -333,10 +340,190 @@ static void calc_avgs(unsigned long avg[3], int missed_periods,
 	avg[2] = calc_load(avg[2], EXP_300s, pct);
 }
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+
+static void record_stat_times(struct psi_group_cpu *groupc, u32 delta)
+{
+	if (groupc->fine_grained_state_mask & (1 << PSI_MEMCG_RECLAIM_SOME)) {
+		groupc->fine_grained_times[PSI_MEMCG_RECLAIM_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_MEMCG_RECLAIM_FULL))
+			groupc->fine_grained_times[PSI_MEMCG_RECLAIM_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_GLOBAL_RECLAIM_SOME)) {
+		groupc->fine_grained_times[PSI_GLOBAL_RECLAIM_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_GLOBAL_RECLAIM_FULL))
+			groupc->fine_grained_times[PSI_GLOBAL_RECLAIM_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_COMPACT_SOME)) {
+		groupc->fine_grained_times[PSI_COMPACT_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_COMPACT_FULL))
+			groupc->fine_grained_times[PSI_COMPACT_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_ASYNC_MEMCG_RECLAIM_SOME)) {
+		groupc->fine_grained_times[PSI_ASYNC_MEMCG_RECLAIM_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_ASYNC_MEMCG_RECLAIM_FULL))
+			groupc->fine_grained_times[PSI_ASYNC_MEMCG_RECLAIM_FULL] += delta;
+	}
+	if (groupc->fine_grained_state_mask & (1 << PSI_SWAP_SOME)) {
+		groupc->fine_grained_times[PSI_SWAP_SOME] += delta;
+		if (groupc->fine_grained_state_mask & (1 << PSI_SWAP_FULL))
+			groupc->fine_grained_times[PSI_SWAP_FULL] += delta;
+	}
+#ifdef CONFIG_CFS_BANDWIDTH
+	if (groupc->state_mask & (1 << PSI_CPU_FULL)) {
+		if (groupc->prev_throttle == CPU_CFS_BANDWIDTH)
+			groupc->fine_grained_times[PSI_CPU_CFS_BANDWIDTH_FULL] += delta;
+#ifdef CONFIG_QOS_SCHED
+		else if (groupc->prev_throttle == QOS_THROTTLED)
+			groupc->fine_grained_times[PSI_CPU_QOS_FULL] += delta;
+	}
+#endif
+#endif
+}
+
+static bool test_fine_grained_stat(unsigned int *stat_tasks,
+				   unsigned int nr_running,
+				   enum psi_stat_states state)
+{
+	switch (state) {
+	case PSI_MEMCG_RECLAIM_SOME:
+		return unlikely(stat_tasks[NR_MEMCG_RECLAIM]);
+	case PSI_MEMCG_RECLAIM_FULL:
+		return unlikely(stat_tasks[NR_MEMCG_RECLAIM] &&
+		       nr_running == stat_tasks[NR_MEMCG_RECLAIM_RUNNING]);
+	case PSI_GLOBAL_RECLAIM_SOME:
+		return unlikely(stat_tasks[NR_GLOBAL_RECLAIM]);
+	case PSI_GLOBAL_RECLAIM_FULL:
+		return unlikely(stat_tasks[NR_GLOBAL_RECLAIM] &&
+		       nr_running == stat_tasks[NR_GLOBAL_RECLAIM_RUNNING]);
+	case PSI_COMPACT_SOME:
+		return unlikely(stat_tasks[NR_COMPACT]);
+	case PSI_COMPACT_FULL:
+		return unlikely(stat_tasks[NR_COMPACT] &&
+		       nr_running == stat_tasks[NR_COMPACT_RUNNING]);
+	case PSI_ASYNC_MEMCG_RECLAIM_SOME:
+		return unlikely(stat_tasks[NR_ASYNC_MEMCG_RECLAIM]);
+	case PSI_ASYNC_MEMCG_RECLAIM_FULL:
+		return unlikely(stat_tasks[NR_ASYNC_MEMCG_RECLAIM] &&
+		      nr_running == stat_tasks[NR_ASYNC_MEMCG_RECLAIM_RUNNING]);
+	case PSI_SWAP_SOME:
+		return unlikely(stat_tasks[NR_SWAP]);
+	case PSI_SWAP_FULL:
+		return unlikely(stat_tasks[NR_SWAP] &&
+		       nr_running == stat_tasks[NR_SWAP_RUNNING]);
+	default:
+		return false;
+	}
+}
+
+static void psi_group_stat_change(struct psi_group *group, int cpu,
+				  int clear, int set)
+{
+	int t;
+	u32 state_mask = 0;
+	enum psi_stat_states s;
+	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
+
+	write_seqcount_begin(&groupc->seq);
+
+	for (t = 0; clear; clear &= ~(1 << t), t++)
+		if (clear & (1 << t))
+			groupc->fine_grained_tasks[t]--;
+	for (t = 0; set; set &= ~(1 << t), t++)
+		if (set & (1 << t))
+			groupc->fine_grained_tasks[t]++;
+	for (s = 0; s < PSI_CPU_CFS_BANDWIDTH_FULL; s++)
+		if (test_fine_grained_stat(groupc->fine_grained_tasks,
+					   groupc->tasks[NR_RUNNING], s))
+			state_mask |= (1 << s);
+	if (unlikely(groupc->state_mask & PSI_ONCPU) &&
+		     cpu_curr(cpu)->memstall_type)
+		state_mask |= (1 << (cpu_curr(cpu)->memstall_type * 2 - 1));
+
+	groupc->fine_grained_state_mask = state_mask;
+	write_seqcount_end(&groupc->seq);
+}
+
+static void psi_stat_flags_change(struct task_struct *task, int *stat_set,
+				  int *stat_clear, int set, int clear)
+{
+	if (!task->memstall_type)
+		return;
+
+	if (clear) {
+		if (clear & TSK_MEMSTALL)
+			*stat_clear |= 1 << (2 * task->memstall_type - 2);
+		if (clear & TSK_MEMSTALL_RUNNING)
+			*stat_clear |= 1 << (2 * task->memstall_type - 1);
+	}
+	if (set) {
+		if (set & TSK_MEMSTALL)
+			*stat_set |= 1 << (2 * task->memstall_type - 2);
+		if (set & TSK_MEMSTALL_RUNNING)
+			*stat_set |= 1 << (2 * task->memstall_type - 1);
+	}
+	if (!task->in_memstall)
+		task->memstall_type = 0;
+}
+
+static void get_recent_stat_times(struct psi_group *group, int cpu,
+				  enum psi_aggregators aggregator, u64 *stat_delta, u64 nonidle)
+{
+	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
+	u32 times[NR_PSI_STAT_STATES] = {0};
+	enum psi_stat_states s;
+	u32 delta;
+
+	memcpy(times, groupc->fine_grained_times, sizeof(groupc->fine_grained_times));
+	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+		if (groupc->fine_grained_state_mask & (1 << s))
+			times[s] += groupc->fine_grained_times_delta;
+		delta = times[s] - groupc->fine_grained_times_prev[aggregator][s];
+		groupc->fine_grained_times_prev[aggregator][s] = times[s];
+		stat_delta[s] += (u64)delta * nonidle;
+	}
+}
+#else
+static inline void psi_group_stat_change(struct psi_group *group, int cpu,
+					 int clear, int set) {}
+static inline void psi_stat_flags_change(struct task_struct *task,
+					 int *stat_set, int *stat_clear,
+					 int set, int clear) {}
+#endif
+
+#if defined(CONFIG_CFS_BANDWIDTH) && defined(CONFIG_CGROUP_CPUACCT) && \
+	defined(CONFIG_PSI_FINE_GRAINED)
+static void update_throttle_type(struct task_struct *task, int cpu, bool next)
+{
+	if (!cgroup_subsys_on_dfl(cpuacct_cgrp_subsys)) {
+		struct cgroup *cpuacct_cgrp;
+		struct psi_group_cpu *groupc;
+		struct task_group *tsk_grp;
+
+		rcu_read_lock();
+		cpuacct_cgrp = task_cgroup(task, cpuacct_cgrp_id);
+		if (cgroup_parent(cpuacct_cgrp)) {
+			groupc = per_cpu_ptr(cgroup_psi(cpuacct_cgrp)->pcpu, cpu);
+			tsk_grp = task_group(task);
+			if (next)
+				groupc->prev_throttle = groupc->cur_throttle;
+			groupc->cur_throttle = tsk_grp->cfs_rq[cpu]->throttled;
+		}
+		rcu_read_unlock();
+	}
+}
+#else
+static inline void update_throttle_type(struct task_struct *task, int cpu,
+					bool next) {}
+#endif
+
 static void collect_percpu_times(struct psi_group *group,
 				 enum psi_aggregators aggregator,
 				 u32 *pchanged_states)
 {
+#ifdef CONFIG_PSI_FINE_GRAINED
+	u64 stat_delta[NR_PSI_STAT_STATES] = { 0 };
+#endif
 	u64 deltas[NR_PSI_STATES - 1] = { 0, };
 	unsigned long nonidle_total = 0;
 	u32 changed_states = 0;
@@ -365,6 +552,9 @@ static void collect_percpu_times(struct psi_group *group,
 
 		for (s = 0; s < PSI_NONIDLE; s++)
 			deltas[s] += (u64)times[s] * nonidle;
+#ifdef CONFIG_PSI_FINE_GRAINED
+		get_recent_stat_times(group, cpu, aggregator, stat_delta, nonidle);
+#endif
 	}
 
 	/*
@@ -383,6 +573,12 @@ static void collect_percpu_times(struct psi_group *group,
 	for (s = 0; s < NR_PSI_STATES - 1; s++)
 		group->total[aggregator][s] +=
 				div_u64(deltas[s], max(nonidle_total, 1UL));
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+		group->fine_grained_total[aggregator][s] +=
+			div_u64(stat_delta[s], max(nonidle_total, 1UL));
+#endif
 
 	if (pchanged_states)
 		*pchanged_states = changed_states;
@@ -556,6 +752,18 @@ static u64 update_averages(struct psi_group *group, u64 now)
 		group->avg_total[s] += sample;
 		calc_avgs(group->avg[s], missed_periods, sample, period);
 	}
+#ifdef CONFIG_PSI_FINE_GRAINED
+	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+		u32 stat_sample;
+
+		stat_sample = group->fine_grained_total[PSI_AVGS][s] -
+			      group->fine_grained_avg_total[s];
+		if (stat_sample > period)
+			stat_sample = period;
+		group->fine_grained_avg_total[s] += stat_sample;
+		calc_avgs(group->fine_grained_avg[s], missed_periods, stat_sample, period);
+	}
+#endif
 
 	return avg_next_update;
 }
@@ -773,6 +981,10 @@ static void record_times(struct psi_group_cpu *groupc, u64 now)
 
 	if (groupc->state_mask & (1 << PSI_NONIDLE))
 		groupc->times[PSI_NONIDLE] += delta;
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+	record_stat_times(groupc, delta);
+#endif
 }
 
 static void psi_group_change(struct psi_group *group, int cpu,
@@ -843,8 +1055,9 @@ static void psi_group_change(struct psi_group *group, int cpu,
 		 * may have already incorporated the live state into times_prev;
 		 * avoid a delta sample underflow when PSI is later re-enabled.
 		 */
-		if (unlikely(groupc->state_mask & (1 << PSI_NONIDLE)))
+		if (unlikely(groupc->state_mask & (1 << PSI_NONIDLE))) {
 			record_times(groupc, now);
+		}
 
 		groupc->state_mask = state_mask;
 
@@ -881,11 +1094,35 @@ static void psi_group_change(struct psi_group *group, int cpu,
 		schedule_delayed_work(&group->avgs_work, PSI_FREQ);
 }
 
+#if defined(CONFIG_CGROUP_CPUACCT) && defined(CONFIG_PSI_CGROUP_V1)
+static bool task_is_in_psi_v1(void)
+{
+	if (static_branch_likely(&psi_v1_disabled))
+		return false;
+
+	return !cgroup_subsys_on_dfl(cpuacct_cgrp_subsys);
+}
+#else
+static bool task_is_in_psi_v1(void)
+{
+	return false;
+}
+#endif
+
 static inline struct psi_group *task_psi_group(struct task_struct *task)
 {
 #ifdef CONFIG_CGROUPS
-	if (static_branch_likely(&psi_cgroups_enabled))
+	if (static_branch_likely(&psi_cgroups_enabled)) {
+		if (task_is_in_psi_v1()) {
+			struct cgroup *cgroup;
+
+			rcu_read_lock();
+			cgroup = task_cgroup(task, cpuacct_cgrp_id);
+			rcu_read_unlock();
+			return cgroup_psi(cgroup);
+		}
 		return cgroup_psi(task_dfl_cgroup(task));
+	}
 #endif
 	return &psi_system;
 }
@@ -910,17 +1147,21 @@ void psi_task_change(struct task_struct *task, int clear, int set)
 	int cpu = task_cpu(task);
 	struct psi_group *group;
 	u64 now;
+	int stat_set = 0;
+	int stat_clear = 0;
 
 	if (!task->pid)
 		return;
 
 	psi_flags_change(task, clear, set);
+	psi_stat_flags_change(task, &stat_set, &stat_clear, set, clear);
 
 	now = cpu_clock(cpu);
 
 	group = task_psi_group(task);
 	do {
 		psi_group_change(group, cpu, clear, set, now, true);
+		psi_group_stat_change(group, cpu, stat_clear, stat_set);
 	} while ((group = group->parent));
 }
 
@@ -932,6 +1173,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 	u64 now = cpu_clock(cpu);
 
 	if (next->pid) {
+		update_throttle_type(next, cpu, true);
 		psi_flags_change(next, 0, TSK_ONCPU);
 		/*
 		 * Set TSK_ONCPU on @next's cgroups. If @next shares any
@@ -947,13 +1189,18 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 			}
 
 			psi_group_change(group, cpu, 0, TSK_ONCPU, now, true);
+			psi_group_stat_change(group, cpu, 0, 0);
 		} while ((group = group->parent));
 	}
 
 	if (prev->pid) {
 		int clear = TSK_ONCPU, set = 0;
 		bool wake_clock = true;
+		int stat_set = 0;
+		int stat_clear = 0;
+		bool memstall_type_change = false;
 
+		update_throttle_type(prev, cpu, false);
 		/*
 		 * When we're going to sleep, psi_dequeue() lets us
 		 * handle TSK_RUNNING, TSK_MEMSTALL_RUNNING and
@@ -979,13 +1226,20 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		}
 
 		psi_flags_change(prev, clear, set);
+		psi_stat_flags_change(prev, &stat_set, &stat_clear, set, clear);
 
 		group = task_psi_group(prev);
 		do {
 			if (group == common)
 				break;
 			psi_group_change(group, cpu, clear, set, now, wake_clock);
+			psi_group_stat_change(group, cpu, stat_clear, stat_set);
 		} while ((group = group->parent));
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+		if (next->memstall_type != prev->memstall_type)
+			memstall_type_change = true;
+#endif
 
 		/*
 		 * TSK_ONCPU is handled up to the common ancestor. If there are
@@ -993,10 +1247,13 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		 * to sleep, or only one task is memstall), finish propagating
 		 * those differences all the way up to the root.
 		 */
-		if ((prev->psi_flags ^ next->psi_flags) & ~TSK_ONCPU) {
+		if ((prev->psi_flags ^ next->psi_flags) & ~TSK_ONCPU ||
+		     memstall_type_change) {
 			clear &= ~TSK_ONCPU;
-			for (; group; group = group->parent)
+			for (; group; group = group->parent) {
 				psi_group_change(group, cpu, clear, set, now, wake_clock);
+				psi_group_stat_change(group, cpu, stat_clear, stat_set);
+			}
 		}
 	}
 }
@@ -1008,6 +1265,9 @@ void psi_account_irqtime(struct task_struct *task, u32 delta)
 	struct psi_group *group;
 	struct psi_group_cpu *groupc;
 	u64 now;
+
+	if (static_branch_likely(&psi_disabled))
+		return;
 
 	if (!task->pid)
 		return;
@@ -1036,7 +1296,9 @@ void psi_account_irqtime(struct task_struct *task, u32 delta)
 
 /**
  * psi_memstall_enter - mark the beginning of a memory stall section
- * @flags: flags to handle nested sections
+ * @flags: flags to handle nested sections. When the memory pressure
+ * is stalled in pressure_stat, the flags will be the pressure source,
+ * Otherwise, the init flags should be zero.
  *
  * Marks the calling task as being stalled due to a lack of memory,
  * such as waiting for a refault or performing reclaim.
@@ -1045,6 +1307,9 @@ void psi_memstall_enter(unsigned long *flags)
 {
 	struct rq_flags rf;
 	struct rq *rq;
+#ifdef CONFIG_PSI_FINE_GRAINED
+	unsigned long stat_flags = *flags;
+#endif
 
 	if (static_branch_likely(&psi_disabled))
 		return;
@@ -1052,6 +1317,8 @@ void psi_memstall_enter(unsigned long *flags)
 	*flags = current->in_memstall;
 	if (*flags)
 		return;
+
+	trace_psi_memstall_enter(_RET_IP_);
 	/*
 	 * in_memstall setting & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we can
@@ -1060,6 +1327,10 @@ void psi_memstall_enter(unsigned long *flags)
 	rq = this_rq_lock_irq(&rf);
 
 	current->in_memstall = 1;
+#ifdef CONFIG_PSI_FINE_GRAINED
+	if (stat_flags)
+		current->memstall_type = stat_flags;
+#endif
 	psi_task_change(current, 0, TSK_MEMSTALL | TSK_MEMSTALL_RUNNING);
 
 	rq_unlock_irq(rq, &rf);
@@ -1082,6 +1353,8 @@ void psi_memstall_leave(unsigned long *flags)
 
 	if (*flags)
 		return;
+
+	trace_psi_memstall_leave(_RET_IP_);
 	/*
 	 * in_memstall clearing & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we could
@@ -1620,6 +1893,81 @@ static const struct proc_ops psi_cpu_proc_ops = {
 	.proc_release	= psi_fop_release,
 };
 
+#ifdef CONFIG_PSI_FINE_GRAINED
+static const char *const psi_stat_names[] = {
+	"cgroup_memory_reclaim",
+	"global_memory_reclaim",
+	"compact",
+	"cgroup_async_memory_reclaim",
+	"swap",
+	"cpu_cfs_bandwidth",
+	"cpu_qos",
+};
+
+static void get_stat_names(struct seq_file *m, int i, bool is_full)
+{
+	if (i <= PSI_SWAP_FULL && !is_full)
+		return seq_printf(m, "%s\n", psi_stat_names[i / 2]);
+	else if (i == PSI_CPU_CFS_BANDWIDTH_FULL)
+		return seq_printf(m, "%s\n", "cpu_cfs_bandwidth");
+#ifdef CONFIG_QOS_SCHED
+	else if (i == PSI_CPU_QOS_FULL)
+		return seq_printf(m, "%s\n", "cpu_qos");
+#endif
+}
+
+int psi_stat_show(struct seq_file *m, struct psi_group *group)
+{
+	int i;
+	u64 now;
+
+	if (static_branch_likely(&psi_disabled))
+		return -EOPNOTSUPP;
+
+	mutex_lock(&group->avgs_lock);
+	now = sched_clock();
+	collect_percpu_times(group, PSI_AVGS, NULL);
+	if (now >= group->avg_next_update)
+		group->avg_next_update = update_averages(group, now);
+	mutex_unlock(&group->avgs_lock);
+
+	for (i = 0; i < NR_PSI_STAT_STATES; i++) {
+		unsigned long avg[3] = {0, };
+		int w;
+		u64 total;
+		bool is_full = i % 2 || i > PSI_SWAP_FULL;
+
+		for (w = 0; w < 3; w++)
+			avg[w] = group->fine_grained_avg[i][w];
+		total = div_u64(group->fine_grained_total[PSI_AVGS][i], NSEC_PER_USEC);
+		get_stat_names(m, i, is_full);
+		seq_printf(m, "%s avg10=%lu.%02lu avg60=%lu.%02lu avg300=%lu.%02lu total=%llu\n",
+			   is_full ? "full" : "some",
+			   LOAD_INT(avg[0]), LOAD_FRAC(avg[0]),
+			   LOAD_INT(avg[1]), LOAD_FRAC(avg[1]),
+			   LOAD_INT(avg[2]), LOAD_FRAC(avg[2]),
+			   total);
+	}
+	return 0;
+}
+static int system_psi_stat_show(struct seq_file *m, void *v)
+{
+	return psi_stat_show(m, &psi_system);
+}
+
+static int psi_stat_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, system_psi_stat_show, NULL);
+}
+
+static const struct proc_ops psi_stat_proc_ops = {
+	.proc_open	= psi_stat_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= psi_fop_release,
+};
+#endif
+
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 static int psi_irq_show(struct seq_file *m, void *v)
 {
@@ -1656,6 +2004,9 @@ static int __init psi_proc_init(void)
 		proc_create("pressure/cpu", 0666, NULL, &psi_cpu_proc_ops);
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 		proc_create("pressure/irq", 0666, NULL, &psi_irq_proc_ops);
+#endif
+#ifdef CONFIG_PSI_FINE_GRAINED
+		proc_create("pressure/stat", 0666, NULL, &psi_stat_proc_ops);
 #endif
 	}
 	return 0;

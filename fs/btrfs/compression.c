@@ -475,7 +475,7 @@ void btrfs_submit_compressed_read(struct btrfs_bio *bbio)
 	u64 em_len;
 	u64 em_start;
 	struct extent_map *em;
-	unsigned long pflags;
+	unsigned long pflags = 0;
 	int memstall = 0;
 	blk_status_t ret;
 	int ret2;

@@ -15,6 +15,9 @@ struct css_set;
 #ifdef CONFIG_PSI
 
 extern struct static_key_false psi_disabled;
+#ifdef CONFIG_PSI_CGROUP_V1
+extern struct static_key_true psi_v1_disabled;
+#endif
 extern struct psi_group psi_system;
 
 void psi_init(void);
@@ -30,6 +33,10 @@ void psi_trigger_destroy(struct psi_trigger *t);
 
 __poll_t psi_trigger_poll(void **trigger_ptr, struct file *file,
 			poll_table *wait);
+
+#ifdef CONFIG_PSI_FINE_GRAINED
+int psi_stat_show(struct seq_file *s, struct psi_group *group);
+#endif
 
 #ifdef CONFIG_CGROUPS
 static inline struct psi_group *cgroup_psi(struct cgroup *cgrp)

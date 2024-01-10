@@ -126,6 +126,14 @@ __schedstats_from_se(struct sched_entity *se)
 	return &task_of(se)->stats;
 }
 
+#ifdef CONFIG_QOS_SCHED
+/*
+ * To distinguish cfs bw, use QOS_THROTTLED mark cfs_rq->throttled
+ * when qos throttled(and cfs bw throttle mark cfs_rq->throttled as 1).
+ */
+#define QOS_THROTTLED	2
+#endif
+
 #ifdef CONFIG_PSI
 void psi_task_change(struct task_struct *task, int clear, int set);
 void psi_task_switch(struct task_struct *prev, struct task_struct *next,
