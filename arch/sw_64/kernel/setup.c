@@ -1013,6 +1013,21 @@ static int __init debugfs_sw64(void)
 	return 0;
 }
 arch_initcall(debugfs_sw64);
+
+static int __init debugfs_mclk_init(void)
+{
+	static u64 mclk;
+
+	if (!sw64_debugfs_dir)
+		return -ENODEV;
+
+	mclk = *((unsigned char *)__va(MB_MCLK));
+	debugfs_create_u64("mclk", 0644, sw64_debugfs_dir, &mclk);
+
+	return 0;
+
+}
+late_initcall(debugfs_mclk_init);
 #endif
 
 #ifdef CONFIG_OF
