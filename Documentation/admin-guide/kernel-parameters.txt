@@ -2449,7 +2449,7 @@
 	keepinitrd	[HW,ARM]
 
 	kernelcore=	[KNL,X86,IA-64,PPC]
-			Format: nn[KMGTPE] | nn% | "mirror"
+			Format: nn[KMGTPE] | nn% | "mirror" | "reliable"
 			This parameter specifies the amount of memory usable by
 			the kernel for non-movable allocations.  The requested
 			amount is spread evenly throughout all nodes in the
@@ -2472,6 +2472,10 @@
 			for non-movable allocations and remaining memory is used
 			for Movable pages.  "nn[KMGTPE]", "nn%", and "mirror"
 			are exclusive, so you cannot specify multiple forms.
+
+			Option "reliable" is base on option "mirror", but make
+			some extension. These two features are alternatives.
+			Current only arm64 is supported.
 
 	kgdbdbgp=	[KGDB,HW] kgdb over EHCI usb debug port.
 			Format: <Controller#>[,poll interval]

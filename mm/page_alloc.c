@@ -3189,6 +3189,10 @@ retry:
 		struct page *page;
 		unsigned long mark;
 
+		/* skip non-mirrored zone for normal user tasks */
+		if (skip_non_mirrored_zone(gfp_mask, z))
+			continue;
+
 		if (cpusets_enabled() &&
 			(alloc_flags & ALLOC_CPUSET) &&
 			!__cpuset_zone_allowed(zone, gfp_mask))

@@ -31,7 +31,11 @@ typedef unsigned int __bitwise gfp_t;
 #define ___GFP_IO		0x40u
 #define ___GFP_FS		0x80u
 #define ___GFP_ZERO		0x100u
-/* 0x200u unused */
+#ifdef CONFIG_MEMORY_RELIABLE
+#define ___GFP_RELIABLE		0x200u
+#else
+#define ___GFP_RELIABLE		0
+#endif
 #define ___GFP_DIRECT_RECLAIM	0x400u
 #define ___GFP_KSWAPD_RECLAIM	0x800u
 #define ___GFP_WRITE		0x1000u
@@ -248,6 +252,9 @@ typedef unsigned int __bitwise gfp_t;
 /* Disable lockdep for GFP context tracking */
 #define __GFP_NOLOCKDEP ((__force gfp_t)___GFP_NOLOCKDEP)
 
+/* Alloc memory from mirrored region */
+#define __GFP_RELIABLE ((__force gfp_t)___GFP_RELIABLE)
+
 /* Room for N __GFP_FOO bits */
 #define __GFP_BITS_SHIFT (26 + IS_ENABLED(CONFIG_LOCKDEP))
 #define __GFP_BITS_MASK ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
@@ -336,5 +343,6 @@ typedef unsigned int __bitwise gfp_t;
 #define GFP_TRANSHUGE_LIGHT	((GFP_HIGHUSER_MOVABLE | __GFP_COMP | \
 			 __GFP_NOMEMALLOC | __GFP_NOWARN) & ~__GFP_RECLAIM)
 #define GFP_TRANSHUGE	(GFP_TRANSHUGE_LIGHT | __GFP_DIRECT_RECLAIM)
+#define GFP_RELIABLE __GFP_RELIABLE
 
 #endif /* __LINUX_GFP_TYPES_H */
