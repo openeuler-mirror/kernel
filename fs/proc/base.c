@@ -2657,6 +2657,11 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 	return d_splice_alias(inode, dentry);
 }
 
+static bool proc_hide_pidents(const struct pid_entry *p)
+{
+	return false;
+}
+
 static struct dentry *proc_pident_lookup(struct inode *dir, 
 					 struct dentry *dentry,
 					 const struct pid_entry *p,
@@ -2674,6 +2679,8 @@ static struct dentry *proc_pident_lookup(struct inode *dir,
 	 */
 	for (; p < end; p++) {
 		if (p->len != dentry->d_name.len)
+			continue;
+		if (proc_hide_pidents(p))
 			continue;
 		if (!memcmp(dentry->d_name.name, p->name, p->len)) {
 			res = proc_pident_instantiate(dentry, task, p);
@@ -2701,8 +2708,9 @@ static int proc_pident_readdir(struct file *file, struct dir_context *ctx,
 		goto out;
 
 	for (p = ents + (ctx->pos - 2); p < ents + nents; p++) {
-		if (!proc_fill_cache(file, ctx, p->name, p->len,
-				proc_pident_instantiate, task, p))
+		if (!proc_hide_pidents(p) &&
+		    !proc_fill_cache(file, ctx, p->name, p->len,
+				     proc_pident_instantiate, task, p))
 			break;
 		ctx->pos++;
 	}
