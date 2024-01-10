@@ -47,6 +47,9 @@
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
 
+#define D_COUNT_MAX (INT_MAX / 2)
+
+
 struct backing_dev_info;
 struct bdi_writeback;
 struct bio;
