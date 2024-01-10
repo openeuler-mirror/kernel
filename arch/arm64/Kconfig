@@ -2242,6 +2242,14 @@ config ARM64_DEBUG_PRIORITY_MASKING
 	  If unsure, say N
 endif # ARM64_PSEUDO_NMI
 
+config NON_NMI_IPI_BACKTRACE
+	bool "Support non nmi ipi backtrace"
+	depends on ARM64_PSEUDO_NMI
+	default n
+	help
+	  This adds support for non nmi ipi backtrace, which allows hungtask_monitor
+	  to print stack trace when recovering from a hung task.
+
 config RELOCATABLE
 	bool "Build a relocatable kernel image" if EXPERT
 	select ARCH_HAS_RELR
