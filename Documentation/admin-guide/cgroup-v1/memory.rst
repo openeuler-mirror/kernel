@@ -83,6 +83,10 @@ Brief summary of control files.
                                      This knob is deprecated and shouldn't be
                                      used.
  memory.force_empty		     trigger forced page reclaim
+ memory.force_swapin		     trigger forced swapin anon page
+ memory.swap.max		     set/show limit for the difference between memsw.usage
+				     and memory.usage
+ memory.swapfile		     set/show available swap file
  memory.pressure_level		     set memory pressure notifications
  memory.swappiness		     set/show swappiness parameter of vmscan
 				     (See sysctl's vm.swappiness)

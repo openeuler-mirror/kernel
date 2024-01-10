@@ -185,6 +185,11 @@ success:
 	return 0;
 }
 
+static inline bool can_madv_lru_vma(struct vm_area_struct *vma)
+{
+	return !(vma->vm_flags & (VM_LOCKED|VM_PFNMAP|VM_HUGETLB));
+}
+
 #ifdef CONFIG_SWAP
 static int swapin_walk_pmd_entry(pmd_t *pmd, unsigned long start,
 		unsigned long end, struct mm_walk *walk)
@@ -272,6 +277,27 @@ static void shmem_swapin_range(struct vm_area_struct *vma,
 	swap_read_unplug(splug);
 }
 #endif		/* CONFIG_SWAP */
+
+#ifdef CONFIG_MEMCG_SWAP_QOS
+void force_swapin_vma(struct vm_area_struct *vma)
+{
+	struct file *file = vma->vm_file;
+
+	if (!can_madv_lru_vma(vma))
+		return;
+
+	if (!file) {
+		walk_page_vma(vma, &swapin_walk_ops, vma);
+		lru_add_drain();
+	} else if (shmem_mapping(file->f_mapping))
+		shmem_swapin_range(vma, vma->vm_start,
+			vma->vm_end, file->f_mapping);
+}
+#else
+void force_swapin_vma(struct vm_area_struct *vma)
+{
+}
+#endif
 
 /*
  * Schedule all required I/O operations.  Do not wait for completion.
@@ -553,11 +579,6 @@ static void madvise_cold_page_range(struct mmu_gather *tlb,
 	tlb_start_vma(tlb, vma);
 	walk_page_range(vma->vm_mm, addr, end, &cold_walk_ops, &walk_private);
 	tlb_end_vma(tlb, vma);
-}
-
-static inline bool can_madv_lru_vma(struct vm_area_struct *vma)
-{
-	return !(vma->vm_flags & (VM_LOCKED|VM_PFNMAP|VM_HUGETLB));
 }
 
 static long madvise_cold(struct vm_area_struct *vma,

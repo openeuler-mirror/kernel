@@ -65,6 +65,12 @@
 #include <linux/seq_buf.h>
 #include <linux/memcg_memfs_info.h>
 #include <linux/sched/isolation.h>
+#include <linux/parser.h>
+
+#ifdef CONFIG_MEMCG_SWAP_QOS
+#include <linux/blkdev.h>
+#endif
+
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -4202,6 +4208,7 @@ void memcg_print_bad_task(struct oom_control *oc)
 	}
 }
 
+#ifdef CONFIG_SYSCTL
 static void memcg_oom_prio_reset(void)
 {
 	struct mem_cgroup *iter;
@@ -4231,32 +4238,342 @@ static int sysctl_memcg_oom_prio_handler(struct ctl_table *table, int write,
 
 	return ret;
 }
+#endif
+#endif
 
-static struct ctl_table memcg_oom_prio_sysctls[] = {
-	{
-		/*
-		 * This sysctl is used to control memcg oom priority
-		 * feature, the sysctl name is for compatibility.
-		 */
-		.procname	= "memcg_qos_enable",
-		.data		= &sysctl_memcg_oom_prio,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= sysctl_memcg_oom_prio_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-};
+#ifdef CONFIG_MEMCG_SWAP_QOS
+DEFINE_STATIC_KEY_FALSE(memcg_swap_qos_key);
 
-static __init int memcg_oom_prio_sysctls_init(void)
+#ifdef CONFIG_SYSCTL
+static int sysctl_memcg_swap_qos_stat;
+static int swap_qos_type_max = MAX_MEMCG_SWAP_TYPE;
+
+static void memcg_swap_qos_reset(int type)
 {
-	register_sysctl_init("vm", memcg_oom_prio_sysctls);
+	struct mem_cgroup *memcg;
+
+	for_each_mem_cgroup(memcg) {
+		WRITE_ONCE(memcg->swap_dev->max, PAGE_COUNTER_MAX);
+		WRITE_ONCE(memcg->swap_dev->type, type);
+	}
+}
+
+static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+	int qos_stat_old = sysctl_memcg_swap_qos_stat;
+	int swap_type;
+
+	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
+	if (ret)
+		return ret;
+
+	if (write) {
+		if (qos_stat_old == sysctl_memcg_swap_qos_stat)
+			return 0;
+
+		switch (sysctl_memcg_swap_qos_stat) {
+		case MEMCG_SWAP_STAT_DISABLE:
+			static_branch_disable(&memcg_swap_qos_key);
+			return 0;
+		case MEMCG_SWAP_STAT_ALL:
+			swap_type = SWAP_TYPE_ALL;
+			break;
+		case MEMCG_SWAP_STAT_NONE:
+			swap_type = SWAP_TYPE_NONE;
+			break;
+		}
+
+		if (qos_stat_old == MEMCG_SWAP_STAT_DISABLE) {
+			memcg_swap_qos_reset(swap_type);
+			static_branch_enable(&memcg_swap_qos_key);
+			enable_swap_slots_cache_max();
+		} else {
+			return -EINVAL;
+		}
+	}
+
 	return 0;
 }
+#endif
+
+static int mem_cgroup_task_swapin(struct task_struct *task, void *arg)
+{
+	struct mm_struct *mm = task->mm;
+	struct vm_area_struct *vma;
+	struct blk_plug plug;
+	VMA_ITERATOR(vmi, mm, 0);
+
+	if (__task_is_dying(task))
+		return 0;
+	if (!mm || !mmget_not_zero(mm))
+		return 0;
+
+	mmap_read_lock(mm);
+	blk_start_plug(&plug);
+	for_each_vma(vmi, vma)
+		force_swapin_vma(vma);
+	blk_finish_plug(&plug);
+	mmap_read_unlock(mm);
+	mmput(mm);
+
+	return 0;
+}
+
+static ssize_t memory_swapin(struct kernfs_open_file *of, char *buf,
+			      size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	mem_cgroup_scan_tasks(memcg, mem_cgroup_task_swapin, NULL);
+
+	return nbytes;
+}
+
+static int memcg_alloc_swap_device(struct mem_cgroup *memcg)
+{
+	memcg->swap_dev = kmalloc(sizeof(struct swap_device), GFP_KERNEL);
+	if (!memcg->swap_dev)
+		return -ENOMEM;
+	return 0;
+}
+
+static void memcg_free_swap_device(struct mem_cgroup *memcg)
+{
+	if (!memcg->swap_dev)
+		return;
+
+	kfree(memcg->swap_dev);
+	memcg->swap_dev = NULL;
+}
+
+static void memcg_swap_device_init(struct mem_cgroup *memcg,
+				   struct mem_cgroup *parent)
+{
+	if (!static_branch_likely(&memcg_swap_qos_key) || !parent) {
+		WRITE_ONCE(memcg->swap_dev->max, PAGE_COUNTER_MAX);
+		WRITE_ONCE(memcg->swap_dev->type, SWAP_TYPE_ALL);
+	} else {
+		WRITE_ONCE(memcg->swap_dev->max,
+			   READ_ONCE(parent->swap_dev->max));
+		WRITE_ONCE(memcg->swap_dev->type,
+			   READ_ONCE(parent->swap_dev->type));
+	}
+}
+
+u64 memcg_swapmax_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return PAGE_COUNTER_MAX * PAGE_SIZE;
+
+	return READ_ONCE(memcg->swap_dev->max) * PAGE_SIZE;
+}
+
+static ssize_t memcg_swapmax_write(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long max;
+	int err;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return -EACCES;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &max);
+	if (err)
+		return err;
+
+	WRITE_ONCE(memcg->swap_dev->max, max);
+
+	return nbytes;
+}
+
+static int mem_cgroup_check_swap_for_v1(struct folio *folio, swp_entry_t entry)
+{
+	struct mem_cgroup *memcg, *target_memcg;
+	unsigned long swap_usage;
+	unsigned long swap_limit;
+	long nr_swap_pages = PAGE_COUNTER_MAX;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return 0;
+
+	if (!entry.val)
+		return 0;
+
+	rcu_read_lock();
+	target_memcg = folio_memcg(folio);
+	if (!target_memcg || mem_cgroup_is_root(target_memcg) ||
+		!css_tryget_online(&target_memcg->css)) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	rcu_read_unlock();
+
+	for (memcg = target_memcg; memcg != root_mem_cgroup;
+	     memcg = parent_mem_cgroup(memcg)) {
+		swap_limit = READ_ONCE(memcg->swap_dev->max);
+		swap_usage = page_counter_read(&memcg->memsw) -
+			     page_counter_read(&memcg->memory);
+		nr_swap_pages = min_t(long, nr_swap_pages,
+				      swap_limit - swap_usage);
+	}
+	css_put(&target_memcg->css);
+
+	if (folio_nr_pages(folio) > nr_swap_pages)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static int memcg_swapfile_read(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+	int type;
+
+	if (!static_branch_likely(&memcg_swap_qos_key)) {
+		seq_printf(m, "all\n");
+		return 0;
+	}
+
+	type = READ_ONCE(memcg->swap_dev->type);
+	if (type == SWAP_TYPE_NONE)
+		seq_printf(m, "none\n");
+	else if (type == SWAP_TYPE_ALL)
+		seq_printf(m, "all\n");
+	else
+		read_swapfile_for_memcg(m, type);
+	return 0;
+}
+
+static ssize_t memcg_swapfile_write(struct kernfs_open_file *of, char *buf,
+				     size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	struct filename *pathname;
+	struct file *swapfile;
+	int ret;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return -EACCES;
+
+	buf = strstrip(buf);
+
+	if (!strcmp(buf, "none")) {
+		WRITE_ONCE(memcg->swap_dev->type, SWAP_TYPE_NONE);
+		return nbytes;
+	} else if (!strcmp(buf, "all")) {
+		WRITE_ONCE(memcg->swap_dev->type, SWAP_TYPE_ALL);
+		return nbytes;
+	}
+
+	pathname = getname_kernel(buf);
+	if (IS_ERR(pathname))
+		return PTR_ERR(pathname);
+
+	swapfile = file_open_name(pathname, O_RDWR|O_LARGEFILE, 0);
+	if (IS_ERR(swapfile)) {
+		putname(pathname);
+		return PTR_ERR(swapfile);
+	}
+	ret = write_swapfile_for_memcg(swapfile->f_mapping,
+				       &memcg->swap_dev->type);
+	filp_close(swapfile, NULL);
+	putname(pathname);
+
+	return ret < 0 ? ret : nbytes;
+}
+
+int memcg_get_swap_type(struct folio *folio)
+{
+	struct mem_cgroup *memcg;
+	int type;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return SWAP_TYPE_ALL;
+
+	if (!folio)
+		return SWAP_TYPE_ALL;
+
+	rcu_read_lock();
+	memcg = folio_memcg(folio);
+	if (!memcg || mem_cgroup_is_root(memcg) ||
+		!css_tryget_online(&memcg->css)) {
+		rcu_read_unlock();
+		return SWAP_TYPE_ALL;
+	}
+	rcu_read_unlock();
+
+	type = READ_ONCE(memcg->swap_dev->type);
+	css_put(&memcg->css);
+	return type;
+}
+
+void memcg_remove_swapfile(int type)
+{
+	struct mem_cgroup *memcg;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return;
+
+	for_each_mem_cgroup(memcg)
+		if (READ_ONCE(memcg->swap_dev->type) == type)
+			WRITE_ONCE(memcg->swap_dev->type, SWAP_TYPE_NONE);
+}
+
+static long mem_cgroup_get_nr_swap_pages_type(struct mem_cgroup *memcg)
+{
+	int type;
+
+	if (!static_branch_likely(&memcg_swap_qos_key))
+		return mem_cgroup_get_nr_swap_pages(memcg);
+
+	type = READ_ONCE(memcg->swap_dev->type);
+	if (type == SWAP_TYPE_ALL)
+		return mem_cgroup_get_nr_swap_pages(memcg);
+	else if (type == SWAP_TYPE_NONE)
+		return 0;
+	else
+		return get_nr_swap_pages_type(type);
+}
+
 #else
-static inline int memcg_oom_prio_sysctls_init(void)
+static int memcg_alloc_swap_device(struct mem_cgroup *memcg)
 {
 	return 0;
+}
+
+static void memcg_free_swap_device(struct mem_cgroup *memcg)
+{
+}
+
+static void memcg_swap_device_init(struct mem_cgroup *memcg,
+				   struct mem_cgroup *parent)
+{
+}
+
+static int mem_cgroup_check_swap_for_v1(struct folio *folio, swp_entry_t entry)
+{
+	return 0;
+}
+
+int memcg_get_swap_type(struct folio *folio)
+{
+	return SWAP_TYPE_ALL;
+}
+
+void memcg_remove_swapfile(int type)
+{
+}
+
+static long mem_cgroup_get_nr_swap_pages_type(struct mem_cgroup *memcg)
+{
+	return mem_cgroup_get_nr_swap_pages(memcg);
 }
 
 #endif
@@ -5751,6 +6068,25 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = memory_ksm_show,
 	},
 #endif
+#ifdef CONFIG_MEMCG_SWAP_QOS
+	{
+		.name = "force_swapin",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memory_swapin,
+	},
+	{
+		.name = "swap.max",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memcg_swapmax_write,
+		.read_u64 = memcg_swapmax_read,
+	},
+	{
+		.name = "swapfile",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.write = memcg_swapfile_write,
+		.seq_show = memcg_swapfile_read,
+	},
+#endif
 	{ },	/* terminate */
 };
 
@@ -5886,6 +6222,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 		free_mem_cgroup_per_node_info(memcg, node);
 	kfree(memcg->vmstats);
 	free_percpu(memcg->vmstats_percpu);
+	memcg_free_swap_device(memcg);
 	kfree(memcg);
 }
 
@@ -5906,6 +6243,9 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	memcg = kzalloc(struct_size(memcg, nodeinfo, nr_node_ids), GFP_KERNEL);
 	if (!memcg)
 		return ERR_PTR(error);
+
+	if (memcg_alloc_swap_device(memcg))
+		goto fail;
 
 	memcg->id.id = idr_alloc(&mem_cgroup_idr, NULL,
 				 1, MEM_CGROUP_ID_MAX + 1, GFP_KERNEL);
@@ -5990,12 +6330,14 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		page_counter_init(&memcg->swap, &parent->swap);
 		page_counter_init(&memcg->kmem, &parent->kmem);
 		page_counter_init(&memcg->tcpmem, &parent->tcpmem);
+		memcg_swap_device_init(memcg, parent);
 	} else {
 		init_memcg_events();
 		page_counter_init(&memcg->memory, NULL);
 		page_counter_init(&memcg->swap, NULL);
 		page_counter_init(&memcg->kmem, NULL);
 		page_counter_init(&memcg->tcpmem, NULL);
+		memcg_swap_device_init(memcg, NULL);
 
 		root_mem_cgroup = memcg;
 		return &memcg->css;
@@ -7308,6 +7650,62 @@ static ssize_t memory_oom_group_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
+enum {
+	MEMORY_RECLAIM_TYPE = 0,
+	MEMORY_RECLAIM_NULL,
+};
+
+static const match_table_t tokens = {
+	{ MEMORY_RECLAIM_TYPE, "type=%s"},
+	{ MEMORY_RECLAIM_NULL, NULL },
+};
+
+#define RECLAIM_TYPE_SIZE 8
+
+static int reclaim_param_parse(char *buf, unsigned long *nr_pages,
+			       unsigned int *reclaim_options)
+{
+	char *old_buf, *start;
+	char type[RECLAIM_TYPE_SIZE];
+	substring_t args[MAX_OPT_ARGS];
+	u64 bytes;
+
+	buf = strstrip(buf);
+	if (!strcmp(buf, "")) {
+		*nr_pages = PAGE_COUNTER_MAX;
+		return 0;
+	}
+
+	old_buf = buf;
+	bytes = memparse(buf, &buf);
+	if (buf == old_buf)
+		return -EINVAL;
+
+	*nr_pages = min(bytes / PAGE_SIZE, (u64)PAGE_COUNTER_MAX);
+
+	buf = strstrip(buf);
+	while ((start = strsep(&buf, " ")) != NULL) {
+		if (!strlen(start))
+			continue;
+
+		switch (match_token(start, tokens, args)) {
+		case MEMORY_RECLAIM_TYPE:
+			match_strlcpy(type, &args[0], RECLAIM_TYPE_SIZE);
+			if (!strcmp(type, "anon"))
+				*reclaim_options |= MEMCG_RECLAIM_NOT_FILE;
+			else if (!strcmp(type, "file"))
+				*reclaim_options &= ~MEMCG_RECLAIM_MAY_SWAP;
+			else
+				return -EINVAL;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 			      size_t nbytes, loff_t off)
 {
@@ -7317,17 +7715,21 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 	unsigned int reclaim_options;
 	int err;
 
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "", &nr_to_reclaim);
+	reclaim_options = MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
+	err = reclaim_param_parse(buf, &nr_to_reclaim, &reclaim_options);
 	if (err)
 		return err;
 
-	reclaim_options	= MEMCG_RECLAIM_MAY_SWAP | MEMCG_RECLAIM_PROACTIVE;
 	while (nr_reclaimed < nr_to_reclaim) {
 		unsigned long reclaimed;
 
 		if (signal_pending(current))
 			return -EINTR;
+
+		/* If only reclaim swap pages, check swap space at first. */
+		if ((reclaim_options & MEMCG_RECLAIM_NOT_FILE) &&
+		    (mem_cgroup_get_nr_swap_pages_type(memcg) <= 0))
+			return -EAGAIN;
 
 		/*
 		 * This is the final attempt, drain percpu lru caches in the
@@ -7970,6 +8372,51 @@ void mem_cgroup_uncharge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages)
 	refill_stock(memcg, nr_pages);
 }
 
+#ifdef CONFIG_SYSCTL
+static struct ctl_table mem_cgroup_sysctls[] = {
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+	{
+		/*
+		 * This sysctl is used to control memcg oom priority
+		 * feature, the sysctl name is for compatibility.
+		 */
+		.procname	= "memcg_qos_enable",
+		.data		= &sysctl_memcg_oom_prio,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_memcg_oom_prio_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
+#ifdef CONFIG_MEMCG_SWAP_QOS
+	{
+		.procname	= "memcg_swap_qos_enable",
+		.data		= &sysctl_memcg_swap_qos_stat,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_memcg_swap_qos_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &swap_qos_type_max,
+	},
+#endif
+};
+
+static __init int mem_cgroup_sysctls_init(void)
+{
+	if (mem_cgroup_disabled())
+		return 0;
+
+	register_sysctl_init("vm", mem_cgroup_sysctls);
+	return 0;
+}
+#else
+static __init int mem_cgroup_sysctls_init(void)
+{
+	return 0;
+}
+#endif
+
 static int __init cgroup_memory(char *s)
 {
 	char *token;
@@ -8029,7 +8476,7 @@ static int __init mem_cgroup_init(void)
 	}
 
 	mem_cgroup_memfs_info_init();
-	memcg_oom_prio_sysctls_init();
+	mem_cgroup_sysctls_init();
 
 	return 0;
 }
@@ -8139,7 +8586,7 @@ int __mem_cgroup_try_charge_swap(struct folio *folio, swp_entry_t entry)
 	unsigned short oldid;
 
 	if (do_memsw_account())
-		return 0;
+		return mem_cgroup_check_swap_for_v1(folio, entry);
 
 	memcg = folio_memcg(folio);
 
