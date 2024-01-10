@@ -16,11 +16,16 @@ extern bool reliable_enabled;
 extern struct file_operations proc_reliable_operations;
 extern bool shmem_reliable;
 extern bool pagecache_reliable;
+extern struct percpu_counter pagecache_reliable_pages;
+extern struct percpu_counter anon_reliable_pages;
 
 void mem_reliable_init(bool has_unmirrored_mem, unsigned long mirrored_sz);
 bool mem_reliable_status(void);
 bool mem_reliable_hide_file(const char *name);
 void shmem_reliable_init(void);
+void reliable_lru_add(enum lru_list lru, struct folio *folio, int val);
+void reliable_lru_add_batch(int zid, enum lru_list lru, int val);
+bool mem_reliable_counter_initialized(void);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -98,6 +103,16 @@ static inline void filemap_prepare_alloc(gfp_t *gfp_mask)
 	else
 		*gfp_mask &= ~GFP_RELIABLE;
 }
+
+static inline unsigned long task_reliable_used_pages(void)
+{
+	s64 nr_pages;
+
+	nr_pages = percpu_counter_read_positive(&pagecache_reliable_pages);
+	nr_pages += percpu_counter_read_positive(&anon_reliable_pages);
+
+	return nr_pages;
+}
 #else
 #define reliable_enabled 0
 
@@ -116,6 +131,11 @@ static inline bool mem_reliable_hide_file(const char *name) { return false; }
 static inline void shmem_prepare_alloc(gfp_t *gfp_mask) {}
 static inline void filemap_prepare_alloc(gfp_t *gfp_mask) {}
 static inline void shmem_reliable_init(void) {}
+static inline void reliable_lru_add(enum lru_list lru, struct folio *folio,
+				    int val) {}
+static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
+					  int val) {}
+static inline bool mem_reliable_counter_initialized(void) { return false; }
 #endif
 
 #endif

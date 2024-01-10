@@ -6,6 +6,8 @@
 #include <linux/memory.h>
 #include <linux/memory_hotplug.h>
 #include <linux/crash_dump.h>
+#include <linux/seq_file.h>
+#include <linux/mmzone.h>
 
 #define PAGES_TO_B(n_pages)	((n_pages) << PAGE_SHIFT)
 
@@ -15,6 +17,14 @@ EXPORT_SYMBOL_GPL(mem_reliable);
 bool reliable_enabled;
 bool shmem_reliable __read_mostly = true;
 bool pagecache_reliable __read_mostly = true;
+struct percpu_counter pagecache_reliable_pages;
+struct percpu_counter anon_reliable_pages;
+
+bool mem_reliable_counter_initialized(void)
+{
+	return likely(percpu_counter_initialized(&pagecache_reliable_pages)) &&
+		likely((percpu_counter_initialized(&anon_reliable_pages)));
+}
 
 bool mem_reliable_status(void)
 {
@@ -71,6 +81,48 @@ void shmem_reliable_init(void)
 	if (!mem_reliable_is_enabled() || !shmem_reliable_is_enabled())
 		shmem_reliable = false;
 }
+
+void reliable_lru_add_batch(int zid, enum lru_list lru, int val)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (zid < ZONE_MOVABLE) {
+		if (is_file_lru(lru))
+			percpu_counter_add(&pagecache_reliable_pages, val);
+		else if (is_anon_lru(lru))
+			percpu_counter_add(&anon_reliable_pages, val);
+	}
+}
+
+void reliable_lru_add(enum lru_list lru, struct folio *folio, int val)
+{
+	if (!folio_reliable(folio))
+		return;
+
+	if (is_file_lru(lru))
+		percpu_counter_add(&pagecache_reliable_pages, val);
+	else if (is_anon_lru(lru))
+		percpu_counter_add(&anon_reliable_pages, val);
+	else if (lru == LRU_UNEVICTABLE) {
+		if (folio_test_anon(folio))
+			percpu_counter_add(&anon_reliable_pages, val);
+		else
+			percpu_counter_add(&pagecache_reliable_pages, val);
+	}
+}
+
+static int __init reliable_sysctl_init(void)
+{
+	if (!mem_reliable_is_enabled())
+		return 0;
+
+	percpu_counter_init(&pagecache_reliable_pages, 0, GFP_KERNEL);
+	percpu_counter_init(&anon_reliable_pages, 0, GFP_KERNEL);
+
+	return 0;
+}
+arch_initcall(reliable_sysctl_init);
 
 static int __init setup_reliable_debug(char *str)
 {
