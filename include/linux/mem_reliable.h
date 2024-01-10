@@ -63,6 +63,12 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 
 	return false;
 }
+
+static inline void shmem_prepare_alloc(gfp_t *gfp_mask)
+{
+	if (mem_reliable_is_enabled())
+		*gfp_mask |= GFP_RELIABLE;
+}
 #else
 #define reliable_enabled 0
 
@@ -77,6 +83,7 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 }
 static inline bool mem_reliable_status(void) { return false; }
 static inline bool mem_reliable_hide_file(const char *name) { return false; }
+static inline void shmem_prepare_alloc(gfp_t *gfp_mask) {}
 #endif
 
 #endif
