@@ -60,6 +60,8 @@ struct vtimer_info {
 	bool (*get_active_stat)(struct kvm_vcpu *vcpu, int vintid);
 	void (*set_active_stat)(struct kvm_vcpu *vcpu, int vintid, bool active);
 };
+
+u16 kvm_vgic_get_vcpu_vpeid(struct kvm_vcpu *vcpu);
 #endif
 
 enum vgic_type {
