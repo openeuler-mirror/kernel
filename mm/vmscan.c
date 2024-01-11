@@ -2260,6 +2260,7 @@ static __always_inline void update_lru_sizes(struct lruvec *lruvec,
 			continue;
 
 		update_lru_size(lruvec, lru, zid, -nr_zone_taken[zid]);
+		reliable_lru_add_batch(zid, lru, -nr_zone_taken[zid]);
 	}
 
 }
@@ -3867,6 +3868,7 @@ static void reset_batch_size(struct lruvec *lruvec, struct lru_gen_mm_walk *walk
 		if (lru_gen_is_active(lruvec, gen))
 			lru += LRU_ACTIVE;
 		__update_lru_size(lruvec, lru, zone, delta);
+		reliable_lru_add_batch(zone, lru, delta);
 	}
 }
 

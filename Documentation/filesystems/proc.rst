@@ -163,6 +163,8 @@ usually fail with ESRCH.
 		can be derived from smaps, but is faster and more convenient
  numa_maps	An extension based on maps, showing the memory locality and
 		binding policy as well as mem usage (in pages) of each mapping.
+ reliable	Present with CONFIG_MEMORY_RELIABLE=y. Task reliable status
+		information
  =============  ===============================================================
 
 For example, to get the status information of a process, all you have to do is
@@ -195,6 +197,7 @@ read the file /proc/PID/status::
   VmPTE:        20 kb
   VmSwap:        0 kB
   HugetlbPages:          0 kB
+  Reliable:         1608 kB
   CoreDumping:    0
   THP_enabled:	  1
   Threads:        1
@@ -278,6 +281,7 @@ It's slow but very precise.
  VmSwap                      amount of swap used by anonymous private data
                              (shmem swap usage is not included)
  HugetlbPages                size of hugetlb memory portions
+ Reliable                    size of reliable memory used
  CoreDumping                 process's memory is currently being dumped
                              (killing the process may lead to a corrupted core)
  THP_enabled		     process is allowed to use THP (returns 0 when
@@ -674,6 +678,10 @@ Where:
 node locality page counters (N0 == node0, N1 == node1, ...) and the kernel page
 size, in KB, that is backing the mapping up.
 
+The /proc/pid/reliable is used to control user task's reliable status.
+Task with this flag can only alloc memory from mirrored region. Global
+init task's reliable flag can not be accessed.
+
 1.2 Kernel data
 ---------------
 
@@ -1021,6 +1029,13 @@ Example output. You may not have all of these fields.
     DirectMap4k:      401152 kB
     DirectMap2M:    10008576 kB
     DirectMap1G:    24117248 kB
+    ReliableTotal:     8190696 kB
+    ReliableUsed:       252912 kB
+    ReliableTaskUsed:   108136 kB
+    ReliableBuddyMem:  7937784 kB
+    ReliableShmem:         840 kB
+    FileCache:          104944 kB
+    ReliableFileCache:   102688 kB
 
 MemTotal
               Total usable RAM (i.e. physical RAM minus a few reserved
@@ -1185,6 +1200,21 @@ HugePages_Total, HugePages_Free, HugePages_Rsvd, HugePages_Surp, Hugepagesize, H
 DirectMap4k, DirectMap2M, DirectMap1G
               Breakdown of page table sizes used in the kernel's
               identity mapping of RAM
+ReliableTotal
+              Total reliable memory size
+ReliableUsed
+              The used amount of reliable memory
+ReliableTaskUsed
+              Size of mirrored memory used by user task
+ReliableBuddyMem
+              Size of unused mirrored memory in buddy system
+ReliableShmem
+              Total reliable memory used by share memory
+FileCache
+              Memory usage of page cache
+ReliableFileCache
+              Reliable memory usage of page cache
+
 
 vmallocinfo
 ~~~~~~~~~~~

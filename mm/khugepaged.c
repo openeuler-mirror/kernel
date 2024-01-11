@@ -95,6 +95,8 @@ static struct kmem_cache *mm_slot_cache __read_mostly;
 
 struct collapse_control {
 	bool is_khugepaged;
+	/* alloc hugepage from reliable zone */
+	bool reliable;
 
 	/* Num pages scanned per node */
 	u32 node_load[MAX_NUMNODES];
@@ -715,6 +717,7 @@ static void __collapse_huge_page_copy_succeeded(pte_t *pte,
 			 */
 			spin_lock(ptl);
 			ptep_clear(vma->vm_mm, address, _pte);
+			add_reliable_page_counter(src_page, vma->vm_mm, 1);
 			page_remove_rmap(src_page, vma, false);
 			spin_unlock(ptl);
 			free_page_and_swap_cache(src_page);
@@ -825,6 +828,7 @@ static void khugepaged_alloc_sleep(void)
 
 struct collapse_control khugepaged_collapse_control = {
 	.is_khugepaged = true,
+	.reliable = false,
 };
 
 static bool hpage_collapse_scan_abort(int nid, struct collapse_control *cc)
@@ -1063,6 +1067,9 @@ static int alloc_charge_hpage(struct page **hpage, struct mm_struct *mm,
 	int node = hpage_collapse_find_target_node(cc);
 	struct folio *folio;
 
+	if (cc->reliable)
+		gfp |= GFP_RELIABLE;
+
 	if (!hpage_collapse_alloc_page(hpage, gfp, node, &cc->alloc_nmask))
 		return SCAN_ALLOC_HUGE_PAGE_FAIL;
 
@@ -1218,6 +1225,7 @@ static int collapse_huge_page(struct mm_struct *mm, unsigned long address,
 
 	spin_lock(pmd_ptl);
 	BUG_ON(!pmd_none(*pmd));
+	add_reliable_page_counter(hpage, vma->vm_mm, HPAGE_PMD_NR);
 	page_add_new_anon_rmap(hpage, vma, address);
 	lru_cache_add_inactive_or_unevictable(hpage, vma);
 	pgtable_trans_huge_deposit(mm, pmd, pgtable);
@@ -1260,6 +1268,7 @@ static int hpage_collapse_scan_pmd(struct mm_struct *mm,
 
 	memset(cc->node_load, 0, sizeof(cc->node_load));
 	nodes_clear(cc->alloc_nmask);
+	cc->reliable = false;
 	pte = pte_offset_map_lock(mm, pmd, address, &ptl);
 	if (!pte) {
 		result = SCAN_PMD_NULL;
@@ -1384,6 +1393,9 @@ static int hpage_collapse_scan_pmd(struct mm_struct *mm,
 		     PageReferenced(page) || mmu_notifier_test_young(vma->vm_mm,
 								     address)))
 			referenced++;
+
+		if (page_reliable(page))
+			cc->reliable = true;
 	}
 	if (!writable) {
 		result = SCAN_PAGE_RO;
@@ -1621,6 +1633,7 @@ int collapse_pte_mapped_thp(struct mm_struct *mm, unsigned long addr,
 		 */
 		ptep_clear(mm, addr, pte);
 		page_remove_rmap(page, vma, false);
+		add_reliable_page_counter(page, mm, -1);
 		nr_ptes++;
 	}
 
@@ -2227,6 +2240,7 @@ static int hpage_collapse_scan_file(struct mm_struct *mm, unsigned long addr,
 	swap = 0;
 	memset(cc->node_load, 0, sizeof(cc->node_load));
 	nodes_clear(cc->alloc_nmask);
+	cc->reliable = false;
 	rcu_read_lock();
 	xas_for_each(&xas, page, start + HPAGE_PMD_NR - 1) {
 		if (xas_retry(&xas, page))
@@ -2294,6 +2308,9 @@ static int hpage_collapse_scan_file(struct mm_struct *mm, unsigned long addr,
 			xas_pause(&xas);
 			cond_resched_rcu();
 		}
+
+		if (page_reliable(page))
+			cc->reliable = true;
 	}
 	rcu_read_unlock();
 
@@ -2739,6 +2756,7 @@ int madvise_collapse(struct vm_area_struct *vma, struct vm_area_struct **prev,
 		mmap_assert_locked(mm);
 		memset(cc->node_load, 0, sizeof(cc->node_load));
 		nodes_clear(cc->alloc_nmask);
+		cc->reliable = false;
 		if (IS_ENABLED(CONFIG_SHMEM) && vma->vm_file) {
 			struct file *file = get_file(vma->vm_file);
 			pgoff_t pgoff = linear_page_index(vma, addr);

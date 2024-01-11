@@ -185,6 +185,7 @@ static void filemap_unaccount_folio(struct address_space *mapping,
 	__lruvec_stat_mod_folio(folio, NR_FILE_PAGES, -nr);
 	if (folio_test_swapbacked(folio)) {
 		__lruvec_stat_mod_folio(folio, NR_SHMEM, -nr);
+		shmem_reliable_folio_add(folio, -nr);
 		if (folio_test_pmd_mappable(folio))
 			__lruvec_stat_mod_folio(folio, NR_SHMEM_THPS, -nr);
 	} else if (folio_test_pmd_mappable(folio)) {
@@ -830,10 +831,14 @@ void replace_page_cache_folio(struct folio *old, struct folio *new)
 		__lruvec_stat_sub_folio(old, NR_FILE_PAGES);
 	if (!folio_test_hugetlb(new))
 		__lruvec_stat_add_folio(new, NR_FILE_PAGES);
-	if (folio_test_swapbacked(old))
+	if (folio_test_swapbacked(old)) {
 		__lruvec_stat_sub_folio(old, NR_SHMEM);
-	if (folio_test_swapbacked(new))
+		shmem_reliable_folio_add(old, -folio_nr_pages(old));
+	}
+	if (folio_test_swapbacked(new)) {
 		__lruvec_stat_add_folio(new, NR_SHMEM);
+		shmem_reliable_folio_add(new, folio_nr_pages(new));
+	}
 	xas_unlock_irq(&xas);
 	if (free_folio)
 		free_folio(old);
@@ -962,6 +967,8 @@ struct folio *filemap_alloc_folio(gfp_t gfp, unsigned int order)
 {
 	int n;
 	struct folio *folio;
+
+	filemap_prepare_alloc(&gfp);
 
 	if (cpuset_do_page_mem_spread()) {
 		unsigned int cpuset_mems_cookie;

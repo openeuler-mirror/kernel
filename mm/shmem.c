@@ -808,6 +808,7 @@ static int shmem_add_to_page_cache(struct folio *folio,
 		mapping->nrpages += nr;
 		__lruvec_stat_mod_folio(folio, NR_FILE_PAGES, nr);
 		__lruvec_stat_mod_folio(folio, NR_SHMEM, nr);
+		shmem_reliable_folio_add(folio, nr);
 unlock:
 		xas_unlock_irq(&xas);
 	} while (xas_nomem(&xas, gfp));
@@ -839,6 +840,7 @@ static void shmem_delete_from_page_cache(struct folio *folio, void *radswap)
 	mapping->nrpages -= nr;
 	__lruvec_stat_mod_folio(folio, NR_FILE_PAGES, -nr);
 	__lruvec_stat_mod_folio(folio, NR_SHMEM, -nr);
+	shmem_reliable_folio_add(folio, -nr);
 	xa_unlock_irq(&mapping->i_pages);
 	folio_put(folio);
 	BUG_ON(error);
@@ -1677,6 +1679,9 @@ static struct folio *shmem_alloc_and_acct_folio(gfp_t gfp, struct inode *inode,
 	if (err)
 		goto failed;
 
+	if (!shmem_prepare_alloc(&gfp))
+		goto no_mem;
+
 	if (huge)
 		folio = shmem_alloc_hugefolio(gfp, info, index);
 	else
@@ -1687,6 +1692,7 @@ static struct folio *shmem_alloc_and_acct_folio(gfp_t gfp, struct inode *inode,
 		return folio;
 	}
 
+no_mem:
 	err = -ENOMEM;
 	shmem_inode_unacct_blocks(inode, nr);
 failed:
@@ -1754,8 +1760,10 @@ static int shmem_replace_folio(struct folio **foliop, gfp_t gfp,
 		mem_cgroup_migrate(old, new);
 		__lruvec_stat_mod_folio(new, NR_FILE_PAGES, 1);
 		__lruvec_stat_mod_folio(new, NR_SHMEM, 1);
+		shmem_reliable_folio_add(new, 1);
 		__lruvec_stat_mod_folio(old, NR_FILE_PAGES, -1);
 		__lruvec_stat_mod_folio(old, NR_SHMEM, -1);
+		shmem_reliable_folio_add(old, -1);
 	}
 	xa_unlock_irq(&swap_mapping->i_pages);
 
@@ -4625,6 +4633,9 @@ void __init shmem_init(void)
 	else
 		shmem_huge = SHMEM_HUGE_NEVER; /* just in case it was patched */
 #endif
+
+	shmem_reliable_init();
+
 	return;
 
 out1:

@@ -168,6 +168,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 
 	arch_report_meminfo(m);
 
+	reliable_report_meminfo(m);
+
 	return 0;
 }
 

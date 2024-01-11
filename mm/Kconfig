@@ -1348,6 +1348,23 @@ config CLEAR_FREELIST_PAGE
 	  To enable this feature, kernel parameter "clear_freelist" also
 	  needs to be added.
 
+config MEMORY_RELIABLE
+	bool "Support for memory reliable"
+	depends on ARM64
+	default n
+	help
+	  Memory reliable is based on mirror memory. It has the following
+	  additional features:
+	  a) normal user tasks never alloc memory from mirrored region;
+	  b) special user tasks will allocate memory from mirrored region
+	  by default; c) upper limit of mirrored region allcated for user
+	  tasks, shmem and pagecache.
+	  Special user tasks and shmem/pagecache can fallback to
+	  non-mirrored region if you enable reliable fallback mechanism.
+
+	  To enable this function, mirrored memory is needed and
+	  "kernelcore=reliable" need to be added in kernel parameters.
+
 source "mm/damon/Kconfig"
 
 endmenu
