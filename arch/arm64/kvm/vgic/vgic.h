@@ -153,7 +153,7 @@ static inline bool vgic_direct_sgi_or_ppi(struct vgic_irq *irq)
 
 	return direct_sgi || direct_ppi;
 #else
-	return direct_sgi
+	return direct_sgi;
 #endif
 }
 
@@ -353,5 +353,8 @@ void vgic_v4_teardown(struct kvm *kvm);
 void vgic_v4_configure_vsgis(struct kvm *kvm);
 void vgic_v4_get_vlpi_state(struct vgic_irq *irq, bool *val);
 int vgic_v4_request_vpe_irq(struct kvm_vcpu *vcpu, int irq);
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+void vgic_v4_configure_vtimer(struct kvm *kvm);
+#endif
 
 #endif
