@@ -36,6 +36,9 @@ struct pid_namespace {
 #endif
 	struct user_namespace *user_ns;
 	struct ucounts *ucounts;
+#ifdef CONFIG_PID_MAX_PER_NAMESPACE
+	int pid_max;
+#endif
 	int reboot;	/* group exit code if this pidns was rebooted */
 	struct ns_common ns;
 #if defined(CONFIG_SYSCTL) && defined(CONFIG_MEMFD_CREATE)
