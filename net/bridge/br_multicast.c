@@ -2068,6 +2068,7 @@ void br_multicast_dev_del(struct net_bridge *br)
 
 out:
 	spin_unlock_bh(&br->multicast_lock);
+	br_multicast_stop(br);
 }
 
 int br_multicast_set_router(struct net_bridge *br, unsigned long val)
