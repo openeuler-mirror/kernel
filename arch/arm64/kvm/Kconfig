@@ -81,4 +81,9 @@ config ARCH_VCPU_STAT
 
 	  If unsure, say N.
 
+config VIRT_VTIMER_IRQ_BYPASS
+	bool "MBIGEN enable vtimer irq bypass"
+	depends on KVM && ARM64 && ARCH_HISI && HISILICON_IRQ_MBIGEN
+	default n
+
 endif # VIRTUALIZATION
