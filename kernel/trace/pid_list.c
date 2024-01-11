@@ -414,7 +414,11 @@ struct trace_pid_list *trace_pid_list_alloc(void)
 	int i;
 
 	/* According to linux/thread.h, pids can be no bigger that 30 bits */
+#ifndef CONFIG_PID_MAX_PER_NAMESPACE
 	WARN_ON_ONCE(pid_max > (1 << 30));
+#else
+	WARN_ON_ONCE(task_active_pid_ns(current)->pid_max > (1 << 30));
+#endif
 
 	pid_list = kzalloc(sizeof(*pid_list), GFP_KERNEL);
 	if (!pid_list)

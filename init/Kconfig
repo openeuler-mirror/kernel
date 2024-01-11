@@ -2147,3 +2147,10 @@ config ARCH_HAS_SYNC_CORE_BEFORE_USERMODE
 # <asm/syscall_wrapper.h>.
 config ARCH_HAS_SYSCALL_WRAPPER
 	def_bool n
+
+config PID_MAX_PER_NAMESPACE
+	bool "Make pid_max per namespace"
+	depends on PID_NS
+	default n
+	help
+	  Say Y here to enable make pid_max per namespace.

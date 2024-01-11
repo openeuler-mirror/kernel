@@ -695,7 +695,9 @@ extern unsigned long tracing_thresh;
 
 /* PID filtering */
 
+#ifndef CONFIG_PID_MAX_PER_NAMESPACE
 extern int pid_max;
+#endif
 
 bool trace_find_filtered_pid(struct trace_pid_list *filtered_pids,
 			     pid_t search_pid);
