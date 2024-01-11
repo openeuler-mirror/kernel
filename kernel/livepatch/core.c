@@ -1155,6 +1155,9 @@ static void klp_init_func_early(struct klp_object *obj,
 	kobject_init(&func->kobj, &klp_ktype_func);
 	list_add_tail(&func->node, &obj->func_list);
 	func->func_node = NULL;
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	func->nop = false;
+#endif
 }
 
 static void klp_init_object_early(struct klp_patch *patch,
@@ -1165,6 +1168,7 @@ static void klp_init_object_early(struct klp_patch *patch,
 	list_add_tail(&obj->node, &patch->obj_list);
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	obj->mod = NULL;
+	obj->dynamic = false;
 #endif
 }
 
@@ -1199,6 +1203,12 @@ static int klp_init_patch(struct klp_patch *patch)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	if (patch->replace) {
+		pr_err("Replacing is not supported\n");
+		return -EINVAL;
+	}
+#endif
 	if (patch->replace) {
 		ret = klp_add_nops(patch);
 		if (ret)
