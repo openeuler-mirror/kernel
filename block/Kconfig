@@ -259,6 +259,13 @@ config BLK_DEV_DETECT_WRITING_PART0
 	  As a supplement to BLK_DEV_WRITE_MOUNTED, enabling this
 	  to detect the scenario above.
 
+config BLK_DEV_WRITE_MOUNTED_DUMP
+	bool "Dump info when detecting conflict of opening block device"
+	default n
+	help
+	  Enabling this to dump info when opening mounted block devices
+	  for write or trying to mount write opened block devices.
+
 source "block/partitions/Kconfig"
 
 config BLK_MQ_PCI
