@@ -30,8 +30,12 @@
 #include "../fs/internal.h"
 #include "blk.h"
 
+#define bdev_write_mounted_opt(opt) (bdev_allow_write_mounted & (1 << BLKDEV_##opt))
 /* Should we allow writing to mounted block devices? */
-static bool bdev_allow_write_mounted = IS_ENABLED(CONFIG_BLK_DEV_WRITE_MOUNTED);
+#define BLKDEV_ALLOW_WRITE_MOUNTED	0
+
+static u8 bdev_allow_write_mounted =
+	IS_ENABLED(CONFIG_BLK_DEV_WRITE_MOUNTED) << BLKDEV_ALLOW_WRITE_MOUNTED;
 
 struct bdev_inode {
 	struct block_device bdev;
@@ -755,7 +759,7 @@ static bool bdev_mount_blocked(struct block_device *bdev)
 
 static bool bdev_may_open(struct block_device *bdev, blk_mode_t mode)
 {
-	if (bdev_allow_write_mounted)
+	if (bdev_write_mounted_opt(ALLOW_WRITE_MOUNTED))
 		return true;
 	/* Writes blocked? */
 	if (mode & BLK_OPEN_WRITE && bdev_writes_blocked(bdev))
@@ -1134,7 +1138,7 @@ void bdev_statx_dioalign(struct inode *inode, struct kstat *stat)
 
 static int __init setup_bdev_allow_write_mounted(char *str)
 {
-	if (kstrtobool(str, &bdev_allow_write_mounted))
+	if (kstrtou8(str, 0, &bdev_allow_write_mounted))
 		pr_warn("Invalid option string for bdev_allow_write_mounted:"
 			" '%s'\n", str);
 	return 1;
