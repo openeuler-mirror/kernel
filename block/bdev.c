@@ -735,17 +735,22 @@ void blkdev_put_no_open(struct block_device *bdev)
 
 static bool bdev_writes_blocked(struct block_device *bdev)
 {
-	return bdev->bd_writers == -1;
+	return bdev->bd_mounted;
 }
 
 static void bdev_block_writes(struct block_device *bdev)
 {
-	bdev->bd_writers = -1;
+	bdev->bd_mounted = true;
 }
 
 static void bdev_unblock_writes(struct block_device *bdev)
 {
-	bdev->bd_writers = 0;
+	bdev->bd_mounted = false;
+}
+
+static bool bdev_mount_blocked(struct block_device *bdev)
+{
+	return bdev->bd_writers > 0;
 }
 
 static bool bdev_may_open(struct block_device *bdev, blk_mode_t mode)
@@ -755,16 +760,13 @@ static bool bdev_may_open(struct block_device *bdev, blk_mode_t mode)
 	/* Writes blocked? */
 	if (mode & BLK_OPEN_WRITE && bdev_writes_blocked(bdev))
 		return false;
-	if (mode & BLK_OPEN_RESTRICT_WRITES && bdev->bd_writers > 0)
+	if (mode & BLK_OPEN_RESTRICT_WRITES && bdev_mount_blocked(bdev))
 		return false;
 	return true;
 }
 
 static void bdev_claim_write_access(struct block_device *bdev, blk_mode_t mode)
 {
-	if (bdev_allow_write_mounted)
-		return;
-
 	/* Claim exclusive or shared write access. */
 	if (mode & BLK_OPEN_RESTRICT_WRITES)
 		bdev_block_writes(bdev);
@@ -774,9 +776,6 @@ static void bdev_claim_write_access(struct block_device *bdev, blk_mode_t mode)
 
 static void bdev_yield_write_access(struct block_device *bdev, blk_mode_t mode)
 {
-	if (bdev_allow_write_mounted)
-		return;
-
 	/* Yield exclusive or shared write access. */
 	if (mode & BLK_OPEN_RESTRICT_WRITES)
 		bdev_unblock_writes(bdev);
