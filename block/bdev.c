@@ -818,6 +818,22 @@ static void bdev_unblock_mount(struct block_device *bdev)
 		bdev->bd_disk->write_open_partitions--;
 }
 
+static void bdev_write_exclusive_dump(struct block_device *bdev, void *holder,
+				      const struct blk_holder_ops *hops)
+{
+	bool may_claim;
+
+	if (!bdev_write_mounted_opt(WRITE_MOUNTED_DUMP))
+		return;
+
+	mutex_lock(&bdev_lock);
+	may_claim = bd_may_claim(bdev, holder, hops);
+	mutex_unlock(&bdev_lock);
+
+	if (!may_claim)
+		blkdev_dump_conflict_opener(bdev, OPEN_EXCLUSIVE);
+}
+
 static bool bdev_may_open(struct block_device *bdev, blk_mode_t mode)
 {
 	if (bdev_write_mounted_opt(ALLOW_WRITE_MOUNTED) &&
@@ -918,6 +934,9 @@ struct bdev_handle *bdev_open_by_dev(dev_t dev, blk_mode_t mode, void *holder,
 	}
 
 	disk_block_events(disk);
+
+	if (mode & BLK_OPEN_WRITE)
+		bdev_write_exclusive_dump(bdev, holder, hops);
 
 	mutex_lock(&disk->open_mutex);
 	ret = -ENXIO;
