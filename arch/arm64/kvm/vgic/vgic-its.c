@@ -1026,7 +1026,12 @@ static int vgic_its_cmd_handle_movi(struct kvm *kvm, struct vgic_its *its,
 	ite->collection = collection;
 	vcpu = kvm_get_vcpu(kvm, collection->target_addr);
 
+#ifdef CONFIG_KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
+	if (!vgic_lpis_enabled(vcpu))
+		vgic_its_invalidate_cache(kvm);
+#else
 	vgic_its_invalidate_cache(kvm);
+#endif
 
 	return update_affinity(ite->irq, vcpu);
 }
