@@ -7,6 +7,7 @@
 
 #include <linux/wait.h>
 #include <linux/compiler.h>
+#include <linux/kabi.h>
 
 struct kmem_cache;
 
@@ -23,6 +24,9 @@ typedef struct mempool_s {
 	mempool_alloc_t *alloc;
 	mempool_free_t *free;
 	wait_queue_head_t wait;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 } mempool_t;
 
 static inline bool mempool_initialized(mempool_t *pool)
