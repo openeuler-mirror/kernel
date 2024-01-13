@@ -310,6 +310,8 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 			ret = dpool_promote_gigantic_page(src_pool, dst_pool, spage);
 			break;
 		case PAGES_POOL_2M: {
+			unsigned long nr_pages = 1 << PMD_ORDER;
+
 			/*
 			 * Since the dpool_mutex is already locked,
 			 * there is no way to free spage_next, so
@@ -317,6 +319,9 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 			 */
 			spin_unlock(&dpool->lock);
 			cond_resched();
+			lru_add_drain_all();
+			do_migrate_range(spage->start_pfn,
+					 spage->start_pfn + nr_pages);
 			spin_lock(&dpool->lock);
 			ret = dpool_promote_huge_page(src_pool, dst_pool, spage);
 			break;
