@@ -1310,6 +1310,24 @@ void mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 	}
 }
 
+/**
+ * mem_cgroup_scan_cgroups - iterate over memcgs of a memory cgroup hierarchy
+ * @memcg: hierarchy root
+ * @fn: function to call for each memcg
+ * @arg: argument passed to @fn
+ *
+ * This function iterates over memcg attached to @memcg or to any of its
+ * descendants and calls @fn for each memcgs.
+ */
+void mem_cgroup_scan_cgroups(struct mem_cgroup *memcg,
+			     void (*fn)(struct mem_cgroup *, void *), void *arg)
+{
+	struct mem_cgroup *iter;
+
+	for_each_mem_cgroup_tree(iter, memcg)
+		fn(iter, arg);
+}
+
 #ifdef CONFIG_DEBUG_VM
 void lruvec_memcg_debug(struct lruvec *lruvec, struct folio *folio)
 {
