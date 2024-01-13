@@ -793,6 +793,96 @@ int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
 	return ret;
 }
 
+struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
+					  struct hstate *h, bool reserved)
+{
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	struct folio *folio = NULL;
+	unsigned long flags;
+	int type;
+
+	if (!dpool_enabled)
+		return NULL;
+
+	dpool = p->dpool;
+	if (!dpool)
+		return NULL;
+
+	spin_lock_irqsave(&dpool->lock, flags);
+	if (!dpool->online)
+		goto unlock;
+
+	if (hstate_is_gigantic(h))
+		type = PAGES_POOL_1G;
+	else
+		type = PAGES_POOL_2M;
+	pool = &dpool->pool[type];
+
+	list_for_each_entry(folio, &pool->freelist, lru) {
+		if (folio_test_hwpoison(folio))
+			continue;
+
+		list_del(&folio->lru);
+		__folio_clear_dpool(folio);
+		folio_ref_unfreeze(folio, 1);
+		pool->free_huge_pages--;
+		pool->used_huge_pages++;
+		if (reserved) {
+			folio_set_hugetlb_restore_reserve(folio);
+			pool->resv_huge_pages--;
+		}
+		folio_set_pool(folio);
+		goto unlock;
+	}
+	folio = NULL;
+
+unlock:
+	spin_unlock_irqrestore(&dpool->lock, flags);
+
+	return folio;
+}
+
+void dynamic_pool_free_hugepage(struct folio *folio, bool restore_reserve)
+{
+	struct hstate *h = folio_hstate(folio);
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	unsigned long flags;
+	int type;
+
+	if (!dpool_enabled)
+		return;
+
+	dpool = dpool_get_from_page(folio_page(folio, 0));
+	if (!dpool) {
+		pr_err("get dpool failed when free hugepage 0x%px\n", folio);
+		return;
+	}
+
+	spin_lock_irqsave(&dpool->lock, flags);
+	if (hstate_is_gigantic(h))
+		type = PAGES_POOL_1G;
+	else
+		type = PAGES_POOL_2M;
+	pool = &dpool->pool[type];
+
+	if (folio_test_hwpoison(folio))
+		goto unlock;
+
+	folio_clear_pool(folio);
+	__folio_set_dpool(folio);
+	list_add(&folio->lru, &pool->freelist);
+	pool->free_huge_pages++;
+	pool->used_huge_pages--;
+	if (restore_reserve)
+		pool->resv_huge_pages++;
+
+unlock:
+	spin_unlock_irqrestore(&dpool->lock, flags);
+	dpool_put(dpool);
+}
+
 /* === dynamic pool function ========================================== */
 
 static void dpool_dump_child_memcg(struct mem_cgroup *memcg, void *message)

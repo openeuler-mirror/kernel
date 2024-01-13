@@ -1947,6 +1947,14 @@ void free_huge_folio(struct folio *folio)
 				     pages_per_huge_page(h), folio);
 	hugetlb_cgroup_uncharge_folio_rsvd(hstate_index(h),
 					  pages_per_huge_page(h), folio);
+
+	if (page_from_dynamic_pool(folio_page(folio, 0))) {
+		list_del(&folio->lru);
+		spin_unlock_irqrestore(&hugetlb_lock, flags);
+		dynamic_pool_free_hugepage(folio, restore_reserve);
+		return;
+	}
+
 	if (restore_reserve)
 		h->resv_huge_pages++;
 
@@ -3186,6 +3194,19 @@ struct folio *alloc_hugetlb_folio(struct vm_area_struct *vma,
 	if (ret)
 		goto out_uncharge_cgroup_reservation;
 
+	if (file_in_dynamic_pool(info)) {
+		bool reserved = false;
+
+		if (!avoid_reserve && vma_has_reserves(vma, gbl_chg))
+			reserved = true;
+		folio = dynamic_pool_alloc_hugepage(info, h, reserved);
+		if (!folio)
+			goto out_uncharge_cgroup;
+		spin_lock_irq(&hugetlb_lock);
+		list_add(&folio->lru, &h->hugepage_activelist);
+		goto out;
+	}
+
 	spin_lock_irq(&hugetlb_lock);
 	/*
 	 * glb_chg is passed to indicate whether or not a page must be taken
@@ -3208,6 +3229,7 @@ struct folio *alloc_hugetlb_folio(struct vm_area_struct *vma,
 		/* Fall through */
 	}
 
+out:
 	hugetlb_cgroup_commit_charge(idx, pages_per_huge_page(h), h_cg, folio);
 	/* If allocation is not consuming a reservation, also store the
 	 * hugetlb_cgroup pointer on the page.

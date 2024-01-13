@@ -90,6 +90,9 @@ void dynamic_pool_bind_file(struct hugetlbfs_inode_info *p, struct hstate *h);
 void dynamic_pool_unbind_file(struct hugetlbfs_inode_info *p);
 int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
 				     struct hugetlbfs_inode_info *p);
+struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
+					  struct hstate *h, bool reserved);
+void dynamic_pool_free_hugepage(struct folio *folio, bool restore_reserve);
 
 void dynamic_pool_inherit(struct mem_cgroup *memcg);
 int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online);
@@ -146,6 +149,17 @@ static inline int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
 						   struct hugetlbfs_inode_info *p)
 {
 	return -ENOMEM;
+}
+
+static inline struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
+					struct hstate *h, bool reserved)
+{
+	return NULL;
+}
+
+static inline void dynamic_pool_free_hugepage(struct folio *folio,
+					      bool restore_reserve)
+{
 }
 #endif
 
