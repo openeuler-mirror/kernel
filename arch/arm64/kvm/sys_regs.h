@@ -100,8 +100,13 @@ struct sys_reg_desc {
 #define REG_USER_WI		(1 << 3) /* WI from userspace only */
 
 static __printf(2, 3)
+#if defined(CONFIG_OPTIMIZE_INLINING)
 inline void print_sys_reg_msg(const struct sys_reg_params *p,
-				       char *fmt, ...)
+					char *fmt, ...)
+#else
+void print_sys_reg_msg(const struct sys_reg_params *p,
+					char *fmt, ...)
+#endif
 {
 	va_list va;
 

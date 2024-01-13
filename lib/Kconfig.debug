@@ -475,7 +475,8 @@ config HEADERS_INSTALL
 	  as uapi header sanity checks.
 
 config OPTIMIZE_INLINING
-	def_bool y
+	bool "Optimize inlining"
+	def_bool n
 	help
 	  This option determines if the kernel forces gcc to inline the functions
 	  developers have marked 'inline'. Doing so takes away freedom from gcc to
