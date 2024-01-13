@@ -373,6 +373,7 @@ TRACE_EVENT(aer_event,
 	EM ( MF_MSG_BUDDY, "free buddy page" )				\
 	EM ( MF_MSG_DAX, "dax page" )					\
 	EM ( MF_MSG_UNSPLIT_THP, "unsplit thp" )			\
+	EM ( MF_MSG_FREE_DPOOL, "free dynamic pool page" )		\
 	EMe ( MF_MSG_UNKNOWN, "unknown page" )
 
 /*
