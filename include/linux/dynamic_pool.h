@@ -74,10 +74,22 @@ static inline bool page_from_dynamic_pool(struct page *page)
 	return PagePool(page);
 }
 
+static inline bool file_in_dynamic_pool(struct hugetlbfs_inode_info *p)
+{
+	if (!dpool_enabled)
+		return false;
+
+	return p && p->dpool;
+}
+
 int dynamic_pool_can_attach(struct task_struct *tsk, struct mem_cgroup *memcg);
 struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order,
 				     unsigned int alloc_flags);
 void dynamic_pool_free_page(struct page *page);
+void dynamic_pool_bind_file(struct hugetlbfs_inode_info *p, struct hstate *h);
+void dynamic_pool_unbind_file(struct hugetlbfs_inode_info *p);
+int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
+				     struct hugetlbfs_inode_info *p);
 
 void dynamic_pool_inherit(struct mem_cgroup *memcg);
 int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online);
@@ -114,6 +126,28 @@ static inline struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order
 static inline void dynamic_pool_free_page(struct page *page)
 {
 }
+
+#ifdef CONFIG_HUGETLBFS
+static inline bool file_in_dynamic_pool(struct hugetlbfs_inode_info *p)
+{
+	return false;
+}
+
+static inline void dynamic_pool_bind_file(struct hugetlbfs_inode_info *p,
+					  struct hstate *h)
+{
+}
+
+static inline void dynamic_pool_unbind_file(struct hugetlbfs_inode_info *p)
+{
+}
+
+static inline int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
+						   struct hugetlbfs_inode_info *p)
+{
+	return -ENOMEM;
+}
+#endif
 
 static inline void dynamic_pool_inherit(struct mem_cgroup *memcg)
 {

@@ -731,6 +731,68 @@ put:
 	dpool_put(dpool);
 }
 
+void dynamic_pool_bind_file(struct hugetlbfs_inode_info *p, struct hstate *h)
+{
+	unsigned long size;
+
+	if (!dpool_enabled || !p)
+		return;
+
+	size = huge_page_size(h);
+	if (size == PMD_SIZE || size == PUD_SIZE)
+		p->dpool = dpool_get_from_task(current);
+	else
+		p->dpool = NULL;
+}
+
+void dynamic_pool_unbind_file(struct hugetlbfs_inode_info *p)
+{
+	struct dynamic_pool *dpool;
+
+	if (!dpool_enabled || !p || !p->dpool)
+		return;
+
+	dpool = p->dpool;
+	p->dpool = NULL;
+	dpool_put(dpool);
+}
+
+int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
+				     struct hugetlbfs_inode_info *p)
+{
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	unsigned long flags;
+	int type;
+	int ret = -ENOMEM;
+
+	if (!dpool_enabled || !p || !p->dpool)
+		return 0;
+
+	dpool = p->dpool;
+	spin_lock_irqsave(&dpool->lock, flags);
+
+	if (hstate_is_gigantic(h))
+		type = PAGES_POOL_1G;
+	else
+		type = PAGES_POOL_2M;
+	pool = &dpool->pool[type];
+
+	if (delta > 0) {
+		if (delta <= pool->free_huge_pages - pool->resv_huge_pages) {
+			pool->resv_huge_pages += delta;
+			ret = 0;
+		}
+	} else {
+		pool->resv_huge_pages -= (unsigned long)(-delta);
+		WARN_ON(pool->resv_huge_pages < 0);
+		ret = 0;
+	}
+	spin_unlock_irqrestore(&dpool->lock, flags);
+
+	return ret;
+}
+
 /* === dynamic pool function ========================================== */
 
 static void dpool_dump_child_memcg(struct mem_cgroup *memcg, void *message)
