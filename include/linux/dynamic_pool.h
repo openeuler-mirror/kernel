@@ -24,10 +24,13 @@ struct pages_pool {
 	struct list_head freelist;
 };
 
+struct dynamic_pool_ops;
+
 struct dynamic_pool {
 	refcount_t refcnt;
 	bool online;
 	struct mem_cgroup *memcg;
+	struct dynamic_pool_ops *ops;
 
 	spinlock_t lock;
 	struct pages_pool pool[PAGES_POOL_MAX];

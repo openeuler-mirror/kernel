@@ -1315,7 +1315,7 @@ static bool vma_has_reserves(struct vm_area_struct *vma, long chg)
 	return false;
 }
 
-static void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio)
+void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio)
 {
 	int nid = folio_nid(folio);
 
@@ -1328,8 +1328,7 @@ static void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio)
 	folio_set_hugetlb_freed(folio);
 }
 
-static struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h,
-								int nid)
+struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h, int nid)
 {
 	struct folio *folio;
 	bool pin = !!(current->flags & PF_MEMALLOC_PIN);

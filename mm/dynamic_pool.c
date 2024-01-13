@@ -7,6 +7,7 @@
 
 #define pr_fmt(fmt) "Dynamic pool: " fmt
 
+#include <linux/memblock.h>
 #include <linux/dynamic_pool.h>
 
 static bool enable_dhugetlb;
@@ -16,6 +17,23 @@ DEFINE_STATIC_KEY_FALSE(dynamic_pool_key);
 
 /* Protect the operation of dynamic pool */
 static DEFINE_MUTEX(dpool_mutex);
+
+/* Introduce the special opeartion. */
+struct dynamic_pool_ops {
+	int (*fill_pool)(struct dynamic_pool *dpool, void *arg);
+	int (*drain_pool)(struct dynamic_pool *dpool);
+};
+
+/* Used to record the mapping of page and dpool */
+struct dpool_page_array {
+	unsigned long count;
+	struct dynamic_pool *dpool[];
+};
+
+#define DEFAULT_PAGE_ARRAY_COUNT	4096
+#define hugepage_index(pfn)	((pfn) >> PUD_ORDER)
+static struct dpool_page_array *dpool_page_array;
+static DEFINE_RWLOCK(dpool_page_array_rwlock);
 
 /* === reference function ============================================= */
 
@@ -69,7 +87,8 @@ static void dpool_dump_child_memcg(struct mem_cgroup *memcg, void *message)
 	pr_cont("\n");
 }
 
-static struct dynamic_pool *dpool_create(struct mem_cgroup *memcg)
+static struct dynamic_pool *dpool_create(struct mem_cgroup *memcg,
+					 struct dynamic_pool_ops *ops)
 {
 	struct dynamic_pool *dpool;
 	int i;
@@ -87,6 +106,7 @@ static struct dynamic_pool *dpool_create(struct mem_cgroup *memcg)
 	spin_lock_init(&dpool->lock);
 	refcount_set(&dpool->refcnt, 1);
 	dpool->memcg = memcg;
+	dpool->ops = ops;
 
 	for (i = 0; i < PAGES_POOL_MAX; i++)
 		INIT_LIST_HEAD(&dpool->pool[i].freelist);
@@ -138,6 +158,13 @@ int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online)
 	/* A offline dpool is not allowed for allocation */
 	dpool->online = false;
 
+	BUG_ON(!dpool->ops->drain_pool);
+	ret = dpool->ops->drain_pool(dpool);
+	if (ret) {
+		pr_err("drain pool failed\n");
+		goto put;
+	}
+
 	memcg->dpool = NULL;
 
 	/* Release the initial reference count */
@@ -165,6 +192,22 @@ static int __init dynamic_pool_init(void)
 	if (!enable_dhugetlb)
 		return 0;
 
+	if (enable_dhugetlb) {
+		unsigned long count, size;
+
+		count = max_t(unsigned long, hugepage_index(max_pfn),
+				DEFAULT_PAGE_ARRAY_COUNT);
+		size = sizeof(struct dpool_page_array) +
+			count * sizeof(struct dynamic_pool *);
+		dpool_page_array = kzalloc(size, GFP_KERNEL);
+		if (!dpool_page_array) {
+			pr_err("init failed\n");
+			return -ENOMEM;
+		}
+
+		dpool_page_array->count = count;
+	}
+
 	static_branch_enable(&dynamic_pool_key);
 	pr_info("enabled\n");
 
@@ -180,6 +223,133 @@ static int __init dynamic_hugetlb_setup(char *buf)
 }
 early_param("dynamic_hugetlb", dynamic_hugetlb_setup);
 
+static int dpool_record_page(struct dynamic_pool *dpool, unsigned long idx)
+{
+	read_lock(&dpool_page_array_rwlock);
+
+	/*
+	 * If page's pfn is greater than dhugetlb_pagelist_t->count (which
+	 * may occurs due to memory hotplug) then dhugetlb_pagelist_t need
+	 * to be reallocated, so need write_lock here.
+	 */
+	if (idx >= dpool_page_array->count) {
+		unsigned long size;
+		struct dpool_page_array *tmp;
+
+		read_unlock(&dpool_page_array_rwlock);
+		write_lock(&dpool_page_array_rwlock);
+
+		size = sizeof(struct dpool_page_array) +
+			(idx + 1) * sizeof(struct dynamic_pool *);
+		tmp = krealloc(dpool_page_array, size, GFP_ATOMIC);
+		if (!tmp) {
+			write_unlock(&dpool_page_array_rwlock);
+			return -ENOMEM;
+		}
+
+		tmp->count = idx + 1;
+		dpool_page_array = tmp;
+
+		write_unlock(&dpool_page_array_rwlock);
+		read_lock(&dpool_page_array_rwlock);
+	}
+	dpool_page_array->dpool[idx] = dpool;
+	read_unlock(&dpool_page_array_rwlock);
+
+	return 0;
+}
+
+static int dpool_fill_from_hugetlb(struct dynamic_pool *dpool, void *arg)
+{
+	struct hstate *h = size_to_hstate(PUD_SIZE);
+	unsigned long nr_pages = *(unsigned long *)arg;
+	int nid = dpool->nid;
+	unsigned long count = 0;
+	struct pages_pool *pool = &dpool->pool[PAGES_POOL_1G];
+	struct page *page, *next;
+	struct folio *folio;
+	unsigned long idx;
+	LIST_HEAD(page_list);
+
+	if (!h)
+		return -EINVAL;
+
+	spin_lock(&hugetlb_lock);
+	if ((h->free_huge_pages_node[nid] < nr_pages) ||
+	     (h->free_huge_pages - h->resv_huge_pages < nr_pages)) {
+		spin_unlock(&hugetlb_lock);
+		return -ENOMEM;
+	}
+
+	while (count < nr_pages) {
+		folio = dequeue_hugetlb_folio_node_exact(h, nid);
+		if (!folio)
+			break;
+		page = folio_page(folio, 0);
+		/* dequeue will unfreeze the page, refreeze it. */
+		page_ref_freeze(page, 1);
+		idx = hugepage_index(page_to_pfn(page));
+		if (dpool_record_page(dpool, idx)) {
+			enqueue_hugetlb_folio(h, folio);
+			pr_err("dpool_page_array can't record page 0x%px\n",
+				page);
+			continue;
+		}
+		list_move(&page->lru, &page_list);
+		count++;
+	}
+	spin_unlock(&hugetlb_lock);
+
+	list_for_each_entry_safe(page, next, &page_list, lru) {
+		__SetPageDpool(page);
+		spin_lock(&dpool->lock);
+		list_move(&page->lru, &pool->freelist);
+		pool->free_pages++;
+		dpool->total_pages++;
+		spin_unlock(&dpool->lock);
+	}
+
+	return 0;
+}
+
+static int dpool_drain_to_hugetlb(struct dynamic_pool *dpool)
+{
+	struct hstate *h = size_to_hstate(PUD_SIZE);
+	struct pages_pool *pool = &dpool->pool[PAGES_POOL_1G];
+	struct page *page, *next;
+	unsigned long idx;
+	LIST_HEAD(page_list);
+
+	if (!h)
+		return -EINVAL;
+
+	spin_lock(&dpool->lock);
+	list_for_each_entry_safe(page, next, &pool->freelist, lru) {
+		WARN_ON(PageHWPoison(page));
+		idx = hugepage_index(page_to_pfn(page));
+		WARN_ON(dpool_record_page(NULL, idx));
+
+		list_move(&page->lru, &page_list);
+		__ClearPageDpool(page);
+		pool->free_pages--;
+		dpool->total_pages--;
+	}
+	spin_unlock(&dpool->lock);
+
+	list_for_each_entry_safe(page, next, &page_list, lru) {
+		spin_lock(&hugetlb_lock);
+		enqueue_hugetlb_folio(h, page_folio(page));
+		spin_unlock(&hugetlb_lock);
+	}
+
+	return dpool->total_pages ? -ENOMEM : 0;
+}
+
+static struct dynamic_pool_ops hugetlb_dpool_ops = {
+	.fill_pool = dpool_fill_from_hugetlb,
+	.drain_pool = dpool_drain_to_hugetlb,
+};
+
 /* If dynamic pool is disabled, hide the interface */
 bool dynamic_pool_hide_files(struct cftype *cft)
 {
@@ -194,6 +364,7 @@ int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
 {
 	struct dynamic_pool *dpool;
 	int ret = -EINVAL;
+	bool new_create = false;
 
 	if (!dpool_enabled)
 		return -EINVAL;
@@ -207,11 +378,12 @@ int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
 
 	dpool = memcg->dpool;
 	if (!dpool) {
-		dpool = dpool_create(memcg);
+		dpool = dpool_create(memcg, &hugetlb_dpool_ops);
 		if (!dpool)
 			goto unlock;
 
 		dpool->nid = nid;
+		new_create = true;
 	} else if (dpool->memcg != memcg) {
 		pr_err("add memory failed, not parent memcg\n");
 		goto unlock;
@@ -220,7 +392,20 @@ int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
 			dpool->nid);
 		goto unlock;
 	}
-	ret = 0;
+
+	BUG_ON(!dpool->ops->fill_pool);
+	ret = dpool->ops->fill_pool(dpool, &size);
+	if (ret) {
+		pr_err("fill pool failed\n");
+		/*
+		 * If create a new hpool here but add memory failed,
+		 * release it directly here.
+		 */
+		if (new_create) {
+			memcg->dpool = NULL;
+			dpool_put(dpool);
+		}
+	}
 
 unlock:
 	mutex_unlock(&dpool_mutex);

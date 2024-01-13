@@ -282,6 +282,9 @@ long hugetlb_change_protection(struct vm_area_struct *vma,
 bool is_hugetlb_entry_migration(pte_t pte);
 void hugetlb_unshare_all_pmds(struct vm_area_struct *vma);
 
+void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio);
+struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h, int nid);
+
 #ifdef CONFIG_HUGETLB_INSERT_PAGE
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 				pgprot_t prot, struct page *hpage);
