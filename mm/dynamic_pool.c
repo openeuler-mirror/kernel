@@ -11,6 +11,9 @@
 #include <linux/dynamic_pool.h>
 #include "internal.h"
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/dynamic_pool.h>
+
 static bool enable_dhugetlb;
 
 /* Indicate the enabled of dynamic pool */
@@ -215,7 +218,7 @@ static int dpool_demote_pool_locked(struct dynamic_pool *dpool, int type)
 {
 	struct pages_pool *src_pool, *dst_pool;
 	struct split_page *spage = NULL;
-	struct page *page;
+	struct page *page = NULL;
 	int ret = -ENOMEM;
 
 	lockdep_assert_held(&dpool->lock);
@@ -256,6 +259,7 @@ out:
 	} else {
 		kfree(spage);
 	}
+	trace_dpool_demote(dpool, type, page, ret);
 
 	return ret;
 }
@@ -339,6 +343,7 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 {
 	struct pages_pool *src_pool, *dst_pool;
 	struct split_page *spage, *spage_next;
+	struct page *page = NULL;
 	int ret = -ENOMEM;
 
 
@@ -385,6 +390,7 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 	}
 
 	if (!ret) {
+		page = pfn_to_page(spage->start_pfn);
 		list_del(&spage->entry);
 		dst_pool->split_pages--;
 	}
@@ -393,6 +399,7 @@ unlock:
 	spin_unlock(&dpool->lock);
 	if (!ret)
 		kfree(spage);
+	trace_dpool_promote(dpool, type, page, ret);
 
 	return ret;
 }
@@ -789,6 +796,8 @@ int dynamic_pool_hugetlb_acct_memory(struct hstate *h, long delta,
 		ret = 0;
 	}
 	spin_unlock_irqrestore(&dpool->lock, flags);
+	trace_dpool_acct_memory(dpool, type, delta, pool->resv_huge_pages,
+				ret);
 
 	return ret;
 }
@@ -839,6 +848,8 @@ struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
 
 unlock:
 	spin_unlock_irqrestore(&dpool->lock, flags);
+	trace_dpool_alloc_hugepage(dpool, type, folio, pool->free_huge_pages,
+				   pool->resv_huge_pages);
 
 	return folio;
 }
@@ -881,6 +892,8 @@ void dynamic_pool_free_hugepage(struct folio *folio, bool restore_reserve)
 unlock:
 	spin_unlock_irqrestore(&dpool->lock, flags);
 	dpool_put(dpool);
+	trace_dpool_free_hugepage(dpool, type, folio, pool->free_huge_pages,
+				  pool->resv_huge_pages);
 }
 
 /* === dynamic pool function ========================================== */
