@@ -430,6 +430,22 @@ void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m)
 
 	seq_printf(m, "nid %d\n", dpool->nid);
 	seq_printf(m, "dhugetlb_total_pages %lu\n", dpool->total_pages);
+	seq_printf(m, "1G_total_reserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_1G].nr_huge_pages);
+	seq_printf(m, "1G_free_reserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_1G].free_huge_pages);
+	seq_printf(m, "1G_mmap_reserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_1G].resv_huge_pages);
+	seq_printf(m, "1G_used_pages %lu\n",
+		   dpool->pool[PAGES_POOL_1G].used_huge_pages);
+	seq_printf(m, "2M_total_reserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_2M].nr_huge_pages);
+	seq_printf(m, "2M_free_reserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_2M].free_huge_pages);
+	seq_printf(m, "2M_mmap_reserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_2M].resv_huge_pages);
+	seq_printf(m, "2M_used_pages %lu\n",
+		   dpool->pool[PAGES_POOL_2M].used_huge_pages);
 	seq_printf(m, "1G_free_unreserved_pages %lu\n",
 		   dpool->pool[PAGES_POOL_1G].free_pages);
 	seq_printf(m, "2M_free_unreserved_pages %lu\n",
@@ -441,4 +457,45 @@ void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m)
 
 	spin_unlock(&dpool->lock);
 	dpool_put(dpool);
+}
+
+int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
+				  unsigned long nr_pages, int type)
+{
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	unsigned long delta;
+	int ret = -EINVAL;
+
+	if (!dpool_enabled)
+		return -EINVAL;
+
+	mutex_lock(&dpool_mutex);
+
+	dpool = dpool_get_from_memcg(memcg);
+	if (!dpool)
+		goto unlock;
+
+	pool = &dpool->pool[type];
+	spin_lock(&dpool->lock);
+	if (nr_pages > pool->nr_huge_pages) {
+		delta = min(nr_pages - pool->nr_huge_pages, pool->free_pages);
+		pool->nr_huge_pages += delta;
+		pool->free_huge_pages += delta;
+		pool->free_pages -= delta;
+	} else {
+		delta = min(pool->nr_huge_pages - nr_pages,
+			    pool->free_huge_pages - pool->resv_huge_pages);
+		pool->nr_huge_pages -= delta;
+		pool->free_huge_pages -= delta;
+		pool->free_pages += delta;
+	}
+	spin_unlock(&dpool->lock);
+	dpool_put(dpool);
+	ret = 0;
+
+unlock:
+	mutex_unlock(&dpool_mutex);
+
+	return ret;
 }

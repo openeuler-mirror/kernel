@@ -5786,6 +5786,42 @@ static int mem_cgroup_dpool_read(struct seq_file *m, void *v)
 
 	return 0;
 }
+
+static ssize_t mem_cgroup_dpool_1G_write(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	char *endp;
+	unsigned long nr_pages;
+	int ret;
+
+	buf = strstrip(buf);
+	nr_pages = memparse(buf, &endp);
+	if (*endp != '\0')
+		return -EINVAL;
+
+	ret = dynamic_pool_reserve_hugepage(memcg, nr_pages, PAGES_POOL_1G);
+
+	return ret ? : nbytes;
+}
+
+static ssize_t mem_cgroup_dpool_2M_write(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	char *endp;
+	unsigned long nr_pages;
+	int ret;
+
+	buf = strstrip(buf);
+	nr_pages = memparse(buf, &endp);
+	if (*endp != '\0')
+		return -EINVAL;
+
+	ret = dynamic_pool_reserve_hugepage(memcg, nr_pages, PAGES_POOL_2M);
+
+	return ret ? : nbytes;
+}
 #endif
 
 static int memory_stat_show(struct seq_file *m, void *v);
@@ -6154,6 +6190,16 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.name = "dhugetlb.nr_pages",
 		.write = mem_cgroup_dpool_write,
 		.seq_show = mem_cgroup_dpool_read,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.1G.reserved_pages",
+		.write = mem_cgroup_dpool_1G_write,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.2M.reserved_pages",
+		.write = mem_cgroup_dpool_2M_write,
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
 	},
 #endif

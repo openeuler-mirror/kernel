@@ -22,6 +22,12 @@ struct pages_pool {
 	unsigned long free_pages;
 	unsigned long used_pages;
 	struct list_head freelist;
+
+	/* Used for hugepage allocation */
+	unsigned long nr_huge_pages;
+	unsigned long free_huge_pages;
+	unsigned long resv_huge_pages;
+	unsigned long used_huge_pages;
 };
 
 struct dynamic_pool_ops;
@@ -49,6 +55,8 @@ bool dynamic_pool_hide_files(struct cftype *cft);
 int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
 			    unsigned long size);
 void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m);
+int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
+				  unsigned long nr_pages, int type);
 
 #else
 struct dynamic_pool {};
