@@ -136,6 +136,9 @@ enum pageflags {
 	PG_arch_2,
 	PG_arch_3,
 #endif
+#ifdef CONFIG_DYNAMIC_POOL
+	PG_pool,		/* Page is allocated from dynamic pool */
+#endif
 	__NR_PAGEFLAGS,
 
 	PG_readahead = PG_reclaim,
@@ -601,6 +604,15 @@ __PAGEFLAG(Reported, reported, PF_NO_COMPOUND)
 PAGEFLAG(VmemmapSelfHosted, vmemmap_self_hosted, PF_ANY)
 #else
 PAGEFLAG_FALSE(VmemmapSelfHosted, vmemmap_self_hosted)
+#endif
+
+/*
+ * PagePool() is used to track page allocated from dpool.
+ */
+#ifdef CONFIG_DYNAMIC_POOL
+PAGEFLAG(Pool, pool, PF_NO_TAIL)
+#else
+PAGEFLAG_FALSE(Pool, pool)
 #endif
 
 /*
