@@ -4330,6 +4330,8 @@ restart:
 			continue;
 		if ((cft->flags & CFTYPE_DEBUG) && !cgroup_debug)
 			continue;
+		if (dynamic_pool_hide_files(cft))
+			continue;
 		if (is_add) {
 			ret = cgroup_add_file(css, cgrp, cft);
 			if (ret) {

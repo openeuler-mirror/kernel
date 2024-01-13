@@ -5749,6 +5749,45 @@ static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
 }
 #endif /* CONFIG_KSM */
 
+#ifdef CONFIG_DYNAMIC_POOL
+static ssize_t mem_cgroup_dpool_write(struct kernfs_open_file *of,
+				      char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long size;
+	int nid;
+	char *endp;
+	int ret = -EINVAL;
+
+	buf = strstrip(buf);
+	nid = memparse(buf, &endp);
+	if (*endp != ' ')
+		goto out;
+
+	if (nid < 0 || nid >= MAX_NUMNODES || !node_online(nid))
+		goto out;
+
+	buf = endp + 1;
+	size = memparse(buf, &endp);
+	if (*endp != '\0' || size == 0)
+		goto out;
+
+	ret = dynamic_pool_add_memory(memcg, nid, size);
+
+out:
+	return ret ? : nbytes;
+}
+
+static int mem_cgroup_dpool_read(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+
+	dynamic_pool_show(memcg, m);
+
+	return 0;
+}
+#endif
+
 static int memory_stat_show(struct seq_file *m, void *v);
 
 #ifdef CONFIG_MEMCG_V1_RECLAIM
@@ -6108,6 +6147,14 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.write = memcg_swapfile_write,
 		.seq_show = memcg_swapfile_read,
+	},
+#endif
+#ifdef CONFIG_DYNAMIC_POOL
+	{
+		.name = "dhugetlb.nr_pages",
+		.write = mem_cgroup_dpool_write,
+		.seq_show = mem_cgroup_dpool_read,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
 	},
 #endif
 	{ },	/* terminate */

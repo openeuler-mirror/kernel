@@ -32,11 +32,20 @@ struct dynamic_pool {
 	spinlock_t lock;
 	struct pages_pool pool[PAGES_POOL_MAX];
 
+	/* Used for dynamic hugetlb */
+	int nid;
+	unsigned long total_pages;
+
 	KABI_RESERVE(1)
 };
 
 void dynamic_pool_inherit(struct mem_cgroup *memcg);
 int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online);
+
+bool dynamic_pool_hide_files(struct cftype *cft);
+int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
+			    unsigned long size);
+void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m);
 
 #else
 struct dynamic_pool {};
@@ -50,5 +59,12 @@ static inline int dynamic_pool_destroy(struct cgroup *cgrp,
 {
 	return 0;
 }
+
+#ifdef CONFIG_CGROUPS
+static inline bool dynamic_pool_hide_files(struct cftype *cft)
+{
+	return false;
+}
+#endif
 #endif /* CONFIG_DYNAMIC_POOL */
 #endif /* __LINUX_DYNAMIC_POOL_H */

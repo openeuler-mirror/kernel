@@ -9,6 +9,8 @@
 
 #include <linux/dynamic_pool.h>
 
+static bool enable_dhugetlb;
+
 /* Indicate the enabled of dynamic pool */
 DEFINE_STATIC_KEY_FALSE(dynamic_pool_key);
 
@@ -160,9 +162,98 @@ unlock:
 
 static int __init dynamic_pool_init(void)
 {
+	if (!enable_dhugetlb)
+		return 0;
+
 	static_branch_enable(&dynamic_pool_key);
 	pr_info("enabled\n");
 
 	return 0;
 }
 subsys_initcall(dynamic_pool_init);
+
+/* === Dynamic hugetlb interface ====================================== */
+
+static int __init dynamic_hugetlb_setup(char *buf)
+{
+	return kstrtobool(buf, &enable_dhugetlb);
+}
+early_param("dynamic_hugetlb", dynamic_hugetlb_setup);
+
+/* If dynamic pool is disabled, hide the interface */
+bool dynamic_pool_hide_files(struct cftype *cft)
+{
+	if (dpool_enabled && enable_dhugetlb)
+		return false;
+
+	return !!strstr(cft->name, "dhugetlb");
+}
+
+int dynamic_pool_add_memory(struct mem_cgroup *memcg, int nid,
+			    unsigned long size)
+{
+	struct dynamic_pool *dpool;
+	int ret = -EINVAL;
+
+	if (!dpool_enabled)
+		return -EINVAL;
+
+	mutex_lock(&dpool_mutex);
+
+	if (!(memcg->css.cgroup->self.flags & CSS_ONLINE)) {
+		pr_err("add memory failed, memcg is going offline\n");
+		goto unlock;
+	}
+
+	dpool = memcg->dpool;
+	if (!dpool) {
+		dpool = dpool_create(memcg);
+		if (!dpool)
+			goto unlock;
+
+		dpool->nid = nid;
+	} else if (dpool->memcg != memcg) {
+		pr_err("add memory failed, not parent memcg\n");
+		goto unlock;
+	} else if (dpool->nid != nid) {
+		pr_err("add memory failed, not target nid(%d)\n",
+			dpool->nid);
+		goto unlock;
+	}
+	ret = 0;
+
+unlock:
+	mutex_unlock(&dpool_mutex);
+
+	return ret;
+}
+
+void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m)
+{
+	struct dynamic_pool *dpool;
+
+	if (!dpool_enabled || !memcg)
+		return;
+
+	dpool = dpool_get_from_memcg(memcg);
+	if (!dpool) {
+		seq_puts(m, "Current hierarchial have not memory pool.\n");
+		return;
+	}
+
+	spin_lock(&dpool->lock);
+
+	seq_printf(m, "nid %d\n", dpool->nid);
+	seq_printf(m, "dhugetlb_total_pages %lu\n", dpool->total_pages);
+	seq_printf(m, "1G_free_unreserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_1G].free_pages);
+	seq_printf(m, "2M_free_unreserved_pages %lu\n",
+		   dpool->pool[PAGES_POOL_2M].free_pages);
+	seq_printf(m, "4K_free_pages %lu\n",
+		   dpool->pool[PAGES_POOL_4K].free_pages);
+	seq_printf(m, "4K_used_pages %lu\n",
+		   dpool->pool[PAGES_POOL_4K].used_pages);
+
+	spin_unlock(&dpool->lock);
+	dpool_put(dpool);
+}
