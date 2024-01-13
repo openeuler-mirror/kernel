@@ -82,6 +82,7 @@ static DECLARE_WAIT_QUEUE_HEAD(resync_wait);
 static struct workqueue_struct *md_wq;
 static struct workqueue_struct *md_misc_wq;
 static struct workqueue_struct *md_rdev_misc_wq;
+struct workqueue_struct *md_bitmap_wq;
 
 static int remove_and_add_spares(struct mddev *mddev,
 				 struct md_rdev *this);
@@ -9671,6 +9672,11 @@ static int __init md_init(void)
 	if (!md_rdev_misc_wq)
 		goto err_rdev_misc_wq;
 
+	md_bitmap_wq = alloc_workqueue("md_bitmap", WQ_MEM_RECLAIM | WQ_UNBOUND,
+				       0);
+	if (!md_bitmap_wq)
+		goto err_bitmap_wq;
+
 	if ((ret = register_blkdev(MD_MAJOR, "md")) < 0)
 		goto err_md;
 
@@ -9692,6 +9698,8 @@ static int __init md_init(void)
 err_mdp:
 	unregister_blkdev(MD_MAJOR, "md");
 err_md:
+	destroy_workqueue(md_bitmap_wq);
+err_bitmap_wq:
 	destroy_workqueue(md_rdev_misc_wq);
 err_rdev_misc_wq:
 	destroy_workqueue(md_misc_wq);
@@ -9987,6 +9995,7 @@ static __exit void md_exit(void)
 	}
 	destroy_workqueue(md_rdev_misc_wq);
 	destroy_workqueue(md_misc_wq);
+	destroy_workqueue(md_bitmap_wq);
 	destroy_workqueue(md_wq);
 }
 
