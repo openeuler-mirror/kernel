@@ -95,6 +95,25 @@ static struct dynamic_pool *dpool_get_from_task(struct task_struct *tsk)
 	return dpool;
 }
 
+static struct dynamic_pool *dpool_get_from_page(struct page *page)
+{
+	struct dynamic_pool *dpool = NULL;
+	unsigned long idx;
+
+	rcu_read_lock();
+	idx = hugepage_index(page_to_pfn(page));
+	read_lock(&dpool_page_array_rwlock);
+	if (idx < dpool_page_array->count)
+		dpool = dpool_page_array->dpool[idx];
+	read_unlock(&dpool_page_array_rwlock);
+
+	if (!dpool_get_unless_zero(dpool))
+		dpool = NULL;
+	rcu_read_unlock();
+
+	return dpool;
+}
+
 /* === demote and promote function ==================================== */
 
 /*
@@ -390,6 +409,115 @@ int dynamic_pool_can_attach(struct task_struct *tsk, struct mem_cgroup *memcg)
 	dpool_put(dst_dpool);
 
 	return ret;
+}
+
+static bool dpool_should_alloc(gfp_t gfp_mask, unsigned int order)
+{
+	gfp_t gfp = gfp_mask & GFP_HIGHUSER_MOVABLE;
+
+	if (current->flags & PF_KTHREAD)
+		return false;
+
+	if (order != 0)
+		return false;
+
+	/*
+	 * The cgroup only charges anonymous and file pages from usespage.
+	 * some filesystem maybe has masked out the __GFP_IO | __GFP_FS
+	 * to avoid recursive memory request. eg: loop device, xfs.
+	 */
+	if ((gfp | __GFP_IO | __GFP_FS) != GFP_HIGHUSER_MOVABLE)
+		return false;
+
+	return true;
+}
+
+struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order,
+				     unsigned int alloc_flags)
+{
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	struct page *page = NULL;
+	unsigned long flags;
+
+	if (!dpool_enabled)
+		return NULL;
+
+	if (!dpool_should_alloc(gfp, order))
+		return NULL;
+
+	dpool = dpool_get_from_task(current);
+	if (!dpool)
+		return NULL;
+
+	pool = &dpool->pool[PAGES_POOL_4K];
+	spin_lock_irqsave(&dpool->lock, flags);
+	if (!dpool->online)
+		goto unlock;
+
+retry:
+	page = NULL;
+	if (!pool->free_pages && dpool_demote_pool_locked(dpool, PAGES_POOL_2M))
+		goto unlock;
+
+	page = list_first_entry_or_null(&pool->freelist, struct page, lru);
+	if (!page)
+		goto unlock;
+
+	__ClearPageDpool(page);
+	list_del(&page->lru);
+	pool->free_pages--;
+	pool->used_pages++;
+
+	if (check_new_page(page)) {
+		/* This is a bad page, treat it as a used pages */
+		SetPagePool(page);
+		goto retry;
+	}
+
+	SetPagePool(page);
+
+unlock:
+	spin_unlock_irqrestore(&dpool->lock, flags);
+	dpool_put(dpool);
+	if (page)
+		prep_new_page(page, order, gfp, alloc_flags);
+
+	return page;
+}
+
+void dynamic_pool_free_page(struct page *page)
+{
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	unsigned long flags;
+
+	if (!dpool_enabled)
+		return;
+
+	dpool = dpool_get_from_page(page);
+	if (!dpool) {
+		pr_err("get dpool failed when free page 0x%px\n", page);
+		return;
+	}
+
+	pool = &dpool->pool[PAGES_POOL_4K];
+	spin_lock_irqsave(&dpool->lock, flags);
+
+	ClearPagePool(page);
+	if (!free_pages_prepare(page, 0, 0)) {
+		SetPagePool(page);
+		goto unlock;
+	}
+
+	__SetPageDpool(page);
+	list_add(&page->lru, &pool->freelist);
+	pool->free_pages++;
+	pool->used_pages--;
+
+unlock:
+	spin_unlock_irqrestore(&dpool->lock, flags);
+	dpool_put(dpool);
 }
 
 /* === dynamic pool function ========================================== */

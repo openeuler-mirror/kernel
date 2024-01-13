@@ -57,7 +57,18 @@ struct dynamic_pool {
 	KABI_RESERVE(1)
 };
 
+static inline bool page_from_dynamic_pool(struct page *page)
+{
+	if (!dpool_enabled)
+		return false;
+
+	return PagePool(page);
+}
+
 int dynamic_pool_can_attach(struct task_struct *tsk, struct mem_cgroup *memcg);
+struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order,
+				     unsigned int alloc_flags);
+void dynamic_pool_free_page(struct page *page);
 
 void dynamic_pool_inherit(struct mem_cgroup *memcg);
 int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online);
@@ -70,12 +81,29 @@ int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
 				  unsigned long nr_pages, int type);
 
 #else
+#define dpool_enabled	0
+
 struct dynamic_pool {};
+
+static inline bool page_from_dynamic_pool(struct page *page)
+{
+	return false;
+}
 
 static inline int dynamic_pool_can_attach(struct task_struct *tsk,
 					  struct mem_cgroup *memcg)
 {
 	return 0;
+}
+
+static inline struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order,
+						   unsigned int alloc_flags)
+{
+	return NULL;
+}
+
+static inline void dynamic_pool_free_page(struct page *page)
+{
 }
 
 static inline void dynamic_pool_inherit(struct mem_cgroup *memcg)
