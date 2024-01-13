@@ -2399,6 +2399,9 @@ retry:
 	if (!folio_test_hugetlb(folio))
 		return 0;
 
+	if (page_from_dynamic_pool(page) || page_in_dynamic_pool(page))
+		return -EBUSY;
+
 	spin_lock_irq(&hugetlb_lock);
 	if (!folio_test_hugetlb(folio)) {
 		rc = 0;
@@ -3100,6 +3103,9 @@ int isolate_or_dissolve_huge_page(struct page *page, struct list_head *list)
 	struct hstate *h;
 	struct folio *folio = page_folio(page);
 	int ret = -EBUSY;
+
+	if (page_from_dynamic_pool(page) || page_in_dynamic_pool(page))
+		return -EBUSY;
 
 	/*
 	 * The page might have been dissolved from under our feet, so make sure
