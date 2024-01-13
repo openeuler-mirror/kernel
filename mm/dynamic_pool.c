@@ -134,6 +134,34 @@ static int dpool_demote_gigantic_page(struct pages_pool *src_pool,
 	return 0;
 }
 
+static int dpool_demote_huge_page(struct pages_pool *src_pool,
+				  struct pages_pool *dst_pool,
+				  struct page *page)
+{
+	struct folio *folio = page_folio(page);
+	int nr_pages = 1 << PMD_ORDER;
+	struct page *subpage;
+	int i;
+
+	if (PageHWPoison(page))
+		return -EHWPOISON;
+
+	list_del(&page->lru);
+	__ClearPageDpool(page);
+	src_pool->free_pages--;
+
+	clear_compound_page(page_folio(page), PMD_ORDER);
+	for (i = 0; i < nr_pages; i++) {
+		subpage = folio_page(folio, i);
+		free_pages_prepare(subpage, 0, 0);
+		__SetPageDpool(subpage);
+		list_add_tail(&subpage->lru, &dst_pool->freelist);
+		dst_pool->free_pages++;
+	}
+
+	return 0;
+}
+
 static int dpool_demote_pool_locked(struct dynamic_pool *dpool, int type)
 {
 	struct pages_pool *src_pool, *dst_pool;
@@ -160,6 +188,9 @@ static int dpool_demote_pool_locked(struct dynamic_pool *dpool, int type)
 		switch (type) {
 		case PAGES_POOL_1G:
 			ret = dpool_demote_gigantic_page(src_pool, dst_pool, page);
+			break;
+		case PAGES_POOL_2M:
+			ret = dpool_demote_huge_page(src_pool, dst_pool, page);
 			break;
 		default:
 			BUG();
@@ -218,6 +249,43 @@ static int dpool_promote_gigantic_page(struct pages_pool *src_pool,
 	return 0;
 }
 
+static int dpool_promote_huge_page(struct pages_pool *src_pool,
+				   struct pages_pool *dst_pool,
+				   struct split_page *spage)
+{
+	struct hstate *h = size_to_hstate(PMD_SIZE);
+	int nr_pages = 1 << PMD_ORDER;
+	struct page *page, *subpage;
+	int i;
+
+	for (i = 0; i < nr_pages; i++) {
+		subpage = pfn_to_page(spage->start_pfn + i);
+		if (!PageDpool(subpage))
+			return -EBUSY;
+
+		if (PageHWPoison(subpage))
+			return -EHWPOISON;
+	}
+
+	for (i = 0; i < nr_pages; i++) {
+		subpage = pfn_to_page(spage->start_pfn + i);
+		__ClearPageDpool(subpage);
+		list_del(&subpage->lru);
+		src_pool->free_pages--;
+	}
+
+	page = pfn_to_page(spage->start_pfn);
+	prep_new_page(page, PMD_ORDER, __GFP_COMP, 0);
+	set_page_count(page, 0);
+	folio_change_private(page_folio(page), NULL);
+	__SetPageDpool(page);
+	__prep_new_hugetlb_folio(h, page_folio(page));
+	list_add_tail(&page->lru, &dst_pool->freelist);
+	dst_pool->free_pages++;
+
+	return 0;
+}
+
 static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 {
 	struct pages_pool *src_pool, *dst_pool;
@@ -241,6 +309,18 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 		case PAGES_POOL_1G:
 			ret = dpool_promote_gigantic_page(src_pool, dst_pool, spage);
 			break;
+		case PAGES_POOL_2M: {
+			/*
+			 * Since the dpool_mutex is already locked,
+			 * there is no way to free spage_next, so
+			 * it is safe to unlock here.
+			 */
+			spin_unlock(&dpool->lock);
+			cond_resched();
+			spin_lock(&dpool->lock);
+			ret = dpool_promote_huge_page(src_pool, dst_pool, spage);
+			break;
+		}
 		default:
 			BUG();
 		}
@@ -749,6 +829,18 @@ int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
 		while (delta > pool->free_pages &&
 		       !dpool_demote_pool_locked(dpool, type - 1))
 			cond_resched_lock(&dpool->lock);
+		/* Only try merge pages for 2M pages */
+		if (type == PAGES_POOL_2M) {
+			while (delta > pool->free_pages) {
+				spin_unlock(&dpool->lock);
+				cond_resched();
+				if (dpool_promote_pool(dpool, type)) {
+					spin_lock(&dpool->lock);
+					break;
+				}
+				spin_lock(&dpool->lock);
+			}
+		}
 		delta = min(delta, pool->free_pages);
 		pool->nr_huge_pages += delta;
 		pool->free_huge_pages += delta;
