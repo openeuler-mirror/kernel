@@ -73,6 +73,28 @@ static struct dynamic_pool *dpool_get_from_memcg(struct mem_cgroup *memcg)
 	return dpool;
 }
 
+static struct dynamic_pool *dpool_get_from_task(struct task_struct *tsk)
+{
+	struct dynamic_pool *dpool = NULL;
+	struct mem_cgroup *memcg;
+
+	if (!dpool_enabled)
+		return NULL;
+
+	rcu_read_lock();
+	do {
+		memcg = mem_cgroup_from_task(tsk);
+	} while (memcg && !css_tryget(&memcg->css));
+	rcu_read_unlock();
+	if (!memcg)
+		return NULL;
+
+	dpool = dpool_get_from_memcg(memcg);
+	css_put(&memcg->css);
+
+	return dpool;
+}
+
 /* === demote and promote function ==================================== */
 
 /*
@@ -342,6 +364,30 @@ unlock:
 	spin_unlock(&dpool->lock);
 	if (!ret)
 		kfree(spage);
+
+	return ret;
+}
+
+/* === allocation interface =========================================== */
+
+int dynamic_pool_can_attach(struct task_struct *tsk, struct mem_cgroup *memcg)
+{
+	struct dynamic_pool *src_dpool, *dst_dpool;
+	int ret = 0;
+
+	if (!dpool_enabled)
+		return 0;
+
+	src_dpool = dpool_get_from_task(tsk);
+	if (!src_dpool)
+		return 0;
+
+	dst_dpool = dpool_get_from_memcg(memcg);
+	if (dst_dpool != src_dpool)
+		ret = -EPERM;
+
+	dpool_put(src_dpool);
+	dpool_put(dst_dpool);
 
 	return ret;
 }

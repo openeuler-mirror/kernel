@@ -7239,6 +7239,10 @@ static int mem_cgroup_can_attach(struct cgroup_taskset *tset)
 	if (!p)
 		return 0;
 
+	ret = dynamic_pool_can_attach(p, memcg);
+	if (ret)
+		return ret;
+
 	/*
 	 * We are now committed to this value whatever it is. Changes in this
 	 * tunable will only affect upcoming migrations, not the current one.
