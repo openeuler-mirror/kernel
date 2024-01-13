@@ -77,6 +77,15 @@ struct dpool_info {
 	struct range pfn_ranges[];
 };
 
+bool __task_in_dynamic_pool(struct task_struct *tsk);
+static inline bool task_in_dynamic_pool(struct task_struct *tsk)
+{
+	if (!dpool_enabled)
+		return false;
+
+	return __task_in_dynamic_pool(tsk);
+}
+
 static inline bool page_from_dynamic_pool(struct page *page)
 {
 	if (!dpool_enabled)
@@ -125,6 +134,11 @@ struct dynamic_pool {};
 struct dpool_info {};
 
 static inline bool page_from_dynamic_pool(struct page *page)
+{
+	return false;
+}
+
+static inline bool task_in_dynamic_pool(struct task_struct *tsk)
 {
 	return false;
 }

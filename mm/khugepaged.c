@@ -20,6 +20,7 @@
 #include <linux/swapops.h>
 #include <linux/shmem_fs.h>
 #include <linux/ksm.h>
+#include <linux/dynamic_pool.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -361,6 +362,10 @@ int hugepage_madvise(struct vm_area_struct *vma,
 		if (mm_has_pgste(vma->vm_mm))
 			return 0;
 #endif
+
+		if (task_in_dynamic_pool(current))
+			return -EINVAL;
+
 		*vm_flags &= ~VM_NOHUGEPAGE;
 		*vm_flags |= VM_HUGEPAGE;
 		/*
@@ -1369,6 +1374,11 @@ static int hpage_collapse_scan_pmd(struct mm_struct *mm,
 			goto out_unmap;
 		}
 
+		if (page_from_dynamic_pool(page)) {
+			result = SCAN_FAIL;
+			goto out_unmap;
+		}
+
 		/*
 		 * Check if the page has any GUP (or other external) pins.
 		 *
@@ -2296,6 +2306,11 @@ static int hpage_collapse_scan_file(struct mm_struct *mm, unsigned long addr,
 			break;
 		}
 
+		if (page_from_dynamic_pool(page)) {
+			result = SCAN_FAIL;
+			break;
+		}
+
 		/*
 		 * We probably should check if the page is referenced here, but
 		 * nobody would transfer pte_young() to PageReferenced() for us.
@@ -2724,6 +2739,9 @@ int madvise_collapse(struct vm_area_struct *vma, struct vm_area_struct **prev,
 	*prev = vma;
 
 	if (!hugepage_vma_check(vma, vma->vm_flags, false, false, false))
+		return -EINVAL;
+
+	if (task_in_dynamic_pool(current))
 		return -EINVAL;
 
 	cc = kmalloc(sizeof(*cc), GFP_KERNEL);

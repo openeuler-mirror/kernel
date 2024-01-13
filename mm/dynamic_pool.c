@@ -136,6 +136,19 @@ static struct dynamic_pool *dpool_get_from_page(struct page *page)
 	return dpool;
 }
 
+bool __task_in_dynamic_pool(struct task_struct *tsk)
+{
+	struct dynamic_pool *dpool;
+
+	if (!dpool_enabled)
+		return false;
+
+	dpool = dpool_get_from_task(tsk);
+	dpool_put(dpool);
+
+	return !!dpool;
+}
+
 /* === demote and promote function ==================================== */
 
 static void dpool_disable_pcp_pool(struct dynamic_pool *dpool, bool drain);
