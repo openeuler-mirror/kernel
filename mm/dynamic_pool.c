@@ -435,6 +435,12 @@ int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online)
 	/* A offline dpool is not allowed for allocation */
 	dpool->online = false;
 
+	/*
+	 * Even if no process exists in the memory cgroup, some pages may
+	 * still be occupied. Release these pages before restore pool.
+	 */
+	mem_cgroup_force_empty(dpool->memcg);
+
 	BUG_ON(!dpool->ops->restore_pool);
 	ret = dpool->ops->restore_pool(dpool);
 	if (ret) {

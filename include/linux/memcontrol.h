@@ -1236,6 +1236,8 @@ static inline bool memcg_has_children(struct mem_cgroup *memcg)
 	return ret;
 }
 
+int mem_cgroup_force_empty(struct mem_cgroup *memcg);
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0

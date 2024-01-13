@@ -3729,7 +3729,7 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
  *
  * Caller is responsible for holding css reference for memcg.
  */
-static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
+int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 {
 	int nr_retries = MAX_RECLAIM_RETRIES;
 
