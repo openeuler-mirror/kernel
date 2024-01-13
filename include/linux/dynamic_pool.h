@@ -18,6 +18,11 @@ enum pages_pool_type {
 	PAGES_POOL_MAX,
 };
 
+struct split_page {
+	struct list_head entry;
+	unsigned long start_pfn;
+};
+
 struct pages_pool {
 	unsigned long free_pages;
 	unsigned long used_pages;
@@ -28,6 +33,10 @@ struct pages_pool {
 	unsigned long free_huge_pages;
 	unsigned long resv_huge_pages;
 	unsigned long used_huge_pages;
+
+	/* Used for split page */
+	unsigned long split_pages;
+	struct list_head splitlist;
 };
 
 struct dynamic_pool_ops;

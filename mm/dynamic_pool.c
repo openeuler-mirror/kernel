@@ -22,6 +22,7 @@ static DEFINE_MUTEX(dpool_mutex);
 struct dynamic_pool_ops {
 	int (*fill_pool)(struct dynamic_pool *dpool, void *arg);
 	int (*drain_pool)(struct dynamic_pool *dpool);
+	int (*restore_pool)(struct dynamic_pool *dpool);
 };
 
 /* Used to record the mapping of page and dpool */
@@ -108,8 +109,10 @@ static struct dynamic_pool *dpool_create(struct mem_cgroup *memcg,
 	dpool->memcg = memcg;
 	dpool->ops = ops;
 
-	for (i = 0; i < PAGES_POOL_MAX; i++)
+	for (i = 0; i < PAGES_POOL_MAX; i++) {
 		INIT_LIST_HEAD(&dpool->pool[i].freelist);
+		INIT_LIST_HEAD(&dpool->pool[i].splitlist);
+	}
 
 	css_get(&memcg->css);
 	memcg->dpool = dpool;
@@ -157,6 +160,13 @@ int dynamic_pool_destroy(struct cgroup *cgrp, bool *clear_css_online)
 
 	/* A offline dpool is not allowed for allocation */
 	dpool->online = false;
+
+	BUG_ON(!dpool->ops->restore_pool);
+	ret = dpool->ops->restore_pool(dpool);
+	if (ret) {
+		pr_err("restore pool failed\n");
+		goto put;
+	}
 
 	BUG_ON(!dpool->ops->drain_pool);
 	ret = dpool->ops->drain_pool(dpool);
@@ -345,9 +355,52 @@ static int dpool_drain_to_hugetlb(struct dynamic_pool *dpool)
 	return dpool->total_pages ? -ENOMEM : 0;
 }
 
+static int dpool_merge_all(struct dynamic_pool *dpool)
+{
+	struct pages_pool *pool;
+	int ret = -ENOMEM;
+
+	pool = &dpool->pool[PAGES_POOL_2M];
+	spin_lock(&dpool->lock);
+	if (pool->split_pages || pool->used_huge_pages || pool->resv_huge_pages) {
+		ret = -ENOMEM;
+		pr_err("some 2M pages are still in use or mmap, delete failed: ");
+		pr_cont_cgroup_name(dpool->memcg->css.cgroup);
+		pr_cont("\n");
+		spin_unlock(&dpool->lock);
+		goto out;
+	}
+
+	pool->free_pages += pool->nr_huge_pages;
+	pool->nr_huge_pages = 0;
+	pool->free_huge_pages = 0;
+	spin_unlock(&dpool->lock);
+
+	pool = &dpool->pool[PAGES_POOL_1G];
+	spin_lock(&dpool->lock);
+	if (pool->split_pages || pool->used_huge_pages || pool->resv_huge_pages) {
+		ret = -ENOMEM;
+		pr_err("some 1G pages are still in use or mmap, delete failed: ");
+		pr_cont_cgroup_name(dpool->memcg->css.cgroup);
+		pr_cont("\n");
+		spin_unlock(&dpool->lock);
+		goto out;
+	}
+
+	pool->free_pages += pool->nr_huge_pages;
+	pool->nr_huge_pages = 0;
+	pool->free_huge_pages = 0;
+	spin_unlock(&dpool->lock);
+	ret = 0;
+
+out:
+	return ret;
+}
+
 static struct dynamic_pool_ops hugetlb_dpool_ops = {
 	.fill_pool = dpool_fill_from_hugetlb,
 	.drain_pool = dpool_drain_to_hugetlb,
+	.restore_pool = dpool_merge_all,
 };
 
 /* If dynamic pool is disabled, hide the interface */
