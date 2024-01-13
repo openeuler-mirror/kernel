@@ -63,7 +63,18 @@ struct dynamic_pool {
 	int nid;
 	unsigned long total_pages;
 
+	/* Used for dynamic pagelist */
+	int range_cnt;
+	struct range *pfn_ranges;
+	unsigned long nr_poisoned_pages;
+
 	KABI_RESERVE(1)
+};
+
+struct dpool_info {
+	struct mem_cgroup *memcg;
+	int range_cnt;
+	struct range pfn_ranges[];
 };
 
 static inline bool page_from_dynamic_pool(struct page *page)
@@ -104,10 +115,14 @@ void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m);
 int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
 				  unsigned long nr_pages, int type);
 
+int dpool_init(struct dpool_info *arg);
+void dynamic_pool_show_meminfo(struct seq_file *m);
+
 #else
 #define dpool_enabled	0
 
 struct dynamic_pool {};
+struct dpool_info {};
 
 static inline bool page_from_dynamic_pool(struct page *page)
 {
@@ -179,5 +194,14 @@ static inline bool dynamic_pool_hide_files(struct cftype *cft)
 	return false;
 }
 #endif
+
+static inline int dpool_init(struct dpool_info *arg)
+{
+	return 0;
+}
+
+static inline void dynamic_pool_show_meminfo(struct seq_file *m)
+{
+}
 #endif /* CONFIG_DYNAMIC_POOL */
 #endif /* __LINUX_DYNAMIC_POOL_H */

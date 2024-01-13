@@ -15,6 +15,7 @@
 #include <trace/events/dynamic_pool.h>
 
 static bool enable_dhugetlb;
+static bool enable_dpagelist;
 
 /* Indicate the enabled of dynamic pool */
 DEFINE_STATIC_KEY_FALSE(dynamic_pool_key);
@@ -40,6 +41,9 @@ struct dpool_page_array {
 static struct dpool_page_array *dpool_page_array;
 static DEFINE_RWLOCK(dpool_page_array_rwlock);
 
+/* For dpagelist, there are only one dpool */
+static struct dynamic_pool *dpool_global_pool;
+
 /* Used for percpu pages pool */
 #define PCP_PAGE_MAX	1024
 #define PCP_PAGE_BATCH	(PCP_PAGE_MAX >> 2)
@@ -62,8 +66,10 @@ static void dpool_put(struct dynamic_pool *dpool)
 	if (refcount_dec_and_test(&dpool->refcnt)) {
 		dpool->memcg->dpool = NULL;
 		css_put(&dpool->memcg->css);
+		dpool_global_pool = NULL;
 		synchronize_rcu();
 		free_percpu(dpool->pcp_pool);
+		kfree(dpool->pfn_ranges);
 		kfree(dpool);
 	}
 }
@@ -109,11 +115,19 @@ static struct dynamic_pool *dpool_get_from_page(struct page *page)
 	unsigned long idx;
 
 	rcu_read_lock();
-	idx = hugepage_index(page_to_pfn(page));
-	read_lock(&dpool_page_array_rwlock);
-	if (idx < dpool_page_array->count)
-		dpool = dpool_page_array->dpool[idx];
-	read_unlock(&dpool_page_array_rwlock);
+	if (enable_dhugetlb) {
+		idx = hugepage_index(page_to_pfn(page));
+		read_lock(&dpool_page_array_rwlock);
+		if (idx < dpool_page_array->count)
+			dpool = dpool_page_array->dpool[idx];
+		read_unlock(&dpool_page_array_rwlock);
+	} else if (enable_dpagelist) {
+		/*
+		 * Attention: dpool_global_pool return for any page,
+		 * so need other check to make sure it is from dpool.
+		 */
+		dpool = dpool_global_pool;
+	}
 
 	if (!dpool_get_unless_zero(dpool))
 		dpool = NULL;
@@ -1049,7 +1063,7 @@ unlock:
 
 static int __init dynamic_pool_init(void)
 {
-	if (!enable_dhugetlb)
+	if (!enable_dhugetlb && !enable_dpagelist)
 		return 0;
 
 	if (enable_dhugetlb) {
@@ -1079,6 +1093,9 @@ subsys_initcall(dynamic_pool_init);
 
 static int __init dynamic_hugetlb_setup(char *buf)
 {
+	if (enable_dpagelist)
+		return 0;
+
 	return kstrtobool(buf, &enable_dhugetlb);
 }
 early_param("dynamic_hugetlb", dynamic_hugetlb_setup);
@@ -1451,4 +1468,200 @@ unlock:
 	mutex_unlock(&dpool_mutex);
 
 	return ret;
+}
+
+/* === Dynamic pagelist interface ===================================== */
+
+static int __init dynamic_pagelist_setup(char *buf)
+{
+	if (enable_dhugetlb)
+		return 0;
+
+	return kstrtobool(buf, &enable_dpagelist);
+}
+early_param("dpool", dynamic_pagelist_setup);
+
+static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
+{
+	struct dpool_info *info = (struct dpool_info *)arg;
+	struct pages_pool *pool = &dpool->pool[PAGES_POOL_4K];
+	int i, ret = -EINVAL;
+
+	dpool->range_cnt = info->range_cnt;
+	dpool->pfn_ranges =
+		kmalloc_array(info->range_cnt, sizeof(struct range), GFP_KERNEL);
+	if (!dpool->pfn_ranges)
+		return -ENOMEM;
+
+	memcpy(dpool->pfn_ranges, info->pfn_ranges,
+		sizeof(struct range) * dpool->range_cnt);
+
+	spin_lock(&dpool->lock);
+
+	for (i = 0; i < dpool->range_cnt; i++) {
+		struct range *range = &dpool->pfn_ranges[i];
+		u64 pfn;
+
+		for (pfn = range->start; pfn <= range->end; pfn++) {
+			struct page *page = pfn_to_page(pfn);
+
+			set_page_count(page, 0);
+			page_mapcount_reset(page);
+
+			if (!free_pages_prepare(page, 0, 0)) {
+				pr_err("fill pool failed, check pages failed\n");
+				goto unlock;
+			}
+
+			__SetPageDpool(page);
+			list_add_tail(&page->lru, &pool->freelist);
+			pool->free_pages++;
+
+			cond_resched_lock(&dpool->lock);
+		}
+	}
+	ret = 0;
+
+unlock:
+	spin_unlock(&dpool->lock);
+
+	return ret;
+}
+
+static int dpool_drain_to_pagelist(struct dynamic_pool *dpool)
+{
+	struct pages_pool *pool = &dpool->pool[PAGES_POOL_4K];
+
+	/* check poisoned pages */
+	return (pool->used_pages == dpool->nr_poisoned_pages) ? 0 : -ENOMEM;
+}
+
+static int dpool_migrate_used_pages(struct dynamic_pool *dpool)
+{
+	int range_cnt = dpool->range_cnt;
+	int i;
+
+	spin_lock(&dpool->lock);
+
+	dpool->nr_poisoned_pages = 0;
+	for (i = 0; i < range_cnt; i++) {
+		struct range *range = &dpool->pfn_ranges[i];
+		u64 pfn;
+
+		for (pfn = range->start; pfn <= range->end; pfn++) {
+			struct page *page = pfn_to_page(pfn);
+
+			/* Unlock and try migration. */
+			spin_unlock(&dpool->lock);
+			cond_resched();
+
+			if (PageDpool(page)) {
+				spin_lock(&dpool->lock);
+				continue;
+			}
+
+			if (PageHWPoison(page))
+				dpool->nr_poisoned_pages++;
+
+			lru_add_drain_all();
+			do_migrate_range(pfn, pfn + 1);
+			spin_lock(&dpool->lock);
+		}
+	}
+
+	spin_unlock(&dpool->lock);
+
+	return 0;
+}
+
+struct dynamic_pool_ops pagelist_dpool_ops = {
+	.fill_pool = dpool_fill_from_pagelist,
+	.drain_pool = dpool_drain_to_pagelist,
+	.restore_pool = dpool_migrate_used_pages,
+};
+
+int dpool_init(struct dpool_info *arg)
+{
+	struct dynamic_pool *dpool;
+	int ret;
+
+	if (!dpool_enabled)
+		return -EINVAL;
+
+	if (!arg || !arg->memcg || arg->range_cnt <= 0) {
+		pr_err("init failed, arg is invalid\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&dpool_mutex);
+
+	if (dpool_global_pool || arg->memcg->dpool) {
+		pr_err("init failed, dpool is already exist\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	if (!(arg->memcg->css.cgroup->self.flags & CSS_ONLINE)) {
+		pr_err("init failed, memcg is not online\n");
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	dpool = dpool_create(arg->memcg, &pagelist_dpool_ops);
+	if (!dpool) {
+		pr_err("init failed, create failed. ret: %d\n", ret);
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
+	dpool_global_pool = dpool;
+
+	BUG_ON(!dpool->ops->fill_pool);
+	ret = dpool->ops->fill_pool(dpool, arg);
+	if (ret)
+		dpool_put(dpool);
+
+unlock:
+	mutex_unlock(&dpool_mutex);
+
+	return ret;
+}
+
+void dynamic_pool_show_meminfo(struct seq_file *m)
+{
+	struct dynamic_pool *dpool;
+	struct pages_pool *pool;
+	unsigned long free_pages = 0;
+	long used_pages = 0;
+
+	if (!dpool_enabled || !enable_dpagelist)
+		return;
+
+	dpool = dpool_get_from_page(NULL);
+	if (!dpool)
+		goto out;
+
+	pool = &dpool->pool[PAGES_POOL_4K];
+	dpool_disable_pcp_pool(dpool, false);
+	spin_lock(&dpool->lock);
+	dpool_sum_pcp_pool(dpool, &free_pages, &used_pages);
+	free_pages += pool->free_pages;
+	used_pages += pool->used_pages;
+	spin_unlock(&dpool->lock);
+	dpool_enable_pcp_pool(dpool);
+
+out:
+	if (m) {
+		seq_printf(m,
+			   "DPoolTotal:     %8lu kB\n"
+			   "DPoolFree:      %8ld kB\n",
+			   (free_pages + used_pages) << (PAGE_SHIFT - 10),
+			   free_pages << (PAGE_SHIFT - 10));
+	} else {
+		pr_info("DPoolTotal: %lu kB\n",
+			(free_pages + used_pages) << (PAGE_SHIFT - 10));
+		pr_info("DPoolFree: %ld kB\n", free_pages << (PAGE_SHIFT - 10));
+	}
+
+	dpool_put(dpool);
 }
