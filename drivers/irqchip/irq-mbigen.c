@@ -53,6 +53,11 @@
  */
 #define REG_MBIGEN_LPI_TYPE_OFFSET	0x0
 
+#ifdef CONFIG_IRQ_MBIGEN_ENABLE_SPI
+#define REG_MBIGEN_SPI_VEC_OFFSET	0x500
+#define REG_MBIGEN_SPI_TYPE_OFFSET	0x400
+#endif
+
 /**
  * struct mbigen_device - holds the information of mbigen device.
  *
@@ -68,6 +73,11 @@ static inline unsigned int get_mbigen_vec_reg(irq_hw_number_t hwirq)
 {
 	unsigned int nid, pin;
 
+#ifdef CONFIG_IRQ_MBIGEN_ENABLE_SPI
+	if (hwirq < SPI_NUM_PER_MBIGEN_CHIP)
+		return (hwirq * 4 + REG_MBIGEN_SPI_VEC_OFFSET);
+#endif
+
 	hwirq -= SPI_NUM_PER_MBIGEN_CHIP;
 	nid = hwirq / IRQS_PER_MBIGEN_NODE + 1;
 	pin = hwirq % IRQS_PER_MBIGEN_NODE;
@@ -80,6 +90,15 @@ static inline void get_mbigen_type_reg(irq_hw_number_t hwirq,
 					u32 *mask, u32 *addr)
 {
 	unsigned int nid, irq_ofst, ofst;
+
+#ifdef CONFIG_IRQ_MBIGEN_ENABLE_SPI
+	if (hwirq < SPI_NUM_PER_MBIGEN_CHIP) {
+		*mask = 1 << (hwirq % 32);
+		ofst = hwirq / 32 * 4;
+		*addr = ofst + REG_MBIGEN_SPI_TYPE_OFFSET;
+		return;
+	}
+#endif
 
 	hwirq -= SPI_NUM_PER_MBIGEN_CHIP;
 	nid = hwirq / IRQS_PER_MBIGEN_NODE + 1;
@@ -152,8 +171,16 @@ static void mbigen_write_msg(struct msi_desc *desc, struct msi_msg *msg)
 
 	if (!msg->address_lo && !msg->address_hi)
 		return;
- 
+
 	base += get_mbigen_vec_reg(d->hwirq);
+
+#ifdef CONFIG_IRQ_MBIGEN_ENABLE_SPI
+	if (d->hwirq < SPI_NUM_PER_MBIGEN_CHIP) {
+		writel_relaxed(msg->data, base);
+		return;
+	}
+#endif
+
 	val = readl_relaxed(base);
 
 	val &= ~(IRQ_EVENT_ID_MASK << IRQ_EVENT_ID_SHIFT);
@@ -174,8 +201,12 @@ static int mbigen_domain_translate(struct irq_domain *d,
 		if (fwspec->param_count != 2)
 			return -EINVAL;
 
+#ifdef CONFIG_IRQ_MBIGEN_ENABLE_SPI
+		if (fwspec->param[0] > MAXIMUM_IRQ_PIN_NUM)
+#else
 		if ((fwspec->param[0] > MAXIMUM_IRQ_PIN_NUM) ||
 			(fwspec->param[0] < SPI_NUM_PER_MBIGEN_CHIP))
+#endif
 			return -EINVAL;
 		else
 			*hwirq = fwspec->param[0];
