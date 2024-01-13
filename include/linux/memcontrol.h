@@ -28,6 +28,7 @@ struct page;
 struct mm_struct;
 struct kmem_cache;
 struct oom_control;
+struct dynamic_pool;
 
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
@@ -362,6 +363,10 @@ struct mem_cgroup {
 
 #ifdef CONFIG_MEMCG_SWAP_QOS
 	struct swap_device *swap_dev;
+#endif
+
+#ifdef CONFIG_DYNAMIC_POOL
+	struct dynamic_pool *dpool;
 #endif
 
 	struct mem_cgroup_per_node *nodeinfo[];

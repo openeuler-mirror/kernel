@@ -66,6 +66,7 @@
 #include <linux/memcg_memfs_info.h>
 #include <linux/sched/isolation.h>
 #include <linux/parser.h>
+#include <linux/dynamic_pool.h>
 
 #ifdef CONFIG_MEMCG_SWAP_QOS
 #include <linux/blkdev.h>
@@ -6400,6 +6401,8 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 #ifdef CONFIG_MEMCG_OOM_PRIORITY
 	memcg_oom_prio_init(memcg);
 #endif
+
+	dynamic_pool_inherit(memcg);
 
 	/* Online state pins memcg ID, memcg ID pins CSS */
 	refcount_set(&memcg->id.ref, 1);
