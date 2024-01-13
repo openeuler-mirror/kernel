@@ -25,7 +25,7 @@ struct split_page {
 
 struct pages_pool {
 	unsigned long free_pages;
-	unsigned long used_pages;
+	long used_pages;
 	struct list_head freelist;
 
 	/* Used for hugepage allocation */
@@ -39,6 +39,13 @@ struct pages_pool {
 	struct list_head splitlist;
 };
 
+struct pcp_pages_pool {
+	spinlock_t lock;
+	unsigned long free_pages;
+	long used_pages;
+	struct list_head freelist;
+};
+
 struct dynamic_pool_ops;
 
 struct dynamic_pool {
@@ -49,6 +56,8 @@ struct dynamic_pool {
 
 	spinlock_t lock;
 	struct pages_pool pool[PAGES_POOL_MAX];
+	atomic_t pcp_refcnt;
+	struct pcp_pages_pool __percpu *pcp_pool;
 
 	/* Used for dynamic hugetlb */
 	int nid;
