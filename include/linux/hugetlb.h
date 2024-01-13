@@ -803,6 +803,11 @@ int hugetlb_add_to_page_cache(struct folio *folio, struct address_space *mapping
 			pgoff_t idx);
 void restore_reserve_on_error(struct hstate *h, struct vm_area_struct *vma,
 				unsigned long address, struct folio *folio);
+void destroy_compound_hugetlb_folio_for_demote(struct folio *folio,
+						unsigned int order);
+bool prep_compound_gigantic_folio_for_demote(struct folio *folio,
+						unsigned int order);
+void __prep_new_hugetlb_folio(struct hstate *h, struct folio *folio);
 
 /* arch callback */
 int __init __alloc_bootmem_huge_page(struct hstate *h, int nid);

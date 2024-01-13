@@ -1538,7 +1538,7 @@ static void __destroy_compound_gigantic_folio(struct folio *folio,
 	__folio_clear_head(folio);
 }
 
-static void destroy_compound_hugetlb_folio_for_demote(struct folio *folio,
+void destroy_compound_hugetlb_folio_for_demote(struct folio *folio,
 					unsigned int order)
 {
 	__destroy_compound_gigantic_folio(folio, order, true);
@@ -1967,7 +1967,7 @@ static void __prep_account_new_huge_page(struct hstate *h, int nid)
 	h->nr_huge_pages_node[nid]++;
 }
 
-static void __prep_new_hugetlb_folio(struct hstate *h, struct folio *folio)
+void __prep_new_hugetlb_folio(struct hstate *h, struct folio *folio)
 {
 	hugetlb_vmemmap_optimize(h, &folio->page);
 	INIT_LIST_HEAD(&folio->lru);
@@ -2068,7 +2068,7 @@ static bool prep_compound_gigantic_folio(struct folio *folio,
 	return __prep_compound_gigantic_folio(folio, order, false);
 }
 
-static bool prep_compound_gigantic_folio_for_demote(struct folio *folio,
+bool prep_compound_gigantic_folio_for_demote(struct folio *folio,
 							unsigned int order)
 {
 	return __prep_compound_gigantic_folio(folio, order, true);

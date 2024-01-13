@@ -9,6 +9,7 @@
 
 #include <linux/memblock.h>
 #include <linux/dynamic_pool.h>
+#include "internal.h"
 
 static bool enable_dhugetlb;
 
@@ -70,6 +71,194 @@ static struct dynamic_pool *dpool_get_from_memcg(struct mem_cgroup *memcg)
 	rcu_read_unlock();
 
 	return dpool;
+}
+
+/* === demote and promote function ==================================== */
+
+/*
+ * Clear compound structure which is inverse of prep_compound_page,
+ * For detail, see destroy_compound_hugetlb_folio_for_demote.
+ */
+static void clear_compound_page(struct folio *folio, unsigned int order)
+{
+	int i;
+	int nr_pages = 1 << order;
+	struct page *p;
+
+	atomic_set(&folio->_entire_mapcount, 0);
+	atomic_set(&folio->_nr_pages_mapped, 0);
+	atomic_set(&folio->_pincount, 0);
+
+	for (i = 0; i < nr_pages; i++) {
+		p = folio_page(folio, i);
+		p->flags &= ~PAGE_FLAGS_CHECK_AT_FREE;
+		p->mapping = NULL;
+		if (!i)
+			__ClearPageHead(p);
+		else
+			clear_compound_head(p);
+		set_page_private(p, 0);
+	}
+}
+
+static int dpool_demote_gigantic_page(struct pages_pool *src_pool,
+				       struct pages_pool *dst_pool,
+				       struct page *page)
+{
+	struct folio *folio = page_folio(page);
+	struct hstate *h = size_to_hstate(PMD_SIZE);
+	int nr_pages = 1 << PUD_ORDER;
+	int block_size = 1 << PMD_ORDER;
+	struct page *subpage;
+	int i;
+
+	if (PageHWPoison(page))
+		return -EHWPOISON;
+
+	list_del(&page->lru);
+	__ClearPageDpool(page);
+	src_pool->free_pages--;
+
+	destroy_compound_hugetlb_folio_for_demote(folio, PUD_ORDER);
+
+	for (i = 0; i < nr_pages; i += block_size) {
+		subpage = folio_page(folio, i);
+		prep_compound_page(subpage, PMD_ORDER);
+		folio_change_private(page_folio(subpage), NULL);
+		__SetPageDpool(subpage);
+		__prep_new_hugetlb_folio(h, page_folio(subpage));
+		list_add_tail(&subpage->lru, &dst_pool->freelist);
+		dst_pool->free_pages++;
+	}
+
+	return 0;
+}
+
+static int dpool_demote_pool_locked(struct dynamic_pool *dpool, int type)
+{
+	struct pages_pool *src_pool, *dst_pool;
+	struct split_page *spage = NULL;
+	struct page *page;
+	int ret = -ENOMEM;
+
+	lockdep_assert_held(&dpool->lock);
+
+	if (type < 0 || type >= PAGES_POOL_MAX - 1)
+		return -EINVAL;
+
+	src_pool = &dpool->pool[type];
+	dst_pool = &dpool->pool[type + 1];
+
+	spage = kzalloc(sizeof(struct split_page), GFP_ATOMIC);
+	if (!spage)
+		goto out;
+
+	if (!src_pool->free_pages && dpool_demote_pool_locked(dpool, type - 1))
+		goto out;
+
+	list_for_each_entry(page, &src_pool->freelist, lru) {
+		switch (type) {
+		case PAGES_POOL_1G:
+			ret = dpool_demote_gigantic_page(src_pool, dst_pool, page);
+			break;
+		default:
+			BUG();
+		}
+		if (!ret)
+			break;
+	}
+
+out:
+	if (!ret) {
+		spage->start_pfn = page_to_pfn(page);
+		list_add(&spage->entry, &src_pool->splitlist);
+		src_pool->split_pages++;
+	} else {
+		kfree(spage);
+	}
+
+	return ret;
+}
+
+static int dpool_promote_gigantic_page(struct pages_pool *src_pool,
+				       struct pages_pool *dst_pool,
+				       struct split_page *spage)
+{
+	struct hstate *h = size_to_hstate(PUD_SIZE);
+	int nr_pages = 1 << PUD_ORDER;
+	int block_size = 1 << PMD_ORDER;
+	struct page *page, *subpage;
+	int i;
+
+	for (i = 0; i < nr_pages; i += block_size) {
+		subpage = pfn_to_page(spage->start_pfn + i);
+		if (!PageDpool(subpage))
+			return -EBUSY;
+
+		if (PageHWPoison(subpage))
+			return -EHWPOISON;
+	}
+
+	for (i = 0; i < nr_pages; i += block_size) {
+		subpage = pfn_to_page(spage->start_pfn + i);
+		clear_compound_page(page_folio(subpage), PMD_ORDER);
+		__ClearPageDpool(subpage);
+		list_del(&subpage->lru);
+		src_pool->free_pages--;
+	}
+
+	page = pfn_to_page(spage->start_pfn);
+	prep_compound_gigantic_folio_for_demote(page_folio(page), PUD_ORDER);
+	folio_change_private(page_folio(page), NULL);
+	__SetPageDpool(page);
+	__prep_new_hugetlb_folio(h, page_folio(page));
+	list_add_tail(&page->lru, &dst_pool->freelist);
+	dst_pool->free_pages++;
+
+	return 0;
+}
+
+static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
+{
+	struct pages_pool *src_pool, *dst_pool;
+	struct split_page *spage, *spage_next;
+	int ret = -ENOMEM;
+
+
+	if (type < 0 || type >= PAGES_POOL_MAX - 1)
+		return -EINVAL;
+
+	src_pool = &dpool->pool[type + 1];
+	dst_pool = &dpool->pool[type];
+
+	spin_lock(&dpool->lock);
+
+	if (!dst_pool->split_pages)
+		goto unlock;
+
+	list_for_each_entry_safe(spage, spage_next, &dst_pool->splitlist, entry) {
+		switch (type) {
+		case PAGES_POOL_1G:
+			ret = dpool_promote_gigantic_page(src_pool, dst_pool, spage);
+			break;
+		default:
+			BUG();
+		}
+		if (!ret)
+			break;
+	}
+
+	if (!ret) {
+		list_del(&spage->entry);
+		dst_pool->split_pages--;
+	}
+
+unlock:
+	spin_unlock(&dpool->lock);
+	if (!ret)
+		kfree(spage);
+
+	return ret;
 }
 
 /* === dynamic pool function ========================================== */
@@ -361,6 +550,18 @@ static int dpool_merge_all(struct dynamic_pool *dpool)
 	int ret = -ENOMEM;
 
 	pool = &dpool->pool[PAGES_POOL_2M];
+	while (pool->split_pages) {
+		cond_resched();
+		ret = dpool_promote_pool(dpool, PAGES_POOL_2M);
+		if (ret) {
+			pr_err("some 4K pages can't merge ret: %d, delete failed: \n",
+				ret);
+			pr_cont_cgroup_name(dpool->memcg->css.cgroup);
+			pr_cont("\n");
+			goto out;
+		}
+	}
+
 	spin_lock(&dpool->lock);
 	if (pool->split_pages || pool->used_huge_pages || pool->resv_huge_pages) {
 		ret = -ENOMEM;
@@ -377,6 +578,18 @@ static int dpool_merge_all(struct dynamic_pool *dpool)
 	spin_unlock(&dpool->lock);
 
 	pool = &dpool->pool[PAGES_POOL_1G];
+	while (pool->split_pages) {
+		cond_resched();
+		ret = dpool_promote_pool(dpool, PAGES_POOL_1G);
+		if (ret) {
+			pr_err("some 2M pages can't merge ret: %d, delete failed: \n",
+				ret);
+			pr_cont_cgroup_name(dpool->memcg->css.cgroup);
+			pr_cont("\n");
+			goto out;
+		}
+	}
+
 	spin_lock(&dpool->lock);
 	if (pool->split_pages || pool->used_huge_pages || pool->resv_huge_pages) {
 		ret = -ENOMEM;
@@ -532,7 +745,11 @@ int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
 	pool = &dpool->pool[type];
 	spin_lock(&dpool->lock);
 	if (nr_pages > pool->nr_huge_pages) {
-		delta = min(nr_pages - pool->nr_huge_pages, pool->free_pages);
+		delta = nr_pages - pool->nr_huge_pages;
+		while (delta > pool->free_pages &&
+		       !dpool_demote_pool_locked(dpool, type - 1))
+			cond_resched_lock(&dpool->lock);
+		delta = min(delta, pool->free_pages);
 		pool->nr_huge_pages += delta;
 		pool->free_huge_pages += delta;
 		pool->free_pages -= delta;
