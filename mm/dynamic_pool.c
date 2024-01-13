@@ -10,6 +10,7 @@
 #include <linux/memblock.h>
 #include <linux/dynamic_pool.h>
 #include "internal.h"
+#include "hugetlb_vmemmap.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/dynamic_pool.h>
@@ -1230,6 +1231,15 @@ static int dpool_fill_from_hugetlb(struct dynamic_pool *dpool, void *arg)
 	spin_unlock(&hugetlb_lock);
 
 	list_for_each_entry_safe(page, next, &page_list, lru) {
+		if (hugetlb_vmemmap_restore(h, page)) {
+			spin_lock(&hugetlb_lock);
+			enqueue_hugetlb_folio(h, folio);
+			spin_unlock(&hugetlb_lock);
+			pr_err("restore hugetlb_vmemmap failed page 0x%px\n",
+				page);
+			continue;
+		}
+
 		__SetPageDpool(page);
 		spin_lock(&dpool->lock);
 		list_move(&page->lru, &pool->freelist);
@@ -1266,6 +1276,7 @@ static int dpool_drain_to_hugetlb(struct dynamic_pool *dpool)
 	spin_unlock(&dpool->lock);
 
 	list_for_each_entry_safe(page, next, &page_list, lru) {
+		hugetlb_vmemmap_optimize(h, page);
 		spin_lock(&hugetlb_lock);
 		enqueue_hugetlb_folio(h, page_folio(page));
 		spin_unlock(&hugetlb_lock);
