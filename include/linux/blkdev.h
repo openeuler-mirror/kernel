@@ -162,6 +162,8 @@ struct gendisk {
 
 	struct mutex open_mutex;	/* open/close mutex */
 	unsigned open_partitions;	/* number of open partitions */
+	unsigned write_open_partitions;	/* number of write open partitions */
+	unsigned mount_partitions;	/* number of mount partitions */
 
 	struct backing_dev_info	*bdi;
 	struct kobject queue_kobj;	/* the queue/ directory */
