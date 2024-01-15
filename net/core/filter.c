@@ -5595,6 +5595,28 @@ static int bpf_sock_ops_get_syn(struct bpf_sock_ops_kern *bpf_sock,
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+#define SK_BPF_GID_UID  18000
+static int bpf_sock_ops_get_uid_gid(struct bpf_sock_ops_kern *bpf_sock,
+				    char *optval, int optlen)
+{
+	struct sock *sk = bpf_sock->sk;
+	kuid_t uid;
+	kgid_t gid;
+
+	if (!sk || !sk_fullsock(sk) || optlen < sizeof(u64))
+		return -EINVAL;
+
+	uid = sock_net_uid(sock_net(sk), sk);
+	gid = sock_net_gid(sock_net(sk), sk);
+
+	*(u32 *)optval = from_kgid_munged(sock_net(sk)->user_ns, gid);
+	*((u32 *)optval + 1) = from_kuid_munged(sock_net(sk)->user_ns, uid);
+
+	return sizeof(u64);
+}
+#endif
+
 BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
@@ -5619,6 +5641,10 @@ BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 
 		return ret;
 	}
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+	if (level == SOL_IP && optname == SK_BPF_GID_UID)
+		return bpf_sock_ops_get_uid_gid(bpf_sock, optval, optlen);
+#endif
 
 	return _bpf_getsockopt(bpf_sock->sk, level, optname, optval, optlen);
 }
