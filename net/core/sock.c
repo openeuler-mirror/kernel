@@ -3426,8 +3426,14 @@ void sock_init_data_uid(struct socket *sock, struct sock *sk, kuid_t uid)
 		sk->sk_type	=	sock->type;
 		RCU_INIT_POINTER(sk->sk_wq, &sock->wq);
 		sock->sk	=	sk;
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+		sk->sk_gid	=	SOCK_INODE(sock)->i_gid;
+#endif
 	} else {
 		RCU_INIT_POINTER(sk->sk_wq, NULL);
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+		sk->sk_gid	=	make_kgid(sock_net(sk)->user_ns, 0);
+#endif
 	}
 	sk->sk_uid	=	uid;
 

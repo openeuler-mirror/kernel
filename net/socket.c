@@ -604,10 +604,14 @@ static int sockfs_setattr(struct mnt_idmap *idmap,
 	if (!err && (iattr->ia_valid & ATTR_UID)) {
 		struct socket *sock = SOCKET_I(d_inode(dentry));
 
-		if (sock->sk)
+		if (sock->sk) {
 			sock->sk->sk_uid = iattr->ia_uid;
-		else
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+			sock->sk->sk_gid = iattr->ia_gid;
+#endif
+		} else {
 			err = -ENOENT;
+		}
 	}
 
 	return err;
