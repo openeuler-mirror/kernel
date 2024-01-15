@@ -5597,6 +5597,13 @@ static int bpf_sock_ops_get_syn(struct bpf_sock_ops_kern *bpf_sock,
 
 #if IS_ENABLED(CONFIG_NETACC_TERRACE)
 #define SK_BPF_GID_UID  18000
+
+#include <net/netfilter/nf_conntrack.h>
+#include <linux/netfilter_ipv4.h>
+
+bpf_getorigdst_opt_func bpf_getorigdst_opt;
+EXPORT_SYMBOL(bpf_getorigdst_opt);
+
 static int bpf_sock_ops_get_uid_gid(struct bpf_sock_ops_kern *bpf_sock,
 				    char *optval, int optlen)
 {
@@ -5615,6 +5622,36 @@ static int bpf_sock_ops_get_uid_gid(struct bpf_sock_ops_kern *bpf_sock,
 
 	return sizeof(u64);
 }
+
+static int bpf_sk_original_addr(struct bpf_sock_ops_kern *bpf_sock,
+				int optname, char *optval, int optlen)
+{
+	struct sock *sk = bpf_sock->sk;
+	int ret = -EINVAL;
+
+	if (!sk_fullsock(sk))
+		goto err_clear;
+
+	if (!bpf_getorigdst_opt)
+		goto err_clear;
+
+#if IS_ENABLED(CONFIG_NF_CONNTRACK)
+	if (optname == BPF_SO_ORIGINAL_DST)
+		ret = bpf_getorigdst_opt(sk, optname, optval, &optlen,
+					 IP_CT_DIR_ORIGINAL);
+	else
+		ret = bpf_getorigdst_opt(sk, optname, optval, &optlen,
+					 IP_CT_DIR_REPLY);
+	if (ret < 0)
+		goto err_clear;
+	return ret;
+#endif
+
+err_clear:
+	memset(optval, 0, optlen);
+	return ret;
+}
+
 #endif
 
 BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
@@ -5644,6 +5681,9 @@ BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 #if IS_ENABLED(CONFIG_NETACC_TERRACE)
 	if (level == SOL_IP && optname == SK_BPF_GID_UID)
 		return bpf_sock_ops_get_uid_gid(bpf_sock, optval, optlen);
+	else if (level == SOL_IP && (optname == BPF_SO_ORIGINAL_DST ||
+				     optname == BPF_SO_REPLY_SRC))
+		return bpf_sk_original_addr(bpf_sock, optname, optval, optlen);
 #endif
 
 	return _bpf_getsockopt(bpf_sock->sk, level, optname, optval, optlen);
