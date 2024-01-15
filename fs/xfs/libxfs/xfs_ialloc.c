@@ -652,6 +652,7 @@ xfs_ialloc_ag_alloc(
 	int			do_sparse = 0;
 
 	memset(&args, 0, sizeof(args));
+	args.postallocs = 1;
 	args.tp = tp;
 	args.mp = tp->t_mountp;
 	args.fsbno = NULLFSBLOCK;
@@ -782,6 +783,8 @@ sparse_alloc:
 		args.alignment = args.mp->m_sb.sb_spino_align;
 		args.prod = 1;
 
+		/* Allow space for the inode btree to split */
+		args.minleft = igeo->inobt_maxlevels;
 		args.minlen = igeo->ialloc_min_blks;
 		args.maxlen = args.minlen;
 
