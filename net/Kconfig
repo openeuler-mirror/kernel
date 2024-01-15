@@ -514,4 +514,11 @@ config NETACC_BPF
 	help
 	  Network acceleration in bpf.
 
+config NETACC_TERRACE
+	bool "Terrace Service Acceleration"
+	default y
+	help
+	  Accelerating intra-node communication on the data plane of the
+	  Terrace service.
+
 endif   # if NET

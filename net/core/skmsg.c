@@ -444,8 +444,12 @@ int sk_msg_recvmsg(struct sock *sk, struct sk_psock *psock, struct msghdr *msg,
 			if (likely(!peek)) {
 				sge->offset += copy;
 				sge->length -= copy;
-				if (!msg_rx->skb)
+				if (!msg_rx->skb) {
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+					atomic_sub(copy, &sk->sk_rmem_alloc);
+#endif
 					sk_mem_uncharge(sk, copy);
+				}
 				msg_rx->sg.size -= copy;
 
 				if (!sge->length) {
@@ -771,6 +775,10 @@ static void __sk_psock_purge_ingress_msg(struct sk_psock *psock)
 
 	list_for_each_entry_safe(msg, tmp, &psock->ingress_msg, list) {
 		list_del(&msg->list);
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+		if (!msg->skb)
+			atomic_sub(msg->sg.size, &psock->sk->sk_rmem_alloc);
+#endif
 		sk_msg_free(psock->sk, msg);
 		kfree(msg);
 	}
