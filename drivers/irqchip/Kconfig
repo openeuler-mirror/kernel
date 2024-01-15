@@ -159,6 +159,13 @@ config HISILICON_IRQ_MBIGEN
 	select ARM_GIC_V3
 	select ARM_GIC_V3_ITS
 
+config IRQ_MBIGEN_ENABLE_SPI
+	bool "MBIGEN enable generating SPIs"
+	depends on HISILICON_IRQ_MBIGEN
+	default n
+	help
+	  Use the first 64-pins of each MBIGEN chip to generate SPIs.
+
 config IMGPDC_IRQ
 	bool
 	select GENERIC_IRQ_CHIP
