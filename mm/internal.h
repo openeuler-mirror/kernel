@@ -434,10 +434,16 @@ static inline void prep_compound_tail(struct page *head, int tail_idx)
 	set_page_private(p, 0);
 }
 
+typedef int __bitwise fpi_t;
 extern void prep_compound_page(struct page *page, unsigned int order);
 
 extern void post_alloc_hook(struct page *page, unsigned int order,
 					gfp_t gfp_flags);
+extern bool free_pages_prepare(struct page *page, unsigned int order,
+			       fpi_t fpi_flags);
+extern int check_new_page(struct page *page);
+extern void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+			  unsigned int alloc_flags);
 extern int user_min_free_kbytes;
 
 extern void free_unref_page(struct page *page, unsigned int order);

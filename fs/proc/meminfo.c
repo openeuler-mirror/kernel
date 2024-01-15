@@ -18,6 +18,7 @@
 #include <linux/cma.h>
 #endif
 #include <linux/zswap.h>
+#include <linux/dynamic_pool.h>
 #include <asm/page.h>
 #include "internal.h"
 
@@ -169,6 +170,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	arch_report_meminfo(m);
 
 	reliable_report_meminfo(m);
+
+	dynamic_pool_show_meminfo(m);
 
 	return 0;
 }

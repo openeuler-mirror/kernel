@@ -28,6 +28,7 @@ struct page;
 struct mm_struct;
 struct kmem_cache;
 struct oom_control;
+struct dynamic_pool;
 
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
@@ -362,6 +363,10 @@ struct mem_cgroup {
 
 #ifdef CONFIG_MEMCG_SWAP_QOS
 	struct swap_device *swap_dev;
+#endif
+
+#ifdef CONFIG_DYNAMIC_POOL
+	struct dynamic_pool *dpool;
 #endif
 
 	struct mem_cgroup_per_node *nodeinfo[];
@@ -883,6 +888,9 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *,
 void mem_cgroup_iter_break(struct mem_cgroup *, struct mem_cgroup *);
 void mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 			   int (*)(struct task_struct *, void *), void *arg);
+void mem_cgroup_scan_cgroups(struct mem_cgroup *memcg,
+			     void (*fn)(struct mem_cgroup *, void *),
+			     void *arg);
 
 static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 {
@@ -1216,6 +1224,19 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 
 int memcg_get_swap_type(struct folio *folio);
 void memcg_remove_swapfile(int type);
+
+/* Test whether @memcg has children, dead or alive. */
+static inline bool memcg_has_children(struct mem_cgroup *memcg)
+{
+	bool ret;
+
+	rcu_read_lock();
+	ret = css_next_child(NULL, &memcg->css);
+	rcu_read_unlock();
+	return ret;
+}
+
+int mem_cgroup_force_empty(struct mem_cgroup *memcg);
 
 #else /* CONFIG_MEMCG */
 

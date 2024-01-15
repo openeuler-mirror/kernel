@@ -79,6 +79,7 @@ static struct vfsmount *shm_mnt;
 #include <linux/rmap.h>
 #include <linux/uuid.h>
 #include <linux/quotaops.h>
+#include <linux/dynamic_pool.h>
 
 #include <linux/uaccess.h>
 
@@ -2018,6 +2019,8 @@ repeat:
 
 	if (!shmem_is_huge(inode, index, false,
 			   vma ? vma->vm_mm : NULL, vma ? vma->vm_flags : 0))
+		goto alloc_nohuge;
+	if (task_in_dynamic_pool(current))
 		goto alloc_nohuge;
 
 	huge_gfp = vma_thp_gfp_mask(vma);

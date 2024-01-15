@@ -282,6 +282,9 @@ long hugetlb_change_protection(struct vm_area_struct *vma,
 bool is_hugetlb_entry_migration(pte_t pte);
 void hugetlb_unshare_all_pmds(struct vm_area_struct *vma);
 
+void enqueue_hugetlb_folio(struct hstate *h, struct folio *folio);
+struct folio *dequeue_hugetlb_folio_node_exact(struct hstate *h, int nid);
+
 #ifdef CONFIG_HUGETLB_INSERT_PAGE
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 				pgprot_t prot, struct page *hpage);
@@ -593,6 +596,9 @@ struct hugetlbfs_inode_info {
 	struct shared_policy policy;
 	struct inode vfs_inode;
 	unsigned int seals;
+#ifdef CONFIG_DYNAMIC_POOL
+	struct dynamic_pool *dpool;
+#endif
 };
 
 static inline struct hugetlbfs_inode_info *HUGETLBFS_I(struct inode *inode)
@@ -800,6 +806,11 @@ int hugetlb_add_to_page_cache(struct folio *folio, struct address_space *mapping
 			pgoff_t idx);
 void restore_reserve_on_error(struct hstate *h, struct vm_area_struct *vma,
 				unsigned long address, struct folio *folio);
+void destroy_compound_hugetlb_folio_for_demote(struct folio *folio,
+						unsigned int order);
+bool prep_compound_gigantic_folio_for_demote(struct folio *folio,
+						unsigned int order);
+void __prep_new_hugetlb_folio(struct hstate *h, struct folio *folio);
 
 /* arch callback */
 int __init __alloc_bootmem_huge_page(struct hstate *h, int nid);

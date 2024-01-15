@@ -53,6 +53,7 @@
 #include <linux/khugepaged.h>
 #include <linux/delayacct.h>
 #include <linux/cacheinfo.h>
+#include <linux/dynamic_pool.h>
 #include <asm/div64.h>
 #include "internal.h"
 #include "shuffle.h"
@@ -1073,7 +1074,7 @@ static void kernel_init_pages(struct page *page, int numpages)
 	kasan_enable_current();
 }
 
-static __always_inline bool free_pages_prepare(struct page *page,
+__always_inline bool free_pages_prepare(struct page *page,
 			unsigned int order, fpi_t fpi_flags)
 {
 	int bad = 0;
@@ -1426,7 +1427,7 @@ static void check_new_page_bad(struct page *page)
 /*
  * This page is about to be returned from the page allocator
  */
-static int check_new_page(struct page *page)
+int check_new_page(struct page *page)
 {
 	if (likely(page_expected_state(page,
 				PAGE_FLAGS_CHECK_AT_PREP|__PG_HWPOISON)))
@@ -1538,8 +1539,8 @@ inline void post_alloc_hook(struct page *page, unsigned int order,
 	page_table_check_alloc(page, order);
 }
 
-static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
-							unsigned int alloc_flags)
+void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+						unsigned int alloc_flags)
 {
 	post_alloc_hook(page, order, gfp_flags);
 
@@ -2484,6 +2485,11 @@ void free_unref_page(struct page *page, unsigned int order)
 	unsigned long pfn = page_to_pfn(page);
 	int migratetype, pcpmigratetype;
 
+	if (page_from_dynamic_pool(page)) {
+		dynamic_pool_free_page(page);
+		return;
+	}
+
 	if (!free_unref_page_prepare(page, pfn, order))
 		return;
 
@@ -2530,6 +2536,13 @@ void free_unref_page_list(struct list_head *list)
 	/* Prepare pages for freeing */
 	list_for_each_entry_safe(page, next, list, lru) {
 		unsigned long pfn = page_to_pfn(page);
+
+		if (page_from_dynamic_pool(page)) {
+			list_del(&page->lru);
+			dynamic_pool_free_page(page);
+			continue;
+		}
+
 		if (!free_unref_page_prepare(page, pfn, 0)) {
 			list_del(&page->lru);
 			continue;
@@ -4733,6 +4746,13 @@ retry:
 	 * memory until all local zones are considered.
 	 */
 	alloc_flags |= alloc_flags_nofragment(ac.preferred_zoneref->zone, gfp);
+
+	 /* Before alloc from buddy system, alloc from dpool firstly */
+	if (dpool_enabled) {
+		page = dynamic_pool_alloc_page(alloc_gfp, order, alloc_flags);
+		if (page)
+			goto out;
+	}
 
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);

@@ -136,6 +136,9 @@ enum pageflags {
 	PG_arch_2,
 	PG_arch_3,
 #endif
+#ifdef CONFIG_DYNAMIC_POOL
+	PG_pool,		/* Page is allocated from dynamic pool */
+#endif
 	__NR_PAGEFLAGS,
 
 	PG_readahead = PG_reclaim,
@@ -604,6 +607,15 @@ PAGEFLAG_FALSE(VmemmapSelfHosted, vmemmap_self_hosted)
 #endif
 
 /*
+ * PagePool() is used to track page allocated from dpool.
+ */
+#ifdef CONFIG_DYNAMIC_POOL
+PAGEFLAG(Pool, pool, PF_NO_TAIL)
+#else
+PAGEFLAG_FALSE(Pool, pool)
+#endif
+
+/*
  * On an anonymous page mapped into a user virtual memory area,
  * page->mapping points to its anon_vma, not to a struct address_space;
  * with the PAGE_MAPPING_ANON bit set to distinguish it.  See rmap.h.
@@ -921,6 +933,9 @@ static inline bool is_page_hwpoison(struct page *page)
 #define PG_offline	0x00000100
 #define PG_table	0x00000200
 #define PG_guard	0x00000400
+#ifdef CONFIG_DYNAMIC_POOL
+#define PG_dpool	0x00000800
+#endif
 
 #define PageType(page, flag)						\
 	((page->page_type & (PAGE_TYPE_BASE | flag)) == PAGE_TYPE_BASE)
@@ -1011,6 +1026,13 @@ PAGE_TYPE_OPS(Table, table, pgtable)
  * Marks guardpages used with debug_pagealloc.
  */
 PAGE_TYPE_OPS(Guard, guard, guard)
+
+#ifdef CONFIG_DYNAMIC_POOL
+/*
+ * PageDpool() indicates that the page is free and in the dpool.
+ */
+PAGE_TYPE_OPS(Dpool, dpool, dpool)
+#endif
 
 extern bool is_free_buddy_page(struct page *page);
 

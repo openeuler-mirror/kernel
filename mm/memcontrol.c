@@ -66,6 +66,7 @@
 #include <linux/memcg_memfs_info.h>
 #include <linux/sched/isolation.h>
 #include <linux/parser.h>
+#include <linux/dynamic_pool.h>
 
 #ifdef CONFIG_MEMCG_SWAP_QOS
 #include <linux/blkdev.h>
@@ -1308,6 +1309,24 @@ void mem_cgroup_scan_tasks(struct mem_cgroup *memcg,
 			break;
 		}
 	}
+}
+
+/**
+ * mem_cgroup_scan_cgroups - iterate over memcgs of a memory cgroup hierarchy
+ * @memcg: hierarchy root
+ * @fn: function to call for each memcg
+ * @arg: argument passed to @fn
+ *
+ * This function iterates over memcg attached to @memcg or to any of its
+ * descendants and calls @fn for each memcgs.
+ */
+void mem_cgroup_scan_cgroups(struct mem_cgroup *memcg,
+			     void (*fn)(struct mem_cgroup *, void *), void *arg)
+{
+	struct mem_cgroup *iter;
+
+	for_each_mem_cgroup_tree(iter, memcg)
+		fn(iter, arg);
 }
 
 #ifdef CONFIG_DEBUG_VM
@@ -3710,7 +3729,7 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
  *
  * Caller is responsible for holding css reference for memcg.
  */
-static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
+int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 {
 	int nr_retries = MAX_RECLAIM_RETRIES;
 
@@ -5730,6 +5749,81 @@ static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
 }
 #endif /* CONFIG_KSM */
 
+#ifdef CONFIG_DYNAMIC_POOL
+static ssize_t mem_cgroup_dpool_write(struct kernfs_open_file *of,
+				      char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long size;
+	int nid;
+	char *endp;
+	int ret = -EINVAL;
+
+	buf = strstrip(buf);
+	nid = memparse(buf, &endp);
+	if (*endp != ' ')
+		goto out;
+
+	if (nid < 0 || nid >= MAX_NUMNODES || !node_online(nid))
+		goto out;
+
+	buf = endp + 1;
+	size = memparse(buf, &endp);
+	if (*endp != '\0' || size == 0)
+		goto out;
+
+	ret = dynamic_pool_add_memory(memcg, nid, size);
+
+out:
+	return ret ? : nbytes;
+}
+
+static int mem_cgroup_dpool_read(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
+
+	dynamic_pool_show(memcg, m);
+
+	return 0;
+}
+
+static ssize_t mem_cgroup_dpool_1G_write(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	char *endp;
+	unsigned long nr_pages;
+	int ret;
+
+	buf = strstrip(buf);
+	nr_pages = memparse(buf, &endp);
+	if (*endp != '\0')
+		return -EINVAL;
+
+	ret = dynamic_pool_reserve_hugepage(memcg, nr_pages, PAGES_POOL_1G);
+
+	return ret ? : nbytes;
+}
+
+static ssize_t mem_cgroup_dpool_2M_write(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	char *endp;
+	unsigned long nr_pages;
+	int ret;
+
+	buf = strstrip(buf);
+	nr_pages = memparse(buf, &endp);
+	if (*endp != '\0')
+		return -EINVAL;
+
+	ret = dynamic_pool_reserve_hugepage(memcg, nr_pages, PAGES_POOL_2M);
+
+	return ret ? : nbytes;
+}
+#endif
+
 static int memory_stat_show(struct seq_file *m, void *v);
 
 #ifdef CONFIG_MEMCG_V1_RECLAIM
@@ -6091,6 +6185,24 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = memcg_swapfile_read,
 	},
 #endif
+#ifdef CONFIG_DYNAMIC_POOL
+	{
+		.name = "dhugetlb.nr_pages",
+		.write = mem_cgroup_dpool_write,
+		.seq_show = mem_cgroup_dpool_read,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.1G.reserved_pages",
+		.write = mem_cgroup_dpool_1G_write,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.2M.reserved_pages",
+		.write = mem_cgroup_dpool_2M_write,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+#endif
 	{ },	/* terminate */
 };
 
@@ -6382,6 +6494,8 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 #ifdef CONFIG_MEMCG_OOM_PRIORITY
 	memcg_oom_prio_init(memcg);
 #endif
+
+	dynamic_pool_inherit(memcg);
 
 	/* Online state pins memcg ID, memcg ID pins CSS */
 	refcount_set(&memcg->id.ref, 1);
@@ -7124,6 +7238,10 @@ static int mem_cgroup_can_attach(struct cgroup_taskset *tset)
 	}
 	if (!p)
 		return 0;
+
+	ret = dynamic_pool_can_attach(p, memcg);
+	if (ret)
+		return ret;
 
 	/*
 	 * We are now committed to this value whatever it is. Changes in this

@@ -1365,6 +1365,15 @@ config MEMORY_RELIABLE
 	  To enable this function, mirrored memory is needed and
 	  "kernelcore=reliable" need to be added in kernel parameters.
 
+config DYNAMIC_POOL
+	bool "Dynamic Pool support"
+	depends on X86_64 || (ARM64 && ARM64_4K_PAGES)
+	depends on MEMCG && HUGETLB_PAGE
+	default n
+	help
+	  A per-memcg pagepool. The task in the memcg will prefer to alloc
+	  pages from corresponding pool.
+
 source "mm/damon/Kconfig"
 
 endmenu

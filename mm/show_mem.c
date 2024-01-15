@@ -14,6 +14,7 @@
 #include <linux/mmzone.h>
 #include <linux/swap.h>
 #include <linux/vmstat.h>
+#include <linux/dynamic_pool.h>
 
 #include "internal.h"
 #include "swap.h"
@@ -427,4 +428,5 @@ void __show_mem(unsigned int filter, nodemask_t *nodemask, int max_zone_idx)
 	printk("%lu pages hwpoisoned\n", atomic_long_read(&num_poisoned_pages));
 #endif
 	reliable_report_meminfo(NULL);
+	dynamic_pool_show_meminfo(NULL);
 }

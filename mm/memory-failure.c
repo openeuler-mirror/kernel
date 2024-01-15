@@ -60,6 +60,7 @@
 #include <linux/pagewalk.h>
 #include <linux/shmem_fs.h>
 #include <linux/sysctl.h>
+#include <linux/dynamic_pool.h>
 #include "swap.h"
 #include "internal.h"
 #include "ras/ras_event.h"
@@ -893,6 +894,7 @@ static const char * const action_page_types[] = {
 	[MF_MSG_BUDDY]			= "free buddy page",
 	[MF_MSG_DAX]			= "dax page",
 	[MF_MSG_UNSPLIT_THP]		= "unsplit thp",
+	[MF_MSG_FREE_DPOOL]		= "free dynamic pool page",
 	[MF_MSG_UNKNOWN]		= "unknown page",
 };
 
@@ -1376,7 +1378,8 @@ static inline bool HWPoisonHandlable(struct page *page, unsigned long flags)
 	if ((flags & MF_SOFT_OFFLINE) && __PageMovable(page))
 		return true;
 
-	return PageLRU(page) || is_free_buddy_page(page);
+	return PageLRU(page) || is_free_buddy_page(page) ||
+	       page_in_dynamic_pool(page);
 }
 
 static int __get_hwpoison_page(struct page *page, unsigned long flags)
@@ -1432,7 +1435,8 @@ try_again:
 				if (pass++ < 3)
 					goto try_again;
 				ret = -EBUSY;
-			} else if (!PageHuge(p) && !is_free_buddy_page(p)) {
+			} else if (!PageHuge(p) && !is_free_buddy_page(p) &&
+				   !page_in_dynamic_pool(p)) {
 				/* We raced with put_page, retry. */
 				if (pass++ < 3)
 					goto try_again;
@@ -1983,6 +1987,8 @@ int __get_huge_page_for_hwpoison(unsigned long pfn, int flags,
 		count_increased = true;
 	} else if (folio_test_hugetlb_freed(folio)) {
 		ret = 0;
+	} else if (page_in_dynamic_pool(folio_page(folio, 0))) {
+		ret = 0;
 	} else if (folio_test_hugetlb_migratable(folio)) {
 		ret = folio_try_get(folio);
 		if (ret)
@@ -2071,6 +2077,8 @@ retry:
 		if (__page_handle_poison(p) >= 0) {
 			page_ref_inc(p);
 			res = MF_RECOVERED;
+		} else if (page_in_dynamic_pool(p)) {
+			return action_result(pfn, MF_MSG_FREE_DPOOL, MF_RECOVERED);
 		} else {
 			res = MF_FAILED;
 		}
@@ -2226,6 +2234,8 @@ try_again:
 	 *    Implies some kernel user: cannot stop them from
 	 *    R/W the page; let's pray that the page has been
 	 *    used and will be freed some time later.
+	 * 3) it's a free page in dynamic pool, and therefore in safe hand:
+	 *    check_new_page() will be the gate keeper.
 	 * In fact it's dangerous to directly bump up page count from 0,
 	 * that may make page_ref_freeze()/page_ref_unfreeze() mismatch.
 	 */
@@ -2246,6 +2256,8 @@ try_again:
 					res = MF_FAILED;
 				}
 				res = action_result(pfn, MF_MSG_BUDDY, res);
+			} else if (page_in_dynamic_pool(p)) {
+				res = action_result(pfn, MF_MSG_FREE_DPOOL, MF_RECOVERED);
 			} else {
 				res = action_result(pfn, MF_MSG_KERNEL_HIGH_ORDER, MF_IGNORED);
 			}

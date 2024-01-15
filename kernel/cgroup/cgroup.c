@@ -59,6 +59,7 @@
 #include <linux/sched/cputime.h>
 #include <linux/sched/deadline.h>
 #include <linux/psi.h>
+#include <linux/dynamic_pool.h>
 #include <net/sock.h>
 #include <linux/backing-dev.h>
 
@@ -4329,6 +4330,8 @@ restart:
 			continue;
 		if ((cft->flags & CFTYPE_DEBUG) && !cgroup_debug)
 			continue;
+		if (dynamic_pool_hide_files(cft))
+			continue;
 		if (is_add) {
 			ret = cgroup_add_file(css, cgrp, cft);
 			if (ret) {
@@ -5965,6 +5968,7 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	struct cgroup_subsys_state *css;
 	struct cgrp_cset_link *link;
 	int ssid;
+	bool clear_css_online = false;
 
 	lockdep_assert_held(&cgroup_mutex);
 
@@ -5981,6 +5985,14 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	 * drained; otherwise, "rmdir parent/child parent" may fail.
 	 */
 	if (css_has_online_children(&cgrp->self))
+		return -EBUSY;
+
+	/*
+	 * If dynamic pool is enabled, make sure dpool is destroyed before
+	 * removing the corresponding memory cgroup. If CSS_ONLINE is set,
+	 * this function will clear it and set clear_css_online to true.
+	 */
+	if (dynamic_pool_destroy(cgrp, &clear_css_online))
 		return -EBUSY;
 
 	/*
