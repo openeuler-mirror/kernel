@@ -3357,6 +3357,7 @@ void br_multicast_dev_del(struct net_bridge *br)
 	hlist_move_list(&br->mcast_gc_list, &deleted_head);
 	spin_unlock_bh(&br->multicast_lock);
 
+	br_multicast_stop(br);
 	br_multicast_gc(&deleted_head);
 	cancel_work_sync(&br->mcast_gc_work);
 
