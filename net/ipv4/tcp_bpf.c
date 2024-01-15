@@ -43,6 +43,13 @@ static int bpf_tcp_ingress(struct sock *sk, struct sk_psock *psock,
 		return -ENOMEM;
 
 	lock_sock(sk);
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+	if (atomic_read(&sk->sk_rmem_alloc) >= sk->sk_rcvbuf) {
+		kfree(tmp);
+		release_sock(sk);
+		return -EAGAIN;
+	}
+#endif
 	tmp->sg.start = msg->sg.start;
 	i = msg->sg.start;
 	do {
@@ -75,6 +82,10 @@ static int bpf_tcp_ingress(struct sock *sk, struct sk_psock *psock,
 	if (!ret) {
 		msg->sg.start = i;
 		sk_psock_queue_msg(psock, tmp);
+#if IS_ENABLED(CONFIG_NETACC_TERRACE)
+		if (sk_psock_test_state(psock, SK_PSOCK_TX_ENABLED))
+			atomic_add(tmp->sg.size, &sk->sk_rmem_alloc);
+#endif
 		sk_psock_data_ready(sk, psock);
 	} else {
 		sk_msg_free(sk, tmp);
