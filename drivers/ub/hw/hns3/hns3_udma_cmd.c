@@ -20,6 +20,7 @@
 #include "hns3_udma_common.h"
 #include "hns3_udma_cmd.h"
 
+static int debug_switch = 1;
 int udma_cmd_init(struct udma_dev *udma_dev)
 {
 	sema_init(&udma_dev->cmd.poll_sem, 1);
@@ -299,6 +300,9 @@ static int __udma_cmq_send(struct udma_dev *dev, struct udma_cmq_desc *desc,
 	int ret = 0;
 	int i;
 
+	if (debug_switch)
+		for (i = 0; i < num; i++)
+			dump_desc(dev, desc + i);
 
 	mutex_lock(&csq->lock);
 
@@ -341,7 +345,7 @@ static int __udma_cmq_send(struct udma_dev *dev, struct udma_cmq_desc *desc,
 	} else {
 		/* FW/HW reset or incorrect number of desc */
 		tail = ub_read(dev, UDMA_TX_CMQ_CI_REG);
-		dev_warn(dev->dev, "CMDQ move tail from %d to %d\n",
+		dev_warn(dev->dev, "CMDQ move tail from %u to %u.\n",
 			 csq->head, tail);
 		csq->head = tail;
 
@@ -604,3 +608,6 @@ int udma_cmd_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
 	else
 		return udma_cmd_mbox_poll(dev, desc, timeout, vfid);
 }
+
+module_param(debug_switch, int, 0444);
+MODULE_PARM_DESC(debug_switch, "set debug print ON, default: 1");
