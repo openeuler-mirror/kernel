@@ -47,7 +47,7 @@ static int _kvm_fault_ni(struct kvm_vcpu *vcpu)
 	return RESUME_HOST;
 }
 
-static int _kvm_handle_csr(struct kvm_vcpu *vcpu, larch_inst inst)
+static int _kvm_handle_csr(struct kvm_vcpu *vcpu, union loongarch_instruction inst)
 {
 	enum emulation_result er = EMULATE_DONE;
 	unsigned int rd, rj, csrid;
@@ -84,7 +84,7 @@ static int _kvm_handle_csr(struct kvm_vcpu *vcpu, larch_inst inst)
 	return er;
 }
 
-static int _kvm_emu_cache(struct kvm_vcpu *vcpu, larch_inst inst)
+static int _kvm_emu_cache(struct kvm_vcpu *vcpu, union loongarch_instruction inst)
 {
 	return EMULATE_DONE;
 }
@@ -93,7 +93,7 @@ static int _kvm_trap_handle_gspr(struct kvm_vcpu *vcpu)
 {
 	enum emulation_result er = EMULATE_DONE;
 	struct kvm_run *run = vcpu->run;
-	larch_inst inst;
+	union loongarch_instruction inst;
 	unsigned long curr_pc;
 	int rd, rj;
 	unsigned int index;
@@ -180,7 +180,7 @@ static int _kvm_trap_handle_gspr(struct kvm_vcpu *vcpu)
 static int _kvm_check_hypcall(struct kvm_vcpu *vcpu)
 {
 	enum emulation_result ret;
-	larch_inst inst;
+	union loongarch_instruction inst;
 	unsigned long curr_pc;
 	unsigned int code;
 
@@ -189,13 +189,13 @@ static int _kvm_check_hypcall(struct kvm_vcpu *vcpu)
 	 * an error and we want to rollback the PC
 	 */
 	inst.word = vcpu->arch.badi;
-	code = inst.reg0i15_format.simmediate;
+	code = inst.reg0i15_format.immediate;
 	curr_pc = vcpu->arch.pc;
 	update_pc(&vcpu->arch);
 
 	ret = EMULATE_DONE;
 	switch (code) {
-	case KVM_HC_CODE_SERIVCE:
+	case KVM_HC_CODE_SERVICE:
 		ret = EMULATE_PV_HYPERCALL;
 		break;
 	case KVM_HC_CODE_SWDBG:
@@ -220,7 +220,8 @@ static int _kvm_check_hypcall(struct kvm_vcpu *vcpu)
  * Also the access to unimplemented csrs 0x15
  * 0x16, 0x50~0x53, 0x80, 0x81, 0x90~0x95, 0x98
  * 0xc0~0xff, 0x100~0x109, 0x500~0x502,
- * cache_op, idle_op iocsr ops the same */
+ * cache_op, idle_op iocsr ops the same
+ */
 static int _kvm_handle_gspr(struct kvm_vcpu *vcpu)
 {
 	enum emulation_result er = EMULATE_DONE;
@@ -342,7 +343,7 @@ static int _kvm_handle_lsx_disabled(struct kvm_vcpu *vcpu)
 
 bool _kvm_guest_has_lasx(struct kvm_vcpu *vcpu)
 {
-      return cpu_has_lasx && vcpu->arch.lsx_enabled && vcpu->kvm->arch.cpucfg_lasx;
+	return cpu_has_lasx && vcpu->arch.lsx_enabled && vcpu->kvm->arch.cpucfg_lasx;
 }
 
 /**
@@ -383,7 +384,7 @@ static int _kvm_handle_read_fault(struct kvm_vcpu *vcpu)
 {
 	struct kvm_run *run = vcpu->run;
 	ulong badv = vcpu->arch.badv;
-	larch_inst inst;
+	union loongarch_instruction inst;
 	enum emulation_result er = EMULATE_DONE;
 	int ret = RESUME_GUEST;
 
@@ -421,7 +422,7 @@ static int _kvm_handle_write_fault(struct kvm_vcpu *vcpu)
 {
 	struct kvm_run *run = vcpu->run;
 	ulong badv = vcpu->arch.badv;
-	larch_inst inst;
+	union loongarch_instruction inst;
 	enum emulation_result er = EMULATE_DONE;
 	int ret = RESUME_GUEST;
 

@@ -54,7 +54,7 @@ static inline int kvm_pmd_huge(pmd_t pmd)
 	return (pmd_val(pmd) & _PAGE_HUGE) != 0;
 #else
 	return 0;
-#endif	
+#endif
 }
 
 static inline int kvm_pud_huge(pud_t pud)
@@ -63,7 +63,7 @@ static inline int kvm_pud_huge(pud_t pud)
 	return (pud_val(pud) & _PAGE_HUGE) != 0;
 #else
 	return 0;
-#endif	
+#endif
 }
 
 static inline pmd_t kvm_pmd_mkhuge(pmd_t pmd)

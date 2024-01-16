@@ -12,32 +12,32 @@
 #include <linux/spinlock.h>
 #include <kvm/iodev.h>
 
-typedef struct gipi_single {
+struct gipi_single {
 	uint32_t status;
 	uint32_t en;
 	uint32_t set;
 	uint32_t clear;
 	uint64_t buf[4];
-} gipi_single;
+};
 
-typedef struct gipiState {
-	gipi_single core[KVM_MAX_VCPUS];
-} gipiState;
+struct gipiState {
+	struct gipi_single core[KVM_MAX_VCPUS];
+};
 
 struct ls3a_kvm_ipi;
 
-typedef struct ipi_io_device {
+struct ipi_io_device {
 	struct ls3a_kvm_ipi *ipi;
 	struct kvm_io_device device;
 	int nodeNum;
-} ipi_io_device;
+};
 
 struct ls3a_kvm_ipi {
 	spinlock_t lock;
 	struct kvm *kvm;
-	gipiState ls3a_gipistate;
+	struct gipiState ls3a_gipistate;
 	int nodeNum;
-	ipi_io_device dev_ls3a_ipi;
+	struct ipi_io_device dev_ls3a_ipi;
 };
 
 #define SMP_MAILBOX			(LOONGSON_VIRT_REG_BASE + 0x0000)

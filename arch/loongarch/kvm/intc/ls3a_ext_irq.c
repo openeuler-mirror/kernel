@@ -30,7 +30,8 @@ void ext_deactive_core_isr(struct kvm *kvm, int irq_num, int vcpu_id)
 
 	bitmap_clear((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2], irq_num, 1);
 	found1 = find_next_bit((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2], EXTIOI_IRQS, 0);
-	kvm_debug("vcpu_id %d irqnum %d found:0x%lx ipnum %d down\n", vcpu_id, irq_num, found1, ipnum);
+	kvm_debug("vcpu_id %d irqnum %d found:0x%lx ipnum %d down\n",
+			vcpu_id, irq_num, found1, ipnum);
 	if (found1 == EXTIOI_IRQS) {
 		irq.cpu = vcpu_id;
 		irq.irq = -(ipnum + 2);		/* IP2~IP5 */
@@ -66,23 +67,22 @@ void ext_irq_update_core(struct kvm *kvm, int irq_num, int level)
 	}
 
 	if (level == 1) {
-		if (test_bit(irq_num, (void *)state->ext_en.reg_u8) == false) {
+		if (test_bit(irq_num, (void *)state->ext_en.reg_u8) == false)
 			return;
-		}
-		if (test_bit(irq_num, (void *)state->ext_isr.reg_u8) == false) {
+		if (test_bit(irq_num, (void *)state->ext_isr.reg_u8) == false)
 			return;
-		}
 		bitmap_set((void *)state->ext_core_isr.reg_u8[vcpu_id], irq_num, 1);
 
-		found1 = find_next_bit((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2], EXTIOI_IRQS, 0);
+		found1 = find_next_bit((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2],
+				EXTIOI_IRQS, 0);
 		bitmap_set((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2], irq_num, 1);
 		kvm_debug("%s:%d  --- vcpu_id %d irqnum %d found1 0x%lx ipnum %d\n",
-					__FUNCTION__, __LINE__, vcpu_id, irq_num, found1, ipnum);
+					__func__, __LINE__, vcpu_id, irq_num, found1, ipnum);
 		if (found1 == EXTIOI_IRQS) {
 			irq.cpu = vcpu_id;
 			irq.irq = ipnum + 2;	/* IP2~IP5 */
 			kvm_debug("%s:%d --- vcpu_id %d ipnum %d raise\n",
-					__FUNCTION__, __LINE__, vcpu_id, ipnum);
+					__func__, __LINE__, vcpu_id, ipnum);
 			if (likely(kvm->vcpus[vcpu_id]))
 				kvm_vcpu_ioctl_interrupt(kvm->vcpus[vcpu_id], &irq);
 			kvm->stat.trigger_ls3a_ext_irq++;
@@ -92,7 +92,8 @@ void ext_irq_update_core(struct kvm *kvm, int irq_num, int level)
 		bitmap_clear((void *)state->ext_core_isr.reg_u8[vcpu_id], irq_num, 1);
 
 		bitmap_clear((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2], irq_num, 1);
-		found1 = find_next_bit((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2], EXTIOI_IRQS, 0);
+		found1 = find_next_bit((void *)state->ext_sw_ipisr[vcpu_id][ipnum + 2],
+				EXTIOI_IRQS, 0);
 		if (found1 == EXTIOI_IRQS) {
 			irq.cpu = vcpu_id;
 			irq.irq = -(ipnum + 2);		/* IP2~IP5 */
@@ -168,7 +169,7 @@ static int ls3a_ext_intctl_readb(struct kvm_vcpu *vcpu,
 		*(uint8_t *)val = state->node_type.reg_u8[reg_count];
 	}
 	kvm_debug("%s: addr=0x%llx,val=0x%x\n",
-				__FUNCTION__, addr, *(uint8_t *)val);
+				__func__, addr, *(uint8_t *)val);
 	return 0;
 }
 
@@ -212,7 +213,7 @@ static int ls3a_ext_intctl_readw(struct kvm_vcpu *vcpu,
 		*(uint32_t *)val = state->node_type.reg_u32[reg_count];
 	}
 	kvm_debug("%s: addr=0x%llx,val=0x%x\n",
-				__FUNCTION__, addr, *(uint32_t *)val);
+				__func__, addr, *(uint32_t *)val);
 
 	return 0;
 }
@@ -257,7 +258,7 @@ static int ls3a_ext_intctl_readl(struct kvm_vcpu *vcpu,
 		*(uint64_t *)val = state->node_type.reg_u64[reg_count];
 	}
 	kvm_debug("%s: addr=0x%llx,val=0x%llx\n",
-					__FUNCTION__, addr, *(uint64_t *)val);
+					__func__, addr, *(uint64_t *)val);
 	return 0;
 }
 /**
@@ -282,8 +283,8 @@ static int ls3a_ext_intctl_read(struct kvm_vcpu *vcpu,
 
 	offset = addr & 0xfffff;
 	if (offset & (size - 1)) {
-		printk("%s:unaligned address access %llx size %d\n",
-			__FUNCTION__, addr, size);
+		pr_info("%s:unaligned address access %llx size %d\n",
+			__func__, addr, size);
 		return 0;
 	}
 	addr = (addr & 0xfffff) - EXTIOI_ADDR_OFF;
@@ -301,11 +302,11 @@ static int ls3a_ext_intctl_read(struct kvm_vcpu *vcpu,
 		break;
 	default:
 		WARN_ONCE(1, "%s: Abnormal address access:addr 0x%llx, size %d\n",
-						__FUNCTION__, addr, size);
+						__func__, addr, size);
 	}
 	ls3a_ext_irq_unlock(s, flags);
 	kvm_debug("%s(%d):address access %llx size %d\n",
-					__FUNCTION__, __LINE__, offset, size);
+					__func__, __LINE__, offset, size);
 
 	return 0;
 }
@@ -332,7 +333,7 @@ static int ls3a_ext_intctl_writeb(struct kvm_vcpu *vcpu,
 	offset = addr & 0xfffff;
 	val_data_u8 = val & 0xffUL;
 
-	kvm_debug("%s: addr=0x%llx,val=0x%lx\n", __FUNCTION__, addr, val);
+	kvm_debug("%s: addr=0x%llx,val=0x%lx\n", __func__, addr, val);
 
 	if ((offset >= EXTIOI_ENABLE_START) && (offset < EXTIOI_ENABLE_END)) {
 		reg_count = (offset - EXTIOI_ENABLE_START);
@@ -361,9 +362,8 @@ static int ls3a_ext_intctl_writeb(struct kvm_vcpu *vcpu,
 
 		mask = 0x1;
 		for (i = 0; i < 8; i++) {
-			if ((old_data_u8 & mask) && (val_data_u8 & mask)) {
+			if ((old_data_u8 & mask) && (val_data_u8 & mask))
 				ext_irq_update_core(kvm, i + reg_count * 8, 0);
-			}
 			mask = mask << 1;
 		}
 
@@ -416,7 +416,7 @@ static int ls3a_ext_intctl_writeb(struct kvm_vcpu *vcpu,
 		state->node_type.reg_u8[reg_count] = val_data_u8;
 	} else {
 		WARN_ONCE(1, "%s: Abnormal address access:addr 0x%llx\n",
-							__FUNCTION__, addr);
+							__func__, addr);
 	}
 
 	return 0;
@@ -445,7 +445,7 @@ static int ls3a_ext_intctl_writew(struct kvm_vcpu *vcpu,
 	offset = addr & 0xfffff;
 	val_data_u32 = val & 0xffffffffUL;
 
-	kvm_debug("%s: addr=0x%llx,val=0x%lx\n", __FUNCTION__, addr, val);
+	kvm_debug("%s: addr=0x%llx,val=0x%lx\n", __func__, addr, val);
 
 	if ((offset >= EXTIOI_ENABLE_START) && (offset < EXTIOI_ENABLE_END)) {
 		reg_count = (offset - EXTIOI_ENABLE_START) / 4;
@@ -475,9 +475,8 @@ static int ls3a_ext_intctl_writew(struct kvm_vcpu *vcpu,
 
 		mask = 0x1;
 		for (i = 0; i < 8 * sizeof(old_data_u32); i++) {
-			if ((old_data_u32 & mask) && (val_data_u32 & mask)) {
+			if ((old_data_u32 & mask) && (val_data_u32 & mask))
 				ext_irq_update_core(kvm, i + reg_count * 32, 0);
-			}
 			mask = mask << 1;
 		}
 	} else if ((offset >= EXTIOI_COREISR_START) && (offset < EXTIOI_COREISR_END)) {
@@ -515,14 +514,14 @@ static int ls3a_ext_intctl_writew(struct kvm_vcpu *vcpu,
 		tmp_data_u8 = (val_data_u32 >> 24) & 0xff;
 		ls3a_ext_intctl_writeb(vcpu, dev, addr + 3, &tmp_data_u8);
 		kvm_debug("%s:id:%d addr=0x%llx, offset 0x%llx val 0x%x\n",
-				__FUNCTION__, vcpu->vcpu_id, addr, offset, val_data_u32);
+				__func__, vcpu->vcpu_id, addr, offset, val_data_u32);
 
 	} else if ((offset >= EXTIOI_NODETYPE_START) && (offset < EXTIOI_NODETYPE_END)) {
 		reg_count = (offset - EXTIOI_NODETYPE_START) / 4;
 		state->node_type.reg_u32[reg_count] = val_data_u32;
 	} else {
 		WARN_ONCE(1, "%s:%d Abnormal address access:addr 0x%llx\n",
-							__FUNCTION__, __LINE__, addr);
+							__func__, __LINE__, addr);
 	}
 
 	return 0;
@@ -549,7 +548,7 @@ static int ls3a_ext_intctl_writel(struct kvm_vcpu *vcpu,
 	offset = addr & 0xfffff;
 	val_data_u64 = val;
 
-	kvm_debug("%s: addr=0x%llx,val=0x%lx\n", __FUNCTION__, addr, val);
+	kvm_debug("%s: addr=0x%llx,val=0x%lx\n", __func__, addr, val);
 
 	if ((offset >= EXTIOI_ENABLE_START) && (offset < EXTIOI_ENABLE_END)) {
 		reg_count = (offset - EXTIOI_ENABLE_START) / 8;
@@ -579,9 +578,8 @@ static int ls3a_ext_intctl_writel(struct kvm_vcpu *vcpu,
 
 		mask = 0x1;
 		for (i = 0; i < 8 * sizeof(old_data_u64); i++) {
-			if ((old_data_u64 & mask) && (val_data_u64 & mask)) {
+			if ((old_data_u64 & mask) && (val_data_u64 & mask))
 				ext_irq_update_core(kvm, i + reg_count * 64, 0);
-			}
 			mask = mask << 1;
 		}
 	} else if ((offset >= EXTIOI_COREISR_START) && (offset < EXTIOI_COREISR_END)) {
@@ -640,7 +638,7 @@ static int ls3a_ext_intctl_writel(struct kvm_vcpu *vcpu,
 		state->node_type.reg_u64[reg_count] = val_data_u64;
 	} else {
 		WARN_ONCE(1, "%s:%d Abnormal address access:addr 0x%llx\n",
-					__FUNCTION__, __LINE__, addr);
+					__func__, __LINE__, addr);
 	}
 	return 0;
 }
@@ -666,8 +664,8 @@ static int ls3a_ext_intctl_write(struct kvm_vcpu *vcpu,
 
 	offset = addr & 0xfffff;
 	if (offset & (size - 1)) {
-		printk("%s(%d):unaligned address access %llx size %d\n",
-			__FUNCTION__, __LINE__, addr, size);
+		pr_info("%s(%d):unaligned address access %llx size %d\n",
+			__func__, __LINE__, addr, size);
 		return 0;
 	}
 
@@ -686,13 +684,13 @@ static int ls3a_ext_intctl_write(struct kvm_vcpu *vcpu,
 		break;
 	default:
 		WARN_ONCE(1, "%s: Abnormal address access:addr 0x%llx,size %d\n",
-						__FUNCTION__, addr, size);
+						__func__, addr, size);
 	}
 
 	ls3a_ext_irq_unlock(s, flags);
 
 	kvm_debug("%s(%d):address access %llx size %d\n",
-					__FUNCTION__, __LINE__, offset, size);
+					__func__, __LINE__, offset, size);
 	return 0;
 }
 
@@ -739,7 +737,7 @@ int kvm_create_ls3a_ext_irq(struct kvm *kvm)
 					EXTIOI_REG_BASE, EXTIOI_ADDR_SIZE, &s->device);
 	mutex_unlock(&kvm->slots_lock);
 	if (ret < 0) {
-		printk("%s dev_ls3a_ext_irq register error  ret %d\n", __FUNCTION__, ret);
+		pr_info("%s dev_ls3a_ext_irq register error  ret %d\n", __func__, ret);
 		goto err_register;
 	}
 
@@ -766,7 +764,7 @@ static int kvm_set_ext_sw_ipmap(struct kvm_ls3a_extirq_state *state)
 				break;
 			}
 		}
-		kvm_debug("%s:%d ipnum:%d i:%d val_data_u8:0x%x\n", __FUNCTION__, __LINE__,
+		kvm_debug("%s:%d ipnum:%d i:%d val_data_u8:0x%x\n", __func__, __LINE__,
 									ipnum, i, val_data_u8);
 
 		if (val_data_u8) {
@@ -793,7 +791,7 @@ static int kvm_set_ext_sw_coremap(struct kvm *kvm, struct kvm_ls3a_extirq_state 
 		state->ext_sw_coremap[reg_count] = state->core_map.reg_u8[reg_count];
 
 		kvm_debug("%s:%d  -- reg_count:%d vcpu %d\n",
-				__FUNCTION__, __LINE__, reg_count, state->core_map.reg_u8[reg_count]);
+				__func__, __LINE__, reg_count, state->core_map.reg_u8[reg_count]);
 	}
 
 	return 0;
@@ -807,12 +805,10 @@ static int kvm_set_ext_sw_ipisr(struct kvm *kvm, struct kvm_ls3a_extirq_state *s
 		core = state->ext_sw_coremap[irq_num];
 		ipnum = state->ext_sw_ipmap[irq_num];
 
-		if (test_bit(irq_num, (void *)state->ext_core_isr.reg_u8[core]) == false) {
+		if (test_bit(irq_num, (void *)state->ext_core_isr.reg_u8[core]) == false)
 			bitmap_clear((void *)state->ext_sw_ipisr[core][ipnum + 2], irq_num, 1);
-		} else {
+		else
 			bitmap_set((void *)state->ext_sw_ipisr[core][ipnum + 2], irq_num, 1);
-		}
-
 	}
 	return 0;
 }
@@ -875,7 +871,7 @@ void kvm_dump_ls3a_extirq_state(struct seq_file *s,
 		struct ls3a_kvm_extirq *irqchip)
 {
 	struct kvm_ls3a_extirq_state *extirq;
-	int i, j = 0;
+	int i = 0, j = 0;
 	unsigned long flags;
 
 	seq_puts(s, "LS3A ext irqchip state:\n");

@@ -252,7 +252,7 @@ static inline unsigned long readl_sw_gcsr(struct loongarch_csrs *csr, int reg)
 	return csr->csrs[reg];
 }
 
-static inline void writel_sw_gcsr(struct loongarch_csrs *csr, int reg, \
+static inline void writel_sw_gcsr(struct loongarch_csrs *csr, int reg,
 		unsigned long val)
 {
 	csr->csrs[reg] = val;
@@ -323,7 +323,7 @@ static inline bool kvm_is_ifetch_fault(struct kvm_vcpu_arch *arch)
 static inline void kvm_arch_hardware_unsetup(void) {}
 static inline void kvm_arch_sync_events(struct kvm *kvm) {}
 static inline void kvm_arch_free_memslot(struct kvm *kvm,
-					struct kvm_memory_slot *slot) {}
+		struct kvm_memory_slot *slot) {}
 static inline void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen) {}
 static inline void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu) {}
 static inline void kvm_arch_vcpu_block_finish(struct kvm_vcpu *vcpu) {}

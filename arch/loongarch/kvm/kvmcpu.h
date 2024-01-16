@@ -67,11 +67,10 @@
 #define KVM_LOONGSON_IRQ_CPU_FIQ		1
 #define KVM_LOONGSON_CPU_IP_NUM			8
 
-typedef union loongarch_instruction  larch_inst;
 typedef int (*exit_handle_fn)(struct kvm_vcpu *);
 
-int  _kvm_emu_mmio_write(struct kvm_vcpu *vcpu, larch_inst inst);
-int  _kvm_emu_mmio_read(struct kvm_vcpu *vcpu, larch_inst inst);
+int  _kvm_emu_mmio_write(struct kvm_vcpu *vcpu, union loongarch_instruction inst);
+int  _kvm_emu_mmio_read(struct kvm_vcpu *vcpu, union loongarch_instruction inst);
 int  _kvm_complete_mmio_read(struct kvm_vcpu *vcpu, struct kvm_run *run);
 int  _kvm_complete_iocsr_read(struct kvm_vcpu *vcpu, struct kvm_run *run);
 int  _kvm_emu_idle(struct kvm_vcpu *vcpu);

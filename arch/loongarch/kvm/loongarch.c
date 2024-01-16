@@ -62,18 +62,18 @@ struct kvm_stats_debugfs_item vcpu_debugfs_entries[] = {
 	VCPU_STAT("halt_wakeup", halt_wakeup),
 	VCPU_STAT("tlbmiss_ld", excep_exits[KVM_EXCCODE_TLBL]),
 	VCPU_STAT("tlbmiss_st", excep_exits[KVM_EXCCODE_TLBS]),
-       	VCPU_STAT("tlb_ifetch", excep_exits[KVM_EXCCODE_TLBI]),	
-	VCPU_STAT("tlbmod", excep_exits[KVM_EXCCODE_TLBM]),	
-	VCPU_STAT("tlbri", excep_exits[KVM_EXCCODE_TLBRI]),	
-	VCPU_STAT("tlbxi", excep_exits[KVM_EXCCODE_TLBXI]),	
+	VCPU_STAT("tlb_ifetch", excep_exits[KVM_EXCCODE_TLBI]),
+	VCPU_STAT("tlbmod", excep_exits[KVM_EXCCODE_TLBM]),
+	VCPU_STAT("tlbri", excep_exits[KVM_EXCCODE_TLBRI]),
+	VCPU_STAT("tlbxi", excep_exits[KVM_EXCCODE_TLBXI]),
 	VCPU_STAT("fp_dis", excep_exits[KVM_EXCCODE_FPDIS]),
 	VCPU_STAT("lsx_dis", excep_exits[KVM_EXCCODE_LSXDIS]),
 	VCPU_STAT("lasx_dis", excep_exits[KVM_EXCCODE_LASXDIS]),
-	VCPU_STAT("fpe", excep_exits[KVM_EXCCODE_FPE]),	
-	VCPU_STAT("watch", excep_exits[KVM_EXCCODE_WATCH]),	
-	VCPU_STAT("gspr", excep_exits[KVM_EXCCODE_GSPR]),	
-	VCPU_STAT("gcm", excep_exits[KVM_EXCCODE_GCM]),	
-	VCPU_STAT("hc", excep_exits[KVM_EXCCODE_HYP]),	
+	VCPU_STAT("fpe", excep_exits[KVM_EXCCODE_FPE]),
+	VCPU_STAT("watch", excep_exits[KVM_EXCCODE_WATCH]),
+	VCPU_STAT("gspr", excep_exits[KVM_EXCCODE_GSPR]),
+	VCPU_STAT("gcm", excep_exits[KVM_EXCCODE_GCM]),
+	VCPU_STAT("hc", excep_exits[KVM_EXCCODE_HYP]),
 	{NULL}
 };
 
@@ -539,9 +539,8 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	 * also switch excfg.VS field, keep host excfg.VS info here
 	 */
 	vcpu->arch.csr = kzalloc(sizeof(struct loongarch_csrs), GFP_KERNEL);
-	if (!vcpu->arch.csr) {
+	if (!vcpu->arch.csr)
 		return -ENOMEM;
-	}
 
 	/* Init */
 	vcpu->arch.last_sched_cpu = -1;
@@ -1114,7 +1113,7 @@ static int kvm_vm_ioctl_get_irqchip(struct kvm *kvm, struct loongarch_kvm_irqchi
 		r = kvm_get_ls7a_ioapic(kvm, (void *)chip->data);
 		break;
 	case KVM_IRQCHIP_LS3A_GIPI:
-		if (dlen != sizeof(gipiState)) {
+		if (dlen != sizeof(struct gipiState)) {
 			kvm_err("get gipi state err dlen:%d\n", dlen);
 			goto dlen_err;
 		}
@@ -1157,7 +1156,7 @@ static int kvm_vm_ioctl_set_irqchip(struct kvm *kvm, struct loongarch_kvm_irqchi
 		r = kvm_set_ls7a_ioapic(kvm, (void *)chip->data);
 		break;
 	case KVM_IRQCHIP_LS3A_GIPI:
-		if (dlen != sizeof(gipiState)) {
+		if (dlen != sizeof(struct gipiState)) {
 			kvm_err("set gipi state err dlen:%d\n", dlen);
 			goto dlen_err;
 		}
@@ -1214,7 +1213,7 @@ static int kvm_csr_io(struct kvm_vcpu *vcpu, struct kvm_msrs __user *user_msrs,
 	unsigned size;
 
 	r = -EFAULT;
-	if (copy_from_user(&msrs, user_msrs, sizeof msrs))
+	if (copy_from_user(&msrs, user_msrs, sizeof(msrs)))
 		goto out;
 
 	r = -E2BIG;
@@ -1383,7 +1382,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp, unsigned int ioctl,
 		vcpu->kvm->arch.online_vcpus = vcpu_state.online_vcpus;
 		vcpu->kvm->arch.is_migrate = vcpu_state.is_migrate;
 		for (i = 0; i < 4; i++)
-			 vcpu->arch.core_ext_ioisr[i] = vcpu_state.core_ext_ioisr[i];
+			vcpu->arch.core_ext_ioisr[i] = vcpu_state.core_ext_ioisr[i];
 
 		vcpu->arch.irq_pending = vcpu_state.irq_pending;
 		vcpu->arch.irq_clear = vcpu_state.irq_clear;
@@ -1533,7 +1532,7 @@ set_irqchip_out:
 	{
 		r = 0;
 		if (copy_to_user(argp, &kvm->arch.cpucfgs, sizeof(struct kvm_cpucfg)))
-		   r = -EFAULT;
+			r = -EFAULT;
 		break;
 	}
 	default:
@@ -1817,10 +1816,8 @@ void kvm_own_lsx(struct kvm_vcpu *vcpu)
 	 * Enable FP if enabled in guest, since we're restoring FP context
 	 * anyway.
 	 */
-	if (_kvm_guest_has_fpu(&vcpu->arch)) {
-
+	if (_kvm_guest_has_fpu(&vcpu->arch))
 		kvm_set_csr_euen(KVM_EUEN_FPEN);
-	}
 
 	/* Enable LSX for guest */
 	kvm_set_csr_euen(KVM_EUEN_LSXEN);
@@ -1867,18 +1864,15 @@ void kvm_own_lasx(struct kvm_vcpu *vcpu)
 	 * Enable FP if enabled in guest, since we're restoring FP context
 	 * anyway.
 	 */
-	if (_kvm_guest_has_lsx(&vcpu->arch)) {
-		/* Enable LSX for guest */
+	if (_kvm_guest_has_lsx(&vcpu->arch))
 		kvm_set_csr_euen(KVM_EUEN_LSXEN);
-	}
 
 	/*
 	 * Enable FPU if enabled in guest, since we're restoring FPU context
 	 * anyway. We set FR and FRE according to guest context.
 	 */
-	if (_kvm_guest_has_fpu(&vcpu->arch)) {
+	if (_kvm_guest_has_fpu(&vcpu->arch))
 		kvm_set_csr_euen(KVM_EUEN_FPEN);
-	}
 
 	/* Enable LASX for guest */
 	kvm_set_csr_euen(KVM_EUEN_LASXEN);
@@ -1940,9 +1934,9 @@ void kvm_lose_fpu(struct kvm_vcpu *vcpu)
 		disable_lsx();
 #endif
 
-		if (vcpu->arch.aux_inuse & KVM_LARCH_FPU) {
+		if (vcpu->arch.aux_inuse & KVM_LARCH_FPU)
 			kvm_clear_csr_euen(KVM_EUEN_FPEN);
-		}
+
 		vcpu->arch.aux_inuse &= ~(KVM_LARCH_FPU |
 					 KVM_LARCH_LSX | KVM_LARCH_LASX);
 	} else if (cpu_has_lsx && vcpu->arch.aux_inuse & KVM_LARCH_LSX) {
@@ -1955,9 +1949,9 @@ void kvm_lose_fpu(struct kvm_vcpu *vcpu)
 		disable_lsx();
 #endif
 
-		if (vcpu->arch.aux_inuse & KVM_LARCH_FPU) {
+		if (vcpu->arch.aux_inuse & KVM_LARCH_FPU)
 			kvm_clear_csr_euen(KVM_EUEN_FPEN);
-		}
+
 		vcpu->arch.aux_inuse &= ~(KVM_LARCH_FPU | KVM_LARCH_LSX);
 	} else if (vcpu->arch.aux_inuse & KVM_LARCH_FPU) {
 

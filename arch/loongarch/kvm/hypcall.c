@@ -10,7 +10,6 @@
 #include "intc/ls3a_ipi.h"
 #include "kvm_compat.h"
 
-
 int kvm_virt_ipi(struct kvm_vcpu *vcpu)
 {
 	int ret = 0;
@@ -62,6 +61,7 @@ static int _kvm_pv_feature(struct kvm_vcpu *vcpu)
 {
 	int feature = vcpu->arch.gprs[KVM_REG_A1];
 	int ret = KVM_RET_NOT_SUPPORTED;
+
 	switch (feature) {
 	case KVM_FEATURE_STEAL_TIME:
 		if (sched_info_on())

@@ -13,33 +13,44 @@
 #include "kvmcsr.h"
 #include "irq.h"
 
-#define CASE_READ_SW_GCSR(csr, regid, csrid)                    \
-	do {                                                    \
-		if (regid == csrid) {                           \
-			return kvm_read_sw_gcsr(csr, csrid);    \
-		}                                               \
-	} while (0)
-
 unsigned long _kvm_emu_read_csr(struct kvm_vcpu *vcpu, int csrid)
 {
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 	unsigned long val = 0;
 
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_ERRCTL);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_ERRINFO1);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_ERRINFO2);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_MERRENTRY);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_MERRERA);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_ERRSAVE);
+	switch (csrid) {
+	case KVM_CSR_ERRCTL:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_ERRCTL);
+	case KVM_CSR_ERRINFO1:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_ERRINFO1);
+	case KVM_CSR_ERRINFO2:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_ERRINFO2);
+	case KVM_CSR_MERRENTRY:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_MERRENTRY);
+	case KVM_CSR_MERRERA:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_MERRERA);
+	case KVM_CSR_ERRSAVE:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_ERRSAVE);
 	/* read sw csr when not config pmu to guest */
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCTRL0);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCTRL1);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCTRL2);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCTRL3);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR0);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR1);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR2);
-	CASE_READ_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR3);
+	case KVM_CSR_PERFCTRL0:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCTRL0);
+	case KVM_CSR_PERFCTRL1:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCTRL1);
+	case KVM_CSR_PERFCTRL2:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCTRL2);
+	case KVM_CSR_PERFCTRL3:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCTRL3);
+	case KVM_CSR_PERFCNTR0:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCNTR0);
+	case KVM_CSR_PERFCNTR1:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCNTR1);
+	case KVM_CSR_PERFCNTR2:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCNTR2);
+	case KVM_CSR_PERFCNTR3:
+		return kvm_read_sw_gcsr(csr, KVM_CSR_PERFCNTR3);
+	default:
+		break;
+	}
 
 	val = 0;
 	if (csrid < 4096)
@@ -50,37 +61,83 @@ unsigned long _kvm_emu_read_csr(struct kvm_vcpu *vcpu, int csrid)
 	return val;
 }
 
-#define CASE_WRITE_SW_GCSR(csr, regid, csrid, val)              \
-	do {                                                    \
-		if (regid == csrid) {                           \
-			kvm_write_sw_gcsr(csr, csrid, val);     \
-			return ;                                \
-		}                                               \
-	} while (0)
-
 void _kvm_emu_write_csr(struct kvm_vcpu *vcpu, int csrid,
 	unsigned long val)
 {
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_ERRCTL, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_ERRINFO1, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_ERRINFO2, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_MERRENTRY, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_MERRERA, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_ERRSAVE, val);
+	switch (csrid) {
+	case KVM_CSR_ERRCTL:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_ERRCTL, val);
+	case KVM_CSR_ERRINFO1:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_ERRINFO1, val);
+	case KVM_CSR_ERRINFO2:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_ERRINFO2, val);
+	case KVM_CSR_MERRENTRY:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_MERRENTRY, val);
+	case KVM_CSR_MERRERA:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_MERRERA, val);
+	case KVM_CSR_ERRSAVE:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_ERRSAVE, val);
+	default:
+		break;
+	}
 
 	/* give pmu register to guest when config perfctrl */
-	CASE_WRITE_HW_PMU(vcpu, csr, csrid, KVM_CSR_PERFCTRL0, val);
-	CASE_WRITE_HW_PMU(vcpu, csr, csrid, KVM_CSR_PERFCTRL1, val);
-	CASE_WRITE_HW_PMU(vcpu, csr, csrid, KVM_CSR_PERFCTRL2, val);
-	CASE_WRITE_HW_PMU(vcpu, csr, csrid, KVM_CSR_PERFCTRL3, val);
-	/* write sw pmu csr if not config ctrl */
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR0, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR1, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR2, val);
-	CASE_WRITE_SW_GCSR(csr, csrid, KVM_CSR_PERFCNTR3, val);
+	switch (csrid) {
+	case KVM_CSR_PERFCTRL0:
+		if (val & KVM_PMU_PLV_ENABLE) {
+			kvm_write_csr_gcfg(kvm_read_csr_gcfg() | KVM_GCFG_GPERF);
+			kvm_write_hw_gcsr(csr, KVM_CSR_PERFCTRL0, val | KVM_PERFCTRL_GMOD);
+			vcpu->arch.aux_inuse |= KVM_LARCH_PERF;
+		} else {
+			kvm_write_sw_gcsr(csr, KVM_CSR_PERFCTRL0, val);
+		}
+		return;
+	case KVM_CSR_PERFCTRL1:
+		if (val & KVM_PMU_PLV_ENABLE) {
+			kvm_write_csr_gcfg(kvm_read_csr_gcfg() | KVM_GCFG_GPERF);
+			kvm_write_hw_gcsr(csr, KVM_CSR_PERFCTRL1, val | KVM_PERFCTRL_GMOD);
+			vcpu->arch.aux_inuse |= KVM_LARCH_PERF;
+		} else {
+			kvm_write_sw_gcsr(csr, KVM_CSR_PERFCTRL1, val);
+		}
+		return;
+	case KVM_CSR_PERFCTRL2:
+		if (val & KVM_PMU_PLV_ENABLE) {
+			kvm_write_csr_gcfg(kvm_read_csr_gcfg() | KVM_GCFG_GPERF);
+			kvm_write_hw_gcsr(csr, KVM_CSR_PERFCTRL2, val | KVM_PERFCTRL_GMOD);
+			vcpu->arch.aux_inuse |= KVM_LARCH_PERF;
+		} else {
+			kvm_write_sw_gcsr(csr, KVM_CSR_PERFCTRL2, val);
+		}
+		return;
+	case KVM_CSR_PERFCTRL3:
+		if (val & KVM_PMU_PLV_ENABLE) {
+			kvm_write_csr_gcfg(kvm_read_csr_gcfg() | KVM_GCFG_GPERF);
+			kvm_write_hw_gcsr(csr, KVM_CSR_PERFCTRL3, val | KVM_PERFCTRL_GMOD);
+			vcpu->arch.aux_inuse |= KVM_LARCH_PERF;
+		} else {
+			kvm_write_sw_gcsr(csr, KVM_CSR_PERFCTRL3, val);
+		}
+		return;
+	default:
+		break;
+	}
 
+	/* write sw pmu csr if not config ctrl */
+	switch (csrid) {
+	case KVM_CSR_PERFCNTR0:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_PERFCNTR0, val);
+	case KVM_CSR_PERFCNTR1:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_PERFCNTR1, val);
+	case KVM_CSR_PERFCNTR2:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_PERFCNTR2, val);
+	case KVM_CSR_PERFCNTR3:
+		return kvm_write_sw_gcsr(csr, KVM_CSR_PERFCNTR3, val);
+	default:
+		break;
+	}
 
 	if (csrid < 4096)
 		kvm_write_sw_gcsr(csr, csrid, val);
@@ -89,26 +146,29 @@ void _kvm_emu_write_csr(struct kvm_vcpu *vcpu, int csrid,
 				csrid, vcpu->arch.pc);
 }
 
-#define CASE_CHANGE_SW_GCSR(csr, regid, csrid, mask, val)               \
-	do {                                                            \
-		if (regid == csrid) {                                   \
-			kvm_change_sw_gcsr(csr, csrid, mask, val);      \
-			return ;                                        \
-		}                                                       \
-	} while (0)
-
 void _kvm_emu_xchg_csr(struct kvm_vcpu *vcpu, int csrid,
 	unsigned long csr_mask, unsigned long val)
 {
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_IMPCTL1, csr_mask, val);
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_ERRCTL, csr_mask, val);
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_ERRINFO1, csr_mask, val);
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_ERRINFO2, csr_mask, val);
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_MERRENTRY, csr_mask, val);
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_MERRERA, csr_mask, val);
-	CASE_CHANGE_SW_GCSR(csr, csrid, KVM_CSR_ERRSAVE, csr_mask, val);
+	switch (csrid) {
+	case KVM_CSR_IMPCTL1:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_IMPCTL1, csr_mask, val);
+	case KVM_CSR_ERRCTL:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_ERRCTL, csr_mask, val);
+	case KVM_CSR_ERRINFO1:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_ERRINFO1, csr_mask, val);
+	case KVM_CSR_ERRINFO2:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_ERRINFO2, csr_mask, val);
+	case KVM_CSR_MERRENTRY:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_MERRENTRY, csr_mask, val);
+	case KVM_CSR_MERRERA:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_MERRERA, csr_mask, val);
+	case KVM_CSR_ERRSAVE:
+		return kvm_change_sw_gcsr(csr, KVM_CSR_ERRSAVE, csr_mask, val);
+	default:
+		break;
+	}
 
 	if (csrid < 4096) {
 		unsigned long orig;
@@ -126,73 +186,208 @@ int _kvm_getcsr(struct kvm_vcpu *vcpu, unsigned int id, u64 *v, int force)
 {
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 
-	GET_HW_GCSR(id, KVM_CSR_CRMD, v);
-	GET_HW_GCSR(id, KVM_CSR_PRMD, v);
-	GET_HW_GCSR(id, KVM_CSR_EUEN, v);
-	GET_HW_GCSR(id, KVM_CSR_MISC, v);
-	GET_HW_GCSR(id, KVM_CSR_ECFG, v);
-	GET_HW_GCSR(id, KVM_CSR_ESTAT, v);
-	GET_HW_GCSR(id, KVM_CSR_ERA, v);
-	GET_HW_GCSR(id, KVM_CSR_BADV, v);
-	GET_HW_GCSR(id, KVM_CSR_BADI, v);
-	GET_HW_GCSR(id, KVM_CSR_EENTRY, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBIDX, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBEHI, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBELO0, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBELO1, v);
-	GET_HW_GCSR(id, KVM_CSR_ASID, v);
-	GET_HW_GCSR(id, KVM_CSR_PGDL, v);
-	GET_HW_GCSR(id, KVM_CSR_PGDH, v);
-	GET_HW_GCSR(id, KVM_CSR_PWCTL0, v);
-	GET_HW_GCSR(id, KVM_CSR_PWCTL1, v);
-	GET_HW_GCSR(id, KVM_CSR_STLBPGSIZE, v);
-	GET_HW_GCSR(id, KVM_CSR_RVACFG, v);
-	GET_HW_GCSR(id, KVM_CSR_CPUID, v);
-	GET_HW_GCSR(id, KVM_CSR_PRCFG1, v);
-	GET_HW_GCSR(id, KVM_CSR_PRCFG2, v);
-	GET_HW_GCSR(id, KVM_CSR_PRCFG3, v);
-	GET_HW_GCSR(id, KVM_CSR_KS0, v);
-	GET_HW_GCSR(id, KVM_CSR_KS1, v);
-	GET_HW_GCSR(id, KVM_CSR_KS2, v);
-	GET_HW_GCSR(id, KVM_CSR_KS3, v);
-	GET_HW_GCSR(id, KVM_CSR_KS4, v);
-	GET_HW_GCSR(id, KVM_CSR_KS5, v);
-	GET_HW_GCSR(id, KVM_CSR_KS6, v);
-	GET_HW_GCSR(id, KVM_CSR_KS7, v);
-	GET_HW_GCSR(id, KVM_CSR_TMID, v);
-	GET_HW_GCSR(id, KVM_CSR_TCFG, v);
-	GET_HW_GCSR(id, KVM_CSR_TVAL, v);
-	GET_HW_GCSR(id, KVM_CSR_CNTC, v);
-	GET_HW_GCSR(id, KVM_CSR_LLBCTL, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRENTRY, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRBADV, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRERA, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRSAVE, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRELO0, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRELO1, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBREHI, v);
-	GET_HW_GCSR(id, KVM_CSR_TLBRPRMD, v);
-	GET_HW_GCSR(id, KVM_CSR_DMWIN0, v);
-	GET_HW_GCSR(id, KVM_CSR_DMWIN1, v);
-	GET_HW_GCSR(id, KVM_CSR_DMWIN2, v);
-	GET_HW_GCSR(id, KVM_CSR_DMWIN3, v);
-	GET_HW_GCSR(id, KVM_CSR_MWPS, v);
-	GET_HW_GCSR(id, KVM_CSR_FWPS, v);
+	switch (id) {
+	case KVM_CSR_CRMD:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_CRMD);
+		return 0;
+	case KVM_CSR_PRMD:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PRMD);
+		return 0;
+	case KVM_CSR_EUEN:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_EUEN);
+		return 0;
+	case KVM_CSR_MISC:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_MISC);
+		return 0;
+	case KVM_CSR_ECFG:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_ECFG);
+		return 0;
+	case KVM_CSR_ESTAT:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_ESTAT);
+		return 0;
+	case KVM_CSR_ERA:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_ERA);
+		return 0;
+	case KVM_CSR_BADV:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_BADV);
+		return 0;
+	case KVM_CSR_BADI:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_BADI);
+		return 0;
+	case KVM_CSR_EENTRY:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_EENTRY);
+		return 0;
+	case KVM_CSR_TLBIDX:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBIDX);
+		return 0;
+	case KVM_CSR_TLBEHI:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBEHI);
+		return 0;
+	case KVM_CSR_TLBELO0:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBELO0);
+		return 0;
+	case KVM_CSR_TLBELO1:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBELO1);
+		return 0;
+	case KVM_CSR_ASID:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_ASID);
+		return 0;
+	case KVM_CSR_PGDL:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PGDL);
+		return 0;
+	case KVM_CSR_PGDH:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PGDH);
+		return 0;
+	case KVM_CSR_PWCTL0:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PWCTL0);
+		return 0;
+	case KVM_CSR_PWCTL1:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PWCTL1);
+		return 0;
+	case KVM_CSR_STLBPGSIZE:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_STLBPGSIZE);
+		return 0;
+	case KVM_CSR_RVACFG:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_RVACFG);
+		return 0;
+	case KVM_CSR_CPUID:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_CPUID);
+		return 0;
+	case KVM_CSR_PRCFG1:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PRCFG1);
+		return 0;
+	case KVM_CSR_PRCFG2:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PRCFG2);
+		return 0;
+	case KVM_CSR_PRCFG3:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_PRCFG3);
+		return 0;
+	case KVM_CSR_KS0:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS0);
+		return 0;
+	case KVM_CSR_KS1:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS1);
+		return 0;
+	case KVM_CSR_KS2:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS2);
+		return 0;
+	case KVM_CSR_KS3:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS3);
+		return 0;
+	case KVM_CSR_KS4:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS4);
+		return 0;
+	case KVM_CSR_KS5:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS5);
+		return 0;
+	case KVM_CSR_KS6:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS6);
+		return 0;
+	case KVM_CSR_KS7:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_KS7);
+		return 0;
+	case KVM_CSR_TMID:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TMID);
+		return 0;
+	case KVM_CSR_TCFG:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TCFG);
+		return 0;
+	case KVM_CSR_TVAL:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TVAL);
+		return 0;
+	case KVM_CSR_CNTC:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_CNTC);
+		return 0;
+	case KVM_CSR_LLBCTL:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_LLBCTL);
+		return 0;
+	case KVM_CSR_TLBRENTRY:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRENTRY);
+		return 0;
+	case KVM_CSR_TLBRBADV:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRBADV);
+		return 0;
+	case KVM_CSR_TLBRERA:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRERA);
+		return 0;
+	case KVM_CSR_TLBRSAVE:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRSAVE);
+		return 0;
+	case KVM_CSR_TLBRELO0:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRELO0);
+		return 0;
+	case KVM_CSR_TLBRELO1:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRELO1);
+		return 0;
+	case KVM_CSR_TLBREHI:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBREHI);
+		return 0;
+	case KVM_CSR_TLBRPRMD:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_TLBRPRMD);
+		return 0;
+	case KVM_CSR_DMWIN0:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_DMWIN0);
+		return 0;
+	case KVM_CSR_DMWIN1:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_DMWIN1);
+		return 0;
+	case KVM_CSR_DMWIN2:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_DMWIN2);
+		return 0;
+	case KVM_CSR_DMWIN3:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_DMWIN3);
+		return 0;
+	case KVM_CSR_MWPS:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_MWPS);
+		return 0;
+	case KVM_CSR_FWPS:
+		*v = (long)kvm_read_hw_gcsr(KVM_CSR_FWPS);
+		return 0;
+	default:
+		break;
+	}
 
-	GET_SW_GCSR(csr, id, KVM_CSR_IMPCTL1, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_IMPCTL2, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_ERRCTL, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_ERRINFO1, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_ERRINFO2, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_MERRENTRY, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_MERRERA, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_ERRSAVE, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_CTAG, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_DEBUG, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_DERA, v);
-	GET_SW_GCSR(csr, id, KVM_CSR_DESAVE, v);
-
-	GET_SW_GCSR(csr, id, KVM_CSR_TINTCLR, v);
+	switch (id) {
+	case KVM_CSR_IMPCTL1:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_IMPCTL1);
+		return 0;
+	case KVM_CSR_IMPCTL2:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_IMPCTL2);
+		return 0;
+	case KVM_CSR_ERRCTL:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_ERRCTL);
+		return 0;
+	case KVM_CSR_ERRINFO1:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_ERRINFO1);
+		return 0;
+	case KVM_CSR_ERRINFO2:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_ERRINFO2);
+		return 0;
+	case KVM_CSR_MERRENTRY:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_MERRENTRY);
+		return 0;
+	case KVM_CSR_MERRERA:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_MERRERA);
+		return 0;
+	case KVM_CSR_ERRSAVE:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_ERRSAVE);
+		return 0;
+	case KVM_CSR_CTAG:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_CTAG);
+		return 0;
+	case KVM_CSR_DEBUG:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_DEBUG);
+		return 0;
+	case KVM_CSR_DERA:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_DERA);
+		return 0;
+	case KVM_CSR_DESAVE:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_DESAVE);
+		return 0;
+	case KVM_CSR_TINTCLR:
+		*v = kvm_read_sw_gcsr(csr, KVM_CSR_TINTCLR);
+		return 0;
+	}
 
 	if (force && (id < CSR_ALL_SIZE)) {
 		*v = kvm_read_sw_gcsr(csr, id);
@@ -207,73 +402,222 @@ int _kvm_setcsr(struct kvm_vcpu *vcpu, unsigned int id, u64 *v, int force)
 	struct loongarch_csrs *csr = vcpu->arch.csr;
 	int ret;
 
-	SET_HW_GCSR(csr, id, KVM_CSR_CRMD, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_PRMD, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_EUEN, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_MISC, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_ECFG, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_ERA, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_BADV, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_BADI, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_EENTRY, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBIDX, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBEHI, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBELO0, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBELO1, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_ASID, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_PGDL, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_PGDH, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_PWCTL0, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_PWCTL1, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_STLBPGSIZE, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_RVACFG, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_CPUID, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS0, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS1, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS2, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS3, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS4, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS5, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS6, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_KS7, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TMID, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TCFG, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TVAL, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_CNTC, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_LLBCTL, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRENTRY, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRBADV, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRERA, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRSAVE, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRELO0, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRELO1, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBREHI, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_TLBRPRMD, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_DMWIN0, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_DMWIN1, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_DMWIN2, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_DMWIN3, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_MWPS, v);
-	SET_HW_GCSR(csr, id, KVM_CSR_FWPS, v);
+	switch (id) {
+	case KVM_CSR_CRMD:
+		kvm_write_hw_gcsr(csr, KVM_CSR_CRMD, *v);
+		return 0;
+	case KVM_CSR_PRMD:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PRMD, *v);
+		return 0;
+	case KVM_CSR_EUEN:
+		kvm_write_hw_gcsr(csr, KVM_CSR_EUEN, *v);
+		return 0;
+	case KVM_CSR_MISC:
+		kvm_write_hw_gcsr(csr, KVM_CSR_MISC, *v);
+		return 0;
+	case KVM_CSR_ECFG:
+		kvm_write_hw_gcsr(csr, KVM_CSR_ECFG, *v);
+		return 0;
+	case KVM_CSR_ESTAT:
+		kvm_write_hw_gcsr(csr, KVM_CSR_ESTAT, *v);
+		return 0;
+	case KVM_CSR_ERA:
+		kvm_write_hw_gcsr(csr, KVM_CSR_ERA, *v);
+		return 0;
+	case KVM_CSR_BADV:
+		kvm_write_hw_gcsr(csr, KVM_CSR_BADV, *v);
+		return 0;
+	case KVM_CSR_BADI:
+		kvm_write_hw_gcsr(csr, KVM_CSR_BADI, *v);
+		return 0;
+	case KVM_CSR_EENTRY:
+		kvm_write_hw_gcsr(csr, KVM_CSR_EENTRY, *v);
+		return 0;
+	case KVM_CSR_TLBIDX:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBIDX, *v);
+		return 0k;
+	case KVM_CSR_TLBEHI:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBEHI, *v);
+		return 0;
+	case KVM_CSR_TLBELO0:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBELO0, *v);
+		return 0;
+	case KVM_CSR_TLBELO1:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBELO1, *v);
+		return 0;
+	case KVM_CSR_ASID:
+		kvm_write_hw_gcsr(csr, KVM_CSR_ASID, *v);
+		return 0;
+	case KVM_CSR_PGDL:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PGDL, *v);
+		return 0;
+	case KVM_CSR_PGDH:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PGDH, *v);
+		return 0;
+	case KVM_CSR_PWCTL0:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PWCTL0, *v);
+		return 0;
+	case KVM_CSR_PWCTL1:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PWCTL1, *v);
+		return 0;
+	case KVM_CSR_STLBPGSIZE:
+		kvm_write_hw_gcsr(csr, KVM_CSR_STLBPGSIZE, *v);
+		return 0;
+	case KVM_CSR_RVACFG:
+		kvm_write_hw_gcsr(csr, KVM_CSR_RVACFG, *v);
+		return 0;
+	case KVM_CSR_CPUID:
+		kvm_write_hw_gcsr(csr, KVM_CSR_CPUID, *v);
+		return 0;
+	case KVM_CSR_PRCFG1:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PRCFG1, *v);
+		return 0;
+	case KVM_CSR_PRCFG2:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PRCFG2, *v);
+		return 0;
+	case KVM_CSR_PRCFG3:
+		kvm_write_hw_gcsr(csr, KVM_CSR_PRCFG3, *v);
+		return 0;
+	case KVM_CSR_KS0:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS0, *v);
+		return 0;
+	case KVM_CSR_KS1:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS1, *v);
+		return 0;
+	case KVM_CSR_KS2:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS2, *v);
+		return 0;
+	case KVM_CSR_KS3:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS3, *v);
+		return 0;
+	case KVM_CSR_KS4:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS4, *v);
+		return 0;
+	case KVM_CSR_KS5:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS5, *v);
+		return 0;
+	case KVM_CSR_KS6:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS6, *v);
+		return 0;
+	case KVM_CSR_KS7:
+		kvm_write_hw_gcsr(csr, KVM_CSR_KS7, *v);
+		return 0;
+	case KVM_CSR_TMID:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TMID, *v);
+		return 0;
+	case KVM_CSR_TCFG:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TCFG, *v);
+		return 0;
+	case KVM_CSR_TVAL:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TVAL, *v);
+		return 0;
+	case KVM_CSR_CNTC:
+		kvm_write_hw_gcsr(csr, KVM_CSR_CNTC, *v);
+		return 0;
+	case KVM_CSR_LLBCTL:
+		kvm_write_hw_gcsr(csr, KVM_CSR_LLBCTL, *v);
+		return 0;
+	case KVM_CSR_TLBRENTRY:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRENTRY, *v);
+		return 0;
+	case KVM_CSR_TLBRBADV:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRBADV, *v);
+		return 0;
+	case KVM_CSR_TLBRERA:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRERA, *v);
+		return 0;
+	case KVM_CSR_TLBRSAVE:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRSAVE, *v);
+		return 0;
+	case KVM_CSR_TLBRELO0:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRELO0, *v);
+		return 0;
+	case KVM_CSR_TLBRELO1:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRELO1, *v);
+		return 0;
+	case KVM_CSR_TLBREHI:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBREHI, *v);
+		return 0;
+	case KVM_CSR_TLBRPRMD:
+		kvm_write_hw_gcsr(csr, KVM_CSR_TLBRPRMD, *v);
+		return 0;
+	case KVM_CSR_DMWIN0:
+		kvm_write_hw_gcsr(csr, KVM_CSR_DMWIN0, *v);
+		return 0;
+	case KVM_CSR_DMWIN1:
+		kvm_write_hw_gcsr(csr, KVM_CSR_DMWIN1, *v);
+		return 0;
+	case KVM_CSR_DMWIN2:
+		kvm_write_hw_gcsr(csr, KVM_CSR_DMWIN2, *v);
+		return 0;
+	case KVM_CSR_DMWIN3:
+		kvm_write_hw_gcsr(csr, KVM_CSR_DMWIN3, *v);
+		return 0;
+	case KVM_CSR_MWPS:
+		kvm_write_hw_gcsr(csr, KVM_CSR_MWPS, *v);
+		return 0;
+	case KVM_CSR_FWPS:
+		kvm_write_hw_gcsr(csr, KVM_CSR_FWPS, *v);
+		return 0;
+	default:
+		break;
+	}
 
-	SET_SW_GCSR(csr, id, KVM_CSR_IMPCTL1, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_IMPCTL2, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_ERRCTL, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_ERRINFO1, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_ERRINFO2, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_MERRENTRY, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_MERRERA, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_ERRSAVE, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_CTAG, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_DEBUG, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_DERA, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_DESAVE, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_PRCFG1, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_PRCFG2, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_PRCFG3, v);
-
-	SET_SW_GCSR(csr, id, KVM_CSR_PGD, v);
-	SET_SW_GCSR(csr, id, KVM_CSR_TINTCLR, v);
+	switch (id) {
+	case KVM_CSR_IMPCTL1:
+		kvm_write_sw_gcsr(csr, KVM_CSR_IMPCTL1, *v);
+		return 0;
+	case KVM_CSR_IMPCTL2:
+		kvm_write_sw_gcsr(csr, KVM_CSR_IMPCTL2, *v);
+		return 0;
+	case KVM_CSR_ERRCTL:
+		kvm_write_sw_gcsr(csr, KVM_CSR_ERRCTL, *v);
+		return 0;
+	case KVM_CSR_ERRINFO1:
+		kvm_write_sw_gcsr(csr, KVM_CSR_ERRINFO1, *v);
+		return 0;
+	case KVM_CSR_ERRINFO2:
+		kvm_write_sw_gcsr(csr, KVM_CSR_ERRINFO2, *v);
+		return 0;
+	case KVM_CSR_MERRENTRY:
+		kvm_write_sw_gcsr(csr, KVM_CSR_MERRENTRY, *v);
+		return 0;
+	case KVM_CSR_MERRERA:
+		kvm_write_sw_gcsr(csr, KVM_CSR_MERRERA, *v);
+		return 0;
+	case KVM_CSR_ERRSAVE:
+		kvm_write_sw_gcsr(csr, KVM_CSR_ERRSAVE, *v);
+		return 0;
+	case KVM_CSR_CTAG:
+		kvm_write_sw_gcsr(csr, KVM_CSR_CTAG, *v);
+		return 0;
+	case KVM_CSR_DEBUG:
+		kvm_write_sw_gcsr(csr, KVM_CSR_DEBUG, *v);
+		return 0;
+	case KVM_CSR_DERA:
+		kvm_write_sw_gcsr(csr, KVM_CSR_DERA, *v);
+		return 0;
+	case KVM_CSR_DESAVE:
+		kvm_write_sw_gcsr(csr, KVM_CSR_DESAVE, *v);
+		return 0;
+	case KVM_CSR_PRCFG1:
+		kvm_write_sw_gcsr(csr, KVM_CSR_PRCFG1, *v);
+		return 0;
+	case KVM_CSR_PRCFG2:
+		kvm_write_sw_gcsr(csr, KVM_CSR_PRCFG2, *v);
+		return 0;
+	case KVM_CSR_PRCFG3:
+		kvm_write_sw_gcsr(csr, KVM_CSR_PRCFG3, *v);
+		return 0;
+	case KVM_CSR_PGD:
+		kvm_write_sw_gcsr(csr, KVM_CSR_PGD, *v);
+		return 0;
+	case KVM_CSR_TINTCLR:
+		kvm_write_sw_gcsr(csr, KVM_CSR_TINTCLR, *v);
+		return 0;
+	default:
+		break;
+	}
 
 	ret = -1;
 	switch (id) {
@@ -296,8 +640,8 @@ int _kvm_setcsr(struct kvm_vcpu *vcpu, unsigned int id, u64 *v, int force)
 
 struct kvm_iocsr {
 	u32 start, end;
-	int (*get) (struct kvm_run *run, struct kvm_vcpu *vcpu, u32 addr, u64 *res);
-	int (*set) (struct kvm_run *run, struct kvm_vcpu *vcpu, u32 addr, u64 val);
+	int (*get)(struct kvm_run *run, struct kvm_vcpu *vcpu, u32 addr, u64 *res);
+	int (*set)(struct kvm_run *run, struct kvm_vcpu *vcpu, u32 addr, u64 val);
 };
 
 static struct kvm_iocsr_entry *_kvm_find_iocsr(struct kvm *kvm, u32 addr)
@@ -409,11 +753,10 @@ static int kvm_extioi_set(struct kvm_run *run, struct kvm_vcpu *vcpu, u32 addr,
 {
 	int ret;
 
-	if ((addr & 0x1f00) == KVM_IOCSR_EXTIOI_ISR_BASE) {
+	if ((addr & 0x1f00) == KVM_IOCSR_EXTIOI_ISR_BASE)
 		run->mmio.phys_addr =  EXTIOI_PERCORE_ADDR(vcpu->vcpu_id, (addr & 0xff));
-	} else {
+	else
 		run->mmio.phys_addr = EXTIOI_ADDR((addr & 0x1fff));
-	}
 
 	ret = kvm_io_bus_write(vcpu, KVM_MMIO_BUS, run->mmio.phys_addr,
 			run->mmio.len, &val);
@@ -520,7 +863,7 @@ static int _kvm_emu_iocsr_write(struct kvm_run *run, struct kvm_vcpu *vcpu,
 }
 
 /* all iocsr operation should in kvm, no mmio */
-int _kvm_emu_iocsr(larch_inst inst,
+int _kvm_emu_iocsr(union loongarch_instruction inst,
 		struct kvm_run *run, struct kvm_vcpu *vcpu)
 {
 	u32 rd, rj, opcode;
@@ -579,9 +922,8 @@ int _kvm_emu_iocsr(larch_inst inst,
 		break;
 	}
 
-	if (ret == EMULATE_DO_IOCSR) {
+	if (ret == EMULATE_DO_IOCSR)
 		vcpu->arch.io_gpr = rd;
-	}
 
 	return ret;
 }
