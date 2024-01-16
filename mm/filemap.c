@@ -2520,6 +2520,15 @@ ssize_t generic_file_buffered_read(struct kiocb *iocb,
 
 		end_offset = min_t(loff_t, isize, iocb->ki_pos + iter->count);
 
+		/*
+		 * Pairs with a barrier in
+		 * block_write_end()->mark_buffer_dirty() or other page
+		 * dirtying routines like iomap_write_end() to ensure
+		 * changes to page contents are visible before we see
+		 * increased inode size.
+		 */
+		smp_rmb();
+
 		while ((iocb->ki_pos >> PAGE_SHIFT) + pg_nr >
 		       (end_offset + PAGE_SIZE - 1) >> PAGE_SHIFT)
 			put_page(pages[--pg_nr]);
