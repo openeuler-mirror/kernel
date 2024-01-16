@@ -14451,6 +14451,11 @@ F:	drivers/regulator/mpq7920.c
 F:	drivers/regulator/mpq7920.h
 F:	include/linux/mfd/mp2629.h
 
+Mont-TSSE(TM) DRIVER
+M:	Zhongfei Cai<carrie.cai@montage-tech.com>
+S:	Maintained
+F:	drivers/crypto/montage
+
 MOST(R) TECHNOLOGY DRIVER
 M:	Parthiban Veerasooran <parthiban.veerasooran@microchip.com>
 M:	Christian Gromm <christian.gromm@microchip.com>
