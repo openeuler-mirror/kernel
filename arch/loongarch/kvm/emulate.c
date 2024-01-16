@@ -24,20 +24,9 @@ int _kvm_emu_idle(struct kvm_vcpu *vcpu)
 {
 	++vcpu->stat.idle_exits;
 	trace_kvm_exit(vcpu, KVM_TRACE_EXIT_IDLE);
-	if (!vcpu->arch.irq_pending) {
-		kvm_save_timer(vcpu);
-		kvm_vcpu_block(vcpu);
 
-		/*
-		 * We we are runnable, then definitely go off to user space to
-		 * check if any I/O interrupts are pending.
-		 */
-		if (kvm_check_request(KVM_REQ_UNHALT, vcpu)) {
-			kvm_clear_request(KVM_REQ_UNHALT, vcpu);
-			vcpu->run->exit_reason = KVM_EXIT_IRQ_WINDOW_OPEN;
-		}
-	}
-
+	kvm_vcpu_block(vcpu);
+	kvm_clear_request(KVM_REQ_UNHALT, vcpu);
 	return EMULATE_DONE;
 }
 
