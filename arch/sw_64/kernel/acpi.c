@@ -209,21 +209,24 @@ acpi_numa_processor_affinity_init(struct acpi_srat_cpu_affinity *pa)
 	}
 
 	if (pa->apic_id >= CONFIG_NR_CPUS) {
-		pr_err("SRAT: PXM %u -> CPU 0x%02x -> Node %u skipped apicid that is too big\n", pxm, pa->apic_id, node);
+		pr_err("SRAT: PXM %u -> CPU 0x%02x -> Node %u skipped apicid that is too big\n",
+				pxm, pa->apic_id, node);
 		return;
 	}
 
 	/* Record the mapping from logical core id to node id */
 	cpu = rcid_to_cpu(pa->apic_id);
 	if (cpu < 0) {
-		pr_err("SRAT: Can not find the logical id for physical Core 0x%02x\n", pa->apic_id);
+		pr_err("SRAT: Can not find the logical id for physical Core 0x%02x\n",
+				pa->apic_id);
 		return;
 	}
 
 	early_map_cpu_to_node(cpu, node);
 
 	node_set(node, numa_nodes_parsed);
-	pr_info("SRAT: PXM %u -> CPU 0x%02x -> Node %u\n", pxm, pa->apic_id, node);
+	pr_info("SRAT: PXM %u -> CPU 0x%02x -> Node %u\n",
+			pxm, pa->apic_id, node);
 }
 
 #ifdef CONFIG_MEMORY_HOTPLUG
