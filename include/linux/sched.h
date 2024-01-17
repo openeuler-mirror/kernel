@@ -2491,6 +2491,13 @@ struct sched_migrate_ctx {
 	int sd_flag;
 	int new_cpu;
 };
+
+struct sched_migrate_node {
+	int src_cpu;
+	int src_node;
+	int dst_cpu;
+	int dst_node;
+};
 #endif
 
 #ifdef CONFIG_SCHED_CORE
