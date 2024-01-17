@@ -28,6 +28,10 @@
 #include <linux/cpumask.h>
 #include <net/xdp.h>
 
+#ifdef CONFIG_BPF_SCHED
+#include <linux/bpf_sched.h>
+#endif
+
 #include "disasm.h"
 
 static const struct bpf_verifier_ops * const bpf_verifier_ops[] = {
@@ -19453,6 +19457,9 @@ int bpf_check_attach_target(struct bpf_verifier_log *log,
 	case BPF_LSM_CGROUP:
 	case BPF_TRACE_FENTRY:
 	case BPF_TRACE_FEXIT:
+#ifdef CONFIG_BPF_SCHED
+	case BPF_SCHED:
+#endif
 		if (!btf_type_is_func(t)) {
 			bpf_log(log, "attach_btf_id %u is not a function\n",
 				btf_id);
@@ -19627,10 +19634,18 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 	if (prog->type == BPF_PROG_TYPE_STRUCT_OPS)
 		return check_struct_ops_btf_id(env);
 
+#ifdef CONFIG_BPF_SCHED
+	if (prog->type != BPF_PROG_TYPE_TRACING &&
+	    prog->type != BPF_PROG_TYPE_LSM &&
+	    prog->type != BPF_PROG_TYPE_EXT &&
+		prog->type != BPF_PROG_TYPE_SCHED)
+		return 0;
+#else
 	if (prog->type != BPF_PROG_TYPE_TRACING &&
 	    prog->type != BPF_PROG_TYPE_LSM &&
 	    prog->type != BPF_PROG_TYPE_EXT)
 		return 0;
+#endif
 
 	ret = bpf_check_attach_target(&env->log, prog, tgt_prog, btf_id, &tgt_info);
 	if (ret)
@@ -19672,6 +19687,14 @@ static int check_attach_btf_id(struct bpf_verifier_env *env)
 		   btf_id_set_contains(&btf_id_deny, btf_id)) {
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_BPF_SCHED
+	if (prog->type == BPF_PROG_TYPE_SCHED) {
+		ret = bpf_sched_verify_prog(&env->log, prog);
+		if (ret < 0)
+			return ret;
+	}
+#endif
 
 	key = bpf_trampoline_compute_key(tgt_prog, prog->aux->attach_btf, btf_id);
 	tr = bpf_trampoline_get(key, &tgt_info);
