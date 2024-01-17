@@ -2479,6 +2479,18 @@ static inline void rseq_syscall(struct pt_regs *regs)
 
 #ifdef CONFIG_BPF_SCHED
 extern void sched_settag(struct task_struct *tsk, s64 tag);
+
+struct sched_migrate_ctx {
+	struct task_struct *task;
+	struct cpumask *select_idle_mask;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+	int want_affine;
+	int wake_flags;
+	int sd_flag;
+	int new_cpu;
+};
 #endif
 
 #ifdef CONFIG_SCHED_CORE

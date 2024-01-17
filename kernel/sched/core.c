@@ -2469,7 +2469,11 @@ static inline bool rq_has_pinned_tasks(struct rq *rq)
  * Per-CPU kthreads are allowed to run on !active && online CPUs, see
  * __set_cpus_allowed_ptr() and select_fallback_rq().
  */
+#ifdef CONFIG_BPF_SCHED
+inline bool is_cpu_allowed(struct task_struct *p, int cpu)
+#else
 static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
+#endif
 {
 	/* When not in the task's cpumask, no point in looking further. */
 	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
@@ -9956,6 +9960,10 @@ LIST_HEAD(task_groups);
 static struct kmem_cache *task_group_cache __read_mostly;
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+DECLARE_PER_CPU(cpumask_var_t, select_idle_mask);
+#endif
+
 void __init sched_init(void)
 {
 	unsigned long ptr = 0;
@@ -10010,6 +10018,13 @@ void __init sched_init(void)
 	init_rt_bandwidth(&root_task_group.rt_bandwidth,
 			global_rt_period(), global_rt_runtime());
 #endif /* CONFIG_RT_GROUP_SCHED */
+
+#if defined(CONFIG_CPUMASK_OFFSTACK) && defined(CONFIG_BPF_SCHED)
+	for_each_possible_cpu(i) {
+		per_cpu(select_idle_mask, i) = (cpumask_var_t)kzalloc_node(
+			cpumask_size(), GFP_KERNEL, cpu_to_node(i));
+	}
+#endif
 
 #ifdef CONFIG_CGROUP_SCHED
 	task_group_cache = KMEM_CACHE(task_group, 0);
