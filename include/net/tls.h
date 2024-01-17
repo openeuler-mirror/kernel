@@ -48,6 +48,7 @@
 #include <net/strparser.h>
 #include <crypto/aead.h>
 #include <uapi/linux/tls.h>
+#include <linux/kabi.h>
 
 struct tls_rec;
 
@@ -146,6 +147,10 @@ struct tls_record_info {
 	u32 end_seq;
 	int len;
 	int num_frags;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+
 	skb_frag_t frags[MAX_SKB_FRAGS];
 };
 
@@ -195,6 +200,11 @@ enum tls_context_flags {
 struct cipher_context {
 	char *iv;
 	char *rec_seq;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 union tls_crypto_context {
@@ -265,6 +275,11 @@ struct tls_context {
 	struct list_head list;
 	refcount_t refcount;
 	struct rcu_head rcu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 enum tls_offload_ctx_dir {
