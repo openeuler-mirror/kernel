@@ -387,6 +387,7 @@ struct auto_affinity {
 	int			period_active;
 	struct affinity_domain	ad;
 	struct task_group	*tg;
+	struct list_head	af_list;
 };
 #endif
 
