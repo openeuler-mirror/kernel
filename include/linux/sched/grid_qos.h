@@ -112,6 +112,7 @@ int sched_grid_zone_update(bool is_locked);
 int sched_grid_zone_add_af(struct auto_affinity *af);
 int sched_grid_zone_del_af(struct auto_affinity *af);
 struct cpumask *sched_grid_zone_cpumask(enum sg_zone_type zone);
+struct cpumask *sched_grid_prefer_cpus(struct task_struct *p);
 #else
 static inline int __init sched_grid_zone_init(void) { return 0; }
 

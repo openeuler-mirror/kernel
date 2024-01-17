@@ -91,9 +91,6 @@ EXPORT_SYMBOL_GPL(sysctl_long_vals);
 #if defined(CONFIG_SYSCTL)
 
 /* Constants used for minimum and maximum */
-#ifdef CONFIG_QOS_SCHED_SMART_GRID
-static int hundred_thousand = 100000;
-#endif
 
 #ifdef CONFIG_PERF_EVENTS
 static const int six_hundred_forty_kb = 640 * 1024;
@@ -2046,17 +2043,6 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE,
 		.extra2		= SYSCTL_INT_MAX,
-	},
-#endif
-#ifdef CONFIG_QOS_SCHED_SMART_GRID
-	{
-		.procname	= "affinity_adjust_delay_ms",
-		.data		= &sysctl_affinity_adjust_delay_ms,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler   = proc_dointvec_minmax,
-		.extra1         = SYSCTL_ZERO,
-		.extra2		= &hundred_thousand,
 	},
 #endif
 	{ }

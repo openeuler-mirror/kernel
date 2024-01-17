@@ -209,6 +209,11 @@ static unsigned int sysctl_numa_balancing_promote_rate_limit = 65536;
 int sysctl_sched_util_low_pct = 85;
 #endif
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+extern unsigned int sysctl_smart_grid_strategy_ctrl;
+static int sysctl_affinity_adjust_delay_ms = 5000;
+#endif
+
 #ifdef CONFIG_SYSCTL
 static struct ctl_table sched_fair_sysctls[] = {
 	{
@@ -287,6 +292,26 @@ static struct ctl_table sched_fair_sysctls[] = {
 		.maxlen		= 5*sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	{
+		.procname	= "smart_grid_strategy_ctrl",
+		.data		= &sysctl_smart_grid_strategy_ctrl,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "affinity_adjust_delay_ms",
+		.data		= &sysctl_affinity_adjust_delay_ms,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2		= &hundred_thousand,
 	},
 #endif
 	{}
@@ -6789,8 +6814,6 @@ static int sched_idle_cpu(int cpu);
 static unsigned long cpu_runnable(struct rq *rq);
 static inline bool prefer_cpus_valid(struct task_struct *p);
 
-int sysctl_affinity_adjust_delay_ms = 5000;
-
 struct static_key __smart_grid_used;
 
 static void smart_grid_usage_inc(void)
@@ -6805,16 +6828,13 @@ static void smart_grid_usage_dec(void)
 
 static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
 {
-	struct affinity_domain *ad;
-
 	if (!smart_grid_used())
 		return p->prefer_cpus;
 
 	if (task_group(p)->auto_affinity->mode == 0)
 		return (void *)p->cpus_ptr;
 
-	ad = &task_group(p)->auto_affinity->ad;
-	return ad->domains[ad->curr_level];
+	return sched_grid_prefer_cpus(p);
 }
 
 static inline int dynamic_affinity_mode(struct task_struct *p)
