@@ -17,6 +17,15 @@ enum sched_grid_qos_class {
 	SCHED_GRID_QOS_CLASS_LEVEL_NR
 };
 
+/*
+ * SCHED_GRID_QOS_TASK_LEVEL was defined different QoS level.
+ * The lower number has the higher priority. (E.g. 0 was the highest)
+ * The enum sched_grid_qos_class defined the max level, the lowest level.
+ */
+#define SCHED_GRID_QOS_TASK_LEVEL_HIGHEST SCHED_GRID_QOS_CLASS_LEVEL_1
+#define SCHED_GRID_QOS_TASK_LEVEL_MAX	(SCHED_GRID_QOS_CLASS_LEVEL_NR)
+#define SCHED_GRID_QOS_TASK_LEVEL_DEFAULT (SCHED_GRID_QOS_CLASS_LEVEL_NR - 1)
+
 enum {
 	SCHED_GRID_QOS_IPS_INDEX = 0,
 	SCHED_GRID_QOS_MEMBOUND_RATIO_INDEX = 1,
@@ -50,7 +59,7 @@ struct sched_grid_qos_sample {
 
 struct sched_grid_qos_stat {
 	enum sched_grid_qos_class class_lvl;
-	int (*set_class_lvl)(struct sched_grid_qos_stat *qos_stat);
+	int (*set_class_lvl)(struct sched_grid_qos_stat *qos_stat, int level);
 	struct sched_grid_qos_sample sample[SCHED_GRID_QOS_SAMPLE_NR];
 };
 
