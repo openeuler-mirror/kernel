@@ -79,6 +79,7 @@
 #include <linux/sched/mm.h>
 #include <linux/sched/numa_balancing.h>
 #include <linux/sched/task.h>
+#include <linux/sched/grid_qos.h>
 #include <linux/nodemask.h>
 #include <linux/cpuset.h>
 #include <linux/slab.h>
@@ -2200,9 +2201,13 @@ struct folio *vma_alloc_folio(gfp_t gfp, int order, struct vm_area_struct *vma,
 
 	if (pol->mode == MPOL_INTERLEAVE) {
 		struct page *page;
-		unsigned nid;
+		int nid = NUMA_NO_NODE;
 
-		nid = interleave_nid(pol, vma, addr, PAGE_SHIFT + order);
+		if (smart_grid_used())
+			nid = sched_grid_preferred_interleave_nid(pol);
+		if (nid == NUMA_NO_NODE)
+			nid = interleave_nid(pol, vma, addr, PAGE_SHIFT + order);
+
 		mpol_cond_put(pol);
 		gfp |= __GFP_COMP;
 		page = alloc_page_interleave(gfp, order, nid);
@@ -2267,6 +2272,8 @@ struct folio *vma_alloc_folio(gfp_t gfp, int order, struct vm_area_struct *vma,
 
 	nmask = policy_nodemask(gfp, pol);
 	preferred_nid = policy_node(gfp, pol, node);
+	if (smart_grid_used())
+		preferred_nid = sched_grid_preferred_nid(preferred_nid, nmask);
 	folio = __folio_alloc(gfp, order, preferred_nid, nmask);
 	mpol_cond_put(pol);
 out:

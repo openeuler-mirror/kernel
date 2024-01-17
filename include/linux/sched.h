@@ -1559,6 +1559,11 @@ struct task_struct {
 #ifdef CONFIG_PSI_FINE_GRAINED
 	int memstall_type;
 #endif
+
+#if defined(CONFIG_QOS_SCHED_SMART_GRID) && !defined(__GENKSYMS__)
+		struct sched_grid_qos *grid_qos;
+#endif
+
 	/*
 	 * New fields for task_struct should be added above here, so that
 	 * they are included in the randomized portion of task_struct.

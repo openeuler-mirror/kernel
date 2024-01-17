@@ -99,6 +99,9 @@
 #include <linux/stackprotector.h>
 #include <linux/user_events.h>
 #include <linux/iommu.h>
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+#include <linux/sched/grid_qos.h>
+#endif
 #include <linux/share_pool.h>
 
 #include <asm/pgalloc.h>
@@ -628,6 +631,9 @@ void free_task(struct task_struct *tsk)
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	if (dynamic_affinity_enabled())
 		sched_prefer_cpus_free(tsk);
+#endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	sched_grid_qos_free(tsk);
 #endif
 	free_task_struct(tsk);
 }
@@ -2388,6 +2394,12 @@ __latent_entropy struct task_struct *copy_process(
 			goto bad_fork_cleanup_count;
 	}
 	current->flags &= ~PF_NPROC_EXCEEDED;
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	retval = sched_grid_qos_fork(p, current);
+	if (retval)
+		goto bad_fork_cleanup_count;
+#endif
 
 	/*
 	 * If multiple threads are within copy_process(), then this check
