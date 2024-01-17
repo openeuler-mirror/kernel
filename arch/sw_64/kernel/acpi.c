@@ -170,10 +170,9 @@ static int rcid_to_cpu(int physical_id)
 {
 	int i;
 
-	for (i = 0; i < NR_CPUS; ++i) {
+	for (i = 0; i < ARRAY_SIZE(__cpu_to_rcid); ++i)
 		if (__cpu_to_rcid[i] == physical_id)
 			return i;
-	}
 
 	/* physical id not found */
 	return -1;
@@ -298,9 +297,9 @@ EXPORT_SYMBOL(acpi_unmap_cpu);
 
 static bool __init is_rcid_duplicate(int rcid)
 {
-	unsigned int i;
+	int i;
 
-	for (i = 0; (i < possible_cores) && (i < NR_CPUS); i++) {
+	for_each_possible_cpu(i) {
 		if (cpu_to_rcid(i) == rcid)
 			return true;
 	}
@@ -406,11 +405,11 @@ static int __init acpi_parse_sw_cintc(union acpi_subtable_headers *header,
 
 static int __init acpi_process_madt_sw_cintc(void)
 {
-	int logical_core, ret;
+	int i, ret;
 
 	/* Clean the map from logical core ID to physical core ID */
-	for (logical_core = 0; logical_core < NR_CPUS; ++logical_core)
-		set_rcid_map(logical_core, -1);
+	for (i = 0; i < ARRAY_SIZE(__cpu_to_rcid); ++i)
+		set_rcid_map(i, -1);
 
 	/* Clean core mask */
 	init_cpu_possible(cpu_none_mask);
