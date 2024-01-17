@@ -4542,6 +4542,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->migration_pending = NULL;
 #endif
 	init_sched_mm_cid(p);
+#ifdef CONFIG_BPF_SCHED
+	p->tag		= 0;
+#endif
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);

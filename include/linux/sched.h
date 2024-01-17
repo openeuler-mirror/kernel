@@ -1547,6 +1547,10 @@ struct task_struct {
 	struct user_event_mm		*user_event_mm;
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+	long tag;
+#endif
+
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	cpumask_t			*prefer_cpus;
 	const cpumask_t			*select_cpus;
