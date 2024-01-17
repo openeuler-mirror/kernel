@@ -2840,6 +2840,10 @@ static DEFINE_MUTEX(sg_zone_lock);
 
 void cpufreq_smart_grid_start_sync(void)
 {
+	/* No need sync when smart grid disabled */
+	if (!smart_grid_enabled())
+		return;
+
 	if (likely(sg_zone.is_init))
 		irq_work_queue(&sg_zone.irq_work);
 }
@@ -3037,6 +3041,10 @@ define_one_global_rw(smart_grid_governor_enable);
 static int create_smart_grid_sysfs_file(void)
 {
 	int ret;
+
+	/* No need init when smart grid disabled */
+	if (!smart_grid_enabled())
+		return 0;
 
 	ret = sysfs_create_file(cpufreq_global_kobject, &smart_grid_governor.attr);
 	if (ret)

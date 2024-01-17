@@ -633,7 +633,8 @@ void free_task(struct task_struct *tsk)
 		sched_prefer_cpus_free(tsk);
 #endif
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
-	sched_grid_qos_free(tsk);
+	if (smart_grid_enabled())
+		sched_grid_qos_free(tsk);
 #endif
 	free_task_struct(tsk);
 }
@@ -2396,9 +2397,11 @@ __latent_entropy struct task_struct *copy_process(
 	current->flags &= ~PF_NPROC_EXCEEDED;
 
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
-	retval = sched_grid_qos_fork(p, current);
-	if (retval)
-		goto bad_fork_cleanup_count;
+	if (smart_grid_enabled()) {
+		retval = sched_grid_qos_fork(p, current);
+		if (retval)
+			goto bad_fork_cleanup_count;
+	}
 #endif
 
 	/*

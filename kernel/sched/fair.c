@@ -6804,6 +6804,16 @@ static inline void sched_fair_update_stop_tick(struct rq *rq, struct task_struct
 #endif
 
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
+
+DEFINE_STATIC_KEY_FALSE(__smart_grid_switch);
+
+static int __init smart_grid_switch_setup(char *__unused)
+{
+	static_branch_enable(&__smart_grid_switch);
+	return 1;
+}
+__setup("smart_grid", smart_grid_switch_setup);
+
 #define AUTO_AFFINITY_DEFAULT_PERIOD_MS 2000
 #define IS_DOMAIN_SET(level, mask)	((1 << (level)) & (mask))
 
@@ -6960,8 +6970,8 @@ void tg_update_affinity_domains(int cpu, int online)
 {
 	int cpu_state[2];
 
-	/* No need update when dynamic affinity disabled */
-	if (!dynamic_affinity_enabled())
+	/* No need update when smart gird disabled */
+	if (!smart_grid_enabled())
 		return;
 
 	cpu_state[0] = cpu;
@@ -7193,8 +7203,8 @@ int init_auto_affinity(struct task_group *tg)
 	struct auto_affinity *auto_affi;
 	int ret;
 
-	/* No need init auto affinity when dynamic affinity disabled */
-	if (!dynamic_affinity_enabled())
+	/* No need init auto affinity when smart grid disabled */
+	if (!smart_grid_enabled())
 		return 0;
 
 	auto_affi = kzalloc(sizeof(*auto_affi), GFP_KERNEL);
@@ -7230,7 +7240,7 @@ static void destroy_auto_affinity(struct task_group *tg)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
 
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return;
 
 	if (unlikely(!auto_affi))

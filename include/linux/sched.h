@@ -2545,8 +2545,22 @@ static inline bool dynamic_affinity_enabled(void)
 
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 extern struct static_key __smart_grid_used;
+extern struct static_key_false __smart_grid_switch;
+
+static inline bool smart_grid_enabled(void)
+{
+	/* smart grid need dynamic affinity enabled first */
+	if (!static_branch_unlikely(&__dynamic_affinity_switch))
+		return false;
+
+	return static_branch_unlikely(&__smart_grid_switch);
+}
+
 static inline bool smart_grid_used(void)
 {
+	if (!smart_grid_enabled())
+		return false;
+
 	return static_key_false(&__smart_grid_used);
 }
 #else

@@ -3323,6 +3323,9 @@ static int smart_grid_level_show(struct seq_file *m, void *v)
 	struct inode *inode = m->private;
 	struct task_struct *p;
 
+	if (!smart_grid_enabled())
+		return -EPERM;
+
 	p = get_proc_task(inode);
 	if (!p)
 		return -ESRCH;
@@ -3349,6 +3352,9 @@ static ssize_t smart_grid_level_write(struct file *file, const char __user *buf,
 	const size_t maxlen = sizeof(buffer) - 1;
 	unsigned int level = SCHED_GRID_QOS_TASK_LEVEL_MAX;
 	int ret = 0;
+
+	if (!smart_grid_enabled())
+		return -EPERM;
 
 	memset(buffer, 0, sizeof(buffer));
 	if (copy_from_user(buffer, buf, count > maxlen ? maxlen : count))

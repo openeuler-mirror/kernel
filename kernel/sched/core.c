@@ -11397,7 +11397,7 @@ static u64 cpu_affinity_mode_read_u64(struct cgroup_subsys_state *css,
 {
 	struct task_group *tg = css_tg(css);
 
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	if (unlikely(!tg->auto_affinity))
@@ -11409,7 +11409,7 @@ static u64 cpu_affinity_mode_read_u64(struct cgroup_subsys_state *css,
 static int cpu_affinity_mode_write_u64(struct cgroup_subsys_state *css,
 				   struct cftype *cftype, u64 mode)
 {
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	return tg_set_dynamic_affinity_mode(css_tg(css), mode);
@@ -11440,7 +11440,7 @@ u64 tg_get_affinity_period(struct task_group *tg)
 static int cpu_affinity_period_write_uint(struct cgroup_subsys_state *css,
 					  struct cftype *cftype, u64 period)
 {
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	return tg_set_affinity_period(css_tg(css), period);
@@ -11449,7 +11449,7 @@ static int cpu_affinity_period_write_uint(struct cgroup_subsys_state *css,
 static u64 cpu_affinity_period_read_uint(struct cgroup_subsys_state *css,
 					 struct cftype *cft)
 {
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	return tg_get_affinity_period(css_tg(css));
@@ -11463,7 +11463,7 @@ static int cpu_affinity_domain_mask_write_u64(struct cgroup_subsys_state *css,
 	struct affinity_domain *ad;
 	u16 full;
 
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	if (unlikely(!tg->auto_affinity))
@@ -11485,7 +11485,7 @@ static u64 cpu_affinity_domain_mask_read_u64(struct cgroup_subsys_state *css,
 {
 	struct task_group *tg = css_tg(css);
 
-	if (!dynamic_affinity_enabled())
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	if (unlikely(!tg->auto_affinity))
@@ -11501,8 +11501,8 @@ static int cpu_affinity_stat_show(struct seq_file *sf, void *v)
 	struct affinity_domain *ad;
 	int i;
 
-	/* No stat when dynamic affinity disabled */
-	if (!dynamic_affinity_enabled())
+	/* No stat when smart grid disabled */
+	if (!smart_grid_enabled())
 		return -EPERM;
 
 	if (unlikely(!auto_affi))
