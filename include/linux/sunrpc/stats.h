@@ -11,6 +11,7 @@
 #define _LINUX_SUNRPC_STATS_H
 
 #include <linux/proc_fs.h>
+#include <linux/kabi.h>
 
 struct rpc_stat {
 	const struct rpc_program *program;
@@ -24,6 +25,9 @@ struct rpc_stat {
 				rpcretrans,
 				rpcauthrefresh,
 				rpcgarbage;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct svc_stat {
@@ -37,6 +41,9 @@ struct svc_stat {
 				rpcbadfmt,
 				rpcbadauth,
 				rpcbadclnt;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct net;
