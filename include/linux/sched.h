@@ -2537,4 +2537,17 @@ static inline bool dynamic_affinity_enabled(void)
 	return static_branch_unlikely(&__dynamic_affinity_switch);
 }
 #endif
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+extern struct static_key __smart_grid_used;
+static inline bool smart_grid_used(void)
+{
+	return static_key_false(&__smart_grid_used);
+}
+#else
+static inline bool smart_grid_used(void)
+{
+	return false;
+}
+#endif
 #endif
