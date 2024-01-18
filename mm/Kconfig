@@ -1374,6 +1374,17 @@ config DYNAMIC_POOL
 	  A per-memcg pagepool. The task in the memcg will prefer to alloc
 	  pages from corresponding pool.
 
+config ETMEM_SCAN
+	tristate "module: etmem page scan for etmem support"
+	depends on ETMEM
+	help
+	  etmem scan is a critical part of the etmem feature.
+	  A kernel module, etmem_scan.ko periodically scans the appointed vma
+	  segments of the target process, perform page table walk accordingly,
+	  check and clear the access bit of each page before finally reporting
+	  scan results back to user space.
+	  etmem scan also supports virtual machine.
+
 config ETMEM
 	bool "Enable etmem feature"
 	depends on MMU
