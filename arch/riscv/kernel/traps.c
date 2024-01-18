@@ -20,6 +20,9 @@
 #include <linux/irq.h>
 #include <linux/kexec.h>
 #include <linux/entry-common.h>
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+#include <linux/livepatch.h>
+#endif
 
 #include <asm/asm-prototypes.h>
 #include <asm/bug.h>
@@ -263,6 +266,22 @@ static bool probe_breakpoint_handler(struct pt_regs *regs)
 	return user ? uprobe_breakpoint_handler(regs) : kprobe_breakpoint_handler(regs);
 }
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+static bool klp_breakpoint_handler(struct pt_regs *regs)
+{
+	void *brk_func = NULL;
+	unsigned long addr = instruction_pointer(regs);
+
+	brk_func = klp_get_brk_func((void *)addr);
+	if (!brk_func) /* not a livepatch breakpoint */
+		return false;
+
+	instruction_pointer_set(regs, (unsigned long)brk_func);
+	return true;
+}
+NOKPROBE_SYMBOL(klp_breakpoint_handler);
+#endif
+
 void handle_break(struct pt_regs *regs)
 {
 	if (probe_single_step_handler(regs))
@@ -278,6 +297,10 @@ void handle_break(struct pt_regs *regs)
 #ifdef CONFIG_KGDB
 	else if (notify_die(DIE_TRAP, "EBREAK", regs, 0, regs->cause, SIGTRAP)
 								== NOTIFY_STOP)
+		return;
+#endif
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	else if (klp_breakpoint_handler(regs))
 		return;
 #endif
 	else if (report_bug(regs->epc, regs) == BUG_TRAP_TYPE_WARN ||
