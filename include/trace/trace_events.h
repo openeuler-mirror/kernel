@@ -252,6 +252,7 @@ static struct trace_event_fields trace_event_fields_##call[] = {	\
 #include "stages/stage5_get_offsets.h"
 
 #undef DECLARE_EVENT_CLASS
+#if defined(CONFIG_OPTIMIZE_INLINING)
 #define DECLARE_EVENT_CLASS(call, proto, args, tstruct, assign, print)	\
 static inline notrace int trace_event_get_offsets_##call(		\
 	struct trace_event_data_offsets_##call *__data_offsets, proto)	\
@@ -264,6 +265,20 @@ static inline notrace int trace_event_get_offsets_##call(		\
 									\
 	return __data_size;						\
 }
+#else
+#define DECLARE_EVENT_CLASS(call, proto, args, tstruct, assign, print)	\
+static notrace int trace_event_get_offsets_##call(			\
+	struct trace_event_data_offsets_##call *__data_offsets, proto)	\
+{									\
+	int __data_size = 0;						\
+	int __maybe_unused __item_length;				\
+	struct trace_event_raw_##call __maybe_unused *entry;		\
+									\
+	tstruct;							\
+									\
+	return __data_size;						\
+}
+#endif
 
 #include TRACE_INCLUDE(TRACE_INCLUDE_FILE)
 
