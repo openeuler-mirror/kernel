@@ -4219,7 +4219,7 @@ void memcg_print_bad_task(struct oom_control *oc)
 	if (memcg_oom_prio_disabled())
 		return;
 
-	if (oc->chosen) {
+	if (oc->chosen && oc->chosen != (void *)-1UL) {
 		struct mem_cgroup *memcg;
 
 		rcu_read_lock();
