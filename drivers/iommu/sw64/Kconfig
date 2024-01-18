@@ -4,6 +4,7 @@ config SUNWAY_IOMMU
 	bool "Sunway IOMMU Support"
 	select IOMMU_API
 	select IOMMU_IOVA
+	select IOMMU_DMA
 	depends on SW64 && PCI && SUBARCH_C3B
 	help
 	  Support for IOMMU on SW64 platform. It can enable or bypass specific device by
