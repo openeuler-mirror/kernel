@@ -308,6 +308,10 @@ extern unsigned int kobjsize(const void *objp);
 # define VM_SOFTDIRTY	0
 #endif
 
+#ifdef CONFIG_ETMEM
+#define VM_SWAPFLAG     0x400000000000000 /* memory swap out flag in vma */
+#endif
+
 #define VM_MIXEDMAP	0x10000000	/* Can contain "struct page" and pure PFN pages */
 #define VM_HUGEPAGE	0x20000000	/* MADV_HUGEPAGE marked this vma */
 #define VM_NOHUGEPAGE	0x40000000	/* MADV_NOHUGEPAGE marked this vma */

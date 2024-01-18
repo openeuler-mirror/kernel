@@ -79,6 +79,10 @@
 
 #define MADV_COLLAPSE	25		/* Synchronous hugepage collapse */
 
+#define MADV_ETMEM_BASE		0x1100
+#define MADV_SWAPFLAG		MADV_ETMEM_BASE /* for memory to be swap out */
+#define MADV_SWAPFLAG_REMOVE	(MADV_SWAPFLAG + 1)
+
 /* compatibility flags */
 #define MAP_FILE	0
 
