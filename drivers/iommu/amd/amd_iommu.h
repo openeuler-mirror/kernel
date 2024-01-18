@@ -90,10 +90,6 @@ static inline int amd_iommu_create_irq_domain(struct amd_iommu *iommu)
 }
 #endif
 
-#define PPR_SUCCESS			0x0
-#define PPR_INVALID			0x1
-#define PPR_FAILURE			0xf
-
 static inline bool is_rd890_iommu(struct pci_dev *pdev)
 {
 	return (pdev->vendor == PCI_VENDOR_ID_ATI) &&
