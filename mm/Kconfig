@@ -1374,6 +1374,18 @@ config DYNAMIC_POOL
 	  A per-memcg pagepool. The task in the memcg will prefer to alloc
 	  pages from corresponding pool.
 
+config ETMEM
+	bool "Enable etmem feature"
+	depends on MMU
+	depends on X86 || ARM64
+	default n
+	help
+	  etmem is a tiered memory extension technology that uses DRAM and memory
+	  compression/high-performance storage media to form tiered memory storage.
+	  Memory data is tiered, and cold data is migrated from memory media to
+	  high-performance storage media to release memory space and reduce
+	  memory costs.
+
 source "mm/damon/Kconfig"
 
 endmenu
