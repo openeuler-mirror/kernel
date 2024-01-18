@@ -22,6 +22,19 @@ static inline struct kvm *mm_kvm(struct mm_struct *mm)
 }
 #endif
 
+extern int add_page_for_swap(struct page *page, struct list_head *pagelist);
+extern struct page *get_page_from_vaddr(struct mm_struct *mm,
+					unsigned long vaddr);
+#else /* !CONFIG_ETMEM */
+static inline int add_page_for_swap(struct page *page, struct list_head *pagelist)
+{
+	return 0;
+}
 
+static inline struct page *get_page_from_vaddr(struct mm_struct *mm,
+					unsigned long vaddr)
+{
+	return NULL;
+}
 #endif /* #ifdef CONFIG_ETMEM */
 #endif /* define __MM_ETMEM_H_ */

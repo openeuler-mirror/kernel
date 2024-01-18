@@ -1385,6 +1385,16 @@ config ETMEM_SCAN
 	  scan results back to user space.
 	  etmem scan also supports virtual machine.
 
+config ETMEM_SWAP
+	tristate "module: etmem page swap for etmem support"
+	depends on ETMEM
+	help
+	  etmem swap is a critical component of the etmem feature.
+	  When using etmem slide engine, etmem_swap.ko will add appointed pages
+	  (ideally all of which are all rarely used, "cold" pages) to swapcache
+	  proactively, which will later be reclaimed and added to swap space,
+	  making room for more frequently used, "hot" pages.
+
 config ETMEM
 	bool "Enable etmem feature"
 	depends on MMU
