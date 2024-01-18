@@ -9,6 +9,37 @@
 #include <linux/etmem.h>
 #include "internal.h"
 
+static bool enable_kernel_swap __read_mostly = true;
+
+bool kernel_swap_enabled(void)
+{
+	return READ_ONCE(enable_kernel_swap);
+}
+
+static ssize_t kernel_swap_enable_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%s\n", enable_kernel_swap ? "true" : "false");
+}
+
+static ssize_t kernel_swap_enable_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	if (!strncmp(buf, "true", 4) || !strncmp(buf, "1", 1))
+		WRITE_ONCE(enable_kernel_swap, true);
+	else if (!strncmp(buf, "false", 5) || !strncmp(buf, "0", 1))
+		WRITE_ONCE(enable_kernel_swap, false);
+	else
+		return -EINVAL;
+
+	return count;
+}
+
+struct kobj_attribute kernel_swap_enable_attr =
+	__ATTR(kernel_swap_enable, 0644, kernel_swap_enable_show,
+		kernel_swap_enable_store);
+
 int add_page_for_swap(struct page *page, struct list_head *pagelist)
 {
 	int err = -EBUSY;

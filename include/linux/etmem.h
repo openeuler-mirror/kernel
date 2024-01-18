@@ -25,6 +25,8 @@ static inline struct kvm *mm_kvm(struct mm_struct *mm)
 extern int add_page_for_swap(struct page *page, struct list_head *pagelist);
 extern struct page *get_page_from_vaddr(struct mm_struct *mm,
 					unsigned long vaddr);
+extern struct kobj_attribute kernel_swap_enable_attr;
+extern bool kernel_swap_enabled(void);
 #else /* !CONFIG_ETMEM */
 static inline int add_page_for_swap(struct page *page, struct list_head *pagelist)
 {
@@ -35,6 +37,11 @@ static inline struct page *get_page_from_vaddr(struct mm_struct *mm,
 					unsigned long vaddr)
 {
 	return NULL;
+}
+
+static inline bool kernel_swap_enabled(void)
+{
+	return true;
 }
 #endif /* #ifdef CONFIG_ETMEM */
 #endif /* define __MM_ETMEM_H_ */
