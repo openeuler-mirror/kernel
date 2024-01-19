@@ -419,6 +419,9 @@ struct task_group {
 	struct uclamp_se	uclamp[UCLAMP_CNT];
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+	long tag;
+#endif
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -453,6 +456,9 @@ static inline int walk_tg_tree(tg_visitor down, tg_visitor up, void *data)
 }
 
 extern int tg_nop(struct task_group *tg, void *data);
+#ifdef CONFIG_BPF_SCHED
+extern int tg_change_tag(struct task_group *tg, void *data);
+#endif
 
 extern void free_fair_sched_group(struct task_group *tg);
 extern int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent);
@@ -3614,5 +3620,9 @@ static inline void init_sched_mm_cid(struct task_struct *t) { }
 
 extern u64 avg_vruntime(struct cfs_rq *cfs_rq);
 extern int entity_eligible(struct cfs_rq *cfs_rq, struct sched_entity *se);
+
+#ifdef CONFIG_BPF_SCHED
+inline bool is_cpu_allowed(struct task_struct *p, int cpu);
+#endif
 
 #endif /* _KERNEL_SCHED_SCHED_H */

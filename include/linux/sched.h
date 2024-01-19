@@ -1547,6 +1547,10 @@ struct task_struct {
 	struct user_event_mm		*user_event_mm;
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+	long tag;
+#endif
+
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	cpumask_t			*prefer_cpus;
 	const cpumask_t			*select_cpus;
@@ -2471,7 +2475,29 @@ void rseq_syscall(struct pt_regs *regs);
 static inline void rseq_syscall(struct pt_regs *regs)
 {
 }
+#endif
 
+#ifdef CONFIG_BPF_SCHED
+extern void sched_settag(struct task_struct *tsk, s64 tag);
+
+struct sched_migrate_ctx {
+	struct task_struct *task;
+	struct cpumask *select_idle_mask;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+	int want_affine;
+	int wake_flags;
+	int sd_flag;
+	int new_cpu;
+};
+
+struct sched_migrate_node {
+	int src_cpu;
+	int src_node;
+	int dst_cpu;
+	int dst_node;
+};
 #endif
 
 #ifdef CONFIG_SCHED_CORE

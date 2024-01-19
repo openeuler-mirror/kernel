@@ -5982,6 +5982,9 @@ bool btf_ctx_access(int off, int size, enum bpf_access_type type,
 				return true;
 			t = btf_type_by_id(btf, t->type);
 			break;
+#ifdef CONFIG_BPF_SCHED
+		case BPF_SCHED:
+#endif
 		case BPF_MODIFY_RETURN:
 			/* For now the BPF_MODIFY_RETURN can only be attached to
 			 * functions that return an int.
