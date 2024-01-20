@@ -2469,11 +2469,7 @@ static inline bool rq_has_pinned_tasks(struct rq *rq)
  * Per-CPU kthreads are allowed to run on !active && online CPUs, see
  * __set_cpus_allowed_ptr() and select_fallback_rq().
  */
-#ifdef CONFIG_BPF_SCHED
-inline bool is_cpu_allowed(struct task_struct *p, int cpu)
-#else
 static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
-#endif
 {
 	/* When not in the task's cpumask, no point in looking further. */
 	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
@@ -2498,6 +2494,13 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
 	/* But are allowed during online. */
 	return cpu_online(cpu);
 }
+
+#ifdef CONFIG_BPF_SCHED
+bool bpf_sched_is_cpu_allowed(struct task_struct *p, int cpu)
+{
+	return is_cpu_allowed(p, cpu);
+}
+#endif
 
 /*
  * This is how migration works:
