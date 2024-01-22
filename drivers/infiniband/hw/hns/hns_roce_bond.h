@@ -14,6 +14,9 @@
 
 #define BOND_ID(id) BIT(id)
 
+#define BOND_ERR_LOG(fmt, ...)				\
+	pr_err("HNS RoCE Bonding: " fmt, ##__VA_ARGS__)	\
+
 enum {
 	BOND_MODE_1,
 	BOND_MODE_2_4,
@@ -68,6 +71,7 @@ struct hns_roce_bond_group {
 	struct mutex bond_mutex;
 	struct hns_roce_func_info bond_func_info[ROCE_BOND_FUNC_MAX];
 	struct delayed_work bond_work;
+	struct completion bond_work_done;
 };
 
 struct hns_roce_die_info {
@@ -81,6 +85,7 @@ int hns_roce_bond_event(struct notifier_block *self,
 int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp);
 bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev);
 struct net_device *hns_roce_get_bond_netdev(struct hns_roce_dev *hr_dev);
-struct hns_roce_bond_group *hns_roce_get_bond_grp(struct hns_roce_dev *hr_dev);
+struct hns_roce_bond_group *hns_roce_get_bond_grp(struct net_device *net_dev,
+						  u8 bus_num);
 
 #endif
