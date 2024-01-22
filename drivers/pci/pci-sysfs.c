@@ -483,12 +483,17 @@ static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
 	unsigned long val;
+	struct pci_dev *pdev = to_pci_dev(dev);
 
 	if (kstrtoul(buf, 0, &val) < 0)
 		return -EINVAL;
 
-	if (val && device_remove_file_self(dev, attr))
-		pci_stop_and_remove_bus_device_locked(to_pci_dev(dev));
+	if (val) {
+		pci_dev_get(pdev);
+		if (device_remove_file_self(dev, attr))
+			pci_stop_and_remove_bus_device_locked(pdev);
+		pci_dev_put(pdev);
+	}
 	return count;
 }
 static DEVICE_ATTR_IGNORE_LOCKDEP(remove, 0220, NULL,
