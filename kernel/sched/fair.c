@@ -8523,7 +8523,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		ctx.select_idle_mask = this_cpu_cpumask_var_ptr(select_idle_mask);
 
 		ret = bpf_sched_cfs_select_rq(&ctx);
-		if (ret >= 0 && is_cpu_allowed(p, ret)) {
+		if (ret >= 0 && bpf_sched_is_cpu_allowed(p, ret)) {
 			rcu_read_unlock();
 			return ret;
 		}

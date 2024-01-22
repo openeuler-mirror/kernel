@@ -3622,7 +3622,7 @@ extern u64 avg_vruntime(struct cfs_rq *cfs_rq);
 extern int entity_eligible(struct cfs_rq *cfs_rq, struct sched_entity *se);
 
 #ifdef CONFIG_BPF_SCHED
-inline bool is_cpu_allowed(struct task_struct *p, int cpu);
+bool bpf_sched_is_cpu_allowed(struct task_struct *p, int cpu);
 #endif
 
 #endif /* _KERNEL_SCHED_SCHED_H */
