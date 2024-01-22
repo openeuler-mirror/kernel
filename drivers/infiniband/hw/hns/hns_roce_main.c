@@ -32,7 +32,6 @@
  */
 #include <linux/acpi.h>
 #include <linux/module.h>
-#include <linux/pci.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
@@ -58,7 +57,7 @@ static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
 	rcu_read_lock();
 
 	if (!ndev)
-		ndev = hr_dev->iboe.netdevs[port_num - 1];
+		ndev = get_hr_netdev(hr_dev, port_num - 1);
 
 	if (ndev)
 		dev_hold(ndev);
@@ -201,14 +200,14 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 
 static int hns_roce_setup_mtu_mac(struct hns_roce_dev *hr_dev)
 {
+	struct net_device *net_dev;
 	int ret;
 	u8 i;
 
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
 		hr_dev->iboe.port_state[i] = IB_PORT_DOWN;
-
-		ret = hns_roce_set_mac(hr_dev, i,
-				       hr_dev->iboe.netdevs[i]->dev_addr);
+		net_dev = get_hr_netdev(hr_dev, i);
+		ret = hns_roce_set_mac(hr_dev, i, net_dev->dev_addr);
 		if (ret)
 			return ret;
 	}
@@ -310,7 +309,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u32 port_num,
 
 	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
 	if (!net_dev)
-		net_dev = hr_dev->iboe.netdevs[port];
+		net_dev = get_hr_netdev(hr_dev, port);
 	if (!net_dev) {
 		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 		dev_err(dev, "find netdev %u failed!\n", port);
@@ -777,11 +776,12 @@ static const struct ib_device_ops hns_roce_dev_restrack_ops = {
 
 static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 {
-	int ret;
 	struct hns_roce_ib_iboe *iboe = NULL;
-	struct ib_device *ib_dev = NULL;
 	struct device *dev = hr_dev->dev;
+	struct ib_device *ib_dev = NULL;
+	struct net_device *net_dev;
 	unsigned int i;
+	int ret;
 
 	iboe = &hr_dev->iboe;
 	spin_lock_init(&iboe->lock);
@@ -820,11 +820,11 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ib_set_device_ops(ib_dev, &hns_roce_dev_ops);
 	ib_set_device_ops(ib_dev, &hns_roce_dev_restrack_ops);
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
-		if (!hr_dev->iboe.netdevs[i])
+		net_dev = get_hr_netdev(hr_dev, i);
+		if (!net_dev)
 			continue;
 
-		ret = ib_device_set_netdev(ib_dev, hr_dev->iboe.netdevs[i],
-					   i + 1);
+		ret = ib_device_set_netdev(ib_dev, net_dev, i + 1);
 		if (ret)
 			return ret;
 	}
