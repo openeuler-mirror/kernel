@@ -1692,6 +1692,9 @@ int pci_save_state(struct pci_dev *dev)
 		pci_dbg(dev, "save config %#04x: %#010x\n",
 			i * 4, dev->saved_config_space[i]);
 	}
+	if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE)
+		dev->saved_config_space[PCI_BRIDGE_CONTROL / 4] &=
+			~(PCI_BRIDGE_CTL_BUS_RESET << 16);
 	dev->state_saved = true;
 
 	i = pci_save_pcie_state(dev);
