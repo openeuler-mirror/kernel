@@ -260,6 +260,19 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 	return 0;
 }
 
+static enum ib_port_state get_upper_port_state(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_bond_group *bond_grp;
+	struct net_device *upper;
+
+	bond_grp = hns_roce_get_bond_grp(hr_dev);
+	upper = bond_grp ? bond_grp->upper_dev : NULL;
+	if (upper)
+		return get_port_state(upper);
+
+	return IB_PORT_ACTIVE;
+}
+
 static int hns_roce_query_port(struct ib_device *ib_dev, u32 port_num,
 			       struct ib_port_attr *props)
 {
@@ -304,6 +317,11 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u32 port_num,
 	props->phys_state = props->state == IB_PORT_ACTIVE ?
 				    IB_PORT_PHYS_STATE_LINK_UP :
 				    IB_PORT_PHYS_STATE_DISABLED;
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND &&
+	    props->state == IB_PORT_ACTIVE)
+		props->state = get_upper_port_state(hr_dev);
+
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
