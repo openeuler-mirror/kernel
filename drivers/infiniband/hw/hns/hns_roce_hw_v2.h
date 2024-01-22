@@ -1586,8 +1586,8 @@ struct hns_roce_bond_info {
 struct hns_roce_dev
 	*hns_roce_bond_init_client(struct hns_roce_bond_group *bond_grp,
 				   int func_idx);
-void hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
-				 int func_idx);
+int hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
+				int func_idx);
 int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata);
 int hns_roce_cmd_bond(struct hns_roce_bond_group *bond_grp,
 		      enum hns_roce_bond_cmd_type bond_type);

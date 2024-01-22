@@ -211,8 +211,11 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 
 	for (i = ROCE_BOND_FUNC_MAX - 1; i >= 0; i--) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
-		if (net_dev)
-			hns_roce_bond_uninit_client(bond_grp, i);
+		if (net_dev) {
+			ret = hns_roce_bond_uninit_client(bond_grp, i);
+			if (ret)
+				goto set_err;
+		}
 	}
 
 	bond_grp->bond_state = HNS_ROCE_BOND_REGISTERING;
@@ -234,15 +237,19 @@ static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
 
 	ret = bond_grp->main_hr_dev ?
 	      hns_roce_cmd_bond(bond_grp, HNS_ROCE_SET_BOND) : -EIO;
+	if (ret)
+		goto set_err;
 
 	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	complete(&bond_grp->bond_work_done);
+	ibdev_info(&bond_grp->main_hr_dev->ib_dev, "RoCE set bond finished!\n");
 
-	if (ret)
-		BOND_ERR_LOG("failed to set RoCE bond, ret = %d.\n", ret);
-	else
-		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
-			   "RoCE set bond finished!\n");
+	return;
+
+set_err:
+	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+	BOND_ERR_LOG("failed to set RoCE bond, ret = %d.\n", ret);
+	hns_roce_cleanup_bond(bond_grp);
 }
 
 static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
@@ -258,7 +265,11 @@ static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
 	bond_grp->main_hr_dev = NULL;
 
-	hns_roce_bond_uninit_client(bond_grp, main_func_idx);
+	ret = hns_roce_bond_uninit_client(bond_grp, main_func_idx);
+	if (ret) {
+		BOND_ERR_LOG("failed to uninit bond, ret = %d.\n", ret);
+		return;
+	}
 
 	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
@@ -303,8 +314,15 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 	int ret;
 
 	while (inc_slave_map > 0) {
-		if (inc_slave_map & 1)
-			hns_roce_bond_uninit_client(bond_grp, inc_func_idx);
+		if (inc_slave_map & 1) {
+			ret = hns_roce_bond_uninit_client(bond_grp, inc_func_idx);
+			if (ret) {
+				BOND_ERR_LOG("failed to uninit slave %u, ret = %d.\n",
+					     inc_func_idx, ret);
+				bond_grp->bond_func_info[inc_func_idx].net_dev = NULL;
+				bond_grp->slave_map &= ~(1U << inc_func_idx);
+			}
+		}
 		inc_slave_map >>= 1;
 		inc_func_idx++;
 	}
@@ -325,36 +343,66 @@ static void hns_roce_slave_inc(struct hns_roce_bond_group *bond_grp)
 			   "RoCE slave increase finished!\n");
 }
 
-static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
+static int switch_main_dev(struct hns_roce_bond_group *bond_grp,
+			   u32 *dec_slave_map, u8 main_func_idx)
 {
-	u8 main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
-	u32 dec_slave_map = bond_grp->slave_map_diff;
 	struct hns_roce_dev *hr_dev;
 	struct net_device *net_dev;
-	u8 dec_func_idx = 0;
 	int ret;
 	int i;
 
-	if (dec_slave_map & (1 << main_func_idx)) {
-		bond_grp->main_hr_dev = NULL;
-		hns_roce_bond_uninit_client(bond_grp, main_func_idx);
-		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
-			net_dev = bond_grp->bond_func_info[i].net_dev;
-			if (!(dec_slave_map & (1 << i)) && net_dev) {
-				bond_grp->bond_state = HNS_ROCE_BOND_REGISTERING;
-				hr_dev = hns_roce_bond_init_client(bond_grp, i);
-				if (hr_dev) {
-					bond_grp->main_hr_dev = hr_dev;
-					break;
-				}
+	bond_grp->main_hr_dev = NULL;
+	ret = hns_roce_bond_uninit_client(bond_grp, main_func_idx);
+	if (ret) {
+		BOND_ERR_LOG("failed to uninit main dev %u, ret = %d.\n",
+			     main_func_idx, ret);
+		*dec_slave_map &= ~(1U << main_func_idx);
+		bond_grp->slave_map |= (1U << main_func_idx);
+		return ret;
+	}
+
+	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
+		net_dev = bond_grp->bond_func_info[i].net_dev;
+		if (!(*dec_slave_map & (1 << i)) && net_dev) {
+			bond_grp->bond_state = HNS_ROCE_BOND_REGISTERING;
+			hr_dev = hns_roce_bond_init_client(bond_grp, i);
+			if (hr_dev) {
+				bond_grp->main_hr_dev = hr_dev;
+				break;
 			}
 		}
 	}
 
+	if (!bond_grp->main_hr_dev)
+		return -ENODEV;
+
+	return 0;
+}
+
+static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
+{
+	u8 main_func_idx = PCI_FUNC(bond_grp->main_hr_dev->pci_dev->devfn);
+	u32 dec_slave_map = bond_grp->slave_map_diff;
+	struct net_device *net_dev;
+	u8 dec_func_idx = 0;
+	int ret;
+
+	if (dec_slave_map & (1 << main_func_idx)) {
+		ret = switch_main_dev(bond_grp, &dec_slave_map, main_func_idx);
+		if (ret == -ENODEV)
+			goto dec_err;
+	}
+
 	while (dec_slave_map > 0) {
 		if (dec_slave_map & 1) {
+			net_dev = bond_grp->bond_func_info[dec_func_idx].net_dev;
 			bond_grp->bond_func_info[dec_func_idx].net_dev = NULL;
-			hns_roce_bond_init_client(bond_grp, dec_func_idx);
+			if (!hns_roce_bond_init_client(bond_grp, dec_func_idx)) {
+				BOND_ERR_LOG("failed to re-init slave %u.\n",
+					     dec_func_idx);
+				bond_grp->slave_map |= (1U << dec_func_idx);
+				bond_grp->bond_func_info[dec_func_idx].net_dev = net_dev;
+			}
 		}
 		dec_slave_map >>= 1;
 		dec_func_idx++;
@@ -365,16 +413,20 @@ static void hns_roce_slave_dec(struct hns_roce_bond_group *bond_grp)
 
 	ret = bond_grp->main_hr_dev ?
 	      hns_roce_cmd_bond(bond_grp, HNS_ROCE_CHANGE_BOND) : -EIO;
+	if (ret)
+		goto dec_err;
 
 	bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	complete(&bond_grp->bond_work_done);
+	ibdev_info(&bond_grp->main_hr_dev->ib_dev,
+		   "RoCE slave decrease finished!\n");
 
-	if (ret)
-		BOND_ERR_LOG("failed to decrease RoCE bond slave, ret = %d.\n",
-			     ret);
-	else
-		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
-			   "RoCE slave decrease finished!\n");
+	return;
+
+dec_err:
+	bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+	BOND_ERR_LOG("failed to decrease RoCE bond slave, ret = %d.\n", ret);
+	hns_roce_cleanup_bond(bond_grp);
 }
 
 static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
@@ -414,7 +466,25 @@ static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 	}
 }
 
-void hns_roce_do_bond_work(struct work_struct *work)
+bool is_bond_slave_in_reset(struct hns_roce_bond_group *bond_grp)
+{
+	struct hnae3_handle *handle;
+	struct net_device *net_dev;
+	int i;
+
+	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
+		net_dev = bond_grp->bond_func_info[i].net_dev;
+		handle = bond_grp->bond_func_info[i].handle;
+		if (net_dev && handle &&
+		    handle->rinfo.reset_state != HNS_ROCE_STATE_NON_RST &&
+		    handle->rinfo.reset_state != HNS_ROCE_STATE_RST_INITED)
+			return true;
+	}
+
+	return false;
+}
+
+static void hns_roce_do_bond_work(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = to_delayed_work(work);
 	struct hns_roce_bond_group *bond_grp =
@@ -422,15 +492,19 @@ void hns_roce_do_bond_work(struct work_struct *work)
 			     bond_work);
 	int status;
 
+	if (is_bond_slave_in_reset(bond_grp))
+		goto queue_work;
+
 	status = mutex_trylock(&roce_bond_mutex);
-	if (!status) {
-		/* delay 1 sec */
-		hns_roce_queue_bond_work(bond_grp, HZ);
-		return;
-	}
+	if (!status)
+		goto queue_work;
 
 	hns_roce_do_bond(bond_grp);
 	mutex_unlock(&roce_bond_mutex);
+	return;
+
+queue_work:
+	hns_roce_queue_bond_work(bond_grp, HZ);
 }
 
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev)
@@ -452,7 +526,6 @@ int hns_roce_bond_init(struct hns_roce_dev *hr_dev)
 				  ret);
 			return ret;
 		}
-		bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
 	}
 
 	hr_dev->bond_nb.notifier_call = hns_roce_bond_event;

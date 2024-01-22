@@ -7136,6 +7136,9 @@ struct hns_roce_dev
 	if (!handle || !handle->client)
 		return NULL;
 
+	if (is_bond_slave_in_reset(bond_grp))
+		return NULL;
+
 	ret = hns_roce_hw_v2_init_instance(handle);
 	if (ret)
 		return NULL;
@@ -7143,19 +7146,24 @@ struct hns_roce_dev
 	return handle->priv;
 }
 
-void hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
-				 int func_idx)
+int hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
+				int func_idx)
 {
 	struct hnae3_handle *handle = bond_grp->bond_func_info[func_idx].handle;
 
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
-		return;
+		return -EPERM;
+
+	if (is_bond_slave_in_reset(bond_grp))
+		return -EBUSY;
 
 	handle->rinfo.instance_state = HNS_ROCE_STATE_BOND_UNINIT;
 
 	__hns_roce_hw_v2_uninit_instance(handle, false, false);
 
 	handle->rinfo.instance_state = HNS_ROCE_STATE_NON_INIT;
+
+	return 0;
 }
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 {
