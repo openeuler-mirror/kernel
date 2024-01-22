@@ -100,9 +100,7 @@ bool hns_roce_bond_is_active(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_bond_group *bond_grp = hns_roce_get_bond_grp(hr_dev);
 
-	if (bond_grp &&
-	    (bond_grp->bond_state == HNS_ROCE_BOND_REGISTERING ||
-	    bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED))
+	if (bond_grp && bond_grp->bond_state != HNS_ROCE_BOND_NOT_BONDED)
 		return true;
 
 	return false;
@@ -184,6 +182,13 @@ static void hns_roce_bond_get_active_slave(struct hns_roce_bond_group *bond_grp)
 
 	bond_grp->active_slave_num = active_slave_num;
 	bond_grp->active_slave_map = active_slave_map;
+}
+
+static int hns_roce_recover_bond(struct hns_roce_bond_group *bond_grp)
+{
+	hns_roce_bond_get_active_slave(bond_grp);
+
+	return hns_roce_cmd_bond(bond_grp, HNS_ROCE_SET_BOND);
 }
 
 static void hns_roce_set_bond(struct hns_roce_bond_group *bond_grp)
@@ -355,6 +360,9 @@ static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 	enum hns_roce_bond_state bond_state = bond_grp->bond_state;
 	bool bond_ready = bond_grp->bond_ready;
 
+	if (!bond_grp->main_hr_dev)
+		return;
+
 	ibdev_info(&bond_grp->main_hr_dev->ib_dev,
 		   "do_bond: bond_ready - %d, bond_state - %d.\n",
 		   bond_ready, bond_grp->bond_state);
@@ -403,13 +411,29 @@ void hns_roce_do_bond_work(struct work_struct *work)
 
 int hns_roce_bond_init(struct hns_roce_dev *hr_dev)
 {
+	struct hns_roce_bond_group *bond_grp = hns_roce_get_bond_grp(hr_dev);
+	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	int ret;
+
+	if (priv->handle->rinfo.reset_state == HNS_ROCE_STATE_RST_INIT &&
+	    bond_grp) {
+		bond_grp->main_hr_dev = hr_dev;
+		ret = hns_roce_recover_bond(bond_grp);
+		if (ret) {
+			ibdev_err(&hr_dev->ib_dev,
+				  "failed to recover RoCE bond, ret = %d.\n",
+				  ret);
+			return ret;
+		}
+		bond_grp->bond_state = HNS_ROCE_BOND_IS_BONDED;
+	}
 
 	hr_dev->bond_nb.notifier_call = hns_roce_bond_event;
 	ret = register_netdevice_notifier(&hr_dev->bond_nb);
 	if (ret) {
 		ibdev_err(&hr_dev->ib_dev,
-			  "failed to register notifier for RoCE bond!\n");
+			  "failed to register notifier for RoCE bond, ret = %d.\n",
+			  ret);
 		hr_dev->bond_nb.notifier_call = NULL;
 	}
 
