@@ -115,17 +115,16 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 	return ret;
 }
 
-static int handle_en_event(struct hns_roce_dev *hr_dev, u32 port,
-			   unsigned long dev_event)
+static int handle_en_event(struct net_device *netdev,
+			   struct hns_roce_dev *hr_dev,
+			   u32 port, unsigned long dev_event)
 {
 	struct device *dev = hr_dev->dev;
 	enum ib_port_state port_state;
-	struct net_device *netdev;
 	struct ib_event event;
 	unsigned long flags;
 	int ret = 0;
 
-	netdev = hr_dev->iboe.netdevs[port];
 	if (!netdev) {
 		dev_err(dev, "can't find netdev on port(%u)!\n", port);
 		return -ENODEV;
@@ -173,17 +172,24 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 				 unsigned long event, void *ptr)
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	struct hns_roce_bond_group *bond_grp;
 	struct hns_roce_ib_iboe *iboe = NULL;
 	struct hns_roce_dev *hr_dev = NULL;
+	struct net_device *upper = NULL;
 	int ret;
 	u32 port;
 
 	hr_dev = container_of(self, struct hns_roce_dev, iboe.nb);
 	iboe = &hr_dev->iboe;
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) {
+		bond_grp = hns_roce_get_bond_grp(hr_dev);
+		upper = bond_grp ? bond_grp->upper_dev : NULL;
+	}
 
 	for (port = 0; port < hr_dev->caps.num_ports; port++) {
-		if (dev == iboe->netdevs[port]) {
-			ret = handle_en_event(hr_dev, port, event);
+		if ((!upper && dev == iboe->netdevs[port]) ||
+		    (upper && dev == upper)) {
+			ret = handle_en_event(dev, hr_dev, port, event);
 			if (ret)
 				return NOTIFY_DONE;
 			break;
