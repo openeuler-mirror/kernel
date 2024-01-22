@@ -345,6 +345,7 @@ static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	jetty_new->jfc_s_id = jetty->ubcore_jetty.jetty_cfg.send_jfc->id;
 	jetty_new->jfc_r_id = jetty->ubcore_jetty.jetty_cfg.recv_jfc->id;
 	list_add(&jetty_new->node, &g_udma_dfx_list[i].dfx->jetty_list->node);
+	++g_udma_dfx_list[i].dfx->jetty_cnt;
 	spin_unlock_irqrestore(lock, flags);
 
 	return;
@@ -374,6 +375,7 @@ static void delete_jetty_id(struct udma_dev *udma_dev,
 				 node) {
 		if (jetty_now->jetty_id == jetty->jetty_id) {
 			list_del(&jetty_now->node);
+			--g_udma_dfx_list[i].dfx->jetty_cnt;
 			kfree(jetty_now);
 			spin_unlock_irqrestore(lock, flags);
 			return;

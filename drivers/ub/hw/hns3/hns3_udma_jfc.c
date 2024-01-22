@@ -441,6 +441,7 @@ static void store_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 
 	jfc_new->jfc_id = udma_jfc->cqn;
 	list_add(&jfc_new->node, &g_udma_dfx_list[i].dfx->jfc_list->node);
+	++g_udma_dfx_list[i].dfx->jfc_cnt;
 	spin_unlock_irqrestore(lock, flags);
 
 	return;
@@ -469,6 +470,7 @@ static void delete_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 				 node) {
 		if (jfc_now->jfc_id == udma_jfc->cqn) {
 			list_del(&jfc_now->node);
+			--g_udma_dfx_list[i].dfx->jfc_cnt;
 			kfree(jfc_now);
 			spin_unlock_irqrestore(lock, flags);
 			return;

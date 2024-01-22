@@ -449,7 +449,7 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 		if (jfr_now->jfr_id == key->key) {
 			jfr->jfr_id = key->key;
 			jfr->state = udma_reg_read(&jfr_context, SRQC_SRQ_ST);
-			jfr->depth = 1 << udma_reg_read(&jfr_context, SRQC_SHIFT);
+			jfr->depth = 1U << udma_reg_read(&jfr_context, SRQC_SHIFT);
 			jfr->jfc_id = jfr_now->jfc_id;
 			val->len = sizeof(struct ubcore_res_jfr_val);
 			return 0;
@@ -526,7 +526,7 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 
 	jfc->jfc_id = udma_reg_read(&jfc_context, CQC_CQN);
 	jfc->state = udma_reg_read(&jfc_context, CQC_CQ_ST);
-	jfc->depth = 1 << udma_reg_read(&jfc_context, CQC_SHIFT);
+	jfc->depth = 1U << udma_reg_read(&jfc_context, CQC_SHIFT);
 
 	val->len = sizeof(struct ubcore_res_jfc_val);
 
@@ -589,8 +589,9 @@ static int udma_query_res_dev_tp(struct udma_dev *udma_dev,
 				 struct ubcore_res_val *val, int i)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	uint32_t *tp_list_ptr = dev->tp_list;
 	struct tpn_list *tpn_now;
+	uint32_t *tp_list;
+	uint32_t tpn_cnt;
 
 	dev->tp_cnt = 0;
 	if (!g_udma_dfx_list[i].dfx) {
@@ -598,14 +599,27 @@ static int udma_query_res_dev_tp(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
+	spin_lock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+	tpn_cnt = g_udma_dfx_list[i].dfx->tpn_cnt;
+	if (tpn_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+		return 0;
+	}
+
+	tp_list = vmalloc(sizeof(*tp_list) * tpn_cnt);
+	if (!tp_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+		return -ENOMEM;
+	}
+
 	list_for_each_entry(tpn_now,
 			    &g_udma_dfx_list[i].dfx->tpn_list->node, node) {
-		*tp_list_ptr = tpn_now->tpn;
-		tp_list_ptr++;
+		tp_list[dev->tp_cnt] = tpn_now->tpn;
 		dev->tp_cnt++;
-		if (dev->tp_cnt == MAX_TP_CNT)
-			break;
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+
+	dev->tp_list = tp_list;
 
 	return 0;
 }
@@ -615,8 +629,9 @@ static int udma_query_res_dev_jfs(struct udma_dev *udma_dev,
 				  struct ubcore_res_val *val, int i)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	uint32_t *jfs_list_ptr = dev->jfs_list;
 	struct jfs_list *jfs_now;
+	uint32_t *jfs_list;
+	uint32_t jfs_cnt;
 
 	dev->jfs_cnt = 0;
 	if (!g_udma_dfx_list[i].dfx) {
@@ -624,14 +639,28 @@ static int udma_query_res_dev_jfs(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
+	spin_lock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+	jfs_cnt = g_udma_dfx_list[i].dfx->jfs_cnt;
+	if (jfs_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+		return 0;
+	}
+
+	jfs_list = vmalloc(sizeof(*jfs_list) * jfs_cnt);
+	if (!jfs_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+		return -ENOMEM;
+	}
+
 	list_for_each_entry(jfs_now,
 			    &g_udma_dfx_list[i].dfx->jfs_list->node, node) {
-		*jfs_list_ptr = jfs_now->jfs_id;
-		jfs_list_ptr++;
+		jfs_list[dev->jfs_cnt] = jfs_now->jfs_id;
 		dev->jfs_cnt++;
-		if (dev->jfs_cnt == MAX_JFS_CNT)
-			break;
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+
+	dev->jfs_list = jfs_list;
+
 	return 0;
 }
 
@@ -640,8 +669,9 @@ static int udma_query_res_dev_jfr(struct udma_dev *udma_dev,
 				  struct ubcore_res_val *val, int i)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	uint32_t *jfr_list_ptr = dev->jfr_list;
 	struct jfr_list *jfr_now;
+	uint32_t *jfr_list;
+	uint32_t jfr_cnt;
 
 	dev->jfr_cnt = 0;
 	if (!g_udma_dfx_list[i].dfx) {
@@ -649,14 +679,28 @@ static int udma_query_res_dev_jfr(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
+	spin_lock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+	jfr_cnt = g_udma_dfx_list[i].dfx->jfr_cnt;
+	if (jfr_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+		return 0;
+	}
+
+	jfr_list = vmalloc(sizeof(*jfr_list) * jfr_cnt);
+	if (!jfr_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+		return -ENOMEM;
+	}
+
 	list_for_each_entry(jfr_now,
 			    &g_udma_dfx_list[i].dfx->jfr_list->node, node) {
-		*jfr_list_ptr = jfr_now->jfr_id;
-		jfr_list_ptr++;
+		jfr_list[dev->jfr_cnt] = jfr_now->jfr_id;
 		dev->jfr_cnt++;
-		if (dev->jfr_cnt == MAX_JFR_CNT)
-			break;
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+
+	dev->jfr_list = jfr_list;
+
 	return 0;
 }
 
@@ -665,8 +709,9 @@ static int udma_query_res_dev_jetty(struct udma_dev *udma_dev,
 				    struct ubcore_res_val *val, int i)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	uint32_t *jetty_list_ptr = dev->jetty_list;
 	struct jetty_list *jetty_now;
+	uint32_t *jetty_list;
+	uint32_t jetty_cnt;
 
 	dev->jetty_cnt = 0;
 	if (!g_udma_dfx_list[i].dfx) {
@@ -674,14 +719,28 @@ static int udma_query_res_dev_jetty(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
+	spin_lock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+	jetty_cnt = g_udma_dfx_list[i].dfx->jetty_cnt;
+	if (jetty_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+		return 0;
+	}
+
+	jetty_list = vmalloc(sizeof(*jetty_list) * jetty_cnt);
+	if (!jetty_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+		return -ENOMEM;
+	}
+
 	list_for_each_entry(jetty_now,
 			    &g_udma_dfx_list[i].dfx->jetty_list->node, node) {
-		*jetty_list_ptr = jetty_now->jetty_id;
-		jetty_list_ptr++;
+		jetty_list[dev->jetty_cnt] = jetty_now->jetty_id;
 		dev->jetty_cnt++;
-		if (dev->jetty_cnt == MAX_JETTY_CNT)
-			break;
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+
+	dev->jetty_list = jetty_list;
+
 	return 0;
 }
 
@@ -690,8 +749,9 @@ static int udma_query_res_dev_jfc(struct udma_dev *udma_dev,
 				  struct ubcore_res_val *val, int i)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	uint32_t *jfc_list_ptr = dev->jfc_list;
 	struct jfc_list *jfc_now;
+	uint32_t *jfc_list;
+	uint32_t jfc_cnt;
 
 	dev->jfc_cnt = 0;
 	if (!g_udma_dfx_list[i].dfx) {
@@ -699,14 +759,28 @@ static int udma_query_res_dev_jfc(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
+	spin_lock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+	jfc_cnt = g_udma_dfx_list[i].dfx->jfc_cnt;
+	if (jfc_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+		return 0;
+	}
+
+	jfc_list = vmalloc(sizeof(*jfc_list) * jfc_cnt);
+	if (!jfc_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+		return -ENOMEM;
+	}
+
 	list_for_each_entry(jfc_now,
 			    &g_udma_dfx_list[i].dfx->jfc_list->node, node) {
-		*jfc_list_ptr = jfc_now->jfc_id;
-		jfc_list_ptr++;
+		jfc_list[dev->jfc_cnt] = jfc_now->jfc_id;
 		dev->jfc_cnt++;
-		if (dev->jfc_cnt == MAX_JFC_CNT)
-			break;
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+
+	dev->jfc_list = jfc_list;
+
 	return 0;
 }
 
@@ -715,8 +789,9 @@ static int udma_query_res_dev_seg(struct udma_dev *udma_dev,
 				  struct ubcore_res_val *val, int i)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct ubcore_seg_info *seg_list_ptr = dev->seg_list;
+	struct ubcore_seg_info *seg_list;
 	struct seg_list *seg_now;
+	uint32_t seg_cnt;
 
 	dev->seg_cnt = 0;
 	if (!g_udma_dfx_list[i].dfx) {
@@ -724,17 +799,32 @@ static int udma_query_res_dev_seg(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
+	spin_lock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+	seg_cnt = g_udma_dfx_list[i].dfx->seg_cnt;
+	if (seg_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+		return 0;
+	}
+
+	seg_list = vmalloc(sizeof(*seg_list) * seg_cnt);
+	if (!seg_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+		return -ENOMEM;
+	}
+
 	list_for_each_entry(seg_now,
 			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
-		memcpy(&seg_list_ptr->ubva.eid, &seg_now->eid, sizeof(union ubcore_eid));
-		seg_list_ptr->ubva.va = seg_now->iova;
-		seg_list_ptr->len = seg_now->len;
-		seg_list_ptr->token_id = seg_now->key_id;
-		seg_list_ptr++;
+		memcpy(&seg_list[dev->seg_cnt].ubva.eid, &seg_now->eid,
+		       sizeof(union ubcore_eid));
+		seg_list[dev->seg_cnt].ubva.va = seg_now->iova;
+		seg_list[dev->seg_cnt].len = seg_now->len;
+		seg_list[dev->seg_cnt].token_id = seg_now->key_id;
 		dev->seg_cnt++;
-		if (dev->seg_cnt == MAX_SEG_CNT)
-			break;
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+
+	dev->seg_list = seg_list;
+
 	return 0;
 }
 
@@ -784,7 +874,9 @@ static int udma_query_res_dev(struct udma_dev *udma_dev,
 
 	dev->tpg_cnt = 0;
 	dev->utp_cnt = 0;
+	dev->vtp_cnt = 0;
 	dev->jetty_group_cnt = 0;
+	dev->rc_cnt = 0;
 
 	return 0;
 }
@@ -1062,7 +1154,7 @@ static int udma_dfx_add_udma_device(struct udma_dev *udma_dev)
 	ret = udma_dfx_list_init(i);
 	if (ret) {
 		dev_err(drv_device, "dfx add dev list failed\n");
-		goto dfx_info_alloc_failed;
+		goto dfx_list_init_failed;
 	}
 
 	ret = g_udma_dfx_list[i].dfx->ops->add_sysfs(g_udma_dfx_list[i].dfx);
@@ -1080,6 +1172,7 @@ static int udma_dfx_add_udma_device(struct udma_dev *udma_dev)
 
 add_sysfs_failed:
 	udma_dfx_list_free(i);
+dfx_list_init_failed:
 	kfree(g_udma_dfx_list[i].dfx);
 	g_udma_dfx_list[i].dfx = NULL;
 dfx_info_alloc_failed:
@@ -1145,16 +1238,16 @@ int udma_dfx_init(struct udma_dev *udma_dev)
 	if (!udma_dev_count) {
 		ret = udma_dfx_chrdev_create(udma_dev);
 		if (ret) {
-			dev_err(drv_device,
-				"udma dfx create chr device failed\n");
+			dev_err(udma_dev->dev,
+				"udma dfx create chr device failed.\n");
 			goto chrdev_create_failed;
 		}
-		dev_info(drv_device, "udma dfx create chr device success\n");
+		dev_info(drv_device, "udma dfx create chr device success.\n");
 	}
 
 	ret = udma_dfx_add_udma_device(udma_dev);
 	if (ret) {
-		dev_err(drv_device, "udma dfx add udma device failed\n");
+		dev_err(drv_device, "udma dfx add udma device failed.\n");
 		goto add_device_failed;
 	}
 
@@ -1174,20 +1267,18 @@ static void udma_dfx_remove_udma_device(struct udma_dev *udma_dev)
 	int i;
 
 	for (i = 0; i < MAX_UDMA_DEV; i++) {
-		if (g_udma_dfx_list[i].dev) {
-			if (g_udma_dfx_list[i].dev == udma_dev) {
-				dev_info(drv_device,
-					 "rmv udma device (%s) from udma dfx\n",
-					 g_udma_dfx_list[i].dfx->dev.dev_name);
-				g_udma_dfx_list[i].dfx->ops->del_sysfs(g_udma_dfx_list[i].dfx);
-				udma_dfx_list_free(i);
+		if (g_udma_dfx_list[i].dev && g_udma_dfx_list[i].dev == udma_dev) {
+			dev_info(drv_device,
+				 "remove udma device (%s) from udma dfx\n",
+				 g_udma_dfx_list[i].dfx->dev.dev_name);
+			g_udma_dfx_list[i].dfx->ops->del_sysfs(g_udma_dfx_list[i].dfx);
+			udma_dfx_list_free(i);
 
-				kfree(g_udma_dfx_list[i].dfx);
-				g_udma_dfx_list[i].dfx = NULL;
-				g_udma_dfx_list[i].dev = NULL;
-				udma_dev_count--;
-				break;
-			}
+			kfree(g_udma_dfx_list[i].dfx);
+			g_udma_dfx_list[i].dfx = NULL;
+			g_udma_dfx_list[i].dev = NULL;
+			udma_dev_count--;
+			break;
 		}
 	}
 }

@@ -395,6 +395,7 @@ static void store_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 	jfr_new->jfr_id = jfr->jfrn;
 	jfr_new->jfc_id = jfr->ubcore_jfr.jfr_cfg.jfc->id;
 	list_add(&jfr_new->node, &g_udma_dfx_list[i].dfx->jfr_list->node);
+	++g_udma_dfx_list[i].dfx->jfr_cnt;
 	spin_unlock_irqrestore(lock, flags);
 
 	return;
@@ -423,6 +424,7 @@ static void delete_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 				 node) {
 		if (jfr_now->jfr_id == jfr->jfrn) {
 			list_del(&jfr_now->node);
+			--g_udma_dfx_list[i].dfx->jfr_cnt;
 			kfree(jfr_now);
 			spin_unlock_irqrestore(lock, flags);
 			return;

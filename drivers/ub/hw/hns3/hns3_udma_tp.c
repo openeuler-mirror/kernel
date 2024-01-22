@@ -196,6 +196,7 @@ static void store_tpn(struct udma_dev *udma_device, struct udma_tp *tp)
 
 	tpn_new->tpn = tp->ubcore_tp.tpn;
 	list_add(&tpn_new->node, &g_udma_dfx_list[i].dfx->tpn_list->node);
+	++g_udma_dfx_list[i].dfx->tpn_cnt;
 	spin_unlock_irqrestore(lock, flags);
 
 	return;
@@ -224,6 +225,7 @@ static void delete_tpn(struct udma_dev *udma_device, struct ubcore_tp *tp)
 				 node) {
 		if (tpn_now->tpn == tp->tpn) {
 			list_del(&tpn_now->node);
+			--g_udma_dfx_list[i].dfx->tpn_cnt;
 			kfree(tpn_now);
 			spin_unlock_irqrestore(lock, flags);
 			return;
