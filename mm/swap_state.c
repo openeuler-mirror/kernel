@@ -21,6 +21,7 @@
 #include <linux/swap_slots.h>
 #include <linux/huge_mm.h>
 #include <linux/shmem_fs.h>
+#include <linux/etmem.h>
 #include "internal.h"
 #include "swap.h"
 
@@ -881,6 +882,9 @@ static struct kobj_attribute vma_ra_enabled_attr = __ATTR_RW(vma_ra_enabled);
 
 static struct attribute *swap_attrs[] = {
 	&vma_ra_enabled_attr.attr,
+#ifdef CONFIG_ETMEM
+	&kernel_swap_enable_attr.attr,
+#endif
 	NULL,
 };
 

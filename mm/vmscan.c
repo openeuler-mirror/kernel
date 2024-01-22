@@ -57,6 +57,7 @@
 #include <linux/khugepaged.h>
 #include <linux/rculist_nulls.h>
 #include <linux/random.h>
+#include <linux/etmem.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -2844,6 +2845,7 @@ unsigned long reclaim_pages(struct list_head *folio_list)
 
 	return nr_reclaimed;
 }
+EXPORT_SYMBOL_GPL(reclaim_pages);
 
 static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 				 struct lruvec *lruvec, struct scan_control *sc)
@@ -3043,6 +3045,9 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 		scan_balance = SCAN_ANON;
 		goto out;
 	}
+
+	if (sc->may_swap && !kernel_swap_enabled())
+		sc->may_swap = 0;
 
 	/* If we have no swap space, do not bother scanning anon folios. */
 	if (!sc->may_swap || !can_reclaim_anon_pages(memcg, pgdat->node_id, sc)) {
@@ -3310,6 +3315,9 @@ static int get_swappiness(struct lruvec *lruvec, struct scan_control *sc)
 {
 	struct mem_cgroup *memcg = lruvec_memcg(lruvec);
 	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+
+	if (sc->may_swap && !kernel_swap_enabled())
+		return 0;
 
 	if (!sc->may_swap)
 		return 0;

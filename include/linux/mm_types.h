@@ -31,6 +31,7 @@
 
 struct address_space;
 struct mem_cgroup;
+struct kvm;
 
 /*
  * Each physical page in the system has a struct page associated with
@@ -940,6 +941,9 @@ struct mm_struct {
 #ifdef CONFIG_MEMORY_RELIABLE
 		/* total used reliable pages */
 		atomic_long_t reliable_nr_page;
+#endif
+#if IS_ENABLED(CONFIG_ETMEM) && IS_ENABLED(CONFIG_KVM)
+		struct kvm *kvm;
 #endif
 	} __randomize_layout;
 
