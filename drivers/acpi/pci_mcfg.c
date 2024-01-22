@@ -79,6 +79,10 @@ static struct mcfg_fixup mcfg_quirks[] = {
 	HISI_QUAD_DOM("HIP07   ",  4, &hisi_pcie_ops),
 	HISI_QUAD_DOM("HIP07   ",  8, &hisi_pcie_ops),
 	HISI_QUAD_DOM("HIP07   ", 12, &hisi_pcie_ops),
+	HISI_QUAD_DOM("HIP12   ", 0x20, &hisi_pcie_ops),
+	HISI_QUAD_DOM("HIP12   ", 0x24, &hisi_pcie_ops),
+	HISI_QUAD_DOM("HIP12   ", 0x28, &hisi_pcie_ops),
+	HISI_QUAD_DOM("HIP12   ", 0x2c, &hisi_pcie_ops),
 
 #define THUNDER_PEM_RES(addr, node) \
 	DEFINE_RES_MEM((addr) + ((u64) (node) << 44), 0x39 * SZ_16M)
