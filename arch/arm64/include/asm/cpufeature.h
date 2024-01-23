@@ -916,6 +916,7 @@ extern struct arm64_ftr_override id_aa64pfr0_override;
 extern struct arm64_ftr_override id_aa64pfr1_override;
 extern struct arm64_ftr_override id_aa64zfr0_override;
 extern struct arm64_ftr_override id_aa64smfr0_override;
+extern struct arm64_ftr_override id_aa64isar0_override;
 extern struct arm64_ftr_override id_aa64isar1_override;
 extern struct arm64_ftr_override id_aa64isar2_override;
 

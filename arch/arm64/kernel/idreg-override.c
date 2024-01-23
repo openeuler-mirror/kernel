@@ -105,6 +105,15 @@ static const struct ftr_set_desc pfr1 __initconst = {
 	},
 };
 
+static const struct ftr_set_desc isar0 __initconst = {
+	.name		= "id_aa64isar0",
+	.override	= &id_aa64isar0_override,
+	.fields		= {
+		FIELD("atomic", ID_AA64ISAR0_EL1_ATOMIC_SHIFT, NULL),
+		{}
+	},
+};
+
 static const struct ftr_set_desc isar1 __initconst = {
 	.name		= "id_aa64isar1",
 	.override	= &id_aa64isar1_override,
@@ -163,6 +172,7 @@ static const struct ftr_set_desc * const regs[] __initconst = {
 	&mmfr1,
 	&pfr0,
 	&pfr1,
+	&isar0,
 	&isar1,
 	&isar2,
 	&smfr0,
@@ -185,6 +195,7 @@ static const struct {
 	{ "arm64.nomops",		"id_aa64isar2.mops=0" },
 	{ "arm64.nomte",		"id_aa64pfr1.mte=0" },
 	{ "nokaslr",			"arm64_sw.nokaslr=1" },
+	{ "arm64.nolse",		"id_aa64isar0.atomic=0" },
 };
 
 static int __init parse_nokaslr(char *unused)
