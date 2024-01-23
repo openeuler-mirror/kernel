@@ -362,6 +362,35 @@ struct cfs_bandwidth {
 #endif
 };
 
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+#define AD_LEVEL_MAX		8
+
+struct affinity_domain {
+	int			dcount;
+	int			curr_level;
+	u32			domain_mask;
+#ifdef CONFIG_SCHEDSTATS
+	u64			stay_cnt[AD_LEVEL_MAX];
+#endif
+	struct cpumask		*domains[AD_LEVEL_MAX];
+	struct cpumask		*domains_orig[AD_LEVEL_MAX];
+};
+#endif
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+struct auto_affinity {
+	raw_spinlock_t		lock;
+	u64			mode;
+	ktime_t			period;
+	struct hrtimer		period_timer;
+	int			period_active;
+	struct affinity_domain	ad;
+	struct task_group	*tg;
+	struct list_head	af_list;
+};
+#endif
+
 /* Task group related information */
 struct task_group {
 	struct cgroup_subsys_state css;
@@ -421,6 +450,10 @@ struct task_group {
 
 #ifdef CONFIG_BPF_SCHED
 	long tag;
+#endif
+
+#if defined(CONFIG_QOS_SCHED_SMART_GRID) && !defined(__GENKSYMS__)
+	struct auto_affinity *auto_affinity;
 #endif
 };
 
@@ -490,6 +523,21 @@ extern void sched_destroy_group(struct task_group *tg);
 extern void sched_release_group(struct task_group *tg);
 
 extern void sched_move_task(struct task_struct *tsk);
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+extern void start_auto_affinity(struct auto_affinity *auto_affi);
+extern void stop_auto_affinity(struct auto_affinity *auto_affi);
+extern int init_auto_affinity(struct task_group *tg);
+extern void tg_update_affinity_domains(int cpu, int online);
+
+#else
+static inline int init_auto_affinity(struct task_group *tg)
+{
+	return 0;
+}
+
+static inline void tg_update_affinity_domains(int cpu, int online) {}
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 extern int sched_group_set_shares(struct task_group *tg, unsigned long shares);
