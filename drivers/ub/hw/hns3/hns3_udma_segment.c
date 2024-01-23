@@ -281,6 +281,7 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 	seg_new->len = seg->size;
 	seg_new->key_id = seg->key;
 	list_add(&seg_new->node, &g_udma_dfx_list[i].dfx->seg_list->node);
+	++g_udma_dfx_list[i].dfx->seg_cnt;
 	spin_unlock_irqrestore(lock, flags);
 
 	return;
@@ -309,6 +310,7 @@ static void delete_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 				 node) {
 		if (seg_now->key_id == seg->key) {
 			list_del(&seg_now->node);
+			--g_udma_dfx_list[i].dfx->seg_cnt;
 			kfree(seg_now);
 			spin_unlock_irqrestore(lock, flags);
 			return;

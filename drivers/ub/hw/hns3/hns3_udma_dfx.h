@@ -39,7 +39,7 @@ static struct udma_dfx_sys_attr g_sysfs_udma_##file_name##_attr = {\
 
 #define HW_ATTRS_LIST_MEMBER(file_name) (&g_sysfs_udma_##file_name##_attr.attr)
 #define MAX_CHAR_NUM_DEV_NAME	12
-#define UDMA_DFX_STR_LEN_MAX 20
+#define UDMA_DFX_STR_LEN_MAX	20
 
 struct udma_dfx_info;
 
@@ -115,11 +115,17 @@ struct udma_dfx_info {
 	struct udma_dfx_ops		*ops;
 	struct device			*drv_dev;
 	struct kobject			kobj;
+	uint32_t			tpn_cnt;
 	struct tpn_list			*tpn_list;
+	uint32_t			jfs_cnt;
 	struct jfs_list			*jfs_list;
+	uint32_t			jfr_cnt;
 	struct jfr_list			*jfr_list;
+	uint32_t			jetty_cnt;
 	struct jetty_list		*jetty_list;
+	uint32_t			jfc_cnt;
 	struct jfc_list			*jfc_list;
+	uint32_t			seg_cnt;
 	struct seg_list			*seg_list;
 	void				*priv;
 };

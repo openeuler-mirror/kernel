@@ -219,6 +219,7 @@ static void store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 	jfs_new->pri = jfs->ubcore_jfs.jfs_cfg.priority;
 	jfs_new->jfc_id = jfs->ubcore_jfs.jfs_cfg.jfc->id;
 	list_add(&jfs_new->node, &g_udma_dfx_list[i].dfx->jfs_list->node);
+	++g_udma_dfx_list[i].dfx->jfs_cnt;
 	spin_unlock_irqrestore(lock, flags);
 
 	return;
@@ -247,6 +248,7 @@ static void delete_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 				 node) {
 		if (jfs_now->jfs_id == jfs->jfs_id) {
 			list_del(&jfs_now->node);
+			--g_udma_dfx_list[i].dfx->jfs_cnt;
 			kfree(jfs_now);
 			spin_unlock_irqrestore(lock, flags);
 			return;
