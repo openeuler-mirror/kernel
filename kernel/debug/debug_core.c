@@ -238,7 +238,11 @@ NOKPROBE_SYMBOL(kgdb_call_nmi_hook);
 static DEFINE_PER_CPU(call_single_data_t, kgdb_roundup_csd) =
 	CSD_INIT(kgdb_call_nmi_hook, NULL);
 
+#ifdef CONFIG_IPI_AS_NMI
 void kgdb_smp_call_nmi_hook(void)
+#else
+void __weak kgdb_roundup_cpus(void)
+#endif
 {
 	call_single_data_t *csd;
 	int this_cpu = raw_smp_processor_id();
@@ -269,12 +273,14 @@ void kgdb_smp_call_nmi_hook(void)
 			kgdb_info[cpu].rounding_up = false;
 	}
 }
+#ifdef CONFIG_IPI_AS_NMI
 NOKPROBE_SYMBOL(kgdb_smp_call_nmi_hook);
 
 void __weak kgdb_roundup_cpus(void)
 {
 	kgdb_smp_call_nmi_hook();
 }
+#endif
 NOKPROBE_SYMBOL(kgdb_roundup_cpus);
 
 #endif

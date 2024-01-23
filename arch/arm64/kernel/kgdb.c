@@ -358,6 +358,7 @@ int kgdb_arch_remove_breakpoint(struct kgdb_bkpt *bpt)
 			*(u32 *)bpt->saved_instr);
 }
 
+#ifdef CONFIG_IPI_AS_NMI
 void kgdb_roundup_cpus(void)
 {
 	struct cpumask mask;
@@ -374,3 +375,4 @@ void kgdb_roundup_cpus(void)
 
 	arm64_send_nmi(&mask);
 }
+#endif
