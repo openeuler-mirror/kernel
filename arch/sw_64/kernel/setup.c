@@ -594,7 +594,7 @@ static void __init setup_machine_fdt(void)
 		}
 	}
 
-	if (!phys_addr_valid(virt_to_phys(dt_virt)) ||
+	if (!phys_addr_valid(__boot_pa(dt_virt)) ||
 			!early_init_dt_scan(dt_virt)) {
 		pr_crit("\n"
 			"Error: invalid device tree blob at virtual address %px\n"
