@@ -1336,7 +1336,7 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	struct timer_map map;
-	int ret;
+	int ret = 0;
 
 	if (timer->enabled)
 		return 0;
