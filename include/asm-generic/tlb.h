@@ -14,6 +14,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/swap.h>
 #include <linux/hugetlb_inline.h>
+#include <linux/kabi.h>
 #include <asm/tlbflush.h>
 #include <asm/cacheflush.h>
 
@@ -348,6 +349,8 @@ struct mmu_gather {
 	unsigned int page_size;
 #endif
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 void tlb_flush_mmu(struct mmu_gather *tlb);
