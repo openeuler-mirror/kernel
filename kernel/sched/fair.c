@@ -131,6 +131,7 @@ static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
 static DEFINE_PER_CPU(int, qos_cpu_overload);
 unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
 unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
+static int __unthrottle_qos_cfs_rqs(int cpu);
 static int unthrottle_qos_cfs_rqs(int cpu);
 static bool qos_smt_expelled(int this_cpu);
 #endif
@@ -5733,7 +5734,7 @@ static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 	lockdep_assert_rq_held(rq);
 
 #ifdef CONFIG_QOS_SCHED
-	unthrottle_qos_cfs_rqs(cpu_of(rq));
+	__unthrottle_qos_cfs_rqs(cpu_of(rq));
 #endif
 
 	rcu_read_lock();
