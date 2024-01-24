@@ -326,6 +326,16 @@ static struct event_constraint intel_spr_event_constraints[] = {
 	EVENT_CONSTRAINT_END
 };
 
+static struct extra_reg intel_gnr_extra_regs[] __read_mostly = {
+	INTEL_UEVENT_EXTRA_REG(0x012a, MSR_OFFCORE_RSP_0, 0x3fffffffffull, RSP_0),
+	INTEL_UEVENT_EXTRA_REG(0x012b, MSR_OFFCORE_RSP_1, 0x3fffffffffull, RSP_1),
+	INTEL_UEVENT_PEBS_LDLAT_EXTRA_REG(0x01cd),
+	INTEL_UEVENT_EXTRA_REG(0x02c6, MSR_PEBS_FRONTEND, 0x9, FE),
+	INTEL_UEVENT_EXTRA_REG(0x03c6, MSR_PEBS_FRONTEND, 0x7fff1f, FE),
+	INTEL_UEVENT_EXTRA_REG(0x40ad, MSR_PEBS_FRONTEND, 0x7, FE),
+	INTEL_UEVENT_EXTRA_REG(0x04c2, MSR_PEBS_FRONTEND, 0x8, FE),
+	EVENT_EXTRA_END
+};
 
 EVENT_ATTR_STR(mem-loads,	mem_ld_nhm,	"event=0x0b,umask=0x10,ldlat=3");
 EVENT_ATTR_STR(mem-loads,	mem_ld_snb,	"event=0xcd,umask=0x1,ldlat=3");
@@ -5465,6 +5475,15 @@ pebs_is_visible(struct kobject *kobj, struct attribute *attr, int i)
 }
 
 static umode_t
+mem_is_visible(struct kobject *kobj, struct attribute *attr, int i)
+{
+	if (attr == &event_attr_mem_ld_aux.attr.attr)
+		return x86_pmu.flags & PMU_FL_MEM_LOADS_AUX ? attr->mode : 0;
+
+	return pebs_is_visible(kobj, attr, i);
+}
+
+static umode_t
 lbr_is_visible(struct kobject *kobj, struct attribute *attr, int i)
 {
 	return x86_pmu.lbr_nr ? attr->mode : 0;
@@ -5491,7 +5510,7 @@ static struct attribute_group group_events_td  = {
 
 static struct attribute_group group_events_mem = {
 	.name       = "events",
-	.is_visible = pebs_is_visible,
+	.is_visible = mem_is_visible,
 };
 
 static struct attribute_group group_events_tsx = {
@@ -6500,6 +6519,11 @@ __init int intel_pmu_init(void)
 
 	case INTEL_FAM6_SAPPHIRERAPIDS_X:
 	case INTEL_FAM6_EMERALDRAPIDS_X:
+		x86_pmu.flags |= PMU_FL_MEM_LOADS_AUX;
+		x86_pmu.extra_regs = intel_spr_extra_regs;
+		fallthrough;
+	case INTEL_FAM6_GRANITERAPIDS_X:
+	case INTEL_FAM6_GRANITERAPIDS_D:
 		pmem = true;
 		x86_pmu.late_ack = true;
 		memcpy(hw_cache_event_ids, spr_hw_cache_event_ids, sizeof(hw_cache_event_ids));
@@ -6507,7 +6531,8 @@ __init int intel_pmu_init(void)
 
 		x86_pmu.event_constraints = intel_spr_event_constraints;
 		x86_pmu.pebs_constraints = intel_spr_pebs_event_constraints;
-		x86_pmu.extra_regs = intel_spr_extra_regs;
+		if (!x86_pmu.extra_regs)
+			x86_pmu.extra_regs = intel_gnr_extra_regs;
 		x86_pmu.limit_period = spr_limit_period;
 		x86_pmu.pebs_aliases = NULL;
 		x86_pmu.pebs_prec_dist = true;
@@ -6516,7 +6541,6 @@ __init int intel_pmu_init(void)
 		x86_pmu.flags |= PMU_FL_NO_HT_SHARING;
 		x86_pmu.flags |= PMU_FL_PEBS_ALL;
 		x86_pmu.flags |= PMU_FL_INSTR_LATENCY;
-		x86_pmu.flags |= PMU_FL_MEM_LOADS_AUX;
 
 		x86_pmu.hw_config = hsw_hw_config;
 		x86_pmu.get_event_constraints = spr_get_event_constraints;
