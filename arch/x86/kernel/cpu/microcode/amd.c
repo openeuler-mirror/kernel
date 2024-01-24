@@ -477,15 +477,18 @@ static bool early_apply_microcode(u32 cpuid_1_eax, void *ucode, size_t size)
 
 static bool get_builtin_microcode(struct cpio_data *cp, unsigned int family)
 {
-	char fw_name[36] = "amd-ucode/microcode_amd.bin";
+	char fw_name[40] = "amd-ucode/microcode_amd.bin";
 	struct firmware fw;
 
 	if (IS_ENABLED(CONFIG_X86_32))
 		return false;
 
-	if (family >= 0x15)
+	if (x86_cpuid_vendor() == X86_VENDOR_AMD && family >= 0x15)
 		snprintf(fw_name, sizeof(fw_name),
 			 "amd-ucode/microcode_amd_fam%02hhxh.bin", family);
+	else if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+		snprintf(fw_name, sizeof(fw_name),
+			 "hygon-ucode/microcode_hygon_fam%02hhxh.bin", family);
 
 	if (firmware_request_builtin(&fw, fw_name)) {
 		cp->size = fw.size;
@@ -530,7 +533,9 @@ static int __init save_microcode_in_initrd(void)
 	enum ucode_state ret;
 	struct cpio_data cp;
 
-	if (dis_ucode_ldr || c->x86_vendor != X86_VENDOR_AMD || c->x86 < 0x10)
+	if (dis_ucode_ldr ||
+	    ((c->x86_vendor != X86_VENDOR_AMD || c->x86 < 0x10) &&
+	     (c->x86_vendor != X86_VENDOR_HYGON)))
 		return 0;
 
 	find_blobs_in_containers(cpuid_1_eax, &cp);
@@ -883,7 +888,7 @@ static enum ucode_state load_microcode_amd(u8 family, const u8 *data, size_t siz
  */
 static enum ucode_state request_microcode_amd(int cpu, struct device *device)
 {
-	char fw_name[36] = "amd-ucode/microcode_amd.bin";
+	char fw_name[40] = "amd-ucode/microcode_amd.bin";
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	enum ucode_state ret = UCODE_NFOUND;
 	const struct firmware *fw;
@@ -891,8 +896,12 @@ static enum ucode_state request_microcode_amd(int cpu, struct device *device)
 	if (force_minrev)
 		return UCODE_NFOUND;
 
-	if (c->x86 >= 0x15)
-		snprintf(fw_name, sizeof(fw_name), "amd-ucode/microcode_amd_fam%.2xh.bin", c->x86);
+	if (x86_cpuid_vendor() == X86_VENDOR_AMD && c->x86 >= 0x15)
+		snprintf(fw_name, sizeof(fw_name),
+			"amd-ucode/microcode_amd_fam%.2xh.bin", c->x86);
+	else if (x86_cpuid_vendor() == X86_VENDOR_HYGON)
+		snprintf(fw_name, sizeof(fw_name),
+			"hygon-ucode/microcode_hygon_fam%.2xh.bin", c->x86);
 
 	if (request_firmware_direct(&fw, (const char *)fw_name, device)) {
 		pr_debug("failed to load file %s\n", fw_name);
@@ -942,6 +951,25 @@ struct microcode_ops * __init init_amd_microcode(void)
 
 	return &microcode_amd_ops;
 }
+
+#ifdef CONFIG_CPU_SUP_HYGON
+struct microcode_ops * __init init_hygon_microcode(void)
+{
+	struct cpuinfo_x86 *c = &boot_cpu_data;
+
+	if (c->x86_vendor != X86_VENDOR_HYGON)
+		return NULL;
+
+	strscpy((char *)ucode_path, "kernel/x86/microcode/HygonGenuine.bin",
+		sizeof(ucode_path));
+
+	if (ucode_new_rev)
+		pr_info_once("microcode updated early to new patch_level=0x%08x\n",
+			     ucode_new_rev);
+
+	return &microcode_amd_ops;
+}
+#endif
 
 void __exit exit_amd_microcode(void)
 {
