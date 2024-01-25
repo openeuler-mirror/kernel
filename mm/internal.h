@@ -592,6 +592,56 @@ extern long faultin_vma_page_range(struct vm_area_struct *vma,
 				   bool write, int *locked);
 extern bool mlock_future_ok(struct mm_struct *mm, unsigned long flags,
 			       unsigned long bytes);
+
+/*
+ * NOTE: This function can't tell whether the folio is "fully mapped" in the
+ * range.
+ * "fully mapped" means all the pages of folio is associated with the page
+ * table of range while this function just check whether the folio range is
+ * within the range [start, end). Funcation caller nees to do page table
+ * check if it cares about the page table association.
+ *
+ * Typical usage (like mlock or madvise) is:
+ * Caller knows at least 1 page of folio is associated with page table of VMA
+ * and the range [start, end) is intersect with the VMA range. Caller wants
+ * to know whether the folio is fully associated with the range. It calls
+ * this function to check whether the folio is in the range first. Then checks
+ * the page table to know whether the folio is fully mapped to the range.
+ */
+static inline bool
+folio_within_range(struct folio *folio, struct vm_area_struct *vma,
+		unsigned long start, unsigned long end)
+{
+	pgoff_t pgoff, addr;
+	unsigned long vma_pglen = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+
+	VM_WARN_ON_FOLIO(folio_test_ksm(folio), folio);
+	if (start > end)
+		return false;
+
+	if (start < vma->vm_start)
+		start = vma->vm_start;
+
+	if (end > vma->vm_end)
+		end = vma->vm_end;
+
+	pgoff = folio_pgoff(folio);
+
+	/* if folio start address is not in vma range */
+	if (!in_range(pgoff, vma->vm_pgoff, vma_pglen))
+		return false;
+
+	addr = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+
+	return !(addr < start || end - addr < folio_size(folio));
+}
+
+static inline bool
+folio_within_vma(struct folio *folio, struct vm_area_struct *vma)
+{
+	return folio_within_range(folio, vma, vma->vm_start, vma->vm_end);
+}
+
 /*
  * mlock_vma_folio() and munlock_vma_folio():
  * should be called with vma's mmap_lock held for read or write,
@@ -600,14 +650,10 @@ extern bool mlock_future_ok(struct mm_struct *mm, unsigned long flags,
  * mlock is usually called at the end of page_add_*_rmap(), munlock at
  * the end of page_remove_rmap(); but new anon folios are managed by
  * folio_add_lru_vma() calling mlock_new_folio().
- *
- * @compound is used to include pmd mappings of THPs, but filter out
- * pte mappings of THPs, which cannot be consistently counted: a pte
- * mapping of the THP head cannot be distinguished by the page alone.
  */
 void mlock_folio(struct folio *folio);
 static inline void mlock_vma_folio(struct folio *folio,
-			struct vm_area_struct *vma, bool compound)
+				struct vm_area_struct *vma)
 {
 	/*
 	 * The VM_SPECIAL check here serves two purposes.
@@ -617,17 +663,24 @@ static inline void mlock_vma_folio(struct folio *folio,
 	 *    file->f_op->mmap() is using vm_insert_page(s), when VM_LOCKED may
 	 *    still be set while VM_SPECIAL bits are added: so ignore it then.
 	 */
-	if (unlikely((vma->vm_flags & (VM_LOCKED|VM_SPECIAL)) == VM_LOCKED) &&
-	    (compound || !folio_test_large(folio)))
+	if (unlikely((vma->vm_flags & (VM_LOCKED|VM_SPECIAL)) == VM_LOCKED))
 		mlock_folio(folio);
 }
 
 void munlock_folio(struct folio *folio);
 static inline void munlock_vma_folio(struct folio *folio,
-			struct vm_area_struct *vma, bool compound)
+					struct vm_area_struct *vma)
 {
-	if (unlikely(vma->vm_flags & VM_LOCKED) &&
-	    (compound || !folio_test_large(folio)))
+	/*
+	 * munlock if the function is called. Ideally, we should only
+	 * do munlock if any page of folio is unmapped from VMA and
+	 * cause folio not fully mapped to VMA.
+	 *
+	 * But it's not easy to confirm that's the situation. So we
+	 * always munlock the folio and page reclaim will correct it
+	 * if it's wrong.
+	 */
+	if (unlikely(vma->vm_flags & VM_LOCKED))
 		munlock_folio(folio);
 }
 
