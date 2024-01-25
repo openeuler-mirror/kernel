@@ -19,6 +19,8 @@ enum {
 	IOMMU_TEST_OP_SET_TEMP_MEMORY_LIMIT,
 	IOMMU_TEST_OP_MOCK_DOMAIN_REPLACE,
 	IOMMU_TEST_OP_ACCESS_REPLACE_IOAS,
+	IOMMU_TEST_OP_MOCK_DOMAIN_FLAGS,
+	IOMMU_TEST_OP_DIRTY,
 };
 
 enum {
@@ -40,6 +42,10 @@ enum {
 	MOCK_FLAGS_ACCESS_CREATE_NEEDS_PIN_PAGES = 1 << 0,
 };
 
+enum {
+	MOCK_FLAGS_DEVICE_NO_DIRTY = 1 << 0,
+};
+
 struct iommu_test_cmd {
 	__u32 size;
 	__u32 op;
@@ -56,6 +62,13 @@ struct iommu_test_cmd {
 			/* out_idev_id is the standard iommufd_bind object */
 			__u32 out_idev_id;
 		} mock_domain;
+		struct {
+			__u32 out_stdev_id;
+			__u32 out_hwpt_id;
+			__u32 out_idev_id;
+			/* Expand mock_domain to set mock device flags */
+			__u32 dev_flags;
+		} mock_domain_flags;
 		struct {
 			__u32 pt_id;
 		} mock_domain_replace;
@@ -95,6 +108,14 @@ struct iommu_test_cmd {
 		struct {
 			__u32 ioas_id;
 		} access_replace_ioas;
+		struct {
+			__u32 flags;
+			__aligned_u64 iova;
+			__aligned_u64 length;
+			__aligned_u64 page_size;
+			__aligned_u64 uptr;
+			__aligned_u64 out_nr_dirty;
+		} dirty;
 	};
 	__u32 last;
 };

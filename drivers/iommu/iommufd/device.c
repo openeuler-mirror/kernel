@@ -540,7 +540,7 @@ iommufd_device_auto_get_domain(struct iommufd_device *idev,
 	}
 
 	hwpt = iommufd_hw_pagetable_alloc(idev->ictx, ioas, idev,
-					  immediate_attach);
+					  0, immediate_attach);
 	if (IS_ERR(hwpt)) {
 		destroy_hwpt = ERR_CAST(hwpt);
 		goto out_unlock;
@@ -1184,6 +1184,10 @@ int iommufd_get_hw_info(struct iommufd_ucmd *ucmd)
 	 * the kernel capability is. It could be larger than the input buffer.
 	 */
 	cmd->data_len = data_len;
+
+	cmd->out_capabilities = 0;
+	if (device_iommu_capable(idev->dev, IOMMU_CAP_DIRTY_TRACKING))
+		cmd->out_capabilities |= IOMMU_HW_CAP_DIRTY_TRACKING;
 
 	rc = iommufd_ucmd_respond(ucmd, sizeof(*cmd));
 out_free:
