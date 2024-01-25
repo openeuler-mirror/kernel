@@ -87,9 +87,7 @@ void collect_procs_ksm(struct page *page, struct list_head *to_kill,
 		       int force_early);
 #endif
 
-#ifdef CONFIG_PROC_FS
 long ksm_process_profit(struct mm_struct *);
-#endif /* CONFIG_PROC_FS */
 
 #else  /* !CONFIG_KSM */
 
