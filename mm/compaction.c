@@ -23,6 +23,7 @@
 #include <linux/freezer.h>
 #include <linux/page_owner.h>
 #include <linux/psi.h>
+#include <linux/dynamic_hugetlb.h>
 #include "internal.h"
 
 #ifdef CONFIG_COMPACTION
@@ -1868,6 +1869,9 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 		page = pageblock_pfn_to_page(block_start_pfn,
 						block_end_pfn, cc->zone);
 		if (!page)
+			continue;
+
+		if (page_belong_to_dynamic_hugetlb(page))
 			continue;
 
 		/*
