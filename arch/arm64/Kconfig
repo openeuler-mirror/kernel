@@ -2262,9 +2262,19 @@ config ARM64_DEBUG_PRIORITY_MASKING
 	  If unsure, say N
 endif # ARM64_PSEUDO_NMI
 
+config IPI_AS_NMI
+	bool "Support ipi triggerred as pseudo nmi"
+	depends on ARM64_PSEUDO_NMI
+	default n
+	help
+	  This adds support to trigger ipi as pseudo nmi, which allows to have an IPI
+	  leveraged to invoke NMI functions on other CPUs. Current prospective users
+	  are NMI backtrace and KGDB CPUs round-up whose support is added via future
+	  patches.
+
 config NON_NMI_IPI_BACKTRACE
 	bool "Support non nmi ipi backtrace"
-	depends on ARM64_PSEUDO_NMI
+	depends on IPI_AS_NMI
 	default n
 	help
 	  This adds support for non nmi ipi backtrace, which allows hungtask_monitor

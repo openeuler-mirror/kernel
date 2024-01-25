@@ -6,7 +6,7 @@
 
 #include <asm-generic/irq.h>
 
-#ifdef CONFIG_SMP
+#if defined(CONFIG_SMP) && defined(CONFIG_IPI_AS_NMI)
 extern bool arch_trigger_cpumask_backtrace(const cpumask_t *mask,
 					   int exclude_cpu);
 #define arch_trigger_cpumask_backtrace arch_trigger_cpumask_backtrace

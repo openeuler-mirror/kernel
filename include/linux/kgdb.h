@@ -199,6 +199,7 @@ kgdb_arch_handle_qxfer_pkt(char *remcom_in_buffer,
 
 extern void kgdb_call_nmi_hook(void *ignored);
 
+#ifdef CONFIG_IPI_AS_NMI
 /**
  *	kgdb_smp_call_nmi_hook - Provide default fallback mechanism to
  *				 round-up CPUs
@@ -210,6 +211,7 @@ extern void kgdb_call_nmi_hook(void *ignored);
  */
 
 extern void kgdb_smp_call_nmi_hook(void);
+#endif
 
 /**
  *	kgdb_roundup_cpus - Get other CPUs into a holding pattern

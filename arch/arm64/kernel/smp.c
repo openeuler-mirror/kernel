@@ -937,7 +937,9 @@ static void ipi_setup(int cpu)
 	for (i = 0; i < nr_ipi; i++)
 		enable_percpu_irq(ipi_irq_base + i, 0);
 
+#ifdef CONFIG_IPI_AS_NMI
 	dynamic_ipi_setup(cpu);
+#endif
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -951,7 +953,9 @@ static void ipi_teardown(int cpu)
 	for (i = 0; i < nr_ipi; i++)
 		disable_percpu_irq(ipi_irq_base + i);
 
+#ifdef CONFIG_IPI_AS_NMI
 	dynamic_ipi_teardown(cpu);
+#endif
 }
 #endif
 
@@ -973,8 +977,10 @@ void __init set_smp_ipi_range(int ipi_base, int n)
 		irq_set_status_flags(ipi_base + i, IRQ_HIDDEN);
 	}
 
+#ifdef CONFIG_IPI_AS_NMI
 	if (n > nr_ipi)
 		set_smp_dynamic_ipi(ipi_base + nr_ipi);
+#endif
 
 	ipi_irq_base = ipi_base;
 
