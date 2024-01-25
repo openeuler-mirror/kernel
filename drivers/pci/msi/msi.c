@@ -584,6 +584,12 @@ static void __iomem *msix_map_region(struct pci_dev *dev,
 		return NULL;
 
 	table_offset &= PCI_MSIX_TABLE_OFFSET;
+	if (table_offset >= pci_resource_len(dev, bir)) {
+		dev_err(&dev->dev,
+			"MSI-X Table offset is out of range of BAR:%d!\n",
+			bir);
+		return NULL;
+	}
 	phys_addr = pci_resource_start(dev, bir) + table_offset;
 
 	return ioremap(phys_addr, nr_entries * PCI_MSIX_ENTRY_SIZE);
