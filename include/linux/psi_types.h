@@ -7,6 +7,7 @@
 #include <linux/types.h>
 #include <linux/kref.h>
 #include <linux/wait.h>
+#include <linux/kabi.h>
 
 #ifdef CONFIG_PSI
 
@@ -99,6 +100,12 @@ enum psi_stat_states {
 #ifdef CONFIG_QOS_SCHED
 	PSI_CPU_QOS_FULL,
 #endif
+	PSI_STATE_RESERVE1,
+	PSI_STATE_RESERVE2,
+	PSI_STATE_RESERVE3,
+	PSI_STATE_RESERVE4,
+	PSI_STATE_RESERVE5,
+	PSI_STATE_RESERVE6,
 	NR_PSI_STAT_STATES,
 };
 
@@ -113,6 +120,12 @@ enum psi_stat_task_count {
 	NR_ASYNC_MEMCG_RECLAIM_RUNNING,
 	NR_SWAP,
 	NR_SWAP_RUNNING,
+	NR_PSI_ST_RESERVE1,
+	NR_PSI_ST_RESERVE2,
+	NR_PSI_ST_RESERVE3,
+	NR_PSI_ST_RESERVE4,
+	NR_PSI_ST_RESERVE5,
+	NR_PSI_ST_RESERVE6,
 	NR_PSI_STAT_TASK_COUNTS,
 };
 #endif /* CONFIG_PSI_FINE_GRAINED */
@@ -151,6 +164,11 @@ struct psi_group_cpu {
 	int prev_throttle;
 	int cur_throttle;
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
 };
 
 /* PSI growth tracking window */
@@ -166,6 +184,9 @@ struct psi_window {
 
 	/* Value growth in the previous window */
 	u64 prev_growth;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 struct psi_trigger {
@@ -204,6 +225,9 @@ struct psi_trigger {
 
 	/* Trigger type - PSI_AVGS for unprivileged, PSI_POLL for RT */
 	enum psi_aggregators aggregator;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 struct psi_group {
@@ -259,6 +283,10 @@ struct psi_group {
 	u64 fine_grained_total[NR_PSI_AGGREGATORS][NR_PSI_STAT_STATES];
 	unsigned long fine_grained_avg[NR_PSI_STAT_STATES][3];
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 #else /* CONFIG_PSI */
 
