@@ -38,11 +38,6 @@
 #define HCCS_PCC_CMD_WAIT_RETRIES_NUM		500ULL
 #define HCCS_POLL_STATUS_TIME_INTERVAL_US	3
 
-enum hccs_hw_device_version {
-	HCCS_HW_DEVICE_V1 = 0,
-	HCCS_HW_DEVICE_V2 = 1,
-};
-
 static struct hccs_port_info *kobj_to_port_info(struct kobject *k)
 {
 	return container_of(k, struct hccs_port_info, kobj);
@@ -103,21 +98,6 @@ static int hccs_get_pcc_chan_id(struct hccs_dev *hdev)
 	return 0;
 }
 
-static int hccs_get_device_version(struct hccs_dev *hdev)
-{
-	const struct acpi_device_id *acpi_id;
-
-	acpi_id = acpi_match_device(hdev->dev->driver->acpi_match_table,
-				    hdev->dev);
-	if (!acpi_id) {
-		dev_err(hdev->dev, "get device version failed.");
-		return -EINVAL;
-	}
-
-	hdev->dev_ver = (u8)acpi_id->driver_data;
-	return 0;
-}
-
 static void hccs_chan_tx_done(struct mbox_client *cl, void *msg, int ret)
 {
 	if (ret < 0)
@@ -126,14 +106,6 @@ static void hccs_chan_tx_done(struct mbox_client *cl, void *msg, int ret)
 	else
 		pr_debug("TX completed. CMD sent:0x%x, ret:%d\n",
 			 *(u8 *)msg, ret);
-}
-
-static void hccs_pcc_rx_callback(struct mbox_client *cl, void *m)
-{
-	struct hccs_mbox_client_info *cl_info =
-			container_of(cl, struct hccs_mbox_client_info, client);
-
-	complete(&cl_info->done);
 }
 
 static void hccs_unregister_pcc_channel(struct hccs_dev *hdev)
@@ -157,11 +129,6 @@ static int hccs_register_pcc_channel(struct hccs_dev *hdev)
 	cl->tx_block = false;
 	cl->knows_txdone = true;
 	cl->tx_done = hccs_chan_tx_done;
-	if (hdev->dev_ver == HCCS_HW_DEVICE_V2) {
-		cl->rx_callback = hccs_pcc_rx_callback;
-		init_completion(&cl_info->done);
-	}
-
 	pcc_chan = pcc_mbox_request_channel(cl, hdev->chan_id);
 	if (IS_ERR(pcc_chan)) {
 		dev_err(dev, "PPC channel request failed.\n");
@@ -178,14 +145,8 @@ static int hccs_register_pcc_channel(struct hccs_dev *hdev)
 	 */
 	cl_info->deadline_us =
 			HCCS_PCC_CMD_WAIT_RETRIES_NUM * pcc_chan->latency;
-	if (hdev->dev_ver == HCCS_HW_DEVICE_V1 &&
-	    cl_info->mbox_chan->mbox->txdone_irq) {
+	if (cl_info->mbox_chan->mbox->txdone_irq) {
 		dev_err(dev, "PCC IRQ in PCCT is enabled.\n");
-		rc = -EINVAL;
-		goto err_mbx_channel_free;
-	} else if (hdev->dev_ver == HCCS_HW_DEVICE_V2 &&
-		   !cl_info->mbox_chan->mbox->txdone_irq) {
-		dev_err(dev, "PCC IRQ in PCCT isn't supported.\n");
 		rc = -EINVAL;
 		goto err_mbx_channel_free;
 	}
@@ -212,81 +173,49 @@ out:
 static int hccs_check_chan_cmd_complete(struct hccs_dev *hdev)
 {
 	struct hccs_mbox_client_info *cl_info = &hdev->cl_info;
-	struct acpi_pcct_shared_memory __iomem *comm_base;
-	int ret = 0;
+	struct acpi_pcct_shared_memory __iomem *comm_base =
+							cl_info->pcc_comm_addr;
 	u16 status;
+	int ret;
 
 	/*
 	 * Poll PCC status register every 3us(delay_us) for maximum of
 	 * deadline_us(timeout_us) until PCC command complete bit is set(cond)
 	 */
-	if (hdev->dev_ver == HCCS_HW_DEVICE_V1) {
-		comm_base = cl_info->pcc_comm_addr;
-		ret = readw_poll_timeout(&comm_base->status, status,
-					status & PCC_STATUS_CMD_COMPLETE,
-					HCCS_POLL_STATUS_TIME_INTERVAL_US,
-					cl_info->deadline_us);
-		if (unlikely(ret))
-			dev_err(hdev->dev, "poll PCC status failed, ret = %d.\n", ret);
-	} else {
-		if (!wait_for_completion_timeout(&cl_info->done,
-				usecs_to_jiffies(cl_info->deadline_us))) {
-			dev_err(hdev->dev, "PCC command executed timeout!\n");
-			ret = -ETIMEDOUT;
-		}
-	}
+	ret = readw_poll_timeout(&comm_base->status, status,
+				 status & PCC_STATUS_CMD_COMPLETE,
+				 HCCS_POLL_STATUS_TIME_INTERVAL_US,
+				 cl_info->deadline_us);
+	if (unlikely(ret))
+		dev_err(hdev->dev, "poll PCC status failed, ret = %d.\n", ret);
 
 	return ret;
-}
-
-static void hccs_fill_pcc_shared_mem_region(struct hccs_dev *hdev, u8 cmd,
-					    struct hccs_desc *desc,
-					    void __iomem *comm_space,
-					    u16 space_size)
-{
-	struct hccs_mbox_client_info *cl_info = &hdev->cl_info;
-	struct acpi_pcct_ext_pcc_shared_memory tmp1 = {0};
-	struct acpi_pcct_shared_memory tmp2 = {0};
-
-	if (hdev->dev_ver == HCCS_HW_DEVICE_V1) {
-		tmp2.signature = PCC_SIGNATURE | hdev->chan_id;
-		tmp2.command = cmd;
-		tmp2.status = 0;
-		memcpy_toio(cl_info->pcc_comm_addr, (void *)&tmp2,
-			    sizeof(struct acpi_pcct_shared_memory));
-	} else {
-		tmp1.signature = PCC_SIGNATURE | hdev->chan_id;
-		tmp1.command = cmd;
-		tmp1.flags = PCC_CMD_COMPLETION_NOTIFY;
-		tmp1.length = HCCS_PCC_SHARE_MEM_BYTES;
-		memcpy_toio(cl_info->pcc_comm_addr, (void *)&tmp1,
-			    sizeof(struct acpi_pcct_ext_pcc_shared_memory));
-	}
-
-	/* Copy the message to the PCC comm space */
-	memcpy_toio(comm_space, (void *)desc, space_size);
 }
 
 static int hccs_pcc_cmd_send(struct hccs_dev *hdev, u8 cmd,
 			     struct hccs_desc *desc)
 {
 	struct hccs_mbox_client_info *cl_info = &hdev->cl_info;
+	void __iomem *comm_space = cl_info->pcc_comm_addr +
+					sizeof(struct acpi_pcct_shared_memory);
 	struct hccs_fw_inner_head *fw_inner_head;
-	void __iomem *comm_space;
-	u16 shared_mem_size;
-	u16 space_size;
+	struct acpi_pcct_shared_memory tmp = {0};
+	u16 comm_space_size;
 	int ret;
 
-	shared_mem_size = hdev->dev_ver == HCCS_HW_DEVICE_V1 ?
-			sizeof(struct acpi_pcct_shared_memory) :
-			sizeof(struct acpi_pcct_ext_pcc_shared_memory);
-	comm_space = cl_info->pcc_comm_addr + shared_mem_size;
-	space_size = HCCS_PCC_SHARE_MEM_BYTES - shared_mem_size;
+	/* Write signature for this subspace */
+	tmp.signature = PCC_SIGNATURE | hdev->chan_id;
+	/* Write to the shared command region */
+	tmp.command = cmd;
+	/* Clear cmd complete bit */
+	tmp.status = 0;
+	memcpy_toio(cl_info->pcc_comm_addr, (void *)&tmp,
+			sizeof(struct acpi_pcct_shared_memory));
 
-	hccs_fill_pcc_shared_mem_region(hdev, cmd, desc,
-					comm_space, space_size);
-	if (cl_info->mbox_chan->mbox->txdone_irq)
-		reinit_completion(&cl_info->done);
+	/* Copy the message to the PCC comm space */
+	comm_space_size = HCCS_PCC_SHARE_MEM_BYTES -
+				sizeof(struct acpi_pcct_shared_memory);
+	memcpy_toio(comm_space, (void *)desc, comm_space_size);
 
 	/* Ring doorbell */
 	ret = mbox_send_message(cl_info->mbox_chan, &cmd);
@@ -302,7 +231,7 @@ static int hccs_pcc_cmd_send(struct hccs_dev *hdev, u8 cmd,
 		goto end;
 
 	/* Copy response data */
-	memcpy_fromio((void *)desc, comm_space, space_size);
+	memcpy_fromio((void *)desc, comm_space, comm_space_size);
 	fw_inner_head = &desc->rsp.fw_inner_head;
 	if (fw_inner_head->retStatus) {
 		dev_err(hdev->dev, "Execute PCC command failed, error code = %u.\n",
@@ -311,10 +240,7 @@ static int hccs_pcc_cmd_send(struct hccs_dev *hdev, u8 cmd,
 	}
 
 end:
-	if (cl_info->mbox_chan->mbox->txdone_irq)
-		mbox_chan_txdone(cl_info->mbox_chan, ret);
-	else
-		mbox_client_txdone(cl_info->mbox_chan, ret);
+	mbox_client_txdone(cl_info->mbox_chan, ret);
 	return ret;
 }
 
@@ -1286,10 +1212,6 @@ static int hccs_probe(struct platform_device *pdev)
 	hdev->dev = &pdev->dev;
 	platform_set_drvdata(pdev, hdev);
 
-	rc = hccs_get_device_version(hdev);
-	if (rc)
-		return rc;
-
 	mutex_init(&hdev->lock);
 	rc = hccs_get_pcc_chan_id(hdev);
 	if (rc)
@@ -1329,8 +1251,7 @@ static int hccs_remove(struct platform_device *pdev)
 }
 
 static const struct acpi_device_id hccs_acpi_match[] = {
-	{ "HISI04B1", HCCS_HW_DEVICE_V1},
-	{ "HISI04B2", HCCS_HW_DEVICE_V2},
+	{ "HISI04B1"},
 	{ ""},
 };
 MODULE_DEVICE_TABLE(acpi, hccs_acpi_match);
