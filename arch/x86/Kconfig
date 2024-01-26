@@ -1626,7 +1626,8 @@ config NUMA_EMU
 	  number of nodes. This is only useful for debugging.
 
 config NODES_SHIFT
-	int "Maximum NUMA Nodes (as a power of 2)" if !MAXSMP
+	int "Maximum NUMA Nodes (as a power of 2)"
+	range 8 10 if MAXSMP
 	range 1 10
 	default "10" if MAXSMP
 	default "6" if X86_64
