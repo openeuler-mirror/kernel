@@ -1271,6 +1271,9 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 		if (!page)
 			continue;
 
+		if (page_belong_to_dynamic_hugetlb(page))
+			continue;
+
 		/* If isolation recently failed, do not retry */
 		if (!isolation_suitable(cc, page))
 			continue;
