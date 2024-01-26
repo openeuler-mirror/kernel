@@ -184,12 +184,12 @@ static inline
 void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 {
 }
+#endif
+
 static inline
 bool page_belong_to_dynamic_hugetlb(struct page *page)
 {
 	return false;
 }
-#endif
-
 #endif /* CONFIG_DYNAMIC_HUGETLB */
 #endif /* __LINUX_DYNAMIC_HUGETLB_H */

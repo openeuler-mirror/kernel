@@ -49,6 +49,7 @@
 #include <linux/sched/mm.h>
 #include <linux/ptrace.h>
 #include <linux/oom.h>
+#include <linux/dynamic_hugetlb.h>
 
 #include <asm/tlbflush.h>
 
@@ -1611,6 +1612,9 @@ struct page *alloc_migration_target(struct page *page, unsigned long private)
 	if (PageHuge(page)) {
 		struct hstate *h = page_hstate(compound_head(page));
 
+		if (page_belong_to_dynamic_hugetlb(page))
+			return NULL;
+
 		gfp_mask = htlb_modify_alloc_mask(h, gfp_mask);
 		return alloc_huge_page_nodemask(h, nid, mtc->nmask, gfp_mask);
 	}
@@ -2086,6 +2090,9 @@ static int numamigrate_isolate_page(pg_data_t *pgdat, struct page *page)
 
 	/* Avoid migrating to a node that is nearly full */
 	if (!migrate_balanced_pgdat(pgdat, compound_nr(page)))
+		return 0;
+
+	if (page_belong_to_dynamic_hugetlb(page))
 		return 0;
 
 	if (isolate_lru_page(page))
