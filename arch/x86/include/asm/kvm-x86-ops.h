@@ -141,6 +141,7 @@ KVM_X86_OP_OPTIONAL(control_pre_system_reset)
 KVM_X86_OP_OPTIONAL(control_post_system_reset)
 KVM_X86_OP_OPTIONAL(get_hygon_coco_extension)
 KVM_X86_OP_OPTIONAL(enable_hygon_coco_extension)
+KVM_X86_OP_OPTIONAL(alloc_apic_backing_page)
 
 #undef KVM_X86_OP
 #undef KVM_X86_OP_OPTIONAL

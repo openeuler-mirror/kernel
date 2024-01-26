@@ -1790,6 +1790,7 @@ struct kvm_x86_ops {
 	int (*control_post_system_reset)(struct kvm *kvm);
 	int (*get_hygon_coco_extension)(struct kvm *kvm);
 	int (*enable_hygon_coco_extension)(struct kvm *kvm, u32 arg);
+	void *(*alloc_apic_backing_page)(struct kvm_vcpu *vcpu);
 };
 
 struct kvm_x86_nested_ops {
