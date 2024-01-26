@@ -3377,6 +3377,8 @@ static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, int gid_index,
 			else
 				sgid_type = GID_TYPE_FLAG_ROCE_V2_IPV6;
 		} else if (attr->gid_type == IB_GID_TYPE_ROCE) {
+			if (hr_dev->mac_type == HNAE3_MAC_ROH)
+				return -EPERM;
 			sgid_type = GID_TYPE_FLAG_ROCE_V1;
 		}
 	}
@@ -7191,6 +7193,16 @@ static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
 
 MODULE_DEVICE_TABLE(pci, hns_roce_hw_v2_pci_tbl);
 
+static const struct pci_device_id hns_roh_pci_tbl[] = {
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_100G_ROH), 0 },
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_200G_ROH), 0 },
+	{ PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_400G_ROH), 0 },
+
+	/* required last entry */
+	{0, }
+};
+MODULE_DEVICE_TABLE(pci, hns_roh_pci_tbl);
+
 static void hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 				  struct hnae3_handle *handle)
 {
@@ -7219,6 +7231,10 @@ static void hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 	for (i = 0; i < handle->rinfo.num_vectors; i++)
 		hr_dev->irq[i] = pci_irq_vector(handle->pdev,
 						i + handle->rinfo.base_vector);
+
+	id = pci_match_id(hns_roh_pci_tbl, hr_dev->pci_dev);
+	if (id)
+		hr_dev->mac_type = HNAE3_MAC_ROH;
 
 	/* cmd issue mode: 0 is poll, 1 is event */
 	hr_dev->cmd_mod = 1;

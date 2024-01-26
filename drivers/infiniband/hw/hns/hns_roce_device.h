@@ -1108,6 +1108,7 @@ struct hns_roce_dev {
 	struct hns_roce_hem_table  gmv_table;
 
 	int			cmd_mod;
+	u8			mac_type;
 	int			loop_idc;
 	u32			sdb_offset;
 	u32			odb_offset;
