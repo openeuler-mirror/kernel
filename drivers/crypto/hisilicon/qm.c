@@ -3503,16 +3503,14 @@ static int hisi_qm_sort_devices(int node, struct list_head *head,
 	struct hisi_qm *qm;
 	struct list_head *n;
 	struct device *dev;
-	int dev_node = 0;
+	int dev_node;
 
 	list_for_each_entry(qm, &qm_list->list, list) {
 		dev = &qm->pdev->dev;
 
-		if (IS_ENABLED(CONFIG_NUMA)) {
-			dev_node = dev->numa_node;
-			if (dev_node < 0)
-				dev_node = 0;
-		}
+		dev_node = dev_to_node(dev);
+		if (dev_node < 0)
+			dev_node = 0;
 
 		if (qm_list->check && !qm_list->check(qm))
 			continue;
