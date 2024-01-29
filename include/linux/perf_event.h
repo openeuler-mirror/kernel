@@ -62,6 +62,7 @@ struct perf_guest_info_callbacks {
 #include <linux/security.h>
 #include <linux/static_call.h>
 #include <linux/lockdep.h>
+#include <linux/kabi.h>
 #include <asm/local.h>
 
 struct perf_callchain_entry {
@@ -324,6 +325,11 @@ struct pmu {
 	/* number of address filters this PMU can do */
 	unsigned int			nr_addr_filters;
 
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+
 	/*
 	 * Fully disable/enable this PMU, can be used to protect from the PMI
 	 * as well as for lazy/batch writing of the MSRs.
@@ -540,6 +546,11 @@ struct pmu {
 	 * Check period value for PERF_EVENT_IOC_PERIOD ioctl.
 	 */
 	int (*check_period)		(struct perf_event *event, u64 value); /* optional */
+
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 enum perf_addr_filter_action_t {
@@ -839,6 +850,13 @@ struct perf_event {
 	 * user.
 	 */
 	__u32				orig_type;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
 #endif /* CONFIG_PERF_EVENTS */
 };
 
@@ -965,6 +983,11 @@ struct perf_event_context {
 	 * that until the signal is delivered.
 	 */
 	local_t				nr_pending;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /*
@@ -1040,6 +1063,9 @@ struct perf_cgroup_info {
 	u64				timestamp;
 	u64				timeoffset;
 	int				active;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct perf_cgroup {
@@ -1202,6 +1228,11 @@ struct perf_sample_data {
 	u64				data_page_size;
 	u64				code_page_size;
 	u64				aux_size;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 } ____cacheline_aligned;
 
 /* default value for data source */
