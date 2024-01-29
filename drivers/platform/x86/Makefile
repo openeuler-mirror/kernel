@@ -83,7 +83,9 @@ obj-$(CONFIG_INTEL_INT0002_VGPIO)	+= intel_int0002_vgpio.o
 obj-$(CONFIG_INTEL_MENLOW)		+= intel_menlow.o
 obj-$(CONFIG_INTEL_OAKTRAIL)		+= intel_oaktrail.o
 obj-$(CONFIG_INTEL_VBTN)		+= intel-vbtn.o
-obj-$(CONFIG_INTEL_IFS) += intel/ifs/
+obj-$(CONFIG_INTEL_IFS)			+= intel/ifs/
+obj-$(CONFIG_INTEL_VSEC)		+= intel_vsec.o
+obj-$(CONFIG_INTEL_TPMI)		+= intel_vsec_tpmi.o
 
 # Microsoft
 obj-$(CONFIG_SURFACE3_WMI)		+= surface3-wmi.o
