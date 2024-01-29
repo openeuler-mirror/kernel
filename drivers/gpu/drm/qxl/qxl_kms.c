@@ -283,6 +283,8 @@ vram_mapping_free:
 void qxl_device_fini(struct qxl_device *qdev)
 {
 	int cur_idx;
+	struct drm_device *ddev = &qdev->ddev;
+	struct pci_dev *pdev = to_pci_dev(ddev->dev);
 
 	/* check if qxl_device_init() was successful (gc_work is initialized last) */
 	if (!qdev->gc_work.func)
@@ -305,6 +307,7 @@ void qxl_device_fini(struct qxl_device *qdev)
 	wait_event_timeout(qdev->release_event,
 			   atomic_read(&qdev->release_count) == 0,
 			   HZ);
+	free_irq(pdev->irq, ddev);
 	flush_work(&qdev->gc_work);
 	qxl_surf_evict(qdev);
 	qxl_vram_evict(qdev);
