@@ -636,10 +636,36 @@ static inline struct dentry *lock_parent(struct dentry *dentry)
 	return __lock_parent(dentry);
 }
 
-static inline bool retain_dentry(struct dentry *dentry)
+/*
+ * Return true if dentry is negative and exceed negative dentry limit.
+ */
+static inline bool limit_negative_dentry(struct dentry *dentry)
 {
 	struct dentry *parent;
 
+	parent = dentry->d_parent;
+	if (unlikely(!parent))
+		return false;
+
+	WARN_ON((atomic_read(&parent->d_neg_dnum) < 0));
+	if (!dentry->d_inode) {
+		if (!(dentry->d_flags & DCACHE_NEGATIVE_ACCOUNT)) {
+			unsigned int flags = READ_ONCE(dentry->d_flags);
+
+			flags |= DCACHE_NEGATIVE_ACCOUNT;
+			WRITE_ONCE(dentry->d_flags, flags);
+			atomic_inc(&parent->d_neg_dnum);
+		}
+
+		if (atomic_read(&parent->d_neg_dnum) >= NEG_DENTRY_LIMIT)
+			return true;
+	}
+
+	return false;
+}
+
+static inline bool retain_dentry(struct dentry *dentry)
+{
 	WARN_ON(d_in_lookup(dentry));
 
 	/* Unreachable? Get rid of it */
@@ -654,27 +680,9 @@ static inline bool retain_dentry(struct dentry *dentry)
 			return false;
 	}
 
-	if (unlikely(!dentry->d_parent))
-		goto noparent;
-
-	parent = dentry->d_parent;
-	/* Return false if it's negative */
-	WARN_ON((atomic_read(&parent->d_neg_dnum) < 0));
-	if (!dentry->d_inode) {
-		if (!(dentry->d_flags & DCACHE_NEGATIVE_ACCOUNT)) {
-			unsigned flags = READ_ONCE(dentry->d_flags);
-
-			flags |= DCACHE_NEGATIVE_ACCOUNT;
-			WRITE_ONCE(dentry->d_flags, flags);
-			atomic_inc(&parent->d_neg_dnum);
-		}
-	}
-
-	if (!dentry->d_inode &&
-	    atomic_read(&parent->d_neg_dnum) >= NEG_DENTRY_LIMIT)
+	if (unlikely(limit_negative_dentry(dentry)))
 		return false;
 
-noparent:
 	/* retain; LRU fodder */
 	dentry->d_lockref.count--;
 	if (unlikely(!(dentry->d_flags & DCACHE_LRU_LIST)))
@@ -808,8 +816,25 @@ static inline bool fast_dput(struct dentry *dentry)
 	d_flags &= DCACHE_REFERENCED | DCACHE_LRU_LIST | DCACHE_DISCONNECTED;
 
 	/* Nothing to do? Dropping the reference was all we needed? */
-	if (d_flags == (DCACHE_REFERENCED | DCACHE_LRU_LIST) && !d_unhashed(dentry))
-		return true;
+	if (d_flags == (DCACHE_REFERENCED | DCACHE_LRU_LIST) && !d_unhashed(dentry)) {
+		/*
+		 * If the dentry is not negative dentry, return true directly,
+		 * avoid holding dentry lock in the fast put path.
+		 */
+		if (dentry->d_inode)
+			return true;
+		/*
+		 * If dentry is negative and need to be limitted, it maybe need
+		 * to be killed, so shouldn't fast put and retain in memory.
+		 */
+		spin_lock(&dentry->d_lock);
+		if (likely(!limit_negative_dentry(dentry))) {
+			spin_unlock(&dentry->d_lock);
+			return true;
+		}
+
+		goto dentry_locked;
+	}
 
 	/*
 	 * Not the fast normal case? Get the lock. We've already decremented
@@ -818,6 +843,7 @@ static inline bool fast_dput(struct dentry *dentry)
 	 */
 	spin_lock(&dentry->d_lock);
 
+dentry_locked:
 	/*
 	 * Did somebody else grab a reference to it in the meantime, and
 	 * we're no longer the last user after all? Alternatively, somebody
