@@ -8,6 +8,7 @@
 #include <linux/rhashtable-types.h>
 #include <linux/xfrm.h>
 #include <net/dst_ops.h>
+#include <linux/kabi.h>
 
 struct ctl_table_header;
 
@@ -83,6 +84,9 @@ struct netns_xfrm {
 
 	spinlock_t xfrm_policy_lock;
 	struct mutex xfrm_cfg_mutex;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #endif

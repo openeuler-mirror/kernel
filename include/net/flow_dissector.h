@@ -7,6 +7,7 @@
 #include <linux/siphash.h>
 #include <linux/string.h>
 #include <uapi/linux/if_ether.h>
+#include <linux/kabi.h>
 
 struct bpf_prog;
 struct net;
@@ -401,6 +402,11 @@ struct flow_keys {
 	struct flow_dissector_key_icmp icmp;
 	/* 'addrs' must be the last member */
 	struct flow_dissector_key_addrs addrs;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #define FLOW_KEYS_HASH_OFFSET		\
