@@ -10,6 +10,7 @@
 #include <linux/hugetlb.h>
 #include <linux/page_owner.h>
 #include <linux/migrate.h>
+#include <linux/dynamic_hugetlb.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -195,7 +196,8 @@ int start_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
 	     pfn += pageblock_nr_pages) {
 		page = __first_valid_page(pfn, pageblock_nr_pages);
 		if (page) {
-			if (set_migratetype_isolate(page, migratetype, flags)) {
+			if (page_belong_to_dynamic_hugetlb(page) ||
+			    set_migratetype_isolate(page, migratetype, flags)) {
 				undo_pfn = pfn;
 				goto undo;
 			}
