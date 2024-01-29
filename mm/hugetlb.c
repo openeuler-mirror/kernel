@@ -1762,7 +1762,6 @@ static int free_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 int dissolve_free_huge_page(struct page *page)
 {
 	int rc = -EBUSY;
-	struct dhugetlb_pool *hpool;
 
 retry:
 	/* Not to disrupt normal path by vainly holding hugetlb_lock */
@@ -1770,11 +1769,8 @@ retry:
 		return 0;
 
 	/* Skip dissolve hugepage for dynamic hugetlb */
-	hpool = get_dhugetlb_pool_from_dhugetlb_pagelist(page);
-	if (hpool) {
-		dhugetlb_pool_put(hpool);
+	if (page_belong_to_dynamic_hugetlb(page))
 		return -EBUSY;
-	}
 
 	spin_lock(&hugetlb_lock);
 	if (!PageHuge(page)) {
@@ -4209,6 +4205,16 @@ static int dhugetlb_acct_memory(struct hstate *h, long delta,
 	spin_unlock(&hpool->lock);
 
 	return ret;
+}
+
+bool page_belong_to_dynamic_hugetlb(struct page *page)
+{
+	struct dhugetlb_pool *hpool;
+
+	hpool = get_dhugetlb_pool_from_dhugetlb_pagelist(page);
+	dhugetlb_pool_put(hpool);
+
+	return !!hpool;
 }
 #else
 static int dhugetlb_acct_memory(struct hstate *h, long delta,

@@ -1907,6 +1907,9 @@ static int numamigrate_isolate_page(pg_data_t *pgdat, struct page *page)
 	if (!migrate_balanced_pgdat(pgdat, 1UL << compound_order(page)))
 		return 0;
 
+	if (page_belong_to_dynamic_hugetlb(page))
+		return 0;
+
 	if (isolate_lru_page(page))
 		return 0;
 

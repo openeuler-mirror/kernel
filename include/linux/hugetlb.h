@@ -745,6 +745,7 @@ void move_pages_from_smpool_to_hpool(struct dhugetlb_pool *hpool,
 				     struct small_page_pool *smpool);
 void dhugetlb_reserve_hugepages(struct dhugetlb_pool *hpool,
 				unsigned long count, bool gigantic);
+bool page_belong_to_dynamic_hugetlb(struct page *page);
 #else
 #define enable_dhugetlb		0
 #define dhugetlb_enabled	0
@@ -760,6 +761,10 @@ static inline struct dhugetlb_pool *get_dhugetlb_pool_from_dhugetlb_pagelist(
 	return NULL;
 }
 static inline void dhugetlb_pool_put(struct dhugetlb_pool *hpool) { return; }
+static inline bool page_belong_to_dynamic_hugetlb(struct page *page)
+{
+	return false;
+}
 #endif /* CONFIG_DYNAMIC_HUGETLB */
 
 static inline spinlock_t *huge_pte_lock(struct hstate *h,
