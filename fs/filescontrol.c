@@ -306,7 +306,6 @@ struct cgroup_subsys files_cgrp_subsys = {
 	.css_free = files_cgroup_css_free,
 	.can_attach = files_cgroup_can_attach,
 	.legacy_cftypes = files,
-	.dfl_cftypes = files,
 };
 
 /*
