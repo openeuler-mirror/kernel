@@ -17,6 +17,7 @@
 
 #include <linux/page_counter.h>
 #include <linux/legacy-filescontrol.h>
+#include <linux/filescontrol.h>
 #include <linux/cgroup.h>
 #include <linux/export.h>
 #include <linux/printk.h>
@@ -94,18 +95,6 @@ static void files_cgroup_css_free(struct cgroup_subsys_state *css)
 	kfree(css_fcg(css));
 }
 
-u64 files_cgroup_count_fds(struct files_struct *files)
-{
-	int i;
-	struct fdtable *fdt;
-	int retval = 0;
-
-	fdt = files_fdtable(files);
-	for (i = 0; i < DIV_ROUND_UP(fdt->max_fds, BITS_PER_LONG); i++)
-		retval += hweight64((__u64)fdt->open_fds[i]);
-	return retval;
-}
-
 /*
  * If attaching this cgroup would overcommit the resource then deny
  * the attach. If not, attach the file resource into new cgroup.
@@ -135,7 +124,7 @@ static int files_cgroup_can_attach(struct cgroup_taskset *tset)
 	from_res = css_res_open_handles(from_css);
 
 	spin_lock(&files->file_lock);
-	num_files = files_cgroup_count_fds(files);
+	num_files = file_cg_count_fds(files);
 	page_counter_uncharge(from_res, num_files);
 
 	if (!page_counter_try_charge(to_res, num_files, &fail_res)) {
@@ -211,7 +200,7 @@ int files_cgroup_dup_fds(struct files_struct *newf)
 	if (!files_cgroup_enabled())
 		return 0;
 	spin_lock(&newf->file_lock);
-	err = files_cgroup_alloc_fd(newf, files_cgroup_count_fds(newf));
+	err = files_cgroup_alloc_fd(newf, file_cg_count_fds(newf));
 	spin_unlock(&newf->file_lock);
 	return err;
 }

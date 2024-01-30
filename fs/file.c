@@ -19,7 +19,7 @@
 #include <linux/bitops.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
-#include <linux/legacy-filescontrol.h>
+#include <linux/filescontrol.h>
 #include <linux/close_range.h>
 #include <net/sock.h>
 
@@ -338,7 +338,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, unsigned int max_fds, int
 	new_fdt->open_fds = newf->open_fds_init;
 	new_fdt->full_fds_bits = newf->full_fds_bits_init;
 	new_fdt->fd = &newf->fd_array[0];
-	files_cgroup_assign(newf);
+	files_cg_assign(newf);
 
 	spin_lock(&oldf->file_lock);
 	old_fdt = files_fdtable(oldf);
@@ -403,7 +403,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, unsigned int max_fds, int
 
 	rcu_assign_pointer(newf->fdt, new_fdt);
 
-	if (files_cgroup_dup_fds(newf)) {
+	if (files_cg_dup_fds(newf)) {
 		/* could not get enough FD resources.  Need to clean up. */
 		new_fds = new_fdt->fd;
 		for (i = open_files; i != 0; i--) {
@@ -419,7 +419,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, unsigned int max_fds, int
 	}
 	return newf;
 out_release:
-	files_cgroup_remove(newf);
+	files_cg_remove(newf);
 	kmem_cache_free(files_cachep, newf);
 out:
 	return NULL;
@@ -445,7 +445,7 @@ static struct fdtable *close_files(struct files_struct * files)
 			if (set & 1) {
 				struct file * file = xchg(&fdt->fd[i], NULL);
 				if (file) {
-					files_cgroup_unalloc_fd(files, 1);
+					files_cg_unalloc_fd(files, 1);
 					filp_close(file, files);
 					cond_resched();
 				}
@@ -454,7 +454,7 @@ static struct fdtable *close_files(struct files_struct * files)
 			set >>= 1;
 		}
 	}
-	files_cgroup_remove(files);
+	files_cg_remove(files);
 	return fdt;
 }
 
@@ -548,7 +548,7 @@ repeat:
 	 */
 	if (error)
 		goto repeat;
-	if (files_cgroup_alloc_fd(files, 1)) {
+	if (files_cg_alloc_fd(files, 1)) {
 		error = -EMFILE;
 		goto out;
 	}
@@ -590,7 +590,7 @@ static void __put_unused_fd(struct files_struct *files, unsigned int fd)
 {
 	struct fdtable *fdt = files_fdtable(files);
 
-	files_cgroup_put_fd(files, fd);
+	files_cg_put_fd(files, fd);
 	__clear_open_fd(fd, fdt);
 	if (fd < files->next_fd)
 		files->next_fd = fd;
@@ -1154,7 +1154,7 @@ __releases(&files->file_lock)
 		goto out;
 	}
 
-	if (!tofree && files_cgroup_alloc_fd(files, 1)) {
+	if (!tofree && files_cg_alloc_fd(files, 1)) {
 		err = -EMFILE;
 		goto out;
 	}
