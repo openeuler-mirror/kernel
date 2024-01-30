@@ -2584,6 +2584,11 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 	/* Set up MSI IRQ domain */
 	pci_set_msi_domain(dev);
 
+	if (pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT)
+		dev->rpdev = dev;
+	else
+		dev->rpdev = pcie_find_root_port(dev);
+
 	/* Notifier could use PCI capabilities */
 	dev->match_driver = false;
 	ret = device_add(&dev->dev);

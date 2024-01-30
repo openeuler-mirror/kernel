@@ -199,6 +199,11 @@ static inline const char *slot_name(struct controller *ctrl)
 	return hotplug_slot_name(&ctrl->hotplug_slot);
 }
 
+static inline struct pci_dev *ctrl_dev(struct controller *ctrl)
+{
+	return ctrl->pcie->port;
+}
+
 static inline struct controller *to_ctrl(struct hotplug_slot *hotplug_slot)
 {
 	return container_of(hotplug_slot, struct controller, hotplug_slot);

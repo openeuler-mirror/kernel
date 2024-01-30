@@ -484,9 +484,25 @@ static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
 {
 	unsigned long val;
 	struct pci_dev *pdev = to_pci_dev(dev);
+	struct pci_dev *rpdev = pdev->rpdev;
 
 	if (kstrtoul(buf, 0, &val) < 0)
 		return -EINVAL;
+
+	if (rpdev && test_and_set_bit(0,
+				&rpdev->slot_being_removed_rescanned)) {
+		pr_info("Slot is being removed or rescanned, please try later!\n");
+		return -EINVAL;
+	}
+
+	/*
+	 * if 'dev' is root port itself, 'pci_stop_and_remove_bus_device()' may
+	 * free the 'rpdev', but we need to clear
+	 * 'rpdev->slot_being_removed_rescanned' in the end. So get 'rpdev' to
+	 * avoid possible 'use-after-free'.
+	 */
+	if (rpdev)
+		pci_dev_get(rpdev);
 
 	if (val) {
 		pci_dev_get(pdev);
@@ -494,6 +510,12 @@ static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
 			pci_stop_and_remove_bus_device_locked(pdev);
 		pci_dev_put(pdev);
 	}
+
+	if (rpdev) {
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
+		pci_dev_put(rpdev);
+	}
+
 	return count;
 }
 static DEVICE_ATTR_IGNORE_LOCKDEP(remove, 0220, NULL,
