@@ -25,6 +25,8 @@ struct vmem_altmap {
 	unsigned long free;
 	unsigned long align;
 	unsigned long alloc;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /*
@@ -99,6 +101,8 @@ struct dev_pagemap_ops {
 	 */
 	int (*memory_failure)(struct dev_pagemap *pgmap, unsigned long pfn,
 			      unsigned long nr_pages, int mf_flags);
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define PGMAP_ALTMAP_VALID	(1 << 0)
@@ -133,6 +137,11 @@ struct dev_pagemap {
 	const struct dev_pagemap_ops *ops;
 	void *owner;
 	int nr_range;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
 	union {
 		struct range range;
 		DECLARE_FLEX_ARRAY(struct range, ranges);

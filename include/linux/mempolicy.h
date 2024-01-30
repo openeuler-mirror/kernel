@@ -52,6 +52,9 @@ struct mempolicy {
 		nodemask_t cpuset_mems_allowed;	/* relative to these nodes */
 		nodemask_t user_nodemask;	/* nodemask passed by user */
 	} w;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 /*

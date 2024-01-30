@@ -646,6 +646,10 @@ struct lruvec {
 #ifdef CONFIG_MEMCG
 	struct pglist_data *pgdat;
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /* Isolate unmapped pages */
@@ -1006,6 +1010,12 @@ struct zone {
 	bool			contiguous;
 
 	CACHELINE_PADDING(_pad3_);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+
 	/* Zone statistics */
 	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];
 	atomic_long_t		vm_numa_event[NR_VM_NUMA_EVENT_ITEMS];
@@ -1418,6 +1428,10 @@ typedef struct pglist_data {
 #endif
 
 	CACHELINE_PADDING(_pad2_);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 
 	/* Per-node vmstats */
 	struct per_cpu_nodestat __percpu *per_cpu_nodestats;
