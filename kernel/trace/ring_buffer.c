@@ -28,6 +28,7 @@
 #include <linux/oom.h>
 
 #include <asm/local.h>
+#include <linux/kabi.h>
 
 /*
  * The "absolute" timestamp in the buffer is only 59 bits.
@@ -537,6 +538,9 @@ struct ring_buffer_per_cpu {
 	struct completion		update_done;
 
 	struct rb_irq_work		irq_work;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 struct trace_buffer {
@@ -571,6 +575,9 @@ struct ring_buffer_iter {
 	u64				page_stamp;
 	struct ring_buffer_event	*event;
 	int				missed_events;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 #ifdef RB_TIME_32

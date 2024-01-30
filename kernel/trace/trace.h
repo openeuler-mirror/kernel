@@ -21,6 +21,7 @@
 #include <linux/workqueue.h>
 #include <linux/ctype.h>
 #include <linux/once_lite.h>
+#include <linux/kabi.h>
 
 #include "pid_list.h"
 
@@ -410,6 +411,9 @@ struct trace_array {
 	struct cond_snapshot	*cond_snapshot;
 #endif
 	struct trace_func_repeats	__percpu *last_func_repeats;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 enum {
@@ -1326,6 +1330,8 @@ struct ftrace_event_field {
 	int			size;
 	int			is_signed;
 	int			len;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct prog_entry;

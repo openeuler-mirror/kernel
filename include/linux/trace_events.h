@@ -9,6 +9,7 @@
 #include <linux/hardirq.h>
 #include <linux/perf_event.h>
 #include <linux/tracepoint.h>
+#include <linux/kabi.h>
 
 struct trace_array;
 struct array_buffer;
@@ -677,6 +678,8 @@ struct trace_event_file {
 	atomic_t		ref;	/* ref count for opened files */
 	atomic_t		sm_ref;	/* soft-mode reference counter */
 	atomic_t		tm_ref;	/* trigger-mode reference counter */
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define __TRACE_EVENT_FLAGS(name, value)				\
