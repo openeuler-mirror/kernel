@@ -897,7 +897,8 @@ enum acpi_madt_type {
 	ACPI_MADT_TYPE_APLIC = 26,
 	ACPI_MADT_TYPE_PLIC = 27,
 	ACPI_MADT_TYPE_RESERVED = 28,	/* 28 to 0x7F are reserved */
-	ACPI_MADT_TYPE_OEM_RESERVED = 0x80	/* 0x80 to 0xFF are reserved for OEM use */
+	ACPI_MADT_TYPE_OEM_RESERVED = 0x80,	/* 0x80 to 0xFF are reserved for OEM use */
+	ACPI_MADT_TYPE_PHYTIUM_2500 = 128
 };
 
 /*
