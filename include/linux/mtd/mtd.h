@@ -13,6 +13,7 @@
 #include <linux/device.h>
 #include <linux/of.h>
 #include <linux/nvmem-provider.h>
+#include <linux/kabi.h>
 
 #include <mtd/mtd-abi.h>
 
@@ -398,6 +399,10 @@ struct mtd_info {
 
 	struct mtd_part part;
 	struct mtd_master master;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 static inline struct mtd_info *mtd_get_master(struct mtd_info *mtd)
