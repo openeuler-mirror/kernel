@@ -18,6 +18,7 @@ void files_cg_unalloc_fd(struct files_struct *files, u64 n);
 
 void files_cg_assign(struct files_struct *files);
 void files_cg_remove(struct files_struct *files);
+extern struct files_struct init_files;
 
 int files_cg_dup_fds(struct files_struct *newf);
 void files_cg_put_fd(struct files_struct *files, unsigned int fd);

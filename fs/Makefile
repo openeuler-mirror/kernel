@@ -48,6 +48,7 @@ obj-$(CONFIG_DIRTY_PAGES)	+= dirty_pages.o
 
 obj-$(CONFIG_FHANDLE)		+= fhandle.o
 obj-$(CONFIG_CGROUP_FILES)	+= legacy-filescontrol.o
+obj-$(CONFIG_CGROUP_FILES)	+= misc-filescontrol.o
 obj-$(CONFIG_CGROUP_FILES)	+= filescontrol.o
 obj-y				+= iomap/
 

@@ -115,7 +115,7 @@ static int files_cgroup_can_attach(struct cgroup_taskset *tset)
 
 	task_lock(task);
 	files = task->files;
-	if (!files || files == &init_files) {
+	if (!files || !files->files_cgroup || files == &init_files) {
 		task_unlock(task);
 		return 0;
 	}

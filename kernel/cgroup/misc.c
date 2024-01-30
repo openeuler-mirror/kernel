@@ -24,6 +24,10 @@ static const char *const misc_res_name[] = {
 	/* AMD SEV-ES ASIDs resource */
 	"sev_es",
 #endif
+#ifdef CONFIG_CGROUP_FILES
+	/* fd for file control */
+	"fd",
+#endif
 	"misc_reserve1",
 	"misc_reserve2",
 	"misc_reserve3",

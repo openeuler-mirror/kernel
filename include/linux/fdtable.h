@@ -67,6 +67,7 @@ struct files_struct {
 	struct file __rcu * fd_array[NR_OPEN_DEFAULT];
 #ifdef CONFIG_CGROUP_FILES
 	struct files_cgroup *files_cgroup;
+	struct misc_cg *misc_cg;
 #endif
 };
 
