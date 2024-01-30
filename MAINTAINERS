@@ -23935,6 +23935,13 @@ L:	linux-mm@kvack.org
 S:	Maintained
 F:	mm/zswap.c
 
+ZHAOXIN I2C BUSSES DRIVERS
+M:	Leoliu-oc <leoliu-oc@zhaoxin.com>
+M:	Hanshu <Hanshu@zhaoxin.com>
+L:	kernel@openeuler.org
+S:	Maintained
+F:	drivers/i2c/busses/i2c-zhaoxin.c
+
 THE REST
 M:	Linus Torvalds <torvalds@linux-foundation.org>
 L:	linux-kernel@vger.kernel.org
