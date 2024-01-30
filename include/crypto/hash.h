@@ -11,6 +11,7 @@
 #include <linux/atomic.h>
 #include <linux/crypto.h>
 #include <linux/string.h>
+#include <linux/kabi.h>
 
 struct crypto_ahash;
 
@@ -78,6 +79,8 @@ struct ahash_request {
 
 	/* This field may only be used by the ahash API code. */
 	void *priv;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 
 	void *__ctx[] CRYPTO_MINALIGN_ATTR;
 };
@@ -173,6 +176,8 @@ struct ahash_alg {
 };
 
 struct shash_desc {
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 	struct crypto_shash *tfm;
 	void *__ctx[] __aligned(ARCH_SLAB_MINALIGN);
 };
@@ -262,11 +267,15 @@ struct crypto_ahash {
 
 	unsigned int statesize;
 	unsigned int reqsize;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 	struct crypto_tfm base;
 };
 
 struct crypto_shash {
 	unsigned int descsize;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 	struct crypto_tfm base;
 };
 
