@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* filescontrol.c - Cgroup controller for open file handles.
+/* legacy-filescontrol.c - Cgroup controller for open file handles.
  *
  * Copyright 2014 Google Inc.
  * Author: Brian Makin <merimus@google.com>
@@ -16,7 +16,7 @@
  */
 
 #include <linux/page_counter.h>
-#include <linux/filescontrol.h>
+#include <linux/legacy-filescontrol.h>
 #include <linux/cgroup.h>
 #include <linux/export.h>
 #include <linux/printk.h>

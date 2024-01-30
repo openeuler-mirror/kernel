@@ -19,7 +19,7 @@
 #include <linux/bitops.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
-#include <linux/filescontrol.h>
+#include <linux/legacy-filescontrol.h>
 #include <linux/close_range.h>
 #include <net/sock.h>
 
