@@ -847,11 +847,22 @@ static inline bool fast_dput(struct dentry *dentry)
 	/* Nothing to do? Dropping the reference was all we needed? */
 	if (d_flags == (DCACHE_REFERENCED | DCACHE_LRU_LIST) && !d_unhashed(dentry)) {
 		/*
+		 * If the dentry is not negative dentry, return true directly,
+		 * avoid holding dentry lock in the fast put path.
+		 */
+		if (dentry->d_inode)
+			return true;
+		/*
 		 * If dentry is negative and need to be limitted, it maybe need
 		 * to be killed, so shouldn't fast put and retain in memory.
 		 */
-		if (likely(!limit_negative_dentry(dentry)))
+		spin_lock(&dentry->d_lock);
+		if (likely(!limit_negative_dentry(dentry))) {
+			spin_unlock(&dentry->d_lock);
 			return true;
+		}
+
+		goto dentry_locked;
 	}
 
 	/*
@@ -861,6 +872,7 @@ static inline bool fast_dput(struct dentry *dentry)
 	 */
 	spin_lock(&dentry->d_lock);
 
+dentry_locked:
 	/*
 	 * Did somebody else grab a reference to it in the meantime, and
 	 * we're no longer the last user after all? Alternatively, somebody
