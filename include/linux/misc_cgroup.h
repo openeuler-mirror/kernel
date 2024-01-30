@@ -7,6 +7,7 @@
  */
 #ifndef _MISC_CGROUP_H_
 #define _MISC_CGROUP_H_
+#include <linux/kabi.h>
 
 /**
  * Types of misc cgroup entries supported by the host.
@@ -18,6 +19,11 @@ enum misc_res_type {
 	/* AMD SEV-ES ASIDs resource */
 	MISC_CG_RES_SEV_ES,
 #endif
+	MISC_RES_TYPE_RESERVE1,
+	MISC_RES_TYPE_RESERVE2,
+	MISC_RES_TYPE_RESERVE3,
+	MISC_RES_TYPE_RESERVE4,
+	MISC_RES_TYPE_RESERVE5,
 	MISC_CG_RES_TYPES
 };
 
@@ -37,6 +43,9 @@ struct misc_res {
 	u64 max;
 	atomic64_t usage;
 	atomic64_t events;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 /**
@@ -52,6 +61,9 @@ struct misc_cg {
 	struct cgroup_file events_file;
 
 	struct misc_res res[MISC_CG_RES_TYPES];
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 u64 misc_cg_res_total_usage(enum misc_res_type type);
