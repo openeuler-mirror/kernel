@@ -14,6 +14,9 @@
 	id(KEXEC_INITRAMFS, kexec-initramfs)	\
 	id(POLICY, security-policy)		\
 	id(X509_CERTIFICATE, x509-certificate)	\
+	id(KABI_RESERVE1, KABI_RESERVE1)	\
+	id(KABI_RESERVE2, KABI_RESERVE2)	\
+	id(KABI_RESERVE3, KABI_RESERVE3)	\
 	id(MAX_ID, )
 
 #define __fid_enumify(ENUM, dummy) READING_ ## ENUM,
