@@ -6635,6 +6635,7 @@ CONFIG_INTEL_TPMI=m
 # Intel Speed Select Technology interface support
 #
 CONFIG_INTEL_SPEED_SELECT_INTERFACE=m
+CONFIG_INTEL_SPEED_SELECT_TPMI=m
 # end of Intel Speed Select Technology interface support
 
 CONFIG_INTEL_TURBO_MAX_3=y
