@@ -143,6 +143,8 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 {
 	struct controller *ctrl = container_of(work, struct controller,
 					       button_work.work);
+	int events = ctrl->button_work.data;
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
 
 	mutex_lock(&ctrl->state_lock);
 	switch (ctrl->state) {
@@ -153,6 +155,15 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 		pciehp_request(ctrl, PCI_EXP_SLTSTA_PDC);
 		break;
 	default:
+		if (events) {
+			atomic_or(events, &ctrl->pending_events);
+			if (!pciehp_poll_mode)
+				irq_wake_thread(ctrl->pcie->irq, ctrl);
+		} else {
+			if (rpdev)
+				clear_bit(0,
+					  &rpdev->slot_being_removed_rescanned);
+		}
 		break;
 	}
 	mutex_unlock(&ctrl->state_lock);
@@ -160,6 +171,8 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 
 void pciehp_handle_button_press(struct controller *ctrl)
 {
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
+
 	mutex_lock(&ctrl->state_lock);
 	switch (ctrl->state) {
 	case OFF_STATE:
@@ -176,6 +189,7 @@ void pciehp_handle_button_press(struct controller *ctrl)
 		/* blink power indicator and turn off attention */
 		pciehp_set_indicators(ctrl, PCI_EXP_SLTCTL_PWR_IND_BLINK,
 				      PCI_EXP_SLTCTL_ATTN_IND_OFF);
+		ctrl->button_work.data = 0;
 		schedule_delayed_work(&ctrl->button_work, 5 * HZ);
 		break;
 	case BLINKINGOFF_STATE:
@@ -199,10 +213,14 @@ void pciehp_handle_button_press(struct controller *ctrl)
 			ctrl_info(ctrl, "Slot(%s): Button press: canceling request to power on\n",
 				  slot_name(ctrl));
 		}
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		break;
 	default:
 		ctrl_err(ctrl, "Slot(%s): Button press: ignoring invalid state %#x\n",
 			 slot_name(ctrl), ctrl->state);
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		break;
 	}
 	mutex_unlock(&ctrl->state_lock);
@@ -210,6 +228,8 @@ void pciehp_handle_button_press(struct controller *ctrl)
 
 void pciehp_handle_disable_request(struct controller *ctrl)
 {
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
+
 	mutex_lock(&ctrl->state_lock);
 	switch (ctrl->state) {
 	case BLINKINGON_STATE:
@@ -221,11 +241,14 @@ void pciehp_handle_disable_request(struct controller *ctrl)
 	mutex_unlock(&ctrl->state_lock);
 
 	ctrl->request_result = pciehp_disable_slot(ctrl, SAFE_REMOVAL);
+	if (rpdev)
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
 }
 
 void pciehp_handle_presence_or_link_change(struct controller *ctrl, u32 events)
 {
 	int present, link_active;
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
 
 	/*
 	 * If the slot is on and presence or link has changed, turn it off.
@@ -266,6 +289,8 @@ void pciehp_handle_presence_or_link_change(struct controller *ctrl, u32 events)
 				  slot_name(ctrl));
 		}
 		mutex_unlock(&ctrl->state_lock);
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		return;
 	}
 
@@ -288,6 +313,8 @@ void pciehp_handle_presence_or_link_change(struct controller *ctrl, u32 events)
 		mutex_unlock(&ctrl->state_lock);
 		break;
 	}
+	if (rpdev)
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
 }
 
 static int __pciehp_enable_slot(struct controller *ctrl)
@@ -408,6 +435,14 @@ int pciehp_sysfs_enable_slot(struct hotplug_slot *hotplug_slot)
 int pciehp_sysfs_disable_slot(struct hotplug_slot *hotplug_slot)
 {
 	struct controller *ctrl = to_ctrl(hotplug_slot);
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
+
+	if (rpdev && test_and_set_bit(0,
+				&rpdev->slot_being_removed_rescanned)) {
+		ctrl_info(ctrl, "Slot(%s): Slot is being removed or rescanned, please try later!\n",
+			  slot_name(ctrl));
+		return -EINVAL;
+	}
 
 	mutex_lock(&ctrl->state_lock);
 	switch (ctrl->state) {
@@ -418,6 +453,8 @@ int pciehp_sysfs_disable_slot(struct hotplug_slot *hotplug_slot)
 		wait_event(ctrl->requester,
 			   !atomic_read(&ctrl->pending_events) &&
 			   !ctrl->ist_running);
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		return ctrl->request_result;
 	case POWEROFF_STATE:
 		ctrl_info(ctrl, "Slot(%s): Already in powering off state\n",
@@ -435,6 +472,9 @@ int pciehp_sysfs_disable_slot(struct hotplug_slot *hotplug_slot)
 		break;
 	}
 	mutex_unlock(&ctrl->state_lock);
+
+	if (rpdev)
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
 
 	return -ENODEV;
 }
