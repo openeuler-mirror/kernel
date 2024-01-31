@@ -1121,8 +1121,6 @@ void wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
 	if (!cgroup1_writeback)
 		return;
 
-	lockdep_assert_held(&cgroup_mutex);
-
 	css_get(blkcg_css);
 	memcg->wb_blk_css = blkcg_css;
 	if (pre_blkcss == NULL)
