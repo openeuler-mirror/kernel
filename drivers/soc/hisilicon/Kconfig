@@ -5,7 +5,7 @@ menu "Hisilicon SoC drivers"
 
 config HISI_HBMDEV
 	tristate "add extra support for hbm memory device"
-	depends on ACPI_HOTPLUG_MEMORY
+	depends on ACPI_HOTPLUG_MEMORY && ARCH_HISI
 	select ACPI_CONTAINER
 	help
 	  This driver add two extra supports for memory devices. The driver
