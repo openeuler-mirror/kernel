@@ -18,7 +18,6 @@
 #include <crypto/aead.h>
 #include <crypto/hash.h>
 #include <crypto/skcipher.h>
-#include <linux/kabi.h>
 
 struct cryptd_skcipher {
 	struct crypto_skcipher base;
@@ -33,8 +32,6 @@ bool cryptd_skcipher_queued(struct cryptd_skcipher *tfm);
 void cryptd_free_skcipher(struct cryptd_skcipher *tfm);
 
 struct cryptd_ahash {
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
 	struct crypto_ahash base;
 };
 
