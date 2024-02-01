@@ -453,7 +453,7 @@ struct task_group {
 	long tag;
 #endif
 
-#if defined(CONFIG_QOS_SCHED_SMART_GRID) && !defined(__GENKSYMS__)
+#if defined(CONFIG_QOS_SCHED_SMART_GRID)
 	struct auto_affinity *auto_affinity;
 #endif
 
