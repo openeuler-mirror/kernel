@@ -49,7 +49,6 @@ struct sm4_cipher_data {
 	struct sm4_ctx  keys;  /* Encryption key */
 };
 
-
 static u8 *rep_xcrypt(const u8 *input, u8 *output, void *key, u8 *iv,
 							struct sm4_cipher_data *sm4_data, u64 count)
 {
@@ -63,31 +62,31 @@ static u8 *rep_xcrypt(const u8 *input, u8 *output, void *key, u8 *iv,
 
 	__asm__ __volatile__(
 		#ifdef __x86_64__
-			"pushq %%rbp\n"
-			"pushq %%rbx\n"
-			"pushq %%rcx\n"
-			"pushq %%rsi\n"
-			"pushq %%rdi\n"
+			"pushq %%rbp\n\n"
+			"pushq %%rbx\n\n"
+			"pushq %%rcx\n\n"
+			"pushq %%rsi\n\n"
+			"pushq %%rdi\n\n"
 		#else
-			"pushl %%ebp\n"
-			"pushl %%ebx\n"
-			"pushl %%ecx\n"
-			"pushl %%esi\n"
-			"pushl %%edi\n"
+			"pushl %%ebp\n\n"
+			"pushl %%ebx\n\n"
+			"pushl %%ecx\n\n"
+			"pushl %%esi\n\n"
+			"pushl %%edi\n\n"
 		#endif
 		".byte 0xf3,0x0f,0xa7,0xf0\n"
 		#ifdef __x86_64__
-			"popq %%rdi\n"
-			"popq %%rsi\n"
-			"popq %%rcx\n"
-			"popq %%rbx\n"
-			"popq %%rbp\n"
+			"popq %%rdi\n\n"
+			"popq %%rsi\n\n"
+			"popq %%rcx\n\n"
+			"popq %%rbx\n\n"
+			"popq %%rbp\n\n"
 		#else
-			"popl %%edi\n"
-			"popl %%esi\n"
-			"popl %%ecx\n"
-			"popl %%ebx\n"
-			"popl %%ebp\n"
+			"popl %%edi\n\n"
+			"popl %%esi\n\n"
+			"popl %%ecx\n\n"
+			"popl %%ebx\n\n"
+			"popl %%ebp\n\n"
 		#endif
 		:
 		: "S"(input), "D"(output), "a"(rax), "b"(key), "c"((unsigned long)count), "d"(iv));
