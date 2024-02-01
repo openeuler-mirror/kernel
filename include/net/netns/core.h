@@ -3,6 +3,7 @@
 #define __NETNS_CORE_H__
 
 #include <linux/types.h>
+#include <linux/kabi.h>
 
 struct ctl_table_header;
 struct prot_inuse;
@@ -22,6 +23,11 @@ struct netns_core {
 #if IS_ENABLED(CONFIG_RPS) && IS_ENABLED(CONFIG_SYSCTL)
 	struct cpumask *rps_default_mask;
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #endif
