@@ -246,10 +246,16 @@ int proc_watchdog_cpumask(struct ctl_table *, int, void *, size_t *, loff_t *);
 #endif
 
 #ifdef CONFIG_SDEI_WATCHDOG
+int sdei_watchdog_nmi_enable(unsigned int cpu);
+void sdei_watchdog_nmi_disable(unsigned int cpu);
 void sdei_watchdog_clear_eoi(void);
+int sdei_watchdog_nmi_probe(void);
 extern bool disable_sdei_nmi_watchdog;
 #else
+static inline int sdei_watchdog_nmi_enable(unsigned int cpu) { return -ENODEV; }
+static inline void sdei_watchdog_nmi_disable(unsigned int cpu) { }
 static inline void sdei_watchdog_clear_eoi(void) { }
+static inline int sdei_watchdog_nmi_probe(void) { return -ENODEV; }
 #define disable_sdei_nmi_watchdog 1
 #endif
 

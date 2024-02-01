@@ -487,8 +487,12 @@ static void watchdog_enable(unsigned int cpu)
 	/* Initialize timestamp */
 	update_touch_ts();
 	/* Enable the perf event */
-	if (watchdog_enabled & NMI_WATCHDOG_ENABLED)
-		nmi_watchdog_ops.watchdog_nmi_enable(cpu);
+	if (watchdog_enabled & NMI_WATCHDOG_ENABLED) {
+		if (disable_sdei_nmi_watchdog)
+			watchdog_nmi_enable(cpu);
+		else
+			sdei_watchdog_nmi_enable(cpu);
+	}
 }
 
 static void watchdog_disable(unsigned int cpu)
@@ -502,7 +506,10 @@ static void watchdog_disable(unsigned int cpu)
 	 * between disabling the timer and disabling the perf event causes
 	 * the perf NMI to detect a false positive.
 	 */
-	nmi_watchdog_ops.watchdog_nmi_disable(cpu);
+	if (disable_sdei_nmi_watchdog)
+		watchdog_nmi_disable(cpu);
+	else
+		sdei_watchdog_nmi_disable(cpu);
 	hrtimer_cancel(hrtimer);
 	wait_for_completion(this_cpu_ptr(&softlockup_completion));
 }
@@ -867,7 +874,8 @@ void __init lockup_detector_init(void)
 	cpumask_copy(&watchdog_cpumask,
 		     housekeeping_cpumask(HK_FLAG_TIMER));
 
-	if (!nmi_watchdog_ops.watchdog_nmi_probe())
+	if ((!disable_sdei_nmi_watchdog && !sdei_watchdog_nmi_probe()) ||
+		!watchdog_nmi_probe())
 		nmi_watchdog_available = true;
 	else
 		allow_lockup_detector_init_retry = true;

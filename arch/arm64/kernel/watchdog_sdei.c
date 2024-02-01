@@ -25,7 +25,7 @@ bool disable_sdei_nmi_watchdog;
 static bool sdei_watchdog_registered;
 static DEFINE_PER_CPU(ktime_t, last_check_time);
 
-int watchdog_sdei_enable(unsigned int cpu)
+int sdei_watchdog_nmi_enable(unsigned int cpu)
 {
 	int ret;
 
@@ -49,7 +49,7 @@ int watchdog_sdei_enable(unsigned int cpu)
 	return 0;
 }
 
-void watchdog_sdei_disable(unsigned int cpu)
+void sdei_watchdog_nmi_disable(unsigned int cpu)
 {
 	int ret;
 
@@ -110,7 +110,7 @@ void sdei_watchdog_clear_eoi(void)
 		sdei_api_clear_eoi(SDEI_NMI_WATCHDOG_HWIRQ);
 }
 
-int __init watchdog_sdei_probe(void)
+int __init sdei_watchdog_nmi_probe(void)
 {
 	int ret;
 
@@ -154,9 +154,9 @@ int __init watchdog_sdei_probe(void)
 static struct watchdog_operations arch_watchdog_ops = {
 	.watchdog_nmi_stop = &watchdog_nmi_stop,
 	.watchdog_nmi_start = &watchdog_nmi_start,
-	.watchdog_nmi_probe = &watchdog_sdei_probe,
-	.watchdog_nmi_enable = &watchdog_sdei_enable,
-	.watchdog_nmi_disable = &watchdog_sdei_disable,
+	.watchdog_nmi_probe = &sdei_watchdog_nmi_probe,
+	.watchdog_nmi_enable = &sdei_watchdog_nmi_enable,
+	.watchdog_nmi_disable = &sdei_watchdog_nmi_disable,
 };
 
 void watchdog_ops_init(void)
