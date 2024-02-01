@@ -1591,6 +1591,8 @@ static int uncore_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 		loop = 1;
 
 	boxes = kzalloc(loop * sizeof(struct zhaoxin_uncore_box *), GFP_KERNEL);
+	if (!boxes)
+		return -ENOMEM;
 
 	for (i = 0; i < loop; i++) {
 		type = uncore_pci_uncores[UNCORE_PCI_DEV_TYPE(id->driver_data) + j];
