@@ -1880,7 +1880,7 @@ static void check_node_limit(void)
 	if (sched_steal_node_limit == 0)
 		sched_steal_node_limit = SCHED_STEAL_NODE_LIMIT_DEFAULT;
 	if (n > sched_steal_node_limit) {
-		static_branch_disable(&sched_steal_allow);
+		static_branch_disable_cpuslocked(&sched_steal_allow);
 		pr_debug("Suppressing sched STEAL. To enable, reboot with sched_steal_node_limit=%d", n);
 	}
 }
