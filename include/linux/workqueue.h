@@ -6,6 +6,7 @@
 #ifndef _LINUX_WORKQUEUE_H
 #define _LINUX_WORKQUEUE_H
 
+#include <linux/kabi.h>
 #include <linux/timer.h>
 #include <linux/linkage.h>
 #include <linux/bitops.h>
@@ -102,6 +103,9 @@ struct work_struct {
 #ifdef CONFIG_LOCKDEP
 	struct lockdep_map lockdep_map;
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define WORK_DATA_INIT()	ATOMIC_LONG_INIT((unsigned long)WORK_STRUCT_NO_POOL)
@@ -117,6 +121,9 @@ struct delayed_work {
 	int cpu;
 	/* delayed_work private data, only used in pciehp now */
 	unsigned long data;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct rcu_work {
@@ -203,6 +210,11 @@ struct workqueue_attrs {
 	 * @ordered: work items must be executed one by one in queueing order
 	 */
 	bool ordered;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 static inline struct delayed_work *to_delayed_work(struct work_struct *work)
