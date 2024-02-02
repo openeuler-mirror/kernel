@@ -286,6 +286,8 @@ struct rt_bandwidth {
 	u64			rt_runtime;
 	struct hrtimer		rt_period_timer;
 	unsigned int		rt_period_active;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 void __dl_clear_params(struct task_struct *p);
@@ -360,6 +362,14 @@ struct cfs_bandwidth {
 	int			nr_burst;
 	u64			throttled_time;
 	u64			burst_time;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 #endif
 };
 
@@ -731,7 +741,14 @@ struct cfs_rq {
 		unsigned long           qos_idle_h_nr_running_padding;
 	};
 #endif
-
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -778,6 +795,8 @@ struct rt_rq {
 	struct rq		*rq;
 	struct task_group	*tg;
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 static inline bool rt_rq_is_runnable(struct rt_rq *rt_rq)
@@ -972,6 +991,8 @@ struct root_domain {
 	 * CPUs of the rd. Protected by RCU.
 	 */
 	struct perf_domain __rcu *pd;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 extern void init_defrootdomain(void);
@@ -1266,6 +1287,14 @@ struct rq {
 	call_single_data_t	cfsb_csd;
 	struct list_head	cfsb_csd_list;
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -2031,6 +2060,8 @@ struct sched_group {
 	struct sched_group_capacity *sgc;
 	int			asym_prefer_cpu;	/* CPU of highest priority in group */
 	int			flags;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 
 	/*
 	 * The CPUs this group covers.
@@ -2414,6 +2445,8 @@ struct sched_class {
 #ifdef CONFIG_SCHED_CORE
 	int (*task_is_throttled)(struct task_struct *p, int cpu);
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)

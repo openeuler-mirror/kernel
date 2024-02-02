@@ -13,6 +13,7 @@
 #include <linux/list.h>
 #include <linux/bits.h>
 #include <linux/err.h>
+#include <linux/kabi.h>
 
 struct fwnode_operations;
 struct device;
