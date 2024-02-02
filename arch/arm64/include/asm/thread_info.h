@@ -17,6 +17,7 @@ struct task_struct;
 #include <asm/memory.h>
 #include <asm/stack_pointer.h>
 #include <asm/types.h>
+#include <linux/kabi.h>
 
 /*
  * low level task data that entry.S needs immediate access to.
@@ -46,6 +47,9 @@ struct thread_info {
 	u64			mpam_partid_pmg;
 #endif
 	u32			cpu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define thread_saved_pc(tsk)	\
