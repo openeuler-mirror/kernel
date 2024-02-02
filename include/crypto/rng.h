@@ -76,8 +76,6 @@ struct rng_alg {
 };
 
 struct crypto_rng {
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
 	struct crypto_tfm base;
 };
 
