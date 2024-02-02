@@ -62,7 +62,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
 
-bool precise_iostat;
+bool precise_iostat = true;
 
 static int __init precise_iostat_setup(char *str)
 {
