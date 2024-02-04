@@ -1314,6 +1314,7 @@ config SHARE_POOL
 
 config ASCEND_OOM
 	bool "Enable support for disable oom killer"
+	depends on ASCEND_FEATURES
 	default n
 	help
 	  In some cases we hopes that the oom will not kill the process when it occurs,
