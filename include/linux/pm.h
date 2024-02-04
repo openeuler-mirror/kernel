@@ -757,6 +757,9 @@ struct dev_pm_domain {
 	int (*activate)(struct device *dev);
 	void (*sync)(struct device *dev);
 	void (*dismiss)(struct device *dev);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /*

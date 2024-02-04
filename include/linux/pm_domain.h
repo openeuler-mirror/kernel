@@ -111,6 +111,10 @@ struct genpd_power_state {
 	struct fwnode_handle *fwnode;
 	u64 idle_time;
 	void *data;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+
 };
 
 struct genpd_lock_ops;
