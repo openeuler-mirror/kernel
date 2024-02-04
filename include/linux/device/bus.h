@@ -102,6 +102,11 @@ struct bus_type {
 	const struct dev_pm_ops *pm;
 
 	bool need_parent_lock;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 int __must_check bus_register(const struct bus_type *bus);
