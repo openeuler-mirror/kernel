@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+config PAGE_EJECT
+	tristate "page eject"
+	default m
+	depends on ARM64 && ARCH_HISI && MEMORY_FAILURE
+	help
+	  Used to eject page, which is achieved by soft_offline_page and
+	  unpoison_memory. A linked list is maintained to log the pfns
+	  which are offlined by this module. Only the pfns present in the
+	  list is allowed to go online.
