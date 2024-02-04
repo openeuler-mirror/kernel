@@ -18,6 +18,7 @@
 #include <linux/spinlock.h>
 #include <linux/cpumask.h>
 #include <linux/time64.h>
+#include <linux/kabi.h>
 
 /*
  * Flags to control the behaviour of a genpd.
@@ -166,6 +167,11 @@ struct generic_pm_domain {
 			unsigned long lock_flags;
 		};
 	};
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 
 };
 
