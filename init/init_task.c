@@ -57,6 +57,10 @@ unsigned long init_shadow_call_stack[SCS_SIZE / sizeof(long)]
 };
 #endif
 
+static struct task_struct_resvd init_task_struct_resvd = {
+	.task = &init_task,
+};
+
 /*
  * Set up the first task table, touch at your own risk!. Base=0,
  * limit=0x1fffff (=2MB)
@@ -216,6 +220,7 @@ struct task_struct init_task
 #ifdef CONFIG_BPF_SCHED
 	.tag		= 0,
 #endif
+	._resvd = &init_task_struct_resvd,
 };
 EXPORT_SYMBOL(init_task);
 
