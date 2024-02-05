@@ -209,8 +209,8 @@ struct audit_context {
 	};
 	int fds[2];
 	struct audit_proctitle proctitle;
-	KABI_RESERVE(0);
-	KABI_RESERVE(1);
+	KABI_RESERVE(0)
+	KABI_RESERVE(1)
 };
 
 extern bool audit_ever_enabled;
