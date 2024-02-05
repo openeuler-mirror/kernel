@@ -32,6 +32,9 @@ struct netpoll {
 	bool ipv6;
 	u16 local_port, remote_port;
 	u8 remote_mac[ETH_ALEN];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct netpoll_info {
