@@ -63,6 +63,9 @@ enum wb_reason {
 struct wb_completion {
 	atomic_t		cnt;
 	wait_queue_head_t	*waitq;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define __WB_COMPLETION_INIT(_waitq)	\
@@ -160,6 +163,13 @@ struct bdi_writeback {
 		struct rcu_head rcu;
 	};
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
 };
 
 struct backing_dev_info {
@@ -198,6 +208,11 @@ struct backing_dev_info {
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debug_dir;
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 struct wb_lock_cookie {
