@@ -71,7 +71,7 @@ static struct kmem_cache *blk_requestq_cachep;
  */
 static struct workqueue_struct *kblockd_workqueue;
 
-static bool precise_iostat;
+static bool precise_iostat = true;
 
 static int __init precise_iostat_setup(char *str)
 {
