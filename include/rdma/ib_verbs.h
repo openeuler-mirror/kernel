@@ -450,6 +450,8 @@ struct ib_device_attr {
 	u64			max_dm_size;
 	/* Max entries for sgl for optimized performance per READ */
 	u32			max_sgl_rd;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 enum ib_mtu {
@@ -607,6 +609,8 @@ struct rdma_hw_stats {
 	const struct rdma_stat_desc *descs;
 	unsigned long	*is_disabled;
 	int		num_counters;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 	u64		value[];
 };
 
@@ -1642,6 +1646,8 @@ struct ib_srq {
 	 * Implementation details of the RDMA core, don't use in drivers:
 	 */
 	struct rdma_restrack_entry res;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 enum ib_raw_packet_caps {
@@ -2217,6 +2223,8 @@ struct ib_port_data {
 	struct hlist_node ndev_hash_link;
 	struct rdma_port_counter port_counter;
 	struct ib_port *sysfs;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /* rdma netdev type - specifies protocol type */
@@ -2686,6 +2694,8 @@ struct ib_device_ops {
 	DECLARE_RDMA_OBJ_SIZE(ib_srq);
 	DECLARE_RDMA_OBJ_SIZE(ib_ucontext);
 	DECLARE_RDMA_OBJ_SIZE(ib_xrcd);
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct ib_core_device {
@@ -2786,6 +2796,8 @@ struct ib_device {
 	char iw_ifname[IFNAMSIZ];
 	u32 iw_driver_flags;
 	u32 lag_flags;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 static inline void *rdma_zalloc_obj(struct ib_device *dev, size_t size,
