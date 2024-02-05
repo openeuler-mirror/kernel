@@ -6,7 +6,7 @@
 int sysctl_bond_broadcast_arp_or_nd __read_mostly;
 EXPORT_SYMBOL(sysctl_bond_broadcast_arp_or_nd);
 
-struct ctl_table_header *bond_broadcast_arp_or_nd_table_header;
+static struct ctl_table_header *bond_broadcast_arp_or_nd_table_header;
 
 static struct ctl_table bond_broadcast_arp_or_nd_table[] = {
 	{
