@@ -2948,7 +2948,7 @@ static void arm_smmu_iotlb_sync_map(struct iommu_domain *domain,
 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
 	size_t granule_size;
 
-	if (!cpus_have_const_cap(ARM64_WORKAROUND_HISILICON_ERRATUM_162100602))
+	if (!(smmu_domain->smmu->options & ARM_SMMU_OPT_SYNC_MAP))
 		return;
 
 	granule_size = 1 <<  __ffs(smmu_domain->domain.pgsize_bitmap);
@@ -5145,6 +5145,14 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 	case IDR5_OAS_48_BIT:
 		smmu->oas = 48;
 	}
+
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+	/* IIDR */
+	reg = readl_relaxed(smmu->base + ARM_SMMU_IIDR);
+	if (FIELD_GET(IIDR_VARIANT, reg) == 0x3 &&
+	    FIELD_GET(IIDR_REVISON, reg) == 0x2)
+		smmu->options |= ARM_SMMU_OPT_SYNC_MAP;
+#endif
 
 	if (arm_smmu_ops.pgsize_bitmap == -1UL)
 		arm_smmu_ops.pgsize_bitmap = smmu->pgsize_bitmap;
