@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config DRM_PHYTIUM
+	tristate "DRM Support for Phytium Graphics Card"
+	depends on DRM && ARCH_PHYTIUM
+	select DRM_KMS_HELPER
+	select DRM_DISPLAY_HELPER
+	select DRM_DISPLAY_DP_HELPER
+	select DRM_DISPLAY_HDCP_HELPER
+	help
+	  Choose this option if you have a phytium graphics card.
+	  This driver provides kernel mode setting and buffer management to userspace.

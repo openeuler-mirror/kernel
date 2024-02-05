@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/dc/snps,dc.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Phytium Display Controller
+
+maintainers:
+  - Chen Baozi <chenbaozi@phytium.com.cn>
+
+allOf:
+  - $ref: /schemas/dc/display-controller.yaml#
+
+properties:
+  compatible:
+    const: phytium,dc
+
+  reg:
+    minItems: 1
+    items:
+      - description: Offset and length of the memory mapped registers
+
+  interrupts:
+    maxItems: 1
+
+  clocks:
+    minItems: 1
+    items:
+      - description:Display controller reference clock source
+
+unevaluatedProperties: false
+
+required:
+  - compatible
+  - reg
+  - interrupts
+
+Example:
+       /memreserve/ 0xf4000000 0x4000000; // (optional)
+
+       dc0@32000000 {
+               compatible = "phytium,dc";
+               reg = <0x0 0x32000000 0x0 0x8000>,
+                     <0x0 0xf4000000 0x0 0x4000000>; // (optional)
+               interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
+               pipe_mask = 0x3
+               edp_mask = 0x0;
+       };
