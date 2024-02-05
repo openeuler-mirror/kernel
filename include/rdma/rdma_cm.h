@@ -64,6 +64,9 @@ struct rdma_route {
 	 * 2 - Both primary and alternate path are available
 	 */
 	int num_pri_alt_paths;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct rdma_conn_param {
