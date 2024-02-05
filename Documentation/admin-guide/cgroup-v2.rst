@@ -2505,6 +2505,13 @@ first, and stays charged to that cgroup until that resource is freed. Migrating
 a process to a different cgroup does not move the charge to the destination
 cgroup where the process has moved.
 
+Misc type explaination
+~~~~~~~~~~~~~~~~~~~~~~~
+
+  MISC_CG_RES_FD
+	Resource for controling fd. Fd is charged when alloc a new fd or copy files,
+	and uncharged when file is close or putting unused fd.
+
 Others
 ------
 
