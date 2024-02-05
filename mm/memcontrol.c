@@ -8541,7 +8541,8 @@ static __init int mem_cgroup_sysctls_init(void)
 	if (mem_cgroup_disabled())
 		return 0;
 
-	register_sysctl_init("vm", mem_cgroup_sysctls);
+	if (ARRAY_SIZE(mem_cgroup_sysctls))
+		register_sysctl_init("vm", mem_cgroup_sysctls);
 	return 0;
 }
 #else
