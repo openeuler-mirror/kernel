@@ -1582,7 +1582,7 @@ struct task_struct {
 	int memstall_type;
 #endif
 
-#if defined(CONFIG_QOS_SCHED_SMART_GRID) && !defined(__GENKSYMS__)
+#if defined(CONFIG_QOS_SCHED_SMART_GRID)
 		struct sched_grid_qos *grid_qos;
 #endif
 
