@@ -32,6 +32,8 @@
 #include <net/snmp.h>
 #endif
 
+#include <linux/kabi.h>
+
 #define XFRM_PROTO_ESP		50
 #define XFRM_PROTO_AH		51
 #define XFRM_PROTO_COMP		108
@@ -289,6 +291,9 @@ struct xfrm_state {
 	/* Private data of this transformer, format is opaque,
 	 * interpreted by xfrm_type methods. */
 	void			*data;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 static inline struct net *xs_net(struct xfrm_state *x)
@@ -549,6 +554,9 @@ struct xfrm_policy {
 	struct rcu_head		rcu;
 
 	struct xfrm_dev_offload xdo;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 static inline struct net *xp_net(const struct xfrm_policy *xp)
