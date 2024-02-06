@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -14,13 +13,11 @@
 #include <linux/random.h>
 #include <linux/kthread.h>
 #include <linux/io-mapping.h>
-#include <common/driver.h>
+#include "common/driver.h"
 #include <linux/debugfs.h>
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
-
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
 #include "tmp_cmdq_defines.h"
-#include <common/andes/hif_cmdqm_csr_defines.h>
 
 enum {
 	CMD_IF_REV = 3,
@@ -73,24 +70,18 @@ enum {
 };
 
 static struct xsc_cmd_work_ent *alloc_cmd(struct xsc_cmd *cmd,
-					   struct xsc_cmd_msg *in,
-					   struct xsc_rsp_msg *out,
-					   xsc_cmd_cbk_t cbk,
-					   void *context, int page_queue)
+					  struct xsc_cmd_msg *in,
+					  struct xsc_rsp_msg *out)
 {
-	gfp_t alloc_flags = cbk ? GFP_ATOMIC : GFP_KERNEL;
 	struct xsc_cmd_work_ent *ent;
 
-	ent = kzalloc(sizeof(*ent), alloc_flags);
+	ent = kzalloc(sizeof(*ent), GFP_KERNEL);
 	if (!ent)
 		return ERR_PTR(-ENOMEM);
 
 	ent->in		= in;
 	ent->out	= out;
-	ent->callback	= cbk;
-	ent->context	= context;
 	ent->cmd	= cmd;
-	ent->page_queue = page_queue;
 
 	return ent;
 }
@@ -212,23 +203,19 @@ static int verify_signature(struct xsc_cmd_work_ent *ent)
 	return 0;
 }
 
-#ifdef COSIM
-static void dump_buf(void *buf, int size, int data_only, int offset)
+static void dump_buf(void *buf, int size, int offset)
 {
 	__be32 *p = buf;
 	int i;
 
 	for (i = 0; i < size; i += 16) {
-		pr_debug("%03x: %08x %08x %08x %08x\n", offset, be32_to_cpu(p[0]),
-			 be32_to_cpu(p[1]), be32_to_cpu(p[2]),
-			 be32_to_cpu(p[3]));
+		xsc_pr_debug("%03x: %08x %08x %08x %08x\n", offset, be32_to_cpu(p[0]),
+			     be32_to_cpu(p[1]), be32_to_cpu(p[2]), be32_to_cpu(p[3]));
 		p += 4;
 		offset += 16;
 	}
-	if (!data_only)
-		pr_debug("\n");
+	xsc_pr_debug("\n");
 }
-#endif
 
 const char *xsc_command_str(int command)
 {
@@ -236,23 +223,29 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_QUERY_HCA_CAP:
 		return "QUERY_HCA_CAP";
 
-	case XSC_CMD_OP_SET_HCA_CAP:
-		return "SET_HCA_CAP";
+	case XSC_CMD_OP_ENABLE_HCA:
+		return "ENABLE_HCA";
 
-	case XSC_CMD_OP_QUERY_ADAPTER:
-		return "QUERY_ADAPTER";
+	case XSC_CMD_OP_DISABLE_HCA:
+		return "DISABLE_HCA";
 
-	case XSC_CMD_OP_INIT_HCA:
-		return "INIT_HCA";
+	case XSC_CMD_OP_MODIFY_HCA:
+		return "MODIFY_HCA";
 
-	case XSC_CMD_OP_TEARDOWN_HCA:
-		return "TEARDOWN_HCA";
+	case XSC_CMD_OP_QUERY_CMDQ_VERSION:
+		return "QUERY_CMDQ_VERSION";
 
-	case XSC_CMD_OP_QUERY_PAGES:
-		return "QUERY_PAGES";
+	case XSC_CMD_OP_QUERY_MSIX_TBL_INFO:
+		return "QUERY_MSIX_TBL_INFO";
 
-	case XSC_CMD_OP_MANAGE_PAGES:
-		return "MANAGE_PAGES";
+	case XSC_CMD_OP_FUNCTION_RESET:
+		return "FUNCTION_RESET";
+
+	case XSC_CMD_OP_DUMMY:
+		return "DUMMY_CMD";
+
+	case XSC_CMD_OP_SET_DEBUG_INFO:
+		return "SET_DEBUG_INFO";
 
 	case XSC_CMD_OP_CREATE_MKEY:
 		return "CREATE_MKEY";
@@ -265,6 +258,12 @@ const char *xsc_command_str(int command)
 
 	case XSC_CMD_OP_QUERY_SPECIAL_CONTEXTS:
 		return "QUERY_SPECIAL_CONTEXTS";
+
+	case XSC_CMD_OP_SET_MPT:
+		return "SET_MPT";
+
+	case XSC_CMD_OP_SET_MTT:
+		return "SET_MTT";
 
 	case XSC_CMD_OP_CREATE_EQ:
 		return "CREATE_EQ";
@@ -332,53 +331,11 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_INIT2INIT_QP:
 		return "INIT2INIT_QP";
 
-	case XSC_CMD_OP_SUSPEND_QP:
-		return "SUSPEND_QP";
-
-	case XSC_CMD_OP_UNSUSPEND_QP:
-		return "UNSUSPEND_QP";
-
 	case XSC_CMD_OP_SQD2SQD_QP:
 		return "SQD2SQD_QP";
 
-	case XSC_CMD_OP_ALLOC_QP_COUNTER_SET:
-		return "ALLOC_QP_COUNTER_SET";
-
-	case XSC_CMD_OP_DEALLOC_QP_COUNTER_SET:
-		return "DEALLOC_QP_COUNTER_SET";
-
-	case XSC_CMD_OP_QUERY_QP_COUNTER_SET:
-		return "QUERY_QP_COUNTER_SET";
-
-	case XSC_CMD_OP_CREATE_PSV:
-		return "CREATE_PSV";
-
-	case XSC_CMD_OP_DESTROY_PSV:
-		return "DESTROY_PSV";
-
-	case XSC_CMD_OP_QUERY_PSV:
-		return "QUERY_PSV";
-
-	case XSC_CMD_OP_QUERY_SIG_RULE_TABLE:
-		return "QUERY_SIG_RULE_TABLE";
-
-	case XSC_CMD_OP_QUERY_BLOCK_SIZE_TABLE:
-		return "QUERY_BLOCK_SIZE_TABLE";
-
-	case XSC_CMD_OP_CREATE_SRQ:
-		return "CREATE_SRQ";
-
-	case XSC_CMD_OP_DESTROY_SRQ:
-		return "DESTROY_SRQ";
-
-	case XSC_CMD_OP_QUERY_SRQ:
-		return "QUERY_SRQ";
-
-	case XSC_CMD_OP_ARM_RQ:
-		return "ARM_RQ";
-
-	case XSC_CMD_OP_RESIZE_SRQ:
-		return "RESIZE_SRQ";
+	case XSC_CMD_OP_QUERY_QP_FLUSH_STATUS:
+		return "QUERY_QP_FLUSH_STATUS";
 
 	case XSC_CMD_OP_ALLOC_PD:
 		return "ALLOC_PD";
@@ -386,87 +343,289 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_DEALLOC_PD:
 		return "DEALLOC_PD";
 
-	case XSC_CMD_OP_ALLOC_UAR:
-		return "ALLOC_UAR";
-
-	case XSC_CMD_OP_DEALLOC_UAR:
-		return "DEALLOC_UAR";
-
-	case XSC_CMD_OP_ATTACH_TO_MCG:
-		return "ATTACH_TO_MCG";
-
-	case XSC_CMD_OP_DETACH_FROM_MCG:
-		return "DETACH_FROM_MCG";
-
-	case XSC_CMD_OP_ALLOC_XRCD:
-		return "ALLOC_XRCD";
-
-	case XSC_CMD_OP_DEALLOC_XRCD:
-		return "DEALLOC_XRCD";
-
 	case XSC_CMD_OP_ACCESS_REG:
 		return "ACCESS_REG";
+
+	case XSC_CMD_OP_MODIFY_RAW_QP:
+		return "MODIFY_RAW_QP";
+
+	case XSC_CMD_OP_ENABLE_NIC_HCA:
+		return "ENABLE_NIC_HCA";
+
+	case XSC_CMD_OP_DISABLE_NIC_HCA:
+		return "DISABLE_NIC_HCA";
+
+	case XSC_CMD_OP_MODIFY_NIC_HCA:
+		return "MODIFY_NIC_HCA";
+
+	case XSC_CMD_OP_QUERY_NIC_VPORT_CONTEXT:
+		return "QUERY_NIC_VPORT_CONTEXT";
+
+	case XSC_CMD_OP_MODIFY_NIC_VPORT_CONTEXT:
+		return "MODIFY_NIC_VPORT_CONTEXT";
+
+	case XSC_CMD_OP_QUERY_VPORT_STATE:
+		return "QUERY_VPORT_STATE";
+
+	case XSC_CMD_OP_MODIFY_VPORT_STATE:
+		return "MODIFY_VPORT_STATE";
+
+	case XSC_CMD_OP_QUERY_HCA_VPORT_CONTEXT:
+		return "QUERY_HCA_VPORT_CONTEXT";
+
+	case XSC_CMD_OP_MODIFY_HCA_VPORT_CONTEXT:
+		return "MODIFY_HCA_VPORT_CONTEXT";
+
+	case XSC_CMD_OP_QUERY_HCA_VPORT_GID:
+		return "QUERY_HCA_VPORT_GID";
+
+	case XSC_CMD_OP_QUERY_HCA_VPORT_PKEY:
+		return "QUERY_HCA_VPORT_PKEY";
+
+	case XSC_CMD_OP_QUERY_VPORT_COUNTER:
+		return "QUERY_VPORT_COUNTER";
+
+	case XSC_CMD_OP_QUERY_PRIO_STATS:
+		return "QUERY_PRIO_STATS";
+
+	case XSC_CMD_OP_QUERY_PHYPORT_STATE:
+		return "QUERY_PHYPORT_STATE";
+
+	case XSC_CMD_OP_QUERY_EVENT_TYPE:
+		return "QUERY_EVENT_TYPE";
+
+	case XSC_CMD_OP_QUERY_LINK_INFO:
+		return "QUERY_LINK_INFO";
+
+	case XSC_CMD_OP_LAG_CREATE:
+		return "LAG_CREATE";
+
+	case XSC_CMD_OP_LAG_MODIFY:
+		return "LAG_MODIFY";
+
+	case XSC_CMD_OP_LAG_DESTROY:
+		return "LAG_DESTROY";
+
+	case XSC_CMD_OP_LAG_SET_QOS:
+		return "LAG_SET_QOS";
+
+	case XSC_CMD_OP_ENABLE_MSIX:
+		return "ENABLE_MSIX";
+
+	case XSC_CMD_OP_IOCTL_FLOW:
+		return "CFG_FLOW_TABLE";
+
+	case XSC_CMD_OP_IOCTL_SET_DSCP_PMT:
+		return "SET_DSCP_PMT";
+
+	case XSC_CMD_OP_IOCTL_GET_DSCP_PMT:
+		return "GET_DSCP_PMT";
+
+	case XSC_CMD_OP_IOCTL_SET_TRUST_MODE:
+		return "SET_TRUST_MODE";
+
+	case XSC_CMD_OP_IOCTL_GET_TRUST_MODE:
+		return "GET_TRUST_MODE";
+
+	case XSC_CMD_OP_IOCTL_SET_PCP_PMT:
+		return "SET_PCP_PMT";
+
+	case XSC_CMD_OP_IOCTL_GET_PCP_PMT:
+		return "GET_PCP_PMT";
+
+	case XSC_CMD_OP_IOCTL_SET_DEFAULT_PRI:
+		return "SET_DEFAULT_PRI";
+
+	case XSC_CMD_OP_IOCTL_GET_DEFAULT_PRI:
+		return "GET_DEFAULT_PRI";
+
+	case XSC_CMD_OP_IOCTL_SET_PFC:
+		return "SET_PFC";
+
+	case XSC_CMD_OP_IOCTL_GET_PFC:
+		return "GET_PFC";
+
+	case XSC_CMD_OP_IOCTL_SET_RATE_LIMIT:
+		return "SET_RATE_LIMIT";
+
+	case XSC_CMD_OP_IOCTL_GET_RATE_LIMIT:
+		return "GET_RATE_LIMIT";
+
+	case XSC_CMD_OP_IOCTL_SET_SP:
+		return "SET_SP";
+
+	case XSC_CMD_OP_IOCTL_GET_SP:
+		return "GET_SP";
+
+	case XSC_CMD_OP_IOCTL_SET_WEIGHT:
+		return "SET_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_GET_WEIGHT:
+		return "GET_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_DPU_SET_PORT_WEIGHT:
+		return "DPU_SET_PORT_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_DPU_GET_PORT_WEIGHT:
+		return "DPU_GET_PORT_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_DPU_SET_PRIO_WEIGHT:
+		return "DPU_SET_PRIO_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_DPU_GET_PRIO_WEIGHT:
+		return "DPU_GET_PRIO_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_SET_ENABLE_RP:
+		return "ENABLE_RP";
+
+	case XSC_CMD_OP_IOCTL_SET_ENABLE_NP:
+		return "ENABLE_NP";
+
+	case XSC_CMD_OP_IOCTL_SET_INIT_ALPHA:
+		return "SET_INIT_ALPHA";
+
+	case XSC_CMD_OP_IOCTL_SET_G:
+		return "SET_G";
+
+	case XSC_CMD_OP_IOCTL_SET_AI:
+		return "SET_AI";
+
+	case XSC_CMD_OP_IOCTL_SET_HAI:
+		return "SET_HAI";
+
+	case XSC_CMD_OP_IOCTL_SET_TH:
+		return "SET_TH";
+
+	case XSC_CMD_OP_IOCTL_SET_BC_TH:
+		return "SET_BC_TH";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_OPCODE:
+		return "SET_CNP_OPCODE";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_BTH_B:
+		return "SET_CNP_BTH_B";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_BTH_F:
+		return "SET_CNP_BTH_F";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_ECN:
+		return "SET_CNP_ECN";
+
+	case XSC_CMD_OP_IOCTL_SET_DATA_ECN:
+		return "SET_DATA_ECN";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_TX_INTERVAL:
+		return "SET_CNP_TX_INTERVAL";
+
+	case XSC_CMD_OP_IOCTL_SET_EVT_PERIOD_RSTTIME:
+		return "SET_EVT_PERIOD_RSTTIME";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_DSCP:
+		return "SET_CNP_DSCP";
+
+	case XSC_CMD_OP_IOCTL_SET_CNP_PCP:
+		return "SET_CNP_PCP";
+
+	case XSC_CMD_OP_IOCTL_SET_EVT_PERIOD_ALPHA:
+		return "SET_EVT_PERIOD_ALPHA";
+
+	case XSC_CMD_OP_IOCTL_GET_CC_CFG:
+		return "GET_CC_CFG";
+
+	case XSC_CMD_OP_IOCTL_GET_CC_STAT:
+		return "GET_CC_STAT";
+
+	case XSC_CMD_OP_IOCTL_SET_CLAMP_TGT_RATE:
+		return "SET_CLAMP_TGT_RATE";
+
+	case XSC_CMD_OP_IOCTL_SET_MAX_HAI_FACTOR:
+		return "SET_MAX_HAI_FACTOR";
+
+	case XSC_CMD_OP_IOCTL_SET_HWC:
+		return "SET_HWCONFIG";
+
+	case XSC_CMD_OP_IOCTL_GET_HWC:
+		return "GET_HWCONFIG";
+
+	case XSC_CMD_OP_SET_MTU:
+		return "SET_MTU";
+
+	case XSC_CMD_OP_QUERY_ETH_MAC:
+		return "QUERY_ETH_MAC";
+
+	case XSC_CMD_OP_QUERY_HW_STATS:
+		return "QUERY_HW_STATS";
+
+	case XSC_CMD_OP_QUERY_PAUSE_CNT:
+		return "QUERY_PAUSE_CNT";
+
+	case XSC_CMD_OP_SET_RTT_EN:
+		return "SET_RTT_EN";
+
+	case XSC_CMD_OP_GET_RTT_EN:
+		return "GET_RTT_EN";
+
+	case XSC_CMD_OP_SET_RTT_QPN:
+		return "SET_RTT_QPN";
+
+	case XSC_CMD_OP_GET_RTT_QPN:
+		return "GET_RTT_QPN";
+
+	case XSC_CMD_OP_SET_RTT_PERIOD:
+		return "SET_RTT_PERIOD";
+
+	case XSC_CMD_OP_GET_RTT_PERIOD:
+		return "GET_RTT_PERIOD";
+
+	case XSC_CMD_OP_GET_RTT_RESULT:
+		return "GET_RTT_RESULT";
+
+	case XSC_CMD_OP_GET_RTT_STATS:
+		return "ET_RTT_STATS";
+
+	case XSC_CMD_OP_SET_LED_STATUS:
+		return "SET_LED_STATUS";
+
+	case XSC_CMD_OP_AP_FEAT:
+		return "AP_FEAT";
+
+	case XSC_CMD_OP_PCIE_LAT_FEAT:
+		return "PCIE_LAT_FEAT";
+
+	case XSC_CMD_OP_USER_EMU_CMD:
+		return "USER_EMU_CMD";
 
 	default: return "unknown command opcode";
 	}
 }
 
-#ifdef COSIM
 static void dump_command(struct xsc_core_device *xdev, struct xsc_cmd_mailbox *next,
 			 struct xsc_cmd_work_ent *ent, int input, int len)
 {
 	u16 op = be16_to_cpu(((struct xsc_inbox_hdr *)(ent->lay->in))->opcode);
-	int data_only;
 	int offset = 0;
-	int dump_len;
 
-	data_only = !!(xsc_debug_mask & (1 << XSC_CMD_DATA));
+	if (!(xsc_debug_mask & (1 << XSC_CMD_DATA)))
+		return;
 
-	if (data_only)
-		xsc_core_dbg_mask(xdev, 1 << XSC_CMD_DATA,
-				   "dump command data %s(0x%x) %s\n",
-				   xsc_command_str(op), op,
-				   input ? "INPUT" : "OUTPUT");
-	else
-		xsc_core_dbg(xdev, "dump command %s(0x%x) %s\n",
-			      xsc_command_str(op), op,
-			      input ? "INPUT" : "OUTPUT");
+	xsc_core_dbg(xdev, "dump command %s(0x%x) %s\n", xsc_command_str(op), op,
+		     input ? "INPUT" : "OUTPUT");
 
-	if (data_only) {
-		if (input) {
-			dump_buf(ent->lay->in, sizeof(ent->lay->in), 1, offset);
-			offset += sizeof(ent->lay->in);
-		} else {
-			dump_buf(ent->rsp_lay->out, sizeof(ent->rsp_lay->out), 1, offset);
-			offset += sizeof(ent->rsp_lay->out);
-		}
+	if (input) {
+		dump_buf(ent->lay, sizeof(*ent->lay), offset);
+		offset += sizeof(*ent->lay);
 	} else {
-		if (input) {
-			dump_buf(ent->lay, sizeof(*ent->lay), 0, offset);
-			offset += sizeof(*ent->lay);
-		} else {
-			dump_buf(ent->rsp_lay, sizeof(*ent->rsp_lay), 0, offset);
-			offset += sizeof(*ent->rsp_lay);
-		}
+		dump_buf(ent->rsp_lay, sizeof(*ent->rsp_lay), offset);
+		offset += sizeof(*ent->rsp_lay);
 	}
 
 	while (next && offset < len) {
-		if (data_only) {
-			dump_len = min_t(int, XSC_CMD_DATA_BLOCK_SIZE, len - offset);
-			dump_buf(next->buf, dump_len, 1, offset);
-			offset += XSC_CMD_DATA_BLOCK_SIZE;
-		} else {
-			xsc_core_dbg(xdev, "command block:\n");
-			dump_buf(next->buf, sizeof(struct xsc_cmd_prot_block), 0, offset);
-			offset += sizeof(struct xsc_cmd_prot_block);
-		}
+		xsc_core_dbg(xdev, "command block:\n");
+		dump_buf(next->buf, sizeof(struct xsc_cmd_prot_block), offset);
+		offset += sizeof(struct xsc_cmd_prot_block);
 		next = next->next;
 	}
-
-	if (data_only)
-		pr_debug("\n");
 }
-#endif
 
 static void cmd_work_handler(struct work_struct *work)
 {
@@ -477,17 +636,13 @@ static void cmd_work_handler(struct work_struct *work)
 	struct semaphore *sem;
 	unsigned long flags;
 
-	sem = ent->page_queue ? &cmd->pages_sem : &cmd->sem;
+	sem = &cmd->sem;
 	down(sem);
-	if (!ent->page_queue) {
-		ent->idx = alloc_ent(cmd);
-		if (ent->idx < 0) {
-			xsc_core_err(xdev, "failed to allocate command entry\n");
-			up(sem);
-			return;
-		}
-	} else {
-		ent->idx = cmd->max_reg_cmds;
+	ent->idx = alloc_ent(cmd);
+	if (ent->idx < 0) {
+		xsc_core_err(xdev, "failed to allocate command entry\n");
+		up(sem);
+		return;
 	}
 
 	ent->token = alloc_token(cmd);
@@ -511,16 +666,14 @@ static void cmd_work_handler(struct work_struct *work)
 		set_signature(ent);
 	else
 		lay->sig = 0xff;
-#ifdef COSIM
 	dump_command(xdev, ent->in->next, ent, 1, ent->in->len);
-#endif
 
 	ktime_get_ts64(&ent->ts1);
 
 	/* ring doorbell after the descriptor is valid */
 	wmb();
 
-	cmd->cmd_pid = (cmd->cmd_pid + 1) % (1<<cmd->log_sz);
+	cmd->cmd_pid = (cmd->cmd_pid + 1) % (1 << cmd->log_sz);
 	writel(cmd->cmd_pid, REG_ADDR(xdev, cmd->reg.req_pid_addr));
 	mmiowb();
 	spin_unlock_irqrestore(&cmd->doorbell_lock, flags);
@@ -578,12 +731,12 @@ static int wait_func(struct xsc_core_device *xdev, struct xsc_cmd_work_ent *ent)
 		err = ent->ret;
 
 	if (err == -ETIMEDOUT) {
-		xsc_core_warn(xdev, "%s(0x%x) timeout. Will cause a leak of a command resource\n",
-			       xsc_command_str(msg_to_opcode(ent->in)),
-			       msg_to_opcode(ent->in));
+		xsc_core_warn(xdev, "wait for %s(0x%x) response timeout!\n",
+			      xsc_command_str(msg_to_opcode(ent->in)),
+			      msg_to_opcode(ent->in));
 	} else if (err) {
 		xsc_core_dbg(xdev, "err %d, delivery status %s(%d)\n", err,
-			      deliv_status_to_str(ent->status), ent->status);
+			     deliv_status_to_str(ent->status), ent->status);
 	}
 
 	return err;
@@ -594,8 +747,7 @@ static int wait_func(struct xsc_core_device *xdev, struct xsc_cmd_work_ent *ent)
  *    2. page queue commands do not support asynchrous completion
  */
 static int xsc_cmd_invoke(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
-			   struct xsc_rsp_msg *out, xsc_cmd_cbk_t callback,
-			   void *context, int page_queue, u8 *status)
+			  struct xsc_rsp_msg *out, u8 *status)
 {
 	struct xsc_cmd *cmd = &xdev->cmd;
 	struct xsc_cmd_work_ent *ent;
@@ -606,55 +758,46 @@ static int xsc_cmd_invoke(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 	u16 op;
 	struct semaphore *sem;
 
-	if (callback && page_queue)
-		return -EINVAL;
-
-	ent = alloc_cmd(cmd, in, out, callback, context, page_queue);
+	ent = alloc_cmd(cmd, in, out);
 	if (IS_ERR(ent))
 		return PTR_ERR(ent);
 
-	if (!callback)
-		init_completion(&ent->done);
-
+	init_completion(&ent->done);
 	INIT_WORK(&ent->work, cmd_work_handler);
-	if (page_queue) {
-		cmd_work_handler(&ent->work);
-	} else if (!queue_work(cmd->wq, &ent->work)) {
+	if (!queue_work(cmd->wq, &ent->work)) {
 		xsc_core_warn(xdev, "failed to queue work\n");
 		err = -ENOMEM;
 		goto out_free;
 	}
 
-	if (!callback) {
-		err = wait_func(xdev, ent);
-		if (err == -ETIMEDOUT)
-			goto out;
-		t1 = timespec64_to_ktime(ent->ts1);
-		t2 = timespec64_to_ktime(ent->ts2);
-		delta = ktime_sub(t2, t1);
-		ds = ktime_to_ns(delta);
-		op = be16_to_cpu(((struct xsc_inbox_hdr *)in->first.data)->opcode);
-		if (op < ARRAY_SIZE(cmd->stats)) {
-			stats = &cmd->stats[op];
-			spin_lock(&stats->lock);
-			stats->sum += ds;
-			++stats->n;
-			spin_unlock(&stats->lock);
-		}
-		xsc_core_dbg_mask(xdev, 1 << XSC_CMD_TIME,
-				   "fw exec time for %s is %lld nsec\n",
-				   xsc_command_str(op), ds);
-		*status = ent->status;
-		free_cmd(ent);
+	err = wait_func(xdev, ent);
+	if (err == -ETIMEDOUT)
+		goto out;
+	t1 = timespec64_to_ktime(ent->ts1);
+	t2 = timespec64_to_ktime(ent->ts2);
+	delta = ktime_sub(t2, t1);
+	ds = ktime_to_ns(delta);
+	op = be16_to_cpu(((struct xsc_inbox_hdr *)in->first.data)->opcode);
+	if (op < ARRAY_SIZE(cmd->stats)) {
+		stats = &cmd->stats[op];
+		spin_lock(&stats->lock);
+		stats->sum += ds;
+		++stats->n;
+		spin_unlock(&stats->lock);
 	}
+	xsc_core_dbg_mask(xdev, 1 << XSC_CMD_TIME,
+			  "fw exec time for %s is %lld nsec\n",
+			  xsc_command_str(op), ds);
+	*status = ent->status;
+	free_cmd(ent);
 
 	return err;
 
+out:
+	sem = &cmd->sem;
+	up(sem);
 out_free:
 	free_cmd(ent);
-out:
-	sem = ent->page_queue ? &cmd->pages_sem : &cmd->sem;
-	up(sem);
 	return err;
 }
 
@@ -745,7 +888,6 @@ static int xsc_copy_from_rsp_msg(void *to, struct xsc_rsp_msg *from, int size)
 		copy = min_t(int, size, XSC_CMD_DATA_BLOCK_SIZE);
 		block = next->buf;
 		if (block->owner_status != 1) {
-			//xsc_core_warn(xdev, "dam buf not ready\n");
 			mdelay(10);
 			continue;
 		}
@@ -760,7 +902,7 @@ static int xsc_copy_from_rsp_msg(void *to, struct xsc_rsp_msg *from, int size)
 }
 
 static struct xsc_cmd_mailbox *alloc_cmd_box(struct xsc_core_device *xdev,
-					      gfp_t flags)
+					     gfp_t flags)
 {
 	struct xsc_cmd_mailbox *mailbox;
 
@@ -789,7 +931,7 @@ static void free_cmd_box(struct xsc_core_device *xdev,
 }
 
 static struct xsc_cmd_msg *xsc_alloc_cmd_msg(struct xsc_core_device *xdev,
-					       gfp_t flags, int size)
+					     gfp_t flags, int size)
 {
 	struct xsc_cmd_mailbox *tmp, *head = NULL;
 	struct xsc_cmd_prot_block *block;
@@ -836,7 +978,7 @@ err_alloc:
 }
 
 static void xsc_free_cmd_msg(struct xsc_core_device *xdev,
-				  struct xsc_cmd_msg *msg)
+			     struct xsc_cmd_msg *msg)
 {
 	struct xsc_cmd_mailbox *head = msg->next;
 	struct xsc_cmd_mailbox *next;
@@ -850,7 +992,7 @@ static void xsc_free_cmd_msg(struct xsc_core_device *xdev,
 }
 
 static struct xsc_rsp_msg *xsc_alloc_rsp_msg(struct xsc_core_device *xdev,
-					       gfp_t flags, int size)
+					     gfp_t flags, int size)
 {
 	struct xsc_cmd_mailbox *tmp, *head = NULL;
 	struct xsc_cmd_prot_block *block;
@@ -897,7 +1039,7 @@ err_alloc:
 }
 
 static void xsc_free_rsp_msg(struct xsc_core_device *xdev,
-				  struct xsc_rsp_msg *msg)
+			     struct xsc_rsp_msg *msg)
 {
 	struct xsc_cmd_mailbox *head = msg->next;
 	struct xsc_cmd_mailbox *next;
@@ -1111,8 +1253,6 @@ void xsc_cmd_use_events(struct xsc_core_device *xdev)
 	for (i = 0; i < cmd->max_reg_cmds; i++)
 		down(&cmd->sem);
 
-	down(&cmd->pages_sem);
-
 	flush_workqueue(cmd->wq);
 
 	cmd->mode = CMD_MODE_EVENTS;
@@ -1122,7 +1262,6 @@ void xsc_cmd_use_events(struct xsc_core_device *xdev)
 	kthread_stop(cmd->cq_task);
 	cmd->cq_task = NULL;
 
-	up(&cmd->pages_sem);
 	for (i = 0; i < cmd->max_reg_cmds; i++)
 		up(&cmd->sem);
 }
@@ -1136,15 +1275,12 @@ void xsc_cmd_use_polling(struct xsc_core_device *xdev)
 	for (i = 0; i < cmd->max_reg_cmds; i++)
 		down(&cmd->sem);
 
-	down(&cmd->pages_sem);
-
 	flush_workqueue(cmd->wq);
 	cmd->mode = CMD_MODE_POLLING;
 	cmd->cq_task = kthread_create(cmd_cq_polling, (void *)xdev, "xsc_cmd_cq_polling");
 	if (cmd->cq_task)
 		wake_up_process(cmd->cq_task);
 
-	up(&cmd->pages_sem);
 	for (i = 0; i < cmd->max_reg_cmds; i++)
 		up(&cmd->sem);
 }
@@ -1195,13 +1331,8 @@ static void free_msg(struct xsc_core_device *xdev, struct xsc_cmd_msg *msg)
 	}
 }
 
-static int is_manage_pages(struct xsc_inbox_hdr *in)
-{
-	return be16_to_cpu(in->opcode) == XSC_CMD_OP_MANAGE_PAGES;
-}
-
 static int dummy_work(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
-				struct xsc_rsp_msg *out, u16 dummy_cnt, u16 dummy_start_pid)
+		      struct xsc_rsp_msg *out, u16 dummy_cnt, u16 dummy_start_pid)
 {
 	struct xsc_cmd *cmd = &xdev->cmd;
 	struct xsc_cmd_work_ent **dummy_ent_arr;
@@ -1221,7 +1352,7 @@ static int dummy_work(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 	}
 
 	for (i = 0; i < dummy_cnt; i++) {
-		dummy_ent_arr[i] = alloc_cmd(cmd, in, out, NULL, NULL, 0);
+		dummy_ent_arr[i] = alloc_cmd(cmd, in, out);
 		if (IS_ERR(dummy_ent_arr[i])) {
 			xsc_core_err(xdev, "failed to alloc cmd buffer\n");
 			err = -ENOMEM;
@@ -1245,8 +1376,7 @@ static int dummy_work(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 		lay = get_inst(cmd, temp_pid);
 		dummy_ent_arr[i]->lay = lay;
 		memset(lay, 0, sizeof(*lay));
-		memcpy(lay->in, dummy_ent_arr[i]->in->first.data,
-			sizeof(dummy_ent_arr[i]->in));
+		memcpy(lay->in, dummy_ent_arr[i]->in->first.data, sizeof(dummy_ent_arr[i]->in));
 		lay->inlen = cpu_to_be32(dummy_ent_arr[i]->in->len);
 		lay->outlen = cpu_to_be32(dummy_ent_arr[i]->out->len);
 		lay->type = XSC_PCI_CMD_XPORT;
@@ -1256,7 +1386,7 @@ static int dummy_work(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 			set_signature(dummy_ent_arr[i]);
 		else
 			lay->sig = 0xff;
-		temp_pid = (temp_pid + 1) % (1<<cmd->log_sz);
+		temp_pid = (temp_pid + 1) % (1 << cmd->log_sz);
 	}
 
 	/* ring doorbell after the descriptor is valid */
@@ -1267,10 +1397,10 @@ static int dummy_work(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 
 	mmiowb();
 	xsc_core_dbg(xdev, "write 0x%x to command doorbell, idx %u ~ %u\n", cmd->cmd_pid,
-		dummy_ent_arr[0]->idx, dummy_ent_arr[dummy_cnt-1]->idx);
+		     dummy_ent_arr[0]->idx, dummy_ent_arr[dummy_cnt - 1]->idx);
 
 	if (wait_for_completion_timeout(&dummy_ent_arr[dummy_cnt - 1]->done,
-			msecs_to_jiffies(3000)) == 0) {
+					msecs_to_jiffies(3000)) == 0) {
 		xsc_core_err(xdev, "dummy_cmd %d ent timeout, cmdq fail\n", dummy_cnt - 1);
 		err = -ETIMEDOUT;
 	} else {
@@ -1298,7 +1428,7 @@ alloc_ent_arr_err:
 }
 
 static int xsc_dummy_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out,
-		  int out_size, u16 dmmy_cnt, u16 dummy_start)
+			      int out_size, u16 dmmy_cnt, u16 dummy_start)
 {
 	struct xsc_cmd_msg *inb;
 	struct xsc_rsp_msg *outb;
@@ -1378,18 +1508,18 @@ static int request_pid_cid_mismatch_restore(struct xsc_core_device *xdev)
 
 	req_pid = readl(REG_ADDR(xdev, cmd->reg.req_pid_addr));
 	req_cid = readl(REG_ADDR(xdev, cmd->reg.req_cid_addr));
-	if (req_pid >= (1<<cmd->log_sz) || req_cid >= (1<<cmd->log_sz)) {
+	if (req_pid >= (1 << cmd->log_sz) || req_cid >= (1 << cmd->log_sz)) {
 		xsc_core_err(xdev, "req_pid %d, req_cid %d, out of normal range!!! max value is %d\n",
-						req_pid, req_cid, (1<<cmd->log_sz));
+			     req_pid, req_cid, (1 << cmd->log_sz));
 		return -1;
 	}
 
 	if (req_pid == req_cid)
 		return 0;
 
-	gap = (req_pid > req_cid) ? (req_pid - req_cid) : ((1<<cmd->log_sz) + req_pid - req_cid);
+	gap = (req_pid > req_cid) ? (req_pid - req_cid) : ((1 << cmd->log_sz) + req_pid - req_cid);
 	xsc_core_info(xdev, "Cmdq req_pid %d, req_cid %d, send %d dummy cmds\n",
-					req_pid, req_cid, gap);
+		      req_pid, req_cid, gap);
 
 	err = xsc_send_dummy_cmd(xdev, gap, req_cid);
 	if (err) {
@@ -1406,11 +1536,8 @@ int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out
 {
 	struct xsc_cmd_msg *inb;
 	struct xsc_rsp_msg *outb;
-	int pages_queue;
 	int err;
 	u8 status = 0;
-
-	pages_queue = is_manage_pages(in);
 
 	inb = alloc_msg(xdev, in_size);
 	if (IS_ERR(inb)) {
@@ -1430,12 +1557,13 @@ int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out
 		goto out_in;
 	}
 
-	err = xsc_cmd_invoke(xdev, inb, outb, NULL, NULL, pages_queue, &status);
+	err = xsc_cmd_invoke(xdev, inb, outb, &status);
 	if (err)
 		goto out_out;
 
 	if (status) {
-		xsc_core_err(xdev, "err %d, status %d\n", err, status);
+		xsc_core_err(xdev, "opcode:%#x, err %d, status %d\n",
+			     msg_to_opcode(inb), err, status);
 		err = status_to_err(status);
 		goto out_out;
 	}
@@ -1511,14 +1639,10 @@ static void xsc_cmd_comp_handler(struct xsc_core_device *xdev, u8 idx, struct xs
 {
 	struct xsc_cmd *cmd = &xdev->cmd;
 	struct xsc_cmd_work_ent *ent;
-	xsc_cmd_cbk_t callback;
-	void *context;
-	int err;
 	struct xsc_inbox_hdr *hdr;
 
 	if (idx > cmd->max_reg_cmds || (cmd->bitmask & (1 << idx))) {
-		xsc_core_err(xdev, "idx[%d] exceed max cmds, or has no relative request.\n",
-			idx);
+		xsc_core_err(xdev, "idx[%d] exceed max cmds, or has no relative request.\n", idx);
 		return;
 	}
 	ent = cmd->ent_arr[idx];
@@ -1526,37 +1650,21 @@ static void xsc_cmd_comp_handler(struct xsc_core_device *xdev, u8 idx, struct xs
 	ktime_get_ts64(&ent->ts2);
 
 	memcpy(ent->out->first.data, ent->rsp_lay->out, sizeof(ent->rsp_lay->out));
-#ifdef COSIM
 	dump_command(xdev, ent->out->next, ent, 0, ent->out->len);
-#endif
 	if (!cmd->checksum_disabled)
 		ent->ret = verify_signature(ent);
 	else
 		ent->ret = 0;
 	ent->status = 0;
-//	ent->status = ((struct xsc_outbox_hdr *)ent->rsp_lay->out)->status;
 
 	hdr = (struct xsc_inbox_hdr *)ent->in->first.data;
-#ifdef XSC_DEBUG
 	xsc_core_dbg(xdev, "delivery status:%s(%d), rsp status=%d, opcode %#x, idx:%d,%d, ret=%d\n",
-		deliv_status_to_str(ent->status), ent->status,
-		((struct xsc_outbox_hdr *)ent->rsp_lay->out)->status,
-		__be16_to_cpu(hdr->opcode), idx, ent->lay->idx, ent->ret);
-#endif
+		     deliv_status_to_str(ent->status), ent->status,
+		     ((struct xsc_outbox_hdr *)ent->rsp_lay->out)->status,
+		     __be16_to_cpu(hdr->opcode), idx, ent->lay->idx, ent->ret);
 	free_ent(cmd, ent->idx);
-	if (ent->callback) {
-		callback = ent->callback;
-		context = ent->context;
-		err = ent->ret;
-		free_cmd(ent);
-		callback(err, context);
-	} else {
-		complete(&ent->done);
-	}
-	if (ent->page_queue)
-		up(&cmd->pages_sem);
-	else
-		up(&cmd->sem);
+	complete(&ent->done);
+	up(&cmd->sem);
 }
 
 static int cmd_cq_polling(void *data)
@@ -1586,13 +1694,13 @@ static int cmd_cq_polling(void *data)
 		if (cmd->owner_bit != rsp->owner_bit) {
 			//hw update cq doorbell but buf may not ready
 			xsc_core_err(xdev, "hw update cq doorbell but buf not ready %u %u\n",
-							   cmd->cq_cid, cq_pid);
+				     cmd->cq_cid, cq_pid);
 			continue;
 		}
 
 		xsc_cmd_comp_handler(xdev, rsp->idx, rsp);
 
-		cmd->cq_cid = (cmd->cq_cid + 1) % (1<<cmd->log_sz);
+		cmd->cq_cid = (cmd->cq_cid + 1) % (1 << cmd->log_sz);
 
 		writel(cmd->cq_cid, REG_ADDR(xdev, cmd->reg.rsp_cid_addr));
 		if (cmd->cq_cid == 0)
@@ -1667,7 +1775,7 @@ void xsc_cmd_resp_handler(struct xsc_core_device *xdev)
 		}
 		if (cmd->owner_bit != rsp->owner_bit) {
 			xsc_core_err(xdev, "hw update cq doorbell but buf not ready %u %u\n",
-				cmd->cq_cid, cq_pid);
+				     cmd->cq_cid, cq_pid);
 			return;
 		}
 
@@ -1706,14 +1814,6 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 	u32 err_stat;
 	int err;
 	int i;
-
-//	cmd_if_rev = cmdif_rev(dev);
-//	if (cmd_if_rev != CMD_IF_REV) {
-//		dev_err(&dev->pdev->dev,
-//			"Driver cmdif rev(%d) differs from firmware's(%d)\n",
-//			CMD_IF_REV, cmd_if_rev);
-//		return -EINVAL;
-//	}
 
 	//sriov need adapt for this process.
 	//now there is 544 cmdq resource, soc using from id 514
@@ -1768,7 +1868,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 	}
 
 	cmd->cq_dma = dma_map_single(&xdev->pdev->dev, cmd->cq_buf, PAGE_SIZE,
-				  DMA_BIDIRECTIONAL);
+				     DMA_BIDIRECTIONAL);
 	if (dma_mapping_error(&xdev->pdev->dev, cmd->cq_dma)) {
 		err = -ENOMEM;
 		goto err_map_cmd;
@@ -1785,7 +1885,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 
 	cmd->log_sz = Q_DEPTH_LOG;
 	cmd->log_stride = readl(REG_ADDR(xdev, cmd->reg.element_sz_addr));
-	writel(1<<cmd->log_sz, REG_ADDR(xdev, cmd->reg.q_depth_addr));
+	writel(1 << cmd->log_sz, REG_ADDR(xdev, cmd->reg.q_depth_addr));
 	if (cmd->log_stride != ELEMENT_SIZE_LOG) {
 		dev_err(&xdev->pdev->dev, "firmware failed to init cmdq, log_stride=(%d, %d)\n",
 			cmd->log_stride, ELEMENT_SIZE_LOG);
@@ -1810,12 +1910,6 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 	cmd->max_reg_cmds = (1 << cmd->log_sz) - 1;
 	cmd->bitmask = (1 << cmd->max_reg_cmds) - 1;
 
-//	cmd->cmdif_rev = ioread32be(&dev->iseg->cmdif_rev_fw_sub) >> 16;
-//	if (cmd->cmdif_rev > CMD_IF_REV) {
-//		err = -ENOTSUPP;
-//		goto err_map;
-//	}
-
 	spin_lock_init(&cmd->alloc_lock);
 	spin_lock_init(&cmd->token_lock);
 	spin_lock_init(&cmd->doorbell_lock);
@@ -1823,7 +1917,6 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		spin_lock_init(&cmd->stats[i].lock);
 
 	sema_init(&cmd->sem, cmd->max_reg_cmds);
-	sema_init(&cmd->pages_sem, 1);
 
 	cmd_h = (u32)((u64)(cmd->dma) >> 32);
 	cmd_l = (u32)(cmd->dma);
@@ -1833,10 +1926,6 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		goto err_map;
 	}
 
-//	iowrite32be(cmd_h, &dev->iseg->cmdq_addr_h);
-//	iowrite32be(cmd_l, &dev->iseg->cmdq_addr_l_sz);
-//	u32 *ptr = (u32 *)&cmd->dma;
-//	IA_WRITE(xdev, CMDQ_PA_REG_ADDR, ptr, sizeof(u64) / sizeof(u32));
 	writel(cmd_h, REG_ADDR(xdev, cmd->reg.req_buf_h_addr));
 	writel(cmd_l, REG_ADDR(xdev, cmd->reg.req_buf_l_addr));
 
@@ -1854,7 +1943,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 	wmb();
 
 	xsc_core_dbg(xdev, "descriptor at dma 0x%llx 0x%llx\n",
-			(unsigned long long)(cmd->dma), (unsigned long long)(cmd->cq_dma));
+		     (unsigned long long)(cmd->dma), (unsigned long long)(cmd->cq_dma));
 
 	cmd->mode = CMD_MODE_POLLING;
 

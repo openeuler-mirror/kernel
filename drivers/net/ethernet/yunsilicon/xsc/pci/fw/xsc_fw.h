@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -9,8 +8,8 @@
 
 #include "osdep.h"
 
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
 
 struct xsc_free_list {
 	struct list_head list;
@@ -53,10 +52,10 @@ int xsc_alloc_res(u32 *res, u64 *res_tbl, u32 max);
 int xsc_dealloc_res(u32 *res, u64 *res_tbl);
 
 int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32 *alloc,
-		u32 base_align);
+			 u32 base_align);
 
 int release_to_free_list(struct xsc_free_list_wl *list, u32 release,
-				u32 num_released);
+			 u32 num_released);
 
 int alloc_mpt_entry(struct xsc_core_device *dev, u32 *mpt_idx);
 

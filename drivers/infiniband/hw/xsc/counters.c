@@ -5,11 +5,11 @@
  */
 
 #include <linux/fs.h>
-#include <common/xsc_core.h>
-#include <common/xsc_hsi.h>
-#include <common/driver.h>
-#include <common/xsc_lag.h>
-#include <common/xsc_cmd.h>
+#include "common/xsc_core.h"
+#include "common/xsc_hsi.h"
+#include "common/driver.h"
+#include "common/xsc_lag.h"
+#include "common/xsc_cmd.h"
 #include "counters.h"
 
 #define COUNTERS_FILE_NAME         "counters"
@@ -66,7 +66,7 @@ static const struct counter_desc vf_hw_stats_desc[] = {
 };
 
 static ssize_t counters_names_show(struct kobject *kobjs,
-			struct attribute *attr, char *buf)
+				   struct attribute *attr, char *buf)
 {
 	int i;
 	ssize_t count = 0;
@@ -74,11 +74,12 @@ static ssize_t counters_names_show(struct kobject *kobjs,
 	const struct counter_desc *desc;
 
 	xsc_counters_name_attr = container_of(attr,
-		struct xsc_counters_attribute, attr);
+					      struct xsc_counters_attribute,
+					      attr);
 
 	if (!xsc_counters_name_attr->dev ||
-		!xsc_counters_name_attr->desc ||
-		xsc_counters_name_attr->desc_size == 0)
+	    !xsc_counters_name_attr->desc ||
+	    xsc_counters_name_attr->desc_size == 0)
 		return 0;
 
 	for (i = 0; i < xsc_counters_name_attr->desc_size; ++i) {
@@ -90,7 +91,7 @@ static ssize_t counters_names_show(struct kobject *kobjs,
 }
 
 static ssize_t counters_show(struct kobject *kobjs,
-			struct attribute *attr, char *buf)
+			     struct attribute *attr, char *buf)
 {
 	int i;
 	ssize_t count = 0;
@@ -105,10 +106,11 @@ static ssize_t counters_show(struct kobject *kobjs,
 	struct xsc_lag *ldev;
 
 	xsc_counters_attr = container_of(attr,
-		struct xsc_counters_attribute, attr);
+					 struct xsc_counters_attribute,
+					 attr);
 
 	if (!xsc_counters_attr->dev ||
-		!xsc_counters_attr->desc ||
+	    !xsc_counters_attr->desc ||
 		xsc_counters_attr->desc_size == 0)
 		return 0;
 
@@ -154,9 +156,9 @@ static ssize_t counters_show(struct kobject *kobjs,
 }
 
 static ssize_t counters_value_read(struct file *file,
-			struct kobject *kob,
-			struct bin_attribute *bin_attr,
-			char *buf, loff_t loff, size_t size)
+				   struct kobject *kob,
+				   struct bin_attribute *bin_attr,
+				   char *buf, loff_t loff, size_t size)
 {
 	int i;
 	struct xsc_counters_bin_attribute *xsc_counters_bin_attr;
@@ -168,12 +170,13 @@ static ssize_t counters_value_read(struct file *file,
 	const struct counter_desc *desc;
 
 	xsc_counters_bin_attr = container_of(&bin_attr->attr,
-		struct xsc_counters_bin_attribute, attr);
+					     struct xsc_counters_bin_attribute,
+					     attr);
 
 	if (!xsc_counters_bin_attr->dev ||
-		!xsc_counters_bin_attr->desc ||
-		xsc_counters_bin_attr->desc_size == 0 ||
-		xsc_counters_bin_attr->size == 0)
+	    !xsc_counters_bin_attr->desc ||
+	    xsc_counters_bin_attr->desc_size == 0 ||
+	    xsc_counters_bin_attr->size == 0)
 		return 0;
 
 	dev = xsc_counters_bin_attr->dev;
@@ -260,16 +263,20 @@ int xsc_counters_init(struct ib_device *ib_dev, struct xsc_core_device *dev)
 	xsc_counters_bin->dev = dev;
 
 	if (is_pf) {
-		xsc_counters_name->desc = xsc_counters->desc =
-			xsc_counters_bin->desc = &hw_stats_desc[0];
-		xsc_counters_name->desc_size = xsc_counters->desc_size =
-			xsc_counters_bin->desc_size = ARRAY_SIZE(hw_stats_desc);
+		xsc_counters_name->desc = &hw_stats_desc[0];
+		xsc_counters->desc = &hw_stats_desc[0];
+		xsc_counters_bin->desc = &hw_stats_desc[0];
+		xsc_counters_name->desc_size = ARRAY_SIZE(hw_stats_desc);
+		xsc_counters->desc_size = ARRAY_SIZE(hw_stats_desc);
+		xsc_counters_bin->desc_size = ARRAY_SIZE(hw_stats_desc);
 		xsc_counters_bin->size = xsc_counters_bin->desc_size * sizeof(u64);
 	} else {
-		xsc_counters_name->desc = xsc_counters->desc =
-			xsc_counters_bin->desc = &vf_hw_stats_desc[0];
-		xsc_counters_name->desc_size = xsc_counters->desc_size =
-			xsc_counters_bin->desc_size = ARRAY_SIZE(vf_hw_stats_desc);
+		xsc_counters_name->desc = &vf_hw_stats_desc[0];
+		xsc_counters->desc = &vf_hw_stats_desc[0];
+		xsc_counters_bin->desc = &vf_hw_stats_desc[0];
+		xsc_counters_name->desc_size = ARRAY_SIZE(vf_hw_stats_desc);
+		xsc_counters->desc_size = ARRAY_SIZE(vf_hw_stats_desc);
+		xsc_counters_bin->desc_size = ARRAY_SIZE(vf_hw_stats_desc);
 		xsc_counters_bin->size = xsc_counters_bin->desc_size * sizeof(u64);
 	}
 
@@ -283,7 +290,7 @@ int xsc_counters_init(struct ib_device *ib_dev, struct xsc_core_device *dev)
 
 	dev->counters_priv = counters_attr_g;
 
-	ret = sysfs_create_group(&(ib_dev->dev.kobj), counters_attr_g);
+	ret = sysfs_create_group(&ib_dev->dev.kobj, counters_attr_g);
 	if (ret)
 		goto err_counters_create_group;
 
@@ -333,7 +340,7 @@ void xsc_counters_fini(struct ib_device *ib_dev, struct xsc_core_device *dev)
 	xsc_counters = (struct xsc_counters_attribute *)counters_attrs[1];
 
 	if (counters_attr_g) {
-		sysfs_remove_group(&(ib_dev->dev.kobj), counters_attr_g);
+		sysfs_remove_group(&ib_dev->dev.kobj, counters_attr_g);
 		kfree(counters_attr_g);
 		counters_attr_g = NULL;
 	}

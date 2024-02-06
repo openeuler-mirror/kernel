@@ -1,22 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/etherdevice.h>
 #include <linux/mutex.h>
 #include <linux/idr.h>
-#include <common/vport.h>
+#include "common/vport.h"
 #include "fw/xsc_tbm.h"
 #include "eswitch.h"
-#include <common/xsc_lag.h>
-
-u8 xsc_eswitch_mode(struct xsc_eswitch *esw)
-{
-	return ESW_ALLOWED(esw) ? esw->mode : XSC_ESWITCH_NONE;
-}
-EXPORT_SYMBOL_GPL(xsc_eswitch_mode);
+#include "common/xsc_lag.h"
 
 static int xsc_eswitch_check(const struct xsc_core_device *dev)
 {
@@ -40,7 +33,7 @@ xsc_eswitch_get_vport(struct xsc_eswitch *esw, u16 vport_num)
 
 	if (idx > esw->total_vports - 1) {
 		xsc_core_dbg(esw->dev, "vport out of range: num(0x%x), idx(0x%x)\n",
-			  vport_num, idx);
+			     vport_num, idx);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -84,9 +77,7 @@ static int esw_mode_to_devlink(u16 xsc_mode, u16 *mode)
 	return 0;
 }
 
-int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode
-				  , struct netlink_ext_ack *extack
-				)
+int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode, struct netlink_ext_ack *extack)
 {
 	struct xsc_core_device *dev = devlink_priv(devlink);
 	struct xsc_eswitch *esw = dev->priv.eswitch;
@@ -110,7 +101,10 @@ int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode
 	if (cur_xsc_mode == xsc_mode)
 		goto done;
 
-	if (xsc_mode == XSC_ESWITCH_OFFLOADS && cur_xsc_mode != XSC_ESWITCH_LEGACY) {
+	if ((cur_xsc_mode != XSC_ESWITCH_LEGACY && xsc_mode == XSC_ESWITCH_OFFLOADS) ||
+	    (cur_xsc_mode == XSC_ESWITCH_OFFLOADS && xsc_mode == XSC_ESWITCH_LEGACY)) {
+		xsc_core_err(dev, "%s failed: do not set mode %d to mode %d\n",
+			     __func__, cur_xsc_mode, xsc_mode);
 		mutex_unlock(&esw->mode_lock);
 		return -EOPNOTSUPP;
 	}
@@ -120,7 +114,7 @@ int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode
 	xsc_lag_enable(dev);
 
 	if (esw->mode == XSC_ESWITCH_OFFLOADS)
-		xsc_set_vf_pp_status(dev, false);
+		xsc_cmd_modify_hca(dev);
 
 done:
 	mutex_unlock(&esw->mode_lock);
@@ -147,7 +141,6 @@ int xsc_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode)
 static void esw_vport_change_handle_locked(struct xsc_vport *vport)
 {
 	struct xsc_core_device *dev = vport->dev;
-	//struct xsc_eswitch *esw = dev->priv.eswitch;
 	u8 mac[ETH_ALEN];
 
 	xsc_query_other_nic_vport_mac_address(dev, vport->vport, mac);
@@ -165,11 +158,9 @@ static void esw_vport_change_handler(struct work_struct *work)
 }
 
 void xsc_eswitch_enable_vport(struct xsc_eswitch *esw,
-			       struct xsc_vport *vport,
-			       enum xsc_eswitch_vport_event enabled_events)
+			      struct xsc_vport *vport,
+			      enum xsc_eswitch_vport_event enabled_events)
 {
-	u16 vport_num = vport->vport;
-
 	mutex_lock(&esw->state_lock);
 	if (vport->enabled)
 		goto unlock_out;
@@ -182,22 +173,13 @@ void xsc_eswitch_enable_vport(struct xsc_eswitch *esw,
 	vport->enabled_events = enabled_events;
 	vport->enabled = true;
 
-	/* Esw manager is trusted by default. Host PF (vport 0) is trusted as well
-	 * in smartNIC as it's a vport group manager.
-	 */
-	//if (is_esw_manager_vport(esw, vport_num))
-	//	vport->info.trusted = true;
-
-//	esw_vport_change_handle_locked(vport);
-
 	esw->enabled_vports++;
-	xsc_core_dbg(esw->dev, "Enabled VPORT(%d)\n", vport_num);
 unlock_out:
 	mutex_unlock(&esw->state_lock);
 }
 
 void xsc_eswitch_disable_vport(struct xsc_eswitch *esw,
-				struct xsc_vport *vport)
+			       struct xsc_vport *vport)
 {
 	u16 vport_num = vport->vport;
 
@@ -223,7 +205,7 @@ done:
 }
 
 void xsc_eswitch_enable_pf_vf_vports(struct xsc_eswitch *esw,
-					enum xsc_eswitch_vport_event enabled_events)
+				     enum xsc_eswitch_vport_event enabled_events)
 {
 	struct xsc_vport *vport;
 	int i;
@@ -257,11 +239,6 @@ int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int mode, int num_vfs)
 {
 	int err;
 
-	//if (!ESW_ALLOWED(esw) || !esw->dev.caps.ft_support) {
-	//	xsc_core_warn(esw->dev, "E-Switch FDB is not supported, aborting ...\n");
-	//	return -EOPNOTSUPP;
-	//}
-
 	lockdep_assert_held(&esw->mode_lock);
 
 	esw->num_vfs = num_vfs;
@@ -278,11 +255,9 @@ int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int mode, int num_vfs)
 
 	esw->mode = mode;
 
-	//xsc_eswitch_event_handlers_register(esw);
-
 	xsc_core_info(esw->dev, "Enable: mode(%s), nvfs(%d), active vports(%d)\n",
-		 mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS",
-		 num_vfs, esw->enabled_vports);
+		      mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS",
+		      num_vfs, esw->enabled_vports);
 
 	return 0;
 
@@ -310,17 +285,11 @@ void xsc_eswitch_disable_locked(struct xsc_eswitch *esw, bool clear_vf)
 		return;
 
 	xsc_core_info(esw->dev, "Disable: mode(%s)\n",
-		 esw->mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS");
+		      esw->mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS");
 
-//	xsc_eswitch_event_handlers_unregister(esw);
-
-	//if (esw->mode == XSC_ESWITCH_LEGACY)
-	//	esw_legacy_disable(esw);
 	old_mode = esw->mode;
 	esw->mode = XSC_ESWITCH_NONE;
 
-	//if (clear_vf)
-	//	xsc_eswitch_clear_vf_vports_info(esw);
 	esw->num_vfs = 0;
 }
 
@@ -341,7 +310,8 @@ int xsc_eswitch_init(struct xsc_core_device *dev)
 	int i, total_vports, err;
 
 	if (!XSC_VPORT_MANAGER(dev)) {
-		xsc_core_info(dev, "%s XSC_VPORT_MANAGER check fail\n", __func__);
+		if (xsc_core_is_pf(dev))
+			xsc_core_err(dev, "%s XSC_VPORT_MANAGER check fail\n", __func__);
 		return 0;
 	}
 
@@ -377,6 +347,7 @@ int xsc_eswitch_init(struct xsc_core_device *dev)
 		vport->info.link_state = XSC_VPORT_ADMIN_STATE_AUTO;
 		vport->info.vlan_proto = htons(ETH_P_8021Q);
 		vport->info.roce = true;
+
 		vport->dev = dev;
 		INIT_WORK(&vport->vport_change_handler,
 			  esw_vport_change_handler);
@@ -407,6 +378,7 @@ void xsc_eswitch_cleanup(struct xsc_core_device *dev)
 	kfree(dev->priv.eswitch);
 }
 
+#ifdef XSC_ESW_GUID_ENABLE
 static void node_guid_gen_from_mac(u64 *node_guid, u8 mac[ETH_ALEN])
 {
 	((u8 *)node_guid)[7] = mac[0];
@@ -418,16 +390,21 @@ static void node_guid_gen_from_mac(u64 *node_guid, u8 mac[ETH_ALEN])
 	((u8 *)node_guid)[1] = mac[4];
 	((u8 *)node_guid)[0] = mac[5];
 }
+#endif
 
 int xsc_eswitch_set_vport_mac(struct xsc_eswitch *esw,
-			       u16 vport, u8 mac[ETH_ALEN])
+			      u16 vport, u8 mac[ETH_ALEN])
 {
 	struct xsc_vport *evport = xsc_eswitch_get_vport(esw, vport);
-	u64 node_guid;
 	int err = 0;
+
+#ifdef XSC_ESW_GUID_ENABLE
+	u64 node_guid;
+#endif
 
 	if (IS_ERR(evport))
 		return PTR_ERR(evport);
+
 	if (is_multicast_ether_addr(mac))
 		return -EINVAL;
 
@@ -435,26 +412,28 @@ int xsc_eswitch_set_vport_mac(struct xsc_eswitch *esw,
 
 	if (evport->info.spoofchk && !is_valid_ether_addr(mac))
 		xsc_core_warn(esw->dev,
-			       "Set invalid MAC while spoofchk is on, vport(%d)\n",
-			       vport);
+			      "Set invalid MAC while spoofchk is on, vport(%d)\n",
+			      vport);
 
-	err = xsc_modify_other_nic_vport_mac_address(esw->dev, vport, mac);
+	err = xsc_modify_other_nic_vport_mac_address(esw->dev, vport, mac, false);
 	if (err) {
-		xsc_core_warn(esw->dev,
-			       "Failed to xsc_modify_nic_vport_mac vport(%d) err=(%d)\n",
-			       vport, err);
+		xsc_core_err(esw->dev,
+			     "Failed to xsc_modify_nic_vport_mac vport(%d) err=(%d)\n",
+			     vport, err);
 		goto unlock;
 	}
 
+	ether_addr_copy(evport->info.mac, mac);
+
+#ifdef XSC_ESW_GUID_ENABLE
 	node_guid_gen_from_mac(&node_guid, mac);
 	err = xsc_modify_other_nic_vport_node_guid(esw->dev, vport, node_guid);
 	if (err)
-		xsc_core_warn(esw->dev,
-			       "Failed to set vport %d node guid, err = %d. RDMA_CM will not function properly for this VF.\n",
-			       vport, err);
-
-	ether_addr_copy(evport->info.mac, mac);
+		xsc_core_err(esw->dev,
+			     "Failed to set vport %d node guid, err = %d. RDMA_CM will not function properly for this VF.\n",
+			     vport, err);
 	evport->info.node_guid = node_guid;
+#endif
 
 #ifdef XSC_ESW_FDB_ENABLE
 	if (evport->enabled && esw->mode == XSC_ESWITCH_LEGACY)
@@ -465,9 +444,10 @@ unlock:
 	mutex_unlock(&esw->state_lock);
 	return err;
 }
+EXPORT_SYMBOL(xsc_eswitch_set_vport_mac);
 
 int xsc_eswitch_get_vport_mac(struct xsc_eswitch *esw,
-			       u16 vport, u8 *mac)
+			      u16 vport, u8 *mac)
 {
 	struct xsc_vport *evport = xsc_eswitch_get_vport(esw, vport);
 
@@ -481,13 +461,13 @@ int xsc_eswitch_get_vport_mac(struct xsc_eswitch *esw,
 }
 
 int __xsc_eswitch_set_vport_vlan(struct xsc_eswitch *esw, int vport, u16 vlan,
-				  u8 qos, __be16 proto, u8 set_flags)
+				 u8 qos, __be16 proto, u8 set_flags)
 {
 	return 0;
 }
 
 int xsc_eswitch_set_vport_vlan(struct xsc_eswitch *esw, int vport,
-				u16 vlan, u8 qos, __be16 vlan_proto)
+			       u16 vlan, u8 qos, __be16 vlan_proto)
 {
 	u8 set_flags = 0;
 	int err = 0;
@@ -523,7 +503,7 @@ int xsc_eswitch_set_vport_state(struct xsc_eswitch *esw,
 }
 
 int xsc_eswitch_set_vport_spoofchk(struct xsc_eswitch *esw,
-				u16 vport, bool spoofchk)
+				   u16 vport, u8 spoofchk)
 {
 	struct xsc_vport *evport = xsc_eswitch_get_vport(esw, vport);
 	bool pschk;
@@ -542,11 +522,9 @@ int xsc_eswitch_set_vport_spoofchk(struct xsc_eswitch *esw,
 	pschk = evport->info.spoofchk;
 	evport->info.spoofchk = spoofchk;
 	if (pschk && !is_valid_ether_addr(evport->info.mac))
-		xsc_core_warn(esw->dev,
-		"Spoofchk in set while MAC is invalid, vport(%d)\n",
-		evport->vport);
-	//if (evport->enabled && esw->mode == XSC_ESWITCH_LEGACY)
-	//        err = __xsc_eswitch_set_spoofchk(esw, evport);
+		xsc_core_warn(esw->dev, "Spoofchk in set while MAC is invalid, vport(%d)\n",
+			      evport->vport);
+
 	if (err)
 		evport->info.spoofchk = pschk;
 
@@ -556,8 +534,8 @@ unlock:
 }
 
 static int xsc_eswitch_update_vport_trunk(struct xsc_eswitch *esw,
-					   struct xsc_vport *evport,
-					   unsigned long *old_trunk)
+					  struct xsc_vport *evport,
+					  unsigned long *old_trunk)
 {
 	DECLARE_BITMAP(diff_vlan_bm, VLAN_N_VID);
 	int err = 0;
@@ -567,19 +545,14 @@ static int xsc_eswitch_update_vport_trunk(struct xsc_eswitch *esw,
 	if (!bitmap_weight(diff_vlan_bm, VLAN_N_VID))
 		return err;
 
-	if (err) {
-		bitmap_copy(evport->info.vlan_trunk_8021q_bitmap, old_trunk,
-			    VLAN_N_VID);
-		//esw_update_acl_trunk_bitmap(esw, evport->vport);
-		//esw_acl_egress_lgcy_setup(esw, evport);
-		//esw_acl_ingress_lgcy_setup(esw, evport);
-	}
+	if (err)
+		bitmap_copy(evport->info.vlan_trunk_8021q_bitmap, old_trunk, VLAN_N_VID);
 
 	return err;
 }
 
 int xsc_eswitch_add_vport_trunk_range(struct xsc_eswitch *esw,
-					int vport, u16 start_vlan, u16 end_vlan)
+				      int vport, u16 start_vlan, u16 end_vlan)
 {
 	DECLARE_BITMAP(prev_vport_bitmap, VLAN_N_VID);
 	struct xsc_vport *evport = xsc_eswitch_get_vport(esw, vport);
@@ -598,8 +571,8 @@ int xsc_eswitch_add_vport_trunk_range(struct xsc_eswitch *esw,
 	if (evport->info.vlan || evport->info.qos) {
 		err = -EPERM;
 		xsc_core_warn(esw->dev,
-			       "VGT+ is not allowed when operating in VST mode vport(%d)\n",
-			       vport);
+			      "VGT+ is not allowed when operating in VST mode vport(%d)\n",
+			      vport);
 		goto unlock;
 	}
 
@@ -616,7 +589,7 @@ unlock:
 }
 
 int xsc_eswitch_del_vport_trunk_range(struct xsc_eswitch *esw,
-					int vport, u16 start_vlan, u16 end_vlan)
+				      int vport, u16 start_vlan, u16 end_vlan)
 {
 	DECLARE_BITMAP(prev_vport_bitmap, VLAN_N_VID);
 	struct xsc_vport *evport = xsc_eswitch_get_vport(esw, vport);
@@ -658,8 +631,6 @@ int xsc_eswitch_set_vport_trust(struct xsc_eswitch *esw,
 		goto unlock;
 	}
 	evport->info.trusted = setting;
-//	if (evport->enabled)
-//		esw_vport_change_handle_locked(evport);
 
 unlock:
 	mutex_unlock(&esw->state_lock);
@@ -667,13 +638,13 @@ unlock:
 }
 
 int xsc_eswitch_set_vport_rate(struct xsc_eswitch *esw, u16 vport,
-				u32 max_rate, u32 min_rate)
+			       u32 max_rate, u32 min_rate)
 {
 	return 0;
 }
 
 int xsc_eswitch_get_vport_config(struct xsc_eswitch *esw,
-				  u16 vport, struct ifla_vf_info *ivi)
+				 u16 vport, struct ifla_vf_info *ivi)
 {
 	struct xsc_vport *evport = xsc_eswitch_get_vport(esw, vport);
 
@@ -685,45 +656,39 @@ int xsc_eswitch_get_vport_config(struct xsc_eswitch *esw,
 
 	mutex_lock(&esw->state_lock);
 	ether_addr_copy(ivi->mac, evport->info.mac);
-	ivi->linkstate = evport->info.link_state;
-	ivi->vlan = evport->info.vlan;
-	ivi->qos = evport->info.qos;
-	ivi->vlan_proto = evport->info.vlan_proto;
-	ivi->spoofchk = evport->info.spoofchk;
-	ivi->trusted = evport->info.trusted;
-	ivi->min_tx_rate = evport->qos.min_rate;
-	ivi->max_tx_rate = evport->qos.max_rate;
+
 	mutex_unlock(&esw->state_lock);
 
 	return 0;
 }
+EXPORT_SYMBOL(xsc_eswitch_get_vport_config);
 
 int xsc_eswitch_vport_update_group(struct xsc_eswitch *esw, int vport_num,
-					u32 group_id)
+				   u32 group_id)
 {
 	return 0;
 }
 
 int xsc_eswitch_set_vgroup_rate(struct xsc_eswitch *esw, int group_id,
-					u32 max_rate)
+				u32 max_rate)
 {
 	return 0;
 }
 
 int xsc_eswitch_set_vgroup_max_rate(struct xsc_eswitch *esw, int group_id,
-					u32 max_rate)
+				    u32 max_rate)
 {
 	return 0;
 }
 
 int xsc_eswitch_set_vgroup_min_rate(struct xsc_eswitch *esw, int group_id,
-					u32 min_rate)
+				    u32 min_rate)
 {
 	return 0;
 }
 
 int xsc_eswitch_modify_esw_vport_context(struct xsc_eswitch *esw, u16 vport,
-					bool other_vport, void *in, int inlen)
+					 bool other_vport, void *in, int inlen)
 {
 	return 0;
 }
@@ -741,9 +706,8 @@ int xsc_eswitch_get_vport_stats(struct xsc_eswitch *esw,
 }
 
 int xsc_eswitch_query_vport_drop_stats(struct xsc_core_device *dev,
-					struct xsc_vport *vport,
-					struct xsc_vport_drop_stats *stats)
+				       struct xsc_vport *vport,
+				       struct xsc_vport_drop_stats *stats)
 {
 	return 0;
 }
-

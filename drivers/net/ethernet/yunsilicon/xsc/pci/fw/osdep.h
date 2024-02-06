@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef OSDEP_H
 #define OSDEP_H
 
-#include <common/xsc_core.h>
+#include "common/xsc_core.h"
 
 #define xsc_print printk
 

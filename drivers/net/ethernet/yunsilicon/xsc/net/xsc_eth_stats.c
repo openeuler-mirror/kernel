@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/types.h>
-#include <common/xsc_cmd.h>
+#include "common/xsc_cmd.h"
 
 #include "xsc_eth_stats.h"
 #include "xsc_eth.h"
@@ -39,6 +38,7 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_wqes) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_wqe_err) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_oversize_pkts_sw_drop) },
+	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_oversize_pkts_err) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_buff_alloc_err) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_cache_reuse) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, rx_cache_full) },
@@ -51,8 +51,8 @@ static const struct counter_desc sw_stats_desc[] = {
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_events) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_0) },
-	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_1_64) },
-	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_65_511) },
+	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_1_63) },
+	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_64_511) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_512_1023) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_poll_1024) },
 	{ XSC_DECLARE_STAT(struct xsc_sw_stats, ch_arm) },
@@ -112,6 +112,7 @@ void xsc_grp_sw_update_stats(struct xsc_adapter *adapter)
 		s->rx_wqes	+= rq_stats->wqes;
 		s->rx_wqe_err   += rq_stats->wqe_err;
 		s->rx_oversize_pkts_sw_drop += rq_stats->oversize_pkts_sw_drop;
+		s->rx_oversize_pkts_err += rq_stats->oversize_pkts_err;
 		s->rx_buff_alloc_err += rq_stats->buff_alloc_err;
 		s->rx_cache_reuse += rq_stats->cache_reuse;
 		s->rx_cache_full += rq_stats->cache_full;
@@ -125,8 +126,8 @@ void xsc_grp_sw_update_stats(struct xsc_adapter *adapter)
 		s->ch_events		+= ch_stats->events;
 		s->ch_poll		+= ch_stats->poll;
 		s->ch_poll_0		+= ch_stats->poll_0;
-		s->ch_poll_1_64		+= ch_stats->poll_1_64;
-		s->ch_poll_65_511	+= ch_stats->poll_65_511;
+		s->ch_poll_1_63		+= ch_stats->poll_1_63;
+		s->ch_poll_64_511	+= ch_stats->poll_64_511;
 		s->ch_poll_512_1023	+= ch_stats->poll_512_1023;
 		s->ch_poll_1024		+= ch_stats->poll_1024;
 		s->ch_arm		+= ch_stats->arm;
@@ -169,6 +170,7 @@ static const struct counter_desc rq_stats_desc[] = {
 	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, cqes) },
 	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, wqe_err) },
 	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, oversize_pkts_sw_drop) },
+	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, oversize_pkts_err) },
 	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, buff_alloc_err) },
 	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, cache_reuse) },
 	{ XSC_DECLARE_RX_STAT(struct xsc_rq_stats, cache_full) },
@@ -206,8 +208,8 @@ static const struct counter_desc ch_stats_desc[] = {
 	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, events) },
 	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll) },
 	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_0) },
-	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_1_64) },
-	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_65_511) },
+	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_1_63) },
+	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_64_511) },
 	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_512_1023) },
 	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, poll_1024) },
 	{ XSC_DECLARE_CH_STAT(struct xsc_ch_stats, arm) },
@@ -230,7 +232,7 @@ static int xsc_grp_channels_get_num_stats(struct xsc_adapter *adapter)
 }
 
 static int xsc_grp_channels_fill_strings(struct xsc_adapter *adapter, u8 *data,
-					   int idx)
+					 int idx)
 {
 	int max_nch = xsc_get_netdev_max_channels(adapter);
 	int max_tc = xsc_get_netdev_max_tc(adapter);
@@ -258,7 +260,7 @@ static int xsc_grp_channels_fill_strings(struct xsc_adapter *adapter, u8 *data,
 }
 
 static int xsc_grp_channels_fill_stats(struct xsc_adapter *adapter, u64 *data,
-					 int idx)
+				       int idx)
 {
 	int max_nch = xsc_get_netdev_max_channels(adapter);
 	int max_tc = xsc_get_netdev_max_tc(adapter);
@@ -269,13 +271,13 @@ static int xsc_grp_channels_fill_stats(struct xsc_adapter *adapter, u64 *data,
 		for (j = 0; j < NUM_CH_STATS; j++)
 			data[idx++] =
 				XSC_READ_CTR64_CPU(&stats->channel_stats[i].ch,
-						     ch_stats_desc, j);
+						   ch_stats_desc, j);
 
 	for (i = 0; i < max_nch; i++) {
 		for (j = 0; j < NUM_RQ_STATS; j++)
 			data[idx++] =
 				XSC_READ_CTR64_CPU(&stats->channel_stats[i].rq,
-						     rq_stats_desc, j);
+						   rq_stats_desc, j);
 	}
 
 	for (tc = 0; tc < max_tc; tc++)
@@ -283,7 +285,7 @@ static int xsc_grp_channels_fill_stats(struct xsc_adapter *adapter, u64 *data,
 			for (j = 0; j < NUM_SQ_STATS; j++)
 				data[idx++] =
 					XSC_READ_CTR64_CPU(&stats->channel_stats[i].sq[tc],
-						     sq_stats_desc, j);
+							   sq_stats_desc, j);
 
 	return idx;
 }
@@ -391,11 +393,11 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 	in.pport = xdev->mac_port;
 
 	ret = xsc_cmd_exec(adapter->xdev, (void *)&in, sizeof(struct xsc_prio_stats_mbox_in),
-		(void *)&out, sizeof(struct xsc_prio_stats_mbox_out));
-	if ((ret == 0) && (out.hdr.status == 0)) {
+			   (void *)&out, sizeof(struct xsc_prio_stats_mbox_out));
+	if (ret == 0 && out.hdr.status == 0) {
 		for (i = 0; i < ARRAY_SIZE(hw_prio_stats_desc); i++) {
 			val = XSC_READ_CTR64_CPU(&out.prio_stats, hw_prio_stats_desc, i);
-			data[idx++] = __be64_to_cpu(val);
+						 data[idx++] = __be64_to_cpu(val);
 		}
 	}
 
@@ -406,8 +408,8 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 	hw_in.is_lag = 0;
 
 	ret = xsc_cmd_exec(adapter->xdev, (void *)&hw_in, sizeof(struct xsc_hw_stats_mbox_in),
-		(void *)&hw_out, sizeof(struct xsc_hw_stats_mbox_out));
-	if ((ret == 0) && (hw_out.hdr.status == 0)) {
+			   (void *)&hw_out, sizeof(struct xsc_hw_stats_mbox_out));
+	if (ret == 0 && hw_out.hdr.status == 0) {
 		for (i = 0; i < ARRAY_SIZE(hw_stats_desc); i++) {
 			val = XSC_READ_CTR64_CPU(&hw_out.hw_stats, hw_stats_desc, i);
 			data[idx++] = __be64_to_cpu(val);
@@ -461,4 +463,3 @@ void xsc_fold_sw_stats64(struct xsc_adapter *adapter, struct rtnl_link_stats64 *
 		}
 	}
 }
-

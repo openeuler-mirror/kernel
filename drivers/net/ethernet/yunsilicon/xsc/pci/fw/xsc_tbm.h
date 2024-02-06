@@ -1,23 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef XSC_TBM_H
 #define XSC_TBM_H
 
-#include <common/xsc_core.h>
+#include "common/xsc_core.h"
 
 #define XSC_LAG_NUM_MAX		0x30
-
-#ifndef PCIE0_PF_NUM
-#define PCIE0_PF_NUM	2
-#endif
-
-#ifndef PCIE1_PF_NUM
-#define PCIE1_PF_NUM	0
-#endif
 
 enum {
 	XSC_VLAN_MODE_NONE = 0,
@@ -70,16 +61,6 @@ enum {
 int xsc_tbm_vlan_config(struct xsc_core_device *dev,
 			struct xsc_logic_port_info *info,
 			struct xsc_vlan_config *config);
-
-static inline bool xsc_vf_pp_init_enable(const struct xsc_core_device *dev)
-{
-	return dev->vf_pp_init;
-}
-
-static inline void xsc_set_vf_pp_status(struct xsc_core_device *dev, bool status)
-{
-	dev->vf_pp_init = status;
-}
 
 #endif /* XSC_TBM_H */
 

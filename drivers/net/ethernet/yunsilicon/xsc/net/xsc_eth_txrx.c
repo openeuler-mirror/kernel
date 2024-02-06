@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -19,7 +18,7 @@ void xsc_cq_notify_hw_rearm(struct xsc_cq *cq)
 	db.cq_id = cpu_to_le32(cq->xcq.cqn);
 	db.arm = 0;
 
-	/* keep order */
+	/* ensure doorbell record is visible to device before ringing the doorbell */
 	wmb();
 	writel(db.val, REG_ADDR(cq->xdev, cq->xdev->regs.complete_db));
 	if (cq->channel && cq->channel->stats)
@@ -39,8 +38,6 @@ void xsc_cq_notify_hw(struct xsc_cq *cq)
 	db.cq_next_cid = cpu_to_le32(cq->wq.cc);
 	db.cq_id = cpu_to_le32(cq->xcq.cqn);
 
-	/* ensure doorbell record is visible to device before ringing the doorbell*/
-//	wmb();
 	writel(db.val, REG_ADDR(xdev, xdev->regs.complete_reg));
 	if (cq->channel && cq->channel->stats)
 		cq->channel->stats->noarm++;
@@ -74,15 +71,23 @@ int xsc_eth_napi_poll(struct napi_struct *napi, int budget)
 		busy |= work_done == budget;
 	}
 
-	if (work_done < budget) {
-		if (unlikely(!napi_complete_done(napi, work_done)))
-			goto out;
-
-		for (i = 0; i < c->num_tc; i++)
-			xsc_cq_notify_hw_rearm(&c->qp.sq[i].cq);
-
-		xsc_cq_notify_hw_rearm(&rq->cq);
+	if (busy) {
+		if (likely(xsc_channel_no_affinity_change(c))) {
+			rcu_read_unlock();
+			return budget;
+		}
+		c->stats->aff_change++;
+		if (budget && work_done == budget)
+			work_done--;
 	}
+
+	if (unlikely(!napi_complete_done(napi, work_done)))
+		goto out;
+
+	for (i = 0; i < c->num_tc; i++)
+		xsc_cq_notify_hw_rearm(&c->qp.sq[i].cq);
+
+	xsc_cq_notify_hw_rearm(&rq->cq);
 
 out:
 	rcu_read_unlock();

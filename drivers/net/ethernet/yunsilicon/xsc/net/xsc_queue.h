@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -41,13 +40,12 @@ enum {
 struct xsc_dma_info {
 	struct page	*page;
 	dma_addr_t	addr;
-	u32		refcnt_bias;
 };
 
 struct xsc_wqe_frag_info {
 	struct xsc_dma_info *di;
 	u32 offset;
-	bool last_in_page;
+	u8 last_in_page;
 };
 
 struct xsc_rq_frag_info {
@@ -60,6 +58,8 @@ struct xsc_rq_frags_info {
 	u8 num_frags;
 	u8 log_num_frags;
 	u8 wqe_bulk;
+	u8 wqe_bulk_min;
+	u8 frags_max_num;
 };
 
 struct xsc_cq {
@@ -75,12 +75,21 @@ struct xsc_cq {
 	/* control */
 	struct xsc_core_device	*xdev;
 	struct xsc_wq_ctrl	wq_ctrl;
+	u8			rx;
 } ____cacheline_aligned_in_smp;
 
-#define XSC_PAGE_CACHE_LOG_MAX_RQ_MULT		4
+struct xsc_pcie_lat_work {
+	struct xsc_core_device *xdev;
+	struct xsc_adapter *adapter;
+	struct delayed_work work;
+	u16 enable;
+	u32 period;
+};
+
+#define XSC_PAGE_CACHE_LOG_MAX_RQ_MULT		6
 #define XSC_PAGE_CACHE_REDUCE_WORK_INTERVAL	200  /* msecs */
 #define XSC_PAGE_CACHE_REDUCE_GRACE_PERIOD	1000 /* msecs */
-#define XSC_PAGE_CACHE_REDUCE_SUCCESS_CNT	20
+#define XSC_PAGE_CACHE_REDUCE_SUCCESS_CNT	4
 
 struct xsc_page_cache_reduce {
 	struct delayed_work	reduce_work;
@@ -94,22 +103,20 @@ struct xsc_page_cache_reduce {
 
 struct xsc_page_cache {
 	struct xsc_dma_info	*page_cache;
-	int	head;
+	u32	head;
+	u32	tail;
 	u32	sz;
-	u32	lrs;
-	u8	log_min_sz;
-	u8	log_max_sz;
-	struct xsc_page_cache_reduce	reduce;
+	u32	resv;
 };
 
 struct xsc_rq;
 struct xsc_cqe64;
 typedef void (*xsc_fp_handle_rx_cqe)(struct xsc_cqwq *cqwq, struct xsc_rq *rq,
-					struct xsc_cqe64 *cqe64);
+				     struct xsc_cqe64 *cqe64);
 typedef bool (*xsc_fp_post_rx_wqes)(struct xsc_rq *rq);
-typedef void (*xsc_fp_dealloc_wqe)(struct xsc_rq *rq);
+typedef void (*xsc_fp_dealloc_wqe)(struct xsc_rq *rq, u16 ix);
 typedef struct sk_buff * (*xsc_fp_skb_from_cqe)(struct xsc_rq *rq,
-			struct xsc_wqe_frag_info *wi, u32 cqe_bcnt, u8 has_pph);
+			  struct xsc_wqe_frag_info *wi, u32 cqe_bcnt, u8 has_pph);
 
 struct xsc_rq {
 	struct xsc_core_qp		cqp;
@@ -137,11 +144,11 @@ struct xsc_rq {
 	struct xsc_rq_stats *stats;
 
 	u32 hw_mtu;
-	u8 frags_reuse_num;
+	u32 frags_sz;
 
 	xsc_fp_handle_rx_cqe	handle_rx_cqe;
 	xsc_fp_post_rx_wqes	post_wqes;
-	xsc_fp_dealloc_wqe	dealloc_wqes;
+	xsc_fp_dealloc_wqe	dealloc_wqe;
 	struct xsc_page_cache	page_cache;
 } ____cacheline_aligned_in_smp;
 
@@ -240,7 +247,7 @@ static inline u8 get_cqe_opcode(struct xsc_cqe64 *cqe)
 }
 
 static inline void xsc_dump_err_cqe(struct xsc_core_device *dev,
-				     struct xsc_cqe64 *cqe)
+				    struct xsc_cqe64 *cqe)
 {
 	print_hex_dump(KERN_WARNING, "", DUMP_PREFIX_OFFSET, 16, 1, cqe,
 		       sizeof(*cqe), false);

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -9,7 +8,8 @@
 
 #include "xsc_queue.h"
 #include "xsc_eth_compat.h"
-#include <common/xsc_hsi.h>
+#include "common/xsc_pph.h"
+#include "common/xsc_hsi.h"
 
 #define SW_MIN_MTU		64
 #define SW_DEFAULT_MTU		1500
@@ -17,8 +17,9 @@
 
 #define XSC_ETH_HW_MTU_SEND	9800		/*need to obtain from hardware*/
 #define XSC_ETH_HW_MTU_RECV	9800		/*need to obtain from hardware*/
-#define XSC_SW2HW_MTU(mtu)	(mtu + 14 + 4)
-#define XSC_SW2HW_FRAG_SIZE(mtu)	(mtu + 14 + 4 + XSC_PPH_HEAD_LEN)
+#define XSC_SW2HW_MTU(mtu)	((mtu) + 14 + 4)
+#define XSC_SW2HW_FRAG_SIZE(mtu)	((mtu) + 14 + 8 + 4 + XSC_PPH_HEAD_LEN)
+#define XSC_SW2HW_RX_PKT_LEN(mtu)	((mtu) + 14 + 256)
 
 #define XSC_RX_MAX_HEAD			(256)
 #define XSC_RX_HEADROOM			NET_SKB_PAD
@@ -41,7 +42,7 @@
 #define XSC_ETH_MAX_TC_TOTAL		(XSC_ETH_MAX_NUM_CHANNELS * XSC_MAX_NUM_TC)
 #define XSC_ETH_MAX_QP_NUM_PER_CH	(XSC_MAX_NUM_TC + 1)
 
-#define XSC_SKB_FRAG_SZ(len)	(SKB_DATA_ALIGN(len) +	\
+#define XSC_SKB_FRAG_SZ(len)		(SKB_DATA_ALIGN(len) +	\
 					SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
 #define XSC_MIN_SKB_FRAG_SZ		(XSC_SKB_FRAG_SZ(XSC_RX_HEADROOM))
 #define XSC_LOG_MAX_RX_WQE_BULK	\
@@ -71,6 +72,7 @@
 #define XSC_EQ_ELE_SZ		8	//size of a eq entry
 
 #define XSC_CQ_POLL_BUDGET	64
+#define XSC_TX_POLL_BUDGET	128
 
 #define XSC_MAX_BW_ALLOC	100 /* Max percentage of BW allocation */
 #define XSC_MAX_PRIORITY	8
@@ -128,7 +130,6 @@ struct xsc_eth_rx_wqe_cyc {
 };
 
 struct xsc_eq_param {
-//	struct xsc_eq_cmd_param eqc;
 	struct xsc_queue_attr eq_attr;
 };
 
@@ -141,7 +142,7 @@ struct xsc_cq_param {
 };
 
 struct xsc_rq_param {
-//	struct xsc_rq_cmd_param rqc;
+	struct xsc_wq_param wq;
 	struct xsc_queue_attr rq_attr;
 	struct xsc_rq_frags_info frags_info;
 
@@ -149,6 +150,7 @@ struct xsc_rq_param {
 
 struct xsc_sq_param {
 //	struct xsc_rq_cmd_param sqc;
+	struct xsc_wq_param wq;
 	struct xsc_queue_attr sq_attr;
 };
 
@@ -193,7 +195,8 @@ struct xsc_channel {
 	struct cpumask *aff_mask;
 	struct irq_desc *irq_desc;
 	struct xsc_ch_stats *stats;
-};
+	u8	rx_int;
+} ____cacheline_aligned_in_smp;
 
 enum xsc_eth_priv_flag {
 	XSC_PFLAG_RX_NO_CSUM_COMPLETE,
@@ -227,16 +230,14 @@ struct xsc_eth_params {
 	u32	rq_frags_size;
 
 	u16	num_rl_txqs;
-	bool rx_cqe_compress_def;
-//	struct net_dim_cq_moder rx_cq_moderation;
-//	struct net_dim_cq_moder tx_cq_moderation;
-	bool tunneled_offload_en;
-	bool lro_en;
+	u8	rx_cqe_compress_def;
+	u8	tunneled_offload_en;
+	u8	lro_en;
 	u8	tx_min_inline_mode;
-	bool vlan_strip_disable;
-	bool scatter_fcs_en;
-	bool rx_dim_enabled;
-	bool tx_dim_enabled;
+	u8	vlan_strip_disable;
+	u8	scatter_fcs_en;
+	u8	rx_dim_enabled;
+	u8	tx_dim_enabled;
 	u32	lro_timeout;
 	u32	pflags;
 };
@@ -248,7 +249,7 @@ struct xsc_eth_channels {
 };
 
 struct xsc_eth_redirect_rqt_param {
-	bool is_rss;
+	u8 is_rss;
 	union {
 		u32 rqn; /* Direct RQN (Non-RSS) */
 		struct {
@@ -260,7 +261,7 @@ struct xsc_eth_redirect_rqt_param {
 
 union xsc_send_doorbell {
 	struct{
-		int32_t  next_pid : 16;
+		s32  next_pid : 16;
 		u32 qp_num : 15;
 	};
 	u32 send_data;
@@ -268,7 +269,7 @@ union xsc_send_doorbell {
 
 union xsc_recv_doorbell {
 	struct{
-		int32_t  next_pid : 13;
+		s32  next_pid : 13;
 		u32 qp_num : 15;
 	};
 	u32 recv_data;

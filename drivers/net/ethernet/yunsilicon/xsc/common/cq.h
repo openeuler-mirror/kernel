@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -8,9 +7,9 @@
 #define XSC_CORE_CQ_H
 
 #include <rdma/ib_verbs.h>
-#include <common/driver.h>
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
+#include "common/driver.h"
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
 
 struct xsc_core_cq {
 	u32			cqn;
@@ -76,10 +75,10 @@ static inline void xsc_cq_set_ci(struct xsc_core_cq *cq)
 }
 
 int xsc_core_create_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
-			struct xsc_create_cq_mbox_in *in, int inlen);
+		       struct xsc_create_cq_mbox_in *in, int inlen);
 int xsc_core_destroy_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq);
 int xsc_core_query_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
-		       struct xsc_query_cq_mbox_out *out);
+		      struct xsc_query_cq_mbox_out *out);
 int xsc_debug_cq_add(struct xsc_core_device *dev, struct xsc_core_cq *cq);
 void xsc_debug_cq_remove(struct xsc_core_device *dev, struct xsc_core_cq *cq);
 

@@ -1,15 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef XSC_QP_H
 #define XSC_QP_H
 
-#include <common/xsc_hsi.h>
-#include <common/device.h>
-#include <common/driver.h>
+#include "common/xsc_hsi.h"
+#include "common/device.h"
+#include "common/driver.h"
 
 enum {
 	XSC_QP_PM_MIGRATED		= 0x3,
@@ -35,7 +34,7 @@ struct xsc_send_wqe_ctrl_seg {
 			u8		has_pph:1;
 			u8		so_type:1;
 			__le16		so_data_size:14;
-			u8		rsvd:8;
+			u8:8;
 			u8		so_hdr_len:8;
 		};
 		struct {
@@ -46,20 +45,20 @@ struct xsc_send_wqe_ctrl_seg {
 	};
 	__le32		se:1;
 	__le32		ce:1;
-	__le32		rsvd1:30;
+	__le32:30;
 };
 
 struct xsc_wqe_data_seg {
 	union {
 		__le32		in_line:1;
 		struct {
-			__le32		rsvd:1;
+			__le32:1;
 			__le32		seg_len:31;
 			__le32		mkey;
 			__le64		va;
 		};
 		struct {
-			__le32		rsvd1:1;
+			__le32:1;
 			__le32		len:7;
 			u8		in_line_data[15];
 		};
@@ -105,7 +104,7 @@ struct xsc_wqe_data_seg_2 {
 };
 
 struct xsc_core_qp {
-	void (*event)(struct xsc_core_qp *qp, int event);
+	void (*event)(struct xsc_core_qp *qp, int type);
 	int			qpn;
 	atomic_t		refcount;
 	struct completion	free;
@@ -117,6 +116,7 @@ struct xsc_core_qp {
 	struct xsc_qp_trace	*trace_info;
 	u16	qp_type_internal;
 	u16	grp_id;
+	struct completion	delayed_release;
 };
 
 struct xsc_qp_path {
@@ -155,22 +155,22 @@ static inline struct xsc_core_qp *__xsc_qp_lookup(struct xsc_core_device *xdev, 
 }
 
 int create_resource_common(struct xsc_core_device *xdev,
-				  struct xsc_core_qp *qp);
+			   struct xsc_core_qp *qp);
 void destroy_resource_common(struct xsc_core_device *xdev,
-				  struct xsc_core_qp *qp);
+			     struct xsc_core_qp *qp);
 
 int xsc_core_create_qp(struct xsc_core_device *xdev,
-			struct xsc_core_qp *qp,
-			struct xsc_create_qp_mbox_in *in,
-			int inlen);
+		       struct xsc_core_qp *qp,
+		       struct xsc_create_qp_mbox_in *in,
+		       int inlen);
 int xsc_core_qp_modify(struct xsc_core_device *xdev, enum xsc_qp_state cur_state,
-			enum xsc_qp_state new_state,
-			struct xsc_modify_qp_mbox_in *in, int sqd_event,
-			struct xsc_core_qp *qp);
+		       enum xsc_qp_state new_state,
+		       struct xsc_modify_qp_mbox_in *in, int sqd_event,
+		       struct xsc_core_qp *qp);
 int xsc_core_destroy_qp(struct xsc_core_device *xdev,
-			 struct xsc_core_qp *qp);
+			struct xsc_core_qp *qp);
 int xsc_core_qp_query(struct xsc_core_device *xdev, struct xsc_core_qp *qp,
-		       struct xsc_query_qp_mbox_out *out, int outlen);
+		      struct xsc_query_qp_mbox_out *out, int outlen);
 
 void xsc_init_qp_table(struct xsc_core_device *xdev);
 void xsc_cleanup_qp_table(struct xsc_core_device *xdev);
@@ -179,5 +179,9 @@ void xsc_debug_qp_remove(struct xsc_core_device *xdev, struct xsc_core_qp *qp);
 
 int xsc_create_qptrace(struct xsc_core_device *xdev, struct xsc_core_qp *qp);
 void xsc_remove_qptrace(struct xsc_core_device *xdev, struct xsc_core_qp *qp);
+
+void xsc_init_delayed_release(void);
+void xsc_stop_delayed_release(void);
+void xsc_add_to_delayed_release_list(struct xsc_core_device *xdev, struct xsc_core_qp *qp);
 
 #endif /* XSC_QP_H */

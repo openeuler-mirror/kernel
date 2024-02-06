@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef XSC_CMD_H
 #define XSC_CMD_H
 
-#define CMDQ_VERSION 0xe
+#define CMDQ_VERSION 0x19
 
 #define QOS_PRIO_MAX		7
 #define	QOS_DSCP_MAX		63
@@ -20,6 +19,33 @@
 #define MAX_PKT_LEN		9800
 #define XSC_RTT_CFG_QPN_MAX 32
 
+#define XSC_PCIE_LAT_INIT_INTERVAL_MIN	200
+#define XSC_PCIE_LAT_CFG_INTERVAL_MAX	8
+#define XSC_PCIE_LAT_CFG_HISTOGRAM_MAX	9
+#define XSC_PCIE_LAT_EN_DISABLE		0
+#define XSC_PCIE_LAT_EN_ENABLE		1
+#define XSC_PCIE_LAT_INTERVAL_MIN	100
+#define XSC_PCIE_LAT_INTERVAL_MAX	30000
+#define XSC_PCIE_LAT_PERIOD_MIN		1
+#define XSC_PCIE_LAT_PERIOD_MAX		20
+#define DPU_PORT_WGHT_CFG_MAX		1
+
+enum {
+	DPU_PORT_WGHT_TARGET_HOST,
+	DPU_PORT_WGHT_TARGET_SOC,
+	DPU_PORT_WGHT_TARGET_NUM,
+};
+
+enum {
+	DPU_PRIO_WGHT_TARGET_HOST2SOC,
+	DPU_PRIO_WGHT_TARGET_SOC2HOST,
+	DPU_PRIO_WGHT_TARGET_HOSTSOC2LAG,
+	DPU_PRIO_WGHT_TARGET_NUM,
+};
+
+#define XSC_AP_FEAT_UDP_SPORT_MIN	1024
+#define XSC_AP_FEAT_UDP_SPORT_MAX	65535
+
 enum {
 	XSC_CMD_OP_QUERY_HCA_CAP		= 0x100,
 	XSC_CMD_OP_QUERY_ADAPTER		= 0x101,
@@ -27,6 +53,7 @@ enum {
 	XSC_CMD_OP_TEARDOWN_HCA			= 0x103,
 	XSC_CMD_OP_ENABLE_HCA			= 0x104,
 	XSC_CMD_OP_DISABLE_HCA			= 0x105,
+	XSC_CMD_OP_MODIFY_HCA			= 0x106,
 	XSC_CMD_OP_QUERY_PAGES			= 0x107,
 	XSC_CMD_OP_MANAGE_PAGES			= 0x108,
 	XSC_CMD_OP_SET_HCA_CAP			= 0x109,
@@ -34,6 +61,8 @@ enum {
 	XSC_CMD_OP_QUERY_MSIX_TBL_INFO		= 0x10b,
 	XSC_CMD_OP_FUNCTION_RESET		= 0x10c,
 	XSC_CMD_OP_DUMMY			= 0x10d,
+	XSC_CMD_OP_SET_DEBUG_INFO		= 0x10e,
+	XSC_CMD_OP_QUERY_PSV_FUNCID		= 0x10f,
 
 	XSC_CMD_OP_CREATE_MKEY			= 0x200,
 	XSC_CMD_OP_QUERY_MKEY			= 0x201,
@@ -41,6 +70,8 @@ enum {
 	XSC_CMD_OP_QUERY_SPECIAL_CONTEXTS	= 0x203,
 	XSC_CMD_OP_REG_MR			= 0x204,
 	XSC_CMD_OP_DEREG_MR			= 0x205,
+	XSC_CMD_OP_SET_MPT			= 0x206,
+	XSC_CMD_OP_SET_MTT			= 0x207,
 
 	XSC_CMD_OP_CREATE_EQ			= 0x301,
 	XSC_CMD_OP_DESTROY_EQ			= 0x302,
@@ -77,6 +108,7 @@ enum {
 	XSC_CMD_OP_CREATE_MULTI_QP		= 0x515,
 	XSC_CMD_OP_ALLOC_MULTI_VIRTQ    = 0x516,
 	XSC_CMD_OP_RELEASE_MULTI_VIRTQ  = 0x517,
+	XSC_CMD_OP_QUERY_QP_FLUSH_STATUS	= 0x518,
 
 	XSC_CMD_OP_CREATE_PSV			= 0x600,
 	XSC_CMD_OP_DESTROY_PSV			= 0x601,
@@ -120,7 +152,8 @@ enum {
 	XSC_CMD_OP_QUERY_VPORT_COUNTER		= 0x828,
 	XSC_CMD_OP_QUERY_PRIO_STATS		= 0x829,
 	XSC_CMD_OP_QUERY_PHYPORT_STATE		= 0x830,
-	XSC_CMD_OP_QUERY_EVENT_TYPE			= 0x831,
+	XSC_CMD_OP_QUERY_EVENT_TYPE		= 0x831,
+	XSC_CMD_OP_QUERY_LINK_INFO		= 0x832,
 
 	XSC_CMD_OP_LAG_CREATE			= 0x840,
 	XSC_CMD_OP_LAG_MODIFY			= 0x841,
@@ -147,6 +180,10 @@ enum {
 	XSC_CMD_OP_IOCTL_GET_SP			= 0x100d,
 	XSC_CMD_OP_IOCTL_SET_WEIGHT		= 0x100e,
 	XSC_CMD_OP_IOCTL_GET_WEIGHT		= 0x100f,
+	XSC_CMD_OP_IOCTL_DPU_SET_PORT_WEIGHT		= 0x1010,
+	XSC_CMD_OP_IOCTL_DPU_GET_PORT_WEIGHT		= 0x1011,
+	XSC_CMD_OP_IOCTL_DPU_SET_PRIO_WEIGHT		= 0x1012,
+	XSC_CMD_OP_IOCTL_DPU_GET_PRIO_WEIGHT		= 0x1013,
 
 	XSC_CMD_OP_IOCTL_SET_ENABLE_RP = 0x1030,
 	XSC_CMD_OP_IOCTL_SET_ENABLE_NP = 0x1031,
@@ -167,8 +204,9 @@ enum {
 	XSC_CMD_OP_IOCTL_SET_CNP_PCP = 0x1040,
 	XSC_CMD_OP_IOCTL_SET_EVT_PERIOD_ALPHA = 0x1041,
 	XSC_CMD_OP_IOCTL_GET_CC_CFG = 0x1042,
-	XSC_CMD_OP_IOCTL_GET_CC_STAT = 0x104a,
+	XSC_CMD_OP_IOCTL_GET_CC_STAT = 0x104b,
 	XSC_CMD_OP_IOCTL_SET_CLAMP_TGT_RATE = 0x1052,
+	XSC_CMD_OP_IOCTL_SET_MAX_HAI_FACTOR = 0x1053,
 
 	XSC_CMD_OP_IOCTL_SET_HWC = 0x1060,
 	XSC_CMD_OP_IOCTL_GET_HWC = 0x1061,
@@ -189,6 +227,11 @@ enum {
 	XSC_CMD_OP_GET_RTT_STATS = 0X1227,
 
 	XSC_CMD_OP_SET_LED_STATUS = 0X1228,
+
+	XSC_CMD_OP_AP_FEAT                      = 0x1400,
+	XSC_CMD_OP_PCIE_LAT_FEAT		= 0x1401,
+
+	XSC_CMD_OP_USER_EMU_CMD = 0x8000,
 
 	XSC_CMD_OP_MAX
 };
@@ -216,8 +259,8 @@ enum xsc_eth_vf_num_sel {
 };
 
 enum {
-	XSC_CMD_RESP_LINKSPEED_MODE_25G = 0x0,
-	XSC_CMD_RESP_LINKSPEED_MODE_100G = 0x1
+	XSC_CMD_RESP_LINKSPEED_MODE_25G = 25000,
+	XSC_CMD_RESP_LINKSPEED_MODE_100G = 100000
 };
 
 enum xsc_dma_direct {
@@ -226,6 +269,15 @@ enum xsc_dma_direct {
 	DMA_DIR_WRITE,
 	DMA_DIR_LOOPBACK,
 	DMA_DIR_MAX,
+};
+
+/* hw feature bitmap, 32bit */
+enum xsc_hw_feature_flag {
+	XSC_HW_RDMA_SUPPORT = 0x1,
+	XSC_HW_SECOND_FEATURE = 0x2,
+	XSC_HW_THIRD_FEATURE = 0x4,
+
+	XSC_HW_LAST_FEATURE = 0x80000000,
 };
 
 struct xsc_inbox_hdr {
@@ -298,7 +350,8 @@ struct xsc_create_qp_request {
 	__be16		cqn_send;
 	__be16		cqn_recv;
 	__be16		glb_funcid;
-	__be16		rsvd;
+	/*rsvd,rename logic_port used to transfer logical_port to fw*/
+	__be16		logic_port;
 	__be64		pas[0];
 };
 
@@ -306,6 +359,7 @@ struct xsc_create_qp_mbox_in {
 	struct xsc_inbox_hdr		hdr;
 	struct xsc_create_qp_request	req;
 };
+
 struct xsc_create_qp_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	__be32			qpn;
@@ -316,12 +370,20 @@ struct xsc_destroy_qp_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be32			qpn;
 	u8			rsvd[4];
-
 };
 
 struct xsc_destroy_qp_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	u8			rsvd[8];
+};
+
+struct xsc_query_qp_flush_status_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	__be32			qpn;
+};
+
+struct xsc_query_qp_flush_status_mbox_out {
+	struct xsc_outbox_hdr	hdr;
 };
 
 struct xsc_qp_context {
@@ -372,6 +434,7 @@ struct xsc_modify_qp_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be32			qpn;
 	struct xsc_qp_context	ctx;
+	u8			no_need_wait;
 };
 
 struct xsc_modify_qp_mbox_out {
@@ -463,6 +526,7 @@ struct xsc_destroy_eq_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be32			eqn;
 	u8			rsvd[4];
+
 };
 
 struct xsc_destroy_eq_mbox_out {
@@ -490,6 +554,7 @@ struct xsc_dealloc_pd_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be32			pdn;
 	u8			rsvd[4];
+
 };
 
 struct xsc_dealloc_pd_mbox_out {
@@ -529,6 +594,45 @@ struct xsc_unregister_mr_mbox_in {
 };
 
 struct xsc_unregister_mr_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_mpt_item {
+	__be32		pdn;
+	__be32		pa_num;
+	__be32		len;
+	__be32		mkey;
+	u8		rsvd[5];
+	u8		acc;
+	u8		page_mode;
+	u8		map_en;
+	__be64		va_base;
+};
+
+struct xsc_set_mpt_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_mpt_item	mpt_item;
+};
+
+struct xsc_set_mpt_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	__be32			mtt_base;
+	u8			rsvd[4];
+};
+
+struct xsc_mtt_setting {
+	__be32		mtt_base;
+	__be32		pa_num;
+	__be64		pas[0];
+};
+
+struct xsc_set_mtt_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_mtt_setting	mtt_setting;
+};
+
+struct xsc_set_mtt_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	u8			rsvd[8];
 };
@@ -700,12 +804,16 @@ struct xsc_hca_cap {
 	u8		log_max_xrcd;
 	u8		rsvd26[40];
 	__be32		uar_page_sz;
-	u8		rsvd27[28];
+	u8		rsvd27[8];
+	__be32		hw_feature_flag;/*enum xsc_hw_feature_flag*/
+	__be16		funcid[8];
 	u8		log_msx_atomic_size_qp;
 	u8		rsvd28[2];
 	u8		log_msx_atomic_size_dc;
 	u8		board_sn[XSC_BOARD_SN_LEN];
-	u8		rsvd29[12];
+	u8		max_tc;
+	u8		rsvd29[10];
+	u8		nif_port_num;
 	__be32		hca_core_clock;
 	__be32		max_rwq_indirection_tables;/*rss_caps*/
 	__be32		max_rwq_indirection_table_size;/*rss_caps*/
@@ -737,37 +845,17 @@ struct xsc_cmd_query_hca_cap_mbox_out {
 	struct xsc_hca_cap	hca_cap;
 };
 
-struct xsc_cmd_init_hca_mbox_in {
-	struct xsc_inbox_hdr	hdr;
-	u8			rsvd0[2];
-	__be16			profile;
-	u8			rsvd1[4];
-};
-
-struct xsc_cmd_init_hca_mbox_out {
-	struct xsc_outbox_hdr	hdr;
-	u8			rsvd[8];
-};
-
-struct xsc_cmd_teardown_hca_mbox_in {
-	struct xsc_inbox_hdr	hdr;
-	u8			rsvd0[2];
-	__be16			profile;
-	u8			rsvd1[4];
-};
-
-struct xsc_cmd_teardown_hca_mbox_out {
-	struct xsc_outbox_hdr	hdr;
-	u8			rsvd[8];
-};
-
 struct xsc_cmd_enable_hca_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	u8	pf;
 	u8	pcie;
 	u8	pf_id;
-	__be16	vf_id;
-	u8	rsvd0[3];
+	u8	rsvd0;
+	__be16	vf_num;
+	__be16  max_msix_vec;
+	__be16	cpu_num;
+	u8	pp_bypass;
+	u8	esw_mode;
 };
 
 struct xsc_cmd_enable_hca_mbox_out {
@@ -781,11 +869,29 @@ struct xsc_cmd_disable_hca_mbox_in {
 	u8	pf;
 	u8	pcie;
 	u8	pf_id;
-	__be16	vf_id;
-	u8	rsvd0[3];
+	u8	rsvd0;
+	__be16	vf_num;
+	u8	pp_bypass;
+	u8	esw_mode;
 };
 
 struct xsc_cmd_disable_hca_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8	status;
+	u8	rsvd0[3];
+};
+
+struct xsc_cmd_modify_hca_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8	pf;
+	u8	pcie;
+	u8	pf_id;
+	u8	pp_bypass;
+	u8	esw_mode;
+	u8	rsvd0[3];
+};
+
+struct xsc_cmd_modify_hca_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	u8	status;
 	u8	rsvd0[3];
@@ -804,36 +910,38 @@ struct xsc_query_special_ctxs_mbox_out {
 
 /* vport mbox */
 struct xsc_nic_vport_context {
-	u32		min_wqe_inline_mode:3;
-	u32		disable_mc_local_lb:1;
-	u32		disable_uc_local_lb:1;
-	u32		roce_en:1;
+	__be32		min_wqe_inline_mode:3;
+	__be32		disable_mc_local_lb:1;
+	__be32		disable_uc_local_lb:1;
+	__be32		roce_en:1;
 
-	u32		arm_change_event:1;
-	u32		event_on_mtu:1;
-	u32		event_on_promisc_change:1;
-	u32		event_on_vlan_change:1;
-	u32		event_on_mc_address_change:1;
-	u32		event_on_uc_address_change:1;
-	u32		affiliation_criteria:4;
-	u32		affiliated_vhca_id;
+	__be32		arm_change_event:1;
+	__be32		event_on_mtu:1;
+	__be32		event_on_promisc_change:1;
+	__be32		event_on_vlan_change:1;
+	__be32		event_on_mc_address_change:1;
+	__be32		event_on_uc_address_change:1;
+	__be32		affiliation_criteria:4;
+	__be32		affiliated_vhca_id;
 
-	u16		mtu;
+	__be16		mtu;
 
-	u64		system_image_guid;
-	u64		port_guid;
-	u64		node_guid;
+	__be64		system_image_guid;
+	__be64		port_guid;
+	__be64		node_guid;
 
-	u32		qkey_violation_counter;
+	__be32		qkey_violation_counter;
 
-	u16		promisc_uc:1;
-	u16		promisc_mc:1;
-	u16		promisc_all:1;
-	u16		allowed_list_type:3;
-	u16		allowed_list_size:10;
+	__be16		promisc_uc:1;
+	__be16		promisc_mc:1;
+	__be16		promisc_all:1;
+	__be16		vlan_allowed:1;
+	__be16		allowed_list_type:3;
+	__be16		allowed_list_size:10;
 
 	u8		permanent_address[6];
-	u64		current_uc_mac_address[0];
+	u8		current_address[6];
+	u8		current_uc_mac_address[0][2];
 };
 
 enum {
@@ -877,26 +985,29 @@ struct xsc_modify_nic_vport_context_out {
 };
 
 struct xsc_modify_nic_vport_field_select {
-	u32		affiliation:1;
-	u32		disable_uc_local_lb:1;
-	u32		disable_mc_local_lb:1;
-	u32		node_guid:1;
-	u32		port_guid:1;
-	u32		min_inline:1;
-	u32		mtu:1;
-	u32		change_event:1;
-	u32		promisc:1;
-	u32		permanent_address:1;
-	u32		addresses_list:1;
-	u32		roce_en:1;
-	u32		rsvd:20;
+	__be32		affiliation:1;
+	__be32		disable_uc_local_lb:1;
+	__be32		disable_mc_local_lb:1;
+	__be32		node_guid:1;
+	__be32		port_guid:1;
+	__be32		min_inline:1;
+	__be32		mtu:1;
+	__be32		change_event:1;
+	__be32		promisc:1;
+	__be32		permanent_address:1;
+	__be32		current_address:1;
+	__be32		addresses_list:1;
+	__be32		roce_en:1;
+	__be32		rsvd:19;
 };
 
 struct xsc_modify_nic_vport_context_in {
 	struct xsc_inbox_hdr	hdr;
-	u32			other_vport:1;
-	u32			vport_number:16;
-	u32			rsvd:15;
+	__be32			other_vport:1;
+	__be32			vport_number:16;
+	__be32			rsvd:15;
+	__be16			caps;
+	__be16			caps_mask;
 
 	struct xsc_modify_nic_vport_field_select field_select;
 	struct xsc_nic_vport_context nic_vport_ctx;
@@ -1093,7 +1204,8 @@ struct xsc_create_lag_request {
 	u8	lag_sel_mode;
 	u8	remap_port1;
 	u8	remap_port2;
-	u8	rsvd[2];
+	u8	kernel_bond;
+	u8	rsvd[5];
 };
 
 struct xsc_modify_lag_request {
@@ -1108,7 +1220,8 @@ struct xsc_modify_lag_request {
 
 struct xsc_destroy_lag_request {
 	__be16	lag_id;
-	u8	rsvd[2];
+	u8	kernel_bond;
+	u8	rsvd[5];
 };
 
 struct xsc_set_lag_qos_request {
@@ -1116,8 +1229,7 @@ struct xsc_set_lag_qos_request {
 	u8		member_bitmap;
 	u8		lag_del;
 	u8		pcie_no;
-	u8		esw_mode;
-	u8		resv[2];
+	u8		resv[3];
 };
 
 struct xsc_create_lag_mbox_in {
@@ -1289,7 +1401,20 @@ struct xsc_event_resp {
 
 struct xsc_event_linkstatus_resp {
 	u8 linkstatus; /*0:down, 1:up*/
-	u8 linkspeed; /*0:25G, 1:100G*/
+};
+
+struct xsc_event_linkinfo_resp {
+	u8 linkstatus; /*0:down, 1:up*/
+	u8 port;
+	u8 duplex;
+	u8 autoneg;
+	u32 linkspeed;
+	u64 supported;
+	u64 advertising;
+	u64 supported_fec;	/* reserved, not support currently */
+	u64 advertised_fec;	/* reserved, not support currently */
+	u64 supported_speed[2];
+	u64 advertising_speed[2];
 };
 
 struct xsc_event_query_type_mbox_in {
@@ -1310,6 +1435,15 @@ struct xsc_event_query_linkstatus_mbox_in {
 struct xsc_event_query_linkstatus_mbox_out {
 	struct xsc_outbox_hdr		hdr;
 	struct xsc_event_linkstatus_resp	ctx;
+};
+
+struct xsc_event_query_linkinfo_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+};
+
+struct xsc_event_query_linkinfo_mbox_out {
+	struct xsc_outbox_hdr		hdr;
+	struct xsc_event_linkinfo_resp	ctx;
 };
 
 struct xsc_event_set_led_status_mbox_in {
@@ -1375,6 +1509,27 @@ struct xsc_weight_get {
 	u8 weight[QOS_PRIO_MAX + 1];
 	u8 max_prio;
 	u8 rsvd[7];
+};
+
+struct xsc_dpu_port_weight_set {
+	u8 target;
+	u8 weight[DPU_PORT_WGHT_CFG_MAX + 1];
+	u8 rsv[5];
+};
+
+struct xsc_dpu_port_weight_get {
+	u8 weight[DPU_PORT_WGHT_TARGET_NUM][DPU_PORT_WGHT_CFG_MAX + 1];
+	u8 rsvd[4];
+};
+
+struct xsc_dpu_prio_weight_set {
+	u8 target;
+	u8 weight[QOS_PRIO_MAX + 1];
+	u8 rsv[7];
+};
+
+struct xsc_dpu_prio_weight_get {
+	u8 weight[DPU_PRIO_WGHT_TARGET_NUM][QOS_PRIO_MAX + 1];
 };
 
 struct xsc_cc_mbox_in {
@@ -1519,6 +1674,13 @@ struct xsc_cc_cmd_clamp_tgt_rate {
 	u32 section;
 };
 
+struct xsc_cc_cmd_max_hai_factor {
+	u16 cmd;
+	u16 len;
+	u32 max_hai_factor;
+	u32 section;
+};
+
 struct xsc_cc_cmd_get_cfg {
 	u16 cmd;
 	u16 len;
@@ -1541,6 +1703,7 @@ struct xsc_cc_cmd_get_cfg {
 	u32 cnp_pcp;
 	u32 evt_period_alpha;
 	u32 clamp_tgt_rate;
+	u32 max_hai_factor;
 	u32 section;
 };
 
@@ -1560,6 +1723,7 @@ struct xsc_cc_cmd_stat {
 struct xsc_set_mtu_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be16			mtu;
+	__be16			rx_buf_sz_min;
 	u8			mac_port;
 	u8			rsvd;
 };
@@ -1576,21 +1740,22 @@ struct xsc_hwc_mbox_out {
 
 struct hwc_set_t {
 	u8 type;
-	u8 model;
 	u8 s_wqe_mode;
 	u8 r_wqe_mode;
 	u8 ack_timeout;
 	u8 group_mode;
 	u8 lossless_prio[XSC_MAX_MAC_NUM];
+	u8 lossless_prio_len;
 	u8 retry_cnt_th;
 	u8 adapt_to_other;
-	u8 rsvd[1];
+	u8 alloc_qp_id_mode;
 	u16 max_vf_nums;
+	u8 eth_pkt_offset;
+	u8 rdma_pkt_offset;
+	u8 tso_eth_pkt_offset;
 };
 
 struct hwc_get_t {
-	u8 cur_model;
-	u8 next_model;
 	u8 cur_s_wqe_mode;
 	u8 next_s_wqe_mode;
 	u8 cur_r_wqe_mode;
@@ -1601,12 +1766,21 @@ struct hwc_get_t {
 	u8 next_group_mode;
 	u8 cur_lossless_prio[XSC_MAX_MAC_NUM];
 	u8 next_lossless_prio[XSC_MAX_MAC_NUM];
+	u8 lossless_prio_len;
 	u8 cur_retry_cnt_th;
 	u8 next_retry_cnt_th;
 	u8 cur_adapt_to_other;
 	u8 next_adapt_to_other;
 	u16 cur_max_vf_nums;
 	u16 next_max_vf_nums;
+	u8 cur_eth_pkt_offset;
+	u8 next_eth_pkt_offset;
+	u8 cur_rdma_pkt_offset;
+	u8 next_rdma_pkt_offset;
+	u8 cur_tso_eth_pkt_offset;
+	u8 next_tso_eth_pkt_offset;
+	u8 cur_alloc_qp_id_mode;
+	u8 next_alloc_qp_id_mode;
 };
 
 struct xsc_set_mtu_mbox_out {
@@ -1636,11 +1810,9 @@ struct xsc_query_pause_cnt_mbox_out {
 };
 
 enum {
-	XSC_TBM_CAP_IPAT_BYPASS = 0,
-	XSC_TBM_CAP_PCT_BYPASS,
-	XSC_TBM_CAP_HASH_PPH,
+	XSC_TBM_CAP_HASH_PPH = 0,
 	XSC_TBM_CAP_RSS,
-	XSC_TBM_CAP_BC_BYPASS,
+	XSC_TBM_CAP_PP_BYPASS,
 };
 
 struct xsc_nic_attr {
@@ -1664,13 +1836,8 @@ struct xsc_cmd_enable_nic_hca_mbox_in {
 	struct xsc_rss_attr	rss;
 };
 
-struct xsc_enable_nic_hca_resp {
-	__be16	bomt_idx;
-};
-
 struct xsc_cmd_enable_nic_hca_mbox_out {
 	struct xsc_outbox_hdr		hdr;
-	struct xsc_enable_nic_hca_resp	res;
 	u8	status;
 	u8	rsvd0;
 };
@@ -1680,14 +1847,9 @@ struct xsc_nic_dis_attr {
 	__be16	caps;
 };
 
-struct xsc_broadcast_dis_attr {
-	__be16	bomt_idx;
-};
-
 struct xsc_cmd_disable_nic_hca_mbox_in {
 	struct xsc_inbox_hdr		hdr;
 	struct xsc_nic_dis_attr		nic;
-	struct xsc_broadcast_dis_attr	bc;
 };
 
 struct xsc_cmd_disable_nic_hca_mbox_out {
@@ -1735,6 +1897,36 @@ struct xsc_function_reset_mbox_in {
 struct xsc_function_reset_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	u8	rsvd[8];
+};
+
+enum {
+	XSC_PCIE_LAT_FEAT_SET_EN	= 0,
+	XSC_PCIE_LAT_FEAT_GET_EN,
+	XSC_PCIE_LAT_FEAT_SET_INTERVAL,
+	XSC_PCIE_LAT_FEAT_GET_INTERVAL,
+	XSC_PCIE_LAT_FEAT_GET_HISTOGRAM,
+	XSC_PCIE_LAT_FEAT_GET_PEAK,
+	XSC_PCIE_LAT_FEAT_HW,
+	XSC_PCIE_LAT_FEAT_HW_INIT,
+};
+
+struct xsc_pcie_lat {
+	u8 pcie_lat_enable;
+	u32 pcie_lat_interval[XSC_PCIE_LAT_CFG_INTERVAL_MAX];
+	u32 pcie_lat_histogram[XSC_PCIE_LAT_CFG_HISTOGRAM_MAX];
+	u32 pcie_lat_peak;
+};
+
+struct xsc_pcie_lat_feat_mbox_in {
+	struct xsc_inbox_hdr hdr;
+	__be16 xsc_pcie_lat_feature_opcode;
+	struct xsc_pcie_lat pcie_lat;
+};
+
+struct xsc_pcie_lat_feat_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	__be16 xsc_pcie_lat_feature_opcode;
+	struct xsc_pcie_lat pcie_lat;
 };
 
 struct xsc_reg_mcia {
@@ -1818,6 +2010,44 @@ struct rtt_stats {
 struct xsc_rtt_stats_mbox_out {
 	struct xsc_outbox_hdr	 hdr;
 	struct rtt_stats stats;
+};
+
+enum {
+	XSC_AP_FEAT_SET_UDP_SPORT = 0,
+};
+
+struct xsc_ap_feat_set_udp_sport {
+	u32 qpn;
+	u32 udp_sport;
+};
+
+struct xsc_ap {
+	struct xsc_ap_feat_set_udp_sport set_udp_sport;
+};
+
+struct xsc_ap_feat_mbox_in {
+	struct xsc_inbox_hdr hdr;
+	__be16 xsc_ap_feature_opcode;
+	struct xsc_ap ap;
+};
+
+struct xsc_ap_feat_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	__be16 xsc_ap_feature_opcode;
+	struct xsc_ap ap;
+};
+
+struct xsc_set_debug_info_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			set_field;
+	u8			log_level;
+	u8			cmd_verbose;
+	u8			rsvd[5];
+};
+
+struct xsc_set_debug_info_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			rsvd[8];
 };
 
 #endif /* XSC_CMD_H */

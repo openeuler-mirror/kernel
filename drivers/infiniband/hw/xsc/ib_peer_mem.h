@@ -40,7 +40,7 @@ struct ib_peer_memory_client {
 
 enum ib_peer_mem_flags {
 	IB_PEER_MEM_ALLOW	= 1,
-	IB_PEER_MEM_INVAL_SUPP = (1<<1),
+	IB_PEER_MEM_INVAL_SUPP = (1 << 1),
 };
 
 struct core_ticket {
@@ -57,8 +57,8 @@ void ib_put_peer_client(struct ib_peer_memory_client *ib_peer_client,
 			void *peer_client_context);
 
 int ib_peer_create_invalidation_ctx(struct ib_peer_memory_client *ib_peer_mem,
-				struct ib_umem_ex *umem,
-				struct invalidation_ctx **invalidation_ctx);
+				    struct ib_umem_ex *umem,
+				    struct invalidation_ctx **invalidation_ctx);
 
 void ib_peer_destroy_invalidation_ctx(struct ib_peer_memory_client *ib_peer_mem,
 				      struct invalidation_ctx *invalidation_ctx);

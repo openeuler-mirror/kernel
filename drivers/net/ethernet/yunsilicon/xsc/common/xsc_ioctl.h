@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -20,12 +19,15 @@
 	_IOWR(XSC_IOCTL_MAGIC, 3, struct xsc_ioctl_hdr)
 #define XSC_IOCTL_MEM \
 	_IOWR(XSC_IOCTL_MAGIC, 4, struct xsc_ioctl_hdr)
+#define XSC_IOCTL_CMDQ_RAW \
+	_IOWR(XSC_IOCTL_MAGIC, 5, struct xsc_ioctl_hdr)
 
 #define XSC_IOCTL_CHECK_FILED		0x01234567
 enum {
 	XSC_IOCTL_OP_GET_LOCAL,
 	XSC_IOCTL_OP_GET_VF_INFO,
 	XSC_IOCTL_OP_GET_CONTEXT,
+	XSC_IOCTL_OP_GET_INFO_BY_BDF,
 	XSC_IOCTL_OP_GET_MAX
 };
 
@@ -52,6 +54,13 @@ enum {
 	XSC_IOCTL_MEM_ALLOC		= 0x300,
 	XSC_IOCTL_MEM_FREE,
 	XSC_IOCTL_MEM_MAX
+};
+
+enum {
+	XSC_IOCTL_GET_VECTOR_MATRIX	= 0x400,
+	XSC_IOCTL_SET_LOG_LEVEL		= 0x401,
+	XSC_IOCTL_SET_CMD_VERBOSE	= 0x402,
+	XSC_IOCTL_DRIVER_MAX
 };
 
 enum  xsc_flow_tbl_id {
@@ -141,6 +150,8 @@ enum  xsc_flow_tbl_id {
 	XSC_FLOW_MAC_PORT_MTU,	//MAC_PORT_MTU
 	XSC_FLOW_ECP_PKT_LEN_INC,	//ECP_PKT_LEN_INC
 	XSC_FLOW_TCP_FLAGS_CFG,	//TCP_FLAGS_CFG
+	XSC_FLOW_DBG_CNT,	//DBG_CNT
+	XSC_FLOW_PRS_REC_PORT_UDF_SEL,
 	XSC_FLOW_TBL_MAX
 };
 
@@ -177,6 +188,9 @@ struct xsc_ioctl_qp_range {
 };
 
 struct xsc_ioctl_get_phy_info_res {
+	u32 domain;
+	u32 bus;
+	u32 devfn;
 	u32 phy_port; //local pf pcie funcid xdev->pcie_port
 	u32 func_id; //local pf port funcid  xdev->glb_func_id ?
 	u32 logic_in_port; //local pf port logical_in_port xdev->logic_port
@@ -185,7 +199,7 @@ struct xsc_ioctl_get_phy_info_res {
 	u16 lag_id;
 	u16 raw_qp_id_base;
 	u16 raw_rss_qp_id_base;
-	u16 funcid_encode[8];
+	u16 funcid[8];
 	u16 lag_port_start;
 	u16 raw_tpe_qp_num;
 	int send_seg_num;
@@ -194,6 +208,7 @@ struct xsc_ioctl_get_phy_info_res {
 	u8 dma_rw_tbl_vld;
 	u8 pct_compress_vld;
 	u32 chip_version;
+	u32 hca_core_clock;
 };
 
 struct xsc_ioctl_get_vf_info_res {
@@ -202,6 +217,12 @@ struct xsc_ioctl_get_vf_info_res {
 	u16	pf_id;		//pf0=0, pf1=1
 	u32	func_id;
 	u32	logic_port;
+};
+
+struct xsc_alloc_ucontext_req {
+	u32 domain;
+	u32 bus;
+	u32 devfn;
 };
 
 struct xsc_ioctl_global_pcp {
@@ -236,6 +257,11 @@ struct xsc_ioctl_cma_dscp {
 	int dscp;
 };
 
+struct xsc_ioctl_set_debug_info {
+	unsigned int	log_level;
+	unsigned int	cmd_verbose;
+};
+
 /* type-value */
 struct xsc_ioctl_data_tl {
 	u16 table;		/* table id */
@@ -252,8 +278,17 @@ struct xsc_ioctl_attr {
 	u8 data[0];		/* specific table info */
 };
 
+struct xsc_ioctl_emu_hdr {
+	u16	in_length;	/* cmd req length */
+	u16	out_length;	/* cmd rsp length */
+	u8	data[0];	/* emu cmd content start from here */
+};
+
 struct xsc_ioctl_hdr {
 	u32 check_filed;		/* Validity verification fileds */
+	u32 domain;
+	u32 bus;
+	u32 devfn;
 	struct xsc_ioctl_attr attr;
 };
 

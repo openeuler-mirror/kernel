@@ -52,6 +52,7 @@ enum {
 	XSC_QP_FLAG_TIR_ALLOW_SELF_LB_MC = 1 << 7,
 	XSC_QP_FLAG_ALLOW_SCATTER_CQE	= 1 << 8,
 	XSC_QP_FLAG_RAWPACKET_TSO       = 1 << 9,
+	XSC_QP_FLAG_RAWPACKET_TX	= 1 << 10,
 };
 
 struct xsc_ib_alloc_ucontext_req {
@@ -132,7 +133,28 @@ enum xsc_rx_hash_function_flags {
 	XSC_RX_HASH_FUNC_TOEPLITZ	= 1 << 0,
 };
 
-/* RX Hash flags, these flags allows to set which incoming packet's field should
+enum xsc_rdma_link_speed {
+	XSC_RDMA_LINK_SPEED_2_5GB	= 1 << 0,
+	XSC_RDMA_LINK_SPEED_5GB		= 1 << 1,
+	XSC_RDMA_LINK_SPEED_10GB	= 1 << 3,
+	XSC_RDMA_LINK_SPEED_14GB	= 1 << 4,
+	XSC_RDMA_LINK_SPEED_25GB	= 1 << 5,
+	XSC_RDMA_LINK_SPEED_50GB	= 1 << 6,
+	XSC_RDMA_LINK_SPEED_100GB	= 1 << 7,
+};
+
+enum xsc_rdma_phys_state {
+	XSC_RDMA_PHY_STATE_SLEEP	= 1,
+	XSC_RDMA_PHY_STATE_POLLING,
+	XSC_RDMA_PHY_STATE_DISABLED,
+	XSC_RDMA_PHY_STATE_PORT_CONFIGURATION_TRAINNING,
+	XSC_RDMA_PHY_STATE_LINK_UP,
+	XSC_RDMA_PHY_STATE_LINK_ERROR_RECOVERY,
+	XSC_RDMA_PHY_STATE_PHY_TEST,
+};
+
+/*
+ * RX Hash flags, these flags allows to set which incoming packet's field should
  * participates in RX Hash. Each flag represent certain packet's field,
  * when the flag is set the field that is represented by the flag will
  * participate in RX Hash calculation.

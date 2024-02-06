@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
-#include <common/xsc_core.h>
-#include <common/driver.h>
-#include <common/cq.h>
-#include <common/qp.h>
-#include <common/xsc_lag.h>
-#include <common/xsc_port_ctrl.h>
+#include "common/xsc_core.h"
+#include "common/driver.h"
+#include "common/cq.h"
+#include "common/qp.h"
+#include "common/xsc_lag.h"
+#include "common/xsc_port_ctrl.h"
 #ifdef CONFIG_XSC_ESWITCH
 #include "devlink.h"
 #include "eswitch.h"
@@ -19,50 +18,57 @@
 #include "xsc_pci_ctrl.h"
 
 #ifdef RUN_WITH_PSV
-#include "../../../../xscale-fw/include/xscale-fw.h"
+#include "xscale-fw.h"
 #endif
 
 unsigned int xsc_debug_mask;
 module_param_named(debug_mask, xsc_debug_mask, uint, 0644);
 MODULE_PARM_DESC(debug_mask,
-	"debug mask: 1=dump cmd data, 2=dump cmd exec time, 3=both. Default=0");
+		 "debug mask: 1=dump cmd data, 2=dump cmd exec time, 3=both. Default=0");
 
-bool hw_init = 1;
-int pcie_no;
-module_param_named(hw_init, hw_init, bool, 0644);
-module_param_named(pcie_no, pcie_no, int, 0644);
+unsigned int xsc_log_level = XSC_LOG_LEVEL_WARN;
+module_param_named(log_level, xsc_log_level, uint, 0644);
+MODULE_PARM_DESC(log_level,
+		 "lowest log level to print: 0=debug, 1=info, 2=warning, 3=error. Default=1");
+EXPORT_SYMBOL(xsc_log_level);
 
 static bool probe_vf = 1;
 module_param_named(probe_vf, probe_vf, bool, 0644);
 MODULE_PARM_DESC(probe_vf, "probe VFs or not, 0 = not probe, 1 = probe. Default = 1");
 
 static bool xsc_hw_reset;
+u8 g_xsc_pcie_no = XSC_PCIE_NO_UNSET;
+EXPORT_SYMBOL(g_xsc_pcie_no);
 
 #define DRIVER_NAME			"xsc_pci"
 #define DRIVER_VERSION			"0.1.0"
 
-#define XSC_PCI_VENDOR_ID_OBSOLETE	0x1172
-#define XSC_PCI_VENDOR_ID		0x1f67
-#define XSC_PF1_DEVICE_ID		0x0001
-#define XSC_PF1_VF_DEVICE_ID		0x0002
-
-#ifdef USE_VIRTIO
 static const struct pci_device_id xsc_pci_id_table[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_REDHAT_QUMRANET, PCI_ANY_ID) },
-	{ 0 }
-};
-#else
-static const struct pci_device_id xsc_pci_id_table[] = {
-	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_PF1_DEVICE_ID) },
-	{ PCI_DEVICE(XSC_PCI_VENDOR_ID_OBSOLETE, XSC_PF1_DEVICE_ID) },
-	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_PF1_VF_DEVICE_ID),
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_PF1_DEVICE_ID_OBSOLETE) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID_OBSOLETE, XSC_PF1_DEVICE_ID_OBSOLETE) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_PF1_VF_DEVICE_ID_OBSOLETE),
 		.driver_data = XSC_PCI_DEV_IS_VF}, /* PF1's VF */
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MC_PF_DEV_ID) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MC_VF_DEV_ID),
+		.driver_data = XSC_PCI_DEV_IS_VF },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MF_HOST_PF_DEV_ID) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MF_HOST_VF_DEV_ID),
+		.driver_data = XSC_PCI_DEV_IS_VF },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MF_SOC_PF_DEV_ID) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MS_PF_DEV_ID) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MS_VF_DEV_ID),
+		.driver_data = XSC_PCI_DEV_IS_VF },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MV_HOST_PF_DEV_ID) },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MV_HOST_VF_DEV_ID),
+		.driver_data = XSC_PCI_DEV_IS_VF },
+	{ PCI_DEVICE(XSC_PCI_VENDOR_ID, XSC_MV_SOC_PF_DEV_ID) },
 	{ 0 }
 };
-#endif /* !USE_VIRTIO */
+
 MODULE_DEVICE_TABLE(pci, xsc_pci_id_table);
 
-#ifndef RUN_WITH_PSV
+#define	IS_VIRT_FUNCTION(id) ((id)->driver_data == XSC_PCI_DEV_IS_VF)
+
 static bool need_write_reg_directly(void *in)
 {
 	struct xsc_inbox_hdr *hdr;
@@ -83,7 +89,7 @@ static bool need_write_reg_directly(void *in)
 	return false;
 }
 
-#else
+#ifdef RUN_WITH_PSV
 static u8 phyport_num;
 
 static u32 xsc_get_glb_func_id(struct xsc_core_device *dev)
@@ -93,22 +99,22 @@ static u32 xsc_get_glb_func_id(struct xsc_core_device *dev)
 	struct xsc_core_device *pf_xdev;
 
 	if (xsc_core_is_pf(dev)) {
-		if (xsc_get_pcie_no() == 0)
-			return XSC_PCIE0_PF_N_FUNC_ID(phyport_num++);
+		if (g_xsc_pcie_no == XSC_PCIE_NO_HOST)
+			return pf_index_to_pcie0_funcid(&dev->caps, phyport_num++);
 		else
-			return XSC_PCIE1_PF_N_FUNC_ID(phyport_num++);
+			return pf_index_to_pcie1_funcid(&dev->caps, phyport_num++);
 	} else {
 		pf_xdev = pci_get_drvdata(pdev->physfn);
 		vf_bdf = (pdev->bus->number << 8) | pdev->devfn;
-		if (xsc_get_pcie_no() == 0 && vf_bdf >= pf_xdev->priv.sriov.vf_bdf_base) {
+		if (g_xsc_pcie_no == XSC_PCIE_NO_HOST &&
+		    vf_bdf >= pf_xdev->priv.sriov.vf_bdf_base) {
 			vf_id = vf_bdf - pf_xdev->priv.sriov.vf_bdf_base;
 			if (pf_xdev->pf_id == 0)
-				return XSC_PCIE0_PF0_VF_N_FUNC_ID(vf_id);
+				return vf_index_to_pcie0_funcid(&dev->caps, vf_id, 0);
 			else
-				return XSC_PCIE0_PF1_VF_N_FUNC_ID(vf_id);
+				return vf_index_to_pcie0_funcid(&dev->caps, vf_id, 1);
 		}
 	}
-
 	return 0;
 }
 #endif
@@ -116,42 +122,52 @@ static u32 xsc_get_glb_func_id(struct xsc_core_device *dev)
 int xsc_cmd_exec(struct xsc_core_device *dev, void *in, int in_size, void *out,
 		 int out_size)
 {
-#ifndef RUN_WITH_PSV
-	int ret;
-
 	if (need_write_reg_directly(in))
-		ret = xsc_cmd_write_reg_directly(dev, in, in_size, out, out_size, dev->glb_func_id);
-	else
-		ret = _xsc_cmd_exec(dev, in, in_size, out, out_size);
-
-	return ret;
+		return xsc_cmd_write_reg_directly(dev, in, in_size, out,
+						  out_size, dev->glb_func_id);
+#ifndef RUN_WITH_PSV
+	return _xsc_cmd_exec(dev, in, in_size, out, out_size);
 #else
 	return xsc_cmd_exec_psv(dev, in, in_size, out, out_size, dev->glb_func_id);
 #endif
 }
 EXPORT_SYMBOL(xsc_cmd_exec);
 
-int xsc_get_pcie_no(void)
+u8 xsc_devid_to_pcie_no(int dev_id)
 {
+	u8 pcie_no;
+
+	switch (dev_id) {
+	case XSC_MC_PF_DEV_ID:
+	case XSC_MC_VF_DEV_ID:
+	case XSC_MF_HOST_PF_DEV_ID:
+	case XSC_MF_HOST_VF_DEV_ID:
+	case XSC_MS_PF_DEV_ID:
+	case XSC_MS_VF_DEV_ID:
+	case XSC_MV_HOST_PF_DEV_ID:
+	case XSC_MV_HOST_VF_DEV_ID:
+		pcie_no = 0;
+		break;
+	case XSC_MF_SOC_PF_DEV_ID:
+	case XSC_MV_SOC_PF_DEV_ID:
+		pcie_no = 1;
+		break;
+	default:
+		pcie_no = 0;
+		break;
+	}
 	return pcie_no;
 }
-EXPORT_SYMBOL(xsc_get_pcie_no);
 
 static int set_dma_caps(struct pci_dev *pdev)
 {
 	int err = 0;
 
 	err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(64));
-	if (err) {
+	if (err)
 		err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
-	} else {
-		err = dma_set_coherent_mask(&pdev->dev,
-#ifdef USE_VIRTIO
-			DMA_BIT_MASK(32 + VIRTIO_PCI_QUEUE_ADDR_SHIFT));
-#else
-			DMA_BIT_MASK(64));
-#endif /* !USE_VIRTIO */
-	}
+	else
+		err = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64));
 
 	if (!err)
 		dma_set_max_seg_size(&pdev->dev, 2u * 1024 * 1024 * 1024);
@@ -163,76 +179,82 @@ static void xsc_pci_get_bdf(struct xsc_core_device *dev)
 {
 	struct pci_dev *pci_dev = dev->pdev;
 
-	dev->bus_id = pci_dev->bus->number;
-	dev->dev_id = PCI_SLOT(pci_dev->devfn);
+	dev->bus_num = pci_dev->bus->number;
+	dev->dev_num = PCI_SLOT(pci_dev->devfn);
 	dev->func_id = PCI_FUNC(pci_dev->devfn);
+	dev->device_id = pci_dev->device;
 
-	xsc_core_info(dev, "%s: bdf=%04x.%04x.%04x\n",
-		__func__, dev->bus_id, dev->dev_id, dev->func_id);
+	xsc_core_info(dev, "%s: bdf=%04x.%04x.%04x, device_id=0x%04x\n",
+		      __func__, dev->bus_num, dev->dev_num, dev->func_id, dev->device_id);
 }
 
-static void xsc_pci_calc_pf_port(struct xsc_core_device *dev)
+static int xsc_pci_calc_pf_port(struct xsc_core_device *dev)
 {
-	dev->pf = xsc_cal_pf_vf_id(dev->glb_func_id, &dev->pf_id,
-				&dev->pcie, &dev->vf_id) ? 1 : 0;
-	if (dev->pcie == 0) {
-		dev->pcie_port = XSC_PHY_PORT_PCIE_N(0);
-		dev->logic_port = XSC_PCIE0_PF_N_LOGIC_PORT(dev->pf_id);
+	u8 pcie_no;
 
+	if (!funcid_to_pf_vf_index(&dev->caps, dev->glb_func_id,
+				   &dev->pf, &dev->pf_id, &pcie_no, &dev->vf_id))
+		return -EINVAL;
+
+	if (pcie_no == 0) {
+		dev->pcie_port = XSC_PHY_PORT_PCIE_N(0);
+		dev->logic_port = pf_index_to_pcie0_xscport(&dev->caps, dev->pf_id);
 	} else {
 		dev->pcie_port = XSC_PHY_PORT_PCIE_N(1);
-		dev->logic_port = XSC_PCIE1_PF_N_LOGIC_PORT(dev->pf_id);
+		dev->logic_port = pf_index_to_pcie1_xscport(&dev->caps, dev->pf_id);
 	}
 	dev->pf_logic_port = dev->logic_port;
-	dev->mac_logic_port = dev->mac_port = dev->caps.mac_port;
+	dev->mac_port = dev->caps.mac_port;
+	dev->mac_logic_port = dev->mac_port;
 
 	xsc_core_dbg(dev,
-		"glb_func=%d, pcie_port=%d, pf_logic_port=%d, mac_port=%d, board_id=%d\n",
-		dev->glb_func_id, dev->pcie_port, dev->logic_port,
-		dev->mac_port, dev->board_id);
+		     "glb_func=%d, pcie_port=%d, pf_logic_port=%d, mac_port=%d, board_id=%d\n",
+		     dev->glb_func_id, dev->pcie_port, dev->logic_port,
+		     dev->mac_port, dev->board_id);
+
+	return 0;
 }
 
 void xsc_pci_get_vf_info(struct xsc_core_device *dev, struct xsc_vf_info *info)
 {
+	if (!dev || !info || !check_caps_funcid_valid(&dev->caps))
+		xsc_core_err(dev, "%s input err\n", __func__);
+
 	if (info->phy_port == 0) {
-		if (info->pf_id == 0) {
-			info->logic_port = XSC_PCIE0_PF0_VF_N_LOGIC_PORT(info->vf_id);
-			info->func_id = XSC_PCIE0_PF0_VF_N_FUNC_ID(info->vf_id);
-		} else {
-			info->logic_port = XSC_PCIE0_PF1_VF_N_LOGIC_PORT(info->vf_id);
-			info->func_id = XSC_PCIE0_PF1_VF_N_FUNC_ID(info->vf_id);
-		}
+		info->logic_port = vf_index_to_pcie0_xscport(&dev->caps, info->vf_id, info->pf_id);
+		info->func_id = vf_index_to_pcie0_funcid(&dev->caps, info->vf_id, info->pf_id);
 	} else {
-		if (info->pf_id == 0) {
-			info->logic_port = XSC_PCIE1_PF0_VF_N_LOGIC_PORT(info->vf_id);
-			info->func_id = XSC_PCIE1_PF0_VF_N_FUNC_ID(info->vf_id);
-		} else {
-			info->logic_port = XSC_PCIE1_PF1_VF_N_LOGIC_PORT(info->vf_id);
-			info->func_id = XSC_PCIE1_PF1_VF_N_FUNC_ID(info->vf_id);
-		}
+		info->logic_port = vf_index_to_pcie1_xscport(&dev->caps, info->vf_id, info->pf_id);
+		info->func_id = vf_index_to_pcie1_funcid(&dev->caps, info->vf_id, info->pf_id);
 	}
 }
 EXPORT_SYMBOL(xsc_pci_get_vf_info);
 
-static void xsc_pci_calc_vf_port(struct xsc_core_device *dev)
+static int xsc_pci_calc_vf_port(struct xsc_core_device *dev)
 {
-	dev->pf = xsc_cal_pf_vf_id(dev->glb_func_id, &dev->pf_id, &dev->pcie, &dev->vf_id);
-	if (unlikely(dev->pcie == 1))
-		return;
+	u8 pcie_no;
 
-	if (dev->pf_id == 0)
-		dev->logic_port = XSC_PCIE0_PF0_VF_N_LOGIC_PORT(dev->vf_id);
-	else
-		dev->logic_port = XSC_PCIE0_PF1_VF_N_LOGIC_PORT(dev->vf_id);
+	if (!funcid_to_pf_vf_index(&dev->caps, dev->glb_func_id,
+				   &dev->pf, &dev->pf_id, &pcie_no, &dev->vf_id))
+		return -EINVAL;
+	if (unlikely(pcie_no == 1))
+		return -EINVAL;
+
+	dev->logic_port = vf_index_to_pcie0_xscport(&dev->caps, dev->vf_id, dev->pf_id);
 
 	dev->pcie_port = XSC_PHY_PORT_PCIE_N(0);
-	dev->pf_logic_port = XSC_PCIE0_PF_N_LOGIC_PORT(dev->pf_id);
-	dev->mac_logic_port = dev->mac_port = dev->caps.mac_port;
+	dev->pf_logic_port = pf_index_to_pcie0_xscport(&dev->caps, dev->pf_id);
+	dev->mac_port = dev->caps.mac_port;
+	dev->mac_logic_port = dev->mac_port;
 
 	xsc_core_dbg(dev,
-		"vf%d_logic_port=%d, glb_func_id=%d, pf%d_logic_port=%d, mac_logic_port=%d, board_id=%d\n",
-		dev->vf_id, dev->logic_port, dev->glb_func_id, dev->pf_id,
-		dev->pf_logic_port, dev->mac_logic_port, dev->board_id);
+		     "vf%d_logic_port=%d, glb_func_id=%d, pf%d_logic_port=%d\n",
+		     dev->vf_id, dev->logic_port, dev->glb_func_id, dev->pf_id,
+		     dev->pf_logic_port);
+	xsc_core_dbg(dev, "mac_logic_port=%d, board_id=%d\n",
+		     dev->mac_logic_port, dev->board_id);
+
+	return 0;
 }
 
 static int xsc_pci_enable_device(struct xsc_core_device *dev)
@@ -347,18 +369,10 @@ int xsc_dev_init(struct xsc_core_device *dev)
 		goto err_debugfs_init;
 	}
 
-	err = xsc_pagealloc_init(dev);
-	if (err) {
-		xsc_core_err(dev, "xsc_pagealloc_init failed %d\n", err);
-		goto err_pagealloc_init;
-	}
-
 	xsc_init_reg_addr(dev);
 
 	return 0;
 
-err_pagealloc_init:
-	xsc_debugfs_fini(dev);
 err_debugfs_init:
 	xsc_dev_res_cleanup(dev);
 err_res_init:
@@ -367,9 +381,6 @@ err_res_init:
 
 void xsc_dev_cleanup(struct xsc_core_device *dev)
 {
-//	xsc_pagealloc_stop(dev);
-//	xsc_reclaim_startup_pages(dev);
-	xsc_pagealloc_cleanup(dev);
 //	iounmap(dev->iseg);
 	xsc_debugfs_fini(dev);
 	xsc_dev_res_cleanup(dev);
@@ -383,13 +394,9 @@ static int xsc_pci_init(struct xsc_core_device *dev, const struct pci_device_id 
 	void __iomem *bar_base = NULL;
 	char name[16];
 
-#ifdef USE_VIRTIO
-	snprintf(name, sizeof(name), "%s", "xsc-virtio");
-#else
 	snprintf(name, sizeof(name), "%s", "xsc-pci");
 	if (id->vendor == XSC_PCI_VENDOR_ID_OBSOLETE)
 		bar_num = 2;
-#endif
 
 	mutex_init(&dev->pci_status_mutex);
 	dev->priv.numa_node = dev_to_node(&pdev->dev);
@@ -406,7 +413,7 @@ static int xsc_pci_init(struct xsc_core_device *dev, const struct pci_device_id 
 	err = pci_request_region(pdev, bar_num, name);
 	if (err) {
 		xsc_core_err(dev, "failed to request %s pci_region=%d: err=%d\n",
-			name, bar_num, err);
+			     name, bar_num, err);
 		goto err_disable;
 	}
 
@@ -424,7 +431,7 @@ static int xsc_pci_init(struct xsc_core_device *dev, const struct pci_device_id 
 		goto err_clr_master;
 	} else {
 		xsc_core_info(dev, "ioremap bar%d base address=0x%llx\n", bar_num,
-			(unsigned long long)bar_base);
+			      (unsigned long long)bar_base);
 	}
 
 	err = pci_save_state(pdev);
@@ -434,11 +441,7 @@ static int xsc_pci_init(struct xsc_core_device *dev, const struct pci_device_id 
 	}
 
 	dev->bar_num = bar_num;
-#ifdef USE_VIRTIO
-	dev->bar0 = bar_base;
-#else
 	dev->bar2 = bar_base;
-#endif /* !USE_VIRTIO */
 	xsc_pci_get_bdf(dev);
 
 	xsc_init_reg_addr(dev);
@@ -461,11 +464,11 @@ static void xsc_pci_fini(struct xsc_core_device *dev)
 	struct pci_dev *pdev = dev->pdev;
 	void __iomem *bar_base = NULL;
 
-#ifdef USE_VIRTIO
-	bar_base = dev->bar0;
-#else
-	bar_base = dev->bar2;
+#ifdef RUN_WITH_PSV
+	xsc_stop_fw(dev);
 #endif
+
+	bar_base = dev->bar2;
 
 	if (bar_base)
 		pci_iounmap(pdev, bar_base);
@@ -501,7 +504,7 @@ static int xsc_check_cmdq_version(struct xsc_core_device *dev)
 
 	if (be16_to_cpu(out->cmdq_ver) != CMDQ_VERSION) {
 		xsc_core_err(dev, "cmdq version check failed, expecting version %d, actual version %d\n",
-			CMDQ_VERSION, be16_to_cpu(out->cmdq_ver));
+			     CMDQ_VERSION, be16_to_cpu(out->cmdq_ver));
 		err = -EINVAL;
 		goto out_out;
 	}
@@ -550,13 +553,20 @@ static int xsc_init_once(struct xsc_core_device *dev)
 {
 	int err;
 
+#ifndef COSIM
 	err = xsc_cmd_init(dev);
 	if (err) {
 		xsc_core_err(dev, "Failed initializing command interface, aborting\n");
 		goto err_cmd_init;
 	}
-
+#endif
 #ifdef RUN_WITH_PSV
+	err = xsc_cmd_query_psv_funcid(dev, &dev->caps);
+	if (err) {
+		xsc_core_err(dev, "Failed to query psv funcid, err=%d\n", err);
+		goto err_cmdq_ver_chk;
+	}
+
 	dev->glb_func_id = xsc_get_glb_func_id(dev);
 #endif
 
@@ -584,14 +594,29 @@ static int xsc_init_once(struct xsc_core_device *dev)
 		goto err_cmdq_ver_chk;
 	}
 	if (xsc_core_is_pf(dev)) {
-		xsc_pci_calc_pf_port(dev);
+		err = xsc_pci_calc_pf_port(dev);
+		if (err) {
+			xsc_core_err(dev, "Failed to xsc_pci_calc_pf_port\n");
+			goto err_cmdq_ver_chk;
+		}
 		err = xsc_create_res(dev);
 		if (err) {
 			xsc_core_err(dev, "Failed to create resource, err=%d\n", err);
 			goto err_cmdq_ver_chk;
 		}
 	} else {
-		xsc_pci_calc_vf_port(dev);
+		err = xsc_pci_calc_vf_port(dev);
+		if (err) {
+			xsc_core_err(dev, "Failed to xsc_pci_calc_vf_port\n");
+			goto err_cmdq_ver_chk;
+		}
+		if (!dev->pdev->physfn) {
+			err = xsc_create_res(dev);
+			if (err) {
+				xsc_core_err(dev, "Failed to create resource, err=%d\n", err);
+				goto err_cmdq_ver_chk;
+			}
+		}
 	}
 
 	xsc_init_cq_table(dev);
@@ -614,21 +639,23 @@ static int xsc_init_once(struct xsc_core_device *dev)
 #endif
 	return 0;
 
+#ifdef CONFIG_XSC_SRIOV
 #ifdef CONFIG_XSC_ESWITCH
 err_eswitch_init:
 	xsc_sriov_cleanup(dev);
 #endif
-#ifdef CONFIG_XSC_SRIOV
 err_sriov_init:
-#endif
 	xsc_eq_cleanup(dev);
 	xsc_cleanup_qp_table(dev);
 	xsc_cleanup_cq_table(dev);
 	if (xsc_core_is_pf(dev))
 		xsc_destroy_res(dev);
+#endif
 err_cmdq_ver_chk:
+#ifndef COSIM
 	xsc_cmd_cleanup(dev);
 err_cmd_init:
+#endif
 	return err;
 }
 
@@ -645,15 +672,15 @@ static int xsc_cleanup_once(struct xsc_core_device *dev)
 	xsc_cleanup_cq_table(dev);
 	if (xsc_core_is_pf(dev))
 		xsc_destroy_res(dev);
+#ifndef COSIM
 	xsc_cmd_cleanup(dev);
+#endif
 	return 0;
 }
 
 static int xsc_load(struct xsc_core_device *dev)
 {
 	int err;
-
-	xsc_pagealloc_start(dev);
 
 	err = xsc_irq_eq_create(dev);
 	if (err) {
@@ -668,7 +695,6 @@ static int xsc_load(struct xsc_core_device *dev)
 		goto err_sriov;
 	}
 #endif
-
 	return 0;
 
 #ifdef CONFIG_XSC_SRIOV
@@ -676,7 +702,6 @@ err_sriov:
 	xsc_irq_eq_destroy(dev);
 #endif
 err_irq_eq_create:
-	xsc_pagealloc_stop(dev);
 	return err;
 }
 
@@ -687,7 +712,6 @@ static int xsc_unload(struct xsc_core_device *dev)
 	xsc_sriov_detach(dev);
 #endif
 	xsc_irq_eq_destroy(dev);
-	xsc_pagealloc_stop(dev);
 
 	return 0;
 }
@@ -785,7 +809,7 @@ int xsc_unload_one(struct xsc_core_device *dev, bool cleanup)
 	mutex_lock(&dev->intf_state_mutex);
 	if (!test_bit(XSC_INTERFACE_STATE_UP, &dev->intf_state)) {
 		xsc_core_warn(dev, "%s: interface is down, NOP\n",
-			       __func__);
+			      __func__);
 		if (cleanup)
 			xsc_cleanup_once(dev);
 		goto out;
@@ -814,7 +838,6 @@ static int xsc_pci_probe(struct pci_dev *pci_dev,
 	int err;
 #ifdef CONFIG_XSC_ESWITCH
 	struct devlink *devlink;
-
 	devlink = xsc_devlink_alloc();
 	if (!devlink) {
 		dev_err(&pci_dev->dev, "devlink alloc failed\n");
@@ -823,22 +846,24 @@ static int xsc_pci_probe(struct pci_dev *pci_dev,
 	xdev = devlink_priv(devlink);
 #else
 	/* allocate core structure and fill it out */
-	xdev = kzalloc(sizeof(struct xsc_core_device), GFP_KERNEL);
+	xdev = kzalloc(sizeof(*xdev), GFP_KERNEL);
 	if (!xdev)
 		return -ENOMEM;
 #endif
 
 	xdev->pdev = pci_dev;
 	xdev->device = &pci_dev->dev;
+	if (g_xsc_pcie_no == XSC_PCIE_NO_UNSET)
+		g_xsc_pcie_no = xsc_devid_to_pcie_no(pci_dev->device);
 	priv = &xdev->priv;
-	xdev->coredev_type = pci_dev->is_virtfn ?
+	xdev->coredev_type = (IS_VIRT_FUNCTION(id)) ?
 				XSC_COREDEV_VF : XSC_COREDEV_PF;
 	xsc_core_info(xdev, "%s: dev_type=%d is_vf=%d\n",
-		__func__, xdev->coredev_type, pci_dev->is_virtfn);
+		      __func__, xdev->coredev_type, pci_dev->is_virtfn);
 
 #ifdef CONFIG_XSC_SRIOV
 	priv->sriov.probe_vf = probe_vf;
-	if (pci_dev->is_virtfn && !probe_vf) {
+	if ((IS_VIRT_FUNCTION(id)) && !probe_vf) {
 		xsc_core_err(xdev, "VFs are not binded to xsc driver\n");
 		return 0;
 	}
@@ -853,13 +878,10 @@ static int xsc_pci_probe(struct pci_dev *pci_dev,
 	}
 
 #ifdef RUN_WITH_PSV
-	if (!xsc_hw_reset) {
-		xsc_hw_reset = true;
-		err = xsc_start_fw(xdev);
-		if (err) {
-			xsc_core_err(xdev, "PSV: failed to start fw.\n");
-			goto err_start_fw;
-		}
+	err = xsc_start_fw(xdev);
+	if (err) {
+		xsc_core_err(xdev, "PSV: failed to start fw.\n");
+		goto err_start_fw;
 	}
 #endif
 
@@ -871,7 +893,7 @@ static int xsc_pci_probe(struct pci_dev *pci_dev,
 
 	if (xsc_fpga_not_supported(xdev)) {
 		err = -EOPNOTSUPP;
-		goto err_dev_init;
+		goto err_version_check;
 	}
 
 	err = xsc_load_one(xdev, true);
@@ -883,9 +905,11 @@ static int xsc_pci_probe(struct pci_dev *pci_dev,
 	return 0;
 
 err_load:
+err_version_check:
 	xsc_dev_cleanup(xdev);
 err_dev_init:
 #ifdef RUN_WITH_PSV
+	xsc_stop_fw(xdev);
 err_start_fw:
 #endif
 	xsc_pci_fini(xdev);
@@ -935,6 +959,8 @@ static int __init xsc_init(void)
 
 	xsc_register_debugfs();
 
+	qpts_init();
+
 	err = xsc_port_ctrl_init();
 	if (err) {
 		pr_err("failed to initialize port control\n");
@@ -954,6 +980,7 @@ static int __init xsc_init(void)
 		goto err_register;
 	}
 
+	xsc_init_delayed_release();
 	return 0;
 
 err_register:
@@ -962,20 +989,22 @@ err_pci_ctrl:
 	xsc_port_ctrl_fini();
 err_port_ctrl:
 	xsc_unregister_debugfs();
+	qpts_fini();
 	return err;
 }
 
 static void __exit xsc_fini(void)
 {
+	xsc_stop_delayed_release();
 	pci_unregister_driver(&xsc_pci_driver);
 	xsc_pci_ctrl_fini();
 	xsc_port_ctrl_fini();
 	xsc_unregister_debugfs();
+	qpts_fini();
 }
 
 module_init(xsc_init);
 module_exit(xsc_fini);
 
-MODULE_DESCRIPTION("Yunsilicon XSC PCI driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0.0");
+

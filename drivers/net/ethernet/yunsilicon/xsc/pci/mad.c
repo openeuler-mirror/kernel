@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <common/driver.h>
+#include "common/driver.h"
 
 int xsc_core_mad_ifc(struct xsc_core_device *xdev, void *inb, void *outb,
-		      u16 opmod, int port)
+		     u16 opmod, int port)
 {
 	struct xsc_mad_ifc_mbox_in *in = NULL;
 	struct xsc_mad_ifc_mbox_out *out = NULL;

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <common/driver.h>
+#include "common/driver.h"
 
 int xsc_core_alloc_pd(struct xsc_core_device *xdev, u32 *pdn)
 {

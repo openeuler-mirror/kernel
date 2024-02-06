@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
-#include <common/xsc_ioctl.h>
-#include <common/xsc_cmd.h>
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
+#include "common/xsc_ioctl.h"
+#include "common/xsc_cmd.h"
 
 #include "xsc_reg_struct.h"
 #include "xsc_fw.h"
@@ -97,13 +96,13 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 	u32 mem_size = be32_to_cpu(req->req.len);
 	u32 pdn = be32_to_cpu(req->req.pdn);
 	u32 key = be32_to_cpu(req->req.mkey);
-	int pages_num = be32_to_cpu(req->req.pa_num);
+	int pa_num = be32_to_cpu(req->req.pa_num);
 	u32 *ptr;
 	u64 reg_addr;
 	int i;
 	int reg_stride;
 
-	if (pages_num && alloc_mtt_entry(dev, pages_num, &mtt_base))
+	if (pa_num && alloc_mtt_entry(dev, pa_num, &mtt_base))
 		return -EINVAL;
 
 	mpt_idx = xsc_mkey_to_idx(key);
@@ -120,7 +119,7 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 
 	get_xsc_res(dev)->mpt_entry[mpt_idx].va = va;
 	get_xsc_res(dev)->mpt_entry[mpt_idx].mtt_base = mtt_base;
-	get_xsc_res(dev)->mpt_entry[mpt_idx].page_num = pages_num;
+	get_xsc_res(dev)->mpt_entry[mpt_idx].page_num = pa_num;
 
 	ptr = (u32 *)&mpt_ent;
 	reg_stride = REG_WIDTH_TO_STRIDE(MMC_MPT_TBL_MEM_WIDTH);
@@ -131,11 +130,12 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 			xsc_get_iae_idx(dev));
 
 	xsc_core_dbg(dev, "reg mr, write mpt[%u]: va=%llx, mem_size=%u, pdn=%u\n",
-		mpt_idx, va, mpt_ent.mem_size, mpt_ent.pdn);
+		     mpt_idx, va, mpt_ent.mem_size, mpt_ent.pdn);
 	xsc_core_dbg(dev, "key=%u, mtt_base=%u, acc=%u, page_mode=%u, mem_map_en=%u\n",
-		mpt_ent.key, mpt_ent.mtt_base, mpt_ent.acc, mpt_ent.page_mode, mpt_ent.mem_map_en);
+		     mpt_ent.key, mpt_ent.mtt_base, mpt_ent.acc,
+		     mpt_ent.page_mode, mpt_ent.mem_map_en);
 
-	for (i = 0; i < pages_num; i++) {
+	for (i = 0; i < pa_num; i++) {
 		u64 pa = req->req.pas[i];
 
 		pa = be64_to_cpu(pa);
@@ -203,7 +203,7 @@ int xsc_dereg_mr(struct xsc_core_device *xdev, void *in, void *out)
 }
 
 static int xsc_cmd_exec_ioctl_flow(struct xsc_core_device *dev,
-	void *in, void *out)
+				   void *in, void *out)
 {
 	struct xsc_ioctl_mbox_in *req;
 	struct xsc_ioctl_mbox_out *resp;
@@ -233,7 +233,7 @@ static int xsc_cmd_exec_ioctl_flow(struct xsc_core_device *dev,
 
 	switch (opmod) {
 	case XSC_IOCTL_OP_ADD:
-		ret = xsc_flow_add(dev, table, length, tl+1);
+		ret = xsc_flow_add(dev, table, length, tl + 1);
 		break;
 	default:
 		ret = -EINVAL;
@@ -249,7 +249,7 @@ out:
 }
 
 int xsc_cmd_write_reg_directly(struct xsc_core_device *dev, void *in, int in_size, void *out,
-		 int out_size, int func_id)
+			       int out_size, int func_id)
 {
 	int opcode, ret = 0;
 	unsigned long flags;

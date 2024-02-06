@@ -8,7 +8,7 @@
 #include <rdma/ib_umem.h>
 #include "xsc_ib.h"
 #include "user.h"
-#include <common/xsc_hsi.h>
+#include "common/xsc_hsi.h"
 #include <linux/dma-direct.h>
 
 enum {
@@ -96,7 +96,7 @@ static void xsc_ib_cq_event(struct xsc_core_cq *xcq, enum xsc_event type)
 
 	if (type != XSC_EVENT_TYPE_CQ_ERROR) {
 		xsc_ib_err(dev, "Unexpected event type %d on CQ %06x\n",
-			     type, xcq->cqn);
+			   type, xcq->cqn);
 		return;
 	}
 
@@ -129,7 +129,8 @@ static void *get_sw_cqe(struct xsc_ib_cq *cq, int n)
 }
 
 static inline void handle_good_req(struct ib_wc *wc,
-	struct xsc_cqe *cqe, u8 opcode)
+				   struct xsc_cqe *cqe,
+				   u8 opcode)
 {
 	wc->opcode = xsc_cqe_opcode[opcode];
 	if (opcode == XSC_OPCODE_RDMA_REQ_READ)
@@ -150,7 +151,6 @@ static void handle_responder(struct ib_wc *wc, struct xsc_cqe *cqe,
 	idx = wq->tail & (wq->wqe_cnt - 1);
 	wc->wr_id = wq->wrid[idx];
 	++wq->tail;
-
 }
 
 struct ib_mad_list_head {
@@ -189,10 +189,10 @@ static void *get_seg_wqe(void *first, int n)
 }
 
 static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
-			struct xsc_ib_qp **cur_qp,
-			struct ib_wc *wc,
-			struct xsc_cqe *cqe,
-			u8 opcode)
+					  struct xsc_ib_qp **cur_qp,
+					  struct ib_wc *wc,
+					  struct xsc_cqe *cqe,
+					  u8 opcode)
 {
 	struct xsc_ib_dev *dev = to_mdev(cq->ibcq.device);
 	void *recv;
@@ -246,8 +246,8 @@ static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
 }
 
 static int xsc_poll_one(struct xsc_ib_cq *cq,
-			 struct xsc_ib_qp **cur_qp,
-			 struct ib_wc *wc)
+			struct xsc_ib_qp **cur_qp,
+			struct ib_wc *wc)
 {
 	struct xsc_ib_dev *dev = to_mdev(cq->ibcq.device);
 	struct xsc_core_qp *xqp;
@@ -281,7 +281,7 @@ static int xsc_poll_one(struct xsc_ib_cq *cq,
 		xqp = __xsc_qp_lookup(dev->xdev, qpn);
 		if (unlikely(!xqp)) {
 			xsc_ib_warn(dev, "CQE@CQ %d for unknown QPN %d\n",
-				     cq->xcq.cqn, qpn);
+				    cq->xcq.cqn, qpn);
 			return -EINVAL;
 		}
 
@@ -319,7 +319,7 @@ static int xsc_poll_one(struct xsc_ib_cq *cq,
 
 	default:
 		xsc_ib_err(dev, "completion error\n%08x %08x %08x %08x %08x %08x\n",
-			p[0], p[1], p[2], p[3], p[5], p[6]);
+			   p[0], p[1], p[2], p[3], p[5], p[6]);
 		wc->status = IB_WC_GENERAL_ERR;
 		wc->wr_id = 0;
 		break;
@@ -356,7 +356,6 @@ int xsc_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 	spin_unlock_irqrestore(&cq->lock, flags);
 
 	return npolled;
-
 }
 
 int xsc_cqe_is_empty(struct xsc_ib_cq *cq)
@@ -411,7 +410,7 @@ static int alloc_cq_buf(struct xsc_ib_dev *dev, struct xsc_ib_cq_buf *buf,
 	int err;
 
 	err = xsc_buf_alloc(dev->xdev, nent * cqe_size,
-			     PAGE_SIZE, &buf->buf);
+			    PAGE_SIZE, &buf->buf);
 	if (err)
 		return err;
 
@@ -452,19 +451,18 @@ static int create_cq_user(struct xsc_ib_dev *dev, struct ib_udata *udata,
 	}
 
 	xsc_ib_cont_pages(cq->buf.umem, ucmd.buf_addr, &npages, &page_shift,
-			   &ncont, NULL);
+			  &ncont, NULL);
 	if (ncont != npages) {
-		xsc_ib_warn(dev, "bad page_shift:%d, ncont:%d\n", page_shift, ncont);
+		xsc_ib_dbg(dev, "bad page_shift:%d, ncont:%d\n", page_shift, ncont);
 		/* amber doesn't support compound pages */
 		page_shift = PAGE_SHIFT;
 		ncont = npages;
-		xsc_ib_warn(dev, "overwrite to page_shift:%d, ncont:%d\n",
-			     page_shift, ncont);
+		xsc_ib_dbg(dev, "overwrite to page_shift:%d, ncont:%d\n", page_shift, ncont);
 	}
 	log_cq_sz = ilog2(entries);
 	hw_npages = DIV_ROUND_UP((1 << log_cq_sz) * sizeof(struct xsc_cqe), PAGE_SIZE_4K);
 	xsc_ib_dbg(dev, "addr 0x%llx, entries %d, size %u, npages %d, page_shift %d, ncont %d, hw_npages %d\n",
-		ucmd.buf_addr, entries, ucmd.cqe_size, npages, page_shift, ncont, hw_npages);
+		   ucmd.buf_addr, entries, ucmd.cqe_size, npages, page_shift, ncont, hw_npages);
 
 	*inlen = sizeof(**cqb) + sizeof(*(*cqb)->pas) * hw_npages;
 	*cqb = xsc_vzalloc(*inlen);
@@ -548,7 +546,7 @@ xsc_ib_create_cq_def()
 	entries = roundup_pow_of_two(entries + 1);
 
 	xsc_ib_dbg(dev, "entries:%d, vector:%d, max_cqes:%d\n", entries, vector,
-			dev->xdev->caps.max_cqes);
+		   dev->xdev->caps.max_cqes);
 
 	if (entries > dev->xdev->caps.max_cqes)
 		entries = dev->xdev->caps.max_cqes;
@@ -613,8 +611,7 @@ err_cqb:
 		destroy_cq_kernel(dev, cq);
 
 err_create:
-	kfree(cq);
-	return err;
+	return RET_VALUE(err);
 }
 
 xsc_ib_destroy_cq_def()
@@ -660,7 +657,7 @@ void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 rsn)
 	/* Now sweep backwards through the CQ, removing CQ entries
 	 * that match our QP by copying older entries on top of them.
 	 */
-	while ((int) --prod_index - (int) cq->xcq.cons_index >= 0) {
+	while ((int)(--prod_index) - (int)cq->xcq.cons_index >= 0) {
 		cqe = get_cqe(cq, prod_index & cq->ibcq.cqe);
 		if (is_equal_rsn(cqe, rsn)) {
 			++nfreed;

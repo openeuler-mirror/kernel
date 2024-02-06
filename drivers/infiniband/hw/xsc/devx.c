@@ -3,13 +3,12 @@
  * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
-
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/uverbs_types.h>
 #include <rdma/uverbs_ioctl.h>
 #include <rdma/ib_umem.h>
-#include <common/driver.h>
+#include "common/driver.h"
 #include "xsc_ib.h"
 #define UVERBS_MODULE_NAME xsc_ib
 #include <rdma/uverbs_named_ioctl.h>
@@ -38,10 +37,8 @@ static int UVERBS_HANDLER(XSC_IB_METHOD_DEVX_OTHER)(struct uverbs_attr_bundle *a
 {
 	struct xsc_ib_ucontext *c;
 	struct xsc_ib_dev *dev;
-	void *cmd_in = uverbs_attr_get_alloced_ptr(
-		attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_IN);
-	int cmd_out_len = uverbs_attr_get_len(attrs,
-					XSC_IB_ATTR_DEVX_OTHER_CMD_OUT);
+	void *cmd_in = uverbs_attr_get_alloced_ptr(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_IN);
+	int cmd_out_len = uverbs_attr_get_len(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_OUT);
 	void *cmd_out;
 	int err;
 
@@ -58,28 +55,25 @@ static int UVERBS_HANDLER(XSC_IB_METHOD_DEVX_OTHER)(struct uverbs_attr_bundle *a
 		return PTR_ERR(cmd_out);
 
 	err = xsc_cmd_exec(dev->xdev, cmd_in,
-			uverbs_attr_get_len(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_IN),
-			cmd_out, cmd_out_len);
+			   uverbs_attr_get_len(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_IN),
+			   cmd_out, cmd_out_len);
 	if (err)
 		return err;
 
 	return uverbs_copy_to(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_OUT, cmd_out, cmd_out_len);
 }
 
-DECLARE_UVERBS_NAMED_METHOD(
-	XSC_IB_METHOD_DEVX_OTHER,
-	UVERBS_ATTR_PTR_IN(
-		XSC_IB_ATTR_DEVX_OTHER_CMD_IN,
-		UVERBS_ATTR_MIN_SIZE(sizeof(struct xsc_inbox_hdr)),
-		UA_MANDATORY,
-		UA_ALLOC_AND_COPY),
-	UVERBS_ATTR_PTR_OUT(
-		XSC_IB_ATTR_DEVX_OTHER_CMD_OUT,
-		UVERBS_ATTR_MIN_SIZE(sizeof(struct xsc_outbox_hdr)),
-		UA_MANDATORY));
+DECLARE_UVERBS_NAMED_METHOD(XSC_IB_METHOD_DEVX_OTHER,
+			    UVERBS_ATTR_PTR_IN(XSC_IB_ATTR_DEVX_OTHER_CMD_IN,
+					       UVERBS_ATTR_MIN_SIZE(sizeof(struct xsc_inbox_hdr)),
+					       UA_MANDATORY,
+					       UA_ALLOC_AND_COPY),
+			    UVERBS_ATTR_PTR_OUT(XSC_IB_ATTR_DEVX_OTHER_CMD_OUT,
+						UVERBS_ATTR_MIN_SIZE(sizeof(struct xsc_outbox_hdr)),
+						UA_MANDATORY));
 
 DECLARE_UVERBS_GLOBAL_METHODS(XSC_IB_OBJECT_DEVX,
-			&UVERBS_METHOD(XSC_IB_METHOD_DEVX_OTHER));
+			      &UVERBS_METHOD(XSC_IB_METHOD_DEVX_OTHER));
 
 const struct uverbs_object_tree_def *xsc_ib_get_devx_tree(void)
 {

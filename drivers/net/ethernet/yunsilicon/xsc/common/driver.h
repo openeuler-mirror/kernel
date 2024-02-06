@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -14,17 +13,17 @@
 #include <linux/semaphore.h>
 #include <linux/vmalloc.h>
 #include <linux/radix-tree.h>
-#include <common/device.h>
-#include <common/doorbell.h>
-#include <common/xsc_core.h>
-#include <common/xsc_cmd.h>
-#include <common/xsc_hsi.h>
-#include <common/andes/mmc_csr_defines.h>
+#include "common/device.h"
+#include "common/doorbell.h"
+#include "common/xsc_core.h"
+#include "common/xsc_cmd.h"
+#include "common/xsc_hsi.h"
+#include "common/qpts.h"
 
-#define LS_64(val, field) (((u64)val << field ## _SHIFT) & (field ## _MASK))
-#define RS_64(val, field) ((u64)(val & field ## _MASK) >> field ## _SHIFT)
-#define LS_32(val, field) ((val << field ## _SHIFT) & (field ## _MASK))
-#define RS_32(val, field) ((val & field ## _MASK) >> field ## _SHIFT)
+#define LS_64(val, field) (((u64)(val) << field ## _SHIFT) & (field ## _MASK))
+#define RS_64(val, field) ((u64)((val) & field ## _MASK) >> field ## _SHIFT)
+#define LS_32(val, field) (((val) << field ## _SHIFT) & (field ## _MASK))
+#define RS_32(val, field) (((val) & field ## _MASK) >> field ## _SHIFT)
 
 enum {
 	CMD_OWNER_SW		= 0x0,
@@ -76,28 +75,6 @@ struct xsc_rsc_debug {
 	enum dbg_rsc_type	type;
 	struct dentry	       *root;
 	struct xsc_field_desc	fields[0];
-};
-
-struct __packed xsc_qp_trace {
-	u16 main_ver;
-	u16 sub_ver;
-	u32 pid;
-	u16 qp_type;
-	u16 af_type;
-	union {
-		u32 s_addr4;
-		u8  s_addr6[16];
-	} s_addr;
-	union {
-		u32 d_addr4;
-		u8  d_addr6[16];
-	} d_addr;
-	u16 s_port;
-	u16 d_port;
-	u32 affinity_idx;
-	u64 timestamp;
-	u32 lqpn;
-	u32 rqpn;
 };
 
 struct xsc_buf_list {
@@ -204,15 +181,13 @@ struct xsc_dev_resource {
 	struct xsc_cq_table cq_table;
 	struct xsc_eq_table eq_table;
 	struct xsc_irq_info *irq_info;
-	spinlock_t mkey_lock;
+	spinlock_t mkey_lock;	/* protect mkey */
 	u8 mkey_key;
-	struct mutex alloc_mutex;
+	struct mutex alloc_mutex;	/* protect buffer alocation according to numa node */
 	int numa_node;
-	struct workqueue_struct *pg_wq;
-	struct rb_root page_root;
 	int fw_pages;
 	int reg_pages;
-	struct mutex pgdir_mutex;
+	struct mutex pgdir_mutex;	/* protect pgdir_list */
 	struct list_head pgdir_list;
 	struct dentry *qp_debugfs;
 	struct dentry *eq_debugfs;
@@ -290,26 +265,18 @@ int xsc_cmd_status_to_err(struct xsc_outbox_hdr *hdr);
 int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out,
 		  int out_size);
 int xsc_buf_alloc(struct xsc_core_device *xdev, int size, int max_direct,
-		   struct xsc_buf *buf);
+		  struct xsc_buf *buf);
 void xsc_buf_free(struct xsc_core_device *dev, struct xsc_buf *buf);
 int xsc_core_create_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr);
 int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr);
 int xsc_core_register_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
-			  struct xsc_register_mr_mbox_in *in, int inlen);
+			 struct xsc_register_mr_mbox_in *in, int inlen);
 int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr);
 void xsc_reg_local_dma_mr(struct xsc_core_device *dev);
 int xsc_core_alloc_pd(struct xsc_core_device *xdev, u32 *pdn);
 int xsc_core_dealloc_pd(struct xsc_core_device *xdev, u32 pdn);
 int xsc_core_mad_ifc(struct xsc_core_device *xdev, void *inb, void *outb,
-		      u16 opmod, int port);
-int xsc_pagealloc_init(struct xsc_core_device *xdev);
-void xsc_pagealloc_cleanup(struct xsc_core_device *xdev);
-int xsc_pagealloc_start(struct xsc_core_device *xdev);
-void xsc_pagealloc_stop(struct xsc_core_device *xdev);
-void xsc_core_req_pages_handler(struct xsc_core_device *xdev, u16 func_id,
-				 s16 npages);
-int xsc_satisfy_startup_pages(struct xsc_core_device *xdev);
-int xsc_reclaim_startup_pages(struct xsc_core_device *xdev);
+		     u16 opmod, int port);
 void xsc_register_debugfs(void);
 void xsc_unregister_debugfs(void);
 int xsc_eq_init(struct xsc_core_device *dev);
@@ -318,10 +285,10 @@ void xsc_fill_page_array(struct xsc_buf *buf, __be64 *pas, int npages);
 void xsc_fill_page_frag_array(struct xsc_frag_buf *buf, __be64 *pas, int npages);
 void xsc_qp_event(struct xsc_core_device *xdev, u32 qpn, int event_type);
 int xsc_vector2eqn(struct xsc_core_device *dev, int vector, int *eqn,
-		    unsigned int *irqn);
+		   unsigned int *irqn);
 void xsc_cq_event(struct xsc_core_device *xdev, u32 cqn, int event_type);
 int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
-		       int nent, const char *name);
+		      int nent, const char *name);
 int xsc_destroy_unmap_eq(struct xsc_core_device *dev, struct xsc_eq *eq);
 int xsc_start_eqs(struct xsc_core_device *dev);
 void xsc_stop_eqs(struct xsc_core_device *dev);
@@ -329,14 +296,14 @@ void xsc_stop_eqs(struct xsc_core_device *dev);
 int xsc_qp_debugfs_init(struct xsc_core_device *dev);
 void xsc_qp_debugfs_cleanup(struct xsc_core_device *dev);
 int xsc_core_access_reg(struct xsc_core_device *xdev, void *data_in,
-			 int size_in, void *data_out, int size_out,
-			 u16 reg_num, int arg, int write);
+			int size_in, void *data_out, int size_out,
+			u16 reg_num, int arg, int write);
 int xsc_set_port_caps(struct xsc_core_device *xdev, int port_num, u32 caps);
 
 int xsc_debug_eq_add(struct xsc_core_device *xdev, struct xsc_eq *eq);
 void xsc_debug_eq_remove(struct xsc_core_device *xdev, struct xsc_eq *eq);
 int xsc_core_eq_query(struct xsc_core_device *dev, struct xsc_eq *eq,
-		       struct xsc_query_eq_mbox_out *out, int outlen);
+		      struct xsc_query_eq_mbox_out *out, int outlen);
 int xsc_eq_debugfs_init(struct xsc_core_device *dev);
 void xsc_eq_debugfs_cleanup(struct xsc_core_device *dev);
 int xsc_cq_debugfs_init(struct xsc_core_device *dev);
@@ -351,7 +318,7 @@ void xsc_qptrace_debugfs_cleanup(struct xsc_core_device *dev);
 
 int xsc_db_alloc_node(struct xsc_core_device *xdev, struct xsc_db *db, int node);
 int xsc_frag_buf_alloc_node(struct xsc_core_device *xdev, int size,
-					     struct xsc_frag_buf *buf, int node);
+			    struct xsc_frag_buf *buf, int node);
 void xsc_db_free(struct xsc_core_device *xdev, struct xsc_db *db);
 void xsc_frag_buf_free(struct xsc_core_device *xdev, struct xsc_frag_buf *buf);
 

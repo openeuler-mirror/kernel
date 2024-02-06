@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
-#include <common/driver.h>
-#include <common/device.h>
-#include <common/xsc_core.h>
+#include "common/driver.h"
+#include "common/device.h"
+#include "common/xsc_core.h"
 #include "wq.h"
 
 u32 xsc_wq_cyc_get_size(struct xsc_wq_cyc *wq)
@@ -21,8 +20,8 @@ static u32 wq_get_byte_sz(u8 log_sz, u8 log_stride)
 }
 
 int xsc_eth_cqwq_create(struct xsc_core_device *xdev, struct xsc_wq_param *param,
-		     u8 q_log_size, u8 ele_log_size, struct xsc_cqwq *wq,
-		     struct xsc_wq_ctrl *wq_ctrl)
+			u8 q_log_size, u8 ele_log_size, struct xsc_cqwq *wq,
+			struct xsc_wq_ctrl *wq_ctrl)
 {
 	u8 log_wq_stride = ele_log_size;
 	u8 log_wq_sz     = q_log_size;
@@ -35,11 +34,10 @@ int xsc_eth_cqwq_create(struct xsc_core_device *xdev, struct xsc_wq_param *param
 	}
 
 	err = xsc_frag_buf_alloc_node(xdev, wq_get_byte_sz(log_wq_sz, log_wq_stride),
-				       &wq_ctrl->buf,
-				       param->buf_numa_node);
+				      &wq_ctrl->buf,
+				      param->buf_numa_node);
 	if (err) {
-		xsc_core_warn(xdev, "xsc_frag_buf_alloc_node() failed, %d\n",
-			       err);
+		xsc_core_warn(xdev, "xsc_frag_buf_alloc_node() failed, %d\n", err);
 		goto err_db_free;
 	}
 
@@ -57,8 +55,8 @@ err_db_free:
 EXPORT_SYMBOL_GPL(xsc_eth_cqwq_create);
 
 int xsc_eth_wq_cyc_create(struct xsc_core_device *xdev, struct xsc_wq_param *param,
-		       u8 q_log_size, u8 ele_log_size, struct xsc_wq_cyc *wq,
-		       struct xsc_wq_ctrl *wq_ctrl)
+			  u8 q_log_size, u8 ele_log_size, struct xsc_wq_cyc *wq,
+			  struct xsc_wq_ctrl *wq_ctrl)
 {
 	u8 log_wq_stride = ele_log_size;
 	u8 log_wq_sz     = q_log_size;
@@ -72,7 +70,7 @@ int xsc_eth_wq_cyc_create(struct xsc_core_device *xdev, struct xsc_wq_param *par
 	}
 
 	err = xsc_frag_buf_alloc_node(xdev, wq_get_byte_sz(log_wq_sz, log_wq_stride),
-				       &wq_ctrl->buf, param->buf_numa_node);
+				      &wq_ctrl->buf, param->buf_numa_node);
 	if (err) {
 		xsc_core_warn(xdev, "xsc_frag_buf_alloc_node() failed, %d\n", err);
 		goto err_db_free;

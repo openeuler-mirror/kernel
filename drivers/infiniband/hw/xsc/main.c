@@ -12,10 +12,10 @@
 #include <linux/slab.h>
 #include <linux/io-mapping.h>
 #include <linux/sched.h>
-#include <common/xsc_core.h>
-#include <common/xsc_hsi.h>
-#include <common/xsc_cmd.h>
-#include <common/driver.h>
+#include "common/xsc_core.h"
+#include "common/xsc_hsi.h"
+#include "common/xsc_cmd.h"
+#include "common/driver.h"
 
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_smi.h>
@@ -26,99 +26,16 @@
 #include "xsc_rdma_ctrl.h"
 
 #define DRIVER_NAME "xsc_ib"
-#define DRIVER_VERSION "1.0.0"
+#define DRIVER_VERSION "1.0"
 #define DRIVER_RELDATE	"Jan 2022"
 
-MODULE_DESCRIPTION("Yunsilicon XSC RDMA driver");
-MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Yunsilicon Amber HCA IB driver");
+MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRIVER_VERSION);
 
-static int prof_sel = 2;
-module_param_named(prof_sel, prof_sel, int, 0444);
-MODULE_PARM_DESC(prof_sel, "profile selector. Valid range 0 - 2");
-
 static char xsc_version[] =
-	DRIVER_NAME ": Yunsilicon Amber Infiniband driver"
+	DRIVER_NAME ": Yunsilicon Infiniband driver"
 	DRIVER_VERSION " (" DRIVER_RELDATE ")\n";
-
-struct xsc_profile profile[] = {
-	[0] = {
-		.mask		= 0,
-	},
-	[1] = {
-		.mask		= XSC_PROF_MASK_QP_SIZE,
-		.log_max_qp	= 12,
-	},
-	[2] = {
-		.mask		= XSC_PROF_MASK_QP_SIZE |
-				  XSC_PROF_MASK_MR_CACHE,
-		.log_max_qp	= 17,
-		.mr_cache[0]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[1]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[2]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[3]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[4]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[5]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[6]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[7]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[8]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[9]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[10]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[11]	= {
-			.size	= 500,
-			.limit	= 250
-		},
-		.mr_cache[12]	= {
-			.size	= 64,
-			.limit	= 32
-		},
-		.mr_cache[13]	= {
-			.size	= 32,
-			.limit	= 16
-		},
-		.mr_cache[14]	= {
-			.size	= 16,
-			.limit	= 8
-		},
-		.mr_cache[15]	= {
-			.size	= 8,
-			.limit	= 4
-		},
-	},
-};
 
 __be64 sys_image_guid;
 void xsc_get_sys_image_guid(u8 *dev_addr, u8 *guid)
@@ -143,8 +60,8 @@ void xsc_get_sys_image_guid(u8 *dev_addr, u8 *guid)
 }
 
 static int xsc_ib_query_device(struct ib_device *ibdev,
-				struct ib_device_attr *props,
-				struct ib_udata *udata)
+			       struct ib_device_attr *props,
+			       struct ib_udata *udata)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	int max_rq_sg;
@@ -194,16 +111,17 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
 
 	props->page_size_cap	   = dev->xdev->caps.min_page_sz;
-	props->max_mr_size	   = (1 << dev->xdev->caps.log_max_mtt)*PAGE_SIZE;
+	props->max_mr_size	   = (1 << dev->xdev->caps.log_max_mtt) * PAGE_SIZE;
 	props->max_qp		   = 1 << dev->xdev->caps.log_max_qp;
 	props->max_qp_wr	   = dev->xdev->caps.max_wqes;
 	max_rq_sg = dev->xdev->caps.max_rq_desc_sz / sizeof(struct xsc_wqe_data_seg);
 	max_sq_sg = (dev->xdev->caps.max_sq_desc_sz - sizeof(struct xsc_wqe_ctrl_seg_2)) /
 		sizeof(struct xsc_wqe_data_seg_2);
 
-	props->max_send_sge = dev->xdev->caps.send_ds_num;
+	props->max_send_sge = dev->xdev->caps.send_ds_num - XSC_CTRL_SEG_NUM -
+		XSC_RADDR_SEG_NUM;
 	props->max_recv_sge = dev->xdev->caps.recv_ds_num;
-	props->max_sge_rd	   = 0;/*xsc unsupported RD server type*/
+	props->max_sge_rd	   = 1;/*max sge per read wqe*/
 	props->max_cq		   = 1 << dev->xdev->caps.log_max_cq;
 	props->max_cqe		   = dev->xdev->caps.max_cqes - 1;
 	props->max_mr		   = 1 << dev->xdev->caps.log_max_mkey;
@@ -212,16 +130,16 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->max_qp_init_rd_atom = dev->xdev->caps.max_ra_res_qp;
 	props->max_res_rd_atom	   = props->max_qp_rd_atom * props->max_qp;
 	props->max_srq		   =
-		dev->xdev->caps.log_max_srq?(1 << dev->xdev->caps.log_max_srq):0;
+		dev->xdev->caps.log_max_srq ? (1 << dev->xdev->caps.log_max_srq) : 0;
 	props->max_srq_wr	   = dev->xdev->caps.max_srq_wqes - 1;
-	props->max_srq_sge	   = dev->xdev->caps.log_max_srq?(max_rq_sg - 1):0;
+	props->max_srq_sge	   = dev->xdev->caps.log_max_srq ? (max_rq_sg - 1) : 0;
 	props->max_fast_reg_page_list_len = (unsigned int)-1;
 	props->local_ca_ack_delay  = dev->xdev->caps.local_ca_ack_delay;
 	props->atomic_cap	   = dev->xdev->caps.flags & XSC_DEV_CAP_FLAG_ATOMIC ?
 		IB_ATOMIC_HCA : IB_ATOMIC_NONE;
 	props->masked_atomic_cap   = IB_ATOMIC_HCA;
 	props->max_mcast_grp	   =
-		dev->xdev->caps.log_max_mcg?(1 << dev->xdev->caps.log_max_mcg):0;
+		dev->xdev->caps.log_max_mcg ? (1 << dev->xdev->caps.log_max_mcg) : 0;
 	props->max_mcast_qp_attach = dev->xdev->caps.max_qp_mcg;
 	props->max_total_mcast_qp_attach = props->max_mcast_qp_attach *
 					   props->max_mcast_grp;
@@ -242,7 +160,7 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 
 	/*response tso_caps extend param*/
 	if (field_avail(typeof(resp), tso_caps, udata->outlen)) {
-		max_tso = dev->xdev->caps.log_max_tso?(1 << dev->xdev->caps.log_max_tso):0;
+		max_tso = dev->xdev->caps.log_max_tso ? (1 << dev->xdev->caps.log_max_tso) : 0;
 		if (max_tso) {
 			resp.tso_caps.max_tso = max_tso;
 			resp.tso_caps.supported_qpts |= 1 << IB_QPT_RAW_PACKET;
@@ -295,12 +213,13 @@ static enum rdma_link_layer xsc_ib_port_link_layer(struct ib_device *ibdev, u8 p
 }
 
 int xsc_ib_query_port(struct ib_device *ibdev, u8 port,
-			struct ib_port_attr *props)
+		      struct ib_port_attr *props)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	struct net_device *ndev = dev->netdev;
+	struct xsc_core_device *xdev = dev->xdev;
 
-	if (port < 1 || port > dev->xdev->caps.num_ports) {
+	if (port < 1 || port > xdev->caps.num_ports) {
 		xsc_ib_warn(dev, "invalid port number %d\n", port);
 		return -EINVAL;
 	}
@@ -323,16 +242,26 @@ int xsc_ib_query_port(struct ib_device *ibdev, u8 port,
 	props->sm_sl = 0;
 	props->subnet_timeout = 0;
 	props->init_type_reply = 0;
-	props->active_width = 1;
-	props->active_speed = 32;
-	props->phys_state = 5;
+	if (!is_support_rdma(xdev)) {
+		props->active_width = 1;
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+	} else {
+		if (xsc_get_link_speed(xdev) == XSC_CMD_RESP_LINKSPEED_MODE_100G)
+			props->active_width = 2;
+		else
+			props->active_width = 1;
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+	}
 
+	props->phys_state = netif_carrier_ok(ndev) ? XSC_RDMA_PHY_STATE_LINK_UP :
+				XSC_RDMA_PHY_STATE_DISABLED;
 	return 0;
 }
+
 const struct xsc_gid xsc_gid_zero;
 
 static int xsc_ib_query_gid(struct ib_device *ibdev, u8 port_num,
-				int index, union ib_gid *gid)
+			    int index, union ib_gid *gid)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	struct xsc_sgid_tbl *sgid_tbl = &dev->ib_res.sgid_tbl;
@@ -351,8 +280,8 @@ static int xsc_ib_del_gid(const struct ib_gid_attr *attr, void **context)
 {
 	int index = 0;
 	struct xsc_ib_dev *dev = to_mdev(attr->device);
+	struct xsc_gid *gid_raw = (struct xsc_gid *)&attr->gid;
 	struct xsc_sgid_tbl *sgid_tbl = &dev->ib_res.sgid_tbl;
-	struct xsc_gid *gid = (struct xsc_gid *)&attr->gid;
 
 	if (!sgid_tbl)
 		return -EINVAL;
@@ -361,7 +290,7 @@ static int xsc_ib_del_gid(const struct ib_gid_attr *attr, void **context)
 		return -ENOMEM;
 
 	for (index = 0; index < sgid_tbl->max; index++) {
-		if (!memcmp(&sgid_tbl->tbl[index], gid, sizeof(*gid)))
+		if (!memcmp(&sgid_tbl->tbl[index], gid_raw, sizeof(*gid_raw)))
 			break;
 	}
 
@@ -380,8 +309,8 @@ int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 	int i = 0;
 	u32 free_idx = 0;
 	struct xsc_ib_dev *dev = to_mdev(attr->device);
+	struct xsc_gid *gid_raw = (struct xsc_gid *)&attr->gid;
 	struct xsc_sgid_tbl *sgid_tbl = &dev->ib_res.sgid_tbl;
-	struct xsc_gid *gid = (struct xsc_gid *)&attr->gid;
 
 	if (!sgid_tbl)
 		return -EINVAL;
@@ -391,7 +320,7 @@ int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 
 	free_idx = sgid_tbl->max;
 	for (i = 0; i < sgid_tbl->max; i++) {
-		if (!memcmp(&sgid_tbl->tbl[i], gid, sizeof(*gid))) {
+		if (!memcmp(&sgid_tbl->tbl[i], gid_raw, sizeof(*gid_raw))) {
 			return 0;
 		} else if (!memcmp(&sgid_tbl->tbl[i], &xsc_gid_zero, sizeof(xsc_gid_zero)) &&
 				free_idx == sgid_tbl->max) {
@@ -402,15 +331,16 @@ int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 	if (free_idx == sgid_tbl->max)
 		return -ENOMEM;
 
-	memcpy(&sgid_tbl->tbl[free_idx], gid, sizeof(*gid));
+	memcpy(&sgid_tbl->tbl[free_idx], gid_raw, sizeof(*gid_raw));
 	sgid_tbl->count++;
 	xsc_ib_dbg(dev, "Add gid to index:%u, count:%u, max:%u\n", free_idx, sgid_tbl->count,
-			sgid_tbl->max);
+		   sgid_tbl->max);
 
 	return 0;
 }
+
 static int xsc_ib_query_pkey(struct ib_device *ibdev, u8 port, u16 index,
-				u16 *pkey)
+			     u16 *pkey)
 {
 	*pkey = 0xffff;
 	return 0;
@@ -421,7 +351,7 @@ struct xsc_reg_node_desc {
 };
 
 static int xsc_ib_modify_device(struct ib_device *ibdev, int mask,
-				 struct ib_device_modify *props)
+				struct ib_device_modify *props)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	struct xsc_reg_node_desc in;
@@ -436,12 +366,13 @@ static int xsc_ib_modify_device(struct ib_device *ibdev, int mask,
 	if (!(mask & IB_DEVICE_MODIFY_NODE_DESC))
 		return 0;
 
-	/* If possible, pass node desc to FW, so it can generate
+	/*
+	 * If possible, pass node desc to FW, so it can generate
 	 * a 144 trap.  If cmd fails, just ignore.
 	 */
 	memcpy(&in, props->node_desc, 64);
 	err = xsc_core_access_reg(dev->xdev, &in, sizeof(in), &out,
-				   sizeof(out), XSC_REG_NODE_DESC, 0, 1);
+				  sizeof(out), XSC_REG_NODE_DESC, 0, 1);
 	if (err)
 		return err;
 
@@ -449,8 +380,9 @@ static int xsc_ib_modify_device(struct ib_device *ibdev, int mask,
 
 	return err;
 }
+
 static int xsc_ib_modify_port(struct ib_device *ibdev, u8 port, int mask,
-				struct ib_port_modify *props)
+			      struct ib_port_modify *props)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	struct ib_port_attr attr;
@@ -483,8 +415,6 @@ xsc_ib_alloc_ucontext_def()
 	struct xsc_ib_alloc_ucontext_resp resp;
 	struct xsc_ib_ucontext *context;
 	int err;
-
-	pr_err("[%s:%d]", __func__, __LINE__);
 
 	if (!dev->ib_active)
 		return RET_VALUE(-EAGAIN);
@@ -520,11 +450,12 @@ xsc_ib_alloc_ucontext_def()
 	return 0;
 
 out_ctx:
-	return err;
+	return RET_VALUE(err);
 }
 
 xsc_ib_dealloc_ucontext_def()
 {
+	return;
 }
 
 static int xsc_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vma)
@@ -582,7 +513,7 @@ xsc_ib_alloc_pd_def()
 		resp.pdn = pd->pdn;
 		if (ib_copy_to_udata(udata, &resp, sizeof(resp))) {
 			xsc_core_dealloc_pd(to_mdev(ibdev)->xdev, pd->pdn);
-			return -EFAULT;
+			return RET_VALUE(-EFAULT);
 		}
 	} else {
 		pd->pa_lkey = 0;
@@ -602,7 +533,7 @@ xsc_ib_dealloc_pd_def()
 }
 
 static int xsc_port_immutable(struct ib_device *ibdev, u8 port_num,
-				struct ib_port_immutable *immutable)
+			      struct ib_port_immutable *immutable)
 {
 	struct ib_port_attr attr;
 	int err;
@@ -669,7 +600,7 @@ static int init_node_data(struct xsc_ib_dev *dev)
 }
 
 void xsc_core_event(struct xsc_core_device *xdev, enum xsc_dev_event event,
-		     unsigned long param)
+		    unsigned long param)
 {
 	struct xsc_priv *priv = &xdev->priv;
 	struct xsc_device_context *dev_ctx;
@@ -689,7 +620,7 @@ void xsc_core_event(struct xsc_core_device *xdev, enum xsc_dev_event event,
 }
 
 static void xsc_ib_event(struct xsc_core_device *dev, void *context,
-	enum xsc_dev_event event, unsigned long data)
+			 enum xsc_dev_event event, unsigned long data)
 {
 	struct xsc_ib_dev *ibdev = (struct xsc_ib_dev *)context;
 	struct ib_event ibev;
@@ -775,7 +706,7 @@ static int get_port_caps(struct xsc_ib_dev *dev)
 		dev->xdev->caps.port[port - 1].pkey_table_len = dprops->max_pkeys;
 		dev->xdev->caps.port[port - 1].gid_table_len = pprops->gid_tbl_len;
 		xsc_ib_dbg(dev, "pkey_table_len %d, gid_table_len %d\n",
-				dprops->max_pkeys, pprops->gid_tbl_len);
+			   dprops->max_pkeys, pprops->gid_tbl_len);
 	}
 
 out:
@@ -793,7 +724,7 @@ static int xsc_create_dev_res(struct xsc_ib_res *ib_res)
 	ib_res->sgid_tbl.max = dev->xdev->caps.port[0].gid_table_len;
 
 	ib_res->sgid_tbl.tbl = kcalloc(ib_res->sgid_tbl.max, sizeof(struct xsc_gid),
-			GFP_KERNEL);
+				       GFP_KERNEL);
 
 	if (!ib_res->sgid_tbl.tbl)
 		return -ENOMEM;
@@ -811,7 +742,6 @@ static int populate_specs_root(struct xsc_ib_dev *dev)
 	const struct uverbs_object_tree_def **trees =
 		(const struct uverbs_object_tree_def **)dev->driver_trees;
 	size_t num_trees = 0;
-
 	trees[num_trees++] = xsc_ib_get_devx_tree();
 
 	WARN_ON(num_trees >= ARRAY_SIZE(dev->driver_trees));
@@ -842,7 +772,6 @@ static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 	dev->ib_dev.ops.uverbs_abi_ver	= XSC_IB_UVERBS_ABI_VERSION;
 	dev->ib_dev.ops.driver_id = RDMA_DRIVER_XSC5;
 	dev->ib_dev.ops.uverbs_no_driver_id_binding = 1;
-
 	dev->ib_dev.ops.query_device	= xsc_ib_query_device;
 	dev->ib_dev.ops.query_port	= xsc_ib_query_port;
 	dev->ib_dev.ops.query_gid	= xsc_ib_query_gid;
@@ -897,23 +826,12 @@ static int init_one(struct xsc_core_device *xdev,
 
 	printk_once(KERN_INFO "%s", xsc_version);
 
-	pr_err("[%s:%d]", __func__, __LINE__);
-
 	dev = (struct xsc_ib_dev *)ib_alloc_device(xsc_ib_dev, ib_dev);
 	if (!dev)
 		return -ENOMEM;
 
-	pr_err("[%s:%d]", __func__, __LINE__);
-
 	dev->xdev = xdev;
 	xdev->event = xsc_core_event;
-	_xsc_get_netdev(dev);
-//	if (prof_sel >= ARRAY_SIZE(profile)) {
-//		pr_warn("selected pofile out of range, selceting default\n");
-//		prof_sel = 0;
-//	}
-//	mdev->profile = &profile[prof_sel];
-
 	_xsc_get_netdev(dev);
 	xsc_get_sys_image_guid(dev->netdev->dev_addr, (u8 *)&sys_image_guid);
 	err = get_port_caps(dev);
@@ -932,7 +850,9 @@ static int init_one(struct xsc_core_device *xdev,
 	else
 		dev->num_comp_vectors = xdev->dev_res->eq_table.num_comp_vectors;
 
-	pr_err("[%s:%d]", __func__, __LINE__);
+//	dev->ib_dev.dev.dma_ops = &dma_virt_ops;
+//	dma_coerce_mask_and_coherent(&dev->ib_dev.dev,
+//				     dma_get_required_mask(&dev->ib_dev.dev));
 
 	strlcpy(dev->ib_dev.name, "xscale_%d", IB_DEVICE_NAME_MAX);
 	dev->ib_dev.node_type		= RDMA_NODE_IB_CA;
@@ -988,7 +908,6 @@ static int init_one(struct xsc_core_device *xdev,
 	if (err)
 		goto err_free;
 
-	pr_err("[%s:%d]", __func__, __LINE__);
 	crc_table_init(dev);
 
 	populate_specs_root(dev);
@@ -997,7 +916,6 @@ static int init_one(struct xsc_core_device *xdev,
 	if (ib_register_device(&dev->ib_dev, dev->ib_dev.name, dev->xdev->device))
 		goto err_rsrc;
 
-	pr_err("[%s:%d]", __func__, __LINE__);
 	dev->ib_active = true;
 	*m_ibdev = dev;
 
@@ -1007,6 +925,10 @@ static int init_one(struct xsc_core_device *xdev,
 	xsc_priv_dev_init(&dev->ib_dev, xdev);
 
 	xsc_rtt_sysfs_init(&dev->ib_dev, xdev);
+
+	err = xsc_ib_sysfs_init(&dev->ib_dev, xdev);
+	if (err)
+		pr_err("fail to init ib sysfs\n");
 
 	return 0;
 
@@ -1024,6 +946,7 @@ static void remove_one(struct xsc_core_device *xdev, void *intf_ctx)
 	struct xsc_ib_dev *dev = (struct xsc_ib_dev *)intf_ctx;
 
 	xsc_rtt_sysfs_fini(xdev);
+	xsc_ib_sysfs_fini(&dev->ib_dev, xdev);
 	xsc_priv_dev_fini(&dev->ib_dev, xdev);
 	xsc_counters_fini(&dev->ib_dev, xdev);
 	ib_unregister_device(&dev->ib_dev);
@@ -1035,27 +958,23 @@ static void *xsc_add(struct xsc_core_device *xpdev)
 	struct xsc_ib_dev *m_ibdev = NULL;
 	int ret = -1;
 
-	pr_err("===> %s: enter\n", __func__);
-#ifdef USE_VIRTIO
-	pr_err("pcidev:%p bar0:%x\n", xpdev, xpdev->bar0);
-#endif /* USE_VIRTIO */
-	pr_err("enter virt_rdma_probe\n");
+	pr_err("add rdma driver\n");
 
 	ret = init_one(xpdev, &m_ibdev);
 	if (ret) {
-		pr_err("%s fail, ret = %d\n", __func__, ret);
+		pr_err("xsc ib dev add fail, ret = %d\n", ret);
 		return NULL;
 	}
 
-	xpdev->rdma_ready = true;
+	xpdev->rdma_ready = 1;
 	return m_ibdev;
 }
 
 static void xsc_remove(struct xsc_core_device *xpdev, void *context)
 {
-	pr_err("<=== %s: enter\n", __func__);
+	pr_err("remove rdma driver\n");
 	remove_one(xpdev, context);
-	xpdev->rdma_ready = false;
+	xpdev->rdma_ready = 0;
 }
 
 static struct xsc_interface xsc_interface = {

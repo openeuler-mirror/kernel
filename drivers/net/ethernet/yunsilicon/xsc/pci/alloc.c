@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -11,7 +10,7 @@
 #include <linux/bitmap.h>
 #include <linux/dma-mapping.h>
 #include <linux/vmalloc.h>
-#include <common/driver.h>
+#include "common/driver.h"
 
 /* Handling for queue buffers -- we allocate a bunch of memory and
  * register it in a memory region at HCA virtual address 0.  If the
@@ -20,7 +19,7 @@
  */
 
 int xsc_buf_alloc(struct xsc_core_device *xdev, int size, int max_direct,
-		   struct xsc_buf *buf)
+		  struct xsc_buf *buf)
 {
 	dma_addr_t t;
 
@@ -30,7 +29,7 @@ int xsc_buf_alloc(struct xsc_core_device *xdev, int size, int max_direct,
 		buf->npages       = 1;
 		buf->page_shift   = get_order(size) + PAGE_SHIFT;
 		buf->direct.buf   = dma_alloc_coherent(&xdev->pdev->dev,
-							size, &t, GFP_KERNEL | __GFP_ZERO);
+						       size, &t, GFP_KERNEL | __GFP_ZERO);
 		if (!buf->direct.buf)
 			return -ENOMEM;
 
@@ -55,7 +54,7 @@ int xsc_buf_alloc(struct xsc_core_device *xdev, int size, int max_direct,
 		for (i = 0; i < buf->nbufs; i++) {
 			buf->page_list[i].buf =
 				dma_alloc_coherent(&xdev->pdev->dev, PAGE_SIZE,
-						    &t, GFP_KERNEL | __GFP_ZERO);
+						   &t, GFP_KERNEL | __GFP_ZERO);
 			if (!buf->page_list[i].buf)
 				goto err_free;
 
@@ -90,10 +89,10 @@ void xsc_buf_free(struct xsc_core_device *xdev, struct xsc_buf *buf)
 {
 	int i;
 
-	if (buf->nbufs == 1)
+	if (buf->nbufs == 1) {
 		dma_free_coherent(&xdev->pdev->dev, buf->size, buf->direct.buf,
 				  buf->direct.map);
-	else {
+	} else {
 		if (BITS_PER_LONG == 64 && buf->direct.buf)
 			vunmap(buf->direct.buf);
 
@@ -140,8 +139,8 @@ void xsc_fill_page_frag_array(struct xsc_frag_buf *buf, __be64 *pas, int npages)
 EXPORT_SYMBOL_GPL(xsc_fill_page_frag_array);
 
 static void *xsc_dma_zalloc_coherent_node(struct xsc_core_device *xdev,
-					   size_t size, dma_addr_t *dma_handle,
-					   int node)
+					  size_t size, dma_addr_t *dma_handle,
+					  int node)
 {
 	struct xsc_dev_resource *dev_res = xdev->dev_res;
 	struct device *device = &xdev->pdev->dev;
@@ -167,7 +166,7 @@ static void *xsc_dma_zalloc_coherent_node(struct xsc_core_device *xdev,
 }
 
 int xsc_frag_buf_alloc_node(struct xsc_core_device *xdev, int size,
-			     struct xsc_frag_buf *buf, int node)
+			    struct xsc_frag_buf *buf, int node)
 {
 	int i;
 
@@ -184,14 +183,14 @@ int xsc_frag_buf_alloc_node(struct xsc_core_device *xdev, int size,
 		int frag_sz = min_t(int, size, PAGE_SIZE);
 
 		frag->buf = xsc_dma_zalloc_coherent_node(xdev, frag_sz,
-							  &frag->map, node);
+							 &frag->map, node);
 		if (!frag->buf)
 			goto err_free_buf;
 		if (frag->map & ((1 << buf->page_shift) - 1)) {
 			dma_free_coherent(&xdev->pdev->dev, frag_sz,
 					  buf->frags[i].buf, buf->frags[i].map);
 			xsc_core_warn(xdev, "unexpected map alignment: %pad, page_shift=%d\n",
-				       &frag->map, buf->page_shift);
+				      &frag->map, buf->page_shift);
 			goto err_free_buf;
 		}
 		size -= frag_sz;
@@ -226,7 +225,7 @@ void xsc_frag_buf_free(struct xsc_core_device *xdev, struct xsc_frag_buf *buf)
 EXPORT_SYMBOL_GPL(xsc_frag_buf_free);
 
 static struct xsc_db_pgdir *xsc_alloc_db_pgdir(struct xsc_core_device *xdev,
-						 int node)
+					       int node)
 {
 	u32 db_per_page = PAGE_SIZE / cache_line_size();
 	struct xsc_db_pgdir *pgdir;
@@ -244,7 +243,7 @@ static struct xsc_db_pgdir *xsc_alloc_db_pgdir(struct xsc_core_device *xdev,
 	bitmap_fill(pgdir->bitmap, db_per_page);
 
 	pgdir->db_page = xsc_dma_zalloc_coherent_node(xdev, PAGE_SIZE,
-						       &pgdir->db_dma, node);
+						      &pgdir->db_dma, node);
 	if (!pgdir->db_page) {
 		bitmap_free(pgdir->bitmap);
 		kfree(pgdir);
@@ -255,7 +254,7 @@ static struct xsc_db_pgdir *xsc_alloc_db_pgdir(struct xsc_core_device *xdev,
 }
 
 static int xsc_alloc_db_from_pgdir(struct xsc_db_pgdir *pgdir,
-				    struct xsc_db *db)
+				   struct xsc_db *db)
 {
 	u32 db_per_page = PAGE_SIZE / cache_line_size();
 	int offset;
@@ -333,4 +332,3 @@ void xsc_db_free(struct xsc_core_device *xdev, struct xsc_db *db)
 	mutex_unlock(&xdev->dev_res->pgdir_mutex);
 }
 EXPORT_SYMBOL_GPL(xsc_db_free);
-

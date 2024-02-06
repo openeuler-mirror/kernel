@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
-#include <common/xsc_core.h>
+#include "common/xsc_core.h"
 #include "devlink.h"
 #ifdef CONFIG_XSC_ESWITCH
 #include "eswitch.h"
@@ -30,8 +29,11 @@ void xsc_devlink_free(struct devlink *devlink)
 int xsc_devlink_register(struct devlink *devlink, struct device *dev)
 {
 	int err = 0;
-
+#ifdef HAVE_DEVLINK_ALLOC_DEV_PARM
+	err = devlink_register(devlink);
+#else
 	err = devlink_register(devlink, dev);
+#endif
 	return err;
 }
 

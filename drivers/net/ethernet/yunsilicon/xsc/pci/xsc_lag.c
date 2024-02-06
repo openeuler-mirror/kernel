@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/netdevice.h>
-#include <net/ip_fib.h>
-#include <common/xsc_core.h>
-#include <common/driver.h>
+#include "common/xsc_core.h"
+#include "common/driver.h"
 #include <net/bonding.h>
-#include <common/xsc_lag.h>
+#include "common/xsc_lag.h"
 
-#include <common/xsc_hsi.h>
-#include <common/xsc_ioctl.h>
-#include <common/xsc_cmd.h>
+#include "common/xsc_hsi.h"
+#include "common/xsc_ioctl.h"
+#include "common/xsc_cmd.h"
 
 #include <linux/if_bonding.h>
 #include <net/neighbour.h>
@@ -79,45 +77,54 @@ int xsc_cmd_create_lag(struct xsc_lag *ldev, u8 flags)
 	bool mp_lag = flags & XSC_LAG_FLAG_MULTIPATH;
 	bool roce_lag = flags & XSC_LAG_FLAG_ROCE;
 	bool sriov_lag = flags & XSC_LAG_FLAG_SRIOV;
+	bool kernel_bond = flags & XSC_BOND_FLAG_KERNEL;
 
 	u16 lag_id = XSC_LAG_PORT_START;
 	u8 lag_num = XSC_LAG_NUM_MAX;
 
-	if (!(flags & XSC_LAG_MODE_FLAGS))
+	if (!(flags & XSC_LAG_MODE_FLAGS) && !kernel_bond)
 		return -EINVAL;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_CREATE);
 
-	in.req.mp_lag = mp_lag;
-	in.req.roce_lag = roce_lag;
-	in.req.lag_id = cpu_to_be16(lag_id);
-	in.req.lag_num = lag_num;
-	in.req.lag_start = cpu_to_be16(lag_id);
-	in.req.lag_sel_mode = mp_lag ? XSC_LAG_HASH_L34 : xsc_lag_hashtype_convert(xdev0, ldev);
-	in.req.remap_port1 = remap_port1;
-	in.req.remap_port2 = remap_port2;
+	if (!kernel_bond) {
+		in.req.mp_lag = mp_lag;
+		in.req.roce_lag = roce_lag;
+		in.req.lag_id = cpu_to_be16(lag_id);
+		in.req.lag_num = lag_num;
+		in.req.lag_start = cpu_to_be16(lag_id);
+		in.req.lag_sel_mode =
+			mp_lag ? XSC_LAG_HASH_L34 : xsc_lag_hashtype_convert(xdev0, ldev);
+		in.req.remap_port1 = remap_port1;
+		in.req.remap_port2 = remap_port2;
 
-	xsc_core_info(xdev0, "modify lag: lag_id = %d, mp_lag=%d, roce_lag=%d, sriov_lag=%d, lag_sel_mode = %d\n",
-				lag_id, mp_lag, roce_lag, sriov_lag, in.req.lag_sel_mode);
+		xsc_core_info(xdev0, "create lag: lag_id = %d, mp_lag=%d, roce_lag=%d, sriov_lag=%d, lag_sel_mode = %d\n",
+			      lag_id, mp_lag, roce_lag, sriov_lag, in.req.lag_sel_mode);
+	} else {
+		in.req.kernel_bond = true;
+		xsc_core_info(xdev0, "create kernel bond\n");
+	}
 
 	memcpy(info_mac0->netdev_addr, netdev0->dev_addr, ETH_ALEN);
 	memcpy(info_mac1->netdev_addr, netdev1->dev_addr, ETH_ALEN);
 	memcpy(info_mac0->gw_dmac, tracker->gw_dmac0, ETH_ALEN);
 	memcpy(info_mac1->gw_dmac, tracker->gw_dmac1, ETH_ALEN);
-	info_mac0->info_mac.mac_logic_port = xdev0->mac_logic_port;
-	info_mac0->info_mac.logic_port	= xdev0->logic_port;
-	info_mac0->info_mac.glb_func_id	= xdev0->glb_func_id;
-	info_mac1->info_mac.mac_logic_port = xdev1->mac_logic_port;
-	info_mac1->info_mac.logic_port = xdev1->logic_port;
-	info_mac1->info_mac.glb_func_id	= xdev1->glb_func_id;
+	info_mac0->info_mac.mac_logic_port = cpu_to_be16(xdev0->mac_logic_port);
+	info_mac0->info_mac.logic_port	= cpu_to_be16(xdev0->logic_port);
+	info_mac0->info_mac.glb_func_id	= cpu_to_be16(xdev0->glb_func_id);
+	info_mac1->info_mac.mac_logic_port = cpu_to_be16(xdev1->mac_logic_port);
+	info_mac1->info_mac.logic_port = cpu_to_be16(xdev1->logic_port);
+	info_mac1->info_mac.glb_func_id	= cpu_to_be16(xdev1->glb_func_id);
 
 	ret = xsc_cmd_exec(xdev0, &in, sizeof(in), &out, sizeof(out));
-	if (ret) {
-		xsc_core_err(xdev0, "%s:error\n", __func__);
-		return ret;
+	if (ret || out.hdr.status) {
+		xsc_core_err(xdev0, "Failed to create lag, err=%d out.status=%u\n",
+			     ret, out.hdr.status);
+		return -ENOEXEC;
 	}
 
-	ldev->lag_id = lag_id;
+	if (!kernel_bond)
+		ldev->lag_id = lag_id;
 
 	return ret;
 }
@@ -147,42 +154,50 @@ int xsc_cmd_modify_lag(struct xsc_lag *ldev)
 	in.req.lag_sel_mode = mp_lag ? XSC_LAG_HASH_L34 : xsc_lag_hashtype_convert(xdev0, ldev);
 
 	xsc_core_info(xdev0, "modify lag: lag_id = %d, mp_lag=%d, roce_lag=%d, sriov_lag=%d, lag_sel_mode = %d\n",
-				lag_id, mp_lag, roce_lag, sriov_lag, in.req.lag_sel_mode);
+		      lag_id, mp_lag, roce_lag, sriov_lag, in.req.lag_sel_mode);
 
 	ret = xsc_cmd_exec(xdev0, &in, sizeof(in), &out, sizeof(out));
-	if (ret) {
-		xsc_core_err(xdev0, "%s:error\n", __func__);
-		return ret;
+	if (ret || out.hdr.status) {
+		xsc_core_err(xdev0, "Failed to modify lag, err=%d out.status=%u\n",
+			     ret, out.hdr.status);
+		return -ENOEXEC;
 	}
 
 	return ret;
 }
 
-int xsc_cmd_destroy_lag(struct xsc_lag *ldev)
+int xsc_cmd_destroy_lag(struct xsc_lag *ldev, u8 bond_flags)
 {
 	struct xsc_core_device *xdev0 = ldev->pf[0].xdev;
 	u8 flags = ldev->flags;
 	int ret = -1;
+	bool kernel_bond = bond_flags & XSC_BOND_FLAG_KERNEL;
 
 	struct xsc_destroy_lag_mbox_in in = {};
 	struct xsc_destroy_lag_mbox_out out = {};
 
-	if (!(flags & XSC_LAG_MODE_FLAGS))
+	if (!(flags & XSC_LAG_MODE_FLAGS) && !kernel_bond)
 		return -EINVAL;
-
-	xsc_core_info(xdev0, "destroy lag: lag_id = %d\n", ldev->lag_id);
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_DESTROY);
 
-	in.req.lag_id = ldev->lag_id;
-
-	ret = xsc_cmd_exec(xdev0, &in, sizeof(in), &out, sizeof(out));
-	if (ret) {
-		xsc_core_err(xdev0, "%s:error\n", __func__);
-		return ret;
+	if (!kernel_bond) {
+		in.req.lag_id = ldev->lag_id;
+		xsc_core_info(xdev0, "destroy lag: lag_id = %d\n", ldev->lag_id);
+	} else {
+		in.req.kernel_bond = true;
+		xsc_core_info(xdev0, "destroy kernel bond\n");
 	}
 
-	ldev->lag_id = 0xff;
+	ret = xsc_cmd_exec(xdev0, &in, sizeof(in), &out, sizeof(out));
+	if (ret || out.hdr.status) {
+		xsc_core_err(xdev0, "Failed to destroy lag, err=%d out.status=%u\n",
+			     ret, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	if (!kernel_bond)
+		ldev->lag_id = 0xff;
 
 	return ret;
 }
@@ -209,8 +224,7 @@ static int xsc_lag_set_qos(struct xsc_core_device *xdev, u16 lag_id, u8 member_b
 	req->lag_id = cpu_to_be16(lag_id);
 	req->member_bitmap = member_bitmap;
 	req->lag_del = lag_del;
-	req->pcie_no = xsc_get_pcie_no();
-	req->esw_mode = xdev->priv.eswitch->mode;
+	req->pcie_no = g_xsc_pcie_no;
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_SET_QOS);
 
 	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
@@ -241,22 +255,22 @@ static bool xsc_lag_check_prereq(struct xsc_lag *ldev)
 }
 
 static void xsc_infer_tx_affinity_mapping(struct xsc_core_device *xdev0, struct xsc_lag *ldev,
-		u8 *port1, u8 *port2)
+					  u8 *port1, u8 *port2)
 {
 	struct lag_tracker *tracker = &ldev->tracker;
 	*port1 = MAC_INVALID;
 	*port2 = MAC_INVALID;
 
 	if (tracker->netdev_state[0].tx_enabled &&
-		tracker->netdev_state[0].link_up)
+	    tracker->netdev_state[0].link_up)
 		*port1 = MAC_0_LOGIC;
 
 	if (tracker->netdev_state[1].tx_enabled &&
-		tracker->netdev_state[1].link_up)
+	    tracker->netdev_state[1].link_up)
 		*port2 = MAC_1_LOGIC;
 
 	xsc_core_info(xdev0, "tx_affinity_mapping: port1 = %d, port2 = %d\n",
-			*port1, *port2);
+		      *port1, *port2);
 }
 
 static int xsc_create_lag(struct xsc_lag *ldev, u8 flags)
@@ -265,10 +279,10 @@ static int xsc_create_lag(struct xsc_lag *ldev, u8 flags)
 	int err;
 
 	xsc_infer_tx_affinity_mapping(xdev0, ldev, &ldev->v2p_map[0],
-		&ldev->v2p_map[1]);
+				      &ldev->v2p_map[1]);
 
 	xsc_core_info(xdev0, "xsc create lag 1:%d port 2:%d",
-			ldev->v2p_map[0], ldev->v2p_map[1]);
+		      ldev->v2p_map[0], ldev->v2p_map[1]);
 
 	err = xsc_cmd_create_lag(ldev, flags);
 	if (err)
@@ -304,16 +318,16 @@ void xsc_modify_lag(struct xsc_lag *ldev)
 	int err;
 
 	xsc_infer_tx_affinity_mapping(xdev0, ldev, &v2p_port1,
-		&v2p_port2);
+				      &v2p_port2);
 
 	if (v2p_port1 != ldev->v2p_map[0] ||
-		v2p_port2 != ldev->v2p_map[1] ||
-		tracker->hash_type != tracker->old_hash_type) {
+	    v2p_port2 != ldev->v2p_map[1] ||
+	    tracker->hash_type != tracker->old_hash_type) {
 		ldev->v2p_map[0] = v2p_port1;
 		ldev->v2p_map[1] = v2p_port2;
 
 	xsc_core_info(xdev0, "modify lag map port 1:%d port 2:%d",
-			ldev->v2p_map[0], ldev->v2p_map[1]);
+		      ldev->v2p_map[0], ldev->v2p_map[1]);
 
 	err = xsc_cmd_modify_lag(ldev);
 		if (err) {
@@ -334,7 +348,7 @@ static void xsc_deactivate_lag(struct xsc_lag *ldev)
 	if (xsc_lag_set_qos(xdev0, ldev->lag_id, 0, true))
 		xsc_core_err(xdev0, "failed to set QoS for LAG %u\n", ldev->lag_id);
 
-	if (xsc_cmd_destroy_lag(ldev))
+	if (xsc_cmd_destroy_lag(ldev, XSC_BOND_FLAG_LAG))
 		xsc_core_err(xdev0, "Failed to deactivate LAG; driver restart required, Make sure all VFs are unbound prior to LAG activation or deactivation\n");
 
 	ldev->flags &= ~XSC_LAG_MODE_FLAGS;
@@ -346,8 +360,7 @@ static void xsc_lag_remove_ib_devices(struct xsc_lag *ldev)
 
 	for (i = 0; i < XSC_MAX_PORTS; i++)
 		if (ldev->pf[i].xdev)
-			xsc_remove_dev_by_protocol(ldev->pf[i].xdev,
-				XSC_INTERFACE_PROTOCOL_IB);
+			xsc_remove_dev_by_protocol(ldev->pf[i].xdev, XSC_INTERFACE_PROTOCOL_IB);
 }
 
 static void xsc_lag_add_ib_devices(struct xsc_lag *ldev)
@@ -356,8 +369,7 @@ static void xsc_lag_add_ib_devices(struct xsc_lag *ldev)
 
 	for (i = 0; i < XSC_MAX_PORTS; i++)
 		if (ldev->pf[i].xdev)
-			xsc_add_dev_by_protocol(ldev->pf[i].xdev,
-				XSC_INTERFACE_PROTOCOL_IB);
+			xsc_add_dev_by_protocol(ldev->pf[i].xdev, XSC_INTERFACE_PROTOCOL_IB);
 }
 
 static void xsc_do_bond(struct xsc_lag *ldev)
@@ -365,19 +377,35 @@ static void xsc_do_bond(struct xsc_lag *ldev)
 	struct xsc_core_device *xdev0 = ldev->pf[0].xdev;
 	struct xsc_core_device *xdev1 = ldev->pf[1].xdev;
 	struct lag_tracker tracker;
-	bool do_bond;
+	bool do_lag;
 	bool roce_lag;
+	int ret = 0;
 
 	if (!xdev0 || !xdev1)
 		return;
-
-	roce_lag = xsc_is_roce_lag_allowed(ldev);
 
 	mutex_lock(&lag_mutex);
 	tracker = ldev->tracker;
 	mutex_unlock(&lag_mutex);
 
-	do_bond = tracker.is_bonded &&
+	if (tracker.is_kernel_bonded_change) {
+		if (tracker.is_kernel_bonded && !__xsc_bond_is_active(ldev)) {
+			ret = xsc_cmd_create_lag(ldev, XSC_BOND_FLAG_KERNEL);
+			ldev->flags |= XSC_BOND_FLAG_KERNEL;
+
+			xsc_core_info(xdev0, "Create kernel bond, ret = %d\n", ret);
+		} else if (!tracker.is_kernel_bonded && __xsc_bond_is_active(ldev)) {
+			ret = xsc_cmd_destroy_lag(ldev, XSC_BOND_FLAG_KERNEL);
+			ldev->flags &= ~XSC_BOND_FLAG_KERNEL;
+
+			xsc_core_info(xdev0, "Destroy kernel bond, ret = %d\n", ret);
+		}
+		tracker.is_kernel_bonded_change = false;
+
+		return;
+	}
+
+	do_lag = tracker.is_hw_bonded &&
 		!tracker.lag_disable &&
 		ldev->pf[0].netdev &&
 		ldev->pf[1].netdev &&
@@ -385,20 +413,30 @@ static void xsc_do_bond(struct xsc_lag *ldev)
 		ldev->pf[1].netdev == tracker.ndev[1] &&
 		xsc_lag_check_prereq(ldev);
 
-	xsc_core_info(xdev0, "do_bond = %d, is_bonded = %d, lag_disable = %d, lag_check = %d\n",
-		do_bond, tracker.is_bonded, tracker.lag_disable, xsc_lag_check_prereq(ldev));
+	roce_lag = xsc_is_roce_lag_allowed(ldev);
 
-	if (do_bond && !__xsc_lag_is_active(ldev)) {
+	if (roce_lag &&
+	    (!radix_tree_empty(&xdev0->priv_device.bdf_tree) ||
+	     !radix_tree_empty(&xdev1->priv_device.bdf_tree))) {
+		xsc_core_err(xdev0, "Failed to create roce lag because the ib device is open\n");
+		return;
+	}
+
+	xsc_core_info(xdev0, "do_lag = %d, is_hw_bonded = %d, lag_disable = %d, lag_check = %d\n",
+		      do_lag, tracker.is_hw_bonded, tracker.lag_disable,
+		      xsc_lag_check_prereq(ldev));
+
+	if (do_lag && !__xsc_lag_is_active(ldev)) {
 		if (roce_lag) {
 			xsc_lag_remove_ib_devices(ldev);
-			xsc_activate_lag(ldev, XSC_LAG_FLAG_ROCE);
+			xsc_activate_lag(ldev, (XSC_LAG_FLAG_ROCE));
 			xsc_add_dev_by_protocol(xdev0, XSC_INTERFACE_PROTOCOL_IB);
 		} else {
 			xsc_activate_lag(ldev, XSC_LAG_FLAG_SRIOV);
 		}
-	} else if (do_bond && __xsc_lag_is_active(ldev)) {
+	} else if (do_lag && __xsc_lag_is_active(ldev)) {
 		xsc_modify_lag(ldev);
-	} else if (!do_bond && __xsc_lag_is_active(ldev)) {
+	} else if (!do_lag && __xsc_lag_is_active(ldev)) {
 		if (roce_lag)
 			xsc_remove_dev_by_protocol(xdev0, XSC_INTERFACE_PROTOCOL_IB);
 
@@ -413,13 +451,13 @@ static void xsc_do_bond_work(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = to_delayed_work(work);
 	struct xsc_lag *ldev = container_of(delayed_work, struct xsc_lag,
-					     bond_work);
+					    bond_work);
 	int status;
 
 	status = mutex_trylock(&xsc_intf_mutex);
 	if (!status) {
 		/* 1 sec delay. */
-		queue_delayed_work(ldev->wq, &ldev->bond_work, HZ/2);
+		queue_delayed_work(ldev->wq, &ldev->bond_work, HZ / 2);
 		return;
 	}
 
@@ -448,7 +486,7 @@ static struct xsc_lag *xsc_lag_dev_alloc(void)
 }
 
 static void xsc_lag_dev_add_xdev(struct xsc_lag *ldev,
-				struct xsc_core_device *xdev)
+				 struct xsc_core_device *xdev)
 {
 	unsigned int fn = PCI_FUNC(xdev->pdev->devfn) % XSC_MAX_PORTS;
 
@@ -462,7 +500,7 @@ static void xsc_lag_dev_add_xdev(struct xsc_lag *ldev,
 }
 
 int xsc_lag_dev_get_netdev_idx(struct xsc_lag *ldev,
-				struct net_device *ndev)
+			       struct net_device *ndev)
 {
 	int i;
 
@@ -492,12 +530,12 @@ enum netdev_lag_hash bond_lag_hash_type(struct bonding *bond)
 }
 
 static bool xsc_lag_eval_bonding_conds(struct xsc_lag *ldev,
-					struct lag_tracker *tracker,
-					struct net_device *upper)
+				       struct lag_tracker *tracker,
+				       struct net_device *upper)
 {
 	int bond_status = 0, num_slaves = 0, idx;
 	struct net_device *ndev_tmp;
-	bool is_bonded;
+	bool is_hw_bonded = false, is_kernel_bonded = false;
 	struct xsc_core_device *xdev0 = ldev->pf[0].xdev;
 
 	rcu_read_lock();
@@ -511,13 +549,13 @@ static bool xsc_lag_eval_bonding_conds(struct xsc_lag *ldev,
 	rcu_read_unlock();
 
 	xsc_core_info(xdev0, "num_slaves = %d, bond_status = %d\n",
-			num_slaves, bond_status);
+		      num_slaves, bond_status);
 	/* None of this lagdev's netdevs are slaves of this master. */
 
-	if (tracker->is_bonded &&
-		(!tracker->netdev_state[0].link_up || !tracker->netdev_state[0].tx_enabled) &&
-		(!tracker->netdev_state[1].link_up || !tracker->netdev_state[1].tx_enabled)) {
-		tracker->is_bonded = false;
+	if (tracker->is_hw_bonded &&
+	    (!tracker->netdev_state[0].link_up || !tracker->netdev_state[0].tx_enabled) &&
+	    (!tracker->netdev_state[1].link_up || !tracker->netdev_state[1].tx_enabled)) {
+		tracker->is_hw_bonded = false;
 		return true;
 	}
 
@@ -529,16 +567,27 @@ static bool xsc_lag_eval_bonding_conds(struct xsc_lag *ldev,
 	 * of the same lag master, and only them.
 	 * Lag mode must be activebackup or hash.
 	 */
-	if (!tracker->is_bonded)
-		is_bonded = (num_slaves == XSC_MAX_PORTS) &&
-		(bond_status == 0x3) &&
-		((tracker->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) ||
-		(tracker->tx_type == NETDEV_LAG_TX_TYPE_HASH));
+	if (!tracker->is_kernel_bonded && !tracker->is_hw_bonded)
+		is_kernel_bonded = (num_slaves == XSC_MAX_PORTS) &&
+			(bond_status == 0x3);
 
-	xsc_core_info(xdev0, "is_bonded = %d\n", is_bonded);
+	if (!tracker->is_hw_bonded)
+		is_hw_bonded = (num_slaves == XSC_MAX_PORTS) &&
+			(bond_status == 0x3) &&
+			((tracker->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) ||
+			(tracker->tx_type == NETDEV_LAG_TX_TYPE_HASH));
 
-	if (tracker->is_bonded != is_bonded) {
-		tracker->is_bonded = is_bonded;
+	xsc_core_info(xdev0, "is_hw_bonded = %d, is_kernel_bonded = %d\n", is_hw_bonded,
+		      is_kernel_bonded);
+
+	if (tracker->is_hw_bonded != is_hw_bonded) {
+		tracker->is_hw_bonded = is_hw_bonded;
+		return true;
+	}
+
+	if (tracker->is_kernel_bonded != is_kernel_bonded) {
+		tracker->is_kernel_bonded = is_kernel_bonded;
+		tracker->is_kernel_bonded_change = true;
 		return true;
 	}
 
@@ -546,9 +595,9 @@ static bool xsc_lag_eval_bonding_conds(struct xsc_lag *ldev,
 }
 
 static bool xsc_handle_changeupper_event(struct xsc_lag *ldev,
-					struct lag_tracker *tracker,
-					struct net_device *ndev,
-					struct netdev_notifier_changeupper_info *info)
+					 struct lag_tracker *tracker,
+					 struct net_device *ndev,
+					 struct netdev_notifier_changeupper_info *info)
 {
 	enum netdev_lag_tx_type tx_type = NETDEV_LAG_TX_TYPE_UNKNOWN;
 	struct netdev_lag_upper_info *lag_upper_info;
@@ -572,9 +621,9 @@ static bool xsc_handle_changeupper_event(struct xsc_lag *ldev,
 }
 
 static bool xsc_handle_changelowerstate_event(struct xsc_lag *ldev,
-					struct lag_tracker *tracker,
-					struct net_device *ndev,
-					struct netdev_notifier_changelowerstate_info *info)
+					      struct lag_tracker *tracker,
+					      struct net_device *ndev,
+					      struct netdev_notifier_changelowerstate_info *info)
 {
 	struct netdev_lag_lower_state_info *lag_lower_info;
 	int idx;
@@ -626,15 +675,15 @@ static bool xsc_handle_changehash_event(struct xsc_lag *ldev,
 }
 
 static int xsc_lag_netdev_event(struct notifier_block *this,
-				 unsigned long event, void *ptr)
+				unsigned long event, void *ptr)
 {
 	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
 	struct lag_tracker tracker;
 	struct xsc_lag *ldev;
 	bool changed = 0;
 
-	if ((event != NETDEV_CHANGE) && (event != NETDEV_CHANGEUPPER) &&
-			(event != NETDEV_CHANGELOWERSTATE))
+	if (event != NETDEV_CHANGE && event != NETDEV_CHANGEUPPER &&
+	    event != NETDEV_CHANGELOWERSTATE)
 		return NOTIFY_DONE;
 
 	ldev    = container_of(this, struct xsc_lag, nb);
@@ -643,15 +692,14 @@ static int xsc_lag_netdev_event(struct notifier_block *this,
 	switch (event) {
 	case NETDEV_CHANGEUPPER:
 		changed = xsc_handle_changeupper_event(ldev, &tracker, ndev,
-							ptr);
+						       ptr);
 		break;
 	case NETDEV_CHANGELOWERSTATE:
 		changed = xsc_handle_changelowerstate_event(ldev, &tracker,
-							     ndev, ptr);
+							    ndev, ptr);
 		break;
 	case NETDEV_CHANGE:
-		changed = xsc_handle_changehash_event(ldev, &tracker, ndev,
-							ptr);
+		changed = xsc_handle_changehash_event(ldev, &tracker, ndev, ptr);
 	break;
 	}
 
@@ -675,7 +723,7 @@ static void xsc_lag_fib_event_flush(struct notifier_block *nb)
 }
 
 bool xsc_esw_multipath_prereq(struct xsc_core_device *xdev0,
-		struct xsc_core_device *xdev1)
+			      struct xsc_core_device *xdev1)
 {
 #ifdef CONFIG_XSC_ESWITCH
 	return (xdev0->priv.eswitch->mode == XSC_ESWITCH_OFFLOADS &&
@@ -683,7 +731,6 @@ bool xsc_esw_multipath_prereq(struct xsc_core_device *xdev0,
 #else
 	return false;
 #endif
-
 }
 
 bool xsc_lag_multipath_check_prereq(struct xsc_lag *ldev)
@@ -734,8 +781,8 @@ static void xsc_lag_set_port_affinity(struct xsc_lag *ldev, int port)
 }
 
 static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
-							unsigned long event,
-							struct fib_info *fi)
+				    unsigned long event,
+				    struct fib_info *fi)
 {
 	struct lag_mp *mp = &ldev->lag_mp;
 	struct fib_nh *fib_nh0, *fib_nh1;
@@ -749,7 +796,7 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 	nhs = fi->fib_nhs;
 #endif
 	/* Handle delete event */
-	if ((event == FIB_EVENT_ENTRY_DEL) && __xsc_lag_is_active(ldev) && (nhs == 2)) {
+	if (event == FIB_EVENT_ENTRY_DEL && __xsc_lag_is_active(ldev) && nhs == 2) {
 		/* stop track */
 		if (mp->mfi == fi)
 			mp->mfi = NULL;
@@ -761,7 +808,7 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 	xsc_core_info(ldev->pf[0].xdev, "nhs=%d\n", nhs);
 #endif
 
-	if (nhs == 1 && (event != FIB_EVENT_ENTRY_DEL)) {
+	if (nhs == 1 && event != FIB_EVENT_ENTRY_DEL) {
 		if (__xsc_lag_is_active(ldev)) {
 #ifdef HAVE_FIB_INFO_NH
 			struct net_device *nh_dev = fib_info_nh(fi, 0)->fib_nh_dev;
@@ -791,17 +838,17 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 
 #ifdef HAVE_FIB_NH_DEV
 		if (!(fib_nh0->fib_nh_dev == ldev->pf[0].netdev &&
-			fib_nh1->fib_nh_dev == ldev->pf[1].netdev) &&
-			!(fib_nh0->fib_nh_dev == ldev->pf[1].netdev &&
-			fib_nh1->fib_nh_dev == ldev->pf[0].netdev)) {
+		      fib_nh1->fib_nh_dev == ldev->pf[1].netdev) &&
+		    !(fib_nh0->fib_nh_dev == ldev->pf[1].netdev &&
+		      fib_nh1->fib_nh_dev == ldev->pf[0].netdev)) {
 #else
 		if (!(fib_nh0->nh_dev == ldev->pf[0].netdev &&
-			fib_nh1->nh_dev == ldev->pf[1].netdev) &&
-			!(fib_nh0->nh_dev == ldev->pf[1].netdev &&
-			fib_nh1->nh_dev == ldev->pf[0].netdev)) {
+		      fib_nh1->nh_dev == ldev->pf[1].netdev) &&
+		    !(fib_nh0->nh_dev == ldev->pf[1].netdev &&
+		      fib_nh1->nh_dev == ldev->pf[0].netdev)) {
 #endif
 			xsc_core_err(ldev->pf[0].xdev,
-					"Multipath offload require two ports of the same HCA\n");
+				     "Multipath offload require two ports of the same HCA\n");
 			return;
 		}
 
@@ -817,7 +864,7 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 #endif
 		if (!neigh0 || !neigh1) {
 			xsc_core_err(ldev->pf[0].xdev,
-					"Multipath offload require two ports with valid neighbor\n");
+				     "Multipath offload require two ports with valid neighbor\n");
 			return;
 		}
 
@@ -830,7 +877,7 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 				neigh_release(neigh0);
 				neigh_release(neigh1);
 				xsc_core_err(ldev->pf[0].xdev,
-						"Multipath offload require two ports with valid gw\n");
+					     "Multipath offload require two ports with valid gw\n");
 				return;
 			}
 		}
@@ -844,7 +891,7 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 				neigh_release(neigh0);
 				neigh_release(neigh1);
 				xsc_core_err(ldev->pf[0].xdev,
-						"Multipath offload require two ports with valid gw\n");
+					     "Multipath offload require two ports with valid gw\n");
 				return;
 			}
 		}
@@ -860,9 +907,9 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 }
 
 static void xsc_lag_fib_nexthop_event(struct xsc_lag *ldev,
-				       unsigned long event,
-				       struct fib_nh *fib_nh,
-				       struct fib_info *fi)
+				      unsigned long event,
+				      struct fib_nh *fib_nh,
+				      struct fib_info *fi)
 {
 	struct lag_mp *mp = &ldev->lag_mp;
 
@@ -902,20 +949,24 @@ static void xsc_lag_fib_update(struct work_struct *work)
 	rtnl_lock();
 	switch (fib_work->event) {
 	case FIB_EVENT_ENTRY_REPLACE:
+		fallthrough;
 	case FIB_EVENT_ENTRY_APPEND:
+		fallthrough;
 	case FIB_EVENT_ENTRY_ADD:
+		fallthrough;
 	case FIB_EVENT_ENTRY_DEL:
 		xsc_lag_fib_route_event(ldev, fib_work->event,
-					 fib_work->fen_info.fi);
+					fib_work->fen_info.fi);
 		fib_info_put(fib_work->fen_info.fi);
 		break;
 	case FIB_EVENT_NH_ADD:
+		fallthrough;
 	case FIB_EVENT_NH_DEL:
 		fib_nh = fib_work->fnh_info.fib_nh;
 		xsc_lag_fib_nexthop_event(ldev,
-					   fib_work->event,
-					   fib_work->fnh_info.fib_nh,
-					   fib_nh->nh_parent);
+					  fib_work->event,
+					  fib_work->fnh_info.fib_nh,
+					  fib_nh->nh_parent);
 		fib_info_put(fib_work->fnh_info.fib_nh->nh_parent);
 		break;
 	}
@@ -939,8 +990,8 @@ struct xsc_fib_event_work *xsc_lag_init_fib_work(struct xsc_lag *ldev, unsigned 
 }
 
 int xsc_lag_fib_event(struct notifier_block *nb,
-			      unsigned long event,
-			      void *ptr)
+		      unsigned long event,
+		      void *ptr)
 {
 	struct lag_mp *mp = container_of(nb, struct lag_mp, fib_nb);
 	struct xsc_lag *ldev = container_of(mp, struct xsc_lag, lag_mp);
@@ -963,8 +1014,11 @@ int xsc_lag_fib_event(struct notifier_block *nb,
 
 	switch (event) {
 	case FIB_EVENT_ENTRY_REPLACE:
+		fallthrough;
 	case FIB_EVENT_ENTRY_APPEND:
+		fallthrough;
 	case FIB_EVENT_ENTRY_ADD:
+		fallthrough;
 	case FIB_EVENT_ENTRY_DEL:
 		fen_info = container_of(info, struct fib_entry_notifier_info, info);
 		fi = fen_info->fi;
@@ -989,6 +1043,7 @@ int xsc_lag_fib_event(struct notifier_block *nb,
 		fib_info_hold(fib_work->fen_info.fi);
 		break;
 	case FIB_EVENT_NH_ADD:
+		fallthrough;
 	case FIB_EVENT_NH_DEL:
 		fnh_info = container_of(info, struct fib_nh_notifier_info,
 					info);
@@ -1021,7 +1076,7 @@ int xsc_lag_mp_init(struct xsc_lag *ldev)
 
 	mp->fib_nb.notifier_call = xsc_lag_fib_event;
 	err = register_fib_notifier(&init_net, &mp->fib_nb,
-				xsc_lag_fib_event_flush, NULL);
+				    xsc_lag_fib_event_flush, NULL);
 	if (err) {
 		destroy_workqueue(mp->wq);
 		mp->fib_nb.notifier_call = NULL;
@@ -1061,7 +1116,8 @@ int __xsc_lag_add_xdev(struct xsc_core_device *xdev)
 
 	if (!ldev->nb.notifier_call) {
 		ldev->nb.notifier_call = xsc_lag_netdev_event;
-		if (register_netdevice_notifier(&ldev->nb)) {
+		err = register_netdevice_notifier(&ldev->nb);
+		if (err) {
 			ldev->nb.notifier_call = NULL;
 			xsc_core_err(xdev, "Failed to register LAG netdev notifier\n");
 		}
@@ -1134,8 +1190,9 @@ void xsc_lag_update_trackers(struct xsc_lag *ldev)
 			tx_type = NETDEV_LAG_TX_TYPE_HASH;
 			tracker->hash_type = bond_lag_hash_type(bond);
 			tracker->old_hash_type = tracker->hash_type;
-		} else if (BOND_MODE(bond) == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP)
+		} else if (BOND_MODE(bond) == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
 			tx_type = NETDEV_LAG_TX_TYPE_ACTIVEBACKUP;
+		}
 
 		upper = bond->dev;
 	}
@@ -1224,7 +1281,6 @@ void xsc_lag_remove(struct xsc_core_device *xdev)
 
 	xsc_lag_dev_remove_pf(ldev, xdev);
 	xsc_lag_dev_put(ldev);
-
 }
 EXPORT_SYMBOL(xsc_lag_remove);
 
@@ -1274,8 +1330,6 @@ void xsc_lag_disable(struct xsc_core_device *xdev)
 	if (!ldev)
 		goto unlock;
 
-	xsc_ldev_get(ldev);
-
 	if (!__xsc_lag_is_active(ldev))
 		goto unlock;
 
@@ -1313,4 +1367,3 @@ void xsc_lag_enable(struct xsc_core_device *xdev)
 unlock:
 	mutex_unlock(&xsc_intf_mutex);
 }
-
