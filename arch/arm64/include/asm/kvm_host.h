@@ -1155,5 +1155,6 @@ void kvm_arm_vcpu_power_off(struct kvm_vcpu *vcpu);
 bool kvm_arm_vcpu_stopped(struct kvm_vcpu *vcpu);
 
 extern bool kvm_ncsnp_support;
+extern bool kvm_dvmbm_support;
 
 #endif /* __ARM64_KVM_HOST_H__ */
