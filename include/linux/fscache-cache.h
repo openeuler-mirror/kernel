@@ -43,6 +43,11 @@ struct fscache_cache {
 	unsigned int		debug_id;
 	enum fscache_cache_state state;
 	char			*name;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /*
@@ -77,6 +82,11 @@ struct fscache_cache_ops {
 
 	/* Prepare to write to a live cache object */
 	void (*prepare_to_write)(struct fscache_cookie *cookie);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 extern struct workqueue_struct *fscache_wq;
