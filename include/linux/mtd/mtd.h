@@ -78,6 +78,8 @@ struct mtd_oob_ops {
 	uint8_t		*datbuf;
 	uint8_t		*oobbuf;
 	struct mtd_req_stats *stats;
+	KABI_RESERVE(0)
+	KABI_RESERVE(1)
 };
 
 /**
@@ -216,6 +218,8 @@ struct mtd_part {
 	u64 offset;
 	u64 size;
 	u32 flags;
+	KABI_RESERVE(0)
+	KABI_RESERVE(1)
 };
 
 /**
@@ -234,6 +238,8 @@ struct mtd_master {
 	struct mutex partitions_lock;
 	struct mutex chrdev_lock;
 	unsigned int suspended : 1;
+	KABI_RESERVE(0)
+	KABI_RESERVE(1)
 };
 
 struct mtd_info {

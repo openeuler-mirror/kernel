@@ -10,6 +10,7 @@
 #include <linux/uaccess.h>
 #include <linux/termios.h>
 #include <linux/seq_file.h>
+#include <linux/kabi.h>
 
 struct tty_struct;
 struct tty_driver;
@@ -391,6 +392,8 @@ struct tty_operations {
 	void (*poll_put_char)(struct tty_driver *driver, int line, char ch);
 #endif
 	int (*proc_show)(struct seq_file *m, void *driver);
+	KABI_RESERVE(0)
+	KABI_RESERVE(1)
 } __randomize_layout;
 
 /**
