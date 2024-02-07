@@ -911,6 +911,38 @@ __SYSCALL(__NR_set_mempolicy_home_node, sys_set_mempolicy_home_node)
 __SYSCALL(__NR_cachestat, sys_cachestat)
 #define __NR_fchmodat2 452
 __SYSCALL(__NR_fchmodat2, sys_fchmodat2)
+#define __NR_map_shadow_stack 453
+__SYSCALL(__NR_map_shadow_stack, sys_map_shadow_stack)
+#define __NR_kabi_reserved454 454
+__SYSCALL(__NR_kabi_reserved454, sys_ni_syscall)
+#define __NR_kabi_reserved455 455
+__SYSCALL(__NR_kabi_reserved455, sys_ni_syscall)
+#define __NR_kabi_reserved456 456
+__SYSCALL(__NR_kabi_reserved456, sys_ni_syscall)
+#define __NR_kabi_reserved457 457
+__SYSCALL(__NR_kabi_reserved457, sys_ni_syscall)
+#define __NR_kabi_reserved458 458
+__SYSCALL(__NR_kabi_reserved458, sys_ni_syscall)
+#define __NR_kabi_reserved459 459
+__SYSCALL(__NR_kabi_reserved459, sys_ni_syscall)
+#define __NR_kabi_reserved460 460
+__SYSCALL(__NR_kabi_reserved460, sys_ni_syscall)
+#define __NR_kabi_reserved461 461
+__SYSCALL(__NR_kabi_reserved461, sys_ni_syscall)
+#define __NR_kabi_reserved462 462
+__SYSCALL(__NR_kabi_reserved462, sys_ni_syscall)
+#define __NR_kabi_reserved463 463
+__SYSCALL(__NR_kabi_reserved463, sys_ni_syscall)
+#define __NR_kabi_reserved464 464
+__SYSCALL(__NR_kabi_reserved464, sys_ni_syscall)
+#define __NR_kabi_reserved465 465
+__SYSCALL(__NR_kabi_reserved465, sys_ni_syscall)
+#define __NR_kabi_reserved466 466
+__SYSCALL(__NR_kabi_reserved466, sys_ni_syscall)
+#define __NR_kabi_reserved467 467
+__SYSCALL(__NR_kabi_reserved467, sys_ni_syscall)
+#define __NR_kabi_reserved468 468
+__SYSCALL(__NR_kabi_reserved468, sys_ni_syscall)
 
 /*
  * Please add new compat syscalls above this comment and update
