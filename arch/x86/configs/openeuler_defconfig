@@ -4065,6 +4065,9 @@ CONFIG_PINCTRL_SUNRISEPOINT=m
 # CONFIG_PINCTRL_TIGERLAKE is not set
 # end of Intel pinctrl drivers
 
+CONFIG_PINCTRL_ZHAOXIN=m
+CONFIG_PINCTRL_KX7000=m
+
 #
 # Renesas pinctrl drivers
 #
