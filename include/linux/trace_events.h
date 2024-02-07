@@ -558,9 +558,10 @@ struct trace_event_file {
 	 * caching and such. Which is mostly OK ;-)
 	 */
 	unsigned long		flags;
-	atomic_t		ref;	/* ref count for opened files */
 	atomic_t		sm_ref;	/* soft-mode reference counter */
 	atomic_t		tm_ref;	/* trigger-mode reference counter */
+
+	KABI_EXTEND(atomic_t ref)	/* ref count for opened files */
 };
 
 #define __TRACE_EVENT_FLAGS(name, value)				\
