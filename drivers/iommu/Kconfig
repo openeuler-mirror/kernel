@@ -423,6 +423,13 @@ config ARM_SMMU_V3_PM
 	help
 	  Add support for suspend and resume support for arm smmu v3.
 
+config ARM_SMMU_V3_HTTU
+	bool "Add arm_smmu_v3  Hardware Translation Table Update"
+	depends on ARM_SMMU_V3
+	default n
+	help
+	  Add support for Hardware Translation Table Update arm smmu v3.
+
 config S390_IOMMU
 	def_bool y if S390 && PCI
 	depends on S390 && PCI
