@@ -25,13 +25,7 @@
 #include <urma/ubcore_uapi.h>
 #include "ubcore_netlink.h"
 #include "ubcore_priv.h"
-#include "ubcore_netdev.h"
 
-#define UBCORE_MAX_SIP (1 << 24) /* 2^24 */
-#define UBCORE_SIP_TABLE_SIZE (1024) /* 1823: 16; 1650: 1024; 1636: N/A */
-
-static DECLARE_BITMAP(g_sip_bitmap, UBCORE_MAX_SIP);
-static DEFINE_SPINLOCK(g_sip_spinlock);
 static DECLARE_RWSEM(g_port_list_lock);
 
 struct ubcore_ndev_port {
@@ -43,12 +37,130 @@ struct ubcore_ndev_port {
 	char dev_name[UBCORE_MAX_DEV_NAME];
 };
 
-struct ubcore_sip_table {
-	struct ubcore_sip_info *entry[UBCORE_SIP_TABLE_SIZE];
-	struct mutex lock;
-};
+uint32_t ubcore_get_sip_max_cnt(struct ubcore_sip_table *sip_table)
+{
+	int i;
 
-static struct ubcore_sip_table g_sip_table;
+	for (i = (int)UBCORE_SIP_TABLE_SIZE - 1; i >= 0; i--) {
+		if (sip_table->entry[i] != NULL)
+			break;
+	}
+
+	return (uint32_t)(i + 1);
+}
+
+struct ubcore_sip_info *ubcore_lookup_sip_info(struct ubcore_sip_table *sip_table, uint32_t idx)
+{
+	struct ubcore_sip_info *sip = NULL;
+
+	if (idx >= UBCORE_SIP_TABLE_SIZE || sip_table->entry[idx] == NULL) {
+		ubcore_log_err("sip node does not exist");
+		return NULL;
+	}
+	sip = sip_table->entry[idx];
+	return sip;
+}
+
+static struct ubcore_nlmsg *ubcore_alloc_sip_req(enum ubcore_nlmsg_type msg_type,
+	enum ubcore_transport_type transport_type, uint32_t payload_len,
+	struct ubcore_sip_info *sip_info)
+{
+	struct ubcore_nlmsg *req_msg;
+
+	req_msg = kzalloc(sizeof(struct ubcore_nlmsg) + payload_len, GFP_KERNEL);
+	if (req_msg == NULL)
+		return NULL;
+
+	req_msg->msg_type = msg_type;
+	req_msg->transport_type = transport_type;
+	(void)memcpy(req_msg->dst_eid.raw, sip_info->addr.net_addr.raw,
+		UBCORE_EID_SIZE);
+	(void)memcpy(req_msg->src_eid.raw, sip_info->addr.net_addr.raw,
+		UBCORE_EID_SIZE);
+	req_msg->payload_len = payload_len;
+
+	return req_msg;
+}
+
+int ubcore_notify_uvs_del_sip(struct ubcore_device *dev,
+	struct ubcore_sip_info *sip_info, uint32_t index)
+{
+	struct ubcore_nlmsg *req_msg, *resp_msg;
+	struct ubcore_del_sip_req *sip_req;
+	struct ubcore_del_sip_resp *resp;
+
+	req_msg = ubcore_alloc_sip_req(UBCORE_NL_DEL_SIP_REQ, dev->transport_type,
+		sizeof(struct ubcore_del_sip_req), sip_info);
+	if (req_msg == NULL)
+		return -ENOMEM;
+
+	sip_req = (struct ubcore_del_sip_req *)(void *)req_msg->payload;
+	sip_req->index = index;
+
+	resp_msg = ubcore_nl_send_wait(dev, req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to wait query response");
+		kfree(req_msg);
+		return -1;
+	}
+	resp = (struct ubcore_del_sip_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != UBCORE_NL_DEL_SIP_RESP || resp == NULL ||
+		resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("del sip request is rejected with type %d ret %d",
+			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+		kfree(resp_msg);
+		kfree(req_msg);
+		return -1;
+	}
+	kfree(resp_msg);
+	kfree(req_msg);
+	return 0;
+}
+
+int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
+	struct ubcore_sip_info *sip_info, uint32_t index)
+{
+	struct ubcore_nlmsg *req_msg, *resp_msg;
+	struct ubcore_add_sip_req *sip_req;
+	struct ubcore_add_sip_resp *resp;
+
+	req_msg = ubcore_alloc_sip_req(UBCORE_NL_ADD_SIP_REQ, dev->transport_type,
+		sizeof(struct ubcore_add_sip_req), sip_info);
+	if (req_msg == NULL)
+		return -ENOMEM;
+
+	sip_req = (struct ubcore_add_sip_req *)(void *)req_msg->payload;
+	(void)memcpy(sip_req->dev_name, sip_info->dev_name,
+		UBCORE_MAX_DEV_NAME);
+	(void)memcpy(&sip_req->netaddr, &sip_info->addr,
+		sizeof(struct ubcore_net_addr));
+	sip_req->index = index;
+	sip_req->port_cnt = sip_info->port_cnt;
+	(void)memcpy(sip_req->port_id, sip_info->port_id,
+		UBCORE_MAX_PORT_CNT);
+	sip_req->prefix_len = sip_info->prefix_len;
+	sip_req->mtu = sip_info->mtu;
+
+	resp_msg = ubcore_nl_send_wait(dev, req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to wait query response");
+		kfree(req_msg);
+		return -1;
+	}
+
+	resp = (struct ubcore_add_sip_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != UBCORE_NL_ADD_SIP_RESP || resp == NULL ||
+		resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("add sip request is rejected with type %d ret %d",
+			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+		kfree(resp_msg);
+		kfree(req_msg);
+		return -1;
+	}
+	kfree(resp_msg);
+	kfree(req_msg);
+	return 0;
+}
 
 int ubcore_check_port_state(struct ubcore_device *dev, uint8_t port_idx)
 {
@@ -135,8 +247,8 @@ static int ubcore_port_duplicate_check(struct ubcore_ndev_port *port_info,
 static void ubcore_sync_sip_port_list(struct ubcore_device *dev,
 	uint8_t *port_list, uint8_t port_cnt)
 {
-	struct ubcore_sip_info new_sip = {0};
-	struct ubcore_sip_info old_sip = {0};
+	struct ubcore_sip_info *new_sip;
+	struct ubcore_sip_info old_sip;
 	struct ubcore_device *tpf_dev;
 	uint32_t max_cnt;
 	uint32_t i;
@@ -145,32 +257,26 @@ static void ubcore_sync_sip_port_list(struct ubcore_device *dev,
 	if (tpf_dev == NULL)
 		return;
 
-	max_cnt = ubcore_get_sip_max_cnt();
-
+	mutex_lock(&tpf_dev->sip_table.lock);
+	max_cnt = ubcore_get_sip_max_cnt(&tpf_dev->sip_table);
 	for (i = 0; i < max_cnt; i++) {
-		if (ubcore_get_sip_info_copy(i, &new_sip) != 0)
+		new_sip = ubcore_lookup_sip_info(&tpf_dev->sip_table, i);
+		if (new_sip == NULL)
 			continue;
-
-		if (memcmp(new_sip.dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME) != 0)
-			continue;
-
-		old_sip = new_sip;
-
-		(void)memcpy(new_sip.port_id,
-			port_list, UBCORE_MAX_PORT_CNT);
-		new_sip.port_cnt = port_cnt;
-		if (ubcore_sip_info_update(i, (const struct ubcore_sip_info *)&new_sip) != 0)
-			continue;
+		old_sip = *new_sip;
+		(void)memcpy(new_sip->port_id, port_list,
+			UBCORE_MAX_PORT_CNT);
+		new_sip->port_cnt = port_cnt;
 
 		if (ubcore_get_netlink_valid() == true) {
 			(void)ubcore_notify_uvs_del_sip(tpf_dev, &old_sip, i);
-			(void)ubcore_notify_uvs_add_sip(tpf_dev, &new_sip, i);
+			(void)ubcore_notify_uvs_add_sip(tpf_dev, new_sip, i);
 		}
 		ubcore_log_info("dev_name: %s, old port_cnt: %hhu, new port_cnt: %hhu\n",
-			dev->dev_name, old_sip.port_cnt, new_sip.port_cnt);
+			dev->dev_name, old_sip.port_cnt, new_sip->port_cnt);
 	}
-
 	ubcore_put_device(tpf_dev);
+	mutex_unlock(&tpf_dev->sip_table.lock);
 }
 
 int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
@@ -309,281 +415,119 @@ void ubcore_put_port_netdev(struct ubcore_device *dev)
 }
 EXPORT_SYMBOL(ubcore_put_port_netdev);
 
-static void ubcore_sip_bitmap_init(void)
-{
-	bitmap_zero(g_sip_bitmap, UBCORE_MAX_SIP);
-}
-
-uint32_t ubcore_sip_idx_alloc(uint32_t idx)
-{
-	uint32_t ret_idx = idx;
-	int ret;
-
-	spin_lock(&g_sip_spinlock);
-	if (ret_idx > 0) {
-		ret = test_bit(ret_idx, g_sip_bitmap);
-		if (ret == 0) {
-			set_bit(ret_idx, g_sip_bitmap);
-			spin_unlock(&g_sip_spinlock);
-			return ret_idx;
-		}
-		spin_unlock(&g_sip_spinlock);
-		ubcore_log_err("ret_idx allocation failed.\n");
-		return 0;
-	}
-	ret_idx = (uint32_t)find_first_zero_bit(g_sip_bitmap, UBCORE_MAX_SIP);
-	if (ret_idx >= UBCORE_MAX_SIP) {
-		ubcore_log_err("ret_idx allocation failed.\n");
-		spin_unlock(&g_sip_spinlock);
-		return 0;
-	}
-	set_bit(ret_idx, g_sip_bitmap);
-	spin_unlock(&g_sip_spinlock);
-	return ret_idx;
-}
-
-int ubcore_sip_idx_free(uint32_t idx)
-{
-	spin_lock(&g_sip_spinlock);
-	if (test_bit(idx, g_sip_bitmap) == false) {
-		spin_unlock(&g_sip_spinlock);
-		ubcore_log_err("idx is used.\n");
-		return -EINVAL;
-	}
-	clear_bit(idx, g_sip_bitmap);
-	spin_unlock(&g_sip_spinlock);
-	return 0;
-}
-
-void ubcore_sip_table_init(void)
-{
-	ubcore_sip_bitmap_init();
-	mutex_init(&g_sip_table.lock);
-}
-
-void ubcore_sip_table_uninit(void)
+void ubcore_sip_table_init(struct ubcore_sip_table *sip_table)
 {
 	uint32_t i;
 
-	mutex_lock(&g_sip_table.lock);
-	for (i = 0; i < UBCORE_SIP_TABLE_SIZE; i++) {
-		if (g_sip_table.entry[i] != NULL) {
-			kfree(g_sip_table.entry[i]);
-			g_sip_table.entry[i] = NULL;
-		}
-	}
-	mutex_unlock(&g_sip_table.lock);
-	mutex_destroy(&g_sip_table.lock);
+	bitmap_zero(sip_table->index_bitmap, UBCORE_MAX_SIP);
+	for (i = 0; i < UBCORE_SIP_TABLE_SIZE; i++)
+		sip_table->entry[i] = NULL;
+	mutex_init(&sip_table->lock);
 }
 
-int ubcore_add_sip_entry(const struct ubcore_sip_info *sip, uint32_t idx)
+void ubcore_sip_table_uninit(struct ubcore_sip_table *sip_table)
+{
+	uint32_t max_cnt;
+	uint32_t i;
+
+	mutex_lock(&sip_table->lock);
+	max_cnt = ubcore_get_sip_max_cnt(sip_table);
+	for (i = 0; i < max_cnt; i++) {
+		if (sip_table->entry[i] != NULL) {
+			kfree(sip_table->entry[i]);
+			sip_table->entry[i] = NULL;
+		}
+	}
+	mutex_unlock(&sip_table->lock);
+}
+
+int ubcore_sip_idx_alloc(struct ubcore_sip_table *sip_table)
+{
+	uint32_t ret_idx;
+
+	mutex_lock(&sip_table->lock);
+	ret_idx = (uint32_t)find_first_zero_bit(sip_table->index_bitmap, UBCORE_MAX_SIP);
+	if (ret_idx >= UBCORE_MAX_SIP) {
+		ubcore_log_err("idx allocation failed.\n");
+		mutex_unlock(&sip_table->lock);
+		return -1;
+	}
+	set_bit(ret_idx, sip_table->index_bitmap);
+	mutex_unlock(&sip_table->lock);
+	return (int)ret_idx;
+}
+
+int ubcore_sip_idx_free(struct ubcore_sip_table *sip_table, uint32_t idx)
+{
+	mutex_lock(&sip_table->lock);
+	if (test_bit(idx, sip_table->index_bitmap) == false) {
+		mutex_unlock(&sip_table->lock);
+		ubcore_log_err("idx is used.\n");
+		return -EINVAL;
+	}
+	clear_bit(idx, sip_table->index_bitmap);
+	mutex_unlock(&sip_table->lock);
+	return 0;
+}
+
+int ubcore_add_sip_entry(struct ubcore_sip_table *sip_table, const struct ubcore_sip_info *sip,
+	uint32_t idx)
 {
 	struct ubcore_sip_info *new_sip;
 
-	if (idx >= UBCORE_SIP_TABLE_SIZE || g_sip_table.entry[idx] != NULL) {
-		ubcore_log_err("add sip failed.\n");
-		return -1;
+	if (idx >= UBCORE_SIP_TABLE_SIZE || sip_table->entry[idx] != NULL) {
+		ubcore_log_err("Parameters are illegal.\n");
+		return -EINVAL;
 	}
 	new_sip = kzalloc(sizeof(struct ubcore_sip_info), GFP_ATOMIC);
 	if (new_sip == NULL)
 		return -ENOMEM;
 
+	mutex_lock(&sip_table->lock);
 	(void)memcpy(new_sip, sip, sizeof(struct ubcore_sip_info));
-	mutex_lock(&g_sip_table.lock);
-	g_sip_table.entry[idx] = new_sip;
-	mutex_unlock(&g_sip_table.lock);
-	ubcore_log_info("sip table add netdev: %s, entry idx: %d.\n", new_sip->dev_name, idx);
+	sip_table->entry[idx] = new_sip;
+	mutex_unlock(&sip_table->lock);
+	ubcore_log_info("tpf_dev_name: %s sip table add entry idx: %d.\n",
+		sip->dev_name, idx);
 	return 0;
 }
 
-int ubcore_del_sip_entry(uint32_t idx)
+int ubcore_del_sip_entry(struct ubcore_sip_table *sip_table, uint32_t idx)
 {
-	if (idx >= UBCORE_SIP_TABLE_SIZE ||  g_sip_table.entry[idx] == NULL) {
-		ubcore_log_err("delete sip failed.\n");
-		return -1;
+	if (idx >= UBCORE_SIP_TABLE_SIZE || sip_table->entry[idx] == NULL) {
+		ubcore_log_err("Parameters are illegal.\n");
+		return -EINVAL;
 	}
-	mutex_lock(&g_sip_table.lock);
-	kfree(g_sip_table.entry[idx]);
-	g_sip_table.entry[idx] = NULL;
-	mutex_unlock(&g_sip_table.lock);
-	ubcore_log_info("del sip entry idx: %d.\n", idx);
+
+	ubcore_log_info("tpf_name: %s del sip entry idx: %d.\n",
+		sip_table->entry[idx]->dev_name, idx);
+	mutex_lock(&sip_table->lock);
+	kfree(sip_table->entry[idx]);
+	sip_table->entry[idx] = NULL;
+	mutex_unlock(&sip_table->lock);
+
 	return 0;
 }
 
-int ubcore_lookup_sip_idx(struct ubcore_sip_info *sip, uint32_t *idx)
+int ubcore_lookup_sip_idx(struct ubcore_sip_table *sip_table, struct ubcore_sip_info *sip,
+	uint32_t *idx)
 {
 	uint32_t i;
 
-	mutex_lock(&g_sip_table.lock);
+	mutex_lock(&sip_table->lock);
 	for (i = 0; i < UBCORE_SIP_TABLE_SIZE; i++) {
-		if (g_sip_table.entry[i] != NULL && memcmp(g_sip_table.entry[i], sip,
+		if (sip_table->entry[i] != NULL &&
+			memcmp(sip_table->entry[i], sip,
 			sizeof(struct ubcore_sip_info)) == 0) {
 			*idx = i;
 			break;
 		}
 	}
-	mutex_unlock(&g_sip_table.lock);
-
 	if (i == UBCORE_SIP_TABLE_SIZE) {
+		mutex_unlock(&sip_table->lock);
 		ubcore_log_warn("no available idx found.\n");
-		return -1;
+		return -EINVAL;
 	}
-	return 0;
-}
-
-int ubcore_lookup_sip_by_addr(struct ubcore_net_addr *addr, char *dev_name)
-{
-	uint32_t i;
-
-	mutex_lock(&g_sip_table.lock);
-	for (i = 0; i < UBCORE_SIP_TABLE_SIZE; i++) {
-		if (g_sip_table.entry[i] != NULL && memcmp(&g_sip_table.entry[i]->addr, addr,
-			sizeof(struct ubcore_net_addr)) == 0) {
-			(void)memcpy(dev_name, g_sip_table.entry[i]->dev_name, UBCORE_MAX_DEV_NAME);
-			break;
-		}
-	}
-	mutex_unlock(&g_sip_table.lock);
-
-	if (i == UBCORE_SIP_TABLE_SIZE) {
-		ubcore_log_warn("no available idx found.\n");
-		return -1;
-	}
-	return 0;
-}
-
-uint32_t ubcore_get_sip_max_cnt(void)
-{
-	return UBCORE_SIP_TABLE_SIZE;
-}
-
-struct ubcore_sip_info *ubcore_lookup_sip_info(uint32_t idx)
-{
-	struct ubcore_sip_info *sip = NULL;
-
-	mutex_lock(&g_sip_table.lock);
-	if (idx < UBCORE_SIP_TABLE_SIZE && g_sip_table.entry[idx] != NULL)
-		sip = g_sip_table.entry[idx];
-	mutex_unlock(&g_sip_table.lock);
-	return sip;
-}
-
-int ubcore_get_sip_info_copy(uint32_t idx, struct ubcore_sip_info *sip)
-{
-	int ret = -1;
-
-	mutex_lock(&g_sip_table.lock);
-	if (idx < UBCORE_SIP_TABLE_SIZE && g_sip_table.entry[idx] != NULL) {
-		(void)memcpy(sip, g_sip_table.entry[idx],
-			sizeof(struct ubcore_sip_info));
-		ret = 0;
-	}
-	mutex_unlock(&g_sip_table.lock);
-	return ret;
-}
-
-int ubcore_sip_info_update(uint32_t idx, const struct ubcore_sip_info *sip)
-{
-	int ret = -1;
-
-	mutex_lock(&g_sip_table.lock);
-	if (idx < UBCORE_SIP_TABLE_SIZE && g_sip_table.entry[idx] != NULL) {
-		(void)memcpy(g_sip_table.entry[idx], sip,
-			sizeof(struct ubcore_sip_info));
-		ret = 0;
-	}
-	mutex_unlock(&g_sip_table.lock);
-	return ret;
-}
-
-int ubcore_notify_uvs_del_sip(struct ubcore_device *dev,
-	const struct ubcore_sip_info *sip_info, uint32_t index)
-{
-	struct ubcore_nlmsg *req_msg, *resp_msg;
-	struct ubcore_del_sip_req *sip_req;
-	struct ubcore_del_sip_resp *resp;
-
-	req_msg = kzalloc(sizeof(struct ubcore_nlmsg) +
-		sizeof(struct ubcore_del_sip_req), GFP_KERNEL);
-	if (req_msg == NULL)
-		return -ENOMEM;
-
-	/* fill msg head */
-	req_msg->msg_type = UBCORE_NL_DEL_SIP_REQ;
-	req_msg->transport_type = dev->transport_type;
-	(void)memcpy(req_msg->dst_eid.raw, sip_info->addr.net_addr.raw, UBCORE_EID_SIZE);
-	(void)memcpy(req_msg->src_eid.raw, sip_info->addr.net_addr.raw, UBCORE_EID_SIZE);
-	req_msg->payload_len = (uint32_t)sizeof(struct ubcore_del_sip_req);
-
-	/* fill msg payload */
-	sip_req = (struct ubcore_del_sip_req *)(void *)req_msg->payload;
-	sip_req->index = index;
-	resp_msg = ubcore_nl_send_wait(dev, req_msg);
-	if (resp_msg == NULL) {
-		ubcore_log_err("Failed to wait query response");
-		kfree(req_msg);
-		return -1;
-	}
-	resp = (struct ubcore_del_sip_resp *)(void *)resp_msg->payload;
-	if (resp_msg->msg_type != UBCORE_NL_DEL_SIP_RESP || resp == NULL ||
-		resp->ret != UBCORE_NL_RESP_SUCCESS) {
-		ubcore_log_err("del sip request is rejected with type %d ret %d",
-			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
-		kfree(resp_msg);
-		kfree(req_msg);
-		return -1;
-	}
-	kfree(resp_msg);
-	kfree(req_msg);
-	return 0;
-}
-
-int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
-	const struct ubcore_sip_info *sip_info, uint32_t index)
-{
-	struct ubcore_nlmsg *req_msg, *resp_msg;
-	struct ubcore_add_sip_req *sip_req;
-	struct ubcore_add_sip_resp *resp;
-
-	req_msg = kzalloc(sizeof(struct ubcore_nlmsg) +
-		sizeof(struct ubcore_add_sip_req), GFP_KERNEL);
-	if (req_msg == NULL)
-		return -ENOMEM;
-
-	/* fill msg head */
-	req_msg->msg_type = UBCORE_NL_ADD_SIP_REQ;
-	req_msg->transport_type = dev->transport_type;
-	(void)memcpy(req_msg->dst_eid.raw, sip_info->addr.net_addr.raw, UBCORE_EID_SIZE);
-	(void)memcpy(req_msg->src_eid.raw, sip_info->addr.net_addr.raw, UBCORE_EID_SIZE);
-	req_msg->payload_len = (uint32_t)sizeof(struct ubcore_add_sip_req);
-
-	/* fill msg payload */
-	sip_req = (struct ubcore_add_sip_req *)(void *)req_msg->payload;
-	memcpy(sip_req->dev_name, sip_info->dev_name, UBCORE_MAX_DEV_NAME);
-	memcpy(&sip_req->netaddr, &sip_info->addr, sizeof(struct ubcore_net_addr));
-	sip_req->index = index;
-	sip_req->port_cnt = sip_info->port_cnt;
-	(void)memcpy(sip_req->port_id, sip_info->port_id, UBCORE_MAX_PORT_CNT);
-	sip_req->prefix_len = sip_info->prefix_len;
-	sip_req->mtu = sip_info->mtu;
-
-	resp_msg = ubcore_nl_send_wait(dev, req_msg);
-	if (resp_msg == NULL) {
-		ubcore_log_err("Failed to wait query response");
-		kfree(req_msg);
-		return -1;
-	}
-
-	resp = (struct ubcore_add_sip_resp *)(void *)resp_msg->payload;
-	if (resp_msg->msg_type != UBCORE_NL_ADD_SIP_RESP || resp == NULL ||
-		resp->ret != UBCORE_NL_RESP_SUCCESS) {
-		ubcore_log_err("add sip request is rejected with type %d ret %d",
-			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
-		kfree(resp_msg);
-		kfree(req_msg);
-		return -1;
-	}
-	kfree(resp_msg);
-	kfree(req_msg);
+	mutex_unlock(&sip_table->lock);
 	return 0;
 }

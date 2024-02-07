@@ -294,8 +294,10 @@ static int ubcore_cmd_create_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		goto free_arg;
 
-	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB)
-		return ubcore_cmd_create_tp(hdr, arg);
+	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
+		ret = ubcore_cmd_create_tp(hdr, arg);
+		goto free_arg;
+	}
 
 	dev = ubcore_find_tpf_device(&arg->in.tpf.netaddr, arg->in.tpf.trans_type);
 	if (dev == NULL) {
@@ -560,8 +562,10 @@ static int ubcore_cmd_modify_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		goto free_arg;
 
-	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB)
-		return ubcore_cmd_modify_tp(hdr, arg);
+	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
+		ret = ubcore_cmd_modify_tp(hdr, arg);
+		goto free_arg;
+	}
 
 	dev = ubcore_find_tpf_device(&arg->in.tpf.netaddr, arg->in.tpf.trans_type);
 	if (dev == NULL) {
@@ -795,8 +799,10 @@ static int ubcore_cmd_create_target_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		goto free_arg;
 
-	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB)
-		return ubcore_cmd_create_target_tp(hdr, arg);
+	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
+		ret = ubcore_cmd_create_target_tp(hdr, arg);
+		goto free_arg;
+	}
 
 	dev = ubcore_find_tpf_device(&arg->in.tpf.netaddr, arg->in.tpf.trans_type);
 	if (dev == NULL) {
@@ -1010,7 +1016,7 @@ static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *
 {
 	uint32_t i;
 
-	for (i = 0; i < dev->attr.max_eid_cnt; i++) {
+	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (memcmp(dev->eid_table.eid_entries[i].eid.raw, eid->raw, UBCORE_EID_SIZE) == 0) {
 			ubcore_log_warn("eid already exists\n");
 			break;
@@ -1025,7 +1031,7 @@ static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *
 			break;
 		}
 	}
-	if (i == dev->attr.max_eid_cnt) {
+	if (i == dev->attr.dev_cap.max_eid_cnt) {
 		ubcore_log_err("eid table is full");
 		return -1;
 	}
@@ -1037,7 +1043,7 @@ static int ubcore_eidtbl_del_entry(struct ubcore_device *dev, union ubcore_eid *
 {
 	uint32_t i;
 
-	for (i = 0; i < dev->attr.max_eid_cnt; i++) {
+	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (memcmp(dev->eid_table.eid_entries[i].eid.raw, eid->raw, UBCORE_EID_SIZE) == 0) {
 			(void)memset(&dev->eid_table.eid_entries[i],
 				0, sizeof(struct ubcore_eid_entry));
@@ -1046,7 +1052,7 @@ static int ubcore_eidtbl_del_entry(struct ubcore_device *dev, union ubcore_eid *
 			break;
 		}
 	}
-	if (i == dev->attr.max_eid_cnt) {
+	if (i == dev->attr.dev_cap.max_eid_cnt) {
 		ubcore_log_err("eid table is empty");
 		return -1;
 	}
@@ -1056,7 +1062,7 @@ static int ubcore_eidtbl_del_entry(struct ubcore_device *dev, union ubcore_eid *
 static int ubcore_eidtbl_update_entry(struct ubcore_device *dev, union ubcore_eid *eid,
 	uint32_t eid_idx, bool is_add, struct net *net)
 {
-	if (eid_idx >= dev->attr.max_eid_cnt) {
+	if (eid_idx >= dev->attr.dev_cap.max_eid_cnt) {
 		ubcore_log_err("eid table is full\n");
 		return -1;
 	}
@@ -1121,7 +1127,7 @@ static int ubcore_cmd_set_upi(struct ubcore_cmd_hdr *hdr)
 		ubcore_log_err("This mode does not support setting upi\n");
 		return -1;
 	}
-	for (i = 0; i < dev->attr.max_eid_cnt; i++) {
+	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		cfg.eid = dev->eid_table.eid_entries[i].eid;
 		cfg.eid_index = i;
 		if (dev->eid_table.eid_entries[i].valid == false)
@@ -1902,7 +1908,7 @@ static int ubcore_cmd_get_dev_feature(struct ubcore_cmd_hdr *hdr)
 	}
 
 	arg.out.feature.value = dev->attr.dev_cap.feature.value;
-	arg.out.max_ueid_cnt = dev->attr.max_eid_cnt;
+	arg.out.max_ueid_cnt = dev->attr.dev_cap.max_eid_cnt;
 	ubcore_put_device(dev);
 
 	if (ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,

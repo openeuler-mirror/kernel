@@ -875,6 +875,7 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 
 	cfg.depth = arg.in.depth;
 	cfg.flag.value = arg.in.flag;
+	cfg.ceqn = arg.in.ceqn;
 
 	/* jfce may be ERR_PTR */
 	jfce = uburma_get_jfce_uobj(arg.in.jfce_fd, file);
@@ -1735,6 +1736,7 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 	cfg.token_value.token = arg.in.token;
 	cfg.id = arg.in.id;
 	cfg.policy = (enum ubcore_jetty_grp_policy)arg.in.policy;
+	cfg.eid_index = file->ucontext->eid_index;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
 	jetty_grp_uobj = (struct uburma_jetty_grp_uobj *)uobj_alloc(UOBJ_CLASS_JETTY_GRP, file);

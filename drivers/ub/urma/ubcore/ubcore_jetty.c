@@ -52,19 +52,6 @@ struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id)
 }
 EXPORT_SYMBOL(ubcore_find_jfr);
 
-static uint32_t ubcore_get_ceqn(struct ubcore_device *dev)
-{
-	uint32_t ceqn = 0;
-	int cpu;
-
-	if (dev->attr.dev_cap.ceq_cnt > 0) {
-		cpu = get_cpu();
-		ceqn = (uint32_t)(cpu % dev->attr.dev_cap.ceq_cnt);
-		put_cpu();
-	}
-	return ceqn;
-}
-
 static int check_and_fill_jfc_attr(struct ubcore_jfc_cfg *cfg, struct ubcore_jfc_cfg *user)
 {
 	if (cfg->depth < user->depth)
@@ -81,15 +68,11 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, struct ubcore_jf
 	struct ubcore_udata *udata)
 {
 	struct ubcore_jfc *jfc;
-	uint32_t ceqn;
 
 	if (dev == NULL || cfg == NULL || dev->ops->create_jfc == NULL ||
 		dev->ops->destroy_jfc == NULL)
 		return NULL;
 
-	ceqn = ubcore_get_ceqn(dev);
-
-	((struct ubcore_jfc_cfg *)cfg)->ceqn = ceqn;
 	jfc = dev->ops->create_jfc(dev, cfg, udata);
 	if (jfc == NULL) {
 		ubcore_log_err("failed to create jfc.\n");
@@ -101,7 +84,6 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, struct ubcore_jf
 		ubcore_log_err("jfc cfg is not qualified.\n");
 		return NULL;
 	}
-	jfc->jfc_cfg.ceqn = ceqn;
 	jfc->jfce_handler = jfce_handler;
 	jfc->jfae_handler = jfae_handler;
 	jfc->ub_dev = dev;
@@ -513,7 +495,6 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	tjfr->cfg = *cfg;
 	tjfr->ub_dev = dev;
 	tjfr->uctx = ubcore_get_uctx(udata);
-	tjfr->type = UBCORE_JFR;
 	atomic_set(&tjfr->use_cnt, 0);
 	mutex_init(&tjfr->lock);
 
@@ -631,6 +612,8 @@ static int check_jetty_cfg_with_jetty_grp(struct ubcore_jetty_cfg *cfg)
 
 	if (cfg->flag.bs.share_jfr == 1 && (cfg->jfr == NULL ||
 		cfg->token_value.token != cfg->jfr->jfr_cfg.token_value.token ||
+		cfg->jetty_grp->jetty_grp_cfg.flag.bs.token_policy !=
+		cfg->jfr->jfr_cfg.flag.bs.token_policy ||
 		cfg->jfr->jfr_cfg.trans_mode != UBCORE_TP_RM))
 		return -1;
 
@@ -954,7 +937,6 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	tjetty->cfg = *cfg;
 	tjetty->ub_dev = dev;
 	tjetty->uctx = ubcore_get_uctx(udata);
-	tjetty->type = cfg->type;
 
 	atomic_set(&tjetty->use_cnt, 0);
 	mutex_init(&tjetty->lock);

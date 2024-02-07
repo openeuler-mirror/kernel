@@ -260,7 +260,7 @@ static struct ubcore_req_host *ubcore_migrate_req(struct ubcore_device *dev,
 
 	mig_resp = (struct ubcore_nl_function_mig_req *)req_copy->req.data;
 	mig_resp->mig_fe_idx = mig_msg->mig_fe_idx;
-	(void)strcpy(mig_resp->dev_name, dev->dev_name);
+	(void)strncpy(mig_resp->dev_name, dev->dev_name, strlen(dev->dev_name));
 
 	return req_copy;
 }

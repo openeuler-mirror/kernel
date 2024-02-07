@@ -227,7 +227,7 @@ struct ubcore_device *ubcore_find_device(union ubcore_eid *eid, enum ubcore_tran
 
 	mutex_lock(&g_device_mutex);
 	list_for_each_entry(dev, &g_device_list, list_node) {
-		for (idx = 0; idx < dev->attr.max_eid_cnt; idx++) {
+		for (idx = 0; idx < dev->attr.dev_cap.max_eid_cnt; idx++) {
 			if (memcmp(&dev->eid_table.eid_entries[idx].eid, eid,
 				sizeof(union ubcore_eid)) == 0 && dev->transport_type == type) {
 				target = dev;
@@ -303,15 +303,16 @@ int ubcore_add_upi_list(struct ubcore_device *dev, uint32_t upi)
 	return 0;
 }
 
-void ubcore_destroy_upi_list(void)
+void ubcore_destroy_upi_list(struct ubcore_device *dev)
 {
 	struct ubcore_upi_entry *entry = NULL, *next;
 
 	mutex_lock(&g_upi_lock);
 	list_for_each_entry_safe(entry, next, &g_upi_list, node) {
-		if (entry != NULL) {
+		if (entry != NULL && entry->dev == dev) {
 			list_del(&entry->node);
 			kfree(entry);
+			break;
 		}
 	}
 	mutex_unlock(&g_upi_lock);
@@ -431,17 +432,16 @@ struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name,
 struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
 	enum ubcore_transport_type type)
 {
-	char dev_name[UBCORE_MAX_DEV_NAME] = {0};
+	struct ubcore_device *tpf_dev = NULL;
 
 	if (netaddr == NULL)
 		return ubcore_find_tpf_device_legacy();
 
-	if (ubcore_lookup_sip_by_addr(netaddr, dev_name) < 0) {
-		ubcore_log_warn("can not find tpf by net_addr:ip %pI6c", &netaddr->net_addr);
+	tpf_dev = ubcore_lookup_tpf_by_sip_addr(netaddr);
+	if (tpf_dev == NULL)
 		return ubcore_find_tpf_device_legacy();
-	}
 
-	return ubcore_find_tpf_device_by_name(dev_name, type);
+	return tpf_dev;
 }
 
 int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg)
@@ -565,13 +565,13 @@ static int ubcore_create_eidtable(struct ubcore_device *dev)
 	struct ubcore_eid_entry *entry_list;
 
 	entry_list = kcalloc(1,
-		dev->attr.max_eid_cnt * sizeof(struct ubcore_eid_entry), GFP_ATOMIC);
+		dev->attr.dev_cap.max_eid_cnt * sizeof(struct ubcore_eid_entry), GFP_ATOMIC);
 	if (entry_list == NULL)
 		return -ENOMEM;
 
 	dev->eid_table.eid_entries = entry_list;
 	spin_lock_init(&dev->eid_table.lock);
-	dev->eid_table.eid_cnt = dev->attr.max_eid_cnt;
+	dev->eid_table.eid_cnt = dev->attr.dev_cap.max_eid_cnt;
 	dev->dynamic_eid = 1;
 	return 0;
 }
@@ -717,6 +717,7 @@ int ubcore_query_all_device_tpf_dev_info(void)
 					dev->dev_name);
 				ret = -1;
 			}
+			ubcore_log_info("query tpf_dev %s to notify uvs", dev->dev_name);
 		}
 	}
 	mutex_unlock(&g_device_mutex);
@@ -734,6 +735,9 @@ static int init_ubcore_device(struct ubcore_device *dev)
 	/* set tpf device */
 	if (dev->transport_type == UBCORE_TRANSPORT_UB && g_tpf == NULL && dev->attr.tp_maintainer)
 		g_tpf = dev;
+
+	if (dev->transport_type == UBCORE_TRANSPORT_UB && dev->attr.tp_maintainer)
+		ubcore_sip_table_init(&dev->sip_table);
 
 	device_initialize(&dev->dev);
 	dev_set_drvdata(&dev->dev, dev);
@@ -775,6 +779,24 @@ static int init_ubcore_device(struct ubcore_device *dev)
 	return 0;
 }
 
+static void ubcore_remove_uvs_sip_info(struct ubcore_device *dev)
+{
+	struct ubcore_sip_info *sip_info;
+	uint32_t max_cnt = 0;
+	uint32_t i;
+
+	mutex_lock(&dev->sip_table.lock);
+	max_cnt = ubcore_get_sip_max_cnt(&dev->sip_table);
+	for (i = 0; i < max_cnt; i++) {
+		sip_info = dev->sip_table.entry[i];
+		if (sip_info == NULL)
+			continue;
+		if (ubcore_get_netlink_valid() == true)
+			(void)ubcore_notify_uvs_del_sip(dev, sip_info, i);
+	}
+	mutex_unlock(&dev->sip_table.lock);
+}
+
 static void uninit_ubcore_device(struct ubcore_device *dev)
 {
 	ubcore_put_port_netdev(dev);
@@ -783,12 +805,14 @@ static void uninit_ubcore_device(struct ubcore_device *dev)
 	ubcore_destroy_eidtable(dev);
 
 	if (!dev->attr.virtualization)
-		ubcore_destroy_upi_list();
+		ubcore_destroy_upi_list(dev);
 
 	if (g_tpf == dev && dev->attr.tp_maintainer)
 		g_tpf = NULL;
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB && dev->attr.tp_maintainer) {
+		ubcore_remove_uvs_sip_info(dev);
+		ubcore_sip_table_uninit(&dev->sip_table);
 		if (ubcore_get_netlink_valid() && ubcore_send_remove_tpf_dev_info(dev) != 0)
 			ubcore_log_warn("failed to remove tpf dev info %s", dev->dev_name);
 	}
@@ -1343,58 +1367,63 @@ EXPORT_SYMBOL(ubcore_query_stats);
 static int ubcore_add_device_sip(struct ubcore_device *dev, struct ubcore_sip_info *sip)
 {
 	uint32_t index;
-	int ret;
 
-	ret = ubcore_lookup_sip_idx(sip, &index);
-	if (ret == 0) {
+	if (ubcore_lookup_sip_idx(&dev->sip_table, sip, &index) == 0) {
 		ubcore_log_err("sip already exists\n");
 		return -1;
 	}
-	index = ubcore_sip_idx_alloc(0);
+	index = ubcore_sip_idx_alloc(&dev->sip_table);
 
 	if (dev->ops->add_net_addr != NULL && dev->ops->add_net_addr(dev, &sip->addr, index) != 0) {
 		ubcore_log_err("Failed to set net addr");
-		ret = -1;
 		goto free_sip_index;
 	}
 	/* add net_addr entry, record idx -> netaddr mapping */
-	if (ubcore_add_sip_entry(sip, index) != 0) {
-		ret = -1;
+	if (ubcore_add_sip_entry(&dev->sip_table, sip, index) != 0)
 		goto del_net_addr;
-	}
+
 	/* nodify uvs add sip info */
-	if (ubcore_get_netlink_valid() == true)
-		(void)ubcore_notify_uvs_add_sip(dev, sip, index);
+	if (ubcore_get_netlink_valid() == true && ubcore_notify_uvs_add_sip(dev, sip, index) != 0)
+		goto del_sip_entry;
+
 	return 0;
 
+del_sip_entry:
+	(void)ubcore_del_sip_entry(&dev->sip_table, index);
 del_net_addr:
 	if (dev->ops->delete_net_addr != NULL)
 		dev->ops->delete_net_addr(dev, index);
 free_sip_index:
-	(void)ubcore_sip_idx_free(index);
-	return ret;
+	(void)ubcore_sip_idx_free(&dev->sip_table, index);
+	return -1;
 }
 
 static int ubcore_del_device_sip(struct ubcore_device *dev, struct ubcore_sip_info *sip)
 {
 	uint32_t index;
 
-	if (ubcore_lookup_sip_idx(sip, &index) != 0)
+	if (ubcore_lookup_sip_idx(&dev->sip_table, sip, &index) != 0)
 		return -1;
 
-	(void)ubcore_del_sip_entry(index);
+	(void)ubcore_del_sip_entry(&dev->sip_table, index);
 
 	if (dev->ops->delete_net_addr != NULL && dev->ops->delete_net_addr(dev, index) != 0) {
 		ubcore_log_err("Failed to delete net addr");
-		(void)ubcore_add_sip_entry(sip, index);
-		return -1;
+		goto add_sip_entry;
 	}
 	/* nodify uvs add sip info */
-	if (ubcore_get_netlink_valid() == true)
-		(void)ubcore_notify_uvs_del_sip(dev, sip, index);
+	if (ubcore_get_netlink_valid() == true && ubcore_notify_uvs_del_sip(dev, sip, index) != 0)
+		goto add_net_addr;
 
-	(void)ubcore_sip_idx_free(index);
+	(void)ubcore_sip_idx_free(&dev->sip_table, index);
 	return 0;
+
+add_net_addr:
+	if (dev->ops->add_net_addr != NULL)
+		dev->ops->add_net_addr(dev, &sip->addr, index);
+add_sip_entry:
+	(void)ubcore_add_sip_entry(&dev->sip_table, sip, index);
+	return -1;
 }
 
 static int ubcore_update_sip(struct ubcore_sip_info *sip, bool is_add)
@@ -1438,28 +1467,6 @@ int ubcore_delete_sip(struct ubcore_sip_info *sip)
 }
 EXPORT_SYMBOL(ubcore_delete_sip);
 
-void ubcore_sync_sip_table(void)
-{
-	struct ubcore_sip_info *sip;
-	struct ubcore_device *tpf_dev;
-	uint32_t max_cnt;
-	uint32_t i;
-
-	max_cnt = ubcore_get_sip_max_cnt();
-
-	for (i = 0; i < max_cnt; i++) {
-		sip = ubcore_lookup_sip_info(i);
-		if (sip == NULL)
-			continue;
-
-		tpf_dev = ubcore_find_tpf_device_by_name(sip->dev_name, UBCORE_TRANSPORT_UB);
-		if (tpf_dev) {
-			(void)ubcore_notify_uvs_add_sip(tpf_dev, sip, i);
-			ubcore_put_device(tpf_dev);
-		}
-	}
-}
-
 struct ubcore_eid_info *ubcore_get_eid_list(struct ubcore_device *dev, uint32_t *cnt)
 {
 	struct ubcore_eid_info *tmp;
@@ -1467,12 +1474,12 @@ struct ubcore_eid_info *ubcore_get_eid_list(struct ubcore_device *dev, uint32_t 
 	uint32_t count;
 	uint32_t i;
 
-	tmp = vmalloc(dev->attr.max_eid_cnt * sizeof(struct ubcore_eid_info));
+	tmp = vmalloc(dev->attr.dev_cap.max_eid_cnt * sizeof(struct ubcore_eid_info));
 	if (tmp == NULL)
 		return NULL;
 
 	spin_lock(&dev->eid_table.lock);
-	for (i = 0, count = 0; i < dev->attr.max_eid_cnt; i++) {
+	for (i = 0, count = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (dev->eid_table.eid_entries[i].valid == true) {
 			tmp[count].eid = dev->eid_table.eid_entries[i].eid;
 			tmp[count].eid_index = i;
@@ -1502,3 +1509,64 @@ void ubcore_free_eid_list(struct ubcore_eid_info *eid_list)
 		vfree(eid_list);
 }
 EXPORT_SYMBOL(ubcore_free_eid_list);
+
+void ubcore_sync_sip_table(void)
+{
+	struct ubcore_sip_table *sip_table;
+	struct ubcore_device *dev = NULL;
+	struct ubcore_sip_info *sip;
+	uint32_t max_cnt;
+	uint32_t i;
+
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		if (dev != NULL && dev->attr.tp_maintainer == true) {
+			ubcore_get_device(dev);
+			sip_table = &dev->sip_table;
+			mutex_lock(&sip_table->lock);
+			max_cnt = ubcore_get_sip_max_cnt(sip_table);
+			for (i = 0; i < max_cnt; i++) {
+				sip = sip_table->entry[i];
+				if (sip == NULL)
+					continue;
+				if (ubcore_get_netlink_valid() == true)
+					(void)ubcore_notify_uvs_add_sip(dev, sip, i);
+			}
+			mutex_unlock(&sip_table->lock);
+			ubcore_put_device(dev);
+		}
+	}
+	mutex_unlock(&g_device_mutex);
+}
+
+struct ubcore_device *ubcore_lookup_tpf_by_sip_addr(struct ubcore_net_addr *addr)
+{
+	struct ubcore_device *dev = NULL, *target = NULL;
+	struct ubcore_sip_table *sip_table;
+	uint32_t max_cnt;
+	uint32_t i = 0;
+
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		if (dev != NULL && dev->attr.tp_maintainer == true) {
+			sip_table = &dev->sip_table;
+			mutex_lock(&sip_table->lock);
+			max_cnt = ubcore_get_sip_max_cnt(sip_table);
+			for (i = 0; dev != NULL && i < max_cnt; i++) {
+				if (sip_table->entry[i] != NULL &&
+					memcmp(addr, &sip_table->entry[i]->addr,
+						sizeof(struct ubcore_net_addr)) == 0) {
+					target = dev;
+					ubcore_get_device(dev);
+					mutex_unlock(&sip_table->lock);
+					mutex_unlock(&g_device_mutex);
+					return target;
+				};
+			}
+			mutex_unlock(&sip_table->lock);
+		}
+	}
+	mutex_unlock(&g_device_mutex);
+
+	return target;
+}

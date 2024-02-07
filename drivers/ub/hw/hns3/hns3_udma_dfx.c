@@ -403,7 +403,7 @@ static int udma_query_res_jfs(struct udma_dev *udma_dev,
 			jfs->jfs_id = jfs_now->jfs_id;
 			jfs->state = jfs_now->state;
 			jfs->depth = jfs_now->depth;
-			jfs->pri = jfs_now->pri;
+			jfs->priority = jfs_now->pri;
 			jfs->jfc_id = jfs_now->jfc_id;
 			val->len = sizeof(struct ubcore_res_jfs_val);
 			return 0;
@@ -487,7 +487,7 @@ static int udma_query_res_jetty(struct udma_dev *udma_dev,
 			jetty->jetty_id = jetty_now->jetty_id;
 			jetty->state = jetty_now->state;
 			jetty->jfs_depth = jetty_now->jfs_depth;
-			jetty->pri = jetty_now->pri;
+			jetty->priority = jetty_now->pri;
 			jetty->jfr_id = jetty_now->jfr_id;
 			jetty->send_jfc_id  = jetty_now->jfc_s_id;
 			jetty->recv_jfc_id  = jetty_now->jfc_r_id;
@@ -540,7 +540,9 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 	struct ubcore_res_seg_val *seg = (struct ubcore_res_seg_val *)val->addr;
 	struct udma_mpt_entry mpt_entry;
 	struct seg_list *seg_now;
+	union ubcore_eid eid;
 	uint32_t mpt_index;
+	uint32_t token_id;
 	int ret, i;
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
@@ -564,22 +566,36 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 		return ret;
 	}
 
-	seg->ubva.va = udma_reg_read(&mpt_entry, MPT_VA_L) |
-		       udma_reg_read(&mpt_entry, MPT_VA_H) <<
-		       MPT_VA_H_SHIFT;
-	seg->len = udma_reg_read(&mpt_entry, MPT_LEN_L) |
-		   udma_reg_read(&mpt_entry, MPT_LEN_H) <<
-		   MPT_LEN_H_SHIFT;
-	seg->token_id = udma_reg_read(&mpt_entry, MPT_LKEY);
-	list_for_each_entry(seg_now,
-			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
-		if (seg_now->key_id == seg->token_id) {
-			memcpy(&seg->ubva.eid, &seg_now->eid, sizeof(union ubcore_eid));
+	token_id = udma_reg_read(&mpt_entry, MPT_LKEY);
+	seg->seg_cnt = 0;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+	list_for_each_entry(seg_now, &g_udma_dfx_list[i].dfx->seg_list->node, node) {
+		if (seg_now->key_id == token_id) {
+			memcpy(&eid, &seg_now->eid, sizeof(union ubcore_eid));
+			seg->seg_cnt = 1;
 			break;
 		}
 	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
 
-	val->len = sizeof(struct ubcore_res_seg_val);
+	if (seg->seg_cnt == 0) {
+		dev_err(udma_dev->dev, "failed to query seg, token_id = %u.\n", token_id);
+		return -EINVAL;
+	}
+
+	seg->seg_list = vmalloc(sizeof(struct ubcore_seg_info));
+	if (!seg->seg_list)
+		return -ENOMEM;
+
+	seg->seg_list->token_id = token_id;
+	seg->seg_list->len = udma_reg_read(&mpt_entry, MPT_LEN_L) |
+			     udma_reg_read(&mpt_entry, MPT_LEN_H) <<
+			     MPT_LEN_H_SHIFT;
+	seg->seg_list->ubva.va = udma_reg_read(&mpt_entry, MPT_VA_L) |
+				 udma_reg_read(&mpt_entry, MPT_VA_H) <<
+				 MPT_VA_H_SHIFT;
+	seg->seg_list->ubva.eid = eid;
 
 	return 0;
 }

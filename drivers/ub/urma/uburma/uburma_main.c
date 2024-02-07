@@ -153,7 +153,8 @@ static int uburma_create_eid_table(struct uburma_logic_device *ldev, struct ubco
 {
 	struct uburma_eid *eid_list;
 
-	eid_list = kcalloc(1, ubc_dev->attr.max_eid_cnt * sizeof(struct uburma_eid), GFP_ATOMIC);
+	eid_list = kcalloc(
+		1, ubc_dev->attr.dev_cap.max_eid_cnt * sizeof(struct uburma_eid), GFP_ATOMIC);
 	if (eid_list == NULL)
 		return -ENOMEM;
 
@@ -188,7 +189,7 @@ static int uburma_fill_logic_device_attr(struct uburma_logic_device *ldev,
 	}
 
 	/* create /sys/class/uburma/<ubc_dev->dev_name>/fe* */
-	for (f1 = 0; f1 < ubc_dev->attr.fe_cnt; f1++) {
+	for (f1 = 0; f1 < ubc_dev->attr.dev_cap.max_fe_cnt; f1++) {
 		if (uburma_create_fe_attr_files(ldev, ubu_dev, f1) != 0)
 			goto err_fe_attr;
 	}
@@ -197,7 +198,7 @@ static int uburma_fill_logic_device_attr(struct uburma_logic_device *ldev,
 	if (uburma_create_eid_table(ldev, ubc_dev) != 0)
 		goto err_fe_attr;
 
-	for (e1 = 0; e1 < ubc_dev->attr.max_eid_cnt; e1++) {
+	for (e1 = 0; e1 < ubc_dev->attr.dev_cap.max_eid_cnt; e1++) {
 		if (uburma_create_eid_attr_files(ldev, e1) != 0)
 			goto err_eid_attr;
 	}
@@ -227,12 +228,12 @@ static void uburma_unfill_logic_device_attr(struct uburma_logic_device *ldev,
 	uint16_t f;
 	uint8_t p;
 
-	for (e = 0; e < ubc_dev->attr.max_eid_cnt; e++)
+	for (e = 0; e < ubc_dev->attr.dev_cap.max_eid_cnt; e++)
 		uburma_remove_eid_attr_files(ldev, e);
 
 	uburma_destroy_eid_table(ldev);
 
-	for (f = 0; f < ubc_dev->attr.fe_cnt; f++)
+	for (f = 0; f < ubc_dev->attr.dev_cap.max_fe_cnt; f++)
 		uburma_remove_fe_attr_files(ldev, f);
 
 	for (p = 0; p < ubc_dev->attr.port_cnt; p++)

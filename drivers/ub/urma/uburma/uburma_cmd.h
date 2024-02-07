@@ -284,6 +284,7 @@ struct uburma_cmd_create_jfc {
 		uint32_t flag;
 		int jfce_fd;
 		uint64_t urma_jfc; /* urma jfc pointer */
+		uint32_t ceqn;     /* [Optional] event queue id */
 	} in;
 	struct {
 		uint32_t id;

@@ -342,7 +342,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	struct net_device *net_dev;
 	int i;
 
-	attr->max_eid_cnt = udma_dev->caps.max_eid_cnt;
+	attr->dev_cap.max_eid_cnt = udma_dev->caps.max_eid_cnt;
 	attr->dev_cap.max_jfc = (1 << udma_dev->caps.num_jfc_shift);
 	attr->dev_cap.max_jfs = (1 << udma_dev->caps.num_jfs_shift);
 	attr->dev_cap.max_jfr = (1 << udma_dev->caps.num_jfr_shift);
@@ -361,7 +361,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->dev_cap.feature.bs.spray_en = 1;
 	attr->dev_cap.max_jfs_rsge = udma_dev->caps.max_sq_sg;
 	attr->dev_cap.congestion_ctrl_alg = query_congest_alg(udma_dev->caps.cong_type);
-	attr->fe_cnt = udma_dev->func_num - 1;
+	attr->dev_cap.max_fe_cnt = udma_dev->func_num - 1;
 	attr->port_cnt = udma_dev->caps.num_ports;
 	attr->tp_maintainer = true;
 

@@ -80,7 +80,8 @@ static struct ubcore_nl_session *ubcore_create_nl_session(struct ubcore_device *
 	spin_unlock_irqrestore(&g_nl_session_lock, flags);
 	kref_init(&s->kref);
 	init_completion(&s->comp);
-	(void)strcpy(s->dev_name, dev->dev_name);
+	(void)strncpy(s->dev_name, dev->dev_name, strlen(dev->dev_name));
+
 	return s;
 }
 
@@ -264,7 +265,7 @@ static struct ubcore_nlmsg *ubcore_get_migrate_vtp_req(struct ubcore_vtp *vtp,
 		return NULL;
 	}
 	mig_req = (struct ubcore_migrate_vtp_req *)(void *)req->payload;
-	(void)strcpy(mig_req->dev_name, dev_name);
+	(void)strncpy(mig_req->dev_name, dev_name, strlen(dev_name));
 
 	mig_req->vtp_cfg.fe_idx = vtp->cfg.fe_idx;
 	mig_req->vtp_cfg.vtpn = vtp->cfg.vtpn;
