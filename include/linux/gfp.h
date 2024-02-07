@@ -98,15 +98,21 @@ static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
 #error GFP_ZONES_SHIFT too large to create GFP_ZONE_TABLE integer
 #endif
 
+#if GFP_ZONES_SHIFT >= 3
+#define TABLE_TYPE(X)	((uint64_t)X)
+#else
+#define TABLE_TYPE(X)	X
+#endif
+
 #define GFP_ZONE_TABLE ( \
-	(ZONE_NORMAL << 0 * GFP_ZONES_SHIFT)				       \
-	| (OPT_ZONE_DMA << ___GFP_DMA * GFP_ZONES_SHIFT)		       \
-	| (OPT_ZONE_HIGHMEM << ___GFP_HIGHMEM * GFP_ZONES_SHIFT)	       \
-	| (OPT_ZONE_DMA32 << ___GFP_DMA32 * GFP_ZONES_SHIFT)		       \
-	| (ZONE_NORMAL << ___GFP_MOVABLE * GFP_ZONES_SHIFT)		       \
-	| (OPT_ZONE_DMA << (___GFP_MOVABLE | ___GFP_DMA) * GFP_ZONES_SHIFT)    \
-	| (ZONE_MOVABLE << (___GFP_MOVABLE | ___GFP_HIGHMEM) * GFP_ZONES_SHIFT)\
-	| (OPT_ZONE_DMA32 << (___GFP_MOVABLE | ___GFP_DMA32) * GFP_ZONES_SHIFT)\
+	(TABLE_TYPE(ZONE_NORMAL) << 0 * GFP_ZONES_SHIFT)					\
+	| (TABLE_TYPE(OPT_ZONE_DMA) << ___GFP_DMA * GFP_ZONES_SHIFT)				\
+	| (TABLE_TYPE(OPT_ZONE_HIGHMEM) << ___GFP_HIGHMEM * GFP_ZONES_SHIFT)			\
+	| (TABLE_TYPE(OPT_ZONE_DMA32) << ___GFP_DMA32 * GFP_ZONES_SHIFT)			\
+	| (TABLE_TYPE(ZONE_NORMAL) << ___GFP_MOVABLE * GFP_ZONES_SHIFT)				\
+	| (TABLE_TYPE(OPT_ZONE_DMA) << (___GFP_MOVABLE | ___GFP_DMA) * GFP_ZONES_SHIFT)		\
+	| (TABLE_TYPE(ZONE_MOVABLE) << (___GFP_MOVABLE | ___GFP_HIGHMEM) * GFP_ZONES_SHIFT)	\
+	| (TABLE_TYPE(OPT_ZONE_DMA32) << (___GFP_MOVABLE | ___GFP_DMA32) * GFP_ZONES_SHIFT)	\
 )
 
 /*
@@ -142,6 +148,8 @@ static inline enum zone_type gfp_zone(gfp_t flags)
 
 	return z;
 }
+
+#undef TABLE_TYPE
 
 /*
  * There is only one page-allocator function, and two main namespaces to
