@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/timer.h>
 #include <linux/scatterlist.h>
+#include <linux/kabi.h>
 #include <scsi/scsi_device.h>
 
 struct Scsi_Host;
@@ -141,6 +142,9 @@ struct scsi_cmnd {
 					 * to be at an address < 16Mb). */
 
 	int result;		/* Status code from lower level driver */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /* Variant of blk_mq_rq_from_pdu() that verifies the type of its argument. */
