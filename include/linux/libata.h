@@ -23,6 +23,7 @@
 #include <linux/cdrom.h>
 #include <linux/sched.h>
 #include <linux/async.h>
+#include <linux/kabi.h>
 
 /*
  * Define if arch has non-standard setup.  This is a _PCI_ standard
@@ -549,6 +550,11 @@ struct ata_taskfile {
 	u32			auxiliary;	/* auxiliary field */
 						/* from SATA 3.1 and */
 						/* ATA-8 ACS-3 */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #ifdef CONFIG_ATA_SFF
@@ -728,6 +734,14 @@ struct ata_device {
 	int			spdn_cnt;
 	/* ering is CLEAR_END, read comment above CLEAR_END */
 	struct ata_ering	ering;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
 };
 
 /* Fields between ATA_DEVICE_CLEAR_BEGIN and ATA_DEVICE_CLEAR_END are
@@ -799,6 +813,15 @@ struct ata_link {
 	struct ata_device	device[ATA_MAX_DEVICES];
 
 	unsigned long		last_lpm_change; /* when last LPM change happened */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+
 };
 #define ATA_LINK_CLEAR_BEGIN		offsetof(struct ata_link, active_tag)
 #define ATA_LINK_CLEAR_END		offsetof(struct ata_link, device[0])
@@ -877,6 +900,15 @@ struct ata_port {
 	/* owned by EH */
 	u8			*ncq_sense_buf;
 	u8			sector_buf[ATA_SECT_SIZE] ____cacheline_aligned;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 /* The following initializer overrides a method to NULL whether one of
@@ -981,6 +1013,10 @@ struct ata_port_operations {
 	ssize_t (*transmit_led_message)(struct ata_port *ap, u32 state,
 					ssize_t size);
 
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 	/*
 	 * ->inherits must be the last field and all the preceding
 	 * fields must be pointers.
@@ -996,6 +1032,9 @@ struct ata_port_info {
 	unsigned int		udma_mask;
 	struct ata_port_operations *port_ops;
 	void 			*private_data;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct ata_timing {
