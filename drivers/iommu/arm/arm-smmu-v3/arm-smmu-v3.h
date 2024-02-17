@@ -587,6 +587,9 @@ struct arm_smmu_cmdq {
 	atomic_long_t			*valid_map;
 	atomic_t			owner_prod;
 	atomic_t			lock;
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+	int				shared;
+#endif
 };
 
 #ifdef CONFIG_ARM_SMMU_V3_ECMDQ
