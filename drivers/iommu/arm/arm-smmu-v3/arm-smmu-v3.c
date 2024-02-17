@@ -422,7 +422,7 @@ static struct arm_smmu_cmdq *arm_smmu_get_cmdq(struct arm_smmu_device *smmu)
 	if (smmu->ecmdq_enabled) {
 		struct arm_smmu_ecmdq *ecmdq;
 
-		ecmdq = *this_cpu_ptr(smmu->ecmdq);
+		ecmdq = *this_cpu_ptr(smmu->ecmdqs);
 
 		return &ecmdq->cmdq;
 	}
@@ -521,7 +521,7 @@ static void arm_smmu_ecmdq_skip_err(struct arm_smmu_device *smmu)
 	for (i = 0; i < smmu->nr_ecmdq; i++) {
 		unsigned long flags;
 
-		ecmdq = *per_cpu_ptr(smmu->ecmdq, i);
+		ecmdq = *per_cpu_ptr(smmu->ecmdqs, i);
 		q = &ecmdq->cmdq.q;
 
 		prod = readl_relaxed(q->prod_reg);
@@ -3889,6 +3889,55 @@ static int arm_smmu_device_disable(struct arm_smmu_device *smmu)
 	return ret;
 }
 
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+static int arm_smmu_ecmdq_reset(struct arm_smmu_device *smmu)
+{
+	int i, cpu, ret = 0;
+	u32 reg;
+
+	if (!smmu->nr_ecmdq)
+		return 0;
+
+	i = 0;
+	for_each_possible_cpu(cpu) {
+		struct arm_smmu_ecmdq *ecmdq;
+		struct arm_smmu_queue *q;
+
+		ecmdq = *per_cpu_ptr(smmu->ecmdqs, cpu);
+		if (ecmdq != per_cpu_ptr(smmu->ecmdq, cpu))
+			continue;
+
+		q = &ecmdq->cmdq.q;
+		i++;
+
+		if (WARN_ON(q->llq.prod != q->llq.cons)) {
+			q->llq.prod = 0;
+			q->llq.cons = 0;
+		}
+		writeq_relaxed(q->q_base, ecmdq->base + ARM_SMMU_ECMDQ_BASE);
+		writel_relaxed(q->llq.prod, ecmdq->base + ARM_SMMU_ECMDQ_PROD);
+		writel_relaxed(q->llq.cons, ecmdq->base + ARM_SMMU_ECMDQ_CONS);
+
+		/* enable ecmdq */
+		writel(ECMDQ_PROD_EN | q->llq.prod, q->prod_reg);
+		ret = readl_relaxed_poll_timeout(q->cons_reg, reg, reg & ECMDQ_CONS_ENACK,
+					  1, ARM_SMMU_POLL_TIMEOUT_US);
+		if (ret) {
+			dev_err(smmu->dev, "ecmdq[%d] enable failed\n", i);
+			smmu->ecmdq_enabled = 0;
+			break;
+		}
+	}
+
+	return ret;
+}
+#else
+static int arm_smmu_ecmdq_reset(struct arm_smmu_device *smmu)
+{
+	return 0;
+}
+#endif
+
 static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool resume)
 {
 	int ret;
@@ -3935,33 +3984,7 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool resume)
 	writel_relaxed(smmu->cmdq.q.llq.prod, smmu->base + ARM_SMMU_CMDQ_PROD);
 	writel_relaxed(smmu->cmdq.q.llq.cons, smmu->base + ARM_SMMU_CMDQ_CONS);
 
-#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
-	if (smmu->features & ARM_SMMU_FEAT_ECMDQ) {
-		int i;
-
-		for (i = 0; i < smmu->nr_ecmdq; i++) {
-			struct arm_smmu_ecmdq *ecmdq;
-			struct arm_smmu_queue *q;
-
-			ecmdq = *per_cpu_ptr(smmu->ecmdq, i);
-			q = &ecmdq->cmdq.q;
-
-			writeq_relaxed(q->q_base, ecmdq->base + ARM_SMMU_ECMDQ_BASE);
-			writel_relaxed(q->llq.prod, ecmdq->base + ARM_SMMU_ECMDQ_PROD);
-			writel_relaxed(q->llq.cons, ecmdq->base + ARM_SMMU_ECMDQ_CONS);
-
-			/* enable ecmdq */
-			writel(ECMDQ_PROD_EN, q->prod_reg);
-			ret = readl_relaxed_poll_timeout(q->cons_reg, reg, reg & ECMDQ_CONS_ENACK,
-						  1, ARM_SMMU_POLL_TIMEOUT_US);
-			if (ret) {
-				dev_err(smmu->dev, "ecmdq[%d] enable failed\n", i);
-				smmu->ecmdq_enabled = 0;
-				break;
-			}
-		}
-	}
-#endif
+	arm_smmu_ecmdq_reset(smmu);
 
 	enables = CR0_CMDQEN;
 	ret = arm_smmu_write_reg_sync(smmu, enables, ARM_SMMU_CR0,
@@ -4055,24 +4078,30 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool resume)
 #ifdef CONFIG_ARM_SMMU_V3_ECMDQ
 static int arm_smmu_ecmdq_layout(struct arm_smmu_device *smmu)
 {
-	int cpu;
+	int cpu, host_cpu;
 	struct arm_smmu_ecmdq *ecmdq;
 
-	if (num_possible_cpus() <= smmu->nr_ecmdq) {
-		ecmdq = devm_alloc_percpu(smmu->dev, *ecmdq);
-		if (!ecmdq)
-			return -ENOMEM;
+	ecmdq = devm_alloc_percpu(smmu->dev, *ecmdq);
+	if (!ecmdq)
+		return -ENOMEM;
+	smmu->ecmdq = ecmdq;
 
-		for_each_possible_cpu(cpu)
-			*per_cpu_ptr(smmu->ecmdq, cpu) = per_cpu_ptr(ecmdq, cpu);
-
-		/* A core requires at most one ECMDQ */
+	/* A core requires at most one ECMDQ */
+	if (num_possible_cpus() < smmu->nr_ecmdq)
 		smmu->nr_ecmdq = num_possible_cpus();
 
-		return 0;
+	for_each_possible_cpu(cpu) {
+		if (cpu < smmu->nr_ecmdq) {
+			*per_cpu_ptr(smmu->ecmdqs, cpu) = per_cpu_ptr(smmu->ecmdq, cpu);
+		} else {
+			host_cpu = cpu % smmu->nr_ecmdq;
+			ecmdq = per_cpu_ptr(smmu->ecmdq, host_cpu);
+			ecmdq->cmdq.shared = 1;
+			*per_cpu_ptr(smmu->ecmdqs, cpu) = ecmdq;
+		}
 	}
 
-	return -ENOSPC;
+	return 0;
 }
 
 static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
@@ -4089,6 +4118,8 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 	numq = 1 << FIELD_GET(IDR6_LOG2NUMQ, reg);
 	smmu->nr_ecmdq = nump * numq;
 	gap = ECMDQ_CP_RRESET_SIZE >> FIELD_GET(IDR6_LOG2NUMQ, reg);
+	if (!smmu->nr_ecmdq)
+		return -EOPNOTSUPP;
 
 	smmu_dma_base = (vmalloc_to_pfn(smmu->base) << PAGE_SHIFT);
 	cp_regs = ioremap(smmu_dma_base + ARM_SMMU_ECMDQ_CP_BASE, PAGE_SIZE);
@@ -4121,8 +4152,8 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 	if (!cp_base)
 		return -ENOMEM;
 
-	smmu->ecmdq = devm_alloc_percpu(smmu->dev, struct arm_smmu_ecmdq *);
-	if (!smmu->ecmdq)
+	smmu->ecmdqs = devm_alloc_percpu(smmu->dev, struct arm_smmu_ecmdq *);
+	if (!smmu->ecmdqs)
 		return -ENOMEM;
 
 	ret = arm_smmu_ecmdq_layout(smmu);
@@ -4136,10 +4167,21 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 		struct arm_smmu_ecmdq *ecmdq;
 		struct arm_smmu_queue *q;
 
-		ecmdq = *per_cpu_ptr(smmu->ecmdq, cpu);
-		ecmdq->base = cp_base + addr;
-
+		ecmdq = *per_cpu_ptr(smmu->ecmdqs, cpu);
 		q = &ecmdq->cmdq.q;
+
+		/*
+		 * The boot option "maxcpus=" can limit the number of online
+		 * CPUs. The CPUs that are not selected are not showed in
+		 * cpumask_of_node(node), their 'ecmdq' may be NULL.
+		 *
+		 * (ecmdq != per_cpu_ptr(smmu->ecmdq, cpu)) indicates that the
+		 * ECMDQ is shared by multiple cores and should be initialized
+		 * only by the first owner.
+		 */
+		if (!ecmdq || (ecmdq != per_cpu_ptr(smmu->ecmdq, cpu)))
+			continue;
+		ecmdq->base = cp_base + addr;
 
 		q->llq.max_n_shift = ECMDQ_MAX_SZ_SHIFT + shift_increment;
 		ret = arm_smmu_init_one_queue(smmu, q, ecmdq->base, ARM_SMMU_ECMDQ_PROD,
@@ -4564,8 +4606,70 @@ static void __iomem *arm_smmu_ioremap(struct device *dev, resource_size_t start,
 }
 
 #ifdef CONFIG_ARM_SMMU_V3_PM
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+static int arm_smmu_ecmdq_disable(struct device *dev)
+{
+	int i, j;
+	int ret, nr_fail = 0, n = 100;
+	u32 reg, prod, cons;
+	struct arm_smmu_ecmdq *ecmdq;
+	struct arm_smmu_queue *q;
+	struct arm_smmu_device *smmu = dev_get_drvdata(dev);
+
+	for (i = 0; i < smmu->nr_ecmdq; i++) {
+		ecmdq = *per_cpu_ptr(smmu->ecmdqs, i);
+		q = &ecmdq->cmdq.q;
+
+		prod = readl_relaxed(q->prod_reg);
+		cons = readl_relaxed(q->cons_reg);
+		if ((prod & ECMDQ_PROD_EN) == 0)
+			continue;
+
+		for (j = 0; j < n; j++) {
+			if (Q_IDX(&q->llq, prod) == Q_IDX(&q->llq, cons) &&
+			    Q_WRP(&q->llq, prod) == Q_WRP(&q->llq, cons))
+				break;
+
+			/* Wait a moment, so ECMDQ has a chance to finish */
+			udelay(1);
+			cons = readl_relaxed(q->cons_reg);
+		}
+		WARN_ON(prod != readl_relaxed(q->prod_reg));
+		if (j >= n)
+			dev_warn(smmu->dev,
+				 "Forcibly disabling ecmdq[%d]: prod=%08x, cons=%08x\n",
+				 i, prod, cons);
+
+		/* disable ecmdq */
+		prod &= ~ECMDQ_PROD_EN;
+		writel(prod, q->prod_reg);
+		ret = readl_relaxed_poll_timeout(q->cons_reg, reg, !(reg & ECMDQ_CONS_ENACK),
+					  1, ARM_SMMU_POLL_TIMEOUT_US);
+		if (ret) {
+			nr_fail++;
+			dev_err(smmu->dev, "ecmdq[%d] disable failed\n", i);
+		}
+	}
+
+	if (nr_fail) {
+		smmu->ecmdq_enabled = 0;
+		pr_warn("Suppress ecmdq feature, switch to normal cmdq\n");
+		return -EIO;
+	}
+
+	return 0;
+}
+#else
+static int arm_smmu_ecmdq_disable(struct device *dev)
+{
+	return 0;
+}
+#endif
+
 static int arm_smmu_suspend(struct device *dev)
 {
+	arm_smmu_ecmdq_disable(dev);
+
 	/*
 	 * The smmu is powered off and related registers are automatically
 	 * cleared when suspend. No need to do anything.

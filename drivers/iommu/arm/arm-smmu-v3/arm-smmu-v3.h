@@ -711,7 +711,9 @@ struct arm_smmu_device {
 		u32			nr_ecmdq;
 		u32			ecmdq_enabled;
 	};
-	struct arm_smmu_ecmdq *__percpu *ecmdq;
+
+	struct arm_smmu_ecmdq *__percpu	*ecmdqs;
+	struct arm_smmu_ecmdq  __percpu	*ecmdq;
 #endif
 
 	struct arm_smmu_cmdq		cmdq;
