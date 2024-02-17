@@ -430,6 +430,17 @@ config ARM_SMMU_V3_HTTU
 	help
 	  Add support for Hardware Translation Table Update arm smmu v3.
 
+config ARM_SMMU_V3_ECMDQ
+	bool "Add arm_smmu_v3 ecmdq support"
+	depends on ARM_SMMU_V3
+	default n
+	help
+	  Add support for ARM_SMMU_V3 ECMDQ. One smmu can have multiple
+	  ECMDQs which can be used to reduce competition when smmu try
+	  to send commands.
+
+	  If not sure, say no.
+
 config S390_IOMMU
 	def_bool y if S390 && PCI
 	depends on S390 && PCI
