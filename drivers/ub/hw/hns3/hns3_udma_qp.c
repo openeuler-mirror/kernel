@@ -33,6 +33,15 @@ static bool um_spray_en;
 static ushort um_data_udp_start;
 static ushort um_udp_range;
 
+static bool is_rc_jetty(struct udma_qp_attr *qp_attr)
+{
+	if (qp_attr->is_jetty && qp_attr->jetty &&
+	    qp_attr->tp_mode == UBCORE_TP_RC)
+		return true;
+
+	return false;
+}
+
 static void set_qpc_wqe_cnt(struct udma_qp *qp,
 			    struct udma_qp_context *context,
 			    struct udma_qp_context *context_mask)
@@ -44,6 +53,12 @@ static void set_qpc_wqe_cnt(struct udma_qp *qp,
 
 	udma_reg_write(context, QPC_SQ_SHIFT, ilog2(qp->sq.wqe_cnt));
 	udma_reg_clear(context_mask, QPC_SQ_SHIFT);
+
+	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	    !qp->qp_attr.jetty->dca_en) {
+		udma_reg_write(context, QPC_RQ_SHIFT, ilog2(qp->rq.wqe_cnt));
+		udma_reg_clear(context_mask, QPC_RQ_SHIFT);
+	}
 }
 
 static void config_qp_sq_buf_mask(struct udma_qp_context *context_mask)
@@ -60,6 +75,45 @@ static void config_qp_sq_buf_mask(struct udma_qp_context *context_mask)
 	udma_reg_clear(context_mask, QPC_SGE_HOP_NUM);
 	udma_reg_clear(context_mask, QPC_WQE_SGE_BA_PG_SZ);
 	udma_reg_clear(context_mask, QPC_WQE_SGE_BUF_PG_SZ);
+}
+
+static int config_qp_rq_buf(struct udma_dev *udma_device,
+			    struct udma_qp *qp,
+			    struct udma_qp_context *context,
+			    struct udma_qp_context *context_mask)
+{
+	uint64_t mtts_wqe[MTT_MIN_COUNT] = {};
+	int count;
+
+	/* search RQ buf's mtts */
+	count = udma_mtr_find(udma_device, &qp->qp_attr.jfr->buf_mtr, qp->qp_attr.jfr->offset,
+			    mtts_wqe, ARRAY_SIZE(mtts_wqe), NULL);
+	if (count < 1) {
+		dev_err(udma_device->dev, "failed to find QP(0x%llx) RQ buf.\n",
+			qp->qpn);
+		return -EINVAL;
+	}
+
+	udma_reg_write(context, QPC_RQ_HOP_NUM,
+			to_udma_hem_hopnum(udma_device->caps.wqe_rq_hop_num,
+					qp->rq.wqe_cnt));
+	udma_reg_clear(context_mask, QPC_RQ_HOP_NUM);
+
+	udma_reg_write(context, QPC_RQ_CUR_BLK_ADDR_L,
+		to_udma_hw_page_addr(mtts_wqe[0]));
+	udma_reg_write(context, QPC_RQ_CUR_BLK_ADDR_H,
+		upper_32_bits(to_udma_hw_page_addr(mtts_wqe[0])));
+	udma_reg_clear(context_mask, QPC_RQ_CUR_BLK_ADDR_L);
+	udma_reg_clear(context_mask, QPC_RQ_CUR_BLK_ADDR_H);
+
+	udma_reg_write(context, QPC_RQ_NXT_BLK_ADDR_L,
+		to_udma_hw_page_addr(mtts_wqe[1]));
+	udma_reg_write(context, QPC_RQ_NXT_BLK_ADDR_H,
+		upper_32_bits(to_udma_hw_page_addr(mtts_wqe[1])));
+	udma_reg_clear(context_mask, QPC_RQ_NXT_BLK_ADDR_L);
+	udma_reg_clear(context_mask, QPC_RQ_NXT_BLK_ADDR_H);
+
+	return 0;
 }
 
 static int config_qp_sq_buf(struct udma_dev *udma_device,
@@ -85,13 +139,20 @@ static int config_qp_sq_buf(struct udma_dev *udma_device,
 
 	if (qp->sge.sge_cnt > 0) {
 		count = udma_mtr_find(udma_device, &qp->mtr,
-				      qp->sge.wqe_offset, &sge_cur_blk,
+					qp->sge.wqe_offset, &sge_cur_blk,
 					1, NULL);
 		if (count < 1) {
 			dev_err(udma_device->dev,
 				"failed to find QP(0x%llx) SGE buf.\n", qp->qpn);
 			return -EINVAL;
 		}
+	}
+
+	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	    !qp->qp_attr.jetty->dca_en) {
+		count = config_qp_rq_buf(udma_device, qp, context, context_mask);
+		if (count)
+			return -EINVAL;
 	}
 
 	/*
@@ -301,6 +362,17 @@ static void edit_qpc_for_db(struct udma_qp_context *context, struct udma_qp_cont
 	if (qp->en_flags & UDMA_QP_CAP_RQ_RECORD_DB) {
 		udma_reg_enable(context, QPC_RQ_RECORD_EN);
 		udma_reg_clear(context_mask, QPC_RQ_RECORD_EN);
+		if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+		    !qp->qp_attr.jetty->dca_en) {
+			udma_reg_write(context, QPC_RQ_DB_RECORD_ADDR_L,
+				lower_32_bits(qp->qp_attr.jfr->db.dma) >>
+						DMA_DB_RECORD_SHIFT);
+			udma_reg_write(context, QPC_RQ_DB_RECORD_ADDR_H,
+				upper_32_bits(qp->qp_attr.jfr->db.dma));
+
+			udma_reg_clear(context_mask, QPC_RQ_DB_RECORD_ADDR_L);
+			udma_reg_clear(context_mask, QPC_RQ_DB_RECORD_ADDR_H);
+		}
 	}
 
 	if (qp->en_flags & UDMA_QP_CAP_OWNER_DB) {
@@ -314,6 +386,9 @@ static void edit_qpc_for_srqn(struct udma_qp *qp,
 			      struct udma_qp_context *context_mask)
 {
 	if (qp->qp_attr.jfr) {
+		if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+		    !qp->qp_attr.jetty->dca_en)
+			return;
 		udma_reg_enable(context, QPC_SRQ_EN);
 		udma_reg_clear(context_mask, QPC_SRQ_EN);
 
@@ -465,6 +540,7 @@ static int modify_qp_rtr_to_rts(struct udma_qp *qp,
 
 	qp->sq.wqe_offset = qp->sq.offset;
 	qp->sge.wqe_offset = qp->sge.offset;
+	qp->rq.wqe_offset = qp->rq.offset;
 
 	ret = config_qp_sq_buf(udma_device, qp, context, context_mask);
 	if (ret) {
@@ -1005,6 +1081,12 @@ int fill_jfr_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	}
 	qp_attr->cap.min_rnr_timer = jfr->jfr_cfg.min_rnr_timer;
 
+	if (is_rc_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
+	    !qp_attr->jetty->dca_en) {
+		qp_attr->cap.max_recv_wr = jfr->jfr_cfg.depth;
+		qp_attr->cap.max_recv_sge = jfr->jfr_cfg.max_sge;
+	}
+
 	return 0;
 }
 
@@ -1163,8 +1245,16 @@ static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
 	qp->sq.max_gs = min(qp->sq.max_gs, udma_dev->caps.max_sq_sg);
 }
 
-static void set_rq_size(struct udma_qp *qp, struct udma_qp_cap *cap)
+static void set_rq_size(struct udma_dev *udma_dev, struct udma_qp *qp, struct udma_qp_cap *cap)
 {
+	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	    !qp->qp_attr.jetty->dca_en) {
+		qp->rq.wqe_cnt = roundup_pow_of_two(cap->max_recv_wr);
+		qp->rq.max_gs = roundup_pow_of_two(cap->max_recv_sge);
+		qp->rq.wqe_shift = ilog2(roundup_pow_of_two(UDMA_SGE_SIZE * cap->max_recv_sge));
+		qp->rq.offset = qp->qp_attr.jfr->offset;
+		return;
+	}
 	/* set rq param to 0 */
 	qp->rq.wqe_cnt = 0;
 	qp->rq.max_gs = 1;
@@ -1189,15 +1279,6 @@ static int set_user_sq_size(struct udma_dev *udma_dev, struct udma_qp *qp,
 	set_ext_sge_param(udma_dev, qp->sq.wqe_cnt, qp, cap);
 
 	return 0;
-}
-
-static bool is_rc_jetty(struct udma_qp_attr *qp_attr)
-{
-	if (qp_attr->is_jetty && qp_attr->jetty &&
-	    qp_attr->tp_mode == UBCORE_TP_RC)
-		return true;
-
-	return false;
 }
 
 static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
@@ -1230,7 +1311,7 @@ static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
 
 	qp->max_inline_data = qp_attr->cap.max_inline_data;
 
-	set_rq_size(qp, &qp_attr->cap);
+	set_rq_size(udma_dev, qp, &qp_attr->cap);
 
 	if (!qp_attr->is_tgt) {
 		ret = copy_from_user(ucmd, (void *)udata->udrv_data->in_addr,
@@ -1420,6 +1501,21 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 		buf_attr->region[idx].hopnum = udma_dev->caps.wqe_sge_hop_num;
 		idx++;
 		qp->buff_size += buf_size;
+	}
+
+	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	    !qp->qp_attr.jetty->dca_en) {
+		/* RQ WQE */
+		qp->rq.offset = qp->buff_size;
+
+		buf_size = to_udma_hem_entries_size(qp->rq.wqe_cnt,
+						qp->rq.wqe_shift);
+		if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
+			buf_attr->region[idx].size = buf_size;
+			buf_attr->region[idx].hopnum = udma_dev->caps.wqe_rq_hop_num;
+			idx++;
+			qp->buff_size += buf_size;
+		}
 	}
 
 	if (qp->buff_size < 1)
@@ -1853,6 +1949,8 @@ static int udma_alloc_qp_sq(struct udma_dev *udma_dev, struct udma_qp *qp,
 	if (is_rc_jetty(qp_attr)) {
 		qp->sdb = qp_attr->jetty->rc_node.sdb;
 		qp->en_flags |= UDMA_QP_CAP_SQ_RECORD_DB;
+		if (!qp_attr->jetty->shared_jfr && !qp_attr->jetty->dca_en)
+			qp->en_flags |= UDMA_QP_CAP_RQ_RECORD_DB;
 		qp->dca_ctx = &qp_attr->jetty->rc_node.context->dca_ctx;
 		if (qp_attr->jetty->rc_node.buf_addr) {
 			qp->mtr = qp_attr->jetty->rc_node.mtr;
@@ -1879,7 +1977,7 @@ static int udma_alloc_qp_sq(struct udma_dev *udma_dev, struct udma_qp *qp,
 			dev_err(udma_dev->dev,
 				"failed to alloc QP doorbell, ret = %d.\n",
 				ret);
-			free_qp_db(udma_dev, qp);
+			free_qp_wqe(udma_dev, qp);
 		}
 	}
 

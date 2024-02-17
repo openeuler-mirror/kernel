@@ -108,6 +108,68 @@ static int alloc_jfr_wqe_buf(struct udma_dev *dev,
 	return ret;
 }
 
+static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
+			     struct udma_jfr *jfr,
+			     struct ubcore_udata *udata,
+			     struct udma_create_jfr_ucmd *ucmd)
+{
+	struct udma_buf_attr buf_attr = {};
+	uint32_t total_buff_size = 0;
+	uint32_t idx = 0;
+	int buf_size;
+	int ret;
+
+	/* SQ WQE */
+	buf_size = to_udma_hem_entries_size(ucmd->sqe_cnt, ucmd->sqe_shift);
+	if (buf_size > 0) {
+		buf_attr.region[idx].size = buf_size;
+		buf_attr.region[idx].hopnum = dev->caps.wqe_sq_hop_num;
+		total_buff_size += buf_size;
+		idx++;
+	}
+
+	/* extend SGE WQE in SQ */
+	buf_size = to_udma_hem_entries_size(ucmd->sge_cnt, ucmd->sge_shift);
+	if (buf_size > 0) {
+		buf_attr.region[idx].size = buf_size;
+		buf_attr.region[idx].hopnum = dev->caps.wqe_sge_hop_num;
+		total_buff_size += buf_size;
+		idx++;
+	}
+
+	/* RQ WQE */
+	jfr->offset = total_buff_size;
+	jfr->wqe_shift = ilog2(roundup_pow_of_two(UDMA_SGE_SIZE *
+						  jfr->max_sge));
+
+	buf_size = to_udma_hem_entries_size(jfr->wqe_cnt, jfr->wqe_shift);
+	if (buf_size > 0) {
+		buf_attr.region[idx].size = buf_size;
+		buf_attr.region[idx].hopnum = dev->caps.wqe_rq_hop_num;
+		total_buff_size += buf_size;
+		idx++;
+	}
+
+	if (total_buff_size < 1) {
+		dev_err(dev->dev, "jetty rq buf size is invalid, size = %u.\n",
+			total_buff_size);
+		return -EINVAL;
+	}
+
+	buf_attr.region_count = idx;
+	buf_attr.mtt_only = false;
+	buf_attr.page_shift = PAGE_SHIFT + dev->caps.mtt_buf_pg_sz;
+
+	ret = udma_mtr_create(dev, &jfr->buf_mtr, &buf_attr,
+			      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz,
+			      ucmd->wqe_buf_addr, !!udata);
+	if (ret)
+		dev_err(dev->dev,
+			"failed to alloc JFR buf mtr, ret = %d.\n", ret);
+
+	return ret;
+}
+
 static void free_jfr_wqe_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 {
 	udma_mtr_destroy(dev, &jfr->buf_mtr);
@@ -136,9 +198,16 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 	if (ret)
 		return ret;
 
-	ret = alloc_jfr_wqe_buf(dev, jfr, udata, ucmd.buf_addr);
-	if (ret)
-		goto err_idx;
+	if (ucmd.wqe_buf_addr) {
+		dev->caps.flags |= UDMA_CAP_FLAG_SRQ_RECORD_DB;
+		ret = alloc_jfr_wqe_buf_rq(dev, jfr, udata, &ucmd);
+		if (ret)
+			goto err_idx;
+	} else {
+		ret = alloc_jfr_wqe_buf(dev, jfr, udata, ucmd.buf_addr);
+		if (ret)
+			goto err_idx;
+	}
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB) {
 		ret = udma_db_map_user(dev, ucmd.db_addr, &jfr->db);
@@ -187,6 +256,7 @@ static int udma_write_jfr_index_queue(struct udma_dev *dev,
 	struct udma_jfr_idx_que *idx_que = &jfr->idx_que;
 	uint64_t mtts_idx[MTT_MIN_COUNT] = {};
 	uint64_t dma_handle_idx = 0;
+	uint64_t dma_idx_shift;
 	int ret;
 
 	/* Get physical address of idx que buf */
@@ -198,12 +268,12 @@ static int udma_write_jfr_index_queue(struct udma_dev *dev,
 		return -ENOBUFS;
 	}
 
+	dma_idx_shift = dma_handle_idx >> DMA_IDX_SHIFT;
 	udma_reg_write(ctx, SRQC_IDX_HOP_NUM,
 		       to_udma_hem_hopnum(dev->caps.idx_hop_num, jfr->wqe_cnt));
 
-	udma_reg_write(ctx, SRQC_IDX_BT_BA_L, dma_handle_idx >> DMA_IDX_SHIFT);
-	udma_reg_write(ctx, SRQC_IDX_BT_BA_H,
-		       upper_32_bits(dma_handle_idx >> DMA_IDX_SHIFT));
+	udma_reg_write(ctx, SRQC_IDX_BT_BA_L, dma_idx_shift);
+	udma_reg_write(ctx, SRQC_IDX_BT_BA_H, upper_32_bits(dma_idx_shift));
 
 	udma_reg_write(ctx, SRQC_IDX_BA_PG_SZ,
 		       to_udma_hw_page_shift(idx_que->mtr.hem_cfg.ba_pg_shift));
@@ -232,7 +302,7 @@ static int write_jfrc(struct udma_dev *dev, struct udma_jfr *jfr, void *mb_buf)
 
 	memset(ctx, 0, sizeof(*ctx));
 
-	ret = udma_mtr_find(dev, &jfr->buf_mtr, 0, mtts_wqe,
+	ret = udma_mtr_find(dev, &jfr->buf_mtr, jfr->offset, mtts_wqe,
 			    ARRAY_SIZE(mtts_wqe), &dma_handle_wqe);
 	if (ret < 1) {
 		dev_err(dev->dev, "failed to find mtr for JFR WQE, ret = %d.\n",

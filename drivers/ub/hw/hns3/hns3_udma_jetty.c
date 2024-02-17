@@ -269,6 +269,11 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 			return ret;
 		}
 
+		if (!jetty->shared_jfr) {
+			jetty->rc_node.mtr = jetty->udma_jfr->buf_mtr;
+			return 0;
+		}
+
 		ret = udma_mtr_create(dev, &jetty->rc_node.mtr, &buf_attr,
 				      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz,
 				      ucmd.buf_addr, !!udata);
@@ -449,7 +454,7 @@ err_alloc_jetty_id:
 	return NULL;
 }
 
-int free_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty)
+static int free_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty)
 {
 	int ret = 0;
 
@@ -463,7 +468,8 @@ int free_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty)
 		udma_destroy_qp_common(dev, &jetty->qp);
 	} else if (jetty->tp_mode == UBCORE_TP_RC && !jetty->dca_en) {
 		udma_db_unmap_user(dev, &jetty->rc_node.sdb);
-		udma_mtr_destroy(dev, &jetty->rc_node.mtr);
+		if (jetty->shared_jfr)
+			udma_mtr_destroy(dev, &jetty->rc_node.mtr);
 	}
 
 	return ret;
