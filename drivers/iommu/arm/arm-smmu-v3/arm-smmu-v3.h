@@ -45,6 +45,7 @@
 #define IDR0_S2P			(1 << 0)
 
 #define ARM_SMMU_IDR1			0x4
+#define IDR1_ECMDQ			(1 << 31)
 #define IDR1_TABLES_PRESET		(1 << 30)
 #define IDR1_QUEUES_PRESET		(1 << 29)
 #define IDR1_REL			(1 << 28)
@@ -121,6 +122,7 @@
 #define ARM_SMMU_IRQ_CTRLACK		0x54
 
 #define ARM_SMMU_GERROR			0x60
+#define GERROR_CMDQP_ERR		(1 << 9)
 #define GERROR_SFM_ERR			(1 << 8)
 #define GERROR_MSI_GERROR_ABT_ERR	(1 << 7)
 #define GERROR_MSI_PRIQ_ABT_ERR		(1 << 6)
@@ -136,6 +138,26 @@
 #define ARM_SMMU_GERROR_IRQ_CFG0	0x68
 #define ARM_SMMU_GERROR_IRQ_CFG1	0x70
 #define ARM_SMMU_GERROR_IRQ_CFG2	0x74
+
+#define ARM_SMMU_IDR6			0x190
+#define IDR6_LOG2NUMP			GENMASK(27, 24)
+#define IDR6_LOG2NUMQ			GENMASK(19, 16)
+#define IDR6_BA_DOORBELLS		GENMASK(9, 0)
+
+#define ARM_SMMU_ECMDQ_BASE		0x00
+#define ARM_SMMU_ECMDQ_PROD		0x08
+#define ARM_SMMU_ECMDQ_CONS		0x0c
+#define ECMDQ_MAX_SZ_SHIFT		8
+#define ECMDQ_PROD_EN			(1 << 31)
+#define ECMDQ_CONS_ENACK		(1 << 31)
+#define ECMDQ_CONS_ERR			(1 << 23)
+#define ECMDQ_PROD_ERRACK		(1 << 23)
+
+#define ARM_SMMU_ECMDQ_CP_BASE		0x4000
+#define ECMDQ_CP_ADDR			GENMASK_ULL(51, 12)
+#define ECMDQ_CP_CMDQGS			GENMASK_ULL(2, 1)
+#define ECMDQ_CP_PRESET			(1UL << 0)
+#define ECMDQ_CP_RRESET_SIZE		0x10000
 
 #define ARM_SMMU_STRTAB_BASE		0x80
 #define STRTAB_BASE_RA			(1UL << 62)
@@ -538,6 +560,10 @@ struct arm_smmu_ll_queue {
 struct arm_smmu_queue {
 	struct arm_smmu_ll_queue	llq;
 	int				irq; /* Wired interrupt */
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+	u32				ecmdq_prod;
+	rwlock_t			ecmdq_lock;
+#endif
 
 	__le64				*base;
 	dma_addr_t			base_dma;
@@ -561,7 +587,17 @@ struct arm_smmu_cmdq {
 	atomic_long_t			*valid_map;
 	atomic_t			owner_prod;
 	atomic_t			lock;
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+	int				shared;
+#endif
 };
+
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+struct arm_smmu_ecmdq {
+	struct arm_smmu_cmdq		cmdq;
+	void __iomem			*base;
+};
+#endif
 
 struct arm_smmu_cmdq_batch {
 	u64				cmds[CMDQ_BATCH_ENTRIES * CMDQ_ENT_DWORDS];
@@ -661,6 +697,7 @@ struct arm_smmu_device {
 #define ARM_SMMU_FEAT_NESTING		(1 << 21)
 #define ARM_SMMU_FEAT_BBML1		(1 << 22)
 #define ARM_SMMU_FEAT_BBML2		(1 << 23)
+#define ARM_SMMU_FEAT_ECMDQ		(1 << 24)
 	u32				features;
 
 #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
@@ -668,6 +705,16 @@ struct arm_smmu_device {
 #define ARM_SMMU_OPT_MSIPOLL		(1 << 2)
 #define ARM_SMMU_OPT_CMDQ_FORCE_SYNC	(1 << 3)
 	u32				options;
+
+#ifdef CONFIG_ARM_SMMU_V3_ECMDQ
+	union {
+		u32			nr_ecmdq;
+		u32			ecmdq_enabled;
+	};
+
+	struct arm_smmu_ecmdq *__percpu	*ecmdqs;
+	struct arm_smmu_ecmdq  __percpu	*ecmdq;
+#endif
 
 	struct arm_smmu_cmdq		cmdq;
 	struct arm_smmu_evtq		evtq;
