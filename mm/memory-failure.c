@@ -2496,19 +2496,7 @@ core_initcall(memory_failure_init);
 		pr_info(fmt, pfn);			\
 })
 
-/**
- * unpoison_memory - Unpoison a previously poisoned page
- * @pfn: Page number of the to be unpoisoned page
- *
- * Software-unpoison a page that has been poisoned by
- * memory_failure() earlier.
- *
- * This is only done on the software-level, so it only works
- * for linux injected failures, not real hardware failures
- *
- * Returns 0 for success, otherwise -errno.
- */
-int unpoison_memory(unsigned long pfn)
+static int __unpoison_memory(unsigned long pfn, bool hw_mf_check)
 {
 	struct folio *folio;
 	struct page *p;
@@ -2526,7 +2514,7 @@ int unpoison_memory(unsigned long pfn)
 
 	mutex_lock(&mf_mutex);
 
-	if (hw_memory_failure) {
+	if (hw_mf_check && hw_memory_failure) {
 		unpoison_pr_info("Unpoison: Disabled after HW memory failure %#lx\n",
 				 pfn, &unpoison_rs);
 		ret = -EOPNOTSUPP;
@@ -2609,7 +2597,45 @@ unlock_mutex:
 	}
 	return ret;
 }
+
+/**
+ * unpoison_memory - Unpoison a previously poisoned page
+ * @pfn: Page number of the to be unpoisoned page
+ *
+ * Software-unpoison a page that has been poisoned by
+ * memory_failure() earlier.
+ *
+ * This is only done on the software-level, so it only works
+ * for linux injected failures, not real hardware failures
+ *
+ * Returns 0 for success, otherwise -errno.
+ */
+int unpoison_memory(unsigned long pfn)
+{
+	return __unpoison_memory(pfn, true);
+}
 EXPORT_SYMBOL(unpoison_memory);
+
+/**
+ * soft_online_page - Unpoison a previously poisoned page
+ * @pfn: Page number of the to be unpoisoned page
+ *
+ * Software-unpoison a page that has been poisoned by
+ * memory_failure() earlier.
+ *
+ * This is only done on the software-level, so it only works
+ * for linux injected failures, not real hardware failures
+ *
+ * Since KPTE will be clear once hardware memory corrupts
+ * happens in x86, hw_mf_check can not be ignored for x86.
+ *
+ * Returns 0 for success, otherwise -errno.
+ */
+int soft_online_page(unsigned long pfn)
+{
+	return __unpoison_memory(pfn, IS_ENABLED(CONFIG_X86));
+}
+EXPORT_SYMBOL_GPL(soft_online_page);
 
 static bool isolate_page(struct page *page, struct list_head *pagelist)
 {
@@ -2801,3 +2827,4 @@ retry:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(soft_offline_page);
