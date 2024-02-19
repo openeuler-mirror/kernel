@@ -275,11 +275,18 @@ IF_HAVE_VM_USWAP(VM_USWAP,		"userswap"	)		\
 #define IFDEF_ZONE_HIGHMEM(X)
 #endif
 
+#ifdef CONFIG_ZONE_EXTMEM
+#define IFDEF_ZONE_EXTMEM(X) X
+#else
+#define IFDEF_ZONE_EXTMEM(X)
+#endif
+
 #define ZONE_TYPE						\
 	IFDEF_ZONE_DMA(		EM (ZONE_DMA,	 "DMA"))	\
 	IFDEF_ZONE_DMA32(	EM (ZONE_DMA32,	 "DMA32"))	\
 				EM (ZONE_NORMAL, "Normal")	\
 	IFDEF_ZONE_HIGHMEM(	EM (ZONE_HIGHMEM,"HighMem"))	\
+	IFDEF_ZONE_EXTMEM(	EM (ZONE_EXTMEM, "ExtMem"))	\
 				EMe(ZONE_MOVABLE,"Movable")
 
 #define LRU_NAMES		\
