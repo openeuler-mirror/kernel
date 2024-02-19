@@ -2495,7 +2495,7 @@ void console_unlock(void)
 	static char text[LOG_LINE_MAX + PREFIX_MAX];
 	static int panic_console_dropped;
 	unsigned long flags;
-	bool do_cond_resched, retry;
+	bool do_cond_resched, retry, locked = false;
 	struct printk_info info;
 	struct printk_record r;
 
@@ -2541,6 +2541,7 @@ again:
 
 		printk_safe_enter_irqsave(flags);
 		raw_spin_lock(&logbuf_lock);
+		locked = true;
 skip:
 		if (!prb_read_valid(prb, console_seq, &r))
 			break;
@@ -2588,6 +2589,7 @@ skip:
 				console_msg_format & MSG_FORMAT_SYSLOG,
 				printk_time);
 		console_seq++;
+		locked = false;
 		raw_spin_unlock(&logbuf_lock);
 
 		/*
@@ -2619,7 +2621,8 @@ skip:
 
 	console_locked = 0;
 
-	raw_spin_unlock(&logbuf_lock);
+	if (likely(locked))
+		raw_spin_unlock(&logbuf_lock);
 
 	up_console_sem();
 
