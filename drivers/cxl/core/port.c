@@ -625,7 +625,6 @@ static int devm_cxl_link_parent_dport(struct device *host,
 static struct lock_class_key cxl_port_key;
 
 static struct cxl_port *cxl_port_alloc(struct device *uport_dev,
-				       resource_size_t component_reg_phys,
 				       struct cxl_dport *parent_dport)
 {
 	struct cxl_port *port;
@@ -676,7 +675,6 @@ static struct cxl_port *cxl_port_alloc(struct device *uport_dev,
 	} else
 		dev->parent = uport_dev;
 
-	port->component_reg_phys = component_reg_phys;
 	ida_init(&port->decoder_ida);
 	port->hdm_end = -1;
 	port->commit_end = -1;
@@ -700,15 +698,17 @@ err:
 static int cxl_setup_comp_regs(struct device *host, struct cxl_register_map *map,
 			       resource_size_t component_reg_phys)
 {
+	*map = (struct cxl_register_map) {
+		.host = host,
+		.reg_type = CXL_REGLOC_RBI_EMPTY,
+		.resource = component_reg_phys,
+	};
+
 	if (component_reg_phys == CXL_RESOURCE_NONE)
 		return 0;
 
-	*map = (struct cxl_register_map) {
-		.host = host,
-		.reg_type = CXL_REGLOC_RBI_COMPONENT,
-		.resource = component_reg_phys,
-		.max_size = CXL_COMPONENT_REG_BLOCK_SIZE,
-	};
+	map->reg_type = CXL_REGLOC_RBI_COMPONENT;
+	map->max_size = CXL_COMPONENT_REG_BLOCK_SIZE;
 
 	return cxl_setup_regs(map);
 }
@@ -718,7 +718,7 @@ static int cxl_port_setup_regs(struct cxl_port *port,
 {
 	if (dev_is_platform(port->uport_dev))
 		return 0;
-	return cxl_setup_comp_regs(&port->dev, &port->comp_map,
+	return cxl_setup_comp_regs(&port->dev, &port->reg_map,
 				   component_reg_phys);
 }
 
@@ -735,9 +735,9 @@ static int cxl_dport_setup_regs(struct device *host, struct cxl_dport *dport,
 	 * register probing, and fixup @host after the fact, since @host may be
 	 * NULL.
 	 */
-	rc = cxl_setup_comp_regs(dport->dport_dev, &dport->comp_map,
+	rc = cxl_setup_comp_regs(dport->dport_dev, &dport->reg_map,
 				 component_reg_phys);
-	dport->comp_map.host = host;
+	dport->reg_map.host = host;
 	return rc;
 }
 
@@ -750,21 +750,36 @@ static struct cxl_port *__devm_cxl_add_port(struct device *host,
 	struct device *dev;
 	int rc;
 
-	port = cxl_port_alloc(uport_dev, component_reg_phys, parent_dport);
+	port = cxl_port_alloc(uport_dev, parent_dport);
 	if (IS_ERR(port))
 		return port;
 
 	dev = &port->dev;
-	if (is_cxl_memdev(uport_dev))
-		rc = dev_set_name(dev, "endpoint%d", port->id);
-	else if (parent_dport)
-		rc = dev_set_name(dev, "port%d", port->id);
-	else
-		rc = dev_set_name(dev, "root%d", port->id);
-	if (rc)
-		goto err;
+	if (is_cxl_memdev(uport_dev)) {
+		struct cxl_memdev *cxlmd = to_cxl_memdev(uport_dev);
+		struct cxl_dev_state *cxlds = cxlmd->cxlds;
 
-	rc = cxl_port_setup_regs(port, component_reg_phys);
+		rc = dev_set_name(dev, "endpoint%d", port->id);
+		if (rc)
+			goto err;
+
+		/*
+		 * The endpoint driver already enumerated the component and RAS
+		 * registers. Reuse that enumeration while prepping them to be
+		 * mapped by the cxl_port driver.
+		 */
+		port->reg_map = cxlds->reg_map;
+		port->reg_map.host = &port->dev;
+	} else if (parent_dport) {
+		rc = dev_set_name(dev, "port%d", port->id);
+		if (rc)
+			goto err;
+
+		rc = cxl_port_setup_regs(port, component_reg_phys);
+		if (rc)
+			goto err;
+	} else
+		rc = dev_set_name(dev, "root%d", port->id);
 	if (rc)
 		goto err;
 
@@ -2091,3 +2106,4 @@ static void cxl_core_exit(void)
 subsys_initcall(cxl_core_init);
 module_exit(cxl_core_exit);
 MODULE_LICENSE("GPL v2");
+MODULE_IMPORT_NS(CXL);
