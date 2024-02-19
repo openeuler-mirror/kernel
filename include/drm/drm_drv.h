@@ -34,6 +34,8 @@
 
 #include <drm/drm_device.h>
 
+#include <linux/kabi.h>
+
 struct drm_file;
 struct drm_gem_object;
 struct drm_master;
@@ -452,6 +454,9 @@ struct drm_driver {
 	void (*disable_vblank)(struct drm_device *dev, unsigned int pipe);
 	int dev_priv_size;
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 void *__devm_drm_dev_alloc(struct device *parent,

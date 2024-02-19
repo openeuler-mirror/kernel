@@ -25,6 +25,8 @@
 #include <linux/types.h>
 #include <uapi/drm/drm_fourcc.h>
 
+#include <linux/kabi.h>
+
 /**
  * DRM_FORMAT_MAX_PLANES - maximum number of planes a DRM format can have
  */
@@ -141,6 +143,9 @@ struct drm_format_info {
 
 	/** @is_color_indexed: Is it a color-indexed format? */
 	bool is_color_indexed;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**

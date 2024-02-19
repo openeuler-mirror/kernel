@@ -41,6 +41,8 @@
 
 #include <drm/drm_vma_manager.h>
 
+#include <linux/kabi.h>
+
 struct iosys_map;
 struct drm_gem_object;
 
@@ -216,6 +218,9 @@ struct drm_gem_object_funcs {
 	 * This is optional but necessary for mmap support.
 	 */
 	const struct vm_operations_struct *vm_ops;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**
@@ -421,6 +426,9 @@ struct drm_gem_object {
 	 * The current LRU list that the GEM object is on.
 	 */
 	struct drm_gem_lru *lru;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**

@@ -38,6 +38,8 @@
 
 #include <drm/drm_prime.h>
 
+#include <linux/kabi.h>
+
 struct dma_fence;
 struct drm_file;
 struct drm_device;
@@ -83,6 +85,9 @@ struct drm_minor {
 
 	struct list_head debugfs_list;
 	struct mutex debugfs_lock; /* Protects debugfs_list. */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**
@@ -374,6 +379,9 @@ struct drm_file {
 #if IS_ENABLED(CONFIG_DRM_LEGACY)
 	unsigned long lock_count; /* DRI1 legacy lock count */
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**
