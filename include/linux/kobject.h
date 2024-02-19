@@ -15,6 +15,7 @@
 #ifndef _KOBJECT_H_
 #define _KOBJECT_H_
 
+#include <linux/kabi.h>
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/sysfs.h>
@@ -79,6 +80,9 @@ struct kobject {
 #ifdef CONFIG_DEBUG_KOBJECT_RELEASE
 	struct delayed_work	release;
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 __printf(2, 3) int kobject_set_name(struct kobject *kobj, const char *name, ...);
@@ -120,6 +124,9 @@ struct kobj_type {
 	const struct kobj_ns_type_operations *(*child_ns_type)(const struct kobject *kobj);
 	const void *(*namespace)(const struct kobject *kobj);
 	void (*get_ownership)(const struct kobject *kobj, kuid_t *uid, kgid_t *gid);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct kobj_uevent_env {
@@ -170,6 +177,9 @@ struct kset {
 	spinlock_t list_lock;
 	struct kobject kobj;
 	const struct kset_uevent_ops *uevent_ops;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 } __randomize_layout;
 
 void kset_init(struct kset *kset);
