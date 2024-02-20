@@ -534,6 +534,12 @@ CONFIG_ARM64_AS_HAS_MTE=y
 # end of ARMv8.5 architectural features
 
 #
+# ARMv8.6 architectural features
+#
+CONFIG_ARM64_TWED=y
+# end of ARMv8.6 architectural features
+
+#
 # ARMv8.7 architectural features
 #
 CONFIG_ARM64_EPAN=y
