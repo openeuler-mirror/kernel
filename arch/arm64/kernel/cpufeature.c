@@ -1355,6 +1355,17 @@ static bool has_cache_idc(const struct arm64_cpu_capabilities *entry,
 	return ctr & BIT(CTR_IDC_SHIFT);
 }
 
+#ifdef CONFIG_MPAM
+static bool has_mpam(const struct arm64_cpu_capabilities *entry, int __unused)
+{
+	u64 pfr0 = read_sanitised_ftr_reg(SYS_ID_AA64PFR0_EL1);
+	u64 pfr1 = read_sanitised_ftr_reg(SYS_ID_AA64PFR1_EL1);
+
+	return cpuid_feature_extract_unsigned_field(pfr0, ID_AA64PFR0_MPAM_SHIFT) |
+		cpuid_feature_extract_unsigned_field(pfr1, ID_AA64PFR1_MPAMFRAC_SHIFT);
+}
+#endif
+
 static void cpu_emulate_effective_ctr(const struct arm64_cpu_capabilities *__unused)
 {
 	/*
@@ -2320,12 +2331,7 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.desc = "ARM64 MPAM Extension Support",
 		.capability = ARM64_HAS_MPAM,
 		.type = ARM64_CPUCAP_SCOPE_SYSTEM,
-		.matches = has_cpuid_feature,
-		.sys_reg = SYS_ID_AA64PFR0_EL1,
-		.sign = FTR_UNSIGNED,
-		.field_pos = ID_AA64PFR0_MPAM_SHIFT,
-		.field_width = 4,
-		.min_field_value = ID_AA64PFR0_MPAM,
+		.matches = has_mpam,
 	},
 #endif /* CONFIG_MPAM */
 #ifdef CONFIG_ARM64_AMU_EXTN
