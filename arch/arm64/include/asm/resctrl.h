@@ -295,6 +295,7 @@ do {   \
 struct resctrl_staged_config {
 	hw_closid_t     hw_closid;
 	u32             new_ctrl[SCHEMA_NUM_CTRL_TYPE];
+	bool            ctrl_updated[SCHEMA_NUM_CTRL_TYPE];
 	bool            have_new_ctrl;
 	enum resctrl_conf_type  conf_type;
 	enum resctrl_ctrl_type  ctrl_type;

@@ -321,6 +321,7 @@ parse_cache(char *buf, struct resctrl_resource *r,
 	}
 
 	cfg->new_ctrl[type] = data;
+	cfg->ctrl_updated[type] = true;
 	cfg->have_new_ctrl = true;
 
 	return 0;
@@ -369,6 +370,7 @@ parse_bw(char *buf, struct resctrl_resource *r,
 	}
 
 	cfg->new_ctrl[type] = data;
+	cfg->ctrl_updated[type] = true;
 	cfg->have_new_ctrl = true;
 
 	return 0;
