@@ -23,7 +23,7 @@
 #ifndef UBCORE_UAPI_H
 #define UBCORE_UAPI_H
 
-#include "ubcore_types.h"
+#include <urma/ubcore_types.h>
 /**
  * Application specifies the device to allocate an context.
  * @param[in] dev: ubcore_device found by add ops in the client.
@@ -507,6 +507,51 @@ int ubcore_post_jetty_recv_wr(struct ubcore_jetty *jetty, struct ubcore_jfr_wr *
  * -1 on error
  */
 int ubcore_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
+
+
+// for system not support cgroup
+#ifndef CONFIG_CGROUP_RDMA
+static inline void ubcore_cgroup_reg_dev(struct ubcore_device *dev) {}
+
+static inline void ubcore_cgroup_unreg_dev(struct ubcore_device *dev) {}
+
+static inline int ubcore_cgroup_try_charge(struct ubcore_cg_object *cg_obj,
+	struct ubcore_device *dev, enum ubcore_resource_type type) { return 0; }
+
+static inline  void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj,
+	struct ubcore_device *dev, enum ubcore_resource_type type) {}
+#else
+/**
+ * Client register cgroup dev
+ * @param[in] dev: the ubcore device handle;
+ */
+void ubcore_cgroup_reg_dev(struct ubcore_device *dev);
+
+/**
+ * Client unregister cgroup dev
+ * @param[in] dev: the ubcore device handle;
+ */
+void ubcore_cgroup_unreg_dev(struct ubcore_device *dev);
+
+/**
+ * Client try to charge cgroup count
+ * @param[in] cg_obj: the cgroup obj
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] type: the cgroup resource type
+ * @return: 0 on success, other value on error
+ */
+int ubcore_cgroup_try_charge(struct ubcore_cg_object *cg_obj, struct ubcore_device *dev,
+	enum ubcore_resource_type type);
+
+/**
+ * Client uncharge cgroup count
+ * @param[in] cg_obj: the cgroup obj
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] type: the cgroup resource type
+ */
+void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj, struct ubcore_device *dev,
+	enum ubcore_resource_type type);
+#endif // CONFIG_CGROUP_RDMA
 
 /* The APIs below are deprecated, should not be called by driver or ubcore client */
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);

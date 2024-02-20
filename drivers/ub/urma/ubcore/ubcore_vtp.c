@@ -75,8 +75,8 @@ static int ubcore_send_create_vtp_req(struct ubcore_device *dev,
 
 	cb.callback = ubcore_handle_create_vtp_resp;
 	cb.user_arg = vtpn;
-	ret = ubcore_send_fe2tpf_msg(dev, req, p->wait, &cb);
-	/* do not free req here */
+	ret = ubcore_send_fe2tpf_msg(dev, req, &cb);
+	kfree(req);
 	return ret;
 }
 
@@ -122,8 +122,8 @@ static int ubcore_send_del_vtp_req(struct ubcore_vtpn *vtpn)
 
 	cb.callback = ubcore_handle_del_vtp_resp;
 	cb.user_arg = vtpn;
-	ret = ubcore_send_fe2tpf_msg(vtpn->ub_dev, req, true, &cb);
-	/* do not free req here */
+	ret = ubcore_send_fe2tpf_msg(vtpn->ub_dev, req, &cb);
+	kfree(req);
 	return ret;
 }
 
@@ -136,6 +136,11 @@ static struct ubcore_vtpn *ubcore_alloc_vtpn(struct ubcore_device *dev,
 		return NULL;
 
 	vtpn = dev->ops->alloc_vtpn(dev);
+	if (vtpn == NULL) {
+		ubcore_log_err("failed to alloc vtpn!, dev_name:%s", dev->dev_name);
+		return NULL;
+	}
+
 	vtpn->ub_dev = dev;
 	atomic_set(&vtpn->use_cnt, 1);
 	atomic_set(&vtpn->state, (int)UBCORE_VTPS_CREATING);
@@ -503,7 +508,6 @@ void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 
 	vtp_param->peer_jetty = cfg->id.id;
 	vtp_param->eid_index = cfg->eid_index;
-	vtp_param->wait = true;
 }
 
 int ubcore_config_function_migrate_state(struct ubcore_device *dev, uint16_t fe_idx,

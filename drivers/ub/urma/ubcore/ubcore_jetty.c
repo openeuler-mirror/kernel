@@ -595,7 +595,7 @@ static int check_and_fill_jetty_attr(struct ubcore_jetty_cfg *cfg, struct ubcore
 	return 0;
 }
 
-static int check_jetty_cfg(struct ubcore_jetty_cfg *cfg)
+static int check_jetty_cfg(struct ubcore_device *dev, struct ubcore_jetty_cfg *cfg)
 {
 	if (ubcore_check_trans_mode_valid(cfg->trans_mode) != true) {
 		ubcore_log_err("Invalid parameter, trans_mode: %d.\n", (int)cfg->trans_mode);
@@ -607,6 +607,10 @@ static int check_jetty_cfg(struct ubcore_jetty_cfg *cfg)
 		return -1;
 	}
 
+	if (cfg->flag.bs.share_jfr == 0 && dev->transport_type == UBCORE_TRANSPORT_UB) {
+		ubcore_log_err("UB dev should use share jfr");
+		return -1;
+	}
 	if (cfg->flag.bs.share_jfr != 0 &&
 		(cfg->jfr == NULL || cfg->jfr->jfr_cfg.trans_mode != cfg->trans_mode)) {
 		ubcore_log_err("jfr is null or trans_mode invalid with shared jfr flag.\n");
@@ -739,7 +743,7 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev, struct ubcor
 		dev->ops->destroy_jetty == NULL)
 		return NULL;
 
-	if (check_jetty_cfg(cfg) != 0) {
+	if (check_jetty_cfg(dev, cfg) != 0) {
 		ubcore_log_err("failed to check jetty cfg.\n");
 		return NULL;
 	}
@@ -864,6 +868,13 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->destroy_jetty == NULL)
 		return -1;
 
+	if ((jetty->ub_dev->transport_type == UBCORE_TRANSPORT_UB &&
+		jetty->jetty_cfg.trans_mode == UBCORE_TP_RC && jetty->remote_jetty != NULL) ||
+		atomic_read(&jetty->use_cnt) > 0) {
+		ubcore_log_err("Failed to delete jetty in RC mode because it has remote jetty");
+		return -1;
+	}
+
 	jetty_grp = jetty->jetty_cfg.jetty_grp;
 	send_jfc = jetty->jetty_cfg.send_jfc;
 	recv_jfc = jetty->jetty_cfg.recv_jfc;
@@ -881,6 +892,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 		atomic_set(&jetty->remote_jetty->use_cnt, 0);
 		/* The tjetty object will release remote jetty resources */
 		jetty->remote_jetty = NULL;
+		ubcore_log_warn("jetty->remote_jetty != NULL and it has been handled");
 	}
 
 	if (jetty_grp != NULL)
@@ -1189,17 +1201,26 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	}
 
 	dev = jetty->ub_dev;
+	if (dev == NULL) {
+		ubcore_log_err("Invalid parameter with dev null_ptr.\n");
+		return -1;
+	}
 
-	if (dev->ops->bind_jetty != NULL && dev->ops->unbind_jetty != NULL) {
+	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
+		struct ubcore_vtpn *vtpn;
+		/* IB devices don't need to call bind_jetty and unbind_jetty */
+		if (dev->ops == NULL || dev->ops->bind_jetty == NULL ||
+			dev->ops->unbind_jetty == NULL) {
+			ubcore_log_err("Failed to bind jetty, no ops->bind_jetty\n");
+			return -1;
+		}
+
 		ret = dev->ops->bind_jetty(jetty, tjetty, udata);
 		if (ret != 0) {
 			ubcore_log_err("Failed to bind jetty");
 			return ret;
 		}
-	}
-
-	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
-		struct ubcore_vtpn *vtpn;
+		atomic_inc(&jetty->use_cnt);
 
 		ubcore_set_vtp_param(dev, jetty, &tjetty->cfg, &vtp_param);
 		mutex_lock(&tjetty->lock);
@@ -1230,8 +1251,10 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	return 0;
 
 unbind:
-	if (dev->ops->bind_jetty != NULL && dev->ops->unbind_jetty != NULL)
+	if (dev->ops->bind_jetty != NULL && dev->ops->unbind_jetty != NULL) {
 		(void)dev->ops->unbind_jetty(jetty);
+		atomic_dec(&jetty->use_cnt);
+	}
 
 	return ret;
 }
@@ -1256,6 +1279,10 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 	}
 
 	dev = jetty->ub_dev;
+	if (dev == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
 		if (tjetty->vtpn != NULL) {
@@ -1282,13 +1309,22 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 		}
 	}
 	ubcore_log_info("jetty: %u unbind tjetty: %u\n", jetty->id, tjetty->cfg.id.id);
-	if (dev->ops->bind_jetty != NULL && dev->ops->unbind_jetty != NULL) {
+
+	/* IB devices don't need to call bind_jetty and unbind_jetty */
+	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
+		if (dev->ops == NULL || dev->ops->bind_jetty == NULL ||
+			dev->ops->unbind_jetty == NULL) {
+			ubcore_log_err("Failed to unbind jetty, no ops->unbind_jetty\n");
+			return -1;
+		}
 		ret = dev->ops->unbind_jetty(jetty);
 		if (ret != 0) {
 			ubcore_log_err("Failed to unbind jetty");
 			return ret;
 		}
+		atomic_dec(&jetty->use_cnt);
 	}
+
 	atomic_dec(&tjetty->use_cnt);
 	jetty->remote_jetty = NULL;
 	return 0;

@@ -127,11 +127,19 @@ void uburma_uninit_jfe(struct uburma_jfe *jfe)
 static int uburma_delete_jfce(struct inode *inode, struct file *filp)
 {
 	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_file *ufile;
 
+	if (uobj == NULL || uobj->ufile == NULL)
+		return 0;
+
+	ufile = uobj->ufile;
+	mutex_lock(&ufile->mutex);
 	uobj_get(uobj);
 	/* will call uburma_hot_unplug_jfce if clean up is not going on */
 	uburma_close_uobj_fd(filp);
 	uobj_put(uobj);
+	mutex_unlock(&ufile->mutex);
+
 	return 0;
 }
 
@@ -336,13 +344,20 @@ static int uburma_delete_jfae(struct inode *inode, struct file *filp)
 {
 	struct uburma_uobj *uobj = filp->private_data;
 	struct uburma_jfae_uobj *jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+	struct uburma_file *ufile;
 
-	/* todonext: handle uobj == NULL */
+	if (uobj == NULL || jfae == NULL || uobj->ufile == NULL)
+		return 0;
+
+	ufile = uobj->ufile;
+	mutex_lock(&ufile->mutex);
 	uobj_get(uobj);
 	/* call uburma_hot_unplug_jfae when cleanup is not going on */
 	uburma_close_uobj_fd(filp);
 	uburma_uninit_jfe(&jfae->jfe);
 	uobj_put(uobj);
+	mutex_unlock(&ufile->mutex);
+
 	return 0;
 }
 

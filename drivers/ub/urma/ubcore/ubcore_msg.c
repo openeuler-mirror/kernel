@@ -127,8 +127,8 @@ static int ubcore_forward_fe2uvs_msg(struct ubcore_device *dev, struct ubcore_re
 		return -ENOMEM;
 
 	cb.callback = ubcore_forward_uvs2fe_msg;
-	cb.user_arg = dev;
-	ret = ubcore_nl_send_nowait(nlmsg, &cb);
+	cb.user_arg = NULL; /* If bind or advise tp timeout expires, dev may drive unregister */
+	ret = ubcore_nl_send_nowait(dev, nlmsg, &cb);
 	if (ret) {
 		kfree(nlmsg);
 		return -EIO;
@@ -160,27 +160,20 @@ static int ubcore_tpf2fe_msg(struct ubcore_device *dev, struct ubcore_resp *resp
 	}
 	s->resp = resp;
 	kref_put(&s->kref, ubcore_free_msg_session);
+	complete(&s->comp);
 
-	if (s->cb.callback == NULL) {
-		complete(&s->comp);
-	} else {
-		s->cb.callback(dev, resp, s->cb.user_arg);
-		kfree(resp);
-		kfree(s->req);
-		ubcore_destroy_msg_session(s);
-	}
 	return 0;
 }
-static void ubcore_fill_tpf_dev_name(struct ubcore_req_host *req_host)
+static void ubcore_fill_tpf_dev_name(struct ubcore_device *tpf_dev,
+	struct ubcore_req_host *req_host)
 {
 	struct ubcore_create_vtp_req *create;
 	struct ubcore_create_vtp_req *destroy;
 	struct ubcore_msg_discover_eid_req *eid_req;
 	struct ubcore_msg_config_device_req *config_dev;
-	struct ubcore_device *tpf_dev;
 
-	tpf_dev = ubcore_find_tpf_device(NULL, UBCORE_TRANSPORT_UB);
-	if (tpf_dev == NULL)
+	/* for alpha dev */
+	if (!tpf_dev->attr.tp_maintainer)
 		return;
 
 	switch (req_host->req.opcode) {
@@ -215,7 +208,6 @@ static void ubcore_fill_tpf_dev_name(struct ubcore_req_host *req_host)
 	default:
 		ubcore_log_err("Unrecognized type of opcode %d\n", (int)req_host->req.opcode);
 	}
-	ubcore_put_device(tpf_dev);
 }
 
 static struct ubcore_req_host *ubcore_copy_req_host(struct ubcore_req_host *req_host)
@@ -295,8 +287,9 @@ int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req)
 			ubcore_log_err("Failed to create handle msg req!\n");
 			return -ENOMEM;
 		}
+
 		/* fill tpf_dev name */
-		ubcore_fill_tpf_dev_name(handle_req);
+		ubcore_fill_tpf_dev_name(dev, handle_req);
 	}
 
 	ret = ubcore_fe2tpf_msg(dev, handle_req);
@@ -364,7 +357,7 @@ int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp_ho
 }
 
 int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
-	bool wait, struct ubcore_resp_cb *cb)
+	struct ubcore_resp_cb *cb)
 {
 	unsigned long leavetime;
 	struct ubcore_msg_session *s;
@@ -385,11 +378,6 @@ int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
 		return -EIO;
 	}
 
-	if (!wait) {
-		s->cb = *cb;
-		return 0;
-	}
-
 	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_MSG_TIMEOUT));
 	if (leavetime == 0) {
 		ubcore_log_err("Failed to wait req reply, msg_id = %u, opcode = %hu, leavetime =  %lu.\n",
@@ -403,7 +391,6 @@ int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
 
 	ret = cb->callback(dev, s->resp, cb->user_arg);
 	kfree(s->resp);
-	kfree(s->req);
 	ubcore_destroy_msg_session(s);
 	return ret;
 }
@@ -433,10 +420,13 @@ static int ubcore_msg_discover_eid_cb(struct ubcore_device *dev,
 	if (resp->opcode == UBCORE_MSG_ALLOC_EID) {
 		if (ubcore_update_eidtbl_by_idx(dev, &data->eid, data->eid_index, true, net) != 0)
 			return -1;
-		if (ubcore_add_ueid(dev, data->fe_idx, &cfg) != 0)
+		if (!dev->attr.virtualization && ubcore_add_ueid(dev, data->fe_idx, &cfg) != 0) {
+			(void)ubcore_update_eidtbl_by_idx(
+				dev, &data->eid, data->eid_index, false, net);
 			return -1;
+		}
 	} else {
-		if (ubcore_delete_ueid(dev, data->fe_idx, &cfg) != 0)
+		if (!dev->attr.virtualization && ubcore_delete_ueid(dev, data->fe_idx, &cfg) != 0)
 			return -1;
 		if (ubcore_update_eidtbl_by_idx(dev, &data->eid, data->eid_index, false, net) != 0)
 			return -1;
@@ -457,10 +447,9 @@ int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
 	cb.user_arg = net;
 	data_len = sizeof(struct ubcore_msg_discover_eid_req);
 	req_msg = kcalloc(1, sizeof(struct ubcore_req) + data_len, GFP_KERNEL);
-	if (req_msg == NULL) {
-		ubcore_log_err("alloc req_msg failed.\n");
+	if (req_msg == NULL)
 		return -ENOMEM;
-	}
+
 	req_msg->len = data_len;
 	req_msg->opcode = op;
 	data = (struct ubcore_msg_discover_eid_req *)req_msg->data;
@@ -469,9 +458,9 @@ int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
 	data->virtualization = dev->attr.virtualization;
 	(void)memcpy(data->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME);
 
-	ret = ubcore_send_fe2tpf_msg(dev, req_msg, true, &cb);
+	ret = ubcore_send_fe2tpf_msg(dev, req_msg, &cb);
 	if (ret != 0)
 		ubcore_log_err("send fe2tpf failed.\n");
-
+	kfree(req_msg);
 	return ret;
 }

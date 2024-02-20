@@ -36,6 +36,7 @@
 #define UBCORE_UVS_CMD_DEV_MAX 64
 #define UBCORE_MAX_VTP_CFG_CNT 32
 #define UBCORE_MAX_EID_CONFIG_CNT 32
+#define UBCORE_MAX_DSCP_VL_NUM 64
 
 /* only for uvs control ubcore device ioctl */
 enum ubcore_uvs_cmd {
@@ -51,6 +52,7 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_DEL_SIP,
 	UBCORE_CMD_MAP_VTP,
 	UBCORE_CMD_CREATE_UTP,
+	UBCORE_CMD_ONLY_CREATE_UTP,
 	UBCORE_CMD_DESTROY_UTP,
 	UBCORE_CMD_GET_DEV_FEATURE,
 	UBCORE_CMD_RESTORE_TP_ERROR_RSP,
@@ -68,7 +70,40 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_CREATE_CTP,
 	UBCORE_CMD_DESTROY_CTP,
 	UBCORE_CMD_CHANGE_TPG_TO_ERROR,
+	UBCORE_CMD_ALLOC_EID,
+	UBCORE_CMD_DEALLOC_EID,
+	UBCORE_CMD_QUERY_FE_IDX,
+	UBCORE_CMD_CONFIG_DSCP_VL,
 	UBCORE_CMD_LAST
+};
+
+struct ubcore_cmd_opt_eid {
+	struct {
+		char dev_name[UBCORE_UVS_CMD_DEV_MAX];
+		uint32_t upi;
+		uint16_t fe_idx;
+		union ubcore_eid eid;
+		uint32_t eid_index;
+	} in;
+};
+
+struct ubcore_cmd_opt_query_fe_idx {
+	struct {
+		char dev_name[UBCORE_UVS_CMD_DEV_MAX];
+		struct ubcore_devid devid;
+	} in;
+	struct {
+		uint16_t fe_idx;
+	} out;
+};
+
+struct ubcore_cmd_opt_config_dscp_vl {
+	struct {
+		char dev_name[UBCORE_UVS_CMD_DEV_MAX];
+		uint8_t dscp[UBCORE_MAX_DSCP_VL_NUM];
+		uint8_t vl[UBCORE_MAX_DSCP_VL_NUM];
+		uint8_t num;
+	} in;
 };
 
 struct ubcore_cmd_channel_init {
@@ -127,8 +162,6 @@ struct ubcore_cmd_create_tpg {
 	/* for alpha */
 	struct ubcore_ta_data ta_data;
 	enum ubcore_mtu local_mtu;
-	struct ubcore_udrv_priv udata;
-	struct ubcore_udrv_ext udrv_ext;
 };
 
 /* modify tps in the tp list of tpg to RTR, RTS, and then map vtpn to tpg */
@@ -306,6 +339,7 @@ struct ubcore_cmd_modify_vtp {
 /* restore tp error */
 struct ubcore_cmd_restore_tp_error {
 	struct {
+		struct ubcore_cmd_tpf tpf;
 		uint32_t tpgn;
 		uint32_t tpn;
 		uint16_t data_udp_start;
@@ -318,6 +352,7 @@ struct ubcore_cmd_restore_tp_error {
 /* restore tp suspend */
 struct ubcore_cmd_restore_tp_suspend {
 	struct {
+		struct ubcore_cmd_tpf tpf;
 		uint32_t tpgn;
 		uint32_t tpn;
 		uint16_t data_udp_start;
@@ -332,12 +367,14 @@ struct ubcore_cmd_get_dev_feature {
 	} in;
 	struct {
 		union ubcore_device_feat feature;
+		uint32_t max_ueid_cnt;
 	} out;
 };
 
 /* change tp to error */
 struct ubcore_cmd_change_tp_to_error {
 	struct {
+		struct ubcore_cmd_tpf tpf;
 		uint32_t tpgn;
 		uint32_t tpn;
 	} in;
@@ -361,10 +398,12 @@ struct ubcore_cmd_show_upi {
 
 struct ubcore_cmd_get_dev_info {
 	struct {
-		char target_tpf_name[UBCORE_UVS_CMD_DEV_MAX];
+		char target_pf_name[UBCORE_UVS_CMD_DEV_MAX];
+		struct ubcore_cmd_tpf tpf;
 	} in;
 	struct {
 		bool port_is_active;
+		char target_tpf_name[UBCORE_UVS_CMD_DEV_MAX];
 	} out;
 };
 

@@ -36,7 +36,6 @@ struct ubcore_vtp_param {
 	uint32_t local_jetty;
 	uint32_t peer_jetty;
 	uint32_t eid_index;
-	bool wait; /* wait blockingly  or no wait */
 	/* for alpha */
 	struct ubcore_ta ta;
 };
@@ -55,8 +54,8 @@ struct ubcore_create_vtp_req {
 	/* for alpha */
 	struct ubcore_ta_data ta_data;
 	uint32_t udrv_in_len;
-	uint32_t udrv_out_len;
-	uint8_t udrv_data[0];
+	uint32_t ext_len;
+	uint8_t udrv_ext[0]; /* struct ubcore_udrv_priv->in_len + struct ubcore_tp_ext->len*/
 };
 
 struct ubcore_create_vtp_resp {

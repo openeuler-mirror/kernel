@@ -513,6 +513,19 @@ static ssize_t utp_cnt_show(struct device *dev, struct device_attribute *attr, c
 
 static DEVICE_ATTR_RO(utp_cnt);
 
+static ssize_t max_tp_in_tpg_show_cb(struct ubcore_device *ubc_dev, char *buf)
+{
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n",
+		ubc_dev->attr.dev_cap.max_tp_in_tpg);
+}
+
+static ssize_t max_tp_in_tpg_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uburma_show_dev_attr(dev, attr, buf, max_tp_in_tpg_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_tp_in_tpg);
+
 static ssize_t port_count_show_cb(struct ubcore_device *ubc_dev, char *buf)
 {
 	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.port_cnt);
@@ -622,6 +635,7 @@ static struct attribute *uburma_dev_attrs[] = {
 	&dev_attr_congestion_ctrl_alg.attr,
 	&dev_attr_ceq_cnt.attr,
 	&dev_attr_utp_cnt.attr,
+	&dev_attr_max_tp_in_tpg.attr,
 	&dev_attr_port_count.attr,
 	&dev_attr_fe_cnt.attr,
 	&dev_attr_max_eid_cnt.attr,
@@ -956,7 +970,7 @@ static ssize_t show_eid_cb(struct ubcore_device *ubc_dev, char *buf, uint16_t id
 {
 	union ubcore_eid eid;
 
-	if (ubc_dev->eid_table.eid_entries[idx].net == net) {
+	if (net_eq(ubc_dev->eid_table.eid_entries[idx].net, net)) {
 		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
 			EID_ARGS(ubc_dev->eid_table.eid_entries[idx].eid));
 	} else {

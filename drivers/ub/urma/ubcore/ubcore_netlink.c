@@ -29,7 +29,7 @@
 #include "ubcore_netlink.h"
 
 #define UBCORE_NL_TYPE 24 /* same with agent netlink type */
-#define UBCORE_NL_TIMEOUT 10000 /* 10s */
+#define UBCORE_NL_TIMEOUT 30000 /* 30s */
 #define UBCORE_NL_INVALID_PORT 0
 
 static struct sock *nl_sock;
@@ -64,7 +64,8 @@ struct ubcore_nlmsg *ubcore_alloc_nlmsg(size_t payload_len,
 	return msg;
 }
 
-static struct ubcore_nl_session *ubcore_create_nl_session(struct ubcore_nlmsg *req)
+static struct ubcore_nl_session *ubcore_create_nl_session(struct ubcore_device *dev,
+	struct ubcore_nlmsg *req)
 {
 	struct ubcore_nl_session *s;
 	unsigned long flags;
@@ -79,6 +80,7 @@ static struct ubcore_nl_session *ubcore_create_nl_session(struct ubcore_nlmsg *r
 	spin_unlock_irqrestore(&g_nl_session_lock, flags);
 	kref_init(&s->kref);
 	init_completion(&s->comp);
+	(void)strcpy(s->dev_name, dev->dev_name);
 	return s;
 }
 
@@ -181,6 +183,7 @@ static void ubcore_nl_handle_tpf2fe_resp(struct nlmsghdr *nlh)
 {
 	struct ubcore_nl_session *s;
 	struct ubcore_nlmsg *resp;
+	struct ubcore_device *dev;
 
 	resp = ubcore_get_nlmsg_data(nlh);
 	if (resp == NULL) {
@@ -196,7 +199,13 @@ static void ubcore_nl_handle_tpf2fe_resp(struct nlmsghdr *nlh)
 	s->resp = resp;
 	kref_put(&s->kref, ubcore_free_nl_session);
 
-	s->cb.callback(resp, s->cb.user_arg);
+	dev = ubcore_find_device_with_name(s->dev_name);
+	if (dev != NULL) {
+		s->cb.user_arg = (void *)dev;
+		s->cb.callback(resp, s->cb.user_arg);
+	}
+	ubcore_put_device(dev);
+
 	kfree(s->req);
 	kfree(s->resp);
 	ubcore_destroy_nl_session(s);
@@ -365,7 +374,7 @@ static int ubcore_nl_unicast(struct ubcore_nlmsg *pbuf, uint32_t len)
 	return ret < 0 ? ret : 0;
 }
 
-struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req)
+struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_device *dev, struct ubcore_nlmsg *req)
 {
 	unsigned long leavetime;
 	struct ubcore_nl_session *s;
@@ -373,7 +382,7 @@ struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req)
 	int ret;
 
 	req->nlmsg_seq = ubcore_get_nlmsg_seq();
-	s = ubcore_create_nl_session(req);
+	s = ubcore_create_nl_session(dev, req);
 	if (s == NULL) {
 		ubcore_log_err("Failed to create nl session");
 		return NULL;
@@ -397,13 +406,14 @@ struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req)
 	return resp;
 }
 
-int ubcore_nl_send_nowait(struct ubcore_nlmsg *req, struct ubcore_nl_resp_cb *cb)
+int ubcore_nl_send_nowait(struct ubcore_device *dev, struct ubcore_nlmsg *req,
+	struct ubcore_nl_resp_cb *cb)
 {
 	struct ubcore_nl_session *s;
 	int ret;
 
 	req->nlmsg_seq = ubcore_get_nlmsg_seq();
-	s = ubcore_create_nl_session(req);
+	s = ubcore_create_nl_session(dev, req);
 	if (s == NULL) {
 		ubcore_log_err("Failed to create nl session");
 		return -ENOMEM;

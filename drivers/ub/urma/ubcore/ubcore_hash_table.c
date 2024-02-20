@@ -30,10 +30,9 @@ int ubcore_hash_table_alloc(struct ubcore_hash_table *ht, const struct ubcore_ht
 		return -1;
 	ht->p = *p;
 	ht->head = kcalloc(p->size, sizeof(struct hlist_head), GFP_KERNEL);
-	if (ht->head == NULL) {
-		ubcore_log_err("hash table allocation failed.\n");
-		return -1;
-	}
+	if (ht->head == NULL)
+		return -ENOMEM;
+
 	for (i = 0; i < p->size; i++)
 		INIT_HLIST_HEAD(&ht->head[i]);
 
