@@ -5069,6 +5069,13 @@ static const struct pci_dev_acs_enabled {
 	{ PCI_VENDOR_ID_AMPERE, 0xE00A, pci_quirk_xgene_acs },
 	{ PCI_VENDOR_ID_AMPERE, 0xE00B, pci_quirk_xgene_acs },
 	{ PCI_VENDOR_ID_AMPERE, 0xE00C, pci_quirk_xgene_acs },
+#ifdef CONFIG_ARCH_PHYTIUM
+	/* because PLX switch Vendor id is 0x10b5 on phytium cpu */
+	{ 0x10b5, PCI_ANY_ID, pci_quirk_xgene_acs },
+	/* because rootcomplex Vendor id is 0x17cd on phytium cpu */
+	{ 0x17cd, PCI_ANY_ID, pci_quirk_xgene_acs },
+#endif
+
 	/* Broadcom multi-function device */
 	{ PCI_VENDOR_ID_BROADCOM, 0x16D7, pci_quirk_mf_endpoint_acs },
 	{ PCI_VENDOR_ID_BROADCOM, 0x1750, pci_quirk_mf_endpoint_acs },
