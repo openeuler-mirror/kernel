@@ -25,6 +25,9 @@ DECLARE_EARLY_PER_CPU_READ_MOSTLY(u32, x86_cpu_to_acpiid);
 
 struct task_struct;
 
+struct smp_ops_resvd {
+};
+
 struct smp_ops {
 	void (*smp_prepare_boot_cpu)(void);
 	void (*smp_prepare_cpus)(unsigned max_cpus);
@@ -43,6 +46,7 @@ struct smp_ops {
 
 	void (*send_call_func_ipi)(const struct cpumask *mask);
 	void (*send_call_func_single_ipi)(int cpu);
+	KABI_AUX_EMBED(smp_ops)
 };
 
 /* Globals due to paravirt */

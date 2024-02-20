@@ -14,6 +14,8 @@
 #include <asm/ptrace.h>
 #include <linux/kabi.h>
 
+#include <linux/kabi.h>
+
 /*
  * Types defining task->signal and task->sighand and APIs using them:
  */
