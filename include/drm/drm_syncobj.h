@@ -28,6 +28,7 @@
 
 #include <linux/dma-fence.h>
 #include <linux/dma-fence-chain.h>
+#include <linux/kabi.h>
 
 struct drm_file;
 
@@ -65,6 +66,8 @@ struct drm_syncobj {
 	 * @file: A file backing for this syncobj.
 	 */
 	struct file *file;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 void drm_syncobj_free(struct kref *kref);
