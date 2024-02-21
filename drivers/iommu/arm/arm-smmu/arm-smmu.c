@@ -35,6 +35,10 @@
 #include <linux/ratelimit.h>
 #include <linux/slab.h>
 
+#ifdef CONFIG_ARCH_PHYTIUM
+#include <asm/phytium_machine_types.h>
+#endif
+
 #include <linux/fsl/mc.h>
 
 #include "arm-smmu.h"
@@ -51,6 +55,7 @@
 
 #define MSI_IOVA_BASE			0x8000000
 #define MSI_IOVA_LENGTH			0x100000
+#define SMR_MASK_SHIFT			16
 
 static int force_stage;
 module_param(force_stage, int, S_IRUGO);
@@ -1363,6 +1368,19 @@ static struct iommu_device *arm_smmu_probe_device(struct device *dev)
 		return ERR_PTR(-ENODEV);
 	}
 
+#ifdef CONFIG_ARCH_PHYTIUM
+#define FWID_READ(id) (((u16)(id) >> 3) | (((id) >> SMR_MASK_SHIFT | 0x7000) << SMR_MASK_SHIFT))
+	if (typeof_ft2000plus()) {
+		int num = fwspec->num_ids;
+
+		for (i = 0; i < num; i++) {
+			u32 fwid = FWID_READ(fwspec->ids[i]);
+
+			iommu_fwspec_add_ids(dev, &fwid, 1);
+		}
+	}
+#endif
+
 	ret = -EINVAL;
 	for (i = 0; i < fwspec->num_ids; i++) {
 		u16 sid = FIELD_GET(ARM_SMMU_SMR_ID, fwspec->ids[i]);
@@ -1458,7 +1476,12 @@ static struct iommu_group *arm_smmu_device_group(struct device *dev)
 			mutex_unlock(&smmu->stream_map_mutex);
 			return ERR_PTR(-EINVAL);
 		}
-
+#ifdef CONFIG_ARCH_PHYTIUM
+		if (typeof_s2500())
+			break;
+		if (typeof_ft2000plus() && !smmu->s2crs[idx].group)
+			continue;
+#endif
 		group = smmu->s2crs[idx].group;
 	}
 
