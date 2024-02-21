@@ -242,7 +242,6 @@ static u16 sunway_domain_id_alloc(void)
 static int sunway_domain_init(struct sunway_iommu_domain *sdomain)
 {
 	spin_lock_init(&sdomain->lock);
-	mutex_init(&sdomain->api_lock);
 	sdomain->id = sunway_domain_id_alloc();
 	if (!sdomain->id)
 		return -ENOMEM;
@@ -1073,9 +1072,7 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	if (iova >= SW64_BAR_ADDRESS)
 		return 0;
 
-	mutex_lock(&sdomain->api_lock);
 	ret = sunway_iommu_map_page(sdomain, iova, paddr, page_size);
-	mutex_unlock(&sdomain->api_lock);
 
 	return ret;
 }
@@ -1091,9 +1088,7 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	if (iova >= SW64_BAR_ADDRESS)
 		return page_size;
 
-	mutex_lock(&sdomain->api_lock);
 	unmap_size = sunway_iommu_unmap_page(sdomain, iova, page_size);
-	mutex_unlock(&sdomain->api_lock);
 
 	return unmap_size;
 }
