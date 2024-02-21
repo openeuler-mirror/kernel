@@ -2776,6 +2776,23 @@ static void arm_smmu_iotlb_sync(struct iommu_domain *domain,
 				      gather->pgsize, true, smmu_domain);
 }
 
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+static void arm_smmu_iotlb_sync_map(struct iommu_domain *domain,
+				    unsigned long iova, size_t size)
+{
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	size_t granule_size;
+
+	if (!(smmu_domain->smmu->options & ARM_SMMU_OPT_SYNC_MAP))
+		return;
+
+	granule_size = 1 <<  __ffs(smmu_domain->domain.pgsize_bitmap);
+
+	/* Add a SYNC command to sync io-pgtale to avoid errors in pgtable prefetch*/
+	arm_smmu_tlb_inv_range_domain(iova, granule_size, granule_size, true, smmu_domain);
+}
+#endif
+
 static phys_addr_t
 arm_smmu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)
 {
@@ -3339,6 +3356,9 @@ static struct iommu_ops arm_smmu_ops = {
 		.unmap_pages		= arm_smmu_unmap_pages,
 		.flush_iotlb_all	= arm_smmu_flush_iotlb_all,
 		.iotlb_sync		= arm_smmu_iotlb_sync,
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+		.iotlb_sync_map         = arm_smmu_iotlb_sync_map,
+#endif
 		.iova_to_phys		= arm_smmu_iova_to_phys,
 		.enable_nesting		= arm_smmu_enable_nesting,
 #ifdef CONFIG_ARM_SMMU_V3_HTTU
@@ -4227,6 +4247,13 @@ static void arm_smmu_device_iidr_probe(struct arm_smmu_device *smmu)
 		}
 		break;
 	}
+
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+	reg = readl_relaxed(smmu->base + ARM_SMMU_IIDR);
+	if (FIELD_GET(IIDR_VARIANT, reg) == 0x3 &&
+	    FIELD_GET(IIDR_REVISION, reg) == 0x2)
+		smmu->options |= ARM_SMMU_OPT_SYNC_MAP;
+#endif
 }
 
 static void arm_smmu_get_httu(struct arm_smmu_device *smmu, u32 reg)
