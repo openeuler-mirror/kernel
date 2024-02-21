@@ -6346,11 +6346,13 @@ static int hns_roce_v2_modify_srq(struct ib_srq *ibsrq,
 	struct hns_roce_srq_context *srq_context;
 	struct hns_roce_srq_context *srqc_mask;
 	struct hns_roce_cmd_mailbox *mailbox;
-	int ret = -EOPNOTSUPP;
+	int ret = 0;
 
 	/* Resizing SRQs is not supported yet */
-	if (srq_attr_mask & IB_SRQ_MAX_WR)
+	if (srq_attr_mask & IB_SRQ_MAX_WR) {
+		ret = -EOPNOTSUPP;
 		goto out;
+	}
 
 	if (srq_attr_mask & IB_SRQ_LIMIT) {
 		if (srq_attr->srq_limit > srq->wqe_cnt) {
