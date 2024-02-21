@@ -35,6 +35,7 @@
 
 #include <linux/kref.h>
 #include <linux/list.h>
+#include <linux/kabi.h>
 
 #include "ttm_device.h"
 
@@ -133,6 +134,10 @@ struct ttm_buffer_object {
 	 * either of these locks held.
 	 */
 	struct sg_table *sg;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /**
@@ -183,6 +188,8 @@ struct ttm_operation_ctx {
 	bool force_alloc;
 	struct dma_resv *resv;
 	uint64_t bytes_moved;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**
