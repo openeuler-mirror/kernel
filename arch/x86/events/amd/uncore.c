@@ -189,9 +189,20 @@ static void amd_uncore_del(struct perf_event *event, int flags)
  */
 static u64 l3_thread_slice_mask(u64 config)
 {
-	if (boot_cpu_data.x86 <= 0x18)
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD &&
+	    boot_cpu_data.x86 <= 0x18)
 		return ((config & AMD64_L3_SLICE_MASK) ? : AMD64_L3_SLICE_MASK) |
 		       ((config & AMD64_L3_THREAD_MASK) ? : AMD64_L3_THREAD_MASK);
+
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+	    boot_cpu_data.x86 == 0x18) {
+		if (boot_cpu_data.x86_model == 0x6)
+			return ((config & HYGON_L3_SLICE_MASK) ? : HYGON_L3_SLICE_MASK) |
+			       ((config & HYGON_L3_THREAD_MASK) ? : HYGON_L3_THREAD_MASK);
+		else
+			return ((config & AMD64_L3_SLICE_MASK) ? : AMD64_L3_SLICE_MASK) |
+			       ((config & AMD64_L3_THREAD_MASK) ? : AMD64_L3_THREAD_MASK);
+	}
 
 	/*
 	 * If the user doesn't specify a threadmask, they're not trying to
@@ -307,6 +318,8 @@ DEFINE_UNCORE_FORMAT_ATTR(threadmask2,	threadmask,	"config:56-57");	   /* F19h L
 DEFINE_UNCORE_FORMAT_ATTR(enallslices,	enallslices,	"config:46");		   /* F19h L3 */
 DEFINE_UNCORE_FORMAT_ATTR(enallcores,	enallcores,	"config:47");		   /* F19h L3 */
 DEFINE_UNCORE_FORMAT_ATTR(sliceid,	sliceid,	"config:48-50");	   /* F19h L3 */
+DEFINE_UNCORE_FORMAT_ATTR(slicemask4,	slicemask,	"config:28-31");	   /* F18h L3 */
+DEFINE_UNCORE_FORMAT_ATTR(threadmask32,	threadmask,	"config:32-63");	   /* F18h L3 */
 
 static struct attribute *amd_uncore_df_format_attr[] = {
 	&format_attr_event12.attr, /* event14 if F17h+ */
@@ -619,11 +632,23 @@ static int __init amd_uncore_init(void)
 			*l3_attr++ = &format_attr_enallcores.attr;
 			*l3_attr++ = &format_attr_sliceid.attr;
 			*l3_attr++ = &format_attr_threadmask2.attr;
-		} else if (boot_cpu_data.x86 >= 0x17) {
+		} else if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD &&
+			   boot_cpu_data.x86 >= 0x17) {
 			*l3_attr++ = &format_attr_event8.attr;
 			*l3_attr++ = &format_attr_umask.attr;
 			*l3_attr++ = &format_attr_slicemask.attr;
 			*l3_attr++ = &format_attr_threadmask8.attr;
+		} else if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+			   boot_cpu_data.x86 == 0x18) {
+			*l3_attr++ = &format_attr_event8.attr;
+			*l3_attr++ = &format_attr_umask.attr;
+			if (boot_cpu_data.x86_model == 6) {
+				*l3_attr++ = &format_attr_slicemask4.attr;
+				*l3_attr++ = &format_attr_threadmask32.attr;
+			} else {
+				*l3_attr++ = &format_attr_slicemask.attr;
+				*l3_attr++ = &format_attr_threadmask8.attr;
+			}
 		}
 
 		amd_uncore_llc = alloc_percpu(struct amd_uncore *);
