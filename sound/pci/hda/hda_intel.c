@@ -1961,6 +1961,10 @@ static int azx_first_init(struct azx *chip)
 		azx_init_pci_zx(chip);
 	}
 
+	if (chip->driver_type == AZX_DRIVER_HYGON &&
+	    chip->pci->device == PCI_DEVICE_ID_HYGON_18H_M05H_HDA)
+		bus->hygon_dword_access = 1;
+
 	err = pci_request_regions(pci, "ICH HD audio");
 	if (err < 0)
 		return err;
