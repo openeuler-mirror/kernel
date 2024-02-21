@@ -760,12 +760,7 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 
 	/* Remove HiAddrOffset from normalized address, if enabled: */
 	if (tmp & BIT(0)) {
-		u64 hi_addr_offset;
-
-		if (hygon_f18h_m4h())
-			hi_addr_offset = (tmp & GENMASK_ULL(31, 18)) << 8;
-		else
-			hi_addr_offset = (tmp & GENMASK_ULL(31, 20)) << 8;
+		u64 hi_addr_offset = (tmp & GENMASK_ULL(31, 20)) << 8;
 
 		if (norm_addr >= hi_addr_offset) {
 			ret_addr -= hi_addr_offset;
