@@ -192,6 +192,18 @@ static int __must_check uobj_remove_commit_internal(struct uburma_uobj *uobj,
 	return ret;
 }
 
+static int uobj_cg_try_charge(struct uburma_uobj *uobj)
+{
+	return ubcore_cgroup_try_charge(&uobj->cg_obj, uobj->ufile->ucontext->ub_dev,
+									UBCORE_RESOURCE_HCA_OBJECT);
+}
+
+static void uboj_cg_uncharge(struct uburma_uobj *uobj)
+{
+	ubcore_cgroup_uncharge(&uobj->cg_obj, uobj->ufile->ucontext->ub_dev,
+						   UBCORE_RESOURCE_HCA_OBJECT);
+}
+
 static struct uburma_uobj *uobj_idr_alloc_begin(const struct uobj_type *type,
 						struct uburma_file *ufile)
 {
@@ -203,12 +215,21 @@ static struct uburma_uobj *uobj_idr_alloc_begin(const struct uobj_type *type,
 		return uobj;
 
 	ret = uobj_alloc_idr(uobj);
-	if (ret) {
-		uobj_put(uobj);
-		return ERR_PTR(ret);
-	}
+	if (ret)
+		goto put_obj;
 
+	ret = uobj_cg_try_charge(uobj);
+	if (ret != 0) {
+		uburma_log_warn("cgroup charge failed");
+		goto remove;
+	}
 	return uobj;
+
+remove:
+	uobj_remove_idr(uobj);
+put_obj:
+	uobj_put(uobj);
+	return ERR_PTR(ret);
 }
 
 static void uobj_idr_alloc_commit(struct uburma_uobj *uobj)
@@ -220,6 +241,7 @@ static void uobj_idr_alloc_commit(struct uburma_uobj *uobj)
 
 static void uobj_idr_alloc_abort(struct uburma_uobj *uobj)
 {
+	uboj_cg_uncharge(uobj);
 	uobj_remove_idr(uobj);
 	uobj_put(uobj);
 }
@@ -263,6 +285,7 @@ static int __must_check uobj_idr_remove_commit(struct uburma_uobj *uobj,
 	if (why == UBURMA_REMOVE_DESTROY && ret)
 		return ret;
 
+	uboj_cg_uncharge(uobj);
 	uobj_remove_idr(uobj);
 	return ret;
 }
@@ -469,6 +492,29 @@ void uburma_init_uobj_context(struct uburma_file *ufile)
 	init_rwsem(&ufile->cleanup_rwsem);
 }
 
+static inline void do_clean_uobj(struct uburma_uobj *obj, unsigned int cur_order,
+	enum uburma_remove_reason why)
+{
+	int ret;
+	/* if we hit this WARN_ON,
+	 * that means we are racing with a lookup_get.
+	 */
+	WARN_ON(uobj_try_lock(obj, true));
+	ret = obj->type->type_class->remove_commit(obj, why);
+	if (ret)
+		pr_warn("uburma: failed to remove uobject id %d order %u\n",
+			obj->id, cur_order);
+
+	list_del_init(&obj->list);
+
+	/* uburma_close_uobj_fd will also try lock the uobj for write */
+	if (uobj_type_is_fd(obj))
+		uobj_unlock(obj, true); /* match with uobj_try_lock */
+
+	/* put the ref we took when we created the object */
+	uobj_put(obj);
+}
+
 void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason why)
 {
 	unsigned int cur_order = 0;
@@ -482,28 +528,10 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason w
 
 		mutex_lock(&ufile->uobjects_lock);
 		list_for_each_entry_safe(obj, next_obj, &ufile->uobjects, list) {
-			if (obj->type->destroy_order == cur_order) {
-				int ret;
-				/* if we hit this WARN_ON,
-				 * that means we are racing with a lookup_get.
-				 */
-				WARN_ON(uobj_try_lock(obj, true));
-				ret = obj->type->type_class->remove_commit(obj, why);
-				if (ret)
-					pr_warn("uburma: failed to remove uobject id %d order %u\n",
-						obj->id, cur_order);
-
-				list_del_init(&obj->list);
-
-				/* uburma_close_uobj_fd will also try lock the uobj for write */
-				if (uobj_type_is_fd(obj))
-					uobj_unlock(obj, true); /* match with uobj_try_lock */
-
-				/* put the ref we took when we created the object */
-				uobj_put(obj);
-			} else {
+			if (obj->type->destroy_order == cur_order)
+				do_clean_uobj(obj, cur_order, why);
+			else
 				next_order = min(next_order, obj->type->destroy_order);
-			}
 		}
 		mutex_unlock(&ufile->uobjects_lock);
 		cur_order = next_order;
@@ -606,6 +634,14 @@ static int uburma_free_tjfr(struct uburma_uobj *uobj, enum uburma_remove_reason 
 
 static int uburma_free_tjetty(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
+	struct uburma_tjetty_uobj *uburma_tjetty;
+
+	uburma_tjetty = (struct uburma_tjetty_uobj *)uobj;
+	if (uburma_tjetty->jetty_uobj != NULL) {
+		(void)ubcore_unbind_jetty(uburma_tjetty->jetty_uobj->uobj.object);
+		uburma_tjetty->jetty_uobj = NULL;
+		uburma_log_warn("unbind_jetty hasn't been done and it has been handled");
+	}
 	return ubcore_unimport_jetty((struct ubcore_tjetty *)uobj->object);
 }
 
@@ -727,7 +763,7 @@ declare_uobj_class(UOBJ_CLASS_JETTY_GRP, &uobj_type_alloc_idr(
 	sizeof(struct uburma_jetty_grp_uobj), 1, uburma_free_jetty_grp));
 declare_uobj_class(UOBJ_CLASS_TARGET_JFR, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
 	uburma_free_tjfr));
-declare_uobj_class(UOBJ_CLASS_TARGET_JETTY, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
-	uburma_free_tjetty));
+declare_uobj_class(UOBJ_CLASS_TARGET_JETTY, &uobj_type_alloc_idr(sizeof(struct uburma_tjetty_uobj),
+	0, uburma_free_tjetty));
 declare_uobj_class(UOBJ_CLASS_TARGET_SEG, &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
 	uburma_free_tseg));

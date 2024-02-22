@@ -56,8 +56,9 @@ union ubcore_set_vport_cfg_mask {
 		uint32_t max_jetty_cnt       : 1;
 		uint32_t min_jfr_cnt         : 1;
 		uint32_t max_jfr_cnt         : 1;
+		uint32_t tp_cnt              : 1;
 		uint32_t slice               : 1;
-		uint32_t reserved            : 25;
+		uint32_t reserved            : 24;
 	} bs;
 	uint32_t value;
 };
@@ -72,6 +73,7 @@ struct ubcore_set_vport_cfg {
 	uint32_t max_jetty_cnt;
 	uint32_t min_jfr_cnt;
 	uint32_t max_jfr_cnt;
+	uint32_t tp_cnt;
 	uint32_t slice;
 };
 
@@ -98,6 +100,11 @@ void ubcore_get_device(struct ubcore_device *dev);
 void ubcore_put_device(struct ubcore_device *dev);
 struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
 	enum ubcore_transport_type type);
+struct ubcore_device *ubcore_find_tpf_by_dev(struct ubcore_device *dev,
+	enum ubcore_transport_type type);
+struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name,
+	enum ubcore_transport_type type);
+
 int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg);
 int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev, union ubcore_eid *eid,
 	uint32_t eid_idx, bool is_alloc_eid, struct net *net);
@@ -121,7 +128,6 @@ int ubcore_query_all_device_tpf_dev_info(void);
 void ubcore_set_tp_init_cfg(struct ubcore_tp *tp, struct ubcore_tp_cfg *cfg);
 struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg *cfg,
 	struct ubcore_udata *udata);
-void ubcore_abort_tp(struct ubcore_tp *tp, struct ubcore_tp_meta *meta);
 int ubcore_modify_tp(struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
 	struct ubcore_tp_attr *tp_attr, struct ubcore_udata udata);
 

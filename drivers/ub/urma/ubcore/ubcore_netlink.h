@@ -120,16 +120,17 @@ struct ubcore_nl_destroy_tp_resp {
 
 struct ubcore_nl_query_tp_req {
 	enum ubcore_transport_mode trans_mode;
+	char dev_name[UBCORE_MAX_DEV_NAME];
+	uint16_t fe_idx;
 };
 
 struct ubcore_nl_query_tp_resp {
 	enum ubcore_nl_resp_status ret;
-	bool tp_exist;
-	uint32_t tpn; /* must set if tp exist is true */
-	union ubcore_eid dst_eid; /* underlay */
-	struct ubcore_net_addr src_addr; /* underlay */
-	struct ubcore_net_addr dst_addr; /* underlay */
-	struct ubcore_multipath_tp_cfg cfg;
+	uint8_t retry_num;
+	uint8_t retry_factor;
+	uint8_t ack_timeout;
+	uint8_t dscp;
+	uint32_t oor_cnt;
 };
 
 struct ubcore_nl_restore_tp_req {
@@ -157,6 +158,7 @@ struct ubcore_nl_session {
 	struct kref kref;
 	struct ubcore_nl_resp_cb cb;
 	struct completion comp; /* Synchronization event of timeout sleep and thread wakeup */
+	char dev_name[UBCORE_MAX_DEV_NAME];
 };
 
 struct ubcore_add_sip_req {
@@ -209,10 +211,16 @@ struct ubcore_nl_function_mig_req {
 	char dev_name[UBCORE_MAX_DEV_NAME];
 };
 
+enum ubcore_update_tpf_opcode {
+	UBCORE_UPDATE_TPF_ADD = 0,
+	UBCORE_UPDATE_TPF_DEL
+};
+
 struct ubcore_update_tpf_dev_info_req {
 	char dev_name[UBCORE_MAX_DEV_NAME];
 	union ubcore_device_feat dev_fea;
 	uint32_t cc_entry_cnt;
+	enum ubcore_update_tpf_opcode opcode;
 	uint8_t data[0];
 }; // same as tpsa_nl_update_tpf_dev_info_req
 
@@ -230,9 +238,10 @@ int ubcore_netlink_init(void);
 void ubcore_netlink_exit(void);
 
 /* return response msg pointer, caller must release it */
-struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_nlmsg *req);
+struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_device *dev, struct ubcore_nlmsg *req);
 
-int ubcore_nl_send_nowait(struct ubcore_nlmsg *req, struct ubcore_nl_resp_cb *cb);
+int ubcore_nl_send_nowait(struct ubcore_device *dev, struct ubcore_nlmsg *req,
+	struct ubcore_nl_resp_cb *cb);
 int ubcore_nl_send_nowait_without_cb(struct ubcore_nlmsg *req);
 struct ubcore_nlmsg *ubcore_alloc_nlmsg(size_t payload_len,
 	const union ubcore_eid *src_eid, const union ubcore_eid *dst_eid);
@@ -240,3 +249,4 @@ struct ubcore_nlmsg *ubcore_alloc_nlmsg(size_t payload_len,
 void ubcore_report_migrate_vtp(struct ubcore_device *dev, struct ubcore_vtp *vtp,
 	enum ubcore_event_type event_type);
 #endif
+

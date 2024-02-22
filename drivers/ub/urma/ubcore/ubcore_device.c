@@ -390,14 +390,58 @@ void ubcore_put_device(struct ubcore_device *dev)
 		complete(&dev->comp);
 }
 
-struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
-	enum ubcore_transport_type type)
+struct ubcore_device *ubcore_find_tpf_device_legacy(void)
 {
 	if (g_tpf == NULL)
 		ubcore_log_err("tpf is not registered yet");
 
 	ubcore_get_device(g_tpf);
 	return g_tpf;
+}
+
+struct ubcore_device *ubcore_find_tpf_by_dev(struct ubcore_device *dev,
+	enum ubcore_transport_type type)
+{
+	if (dev != NULL && dev->attr.tp_maintainer && dev->transport_type == type) {
+		ubcore_get_device(dev);
+		return dev;
+	}
+
+	return ubcore_find_tpf_device_legacy();
+}
+
+struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name,
+	enum ubcore_transport_type type)
+{
+	struct ubcore_device *dev;
+
+	dev = ubcore_find_device_with_name(dev_name);
+	if (dev == NULL) {
+		ubcore_log_err("can not find dev by name:%s", dev_name);
+		return NULL;
+	}
+
+	if (dev->attr.tp_maintainer && dev->transport_type == type)
+		return dev;
+
+	ubcore_put_device(dev);
+	return ubcore_find_tpf_device_legacy();
+}
+
+struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
+	enum ubcore_transport_type type)
+{
+	char dev_name[UBCORE_MAX_DEV_NAME] = {0};
+
+	if (netaddr == NULL)
+		return ubcore_find_tpf_device_legacy();
+
+	if (ubcore_lookup_sip_by_addr(netaddr, dev_name) < 0) {
+		ubcore_log_warn("can not find tpf by net_addr:ip %pI6c", &netaddr->net_addr);
+		return ubcore_find_tpf_device_legacy();
+	}
+
+	return ubcore_find_tpf_device_by_name(dev_name, type);
 }
 
 int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg)
@@ -540,6 +584,51 @@ static void ubcore_destroy_eidtable(struct ubcore_device *dev)
 	}
 }
 
+static int ubcore_send_remove_tpf_dev_info(struct ubcore_device *dev)
+{
+	int ret;
+	struct ubcore_nlmsg *resp_msg, *req_msg;
+	struct ubcore_update_tpf_dev_info_resp *resp;
+	struct ubcore_update_tpf_dev_info_req *data;
+
+	req_msg = kcalloc(1, sizeof(struct ubcore_nlmsg) +
+		sizeof(struct ubcore_update_tpf_dev_info_req), GFP_KERNEL);
+	if (req_msg == NULL)
+		return -ENOMEM;
+
+	req_msg->msg_type = UBCORE_NL_UPDATE_TPF_DEV_INFO_REQ;
+	req_msg->transport_type = dev->transport_type;
+	req_msg->payload_len = sizeof(struct ubcore_update_tpf_dev_info_req);
+
+	/* fill msg payload */
+	data = (struct ubcore_update_tpf_dev_info_req *)req_msg->payload;
+	data->dev_fea = dev->attr.dev_cap.feature;
+	data->cc_entry_cnt = 0;
+	data->opcode = UBCORE_UPDATE_TPF_DEL;
+	(void)strcpy(data->dev_name, dev->dev_name);
+
+	resp_msg = ubcore_nl_send_wait(dev, req_msg);
+	if (resp_msg == NULL) {
+		ubcore_log_err("Failed to wait query response");
+		kfree(req_msg);
+		return -1;
+	}
+
+	resp = (struct ubcore_update_tpf_dev_info_resp *)(void *)resp_msg->payload;
+	if (resp_msg->msg_type != UBCORE_NL_UPDATE_TPF_DEV_INFO_RESP || resp == NULL ||
+		resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("update tpf dev info request is rejected with type %d ret %d",
+			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
+		ret = -1;
+	} else {
+		ret = 0;
+	}
+
+	kfree(resp_msg);
+	kfree(req_msg);
+	return ret;
+}
+
 static int ubcore_query_send_tpf_dev_info(struct ubcore_device *dev)
 {
 	struct ubcore_nlmsg *resp_msg, *req_msg;
@@ -574,7 +663,6 @@ static int ubcore_query_send_tpf_dev_info(struct ubcore_device *dev)
 	req_msg = kcalloc(1, sizeof(struct ubcore_nlmsg) + cc_len, GFP_KERNEL);
 	if (req_msg == NULL) {
 		kfree(cc_entry);
-		ubcore_log_err("Failed to alloc update tpf dev req msg.\n");
 		return -ENOMEM;
 	}
 
@@ -588,10 +676,11 @@ static int ubcore_query_send_tpf_dev_info(struct ubcore_device *dev)
 	data->dev_fea = dev->attr.dev_cap.feature;
 	data->cc_entry_cnt = cc_entry_cnt;
 	(void)strcpy(data->dev_name, dev->dev_name);
+	data->opcode = UBCORE_UPDATE_TPF_ADD;
 	array = (struct ubcore_cc_entry *)data->data;
 	(void)memcpy(array, cc_entry, sizeof(struct ubcore_cc_entry) * cc_entry_cnt);
 
-	resp_msg = ubcore_nl_send_wait(req_msg);
+	resp_msg = ubcore_nl_send_wait(dev, req_msg);
 	if (resp_msg == NULL) {
 		ubcore_log_err("Failed to wait query response");
 		kfree(cc_entry);
@@ -602,7 +691,7 @@ static int ubcore_query_send_tpf_dev_info(struct ubcore_device *dev)
 	resp = (struct ubcore_update_tpf_dev_info_resp *)(void *)resp_msg->payload;
 	if (resp_msg->msg_type != UBCORE_NL_UPDATE_TPF_DEV_INFO_RESP || resp == NULL ||
 		resp->ret != UBCORE_NL_RESP_SUCCESS) {
-		ubcore_log_err("update tpf dev info request is rejected with type %d ret %d",
+		ubcore_log_err("update tpf dev info del request is rejected with type %d ret %d",
 			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
 		ret = -1;
 	} else {
@@ -688,14 +777,21 @@ static int init_ubcore_device(struct ubcore_device *dev)
 
 static void uninit_ubcore_device(struct ubcore_device *dev)
 {
+	ubcore_put_port_netdev(dev);
 	ubcore_update_default_eid(dev, false);
 	ubcore_free_hash_tables(dev);
 	ubcore_destroy_eidtable(dev);
 
 	if (!dev->attr.virtualization)
 		ubcore_destroy_upi_list();
+
 	if (g_tpf == dev && dev->attr.tp_maintainer)
 		g_tpf = NULL;
+
+	if (dev->transport_type == UBCORE_TRANSPORT_UB && dev->attr.tp_maintainer) {
+		if (ubcore_get_netlink_valid() && ubcore_send_remove_tpf_dev_info(dev) != 0)
+			ubcore_log_warn("failed to remove tpf dev info %s", dev->dev_name);
+	}
 
 	put_device(&dev->dev);
 }
@@ -724,7 +820,7 @@ static int ubcore_config_device_rsp_msg_cb(struct ubcore_device *dev,
 	cfg.rc_cfg.rc_cnt = data->rc_cnt;
 	cfg.rc_cfg.depth = data->rc_depth;
 
-	cfg.mask.bs.slice = 1;
+	cfg.mask.bs.slice = data->set_slice;
 	cfg.slice = data->slice;
 
 	/* For a new TPF device, the suspend config needs to be set. */
@@ -754,8 +850,7 @@ static int ubcore_config_device_default(struct ubcore_device *dev)
 	cfg.rc_cfg.rc_cnt = dev->attr.dev_cap.max_rc;
 	cfg.rc_cfg.depth = dev->attr.dev_cap.max_rc_depth;
 
-	cfg.mask.bs.slice = 1;
-	cfg.slice = dev->attr.dev_cap.max_slice;
+	/* slice and mask.slice are set to 0 by default */
 
 	/* If suspend_period and cnt cannot be read, do not need to configure it */
 	return dev->ops->config_device(dev, &cfg);
@@ -798,7 +893,8 @@ static int ubcore_config_device_in_register(struct ubcore_device *dev)
 	/* New TPF devices need to be query suspend info. */
 	data->is_tpf_dev = dev->attr.tp_maintainer;
 
-	ret = ubcore_send_fe2tpf_msg(dev, req_msg, true, &cb);
+	ret = ubcore_send_fe2tpf_msg(dev, req_msg, &cb);
+	kfree(req_msg);
 	if (ret != 0) {
 		ubcore_log_err("send fe2tpf failed.\n");
 		return ubcore_config_device_default(dev);
@@ -831,9 +927,10 @@ int ubcore_register_device(struct ubcore_device *dev)
 
 	if (ubcore_config_device_in_register(dev) != 0) {
 		ubcore_log_err("failed to config ubcore device.\n");
+		uninit_ubcore_device(dev);
 		return -EPERM;
 	}
-
+	ubcore_cgroup_reg_dev(dev);
 	mutex_lock(&g_device_mutex);
 
 	list_for_each_entry(client, &g_client_list, list_node) {
@@ -876,6 +973,8 @@ void ubcore_unregister_device(struct ubcore_device *dev)
 			ctx->client->remove(dev, ctx->data);
 	}
 	up_write(&g_lists_rwsem);
+
+	ubcore_cgroup_unreg_dev(dev);
 
 	uninit_ubcore_device(dev);
 
@@ -991,23 +1090,57 @@ void ubcore_dispatch_async_event(struct ubcore_event *event)
 }
 EXPORT_SYMBOL(ubcore_dispatch_async_event);
 
+static bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index)
+{
+	struct net *net;
+
+	if (IS_ERR_OR_NULL(dev->eid_table.eid_entries))
+		return false;
+
+	spin_lock(&dev->eid_table.lock);
+	if (!dev->eid_table.eid_entries[eid_index].valid) {
+		spin_unlock(&dev->eid_table.lock);
+		return false;
+	}
+	net = dev->eid_table.eid_entries[eid_index].net;
+	spin_unlock(&dev->eid_table.lock);
+	return net_eq(net, current->nsproxy->net_ns);
+}
+
 struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	struct ubcore_udrv_priv *udrv_data)
 {
 	struct ubcore_ucontext *ucontext;
+	struct ubcore_cg_object cg_obj;
+	int ret;
 
 	if (dev == NULL || dev->ops == NULL || dev->ops->alloc_ucontext == NULL) {
 		ubcore_log_err("alloc_ucontext not registered.\n");
 		return NULL;
 	}
+
+	if (!ubcore_eid_accessible(dev, eid_index)) {
+		ubcore_log_err("eid is not accessible by current ns.\n");
+		return NULL;
+	}
+
+	ret = ubcore_cgroup_try_charge(&cg_obj, dev, UBCORE_RESOURCE_HCA_HANDLE);
+	if (ret != 0) {
+		ubcore_log_err("cgroup charge fail:%d ,dev_name :%s\n", ret, dev->dev_name);
+		return NULL;
+	}
+
 	ucontext = dev->ops->alloc_ucontext(dev, eid_index, udrv_data);
 	if (ucontext == NULL) {
 		ubcore_log_err("failed to alloc ucontext.\n");
+		ubcore_cgroup_uncharge(&cg_obj, dev, UBCORE_RESOURCE_HCA_HANDLE);
 		return NULL;
 	}
 
 	ucontext->eid_index = eid_index;
 	ucontext->ub_dev = dev;
+	ucontext->cg_obj = cg_obj;
+
 	return ucontext;
 }
 EXPORT_SYMBOL(ubcore_alloc_ucontext);
@@ -1015,16 +1148,20 @@ EXPORT_SYMBOL(ubcore_alloc_ucontext);
 void ubcore_free_ucontext(struct ubcore_device *dev, struct ubcore_ucontext *ucontext)
 {
 	int ret;
+	struct ubcore_cg_object cg_obj;
 
 	if (dev == NULL || ucontext == NULL || dev->ops == NULL ||
 	    dev->ops->free_ucontext == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
+	cg_obj = ucontext->cg_obj;
 
 	ret = dev->ops->free_ucontext(ucontext);
 	if (ret != 0)
 		ubcore_log_err("failed to free_adu, ret: %d.\n", ret);
+
+	ubcore_cgroup_uncharge(&cg_obj, dev, UBCORE_RESOURCE_HCA_HANDLE);
 }
 EXPORT_SYMBOL(ubcore_free_ucontext);
 
@@ -1057,7 +1194,9 @@ int ubcore_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ue
 
 	ret = dev->ops->add_ueid(dev, fe_idx, cfg);
 	if (ret != 0) {
-		ubcore_log_err("failed to add ueid, ret: %d.\n", ret);
+		ubcore_log_err("failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u",
+		fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index);
+		ubcore_log_err("failed to add ueid, ret: %d", ret);
 		return -EPERM;
 	}
 	return ret;
@@ -1068,14 +1207,16 @@ int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore
 {
 	int ret;
 
-	if (dev == NULL || dev->ops == NULL || dev->ops->delete_ueid == NULL) {
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->delete_ueid == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return -EINVAL;
 	}
 
 	ret = dev->ops->delete_ueid(dev, fe_idx, cfg);
 	if (ret != 0) {
-		ubcore_log_err("failed to delete eid, ret: %d.\n", ret);
+		ubcore_log_err("failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u",
+		fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index);
+		ubcore_log_err("failed to add ueid, ret: %d", ret);
 		return -EPERM;
 	}
 	return ret;
@@ -1128,7 +1269,6 @@ int ubcore_query_resource(struct ubcore_device *dev, struct ubcore_res_key *key,
 		ubcore_log_err("Invalid argument.\n");
 		return -EINVAL;
 	}
-
 	ret = dev->ops->query_res(dev, key, val);
 	if (ret != 0) {
 		ubcore_log_err("failed to query res, ret: %d.\n", ret);
@@ -1265,14 +1405,19 @@ static int ubcore_update_sip(struct ubcore_sip_info *sip, bool is_add)
 		ubcore_log_err("There is an illegal parameter.\n");
 		return -1;
 	}
-	tpf_dev = ubcore_find_tpf_device(&sip->addr, UBCORE_TRANSPORT_UB);
+	tpf_dev = ubcore_find_tpf_device_by_name(sip->dev_name, UBCORE_TRANSPORT_UB);
+	if (!tpf_dev) {
+		ubcore_log_err("update sip find no tpf\n");
+		return -1;
+	}
+
 	if (is_add) {
-		if (tpf_dev && ubcore_add_device_sip(tpf_dev, sip) != 0) {
+		if (ubcore_add_device_sip(tpf_dev, sip) != 0) {
 			ubcore_put_device(tpf_dev);
 			return -1;
 		}
 	} else {
-		if (tpf_dev && ubcore_del_device_sip(tpf_dev, sip) != 0) {
+		if (ubcore_del_device_sip(tpf_dev, sip) != 0) {
 			ubcore_put_device(tpf_dev);
 			return -1;
 		}
@@ -1307,7 +1452,7 @@ void ubcore_sync_sip_table(void)
 		if (sip == NULL)
 			continue;
 
-		tpf_dev = ubcore_find_tpf_device(&sip->addr, UBCORE_TRANSPORT_UB);
+		tpf_dev = ubcore_find_tpf_device_by_name(sip->dev_name, UBCORE_TRANSPORT_UB);
 		if (tpf_dev) {
 			(void)ubcore_notify_uvs_add_sip(tpf_dev, sip, i);
 			ubcore_put_device(tpf_dev);

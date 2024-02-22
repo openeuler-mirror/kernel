@@ -144,15 +144,20 @@ static int ubcore_cmd_query_stats(struct ubcore_cmd_hdr *hdr)
 				   sizeof(struct ubcore_cmd_query_stats));
 }
 
-static int ubcore_cmd_updata_ueid(struct ubcore_cmd_hdr *hdr, enum ubcore_msg_opcode op)
+static int ubcore_cmd_update_ueid(struct ubcore_cmd_hdr *hdr, enum ubcore_msg_opcode op)
 {
-	struct net *net = current->nsproxy->net_ns;
-	struct ubcore_cmd_updata_ueid arg;
+	struct ubcore_cmd_update_ueid arg;
+	struct net *net = &init_net;
 	struct ubcore_device *dev;
-	int ret;
+	int ret = 0;
+
+	if (!ns_capable(current->nsproxy->net_ns->user_ns, CAP_NET_ADMIN)) {
+		ubcore_log_err("current user does not have net admin capability");
+		return -EPERM;
+	}
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
-		sizeof(struct ubcore_cmd_updata_ueid));
+		sizeof(struct ubcore_cmd_update_ueid));
 	if (ret != 0)
 		return -EPERM;
 
@@ -161,6 +166,7 @@ static int ubcore_cmd_updata_ueid(struct ubcore_cmd_hdr *hdr, enum ubcore_msg_op
 		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
 		return -EPERM;
 	}
+
 	if (!dev->attr.virtualization && dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1) {
 		ubcore_put_device(dev);
 		ubcore_log_err("pattern1 does not support static mode\n");
@@ -175,13 +181,23 @@ static int ubcore_cmd_updata_ueid(struct ubcore_cmd_hdr *hdr, enum ubcore_msg_op
 		ubcore_put_device(dev);
 		return -EPERM;
 	}
-	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, op, net) != 0) {
-		ubcore_put_device(dev);
-		return -EPERM;
+
+	if (arg.in.ns_fd >= 0) {
+		net = get_net_ns_by_fd(arg.in.ns_fd);
+		if (IS_ERR(net)) {
+			ubcore_put_device(dev);
+			ubcore_log_err("Failed to get ns by fd.\n");
+			return PTR_ERR(net);
+		}
 	}
 
+	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, op, net) != 0)
+		ret = -EPERM;
+
+	if (arg.in.ns_fd >= 0)
+		put_net(net);
 	ubcore_put_device(dev);
-	return 0;
+	return ret;
 }
 
 static void ubcore_update_pattern1_eid(struct ubcore_device *dev,
@@ -315,295 +331,168 @@ static uint32_t ubcore_get_query_res_len(uint32_t type)
 	return 0;
 }
 
-static void ubcore_dealloc_res_dev(struct ubcore_res_dev_val *ubcore_addr)
-{
-	if (ubcore_addr->seg_list != NULL) {
-		vfree(ubcore_addr->seg_list);
-		ubcore_addr->seg_list = NULL;
-	}
-	if (ubcore_addr->jfs_list != NULL) {
-		vfree(ubcore_addr->jfs_list);
-		ubcore_addr->jfs_list = NULL;
-	}
-	if (ubcore_addr->jfr_list != NULL) {
-		vfree(ubcore_addr->jfr_list);
-		ubcore_addr->jfr_list = NULL;
-	}
-	if (ubcore_addr->jfc_list != NULL) {
-		vfree(ubcore_addr->jfc_list);
-		ubcore_addr->jfc_list = NULL;
-	}
-	if (ubcore_addr->jetty_list != NULL) {
-		vfree(ubcore_addr->jetty_list);
-		ubcore_addr->jetty_list = NULL;
-	}
-	if (ubcore_addr->jetty_group_list != NULL) {
-		vfree(ubcore_addr->jetty_group_list);
-		ubcore_addr->jetty_group_list = NULL;
-	}
-	if (ubcore_addr->rc_list != NULL) {
-		vfree(ubcore_addr->rc_list);
-		ubcore_addr->rc_list = NULL;
-	}
-	if (ubcore_addr->vtp_list != NULL) {
-		vfree(ubcore_addr->vtp_list);
-		ubcore_addr->vtp_list = NULL;
-	}
-	if (ubcore_addr->tp_list != NULL) {
-		vfree(ubcore_addr->tp_list);
-		ubcore_addr->tp_list = NULL;
-	}
-	if (ubcore_addr->tpg_list != NULL) {
-		vfree(ubcore_addr->tpg_list);
-		ubcore_addr->tpg_list = NULL;
-	}
-	if (ubcore_addr->utp_list != NULL) {
-		vfree(ubcore_addr->utp_list);
-		ubcore_addr->utp_list = NULL;
-	}
-}
-
-static int ubcore_fill_res_addr(struct ubcore_res_dev_val *ubcore_addr)
-{
-	ubcore_addr->seg_list = vmalloc(sizeof(struct ubcore_seg_info) * ubcore_addr->seg_cnt);
-	if (ubcore_addr->seg_list == NULL)
-		return -ENOMEM;
-
-	ubcore_addr->jfs_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfs_cnt);
-	if (ubcore_addr->jfs_list == NULL)
-		goto free_seg_list;
-
-	ubcore_addr->jfr_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfr_cnt);
-	if (ubcore_addr->jfr_list == NULL)
-		goto free_jfs_list;
-
-	ubcore_addr->jfc_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jfc_cnt);
-	if (ubcore_addr->jfc_list == NULL)
-		goto free_jfr_list;
-
-	ubcore_addr->jetty_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jetty_cnt);
-	if (ubcore_addr->jetty_list == NULL)
-		goto free_jfc_list;
-
-	ubcore_addr->jetty_group_list = vmalloc(sizeof(uint32_t) * ubcore_addr->jetty_group_cnt);
-	if (ubcore_addr->jetty_group_list == NULL)
-		goto free_jetty_list;
-
-	ubcore_addr->rc_list = vmalloc(sizeof(uint32_t) * ubcore_addr->rc_cnt);
-	if (ubcore_addr->rc_list == NULL)
-		goto free_jetty_group_list;
-
-	ubcore_addr->vtp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->vtp_cnt);
-	if (ubcore_addr->vtp_list == NULL)
-		goto free_rc_list;
-
-	ubcore_addr->tp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->tp_cnt);
-	if (ubcore_addr->tp_list == NULL)
-		goto free_vtp_list;
-
-	ubcore_addr->tpg_list = vmalloc(sizeof(uint32_t) * ubcore_addr->tpg_cnt);
-	if (ubcore_addr->tpg_list == NULL)
-		goto free_tp_list;
-
-	ubcore_addr->utp_list = vmalloc(sizeof(uint32_t) * ubcore_addr->utp_cnt);
-	if (ubcore_addr->utp_list == NULL)
-		goto free_tpg_list;
-
-	return 0;
-free_tpg_list:
-	vfree(ubcore_addr->tpg_list);
-free_tp_list:
-	vfree(ubcore_addr->tp_list);
-free_vtp_list:
-	vfree(ubcore_addr->vtp_list);
-free_rc_list:
-	vfree(ubcore_addr->rc_list);
-free_jetty_group_list:
-	vfree(ubcore_addr->jetty_group_list);
-free_jetty_list:
-	vfree(ubcore_addr->jetty_list);
-free_jfc_list:
-	vfree(ubcore_addr->jfc_list);
-free_jfr_list:
-	vfree(ubcore_addr->jfr_list);
-free_jfs_list:
-	vfree(ubcore_addr->jfs_list);
-free_seg_list:
-	vfree(ubcore_addr->seg_list);
-	return -ENOMEM;
-}
-
-static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *dev_val,
-				    struct ubcore_res_dev_val *ubcore_addr)
+static int ubcore_fill_user_res_dev(struct ubcore_res_dev_val *user_addr,
+				    struct ubcore_res_dev_val *kernal_addr)
 {
 	int ret;
 
-	dev_val->seg_cnt = ubcore_addr->seg_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->seg_list,
-				  ubcore_addr->seg_list,
-				  dev_val->seg_cnt * sizeof(struct ubcore_seg_info));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->seg_list,
+		kernal_addr->seg_list, kernal_addr->seg_cnt * sizeof(struct ubcore_seg_info));
 	if (ret != 0)
 		return ret;
 
-	dev_val->jfs_cnt = ubcore_addr->jfs_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfs_list,
-				  ubcore_addr->jfs_list, dev_val->jfs_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->jfs_list,
+		kernal_addr->jfs_list, kernal_addr->jfs_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->jfr_cnt = ubcore_addr->jfr_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfr_list,
-				  ubcore_addr->jfr_list, dev_val->jfr_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->jfr_list,
+		kernal_addr->jfr_list, kernal_addr->jfr_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->jfc_cnt = ubcore_addr->jfc_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jfc_list,
-				  ubcore_addr->jfc_list, dev_val->jfc_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->jfc_list,
+		kernal_addr->jfc_list, kernal_addr->jfc_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->jetty_cnt = ubcore_addr->jetty_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_list,
-				  ubcore_addr->jetty_list, dev_val->jetty_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->jetty_list,
+		kernal_addr->jetty_list, kernal_addr->jetty_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->jetty_group_cnt = ubcore_addr->jetty_group_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->jetty_group_list,
-				  ubcore_addr->jetty_group_list,
-				  dev_val->jetty_group_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->jetty_group_list,
+		kernal_addr->jetty_group_list, kernal_addr->jetty_group_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->rc_cnt = ubcore_addr->rc_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->rc_list,
-		ubcore_addr->rc_list,
-		dev_val->rc_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->rc_list,
+		kernal_addr->rc_list, kernal_addr->rc_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->vtp_cnt = ubcore_addr->vtp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->vtp_list,
-		ubcore_addr->vtp_list,
-		dev_val->vtp_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->vtp_list,
+		kernal_addr->vtp_list, kernal_addr->vtp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->tp_cnt = ubcore_addr->tp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->tp_list,
-				  ubcore_addr->tp_list, dev_val->tp_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->tp_list,
+		kernal_addr->tp_list, kernal_addr->tp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->tpg_cnt = ubcore_addr->tpg_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->tpg_list,
-				  ubcore_addr->tpg_list, dev_val->tpg_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->tpg_list,
+		kernal_addr->tpg_list, kernal_addr->tpg_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
-	dev_val->utp_cnt = ubcore_addr->utp_cnt;
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)dev_val->utp_list,
-				  ubcore_addr->utp_list, dev_val->utp_cnt * sizeof(uint32_t));
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)user_addr->utp_list,
+		kernal_addr->utp_list, kernal_addr->utp_cnt * sizeof(uint32_t));
 	if (ret != 0)
 		return ret;
 
 	return 0;
 }
 
-static int ubcore_query_res_dev(struct ubcore_device *dev, struct ubcore_res_key *key,
-				struct ubcore_res_dev_val *dev_val)
+static int ubcore_copy_to_usr_tp_list(uint64_t user_tp_list, struct ubcore_res_tpg_val *tpg)
 {
-	struct ubcore_res_dev_val ubcore_addr = { 0 };
-	struct ubcore_res_val val = { 0 };
-	int ret = 0;
+	int ret;
 
-	(void)memcpy(&ubcore_addr, dev_val, sizeof(struct ubcore_res_dev_val));  // save
-
-	if (ubcore_fill_res_addr(&ubcore_addr) != 0) {
-		ubcore_log_err("Failed to fill dev dev_val.\n");
-		return -ENOMEM;
-	}
-
-	val.addr = (uint64_t)&ubcore_addr;
-	val.len = (uint32_t)sizeof(struct ubcore_res_dev_val);
-
-	ret = ubcore_query_resource(dev, key, &val);
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)user_tp_list,
+		tpg->tp_list, sizeof(uint32_t) * tpg->tp_cnt);
 	if (ret != 0)
-		goto ubcore_free_dev;
+		ubcore_log_err("ubcore_copy_to_user failed.\n");
 
-	ret = ubcore_fill_user_res_dev(dev_val, &ubcore_addr);
-ubcore_free_dev:
-	ubcore_dealloc_res_dev(&ubcore_addr);
+	vfree(tpg->tp_list);
 	return ret;
 }
 
-static void ubcore_dealloc_res_tp_list(uint64_t user_tp_list, struct ubcore_res_val *val)
-{
-	struct ubcore_res_tpg_val *tpg = (struct ubcore_res_tpg_val *)val->addr;
 
-	if (ubcore_copy_to_user((void __user *)(uintptr_t)user_tp_list,
-		tpg->tp_list, sizeof(uint32_t) * tpg->tp_cnt) != 0)
+static int ubcore_copy_to_usr_jetty_list(uint64_t user_jetty_list,
+	struct ubcore_res_jetty_group_val *jetty_grp)
+{
+	int ret;
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)user_jetty_list, jetty_grp->jetty_list,
+		sizeof(uint32_t) * jetty_grp->jetty_cnt);
+	if (ret != 0)
 		ubcore_log_err("ubcore_copy_to_user failed.\n");
 
-	kfree(tpg->tp_list);
+	vfree(jetty_grp->jetty_list);
+	return ret;
 }
 
-static int ubcore_alloc_res_tp_list(struct ubcore_res_val *val)
+static void ubcore_query_copy_cnt(struct ubcore_cmd_query_res *arg,
+	uint64_t val_addr, uint64_t user_addr)
 {
-	struct ubcore_res_tpg_val *tpg;
+	struct ubcore_res_tpg_val *tpg_val;
+	struct ubcore_res_tpg_val *tpg_user_val;
 
-	tpg = (struct ubcore_res_tpg_val *)val->addr;
-	tpg->tp_list = kzalloc(sizeof(uint32_t) * UBCORE_MAX_TP_CNT_IN_GRP, GFP_KERNEL);
-	if (tpg->tp_list == NULL)
-		return -ENOMEM;
+	struct ubcore_res_jetty_group_val *jgrp_val;
+	struct ubcore_res_jetty_group_val *jgrp_user_val;
 
-	return 0;
+	struct ubcore_res_dev_val *dev_val;
+	struct ubcore_res_dev_val *dev_user_val;
+
+	switch (arg->in.type) {
+	case UBCORE_RES_KEY_TPG:
+		tpg_val = (struct ubcore_res_tpg_val *)val_addr;
+		tpg_user_val = (struct ubcore_res_tpg_val *)user_addr;
+		tpg_user_val->tp_cnt = tpg_val->tp_cnt;
+		return;
+	case UBCORE_RES_KEY_JETTY_GROUP:
+		jgrp_val = (struct ubcore_res_jetty_group_val *)val_addr;
+		jgrp_user_val = (struct ubcore_res_jetty_group_val *)user_addr;
+		jgrp_user_val->jetty_cnt = jgrp_val->jetty_cnt;
+		return;
+	case UBCORE_RES_KEY_URMA_DEV:
+		dev_val = (struct ubcore_res_dev_val *)val_addr;
+		dev_user_val = (struct ubcore_res_dev_val *)user_addr;
+		dev_user_val->seg_cnt = dev_val->seg_cnt;
+		dev_user_val->jfs_cnt = dev_val->jfs_cnt;
+		dev_user_val->jfr_cnt = dev_val->jfr_cnt;
+		dev_user_val->jfc_cnt = dev_val->jfc_cnt;
+		dev_user_val->jetty_cnt = dev_val->jetty_cnt;
+		dev_user_val->jetty_group_cnt = dev_val->jetty_group_cnt;
+		dev_user_val->rc_cnt = dev_val->rc_cnt;
+		dev_user_val->vtp_cnt = dev_val->vtp_cnt;
+		dev_user_val->tp_cnt = dev_val->tp_cnt;
+		dev_user_val->tpg_cnt = dev_val->tpg_cnt;
+		dev_user_val->utp_cnt = dev_val->utp_cnt;
+		return;
+	default:
+		ubcore_log_info("Other types don't need query cnt");
+		return;
+	}
 }
 
-static void ubcore_dealloc_res_jetty_list(uint64_t user_jetty_list, struct ubcore_res_val *val)
-{
-	struct ubcore_res_jetty_group_val *tpg;
-
-	tpg = (struct ubcore_res_jetty_group_val *)val->addr;
-
-	if (ubcore_copy_to_user((void __user *)(uintptr_t)user_jetty_list, tpg->jetty_list,
-		sizeof(uint32_t) * tpg->jetty_cnt) != 0)
-		ubcore_log_err("ubcore_copy_to_user failed.\n");
-
-	kfree(tpg->jetty_list);
-}
-
-static int ubcore_alloc_res_jetty_list(struct ubcore_device *dev, struct ubcore_res_val *val)
-{
-	struct ubcore_res_jetty_group_val *tpg;
-
-	tpg = (struct ubcore_res_jetty_group_val *)val->addr;
-	tpg->jetty_list = kcalloc(1, sizeof(uint32_t) * dev->attr.dev_cap.max_jetty_in_jetty_grp,
-		GFP_KERNEL);
-	if (tpg->jetty_list == NULL)
-		return -ENOMEM;
-
-	return 0;
-}
-
-static int ubcore_query_res_arg(struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
+static int ubcore_query_cnt(struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
 	uint32_t res_len)
 {
 	struct ubcore_res_key key = {0};
 	struct ubcore_res_val val = {0};
-	uint64_t user_tp_list_addr = 0;      // to saves and restores user-mode addresses
-	uint64_t user_jetty_list_addr = 0;   // to saves and restores user-mode addresses
-	void *k_res_val;
+	void *kernal_addr;
+	void *user_addr;
 	int ret;
 
-	k_res_val = kzalloc(res_len, GFP_KERNEL);
-	if (k_res_val == NULL)
+	kernal_addr = kzalloc(res_len, GFP_KERNEL);
+	if (kernal_addr == NULL)
 		return -1;
 
-	ret = ubcore_copy_from_user(k_res_val, (void __user *)(uintptr_t)arg->out.addr, res_len);
+	user_addr = kzalloc(res_len, GFP_KERNEL);
+	if (user_addr == NULL) {
+		kfree(kernal_addr);
+		return -1;
+	}
+
+	ret = ubcore_copy_from_user(kernal_addr, (void __user *)(uintptr_t)arg->out.addr, res_len);
 	if (ret != 0)
 		goto kfree_addr;
+
+	ret = ubcore_copy_from_user(user_addr, (void __user *)(uintptr_t)arg->out.addr, res_len);
+	if (ret != 0)
+		goto kfree_addr;
+
 	if (arg->in.type == (uint32_t)UBCORE_RES_KEY_VTP && dev->attr.virtualization == true) {
 		ubcore_log_warn("FE device do not support query VTP, dev: %s, type: %u.\n",
 			dev->dev_name, arg->in.type);
@@ -614,48 +503,90 @@ static int ubcore_query_res_arg(struct ubcore_device *dev, struct ubcore_cmd_que
 	key.key = arg->in.key;
 	key.key_ext = arg->in.key_ext;
 	key.key_cnt = arg->in.key_cnt;
-	val.addr = (uint64_t)k_res_val;
+	val.addr = (uint64_t)kernal_addr;
 	val.len = res_len;
 
+	// urma only alloc memory for the struct
+	// driver will alloc memory for the list pointer in the struct; urma need to vfree it later
+
+	ret = ubcore_query_resource(dev, &key, &val);
+	if (ret != 0)
+		goto kfree_addr;
+
+	ubcore_query_copy_cnt(arg, val.addr, (uint64_t)user_addr);
+
+	arg->out.save_ptr = (uint64_t)kernal_addr;
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, user_addr, res_len);
+	if (ret != 0)
+		goto kfree_addr;
+
+	/* kernal_addr save for second ioctl */
+	kfree(user_addr);
+	return ret;
+
+kfree_addr:
+	kfree(kernal_addr);
+	kfree(user_addr);
+	return ret;
+}
+
+static void ubcore_query_list_free(struct ubcore_res_dev_val *kernal_addr)
+{
+	vfree(kernal_addr->seg_list);
+	vfree(kernal_addr->jfs_list);
+	vfree(kernal_addr->jfr_list);
+	vfree(kernal_addr->jfc_list);
+	vfree(kernal_addr->jetty_list);
+	vfree(kernal_addr->jetty_group_list);
+	vfree(kernal_addr->rc_list);
+	vfree(kernal_addr->vtp_list);
+	vfree(kernal_addr->tp_list);
+	vfree(kernal_addr->tpg_list);
+	vfree(kernal_addr->utp_list);
+}
+
+static int ubcore_query_list(struct ubcore_device *dev, struct ubcore_cmd_query_res *arg,
+	uint32_t res_len)
+{
+	uint64_t kernal_addr;
+	void *user_addr;
+	void *k_addr;
+	int ret;
+
+	kernal_addr = arg->out.save_ptr;
+	k_addr = (void *)kernal_addr;
+	user_addr = kzalloc(res_len, GFP_KERNEL);
+	if (user_addr == NULL)
+		return -1;
+
+	ret = ubcore_copy_from_user(user_addr, (void __user *)(uintptr_t)arg->out.addr, res_len);
+	if (ret != 0)
+		goto kfree_addr;
+
 	if (arg->in.type == UBCORE_RES_KEY_TPG) {
-		user_tp_list_addr =
-			(uint64_t)(((struct ubcore_res_tpg_val *)k_res_val)->tp_list);  // save
-		if (ubcore_alloc_res_tp_list(&val) != 0)
-			goto kfree_addr;
-	}
-
-	if (arg->in.type == UBCORE_RES_KEY_JETTY_GROUP) {
-		// save
-		user_jetty_list_addr =
-			(uint64_t)(((struct ubcore_res_jetty_group_val *)k_res_val)->jetty_list);
-		if (ubcore_alloc_res_jetty_list(dev, &val) != 0)
-			goto kfree_addr;
-	}
-
-	if (arg->in.type == UBCORE_RES_KEY_URMA_DEV)
-		ret = ubcore_query_res_dev(dev, &key, (struct ubcore_res_dev_val *)k_res_val);
-	else
-		ret = ubcore_query_resource(dev, &key, &val);
-
-	if (arg->in.type == UBCORE_RES_KEY_TPG) {
-		ubcore_dealloc_res_tp_list(user_tp_list_addr, &val);
-		/* recover after use */
-		((struct ubcore_res_tpg_val *)k_res_val)->tp_list = (uint32_t *)user_tp_list_addr;
-	}
-
-	if (arg->in.type == UBCORE_RES_KEY_JETTY_GROUP) {
-		ubcore_dealloc_res_jetty_list(user_jetty_list_addr, &val);
-		((struct ubcore_res_jetty_group_val *)k_res_val)->jetty_list =
-			(uint32_t *)user_jetty_list_addr;  // recover after use
+		ret = ubcore_copy_to_usr_tp_list(
+			(uint64_t)(((struct ubcore_res_tpg_val *)user_addr)->tp_list),
+			(struct ubcore_res_tpg_val *)kernal_addr);
+	} else if (arg->in.type == UBCORE_RES_KEY_JETTY_GROUP) {
+		ret = ubcore_copy_to_usr_jetty_list(
+			(uint64_t)(((struct ubcore_res_jetty_group_val *)user_addr)->jetty_list),
+			(struct ubcore_res_jetty_group_val *)kernal_addr);
+	} else if (arg->in.type == UBCORE_RES_KEY_URMA_DEV) {
+		ret = ubcore_fill_user_res_dev((struct ubcore_res_dev_val *)user_addr,
+			(struct ubcore_res_dev_val *)kernal_addr);
+		ubcore_query_list_free((struct ubcore_res_dev_val *)kernal_addr);
+	} else {
+		(void)memcpy(user_addr, k_addr, res_len);
 	}
 
 	if (ret != 0)
 		goto kfree_addr;
 
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, k_res_val, res_len);
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)arg->out.addr, user_addr, res_len);
 
 kfree_addr:
-	kfree(k_res_val);
+	kfree(user_addr);
+	kfree(k_addr); /* release after second ioctl */
 	return ret;
 }
 
@@ -684,7 +615,11 @@ static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 		return -EINVAL;
 	}
 
-	ret = ubcore_query_res_arg(dev, &arg, res_len);
+	if (arg.in.query_cnt)
+		ret = ubcore_query_cnt(dev, &arg, res_len);
+	else
+		ret = ubcore_query_list(dev, &arg, res_len);
+
 	if (ret != 0) {
 		ubcore_put_device(dev);
 		ubcore_log_err("Failed to query res by arg\n");
@@ -692,8 +627,9 @@ static int ubcore_cmd_query_res(struct ubcore_cmd_hdr *hdr)
 	}
 
 	ubcore_put_device(dev);
+
 	return ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
-				   sizeof(struct ubcore_cmd_query_res));
+		sizeof(struct ubcore_cmd_query_res));
 }
 
 static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
@@ -706,9 +642,9 @@ static int ubcore_cmd_parse(struct ubcore_cmd_hdr *hdr)
 	case UBCORE_CMD_QUERY_RES:
 		return ubcore_cmd_query_res(hdr);
 	case UBCORE_CMD_ADD_EID:
-		return ubcore_cmd_updata_ueid(hdr, UBCORE_MSG_ALLOC_EID);
+		return ubcore_cmd_update_ueid(hdr, UBCORE_MSG_ALLOC_EID);
 	case UBCORE_CMD_DEL_EID:
-		return ubcore_cmd_updata_ueid(hdr, UBCORE_MSG_DEALLOC_EID);
+		return ubcore_cmd_update_ueid(hdr, UBCORE_MSG_DEALLOC_EID);
 	case UBCORE_CMD_SET_EID_MODE:
 		return ubcore_cmd_set_eid_mode(hdr);
 	default:
@@ -948,14 +884,17 @@ static int ubcore_handle_inetaddr_event(struct net_device *netdev, unsigned long
 		real_netdev = netdev;
 		real_netaddr = *netaddr;
 	}
-	tpf_dev = ubcore_find_tpf_device(&real_netaddr, UBCORE_TRANSPORT_UB);
+
 	devices = ubcore_get_devices_from_netdev(real_netdev, &num_devices);
-	if (devices == NULL) {
-		ubcore_put_device(tpf_dev);
+	if (devices == NULL)
 		return NOTIFY_DONE;
-	}
+
 	for (i = 0; i < num_devices; i++) {
 		dev = devices[i];
+		if (dev->attr.virtualization)
+			continue;
+
+		tpf_dev = ubcore_find_tpf_by_dev(dev, UBCORE_TRANSPORT_UB);
 		switch (event) {
 		case NETDEV_UP:
 			if (tpf_dev)
@@ -970,8 +909,9 @@ static int ubcore_handle_inetaddr_event(struct net_device *netdev, unsigned long
 		default:
 			break;
 		}
+		if (tpf_dev)
+			ubcore_put_device(tpf_dev);
 	}
-	ubcore_put_device(tpf_dev);
 	ubcore_put_devices(devices, num_devices);
 	return NOTIFY_OK;
 }
@@ -1094,29 +1034,32 @@ void ubcore_update_default_eid(struct ubcore_device *dev, bool is_add)
 	struct ubcore_net_addr_node *next;
 	LIST_HEAD(na_list);
 
-	/* Do not modify eid if the driver already set default eid other than 0 */
-	if (netdev == NULL || !(dev->eid_table.eid_entries[0].eid.in6.interface_id == 0 &&
-		dev->eid_table.eid_entries[0].eid.in6.subnet_prefix == 0))
+	if (netdev == NULL)
 		return;
+
+	/* In virtualization situation sip and eid are not from net_dev */
+	if (dev->attr.virtualization)
+		return;
+
+	tpf_dev = ubcore_find_tpf_by_dev(dev, UBCORE_TRANSPORT_UB);
 
 	ubcore_netdev_get_ipv4(netdev, &na_list);
 	ubcore_netdev_get_ipv6(netdev, &na_list);
 	list_for_each_entry_safe(na_entry, next, &na_list, node) {
 		if (na_entry->addr.net_addr.in6.subnet_prefix == cpu_to_be64(UBCORE_LOCAL_SHUNET))
 			continue;
-		tpf_dev = ubcore_find_tpf_device(&na_entry->addr, UBCORE_TRANSPORT_UB);
 		if (tpf_dev)
 			is_add == true ?
 				ubcore_add_net_addr(tpf_dev, dev, &na_entry->addr,
 					netdev, na_entry->prefix_len) :
 				ubcore_delete_net_addr(tpf_dev, dev, &na_entry->addr,
 					netdev, na_entry->prefix_len);
-		if (tpf_dev)
-			ubcore_put_device(tpf_dev);
 		ubcore_update_eid(dev, &na_entry->addr, is_add);
 		list_del(&na_entry->node);
 		kfree(na_entry);
 	}
+	if (tpf_dev)
+		ubcore_put_device(tpf_dev);
 }
 
 void ubcore_update_netaddr(struct ubcore_device *dev, struct net_device *netdev, bool add)
@@ -1162,38 +1105,41 @@ static int ubcore_remove_netaddr(struct ubcore_device *dev, struct net_device *n
 	return NOTIFY_OK;
 }
 
-static void ubcore_chang_mtu(struct ubcore_device *dev, struct net_device *netdev)
+static void ubcore_change_mtu(struct ubcore_device *dev, struct net_device *netdev)
 {
+	struct ubcore_sip_info new_sip = {0};
+	struct ubcore_sip_info old_sip = {0};
 	struct ubcore_device *tpf_dev;
-	struct ubcore_sip_info *old_sip;
-	struct ubcore_sip_info new_sip;
 	uint32_t max_cnt;
 	uint32_t i;
 
-	if (ubcore_get_netlink_valid() == false)
+	tpf_dev = ubcore_find_tpf_device(NULL, UBCORE_TRANSPORT_UB);
+	if (tpf_dev == NULL)
 		return;
 
-	tpf_dev = ubcore_find_tpf_device(NULL, UBCORE_TRANSPORT_UB);
 	max_cnt = ubcore_get_sip_max_cnt();
 
 	for (i = 0; i < max_cnt; i++) {
-		if (tpf_dev) {
-			old_sip = ubcore_lookup_sip_info(i);
-			if (old_sip == NULL)
-				continue;
-			new_sip = *old_sip;
-			new_sip.mtu = netdev->mtu;
-			if (memcmp(old_sip->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME) == 0) {
-				(void)ubcore_notify_uvs_del_sip(tpf_dev, old_sip, i);
-				(void)ubcore_notify_uvs_add_sip(tpf_dev, &new_sip, i);
-				ubcore_log_info("dev_name: %s, mtu: %u change mtu: %u\n",
-					dev->dev_name, old_sip->mtu, new_sip.mtu);
-				old_sip->mtu = netdev->mtu;
-			}
+		if (ubcore_get_sip_info_copy(i, &new_sip) != 0)
+			continue;
+
+		if (memcmp(new_sip.dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME) != 0)
+			continue;
+
+		old_sip = new_sip;
+		new_sip.mtu = netdev->mtu;
+		if (ubcore_sip_info_update(i, (const struct ubcore_sip_info *)&new_sip) != 0)
+			continue;
+
+		if (ubcore_get_netlink_valid() == true) {
+			(void)ubcore_notify_uvs_del_sip(tpf_dev, &old_sip, i);
+			(void)ubcore_notify_uvs_add_sip(tpf_dev, &new_sip, i);
 		}
+		ubcore_log_info("dev_name: %s, mtu: %u change to mtu: %u\n",
+			dev->dev_name, old_sip.mtu, new_sip.mtu);
 	}
-	if (tpf_dev)
-		ubcore_put_device(tpf_dev);
+
+	ubcore_put_device(tpf_dev);
 }
 
 static int ubcore_netdev_event_change_upper(struct ubcore_device *dev,
@@ -1284,6 +1230,47 @@ static struct net_device *ubcore_find_master_netdev(unsigned long event,
 	return bond;
 }
 
+static void ubcore_do_netdev_notify(unsigned long event, struct ubcore_device *dev,
+	struct net_device *netdev, void *arg)
+{
+	switch (event) {
+	case NETDEV_REGISTER:
+	case NETDEV_UP:
+		if (dev->transport_type != UBCORE_TRANSPORT_UB)
+			ubcore_add_netaddr(dev, netdev);
+		break;
+	case NETDEV_UNREGISTER:
+	case NETDEV_DOWN:
+		if (dev->transport_type != UBCORE_TRANSPORT_UB)
+			ubcore_remove_netaddr(dev, netdev);
+		break;
+	case NETDEV_CHANGEADDR:
+		if (dev->transport_type != UBCORE_TRANSPORT_UB) {
+			ubcore_remove_netaddr(dev, netdev);
+			ubcore_add_netaddr(dev, netdev);
+		}
+		break;
+	case NETDEV_CHANGEMTU:
+		if (dev->transport_type == UBCORE_TRANSPORT_UB)
+			ubcore_change_mtu(dev, netdev);
+		break;
+	case NETDEV_CHANGEUPPER:
+		/* NETDEV_CHANGEUPPER event need to put_device ahead due to unregister dev */
+		if (dev->transport_type == UBCORE_TRANSPORT_UB)
+			(void)ubcore_netdev_event_change_upper(dev, netdev, arg);
+		else
+			ubcore_put_device(dev);
+
+		break;
+	case NETDEV_CHANGELOWERSTATE:
+		if (dev->transport_type == UBCORE_TRANSPORT_UB)
+			(void)ubcore_netdev_event_change_lower_state(dev, netdev, arg);
+		break;
+	default:
+		break;
+	}
+}
+
 static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long event, void *arg)
 {
 	struct net_device *netdev = netdev_notifier_info_to_dev(arg);
@@ -1326,41 +1313,13 @@ static int ubcore_net_notifier_call(struct notifier_block *nb, unsigned long eve
 
 	for (i = 0; i < num_devices; i++) {
 		dev = devices[i];
-		switch (event) {
-		case NETDEV_REGISTER:
-		case NETDEV_UP:
-			if (dev->transport_type != UBCORE_TRANSPORT_UB)
-				ubcore_add_netaddr(dev, netdev);
-			break;
-		case NETDEV_UNREGISTER:
-		case NETDEV_DOWN:
-			if (dev->transport_type != UBCORE_TRANSPORT_UB)
-				ubcore_remove_netaddr(dev, netdev);
-			break;
-		case NETDEV_CHANGEADDR:
-			if (dev->transport_type != UBCORE_TRANSPORT_UB) {
-				ubcore_remove_netaddr(dev, netdev);
-				ubcore_add_netaddr(dev, netdev);
-			}
-			break;
-		case NETDEV_CHANGEMTU:
-			if (dev->transport_type == UBCORE_TRANSPORT_UB)
-				ubcore_chang_mtu(dev, netdev);
-			break;
-		case NETDEV_CHANGEUPPER:
-			if (dev->transport_type == UBCORE_TRANSPORT_UB)
-				(void)ubcore_netdev_event_change_upper(dev, netdev, arg);
-			break;
-		case NETDEV_CHANGELOWERSTATE:
-			if (dev->transport_type == UBCORE_TRANSPORT_UB)
-				(void)ubcore_netdev_event_change_lower_state(dev, netdev, arg);
-			break;
-		default:
-			break;
-		}
+		ubcore_do_netdev_notify(event, dev, netdev, arg);
 	}
 	if (event != NETDEV_CHANGEUPPER)
 		ubcore_put_devices(devices, num_devices);
+	else
+		kfree(devices);
+
 	return NOTIFY_OK;
 }
 
@@ -1416,7 +1375,7 @@ static int __init ubcore_init(void)
 	if (ret != 0)
 		return ret;
 
-	(void)ubcore_sip_table_init();
+	ubcore_sip_table_init();
 
 	if (ubcore_netlink_init() != 0) {
 		ubcore_sip_table_uninit();

@@ -19,6 +19,7 @@ ubcore-objs := ubcore_main.o \
 			ubcore_tpg.o \
 			ubcore_utp.o \
 			ubcore_uvs_cmd.o \
-			ubcore_vtp.o
+			ubcore_vtp.o \
+			ubcore_cgroup.o
 
 obj-$(CONFIG_UB) += ubcore.o

@@ -29,6 +29,7 @@
 #include "uburma_types.h"
 #include "uburma_uobj.h"
 #include "uburma_cmd.h"
+#include "uburma_main.h"
 
 int uburma_mmap(struct file *filp, struct vm_area_struct *vma)
 {
@@ -97,8 +98,14 @@ int uburma_open(struct inode *inode, struct file *filp)
 	mutex_lock(&ubu_dev->lists_mutex);
 	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
 	if (ubc_dev == NULL || ubc_dev->dev_name == NULL) {
-		uburma_log_err("can not find ubcore device.\n");
 		ret = EIO;
+		uburma_log_err("can not find ubcore device.\n");
+		goto err;
+	}
+
+	if (!uburma_dev_accessible_by_ns(ubu_dev, current->nsproxy->net_ns)) {
+		ret = EPERM;
+		uburma_log_err("urma device is not accessible by current ns.\n");
 		goto err;
 	}
 

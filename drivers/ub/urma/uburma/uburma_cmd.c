@@ -1642,6 +1642,7 @@ static int uburma_cmd_unadvise_jetty(struct ubcore_device *ubc_dev,
 static int uburma_cmd_bind_jetty(struct ubcore_device *ubc_dev,
 	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
 {
+	struct uburma_tjetty_uobj *uburma_tjetty;
 	struct uburma_cmd_bind_jetty arg;
 	struct uburma_uobj *tjetty_uobj;
 	struct uburma_uobj *jetty_uobj;
@@ -1675,6 +1676,8 @@ static int uburma_cmd_bind_jetty(struct ubcore_device *ubc_dev,
 	else
 		arg.out.tpn = UBURMA_INVALID_TPN;
 
+	uburma_tjetty = (struct uburma_tjetty_uobj *)(tjetty_uobj);
+	uburma_tjetty->jetty_uobj = (struct uburma_jetty_uobj *)jetty_uobj;
 	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct uburma_cmd_bind_jetty));
 	if (ret != 0)
@@ -1687,6 +1690,7 @@ static int uburma_cmd_bind_jetty(struct ubcore_device *ubc_dev,
 static int uburma_cmd_unbind_jetty(struct ubcore_device *ubc_dev,
 	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
 {
+	struct uburma_tjetty_uobj *uburma_tjetty;
 	struct uburma_cmd_unadvise_jetty arg;
 	struct uburma_uobj *tjetty_uobj;
 	struct uburma_uobj *jetty_uobj;
@@ -1704,6 +1708,9 @@ static int uburma_cmd_unbind_jetty(struct ubcore_device *ubc_dev,
 	ret = ubcore_unbind_jetty(jetty_uobj->object);
 	if (ret != 0)
 		uburma_log_err("failed to unbind jetty, ret: %d.\n", ret);
+
+	uburma_tjetty = (struct uburma_tjetty_uobj *)(tjetty_uobj);
+	uburma_tjetty->jetty_uobj = NULL;
 
 	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 	return ret;

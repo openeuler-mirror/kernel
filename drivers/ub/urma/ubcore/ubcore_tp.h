@@ -72,4 +72,5 @@ void ubcore_report_tp_error(struct ubcore_device *dev, struct ubcore_tp *tp);
 
 void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	union ubcore_tp_attr_mask mask);
+int ubcore_modify_tp_state_check(struct ubcore_tp *tp, enum ubcore_tp_state new_state);
 #endif

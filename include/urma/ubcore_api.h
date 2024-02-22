@@ -21,7 +21,7 @@
 #ifndef UBCORE_API_H
 #define UBCORE_API_H
 
-#include "ubcore_types.h"
+#include <urma/ubcore_types.h>
 
 /**
  * Register a device to ubcore
@@ -87,18 +87,18 @@ enum ubcore_mtu ubcore_get_mtu(int mtu);
 /**
  * TPF receives msg from VF or PF, called only by driver.
  * @param[in] dev: TPF device;
- * @param[in] msg: received msg;
+ * @param[in] req: received msg;
  * @return: 0 on success, other value on error
  */
-int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *msg);
+int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req);
 
 /**
  * VF or PF receives msg from TPF, called only by driver.
  * @param[in] dev: VF or PF device;
- * @param[in] msg: received msg;
+ * @param[in] resp: received msg;
  * @return: 0 on success, other value on error
  */
-int ubcore_recv_resp(struct ubcore_device *dev, struct ubcore_resp *msg);
+int ubcore_recv_resp(struct ubcore_device *dev, struct ubcore_resp *resp);
 
 /**
  * Invoke ndev bind port_id, called only by driver

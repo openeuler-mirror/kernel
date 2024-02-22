@@ -64,6 +64,7 @@ struct ubcore_msg_config_device_resp {
 	uint32_t rc_cnt;
 	uint32_t rc_depth;
 	uint32_t slice;                 /* TA slice size byte */
+	uint32_t set_slice;
 	bool is_tpf_dev;
 	uint32_t suspend_period;
 	uint32_t suspend_cnt;
@@ -95,9 +96,10 @@ struct ubcore_function_mig_resp {
 };
 
 int ubcore_send_req(struct ubcore_device *dev, struct ubcore_req *req);
-int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp);
+int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp_host);
+/* caller should free memory of req after return */
 int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
-	bool wait, struct ubcore_resp_cb *cb);
+	struct ubcore_resp_cb *cb);
 int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
 	enum ubcore_msg_opcode op, struct net *net);
 #endif

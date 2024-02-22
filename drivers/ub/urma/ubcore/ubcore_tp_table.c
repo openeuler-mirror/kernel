@@ -42,7 +42,7 @@ void ubcore_remove_tp_node(struct ubcore_hash_table *ht, struct ubcore_tp_node *
 }
 
 /* Find and remove the tp from table only if it is unreferenced */
-struct ubcore_tp *ubcore_find_remove_tp(struct ubcore_hash_table *ht, uint32_t hash,
+void ubcore_find_remove_tp(struct ubcore_hash_table *ht, uint32_t hash,
 					const struct ubcore_tp_key *key)
 {
 	struct ubcore_tp_node *tp_node;
@@ -51,22 +51,21 @@ struct ubcore_tp *ubcore_find_remove_tp(struct ubcore_hash_table *ht, uint32_t h
 	spin_lock(&ht->lock);
 	if (ht->head == NULL) {
 		spin_unlock(&ht->lock);
-		return NULL;
+		return;
 	}
 	tp_node = ubcore_hash_table_lookup_nolock(ht, hash, key);
 	if (tp_node == NULL) {
 		spin_unlock(&ht->lock);
-		return NULL;
+		return;
 	}
-
 	if (atomic_dec_return(&tp_node->tp->use_cnt) == 0) {
 		tp = tp_node->tp;
 		hlist_del(&tp_node->hnode);
 		mutex_destroy(&tp_node->lock);
 		kfree(tp_node);
+		(void)ubcore_destroy_tp(tp);
 	}
 	spin_unlock(&ht->lock);
-	return tp;
 }
 
 struct ubcore_hash_table *ubcore_create_tptable(void)
@@ -166,6 +165,7 @@ struct ubcore_tp_node *ubcore_add_tp_node(struct ubcore_hash_table *ht, uint32_t
 		spin_unlock(&ht->lock);
 		mutex_destroy(&new_tp_node->lock);
 		kfree(new_tp_node);
+		atomic_inc(&tp_node->tp->use_cnt);
 		return tp_node;
 	}
 
@@ -173,6 +173,7 @@ struct ubcore_tp_node *ubcore_add_tp_node(struct ubcore_hash_table *ht, uint32_t
 	/* set private data for tp restore */
 	tp->priv = new_tp_node;
 	spin_unlock(&ht->lock);
+	atomic_inc(&new_tp_node->tp->use_cnt);
 	return new_tp_node;
 }
 
@@ -202,12 +203,3 @@ struct ubcore_tp_node *ubcore_add_tp_with_tpn(struct ubcore_device *dev, struct 
 	return tp_node;
 }
 
-struct ubcore_tp *ubcore_remove_tp_with_tpn(struct ubcore_device *dev, uint32_t tpn)
-{
-	struct ubcore_tp_key key;
-
-	memset(&key, 0, sizeof(struct ubcore_tp_key));
-	key.key_type = UBCORE_TP_KEY_TPN;
-	key.tpn = tpn;
-	return ubcore_find_remove_tp(&dev->ht[UBCORE_HT_TP], tpn, &key);
-}

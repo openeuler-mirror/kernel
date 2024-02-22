@@ -55,6 +55,7 @@ struct uburma_uobj {
 	struct rcu_head rcu; /* kfree_rcu() overhead */
 
 	const struct uobj_type *type;
+	struct ubcore_cg_object cg_obj; /* cgroup control */
 };
 
 struct uobj_type {
@@ -104,7 +105,7 @@ struct uburma_jfce_uobj {
 };
 
 struct uburma_jfc_uobj {
-	struct uburma_uobj uobj; /* base uobj struct */
+	struct uburma_uobj uobj;
 	struct uburma_uobj *jfce; /* associated jfce uobj */
 	struct list_head comp_event_list;
 	struct list_head async_event_list;
@@ -113,27 +114,32 @@ struct uburma_jfc_uobj {
 };
 
 struct uburma_jfs_uobj {
-	struct uburma_uobj uobj; /* base uobj struct */
+	struct uburma_uobj uobj;
 	struct list_head async_event_list;
 	uint32_t async_events_reported;
 };
 
 struct uburma_jfr_uobj {
-	struct uburma_uobj uobj; /* base uobj struct */
+	struct uburma_uobj uobj;
 	struct list_head async_event_list;
 	uint32_t async_events_reported;
 };
 
 struct uburma_jetty_uobj {
-	struct uburma_uobj uobj; /* base uobj struct */
+	struct uburma_uobj uobj;
 	struct list_head async_event_list;
 	uint32_t async_events_reported;
 };
 
 struct uburma_jetty_grp_uobj {
-	struct uburma_uobj  uobj; /* base uobj struct */
+	struct uburma_uobj uobj;
 	struct list_head async_event_list;
 	uint32_t async_events_reported;
+};
+
+struct uburma_tjetty_uobj {
+	struct uburma_uobj uobj;
+	struct uburma_jetty_uobj *jetty_uobj;
 };
 
 struct uburma_jfae_uobj {

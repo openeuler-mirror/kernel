@@ -31,7 +31,8 @@
 #include <linux/libfdt_env.h>
 #include <linux/mm.h>
 #include <linux/netdevice.h>
-#include "ubcore_opcode.h"
+#include <linux/cgroup_rdma.h>
+#include <urma/ubcore_opcode.h>
 
 #define UBCORE_GET_VERSION(a, b) (((a) << 16) + ((b) > 65535 ? 65535 : (b)))
 #define UBCORE_API_VERSION ((0 << 16) + 9)        // Current Version: 0.9
@@ -46,6 +47,8 @@
 #define UBCORE_MAX_ATTR_GROUP 3
 #define UBCORE_EID_SIZE (16)
 #define UBCORE_EID_STR_LEN (39)
+#define UBCORE_DEVID_SIZE (16)
+
 #define EID_FMT                           \
 	"%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x"
 #define EID_UNPACK(...) __VA_ARGS__
@@ -69,6 +72,12 @@ enum ubcore_transport_type {
 	UBCORE_TRANSPORT_MAX
 };
 
+enum ubcore_resource_type {
+	UBCORE_RESOURCE_HCA_HANDLE = 0,
+	UBCORE_RESOURCE_HCA_OBJECT,
+	UBCORE_RESOURCE_HCA_MAX
+};
+
 #define UBCORE_ACCESS_LOCAL_WRITE   0x1
 #define UBCORE_ACCESS_REMOTE_READ   (0x1 << 1)
 #define UBCORE_ACCESS_REMOTE_WRITE  (0x1 << 2)
@@ -76,6 +85,18 @@ enum ubcore_transport_type {
 #define UBCORE_ACCESS_REMOTE_INVALIDATE (0x1 << 4)
 
 #define UBCORE_SEG_TOKEN_ID_INVALID UINT_MAX
+
+struct ubcore_cg_device {
+#ifdef CONFIG_CGROUP_RDMA
+	struct rdmacg_device dev;
+#endif
+};
+
+struct ubcore_cg_object {
+#ifdef CONFIG_CGROUP_RDMA
+	struct rdma_cgroup *cg;
+#endif
+};
 
 union ubcore_eid {
 	uint8_t raw[UBCORE_EID_SIZE];
@@ -99,6 +120,10 @@ struct ubcore_ueid_cfg {
 	union ubcore_eid eid;
 	uint32_t upi;
 	uint32_t eid_index;
+};
+
+struct ubcore_devid {
+	uint8_t raw[UBCORE_DEVID_SIZE];
 };
 
 struct ubcore_jetty_id {
@@ -263,6 +288,7 @@ struct ubcore_ucontext {
 	union ubcore_eid eid;
 	uint32_t eid_index;
 	void *jfae; /* jfae uobj */
+	struct ubcore_cg_object cg_obj;
 	atomic_t use_cnt;
 };
 
@@ -514,6 +540,7 @@ struct ubcore_device_cap {
 	uint16_t trans_mode;          /* one or more from ubcore_transport_mode_t */
 	uint16_t congestion_ctrl_alg; /* one or more mode from ubcore_congestion_ctrl_alg_t */
 	uint16_t ceq_cnt;     /* completion vector count */
+	uint32_t max_tp_in_tpg;
 	uint32_t utp_cnt;
 	uint32_t max_oor_cnt;         /* max OOR window size by packet */
 	uint32_t mn;
@@ -2230,6 +2257,25 @@ struct ubcore_ops {
 	 */
 	int (*modify_vtp)(struct ubcore_vtp *vtp, struct ubcore_vtp_attr *attr,
 		union ubcore_vtp_attr_mask *mask);
+	/**
+	 * query fe index.
+	 * @param[in] dev: the ub device handle;
+	 * @param[in] devid: vf devid to query
+	 * @param[out] fe_idx: fe id;
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_fe_idx)(struct ubcore_device *dev, struct ubcore_devid *devid,
+		uint16_t *fe_idx);
+	/**
+	 * config dscp-vl mapping
+	 * @param[in] dev:the ub dev handle;
+	 * @param[in] dscp: the dscp value array
+	 * @param[in] vl: the vl value array
+	 * @param[in] num: array num
+	 * @return: 0 on success, other value on error
+	 */
+	int (*config_dscp_vl)(struct ubcore_device *dev, uint8_t *dscp, uint8_t *vl,
+		uint8_t num);
 };
 
 struct ubcore_bitmap {
@@ -2300,6 +2346,7 @@ struct ubcore_device {
 	struct completion comp;
 	bool dynamic_eid; /* Assign eid dynamically with netdev notifier */
 	struct ubcore_eid_table eid_table;
+	struct ubcore_cg_device cg_device;
 };
 
 struct ubcore_port {

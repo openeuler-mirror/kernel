@@ -71,10 +71,12 @@ struct ubcore_cmd_query_res {
 		uint32_t key;
 		uint32_t key_ext;
 		uint32_t key_cnt;
+		bool query_cnt;
 	} in;
 	struct {
 		uint64_t addr;
 		uint32_t len;
+		uint64_t save_ptr; /* save ubcore address for second ioctl */
 	} out;
 };
 
@@ -89,10 +91,11 @@ struct ubcore_cmd_show_utp {
 	} out;
 };
 
-struct ubcore_cmd_updata_ueid {
+struct ubcore_cmd_update_ueid {
 	struct {
 		char dev_name[UBCORE_CMD_DEV_MAX];
 		uint32_t eid_index;
+		int ns_fd;
 	} in;
 };
 

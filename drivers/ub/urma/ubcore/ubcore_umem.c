@@ -59,6 +59,7 @@ static int umem_pin_pages(uint64_t cur_base, uint64_t npages, uint32_t gup_flags
 				     min_t(unsigned long, (unsigned long)npages,
 					   PAGE_SIZE / sizeof(struct page *)),
 				     gup_flags | FOLL_LONGTERM, page_list);
+
 	return pinned;
 }
 
@@ -67,6 +68,7 @@ static uint64_t umem_atomic_add(uint64_t npages, struct mm_struct *mm)
 	uint64_t ret;
 
 	ret = atomic64_add_return(npages, &mm->pinned_vm);
+
 	return ret;
 }
 
