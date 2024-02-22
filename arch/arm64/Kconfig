@@ -1187,14 +1187,13 @@ config HISILICON_ERRATUM_1980005
 
 config HISILICON_ERRATUM_162100602
 	bool "Hisilicon erratum 162100602"
-	depends on ARM_SMMU_V3
+	depends on ARM_SMMU_V3 && ARCH_HISI
 	default y
 	help
-	  On Hisilicon LINXICORE9100 cores, SMMU pagetable prefetch features may
-	  prefetch and use a invalid PTE even the PTE is valid at that time. This
-	  will cause the device trigger fake pagefaults. If the SMMU works in
-	  terminate mode, transactions which occur fake pagefaults will be aborted,
-	  and could result in unexpected errors.
+	  SMMU pagetable prefetch features may prefetch and use a invalid PTE even
+	  the PTE is valid at that time. This will cause the device trigger fake
+	  pagefaults. If the SMMU works in terminate mode, transactions which occur
+	  fake pagefaults will be aborted, and could result in unexpected errors.
 
 	  If unsure, say Y.
 
