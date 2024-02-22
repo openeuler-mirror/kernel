@@ -27,6 +27,7 @@
 #include <linux/types.h> /* stackdepot.h is not self-contained */
 #include <linux/stackdepot.h>
 #include <linux/ww_mutex.h>
+#include <linux/kabi.h>
 
 struct drm_modeset_lock;
 
@@ -72,6 +73,8 @@ struct drm_modeset_acquire_ctx {
 
 	/* Perform interruptible waits on this context. */
 	bool interruptible;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**
