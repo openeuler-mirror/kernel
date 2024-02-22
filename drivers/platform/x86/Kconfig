@@ -1318,9 +1318,12 @@ config INTEL_TURBO_MAX_3
 	  This driver is only required when the system is not using Hardware
 	  P-States (HWP). In HWP mode, priority can be read from ACPI tables.
 
+config INTEL_UNCORE_FREQ_CONTROL_TPMI
+	tristate
 config INTEL_UNCORE_FREQ_CONTROL
 	tristate "Intel Uncore frequency control driver"
 	depends on X86_64
+	select INTEL_UNCORE_FREQ_CONTROL_TPMI if INTEL_TPMI
 	help
 	  This driver allows control of uncore frequency limits on
 	  supported server platforms.
