@@ -340,15 +340,16 @@ parse_bw(char *buf, struct resctrl_resource *r,
 		return -EINVAL;
 	}
 
+	if (kstrtoul(buf, rr->ctrl_features[type].base, &data)) {
+		rdt_last_cmd_printf("Non-decimal digit in MB value %s\n", buf);
+		return -EINVAL;
+	}
+
 	switch (rr->ctrl_features[type].evt) {
 	case QOS_MBA_MAX_EVENT_ID:
 	case QOS_MBA_PBM_EVENT_ID:
 	case QOS_MBA_MIN_EVENT_ID:
-		if (kstrtoul(buf, rr->ctrl_features[type].base, &data)) {
-			rdt_last_cmd_printf("Non-decimal digit in MB value %s\n", buf);
-			return -EINVAL;
-		}
-		if (data < r->mbw.min_bw) {
+		if (data < r->mbw.min_bw || data >= rr->ctrl_features[type].max_wd) {
 			rdt_last_cmd_printf("MB value %ld out of range [%d,%d]\n", data,
 					r->mbw.min_bw, rr->ctrl_features[type].max_wd - 1);
 			return -EINVAL;
@@ -356,17 +357,12 @@ parse_bw(char *buf, struct resctrl_resource *r,
 		data = roundup(data, r->mbw.bw_gran);
 		break;
 	default:
-		if (kstrtoul(buf, rr->ctrl_features[type].base, &data)) {
-			rdt_last_cmd_printf("Non-decimal digit in MB value %s\n", buf);
+		if (data >= rr->ctrl_features[type].max_wd) {
+			rdt_last_cmd_printf("MB value %ld exceed %d\n", data,
+					rr->ctrl_features[type].max_wd - 1);
 			return -EINVAL;
 		}
 		break;
-	}
-
-	if (data >= rr->ctrl_features[type].max_wd) {
-		rdt_last_cmd_printf("MB value %ld out of range [%d,%d]\n", data,
-				r->mbw.min_bw, rr->ctrl_features[type].max_wd - 1);
-		return -EINVAL;
 	}
 
 	cfg->new_ctrl[type] = data;
