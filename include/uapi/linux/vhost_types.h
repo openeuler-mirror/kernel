@@ -202,4 +202,7 @@ enum {
  */
 #define VHOST_BACKEND_F_ENABLE_AFTER_DRIVER_OK  0x6
 
+/* Device can use bytemap to deal log */
+#define VHOST_BACKEND_F_BYTEMAPLOG  0x3f
+
 #endif
