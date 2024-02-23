@@ -480,7 +480,7 @@ static void vdpasim_set_status(struct vdpa_device *vdpa, u8 status)
 	mutex_unlock(&vdpasim->mutex);
 }
 
-static int vdpasim_reset(struct vdpa_device *vdpa)
+static int vdpasim_reset(struct vdpa_device *vdpa, int state)
 {
 	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
 

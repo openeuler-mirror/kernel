@@ -496,7 +496,7 @@ static void pds_vdpa_init_vqs_entry(struct pds_vdpa_device *pdsv, int qid,
 	pdsv->vqs[qid].notify = notify;
 }
 
-static int pds_vdpa_reset(struct vdpa_device *vdpa_dev)
+static int pds_vdpa_reset(struct vdpa_device *vdpa_dev, int state)
 {
 	struct pds_vdpa_device *pdsv = vdpa_to_pdsv(vdpa_dev);
 	struct device *dev;

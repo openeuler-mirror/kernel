@@ -434,7 +434,7 @@ static void ifcvf_vdpa_set_status(struct vdpa_device *vdpa_dev, u8 status)
 	ifcvf_set_status(vf, status);
 }
 
-static int ifcvf_vdpa_reset(struct vdpa_device *vdpa_dev)
+static int ifcvf_vdpa_reset(struct vdpa_device *vdpa_dev, int state)
 {
 	struct ifcvf_hw *vf = vdpa_to_vf(vdpa_dev);
 	u8 status = ifcvf_get_status(vf);
