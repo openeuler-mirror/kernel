@@ -6,6 +6,9 @@
 #include <linux/module.h>
 #include <linux/ima.h>
 #include <asm/efi.h>
+#ifdef CONFIG_IMA_DIGEST_LIST
+#include <linux/ctype.h>
+#endif
 
 #ifndef arch_ima_efi_boot_mode
 #define arch_ima_efi_boot_mode efi_secureboot_mode_unset

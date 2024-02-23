@@ -138,4 +138,11 @@ config SYSTEM_BLACKLIST_AUTH_UPDATE
 	  keyring.  The PKCS#7 signature of the description is set in the key
 	  payload.  Blacklist keys cannot be removed.
 
+config PGP_PRELOAD_PUBLIC_KEYS
+	bool "Preload PGP public keys"
+	select PGP_PRELOAD
+	default n
+	help
+	  Provide a keyring of PGP public keys.
+
 endmenu

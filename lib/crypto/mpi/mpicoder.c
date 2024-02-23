@@ -79,6 +79,49 @@ MPI mpi_read_raw_data(const void *xbuffer, size_t nbytes)
 }
 EXPORT_SYMBOL_GPL(mpi_read_raw_data);
 
+#ifdef CONFIG_PGP_LIBRARY
+int mpi_key_length(const void *xbuffer, unsigned int ret_nread,
+		   unsigned int *nbits_arg, unsigned int *nbytes_arg)
+{
+	const uint8_t *buffer = xbuffer;
+	unsigned int nbits, nbytes;
+
+	if (ret_nread < 2)
+		return -EINVAL;
+	nbits = buffer[0] << 8 | buffer[1];
+
+	if (nbits > MAX_EXTERN_MPI_BITS) {
+		pr_info("MPI: mpi too large (%u bits)\n", nbits);
+		return -EINVAL;
+	}
+
+	nbytes = DIV_ROUND_UP(nbits, 8);
+	if (nbytes + 2 > ret_nread) {
+		pr_info("MPI: mpi larger than buffer nbytes=%u ret_nread=%u\n",
+			nbytes, ret_nread);
+		return -EINVAL;
+	}
+
+	if (nbits_arg)
+		*nbits_arg = nbits;
+	if (nbytes_arg)
+		*nbytes_arg = nbytes;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mpi_key_length);
+
+MPI mpi_read_from_buffer(const void *xbuffer, unsigned *ret_nread)
+{
+	const uint8_t *buffer = xbuffer;
+	unsigned int nbytes;
+	MPI val;
+	int ret;
+
+	ret = mpi_key_length(xbuffer, *ret_nread, NULL, &nbytes);
+	if (ret < 0)
+		return ERR_PTR(ret);
+#else
 MPI mpi_read_from_buffer(const void *xbuffer, unsigned *ret_nread)
 {
 	const uint8_t *buffer = xbuffer;
@@ -101,6 +144,7 @@ MPI mpi_read_from_buffer(const void *xbuffer, unsigned *ret_nread)
 		return ERR_PTR(-EINVAL);
 	}
 
+#endif /* CONFIG_PGP_LIBRARY */
 	val = mpi_read_raw_data(buffer + 2, nbytes);
 	if (!val)
 		return ERR_PTR(-ENOMEM);
