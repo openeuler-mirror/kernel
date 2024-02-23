@@ -571,6 +571,7 @@ static long vhost_vdpa_resume(struct vhost_vdpa *v)
 	return ops->resume(vdpa);
 }
 
+#ifdef CONFIG_VHOST_VDPA_MIGRATION
 static int vhost_vdpa_get_dev_buffer_size(struct vhost_vdpa *v,
 					  uint32_t __user *argp)
 {
@@ -688,6 +689,7 @@ static long vhost_vdpa_log_sync(struct vhost_vdpa *v)
 
 	return ops->log_sync(vdpa);
 }
+#endif
 
 static long vhost_vdpa_vring_ioctl(struct vhost_vdpa *v, unsigned int cmd,
 				   void __user *argp)
@@ -864,6 +866,7 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 			r = -EFAULT;
 		break;
 	case VHOST_SET_LOG_BASE:
+#ifdef CONFIG_VHOST_VDPA_MIGRATION
 		r = vhost_vdpa_set_log_base(v, argp);
 		break;
 	case VHOST_SET_LOG_SIZE:
@@ -872,6 +875,7 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 	case VHOST_LOG_SYNC:
 		r = vhost_vdpa_log_sync(v);
 		break;
+#endif
 	case VHOST_SET_LOG_FD:
 		r = -ENOIOCTLCMD;
 		break;
@@ -903,6 +907,7 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 	case VHOST_VDPA_RESUME:
 		r = vhost_vdpa_resume(v);
 		break;
+#ifdef CONFIG_VHOST_VDPA_MIGRATION
 	case VHOST_GET_DEV_BUFFER_SIZE:
 		r = vhost_vdpa_get_dev_buffer_size(v, argp);
 		break;
@@ -915,6 +920,7 @@ static long vhost_vdpa_unlocked_ioctl(struct file *filep,
 	case VHOST_VDPA_SET_MIG_STATE:
 		r = vhost_vdpa_set_mig_state(v, argp);
 		break;
+#endif
 	default:
 		r = vhost_dev_ioctl(&v->vdev, cmd, argp);
 		if (r == -ENOIOCTLCMD)
