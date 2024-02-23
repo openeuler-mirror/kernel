@@ -49,6 +49,7 @@ struct vhost_vdpa {
 	struct completion completion;
 	struct vdpa_device *vdpa;
 	struct hlist_head as[VHOST_VDPA_IOTLB_BUCKETS];
+	struct vhost_iotlb resv_iotlb;
 	struct device dev;
 	struct cdev cdev;
 	atomic_t opened;
@@ -1254,6 +1255,10 @@ static int vhost_vdpa_process_iotlb_update(struct vhost_vdpa *v,
 	    msg->iova + msg->size - 1 > v->range.last)
 		return -EINVAL;
 
+	if (vhost_iotlb_itree_first(&v->resv_iotlb, msg->iova,
+				    msg->iova + msg->size - 1))
+		return -EINVAL;
+
 	if (vhost_iotlb_itree_first(iotlb, msg->iova,
 				    msg->iova + msg->size - 1))
 		return -EEXIST;
@@ -1342,6 +1347,46 @@ static ssize_t vhost_vdpa_chr_write_iter(struct kiocb *iocb,
 	return vhost_chr_write_iter(dev, from);
 }
 
+static int vhost_vdpa_resv_iommu_region(struct iommu_domain *domain, struct device *dma_dev,
+	struct vhost_iotlb *resv_iotlb)
+{
+	struct list_head dev_resv_regions;
+	phys_addr_t resv_msi_base = 0;
+	struct iommu_resv_region *region;
+	int ret = 0;
+	bool with_sw_msi = false;
+	bool with_hw_msi = false;
+
+	INIT_LIST_HEAD(&dev_resv_regions);
+	iommu_get_resv_regions(dma_dev, &dev_resv_regions);
+
+	list_for_each_entry(region, &dev_resv_regions, list) {
+		ret = vhost_iotlb_add_range_ctx(resv_iotlb, region->start,
+						region->start + region->length - 1,
+						0, 0, NULL);
+		if (ret) {
+			vhost_iotlb_reset(resv_iotlb);
+			break;
+		}
+
+		if (region->type == IOMMU_RESV_MSI)
+			with_hw_msi = true;
+
+		if (region->type == IOMMU_RESV_SW_MSI) {
+			resv_msi_base = region->start;
+			with_sw_msi = true;
+		}
+
+	}
+
+	if (!ret && !with_hw_msi && with_sw_msi)
+		ret = iommu_get_msi_cookie(domain, resv_msi_base);
+
+	iommu_put_resv_regions(dma_dev, &dev_resv_regions);
+
+	return ret;
+}
+
 static int vhost_vdpa_alloc_domain(struct vhost_vdpa *v)
 {
 	struct vdpa_device *vdpa = v->vdpa;
@@ -1370,11 +1415,16 @@ static int vhost_vdpa_alloc_domain(struct vhost_vdpa *v)
 
 	ret = iommu_attach_device(v->domain, dma_dev);
 	if (ret)
-		goto err_attach;
+		goto err_alloc_domain;
+
+	ret = vhost_vdpa_resv_iommu_region(v->domain, dma_dev, &v->resv_iotlb);
+	if (ret)
+		goto err_attach_device;
 
 	return 0;
-
-err_attach:
+err_attach_device:
+	iommu_detach_device(v->domain, dma_dev);
+err_alloc_domain:
 	iommu_domain_free(v->domain);
 	v->domain = NULL;
 	return ret;
@@ -1497,6 +1547,7 @@ static int vhost_vdpa_release(struct inode *inode, struct file *filep)
 	vhost_vdpa_unbind_mm(v);
 	vhost_vdpa_config_put(v);
 	vhost_vdpa_cleanup(v);
+	vhost_iotlb_reset(&v->resv_iotlb);
 	mutex_unlock(&d->mutex);
 
 	atomic_dec(&v->opened);
@@ -1628,6 +1679,8 @@ static int vhost_vdpa_probe(struct vdpa_device *vdpa)
 		r = -ENOMEM;
 		goto err;
 	}
+
+	vhost_iotlb_init(&v->resv_iotlb, 0, 0);
 
 	r = dev_set_name(&v->dev, "vhost-vdpa-%u", minor);
 	if (r)
