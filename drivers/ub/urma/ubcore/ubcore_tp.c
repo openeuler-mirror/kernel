@@ -1369,7 +1369,7 @@ static int ubcore_restore_tp_to_rts(struct ubcore_device *dev, struct ubcore_tp 
 	ubcore_log_info("restore tp to rts(attr): state: %u, rx_psn: %u, tx_psn: %u",
 		(uint32_t)attr.state, attr.rx_psn, attr.tx_psn);
 
-	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RESET, &attr, mask) != 0)
+	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RTS, &attr, mask) != 0)
 		return -1;
 
 	tp->rx_psn = rx_psn;
@@ -1405,7 +1405,7 @@ int ubcore_restore_tp_error_to_rtr(struct ubcore_device *dev, struct ubcore_tp *
 		(uint32_t)attr.state, attr.rx_psn, attr.tx_psn,
 		attr.data_udp_start, attr.ack_udp_start);
 
-	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RESET, &attr, mask) != 0)
+	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RTR, &attr, mask) != 0)
 		return -1;
 
 	tp->rx_psn = rx_psn;
@@ -1429,7 +1429,7 @@ int ubcore_restore_tp_error_to_rts(struct ubcore_device *dev, struct ubcore_tp *
 	ubcore_log_info("restore tp to rts, state mask: %u state: %u",
 		mask.bs.state, (uint32_t)attr.state);
 
-	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RESET, &attr, mask) != 0)
+	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RTS, &attr, mask) != 0)
 		return -1;
 
 	return 0;
@@ -1445,7 +1445,7 @@ int ubcore_change_tp_to_err(struct ubcore_device *dev, struct ubcore_tp *tp)
 
 	attr.state = UBCORE_TP_STATE_ERR;
 
-	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_RESET, &attr, mask) != 0)
+	if (ubcore_modify_tp_state(dev, tp, UBCORE_TP_STATE_ERR, &attr, mask) != 0)
 		return -1;
 
 	return 0;

@@ -632,6 +632,17 @@ static int uburma_free_tjfr(struct uburma_uobj *uobj, enum uburma_remove_reason 
 	return ubcore_unimport_jfr((struct ubcore_tjetty *)uobj->object);
 }
 
+static void uburma_free_tjetty_refcnt(struct uburma_tjetty_uobj *uburma_tjetty)
+{
+	struct ubcore_jetty *jetty;
+
+	jetty = (struct ubcore_jetty *)uburma_tjetty->jetty_uobj->uobj.object;
+	if (jetty->remote_jetty != NULL) {
+		atomic_set(&jetty->remote_jetty->use_cnt, 0);
+		jetty->remote_jetty = NULL;
+	}
+}
+
 static int uburma_free_tjetty(struct uburma_uobj *uobj, enum uburma_remove_reason why)
 {
 	struct uburma_tjetty_uobj *uburma_tjetty;
@@ -639,6 +650,11 @@ static int uburma_free_tjetty(struct uburma_uobj *uobj, enum uburma_remove_reaso
 	uburma_tjetty = (struct uburma_tjetty_uobj *)uobj;
 	if (uburma_tjetty->jetty_uobj != NULL) {
 		(void)ubcore_unbind_jetty(uburma_tjetty->jetty_uobj->uobj.object);
+		/* When resetting the network card, socket messages cannot be sent.
+		 * Unbind jetty cannot succeed. The tjetty reference needs to be released,
+		 * otherwise unimport jetty cannot succeed.
+		 */
+		uburma_free_tjetty_refcnt(uburma_tjetty);
 		uburma_tjetty->jetty_uobj = NULL;
 		uburma_log_warn("unbind_jetty hasn't been done and it has been handled");
 	}

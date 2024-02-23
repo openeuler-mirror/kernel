@@ -31,7 +31,11 @@
 #include <linux/libfdt_env.h>
 #include <linux/mm.h>
 #include <linux/netdevice.h>
+
+#ifdef CONFIG_CGROUP_RDMA
 #include <linux/cgroup_rdma.h>
+#endif
+
 #include <urma/ubcore_opcode.h>
 
 #define UBCORE_GET_VERSION(a, b) (((a) << 16) + ((b) > 65535 ? 65535 : (b)))
@@ -48,6 +52,7 @@
 #define UBCORE_EID_SIZE (16)
 #define UBCORE_EID_STR_LEN (39)
 #define UBCORE_DEVID_SIZE (16)
+#define UBCORE_GUID_SIZE (16)
 
 #define EID_FMT                           \
 	"%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x"
@@ -63,6 +68,8 @@
 /* support 8 priorities and 8 algorithms */
 /* same as URMA_CC_IDX_TABLE_SIZE */
 #define UBCORE_CC_IDX_TABLE_SIZE 64
+#define UBCORE_SIP_TABLE_SIZE (1024) /* 1823: 16; 1650: 1024; 1636: N/A */
+#define UBCORE_MAX_SIP UBCORE_SIP_TABLE_SIZE
 
 enum ubcore_transport_type {
 	UBCORE_TRANSPORT_INVALID = -1,
@@ -417,7 +424,7 @@ enum ubcore_tp_cc_alg {
 };
 
 enum ubcore_congestion_ctrl_alg {
-	UBCORE_CC_PFC = 0x1 << UBCORE_TP_CC_NONE,
+	UBCORE_CC_NONE = 0x1 << UBCORE_TP_CC_NONE,
 	UBCORE_CC_DCQCN = 0x1 << UBCORE_TP_CC_DCQCN,
 	UBCORE_CC_DCQCN_AND_NETWORK_CC = 0x1 << UBCORE_TP_CC_DCQCN_AND_NETWORK_CC,
 	UBCORE_CC_LDCP = 0x1 << UBCORE_TP_CC_LDCP,
@@ -548,20 +555,24 @@ struct ubcore_device_cap {
 	uint32_t max_slice;           /* 256K (1823), 64K (1650) */
 	uint32_t max_atomic_size;     /* in terms of bytes, e.g. 8 or 64 */
 	union ubcore_atomic_feat atomic_feat;
+	uint32_t max_eid_cnt;
+	uint32_t max_upi_cnt;
+	uint32_t max_netaddr_cnt;
+	uint16_t max_fe_cnt;          /* PF: greater than or equal to 0; FE: must be 0 */
+};
+
+struct ubcore_guid {
+	uint8_t raw[UBCORE_GUID_SIZE];
 };
 
 struct ubcore_device_attr {
-	uint64_t guid;
+	struct ubcore_guid guid;
 	uint16_t fe_idx;
-	uint32_t max_eid_cnt;
-	uint32_t max_upi_cnt;
 	struct ubcore_device_cap dev_cap;
-	uint16_t fe_cnt;                   /* PF: greater than or equal to 0; FE: must be 0 */
 	struct ubcore_port_attr port_attr[UBCORE_MAX_PORT_CNT];
 	uint8_t port_cnt;
 	bool virtualization; /* In VM or not, must set by driver when register device */
 	bool tp_maintainer;                /* device used to maintain TP resource */
-	uint32_t max_netaddr_cnt;
 };
 
 union ubcore_device_cfg_mask {
@@ -662,7 +673,7 @@ union ubcore_tp_cfg_flag {
 		 * along with the information in the bonding group table.
 		 */
 		uint32_t bonding : 1;
-		uint32_t reserved : 19;
+		uint32_t reserved : 27;
 	} bs;
 	uint32_t value;
 };
@@ -674,7 +685,7 @@ union ubcore_tp_mod_flag {
 		uint32_t cc_en       : 1; /* congestion control algorithm, 0: disable 1: enable */
 		uint32_t cc_alg      : 4; /* The value is ubcore_tp_cc_alg_t */
 		uint32_t spray_en    : 1; /* spray with src udp port, 0: disable 1: enable */
-		uint32_t reserved    : 23;
+		uint32_t reserved    : 24;
 	} bs;
 	uint32_t value;
 };
@@ -1183,7 +1194,6 @@ struct ubcore_tjetty_cfg {
 struct ubcore_tjetty {
 	struct ubcore_device *ub_dev;
 	struct ubcore_ucontext *uctx;
-	enum ubcore_target_type type;
 	struct ubcore_tjetty_cfg cfg;
 	struct ubcore_tp *tp;
 	struct ubcore_vtpn *vtpn;
@@ -1204,8 +1214,18 @@ struct ubcore_jetty {
 	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
 };
 
+union ubcore_jetty_grp_flag {
+	struct {
+		uint32_t token_policy	: 3;
+		uint32_t reserved	: 29;
+	} bs;
+	uint32_t value;
+};
+
 struct ubcore_jetty_grp_cfg {
 	char name[UBCORE_JETTY_GRP_MAX_NAME];
+	uint32_t eid_index;
+	union ubcore_jetty_grp_flag flag;
 	struct ubcore_token token_value;
 	uint32_t id;
 	enum ubcore_jetty_grp_policy policy;
@@ -1236,7 +1256,7 @@ enum ubcore_res_key_type {
 	UBCORE_RES_KEY_JETTY_GROUP,   // key id: JETTY GROUP ID
 	UBCORE_RES_KEY_JFC,           // key id: JFC ID
 	UBCORE_RES_KEY_RC,            // key id: RC ID
-	UBCORE_RES_KEY_SEG,           // key id: UKEY ID
+	UBCORE_RES_KEY_SEG,           // key id: TOKEN ID
 	UBCORE_RES_KEY_URMA_DEV       // key id: EID
 };
 
@@ -1285,14 +1305,14 @@ struct ubcore_res_utp_val {
 	uint32_t utpn;
 	uint16_t data_udp_start;
 	uint8_t udp_range;
-	uint8_t spray_en;
+	union ubcore_utp_cfg_flag flag;
 };
 
 struct ubcore_res_jfs_val {
 	uint32_t jfs_id;
 	uint8_t state;
 	uint32_t depth;
-	uint8_t pri;
+	uint8_t priority;
 	uint32_t jfc_id;
 };
 
@@ -1300,7 +1320,6 @@ struct ubcore_res_jfr_val {
 	uint32_t jfr_id;
 	uint8_t state;
 	uint32_t depth;
-	uint8_t pri;
 	uint32_t jfc_id;
 };
 
@@ -1311,7 +1330,7 @@ struct ubcore_res_jetty_val {
 	uint32_t jfr_id;
 	uint32_t jfs_depth;
 	uint8_t state;
-	uint8_t pri;
+	uint8_t priority;
 };
 
 struct ubcore_res_jetty_group_val {
@@ -1332,17 +1351,15 @@ struct ubcore_res_rc_val {
 	uint8_t state;
 };
 
-struct ubcore_res_seg_val {
-	struct ubcore_ubva ubva;
-	uint64_t len;
-	uint32_t token_id;
-	struct ubcore_token token_value;
-};
-
 struct ubcore_seg_info {
 	struct ubcore_ubva ubva;
 	uint64_t len;
 	uint32_t token_id;
+};
+
+struct ubcore_res_seg_val {
+	uint32_t seg_cnt;
+	struct ubcore_seg_info *seg_list;
 };
 
 struct ubcore_res_dev_val {
@@ -1528,12 +1545,14 @@ struct ubcore_cr {
 };
 
 enum ubcore_stats_key_type {
-	UBCORE_STATS_KEY_TP = 1,
-	UBCORE_STATS_KEY_TPG = 2,
-	UBCORE_STATS_KEY_JFS = 3,
-	UBCORE_STATS_KEY_JFR = 4,
-	UBCORE_STATS_KEY_JETTY = 5,
-	UBCORE_STATS_KEY_JETTY_GROUP = 6
+	UBCORE_STATS_KEY_VTP = 1,
+	UBCORE_STATS_KEY_TP = 2,
+	UBCORE_STATS_KEY_TPG = 3,
+	UBCORE_STATS_KEY_JFS = 4,
+	UBCORE_STATS_KEY_JFR = 5,
+	UBCORE_STATS_KEY_JETTY = 6,
+	UBCORE_STATS_KEY_JETTY_GROUP = 7,
+	UBCORE_STATS_KEY_URMA_DEV = 8,
 };
 
 struct ubcore_stats_key {
@@ -2313,6 +2332,12 @@ struct ubcore_eid_table {
 	spinlock_t lock;
 };
 
+struct ubcore_sip_table {
+	struct mutex lock;
+	struct ubcore_sip_info *entry[UBCORE_SIP_TABLE_SIZE];
+	DECLARE_BITMAP(index_bitmap, UBCORE_MAX_SIP);
+};
+
 struct ubcore_device {
 	struct list_head list_node; /* add to device list */
 
@@ -2347,6 +2372,7 @@ struct ubcore_device {
 	bool dynamic_eid; /* Assign eid dynamically with netdev notifier */
 	struct ubcore_eid_table eid_table;
 	struct ubcore_cg_device cg_device;
+	struct ubcore_sip_table sip_table;
 };
 
 struct ubcore_port {
@@ -2395,6 +2421,7 @@ struct ubcore_sip_info {
 	uint8_t port_cnt;
 	uint8_t port_id[UBCORE_MAX_PORT_CNT];
 	uint32_t mtu;
+	char netdev_name[UBCORE_MAX_DEV_NAME]; /* for change mtu */
 };
 
 union ubcore_global_cfg_mask {

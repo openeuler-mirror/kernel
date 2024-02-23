@@ -280,7 +280,7 @@ static int ubcore_cmd_set_eid_mode(struct ubcore_cmd_hdr *hdr)
 	/* change eid mode, need to flush eids */
 	event.ub_dev = dev;
 	event.event_type = UBCORE_EVENT_EID_CHANGE;
-	for (i = 0; i < dev->attr.max_eid_cnt; i++) {
+	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (dev->eid_table.eid_entries[i].valid == true) {
 			eid = dev->eid_table.eid_entries[i].eid;
 			if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1)
@@ -401,7 +401,7 @@ static int ubcore_copy_to_usr_tp_list(uint64_t user_tp_list, struct ubcore_res_t
 	ret = ubcore_copy_to_user((void __user *)(uintptr_t)user_tp_list,
 		tpg->tp_list, sizeof(uint32_t) * tpg->tp_cnt);
 	if (ret != 0)
-		ubcore_log_err("ubcore_copy_to_user failed.\n");
+		ubcore_log_err("ubcore_copy_to_user failed, cnt = %u\n", tpg->tp_cnt);
 
 	vfree(tpg->tp_list);
 	return ret;
@@ -416,14 +416,28 @@ static int ubcore_copy_to_usr_jetty_list(uint64_t user_jetty_list,
 	ret = ubcore_copy_to_user((void __user *)(uintptr_t)user_jetty_list, jetty_grp->jetty_list,
 		sizeof(uint32_t) * jetty_grp->jetty_cnt);
 	if (ret != 0)
-		ubcore_log_err("ubcore_copy_to_user failed.\n");
+		ubcore_log_err("ubcore_copy_to_user failed, cnt = %u\n", jetty_grp->jetty_cnt);
 
 	vfree(jetty_grp->jetty_list);
 	return ret;
 }
 
+static int ubcore_copy_to_usr_segment_list(uint64_t user_seg_list,
+	struct ubcore_res_seg_val *seg_info)
+{
+	int ret;
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)user_seg_list, seg_info->seg_list,
+		sizeof(struct ubcore_seg_info) * seg_info->seg_cnt);
+	if (ret != 0)
+		ubcore_log_err("ubcore_copy_to_user failed, cnt = %u\n", seg_info->seg_cnt);
+
+	vfree(seg_info->seg_list);
+	return ret;
+}
+
 static void ubcore_query_copy_cnt(struct ubcore_cmd_query_res *arg,
-	uint64_t val_addr, uint64_t user_addr)
+	uint64_t k_addr, uint64_t user_addr)
 {
 	struct ubcore_res_tpg_val *tpg_val;
 	struct ubcore_res_tpg_val *tpg_user_val;
@@ -431,22 +445,30 @@ static void ubcore_query_copy_cnt(struct ubcore_cmd_query_res *arg,
 	struct ubcore_res_jetty_group_val *jgrp_val;
 	struct ubcore_res_jetty_group_val *jgrp_user_val;
 
+	struct ubcore_res_seg_val *seg_val;
+	struct ubcore_res_seg_val *seg_user_val;
+
 	struct ubcore_res_dev_val *dev_val;
 	struct ubcore_res_dev_val *dev_user_val;
 
 	switch (arg->in.type) {
 	case UBCORE_RES_KEY_TPG:
-		tpg_val = (struct ubcore_res_tpg_val *)val_addr;
+		tpg_val = (struct ubcore_res_tpg_val *)k_addr;
 		tpg_user_val = (struct ubcore_res_tpg_val *)user_addr;
 		tpg_user_val->tp_cnt = tpg_val->tp_cnt;
 		return;
 	case UBCORE_RES_KEY_JETTY_GROUP:
-		jgrp_val = (struct ubcore_res_jetty_group_val *)val_addr;
+		jgrp_val = (struct ubcore_res_jetty_group_val *)k_addr;
 		jgrp_user_val = (struct ubcore_res_jetty_group_val *)user_addr;
 		jgrp_user_val->jetty_cnt = jgrp_val->jetty_cnt;
 		return;
+	case UBCORE_RES_KEY_SEG:
+		seg_val = (struct ubcore_res_seg_val *)k_addr;
+		seg_user_val = (struct ubcore_res_seg_val *)user_addr;
+		seg_user_val->seg_cnt = seg_val->seg_cnt;
+		return;
 	case UBCORE_RES_KEY_URMA_DEV:
-		dev_val = (struct ubcore_res_dev_val *)val_addr;
+		dev_val = (struct ubcore_res_dev_val *)k_addr;
 		dev_user_val = (struct ubcore_res_dev_val *)user_addr;
 		dev_user_val->seg_cnt = dev_val->seg_cnt;
 		dev_user_val->jfs_cnt = dev_val->jfs_cnt;
@@ -471,7 +493,7 @@ static int ubcore_query_cnt(struct ubcore_device *dev, struct ubcore_cmd_query_r
 {
 	struct ubcore_res_key key = {0};
 	struct ubcore_res_val val = {0};
-	void *kernal_addr;
+	void *kernal_addr; /* urma applies for memory; driver fills; kfree during 2nd ioctl */
 	void *user_addr;
 	int ret;
 
@@ -563,20 +585,30 @@ static int ubcore_query_list(struct ubcore_device *dev, struct ubcore_cmd_query_
 	if (ret != 0)
 		goto kfree_addr;
 
-	if (arg->in.type == UBCORE_RES_KEY_TPG) {
+	switch (arg->in.type) {
+	case UBCORE_RES_KEY_TPG:
 		ret = ubcore_copy_to_usr_tp_list(
 			(uint64_t)(((struct ubcore_res_tpg_val *)user_addr)->tp_list),
 			(struct ubcore_res_tpg_val *)kernal_addr);
-	} else if (arg->in.type == UBCORE_RES_KEY_JETTY_GROUP) {
+		break;
+	case UBCORE_RES_KEY_JETTY_GROUP:
 		ret = ubcore_copy_to_usr_jetty_list(
 			(uint64_t)(((struct ubcore_res_jetty_group_val *)user_addr)->jetty_list),
 			(struct ubcore_res_jetty_group_val *)kernal_addr);
-	} else if (arg->in.type == UBCORE_RES_KEY_URMA_DEV) {
+		break;
+	case UBCORE_RES_KEY_SEG:
+		ret = ubcore_copy_to_usr_segment_list(
+			(uint64_t)(((struct ubcore_res_seg_val *)user_addr)->seg_list),
+			(struct ubcore_res_seg_val *)kernal_addr);
+		break;
+	case UBCORE_RES_KEY_URMA_DEV:
 		ret = ubcore_fill_user_res_dev((struct ubcore_res_dev_val *)user_addr,
 			(struct ubcore_res_dev_val *)kernal_addr);
 		ubcore_query_list_free((struct ubcore_res_dev_val *)kernal_addr);
-	} else {
+		break;
+	default:
 		(void)memcpy(user_addr, k_addr, res_len);
+		break;
 	}
 
 	if (ret != 0)
@@ -756,20 +788,19 @@ static void ubcore_ipv4_to_netaddr(struct ubcore_net_addr *netaddr, __be32 ipv4)
 	netaddr->net_addr.in4.addr = ipv4;
 }
 
-static void ubcore_sip_init(struct ubcore_sip_info *sip, struct ubcore_device *pf_dev,
+static void ubcore_sip_init(struct ubcore_sip_info *sip, struct ubcore_device *tpf_dev,
 	const struct ubcore_net_addr *netaddr, uint8_t *port_list,
-	uint8_t port_cnt, uint32_t prefix_len, uint32_t mtu)
+	uint8_t port_cnt, uint32_t prefix_len, struct net_device *netdev)
 {
-	(void)memcpy(sip->dev_name, pf_dev->dev_name, UBCORE_MAX_DEV_NAME);
+	(void)memcpy(sip->dev_name, tpf_dev->dev_name, UBCORE_MAX_DEV_NAME);
 	(void)memcpy(&sip->addr, netaddr, sizeof(struct ubcore_net_addr));
 	if (port_list != NULL)
 		(void)memcpy(sip->port_id, port_list, UBCORE_MAX_PORT_CNT);
-	else
-		ubcore_log_warn("no one set port_list\n");
-
 	sip->port_cnt = port_cnt;
 	sip->prefix_len = prefix_len;
-	sip->mtu = mtu;
+	sip->mtu = netdev->mtu;
+	(void)memcpy(sip->netdev_name, netdev_name(netdev),
+		UBCORE_MAX_DEV_NAME);
 }
 
 static void ubcore_add_net_addr(struct ubcore_device *tpf_dev, struct ubcore_device *pf_dev,
@@ -783,23 +814,22 @@ static void ubcore_add_net_addr(struct ubcore_device *tpf_dev, struct ubcore_dev
 
 	/* get driver set nedev port */
 	ubcore_find_port_netdev(pf_dev, netdev, &port_list, &port_cnt);
+	ubcore_sip_init(&sip, tpf_dev,
+		netaddr, port_list, port_cnt, prefix_len, netdev);
 
-	ubcore_sip_init(&sip, pf_dev,
-		netaddr, port_list, port_cnt, prefix_len, (uint32_t)netdev->mtu);
-
-	ret = ubcore_lookup_sip_idx(&sip, &index);
+	ret = ubcore_lookup_sip_idx(&tpf_dev->sip_table, &sip, &index);
 	if (ret == 0) {
 		ubcore_log_err("sip already exists\n");
 		return;
 	}
-	index = ubcore_sip_idx_alloc(0);
+	index = (uint32_t)ubcore_sip_idx_alloc(&tpf_dev->sip_table);
 
 	if (tpf_dev->ops->add_net_addr != NULL &&
 		tpf_dev->ops->add_net_addr(tpf_dev, netaddr, index) != 0)
 		ubcore_log_err("Failed to set net addr");
 
 	/* add net_addr entry, record idx -> netaddr mapping */
-	(void)ubcore_add_sip_entry(&sip, index);
+	(void)ubcore_add_sip_entry(&tpf_dev->sip_table, &sip, index);
 
 	/* nodify uvs add sip info */
 	if (ubcore_get_netlink_valid() == true)
@@ -821,17 +851,17 @@ static void ubcore_delete_net_addr(struct ubcore_device *tpf_dev, struct ubcore_
 
 	ubcore_find_port_netdev(pf_dev, netdev, &port_list, &port_cnt);
 
-	ubcore_sip_init(&sip, pf_dev,
-		netaddr, port_list, port_cnt, prefix_len, (uint32_t)netdev->mtu);
-	if (ubcore_lookup_sip_idx(&sip, &index) != 0)
+	ubcore_sip_init(&sip, tpf_dev,
+		netaddr, port_list, port_cnt, prefix_len, netdev);
+	if (ubcore_lookup_sip_idx(&tpf_dev->sip_table, &sip, &index) != 0)
 		return;
 
 	if (tpf_dev->ops->delete_net_addr != NULL &&
 		tpf_dev->ops->delete_net_addr(tpf_dev, index) != 0)
 		ubcore_log_err("Failed to delete net addr");
 
-	(void)ubcore_del_sip_entry(index);
-	(void)ubcore_sip_idx_free(index);
+	(void)ubcore_del_sip_entry(&tpf_dev->sip_table, index);
+	(void)ubcore_sip_idx_free(&tpf_dev->sip_table, index);
 	/* nodify uvs delete sip info */
 	if (ubcore_get_netlink_valid() == true)
 		(void)ubcore_notify_uvs_del_sip(tpf_dev, &sip, index);
@@ -1107,38 +1137,33 @@ static int ubcore_remove_netaddr(struct ubcore_device *dev, struct net_device *n
 
 static void ubcore_change_mtu(struct ubcore_device *dev, struct net_device *netdev)
 {
-	struct ubcore_sip_info new_sip = {0};
-	struct ubcore_sip_info old_sip = {0};
 	struct ubcore_device *tpf_dev;
+	struct ubcore_sip_info *new_sip;
+	struct ubcore_sip_info old_sip;
 	uint32_t max_cnt;
 	uint32_t i;
 
-	tpf_dev = ubcore_find_tpf_device(NULL, UBCORE_TRANSPORT_UB);
+	tpf_dev = ubcore_find_tpf_by_dev(dev, UBCORE_TRANSPORT_UB);
 	if (tpf_dev == NULL)
 		return;
 
-	max_cnt = ubcore_get_sip_max_cnt();
-
+	mutex_lock(&tpf_dev->sip_table.lock);
+	max_cnt = ubcore_get_sip_max_cnt(&tpf_dev->sip_table);
 	for (i = 0; i < max_cnt; i++) {
-		if (ubcore_get_sip_info_copy(i, &new_sip) != 0)
+		new_sip = ubcore_lookup_sip_info(&tpf_dev->sip_table, i);
+		if (new_sip == NULL || memcmp(new_sip->netdev_name, netdev_name(netdev),
+			UBCORE_MAX_DEV_NAME) != 0)
 			continue;
-
-		if (memcmp(new_sip.dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME) != 0)
-			continue;
-
-		old_sip = new_sip;
-		new_sip.mtu = netdev->mtu;
-		if (ubcore_sip_info_update(i, (const struct ubcore_sip_info *)&new_sip) != 0)
-			continue;
-
+		old_sip = *new_sip;
+		new_sip->mtu = netdev->mtu;
 		if (ubcore_get_netlink_valid() == true) {
 			(void)ubcore_notify_uvs_del_sip(tpf_dev, &old_sip, i);
-			(void)ubcore_notify_uvs_add_sip(tpf_dev, &new_sip, i);
+			(void)ubcore_notify_uvs_add_sip(tpf_dev, new_sip, i);
 		}
-		ubcore_log_info("dev_name: %s, mtu: %u change to mtu: %u\n",
-			dev->dev_name, old_sip.mtu, new_sip.mtu);
+		ubcore_log_info("dev_name: %s, netdev: %s mtu: %u change to mtu: %u\n",
+			dev->dev_name, netdev_name(netdev), old_sip.mtu, new_sip->mtu);
 	}
-
+	mutex_unlock(&tpf_dev->sip_table.lock);
 	ubcore_put_device(tpf_dev);
 }
 
@@ -1375,10 +1400,7 @@ static int __init ubcore_init(void)
 	if (ret != 0)
 		return ret;
 
-	ubcore_sip_table_init();
-
 	if (ubcore_netlink_init() != 0) {
-		ubcore_sip_table_uninit();
 		ubcore_unregister_sysfs();
 		return -1;
 	}
@@ -1387,7 +1409,6 @@ static int __init ubcore_init(void)
 	if (ret != 0) {
 		pr_err("Failed to register notifiers\n");
 		ubcore_netlink_exit();
-		ubcore_sip_table_uninit();
 		ubcore_unregister_sysfs();
 		return -1;
 	}
@@ -1399,7 +1420,6 @@ static int __init ubcore_init(void)
 static void __exit ubcore_exit(void)
 {
 	ubcore_unregister_notifiers();
-	ubcore_sip_table_uninit();
 	ubcore_netlink_exit();
 	ubcore_unregister_sysfs();
 	ubcore_log_info("ubcore module exits.\n");

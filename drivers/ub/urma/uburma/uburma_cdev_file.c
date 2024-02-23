@@ -112,7 +112,8 @@ static DEVICE_ATTR_RO(ubdev);
 
 static ssize_t guid_show_cb(struct ubcore_device *ubc_dev, char *buf)
 {
-	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%llu\n", ubc_dev->attr.guid);
+	return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT "\n",
+		EID_ARGS(ubc_dev->attr.guid));
 }
 
 static ssize_t guid_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -124,7 +125,7 @@ static DEVICE_ATTR_RO(guid);
 
 static ssize_t max_upi_cnt_show_cb(struct ubcore_device *ubc_dev, char *buf)
 {
-	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.max_upi_cnt);
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.max_upi_cnt);
 }
 
 static ssize_t max_upi_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -551,7 +552,7 @@ static DEVICE_ATTR_RO(virtualization);
 
 static ssize_t show_fe_cnt_cb(struct ubcore_device *ubc_dev, char *buf)
 {
-	return snprintf(buf, UBURMA_MAX_VALUE_LEN - 1, "%u\n", ubc_dev->attr.fe_cnt);
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN - 1, "%u\n", ubc_dev->attr.dev_cap.max_fe_cnt);
 }
 static ssize_t fe_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -571,7 +572,7 @@ static DEVICE_ATTR_RO(dynamic_eid);
 
 static ssize_t max_eid_cnt_show_cb(struct ubcore_device *ubc_dev, char *buf)
 {
-	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.max_eid_cnt);
+	return snprintf(buf, UBURMA_MAX_VALUE_LEN, "%u\n", ubc_dev->attr.dev_cap.max_eid_cnt);
 }
 
 static ssize_t max_eid_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
