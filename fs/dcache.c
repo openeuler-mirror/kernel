@@ -682,6 +682,10 @@ static inline bool limit_negative_dentry(struct dentry *dentry)
 {
 	struct dentry *parent;
 
+	/* The dentry is now unrecoverably dead, shuoldn't limit */
+	if (unlikely(dentry->d_lockref.count < 0))
+		return false;
+
 	parent = dentry->d_parent;
 	if (unlikely(!parent))
 		return false;
