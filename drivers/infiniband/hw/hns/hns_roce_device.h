@@ -637,6 +637,8 @@ struct hns_roce_qp {
 	struct list_head	sq_node; /* all send qps are on a list */
 	struct hns_user_mmap_entry *dwqe_mmap_entry;
 	u32			config;
+	u8			tc_mode;
+	u8			priority;
 };
 
 struct hns_roce_ib_iboe {
@@ -944,6 +946,9 @@ struct hns_roce_hw {
 	int (*query_cqc)(struct hns_roce_dev *hr_dev, u32 cqn, void *buffer);
 	int (*query_qpc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
 	int (*query_mpt)(struct hns_roce_dev *hr_dev, u32 key, void *buffer);
+	int (*get_dscp)(struct hns_roce_dev *hr_dev, u8 dscp,
+			u8 *tc_mode, u8 *priority);
+	int (*query_sccc)(struct hns_roce_dev *hr_dev, u32 qpn, void *buffer);
 	int (*query_srqc)(struct hns_roce_dev *hr_dev, u32 srqn, void *buffer);
 	int (*query_hw_counter)(struct hns_roce_dev *hr_dev,
 				u64 *stats, u32 port, int *hw_counters);

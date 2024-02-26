@@ -59,8 +59,10 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibah->device);
 	struct hns_roce_ib_create_ah_resp resp = {};
 	struct hns_roce_ah *ah = to_hr_ah(ibah);
-	int ret = 0;
+	u8 priority = 0;
+	u8 tc_mode = 0;
 	u32 max_sl;
+	int ret;
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08 && udata)
 		return -EOPNOTSUPP;
@@ -76,7 +78,20 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	ah->av.udp_sport = get_ah_udp_sport(ah_attr);
 	ah->av.tclass = get_tclass(grh);
 
-	ah->av.sl = rdma_ah_get_sl(ah_attr);
+	ret = hr_dev->hw->get_dscp(hr_dev, get_tclass(grh), &tc_mode,
+				   &priority);
+	if (ret == -EOPNOTSUPP)
+		ret = 0;
+
+	if (ret && grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
+		return ret;
+
+	if (tc_mode == HNAE3_TC_MAP_MODE_DSCP &&
+	    grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
+		ah->av.sl = priority;
+	else
+		ah->av.sl = rdma_ah_get_sl(ah_attr);
+
 	max_sl = min_t(u32, MAX_SERVICE_LEVEL, hr_dev->caps.sl_num - 1);
 	if (unlikely(ah->av.sl > max_sl)) {
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
@@ -99,6 +114,8 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 	}
 
 	if (udata) {
+		resp.priority = ah->av.sl;
+		resp.tc_mode = tc_mode;
 		memcpy(resp.dmac, ah_attr->roce.dmac, ETH_ALEN);
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
