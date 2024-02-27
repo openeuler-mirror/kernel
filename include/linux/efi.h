@@ -26,6 +26,7 @@
 #include <linux/uuid.h>
 
 #include <asm/page.h>
+#include <linux/kabi.h>
 
 struct screen_info;
 
@@ -669,6 +670,8 @@ extern struct efi {
 
 	struct efi_memory_map		memmap;
 	unsigned long			flags;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 } efi;
 
 #define EFI_RT_SUPPORTED_GET_TIME				0x0001
