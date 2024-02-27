@@ -704,7 +704,7 @@ static void vduse_vdpa_set_config(struct vdpa_device *vdpa, unsigned int offset,
 	/* Now we only support read-only configuration space */
 }
 
-static int vduse_vdpa_reset(struct vdpa_device *vdpa)
+static int vduse_vdpa_reset(struct vdpa_device *vdpa, int state)
 {
 	struct vduse_dev *dev = vdpa_to_vduse(vdpa);
 	int ret = vduse_dev_set_status(dev, 0);

@@ -245,7 +245,7 @@ static int snet_reset_dev(struct snet *snet)
 	return 0;
 }
 
-static int snet_reset(struct vdpa_device *vdev)
+static int snet_reset(struct vdpa_device *vdev, int state)
 {
 	struct snet *snet = vdpa_to_snet(vdev);
 

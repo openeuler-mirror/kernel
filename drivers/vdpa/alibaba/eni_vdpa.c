@@ -226,7 +226,7 @@ static void eni_vdpa_set_status(struct vdpa_device *vdpa, u8 status)
 		eni_vdpa_free_irq(eni_vdpa);
 }
 
-static int eni_vdpa_reset(struct vdpa_device *vdpa)
+static int eni_vdpa_reset(struct vdpa_device *vdpa, int state)
 {
 	struct eni_vdpa *eni_vdpa = vdpa_to_eni(vdpa);
 	struct virtio_pci_legacy_device *ldev = &eni_vdpa->ldev;

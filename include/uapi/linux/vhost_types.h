@@ -163,6 +163,22 @@ struct vhost_vdpa_iova_range {
 	__u64 last;
 };
 
+/* vhost vdpa device migration statue */
+enum {
+	VHOST_VDPA_DEVICE_START,
+	VHOST_VDPA_DEVICE_STOP,
+	VHOST_VDPA_DEVICE_PRE_START,
+	VHOST_VDPA_DEVICE_PRE_STOP,
+	VHOST_VDPA_DEVICE_CANCEL,
+	VHOST_VDPA_DEVICE_POST_START,
+	VHOST_VDPA_DEVICE_START_ASYNC,
+	VHOST_VDPA_DEVICE_STOP_ASYNC,
+	VHOST_VDPA_DEVICE_PRE_START_ASYNC,
+	VHOST_VDPA_DEVICE_QUERY_OP_STATE,
+	VHOST_VDPA_DEVICE_MSIX_MASK,
+	VHOST_VDPA_DEVICE_MSIX_UNMASK,
+};
+
 /* Feature bits */
 /* Log all write descriptors. Can be changed while device is active. */
 #define VHOST_F_LOG_ALL 26
@@ -185,5 +201,8 @@ struct vhost_vdpa_iova_range {
  * DRIVER_OK
  */
 #define VHOST_BACKEND_F_ENABLE_AFTER_DRIVER_OK  0x6
+
+/* Device can use bytemap to deal log */
+#define VHOST_BACKEND_F_BYTEMAPLOG  0x3f
 
 #endif

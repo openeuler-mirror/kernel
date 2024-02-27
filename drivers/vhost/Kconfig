@@ -79,6 +79,17 @@ config VHOST_VDPA
 	  To compile this driver as a module, choose M here: the module
 	  will be called vhost_vdpa.
 
+config VHOST_VDPA_MIGRATION
+	tristate "vdpa migration support for vhost-vdpa"
+	default n
+	help
+	  This option allows vhost vdpa to support migration.
+	  Userspace programs can migration vdpa device using
+	  VHOST_SET_LOG_BASE/VHOST_SET_LOG_SIZE/VHOST_LOG_SYNC/VHOST_LOG_SYNC/
+	  VHOST_LOG_SYNC/VHOST_GET_DEV_BUFFER_SIZE ioctls.
+
+	  This is only support arm64 platform.
+
 config VHOST_CROSS_ENDIAN_LEGACY
 	bool "Cross-endian support for vhost"
 	default n
