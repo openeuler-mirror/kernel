@@ -338,12 +338,12 @@ static inline int pte_none(pte_t pte)
 
 static inline int pte_present(pte_t pte)
 {
-	return pte_val(pte) & (_PAGE_VALID | _PAGE_PROTNONE);
+	return !!(pte_val(pte) & (_PAGE_VALID | _PAGE_PROTNONE));
 }
 
 static inline int pte_huge(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_LEAF;
+	return !!(pte_val(pte) & _PAGE_LEAF);
 }
 
 static inline void pte_clear(struct mm_struct *mm,
@@ -383,7 +383,7 @@ static inline int pmd_present(pmd_t pmd)
 	 * the _PAGE_LEAF flag will remain set at all times while the
 	 * _PAGE_VALID bit is clear).
 	 */
-	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_LEAF);
+	return !!(pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_LEAF));
 }
 
 static inline void pmd_clear(pmd_t *pmdp)
@@ -393,12 +393,12 @@ static inline void pmd_clear(pmd_t *pmdp)
 
 static inline int pmd_dirty(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_DIRTY;
+	return !!(pmd_val(pmd) & _PAGE_DIRTY);
 }
 
 static inline int pmd_young(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_ACCESSED;
+	return !!(pmd_val(pmd) & _PAGE_ACCESSED);
 }
 
 #define __HAVE_ARCH_PMD_WRITE
@@ -481,7 +481,7 @@ static inline int pud_bad(pud_t pud)
 
 static inline int pud_present(pud_t pud)
 {
-	return pud_val(pud) & _PAGE_VALID;
+	return !!(pud_val(pud) & _PAGE_VALID);
 }
 
 static inline void pud_clear(pud_t *pudp)
@@ -536,22 +536,22 @@ static inline int pte_write(pte_t pte)
 
 static inline int pte_dirty(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_DIRTY;
+	return !!(pte_val(pte) & _PAGE_DIRTY);
 }
 
 static inline int pte_young(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_ACCESSED;
+	return !!(pte_val(pte) & _PAGE_ACCESSED);
 }
 
 static inline int pte_special(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_SPECIAL;
+	return !!(pte_val(pte) & _PAGE_SPECIAL);
 }
 
 static inline int pte_cont(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_CONT;
+	return !!(pte_val(pte) & _PAGE_CONT);
 }
 
 static inline pte_t pte_wrprotect(pte_t pte)
@@ -640,17 +640,17 @@ static inline int pte_devmap(pte_t a)
 
 static inline int pmd_trans_splitting(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_SPLITTING;
+	return !!(pmd_val(pmd) & _PAGE_SPLITTING);
 }
 
 static inline int pmd_trans_cont(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_CONT;
+	return !!(pmd_val(pmd) & _PAGE_CONT);
 }
 
 static inline int pmd_trans_huge(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_LEAF;
+	return !!(pmd_val(pmd) & _PAGE_LEAF);
 }
 
 static inline int has_transparent_hugepage(void)
