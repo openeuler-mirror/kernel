@@ -77,7 +77,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	struct pt_regs *childregs = task_pt_regs(p);
 	struct pt_regs *regs = current_pt_regs();
 
-	p->thread.sp = (unsigned long) childregs;
+	p->thread.sp = (unsigned long) childregs - STACKFRAME_SIZE;
 
 	if (unlikely(p->flags & PF_KTHREAD)) {
 		/* kernel thread */
