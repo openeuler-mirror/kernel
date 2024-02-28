@@ -332,9 +332,11 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 				     &smccc_feat->std_hyp_bmap))
 				val[0] = SMCCC_RET_SUCCESS;
 			break;
+#ifdef CONFIG_PARAVIRT_SCHED
 		case ARM_SMCCC_HV_PV_SCHED_FEATURES:
 			val[0] = SMCCC_RET_SUCCESS;
 			break;
+#endif /* CONFIG_PARAVIRT_SCHED */
 		}
 		break;
 	case ARM_SMCCC_HV_PV_TIME_FEATURES:
@@ -345,6 +347,7 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 		if (gpa != INVALID_GPA)
 			val[0] = gpa;
 		break;
+#ifdef CONFIG_PARAVIRT_SCHED
 	case ARM_SMCCC_HV_PV_SCHED_FEATURES:
 		val[0] = kvm_hypercall_pvsched_features(vcpu);
 		break;
@@ -359,6 +362,7 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 		vcpu->arch.pvsched.base = INVALID_GPA;
 		val[0] = SMCCC_RET_SUCCESS;
 		break;
+#endif /* CONFIG_PARAVIRT_SCHED */
 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
 		val[0] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_0;
 		val[1] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_1;

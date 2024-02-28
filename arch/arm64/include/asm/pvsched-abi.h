@@ -7,10 +7,12 @@
 #ifndef __ASM_PVSCHED_ABI_H
 #define __ASM_PVSCHED_ABI_H
 
+#ifdef CONFIG_PARAVIRT_SCHED
 struct pvsched_vcpu_state {
 	__le32 preempted;
 	/* Structure must be 64 byte aligned, pad to that size */
 	u8 padding[60];
 } __packed;
+#endif /* CONFIG_PARAVIRT_SCHED */
 
 #endif

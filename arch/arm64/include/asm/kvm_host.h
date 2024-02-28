@@ -596,10 +596,12 @@ struct kvm_vcpu_arch {
 		gpa_t base;
 	} steal;
 
+#ifdef CONFIG_PARAVIRT_SCHED
 	/* Guest PV sched state */
 	struct {
 		gpa_t base;
 	} pvsched;
+#endif
 
 	/* Per-vcpu CCSIDR override or NULL */
 	u32 *ccsidr;

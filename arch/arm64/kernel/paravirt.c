@@ -22,6 +22,7 @@
 
 #include <asm/paravirt.h>
 #include <asm/pvclock-abi.h>
+#include <asm/pvsched-abi.h>
 #include <asm/smp_plat.h>
 
 struct static_key paravirt_steal_enabled;
@@ -174,3 +175,110 @@ int __init pv_time_init(void)
 
 	return 0;
 }
+
+#ifdef CONFIG_PARAVIRT_SCHED
+DEFINE_PER_CPU(struct pvsched_vcpu_state, pvsched_vcpu_region) __aligned(64);
+EXPORT_PER_CPU_SYMBOL(pvsched_vcpu_region);
+
+static bool kvm_vcpu_is_preempted(int cpu)
+{
+	struct pvsched_vcpu_state *reg;
+	u32 preempted;
+
+	reg = &per_cpu(pvsched_vcpu_region, cpu);
+	if (!reg) {
+		pr_warn_once("PV sched enabled but not configured for cpu %d\n",
+			     cpu);
+		return false;
+	}
+
+	preempted = le32_to_cpu(READ_ONCE(reg->preempted));
+
+	return !!preempted;
+}
+
+static int pvsched_vcpu_state_dying_cpu(unsigned int cpu)
+{
+	struct pvsched_vcpu_state *reg;
+	struct arm_smccc_res res;
+
+	reg = this_cpu_ptr(&pvsched_vcpu_region);
+	if (!reg)
+		return -EFAULT;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_SCHED_IPA_RELEASE, &res);
+	memset(reg, 0, sizeof(*reg));
+
+	return 0;
+}
+
+static int init_pvsched_vcpu_state(unsigned int cpu)
+{
+	struct pvsched_vcpu_state *reg;
+	struct arm_smccc_res res;
+
+	reg = this_cpu_ptr(&pvsched_vcpu_region);
+	if (!reg)
+		return -EFAULT;
+
+	/* Pass the memory address to host via hypercall */
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_SCHED_IPA_INIT,
+			     virt_to_phys(reg), &res);
+
+	return 0;
+}
+
+static int kvm_arm_init_pvsched(void)
+{
+	int ret;
+
+	ret = cpuhp_setup_state(CPUHP_AP_ARM_KVM_PVSCHED_STARTING,
+				"hypervisor/arm/pvsched:starting",
+				init_pvsched_vcpu_state,
+				pvsched_vcpu_state_dying_cpu);
+
+	if (ret < 0) {
+		pr_warn("PV sched init failed\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static bool has_kvm_pvsched(void)
+{
+	struct arm_smccc_res res;
+
+	/* To detect the presence of PV sched support we require SMCCC 1.1+ */
+	if (arm_smccc_1_1_get_conduit() == SMCCC_CONDUIT_NONE)
+		return false;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+			     ARM_SMCCC_HV_PV_SCHED_FEATURES, &res);
+
+	return (res.a0 == SMCCC_RET_SUCCESS);
+}
+
+int __init pv_sched_init(void)
+{
+	int ret;
+
+	if (is_hyp_mode_available())
+		return 0;
+
+	if (!has_kvm_pvsched()) {
+		pr_warn("PV sched is not available\n");
+		return 0;
+	}
+
+	ret = kvm_arm_init_pvsched();
+	if (ret)
+		return ret;
+
+	static_call_update(pv_vcpu_preempted, kvm_vcpu_is_preempted);
+	pr_info("using PV sched preempted\n");
+
+	return 0;
+}
+early_initcall(pv_sched_init);
+#endif /* CONFIG_PARAVIRT_SCHED */
