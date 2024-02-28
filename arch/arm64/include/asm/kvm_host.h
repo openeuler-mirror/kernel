@@ -1051,6 +1051,15 @@ static inline bool kvm_arm_is_pvtime_enabled(struct kvm_vcpu_arch *vcpu_arch)
 	return (vcpu_arch->steal.base != INVALID_GPA);
 }
 
+#ifdef CONFIG_PARAVIRT_SCHED
+long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
+#else
+static inline long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu)
+{
+	return 0;
+}
+#endif
+
 void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
 
 struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);

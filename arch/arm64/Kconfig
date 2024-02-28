@@ -1549,6 +1549,17 @@ config PARAVIRT
 	  under a hypervisor, potentially improving performance significantly
 	  over full virtualization.
 
+config PARAVIRT_SCHED
+	bool "Paravirtualization layer for sched"
+	depends on PARAVIRT
+	help
+	  This supports the vCPU preemption check to enhance lock performance on
+	  overcommitted hosts (more runnable vCPUs than physical CPUs in the
+	  system) as doing busy waits for preempted vCPUs will hurt system
+	  performance far worse than early yielding.
+
+	  If you are unsure how to answer this question, answer Y.
+
 config PARAVIRT_TIME_ACCOUNTING
 	bool "Paravirtual steal time accounting"
 	select PARAVIRT

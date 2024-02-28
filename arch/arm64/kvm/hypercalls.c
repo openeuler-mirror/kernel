@@ -332,6 +332,9 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 				     &smccc_feat->std_hyp_bmap))
 				val[0] = SMCCC_RET_SUCCESS;
 			break;
+		case ARM_SMCCC_HV_PV_SCHED_FEATURES:
+			val[0] = SMCCC_RET_SUCCESS;
+			break;
 		}
 		break;
 	case ARM_SMCCC_HV_PV_TIME_FEATURES:
@@ -341,6 +344,9 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 		gpa = kvm_init_stolen_time(vcpu);
 		if (gpa != INVALID_GPA)
 			val[0] = gpa;
+		break;
+	case ARM_SMCCC_HV_PV_SCHED_FEATURES:
+		val[0] = kvm_hypercall_pvsched_features(vcpu);
 		break;
 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
 		val[0] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_0;
