@@ -1887,12 +1887,23 @@ out:
 	return ret;
 }
 
+int udma_init_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
+{
+	struct udma_qp_context ctx[2] = {};
+	int ret;
+
+	ret = udma_pass_qpc_to_hw(udma_dev, ctx, ctx + 1, qp);
+	if (ret)
+		dev_err(udma_dev->dev, "failed to init QPC to HW, ret = %d.\n", ret);
+
+	return ret;
+}
+
 int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata)
 {
 	struct udma_ucontext *uctx = to_udma_ucontext(udata->uctx);
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
-	struct udma_qp_context ctx[2] = {0};
 	struct device *dev = udma_dev->dev;
 	struct udma_create_tp_ucmd ucmd;
 	struct udma_create_tp_resp resp;
@@ -1964,12 +1975,6 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 
 	refcount_set(&qp->refcount, 1);
 	init_completion(&qp->free);
-
-	ret = udma_pass_qpc_to_hw(udma_dev, ctx, ctx+1, qp);
-	if (ret) {
-		dev_err(dev, "failed to pass QPC to HW, ret = %d.\n", ret);
-		goto err_copy;
-	}
 
 	return 0;
 

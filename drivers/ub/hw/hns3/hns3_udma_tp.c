@@ -467,16 +467,24 @@ struct ubcore_tp *udma_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg
 	udma_set_tp(dev, cfg, tp);
 
 	ret = udma_store_tp(udma_dev, tp, &fail_ret_tp);
-	unlock_jetty(&tp->qp.qp_attr);
 	if (ret || fail_ret_tp)
 		goto failed_create_qp;
+
+	ret = udma_init_qpc(udma_dev, &tp->qp);
+	if (ret)
+		goto failed_init_qpc;
+
+	unlock_jetty(&tp->qp.qp_attr);
 
 	if (dfx_switch)
 		store_tpn(udma_dev, tp);
 
 	return &tp->ubcore_tp;
 
+failed_init_qpc:
+	udma_erase_tp(tp);
 failed_create_qp:
+	unlock_jetty(&tp->qp.qp_attr);
 	udma_destroy_qp_common(udma_dev, &tp->qp);
 failed_alloc_tp:
 	kfree(tp);

@@ -103,8 +103,14 @@ static int create_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 	udma_fill_jfs_um_qp_attr(dev, jfs, &jfs->um_qp.qp_attr, udata->uctx, cfg);
 	jfs->um_qp.qp_attr.qpn_map = &jfs->qpn_map;
 	ret = udma_create_qp_common(dev, &jfs->um_qp, udata);
-	if (ret)
+	if (ret) {
 		dev_err(dev->dev, "failed to create qp for um jfs.\n");
+		return ret;
+	}
+
+	ret = udma_init_qpc(dev, &jfs->um_qp);
+	if (ret)
+		udma_destroy_qp_common(dev, &jfs->um_qp);
 
 	return ret;
 }

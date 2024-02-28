@@ -124,6 +124,12 @@ static int alloc_jetty_um_qp(struct udma_dev *dev, struct udma_jetty *jetty,
 		return ret;
 	}
 
+	ret = udma_init_qpc(dev, &jetty->qp);
+	if (ret) {
+		udma_destroy_qp_common(dev, &jetty->qp);
+		return ret;
+	}
+
 	jetty->qp.state = QPS_RESET;
 	ret = udma_modify_qp_jetty(dev, jetty, QPS_RTS);
 	if (ret)
@@ -163,10 +169,10 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 			      struct udma_jetty *jetty,
 			      struct udma_buf_attr *buf_attr)
 {
-	int totle_buff_size = 0;
+	uint32_t total_buff_size = 0;
 	uint32_t cfg_depth;
-	int buf_size;
-	int idx = 0;
+	uint32_t buf_size;
+	uint32_t idx = 0;
 
 	/* SQ WQE */
 	jetty->rc_node.sge_offset = 0;
@@ -182,10 +188,10 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = udma_dev->caps.wqe_sq_hop_num;
 		idx++;
-		totle_buff_size += buf_size;
+		total_buff_size += buf_size;
 	}
 	/* extend SGE WQE in SQ */
-	jetty->rc_node.sge_offset = totle_buff_size;
+	jetty->rc_node.sge_offset = total_buff_size;
 
 	buf_size = to_udma_hem_entries_size(jetty->rc_node.sge_cnt,
 					    jetty->rc_node.sge_shift);
@@ -193,11 +199,14 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = udma_dev->caps.wqe_sge_hop_num;
 		idx++;
-		totle_buff_size += buf_size;
+		total_buff_size += buf_size;
 	}
 
-	if (totle_buff_size < 1)
+	if (total_buff_size < 1) {
+		dev_err(udma_dev->dev, "jetty buf size is invalid, size = %u.\n",
+			total_buff_size);
 		return -EINVAL;
+	}
 
 	buf_attr->region_count = idx;
 	buf_attr->mtt_only = false;
