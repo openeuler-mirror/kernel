@@ -29,6 +29,41 @@
 
 #include "trace.h"
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+/* debugfs entries of Detail For vcpu stat EXtension */
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT("pid", pid),
+	DFX_STAT("hvc_exit_stat", hvc_exit_stat),
+	DFX_STAT("wfe_exit_stat", wfe_exit_stat),
+	DFX_STAT("wfi_exit_stat", wfi_exit_stat),
+	DFX_STAT("mmio_exit_user", mmio_exit_user),
+	DFX_STAT("mmio_exit_kernel", mmio_exit_kernel),
+	DFX_STAT("signal_exits", signal_exits),
+	DFX_STAT("exits", exits),
+	DFX_STAT("fp_asimd_exit_stat", fp_asimd_exit_stat),
+	DFX_STAT("irq_exit_stat", irq_exit_stat),
+	DFX_STAT("sys64_exit_stat", sys64_exit_stat),
+	DFX_STAT("mabt_exit_stat", mabt_exit_stat),
+	DFX_STAT("fail_entry_exit_stat", fail_entry_exit_stat),
+	DFX_STAT("internal_error_exit_stat", internal_error_exit_stat),
+	DFX_STAT("unknown_ec_exit_stat", unknown_ec_exit_stat),
+	DFX_STAT("cp15_32_exit_stat", cp15_32_exit_stat),
+	DFX_STAT("cp15_64_exit_stat", cp15_64_exit_stat),
+	DFX_STAT("cp14_mr_exit_stat", cp14_mr_exit_stat),
+	DFX_STAT("cp14_ls_exit_stat", cp14_ls_exit_stat),
+	DFX_STAT("cp14_64_exit_stat", cp14_64_exit_stat),
+	DFX_STAT("smc_exit_stat", smc_exit_stat),
+	DFX_STAT("sve_exit_stat", sve_exit_stat),
+	DFX_STAT("debug_exit_stat", debug_exit_stat),
+	DFX_STAT("steal", steal),
+	DFX_STAT("st_max", st_max),
+	DFX_STAT("utime", utime),
+	DFX_STAT("stime", stime),
+	DFX_STAT("gtime", gtime),
+	{ NULL }
+};
+#endif
+
 const struct _kvm_stats_desc kvm_vm_stats_desc[] = {
 	KVM_GENERIC_VM_STATS()
 };
@@ -50,7 +85,10 @@ const struct _kvm_stats_desc kvm_vcpu_stats_desc[] = {
 	STATS_DESC_COUNTER(VCPU, mmio_exit_user),
 	STATS_DESC_COUNTER(VCPU, mmio_exit_kernel),
 	STATS_DESC_COUNTER(VCPU, signal_exits),
-	STATS_DESC_COUNTER(VCPU, exits)
+	STATS_DESC_COUNTER(VCPU, exits),
+#ifdef CONFIG_ARCH_VCPU_STAT
+	STATS_DESC_DFX_COUNTER(DFX, vcpu_stat)
+#endif
 };
 
 const struct kvm_stats_header kvm_vcpu_stats_header = {

@@ -154,4 +154,13 @@ config KVM_PROVE_MMU
 config KVM_EXTERNAL_WRITE_TRACKING
 	bool
 
+config ARCH_VCPU_STAT
+	bool "export kvm exits to vcpu_stat"
+	depends on KVM
+	default n
+	help
+	  Say Y here to enable kvm exits counting
+
+	  If unsure, say N.
+
 endif # VIRTUALIZATION

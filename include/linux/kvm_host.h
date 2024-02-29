@@ -1820,6 +1820,16 @@ struct _kvm_stats_desc {
 		},							       \
 		.name = #stat,						       \
 	}
+#ifdef CONFIG_ARCH_VCPU_STAT
+#define DFX_STATS_DESC(stat, type, unit, base, exp, sz, bsz)		       \
+	{								       \
+		{							       \
+			STATS_DESC_COMMON(type, unit, base, exp, sz, bsz),     \
+			.offset = 0					       \
+		},							       \
+		.name = #stat,						       \
+	}
+#endif
 /* SCOPE: VM, VM_GENERIC, VCPU, VCPU_GENERIC */
 #define STATS_DESC(SCOPE, stat, type, unit, base, exp, sz, bsz)		       \
 	SCOPE##_STATS_DESC(stat, type, unit, base, exp, sz, bsz)
@@ -1839,6 +1849,11 @@ struct _kvm_stats_desc {
 #define STATS_DESC_LOG_HIST(SCOPE, name, unit, base, exponent, sz)	       \
 	STATS_DESC(SCOPE, name, KVM_STATS_TYPE_LOG_HIST,		       \
 		unit, base, exponent, sz, 0)
+#ifdef CONFIG_ARCH_VCPU_STAT
+#define STATS_DESC_DFX(SCOPE, name, unit, base, exponent)		       \
+	STATS_DESC(SCOPE, name, KVM_STATS_TYPE_DFX,			       \
+		unit, base, exponent, 1, 0)
+#endif
 
 /* Cumulative counter, read/write */
 #define STATS_DESC_COUNTER(SCOPE, name)					       \
@@ -1861,6 +1876,12 @@ struct _kvm_stats_desc {
 #define STATS_DESC_PBOOLEAN(SCOPE, name)				       \
 	STATS_DESC_PEAK(SCOPE, name, KVM_STATS_UNIT_BOOLEAN,		       \
 		KVM_STATS_BASE_POW10, 0)
+#ifdef CONFIG_ARCH_VCPU_STAT
+/* Dfx vcpu stat value, read/write */
+#define STATS_DESC_DFX_COUNTER(SCOPE, name)				       \
+	STATS_DESC_DFX(SCOPE, name, KVM_STATS_UNIT_NONE,		       \
+		KVM_STATS_BASE_POW10, 0)
+#endif
 
 /* Cumulative time in nanosecond */
 #define STATS_DESC_TIME_NSEC(SCOPE, name)				       \
@@ -1896,6 +1917,25 @@ struct _kvm_stats_desc {
 	STATS_DESC_IBOOLEAN(VCPU_GENERIC, blocking)
 
 extern struct dentry *kvm_debugfs_dir;
+
+#ifdef CONFIG_ARCH_VCPU_STAT
+enum dfx_stat_kind {
+	DFX_STAT_U64,
+	DFX_STAT_CPUTIME,
+};
+
+#define DFX_STAT(n, x, ...)							\
+	{ n, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64, ## __VA_ARGS__ }
+
+/* Detail For vcpu stat EXtension debugfs item */
+struct dfx_kvm_stats_debugfs_item {
+	const char *name;
+	int offset;
+	enum dfx_stat_kind dfx_kind;
+	struct dentry *dentry;
+};
+extern struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[];
+#endif
 
 ssize_t kvm_stats_read(char *id, const struct kvm_stats_header *header,
 		       const struct _kvm_stats_desc *desc,
@@ -2280,6 +2320,10 @@ static inline int kvm_arch_vcpu_run_pid_change(struct kvm_vcpu *vcpu)
 	return 0;
 }
 #endif /* CONFIG_HAVE_KVM_VCPU_RUN_PID_CHANGE */
+
+#ifdef CONFIG_ARCH_VCPU_STAT
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat);
+#endif
 
 typedef int (*kvm_vm_thread_fn_t)(struct kvm *kvm, uintptr_t data);
 

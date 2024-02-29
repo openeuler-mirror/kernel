@@ -910,6 +910,7 @@ struct kvm_vm_stat {
 };
 
 struct kvm_vcpu_stat {
+	u64 pid;
 	struct kvm_vcpu_stat_generic generic;
 	u64 hvc_exit_stat;
 	u64 wfe_exit_stat;
@@ -918,6 +919,26 @@ struct kvm_vcpu_stat {
 	u64 mmio_exit_kernel;
 	u64 signal_exits;
 	u64 exits;
+	u64 fp_asimd_exit_stat;
+	u64 irq_exit_stat;
+	u64 sys64_exit_stat;
+	u64 mabt_exit_stat;
+	u64 fail_entry_exit_stat;
+	u64 internal_error_exit_stat;
+	u64 unknown_ec_exit_stat;
+	u64 cp15_32_exit_stat;
+	u64 cp15_64_exit_stat;
+	u64 cp14_mr_exit_stat;
+	u64 cp14_ls_exit_stat;
+	u64 cp14_64_exit_stat;
+	u64 smc_exit_stat;
+	u64 sve_exit_stat;
+	u64 debug_exit_stat;
+	u64 steal;
+	u64 st_max;
+	u64 utime;
+	u64 stime;
+	u64 gtime;
 };
 
 unsigned long kvm_arm_num_regs(struct kvm_vcpu *vcpu);

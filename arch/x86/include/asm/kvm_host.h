@@ -1486,6 +1486,7 @@ struct kvm_vm_stat {
 };
 
 struct kvm_vcpu_stat {
+	u64 pid;
 	struct kvm_vcpu_stat_generic generic;
 	u64 pf_taken;
 	u64 pf_fixed;
@@ -1505,6 +1506,9 @@ struct kvm_vcpu_stat {
 	u64 nmi_window_exits;
 	u64 l1d_flush;
 	u64 halt_exits;
+	u64 halt_successful_poll;
+	u64 halt_attempted_poll;
+	u64 halt_wakeup;
 	u64 request_irq_exits;
 	u64 irq_exits;
 	u64 host_state_reload;
@@ -1515,6 +1519,19 @@ struct kvm_vcpu_stat {
 	u64 irq_injections;
 	u64 nmi_injections;
 	u64 req_event;
+	u64 cr_exits;
+	u64 msr_rd_exits;
+	u64 msr_wr_exits;
+	u64 apic_wr_exits;
+	u64 ept_vio_exits;
+	u64 ept_mis_exits;
+	u64 pause_exits;
+	u64 steal;
+	u64 st_max;
+	u64 utime;
+	u64 stime;
+	u64 gtime;
+	u64 preemption_timer_exits;
 	u64 nested_run;
 	u64 directed_yield_attempted;
 	u64 directed_yield_successful;
