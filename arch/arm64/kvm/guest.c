@@ -55,6 +55,11 @@ struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
 	DFX_STAT("smc_exit_stat", smc_exit_stat),
 	DFX_STAT("sve_exit_stat", sve_exit_stat),
 	DFX_STAT("debug_exit_stat", debug_exit_stat),
+	DFX_STAT("steal", steal),
+	DFX_STAT("st_max", st_max),
+	DFX_STAT("utime", utime),
+	DFX_STAT("stime", stime),
+	DFX_STAT("gtime", gtime),
 	{ NULL }
 };
 #endif

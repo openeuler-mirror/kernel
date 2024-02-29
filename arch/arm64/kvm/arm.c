@@ -449,6 +449,22 @@ void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu)
 
 }
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->st_max = 0;
+}
+
+static void update_steal_time(struct kvm_vcpu *vcpu)
+{
+	u64 delta;
+
+	delta = current->sched_info.run_delay - vcpu->stat.steal;
+	vcpu->stat.steal = current->sched_info.run_delay;
+	vcpu->stat.st_max = max(vcpu->stat.st_max, delta);
+}
+#endif
+
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	struct kvm_s2_mmu *mmu;
@@ -487,6 +503,9 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	else
 		vcpu_set_wfx_traps(vcpu);
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+	update_steal_time(vcpu);
+#endif
 	if (vcpu_has_ptrauth(vcpu))
 		vcpu_ptrauth_disable(vcpu);
 	kvm_arch_vcpu_load_debug_state_flags(vcpu);
@@ -863,6 +882,15 @@ static bool vcpu_mode_is_bad_32bit(struct kvm_vcpu *vcpu)
 	return !kvm_supports_32bit_el0();
 }
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+static void update_vcpu_stat_time(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->utime = current->utime;
+	vcpu_stat->stime = current->stime;
+	vcpu_stat->gtime = current->gtime;
+}
+#endif
+
 /**
  * kvm_vcpu_exit_request - returns true if the VCPU should *not* enter the guest
  * @vcpu:	The VCPU pointer
@@ -1107,6 +1135,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		}
 
 		ret = handle_exit(vcpu, ret);
+#ifdef CONFIG_ARCH_VCPU_STAT
+		update_vcpu_stat_time(&vcpu->stat);
+#endif
 	}
 
 	/* Tell userspace about in-kernel device output levels */

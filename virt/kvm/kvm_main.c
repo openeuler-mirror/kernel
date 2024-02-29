@@ -5914,6 +5914,7 @@ static int __dfx_vcpu_stats_get(struct seq_file *p, void *v)
 				break;
 			memcpy(vcpu_stats + index, &vcpu->stat,
 			       sizeof(struct kvm_vcpu_stat));
+			kvm_arch_vcpu_stat_reset(&vcpu->stat);
 			++index;
 		}
 	}

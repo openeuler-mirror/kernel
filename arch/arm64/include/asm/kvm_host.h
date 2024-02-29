@@ -934,6 +934,11 @@ struct kvm_vcpu_stat {
 	u64 smc_exit_stat;
 	u64 sve_exit_stat;
 	u64 debug_exit_stat;
+	u64 steal;
+	u64 st_max;
+	u64 utime;
+	u64 stime;
+	u64 gtime;
 };
 
 unsigned long kvm_arm_num_regs(struct kvm_vcpu *vcpu);
