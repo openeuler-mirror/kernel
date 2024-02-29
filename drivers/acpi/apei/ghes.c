@@ -518,9 +518,12 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata, int s
 	int sec_sev, i;
 	char *p;
 
-	log_arm_hw_error(err);
-
 	sec_sev = ghes_severity(gdata->error_severity);
+#ifdef CONFIG_RAS_ARM_EVENT_INFO
+	log_arm_hw_error(err, sec_sev);
+#else
+	log_arm_hw_error(err);
+#endif
 	if (sev != GHES_SEV_RECOVERABLE || sec_sev != GHES_SEV_RECOVERABLE)
 		return false;
 
