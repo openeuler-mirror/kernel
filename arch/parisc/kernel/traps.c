@@ -697,6 +697,8 @@ void notrace handle_interruption(int code, struct pt_regs *regs)
 			}
 			up_read(&current->mm->mmap_sem);
 		}
+		/* CPU could not fetch instruction, so clear stale IIR value. */
+		regs->iir = 0xbaadf00d;
 		/* Fall Through */
 	case 27: 
 		/* Data memory protection ID trap */
