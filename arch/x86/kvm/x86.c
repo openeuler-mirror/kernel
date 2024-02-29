@@ -244,6 +244,42 @@ EXPORT_SYMBOL_GPL(host_arch_capabilities);
 #ifdef CONFIG_ARCH_VCPU_STAT
 /* debugfs entries of Detail For vcpu stat EXtension */
 struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT("pid", pid),
+	DFX_STAT("pf_fixed", pf_fixed),
+	DFX_STAT("pf_guest", pf_guest),
+	DFX_STAT("tlb_flush", tlb_flush),
+	DFX_STAT("invlpg", invlpg),
+	DFX_STAT("exits", exits),
+	DFX_STAT("io_exits", io_exits),
+	DFX_STAT("mmio_exits", mmio_exits),
+	DFX_STAT("signal_exits", signal_exits),
+	DFX_STAT("irq_window", irq_window_exits),
+	DFX_STAT("nmi_window", nmi_window_exits),
+	DFX_STAT("halt_exits", halt_exits),
+	DFX_STAT("halt_successful_poll", halt_successful_poll),
+	DFX_STAT("halt_attempted_poll", halt_attempted_poll),
+	DFX_STAT("halt_wakeup", halt_wakeup),
+	DFX_STAT("request_irq", request_irq_exits),
+	DFX_STAT("irq_exits", irq_exits),
+	DFX_STAT("host_state_reload", host_state_reload),
+	DFX_STAT("fpu_reload", fpu_reload),
+	DFX_STAT("insn_emulation", insn_emulation),
+	DFX_STAT("insn_emulation_fail", insn_emulation_fail),
+	DFX_STAT("hypercalls", hypercalls),
+	DFX_STAT("irq_injections", irq_injections),
+	DFX_STAT("nmi_injections", nmi_injections),
+	DFX_STAT("cr_exits", cr_exits),
+	DFX_STAT("msr_rd_exits", msr_rd_exits),
+	DFX_STAT("msr_wr_exits", msr_wr_exits),
+	DFX_STAT("apic_wr_exits", apic_wr_exits),
+	DFX_STAT("ept_vio_exits", ept_vio_exits),
+	DFX_STAT("ept_mis_exits", ept_mis_exits),
+	DFX_STAT("pause_exits", pause_exits),
+	DFX_STAT("steal", steal),
+	DFX_STAT("st_max", st_max),
+	DFX_STAT("utime", utime),
+	DFX_STAT("stime", stime),
+	DFX_STAT("gtime", gtime),
 	{ NULL }
 };
 #endif
@@ -310,6 +346,9 @@ const struct _kvm_stats_desc kvm_vcpu_stats_desc[] = {
 	STATS_DESC_COUNTER(VCPU, preemption_other),
 	STATS_DESC_IBOOLEAN(VCPU, guest_mode),
 	STATS_DESC_COUNTER(VCPU, notify_window_exits),
+#ifdef CONFIG_ARCH_VCPU_STAT
+	STATS_DESC_DFX_COUNTER(DFX, vcpu_stat),
+#endif
 };
 
 const struct kvm_stats_header kvm_vcpu_stats_header = {
@@ -2062,6 +2101,7 @@ int kvm_emulate_rdmsr(struct kvm_vcpu *vcpu)
 	u64 data;
 	int r;
 
+	vcpu->stat.msr_rd_exits++;
 	r = kvm_get_msr_with_filter(vcpu, ecx, &data);
 
 	if (!r) {
@@ -2087,6 +2127,7 @@ int kvm_emulate_wrmsr(struct kvm_vcpu *vcpu)
 	u64 data = kvm_read_edx_eax(vcpu);
 	int r;
 
+	vcpu->stat.msr_wr_exits++;
 	r = kvm_set_msr_with_filter(vcpu, ecx, data);
 
 	if (!r) {
@@ -3500,6 +3541,28 @@ static void kvm_vcpu_flush_tlb_guest(struct kvm_vcpu *vcpu)
 	kvm_hv_vcpu_purge_flush_tlb(vcpu);
 }
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+static u64 accumulate_stat_steal_time(u64 *last_steal)
+{
+	u64 delta;
+
+	if (*last_steal == 0)
+		delta = 0;
+	else
+		delta = current->sched_info.run_delay - *last_steal;
+
+	*last_steal = current->sched_info.run_delay;
+	return delta;
+}
+
+static void update_stat_steal_time(struct kvm_vcpu *vcpu)
+{
+	u64 delta;
+
+	delta = accumulate_stat_steal_time(&vcpu->stat.steal);
+	vcpu->stat.st_max = max(vcpu->stat.st_max, delta);
+}
+#endif
 
 static inline void kvm_vcpu_flush_tlb_current(struct kvm_vcpu *vcpu)
 {
@@ -3532,6 +3595,9 @@ static void record_steal_time(struct kvm_vcpu *vcpu)
 	u64 steal;
 	u32 version;
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+	update_stat_steal_time(vcpu);
+#endif
 	if (kvm_xen_msr_enabled(vcpu->kvm)) {
 		kvm_xen_runstate_set_running(vcpu);
 		return;
@@ -10880,6 +10946,12 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		kvm_lapic_sync_from_vapic(vcpu);
 
 	r = static_call(kvm_x86_handle_exit)(vcpu, exit_fastpath);
+#ifdef CONFIG_ARCH_VCPU_STAT
+	vcpu->stat.utime = current->utime;
+	vcpu->stat.stime = current->stime;
+	vcpu->stat.gtime = current->gtime;
+#endif
+
 	return r;
 
 cancel_injection:
@@ -13653,6 +13725,13 @@ int kvm_sev_es_string_io(struct kvm_vcpu *vcpu, unsigned int size,
 		  : kvm_sev_es_outs(vcpu, size, port);
 }
 EXPORT_SYMBOL_GPL(kvm_sev_es_string_io);
+
+#ifdef CONFIG_ARCH_VCPU_STAT
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->st_max = 0;
+}
+#endif
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_entry);
 EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_exit);

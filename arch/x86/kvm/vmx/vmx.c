@@ -5448,6 +5448,7 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 	exit_qualification = vmx_get_exit_qual(vcpu);
 	cr = exit_qualification & 15;
 	reg = (exit_qualification >> 8) & 15;
+	vcpu->stat.cr_exits++;
 	switch ((exit_qualification >> 4) & 3) {
 	case 0: /* mov to cr */
 		val = kvm_register_read(vcpu, reg);
@@ -5673,6 +5674,7 @@ static int handle_apic_write(struct kvm_vcpu *vcpu)
 	 */
 	u32 offset = exit_qualification & 0xff0;
 
+	vcpu->stat.apic_wr_exits++;
 	kvm_apic_write_nodecode(vcpu, offset);
 	return 1;
 }
@@ -5741,6 +5743,7 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	u64 error_code;
 
 	exit_qualification = vmx_get_exit_qual(vcpu);
+	vcpu->stat.ept_vio_exits++;
 
 	/*
 	 * EPT violation happened while executing iret from NMI,
@@ -5800,6 +5803,7 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 	 * nGPA here instead of the required GPA.
 	 */
 	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+	vcpu->stat.ept_mis_exits++;
 	if (!is_guest_mode(vcpu) &&
 	    !kvm_io_bus_write(vcpu, KVM_FAST_MMIO_BUS, gpa, 0, NULL)) {
 		trace_kvm_fast_mmio(gpa);
@@ -5918,6 +5922,7 @@ static void shrink_ple_window(struct kvm_vcpu *vcpu)
  */
 static int handle_pause(struct kvm_vcpu *vcpu)
 {
+	vcpu->stat.pause_exits++;
 	if (!kvm_pause_in_guest(vcpu->kvm))
 		grow_ple_window(vcpu);
 
