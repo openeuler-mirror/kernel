@@ -154,6 +154,13 @@ static unsigned long long kvm_active_vms;
 
 static DEFINE_PER_CPU(cpumask_var_t, cpu_kick_mask);
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+/* debugfs entries of Detail For vcpu stat EXtension */
+__weak struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	{ NULL }
+};
+#endif
+
 __weak void kvm_arch_guest_memory_reclaimed(struct kvm *kvm)
 {
 }
@@ -4161,6 +4168,9 @@ static long kvm_vcpu_ioctl(struct file *filp,
 			if (oldpid)
 				synchronize_rcu();
 			put_pid(oldpid);
+#if defined(CONFIG_ARCH_VCPU_STAT)
+			vcpu->stat.pid = current->pid;
+#endif /* defined(CONFIG_ARCH_VCPU_STAT) */
 		}
 		r = kvm_arch_vcpu_ioctl_run(vcpu);
 		trace_kvm_userspace_exit(vcpu->run->exit_reason, r);
@@ -5868,6 +5878,83 @@ static int vcpu_stat_clear(void *_offset, u64 val)
 	return 0;
 }
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+__weak void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+}
+
+#define DFX_MAX_VCPU            1024
+#define DFX_MAX_VCPU_STAT_SIZE  1024
+
+static int __dfx_vcpu_stats_get(struct seq_file *p, void *v)
+{
+	struct kvm *kvm;
+	struct kvm_vcpu *vcpu;
+	struct kvm_vcpu_stat *vcpu_stats;
+	struct dfx_kvm_stats_debugfs_item *dp;
+	int vcpu_nr = 0;
+	unsigned long i = 0;
+	int index = 0;
+
+	mutex_lock(&kvm_lock);
+	list_for_each_entry(kvm, &vm_list, vm_list)
+		kvm_for_each_vcpu(i, vcpu, kvm) {
+			vcpu_nr++;
+		}
+	mutex_unlock(&kvm_lock);
+	vcpu_nr = min(vcpu_nr, DFX_MAX_VCPU);
+	vcpu_stats = vmalloc(vcpu_nr * sizeof(struct kvm_vcpu_stat));
+	if (!vcpu_stats)
+		return -ENOMEM;
+
+	mutex_lock(&kvm_lock);
+	list_for_each_entry(kvm, &vm_list, vm_list) {
+		kvm_for_each_vcpu(i, vcpu, kvm) {
+			if (index >= vcpu_nr)
+				break;
+			memcpy(vcpu_stats + index, &vcpu->stat,
+			       sizeof(struct kvm_vcpu_stat));
+			++index;
+		}
+	}
+	mutex_unlock(&kvm_lock);
+	for (i = 0; i < vcpu_nr; i++) {
+		for (dp = dfx_debugfs_entries; dp->name; ++dp) {
+			switch (dp->dfx_kind) {
+			case DFX_STAT_U64:
+				seq_put_decimal_ull(p, " ",
+						*(u64 *)((void *)&vcpu_stats[i] + dp->offset));
+				break;
+			case DFX_STAT_CPUTIME:
+				pr_warn("DFX_STAT_CPUTIME not supported currently!");
+				break;
+			default:
+				pr_warn("Bad dfx_kind in dfx_debugfs_entries!");
+				break;
+			}
+		}
+		seq_putc(p, '\n');
+	}
+
+	vfree(vcpu_stats);
+	return 0;
+}
+
+static int dfx_vcpu_stats_open(struct inode *inode, struct file *file)
+{
+	size_t size = DFX_MAX_VCPU_STAT_SIZE * (DFX_MAX_VCPU + 1);
+
+	return single_open_size(file, __dfx_vcpu_stats_get, NULL, size);
+}
+
+static const struct file_operations dfx_stat_fops = {
+	.open		= dfx_vcpu_stats_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
+
 DEFINE_SIMPLE_ATTRIBUTE(vcpu_stat_fops, vcpu_stat_get, vcpu_stat_clear,
 			"%llu\n");
 DEFINE_SIMPLE_ATTRIBUTE(vcpu_stat_readonly_fops, vcpu_stat_get, NULL, "%llu\n");
@@ -5943,7 +6030,13 @@ static void kvm_init_debug(void)
 
 	for (i = 0; i < kvm_vcpu_stats_header.num_desc; ++i) {
 		pdesc = &kvm_vcpu_stats_desc[i];
+#ifdef CONFIG_ARCH_VCPU_STAT
+		if ((pdesc->desc.flags & KVM_STATS_TYPE_MASK) == KVM_STATS_TYPE_DFX)
+			fops = &dfx_stat_fops;
+		else if (kvm_stats_debugfs_mode(pdesc) & 0222)
+#else
 		if (kvm_stats_debugfs_mode(pdesc) & 0222)
+#endif
 			fops = &vcpu_stat_fops;
 		else
 			fops = &vcpu_stat_readonly_fops;

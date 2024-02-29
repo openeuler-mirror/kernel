@@ -241,6 +241,13 @@ EXPORT_SYMBOL_GPL(host_xss);
 u64 __read_mostly host_arch_capabilities;
 EXPORT_SYMBOL_GPL(host_arch_capabilities);
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+/* debugfs entries of Detail For vcpu stat EXtension */
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	{ NULL }
+};
+#endif
+
 const struct _kvm_stats_desc kvm_vm_stats_desc[] = {
 	KVM_GENERIC_VM_STATS(),
 	STATS_DESC_COUNTER(VM, mmu_shadow_zapped),

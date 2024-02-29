@@ -72,4 +72,13 @@ config PROTECTED_NVHE_STACKTRACE
 
 	  If unsure, or not using protected nVHE (pKVM), say N.
 
+config ARCH_VCPU_STAT
+	bool "export kvm exits to vcpu_stat"
+	depends on KVM
+	default n
+	help
+	  Say Y here to enable kvm exits counting
+
+	  If unsure, say N.
+
 endif # VIRTUALIZATION

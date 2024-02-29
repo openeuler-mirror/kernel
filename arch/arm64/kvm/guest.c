@@ -29,6 +29,21 @@
 
 #include "trace.h"
 
+#ifdef CONFIG_ARCH_VCPU_STAT
+/* debugfs entries of Detail For vcpu stat EXtension */
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT("pid", pid),
+	DFX_STAT("hvc_exit_stat", hvc_exit_stat),
+	DFX_STAT("wfe_exit_stat", wfe_exit_stat),
+	DFX_STAT("wfi_exit_stat", wfi_exit_stat),
+	DFX_STAT("mmio_exit_user", mmio_exit_user),
+	DFX_STAT("mmio_exit_kernel", mmio_exit_kernel),
+	DFX_STAT("signal_exits", signal_exits),
+	DFX_STAT("exits", exits),
+	{ NULL }
+};
+#endif
+
 const struct _kvm_stats_desc kvm_vm_stats_desc[] = {
 	KVM_GENERIC_VM_STATS()
 };
@@ -50,7 +65,10 @@ const struct _kvm_stats_desc kvm_vcpu_stats_desc[] = {
 	STATS_DESC_COUNTER(VCPU, mmio_exit_user),
 	STATS_DESC_COUNTER(VCPU, mmio_exit_kernel),
 	STATS_DESC_COUNTER(VCPU, signal_exits),
-	STATS_DESC_COUNTER(VCPU, exits)
+	STATS_DESC_COUNTER(VCPU, exits),
+#ifdef CONFIG_ARCH_VCPU_STAT
+	STATS_DESC_DFX_COUNTER(DFX, vcpu_stat)
+#endif
 };
 
 const struct kvm_stats_header kvm_vcpu_stats_header = {
