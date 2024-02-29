@@ -1531,6 +1531,7 @@ struct kvm_vcpu_stat {
 	u64 utime;
 	u64 stime;
 	u64 gtime;
+	u64 preemption_timer_exits;
 	u64 nested_run;
 	u64 directed_yield_attempted;
 	u64 directed_yield_successful;

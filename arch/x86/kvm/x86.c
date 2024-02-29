@@ -280,6 +280,7 @@ struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
 	DFX_STAT("utime", utime),
 	DFX_STAT("stime", stime),
 	DFX_STAT("gtime", gtime),
+	DFX_STAT("preemption_timer_exits", preemption_timer_exits),
 	{ NULL }
 };
 #endif

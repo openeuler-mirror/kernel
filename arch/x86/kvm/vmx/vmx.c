@@ -6012,6 +6012,7 @@ static fastpath_t handle_fastpath_preemption_timer(struct kvm_vcpu *vcpu)
 
 static int handle_preemption_timer(struct kvm_vcpu *vcpu)
 {
+	++vcpu->stat.preemption_timer_exits;
 	handle_fastpath_preemption_timer(vcpu);
 	return 1;
 }
@@ -7219,6 +7220,7 @@ static fastpath_t vmx_exit_handlers_fastpath(struct kvm_vcpu *vcpu)
 		++vcpu->stat.msr_wr_exits;
 		return handle_fastpath_set_msr_irqoff(vcpu);
 	case EXIT_REASON_PREEMPTION_TIMER:
+		++vcpu->stat.preemption_timer_exits;
 		return handle_fastpath_preemption_timer(vcpu);
 	default:
 		return EXIT_FASTPATH_NONE;
