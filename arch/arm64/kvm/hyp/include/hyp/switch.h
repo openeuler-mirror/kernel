@@ -326,8 +326,10 @@ static bool kvm_hyp_handle_fpsimd(struct kvm_vcpu *vcpu, u64 *exit_code)
 	/* Only handle traps the vCPU can support here: */
 	switch (esr_ec) {
 	case ESR_ELx_EC_FP_ASIMD:
+		vcpu->stat.fp_asimd_exit_stat++;
 		break;
 	case ESR_ELx_EC_SVE:
+		vcpu->stat.sve_exit_stat++;
 		if (!sve_guest)
 			return false;
 		break;
