@@ -737,4 +737,7 @@ config ARM_ARCH_TIMER_WORKAROUND_IN_USERSPACE
 	default y
 	depends on ARM_ARCH_TIMER_OOL_WORKAROUND
 
+config SW64_TIMER
+	bool
+
 endmenu
