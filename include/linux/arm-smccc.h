@@ -577,5 +577,26 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
 		method;							\
 	})
 
+#ifdef CONFIG_PARAVIRT_SCHED
+/* Paravirtualised sched calls */
+#define ARM_SMCCC_HV_PV_SCHED_FEATURES					\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_STANDARD_HYP,		\
+			   0x90)
+
+#define ARM_SMCCC_HV_PV_SCHED_IPA_INIT					\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_STANDARD_HYP,		\
+			   0x91)
+
+#define ARM_SMCCC_HV_PV_SCHED_IPA_RELEASE				\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_STANDARD_HYP,		\
+			   0x92)
+#endif /* CONFIG_PARAVIRT_SCHED */
+
 #endif /*__ASSEMBLY__*/
 #endif /*__LINUX_ARM_SMCCC_H*/

@@ -7,6 +7,7 @@
 
 #include <asm/qspinlock.h>
 #include <asm/qrwlock.h>
+#include <asm/paravirt.h>
 
 /* See include/linux/spinlock.h */
 #define smp_mb__after_spinlock()	smp_mb()
@@ -19,9 +20,16 @@
  * https://lore.kernel.org/lkml/20200110100612.GC2827@hirez.programming.kicks-ass.net
  */
 #define vcpu_is_preempted vcpu_is_preempted
+#if defined(CONFIG_PARAVIRT) && defined(CONFIG_PARAVIRT_SCHED)
+static inline bool vcpu_is_preempted(int cpu)
+{
+	return pv_vcpu_is_preempted(cpu);
+}
+#else
 static inline bool vcpu_is_preempted(int cpu)
 {
 	return false;
 }
+#endif /* CONFIG_PARAVIRT && CONFIG_PARAVIRT_SCHED */
 
 #endif /* __ASM_SPINLOCK_H */
