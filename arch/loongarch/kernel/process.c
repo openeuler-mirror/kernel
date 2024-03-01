@@ -348,9 +348,10 @@ static void raise_backtrace(cpumask_t *mask)
 	}
 }
 
-void arch_trigger_cpumask_backtrace(const cpumask_t *mask, int exclude_cpu)
+bool arch_trigger_cpumask_backtrace(const cpumask_t *mask, int exclude_cpu)
 {
 	nmi_trigger_cpumask_backtrace(mask, exclude_cpu, raise_backtrace);
+	return true;
 }
 
 #ifdef CONFIG_64BIT
