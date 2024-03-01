@@ -7110,9 +7110,43 @@ static int hns_roce_hw_v2_reset_notify(struct hnae3_handle *handle,
 	return ret;
 }
 
+static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
+					      bool linkup)
+{
+	struct net_device *netdev = handle->rinfo.netdev;
+	struct hns_roce_dev *hr_dev = handle->priv;
+	struct ib_event event;
+	unsigned long flags;
+	u8 phy_port;
+
+	if (linkup || !hr_dev)
+		return;
+
+	for (phy_port = 0; phy_port < hr_dev->caps.num_ports; phy_port++)
+		if (netdev == hr_dev->iboe.netdevs[phy_port])
+			break;
+
+	if (phy_port == hr_dev->caps.num_ports)
+		return;
+
+	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
+	if (hr_dev->iboe.port_state[phy_port] == IB_PORT_DOWN) {
+		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+		return;
+	}
+	hr_dev->iboe.port_state[phy_port] = IB_PORT_DOWN;
+	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+
+	event.device = &hr_dev->ib_dev;
+	event.element.port_num = to_rdma_port_num(phy_port);
+	event.event = IB_EVENT_PORT_ERR;
+	ib_dispatch_event(&event);
+}
+
 static const struct hnae3_client_ops hns_roce_hw_v2_ops = {
 	.init_instance = hns_roce_hw_v2_init_instance,
 	.uninit_instance = hns_roce_hw_v2_uninit_instance,
+	.link_status_change = hns_roce_hw_v2_link_status_change,
 	.reset_notify = hns_roce_hw_v2_reset_notify,
 };
 
