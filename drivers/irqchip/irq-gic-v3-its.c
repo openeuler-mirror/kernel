@@ -43,6 +43,104 @@
 
 #include "irq-gic-common.h"
 
+#ifdef CONFIG_VIRT_PLAT_DEV
+#include <linux/pci.h>
+
+/* a reserved bus id region */
+struct plat_rsv_buses {
+	u8	start;	/* the first reserved bus id */
+	u8	count;
+};
+
+/*
+ * Build a devid pool per reserved bus id region, where all
+ * device ids should be unused by physical PCI devices.
+ */
+struct rsv_devid_pool {
+	struct list_head	entry;
+
+	struct plat_rsv_buses	buses;
+	u32			start;
+	u32			end;
+
+	raw_spinlock_t		devid_bm_lock;
+	unsigned long		*devid_bm;
+};
+
+static LIST_HEAD(rsv_devid_pools);
+static DEFINE_RAW_SPINLOCK(rsv_devid_pools_lock);
+
+/* Do we have usable rsv_devid_pool? Initialized to be true. */
+bool rsv_devid_pool_cap = true;
+static u8 rsv_buses_start, rsv_buses_count;
+
+static int __init rsv_buses_start_cfg(char *buf)
+{
+	return kstrtou8(buf, 0, &rsv_buses_start);
+}
+early_param("irqchip.gicv3_rsv_buses_start", rsv_buses_start_cfg);
+
+static int __init rsv_buses_count_cfg(char *buf)
+{
+	return kstrtou8(buf, 0, &rsv_buses_count);
+}
+early_param("irqchip.gicv3_rsv_buses_count", rsv_buses_count_cfg);
+
+static void get_rsv_buses_resource(struct plat_rsv_buses *buses)
+{
+	buses->start = rsv_buses_start;
+	buses->count = rsv_buses_count;
+
+	/*
+	 * FIXME: There is no architectural way to get the *correct*
+	 * reserved bus id info.
+	 *
+	 * The first thought is to increase the GITS_TYPER.Devbits for
+	 * the usage for virtualization, but this will break all
+	 * command layouts with DeviceID as an argument (e.g., INT).
+	 *
+	 * The second way is to decrease the GITS_TYPER.Devids so that
+	 * SW can pick the unused device IDs for use (these IDs should
+	 * actually be supported at HW level, though not exposed).
+	 * *Or* fetch the information with the help of firmware. They
+	 * are essentially the same way.
+	 */
+}
+
+static int probe_devid_pool_one(void)
+{
+	struct rsv_devid_pool *devid_pool;
+
+	devid_pool = kzalloc(sizeof(*devid_pool), GFP_KERNEL);
+	if (!devid_pool)
+		return -ENOMEM;
+
+	get_rsv_buses_resource(&devid_pool->buses);
+	raw_spin_lock_init(&devid_pool->devid_bm_lock);
+
+	devid_pool->start = PCI_DEVID(devid_pool->buses.start, 0);
+	devid_pool->end = PCI_DEVID(devid_pool->buses.start + devid_pool->buses.count, 0);
+
+	if (devid_pool->end == devid_pool->start) {
+		kfree(devid_pool);
+		return -EINVAL;
+	}
+
+	devid_pool->devid_bm = bitmap_zalloc(devid_pool->end - devid_pool->start,
+					     GFP_KERNEL);
+	if (!devid_pool->devid_bm) {
+		kfree(devid_pool);
+		return -ENOMEM;
+	}
+
+	raw_spin_lock(&rsv_devid_pools_lock);
+	list_add(&devid_pool->entry, &rsv_devid_pools);
+	raw_spin_unlock(&rsv_devid_pools_lock);
+
+	return 0;
+}
+#endif
+
 #define ITS_FLAGS_CMDQ_NEEDS_FLUSHING		(1ULL << 0)
 #define ITS_FLAGS_WORKAROUND_CAVIUM_22375	(1ULL << 1)
 #define ITS_FLAGS_WORKAROUND_CAVIUM_23144	(1ULL << 2)
@@ -170,6 +268,12 @@ struct its_device {
 	u32			nr_ites;
 	u32			device_id;
 	bool			shared;
+
+#ifdef CONFIG_VIRT_PLAT_DEV
+	/* For virtual devices which needed the devid managed */
+	bool			is_vdev;
+	struct rsv_devid_pool	*devid_pool;
+#endif
 };
 
 static struct {
@@ -197,10 +301,80 @@ static DEFINE_RAW_SPINLOCK(vmovp_lock);
 
 static DEFINE_IDA(its_vpeid_ida);
 
+#ifdef CONFIG_VIRT_PLAT_DEV
+static void free_devid_to_rsv_pools(struct its_device *its_dev)
+{
+	struct rsv_devid_pool *pool = its_dev->devid_pool;
+	u32 id, size;
+
+	WARN_ON(!pool);
+
+	id = its_dev->device_id - pool->start;
+	size = pool->end - pool->start;
+	WARN_ON(id >= size);
+
+	raw_spin_lock(&pool->devid_bm_lock);
+	clear_bit(id, pool->devid_bm);
+	raw_spin_unlock(&pool->devid_bm_lock);
+
+	pr_debug("ITS: free devid (%u) to rsv_devid_pools\n", its_dev->device_id);
+}
+
+static int alloc_devid_from_rsv_pools(struct rsv_devid_pool **devid_pool,
+				      u32 *dev_id)
+{
+	struct rsv_devid_pool *pool;
+	int err = -ENOSPC;
+
+	raw_spin_lock(&rsv_devid_pools_lock);
+	list_for_each_entry(pool, &rsv_devid_pools, entry) {
+		u32 size, id;
+
+		size = pool->end - pool->start;
+
+		raw_spin_lock(&pool->devid_bm_lock);
+		id = find_first_zero_bit(pool->devid_bm, size);
+		if (id >= size) {
+			/* No usable device id in this pool, try next. */
+			raw_spin_unlock(&pool->devid_bm_lock);
+			continue;
+		}
+
+		*dev_id = pool->start + id;
+		set_bit(id, pool->devid_bm);
+		raw_spin_unlock(&pool->devid_bm_lock);
+
+		*devid_pool = pool;
+		err = 0;
+		break;
+	}
+	raw_spin_unlock(&rsv_devid_pools_lock);
+
+	pr_debug("ITS: alloc devid (%u) from rsv_devid_pools\n", *dev_id);
+	return err;
+}
+#endif
+
 #define gic_data_rdist()		(raw_cpu_ptr(gic_rdists->rdist))
 #define gic_data_rdist_cpu(cpu)		(per_cpu_ptr(gic_rdists->rdist, cpu))
 #define gic_data_rdist_rd_base()	(gic_data_rdist()->rd_base)
 #define gic_data_rdist_vlpi_base()	(gic_data_rdist_rd_base() + SZ_128K)
+
+#ifdef CONFIG_VIRT_PLAT_DEV
+/*
+ * Currently we only build *one* devid pool.
+ */
+static int build_devid_pools(void)
+{
+	struct its_node *its;
+
+	its = list_first_entry(&its_nodes, struct its_node, entry);
+	if (readl_relaxed(its->base + GITS_IIDR) != 0x00051736)
+		return -EINVAL;
+
+	return probe_devid_pool_one();
+}
+#endif
 
 /*
  * Skip ITSs that have no vLPIs mapped, unless we're on GICv4.1, as we
@@ -3484,6 +3658,13 @@ static void its_free_device(struct its_device *its_dev)
 	raw_spin_unlock_irqrestore(&its_dev->its->lock, flags);
 	kfree(its_dev->event_map.col_map);
 	kfree(its_dev->itt);
+
+#ifdef CONFIG_VIRT_PLAT_DEV
+	if (its_dev->is_vdev) {
+		WARN_ON(!rsv_devid_pool_cap);
+		free_devid_to_rsv_pools(its_dev);
+	}
+#endif
 	kfree(its_dev);
 }
 
@@ -3520,6 +3701,23 @@ static int its_msi_prepare(struct irq_domain *domain, struct device *dev,
 	 */
 	dev_id = info->scratchpad[0].ul;
 
+#ifdef CONFIG_VIRT_PLAT_DEV
+	int use_devid_pool = false;
+	struct rsv_devid_pool *pool = NULL;
+
+	if (rsv_devid_pool_cap && !dev->of_node && !dev->fwnode &&
+	    info->scratchpad[0].ul == -1)
+		use_devid_pool = true;
+
+	if (use_devid_pool) {
+		err = alloc_devid_from_rsv_pools(&pool, &dev_id);
+		if (err) {
+			pr_warn("ITS: No remaining device id\n");
+			return err;
+		}
+	}
+#endif
+
 	msi_info = msi_get_domain_info(domain);
 	its = msi_info->data;
 
@@ -3536,6 +3734,10 @@ static int its_msi_prepare(struct irq_domain *domain, struct device *dev,
 	mutex_lock(&its->dev_alloc_lock);
 	its_dev = its_find_device(its, dev_id);
 	if (its_dev) {
+#ifdef CONFIG_VIRT_PLAT_DEV
+		/* Impossible ...*/
+		WARN_ON_ONCE(use_devid_pool);
+#endif
 		/*
 		 * We already have seen this ID, probably through
 		 * another alias (PCI bridge of some sort). No need to
@@ -3556,6 +3758,13 @@ static int its_msi_prepare(struct irq_domain *domain, struct device *dev,
 		its_dev->shared = true;
 
 	pr_debug("ITT %d entries, %d bits\n", nvec, ilog2(nvec));
+
+#ifdef CONFIG_VIRT_PLAT_DEV
+	if (use_devid_pool) {
+		its_dev->is_vdev = true;
+		its_dev->devid_pool = pool;
+	}
+#endif
 out:
 	mutex_unlock(&its->dev_alloc_lock);
 	info->scratchpad[0].ptr = its_dev;
@@ -5705,6 +5914,14 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
 			rdists->has_vlpis = false;
 			pr_err("ITS: Disabling GICv4 support\n");
 		}
+
+#ifdef CONFIG_VIRT_PLAT_DEV
+		if (build_devid_pools())
+			rsv_devid_pool_cap = false;
+
+		if (rsv_devid_pool_cap)
+			pr_info("ITS: reserved device id pools enabled\n");
+#endif
 	}
 
 	register_syscore_ops(&its_syscore_ops);
