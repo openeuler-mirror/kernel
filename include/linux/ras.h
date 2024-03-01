@@ -42,6 +42,7 @@ log_non_standard_event(const guid_t *sec_type,
 static inline void
 log_arm_hw_error(struct cper_sec_proc_arm *err, const u8 sev) { return; }
 #else
+static inline void
 log_arm_hw_error(struct cper_sec_proc_arm *err) { return; }
 #endif
 
