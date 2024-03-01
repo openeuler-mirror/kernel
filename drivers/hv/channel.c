@@ -194,7 +194,7 @@ int vmbus_open(struct vmbus_channel *newchannel, u32 send_ringbuffer_size,
 
 	if (newchannel->rescind) {
 		err = -ENODEV;
-		goto error_free_gpadl;
+		goto error_clean_msglist;
 	}
 
 	ret = vmbus_post_msg(open_msg,
