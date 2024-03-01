@@ -646,6 +646,7 @@ struct hns_roce_ib_iboe {
 	struct net_device      *netdevs[HNS_ROCE_MAX_PORTS];
 	struct notifier_block	nb;
 	u8			phy_port[HNS_ROCE_MAX_PORTS];
+	enum ib_port_state	port_state[HNS_ROCE_MAX_PORTS];
 };
 
 struct hns_roce_ceqe {
@@ -1175,6 +1176,17 @@ static inline u8 get_tclass(const struct ib_global_route *grh)
 {
 	return grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP ?
 	       grh->traffic_class >> DSCP_SHIFT : grh->traffic_class;
+}
+
+static inline u8 to_rdma_port_num(u8 phy_port_num)
+{
+	return phy_port_num + 1;
+}
+
+static inline enum ib_port_state get_port_state(struct net_device *net_dev)
+{
+	return (netif_running(net_dev) && netif_carrier_ok(net_dev)) ?
+		IB_PORT_ACTIVE : IB_PORT_DOWN;
 }
 
 extern const struct attribute_group *hns_attr_port_groups[];
