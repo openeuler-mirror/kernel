@@ -646,6 +646,7 @@ struct hns_roce_ib_iboe {
 	struct net_device      *netdevs[HNS_ROCE_MAX_PORTS];
 	struct notifier_block	nb;
 	u8			phy_port[HNS_ROCE_MAX_PORTS];
+	enum ib_port_state	port_state[HNS_ROCE_MAX_PORTS];
 };
 
 struct hns_roce_ceqe {
@@ -708,6 +709,14 @@ struct hns_roce_eq {
 
 struct hns_roce_eq_table {
 	struct hns_roce_eq	*eq;
+};
+
+enum hns_roce_scc_algo {
+	HNS_ROCE_SCC_ALGO_DCQCN = 0,
+	HNS_ROCE_SCC_ALGO_LDCP,
+	HNS_ROCE_SCC_ALGO_HC3,
+	HNS_ROCE_SCC_ALGO_DIP,
+	HNS_ROCE_SCC_ALGO_TOTAL,
 };
 
 enum cong_type {
@@ -954,6 +963,20 @@ struct hns_roce_hw {
 				u64 *stats, u32 port, int *hw_counters);
 	const struct ib_device_ops *hns_roce_dev_ops;
 	const struct ib_device_ops *hns_roce_dev_srq_ops;
+	int (*config_scc_param)(struct hns_roce_dev *hr_dev,
+				enum hns_roce_scc_algo algo);
+	int (*query_scc_param)(struct hns_roce_dev *hr_dev,
+			       enum hns_roce_scc_algo alog);
+};
+
+#define HNS_ROCE_SCC_PARAM_SIZE 4
+struct hns_roce_scc_param {
+	__le32 param[HNS_ROCE_SCC_PARAM_SIZE];
+	u32 lifespan;
+	unsigned long timestamp;
+	enum hns_roce_scc_algo algo_type;
+	struct delayed_work scc_cfg_dwork;
+	struct hns_roce_dev *hr_dev;
 };
 
 struct hns_roce_dev {
@@ -1019,6 +1042,7 @@ struct hns_roce_dev {
 	u64 dwqe_page;
 	struct hns_roce_dev_debugfs dbgfs;
 	atomic64_t *dfx_cnt;
+	struct hns_roce_scc_param *scc_param;
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
@@ -1153,6 +1177,19 @@ static inline u8 get_tclass(const struct ib_global_route *grh)
 	return grh->sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP ?
 	       grh->traffic_class >> DSCP_SHIFT : grh->traffic_class;
 }
+
+static inline u8 to_rdma_port_num(u8 phy_port_num)
+{
+	return phy_port_num + 1;
+}
+
+static inline enum ib_port_state get_port_state(struct net_device *net_dev)
+{
+	return (netif_running(net_dev) && netif_carrier_ok(net_dev)) ?
+		IB_PORT_ACTIVE : IB_PORT_DOWN;
+}
+
+extern const struct attribute_group *hns_attr_port_groups[];
 
 void hns_roce_init_uar_table(struct hns_roce_dev *dev);
 int hns_roce_uar_alloc(struct hns_roce_dev *dev, struct hns_roce_uar *uar);
@@ -1294,4 +1331,6 @@ struct hns_user_mmap_entry *
 hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 				size_t length,
 				enum hns_roce_mmap_type mmap_type);
+void hns_roce_register_sysfs(struct hns_roce_dev *hr_dev);
+void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
 #endif /* _HNS_ROCE_DEVICE_H */

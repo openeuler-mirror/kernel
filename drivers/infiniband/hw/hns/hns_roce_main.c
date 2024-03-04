@@ -89,10 +89,13 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 }
 
 static int handle_en_event(struct hns_roce_dev *hr_dev, u32 port,
-			   unsigned long event)
+			   unsigned long dev_event)
 {
 	struct device *dev = hr_dev->dev;
+	enum ib_port_state port_state;
 	struct net_device *netdev;
+	struct ib_event event;
+	unsigned long flags;
 	int ret = 0;
 
 	netdev = hr_dev->iboe.netdevs[port];
@@ -101,20 +104,38 @@ static int handle_en_event(struct hns_roce_dev *hr_dev, u32 port,
 		return -ENODEV;
 	}
 
-	switch (event) {
-	case NETDEV_UP:
-	case NETDEV_CHANGE:
+	switch (dev_event) {
 	case NETDEV_REGISTER:
 	case NETDEV_CHANGEADDR:
 		ret = hns_roce_set_mac(hr_dev, port, netdev->dev_addr);
 		break;
+	case NETDEV_UP:
+	case NETDEV_CHANGE:
+		ret = hns_roce_set_mac(hr_dev, port, netdev->dev_addr);
+		if (ret)
+			return ret;
+		fallthrough;
 	case NETDEV_DOWN:
-		/*
-		 * In v1 engine, only support all ports closed together.
-		 */
+		port_state = get_port_state(netdev);
+
+		spin_lock_irqsave(&hr_dev->iboe.lock, flags);
+		if (hr_dev->iboe.port_state[port] == port_state) {
+			spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+			return NOTIFY_DONE;
+		}
+		hr_dev->iboe.port_state[port] = port_state;
+		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+
+		event.device = &hr_dev->ib_dev;
+		event.event = (port_state == IB_PORT_ACTIVE) ?
+			      IB_EVENT_PORT_ACTIVE : IB_EVENT_PORT_ERR;
+		event.element.port_num = to_rdma_port_num(port);
+		ib_dispatch_event(&event);
+		break;
+	case NETDEV_UNREGISTER:
 		break;
 	default:
-		dev_dbg(dev, "NETDEV event = 0x%x!\n", (u32)(event));
+		dev_dbg(dev, "NETDEV event = 0x%x!\n", (u32)(dev_event));
 		break;
 	}
 
@@ -151,6 +172,8 @@ static int hns_roce_setup_mtu_mac(struct hns_roce_dev *hr_dev)
 	u8 i;
 
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
+		hr_dev->iboe.port_state[i] = IB_PORT_DOWN;
+
 		ret = hns_roce_set_mac(hr_dev, i,
 				       hr_dev->iboe.netdevs[i]->dev_addr);
 		if (ret)
@@ -248,9 +271,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u32 port_num,
 
 	mtu = iboe_get_mtu(net_dev->mtu);
 	props->active_mtu = mtu ? min(props->max_mtu, mtu) : IB_MTU_256;
-	props->state = netif_running(net_dev) && netif_carrier_ok(net_dev) ?
-			       IB_PORT_ACTIVE :
-			       IB_PORT_DOWN;
+	props->state = get_port_state(net_dev);
 	props->phys_state = props->state == IB_PORT_ACTIVE ?
 				    IB_PORT_PHYS_STATE_LINK_UP :
 				    IB_PORT_PHYS_STATE_DISABLED;
@@ -633,6 +654,7 @@ static const struct ib_device_ops hns_roce_dev_ops = {
 	.query_pkey = hns_roce_query_pkey,
 	.query_port = hns_roce_query_port,
 	.reg_user_mr = hns_roce_reg_user_mr,
+	.port_groups = hns_attr_port_groups,
 
 	INIT_RDMA_OBJ_SIZE(ib_ah, hns_roce_ah, ibah),
 	INIT_RDMA_OBJ_SIZE(ib_cq, hns_roce_cq, ib_cq),
@@ -1106,6 +1128,7 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	if (ret)
 		goto error_failed_register_device;
 
+	hns_roce_register_sysfs(hr_dev);
 	hns_roce_register_debugfs(hr_dev);
 
 	return 0;
@@ -1140,6 +1163,7 @@ error_failed_alloc_dfx_cnt:
 
 void hns_roce_exit(struct hns_roce_dev *hr_dev)
 {
+	hns_roce_unregister_sysfs(hr_dev);
 	hns_roce_unregister_debugfs(hr_dev);
 	hns_roce_unregister_device(hr_dev);
 

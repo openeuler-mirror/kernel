@@ -6733,6 +6733,67 @@ static void hns_roce_v2_cleanup_eq_table(struct hns_roce_dev *hr_dev)
 	kfree(eq_table->eq);
 }
 
+static const enum hns_roce_opcode_type scc_opcode[] = {
+	HNS_ROCE_OPC_CFG_DCQCN_PARAM,
+	HNS_ROCE_OPC_CFG_LDCP_PARAM,
+	HNS_ROCE_OPC_CFG_HC3_PARAM,
+	HNS_ROCE_OPC_CFG_DIP_PARAM,
+};
+
+static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
+					enum hns_roce_scc_algo algo)
+{
+	struct hns_roce_scc_param *scc_param;
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	if (algo >= HNS_ROCE_SCC_ALGO_TOTAL) {
+		ibdev_err_ratelimited(&hr_dev->ib_dev, "invalid SCC algo.\n");
+		return -EINVAL;
+	}
+
+	hns_roce_cmq_setup_basic_desc(&desc, scc_opcode[algo], false);
+	scc_param = &hr_dev->scc_param[algo];
+	memcpy(&desc.data, scc_param, sizeof(scc_param->param));
+
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret)
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"failed to configure scc param, opcode: 0x%x, ret = %d.\n",
+			le16_to_cpu(desc.opcode), ret);
+	return ret;
+}
+
+static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
+				       enum hns_roce_scc_algo algo)
+{
+	struct hns_roce_scc_param *scc_param;
+	struct hns_roce_cmq_desc desc;
+	int ret;
+
+	if (hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08 || hr_dev->is_vf)
+		return -EOPNOTSUPP;
+
+	if (algo >= HNS_ROCE_SCC_ALGO_TOTAL) {
+		ibdev_err_ratelimited(&hr_dev->ib_dev, "invalid SCC algo.\n");
+		return -EINVAL;
+	}
+
+	hns_roce_cmq_setup_basic_desc(&desc, scc_opcode[algo], true);
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret) {
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"failed to query scc param, opcode: 0x%x, ret = %d.\n",
+			le16_to_cpu(desc.opcode), ret);
+		return ret;
+	}
+
+	scc_param = &hr_dev->scc_param[algo];
+	memcpy(scc_param, &desc.data, sizeof(scc_param->param));
+
+	return 0;
+}
+
 static const struct ib_device_ops hns_roce_v2_dev_ops = {
 	.destroy_qp = hns_roce_v2_destroy_qp,
 	.modify_cq = hns_roce_v2_modify_cq,
@@ -6782,6 +6843,8 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.query_hw_counter = hns_roce_hw_v2_query_counter,
 	.hns_roce_dev_ops = &hns_roce_v2_dev_ops,
 	.hns_roce_dev_srq_ops = &hns_roce_v2_dev_srq_ops,
+	.config_scc_param = hns_roce_v2_config_scc_param,
+	.query_scc_param = hns_roce_v2_query_scc_param,
 };
 
 static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
@@ -7047,9 +7110,43 @@ static int hns_roce_hw_v2_reset_notify(struct hnae3_handle *handle,
 	return ret;
 }
 
+static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
+					      bool linkup)
+{
+	struct net_device *netdev = handle->rinfo.netdev;
+	struct hns_roce_dev *hr_dev = handle->priv;
+	struct ib_event event;
+	unsigned long flags;
+	u8 phy_port;
+
+	if (linkup || !hr_dev)
+		return;
+
+	for (phy_port = 0; phy_port < hr_dev->caps.num_ports; phy_port++)
+		if (netdev == hr_dev->iboe.netdevs[phy_port])
+			break;
+
+	if (phy_port == hr_dev->caps.num_ports)
+		return;
+
+	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
+	if (hr_dev->iboe.port_state[phy_port] == IB_PORT_DOWN) {
+		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+		return;
+	}
+	hr_dev->iboe.port_state[phy_port] = IB_PORT_DOWN;
+	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+
+	event.device = &hr_dev->ib_dev;
+	event.element.port_num = to_rdma_port_num(phy_port);
+	event.event = IB_EVENT_PORT_ERR;
+	ib_dispatch_event(&event);
+}
+
 static const struct hnae3_client_ops hns_roce_hw_v2_ops = {
 	.init_instance = hns_roce_hw_v2_init_instance,
 	.uninit_instance = hns_roce_hw_v2_uninit_instance,
+	.link_status_change = hns_roce_hw_v2_link_status_change,
 	.reset_notify = hns_roce_hw_v2_reset_notify,
 };
 
