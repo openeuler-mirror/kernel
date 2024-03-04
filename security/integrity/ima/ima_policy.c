@@ -276,7 +276,7 @@ static struct ima_rule_entry secure_boot_rules[] __ro_after_init = {
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 #ifdef CONFIG_IMA_DIGEST_LIST
 	{.action = APPRAISE, .func = DIGEST_LIST_CHECK,
-	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED | IMA_MODSIG_ALLOWED},
 #endif
 };
 
@@ -1418,7 +1418,8 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 				     IMA_PERMIT_DIRECTIO | IMA_VALIDATE_ALGOS |
 #ifdef CONFIG_IMA_DIGEST_LIST
 				     IMA_CHECK_BLACKLIST | IMA_VERITY_REQUIRED |
-				     IMA_META_IMMUTABLE_REQUIRED | IMA_PARSER))
+				     IMA_META_IMMUTABLE_REQUIRED | IMA_PARSER |
+				     IMA_MODSIG_ALLOWED))
 #else
 				     IMA_CHECK_BLACKLIST | IMA_VERITY_REQUIRED))
 #endif
