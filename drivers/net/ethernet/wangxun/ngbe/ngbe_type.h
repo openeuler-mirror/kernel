@@ -59,9 +59,6 @@
 #define NGBE_EEPROM_VERSION_L			0x1D
 #define NGBE_EEPROM_VERSION_H			0x1E
 
-/* Media-dependent registers. */
-#define NGBE_MDIO_CLAUSE_SELECT			0x11220
-
 /* GPIO Registers */
 #define NGBE_GPIO_DR				0x14800
 #define NGBE_GPIO_DDR				0x14804
@@ -132,5 +129,8 @@
 #define NGBE_MIN_RXD				128
 
 extern char ngbe_driver_name[];
+
+void ngbe_down(struct wx *wx);
+void ngbe_up(struct wx *wx);
 
 #endif /* _NGBE_TYPE_H_ */

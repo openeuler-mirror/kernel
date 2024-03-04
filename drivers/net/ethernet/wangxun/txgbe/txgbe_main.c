@@ -206,7 +206,6 @@ static int txgbe_request_irq(struct wx *wx)
 static void txgbe_up_complete(struct wx *wx)
 {
 	struct net_device *netdev = wx->netdev;
-	struct txgbe *txgbe;
 
 	wx_control_hw(wx, true);
 	wx_configure_vectors(wx);
@@ -215,8 +214,7 @@ static void txgbe_up_complete(struct wx *wx)
 	smp_mb__before_atomic();
 	wx_napi_enable_all(wx);
 
-	txgbe = netdev_to_txgbe(netdev);
-	phylink_start(txgbe->phylink);
+	phylink_start(wx->phylink);
 
 	/* clear any pending interrupts, may auto mask */
 	rd32(wx, WX_PX_IC(0));
@@ -286,18 +284,24 @@ static void txgbe_disable_device(struct wx *wx)
 
 	/* Disable the Tx DMA engine */
 	wr32m(wx, WX_TDM_CTL, WX_TDM_CTL_TE, 0);
+
+	wx_update_stats(wx);
 }
 
-static void txgbe_down(struct wx *wx)
+void txgbe_down(struct wx *wx)
 {
-	struct txgbe *txgbe = netdev_to_txgbe(wx->netdev);
-
 	txgbe_disable_device(wx);
 	txgbe_reset(wx);
-	phylink_stop(txgbe->phylink);
+	phylink_stop(wx->phylink);
 
 	wx_clean_all_tx_rings(wx);
 	wx_clean_all_rx_rings(wx);
+}
+
+void txgbe_up(struct wx *wx)
+{
+	wx_configure(wx);
+	txgbe_up_complete(wx);
 }
 
 /**
@@ -536,7 +540,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 	u16 eeprom_verh = 0, eeprom_verl = 0, offset = 0;
 	u16 eeprom_cfg_blkh = 0, eeprom_cfg_blkl = 0;
 	u16 build = 0, major = 0, patch = 0;
-	u8 part_str[TXGBE_PBANUM_LENGTH];
 	u32 etrack_id = 0;
 
 	err = pci_enable_device_mem(pdev);
@@ -637,6 +640,7 @@ static int txgbe_probe(struct pci_dev *pdev,
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 	netdev->priv_flags |= IFF_SUPP_NOFCS;
+	netdev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
 
 	netdev->min_mtu = ETH_MIN_MTU;
 	netdev->max_mtu = WX_MAX_JUMBO_FRAME_SIZE -
@@ -733,13 +737,6 @@ static int txgbe_probe(struct pci_dev *pdev,
 		txgbe_check_minimum_link(wx);
 	else
 		dev_warn(&pdev->dev, "Failed to enumerate PF devices.\n");
-
-	/* First try to read PBA as a string */
-	err = txgbe_read_pba_string(wx, part_str, TXGBE_PBANUM_LENGTH);
-	if (err)
-		strncpy(part_str, "Unknown", TXGBE_PBANUM_LENGTH);
-
-	netif_info(wx, probe, netdev, "%pM\n", netdev->dev_addr);
 
 	return 0;
 

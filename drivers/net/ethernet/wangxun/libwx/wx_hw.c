@@ -12,6 +12,98 @@
 #include "wx_lib.h"
 #include "wx_hw.h"
 
+static int wx_phy_read_reg_mdi(struct mii_bus *bus, int phy_addr, int devnum, int regnum)
+{
+	struct wx *wx = bus->priv;
+	u32 command, val;
+	int ret;
+
+	/* setup and write the address cycle command */
+	command = WX_MSCA_RA(regnum) |
+		  WX_MSCA_PA(phy_addr) |
+		  WX_MSCA_DA(devnum);
+	wr32(wx, WX_MSCA, command);
+
+	command = WX_MSCC_CMD(WX_MSCA_CMD_READ) | WX_MSCC_BUSY;
+	if (wx->mac.type == wx_mac_em)
+		command |= WX_MDIO_CLK(6);
+	wr32(wx, WX_MSCC, command);
+
+	/* wait to complete */
+	ret = read_poll_timeout(rd32, val, !(val & WX_MSCC_BUSY), 1000,
+				100000, false, wx, WX_MSCC);
+	if (ret) {
+		wx_err(wx, "Mdio read c22 command did not complete.\n");
+		return ret;
+	}
+
+	return (u16)rd32(wx, WX_MSCC);
+}
+
+static int wx_phy_write_reg_mdi(struct mii_bus *bus, int phy_addr,
+				int devnum, int regnum, u16 value)
+{
+	struct wx *wx = bus->priv;
+	u32 command, val;
+	int ret;
+
+	/* setup and write the address cycle command */
+	command = WX_MSCA_RA(regnum) |
+		  WX_MSCA_PA(phy_addr) |
+		  WX_MSCA_DA(devnum);
+	wr32(wx, WX_MSCA, command);
+
+	command = value | WX_MSCC_CMD(WX_MSCA_CMD_WRITE) | WX_MSCC_BUSY;
+	if (wx->mac.type == wx_mac_em)
+		command |= WX_MDIO_CLK(6);
+	wr32(wx, WX_MSCC, command);
+
+	/* wait to complete */
+	ret = read_poll_timeout(rd32, val, !(val & WX_MSCC_BUSY), 1000,
+				100000, false, wx, WX_MSCC);
+	if (ret)
+		wx_err(wx, "Mdio write c22 command did not complete.\n");
+
+	return ret;
+}
+
+int wx_phy_read_reg_mdi_c22(struct mii_bus *bus, int phy_addr, int regnum)
+{
+	struct wx *wx = bus->priv;
+
+	wr32(wx, WX_MDIO_CLAUSE_SELECT, 0xF);
+	return wx_phy_read_reg_mdi(bus, phy_addr, 0, regnum);
+}
+EXPORT_SYMBOL(wx_phy_read_reg_mdi_c22);
+
+int wx_phy_write_reg_mdi_c22(struct mii_bus *bus, int phy_addr, int regnum, u16 value)
+{
+	struct wx *wx = bus->priv;
+
+	wr32(wx, WX_MDIO_CLAUSE_SELECT, 0xF);
+	return wx_phy_write_reg_mdi(bus, phy_addr, 0, regnum, value);
+}
+EXPORT_SYMBOL(wx_phy_write_reg_mdi_c22);
+
+int wx_phy_read_reg_mdi_c45(struct mii_bus *bus, int phy_addr, int devnum, int regnum)
+{
+	struct wx *wx = bus->priv;
+
+	wr32(wx, WX_MDIO_CLAUSE_SELECT, 0);
+	return wx_phy_read_reg_mdi(bus, phy_addr, devnum, regnum);
+}
+EXPORT_SYMBOL(wx_phy_read_reg_mdi_c45);
+
+int wx_phy_write_reg_mdi_c45(struct mii_bus *bus, int phy_addr,
+			     int devnum, int regnum, u16 value)
+{
+	struct wx *wx = bus->priv;
+
+	wr32(wx, WX_MDIO_CLAUSE_SELECT, 0);
+	return wx_phy_write_reg_mdi(bus, phy_addr, devnum, regnum, value);
+}
+EXPORT_SYMBOL(wx_phy_write_reg_mdi_c45);
+
 static void wx_intr_disable(struct wx *wx, u64 qmask)
 {
 	u32 mask;
@@ -1066,6 +1158,81 @@ static void wx_set_rxpba(struct wx *wx)
 	wr32(wx, WX_TDM_PB_THRE(0), txpbthresh);
 }
 
+#define WX_ETH_FRAMING 20
+
+/**
+ * wx_hpbthresh - calculate high water mark for flow control
+ *
+ * @wx: board private structure to calculate for
+ **/
+static int wx_hpbthresh(struct wx *wx)
+{
+	struct net_device *dev = wx->netdev;
+	int link, tc, kb, marker;
+	u32 dv_id, rx_pba;
+
+	/* Calculate max LAN frame size */
+	link = dev->mtu + ETH_HLEN + ETH_FCS_LEN + WX_ETH_FRAMING;
+	tc = link;
+
+	/* Calculate delay value for device */
+	dv_id = WX_DV(link, tc);
+
+	/* Delay value is calculated in bit times convert to KB */
+	kb = WX_BT2KB(dv_id);
+	rx_pba = rd32(wx, WX_RDB_PB_SZ(0)) >> WX_RDB_PB_SZ_SHIFT;
+
+	marker = rx_pba - kb;
+
+	/* It is possible that the packet buffer is not large enough
+	 * to provide required headroom. In this case throw an error
+	 * to user and a do the best we can.
+	 */
+	if (marker < 0) {
+		dev_warn(&wx->pdev->dev,
+			 "Packet Buffer can not provide enough headroom to support flow control. Decrease MTU or number of traffic classes\n");
+		marker = tc + 1;
+	}
+
+	return marker;
+}
+
+/**
+ * wx_lpbthresh - calculate low water mark for flow control
+ *
+ * @wx: board private structure to calculate for
+ **/
+static int wx_lpbthresh(struct wx *wx)
+{
+	struct net_device *dev = wx->netdev;
+	u32 dv_id;
+	int tc;
+
+	/* Calculate max LAN frame size */
+	tc = dev->mtu + ETH_HLEN + ETH_FCS_LEN;
+
+	/* Calculate delay value for device */
+	dv_id = WX_LOW_DV(tc);
+
+	/* Delay value is calculated in bit times convert to KB */
+	return WX_BT2KB(dv_id);
+}
+
+/**
+ * wx_pbthresh_setup - calculate and setup high low water marks
+ *
+ * @wx: board private structure to calculate for
+ **/
+static void wx_pbthresh_setup(struct wx *wx)
+{
+	wx->fc.high_water = wx_hpbthresh(wx);
+	wx->fc.low_water = wx_lpbthresh(wx);
+
+	/* Low water marks must not be larger than high water marks */
+	if (wx->fc.low_water > wx->fc.high_water)
+		wx->fc.low_water = 0;
+}
+
 static void wx_configure_port(struct wx *wx)
 {
 	u32 value, i;
@@ -1492,6 +1659,7 @@ static void wx_configure_isb(struct wx *wx)
 void wx_configure(struct wx *wx)
 {
 	wx_set_rxpba(wx);
+	wx_pbthresh_setup(wx);
 	wx_configure_port(wx);
 
 	wx_set_rx_mode(wx->netdev);
@@ -1910,6 +2078,201 @@ int wx_vlan_rx_kill_vid(struct net_device *netdev, __be16 proto, u16 vid)
 	return 0;
 }
 EXPORT_SYMBOL(wx_vlan_rx_kill_vid);
+
+static void wx_enable_rx_drop(struct wx *wx, struct wx_ring *ring)
+{
+	u16 reg_idx = ring->reg_idx;
+	u32 srrctl;
+
+	srrctl = rd32(wx, WX_PX_RR_CFG(reg_idx));
+	srrctl |= WX_PX_RR_CFG_DROP_EN;
+
+	wr32(wx, WX_PX_RR_CFG(reg_idx), srrctl);
+}
+
+static void wx_disable_rx_drop(struct wx *wx, struct wx_ring *ring)
+{
+	u16 reg_idx = ring->reg_idx;
+	u32 srrctl;
+
+	srrctl = rd32(wx, WX_PX_RR_CFG(reg_idx));
+	srrctl &= ~WX_PX_RR_CFG_DROP_EN;
+
+	wr32(wx, WX_PX_RR_CFG(reg_idx), srrctl);
+}
+
+int wx_fc_enable(struct wx *wx, bool tx_pause, bool rx_pause)
+{
+	u16 pause_time = WX_DEFAULT_FCPAUSE;
+	u32 mflcn_reg, fccfg_reg, reg;
+	u32 fcrtl, fcrth;
+	int i;
+
+	/* Low water mark of zero causes XOFF floods */
+	if (tx_pause && wx->fc.high_water) {
+		if (!wx->fc.low_water || wx->fc.low_water >= wx->fc.high_water) {
+			wx_err(wx, "Invalid water mark configuration\n");
+			return -EINVAL;
+		}
+	}
+
+	/* Disable any previous flow control settings */
+	mflcn_reg = rd32(wx, WX_MAC_RX_FLOW_CTRL);
+	mflcn_reg &= ~WX_MAC_RX_FLOW_CTRL_RFE;
+
+	fccfg_reg = rd32(wx, WX_RDB_RFCC);
+	fccfg_reg &= ~WX_RDB_RFCC_RFCE_802_3X;
+
+	if (rx_pause)
+		mflcn_reg |= WX_MAC_RX_FLOW_CTRL_RFE;
+	if (tx_pause)
+		fccfg_reg |= WX_RDB_RFCC_RFCE_802_3X;
+
+	/* Set 802.3x based flow control settings. */
+	wr32(wx, WX_MAC_RX_FLOW_CTRL, mflcn_reg);
+	wr32(wx, WX_RDB_RFCC, fccfg_reg);
+
+	/* Set up and enable Rx high/low water mark thresholds, enable XON. */
+	if (tx_pause && wx->fc.high_water) {
+		fcrtl = (wx->fc.low_water << 10) | WX_RDB_RFCL_XONE;
+		wr32(wx, WX_RDB_RFCL, fcrtl);
+		fcrth = (wx->fc.high_water << 10) | WX_RDB_RFCH_XOFFE;
+	} else {
+		wr32(wx, WX_RDB_RFCL, 0);
+		/* In order to prevent Tx hangs when the internal Tx
+		 * switch is enabled we must set the high water mark
+		 * to the Rx packet buffer size - 24KB.  This allows
+		 * the Tx switch to function even under heavy Rx
+		 * workloads.
+		 */
+		fcrth = rd32(wx, WX_RDB_PB_SZ(0)) - 24576;
+	}
+
+	wr32(wx, WX_RDB_RFCH, fcrth);
+
+	/* Configure pause time */
+	reg = pause_time * 0x00010001;
+	wr32(wx, WX_RDB_RFCV, reg);
+
+	/* Configure flow control refresh threshold value */
+	wr32(wx, WX_RDB_RFCRT, pause_time / 2);
+
+	/*  We should set the drop enable bit if:
+	 *  Number of Rx queues > 1 and flow control is disabled
+	 *
+	 *  This allows us to avoid head of line blocking for security
+	 *  and performance reasons.
+	 */
+	if (wx->num_rx_queues > 1 && !tx_pause) {
+		for (i = 0; i < wx->num_rx_queues; i++)
+			wx_enable_rx_drop(wx, wx->rx_ring[i]);
+	} else {
+		for (i = 0; i < wx->num_rx_queues; i++)
+			wx_disable_rx_drop(wx, wx->rx_ring[i]);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(wx_fc_enable);
+
+/**
+ * wx_update_stats - Update the board statistics counters.
+ * @wx: board private structure
+ **/
+void wx_update_stats(struct wx *wx)
+{
+	struct wx_hw_stats *hwstats = &wx->stats;
+
+	u64 non_eop_descs = 0, alloc_rx_buff_failed = 0;
+	u64 hw_csum_rx_good = 0, hw_csum_rx_error = 0;
+	u64 restart_queue = 0, tx_busy = 0;
+	u32 i;
+
+	/* gather some stats to the wx struct that are per queue */
+	for (i = 0; i < wx->num_rx_queues; i++) {
+		struct wx_ring *rx_ring = wx->rx_ring[i];
+
+		non_eop_descs += rx_ring->rx_stats.non_eop_descs;
+		alloc_rx_buff_failed += rx_ring->rx_stats.alloc_rx_buff_failed;
+		hw_csum_rx_good += rx_ring->rx_stats.csum_good_cnt;
+		hw_csum_rx_error += rx_ring->rx_stats.csum_err;
+	}
+	wx->non_eop_descs = non_eop_descs;
+	wx->alloc_rx_buff_failed = alloc_rx_buff_failed;
+	wx->hw_csum_rx_error = hw_csum_rx_error;
+	wx->hw_csum_rx_good = hw_csum_rx_good;
+
+	for (i = 0; i < wx->num_tx_queues; i++) {
+		struct wx_ring *tx_ring = wx->tx_ring[i];
+
+		restart_queue += tx_ring->tx_stats.restart_queue;
+		tx_busy += tx_ring->tx_stats.tx_busy;
+	}
+	wx->restart_queue = restart_queue;
+	wx->tx_busy = tx_busy;
+
+	hwstats->gprc += rd32(wx, WX_RDM_PKT_CNT);
+	hwstats->gptc += rd32(wx, WX_TDM_PKT_CNT);
+	hwstats->gorc += rd64(wx, WX_RDM_BYTE_CNT_LSB);
+	hwstats->gotc += rd64(wx, WX_TDM_BYTE_CNT_LSB);
+	hwstats->tpr += rd64(wx, WX_RX_FRAME_CNT_GOOD_BAD_L);
+	hwstats->tpt += rd64(wx, WX_TX_FRAME_CNT_GOOD_BAD_L);
+	hwstats->crcerrs += rd64(wx, WX_RX_CRC_ERROR_FRAMES_L);
+	hwstats->rlec += rd64(wx, WX_RX_LEN_ERROR_FRAMES_L);
+	hwstats->bprc += rd64(wx, WX_RX_BC_FRAMES_GOOD_L);
+	hwstats->bptc += rd64(wx, WX_TX_BC_FRAMES_GOOD_L);
+	hwstats->mprc += rd64(wx, WX_RX_MC_FRAMES_GOOD_L);
+	hwstats->mptc += rd64(wx, WX_TX_MC_FRAMES_GOOD_L);
+	hwstats->roc += rd32(wx, WX_RX_OVERSIZE_FRAMES_GOOD);
+	hwstats->ruc += rd32(wx, WX_RX_UNDERSIZE_FRAMES_GOOD);
+	hwstats->lxonoffrxc += rd32(wx, WX_MAC_LXONOFFRXC);
+	hwstats->lxontxc += rd32(wx, WX_RDB_LXONTXC);
+	hwstats->lxofftxc += rd32(wx, WX_RDB_LXOFFTXC);
+	hwstats->o2bgptc += rd32(wx, WX_TDM_OS2BMC_CNT);
+	hwstats->b2ospc += rd32(wx, WX_MNG_BMC2OS_CNT);
+	hwstats->o2bspc += rd32(wx, WX_MNG_OS2BMC_CNT);
+	hwstats->b2ogprc += rd32(wx, WX_RDM_BMC2OS_CNT);
+	hwstats->rdmdrop += rd32(wx, WX_RDM_DRP_PKT);
+
+	for (i = 0; i < wx->mac.max_rx_queues; i++)
+		hwstats->qmprc += rd32(wx, WX_PX_MPRC(i));
+}
+EXPORT_SYMBOL(wx_update_stats);
+
+/**
+ *  wx_clear_hw_cntrs - Generic clear hardware counters
+ *  @wx: board private structure
+ *
+ *  Clears all hardware statistics counters by reading them from the hardware
+ *  Statistics counters are clear on read.
+ **/
+void wx_clear_hw_cntrs(struct wx *wx)
+{
+	u16 i = 0;
+
+	for (i = 0; i < wx->mac.max_rx_queues; i++)
+		wr32(wx, WX_PX_MPRC(i), 0);
+
+	rd32(wx, WX_RDM_PKT_CNT);
+	rd32(wx, WX_TDM_PKT_CNT);
+	rd64(wx, WX_RDM_BYTE_CNT_LSB);
+	rd32(wx, WX_TDM_BYTE_CNT_LSB);
+	rd32(wx, WX_RDM_DRP_PKT);
+	rd32(wx, WX_RX_UNDERSIZE_FRAMES_GOOD);
+	rd32(wx, WX_RX_OVERSIZE_FRAMES_GOOD);
+	rd64(wx, WX_RX_FRAME_CNT_GOOD_BAD_L);
+	rd64(wx, WX_TX_FRAME_CNT_GOOD_BAD_L);
+	rd64(wx, WX_RX_MC_FRAMES_GOOD_L);
+	rd64(wx, WX_TX_MC_FRAMES_GOOD_L);
+	rd64(wx, WX_RX_BC_FRAMES_GOOD_L);
+	rd64(wx, WX_TX_BC_FRAMES_GOOD_L);
+	rd64(wx, WX_RX_CRC_ERROR_FRAMES_L);
+	rd64(wx, WX_RX_LEN_ERROR_FRAMES_L);
+	rd32(wx, WX_RDB_LXONTXC);
+	rd32(wx, WX_RDB_LXOFFTXC);
+	rd32(wx, WX_MAC_LXONOFFRXC);
+}
+EXPORT_SYMBOL(wx_clear_hw_cntrs);
 
 /**
  *  wx_start_hw - Prepare hardware for Tx/Rx
