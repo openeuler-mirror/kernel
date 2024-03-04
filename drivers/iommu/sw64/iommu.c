@@ -81,6 +81,21 @@ struct dma_domain {
 const struct iommu_ops sunway_iommu_ops;
 static const struct dma_map_ops sunway_dma_ops;
 
+static int __last_alias(struct pci_dev *pdev, u16 alias, void *data)
+{
+	*(u16 *)data = alias;
+	return 0;
+}
+
+static int get_alias(struct pci_dev *pdev)
+{
+	u16 pci_alias;
+
+	/* As far as I know, few devices are using more than 2 aliases. */
+	pci_for_each_dma_alias(pdev, __last_alias, &pci_alias);
+
+	return pci_alias;
+}
 
 /* flush helpers */
 static void piu_flush_all(struct pci_controller *hose)
@@ -125,15 +140,28 @@ void flush_ptlb_by_addr(struct sunway_iommu_domain *sdomain,
 	struct pci_controller *hose;
 	struct pci_dev *pdev;
 	struct sunway_iommu_dev *sdev_data;
+	unsigned long address;
+	u16 alias, bus_number, devfn;
 
 	list_for_each_entry(sdev_data, &sdomain->dev_list, list) {
 		pdev = sdev_data->pdev;
 		hose = pci_bus_to_pci_controller(pdev->bus);
 
-		flush_addr = (pdev->bus->number << 8)
+		address = (pdev->bus->number << 8)
 			    | pdev->devfn | (flush_addr << 16);
 		write_piu_ior0(hose->node, hose->index,
 				PTLB_FLUSHVADDR, flush_addr);
+
+		if (sdev_data->alias != sdev_data->devid) {
+			alias = sdev_data->alias;
+			bus_number = PCI_BUS_NUM(alias);
+			devfn = PCI_SLOT(alias) | PCI_FUNC(alias);
+
+			address = (bus_number << 8)
+				| devfn | (flush_addr << 16);
+			write_piu_ior0(hose->node, hose->index,
+				PTLB_FLUSHVADDR, flush_addr);
+		}
 	}
 }
 
@@ -297,44 +325,80 @@ static void device_flush_all(struct sunway_iommu_dev *sdata)
 	write_piu_ior0(hose->node, hose->index, DTLB_FLUSHDEV, sdata->devid);
 	write_piu_ior0(hose->node, hose->index, PTLB_FLUSHDEV, sdata->devid);
 	write_piu_ior0(hose->node, hose->index, PCACHE_FLUSHDEV, sdata->devid);
+
+	if (sdata->devid != sdata->alias) {
+		write_piu_ior0(hose->node, hose->index, DTLB_FLUSHDEV, sdata->alias);
+		write_piu_ior0(hose->node, hose->index, PTLB_FLUSHDEV, sdata->alias);
+		write_piu_ior0(hose->node, hose->index, PCACHE_FLUSHDEV, sdata->alias);
+	}
 }
 
 /* iommu_ops device attach/unattach helpers */
+static bool
+set_entry_by_devid(u16 devid,
+		   struct sunway_iommu_domain *sdomain,
+		   struct sunway_iommu *iommu)
+{
+	struct page *dt_page, *pt_page;
+	unsigned long *dte_l1, *dte_l2;
+	unsigned long dte_l1_val, dte_l2_base, dte_l2_val;
+	u16 bus_number, devfn;
+
+	bus_number = PCI_BUS_NUM(devid);
+	devfn = PCI_SLOT(devid) | PCI_FUNC(devid);
+
+	dte_l1 = iommu->iommu_dtbr + bus_number;
+	dte_l1_val = *dte_l1;
+
+	if (!dte_l1_val) {
+		/* Alloc a new level-2 device table page */
+		dt_page = alloc_pages_node(iommu->node, GFP_KERNEL | __GFP_ZERO,
+				get_order(PAGE_SIZE));
+
+		WARN_ON(!dt_page);
+		dte_l2_base = (unsigned long)page_address(dt_page);
+		dte_l1_val = (__pa(dte_l2_base) & PAGE_MASK) | SW64_IOMMU_ENTRY_VALID;
+		*dte_l1 = dte_l1_val;
+	}
+
+	if (!sdomain->pt_root) {
+		pt_page = alloc_pages_node(iommu->node, GFP_KERNEL | __GFP_ZERO, 0);
+		WARN_ON(!pt_page);
+		sdomain->pt_root = page_address(pt_page);
+	}
+
+	dte_l2 = __va(dte_l1_val & ~(SW64_IOMMU_ENTRY_VALID) & PAGE_MASK) + (devfn << 3);
+	dte_l2_val = (__pa(sdomain->pt_root) & PAGE_MASK) | SW64_IOMMU_ENTRY_VALID;
+	if (sdomain->type == IOMMU_DOMAIN_IDENTITY) {
+		dte_l2_val |= 0x1;
+		*dte_l2 = dte_l2_val;
+		return true;
+	}
+
+	*dte_l2 = dte_l2_val;
+	pr_debug("iommu: device with id %d added to domain: %d\n", devid, sdomain->id);
+
+	return false;
+}
+
 static void
 set_dte_entry(struct sunway_iommu_dev *sdev, struct sunway_iommu_domain *sdomain)
 {
 	struct sunway_iommu *iommu;
 	struct pci_dev *pdev;
-	struct page *page;
-	unsigned long *dte_l1, *dte_l2;
-	unsigned long dte_l1_val, dte_l2_base, dte_l2_val;
+	bool is_identity;
 
 	pdev = sdev->pdev;
 	if (pdev->hdr_type == PCI_HEADER_TYPE_BRIDGE)
 		return;
 
-	sdev->devid = PCI_DEVID(pdev->bus->number, pdev->devfn);
 	iommu = sdev->iommu;
-	dte_l1 = iommu->iommu_dtbr + (pdev->bus->number);
-	dte_l1_val = *dte_l1;
+	is_identity = set_entry_by_devid(sdev->devid, sdomain, iommu);
+	if (sdev->devid != sdev->alias)
+		is_identity = set_entry_by_devid(sdev->alias, sdomain, iommu);
 
-	if (!dte_l1_val) {
-		/* Alloc a new level-2 device table page */
-		page = alloc_pages_node(iommu->node, __GFP_ZERO,
-				get_order(PAGE_SIZE));
-		dte_l2_base = (unsigned long)page_address(page);
-		dte_l1_val = (__pa(dte_l2_base) & PAGE_MASK) | SW64_IOMMU_ENTRY_VALID;
-		*dte_l1 = dte_l1_val;
-	}
-
-	dte_l2 = __va(dte_l1_val & ~(SW64_IOMMU_ENTRY_VALID) & PAGE_MASK) + (pdev->devfn << 3);
-	BUG_ON(!sdomain->pt_root);
-	dte_l2_val = (__pa(sdomain->pt_root) & PAGE_MASK) | SW64_IOMMU_ENTRY_VALID;
-	if (sdomain->type == IOMMU_DOMAIN_IDENTITY) {
-		dte_l2_val |= 0x1;
+	if (is_identity)
 		sdev->passthrough = IDENTMAP_ALL;
-	}
-	*dte_l2 = dte_l2_val;
 
 	device_flush_all(sdev);
 }
@@ -1118,6 +1182,9 @@ static int iommu_init_device(struct device *dev)
 		return -ENOMEM;
 
 	pdev = to_pci_dev(dev);
+	sdev->devid = PCI_DEVID(pdev->bus->number, pdev->devfn);
+	sdev->alias = get_alias(pdev);
+
 	hose = pci_bus_to_pci_controller(pdev->bus);
 	iommu = hose->pci_iommu;
 	llist_add(&sdev->dev_data_list, &dev_data_list);
@@ -1165,6 +1232,9 @@ static struct iommu_device *sunway_iommu_probe_device(struct device *dev)
 	struct pci_controller *hose;
 	struct sunway_iommu *iommu;
 	int ret;
+
+	if (!dev_is_pci(dev))
+		return 0;
 
 	pdev = to_pci_dev(dev);
 	if (!pdev)
