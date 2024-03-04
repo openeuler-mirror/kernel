@@ -1596,7 +1596,7 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 
 static struct iommu_group *sunway_iommu_device_group(struct device *dev)
 {
-	return pci_device_group(dev);
+	return generic_device_group(dev);
 }
 
 static void iommu_uninit_device(struct device *dev)
@@ -1664,12 +1664,6 @@ static struct iommu_device *sunway_iommu_probe_device(struct device *dev)
 
 	pdev = to_pci_dev(dev);
 	if (!pdev)
-		return ERR_PTR(-ENODEV);
-
-	if (pdev->hdr_type == PCI_HEADER_TYPE_BRIDGE)
-		return ERR_PTR(-ENODEV);
-
-	if (pci_pcie_type(pdev) == PCI_EXP_TYPE_ROOT_PORT)
 		return ERR_PTR(-ENODEV);
 
 	hose = pci_bus_to_pci_controller(pdev->bus);

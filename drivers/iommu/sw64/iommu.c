@@ -1095,7 +1095,12 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 
 static struct iommu_group *sunway_iommu_device_group(struct device *dev)
 {
-	return pci_device_group(dev);
+	/*
+	 * As sw64 requires all DMA transactions to go through RC right now,
+	 * there is no need to consider group isolation yet. Thus, we decide
+	 * to use the one device/function per group strategy here.
+	 */
+	return generic_device_group(dev);
 }
 
 static int iommu_init_device(struct device *dev)
@@ -1163,12 +1168,6 @@ static struct iommu_device *sunway_iommu_probe_device(struct device *dev)
 
 	pdev = to_pci_dev(dev);
 	if (!pdev)
-		return ERR_PTR(-ENODEV);
-
-	if (pdev->hdr_type == PCI_HEADER_TYPE_BRIDGE)
-		return ERR_PTR(-ENODEV);
-
-	if (pci_pcie_type(pdev) == PCI_EXP_TYPE_ROOT_PORT)
 		return ERR_PTR(-ENODEV);
 
 	hose = pci_bus_to_pci_controller(pdev->bus);
