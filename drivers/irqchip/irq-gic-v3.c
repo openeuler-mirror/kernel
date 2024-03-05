@@ -140,16 +140,6 @@ static DEFINE_PER_CPU(bool, has_rss);
 /* Our default, arbitrary priority value. Linux only uses one anyway. */
 #define DEFAULT_PMR_VALUE	0xf0
 
-enum gic_intid_range {
-	SGI_RANGE,
-	PPI_RANGE,
-	SPI_RANGE,
-	EPPI_RANGE,
-	ESPI_RANGE,
-	LPI_RANGE,
-	__INVALID_RANGE__
-};
-
 #ifdef CONFIG_ARM64
 #include <asm/nmi.h>
 #include <asm/cpufeature.h>
@@ -165,25 +155,12 @@ static inline bool has_v3_3_nmi(void)
 }
 #endif
 
-static enum gic_intid_range __get_intid_range(irq_hw_number_t hwirq)
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+phys_addr_t get_gicr_paddr(int cpu)
 {
-	switch (hwirq) {
-	case 0 ... 15:
-		return SGI_RANGE;
-	case 16 ... 31:
-		return PPI_RANGE;
-	case 32 ... 1019:
-		return SPI_RANGE;
-	case EPPI_BASE_INTID ... (EPPI_BASE_INTID + 63):
-		return EPPI_RANGE;
-	case ESPI_BASE_INTID ... (ESPI_BASE_INTID + 1023):
-		return ESPI_RANGE;
-	case 8192 ... GENMASK(23, 0):
-		return LPI_RANGE;
-	default:
-		return __INVALID_RANGE__;
-	}
+	return (per_cpu_ptr(gic_data.rdists.rdist, cpu))->phys_base;
 }
+#endif
 
 static enum gic_intid_range get_intid_range(struct irq_data *d)
 {
@@ -1201,6 +1178,11 @@ static int __gic_update_rdist_properties(struct redist_region *region,
 		gic_data.rdists.has_rvpeid = false;
 	}
 
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+	/* HiSilicon implement: if GICv4.1 is supported, vtimer irqbypass is supported */
+	gic_data.rdists.has_vtimer = gic_data.rdists.has_rvpeid;
+#endif
+
 	gic_data.ppi_nr = min(GICR_TYPER_NR_PPIS(typer), gic_data.ppi_nr);
 
 	return 1;
@@ -2166,6 +2148,9 @@ static int __init gic_init_bases(phys_addr_t dist_phys_base,
 		gic_data.rdists.has_vlpis = true;
 		gic_data.rdists.has_direct_lpi = true;
 		gic_data.rdists.has_vpend_valid_dirty = true;
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+		gic_data.rdists.has_vtimer = false;
+#endif
 	}
 
 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
@@ -2345,6 +2330,9 @@ static void __init gic_of_setup_kvm_info(struct device_node *node)
 
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
+#endif
 	vgic_set_kvm_info(&gic_v3_kvm_info);
 }
 
@@ -2685,6 +2673,9 @@ static void __init gic_acpi_setup_kvm_info(void)
 
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
+#endif
 	vgic_set_kvm_info(&gic_v3_kvm_info);
 }
 

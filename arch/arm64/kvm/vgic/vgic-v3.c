@@ -571,6 +571,10 @@ int vgic_v3_map_resources(struct kvm *kvm)
 	if (kvm_vgic_global_state.has_gicv4_1)
 		vgic_v4_configure_vsgis(kvm);
 
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+	if (kvm_vgic_vtimer_irqbypass_support())
+		vgic_v4_configure_vtimer(kvm);
+#endif
 	return 0;
 }
 
@@ -653,6 +657,12 @@ int vgic_v3_probe(const struct gic_kvm_info *info)
 		kvm_info("GICv4%s support %sabled\n",
 			 kvm_vgic_global_state.has_gicv4_1 ? ".1" : "",
 			 gicv4_enable ? "en" : "dis");
+
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+		kvm_vgic_global_state.has_direct_vtimer = info->has_vtimer && gicv4_enable;
+		if (kvm_vgic_global_state.has_direct_vtimer)
+			kvm_info("vtimer-irqbypass support enabled at GIC level\n");
+#endif
 	}
 
 	kvm_vgic_global_state.vcpu_base = 0;
