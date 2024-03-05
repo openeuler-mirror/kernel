@@ -1027,3 +1027,37 @@ int resctrl_update_groups_config(struct rdtgroup *rdtgrp)
 
 	return ret;
 }
+
+int __resctrl_group_show_options(struct seq_file *seq)
+{
+	struct resctrl_resource *res;
+	struct raw_resctrl_resource *r;
+
+	res = mpam_resctrl_get_resource(RDT_RESOURCE_L3);
+	if (res && res->cdp_enable)
+		seq_puts(seq, ",cdpl3");
+
+	res = mpam_resctrl_get_resource(RDT_RESOURCE_L2);
+	if (res && res->cdp_enable)
+		seq_puts(seq, ",cdpl2");
+
+	r = mpam_get_raw_resctrl_resource(RDT_RESOURCE_L3);
+	if (r && r->ctrl_features[SCHEMA_PBM].enabled)
+		seq_puts(seq, ",caPbm");
+	if (r && r->ctrl_features[SCHEMA_MAX].enabled)
+		seq_puts(seq, ",caMax");
+	if (r && r->ctrl_features[SCHEMA_PRI].enabled)
+		seq_puts(seq, ",caPrio");
+
+	r = mpam_get_raw_resctrl_resource(RDT_RESOURCE_MC);
+	if (r && r->ctrl_features[SCHEMA_MAX].enabled)
+		seq_puts(seq, ",mbMax");
+	if (r && r->ctrl_features[SCHEMA_MIN].enabled)
+		seq_puts(seq, ",mbMin");
+	if (r && r->ctrl_features[SCHEMA_HDL].enabled)
+		seq_puts(seq, ",mbHdl");
+	if (r && r->ctrl_features[SCHEMA_PRI].enabled)
+		seq_puts(seq, ",mbPrio");
+
+	return 0;
+}

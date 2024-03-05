@@ -415,10 +415,7 @@ void resctrl_resource_reset(void);
 
 int resctrl_group_init_alloc(struct rdtgroup *rdtgrp);
 
-static inline int __resctrl_group_show_options(struct seq_file *seq)
-{
-	return 0;
-}
+int __resctrl_group_show_options(struct seq_file *seq);
 
 int resctrl_update_groups_config(struct rdtgroup *rdtgrp);
 
