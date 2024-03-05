@@ -810,8 +810,10 @@ void virtio_transport_release(struct vsock_sock *vsk)
 	}
 	release_sock(sk);
 
-	if (remove_sock)
+	if (remove_sock) {
+		sock_set_flag(sk, SOCK_DONE);
 		vsock_remove_sock(vsk);
+	}
 }
 EXPORT_SYMBOL_GPL(virtio_transport_release);
 
@@ -1037,8 +1039,8 @@ void virtio_transport_recv_pkt(struct virtio_vsock_pkt *pkt)
 
 	lock_sock(sk);
 
-	/* Check if sk has been released before lock_sock */
-	if (sk->sk_shutdown == SHUTDOWN_MASK) {
+	/* Check if sk has been closed before lock_sock */
+	if (sock_flag(sk, SOCK_DONE)) {
 		(void)virtio_transport_reset_no_sock(pkt);
 		release_sock(sk);
 		sock_put(sk);
