@@ -465,24 +465,19 @@ ENTRY(kimage_vaddr)
  * If we're fortunate enough to boot at EL2, ensure that the world is
  * sane before dropping to EL1.
  *
- * Since we cannot always rely on ERET synchronizing writes to sysregs (e.g. if
- * SCTLR_ELx.EOS is clear), we place an ISB prior to ERET.
- *
  * Returns either BOOT_CPU_MODE_EL1 or BOOT_CPU_MODE_EL2 in w0 if
  * booted in EL1 or EL2 respectively.
  */
 ENTRY(el2_setup)
+	msr	SPsel, #1			// We want to use SP_EL{1,2}
 	mrs	x0, CurrentEL
 	cmp	x0, #CurrentEL_EL2
 	b.eq	1f
 	mov_q	x0, (SCTLR_EL1_RES1 | ENDIAN_SET_EL1)
 	msr	sctlr_el1, x0
+	mov	w0, #BOOT_CPU_MODE_EL1		// This cpu booted in EL1
 	isb
-	mov_q	x0, INIT_PSTATE_EL1
-	msr	spsr_el1, x0
-	msr	elr_el1, lr
-	mov	w0, #BOOT_CPU_MODE_EL1
-	eret
+	ret
 
 1:	mov_q	x0, (SCTLR_EL2_RES1 | ENDIAN_SET_EL2)
 	msr	sctlr_el2, x0
@@ -593,12 +588,9 @@ set_hcr:
 
 	cbz	x2, install_el2_stub
 
+	mov	w0, #BOOT_CPU_MODE_EL2		// This CPU booted in EL2
 	isb
-	mov_q	x0, INIT_PSTATE_EL2
-	msr	spsr_el2, x0
-	msr	elr_el2, lr
-	mov	w0, #BOOT_CPU_MODE_EL2
-	eret
+	ret
 
 install_el2_stub:
 	/*
@@ -630,11 +622,12 @@ install_el2_stub:
 7:	adr_l	x0, __hyp_stub_vectors
 	msr	vbar_el2, x0
 
-	isb
-	mov	x0, #INIT_PSTATE_EL1
+	/* spsr */
+	mov	x0, #(PSR_F_BIT | PSR_I_BIT | PSR_A_BIT | PSR_D_BIT |\
+		      PSR_MODE_EL1h)
 	msr	spsr_el2, x0
 	msr	elr_el2, lr
-	mov	w0, #BOOT_CPU_MODE_EL2
+	mov	w0, #BOOT_CPU_MODE_EL2		// This CPU booted in EL2
 	eret
 ENDPROC(el2_setup)
 
