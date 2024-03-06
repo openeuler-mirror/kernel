@@ -1856,8 +1856,9 @@ static void bfq_remove_request(struct request_queue *q,
 
 }
 
-static bool bfq_bio_merge(struct request_queue *q, struct bio *bio)
+static bool bfq_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio)
 {
+	struct request_queue *q = hctx->queue;
 	struct bfq_data *bfqd = q->elevator->elevator_data;
 	struct request *free = NULL;
 	/*
