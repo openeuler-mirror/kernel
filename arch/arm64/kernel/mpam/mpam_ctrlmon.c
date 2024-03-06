@@ -229,6 +229,8 @@ static void resctrl_group_resync_domain_ctrls(struct rdtgroup *rdtgrp,
 		 * we should synchronize all child mon groups'
 		 * configuration from this ctrl rdtgrp
 		 */
+		resctrl_cdp_mpamid_map_val(rdtgrp->closid.intpartid,
+					   cfg[i].conf_type, closid.intpartid);
 		head = &rdtgrp->mon.crdtgrp_list;
 		list_for_each_entry(entry, head, mon.crdtgrp_list) {
 			resctrl_cdp_mpamid_map_val(entry->closid.reqpartid,
@@ -286,6 +288,8 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 		 * we should synchronize all child mon groups'
 		 * configuration from this ctrl rdtgrp
 		 */
+		resctrl_cdp_mpamid_map_val(rdtgrp->closid.intpartid,
+					   cfg[i].conf_type, closid.intpartid);
 		head = &rdtgrp->mon.crdtgrp_list;
 		list_for_each_entry(entry, head, mon.crdtgrp_list) {
 			resctrl_cdp_mpamid_map_val(entry->closid.reqpartid,
