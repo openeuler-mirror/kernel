@@ -170,6 +170,9 @@ static void iscsi_sw_tcp_data_ready(struct sock *sk)
 	struct iscsi_sw_tcp_conn *tcp_sw_conn;
 	struct iscsi_tcp_conn *tcp_conn;
 	struct iscsi_conn *conn;
+#ifdef KWORKER_NUMA_AFFINITY
+	int current_cpu;
+#endif
 
 	trace_sk_data_ready(sk);
 
@@ -180,6 +183,16 @@ static void iscsi_sw_tcp_data_ready(struct sock *sk)
 		return;
 	}
 	tcp_conn = conn->dd_data;
+
+#ifdef KWORKER_NUMA_AFFINITY
+	/* save intimate cpu when in softirq */
+	if (!sock_owned_by_user_nocheck(sk)) {
+		current_cpu = smp_processor_id();
+		if (conn->intimate_cpu != current_cpu)
+			conn->intimate_cpu = current_cpu;
+	}
+#endif
+
 	tcp_sw_conn = tcp_conn->dd_data;
 
 	if (tcp_sw_conn->queue_recv)
