@@ -294,4 +294,5 @@ int hclge_tm_set_tc_rate_limit(struct hclge_dev *hdev,
 u32 hclge_tm_rate_2_port_rate(u64 rate);
 void hclge_tm_vport_tc_info_update(struct hclge_vport *vport);
 int hclge_dscp_to_pri_map(struct hclge_dev *hdev);
+void hclge_reset_tc_config(struct hclge_dev *hdev);
 #endif
