@@ -162,7 +162,7 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	    !(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL))
 		return 0;
 
-	if (!(hr_dev->caps.cong_type & (1 << scc_attr->algo_type)))
+	if (!(hr_dev->caps.default_cong_type & (1 << scc_attr->algo_type)))
 		return 0;
 
 	return 0644;
