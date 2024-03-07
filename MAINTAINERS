@@ -23966,6 +23966,11 @@ S:	Maintained
 F:	drivers/pinctrl/zhaoxin/pinctrl-kx7000.c
 F:	drivers/pinctrl/zhaoxin/pinctrl-zhaoxin.c
 
+MUCSE Ethernet Controller drivers
+M:      Yibo Dong <dong100@mucse.com>
+S:      Maintained
+F:      drivers/net/ethernet/mucse/
+
 THE REST
 M:	Linus Torvalds <torvalds@linux-foundation.org>
 L:	linux-kernel@vger.kernel.org
