@@ -743,7 +743,7 @@ static int rdt_last_cmd_status_show(struct kernfs_open_file *of,
 	if (len)
 		seq_printf(seq, "%.*s", len, last_cmd_status_buf);
 	else
-		seq_puts(seq, "ok\n");
+		seq_puts(seq, "");
 	mutex_unlock(&rdtgroup_mutex);
 	return 0;
 }
