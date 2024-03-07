@@ -265,7 +265,8 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 		closid.intpartid = hw_closid_val(cfg[i].hw_closid);
 		for_each_ctrl_type(type) {
 			/* if ctrl group's config has changed, refresh it first. */
-			if (dom->ctrl_val[closid.intpartid] != cfg[i].new_ctrl) {
+			if (dom->ctrl_val[type][closid.intpartid] != cfg[i].new_ctrl[type] &&
+				cfg[i].ctrl_updated[type] == true) {
 				/*
 				 * duplicate ctrl group's configuration indexed
 				 * by intpartid from domain ctrl_val array.
@@ -400,6 +401,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 	struct mpam_resctrl_res *res;
 	enum resctrl_conf_type conf_type;
 	struct resctrl_staged_config *cfg;
+	enum resctrl_ctrl_type t;
 	char *tok, *resname;
 	u32 closid;
 	int ret = 0;
@@ -422,13 +424,17 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 	for_each_supported_resctrl_exports(res) {
 		r = &res->resctrl_res;
 
-		if (r->alloc_enabled) {
-			list_for_each_entry(dom, &r->domains, list) {
-				dom->have_new_ctrl = false;
-				for_each_conf_type(conf_type) {
-					cfg = &dom->staged_cfg[conf_type];
-					cfg->have_new_ctrl = false;
+		if (!r->alloc_enabled)
+			continue;
+
+		list_for_each_entry(dom, &r->domains, list) {
+			dom->have_new_ctrl = false;
+			for_each_conf_type(conf_type) {
+				cfg = &dom->staged_cfg[conf_type];
+				for_each_ctrl_type(t) {
+					cfg->ctrl_updated[t] = false;
 				}
+				cfg->have_new_ctrl = false;
 			}
 		}
 	}
@@ -908,11 +914,13 @@ static void rdtgroup_init_mba(struct resctrl_schema *s, u32 closid)
 		cfg = &d->staged_cfg[CDP_BOTH];
 		cfg->cdp_both_ctrl = s->cdp_mc_both;
 		cfg->new_ctrl[SCHEMA_COMM] = rr->ctrl_features[SCHEMA_COMM].default_ctrl;
+		cfg->ctrl_updated[SCHEMA_COMM] = true;
 		resctrl_cdp_mpamid_map(closid, CDP_BOTH, cfg->hw_closid);
 		cfg->have_new_ctrl = true;
 		/* Set extension ctrl default value, e.g. priority/hardlimit */
 		for_each_extend_ctrl_type(t) {
 			cfg->new_ctrl[t] = rr->ctrl_features[t].default_ctrl;
+			cfg->ctrl_updated[t] = true;
 		}
 	}
 }
@@ -965,6 +973,7 @@ static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
 		}
 
 		resctrl_cdp_mpamid_map(closid, conf_type, cfg->hw_closid);
+		cfg->ctrl_updated[SCHEMA_COMM] = true;
 		cfg->have_new_ctrl = true;
 
 		/*
@@ -974,6 +983,7 @@ static int rdtgroup_init_cat(struct resctrl_schema *s, u32 closid)
 		for_each_extend_ctrl_type(ctrl_type) {
 			cfg->new_ctrl[ctrl_type] =
 				rr->ctrl_features[ctrl_type].default_ctrl;
+			cfg->ctrl_updated[ctrl_type] = true;
 		}
 	}
 
