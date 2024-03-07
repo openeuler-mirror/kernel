@@ -29,4 +29,6 @@ source "lib/Kconfig"
 
 source "lib/Kconfig.debug"
 
+source "lib/Kconfig.openeuler"
+
 source "Documentation/Kconfig"

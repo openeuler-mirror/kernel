@@ -1,0 +1,8 @@
+config KWORKER_NUMA_AFFINITY
+	bool "kworker NUMA affinity"
+	default n
+	help
+	  This feature implements a set of adaptive mechanisms so that the
+	  workqueue can automatically identify the CPU of the soft interrupt
+	  and automatically schedule the workqueue to the corresponding NUMA
+	  node.

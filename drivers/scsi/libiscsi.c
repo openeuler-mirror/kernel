@@ -89,9 +89,20 @@ inline void iscsi_conn_queue_xmit(struct iscsi_conn *conn)
 {
 	struct Scsi_Host *shost = conn->session->host;
 	struct iscsi_host *ihost = shost_priv(shost);
+#ifdef KWORKER_NUMA_AFFINITY
+	int intimate_cpu = conn->intimate_cpu;
 
+	if (ihost->workq) {
+		/* we expect it to be excuted on the same numa of the intimate cpu */
+		if ((intimate_cpu >= 0) && cpu_possible(intimate_cpu))
+			queue_work_on(intimate_cpu, ihost->workq, &conn->xmitwork);
+		else
+			queue_work(ihost->workq, &conn->xmitwork);
+	}
+#else
 	if (ihost->workq)
 		queue_work(ihost->workq, &conn->xmitwork);
+#endif
 }
 EXPORT_SYMBOL_GPL(iscsi_conn_queue_xmit);
 
@@ -2907,9 +2918,15 @@ struct Scsi_Host *iscsi_host_alloc(const struct scsi_host_template *sht,
 	ihost = shost_priv(shost);
 
 	if (xmit_can_sleep) {
+#ifdef KWORKER_NUMA_AFFINITY
+		/* this kind of workqueue only support single work */
+		ihost->workq = alloc_ordered_workqueue("iscsi_q_%d", __WQ_LEGACY | WQ_MEM_RECLAIM |
+							__WQ_DYNAMIC, shost->host_no);
+#else
 		ihost->workq = alloc_workqueue("iscsi_q_%d",
-			WQ_SYSFS | __WQ_LEGACY | WQ_MEM_RECLAIM | WQ_UNBOUND,
-			1, shost->host_no);
+				WQ_SYSFS | __WQ_LEGACY | WQ_MEM_RECLAIM | WQ_UNBOUND,
+				1, shost->host_no);
+#endif
 		if (!ihost->workq)
 			goto free_host;
 	}
@@ -3190,6 +3207,9 @@ iscsi_conn_setup(struct iscsi_cls_session *cls_session, int dd_size,
 	conn->c_stage = ISCSI_CONN_INITIAL_STAGE;
 	conn->id = conn_idx;
 	conn->exp_statsn = 0;
+#ifdef KWORKER_NUMA_AFFINITY
+	conn->intimate_cpu = -1;
+#endif
 
 	timer_setup(&conn->transport_timer, iscsi_check_transport_timeouts, 0);
 
