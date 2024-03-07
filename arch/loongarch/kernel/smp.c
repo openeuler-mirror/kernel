@@ -304,8 +304,7 @@ int loongson_cpu_disable(void)
 	set_cpu_online(cpu, false);
 	calculate_cpu_foreign_map();
 	local_irq_save(flags);
-	irq_migrate_all_off_this_cpu();
-	clear_csr_ecfg(ECFG0_IM);
+	fixup_irqs();
 	local_irq_restore(flags);
 	local_flush_tlb_all();
 
