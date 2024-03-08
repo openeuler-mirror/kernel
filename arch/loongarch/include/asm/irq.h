@@ -120,6 +120,7 @@ extern struct fwnode_handle *pch_lpc_handle;
 extern struct fwnode_handle *pch_pic_handle[MAX_IO_PICS];
 
 extern irqreturn_t loongson_ipi_interrupt(int irq, void *dev);
+extern void fixup_irqs(void);
 
 #include <asm-generic/irq.h>
 

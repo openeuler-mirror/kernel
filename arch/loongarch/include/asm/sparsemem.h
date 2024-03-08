@@ -8,7 +8,7 @@
  * SECTION_SIZE_BITS		2^N: how big each section will be
  * MAX_PHYSMEM_BITS		2^N: how much memory we can have in that space
  */
-#define SECTION_SIZE_BITS	29 /* 2^29 = Largest Huge Page Size */
+#define SECTION_SIZE_BITS	28
 #define MAX_PHYSMEM_BITS	48
 
 #ifdef CONFIG_SPARSEMEM_VMEMMAP

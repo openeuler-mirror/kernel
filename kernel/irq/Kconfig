@@ -148,5 +148,5 @@ config GENERIC_IRQ_MULTI_HANDLER
 # Do not even think of enabling this on any new platform
 config DEPRECATED_IRQ_CPU_ONOFFLINE
 	bool
-	depends on CAVIUM_OCTEON_SOC
-	default CAVIUM_OCTEON_SOC
+	depends on CAVIUM_OCTEON_SOC || LOONGARCH
+	default CAVIUM_OCTEON_SOC || LOONGARCH
