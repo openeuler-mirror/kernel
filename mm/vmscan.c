@@ -2791,7 +2791,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 			nr_deactivate, nr_rotated, sc->priority, file);
 }
 
-static unsigned int reclaim_folio_list(struct list_head *folio_list,
+unsigned int reclaim_folio_list(struct list_head *folio_list,
 				      struct pglist_data *pgdat)
 {
 	struct reclaim_stat dummy_stat;
