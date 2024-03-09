@@ -60,7 +60,7 @@ static inline pgprot_t arch_vm_get_page_prot(unsigned long vm_flags)
 		prot |= PTE_ATTRINDX(MT_NORMAL_TAGGED);
 
 	if (vm_flags & VM_PBHA_BIT0)
-		prot |= PROT_PBHA_BIT0;  /* select PBHA BIT 0 for pbha */
+		prot |= PTE_PBHA0;
 
 	return __pgprot(prot);
 }

@@ -13,7 +13,7 @@
 #define PROT_SEM	0x8		/* page may be used for atomic ops */
 /*			0x10		   reserved for arch-specific use */
 /*			0x20		   reserved for arch-specific use */
-/*			0x40		   reserved for arch-specific use */
+/*			0x1000		   reserved for arch-specific use */
 #define PROT_NONE	0x0		/* page can not be accessed */
 #define PROT_GROWSDOWN	0x01000000	/* mprotect flag: extend change to start of growsdown vma */
 #define PROT_GROWSUP	0x02000000	/* mprotect flag: extend change to end of growsup vma */
