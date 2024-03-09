@@ -166,13 +166,11 @@ clear_status:
 	clear_bit(TSSE_DEV_STATUS_STARTED, &tdev->status);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(tsse_start_dev);
 
 int tsse_prepare_restart_dev(struct tsse_dev *tdev)
 {
 	return tsse_stop_dev(tdev, false);
 }
-EXPORT_SYMBOL_GPL(tsse_prepare_restart_dev);
 
 void tsse_devmgr_rm_dev(struct tsse_dev *tdev)
 {
@@ -180,7 +178,6 @@ void tsse_devmgr_rm_dev(struct tsse_dev *tdev)
 	tsse_dev_free_irq_vectors(tdev);
 	msleep(300);
 }
-EXPORT_SYMBOL_GPL(tsse_devmgr_rm_dev);
 
 int tsse_devmgr_add_dev(struct tsse_dev *tdev)
 {
@@ -197,7 +194,6 @@ int tsse_devmgr_add_dev(struct tsse_dev *tdev)
 	}
 	return ret;
 }
-EXPORT_SYMBOL_GPL(tsse_devmgr_add_dev);
 
 struct list_head *tsse_devmgr_get_head(void)
 {

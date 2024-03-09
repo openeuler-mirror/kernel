@@ -11,18 +11,25 @@
 #include <linux/moduleparam.h>
 #include <linux/pci.h>
 #include <linux/pci-ats.h>
+#include <linux/sysfs.h>
 
 #include "tsse_dev_drv.h"
 #include "tsse_vuart.h"
 #include "tsse_ipc.h"
 #include "tsse_fw_service.h"
 
+#define CLUSTER_SLOT_CONFIG_OFFSET 0x5780000
+#define QPAIR_SETTING_OFFSET 0x50000
+#define BAR_START 2
+#define BAR_END 4
+
 static DEFINE_IDA(tsse_ida);
 
 static inline void tsse_qpair_enable_pf(struct tsse_dev *tdev, bool enable)
 {
 	writel(enable ? 1 : 0,
-	       TSSE_DEV_BARS(tdev)[2].virt_addr + 0x5780000 + 0x50000);
+	       TSSE_DEV_BARS(tdev)[2].virt_addr +
+		   CLUSTER_SLOT_CONFIG_OFFSET + QPAIR_SETTING_OFFSET);
 }
 static int tsse_sriov_disable(struct tsse_dev *tdev)
 {
@@ -107,6 +114,39 @@ static int tsse_sriov_configure(struct pci_dev *pdev, int num_vfs_param)
 	return num_vfs_param;
 }
 
+/**
+ * This function will be called when user writes string to /sys/bus/pci/devices/.../tsse_image_load.
+ * Driver will always loads /lib/firmware/tsse_firmware.bin.
+ * @dev: device
+ * @attr: device attribute
+ * @buf: string that user writes
+ * @count: string length that user writes
+ * Return: the number of bytes used from the buffer, here it is just the count argument.
+*/
+static ssize_t tsse_image_load_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct pci_dev *pdev = NULL;
+	struct tsse_dev *tdev = NULL;
+
+	pdev = container_of(dev, struct pci_dev, dev);
+	if (pdev)
+		tdev = pci_to_tsse_dev(pdev);
+	if (buf && count && tdev) {
+		tsse_dev_info(tdev, "receive command to load firmware %s\n", TSSE_FIRMWARE);
+		if (!tsse_fw_load(pdev, TSSE_FIRMWARE, &tdev->fw)) {
+			if (!get_firmware_version(tdev->fw, tdev->fw_version))
+				tdev->fw_version_exist = true;
+			if (tsse_fw_manual_load_ipc(pdev))
+				dev_err(&pdev->dev, "%s %d: firmware update failed\n",
+					__func__, __LINE__);
+		}
+	}
+	return count;
+}
+
+DEVICE_ATTR_WO(tsse_image_load);
+
 static int device_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	int status = 0;
@@ -163,7 +203,7 @@ static int device_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_err;
 	}
 
-	for (bar = 2; bar < 4;) {
+	for (bar = BAR_START; bar < BAR_END;) {
 		TSSE_DEV_BARS(tdev)[bar].addr = pci_resource_start(pdev, bar);
 		TSSE_DEV_BARS(tdev)[bar].size = pci_resource_len(pdev, bar);
 		TSSE_DEV_BARS(tdev)
@@ -219,9 +259,13 @@ static int device_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		status = -EFAULT;
 		goto out_err_port_init;
 	}
+
+	tdev->fw_version_exist = false;
 	/* Its result not break driver init process */
-	if (!tsse_fw_load(pdev))
-		get_firmware_version((char *)tdev->fw->data, tdev->fw->size, tdev->fw_version);
+	if (!tsse_fw_load(pdev, TSSE_FIRMWARE, &tdev->fw)) {
+		if (!get_firmware_version(tdev->fw, tdev->fw_version))
+			tdev->fw_version_exist = true;
+	}
 
 	if (tsse_ipc_init(pdev)) {
 		dev_err(&pdev->dev,
@@ -231,13 +275,22 @@ static int device_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_err_ipc;
 	}
 
+	if (sysfs_create_file(&pdev->dev.kobj, &dev_attr_tsse_image_load.attr)) {
+		dev_err(&pdev->dev,
+			"%s %d: sysfs_create_file failed for tsse image load.\n",
+			__func__, __LINE__);
+		status = -EFAULT;
+		goto out_err_image_load;
+	}
+
 	tsse_dev_info(tdev, "successful\n");
 
 	pci_read_config_dword(pdev, 0x720, &tmp_val);
 	tsse_dev_dbg(tdev, "the value of FILTER_MASK_2_REG is 0x%x\n", tmp_val);
 
 	return 0;
-
+out_err_image_load:
+	tsse_ipc_deinit(tdev);
 out_err_ipc:
 	vuart_uninit_port(pdev);
 out_err_port_init:
@@ -261,6 +314,7 @@ static void device_remove(struct pci_dev *pdev)
 		release_firmware(tdev->fw);
 		tdev->fw = NULL;
 	}
+	sysfs_remove_file(&pdev->dev.kobj, &dev_attr_tsse_image_load.attr);
 	tsse_ipc_deinit(tdev);
 	vuart_uninit_port(pdev);
 	tsse_devmgr_rm_dev(tdev);
