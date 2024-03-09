@@ -3967,6 +3967,18 @@ static ssize_t pid_tag_write(struct file *file, const char __user *buf,
 
 	sched_settag(tsk, tag);
 
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	tag = tag < SCHED_GRID_QOS_TASK_LEVEL_HIGHEST ?
+		SCHED_GRID_QOS_TASK_LEVEL_HIGHEST : tag;
+	tag = tag >= SCHED_GRID_QOS_TASK_LEVEL_MAX ?
+		SCHED_GRID_QOS_TASK_LEVEL_DEFAULT : tag;
+
+	if (tsk->grid_qos != NULL &&
+	    tsk->grid_qos->stat.set_class_lvl != NULL)
+		err = tsk->grid_qos->stat.set_class_lvl(&tsk->grid_qos->stat,
+							(unsigned int)tag);
+#endif
+
 out:
 	put_task_struct(tsk);
 	return err < 0 ? err : count;
