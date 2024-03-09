@@ -477,7 +477,9 @@ static void qedf_update_link_speed(struct qedf_ctx *qedf,
 		lport->link_supported_speeds |= FC_PORTSPEED_50GBIT;
 	if (link->supported_caps & SUPPORTED_100000baseKR4_Full)
 		lport->link_supported_speeds |= FC_PORTSPEED_100GBIT;
-	fc_host_supported_speeds(lport->host) = lport->link_supported_speeds;
+	if (lport->host && lport->host->shost_data)
+		fc_host_supported_speeds(lport->host) =
+			lport->link_supported_speeds;
 }
 
 static void qedf_link_update(void *dev, struct qed_link_output *link)
