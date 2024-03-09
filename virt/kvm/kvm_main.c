@@ -662,6 +662,7 @@ static __always_inline int kvm_handle_hva_range_no_flush(struct mmu_notifier *mn
 
 	return __kvm_handle_hva_range(kvm, &range);
 }
+#endif /* KVM_ARCH_WANT_NEW_MMU_NOTIFIER_APIS */
 
 static void kvm_inc_notifier_count(struct kvm *kvm, unsigned long start,
 				   unsigned long end)
@@ -691,7 +692,6 @@ static void kvm_inc_notifier_count(struct kvm *kvm, unsigned long start,
 			max(kvm->mmu_notifier_range_end, end);
 	}
 }
-#endif /* KVM_ARCH_WANT_NEW_MMU_NOTIFIER_APIS */
 
 static void kvm_mmu_notifier_change_pte(struct mmu_notifier *mn,
 					struct mm_struct *mm,
@@ -748,6 +748,9 @@ static int kvm_mmu_notifier_invalidate_range_start(struct mmu_notifier *mn,
 #else
 	idx = srcu_read_lock(&kvm->srcu);
 	KVM_MMU_LOCK(kvm);
+
+	kvm_inc_notifier_count(kvm, range->start, range->end);
+
 	need_tlb_flush = kvm_unmap_hva_range(kvm, range->start, range->end,
 					     range->flags);
 	/* we've to flush the tlb before the pages can be freed */
