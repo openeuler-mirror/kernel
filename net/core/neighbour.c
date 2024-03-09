@@ -855,7 +855,9 @@ static void neigh_periodic_work(struct work_struct *work)
 			if (refcount_read(&n->refcnt) == 1 &&
 			    (state == NUD_FAILED ||
 			     time_after(jiffies, n->used + NEIGH_VAR(n->parms, GC_STALETIME)))) {
-				*np = n->next;
+				rcu_assign_pointer(*np,
+						rcu_dereference_protected(n->next,
+							lockdep_is_held(&tbl->lock)));
 				n->dead = 1;
 				write_unlock(&n->lock);
 				neigh_cleanup_and_release(n);
