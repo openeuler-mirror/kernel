@@ -174,29 +174,52 @@ static inline bool dev_xmit_complete(int rc)
 	}
 
 struct net_device_stats {
-	NET_DEV_STAT(rx_packets);
-	NET_DEV_STAT(tx_packets);
-	NET_DEV_STAT(rx_bytes);
-	NET_DEV_STAT(tx_bytes);
-	NET_DEV_STAT(rx_errors);
-	NET_DEV_STAT(tx_errors);
-	NET_DEV_STAT(rx_dropped);
-	NET_DEV_STAT(tx_dropped);
-	NET_DEV_STAT(multicast);
-	NET_DEV_STAT(collisions);
-	NET_DEV_STAT(rx_length_errors);
-	NET_DEV_STAT(rx_over_errors);
-	NET_DEV_STAT(rx_crc_errors);
-	NET_DEV_STAT(rx_frame_errors);
-	NET_DEV_STAT(rx_fifo_errors);
-	NET_DEV_STAT(rx_missed_errors);
-	NET_DEV_STAT(tx_aborted_errors);
-	NET_DEV_STAT(tx_carrier_errors);
-	NET_DEV_STAT(tx_fifo_errors);
-	NET_DEV_STAT(tx_heartbeat_errors);
-	NET_DEV_STAT(tx_window_errors);
-	NET_DEV_STAT(rx_compressed);
-	NET_DEV_STAT(tx_compressed);
+	KABI_REPLACE(unsigned long rx_packets,
+			NET_DEV_STAT(rx_packets))
+	KABI_REPLACE(unsigned long tx_packets,
+			NET_DEV_STAT(tx_packets))
+	KABI_REPLACE(unsigned long rx_bytes,
+			NET_DEV_STAT(rx_bytes))
+	KABI_REPLACE(unsigned long tx_bytes,
+			NET_DEV_STAT(tx_bytes))
+	KABI_REPLACE(unsigned long rx_errors,
+			NET_DEV_STAT(rx_errors))
+	KABI_REPLACE(unsigned long tx_errors,
+			NET_DEV_STAT(tx_errors))
+	KABI_REPLACE(unsigned long rx_dropped,
+			NET_DEV_STAT(rx_dropped))
+	KABI_REPLACE(unsigned long tx_dropped,
+			NET_DEV_STAT(tx_dropped))
+	KABI_REPLACE(unsigned long multicast,
+			NET_DEV_STAT(multicast))
+	KABI_REPLACE(unsigned long collisions,
+			NET_DEV_STAT(collisions))
+	KABI_REPLACE(unsigned long rx_length_errors,
+			NET_DEV_STAT(rx_length_errors))
+	KABI_REPLACE(unsigned long rx_over_errors,
+			NET_DEV_STAT(rx_over_errors))
+	KABI_REPLACE(unsigned long rx_crc_errors,
+			NET_DEV_STAT(rx_crc_errors))
+	KABI_REPLACE(unsigned long rx_frame_errors,
+			NET_DEV_STAT(rx_frame_errors))
+	KABI_REPLACE(unsigned long rx_fifo_errors,
+			NET_DEV_STAT(rx_fifo_errors))
+	KABI_REPLACE(unsigned long rx_missed_errors,
+			NET_DEV_STAT(rx_missed_errors))
+	KABI_REPLACE(unsigned long tx_aborted_errors,
+			NET_DEV_STAT(tx_aborted_errors))
+	KABI_REPLACE(unsigned long tx_carrier_errors,
+			NET_DEV_STAT(tx_carrier_errors))
+	KABI_REPLACE(unsigned long tx_fifo_errors,
+			NET_DEV_STAT(tx_fifo_errors))
+	KABI_REPLACE(unsigned long tx_heartbeat_errors,
+			NET_DEV_STAT(tx_heartbeat_errors))
+	KABI_REPLACE(unsigned long tx_window_errors,
+			NET_DEV_STAT(tx_window_errors))
+	KABI_REPLACE(unsigned long rx_compressed,
+			NET_DEV_STAT(rx_compressed))
+	KABI_REPLACE(unsigned long tx_compressed,
+			NET_DEV_STAT(tx_compressed))
 };
 #undef NET_DEV_STAT
 
