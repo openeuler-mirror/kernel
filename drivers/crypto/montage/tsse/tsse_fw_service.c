@@ -23,7 +23,7 @@
 #define SEARCH_PATTERN "MT_CFG_BUILD_VERSION_DETAIL"
 #define SEARCH_PATTERN_LEN 28
 
-int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
+static int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 {
 	u8 *h2d;
 	u32 int_reg;
@@ -48,7 +48,7 @@ int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 	return 0;
 }
 
-void fw_free(void *msg_t)
+static void fw_free(void *msg_t)
 {
 	struct tsse_msg *tssemsg;
 	struct ipc_msg *payload;

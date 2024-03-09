@@ -14,7 +14,7 @@
 #include "tsse_dev.h"
 #include "tsse_service.h"
 
-struct tsse_msg *get_msginf(void __iomem *d2h)
+static struct tsse_msg *get_msginf(void __iomem *d2h)
 {
 	uint32_t u_len;
 	struct tsse_msg *tssemsg;
@@ -38,7 +38,7 @@ struct tsse_msg *get_msginf(void __iomem *d2h)
 	return tssemsg;
 }
 
-void ipc_recieve_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
+static void ipc_recieve_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 {
 	uint32_t u_len = msg->header.i_len - sizeof(struct ipc_header);
 	uint32_t *msg_data = NULL;
@@ -50,7 +50,7 @@ void ipc_recieve_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 
 }
 
-int msg_rout(struct tsse_ipc *tsseipc, struct tsse_msg *tssemsg)
+static int msg_rout(struct tsse_ipc *tsseipc, struct tsse_msg *tssemsg)
 {
 	int ret = 0;
 	struct ipc_msg *msg;
@@ -100,26 +100,14 @@ void notify_device(struct tsse_ipc *tsseipc)
 }
 EXPORT_SYMBOL(notify_device);
 
-void ipc_send_msg(struct tsse_ipc *tsseipc, struct ipc_data *msg)
-{
-	u8 *h2d = NULL;
-
-	h2d = (u8 *)(tsseipc->virt_addr + HOST2MAIN_IPC_OFFSET);
-	memcpy_toio(h2d, msg, sizeof(struct ipc_header));
-	memcpy_toio(h2d + sizeof(struct ipc_header), (u32 *)msg->i_ptr,
-		    msg->header.i_len - sizeof(struct ipc_header));
-	return;
-
-}
-
-void ipc_hw_init(struct tsse_ipc *hw_ipc)
+static void ipc_hw_init(struct tsse_ipc *hw_ipc)
 {
 	writel(0x1, hw_ipc->virt_addr + MAIN2HOST_INTR_ENABLE_OFFSET);
 	writel(0x0, hw_ipc->virt_addr + HOST2MAIN_INTR_SET_OFFSET);
 	writel(0x0, hw_ipc->virt_addr + MAIN2HOST_INTR_SET_OFFSET);
 }
 
-int ipc_init_msg(struct tsse_ipc *tsseipc)
+static int ipc_init_msg(struct tsse_ipc *tsseipc)
 {
 	u8 *h2d;
 	u32 int_reg;

@@ -34,12 +34,6 @@ static inline void tsse_list_add(struct list_head *new, struct list_head *prev,
 	WRITE_ONCE(prev->next, new);
 }
 
-static inline void tsse_list_add_tail(struct list_head *new,
-				      struct list_head *head)
-{
-	tsse_list_add(new, head->prev, head);
-}
-
 static int tsse_dev_pf_get(struct tsse_dev *vf_tsse_dev)
 {
 	int ret = 0;
@@ -104,7 +98,7 @@ void tsse_dev_put(struct tsse_dev *tdev)
 	}
 }
 
-int tsse_stop_dev(struct tsse_dev *tdev, bool busy_exit)
+static int tsse_stop_dev(struct tsse_dev *tdev, bool busy_exit)
 {
 	int times, max_retry = 150;
 
@@ -209,21 +203,3 @@ struct list_head *tsse_devmgr_get_head(void)
 {
 	return &tsse_dev_table;
 }
-
-struct tsse_dev *get_tssedev(int id)
-{
-	struct list_head *itr;
-	struct tsse_dev *ptr;
-
-	mutex_lock(&tsse_dev_table_lock);
-
-	list_for_each(itr, &tsse_dev_table) {
-		ptr = list_entry(itr, struct tsse_dev, list);
-		break;
-	}
-
-	mutex_unlock(&tsse_dev_table_lock);
-
-	return ptr;
-}
-EXPORT_SYMBOL_GPL(get_tssedev);
