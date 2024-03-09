@@ -170,6 +170,7 @@ static inline bool dev_xmit_complete(int rc)
 	}
 
 struct net_device_stats {
+#ifndef __GENKSYMS__
 	NET_DEV_STAT(rx_packets);
 	NET_DEV_STAT(tx_packets);
 	NET_DEV_STAT(rx_bytes);
@@ -193,6 +194,31 @@ struct net_device_stats {
 	NET_DEV_STAT(tx_window_errors);
 	NET_DEV_STAT(rx_compressed);
 	NET_DEV_STAT(tx_compressed);
+#else
+	unsigned long	rx_packets;
+	unsigned long	tx_packets;
+	unsigned long	rx_bytes;
+	unsigned long	tx_bytes;
+	unsigned long	rx_errors;
+	unsigned long	tx_errors;
+	unsigned long	rx_dropped;
+	unsigned long	tx_dropped;
+	unsigned long	multicast;
+	unsigned long	collisions;
+	unsigned long	rx_length_errors;
+	unsigned long	rx_over_errors;
+	unsigned long	rx_crc_errors;
+	unsigned long	rx_frame_errors;
+	unsigned long	rx_fifo_errors;
+	unsigned long	rx_missed_errors;
+	unsigned long	tx_aborted_errors;
+	unsigned long	tx_carrier_errors;
+	unsigned long	tx_fifo_errors;
+	unsigned long	tx_heartbeat_errors;
+	unsigned long	tx_window_errors;
+	unsigned long	rx_compressed;
+	unsigned long	tx_compressed;
+#endif
 };
 #undef NET_DEV_STAT
 
