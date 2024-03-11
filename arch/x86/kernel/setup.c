@@ -55,6 +55,7 @@
 #include <asm/unwind.h>
 #include <asm/vsyscall.h>
 #include <linux/vmalloc.h>
+#include <asm/csv.h>
 
 /*
  * max_low_pfn_mapped: highest directly mapped pfn < 4 GB
@@ -1217,6 +1218,16 @@ void __init setup_arch(char **cmdline_p)
 	early_acpi_boot_init();
 
 	initmem_init();
+
+	/*
+	 * Try to reserve contiguous memory to support CSV3. The
+	 * contiguous memory will be reserved iff running on bare metal
+	 * and support CSV3 feature.
+	 * Note: If CONFIG_HYGON_CSV is not set, early_csv_reserve_mem
+	 * will do nothing.
+	 */
+	early_csv_reserve_mem();
+
 	dma_contiguous_reserve(max_pfn_mapped << PAGE_SHIFT);
 
 	if (boot_cpu_has(X86_FEATURE_GBPAGES))

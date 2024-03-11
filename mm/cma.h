@@ -33,7 +33,11 @@ struct cma {
 	bool reserve_pages_on_error;
 };
 
+#ifdef CONFIG_HYGON_CSV
+extern struct cma *cma_areas;
+#else
 extern struct cma cma_areas[MAX_CMA_AREAS];
+#endif
 extern unsigned cma_area_count;
 
 static inline unsigned long cma_bitmap_maxno(struct cma *cma)
