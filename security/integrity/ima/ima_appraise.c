@@ -648,7 +648,8 @@ int ima_appraise_measurement(enum ima_hooks func,
 		 * are signed or found in a digest list (immutable)
 		 */
 		if (func == DIGEST_LIST_CHECK || ima_current_is_parser()) {
-			if (xattr_value->type == EVM_IMA_XATTR_DIGSIG)
+			if (try_modsig ||
+			    xattr_value->type == EVM_IMA_XATTR_DIGSIG)
 				break;
 			if (found_digest &&
 			    ima_digest_is_immutable(found_digest))

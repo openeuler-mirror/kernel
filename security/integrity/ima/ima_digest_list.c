@@ -24,6 +24,7 @@
 #include <linux/xattr.h>
 #include <linux/sched/mm.h>
 #include <linux/magic.h>
+#include <linux/module_signature.h>
 
 #include "ima.h"
 #include "ima_digest_list.h"
@@ -152,6 +153,25 @@ static void ima_del_digest_data_entry(u8 *digest, enum hash_algo algo,
 	kfree(d);
 }
 
+static size_t ima_get_compact_list_sig_len(loff_t size, void *buf)
+{
+	const size_t marker_len = strlen(MODULE_SIG_STRING);
+	const struct module_signature *sig;
+	const void *p;
+
+	if (size <= marker_len + sizeof(*sig))
+		return 0;
+
+	p = buf + size - marker_len;
+
+	if (memcmp(p, MODULE_SIG_STRING, marker_len))
+		return 0;
+
+	sig = (const struct module_signature *)(p - sizeof(*sig));
+
+	return be32_to_cpu(sig->sig_len) + marker_len + sizeof(*sig);
+}
+
 /***********************
  * Compact list parser *
  ***********************/
@@ -172,9 +192,18 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 	struct compact_list_hdr *hdr;
 	size_t digest_len;
 	int ret = 0, i;
+	ssize_t sig_len;
 
 	if (!(ima_digest_list_actions & ima_policy_flag))
 		return -EACCES;
+
+	sig_len = ima_get_compact_list_sig_len(size, buf);
+	if (sig_len >= size) {
+		pr_err("compact list, invalid signature\n");
+		return -EINVAL;
+	}
+
+	bufendp -= sig_len;
 
 	while (bufp < bufendp) {
 		if (bufp + sizeof(*hdr) > bufendp) {
@@ -235,7 +264,7 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 		}
 	}
 
-	return bufp - buf;
+	return bufp - buf + sig_len;
 }
 
 /***************************
@@ -269,8 +298,7 @@ void ima_check_measured_appraised(struct file *file)
 	}
 
 	if ((ima_digest_list_actions & IMA_APPRAISE) &&
-	    (!(iint->flags & IMA_APPRAISED) ||
-	    !test_bit(IMA_DIGSIG, &iint->atomic_flags))) {
+	    (!(iint->flags & IMA_APPRAISED))) {
 		pr_err("%s not appraised, disabling digest lists lookup for appraisal\n",
 			file_dentry(file)->d_name.name);
 		ima_digest_list_actions &= ~IMA_APPRAISE;
