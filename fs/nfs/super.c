@@ -2069,6 +2069,15 @@ static int nfs23_validate_mount_data(void *options,
 			       sizeof(mntfh->data) - mntfh->size);
 
 		/*
+		 * for proto == XPRT_TRANSPORT_UDP, which is what uses
+		 * to_exponential, implying shift: limit the shift value
+		 * to BITS_PER_LONG (majortimeo is unsigned long)
+		 */
+		if (!(data->flags & NFS_MOUNT_TCP)) /* this will be UDP */
+			if (data->retrans >= 64) /* shift value is too large */
+				goto out_invalid_data;
+
+		/*
 		 * Translate to nfs_parsed_mount_data, which nfs_fill_super
 		 * can deal with.
 		 */
@@ -2167,6 +2176,10 @@ out_no_address:
 
 out_invalid_fh:
 	dfprintk(MOUNT, "NFS: invalid root filehandle\n");
+	return -EINVAL;
+
+out_invalid_data:
+	dfprintk(MOUNT, "NFS: invalid binary mount data\n");
 	return -EINVAL;
 }
 
