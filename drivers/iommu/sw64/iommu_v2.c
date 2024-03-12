@@ -147,10 +147,10 @@ void flush_ptlb_by_addr(struct sunway_iommu_domain *sdomain, unsigned long flush
 		address = (pdev->bus->number << 8)
 				| pdev->devfn | (flush_addr << 16);
 		write_piu_ior0(hose->node, hose->index,
-				PTLB_FLUSHVADDR, flush_addr);
+				PTLB_FLUSHVADDR, address);
 
-		if (sdev_data->alias != sdev_data->devid) {
-			alias = sdev_data->alias;
+		if (sdev->alias != sdev->devid) {
+			alias = sdev->alias;
 			bus_number = PCI_BUS_NUM(alias);
 			devfn = PCI_SLOT(alias) | PCI_FUNC(alias);
 
@@ -1699,8 +1699,8 @@ static int iommu_init_device(struct device *dev)
 		return -ENOMEM;
 
 	pdev = to_pci_dev(dev);
-	sdev_data->devid = PCI_DEVID(pdev->bus->number, pdev->devfn);
-	sdev_data->alias = get_alias(pdev);
+	sdev->devid = PCI_DEVID(pdev->bus->number, pdev->devfn);
+	sdev->alias = get_alias(pdev);
 
 	hose = pci_bus_to_pci_controller(pdev->bus);
 	iommu = hose->pci_iommu;
