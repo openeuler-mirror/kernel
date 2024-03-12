@@ -485,7 +485,10 @@ static void free_all_child_rdtgrp(struct resctrl_group *rdtgrp)
 		/* rmid may not be used */
 		rmid_free(sentry->mon.rmid);
 		list_del(&sentry->mon.crdtgrp_list);
-		rdtgroup_remove(sentry);
+		if (atomic_read(&sentry->waitcount) != 0)
+			sentry->flags = RDT_DELETED;
+		else
+			rdtgroup_remove(sentry);
 	}
 }
 
@@ -519,7 +522,10 @@ static void rmdir_all_sub(void)
 
 		kernfs_remove(rdtgrp->kn);
 		list_del(&rdtgrp->resctrl_group_list);
-		rdtgroup_remove(rdtgrp);
+		if (atomic_read(&rdtgrp->waitcount) != 0)
+			rdtgrp->flags = RDT_DELETED;
+		else
+			rdtgroup_remove(rdtgrp);
 	}
 	/* Notify online CPUs to update per cpu storage and PQR_ASSOC MSR */
 	update_closid_rmid(cpu_online_mask, &resctrl_group_default);
