@@ -78,9 +78,11 @@ static int mpam_resctrl_setup_domain(unsigned int cpu,
 		}
 	}
 
-	/* cpu with unknown exported component? */
-	if (WARN_ON_ONCE(!comp))
+	if (!comp) {
+		pr_info_once("There is no msc corresponding to CPU%d.\n", cpu);
 		return 0;
+	}
+
 
 	dom = kzalloc_node(sizeof(*dom), GFP_KERNEL, cpu_to_node(cpu));
 	if (!dom)
@@ -168,9 +170,10 @@ int mpam_resctrl_cpu_offline(unsigned int cpu)
 	for_each_supported_resctrl_exports(res) {
 		 d = resctrl_get_domain_from_cpu(cpu, &res->resctrl_res);
 
-		/* cpu with unknown exported component? */
-		if (WARN_ON_ONCE(!d))
+		if (!d) {
+			pr_info_once("There is no msc corresponding to CPU%d.\n", cpu);
 			continue;
+		}
 
 		cpumask_clear_cpu(cpu, &d->cpu_mask);
 
