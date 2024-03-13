@@ -550,26 +550,22 @@ static int find_rdtgrp_allocable_rmid(struct resctrl_group *rdtgrp)
 	struct list_head *head;
 
 	prgrp = rdtgrp->mon.parent;
-	if (prgrp == &resctrl_group_default) {
-		rmid = rmid_alloc(-1);
-		if (rmid < 0)
-			return rmid;
-	} else {
-		do {
-			rmid = rmid_alloc(prgrp->closid.reqpartid);
+
+	do {
+		rmid = rmid_alloc(prgrp->closid.reqpartid);
+		if (rmid >= 0)
+			break;
+
+		head = &prgrp->mon.crdtgrp_list;
+		list_for_each_entry(entry, head, mon.crdtgrp_list) {
+			if (entry == rdtgrp)
+				continue;
+
+			rmid = rmid_alloc(entry->closid.reqpartid);
 			if (rmid >= 0)
 				break;
-
-			head = &prgrp->mon.crdtgrp_list;
-			list_for_each_entry(entry, head, mon.crdtgrp_list) {
-				if (entry == rdtgrp)
-					continue;
-				rmid = rmid_alloc(entry->closid.reqpartid);
-				if (rmid >= 0)
-					break;
-			}
-		} while (0);
-	}
+		}
+	} while (0);
 
 	if (rmid < 0)
 		rmid = rmid_alloc(-1);
