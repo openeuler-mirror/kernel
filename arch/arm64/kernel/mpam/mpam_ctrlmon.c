@@ -818,7 +818,6 @@ static int resctrl_group_mkdir_info_resdir(struct resctrl_resource *r,
 	if (IS_ERR(kn_subdir))
 		return PTR_ERR(kn_subdir);
 
-	kernfs_get(kn_subdir);
 	ret = resctrl_group_kn_set_ugid(kn_subdir);
 	if (ret)
 		return ret;
@@ -844,7 +843,6 @@ int resctrl_group_create_info_dir(struct kernfs_node *parent_kn,
 	*kn_info = kernfs_create_dir(parent_kn, "info", parent_kn->mode, NULL);
 	if (IS_ERR(*kn_info))
 		return PTR_ERR(*kn_info);
-	kernfs_get(*kn_info);
 
 	ret = resctrl_group_add_files(*kn_info, RF_TOP_INFO);
 	if (ret)
@@ -878,12 +876,6 @@ int resctrl_group_create_info_dir(struct kernfs_node *parent_kn,
 				goto out_destroy;
 		}
 	}
-
-	/*
-	 m This extra ref will be put in kernfs_remove() and guarantees
-	 * that @rdtgrp->kn is always accessible.
-	 */
-	kernfs_get(*kn_info);
 
 	ret = resctrl_group_kn_set_ugid(*kn_info);
 	if (ret)
