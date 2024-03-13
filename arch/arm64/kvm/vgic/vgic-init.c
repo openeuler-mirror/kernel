@@ -52,9 +52,21 @@
 void kvm_vgic_early_init(struct kvm *kvm)
 {
 	struct vgic_dist *dist = &kvm->arch.vgic;
+#ifdef CONFIG_KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
+	raw_spinlock_t *lpi_lock;
+	int i;
+#endif
 
 	INIT_LIST_HEAD(&dist->lpi_list_head);
+#ifdef CONFIG_KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
+	for (i = 0; i < LPI_TRANS_CACHES_NUM; i++) {
+		lpi_lock = &dist->lpi_translation_cache[i].lpi_cache_lock;
+		INIT_LIST_HEAD(&dist->lpi_translation_cache[i].lpi_cache);
+		raw_spin_lock_init(lpi_lock);
+	}
+#else
 	INIT_LIST_HEAD(&dist->lpi_translation_cache);
+#endif
 	raw_spin_lock_init(&dist->lpi_list_lock);
 #ifdef CONFIG_VIRT_PLAT_DEV
 	INIT_LIST_HEAD(&dist->sdev_list_head);

@@ -64,6 +64,11 @@ struct vtimer_info {
 u16 kvm_vgic_get_vcpu_vpeid(struct kvm_vcpu *vcpu);
 #endif
 
+#ifdef CONFIG_KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
+/* The number of lpi translation cache lists */
+#define LPI_TRANS_CACHES_NUM 8
+#endif
+
 enum vgic_type {
 	VGIC_V2,		/* Good ol' GICv2 */
 	VGIC_V3,		/* New fancy GICv3 */
@@ -225,6 +230,14 @@ struct vgic_io_device {
 	struct kvm_io_device dev;
 };
 
+#ifdef CONFIG_KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
+struct its_trans_cache {
+	/* LPI translation cache */
+	struct list_head	lpi_cache;
+	raw_spinlock_t		lpi_cache_lock;
+};
+#endif
+
 struct vgic_its {
 	/* The base address of the ITS control register frame */
 	gpa_t			vgic_its_base;
@@ -323,8 +336,13 @@ struct vgic_dist {
 	struct list_head	lpi_list_head;
 	int			lpi_list_count;
 
+#ifdef CONFIG_KVM_ARM_MULTI_LPI_TRANSLATE_CACHE
+	/* LPI translation cache array */
+	struct its_trans_cache lpi_translation_cache[LPI_TRANS_CACHES_NUM];
+#else
 	/* LPI translation cache */
 	struct list_head	lpi_translation_cache;
+#endif
 
 	/* used by vgic-debug */
 	struct vgic_state_iter *iter;
