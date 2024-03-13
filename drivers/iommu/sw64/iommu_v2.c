@@ -61,6 +61,7 @@
 #define PAGE_8G_OFFSET_MASK	((1UL << PAGE_8G_SHIFT) - 1)
 #define PAGE_512M_OFFSET_MASK	((1UL << PAGE_512M_SHIFT) - 1)
 #define PAGE_8M_OFFSET_MASK	((1UL << PAGE_8M_SHIFT) - 1)
+#define MAX_IOVA_WIDTH		(1UL << 42)
 
 /* IOMMU Exceptional Status */
 enum exceptype {
@@ -1196,8 +1197,14 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	 * and pci device BAR, check should be introduced manually
 	 * to avoid VFIO trying to map pci config space.
 	 */
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return 0;
+
+	/* IOMMU v2 supports 42 bit mapped address width*/
+	if (iova >= MAX_IOVA_WIDTH) {
+		pr_err("IOMMU cannot map provided address: %lx\n", iova);
+		return -EFAULT;
+	}
 
 	ret = sunway_iommu_map_page(sdomain, iova, paddr, page_size);
 
@@ -1212,8 +1219,14 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	size_t unmap_size;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return page_size;
+
+	/* IOMMU v2 supports 42 bit mapped address width*/
+	if (iova >= MAX_IOVA_WIDTH) {
+		pr_err("IOMMU cannot map provided address: %lx\n", iova);
+		return -EFAULT;
+	}
 
 	unmap_size = sunway_iommu_unmap_page(sdomain, iova, page_size);
 
