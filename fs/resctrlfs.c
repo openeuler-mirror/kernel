@@ -212,8 +212,7 @@ void resctrl_group_kn_unlock(struct kernfs_node *kn)
 	if (atomic_dec_and_test(&rdtgrp->waitcount) &&
 	    (rdtgrp->flags & RDT_DELETED)) {
 		kernfs_unbreak_active_protection(kn);
-		kernfs_put(rdtgrp->kn);
-		kfree(rdtgrp);
+		rdtgroup_remove(rdtgrp);
 	} else {
 		kernfs_unbreak_active_protection(kn);
 	}
@@ -234,12 +233,6 @@ mongroup_create_dir(struct kernfs_node *parent_kn, struct resctrl_group *prgrp,
 
 	if (dest_kn)
 		*dest_kn = kn;
-
-	/*
-	 * This extra ref will be put in kernfs_remove() and guarantees
-	 * that @rdtgrp->kn is always accessible.
-	 */
-	kernfs_get(kn);
 
 	ret = resctrl_group_kn_set_ugid(kn);
 	if (ret)
@@ -373,7 +366,6 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 			dentry = ERR_PTR(ret);
 			goto out_info;
 		}
-		kernfs_get(kn_mongrp);
 
 		ret = mkdir_mondata_all_prepare(&resctrl_group_default);
 		if (ret < 0) {
@@ -386,7 +378,7 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 			dentry = ERR_PTR(ret);
 			goto out_mongrp;
 		}
-		kernfs_get(kn_mondata);
+
 		resctrl_group_default.mon.mon_data_kn = kn_mondata;
 	}
 
@@ -474,7 +466,10 @@ static void free_all_child_rdtgrp(struct resctrl_group *rdtgrp)
 		/* rmid may not be used */
 		rmid_free(sentry->mon.rmid);
 		list_del(&sentry->mon.crdtgrp_list);
-		kfree(sentry);
+		if (atomic_read(&sentry->waitcount) != 0)
+			sentry->flags = RDT_DELETED;
+		else
+			rdtgroup_remove(sentry);
 	}
 }
 
@@ -508,7 +503,10 @@ static void rmdir_all_sub(void)
 
 		kernfs_remove(rdtgrp->kn);
 		list_del(&rdtgrp->resctrl_group_list);
-		kfree(rdtgrp);
+		if (atomic_read(&rdtgrp->waitcount) != 0)
+			rdtgrp->flags = RDT_DELETED;
+		else
+			rdtgroup_remove(rdtgrp);
 	}
 	/* Notify online CPUs to update per cpu storage and PQR_ASSOC MSR */
 	update_closid_rmid(cpu_online_mask, &resctrl_group_default);
@@ -645,7 +643,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	 * kernfs_remove() will drop the reference count on "kn" which
 	 * will free it. But we still need it to stick around for the
 	 * resctrl_group_kn_unlock(kn} call below. Take one extra reference
-	 * here, which will be dropped inside resctrl_group_kn_unlock().
+	 * here, which will be dropped inside rdtgroup_remove().
 	 */
 	kernfs_get(kn);
 
@@ -685,6 +683,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 out_prepare_clean:
 	mkdir_mondata_all_prepare_clean(rdtgrp);
 out_destroy:
+	kernfs_put(rdtgrp->kn);
 	kernfs_remove(rdtgrp->kn);
 out_free_rmid:
 	rmid_free(rdtgrp->mon.rmid);
@@ -701,7 +700,7 @@ out_unlock:
 static void mkdir_resctrl_prepare_clean(struct resctrl_group *rgrp)
 {
 	kernfs_remove(rgrp->kn);
-	kfree(rgrp);
+	rdtgroup_remove(rgrp);
 }
 
 /*
@@ -866,11 +865,6 @@ static int resctrl_group_rmdir_mon(struct kernfs_node *kn, struct resctrl_group 
 {
 	resctrl_group_rm_mon(rdtgrp, tmpmask);
 
-	/*
-	 * one extra hold on this, will drop when we kfree(rdtgrp)
-	 * in resctrl_group_kn_unlock()
-	 */
-	kernfs_get(kn);
 	kernfs_remove(rdtgrp->kn);
 
 	return 0;
@@ -919,11 +913,6 @@ static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group
 {
 	resctrl_group_rm_ctrl(rdtgrp, tmpmask);
 
-	/*
-	 * one extra hold on this, will drop when we kfree(rdtgrp)
-	 * in resctrl_group_kn_unlock()
-	 */
-	kernfs_get(kn);
 	kernfs_remove(rdtgrp->kn);
 
 	return 0;
