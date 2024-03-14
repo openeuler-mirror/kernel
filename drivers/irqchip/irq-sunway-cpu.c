@@ -392,18 +392,6 @@ static __init int cintc_acpi_init(union acpi_subtable_headers *header,
 	acpi_table_parse_madt(ACPI_MADT_TYPE_SW_MSIC,
 			msic_parse_madt, 0);
 
-	/**
-	 * After initializing MSIC, it's time to enable MSI interrupts
-	 * for boot core. For other SMP cores, if present, this
-	 * initialization is performed during SMP startup.
-	 */
-	if (!virtual) {
-		sw64_write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI0_INTEN);
-		sw64_write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI1_INTEN);
-		sw64_write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI2_INTEN);
-		sw64_write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI3_INTEN);
-	}
-
 	return 0;
 }
 
