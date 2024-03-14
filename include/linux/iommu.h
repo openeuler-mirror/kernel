@@ -643,6 +643,7 @@ struct iommu_ops {
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
+	KABI_RESERVE(9)
 };
 
 /**
