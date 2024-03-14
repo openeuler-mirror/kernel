@@ -127,12 +127,12 @@ static int udma_dfx_seg_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
 				     sizeof(mpt_entry), UDMA_CMD_QUERY_MPT);
 	if (ret) {
-		dev_err(udma_dev->dev, "query seg context failed, ret = %d\n",
-			ret);
+		dev_err(udma_dev->dev, "query seg context failed, ret = %d\n", ret);
 		return ret;
 	}
 
 	udma_dfx_seg_print(udma_dev, seg_key, &mpt_entry);
+
 	return ret;
 }
 
@@ -166,8 +166,7 @@ static void udma_dfx_query_sccc(struct udma_dev *udma_dev, uint32_t sccc_id)
 				     udma_dev->caps.scc_ctx_sz,
 				     UDMA_CMD_QUERY_SCCC);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"query sccc failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query sccc failed, ret = %d\n", ret);
 		kfree(sccc);
 		return;
 	}
@@ -205,8 +204,7 @@ static int udma_dfx_tp_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	ret = udma_dfx_query_context(udma_dev, tpn, &qp_context,
 				     sizeof(qp_context), UDMA_CMD_QUERY_QPC);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"query qp context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query qp context failed, ret = %d\n", ret);
 		return ret;
 	}
 
@@ -262,12 +260,12 @@ static int udma_dfx_jfr_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	ret = udma_dfx_query_context(udma_dev, jfrn, &jfr_context,
 				     sizeof(jfr_context), UDMA_CMD_QUERY_SRQC);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"query jfr context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query jfr context failed, ret = %d\n", ret);
 		return ret;
 	}
 
 	udma_dfx_jfrc_print(udma_dev, jfrn, &jfr_context);
+
 	return 0;
 }
 
@@ -310,13 +308,13 @@ static int udma_dfx_jfc_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	ret = udma_dfx_query_context(udma_dev, jfcn, &jfc_context,
 				     sizeof(jfc_context), UDMA_CMD_QUERY_CQC);
 	if (ret) {
-		dev_info(udma_dev->dev,
-			 "query jfc context fail, ret = %d, jfcn = %u\n",
+		dev_info(udma_dev->dev, "query jfc context fail, ret = %d, jfcn = %u\n",
 			 ret, jfcn);
 		return ret;
 	}
 
 	udma_dfx_jfcc_print(udma_dev, jfcn, &jfc_context);
+
 	return 0;
 }
 
@@ -325,10 +323,12 @@ int udma_find_dfx_dev(struct udma_dev *udma_dev, int *num)
 	int i;
 
 	for (i = 0; i < MAX_UDMA_DEV; i++) {
+		read_lock(&g_udma_dfx_list[i].rwlock);
 		if (g_udma_dfx_list[i].dev == udma_dev) {
 			*num = i;
 			return 0;
 		}
+		read_unlock(&g_udma_dfx_list[i].rwlock);
 	}
 
 	dev_err(udma_dev->dev, "failed to find dfx device!\n");
@@ -344,9 +344,8 @@ static int udma_query_res_tp(struct udma_dev *udma_dev,
 	int ret;
 
 	if (val->len < sizeof(struct ubcore_res_tp_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
+		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
+			(uint32_t)key->type, val->len);
 		val->len = sizeof(struct ubcore_res_tp_val);
 		return -EINVAL;
 	}
@@ -354,8 +353,7 @@ static int udma_query_res_tp(struct udma_dev *udma_dev,
 	ret = udma_dfx_query_context(udma_dev, key->key, &qp_context,
 				     sizeof(qp_context), UDMA_CMD_QUERY_QPC);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"query qp context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query qp context failed, ret = %d\n", ret);
 		return ret;
 	}
 
@@ -386,9 +384,8 @@ static int udma_query_res_jfs(struct udma_dev *udma_dev,
 	int i;
 
 	if (val->len < sizeof(struct ubcore_res_jfs_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
+		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
+			(uint32_t)key->type, val->len);
 		val->len = sizeof(struct ubcore_res_jfs_val);
 		return -EINVAL;
 	}
@@ -405,10 +402,12 @@ static int udma_query_res_jfs(struct udma_dev *udma_dev,
 			jfs->depth = jfs_now->depth;
 			jfs->priority = jfs_now->pri;
 			jfs->jfc_id = jfs_now->jfc_id;
+			read_unlock(&g_udma_dfx_list[i].rwlock);
 			val->len = sizeof(struct ubcore_res_jfs_val);
 			return 0;
 		}
 	}
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	dev_err(udma_dev->dev, "failed to find jfs!\n");
 	return -EINVAL;
@@ -447,14 +446,16 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 	list_for_each_entry(jfr_now,
 			    &g_udma_dfx_list[i].dfx->jfr_list->node, node) {
 		if (jfr_now->jfr_id == key->key) {
+			jfr->jfc_id = jfr_now->jfc_id;
+			read_unlock(&g_udma_dfx_list[i].rwlock);
 			jfr->jfr_id = key->key;
 			jfr->state = udma_reg_read(&jfr_context, SRQC_SRQ_ST);
 			jfr->depth = 1U << udma_reg_read(&jfr_context, SRQC_SHIFT);
-			jfr->jfc_id = jfr_now->jfc_id;
 			val->len = sizeof(struct ubcore_res_jfr_val);
 			return 0;
 		}
 	}
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	dev_err(udma_dev->dev, "failed to find jfr!\n");
 	return -EINVAL;
@@ -491,10 +492,12 @@ static int udma_query_res_jetty(struct udma_dev *udma_dev,
 			jetty->jfr_id = jetty_now->jfr_id;
 			jetty->send_jfc_id  = jetty_now->jfc_s_id;
 			jetty->recv_jfc_id  = jetty_now->jfc_r_id;
+			read_unlock(&g_udma_dfx_list[i].rwlock);
 			val->len = sizeof(struct ubcore_res_jetty_val);
 			return 0;
 		}
 	}
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	dev_err(udma_dev->dev, "failed to find jetty!\n");
 	return -EINVAL;
@@ -509,9 +512,8 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 	int ret;
 
 	if (val->len < sizeof(struct ubcore_res_jfc_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
+		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
+			(uint32_t)key->type, val->len);
 		val->len = sizeof(struct ubcore_res_jfc_val);
 		return -EINVAL;
 	}
@@ -519,8 +521,7 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 	ret = udma_dfx_query_context(udma_dev, key->key, &jfc_context,
 				     sizeof(jfc_context), UDMA_CMD_QUERY_CQC);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"query jfc context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query jfc context failed, ret = %d\n", ret);
 		return ret;
 	}
 
@@ -533,26 +534,19 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 	return 0;
 }
 
-static int udma_query_res_seg(struct udma_dev *udma_dev,
-			      struct ubcore_res_key *key,
+static int udma_query_res_seg(struct udma_dev *udma_dev, struct ubcore_res_key *key,
 			      struct ubcore_res_val *val)
 {
 	struct ubcore_res_seg_val *seg = (struct ubcore_res_seg_val *)val->addr;
 	struct udma_mpt_entry mpt_entry;
+	uint32_t mpt_index, token_id;
 	struct seg_list *seg_now;
 	union ubcore_eid eid;
-	uint32_t mpt_index;
-	uint32_t token_id;
 	int ret, i;
 
-	ret = udma_find_dfx_dev(udma_dev, &i);
-	if (ret)
-		return ret;
-
 	if (val->len < sizeof(struct ubcore_res_seg_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
+		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
+			(uint32_t)key->type, val->len);
 		val->len = sizeof(struct ubcore_res_seg_val);
 		return -EINVAL;
 	}
@@ -561,13 +555,16 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
 				     sizeof(mpt_entry), UDMA_CMD_QUERY_MPT);
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"query seg context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query seg context failed, ret = %d\n", ret);
 		return ret;
 	}
 
 	token_id = udma_reg_read(&mpt_entry, MPT_LKEY);
 	seg->seg_cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
 
 	spin_lock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
 	list_for_each_entry(seg_now, &g_udma_dfx_list[i].dfx->seg_list->node, node) {
@@ -578,6 +575,7 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 		}
 	}
 	spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	if (seg->seg_cnt == 0) {
 		dev_err(udma_dev->dev, "failed to query seg, token_id = %u.\n", token_id);
@@ -590,11 +588,9 @@ static int udma_query_res_seg(struct udma_dev *udma_dev,
 
 	seg->seg_list->token_id = token_id;
 	seg->seg_list->len = udma_reg_read(&mpt_entry, MPT_LEN_L) |
-			     udma_reg_read(&mpt_entry, MPT_LEN_H) <<
-			     MPT_LEN_H_SHIFT;
+			     udma_reg_read(&mpt_entry, MPT_LEN_H) << MPT_LEN_H_SHIFT;
 	seg->seg_list->ubva.va = udma_reg_read(&mpt_entry, MPT_VA_L) |
-				 udma_reg_read(&mpt_entry, MPT_VA_H) <<
-				 MPT_VA_H_SHIFT;
+				 udma_reg_read(&mpt_entry, MPT_VA_H) << MPT_VA_H_SHIFT;
 	seg->seg_list->ubva.eid = eid;
 
 	return 0;
@@ -849,13 +845,11 @@ static int udma_query_res_dev(struct udma_dev *udma_dev,
 			      struct ubcore_res_val *val)
 {
 	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	int ret;
-	int i;
+	int ret, i;
 
 	if (val->len < sizeof(struct ubcore_res_dev_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
+		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
+			(uint32_t)key->type, val->len);
 		val->len = sizeof(struct ubcore_res_dev_val);
 		return -EINVAL;
 	}
@@ -866,27 +860,27 @@ static int udma_query_res_dev(struct udma_dev *udma_dev,
 
 	ret = udma_query_res_dev_tp(udma_dev, key, val, i);
 	if (ret)
-		return ret;
+		goto err_query_res;
 
 	ret = udma_query_res_dev_jfs(udma_dev, key, val, i);
 	if (ret)
-		return ret;
+		goto err_query_res;
 
 	ret = udma_query_res_dev_jfr(udma_dev, key, val, i);
 	if (ret)
-		return ret;
+		goto err_query_res;
 
 	ret = udma_query_res_dev_jetty(udma_dev, key, val, i);
 	if (ret)
-		return ret;
+		goto err_query_res;
 
 	ret = udma_query_res_dev_jfc(udma_dev, key, val, i);
 	if (ret)
-		return ret;
+		goto err_query_res;
 
 	ret = udma_query_res_dev_seg(udma_dev, key, val, i);
 	if (ret)
-		return ret;
+		goto err_query_res;
 
 	dev->tpg_cnt = 0;
 	dev->utp_cnt = 0;
@@ -894,7 +888,10 @@ static int udma_query_res_dev(struct udma_dev *udma_dev,
 	dev->jetty_group_cnt = 0;
 	dev->rc_cnt = 0;
 
-	return 0;
+err_query_res:
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	return ret;
 }
 
 static int udma_check_key_type(struct udma_dev *udma_dev,
@@ -909,8 +906,7 @@ static int udma_check_key_type(struct udma_dev *udma_dev,
 	      key->type == UBCORE_RES_KEY_UTP ||
 	      key->type == UBCORE_RES_KEY_JETTY_GROUP;
 	if (ret) {
-		dev_err(udma_dev->dev,
-			"Key type: %u invalid.\n", (uint32_t)key->type);
+		dev_err(udma_dev->dev, "key type: %u invalid.\n", (uint32_t)key->type);
 		return -EINVAL;
 	}
 
@@ -1041,8 +1037,10 @@ struct udma_dfx_ops udma_dfx_ops = {
 	.del_sysfs = udma_dfx_del_sysfs,
 };
 
-static void list_lock_init(struct udma_dfx_info *dfx)
+static void list_lock_init(struct udma_dfx_info *dfx, int num)
 {
+	rwlock_init(&g_udma_dfx_list[num].rwlock);
+
 	spin_lock_init(&dfx->tpn_list->node_lock);
 	INIT_LIST_HEAD(&dfx->tpn_list->node);
 	spin_lock_init(&dfx->jfs_list->node_lock);
@@ -1088,7 +1086,7 @@ static int udma_dfx_list_init(int num)
 	if (!dfx->seg_list)
 		goto jfc_id_list_alloc_failed;
 
-	list_lock_init(dfx);
+	list_lock_init(dfx, num);
 
 	return 0;
 
@@ -1111,8 +1109,7 @@ tpn_list_alloc_failed:
 do {									\
 	lock = &dfx->name##_list->node_lock;				\
 	spin_lock_irqsave(lock, flags);					\
-	list_for_each_entry_safe(name##_id, name##_tmp,			\
-				 &dfx->name##_list->node, node) {	\
+	list_for_each_entry_safe(name##_id, name##_tmp,	&dfx->name##_list->node, node) {	\
 		list_del(&name##_id->node);				\
 		kfree(name##_id);					\
 	}								\
@@ -1203,8 +1200,7 @@ static int udma_dfx_chrdev_create(struct udma_dev *udma_dev)
 
 	major = register_chrdev(0, DFX_DEVICE_NAME, &chr_ops);
 	if (major < 0) {
-		dev_err(udma_dev->dev,
-			"udma dfx register the character device failed\n ");
+		dev_err(udma_dev->dev, "udma dfx register the character device failed\n");
 		ret = major;
 		goto device_register_failed;
 	}
@@ -1254,8 +1250,7 @@ int udma_dfx_init(struct udma_dev *udma_dev)
 	if (!udma_dev_count) {
 		ret = udma_dfx_chrdev_create(udma_dev);
 		if (ret) {
-			dev_err(udma_dev->dev,
-				"udma dfx create chr device failed.\n");
+			dev_err(udma_dev->dev, "udma dfx create chr device failed.\n");
 			goto chrdev_create_failed;
 		}
 		dev_info(drv_device, "udma dfx create chr device success.\n");
@@ -1283,9 +1278,9 @@ static void udma_dfx_remove_udma_device(struct udma_dev *udma_dev)
 	int i;
 
 	for (i = 0; i < MAX_UDMA_DEV; i++) {
+		write_lock(&g_udma_dfx_list[i].rwlock);
 		if (g_udma_dfx_list[i].dev && g_udma_dfx_list[i].dev == udma_dev) {
-			dev_info(drv_device,
-				 "remove udma device (%s) from udma dfx\n",
+			dev_info(drv_device, "remove udma device (%s) from udma dfx\n",
 				 g_udma_dfx_list[i].dfx->dev.dev_name);
 			g_udma_dfx_list[i].dfx->ops->del_sysfs(g_udma_dfx_list[i].dfx);
 			udma_dfx_list_free(i);
@@ -1294,8 +1289,10 @@ static void udma_dfx_remove_udma_device(struct udma_dev *udma_dev)
 			g_udma_dfx_list[i].dfx = NULL;
 			g_udma_dfx_list[i].dev = NULL;
 			udma_dev_count--;
+			write_unlock(&g_udma_dfx_list[i].rwlock);
 			break;
 		}
+		write_unlock(&g_udma_dfx_list[i].rwlock);
 	}
 }
 

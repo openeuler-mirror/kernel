@@ -325,8 +325,10 @@ static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 		return;
 
 	jetty_new = kzalloc(sizeof(struct jetty_list), GFP_KERNEL);
-	if (jetty_new == NULL)
+	if (!jetty_new) {
+		read_unlock(&g_udma_dfx_list[i].rwlock);
 		return;
+	}
 
 	lock = &g_udma_dfx_list[i].dfx->jetty_list->node_lock;
 	spin_lock_irqsave(lock, flags);
@@ -356,11 +358,13 @@ static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	list_add(&jetty_new->node, &g_udma_dfx_list[i].dfx->jetty_list->node);
 	++g_udma_dfx_list[i].dfx->jetty_cnt;
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	return;
 
 found:
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 	kfree(jetty_new);
 }
 
@@ -386,11 +390,11 @@ static void delete_jetty_id(struct udma_dev *udma_dev,
 			list_del(&jetty_now->node);
 			--g_udma_dfx_list[i].dfx->jetty_cnt;
 			kfree(jetty_now);
-			spin_unlock_irqrestore(lock, flags);
-			return;
+			break;
 		}
 	}
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
 static void free_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)

@@ -84,8 +84,10 @@ static int alloc_seg_key(struct udma_dev *udma_dev, struct udma_seg *seg)
 	}
 
 	return 0;
+
 err_free_bitmap:
 	ida_free(&seg_ida->ida, id);
+
 	return err;
 }
 
@@ -245,26 +247,26 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 	int ret;
 	int i;
 
-	ret = udma_find_dfx_dev(udma_dev, &i);
-	if (ret)
-		return;
-
-	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table,
-					      seg->ctx->eid_index);
+	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table, seg->ctx->eid_index);
 	if (IS_ERR_OR_NULL(udma_eid)) {
-		dev_err(udma_dev->dev, "Failed to find eid, index = %d\n.",
+		dev_err(udma_dev->dev, "failed to find eid, index = %d\n.",
 			seg->ctx->eid_index);
 		return;
 	}
 
-	seg_new = kzalloc(sizeof(struct seg_list), GFP_KERNEL);
-	if (seg_new == NULL)
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
 		return;
+
+	seg_new = kzalloc(sizeof(struct seg_list), GFP_KERNEL);
+	if (!seg_new) {
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return;
+	}
 
 	lock = &g_udma_dfx_list[i].dfx->seg_list->node_lock;
 	spin_lock_irqsave(lock, flags);
-	list_for_each_entry(seg_now,
-			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
+	list_for_each_entry(seg_now, &g_udma_dfx_list[i].dfx->seg_list->node, node) {
 		if (seg_now->key_id == seg->key) {
 			memcpy(&seg_now->eid, &udma_eid->eid,
 			       sizeof(union ubcore_eid));
@@ -283,11 +285,13 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 	list_add(&seg_new->node, &g_udma_dfx_list[i].dfx->seg_list->node);
 	++g_udma_dfx_list[i].dfx->seg_cnt;
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	return;
 
 found:
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 	kfree(seg_new);
 }
 
@@ -312,11 +316,11 @@ static void delete_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 			list_del(&seg_now->node);
 			--g_udma_dfx_list[i].dfx->seg_cnt;
 			kfree(seg_now);
-			spin_unlock_irqrestore(lock, flags);
-			return;
+			break;
 		}
 	}
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
 struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
@@ -370,6 +374,7 @@ err_alloc_pbl:
 	free_seg_key(udma_dev, seg);
 err_alloc_key:
 	kfree(seg);
+
 	return NULL;
 }
 
@@ -382,8 +387,8 @@ void udma_seg_free(struct udma_dev *udma_dev, struct udma_seg *seg)
 					  key_to_hw_index(seg->key) &
 					  (udma_dev->caps.num_mtpts - 1));
 		if (ret)
-			dev_warn(udma_dev->dev, "failed to destroy mpt, ret = %d.\n",
-				 ret);
+			dev_err(udma_dev->dev, "failed to destroy mpt, ret = %d.\n",
+				ret);
 	}
 
 	free_seg_pbl(udma_dev, seg);

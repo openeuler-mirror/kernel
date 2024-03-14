@@ -183,8 +183,10 @@ static void store_tpn(struct udma_dev *udma_device, struct udma_tp *tp)
 		return;
 
 	tpn_new = kzalloc(sizeof(struct tpn_list), GFP_KERNEL);
-	if (tpn_new == NULL)
+	if (!tpn_new) {
+		read_unlock(&g_udma_dfx_list[i].rwlock);
 		return;
+	}
 
 	lock = &g_udma_dfx_list[i].dfx->tpn_list->node_lock;
 	spin_lock_irqsave(lock, flags);
@@ -198,11 +200,13 @@ static void store_tpn(struct udma_dev *udma_device, struct udma_tp *tp)
 	list_add(&tpn_new->node, &g_udma_dfx_list[i].dfx->tpn_list->node);
 	++g_udma_dfx_list[i].dfx->tpn_cnt;
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	return;
 
 found:
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 	kfree(tpn_new);
 }
 
@@ -227,11 +231,11 @@ static void delete_tpn(struct udma_dev *udma_device, struct ubcore_tp *tp)
 			list_del(&tpn_now->node);
 			--g_udma_dfx_list[i].dfx->tpn_cnt;
 			kfree(tpn_now);
-			spin_unlock_irqrestore(lock, flags);
-			return;
+			break;
 		}
 	}
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
 int udma_destroy_tp(struct ubcore_tp *tp)
@@ -245,8 +249,8 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 
 	udma_tp = to_udma_tp(tp);
 	if (!udma_erase_tp(udma_tp)) {
-		dev_err(udma_device->dev,
-			"failed to find tp, tpn = 0x%x\n", tp->tpn);
+		dev_warn(udma_device->dev,
+			 "tp(tpn = 0x%x) has already been destroyed.\n", tp->tpn);
 		return 0;
 	}
 
