@@ -354,6 +354,12 @@ struct hclge_sfp_info_cmd {
 	u8 rsv[6];
 };
 
+struct hclge_port_fault_cmd {
+	__le32 fault_status;
+	__le32 port_type;
+	u8 rsv[16];
+};
+
 #define HCLGE_MAC_CFG_FEC_AUTO_EN_B	0
 #define HCLGE_MAC_CFG_FEC_MODE_S	1
 #define HCLGE_MAC_CFG_FEC_MODE_M	GENMASK(3, 1)
@@ -867,11 +873,17 @@ struct hclge_phy_link_ksetting_1_cmd {
 	u8 rsv[22];
 };
 
+#define HCLGE_PHY_RW_DIRECTLY	0
+#define HCLGE_PHY_RW_WITH_PAGE	1
 struct hclge_phy_reg_cmd {
 	__le16 reg_addr;
 	u8 rsv0[2];
 	__le16 reg_val;
-	u8 rsv1[18];
+	u8 rsv1[2];
+	u8 type;
+	u8 dev_addr;
+	__le16 page;
+	u8 rsv2[12];
 };
 
 struct hclge_wol_cfg_cmd {

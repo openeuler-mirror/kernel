@@ -43,6 +43,7 @@
 #define HNAE3_DEVICE_VERSION_V1   0x00020
 #define HNAE3_DEVICE_VERSION_V2   0x00021
 #define HNAE3_DEVICE_VERSION_V3   0x00030
+#define HNAE3_DEVICE_VERSION_V4   0x00032
 
 #define HNAE3_PCI_REVISION_BIT_SIZE		8
 
@@ -104,6 +105,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_WOL_B,
 	HNAE3_DEV_SUPPORT_TM_FLUSH_B,
 	HNAE3_DEV_SUPPORT_VF_FAULT_B,
+	HNAE3_DEV_SUPPORT_NOTIFY_PKT_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -180,6 +182,9 @@ enum HNAE3_DEV_CAP_BITS {
 
 #define hnae3_ae_dev_vf_fault_supported(ae_dev) \
 	test_bit(HNAE3_DEV_SUPPORT_VF_FAULT_B, (ae_dev)->caps)
+
+#define hnae3_ae_dev_notify_pkt_supported(ae_dev) \
+	test_bit(HNAE3_DEV_SUPPORT_NOTIFY_PKT_B, (ae_dev)->caps)
 
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
@@ -782,6 +787,8 @@ struct hnae3_ae_ops {
 			struct ethtool_wolinfo *wol);
 	int (*set_wol)(struct hnae3_handle *handle,
 		       struct ethtool_wolinfo *wol);
+	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
+			void *data, size_t length);
 };
 
 struct hnae3_dcb_ops {

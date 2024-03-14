@@ -12,7 +12,7 @@
 
 #include "hclge_cmd.h"
 #include "hclge_ptp.h"
-#include "hnae3.h"
+#include "hnae3_ext.h"
 #include "hclge_comm_rss.h"
 #include "hclge_comm_tqp_stats.h"
 
@@ -25,6 +25,8 @@
 
 #define HCLGE_RD_FIRST_STATS_NUM        2
 #define HCLGE_RD_OTHER_STATS_NUM        4
+
+#define HCLGE_RESET_MAX_FAIL_CNT	5
 
 #define HCLGE_INVALID_VPORT 0xffff
 
@@ -376,6 +378,7 @@ struct hclge_tm_info {
 	enum hclge_fc_mode fc_mode;
 	u8 hw_pfc_map; /* Allow for packet drop or not on this TC */
 	u8 pfc_en;	/* PFC enabled or not for user priority */
+	u16 pause_time;
 };
 
 /* max number of mac statistics on each version */
@@ -972,6 +975,8 @@ struct hclge_dev {
 	struct hclge_ptp *ptp;
 	struct devlink *devlink;
 	struct hclge_comm_rss_cfg rss_cfg;
+	struct hnae3_notify_pkt_param notify_param;
+	struct hnae3_torus_param torus_param;
 };
 
 /* VPort level vlan tag configuration for TX direction */
@@ -1160,4 +1165,9 @@ int hclge_enable_vport_vlan_filter(struct hclge_vport *vport, bool request_en);
 int hclge_mac_update_stats(struct hclge_dev *hdev);
 struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
 int hclge_inform_vf_reset(struct hclge_vport *vport, u16 reset_type);
+void hclge_reset_task_schedule(struct hclge_dev *hdev);
+void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle);
+void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
+			  u8 *module_type);
+int hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable);
 #endif
