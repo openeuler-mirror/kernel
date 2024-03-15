@@ -1190,23 +1190,6 @@ static void sec_probe_uninit(struct hisi_qm *qm)
 	hisi_qm_dev_err_uninit(qm);
 }
 
-static void sec_iommu_used_check(struct sec_dev *sec)
-{
-	struct iommu_domain *domain;
-	struct device *dev = &sec->qm.pdev->dev;
-
-	domain = iommu_get_domain_for_dev(dev);
-
-	/* Check if iommu is used */
-	sec->iommu_used = false;
-	if (domain) {
-		if (domain->type & __IOMMU_DOMAIN_PAGING)
-			sec->iommu_used = true;
-		dev_info(dev, "SMMU Opened, the iommu type = %u\n",
-			domain->type);
-	}
-}
-
 static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct sec_dev *sec;
@@ -1225,7 +1208,6 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	sec->ctx_q_num = ctx_q_num;
-	sec_iommu_used_check(sec);
 
 	ret = sec_probe_init(sec);
 	if (ret) {
