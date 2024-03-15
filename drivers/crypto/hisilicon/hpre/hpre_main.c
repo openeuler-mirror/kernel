@@ -10,7 +10,6 @@
 #include <linux/pci.h>
 #include <linux/pm_runtime.h>
 #include <linux/topology.h>
-#include <linux/uacce.h>
 #include "hpre.h"
 
 #define HPRE_QM_ABNML_INT_MASK		0x100004

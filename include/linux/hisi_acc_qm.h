@@ -8,6 +8,7 @@
 #include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/uacce.h>
 
 #define QM_QNUM_V1			4096
 #define QM_QNUM_V2			1024
@@ -405,6 +406,7 @@ struct hisi_qp_status {
 	u16 cq_head;
 	bool cqc_phase;
 	atomic_t flags;
+	atomic_t complete_task;
 };
 
 struct hisi_qp_ops {
@@ -495,7 +497,7 @@ static inline int mode_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 
 	ret = kstrtou32(val, 10, &n);
-	if (ret != 0 || (n != UACCE_MODE_SVA &&
+	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_SVA &&
 			 n != UACCE_MODE_NOUACCE))
 		return -EINVAL;
 
@@ -527,6 +529,7 @@ static inline void hisi_qm_del_list(struct hisi_qm *qm, struct hisi_qm_list *qm_
 	mutex_unlock(&qm_list->lock);
 }
 
+int qm_register_uacce(struct hisi_qm *qm);
 int hisi_qm_init(struct hisi_qm *qm);
 void hisi_qm_uninit(struct hisi_qm *qm);
 int hisi_qm_start(struct hisi_qm *qm);

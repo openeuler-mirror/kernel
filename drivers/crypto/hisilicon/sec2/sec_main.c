@@ -13,7 +13,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/seq_file.h>
 #include <linux/topology.h>
-#include <linux/uacce.h>
 
 #include "sec.h"
 
@@ -1232,12 +1231,10 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_qm_del_list;
 	}
 
-	if (qm->uacce) {
-		ret = uacce_register(qm->uacce);
-		if (ret) {
-			pci_err(pdev, "failed to register uacce (%d)!\n", ret);
-			goto err_alg_unregister;
-		}
+	ret = qm_register_uacce(qm);
+	if (ret) {
+		pci_err(pdev, "failed to register uacce (%d)!\n", ret);
+		goto err_alg_unregister;
 	}
 
 	if (qm->fun_type == QM_HW_PF && vfs_num) {
