@@ -43,6 +43,7 @@
 #include <rdma/uverbs_ioctl.h>
 
 #include "hnae3.h"
+#include "hclge_main.h"
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_cmd.h"
@@ -1359,6 +1360,61 @@ static int hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 		if (!v2_chk_mbox_is_avail(hr_dev, &busy))
 			return busy ? -EBUSY : 0;
 	}
+
+	return ret;
+}
+
+static inline enum hns_roce_opcode_type
+	get_bond_opcode(enum hns_roce_bond_cmd_type bond_type)
+{
+	if (bond_type == HNS_ROCE_SET_BOND)
+		return HNS_ROCE_OPC_SET_BOND_INFO;
+	else if (bond_type == HNS_ROCE_CHANGE_BOND)
+		return HNS_ROCE_OPC_CHANGE_ACTIVE_PORT;
+	else
+		return HNS_ROCE_OPC_CLEAR_BOND_INFO;
+}
+
+int hns_roce_cmd_bond(struct hns_roce_bond_group *bond_grp,
+		      enum hns_roce_bond_cmd_type bond_type)
+{
+	enum hns_roce_opcode_type opcode = get_bond_opcode(bond_type);
+	struct hns_roce_bond_info *slave_info;
+	struct hns_roce_cmq_desc desc = {};
+	int ret;
+
+	slave_info = (struct hns_roce_bond_info *)desc.data;
+	hns_roce_cmq_setup_basic_desc(&desc, opcode, false);
+
+	slave_info->bond_id = cpu_to_le32(bond_grp->bond_id);
+	if (bond_type == HNS_ROCE_CLEAR_BOND)
+		goto out;
+
+	if (bond_grp->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP) {
+		slave_info->bond_mode = cpu_to_le32(BOND_MODE_1);
+		if (bond_grp->active_slave_num != 1)
+			ibdev_err(&bond_grp->main_hr_dev->ib_dev,
+				  "active slave cnt(%d) in Mode 1 is invalid.\n",
+				  bond_grp->active_slave_num);
+	} else {
+		slave_info->bond_mode = cpu_to_le32(BOND_MODE_2_4);
+		slave_info->hash_policy =
+			cpu_to_le32(bond_grp->bond->params.xmit_policy);
+	}
+
+	slave_info->active_slave_cnt =
+		cpu_to_le32(bond_grp->active_slave_num);
+	slave_info->active_slave_mask =
+		cpu_to_le32(bond_grp->active_slave_map);
+	slave_info->slave_mask =
+		cpu_to_le32(bond_grp->slave_map);
+
+out:
+	ret = hns_roce_cmq_send(bond_grp->main_hr_dev, &desc, 1);
+	if (ret)
+		ibdev_err(&bond_grp->main_hr_dev->ib_dev,
+			  "cmq bond type(%d) failed, ret = %d.\n",
+			  bond_type, ret);
 
 	return ret;
 }
@@ -6841,6 +6897,9 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.hns_roce_dev_srq_ops = &hns_roce_v2_dev_srq_ops,
 	.config_scc_param = hns_roce_v2_config_scc_param,
 	.query_scc_param = hns_roce_v2_query_scc_param,
+	.bond_init = hns_roce_bond_init,
+	.bond_is_active = hns_roce_bond_is_active,
+	.get_bond_netdev = hns_roce_get_bond_netdev,
 };
 
 static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
@@ -6895,6 +6954,35 @@ static void hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 	priv->handle = handle;
 }
 
+static bool check_vf_support(struct pci_dev *vf)
+{
+	struct hns_roce_bond_group *bond_grp;
+	struct pci_dev *pf = pci_physfn(vf);
+	struct hnae3_ae_dev *ae_dev;
+	struct hnae3_handle *handle;
+	struct hns_roce_dev *hr_dev;
+	struct hclge_dev *hdev;
+
+	/* pf == vf means that the driver is running in VM. */
+	if (pf == vf)
+		return true;
+
+	ae_dev = pci_get_drvdata(pf);
+	hdev = ae_dev->priv;
+	handle = &hdev->vport[0].roce;
+	hr_dev = handle->priv;
+
+	if (!hr_dev)
+		return false;
+
+	bond_grp = hns_roce_get_bond_grp(get_hr_netdev(hr_dev, 0),
+					 pf->bus->number);
+	if (bond_grp)
+		return false;
+
+	return true;
+}
+
 static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 {
 	struct hns_roce_dev *hr_dev;
@@ -6911,6 +6999,11 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 	}
 
 	hns_roce_hw_v2_get_cfg(hr_dev, handle);
+
+	if (hr_dev->is_vf && !check_vf_support(hr_dev->pci_dev)) {
+		ret = -EOPNOTSUPP;
+		goto error_failed_roce_init;
+	}
 
 	ret = hns_roce_init(hr_dev);
 	if (ret) {
@@ -6931,7 +7024,7 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 	return 0;
 
 error_failed_free_mr_init:
-	hns_roce_exit(hr_dev);
+	hns_roce_exit(hr_dev, true);
 
 error_failed_roce_init:
 	kfree(hr_dev->priv);
@@ -6943,7 +7036,7 @@ error_failed_kzalloc:
 }
 
 static void __hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
-					   bool reset)
+					   bool reset, bool bond_cleanup)
 {
 	struct hns_roce_dev *hr_dev = handle->priv;
 
@@ -6958,7 +7051,7 @@ static void __hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
 		free_mr_exit(hr_dev);
 
-	hns_roce_exit(hr_dev);
+	hns_roce_exit(hr_dev, bond_cleanup);
 	kfree(hr_dev->priv);
 	ib_dealloc_device(&hr_dev->ib_dev);
 }
@@ -7009,14 +7102,68 @@ reset_chk_err:
 static void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 					   bool reset)
 {
+	struct hns_roce_bond_group *bond_grp;
+
+	/* Wait for the completion of bond work to avoid concurrency */
+	if (handle->rinfo.instance_state == HNS_ROCE_STATE_BOND_UNINIT) {
+		bond_grp = hns_roce_get_bond_grp(handle->rinfo.netdev,
+						 handle->pdev->bus->number);
+		if (bond_grp) {
+			wait_for_completion(&bond_grp->bond_work_done);
+			if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED)
+				kfree(bond_grp);
+		}
+	}
+
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
 		return;
 
 	handle->rinfo.instance_state = HNS_ROCE_STATE_UNINIT;
 
-	__hns_roce_hw_v2_uninit_instance(handle, reset);
+	__hns_roce_hw_v2_uninit_instance(handle, reset, true);
 
 	handle->rinfo.instance_state = HNS_ROCE_STATE_NON_INIT;
+}
+
+struct hns_roce_dev
+	*hns_roce_bond_init_client(struct hns_roce_bond_group *bond_grp,
+				   int func_idx)
+{
+	struct hnae3_handle *handle;
+	int ret;
+
+	handle = bond_grp->bond_func_info[func_idx].handle;
+	if (!handle || !handle->client)
+		return NULL;
+
+	if (is_bond_slave_in_reset(bond_grp))
+		return NULL;
+
+	ret = hns_roce_hw_v2_init_instance(handle);
+	if (ret)
+		return NULL;
+
+	return handle->priv;
+}
+
+int hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
+				int func_idx)
+{
+	struct hnae3_handle *handle = bond_grp->bond_func_info[func_idx].handle;
+
+	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
+		return -EPERM;
+
+	if (is_bond_slave_in_reset(bond_grp))
+		return -EBUSY;
+
+	handle->rinfo.instance_state = HNS_ROCE_STATE_BOND_UNINIT;
+
+	__hns_roce_hw_v2_uninit_instance(handle, false, false);
+
+	handle->rinfo.instance_state = HNS_ROCE_STATE_NON_INIT;
+
+	return 0;
 }
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 {
@@ -7079,7 +7226,7 @@ static int hns_roce_hw_v2_reset_notify_uninit(struct hnae3_handle *handle)
 	handle->rinfo.reset_state = HNS_ROCE_STATE_RST_UNINIT;
 	dev_info(&handle->pdev->dev, "In reset process RoCE client uninit.\n");
 	msleep(HNS_ROCE_V2_HW_RST_UNINT_DELAY);
-	__hns_roce_hw_v2_uninit_instance(handle, false);
+	__hns_roce_hw_v2_uninit_instance(handle, false, false);
 
 	return 0;
 }
@@ -7111,15 +7258,29 @@ static void hns_roce_hw_v2_link_status_change(struct hnae3_handle *handle,
 {
 	struct net_device *netdev = handle->rinfo.netdev;
 	struct hns_roce_dev *hr_dev = handle->priv;
+	struct hns_roce_bond_group *bond_grp;
+	struct net_device *hr_net_dev;
 	struct ib_event event;
 	unsigned long flags;
 	u8 phy_port;
+	u8 bus_num;
 
 	if (linkup || !hr_dev)
 		return;
 
+	/* For bond device, the link status depends on the upper netdev,
+	 * and the upper device's link status depends on all the slaves'
+	 * netdev but not only one. So bond device cannot get a correct
+	 * link status from this path.
+	 */
+	hr_net_dev = get_hr_netdev(hr_dev, 0);
+	bus_num = get_hr_bus_num(hr_dev);
+	bond_grp = hns_roce_get_bond_grp(hr_net_dev, bus_num);
+	if (bond_grp)
+		return;
+
 	for (phy_port = 0; phy_port < hr_dev->caps.num_ports; phy_port++)
-		if (netdev == hr_dev->iboe.netdevs[phy_port])
+		if (netdev == get_hr_netdev(hr_dev, phy_port))
 			break;
 
 	if (phy_port == hr_dev->caps.num_ports)
