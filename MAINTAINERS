@@ -19521,6 +19521,11 @@ S:	Maintained
 F:	drivers/infiniband/hw/xsc
 F:	drivers/net/ethernet/yunsilicon/xsc
 
+YUSUR ETHERNET DRIVERS
+M:	yusur <opensource-dev@yusur.tech>
+S:	Maintained
+F:	drivers/net/ethernet/yusur
+
 Z8530 DRIVER FOR AX.25
 M:	Joerg Reuter <jreuter@yaina.de>
 L:	linux-hams@vger.kernel.org

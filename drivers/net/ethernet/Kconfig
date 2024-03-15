@@ -187,5 +187,6 @@ source "drivers/net/ethernet/xilinx/Kconfig"
 source "drivers/net/ethernet/xircom/Kconfig"
 source "drivers/net/ethernet/nebula-matrix/Kconfig"
 source "drivers/net/ethernet/yunsilicon/Kconfig"
+source "drivers/net/ethernet/yusur/Kconfig"
 
 endif # ETHERNET
