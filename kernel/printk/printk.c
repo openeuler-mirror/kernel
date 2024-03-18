@@ -2426,7 +2426,7 @@ void console_unlock(void)
 	static char text[LOG_LINE_MAX + PREFIX_MAX];
 	static int panic_console_dropped;
 	unsigned long flags;
-	bool do_cond_resched, retry;
+	bool do_cond_resched, retry, locked = false;
 
 	if (console_suspended) {
 		up_console_sem();
@@ -2469,6 +2469,7 @@ again:
 
 		printk_safe_enter_irqsave(flags);
 		raw_spin_lock(&logbuf_lock);
+		locked = true;
 		if (console_seq < log_first_seq) {
 			len = snprintf(text, sizeof(text),
 				       "** %llu printk messages dropped **\n",
@@ -2520,6 +2521,7 @@ skip:
 		}
 		console_idx = log_next(console_idx);
 		console_seq++;
+		locked = false;
 		raw_spin_unlock(&logbuf_lock);
 
 		/*
@@ -2539,11 +2541,11 @@ skip:
 			return;
 		}
 
-		printk_safe_exit_irqrestore(flags);
-
 		/* Allow panic_cpu to take over the consoles safely */
 		if (abandon_console_lock_in_panic())
 			break;
+
+		printk_safe_exit_irqrestore(flags);
 
 		if (do_cond_resched)
 			cond_resched();
@@ -2551,7 +2553,8 @@ skip:
 
 	console_locked = 0;
 
-	raw_spin_unlock(&logbuf_lock);
+	if (likely(locked))
+		raw_spin_unlock(&logbuf_lock);
 
 	up_console_sem();
 
