@@ -175,13 +175,13 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 	spin_lock(&cdata->cdata_lock);
 	for (i = 0; i < cdata->multi_msi; i++)
 		per_cpu(vector_irq, cpu)[vector + i] = entry->irq + i;
-	BUG_ON(irq_chip_compose_msi_msg(irqd, &msg));
-	__pci_write_msi_msg(entry, &msg);
 	cdata->prev_vector = cdata->vector;
 	cdata->prev_cpu = cdata->dst_cpu;
 	cdata->dst_cpu = cpu;
 	cdata->vector = vector;
 	cdata->move_in_progress = true;
+	irq_msi_compose_msg(d, &msg);
+	__pci_write_msi_msg(entry, &msg);
 	spin_unlock(&cdata->cdata_lock);
 	cpumask_copy(irq_data_get_affinity_mask(irqd), &searchmask);
 
