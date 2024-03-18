@@ -25,13 +25,13 @@
 
 /*
  * Structure allocated for each page or THP when block size < page size
- * to track sub-page uptodate status and I/O completions.
+ * to track sub-page uptodate and dirty status and I/O completions.
  */
 struct iomap_page {
 	atomic_t		read_bytes_pending;
 	atomic_t		write_bytes_pending;
-	spinlock_t		uptodate_lock;
-	unsigned long		uptodate[];
+	spinlock_t		state_lock;
+	unsigned long		state[];
 };
 
 static inline struct iomap_page *to_iomap_page(struct page *page)
@@ -59,11 +59,13 @@ iomap_page_create(struct inode *inode, struct page *page)
 	if (iop || nr_blocks <= 1)
 		return iop;
 
-	iop = kzalloc(struct_size(iop, uptodate, BITS_TO_LONGS(nr_blocks)),
+	iop = kzalloc(struct_size(iop, state, BITS_TO_LONGS(2 * nr_blocks)),
 			GFP_NOFS | __GFP_NOFAIL);
-	spin_lock_init(&iop->uptodate_lock);
+	spin_lock_init(&iop->state_lock);
 	if (PageUptodate(page))
-		bitmap_fill(iop->uptodate, nr_blocks);
+		bitmap_set(iop->state, 0, nr_blocks);
+	if (PageDirty(page))
+		bitmap_set(iop->state, nr_blocks, nr_blocks);
 	attach_page_private(page, iop);
 	return iop;
 }
@@ -78,7 +80,7 @@ iomap_page_release(struct page *page)
 		return;
 	WARN_ON_ONCE(atomic_read(&iop->read_bytes_pending));
 	WARN_ON_ONCE(atomic_read(&iop->write_bytes_pending));
-	WARN_ON_ONCE(bitmap_full(iop->uptodate, nr_blocks) !=
+	WARN_ON_ONCE(bitmap_full(iop->state, nr_blocks) !=
 			PageUptodate(page));
 	kfree(iop);
 }
@@ -109,7 +111,7 @@ iomap_adjust_read_range(struct inode *inode, struct iomap_page *iop,
 
 		/* move forward for each leading block marked uptodate */
 		for (i = first; i <= last; i++) {
-			if (!test_bit(i, iop->uptodate))
+			if (!test_bit(i, iop->state))
 				break;
 			*pos += block_size;
 			poff += block_size;
@@ -119,7 +121,7 @@ iomap_adjust_read_range(struct inode *inode, struct iomap_page *iop,
 
 		/* truncate len if we find any trailing uptodate block(s) */
 		for ( ; i <= last; i++) {
-			if (test_bit(i, iop->uptodate)) {
+			if (test_bit(i, iop->state)) {
 				plen -= (last - i + 1) * block_size;
 				last = i - 1;
 				break;
@@ -144,6 +146,53 @@ iomap_adjust_read_range(struct inode *inode, struct iomap_page *iop,
 }
 
 static void
+iomap_set_range_dirty(struct page *page, unsigned int off, unsigned int len)
+{
+	struct inode *inode = page->mapping->host;
+	unsigned int nr_blocks = i_blocks_per_page(inode, page);
+	unsigned int first = off >> inode->i_blkbits;
+	unsigned int last = (off + len - 1) >> inode->i_blkbits;
+	unsigned long flags;
+	struct iomap_page *iop;
+
+	if (PageError(page))
+		return;
+
+	if (len)
+		iomap_set_page_dirty(page);
+
+	if (!page_has_private(page))
+		return;
+
+	iop = to_iomap_page(page);
+	spin_lock_irqsave(&iop->state_lock, flags);
+	bitmap_set(iop->state, first + nr_blocks, last - first + 1);
+	spin_unlock_irqrestore(&iop->state_lock, flags);
+}
+
+static void
+iomap_clear_range_dirty(struct page *page, unsigned int off, unsigned int len)
+{
+	struct inode *inode = page->mapping->host;
+	unsigned int nr_blocks = i_blocks_per_page(inode, page);
+	unsigned int first = off >> inode->i_blkbits;
+	unsigned int last = (off + len - 1) >> inode->i_blkbits;
+	unsigned long flags;
+	struct iomap_page *iop;
+
+	if (PageError(page))
+		return;
+
+	if (!page_has_private(page))
+		return;
+
+	iop = to_iomap_page(page);
+	spin_lock_irqsave(&iop->state_lock, flags);
+	bitmap_clear(iop->state, first + nr_blocks, last - first + 1);
+	spin_unlock_irqrestore(&iop->state_lock, flags);
+}
+
+static void
 iomap_iop_set_range_uptodate(struct page *page, unsigned off, unsigned len)
 {
 	struct iomap_page *iop = to_iomap_page(page);
@@ -152,11 +201,11 @@ iomap_iop_set_range_uptodate(struct page *page, unsigned off, unsigned len)
 	unsigned last = (off + len - 1) >> inode->i_blkbits;
 	unsigned long flags;
 
-	spin_lock_irqsave(&iop->uptodate_lock, flags);
-	bitmap_set(iop->uptodate, first, last - first + 1);
-	if (bitmap_full(iop->uptodate, i_blocks_per_page(inode, page)))
+	spin_lock_irqsave(&iop->state_lock, flags);
+	bitmap_set(iop->state, first, last - first + 1);
+	if (bitmap_full(iop->state, i_blocks_per_page(inode, page)))
 		SetPageUptodate(page);
-	spin_unlock_irqrestore(&iop->uptodate_lock, flags);
+	spin_unlock_irqrestore(&iop->state_lock, flags);
 }
 
 static void
@@ -451,7 +500,7 @@ iomap_is_partially_uptodate(struct page *page, unsigned long from,
 
 	if (iop) {
 		for (i = first; i <= last; i++)
-			if (!test_bit(i, iop->uptodate))
+			if (!test_bit(i, iop->state))
 				return 0;
 		return 1;
 	}
@@ -708,7 +757,7 @@ static size_t __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 	if (unlikely(copied < len && !PageUptodate(page)))
 		return 0;
 	iomap_set_range_uptodate(page, offset_in_page(pos), len);
-	iomap_set_page_dirty(page);
+	iomap_set_range_dirty(page, offset_in_page(pos), len);
 	return copied;
 }
 
@@ -1407,6 +1456,7 @@ iomap_writepage_map(struct iomap_writepage_ctx *wpc,
 {
 	struct iomap_page *iop = iomap_page_create(inode, page);
 	struct iomap_ioend *ioend, *next;
+	unsigned int nr_blocks = i_blocks_per_page(inode, page);
 	unsigned len = i_blocksize(inode);
 	u64 file_offset; /* file offset of page */
 	int error = 0, count = 0, i;
@@ -1422,7 +1472,7 @@ iomap_writepage_map(struct iomap_writepage_ctx *wpc,
 	for (i = 0, file_offset = page_offset(page);
 	     i < (PAGE_SIZE >> inode->i_blkbits) && file_offset < end_offset;
 	     i++, file_offset += len) {
-		if (iop && !test_bit(i, iop->uptodate))
+		if (iop && !test_bit(i + nr_blocks, iop->state))
 			continue;
 
 		error = wpc->ops->map_blocks(wpc, inode, file_offset);
@@ -1465,6 +1515,7 @@ iomap_writepage_map(struct iomap_writepage_ctx *wpc,
 		}
 	}
 
+	iomap_clear_range_dirty(page, 0, PAGE_SIZE);
 	set_page_writeback(page);
 	unlock_page(page);
 
