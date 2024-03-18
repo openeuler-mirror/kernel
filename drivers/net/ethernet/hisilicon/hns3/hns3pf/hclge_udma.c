@@ -71,7 +71,7 @@ int hclge_init_udma_client_instance(struct hnae3_ae_dev *ae_dev,
 {
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hnae3_client *client;
-	int rst_cnt;
+	u32 rst_cnt;
 	int ret;
 
 	if (!hnae3_dev_udma_supported(ae_dev) || !hdev->udma_client ||

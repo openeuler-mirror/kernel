@@ -251,7 +251,6 @@ int hclge_unic_update_ip_list(struct hclge_vport *vport,
 					       &vport->ip_list_lock,
 					       state,
 					       (const unsigned char *)&ip_addr);
-
 	if (ret == -ENOENT)
 		dev_err(&hdev->pdev->dev,
 			"failed to delete ip %pI6c from ip list\n",
@@ -383,7 +382,6 @@ static void hclge_unic_sync_vport_ip_table(struct hclge_vport *vport)
 						    &vport->ip_list,
 						    &vport->ip_list_lock,
 						    sync, unsync);
-
 	if (all_added)
 		vport->overflow_promisc_flags &= ~HNAE3_OVERFLOW_MPE;
 	else

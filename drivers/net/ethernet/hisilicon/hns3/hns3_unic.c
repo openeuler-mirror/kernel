@@ -79,7 +79,6 @@ u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info)
 	u32 l3_type;
 
 	l3_type = hns3_get_l3_type(priv, l234info, ol_info);
-
 	if (l3_type == HNS3_L3_TYPE_IPV4)
 		return UB_IPV4_CFG_TYPE;
 	else if (l3_type == HNS3_L3_TYPE_IPV6)
@@ -209,6 +208,8 @@ void hns3_unic_lp_setup_skb(struct sk_buff *skb)
 void hns3_unic_lb_check_skb_data(struct hns3_enet_ring *ring,
 				 struct sk_buff *skb)
 {
+#define HNS3_UNIC_DUMP_ROW_SIZE 16
+
 	unsigned int nip_ctrl_len = sizeof(struct ub_nip_ctrl_fld);
 	struct hns3_enet_tqp_vector *tqp_vector = ring->tqp_vector;
 	struct net_device *ndev = skb->dev;
@@ -238,8 +239,8 @@ out:
 	if (is_success)
 		tqp_vector->rx_group.total_packets++;
 	else
-		print_hex_dump(KERN_ERR, "ubn selftest:", DUMP_PREFIX_OFFSET,
-			       16, 1, skb->data, len, true);
+		print_hex_dump(KERN_ERR, "ubl selftest:", DUMP_PREFIX_OFFSET,
+			       HNS3_UNIC_DUMP_ROW_SIZE, 1, skb->data, len, true);
 
 	dev_kfree_skb_any(skb);
 }
