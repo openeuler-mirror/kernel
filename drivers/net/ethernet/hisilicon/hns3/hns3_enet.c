@@ -5660,7 +5660,7 @@ static int hns3_client_init(struct hnae3_handle *handle)
 						    &max_rss_size);
 #ifdef CONFIG_HNS3_UBL
 	if (hns3_ubl_supported(handle))
-		netdev = alloc_ubndev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+		netdev = alloc_ubldev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
 	else
 		netdev = alloc_etherdev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
 #else

@@ -145,13 +145,13 @@ void ubl_setup(struct net_device *dev)
 EXPORT_SYMBOL(ubl_setup);
 
 /**
- * alloc_ubndev_mqs - Allocates and sets up an ub-n device
+ * alloc_ubldev_mqs - Allocates and sets up an ub-n device
  * @sizeof_priv: Size of additional driver-private structure to be allocated
- *	for this ubn device
+ *	for this ubl device
  * @txqs: The number of TX queues this device has.
  * @rxqs: The number of RX queues this device has.
  *
- * Fill in the fields of the device structure with ubn-generic
+ * Fill in the fields of the device structure with ubl-generic
  * values. Basically does everything except registering the device.
  *
  * Constructs a new net device, complete with a private data area of
@@ -159,13 +159,13 @@ EXPORT_SYMBOL(ubl_setup);
  * this private data area.
  */
 
-struct net_device *alloc_ubndev_mqs(int sizeof_priv, unsigned int txqs,
+struct net_device *alloc_ubldev_mqs(int sizeof_priv, unsigned int txqs,
 				    unsigned int rxqs)
 {
 	return alloc_netdev_mqs(sizeof_priv, "ubl%d", NET_NAME_UNKNOWN,
 				ubl_setup, txqs, rxqs);
 }
-EXPORT_SYMBOL(alloc_ubndev_mqs);
+EXPORT_SYMBOL(alloc_ubldev_mqs);
 
 /**
  * ubl_type_trans - obtains skb->protocol and adds sw_ptype to the packet
