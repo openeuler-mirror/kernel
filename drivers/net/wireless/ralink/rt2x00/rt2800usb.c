@@ -46,6 +46,11 @@ static bool modparam_nohwcrypt;
 module_param_named(nohwcrypt, modparam_nohwcrypt, bool, 0444);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
 
+void rt2x00lib_pre_reset_hw(struct rt2x00_dev *rt2x00dev)
+{
+	rt2800_pre_reset_hw(rt2x00dev);
+}
+
 static bool rt2800usb_hwcrypt_disabled(struct rt2x00_dev *rt2x00dev)
 {
 	return modparam_nohwcrypt;
@@ -858,7 +863,6 @@ static const struct rt2x00lib_ops rt2800usb_rt2x00_ops = {
 	.config_erp		= rt2800_config_erp,
 	.config_ant		= rt2800_config_ant,
 	.config			= rt2800_config,
-	.pre_reset_hw		= rt2800_pre_reset_hw,
 };
 
 static void rt2800usb_queue_init(struct data_queue *queue)

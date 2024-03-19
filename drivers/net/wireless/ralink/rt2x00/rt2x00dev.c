@@ -1266,6 +1266,10 @@ static int rt2x00lib_initialize(struct rt2x00_dev *rt2x00dev)
 	return 0;
 }
 
+void __weak rt2x00lib_pre_reset_hw(struct rt2x00_dev *rt2x00dev)
+{
+}
+
 int rt2x00lib_start(struct rt2x00_dev *rt2x00dev)
 {
 	int retval = 0;
@@ -1276,7 +1280,7 @@ int rt2x00lib_start(struct rt2x00_dev *rt2x00dev)
 		 * mac80211 never call start() two times in row without stop();
 		 */
 		set_bit(DEVICE_STATE_RESET, &rt2x00dev->flags);
-		rt2x00dev->ops->lib->pre_reset_hw(rt2x00dev);
+		rt2x00lib_pre_reset_hw(rt2x00dev);
 		rt2x00lib_stop(rt2x00dev);
 	}
 
