@@ -10,9 +10,10 @@
 	BPF_LDX_MEM(BPF_DW, BPF_REG_0, BPF_REG_6, 0),
 	BPF_EXIT_INSN(),
 	},
-	.result = REJECT,
-	.errstr = "invalid read from stack R6 off=-8 size=8",
-	.prog_type = BPF_PROG_TYPE_SCHED_CLS,
+	.result = ACCEPT,
+	.retval = POINTER_VALUE,
+	.errstr_unpriv = "invalid read from stack R6 off=-8 size=8",
+	.result_unpriv = REJECT,
 },
 {
 	"raw_stack: skb_load_bytes, negative len",
