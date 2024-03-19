@@ -56,6 +56,13 @@ static irqreturn_t psp_irq_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static void hygon_fixup_psp_caps(struct psp_device *psp)
+{
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+		psp->capability &= ~(PSP_CAPABILITY_TEE |
+				     PSP_CAPABILITY_PSP_SECURITY_REPORTING);
+}
+
 static unsigned int psp_get_capability(struct psp_device *psp)
 {
 	unsigned int val = ioread32(psp->io_regs + psp->vdata->feature_reg);
@@ -72,6 +79,12 @@ static unsigned int psp_get_capability(struct psp_device *psp)
 		return -ENODEV;
 	}
 	psp->capability = val;
+
+	/*
+	 * Fix capability of Hygon psp, the meaning of Hygon psp feature
+	 * register is not exactly the same as AMD.
+	 */
+	hygon_fixup_psp_caps(psp);
 
 	/* Detect if TSME and SME are both enabled */
 	if (psp->capability & PSP_CAPABILITY_PSP_SECURITY_REPORTING &&
