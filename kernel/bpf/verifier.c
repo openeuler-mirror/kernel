@@ -726,16 +726,22 @@ out:
 static void *realloc_array(void *arr, size_t old_n, size_t new_n, size_t size)
 {
 	size_t bytes;
+	void *new_arr;
 
 	if (!new_n || old_n == new_n)
 		goto out;
 
-	if (unlikely(check_mul_overflow(new_n, size, &bytes)))
+	if (unlikely(check_mul_overflow(new_n, size, &bytes))) {
+		kfree(arr);
 		return NULL;
+	}
 
-	arr = krealloc(arr, bytes, GFP_KERNEL);
-	if (!arr)
+	new_arr = krealloc(arr, bytes, GFP_KERNEL);
+	if (!new_arr) {
+		kfree(arr);
 		return NULL;
+	}
+	arr = new_arr;
 
 	if (new_n > old_n)
 		memset(arr + old_n * size, 0, (new_n - old_n) * size);
