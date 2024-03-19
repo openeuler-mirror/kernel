@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- *	linux/arch/sw_64/kernel/smp.c
- */
 
 #include <linux/errno.h>
 #include <linux/sched/mm.h>
@@ -19,14 +16,14 @@
 
 #include "proto.h"
 
-struct smp_rcb_struct *smp_rcb = NULL;
+struct smp_rcb_struct *smp_rcb;
 
 extern struct cpuinfo_sw64 cpu_data[NR_CPUS];
 
 
 #define smp_debug 0
 #define DBGS(fmt, arg...) \
-	do { if (smp_debug) printk("SMP: " fmt, ## arg); } while (0)
+	do { if (smp_debug) pr_info("SMP: " fmt, ## arg); } while (0)
 
 void *idle_task_pointer[NR_CPUS];
 
@@ -47,7 +44,7 @@ enum ipi_message_type {
 int smp_num_cpus = 1;		/* Number that came online.  */
 EXPORT_SYMBOL(smp_num_cpus);
 
-struct rcid_infomation rcid_info = { 0 };
+struct rcid_information rcid_info = { 0 };
 
 #define send_sleep_interrupt(cpu)	send_ipi((cpu), II_SLEEP)
 #define send_wakeup_interrupt(cpu)	send_ipi((cpu), II_WAKE)
@@ -82,7 +79,7 @@ void smp_callin(void)
 	local_irq_disable();
 
 	if (cpu_online(cpuid)) {
-		printk("??, cpu 0x%x already present??\n", cpuid);
+		pr_err("??, cpu 0x%x already present??\n", cpuid);
 		BUG();
 	}
 
@@ -230,31 +227,31 @@ void __init setup_smp(void)
 	smp_rcb_init(INIT_SMP_RCB);
 }
 
-void rcid_infomation_init(int core_version)
+void rcid_information_init(int core_version)
 {
 	if (rcid_info.initialized)
 		return;
 
 	switch (core_version) {
-		case CORE_VERSION_C3B:
-			rcid_info.thread_bits  = 1;
-			rcid_info.thread_shift = 31;
-			rcid_info.core_bits    = 5;
-			rcid_info.core_shift   = 0;
-			rcid_info.domain_bits  = 2;
-			rcid_info.domain_shift = 5;
-			break;
-		case CORE_VERSION_C4:
-			rcid_info.thread_bits  = 1;
-			rcid_info.thread_shift = 8;
-			rcid_info.core_bits    = 6;
-			rcid_info.core_shift   = 0;
-			rcid_info.domain_bits  = 2;
-			rcid_info.domain_shift = 12;
-			break;
-		default:
-			rcid_info.initialized = 0;
-			return;
+	case CORE_VERSION_C3B:
+		rcid_info.thread_bits  = 1;
+		rcid_info.thread_shift = 31;
+		rcid_info.core_bits    = 5;
+		rcid_info.core_shift   = 0;
+		rcid_info.domain_bits  = 2;
+		rcid_info.domain_shift = 5;
+		break;
+	case CORE_VERSION_C4:
+		rcid_info.thread_bits  = 1;
+		rcid_info.thread_shift = 8;
+		rcid_info.core_bits    = 6;
+		rcid_info.core_shift   = 0;
+		rcid_info.domain_bits  = 2;
+		rcid_info.domain_shift = 12;
+		break;
+	default:
+		rcid_info.initialized = 0;
+		return;
 	}
 
 	rcid_info.initialized = 1;
@@ -325,7 +322,7 @@ void smp_prepare_boot_cpu(void)
 
 int vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
-	printk("%s: cpu = %d\n", __func__, cpu);
+	pr_info("%s: cpu = %d\n", __func__, cpu);
 
 	wmb();
 	smp_rcb->ready = 0;
@@ -512,9 +509,8 @@ void flush_tlb_mm(struct mm_struct *mm)
 	/* happens as a result of exit_mmap()
 	 * Shall we clear mm->context.asid[] here?
 	 */
-	if (atomic_read(&mm->mm_users) == 0) {
+	if (atomic_read(&mm->mm_users) == 0)
 		return;
-	}
 
 	preempt_disable();
 

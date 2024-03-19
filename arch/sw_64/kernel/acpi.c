@@ -246,34 +246,31 @@ setup_rcid_and_core_mask(struct acpi_madt_sw_cintc *sw_cintc)
 	 * represents the maximum number of cores in the system.
 	 */
 	if (possible_cores >= nr_cpu_ids) {
-		pr_err(PREFIX "Max core num [%u] reached, core [0x%x] ignored."
-			" Please check the firmware or CONFIG_NR_CPUS!\n",
+		pr_err(PREFIX "Max core num [%u] reached, core [0x%x] ignored\n",
 			nr_cpu_ids, rcid);
 		return -ENODEV;
 	}
 
 	/* The rcid of each core is unique */
 	if (is_rcid_duplicate(rcid)) {
-		pr_err(PREFIX "Duplicate core [0x%x] in MADT."
-			" Please check the firmware!\n", rcid);
+		pr_err(PREFIX "Duplicate core [0x%x] in MADT\n", rcid);
 		return -EINVAL;
 	}
 
 	/* We can never disable the boot core, whose rcid is 0 */
 	if ((rcid == 0) && !is_core_enabled(sw_cintc->flags)) {
-		pr_err(PREFIX "Boot core disabled in MADT."
-			" Please check the firmware!\n");
+		pr_err(PREFIX "Boot core disabled in MADT\n");
 		return -EINVAL;
 	}
 
 	/* Online capable makes core possible */
-	if (!is_core_enabled(sw_cintc->flags) && \
+	if (!is_core_enabled(sw_cintc->flags) &&
 			!is_core_online_capable(sw_cintc->flags)) {
 		disabled_cores++;
 		return 0;
 	}
 
-	rcid_infomation_init(sw_cintc->version);
+	rcid_information_init(sw_cintc->version);
 
 	/* The logical core ID of the boot core must be 0 */
 	if (rcid == 0)
@@ -291,8 +288,8 @@ setup_rcid_and_core_mask(struct acpi_madt_sw_cintc *sw_cintc)
 	 * 1. core is enabled via firmware
 	 * 2. core is not disabled by cmdline param(offline)
 	 */
-	if (is_core_enabled(sw_cintc->flags) && \
-		!cpumask_test_cpu(logical_core_id, &cpu_offline)) {
+	if (is_core_enabled(sw_cintc->flags) &&
+			!cpumask_test_cpu(logical_core_id, &cpu_offline)) {
 		set_cpu_present(logical_core_id, true);
 		if (logical_core_id != 0)
 			present_cores++;
@@ -310,8 +307,7 @@ static int __init acpi_parse_sw_cintc(union acpi_subtable_headers *header,
 
 	sw_cintc = (struct acpi_madt_sw_cintc *)header;
 	if (BAD_MADT_ENTRY(sw_cintc, end)) {
-		pr_err(PREFIX "SW CINTC entry error."
-			" Please check the firmware!\n");
+		pr_err(PREFIX "SW CINTC entry error\n");
 		return -EINVAL;
 	}
 
@@ -381,8 +377,9 @@ void __init acpi_boot_table_init(void)
 		pr_err("Failed to init ACPI tables\n");
 		disable_acpi();
 		return;
-	} else
-		pr_info("Successfully parsed ACPI table\n");
+	}
+
+	pr_info("Successfully parsed ACPI table\n");
 
 	/**
 	 * Process SW64 Core Interrupt Controller(SW CINTC) in MADT table.
