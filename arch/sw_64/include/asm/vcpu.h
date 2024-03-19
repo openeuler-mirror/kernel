@@ -55,7 +55,7 @@ struct vcpucb {
 	unsigned long reserved[3];
 };
 
-#else
+#elif CONFIG_SUBARCH_C4
 
 struct vcpucb {
 	unsigned long ktp;
@@ -100,7 +100,14 @@ struct vcpucb {
 	unsigned long shtclock_offset;
 	unsigned long migration_mark;
 	unsigned long shtclock;
-	unsigned long reserved[6];
+	unsigned long csr_pc;
+	unsigned long csr_ps;
+	unsigned long csr_sp;
+	unsigned long csr_ktp;
+	unsigned long csr_earg0;
+	unsigned long csr_earg1;
+	unsigned long csr_earg2;
+	unsigned long csr_scratch;
 };
 #endif
 
