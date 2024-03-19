@@ -1,6 +1,7 @@
-config UACCE
+menuconfig UACCE
 	tristate "Accelerator Framework for User Land"
 	depends on IOMMU_API
+	select ANON_INODES
 	help
 	  UACCE provides interface for the user process to access the hardware
 	  without interaction with the kernel space in data path.

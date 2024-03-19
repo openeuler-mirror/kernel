@@ -6,6 +6,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/idr.h>
 #include <linux/io.h>
+#include <linux/iommu.h>
 #include <linux/irqreturn.h>
 #include <linux/log2.h>
 #include <linux/pm_runtime.h>
@@ -849,6 +850,33 @@ static void qm_cq_head_update(struct hisi_qp *qp)
 	}
 }
 
+static void qm_poll_user_event_cb(struct hisi_qp *qp)
+{
+	struct qm_cqe *cqe = qp->cqe + qp->qp_status.cq_head;
+	struct uacce_queue *q = qp->uacce_q;
+	bool updated = 0;
+
+	/*
+	 * If multi thread poll one queue, each thread will produce
+	 * one event, so we query one cqe and break out of the loop.
+	 * If only one thread poll one queue, we need query all cqe
+	 * to ensure that we poll a cleaned queue next time.
+	 */
+	while (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
+		dma_rmb();
+		qm_cq_head_update(qp);
+		cqe = qp->cqe + qp->qp_status.cq_head;
+		updated = 1;
+		if (!wq_has_single_sleeper(&q->wait))
+			break;
+	}
+
+	if (updated) {
+		atomic_inc(&qp->qp_status.complete_task);
+		qp->event_cb(qp);
+	}
+}
+
 static void qm_poll_req_cb(struct hisi_qp *qp)
 {
 	struct qm_cqe *cqe = qp->cqe + qp->qp_status.cq_head;
@@ -886,7 +914,7 @@ static void qm_work_process(struct work_struct *work)
 			continue;
 
 		if (qp->event_cb) {
-			qp->event_cb(qp);
+			qm_poll_user_event_cb(qp);
 			continue;
 		}
 
@@ -1073,6 +1101,7 @@ static void qm_init_qp_status(struct hisi_qp *qp)
 	qp_status->cq_head = 0;
 	qp_status->cqc_phase = true;
 	atomic_set(&qp_status->used, 0);
+	atomic_set(&qp_status->complete_task, 0);
 }
 
 static void qm_init_prefetch(struct hisi_qm *qm)
@@ -2229,7 +2258,7 @@ static void hisi_qm_cache_wb(struct hisi_qm *qm)
 
 static void qm_qp_event_notifier(struct hisi_qp *qp)
 {
-	wake_up_interruptible(&qp->uacce_q->wait);
+	uacce_wake_up(qp->uacce_q);
 }
 
  /* This function returns free number of qp in qm. */
@@ -2375,18 +2404,8 @@ static void hisi_qm_uacce_stop_queue(struct uacce_queue *q)
 static int hisi_qm_is_q_updated(struct uacce_queue *q)
 {
 	struct hisi_qp *qp = q->priv;
-	struct qm_cqe *cqe = qp->cqe + qp->qp_status.cq_head;
-	int updated = 0;
 
-	while (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
-		/* make sure to read data from memory */
-		dma_rmb();
-		qm_cq_head_update(qp);
-		cqe = qp->cqe + qp->qp_status.cq_head;
-		updated = 1;
-	}
-
-	return updated;
+	return atomic_add_unless(&qp->qp_status.complete_task, -1, 0);
 }
 
 static void qm_set_sqctype(struct uacce_queue *q, u16 type)
@@ -2417,7 +2436,7 @@ static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
 		qm_set_sqctype(q, qp_ctx.qc_type);
 		qp_ctx.id = qp->qp_id;
 
-		if (copy_to_user((void __user *)arg, &qp_ctx,
+		if (copy_to_user((void __user *)(uintptr_t)arg, &qp_ctx,
 				 sizeof(struct hisi_qp_ctx)))
 			return -EFAULT;
 
@@ -2439,6 +2458,66 @@ static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
 	}
 
 	return -EINVAL;
+}
+
+static void qm_uacce_api_ver_init(struct hisi_qm *qm)
+{
+	struct uacce_device *uacce = qm->uacce;
+
+	if (uacce->flags & UACCE_DEV_IOMMU) {
+		qm->use_sva = uacce->flags & UACCE_DEV_SVA ? true : false;
+
+		if (qm->ver == QM_HW_V1)
+			uacce->api_ver = HISI_QM_API_VER_BASE;
+		else if (qm->ver == QM_HW_V2)
+			uacce->api_ver = HISI_QM_API_VER2_BASE;
+		else
+			uacce->api_ver = HISI_QM_API_VER3_BASE;
+	} else {
+		qm->use_sva = false;
+
+		if (qm->ver == QM_HW_V1)
+			uacce->api_ver = HISI_QM_API_VER_BASE
+					 UACCE_API_VER_NOIOMMU_SUBFIX;
+		else if (qm->ver == QM_HW_V2)
+			uacce->api_ver = HISI_QM_API_VER2_BASE
+					 UACCE_API_VER_NOIOMMU_SUBFIX;
+		else
+			uacce->api_ver = HISI_QM_API_VER3_BASE
+					 UACCE_API_VER_NOIOMMU_SUBFIX;
+	}
+}
+
+static void qm_uacce_base_init(struct hisi_qm *qm)
+{
+	unsigned long dus_page_nr, mmio_page_nr;
+	struct uacce_device *uacce = qm->uacce;
+	struct pci_dev *pdev = qm->pdev;
+	u16 sq_depth, cq_depth;
+
+	qm_uacce_api_ver_init(qm);
+
+	if (qm->ver == QM_HW_V1)
+		mmio_page_nr = QM_DOORBELL_PAGE_NR;
+	else if (qm->ver == QM_HW_V2 ||
+		!test_bit(QM_SUPPORT_DB_ISOLATION, &qm->caps))
+		mmio_page_nr = QM_DOORBELL_PAGE_NR +
+			QM_DOORBELL_SQ_CQ_BASE_V2 / PAGE_SIZE;
+	else
+		mmio_page_nr = QM_QP_DB_INTERVAL / PAGE_SIZE;
+
+	uacce->is_vf = pdev->is_virtfn;
+	uacce->priv = qm;
+	uacce->parent = &pdev->dev;
+	qm_get_xqc_depth(qm, &sq_depth, &cq_depth, QM_QP_DEPTH_CAP);
+
+	/* Add one more page for device or qp status */
+	dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * sq_depth +
+			sizeof(struct qm_cqe) * cq_depth + PAGE_SIZE) >>
+					PAGE_SHIFT;
+
+	uacce->qf_pg_num[UACCE_QFRT_MMIO] = mmio_page_nr;
+	uacce->qf_pg_num[UACCE_QFRT_DUS] = dus_page_nr;
 }
 
 /**
@@ -2566,7 +2645,7 @@ static void qm_remove_uacce(struct hisi_qm *qm)
 {
 	struct uacce_device *uacce = qm->uacce;
 
-	if (qm->use_sva) {
+	if (uacce) {
 		qm_hw_err_destroy(qm);
 		uacce_remove(uacce);
 		qm->uacce = NULL;
@@ -2575,15 +2654,9 @@ static void qm_remove_uacce(struct hisi_qm *qm)
 
 static int qm_alloc_uacce(struct hisi_qm *qm)
 {
+	struct uacce_interface interface = {0};
 	struct pci_dev *pdev = qm->pdev;
 	struct uacce_device *uacce;
-	unsigned long mmio_page_nr;
-	unsigned long dus_page_nr;
-	u16 sq_depth, cq_depth;
-	struct uacce_interface interface = {
-		.flags = UACCE_DEV_SVA,
-		.ops = &uacce_qm_ops,
-	};
 	int ret;
 
 	ret = strscpy(interface.name, dev_driver_string(&pdev->dev),
@@ -2591,52 +2664,40 @@ static int qm_alloc_uacce(struct hisi_qm *qm)
 	if (ret < 0)
 		return -ENAMETOOLONG;
 
-	uacce = uacce_alloc(&pdev->dev, &interface);
-	if (IS_ERR(uacce))
-		return PTR_ERR(uacce);
+	interface.flags = qm->use_iommu ? UACCE_DEV_IOMMU : UACCE_DEV_NOIOMMU;
+	if (qm->mode == UACCE_MODE_SVA) {
+		if (!qm->use_iommu) {
+			pci_err(pdev, "iommu not support sva!\n");
+			return -EINVAL;
+		}
 
-	if (uacce->flags & UACCE_DEV_SVA) {
-		qm->use_sva = true;
-	} else {
-		/* only consider sva case */
-		qm_remove_uacce(qm);
-		return -EINVAL;
+		interface.flags |= UACCE_DEV_SVA;
 	}
 
-	uacce->is_vf = pdev->is_virtfn;
-	uacce->priv = qm;
-
-	if (qm->ver == QM_HW_V1)
-		uacce->api_ver = HISI_QM_API_VER_BASE;
-	else if (qm->ver == QM_HW_V2)
-		uacce->api_ver = HISI_QM_API_VER2_BASE;
-	else
-		uacce->api_ver = HISI_QM_API_VER3_BASE;
-
-	if (qm->ver == QM_HW_V1)
-		mmio_page_nr = QM_DOORBELL_PAGE_NR;
-	else if (!test_bit(QM_SUPPORT_DB_ISOLATION, &qm->caps))
-		mmio_page_nr = QM_DOORBELL_PAGE_NR +
-			QM_DOORBELL_SQ_CQ_BASE_V2 / PAGE_SIZE;
-	else
-		mmio_page_nr = qm->db_interval / PAGE_SIZE;
-
-	qm_get_xqc_depth(qm, &sq_depth, &cq_depth, QM_QP_DEPTH_CAP);
-
-	/* Add one more page for device or qp status */
-	dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * sq_depth +
-		       sizeof(struct qm_cqe) * cq_depth  + PAGE_SIZE) >>
-					 PAGE_SHIFT;
-
-	uacce->qf_pg_num[UACCE_QFRT_MMIO] = mmio_page_nr;
-	uacce->qf_pg_num[UACCE_QFRT_DUS]  = dus_page_nr;
-
+	interface.ops = &uacce_qm_ops;
+	uacce = uacce_alloc(&pdev->dev, &interface);
+	if (IS_ERR(uacce)) {
+		pci_err(pdev, "fail to alloc uacce device\n!");
+		return PTR_ERR(uacce);
+	}
 	qm->uacce = uacce;
+
+	qm_uacce_base_init(qm);
 	INIT_LIST_HEAD(&qm->isolate_data.qm_hw_errs);
 	mutex_init(&qm->isolate_data.isolate_lock);
 
 	return 0;
 }
+
+int qm_register_uacce(struct hisi_qm *qm)
+{
+	if (!qm->uacce)
+		return 0;
+
+	dev_info(&qm->pdev->dev, "qm register to uacce\n");
+	return uacce_register(qm->uacce);
+}
+EXPORT_SYMBOL_GPL(qm_register_uacce);
 
 /**
  * qm_frozen() - Try to froze QM to cut continuous queue request. If
@@ -2743,7 +2804,7 @@ static int hisi_qp_memory_init(struct hisi_qm *qm, size_t dma_size, int id,
 	struct hisi_qp *qp;
 	int ret = -ENOMEM;
 
-	qm->poll_data[id].qp_finish_id = kcalloc(qm->qp_num, sizeof(u16),
+	qm->poll_data[id].qp_finish_id = kcalloc(qm->eq_depth, sizeof(u16),
 						 GFP_KERNEL);
 	if (!qm->poll_data[id].qp_finish_id)
 		return -ENOMEM;
@@ -2771,6 +2832,20 @@ err_free_qp_finish_id:
 	return ret;
 }
 
+static inline bool is_iommu_used(struct device *dev)
+{
+	struct iommu_domain *domain;
+
+	domain = iommu_get_domain_for_dev(dev);
+	if (domain) {
+		dev_info(dev, "iommu domain type = %u\n", domain->type);
+		if (domain->type & __IOMMU_DOMAIN_PAGING)
+			return true;
+	}
+
+	return false;
+}
+
 static void hisi_qm_pre_init(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -2786,6 +2861,7 @@ static void hisi_qm_pre_init(struct hisi_qm *qm)
 	mutex_init(&qm->mailbox_lock);
 	init_rwsem(&qm->qps_lock);
 	qm->qp_in_used = 0;
+	qm->use_iommu = is_iommu_used(&pdev->dev);
 	if (test_bit(QM_SUPPORT_RPM, &qm->caps)) {
 		if (!acpi_device_power_manageable(ACPI_COMPANION(&pdev->dev)))
 			dev_info(&pdev->dev, "_PS0 and _PR0 are not defined");
@@ -2893,12 +2969,9 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	hisi_qm_set_state(qm, QM_NOT_READY);
 	up_write(&qm->qps_lock);
 
+	qm_remove_uacce(qm);
 	qm_irqs_unregister(qm);
 	hisi_qm_pci_uninit(qm);
-	if (qm->use_sva) {
-		uacce_remove(qm->uacce);
-		qm->uacce = NULL;
-	}
 }
 EXPORT_SYMBOL_GPL(hisi_qm_uninit);
 
@@ -4098,7 +4171,7 @@ static int qm_controller_reset_prepare(struct hisi_qm *qm)
 		return ret;
 	}
 
-	if (qm->use_sva) {
+	if (qm->uacce) {
 		ret = qm_hw_err_isolate(qm);
 		if (ret)
 			pci_err(pdev, "failed to isolate hw err!\n");
@@ -4424,7 +4497,7 @@ err_reset:
 	qm_reset_bit_clear(qm);
 
 	/* if resetting fails, isolate the device */
-	if (qm->use_sva)
+	if (qm->uacce)
 		qm->isolate_data.is_isolate = true;
 	return ret;
 }
@@ -5386,7 +5459,7 @@ int hisi_qm_init(struct hisi_qm *qm)
 		}
 	}
 
-	if (qm->mode == UACCE_MODE_SVA) {
+	if (qm->mode != UACCE_MODE_NOUACCE) {
 		ret = qm_alloc_uacce(qm);
 		if (ret < 0)
 			dev_warn(dev, "fail to alloc uacce (%d)\n", ret);
