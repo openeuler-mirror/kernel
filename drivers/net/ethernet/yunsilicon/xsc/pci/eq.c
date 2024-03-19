@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
-
 #include <linux/interrupt.h>
 #include <linux/module.h>
-#include <common/driver.h>
-#include <common/cq.h>
+#include "common/driver.h"
+#include "common/cq.h"
 #include "fw/xsc_fw.h"
 #include "wq.h"
-#include <common/xsc_core.h>
+#include "common/xsc_core.h"
 
 enum {
 	XSC_EQE_SIZE		= sizeof(struct xsc_eqe),
@@ -66,17 +64,6 @@ static struct xsc_eqe *next_eqe_sw(struct xsc_eq *eq)
 	return ((eqe->owner & 1) ^ !!(eq->cons_index & eq->nent)) ? NULL : eqe;
 }
 
-#ifdef XSC_DEBUG
-static const char *eqe_type_str(u8 type)
-{
-	switch (type) {
-	case XSC_EVENT_TYPE_COMP:
-		return "XSC_EVENT_TYPE_COMP";
-	default:
-		return "Unrecognized event";
-	}
-}
-#endif
 static void eq_update_ci(struct xsc_eq *eq, int arm)
 {
 	union xsc_eq_doorbell db;
@@ -86,8 +73,7 @@ static void eq_update_ci(struct xsc_eq *eq, int arm)
 	db.eq_next_cid = eq->cons_index;
 	db.eq_id = eq->eqn;
 #ifdef XSC_DEBUG
-	xsc_core_dbg(eq->dev, "ARM EQ %d ci 0x%x arm %d\n",
-		eq->eqn, eq->cons_index, arm);
+	xsc_core_dbg(eq->dev, "ARM EQ %d ci 0x%x arm %d\n", eq->eqn, eq->cons_index, arm);
 #endif
 	writel(db.val, REG_ADDR(eq->dev, eq->doorbell));
 	/* We still want ordering, just not swabbing, so add a barrier */
@@ -106,7 +92,7 @@ void xsc_cq_completion(struct xsc_core_device *dev, u32 cqn)
 	rcu_read_unlock();
 
 	if (!cq) {
-		xsc_core_err(dev, "Completion event for bogus CQ 0x%x\n", cqn);
+		xsc_core_err(dev, "Completion event for bogus CQ, cqn=%d\n", cqn);
 		return;
 	}
 
@@ -133,7 +119,7 @@ void xsc_eq_cq_event(struct xsc_core_device *dev, u32 cqn, int event_type)
 	spin_unlock(&table->lock);
 
 	if (unlikely(!cq)) {
-		xsc_core_err(dev, "Async event for bogus CQ 0x%x\n", cqn);
+		xsc_core_err(dev, "Async event for bogus CQ, cqn=%d\n", cqn);
 		return;
 	}
 
@@ -141,7 +127,6 @@ void xsc_eq_cq_event(struct xsc_core_device *dev, u32 cqn, int event_type)
 
 	if (atomic_dec_and_test(&cq->refcount))
 		complete(&cq->free);
-
 }
 
 static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
@@ -157,8 +142,8 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 		 */
 		rmb();
 #ifdef XSC_DEBUG
-		xsc_core_dbg(eq->dev, "eqn %d, eqe type %s cqn/qpn: %d\n",
-			eq->eqn, eqe_type_str(eqe->type), eqe->queue_id);
+		xsc_core_dbg(eq->dev, "eqn=%d, eqe_type=%d, cqn/qpn=%d\n",
+			     eq->eqn, eqe->type, eqe->queue_id);
 #endif
 		switch (eqe->type) {
 		case XSC_EVENT_TYPE_COMP:
@@ -182,7 +167,7 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 			xsc_qp_event(dev, qpn, eqe->type);
 			break;
 		default:
-			xsc_core_warn(dev, "Unhandle event 0x%x on EQ 0x%x\n", eqe->type, eq->eqn);
+			xsc_core_warn(dev, "Unhandle event %d on EQ %d\n", eqe->type, eq->eqn);
 			break;
 		}
 
@@ -198,7 +183,7 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 		 */
 		if (unlikely(set_ci >= XSC_NUM_SPARE_EQE)) {
 			xsc_core_dbg(dev, "EQ%d eq_num=%d qpn=%d, db_noarm\n",
-					eq->eqn, set_ci, eqe->queue_id);
+				     eq->eqn, set_ci, eqe->queue_id);
 			eq_update_ci(eq, 0);
 			set_ci = 0;
 		}
@@ -207,7 +192,7 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 	eq_update_ci(eq, 1);
 #ifdef XSC_DEBUG
 	xsc_core_dbg(dev, "EQ%d eq_num=%d qpn=%d, db_arm\n",
-			eq->eqn, set_ci, (eqe?eqe->queue_id:0));
+		     eq->eqn, set_ci, (eqe ? eqe->queue_id : 0));
 #endif
 
 	return eqes_found;
@@ -238,7 +223,7 @@ static void init_eq_buf(struct xsc_eq *eq)
 }
 
 int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
-		       int nent, const char *name)
+		      int nent, const char *name)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
 	u16 msix_vec_offset = dev->msix_vec_base + vecidx;
@@ -249,8 +234,7 @@ int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
 	int hw_npages;
 
 	eq->nent = roundup_pow_of_two(roundup(nent, XSC_NUM_SPARE_EQE));
-	err = xsc_buf_alloc(dev, eq->nent * XSC_EQE_SIZE, PAGE_SIZE,
-			     &eq->buf);
+	err = xsc_buf_alloc(dev, eq->nent * XSC_EQE_SIZE, PAGE_SIZE, &eq->buf);
 	if (err)
 		return err;
 
@@ -279,7 +263,6 @@ int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
 		goto err_in;
 
 	if (out.hdr.status) {
-		//err = xsc_cmd_status_to_err(&out.hdr);
 		err = -ENOSPC;
 		goto err_in;
 	}
@@ -293,7 +276,7 @@ int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
 	eq->doorbell = dev->regs.event_db;
 	eq->index = vecidx;
 	xsc_core_dbg(dev, "msix%d request vector%d eq%d irq%d\n",
-			vecidx, msix_vec_offset, eq->eqn, eq->irqn);
+		     vecidx, msix_vec_offset, eq->eqn, eq->irqn);
 
 	err = request_irq(eq->irqn, xsc_msix_handler, 0,
 			  dev_res->irq_info[vecidx].name, eq);
@@ -326,7 +309,7 @@ int xsc_destroy_unmap_eq(struct xsc_core_device *dev, struct xsc_eq *eq)
 	err = xsc_cmd_destroy_eq(dev, eq->eqn);
 	if (err)
 		xsc_core_warn(dev, "failed to destroy a previously created eq: eqn %d\n",
-			       eq->eqn);
+			      eq->eqn);
 	xsc_buf_free(dev, &eq->buf);
 
 	return err;
@@ -357,7 +340,7 @@ int xsc_start_eqs(struct xsc_core_device *dev)
 	int err;
 
 	err = xsc_create_map_eq(dev, &table->async_eq, XSC_EQ_VEC_ASYNC,
-				 XSC_NUM_ASYNC_EQE, "xsc_async_eq");
+				XSC_NUM_ASYNC_EQE, "xsc_async_eq");
 	if (err)
 		xsc_core_warn(dev, "failed to create async EQ %d\n", err);
 
@@ -373,7 +356,7 @@ void xsc_stop_eqs(struct xsc_core_device *dev)
 }
 
 int xsc_core_eq_query(struct xsc_core_device *dev, struct xsc_eq *eq,
-		       struct xsc_query_eq_mbox_out *out, int outlen)
+		      struct xsc_query_eq_mbox_out *out, int outlen)
 {
 	struct xsc_query_eq_mbox_in in;
 	int err = 0;
@@ -382,10 +365,6 @@ int xsc_core_eq_query(struct xsc_core_device *dev, struct xsc_eq *eq,
 	memset(out, 0, outlen);
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_EQ);
 	in.eqn = eq->eqn;
-
-	//err = xsc_cmd_exec(dev, &in, sizeof(in), out, outlen);
-	//if (err)
-	//	return err;
 
 	if (out->hdr.status)
 		err = xsc_cmd_status_to_err(&out->hdr);

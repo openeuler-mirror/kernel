@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/device.h>
 #include <linux/netdevice.h>
 #include <net/pkt_cls.h>
-#include <common/xsc_core.h>
-#include <common/xsc_cmd.h>
+#include "common/xsc_core.h"
+#include "common/xsc_cmd.h"
 #include "xsc_eth.h"
 #include "xsc_eth_debug.h"
 
@@ -40,7 +39,7 @@ static int xsc_max_tc(struct xsc_core_device *dev)
 }
 
 static int xsc_dcbnl_set_dcbx_mode(struct xsc_adapter *priv,
-				     enum xsc_dcbx_oper_mode mode)
+				   enum xsc_dcbx_oper_mode mode)
 {
 	return 1;
 }
@@ -54,7 +53,7 @@ static int xsc_dcbnl_switch_to_host_mode(struct xsc_adapter *priv)
 }
 
 static int xsc_dcbnl_ieee_getets(struct net_device *netdev,
-				   struct ieee_ets *ets)
+				 struct ieee_ets *ets)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
@@ -109,7 +108,7 @@ static int xsc_dcbnl_ieee_getets(struct net_device *netdev,
 			 !is_tc_group_6_exist)
 			priv->dcbx.tc_tsa[i] = IEEE_8021QAZ_TSA_VENDOR;
 		xsc_eth_dbg(HW, priv, "%s: tc%d, group=%d, bw=%d\n",
-				__func__, i, tc_group[i], ets->tc_tx_bw[i]);
+			    __func__, i, tc_group[i], ets->tc_tx_bw[i]);
 	}
 	memcpy(ets->tc_tsa, priv->dcbx.tc_tsa, sizeof(ets->tc_tsa));
 
@@ -156,7 +155,7 @@ static void xsc_build_tc_group(struct ieee_ets *ets, u8 *tc_group, int max_tc)
 }
 
 static void xsc_build_tc_tx_bw(struct ieee_ets *ets, u8 *tc_tx_bw,
-				 u8 *tc_group, int max_tc)
+			       u8 *tc_group, int max_tc)
 {
 	int bw_for_ets_zero_bw_tc = 0;
 	int last_ets_zero_bw_tc = -1;
@@ -235,8 +234,8 @@ int xsc_dcbnl_ieee_setets_core(struct xsc_adapter *priv, struct ieee_ets *ets)
 }
 
 static int xsc_dbcnl_validate_ets(struct net_device *netdev,
-				    struct ieee_ets *ets,
-				    bool zero_sum_allowed)
+				  struct ieee_ets *ets,
+				  bool zero_sum_allowed)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	bool have_ets_tc = false;
@@ -272,7 +271,7 @@ static int xsc_dbcnl_validate_ets(struct net_device *netdev,
 }
 
 static int xsc_dcbnl_ieee_setets(struct net_device *dev,
-				   struct ieee_ets *ets)
+				 struct ieee_ets *ets)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	int err;
@@ -292,12 +291,10 @@ static int xsc_dcbnl_ieee_setets(struct net_device *dev,
 }
 
 static int xsc_dcbnl_ieee_getpfc(struct net_device *dev,
-				   struct ieee_pfc *pfc)
+				 struct ieee_pfc *pfc)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_core_device *xdev = priv->xdev;
-//	struct xsc_pport_stats *pstats = &priv->stats.pport;
-//	struct xsc_cee_config cee_cfg = priv->dcbx.cee_cfg;
 	int i;
 
 	pfc->pfc_cap = xsc_max_tc(xdev) + 1;
@@ -313,9 +310,6 @@ static int xsc_dcbnl_ieee_getpfc(struct net_device *dev,
 #else
 	pfc->pfc_en = 0;
 
-//	for (i = 0; i < CEE_DCBX_MAX_PRIO; i++)
-//		pfc->pfc_en |= cee_cfg.pfc_setting[i] << i;
-
 	for (i = 0; i < pfc->pfc_cap; i++)
 		pfc->pfc_en |= 1 << i;
 
@@ -326,11 +320,11 @@ static int xsc_dcbnl_ieee_getpfc(struct net_device *dev,
 }
 
 static int xsc_dcbnl_ieee_setpfc(struct net_device *dev,
-				   struct ieee_pfc *pfc)
+				 struct ieee_pfc *pfc)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	u32 changed = 0;
-	u8 curr_pfc_en = 0;
+	u8 curr_pfc_en;
 	int ret = 0;
 #ifndef XSC_DCBX_STUB
 	struct xsc_core_device *xdev = priv->xdev;
@@ -358,7 +352,7 @@ static int xsc_dcbnl_ieee_setpfc(struct net_device *dev,
 	if (pfc->pfc_en != curr_pfc_en) {
 		changed |= XSC_PORT_BUFFER_PFC;
 		for (i = 0; i < CEE_DCBX_MAX_PRIO; i++) {
-			if (pfc->pfc_en & (1<<i))
+			if (pfc->pfc_en & (1 << i))
 				cee_cfg->pfc_setting[i] = 1;
 			else
 				cee_cfg->pfc_setting[i] = 0;
@@ -366,7 +360,7 @@ static int xsc_dcbnl_ieee_setpfc(struct net_device *dev,
 	}
 #endif
 	xsc_eth_dbg(HW, priv, "%s: new_pfc_en=0x%x, cur_pfc_en=0x%x\n",
-			__func__, pfc->pfc_en, curr_pfc_en);
+		    __func__, pfc->pfc_en, curr_pfc_en);
 
 	if (pfc->delay &&
 	    pfc->delay < XSC_MAX_CABLE_LENGTH &&
@@ -378,11 +372,11 @@ static int xsc_dcbnl_ieee_setpfc(struct net_device *dev,
 #ifndef XSC_DCBX_STUB
 	if (xdev->caps.port_buf) {
 		pfc_new.pfc_en = (changed & XSC_PORT_BUFFER_PFC) ?
-					pfc->pfc_en : curr_pfc_en;
+				  pfc->pfc_en : curr_pfc_en;
 		if (priv->dcbx.manual_buffer)
 			ret = xsc_port_manual_buffer_config(priv, changed,
-							      dev->mtu, &pfc_new,
-							      NULL, NULL);
+							    dev->mtu, &pfc_new,
+							    NULL, NULL);
 		if (ret && (changed & XSC_PORT_BUFFER_CABLE_LEN))
 			priv->dcbx.cable_len = old_cable_len;
 	}
@@ -390,8 +384,8 @@ static int xsc_dcbnl_ieee_setpfc(struct net_device *dev,
 
 	if (!ret)
 		xsc_eth_dbg(HW, priv,
-			  "%s: PFC per priority bit mask: 0x%x\n",
-			  __func__, pfc->pfc_en);
+			    "%s: PFC per priority bit mask: 0x%x\n",
+			    __func__, pfc->pfc_en);
 
 	return ret;
 }
@@ -413,7 +407,7 @@ static u8 xsc_dcbnl_setdcbx(struct net_device *dev, u8 mode)
 	if (mode & DCB_CAP_DCBX_LLD_MANAGED)
 		return 1;
 
-	if ((!mode) && priv->xdev->caps.dcbx) {
+	if (!mode && priv->xdev->caps.dcbx) {
 		if (dcbx->mode == XSC_DCBX_PARAM_VER_OPER_AUTO)
 			return 0;
 
@@ -449,8 +443,7 @@ static int xsc_dcbnl_ieee_setapp(struct net_device *dev, struct dcb_app *app)
 	if (!priv->xdev->caps.dscp)
 		return -EOPNOTSUPP;
 
-	if ((app->selector != IEEE_8021QAZ_APP_SEL_DSCP) ||
-	    (app->protocol >= XSC_MAX_DSCP))
+	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP || app->protocol >= XSC_MAX_DSCP)
 		return -EINVAL;
 
 	/* Save the old entry info */
@@ -502,8 +495,7 @@ static int xsc_dcbnl_ieee_delapp(struct net_device *dev, struct dcb_app *app)
 	if  (!priv->xdev->caps.dscp)
 		return -EOPNOTSUPP;
 
-	if ((app->selector != IEEE_8021QAZ_APP_SEL_DSCP) ||
-	    (app->protocol >= XSC_MAX_DSCP))
+	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP || app->protocol >= XSC_MAX_DSCP)
 		return -EINVAL;
 
 	/* Skip if no dscp app entry */
@@ -538,7 +530,7 @@ fw_err:
 }
 
 static int xsc_dcbnl_ieee_getmaxrate(struct net_device *netdev,
-				       struct ieee_maxrate *maxrate)
+				     struct ieee_maxrate *maxrate)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
@@ -581,7 +573,7 @@ static int xsc_dcbnl_ieee_getmaxrate(struct net_device *netdev,
 }
 
 static int xsc_dcbnl_ieee_setmaxrate(struct net_device *netdev,
-				       struct ieee_maxrate *maxrate)
+				     struct ieee_maxrate *maxrate)
 {
 	struct xsc_adapter *priv    = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
@@ -613,7 +605,7 @@ static int xsc_dcbnl_ieee_setmaxrate(struct net_device *netdev,
 
 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++)
 		netdev_dbg(netdev, "%s: tc_%d <=> max_bw %d Gbps\n",
-			  __func__, i, max_bw_value[i]);
+			   __func__, i, max_bw_value[i]);
 #ifndef XSC_DCBX_STUB
 	return xsc_modify_port_ets_rate_limit(xdev, max_bw_value, max_bw_unit);
 #else
@@ -682,7 +674,7 @@ static u8 xsc_dcbnl_getstate(struct net_device *netdev)
 }
 
 static void xsc_dcbnl_getpermhwaddr(struct net_device *netdev,
-				      u8 *perm_addr)
+				    u8 *perm_addr)
 {
 #ifndef XSC_DCBX_STUB
 	struct xsc_adapter *priv = netdev_priv(netdev);
@@ -698,15 +690,15 @@ static void xsc_dcbnl_getpermhwaddr(struct net_device *netdev,
 }
 
 static void xsc_dcbnl_setpgtccfgtx(struct net_device *netdev,
-				     int priority, u8 prio_type,
-				     u8 pgid, u8 bw_pct, u8 up_map)
+				   int priority, u8 prio_type,
+				   u8 pgid, u8 bw_pct, u8 up_map)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_cee_config *cee_cfg = &priv->dcbx.cee_cfg;
 
 	xsc_eth_dbg(HW, priv, "%s: prio=%d, type=%d, pgid=%d, bw_pct=%d, up_map=%d\n",
-			__func__, priority, prio_type, pgid,
-			bw_pct, up_map);
+		    __func__, priority, prio_type, pgid,
+		    bw_pct, up_map);
 	if (priority >= CEE_DCBX_MAX_PRIO) {
 		netdev_err(netdev,
 			   "%s, priority is out of range\n", __func__);
@@ -723,13 +715,13 @@ static void xsc_dcbnl_setpgtccfgtx(struct net_device *netdev,
 }
 
 static void xsc_dcbnl_setpgbwgcfgtx(struct net_device *netdev,
-				      int pgid, u8 bw_pct)
+				    int pgid, u8 bw_pct)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_cee_config *cee_cfg = &priv->dcbx.cee_cfg;
 
 	xsc_eth_dbg(HW, priv, "%s: pgid=%d, bw_pct=%d\n",
-			__func__, pgid, bw_pct);
+		    __func__, pgid, bw_pct);
 	if (pgid >= CEE_DCBX_MAX_PGS) {
 		netdev_err(netdev,
 			   "%s, priority group is out of range\n", __func__);
@@ -740,8 +732,8 @@ static void xsc_dcbnl_setpgbwgcfgtx(struct net_device *netdev,
 }
 
 static void xsc_dcbnl_getpgtccfgtx(struct net_device *netdev,
-				     int priority, u8 *prio_type,
-				     u8 *pgid, u8 *bw_pct, u8 *up_map)
+				   int priority, u8 *prio_type,
+				   u8 *pgid, u8 *bw_pct, u8 *up_map)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
@@ -766,11 +758,11 @@ static void xsc_dcbnl_getpgtccfgtx(struct net_device *netdev,
 		*pgid = 0;
 
 	xsc_eth_dbg(HW, priv, "%s: prio=%d, pgid=%d, bw_pct=%d\n",
-			__func__, priority, *pgid, *bw_pct);
+		    __func__, priority, *pgid, *bw_pct);
 }
 
 static void xsc_dcbnl_getpgbwgcfgtx(struct net_device *netdev,
-				      int pgid, u8 *bw_pct)
+				    int pgid, u8 *bw_pct)
 {
 	struct ieee_ets ets;
 	struct xsc_adapter *priv = netdev_priv(netdev);
@@ -784,17 +776,17 @@ static void xsc_dcbnl_getpgbwgcfgtx(struct net_device *netdev,
 	xsc_dcbnl_ieee_getets(netdev, &ets);
 	*bw_pct = ets.tc_tx_bw[pgid];
 	xsc_eth_dbg(HW, priv, "%s: pgid=%d, bw_pct=%d\n",
-			__func__, pgid, *bw_pct);
+		    __func__, pgid, *bw_pct);
 }
 
 static void xsc_dcbnl_setpfccfg(struct net_device *netdev,
-				  int priority, u8 setting)
+				int priority, u8 setting)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_cee_config *cee_cfg = &priv->dcbx.cee_cfg;
 
 	xsc_eth_dbg(HW, priv, "%s: prio=%d, setting=%d\n",
-			__func__, priority, setting);
+		    __func__, priority, setting);
 	if (priority >= CEE_DCBX_MAX_PRIO) {
 		netdev_err(netdev,
 			   "%s, priority is out of range\n", __func__);
@@ -809,7 +801,7 @@ static void xsc_dcbnl_setpfccfg(struct net_device *netdev,
 
 static int
 xsc_dcbnl_get_priority_pfc(struct net_device *netdev,
-			     int priority, u8 *setting)
+			   int priority, u8 *setting)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct ieee_pfc pfc;
@@ -823,12 +815,12 @@ xsc_dcbnl_get_priority_pfc(struct net_device *netdev,
 		*setting = (pfc.pfc_en >> priority) & 0x01;
 
 	xsc_eth_dbg(HW, priv, "%s: prio=%d, setting=%d\n",
-			__func__, priority, *setting);
+		    __func__, priority, *setting);
 	return err;
 }
 
 static void xsc_dcbnl_getpfccfg(struct net_device *netdev,
-				  int priority, u8 *setting)
+				int priority, u8 *setting)
 {
 	if (priority >= CEE_DCBX_MAX_PRIO) {
 		netdev_err(netdev,
@@ -843,7 +835,7 @@ static void xsc_dcbnl_getpfccfg(struct net_device *netdev,
 }
 
 static u8 xsc_dcbnl_getcap(struct net_device *netdev,
-			     int capid, u8 *cap)
+			   int capid, u8 *cap)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
@@ -883,12 +875,12 @@ static u8 xsc_dcbnl_getcap(struct net_device *netdev,
 	}
 
 	xsc_eth_dbg(HW, priv, "%s: capid=%d, cap=%d, ret=%d\n",
-			__func__, capid, *cap, rval);
+		    __func__, capid, *cap, rval);
 	return rval;
 }
 
 static int xsc_dcbnl_getnumtcs(struct net_device *netdev,
-				 int tcs_id, u8 *num)
+			       int tcs_id, u8 *num)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
@@ -903,7 +895,7 @@ static int xsc_dcbnl_getnumtcs(struct net_device *netdev,
 	}
 
 	xsc_eth_dbg(HW, priv, "%s: tcs_id=%d, tc_num=%d\n",
-			__func__, tcs_id, *num);
+		    __func__, tcs_id, *num);
 	return 0;
 }
 
@@ -922,22 +914,22 @@ static void xsc_dcbnl_setpfcstate(struct net_device *netdev, u8 state)
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_cee_config *cee_cfg = &priv->dcbx.cee_cfg;
 
-	if ((state != XSC_CEE_STATE_UP) && (state != XSC_CEE_STATE_DOWN))
+	if (state != XSC_CEE_STATE_UP && state != XSC_CEE_STATE_DOWN)
 		return;
 
 	cee_cfg->pfc_enable = state;
 }
 
 static int xsc_dcbnl_getbuffer(struct net_device *dev,
-				 struct dcbnl_buffer *dcb_buffer)
+			       struct dcbnl_buffer *dcb_buffer)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_core_device *xdev = priv->xdev;
-	int err = 0;
-#ifndef XSC_DCBX_STUB
+	struct xsc_port_buffer port_buffer = {0};
+	u8 buffer[XSC_MAX_PRIORITY] = {0};
 	int i;
-	struct xsc_port_buffer port_buffer;
-	u8 buffer[XSC_MAX_PRIORITY];
+#ifndef XSC_DCBX_STUB
+	int err = 0;
 #endif
 
 	if (!xdev->caps.port_buf)
@@ -947,35 +939,35 @@ static int xsc_dcbnl_getbuffer(struct net_device *dev,
 	err = xsc_port_query_priority2buffer(xdev, buffer);
 	if (err)
 		return err;
+#endif
 
 	for (i = 0; i < XSC_MAX_PRIORITY; i++)
 		dcb_buffer->prio2buffer[i] = buffer[i];
 
+#ifndef XSC_DCBX_STUB
 	err = xsc_port_query_buffer(priv, &port_buffer);
 	if (err)
 		return err;
+#endif
 
 	for (i = 0; i < XSC_MAX_BUFFER; i++)
 		dcb_buffer->buffer_size[i] = port_buffer.buffer[i].size;
 	dcb_buffer->total_size = port_buffer.port_buffer_size;
-#endif
-	return err;
+
+	return 0;
 }
 
 static int xsc_dcbnl_setbuffer(struct net_device *dev,
-				 struct dcbnl_buffer *dcb_buffer)
+			       struct dcbnl_buffer *dcb_buffer)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_core_device *xdev = priv->xdev;
-	int i;
-	int err = 0;
-#ifndef XSC_DCBX_STUB
-	struct xsc_port_buffer port_buffer;
-	u8 old_prio2buffer[XSC_MAX_PRIORITY];
+	struct xsc_port_buffer port_buffer = {0};
+	u8 old_prio2buffer[XSC_MAX_PRIORITY] = {0};
 	u32 *buffer_size = NULL;
 	u8 *prio2buffer = NULL;
 	u32 changed = 0;
-#endif
+	int i, err = 0;
 
 	if (!xdev->caps.port_buf)
 		return -EOPNOTSUPP;
@@ -990,6 +982,7 @@ static int xsc_dcbnl_setbuffer(struct net_device *dev,
 	err = xsc_port_query_priority2buffer(xdev, old_prio2buffer);
 	if (err)
 		return err;
+#endif
 
 	for (i = 0; i < XSC_MAX_PRIORITY; i++) {
 		if (dcb_buffer->prio2buffer[i] != old_prio2buffer[i]) {
@@ -999,9 +992,11 @@ static int xsc_dcbnl_setbuffer(struct net_device *dev,
 		}
 	}
 
+#ifndef XSC_DCBX_STUB
 	err = xsc_port_query_buffer(priv, &port_buffer);
 	if (err)
 		return err;
+#endif
 
 	for (i = 0; i < XSC_MAX_BUFFER; i++) {
 		if (port_buffer.buffer[i].size != dcb_buffer->buffer_size[i]) {
@@ -1014,9 +1009,10 @@ static int xsc_dcbnl_setbuffer(struct net_device *dev,
 	if (!changed)
 		return 0;
 
-	priv->dcbx.manual_buffer = true;
+	priv->dcbx.manual_buffer = 1;
+#ifndef XSC_DCBX_STUB
 	err = xsc_port_manual_buffer_config(priv, changed, dev->mtu, NULL,
-					      buffer_size, prio2buffer);
+					    buffer_size, prio2buffer);
 #endif
 	return err;
 }
@@ -1034,7 +1030,6 @@ const struct dcbnl_rtnl_ops xsc_dcbnl_ops = {
 	.setdcbx	= xsc_dcbnl_setdcbx,
 	.dcbnl_getbuffer = xsc_dcbnl_getbuffer,
 	.dcbnl_setbuffer = xsc_dcbnl_setbuffer,
-
 /* CEE interfaces */
 	.setall         = xsc_dcbnl_setall,
 	.getstate       = xsc_dcbnl_getstate,
@@ -1054,7 +1049,7 @@ const struct dcbnl_rtnl_ops xsc_dcbnl_ops = {
 };
 
 static void xsc_dcbnl_query_dcbx_mode(struct xsc_adapter *priv,
-					enum xsc_dcbx_oper_mode *mode)
+				      enum xsc_dcbx_oper_mode *mode)
 {
 	*mode = XSC_DCBX_PARAM_VER_OPER_HOST;
 
@@ -1144,7 +1139,6 @@ static void xsc_trust_update_tx_min_inline_mode(struct xsc_adapter *priv)
 
 static void xsc_trust_update_sq_inline_mode(struct xsc_adapter *priv)
 {
-
 	int old_mode = priv->nic_param.tx_min_inline_mode;
 
 	mutex_lock(&priv->state_lock);
@@ -1190,7 +1184,7 @@ static int xsc_set_dscp2prio(struct xsc_adapter *priv, u8 dscp, u8 prio)
 	int err = 0;
 
 	xsc_eth_dbg(HW, priv, "%s: dscp=%d, prio=%d\n",
-			__func__, dscp, prio);
+		    __func__, dscp, prio);
 #ifndef XSC_DCBX_STUB
 	err = xsc_cmd_set_dscp2prio(priv->xdev, dscp, prio);
 	if (err)
@@ -1274,11 +1268,10 @@ void xsc_dcbnl_initialize(struct xsc_adapter *priv)
 		priv->dcbx.cap |= DCB_CAP_DCBX_HOST;
 
 	priv->dcbx.port_buff_cell_sz = xsc_query_port_buffers_cell_size(priv);
-	priv->dcbx.manual_buffer = false;
+	priv->dcbx.manual_buffer = 0;
 	priv->dcbx.cable_len = XSC_DEFAULT_CABLE_LEN;
 
 	xsc_cee_init(priv);
 	xsc_ets_init(priv);
 }
 #endif
-

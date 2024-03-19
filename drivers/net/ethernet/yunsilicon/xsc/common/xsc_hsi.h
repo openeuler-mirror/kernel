@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -11,92 +10,26 @@
 
 #include <linux/types.h>
 #include <linux/bitops.h>
-#include <common/andes/chip_version.h>
-#include <common/andes/chip_scale_defines.h>
-#include <common/andes/mmc_csr_defines.h>
-#include <common/andes/clsf_dma_csr_defines.h>
-#include <common/andes/hif_tbl_csr_defines.h>
-
-#define MSIX_SUPPORT
-#define XSC_BQL_SUPPORT
-#define XSC_RSS_SUPPORT
+#include "common/xsc_macro.h"
 
 #ifdef MSIX_SUPPORT
 #else
 #define NEED_CREATE_RX_THREAD
 #endif
 
-/*define product macro*/
-#if ((CHIP_VERSION_L == 0xa) || \
-	(CHIP_VERSION_L == 0xa10))
-#define XSC_CHIP_ANDES
-#elif ((CHIP_VERSION_L == 0xb) || \
-	(CHIP_VERSION_L == 0xb20) || \
-	(CHIP_VERSION_L == 0xb11) || \
-	(CHIP_VERSION_L == 0xb13))
-#define XSC_CHIP_BERYL
-#if (CHIP_VERSION_L == 0xb20)
-#define XSC_CHIP_BERYL_100
-#endif
-#if (CHIP_VERSION_L == 0xb11)
-#define XSC_CHIP_BERYL_50
-#endif
-#if (CHIP_VERSION_L == 0xb13)
-#define XSC_CHIP_BERYL_50S
-#endif
-#if (CHIP_VERSION_L == 0xb12)
-#define XSC_CHIP_BERYL_50R
-#endif
-#elif ((CHIP_VERSION_L == 0xc) || \
-	(CHIP_VERSION_L == 0xc11) || \
-	(CHIP_VERSION_L == 0xc12) || \
-	(CHIP_VERSION_L == 0xc13))
-#define XSC_CHIP_CRYSTAL
-#if (CHIP_VERSION_L == 0xc13)
-#define XSC_CHIP_CRYSTAL_A
-#endif
-#if (CHIP_VERSION_L == 0xc12)
-#define XSC_CHIP_CRYSTAL_B
-#endif
-#if (CHIP_VERSION_L == 0xc11)
-#define XSC_CHIP_CRYSTAL_C
-#endif
-#endif
-
-#if (CHIP_HOTFIX_NUM > 0x22)
-#if ((CHIP_VERSION_L == 0xb13) || \
-	(CHIP_VERSION_L == 0xc11) || \
-	(CHIP_VERSION_L == 0xc12) || \
-	(CHIP_VERSION_L == 0xc13))
-#define XSC_CHIP_RDMA_UNSUPPORTED   1
-#endif
-#endif
-
 #ifndef RUN_WITH_PSV
-#if (CHIP_HOTFIX_NUM >= 0x23)
 #define XSC_MSIX_BAR_EMUL
-#endif
 #endif
 
 #define PAGE_SHIFT_4K          12
 #define PAGE_SIZE_4K           (_AC(1, UL) << PAGE_SHIFT_4K)
-#define PAGE_MASK_4K           (~(PAGE_SIZE_4K-1))
+#define PAGE_MASK_4K           (~(PAGE_SIZE_4K - 1))
 
 #ifndef EQ_NUM_MAX
 #define EQ_NUM_MAX		1024
 #endif
 #ifndef EQ_SIZE_MAX
 #define EQ_SIZE_MAX		1024
-#endif
-
-#if defined XSC_CHIP_ANDES
-#define XSC_RSS_INDIR_TBL_N     1032 /*8PFs+1024VFs*/
-#elif defined XSC_CHIP_BERYL
-#define XSC_RSS_INDIR_TBL_N     514 /*2PFs+512VFs*/
-#elif defined XSC_CHIP_BERYL_100
-#define XSC_RSS_INDIR_TBL_N     514 /*2PFs+512VFs*/
-#elif defined XSC_CHIP_CRYSTAL
-#define XSC_RSS_INDIR_TBL_N     514 /*2PFs+512VFs*/
 #endif
 
 #define XSC_RSS_INDIR_TBL_S     256
@@ -133,6 +66,7 @@
 #define XSC_MAX_RX_FRAGS        4
 #define XSC_RX_FRAG_SZ_ORDER    0
 #define XSC_RX_FRAG_SZ          (PAGE_SIZE << XSC_RX_FRAG_SZ_ORDER)
+#define DEFAULT_FRAG_SIZE       (2048)
 
 /* message opcode */
 enum {
@@ -214,6 +148,7 @@ enum {
 	XSC_QUEUE_TYPE_VIRTIO_BLK	= 4,
 	XSC_QUEUE_TYPE_RAW_TPE		= 5,
 	XSC_QUEUE_TYPE_RAW_TSO		= 6,
+	XSC_QUEUE_TYPE_RAW_TX		= 7,
 	XSC_QUEUE_TYPE_INVALID		= 0xFF,
 };
 
@@ -241,6 +176,8 @@ enum {
 	XSC_BASE_WQE_SHIFT		= 4,
 	XSC_SEND_SEG_NUM		= 4,
 	XSC_SEND_WQE_SHIFT		= 6,
+	XSC_CTRL_SEG_NUM		= 1,
+	XSC_RADDR_SEG_NUM		= 1,
 };
 
 enum {
@@ -254,8 +191,8 @@ enum {
 };
 
 /* Descriptors that are allocated by SW and accessed by HW, 32-byte aligned
+ * this is to keep descriptor structures packed
  */
-/* this is to keep descriptor structures packed */
 struct regpair {
 	__le32	lo;
 	__le32	hi;
@@ -415,8 +352,8 @@ enum xsc_tbm_pct_inport {
 /*for beryl tcam table .end*/
 
 /* Size of WQE */
-#define XSC_SEND_WQE_SIZE (1 << XSC_SEND_WQE_SHIFT)
-#define XSC_RECV_WQE_SIZE (1 << XSC_RECV_WQE_SHIFT)
+#define XSC_SEND_WQE_SIZE BIT(XSC_SEND_WQE_SHIFT)
+#define XSC_RECV_WQE_SIZE BIT(XSC_RECV_WQE_SHIFT)
 
 union xsc_db_data {
 	struct {
@@ -438,215 +375,9 @@ union xsc_db_data {
 	__le32 raw_data;
 };
 
-enum xsc_port_type_encode {
-	XSC_PHY_PORT_MAC_0	= 0x0,
-	XSC_PHY_PORT_MAC_1	= 0x1,
-	XSC_PHY_PORT_MAC_2	= 0x2,
-	XSC_PHY_PORT_MAC_3	= 0x3,
-	XSC_PHY_PORT_MAC_4	= 0x4,
-	XSC_PHY_PORT_MAC_5	= 0x5,
-	XSC_PHY_PORT_MAC_6	= 0x6,
-	XSC_PHY_PORT_MAC_7	= 0x7,
-	XSC_PHY_PORT_PCIE_0	= 0x8,
-	XSC_PHY_PORT_PCIE_1	= 0x9,
-
-	XSC_LAG_PORT_START	= 15,
-	XSC_LAG_PORT_END	= 62,
-
-	XSC_PORT_FUNC_ID_START	= 63,
-	XSC_PORT_FUNC_ID_END	= 1214,
-};
-
-#define XSC_PHY_PORT_MAC_NUM	8
-
-#ifndef XSC_CHIP_ANDES
-#ifdef XSC_CHIP_BERYL_50S
-#define XSC_PCIE0_VF_LOGIC_PORT_NUM		512
-#else
-#define XSC_PCIE0_VF_LOGIC_PORT_NUM		256
-#endif
-#define XSC_PCIE1_VF_LOGIC_PORT_NUM		0
-#define XSC_PCIE0_PF_LOGIC_PORT_NUM		2
-#define XSC_PCIE1_PF_LOGIC_PORT_NUM		8
-
-#ifndef PCIE0_PF1_VF_NUM
-#define PCIE0_PF1_VF_NUM 0
-#endif
-
-enum xsc_port_func_id_encode {
-	XSC_PCIE0_VF0_FUNC_ID	= 0,
-	XSC_PCIE0_PF0_VF0_FUNC_ID	= XSC_PCIE0_VF0_FUNC_ID,
-#if (CHIP_HOTFIX_NUM >= 0x23)
-	XSC_PCIE0_PF1_VF0_FUNC_ID	= (XSC_PCIE0_PF0_VF0_FUNC_ID +
-						PCIE0_PF0_VF_NUM),
-	XSC_PCIE0_VF_FUNC_ID_END        = (XSC_PCIE0_PF1_VF0_FUNC_ID +
-						PCIE0_PF1_VF_NUM - 1),
-#else
-	XSC_PCIE0_PF1_VF0_FUNC_ID	= (XSC_PCIE0_PF0_VF0_FUNC_ID +
-						XSC_PCIE0_VF_LOGIC_PORT_NUM),
-	XSC_PCIE0_VF_FUNC_ID_END        = (XSC_PCIE0_PF0_VF0_FUNC_ID +
-						2*XSC_PCIE0_VF_LOGIC_PORT_NUM - 1),//511
-#endif
-	XSC_PCIE1_VF0_FUNC_ID           = XSC_PCIE0_VF_FUNC_ID_END,
-	XSC_PCIE1_PF0_VF0_FUNC_ID	= XSC_PCIE0_VF_FUNC_ID_END,
-	XSC_PCIE1_PF1_VF0_FUNC_ID	= XSC_PCIE0_VF_FUNC_ID_END,
-	XSC_PCIE1_VF_FUNC_ID_END        = XSC_PCIE0_VF_FUNC_ID_END,
-
-#if (CHIP_HOTFIX_NUM >= 0x23)
-	XSC_PCIE0_PF0_FUNC_ID           = (XSC_PCIE0_VF_FUNC_ID_END + 1),
-	XSC_PCIE0_PF_FUNC_ID_END        = (XSC_PCIE0_PF0_FUNC_ID + PCIE0_PF_NUM - 1),
-	XSC_PCIE1_PF0_FUNC_ID           = (XSC_PCIE0_PF_FUNC_ID_END + 1),
-	XSC_PCIE1_PF_FUNC_ID_END        = (XSC_PCIE1_PF0_FUNC_ID + PCIE1_PF_NUM - 1),//521
-#else
-	XSC_PCIE0_PF0_FUNC_ID           = (XSC_PCIE1_PF0_VF0_FUNC_ID + 1),//512
-	XSC_PCIE0_PF_FUNC_ID_END        = (XSC_PCIE0_PF0_FUNC_ID +
-						XSC_PCIE0_PF_LOGIC_PORT_NUM - 1),//513
-	XSC_PCIE1_PF0_FUNC_ID           = (XSC_PCIE0_PF0_FUNC_ID +
-						XSC_PCIE0_PF_LOGIC_PORT_NUM),//514
-	XSC_PCIE1_PF_FUNC_ID_END        = (XSC_PCIE1_PF0_FUNC_ID +
-						XSC_PCIE1_PF_LOGIC_PORT_NUM - 1),//521
-#endif
-	XSC_FUNC_ID_END,
-};
-#else
-#define XSC_PCIE0_VF_LOGIC_PORT_NUM		512
-#define XSC_PCIE1_VF_LOGIC_PORT_NUM		0
-#define XSC_PCIE0_PF_LOGIC_PORT_NUM		2
-#define XSC_PCIE1_PF_LOGIC_PORT_NUM		8
-enum xsc_port_func_id_encode {
-	XSC_PCIE0_VF0_FUNC_ID		= 0,
-	XSC_PCIE0_PF0_VF0_FUNC_ID	= XSC_PCIE0_VF0_FUNC_ID,
-	XSC_PCIE0_PF1_VF0_FUNC_ID	= (XSC_PCIE0_PF0_VF0_FUNC_ID +
-						XSC_PCIE0_VF_LOGIC_PORT_NUM),//512
-	XSC_PCIE0_VF_FUNC_ID_END	= (XSC_PCIE0_VF0_FUNC_ID +
-						2*XSC_PCIE0_VF_LOGIC_PORT_NUM - 1),//1023
-
-	XSC_PCIE1_VF0_FUNC_ID		= XSC_PCIE0_VF_FUNC_ID_END,
-	XSC_PCIE1_PF0_VF0_FUNC_ID	= XSC_PCIE0_VF_FUNC_ID_END,
-	XSC_PCIE1_PF1_VF0_FUNC_ID	= XSC_PCIE0_VF_FUNC_ID_END,
-	XSC_PCIE1_VF_FUNC_ID_END	= XSC_PCIE0_VF_FUNC_ID_END,
-
-	XSC_PCIE0_PF0_FUNC_ID		= (XSC_PCIE0_VF0_FUNC_ID +
-						2*XSC_PCIE0_VF_LOGIC_PORT_NUM),//1024
-	XSC_PCIE0_PF_FUNC_ID_END	= (XSC_PCIE0_PF0_FUNC_ID +
-						XSC_PCIE0_PF_LOGIC_PORT_NUM - 1),//1025
-
-	XSC_PCIE1_PF0_FUNC_ID		= 1032,//from program manual
-	XSC_PCIE1_PF_FUNC_ID_END	= (XSC_PCIE1_PF0_FUNC_ID +
-						XSC_PCIE1_PF_LOGIC_PORT_NUM - 1),//1039
-	XSC_FUNC_ID_END,
-};
-#endif
-
-#define XSC_PHY_PORT_MAC_N(mac_id) \
-	(XSC_PHY_PORT_MAC_0 + mac_id)
-#define XSC_PHY_PORT_PCIE_N(pcie_id) \
-	(XSC_PHY_PORT_PCIE_0 + pcie_id)
-#define XSC_PHY_PORT_TO_PCIE0_PF_ID(pcie_port) \
-	(pcie_port - XSC_PHY_PORT_PCIE_0)
-#define XSC_PHY_PORT_TO_PCIE1_PF_ID(pcie_port) \
-	(pcie_port - XSC_PHY_PORT_PCIE_1 - 1)
-
-#define XSC_GLB_FUNC_TO_PCIE0_PF_ID(glb_func) \
-	(glb_func - XSC_PCIE0_PF0_FUNC_ID)
-#define XSC_GLB_FUNC_TO_PCIE1_PF_ID(glb_func) \
-	(glb_func - XSC_PCIE1_PF0_FUNC_ID)
-
-#define XSC_PCIE0_PF0_VF_N_FUNC_ID(vf_id) \
-	(XSC_PCIE0_PF0_VF0_FUNC_ID + vf_id)
-#define XSC_PCIE0_PF1_VF_N_FUNC_ID(vf_id) \
-	(XSC_PCIE0_PF1_VF0_FUNC_ID + vf_id)
-
-#define XSC_PCIE1_PF0_VF_N_FUNC_ID(vf_id) \
-	(XSC_PCIE1_PF0_VF0_FUNC_ID + vf_id)
-#define XSC_PCIE1_PF1_VF_N_FUNC_ID(vf_id) \
-	(XSC_PCIE1_PF1_VF0_FUNC_ID + vf_id)
-
-#define XSC_PCIE0_PF_N_FUNC_ID(pf_id) \
-	(XSC_PCIE0_PF0_FUNC_ID + pf_id)
-#define XSC_PCIE1_PF_N_FUNC_ID(pf_id) \
-	(XSC_PCIE1_PF0_FUNC_ID + pf_id)
-
-#define XSC_PCIE0_PF_N_LOGIC_PORT(pf_id) \
-	(XSC_PORT_FUNC_ID_START + XSC_PCIE0_PF0_FUNC_ID + pf_id)
-#define XSC_PCIE1_PF_N_LOGIC_PORT(pf_id) \
-	(XSC_PORT_FUNC_ID_START + XSC_PCIE1_PF0_FUNC_ID + pf_id)
-
-#define XSC_PCIE0_PF0_VF_N_LOGIC_PORT(vf_id) \
-	(XSC_PORT_FUNC_ID_START + XSC_PCIE0_PF0_VF_N_FUNC_ID(vf_id))
-#define XSC_PCIE0_PF1_VF_N_LOGIC_PORT(vf_id) \
-	(XSC_PORT_FUNC_ID_START + XSC_PCIE0_PF1_VF_N_FUNC_ID(vf_id))
-
-#define XSC_PCIE1_PF0_VF_N_LOGIC_PORT(vf_id) \
-	(XSC_PORT_FUNC_ID_START + XSC_PCIE1_PF0_VF_N_FUNC_ID(vf_id))
-#define XSC_PCIE1_PF1_VF_N_LOGIC_PORT(vf_id) \
-	(XSC_PORT_FUNC_ID_START + XSC_PCIE1_PF1_VF_N_FUNC_ID(vf_id))
-
 #define XSC_BROADCASTID_MAX		2
-#define XSC_TBM_BOMT_DESTINFO_SHIFT	(XSC_BROADCASTID_MAX/2)
+#define XSC_TBM_BOMT_DESTINFO_SHIFT	(XSC_BROADCASTID_MAX / 2)
 #define XSC_TBM_BOMT_BROADCASTID_MASK	(XSC_BROADCASTID_MAX - 1)
-
-static inline bool xsc_cal_pf_vf_id(int func_id, u8 *pf_id, u8 *pcie_no, u16 *vf_id)
-{
-	bool is_pf = true;
-
-	if (func_id >= XSC_PCIE0_PF0_FUNC_ID &&
-		func_id <= XSC_PCIE0_PF_FUNC_ID_END) {
-		is_pf = true;
-		*pf_id = func_id - XSC_PCIE0_PF0_FUNC_ID;
-		*pcie_no = 0;
-	} else if (func_id >= XSC_PCIE1_PF0_FUNC_ID &&
-		func_id <= XSC_PCIE1_PF_FUNC_ID_END) {
-		is_pf = true;
-		*pf_id = func_id - XSC_PCIE1_PF0_FUNC_ID;
-		*pcie_no = 1;
-	} else if (func_id >= XSC_PCIE0_PF0_VF0_FUNC_ID &&
-		func_id < XSC_PCIE0_PF1_VF0_FUNC_ID) {
-		is_pf = false;
-		*pf_id = 0;
-		*vf_id = func_id - XSC_PCIE0_PF0_VF0_FUNC_ID;
-		*pcie_no = 0;
-	} else if (func_id >= XSC_PCIE0_PF1_VF0_FUNC_ID &&
-		func_id <= XSC_PCIE0_VF_FUNC_ID_END) {
-		is_pf = false;
-		*pf_id = 1;
-		*vf_id = func_id - XSC_PCIE0_PF1_VF0_FUNC_ID;
-		*pcie_no = 0;
-	}
-	return is_pf;
-}
-
-#define XSC_IS_VF(glb_func) (((glb_func) >= XSC_PCIE0_VF0_FUNC_ID &&		\
-				(glb_func) <= XSC_PCIE0_VF_FUNC_ID_END) ||	\
-				((glb_func) >= XSC_PCIE1_VF0_FUNC_ID &&		\
-				(glb_func) <= XSC_PCIE1_VF_FUNC_ID_END))
-
-#define XSC_IS_PF0_VF(glb_func) (((glb_func) >= XSC_PCIE0_PF0_VF0_FUNC_ID &&	\
-				(glb_func) < XSC_PCIE0_PF1_VF0_FUNC_ID) ||	\
-				((glb_func) >= XSC_PCIE1_PF0_VF0_FUNC_ID &&	\
-				(glb_func) < XSC_PCIE1_PF1_VF0_FUNC_ID))
-
-#define XSC_IS_PCIE0_PF(glb_func) ((glb_func) >= XSC_PCIE0_PF0_FUNC_ID &&	\
-				(glb_func) <= XSC_PCIE0_PF_FUNC_ID_END)
-
-#define XSC_PF_GET_PF_ID(glb_func) (XSC_IS_PCIE0_PF(glb_func) ?			\
-				(glb_func) - XSC_PCIE0_PF0_FUNC_ID :		\
-				(glb_func) - XSC_PCIE1_PF0_FUNC_ID)
-
-#define XSC_PF_VF_GET_PF_ID(glb_func) (XSC_IS_VF(glb_func) ?			\
-				(XSC_IS_PF0_VF(glb_func) ? 0 : 1) :		\
-				XSC_PF_GET_PF_ID(glb_func))
-
-#define XSC_IS_PCIE0(glb_func) (((glb_func) >= XSC_PCIE0_VF0_FUNC_ID &&		\
-				(glb_func) <= XSC_PCIE0_VF_FUNC_ID_END) ||	\
-				((glb_func) >= XSC_PCIE0_PF0_FUNC_ID &&		\
-				(glb_func) <= XSC_PCIE0_PF_FUNC_ID_END))
-
-#define XSC_GET_PCIE_NO(glb_func) (XSC_IS_PCIE0(glb_func) ? 0 : 1)
-
-#define XSC_IS_PF(func_id)									\
-	(((func_id) >= XSC_PCIE0_PF0_FUNC_ID && (func_id) <= XSC_PCIE0_PF_FUNC_ID_END) ||	\
-	((func_id) >= XSC_PCIE1_PF0_FUNC_ID && (func_id) <= XSC_PCIE1_PF_FUNC_ID_END))
 
 /* Doorbell registers */
 //

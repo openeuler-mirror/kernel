@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -88,14 +87,14 @@ struct epp_pph {
 	u16 rsv11:2;
 	u16 pkt_hdr_ptr:14;		//38 bytes
 
-	u64 rsv12:5;
-	u64 csum_ofst:8;
-	u64 csum_val:29;
-	u64 csum_plen:14;
-	u64 rsv11_0:8;			//46 bytes
+	u64	 rsv12:5;
+	u64	 csum_ofst:8;
+	u64	 csum_val:29;
+	u64	 csum_plen:14;
+	u64	 rsv11_0:8;			//46 bytes
 
-	u64 rsv11_1;
-	u64 rsv11_2;
+	u64	 rsv11_1;
+	u64	 rsv11_2;
 	u16 rsv11_3;
 };
 
@@ -118,60 +117,60 @@ struct epp_pph {
 #define EPP2SOC_PPH_EXT_ERROR_BITMAP_BIT_OFFSET (0)
 
 #define XSC_GET_EPP2SOC_PPH_EXT_TUNNEL_TYPE(PPH_BASE_ADDR)	\
-	((*(u16 *)((u8 *)PPH_BASE_ADDR + EPP2SOC_PPH_EXT_TUNNEL_TYPE_OFFSET) & \
+	((*(u16 *)((u8 *)(PPH_BASE_ADDR) + EPP2SOC_PPH_EXT_TUNNEL_TYPE_OFFSET) & \
 	EPP2SOC_PPH_EXT_TUNNEL_TYPE_BIT_MASK) >> EPP2SOC_PPH_EXT_TUNNEL_TYPE_BIT_OFFSET)
 
 #define XSC_GET_EPP2SOC_PPH_ERROR_BITMAP(PPH_BASE_ADDR)		\
-	((*(u8 *)((u8 *)PPH_BASE_ADDR + EPP2SOC_PPH_EXT_ERROR_BITMAP_OFFSET) & \
+	((*(u8 *)((u8 *)(PPH_BASE_ADDR) + EPP2SOC_PPH_EXT_ERROR_BITMAP_OFFSET) & \
 	EPP2SOC_PPH_EXT_ERROR_BITMAP_BIT_MASK) >> EPP2SOC_PPH_EXT_ERROR_BITMAP_BIT_OFFSET)
 
 #define PPH_OUTER_IP_TYPE_OFF		(4UL)
 #define PPH_OUTER_IP_TYPE_MASK		(0x3)
 #define PPH_OUTER_IP_TYPE_SHIFT		(11)
 #define PPH_OUTER_IP_TYPE(base)		\
-	((ntohs(*(u16 *)((u8 *)base + PPH_OUTER_IP_TYPE_OFF)) >> \
+	((ntohs(*(u16 *)((u8 *)(base) + PPH_OUTER_IP_TYPE_OFF)) >> \
 	PPH_OUTER_IP_TYPE_SHIFT) & PPH_OUTER_IP_TYPE_MASK)
 
 #define PPH_OUTER_IP_OFST_OFF		(4UL)
 #define PPH_OUTER_IP_OFST_MASK		(0x1f)
 #define PPH_OUTER_IP_OFST_SHIFT		(6)
 #define PPH_OUTER_IP_OFST(base)		 \
-	((ntohs(*(u16 *)((u8 *)base + PPH_OUTER_IP_OFST_OFF)) >> \
+	((ntohs(*(u16 *)((u8 *)(base) + PPH_OUTER_IP_OFST_OFF)) >> \
 	PPH_OUTER_IP_OFST_SHIFT) & PPH_OUTER_IP_OFST_MASK)
 
 #define PPH_OUTER_IP_LEN_OFF		(4UL)
 #define PPH_OUTER_IP_LEN_MASK		(0x3f)
 #define PPH_OUTER_IP_LEN_SHIFT		(0)
 #define PPH_OUTER_IP_LEN(base)		\
-	((ntohs(*(u16 *)((u8 *)base + PPH_OUTER_IP_LEN_OFF)) >> \
+	((ntohs(*(u16 *)((u8 *)(base) + PPH_OUTER_IP_LEN_OFF)) >> \
 	PPH_OUTER_IP_LEN_SHIFT) & PPH_OUTER_IP_LEN_MASK)
 
 #define PPH_OUTER_TP_TYPE_OFF		(6UL)
 #define PPH_OUTER_TP_TYPE_MASK		(0x7)
 #define PPH_OUTER_TP_TYPE_SHIFT		(12)
 #define PPH_OUTER_TP_TYPE(base)		\
-	((ntohs(*(u16 *)((u8 *)base + PPH_OUTER_TP_TYPE_OFF)) >> \
+	((ntohs(*(u16 *)((u8 *)(base) + PPH_OUTER_TP_TYPE_OFF)) >> \
 	PPH_OUTER_TP_TYPE_SHIFT) & PPH_OUTER_TP_TYPE_MASK)
 
 #define PPH_PAYLOAD_OFST_OFF		(14UL)
 #define PPH_PAYLOAD_OFST_MASK		(0xff)
 #define PPH_PAYLOAD_OFST_SHIFT		(3)
 #define PPH_PAYLOAD_OFST(base)		\
-	((ntohs(*(u16 *)((u8 *)base + PPH_PAYLOAD_OFST_OFF)) >> \
+	((ntohs(*(u16 *)((u8 *)(base) + PPH_PAYLOAD_OFST_OFF)) >> \
 	PPH_PAYLOAD_OFST_SHIFT) & PPH_PAYLOAD_OFST_MASK)
 
 #define PPH_CSUM_OFST_OFF		(38UL)
 #define PPH_CSUM_OFST_MASK		(0xff)
 #define PPH_CSUM_OFST_SHIFT		(51)
 #define PPH_CSUM_OFST(base)		\
-	((be64_to_cpu(*(u64 *)((u8 *)base + PPH_CSUM_OFST_OFF)) >> \
+	((be64_to_cpu(*(u64	 *)((u8 *)(base) + PPH_CSUM_OFST_OFF)) >> \
 	PPH_CSUM_OFST_SHIFT) & PPH_CSUM_OFST_MASK)
 
 #define PPH_CSUM_VAL_OFF		(38UL)
 #define PPH_CSUM_VAL_MASK		(0xeffffff)
 #define PPH_CSUM_VAL_SHIFT		(22)
 #define PPH_CSUM_VAL(base)		\
-	((be64_to_cpu(*(u64 *)((u8 *)base + PPH_CSUM_VAL_OFF)) >> \
+	((be64_to_cpu(*(u64	 *)((u8 *)(base) + PPH_CSUM_VAL_OFF)) >> \
 	PPH_CSUM_VAL_SHIFT) & PPH_CSUM_VAL_MASK)
 #endif /* XSC_TBM_H */
 

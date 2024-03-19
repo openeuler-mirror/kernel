@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -18,7 +17,7 @@
 #define XSC_GET_DOORBELL_LOCK(ptr)      (NULL)
 
 static inline void xsc_write64(__be32 val[2], void __iomem *dest,
-				spinlock_t *doorbell_lock)
+			       spinlock_t *doorbell_lock)
 {
 	__raw_writeq(*(u64 *)val, dest);
 }
@@ -35,13 +34,13 @@ static inline void xsc_write64(__be32 val[2], void __iomem *dest,
 #define XSC_GET_DOORBELL_LOCK(ptr)      (ptr)
 
 static inline void xsc_write64(__be32 val[2], void __iomem *dest,
-				spinlock_t *doorbell_lock)
+			       spinlock_t *doorbell_lock)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(doorbell_lock, flags);
-	__raw_writel((__force u32) val[0], dest);
-	__raw_writel((__force u32) val[1], dest + 4);
+	__raw_writel((__force u32)val[0], dest);
+	__raw_writel((__force u32)val[1], dest + 4);
 	spin_unlock_irqrestore(doorbell_lock, flags);
 }
 

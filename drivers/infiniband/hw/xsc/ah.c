@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/random.h>
+#include <rdma/ib_cache.h>
 
 #include "xsc_ib.h"
 #include "user.h"
@@ -26,15 +27,15 @@ static u32 xsc_calc_roce_udp_flow_label(void)
 }
 
 static u16 xsc_ah_get_udp_sport(const struct xsc_ib_dev *dev,
-		struct rdma_ah_attr *ah_attr)
+				struct rdma_ah_attr *ah_attr)
 {
 	enum ib_gid_type gid_type = ah_attr->grh.sgid_attr->gid_type;
 	u16 sport = 0;
 	u32 fl = 0;
 
-	if ((gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP) &&
-			(rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH) &&
-			(ah_attr->grh.flow_label & IB_GRH_FLOWLABEL_MASK)) {
+	if (gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP &&
+	    (rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH) &&
+	    (ah_attr->grh.flow_label & IB_GRH_FLOWLABEL_MASK)) {
 		fl = ah_attr->grh.flow_label;
 	} else {
 		/*generate a 20bit flow_label and output to user layer*/
@@ -88,11 +89,10 @@ xsc_ib_create_ah_def()
 {
 	struct xsc_ib_ah *ah = to_mah(ibah);
 	struct xsc_ib_dev *dev = to_mdev(ibah->device);
-
 	struct rdma_ah_attr *ah_attr = init_attr->ah_attr;
 	enum rdma_ah_attr_type ah_type = ah_attr->type;
 
-	if ((ah_type == RDMA_AH_ATTR_TYPE_ROCE) &&
+	if (ah_type == RDMA_AH_ATTR_TYPE_ROCE &&
 	    !(rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH))
 		return RET_VALUE(-EINVAL);
 

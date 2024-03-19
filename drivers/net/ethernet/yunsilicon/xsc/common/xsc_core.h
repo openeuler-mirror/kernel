@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -21,30 +20,45 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/delay.h>
-#include <common/driver.h>
 #include <linux/types.h>
 #include <linux/cdev.h>
 #include <linux/sched.h>
 #include <linux/version.h>
-#ifdef USE_VIRTIO
-#include <linux/virtio.h>
-#include <linux/virtio_config.h>
-#include <linux/virtio_pci.h>
-#endif /* USE_VIRTIO */
+#include <linux/if_vlan.h>
 
-#include <common/xsc_cmd.h>
-#include <common/xsc_ioctl.h>
-#include <common/andes/hif_cpm_csr_defines.h>
-#include <common/andes/hif_irq_csr_defines.h>
-#include <common/andes/chip_version.h>
-#include <common/xsc_reg.h>
-#include <common/xsc_eswitch.h>
+#include "common/xsc_macro.h"
+#include "common/xsc_cmd.h"
+#include "common/xsc_ioctl.h"
+#include "common/xsc_auto_hw.h"
+#include "common/driver.h"
+#include "common/xsc_reg.h"
+#include "common/xsc_eswitch.h"
 
 extern uint xsc_debug_mask;
+extern unsigned int xsc_log_level;
 
 #ifndef mmiowb
 #define mmiowb()
 #endif
+
+#define XSC_PCI_VENDOR_ID_OBSOLETE	0x1172
+#define XSC_PCI_VENDOR_ID		0x1f67
+#define XSC_PF1_DEVICE_ID_OBSOLETE	0x0001
+#define XSC_PF1_VF_DEVICE_ID_OBSOLETE	0x0002
+
+#define XSC_MC_PF_DEV_ID		0x1011
+#define XSC_MC_VF_DEV_ID		0x1012
+
+#define XSC_MF_HOST_PF_DEV_ID		0x1051
+#define XSC_MF_HOST_VF_DEV_ID		0x1052
+#define XSC_MF_SOC_PF_DEV_ID		0x1053
+
+#define XSC_MS_PF_DEV_ID		0x1111
+#define XSC_MS_VF_DEV_ID		0x1112
+
+#define XSC_MV_HOST_PF_DEV_ID		0x1151
+#define XSC_MV_HOST_VF_DEV_ID		0x1152
+#define XSC_MV_SOC_PF_DEV_ID		0x1153
 
 #define REG_ADDR(dev, offset)						\
 	(xsc_core_is_pf(dev) ? ((dev->bar2) + ((offset) - 0xA0000000)) : ((dev->bar2) + (offset)))
@@ -55,10 +69,27 @@ extern uint xsc_debug_mask;
 #define QPM_PAM_TBL_INDEX_SHIFT				2
 #define QPM_PAM_PAGE_SHIFT				12
 
+enum {
+	XSC_LOG_LEVEL_DBG	= 0,
+	XSC_LOG_LEVEL_INFO	= 1,
+	XSC_LOG_LEVEL_WARN	= 2,
+	XSC_LOG_LEVEL_ERR	= 3,
+};
+
+#ifndef dev_fmt
+#define dev_fmt(fmt) fmt
+#endif
+
+#define xsc_dev_log(condition, level, dev, fmt, ...)			\
+do {									\
+	if (condition)							\
+		dev_printk(level, dev, dev_fmt(fmt), ##__VA_ARGS__);	\
+} while (0)
+
 #define xsc_core_dbg(__dev, format, ...)				\
-	dev_dbg(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
-		 __func__, __LINE__, current->pid,			\
-		 ##__VA_ARGS__)
+	xsc_dev_log(xsc_log_level <= XSC_LOG_LEVEL_DBG, KERN_DEBUG,	\
+		&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
+		__func__, __LINE__, current->pid, ##__VA_ARGS__)
 
 #define xsc_core_dbg_once(__dev, format, ...)				\
 	dev_dbg_once(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,	\
@@ -72,9 +103,9 @@ do {									\
 } while (0)
 
 #define xsc_core_err(__dev, format, ...)				\
-	dev_err(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
-		__func__, __LINE__, current->pid,			\
-	       ##__VA_ARGS__)
+	xsc_dev_log(xsc_log_level <= XSC_LOG_LEVEL_ERR, KERN_ERR,	\
+		&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
+		__func__, __LINE__, current->pid, ##__VA_ARGS__)
 
 #define xsc_core_err_rl(__dev, format, ...)				\
 	dev_err_ratelimited(&(__dev)->pdev->dev,			\
@@ -83,12 +114,20 @@ do {									\
 			   ##__VA_ARGS__)
 
 #define xsc_core_warn(__dev, format, ...)				\
-	dev_warn(&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,	\
-		 __func__, __LINE__, current->pid,			\
-		##__VA_ARGS__)
+	xsc_dev_log(xsc_log_level <= XSC_LOG_LEVEL_WARN, KERN_WARNING,	\
+		&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
+		__func__, __LINE__, current->pid, ##__VA_ARGS__)
 
 #define xsc_core_info(__dev, format, ...)				\
-	dev_info(&(__dev)->pdev->dev, format, ##__VA_ARGS__)
+	xsc_dev_log(xsc_log_level <= XSC_LOG_LEVEL_INFO, KERN_INFO,	\
+		&(__dev)->pdev->dev, "%s:%d:(pid %d): " format,		\
+		__func__, __LINE__, current->pid, ##__VA_ARGS__)
+
+#define xsc_pr_debug(format, ...)					\
+do {									\
+	if (xsc_log_level <= XSC_LOG_LEVEL_DBG)				\
+		pr_debug(format, ##__VA_ARGS__);		\
+} while (0)
 
 #define assert(__dev, expr)						\
 do {									\
@@ -100,6 +139,12 @@ do {									\
 } while (0)
 
 #define IS_ALIGNED(x, a)	(((x) & ((typeof(x))(a) - 1)) == 0)
+
+#define XSC_PCIE_NO_HOST	0x0
+#define XSC_PCIE_NO_SOC		0x1
+#define XSC_PCIE_NO_UNSET	0xFF
+
+extern u8 g_xsc_pcie_no;
 
 enum xsc_dev_event {
 	XSC_DEV_EVENT_SYS_ERROR,
@@ -151,7 +196,7 @@ static DEFINE_MUTEX(xsc_intf_mutex);
 #define GROUP_REFER_CNT_SIZE	1024
 
 struct qp_group_refer {
-	spinlock_t lock;
+	spinlock_t lock;	/* protect refer_cnt[] */
 	u16 refer_cnt[GROUP_REFER_CNT_SIZE];
 };
 
@@ -161,12 +206,14 @@ struct xsc_priv_device {
 	dev_t	devno;
 	struct cdev	cdev;
 	struct list_head	mem_list;
-	spinlock_t		mem_lock;
+	spinlock_t		mem_lock;	/* protect mem_list */
+	struct radix_tree_root	bdf_tree;
+	spinlock_t		bdf_lock;	/* protect bdf_tree */
 };
 
 struct xsc_dpdk_mem {
 	struct list_head	mem_list;
-	spinlock_t		mem_lock;
+	spinlock_t		mem_lock;	/* protect mem_list */
 };
 
 enum xsc_pci_status {
@@ -195,8 +242,10 @@ enum {
 	XSC_INTERFACE_ATTACHED,
 };
 
+#ifndef COSIM
 #define CONFIG_XSC_SRIOV	1
-#define CONFIG_XSC_ESWITCH	1
+#endif
+//#define CONFIG_XSC_ESWITCH	1
 
 enum xsc_coredev_type {
 	XSC_COREDEV_PF,
@@ -218,12 +267,6 @@ enum port_state_policy {
 enum {
 	XSC_CAP_PORT_TYPE_IB	= 0x0,
 	XSC_CAP_PORT_TYPE_ETH	= 0x1,
-};
-
-enum xsc_list_type {
-	XSC_NVPRT_LIST_TYPE_UC   = 0x0,
-	XSC_NVPRT_LIST_TYPE_MC   = 0x1,
-	XSC_NVPRT_LIST_TYPE_VLAN = 0x2,
 };
 
 enum xsc_inline_modes {
@@ -268,7 +311,7 @@ struct xsc_core_sriov {
 	int	num_vfs;
 	u16	max_vfs;
 	u16	vf_bdf_base;
-	bool	probe_vf;
+	u8	probe_vf;
 	struct xsc_vf_context	*vfs_ctx;
 	struct kobject		*config;
 	struct kobject		*groups_config;
@@ -306,9 +349,9 @@ struct xsc_vport_info {
 	int                     link_state;
 	u32                     min_rate;
 	u32                     max_rate;
-	bool                    spoofchk;
-	bool                    trusted;
-	bool                    roce;
+	u8                      spoofchk;
+	u8                      trusted;
+	u8                      roce;
 	/* the admin approved vlan list */
 	DECLARE_BITMAP(vlan_trunk_8021q_bitmap, VLAN_N_VID);
 	u32			group;
@@ -342,7 +385,7 @@ struct xsc_vport {
 	struct xsc_vport_info   info;
 
 	struct {
-		bool    enabled;
+		u8    enabled;
 		u32     esw_tsar_ix;
 		u32     bw_share;
 	u32     min_rate;
@@ -350,7 +393,7 @@ struct xsc_vport {
 //		struct xsc_vgroup *group;
 	} qos;
 
-	bool                    enabled;
+	u8 enabled;
 	enum xsc_eswitch_vport_event enabled_events;
 	u16 match_id;
 	u32 bond_metadata;
@@ -381,14 +424,14 @@ struct xsc_eswitch {
 };
 
 struct xsc_core_health {
-	bool				sick;
+	u8	sick;
 };
 
 struct xsc_priv {
 	char			name[XSC_MAX_NAME_LEN];
 	struct list_head	dev_list;
 	struct list_head	ctx_list;
-	spinlock_t		ctx_lock;
+	spinlock_t		ctx_lock;	/* protect ctx_list */
 	int			numa_node;
 	struct xsc_core_sriov	sriov;
 	struct xsc_eswitch	*eswitch;
@@ -401,6 +444,23 @@ struct xsc_port_ctrl {
 	dev_t devid;
 	struct cdev cdev;
 	struct device *device;
+	struct list_head file_list;
+	spinlock_t file_lock;	/* protect file_list */
+};
+
+struct xsc_port_ctrl_file {
+	struct list_head file_node;
+	struct radix_tree_root bdf_tree;
+	spinlock_t bdf_lock;	/* protect bdf_tree */
+	struct xsc_bdf_file *root_bdf;
+	struct xsc_port_ctrl *ctrl;
+};
+
+struct xsc_bdf_file {
+	unsigned long key;
+	struct radix_tree_root obj_tree;	/* protect obj_tree */
+	spinlock_t obj_lock;
+	struct xsc_core_device *xdev;
 };
 
 struct xsc_port_caps {
@@ -487,6 +547,10 @@ struct xsc_caps {
 	u16		raweth_qp_id_end;
 	u32		qp_rate_limit_min;
 	u32		qp_rate_limit_max;
+	u32		hw_feature_flag;
+	u16		funcid[8];
+	u16		funcid_valid;
+	u8		nif_port_num;
 };
 
 struct cache_ent {
@@ -576,8 +640,6 @@ struct xsc_rsp_layout {
 struct xsc_cmd_work_ent {
 	struct xsc_cmd_msg    *in;
 	struct xsc_rsp_msg    *out;
-	xsc_cmd_cbk_t		callback;
-	void		       *context;
 	int idx;
 	struct completion	done;
 	struct xsc_cmd        *cmd;
@@ -585,7 +647,6 @@ struct xsc_cmd_work_ent {
 	struct xsc_cmd_layout *lay;
 	struct xsc_rsp_layout *rsp_lay;
 	int			ret;
-	int			page_queue;
 	u8			status;
 	u8			token;
 	struct timespec64       ts1;
@@ -647,21 +708,15 @@ struct xsc_cmd {
 	int		events;
 	u32 __iomem    *vector;
 
-	/* protect command queue allocations
-	 */
-	spinlock_t	alloc_lock;
-
-	/* protect token allocations
-	 */
-	spinlock_t	token_lock;
-	spinlock_t	doorbell_lock;
+	spinlock_t	alloc_lock;	/* protect command queue allocations */
+	spinlock_t	token_lock;	/* protect token allocations */
+	spinlock_t	doorbell_lock;	/* protect cmdq req pid doorbell */
 	u8		token;
 	unsigned long	bitmask;
 	char		wq_name[XSC_CMD_WQ_MAX_NAME];
 	struct workqueue_struct *wq;
 	struct task_struct *cq_task;
 	struct semaphore sem;
-	struct semaphore pages_sem;
 	int	mode;
 	struct xsc_cmd_work_ent *ent_arr[XSC_MAX_COMMANDS];
 	struct pci_pool *pool;
@@ -673,18 +728,8 @@ struct xsc_cmd {
 	u8	ownerbit_learned;
 };
 
-struct xsc_profile {
-	u64	mask;
-	u32	log_max_qp;
-	int	cmdif_csum;
-	struct {
-		int	size;
-		int	limit;
-	} mr_cache[MAX_MR_CACHE_ENTRIES];
-};
-
 struct xsc_lock {
-	spinlock_t lock;
+	spinlock_t lock;	/* xsc spin lock */
 };
 
 struct xsc_reg_addr {
@@ -709,25 +754,19 @@ struct xsc_core_device {
 	struct xsc_priv	priv;
 	struct xsc_port_ctrl port_ctrl;
 	struct xsc_dev_resource *dev_res;
-#ifdef USE_VIRTIO
-	struct device virtio_dev;
-#endif /* USE_VIRTIO */
 	void			*xsc_ib_dev;
 	void			*netdev;
 	void			*eth_priv;
 	void			*ovs_priv;
-#ifdef USE_VIRTIO
-	void __iomem	*bar0;
-#endif /* USE_VIRTIO */
 	void __iomem	*bar2;
 	int			bar_num;
 
-	u16			bus_id;
-	u16			dev_id;
+	u16			bus_num;
+	u16			dev_num;
 	u16			func_id;
+	u16			device_id;
 
 	u8			pf;
-	u8			pcie;
 	u8			mac_port;	/* mac physic port */
 	u8			pcie_port;	/* pcie physic port */
 	u8			pf_id;
@@ -739,29 +778,27 @@ struct xsc_core_device {
 	u16			gsi_qpn;	/* logic qpn for gsi*/
 
 	u16			bomt_idx;
-	bool			vf_pp_init;
 
 	u16			msix_vec_base;
 
-	struct mutex		pci_status_mutex;
+	struct mutex		pci_status_mutex;	/* protect pci_status */
 	enum xsc_pci_status	pci_status;
 	u32			board_id;
 	char			board_sn[XSC_BOARD_SN_LEN];
-	struct mutex		intf_state_mutex;
+	struct mutex		intf_state_mutex;	/* protect intf_state */
 	unsigned long		intf_state;
 	enum xsc_coredev_type	coredev_type;
 	struct xsc_caps		caps;
 	atomic_t		num_qps;
 	struct xsc_cmd		cmd;
 	struct xsc_lock		reg_access_lock;
-	bool			rdma_ready;
-	struct xsc_profile	*profile;
+	u8			rdma_ready;
 
 	void			*counters_priv;
 	struct xsc_priv_device	priv_device;
 	struct xsc_dpdk_mem	dpdk_mem;
 	void (*event)(struct xsc_core_device *dev,
-			enum xsc_dev_event event, unsigned long param);
+		      enum xsc_dev_event event, unsigned long param);
 
 	void (*event_handler)(void *adapter);
 
@@ -775,6 +812,8 @@ struct xsc_core_device {
 	cpumask_var_t		xps_cpumask;
 
 	void	*rtt_priv;
+	void	*ap_priv;
+	void	*pcie_lat;
 };
 
 struct xsc_feature_flag {
@@ -797,7 +836,7 @@ struct xsc_interface {
 	int (*attach)(struct xsc_core_device *dev, void *context);
 	void (*detach)(struct xsc_core_device *dev, void *context);
 	void (*event)(struct xsc_core_device *dev, void *context,
-		enum xsc_dev_event event, unsigned long param);
+		      enum xsc_dev_event event, unsigned long param);
 	void *(*get_dev)(void *context);
 };
 
@@ -828,16 +867,16 @@ int xsc_register_interface(struct xsc_interface *intf);
 void xsc_unregister_interface(struct xsc_interface *intf);
 void xsc_reload_interface(struct xsc_core_device *dev, int protocol);
 void xsc_reload_interfaces(struct xsc_core_device *dev,
-			    int protocol1, int protocol2,
-			    bool valid1, bool valid2);
+			   int protocol1, int protocol2,
+			   bool valid1, bool valid2);
 struct xsc_core_device *xsc_get_next_phys_dev(struct xsc_core_device *dev);
 void xsc_remove_dev_by_protocol(struct xsc_core_device *dev, int protocol);
 void xsc_add_dev_by_protocol(struct xsc_core_device *dev, int protocol);
 
 int xsc_cmd_write_reg_directly(struct xsc_core_device *dev, void *in, int in_size, void *out,
-		 int out_size, int func_id);
+			       int out_size, int func_id);
 int xsc_cmd_exec(struct xsc_core_device *dev, void *in, int in_size,
-		     void *out, int out_size);
+		 void *out, int out_size);
 int xsc_create_mkey(struct xsc_core_device *xdev, void *in, void *out);
 int xsc_destroy_mkey(struct xsc_core_device *xdev, void *in, void *out);
 int xsc_reg_mr(struct xsc_core_device *dev, void *in, void *out);
@@ -857,22 +896,30 @@ int xsc_create_res(struct xsc_core_device *dev);
 void xsc_destroy_res(struct xsc_core_device *dev);
 
 int xsc_counters_init(struct ib_device *ib_dev,
-	    struct xsc_core_device *dev);
+		      struct xsc_core_device *dev);
 void xsc_counters_fini(struct ib_device *ib_dev,
-	    struct xsc_core_device *dev);
+		       struct xsc_core_device *dev);
 
 int xsc_priv_dev_init(struct ib_device *ib_dev, struct xsc_core_device *dev);
 void xsc_priv_dev_fini(struct ib_device *ib_dev, struct xsc_core_device *dev);
 
+int xsc_eth_sysfs_create(struct net_device *netdev, struct xsc_core_device *dev);
+void xsc_eth_sysfs_remove(struct net_device *netdev, struct xsc_core_device *dev);
 int xsc_rtt_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev);
 void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev);
 
+int xsc_ib_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev);
+void xsc_ib_sysfs_fini(struct ib_device *ib_dev, struct xsc_core_device *xdev);
+
+#ifdef RUN_WITH_PSV
+int xsc_cmd_query_psv_funcid(struct xsc_core_device *dev,
+			     struct xsc_caps *caps);
+#endif
 int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
-			   struct xsc_caps *caps);
-int xsc_cmd_init_hca(struct xsc_core_device *dev);
-int xsc_cmd_teardown_hca(struct xsc_core_device *dev);
-int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_idx);
-int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_idx);
+			  struct xsc_caps *caps);
+int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_num, u16 max_msix);
+int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_num);
+int xsc_cmd_modify_hca(struct xsc_core_device *dev);
 int xsc_get_board_id(struct xsc_core_device *dev);
 
 int xsc_irq_eq_create(struct xsc_core_device *dev);
@@ -888,20 +935,20 @@ void xsc_sriov_sysfs_cleanup(struct xsc_core_device *dev);
 int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs);
 void xsc_destroy_vfs_sysfs(struct xsc_core_device *dev, int num_vfs);
 int xsc_create_vf_group_sysfs(struct xsc_core_device *dev,
-			       u32 group_id, struct kobject *group_kobj);
+			      u32 group_id, struct kobject *group_kobj);
 void xsc_destroy_vf_group_sysfs(struct xsc_core_device *dev,
-				 struct kobject *group_kobj);
+				struct kobject *group_kobj);
 void xsc_pci_get_vf_info(struct xsc_core_device *dev,
-			struct xsc_vf_info *info);
-int xsc_get_pcie_no(void);
+			 struct xsc_vf_info *info);
 u32 xsc_eth_pcie_read32_by_mac_port(struct xsc_core_device *xdev, u32 mac_port,
-	u32 eth_ip_inter_addr);
+				    u32 eth_ip_inter_addr);
 void xsc_eth_pcie_write32_by_mac_port(struct xsc_core_device *xdev, u32 mac_port,
-	u32 eth_ip_inter_addr, u32 val);
+				      u32 eth_ip_inter_addr, u32 val);
 struct cpumask *xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int vector);
 void mask_cpu_by_node(int node, struct cpumask *dstp);
+int xsc_get_link_speed(struct xsc_core_device *dev);
 
-#define XSC_ESWITCH_MANAGER(dev) (dev->caps.eswitch_manager)
+#define XSC_ESWITCH_MANAGER(dev) ((dev)->caps.eswitch_manager)
 
 static inline bool xsc_sriov_is_enabled(struct xsc_core_device *dev)
 {
@@ -933,7 +980,7 @@ static inline bool xsc_core_is_ecpf(struct xsc_core_device *dev)
 	return dev->caps.embedded_cpu;
 }
 
-#define XSC_ESWITCH_MANAGER(dev) (dev->caps.eswitch_manager)
+#define XSC_ESWITCH_MANAGER(dev) ((dev)->caps.eswitch_manager)
 #define ESW_ALLOWED(esw) ((esw) && XSC_ESWITCH_MANAGER((esw)->dev))
 
 static inline bool
@@ -995,6 +1042,7 @@ static inline void acquire_ia_lock(struct xsc_core_device *xdev, int *iae_idx)
 	else
 		*iae_idx = -1;
 }
+
 #define ACQUIRE_IA_LOCK(bp, iae_idx)		\
 	do {					\
 		int idx;			\
@@ -1068,7 +1116,7 @@ static inline void wait_for_complete(struct xsc_core_device *xdev, int iae_idx)
 }
 
 static inline void ia_write_reg_mr(struct xsc_core_device *xdev, u32 reg,
-	u32 *ptr, int n, int idx)
+				   u32 *ptr, int n, int idx)
 {
 	ia_write_data(xdev, ptr, n, idx);
 	ia_write_reg_addr(xdev, reg, idx);
@@ -1129,4 +1177,583 @@ static inline void reg_write32(struct xsc_core_device *dev, u32 offset, u32 val)
 #define REG_RD32(dev, offset) reg_read32(dev, offset)
 #define REG_WR32(dev, offset, val) reg_write32(dev, offset, val)
 
+static inline unsigned long bdf_to_key(unsigned int domain, unsigned int bus, unsigned int devfn)
+{
+	return ((unsigned long)domain << 32) | ((bus & 0xff) << 16) | (devfn & 0xff);
+}
+
+enum xsc_port_type_encode {
+	XSC_PHY_PORT_MAC_0	= 0x0,
+	XSC_PHY_PORT_MAC_1	= 0x1,
+	XSC_PHY_PORT_MAC_2	= 0x2,
+	XSC_PHY_PORT_MAC_3	= 0x3,
+	XSC_PHY_PORT_MAC_4	= 0x4,
+	XSC_PHY_PORT_MAC_5	= 0x5,
+	XSC_PHY_PORT_MAC_6	= 0x6,
+	XSC_PHY_PORT_MAC_7	= 0x7,
+	XSC_PHY_PORT_PCIE_0	= 0x8,
+	XSC_PHY_PORT_PCIE_1	= 0x9,
+
+	XSC_LAG_PORT_START	= 15,
+	XSC_LAG_PORT_END	= 62,
+
+	XSC_PORT_FUNC_ID_START	= 63,
+	XSC_PORT_FUNC_ID_END	= 1214,
+};
+
+#define XSC_PHY_PORT_MAC_NUM	8
+
+#define XSC_PHY_PORT_MAC_N(mac_id) \
+	(XSC_PHY_PORT_MAC_0 + (mac_id))
+#define XSC_PHY_PORT_PCIE_N(pcie_id) \
+	(XSC_PHY_PORT_PCIE_0 + (pcie_id))
+#define XSC_PHY_PORT_TO_PCIE0_PF_ID(pcie_port) \
+	((pcie_port) - XSC_PHY_PORT_PCIE_0)
+#define XSC_PHY_PORT_TO_PCIE1_PF_ID(pcie_port) \
+	((pcie_port) - XSC_PHY_PORT_PCIE_1 - 1)
+
+#define U16_DIV2(a) ((u16)((u16)(a) >> 1))
+
+#define U16_TOTAL(start, end) ((u16)(1 + (end) - (start)))
+
+#define U16_HALF(start, end) (U16_DIV2(U16_TOTAL(start, end)))
+
+//use single unsigned integer overflow reduces instructions and branches
+//notice: 'min' and 'max' cannot be a function or statement, to avoid possible side-effect
+#define U16_JUDGE_RANGE(min, max, x) \
+	(((min) < (max)) && ((u16)((x) - (min)) <= (u16)((max) - (min))))
+
+//notice: 'min' and 'max' cannot be a function or statement, to avoid possible side-effect
+#define U16_JUDGE_RANGE_BOTTOM_HALF(min, max, x) \
+		(((min) < (max)) && \
+		((u16)((x) - (min)) <= U16_DIV2((u16)((max) - (min)))))
+
+//notice: 'min' and 'max' cannot be a function or statement, to avoid possible side-effect
+#define U16_JUDGE_RANGE_TOP_HALF(min, max, x) \
+		(((min) < (max)) && \
+		((u16)((x) - U16_HALF((min), (max))) <= U16_DIV2((u16)((max) - (min)))))
+
+//notice: 'b' cannot be a function or statement, to avoid possible side-effect
+#define U16_THREE_EQUAL(a, b, c) \
+	(((a) == (b)) && ((b) == (c)))
+
+static inline bool check_caps_funcid_valid(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	return true;
+}
+
+/* Comment...
+ * accordence to xsc_core.h funcid[n] order must be:
+ * 0: pcie0_vf_begin
+ * 1: pcie0_vf_end
+ * 2: pcie0_pf_begin
+ * 3: pcie0_pf_end
+ * 4: pcie1_vf_begin
+ * 5: pcie1_vf_end
+ * 6: pcie1_pf_begin
+ * 7: pcie1_pf_end
+ */
+static inline u16 get_pcie0_vf_begin(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[0];
+}
+
+static inline u16 get_pcie0_vf_end(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[1];
+}
+
+static inline u16 get_pcie0_pf_begin(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[2];
+}
+
+static inline u16 get_pcie0_pf_end(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[3];
+}
+
+static inline u16 get_pcie1_vf_begin(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[4];
+}
+
+static inline u16 get_pcie1_vf_end(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[5];
+}
+
+static inline u16 get_pcie1_pf_begin(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[6];
+}
+
+static inline u16 get_pcie1_pf_end(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return caps->funcid[7];
+}
+
+static inline u16 get_xsc_funcid_end(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return (caps->funcid[7] + 1);
+}
+
+static inline u16 get_pcie0_vf_num(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return U16_TOTAL(caps->funcid[0], caps->funcid[1]);
+}
+
+static inline u16 get_pcie0_pf_num(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return U16_TOTAL(caps->funcid[2], caps->funcid[3]);
+}
+
+static inline u16 get_pcie1_vf_num(struct xsc_caps *caps)
+{
+	return 0;//pcie1 has no vf
+}
+
+static inline u16 get_pcie1_pf_num(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	return U16_TOTAL(caps->funcid[6], caps->funcid[7]);
+}
+
+static inline u16 get_pcie0_pf0_vf_num(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 1)
+		return U16_TOTAL(caps->funcid[0], caps->funcid[1]);
+	else
+		return U16_HALF(caps->funcid[0], caps->funcid[1]);
+}
+
+static inline u16 get_pcie0_pf1_vf_num(struct xsc_caps *caps)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 1)
+		return 0;
+	else
+		return U16_HALF(caps->funcid[0], caps->funcid[1]);
+}
+
+static inline u16 get_pcie1_pf0_vf_num(struct xsc_caps *caps)
+{
+	return 0;//pcie1 has no vf
+}
+
+static inline u16 get_pcie1_pf1_vf_num(struct xsc_caps *caps)
+{
+	return 0;//pcie1 has no vf
+}
+
+static inline u16
+vf_index_to_pcie0_funcid(struct xsc_caps *caps, u16 vf_index, u16 belong_pf)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	//notice: not check vf_index out of range
+	return (belong_pf == 0)
+			? (vf_index + caps->funcid[0])
+			: (vf_index + U16_HALF(caps->funcid[0], caps->funcid[1]));
+}
+
+static inline u16
+vf_index_to_pcie1_funcid(struct xsc_caps *caps, u16 vf_index, u16 belong_pf)
+{
+	return 0;//pcie1 has no vf
+}
+
+static inline u16
+pf_index_to_pcie0_funcid(struct xsc_caps *caps, u16 pf_index)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	//notice: not check pf_index out of range
+	return pf_index + caps->funcid[2];
+}
+
+static inline u16
+pf_index_to_pcie1_funcid(struct xsc_caps *caps, u16 pf_index)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	//notice: not check pf_index out of range
+	return pf_index + caps->funcid[6];
+}
+
+static inline u16
+vf_index_to_pcie0_xscport(struct xsc_caps *caps, u16 vf_index, u16 belong_pf)
+{
+	//notice: not check vf_index out of range
+	return (belong_pf == 0)
+			? (XSC_PORT_FUNC_ID_START + vf_index + caps->funcid[0])
+			: (XSC_PORT_FUNC_ID_START + vf_index
+				+ U16_HALF(caps->funcid[0], caps->funcid[1]));
+}
+
+static inline u16
+vf_index_to_pcie1_xscport(struct xsc_caps *caps, u16 vf_index, u16 belong_pf)
+{
+	return 0;//pcie1 has no vf
+}
+
+static inline u16
+pf_index_to_pcie0_xscport(struct xsc_caps *caps, u16 pf_index)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	//notice: not check pf_index out of range
+	return XSC_PORT_FUNC_ID_START + pf_index + caps->funcid[2];
+}
+
+static inline u16
+pf_index_to_pcie1_xscport(struct xsc_caps *caps, u16 pf_index)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return 0;
+	//notice: not check pf_index out of range
+	return XSC_PORT_FUNC_ID_START + pf_index + caps->funcid[6];
+}
+
+static inline bool
+check_is_vf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id))
+		return true;
+
+	if (U16_THREE_EQUAL(caps->funcid[0], caps->funcid[1], func_id))
+		return true;
+	//pcie1 has no vf
+
+	return false;
+}
+
+static inline bool
+check_is_pf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_JUDGE_RANGE(caps->funcid[2], caps->funcid[3], func_id))
+		return true;
+	if (U16_JUDGE_RANGE(caps->funcid[6], caps->funcid[7], func_id))
+		return true;
+
+	if (U16_THREE_EQUAL(caps->funcid[2], caps->funcid[3], func_id))
+		return true;
+	if (U16_THREE_EQUAL(caps->funcid[6], caps->funcid[7], func_id))
+		return true;
+
+	return false;
+}
+
+static inline bool
+check_is_pcie0_pf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_JUDGE_RANGE(caps->funcid[2], caps->funcid[3], func_id))
+		return true;
+
+	if (U16_THREE_EQUAL(caps->funcid[2], caps->funcid[3], func_id))
+		return true;
+
+	return false;
+}
+
+static inline bool
+check_is_pcie1_pf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_JUDGE_RANGE(caps->funcid[6], caps->funcid[7], func_id))
+		return true;
+
+	if (U16_THREE_EQUAL(caps->funcid[6], caps->funcid[7], func_id))
+		return true;
+
+	return false;
+}
+
+static inline bool
+check_is_pcie0_vf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id))
+		return true;
+
+	if (U16_THREE_EQUAL(caps->funcid[0], caps->funcid[1], func_id))
+		return true;
+
+	return false;
+}
+
+static inline bool
+check_is_pcie1_vf(struct xsc_caps *caps, u16 func_id)
+{
+	return false;//pcie1 has no vf
+}
+
+static inline bool
+check_is_pcie0_pf0_vf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_JUDGE_RANGE_BOTTOM_HALF(caps->funcid[0], caps->funcid[1], func_id))
+		return true;
+
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 1) {
+		if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id))
+			return true;
+	}
+
+	return false;
+}
+
+static inline bool
+check_is_pcie0_pf1_vf(struct xsc_caps *caps, u16 func_id)
+{
+	if (!caps || caps->funcid_valid == 0)
+		return false;
+
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 2) {
+		if (U16_JUDGE_RANGE_TOP_HALF(caps->funcid[0], caps->funcid[1], func_id))
+			return true;
+	}
+
+	return false;
+}
+
+static inline bool
+pf_funcid_to_pf_index(struct xsc_caps *caps, u16 func_id, u8 *pf_id)
+{
+	if (!caps || caps->funcid_valid == 0 || !pf_id)
+		return false;
+
+	*pf_id = 0xff;
+	if (U16_THREE_EQUAL(caps->funcid[2], caps->funcid[3], func_id)) {
+		*pf_id = 0;
+		return true;
+	}
+	if (U16_THREE_EQUAL(caps->funcid[6], caps->funcid[7], func_id)) {
+		*pf_id = 0;
+		return true;
+	}
+
+	if (U16_JUDGE_RANGE(caps->funcid[2], caps->funcid[3], func_id))
+		*pf_id = func_id - caps->funcid[2];
+	else if (U16_JUDGE_RANGE(caps->funcid[6], caps->funcid[7], func_id))
+		*pf_id = func_id - caps->funcid[6];
+	else
+		return false;
+
+	return true;
+}
+
+static inline bool
+vf_funcid_to_vf_index(struct xsc_caps *caps, u16 func_id, u16 *vf_id)
+{
+	if (!caps || caps->funcid_valid == 0 || !vf_id)
+		return false;
+
+	*vf_id = 0xffff;
+	//vf_num = 1 is impossible
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 1) {
+		if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id)) {
+			*vf_id = func_id - caps->funcid[0];
+			return true;
+		}
+	}
+	//pcie1 has no vf
+	if (U16_JUDGE_RANGE_BOTTOM_HALF(caps->funcid[0], caps->funcid[1], func_id))
+		*vf_id = func_id - caps->funcid[0];
+	else if (U16_JUDGE_RANGE_TOP_HALF(caps->funcid[0], caps->funcid[1], func_id))
+		*vf_id = func_id - U16_HALF(caps->funcid[0], caps->funcid[1]);
+	else
+		return false;
+
+	return true;
+}
+
+static inline bool
+funcid_to_pf_index(struct xsc_caps *caps, u16 func_id, u8 *pf_id)
+{
+	if (!caps || caps->funcid_valid == 0 || !pf_id)
+		return false;
+
+	*pf_id = 0xff;
+	//vf_num = 1 is impossible
+	if (U16_THREE_EQUAL(caps->funcid[2], caps->funcid[3], func_id)) {
+		*pf_id = 0;
+		return true;
+	}
+	if (U16_THREE_EQUAL(caps->funcid[6], caps->funcid[7], func_id)) {
+		*pf_id = 0;
+		return true;
+	}
+
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 1) {
+		if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id)) {
+			*pf_id = 0;
+			return true;
+		}
+	}
+	//pcie1 has no vf
+	if (U16_JUDGE_RANGE(caps->funcid[2], caps->funcid[3], func_id))
+		*pf_id = func_id - caps->funcid[2];
+	else if (U16_JUDGE_RANGE(caps->funcid[6], caps->funcid[7], func_id))
+		*pf_id = func_id - caps->funcid[6];
+	else if (U16_JUDGE_RANGE_BOTTOM_HALF(caps->funcid[0], caps->funcid[1], func_id))
+		*pf_id = 0;
+	else if (U16_JUDGE_RANGE_TOP_HALF(caps->funcid[0], caps->funcid[1], func_id))
+		*pf_id = 1;
+	else
+		return false;
+
+	return true;
+}
+
+static inline bool
+funcid_to_pcie_no(struct xsc_caps *caps, u16 func_id, u8 *pcie_no)
+{
+	if (!caps || caps->funcid_valid == 0 || !pcie_no)
+		return false;
+
+	*pcie_no = 0xff;
+	//vf_num = 1 is impossible
+	if (U16_THREE_EQUAL(caps->funcid[2], caps->funcid[3], func_id)) {
+		*pcie_no = 0;
+		return true;
+	}
+	if (U16_THREE_EQUAL(caps->funcid[6], caps->funcid[7], func_id)) {
+		*pcie_no = 1;
+		return true;
+	}
+	//pcie1 has no vf
+	if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id))
+		*pcie_no = 0;
+	else if (U16_JUDGE_RANGE(caps->funcid[2], caps->funcid[3], func_id))
+		*pcie_no = 0;
+	else if (U16_JUDGE_RANGE(caps->funcid[6], caps->funcid[7], func_id))
+		*pcie_no = 1;
+	else
+		return false;
+
+	return true;
+}
+
+static inline bool
+funcid_to_pf_vf_index(struct xsc_caps *caps, u16 func_id,
+		      u8 *is_pf, u8 *pf_id, u8 *pcie_no, u16 *vf_id)
+{
+	if (!caps || caps->funcid_valid == 0 ||
+	    !is_pf || !pf_id || !pcie_no || !vf_id)
+		return false;
+
+	*is_pf = 0xff;
+	*pf_id = 0xff;
+	*pcie_no = 0xff;
+	*vf_id = 0xffff;
+	//vf_num = 1 is impossible
+	if (U16_THREE_EQUAL(caps->funcid[2], caps->funcid[3], func_id)) {
+		*is_pf = 1;
+		*pf_id = 0;
+		*pcie_no = 0;
+		*vf_id = 0xffff;
+		return true;
+	}
+	if (U16_THREE_EQUAL(caps->funcid[6], caps->funcid[7], func_id)) {
+		*is_pf = 1;
+		*pf_id = 1;
+		*pcie_no = 1;
+		*vf_id = 0xffff;
+		return true;
+	}
+
+	if (U16_TOTAL(caps->funcid[2], caps->funcid[3]) == 1) {
+		if (U16_JUDGE_RANGE(caps->funcid[0], caps->funcid[1], func_id)) {
+			*is_pf = 0;
+			*pf_id = 0;
+			*pcie_no = 0;
+			*vf_id = func_id - caps->funcid[0];
+			return true;
+		}
+	}
+	//pcie1 has no vf
+	if (U16_JUDGE_RANGE(caps->funcid[2], caps->funcid[3], func_id)) {
+		*is_pf = 1;
+		*pf_id = func_id - caps->funcid[2];
+		*pcie_no = 0;
+		*vf_id = 0xffff;
+	} else if (U16_JUDGE_RANGE(caps->funcid[6], caps->funcid[7], func_id)) {
+		*is_pf = 1;
+		*pf_id = func_id - caps->funcid[6];
+		*pcie_no = 1;
+		*vf_id = 0xffff;
+	} else if (U16_JUDGE_RANGE_BOTTOM_HALF(caps->funcid[0], caps->funcid[1], func_id)) {
+		*is_pf = 0;
+		*pf_id = 0;
+		*vf_id = func_id - caps->funcid[0];
+		*pcie_no = 0;
+	} else if (U16_JUDGE_RANGE_TOP_HALF(caps->funcid[0], caps->funcid[1], func_id)) {
+		*is_pf = 0;
+		*pf_id = 1;
+		*vf_id = func_id - U16_HALF(caps->funcid[0], caps->funcid[1]);
+		*pcie_no = 0;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+static inline bool
+is_support_rdma(struct xsc_core_device *dev)
+{
+	if (!dev)
+		return false;
+
+	if (dev->caps.hw_feature_flag | XSC_HW_RDMA_SUPPORT)
+		return true;
+
+	return false;
+}
+
 #endif /* XSC_CORE_H */
+

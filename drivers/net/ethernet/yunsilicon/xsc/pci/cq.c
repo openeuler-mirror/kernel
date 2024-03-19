@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <common/driver.h>
-#include <common/cq.h>
+#include "common/driver.h"
+#include "common/cq.h"
 #include <rdma/ib_verbs.h>
 
 void xsc_cq_event(struct xsc_core_device *xdev, u32 cqn, int event_type)
@@ -35,7 +34,7 @@ void xsc_cq_event(struct xsc_core_device *xdev, u32 cqn, int event_type)
 }
 
 int xsc_core_create_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
-			struct xsc_create_cq_mbox_in *in, int inlen)
+		       struct xsc_create_cq_mbox_in *in, int inlen)
 {
 	int err;
 	struct xsc_cq_table *table = &dev->dev_res->cq_table;
@@ -70,8 +69,7 @@ int xsc_core_create_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
 	cq->pid = current->pid;
 	err = xsc_debug_cq_add(dev, cq);
 	if (err)
-		xsc_core_dbg(dev, "failed adding CP 0x%x to debug file system\n",
-			      cq->cqn);
+		xsc_core_dbg(dev, "failed adding CP 0x%x to debug file system\n", cq->cqn);
 
 	return 0;
 
@@ -115,8 +113,6 @@ int xsc_core_destroy_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq)
 	if (out.hdr.status)
 		return xsc_cmd_status_to_err(&out.hdr);
 
-	//synchronize_irq(cq->irqn);
-
 	xsc_debug_cq_remove(dev, cq);
 	if (atomic_dec_and_test(&cq->refcount))
 		complete(&cq->free);
@@ -127,7 +123,7 @@ int xsc_core_destroy_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq)
 EXPORT_SYMBOL(xsc_core_destroy_cq);
 
 int xsc_core_query_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
-		       struct xsc_query_cq_mbox_out *out)
+		      struct xsc_query_cq_mbox_out *out)
 {
 	struct xsc_query_cq_mbox_in in;
 	int err;

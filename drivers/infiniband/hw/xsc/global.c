@@ -20,6 +20,7 @@ static int is_valid_pcp(int pcp)
 		return 0;
 	return -1;
 }
+
 static int is_valid_dscp(int dscp)
 {
 	if ((dscp >= 0 && dscp <= QOS_DSCP_MAX) || dscp == GLOBAL_UNSET_FORCE_VALUE)

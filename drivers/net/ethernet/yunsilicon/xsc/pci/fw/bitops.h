@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -10,7 +9,7 @@
 #include <linux/bitops.h>
 #include <linux/bitmap.h>
 
-#define __round_mask(x, y) ((__typeof__(x))((y)-1))
+#define __round_mask(x, y) ((__typeof__(x))((y) - 1))
 #define round_up(x, y) ((((x)-1) | __round_mask(x, y))+1)
 #define round_down(x, y) ((x) & ~__round_mask(x, y))
 

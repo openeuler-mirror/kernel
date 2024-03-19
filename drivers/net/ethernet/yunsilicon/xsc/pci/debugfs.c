@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/debugfs.h>
 #include <linux/time.h>
-#include <common/xsc_core.h>
-#include <common/xsc_hsi.h>
-#include <common/driver.h>
-#include <common/qp.h>
-#include <common/cq.h>
+#include "common/xsc_core.h"
+#include "common/xsc_hsi.h"
+#include "common/driver.h"
+#include "common/qp.h"
+#include "common/cq.h"
 #include "fw/xsc_tbm.h"
 
 enum {
@@ -131,12 +130,11 @@ static ssize_t xsc_debugfs_reg_write(struct file *filp,
 			offset += 5;
 			num = 0;
 			while (1) {
-				cnt = sscanf(&xsc_debugfs_reg_buf[offset], "%x %n",
-					&value, &tmp);
+				cnt = sscanf(&xsc_debugfs_reg_buf[offset], "%x %n", &value, &tmp);
 				if (cnt < 2)
 					break;
 				xsc_core_info(xdev, "write: 0x%llx = 0x%x\n",
-					(reg + sizeof(int) * num), value);
+					      (reg + sizeof(int) * num), value);
 				offset += tmp;
 				buf[num++] = value;
 				if (num == 8)
@@ -145,8 +143,9 @@ static ssize_t xsc_debugfs_reg_write(struct file *filp,
 			if (num > 1) {
 				ptr = &buf[0];
 				IA_WRITE(xdev, reg, ptr, num);
-			} else if (num == 1)
+			} else if (num == 1) {
 				REG_WR32(xdev, reg, buf[0]);
+			}
 		} else {
 			xsc_core_err(xdev, "write <reg> <value>\n");
 		}
@@ -165,7 +164,7 @@ static ssize_t xsc_debugfs_reg_write(struct file *filp,
 			xsc_core_info(xdev, "read: 0x%llx num:%d\n", reg, num);
 			for (i = 0; i < num; i++)
 				xsc_core_info(xdev, "read:0x%llx = %#x\n",
-					(reg + sizeof(int) * i), buf[i]);
+					      (reg + sizeof(int) * i), buf[i]);
 		} else if (cnt == 1) {
 			int value = REG_RD32(xdev, reg);
 
@@ -190,7 +189,7 @@ static const struct file_operations xsc_debugfs_reg_fops = {
 };
 
 static ssize_t xsc_debugfs_vlan_read(struct file *filp, char __user *buffer,
-					size_t count, loff_t *ppos)
+				     size_t count, loff_t *ppos)
 {
 	char *buf;
 	int len;
@@ -217,8 +216,8 @@ static ssize_t xsc_debugfs_vlan_read(struct file *filp, char __user *buffer,
 }
 
 static ssize_t xsc_debugfs_vlan_write(struct file *filp,
-				const char __user *buffer,
-				size_t count, loff_t *ppos)
+				      const char __user *buffer,
+				      size_t count, loff_t *ppos)
 {
 	struct xsc_core_device *xdev = filp->private_data;
 	struct xsc_vlan_config config;
@@ -235,8 +234,8 @@ static ssize_t xsc_debugfs_vlan_write(struct file *filp,
 		return -ENOSPC;
 
 	len = simple_write_to_buffer(xsc_debugfs_vlan_buf,
-				sizeof(xsc_debugfs_vlan_buf) - 1,
-				ppos, buffer, count);
+				     sizeof(xsc_debugfs_vlan_buf) - 1,
+				     ppos, buffer, count);
 	if (len < 0)
 		return len;
 
@@ -269,9 +268,9 @@ static ssize_t xsc_debugfs_vlan_write(struct file *filp,
 	}
 
 	cnt = sscanf(&xsc_debugfs_vlan_buf[off], "%u %u %u %s %u %u",
-			&config.pvid, &config.vid_allow_base,
-			&config.vid_allow_num, proto,
-			&config.prio, &config.smac_filter_en);
+		     &config.pvid, &config.vid_allow_base,
+		     &config.vid_allow_num, proto,
+		     &config.prio, &config.smac_filter_en);
 	if (cnt < 3) {
 		xsc_core_err(xdev, "error arguments: <mode> <vid> <vlan_start> <vlan_num> <proto> <prio> <smac_en>\n");
 		return 0;
@@ -290,9 +289,9 @@ static ssize_t xsc_debugfs_vlan_write(struct file *filp,
 	}
 
 	xsc_core_info(xdev, "%s: vlan_mode=%d vid=%d vlan_allow=%d/%d proto=0x%x prio=%d smac_en=%d",
-		__func__, config.mode, config.pvid, config.vid_allow_base,
-		config.vid_allow_num, config.proto, config.prio,
-		config.smac_filter_en);
+		      __func__, config.mode, config.pvid, config.vid_allow_base,
+		      config.vid_allow_num, config.proto, config.prio,
+		      config.smac_filter_en);
 
 	return count;
 }
@@ -310,12 +309,10 @@ int xsc_vlan_debugfs_init(struct xsc_core_device *dev)
 
 	if (dev->dev_res->dbg_root) {
 		pfile = debugfs_create_file("vlan", 0644,
-					dev->dev_res->dbg_root, dev,
-					&xsc_debugfs_vlan_fops);
+					    dev->dev_res->dbg_root, dev,
+					    &xsc_debugfs_vlan_fops);
 		if (!pfile)
 			xsc_core_err(dev, "failed to create vlan debugfs\n");
-		else
-			xsc_core_info(dev, "create vlan debugfs ok\n");
 	}
 
 	return 0;
@@ -335,15 +332,13 @@ int xsc_debugfs_init(struct xsc_core_device *dev)
 					    dev->dev_res->dbg_root, dev,
 					    &xsc_debugfs_reg_fops);
 		if (!pfile)
-			xsc_core_err(dev, "failed to create debugfs ops for %s\n",
-				name);
+			xsc_core_err(dev, "failed to create debugfs ops for %s\n", name);
 	} else {
 		xsc_core_err(dev, "failed to create debugfs dir for %s\n", name);
 		return -ENOMEM;
 	}
 
 	xsc_vlan_debugfs_init(dev);
-	xsc_core_info(dev, "%s.dir_name=%s\r\n", __func__, name);
 
 	return 0;
 }
@@ -483,8 +478,7 @@ int xsc_cmdif_debugfs_init(struct xsc_core_device *xdev)
 		if (strcmp(namep, "unknown command opcode")) {
 			stats->root = debugfs_create_dir(namep, *cmdif_debugfs);
 			if (!stats->root) {
-				xsc_core_warn(xdev, "failed adding command %d\n",
-					       i);
+				xsc_core_warn(xdev, "failed adding command %d\n", i);
 				err = -ENOMEM;
 				goto out;
 			}
@@ -815,14 +809,65 @@ void xsc_debug_qp_remove(struct xsc_core_device *dev, struct xsc_core_qp *qp)
 		rem_res_tree(qp->dbg);
 }
 
+static int set_udp_sport(u32 qpn, u32 sport, struct xsc_core_device *xdev, struct xsc_qp_trace *t)
+{
+	int err;
+	struct xsc_ap_feat_mbox_in in;
+	struct xsc_ap_feat_mbox_out out;
+	struct timespec64 ts;
+	struct xsc_qpt_update_msg msg;
+
+	ktime_get_boottime_ts64(&ts);
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+
+	in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_AP_FEAT);
+	in.xsc_ap_feature_opcode = __cpu_to_be16(XSC_AP_FEAT_SET_UDP_SPORT);
+	in.ap.set_udp_sport.qpn = __cpu_to_be32(qpn);
+	in.ap.set_udp_sport.udp_sport = __cpu_to_be32(sport);
+
+	err = xsc_cmd_exec(xdev, (void *)&in, sizeof(in), (void *)&out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(xdev, "Failed to set udp_sport, err(%u), status(%u)\n", err,
+			     out.hdr.status);
+		return -EINVAL;
+	}
+
+	msg.main_ver = YS_QPTRACE_VER_MAJOR;
+	msg.sub_ver = YS_QPTRACE_VER_MINOR;
+	msg.type = YS_QPTRACE_UPDATE_TYPE_SPORT;
+	msg.data.timestamp = (u64)(u32)ts.tv_sec * MSEC_PER_SEC +
+		ts.tv_nsec / NSEC_PER_MSEC;
+	msg.data.qpn = qpn;
+	msg.data.bus = xdev->bus_num;
+	msg.data.dev = xdev->dev_num;
+	msg.data.fun = xdev->func_id;
+	msg.data.update.sport.port_old = t->s_port;
+	msg.data.update.sport.port_new = __cpu_to_be16(sport);
+	t->s_port = msg.data.update.sport.port_new;
+
+	qpts_write_one_msg(&msg);
+
+	xsc_core_info(xdev, "Set qpn(%u) udp_sport(%u)\n", qpn, sport);
+
+	return 0;
+}
+
 static ssize_t trace_read(struct file *filp, char __user *buf, size_t count, loff_t *pos)
 {
-	struct xsc_qp_trace *trace_info = filp->private_data;
+	struct xsc_core_qp *qp = filp->private_data;
+	struct xsc_qp_trace *trace_info;
 	int err;
 	int len;
 
 	if (*pos)
 		return 0;
+
+	if (!qp || !qp->trace_info)
+		return -EIO;
+
+	trace_info = qp->trace_info;
 
 	len = sizeof(struct xsc_qp_trace);
 	err = copy_to_user(buf, trace_info, len);
@@ -833,10 +878,78 @@ static ssize_t trace_read(struct file *filp, char __user *buf, size_t count, lof
 	return len;
 }
 
+static ssize_t trace_write(struct file *filp, const char __user *buf, size_t count, loff_t *pos)
+{
+	struct xsc_core_qp *qp = filp->private_data;
+	struct xsc_qp_trace *trace_info;
+	struct xsc_core_device *xdev;
+	int ret = 0, len;
+	u32 sport;
+	char tmp_buf[256] = "";
+
+	ret = -EIO;
+	if (!qp || !qp->dbg || !qp->dbg->xdev || !qp->trace_info) {
+		pr_err("%s error null pointer!\n", __func__);
+		goto trace_write_out;
+	}
+
+	trace_info = qp->trace_info;
+	xdev = qp->dbg->xdev;
+
+	ret = 0;
+	/* don't allow partial writes */
+	if (*pos != 0) {
+		xsc_core_err(xdev, "Don't allow partial writes!\n");
+		goto trace_write_out;
+	}
+
+	ret = -ENOSPC;
+	if (count >= sizeof(tmp_buf)) {
+		xsc_core_err(xdev, "Count out of size of buffer!\n");
+		goto trace_write_out;
+	}
+
+	len = simple_write_to_buffer(tmp_buf, sizeof(tmp_buf) - 1,
+				     pos, buf, count);
+	ret = len;
+	if (len < 0) {
+		xsc_core_err(xdev, "Write to buffer error(%d)!\n", len);
+		goto trace_write_out;
+	}
+
+	tmp_buf[len] = '\0';
+
+	// <sport>
+	// sport 10000
+	if (strncmp(tmp_buf, "sport", 5) == 0) {
+		ret = kstrtouint(&tmp_buf[6], 0, &sport);
+		if (ret != 0) {
+			xsc_core_err(xdev, "error arguments: <sport>\n");
+			ret = -EINVAL;
+			goto trace_write_out;
+		}
+		ret = set_udp_sport(trace_info->lqpn, sport, xdev, trace_info);
+		if (ret) {
+			ret = -EIO;
+			goto trace_write_out;
+		}
+	} else {
+		xsc_core_err(xdev, "invalid arguments: %s\n", tmp_buf);
+		ret = -EOPNOTSUPP;
+		goto trace_write_out;
+	}
+
+	return count;
+
+trace_write_out:
+	return ret;
+}
+
 static const struct file_operations fops_trace = {
 	.owner	= THIS_MODULE,
 	.open	= simple_open,
 	.read	= trace_read,
+	.write	= trace_write,
 };
 
 int xsc_create_qptrace(struct xsc_core_device *dev, struct xsc_core_qp *qp)
@@ -848,8 +961,8 @@ int xsc_create_qptrace(struct xsc_core_device *dev, struct xsc_core_qp *qp)
 
 	snprintf(name, sizeof(name), "%d", qp->qpn);
 
-	qp->trace = debugfs_create_file(name, 0400, dev->dev_res->qptrace_debugfs,
-		(void *)qp->trace_info, &fops_trace);
+	qp->trace = debugfs_create_file(name, 0644, dev->dev_res->qptrace_debugfs,
+					(void *)qp, &fops_trace);
 	if (!qp->trace)
 		return -1;
 
@@ -913,4 +1026,3 @@ void xsc_debug_cq_remove(struct xsc_core_device *dev, struct xsc_core_cq *cq)
 	if (cq->dbg)
 		rem_res_tree(cq->dbg);
 }
-

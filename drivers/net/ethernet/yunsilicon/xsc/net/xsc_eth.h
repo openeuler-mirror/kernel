@@ -1,33 +1,27 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef XSC_ETH_H
 #define XSC_ETH_H
 
-#include <common/qp.h>
+#include "common/qp.h"
 #include "xsc_eth_common.h"
 #include "xsc_eth_stats.h"
-#include <common/version.h>
+#include "common/version.h"
 #include <net/dcbnl.h>
+#include "common/xsc_fs.h"
 
 #define XSC_INVALID_LKEY	0x100
 
 #define XSCALE_ETH_PHYPORT_DOWN		0
 #define XSCALE_ETH_PHYPORT_UP		1
-
+#ifdef CONFIG_DCB
 #define CONFIG_XSC_CORE_EN_DCB		1
+#endif
 #define XSC_PAGE_CACHE			1
 
-//#define XSC_UDP_FRAG_HW_CSUM		1
-//#define UDP_CHECK_0			1
-//#define UDP_CSUM_DEBUG		1
-
-#ifndef COSIM
-#define NEED_AGILEX_TRAINING
-#endif
 #define XSCALE_DRIVER_NAME "xsc_eth"
 #define XSCALE_RET_SUCCESS		0
 #define XSCALE_RET_ERROR		1
@@ -52,8 +46,8 @@ struct xsc_cee_config {
 	/* bw pct for priority group */
 	u8	pg_bw_pct[CEE_DCBX_MAX_PGS];
 	u8	prio_to_pg_map[CEE_DCBX_MAX_PRIO];
-	bool	pfc_setting[CEE_DCBX_MAX_PRIO];
-	bool	pfc_enable;
+	u8	pfc_setting[CEE_DCBX_MAX_PRIO];
+	u8	pfc_enable;
 };
 
 enum {
@@ -89,7 +83,7 @@ struct xsc_dcbx {
 	u8                         cap;
 
 	/* Buffer configuration */
-	bool                       manual_buffer;
+	u8                         manual_buffer;
 	u32                        cable_len;
 	u32                        xoff;
 	u16                        port_buff_cell_sz;
@@ -122,6 +116,11 @@ struct xsc_rss_params {
 	u32	rss_hash_tmpl;
 };
 
+struct xsc_vlan_params {
+	DECLARE_BITMAP(active_cvlans, VLAN_N_VID);
+	DECLARE_BITMAP(active_svlans, VLAN_N_VID);
+};
+
 struct xsc_adapter {
 	struct net_device *netdev;
 	struct pci_dev *pdev;
@@ -130,21 +129,18 @@ struct xsc_adapter {
 
 	struct xsc_eth_params  nic_param;
 	struct xsc_rss_params  rss_params;
+	struct xsc_vlan_params vlan_params;
 
 	struct workqueue_struct		*workq;
 	struct work_struct		update_carrier_work;
 	struct work_struct		set_rx_mode_work;
 	struct work_struct		event_work;
 
-#ifdef NEED_AGILEX_TRAINING
-	struct timer_list		link_timer;
-#endif
-
 	struct xsc_eth_channels	channels;
 	struct xsc_sq **txq2sq;
 
 	u32 status;
-	spinlock_t lock;
+	spinlock_t lock; /* adapter lock */
 
 	struct mutex	state_lock; /* Protects Interface state */
 	struct xsc_stats *stats;
@@ -155,6 +151,8 @@ struct xsc_adapter {
 	u32	msglevel;
 
 	struct task_struct *task;
+
+	int channel_tc2realtxq[XSC_ETH_MAX_NUM_CHANNELS][XSC_MAX_NUM_TC];
 };
 
 struct xsc_rx_buffer {
@@ -193,14 +191,13 @@ typedef int (*xsc_eth_fp_preactivate)(struct xsc_adapter *priv);
 typedef int (*xsc_eth_fp_postactivate)(struct xsc_adapter *priv);
 
 int xsc_safe_switch_channels(struct xsc_adapter *adapter,
-				xsc_eth_fp_preactivate preactivate,
-				xsc_eth_fp_postactivate postactivate);
+			     xsc_eth_fp_preactivate preactivate,
+			     xsc_eth_fp_postactivate postactivate);
 int xsc_eth_num_channels_changed(struct xsc_adapter *priv);
 int xsc_eth_modify_nic_hca(struct xsc_adapter *adapter, u32 change);
-bool xsc_eth_get_phyport_state(struct xsc_adapter *adapter);
-#ifdef NEED_AGILEX_TRAINING
-int xsc_eth_get_linkinfo(struct xsc_event_linkstatus_resp *plinkinfo, struct xsc_adapter *adapter);
-#endif
+bool xsc_eth_get_link_status(struct xsc_adapter *adapter);
+int xsc_eth_get_link_info(struct xsc_adapter *adapter,
+			  struct xsc_event_linkinfo_resp *plinkinfo);
 int xsc_eth_set_led_status(int id, struct xsc_adapter *adapter);
 
 /* Use this function to get max num channels after netdev was created */

@@ -18,10 +18,10 @@ struct counter_desc {
 struct xsc_counters_attribute {
 	struct attribute    attr;
 	ssize_t (*show)(struct kobject *kobj,
-		struct attribute *attr, char *buf);
+			struct attribute *attr, char *buf);
 	ssize_t (*store)(struct kobject *kobj,
-		struct attribute *attr, const char *buf,
-		size_t count);
+			 struct attribute *attr, const char *buf,
+			 size_t count);
 	int     id;
 	struct xsc_core_device *dev;
 	const struct counter_desc *desc;
@@ -31,17 +31,17 @@ struct xsc_counters_attribute {
 struct xsc_counters_bin_attribute {
 	struct attribute  attr;
 	ssize_t (*read)(struct file *file,
-		struct kobject *kobj,
-		struct bin_attribute *attr,
-		char *buf, loff_t offset, size_t size);
+			struct kobject *kobj,
+			struct bin_attribute *bin_attr,
+			char *buf, loff_t off, size_t size);
 	ssize_t (*write)(struct file *file,
-		struct kobject *kobj,
-		struct bin_attribute *attr,
-		char *buf, loff_t offset, size_t size);
+			 struct kobject *kobj,
+			 struct bin_attribute *bin_attr,
+			 char *buf, loff_t off, size_t size);
 	int (*mmap)(struct file *file,
-		struct kobject *kobj,
-		struct bin_attribute *attr,
-		struct vm_area_struct *vma);
+		    struct kobject *kobj,
+		    struct bin_attribute *attr,
+		    struct vm_area_struct *vma);
 	int    id;
 	struct xsc_core_device *dev;
 	const struct counter_desc *desc;
@@ -50,14 +50,14 @@ struct xsc_counters_bin_attribute {
 };
 
 ssize_t counters_vf_names_show(struct kobject *kobjs,
-			struct attribute *attr, char *buf);
+			       struct attribute *attr, char *buf);
 
 ssize_t counters_vf_value_read(struct file *file,
-			struct kobject *kob,
-			struct bin_attribute *bin_attr,
-			char *buf, loff_t loff, size_t size);
+			       struct kobject *kob,
+			       struct bin_attribute *bin_attr,
+			       char *buf, loff_t loff, size_t size);
 
 ssize_t counters_vf_show(struct kobject *kobjs,
-			struct attribute *attr, char *buf);
+			 struct attribute *attr, char *buf);
 
 #endif

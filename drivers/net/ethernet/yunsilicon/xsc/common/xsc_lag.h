@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef XSC_LAG_H
 #define XSC_LAG_H
+
+#include <net/ip_fib.h>
 
 struct lag_func {
 	struct xsc_core_device	*xdev;
@@ -19,7 +20,9 @@ struct lag_tracker {
 	enum   netdev_lag_tx_type	tx_type;
 	struct netdev_lag_lower_state_info	netdev_state[XSC_MAX_PORTS];
 	struct net_device *ndev[XSC_MAX_PORTS];
-	unsigned int is_bonded:1;
+	unsigned int is_hw_bonded:1;
+	unsigned int is_kernel_bonded:1;
+	unsigned int is_kernel_bonded_change:1;
 	unsigned int lag_disable:1;
 	u8 gw_dmac0[6];
 	u8 gw_dmac1[6];
@@ -56,9 +59,14 @@ struct xsc_fib_event_work {
 };
 
 enum {
-	XSC_LAG_FLAG_ROCE		= 1 << 0,
-	XSC_LAG_FLAG_SRIOV		= 1 << 1,
-	XSC_LAG_FLAG_MULTIPATH		= 1 << 2,
+	XSC_LAG_FLAG_ROCE	= 1 << 0,
+	XSC_LAG_FLAG_SRIOV	= 1 << 1,
+	XSC_LAG_FLAG_MULTIPATH	= 1 << 2,
+};
+
+enum {
+	XSC_BOND_FLAG_KERNEL	= 1 << 3,
+	XSC_BOND_FLAG_LAG	= 1 << 4,
 };
 
 enum xsc_lag_hash {
@@ -78,8 +86,13 @@ enum xsc_lag_hash {
 				XSC_LAG_FLAG_MULTIPATH)
 
 #define GET_LAG_MEMBER_BITMAP(remap_port1, remap_port2)		\
-	(((remap_port1 != MAC_INVALID) ? BIT(remap_port1 - MAC_SHIFT) : 0) |		\
-	((remap_port2 != MAC_INVALID) ? BIT(remap_port2 - MAC_SHIFT) : 0))
+	((((remap_port1) != MAC_INVALID) ? BIT((remap_port1) - MAC_SHIFT) : 0) |		\
+	(((remap_port2) != MAC_INVALID) ? BIT((remap_port2) - MAC_SHIFT) : 0))
+
+static inline bool __xsc_bond_is_active(struct xsc_lag *ldev)
+{
+	return !!(ldev->flags & XSC_BOND_FLAG_KERNEL);
+}
 
 static inline bool __xsc_lag_is_active(struct xsc_lag *ldev)
 {
@@ -109,4 +122,3 @@ void xsc_lag_enable(struct xsc_core_device *xdev);
 void xsc_lag_disable(struct xsc_core_device *xdev);
 
 #endif /* XSC_LAG_H */
-

@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/module.h>
-#include <common/driver.h>
-#include <common/port.h>
+#include "common/driver.h"
+#include "common/port.h"
 
 int xsc_core_access_reg(struct xsc_core_device *xdev, void *data_in,
-			 int size_in, void *data_out, int size_out,
-			 u16 reg_num, int arg, int write)
+			int size_in, void *data_out, int size_out,
+			u16 reg_num, int arg, int write)
 {
 	struct xsc_access_reg_mbox_in *in = NULL;
 	struct xsc_access_reg_mbox_out *out = NULL;
@@ -30,7 +29,7 @@ int xsc_core_access_reg(struct xsc_core_device *xdev, void *data_in,
 	in->arg = cpu_to_be32(arg);
 	in->register_id = cpu_to_be16(reg_num);
 	err = xsc_cmd_exec(xdev, in, sizeof(*in) + size_in, out,
-			    sizeof(*out) + size_out);
+			   sizeof(*out) + size_out);
 	if (err)
 		goto ex2;
 
@@ -69,7 +68,7 @@ int xsc_set_port_caps(struct xsc_core_device *xdev, int port_num, u32 caps)
 	in.port_num = port_num;
 
 	err = xsc_core_access_reg(xdev, &in, sizeof(in), &out,
-				   sizeof(out), XSC_REG_PCAP, 0, 1);
+				  sizeof(out), XSC_REG_PCAP, 0, 1);
 
 	return err;
 }
@@ -82,7 +81,7 @@ static int xsc_query_module_num(struct xsc_core_device *dev, int *module_num)
 }
 
 static int xsc_query_module_id(struct xsc_core_device *dev, int module_num,
-				u8 *module_id)
+			       u8 *module_id)
 {
 	struct xsc_reg_mcia in;
 	struct xsc_reg_mcia out;
@@ -96,14 +95,14 @@ static int xsc_query_module_id(struct xsc_core_device *dev, int module_num,
 	in.size = 1;
 
 	err = xsc_core_access_reg(dev, &in, sizeof(in), &out,
-				   sizeof(out), XSC_REG_MCIA, 0, 0);
+				  sizeof(out), XSC_REG_MCIA, 0, 0);
 	if (err)
 		return err;
 
 	status = out.status;
 	if (status) {
 		xsc_core_err(dev, "query_mcia_reg failed: status: 0x%x\n",
-			      status);
+			     status);
 		return -EIO;
 	}
 	ptr = out.dword_0;
@@ -156,7 +155,7 @@ static void xsc_sfp_eeprom_params_set(u16 *i2c_addr, int *page_num, u16 *offset)
 }
 
 static int xsc_query_mcia(struct xsc_core_device *dev,
-			   struct xsc_module_eeprom_query_params *params, u8 *data)
+			  struct xsc_module_eeprom_query_params *params, u8 *data)
 {
 	struct xsc_reg_mcia in;
 	struct xsc_reg_mcia out;
@@ -173,14 +172,14 @@ static int xsc_query_mcia(struct xsc_core_device *dev,
 	in.size = size;
 
 	err = xsc_core_access_reg(dev, &in, sizeof(in), &out,
-				   sizeof(out), XSC_REG_MCIA, 0, 0);
+				  sizeof(out), XSC_REG_MCIA, 0, 0);
 	if (err)
 		return err;
 
 	status = out.status;
 	if (status) {
 		xsc_core_err(dev, "query_mcia_reg failed: status: 0x%x\n",
-			      status);
+			     status);
 		return -EIO;
 	}
 
@@ -191,7 +190,7 @@ static int xsc_query_mcia(struct xsc_core_device *dev,
 }
 
 int xsc_query_module_eeprom(struct xsc_core_device *dev,
-			     u16 offset, u16 size, u8 *data)
+			    u16 offset, u16 size, u8 *data)
 {
 	struct xsc_module_eeprom_query_params query = {0};
 	u8 module_id;
@@ -229,4 +228,3 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	return xsc_query_mcia(dev, &query, data);
 }
 EXPORT_SYMBOL_GPL(xsc_query_module_eeprom);
-

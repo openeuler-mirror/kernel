@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
-#include <common/xsc_core.h>
+#include "common/xsc_core.h"
 
 static void xsc_add_device(struct xsc_interface *intf, struct xsc_priv *priv)
 {
@@ -215,7 +214,7 @@ void xsc_unregister_device(struct xsc_core_device *dev)
 	struct xsc_interface *intf;
 
 	mutex_lock(&xsc_intf_mutex);
-	list_for_each_entry(intf, &intf_list, list)
+	list_for_each_entry_reverse(intf, &intf_list, list)
 		xsc_remove_device(intf, priv);
 	list_del(&priv->dev_list);
 	mutex_unlock(&xsc_intf_mutex);
@@ -268,8 +267,8 @@ void xsc_remove_dev_by_protocol(struct xsc_core_device *dev, int protocol)
 EXPORT_SYMBOL(xsc_remove_dev_by_protocol);
 
 void xsc_reload_interfaces(struct xsc_core_device *dev,
-			    int protocol1, int protocol2,
-			    bool valid1, bool valid2)
+			   int protocol1, int protocol2,
+			   bool valid1, bool valid2)
 {
 	bool reload1;
 	bool reload2;
@@ -323,7 +322,7 @@ struct xsc_core_device *xsc_get_next_phys_dev(struct xsc_core_device *dev)
 		if (!xsc_core_is_pf(tmp_dev))
 			continue;
 
-		if ((dev != tmp_dev) && (xsc_gen_pci_id(tmp_dev) == pci_id)) {
+		if (dev != tmp_dev && (xsc_gen_pci_id(tmp_dev) == pci_id)) {
 			res = tmp_dev;
 			break;
 		}
@@ -332,4 +331,3 @@ struct xsc_core_device *xsc_get_next_phys_dev(struct xsc_core_device *dev)
 	return res;
 }
 EXPORT_SYMBOL(xsc_get_next_phys_dev);
-

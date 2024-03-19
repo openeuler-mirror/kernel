@@ -1,14 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #ifndef __XSC_WQ_H__
 #define __XSC_WQ_H__
 
-#include <common/cq.h>
-#include <common/qp.h>
+#include "common/cq.h"
+#include "common/qp.h"
 
 struct xsc_wq_param {
 	int		buf_numa_node;
@@ -44,7 +43,7 @@ enum xsc_res_type {
 u32 xsc_wq_cyc_get_size(struct xsc_wq_cyc *wq);
 
 int xsc_buf_alloc_node(struct xsc_core_device *dev, int size,
-			struct xsc_frag_buf *buf, int node);
+		       struct xsc_frag_buf *buf, int node);
 
 /*api for eth driver*/
 int xsc_eth_cqwq_create(struct xsc_core_device *xdev, struct xsc_wq_param *param,
@@ -52,14 +51,14 @@ int xsc_eth_cqwq_create(struct xsc_core_device *xdev, struct xsc_wq_param *param
 			struct xsc_wq_ctrl *wq_ctrl);
 
 int xsc_eth_wq_cyc_create(struct xsc_core_device *xdev, struct xsc_wq_param *param,
-			u8 q_log_size, u8 ele_log_size, struct xsc_wq_cyc *wq,
-			struct xsc_wq_ctrl *wq_ctrl);
+			  u8 q_log_size, u8 ele_log_size, struct xsc_wq_cyc *wq,
+			  struct xsc_wq_ctrl *wq_ctrl);
 void xsc_eth_wq_destroy(struct xsc_wq_ctrl *wq_ctrl);
 
 static inline void xsc_init_fbc_offset(struct xsc_buf_list *frags,
-					u8 log_stride, u8 log_sz,
-					u16 strides_offset,
-					struct xsc_frag_buf_ctrl *fbc)
+				       u8 log_stride, u8 log_sz,
+				       u16 strides_offset,
+				       struct xsc_frag_buf_ctrl *fbc)
 {
 	fbc->frags      = frags;
 	fbc->log_stride = log_stride;
@@ -71,14 +70,14 @@ static inline void xsc_init_fbc_offset(struct xsc_buf_list *frags,
 }
 
 static inline void xsc_init_fbc(struct xsc_buf_list *frags,
-				 u8 log_stride, u8 log_sz,
-				 struct xsc_frag_buf_ctrl *fbc)
+				u8 log_stride, u8 log_sz,
+				struct xsc_frag_buf_ctrl *fbc)
 {
 	xsc_init_fbc_offset(frags, log_stride, log_sz, 0, fbc);
 }
 
 static inline void *xsc_frag_buf_get_wqe(struct xsc_frag_buf_ctrl *fbc,
-					  u32 ix)
+					 u32 ix)
 {
 	unsigned int frag;
 

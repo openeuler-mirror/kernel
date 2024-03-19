@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -17,9 +16,9 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
-#include <common/xsc_cmd.h>
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
+#include "common/xsc_cmd.h"
 
 #include "xsc_eth.h"
 #include "xsc_accel.h"
@@ -85,14 +84,14 @@ u32 xsc_eth_process_napi(struct xsc_adapter *adapter)
 
 int xsc_eth_rx_thread(void *arg)
 {
-	u32 uiRet = XSCALE_RET_SUCCESS;
+	u32 ret = XSCALE_RET_SUCCESS;
 	struct xsc_adapter *adapter = (struct xsc_adapter *)arg;
 
 	while (kthread_should_stop() == 0) {
 		if (need_resched())
 			schedule();
-		uiRet = xsc_eth_process_napi(adapter);
-		if (uiRet != XSCALE_RET_SUCCESS)
+		ret = xsc_eth_process_napi(adapter);
+		if (ret != XSCALE_RET_SUCCESS)
 			ETH_DEBUG_LOG("unexpected branch.\r\n");
 
 		ETH_DEBUG_LOG("adapter=%p\r\n", adapter);
@@ -108,7 +107,7 @@ u32 xsc_eth_rx_thread_create(struct xsc_adapter *adapter)
 	struct task_struct *task = NULL;
 
 	task = kthread_create(xsc_eth_rx_thread, (void *)adapter,
-				"xsc_rx%i", g_thread_count);
+			      "xsc_rx%i", g_thread_count);
 	if (!task)
 		return XSCALE_RET_ERROR;
 
@@ -122,5 +121,4 @@ u32 xsc_eth_rx_thread_create(struct xsc_adapter *adapter)
 
 	return XSCALE_RET_SUCCESS;
 }
-#endif
-
+#endif /* NEED_CREATE_RX_THREAD */

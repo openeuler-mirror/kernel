@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 
-#include <rdma/ib_peer_mem.h>
+#include "ib_peer_mem.h"
 #include <rdma/ib_verbs.h>
 #include "ib_umem_ex.h"
 
@@ -169,7 +169,7 @@ static int create_peer_sysfs(struct ib_peer_memory_client *ib_peer_client)
 	/* Dir alreday was created explicitly to get its kernel object for further usage */
 	ib_peer_client->peer_mem_attr_group.name =  NULL;
 	ib_peer_client->kobj = kobject_create_and_add(ib_peer_client->peer_mem->name,
-		peers_kobj);
+						      peers_kobj);
 
 	if (!ib_peer_client->kobj) {
 		ret = -EINVAL;
@@ -284,7 +284,8 @@ static int ib_peer_insert_context(struct ib_peer_memory_client *ib_peer_client,
 	return 0;
 }
 
-/* Caller should be holding the peer client lock, specifically,
+/*
+ * Caller should be holding the peer client lock, specifically,
  * the caller should hold ib_peer_client->lock
  */
 static int ib_peer_remove_context(struct ib_peer_memory_client *ib_peer_client,
@@ -304,13 +305,15 @@ static int ib_peer_remove_context(struct ib_peer_memory_client *ib_peer_client,
 	return 1;
 }
 
-/* ib_peer_create_invalidation_ctx - creates invalidation context for a given umem
+/*
+ * ib_peer_create_invalidation_ctx - creates invalidation context for a given umem
  * @ib_peer_mem: peer client to be used
  * @umem: umem struct belongs to that context
  * @invalidation_ctx: output context
  */
 int ib_peer_create_invalidation_ctx(struct ib_peer_memory_client *ib_peer_mem,
-	struct ib_umem_ex *umem_ex, struct invalidation_ctx **invalidation_ctx)
+				    struct ib_umem_ex *umem_ex,
+				    struct invalidation_ctx **invalidation_ctx)
 {
 	int ret;
 	struct invalidation_ctx *ctx;
@@ -368,6 +371,7 @@ void ib_peer_destroy_invalidation_ctx(struct ib_peer_memory_client *ib_peer_mem,
 	if (!peer_callback && !inflight_invalidation)
 		kfree(invalidation_ctx);
 }
+
 static int ib_memory_peer_check_mandatory(const struct peer_memory_client
 						     *peer_client)
 {

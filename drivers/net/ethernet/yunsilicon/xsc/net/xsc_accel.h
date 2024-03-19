@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -9,7 +8,7 @@
 
 #include <linux/netdev_features.h>
 #include <linux/udp.h>
-#include <common/xsc_core.h>
+#include "common/xsc_core.h"
 
 static inline void xsc_udp_gso_handle_tx_skb(struct sk_buff *skb)
 {
@@ -17,13 +16,11 @@ static inline void xsc_udp_gso_handle_tx_skb(struct sk_buff *skb)
 
 	udp_hdr(skb)->len = htons(payload_len);
 }
-
 static inline struct sk_buff *xsc_accel_handle_tx(struct sk_buff *skb)
 {
 	/*no not consider tls and ipsec*/
 	if (skb_is_gso(skb) && skb_shinfo(skb)->gso_type & SKB_GSO_UDP_L4)
 		xsc_udp_gso_handle_tx_skb(skb);
-
 	return skb;
 }
 

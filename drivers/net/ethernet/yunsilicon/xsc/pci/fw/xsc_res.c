@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -88,8 +87,8 @@ int xsc_alloc_continuous_msix_vec(struct xsc_core_device *dev, u16 vec_num)
 		}
 	}
 	xsc_core_warn(dev,
-		"failed to alloc msix vec, vec_range=%d~%d, vec_num=%d\n",
-		start, end, vec_num);
+		      "failed to alloc msix vec, vec_range=%d~%d, vec_num=%d\n",
+		      start, end, vec_num);
 	return -EINVAL;
 }
 
@@ -107,10 +106,10 @@ int xsc_free_continuous_msix_vec(struct xsc_core_device *dev)
 	end = xres->msix_vec_end;
 
 	if (vec_base < start || vec_base > end ||
-		(vec_base + vec_num - 1) > end) {
+	    (vec_base + vec_num - 1) > end) {
 		xsc_core_warn(dev,
-			"failed to free msix vec, vec_base=%d, vec_num=%d, range=%d~%d\n",
-			vec_base, vec_num, start, end);
+			      "failed to free msix vec, vec_base=%d, vec_num=%d, range=%d~%d\n",
+			      vec_base, vec_num, start, end);
 		return -EINVAL;
 	}
 
@@ -188,7 +187,6 @@ int xsc_alloc_res(u32 *res, u64 *res_tbl, u32 max)
 	clear_bit(bit_num, (unsigned long *)res_tbl);
 	*res = bit_num;
 	return 0;
-
 }
 
 int xsc_dealloc_res(u32 *res, u64 *res_tbl)
@@ -201,7 +199,7 @@ int xsc_dealloc_res(u32 *res, u64 *res_tbl)
 }
 
 int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32 *alloc,
-		u32 base_align)
+			 u32 base_align)
 {
 	struct xsc_free_list *free_node;
 	struct xsc_free_list *next;
@@ -224,7 +222,7 @@ int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32 *alloc
 				new_node->start = free_node->start;
 				new_node->end = start - 1;
 				__list_add(&new_node->list, free_node->list.prev,
-					&free_node->list);
+					   &free_node->list);
 			}
 			*alloc = start;
 			free_node->start = start + required;
@@ -248,8 +246,8 @@ int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32 *alloc
 	return 0;
 }
 
-int release_to_free_list(struct xsc_free_list_wl *list, u32 release,
-				u32 num_released)
+int release_to_free_list(struct xsc_free_list_wl *list, uint32_t release,
+			 uint32_t num_released)
 {
 	struct xsc_free_list *free_node = NULL;
 	struct xsc_free_list *next, *prev;
@@ -306,7 +304,7 @@ create_node:
 		new_node->start = release;
 		new_node->end = release + num_released - 1;
 		__list_add(&new_node->list, free_node->list.prev,
-			&free_node->list);
+			   &free_node->list);
 	}
 ret:
 	xsc_release_lock(&list->lock, flags);
@@ -339,7 +337,7 @@ int alloc_mtt_entry(struct xsc_core_device *dev, u32 pages_num, u32 *mtt_base)
 	int ret = alloc_from_free_list(&xres->mtt_list, pages_num, mtt_base, 1);
 
 	xsc_core_dbg(dev, "alloc mtt for %d pages start from %d\n",
-		pages_num, *mtt_base);
+		     pages_num, *mtt_base);
 
 	return ret;
 }
@@ -350,7 +348,7 @@ int dealloc_mtt_entry(struct xsc_core_device *dev, int pages_num, u32 mtt_base)
 	int ret = release_to_free_list(&xres->mtt_list, mtt_base, pages_num);
 
 	xsc_core_dbg(dev, "mtt release %d pages start from %d\n",
-		pages_num, mtt_base);
+		     pages_num, mtt_base);
 
 	return ret;
 }

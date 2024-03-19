@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
+#include <linux/irqdomain.h>
 #include <linux/msi.h>
 #include <linux/interrupt.h>
 #include <linux/notifier.h>
 #include <linux/module.h>
-#include <common/driver.h>
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
+#include "common/driver.h"
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
 #ifdef CONFIG_RFS_ACCEL
 #include <linux/cpu_rmap.h>
 #endif
@@ -65,10 +65,10 @@ static int xsc_dma_read_msix_init(struct xsc_core_device *xdev)
 	int vecid = 0;
 
 	snprintf(dev_res->irq_info[XSC_DMA_READ_DONE_VEC].name, XSC_MAX_IRQ_NAME, "%s@pci:%s",
-		name, pci_name(xdev->pdev));
+		 name, pci_name(xdev->pdev));
 	irqn = pci_irq_vector(xdev->pdev, XSC_DMA_READ_DONE_VEC);
 	err = request_irq(irqn, xsc_dma_read_msix_handler, 0,
-				dev_res->irq_info[XSC_DMA_READ_DONE_VEC].name, (void *)xdev);
+			  dev_res->irq_info[XSC_DMA_READ_DONE_VEC].name, (void *)xdev);
 
 	vecid = (xdev->msix_vec_base + XSC_DMA_READ_DONE_VEC);
 	value = ((1 << 12) | (vecid & 0xfff));
@@ -79,7 +79,7 @@ static int xsc_dma_read_msix_init(struct xsc_core_device *xdev)
 
 static void xsc_dma_read_msix_fini(struct xsc_core_device *xdev)
 {
-	if ((xdev->caps.msix_enable) && xsc_core_is_pf(xdev))
+	if (xdev->caps.msix_enable && xsc_core_is_pf(xdev))
 		free_irq(pci_irq_vector(xdev->pdev, XSC_DMA_READ_DONE_VEC), xdev);
 }
 
@@ -107,8 +107,8 @@ static void xsc_msix_ctrl_tbl_func_init(struct xsc_core_device *xdev, u32 func_i
 }
 
 static int xsc_msix_mask_tbl_bit_write(struct xsc_core_device *xdev,
-						u32 vector_id,
-						u32 mask_or_unmask)
+				       u32 vector_id,
+				       u32 mask_or_unmask)
 {
 	u32 v;
 	struct xsc_core_device *pf_xdev;
@@ -153,8 +153,8 @@ static void xsc_msix_check_vtr_tbl_idle(struct xsc_core_device *xdev, u32 *idle)
 }
 
 int xsc_msix_vector_tbl_write(struct xsc_core_device *xdev, u32 vector_id,
-					u32 laddr, u32 uaddr, u32 data,
-					u32 func_id, u32 vector_en)
+			      u32 laddr, u32 uaddr, u32 data,
+			      u32 func_id, u32 vector_en)
 {
 	int ret = 0;
 	u32 idle = 0;
@@ -167,9 +167,11 @@ int xsc_msix_vector_tbl_write(struct xsc_core_device *xdev, u32 vector_id,
 		pf_xdev = xdev;
 
 	if (vector_id >= BIT(xdev->caps.log_max_msix) ||
-		func_id > XSC_FUNC_ID_END || vector_en > 1) {
+	    !check_caps_funcid_valid(&xdev->caps) ||
+	    func_id >= get_xsc_funcid_end(&xdev->caps) ||
+	    vector_en > 1) {
 		xsc_core_err(xdev, "%s: invalid input params: func_id=%d\n",
-				__func__, func_id);
+			     __func__, func_id);
 		return -EINVAL;
 	}
 
@@ -216,7 +218,8 @@ int xsc_read_msix_tbl_info(struct xsc_core_device *xdev, u16 index, struct msi_m
 
 static int xsc_msix_ctrl_tbl_init(struct xsc_core_device *xdev)
 {
-	if (xdev->glb_func_id >= XSC_FUNC_ID_END)
+	if (!check_caps_funcid_valid(&xdev->caps) ||
+	    xdev->glb_func_id >= get_xsc_funcid_end(&xdev->caps))
 		return -1;
 
 	xsc_msix_ctrl_tbl_func_init(xdev, xdev->glb_func_id);
@@ -227,7 +230,8 @@ static int xsc_msix_ctrl_tbl_init(struct xsc_core_device *xdev)
 
 static int xsc_msix_ctrl_tbl_fini(struct xsc_core_device *xdev)
 {
-	if (xdev->glb_func_id >= XSC_FUNC_ID_END)
+	if (!check_caps_funcid_valid(&xdev->caps) ||
+	    xdev->glb_func_id >= get_xsc_funcid_end(&xdev->caps))
 		return -1;
 
 	xsc_msix_ctrl_tbl_func_fini(xdev, xdev->glb_func_id);
@@ -306,8 +310,11 @@ static int xsc_msix_vector_tbl_ops(struct xsc_core_device *xdev, u32 vector_en)
 	index = 0;
 	for_each_pci_msi_entry(entry, pdev) {
 		err = xsc_msix_vector_tbl_write(xdev, i,
-			msgs[index].address_lo, msgs[index].address_hi, msgs[index].data,
-			xdev->glb_func_id, vector_en);
+						msgs[index].address_lo,
+						msgs[index].address_hi,
+						msgs[index].data,
+						xdev->glb_func_id,
+						vector_en);
 		i++;
 		index++;
 	}
@@ -501,7 +508,7 @@ xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int vector)
 {
 	struct xsc_eq *eq = xsc_eq_get(dev, vector);
 
-	if (!unlikely(eq))
+	if (unlikely(!eq))
 		return NULL;
 
 	return eq->mask;
@@ -541,8 +548,9 @@ static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 	table->eq_vec_comp_base = nvec_base;
 	table->num_comp_vectors = nvec - nvec_base;
 	dev->msix_vec_base = dev->caps.msix_base;
-	xsc_core_info(dev, "alloc msix_vec_num=%d, vec_base_num=%d, max_msix_num=%d, msix_vec_base=%d\n",
-			nvec, nvec_base, dev->caps.msix_num, dev->msix_vec_base);
+	xsc_core_info(dev,
+		      "alloc msix_vec_num=%d, vec_base_num=%d, max_msix_num=%d, msix_vec_base=%d\n",
+		      nvec, nvec_base, dev->caps.msix_num, dev->msix_vec_base);
 
 	return 0;
 
@@ -589,7 +597,7 @@ static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 	table->eq_vec_comp_base = nvec_base;
 	table->num_comp_vectors = nvec - nvec_base;
 	xsc_core_info(dev, "alloc irq vector=%d, vec_base=%d, max_eq_nums=%d, log_max_eq=%d\n",
-			nvec, nvec_base, dev->caps.max_num_eqs, dev->caps.log_max_eq);
+		      nvec, nvec_base, dev->caps.max_num_eqs, dev->caps.log_max_eq);
 
 	return 0;
 
@@ -610,7 +618,7 @@ static void xsc_free_irq_vectors(struct xsc_core_device *dev)
 }
 
 int xsc_vector2eqn(struct xsc_core_device *dev, int vector, int *eqn,
-		    unsigned int *irqn)
+		   unsigned int *irqn)
 {
 	struct xsc_eq_table *table = &dev->dev_res->eq_table;
 	struct xsc_eq *eq, *n;
@@ -674,7 +682,7 @@ static int alloc_comp_eqs(struct xsc_core_device *dev)
 
 		snprintf(name, XSC_MAX_IRQ_NAME, "xsc_comp%d", i);
 		err = xsc_create_map_eq(dev, eq,
-					 i + table->eq_vec_comp_base, nent, name);
+					i + table->eq_vec_comp_base, nent, name);
 		if (err) {
 			kfree(eq);
 			goto clean;
@@ -717,7 +725,7 @@ int xsc_request_irq_for_cmdq(struct xsc_core_device *dev, u8 vecidx)
 	writel(dev->msix_vec_base + vecidx, REG_ADDR(dev, dev->cmd.reg.msix_vec_addr));
 
 	snprintf(dev_res->irq_info[vecidx].name, XSC_MAX_IRQ_NAME, "%s@pci:%s",
-		"xsc_cmd", pci_name(dev->pdev));
+		 "xsc_cmd", pci_name(dev->pdev));
 	dev->cmd.irqn = pci_irq_vector(dev->pdev, vecidx);
 	return request_irq(dev->cmd.irqn, xsc_cmd_handler, 0,
 		dev_res->irq_info[vecidx].name, dev);
@@ -750,7 +758,7 @@ int xsc_request_irq_for_event(struct xsc_core_device *dev)
 	struct xsc_dev_resource *dev_res = dev->dev_res;
 
 	snprintf(dev_res->irq_info[XSC_VEC_CMD_EVENT].name, XSC_MAX_IRQ_NAME, "%s@pci:%s",
-		"xsc_eth_event", pci_name(dev->pdev));
+		 "xsc_eth_event", pci_name(dev->pdev));
 
 	return request_irq(pci_irq_vector(dev->pdev, XSC_VEC_CMD_EVENT), xsc_event_handler, 0,
 			dev_res->irq_info[XSC_VEC_CMD_EVENT].name, dev);
@@ -831,7 +839,7 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 		goto err_request_event_irq;
 	}
 
-	if ((dev->caps.msix_enable) && xsc_core_is_pf(dev)) {
+	if (dev->caps.msix_enable && xsc_core_is_pf(dev)) {
 		err = xsc_dma_read_msix_init(dev);
 		if (err) {
 			xsc_core_err(dev, "dma read msix init failed %d.\n", err);

@@ -9,8 +9,8 @@
 #include "xsc_ib.h"
 #include "global.h"
 #include "user.h"
-#include <common/xsc_hsi.h>
-#include <common/xsc_lag.h>
+#include "common/xsc_hsi.h"
+#include "common/xsc_lag.h"
 #include <linux/crc32.h>
 #include <linux/dma-direct.h>
 #include <rdma/ib_addr.h>
@@ -24,8 +24,15 @@ enum {
 	XSC_IB_CACHE_LINE_SIZE	= 64,
 };
 
-#define LAG_PORT_NUM_MASK	0xffff0000
-#define UDP_SPORT_MASK		0x0000ffff
+#define LAG_PORT_NUM_MASK_EN		0x80000000
+#define LAG_PORT_NUM_MASK_EN_OFFSET	31
+#define LAG_PORT_NUM_MASK		0x30000
+#define LAG_PORT_NUM_OFFSET		16
+
+#define UDP_SPORT_MASK_EN		0x40000000
+#define UDP_SPORT_MASK_EN_OFFSET	30
+#define UDP_SPORT_MASK			0xffff
+#define UDP_SPORT_OFFSET		0
 
 static const u32 xsc_ib_opcode[] = {
 	[IB_WR_SEND]			= XSC_MSG_OPCODE_SEND,
@@ -91,7 +98,7 @@ static int iboe_tos_to_sl(struct net_device *ndev, int tos)
 }
 
 static inline void set_remote_addr_seg(struct xsc_wqe_data_seg *remote_seg,
-				 u32 msg_len, u64 remote_addr, u32 rkey)
+				       u32 msg_len, u64 remote_addr, u32 rkey)
 {
 	remote_seg->in_line = 0;
 	WR_LE_32(remote_seg->seg_len, msg_len);
@@ -219,7 +226,7 @@ static int calc_sq_size(struct xsc_ib_dev *dev, struct ib_qp_init_attr *attr,
 	qp->sq.ds_cnt = qp->sq.wqe_cnt << (dev->xdev->caps.send_wqe_shift - XSC_BASE_WQE_SHIFT);
 	wq_size = qp->sq.wqe_cnt * wqe_size;
 	qp->sq.wqe_shift = ilog2(wqe_size);
-	qp->sq.max_gs = attr->cap.max_send_wr;
+	qp->sq.max_gs = dev->xdev->caps.send_ds_num - XSC_CTRL_SEG_NUM - XSC_RADDR_SEG_NUM;
 	qp->sq.max_post = qp->sq.wqe_cnt;
 
 	return wq_size;
@@ -265,9 +272,9 @@ static int create_user_qp(struct xsc_ib_dev *dev, struct ib_pd *pd,
 
 	err = ib_copy_from_udata(&ucmd, udata, sizeof(ucmd));
 	xsc_ib_dbg(dev,
-		    "buf_addr:0x%lx db_addr:0x%lx sq cnt:%u, rq cnt:%u, rq shift:%u\n",
-		    (uintptr_t)ucmd.buf_addr, (uintptr_t)ucmd.db_addr,
-		    ucmd.sq_wqe_count, ucmd.rq_wqe_count, ucmd.rq_wqe_shift);
+		   "buf_addr:0x%lx db_addr:0x%lx sq cnt:%u, rq cnt:%u, rq shift:%u\n",
+		   (uintptr_t)ucmd.buf_addr, (uintptr_t)ucmd.db_addr,
+		   ucmd.sq_wqe_count, ucmd.rq_wqe_count, ucmd.rq_wqe_shift);
 	if (err) {
 		xsc_ib_dbg(dev, "copy failed\n");
 		return err;
@@ -292,7 +299,7 @@ static int create_user_qp(struct xsc_ib_dev *dev, struct ib_pd *pd,
 	}
 
 	xsc_ib_cont_pages(qp->umem, ucmd.buf_addr, &npages, &page_shift,
-			   &ncont, NULL);
+			  &ncont, NULL);
 	if (ncont != npages) {
 		// TODO: peer memory support failed
 		page_shift = PAGE_SHIFT;
@@ -306,7 +313,7 @@ static int create_user_qp(struct xsc_ib_dev *dev, struct ib_pd *pd,
 		goto err_umem;
 	}
 	xsc_ib_dbg(dev, "npage:%d, page_shift:%d, ncont:%d, offset:%d, hw_npages %d\n",
-				npages, page_shift, ncont, offset, hw_npages);
+		   npages, page_shift, ncont, offset, hw_npages);
 
 	*inlen = sizeof(**in) + sizeof(*((*in)->req.pas)) * hw_npages;
 	*in = xsc_vzalloc(*inlen);
@@ -330,6 +337,7 @@ err_umem:
 	ib_umem_release(qp->umem);
 
 err_uuar:
+//	free_uuar(&context->uuari, uuarn);
 	return err;
 }
 
@@ -339,6 +347,8 @@ static void destroy_qp_user(struct ib_pd *pd, struct xsc_ib_qp *qp)
 
 	context = to_xucontext(pd->uobject->context);
 	ib_umem_release(qp->umem);
+
+//	free_uuar(&context->uuari, qp->uuarn);
 }
 
 #define MAX_QP1_SQ_HDR_SIZE_V2	512
@@ -408,8 +418,9 @@ static int create_kernel_qp(struct xsc_ib_dev *dev,
 		qp->sq.mad_queue_depth = MAD_QUEUE_DEPTH;
 		qp->sq.hdr_size = MAX_QP1_SQ_HDR_SIZE_V2 * MAD_QUEUE_DEPTH;
 		qp->sq.hdr_buf = ib_dma_alloc_coherent(&dev->ib_dev,
-					qp->sq.hdr_size,
-					&qp->sq.hdr_dma, GFP_KERNEL);
+						       qp->sq.hdr_size,
+						       &qp->sq.hdr_dma,
+						       GFP_KERNEL);
 		if (!qp->sq.hdr_buf) {
 			err = -ENOMEM;
 			xsc_ib_err(dev, "Failed to create sq_hdr_buf");
@@ -435,7 +446,7 @@ static void destroy_qp_kernel(struct xsc_ib_dev *dev, struct xsc_ib_qp *qp)
 {
 	if (qp->sq.hdr_buf)
 		ib_dma_free_coherent(&dev->ib_dev, qp->sq.hdr_size,
-			qp->sq.hdr_buf, qp->sq.hdr_dma);
+				     qp->sq.hdr_buf, qp->sq.hdr_dma);
 	kfree(qp->sq.wqe_head);
 	kfree(qp->sq.w_list);
 	kfree(qp->sq.wrid);
@@ -453,6 +464,8 @@ static u8 ib_to_xsc_qp_type(enum ib_qp_type qp_type, __u32 flags)
 	} else if (qp_type == IB_QPT_RAW_PACKET) {
 		if (flags & XSC_QP_FLAG_RAWPACKET_TSO)
 			return XSC_QUEUE_TYPE_RAW_TSO;
+		else if (flags & XSC_QP_FLAG_RAWPACKET_TX)
+			return XSC_QUEUE_TYPE_RAW_TX;
 		else
 			return XSC_QUEUE_TYPE_RAW;
 	} else {
@@ -545,8 +558,6 @@ static int create_qp_common(struct xsc_ib_dev *dev, struct ib_pd *pd,
 	else
 		in->req.log_sq_sz = ilog2(0x80);
 
-	pr_debug("[%s:%d]\n", __func__, __LINE__);
-
 	if (init_attr->send_cq) {
 		qp->send_cq = init_attr->send_cq;
 		in->req.cqn_send = to_xcq(init_attr->send_cq)->xcq.cqn;
@@ -570,6 +581,7 @@ static int create_qp_common(struct xsc_ib_dev *dev, struct ib_pd *pd,
 	if (in->req.qp_type == XSC_QUEUE_TYPE_INVALID)
 		goto err_create;
 	in->req.glb_funcid = cpu_to_be16(dev->xdev->glb_func_id);
+	in->req.logic_port = cpu_to_be16(dev->xdev->logic_port);
 
 	qp->xqp.qp_type_internal = in->req.qp_type;
 
@@ -694,10 +706,10 @@ static void destroy_qp_common(struct xsc_ib_dev *dev, struct xsc_ib_qp *qp)
 	if (!in)
 		return;
 
-	if ((qp->xqp.qp_type_internal == XSC_QUEUE_TYPE_RAW) ||
-			(qp->state != IB_QPS_RESET))
+	if (qp->xqp.qp_type_internal == XSC_QUEUE_TYPE_RAW ||
+	    qp->state != IB_QPS_RESET)
 		if (xsc_core_qp_modify(dev->xdev, to_xsc_state(qp->state),
-					XSC_QP_STATE_RST, in, sizeof(*in), &qp->xqp))
+				       XSC_QP_STATE_RST, in, sizeof(*in), &qp->xqp))
 			xsc_ib_warn(dev, "modify QP %06x to RESET failed\n", qp->xqp.qpn);
 
 	get_cqs(qp, &send_cq, &recv_cq);
@@ -753,8 +765,8 @@ static const char *ib_qp_type_str(enum ib_qp_type type)
 }
 
 struct ib_qp *xsc_ib_create_qp(struct ib_pd *pd,
-			struct ib_qp_init_attr *init_attr,
-			struct ib_udata *udata)
+			       struct ib_qp_init_attr *init_attr,
+			       struct ib_udata *udata)
 {
 	struct xsc_ib_dev *dev;
 	struct xsc_ib_qp *qp;
@@ -796,7 +808,6 @@ struct ib_qp *xsc_ib_create_qp(struct ib_pd *pd,
 		} else {
 			qp->ibqp.qp_num = qp->xqp.qpn;
 		}
-
 		xsc_ib_dbg(dev, "ib qpnum 0x%x, qpn 0x%x, rcqn 0x%x, scqn 0x%x\n",
 			   qp->ibqp.qp_num, qp->xqp.qpn,
 			   to_xcq(init_attr->recv_cq)->xcq.cqn,
@@ -809,7 +820,7 @@ struct ib_qp *xsc_ib_create_qp(struct ib_pd *pd,
 	case IB_QPT_MAX:
 	default:
 		xsc_ib_dbg(dev, "unsupported qp type %d\n",
-			    init_attr->qp_type);
+			   init_attr->qp_type);
 		/* Don't support raw QPs */
 		return ERR_PTR(-EINVAL);
 	}
@@ -845,23 +856,28 @@ static inline u16 xsc_calc_udp_sport(u32 lqpn, u32 rqpn)
 }
 
 static inline void xsc_path_set_udp_sport(struct xsc_qp_path *path,
-					   const struct rdma_ah_attr *ah,
-					   u32 lqpn, u32 rqpn)
+					  const struct rdma_ah_attr *ah,
+					  u32 lqpn, u32 rqpn)
 {
-	if ((ah->grh.flow_label & UDP_SPORT_MASK) != 0)
-		path->sport = cpu_to_be16(xsc_flow_label_to_udp_sport(ah->grh.flow_label));
-	else
+	if ((ah->grh.flow_label & UDP_SPORT_MASK) != 0) {
+		if ((ah->grh.flow_label & UDP_SPORT_MASK_EN) == 0)
+			path->sport = cpu_to_be16(xsc_flow_label_to_udp_sport(ah->grh.flow_label));
+		else
+			path->sport = cpu_to_be16((ah->grh.flow_label & UDP_SPORT_MASK) >>
+							UDP_SPORT_OFFSET);
+	} else {
 		path->sport = cpu_to_be16(xsc_calc_udp_sport(lqpn, rqpn));
+	}
 }
 
 static int xsc_set_path(struct xsc_ib_dev *dev, const struct rdma_ah_attr *ah,
-			 struct xsc_qp_path *path, u8 port, int attr_mask,
-			 u32 path_flags, const struct ib_qp_attr *attr, struct xsc_ib_qp *qp)
+			struct xsc_qp_path *path, u8 port, int attr_mask,
+			u32 path_flags, const struct ib_qp_attr *attr, struct xsc_ib_qp *qp)
 {
 	struct ib_global_route *grh = rdma_ah_retrieve_grh((struct rdma_ah_attr *)ah);
+	union ib_gid *dgid = &grh->dgid;
 	const struct ib_gid_attr *sgid_attr = grh->sgid_attr;
 	union ib_gid *sgid = &((struct ib_gid_attr *)sgid_attr)->gid;
-	union ib_gid *dgid = &grh->dgid;
 	union {
 		struct sockaddr     _sockaddr;
 		struct sockaddr_in  _sockaddr_in;
@@ -874,13 +890,17 @@ static int xsc_set_path(struct xsc_ib_dev *dev, const struct rdma_ah_attr *ah,
 			return -EINVAL;
 
 		if (qp->ibqp.qp_type == IB_QPT_RC ||
-			qp->ibqp.qp_type == IB_QPT_UC ||
-			qp->ibqp.qp_type == IB_QPT_XRC_INI ||
-			qp->ibqp.qp_type == IB_QPT_XRC_TGT)
+		    qp->ibqp.qp_type == IB_QPT_UC ||
+		    qp->ibqp.qp_type == IB_QPT_XRC_INI ||
+		    qp->ibqp.qp_type == IB_QPT_XRC_TGT)
 			xsc_path_set_udp_sport(path, ah, qp->ibqp.qp_num, attr->dest_qp_num);
 
 //		if (ah->ddgrh.sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
 //			path->ecn_dscp = (grh->traffic_class >> 2) & 0x3f;
+		if (sgid_attr->gid_type != IB_GID_TYPE_ROCE_UDP_ENCAP) {
+			xsc_ib_err(dev, "gid type not ROCEv2\n");
+			return -EINVAL;
+		}
 
 		global_dscp = get_global_force_dscp();
 		if (global_dscp == GLOBAL_UNSET_FORCE_VALUE)
@@ -893,29 +913,32 @@ static int xsc_set_path(struct xsc_ib_dev *dev, const struct rdma_ah_attr *ah,
 		rdma_gid2ip(&dgid_addr._sockaddr, dgid);
 
 		if (sgid_addr._sockaddr.sa_family == AF_INET &&
-			dgid_addr._sockaddr.sa_family == AF_INET) {
+		    dgid_addr._sockaddr.sa_family == AF_INET) {
 			memcpy(path->sip, &sgid_addr._sockaddr_in.sin_addr.s_addr,
-					sizeof(struct in_addr));
+			       sizeof(struct in_addr));
 			memcpy(path->dip, &dgid_addr._sockaddr_in.sin_addr.s_addr,
-					sizeof(struct in_addr));
+			       sizeof(struct in_addr));
 			path->af_type = AF_INET;
 		} else if (sgid_addr._sockaddr.sa_family == AF_INET6 &&
-			dgid_addr._sockaddr.sa_family == AF_INET6) {
+			   dgid_addr._sockaddr.sa_family == AF_INET6) {
 			memcpy(path->sip, &sgid_addr._sockaddr_in6.sin6_addr.s6_addr,
-					sizeof(path->sip));
+			       sizeof(path->sip));
 			memcpy(path->dip, &dgid_addr._sockaddr_in6.sin6_addr.s6_addr,
-					sizeof(path->dip));
+			       sizeof(path->dip));
 			path->af_type = AF_INET6;
 		} else {
 			return -EINVAL;
 		}
 
 		ether_addr_copy(path->smac, sgid_attr->ndev->dev_addr);
+		ether_addr_copy(path->smac, dev->netdev->dev_addr);
+
 		memcpy(path->dmac, ah->roce.dmac, sizeof(ah->roce.dmac));
 
 		if (is_vlan_dev(sgid_attr->ndev)) {
 			path->vlan_valid = 1;
 			path->vlan_id = cpu_to_be16(vlan_dev_vlan_id(sgid_attr->ndev));
+
 			global_pcp = get_global_force_pcp();
 			if (global_pcp == GLOBAL_UNSET_FORCE_VALUE)
 				path->dci_cfi_prio_sl = (ah->sl & 0x7);
@@ -930,8 +953,8 @@ static int xsc_set_path(struct xsc_ib_dev *dev, const struct rdma_ah_attr *ah,
 }
 
 static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
-			       const struct ib_qp_attr *attr, int attr_mask,
-			       enum ib_qp_state cur_state, enum ib_qp_state new_state)
+			      const struct ib_qp_attr *attr, int attr_mask,
+			      enum ib_qp_state cur_state, enum ib_qp_state new_state)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibqp->device);
 	struct xsc_ib_qp *qp = to_xqp(ibqp);
@@ -964,8 +987,8 @@ static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
 
 	if (attr_mask & IB_QP_AV) {
 		err = xsc_set_path(dev, &attr->ah_attr, &path,
-				    attr_mask & IB_QP_PORT ? attr->port_num : qp->port,
-				    attr_mask, 0, attr, qp);
+				   attr_mask & IB_QP_PORT ? attr->port_num : qp->port,
+				   attr_mask, 0, attr, qp);
 		if (err)
 			goto out;
 
@@ -986,10 +1009,11 @@ static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
 		if (ldev && __xsc_lag_is_roce(ldev)) {
 			context->lag_id = cpu_to_be16(ldev->lag_id);
 			context->lag_sel_en = 1;
-			if ((attr->ah_attr.grh.flow_label & LAG_PORT_NUM_MASK) != 0)
-				context->lag_sel = ((attr->ah_attr.grh.flow_label
-						   & LAG_PORT_NUM_MASK) >> 16)
-						   % lag_port_num;
+			if ((attr->ah_attr.grh.flow_label & LAG_PORT_NUM_MASK_EN) != 0)
+				context->lag_sel = ((attr->ah_attr.grh.flow_label &
+							LAG_PORT_NUM_MASK) >>
+							LAG_PORT_NUM_OFFSET) %
+							lag_port_num;
 			else
 				context->lag_sel = qp->xqp.qpn % XSC_MAX_PORTS;
 		}
@@ -1015,8 +1039,8 @@ static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
 
 	memcpy(&in->ctx, context, sizeof(*context));
 	err = xsc_core_qp_modify(dev->xdev, to_xsc_state(cur_state),
-				  to_xsc_state(new_state), in, sqd_event,
-				  &qp->xqp);
+				 to_xsc_state(new_state), in, sqd_event,
+				 &qp->xqp);
 	if (err)
 		goto out;
 
@@ -1031,7 +1055,8 @@ static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
 	if (attr_mask & IB_QP_ALT_PATH)
 		qp->alt_port = attr->alt_port_num;
 
-	/* If we moved a kernel QP to RESET, clean up all old CQ
+	/*
+	 * If we moved a kernel QP to RESET, clean up all old CQ
 	 * entries and reinitialize the QP.
 	 */
 	if (new_state == IB_QPS_RESET && !ibqp->uobject) {
@@ -1054,16 +1079,17 @@ out:
 }
 
 int xsc_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
-		      int attr_mask, struct ib_udata *udata)
+		     int attr_mask, struct ib_udata *udata)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibqp->device);
 	struct xsc_ib_qp *qp = to_xqp(ibqp);
 	enum ib_qp_state cur_state, new_state;
 	int err = -EINVAL;
-#ifdef XSC_CHIP_RDMA_UNSUPPORTED
-	xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
-	return 0;
-#endif
+
+	if (!is_support_rdma(dev->xdev)) {
+		xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
+		return 0;
+	}
 
 	mutex_lock(&qp->mutex);
 
@@ -1071,7 +1097,7 @@ int xsc_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
 
 	xsc_ib_dbg(dev, "cur_state:%u, new_state:%u attr_mask:0x%x\n",
-		    cur_state, new_state, attr_mask);
+		   cur_state, new_state, attr_mask);
 
 	//if (!ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type, attr_mask))
 	//	goto out;
@@ -1082,14 +1108,19 @@ int xsc_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		goto out;
 	}
 
+	//if (attr_mask & IB_QP_PKEY_INDEX) {
+	//	port = attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
+	//	if (attr->pkey_index >= dev->xdev.caps.port[port - 1].pkey_table_len)
+	//		goto out;
+	//}
 	if (attr_mask & IB_QP_MAX_QP_RD_ATOMIC &&
-			attr->max_rd_atomic > dev->xdev->caps.max_ra_res_qp) {
+	    attr->max_rd_atomic > dev->xdev->caps.max_ra_res_qp) {
 		xsc_ib_err(dev, "rd atomic:%u exeeded", attr->max_rd_atomic);
 		goto out;
 	}
 
 	if (attr_mask & IB_QP_MAX_DEST_RD_ATOMIC &&
-			attr->max_dest_rd_atomic > dev->xdev->caps.max_ra_req_qp) {
+	    attr->max_dest_rd_atomic > dev->xdev->caps.max_ra_req_qp) {
 		xsc_ib_err(dev, "dest rd atomic:%u exeeded", attr->max_dest_rd_atomic);
 		goto out;
 	}
@@ -1119,6 +1150,7 @@ static int xsc_wq_overflow(struct xsc_ib_wq *wq, int nreq, struct xsc_ib_cq *cq)
 
 	return cur + nreq >= wq->max_post;
 }
+
 #ifdef XSC_DEBUG
 static void dump_wqe(struct xsc_ib_qp *qp, int idx)
 {
@@ -1137,7 +1169,8 @@ static void dump_wqe(struct xsc_ib_qp *qp, int idx)
 #endif
 
 static inline void xsc_post_send_db(struct xsc_ib_qp *qp,
-	struct xsc_core_device *xdev, int nreq)
+				    struct xsc_core_device *xdev,
+				    int nreq)
 {
 	u16 next_pid;
 	union xsc_db_data db;
@@ -1150,8 +1183,8 @@ static inline void xsc_post_send_db(struct xsc_ib_qp *qp,
 	next_pid = qp->sq.head << (qp->sq.wqe_shift - XSC_BASE_WQE_SHIFT);
 	db.sq_next_pid = next_pid;
 	db.sqn = qp->doorbell_qpn;
-
-	/* Make sure that descriptors are written before
+	/*
+	 * Make sure that descriptors are written before
 	 * updating doorbell record and ringing the doorbell
 	 */
 	wmb();
@@ -1215,7 +1248,7 @@ u32 xsc_icrc_hdr(struct xsc_ib_dev *dev, void *pkt, u32 size, u32 *icrc)
 
 	if (crc_field_len != size) {
 		xsc_ib_err(dev, "Unmatched hdr: expect %d actual %d\n",
-			crc_field_len, size);
+			   crc_field_len, size);
 		return -EINVAL;
 	}
 
@@ -1263,13 +1296,13 @@ u32 xsc_icrc_hdr(struct xsc_ib_dev *dev, void *pkt, u32 size, u32 *icrc)
  */
  // TO BE DONE: sq hdr buf should be create dynamically for mult entry
 int build_qp1_send_v2(struct xsc_ib_dev *dev,
-					struct xsc_ib_qp *qp,
-					const struct ib_send_wr *wr,
-					struct ib_sge *sge,
-					int payload_size, u32 *crc)
+		      struct xsc_ib_qp *qp,
+		      const struct ib_send_wr *wr,
+		      struct ib_sge *sge,
+		      int payload_size, u32 *crc)
 {
-	struct xsc_ib_ah *ah = container_of(ud_wr(wr)->ah, struct xsc_ib_ah,
-					     ibah);
+	struct xsc_ib_ah *ah = container_of(ud_wr((struct ib_send_wr *)wr)->ah, struct xsc_ib_ah,
+					    ibah);
 	const struct ib_gid_attr *sgid_attr = ah->ibah.sgid_attr;
 	u16 ether_type;
 	union ib_gid dgid;
@@ -1283,19 +1316,24 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 	int cm_pcp = 0;
 	void *hdr_buf;
 
+	memset(&qp->qp1_hdr, 0, sizeof(qp->qp1_hdr));
+
 	if (!qp->sq.hdr_buf) {
 		xsc_ib_err(dev, "QP1 buffer is empty!");
 		return -ENOMEM;
 	}
 	hdr_buf = (u8 *)qp->sq.hdr_buf + MAX_QP1_SQ_HDR_SIZE_V2 * qp->sq.mad_index;
 
-	memset(&qp->qp1_hdr, 0, sizeof(qp->qp1_hdr));
+	if (!sgid_attr || !sgid_attr->ndev) {
+		xsc_ib_err(dev, "sgid_addr or ndev is null\n");
+		return -ENXIO;
+	}
 
 	if (is_vlan_dev(sgid_attr->ndev))
 		vlan_id = vlan_dev_vlan_id(sgid_attr->ndev);
 
-	memcpy(&dgid.raw, &ah->av.rgid, 16);// TO DO SOMETHING
 	is_udp = sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP;
+	memcpy(&dgid.raw, &ah->av.rgid, 16);
 	if (is_udp) {
 		if (ipv6_addr_v4mapped((struct in6_addr *)&sgid_attr->gid)) {
 			ip_version = 4;
@@ -1329,7 +1367,7 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 		else
 			cm_pcp = (iboe_tos_to_sl(sgid_attr->ndev, ah->av.tclass) << 13);
 		qp->qp1_hdr.vlan.type = cpu_to_be16(ether_type);
-		qp->qp1_hdr.vlan.tag = cpu_to_be16(vlan_id|cm_pcp);
+		qp->qp1_hdr.vlan.tag = cpu_to_be16(vlan_id | cm_pcp);
 	}
 
 //	if (is_grh || (ip_version == 6)) {
@@ -1391,8 +1429,8 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 	sge->length = MAX_QP1_SQ_HDR_SIZE;
 
 	ib_ud_header_pack(&qp->qp1_hdr, hdr_buf);
-
-	/* Max Header buf size for IPV6 RoCE V2 is 86,
+	/*
+	 * Max Header buf size for IPV6 RoCE V2 is 86,
 	 * which is same as the QP1 SQ header buffer.
 	 * Header buf size for IPV4 RoCE V2 can be 66.
 	 * ETH(14) + VLAN(4)+ IP(20) + UDP (8) + BTH(20).
@@ -1400,8 +1438,8 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 	 */
 	if (is_udp && ip_version == 4)
 		sge->length -= 20;
-
-	/* Max Header buf size for RoCE V1 is 78.
+	/*
+	 * Max Header buf size for RoCE V1 is 78.
 	 * ETH(14) + VLAN(4) + GRH(40) + BTH(20).
 	 * Subtract 8 bytes from QP1 SQ header buf size
 	 */
@@ -1415,21 +1453,36 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 	rc = xsc_icrc_hdr(dev, hdr_buf, sge->length - sizeof(struct ib_unpacked_eth), crc);
 	if (rc) {
 		xsc_ib_err(dev, "CRC error: hdr size %ld\n",
-			sge->length - sizeof(struct ib_unpacked_eth));
+			   sge->length - sizeof(struct ib_unpacked_eth));
 	}
 	return rc;
 }
 
+static void zero_send_ds(struct xsc_ib_qp *qp, int idx)
+{
+	void *seg;
+	int i;
+	int ds_num;
+	u64 *p;
+
+	ds_num = XSC_SEND_SEG_NUM << (qp->sq.wqe_shift - XSC_SEND_WQE_SHIFT);
+	seg = (void *)xsc_get_send_wqe(qp, idx);
+	for (i = 1; i < ds_num; i++) {
+		p = get_seg_wqe(seg, i);
+		p[0] = 0;
+		p[1] = 0;
+	}
+}
+
 int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
-				  const struct ib_send_wr **bad_wr)
+		     const struct ib_send_wr **bad_wr)
 {
 	struct xsc_ib_qp *qp = to_xqp(ibqp);
 	struct xsc_ib_dev *dev = to_mdev(ibqp->device);
 	void *seg;
 	struct xsc_send_wqe_ctrl_seg *ctrl;
 	struct xsc_wqe_data_seg *data_seg;
-	u32	crc;
-
+	u32 crc;
 	int nreq;
 	int err = 0;
 	int i;
@@ -1440,10 +1493,11 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 	u8 *mad_send_base = NULL;
 	struct ib_wc wc;
 	unsigned long qp_irqflag = 0;
-#ifdef XSC_CHIP_RDMA_UNSUPPORTED
-	xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
-	return 0;
-#endif
+
+	if (!is_support_rdma(dev->xdev)) {
+		xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
+		return 0;
+	}
 
 	if (wr->opcode == IB_WR_LOCAL_INV) {
 		spin_lock_irqsave(&qp->lock, qp_irqflag);
@@ -1476,8 +1530,7 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 		struct ib_sge *sgl = &wr->sg_list[0];
 		int sg_n = wr->num_sge;
 
-		if (unlikely(wr->opcode < 0
-			|| wr->opcode >= ARRAY_SIZE(xsc_ib_opcode))) {
+		if (unlikely(wr->opcode < 0 || wr->opcode >= ARRAY_SIZE(xsc_ib_opcode))) {
 			xsc_ib_err(dev, "bad opcode %d\n", wr->opcode);
 			err = EINVAL;
 			*bad_wr = wr;
@@ -1485,7 +1538,7 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 		}
 
 		if (unlikely(xsc_wq_overflow(&qp->sq, nreq,
-					      to_xcq(qp->ibqp.send_cq)))) {
+					     to_xcq(qp->ibqp.send_cq)))) {
 			xsc_ib_err(dev, "send work queue overflow\n");
 			err = ENOMEM;
 			*bad_wr = wr;
@@ -1494,22 +1547,24 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 
 		if (unlikely(wr->num_sge > qp->sq.max_gs)) {
 			xsc_ib_err(dev, "max gs exceeded %d (max = %d)\n",
-				wr->num_sge, qp->sq.max_gs);
+				   wr->num_sge, qp->sq.max_gs);
 			err = ENOMEM;
 			*bad_wr = wr;
 			goto out;
 		}
 
-		if (unlikely((wr->opcode == IB_WR_RDMA_READ) && (wr->num_sge > 1))) {
+		if (unlikely(wr->opcode == IB_WR_RDMA_READ && wr->num_sge > 1)) {
 			xsc_ib_err(dev, "rdma read, max gs exceeded %d (max = 1)\n",
-				wr->num_sge);
+				   wr->num_sge);
 			err = ENOMEM;
 			*bad_wr = wr;
 			goto out;
 		}
 
 		idx = qp->sq.cur_post & (qp->sq.wqe_cnt - 1);
-		ctrl = seg = xsc_get_send_wqe(qp, idx);
+		zero_send_ds(qp, idx);
+		seg = xsc_get_send_wqe(qp, idx);
+		ctrl = seg;
 		ctrl->wqe_id = cpu_to_le16(qp->sq.cur_post <<
 				(qp->sq.wqe_shift - XSC_BASE_WQE_SHIFT));
 		ctrl->ds_data_num = 0;
@@ -1540,11 +1595,10 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 				ctrl->with_immdt = 0;
 				ctrl->ds_data_num++;
 				data_seg = get_seg_wqe(ctrl, seg_index);
-				set_remote_addr_seg(
-					data_seg,
-					msg_len,
-					rdma_wr(wr)->remote_addr,
-					rdma_wr(wr)->rkey);
+				set_remote_addr_seg(data_seg,
+						    msg_len,
+						    rdma_wr(wr)->remote_addr,
+						    rdma_wr(wr)->rkey);
 				seg_index++;
 				break;
 			case IB_WR_REG_MR:
@@ -1559,7 +1613,7 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 			break;
 		case IB_QPT_UD:
 		case IB_QPT_GSI:
-			xsc_ib_err(dev, "debug: %d UD/GSI hit\n", wr->opcode);
+			xsc_ib_dbg(dev, "send MAD packet\n");
 			ctrl->msg_opcode = XSC_MSG_OPCODE_MAD;
 			ctrl->ds_data_num++;
 			data_seg = get_seg_wqe(ctrl, seg_index);
@@ -1571,9 +1625,10 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 			cur_p = mad_send_base + sg.length;
 			for (i = 0; i < wr->num_sge; ++i) {
 				if (likely(wr->sg_list[i].length))
-					memcpy(cur_p, phys_to_virt(
-						dma_to_phys(dev->ib_dev.dma_device,
-						wr->sg_list[i].addr)), wr->sg_list[i].length);
+					memcpy(cur_p,
+					       phys_to_virt(dma_to_phys(dev->ib_dev.dma_device,
+									wr->sg_list[i].addr)),
+					       wr->sg_list[i].length);
 				cur_p += wr->sg_list[i].length;
 			}
 			crc = xsc_crc32(dev, crc, mad_send_base + sg.length, ctrl->msg_len);
@@ -1632,7 +1687,7 @@ out:
 }
 
 int xsc_ib_post_recv(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
-		      const struct ib_recv_wr **bad_wr)
+		     const struct ib_recv_wr **bad_wr)
 {
 	struct xsc_ib_qp *qp = to_xqp(ibqp);
 	struct xsc_ib_dev *dev = to_mdev(ibqp->device);
@@ -1646,18 +1701,18 @@ int xsc_ib_post_recv(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
 	int nreq;
 	u16 idx;
 	int i;
-#ifdef XSC_CHIP_RDMA_UNSUPPORTED
-	xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
-	return 0;
-#endif
+
+	if (!is_support_rdma(xdev)) {
+		xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
+		return 0;
+	}
 
 	spin_lock_irqsave(&qp->rq.lock, flags);
 
 	idx = qp->rq.head & (qp->rq.wqe_cnt - 1);
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		if (unlikely(xsc_wq_overflow(&qp->rq, nreq,
-					to_xcq(qp->ibqp.recv_cq)))) {
+		if (unlikely(xsc_wq_overflow(&qp->rq, nreq, to_xcq(qp->ibqp.recv_cq)))) {
 			xsc_ib_err(dev, "recv work queue overflow\n");
 			err = ENOMEM;
 			*bad_wr = wr;
@@ -1666,7 +1721,7 @@ int xsc_ib_post_recv(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
 
 		if (unlikely(wr->num_sge > qp->rq.max_gs)) {
 			xsc_ib_err(dev, "max gs exceeded %d (max = %d)\n",
-				wr->num_sge, qp->rq.max_gs);
+				   wr->num_sge, qp->rq.max_gs);
 			err = EINVAL;
 			*bad_wr = wr;
 			goto out;
@@ -1699,7 +1754,8 @@ out:
 		db.rq_next_pid = next_pid;
 		db.rqn = qp->doorbell_qpn;
 
-		/* Make sure that descriptors are written before
+		/*
+		 * Make sure that descriptors are written before
 		 * doorbell record.
 		 */
 		wmb();
@@ -1738,7 +1794,7 @@ static inline enum ib_mig_state to_ib_mig_state(int xsc_mig_state)
 }
 
 int xsc_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_mask,
-		     struct ib_qp_init_attr *qp_init_attr)
+		    struct ib_qp_init_attr *qp_init_attr)
 {
 	struct xsc_ib_dev *dev = to_mdev(ibqp->device);
 	struct xsc_ib_qp *qp = to_xqp(ibqp);
@@ -1746,10 +1802,12 @@ int xsc_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_
 	struct xsc_qp_context *context;
 	int xsc_state;
 	int err = 0;
-#ifdef XSC_CHIP_RDMA_UNSUPPORTED
-	xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
-	return 0;
-#endif
+
+	if (!is_support_rdma(dev->xdev)) {
+		xsc_ib_dbg(dev, "rdma unsupported,%s no action.\n", __func__);
+		return 0;
+	}
+
 	mutex_lock(&qp->mutex);
 	outb = kzalloc(sizeof(*outb), GFP_KERNEL);
 	if (!outb) {

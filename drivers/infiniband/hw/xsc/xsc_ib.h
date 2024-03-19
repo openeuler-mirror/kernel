@@ -12,42 +12,35 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_pack.h>
-#include <common/xsc_core.h>
-#include <common/driver.h>
-#include <common/cq.h>
-#include <common/qp.h>
+#include "common/xsc_core.h"
+#include "common/driver.h"
+#include "common/cq.h"
+#include "common/qp.h"
 #include <linux/types.h>
 #include <crypto/hash.h>
 
 #include "xsc_ib_compat.h"
 
-#define DISABLE_XSC_IB_DBG
+#define xsc_ib_dbg(dev, format, arg...)						\
+do {										\
+	if (xsc_log_level <= XSC_LOG_LEVEL_DBG)					\
+		pr_debug("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name,	\
+			__func__, __LINE__, current->pid, ##arg);		\
+} while (0)
 
-#ifdef DISABLE_XSC_IB_DBG
-#define xsc_ib_dbg(dev, format, arg...)				\
-pr_debug("%s:%d:(pid %d): " format, (dev)->ib_dev.name,			\
-	__LINE__, current->pid, ##arg)
+#define xsc_ib_err(dev, format, arg...)						\
+do {										\
+	if (xsc_log_level <= XSC_LOG_LEVEL_ERR)					\
+		pr_err("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name,	\
+			__func__, __LINE__, current->pid, ##arg);		\
+} while (0)
 
-#define xsc_ib_err(dev, format, arg...)				\
-pr_err("%s:%d:(pid %d): " format, (dev)->ib_dev.name,			\
-	__LINE__, current->pid, ##arg)
-
-#define xsc_ib_warn(dev, format, arg...)				\
-pr_warn("%s:%d:(pid %d): " format, (dev)->ib_dev.name,			\
-	__LINE__, current->pid, ##arg)
-#else
-#define xsc_ib_dbg(dev, format, arg...)				\
-pr_debug("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
-	 __LINE__, current->pid, ##arg)
-
-#define xsc_ib_err(dev, format, arg...)				\
-pr_err("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
-	__LINE__, current->pid, ##arg)
-
-#define xsc_ib_warn(dev, format, arg...)				\
-pr_warn("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
-	__LINE__, current->pid, ##arg)
-#endif
+#define xsc_ib_warn(dev, format, arg...)					\
+do {										\
+	if (xsc_log_level <= XSC_LOG_LEVEL_WARN)				\
+		pr_warn("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name,	\
+			__func__, __LINE__, current->pid, ##arg);		\
+} while (0)
 
 struct xsc_ib_ucontext {
 	struct ib_ucontext	ibucontext;
@@ -101,8 +94,8 @@ struct xsc_ib_wq {
 	u64		       *wrid;
 	u32		       *wr_data;
 	struct wr_list	       *w_list;
-	unsigned int	       *wqe_head;
-	u16		        unsig_count;
+	unsigned long	       *wqe_head;
+	u16		       unsig_count;
 
 	/* serialize post to the work queue
 	 */
@@ -173,6 +166,7 @@ struct xsc_ib_qp {
 	struct xsc_qp_context	ctx;
 	struct ib_cq		*send_cq;
 	struct ib_cq		*recv_cq;
+	/* For qp resources */
 	spinlock_t		lock;
 };
 
@@ -305,7 +299,7 @@ struct xsc_ib_dev {
 	/* serialize update of capability mask
 	 */
 	struct mutex			cap_mask_mutex;
-	bool				ib_active;
+	u8				ib_active;
 	/* sync used page count stats
 	 */
 	spinlock_t			mr_lock;
@@ -325,6 +319,13 @@ union xsc_ib_fw_ver {
 		u16	chip_ver_l;
 		u16	feature_flag;
 	} s;
+};
+
+struct xsc_pa_chunk {
+	struct list_head list;
+	u64 va;
+	dma_addr_t pa;
+	size_t length;
 };
 
 static inline struct xsc_ib_cq *to_xibcq(struct xsc_core_cq *xcq)
@@ -379,53 +380,49 @@ static inline struct xsc_ib_ah *to_mah(struct ib_ah *ibah)
 
 static inline struct xsc_ib_dev *xdev2ibdev(struct xsc_core_device *xdev)
 {
-	return container_of(xdev, struct xsc_ib_dev, xdev);
+	return container_of((void *)xdev, struct xsc_ib_dev, xdev);
 }
 
 int xsc_ib_query_port(struct ib_device *ibdev, u8 port,
-			struct ib_port_attr *props);
+		      struct ib_port_attr *props);
 
 struct ib_qp *xsc_ib_create_qp(struct ib_pd *pd,
-			struct ib_qp_init_attr *init_attr,
-			struct ib_udata *udata);
-
+			       struct ib_qp_init_attr *init_attr,
+			       struct ib_udata *udata);
 void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 qpn);
 void xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 qpn);
-int xsc_MAD_IFC(struct xsc_ib_dev *dev, int ignore_mkey, int ignore_bkey,
-		 int port, struct ib_wc *in_wc, struct ib_grh *in_grh,
-		 void *in_mad, void *response_mad);
 
 int xsc_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr);
 int xsc_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
-		      int attr_mask, struct ib_udata *udata);
+		     int attr_mask, struct ib_udata *udata);
 int xsc_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_mask,
-		     struct ib_qp_init_attr *qp_init_attr);
+		    struct ib_qp_init_attr *qp_init_attr);
+
 int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
-		      const struct ib_send_wr **bad_wr);
+		     const struct ib_send_wr **bad_wr);
 int xsc_ib_post_recv(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
-		      const struct ib_recv_wr **bad_wr);
+		     const struct ib_recv_wr **bad_wr);
+
 void *xsc_get_send_wqe(struct xsc_ib_qp *qp, int n);
 int xsc_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc);
 int xsc_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags);
 struct ib_mr *xsc_ib_get_dma_mr(struct ib_pd *pd, int acc);
 struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
-				  u64 virt_addr, int access_flags,
-				  struct ib_udata *udata);
-int xsc_ib_process_mad(struct ib_device *ibdev, int mad_flags, u8 port_num,
-			struct ib_wc *in_wc, struct ib_grh *in_grh,
-			struct ib_mad *in_mad, struct ib_mad *out_mad);
+				 u64 virt_addr, int access_flags,
+				 struct ib_udata *udata);
 int xsc_ib_get_buf_offset(u64 addr, int page_shift, u32 *offset);
 void xsc_ib_cont_pages(struct ib_umem *umem, u64 addr, int *count, int *shift,
-			int *ncont, int *order);
+		       int *ncont, int *order);
 void xsc_ib_populate_pas(struct xsc_ib_dev *dev, struct ib_umem *umem,
-			  int page_shift, __be64 *pas, int npages, bool need_to_devide);
-int xsc_mr_cache_init(struct xsc_ib_dev *dev);
+			 int page_shift, __be64 *pas, int npages, bool need_to_devide);
 const struct uverbs_object_tree_def *xsc_ib_get_devx_tree(void);
 
 int xsc_ib_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
-		int sg_nents, unsigned int *sg_offset);
+		     int sg_nents, unsigned int *sg_offset);
 int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr);
 int xsc_wr_invalidate_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr);
+int xsc_find_best_pgsz(struct ib_umem *umem, unsigned long pgsz_bitmap,
+		       unsigned long addr, int *npage, int *shift, u64 **pas);
 
 static inline void init_query_mad(struct ib_smp *mad)
 {

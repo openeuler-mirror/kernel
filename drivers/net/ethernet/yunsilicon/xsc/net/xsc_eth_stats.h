@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
@@ -10,7 +9,7 @@
 #include "xsc_eth_common.h"
 
 #define XSC_READ_CTR64_CPU(ptr, dsc, i) \
-	(*(u64 *)((char *)ptr + dsc[i].offset))
+	(*(u64 *)((char *)(ptr) + (dsc)[i].offset))
 
 #define ETH_GSTRING_LEN		32
 
@@ -19,9 +18,9 @@
 #define XSC_DECLARE_TX_STAT(type, fld)	"tx%d_"#fld, offsetof(type, fld)
 #define XSC_DECLARE_CH_STAT(type, fld)	"ch%d_"#fld, offsetof(type, fld)
 
-#define XSC_DECLARE_HW_PRIO_STAT_NAME(fld, prio)	(#fld"_prio"#prio)
+#define XSC_DECLARE_HW_PRIO_STAT_NAME(fld, prio)	(#fld "_prio"#prio)
 #define XSC_DECLARE_HW_PRIO_STAT_OFFSET(type, fld, prio)	\
-	(offsetof(type, fld) + (sizeof(type) * prio))
+	(offsetof(type, fld) + (sizeof(type) * (prio)))
 #define XSC_DECLARE_HW_PRIO_STAT(type, fld, prio)	\
 	{XSC_DECLARE_HW_PRIO_STAT_NAME(fld, prio), \
 	XSC_DECLARE_HW_PRIO_STAT_OFFSET(type, fld, prio)}
@@ -38,6 +37,7 @@ struct xsc_rq_stats {
 	u64 wqes;
 	u64 wqe_err;
 	u64 oversize_pkts_sw_drop;
+	u64 oversize_pkts_err;
 	u64 buff_alloc_err;
 	u64 cache_reuse;
 	u64 cache_full;
@@ -78,14 +78,14 @@ struct xsc_ch_stats {
 	u64 events;
 	u64 poll;
 	u64 poll_0;
-	u64 poll_1_64;
-	u64 poll_65_511;
+	u64 poll_1_63;
+	u64 poll_64_511;
 	u64 poll_512_1023;
 	u64 poll_1024;
 	u64 arm;
 	u64 noarm;
 	u64 aff_change;
-};
+} ____cacheline_aligned_in_smp;
 
 struct xsc_adapter;
 struct xsc_stats_grp {
@@ -97,7 +97,6 @@ struct xsc_stats_grp {
 };
 
 struct counter_desc {
-
 	char		format[ETH_GSTRING_LEN];
 	size_t		offset; /* Byte offset */
 };
@@ -133,6 +132,7 @@ struct xsc_sw_stats {
 	u64 rx_wqes;
 	u64 rx_wqe_err;
 	u64 rx_oversize_pkts_sw_drop;
+	u64 rx_oversize_pkts_err;
 	u64 rx_buff_alloc_err;
 	u64 rx_cache_reuse;
 	u64 rx_cache_full;
@@ -145,8 +145,8 @@ struct xsc_sw_stats {
 	u64 ch_events;
 	u64 ch_poll;
 	u64 ch_poll_0;
-	u64 ch_poll_1_64;
-	u64 ch_poll_65_511;
+	u64 ch_poll_1_63;
+	u64 ch_poll_64_511;
 	u64 ch_poll_512_1023;
 	u64 ch_poll_1024;
 	u64 ch_arm;
@@ -158,7 +158,7 @@ struct xsc_channel_stats {
 	struct xsc_ch_stats ch;
 	struct xsc_sq_stats sq[XSC_MAX_NUM_TC];
 	struct xsc_rq_stats rq;
-};
+} ____cacheline_aligned_in_smp;
 
 struct xsc_stats {
 	struct xsc_sw_stats sw;
@@ -171,4 +171,3 @@ extern const int xsc_num_stats_grps;
 void xsc_fold_sw_stats64(struct xsc_adapter *adapter, struct rtnl_link_stats64 *s);
 
 #endif /* XSC_EN_STATS_H */
-

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
 #include <linux/pci.h>
 #include <linux/sysfs.h>
 #include <linux/etherdevice.h>
-#include <common/xsc_core.h>
-#include <common/vport.h>
+#include "common/xsc_core.h"
+#include "common/vport.h"
 #ifdef CONFIG_XSC_ESWITCH
 #include "eswitch.h"
 #endif
@@ -50,9 +49,9 @@ static ssize_t vf_attr_store(struct kobject *kobj,
 
 struct vf_group_attributes {
 	struct attribute attr;
-	ssize_t (*show)(struct xsc_vgroup *group, struct vf_group_attributes *attr,
+	ssize_t (*show)(struct xsc_vgroup *g, struct vf_group_attributes *attr,
 			char *buf);
-	ssize_t (*store)(struct xsc_vgroup *group, struct vf_group_attributes *attr,
+	ssize_t (*store)(struct xsc_vgroup *g, struct vf_group_attributes *attr,
 			 const char *buf, size_t count);
 };
 
@@ -120,7 +119,7 @@ static ssize_t port_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 		return -EINVAL;
 
 	for (i = 0; i < 8; i++)
-		guid += ((u64)tmp[i] << ((7 - i)*8));
+		guid += ((u64)tmp[i] << ((7 - i) * 8));
 
 	in = kzalloc(sizeof(*in), GFP_KERNEL);
 	if (!in)
@@ -162,7 +161,7 @@ static ssize_t node_show(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 	err = show_nic_node_guid(dev, g->vf, &guid);
 	if (err) {
 		xsc_core_warn(dev, "failed to query node guid for vf %d (%d)\n",
-			       g->vf, err);
+			      g->vf, err);
 		return err;
 	}
 
@@ -194,12 +193,12 @@ static ssize_t node_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 		return -EINVAL;
 
 	for (i = 0; i < 8; i++)
-		guid += ((u64)tmp[i] << ((7 - i)*8));
+		guid += ((u64)tmp[i] << ((7 - i) * 8));
 
 	err = modify_nic_node_guid(dev, g->vf, guid);
 	if (err) {
 		xsc_core_warn(dev, "failed to modify node guid for vf %d (%d)\n",
-			       g->vf, err);
+			      g->vf, err);
 		return err;
 	}
 
@@ -231,7 +230,7 @@ static ssize_t policy_show(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 	err = xsc_query_hca_vport_context(dev, 1, 1,  g->vf, rep);
 	if (err) {
 		xsc_core_warn(dev, "failed to query port policy for vf %d (%d)\n",
-			       g->vf, err);
+			      g->vf, err);
 		goto free;
 	}
 	p = policy_str(rep->vport_state_policy);
@@ -324,8 +323,7 @@ set_mac:
 static ssize_t vlan_show(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 			 char *buf)
 {
-	return sprintf(buf,
-		       "usage: write <Vlan:Qos[:Proto]> to set VF Vlan,Qos and Vlan Protocol\n");
+	return sprintf(buf, "<Vlan:Qos[:Proto]>: set VF Vlan, Qos, Vlan Proto(default 802.1Q)\n");
 }
 
 static ssize_t vlan_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
@@ -356,7 +354,7 @@ static ssize_t vlan_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 	}
 
 	err = xsc_eswitch_set_vport_vlan(dev->priv.eswitch, g->vf + 1,
-					  vlan_id, qos, vlan_proto);
+					 vlan_id, qos, vlan_proto);
 	return err ? err : count;
 }
 
@@ -476,12 +474,12 @@ static ssize_t max_tx_rate_store(struct xsc_sriov_vf *g,
 	min_tx_rate = esw->vports[g->vf + 1].info.min_rate;
 	mutex_unlock(&esw->state_lock);
 
-	err = kstrtou32(buf, 10, &max_tx_rate);
+	err = kstrtouint(buf, 10, &max_tx_rate);
 	if (err != 1)
 		return -EINVAL;
 
 	err = xsc_eswitch_set_vport_rate(dev->priv.eswitch, g->vf + 1,
-					  max_tx_rate, min_tx_rate);
+					 max_tx_rate, min_tx_rate);
 	return err ? err : count;
 }
 
@@ -507,12 +505,12 @@ static ssize_t min_tx_rate_store(struct xsc_sriov_vf *g,
 	max_tx_rate = esw->vports[g->vf + 1].info.max_rate;
 	mutex_unlock(&esw->state_lock);
 
-	err = kstrtou32(buf, 10, &min_tx_rate);
+	err = kstrtouint(buf, 10, &min_tx_rate);
 	if (err != 1)
 		return -EINVAL;
 
 	err = xsc_eswitch_set_vport_rate(dev->priv.eswitch, g->vf + 1,
-					  max_tx_rate, min_tx_rate);
+					 max_tx_rate, min_tx_rate);
 	return err ? err : count;
 }
 
@@ -520,8 +518,7 @@ static ssize_t min_pf_tx_rate_show(struct xsc_sriov_vf *g,
 				   struct vf_attributes *oa,
 				   char *buf)
 {
-	return sprintf(buf,
-		       "usage: write <Rate (Mbit/s)> to set PF min rate\n");
+	return sprintf(buf, "usage: write <Rate (Mbit/s)> to set PF min rate\n");
 }
 
 static ssize_t min_pf_tx_rate_store(struct xsc_sriov_vf *g,
@@ -538,12 +535,12 @@ static ssize_t min_pf_tx_rate_store(struct xsc_sriov_vf *g,
 	max_tx_rate = esw->vports[g->vf].info.max_rate;
 	mutex_unlock(&esw->state_lock);
 
-	err = kstrtou32(buf, 10, &min_tx_rate);
+	err = kstrtouint(buf, 10, &min_tx_rate);
 	if (err != 1)
 		return -EINVAL;
 
 	err = xsc_eswitch_set_vport_rate(dev->priv.eswitch, g->vf,
-					  max_tx_rate, min_tx_rate);
+					 max_tx_rate, min_tx_rate);
 	return err ? err : count;
 }
 
@@ -564,7 +561,7 @@ static ssize_t group_store(struct xsc_sriov_vf *g,
 	u32 group_id;
 	int err;
 
-	err = kstrtou32(buf, 10, &group_id);
+	err = kstrtouint(buf, 10, &group_id);
 	if (err != 1)
 		return -EINVAL;
 
@@ -593,7 +590,7 @@ static ssize_t max_tx_rate_group_store(struct xsc_vgroup *g,
 	u32 max_rate;
 	int err;
 
-	err = kstrtou32(buf, 10, &max_rate);
+	err = kstrtouint(buf, 10, &max_rate);
 	if (err != 1)
 		return -EINVAL;
 
@@ -619,7 +616,7 @@ static ssize_t min_tx_rate_group_store(struct xsc_vgroup *g,
 	u32 min_rate;
 	int err;
 
-	err = kstrtou32(buf, 10, &min_rate);
+	err = kstrtouint(buf, 10, &min_rate);
 	if (err != 1)
 		return -EINVAL;
 
@@ -629,8 +626,8 @@ static ssize_t min_tx_rate_group_store(struct xsc_vgroup *g,
 }
 
 #define _sprintf(p, buf, format, arg...)				\
-	((PAGE_SIZE - (int)(p - buf)) <= 0 ? 0 :			\
-	scnprintf(p, PAGE_SIZE - (int)(p - buf), format, ## arg))
+	((PAGE_SIZE - (int)((p) - (buf))) <= 0 ? 0 :			\
+	scnprintf((p), PAGE_SIZE - (int)((p) - (buf)), format, ## arg))
 
 static ssize_t trunk_show(struct xsc_sriov_vf *g,
 			  struct vf_attributes *oa,
@@ -670,12 +667,12 @@ static ssize_t trunk_store(struct xsc_sriov_vf *g,
 
 	if (!strcmp(op, "add"))
 		err = xsc_eswitch_add_vport_trunk_range(dev->priv.eswitch,
-							 g->vf + 1,
-							 start_vid, end_vid);
+							g->vf + 1,
+							start_vid, end_vid);
 	else if (!strcmp(op, "rem"))
 		err = xsc_eswitch_del_vport_trunk_range(dev->priv.eswitch,
-							 g->vf + 1,
-							 start_vid, end_vid);
+							g->vf + 1,
+							start_vid, end_vid);
 	else
 		return -EINVAL;
 
@@ -791,7 +788,7 @@ static ssize_t stats_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 #endif /* CONFIG_XSC_ESWITCH */
 
 static ssize_t num_vfs_store(struct device *device, struct device_attribute *attr,
-			    const char *buf, size_t count)
+			     const char *buf, size_t count)
 {
 	struct pci_dev *pdev = container_of(device, struct pci_dev, dev);
 	int req_vfs;
@@ -809,10 +806,10 @@ static ssize_t num_vfs_store(struct device *device, struct device_attribute *att
 }
 
 static ssize_t num_vfs_show(struct device *device, struct device_attribute *attr,
-			   char *buf)
+			    char *buf)
 {
 	struct pci_dev *pdev = container_of(device, struct pci_dev, dev);
-	struct xsc_core_device *dev  = pci_get_drvdata(pdev);
+	struct xsc_core_device *dev = pci_get_drvdata(pdev);
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
 
 	return sprintf(buf, "%d\n", sriov->num_vfs);
@@ -978,7 +975,7 @@ void xsc_sriov_sysfs_cleanup(struct xsc_core_device *dev)
 }
 
 int xsc_create_vf_group_sysfs(struct xsc_core_device *dev,
-			       u32 group_id, struct kobject *group_kobj)
+			      u32 group_id, struct kobject *group_kobj)
 {
 #ifdef CONFIG_XSC_ESWITCH
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
@@ -996,7 +993,7 @@ int xsc_create_vf_group_sysfs(struct xsc_core_device *dev,
 }
 
 void xsc_destroy_vf_group_sysfs(struct xsc_core_device *dev,
-				 struct kobject *group_kobj)
+				struct kobject *group_kobj)
 {
 #ifdef CONFIG_XSC_ESWITCH
 	kobject_put(group_kobj);

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+/* Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
 
-#include <common/xsc_hsi.h>
-#include <common/xsc_core.h>
-#include <common/xsc_ioctl.h>
+#include "common/xsc_hsi.h"
+#include "common/xsc_core.h"
+#include "common/xsc_ioctl.h"
 
 #include "xsc_flow.h"
 
@@ -50,12 +49,12 @@ static inline void xsc_dma_wr_success_get(struct xsc_core_device *xdev, u32 *suc
 	u32 *ptr = NULL;
 
 	ptr = success;
-	IA_READ(xdev, CLSF_DMA_DMA_DL_SUCCESS_REG_ADDR, ptr, (size/sizeof(u32)));
+	IA_READ(xdev, CLSF_DMA_DMA_DL_SUCCESS_REG_ADDR, ptr, (size / sizeof(u32)));
 }
 
 int xsc_flow_table_dma_write_add(struct xsc_core_device *xdev,
-		const struct tdi_dma_write_key_bits *key,
-		const struct tdi_dma_write_action_bits *action)
+				 const struct tdi_dma_write_key_bits *key,
+				 const struct tdi_dma_write_action_bits *action)
 {
 	u32 i = 0;
 	u32 busy = 0;
@@ -75,7 +74,6 @@ int xsc_flow_table_dma_write_add(struct xsc_core_device *xdev,
 	dma_wr_num = ((action->entry_num + (XSC_DMA_WR_MAX - 1)) / XSC_DMA_WR_MAX);
 
 	for (i = 0; i < dma_wr_num; i++) {
-
 		if ((action->entry_num % XSC_DMA_WR_MAX) && (i == (dma_wr_num - 1)))
 			data_len = ((action->entry_num % XSC_DMA_WR_MAX) * XSC_DMA_LEN);
 		else
@@ -107,7 +105,7 @@ int xsc_flow_table_dma_write_add(struct xsc_core_device *xdev,
 			memset(success, 0, sizeof(success));
 			xsc_dma_wr_success_get(xdev, (u32 *)&success, sizeof(success));
 			xsc_core_err(xdev, "DMA write time %d status 0x%lx%lx fail.\n", i,
-				(unsigned long)success[1], (unsigned long)success[0]);
+				     (unsigned long)success[1], (unsigned long)success[0]);
 			return -1;
 		}
 	}
@@ -121,8 +119,8 @@ void xsc_dma_read_done_complete(void)
 }
 
 int xsc_flow_table_dma_read_add(struct xsc_core_device *xdev,
-		const struct tdi_dma_read_key_bits *key,
-		const struct tdi_dma_read_action_bits *action)
+				const struct tdi_dma_read_key_bits *key,
+				const struct tdi_dma_read_action_bits *action)
 {
 	u32 busy = 0;
 	u32 value = 0;
@@ -171,7 +169,7 @@ int xsc_flow_table_dma_read_add(struct xsc_core_device *xdev,
 }
 
 int xsc_flow_add(struct xsc_core_device *xdev,
-	int table, int length, void *data)
+		 int table, int length, void *data)
 {
 	int ret = -EINVAL;
 	struct xsc_flow_dma_write_add *dma_wr;

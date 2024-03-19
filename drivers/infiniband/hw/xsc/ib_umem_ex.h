@@ -38,13 +38,12 @@ struct invalidation_ctx {
 };
 
 struct ib_umem_ex *ib_client_umem_get(struct ib_ucontext *context,
-					unsigned long addr,
-					size_t size, int access,
-					int dmasync, u8 *peer_exists);
+				      unsigned long addr, size_t size, int access,
+				      int dmasync, u8 *peer_exists);
 
 void ib_umem_ex_release(struct ib_umem_ex *umem_ex);
 
 int ib_client_umem_activate_invalidation_notifier(struct ib_umem_ex *umem_ex,
-					umem_invalidate_func_t func,
-					void *cookie);
+						  umem_invalidate_func_t func,
+						  void *cookie);
 #endif
