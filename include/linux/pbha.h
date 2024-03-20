@@ -54,12 +54,36 @@ static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
 
 	return pte;
 }
+
+static inline bool pte_pbha(pte_t pte)
+{
+	if (!system_support_pbha_bit0())
+		return false;
+
+	return !!(pte_val(pte) & (PBHA_VAL_BIT0 << PBHA_BITS_SHIFT));
+}
+
+static inline bool pmd_pbha(pmd_t pmd)
+{
+	if (!system_support_pbha_bit0())
+		return false;
+
+	return !!(pmd_val(pmd) & (PBHA_VAL_BIT0 << PBHA_BITS_SHIFT));
+}
 #else
 static inline bool system_support_pbha_bit0(void) { return false; }
 static inline pgprot_t pgprot_pbha_bit0(pgprot_t prot) { return prot; }
 static inline pte_t maybe_mk_pbha_bit0(pte_t pte, struct vm_area_struct *vma)
 {
 	return pte;
+}
+static inline bool pte_pbha(pte_t pte)
+{
+	return false;
+}
+static inline bool pmd_pbha(pmd_t pte)
+{
+	return false;
 }
 #endif
 
