@@ -32,17 +32,6 @@ static int udma_config_scc_param(struct udma_dev *udma_dev,
 	struct udma_port *pdata;
 	int ret;
 
-	if (port_num >= udma_dev->caps.num_ports) {
-		dev_err_ratelimited(udma_dev->dev,
-				    "invalid port num %u.\n", port_num);
-		return -ENODEV;
-	}
-
-	if (algo >= UDMA_CONG_TYPE_TOTAL) {
-		dev_err_ratelimited(udma_dev->dev, "invalid SCC algo.\n");
-		return -EINVAL;
-	}
-
 	udma_cmq_setup_basic_desc(&desc, scc_opcode[algo], false);
 	pdata = &udma_dev->port_data[port_num];
 	scc_param = &pdata->scc_param[algo];
@@ -51,7 +40,7 @@ static int udma_config_scc_param(struct udma_dev *udma_dev,
 		return -ENODEV;
 	}
 
-	memcpy(&desc.data, scc_param, sizeof(scc_param->param));
+	memcpy(&desc.data, scc_param->param, sizeof(scc_param->param));
 
 	ret = udma_cmq_send(udma_dev, &desc, 1);
 	if (ret)
@@ -70,17 +59,6 @@ static int udma_query_scc_param(struct udma_dev *udma_dev,
 	struct udma_port *pdata;
 	int ret;
 
-	if (port_num >= udma_dev->caps.num_ports) {
-		dev_err_ratelimited(udma_dev->dev,
-				    "invalid port num %u.\n", port_num);
-		return -ENODEV;
-	}
-
-	if (algo >= UDMA_CONG_TYPE_TOTAL) {
-		dev_err_ratelimited(udma_dev->dev, "invalid SCC algo.\n");
-		return -EINVAL;
-	}
-
 	udma_cmq_setup_basic_desc(&desc, scc_opcode[algo], true);
 	ret = udma_cmq_send(udma_dev, &desc, 1);
 	if (ret) {
@@ -92,7 +70,7 @@ static int udma_query_scc_param(struct udma_dev *udma_dev,
 
 	pdata = &udma_dev->port_data[port_num];
 	scc_param = &pdata->scc_param[algo];
-	memcpy(scc_param, &desc.data, sizeof(scc_param->param));
+	memcpy(scc_param->param, &desc.data, sizeof(scc_param->param));
 
 	return 0;
 }
@@ -167,13 +145,15 @@ static ssize_t scc_attr_show(struct udma_port *pdata,
 			   msecs_to_jiffies(scc_param->lifespan);
 		if (time_is_before_eq_jiffies(exp_time)) {
 			scc_param->timestamp = jiffies;
-			udma_query_scc_param(pdata->udma_dev,
-					     pdata->port_num,
-					     scc_attr->algo_type);
+			ret = udma_query_scc_param(pdata->udma_dev,
+						   pdata->port_num,
+						   scc_attr->algo_type);
+			if (ret)
+				return ret;
 		}
 	}
 
-	memcpy(&val, (void *)scc_param + scc_attr->offset, scc_attr->size);
+	memcpy(&val, (void *)scc_param->param + scc_attr->offset, scc_attr->size);
 
 	return sysfs_emit(buf, "%u\n", le32_to_cpu(val));
 }
@@ -205,11 +185,14 @@ static ssize_t scc_attr_store(struct udma_port *pdata,
 	scc_param = &pdata->scc_param[scc_attr->algo_type];
 
 	/* get current params of this scc algo before configure it first time */
-	if (scc_param->configured == false)
-		udma_query_scc_param(pdata->udma_dev, scc_param->port_num,
-				     scc_param->algo_type);
+	if (scc_param->configured == false) {
+		ret = udma_query_scc_param(pdata->udma_dev, scc_param->port_num,
+					   scc_param->algo_type);
+		if (ret)
+			return ret;
+	}
 
-	memcpy((void *)scc_param + scc_attr->offset, &attr_val, scc_attr->size);
+	memcpy((void *)scc_param->param + scc_attr->offset, &attr_val, scc_attr->size);
 
 	/* lifespan is only used for driver */
 	if (scc_attr->offset >= offsetof(typeof(*scc_param), lifespan))
@@ -470,12 +453,6 @@ static int udma_register_port_sysfs(struct udma_dev *udma_dev, uint8_t port_num,
 	struct udma_port *pdata;
 	int ret;
 
-	if (port_num >= udma_dev->caps.num_ports) {
-		dev_err(udma_dev->dev, "fail to create port sysfs for invalid port %u.\n",
-			port_num);
-		return -ENODEV;
-	}
-
 	pdata = &udma_dev->port_data[port_num];
 	pdata->udma_dev = udma_dev;
 	pdata->port_num = port_num;
@@ -523,8 +500,8 @@ static void udma_unregister_port_sysfs(struct udma_dev *udma_dev, uint8_t port_n
 
 int udma_register_cc_sysfs(struct udma_dev *udma_dev)
 {
-	uint8_t i;
-	uint8_t j;
+	int i;
+	int j;
 
 	for (i = 0; i < udma_dev->caps.num_ports; i++) {
 		if (udma_register_port_sysfs(udma_dev, i, &udma_dev->dev->kobj) != 0)

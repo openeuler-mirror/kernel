@@ -249,8 +249,7 @@ db_err:
 	return ret;
 }
 
-static void set_write_notify_param(struct udma_dev *udma_dev,
-				   struct udma_jfc *udma_jfc,
+static void set_write_notify_param(struct udma_jfc *udma_jfc,
 				   struct udma_jfc_context *jfc_context)
 {
 	uint8_t device_mode;
@@ -341,7 +340,7 @@ static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_
 	}
 
 	if (udma_jfc->jfc_attr_ex.create_flags == UDMA_JFC_CREATE_ENABLE_NOTIFY)
-		set_write_notify_param(udma_dev, udma_jfc, jfc_context);
+		set_write_notify_param(udma_jfc, jfc_context);
 }
 
 static int udma_create_jfc_cqc(struct udma_dev *udma_dev,
@@ -580,10 +579,8 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, struct ubcore_jfc_
 		goto err;
 
 	udma_jfc = kzalloc(sizeof(*udma_jfc), GFP_KERNEL);
-	if (ZERO_OR_NULL_PTR(udma_jfc)) {
-		ret = -ENOMEM;
+	if (!udma_jfc)
 		goto err;
-	}
 
 	init_jfc(udma_jfc, &ucmd);
 

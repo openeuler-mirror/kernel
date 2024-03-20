@@ -28,6 +28,11 @@
 #define UDP_RANGE_BASE 8
 #define UDMA_SQ_WQE_SHIFT 6
 #define RETRY_MSG_PSN_H_OFFSET 16
+#define UDMA_MTU_VAL_256 256
+#define UDMA_MTU_VAL_512 512
+#define UDMA_MTU_VAL_1024 1024
+#define UDMA_MTU_VAL_2048 2048
+#define UDMA_MTU_VAL_4096 4096
 
 struct udma_qp_context_ex {
 	uint32_t data[64];
@@ -170,7 +175,6 @@ struct udma_modify_tp_attr {
 	uint32_t			rq_psn;
 	uint8_t				max_dest_rd_atomic;
 	uint8_t				max_rd_atomic;
-	int				qp_access_flags;
 	uint8_t				min_rnr_timer;
 	uint32_t			qkey;
 	uint8_t				dgid[UDMA_GID_SIZE];

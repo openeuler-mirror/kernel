@@ -199,7 +199,7 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 		return ret;
 
 	if (ucmd.wqe_buf_addr) {
-		dev->caps.flags |= UDMA_CAP_FLAG_SRQ_RECORD_DB;
+		jfr->jfr_caps |= UDMA_JFR_CAP_RECORD_DB;
 		ret = alloc_jfr_wqe_buf_rq(dev, jfr, udata, &ucmd);
 		if (ret)
 			goto err_idx;
@@ -209,7 +209,8 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 			goto err_idx;
 	}
 
-	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB) {
+	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
+	    jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB) {
 		ret = udma_db_map_user(dev, ucmd.db_addr, &jfr->db);
 		if (ret) {
 			dev_err(dev->dev,
@@ -236,7 +237,8 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 	return 0;
 
 err_copy:
-	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB) {
+	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
+	    jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB) {
 		udma_db_unmap_user(dev, &jfr->db);
 		jfr->jfr_caps &= ~UDMA_JFR_CAP_RECORD_DB;
 	}
@@ -528,10 +530,13 @@ static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 {
 	if (refcount_dec_and_test(&jfr->refcount))
 		complete(&jfr->free);
+
 	wait_for_completion(&jfr->free);
 
-	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB)
+	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
+	    jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB)
 		udma_db_unmap_user(dev, &jfr->db);
+
 	free_jfr_wqe_buf(dev, jfr);
 	free_jfr_idx(dev, jfr);
 }

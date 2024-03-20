@@ -903,6 +903,7 @@ void udma_cleanup_hem_table(struct udma_dev *udma_dev,
 		}
 
 	kfree(table->hem);
+	table->hem = NULL;
 }
 
 static struct udma_hem_item *

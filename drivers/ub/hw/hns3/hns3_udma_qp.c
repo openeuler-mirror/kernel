@@ -130,8 +130,7 @@ static int config_qp_sq_buf(struct udma_dev *udma_device,
 	count = udma_mtr_find(udma_device, &qp->mtr, qp->sq.wqe_offset,
 			      &sq_cur_blk, 1, &wqe_sge_ba);
 	if (count < 1) {
-		dev_err(udma_device->dev, "failed to find QP(0x%llx) SQ buf.\n",
-			qp->qpn);
+		dev_err(udma_device->dev, "failed to find QP(0x%llx) SQ buf.\n", qp->qpn);
 		return -EINVAL;
 	}
 
@@ -139,11 +138,9 @@ static int config_qp_sq_buf(struct udma_dev *udma_device,
 
 	if (qp->sge.sge_cnt > 0) {
 		count = udma_mtr_find(udma_device, &qp->mtr,
-					qp->sge.wqe_offset, &sge_cur_blk,
-					1, NULL);
+				      qp->sge.wqe_offset, &sge_cur_blk, 1, NULL);
 		if (count < 1) {
-			dev_err(udma_device->dev,
-				"failed to find QP(0x%llx) SGE buf.\n", qp->qpn);
+			dev_err(udma_device->dev, "failed to find QP(0x%llx) SGE buf.\n", qp->qpn);
 			return -EINVAL;
 		}
 	}
@@ -300,18 +297,6 @@ static inline enum ubcore_mtu get_mtu(struct udma_qp *qp,
 		return UBCORE_MTU_4096;
 
 	return attr->mtu;
-}
-
-static inline int udma_mtu_enum_to_int(enum ubcore_mtu mtu)
-{
-	switch (mtu) {
-	case UBCORE_MTU_256:  return  256;
-	case UBCORE_MTU_512:  return  512;
-	case UBCORE_MTU_1024: return 1024;
-	case UBCORE_MTU_2048: return 2048;
-	case UBCORE_MTU_4096: return 4096;
-	default:		return -1;
-	}
 }
 
 static int udma_alloc_reorder_cq_buf(struct udma_dev *udma_dev,
@@ -528,6 +513,7 @@ static int modify_qp_reset_to_rtr(struct udma_qp *qp,
 	edit_qpc_for_write(qp, context, context_mask);
 
 	edit_qpc_for_receive(qp, attr, context, context_mask);
+
 	return 0;
 }
 
@@ -797,7 +783,7 @@ static void udma_set_oor_field(struct udma_qp *qp,
 	udma_reg_clear(&context_mask->ext, QPCEX_DYN_AT);
 
 	if (udma_dev->caps.reorder_cq_buffer_en &&
-		qp->qp_attr.reorder_cq_addr) {
+	    qp->qp_attr.reorder_cq_addr) {
 		udma_reg_enable(&context->ext, QPCEX_REORDER_CQ_EN);
 		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_EN);
 
@@ -816,14 +802,47 @@ static void udma_set_oor_field(struct udma_qp *qp,
 	}
 }
 
-static void udma_set_opt_fields(struct udma_qp *qp,
+static int udma_mtu_enum_to_int(enum ubcore_mtu mtu)
+{
+	switch (mtu) {
+	case UBCORE_MTU_256:
+		return UDMA_MTU_VAL_256;
+	case UBCORE_MTU_512:
+		return UDMA_MTU_VAL_512;
+	case UBCORE_MTU_1024:
+		return UDMA_MTU_VAL_1024;
+	case UBCORE_MTU_2048:
+		return UDMA_MTU_VAL_2048;
+	default:
+		return UDMA_MTU_VAL_4096;
+	}
+}
+
+static void udma_set_mtu_field(struct udma_qp *qp,
 			       struct ubcore_tp_attr *attr,
-			       union ubcore_tp_attr_mask ubcore_mask,
 			       struct udma_qp_context *context,
 			       struct udma_qp_context *context_mask)
 {
+	qp->ubcore_path_mtu = get_mtu(qp, attr);
+	qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
+	udma_reg_write(context, QPC_MTU, qp->path_mtu);
+	udma_reg_clear(context_mask, QPC_MTU);
+
+	udma_reg_write(context, QPC_LP_PKTN_INI, 0);
+	udma_reg_clear(context_mask, QPC_LP_PKTN_INI);
+
+	/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
+	udma_reg_write(context, QPC_ACK_REQ_FREQ, 0);
+	udma_reg_clear(context_mask, QPC_ACK_REQ_FREQ);
+}
+
+static void udma_set_opt_fields(struct udma_qp *qp,
+				struct ubcore_tp_attr *attr,
+				union ubcore_tp_attr_mask ubcore_mask,
+				struct udma_qp_context *context,
+				struct udma_qp_context *context_mask)
+{
 	struct udma_dev *udma_dev = qp->udma_device;
-	uint8_t lp_pktn_ini;
 
 	if (attr == NULL)
 		return;
@@ -872,22 +891,8 @@ static void udma_set_opt_fields(struct udma_qp *qp,
 		udma_reg_clear(context_mask, QPC_RAQ_PSN);
 	}
 
-	if (ubcore_mask.bs.mtu) {
-		qp->ubcore_path_mtu = get_mtu(qp, attr);
-		qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
-		udma_reg_write(context, QPC_MTU, qp->path_mtu);
-		udma_reg_clear(context_mask, QPC_MTU);
-
-		/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 16KB */
-		lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / udma_mtu_enum_to_int(qp->path_mtu));
-
-		udma_reg_write(context, QPC_LP_PKTN_INI, lp_pktn_ini);
-		udma_reg_clear(context_mask, QPC_LP_PKTN_INI);
-
-		/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
-		udma_reg_write(context, QPC_ACK_REQ_FREQ, lp_pktn_ini);
-		udma_reg_clear(context_mask, QPC_ACK_REQ_FREQ);
-	}
+	if (ubcore_mask.bs.mtu)
+		udma_set_mtu_field(qp, attr, context, context_mask);
 
 	if (ubcore_mask.bs.hop_limit) {
 		udma_reg_write(context, QPC_HOPLIMIT, attr->hop_limit);
@@ -909,27 +914,31 @@ static int udma_set_abs_fields(struct udma_qp *qp,
 		ret = modify_qp_reset_to_rtr(qp, attr, context, context_mask);
 		if (ret) {
 			dev_err(udma_device->dev,
-				"Something went wrong during modify_qp_init_to_rtr\n");
+				"Something went wrong during reset to rtr, new_state = %d.\n",
+				new_state);
 			goto out;
 		}
 	} else if (curr_state == QPS_RESET && new_state == QPS_RTS) {
 		ret = modify_qp_reset_to_rtr(qp, attr, context, context_mask);
 		if (ret) {
 			dev_err(udma_device->dev,
-				"Something went wrong during modify_qp_init_to_rtr\n");
+				"Something went wrong during reset to rtr, new_state = %d.\n",
+				new_state);
 			goto out;
 		}
 		ret = modify_qp_rtr_to_rts(qp, context, context_mask);
 		if (ret) {
 			dev_err(udma_device->dev,
-				"Something went wrong during modify_qp_rtr_to_rts\n");
+				"Something went wrong during rtr to rts, new_state = %d.\n",
+				new_state);
 			goto out;
 		}
 	} else if (curr_state == QPS_RTR && new_state == QPS_RTS) {
 		ret = modify_qp_rtr_to_rts(qp, context, context_mask);
 		if (ret) {
 			dev_err(udma_device->dev,
-				"Something went wrong during modify_qp_rtr_to_rts\n");
+				"Something went wrong during rtr to rts, curr_state = %d.\n",
+				curr_state);
 			goto out;
 		}
 	}
@@ -939,8 +948,8 @@ out:
 }
 
 static void udma_set_um_attr(struct udma_qp *qp,
-			    struct udma_qp_context *context,
-			    struct udma_qp_context *context_mask)
+			     struct udma_qp_context *context,
+			     struct udma_qp_context *context_mask)
 {
 	uint8_t lp_pktn_ini;
 
@@ -1045,9 +1054,8 @@ int fill_jfs_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 		qp_attr->priority = udma_dev->caps.sl_num > 0 ?
 				    udma_dev->caps.sl_num - 1 : 0;
 		dev_err(udma_dev->dev,
-			"The setted priority (%d) cannot larger than the max priority (%d), priority (%d) is used.\n",
-			jfs->jfs_cfg.priority, udma_dev->caps.sl_num,
-			qp_attr->priority);
+			"Incorrect priority(%u) configuration, maximum priority(%u).\n",
+			jfs->jfs_cfg.priority, udma_dev->caps.sl_num);
 	} else {
 		qp_attr->priority = jfs->jfs_cfg.priority;
 	}
@@ -1128,9 +1136,8 @@ int fill_jetty_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 			qp_attr->priority = udma_dev->caps.sl_num > 0 ?
 					    udma_dev->caps.sl_num - 1 : 0;
 			dev_err(udma_dev->dev,
-				"The setted priority (%d) should smaller than the max priority (%d), priority (%d) is used\n",
-				jetty->jetty_cfg.priority,
-				udma_dev->caps.sl_num, qp_attr->priority);
+				"Incorrect priority(%u) configuration, maximum priority(%u).\n",
+				jetty->jetty_cfg.priority, udma_dev->caps.sl_num);
 		} else {
 			qp_attr->priority = jetty->jetty_cfg.priority;
 		}
@@ -1623,18 +1630,15 @@ static int alloc_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp,
 		       struct ubcore_udata *udata,
 		       struct udma_create_tp_ucmd *ucmd)
 {
-	int ret;
+	int ret = 0;
 
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_SDI_MODE)
 		qp->en_flags |= UDMA_QP_CAP_OWNER_DB;
 
-	if (udata) {
+	if (udata)
 		ret = alloc_user_qp_db(udma_dev, qp, ucmd);
-		if (ret)
-			return ret;
-	}
 
-	return 0;
+	return ret;
 }
 
 static int alloc_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
@@ -2002,9 +2006,9 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 {
 	struct udma_ucontext *uctx = to_udma_ucontext(udata->uctx);
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
+	struct udma_create_tp_resp resp = {};
 	struct device *dev = udma_dev->dev;
 	struct udma_create_tp_ucmd ucmd;
-	struct udma_create_tp_resp resp;
 	int ret;
 
 	qp->state = QPS_RESET;

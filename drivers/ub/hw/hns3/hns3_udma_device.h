@@ -490,7 +490,7 @@ struct udma_cmdq {
 };
 
 struct udma_cmd_mailbox {
-	void		       *buf;
+	void		        *buf;
 	dma_addr_t		dma;
 };
 
@@ -520,7 +520,9 @@ struct udma_priv {
 };
 
 struct udma_hem_table {
-	/* HEM type: 0 = qpc, 1 = mtt, 2 = cqc, 3 = srq, 4 = other */
+	/* HEM type: 0 = qpc, 1 = mtpt, 2 = cqc, 3 = srqc, 4 = sccc,
+	 * 5 = qpc_timer, 6 = cqc_timer, 7 = gmv
+	 */
 	uint32_t		type;
 	/* HEM array elment num */
 	uint64_t		num_hem;

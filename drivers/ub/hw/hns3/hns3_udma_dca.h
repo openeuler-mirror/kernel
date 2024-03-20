@@ -190,9 +190,7 @@ void udma_modify_dca(struct udma_dev *dev, struct udma_qp *qp);
 
 int udma_register_dca_mem(struct udma_dev *dev, struct udma_ucontext *context,
 			  struct udma_dca_reg_attr *attr);
-void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
-			struct dca_mem *mem);
-int udma_deregister_dca_mem(struct udma_dev *dev,
+int udma_unregister_dca_mem(struct udma_dev *dev,
 			    struct udma_ucontext *context,
 			    struct udma_dca_dereg_attr *attr, bool from_user);
 
@@ -209,10 +207,10 @@ void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
 void udma_dca_detach(struct udma_dev *dev, struct udma_dca_detach_attr *attr);
 
 int udma_register_udca(struct udma_dev *udma_dev,
-			  struct udma_ucontext *context, struct ubcore_udrv_priv *udrv_data);
+		       struct udma_ucontext *context, struct ubcore_udrv_priv *udrv_data);
 
 void udma_unregister_udca(struct udma_dev *udma_dev,
-			    struct udma_ucontext *context);
+			  struct udma_ucontext *context);
 
 void udma_enum_dca_pool(struct udma_dca_ctx *dca_ctx, void *param,
 			udma_dca_enum_callback cb);
