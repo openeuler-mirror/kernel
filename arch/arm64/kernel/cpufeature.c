@@ -1687,7 +1687,7 @@ static void stage2_test_pbha_value(u8 val)
 		arm64_pbha_stage2_safe_bits |= val;
 }
 
-void update_pbha_perf_only_bit(const u8 *bits, int cnt)
+static void update_pbha_perf_only_bit(const u8 *bits, int cnt)
 {
 	u8 val;
 	int i;
