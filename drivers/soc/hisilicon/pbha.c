@@ -197,7 +197,9 @@ static int __init setup_pbha(char *str)
 		pbha_bit0_enabled = true;
 	}
 
-	pr_info("pbha bit_0 enabled, kernel: %d\n", pbha_bit0_kernel_enabled);
+	if (pbha_bit0_enabled)
+		pr_info("pbha bit_0 enabled, kernel: %d\n",
+			pbha_bit0_kernel_enabled);
 
 	return 0;
 }
