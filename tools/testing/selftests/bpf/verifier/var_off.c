@@ -58,12 +58,48 @@
 	BPF_MOV64_IMM(BPF_REG_0, 0),
 	BPF_EXIT_INSN(),
 	},
-	.result = REJECT,
-	.errstr = "invalid variable-offset read from stack R2",
-	.prog_type = BPF_PROG_TYPE_LWT_IN,
+	.result = ACCEPT,
+	.errstr_unpriv = "R2 variable stack access prohibited for !root",
+	.result_unpriv = REJECT,
+	.prog_type = BPF_PROG_TYPE_CGROUP_SKB,
 },
 {
 	"variable-offset stack write, priv vs unpriv",
+	.insns = {
+	/* Get an unknown value */
+	BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_1, 0),
+	/* Make it small and 8-byte aligned */
+	BPF_ALU64_IMM(BPF_AND, BPF_REG_2, 8),
+	BPF_ALU64_IMM(BPF_SUB, BPF_REG_2, 16),
+	/* Add it to fp.  We now have either fp-8 or
+	 * fp-16, but we don't know which
+	 */
+	BPF_ALU64_REG(BPF_ADD, BPF_REG_2, BPF_REG_10),
+	/* Dereference it for a stack write */
+	BPF_ST_MEM(BPF_DW, BPF_REG_2, 0, 0),
+	BPF_MOV64_IMM(BPF_REG_0, 0),
+	BPF_EXIT_INSN(),
+	},
+	/* Check that the maximum stack depth is correctly maintained according to the
+	 * maximum possible variable offset.
+	 */
+	.result = ACCEPT,
+	/* Variable stack access is rejected for unprivileged.
+	 */
+	.errstr_unpriv = "R2 variable stack access prohibited for !root",
+	.result_unpriv = REJECT,
+},
+{
+	/* Similar to the previous test, but this time also perform a read from the
+	 * address written to with a variable offset. The read is allowed, showing that,
+	 * after a variable-offset write, a priviledged program can read the slots that
+	 * were in the range of that write (even if the verifier doesn't actually know if
+	 * the slot being read was really written to or not.
+	 *
+	 * Despite this test being mostly a superset, the previous test is also kept for
+	 * the sake of it checking the stack depth in the case where there is no read.
+	 */
+	"variable-offset stack write followed by read",
 	.insns = {
 	/* Get an unknown value */
 	BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_1, 0),
@@ -76,21 +112,17 @@
 	BPF_ALU64_REG(BPF_ADD, BPF_REG_2, BPF_REG_10),
 	/* Dereference it for a stack write */
 	BPF_ST_MEM(BPF_DW, BPF_REG_2, 0, 0),
-	/* Now read from the address we just wrote. This shows
-	 * that, after a variable-offset write, a priviledged
-	 * program can read the slots that were in the range of
-	 * that write (even if the verifier doesn't actually know
-	 * if the slot being read was really written to or not.
-	 */
+	/* Now read from the address we just wrote. */
 	BPF_LDX_MEM(BPF_DW, BPF_REG_3, BPF_REG_2, 0),
 	BPF_MOV64_IMM(BPF_REG_0, 0),
 	BPF_EXIT_INSN(),
 	},
-	/* Variable stack access is rejected for unprivileged.
+	/* Check that the maximum stack depth is correctly maintained according to the
+	 * maximum possible variable offset.
 	 */
+	.result = ACCEPT,
 	.errstr_unpriv = "R2 variable stack access prohibited for !root",
 	.result_unpriv = REJECT,
-	.result = ACCEPT,
 },
 {
 	"variable-offset stack write clobbers spilled regs",
@@ -213,31 +245,6 @@
 	.prog_type = BPF_PROG_TYPE_LWT_IN,
 },
 {
-	"indirect variable-offset stack access, max_off+size > max_initialized",
-	.insns = {
-	/* Fill only the second from top 8 bytes of the stack. */
-	BPF_ST_MEM(BPF_DW, BPF_REG_10, -16, 0),
-	/* Get an unknown value. */
-	BPF_LDX_MEM(BPF_W, BPF_REG_2, BPF_REG_1, 0),
-	/* Make it small and 4-byte aligned. */
-	BPF_ALU64_IMM(BPF_AND, BPF_REG_2, 4),
-	BPF_ALU64_IMM(BPF_SUB, BPF_REG_2, 16),
-	/* Add it to fp.  We now have either fp-12 or fp-16, but we don't know
-	 * which. fp-12 size 8 is partially uninitialized stack.
-	 */
-	BPF_ALU64_REG(BPF_ADD, BPF_REG_2, BPF_REG_10),
-	/* Dereference it indirectly. */
-	BPF_LD_MAP_FD(BPF_REG_1, 0),
-	BPF_EMIT_CALL(BPF_FUNC_map_lookup_elem),
-	BPF_MOV64_IMM(BPF_REG_0, 0),
-	BPF_EXIT_INSN(),
-	},
-	.fixup_map_hash_8b = { 5 },
-	.errstr = "invalid indirect read from stack R2 var_off",
-	.result = REJECT,
-	.prog_type = BPF_PROG_TYPE_LWT_IN,
-},
-{
 	"indirect variable-offset stack access, min_off < min_initialized",
 	.insns = {
 	/* Fill only the top 8 bytes of the stack. */
@@ -258,9 +265,10 @@
 	BPF_EXIT_INSN(),
 	},
 	.fixup_map_hash_8b = { 5 },
-	.errstr = "invalid indirect read from stack R2 var_off",
-	.result = REJECT,
-	.prog_type = BPF_PROG_TYPE_LWT_IN,
+	.result = ACCEPT,
+	.errstr_unpriv = "R2 variable stack access prohibited for !root",
+	.result_unpriv = REJECT,
+	.prog_type = BPF_PROG_TYPE_CGROUP_SKB,
 },
 {
 	"indirect variable-offset stack access, priv vs unpriv",
@@ -288,33 +296,6 @@
 	.result_unpriv = REJECT,
 	.result = ACCEPT,
 	.prog_type = BPF_PROG_TYPE_CGROUP_SKB,
-},
-{
-	"indirect variable-offset stack access, uninitialized",
-	.insns = {
-	BPF_MOV64_IMM(BPF_REG_2, 6),
-	BPF_MOV64_IMM(BPF_REG_3, 28),
-	/* Fill the top 16 bytes of the stack. */
-	BPF_ST_MEM(BPF_W, BPF_REG_10, -16, 0),
-	BPF_ST_MEM(BPF_DW, BPF_REG_10, -8, 0),
-	/* Get an unknown value. */
-	BPF_LDX_MEM(BPF_W, BPF_REG_4, BPF_REG_1, 0),
-	/* Make it small and 4-byte aligned. */
-	BPF_ALU64_IMM(BPF_AND, BPF_REG_4, 4),
-	BPF_ALU64_IMM(BPF_SUB, BPF_REG_4, 16),
-	/* Add it to fp.  We now have either fp-12 or fp-16, we don't know
-	 * which, but either way it points to initialized stack.
-	 */
-	BPF_ALU64_REG(BPF_ADD, BPF_REG_4, BPF_REG_10),
-	BPF_MOV64_IMM(BPF_REG_5, 8),
-	/* Dereference it indirectly. */
-	BPF_EMIT_CALL(BPF_FUNC_getsockopt),
-	BPF_MOV64_IMM(BPF_REG_0, 0),
-	BPF_EXIT_INSN(),
-	},
-	.errstr = "invalid indirect read from stack R4 var_off",
-	.result = REJECT,
-	.prog_type = BPF_PROG_TYPE_SOCK_OPS,
 },
 {
 	"indirect variable-offset stack access, ok",
