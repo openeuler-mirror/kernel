@@ -405,6 +405,8 @@ const struct bpf_func_proto bpf_get_local_storage_proto = {
 };
 #endif
 
+#endif /* CONFIG_CGROUPS */
+
 #define BPF_STRTOX_BASE_MASK 0x1F
 
 static int __bpf_strtoull(const char *buf, size_t buf_len, u64 flags,
@@ -532,7 +534,6 @@ const struct bpf_func_proto bpf_strtoul_proto = {
 	.arg3_type	= ARG_ANYTHING,
 	.arg4_type	= ARG_PTR_TO_LONG,
 };
-#endif
 
 BPF_CALL_4(bpf_get_ns_current_pid_tgid, u64, dev, u64, ino,
 	   struct bpf_pidns_info *, nsdata, u32, size)
@@ -701,6 +702,10 @@ bpf_base_func_proto(enum bpf_func_id func_id)
 		return &bpf_ringbuf_discard_proto;
 	case BPF_FUNC_ringbuf_query:
 		return &bpf_ringbuf_query_proto;
+	case BPF_FUNC_strtol:
+		return &bpf_strtol_proto;
+	case BPF_FUNC_strtoul:
+		return &bpf_strtoul_proto;
 	case BPF_FUNC_sched_tg_tag_of:
 		return &bpf_sched_tg_tag_of_proto;
 	case BPF_FUNC_sched_task_tag_of:
