@@ -4606,6 +4606,19 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool resume)
 		ecmdq = *per_cpu_ptr(smmu->ecmdq, i);
 		q = &ecmdq->cmdq.q;
 
+		reg = readl(q->prod_reg);
+		if (reg & ECMDQ_PROD_EN) {
+			/* disable ecmdq */
+			writel(reg & ~ECMDQ_PROD_EN, q->prod_reg);
+			ret = readl_relaxed_poll_timeout(q->cons_reg, reg,
+				!(reg & ECMDQ_CONS_ENACK), 1, ARM_SMMU_POLL_TIMEOUT_US);
+			if (ret) {
+				dev_warn(smmu->dev, "ecmdq[%d] disable failed\n", i);
+				smmu->ecmdq_enabled = 0;
+				break;
+			}
+		}
+
 		if (WARN_ON(q->llq.prod != q->llq.cons)) {
 			q->llq.prod = 0;
 			q->llq.cons = 0;
