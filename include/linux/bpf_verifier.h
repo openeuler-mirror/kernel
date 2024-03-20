@@ -415,6 +415,7 @@ struct bpf_verifier_state {
 	struct bpf_idx_pair *jmp_history;
 	u32 jmp_history_cnt;
 	u32 dfs_depth;
+	u32 callback_unroll_depth;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
@@ -527,6 +528,10 @@ struct bpf_insn_aux_data {
 	 * this instruction, regardless of any heuristics
 	 */
 	bool force_checkpoint;
+	/* true if instruction is a call to a helper function that
+	 * accepts callback function as a parameter.
+	 */
+	bool calls_callback;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
