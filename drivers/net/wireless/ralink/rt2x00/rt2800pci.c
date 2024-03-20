@@ -52,6 +52,11 @@ static bool modparam_nohwcrypt = false;
 module_param_named(nohwcrypt, modparam_nohwcrypt, bool, 0444);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
 
+void rt2x00lib_pre_reset_hw(struct rt2x00_dev *rt2x00dev)
+{
+	rt2800_pre_reset_hw(rt2x00dev);
+}
+
 static bool rt2800pci_hwcrypt_disabled(struct rt2x00_dev *rt2x00dev)
 {
 	return modparam_nohwcrypt;

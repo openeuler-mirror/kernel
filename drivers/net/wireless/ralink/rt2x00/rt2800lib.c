@@ -1440,14 +1440,20 @@ static void rt2800_config_wcid_attr_cipher(struct rt2x00_dev *rt2x00dev,
 
 	offset = MAC_IVEIV_ENTRY(key->hw_key_idx);
 
-	memset(&iveiv_entry, 0, sizeof(iveiv_entry));
-	if ((crypto->cipher == CIPHER_TKIP) ||
-	    (crypto->cipher == CIPHER_TKIP_NO_MIC) ||
-	    (crypto->cipher == CIPHER_AES))
-		iveiv_entry.iv[3] |= 0x20;
-	iveiv_entry.iv[3] |= key->keyidx << 6;
+	if (crypto->cmd == SET_KEY) {
+		rt2800_register_multiread(rt2x00dev, offset,
+					  &iveiv_entry, sizeof(iveiv_entry));
+		if ((crypto->cipher == CIPHER_TKIP) ||
+		    (crypto->cipher == CIPHER_TKIP_NO_MIC) ||
+		    (crypto->cipher == CIPHER_AES))
+			iveiv_entry.iv[3] |= 0x20;
+		iveiv_entry.iv[3] |= key->keyidx << 6;
+	} else {
+		memset(&iveiv_entry, 0, sizeof(iveiv_entry));
+	}
+
 	rt2800_register_multiwrite(rt2x00dev, offset,
-				      &iveiv_entry, sizeof(iveiv_entry));
+				   &iveiv_entry, sizeof(iveiv_entry));
 }
 
 int rt2800_config_shared_key(struct rt2x00_dev *rt2x00dev,
@@ -1635,6 +1641,25 @@ int rt2800_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rt2800_sta_remove);
+
+void rt2800_pre_reset_hw(struct rt2x00_dev *rt2x00dev)
+{
+	struct rt2800_drv_data *drv_data = rt2x00dev->drv_data;
+	struct data_queue *queue = rt2x00dev->bcn;
+	struct queue_entry *entry;
+	int i, wcid;
+
+	for (wcid = WCID_START; wcid < WCID_END; wcid++) {
+		drv_data->wcid_to_sta[wcid - WCID_START] = NULL;
+		__clear_bit(wcid - WCID_START, drv_data->sta_ids);
+	}
+
+	for (i = 0; i < queue->limit; i++) {
+		entry = &queue->entries[i];
+		clear_bit(ENTRY_BCN_ASSIGNED, &entry->flags);
+	}
+}
+EXPORT_SYMBOL_GPL(rt2800_pre_reset_hw);
 
 void rt2800_config_filter(struct rt2x00_dev *rt2x00dev,
 			  const unsigned int filter_flags)
@@ -5546,14 +5571,21 @@ static int rt2800_init_registers(struct rt2x00_dev *rt2x00dev)
 	 * ASIC will keep garbage value after boot, clear encryption keys.
 	 */
 	for (i = 0; i < 4; i++)
-		rt2800_register_write(rt2x00dev,
-					 SHARED_KEY_MODE_ENTRY(i), 0);
+		rt2800_register_write(rt2x00dev, SHARED_KEY_MODE_ENTRY(i), 0);
 
 	for (i = 0; i < 256; i++) {
 		rt2800_config_wcid(rt2x00dev, NULL, i);
 		rt2800_delete_wcid_attr(rt2x00dev, i);
-		rt2800_register_write(rt2x00dev, MAC_IVEIV_ENTRY(i), 0);
 	}
+
+	/*
+	 * Clear encryption initialization vectors on start, but keep them
+	 * for watchdog reset. Otherwise we will have wrong IVs and not be
+	 * able to keep connections after reset.
+	 */
+	if (!test_bit(DEVICE_STATE_RESET, &rt2x00dev->flags))
+		for (i = 0; i < 256; i++)
+			rt2800_register_write(rt2x00dev, MAC_IVEIV_ENTRY(i), 0);
 
 	/*
 	 * Clear all beacons
