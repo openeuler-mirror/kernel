@@ -1450,6 +1450,16 @@ static const struct file_operations proc_pbha_bit0_ops = {
 	.write      = pbha_bit0_write,
 	.llseek     = generic_file_llseek,
 };
+
+bool pbha_bit0_hide_file(const char *name)
+{
+	if (!system_support_pbha_bit0() && !strncmp("pbha_bit0", name, 9))
+		return true;
+
+	return false;
+}
+#else
+static bool pbha_bit0_hide_file(const char *name) { return false; }
 #endif
 
 #ifdef CONFIG_AUDIT
@@ -2849,6 +2859,9 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 
 static bool proc_hide_pidents(const struct pid_entry *p)
 {
+	if (pbha_bit0_hide_file(p->name))
+		return true;
+
 	return false;
 }
 
