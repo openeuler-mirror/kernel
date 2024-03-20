@@ -399,6 +399,7 @@ struct bpf_verifier_state {
 	 */
 	struct bpf_idx_pair *jmp_history;
 	u32 jmp_history_cnt;
+	u32 dfs_depth;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
