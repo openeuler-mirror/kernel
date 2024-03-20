@@ -99,7 +99,7 @@ static int pbha_bit0_pte_range(pmd_t *pmd, unsigned long addr,
 {
 	int *op = (int *)walk->private;
 	struct vm_area_struct *vma = walk->vma;
-	pte_t *pte, ptent;
+	pte_t *pte;
 	spinlock_t *ptl;
 	bool set = (*op == SET_PBHA_BIT0_FLAG);
 
@@ -115,11 +115,8 @@ static int pbha_bit0_pte_range(pmd_t *pmd, unsigned long addr,
 		return 0;
 
 	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
-	for (; addr != end; pte++, addr += PAGE_SIZE) {
-		ptent = *pte;
-
+	for (; addr != end; pte++, addr += PAGE_SIZE)
 		pbha_bit0_update_pte_bits(vma, addr, pte, set);
-	}
 	pte_unmap_unlock(pte - 1, ptl);
 	cond_resched();
 	return 0;
