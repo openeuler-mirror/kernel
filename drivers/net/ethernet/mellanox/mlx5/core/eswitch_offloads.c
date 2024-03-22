@@ -287,10 +287,9 @@ static void esw_put_dest_tables_loop(struct mlx5_eswitch *esw, struct mlx5_flow_
 	for (i = from; i < to; i++)
 		if (esw_attr->dests[i].flags & MLX5_ESW_DEST_CHAIN_WITH_SRC_PORT_CHANGE)
 			mlx5_chains_put_table(chains, 0, 1, 0);
-		else if (mlx5_esw_indir_table_needed(esw, attr, esw_attr->dests[i].rep->vport,
+		else if (mlx5_esw_indir_table_needed(esw, attr, esw_attr->dests[i].vport,
 						     esw_attr->dests[i].mdev))
-			mlx5_esw_indir_table_put(esw, esw_attr->dests[i].rep->vport,
-						 false);
+			mlx5_esw_indir_table_put(esw, esw_attr->dests[i].vport, false);
 }
 
 static bool
@@ -358,8 +357,8 @@ esw_is_indir_table(struct mlx5_eswitch *esw, struct mlx5_flow_attr *attr)
 	 * this criteria.
 	 */
 	for (i = esw_attr->split_count; i < esw_attr->out_count; i++) {
-		if (esw_attr->dests[i].rep &&
-		    mlx5_esw_indir_table_needed(esw, attr, esw_attr->dests[i].rep->vport,
+		if (esw_attr->dests[i].vport_valid &&
+		    mlx5_esw_indir_table_needed(esw, attr, esw_attr->dests[i].vport,
 						esw_attr->dests[i].mdev)) {
 			result = true;
 		} else {
@@ -388,7 +387,7 @@ esw_setup_indir_table(struct mlx5_flow_destination *dest,
 		dest[*i].type = MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE;
 
 		dest[*i].ft = mlx5_esw_indir_table_get(esw, attr,
-						       esw_attr->dests[j].rep->vport, false);
+						       esw_attr->dests[j].vport, false);
 		if (IS_ERR(dest[*i].ft)) {
 			err = PTR_ERR(dest[*i].ft);
 			goto err_indir_tbl_get;
@@ -432,11 +431,11 @@ static bool esw_setup_uplink_fwd_ipsec_needed(struct mlx5_eswitch *esw,
 					      int attr_idx)
 {
 	if (esw->offloads.ft_ipsec_tx_pol &&
-	    esw_attr->dests[attr_idx].rep &&
-	    esw_attr->dests[attr_idx].rep->vport == MLX5_VPORT_UPLINK &&
+	    esw_attr->dests[attr_idx].vport_valid &&
+	    esw_attr->dests[attr_idx].vport == MLX5_VPORT_UPLINK &&
 	    /* To be aligned with software, encryption is needed only for tunnel device */
 	    (esw_attr->dests[attr_idx].flags & MLX5_ESW_DEST_ENCAP_VALID) &&
-	    esw_attr->dests[attr_idx].rep != esw_attr->in_rep &&
+	    esw_attr->dests[attr_idx].vport != esw_attr->in_rep->vport &&
 	    esw_same_vhca_id(esw_attr->dests[attr_idx].mdev, esw->dev))
 		return true;
 
@@ -469,7 +468,7 @@ esw_setup_dest_fwd_vport(struct mlx5_flow_destination *dest, struct mlx5_flow_ac
 			 int attr_idx, int dest_idx, bool pkt_reformat)
 {
 	dest[dest_idx].type = MLX5_FLOW_DESTINATION_TYPE_VPORT;
-	dest[dest_idx].vport.num = esw_attr->dests[attr_idx].rep->vport;
+	dest[dest_idx].vport.num = esw_attr->dests[attr_idx].vport;
 	if (MLX5_CAP_ESW(esw->dev, merged_eswitch)) {
 		dest[dest_idx].vport.vhca_id =
 			MLX5_CAP_GEN(esw_attr->dests[attr_idx].mdev, vhca_id);
@@ -536,21 +535,26 @@ esw_src_port_rewrite_supported(struct mlx5_eswitch *esw)
 }
 
 static bool
-esw_dests_to_vf_pf_vports(struct mlx5_flow_destination *dests, int max_dest)
+esw_dests_to_int_external(struct mlx5_flow_destination *dests, int max_dest)
 {
-	bool vf_dest = false, pf_dest = false;
+	bool internal_dest = false, external_dest = false;
 	int i;
 
 	for (i = 0; i < max_dest; i++) {
-		if (dests[i].type != MLX5_FLOW_DESTINATION_TYPE_VPORT)
+		if (dests[i].type != MLX5_FLOW_DESTINATION_TYPE_VPORT &&
+		    dests[i].type != MLX5_FLOW_DESTINATION_TYPE_UPLINK)
 			continue;
 
-		if (dests[i].vport.num == MLX5_VPORT_UPLINK)
-			pf_dest = true;
+		/* Uplink dest is external, but considered as internal
+		 * if there is reformat because firmware uses LB+hairpin to support it.
+		 */
+		if (dests[i].vport.num == MLX5_VPORT_UPLINK &&
+		    !(dests[i].vport.flags & MLX5_FLOW_DEST_VPORT_REFORMAT_ID))
+			external_dest = true;
 		else
-			vf_dest = true;
+			internal_dest = true;
 
-		if (vf_dest && pf_dest)
+		if (internal_dest && external_dest)
 			return true;
 	}
 
@@ -696,9 +700,9 @@ mlx5_eswitch_add_offloaded_rule(struct mlx5_eswitch *esw,
 
 		/* Header rewrite with combined wire+loopback in FDB is not allowed */
 		if ((flow_act.action & MLX5_FLOW_CONTEXT_ACTION_MOD_HDR) &&
-		    esw_dests_to_vf_pf_vports(dest, i)) {
+		    esw_dests_to_int_external(dest, i)) {
 			esw_warn(esw->dev,
-				 "FDB: Header rewrite with forwarding to both PF and VF is not allowed\n");
+				 "FDB: Header rewrite with forwarding to both internal and external dests is not allowed\n");
 			rule = ERR_PTR(-EINVAL);
 			goto err_esw_get;
 		}
@@ -1177,9 +1181,9 @@ static int esw_add_fdb_peer_miss_rules(struct mlx5_eswitch *esw,
 	struct mlx5_flow_handle *flow;
 	struct mlx5_flow_spec *spec;
 	struct mlx5_vport *vport;
+	int err, pfindex;
 	unsigned long i;
 	void *misc;
-	int err;
 
 	if (!MLX5_VPORT_MANAGER(esw->dev) && !mlx5_core_is_ecpf_esw_manager(esw->dev))
 		return 0;
@@ -1255,7 +1259,15 @@ static int esw_add_fdb_peer_miss_rules(struct mlx5_eswitch *esw,
 			flows[vport->index] = flow;
 		}
 	}
-	esw->fdb_table.offloads.peer_miss_rules[mlx5_get_dev_index(peer_dev)] = flows;
+
+	pfindex = mlx5_get_dev_index(peer_dev);
+	if (pfindex >= MLX5_MAX_PORTS) {
+		esw_warn(esw->dev, "Peer dev index(%d) is over the max num defined(%d)\n",
+			 pfindex, MLX5_MAX_PORTS);
+		err = -EINVAL;
+		goto add_ec_vf_flow_err;
+	}
+	esw->fdb_table.offloads.peer_miss_rules[pfindex] = flows;
 
 	kvfree(spec);
 	return 0;
@@ -3651,22 +3663,6 @@ static int esw_inline_mode_to_devlink(u8 mlx5_mode, u8 *mode)
 	return 0;
 }
 
-static bool esw_offloads_devlink_ns_eq_netdev_ns(struct devlink *devlink)
-{
-	struct mlx5_core_dev *dev = devlink_priv(devlink);
-	struct net *devl_net, *netdev_net;
-	bool ret = false;
-
-	mutex_lock(&dev->mlx5e_res.uplink_netdev_lock);
-	if (dev->mlx5e_res.uplink_netdev) {
-		netdev_net = dev_net(dev->mlx5e_res.uplink_netdev);
-		devl_net = devlink_net(devlink);
-		ret = net_eq(devl_net, netdev_net);
-	}
-	mutex_unlock(&dev->mlx5e_res.uplink_netdev_lock);
-	return ret;
-}
-
 int mlx5_eswitch_block_mode(struct mlx5_core_dev *dev)
 {
 	struct mlx5_eswitch *esw = dev->priv.eswitch;
@@ -3710,13 +3706,6 @@ int mlx5_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode,
 
 	if (esw_mode_from_devlink(mode, &mlx5_mode))
 		return -EINVAL;
-
-	if (mode == DEVLINK_ESWITCH_MODE_SWITCHDEV &&
-	    !esw_offloads_devlink_ns_eq_netdev_ns(devlink)) {
-		NL_SET_ERR_MSG_MOD(extack,
-				   "Can't change E-Switch mode to switchdev when netdev net namespace has diverged from the devlink's.");
-		return -EPERM;
-	}
 
 	mlx5_lag_disable_change(esw->dev);
 	err = mlx5_esw_try_lock(esw);

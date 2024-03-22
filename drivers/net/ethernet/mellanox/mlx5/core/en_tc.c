@@ -2012,9 +2012,10 @@ static void mlx5e_tc_del_fdb_peer_flow(struct mlx5e_tc_flow *flow,
 	list_for_each_entry_safe(peer_flow, tmp, &flow->peer_flows, peer_flows) {
 		if (peer_index != mlx5_get_dev_index(peer_flow->priv->mdev))
 			continue;
+
+		list_del(&peer_flow->peer_flows);
 		if (refcount_dec_and_test(&peer_flow->refcnt)) {
 			mlx5e_tc_del_fdb_flow(peer_flow->priv, peer_flow);
-			list_del(&peer_flow->peer_flows);
 			kfree(peer_flow);
 		}
 	}
@@ -3776,7 +3777,8 @@ alloc_branch_attr(struct mlx5e_tc_flow *flow,
 		break;
 	case FLOW_ACTION_ACCEPT:
 	case FLOW_ACTION_PIPE:
-		if (set_branch_dest_ft(flow->priv, attr))
+		err = set_branch_dest_ft(flow->priv, attr);
+		if (err)
 			goto out_err;
 		break;
 	case FLOW_ACTION_JUMP:
@@ -3786,7 +3788,8 @@ alloc_branch_attr(struct mlx5e_tc_flow *flow,
 			goto out_err;
 		}
 		*jump_count = cond->extval;
-		if (set_branch_dest_ft(flow->priv, attr))
+		err = set_branch_dest_ft(flow->priv, attr);
+		if (err)
 			goto out_err;
 		break;
 	default:
@@ -5734,8 +5737,10 @@ int mlx5e_tc_action_miss_mapping_get(struct mlx5e_priv *priv, struct mlx5_flow_a
 
 	esw = priv->mdev->priv.eswitch;
 	attr->act_id_restore_rule = esw_add_restore_rule(esw, *act_miss_mapping);
-	if (IS_ERR(attr->act_id_restore_rule))
+	if (IS_ERR(attr->act_id_restore_rule)) {
+		err = PTR_ERR(attr->act_id_restore_rule);
 		goto err_rule;
+	}
 
 	return 0;
 

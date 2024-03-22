@@ -73,6 +73,8 @@ struct block_device {
 	bool			bd_mounted;
 	/* The counter of write opened */
 	int			bd_writers;
+
+	bool			bd_ro_warned;
 	/*
 	 * keep this out-of-line as it's both big and not needed in the fast
 	 * path
