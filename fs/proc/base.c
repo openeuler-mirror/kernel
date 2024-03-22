@@ -1450,6 +1450,16 @@ static const struct file_operations proc_pbha_bit0_ops = {
 	.write      = pbha_bit0_write,
 	.llseek     = generic_file_llseek,
 };
+
+bool pbha_bit0_hide_file(const char *name)
+{
+	if (!system_support_pbha_bit0() && !strncmp("pbha_bit0", name, 9))
+		return true;
+
+	return false;
+}
+#else
+static bool pbha_bit0_hide_file(const char *name) { return false; }
 #endif
 
 #ifdef CONFIG_AUDIT
@@ -2847,6 +2857,14 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 	return d_splice_alias(inode, dentry);
 }
 
+static bool proc_hide_pidents(const struct pid_entry *p)
+{
+	if (pbha_bit0_hide_file(p->name))
+		return true;
+
+	return false;
+}
+
 static struct dentry *proc_pident_lookup(struct inode *dir, 
 					 struct dentry *dentry,
 					 const struct pid_entry *p,
@@ -2864,6 +2882,8 @@ static struct dentry *proc_pident_lookup(struct inode *dir,
 	 */
 	for (; p < end; p++) {
 		if (p->len != dentry->d_name.len)
+			continue;
+		if (proc_hide_pidents(p))
 			continue;
 		if (!memcmp(dentry->d_name.name, p->name, p->len)) {
 			res = proc_pident_instantiate(dentry, task, p);
@@ -2891,8 +2911,9 @@ static int proc_pident_readdir(struct file *file, struct dir_context *ctx,
 		goto out;
 
 	for (p = ents + (ctx->pos - 2); p < ents + nents; p++) {
-		if (!proc_fill_cache(file, ctx, p->name, p->len,
-				proc_pident_instantiate, task, p))
+		if (!proc_hide_pidents(p) &&
+		    !proc_fill_cache(file, ctx, p->name, p->len,
+				     proc_pident_instantiate, task, p))
 			break;
 		ctx->pos++;
 	}

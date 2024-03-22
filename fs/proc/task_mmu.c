@@ -20,6 +20,7 @@
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
 #include <linux/module.h>
+#include <linux/pbha.h>
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
@@ -1327,6 +1328,11 @@ struct pagemapread {
 #define PM_PFRAME_MASK		GENMASK_ULL(PM_PFRAME_BITS - 1, 0)
 #define PM_SOFT_DIRTY		BIT_ULL(55)
 #define PM_MMAP_EXCLUSIVE	BIT_ULL(56)
+#ifdef CONFIG_ARM64_PBHA
+#define PM_PBHA_BIT0		BIT_ULL(59)
+#else
+#define PM_PBHA_BIT0		0
+#endif
 #define PM_FILE			BIT_ULL(61)
 #define PM_SWAP			BIT_ULL(62)
 #define PM_PRESENT		BIT_ULL(63)
@@ -1419,6 +1425,9 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
 			page = device_private_entry_to_page(entry);
 	}
 
+	if (pte_pbha(pte))
+		flags |= PM_PBHA_BIT0;
+
 	if (page && !PageAnon(page))
 		flags |= PM_FILE;
 	if (page && !migration && page_mapcount(page) == 1)
@@ -1478,6 +1487,9 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 			page = migration_entry_to_page(entry);
 		}
 #endif
+
+		if (pmd_pbha(pmd))
+			flags |= PM_PBHA_BIT0;
 
 		if (page && !migration && page_mapcount(page) == 1)
 			flags |= PM_MMAP_EXCLUSIVE;
@@ -1710,6 +1722,9 @@ static int get_pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long 
 		u64 flags = 0, frame = 0;
 		pmd_t pmd = *pmdp;
 		struct page *page = NULL;
+
+		if (pmd_pbha(pmd))
+			flags |= PM_PBHA_BIT0;
 
 		if (pmd_present(pmd)) {
 			page = pmd_page(pmd);
