@@ -118,8 +118,22 @@ void ima_collect_modsig(struct modsig *modsig, const void *buf, loff_t size)
 
 int ima_modsig_verify(struct key *keyring, const struct modsig *modsig)
 {
-	return verify_pkcs7_message_sig(NULL, 0, modsig->pkcs7_msg, keyring,
-					VERIFYING_MODULE_SIGNATURE, NULL, NULL);
+	int ret;
+
+	ret = verify_pkcs7_message_sig(NULL, 0, modsig->pkcs7_msg, keyring,
+				       VERIFYING_MODULE_SIGNATURE, NULL, NULL);
+#ifdef CONFIG_IMA_DIGEST_LIST
+	if (ret < 0) {
+#ifdef CONFIG_IMA_KEYRINGS_PERMIT_SIGNED_BY_BUILTIN_OR_SECONDARY
+		keyring = VERIFY_USE_SECONDARY_KEYRING;
+#else
+		keyring = NULL;
+#endif
+		return verify_pkcs7_message_sig(NULL, 0, modsig->pkcs7_msg,
+			keyring, VERIFYING_MODULE_SIGNATURE, NULL, NULL);
+	}
+#endif
+	return ret;
 }
 
 int ima_get_modsig_digest(const struct modsig *modsig, enum hash_algo *algo,
