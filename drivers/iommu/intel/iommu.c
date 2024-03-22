@@ -4359,6 +4359,10 @@ static void intel_iommu_probe_finalize(struct device *dev)
 {
 	set_dma_ops(dev, NULL);
 	iommu_setup_dma_ops(dev, 0, U64_MAX);
+#ifdef CONFIG_X86_64
+	if (is_zhaoxin_kh40000)
+		kh40000_set_iommu_dma_ops(dev);
+#endif
 }
 
 static void intel_iommu_get_resv_regions(struct device *device,
