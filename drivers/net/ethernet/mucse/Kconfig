@@ -55,7 +55,6 @@ config MXGBE_OPTM_WITH_LARGE
 
           If unsure, say N.
 
-
 config MXGBE_MSIX_COUNT
 	int "Number of msix count"
 	default "64"
@@ -70,6 +69,43 @@ config MXGBE_DCB
         help
           Say Y here if you want to use Data Center Bridging (DCB) in the
           driver.
+
+          If unsure, say N.
+
+config MXGBEVF
+	tristate "Mucse(R) 1/10/25/40GbE PCI Express Virtual Function adapters support"
+        depends on PCI
+        help
+          This driver supports Mucse(R) 1/10/25/40GbE PCI Express family of
+          adapters.
+
+          To compile this driver as a module, choose M here. The module
+          will be called rnp.
+
+config MXGBEVF_FIX_VF_QUEUE
+        bool "Fix VF Queue Used(pf)"
+        default y
+        depends on MXGBEVF
+        help
+          Say Y here if you want to fix vf queue order in the driver.
+
+          If unsure, say N.
+
+config MXGBEVF_FIX_MAC_PADDING
+	bool "Close Mac Padding Function(pf)"
+	default y
+        depends on MXGBEVF
+        help
+          Say Y here if you want to fix close mac padding in the driver.
+
+          If unsure, say N.
+
+config MXGBEVF_OPTM_WITH_LARGE
+	bool "Reduce Memory Cost In Large PAGE_SIZE(>8192)"
+	default n
+        depends on MXGBEVF
+        help
+          Say Y here if you want to reduce memory cost in large PAGE_SIZE.
 
           If unsure, say N.
 
