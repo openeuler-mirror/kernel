@@ -21,25 +21,28 @@
 #include "tsse_service.h"
 
 #define SEARCH_PATTERN "MT_CFG_BUILD_VERSION_DETAIL"
-#define SEARCH_PATTERN_LEN 28
+#define SPACE_CH ' '
 
-int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
+static int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 {
 	u8 *h2d;
 	u32 int_reg;
-	u32 rc;
 
 	mutex_lock(&tsseipc->list_lock);
 
 	int_reg = readl(tsseipc->virt_addr + HOST2MAIN_INTR_SET_OFFSET);
 	if ((int_reg & IPC_REGISTER_INT_SET) != 0) {
-		rc = -1;
 		mutex_unlock(&tsseipc->list_lock);
-		return rc;
+		return -EFAULT;
+	}
+	if (msg->header.i_len < sizeof(struct ipc_header) +
+		sizeof(struct msg_info) + sizeof(struct fw_load)) {
+		dev_err(tsseipc->dev, "msg format error\n");
+		return -EFAULT;
 	}
 	h2d = (u8 *)(tsseipc->virt_addr + HOST2MAIN_IPC_OFFSET);
 	memcpy_toio(h2d, msg, sizeof(struct ipc_header));
-	memcpy_toio(h2d + sizeof(struct ipc_header), (u32 *)msg->i_data,
+	memcpy_toio(h2d + sizeof(struct ipc_header), (u8 *)msg->i_data,
 		    msg->header.i_len - sizeof(struct ipc_header));
 	writel(0x1, tsseipc->virt_addr + HOST2MAIN_INTR_SET_OFFSET);
 
@@ -48,41 +51,30 @@ int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 	return 0;
 }
 
-void fw_free(void *msg_t)
+/**
+ * Get version information from firmware
+ * @fw: firmware pointer
+ * @fw_version_out: firmware version string output
+ * Return: 0 on success, error code otherwise
+*/
+int get_firmware_version(const struct firmware *fw, char *fw_version_out)
 {
-	struct tsse_msg *tssemsg;
-	struct ipc_msg *payload;
-
-	payload = (struct ipc_msg *)msg_t;
-	tssemsg = container_of(payload, struct tsse_msg, ipc_payload);
-
-	kvfree(tssemsg);
-}
-
-int get_firmware_version(char *fw_buffer, uint32_t buffer_len, char *fw_version)
-{
-	char *pattern;
-	char *space_ch = " ";
+	const char *pattern = SEARCH_PATTERN;
+	const uint8_t *fw_buffer = fw->data;
 	uint32_t pattern_i = 0, buffer_i = 0;
-	uint32_t pattern_len = SEARCH_PATTERN_LEN - 1; // Not include "\0"
+	uint32_t pattern_len = strlen(pattern); // Not include "\0"
 	uint32_t version_start = 0;
 	uint32_t version_len = 0;
 
-	pattern = kzalloc(SEARCH_PATTERN_LEN, GFP_KERNEL);
-	if (!pattern)
-		return -1;
-
-	snprintf(pattern, SEARCH_PATTERN_LEN, SEARCH_PATTERN);
-
-	while (buffer_i < buffer_len) {
-		if (pattern[pattern_i] == fw_buffer[buffer_i]) {
+	while (buffer_i < fw->size) {
+		if (pattern[pattern_i] == (char) fw_buffer[buffer_i]) {
 			buffer_i++;
 			pattern_i++;
 		}
 		if (pattern_i == pattern_len) {
 			break;	// pattern found
-		} else if ((buffer_i < buffer_len) &&
-			 (pattern[pattern_i] != fw_buffer[buffer_i])) {
+		} else if ((buffer_i < fw->size) &&
+			 (pattern[pattern_i] != (char) fw_buffer[buffer_i])) {
 			// mismatch after pattern_i matches
 			if (pattern_i != 0) {
 				// since the pattern has no common prefix, when mismatch,
@@ -93,22 +85,28 @@ int get_firmware_version(char *fw_buffer, uint32_t buffer_len, char *fw_version)
 			}
 		}
 	}
-	kfree(pattern);
 	if (pattern_i == pattern_len) {
 		buffer_i++;
 		version_start = buffer_i;
-		while (buffer_i < buffer_len) {
-			if (fw_buffer[buffer_i] == space_ch[0]) {
+		while (buffer_i < fw->size) {
+			if (fw_buffer[buffer_i] == SPACE_CH) {
 				version_len = buffer_i - version_start;
-				strscpy(fw_version, fw_buffer + version_start, version_len + 1);
+				if (version_len >= TSSE_FW_VERSION_LEN - 1)
+					version_len = TSSE_FW_VERSION_LEN - 2;
+				strscpy(fw_version_out, fw_buffer + version_start, version_len + 1);
 				return 0;
 			}
 			buffer_i++;
 		}
 	}
-	return -1;
+	return -EINVAL;
 }
 
+/**
+ * Firmware service to handle IPC message from mainCPU.
+ * It will write init or manual load firmware to PCIe BAR and send message back.
+ * No return value.
+*/
 void fw_service(void *tsseipc_t, void *msg_t)
 {
 	void __iomem *fw;
@@ -120,16 +118,15 @@ void fw_service(void *tsseipc_t, void *msg_t)
 	struct ipc_msg *msg = (struct ipc_msg *)msg_t;
 
 	task_offset = sizeof(struct msg_info);
-	fw_task = (struct fw_load *)(msg->i_data +
-				     task_offset / sizeof(uint32_t));
-
+	fw_task = (struct fw_load *)((uint8_t *)msg->i_data + task_offset);
 	tdev = pci_to_tsse_dev(tsseipc->pdev);
+
 	if (!tdev || !tdev->fw) {
 		fw_task->result = 1;
 		fw_task->size = 0;
 		dev_info(tsseipc->dev, "firmware loading failed\n");
-		fw_send_msg(tsseipc, msg);
-		fw_free(msg);
+		if (fw_send_msg(tsseipc, msg))
+			dev_err(tsseipc->dev, "notify device failed\n");
 		return;
 	}
 
@@ -140,24 +137,33 @@ void fw_service(void *tsseipc_t, void *msg_t)
 
 	memcpy_toio((u8 *)fw, tdev->fw->data, size);
 	dev_info(tsseipc->dev, "firmware loading done\n");
-	fw_send_msg(tsseipc, msg);
-	fw_free(msg);
+	if (fw_send_msg(tsseipc, msg))
+		dev_err(tsseipc->dev, "notify device failed\n");
 
-	dev_info(tsseipc->dev, "firmware version: %s\n", tdev->fw_version);
+	if (tdev->fw_version_exist)
+		dev_info(tsseipc->dev, "firmware version: %s\n", tdev->fw_version);
 
 	if (tdev->fw) {
 		release_firmware(tdev->fw);
 		tdev->fw = NULL;
+		memset(tdev->fw_version, 0, TSSE_FW_VERSION_LEN);
+		tdev->fw_version_exist = false;
 	}
 }
 
-int tsse_fw_load(struct pci_dev *pdev)
+/**
+ * Load firmware from /lib/firmware
+ * @pdev: pci device
+ * @name: firmware file name
+ * @fw: pointer to firmware pointer
+ * Return: 0 on success, error code otherwise
+*/
+int tsse_fw_load(struct pci_dev *pdev, const char *name, const struct firmware **fw)
 {
 	int result;
-	struct tsse_dev *tdev = pci_to_tsse_dev(pdev);
 
-	result = request_firmware(&tdev->fw, TSSE_FIRMWARE, &pdev->dev);
+	result = request_firmware(fw, name, &pdev->dev);
 	if (result)
-		dev_err(&pdev->dev, "%s failed\n", __func__);
+		dev_err(&pdev->dev, "%s failed for %s\n", __func__, name);
 	return result;
 }

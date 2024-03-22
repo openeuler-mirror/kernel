@@ -38,11 +38,11 @@
 
 enum IPC_BASIC_CMD {
 	IPC_BASIC_CMD_HOST_INIT = 0x1,
-	IPC_BASIC_CMD_PING = 0x2,
+	IPC_BASIC_CMD_PING = 0x2
 };
 
 enum IPC_BOOT_CMD {
-	IPC_BOOT_CMD_GET_FIRMWARE = 0x1,
+	IPC_BOOT_CMD_GET_FIRMWARE = 0x1
 };
 
 enum IPC_MESSAGE_CLASS {
@@ -60,11 +60,6 @@ struct ipc_header {
 	uint32_t pasid_en : 8;
 
 	uint32_t reserved[2];
-};
-
-struct ipc_data {
-	struct ipc_header header;
-	void *i_ptr;
 };
 
 struct ipc_msg {
@@ -92,11 +87,6 @@ struct ipc_layout {
 	struct msg_info info;
 };
 
-struct tsse_msg {
-	struct list_head list;
-	struct ipc_msg ipc_payload;
-};
-
 struct tsse_ipc {
 	struct device *dev;
 	struct pci_dev *pdev;
@@ -107,6 +97,7 @@ struct tsse_ipc {
 
 int tsse_ipc_init(struct pci_dev *pdev);
 void tsse_ipc_deinit(void *tdev);
+int tsse_fw_manual_load_ipc(struct pci_dev *pdev);
 bool check_send_enbit(struct tsse_ipc *tsseipc);
 void notify_device(struct tsse_ipc *tsseipc);
 #endif

@@ -18,6 +18,7 @@
 
 #define TSSE_PCI_MAX_BARS 4
 #define TSSE_FW_VERSION_LEN 32
+
 struct tsse_bar {
 	void __iomem *virt_addr;
 	resource_size_t addr;
@@ -58,6 +59,7 @@ struct tsse_dev {
 	void *mbx_hw;
 	const struct firmware *fw;
 	char fw_version[TSSE_FW_VERSION_LEN];
+	bool fw_version_exist;
 };
 #define TSSEDEV_TO_DEV(tssedev) (&((tssedev)->tsse_pci_dev.pci_dev->dev))
 #define TSSE_DEV_BARS(tssedev) ((tssedev)->tsse_pci_dev.bars)
@@ -72,7 +74,6 @@ int tsse_devmgr_add_dev(struct tsse_dev *tsse_dev);
 void tsse_devmgr_rm_dev(struct tsse_dev *tdev);
 int tsse_prepare_restart_dev(struct tsse_dev *tdev);
 int tsse_start_dev(struct tsse_dev *tdev);
-struct tsse_dev *get_tssedev(int id);
 
 static inline struct tsse_dev *pci_to_tsse_dev(struct pci_dev *pci_dev)
 {

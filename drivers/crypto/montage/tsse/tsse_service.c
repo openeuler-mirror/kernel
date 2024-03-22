@@ -5,14 +5,13 @@
  * Copyright © 2023 Montage Technology. All rights reserved.
  */
 #include <linux/errno.h>
-#include "tsse_ipc.h"
-#include "tsse_fw_service.h"
+#include "tsse_service.h"
 
 int service_rout(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 {
 	struct msg_info *info;
 	uint32_t msg_class;
-	int ret;
+	int ret = 0;
 
 	info = (struct msg_info *)msg->i_data;
 	msg_class = info->msg_class;
@@ -25,6 +24,5 @@ int service_rout(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 		ret = -EINVAL;
 		break;
 	}
-	return 0;
-
+	return ret;
 }

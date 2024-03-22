@@ -14,60 +14,41 @@
 #include "tsse_dev.h"
 #include "tsse_service.h"
 
-struct tsse_msg *get_msginf(void __iomem *d2h)
+/**
+ * Create ipc_msg and read message from BAR.
+ * Return the pointer to ipc_msg, the caller is responsible for free it.
+*/
+static struct ipc_msg *get_msginf(void __iomem *d2h)
 {
-	uint32_t u_len;
-	struct tsse_msg *tssemsg;
+	uint32_t u_len = 0;
+	struct ipc_msg *msg = NULL;
 
+	uint8_t *device_msg_data = NULL;
 	struct ipc_header *ipc_info = (struct ipc_header *)d2h;
 
+	// The memory layout in d2h should at least contains:
+	// ipc_header, msg_info and fw_load (message body)
+	if (ipc_info->i_len < sizeof(struct ipc_header) +
+		sizeof(struct msg_info) + sizeof(struct fw_load)) {
+		pr_info("%s(): msg format error\n", __func__);
+		return NULL;
+	}
 	u_len = ipc_info->i_len - sizeof(struct ipc_header);
-
-	tssemsg = (struct tsse_msg *)(kzalloc(sizeof(struct tsse_msg) + u_len,
+	msg = (struct ipc_msg *)(kzalloc(sizeof(struct ipc_msg) + u_len,
 					      GFP_ATOMIC));
-
-	if (!tssemsg) {
-		pr_info("%s(): tssemsg kzalloc failed\n", __func__);
+	if (!msg) {
+		pr_info("%s(): ipc_msg kzalloc failed\n", __func__);
 		return NULL;
 	}
 
-	tssemsg->ipc_payload.header.inst_id = ipc_info->inst_id;
-	tssemsg->ipc_payload.header.tgid = ipc_info->tgid;
-	tssemsg->ipc_payload.header.i_len = ipc_info->i_len;
+	msg->header.inst_id = ipc_info->inst_id;
+	msg->header.tgid = ipc_info->tgid;
+	msg->header.i_len = ipc_info->i_len;
 
-	return tssemsg;
-}
+	device_msg_data = (uint8_t *)(d2h + sizeof(struct ipc_header));
+	memcpy_fromio((uint8_t *)msg->i_data, device_msg_data, u_len);
 
-void ipc_recieve_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
-{
-	uint32_t u_len = msg->header.i_len - sizeof(struct ipc_header);
-	uint32_t *msg_data = NULL;
-	void __iomem *d2h = tsseipc->virt_addr + MAIN2HOST_IPC_OFFSET;
-
-	msg_data = (uint32_t *)(d2h + sizeof(struct ipc_header));
-	memcpy_fromio(msg->i_data, msg_data, u_len);
-	return;
-
-}
-
-int msg_rout(struct tsse_ipc *tsseipc, struct tsse_msg *tssemsg)
-{
-	int ret = 0;
-	struct ipc_msg *msg;
-	struct msg_info *info;
-	uint32_t msg_class;
-
-	msg = &tssemsg->ipc_payload;
-
-	ipc_recieve_msg(tsseipc, msg);
-	info = (struct msg_info *)msg->i_data;
-	msg_class = info->msg_class;
-	if (msg_class == IPC_MESSAGE_BOOT) {
-		service_rout(tsseipc, msg);
-		return 0;
-	}
-
-	return ret;
+	return msg;
 }
 
 static irqreturn_t tsse_ipc_d2h_irqhandler(int irq, void *dev_id)
@@ -90,7 +71,6 @@ bool check_send_enbit(struct tsse_ipc *tsseipc)
 	else
 		return false;
 }
-EXPORT_SYMBOL(check_send_enbit);
 
 void notify_device(struct tsse_ipc *tsseipc)
 {
@@ -98,62 +78,51 @@ void notify_device(struct tsse_ipc *tsseipc)
 	return;
 
 }
-EXPORT_SYMBOL(notify_device);
 
-void ipc_send_msg(struct tsse_ipc *tsseipc, struct ipc_data *msg)
-{
-	u8 *h2d = NULL;
-
-	h2d = (u8 *)(tsseipc->virt_addr + HOST2MAIN_IPC_OFFSET);
-	memcpy_toio(h2d, msg, sizeof(struct ipc_header));
-	memcpy_toio(h2d + sizeof(struct ipc_header), (u32 *)msg->i_ptr,
-		    msg->header.i_len - sizeof(struct ipc_header));
-	return;
-
-}
-
-void ipc_hw_init(struct tsse_ipc *hw_ipc)
+/**
+ * Enable main2host interrupt, cleanup interrupt set value in host2main and main2host.
+ * No return value.
+*/
+static void ipc_hw_init(struct tsse_ipc *hw_ipc)
 {
 	writel(0x1, hw_ipc->virt_addr + MAIN2HOST_INTR_ENABLE_OFFSET);
 	writel(0x0, hw_ipc->virt_addr + HOST2MAIN_INTR_SET_OFFSET);
 	writel(0x0, hw_ipc->virt_addr + MAIN2HOST_INTR_SET_OFFSET);
 }
 
-int ipc_init_msg(struct tsse_ipc *tsseipc)
+static int ipc_init_msg(struct tsse_ipc *tsseipc)
 {
 	u8 *h2d;
 	u32 int_reg;
-	u32 rc;
 	u32 cmd_len;
+	u32 i_len;
 	struct ipc_msg *msg;
 	struct msg_info *info_msg;
 
-	msg = (struct ipc_msg *)(kzalloc(
-		sizeof(struct ipc_msg) + sizeof(struct msg_info), GFP_ATOMIC));
+	cmd_len = sizeof(uint32_t);
+	i_len = sizeof(struct ipc_header) + sizeof(struct msg_info) + cmd_len;
+	msg = (struct ipc_msg *)(kzalloc(i_len, GFP_ATOMIC));
 
 	if (!msg) {
 		pr_info("%s(): msg kzalloc failed\n", __func__);
-		return -1;
+		return -EFAULT;
 	}
-	cmd_len = sizeof(uint32_t);
-	msg->header.i_len =
-		sizeof(struct ipc_header) + sizeof(struct msg_info) + cmd_len;
+	msg->header.i_len = i_len;
 	info_msg = (struct msg_info *)msg->i_data;
 	info_msg->msg_class = IPC_MESSAGE_BASIC;
-	*(msg->i_data + sizeof(struct msg_info) / 4) = IPC_BASIC_CMD_HOST_INIT;
+	*(uint32_t *)((uint8_t *)msg->i_data + sizeof(struct msg_info)) = IPC_BASIC_CMD_HOST_INIT;
 
 	mutex_lock(&tsseipc->list_lock);
 	int_reg = readl(tsseipc->virt_addr + HOST2MAIN_INTR_SET_OFFSET);
 	if ((int_reg & IPC_REGISTER_INT_SET) != 0) {
-		rc = -1;
 		mutex_unlock(&tsseipc->list_lock);
 		kfree(msg);
-		return rc;
+		return -EFAULT;
 	}
 	h2d = (u8 *)(tsseipc->virt_addr + HOST2MAIN_IPC_OFFSET);
 
 	memcpy_toio(h2d, msg, sizeof(struct ipc_header));
-	memcpy_toio(h2d + sizeof(struct ipc_header), (u32 *)msg->i_data,
+	memcpy_toio(h2d + sizeof(struct ipc_header), (u8 *)msg->i_data,
 		    sizeof(struct msg_info) + sizeof(uint32_t));
 
 	writel(0x1, tsseipc->virt_addr + HOST2MAIN_INTR_SET_OFFSET);
@@ -168,13 +137,15 @@ static void tsse_ipc_bh_handler(unsigned long data)
 	struct tsse_ipc *tsseipc = (struct tsse_ipc *)data;
 
 	void __iomem *d2h_payload = tsseipc->virt_addr + MAIN2HOST_IPC_OFFSET;
-	struct tsse_msg *msg_tsse = get_msginf(d2h_payload);
+	struct ipc_msg *msg = get_msginf(d2h_payload);
 
-	if (!msg_tsse) {
+	if (!msg) {
 		dev_err(tsseipc->dev, "get_msginf is NULL\n");
 		return;
 	}
-	msg_rout(tsseipc, msg_tsse);
+	if (service_rout(tsseipc, msg))
+		dev_err(tsseipc->dev, "illegal message class\n");
+	kfree(msg);
 }
 
 int tsse_ipc_init(struct pci_dev *pdev)
@@ -198,12 +169,18 @@ int tsse_ipc_init(struct pci_dev *pdev)
 	rc = request_threaded_irq(pci_irq_vector(pdev, 0), NULL,
 				  tsse_ipc_d2h_irqhandler, IRQF_SHARED,
 				  "pf-ipc", ipc);
+	if (rc) {
+		dev_err(&pdev->dev, "request_threaded_irq failed\n");
+		return rc;
+	}
 	ipc_hw_init(ipc);
-	ipc_init_msg(ipc);
-
+	rc = ipc_init_msg(ipc);
+	if (rc) {
+		dev_err(&pdev->dev, "ipc_init_msg failed\n");
+		tsse_ipc_deinit(tdev);
+	}
 	return rc;
 }
-EXPORT_SYMBOL_GPL(tsse_ipc_init);
 
 void tsse_ipc_deinit(void *tdev_t)
 {
@@ -214,8 +191,23 @@ void tsse_ipc_deinit(void *tdev_t)
 	tdev = tdev_t;
 	tsseipc = tdev->ipc;
 	pdev = tsseipc->pdev;
-	free_irq(pci_irq_vector(pdev, 0), tdev->ipc);
-	return;
-
+	if (tsseipc) {
+		free_irq(pci_irq_vector(pdev, 0), tdev->ipc);
+		tdev->ipc = NULL;
+	}
 }
-EXPORT_SYMBOL_GPL(tsse_ipc_deinit);
+
+int tsse_fw_manual_load_ipc(struct pci_dev *pdev)
+{
+	struct tsse_dev *tdev = pci_to_tsse_dev(pdev);
+	struct tsse_ipc *ipc = tdev->ipc;
+	int rc = -EFAULT;
+
+	if (ipc) {
+		ipc_hw_init(ipc);
+		rc = ipc_init_msg(ipc);
+		if (rc)
+			dev_err(&pdev->dev, "ipc_init_msg failed\n");
+	}
+	return rc;
+}
