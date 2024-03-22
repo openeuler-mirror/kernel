@@ -101,4 +101,24 @@ config MXGBEM_OPTM_WITH_LARGE
           Say Y here if you want to reduce memory cost in large PAGE_SIZE.
 
           If unsure, say N.
+
+config MGBEVF
+	tristate "Mucse(R) 1GbE PCI Express Virtual Function adapters support"
+        depends on PCI
+        help
+          This driver supports Mucse(R) 1GE PCI Express Virtual Function
+	  family of adapters.
+
+          To compile this driver as a module, choose M here. The module
+          will be called rnpgbevf.
+
+config MGBEVF_OPTM_WITH_LARGE
+	bool "Reduce Memory Cost In Large PAGE_SIZE(>8192)"
+	default n
+        depends on MGBEVF
+        help
+          Say Y here if you want to reduce memory cost in large PAGE_SIZE.
+
+          If unsure, say N.
+
 endif # NET_VENDOR_MUCSE
