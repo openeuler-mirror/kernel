@@ -2609,11 +2609,11 @@ skip:
 			return;
 		}
 
-		printk_safe_exit_irqrestore(flags);
-
 		/* Allow panic_cpu to take over the consoles safely */
 		if (abandon_console_lock_in_panic())
 			break;
+
+		printk_safe_exit_irqrestore(flags);
 
 		if (do_cond_resched)
 			cond_resched();
