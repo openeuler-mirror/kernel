@@ -1810,6 +1810,8 @@ static int tcp_zerocopy_receive(struct sock *sk,
 	zc->recv_skip_hint = 0;
 	ret = 0;
 	while (length + PAGE_SIZE <= zc->length) {
+		struct page *page;
+
 		if (zc->recv_skip_hint < PAGE_SIZE) {
 			if (skb) {
 				skb = skb->next;
@@ -1830,7 +1832,9 @@ static int tcp_zerocopy_receive(struct sock *sk,
 				frags++;
 			}
 		}
-		if (frags->size != PAGE_SIZE || frags->page_offset)
+		page = skb_frag_page(frags);
+		if (frags->size != PAGE_SIZE || frags->page_offset ||
+		    PageCompound(page) || page->mapping)
 			break;
 		ret = vm_insert_page(vma, address + length,
 				     skb_frag_page(frags));
