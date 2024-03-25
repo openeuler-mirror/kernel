@@ -6,6 +6,7 @@
 
 #include <linux/pci.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_aperture.h>
 #include <linux/dmaengine.h>
 #include "phytium_display_drv.h"
 #include "phytium_pci.h"
@@ -238,11 +239,29 @@ phytium_pci_private_fini(struct pci_dev *pdev, struct phytium_display_private *p
 	devm_kfree(&pdev->dev, pci_priv);
 }
 
+static int phytium_remove_conflicting_framebuffers(struct pci_dev *pdev)
+{
+	resource_size_t base, size;
+
+	base = pci_resource_start(pdev, 2);
+	size = pci_resource_len(pdev, 2);
+
+	return drm_aperture_remove_conflicting_framebuffers(base, size,
+			&phytium_display_drm_driver);
+
+}
+
 static int phytium_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct phytium_display_private *priv = NULL;
 	struct drm_device *dev = NULL;
 	int ret = 0;
+
+	ret = phytium_remove_conflicting_framebuffers(pdev);
+	if (ret) {
+		DRM_ERROR("failed to remove conflicting phytium framebuffers\n");
+		return ret;
+	}
 
 	dev = drm_dev_alloc(&phytium_display_drm_driver, &pdev->dev);
 	if (IS_ERR(dev)) {
