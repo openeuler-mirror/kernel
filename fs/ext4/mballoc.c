@@ -422,6 +422,9 @@ static void ext4_mb_new_preallocation(struct ext4_allocation_context *ac);
 static bool ext4_mb_good_group(struct ext4_allocation_context *ac,
 			       ext4_group_t group, enum criteria cr);
 
+static void ext4_mb_put_pa(struct ext4_allocation_context *ac,
+			struct super_block *sb, struct ext4_prealloc_space *pa);
+
 static int ext4_try_to_trim_range(struct super_block *sb,
 		struct ext4_buddy *e4b, ext4_grpblk_t start,
 		ext4_grpblk_t max, ext4_grpblk_t minblocks);
@@ -4784,6 +4787,79 @@ ext4_mb_pa_goal_check(struct ext4_allocation_context *ac,
 }
 
 /*
+ * check if found pa is valid
+ */
+static bool ext4_mb_pa_is_valid(struct ext4_allocation_context *ac,
+				struct ext4_prealloc_space *pa)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+	ext4_fsblk_t start;
+	ext4_fsblk_t end;
+	int len;
+
+	if (unlikely(pa->pa_free == 0)) {
+		/*
+		 * We found a valid overlapping pa but couldn't use it because
+		 * it had no free blocks. This should ideally never happen
+		 * because:
+		 *
+		 * 1. When a new inode pa is added to rbtree it must have
+		 *    pa_free > 0 since otherwise we won't actually need
+		 *    preallocation.
+		 *
+		 * 2. An inode pa that is in the rbtree can only have it's
+		 *    pa_free become zero when another thread calls:
+		 *      ext4_mb_new_blocks
+		 *       ext4_mb_use_preallocated
+		 *        ext4_mb_use_inode_pa
+		 *
+		 * 3. Further, after the above calls make pa_free == 0, we will
+		 *    immediately remove it from the rbtree in:
+		 *      ext4_mb_new_blocks
+		 *       ext4_mb_release_context
+		 *        ext4_mb_put_pa
+		 *
+		 * 4. Since the pa_free becoming 0 and pa_free getting removed
+		 * from tree both happen in ext4_mb_new_blocks, which is always
+		 * called with i_data_sem held for data allocations, we can be
+		 * sure that another process will never see a pa in rbtree with
+		 * pa_free == 0.
+		 */
+		ext4_msg(ac->ac_sb, KERN_ERR, "invalid pa, free is 0");
+		return false;
+	}
+
+	start = pa->pa_pstart + (ac->ac_o_ex.fe_logical - pa->pa_lstart);
+	end = min(pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len),
+		  start + EXT4_C2B(sbi, ac->ac_o_ex.fe_len));
+	len = EXT4_NUM_B2C(sbi, end - start);
+
+	if (unlikely(start < pa->pa_pstart)) {
+		ext4_msg(ac->ac_sb, KERN_ERR,
+			 "invalid pa, start(%llu) < pa_pstart(%llu)",
+			 start, pa->pa_pstart);
+		return false;
+	}
+	if (unlikely(end > pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len))) {
+		ext4_msg(ac->ac_sb, KERN_ERR,
+			 "invalid pa, end(%llu) > pa_pstart(%llu) + pa_len(%d)",
+			 end, pa->pa_pstart, EXT4_C2B(sbi, pa->pa_len));
+		return false;
+	}
+	if (unlikely(pa->pa_free < len)) {
+		ext4_msg(ac->ac_sb, KERN_ERR,
+			 "invalid pa, pa_free(%d) < len(%d)", pa->pa_free, len);
+		return false;
+	}
+	if (unlikely(len <= 0)) {
+		ext4_msg(ac->ac_sb, KERN_ERR, "invalid pa, len(%d) <= 0", len);
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * search goal blocks in preallocated space
  */
 static noinline_for_stack bool
@@ -4906,45 +4982,37 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 		goto try_group_pa;
 	}
 
-	if (tmp_pa->pa_free && likely(ext4_mb_pa_goal_check(ac, tmp_pa))) {
+	if (unlikely(!ext4_mb_pa_is_valid(ac, tmp_pa))) {
+		ext4_group_t group;
+
+		tmp_pa->pa_free = 0;
+		atomic_inc(&tmp_pa->pa_count);
+		spin_unlock(&tmp_pa->pa_lock);
+		read_unlock(&ei->i_prealloc_lock);
+
+		ext4_mb_put_pa(ac, ac->ac_sb, tmp_pa);
+		group = ext4_get_group_number(ac->ac_sb, tmp_pa->pa_pstart);
+		ext4_lock_group(ac->ac_sb, group);
+		ext4_mark_group_bitmap_corrupted(ac->ac_sb, group,
+						 EXT4_GROUP_INFO_BBITMAP_CORRUPT);
+		ext4_unlock_group(ac->ac_sb, group);
+		ext4_error(ac->ac_sb, "drop pa and mark group %u block bitmap corrupted",
+			   group);
+		WARN_ON_ONCE(1);
+		goto try_group_pa_unlocked;
+	}
+
+	if (likely(ext4_mb_pa_goal_check(ac, tmp_pa))) {
 		atomic_inc(&tmp_pa->pa_count);
 		ext4_mb_use_inode_pa(ac, tmp_pa);
 		spin_unlock(&tmp_pa->pa_lock);
 		read_unlock(&ei->i_prealloc_lock);
 		return true;
-	} else {
-		/*
-		 * We found a valid overlapping pa but couldn't use it because
-		 * it had no free blocks. This should ideally never happen
-		 * because:
-		 *
-		 * 1. When a new inode pa is added to rbtree it must have
-		 *    pa_free > 0 since otherwise we won't actually need
-		 *    preallocation.
-		 *
-		 * 2. An inode pa that is in the rbtree can only have it's
-		 *    pa_free become zero when another thread calls:
-		 *      ext4_mb_new_blocks
-		 *       ext4_mb_use_preallocated
-		 *        ext4_mb_use_inode_pa
-		 *
-		 * 3. Further, after the above calls make pa_free == 0, we will
-		 *    immediately remove it from the rbtree in:
-		 *      ext4_mb_new_blocks
-		 *       ext4_mb_release_context
-		 *        ext4_mb_put_pa
-		 *
-		 * 4. Since the pa_free becoming 0 and pa_free getting removed
-		 * from tree both happen in ext4_mb_new_blocks, which is always
-		 * called with i_data_sem held for data allocations, we can be
-		 * sure that another process will never see a pa in rbtree with
-		 * pa_free == 0.
-		 */
-		WARN_ON_ONCE(tmp_pa->pa_free == 0);
 	}
 	spin_unlock(&tmp_pa->pa_lock);
 try_group_pa:
 	read_unlock(&ei->i_prealloc_lock);
+try_group_pa_unlocked:
 
 	/* can we use group allocation? */
 	if (!(ac->ac_flags & EXT4_MB_HINT_GROUP_ALLOC))
