@@ -110,7 +110,8 @@ ssize_t iomap_dio_complete(struct iomap_dio *dio)
 	 * zeros from unwritten extents.
 	 */
 	if (!dio->error && dio->size &&
-	    (dio->flags & IOMAP_DIO_WRITE) && inode->i_mapping->nrpages) {
+	    (dio->flags & IOMAP_DIO_WRITE) && inode->i_mapping->nrpages &&
+	    !(dio->flags & IOMAP_DIO_INLINE_COMP)) {
 		int err;
 		err = invalidate_inode_pages2_range(inode->i_mapping,
 				offset >> PAGE_SHIFT,
@@ -124,8 +125,10 @@ ssize_t iomap_dio_complete(struct iomap_dio *dio)
 	 * If this is a DSYNC write, make sure we push it to stable storage now
 	 * that we've written data.
 	 */
-	if (ret > 0 && (dio->flags & IOMAP_DIO_NEED_SYNC))
+	if (ret > 0 && (dio->flags & IOMAP_DIO_NEED_SYNC)) {
+		WARN_ON_ONCE(dio->flags & IOMAP_DIO_INLINE_COMP);
 		ret = generic_write_sync(iocb, ret);
+	}
 
 	kfree(dio);
 
@@ -488,6 +491,10 @@ __iomap_dio_rw(struct kiocb *iocb, struct iov_iter *iter,
 		/* for data sync or sync, we need sync completion processing */
 		if (iocb->ki_flags & IOCB_DSYNC)
 			dio->flags |= IOMAP_DIO_NEED_SYNC;
+		else if (dio_flags & IOMAP_DIO_MAY_INLINE_COMP) {
+			/* writes could complete inline */
+			dio->flags |= IOMAP_DIO_INLINE_COMP;
+		}
 
 		/*
 		 * For datasync only writes, we optimistically try using FUA for

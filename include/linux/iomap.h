@@ -297,6 +297,12 @@ struct iomap_dio_ops {
  */
 #define IOMAP_DIO_FORCE_WAIT	(1 << 0)
 
+/*
+ * DIO will be completed inline unless sync operation is needed after io is
+ * finished.
+ */
+#define IOMAP_DIO_MAY_INLINE_COMP	(1 << 3)
+
 ssize_t iomap_dio_rw(struct kiocb *iocb, struct iov_iter *iter,
 		const struct iomap_ops *ops, const struct iomap_dio_ops *dops,
 		unsigned int dio_flags);
