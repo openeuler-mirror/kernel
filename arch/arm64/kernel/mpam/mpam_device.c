@@ -543,6 +543,7 @@ static void mpam_enable(struct work_struct *work)
 	unsigned long flags;
 	struct mpam_device *dev;
 	bool all_devices_probed = true;
+	static atomic_t once;
 
 	/* Have we probed all the devices? */
 	mutex_lock(&mpam_devices_lock);
@@ -557,7 +558,7 @@ static void mpam_enable(struct work_struct *work)
 	}
 	mutex_unlock(&mpam_devices_lock);
 
-	if (!all_devices_probed)
+	if (!(all_devices_probed && !atomic_fetch_inc(&once)))
 		return;
 
 	mutex_lock(&mpam_devices_lock);
