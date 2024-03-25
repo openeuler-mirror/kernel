@@ -52,7 +52,7 @@ static int fw_send_msg(struct tsse_ipc *tsseipc, struct ipc_msg *msg)
 }
 
 /**
- * Get version information from firmware
+ * get_firmware_version() - Get version information from firmware
  * @fw: firmware pointer
  * @fw_version_out: firmware version string output
  * Return: 0 on success, error code otherwise
@@ -103,9 +103,10 @@ int get_firmware_version(const struct firmware *fw, char *fw_version_out)
 }
 
 /**
- * Firmware service to handle IPC message from mainCPU.
+ * fw_service() - Firmware service to handle IPC message from mainCPU.
  * It will write init or manual load firmware to PCIe BAR and send message back.
- * No return value.
+ * @tsseipc_t: pointer to a structure used for IPC
+ * @msg_t: pointer to IPC message
 */
 void fw_service(void *tsseipc_t, void *msg_t)
 {
@@ -152,7 +153,7 @@ void fw_service(void *tsseipc_t, void *msg_t)
 }
 
 /**
- * Load firmware from /lib/firmware
+ * tsse_fw_load() - Load firmware from /lib/firmware
  * @pdev: pci device
  * @name: firmware file name
  * @fw: pointer to firmware pointer

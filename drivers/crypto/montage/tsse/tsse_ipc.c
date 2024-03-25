@@ -15,8 +15,10 @@
 #include "tsse_service.h"
 
 /**
- * Create ipc_msg and read message from BAR.
+ * get_msginf() - Create ipc_msg and read message from BAR.
  * Return the pointer to ipc_msg, the caller is responsible for free it.
+ * @d2h: device2host memory pointer
+ * Return: new ipc_msg pointer, which points to message read from device
 */
 static struct ipc_msg *get_msginf(void __iomem *d2h)
 {
@@ -80,8 +82,9 @@ void notify_device(struct tsse_ipc *tsseipc)
 }
 
 /**
- * Enable main2host interrupt, cleanup interrupt set value in host2main and main2host.
- * No return value.
+ * ipc_hw_init()- Enable main2host interrupt, cleanup interrupt
+ * set value in host2main and main2host.
+ * @hw_ipc: pointer to a structure used for IPC
 */
 static void ipc_hw_init(struct tsse_ipc *hw_ipc)
 {
