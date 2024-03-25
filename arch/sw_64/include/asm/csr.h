@@ -22,9 +22,15 @@
 #define CSR_DS_STAT		0x48
 #define CSR_SOFTCID		0xc9
 #define CSR_DVA			0x54
+#define CSR_BRRETC		0x5e
+#define CSR_BRFAILC		0x5f
 #define CSR_PTBR_SYS		0x68
 #define CSR_PTBR_USR		0x69
 #define CSR_APTP		0x6a
+#define CSR_IDR_PCCTL		0x7a
+#define CSR_IACC		0x7b
+#define CSR_IMISC		0x7c
+#define CSR_RETIC		0x7f
 #define CSR_CID			0xc4
 #define CSR_WR_FREGS		0xc8
 #define CSR_SHTCLOCK		0xca

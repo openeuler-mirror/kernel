@@ -225,12 +225,18 @@ asmlinkage void do_entInt(unsigned long type, unsigned long vector,
 		handle_irq(type);
 		set_irq_regs(old_regs);
 		return;
+#if defined(CONFIG_SUBARCH_C3B)
 	case INT_PC0:
 		perf_irq(PMC_PC0, regs);
 		return;
 	case INT_PC1:
 		perf_irq(PMC_PC1, regs);
 		return;
+#elif defined(CONFIG_SUBARCH_C4)
+	case INT_PC:
+		perf_irq(PMC_PC0, regs);
+		return;
+#endif
 	case INT_DEV:
 		handle_dev_int(regs);
 		return;
