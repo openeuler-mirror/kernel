@@ -77,7 +77,7 @@ static void superio_com1_init(struct pnp_device *device)
 	pnp_set_logical_device(device);
 	pnp_set_enable(device, 1);
 
-	pnp_write_config(device, 0x60, 0x3);
+	pnp_write_config(device, 0x60, 0x2);
 	pnp_write_config(device, 0x61, 0xf8);
 
 	pnp_write_config(device, 0x70, superio_uart0_irq);
@@ -94,7 +94,7 @@ static void superio_com2_init(struct pnp_device *device)
 	pnp_set_logical_device(device);
 	pnp_set_enable(device, 1);
 
-	pnp_write_config(device, 0x60, 0x2);
+	pnp_write_config(device, 0x60, 0x3);
 	pnp_write_config(device, 0x61, 0xf8);
 
 	pnp_write_config(device, 0x70, superio_uart1_irq);
