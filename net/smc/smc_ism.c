@@ -274,11 +274,20 @@ EXPORT_SYMBOL_GPL(smcd_alloc_dev);
 
 int smcd_register_dev(struct smcd_dev *smcd)
 {
+	int rc;
+
 	spin_lock(&smcd_dev_list.lock);
 	list_add_tail(&smcd->list, &smcd_dev_list.list);
 	spin_unlock(&smcd_dev_list.lock);
 
-	return device_add(&smcd->dev);
+	rc = device_add(&smcd->dev);
+	if (rc) {
+		spin_lock(&smcd_dev_list.lock);
+		list_del(&smcd->list);
+		spin_unlock(&smcd_dev_list.lock);
+	}
+
+	return rc;
 }
 EXPORT_SYMBOL_GPL(smcd_register_dev);
 
