@@ -125,6 +125,8 @@ static void remove_board(struct slot *p_slot, bool safe_removal)
 		/* Ignore link or presence changes caused by power off */
 		atomic_and(~(PCI_EXP_SLTSTA_DLLSC | PCI_EXP_SLTSTA_PDC),
 			   &ctrl->pending_events);
+		p_slot->work.data = p_slot->work.data & ~(PCI_EXP_SLTSTA_PDC |
+			   PCI_EXP_SLTSTA_DLLSC);
 	}
 
 	/* turn off Green LED */
