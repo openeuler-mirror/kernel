@@ -1,23 +1,26 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/*
- * Huawei HiNIC PCI Express Linux driver
+// SPDX-License-Identifier: GPL-2.0
+/* Huawei HiNIC PCI Express Linux driver
  * Copyright(c) 2017 Huawei Technologies Co., Ltd
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * for more details.
+ *
  */
 
-#include <linux/if_vlan.h>
-#include <linux/kernel.h>
+#define pr_fmt(fmt) KBUILD_MODNAME ": [NIC]" fmt
+
 #include <linux/netdevice.h>
-#include <linux/u64_stats_sync.h>
-#include <linux/errno.h>
-#include <linux/types.h>
-#include <linux/pci.h>
-#include <linux/device.h>
-#include <linux/dma-mapping.h>
-#include <linux/slab.h>
-#include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/skbuff.h>
-#include <linux/smp.h>
-#include <asm/byteorder.h>
+#include <linux/interrupt.h>
+#include <linux/device.h>
+#include <linux/pci.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/sctp.h>
@@ -25,33 +28,235 @@
 #include <net/ipv6.h>
 #include <net/checksum.h>
 #include <net/ip6_checksum.h>
+#include <linux/dma-mapping.h>
+#include <linux/types.h>
+#include <linux/u64_stats_sync.h>
 
-#include "hinic_common.h"
-#include "hinic_hw_if.h"
-#include "hinic_hw_wqe.h"
-#include "hinic_hw_wq.h"
-#include "hinic_hw_qp.h"
-#include "hinic_hw_dev.h"
-#include "hinic_dev.h"
+#include "ossl_knl.h"
+#include "hinic_hw.h"
+#include "hinic_hw_mgmt.h"
+#include "hinic_nic_io.h"
+#include "hinic_nic_dev.h"
+#include "hinic_qp.h"
 #include "hinic_tx.h"
+#include "hinic_dbg.h"
 
-#define TX_IRQ_NO_PENDING               0
-#define TX_IRQ_NO_COALESC               0
-#define TX_IRQ_NO_LLI_TIMER             0
-#define TX_IRQ_NO_CREDIT                0
-#define TX_IRQ_NO_RESEND_TIMER          0
+#define MIN_SKB_LEN		32
+#define MAX_PAYLOAD_OFFSET	221
 
-#define CI_UPDATE_NO_PENDING            0
-#define CI_UPDATE_NO_COALESC            0
+#define NIC_QID(q_id, nic_dev)	((q_id) & ((nic_dev)->num_qps - 1))
 
-#define HW_CONS_IDX(sq)                 be16_to_cpu(*(u16 *)((sq)->hw_ci_addr))
+#define TXQ_STATS_INC(txq, field)			\
+{							\
+	u64_stats_update_begin(&(txq)->txq_stats.syncp);	\
+	(txq)->txq_stats.field++;				\
+	u64_stats_update_end(&(txq)->txq_stats.syncp);	\
+}
 
-#define MIN_SKB_LEN			32
+void hinic_txq_get_stats(struct hinic_txq *txq,
+			 struct hinic_txq_stats *stats)
+{
+	struct hinic_txq_stats *txq_stats = &txq->txq_stats;
+	unsigned int start;
 
-#define	MAX_PAYLOAD_OFFSET	        221
-#define TRANSPORT_OFFSET(l4_hdr, skb)	((u32)((l4_hdr) - (skb)->data))
+	u64_stats_update_begin(&stats->syncp);
+	do {
+		start = u64_stats_fetch_begin(&txq_stats->syncp);
+		stats->bytes = txq_stats->bytes;
+		stats->packets = txq_stats->packets;
+		stats->busy = txq_stats->busy;
+		stats->wake = txq_stats->wake;
+		stats->dropped = txq_stats->dropped;
+		stats->big_frags_pkts = txq_stats->big_frags_pkts;
+		stats->big_udp_pkts = txq_stats->big_udp_pkts;
+	} while (u64_stats_fetch_retry(&txq_stats->syncp, start));
+	u64_stats_update_end(&stats->syncp);
+}
 
-union hinic_l3 {
+void hinic_txq_clean_stats(struct hinic_txq_stats *txq_stats)
+{
+	u64_stats_update_begin(&txq_stats->syncp);
+	txq_stats->bytes = 0;
+	txq_stats->packets = 0;
+	txq_stats->busy = 0;
+	txq_stats->wake = 0;
+	txq_stats->dropped = 0;
+	txq_stats->big_frags_pkts = 0;
+	txq_stats->big_udp_pkts = 0;
+
+	txq_stats->ufo_pkt_unsupport = 0;
+	txq_stats->ufo_linearize_err = 0;
+	txq_stats->ufo_alloc_skb_err = 0;
+	txq_stats->skb_pad_err = 0;
+	txq_stats->frag_len_overflow = 0;
+	txq_stats->offload_cow_skb_err = 0;
+	txq_stats->alloc_cpy_frag_err = 0;
+	txq_stats->map_cpy_frag_err = 0;
+	txq_stats->map_frag_err = 0;
+	txq_stats->frag_size_err = 0;
+	txq_stats->unknown_tunnel_pkt = 0;
+	u64_stats_update_end(&txq_stats->syncp);
+}
+
+static void txq_stats_init(struct hinic_txq *txq)
+{
+	struct hinic_txq_stats *txq_stats = &txq->txq_stats;
+
+	u64_stats_init(&txq_stats->syncp);
+	hinic_txq_clean_stats(txq_stats);
+}
+
+inline void hinic_set_buf_desc(struct hinic_sq_bufdesc *buf_descs,
+			      dma_addr_t addr, u32 len)
+{
+	buf_descs->hi_addr = cpu_to_be32(upper_32_bits(addr));
+	buf_descs->lo_addr = cpu_to_be32(lower_32_bits(addr));
+	buf_descs->len  = cpu_to_be32(len);
+}
+
+static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
+		      struct hinic_txq *txq, struct hinic_tx_info *tx_info,
+		      struct hinic_sq_bufdesc *buf_descs, u16 skb_nr_frags)
+{
+	struct pci_dev *pdev = nic_dev->pdev;
+	struct hinic_dma_len *dma_len = tx_info->dma_len;
+	skb_frag_t *frag = NULL;
+	u16 base_nr_frags;
+	int j, i = 0;
+	int node, err = 0;
+	u32 nsize, cpy_nsize = 0;
+	u8 *vaddr, *cpy_buff = NULL;
+
+	if (unlikely(skb_nr_frags > HINIC_MAX_SKB_NR_FRAGE)) {
+		for (i = HINIC_MAX_SKB_NR_FRAGE; i <= skb_nr_frags; i++)
+			cpy_nsize +=
+				skb_frag_size(&skb_shinfo(skb)->frags[i - 1]);
+		if (!cpy_nsize) {
+			TXQ_STATS_INC(txq, alloc_cpy_frag_err);
+			return -EINVAL;
+		}
+
+		node = dev_to_node(&nic_dev->pdev->dev);
+		if (node == NUMA_NO_NODE)
+			cpy_buff = kzalloc(cpy_nsize,
+					   GFP_ATOMIC | __GFP_NOWARN);
+		else
+			cpy_buff = kzalloc_node(cpy_nsize,
+						GFP_ATOMIC | __GFP_NOWARN,
+						node);
+
+		if (!cpy_buff) {
+			TXQ_STATS_INC(txq, alloc_cpy_frag_err);
+			return -ENOMEM;
+		}
+
+		tx_info->cpy_buff = cpy_buff;
+
+		for (i = HINIC_MAX_SKB_NR_FRAGE; i <= skb_nr_frags; i++) {
+			frag = &skb_shinfo(skb)->frags[i - 1];
+			nsize = skb_frag_size(frag);
+
+			vaddr = kmap_local_page(skb_frag_page(frag));
+			memcpy(cpy_buff, vaddr + frag->bv_offset, nsize);
+			kunmap_local(vaddr);
+			cpy_buff += nsize;
+		}
+	}
+
+	dma_len[0].dma = dma_map_single(&pdev->dev, skb->data,
+					skb_headlen(skb), DMA_TO_DEVICE);
+	if (dma_mapping_error(&pdev->dev, dma_len[0].dma)) {
+		TXQ_STATS_INC(txq, map_frag_err);
+		err = -EFAULT;
+		goto map_single_err;
+	}
+	dma_len[0].len = skb_headlen(skb);
+	hinic_set_buf_desc(&buf_descs[0], dma_len[0].dma,
+			   dma_len[0].len);
+
+	if (skb_nr_frags > HINIC_MAX_SKB_NR_FRAGE)
+		base_nr_frags = HINIC_MAX_SKB_NR_FRAGE - 1;
+	else
+		base_nr_frags = skb_nr_frags;
+
+	for (i = 0; i < base_nr_frags; ) {
+		frag = &(skb_shinfo(skb)->frags[i]);
+		nsize = skb_frag_size(frag);
+		i++;
+		dma_len[i].dma = skb_frag_dma_map(&pdev->dev, frag, 0,
+						  nsize, DMA_TO_DEVICE);
+		if (dma_mapping_error(&pdev->dev, dma_len[i].dma)) {
+			TXQ_STATS_INC(txq, map_frag_err);
+			i--;
+			err = -EFAULT;
+			goto frag_map_err;
+		}
+		dma_len[i].len = nsize;
+
+		hinic_set_buf_desc(&buf_descs[i], dma_len[i].dma,
+				   dma_len[i].len);
+	}
+
+	if (skb_nr_frags > HINIC_MAX_SKB_NR_FRAGE) {
+		dma_len[HINIC_MAX_SKB_NR_FRAGE].dma =
+				dma_map_single(&pdev->dev, tx_info->cpy_buff,
+					       cpy_nsize, DMA_TO_DEVICE);
+		if (dma_mapping_error(&pdev->dev,
+				      dma_len[HINIC_MAX_SKB_NR_FRAGE].dma)) {
+			TXQ_STATS_INC(txq, map_cpy_frag_err);
+			err = -EFAULT;
+			goto fusion_map_err;
+		}
+
+		dma_len[HINIC_MAX_SKB_NR_FRAGE].len = cpy_nsize;
+		hinic_set_buf_desc(&buf_descs[HINIC_MAX_SKB_NR_FRAGE],
+				   dma_len[HINIC_MAX_SKB_NR_FRAGE].dma,
+				   dma_len[HINIC_MAX_SKB_NR_FRAGE].len);
+	}
+
+	return 0;
+
+fusion_map_err:
+frag_map_err:
+	for (j = 0; j < i;) {
+		j++;
+		dma_unmap_page(&pdev->dev, dma_len[j].dma,
+			       dma_len[j].len, DMA_TO_DEVICE);
+	}
+	dma_unmap_single(&pdev->dev, dma_len[0].dma, dma_len[0].len,
+			 DMA_TO_DEVICE);
+
+map_single_err:
+	kfree(tx_info->cpy_buff);
+	tx_info->cpy_buff = NULL;
+
+	return err;
+}
+
+static inline void tx_unmap_skb(struct hinic_nic_dev *nic_dev,
+				struct sk_buff *skb,
+				struct hinic_dma_len *dma_len,
+				u16 valid_nr_frags)
+{
+	struct pci_dev *pdev = nic_dev->pdev;
+	int i;
+	u16 nr_frags = valid_nr_frags;
+
+	if (nr_frags > HINIC_MAX_SKB_NR_FRAGE)
+		nr_frags = HINIC_MAX_SKB_NR_FRAGE;
+
+	for (i = 0; i < nr_frags; ) {
+		i++;
+		dma_unmap_page(&pdev->dev,
+			       dma_len[i].dma,
+			       dma_len[i].len, DMA_TO_DEVICE);
+	}
+
+	dma_unmap_single(&pdev->dev, dma_len[0].dma,
+			 dma_len[0].len, DMA_TO_DEVICE);
+}
+
+union hinic_ip {
 	struct iphdr *v4;
 	struct ipv6hdr *v6;
 	unsigned char *hdr;
@@ -63,182 +268,49 @@ union hinic_l4 {
 	unsigned char *hdr;
 };
 
-enum hinic_offload_type {
-	TX_OFFLOAD_TSO     = BIT(0),
-	TX_OFFLOAD_CSUM    = BIT(1),
-	TX_OFFLOAD_VLAN    = BIT(2),
-	TX_OFFLOAD_INVALID = BIT(3),
-};
+#define TRANSPORT_OFFSET(l4_hdr, skb)	((u32)((l4_hdr) - (skb)->data))
 
-/**
- * hinic_txq_clean_stats - Clean the statistics of specific queue
- * @txq: Logical Tx Queue
- **/
-static void hinic_txq_clean_stats(struct hinic_txq *txq)
-{
-	struct hinic_txq_stats *txq_stats = &txq->txq_stats;
-
-	u64_stats_update_begin(&txq_stats->syncp);
-	txq_stats->pkts    = 0;
-	txq_stats->bytes   = 0;
-	txq_stats->tx_busy = 0;
-	txq_stats->tx_wake = 0;
-	txq_stats->tx_dropped = 0;
-	txq_stats->big_frags_pkts = 0;
-	u64_stats_update_end(&txq_stats->syncp);
-}
-
-/**
- * hinic_txq_get_stats - get statistics of Tx Queue
- * @txq: Logical Tx Queue
- * @stats: return updated stats here
- **/
-void hinic_txq_get_stats(struct hinic_txq *txq, struct hinic_txq_stats *stats)
-{
-	struct hinic_txq_stats *txq_stats = &txq->txq_stats;
-	unsigned int start;
-
-	do {
-		start = u64_stats_fetch_begin(&txq_stats->syncp);
-		stats->pkts    = txq_stats->pkts;
-		stats->bytes   = txq_stats->bytes;
-		stats->tx_busy = txq_stats->tx_busy;
-		stats->tx_wake = txq_stats->tx_wake;
-		stats->tx_dropped = txq_stats->tx_dropped;
-		stats->big_frags_pkts = txq_stats->big_frags_pkts;
-	} while (u64_stats_fetch_retry(&txq_stats->syncp, start));
-}
-
-/**
- * txq_stats_init - Initialize the statistics of specific queue
- * @txq: Logical Tx Queue
- **/
-static void txq_stats_init(struct hinic_txq *txq)
-{
-	struct hinic_txq_stats *txq_stats = &txq->txq_stats;
-
-	u64_stats_init(&txq_stats->syncp);
-	hinic_txq_clean_stats(txq);
-}
-
-/**
- * tx_map_skb - dma mapping for skb and return sges
- * @nic_dev: nic device
- * @skb: the skb
- * @sges: returned sges
- *
- * Return 0 - Success, negative - Failure
- **/
-static int tx_map_skb(struct hinic_dev *nic_dev, struct sk_buff *skb,
-		      struct hinic_sge *sges)
-{
-	struct hinic_hwdev *hwdev = nic_dev->hwdev;
-	struct hinic_hwif *hwif = hwdev->hwif;
-	struct pci_dev *pdev = hwif->pdev;
-	skb_frag_t *frag;
-	dma_addr_t dma_addr;
-	int i, j;
-
-	dma_addr = dma_map_single(&pdev->dev, skb->data, skb_headlen(skb),
-				  DMA_TO_DEVICE);
-	if (dma_mapping_error(&pdev->dev, dma_addr)) {
-		dev_err(&pdev->dev, "Failed to map Tx skb data\n");
-		return -EFAULT;
-	}
-
-	hinic_set_sge(&sges[0], dma_addr, skb_headlen(skb));
-
-	for (i = 0 ; i < skb_shinfo(skb)->nr_frags; i++) {
-		frag = &skb_shinfo(skb)->frags[i];
-
-		dma_addr = skb_frag_dma_map(&pdev->dev, frag, 0,
-					    skb_frag_size(frag),
-					    DMA_TO_DEVICE);
-		if (dma_mapping_error(&pdev->dev, dma_addr)) {
-			dev_err(&pdev->dev, "Failed to map Tx skb frag\n");
-			goto err_tx_map;
-		}
-
-		hinic_set_sge(&sges[i + 1], dma_addr, skb_frag_size(frag));
-	}
-
-	return 0;
-
-err_tx_map:
-	for (j = 0; j < i; j++)
-		dma_unmap_page(&pdev->dev, hinic_sge_to_dma(&sges[j + 1]),
-			       sges[j + 1].len, DMA_TO_DEVICE);
-
-	dma_unmap_single(&pdev->dev, hinic_sge_to_dma(&sges[0]), sges[0].len,
-			 DMA_TO_DEVICE);
-	return -EFAULT;
-}
-
-/**
- * tx_unmap_skb - unmap the dma address of the skb
- * @nic_dev: nic device
- * @skb: the skb
- * @sges: the sges that are connected to the skb
- **/
-static void tx_unmap_skb(struct hinic_dev *nic_dev, struct sk_buff *skb,
-			 struct hinic_sge *sges)
-{
-	struct hinic_hwdev *hwdev = nic_dev->hwdev;
-	struct hinic_hwif *hwif = hwdev->hwif;
-	struct pci_dev *pdev = hwif->pdev;
-	int i;
-
-	for (i = 0; i < skb_shinfo(skb)->nr_frags ; i++)
-		dma_unmap_page(&pdev->dev, hinic_sge_to_dma(&sges[i + 1]),
-			       sges[i + 1].len, DMA_TO_DEVICE);
-
-	dma_unmap_single(&pdev->dev, hinic_sge_to_dma(&sges[0]), sges[0].len,
-			 DMA_TO_DEVICE);
-}
-
-static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic_l3 *ip,
+static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic_ip *ip,
 				 union hinic_l4 *l4,
-				 enum hinic_offload_type offload_type,
-				 enum hinic_l3_offload_type *l3_type,
-				 u8 *l4_proto)
+				 enum tx_offload_type offload_type,
+				 enum sq_l3_type *l3_type, u8 *l4_proto)
 {
-	u8 *exthdr;
+	unsigned char *exthdr;
 
 	if (ip->v4->version == 4) {
 		*l3_type = (offload_type == TX_OFFLOAD_CSUM) ?
-			   IPV4_PKT_NO_CHKSUM_OFFLOAD :
-			   IPV4_PKT_WITH_CHKSUM_OFFLOAD;
+		  IPV4_PKT_NO_CHKSUM_OFFLOAD : IPV4_PKT_WITH_CHKSUM_OFFLOAD;
 		*l4_proto = ip->v4->protocol;
 	} else if (ip->v4->version == 6) {
 		*l3_type = IPV6_PKT;
 		exthdr = ip->hdr + sizeof(*ip->v6);
 		*l4_proto = ip->v6->nexthdr;
 		if (exthdr != l4->hdr) {
-			int start = exthdr - skb->data;
-			__be16 frag_off;
+			__be16 frag_off = 0;
 
-			ipv6_skip_exthdr(skb, start, l4_proto, &frag_off);
+			ipv6_skip_exthdr(skb, (int)(exthdr - skb->data),
+					 l4_proto, &frag_off);
 		}
 	} else {
-		*l3_type = L3TYPE_UNKNOWN;
+		*l3_type = UNKNOWN_L3TYPE;
 		*l4_proto = 0;
 	}
 }
 
 static void get_inner_l4_info(struct sk_buff *skb, union hinic_l4 *l4,
-			      enum hinic_offload_type offload_type, u8 l4_proto,
-			      enum hinic_l4_offload_type *l4_offload,
+			      enum tx_offload_type offload_type, u8 l4_proto,
+			      enum sq_l4offload_type *l4_offload,
 			      u32 *l4_len, u32 *offset)
 {
-	*l4_offload = OFFLOAD_DISABLE;
 	*offset = 0;
 	*l4_len = 0;
+	*l4_offload = OFFLOAD_DISABLE;
 
 	switch (l4_proto) {
 	case IPPROTO_TCP:
 		*l4_offload = TCP_OFFLOAD_ENABLE;
-		/* doff in unit of 4B */
-		*l4_len = l4->tcp->doff * 4;
+		*l4_len = l4->tcp->doff * 4; /* doff in unit of 4B */
+		/* To keep same with TSO, payload offset begins from paylaod */
 		*offset = *l4_len + TRANSPORT_OFFSET(l4->hdr, skb);
 		break;
 
@@ -255,6 +327,9 @@ static void get_inner_l4_info(struct sk_buff *skb, union hinic_l4 *l4,
 
 		*l4_offload = SCTP_OFFLOAD_ENABLE;
 		*l4_len = sizeof(struct sctphdr);
+		/* To keep same with UFO, payload offset
+		 * begins from L4 header
+		 */
 		*offset = TRANSPORT_OFFSET(l4->hdr, skb);
 		break;
 
@@ -263,102 +338,15 @@ static void get_inner_l4_info(struct sk_buff *skb, union hinic_l4 *l4,
 	}
 }
 
-static __sum16 csum_magic(union hinic_l3 *ip, unsigned short proto)
+static int hinic_tx_csum(struct hinic_txq *txq, struct hinic_sq_task *task,
+			 u32 *queue_info, struct sk_buff *skb)
 {
-	return (ip->v4->version == 4) ?
-		csum_tcpudp_magic(ip->v4->saddr, ip->v4->daddr, 0, proto, 0) :
-		csum_ipv6_magic(&ip->v6->saddr, &ip->v6->daddr, 0, proto, 0);
-}
-
-static int offload_tso(struct hinic_sq_task *task, u32 *queue_info,
-		       struct sk_buff *skb)
-{
-	u32 offset, l4_len, ip_identify, network_hdr_len;
-	enum hinic_l3_offload_type l3_offload;
-	enum hinic_l4_offload_type l4_offload;
-	union hinic_l3 ip;
+	union hinic_ip ip;
 	union hinic_l4 l4;
-	u8 l4_proto;
-
-	if (!skb_is_gso(skb))
-		return 0;
-
-	if (skb_cow_head(skb, 0) < 0)
-		return -EPROTONOSUPPORT;
-
-	if (skb->encapsulation) {
-		u32 gso_type = skb_shinfo(skb)->gso_type;
-		u32 tunnel_type = 0;
-		u32 l4_tunnel_len;
-
-		ip.hdr = skb_network_header(skb);
-		l4.hdr = skb_transport_header(skb);
-		network_hdr_len = skb_inner_network_header_len(skb);
-
-		if (ip.v4->version == 4) {
-			ip.v4->tot_len = 0;
-			l3_offload = IPV4_PKT_WITH_CHKSUM_OFFLOAD;
-		} else if (ip.v4->version == 6) {
-			l3_offload = IPV6_PKT;
-		} else {
-			l3_offload = 0;
-		}
-
-		hinic_task_set_outter_l3(task, l3_offload,
-					 skb_network_header_len(skb));
-
-		if (gso_type & SKB_GSO_UDP_TUNNEL_CSUM) {
-			l4.udp->check = ~csum_magic(&ip, IPPROTO_UDP);
-			tunnel_type = TUNNEL_UDP_CSUM;
-		} else if (gso_type & SKB_GSO_UDP_TUNNEL) {
-			tunnel_type = TUNNEL_UDP_NO_CSUM;
-		}
-
-		l4_tunnel_len = skb_inner_network_offset(skb) -
-				skb_transport_offset(skb);
-		hinic_task_set_tunnel_l4(task, tunnel_type, l4_tunnel_len);
-
-		ip.hdr = skb_inner_network_header(skb);
-		l4.hdr = skb_inner_transport_header(skb);
-	} else {
-		ip.hdr = skb_network_header(skb);
-		l4.hdr = skb_transport_header(skb);
-		network_hdr_len = skb_network_header_len(skb);
-	}
-
-	/* initialize inner IP header fields */
-	if (ip.v4->version == 4)
-		ip.v4->tot_len = 0;
-	else
-		ip.v6->payload_len = 0;
-
-	get_inner_l3_l4_type(skb, &ip, &l4, TX_OFFLOAD_TSO, &l3_offload,
-			     &l4_proto);
-
-	hinic_task_set_inner_l3(task, l3_offload, network_hdr_len);
-
-	ip_identify = 0;
-	if (l4_proto == IPPROTO_TCP)
-		l4.tcp->check = ~csum_magic(&ip, IPPROTO_TCP);
-
-	get_inner_l4_info(skb, &l4, TX_OFFLOAD_TSO, l4_proto, &l4_offload,
-			  &l4_len, &offset);
-
-	hinic_set_tso_inner_l4(task, queue_info, l4_offload, l4_len, offset,
-			       ip_identify, skb_shinfo(skb)->gso_size);
-
-	return 1;
-}
-
-static int offload_csum(struct hinic_sq_task *task, u32 *queue_info,
-			struct sk_buff *skb)
-{
-	enum hinic_l4_offload_type l4_offload;
-	u32 offset, l4_len, network_hdr_len;
-	enum hinic_l3_offload_type l3_type;
-	u32 tunnel_type = NOT_TUNNEL;
-	union hinic_l3 ip;
-	union hinic_l4 l4;
+	enum sq_l3_type l3_type;
+	enum sq_l4offload_type l4_offload;
+	u32 network_hdr_len;
+	u32 offset, l4_len;
 	u8 l4_proto;
 
 	if (skb->ip_summed != CHECKSUM_PARTIAL)
@@ -366,8 +354,8 @@ static int offload_csum(struct hinic_sq_task *task, u32 *queue_info,
 
 	if (skb->encapsulation) {
 		u32 l4_tunnel_len;
+		u32 tunnel_type = TUNNEL_UDP_NO_CSUM;
 
-		tunnel_type = TUNNEL_UDP_NO_CSUM;
 		ip.hdr = skb_network_header(skb);
 
 		if (ip.v4->version == 4) {
@@ -378,7 +366,6 @@ static int offload_csum(struct hinic_sq_task *task, u32 *queue_info,
 			__be16 frag_off;
 
 			l3_type = IPV6_PKT;
-			tunnel_type = TUNNEL_UDP_CSUM;
 			exthdr = ip.hdr + sizeof(*ip.v6);
 			l4_proto = ip.v6->nexthdr;
 			l4.hdr = skb_transport_header(skb);
@@ -386,7 +373,7 @@ static int offload_csum(struct hinic_sq_task *task, u32 *queue_info,
 				ipv6_skip_exthdr(skb, exthdr - skb->data,
 						 &l4_proto, &frag_off);
 		} else {
-			l3_type = L3TYPE_UNKNOWN;
+			l3_type = UNKNOWN_L3TYPE;
 			l4_proto = IPPROTO_RAW;
 		}
 
@@ -411,7 +398,8 @@ static int offload_csum(struct hinic_sq_task *task, u32 *queue_info,
 			network_hdr_len = skb_network_header_len(skb);
 			break;
 		default:
-			/* Unsupported tunnel packet, disable csum offload */
+			TXQ_STATS_INC(txq, unknown_tunnel_pkt);
+			/* Unsupport tunnel packet, disable csum offload */
 			skb_checksum_help(skb);
 			return 0;
 		}
@@ -422,513 +410,737 @@ static int offload_csum(struct hinic_sq_task *task, u32 *queue_info,
 		l4.hdr = skb_transport_header(skb);
 		network_hdr_len = skb_network_header_len(skb);
 	}
+	get_inner_l3_l4_type(skb, &ip, &l4, TX_OFFLOAD_CSUM,
+			     &l3_type, &l4_proto);
 
-	get_inner_l3_l4_type(skb, &ip, &l4, TX_OFFLOAD_CSUM, &l3_type,
-			     &l4_proto);
+	get_inner_l4_info(skb, &l4, TX_OFFLOAD_CSUM, l4_proto,
+			  &l4_offload, &l4_len, &offset);
 
 	hinic_task_set_inner_l3(task, l3_type, network_hdr_len);
-
-	get_inner_l4_info(skb, &l4, TX_OFFLOAD_CSUM, l4_proto, &l4_offload,
-			  &l4_len, &offset);
 
 	hinic_set_cs_inner_l4(task, queue_info, l4_offload, l4_len, offset);
 
 	return 1;
 }
 
-static void offload_vlan(struct hinic_sq_task *task, u32 *queue_info,
-			 u16 vlan_tag, u16 vlan_pri)
+static __sum16 csum_magic(union hinic_ip *ip, unsigned short proto)
 {
-	task->pkt_info0 |= HINIC_SQ_TASK_INFO0_SET(vlan_tag, VLAN_TAG) |
-				HINIC_SQ_TASK_INFO0_SET(1U, VLAN_OFFLOAD);
-
-	*queue_info |= HINIC_SQ_CTRL_SET(vlan_pri, QUEUE_INFO_PRI);
+	return (ip->v4->version == 4) ?
+		csum_tcpudp_magic(ip->v4->saddr, ip->v4->daddr, 0, proto, 0) :
+		csum_ipv6_magic(&ip->v6->saddr, &ip->v6->daddr, 0, proto, 0);
 }
 
-static int hinic_tx_offload(struct sk_buff *skb, struct hinic_sq_task *task,
-			    u32 *queue_info)
+static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
+		     struct sk_buff *skb)
 {
-	enum hinic_offload_type offload = 0;
-	u16 vlan_tag;
-	int enabled;
+	union hinic_ip ip;
+	union hinic_l4 l4;
+	enum sq_l3_type l3_type;
+	enum sq_l4offload_type l4_offload;
+	u32 network_hdr_len;
+	u32 offset, l4_len;
+	u32 ip_identify = 0;
+	u8 l4_proto;
+	int err;
 
-	enabled = offload_tso(task, queue_info, skb);
-	if (enabled > 0) {
-		offload |= TX_OFFLOAD_TSO;
-	} else if (enabled == 0) {
-		enabled = offload_csum(task, queue_info, skb);
-		if (enabled)
-			offload |= TX_OFFLOAD_CSUM;
+	if (!skb_is_gso(skb))
+		return 0;
+
+	err = skb_cow_head(skb, 0);
+	if (err < 0)
+		return err;
+
+	if (skb->encapsulation) {
+		u32 l4_tunnel_len;
+		u32 tunnel_type = 0;
+		u32 gso_type = skb_shinfo(skb)->gso_type;
+
+		ip.hdr = skb_network_header(skb);
+		l4.hdr = skb_transport_header(skb);
+		network_hdr_len = skb_inner_network_header_len(skb);
+
+		if (ip.v4->version == 4)
+			l3_type = IPV4_PKT_WITH_CHKSUM_OFFLOAD;
+		else if (ip.v4->version == 6)
+			l3_type = IPV6_PKT;
+		else
+			l3_type = 0;
+
+		hinic_task_set_outter_l3(task, l3_type,
+					 skb_network_header_len(skb));
+
+		if (gso_type & SKB_GSO_UDP_TUNNEL_CSUM) {
+			l4.udp->check = ~csum_magic(&ip, IPPROTO_UDP);
+			tunnel_type = TUNNEL_UDP_CSUM;
+		} else if (gso_type & SKB_GSO_UDP_TUNNEL) {
+			tunnel_type = TUNNEL_UDP_NO_CSUM;
+		}
+
+		l4_tunnel_len = skb_inner_network_offset(skb) -
+				skb_transport_offset(skb);
+		hinic_task_set_tunnel_l4(task, tunnel_type, l4_tunnel_len);
+
+		ip.hdr = skb_inner_network_header(skb);
+		l4.hdr = skb_inner_transport_header(skb);
 	} else {
-		return -EPROTONOSUPPORT;
+		ip.hdr = skb_network_header(skb);
+		l4.hdr = skb_transport_header(skb);
+		network_hdr_len = skb_network_header_len(skb);
+	}
+
+	get_inner_l3_l4_type(skb, &ip, &l4, TX_OFFLOAD_TSO,
+			     &l3_type, &l4_proto);
+
+	if (l4_proto == IPPROTO_TCP)
+		l4.tcp->check = ~csum_magic(&ip, IPPROTO_TCP);
+
+	get_inner_l4_info(skb, &l4, TX_OFFLOAD_TSO, l4_proto,
+			  &l4_offload, &l4_len, &offset);
+
+	hinic_task_set_inner_l3(task, l3_type, network_hdr_len);
+
+	hinic_set_tso_inner_l4(task, queue_info, l4_offload, l4_len,
+			       offset, ip_identify, skb_shinfo(skb)->gso_size);
+
+	return 1;
+}
+
+static enum tx_offload_type hinic_tx_offload(struct hinic_txq *txq,
+					     struct sk_buff *skb,
+					     struct hinic_sq_task *task,
+					     u32 *queue_info, u8 avd_flag)
+{
+	enum tx_offload_type offload = 0;
+	int tso_cs_en;
+	u16 vlan_tag;
+
+	task->pkt_info0 = 0;
+	task->pkt_info1 = 0;
+	task->pkt_info2 = 0;
+
+	tso_cs_en = hinic_tso(task, queue_info, skb);
+	if (tso_cs_en < 0) {
+		offload = TX_OFFLOAD_INVALID;
+		return offload;
+	} else if (tso_cs_en) {
+		offload |= TX_OFFLOAD_TSO;
+	} else {
+		tso_cs_en = hinic_tx_csum(txq, task, queue_info, skb);
+		if (tso_cs_en)
+			offload |= TX_OFFLOAD_CSUM;
 	}
 
 	if (unlikely(skb_vlan_tag_present(skb))) {
 		vlan_tag = skb_vlan_tag_get(skb);
-		offload_vlan(task, queue_info, vlan_tag,
-			     vlan_tag >> VLAN_PRIO_SHIFT);
+		hinic_set_vlan_tx_offload(task, queue_info, vlan_tag,
+					  vlan_tag >> VLAN_PRIO_SHIFT);
 		offload |= TX_OFFLOAD_VLAN;
 	}
 
-	if (offload)
-		hinic_task_set_l2hdr(task, skb_network_offset(skb));
-
-	/* payload offset should not more than 221 */
-	if (HINIC_SQ_CTRL_GET(*queue_info, QUEUE_INFO_PLDOFF) >
-	    MAX_PAYLOAD_OFFSET) {
-		return -EPROTONOSUPPORT;
+	if (unlikely(SQ_CTRL_QUEUE_INFO_GET(*queue_info, PLDOFF) >
+		     MAX_PAYLOAD_OFFSET)) {
+		offload = TX_OFFLOAD_INVALID;
+		return offload;
 	}
 
-	/* mss should not less than 80 */
-	if (HINIC_SQ_CTRL_GET(*queue_info, QUEUE_INFO_MSS) < HINIC_MSS_MIN) {
-		*queue_info = HINIC_SQ_CTRL_CLEAR(*queue_info, QUEUE_INFO_MSS);
-		*queue_info |= HINIC_SQ_CTRL_SET(HINIC_MSS_MIN, QUEUE_INFO_MSS);
+	if (avd_flag == HINIC_TX_UFO_AVD)
+		task->pkt_info0 |= SQ_TASK_INFO0_SET(1, UFO_AVD);
+
+	if (offload) {
+		hinic_task_set_tx_offload_valid(task, skb_network_offset(skb));
+		task->pkt_info0 = be32_to_cpu(task->pkt_info0);
+		task->pkt_info1 = be32_to_cpu(task->pkt_info1);
+		task->pkt_info2 = be32_to_cpu(task->pkt_info2);
 	}
 
-	return 0;
+	return offload;
 }
 
-netdev_tx_t hinic_lb_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
+static inline void __get_pkt_stats(struct hinic_tx_info *tx_info,
+				   struct sk_buff *skb)
 {
-	struct hinic_dev *nic_dev = netdev_priv(netdev);
-	u16 prod_idx, q_id = skb->queue_mapping;
-	struct netdev_queue *netdev_txq;
-	int nr_sges, err = NETDEV_TX_OK;
-	struct hinic_sq_wqe *sq_wqe;
-	unsigned int wqe_size;
-	struct hinic_txq *txq;
-	struct hinic_qp *qp;
+	u32 ihs, hdr_len;
 
-	txq = &nic_dev->txqs[q_id];
-	qp = container_of(txq->sq, struct hinic_qp, sq);
-	nr_sges = skb_shinfo(skb)->nr_frags + 1;
-
-	err = tx_map_skb(nic_dev, skb, txq->sges);
-	if (err)
-		goto skb_error;
-
-	wqe_size = HINIC_SQ_WQE_SIZE(nr_sges);
-
-	sq_wqe = hinic_sq_get_wqe(txq->sq, wqe_size, &prod_idx);
-	if (!sq_wqe) {
-		netif_stop_subqueue(netdev, qp->q_id);
-
-		sq_wqe = hinic_sq_get_wqe(txq->sq, wqe_size, &prod_idx);
-		if (sq_wqe) {
-			netif_wake_subqueue(nic_dev->netdev, qp->q_id);
-			goto process_sq_wqe;
+	if (skb_is_gso(skb)) {
+#if (defined(HAVE_SKB_INNER_TRANSPORT_HEADER) && \
+	defined(HAVE_SK_BUFF_ENCAPSULATION))
+		if (skb->encapsulation) {
+#ifdef HAVE_SKB_INNER_TRANSPORT_OFFSET
+			ihs = skb_inner_transport_offset(skb) +
+			      inner_tcp_hdrlen(skb);
+#else
+			ihs = (skb_inner_transport_header(skb) - skb->data) +
+			      inner_tcp_hdrlen(skb);
+#endif
+		} else {
+#endif
+			ihs = skb_transport_offset(skb) + tcp_hdrlen(skb);
+#if (defined(HAVE_SKB_INNER_TRANSPORT_HEADER) && \
+	defined(HAVE_SK_BUFF_ENCAPSULATION))
 		}
+#endif
+		hdr_len = (skb_shinfo(skb)->gso_segs - 1) * ihs;
+		tx_info->num_bytes = skb->len + (u64)hdr_len;
 
-		tx_unmap_skb(nic_dev, skb, txq->sges);
-
-		u64_stats_update_begin(&txq->txq_stats.syncp);
-		txq->txq_stats.tx_busy++;
-		u64_stats_update_end(&txq->txq_stats.syncp);
-		err = NETDEV_TX_BUSY;
-		wqe_size = 0;
-		goto flush_skbs;
+	} else {
+		tx_info->num_bytes = skb->len > ETH_ZLEN ? skb->len : ETH_ZLEN;
 	}
 
-process_sq_wqe:
-	hinic_sq_prepare_wqe(txq->sq, sq_wqe, txq->sges, nr_sges);
-	hinic_sq_write_wqe(txq->sq, prod_idx, sq_wqe, skb, wqe_size);
-
-flush_skbs:
-	netdev_txq = netdev_get_tx_queue(netdev, q_id);
-	if ((!netdev_xmit_more()) || (netif_xmit_stopped(netdev_txq)))
-		hinic_sq_write_db(txq->sq, prod_idx, wqe_size, 0);
-
-	return err;
-
-skb_error:
-	dev_kfree_skb_any(skb);
-	u64_stats_update_begin(&txq->txq_stats.syncp);
-	txq->txq_stats.tx_dropped++;
-	u64_stats_update_end(&txq->txq_stats.syncp);
-
-	return NETDEV_TX_OK;
+	tx_info->num_pkts = 1;
 }
 
-netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
+inline u8 hinic_get_vlan_pri(struct sk_buff *skb)
 {
-	struct hinic_dev *nic_dev = netdev_priv(netdev);
-	u16 prod_idx, q_id = skb->queue_mapping;
-	struct netdev_queue *netdev_txq;
-	int nr_sges, err = NETDEV_TX_OK;
-	struct hinic_sq_wqe *sq_wqe;
-	unsigned int wqe_size;
-	struct hinic_txq *txq;
-	struct hinic_qp *qp;
+	u16 vlan_tci = 0;
+	int err;
 
-	txq = &nic_dev->txqs[q_id];
-	qp = container_of(txq->sq, struct hinic_qp, sq);
+	err = vlan_get_tag(skb, &vlan_tci);
+	if (err)
+		return 0;
 
-	if (skb->len < MIN_SKB_LEN) {
-		if (skb_pad(skb, MIN_SKB_LEN - skb->len)) {
-			netdev_err(netdev, "Failed to pad skb\n");
-			goto update_error_stats;
+	return (vlan_tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT;
+}
+
+static void *__try_to_get_wqe(struct net_device *netdev, u16 q_id,
+			      int wqebb_cnt, u16 *pi, u8 *owner)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	void *wqe = NULL;
+
+	netif_stop_subqueue(netdev, q_id);
+	/* We need to check again in a case another CPU has just
+	 * made room available.
+	 */
+	if (unlikely(hinic_get_sq_free_wqebbs(nic_dev->hwdev, q_id) >=
+					      wqebb_cnt)) {
+		netif_start_subqueue(netdev, q_id);
+		/* there have enough wqebbs after queue is wake up */
+		wqe = hinic_get_sq_wqe(nic_dev->hwdev, q_id,
+				       wqebb_cnt, pi, owner);
+	}
+
+	return wqe;
+}
+
+#define HINIC_FRAG_STATUS_OK		0
+#define HINIC_FRAG_STATUS_IGNORE	1
+
+static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
+				      struct net_device *netdev,
+				      struct hinic_txq *txq,
+				      u8 *flag, u8 avd_flag)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_tx_info *tx_info;
+	struct hinic_sq_wqe *wqe = NULL;
+	enum tx_offload_type offload = 0;
+	u16 q_id = txq->q_id;
+	u32 queue_info = 0;
+	u8 owner = 0;
+	u16 pi = 0;
+	int err, wqebb_cnt;
+	u16 num_sge = 0;
+	u16 original_nr_frags;
+	u16 new_nr_frags;
+	u16 i;
+	int frag_err = HINIC_FRAG_STATUS_OK;
+
+	/* skb->dev will not initialized when calling netdev_alloc_skb_ip_align
+	 * and parameter of length is largger then PAGE_SIZE(under redhat7.3),
+	 * but skb->dev will be used in vlan_get_tag or somewhere
+	 */
+	if (unlikely(!skb->dev))
+		skb->dev = netdev;
+
+	if (unlikely(skb->len < MIN_SKB_LEN)) {
+		if (skb_pad(skb, (int)(MIN_SKB_LEN - skb->len))) {
+			TXQ_STATS_INC(txq, skb_pad_err);
+			goto tx_skb_pad_err;
 		}
 
 		skb->len = MIN_SKB_LEN;
 	}
 
-	nr_sges = skb_shinfo(skb)->nr_frags + 1;
-	if (nr_sges > 17) {
-		u64_stats_update_begin(&txq->txq_stats.syncp);
-		txq->txq_stats.big_frags_pkts++;
-		u64_stats_update_end(&txq->txq_stats.syncp);
-	}
+	original_nr_frags = skb_shinfo(skb)->nr_frags;
+	new_nr_frags = original_nr_frags;
 
-	if (nr_sges > txq->max_sges) {
-		netdev_err(netdev, "Too many Tx sges\n");
-		goto skb_error;
-	}
+	/* If size of lastest frags are all zero, should ignore this frags.
+	 * If size of some frag in the middle is zero, should drop this skb.
+	 */
+	for (i = 0; i < original_nr_frags; i++) {
+		if ((skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_OK)
+			continue;
 
-	err = tx_map_skb(nic_dev, skb, txq->sges);
-	if (err)
-		goto skb_error;
-
-	wqe_size = HINIC_SQ_WQE_SIZE(nr_sges);
-
-	sq_wqe = hinic_sq_get_wqe(txq->sq, wqe_size, &prod_idx);
-	if (!sq_wqe) {
-		netif_stop_subqueue(netdev, qp->q_id);
-
-		/* Check for the case free_tx_poll is called in another cpu
-		 * and we stopped the subqueue after free_tx_poll check.
-		 */
-		sq_wqe = hinic_sq_get_wqe(txq->sq, wqe_size, &prod_idx);
-		if (sq_wqe) {
-			netif_wake_subqueue(nic_dev->netdev, qp->q_id);
-			goto process_sq_wqe;
+		if ((!skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_OK) {
+			frag_err = HINIC_FRAG_STATUS_IGNORE;
+			new_nr_frags = i + 1;
+			continue;
 		}
 
-		tx_unmap_skb(nic_dev, skb, txq->sges);
+		if ((!skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_IGNORE)
+			continue;
 
-		u64_stats_update_begin(&txq->txq_stats.syncp);
-		txq->txq_stats.tx_busy++;
-		u64_stats_update_end(&txq->txq_stats.syncp);
-		err = NETDEV_TX_BUSY;
-		wqe_size = 0;
-		goto flush_skbs;
+		if ((skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_IGNORE) {
+			TXQ_STATS_INC(txq, frag_size_err);
+			goto tx_drop_pkts;
+		}
 	}
 
-process_sq_wqe:
-	hinic_sq_prepare_wqe(txq->sq, sq_wqe, txq->sges, nr_sges);
+	num_sge = new_nr_frags + 1;
 
-	err = hinic_tx_offload(skb, &sq_wqe->task, &sq_wqe->ctrl.queue_info);
-	if (err)
-		goto offload_error;
+	/* if skb->len is more than 65536B but num_sge is 1,
+	 * driver will drop it
+	 */
+	if (unlikely(skb->len > HINIC_GSO_MAX_SIZE && num_sge == 1)) {
+		TXQ_STATS_INC(txq, frag_len_overflow);
+		goto tx_drop_pkts;
+	}
 
-	hinic_sq_write_wqe(txq->sq, prod_idx, sq_wqe, skb, wqe_size);
+	/* if sge number more than 17, driver will set 17 sges */
+	if (unlikely(num_sge > HINIC_MAX_SQ_SGE)) {
+		TXQ_STATS_INC(txq, big_frags_pkts);
+		num_sge = HINIC_MAX_SQ_SGE;
+	}
 
-flush_skbs:
-	netdev_txq = netdev_get_tx_queue(netdev, q_id);
-	if ((!netdev_xmit_more()) || (netif_xmit_stopped(netdev_txq)))
-		hinic_sq_write_db(txq->sq, prod_idx, wqe_size, 0);
+	wqebb_cnt = HINIC_SQ_WQEBB_CNT(num_sge);
+	if (likely(hinic_get_sq_free_wqebbs(nic_dev->hwdev, q_id) >=
+			wqebb_cnt)) {
+		if (likely(wqebb_cnt == 1)) {
+			hinic_update_sq_pi(nic_dev->hwdev, q_id,
+					   wqebb_cnt, &pi, &owner);
+			wqe = txq->tx_info[pi].wqe;
+		} else {
+			wqe = hinic_get_sq_wqe(nic_dev->hwdev, q_id,
+					       wqebb_cnt, &pi, &owner);
+		}
 
-	return err;
+	} else {
+		wqe = __try_to_get_wqe(netdev, q_id, wqebb_cnt, &pi, &owner);
+		if (likely(!wqe)) {
+			TXQ_STATS_INC(txq, busy);
+			return NETDEV_TX_BUSY;
+		}
+	}
 
-offload_error:
-	hinic_sq_return_wqe(txq->sq, wqe_size);
-	tx_unmap_skb(nic_dev, skb, txq->sges);
+	tx_info = &txq->tx_info[pi];
+	tx_info->skb = skb;
+	tx_info->wqebb_cnt = wqebb_cnt;
+	tx_info->valid_nr_frags = new_nr_frags;
 
-skb_error:
+	__get_pkt_stats(tx_info, skb);
+
+	offload = hinic_tx_offload(txq, skb, &wqe->task, &queue_info, avd_flag);
+	if (unlikely(offload == TX_OFFLOAD_INVALID)) {
+		hinic_return_sq_wqe(nic_dev->hwdev, q_id, wqebb_cnt, owner);
+		TXQ_STATS_INC(txq, offload_cow_skb_err);
+		goto tx_drop_pkts;
+	}
+
+	err = tx_map_skb(nic_dev, skb, txq, tx_info, wqe->buf_descs,
+			 new_nr_frags);
+	if (err) {
+		hinic_return_sq_wqe(nic_dev->hwdev, q_id, wqebb_cnt, owner);
+		goto tx_drop_pkts;
+	}
+
+	hinic_prepare_sq_ctrl(&wqe->ctrl, queue_info, num_sge, owner);
+
+	hinic_send_sq_wqe(nic_dev->hwdev, q_id, wqe, wqebb_cnt,
+			  nic_dev->sq_cos_mapping[hinic_get_vlan_pri(skb)]);
+
+	return NETDEV_TX_OK;
+
+tx_drop_pkts:
 	dev_kfree_skb_any(skb);
 
-update_error_stats:
+tx_skb_pad_err:
+	TXQ_STATS_INC(txq, dropped);
+
+	*flag = HINIC_TX_DROPPED;
+	return NETDEV_TX_OK;
+}
+
+netdev_tx_t hinic_lb_xmit_frame(struct sk_buff *skb,
+				struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 q_id = skb_get_queue_mapping(skb);
+	struct hinic_txq *txq;
+	u8 flag = 0;
+
+	if (unlikely(!nic_dev->heart_status)) {
+		dev_kfree_skb_any(skb);
+		HINIC_NIC_STATS_INC(nic_dev, tx_carrier_off_drop);
+		return NETDEV_TX_OK;
+	}
+
+	txq = &nic_dev->txqs[q_id];
+
+	return hinic_send_one_skb(skb, netdev, txq, &flag, HINIC_TX_NON_AVD);
+}
+
+netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 q_id = skb_get_queue_mapping(skb);
+	struct hinic_txq *txq;
+	u8 flag = 0;
+
+	if (unlikely(!netif_carrier_ok(netdev) ||
+		     !nic_dev->heart_status)) {
+		dev_kfree_skb_any(skb);
+		HINIC_NIC_STATS_INC(nic_dev, tx_carrier_off_drop);
+		return NETDEV_TX_OK;
+	}
+
+	if (unlikely(q_id >= nic_dev->num_qps)) {
+		txq = &nic_dev->txqs[0];
+		HINIC_NIC_STATS_INC(nic_dev, tx_invalid_qid);
+		goto tx_drop_pkts;
+	}
+	txq = &nic_dev->txqs[q_id];
+
+	return hinic_send_one_skb(skb, netdev, txq, &flag, HINIC_TX_NON_AVD);
+
+tx_drop_pkts:
+	dev_kfree_skb_any(skb);
 	u64_stats_update_begin(&txq->txq_stats.syncp);
-	txq->txq_stats.tx_dropped++;
+	txq->txq_stats.dropped++;
 	u64_stats_update_end(&txq->txq_stats.syncp);
 
 	return NETDEV_TX_OK;
 }
 
-/**
- * tx_free_skb - unmap and free skb
- * @nic_dev: nic device
- * @skb: the skb
- * @sges: the sges that are connected to the skb
- **/
-static void tx_free_skb(struct hinic_dev *nic_dev, struct sk_buff *skb,
-			struct hinic_sge *sges)
+static inline void tx_free_skb(struct hinic_nic_dev *nic_dev,
+			       struct sk_buff *skb,
+			       struct hinic_tx_info *tx_info)
 {
-	tx_unmap_skb(nic_dev, skb, sges);
+	tx_unmap_skb(nic_dev, skb, tx_info->dma_len, tx_info->valid_nr_frags);
 
+	kfree(tx_info->cpy_buff);
+	tx_info->cpy_buff = NULL;
 	dev_kfree_skb_any(skb);
 }
 
-/**
- * free_all_tx_skbs - free all skbs in tx queue
- * @txq: tx queue
- **/
 static void free_all_tx_skbs(struct hinic_txq *txq)
 {
-	struct hinic_dev *nic_dev = netdev_priv(txq->netdev);
-	struct hinic_sq *sq = txq->sq;
-	struct hinic_sq_wqe *sq_wqe;
-	unsigned int wqe_size;
-	struct sk_buff *skb;
-	int nr_sges;
+	struct hinic_nic_dev *nic_dev = netdev_priv(txq->netdev);
+	struct hinic_tx_info *tx_info;
 	u16 ci;
+	int free_wqebbs = hinic_get_sq_free_wqebbs(nic_dev->hwdev,
+						   txq->q_id) + 1;
 
-	while ((sq_wqe = hinic_sq_read_wqebb(sq, &skb, &wqe_size, &ci))) {
-		sq_wqe = hinic_sq_read_wqe(sq, &skb, wqe_size, &ci);
-		if (!sq_wqe)
-			break;
+	while (free_wqebbs < txq->q_depth) {
+		ci = hinic_get_sq_local_ci(nic_dev->hwdev, txq->q_id);
 
-		nr_sges = skb_shinfo(skb)->nr_frags + 1;
+		tx_info = &txq->tx_info[ci];
 
-		hinic_sq_get_sges(sq_wqe, txq->free_sges, nr_sges);
+		tx_free_skb(nic_dev, tx_info->skb, tx_info);
 
-		hinic_sq_put_wqe(sq, wqe_size);
+		hinic_update_sq_local_ci(nic_dev->hwdev, txq->q_id,
+					 tx_info->wqebb_cnt);
 
-		tx_free_skb(nic_dev, skb, txq->free_sges);
+		free_wqebbs += tx_info->wqebb_cnt;
 	}
 }
 
-/**
- * free_tx_poll - free finished tx skbs in tx queue that connected to napi
- * @napi: napi
- * @budget: number of tx
- *
- * Return 0 - Success, negative - Failure
- **/
-static int free_tx_poll(struct napi_struct *napi, int budget)
+int hinic_tx_poll(struct hinic_txq *txq, int budget)
 {
-	struct hinic_txq *txq = container_of(napi, struct hinic_txq, napi);
-	struct hinic_qp *qp = container_of(txq->sq, struct hinic_qp, sq);
-	struct hinic_dev *nic_dev = netdev_priv(txq->netdev);
-	struct netdev_queue *netdev_txq;
-	struct hinic_sq *sq = txq->sq;
-	struct hinic_wq *wq = sq->wq;
-	struct hinic_sq_wqe *sq_wqe;
-	unsigned int wqe_size;
-	int nr_sges, pkts = 0;
+	struct hinic_nic_dev *nic_dev = netdev_priv(txq->netdev);
 	struct sk_buff *skb;
-	u64 tx_bytes = 0;
-	u16 hw_ci, sw_ci;
+	struct hinic_tx_info *tx_info;
+	u64 tx_bytes = 0, wake = 0;
+	int pkts = 0, nr_pkts = 0, wqebb_cnt = 0;
+	u16 hw_ci, sw_ci = 0, q_id = txq->q_id;
+
+	hw_ci = hinic_get_sq_hw_ci(nic_dev->hwdev, q_id);
+	dma_rmb();
+	sw_ci = hinic_get_sq_local_ci(nic_dev->hwdev, q_id);
 
 	do {
-		hw_ci = HW_CONS_IDX(sq) & wq->mask;
+		tx_info = &txq->tx_info[sw_ci];
 
-		dma_rmb();
-
-		/* Reading a WQEBB to get real WQE size and consumer index. */
-		sq_wqe = hinic_sq_read_wqebb(sq, &skb, &wqe_size, &sw_ci);
-		if (!sq_wqe ||
-		    (((hw_ci - sw_ci) & wq->mask) * wq->wqebb_size < wqe_size))
+		/* Whether all of the wqebb of this wqe is completed */
+		if (hw_ci == sw_ci || ((hw_ci - sw_ci) &
+			txq->q_mask) < tx_info->wqebb_cnt) {
 			break;
-
-		/* If this WQE have multiple WQEBBs, we will read again to get
-		 * full size WQE.
-		 */
-		if (wqe_size > wq->wqebb_size) {
-			sq_wqe = hinic_sq_read_wqe(sq, &skb, wqe_size, &sw_ci);
-			if (unlikely(!sq_wqe))
-				break;
 		}
 
-		tx_bytes += skb->len;
+		sw_ci = (u16)(sw_ci + tx_info->wqebb_cnt) & txq->q_mask;
+		prefetch(&txq->tx_info[sw_ci]);
+
+		wqebb_cnt += tx_info->wqebb_cnt;
+
+		skb = tx_info->skb;
+		tx_bytes += tx_info->num_bytes;
+		nr_pkts += tx_info->num_pkts;
 		pkts++;
 
-		nr_sges = skb_shinfo(skb)->nr_frags + 1;
+		tx_free_skb(nic_dev, skb, tx_info);
 
-		hinic_sq_get_sges(sq_wqe, txq->free_sges, nr_sges);
+	} while (likely(pkts < budget));
 
-		hinic_sq_put_wqe(sq, wqe_size);
+	hinic_update_sq_local_ci(nic_dev->hwdev, q_id, wqebb_cnt);
 
-		tx_free_skb(nic_dev, skb, txq->free_sges);
-	} while (pkts < budget);
-
-	if (__netif_subqueue_stopped(nic_dev->netdev, qp->q_id) &&
-	    hinic_get_sq_free_wqebbs(sq) >= HINIC_MIN_TX_NUM_WQEBBS(sq)) {
-		netdev_txq = netdev_get_tx_queue(txq->netdev, qp->q_id);
+	if (unlikely(__netif_subqueue_stopped(nic_dev->netdev, q_id) &&
+		     hinic_get_sq_free_wqebbs(nic_dev->hwdev, q_id) >= 1 &&
+		     test_bit(HINIC_INTF_UP, &nic_dev->flags))) {
+		struct netdev_queue *netdev_txq =
+				netdev_get_tx_queue(txq->netdev, q_id);
 
 		__netif_tx_lock(netdev_txq, smp_processor_id());
-		if (!netif_testing(nic_dev->netdev))
-			netif_wake_subqueue(nic_dev->netdev, qp->q_id);
-
+		/* To avoid re-waking subqueue with xmit_frame */
+		if (__netif_subqueue_stopped(nic_dev->netdev, q_id)) {
+			netif_wake_subqueue(nic_dev->netdev, q_id);
+			wake++;
+		}
 		__netif_tx_unlock(netdev_txq);
-
-		u64_stats_update_begin(&txq->txq_stats.syncp);
-		txq->txq_stats.tx_wake++;
-		u64_stats_update_end(&txq->txq_stats.syncp);
 	}
 
 	u64_stats_update_begin(&txq->txq_stats.syncp);
 	txq->txq_stats.bytes += tx_bytes;
-	txq->txq_stats.pkts += pkts;
+	txq->txq_stats.packets += nr_pkts;
+	txq->txq_stats.wake += wake;
 	u64_stats_update_end(&txq->txq_stats.syncp);
 
-	if (pkts < budget) {
-		napi_complete(napi);
-		if (!HINIC_IS_VF(nic_dev->hwdev->hwif))
-			hinic_hwdev_set_msix_state(nic_dev->hwdev,
-						   sq->msix_entry,
-						   HINIC_MSIX_ENABLE);
+	return pkts;
+}
 
-		return pkts;
+int hinic_setup_tx_wqe(struct hinic_txq *txq)
+{
+	struct net_device *netdev = txq->netdev;
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_sq_wqe *wqe;
+	struct hinic_tx_info *tx_info;
+	u16 pi = 0;
+	int i;
+	u8 owner = 0;
+
+	for (i = 0; i < txq->q_depth; i++) {
+		tx_info = &txq->tx_info[i];
+
+		wqe = hinic_get_sq_wqe(nic_dev->hwdev, txq->q_id,
+				       1, &pi, &owner);
+		if (!wqe) {
+			nicif_err(nic_dev, drv, netdev, "Failed to get SQ wqe\n");
+			break;
+		}
+
+		tx_info->wqe = wqe;
 	}
 
-	return budget;
+	hinic_return_sq_wqe(nic_dev->hwdev, txq->q_id, txq->q_depth, owner);
+
+	return i;
 }
 
-static irqreturn_t tx_irq(int irq, void *data)
+int hinic_setup_all_tx_resources(struct net_device *netdev)
 {
-	struct hinic_txq *txq = data;
-	struct hinic_dev *nic_dev;
-
-	nic_dev = netdev_priv(txq->netdev);
-
-	if (!HINIC_IS_VF(nic_dev->hwdev->hwif))
-		/* Disable the interrupt until napi will be completed */
-		hinic_hwdev_set_msix_state(nic_dev->hwdev,
-					   txq->sq->msix_entry,
-					   HINIC_MSIX_DISABLE);
-
-	hinic_hwdev_msix_cnt_set(nic_dev->hwdev, txq->sq->msix_entry);
-
-	napi_schedule(&txq->napi);
-	return IRQ_HANDLED;
-}
-
-static int tx_request_irq(struct hinic_txq *txq)
-{
-	struct hinic_dev *nic_dev = netdev_priv(txq->netdev);
-	struct hinic_msix_config interrupt_info = {0};
-	struct hinic_intr_coal_info *intr_coal = NULL;
-	struct hinic_hwdev *hwdev = nic_dev->hwdev;
-	struct hinic_hwif *hwif = hwdev->hwif;
-	struct pci_dev *pdev = hwif->pdev;
-	struct hinic_sq *sq = txq->sq;
-	struct hinic_qp *qp;
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_txq *txq;
+	u64 tx_info_sz;
+	u16 i, q_id;
 	int err;
 
-	qp = container_of(sq, struct hinic_qp, sq);
+	for (q_id = 0; q_id < nic_dev->num_qps; q_id++) {
+		txq = &nic_dev->txqs[q_id];
+		tx_info_sz = txq->q_depth * sizeof(*txq->tx_info);
+		if (!tx_info_sz) {
+			nicif_err(nic_dev, drv, netdev, "Cannot allocate zero size txq%d info\n",
+				  q_id);
+			err = -EINVAL;
+			goto init_txq_err;
+		}
 
-	netif_napi_add_weight(txq->netdev, &txq->napi, free_tx_poll,
-			      nic_dev->tx_weight);
+		txq->tx_info = kzalloc(tx_info_sz, GFP_KERNEL);
+		if (!txq->tx_info) {
+			err = -ENOMEM;
+			goto init_txq_err;
+		}
 
-	hinic_hwdev_msix_set(nic_dev->hwdev, sq->msix_entry,
-			     TX_IRQ_NO_PENDING, TX_IRQ_NO_COALESC,
-			     TX_IRQ_NO_LLI_TIMER, TX_IRQ_NO_CREDIT,
-			     TX_IRQ_NO_RESEND_TIMER);
-
-	intr_coal = &nic_dev->tx_intr_coalesce[qp->q_id];
-	interrupt_info.msix_index = sq->msix_entry;
-	interrupt_info.coalesce_timer_cnt = intr_coal->coalesce_timer_cfg;
-	interrupt_info.pending_cnt = intr_coal->pending_limt;
-	interrupt_info.resend_timer_cnt = intr_coal->resend_timer_cfg;
-
-	err = hinic_set_interrupt_cfg(hwdev, &interrupt_info);
-	if (err) {
-		netif_err(nic_dev, drv, txq->netdev,
-			  "Failed to set TX interrupt coalescing attribute\n");
-		netif_napi_del(&txq->napi);
-		return err;
-	}
-
-	err = request_irq(sq->irq, tx_irq, 0, txq->irq_name, txq);
-	if (err) {
-		dev_err(&pdev->dev, "Failed to request Tx irq\n");
-		netif_napi_del(&txq->napi);
-		return err;
-	}
-
-	return 0;
-}
-
-static void tx_free_irq(struct hinic_txq *txq)
-{
-	struct hinic_sq *sq = txq->sq;
-
-	free_irq(sq->irq, txq);
-	netif_napi_del(&txq->napi);
-}
-
-/**
- * hinic_init_txq - Initialize the Tx Queue
- * @txq: Logical Tx Queue
- * @sq: Hardware Tx Queue to connect the Logical queue with
- * @netdev: network device to connect the Logical queue with
- *
- * Return 0 - Success, negative - Failure
- **/
-int hinic_init_txq(struct hinic_txq *txq, struct hinic_sq *sq,
-		   struct net_device *netdev)
-{
-	struct hinic_qp *qp = container_of(sq, struct hinic_qp, sq);
-	struct hinic_dev *nic_dev = netdev_priv(netdev);
-	struct hinic_hwdev *hwdev = nic_dev->hwdev;
-	int err, irqname_len;
-
-	txq->netdev = netdev;
-	txq->sq = sq;
-
-	txq_stats_init(txq);
-
-	txq->max_sges = HINIC_MAX_SQ_BUFDESCS;
-
-	txq->sges = devm_kcalloc(&netdev->dev, txq->max_sges,
-				 sizeof(*txq->sges), GFP_KERNEL);
-	if (!txq->sges)
-		return -ENOMEM;
-
-	txq->free_sges = devm_kcalloc(&netdev->dev, txq->max_sges,
-				      sizeof(*txq->free_sges), GFP_KERNEL);
-	if (!txq->free_sges) {
-		err = -ENOMEM;
-		goto err_alloc_free_sges;
-	}
-
-	irqname_len = snprintf(NULL, 0, "%s_txq%d", netdev->name, qp->q_id) + 1;
-	txq->irq_name = devm_kzalloc(&netdev->dev, irqname_len, GFP_KERNEL);
-	if (!txq->irq_name) {
-		err = -ENOMEM;
-		goto err_alloc_irqname;
-	}
-
-	sprintf(txq->irq_name, "%s_txq%d", netdev->name, qp->q_id);
-
-	err = hinic_hwdev_hw_ci_addr_set(hwdev, sq, CI_UPDATE_NO_PENDING,
-					 CI_UPDATE_NO_COALESC);
-	if (err)
-		goto err_hw_ci;
-
-	err = tx_request_irq(txq);
-	if (err) {
-		netdev_err(netdev, "Failed to request Tx irq\n");
-		goto err_req_tx_irq;
+		err = hinic_setup_tx_wqe(txq);
+		if (err != txq->q_depth) {
+			nicif_err(nic_dev, drv, netdev, "Failed to setup Tx: %d wqe\n",
+				  q_id);
+			q_id++;
+			goto init_txq_err;
+		}
 	}
 
 	return 0;
 
-err_req_tx_irq:
-err_hw_ci:
-	devm_kfree(&netdev->dev, txq->irq_name);
+init_txq_err:
+	for (i = 0; i < q_id; i++) {
+		txq = &nic_dev->txqs[i];
+		kfree(txq->tx_info);
+	}
 
-err_alloc_irqname:
-	devm_kfree(&netdev->dev, txq->free_sges);
-
-err_alloc_free_sges:
-	devm_kfree(&netdev->dev, txq->sges);
 	return err;
 }
 
-/**
- * hinic_clean_txq - Clean the Tx Queue
- * @txq: Logical Tx Queue
- **/
-void hinic_clean_txq(struct hinic_txq *txq)
+void hinic_free_all_tx_resources(struct net_device *netdev)
 {
-	struct net_device *netdev = txq->netdev;
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_txq *txq;
+	u16 q_id;
 
-	tx_free_irq(txq);
-
-	free_all_tx_skbs(txq);
-
-	devm_kfree(&netdev->dev, txq->irq_name);
-	devm_kfree(&netdev->dev, txq->free_sges);
-	devm_kfree(&netdev->dev, txq->sges);
+	for (q_id = 0; q_id < nic_dev->num_qps; q_id++) {
+		txq = &nic_dev->txqs[q_id];
+		free_all_tx_skbs(txq);
+		kfree(txq->tx_info);
+	}
 }
+
+void hinic_set_sq_default_cos(struct net_device *netdev, u8 cos_id)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	int up;
+
+	for (up = HINIC_DCB_UP_MAX - 1; up >= 0; up--)
+		nic_dev->sq_cos_mapping[up] = nic_dev->default_cos_id;
+}
+
+int hinic_sq_cos_mapping(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic_dcb_state dcb_state = {0};
+	u8 default_cos = 0;
+	int err;
+
+	if (HINIC_FUNC_IS_VF(nic_dev->hwdev)) {
+		err = hinic_get_pf_dcb_state(nic_dev->hwdev, &dcb_state);
+		if (err) {
+			hinic_info(nic_dev, drv, "Failed to get vf default cos\n");
+			return err;
+		}
+
+		default_cos = dcb_state.default_cos;
+		nic_dev->default_cos_id = default_cos;
+		hinic_set_sq_default_cos(nic_dev->netdev, default_cos);
+	} else {
+		default_cos = nic_dev->default_cos_id;
+		if (test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))
+			memcpy(nic_dev->sq_cos_mapping, nic_dev->up_cos,
+			       sizeof(nic_dev->sq_cos_mapping));
+		else
+			hinic_set_sq_default_cos(nic_dev->netdev, default_cos);
+
+		dcb_state.dcb_on = !!test_bit(HINIC_DCB_ENABLE,
+					      &nic_dev->flags);
+		dcb_state.default_cos = default_cos;
+		memcpy(dcb_state.up_cos, nic_dev->sq_cos_mapping,
+		       sizeof(dcb_state.up_cos));
+
+		err = hinic_set_dcb_state(nic_dev->hwdev, &dcb_state);
+		if (err)
+			hinic_info(nic_dev, drv, "Failed to set vf default cos\n");
+	}
+
+	return err;
+}
+
+int hinic_alloc_txqs(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	struct pci_dev *pdev = nic_dev->pdev;
+	struct hinic_txq *txq;
+	u16 q_id, num_txqs = nic_dev->max_qps;
+	u64 txq_size;
+
+	txq_size = num_txqs * sizeof(*nic_dev->txqs);
+	if (!txq_size) {
+		nic_err(&pdev->dev, "Cannot allocate zero size txqs\n");
+		return -EINVAL;
+	}
+
+	nic_dev->txqs = kzalloc(txq_size, GFP_KERNEL);
+
+	if (!nic_dev->txqs) {
+		nic_err(&pdev->dev, "Failed to allocate txqs\n");
+		return -ENOMEM;
+	}
+
+	for (q_id = 0; q_id < num_txqs; q_id++) {
+		txq = &nic_dev->txqs[q_id];
+		txq->netdev = netdev;
+		txq->q_id = q_id;
+		txq->q_depth = nic_dev->sq_depth;
+		txq->q_mask = nic_dev->sq_depth - 1;
+
+		txq_stats_init(txq);
+	}
+
+	return 0;
+}
+
+void hinic_free_txqs(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	kfree(nic_dev->txqs);
+}
+
+/* should stop transmit any packets before calling this function */
+#define HINIC_FLUSH_QUEUE_TIMEOUT	1000
+
+static bool hinic_get_hw_handle_status(void *hwdev, u16 q_id)
+{
+	u16 sw_pi = 0, hw_ci = 0;
+
+	sw_pi = hinic_dbg_get_sq_pi(hwdev, q_id);
+	hw_ci = hinic_get_sq_hw_ci(hwdev, q_id);
+
+	return sw_pi == hw_ci;
+}
+
+int hinic_stop_sq(struct hinic_txq *txq)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(txq->netdev);
+	unsigned long timeout;
+	int err;
+
+	timeout = msecs_to_jiffies(HINIC_FLUSH_QUEUE_TIMEOUT) + jiffies;
+	do {
+		if (hinic_get_hw_handle_status(nic_dev->hwdev, txq->q_id))
+			return 0;
+
+		usleep_range(900, 1000);
+	} while (time_before(jiffies, timeout));
+
+	/* force hardware to drop packets */
+	timeout = msecs_to_jiffies(HINIC_FLUSH_QUEUE_TIMEOUT) + jiffies;
+	do {
+		if (hinic_get_hw_handle_status(nic_dev->hwdev, txq->q_id))
+			return 0;
+
+		err = hinic_force_drop_tx_pkt(nic_dev->hwdev);
+		if (err)
+			break;
+
+		usleep_range(9900, 10000);
+	} while (time_before(jiffies, timeout));
+
+	/* Avoid msleep takes too long and get a fake result */
+	if (hinic_get_hw_handle_status(nic_dev->hwdev, txq->q_id))
+		return 0;
+
+	return -EFAULT;
+}
+
+void hinic_flush_txqs(struct net_device *netdev)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 qid;
+	int err;
+
+	for (qid = 0; qid < nic_dev->num_qps; qid++) {
+		err = hinic_stop_sq(&nic_dev->txqs[qid]);
+		if (err)
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed to stop sq%d\n", qid);
+	}
+} /*lint -e766*/
