@@ -11,6 +11,7 @@
 #include "hnae3.h"
 #include "hclgevf_devlink.h"
 #include "hclge_comm_rss.h"
+#include "hclgevf_trace.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -46,6 +47,42 @@ int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclge_desc *desc, int num)
 {
 	return hclge_comm_cmd_send(&hw->hw, desc, num);
 }
+
+static void hclgevf_trace_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *desc,
+				   int num, bool is_special)
+{
+	int i;
+
+	trace_hclge_vf_cmd_send(hw, desc, 0, num);
+
+	if (is_special)
+		return;
+
+	for (i = 1; i < num; i++)
+		trace_hclge_vf_cmd_send(hw, &desc[i], i, num);
+}
+
+static void hclgevf_trace_cmd_get(struct hclge_comm_hw *hw, struct hclge_desc *desc,
+				  int num, bool is_special)
+{
+	int i;
+
+	if (!HCLGE_COMM_SEND_SYNC(le16_to_cpu(desc->flag)))
+		return;
+
+	trace_hclge_vf_cmd_get(hw, desc, 0, num);
+
+	if (is_special)
+		return;
+
+	for (i = 1; i < num; i++)
+		trace_hclge_vf_cmd_get(hw, &desc[i], i, num);
+}
+
+static const struct hclge_comm_cmq_ops hclgevf_cmq_ops = {
+	.trace_cmd_send = hclgevf_trace_cmd_send,
+	.trace_cmd_get = hclgevf_trace_cmd_get,
+};
 
 void hclgevf_arq_init(struct hclgevf_dev *hdev)
 {
@@ -352,6 +389,74 @@ static int hclgevf_knic_setup(struct hclgevf_dev *hdev)
 				kinfo->rss_size);
 
 	return 0;
+}
+
+static void hclgevf_update_fd_qb_state(struct hclgevf_dev *hdev)
+{
+	struct hnae3_handle *handle = &hdev->nic;
+	struct hclge_vf_to_pf_msg send_msg;
+	int ret;
+
+	if (!hdev->qb_cfg.pf_support_qb ||
+	    !test_bit(HNAE3_PFLAG_FD_QB_ENABLE, &handle->priv_flags))
+		return;
+
+	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_QB,
+			       HCLGE_MBX_QB_GET_STATE);
+	ret = hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+	if (ret)
+		dev_err(&hdev->pdev->dev, "failed to get qb state, ret = %d",
+			ret);
+}
+
+static void hclgevf_get_pf_qb_caps(struct hclgevf_dev *hdev)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+	struct hclge_vf_to_pf_msg send_msg;
+	u8 resp_msg;
+	int ret;
+
+	if (!test_bit(HNAE3_DEV_SUPPORT_QB_B, ae_dev->caps))
+		return;
+
+	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_QB,
+			       HCLGE_MBX_QB_CHECK_CAPS);
+	ret = hclgevf_send_mbx_msg(hdev, &send_msg, true, &resp_msg,
+				   sizeof(resp_msg));
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to get qb caps from PF, ret = %d", ret);
+		return;
+	}
+
+	hdev->qb_cfg.pf_support_qb = resp_msg > 0;
+}
+
+static void hclgevf_set_fd_qb(struct hnae3_handle *handle)
+{
+#define HCLGEVF_QB_MBX_STATE_OFFSET	0
+
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+	struct hclge_vf_to_pf_msg send_msg;
+	u8 resp_msg;
+	int ret;
+
+	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_QB,
+			       HCLGE_MBX_QB_ENABLE);
+	send_msg.data[HCLGEVF_QB_MBX_STATE_OFFSET] =
+		test_bit(HNAE3_PFLAG_FD_QB_ENABLE, &handle->priv_flags) ? 1 : 0;
+	ret = hclgevf_send_mbx_msg(hdev, &send_msg, true, &resp_msg,
+				   sizeof(resp_msg));
+	if (ret)
+		dev_err(&hdev->pdev->dev, "failed to set qb state, ret = %d",
+			ret);
+}
+
+static bool hclgevf_query_fd_qb_state(struct hnae3_handle *handle)
+{
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+
+	return hdev->qb_cfg.hw_qb_en;
 }
 
 static void hclgevf_request_link_info(struct hclgevf_dev *hdev)
@@ -1901,6 +2006,8 @@ static void hclgevf_periodic_service_task(struct hclgevf_dev *hdev)
 
 	hclgevf_sync_promisc_mode(hdev);
 
+	hclgevf_update_fd_qb_state(hdev);
+
 	hdev->last_serv_processed = jiffies;
 
 out:
@@ -2796,6 +2903,7 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 	}
 
 	hclgevf_arq_init(hdev);
+
 	ret = hclge_comm_cmd_init(hdev->ae_dev, &hdev->hw.hw,
 				  &hdev->fw_version, false,
 				  hdev->reset_pending);
@@ -2854,6 +2962,8 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 		goto err_cmd_queue_init;
 
 	hclgevf_arq_init(hdev);
+
+	hclge_comm_cmd_init_ops(&hdev->hw.hw, &hclgevf_cmq_ops);
 	ret = hclge_comm_cmd_init(hdev->ae_dev, &hdev->hw.hw,
 				  &hdev->fw_version, false,
 				  hdev->reset_pending);
@@ -2938,6 +3048,8 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 			"failed(%d) to initialize VLAN config\n", ret);
 		goto err_config;
 	}
+
+	hclgevf_get_pf_qb_caps(hdev);
 
 	hclgevf_init_rxd_adv_layout(hdev);
 
@@ -3323,6 +3435,8 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.set_promisc_mode = hclgevf_set_promisc_mode,
 	.request_update_promisc_mode = hclgevf_request_update_promisc_mode,
 	.get_cmdq_stat = hclgevf_get_cmdq_stat,
+	.request_flush_qb_config = hclgevf_set_fd_qb,
+	.query_fd_qb_state = hclgevf_query_fd_qb_state,
 };
 
 static struct hnae3_ae_algo ae_algovf = {

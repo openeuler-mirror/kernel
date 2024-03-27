@@ -5,6 +5,7 @@
 #define __HCLGE_ERR_H
 
 #include "hclge_main.h"
+#include "hclge_debugfs.h"
 #include "hnae3.h"
 
 #define HCLGE_MPF_RAS_INT_MIN_BD_NUM	10
@@ -15,8 +16,10 @@
 #define HCLGE_RAS_PF_OTHER_INT_STS_REG   0x20B00
 #define HCLGE_RAS_REG_NFE_MASK   0xFF00
 #define HCLGE_RAS_REG_ROCEE_ERR_MASK   0x3000000
+#define HCLGE_RAS_REG_ROH_ERR_MASK   0x18000000
 #define HCLGE_RAS_REG_ERR_MASK \
-	(HCLGE_RAS_REG_NFE_MASK | HCLGE_RAS_REG_ROCEE_ERR_MASK)
+	(HCLGE_RAS_REG_NFE_MASK | HCLGE_RAS_REG_ROCEE_ERR_MASK | \
+	 HCLGE_RAS_REG_ROH_ERR_MASK)
 
 #define HCLGE_VECTOR0_REG_MSIX_MASK   0x1FF00
 
@@ -115,6 +118,18 @@
 #define HCLGE_REG_NUM_MAX			256
 #define HCLGE_DESC_NO_DATA_LEN			8
 
+#define HCLGE_BD_NUM_SSU_REG_0		10
+#define HCLGE_BD_NUM_SSU_REG_1		15
+#define HCLGE_BD_NUM_RPU_REG_0		1
+#define HCLGE_BD_NUM_RPU_REG_1		2
+#define HCLGE_BD_NUM_IGU_EGU_REG	9
+#define HCLGE_BD_NUM_GEN_REG		8
+#define HCLGE_MOD_REG_INFO_LEN_MAX	256
+#define HCLGE_MOD_REG_EXTRA_LEN		11
+#define HCLGE_MOD_REG_VALUE_LEN		9
+#define HCLGE_MOD_REG_GROUP_MAX_SIZE	6
+#define HCLGE_MOD_MSG_PARA_ARRAY_MAX_SIZE	8
+
 enum hclge_err_int_type {
 	HCLGE_ERR_INT_MSIX = 0,
 	HCLGE_ERR_INT_RAS_CE = 1,
@@ -151,6 +166,10 @@ enum hclge_mod_name_list {
 	MODULE_ROCEE_QMM	= 48,
 	MODULE_ROCEE_LSAN	= 49,
 	/* add new MODULE NAME for RoCEE here in order */
+	MODULE_ROH_MAC_IF	= 80,
+	MODULE_ROH_HDLC		= 81,
+	MODULE_ROH_HPCS		= 82,
+	/* add new MODULE NAME for ROH here in order */
 };
 
 enum hclge_err_type_list {
@@ -174,6 +193,8 @@ enum hclge_err_type_list {
 	ROCEE_OVF_ERR		= 41,
 	ROCEE_BUS_ERR		= 42,
 	/* add new ERROR TYPE for ROCEE here in order */
+	ROH_ERR			= 80,
+	/* add new ERROR TYPE for ROH here in order */
 };
 
 struct hclge_hw_blk {
@@ -191,6 +212,7 @@ struct hclge_hw_error {
 struct hclge_hw_module_id {
 	enum hclge_mod_name_list module_id;
 	const char *msg;
+	void (*query_reg_info)(struct hclge_dev *hdev);
 };
 
 struct hclge_hw_type_id {
@@ -216,6 +238,28 @@ struct hclge_type_reg_err_info {
 	u8 reg_num;
 	u8 rsv[2];
 	u32 hclge_reg[HCLGE_REG_NUM_MAX];
+};
+
+struct hclge_mod_reg_info {
+	const char *reg_name;
+	bool has_suffix; /* add suffix for register name */
+	/* the positions of reg values in hclge_desc.data */
+	u8 reg_offset_group[HCLGE_MOD_REG_GROUP_MAX_SIZE];
+	u8 group_size;
+};
+
+/* This structure defines cmdq used to query the hardware module debug
+ * regisgers.
+ */
+struct hclge_mod_reg_common_msg {
+	enum hclge_opcode_type cmd;
+	struct hclge_desc *desc;
+	u8 bd_num; /* the bd number of hclge_desc used */
+	bool need_para; /* whether this cmdq needs to add para */
+
+	/* the regs need to print */
+	const struct hclge_mod_reg_info *result_regs;
+	u16 result_regs_size;
 };
 
 int hclge_config_mac_tnl_int(struct hclge_dev *hdev, bool en);

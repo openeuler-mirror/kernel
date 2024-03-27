@@ -5,6 +5,7 @@
 #include <linux/string.h>
 #include <linux/phy.h>
 #include <linux/sfp.h>
+#include <net/page_pool/helpers.h>
 
 #include "hns3_enet.h"
 #include "hns3_ethtool.h"
@@ -466,22 +467,46 @@ static void hns3_update_limit_promisc_mode(struct net_device *netdev,
 	hns3_request_update_promisc_mode(handle);
 }
 
+static void hns3_update_fd_qb_state(struct net_device *netdev, bool enable)
+{
+	struct hnae3_handle *handle = hns3_get_handle(netdev);
+
+	if (!handle->ae_algo->ops->request_flush_qb_config)
+		return;
+
+	handle->ae_algo->ops->request_flush_qb_config(handle);
+}
+
+static void hns3_update_roh_arp_proxy_enable(struct net_device *netdev,
+					     bool enable)
+{
+	netdev_info(netdev, "%s roh arp proxy\n",
+		    enable ? "enable" : "disable");
+}
+
 static const struct hns3_pflag_desc hns3_priv_flags[HNAE3_PFLAG_MAX] = {
-	{ "limit_promisc",	hns3_update_limit_promisc_mode }
+	{ "limit_promisc",	hns3_update_limit_promisc_mode },
+	{ "qb_enable",		hns3_update_fd_qb_state },
+	{ "roh_arp_proxy_enable",	hns3_update_roh_arp_proxy_enable },
 };
 
 static int hns3_get_sset_count(struct net_device *netdev, int stringset)
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	const struct hnae3_ae_ops *ops = h->ae_algo->ops;
+	int pp_stats_count = 0;
 
 	if (!ops->get_sset_count)
 		return -EOPNOTSUPP;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
+#ifdef CONFIG_PAGE_POOL_STATS
+		if (hns3_is_page_pool_enabled())
+			pp_stats_count = page_pool_ethtool_stats_get_count();
+#endif
 		return ((HNS3_TQP_STATS_COUNT * h->kinfo.num_tqps) +
-			ops->get_sset_count(h, stringset));
+			ops->get_sset_count(h, stringset) + pp_stats_count);
 
 	case ETH_SS_TEST:
 		return ops->get_sset_count(h, stringset);
@@ -549,6 +574,10 @@ static void hns3_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 
 	switch (stringset) {
 	case ETH_SS_STATS:
+#ifdef CONFIG_PAGE_POOL_STATS
+		if (hns3_is_page_pool_enabled())
+			buff = page_pool_ethtool_stats_get_strings(buff);
+#endif
 		buff = hns3_get_strings_tqps(h, buff);
 		ops->get_strings(h, stringset, (u8 *)buff);
 		break;
@@ -596,6 +625,28 @@ static u64 *hns3_get_stats_tqps(struct hnae3_handle *handle, u64 *data)
 	return data;
 }
 
+#ifdef CONFIG_PAGE_POOL_STATS
+static u64 *hns3_ethtool_pp_stats(struct hnae3_handle *handle, u64 *data)
+{
+	struct hns3_nic_priv *priv = handle->priv;
+	int ring_num = handle->kinfo.num_tqps;
+	struct page_pool_stats stats = {0};
+	struct page_pool *page_pool;
+	int i;
+
+	if (!hns3_is_page_pool_enabled())
+		return data;
+
+	for (i = 0; i < ring_num; i++) {
+		page_pool = priv->ring[i + ring_num].page_pool;
+		if (page_pool)
+			page_pool_get_stats(page_pool, &stats);
+	}
+
+	return page_pool_ethtool_stats_get(data, &stats);
+}
+#endif
+
 /* hns3_get_stats - get detail statistics.
  * @netdev: net device
  * @stats: statistics info.
@@ -616,6 +667,10 @@ static void hns3_get_stats(struct net_device *netdev,
 		netdev_err(netdev, "could not get any statistics\n");
 		return;
 	}
+
+#ifdef CONFIG_PAGE_POOL_STATS
+	p = hns3_ethtool_pp_stats(h, p);
+#endif
 
 	h->ae_algo->ops->update_stats(h);
 
@@ -1782,6 +1837,14 @@ static int hns3_get_module_info(struct net_device *netdev,
 	case SFF8024_ID_QSFP28_8636:
 		modinfo->type = ETH_MODULE_SFF_8636;
 		modinfo->eeprom_len = ETH_MODULE_SFF_8636_MAX_LEN;
+		break;
+	case SFF8024_ID_QSFP_DD:
+	case SFF8024_ID_QSFP_PLUS_CMIS:
+		modinfo->type = ETH_MODULE_SFF_8636;
+		if (sfp_type.flat_mem & HNS3_CMIS_FLAT_MEMORY)
+			modinfo->eeprom_len = ETH_MODULE_SFF_8636_LEN;
+		else
+			modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
 		break;
 	default:
 		netdev_err(netdev, "Optical module unknown: %#x\n",

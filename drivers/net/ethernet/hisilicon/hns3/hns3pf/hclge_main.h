@@ -214,6 +214,7 @@ enum HCLGE_DEV_STATE {
 	HCLGE_STATE_REMOVING,
 	HCLGE_STATE_NIC_REGISTERED,
 	HCLGE_STATE_ROCE_REGISTERED,
+	HCLGE_STATE_ROH_REGISTERED,
 	HCLGE_STATE_SERVICE_INITED,
 	HCLGE_STATE_RST_SERVICE_SCHED,
 	HCLGE_STATE_RST_HANDLING,
@@ -226,6 +227,7 @@ enum HCLGE_DEV_STATE {
 	HCLGE_STATE_FD_TBL_CHANGED,
 	HCLGE_STATE_FD_CLEAR_ALL,
 	HCLGE_STATE_FD_USER_DEF_CHANGED,
+	HCLGE_STATE_HW_QB_ENABLE,
 	HCLGE_STATE_PTP_EN,
 	HCLGE_STATE_PTP_TX_HANDLING,
 	HCLGE_STATE_FEC_STATS_UPDATING,
@@ -376,6 +378,8 @@ struct hclge_cfg {
 	u16 speed_ability;
 	u16 umv_space;
 };
+
+#define TM_RATE_PORT_RATE_SCALE	125000
 
 struct hclge_tm_info {
 	u8 num_tc;
@@ -643,6 +647,7 @@ struct key_info {
 #define HCLGE_FD_USER_DEF_DATA		GENMASK(15, 0)
 #define HCLGE_FD_USER_DEF_OFFSET	GENMASK(15, 0)
 #define HCLGE_FD_USER_DEF_OFFSET_UNMASK	GENMASK(15, 0)
+#define HCLGE_FD_VXLAN_VNI_UNMASK	GENMASK(31, 0)
 
 /* assigned by firmware, the real filter number for each pf may be less */
 #define MAX_FD_FILTER_NUM	4096
@@ -658,6 +663,7 @@ enum HCLGE_FD_ACTIVE_RULE_TYPE {
 	HCLGE_FD_ARFS_ACTIVE,
 	HCLGE_FD_EP_ACTIVE,
 	HCLGE_FD_TC_FLOWER_ACTIVE,
+	HCLGE_FD_QB_ACTIVE,
 };
 
 enum HCLGE_FD_PACKET_TYPE {
@@ -736,6 +742,7 @@ struct hclge_fd_rule_tuples {
 	u32 l4_user_def;
 	u8 ip_tos;
 	u8 ip_proto;
+	u32 outer_tun_vni;
 };
 
 struct hclge_fd_rule {
@@ -919,6 +926,7 @@ struct hclge_dev {
 	int *vector_irq;
 	u16 num_nic_msi;	/* Num of nic vectors for this PF */
 	u16 num_roce_msi;	/* Num of roce vectors for this PF */
+	u16 num_roh_msi;	/* Num of roh vectors for this PF */
 
 	unsigned long service_timer_period;
 	unsigned long service_timer_previous;
@@ -935,6 +943,7 @@ struct hclge_dev {
 
 	struct hnae3_client *nic_client;
 	struct hnae3_client *roce_client;
+	struct hnae3_client *roh_client;
 
 #define HCLGE_FLAG_MAIN			BIT(0)
 #define HCLGE_FLAG_DCB_CAPABLE		BIT(1)
@@ -1015,6 +1024,7 @@ struct hclge_rx_vtag_cfg {
 enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_ALIVE,
 	HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
+	HCLGE_VPORT_STATE_QB_CHANGE,
 	HCLGE_VPORT_STATE_PROMISC_CHANGE,
 	HCLGE_VPORT_STATE_VLAN_FLTR_CHANGE,
 	HCLGE_VPORT_STATE_INITED,
@@ -1045,6 +1055,8 @@ struct hclge_vf_info {
 	u32 spoofchk;
 	u32 max_tx_rate;
 	u32 trusted;
+	u8 request_qb_en;
+	u8 qb_en;
 	u8 request_uc_en;
 	u8 request_mc_en;
 	u8 request_bc_en;
@@ -1070,6 +1082,7 @@ struct hclge_vport {
 	struct hclge_dev *back;  /* Back reference to associated dev */
 	struct hnae3_handle nic;
 	struct hnae3_handle roce;
+	struct hnae3_handle roh;
 
 	unsigned long state;
 	unsigned long need_notify;
@@ -1174,6 +1187,7 @@ int hclge_enable_vport_vlan_filter(struct hclge_vport *vport, bool request_en);
 int hclge_mac_update_stats(struct hclge_dev *hdev);
 struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf);
 int hclge_inform_vf_reset(struct hclge_vport *vport, u16 reset_type);
+int hclge_query_scc_version(struct hclge_dev *hdev, u32 *scc_version);
 void hclge_reset_task_schedule(struct hclge_dev *hdev);
 void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle);
 void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,

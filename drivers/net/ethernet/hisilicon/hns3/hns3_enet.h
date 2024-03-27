@@ -179,6 +179,11 @@ enum hns3_nic_state {
 #define HNS3_TXD_DECTTL_S			12
 #define HNS3_TXD_DECTTL_M			(0xf << HNS3_TXD_DECTTL_S)
 
+#define HNS3_TXD_FD_ADD_B			1
+#define HNS3_TXD_FD_DEL_B			0
+#define HNS3_TXD_FD_OP_M			GENMASK(21, 20)
+#define HNS3_TXD_FD_OP_S			20
+
 #define HNS3_TXD_OL4CS_B			22
 
 #define HNS3_TXD_MSS_S				0
@@ -213,6 +218,8 @@ enum hns3_nic_state {
 #define HNS3_GL2_CQ_MODE_REG			0x20d08
 #define HNS3_CQ_MODE_EQE			1U
 #define HNS3_CQ_MODE_CQE			0U
+
+#define HNS3_FD_QB_FORCE_CNT_MAX		20
 
 enum hns3_pkt_l2t_type {
 	HNS3_L2_TYPE_UNICAST,
@@ -285,7 +292,7 @@ struct __packed hns3_desc {
 			};
 		};
 
-			__le32 paylen_ol4cs;
+			__le32 paylen_fdop_ol4cs;
 			__le16 bdtp_fe_sc_vld_ra_ri;
 			__le16 mss_hw_csum;
 		} tx;
@@ -398,6 +405,9 @@ enum hns3_pkt_ol4type {
 	HNS3_OL4_TYPE_UNKNOWN
 };
 
+#define IP_VERSION_IPV4		0x4
+#define IP_VERSION_IPV6		0x6
+
 struct hns3_rx_ptype {
 	u32 ptype : 8;
 	u32 csum_level : 2;
@@ -461,6 +471,15 @@ struct hns3_tx_spare {
 	u32 len;
 };
 
+struct hns3_arp_reply {
+	__be32 dest_ip;
+	__be32 src_ip;
+	u8 dest_hw[ETH_ALEN];
+	u8 src_hw[ETH_ALEN];
+	u8 has_vlan;
+	__be16 vlan_tci;
+};
+
 struct hns3_enet_ring {
 	struct hns3_desc *desc; /* dma map address space */
 	struct hns3_desc_cb *desc_cb;
@@ -485,6 +504,11 @@ struct hns3_enet_ring {
 	 */
 	int next_to_clean;
 	u32 flag;          /* ring attribute */
+
+#define HNS3_APR_REPLY_LTH 32
+	struct hns3_arp_reply arp_reply[HNS3_APR_REPLY_LTH];
+	int arp_reply_head;
+	int arp_reply_tail;
 
 	int pending_buf;
 	union {
@@ -594,6 +618,56 @@ struct hns3_nic_priv {
 	struct hns3_enet_coalesce rx_coal;
 	u32 tx_copybreak;
 	u32 rx_copybreak;
+	u8 roh_perm_mac[ETH_ALEN];
+};
+
+#define HNS3_DHCP_SERVER_PORT		68
+#define HNS3_DHCP_CLIENT_PORT		67
+#define HNS3_DHCP_MAGIC			0x63825363
+#define DHCP_OPT_CODE			0
+#define DHCP_OPT_LEN			1
+#define DHCP_OPT_DATA			2
+#define DHCP_CLIENT_ID_LEN		7
+#define DHCP_CLIENT_ID_MAC_OFT		3
+#define DHCP_OVERLOAD_FILE		0x1
+#define DHCP_OVERLOAD_SNAME		0x2
+#define DHCP_OVERLOAD_FILE_USED		0x101
+#define DHCP_OVERLOAD_SNAME_USED	0x202
+#define DHCP_OVERLOAD_USE_FILE(x)	\
+		(((x) & DHCP_OVERLOAD_FILE_USED) == DHCP_OVERLOAD_FILE)
+#define DHCP_OVERLOAD_USE_SNAME(x)	\
+		(((x) & DHCP_OVERLOAD_SNAME_USED) == DHCP_OVERLOAD_SNAME)
+
+enum DHCP_OPTION_CODES {
+	DHCP_OPT_PADDING = 0,
+	DHCP_OPT_OVERLOAD = 52,
+	DHCP_OPT_CLIENT_ID = 61,
+	DHCP_OPT_END = 255
+};
+
+struct hns3_dhcp_packet {
+	u8 op;
+	u8 htype;
+	u8 hlen;
+	u8 hops;
+	u32 xid;
+	u16 secs;
+	u16 flags;
+	u32 ciaddr;
+	u32 yiaddr;
+	u32 siaddr_nip;
+	u32 gateway_nip;
+	u8 chaddr[16]; /* link-layer client hardware address (MAC) */
+	u8 sname[64];
+	u8 file[128];
+	u32 cookie; /* DHCP magic bytes: 0x63825363 */
+	u8 options[312];
+};
+
+struct hns3_dhcp_opt_state {
+	u8 *opt_ptr; /* refer to current option item */
+	int rem; /* remain bytes in options */
+	u32 overload_flag; /* whether use file and sname field as options */
 };
 
 union l3_hdr_info {
@@ -754,4 +828,5 @@ void hns3_cq_period_mode_init(struct hns3_nic_priv *priv,
 
 void hns3_external_lb_prepare(struct net_device *ndev, bool if_running);
 void hns3_external_lb_restore(struct net_device *ndev, bool if_running);
+bool hns3_is_page_pool_enabled(void);
 #endif

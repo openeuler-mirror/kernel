@@ -55,7 +55,10 @@
 #define HNAE3_DEV_ID_50GE_RDMA			0xA224
 #define HNAE3_DEV_ID_50GE_RDMA_MACSEC		0xA225
 #define HNAE3_DEV_ID_100G_RDMA_MACSEC		0xA226
+#define HNAE3_DEV_ID_100G_ROH			0xA227
 #define HNAE3_DEV_ID_200G_RDMA			0xA228
+#define HNAE3_DEV_ID_200G_ROH			0xA22C
+#define HNAE3_DEV_ID_400G_ROH			0xA22D
 #define HNAE3_DEV_ID_VF				0xA22E
 #define HNAE3_DEV_ID_RDMA_DCB_PFC_VF		0xA22F
 
@@ -67,9 +70,18 @@
 #define HNAE3_KNIC_CLIENT_INITED_B		0x3
 #define HNAE3_UNIC_CLIENT_INITED_B		0x4
 #define HNAE3_ROCE_CLIENT_INITED_B		0x5
+#define HNAE3_ROH_CLIENT_INITED_B		0x6
+#define HNAE3_DEV_SUPPORT_ROH_B			0xA
 
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) | \
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
+
+#define HNAE3_DEV_SUPPORT_ROCE_ROH_DCB_BITS \
+		(BIT(HNAE3_DEV_SUPPORT_DCB_B) | BIT(HNAE3_DEV_SUPPORT_ROCE_B) | \
+		 BIT(HNAE3_DEV_SUPPORT_ROH_B))
+
+#define hnae3_dev_roh_supported(hdev) \
+	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROH_B)
 
 #define hnae3_dev_roce_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_ROCE_B)
@@ -106,6 +118,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_TM_FLUSH_B,
 	HNAE3_DEV_SUPPORT_VF_FAULT_B,
 	HNAE3_DEV_SUPPORT_NOTIFY_PKT_B,
+	HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -186,6 +199,9 @@ enum HNAE3_DEV_CAP_BITS {
 #define hnae3_ae_dev_notify_pkt_supported(ae_dev) \
 	test_bit(HNAE3_DEV_SUPPORT_NOTIFY_PKT_B, (ae_dev)->caps)
 
+#define hnae3_ae_dev_gen_reg_dfx_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B, (hdev)->ae_dev->caps)
+
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
 };
@@ -225,6 +241,12 @@ enum hnae3_loop {
 enum hnae3_client_type {
 	HNAE3_CLIENT_KNIC,
 	HNAE3_CLIENT_ROCE,
+	HNAE3_CLIENT_ROH,
+};
+
+enum hnae3_mac_type {
+	HNAE3_MAC_ETH,
+	HNAE3_MAC_ROH,
 };
 
 /* mac media type */
@@ -366,6 +388,15 @@ struct hnae3_vector_info {
 #define HNAE3_FW_VERSION_BYTE1_MASK	GENMASK(15, 8)
 #define HNAE3_FW_VERSION_BYTE0_SHIFT	0
 #define HNAE3_FW_VERSION_BYTE0_MASK	GENMASK(7, 0)
+
+#define HNAE3_SCC_VERSION_BYTE3_SHIFT	24
+#define HNAE3_SCC_VERSION_BYTE3_MASK	GENMASK(31, 24)
+#define HNAE3_SCC_VERSION_BYTE2_SHIFT	16
+#define HNAE3_SCC_VERSION_BYTE2_MASK	GENMASK(23, 16)
+#define HNAE3_SCC_VERSION_BYTE1_SHIFT	8
+#define HNAE3_SCC_VERSION_BYTE1_MASK	GENMASK(15, 8)
+#define HNAE3_SCC_VERSION_BYTE0_SHIFT	0
+#define HNAE3_SCC_VERSION_BYTE0_MASK	GENMASK(7, 0)
 
 struct hnae3_ring_chain_node {
 	struct hnae3_ring_chain_node *next;
@@ -574,6 +605,10 @@ struct hnae3_ae_dev {
  *   Check if any cls flower rule exist
  * dbg_read_cmd
  *   Execute debugfs read command.
+ * request_flush_qb_config
+ *   Request to update queue bonding configuration
+ * query_fd_qb_state
+ *   Query whether hw queue bonding enabled
  * set_tx_hwts_info
  *   Save information for 1588 tx packet
  * get_rx_hwts
@@ -773,6 +808,8 @@ struct hnae3_ae_ops {
 				      struct ethtool_link_ksettings *cmd);
 	int (*set_phy_link_ksettings)(struct hnae3_handle *handle,
 				      const struct ethtool_link_ksettings *cmd);
+	void (*request_flush_qb_config)(struct hnae3_handle *handle);
+	bool (*query_fd_qb_state)(struct hnae3_handle *handle);
 	bool (*set_tx_hwts_info)(struct hnae3_handle *handle,
 				 struct sk_buff *skb);
 	void (*get_rx_hwts)(struct hnae3_handle *handle, struct sk_buff *skb,
@@ -829,6 +866,7 @@ struct hnae3_tc_info {
 	bool mqprio_active;
 	bool mqprio_destroy;
 	bool dcb_ets_active;
+	u64 max_rate[HNAE3_MAX_TC];	/* Unit Bps */
 };
 
 #define HNAE3_MAX_DSCP			64
@@ -871,6 +909,12 @@ struct hnae3_roce_private_info {
 	unsigned long state;
 };
 
+struct hnae3_roh_private_info {
+	struct net_device *netdev;
+	void __iomem *roh_io_base;
+	int base_vector;
+};
+
 #define HNAE3_SUPPORT_APP_LOOPBACK    BIT(0)
 #define HNAE3_SUPPORT_PHY_LOOPBACK    BIT(1)
 #define HNAE3_SUPPORT_SERDES_SERIAL_LOOPBACK	BIT(2)
@@ -888,6 +932,8 @@ struct hnae3_roce_private_info {
 
 enum hnae3_pflag {
 	HNAE3_PFLAG_LIMIT_PROMISC,
+	HNAE3_PFLAG_FD_QB_ENABLE,
+	HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE,
 	HNAE3_PFLAG_MAX
 };
 
@@ -902,6 +948,7 @@ struct hnae3_handle {
 		struct net_device *netdev; /* first member */
 		struct hnae3_knic_private_info kinfo;
 		struct hnae3_roce_private_info rinfo;
+		struct hnae3_roh_private_info rohinfo;
 	};
 
 	u32 numa_node_mask;	/* for multi-chip support */
@@ -919,6 +966,10 @@ struct hnae3_handle {
 
 	unsigned long supported_pflags;
 	unsigned long priv_flags;
+
+	enum hnae3_mac_type mac_type;
+
+	unsigned long link_change_assert_time;
 };
 
 #define hnae3_set_field(origin, mask, shift, val) \
@@ -932,6 +983,11 @@ struct hnae3_handle {
 	hnae3_set_field(origin, 0x1 << (shift), shift, val)
 #define hnae3_get_bit(origin, shift) \
 	hnae3_get_field(origin, 0x1 << (shift), shift)
+
+static inline bool hnae3_check_roh_mac_type(struct hnae3_handle *handle)
+{
+	return handle->mac_type == HNAE3_MAC_ROH;
+}
 
 #define HNAE3_FORMAT_MAC_ADDR_LEN	18
 #define HNAE3_FORMAT_MAC_ADDR_OFFSET_0	0

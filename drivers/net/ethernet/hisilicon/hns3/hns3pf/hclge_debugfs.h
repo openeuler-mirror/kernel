@@ -69,11 +69,6 @@ struct hclge_dbg_reg_common_msg {
 	enum hclge_opcode_type cmd;
 };
 
-struct hclge_dbg_tcam_msg {
-	u8 stage;
-	u32 loc;
-};
-
 #define	HCLGE_DBG_MAX_DFX_MSG_LEN	60
 struct hclge_dbg_dfx_message {
 	int flag;
@@ -770,5 +765,8 @@ struct hclge_dbg_vlan_cfg {
 	u8 pri_only1;
 	u8 pri_only2;
 };
+
+int hclge_dbg_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc_src,
+		       int index, int bd_num, enum hclge_opcode_type cmd);
 
 #endif
