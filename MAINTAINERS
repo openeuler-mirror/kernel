@@ -9531,6 +9531,13 @@ S:	Maintained
 F:	Documentation/ABI/testing/debugfs-hisi-zip
 F:	drivers/crypto/hisilicon/zip/
 
+HISI_RAID SCSI RAID DRIVERS
+M:	Zhang Lei <zhanglei48@huawei.com>
+L:	kernel@openeuler.org
+S:	Maintained
+F:	Documentation/scsi/hisi_raid.rst
+F:	drivers/scsi/hisi_raid/
+
 HMM - Heterogeneous Memory Management
 M:	Jérôme Glisse <jglisse@redhat.com>
 L:	linux-mm@kvack.org
