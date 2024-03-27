@@ -641,18 +641,21 @@ static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 }
 
 static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
-			    struct hns_roce_qp *hr_qp,
+			    struct hns_roce_qp *hr_qp, u8 page_shift,
 			    struct hns_roce_buf_attr *buf_attr)
 {
+	unsigned int page_size = BIT(page_shift);
 	int buf_size;
 	int idx = 0;
 
 	hr_qp->buff_size = 0;
 
+	if (page_shift > PAGE_SHIFT || page_shift < HNS_HW_PAGE_SHIFT)
+		return -EOPNOTSUPP;
+
 	/* SQ WQE */
 	hr_qp->sq.offset = 0;
-	buf_size = to_hr_hem_entries_size(hr_qp->sq.wqe_cnt,
-					  hr_qp->sq.wqe_shift);
+	buf_size = ALIGN(hr_qp->sq.wqe_cnt << hr_qp->sq.wqe_shift, page_size);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = hr_dev->caps.wqe_sq_hop_num;
@@ -662,8 +665,7 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 
 	/* extend SGE WQE in SQ */
 	hr_qp->sge.offset = hr_qp->buff_size;
-	buf_size = to_hr_hem_entries_size(hr_qp->sge.sge_cnt,
-					  hr_qp->sge.sge_shift);
+	buf_size = ALIGN(hr_qp->sge.sge_cnt << hr_qp->sge.sge_shift, page_size);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = hr_dev->caps.wqe_sge_hop_num;
@@ -673,8 +675,7 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 
 	/* RQ WQE */
 	hr_qp->rq.offset = hr_qp->buff_size;
-	buf_size = to_hr_hem_entries_size(hr_qp->rq.wqe_cnt,
-					  hr_qp->rq.wqe_shift);
+	buf_size = ALIGN(hr_qp->rq.wqe_cnt << hr_qp->rq.wqe_shift, page_size);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
 		buf_attr->region[idx].hopnum = hr_dev->caps.wqe_rq_hop_num;
@@ -685,8 +686,8 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 	if (hr_qp->buff_size < 1)
 		return -EINVAL;
 
-	buf_attr->page_shift = HNS_HW_PAGE_SHIFT + hr_dev->caps.mtt_buf_pg_sz;
 	buf_attr->region_count = idx;
+	buf_attr->page_shift = page_shift;
 
 	return 0;
 }
@@ -742,20 +743,27 @@ static int hns_roce_qp_has_rq(struct ib_qp_init_attr *attr)
 
 static int alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
-			struct ib_udata *udata, unsigned long addr)
+			struct ib_udata *udata,
+			struct hns_roce_ib_create_qp *ucmd)
 {
+	struct hns_roce_ucontext *uctx = rdma_udata_to_drv_context(udata,
+					 struct hns_roce_ucontext, ibucontext);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
+	u8 page_shift = HNS_HW_PAGE_SHIFT;
 	int ret;
 
-	ret = set_wqe_buf_attr(hr_dev, hr_qp, &buf_attr);
+	if (uctx && (uctx->config & HNS_ROCE_UCTX_DYN_QP_PGSZ))
+		page_shift = ucmd->pageshift;
+
+	ret = set_wqe_buf_attr(hr_dev, hr_qp, page_shift, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
 		goto err_inline;
 	}
 	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, &buf_attr,
 				  PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
-				  udata, addr);
+				  udata, ucmd->buf_addr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
 		goto err_inline;
@@ -1151,7 +1159,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		}
 	}
 
-	ret = alloc_qp_buf(hr_dev, hr_qp, init_attr, udata, ucmd.buf_addr);
+	ret = alloc_qp_buf(hr_dev, hr_qp, init_attr, udata, &ucmd);
 	if (ret) {
 		ibdev_err(ibdev, "failed to alloc QP buffer, ret = %d.\n", ret);
 		goto err_buf;

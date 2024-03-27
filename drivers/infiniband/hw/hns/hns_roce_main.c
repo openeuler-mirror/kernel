@@ -392,6 +392,7 @@ hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 				ucontext, &entry->rdma_entry, length, 0);
 		break;
 	case HNS_ROCE_MMAP_TYPE_DWQE:
+	case HNS_ROCE_MMAP_TYPE_RESET:
 		ret = rdma_user_mmap_entry_insert_range(
 				ucontext, &entry->rdma_entry, length, 1,
 				U32_MAX);
@@ -430,6 +431,57 @@ static int hns_roce_alloc_uar_entry(struct ib_ucontext *uctx)
 	return 0;
 }
 
+static void hns_roce_dealloc_reset_entry(struct hns_roce_ucontext *context)
+{
+	if (context->reset_mmap_entry)
+		rdma_user_mmap_entry_remove(&context->reset_mmap_entry->rdma_entry);
+}
+
+static int hns_roce_alloc_reset_entry(struct ib_ucontext *uctx)
+{
+	struct hns_roce_ucontext *context = to_hr_ucontext(uctx);
+	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
+
+	context->reset_mmap_entry = hns_roce_user_mmap_entry_insert(uctx,
+		(u64)hr_dev->reset_kaddr, PAGE_SIZE, HNS_ROCE_MMAP_TYPE_RESET);
+
+	if (!context->reset_mmap_entry)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static void hns_roce_get_uctx_config(struct hns_roce_dev *hr_dev,
+				struct hns_roce_ucontext *context,
+				struct hns_roce_ib_alloc_ucontext *ucmd,
+				struct hns_roce_ib_alloc_ucontext_resp *resp)
+{
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		context->config = ucmd->config & HNS_ROCE_EXSGE_FLAGS;
+
+	if (context->config & HNS_ROCE_EXSGE_FLAGS) {
+		resp->config |= HNS_ROCE_RSP_EXSGE_FLAGS;
+		resp->max_inline_data = hr_dev->caps.max_sq_inline;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
+		context->config |= ucmd->config & HNS_ROCE_RQ_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
+			resp->config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
+		context->config |= ucmd->config & HNS_ROCE_CQE_INLINE_FLAGS;
+		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
+			resp->config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
+	}
+
+	if (ucmd->config & HNS_ROCE_UCTX_DYN_QP_PGSZ) {
+		context->config |= HNS_ROCE_UCTX_DYN_QP_PGSZ;
+		resp->config |=  HNS_ROCE_UCTX_RSP_DYN_QP_PGSZ;
+	}
+}
+
 static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 				   struct ib_udata *udata)
 {
@@ -437,6 +489,7 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
 	struct hns_roce_ib_alloc_ucontext_resp resp = {};
 	struct hns_roce_ib_alloc_ucontext ucmd = {};
+	struct rdma_user_mmap_entry *rdma_entry;
 	int ret = -EAGAIN;
 
 	if (!hr_dev->active)
@@ -451,27 +504,9 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 		goto error_out;
 
 	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
-		context->config = ucmd.config & HNS_ROCE_EXSGE_FLAGS;
-
-	if (context->config & HNS_ROCE_EXSGE_FLAGS) {
-		resp.config |= HNS_ROCE_RSP_EXSGE_FLAGS;
-		resp.max_inline_data = hr_dev->caps.max_sq_inline;
-	}
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
-		context->config |= ucmd.config & HNS_ROCE_RQ_INLINE_FLAGS;
-		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
-			resp.config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
-	}
-
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
-		context->config |= ucmd.config & HNS_ROCE_CQE_INLINE_FLAGS;
-		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
-			resp.config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
-	}
-
-	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
 		resp.congest_type = hr_dev->caps.cong_cap;
+
+	hns_roce_get_uctx_config(hr_dev, context, &ucmd, &resp);
 
 	ret = hns_roce_uar_alloc(hr_dev, &context->uar);
 	if (ret)
@@ -487,6 +522,15 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 		mutex_init(&context->page_mutex);
 	}
 
+	ret = hns_roce_alloc_reset_entry(uctx);
+	if (ret)
+		goto error_fail_reset_entry;
+
+	if (context->reset_mmap_entry) {
+		rdma_entry = &context->reset_mmap_entry->rdma_entry;
+		resp.reset_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
+	}
+
 	resp.cqe_size = hr_dev->caps.cqe_sz;
 
 	ret = ib_copy_to_udata(udata, &resp,
@@ -497,6 +541,9 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	return 0;
 
 error_fail_copy_to_udata:
+	hns_roce_dealloc_reset_entry(context);
+
+error_fail_reset_entry:
 	hns_roce_dealloc_uar_entry(context);
 
 error_fail_uar_entry:
@@ -514,6 +561,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
 
 	hns_roce_dealloc_uar_entry(context);
+	hns_roce_dealloc_reset_entry(context);
 
 	ida_free(&hr_dev->uar_ida.ida, (int)context->uar.logic_idx);
 }
@@ -540,6 +588,15 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 	case HNS_ROCE_MMAP_TYPE_DB:
 	case HNS_ROCE_MMAP_TYPE_DWQE:
 		prot = pgprot_device(vma->vm_page_prot);
+		break;
+	case HNS_ROCE_MMAP_TYPE_RESET:
+		if (vma->vm_flags & (VM_WRITE | VM_EXEC)) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		prot = vma->vm_page_prot;
+		pfn = page_to_pfn(hr_dev->reset_page);
 		break;
 	default:
 		ret = -EINVAL;
