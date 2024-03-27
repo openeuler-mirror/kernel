@@ -115,7 +115,8 @@ static int tsse_sriov_configure(struct pci_dev *pdev, int num_vfs_param)
 }
 
 /**
- * This function will be called when user writes string to /sys/bus/pci/devices/.../tsse_image_load.
+ * tsse_image_load_store() - This function will be called when user
+ * writes string to /sys/bus/pci/devices/.../tsse_image_load.
  * Driver will always loads /lib/firmware/tsse_firmware.bin.
  * @dev: device
  * @attr: device attribute
