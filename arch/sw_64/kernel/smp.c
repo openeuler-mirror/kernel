@@ -108,6 +108,8 @@ void smp_callin(void)
 
 	per_cpu(cpu_state, cpuid) = CPU_ONLINE;
 	per_cpu(hard_node_id, cpuid) = rcid_to_domain_id(cpu_to_rcid(cpuid));
+	store_cpu_topology(cpuid);
+	numa_add_cpu(cpuid);
 
 	/* Must have completely accurate bogos.  */
 	local_irq_enable();
@@ -161,8 +163,6 @@ static int secondary_cpu_start(int cpuid, struct task_struct *idle)
 
 started:
 	DBGS("%s: SUCCESS for CPU %d!!!\n", __func__, cpuid);
-	store_cpu_topology(cpuid);
-	numa_add_cpu(cpuid);
 	return 0;
 }
 
