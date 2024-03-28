@@ -163,7 +163,7 @@ static int uswap_unmap_anon_page(struct mm_struct *mm,
 
 	dec_mm_counter(mm, MM_ANONPAGES);
 	add_reliable_page_counter(page, mm, -1);
-	page_remove_rmap(page, vma, false);
+	folio_remove_rmap_pte(page_folio(page), page, vma);
 	page->mapping = NULL;
 
 out_release_unlock:
