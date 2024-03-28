@@ -875,7 +875,7 @@ void __init lockup_detector_init(void)
 		     housekeeping_cpumask(HK_FLAG_TIMER));
 
 	if ((!disable_sdei_nmi_watchdog && !sdei_watchdog_nmi_probe()) ||
-		!watchdog_nmi_probe())
+		(disable_sdei_nmi_watchdog && !watchdog_nmi_probe()))
 		nmi_watchdog_available = true;
 	else
 		allow_lockup_detector_init_retry = true;
