@@ -1221,7 +1221,21 @@ static int hisi_acc_vfio_pci_mmap(struct vfio_device *core_vdev,
 	index = vma->vm_pgoff >> (VFIO_PCI_OFFSET_SHIFT - PAGE_SHIFT);
 	if (index == VFIO_PCI_BAR2_REGION_INDEX) {
 		u64 req_len, pgoff, req_start;
-		resource_size_t end = pci_resource_len(vdev->pdev, index) / 2;
+		resource_size_t end;
+
+		/*
+		 * ACC VF dev 64KB BAR2 region consists of both functional
+		 * register space and migration control register space, each
+		 * uses 32KB BAR2 region, on the system with more than 64KB
+		 * page size, even if the migration control register space
+		 * is written by VM, it will only affects the VF.
+		 *
+		 * In order to support the live migration function in the
+		 * system with a page size above 64KB, the driver needs
+		 * to ensure that the VF region size is aligned with the
+		 * system page size.
+		 */
+		end = PAGE_ALIGN(pci_resource_len(vdev->pdev, index) / 2);
 
 		req_len = vma->vm_end - vma->vm_start;
 		pgoff = vma->vm_pgoff &
