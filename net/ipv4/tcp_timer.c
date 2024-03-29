@@ -25,7 +25,7 @@
 
 static u32 tcp_clamp_rto_to_user_timeout(const struct sock *sk)
 {
-	struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 elapsed, start_ts, user_timeout;
 	s32 remaining;
 
@@ -43,7 +43,7 @@ static u32 tcp_clamp_rto_to_user_timeout(const struct sock *sk)
 
 u32 tcp_clamp_probe0_to_user_timeout(const struct sock *sk, u32 when)
 {
-	struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 remaining, user_timeout;
 	s32 elapsed;
 
