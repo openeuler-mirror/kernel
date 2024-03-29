@@ -1363,8 +1363,6 @@ static int hpre_pf_probe_init(struct hpre *hpre)
 		return ret;
 
 	hpre_open_sva_prefetch(qm);
-
-	hisi_qm_dev_err_init(qm);
 	ret = hpre_show_last_regs_init(qm);
 	if (ret)
 		pci_err(qm->pdev, "Failed to init last word regs!\n");
@@ -1458,8 +1456,6 @@ err_qm_del_list:
 
 err_with_err_init:
 	hpre_probe_uninit(qm);
-	hisi_qm_dev_err_uninit(qm);
-
 err_with_qm_init:
 	hisi_qm_uninit(qm);
 
@@ -1479,12 +1475,7 @@ static void hpre_remove(struct pci_dev *pdev)
 
 	hpre_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
-
-	if (qm->fun_type == QM_HW_PF) {
-		hpre_probe_uninit(qm);
-		hisi_qm_dev_err_uninit(qm);
-	}
-
+	hpre_probe_uninit(qm);
 	hisi_qm_uninit(qm);
 }
 
