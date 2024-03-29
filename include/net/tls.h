@@ -169,7 +169,6 @@ enum {
 };
 
 enum tls_context_flags {
-	TLS_RX_SYNC_RUNNING = 0,
 	/* tls_dev_del was called for the RX side, device state was released,
 	 * but tls_ctx->netdev might still be kept, because TX-side driver
 	 * resources might not be released yet. Used to prevent the second
