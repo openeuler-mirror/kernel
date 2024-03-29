@@ -220,11 +220,18 @@ void page_cache_ra_unbounded(struct readahead_control *ractl,
 		if (mapping->a_ops->readpages) {
 			page->index = index + i;
 			list_add(&page->lru, &page_pool);
-		} else if (add_to_page_cache_lru(page, mapping, index + i,
-					gfp_mask) < 0) {
-			put_page(page);
-			read_pages(ractl, &page_pool, true);
-			continue;
+		} else {
+			int ret;
+
+			ret = add_to_page_cache_lru(page, mapping, index + i,
+					gfp_mask);
+			if (ret < 0) {
+				put_page(page);
+				if (ret == -ENOMEM)
+					break;
+				read_pages(ractl, &page_pool, true);
+				continue;
+			}
 		}
 		if (i == nr_to_read - lookahead_size)
 			SetPageReadahead(page);
