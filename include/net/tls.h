@@ -207,7 +207,7 @@ struct tls_context {
 	union tls_crypto_context crypto_recv;
 
 	struct list_head list;
-	struct net_device *netdev;
+	struct net_device __rcu *netdev;
 	refcount_t refcount;
 
 	void *priv_ctx_tx;
