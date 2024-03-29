@@ -683,7 +683,6 @@ static int hisi_acc_vf_load_state(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 {
 	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
 	struct hisi_acc_vf_migration_file *migf = hisi_acc_vdev->resuming_migf;
-	struct hisi_qm *vf_qm = &hisi_acc_vdev->vf_qm;
 	int ret;
 
 	/* Recover data to VF */
