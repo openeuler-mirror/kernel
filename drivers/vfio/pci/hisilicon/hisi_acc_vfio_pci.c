@@ -444,6 +444,19 @@ static int vf_qm_get_match_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	return 0;
 }
 
+static void vf_qm_xqc_restore(struct hisi_qm *qm,
+	struct hisi_acc_vf_migration_file *migf)
+{
+	struct acc_vf_data *vf_data = &migf->vf_data;
+	u16 eq_head, aeq_head;
+
+	eq_head = vf_data->qm_eqc_dw[0] & 0xFFFF;
+	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, eq_head, 0);
+
+	aeq_head = vf_data->qm_aeqc_dw[0] & 0xFFFF;
+	qm_db(qm, 0, QM_DOORBELL_CMD_AEQ, aeq_head, 0);
+}
+
 static int vf_qm_load_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 			   struct hisi_acc_vf_migration_file *migf)
 {
@@ -673,6 +686,7 @@ static int hisi_acc_vf_load_state(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 {
 	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
 	struct hisi_acc_vf_migration_file *migf = hisi_acc_vdev->resuming_migf;
+	struct hisi_qm *vf_qm = &hisi_acc_vdev->vf_qm;
 	int ret;
 
 	/* Recover data to VF */
@@ -681,6 +695,9 @@ static int hisi_acc_vf_load_state(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 		dev_err(dev, "failed to recover the VF!\n");
 		return ret;
 	}
+
+	/* Restore eqc and aeqc interrupt information */
+	vf_qm_xqc_restore(vf_qm, migf);
 
 	return 0;
 }
