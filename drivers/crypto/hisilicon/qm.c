@@ -470,15 +470,24 @@ static u32 qm_get_dev_err_status(struct hisi_qm *qm)
 /* Check if the error causes the master ooo block */
 static bool qm_check_dev_error(struct hisi_qm *qm)
 {
-	u32 val, dev_val;
+	struct hisi_qm *pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
+	u32 hw_status, dev_status;
 
-	if (qm->fun_type == QM_HW_VF)
+	if (test_bit(QM_DEVICE_DOWN, &qm->misc_ctl))
+		return true;
+
+	/* VF cannot read status register, return false */
+	if (pf_qm->fun_type == QM_HW_VF)
 		return false;
 
-	val = qm_get_hw_error_status(qm) & qm->err_info.qm_shutdown_mask;
-	dev_val = qm_get_dev_err_status(qm) & qm->err_info.dev_shutdown_mask;
+	hw_status = qm_get_hw_error_status(pf_qm) &
+		pf_qm->err_info.qm_shutdown_mask;
+	dev_status = qm_get_dev_err_status(pf_qm) &
+		pf_qm->err_info.dev_shutdown_mask;
+	if (hw_status || dev_status)
+		return true;
 
-	return val || dev_val;
+	return false;
 }
 
 static int qm_wait_reset_finish(struct hisi_qm *qm)
@@ -659,6 +668,12 @@ int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	struct qm_mailbox mailbox;
 	int ret;
 
+	/* No need to judge if master OOO is blocked. */
+	if (qm_check_dev_error(qm)) {
+		dev_err(&qm->pdev->dev, "QM mailbox operation failed since qm is stop!\n");
+		return -EIO;
+	}
+
 	qm_mb_pre_init(&mailbox, cmd, dma_addr, queue, op);
 
 	mutex_lock(&qm->mailbox_lock);
@@ -690,7 +705,6 @@ static int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 /* op 0: set xqc information to hardware, 1: get xqc information from hardware. */
 int qm_set_and_get_xqc(struct hisi_qm *qm, u8 cmd, void *xqc, u32 qp_id, bool op)
 {
-	struct hisi_qm *pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
 	struct qm_mailbox mailbox;
 	dma_addr_t xqc_dma;
 	void *tmp_xqc;
@@ -721,7 +735,7 @@ int qm_set_and_get_xqc(struct hisi_qm *qm, u8 cmd, void *xqc, u32 qp_id, bool op
 	}
 
 	/* Setting xqc will fail if master OOO is blocked. */
-	if (qm_check_dev_error(pf_qm)) {
+	if (qm_check_dev_error(qm)) {
 		dev_err(&qm->pdev->dev, "failed to send mailbox since qm is stop!\n");
 		return -EIO;
 	}
@@ -1091,11 +1105,10 @@ static void qm_disable_qp(struct hisi_qm *qm, u32 qp_id)
 
 static void qm_reset_function(struct hisi_qm *qm)
 {
-	struct hisi_qm *pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
 	struct device *dev = &qm->pdev->dev;
 	int ret;
 
-	if (qm_check_dev_error(pf_qm))
+	if (qm_check_dev_error(qm))
 		return;
 
 	ret = qm_reset_prepare_ready(qm);
@@ -2185,12 +2198,11 @@ static int qm_wait_qp_empty(struct hisi_qm *qm, u32 *state, u32 qp_id)
 static int qm_drain_qp(struct hisi_qp *qp)
 {
 	struct hisi_qm *qm = qp->qm;
-	struct hisi_qm *pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
 	u32 state = 0;
 	int ret;
 
 	/* No need to judge if master OOO is blocked. */
-	if (qm_check_dev_error(pf_qm))
+	if (qm_check_dev_error(qm))
 		return 0;
 
 	/* HW V3 supports drain qp by device */
@@ -4632,7 +4644,7 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev)
 		 * If it occurs, need to wait for soft reset
 		 * to fix it.
 		 */
-		if (qm_check_dev_error(pf_qm)) {
+		if (qm_check_dev_error(qm)) {
 			qm_reset_bit_clear(qm);
 			if (delay > QM_RESET_WAIT_TIMEOUT) {
 				pci_err(pdev, "the hardware error was not recovered!\n");
@@ -4894,6 +4906,7 @@ static void qm_pf_reset_vf_process(struct hisi_qm *qm,
 	if (ret)
 		goto err_get_status;
 
+	clear_bit(QM_DEVICE_DOWN, &qm->misc_ctl);
 	qm_pf_reset_vf_done(qm);
 
 	dev_info(dev, "device reset done.\n");
@@ -4901,6 +4914,7 @@ static void qm_pf_reset_vf_process(struct hisi_qm *qm,
 	return;
 
 err_get_status:
+	clear_bit(QM_DEVICE_DOWN, &qm->misc_ctl);
 	qm_cmd_init(qm);
 	qm_reset_bit_clear(qm);
 }
@@ -4934,6 +4948,7 @@ static void qm_handle_cmd_msg(struct hisi_qm *qm, u32 fun_num)
 		qm_pf_reset_vf_process(qm, QM_DOWN);
 		break;
 	case QM_PF_SRST_PREPARE:
+		set_bit(QM_DEVICE_DOWN, &qm->misc_ctl);
 		qm_pf_reset_vf_process(qm, QM_SOFT_RESET);
 		break;
 	case QM_VF_GET_QOS:
