@@ -1070,7 +1070,7 @@ static irqreturn_t qm_mb_cmd_irq(int irq, void *data)
 	if (!val)
 		return IRQ_NONE;
 
-	if (test_bit(QM_DRIVER_REMOVING, &qm->misc_ctl)) {
+	if (test_bit(QM_DRIVER_DOWN, &qm->misc_ctl)) {
 		dev_warn(&qm->pdev->dev, "Driver is down, message cannot be processed!\n");
 		return IRQ_HANDLED;
 	}
@@ -2784,7 +2784,7 @@ EXPORT_SYMBOL_GPL(qm_register_uacce);
  */
 static int qm_frozen(struct hisi_qm *qm)
 {
-	if (test_bit(QM_DRIVER_REMOVING, &qm->misc_ctl))
+	if (test_bit(QM_DRIVER_DOWN, &qm->misc_ctl))
 		return 0;
 
 	down_write(&qm->qps_lock);
@@ -2792,7 +2792,7 @@ static int qm_frozen(struct hisi_qm *qm)
 	if (!qm->qp_in_used) {
 		qm->qp_in_used = qm->qp_num;
 		up_write(&qm->qps_lock);
-		set_bit(QM_DRIVER_REMOVING, &qm->misc_ctl);
+		set_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 		return 0;
 	}
 
@@ -4751,10 +4751,13 @@ static irqreturn_t qm_abnormal_irq(int irq, void *data)
 
 	atomic64_inc(&qm->debug.dfx.abnormal_irq_cnt);
 	ret = qm_process_dev_error(qm);
-	if (ret == ACC_ERR_NEED_RESET &&
-	    !test_bit(QM_DRIVER_REMOVING, &qm->misc_ctl) &&
-	    !test_and_set_bit(QM_RST_SCHED, &qm->misc_ctl))
-		schedule_work(&qm->rst_work);
+	if (ret == ACC_ERR_NEED_RESET) {
+		if (!test_bit(QM_DRIVER_DOWN, &qm->misc_ctl) &&
+		    !test_and_set_bit(QM_RST_SCHED, &qm->misc_ctl))
+			schedule_work(&qm->rst_work);
+		else if (test_bit(QM_DRIVER_DOWN, &qm->misc_ctl))
+			pci_warn(qm->pdev, "Driver is down, need reload driver!\n");
+	}
 
 	return IRQ_HANDLED;
 }

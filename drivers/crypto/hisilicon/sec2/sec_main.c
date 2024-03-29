@@ -1218,6 +1218,7 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 
 	qm = &sec->qm;
+	set_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 	ret = sec_qm_init(qm, pdev);
 	if (ret) {
 		pci_err(pdev, "Failed to init SEC QM (%d)!\n", ret);
@@ -1237,6 +1238,9 @@ static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		pci_err(pdev, "Failed to start sec qm!\n");
 		goto err_probe_uninit;
 	}
+
+	/* Device is enabled, clear the flag. */
+	clear_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 
 	ret = sec_debugfs_init(qm);
 	if (ret)
@@ -1269,6 +1273,7 @@ err_alg_unregister:
 	hisi_qm_alg_unregister(qm, &sec_devices, ctx_q_num);
 err_qm_del_list:
 	hisi_qm_del_list(qm, &sec_devices);
+	hisi_qm_wait_task_finish(qm, &sec_devices);
 	sec_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 err_probe_uninit:

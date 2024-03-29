@@ -1312,7 +1312,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 
 	qm = &hisi_zip->qm;
-
+	set_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 	ret = hisi_zip_qm_init(qm, pdev);
 	if (ret) {
 		pci_err(pdev, "Failed to init ZIP QM (%d)!\n", ret);
@@ -1328,6 +1328,9 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = hisi_qm_start(qm);
 	if (ret)
 		goto err_dev_err_uninit;
+
+	/* Device is enabled, clear the flag. */
+	clear_bit(QM_DRIVER_DOWN, &qm->misc_ctl);
 
 	ret = hisi_zip_debugfs_init(qm);
 	if (ret)
@@ -1360,6 +1363,7 @@ err_qm_alg_unregister:
 	hisi_qm_alg_unregister(qm, &zip_devices, HZIP_CTX_Q_NUM_DEF);
 
 err_qm_del_list:
+	hisi_qm_wait_task_finish(qm, &zip_devices);
 	hisi_qm_del_list(qm, &zip_devices);
 	hisi_zip_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
