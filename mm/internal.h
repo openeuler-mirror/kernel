@@ -54,12 +54,12 @@ void page_writeback_init(void);
 
 /*
  * If a 16GB hugetlb folio were mapped by PTEs of all of its 4kB pages,
- * its nr_pages_mapped would be 0x400000: choose the COMPOUND_MAPPED bit
+ * its nr_pages_mapped would be 0x400000: choose the ENTIRELY_MAPPED bit
  * above that range, instead of 2*(PMD_SIZE/PAGE_SIZE).  Hugetlb currently
  * leaves nr_pages_mapped at 0, but avoid surprise if it participates later.
  */
-#define COMPOUND_MAPPED		0x800000
-#define FOLIO_PAGES_MAPPED	(COMPOUND_MAPPED - 1)
+#define ENTIRELY_MAPPED		0x800000
+#define FOLIO_PAGES_MAPPED	(ENTIRELY_MAPPED - 1)
 
 /*
  * Flags passed to __show_mem() and show_free_areas() to suppress output in
@@ -647,8 +647,8 @@ folio_within_vma(struct folio *folio, struct vm_area_struct *vma)
  * should be called with vma's mmap_lock held for read or write,
  * under page table lock for the pte/pmd being added or removed.
  *
- * mlock is usually called at the end of page_add_*_rmap(), munlock at
- * the end of page_remove_rmap(); but new anon folios are managed by
+ * mlock is usually called at the end of folio_add_*_rmap_*(), munlock at
+ * the end of folio_remove_rmap_*(); but new anon folios are managed by
  * folio_add_lru_vma() calling mlock_new_folio().
  */
 void mlock_folio(struct folio *folio);
@@ -1033,7 +1033,7 @@ enum {
  * * Ordinary GUP: Using the PT lock
  * * GUP-fast and fork(): mm->write_protect_seq
  * * GUP-fast and KSM or temporary unmapping (swap, migration): see
- *    page_try_share_anon_rmap()
+ *    folio_try_share_anon_rmap_*()
  *
  * Must be called with the (sub)page that's actually referenced via the
  * page table entry, which might not necessarily be the head page for a
@@ -1076,7 +1076,7 @@ static inline bool gup_must_unshare(struct vm_area_struct *vma,
 		return is_cow_mapping(vma->vm_flags);
 	}
 
-	/* Paired with a memory barrier in page_try_share_anon_rmap(). */
+	/* Paired with a memory barrier in folio_try_share_anon_rmap_*(). */
 	if (IS_ENABLED(CONFIG_HAVE_FAST_GUP))
 		smp_rmb();
 

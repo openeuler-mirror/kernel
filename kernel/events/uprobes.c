@@ -200,7 +200,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 				  mk_pte(new_page, vma->vm_page_prot));
 
 	add_reliable_page_counter(old_page, mm, -1);
-	page_remove_rmap(old_page, vma, false);
+	folio_remove_rmap_pte(old_folio, old_page, vma);
 	if (!folio_mapped(old_folio))
 		folio_free_swap(old_folio);
 	page_vma_mapped_walk_done(&pvmw);
