@@ -4,12 +4,11 @@
 #ifndef _RNP_ETHTOOL_H_
 #define _RNP_ETHTOOL_H_
 
-
-#define RNP_WOL_GET_SUPPORTED(adapter) (!!(adapter->wol & GENMASK(3, 0)))
-#define RNP_WOL_GET_STATUS(adapter) (!!(adapter->wol & GENMASK(7, 4)))
-#define RNP_WOL_SET_SUPPORTED(adapter) (adapter->wol |= BIT(0))
-#define RNP_WOL_SET_STATUS(adapter) (adapter->wol |= BIT(4))
-#define RNP_WOL_CLEAR_STATUS(adapter) (adapter->wol &= ~BIT(4))
+#define RNP_WOL_GET_SUPPORTED(adapter) (!!((adapter)->wol & GENMASK(3, 0)))
+#define RNP_WOL_GET_STATUS(adapter) (!!((adapter)->wol & GENMASK(7, 4)))
+#define RNP_WOL_SET_SUPPORTED(adapter) ((adapter)->wol |= BIT(0))
+#define RNP_WOL_SET_STATUS(adapter) ((adapter)->wol |= BIT(4))
+#define RNP_WOL_CLEAR_STATUS(adapter) ((adapter)->wol &= ~BIT(4))
 
 /* rnp allocates num_tx_queues and num_rx_queues symmetrically so
  * we set the num_rx_queues to evaluate to num_tx_queues. This is
@@ -65,7 +64,7 @@ struct rnp_rx_queue_ring_stat {
 	 RNP_NUM_RX_QUEUES *                                             \
 		 (sizeof(struct rnp_rx_queue_stats) / sizeof(u64) +      \
 		  sizeof(struct rnp_queue_stats) / sizeof(u64) +         \
-		  sizeof(struct rnp_rx_queue_ring_stat) / sizeof(u64)))
+		  sizeof(struct rnp_rx_queue_ring_stat) / sizeof(u64) - 2))
 
 #define RNP_STATS_LEN                                     \
 	(RNP_GLOBAL_STATS_LEN + RNP_HWSTRINGS_STATS_LEN + \

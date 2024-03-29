@@ -8,11 +8,11 @@
 #include <linux/mdio.h>
 #include <linux/netdevice.h>
 
-#if IS_ENABLED(CONFIG_MXGBE_FIX_VF_QUEUE)
+#if IS_ENABLED(CONFIG_MXGBE_FIX_VF_QUEUE) && !defined(FIX_VF_QUEUE)
 #define FIX_VF_QUEUE
 #endif /* IS_ENABLED(CONFIG_MXGBE_FIX_VF_QUEUE) */
 
-#if IS_ENABLED(CONFIG_MXGBE_FIX_MAC_PADDING)
+#if IS_ENABLED(CONFIG_MXGBE_FIX_MAC_PADDING) && !defined(FIX_MAC_PADDING)
 #define FIX_MAC_PADDING
 #endif /* IS_ENABLED(CONFIG_MXGBE_FIX_MAC_PADDING) */
 
@@ -39,12 +39,6 @@
 #if IS_ENABLED(CONFIG_FT_PADDING)
 #define FT_PADDING
 #endif /* IS_ENABLED(CONFIG_FT_PADDING) */
-
-// maybe euler can close this ?
-//#if IS_ENABLED(CONFIG_ARM64)
-//#define NO_BQL_TEST
-//#endif
-
 
 #if (PAGE_SIZE < 8192)
 /* if page_size is 4k, no need use this */
@@ -219,11 +213,11 @@ struct rnp_tx_desc {
 struct rnp_tx_ctx_desc {
 	__le32 mss_len_vf_num;
 	__le32 inner_vlan_tunnel_len;
-#define VF_VEB_MARK (1 << 24) /* bit 56 */
-#define VF_VEB_IGNORE_VLAN (1 << 25) /* bit 57 */
+#define VF_VEB_MARK (0x1 << 24) /* bit 56 */
+#define VF_VEB_IGNORE_VLAN (0x1 << 25) /* bit 57 */
 	__le32 resv;
 	__le32 resv_cmd;
-#define RNP_TXD_FLAG_TO_RPU (1 << 15)
+#define RNP_TXD_FLAG_TO_RPU (0x1 << 15)
 #define RNP_TXD_SMAC_CTRL_NOP (0x00 << 12)
 #define RNP_TXD_SMAC_CTRL_REPLACE_MACADDR0 (0x02 << 12)
 #define RNP_TXD_SMAC_CTRL_REPLACE_MACADDR1 (0x06 << 12)
@@ -254,15 +248,15 @@ union rnp_rx_desc {
 		__le32 rss_hash;
 		__le16 mark;
 		__le16 rev1;
-#define RNP_RX_L3_TYPE_MASK (1 << 15) /* 1 is ipv4 */
-#define VEB_VF_PKG (1 << 0) /* bit 48 */
-#define VEB_VF_IGNORE_VLAN (1 << 1) /* bit 49 */
-#define REV_OUTER_VLAN (1 << 5)
+#define RNP_RX_L3_TYPE_MASK (0x1 << 15) /* 1 is ipv4 */
+#define VEB_VF_PKG (0x1 << 0) /* bit 48 */
+#define VEB_VF_IGNORE_VLAN (0x1 << 1) /* bit 49 */
+#define REV_OUTER_VLAN (0x1 << 5)
 		__le16 len;
 		__le16 padding_len;
 		__le16 vlan;
 		__le16 cmd;
-#define RNP_RXD_STAT_VLAN_VALID (1 << 15)
+#define RNP_RXD_STAT_VLAN_VALID (0x1 << 15)
 #define RNP_RXD_STAT_STAG (0x01 << 14)
 #define RNP_RXD_STAT_TUNNEL_NVGRE (0x02 << 13)
 #define RNP_RXD_STAT_TUNNEL_VXLAN (0x01 << 13)
@@ -273,11 +267,11 @@ union rnp_rx_desc {
 #define RNP_RXD_STAT_L4_SCTP (0x02 << 6)
 #define RNP_RXD_STAT_L4_TCP (0x01 << 6)
 #define RNP_RXD_STAT_L4_UDP (0x03 << 6)
-#define RNP_RXD_STAT_IPV6 (1 << 5)
-#define RNP_RXD_STAT_IPV4 (0 << 5)
-#define RNP_RXD_STAT_PTP (1 << 4)
-#define RNP_RXD_STAT_DD (1 << 1)
-#define RNP_RXD_STAT_EOP (1 << 0)
+#define RNP_RXD_STAT_IPV6 (0x1 << 5)
+#define RNP_RXD_STAT_IPV4 (0x0 << 5)
+#define RNP_RXD_STAT_PTP (0x1 << 4)
+#define RNP_RXD_STAT_DD (0x1 << 1)
+#define RNP_RXD_STAT_EOP (0x1 << 0)
 	} wb;
 } __packed;
 
@@ -386,8 +380,7 @@ enum {
 
 /* Flow Director ATR input struct. */
 union rnp_atr_input {
-	/*
-	 * Byte layout in order, all values with MSB first:
+	/* Byte layout in order, all values with MSB first:
 	 *
 	 * vm_pool      - 1 byte
 	 * flow_type    - 1 byte
@@ -433,8 +426,8 @@ union rnp_atr_input {
 };
 
 /* BitTimes (BT) conversion */
-#define RNP_BT2KB(BT) ((BT + (8 * 1024 - 1)) / (8 * 1024))
-#define RNP_B2BT(BT) (BT * 8)
+#define RNP_BT2KB(BT) (((BT) + (8 * 1024 - 1)) / (8 * 1024))
+#define RNP_B2BT(BT) ((BT) * 8)
 
 /* Calculate Delay to respond to PFC */
 #define RNP_PFC_D 672
@@ -661,6 +654,7 @@ struct rnp_hw_stats {
 	/* === mac rx === */
 	u64 mac_rx_broadcast;
 	u64 mac_rx_multicast;
+	u64 mac_rx_csum_err;
 	u64 tx_broadcast;
 	u64 tx_multicast;
 
@@ -684,24 +678,23 @@ struct rnp_mac_info;
 typedef u8 *(*rnp_mc_addr_itr)(struct rnp_hw *hw, u8 **mc_addr_ptr,
 		u32 *vmdq);
 
-
 /* add nic operations */
 struct rnp_eth_operations {
 	/* RAR, Multicast, VLAN */
 	s32 (*get_mac_addr)(struct rnp_eth_info *eth, u8 *addr);
 	s32 (*set_rar)(struct rnp_eth_info *eth, u32 index, u8 *addr,
-			bool enable_addr);
+		       bool enable_addr);
 	s32 (*clear_rar)(struct rnp_eth_info *eth, u32 index);
 	s32 (*set_vmdq)(struct rnp_eth_info *eth, u32 rar, u32 vmdq);
 	s32 (*clear_vmdq)(struct rnp_eth_info *eth, u32 rar, u32 vmdq);
 	s32 (*update_mc_addr_list)(struct rnp_eth_info *eth,
-			struct net_device *netdev, bool sriov_on);
+				   struct net_device *netdev, bool sriov_on);
 	void (*clr_mc_addr)(struct rnp_eth_info *eth);
 	int (*set_rss_hfunc)(struct rnp_eth_info *eth, int hfunc);
 	void (*set_rss_key)(struct rnp_eth_info *eth, bool sriov_en);
 	void (*set_rss_table)(struct rnp_eth_info *eth);
 	void (*set_rx_hash)(struct rnp_eth_info *eth, bool status,
-			bool sriov_en);
+			    bool sriov_en);
 	s32 (*set_vfta)(struct rnp_eth_info *eth, u32 vlan, bool en);
 	void (*clr_vfta)(struct rnp_eth_info *eth);
 	void (*set_vlan_filter)(struct rnp_eth_info *eth, bool status);
@@ -721,10 +714,10 @@ struct rnp_eth_operations {
 	void (*clr_tuple5_remapping)(struct rnp_eth_info *eth, u16 pri_id);
 	void (*clr_all_tuple5_remapping)(struct rnp_eth_info *eth);
 	void (*set_tcp_sync_remapping)(struct rnp_eth_info *eth, int queue,
-			bool flag, bool prio);
+				       bool flag, bool prio);
 	void (*set_rx_skip)(struct rnp_eth_info *eth, int count, bool flag);
 	void (*set_min_max_packet)(struct rnp_eth_info *eth, int min,
-			int max);
+				   int max);
 	void (*set_vlan_strip)(struct rnp_eth_info *eth, u16 queue, bool en);
 	void (*set_outer_vlan_type)(struct rnp_eth_info *eth, int type);
 	void (*set_double_vlan)(struct rnp_eth_info *eth, bool en);
@@ -734,7 +727,7 @@ struct rnp_eth_operations {
 	void (*set_rx)(struct rnp_eth_info *eth, bool status);
 	void (*set_fcs)(struct rnp_eth_info *eth, bool status);
 	void (*set_vf_vlan_mode)(struct rnp_eth_info *eth, u16 vlan,
-			int vf, bool enable);
+				 int vf, bool enable);
 };
 
 enum {
@@ -749,16 +742,16 @@ struct rnp_hw_operations {
 	void (*set_mtu)(struct rnp_hw *hw, int new_mtu);
 	void (*set_vlan_filter_en)(struct rnp_hw *hw, bool status);
 	void (*set_vlan_filter)(struct rnp_hw *hw, u16 vid,
-			bool enable, bool sriov_flag);
+				bool enable, bool sriov_flag);
 	void (*set_vf_vlan_filter)(struct rnp_hw *hw, u16 vid, int vf,
-			bool enable, bool veb_only);
+				   bool enable, bool veb_only);
 	void (*clr_vfta)(struct rnp_hw *hw);
 	void (*set_vlan_strip)(struct rnp_hw *hw, u16 queue, bool strip);
 	void (*set_mac)(struct rnp_hw *hw, u8 *mac, bool sriov_flag);
 	void (*set_rx_mode)(struct rnp_hw *hw, struct net_device *netdev,
 			    bool sriov_flag);
 	void (*set_rar_with_vf)(struct rnp_hw *hw, u8 *mac, int idx,
-			u32 vfnum, bool enable);
+				u32 vfnum, bool enable);
 	void (*clr_rar)(struct rnp_hw *hw, int idx);
 	void (*clr_rar_all)(struct rnp_hw *hw);
 	void (*clr_vlan_veb)(struct rnp_hw *hw);
@@ -767,7 +760,7 @@ struct rnp_hw_operations {
 	void (*set_vxlan_port)(struct rnp_hw *hw, u32 port);
 	void (*set_vxlan_mode)(struct rnp_hw *hw, bool innel);
 	void (*set_mac_speed)(struct rnp_hw *hw, bool link,
-			u32 speed, bool duplex);
+			      u32 speed, bool duplex);
 	void (*set_mac_rx)(struct rnp_hw *hw, bool status);
 	void (*update_sriov_info)(struct rnp_hw *hw);
 	void (*set_sriov_status)(struct rnp_hw *hw, bool status);
@@ -787,9 +780,9 @@ struct rnp_hw_operations {
 	void (*enable_tx_laser)(struct rnp_hw *hw);
 	void (*flap_tx_laser)(struct rnp_hw *hw);
 	s32 (*check_link)(struct rnp_hw *hw, rnp_link_speed *speed,
-			bool *link_up, bool *duplex, bool wait_en);
+			  bool *link_up, bool *duplex, bool wait_en);
 	s32 (*setup_link)(struct rnp_hw *hw, u32 adv,
-			u32 autoneg, u32 speed, u32 duplex);
+			  u32 autoneg, u32 speed, u32 duplex);
 	void (*clean_link)(struct rnp_hw *hw);
 	s32 (*get_link_capabilities)(struct rnp_hw *hw, rnp_link_speed *speed,
 				     bool *autoneg);
@@ -818,18 +811,18 @@ struct rnp_hw_operations {
 	s32 (*phy_write_reg)(struct rnp_hw *hw, u32 addr, u32 type, u16 data);
 	void (*setup_wol)(struct rnp_hw *hw, u32 mode);
 	void (*set_vf_vlan_mode)(struct rnp_hw *hw, u16 vlan, int vf,
-			bool en);
-	void (*driver_status)(struct rnp_hw *hw, bool eanble, int mode);
+				 bool en);
+	void (*driver_status)(struct rnp_hw *hw, bool enable, int mode);
 };
 
 struct rnp_mac_operations {
 	void (*set_mac_rx)(struct rnp_mac_info *mac, bool status);
 	void (*set_mac_speed)(struct rnp_mac_info *mac, bool link,
-			u32 speed, bool duplex);
+			      u32 speed, bool duplex);
 	void (*set_mac_fcs)(struct rnp_mac_info *mac, bool status);
 	s32 (*set_fc_mode)(struct rnp_mac_info *mac);
 	void (*check_link)(struct rnp_mac_info *mac, rnp_link_speed *speed,
-			bool *link_up, bool wait_to_complete);
+			   bool *link_up, bool wait_to_complete);
 	void (*set_mac)(struct rnp_mac_info *mac, u8 *addr, int index);
 	int (*mdio_write)(struct rnp_mac_info *mac, int phyreg, int phydata);
 	int (*mdio_read)(struct rnp_mac_info *mac, int phyreg, int *regvalue);
@@ -847,11 +840,11 @@ struct rnp_eeprom_info {
 struct rnp_dma_operations {
 	void (*set_tx_maxrate)(struct rnp_dma_info *dma, u16 queue, u32 max_rate);
 	void (*set_veb_mac)(struct rnp_dma_info *dma, u8 *mac, u32 vfnum,
-			u32 ring);
+			    u32 ring);
 	/* only set own vlan */
 	void (*set_veb_vlan)(struct rnp_dma_info *dma, u16 vlan, u32 vfnum);
 	void (*set_veb_vlan_mask)(struct rnp_dma_info *dma, u16 vid,
-			u16 vf, int enable);
+				  u16 vf, int enable);
 	void (*clr_veb_all)(struct rnp_dma_info *dma);
 };
 
@@ -999,6 +992,7 @@ struct rnp_mbx_info {
 	u16 vf_ack[64];
 	u16 cpu_req;
 	u16 cpu_ack;
+	/* mbx lock */
 	struct mutex lock;
 	bool other_irq_enabled;
 	int mbx_size;

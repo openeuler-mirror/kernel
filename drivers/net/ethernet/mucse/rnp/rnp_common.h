@@ -139,7 +139,7 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 	u32 offset = ring_num % 32;
 	u32 data = rd32(hw, reg);
 
-	if (enable == true)
+	if (enable)
 		data |= (1 << offset);
 	else
 		data &= ~(1 << offset);
@@ -151,7 +151,7 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 		u32 reg = reg_def;                      \
 		u32 value = rd32(hw, reg);              \
 		dbg("before set  %x %x\n", reg, value); \
-		value |= (0x01 << bit);                 \
+		value |= (0x01 << (bit));                 \
 		dbg("after set %x %x\n", reg, value);   \
 		wr32(hw, reg, value);                   \
 	} while (0)
@@ -161,7 +161,7 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 		u32 reg = reg_def;                     \
 		u32 value = rd32(hw, reg);             \
 		dbg("before clr %x %x\n", reg, value); \
-		value &= (~(0x01 << bit));             \
+		value &= (~(0x01 << (bit)));             \
 		dbg("after clr %x %x\n", reg, value);  \
 		wr32(hw, reg, value);                  \
 	} while (0)
@@ -227,13 +227,13 @@ static inline void buf_dump_line(const char *msg, int line, void *buf,
 			   line, buf);
 
 	for (i = 0; i < len; ++i) {
-		if ((i != 0) && (i % 16) == 0 &&
+		if (i != 0 && (i % 16) == 0 &&
 		    (offset >= (1024 - 10 * 16))) {
 			printk(KERN_DEBUG "%s\n", msg_buf);
 			offset = 0;
 		}
 
-		if ((i != 0) && (i % 16) == 0) {
+		if (i != 0 && (i % 16) == 0) {
 			offset += snprintf(msg_buf + offset, msg_len,
 					   "\n%03x: ", i);
 		}
@@ -265,13 +265,13 @@ static inline void buf_dump(const char *msg, void *buf, int len)
 			   "=== %s #%d ==\n000: ", msg, len);
 
 	for (i = 0; i < len; ++i) {
-		if ((i != 0) && (i % 16) == 0 &&
+		if (i != 0 && (i % 16) == 0 &&
 		    (offset >= (1024 - 10 * 16))) {
 			printk(KERN_DEBUG "%s\n", msg_buf);
 			offset = 0;
 		}
 
-		if ((i != 0) && (i % 16) == 0) {
+		if (i != 0 && (i % 16) == 0) {
 			offset += snprintf(msg_buf + offset, msg_len,
 					   "\n%03x: ", i);
 		}
@@ -282,7 +282,6 @@ static inline void buf_dump(const char *msg, void *buf, int len)
 	offset += snprintf(msg_buf + offset, msg_len, "\n=== done ==\n");
 	printk(KERN_DEBUG "%s\n", msg_buf);
 }
-
 
 enum RNP_LOG_EVT {
 	LOG_MBX_IN,

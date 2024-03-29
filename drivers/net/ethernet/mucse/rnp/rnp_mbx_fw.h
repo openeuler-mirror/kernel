@@ -12,31 +12,31 @@
 #define _PACKED_ALIGN4 __attribute__((packed, aligned(4)))
 #endif
 
-#define VF2PF_MBOX_VEC(mbx, vf) (mbx->vf2pf_mbox_vec_base + 4 * (vf))
-#define CPU2PF_MBOX_VEC(mbx) (mbx->cpu2pf_mbox_vec)
+#define VF2PF_MBOX_VEC(mbx, vf) ((mbx)->vf2pf_mbox_vec_base + 4 * (vf))
+#define CPU2PF_MBOX_VEC(mbx) ((mbx)->cpu2pf_mbox_vec)
 
 /* == PF <--> VF mailbox ==== */
 #define SHARE_MEM_BYTES (64)
 #define PF_VF_SHM(mbx, vf)     \
-	(mbx->pf_vf_shm_base + \
-	 mbx->mbx_mem_size * vf)
+	((mbx)->pf_vf_shm_base + \
+	 (mbx)->mbx_mem_size * (vf))
 /* for PF1 rtl will remap 6000 to 0xb000 */
 #define PF2VF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 0)
 #define VF2PF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 4)
 #define PF_VF_SHM_DATA(mbx, vf) (PF_VF_SHM(mbx, vf) + 8)
-#define PF2VF_MBOX_CTRL(mbx, vf) (mbx->pf2vf_mbox_ctrl_base + 4 * vf)
-#define PF_VF_MBOX_MASK_LO(mbx) (mbx->pf_vf_mbox_mask_lo)
-#define PF_VF_MBOX_MASK_HI(mbx) (mbx->pf_vf_mbox_mask_hi)
+#define PF2VF_MBOX_CTRL(mbx, vf) ((mbx)->pf2vf_mbox_ctrl_base + 4 * (vf))
+#define PF_VF_MBOX_MASK_LO(mbx) ((mbx)->pf_vf_mbox_mask_lo)
+#define PF_VF_MBOX_MASK_HI(mbx) ((mbx)->pf_vf_mbox_mask_hi)
 
 /* === CPU <--> PF === */
-#define CPU_PF_SHM(mbx) (mbx->cpu_pf_shm_base)
+#define CPU_PF_SHM(mbx) ((mbx)->cpu_pf_shm_base)
 #define CPU2PF_COUNTER(mbx) (CPU_PF_SHM(mbx) + 0)
 #define PF2CPU_COUNTER(mbx) (CPU_PF_SHM(mbx) + 4)
 #define CPU_PF_SHM_DATA(mbx) (CPU_PF_SHM(mbx) + 8)
-#define PF2CPU_MBOX_CTRL(mbx) (mbx->pf2cpu_mbox_ctrl)
-#define CPU_PF_MBOX_MASK(mbx) (mbx->cpu_pf_mbox_mask)
-#define MBOX_CTRL_REQ (1 << 0)
-#define MBOX_CTRL_PF_HOLD_SHM (1 << 3)
+#define PF2CPU_MBOX_CTRL(mbx) ((mbx)->pf2cpu_mbox_ctrl)
+#define CPU_PF_MBOX_MASK(mbx) ((mbx)->cpu_pf_mbox_mask)
+#define MBOX_CTRL_REQ (0x1 << 0)
+#define MBOX_CTRL_PF_HOLD_SHM (0x1 << 3)
 
 #define MBOX_IRQ_EN 0
 #define MBOX_IRQ_DISABLE 1
@@ -57,7 +57,7 @@ struct mbx_req_cookie {
 	wait_queue_head_t wait;
 	int done;
 	int priv_len;
-	char priv[0];
+	char priv[];
 };
 
 enum GENERIC_CMD {
@@ -182,6 +182,7 @@ enum LOOPBACK_LEVEL {
 	LOOPBACK_PCS = 5,
 	LOOPBACK_EXTERNAL = 6,
 };
+
 enum LOOPBACK_TYPE {
 	/* Tx->Rx */
 	LOOPBACK_TYPE_LOCAL = 0x0,
@@ -688,7 +689,6 @@ static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req,
 	req->lldp_tx.nr_lane = nr_lane;
 }
 
-
 static inline void build_maintain_req(struct mbx_fw_cmd_req *req,
 				      void *cookie, int cmd, int arg0,
 				      int req_bytes, int reply_bytes,
@@ -863,6 +863,7 @@ static inline void build_get_temp(struct mbx_fw_cmd_req *req, void *cookie)
 	req->reply_lo = 0;
 	req->reply_hi = 0;
 }
+
 static inline void build_get_dump_req(struct mbx_fw_cmd_req *req,
 				      void *cookie, int nr_lane,
 				      u32 fw_bin_phy_lo, u32 fw_bin_phy_hi,
