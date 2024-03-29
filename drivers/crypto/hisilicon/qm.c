@@ -4619,22 +4619,30 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev)
 	u32 delay = 0;
 	int ret;
 
-	qm_dev_err_uninit(pf_qm);
-
-	/*
-	 * Check whether there is an ECC mbit error, If it occurs, need to
-	 * wait for soft reset to fix it.
-	 */
-	while (qm_check_dev_error(pf_qm)) {
-		msleep(++delay);
-		if (delay > QM_RESET_WAIT_TIMEOUT)
+	while (true) {
+		ret = qm_reset_prepare_ready(qm);
+		if (ret) {
+			pci_err(pdev, "FLR not ready!\n");
 			return;
-	}
+		}
 
-	ret = qm_reset_prepare_ready(qm);
-	if (ret) {
-		pci_err(pdev, "FLR not ready!\n");
-		return;
+		qm_dev_err_uninit(pf_qm);
+		/*
+		 * Check whether there is an ECC mbit error,
+		 * If it occurs, need to wait for soft reset
+		 * to fix it.
+		 */
+		if (qm_check_dev_error(pf_qm)) {
+			qm_reset_bit_clear(qm);
+			if (delay > QM_RESET_WAIT_TIMEOUT) {
+				pci_err(pdev, "the hardware error was not recovered!\n");
+				return;
+			}
+
+			msleep(++delay);
+		} else {
+			break;
+		}
 	}
 
 	/* PF obtains the information of VF by querying the register. */
@@ -4648,16 +4656,23 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev)
 	ret = hisi_qm_stop(qm, QM_DOWN);
 	if (ret) {
 		pci_err(pdev, "Failed to stop QM, ret = %d.\n", ret);
-		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
-		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
-		return;
+		goto err_prepare;
 	}
 
 	ret = qm_wait_vf_prepare_finish(qm);
 	if (ret)
 		pci_err(pdev, "failed to stop by vfs in FLR!\n");
 
+	hisi_qm_cache_wb(qm);
 	pci_info(pdev, "FLR resetting...\n");
+	return;
+
+err_prepare:
+	pci_info(pdev, "FLR resetting prepare failed!\n");
+	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
+	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
+	atomic_set(&qm->status.flags, QM_STOP);
+	hisi_qm_cache_wb(qm);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_reset_prepare);
 
