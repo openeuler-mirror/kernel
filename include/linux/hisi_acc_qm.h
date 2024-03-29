@@ -52,8 +52,6 @@
 #define QM_MB_EVENT_SHIFT               8
 #define QM_MB_BUSY_SHIFT		13
 #define QM_MB_OP_SHIFT			14
-#define QM_MB_CMD_DATA_ADDR_L		0x304
-#define QM_MB_CMD_DATA_ADDR_H		0x308
 
 /* doorbell */
 #define QM_DOORBELL_CMD_SQ              0
@@ -559,9 +557,9 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev);
 void hisi_qm_reset_done(struct pci_dev *pdev);
 
 int hisi_qm_wait_mb_ready(struct hisi_qm *qm);
-int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
-	       bool op);
-
+int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr,
+			       u16 queue, bool op);
+int hisi_qm_mb_read(struct hisi_qm *qm, u64 *msg, u8 cmd, u16 queue);
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
 	struct scatterlist *sgl, struct hisi_acc_sgl_pool *pool,
