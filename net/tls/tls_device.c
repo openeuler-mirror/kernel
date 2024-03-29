@@ -978,6 +978,7 @@ out:
 
 static int tls_device_down(struct net_device *netdev)
 {
+	struct tls_context_wrapper *ctx_wrapper;
 	struct tls_context *ctx, *tmp;
 	unsigned long flags;
 	LIST_HEAD(list);
@@ -999,7 +1000,8 @@ static int tls_device_down(struct net_device *netdev)
 		/* Stop offloaded TX and switch to the fallback.
 		 * tls_is_sk_tx_device_offloaded will return false.
 		 */
-		WRITE_ONCE(ctx->sk->sk_validate_xmit_skb, tls_validate_xmit_skb_sw);
+		ctx_wrapper = tls_ctx_wrapper(ctx);
+		WRITE_ONCE(ctx_wrapper->sk->sk_validate_xmit_skb, tls_validate_xmit_skb_sw);
 
 		/* Stop the RX and TX resync.
 		 * tls_dev_resync must not be called after tls_dev_del.

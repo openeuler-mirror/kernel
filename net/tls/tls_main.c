@@ -550,17 +550,19 @@ static int tls_setsockopt(struct sock *sk, int level, int optname,
 static struct tls_context *create_ctx(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
+	struct tls_context_wrapper *ctx_wrapper;
 	struct tls_context *ctx;
 
-	ctx = kzalloc(sizeof(*ctx), GFP_ATOMIC);
-	if (!ctx)
+	ctx_wrapper = kzalloc(sizeof(*ctx_wrapper), GFP_ATOMIC);
+	if (!ctx_wrapper)
 		return NULL;
+	ctx = &ctx_wrapper->ctx;
 
 	icsk->icsk_ulp_data = ctx;
 	ctx->setsockopt = sk->sk_prot->setsockopt;
 	ctx->getsockopt = sk->sk_prot->getsockopt;
 	ctx->sk_proto_close = sk->sk_prot->close;
-	ctx->sk = sk;
+	ctx_wrapper->sk = sk;
 	return ctx;
 }
 

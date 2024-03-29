@@ -227,8 +227,6 @@ struct tls_context {
 	u16 pending_open_record_frags;
 	int (*push_pending_record)(struct sock *sk, int flags);
 
-	struct sock *sk;
-
 	void (*sk_write_space)(struct sock *sk);
 	void (*sk_destruct)(struct sock *sk);
 	void (*sk_proto_close)(struct sock *sk, long timeout);
@@ -242,6 +240,16 @@ struct tls_context {
 	int  (*hash)(struct sock *sk);
 	void (*unhash)(struct sock *sk);
 };
+
+struct tls_context_wrapper {
+	struct tls_context ctx;
+	struct sock *sk;
+};
+
+static inline struct tls_context_wrapper *tls_ctx_wrapper(const struct tls_context *ctx)
+{
+	return (struct tls_context_wrapper *)ctx;
+}
 
 struct tls_offload_context_rx {
 	/* sw must be the first member of tls_offload_context_rx */
