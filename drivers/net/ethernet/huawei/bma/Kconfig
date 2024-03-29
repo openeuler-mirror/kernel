@@ -1,0 +1,10 @@
+#
+# Huawei BMA software driver configuration
+#
+
+config BMA
+	tristate "Huawei BMA Driver"
+	depends on 64BIT
+	help
+		This driver supports Huawei BMA Software. It is used
+		to communication between Huawei BMA and BMC software.
