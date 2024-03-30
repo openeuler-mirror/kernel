@@ -216,11 +216,9 @@ static void resctrl_group_resync_domain_ctrls(struct rdtgroup *rdtgrp,
 
 	for (i = staged_start; i <= staged_end; i++) {
 		cdp_both_ctrl = cfg[i].cdp_both_ctrl;
-		/*
-		 * for ctrl group configuration, hw_closid of cfg[i] equals
-		 * to rdtgrp->closid.intpartid.
-		 */
-		closid.intpartid = hw_closid_val(cfg[i].hw_closid);
+
+		resctrl_cdp_mpamid_map_val(rdtgrp->closid.intpartid,
+					   cfg[i].conf_type, closid.intpartid);
 		resctrl_cdp_mpamid_map_val(rdtgrp->closid.reqpartid,
 				cfg[i].conf_type, closid.reqpartid);
 		resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
@@ -229,8 +227,6 @@ static void resctrl_group_resync_domain_ctrls(struct rdtgroup *rdtgrp,
 		 * we should synchronize all child mon groups'
 		 * configuration from this ctrl rdtgrp
 		 */
-		resctrl_cdp_mpamid_map_val(rdtgrp->closid.intpartid,
-					   cfg[i].conf_type, closid.intpartid);
 		head = &rdtgrp->mon.crdtgrp_list;
 		list_for_each_entry(entry, head, mon.crdtgrp_list) {
 			resctrl_cdp_mpamid_map_val(entry->closid.reqpartid,
@@ -260,11 +256,9 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 			continue;
 		update_on = false;
 		cdp_both_ctrl = cfg[i].cdp_both_ctrl;
-		/*
-		 * for ctrl group configuration, hw_closid of cfg[i] equals
-		 * to rdtgrp->closid.intpartid.
-		 */
-		closid.intpartid = hw_closid_val(cfg[i].hw_closid);
+
+		resctrl_cdp_mpamid_map_val(rdtgrp->closid.intpartid,
+					   cfg[i].conf_type, closid.intpartid);
 		for_each_ctrl_type(type) {
 			/* if ctrl group's config has changed, refresh it first. */
 			if (dom->ctrl_val[type][closid.intpartid] != cfg[i].new_ctrl[type] &&
@@ -279,6 +273,7 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 				dom->ctrl_val[type][closid.intpartid] =
 					cfg[i].new_ctrl[type];
 				dom->have_new_ctrl = true;
+				cfg[i].ctrl_updated[type] = false;
 				update_on = true;
 			}
 		}
@@ -289,8 +284,6 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 		 * we should synchronize all child mon groups'
 		 * configuration from this ctrl rdtgrp
 		 */
-		resctrl_cdp_mpamid_map_val(rdtgrp->closid.intpartid,
-					   cfg[i].conf_type, closid.intpartid);
 		head = &rdtgrp->mon.crdtgrp_list;
 		list_for_each_entry(entry, head, mon.crdtgrp_list) {
 			resctrl_cdp_mpamid_map_val(entry->closid.reqpartid,
