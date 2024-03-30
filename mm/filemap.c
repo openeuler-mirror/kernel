@@ -3168,7 +3168,14 @@ void filemap_map_pages(struct vm_fault *vmf,
 		if (xas.xa_index >= max_idx)
 			goto unlock;
 
-		if (mmap_miss > 0)
+		/*
+		 * If there are too many pages that are recently evicted
+		 * in a file, they will probably continue to be evicted.
+		 * In such situation, read-ahead is only a waste of IO.
+		 * Don't decrease mmap_miss in this scenario to make sure
+		 * we can stop read-ahead.
+		 */
+		if (mmap_miss > 0 && !PageWorkingset(page))
 			mmap_miss--;
 
 		vmf->address += (xas.xa_index - last_pgoff) << PAGE_SHIFT;
