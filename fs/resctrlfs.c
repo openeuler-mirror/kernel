@@ -549,31 +549,38 @@ static int find_rdtgrp_allocable_rmid(struct resctrl_group *rdtgrp)
 
 	prgrp = rdtgrp->mon.parent;
 
-	do {
-		rmid = rmid_alloc(prgrp->closid.reqpartid);
+	/*
+	 * Create ctrl group under root group, just allocate new partid
+	 */
+	if (rdtgrp->type == RDTCTRL_GROUP)
+		goto rmid_realloc;
+
+	rmid = rmid_alloc(prgrp->closid.reqpartid);
+	if (rmid >= 0)
+		goto rmid_attach;
+
+	head = &prgrp->mon.crdtgrp_list;
+	list_for_each_entry(entry, head, mon.crdtgrp_list) {
+		if (entry == rdtgrp)
+			continue;
+
+		rmid = rmid_alloc(entry->closid.reqpartid);
 		if (rmid >= 0)
-			break;
+			goto rmid_attach;
+	}
 
-		head = &prgrp->mon.crdtgrp_list;
-		list_for_each_entry(entry, head, mon.crdtgrp_list) {
-			if (entry == rdtgrp)
-				continue;
-
-			rmid = rmid_alloc(entry->closid.reqpartid);
-			if (rmid >= 0)
-				break;
-		}
-	} while (0);
-
+rmid_realloc:
+	rmid = rmid_alloc(-1);
 	if (rmid < 0)
-		rmid = rmid_alloc(-1);
+		return rmid;
 
+rmid_attach:
 	ret = mpam_rmid_to_partid_pmg(rmid, &reqpartid, NULL);
 	if (ret)
 		return ret;
+
 	rdtgrp->mon.rmid = rmid;
 	rdtgrp->closid.reqpartid = reqpartid;
-
 	return rmid;
 }
 
