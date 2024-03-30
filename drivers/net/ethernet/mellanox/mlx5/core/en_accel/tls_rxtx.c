@@ -265,6 +265,7 @@ struct sk_buff *mlx5e_tls_handle_tx_skb(struct net_device *netdev,
 {
 	struct mlx5e_priv *priv = netdev_priv(netdev);
 	struct mlx5e_tls_offload_context_tx *context;
+	struct net_device *tls_netdev;
 	struct tls_context *tls_ctx;
 	u32 expected_seq;
 	int datalen;
@@ -278,7 +279,8 @@ struct sk_buff *mlx5e_tls_handle_tx_skb(struct net_device *netdev,
 		goto out;
 
 	tls_ctx = tls_get_ctx(skb->sk);
-	if (unlikely(tls_ctx->netdev != netdev))
+	tls_netdev = rcu_dereference_bh(tls_ctx->netdev);
+	if (unlikely(tls_netdev != netdev))
 		goto out;
 
 	skb_seq = ntohl(tcp_hdr(skb)->seq);

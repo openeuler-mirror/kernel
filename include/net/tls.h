@@ -169,7 +169,11 @@ enum {
 };
 
 enum tls_context_flags {
-	TLS_RX_SYNC_RUNNING = 0,
+	/* tls_device_down was called after the netdev went down, device state
+	 * was released, and kTLS works in software, even though rx_conf is
+	 * still TLS_HW (needed for transition).
+	 */
+	TLS_RX_DEV_DEGRADED = 0,
 	/* tls_dev_del was called for the RX side, device state was released,
 	 * but tls_ctx->netdev might still be kept, because TX-side driver
 	 * resources might not be released yet. Used to prevent the second
@@ -203,7 +207,7 @@ struct tls_context {
 	union tls_crypto_context crypto_recv;
 
 	struct list_head list;
-	struct net_device *netdev;
+	struct net_device __rcu *netdev;
 	refcount_t refcount;
 
 	void *priv_ctx_tx;
@@ -236,6 +240,16 @@ struct tls_context {
 	int  (*hash)(struct sock *sk);
 	void (*unhash)(struct sock *sk);
 };
+
+struct tls_context_wrapper {
+	struct tls_context ctx;
+	struct sock *sk;
+};
+
+static inline struct tls_context_wrapper *tls_ctx_wrapper(const struct tls_context *ctx)
+{
+	return (struct tls_context_wrapper *)ctx;
+}
 
 struct tls_offload_context_rx {
 	/* sw must be the first member of tls_offload_context_rx */
@@ -336,6 +350,9 @@ static inline bool tls_is_pending_open_record(struct tls_context *tls_ctx)
 struct sk_buff *
 tls_validate_xmit_skb(struct sock *sk, struct net_device *dev,
 		      struct sk_buff *skb);
+struct sk_buff *
+tls_validate_xmit_skb_sw(struct sock *sk, struct net_device *dev,
+			 struct sk_buff *skb);
 
 static inline bool tls_is_sk_tx_device_offloaded(struct sock *sk)
 {
