@@ -205,13 +205,35 @@ static inline int pmd_young(pmd_t pmd)
 #define arch_flush_lazy_mmu_mode()	do {} while (0)
 #endif
 
-
-#ifndef pte_next_pfn
-static inline pte_t pte_next_pfn(pte_t pte)
+#ifndef pte_batch_hint
+/**
+ * pte_batch_hint - Number of pages that can be added to batch without scanning.
+ * @ptep: Page table pointer for the entry.
+ * @pte: Page table entry.
+ *
+ * Some architectures know that a set of contiguous ptes all map the same
+ * contiguous memory with the same permissions. In this case, it can provide a
+ * hint to aid pte batching without the core code needing to scan every pte.
+ *
+ * An architecture implementation may ignore the PTE accessed state. Further,
+ * the dirty state must apply atomically to all the PTEs described by the hint.
+ *
+ * May be overridden by the architecture, else pte_batch_hint is always 1.
+ */
+static inline unsigned int pte_batch_hint(pte_t *ptep, pte_t pte)
 {
-	return __pte(pte_val(pte) + (1UL << PFN_PTE_SHIFT));
+	return 1;
 }
 #endif
+
+#ifndef pte_advance_pfn
+static inline pte_t pte_advance_pfn(pte_t pte, unsigned long nr)
+{
+	return __pte(pte_val(pte) + (nr << PFN_PTE_SHIFT));
+}
+#endif
+
+#define pte_next_pfn(pte) pte_advance_pfn(pte, 1)
 
 #ifndef set_ptes
 /**
@@ -221,6 +243,10 @@ static inline pte_t pte_next_pfn(pte_t pte)
  * @ptep: Page table pointer for the first entry.
  * @pte: Page table entry for the first page.
  * @nr: Number of pages to map.
+ *
+ * When nr==1, initial state of pte may be present or not present, and new state
+ * may be present or not present. When nr>1, initial state of all ptes must be
+ * not present, and new state must be present.
  *
  * May be overridden by the architecture, or the architecture can define
  * set_pte() and PFN_PTE_SHIFT.
