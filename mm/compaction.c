@@ -23,6 +23,7 @@
 #include <linux/freezer.h>
 #include <linux/page_owner.h>
 #include <linux/psi.h>
+#include <linux/dynamic_pool.h>
 #include "internal.h"
 
 #ifdef CONFIG_COMPACTION
@@ -2023,6 +2024,9 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 				block_end_pfn = min(next_pfn, cc->free_pfn);
 			continue;
 		}
+
+		if (page_in_dynamic_pool(page))
+			continue;
 
 		/*
 		 * If isolation recently failed, do not retry. Only check the

@@ -272,7 +272,7 @@ static int dpool_demote_huge_page(struct pages_pool *src_pool,
 	clear_compound_page(page_folio(page), PMD_ORDER);
 	for (i = 0; i < nr_pages; i++) {
 		subpage = folio_page(folio, i);
-		free_pages_prepare(subpage, 0, 0);
+		dpool_free_page_prepare(subpage);
 		__SetPageDpool(subpage);
 		list_add_tail(&subpage->lru, &dst_pool->freelist);
 		dst_pool->free_pages++;
@@ -395,7 +395,7 @@ static int dpool_promote_huge_page(struct pages_pool *src_pool,
 	}
 
 	page = pfn_to_page(spage->start_pfn);
-	prep_new_page(page, PMD_ORDER, __GFP_COMP, 0);
+	dpool_prep_new_page(page, PMD_ORDER, __GFP_COMP, 0);
 	set_page_count(page, 0);
 	folio_change_private(page_folio(page), NULL);
 	__SetPageDpool(page);
@@ -420,7 +420,7 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 	src_pool = &dpool->pool[type + 1];
 	dst_pool = &dpool->pool[type];
 
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 
 	if (!dst_pool->split_pages)
 		goto unlock;
@@ -438,13 +438,13 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 			 * there is no way to free spage_next, so
 			 * it is safe to unlock here.
 			 */
-			spin_unlock(&dpool->lock);
+			spin_unlock_irq(&dpool->lock);
 			cond_resched();
 			lru_add_drain_all();
 			dpool_disable_pcp_pool(dpool, true);
 			do_migrate_range(spage->start_pfn,
 					 spage->start_pfn + nr_pages);
-			spin_lock(&dpool->lock);
+			spin_lock_irq(&dpool->lock);
 			dpool_enable_pcp_pool(dpool);
 			ret = dpool_promote_huge_page(src_pool, dst_pool, spage);
 			break;
@@ -463,7 +463,7 @@ static int dpool_promote_pool(struct dynamic_pool *dpool, int type)
 	}
 
 unlock:
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 	if (!ret)
 		kfree(spage);
 	trace_dpool_promote(dpool, type, page, ret);
@@ -479,11 +479,12 @@ static void dpool_refill_pcp_pool(struct dynamic_pool *dpool,
 {
 	struct pages_pool *pool = &dpool->pool[PAGES_POOL_4K];
 	struct page *page, *next;
+	unsigned long flags;
 	int i = 0;
 
 	lockdep_assert_held(&pcp_pool->lock);
 
-	spin_lock(&dpool->lock);
+	spin_lock_irqsave(&dpool->lock, flags);
 
 	if (!pool->free_pages && dpool_demote_pool_locked(dpool, PAGES_POOL_2M))
 		goto unlock;
@@ -498,7 +499,7 @@ static void dpool_refill_pcp_pool(struct dynamic_pool *dpool,
 	}
 
 unlock:
-	spin_unlock(&dpool->lock);
+	spin_unlock_irqrestore(&dpool->lock, flags);
 }
 
 static void dpool_drain_pcp_pool(struct dynamic_pool *dpool,
@@ -507,11 +508,12 @@ static void dpool_drain_pcp_pool(struct dynamic_pool *dpool,
 {
 	struct pages_pool *pool = &dpool->pool[PAGES_POOL_4K];
 	struct page *page, *next;
+	unsigned long flags;
 	int i = 0;
 
 	lockdep_assert_held(&pcp_pool->lock);
 
-	spin_lock(&dpool->lock);
+	spin_lock_irqsave(&dpool->lock, flags);
 	list_for_each_entry_safe(page, next, &pcp_pool->freelist, lru) {
 		list_move_tail(&page->lru, &pool->freelist);
 		__SetPageDpool(page);
@@ -523,7 +525,7 @@ static void dpool_drain_pcp_pool(struct dynamic_pool *dpool,
 
 	pool->used_pages += pcp_pool->used_pages;
 	pcp_pool->used_pages = 0;
-	spin_unlock(&dpool->lock);
+	spin_unlock_irqrestore(&dpool->lock, flags);
 }
 
 static void dpool_drain_all_pcp_pool(struct dynamic_pool *dpool)
@@ -614,7 +616,7 @@ retry:
 	pcp_pool->free_pages--;
 	pcp_pool->used_pages++;
 
-	if (check_new_page(page)) {
+	if (dpool_check_new_page(page)) {
 		SetPagePool(page);
 		goto retry;
 	}
@@ -641,7 +643,7 @@ static int dpool_free_pcp_page(struct dynamic_pool *dpool, struct page *page)
 	}
 
 	ClearPagePool(page);
-	if (!free_pages_prepare(page, 0, 0)) {
+	if (!dpool_free_page_prepare(page)) {
 		SetPagePool(page);
 		goto unlock;
 	}
@@ -682,7 +684,7 @@ int dynamic_pool_can_attach(struct task_struct *tsk, struct mem_cgroup *memcg)
 	return ret;
 }
 
-static bool dpool_should_alloc(gfp_t gfp_mask, unsigned int order)
+bool dynamic_pool_should_alloc(gfp_t gfp_mask, unsigned int order)
 {
 	gfp_t gfp = gfp_mask & GFP_HIGHUSER_MOVABLE;
 
@@ -700,6 +702,11 @@ static bool dpool_should_alloc(gfp_t gfp_mask, unsigned int order)
 	if ((gfp | __GFP_IO | __GFP_FS) != GFP_HIGHUSER_MOVABLE)
 		return false;
 
+#ifdef CONFIG_MEMORY_RELIABLE
+	if (mem_reliable_is_enabled() && (gfp_mask & GFP_RELIABLE))
+		return false;
+#endif
+
 	return true;
 }
 
@@ -714,7 +721,7 @@ struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order,
 	if (!dpool_enabled)
 		return NULL;
 
-	if (!dpool_should_alloc(gfp, order))
+	if (!dynamic_pool_should_alloc(gfp, order))
 		return NULL;
 
 	dpool = dpool_get_from_task(current);
@@ -749,7 +756,7 @@ retry:
 	pool->free_pages--;
 	pool->used_pages++;
 
-	if (check_new_page(page)) {
+	if (dpool_check_new_page(page)) {
 		/* This is a bad page, treat it as a used pages */
 		SetPagePool(page);
 		goto retry;
@@ -762,7 +769,7 @@ unlock:
 put:
 	dpool_put(dpool);
 	if (page)
-		prep_new_page(page, order, gfp, alloc_flags);
+		dpool_prep_new_page(page, order, gfp, alloc_flags);
 
 	return page;
 }
@@ -789,7 +796,7 @@ void dynamic_pool_free_page(struct page *page)
 	spin_lock_irqsave(&dpool->lock, flags);
 
 	ClearPagePool(page);
-	if (!free_pages_prepare(page, 0, 0)) {
+	if (!dpool_free_page_prepare(page)) {
 		SetPagePool(page);
 		goto unlock;
 	}
@@ -885,15 +892,15 @@ struct folio *dynamic_pool_alloc_hugepage(struct hugetlbfs_inode_info *p,
 	if (!dpool)
 		return NULL;
 
-	spin_lock_irqsave(&dpool->lock, flags);
-	if (!dpool->online)
-		goto unlock;
-
 	if (hstate_is_gigantic(h))
 		type = PAGES_POOL_1G;
 	else
 		type = PAGES_POOL_2M;
 	pool = &dpool->pool[type];
+
+	spin_lock_irqsave(&dpool->lock, flags);
+	if (!dpool->online)
+		goto unlock;
 
 	list_for_each_entry(folio, &pool->freelist, lru) {
 		if (folio_test_hwpoison(folio))
@@ -938,12 +945,13 @@ void dynamic_pool_free_hugepage(struct folio *folio, bool restore_reserve)
 		return;
 	}
 
-	spin_lock_irqsave(&dpool->lock, flags);
 	if (hstate_is_gigantic(h))
 		type = PAGES_POOL_1G;
 	else
 		type = PAGES_POOL_2M;
 	pool = &dpool->pool[type];
+
+	spin_lock_irqsave(&dpool->lock, flags);
 
 	if (folio_test_hwpoison(folio))
 		goto unlock;
@@ -1204,10 +1212,10 @@ static int dpool_fill_from_hugetlb(struct dynamic_pool *dpool, void *arg)
 	if (!h)
 		return -EINVAL;
 
-	spin_lock(&hugetlb_lock);
+	spin_lock_irq(&hugetlb_lock);
 	if ((h->free_huge_pages_node[nid] < nr_pages) ||
 	     (h->free_huge_pages - h->resv_huge_pages < nr_pages)) {
-		spin_unlock(&hugetlb_lock);
+		spin_unlock_irq(&hugetlb_lock);
 		return -ENOMEM;
 	}
 
@@ -1228,24 +1236,24 @@ static int dpool_fill_from_hugetlb(struct dynamic_pool *dpool, void *arg)
 		list_move(&page->lru, &page_list);
 		count++;
 	}
-	spin_unlock(&hugetlb_lock);
+	spin_unlock_irq(&hugetlb_lock);
 
 	list_for_each_entry_safe(page, next, &page_list, lru) {
 		if (hugetlb_vmemmap_restore(h, page)) {
-			spin_lock(&hugetlb_lock);
+			spin_lock_irq(&hugetlb_lock);
 			enqueue_hugetlb_folio(h, folio);
-			spin_unlock(&hugetlb_lock);
+			spin_unlock_irq(&hugetlb_lock);
 			pr_err("restore hugetlb_vmemmap failed page 0x%px\n",
 				page);
 			continue;
 		}
 
 		__SetPageDpool(page);
-		spin_lock(&dpool->lock);
+		spin_lock_irq(&dpool->lock);
 		list_move(&page->lru, &pool->freelist);
 		pool->free_pages++;
 		dpool->total_pages++;
-		spin_unlock(&dpool->lock);
+		spin_unlock_irq(&dpool->lock);
 	}
 
 	return 0;
@@ -1262,7 +1270,7 @@ static int dpool_drain_to_hugetlb(struct dynamic_pool *dpool)
 	if (!h)
 		return -EINVAL;
 
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 	list_for_each_entry_safe(page, next, &pool->freelist, lru) {
 		WARN_ON(PageHWPoison(page));
 		idx = hugepage_index(page_to_pfn(page));
@@ -1273,13 +1281,13 @@ static int dpool_drain_to_hugetlb(struct dynamic_pool *dpool)
 		pool->free_pages--;
 		dpool->total_pages--;
 	}
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 
 	list_for_each_entry_safe(page, next, &page_list, lru) {
 		hugetlb_vmemmap_optimize(h, page);
-		spin_lock(&hugetlb_lock);
+		spin_lock_irq(&hugetlb_lock);
 		enqueue_hugetlb_folio(h, page_folio(page));
-		spin_unlock(&hugetlb_lock);
+		spin_unlock_irq(&hugetlb_lock);
 	}
 
 	return dpool->total_pages ? -ENOMEM : 0;
@@ -1303,20 +1311,20 @@ static int dpool_merge_all(struct dynamic_pool *dpool)
 		}
 	}
 
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 	if (pool->split_pages || pool->used_huge_pages || pool->resv_huge_pages) {
 		ret = -ENOMEM;
 		pr_err("some 2M pages are still in use or mmap, delete failed: ");
 		pr_cont_cgroup_name(dpool->memcg->css.cgroup);
 		pr_cont("\n");
-		spin_unlock(&dpool->lock);
+		spin_unlock_irq(&dpool->lock);
 		goto out;
 	}
 
 	pool->free_pages += pool->nr_huge_pages;
 	pool->nr_huge_pages = 0;
 	pool->free_huge_pages = 0;
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 
 	pool = &dpool->pool[PAGES_POOL_1G];
 	while (pool->split_pages) {
@@ -1331,20 +1339,20 @@ static int dpool_merge_all(struct dynamic_pool *dpool)
 		}
 	}
 
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 	if (pool->split_pages || pool->used_huge_pages || pool->resv_huge_pages) {
 		ret = -ENOMEM;
 		pr_err("some 1G pages are still in use or mmap, delete failed: ");
 		pr_cont_cgroup_name(dpool->memcg->css.cgroup);
 		pr_cont("\n");
-		spin_unlock(&dpool->lock);
+		spin_unlock_irq(&dpool->lock);
 		goto out;
 	}
 
 	pool->free_pages += pool->nr_huge_pages;
 	pool->nr_huge_pages = 0;
 	pool->free_huge_pages = 0;
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 	ret = 0;
 
 out:
@@ -1436,7 +1444,7 @@ void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m)
 	}
 
 	dpool_disable_pcp_pool(dpool, false);
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 
 	/*
 	 * no others can modify the count because pcp pool is disabled and
@@ -1471,7 +1479,7 @@ void dynamic_pool_show(struct mem_cgroup *memcg, struct seq_file *m)
 	seq_printf(m, "4K_free_pages %lu\n", free_pages);
 	seq_printf(m, "4K_used_pages %ld\n", used_pages);
 
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 	dpool_enable_pcp_pool(dpool);
 	dpool_put(dpool);
 }
@@ -1494,22 +1502,25 @@ int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
 		goto unlock;
 
 	pool = &dpool->pool[type];
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 	if (nr_pages > pool->nr_huge_pages) {
 		delta = nr_pages - pool->nr_huge_pages;
 		while (delta > pool->free_pages &&
-		       !dpool_demote_pool_locked(dpool, type - 1))
-			cond_resched_lock(&dpool->lock);
+		       !dpool_demote_pool_locked(dpool, type - 1)) {
+			spin_unlock_irq(&dpool->lock);
+			cond_resched();
+			spin_lock_irq(&dpool->lock);
+		}
 		/* Only try merge pages for 2M pages */
 		if (type == PAGES_POOL_2M) {
 			while (delta > pool->free_pages) {
-				spin_unlock(&dpool->lock);
+				spin_unlock_irq(&dpool->lock);
 				cond_resched();
 				if (dpool_promote_pool(dpool, type)) {
-					spin_lock(&dpool->lock);
+					spin_lock_irq(&dpool->lock);
 					break;
 				}
-				spin_lock(&dpool->lock);
+				spin_lock_irq(&dpool->lock);
 			}
 		}
 		delta = min(delta, pool->free_pages);
@@ -1523,7 +1534,7 @@ int dynamic_pool_reserve_hugepage(struct mem_cgroup *memcg,
 		pool->free_huge_pages -= delta;
 		pool->free_pages += delta;
 	}
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 	dpool_put(dpool);
 	ret = 0;
 
@@ -1559,7 +1570,7 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 	memcpy(dpool->pfn_ranges, info->pfn_ranges,
 		sizeof(struct range) * dpool->range_cnt);
 
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 
 	for (i = 0; i < dpool->range_cnt; i++) {
 		struct range *range = &dpool->pfn_ranges[i];
@@ -1571,7 +1582,7 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 			set_page_count(page, 0);
 			page_mapcount_reset(page);
 
-			if (!free_pages_prepare(page, 0, 0)) {
+			if (!dpool_free_page_prepare(page)) {
 				pr_err("fill pool failed, check pages failed\n");
 				goto unlock;
 			}
@@ -1586,7 +1597,7 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 	ret = 0;
 
 unlock:
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 
 	return ret;
 }
@@ -1604,7 +1615,7 @@ static int dpool_migrate_used_pages(struct dynamic_pool *dpool)
 	int range_cnt = dpool->range_cnt;
 	int i;
 
-	spin_lock(&dpool->lock);
+	spin_lock_irq(&dpool->lock);
 
 	dpool->nr_poisoned_pages = 0;
 	for (i = 0; i < range_cnt; i++) {
@@ -1615,11 +1626,11 @@ static int dpool_migrate_used_pages(struct dynamic_pool *dpool)
 			struct page *page = pfn_to_page(pfn);
 
 			/* Unlock and try migration. */
-			spin_unlock(&dpool->lock);
+			spin_unlock_irq(&dpool->lock);
 			cond_resched();
 
 			if (PageDpool(page)) {
-				spin_lock(&dpool->lock);
+				spin_lock_irq(&dpool->lock);
 				continue;
 			}
 
@@ -1628,11 +1639,11 @@ static int dpool_migrate_used_pages(struct dynamic_pool *dpool)
 
 			lru_add_drain_all();
 			do_migrate_range(pfn, pfn + 1);
-			spin_lock(&dpool->lock);
+			spin_lock_irq(&dpool->lock);
 		}
 	}
 
-	spin_unlock(&dpool->lock);
+	spin_unlock_irq(&dpool->lock);
 
 	return 0;
 }
@@ -1696,6 +1707,7 @@ void dynamic_pool_show_meminfo(struct seq_file *m)
 	struct pages_pool *pool;
 	unsigned long free_pages = 0;
 	long used_pages = 0;
+	unsigned long flags;
 
 	if (!dpool_enabled || !enable_dpagelist)
 		return;
@@ -1706,11 +1718,11 @@ void dynamic_pool_show_meminfo(struct seq_file *m)
 
 	pool = &dpool->pool[PAGES_POOL_4K];
 	dpool_disable_pcp_pool(dpool, false);
-	spin_lock(&dpool->lock);
+	spin_lock_irqsave(&dpool->lock, flags);
 	dpool_sum_pcp_pool(dpool, &free_pages, &used_pages);
 	free_pages += pool->free_pages;
 	used_pages += pool->used_pages;
-	spin_unlock(&dpool->lock);
+	spin_unlock_irqrestore(&dpool->lock, flags);
 	dpool_enable_pcp_pool(dpool);
 
 out:

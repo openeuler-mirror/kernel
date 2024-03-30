@@ -1080,7 +1080,7 @@ static void kernel_init_pages(struct page *page, int numpages)
 	kasan_enable_current();
 }
 
-__always_inline bool free_pages_prepare(struct page *page,
+static __always_inline bool free_pages_prepare(struct page *page,
 			unsigned int order, fpi_t fpi_flags)
 {
 	int bad = 0;
@@ -1433,7 +1433,7 @@ static void check_new_page_bad(struct page *page)
 /*
  * This page is about to be returned from the page allocator
  */
-int check_new_page(struct page *page)
+static int check_new_page(struct page *page)
 {
 	if (likely(page_expected_state(page,
 				PAGE_FLAGS_CHECK_AT_PREP|__PG_HWPOISON)))
@@ -1545,8 +1545,8 @@ inline void post_alloc_hook(struct page *page, unsigned int order,
 	page_table_check_alloc(page, order);
 }
 
-void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
-						unsigned int alloc_flags)
+static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+							unsigned int alloc_flags)
 {
 	post_alloc_hook(page, order, gfp_flags);
 
@@ -1564,6 +1564,27 @@ void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
 	else
 		clear_page_pfmemalloc(page);
 }
+
+#ifdef CONFIG_DYNAMIC_POOL
+/*
+ * Wrap the core functions with dpool_ prefix to avoid to call them directly.
+ */
+bool dpool_free_page_prepare(struct page *page)
+{
+	return free_pages_prepare(page, 0, 0);
+}
+
+int dpool_check_new_page(struct page *page)
+{
+	return check_new_page(page);
+}
+
+void dpool_prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+				unsigned int alloc_flags)
+{
+	prep_new_page(page, order, gfp_flags, alloc_flags);
+}
+#endif
 
 /*
  * Go through the free lists for the given migratetype and remove
@@ -4098,6 +4119,17 @@ static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 		return;
 	}
 }
+
+static inline bool mem_reliable_fallback_dpool(gfp_t gfp_mask, unsigned int order)
+{
+	if (!reliable_allow_fb_enabled())
+		return false;
+
+	if (!(gfp_mask & GFP_RELIABLE))
+		return false;
+
+	return dynamic_pool_should_alloc(gfp_mask & ~GFP_RELIABLE, order);
+}
 #else
 static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
 						      struct alloc_context *ac)
@@ -4106,6 +4138,10 @@ static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
 }
 static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 						  struct alloc_context *ac) {}
+static inline bool mem_reliable_fallback_dpool(gfp_t gfp_mask, unsigned int order)
+{
+	return false;
+}
 #endif
 
 static inline struct page *
@@ -4764,6 +4800,18 @@ retry:
 	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
 	if (likely(page))
 		goto out;
+
+	/*
+	 * Fallback to dpool if mirrored momory is not enough.
+	 *
+	 * Kswapd and driect reclaim will not be trigger, since the later
+	 * normal memory allocation can trigger this, there is no problem
+	 * here.
+	 */
+	if (mem_reliable_fallback_dpool(gfp, order)) {
+		gfp &= ~GFP_RELIABLE;
+		goto retry;
+	}
 
 	alloc_gfp = gfp;
 	ac.spread_dirty_pages = false;

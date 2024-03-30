@@ -3258,7 +3258,8 @@ out:
 
 	spin_unlock_irq(&hugetlb_lock);
 
-	hugetlb_set_folio_subpool(folio, spool);
+	if (!page_from_dynamic_pool(folio_page(folio, 0)))
+		hugetlb_set_folio_subpool(folio, spool);
 
 	map_commit = vma_commit_reservation(h, vma, addr);
 	if (unlikely(map_chg > map_commit)) {
