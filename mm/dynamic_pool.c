@@ -272,7 +272,7 @@ static int dpool_demote_huge_page(struct pages_pool *src_pool,
 	clear_compound_page(page_folio(page), PMD_ORDER);
 	for (i = 0; i < nr_pages; i++) {
 		subpage = folio_page(folio, i);
-		free_pages_prepare(subpage, 0, 0);
+		dpool_free_page_prepare(subpage);
 		__SetPageDpool(subpage);
 		list_add_tail(&subpage->lru, &dst_pool->freelist);
 		dst_pool->free_pages++;
@@ -395,7 +395,7 @@ static int dpool_promote_huge_page(struct pages_pool *src_pool,
 	}
 
 	page = pfn_to_page(spage->start_pfn);
-	prep_new_page(page, PMD_ORDER, __GFP_COMP, 0);
+	dpool_prep_new_page(page, PMD_ORDER, __GFP_COMP, 0);
 	set_page_count(page, 0);
 	folio_change_private(page_folio(page), NULL);
 	__SetPageDpool(page);
@@ -616,7 +616,7 @@ retry:
 	pcp_pool->free_pages--;
 	pcp_pool->used_pages++;
 
-	if (check_new_page(page)) {
+	if (dpool_check_new_page(page)) {
 		SetPagePool(page);
 		goto retry;
 	}
@@ -643,7 +643,7 @@ static int dpool_free_pcp_page(struct dynamic_pool *dpool, struct page *page)
 	}
 
 	ClearPagePool(page);
-	if (!free_pages_prepare(page, 0, 0)) {
+	if (!dpool_free_page_prepare(page)) {
 		SetPagePool(page);
 		goto unlock;
 	}
@@ -756,7 +756,7 @@ retry:
 	pool->free_pages--;
 	pool->used_pages++;
 
-	if (check_new_page(page)) {
+	if (dpool_check_new_page(page)) {
 		/* This is a bad page, treat it as a used pages */
 		SetPagePool(page);
 		goto retry;
@@ -769,7 +769,7 @@ unlock:
 put:
 	dpool_put(dpool);
 	if (page)
-		prep_new_page(page, order, gfp, alloc_flags);
+		dpool_prep_new_page(page, order, gfp, alloc_flags);
 
 	return page;
 }
@@ -796,7 +796,7 @@ void dynamic_pool_free_page(struct page *page)
 	spin_lock_irqsave(&dpool->lock, flags);
 
 	ClearPagePool(page);
-	if (!free_pages_prepare(page, 0, 0)) {
+	if (!dpool_free_page_prepare(page)) {
 		SetPagePool(page);
 		goto unlock;
 	}
@@ -1582,7 +1582,7 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 			set_page_count(page, 0);
 			page_mapcount_reset(page);
 
-			if (!free_pages_prepare(page, 0, 0)) {
+			if (!dpool_free_page_prepare(page)) {
 				pr_err("fill pool failed, check pages failed\n");
 				goto unlock;
 			}

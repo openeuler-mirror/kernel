@@ -1080,7 +1080,7 @@ static void kernel_init_pages(struct page *page, int numpages)
 	kasan_enable_current();
 }
 
-__always_inline bool free_pages_prepare(struct page *page,
+static __always_inline bool free_pages_prepare(struct page *page,
 			unsigned int order, fpi_t fpi_flags)
 {
 	int bad = 0;
@@ -1433,7 +1433,7 @@ static void check_new_page_bad(struct page *page)
 /*
  * This page is about to be returned from the page allocator
  */
-int check_new_page(struct page *page)
+static int check_new_page(struct page *page)
 {
 	if (likely(page_expected_state(page,
 				PAGE_FLAGS_CHECK_AT_PREP|__PG_HWPOISON)))
@@ -1545,8 +1545,8 @@ inline void post_alloc_hook(struct page *page, unsigned int order,
 	page_table_check_alloc(page, order);
 }
 
-void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
-						unsigned int alloc_flags)
+static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+							unsigned int alloc_flags)
 {
 	post_alloc_hook(page, order, gfp_flags);
 
@@ -1564,6 +1564,27 @@ void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
 	else
 		clear_page_pfmemalloc(page);
 }
+
+#ifdef CONFIG_DYNAMIC_POOL
+/*
+ * Wrap the core functions with dpool_ prefix to avoid to call them directly.
+ */
+bool dpool_free_page_prepare(struct page *page)
+{
+	return free_pages_prepare(page, 0, 0);
+}
+
+int dpool_check_new_page(struct page *page)
+{
+	return check_new_page(page);
+}
+
+void dpool_prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
+				unsigned int alloc_flags)
+{
+	prep_new_page(page, order, gfp_flags, alloc_flags);
+}
+#endif
 
 /*
  * Go through the free lists for the given migratetype and remove
