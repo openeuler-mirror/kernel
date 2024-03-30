@@ -325,8 +325,7 @@ static inline void __check_safe_pte_update(struct mm_struct *mm, pte_t *ptep,
 		     __func__, pte_val(old_pte), pte_val(pte));
 }
 
-static inline void __set_pte_at(struct mm_struct *mm, unsigned long addr,
-				pte_t *ptep, pte_t pte)
+static inline void __sync_cache_and_tags(pte_t pte, unsigned int nr_pages)
 {
 	if (pte_present(pte) && pte_user_exec(pte) && !pte_special(pte))
 		__sync_icache_dcache(pte);
@@ -339,25 +338,39 @@ static inline void __set_pte_at(struct mm_struct *mm, unsigned long addr,
 	 */
 	if (system_supports_mte() && pte_access_permitted(pte, false) &&
 	    !pte_special(pte) && pte_tagged(pte))
-		mte_sync_tags(pte);
-
-	__check_safe_pte_update(mm, ptep, pte);
-
-	set_pte(ptep, pte);
+		mte_sync_tags(pte, nr_pages);
 }
 
-static inline void set_ptes(struct mm_struct *mm, unsigned long addr,
-			      pte_t *ptep, pte_t pte, unsigned int nr)
+/*
+ * Select all bits except the pfn
+ */
+static inline pgprot_t pte_pgprot(pte_t pte)
+{
+	unsigned long pfn = pte_pfn(pte);
+
+	return __pgprot(pte_val(pfn_pte(pfn, __pgprot(0))) ^ pte_val(pte));
+}
+
+#define pte_next_pfn pte_next_pfn
+static inline pte_t pte_next_pfn(pte_t pte)
+{
+	return pfn_pte(pte_pfn(pte) + 1, pte_pgprot(pte));
+}
+
+static inline void set_ptes(struct mm_struct *mm,
+			    unsigned long __always_unused addr,
+			    pte_t *ptep, pte_t pte, unsigned int nr)
 {
 	page_table_check_ptes_set(mm, ptep, pte, nr);
+	__sync_cache_and_tags(pte, nr);
 
 	for (;;) {
-		__set_pte_at(mm, addr, ptep, pte);
+		__check_safe_pte_update(mm, ptep, pte);
+		set_pte(ptep, pte);
 		if (--nr == 0)
 			break;
 		ptep++;
-		addr += PAGE_SIZE;
-		pte_val(pte) += PAGE_SIZE;
+		pte = pte_next_pfn(pte);
 	}
 }
 #define set_ptes set_ptes
@@ -434,16 +447,6 @@ static inline int pte_swp_exclusive(pte_t pte)
 static inline pte_t pte_swp_clear_exclusive(pte_t pte)
 {
 	return clear_pte_bit(pte, __pgprot(PTE_SWP_EXCLUSIVE));
-}
-
-/*
- * Select all bits except the pfn
- */
-static inline pgprot_t pte_pgprot(pte_t pte)
-{
-	unsigned long pfn = pte_pfn(pte);
-
-	return __pgprot(pte_val(pfn_pte(pfn, __pgprot(0))) ^ pte_val(pte));
 }
 
 #ifdef CONFIG_NUMA_BALANCING
@@ -531,18 +534,29 @@ static inline pmd_t pmd_mkdevmap(pmd_t pmd)
 #define pud_pfn(pud)		((__pud_to_phys(pud) & PUD_MASK) >> PAGE_SHIFT)
 #define pfn_pud(pfn,prot)	__pud(__phys_to_pud_val((phys_addr_t)(pfn) << PAGE_SHIFT) | pgprot_val(prot))
 
+static inline void __set_pte_at(struct mm_struct *mm,
+				unsigned long __always_unused addr,
+				pte_t *ptep, pte_t pte, unsigned int nr)
+{
+	__sync_cache_and_tags(pte, nr);
+	__check_safe_pte_update(mm, ptep, pte);
+	set_pte(ptep, pte);
+}
+
 static inline void set_pmd_at(struct mm_struct *mm, unsigned long addr,
 			      pmd_t *pmdp, pmd_t pmd)
 {
 	page_table_check_pmd_set(mm, pmdp, pmd);
-	return __set_pte_at(mm, addr, (pte_t *)pmdp, pmd_pte(pmd));
+	return __set_pte_at(mm, addr, (pte_t *)pmdp, pmd_pte(pmd),
+						PMD_SIZE >> PAGE_SHIFT);
 }
 
 static inline void set_pud_at(struct mm_struct *mm, unsigned long addr,
 			      pud_t *pudp, pud_t pud)
 {
 	page_table_check_pud_set(mm, pudp, pud);
-	return __set_pte_at(mm, addr, (pte_t *)pudp, pud_pte(pud));
+	return __set_pte_at(mm, addr, (pte_t *)pudp, pud_pte(pud),
+						PUD_SIZE >> PAGE_SHIFT);
 }
 
 #define __p4d_to_phys(p4d)	__pte_to_phys(p4d_pte(p4d))
