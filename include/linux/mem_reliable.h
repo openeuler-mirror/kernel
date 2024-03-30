@@ -51,6 +51,9 @@ static inline bool page_reliable(struct page *page)
 	if (!page)
 		return false;
 
+	if (PagePool(page))
+		return false;
+
 	return page_zonenum(page) < ZONE_MOVABLE;
 }
 
