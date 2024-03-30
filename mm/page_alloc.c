@@ -4098,6 +4098,17 @@ static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 		return;
 	}
 }
+
+static inline bool mem_reliable_fallback_dpool(gfp_t gfp_mask, unsigned int order)
+{
+	if (!reliable_allow_fb_enabled())
+		return false;
+
+	if (!(gfp_mask & GFP_RELIABLE))
+		return false;
+
+	return dynamic_pool_should_alloc(gfp_mask & ~GFP_RELIABLE, order);
+}
 #else
 static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
 						      struct alloc_context *ac)
@@ -4106,6 +4117,10 @@ static inline struct zone *mem_reliable_fallback_zone(gfp_t gfp_mask,
 }
 static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
 						  struct alloc_context *ac) {}
+static inline bool mem_reliable_fallback_dpool(gfp_t gfp_mask, unsigned int order)
+{
+	return false;
+}
 #endif
 
 static inline struct page *
@@ -4764,6 +4779,18 @@ retry:
 	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
 	if (likely(page))
 		goto out;
+
+	/*
+	 * Fallback to dpool if mirrored momory is not enough.
+	 *
+	 * Kswapd and driect reclaim will not be trigger, since the later
+	 * normal memory allocation can trigger this, there is no problem
+	 * here.
+	 */
+	if (mem_reliable_fallback_dpool(gfp, order)) {
+		gfp &= ~GFP_RELIABLE;
+		goto retry;
+	}
 
 	alloc_gfp = gfp;
 	ac.spread_dirty_pages = false;

@@ -682,7 +682,7 @@ int dynamic_pool_can_attach(struct task_struct *tsk, struct mem_cgroup *memcg)
 	return ret;
 }
 
-static bool dpool_should_alloc(gfp_t gfp_mask, unsigned int order)
+bool dynamic_pool_should_alloc(gfp_t gfp_mask, unsigned int order)
 {
 	gfp_t gfp = gfp_mask & GFP_HIGHUSER_MOVABLE;
 
@@ -719,7 +719,7 @@ struct page *dynamic_pool_alloc_page(gfp_t gfp, unsigned int order,
 	if (!dpool_enabled)
 		return NULL;
 
-	if (!dpool_should_alloc(gfp, order))
+	if (!dynamic_pool_should_alloc(gfp, order))
 		return NULL;
 
 	dpool = dpool_get_from_task(current);
