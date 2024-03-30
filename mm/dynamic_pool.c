@@ -700,6 +700,11 @@ static bool dpool_should_alloc(gfp_t gfp_mask, unsigned int order)
 	if ((gfp | __GFP_IO | __GFP_FS) != GFP_HIGHUSER_MOVABLE)
 		return false;
 
+#ifdef CONFIG_MEMORY_RELIABLE
+	if (mem_reliable_is_enabled() && (gfp_mask & GFP_RELIABLE))
+		return false;
+#endif
+
 	return true;
 }
 
