@@ -1778,6 +1778,7 @@ static struct folio *compaction_alloc(struct folio *src, unsigned long data)
 	dst = list_entry(cc->freepages.next, struct folio, lru);
 	list_del(&dst->lru);
 	cc->nr_freepages--;
+	cc->nr_migratepages--;
 
 	return dst;
 }
@@ -1793,6 +1794,7 @@ static void compaction_free(struct folio *dst, unsigned long data)
 
 	list_add(&dst->lru, &cc->freepages);
 	cc->nr_freepages++;
+	cc->nr_migratepages++;
 }
 
 /* possible outcome of isolate_migratepages */
@@ -2418,7 +2420,7 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 	unsigned long last_migrated_pfn;
 	const bool sync = cc->mode != MIGRATE_ASYNC;
 	bool update_cached;
-	unsigned int nr_succeeded = 0;
+	unsigned int nr_succeeded = 0, nr_migratepages;
 
 	/*
 	 * These counters track activities during zone compaction.  Initialize
@@ -2536,11 +2538,17 @@ rescan:
 				pageblock_start_pfn(cc->migrate_pfn - 1));
 		}
 
+		/*
+		 * Record the number of pages to migrate since the
+		 * compaction_alloc/free() will update cc->nr_migratepages
+		 * properly.
+		 */
+		nr_migratepages = cc->nr_migratepages;
 		err = migrate_pages(&cc->migratepages, compaction_alloc,
 				compaction_free, (unsigned long)cc, cc->mode,
 				MR_COMPACTION, &nr_succeeded);
 
-		trace_mm_compaction_migratepages(cc, nr_succeeded);
+		trace_mm_compaction_migratepages(nr_migratepages, nr_succeeded);
 
 		/* All pages were either migrated or will be released */
 		cc->nr_migratepages = 0;
