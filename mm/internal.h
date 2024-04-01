@@ -569,6 +569,9 @@ int split_free_page(struct page *free_page,
 
 #if defined CONFIG_COMPACTION || defined CONFIG_CMA
 
+#define NR_PAGE_ORDERS (MAX_ORDER + 1)
+#define MAX_PAGE_ORDER	MAX_ORDER
+
 /*
  * in mm/compaction.c
  */
