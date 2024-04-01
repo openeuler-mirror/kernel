@@ -257,13 +257,6 @@ int nic_set_cpu_affinity(struct net_device *ndev, cpumask_t *affinity_mask)
 
 		tqp_vector->affinity_mask = *affinity_mask;
 
-		ret = irq_set_affinity_hint(tqp_vector->vector_irq, NULL);
-		if (ret) {
-			netdev_err(ndev,
-				   "failed to reset affinity hint, ret = %d\n", ret);
-			goto err_unlock;
-		}
-
 		ret = irq_set_affinity_hint(tqp_vector->vector_irq,
 					    &tqp_vector->affinity_mask);
 		if (ret) {
