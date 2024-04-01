@@ -19,6 +19,21 @@ enum hisi_cpu_type {
 #define SYS_LSUDVM_CTRL_EL2	sys_reg(3, 4, 15, 7, 4)
 #define LSUDVM_CTLR_EL2_MASK	BIT_ULL(0)
 
+#define MAX_CLUSTERS_PER_DIE 8
+#define TB_MN_BASE 0x00C6067f0000
+#define TA_MN_BASE 0x0046067F0000
+#define CHIP_ADDR_OFFSET(_chip)        (((((_chip) >> 3) & 0x1) * 0x80000000000) + \
+	((((_chip) >> 2) & 0x1) * (0x100000000000)) + \
+	(((_chip) & 0x3) * 0x200000000000))
+#define MAX_PG_CFG_SOCKETS 4
+#define MAX_DIES_PER_SOCKET 2
+#define MN_ECO0_OFFSET 0xc00
+#define SOCKET_ID_MASK 0xf8
+#define SOCKET_ID_SHIFT 3
+#define DIE_ID_MASK 0x7
+#define DIE_ID_SHIFT 0
+#define TOTEM_B_ID 3
+
 /*
  * MPIDR_EL1 layout on HIP09
  *
@@ -49,6 +64,7 @@ enum hisi_cpu_type {
 void probe_hisi_cpu_type(void);
 bool hisi_ncsnp_supported(void);
 bool hisi_dvmbm_supported(void);
+void kvm_get_pg_cfg(void);
 
 int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu);
 void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu);

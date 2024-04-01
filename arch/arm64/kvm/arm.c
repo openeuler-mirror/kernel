@@ -2064,6 +2064,9 @@ int kvm_arch_init(void *opaque)
 	kvm_info("KVM ncsnp %s\n", kvm_ncsnp_support ? "enabled" : "disabled");
 	kvm_info("KVM dvmbm %s\n", kvm_dvmbm_support ? "enabled" : "disabled");
 
+	if (kvm_dvmbm_support)
+		kvm_get_pg_cfg();
+
 	in_hyp_mode = is_kernel_in_hyp_mode();
 
 	if (!in_hyp_mode && kvm_arch_requires_vhe()) {
