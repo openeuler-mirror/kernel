@@ -316,9 +316,10 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u32 port_num,
 	if (ret)
 		ibdev_warn(ib_dev, "failed to get speed, ret = %d.\n", ret);
 
+	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
+
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
-	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
 	if (!net_dev)
 		net_dev = get_hr_netdev(hr_dev, port);
 	if (!net_dev) {
