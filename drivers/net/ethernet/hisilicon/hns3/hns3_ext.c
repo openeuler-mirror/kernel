@@ -38,7 +38,7 @@ static int nic_invoke_pri_ops(struct net_device *ndev, int opcode,
 		return -ENODEV;
 
 	if ((!data && length) || (data && !length)) {
-		netdev_err(ndev, "failed to check data and length");
+		netdev_err(ndev, "failed to check data and length\n");
 		return -EINVAL;
 	}
 
