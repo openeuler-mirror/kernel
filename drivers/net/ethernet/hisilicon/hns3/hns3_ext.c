@@ -90,7 +90,7 @@ static int nic_check_pfc_storm_para(int dir, int enable, int period_ms,
 	    period_ms > HNS3_PFC_STORM_PARA_PERIOD_MAX ||
 	    recovery_period_ms < HNS3_PFC_STORM_PARA_PERIOD_MIN ||
 	    recovery_period_ms > HNS3_PFC_STORM_PARA_PERIOD_MAX ||
-	    times <= 0)
+	    !times)
 		return -EINVAL;
 
 	return 0;
