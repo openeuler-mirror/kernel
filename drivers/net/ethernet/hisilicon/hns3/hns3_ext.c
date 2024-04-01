@@ -255,7 +255,7 @@ int nic_set_cpu_affinity(struct net_device *ndev, cpumask_t *affinity_mask)
 		if (tqp_vector->irq_init_flag != HNS3_VECTOR_INITED)
 			continue;
 
-		tqp_vector->affinity_mask = *affinity_mask;
+		cpumask_copy(&tqp_vector->affinity_mask, affinity_mask);
 
 		ret = irq_set_affinity_hint(tqp_vector->vector_irq, NULL);
 		if (ret) {
