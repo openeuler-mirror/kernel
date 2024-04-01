@@ -119,9 +119,18 @@ extern struct fwnode_handle *liointc_handle;
 extern struct fwnode_handle *pch_lpc_handle;
 extern struct fwnode_handle *pch_pic_handle[MAX_IO_PICS];
 
-extern irqreturn_t loongson_ipi_interrupt(int irq, void *dev);
 extern void fixup_irqs(void);
 
+static inline int get_percpu_irq(int vector)
+{
+	struct irq_domain *d;
+
+	d = irq_find_matching_fwnode(cpuintc_handle, DOMAIN_BUS_ANY);
+	if (d)
+		return irq_create_mapping(d, vector);
+
+	return -EINVAL;
+}
 #include <asm-generic/irq.h>
 
 #endif /* _ASM_IRQ_H */
