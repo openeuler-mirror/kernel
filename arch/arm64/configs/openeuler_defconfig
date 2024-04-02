@@ -6887,6 +6887,9 @@ CONFIG_TEE=m
 CONFIG_CPU_INSPECT=m
 CONFIG_CPU_INSPECTOR_ATF=m
 # end of CPU Inspect
+
+CONFIG_ROH=m
+CONFIG_ROH_HNS=m
 # end of Device Drivers
 
 #

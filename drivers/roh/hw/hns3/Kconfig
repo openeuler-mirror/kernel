@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0+
+config ROH_HNS
+	tristate "HNS ROH Driver"
+	depends on NET_VENDOR_HISILICON
+	depends on ARM64
+	depends on PCI && HNS3
+	help
+	  This is a ROH driver for the Hisilicon ROH engine. The engine
+	  is used in Hisilicon Hip09 and more further ICT SoC based on
+	  PCI device.
+
+	  To compile HIP09 driver as module, choose M here.

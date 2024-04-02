@@ -1,0 +1,41 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
+// Copyright (c) 2022 Hisilicon Limited.
+
+#ifndef __HNS3_ROH_DEVICE_H__
+#define __HNS3_ROH_DEVICE_H__
+
+enum hns3_roh_state {
+	HNS3_ROH_STATE_RESETTING,
+	HNS3_ROH_STATE_INIT,
+	HNS3_ROH_STATE_INITED,
+	HNS3_ROH_STATE_DOWN,
+	HNS3_ROH_STATE_CMD_DISABLE,
+};
+
+enum { HNS3_ROH_RST_DIRECT_RETURN = 0 };
+
+enum hns3_roh_link_type {
+	HNS3_ROH_LINK_STATUS_DOWN = 0,
+	HNS3_ROH_LINK_STATUS_UP
+};
+
+enum hns3_roh_dev_sw_state {
+	HNS3_ROH_SW_STATE_MBX_SERVICE_SCHED,
+	HNS3_ROH_SW_STATE_MBX_HANDLING,
+	HNS3_ROH_SW_STATE_LINK_UPDATING,
+	HNS3_ROH_SW_STATE_MAX
+};
+
+enum hns3_roh_event_type {
+	HNS3_ROH_VECTOR0_EVENT_MBX,
+	HNS3_ROH_VECTOR0_EVENT_OTHER
+};
+
+enum hns3_roh_link_fail_code {
+	HNS3_ROH_LF_NORMAL = 0,
+	HNS3_ROH_LF_REF_CLOCK_LOST = 1,
+	HNS3_ROH_LF_XSFP_TX_DISABLE = 2,
+	HNS3_ROH_LF_XSFP_ABSENT = 3
+};
+
+#endif

@@ -3862,6 +3862,28 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 	return ret;
 }
 
+static int hclge_notify_roh_client(struct hclge_dev *hdev,
+				   enum hnae3_reset_notify_type type)
+{
+	struct hnae3_handle *handle = &hdev->vport[0].roh;
+	struct hnae3_client *client = hdev->roh_client;
+	int ret;
+
+	if (!test_bit(HCLGE_STATE_ROH_REGISTERED, &hdev->state) || !client)
+		return 0;
+
+	if (!client->ops->reset_notify)
+		return -EOPNOTSUPP;
+
+	ret = client->ops->reset_notify(handle, type);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"failed to notify roh client type %d, ret = %d\n",
+			type, ret);
+
+	return ret;
+}
+
 static int hclge_reset_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_WATI_MS	100
@@ -4390,6 +4412,10 @@ static int hclge_reset_prepare(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_roh_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 	rtnl_unlock();
@@ -4410,6 +4436,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
+	ret = hclge_notify_roh_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		return ret;
+
 	rtnl_lock();
 	ret = hclge_reset_stack(hdev);
 	rtnl_unlock();
@@ -4420,6 +4450,14 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
 	/* ignore RoCE notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
+	 * times
+	 */
+	if (ret &&
+	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
+		return ret;
+
+	ret = hclge_notify_roh_client(hdev, HNAE3_INIT_CLIENT);
+	/* ignore ROH notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
 	 * times
 	 */
 	if (ret &&
@@ -4437,6 +4475,10 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 		return ret;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclge_notify_roh_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		return ret;
 
@@ -9724,6 +9766,35 @@ static int hclge_get_mac_ethertype_cmd_status(struct hclge_dev *hdev,
 	return return_status;
 }
 
+int hclge_check_mac_addr_valid(struct hclge_dev *hdev, u8 vf,
+			       const u8 *mac_addr)
+{
+	char format_mac_addr[HNAE3_FORMAT_MAC_ADDR_LEN];
+	struct hclge_check_mac_addr_cmd *req;
+	struct hclge_desc desc;
+	int ret;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MAC_ADDR_CHECK, false);
+	req = (struct hclge_check_mac_addr_cmd *)desc.data;
+	ether_addr_copy(req->mac_addr, mac_addr);
+	req->vf_id = vf;
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "failed to check function %u mac addr valid, ret = %d\n",
+			vf, ret);
+		return ret;
+	}
+
+	if (req->response) {
+		hnae3_format_mac_addr(format_mac_addr, mac_addr);
+		dev_err(&hdev->pdev->dev, "invalid function %u mac addr: %s\n",
+			vf, format_mac_addr);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int hclge_set_vf_mac(struct hnae3_handle *handle, int vf,
 			    u8 *mac_addr)
 {
@@ -9877,6 +9948,12 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, const void *p,
 			"change uc mac err! invalid mac: %s.\n",
 			 format_mac_addr);
 		return -EINVAL;
+	}
+
+	if (hnae3_check_roh_mac_type(handle)) {
+		ret = hclge_check_mac_addr_valid(hdev, 0, new_addr);
+		if (ret)
+			return ret;
 	}
 
 	ret = hclge_pause_addr_cfg(hdev, new_addr);

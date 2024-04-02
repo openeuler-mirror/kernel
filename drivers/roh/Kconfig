@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0+
+
+menuconfig ROH
+	tristate "ROH support"
+	depends on HAS_IOMEM && HAS_DMA
+	depends on NET
+	depends on INET
+	depends on ARM64
+	depends on NET_VENDOR_HISILICON
+	depends on m
+	select IRQ_POLL
+	select DIMLIB
+	help
+	  Core support for ROH. Make sure to also select
+	  any protocols you wish to use as well as drivers
+	  for your ROH hardware.
+
+	  To compile ROH core as module, choose M here.
+
+if ROH
+
+source "drivers/roh/hw/hns3/Kconfig"
+
+endif # ROH

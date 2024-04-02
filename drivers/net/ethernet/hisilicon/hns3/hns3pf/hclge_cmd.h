@@ -433,6 +433,13 @@ struct hclge_mac_vlan_tbl_entry_cmd {
 	u8      rsv2[6];
 };
 
+struct hclge_check_mac_addr_cmd {
+	u8	response;
+	u8	mac_addr[ETH_ALEN];
+	u8	vf_id;
+	u8	rsv[16];
+};
+
 #define HCLGE_UMV_SPC_ALC_B	0
 struct hclge_umv_spc_alc_cmd {
 	u8 allocate;
