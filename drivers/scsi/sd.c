@@ -3898,6 +3898,7 @@ static int sd_suspend_common(struct device *dev, bool runtime)
 {
 	struct scsi_disk *sdkp = dev_get_drvdata(dev);
 	int ret = 0;
+	int retries  = SD_START_STOP_RETRY_COUNT;
 
 	if (!sdkp)	/* E.g.: runtime suspend following sd_remove() */
 		return 0;
@@ -3917,10 +3918,14 @@ static int sd_suspend_common(struct device *dev, bool runtime)
 	if (sd_do_start_stop(sdkp->device, runtime)) {
 		if (!sdkp->device->silence_suspend)
 			sd_printk(KERN_NOTICE, sdkp, "Stopping disk\n");
+retry:
 		/* an error is not worth aborting a system sleep */
 		ret = sd_start_stop_device(sdkp, 0);
 		if (!runtime)
 			ret = 0;
+
+		if (ret && ret != -ENODEV && retries--)
+			goto retry;
 	}
 
 	if (!ret)
@@ -3946,6 +3951,7 @@ static int sd_resume(struct device *dev, bool runtime)
 {
 	struct scsi_disk *sdkp = dev_get_drvdata(dev);
 	int ret = 0;
+	int retries = SD_START_STOP_RETRY_COUNT;
 
 	if (!sdkp)	/* E.g.: runtime resume at the start of sd_probe() */
 		return 0;
@@ -3957,7 +3963,10 @@ static int sd_resume(struct device *dev, bool runtime)
 
 	if (!sdkp->device->no_start_on_resume) {
 		sd_printk(KERN_NOTICE, sdkp, "Starting disk\n");
+retry:
 		ret = sd_start_stop_device(sdkp, 1);
+		if (ret && ret != -ENODEV && retries--)
+			goto retry;
 	}
 
 	if (!ret) {

@@ -39,6 +39,12 @@
  */
 #define SD_LAST_BUGGY_SECTORS	8
 
+/*
+ * Number of retries of START_STOP to avoid failures of START_STOP commands
+ * due to exception operations such as host reset or FLR.
+ */
+#define SD_START_STOP_RETRY_COUNT 3
+
 enum {
 	SD_EXT_CDB_SIZE = 32,	/* Extended CDB size */
 	SD_MEMPOOL_SIZE = 2,	/* CDB pool size */
