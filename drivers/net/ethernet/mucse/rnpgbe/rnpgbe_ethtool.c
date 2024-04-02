@@ -1538,7 +1538,7 @@ int rnpgbe_update_ethtool_fdir_entry(struct rnpgbe_adapter *adapter,
 	/* setup hw */
 	hlist_for_each_entry_safe(rule, node2, &adapter->fdir_filter_list,
 				  fdir_node) {
-		if (netif_running(adapter->netdev))
+		if (!netif_running(adapter->netdev))
 			break;
 		/* hw_idx */
 		if (rule->filter.formatted.flow_type == RNP_ATR_FLOW_TYPE_ETHER)

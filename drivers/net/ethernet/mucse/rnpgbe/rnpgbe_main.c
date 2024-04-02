@@ -128,11 +128,11 @@ static void rnpgbe_service_event_complete(struct rnpgbe_adapter *adapter)
 }
 
 /**
- * rnpgbe_set_ivar - set the ring_vector registers,
+ * rnpgbe_set_ring_vector - set the ring_vector registers,
  * mapping interrupt causes to vectors
  * @adapter: pointer to adapter struct
- * @queue: queue to map the corresponding interrupt to
- * @msix_vector: the vector to map to the corresponding queue
+ * @rnpgbe_queue: queue to map the corresponding interrupt to
+ * @rnpgbe_msix_vector: the vector to map to the corresponding queue
  *
  */
 static void rnpgbe_set_ring_vector(struct rnpgbe_adapter *adapter,
@@ -224,7 +224,7 @@ static inline bool rnpgbe_check_tx_hang(struct rnpgbe_ring *tx_ring)
 /**
  * rnpgbe_tx_timeout_reset - initiate reset due to Tx timeout
  * @adapter: driver private struct
- **/
+ */
 static void rnpgbe_tx_timeout_reset(struct rnpgbe_adapter *adapter)
 {
 	/* Do the reset outside of interrupt context */
@@ -237,7 +237,8 @@ static void rnpgbe_tx_timeout_reset(struct rnpgbe_adapter *adapter)
 
 /**
  * rnpgbe_enable_eee_mode - check and enter in LPI mode
- * @priv: driver private structure
+ * @adapter: pointer to adapter struct
+ *
  * Description: this function is to verify and enter in LPI mode in case of
  * EEE.
  */
@@ -264,11 +265,12 @@ static void rnpgbe_enable_eee_mode(struct rnpgbe_adapter *adapter)
 
 /**
  * rnpgbe_disable_eee_mode - disable and exit from LPI mode
- * @priv: driver private structure
+ * @adapter: pointer to adapter struct
+ *
  * Description: this function is to exit and disable EEE in case of
  * LPI state is true. This is called by the xmit.
  */
-void rnpgbe_disable_eee_mode(struct rnpgbe_adapter *adapter)
+static void rnpgbe_disable_eee_mode(struct rnpgbe_adapter *adapter)
 {
 	struct rnpgbe_hw *hw = &adapter->hw;
 
@@ -284,6 +286,7 @@ void rnpgbe_disable_eee_mode(struct rnpgbe_adapter *adapter)
  * rnpgbe_clean_tx_irq - Reclaim resources after transmit completes
  * @q_vector: structure containing interrupt and ring information
  * @tx_ring: tx ring to clean
+ * @napi_budget: budget count
  **/
 static bool rnpgbe_clean_tx_irq(struct rnpgbe_q_vector *q_vector,
 				struct rnpgbe_ring *tx_ring, int napi_budget)
@@ -725,10 +728,11 @@ skip_fix:
 
 /**
  * rnpgbe_rx_ring_reinit - just reinit rx_ring with new count in ->reset_count
+ * @adapter: pointer to adapter struct
  * @rx_ring: rx descriptor ring to transact packets on
  */
-int rnpgbe_rx_ring_reinit(struct rnpgbe_adapter *adapter,
-			  struct rnpgbe_ring *rx_ring)
+static int rnpgbe_rx_ring_reinit(struct rnpgbe_adapter *adapter,
+				 struct rnpgbe_ring *rx_ring)
 {
 	struct rnpgbe_ring *temp_ring;
 	int err = 0;
@@ -1240,7 +1244,6 @@ static bool rnpgbe_alloc_mapped_page(struct rnpgbe_ring *rx_ring,
  * rnpgbe_is_non_eop - process handling of non-EOP buffers
  * @rx_ring: Rx ring being processed
  * @rx_desc: Rx descriptor for current buffer
- * @skb: Current socket buffer containing buffer in progress
  *
  * This function updates next to clean.  If the buffer is an EOP buffer
  * this function exits returning false, otherwise it will place the
@@ -1930,7 +1933,6 @@ static int rnpgbe_clean_rx_irq(struct rnpgbe_q_vector *q_vector,
 	unsigned int driver_drop_packets = 0;
 	struct rnpgbe_adapter *adapter = q_vector->adapter;
 	u16 cleaned_count = rnpgbe_desc_unused_rx(rx_ring);
-	bool xdp_xmit = false;
 	struct xdp_buff xdp;
 
 	xdp.data = NULL;
@@ -1997,12 +1999,11 @@ static int rnpgbe_clean_rx_irq(struct rnpgbe_q_vector *q_vector,
 		}
 
 		if (IS_ERR(skb)) {
-			if (PTR_ERR(skb) == -RNP_XDP_TX) {
-				xdp_xmit = true;
+			if (PTR_ERR(skb) == -RNP_XDP_TX)
 				rnpgbe_rx_buffer_flip(rx_ring, rx_buffer, size);
-			} else {
+			else
 				rx_buffer->pagecnt_bias++;
-			}
+
 			total_rx_packets++;
 			total_rx_bytes += size;
 		} else if (skb) {
@@ -2167,7 +2168,7 @@ static void rnpgbe_configure_msix(struct rnpgbe_adapter *adapter)
 	}
 }
 
-void rnpgbe_write_eitr_rx(struct rnpgbe_q_vector *q_vector)
+static void rnpgbe_write_eitr_rx(struct rnpgbe_q_vector *q_vector)
 {
 	struct rnpgbe_adapter *adapter = q_vector->adapter;
 	struct rnpgbe_hw *hw = &adapter->hw;
@@ -2480,9 +2481,8 @@ static int rnpgbe_request_msix_irqs(struct rnpgbe_adapter *adapter)
 			&adapter->msix_entries[i + adapter->q_vector_off];
 
 		if (q_vector->tx.ring && q_vector->rx.ring) {
-			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
-				 "%s-%s-%d-%d", netdev->name, "TxRx", i,
-				 q_vector->v_idx);
+			snprintf(q_vector->name, sizeof(q_vector->name),
+				 "%s-%s-%u", netdev->name, "TxRx", i);
 		} else {
 			WARN(!(q_vector->tx.ring && q_vector->rx.ring),
 			     "%s vector%d tx rx is null, v_idx:%d\n",
@@ -2641,9 +2641,8 @@ int rnpgbe_setup_tx_maxrate(struct rnpgbe_ring *tx_ring, u64 max_rate,
 
 /**
  * rnpgbe_tx_maxrate_own - callback to set the maximum per-queue bitrate
- * @netdev: network interface device structure
+ * @adapter: pointer to adapter struct
  * @queue_index: Tx queue to set
- * @maxrate: desired maximum transmit bitrate Mbps
  **/
 static int rnpgbe_tx_maxrate_own(struct rnpgbe_adapter *adapter,
 				 int queue_index)
@@ -2724,7 +2723,8 @@ void rnpgbe_configure_tx_ring(struct rnpgbe_adapter *adapter,
 		} while ((status != 1) && (timeout < 100));
 
 		if (timeout >= 100)
-			rnpgbe_dbg("wait tx ready timeout\n");
+			e_dev_err("wait tx ready timeout\n");
+
 		ring_wr32(ring, RNP_DMA_TX_START, 1);
 	}
 }
@@ -3206,7 +3206,7 @@ static void rnpgbe_configure_pause(struct rnpgbe_adapter *adapter)
 	hw->ops.set_pause_mode(hw);
 }
 
-void rnpgbe_vlan_stags_flag(struct rnpgbe_adapter *adapter)
+static void rnpgbe_vlan_stags_flag(struct rnpgbe_adapter *adapter)
 {
 	struct rnpgbe_hw *hw = &adapter->hw;
 
@@ -3311,7 +3311,7 @@ static void rnpgbe_up_complete(struct rnpgbe_adapter *adapter)
 	}
 }
 
-void rnpgbe_reinit_locked(struct rnpgbe_adapter *adapter)
+static void rnpgbe_reinit_locked(struct rnpgbe_adapter *adapter)
 {
 	WARN_ON(in_interrupt());
 	/* put off any impending NetWatchDogTimeout */
@@ -3484,23 +3484,7 @@ static void rnpgbe_fdir_filter_exit(struct rnpgbe_adapter *adapter)
 	spin_unlock(&adapter->fdir_perfect_lock);
 }
 
-int rnpgbe_xmit_nop_frame_ring(struct rnpgbe_adapter *adapter,
-			       struct rnpgbe_ring *tx_ring)
-{
-	u16 i = tx_ring->next_to_use;
-	struct rnpgbe_tx_desc *tx_desc;
-
-	tx_desc = RNP_TX_DESC(tx_ring, i);
-
-	/* set length to 0 */
-	tx_desc->blen_mac_ip_len = 0;
-	tx_desc->vlan_cmd = cpu_to_le32(RNP_TXD_CMD_EOP | RNP_TXD_CMD_RS);
-	/* update tail */
-	rnpgbe_wr_reg(tx_ring->tail, 0);
-	return 0;
-}
-
-void print_status(struct rnpgbe_adapter *adapter)
+static void print_status(struct rnpgbe_adapter *adapter)
 {
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct rnpgbe_eth_info *eth = &hw->eth;
@@ -3678,6 +3662,7 @@ void rnpgbe_down(struct rnpgbe_adapter *adapter)
 /**
  * rnpgbe_tx_timeout - Respond to a Tx Hang
  * @netdev: network interface device structure
+ * @txqueue: queue idx
  **/
 static void rnpgbe_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
@@ -3804,7 +3789,8 @@ static int rnpgbe_sw_init(struct rnpgbe_adapter *adapter)
 
 /**
  * rnpgbe_setup_tx_resources - allocate Tx resources (Descriptors)
- * @tx_ring:    tx descriptor ring (for a specific queue) to setup
+ * @tx_ring: tx descriptor ring (for a specific queue) to setup
+ * @adapter: board private structure
  *
  * Return 0 on success, negative on failure
  **/
@@ -3896,6 +3882,7 @@ err_setup_tx:
 /**
  * rnpgbe_setup_rx_resources - allocate Rx resources (Descriptors)
  * @rx_ring:    rx descriptor ring (for a specific queue) to setup
+ * @adapter: pointer to adapter struct
  *
  * Returns 0 on success, negative on failure
  **/
@@ -4525,7 +4512,6 @@ void rnpgbe_update_stats(struct rnpgbe_adapter *adapter)
 /**
  * rnpgbe_watchdog_update_link - update the link status
  * @adapter: pointer to the device adapter structure
- * @link_speed: pointer to a u32 to store the link_speed
  **/
 static void rnpgbe_watchdog_update_link(struct rnpgbe_adapter *adapter)
 {
@@ -4606,7 +4592,7 @@ static void rnpgbe_watchdog_update_link(struct rnpgbe_adapter *adapter)
 
 /**
  * rnpgbe_eee_ctrl_timer - EEE TX SW timer.
- * @arg : data hook
+ * @t: data hook
  * Description:
  *  if there is no data transfer and if we are not in LPI state,
  *  then MAC Transmitter can be moved to LPI state.
@@ -4621,7 +4607,7 @@ static void rnpgbe_eee_ctrl_timer(struct timer_list *t)
 			  RNP_LPI_T(adapter->eee_timer));
 }
 
-bool rnpgbe_eee_init(struct rnpgbe_adapter *adapter)
+static bool rnpgbe_eee_init(struct rnpgbe_adapter *adapter)
 {
 	int tx_lpi_timer = adapter->tx_lpi_timer;
 	struct rnpgbe_hw *hw = &adapter->hw;
@@ -4648,7 +4634,7 @@ bool rnpgbe_eee_init(struct rnpgbe_adapter *adapter)
 	return true;
 }
 
-int rnpgbe_phy_init_eee(struct rnpgbe_adapter *adapter)
+static int rnpgbe_phy_init_eee(struct rnpgbe_adapter *adapter)
 {
 	struct rnpgbe_hw *hw = &adapter->hw;
 
@@ -4799,7 +4785,7 @@ static void rnpgbe_watchdog_subtask(struct rnpgbe_adapter *adapter)
 
 /**
  * rnpgbe_service_timer - Timer Call-back
- * @data: pointer to adapter cast into an unsigned long
+ * @t: pointer to adapter cast into an unsigned long
  **/
 void rnpgbe_service_timer(struct timer_list *t)
 {
@@ -5698,9 +5684,10 @@ static int rnpgbe_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 /**
- * Polling 'interrupt' - used by things like netconsole to send skbs
+ * rnpgbe_netpoll  - used by things like netconsole to send skbs
  * without having to re-enable interrupts. It's not called while
  * the interrupt routine is executing.
+ * @netdev: network interface device structure
  **/
 static void rnpgbe_netpoll(struct net_device *netdev)
 {
@@ -5767,8 +5754,7 @@ static void rnpgbe_get_stats64(struct net_device *netdev,
 
 /**
  * rnpgbe_setup_tc - configure net_device for multiple traffic classes
- *
- * @netdev: net device to configure
+ * @dev: net device to configure
  * @tc: number of traffic classes to enable
  */
 int rnpgbe_setup_tc(struct net_device *dev, u8 tc)
@@ -6129,7 +6115,7 @@ const struct net_device_ops rnp10_netdev_ops = {
 	.ndo_fix_features = rnpgbe_fix_features,
 };
 
-void rnpgbe_assign_netdev_ops(struct net_device *dev)
+static void rnpgbe_assign_netdev_ops(struct net_device *dev)
 {
 	/* different hw can assign difference fun */
 	dev->netdev_ops = &rnp10_netdev_ops;
@@ -6138,7 +6124,7 @@ void rnpgbe_assign_netdev_ops(struct net_device *dev)
 
 /**
  * rnpgbe_wol_supported - Check whether device supports WoL
- * @hw: hw specific details
+ * @adapter: hw specific details
  * @device_id: the device ID
  *
  * This function is used by probe and ethtool to determine
@@ -6809,7 +6795,7 @@ err_free_net:
 /**
  * rnpgbe_probe - Device Initialization Routine
  * @pdev: PCI device information struct
- * @ent: entry in rnpgbe_pci_tbl
+ * @id: entry in rnpgbe_pci_tbl
  *
  * Returns 0 on success, negative on failure
  *

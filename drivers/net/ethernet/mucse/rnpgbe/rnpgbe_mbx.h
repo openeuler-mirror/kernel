@@ -196,7 +196,6 @@ int rnpgbe_mbx_get_capability(struct rnpgbe_hw *hw, struct rnpgbe_info *info);
 int rnpgbe_mbx_get_eee_capability(struct rnpgbe_hw *hw,
 				  struct rnpgbe_eee_cap *eee_cap);
 int rnpgbe_mbx_link_event_enable(struct rnpgbe_hw *hw, int enable);
-int rnpgbe_mbx_get_link_stat(struct rnpgbe_hw *hw);
 int rnpgbe_mbx_ifup_down(struct rnpgbe_hw *hw, int up);
 int rnpgbe_mbx_tstamps_show(struct rnpgbe_hw *hw, u32 sec, u32 nanosec);
 int rnpgbe_mbx_led_set(struct rnpgbe_hw *hw, int value);

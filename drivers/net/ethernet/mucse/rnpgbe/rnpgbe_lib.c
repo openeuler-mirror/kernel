@@ -305,7 +305,7 @@ static void rnpgbe_set_num_queues(struct rnpgbe_adapter *adapter)
 	rnpgbe_set_rss_queues(adapter);
 }
 
-int rnpgbe_acquire_msix_vectors(struct rnpgbe_adapter *adapter, int vectors)
+static int rnpgbe_acquire_msix_vectors(struct rnpgbe_adapter *adapter, int vectors)
 {
 	int err;
 
@@ -341,12 +341,11 @@ static void rnpgbe_add_ring(struct rnpgbe_ring *ring,
 /**
  * rnpgbe_alloc_q_vector - Allocate memory for a single interrupt vector
  * @adapter: board private structure to initialize
- * @v_count: q_vectors allocated on adapter, used for ring interleaving
+ * @eth_queue_idx: eth queue idx
  * @v_idx: index of vector in adapter struct
- * @txr_count: total number of Tx rings to allocate
- * @txr_idx: index of first Tx ring to allocate
- * @rxr_count: total number of Rx rings to allocate
- * @rxr_idx: index of first Rx ring to allocate
+ * @r_idx: index of first Tx ring to allocate
+ * @r_count: total number of Rx rings to allocate
+ * @step: ring step
  *
  * We allocate one q_vector.  If allocation fails we return -ENOMEM.
  **/
@@ -716,7 +715,7 @@ out:
 	return err;
 }
 
-void update_ring_count(struct rnpgbe_adapter *adapter)
+static void update_ring_count(struct rnpgbe_adapter *adapter)
 {
 	if (adapter->flags2 & RNP_FLAG2_INSMOD)
 		return;
@@ -799,11 +798,10 @@ void rnpgbe_clear_interrupt_scheme(struct rnpgbe_adapter *adapter)
 /**
  * rnpgbe_tx_ctxtdesc - Send a control desc to hw
  * @tx_ring: target ring of this control desc
- * @mss_seg_len: mss length
- * @l4_hdr_len:  l4 length
- * @tunnel_hdr_len: tunnel_hdr_len
- * @inner_vlan_tag: inner_vlan_tag
- * @type_tucmd: cmd
+ * @mss_len_vf_num: mss length
+ * @inner_vlan_tunnel_len: inner vlan tunnel length
+ * @ignore_vlan: ignore vlan flag
+ * @crc_pad: padding flag
  *
  **/
 

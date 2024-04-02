@@ -267,7 +267,7 @@ out:
 /**
  *  rnpgbe_check_for_msg_pf - checks to see if the VF has sent mail
  *  @hw: pointer to the HW structure
- *  @vf_number: the VF index
+ *  @mbx_id: the mbxidx
  *
  *  returns SUCCESS if the VF has set the Status bit or else ERR_MBX
  **/
@@ -298,7 +298,7 @@ static s32 rnpgbe_check_for_msg_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 /**
  *  rnpgbe_check_for_ack_pf - checks to see if the VF has ACKed
  *  @hw: pointer to the HW structure
- *  @vf_number: the VF index
+ *  @mbx_id: the mbx idx
  *
  *  returns SUCCESS if the VF has set the Status bit or else ERR_MBX
  **/
@@ -413,7 +413,7 @@ out_no_write:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @vf_number: the VF index
+ *  @mbx_id: the mbx idx
  *
  *  This function copies a message from the mailbox buffer to the caller's
  *  memory buffer.  The presumption is that the caller knows that there was

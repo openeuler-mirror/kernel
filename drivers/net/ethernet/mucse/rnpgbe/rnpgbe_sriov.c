@@ -298,7 +298,7 @@ int rnpgbe_disable_sriov(struct rnpgbe_adapter *adapter)
 	return 0;
 }
 
-bool check_ari_mode(struct pci_dev *dev)
+static bool check_ari_mode(struct pci_dev *dev)
 {
 	struct pci_bus *bus = dev->bus;
 
@@ -1129,8 +1129,9 @@ void rnpgbe_msg_task(struct rnpgbe_adapter *adapter)
 	}
 }
 
-int rnpgbe_msg_post_status_signle_link(struct rnpgbe_adapter *adapter, int vf,
-				       int link_state)
+static int rnpgbe_msg_post_status_signle_link(struct rnpgbe_adapter *adapter,
+					      int vf,
+					      int link_state)
 {
 	u32 msgbuf[RNP_VFMAILBOX_SIZE];
 	struct rnpgbe_hw *hw = &adapter->hw;

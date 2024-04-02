@@ -269,7 +269,7 @@ int rnpgbe_ptp_get_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 									    0;
 }
 
-int rnpgbe_ptp_setup_ptp(struct rnpgbe_adapter *pf, u32 value)
+static int rnpgbe_ptp_setup_ptp(struct rnpgbe_adapter *pf, u32 value)
 {
 	u32 sec_inc = 0;
 	u64 temp = 0;
@@ -339,7 +339,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 	u32 ptp_over_ethernet = 0;
 	u32 snap_type_sel = 0;
 	u32 ts_master_en = 0;
-	u32 ts_event_en = 0;
 	u32 value = 0;
 	s32 ret = -1;
 
@@ -389,7 +388,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		/* PTP v1, UDP, Sync packet */
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V1_L4_SYNC;
 		/* take time stamp for SYNC messages only */
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
@@ -400,7 +398,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ;
 		/* take time stamp for Delay_Req messages only */
 		ts_master_en = RNP_PTP_TCR_TSMSTRENA;
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
@@ -423,7 +420,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_L4_SYNC;
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for SYNC messages only */
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		break;
@@ -434,7 +430,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for Delay_Req messages only */
 		ts_master_en = RNP_PTP_TCR_TSMSTRENA;
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		break;
@@ -444,7 +439,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		snap_type_sel = RNP_PTP_TCR_SNAPTYPSEL_1;
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		ptp_over_ethernet = RNP_PTP_TCR_TSIPENA;
@@ -455,7 +449,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_SYNC;
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for SYNC messages only */
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		ptp_over_ethernet = RNP_PTP_TCR_TSIPENA;
@@ -467,7 +460,6 @@ int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr)
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for Delay_Req messages only */
 		ts_master_en = RNP_PTP_TCR_TSMSTRENA;
-		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
