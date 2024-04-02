@@ -20328,6 +20328,13 @@ T:	git git://linuxtv.org/media_tree.git
 F:	Documentation/devicetree/bindings/media/i2c/st,st-mipid02.yaml
 F:	drivers/media/i2c/st-mipid02.c
 
+SSSRAID SCSI/Raid DRIVERS
+M:      Qin Zhou <zhouqin@3snic.com>
+L:      linux-scsi@vger.kernel.org
+S:      Maintained
+F:      Documentation/scsi/sssraid.rst
+F:      drivers/scsi/sssraid/
+
 ST STM32 I2C/SMBUS DRIVER
 M:	Pierre-Yves MORDRET <pierre-yves.mordret@foss.st.com>
 M:	Alain Volmat <alain.volmat@foss.st.com>
