@@ -54,7 +54,6 @@
 #define QM_MB_OP_SHIFT			14
 #define QM_MB_CMD_DATA_ADDR_L		0x304
 #define QM_MB_CMD_DATA_ADDR_H		0x308
-#define QM_MB_MAX_WAIT_CNT		6000
 
 /* doorbell */
 #define QM_DOORBELL_CMD_SQ              0
@@ -143,10 +142,11 @@ enum qm_vf_state {
 };
 
 enum qm_misc_ctl_bits {
-	QM_DRIVER_REMOVING = 0x0,
+	QM_DRIVER_DOWN = 0x0,
 	QM_RST_SCHED,
 	QM_RESETTING,
 	QM_MODULE_PARAM,
+	QM_DEVICE_DOWN,
 };
 
 enum qm_cap_bits {
@@ -241,6 +241,8 @@ struct hisi_qm_err_info {
 	u32 ce;
 	u32 nfe;
 	u32 fe;
+	u32 qm_err_type;
+	u32 dev_err_type;
 };
 
 struct hisi_qm_err_status {
@@ -254,6 +256,8 @@ struct hisi_qm_err_ini {
 	void (*hw_err_disable)(struct hisi_qm *qm);
 	u32 (*get_dev_hw_err_status)(struct hisi_qm *qm);
 	void (*clear_dev_hw_err_status)(struct hisi_qm *qm, u32 err_sts);
+	void (*disable_error_report)(struct hisi_qm *qm, u32 err_type);
+	void (*enable_error_report)(struct hisi_qm *qm);
 	void (*open_axi_master_ooo)(struct hisi_qm *qm);
 	void (*close_axi_master_ooo)(struct hisi_qm *qm);
 	void (*open_sva_prefetch)(struct hisi_qm *qm);
@@ -542,8 +546,6 @@ void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
 int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs);
 int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen);
 int hisi_qm_sriov_configure(struct pci_dev *pdev, int num_vfs);
-void hisi_qm_dev_err_init(struct hisi_qm *qm);
-void hisi_qm_dev_err_uninit(struct hisi_qm *qm);
 int hisi_qm_regs_debugfs_init(struct hisi_qm *qm,
 			  struct dfx_diff_registers *dregs, u32 reg_len);
 void hisi_qm_regs_debugfs_uninit(struct hisi_qm *qm, u32 reg_len);
