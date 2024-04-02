@@ -92,10 +92,15 @@ out_sk_rht:
 
 static void __net_exit tipc_exit_net(struct net *net)
 {
+	struct tipc_net *tn = tipc_net(net);
+
 	tipc_net_stop(net);
 	tipc_bcast_stop(net);
 	tipc_nametbl_stop(net);
 	tipc_sk_rht_destroy(net);
+
+	while (atomic_read(&tn->wq_count))
+		cond_resched();
 }
 
 static struct pernet_operations tipc_net_ops = {
