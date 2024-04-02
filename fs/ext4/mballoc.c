@@ -356,6 +356,8 @@ static void ext4_mb_generate_from_pa(struct super_block *sb, void *bitmap,
 					ext4_group_t group);
 static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
 						ext4_group_t group);
+static void ext4_mb_put_pa(struct ext4_allocation_context *ac,
+			struct super_block *sb, struct ext4_prealloc_space *pa);
 
 static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
 {
@@ -3365,6 +3367,47 @@ static void ext4_discard_allocated_blocks(struct ext4_allocation_context *ac)
 }
 
 /*
+ * check if found pa is valid
+ */
+static bool ext4_mb_pa_is_valid(struct ext4_allocation_context *ac,
+				struct ext4_prealloc_space *pa)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(ac->ac_sb);
+	ext4_fsblk_t start;
+	ext4_fsblk_t end;
+	int len;
+
+	start = pa->pa_pstart + (ac->ac_o_ex.fe_logical - pa->pa_lstart);
+	end = min(pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len),
+		  start + EXT4_C2B(sbi, ac->ac_o_ex.fe_len));
+	len = EXT4_NUM_B2C(sbi, end - start);
+
+	if (unlikely(start < pa->pa_pstart)) {
+		ext4_msg(ac->ac_sb, KERN_ERR,
+			 "invalid pa, start(%llu) < pa_pstart(%llu)",
+			 start, pa->pa_pstart);
+		return false;
+	}
+	if (unlikely(end > pa->pa_pstart + EXT4_C2B(sbi, pa->pa_len))) {
+		ext4_msg(ac->ac_sb, KERN_ERR,
+			 "invalid pa, end(%llu) > pa_pstart(%llu) + pa_len(%d)",
+			 end, pa->pa_pstart, EXT4_C2B(sbi, pa->pa_len));
+		return false;
+	}
+	if (unlikely(pa->pa_free < len)) {
+		ext4_msg(ac->ac_sb, KERN_ERR,
+			 "invalid pa, pa_free(%d) < len(%d)", pa->pa_free, len);
+		return false;
+	}
+	if (unlikely(len <= 0)) {
+		ext4_msg(ac->ac_sb, KERN_ERR, "invalid pa, len(%d) <= 0", len);
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * use blocks preallocated to inode
  */
 static void ext4_mb_use_inode_pa(struct ext4_allocation_context *ac,
@@ -3483,6 +3526,23 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 
 		/* found preallocated blocks, use them */
 		spin_lock(&pa->pa_lock);
+		if (unlikely(!ext4_mb_pa_is_valid(ac, pa))) {
+			ext4_group_t group;
+
+			pa->pa_free = 0;
+			atomic_inc(&pa->pa_count);
+			spin_unlock(&pa->pa_lock);
+			rcu_read_unlock();
+			ext4_mb_put_pa(ac, ac->ac_sb, pa);
+			group = ext4_get_group_number(ac->ac_sb, pa->pa_pstart);
+			ext4_lock_group(ac->ac_sb, group);
+			ext4_mark_group_bitmap_corrupted(ac->ac_sb, group,
+					EXT4_GROUP_INFO_BBITMAP_CORRUPT);
+			ext4_unlock_group(ac->ac_sb, group);
+			ext4_error(ac->ac_sb, "drop pa and mark group %u block bitmap corrupted",
+				   group);
+			goto try_group_pa;
+		}
 		if (pa->pa_deleted == 0 && pa->pa_free) {
 			atomic_inc(&pa->pa_count);
 			ext4_mb_use_inode_pa(ac, pa);
@@ -3495,6 +3555,7 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 	}
 	rcu_read_unlock();
 
+try_group_pa:
 	/* can we use group allocation? */
 	if (!(ac->ac_flags & EXT4_MB_HINT_GROUP_ALLOC))
 		return 0;
