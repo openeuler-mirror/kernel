@@ -1493,7 +1493,7 @@ static int vhost_vdpa_open(struct inode *inode, struct file *filep)
 		return -EBUSY;
 	r = vhost_vdpa_alloc_domain(v);
 	if (r)
-		return r;
+		goto close;
 
 	nvqs = v->nvqs;
 	r = vhost_vdpa_reset(v, VDPA_DEV_RESET_OPEN);
@@ -1522,6 +1522,7 @@ static int vhost_vdpa_open(struct inode *inode, struct file *filep)
 
 err:
 	vhost_vdpa_free_domain(v);
+close:
 	atomic_dec(&v->opened);
 	return r;
 }
