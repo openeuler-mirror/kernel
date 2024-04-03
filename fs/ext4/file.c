@@ -75,8 +75,7 @@ static ssize_t ext4_dio_read_iter(struct kiocb *iocb, struct iov_iter *to)
 		return generic_file_read_iter(iocb, to);
 	}
 
-	ret = iomap_dio_rw(iocb, to, &ext4_iomap_ops, NULL,
-			   is_sync_kiocb(iocb));
+	ret = iomap_dio_rw(iocb, to, &ext4_iomap_ops, NULL, 0);
 	inode_unlock_shared(inode);
 
 	file_accessed(iocb->ki_filp);
@@ -490,8 +489,10 @@ static ssize_t ext4_dio_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	loff_t offset = iocb->ki_pos;
 	size_t count = iov_iter_count(from);
 	const struct iomap_ops *iomap_ops = &ext4_iomap_ops;
+	const struct iomap_dio_ops *iomap_dops = &ext4_dio_write_ops;
 	bool extend = false, unaligned_io = false, unwritten = false;
 	bool ilock_shared = true;
+	int dio_flags = 0;
 
 	/*
 	 * We initially start with shared inode lock unless it is
@@ -578,10 +579,13 @@ static ssize_t ext4_dio_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		ext4_journal_stop(handle);
 	}
 
-	if (ilock_shared && !unwritten)
+	if (ilock_shared && !unwritten) {
 		iomap_ops = &ext4_iomap_overwrite_ops;
-	ret = iomap_dio_rw(iocb, from, iomap_ops, &ext4_dio_write_ops,
-			   is_sync_kiocb(iocb) || unaligned_io || extend);
+		iomap_dops = NULL;
+		dio_flags = IOMAP_DIO_MAY_INLINE_COMP;
+	} else if (unaligned_io || extend)
+		dio_flags |= IOMAP_DIO_FORCE_WAIT;
+	ret = iomap_dio_rw(iocb, from, iomap_ops, iomap_dops, dio_flags);
 	if (ret == -ENOTBLK)
 		ret = 0;
 
