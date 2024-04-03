@@ -8809,6 +8809,8 @@ static int hclge_init_vlan_config(struct hclge_dev *hdev)
 	int i;
 
 	if (hdev->pdev->revision >= HNAE3_REVISION_ID_21) {
+		bool enable = true;
+
 		/* for revision 0x21, vf vlan filter is per function */
 		for (i = 0; i < hdev->num_alloc_vport; i++) {
 			vport = &hdev->vport[i];
@@ -8822,9 +8824,12 @@ static int hclge_init_vlan_config(struct hclge_dev *hdev)
 			vport->cur_vlan_fltr_en = true;
 		}
 
+		if (hnae3_dev_vlan_fltr_mdf_supported(hdev))
+			enable = false;
+
 		ret = hclge_set_vlan_filter_ctrl(hdev, HCLGE_FILTER_TYPE_PORT,
-						 HCLGE_FILTER_FE_INGRESS, true,
-						 0);
+						 HCLGE_FILTER_FE_INGRESS,
+						 enable, 0);
 		if (ret)
 			return ret;
 	} else {
