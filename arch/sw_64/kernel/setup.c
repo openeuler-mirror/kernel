@@ -24,6 +24,7 @@
 #endif
 #include <linux/of_fdt.h>
 #include <linux/of_platform.h>
+#include <linux/libfdt.h>
 #include <linux/genalloc.h>
 #include <linux/acpi.h>
 #include <linux/cpu.h>
@@ -134,6 +135,9 @@ EXPORT_SYMBOL(sunway_boot_magic);
 
 unsigned long sunway_dtb_address;
 EXPORT_SYMBOL(sunway_dtb_address);
+
+u64 sunway_mclk_hz;
+u64 sunway_extclk_hz;
 
 /*
  * The format of "screen_info" is strange, and due to early
@@ -557,6 +561,34 @@ static bool __init arch_dtb_verify(void *dt_virt, bool from_firmware)
 	return true;
 }
 
+static void early_parse_fdt_property(const void *fdt, const char *path,
+		const char *prop_name, u64 *property, int size)
+{
+	int node, prop_len;
+	const __be32 *prop;
+
+	if (!path || !prop_name)
+		return;
+
+	node = fdt_path_offset(fdt, path);
+	if (node < 0) {
+		pr_err("Failed to get node [%s]\n", path);
+		return;
+	}
+
+	prop = fdt_getprop(initial_boot_params, node, prop_name, &prop_len);
+	if (!prop) {
+		pr_err("Failed to get property [%s]\n", prop_name);
+		return;
+	}
+
+	if (prop_len != size)
+		pr_warn("Expect [%s] %d bytes, but %d bytes\n",
+				prop_name, size, prop_len);
+
+	*property = of_read_number(prop, size / 4);
+}
+
 static void __init setup_firmware_fdt(void)
 {
 	void *dt_virt;
@@ -585,6 +617,18 @@ static void __init setup_firmware_fdt(void)
 
 		while (true)
 			cpu_relax();
+	}
+
+	if (sunway_boot_magic == 0xDEED2024UL) {
+		/* Parse MCLK(Hz) from firmware DTB */
+		early_parse_fdt_property(dt_virt, "/soc/clocks/mclk",
+				"clock-frequency", &sunway_mclk_hz, sizeof(u32));
+		pr_info("MCLK: %llu Hz\n", sunway_mclk_hz);
+
+		/* Parse EXTCLK(Hz) from firmware DTB */
+		early_parse_fdt_property(dt_virt, "/soc/clocks/extclk",
+				"clock-frequency", &sunway_extclk_hz, sizeof(u32));
+		pr_info("EXTCLK: %llu Hz\n", sunway_extclk_hz);
 	}
 
 	name = of_flat_dt_get_machine_name();
@@ -1030,16 +1074,23 @@ arch_initcall(debugfs_sw64);
 
 static int __init debugfs_mclk_init(void)
 {
-	static u64 mclk;
+	struct dentry *dir = sw64_debugfs_dir;
+	static u64 mclk_mhz, mclk_hz;
 
-	if (!sw64_debugfs_dir)
+	if (!dir)
 		return -ENODEV;
 
-	mclk = *((unsigned char *)__va(MB_MCLK));
-	debugfs_create_u64("mclk", 0644, sw64_debugfs_dir, &mclk);
+	if (sunway_boot_magic != 0xDEED2024UL) {
+		mclk_mhz = *((unsigned char *)__va(MB_MCLK));
+		mclk_hz = mclk_mhz * 1000000;
+		debugfs_create_u64("mclk", 0644, dir, &mclk_mhz);
+		debugfs_create_u64("mclk_hz", 0644, dir, &mclk_hz);
+	} else {
+		mclk_hz = sunway_mclk_hz;
+		debugfs_create_u64("mclk_hz", 0644, dir, &mclk_hz);
+	}
 
 	return 0;
-
 }
 late_initcall(debugfs_mclk_init);
 #endif
