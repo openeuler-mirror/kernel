@@ -93,11 +93,10 @@ static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
 #endif /* OPTM_WITH_LPAGE */
 
 /**
- * rnpgbevf_set_ivar - set IVAR registers - maps interrupt causes to vectors
+ * rnpgbevf_set_ring_vector - maps interrupt causes to vectors
  * @adapter: pointer to adapter struct
- * @direction: 0 for Rx, 1 for Tx, -1 for other causes
- * @queue: queue to map the corresponding interrupt to
- * @msix_vector: the vector to map to the corresponding queue
+ * @rnpgbevf_queue: queue to map the corresponding interrupt to
+ * @rnpgbevf_msix_vector: the vector to map to the corresponding queue
  */
 static void rnpgbevf_set_ring_vector(struct rnpgbevf_adapter *adapter,
 				     u8 rnpgbevf_queue, u8 rnpgbevf_msix_vector)
@@ -116,8 +115,8 @@ static void rnpgbevf_set_ring_vector(struct rnpgbevf_adapter *adapter,
 	rnpgbevf_wr_reg(hw->ring_msix_base + RING_VECTOR(rnpgbevf_queue), data);
 }
 
-void rnpgbevf_unmap_and_free_tx_resource(struct rnpgbevf_ring *ring,
-					 struct rnpgbevf_tx_buffer *tx_buffer)
+static void rnpgbevf_unmap_and_free_tx_resource(struct rnpgbevf_ring *ring,
+						struct rnpgbevf_tx_buffer *tx_buffer)
 {
 	if (tx_buffer->skb) {
 		dev_kfree_skb_any(tx_buffer->skb);
@@ -774,7 +773,8 @@ skip_vf_vlan:
  * @rx_ring: ring to place buffers on
  * @cleaned_count: number of buffers to replace
  **/
-void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring, u16 cleaned_count)
+static void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring,
+				      u16 cleaned_count)
 {
 	union rnp_rx_desc *rx_desc;
 	struct rnpgbevf_rx_buffer *bi;
@@ -880,7 +880,6 @@ void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring, u16 cleaned_count)
  * rnpgbevf_is_non_eop - process handling of non-EOP buffers
  * @rx_ring: Rx ring being processed
  * @rx_desc: Rx descriptor for current buffer
- * @skb: Current socket buffer containing buffer in progress
  *
  * This function updates next to clean.  If the buffer is an EOP buffer
  * this function exits returning false, otherwise it will place the
@@ -1084,7 +1083,7 @@ static struct sk_buff *rnpgbevf_build_skb(struct rnpgbevf_ring *rx_ring,
 }
 
 /**
- * rnp_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
+ * rnpgbevf_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @q_vector: structure containing interrupt and ring information
  * @rx_ring: rx descriptor ring to transact packets on
  * @budget: Total limit on number of packets to process
@@ -1507,7 +1506,7 @@ static void rnpgbevf_rx_buffer_flip(struct rnpgbevf_ring *rx_ring,
 }
 
 /**
- * rnp_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
+ * rnpgbevf_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @q_vector: structure containing interrupt and ring information
  * @rx_ring: rx descriptor ring to transact packets on
  * @budget: Total limit on number of packets to process
@@ -1674,7 +1673,7 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 #endif /* OPTM_WITH_LPAGE */
 
 /**
- * rnp_clean_rx_ring - Free Rx Buffers per Queue
+ * rnpgbevf_clean_rx_ring - Free Rx Buffers per Queue
  * @rx_ring: ring to free buffers from
  **/
 static void rnpgbevf_clean_rx_ring(struct rnpgbevf_ring *rx_ring)
@@ -1724,7 +1723,6 @@ static void rnpgbevf_clean_rx_ring(struct rnpgbevf_ring *rx_ring)
 
 /**
  * rnpgbevf_pull_tail - rnp specific version of skb_pull_tail
- * @rx_ring: rx descriptor ring packet is being transacted on
  * @skb: pointer to current skb being adjusted
  *
  * This function is an rnp specific version of __pskb_pull_tail.  The
@@ -1974,9 +1972,8 @@ static int rnpgbevf_request_msix_irqs(struct rnpgbevf_adapter *adapter)
 			&adapter->msix_entries[i + adapter->vector_off];
 
 		if (q_vector->tx.ring && q_vector->rx.ring) {
-			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
-				 "%s-%s-%d-%d", netdev->name, "TxRx", i,
-				 q_vector->v_idx);
+			snprintf(q_vector->name, sizeof(q_vector->name),
+				 "%s-%s-%u", netdev->name, "TxRx", i);
 		} else {
 			WARN(!(q_vector->tx.ring && q_vector->rx.ring),
 			     "%s vector%d tx rx is null, v_idx:%d\n",
@@ -2034,6 +2031,7 @@ static int rnpgbevf_free_msix_irqs(struct rnpgbevf_adapter *adapter)
  * rnpgbevf_update_itr - update the dynamic ITR value based on statistics
  * @q_vector: structure containing interrupt and ring information
  * @ring_container: structure containing ring performance data
+ * @type: rx or tx ring
  *
  *      Stores a new ITR value based on packets and byte
  *      counts during the last interrupt.  The advantage of per interrupt
@@ -2253,14 +2251,14 @@ clear_counts:
 }
 
 /**
- * rnpgbevf_write_eitr - write EITR register in hardware specific way
+ * rnpgbevf_write_eitr_rx - write EITR register in hardware specific way
  * @q_vector: structure containing interrupt and ring information
  *
  * This function is made to be called by ethtool and by the driver
  * when it needs to update EITR registers at runtime.  Hardware
  * specific quirks/differences are taken care of here.
  */
-void rnpgbevf_write_eitr_rx(struct rnpgbevf_q_vector *q_vector)
+static void rnpgbevf_write_eitr_rx(struct rnpgbevf_q_vector *q_vector)
 {
 	struct rnpgbevf_adapter *adapter = q_vector->adapter;
 	struct rnpgbevf_hw *hw = &adapter->hw;
@@ -2358,8 +2356,8 @@ static inline void rnpgbevf_irq_disable(struct rnpgbevf_adapter *adapter)
  *
  * Configure the Tx descriptor ring after a reset.
  **/
-void rnpgbevf_configure_tx_ring(struct rnpgbevf_adapter *adapter,
-				struct rnpgbevf_ring *ring)
+static void rnpgbevf_configure_tx_ring(struct rnpgbevf_adapter *adapter,
+				       struct rnpgbevf_ring *ring)
 {
 	struct rnpgbevf_hw *hw = &adapter->hw;
 
@@ -2423,20 +2421,20 @@ static void rnpgbevf_configure_tx(struct rnpgbevf_adapter *adapter)
 		rnpgbevf_configure_tx_ring(adapter, adapter->tx_ring[i]);
 }
 
-void rnpgbevf_disable_rx_queue(struct rnpgbevf_adapter *adapter,
-			       struct rnpgbevf_ring *ring)
+static void rnpgbevf_disable_rx_queue(struct rnpgbevf_adapter *adapter,
+				      struct rnpgbevf_ring *ring)
 {
 	ring_wr32(ring, RNPGBE_DMA_RX_START, 0);
 }
 
-void rnpgbevf_enable_rx_queue(struct rnpgbevf_adapter *adapter,
-			      struct rnpgbevf_ring *ring)
+static void rnpgbevf_enable_rx_queue(struct rnpgbevf_adapter *adapter,
+				     struct rnpgbevf_ring *ring)
 {
 	ring_wr32(ring, RNPGBE_DMA_RX_START, 1);
 }
 
-void rnpgbevf_configure_rx_ring(struct rnpgbevf_adapter *adapter,
-				struct rnpgbevf_ring *ring)
+static void rnpgbevf_configure_rx_ring(struct rnpgbevf_adapter *adapter,
+				       struct rnpgbevf_ring *ring)
 {
 	struct rnpgbevf_hw *hw = &adapter->hw;
 	u64 desc_phy = ring->dma;
@@ -2558,13 +2556,12 @@ static int rnpgbevf_vlan_rx_kill_vid(struct net_device *netdev,
 	struct rnpgbevf_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbevf_hw *hw = &adapter->hw;
 	struct rnp_mbx_info *mbx = &hw->mbx;
-	int err = -EOPNOTSUPP;
 
 	if (vid) {
 		spin_lock_bh(&adapter->mbx_lock);
 		set_bit(__RNPVF_MBX_POLLING, &adapter->state);
 		/* remove VID from filter table */
-		err = hw->mac.ops.set_vfta(hw, vid, 0, false);
+		hw->mac.ops.set_vfta(hw, vid, 0, false);
 		clear_bit(__RNPVF_MBX_POLLING, &adapter->state);
 		spin_unlock_bh(&adapter->mbx_lock);
 		hw->ops.set_veb_vlan(hw, 0, VFNUM(mbx, hw->vfnum));
@@ -3184,13 +3181,6 @@ static int rnpgbevf_acquire_msix_vectors(struct rnpgbevf_adapter *adapter,
 					 int vectors)
 {
 	int err = 0;
-	int vector_threshold;
-
-	/* We'll want at least 2 (vector_threshold):
-	 * 1) TxQ[0] + RxQ[0] handler
-	 * 2) Other (Link Status Change, etc.)
-	 */
-	vector_threshold = MIN_MSIX_COUNT;
 
 	/* The more we get, the more we will assign to Tx/Rx Cleanup
 	 * for the separate queues...where Rx Cleanup >= Tx Cleanup.
@@ -3722,7 +3712,7 @@ static int rnpgbevf_reset_subtask(struct rnpgbevf_adapter *adapter)
 
 /**
  * rnpgbevf_watchdog - Timer Call-back
- * @data: pointer to adapter cast into an unsigned long
+ * @t: timer_list pointer
  **/
 static void rnpgbevf_watchdog(struct timer_list *t)
 {
@@ -4375,9 +4365,12 @@ int rnpgbevf_close(struct net_device *netdev)
 	return 0;
 }
 
-void rnpgbevf_tx_ctxtdesc(struct rnpgbevf_ring *tx_ring, u16 mss_seg_len,
-			  u8 l4_hdr_len, u8 tunnel_hdr_len, int ignore_vlan,
-			  u16 type_tucmd, bool crc_pad)
+static void rnpgbevf_tx_ctxtdesc(struct rnpgbevf_ring *tx_ring,
+				 u16 mss_seg_len,
+				 u8 l4_hdr_len,
+				 u8 tunnel_hdr_len,
+				 int ignore_vlan,
+				 u16 type_tucmd, bool crc_pad)
 {
 	struct rnp_tx_ctx_desc *context_desc;
 	u16 i = tx_ring->next_to_use;
@@ -4817,9 +4810,9 @@ static int __rnpgbevf_maybe_stop_tx(struct rnpgbevf_ring *tx_ring, int size)
 	return 0;
 }
 
-void rnpgbevf_maybe_tx_ctxtdesc(struct rnpgbevf_ring *tx_ring,
-				struct rnpgbevf_tx_buffer *first,
-				int ignore_vlan, u16 type_tucmd)
+static void rnpgbevf_maybe_tx_ctxtdesc(struct rnpgbevf_ring *tx_ring,
+				       struct rnpgbevf_tx_buffer *first,
+				       int ignore_vlan, u16 type_tucmd)
 {
 	if (first->ctx_flag) {
 		rnpgbevf_tx_ctxtdesc(tx_ring, first->mss_len, first->l4_hdr_len,
@@ -4835,10 +4828,10 @@ static int rnpgbevf_maybe_stop_tx(struct rnpgbevf_ring *tx_ring, int size)
 	return __rnpgbevf_maybe_stop_tx(tx_ring, size);
 }
 
-netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
-				     struct rnpgbevf_adapter *adapter,
-				     struct rnpgbevf_ring *tx_ring,
-				     bool tx_padding)
+static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
+					    struct rnpgbevf_adapter *adapter,
+					    struct rnpgbevf_ring *tx_ring,
+					    bool tx_padding)
 {
 	struct rnpgbevf_tx_buffer *first;
 	int tso;
@@ -4849,8 +4842,6 @@ netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 	__be16 protocol = skb->protocol;
 	u8 hdr_len = 0;
 	int ignore_vlan = 0;
-
-	rnpgbevf_skb_dump(skb, true);
 
 	/* need: 1 descriptor per page * PAGE_SIZE/RNPVF_MAX_DATA_PER_TXD,
 	 *       + 1 desc for skb_headlen/RNPVF_MAX_DATA_PER_TXD,
@@ -5308,7 +5299,7 @@ static const struct net_device_ops rnpgbevf_netdev_ops = {
 	.ndo_fix_features = rnpgbevf_fix_features,
 };
 
-void rnpgbevf_assign_netdev_ops(struct net_device *dev)
+static void rnpgbevf_assign_netdev_ops(struct net_device *dev)
 {
 	/* different hw can assign difference fun */
 	dev->netdev_ops = &rnpgbevf_netdev_ops;

@@ -11,6 +11,7 @@ static s32 rnpgbevf_poll_for_ack(struct rnpgbevf_hw *hw, bool to_cm3);
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully received a message notification and
  *  copied it into the receive buffer.
@@ -39,6 +40,7 @@ out:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully copied message into the buffer and
  *  received an ack to that message within delay * timeout period
@@ -122,6 +124,7 @@ static inline void rnpgbevf_mbx_inc_vfack(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_check_for_msg_vf - checks to see if the PF has sent mail
  *  @hw: pointer to the HW structure
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if the PF has set the Status bit or else ERR_MBX
  **/
@@ -151,6 +154,7 @@ static s32 rnpgbevf_check_for_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_poll_for_msg - Wait for message notification
  *  @hw: pointer to the HW structure
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully received a message notification
  **/
@@ -170,6 +174,7 @@ static s32 rnpgbevf_poll_for_msg(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_poll_for_ack - Wait for message acknowledgment
  *  @hw: pointer to the HW structure
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully received a message acknowledgment
  **/
@@ -195,6 +200,7 @@ static s32 rnpgbevf_poll_for_ack(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_check_for_rst_msg_vf - checks to see if the PF has ACK'd
  *  @hw: pointer to the HW structure
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if the PF has set the ACK bit or else ERR_MBX
  **/
@@ -357,6 +363,7 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_check_for_ack_vf - checks to see if the PF has ACK'd
  *  @hw: pointer to the HW structure
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if the PF has set the ACK bit or else ERR_MBX
  **/
@@ -386,6 +393,7 @@ static s32 rnpgbevf_check_for_ack_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_obtain_mbx_lock_vf - obtain mailbox lock
  *  @hw: pointer to the HW structure
+ *  @to_cm3: to cm3 or not
  *
  *  return 0 if we obtained the mailbox lock
  **/
@@ -416,6 +424,7 @@ static s32 rnpgbevf_obtain_mbx_lock_vf(struct rnpgbevf_hw *hw, bool to_cm3)
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully copied message into the buffer
  **/
@@ -468,6 +477,7 @@ out_no_write:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
+ *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully read message from buffer
  **/

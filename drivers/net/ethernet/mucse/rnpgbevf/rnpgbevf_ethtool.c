@@ -99,12 +99,6 @@ struct rnpgbevf_rx_queue_ring_stat {
 	(RNPVF_GLOBAL_STATS_LEN + RNPGBE_QUEUE_STATS_LEN +                     \
 	 RNPVF_HWSTRINGS_STATS_LEN)
 
-static const char rnp_gstrings_test[][ETH_GSTRING_LEN] = {
-	"Register test  (offline)", "Link test   (on/offline)"
-};
-
-#define RNPVF_TEST_LEN (sizeof(rnp_gstrings_test) / ETH_GSTRING_LEN)
-
 enum priv_bits {
 	padding_enable = 0,
 };
@@ -251,10 +245,10 @@ static void rnpgbevf_get_drvinfo(struct net_device *netdev,
 	drvinfo->n_priv_flags = RNPVF_PRIV_FLAGS_STR_LEN;
 }
 
-void rnpgbevf_get_ringparam(struct net_device *netdev,
-			    struct ethtool_ringparam *ring,
-			    struct kernel_ethtool_ringparam __always_unused *ker,
-			    struct netlink_ext_ack __always_unused *extack)
+static void rnpgbevf_get_ringparam(struct net_device *netdev,
+				   struct ethtool_ringparam *ring,
+				   struct kernel_ethtool_ringparam __always_unused *ker,
+				   struct netlink_ext_ack __always_unused *extack)
 {
 	struct rnpgbevf_adapter *adapter = netdev_priv(netdev);
 
@@ -264,10 +258,10 @@ void rnpgbevf_get_ringparam(struct net_device *netdev,
 	ring->tx_pending = adapter->tx_ring_item_count;
 }
 
-int rnpgbevf_set_ringparam(struct net_device *netdev,
-			   struct ethtool_ringparam *ring,
-			   struct kernel_ethtool_ringparam __always_unused *ker,
-			   struct netlink_ext_ack __always_unused *extack)
+static int rnpgbevf_set_ringparam(struct net_device *netdev,
+				  struct ethtool_ringparam *ring,
+				  struct kernel_ethtool_ringparam __always_unused *ker,
+				  struct netlink_ext_ack __always_unused *extack)
 {
 	struct rnpgbevf_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbevf_ring *temp_ring;
@@ -391,11 +385,8 @@ clear_reset:
 static void rnpgbevf_get_strings(struct net_device *netdev, u32 stringset,
 				 u8 *data)
 {
-	struct rnpgbevf_adapter *adapter = netdev_priv(netdev);
 	char *p = (char *)data;
 	int i;
-	struct rnpgbevf_ring *ring;
-	u16 queue_idx;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
@@ -414,8 +405,6 @@ static void rnpgbevf_get_strings(struct net_device *netdev, u32 stringset,
 		BUG_ON(RNPVF_NUM_TX_QUEUES != RNPVF_NUM_RX_QUEUES);
 
 		for (i = 0; i < RNPVF_NUM_TX_QUEUES; i++) {
-			ring = adapter->tx_ring[i];
-			queue_idx = ring->rnpgbevf_queue_idx;
 			sprintf(p, "\n     queue%u_tx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_tx_bytes", i);
@@ -449,8 +438,6 @@ static void rnpgbevf_get_strings(struct net_device *netdev, u32 stringset,
 			sprintf(p, "queue%u_tx_equal_count", i);
 			p += ETH_GSTRING_LEN;
 
-			ring = adapter->rx_ring[i];
-			queue_idx = ring->rnpgbevf_queue_idx;
 			sprintf(p, "\n     queue%u_rx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_rx_bytes", i);
