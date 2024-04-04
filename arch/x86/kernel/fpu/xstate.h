@@ -54,8 +54,6 @@ extern int copy_sigframe_from_user_to_xstate(struct task_struct *tsk, const void
 extern void fpu__init_cpu_xstate(void);
 extern void fpu__init_system_xstate(unsigned int legacy_size);
 
-extern void *get_xsave_addr(struct xregs_state *xsave, int xfeature_nr);
-
 extern void __user *get_xsave_addr_user(struct xregs_state __user *xsave, int xfeature_nr);
 
 static inline u64 xfeatures_mask_supervisor(void)
