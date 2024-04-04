@@ -1663,26 +1663,29 @@ static void domain_flush_devices(struct protection_domain *domain)
 
 static u16 domain_id_alloc(void)
 {
+	unsigned long flags;
 	int id;
 
-	spin_lock(&pd_bitmap_lock);
+	spin_lock_irqsave(&pd_bitmap_lock, flags);
 	id = find_first_zero_bit(amd_iommu_pd_alloc_bitmap, MAX_DOMAIN_ID);
 	BUG_ON(id == 0);
 	if (id > 0 && id < MAX_DOMAIN_ID)
 		__set_bit(id, amd_iommu_pd_alloc_bitmap);
 	else
 		id = 0;
-	spin_unlock(&pd_bitmap_lock);
+	spin_unlock_irqrestore(&pd_bitmap_lock, flags);
 
 	return id;
 }
 
 static void domain_id_free(int id)
 {
-	spin_lock(&pd_bitmap_lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&pd_bitmap_lock, flags);
 	if (id > 0 && id < MAX_DOMAIN_ID)
 		__clear_bit(id, amd_iommu_pd_alloc_bitmap);
-	spin_unlock(&pd_bitmap_lock);
+	spin_unlock_irqrestore(&pd_bitmap_lock, flags);
 }
 
 static void free_gcr3_tbl_level1(u64 *tbl)
