@@ -3630,6 +3630,9 @@ static int arm_smmu_aux_attach_dev(struct iommu_domain *domain, struct device *d
 		dev_err(dev, "cannot attach aux domain with different parent\n");
 		ret = -EINVAL;
 		goto out_unlock;
+	} else {
+		ret = -EINVAL;
+		goto out_unlock;
 	}
 
 	/* FIXME: serialize against arm_smmu_share_asid() */
@@ -4813,7 +4816,7 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 	int ret, cpu;
 	u32 i, nump, numq, gap;
 	u32 reg, shift_increment;
-	u64 addr, smmu_dma_base;
+	u64 addr, smmu_dma_base, val, pre_addr;
 	void __iomem *cp_regs, *cp_base;
 
 	/* IDR6 */
@@ -4831,8 +4834,6 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 		return -ENOMEM;
 
 	for (i = 0; i < nump; i++) {
-		u64 val, pre_addr;
-
 		val = readq_relaxed(cp_regs + 32 * i);
 		if (!(val & ECMDQ_CP_PRESET)) {
 			iounmap(cp_regs);
@@ -4872,7 +4873,6 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 		struct arm_smmu_queue *q;
 
 		ecmdq = *per_cpu_ptr(smmu->ecmdqs, cpu);
-		q = &ecmdq->cmdq.q;
 
 		/*
 		 * The boot option "maxcpus=" can limit the number of online
@@ -4885,6 +4885,8 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 		 */
 		if (!ecmdq || (ecmdq != per_cpu_ptr(smmu->ecmdq, cpu)))
 			continue;
+
+		q = &ecmdq->cmdq.q;
 		ecmdq->base = cp_base + addr;
 
 		q->llq.max_n_shift = ECMDQ_MAX_SZ_SHIFT + shift_increment;
