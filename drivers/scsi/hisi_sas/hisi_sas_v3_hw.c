@@ -630,9 +630,9 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 	hisi_sas_write32(hisi_hba, TRANS_LOCK_ICT_TIME, 0x4A817C80);
 	hisi_sas_write32(hisi_hba, HGC_SAS_TXFAIL_RETRY_CTRL, 0x108);
 	hisi_sas_write32(hisi_hba, CFG_AGING_TIME, 0x1);
-	hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x1);
-	hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME, 0x1);
-	hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT, 0x1);
+	hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x3);
+	hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME, 0xa);
+	hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT, 0xa);
 	hisi_sas_write32(hisi_hba, CQ_INT_CONVERGE_EN,
 			 hisi_sas_intr_conv);
 	hisi_sas_write32(hisi_hba, OQ_INT_SRC, 0xffff);
@@ -2771,11 +2771,9 @@ static void config_intr_coal_v3_hw(struct hisi_hba *hisi_hba)
 
 	if (hisi_hba->intr_coal_ticks == 0 ||
 	    hisi_hba->intr_coal_count == 0) {
-		hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x1);
-		hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME, 0x1);
-		hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT, 0x1);
+		hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME, 0xa);
+		hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT, 0xa);
 	} else {
-		hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x3);
 		hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME,
 				 hisi_hba->intr_coal_ticks);
 		hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT,
