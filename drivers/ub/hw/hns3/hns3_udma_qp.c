@@ -33,6 +33,12 @@ static bool um_spray_en;
 static ushort um_data_udp_start;
 static ushort um_udp_range;
 
+static inline uint8_t get_qp_bankid(uint64_t qpn)
+{
+	/* The lower 3 bits of QPN are used to hash to different banks */
+	return (uint8_t)(qpn & QP_BANKID_MASK);
+}
+
 static bool is_rc_jetty(struct udma_qp_attr *qp_attr)
 {
 	if (qp_attr->is_jetty && qp_attr->jetty &&
@@ -377,7 +383,7 @@ static void edit_qpc_for_srqn(struct udma_qp *qp,
 		udma_reg_enable(context, QPC_SRQ_EN);
 		udma_reg_clear(context_mask, QPC_SRQ_EN);
 
-		udma_reg_write(context, QPC_SRQN, qp->qp_attr.jfr->jfrn);
+		udma_reg_write(context, QPC_SRQN, qp->qp_attr.jfr->srqn);
 		udma_reg_clear(context_mask, QPC_SRQN);
 	}
 }
@@ -1050,6 +1056,7 @@ int fill_jfs_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	qp_attr->cap.ack_timeout = jfs->jfs_cfg.err_timeout;
 	qp_attr->qp_type = QPT_RC;
 	qp_attr->tgt_id = ucmd->tgt_id.jfr_id;
+	qp_attr->tp_mode = udma_jfs->tp_mode;
 	if (jfs->jfs_cfg.priority >= udma_dev->caps.sl_num) {
 		qp_attr->priority = udma_dev->caps.sl_num > 0 ?
 				    udma_dev->caps.sl_num - 1 : 0;
@@ -1080,6 +1087,7 @@ int fill_jfr_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	qp_attr->recv_jfc = to_udma_jfc(jfr->jfr_cfg.jfc);
 	qp_attr->uctx = qp_attr->jfr->ubcore_jfr.uctx;
 	qp_attr->qpn_map = &qp_attr->jfr->qpn_map;
+	qp_attr->tp_mode = udma_jfr->tp_mode;
 
 	if (jfr->jfr_cfg.trans_mode == UBCORE_TP_UM) {
 		dev_err(udma_dev->dev, "jfr tp mode error\n");
@@ -1347,19 +1355,12 @@ static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
 }
 
 static uint8_t get_least_load_bankid_for_qp(struct udma_bank *bank,
-					    struct udma_qp_attr *attr,
-					    bool is_target)
+					    struct udma_jfc *jfc)
 {
 	uint32_t least_load = UDMA_INVALID_LOAD_QPNUM;
-	struct udma_jfc *jfc;
 	uint8_t bankid = 0;
 	uint32_t bankcnt;
 	uint8_t i;
-
-	if (!is_target)
-		jfc = attr->send_jfc;
-	else
-		jfc = attr->recv_jfc;
 
 	for (i = 0; i < UDMA_QP_BANK_NUM; ++i) {
 		if (jfc && (get_affinity_cq_bank(i) != (jfc->cqn & CQ_BANKID_MASK)))
@@ -1376,7 +1377,7 @@ static uint8_t get_least_load_bankid_for_qp(struct udma_bank *bank,
 }
 
 static int alloc_qpn_with_bankid(struct udma_bank *bank, uint8_t bankid,
-				 uint64_t *qpn)
+				 uint32_t *qpn)
 {
 	int idx;
 
@@ -1397,34 +1398,78 @@ static int alloc_qpn_with_bankid(struct udma_bank *bank, uint8_t bankid,
 	return 0;
 }
 
+int alloc_common_qpn(struct udma_dev *udma_dev, struct udma_jfc *jfc,
+		     uint32_t *qpn)
+{
+	struct udma_qp_table *qp_table = &udma_dev->qp_table;
+	uint8_t bankid;
+	int ret;
+
+	mutex_lock(&qp_table->bank_mutex);
+	bankid = get_least_load_bankid_for_qp(qp_table->bank, jfc);
+	ret = alloc_qpn_with_bankid(&qp_table->bank[bankid], bankid, qpn);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to alloc qpn, ret = %d\n",
+			ret);
+		mutex_unlock(&qp_table->bank_mutex);
+		return ret;
+	}
+	qp_table->bank[bankid].inuse++;
+	mutex_unlock(&qp_table->bank_mutex);
+
+	return ret;
+}
+
+void free_common_qpn(struct udma_dev *udma_dev, uint32_t qpn)
+{
+	struct udma_qp_table *qp_table = &udma_dev->qp_table;
+	uint8_t bankid;
+
+	bankid = get_qp_bankid(qpn);
+	ida_free(&qp_table->bank[bankid].ida, qpn / UDMA_QP_BANK_NUM);
+	mutex_lock(&qp_table->bank_mutex);
+	qp_table->bank[bankid].inuse--;
+	mutex_unlock(&qp_table->bank_mutex);
+}
+
 static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp, bool is_target)
 {
 	struct udma_qpn_bitmap *qpn_map = qp->qp_attr.qpn_map;
 	struct udma_qp_attr *attr = &qp->qp_attr;
 	struct device *dev = udma_dev->dev;
-	uint64_t num = 0;
+	uint32_t num = 0;
 	uint8_t bankid;
 	int ret;
 
-	if (qpn_map->qpn_shift == 0 || qp->qp_type == QPT_UD) {
-		qp->qpn = gen_qpn(qpn_map->qpn_prefix,
-				  qpn_map->jid << qpn_map->qpn_shift, 0);
-	} else {
-		mutex_lock(&qpn_map->bank_mutex);
-		bankid = get_least_load_bankid_for_qp(qpn_map->bank, attr, is_target);
-		ret = alloc_qpn_with_bankid(&qpn_map->bank[bankid], bankid,
-					    &num);
-		if (ret) {
-			dev_err(dev, "failed to alloc QPN, ret = %d\n", ret);
+	if (attr->tp_mode == UBCORE_TP_RM) {
+		if (qpn_map->qpn_shift == 0 || qp->qp_type == QPT_UD) {
+			qp->qpn = gen_qpn(qpn_map->qpn_prefix,
+					  qpn_map->jid << qpn_map->qpn_shift, 0);
+		} else {
+			mutex_lock(&qpn_map->bank_mutex);
+			bankid = get_least_load_bankid_for_qp(qpn_map->bank,
+							      is_target ? attr->recv_jfc
+									: attr->send_jfc);
+			ret = alloc_qpn_with_bankid(&qpn_map->bank[bankid], bankid,
+						    &num);
+			if (ret) {
+				dev_err(dev, "failed to alloc QPN, ret = %d\n", ret);
+				mutex_unlock(&qpn_map->bank_mutex);
+				return ret;
+			}
+			qpn_map->bank[bankid].inuse++;
 			mutex_unlock(&qpn_map->bank_mutex);
-			return ret;
+			qp->qpn = gen_qpn(qpn_map->qpn_prefix,
+					  qpn_map->jid << qpn_map->qpn_shift, num);
 		}
-		qpn_map->bank[bankid].inuse++;
-		mutex_unlock(&qpn_map->bank_mutex);
-		qp->qpn = gen_qpn(qpn_map->qpn_prefix,
-				  qpn_map->jid << qpn_map->qpn_shift, num);
+	} else {
+		if (attr->is_jetty)
+			qp->qpn = attr->jetty->jetty_id;
+		else if (attr->jfs)
+			qp->qpn = attr->jfs->jfs_id;
+		else
+			qp->qpn = attr->jfr->jfrn;
 	}
-	atomic_inc(&qpn_map->ref_num);
 
 	return 0;
 }
@@ -1874,16 +1919,13 @@ static void free_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp)
 	free_wqe_buf(udma_dev, qp);
 }
 
-static inline uint8_t get_qp_bankid(uint64_t qpn)
-{
-	/* The lower 3 bits of QPN are used to hash to different banks */
-	return (uint8_t)(qpn & QP_BANKID_MASK);
-}
-
 static void free_qpn(struct udma_qp *qp)
 {
 	struct udma_qpn_bitmap *qpn_map = qp->qp_attr.qpn_map;
 	uint8_t bankid;
+
+	if (qp->qp_attr.tp_mode != UBCORE_TP_RM)
+		return;
 
 	if (qpn_map->qpn_shift == 0 || qp->qp_type == QPT_UD)
 		return;

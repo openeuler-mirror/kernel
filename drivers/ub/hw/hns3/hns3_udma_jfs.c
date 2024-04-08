@@ -31,6 +31,7 @@ static int init_jfs_cfg(struct udma_dev *dev, struct udma_jfs *jfs,
 		return -EINVAL;
 	}
 	memcpy(&jfs->ubcore_jfs.jfs_cfg, cfg, sizeof(struct ubcore_jfs_cfg));
+	jfs->jfc = to_udma_jfc(cfg->jfc);
 	jfs->tp_mode = cfg->trans_mode;
 
 	return 0;
@@ -173,20 +174,37 @@ static int alloc_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 	int ret;
 	int id;
 
-	id = ida_alloc_range(&jfs_ida->ida, jfs_ida->min, jfs_ida->max,
-			     GFP_KERNEL);
-	if (id < 0) {
-		dev_err(udma_dev->dev, "failed to alloc jfs_id(%d).\n", id);
-		return id;
+	if (jfs->tp_mode == UBCORE_TP_RM) {
+		id = ida_alloc_range(&jfs_ida->ida, jfs_ida->min, jfs_ida->max,
+				     GFP_KERNEL);
+		if (id < 0) {
+			dev_err(udma_dev->dev, "failed to alloc jfs_id(%d).\n", id);
+			return id;
+		}
+		jfs->jfs_id = (uint32_t)id;
+	} else {
+		ret = alloc_common_qpn(udma_dev, jfs->jfc, &jfs->jfs_id);
+		if (ret) {
+			dev_err(udma_dev->dev, "failed to alloc common jfs_id(%d).\n",
+				ret);
+			return ret;
+		}
 	}
-	jfs->jfs_id = (uint32_t)id;
-	jfs->ubcore_jfs.id = jfs->jfs_id;
 
 	ret = xa_err(xa_store(&jfs_table->xa, jfs->jfs_id, jfs, GFP_KERNEL));
 	if (ret) {
 		dev_err(udma_dev->dev, "failed to store JFS, ret = %d.\n", ret);
-		ida_free(&jfs_ida->ida, id);
+		goto store_err;
 	}
+
+	jfs->ubcore_jfs.id = jfs->jfs_id;
+
+	return ret;
+store_err:
+	if (udma_dev->rm_support && jfs->tp_mode == UBCORE_TP_RM)
+		ida_free(&jfs_ida->ida, id);
+	else
+		free_common_qpn(udma_dev, jfs->jfs_id);
 
 	return ret;
 }
@@ -273,7 +291,10 @@ static void free_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 	struct udma_ida *jfs_ida = &jfs_table->jfs_ida;
 
 	xa_erase(&jfs_table->xa, jfs->jfs_id);
-	ida_free(&jfs_ida->ida, (int)jfs->jfs_id);
+	if (udma_dev->rm_support && jfs->tp_mode == UBCORE_TP_RM)
+		ida_free(&jfs_ida->ida, (int)jfs->jfs_id);
+	else
+		free_common_qpn(udma_dev, jfs->jfs_id);
 }
 
 struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_cfg *cfg,
@@ -282,6 +303,11 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_jfs *jfs;
 	int ret;
+
+	if (!udma_dev->rm_support && cfg->trans_mode == UBCORE_TP_RM) {
+		dev_err(udma_dev->dev, "RM mode jfs is not supported.\n");
+		return NULL;
+	}
 
 	jfs = kcalloc(1, sizeof(struct udma_jfs), GFP_KERNEL);
 	if (!jfs)
@@ -295,9 +321,10 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_
 	if (ret)
 		goto err_alloc_jfs_id;
 
-	init_jetty_x_qpn_bitmap(udma_dev, &jfs->qpn_map,
-				udma_dev->caps.num_jfs_shift,
-				UDMA_JFS_QPN_PREFIX, jfs->jfs_id);
+	if (cfg->trans_mode == UBCORE_TP_RM)
+		init_jetty_x_qpn_bitmap(udma_dev, &jfs->qpn_map,
+					udma_dev->caps.num_jfs_shift,
+					UDMA_JFS_QPN_PREFIX, jfs->jfs_id);
 
 	ret = alloc_jfs_buf(udma_dev, jfs, cfg, udata);
 	if (ret) {
@@ -311,7 +338,8 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev, struct ubcore_jfs_
 	return &jfs->ubcore_jfs;
 
 err_alloc_jfs_buf:
-	clean_jetty_x_qpn_bitmap(&jfs->qpn_map);
+	if (cfg->trans_mode == UBCORE_TP_RM)
+		clean_jetty_x_qpn_bitmap(&jfs->qpn_map);
 	free_jfs_id(udma_dev, jfs);
 err_alloc_jfs_id:
 err_init_cfg:
@@ -330,7 +358,8 @@ int udma_destroy_jfs(struct ubcore_jfs *jfs)
 	udma_dev = to_udma_dev(jfs->ub_dev);
 
 	ret = destroy_jfs_qp(udma_dev, udma_jfs);
-	clean_jetty_x_qpn_bitmap(&udma_jfs->qpn_map);
+	if (udma_jfs->tp_mode == UBCORE_TP_RM)
+		clean_jetty_x_qpn_bitmap(&udma_jfs->qpn_map);
 
 	if (dfx_switch)
 		delete_jfs_id(udma_dev, udma_jfs);

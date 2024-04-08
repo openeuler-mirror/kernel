@@ -41,6 +41,9 @@ static int init_jfr_cfg(struct udma_dev *dev, struct udma_jfr *jfr,
 		jfr->max_sge = roundup_pow_of_two(cfg->max_sge);
 
 	memcpy(&jfr->ubcore_jfr.jfr_cfg, cfg, sizeof(struct ubcore_jfr_cfg));
+	jfr->jfc = to_udma_jfc(cfg->jfc);
+	jfr->tp_mode = cfg->trans_mode;
+
 	return 0;
 }
 
@@ -179,7 +182,6 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 			 struct ubcore_udata *udata)
 {
 	struct udma_create_jfr_ucmd ucmd = {};
-	struct udma_create_jfr_resp resp = {};
 	int ret;
 
 	if (udata) {
@@ -220,28 +222,10 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 		jfr->jfr_caps |= UDMA_JFR_CAP_RECORD_DB;
 	}
 
-	if (udata) {
-		resp.jfr_caps = jfr->jfr_caps;
-		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min(udata->udrv_data->out_len,
-				       (uint32_t)sizeof(resp)));
-		if (ret) {
-			dev_err(dev->dev,
-				"failed to copy jfr resp, ret = %d.\n",
-				ret);
-			goto err_copy;
-		}
-	}
 	refcount_set(&jfr->refcount, 1);
 	init_completion(&jfr->free);
 	return 0;
 
-err_copy:
-	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
-	    jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB) {
-		udma_db_unmap_user(dev, &jfr->db);
-		jfr->jfr_caps &= ~UDMA_JFR_CAP_RECORD_DB;
-	}
 err_db:
 	free_jfr_wqe_buf(dev, jfr);
 err_idx:
@@ -315,7 +299,7 @@ static int write_jfrc(struct udma_dev *dev, struct udma_jfr *jfr, void *mb_buf)
 	udma_reg_write(ctx, SRQC_SRQ_ST, 1);
 	udma_reg_write(ctx, SRQC_SRQ_TYPE, 0);
 	udma_reg_write(ctx, SRQC_PD, 0);
-	udma_reg_write(ctx, SRQC_SRQN, jfr->jfrn);
+	udma_reg_write(ctx, SRQC_SRQN, jfr->srqn);
 	udma_reg_write(ctx, SRQC_XRCD, 0);
 	udma_reg_write(ctx, SRQC_XRC_RSV, 0);
 	udma_reg_write(ctx, SRQC_SHIFT, ilog2(jfr->wqe_cnt));
@@ -365,19 +349,29 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	struct udma_jfr_table *jfr_table = &dev->jfr_table;
 	struct udma_ida *jfr_ida = &jfr_table->jfr_ida;
 	struct udma_cmd_mailbox *mailbox;
-	int ret;
-	int id;
+	int ret, id;
+
+	if (jfr->tp_mode != UBCORE_TP_RM) {
+		ret = alloc_common_qpn(dev, jfr->jfc, &jfr->jfrn);
+		if (ret) {
+			dev_err(dev->dev, "failed to alloc um qpn for jfr(%d).\n", ret);
+			return ret;
+		}
+	}
 
 	id = ida_alloc_range(&jfr_ida->ida, jfr_ida->min, jfr_ida->max,
 			     GFP_KERNEL);
 	if (id < 0) {
 		dev_err(dev->dev, "failed to alloc jfr_id(%d).\n", id);
-		return id;
+		goto free_qpn;
 	}
-	jfr->jfrn = (uint32_t)id;
-	jfr->ubcore_jfr.id = (uint32_t)id;
 
-	ret = udma_table_get(dev, &jfr_table->table, jfr->jfrn);
+	jfr->srqn = (uint32_t)id;
+	if (!jfr->jfrn)
+		jfr->jfrn = (uint32_t)id;
+	jfr->ubcore_jfr.id = jfr->jfrn;
+
+	ret = udma_table_get(dev, &jfr_table->table, jfr->srqn);
 	if (ret) {
 		dev_err(dev->dev, "failed to get JFRC table, ret = %d.\n", ret);
 		goto err_ida;
@@ -402,7 +396,7 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 		goto err_mbox;
 	}
 
-	ret = udma_hw_create_srq(dev, mailbox, jfr->jfrn);
+	ret = udma_hw_create_srq(dev, mailbox, jfr->srqn);
 	if (ret) {
 		dev_err(dev->dev, "failed to config JFRC, ret = %d.\n", ret);
 		goto err_mbox;
@@ -417,9 +411,12 @@ err_mbox:
 err_xa:
 	xa_erase(&jfr_table->xa, jfr->jfrn);
 err_put:
-	udma_table_put(dev, &jfr_table->table, jfr->jfrn);
+	udma_table_put(dev, &jfr_table->table, jfr->srqn);
 err_ida:
 	ida_free(&jfr_ida->ida, id);
+free_qpn:
+	if (jfr->tp_mode != UBCORE_TP_RM)
+		free_common_qpn(dev, jfr->jfrn);
 
 	return ret;
 }
@@ -509,21 +506,24 @@ static void delete_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
-static void free_jfrc(struct udma_dev *dev, uint32_t jfrn)
+static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 {
 	struct udma_jfr_table *jfr_table = &dev->jfr_table;
+	uint32_t jfrn = jfr->jfrn;
 	int ret;
 
-	ret = udma_hw_destroy_srq(dev, jfrn);
+	ret = udma_hw_destroy_srq(dev, jfr->srqn);
 	if (ret)
 		dev_err(dev->dev, "destroy failed (%d) for JFRN 0x%06x\n",
-			ret, jfrn);
+			ret, jfr->srqn);
 
 	xa_erase(&jfr_table->xa, jfrn);
 
-	udma_table_put(dev, &jfr_table->table, jfrn);
+	udma_table_put(dev, &jfr_table->table, jfr->srqn);
 
-	ida_free(&jfr_table->jfr_ida.ida, (int)jfrn);
+	ida_free(&jfr_table->jfr_ida.ida, (int)jfr->srqn);
+	if (jfr->tp_mode != UBCORE_TP_RM)
+		free_common_qpn(dev, jfrn);
 }
 
 static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
@@ -577,10 +577,12 @@ static int alloc_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 
 	qp->qp_type = QPT_UD;
 	qp->qp_attr.is_tgt = true;
+	qp->qp_attr.is_jetty = false;
 	qp->qp_attr.qp_type = QPT_UD;
 	qp->qp_attr.qpn_map = &jfr->qpn_map;
 	qp->qp_attr.recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
 	qp->qp_attr.send_jfc = NULL;
+	qp->qp_attr.jfr = jfr;
 	qp->qp_attr.eid_index =
 		to_udma_ucontext(jfr->ubcore_jfr.uctx)->eid_index;
 	udata.uctx = NULL;
@@ -624,8 +626,14 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct udma_create_jfr_resp resp = {};
 	struct udma_jfr *jfr;
 	int ret;
+
+	if (!udma_dev->rm_support && cfg->trans_mode == UBCORE_TP_RM) {
+		dev_err(udma_dev->dev, "RM mode jfr is not supported.\n");
+		return NULL;
+	}
 
 	jfr = kcalloc(1, sizeof(*jfr), GFP_KERNEL);
 	if (!jfr)
@@ -644,9 +652,10 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 		goto err_alloc_buf;
 
 	xa_init(&jfr->tp_table_xa);
-	init_jetty_x_qpn_bitmap(udma_dev, &jfr->qpn_map,
-				udma_dev->caps.num_jfr_shift,
-				UDMA_JFR_QPN_PREFIX, jfr->jfrn);
+	if (cfg->trans_mode == UBCORE_TP_RM)
+		init_jetty_x_qpn_bitmap(udma_dev, &jfr->qpn_map,
+					udma_dev->caps.num_jfr_shift,
+					UDMA_JFR_QPN_PREFIX, jfr->jfrn);
 	if (cfg->trans_mode == UBCORE_TP_UM) {
 		jfr->ubcore_jfr.uctx = udata->uctx;
 		ret = alloc_jfr_um_qp(udma_dev, jfr);
@@ -657,11 +666,30 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 	if (dfx_switch)
 		store_jfr_id(udma_dev, jfr);
 
+	if (udata) {
+		resp.jfr_caps = jfr->jfr_caps;
+		resp.srqn = jfr->srqn;
+		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
+				   min(udata->udrv_data->out_len,
+				   (uint32_t)sizeof(resp)));
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"failed to copy jfr resp, ret = %d.\n", ret);
+			goto err_copy;
+		}
+	}
+
 	return &jfr->ubcore_jfr;
 
+err_copy:
+	if (dfx_switch)
+		delete_jfr_id(udma_dev, jfr);
+	if (jfr->um_qp)
+		destroy_jfr_um_qp(udma_dev, jfr);
 err_alloc_jfrc:
-	clean_jetty_x_qpn_bitmap(&jfr->qpn_map);
-	free_jfrc(udma_dev, jfr->jfrn);
+	if (cfg->trans_mode == UBCORE_TP_RM)
+		clean_jetty_x_qpn_bitmap(&jfr->qpn_map);
+	free_jfrc(udma_dev, jfr);
 err_alloc_buf:
 	free_jfr_buf(udma_dev, jfr);
 err_alloc_jfr:
@@ -677,12 +705,14 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 
 	if (udma_jfr->um_qp)
 		destroy_jfr_um_qp(dev, udma_jfr);
-	clean_jetty_x_qpn_bitmap(&udma_jfr->qpn_map);
+
+	if (udma_jfr->tp_mode == UBCORE_TP_RM)
+		clean_jetty_x_qpn_bitmap(&udma_jfr->qpn_map);
 
 	if (dfx_switch)
 		delete_jfr_id(dev, udma_jfr);
 
-	free_jfrc(dev, udma_jfr->jfrn);
+	free_jfrc(dev, udma_jfr);
 	free_jfr_buf(dev, udma_jfr);
 	kfree(jfr);
 
@@ -776,7 +806,7 @@ int udma_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 		return -EINVAL;
 	}
 
-	ret = udma_hw_modify_srq(udma_dev, udma_jfr->jfrn, jfr_limit);
+	ret = udma_hw_modify_srq(udma_dev, udma_jfr->srqn, jfr_limit);
 	if (ret)
 		dev_err(udma_dev->dev,
 			"hw modify srq failed, ret = %d.\n", ret);

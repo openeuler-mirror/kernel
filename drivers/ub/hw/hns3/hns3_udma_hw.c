@@ -176,10 +176,16 @@ static void set_default_jetty_caps(struct udma_dev *dev)
 {
 	struct udma_caps *caps = &dev->caps;
 
-	caps->num_jfc_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-	caps->num_jfs_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-	caps->num_jfr_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-	caps->num_jetty_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+	caps->num_jfc_shift = ilog2(caps->num_cqs);
+	if (dev->rm_support) {
+		caps->num_jfs_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+		caps->num_jfr_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+		caps->num_jetty_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
+	} else {
+		caps->num_jfs_shift = caps->num_qps_shift;
+		caps->num_jfr_shift = caps->num_qps_shift;
+		caps->num_jetty_shift = caps->num_qps_shift;
+	}
 }
 
 static void query_hw_speed(struct udma_dev *udma_dev)
@@ -419,16 +425,6 @@ static int load_func_res_caps(struct udma_dev *udma_dev)
 	return 0;
 }
 
-static void setup_default_ext_caps(struct udma_dev *udma_dev)
-{
-	struct udma_caps *caps = &udma_dev->caps;
-
-	caps->num_pi_qps = caps->num_qps;
-	caps->llm_ba_idx = 0;
-	caps->llm_ba_num = UDMA_EXT_LLM_MAX_DEPTH;
-
-}
-
 static int load_ext_cfg_caps(struct udma_dev *udma_dev)
 {
 	struct udma_cmq_desc desc;
@@ -468,8 +464,6 @@ static int query_func_resource_caps(struct udma_dev *udma_dev)
 			ret);
 		return ret;
 	}
-
-	setup_default_ext_caps(udma_dev);
 
 	ret = load_ext_cfg_caps(udma_dev);
 	if (ret)
@@ -966,18 +960,6 @@ static int udma_alloc_cmq_desc(struct udma_dev *udma_dev,
 	return 0;
 }
 
-static void udma_free_cmq_desc(struct udma_dev *udma_dev,
-			       struct udma_cmq_ring *ring)
-{
-	dma_unmap_single(udma_dev->dev, ring->desc_dma_addr,
-			 ring->desc_num * sizeof(struct udma_cmq_desc),
-			 DMA_BIDIRECTIONAL);
-
-	ring->desc_dma_addr = 0;
-	kfree(ring->desc);
-	ring->desc = NULL;
-}
-
 static int init_csq(struct udma_dev *udma_dev,
 		    struct udma_cmq_ring *csq)
 {
@@ -1023,15 +1005,22 @@ static int udma_cmq_init(struct udma_dev *udma_dev)
 static void udma_cmq_exit(struct udma_dev *udma_dev)
 {
 	struct udma_priv *priv = (struct udma_priv *)udma_dev->priv;
+	struct udma_cmq_ring *ring = (struct udma_cmq_ring *)&priv->cmq.csq;
 
-	udma_free_cmq_desc(udma_dev, &priv->cmq.csq);
+	dma_unmap_single(udma_dev->dev, ring->desc_dma_addr,
+			 ring->desc_num * sizeof(struct udma_cmq_desc),
+			 DMA_BIDIRECTIONAL);
+
+	ring->desc_dma_addr = 0;
+	kfree(ring->desc);
+	ring->desc = NULL;
 }
 
 static void func_clr_hw_resetting_state(struct udma_dev *udma_dev,
 					struct hnae3_handle *handle)
 {
 	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
-	uint64_t end;
+	int end;
 
 	udma_dev->dis_db = true;
 
@@ -1134,7 +1123,7 @@ static void __udma_function_clear(struct udma_dev *udma_dev, int vf_id)
 	bool fclr_write_fail_flag = false;
 	struct udma_func_clear *resp;
 	struct udma_cmq_desc desc;
-	uint64_t end;
+	int end;
 	int ret = 0;
 
 	if (check_device_is_in_reset(udma_dev))
@@ -1585,7 +1574,7 @@ static int config_hem_ba_to_hw(struct udma_dev *udma_dev, uint64_t obj,
 	struct udma_mbox *mb;
 	int ret;
 
-	if (IS_ERR_OR_NULL(mbox))
+	if (IS_ERR(mbox))
 		return -ENOMEM;
 
 	mb = (struct udma_mbox *)desc.data;
@@ -1785,8 +1774,8 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 	if (dfx_switch) {
 		ret = udma_dfx_init(udma_dev);
 		if (ret) {
-			dev_err(udma_dev->dev, "UDMA dfx init failed(%d)!\n",
-				ret);
+			dev_err(udma_dev->dev,
+				"UDMA dfx init failed(%d)!\n", ret);
 			goto error_failed_dfx_init;
 		}
 	}

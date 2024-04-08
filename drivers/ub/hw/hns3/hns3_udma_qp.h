@@ -205,7 +205,6 @@ struct udma_qpn_bitmap {
 	uint32_t		qpn_shift;
 	struct udma_bank	bank[UDMA_QP_BANK_NUM];
 	struct mutex		bank_mutex;
-	atomic_t		ref_num;
 };
 
 struct udma_qp_attr {
@@ -235,17 +234,17 @@ struct udma_qp_attr {
 struct udma_wq {
 	uint32_t		wqe_cnt; /* WQE num */
 	uint32_t		max_gs;
-	int			offset;
-	int			wqe_offset;
+	uint32_t		offset;
+	uint32_t		wqe_offset;
 	int			wqe_shift; /* WQE size */
 	uint32_t		head;
 };
 
 struct udma_qp_sge {
 	uint32_t		sge_cnt; /* SGE num */
-	int			offset;
+	uint32_t		offset;
 	int			sge_shift; /* SGE size */
-	int			wqe_offset;
+	uint32_t		wqe_offset;
 };
 
 struct udma_dca_cfg {
@@ -380,6 +379,9 @@ void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);
 void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp);
 int udma_set_dca_buf(struct udma_dev *dev, struct udma_qp *qp);
 int udma_init_qpc(struct udma_dev *udma_dev, struct udma_qp *qp);
+int alloc_common_qpn(struct udma_dev *udma_dev, struct udma_jfc *jfc,
+		     uint32_t *qpn);
+void free_common_qpn(struct udma_dev *udma_dev, uint32_t qpn);
 
 static inline uint8_t get_affinity_cq_bank(uint8_t qp_bank)
 {

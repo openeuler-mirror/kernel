@@ -861,6 +861,7 @@ struct udma_dev {
 	struct udma_port		port_data[UDMA_MAX_PORTS];
 	struct udma_dev_debugfs		*dbgfs;
 	uint64_t			notify_addr;
+	bool				rm_support;
 };
 
 struct udma_seg {
