@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *  Copyright(c) 2021 Shanghai Zhaoxin Semiconductor Corporation.
+ *  Copyright(c) 2023 Shanghai Zhaoxin Semiconductor Corporation.
  *                    All rights reserved.
  */
+
+#define DRIVER_VERSION "1.5.2"
 
 #include <linux/acpi.h>
 #include <linux/delay.h>
@@ -10,11 +12,10 @@
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/version.h>
-
-#define DRIVER_VERSION "1.5.1"
 
 #define ZX_I2C_NAME "i2c_zhaoxin"
 
@@ -85,7 +86,9 @@ struct zxi2c {
 	u16 mcr;
 	u16 csr;
 	u8 fstp;
-	u8			hrv;
+	u8 hrv;
+	ktime_t ti;
+	ktime_t to;
 };
 
 /* parameters Constants */
@@ -93,9 +96,10 @@ struct zxi2c {
 #define ZXI2C_GOLD_FSTP_400K	0x38
 #define ZXI2C_GOLD_FSTP_1M		0x13
 #define ZXI2C_GOLD_FSTP_3400K	0x37
+#define ZXI2C_HS_MASTER_CODE	(0x08 << 8)
+#define ZXI2C_FIFO_SIZE		32
 
-#define ZXI2C_HS_MASTER_CODE (0x08 << 8)
-#define ZXI2C_FIFO_SIZE 32
+#define ZXI2C_TIMEOUT		200
 
 static int zxi2c_wait_bus_ready(struct zxi2c *i2c)
 {
@@ -122,9 +126,29 @@ static int zxi2c_wait_status(struct zxi2c *i2c, u8 status)
 {
 	unsigned long time_left;
 
-	time_left = wait_for_completion_timeout(&i2c->complete, msecs_to_jiffies(500));
-	if (time_left <= 1)
-		return -ETIMEDOUT;
+	time_left = wait_for_completion_timeout(&i2c->complete, msecs_to_jiffies(ZXI2C_TIMEOUT));
+	if (!time_left) {
+		dev_err(i2c->dev, "bus transfer timeout\n");
+		return -EIO;
+	}
+
+	/*
+	 * During each byte access, the host performs clock stretching.
+	 * In this case, the thread may be interrupted by preemption,
+	 * resulting in a long stretching time.
+	 * However, some touchpad can only tolerate host clock stretching
+	 * of no more than 200 ms. We reduce the impact of this through
+	 * a retransmission mechanism.
+	 */
+	local_irq_disable();
+	i2c->to = ktime_get();
+	if (ktime_to_ms(ktime_sub(i2c->to, i2c->ti)) > ZXI2C_TIMEOUT) {
+		local_irq_enable();
+		dev_warn(i2c->dev, "thread has been blocked for a while\n");
+		return -EAGAIN;
+	}
+	i2c->ti = i2c->to;
+	local_irq_enable();
 
 	if (i2c->cmd_status & status)
 		return 0;
@@ -279,9 +303,9 @@ static int zxi2c_fifo_xfer(struct zxi2c *i2c, struct i2c_msg *msg)
 		iowrite8(tmp | ZXI2C_HCR_RST_FIFO, base + ZXI2C_REG_HCR);
 
 		/* set xfer len */
-		if (read) {
+		if (read)
 			iowrite8(xfer_len - 1, base + ZXI2C_REG_HRLR);
-		} else {
+		else {
 			iowrite8(xfer_len - 1, base + ZXI2C_REG_HTLR);
 			/* set write data */
 			for (i = 0; i < xfer_len; i++)
@@ -335,6 +359,7 @@ static int zxi2c_master_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int
 	tmp = ioread8(i2c->base + ZXI2C_REG_CR);
 	tmp &= ~(ZXI2C_CR_RX_END | ZXI2C_CR_TX_END);
 
+	i2c->ti = ktime_get();
 	if (num == 1 && msgs->len >= 2 && (i2c->hrv || msgs->len <= ZXI2C_FIFO_SIZE)) {
 		/* enable fifo mode */
 		iowrite16(ZXI2C_CR_FIFO_MODE | tmp, i2c->base + ZXI2C_REG_CR);
@@ -358,10 +383,6 @@ static int zxi2c_master_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int
 	}
 	/* dis interrupt */
 	iowrite8(0, i2c->base + ZXI2C_REG_IMR);
-
-	/* timeout may caused by another high-priority process, try again */
-	if (ret == -ETIMEDOUT)
-		ret = -EAGAIN;
 
 	return ret;
 }
@@ -461,8 +482,10 @@ static int zxi2c_init(struct platform_device *pdev, struct zxi2c **pi2c)
 		return i2c->irq;
 
 	err = devm_request_irq(&pdev->dev, i2c->irq, zxi2c_isr, IRQF_SHARED, pdev->name, i2c);
-	if (err)
-		return dev_err_probe(&pdev->dev, err, "failed to request irq %i\n", i2c->irq);
+	if (err) {
+		dev_err(&pdev->dev, "failed to request irq %i\n", i2c->irq);
+		return err;
+	}
 
 	i2c->dev = &pdev->dev;
 	init_completion(&i2c->complete);
@@ -491,7 +514,6 @@ static int zxi2c_probe(struct platform_device *pdev)
 	adap->algo = &zxi2c_algorithm;
 	adap->retries = 2;
 	adap->quirks = &zxi2c_quirks;
-
 	adap->dev.parent = &pdev->dev;
 	ACPI_COMPANION_SET(&adap->dev, ACPI_COMPANION(&pdev->dev));
 	snprintf(adap->name, sizeof(adap->name), "zhaoxin-%s-%s", dev_name(pdev->dev.parent),
@@ -548,7 +570,7 @@ static struct platform_driver zxi2c_driver = {
 	.remove = zxi2c_remove,
 	.driver = {
 		.name = ZX_I2C_NAME,
-		.acpi_match_table = ACPI_PTR(zxi2c_acpi_match),
+		.acpi_match_table = zxi2c_acpi_match,
 		.pm = &zxi2c_pm,
 	},
 };
