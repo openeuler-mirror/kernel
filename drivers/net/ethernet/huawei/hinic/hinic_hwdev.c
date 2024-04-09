@@ -3716,9 +3716,6 @@ static void port_sfp_info_event(struct hinic_hwdev *hwdev, void *buf_in,
 		return;
 	}
 
-	if (!chip_node->rt_cmd)
-		return;
-
 	rt_cmd = &chip_node->rt_cmd[sfp_info->port_id];
 	mutex_lock(&chip_node->sfp_mutex);
 	memcpy(&rt_cmd->sfp_info, sfp_info, sizeof(rt_cmd->sfp_info));
@@ -3744,9 +3741,6 @@ static void port_sfp_abs_event(struct hinic_hwdev *hwdev, void *buf_in,
 			sfp_abs->port_id, HINIC_MAX_PORT_ID - 1);
 		return;
 	}
-
-	if (!chip_node->rt_cmd)
-		return;
 
 	rt_cmd = &chip_node->rt_cmd[sfp_abs->port_id];
 	mutex_lock(&chip_node->sfp_mutex);
