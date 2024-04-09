@@ -331,7 +331,6 @@ static bool __init load_digest_list(struct dir_context *__ctx, const char *name,
 	struct path *dir = ctx->path;
 	struct dentry *dentry;
 	struct file *file;
-	u8 *xattr_value = NULL;
 	char *type_start, *format_start, *format_end;
 	void *datap = NULL;
 	loff_t size;
@@ -359,14 +358,6 @@ static bool __init load_digest_list(struct dir_context *__ctx, const char *name,
 	dentry = lookup_one_len(name, dir->dentry, strlen(name));
 	if (IS_ERR(dentry))
 		return true;
-
-	size = vfs_getxattr(&nop_mnt_idmap, dentry, XATTR_NAME_EVM, NULL, 0);
-	if (size < 0) {
-		size = vfs_getxattr_alloc(&nop_mnt_idmap, dentry, XATTR_NAME_IMA,
-					  (char **)&xattr_value, 0, GFP_NOFS);
-		if (size < 0 || xattr_value[0] != EVM_IMA_XATTR_DIGSIG)
-			goto out;
-	}
 
 	file = file_open_root(dir, name, O_RDONLY, 0);
 	if (IS_ERR(file)) {
@@ -399,7 +390,6 @@ static bool __init load_digest_list(struct dir_context *__ctx, const char *name,
 out_fput:
 	fput(file);
 out:
-	kfree(xattr_value);
 	return true;
 }
 
