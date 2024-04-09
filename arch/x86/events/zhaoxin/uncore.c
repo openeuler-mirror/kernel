@@ -5,6 +5,8 @@
 static struct zhaoxin_uncore_type *empty_uncore[] = { NULL, };
 static struct zhaoxin_uncore_type **uncore_msr_uncores = empty_uncore;
 static struct zhaoxin_uncore_type **uncore_pci_uncores = empty_uncore;
+static struct zhaoxin_uncore_type **uncore_mmio_uncores = empty_uncore;
+
 
 static bool pcidrv_registered;
 static struct pci_driver *uncore_pci_driver;
@@ -23,142 +25,206 @@ static int clusters_per_subnode;
 static int subnodes_per_die;
 static int dies_per_socket;
 
-#define YONGFENG_MAX_SUBNODE_NUMBER    8
-static int yongfeng_pcibus_limit[YONGFENG_MAX_SUBNODE_NUMBER];
+#define KH40000_MAX_SUBNODE_NUMBER    8
+static int kh40000_pcibus_limit[KH40000_MAX_SUBNODE_NUMBER];
 
 /* get CPU topology register */
 #define BJ_GLOBAL_STATUS_MSR	0x1610
 #define BJ_HDW_CONFIG_MSR	0X1628
 
-/* WUDAOKOU event control */
-#define WUDAOKOU_UNC_CTL_EV_SEL_MASK		0x000000ff
-#define WUDAOKOU_UNC_CTL_UMASK_MASK		0x0000ff00
-#define WUDAOKOU_UNC_CTL_EDGE_DET		(1 << 18)
-#define WUDAOKOU_UNC_CTL_EN			(1 << 22)
-#define WUDAOKOU_UNC_CTL_INVERT			(1 << 23)
-#define WUDAOKOU_UNC_CTL_CMASK_MASK		0x7000000
-#define WUDAOKOU_UNC_FIXED_CTR_CTL_EN		(1 << 0)
+/* KX5000/KX6000 event control */
+#define KX5000_UNC_CTL_EV_SEL_MASK		0x000000ff
+#define KX5000_UNC_CTL_UMASK_MASK		0x0000ff00
+#define KX5000_UNC_CTL_EDGE_DET		(1 << 18)
+#define KX5000_UNC_CTL_EN			(1 << 22)
+#define KX5000_UNC_CTL_INVERT			(1 << 23)
+#define KX5000_UNC_CTL_CMASK_MASK		0x7000000
+#define KX5000_UNC_FIXED_CTR_CTL_EN		(1 << 0)
 
-#define WUDAOKOU_UNC_RAW_EVENT_MASK		(WUDAOKOU_UNC_CTL_EV_SEL_MASK | \
-						WUDAOKOU_UNC_CTL_UMASK_MASK | \
-						WUDAOKOU_UNC_CTL_EDGE_DET | \
-						WUDAOKOU_UNC_CTL_INVERT | \
-						WUDAOKOU_UNC_CTL_CMASK_MASK)
+#define KX5000_UNC_RAW_EVENT_MASK		(KX5000_UNC_CTL_EV_SEL_MASK | \
+						KX5000_UNC_CTL_UMASK_MASK | \
+						KX5000_UNC_CTL_EDGE_DET | \
+						KX5000_UNC_CTL_INVERT | \
+						KX5000_UNC_CTL_CMASK_MASK)
 
-/* WUDAOKOU uncore global register */
-#define WUDAOKOU_UNC_PERF_GLOBAL_CTL		0x391
-#define WUDAOKOU_UNC_FIXED_CTR			0x394
-#define WUDAOKOU_UNC_FIXED_CTR_CTRL		0x395
+/* KX5000/KX6000 uncore global register */
+#define KX5000_UNC_PERF_GLOBAL_CTL		0x391
+#define KX5000_UNC_FIXED_CTR			0x394
+#define KX5000_UNC_FIXED_CTR_CTRL		0x395
 
-/* WUDAOKOU uncore global control */
-#define WUDAOKOU_UNC_GLOBAL_CTL_EN_PC_ALL	((1ULL << 4) - 1)
-#define WUDAOKOU_UNC_GLOBAL_CTL_EN_FC		(1ULL << 32)
+/* KX5000/KX6000 uncore global control */
+#define KX5000_UNC_GLOBAL_CTL_EN_PC_ALL	((1ULL << 4) - 1)
+#define KX5000_UNC_GLOBAL_CTL_EN_FC		(1ULL << 32)
 
-/* WUDAOKOU uncore register */
-#define WUDAOKOU_UNC_PERFEVTSEL0		0x3c0
-#define WUDAOKOU_UNC_UNCORE_PMC0		0x3b0
+/* KX5000/KX6000 uncore register */
+#define KX5000_UNC_PERFEVTSEL0		0x3c0
+#define KX5000_UNC_UNCORE_PMC0		0x3b0
 
-/* YONGFENG event control */
-#define YONGFENG_PMON_CTL_EV_SEL_MASK		0x000000ff
-#define YONGFENG_PMON_CTL_UMASK_MASK		0x0000ff00
-#define YONGFENG_PMON_CTL_RST			(1 << 17)
-#define YONGFENG_PMON_CTL_EDGE_DET		(1 << 18)
-#define YONGFENG_PMON_CTL_EV_SEL_EXT		(1 << 21)
-#define YONGFENG_PMON_CTL_EN			(1 << 22)
-#define YONGFENG_PMON_CTL_INVERT		(1 << 23)
-#define YONGFENG_PMON_CTL_TRESH_MASK		0xff000000
-#define YONGFENG_PMON_RAW_EVENT_MASK		(YONGFENG_PMON_CTL_EV_SEL_MASK | \
-						YONGFENG_PMON_CTL_UMASK_MASK | \
-						YONGFENG_PMON_CTL_EDGE_DET | \
-						YONGFENG_PMON_CTL_INVERT | \
-						YONGFENG_PMON_CTL_TRESH_MASK)
+/* KH40000 event control */
+#define KH40000_PMON_CTL_EV_SEL_MASK		0x000000ff
+#define KH40000_PMON_CTL_UMASK_MASK		0x0000ff00
+#define KH40000_PMON_CTL_RST			(1 << 17)
+#define KH40000_PMON_CTL_EDGE_DET		(1 << 18)
+#define KH40000_PMON_CTL_EV_SEL_EXT		(1 << 21)
+#define KH40000_PMON_CTL_EN			(1 << 22)
+#define KH40000_PMON_CTL_INVERT		(1 << 23)
+#define KH40000_PMON_CTL_TRESH_MASK		0xff000000
+#define KH40000_PMON_RAW_EVENT_MASK		(KH40000_PMON_CTL_EV_SEL_MASK | \
+						KH40000_PMON_CTL_UMASK_MASK | \
+						KH40000_PMON_CTL_EDGE_DET | \
+						KH40000_PMON_CTL_INVERT | \
+						KH40000_PMON_CTL_TRESH_MASK)
 
-/* YONGFENG LLC register*/
-#define YONGFENG_LLC_MSR_PMON_CTL0		0x1660
-#define YONGFENG_LLC_MSR_PMON_CTR0		0x165c
-#define YONGFENG_LLC_MSR_PMON_BLK_CTL		0x1665
+/* KH40000 LLC register*/
+#define KH40000_LLC_MSR_PMON_CTL0		0x1660
+#define KH40000_LLC_MSR_PMON_CTR0		0x165c
+#define KH40000_LLC_MSR_PMON_BLK_CTL		0x1665
 
-/* YONGFENG HIF register*/
-#define YONGFENG_HIF_MSR_PMON_CTL0		0x1656
-#define YONGFENG_HIF_MSR_PMON_CTR0		0x1651
-#define YONGFENG_HIF_MSR_PMON_FIXED_CTL		0x1655
-#define YONGFENG_HIF_MSR_PMON_FIXED_CTR		0x1650
-#define YONGFENG_HIF_MSR_PMON_BLK_CTL		0x165b
+/* KH40000 HIF register*/
+#define KH40000_HIF_MSR_PMON_CTL0		0x1656
+#define KH40000_HIF_MSR_PMON_CTR0		0x1651
+#define KH40000_HIF_MSR_PMON_FIXED_CTL		0x1655
+#define KH40000_HIF_MSR_PMON_FIXED_CTR		0x1650
+#define KH40000_HIF_MSR_PMON_BLK_CTL		0x165b
 
-/* YONGFENG ZZI(ZPI+ZOI+INI) register*/
-#define YONGFENG_ZZI_MSR_PMON_CTL0		0x166A
-#define YONGFENG_ZZI_MSR_PMON_CTR0		0x1666
-#define YONGFENG_ZZI_MSR_PMON_BLK_CTL		0x166f
+/* KH40000 ZZI(ZPI+ZOI+INI) register*/
+#define KH40000_ZZI_MSR_PMON_CTL0		0x166A
+#define KH40000_ZZI_MSR_PMON_CTR0		0x1666
+#define KH40000_ZZI_MSR_PMON_BLK_CTL		0x166f
 
-/* YONGFENG MC register*/
-#define YONGFENG_MC0_CHy_PMON_FIXED_CTL		0xf40
-#define YONGFENG_MC0_CHy_PMON_FIXED_CTR		0xf20
-#define YONGFENG_MC0_CHy_PMON_CTR0		0xf00
-#define YONGFENG_MC0_CHy_PMON_CTL0		0xf28
-#define YONGFENG_MC0_CHy_PMON_BLK_CTL		0xf44
+/* KH40000 MC register*/
+#define KH40000_MC0_CHy_PMON_FIXED_CTL		0xf40
+#define KH40000_MC0_CHy_PMON_FIXED_CTR		0xf20
+#define KH40000_MC0_CHy_PMON_CTR0		0xf00
+#define KH40000_MC0_CHy_PMON_CTL0		0xf28
+#define KH40000_MC0_CHy_PMON_BLK_CTL		0xf44
 
-#define YONGFENG_MC1_CHy_PMON_FIXED_CTL		0xf90
-#define YONGFENG_MC1_CHy_PMON_FIXED_CTR		0xf70
-#define YONGFENG_MC1_CHy_PMON_CTR0		0xf50
-#define YONGFENG_MC1_CHy_PMON_CTL0		0xf78
-#define YONGFENG_MC1_CHy_PMON_BLK_CTL		0xf94
+#define KH40000_MC1_CHy_PMON_FIXED_CTL		0xf90
+#define KH40000_MC1_CHy_PMON_FIXED_CTR		0xf70
+#define KH40000_MC1_CHy_PMON_CTR0		0xf50
+#define KH40000_MC1_CHy_PMON_CTL0		0xf78
+#define KH40000_MC1_CHy_PMON_BLK_CTL		0xf94
 
-/* YONGFENG PCI register*/
-#define YONGFENG_PCI_PMON_CTR0			0xf00
-#define YONGFENG_PCI_PMON_CTL0			0xf28
-#define YONGFENG_PCI_PMON_BLK_CTL		0xf44
+/* KH40000 PCI register*/
+#define KH40000_PCI_PMON_CTR0			0xf00
+#define KH40000_PCI_PMON_CTL0			0xf28
+#define KH40000_PCI_PMON_BLK_CTL		0xf44
 
-/* YONGFENG ZPI_DLL register*/
-#define YONGFENG_ZPI_DLL_PMON_FIXED_CTL		0xf40
-#define YONGFENG_ZPI_DLL_PMON_FIXED_CTR		0xf20
-#define YONGFENG_ZPI_DLL_PMON_CTR0		0xf00
-#define YONGFENG_ZPI_DLL_PMON_CTL0		0xf28
-#define YONGFENG_ZPI_DLL_PMON_BLK_CTL		0xf44
+/* KH40000 ZPI_DLL register*/
+#define KH40000_ZPI_DLL_PMON_FIXED_CTL		0xf40
+#define KH40000_ZPI_DLL_PMON_FIXED_CTR		0xf20
+#define KH40000_ZPI_DLL_PMON_CTR0		0xf00
+#define KH40000_ZPI_DLL_PMON_CTL0		0xf28
+#define KH40000_ZPI_DLL_PMON_BLK_CTL		0xf44
 
-/* YONGFENG ZDI_DLL register*/
-#define YONGFENG_ZDI_DLL_PMON_FIXED_CTL		0xf40
-#define YONGFENG_ZDI_DLL_PMON_FIXED_CTR		0xf20
-#define YONGFENG_ZDI_DLL_PMON_CTR0		0xf00
-#define YONGFENG_ZDI_DLL_PMON_CTL0		0xf28
-#define YONGFENG_ZDI_DLL_PMON_BLK_CTL		0xf44
+/* KH40000 ZDI_DLL register*/
+#define KH40000_ZDI_DLL_PMON_FIXED_CTL		0xf40
+#define KH40000_ZDI_DLL_PMON_FIXED_CTR		0xf20
+#define KH40000_ZDI_DLL_PMON_CTR0		0xf00
+#define KH40000_ZDI_DLL_PMON_CTL0		0xf28
+#define KH40000_ZDI_DLL_PMON_BLK_CTL		0xf44
 
-/* YONGFENG PXPTRF register*/
-#define YONGFENG_PXPTRF_PMON_CTR0		0xf00
-#define YONGFENG_PXPTRF_PMON_CTL0		0xf28
-#define YONGFENG_PXPTRF_PMON_BLK_CTL		0xf44
+/* KH40000 PXPTRF register*/
+#define KH40000_PXPTRF_PMON_CTR0		0xf00
+#define KH40000_PXPTRF_PMON_CTL0		0xf28
+#define KH40000_PXPTRF_PMON_BLK_CTL		0xf44
 
-/* YONGFENG Box level control */
-#define YONGFENG_PMON_BOX_CTL_RST_CTRL		(1 << 0)
-#define YONGFENG_PMON_BOX_CTL_RST_CTRS		(1 << 1)
-#define YONGFENG_PMON_BOX_CTL_FRZ		(1 << 8)
-//#define YONGFENG_PMON_BOX_CTL_FRZ_EN		(1 << 16)
-#define YONGFENG_PMON_PCI_BOX_PMON_EN		(1 << 31)
+/* KH40000 Box level control */
+#define KH40000_PMON_BOX_CTL_RST_CTRL		(1 << 0)
+#define KH40000_PMON_BOX_CTL_RST_CTRS		(1 << 1)
+#define KH40000_PMON_BOX_CTL_FRZ		(1 << 8)
+#define KH40000_PMON_PCI_BOX_PMON_EN		(1 << 31)
 
-#define YONGFENG_PMON_BOX_CTL_INT		(YONGFENG_PMON_BOX_CTL_RST_CTRL | \
-						YONGFENG_PMON_BOX_CTL_RST_CTRS)
+#define KH40000_PMON_BOX_CTL_INT		(KH40000_PMON_BOX_CTL_RST_CTRL | \
+						KH40000_PMON_BOX_CTL_RST_CTRS)
 
-#define YONGFENG_PMON_PCI_BOX_CTL_INT		(YONGFENG_PMON_BOX_CTL_RST_CTRL | \
-						YONGFENG_PMON_BOX_CTL_RST_CTRS | \
-						YONGFENG_PMON_PCI_BOX_PMON_EN)
+#define KH40000_PMON_PCI_BOX_CTL_INT		(KH40000_PMON_BOX_CTL_RST_CTRL | \
+						KH40000_PMON_BOX_CTL_RST_CTRS | \
+						KH40000_PMON_PCI_BOX_PMON_EN)
+
+/* KX8000 LLC register*/
+#define KX8000_LLC_MSR_PMON_CTL0		0x1979
+#define KX8000_LLC_MSR_PMON_CTR0		0x1975
+#define KX8000_LLC_MSR_PMON_BLK_CTL		0x197e
+
+/* KX8000 MESH register*/
+#define KX8000_MESH_MSR_PMON_CTL0		0x1983
+#define KX8000_MESH_MSR_PMON_CTR0		0x197f
+#define KX8000_MESH_MSR_PMON_BLK_CTL	0x1987
+
+/* KX8000 HOMESTOP register*/
+#define KX8000_HOMESTOP_MSR_PMON_CTL0	0x196a
+#define KX8000_HOMESTOP_MSR_PMON_CTR0	0x1966
+#define KX8000_HOMESTOP_MSR_PMON_BLK_CTL	0x196e
+#define KX8000_HOMESTOP_MSR_PMON_FIXED_CTR	0x1970
+#define KX8000_HOMESTOP_MSR_PMON_FIXED_CTL	0x1971
+
+/* KX8000 CCDie ZDI_PL register*/
+#define KX8000_CCD_ZDI_PL_MSR_PMON_CTL0	0x1960
+#define KX8000_CCD_ZDI_PL_MSR_PMON_CTR0	0x195c
+#define KX8000_CCD_ZDI_PL_MSR_PMON_BLK_CTL	0x1964
+
+/* KX8000 cIODie ZDI_PL register*/
+#define KX8000_IOD_ZDI_PL_MSR_PMON_CTL0	0x1894
+#define KX8000_IOD_ZDI_PL_MSR_PMON_CTR0	0x1890
+#define KX8000_IOD_ZDI_PL_MSR_PMON_BLK_CTL	0x1898
+#define KX8000_IOD_ZDI_PL_MSR_PMON_FIXED_CTR	0x189A
+#define KX8000_IOD_ZDI_PL_MSR_PMON_FIXED_CTL	0x189B
+
+/* KX8000 MC register*/
+#define KX8000_MC_A0_CHy_PMON_FIXED_CTL		0xe30
+#define KX8000_MC_A0_CHy_PMON_FIXED_CTR		0xe08
+#define KX8000_MC_A0_CHy_PMON_CTR0		0xe00
+#define KX8000_MC_A0_CHy_PMON_CTL0		0xe20
+#define KX8000_MC_A0_CHy_PMON_BLK_CTL		0xe34
+
+#define KX8000_MC_A1_CHy_PMON_FIXED_CTL		0xe70
+#define KX8000_MC_A1_CHy_PMON_FIXED_CTR		0xe48
+#define KX8000_MC_A1_CHy_PMON_CTR0		0xe40
+#define KX8000_MC_A1_CHy_PMON_CTL0		0xe60
+#define KX8000_MC_A1_CHy_PMON_BLK_CTL		0xe74
+
+#define KX8000_MC_B0_CHy_PMON_FIXED_CTL		0xeb0
+#define KX8000_MC_B0_CHy_PMON_FIXED_CTR		0xe88
+#define KX8000_MC_B0_CHy_PMON_CTR0		0xe80
+#define KX8000_MC_B0_CHy_PMON_CTL0		0xea0
+#define KX8000_MC_B0_CHy_PMON_BLK_CTL		0xeb4
+
+#define KX8000_MC_B1_CHy_PMON_FIXED_CTL		0xef0
+#define KX8000_MC_B1_CHy_PMON_FIXED_CTR		0xec8
+#define KX8000_MC_B1_CHy_PMON_CTR0		0xec0
+#define KX8000_MC_B1_CHy_PMON_CTL0		0xee0
+#define KX8000_MC_B1_CHy_PMON_BLK_CTL		0xef4
+
+#define KX8000_ZDI_DL_MMIO_PMON_CTR0	0xf00
+#define KX8000_ZDI_DL_MMIO_PMON_CTL0	0xf28
+#define KX8000_ZDI_DL_MMIO_PMON_BLK_CTL 0xf44
+#define KX8000_IOD_ZDI_DL_MMIO_BASE_OFFSET	0x168
+#define KX8000_CCD_ZDI_DL_MMIO_BASE_OFFSET	0x170
+#define KX8000_ZDI_DL_MMIO_BASE_MASK	0x3fff
+#define KX8000_ZDI_DL_MMIO_BASE_MASK	0x3fff
+#define KX8000_ZDI_DL_MMIO_MEM0_MASK	0xfffff000
+#define KX8000_ZDI_DL_MMIO_SIZE			0x1000
+
+
+
 
 DEFINE_UNCORE_FORMAT_ATTR(event, event, "config:0-7");
 DEFINE_UNCORE_FORMAT_ATTR(umask, umask, "config:8-15");
 DEFINE_UNCORE_FORMAT_ATTR(edge, edge, "config:18");
 DEFINE_UNCORE_FORMAT_ATTR(inv, inv, "config:23");
 DEFINE_UNCORE_FORMAT_ATTR(cmask3, cmask, "config:24-26");
-DEFINE_UNCORE_FORMAT_ATTR(cmask8, cmask, "config:24-31");
+DEFINE_UNCORE_FORMAT_ATTR(thresh8, thresh, "config:24-31");
 
 static void get_hdw_config_msr(void *config)
 {
 	u64 *data = (u64 *)config;
-
 	rdmsrl(BJ_HDW_CONFIG_MSR, *data);
 }
 
 static void get_global_status_msr(void *status)
 {
 	u64 *data = (u64 *)status;
-
 	rdmsrl(BJ_GLOBAL_STATUS_MSR, *data);
 }
 
@@ -181,7 +247,7 @@ static void get_topology_number(void)
 		max_packages = 1;
 
 	/* only Yongfeng needs die/subnode/cluster info */
-	if (boot_cpu_data.x86_model != ZHAOXIN_FAM7_YONGFENG)
+	if (boot_cpu_data.x86_model != ZHAOXIN_FAM7_KH40000)
 		return;
 
 	/* check dies_per_socket */
@@ -220,20 +286,20 @@ static int get_pcibus_limit(void)
 		return -ENODEV;
 
 	pci_read_config_dword(dev, 0x94, &val);
-	yongfeng_pcibus_limit[i++] = (val & 0x1f) << 3 | 0x7;
-	yongfeng_pcibus_limit[i++] = (val >> 8 & 0x1f) << 3 | 0x7;
+	kh40000_pcibus_limit[i++] = (val & 0x1f) << 3 | 0x7;
+	kh40000_pcibus_limit[i++] = (val >> 8 & 0x1f) << 3 | 0x7;
 	if (dies_per_socket == 2) {
-		yongfeng_pcibus_limit[i++] = (val >> 16 & 0x1f) << 3 | 0x7;
-		yongfeng_pcibus_limit[i++] = (val >> 24 & 0x1f) << 3 | 0x7;
+		kh40000_pcibus_limit[i++] = (val >> 16 & 0x1f) << 3 | 0x7;
+		kh40000_pcibus_limit[i++] = (val >> 24 & 0x1f) << 3 | 0x7;
 	}
 
 	if (max_packages == 2) {
 		pci_read_config_dword(dev, 0x9c, &val);
-		yongfeng_pcibus_limit[i++] = (val & 0x1f) << 3 | 0x7;
-		yongfeng_pcibus_limit[i++] = (val >> 8 & 0x1f) << 3 | 0x7;
+		kh40000_pcibus_limit[i++] = (val & 0x1f) << 3 | 0x7;
+		kh40000_pcibus_limit[i++] = (val >> 8 & 0x1f) << 3 | 0x7;
 		if (dies_per_socket == 2) {
-			yongfeng_pcibus_limit[i++] = (val >> 16 & 0x1f) << 3 | 0x7;
-			yongfeng_pcibus_limit[i++] = (val >> 24 & 0x1f) << 3 | 0x7;
+			kh40000_pcibus_limit[i++] = (val >> 16 & 0x1f) << 3 | 0x7;
+			kh40000_pcibus_limit[i++] = (val >> 24 & 0x1f) << 3 | 0x7;
 		}
 	}
 
@@ -244,8 +310,8 @@ static int uncore_pcibus_to_subnodeid(struct pci_bus *bus)
 {
 	int i;
 
-	for (i = 0; i < YONGFENG_MAX_SUBNODE_NUMBER; i++) {
-		if (bus->number < yongfeng_pcibus_limit[i])
+	for (i = 0; i < KH40000_MAX_SUBNODE_NUMBER; i++) {
+		if (bus->number < kh40000_pcibus_limit[i])
 			break;
 	}
 
@@ -275,8 +341,8 @@ static void get_topology_info(void)
 		socket_id = (int)((config >> 3) & 0x1);
 		per_cpu(zx_package_id, cpu) = socket_id;
 
-		/* only yongfeng needs cluster and subnode info */
-		if (boot_cpu_data.x86_model != ZHAOXIN_FAM7_YONGFENG)
+		/* only kh40000 needs cluster and subnode info */
+		if (boot_cpu_data.x86_model != ZHAOXIN_FAM7_KH40000)
 			continue;
 
 		smp_call_function_single(cpu, get_hdw_config_msr, &config, 1);
@@ -319,6 +385,7 @@ static void zx_gen_core_map(void)
 
 	for_each_present_cpu(cpu) {
 		cluster_id = zx_topology_cluster_id(cpu);
+
 		for (i = 0; i < 4; i++) {
 			nr = (cluster_id << 2) + i;
 			cpumask_set_cpu(nr, &per_cpu(zx_cluster_core_bits, cpu));
@@ -327,6 +394,7 @@ static void zx_gen_core_map(void)
 
 	for_each_present_cpu(cpu) {
 		subnode_id = zx_topology_subnode_id(cpu);
+
 		for (i = 0; i < 8; i++) {
 			nr = (subnode_id << 3) + i;
 			cpumask_set_cpu(nr, &per_cpu(zx_subnode_core_bits, cpu));
@@ -349,7 +417,7 @@ static void uncore_free_pcibus_map(void)
 
 }
 
-static int yongfeng_pci2node_map_init(void)
+static int kh40000_pci2node_map_init(void)
 {
 	return 0;
 }
@@ -363,7 +431,7 @@ ssize_t zx_uncore_event_show(struct device *dev, struct device_attribute *attr, 
 
 static struct zhaoxin_uncore_box *uncore_pmu_to_box(struct zhaoxin_uncore_pmu *pmu, int cpu)
 {
-	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 		if (!strcmp(pmu->type->name, "llc"))
 			return pmu->boxes[zx_topology_cluster_id(cpu)];
 		else
@@ -423,36 +491,36 @@ again:
 	local64_add(delta, &event->count);
 }
 
-/*WUDAOKOU uncore ops start*/
-static void wudaokou_uncore_msr_disable_event(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+/*KX5000/KX6000 uncore ops start*/
+static void kx5000_uncore_msr_disable_event(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	wrmsrl(event->hw.config_base, 0);
 }
 
-static void wudaokou_uncore_msr_disable_box(struct zhaoxin_uncore_box *box)
+static void kx5000_uncore_msr_disable_box(struct zhaoxin_uncore_box *box)
 {
-	wrmsrl(WUDAOKOU_UNC_PERF_GLOBAL_CTL, 0);
+	wrmsrl(KX5000_UNC_PERF_GLOBAL_CTL, 0);
 }
 
-static void wudaokou_uncore_msr_enable_box(struct zhaoxin_uncore_box *box)
+static void kx5000_uncore_msr_enable_box(struct zhaoxin_uncore_box *box)
 {
-	wrmsrl(WUDAOKOU_UNC_PERF_GLOBAL_CTL,
-		WUDAOKOU_UNC_GLOBAL_CTL_EN_PC_ALL | WUDAOKOU_UNC_GLOBAL_CTL_EN_FC);
+	wrmsrl(KX5000_UNC_PERF_GLOBAL_CTL,
+		KX5000_UNC_GLOBAL_CTL_EN_PC_ALL | KX5000_UNC_GLOBAL_CTL_EN_FC);
 }
 
-static void wudaokou_uncore_msr_enable_event(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+static void kx5000_uncore_msr_enable_event(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	struct hw_perf_event *hwc = &event->hw;
 
 	if (hwc->idx < UNCORE_PMC_IDX_FIXED)
-		wrmsrl(hwc->config_base, hwc->config | WUDAOKOU_UNC_CTL_EN);
+		wrmsrl(hwc->config_base, hwc->config | KX5000_UNC_CTL_EN);
 	else
-		wrmsrl(hwc->config_base, WUDAOKOU_UNC_FIXED_CTR_CTL_EN);
+		wrmsrl(hwc->config_base, KX5000_UNC_FIXED_CTR_CTL_EN);
 }
 
-static struct attribute *wudaokou_uncore_formats_attr[] = {
+static struct attribute *kx5000_uncore_formats_attr[] = {
 	&format_attr_event.attr,
 	&format_attr_umask.attr,
 	&format_attr_edge.attr,
@@ -461,63 +529,63 @@ static struct attribute *wudaokou_uncore_formats_attr[] = {
 	NULL,
 };
 
-static struct attribute_group wudaokou_uncore_format_group = {
+static struct attribute_group kx5000_uncore_format_group = {
 	.name = "format",
-	.attrs = wudaokou_uncore_formats_attr,
+	.attrs = kx5000_uncore_formats_attr,
 };
 
-static struct uncore_event_desc wudaokou_uncore_events[] = {
+static struct uncore_event_desc kx5000_uncore_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct zhaoxin_uncore_ops wudaokou_uncore_msr_ops = {
-	.disable_box	= wudaokou_uncore_msr_disable_box,
-	.enable_box	= wudaokou_uncore_msr_enable_box,
-	.disable_event	= wudaokou_uncore_msr_disable_event,
-	.enable_event	= wudaokou_uncore_msr_enable_event,
+static struct zhaoxin_uncore_ops kx5000_uncore_msr_ops = {
+	.disable_box	= kx5000_uncore_msr_disable_box,
+	.enable_box	= kx5000_uncore_msr_enable_box,
+	.disable_event	= kx5000_uncore_msr_disable_event,
+	.enable_event	= kx5000_uncore_msr_enable_event,
 	.read_counter	= uncore_msr_read_counter,
 };
 
-static struct zhaoxin_uncore_type wudaokou_uncore_box = {
+static struct zhaoxin_uncore_type kx5000_uncore_box = {
 	.name		= "",
 	.num_counters   = 4,
 	.num_boxes	= 1,
 	.perf_ctr_bits	= 48,
 	.fixed_ctr_bits	= 48,
-	.event_ctl	= WUDAOKOU_UNC_PERFEVTSEL0,
-	.perf_ctr	= WUDAOKOU_UNC_UNCORE_PMC0,
-	.fixed_ctr	= WUDAOKOU_UNC_FIXED_CTR,
-	.fixed_ctl	= WUDAOKOU_UNC_FIXED_CTR_CTRL,
-	.event_mask	= WUDAOKOU_UNC_RAW_EVENT_MASK,
-	.event_descs	= wudaokou_uncore_events,
-	.ops		= &wudaokou_uncore_msr_ops,
-	.format_group	= &wudaokou_uncore_format_group,
+	.event_ctl	= KX5000_UNC_PERFEVTSEL0,
+	.perf_ctr	= KX5000_UNC_UNCORE_PMC0,
+	.fixed_ctr	= KX5000_UNC_FIXED_CTR,
+	.fixed_ctl	= KX5000_UNC_FIXED_CTR_CTRL,
+	.event_mask	= KX5000_UNC_RAW_EVENT_MASK,
+	.event_descs	= kx5000_uncore_events,
+	.ops		= &kx5000_uncore_msr_ops,
+	.format_group	= &kx5000_uncore_format_group,
 };
 
-static struct zhaoxin_uncore_type *wudaokou_msr_uncores[] = {
-	&wudaokou_uncore_box,
+static struct zhaoxin_uncore_type *kx5000_msr_uncores[] = {
+	&kx5000_uncore_box,
 	NULL,
 };
-/*WUDAOKOU uncore ops end*/
+/*KX5000/KX6000 uncore ops end*/
 
-/*YONGFENG msr ops start*/
-static void yongfeng_uncore_msr_disable_event(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+/*KH40000 msr ops start*/
+static void kh40000_uncore_msr_disable_event(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	struct hw_perf_event *hwc = &event->hw;
 
 	wrmsrl(hwc->config_base, hwc->config);
 }
 
-static void yongfeng_uncore_msr_enable_event(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+static void kh40000_uncore_msr_enable_event(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	struct hw_perf_event *hwc = &event->hw;
 
-	wrmsrl(hwc->config_base, hwc->config | YONGFENG_PMON_CTL_EN);
+	wrmsrl(hwc->config_base, hwc->config | KH40000_PMON_CTL_EN);
 }
 
-static void yongfeng_uncore_msr_disable_box(struct zhaoxin_uncore_box *box)
+static void kh40000_uncore_msr_disable_box(struct zhaoxin_uncore_box *box)
 {
 	u64 config;
 	unsigned int msr;
@@ -525,12 +593,12 @@ static void yongfeng_uncore_msr_disable_box(struct zhaoxin_uncore_box *box)
 	msr = uncore_msr_box_ctl(box);
 	if (msr) {
 		rdmsrl(msr, config);
-		config |= YONGFENG_PMON_BOX_CTL_FRZ;
+		config |= KH40000_PMON_BOX_CTL_FRZ;
 		wrmsrl(msr, config);
 	}
 }
 
-static void yongfeng_uncore_msr_enable_box(struct zhaoxin_uncore_box *box)
+static void kh40000_uncore_msr_enable_box(struct zhaoxin_uncore_box *box)
 {
 	u64 config;
 	unsigned int msr;
@@ -538,112 +606,112 @@ static void yongfeng_uncore_msr_enable_box(struct zhaoxin_uncore_box *box)
 	msr = uncore_msr_box_ctl(box);
 	if (msr) {
 		rdmsrl(msr, config);
-		config &= ~YONGFENG_PMON_BOX_CTL_FRZ;
+		config &= ~KH40000_PMON_BOX_CTL_FRZ;
 		wrmsrl(msr, config);
 	}
 }
 
-static void yongfeng_uncore_msr_init_box(struct zhaoxin_uncore_box *box)
+static void kh40000_uncore_msr_init_box(struct zhaoxin_uncore_box *box)
 {
 	unsigned int msr = uncore_msr_box_ctl(box);
 
 	if (msr) {
-		wrmsrl(msr, YONGFENG_PMON_BOX_CTL_INT);
+		wrmsrl(msr, KH40000_PMON_BOX_CTL_INT);
 		wrmsrl(msr, 0);
 	}
 }
 
-static struct attribute *yongfeng_uncore_formats_attr[] = {
+static struct attribute *kh40000_uncore_formats_attr[] = {
 	&format_attr_event.attr,
 	&format_attr_umask.attr,
 	&format_attr_edge.attr,
 	&format_attr_inv.attr,
-	&format_attr_cmask8.attr,
+	&format_attr_thresh8.attr,
 	NULL,
 };
 
-static struct attribute_group yongfeng_uncore_format_group = {
+static struct attribute_group kh40000_uncore_format_group = {
 	.name = "format",
-	.attrs = yongfeng_uncore_formats_attr,
+	.attrs = kh40000_uncore_formats_attr,
 };
 
-static struct uncore_event_desc yongfeng_uncore_llc_box_events[] = {
+static struct uncore_event_desc kh40000_uncore_llc_box_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct uncore_event_desc yongfeng_uncore_hif_box_events[] = {
+static struct uncore_event_desc kh40000_uncore_hif_box_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct uncore_event_desc yongfeng_uncore_zzi_box_events[] = {
+static struct uncore_event_desc kh40000_uncore_zzi_box_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct zhaoxin_uncore_ops yongfeng_uncore_msr_ops = {
-	.init_box       = yongfeng_uncore_msr_init_box,
-	.disable_box    = yongfeng_uncore_msr_disable_box,
-	.enable_box     = yongfeng_uncore_msr_enable_box,
-	.disable_event  = yongfeng_uncore_msr_disable_event,
-	.enable_event   = yongfeng_uncore_msr_enable_event,
+static struct zhaoxin_uncore_ops kh40000_uncore_msr_ops = {
+	.init_box       = kh40000_uncore_msr_init_box,
+	.disable_box    = kh40000_uncore_msr_disable_box,
+	.enable_box     = kh40000_uncore_msr_enable_box,
+	.disable_event  = kh40000_uncore_msr_disable_event,
+	.enable_event   = kh40000_uncore_msr_enable_event,
 	.read_counter   = uncore_msr_read_counter,
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_llc_box = {
+static struct zhaoxin_uncore_type kh40000_uncore_llc_box = {
 	.name           = "llc",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
-	.event_ctl      = YONGFENG_LLC_MSR_PMON_CTL0,
-	.perf_ctr       = YONGFENG_LLC_MSR_PMON_CTR0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_LLC_MSR_PMON_BLK_CTL,
-	.event_descs    = yongfeng_uncore_llc_box_events,
-	.ops            = &yongfeng_uncore_msr_ops,
-	.format_group   = &yongfeng_uncore_format_group,
+	.event_ctl      = KH40000_LLC_MSR_PMON_CTL0,
+	.perf_ctr       = KH40000_LLC_MSR_PMON_CTR0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_LLC_MSR_PMON_BLK_CTL,
+	.event_descs    = kh40000_uncore_llc_box_events,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_hif_box = {
+static struct zhaoxin_uncore_type kh40000_uncore_hif_box = {
 	.name           = "hif",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
 	.fixed_ctr_bits = 48,
-	.event_ctl      = YONGFENG_HIF_MSR_PMON_CTL0,
-	.perf_ctr       = YONGFENG_HIF_MSR_PMON_CTR0,
-	.fixed_ctr      = YONGFENG_HIF_MSR_PMON_FIXED_CTR,
-	.fixed_ctl      = YONGFENG_HIF_MSR_PMON_FIXED_CTL,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_HIF_MSR_PMON_BLK_CTL,
-	.event_descs    = yongfeng_uncore_hif_box_events,
-	.ops            = &yongfeng_uncore_msr_ops,
-	.format_group   = &yongfeng_uncore_format_group,
+	.event_ctl      = KH40000_HIF_MSR_PMON_CTL0,
+	.perf_ctr       = KH40000_HIF_MSR_PMON_CTR0,
+	.fixed_ctr      = KH40000_HIF_MSR_PMON_FIXED_CTR,
+	.fixed_ctl      = KH40000_HIF_MSR_PMON_FIXED_CTL,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_HIF_MSR_PMON_BLK_CTL,
+	.event_descs    = kh40000_uncore_hif_box_events,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_zzi_box = {
+static struct zhaoxin_uncore_type kh40000_uncore_zzi_box = {
 	.name           = "zzi",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
-	.event_ctl      = YONGFENG_ZZI_MSR_PMON_CTL0,
-	.perf_ctr       = YONGFENG_ZZI_MSR_PMON_CTR0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_ZZI_MSR_PMON_BLK_CTL,
-	.event_descs    = yongfeng_uncore_zzi_box_events,
-	.ops            = &yongfeng_uncore_msr_ops,
-	.format_group   = &yongfeng_uncore_format_group,
+	.event_ctl      = KH40000_ZZI_MSR_PMON_CTL0,
+	.perf_ctr       = KH40000_ZZI_MSR_PMON_CTR0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_ZZI_MSR_PMON_BLK_CTL,
+	.event_descs    = kh40000_uncore_zzi_box_events,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
 };
 
-static struct zhaoxin_uncore_type *yongfeng_msr_uncores[] = {
-	&yongfeng_uncore_llc_box,
-	&yongfeng_uncore_hif_box,
-	&yongfeng_uncore_zzi_box,
+static struct zhaoxin_uncore_type *kh40000_msr_uncores[] = {
+	&kh40000_uncore_llc_box,
+	&kh40000_uncore_hif_box,
+	&kh40000_uncore_zzi_box,
 	NULL,
 };
-/*YONGFENG msr ops end*/
+/*KH40000 msr ops end*/
 
-/*YONGFENG pci ops start*/
-static void yongfeng_uncore_pci_disable_event(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+/*KH40000 pci ops start*/
+static void kh40000_uncore_pci_disable_event(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	struct hw_perf_event *hwc = &event->hw;
@@ -651,41 +719,41 @@ static void yongfeng_uncore_pci_disable_event(struct zhaoxin_uncore_box *box,
 	pci_write_config_dword(pdev, hwc->config_base, hwc->config);
 }
 
-static void yongfeng_uncore_pci_enable_event(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+static void kh40000_uncore_pci_enable_event(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	struct hw_perf_event *hwc = &event->hw;
 
-	pci_write_config_dword(pdev, hwc->config_base, hwc->config | YONGFENG_PMON_CTL_EN);
+	pci_write_config_dword(pdev, hwc->config_base, hwc->config | KH40000_PMON_CTL_EN);
 }
 
-static void yongfeng_uncore_pci_disable_box(struct zhaoxin_uncore_box *box)
+static void kh40000_uncore_pci_disable_box(struct zhaoxin_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	int box_ctl = uncore_pci_box_ctl(box);
 	u32 config = 0;
 
 	if (!pci_read_config_dword(pdev, box_ctl, &config)) {
-		config |= YONGFENG_PMON_BOX_CTL_FRZ;
+		config |= KH40000_PMON_BOX_CTL_FRZ;
 		pci_write_config_dword(pdev, box_ctl, config);
 	}
 }
 
-static void yongfeng_uncore_pci_enable_box(struct zhaoxin_uncore_box *box)
+static void kh40000_uncore_pci_enable_box(struct zhaoxin_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	int box_ctl = uncore_pci_box_ctl(box);
 	u32 config = 0;
 
 	if (!pci_read_config_dword(pdev, box_ctl, &config)) {
-		config &= ~YONGFENG_PMON_BOX_CTL_FRZ;
+		config &= ~KH40000_PMON_BOX_CTL_FRZ;
 		pci_write_config_dword(pdev, box_ctl, config);
 	}
 }
 
-static u64 yongfeng_uncore_pci_read_counter(struct zhaoxin_uncore_box *box,
-		struct perf_event *event)
+static u64 kh40000_uncore_pci_read_counter(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	struct hw_perf_event *hwc = &event->hw;
@@ -693,194 +761,709 @@ static u64 yongfeng_uncore_pci_read_counter(struct zhaoxin_uncore_box *box,
 
 	pci_read_config_dword(pdev, hwc->event_base, (u32 *)&count + 1);
 	pci_read_config_dword(pdev, hwc->event_base + 4, (u32 *)&count);
+
 	return count;
 }
 
-static void yongfeng_uncore_pci_init_box(struct zhaoxin_uncore_box *box)
+static void kh40000_uncore_pci_init_box(struct zhaoxin_uncore_box *box)
 {
 	struct pci_dev *pdev = box->pci_dev;
 	int box_ctl = uncore_pci_box_ctl(box);
 
-	pci_write_config_dword(pdev, box_ctl, YONGFENG_PMON_PCI_BOX_CTL_INT);
+	pci_write_config_dword(pdev, box_ctl, KH40000_PMON_PCI_BOX_CTL_INT);
 }
 
-static struct uncore_event_desc yongfeng_uncore_imc_events[] = {
+static struct uncore_event_desc kh40000_uncore_imc_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct uncore_event_desc yongfeng_uncore_pci_events[] = {
+static struct uncore_event_desc kh40000_uncore_pci_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct uncore_event_desc yongfeng_uncore_zpi_dll_events[] = {
+static struct uncore_event_desc kh40000_uncore_zpi_dll_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct uncore_event_desc yongfeng_uncore_zdi_dll_events[] = {
+static struct uncore_event_desc kh40000_uncore_zdi_dll_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct uncore_event_desc yongfeng_uncore_pxptrf_events[] = {
+static struct uncore_event_desc kh40000_uncore_pxptrf_events[] = {
 	{ /* end: all zeroes */ },
 };
 
-static struct zhaoxin_uncore_ops yongfeng_uncore_pci_ops = {
-	.init_box       = yongfeng_uncore_pci_init_box,
-	.disable_box    = yongfeng_uncore_pci_disable_box,
-	.enable_box     = yongfeng_uncore_pci_enable_box,
-	.disable_event  = yongfeng_uncore_pci_disable_event,
-	.enable_event   = yongfeng_uncore_pci_enable_event,
-	.read_counter   = yongfeng_uncore_pci_read_counter
+static struct zhaoxin_uncore_ops kh40000_uncore_pci_ops = {
+	.init_box       = kh40000_uncore_pci_init_box,
+	.disable_box    = kh40000_uncore_pci_disable_box,
+	.enable_box     = kh40000_uncore_pci_enable_box,
+	.disable_event  = kh40000_uncore_pci_disable_event,
+	.enable_event   = kh40000_uncore_pci_enable_event,
+	.read_counter   = kh40000_uncore_pci_read_counter
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_mc0 = {
+static struct zhaoxin_uncore_type kh40000_uncore_mc0 = {
 	.name           = "mc0",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
 	.fixed_ctr_bits = 48,
-	.fixed_ctr      = YONGFENG_MC0_CHy_PMON_FIXED_CTR,
-	.fixed_ctl      = YONGFENG_MC0_CHy_PMON_FIXED_CTL,
-	.event_descs    = yongfeng_uncore_imc_events,
-	.perf_ctr       = YONGFENG_MC0_CHy_PMON_CTR0,
-	.event_ctl      = YONGFENG_MC0_CHy_PMON_CTL0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_MC0_CHy_PMON_BLK_CTL,
-	.ops            = &yongfeng_uncore_pci_ops,
-	.format_group   = &yongfeng_uncore_format_group
+	.fixed_ctr      = KH40000_MC0_CHy_PMON_FIXED_CTR,
+	.fixed_ctl      = KH40000_MC0_CHy_PMON_FIXED_CTL,
+	.event_descs    = kh40000_uncore_imc_events,
+	.perf_ctr       = KH40000_MC0_CHy_PMON_CTR0,
+	.event_ctl      = KH40000_MC0_CHy_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_MC0_CHy_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_mc1 = {
+static struct zhaoxin_uncore_type kh40000_uncore_mc1 = {
 	.name           = "mc1",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
 	.fixed_ctr_bits = 48,
-	.fixed_ctr      = YONGFENG_MC1_CHy_PMON_FIXED_CTR,
-	.fixed_ctl      = YONGFENG_MC1_CHy_PMON_FIXED_CTL,
-	.event_descs    = yongfeng_uncore_imc_events,
-	.perf_ctr       = YONGFENG_MC1_CHy_PMON_CTR0,
-	.event_ctl      = YONGFENG_MC1_CHy_PMON_CTL0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_MC1_CHy_PMON_BLK_CTL,
-	.ops            = &yongfeng_uncore_pci_ops,
-	.format_group   = &yongfeng_uncore_format_group
+	.fixed_ctr      = KH40000_MC1_CHy_PMON_FIXED_CTR,
+	.fixed_ctl      = KH40000_MC1_CHy_PMON_FIXED_CTL,
+	.event_descs    = kh40000_uncore_imc_events,
+	.perf_ctr       = KH40000_MC1_CHy_PMON_CTR0,
+	.event_ctl      = KH40000_MC1_CHy_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_MC1_CHy_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_pci = {
+static struct zhaoxin_uncore_type kh40000_uncore_pci = {
 	.name           = "pci",
 	.num_counters   = 4,
-	.num_boxes      = 2,
+	.num_boxes      = 10,
 	.perf_ctr_bits  = 48,
-	.event_descs    = yongfeng_uncore_pci_events,
-	.perf_ctr       = YONGFENG_PCI_PMON_CTR0,
-	.event_ctl      = YONGFENG_PCI_PMON_CTL0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_PCI_PMON_BLK_CTL,
-	.ops            = &yongfeng_uncore_pci_ops,
-	.format_group   = &yongfeng_uncore_format_group
+	.event_descs    = kh40000_uncore_pci_events,
+	.perf_ctr       = KH40000_PCI_PMON_CTR0,
+	.event_ctl      = KH40000_PCI_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_PCI_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_zpi_dll = {
+static struct zhaoxin_uncore_type kh40000_uncore_zpi_dll = {
 	.name           = "zpi_dll",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
-	.event_descs    = yongfeng_uncore_zpi_dll_events,
-	.perf_ctr       = YONGFENG_ZPI_DLL_PMON_CTR0,
-	.event_ctl      = YONGFENG_ZPI_DLL_PMON_CTL0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_ZPI_DLL_PMON_BLK_CTL,
-	.ops            = &yongfeng_uncore_pci_ops,
-	.format_group   = &yongfeng_uncore_format_group
+	.event_descs    = kh40000_uncore_zpi_dll_events,
+	.perf_ctr       = KH40000_ZPI_DLL_PMON_CTR0,
+	.event_ctl      = KH40000_ZPI_DLL_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_ZPI_DLL_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_zdi_dll = {
+static struct zhaoxin_uncore_type kh40000_uncore_zdi_dll = {
 	.name           = "zdi_dll",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
-	.event_descs    = yongfeng_uncore_zdi_dll_events,
-	.perf_ctr       = YONGFENG_ZDI_DLL_PMON_CTR0,
-	.event_ctl      = YONGFENG_ZDI_DLL_PMON_CTL0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_ZDI_DLL_PMON_BLK_CTL,
-	.ops            = &yongfeng_uncore_pci_ops,
-	.format_group   = &yongfeng_uncore_format_group
+	.event_descs    = kh40000_uncore_zdi_dll_events,
+	.perf_ctr       = KH40000_ZDI_DLL_PMON_CTR0,
+	.event_ctl      = KH40000_ZDI_DLL_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_ZDI_DLL_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
 };
 
-static struct zhaoxin_uncore_type yongfeng_uncore_pxptrf = {
+static struct zhaoxin_uncore_type kh40000_uncore_pxptrf = {
 	.name           = "pxptrf",
 	.num_counters   = 4,
 	.num_boxes      = 1,
 	.perf_ctr_bits  = 48,
-	.event_descs    = yongfeng_uncore_pxptrf_events,
-	.perf_ctr       = YONGFENG_PXPTRF_PMON_CTR0,
-	.event_ctl      = YONGFENG_PXPTRF_PMON_CTL0,
-	.event_mask     = YONGFENG_PMON_RAW_EVENT_MASK,
-	.box_ctl        = YONGFENG_PXPTRF_PMON_BLK_CTL,
-	.ops            = &yongfeng_uncore_pci_ops,
-	.format_group   = &yongfeng_uncore_format_group
+	.event_descs    = kh40000_uncore_pxptrf_events,
+	.perf_ctr       = KH40000_PXPTRF_PMON_CTR0,
+	.event_ctl      = KH40000_PXPTRF_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_PXPTRF_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
 };
 
 enum {
-	YONGFENG_PCI_UNCORE_MC0,
-	YONGFENG_PCI_UNCORE_MC1,
-	YONGFENG_PCI_UNCORE_PCI,
-	YONGFENG_PCI_UNCORE_ZPI_DLL,
-	YONGFENG_PCI_UNCORE_ZDI_DLL,
-	YONGFENG_PCI_UNCORE_PXPTRF,
+	KH40000_PCI_UNCORE_MC0,
+	KH40000_PCI_UNCORE_MC1,
+	KH40000_PCI_UNCORE_PCI,
+	KH40000_PCI_UNCORE_ZPI_DLL,
+	KH40000_PCI_UNCORE_ZDI_DLL,
+	KH40000_PCI_UNCORE_PXPTRF,
 };
 
-static struct zhaoxin_uncore_type *yongfeng_pci_uncores[] = {
-	[YONGFENG_PCI_UNCORE_MC0]            = &yongfeng_uncore_mc0,
-	[YONGFENG_PCI_UNCORE_MC1]            = &yongfeng_uncore_mc1,
-	[YONGFENG_PCI_UNCORE_PCI]            = &yongfeng_uncore_pci,
-	[YONGFENG_PCI_UNCORE_ZPI_DLL]        = &yongfeng_uncore_zpi_dll,
-	[YONGFENG_PCI_UNCORE_ZDI_DLL]        = &yongfeng_uncore_zdi_dll,
-	[YONGFENG_PCI_UNCORE_PXPTRF]         = &yongfeng_uncore_pxptrf,
+static struct zhaoxin_uncore_type *kh40000_pci_uncores[] = {
+	[KH40000_PCI_UNCORE_MC0]            = &kh40000_uncore_mc0,
+	[KH40000_PCI_UNCORE_MC1]            = &kh40000_uncore_mc1,
+	[KH40000_PCI_UNCORE_PCI]            = &kh40000_uncore_pci,
+	[KH40000_PCI_UNCORE_ZPI_DLL]        = &kh40000_uncore_zpi_dll,
+	[KH40000_PCI_UNCORE_ZDI_DLL]        = &kh40000_uncore_zdi_dll,
+	[KH40000_PCI_UNCORE_PXPTRF]         = &kh40000_uncore_pxptrf,
 	NULL,
 };
 
-static const struct pci_device_id yongfeng_uncore_pci_ids[] = {
+static const struct pci_device_id kh40000_uncore_pci_ids[] = {
 	{ /* MC Channe0/1 */
 		PCI_DEVICE(0x1D17, 0x31b2),
-		.driver_data = UNCORE_PCI_DEV_DATA(YONGFENG_PCI_UNCORE_MC0, 0),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_MC0, 0),
 	},
 
-	{ /* PCIA */
+	{ /* PCIE D2F0 */
 		PCI_DEVICE(0x1D17, 0x0717),
-		.driver_data = UNCORE_PCI_DEV_DATA(YONGFENG_PCI_UNCORE_PCI, 0),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 0),
 	},
 
-	{ /* PCIB */
-		PCI_DEVICE(0x1D17, 0x071c),
-		.driver_data = UNCORE_PCI_DEV_DATA(YONGFENG_PCI_UNCORE_PCI, 1),
+	{ /* PCIE D2F1 */
+		PCI_DEVICE(0x1D17, 0x0718),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 1),
+	},
+
+	{ /* PCIE D3F0 */
+		PCI_DEVICE(0x1D17, 0x0719),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 2),
+	},
+
+	{ /* PCIE D3F1 */
+		PCI_DEVICE(0x1D17, 0x071A),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 3),
+	},
+
+	{ /* PCIE D3F2 */
+		PCI_DEVICE(0x1D17, 0x071B),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 4),
+	},
+
+	{ /* PCIE D4F0 */
+		PCI_DEVICE(0x1D17, 0x071C),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 5),
+	},
+
+	{ /* PCIE D4F1 */
+		PCI_DEVICE(0x1D17, 0x071D),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 6),
+	},
+
+	{ /* PCIE D5F0 */
+		PCI_DEVICE(0x1D17, 0x071E),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 7),
+	},
+
+	{ /* PCIE D5F1 */
+		PCI_DEVICE(0x1D17, 0x0731),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 8),
+	},
+
+	{ /* PCIE D5F2 */
+		PCI_DEVICE(0x1D17, 0x0732),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PCI, 9),
 	},
 
 	{ /* ZPI_DLL */
 		PCI_DEVICE(0x1D17, 0x91c1),
-		.driver_data = UNCORE_PCI_DEV_DATA(YONGFENG_PCI_UNCORE_ZPI_DLL, 0),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_ZPI_DLL, 0),
 	},
 
 	{ /* ZDI_DLL */
 		PCI_DEVICE(0x1D17, 0x3b03),
-		.driver_data = UNCORE_PCI_DEV_DATA(YONGFENG_PCI_UNCORE_ZDI_DLL, 0),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_ZDI_DLL, 0),
 	},
 
 	{ /* PXPTRF */
 		PCI_DEVICE(0x1D17, 0x31B4),
-		.driver_data = UNCORE_PCI_DEV_DATA(YONGFENG_PCI_UNCORE_PXPTRF, 0),
+		.driver_data = UNCORE_PCI_DEV_DATA(KH40000_PCI_UNCORE_PXPTRF, 0),
 	},
 
 	{ /* end: all zeroes */ }
 };
 
-static struct pci_driver yongfeng_uncore_pci_driver = {
-	.name           = "yongfeng_uncore",
-	.id_table       = yongfeng_uncore_pci_ids,
+static struct pci_driver kh40000_uncore_pci_driver = {
+	.name           = "kh40000_uncore",
+	.id_table       = kh40000_uncore_pci_ids,
 };
-/*YONGFENG pci ops end*/
+/*KH40000 pci ops end*/
+
+
+/*KX8000 msr ops start*/
+static unsigned int kx8000_uncore_msr_offsets[] = {
+	0x0, 0x13, 0x27, 0x3b, 0x4f, 0x63, 0x77, 0x8b
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_mesh_box = {
+	.name           = "mesh",
+	.num_counters   = 4,
+	.num_boxes      = 8,
+	.perf_ctr_bits  = 48,
+	.event_ctl      = KX8000_MESH_MSR_PMON_CTL0,
+	.perf_ctr       = KX8000_MESH_MSR_PMON_CTR0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_MESH_MSR_PMON_BLK_CTL,
+	.msr_offsets	= kx8000_uncore_msr_offsets,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_llc_box = {
+	.name           = "llc",
+	.num_counters   = 4,
+	.num_boxes      = 8,
+	.perf_ctr_bits  = 48,
+	.event_ctl      = KX8000_LLC_MSR_PMON_CTL0,
+	.perf_ctr       = KX8000_LLC_MSR_PMON_CTR0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_LLC_MSR_PMON_BLK_CTL,
+	.msr_offsets	= kx8000_uncore_msr_offsets,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_homestop = {
+	.name           = "homestop",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.event_ctl      = KX8000_HOMESTOP_MSR_PMON_CTL0,
+	.perf_ctr       = KX8000_HOMESTOP_MSR_PMON_CTR0,
+	.fixed_ctr      = KX8000_HOMESTOP_MSR_PMON_FIXED_CTR,
+	.fixed_ctl      = KX8000_HOMESTOP_MSR_PMON_FIXED_CTL,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_HOMESTOP_MSR_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_ccd_zdi_pl = {
+	.name           = "ccd_zdi_pl",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.event_ctl      = KX8000_CCD_ZDI_PL_MSR_PMON_CTL0,
+	.perf_ctr       = KX8000_CCD_ZDI_PL_MSR_PMON_CTR0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_CCD_ZDI_PL_MSR_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_iod_zdi_pl = {
+	.name           = "iod_zdi_pl",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.event_ctl      = KX8000_IOD_ZDI_PL_MSR_PMON_CTL0,
+	.perf_ctr       = KX8000_IOD_ZDI_PL_MSR_PMON_CTR0,
+	.fixed_ctr      = KX8000_IOD_ZDI_PL_MSR_PMON_FIXED_CTR,
+	.fixed_ctl      = KX8000_IOD_ZDI_PL_MSR_PMON_FIXED_CTL,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_IOD_ZDI_PL_MSR_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_msr_ops,
+	.format_group   = &kh40000_uncore_format_group,
+};
+
+
+static struct zhaoxin_uncore_type *kx8000_msr_uncores[] = {
+	&kx8000_uncore_llc_box,
+	&kx8000_uncore_mesh_box,
+	&kh40000_uncore_hif_box,
+	&kx8000_uncore_homestop,
+	&kx8000_uncore_ccd_zdi_pl,
+	&kx8000_uncore_iod_zdi_pl,
+	NULL,
+};
+/*KX8000 msr ops end*/
+
+/*KX8000 pci ops start*/
+static unsigned int kx8000_mc_ctr_lh_offsets[] = {
+	0xc, 0xe, 0x10, 0x12, 0x14
+};
+
+static u64 kx8000_uncore_pci_mc_read_counter(struct zhaoxin_uncore_box *box,
+				struct perf_event *event)
+{
+	struct pci_dev *pdev = box->pci_dev;
+	struct hw_perf_event *hwc = &event->hw;
+	u64 count = 0;
+
+	pci_read_config_word(pdev, hwc->event_base, (u16 *)&count + 3);
+	pci_read_config_dword(pdev, hwc->event_base + kx8000_mc_ctr_lh_offsets[hwc->idx],
+		(u32 *)&count);
+
+	return count;
+}
+
+static struct zhaoxin_uncore_ops kx8000_uncore_pci_mc_ops = {
+	.init_box       = kh40000_uncore_pci_init_box,
+	.disable_box    = kh40000_uncore_pci_disable_box,
+	.enable_box     = kh40000_uncore_pci_enable_box,
+	.disable_event  = kh40000_uncore_pci_disable_event,
+	.enable_event   = kh40000_uncore_pci_enable_event,
+	.read_counter   = kx8000_uncore_pci_mc_read_counter
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_mc_a0 = {
+	.name           = "mc_a0",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.fixed_ctr      = KX8000_MC_A0_CHy_PMON_FIXED_CTR,
+	.fixed_ctl      = KX8000_MC_A0_CHy_PMON_FIXED_CTL,
+	.perf_ctr       = KX8000_MC_A0_CHy_PMON_CTR0,
+	.event_ctl      = KX8000_MC_A0_CHy_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_MC_A0_CHy_PMON_BLK_CTL,
+	.ops            = &kx8000_uncore_pci_mc_ops,
+	.format_group   = &kh40000_uncore_format_group
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_mc_a1 = {
+	.name           = "mc_a1",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.fixed_ctr      = KX8000_MC_A1_CHy_PMON_FIXED_CTR,
+	.fixed_ctl      = KX8000_MC_A1_CHy_PMON_FIXED_CTL,
+	.perf_ctr       = KX8000_MC_A1_CHy_PMON_CTR0,
+	.event_ctl      = KX8000_MC_A1_CHy_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_MC_A1_CHy_PMON_BLK_CTL,
+	.ops            = &kx8000_uncore_pci_mc_ops,
+	.format_group   = &kh40000_uncore_format_group
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_mc_b0 = {
+	.name           = "mc_b0",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.fixed_ctr      = KX8000_MC_B0_CHy_PMON_FIXED_CTR,
+	.fixed_ctl      = KX8000_MC_B0_CHy_PMON_FIXED_CTL,
+	.perf_ctr       = KX8000_MC_B0_CHy_PMON_CTR0,
+	.event_ctl      = KX8000_MC_B0_CHy_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_MC_B0_CHy_PMON_BLK_CTL,
+	.ops            = &kx8000_uncore_pci_mc_ops,
+	.format_group   = &kh40000_uncore_format_group
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_mc_b1 = {
+	.name           = "mc_b1",
+	.num_counters   = 4,
+	.num_boxes      = 1,
+	.perf_ctr_bits  = 48,
+	.fixed_ctr_bits = 48,
+	.fixed_ctr      = KX8000_MC_B1_CHy_PMON_FIXED_CTR,
+	.fixed_ctl      = KX8000_MC_B1_CHy_PMON_FIXED_CTL,
+	.perf_ctr       = KX8000_MC_B1_CHy_PMON_CTR0,
+	.event_ctl      = KX8000_MC_B1_CHy_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KX8000_MC_B1_CHy_PMON_BLK_CTL,
+	.ops            = &kx8000_uncore_pci_mc_ops,
+	.format_group   = &kh40000_uncore_format_group
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_pci = {
+	.name           = "pci",
+	.num_counters   = 4,
+	.num_boxes      = 17,
+	.perf_ctr_bits  = 48,
+	.event_descs    = kh40000_uncore_pci_events,
+	.perf_ctr       = KH40000_PCI_PMON_CTR0,
+	.event_ctl      = KH40000_PCI_PMON_CTL0,
+	.event_mask     = KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl        = KH40000_PCI_PMON_BLK_CTL,
+	.ops            = &kh40000_uncore_pci_ops,
+	.format_group   = &kh40000_uncore_format_group
+};
+
+
+enum {
+	KX8000_PCI_UNCORE_MC_A0,
+	KX8000_PCI_UNCORE_MC_A1,
+	KX8000_PCI_UNCORE_MC_B0,
+	KX8000_PCI_UNCORE_MC_B1,
+	KX8000_PCI_UNCORE_PCI,
+	KX8000_PCI_UNCORE_PXPTRF,
+};
+
+static struct zhaoxin_uncore_type *kx8000_pci_uncores[] = {
+	[KX8000_PCI_UNCORE_MC_A0]            = &kx8000_uncore_mc_a0,
+	[KX8000_PCI_UNCORE_MC_A1]            = &kx8000_uncore_mc_a1,
+	[KX8000_PCI_UNCORE_MC_B0]            = &kx8000_uncore_mc_b0,
+	[KX8000_PCI_UNCORE_MC_B1]            = &kx8000_uncore_mc_b1,
+	[KX8000_PCI_UNCORE_PCI]            = &kx8000_uncore_pci,
+	[KX8000_PCI_UNCORE_PXPTRF]         = &kh40000_uncore_pxptrf,
+	NULL,
+};
+
+static const struct pci_device_id kx8000_uncore_pci_ids[] = {
+	{ /* MC Channe A0/A1/B0/B1 */
+		PCI_DEVICE(0x1D17, 0x31B2),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_MC_A0, 0),
+	},
+
+	{ /* PCIE D2F0 */
+		PCI_DEVICE(0x1D17, 0x0717),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 0),
+	},
+
+	{ /* PCIE D2F1 */
+		PCI_DEVICE(0x1D17, 0x0718),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 1),
+	},
+
+	{ /* PCIE D2F2 */
+		PCI_DEVICE(0x1D17, 0x0733),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 2),
+	},
+
+	{ /* PCIE D2F3 */
+		PCI_DEVICE(0x1D17, 0x0734),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 3),
+	},
+
+	{ /* PCIE D3F0 */
+		PCI_DEVICE(0x1D17, 0x0719),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 4),
+	},
+
+	{ /* PCIE D3F1 */
+		PCI_DEVICE(0x1D17, 0x0735),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 5),
+	},
+
+	{ /* PCIE D3F2 */
+		PCI_DEVICE(0x1D17, 0x0739),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 6),
+	},
+
+	{ /* PCIE D3F3 */
+		PCI_DEVICE(0x1D17, 0x073A),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 7),
+	},
+
+	{ /* PCIE D4F0 */
+		PCI_DEVICE(0x1D17, 0x071B),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 8),
+	},
+
+	{ /* PCIE D4F1 */
+		PCI_DEVICE(0x1D17, 0x071C),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 9),
+	},
+
+	{ /* PCIE D4F2 */
+		PCI_DEVICE(0x1D17, 0x0736),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 10),
+	},
+
+	{ /* PCIE D4F3 */
+		PCI_DEVICE(0x1D17, 0x0737),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 11),
+	},
+
+	{ /* PCIE D4F4 */
+		PCI_DEVICE(0x1D17, 0x0738),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 12),
+	},
+
+	{ /* PCIE D5F0 */
+		PCI_DEVICE(0x1D17, 0x071D),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 13),
+	},
+
+	{ /* PCIE D5F1 */
+		PCI_DEVICE(0x1D17, 0x071E),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 14),
+	},
+
+	{ /* PCIE D5F2 */
+		PCI_DEVICE(0x1D17, 0x0732),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 15),
+	},
+
+	{ /* PCIE D5F3 */
+		PCI_DEVICE(0x1D17, 0x073B),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PCI, 16),
+	},
+
+	{ /* PXPTRF */
+		PCI_DEVICE(0x1D17, 0x31B4),
+		.driver_data = UNCORE_PCI_DEV_DATA(KX8000_PCI_UNCORE_PXPTRF, 0),
+	},
+
+	{ /* end: all zeroes */ }
+};
+
+
+static struct pci_driver kx8000_uncore_pci_driver = {
+	.name           = "kx8000_uncore",
+	.id_table       = kx8000_uncore_pci_ids,
+};
+/*KX8000 pci ops end*/
+
+/*KX8000 mmio ops start*/
+static void kx8000_uncore_mmio_init_box(struct zhaoxin_uncore_box *box)
+{
+	struct pci_dev *pdev = NULL;
+	unsigned int box_ctl = uncore_mmio_box_ctl(box);
+	resource_size_t addr;
+	u32 pci_dword;
+	int mmio_base_offset;
+
+	pdev = pci_get_device(0x1d17, 0x31b1, pdev);
+	if (!pdev)
+		return;
+
+	if (!strcmp(box->pmu->name, "iod_zdi_dl"))
+		mmio_base_offset = KX8000_IOD_ZDI_DL_MMIO_BASE_OFFSET;
+	else
+		mmio_base_offset = KX8000_CCD_ZDI_DL_MMIO_BASE_OFFSET;
+
+	pci_read_config_dword(pdev, mmio_base_offset, &pci_dword);
+	addr = (u64)(pci_dword & KX8000_ZDI_DL_MMIO_BASE_MASK) << 32;
+
+	pci_read_config_dword(pdev, mmio_base_offset + 4, &pci_dword);
+	addr |= pci_dword & KX8000_ZDI_DL_MMIO_MEM0_MASK;
+
+	box->io_addr = ioremap(addr, KX8000_ZDI_DL_MMIO_SIZE);
+	if (!box->io_addr)
+		return;
+
+	writel(KH40000_PMON_PCI_BOX_CTL_INT, box->io_addr + box_ctl);
+}
+
+static void kx8000_uncore_mmio_disable_box(struct zhaoxin_uncore_box *box)
+{
+	u32 config;
+	unsigned int box_ctl = uncore_mmio_box_ctl(box);
+
+	if (!box->io_addr)
+		return;
+
+	config = readl(box->io_addr + box_ctl);
+	config |= KH40000_PMON_BOX_CTL_FRZ;
+	writel(config, box->io_addr + box_ctl);
+}
+
+static void kx8000_uncore_mmio_enable_box(struct zhaoxin_uncore_box *box)
+{
+	u32 config;
+	unsigned int box_ctl = uncore_mmio_box_ctl(box);
+
+	if (!box->io_addr)
+		return;
+
+	config = readl(box->io_addr + box_ctl);
+	config &= ~KH40000_PMON_BOX_CTL_FRZ;
+	writel(config, box->io_addr + box_ctl);
+}
+
+static void kx8000_uncore_mmio_enable_event(struct zhaoxin_uncore_box *box,
+					   struct perf_event *event)
+{
+	struct hw_perf_event *hwc = &event->hw;
+
+	if (!box->io_addr)
+		return;
+
+	writel(hwc->config | KH40000_PMON_CTL_EN, box->io_addr + hwc->config_base);
+}
+
+static void kx8000_uncore_mmio_disable_event(struct zhaoxin_uncore_box *box,
+					    struct perf_event *event)
+{
+	struct hw_perf_event *hwc = &event->hw;
+
+	if (!box->io_addr)
+		return;
+
+	writel(hwc->config, box->io_addr + hwc->config_base);
+}
+
+static void uncore_mmio_exit_box(struct zhaoxin_uncore_box *box)
+{
+	if (box->io_addr)
+		iounmap(box->io_addr);
+}
+
+static u64 uncore_mmio_read_counter(struct zhaoxin_uncore_box *box,
+		struct perf_event *event)
+{
+	u64 count = 0;
+	u64 count_low = 0;
+	u64 count_high = 0;
+
+	if (!box->io_addr)
+		return 0;
+
+	count_high = readl(box->io_addr + event->hw.event_base) & 0xffff;
+	count_low = readl(box->io_addr + event->hw.event_base + 4);
+	count = (count_high << 32) + count_low;
+
+	return count;
+}
+
+static struct zhaoxin_uncore_ops kx8000_uncore_mmio_ops = {
+	.init_box	= kx8000_uncore_mmio_init_box,
+	.exit_box	= uncore_mmio_exit_box,
+	.disable_box	= kx8000_uncore_mmio_disable_box,
+	.enable_box	= kx8000_uncore_mmio_enable_box,
+	.disable_event	= kx8000_uncore_mmio_disable_event,
+	.enable_event	= kx8000_uncore_mmio_enable_event,
+	.read_counter	= uncore_mmio_read_counter,
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_iod_zdi_dl = {
+	.name		= "iod_zdi_dl",
+	.num_counters   = 4,
+	.num_boxes	= 1,
+	.perf_ctr_bits	= 48,
+	.fixed_ctr_bits	= 48,
+	.perf_ctr	= KX8000_ZDI_DL_MMIO_PMON_CTR0,
+	.event_ctl	= KX8000_ZDI_DL_MMIO_PMON_CTL0,
+	.event_mask	= KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl	= KX8000_ZDI_DL_MMIO_PMON_BLK_CTL,
+	.ops		= &kx8000_uncore_mmio_ops,
+	.format_group	= &kh40000_uncore_format_group,
+};
+
+static struct zhaoxin_uncore_type kx8000_uncore_ccd_zdi_dl = {
+	.name		= "ccd_zdi_dl",
+	.num_counters   = 4,
+	.num_boxes	= 1,
+	.perf_ctr_bits	= 48,
+	.fixed_ctr_bits	= 48,
+	.perf_ctr	= KX8000_ZDI_DL_MMIO_PMON_CTR0,
+	.event_ctl	= KX8000_ZDI_DL_MMIO_PMON_CTL0,
+	.event_mask	= KH40000_PMON_RAW_EVENT_MASK,
+	.box_ctl	= KX8000_ZDI_DL_MMIO_PMON_BLK_CTL,
+	.ops		= &kx8000_uncore_mmio_ops,
+	.format_group	= &kh40000_uncore_format_group,
+};
+
+static struct zhaoxin_uncore_type *kx8000_mmio_uncores[] = {
+	&kx8000_uncore_iod_zdi_dl,
+	&kx8000_uncore_ccd_zdi_dl,
+	NULL,
+};
+
+/*KX8000 mmio ops end*/
+
+
 
 static enum hrtimer_restart uncore_pmu_hrtimer(struct hrtimer *hrtimer)
 {
@@ -1375,7 +1958,7 @@ static ssize_t uncore_get_attr_cpumask(struct device *dev,
 	pmu = dev_get_drvdata(dev);
 	uncore_pmu = container_of(pmu, struct zhaoxin_uncore_pmu, pmu);
 
-	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 		if (!strcmp(uncore_pmu->type->name, "llc"))
 			active_mask = &uncore_cpu_cluster_mask;
 		else
@@ -1385,6 +1968,7 @@ static ssize_t uncore_get_attr_cpumask(struct device *dev,
 	}
 	return cpumap_print_to_pagebuf(true, buf, active_mask);
 }
+
 static DEVICE_ATTR(cpumask, 0444, uncore_get_attr_cpumask, NULL);
 
 static struct attribute *uncore_pmu_attrs[] = {
@@ -1448,7 +2032,7 @@ static void uncore_free_boxes(struct zhaoxin_uncore_pmu *pmu)
 {
 	int i, max;
 
-	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 		if (!strcmp(pmu->type->name, "llc"))
 			max = max_clusters;
 		else
@@ -1495,12 +2079,11 @@ static int __init uncore_type_init(struct zhaoxin_uncore_type *type, bool setid)
 	if (!pmus)
 		return -ENOMEM;
 
-	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 		if (!strcmp(type->name, "llc"))
 			size = max_clusters * sizeof(struct zhaoxin_uncore_box *);
 		else
 			size = max_subnodes * sizeof(struct zhaoxin_uncore_box *);
-
 	} else {
 		size = max_packages * sizeof(struct zhaoxin_uncore_box *);
 	}
@@ -1574,23 +2157,28 @@ static int uncore_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 	struct zhaoxin_uncore_pmu *pmu;
 	struct zhaoxin_uncore_box *box;
 	struct zhaoxin_uncore_box **boxes;
+	char mc_dev[10];
+	int loop = 1;
+	int i, j = 0;
+	int subnode_id = 0;
+	int ret = 0;
 
-	int loop, i, j = 0;
-
-	int subnode_id, ret = 0;
-
-	subnode_id = uncore_pcibus_to_subnodeid(pdev->bus);
-	if (subnode_id < 0)
-		return -EINVAL;
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000)
+		subnode_id = uncore_pcibus_to_subnodeid(pdev->bus);
 
 	type = uncore_pci_uncores[UNCORE_PCI_DEV_TYPE(id->driver_data)];
 
-	if (!strcmp(type->name, "mc0"))
-		loop = 2;
-	else
-		loop = 1;
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
+		strscpy(mc_dev, "mc0", sizeof("mc0"));
+		if (!strcmp(type->name, mc_dev))
+			loop = 2;
+	} else if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KX8000) {
+		strscpy(mc_dev, "mc_a0", sizeof("mc_a0"));
+		if (!strcmp(type->name, mc_dev))
+			loop = 4;
+	}
 
-	boxes = kzalloc(loop * sizeof(struct zhaoxin_uncore_box *), GFP_KERNEL);
+	boxes = kcalloc(loop, sizeof(struct zhaoxin_uncore_box *), GFP_KERNEL);
 	if (!boxes)
 		return -ENOMEM;
 
@@ -1603,11 +2191,11 @@ static int uncore_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 		 * for performance monitoring unit with multiple boxes,
 		 * each box has a different function id.
 		 */
-
 		pmu = &type->pmus[UNCORE_PCI_DEV_IDX(id->driver_data)];
 
 		if (WARN_ON_ONCE(pmu->boxes[subnode_id] != NULL))
 			return -EINVAL;
+
 		box = uncore_alloc_box(type, NUMA_NO_NODE);
 		if (!box)
 			return -ENOMEM;
@@ -1627,7 +2215,7 @@ static int uncore_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 		pci_set_drvdata(pdev, boxes);
 		pmu->boxes[subnode_id] = box;
 		if (atomic_inc_return(&pmu->activeboxes) > 1) {
-			if (!strcmp(type->name, "mc0"))
+			if (!strcmp(type->name, mc_dev))
 				goto next_loop;
 			else
 				return 0;
@@ -1643,6 +2231,7 @@ static int uncore_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id
 next_loop:
 		j++;
 	}
+
 	return ret;
 }
 
@@ -1651,31 +2240,38 @@ static void uncore_pci_remove(struct pci_dev *pdev)
 	struct zhaoxin_uncore_box **boxes;
 	struct zhaoxin_uncore_box *box;
 	struct zhaoxin_uncore_pmu *pmu;
-	const char *name;
-	int subnode_id;
+	int subnode_id = 0;
 	int i = 0;
-
-	subnode_id = uncore_pcibus_to_subnodeid(pdev->bus);
+	int loop = 1;
 
 	boxes = pci_get_drvdata(pdev);
 
-again:
-	box = boxes[i];
-	pmu = box->pmu;
-	name = box->pmu->type->name;
-	if (WARN_ON_ONCE(subnode_id != box->subnode_id))
-		return;
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
+		if (!strcmp(boxes[0]->pmu->type->name, "mc0"))
+			loop = 2;
+		else
+			loop = 1;
+	} else if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KX8000) {
+		if (!strcmp(boxes[0]->pmu->type->name, "mc_a0"))
+			loop = 4;
+		else
+			loop = 1;
+	}
 
-	pci_set_drvdata(pdev, NULL);
-	pmu->boxes[subnode_id] = NULL;
-	if (atomic_dec_return(&pmu->activeboxes) == 0)
-		uncore_pmu_unregister(pmu);
-	uncore_box_exit(box);
-	kfree(box);
 
-	if (!strcmp(name, "mc0")) {
-		i++;
-		goto again;
+	for (i = 0; i < loop; i++) {
+		box = boxes[i];
+		pmu = box->pmu;
+		if (WARN_ON_ONCE(subnode_id != box->subnode_id))
+			return;
+
+		pci_set_drvdata(pdev, NULL);
+		pmu->boxes[subnode_id] = NULL;
+		if (atomic_dec_return(&pmu->activeboxes) == 0)
+			uncore_pmu_unregister(pmu);
+
+		uncore_box_exit(box);
+		kfree(box);
 	}
 
 	kfree(boxes);
@@ -1721,16 +2317,16 @@ static void uncore_change_type_ctx(struct zhaoxin_uncore_type *type, int old_cpu
 {
 	struct zhaoxin_uncore_pmu *pmu = type->pmus;
 	struct zhaoxin_uncore_box *box;
-	int i, package_id, cluster_id, subnode_id;
+	int i, package_id, cluster_id = 0, subnode_id = 0;
 
 	package_id = zx_topology_package_id(old_cpu < 0 ? new_cpu : old_cpu);
-	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 		cluster_id = zx_topology_cluster_id(old_cpu < 0 ? new_cpu : old_cpu);
 		subnode_id = zx_topology_subnode_id(old_cpu < 0 ? new_cpu : old_cpu);
 	}
 
 	for (i = 0; i < type->num_boxes; i++, pmu++) {
-		if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+		if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 			if (!strcmp(type->name, "llc")) {
 				box = pmu->boxes[cluster_id];
 				if (!box)
@@ -1747,6 +2343,7 @@ static void uncore_change_type_ctx(struct zhaoxin_uncore_type *type, int old_cpu
 		}
 
 		if (old_cpu < 0) {
+
 			WARN_ON_ONCE(box->cpu != -1);
 			box->cpu = new_cpu;
 			continue;
@@ -1788,31 +2385,32 @@ static void uncore_box_unref(struct zhaoxin_uncore_type **types, int id)
 }
 
 struct zhaoxin_uncore_type *uncore_msr_cluster_uncores[] = {
-	&yongfeng_uncore_llc_box,
+	&kh40000_uncore_llc_box,
 	NULL,
 };
 
 struct zhaoxin_uncore_type *uncore_msr_subnode_uncores[] = {
-	&yongfeng_uncore_hif_box,
-	&yongfeng_uncore_zzi_box,
+	&kh40000_uncore_hif_box,
+	&kh40000_uncore_zzi_box,
 	NULL,
 };
 
 struct zhaoxin_uncore_type *uncore_pci_subnode_uncores[] = {
-	&yongfeng_uncore_mc0,
-	&yongfeng_uncore_mc1,
-	&yongfeng_uncore_pci,
-	&yongfeng_uncore_zpi_dll,
-	&yongfeng_uncore_zdi_dll,
-	&yongfeng_uncore_pxptrf,
+	&kh40000_uncore_mc0,
+	&kh40000_uncore_mc1,
+	&kh40000_uncore_pci,
+	&kh40000_uncore_zpi_dll,
+	&kh40000_uncore_zdi_dll,
+	&kh40000_uncore_pxptrf,
 	NULL,
 };
 
-static void wudaokou_event_cpu_offline(int cpu)
+static void kx5000_event_cpu_offline(int cpu)
 {
 	int package, target;
 
 	/* Check if exiting cpu is used for collecting uncore events */
+
 	if (!cpumask_test_and_clear_cpu(cpu, &uncore_cpu_mask))
 		goto unref_cpu_mask;
 
@@ -1826,14 +2424,17 @@ static void wudaokou_event_cpu_offline(int cpu)
 		target = -1;
 
 	uncore_change_context(uncore_msr_uncores, cpu, target);
+	uncore_change_context(uncore_mmio_uncores, cpu, target);
+	uncore_change_context(uncore_pci_uncores, cpu, target);
 
 unref_cpu_mask:
 	/*clear the references*/
 	package = zx_topology_package_id(cpu);
 	uncore_box_unref(uncore_msr_uncores, package);
+	uncore_box_unref(uncore_mmio_uncores, package);
 }
 
-static void yongfeng_event_cpu_offline(int cpu)
+static void kh40000_event_cpu_offline(int cpu)
 {
 	int cluster_target, subnode_target;
 	int cluster_id, subnode_id;
@@ -1842,6 +2443,7 @@ static void yongfeng_event_cpu_offline(int cpu)
 	subnode_id = zx_topology_subnode_id(cpu);
 
 	/* Check if exiting cpu is used for collecting uncore events */
+
 	if (cpumask_test_and_clear_cpu(cpu, &uncore_cpu_cluster_mask)) {
 		cluster_target = cpumask_any_but(topology_cluster_core_cpumask(cpu), cpu);
 		if (cluster_target < nr_cpu_ids)
@@ -1864,6 +2466,7 @@ static void yongfeng_event_cpu_offline(int cpu)
 	} else {
 		uncore_box_unref(uncore_msr_subnode_uncores, subnode_id);
 	}
+
 }
 
 static int uncore_event_cpu_offline(unsigned int cpu)
@@ -1872,15 +2475,15 @@ static int uncore_event_cpu_offline(unsigned int cpu)
 
 	x86_model = boot_cpu_data.x86_model;
 
-	if (x86_model == ZHAOXIN_FAM7_YONGFENG)
-		yongfeng_event_cpu_offline(cpu);
+	if (x86_model == ZHAOXIN_FAM7_KH40000)
+		kh40000_event_cpu_offline(cpu);
 	else
-		wudaokou_event_cpu_offline(cpu);
+		kx5000_event_cpu_offline(cpu);
 
 	return 0;
 }
 
-static int wudaokou_allocate_boxes(struct zhaoxin_uncore_type **types,
+static int kx5000_allocate_boxes(struct zhaoxin_uncore_type **types,
 			unsigned int id, unsigned int cpu)
 {
 	struct zhaoxin_uncore_box *box, *tmp;
@@ -1921,7 +2524,7 @@ cleanup:
 	return -ENOMEM;
 }
 
-static int yongfeng_allocate_boxes(struct zhaoxin_uncore_type **types,
+static int kh40000_allocate_boxes(struct zhaoxin_uncore_type **types,
 			unsigned int id, unsigned int cpu)
 {
 	struct zhaoxin_uncore_box *box, *tmp;
@@ -1976,10 +2579,10 @@ static int uncore_box_ref(struct zhaoxin_uncore_type **types,
 
 	x86_model = boot_cpu_data.x86_model;
 
-	if (x86_model == ZHAOXIN_FAM7_YONGFENG)
-		ret = yongfeng_allocate_boxes(types, id, cpu);
+	if (x86_model == ZHAOXIN_FAM7_KH40000)
+		ret = kh40000_allocate_boxes(types, id, cpu);
 	else
-		ret = wudaokou_allocate_boxes(types, id, cpu);
+		ret = kx5000_allocate_boxes(types, id, cpu);
 
 	if (ret)
 		return ret;
@@ -1996,15 +2599,16 @@ static int uncore_box_ref(struct zhaoxin_uncore_type **types,
 	return 0;
 }
 
-static int wudaokou_event_cpu_online(unsigned int cpu)
+static int kx5000_event_cpu_online(unsigned int cpu)
 {
-	int package, target, msr_ret;
+	int package, target, msr_ret, mmio_ret;
 
 	package = zx_topology_package_id(cpu);
 	msr_ret = uncore_box_ref(uncore_msr_uncores, package, cpu);
-
-	if (msr_ret)
+	mmio_ret = uncore_box_ref(uncore_mmio_uncores, package, cpu);
+	if (msr_ret && mmio_ret)
 		return -ENOMEM;
+
 	/*
 	 * Check if there is an online cpu in the package
 	 * which collects uncore events already.
@@ -2017,11 +2621,14 @@ static int wudaokou_event_cpu_online(unsigned int cpu)
 
 	if (!msr_ret)
 		uncore_change_context(uncore_msr_uncores, -1, cpu);
+	if (!mmio_ret)
+		uncore_change_context(uncore_mmio_uncores, -1, cpu);
+	uncore_change_context(uncore_pci_uncores, -1, cpu);
 
 	return 0;
 }
 
-static int yongfeng_event_cpu_online(unsigned int cpu)
+static int kh40000_event_cpu_online(unsigned int cpu)
 {
 	int cluster_target, subnode_target;
 	int cluster_id, subnode_id;
@@ -2066,16 +2673,16 @@ static int yongfeng_event_cpu_online(unsigned int cpu)
 static int uncore_event_cpu_online(unsigned int cpu)
 {
 	int x86_model;
-	int wudaokou_ret = 0, yongfeng_ret = 0;
+	int kx5000_ret = 0, kh40000_ret = 0;
 
 	x86_model = boot_cpu_data.x86_model;
 
-	if (x86_model == ZHAOXIN_FAM7_YONGFENG)
-		yongfeng_ret = yongfeng_event_cpu_online(cpu);
+	if (x86_model == ZHAOXIN_FAM7_KH40000)
+		kh40000_ret = kh40000_event_cpu_online(cpu);
 	else
-		wudaokou_ret = wudaokou_event_cpu_online(cpu);
+		kx5000_ret = kx5000_event_cpu_online(cpu);
 
-	if (wudaokou_ret || yongfeng_ret)
+	if (kx5000_ret || kh40000_ret)
 		return -ENOMEM;
 
 	return 0;
@@ -2124,58 +2731,105 @@ err:
 	return ret;
 }
 
+static int __init uncore_mmio_init(void)
+{
+	struct zhaoxin_uncore_type **types = uncore_mmio_uncores;
+	int ret;
+
+	ret = uncore_types_init(types, true);
+	if (ret)
+		goto err;
+
+	for (; *types; types++) {
+		ret = type_pmu_register(*types);
+		if (ret)
+			goto err;
+	}
+	return 0;
+err:
+	uncore_types_exit(uncore_mmio_uncores);
+	uncore_mmio_uncores = empty_uncore;
+	return ret;
+}
+
 struct zhaoxin_uncore_init_fun {
 	void	(*cpu_init)(void);
 	int	(*pci_init)(void);
+	void	(*mmio_init)(void);
 };
 
-void wudaokou_uncore_cpu_init(void)
+void kx5000_uncore_cpu_init(void)
 {
-	uncore_msr_uncores = wudaokou_msr_uncores;
+	uncore_msr_uncores = kx5000_msr_uncores;
 }
 
-static const struct zhaoxin_uncore_init_fun wudaokou_uncore_init __initconst = {
-	.cpu_init = wudaokou_uncore_cpu_init,
+static const struct zhaoxin_uncore_init_fun kx5000_uncore_init __initconst = {
+	.cpu_init = kx5000_uncore_cpu_init,
 };
 
-void yongfeng_uncore_cpu_init(void)
+void kh40000_uncore_cpu_init(void)
 {
-	uncore_msr_uncores = yongfeng_msr_uncores;
+	uncore_msr_uncores = kh40000_msr_uncores;
 }
 
-int yongfeng_uncore_pci_init(void)
+int kh40000_uncore_pci_init(void)
 {
-	/* pci_bus to package mapping, do nothing */
-	int ret = yongfeng_pci2node_map_init();
+	int ret = kh40000_pci2node_map_init();/*pci_bus to package mapping, do nothing*/
 
 	if (ret)
 		return ret;
-	uncore_pci_uncores = yongfeng_pci_uncores;
-	uncore_pci_driver = &yongfeng_uncore_pci_driver;
+	uncore_pci_uncores = kh40000_pci_uncores;
+	uncore_pci_driver = &kh40000_uncore_pci_driver;
 	return 0;
 }
 
-static const struct zhaoxin_uncore_init_fun yongfeng_uncore_init __initconst = {
-	.cpu_init = yongfeng_uncore_cpu_init,
-	.pci_init = yongfeng_uncore_pci_init,
+static const struct zhaoxin_uncore_init_fun kh40000_uncore_init __initconst = {
+	.cpu_init = kh40000_uncore_cpu_init,
+	.pci_init = kh40000_uncore_pci_init,
+};
+
+void kx8000_uncore_cpu_init(void)
+{
+	uncore_msr_uncores = kx8000_msr_uncores;
+}
+
+int kx8000_uncore_pci_init(void)
+{
+	uncore_pci_uncores = kx8000_pci_uncores;
+	uncore_pci_driver = &kx8000_uncore_pci_driver;
+
+	return 0;
+}
+
+void kx8000_uncore_mmio_init(void)
+{
+	uncore_mmio_uncores = kx8000_mmio_uncores;
+}
+
+static const struct zhaoxin_uncore_init_fun kx8000_uncore_init __initconst = {
+	.cpu_init = kx8000_uncore_cpu_init,
+	.pci_init = kx8000_uncore_pci_init,
+	.mmio_init = kx8000_uncore_mmio_init,
 };
 
 static const struct x86_cpu_id zhaoxin_uncore_match[] __initconst = {
-	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_WUDAOKOU, &wudaokou_uncore_init),
-	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_WUDAOKOU, &wudaokou_uncore_init),
-	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_LUJIAZUI, &wudaokou_uncore_init),
-	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_LUJIAZUI, &wudaokou_uncore_init),
-	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_YONGFENG, &yongfeng_uncore_init),
-	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_YONGFENG, &yongfeng_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_KX5000, &kx5000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_KX6000, &kx5000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_KH40000, &kh40000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, ZHAOXIN_FAM7_KX8000, &kx8000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_KX5000, &kx5000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_KX6000, &kx5000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_KH40000, &kh40000_uncore_init),
+	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, ZHAOXIN_FAM7_KX8000, &kx8000_uncore_init),
 	{},
 };
 MODULE_DEVICE_TABLE(x86cpu, zhaoxin_uncore_match);
 
 static int __init zhaoxin_uncore_init(void)
 {
-	const struct x86_cpu_id *id;
+	const struct x86_cpu_id *id = NULL;
 	struct zhaoxin_uncore_init_fun *uncore_init;
-	int pret = 0, cret = 0, ret;
+	int pret = 0, cret = 0, mret = 0, ret;
 
 	id = x86_match_cpu(zhaoxin_uncore_match);
 	if (!id)
@@ -2189,7 +2843,7 @@ static int __init zhaoxin_uncore_init(void)
 	get_topology_number();
 	get_topology_info();
 
-	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_YONGFENG) {
+	if (boot_cpu_data.x86_model == ZHAOXIN_FAM7_KH40000) {
 		zx_gen_core_map();
 		get_pcibus_limit();
 	}
@@ -2207,7 +2861,12 @@ static int __init zhaoxin_uncore_init(void)
 		cret = uncore_cpu_init();
 	}
 
-	if (cret && pret)
+	if (uncore_init->mmio_init) {
+		uncore_init->mmio_init();
+		mret = uncore_mmio_init();
+	}
+
+	if (cret && pret && mret)
 		return -ENODEV;
 
 	ret = cpuhp_setup_state(CPUHP_AP_PERF_X86_UNCORE_ONLINE,
@@ -2222,6 +2881,7 @@ static int __init zhaoxin_uncore_init(void)
 
 err:
 	uncore_types_exit(uncore_msr_uncores);
+	uncore_types_exit(uncore_mmio_uncores);
 	uncore_pci_exit();
 	pr_info("uncore init fail!\n");
 
@@ -2233,6 +2893,7 @@ static void __exit zhaoxin_uncore_exit(void)
 {
 	cpuhp_remove_state(CPUHP_AP_PERF_X86_UNCORE_ONLINE);
 	uncore_types_exit(uncore_msr_uncores);
+	uncore_types_exit(uncore_mmio_uncores);
 	uncore_pci_exit();
 }
 module_exit(zhaoxin_uncore_exit);
