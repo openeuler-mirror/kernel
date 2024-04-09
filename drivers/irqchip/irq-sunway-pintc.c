@@ -49,6 +49,12 @@
 
 #define SW_PINTC_MCU_GSI_BASE  64
 
+#define INTPU_BASE_V1 0x802a00000000
+#define INTPU_SIZE_V1 0x1680
+
+#define MCU_BASE_V1   0x803000000000
+#define MCU_SIZE_V1   0x8f00
+
 struct pintc_chip_data {
 	bool vt;                  /* virtual pintc */
 	u32 node;                 /* node ID */
@@ -354,39 +360,43 @@ pintc_of_init_common(struct device_node *pintc,
 
 	ret = of_property_read_u32(pintc, "sw64,node", &node);
 	if (ret) {
-		pr_err(PREFIX "\"sw64,node\" not found\n");
-		return -EINVAL;
+		node = 0;
+		pr_warn(PREFIX "\"sw64,node\" fallback to %u\n",
+				node);
 	}
 
 	ret = of_property_read_u32(pintc, "sw64,irq-num", &nr_irqs);
 	if (ret) {
-		pr_err(PREFIX "\"sw64,irq-num\" not found\n");
-		return -EINVAL;
+		nr_irqs = vt ? 16 : 8;
+		pr_err(PREFIX "\"sw64,irq-num\" fallback to %u\n",
+				nr_irqs);
 	}
 
 	ret = of_property_read_u32(pintc, "sw64,ver", &version);
 	if (ret) {
-		pr_err(PREFIX "\"sw64,ver\" not found\n");
-		return -EINVAL;
+		version = 1;
+		pr_err(PREFIX "\"sw64,ver\" fallback to %u\n",
+				version);
 	}
 
 	pintc_base = of_iomap(pintc, 0);
 	if (!vt && !pintc_base) {
-		pr_err(PREFIX "failed to map pintc base address\n");
-		return -ENXIO;
+		pintc_base = ioremap(INTPU_BASE_V1, INTPU_SIZE_V1);
+		pr_warn(PREFIX "pintc base address fallback to 0x%lx\n",
+				INTPU_BASE_V1);
 	}
 
 	mcu_base = of_iomap(pintc, 1);
 	if (!vt && !mcu_base) {
-		pr_err(PREFIX "failed to map mcu base address\n");
-		ret = -ENXIO;
-		goto out_unmap0;
+		mcu_base = ioremap(MCU_BASE_V1, MCU_SIZE_V1);
+		pr_warn(PREFIX "mcu base address fallback to 0x%lx\n",
+				MCU_BASE_V1);
 	}
 
 	chip_data = kzalloc_node(sizeof(*chip_data), GFP_KERNEL, node);
 	if (!chip_data) {
 		ret = -ENOMEM;
-		goto out_unmap1;
+		goto out_unmap;
 	}
 
 	chip_data->vt = vt;
@@ -404,9 +414,8 @@ pintc_of_init_common(struct device_node *pintc,
 
 out_free_mem:
 	kfree(chip_data);
-out_unmap1:
+out_unmap:
 	iounmap(mcu_base);
-out_unmap0:
 	iounmap(pintc_base);
 	return ret;
 }
@@ -418,6 +427,7 @@ pintc_of_init(struct device_node *pintc, struct device_node *parent)
 }
 
 IRQCHIP_DECLARE(sw64_pintc, "sw64,pintc", pintc_of_init);
+IRQCHIP_DECLARE(sw64_pintc_legacy, "sw64,sw6_irq_controller", pintc_of_init);
 
 static int __init
 pintc_vt_of_init(struct device_node *pintc, struct device_node *parent)
@@ -426,6 +436,7 @@ pintc_vt_of_init(struct device_node *pintc, struct device_node *parent)
 }
 
 IRQCHIP_DECLARE(sw64_pintc_vt, "sw64,pintc_vt", pintc_vt_of_init);
+IRQCHIP_DECLARE(sw64_pintc_vt_legacy, "sw64,sw6_irq_vt_controller", pintc_vt_of_init);
 #endif
 
 #ifdef CONFIG_ACPI

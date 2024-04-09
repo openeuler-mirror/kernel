@@ -187,20 +187,23 @@ static int __init lpc_intc_of_init(struct device_node *np,
 
 	ret = of_property_read_u32(np, "sw64,node", &node);
 	if (ret) {
-		pr_err(PREFIX "\"sw64,node\" not found\n");
-		return -EINVAL;
+		node = 0;
+		pr_warn(PREFIX "\"sw64,node\" fallback to %u\n",
+				node);
 	}
 
 	ret = of_property_read_u32(np, "sw64,irq-num", &nr_irqs);
 	if (ret) {
-		pr_err(PREFIX "\"sw64,irq-num\" not found\n");
-		return -EINVAL;
+		nr_irqs = 16;
+		pr_warn(PREFIX "\"sw64,irq-num\" fallback to %u\n",
+				nr_irqs);
 	}
 
 	ret = of_property_read_u32(np, "sw64,ver", &version);
 	if (ret) {
-		pr_err(PREFIX "\"sw64,ver\" not found\n");
-		return -EINVAL;
+		version = 1;
+		pr_warn(PREFIX "\"sw64,ver\" fallback to %u\n",
+				version);
 	}
 
 	base = of_iomap(np, 0);
