@@ -2348,7 +2348,6 @@ int rnpgbe_poll(struct napi_struct *napi, int budget)
 	struct rnpgbe_ring *ring;
 	int per_ring_budget, work_done = 0;
 	bool clean_complete = true;
-	int cleaned_total = 0;
 
 	rnpgbe_for_each_ring(ring, q_vector->tx)
 		clean_complete = rnpgbe_clean_tx_irq(q_vector, ring, budget);
@@ -2369,7 +2368,6 @@ int rnpgbe_poll(struct napi_struct *napi, int budget)
 			cleaned = rnpgbe_clean_rx_irq(q_vector, ring,
 						      per_ring_budget);
 		work_done += cleaned;
-		cleaned_total += cleaned;
 		if (cleaned >= per_ring_budget)
 			clean_complete = false;
 	}
@@ -2890,7 +2888,7 @@ static void rnpgbe_configure_rx(struct rnpgbe_adapter *adapter)
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	int i;
-	u32 rxctrl = 0, dma_axi_ctl;
+	u32 dma_axi_ctl;
 
 	/* set_rx_buffer_len must be called before ring initialization */
 	rnpgbe_set_rx_buffer_len(adapter);
@@ -2907,8 +2905,6 @@ static void rnpgbe_configure_rx(struct rnpgbe_adapter *adapter)
 	}
 
 	/* enable all receives */
-	rxctrl |= 0;
-
 	dma_axi_ctl = dma_rd32(dma, RNP_DMA_AXI_EN);
 	dma_axi_ctl |= RX_AXI_RW_EN;
 	dma_wr32(dma, RNP_DMA_AXI_EN, dma_axi_ctl);
@@ -6084,7 +6080,7 @@ static netdev_features_t rnpgbe_features_check(struct sk_buff *skb,
 	return features;
 }
 
-const struct net_device_ops rnp10_netdev_ops = {
+const struct net_device_ops rnpgbe_netdev_ops = {
 	.ndo_open = rnpgbe_open,
 	.ndo_stop = rnpgbe_close,
 	.ndo_start_xmit = rnpgbe_xmit_frame,
@@ -6118,7 +6114,7 @@ const struct net_device_ops rnp10_netdev_ops = {
 static void rnpgbe_assign_netdev_ops(struct net_device *dev)
 {
 	/* different hw can assign difference fun */
-	dev->netdev_ops = &rnp10_netdev_ops;
+	dev->netdev_ops = &rnpgbe_netdev_ops;
 	dev->watchdog_timeo = 5 * HZ;
 }
 
@@ -6147,23 +6143,6 @@ int rnpgbe_wol_supported(struct rnpgbe_adapter *adapter, u16 device_id)
 	}
 
 	return is_wol_supported;
-}
-
-static inline unsigned long rnpgbe_tso_features(struct rnpgbe_hw *hw)
-{
-	unsigned long features = 0;
-
-	if (hw->feature_flags & RNP_NET_FEATURE_TSO)
-		features |= NETIF_F_TSO;
-	if (hw->feature_flags & RNP_NET_FEATURE_TSO)
-		features |= NETIF_F_TSO6;
-
-	features |= NETIF_F_GSO_PARTIAL;
-
-	if (hw->feature_flags & RNP_NET_FEATURE_TX_UDP_TUNNEL)
-		features |= RNP_GSO_PARTIAL_FEATURES;
-
-	return features;
 }
 
 static void remove_mbx_irq(struct rnpgbe_adapter *adapter)
