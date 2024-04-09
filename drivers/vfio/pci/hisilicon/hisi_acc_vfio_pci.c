@@ -81,48 +81,15 @@ static int qm_get_vft(struct hisi_qm *qm, u32 *base)
 	u32 qp_num;
 	int ret;
 
-	ret = hisi_qm_mb(qm, QM_MB_CMD_SQC_VFT_V2, 0, 0, 1);
+	ret = hisi_qm_mb_read(qm, &sqc_vft, QM_MB_CMD_SQC_VFT_V2, 0);
 	if (ret)
 		return ret;
 
-	sqc_vft = readl(qm->io_base + QM_MB_CMD_DATA_ADDR_L) |
-		  ((u64)readl(qm->io_base + QM_MB_CMD_DATA_ADDR_H) <<
-		  QM_XQC_ADDR_OFFSET);
 	*base = QM_SQC_VFT_BASE_MASK_V2 & (sqc_vft >> QM_SQC_VFT_BASE_SHIFT_V2);
 	qp_num = (QM_SQC_VFT_NUM_MASK_V2 &
 		  (sqc_vft >> QM_SQC_VFT_NUM_SHIFT_V2)) + 1;
 
 	return qp_num;
-}
-
-static int qm_get_sqc(struct hisi_qm *qm, u64 *addr)
-{
-	int ret;
-
-	ret = hisi_qm_mb(qm, QM_MB_CMD_SQC_BT, 0, 0, 1);
-	if (ret)
-		return ret;
-
-	*addr = readl(qm->io_base + QM_MB_CMD_DATA_ADDR_L) |
-		  ((u64)readl(qm->io_base + QM_MB_CMD_DATA_ADDR_H) <<
-		  QM_XQC_ADDR_OFFSET);
-
-	return 0;
-}
-
-static int qm_get_cqc(struct hisi_qm *qm, u64 *addr)
-{
-	int ret;
-
-	ret = hisi_qm_mb(qm, QM_MB_CMD_CQC_BT, 0, 0, 1);
-	if (ret)
-		return ret;
-
-	*addr = readl(qm->io_base + QM_MB_CMD_DATA_ADDR_L) |
-		  ((u64)readl(qm->io_base + QM_MB_CMD_DATA_ADDR_H) <<
-		  QM_XQC_ADDR_OFFSET);
-
-	return 0;
 }
 
 static int qm_get_regs(struct hisi_qm *qm, struct acc_vf_data *vf_data)
@@ -347,7 +314,7 @@ static void vf_qm_fun_reset(struct hisi_qm *qm)
 
 static int vf_qm_func_stop(struct hisi_qm *qm)
 {
-	return hisi_qm_mb(qm, QM_MB_CMD_PAUSE_QM, 0, 0, 0);
+	return hisi_qm_mb_write(qm, QM_MB_CMD_PAUSE_QM, 0, 0, 0);
 }
 
 static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
@@ -360,8 +327,11 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	u32 que_iso_state;
 	int ret;
 
-	if (migf->total_length < QM_MATCH_SIZE || hisi_acc_vdev->match_done)
+	if (hisi_acc_vdev->match_done)
 		return 0;
+
+	if (migf->total_length < QM_MATCH_SIZE)
+		return -EINVAL;
 
 	if (vf_data->acc_magic != ACC_DEV_MAGIC) {
 		dev_err(dev, "failed to match ACC_DEV_MAGIC\n");
@@ -441,6 +411,19 @@ static int vf_qm_get_match_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	return 0;
 }
 
+static void vf_qm_xeqc_save(struct hisi_qm *qm,
+	struct hisi_acc_vf_migration_file *migf)
+{
+	struct acc_vf_data *vf_data = &migf->vf_data;
+	u16 eq_head, aeq_head;
+
+	eq_head = vf_data->qm_eqc_dw[0] & 0xFFFF;
+	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, eq_head, 0);
+
+	aeq_head = vf_data->qm_aeqc_dw[0] & 0xFFFF;
+	qm_db(qm, 0, QM_DOORBELL_CMD_AEQ, aeq_head, 0);
+}
+
 static int vf_qm_load_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 			   struct hisi_acc_vf_migration_file *migf)
 {
@@ -470,13 +453,13 @@ static int vf_qm_load_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 		return ret;
 	}
 
-	ret = hisi_qm_mb(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
+	ret = hisi_qm_mb_write(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
 	if (ret) {
 		dev_err(dev, "set sqc failed\n");
 		return ret;
 	}
 
-	ret = hisi_qm_mb(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
+	ret = hisi_qm_mb_write(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
 	if (ret) {
 		dev_err(dev, "set cqc failed\n");
 		return ret;
@@ -505,38 +488,36 @@ static int vf_qm_state_save(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	vf_data->vf_qm_state = QM_READY;
 	hisi_acc_vdev->vf_qm_state = vf_data->vf_qm_state;
 
-	ret = vf_qm_cache_wb(vf_qm);
-	if (ret) {
-		dev_err(dev, "failed to writeback QM Cache!\n");
-		return ret;
-	}
-
 	ret = qm_get_regs(vf_qm, vf_data);
 	if (ret)
 		return -EINVAL;
 
 	/* Every reg is 32 bit, the dma address is 64 bit. */
-	vf_data->eqe_dma = vf_data->qm_eqc_dw[1];
+	vf_data->eqe_dma = vf_data->qm_eqc_dw[QM_XQC_ADDR_HIGH];
 	vf_data->eqe_dma <<= QM_XQC_ADDR_OFFSET;
-	vf_data->eqe_dma |= vf_data->qm_eqc_dw[0];
-	vf_data->aeqe_dma = vf_data->qm_aeqc_dw[1];
+	vf_data->eqe_dma |= vf_data->qm_eqc_dw[QM_XQC_ADDR_LOW];
+	vf_data->aeqe_dma = vf_data->qm_aeqc_dw[QM_XQC_ADDR_HIGH];
 	vf_data->aeqe_dma <<= QM_XQC_ADDR_OFFSET;
-	vf_data->aeqe_dma |= vf_data->qm_aeqc_dw[0];
+	vf_data->aeqe_dma |= vf_data->qm_aeqc_dw[QM_XQC_ADDR_LOW];
 
 	/* Through SQC_BT/CQC_BT to get sqc and cqc address */
-	ret = qm_get_sqc(vf_qm, &vf_data->sqc_dma);
+	ret = hisi_qm_mb_read(vf_qm, &vf_data->sqc_dma, QM_MB_CMD_SQC_BT, 0);
 	if (ret) {
 		dev_err(dev, "failed to read SQC addr!\n");
 		return -EINVAL;
 	}
 
-	ret = qm_get_cqc(vf_qm, &vf_data->cqc_dma);
+	ret = hisi_qm_mb_read(vf_qm, &vf_data->cqc_dma, QM_MB_CMD_CQC_BT, 0);
 	if (ret) {
 		dev_err(dev, "failed to read CQC addr!\n");
 		return -EINVAL;
 	}
 
 	migf->total_length = sizeof(struct acc_vf_data);
+
+	/* Save eqc and aeqc interrupt information */
+	vf_qm_xeqc_save(vf_qm, migf);
+
 	return 0;
 }
 
@@ -637,15 +618,16 @@ static void hisi_acc_vf_disable_fds(struct hisi_acc_vf_core_device *hisi_acc_vde
 static void
 hisi_acc_vf_state_mutex_unlock(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 {
-again:
-	spin_lock(&hisi_acc_vdev->reset_lock);
-	if (hisi_acc_vdev->deferred_reset) {
+	while (true) {
+		spin_lock(&hisi_acc_vdev->reset_lock);
+		if (!hisi_acc_vdev->deferred_reset)
+			break;
+
 		hisi_acc_vdev->deferred_reset = false;
 		spin_unlock(&hisi_acc_vdev->reset_lock);
 		hisi_acc_vdev->vf_qm_state = QM_NOT_READY;
 		hisi_acc_vdev->mig_state = VFIO_DEVICE_STATE_RUNNING;
 		hisi_acc_vf_disable_fds(hisi_acc_vdev);
-		goto again;
 	}
 	mutex_unlock(&hisi_acc_vdev->state_mutex);
 	spin_unlock(&hisi_acc_vdev->reset_lock);
@@ -817,6 +799,7 @@ static ssize_t hisi_acc_vf_save_read(struct file *filp, char __user *buf, size_t
 {
 	struct hisi_acc_vf_migration_file *migf = filp->private_data;
 	ssize_t done = 0;
+	size_t min_len;
 	int ret;
 
 	if (pos)
@@ -834,17 +817,16 @@ static ssize_t hisi_acc_vf_save_read(struct file *filp, char __user *buf, size_t
 		goto out_unlock;
 	}
 
-	len = min_t(size_t, migf->total_length - *pos, len);
-	if (len) {
+	min_len = min_t(size_t, migf->total_length - *pos, len);
+	if (min_len) {
 		u8 *vf_data = (u8 *)&migf->vf_data;
-
-		ret = copy_to_user(buf, vf_data + *pos, len);
+		ret = copy_to_user(buf, vf_data + *pos, min_len);
 		if (ret) {
 			done = -EFAULT;
 			goto out_unlock;
 		}
-		*pos += len;
-		done = len;
+		*pos += min_len;
+		done = min_len;
 	}
 out_unlock:
 	mutex_unlock(&migf->lock);
@@ -947,6 +929,13 @@ static int hisi_acc_vf_stop_device(struct hisi_acc_vf_core_device *hisi_acc_vdev
 		dev_err(dev, "failed to check QM INT state!\n");
 		return ret;
 	}
+
+	ret = vf_qm_cache_wb(vf_qm);
+	if (ret) {
+		dev_err(dev, "failed to writeback QM cache!\n");
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -1221,7 +1210,21 @@ static int hisi_acc_vfio_pci_mmap(struct vfio_device *core_vdev,
 	index = vma->vm_pgoff >> (VFIO_PCI_OFFSET_SHIFT - PAGE_SHIFT);
 	if (index == VFIO_PCI_BAR2_REGION_INDEX) {
 		u64 req_len, pgoff, req_start;
-		resource_size_t end = pci_resource_len(vdev->pdev, index) / 2;
+		resource_size_t end;
+
+		/*
+		 * ACC VF dev 64KB BAR2 region consists of both functional
+		 * register space and migration control register space, each
+		 * uses 32KB BAR2 region, on the system with more than 64KB
+		 * page size, even if the migration control register space
+		 * is written by VM, it will only affects the VF.
+		 *
+		 * In order to support the live migration function in the
+		 * system with a page size above 64KB, the driver needs
+		 * to ensure that the VF region size is aligned with the
+		 * system page size.
+		 */
+		end = PAGE_ALIGN(pci_resource_len(vdev->pdev, index) / 2);
 
 		req_len = vma->vm_end - vma->vm_start;
 		pgoff = vma->vm_pgoff &

@@ -662,7 +662,7 @@ mb_err_cnt_increase:
 	return ret;
 }
 
-int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
+int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	       bool op)
 {
 	struct qm_mailbox mailbox;
@@ -682,9 +682,9 @@ int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(hisi_qm_mb);
+EXPORT_SYMBOL_GPL(hisi_qm_mb_write);
 
-static int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
+int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 {
 	struct qm_mailbox mailbox;
 	int ret;
@@ -701,6 +701,7 @@ static int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hisi_qm_mb_read);
 
 /* op 0: set xqc information to hardware, 1: get xqc information from hardware. */
 int qm_set_and_get_xqc(struct hisi_qm *qm, u8 cmd, void *xqc, u32 qp_id, bool op)
@@ -1789,12 +1790,12 @@ unlock:
 
 static int qm_drain_qm(struct hisi_qm *qm)
 {
-	return hisi_qm_mb(qm, QM_MB_CMD_FLUSH_QM, 0, 0, 0);
+	return hisi_qm_mb_write(qm, QM_MB_CMD_FLUSH_QM, 0, 0, 0);
 }
 
 static int qm_stop_qp(struct hisi_qp *qp)
 {
-	return hisi_qm_mb(qp->qm, QM_MB_CMD_STOP_QP, 0, qp->qp_id, 0);
+	return hisi_qm_mb_write(qp->qm, QM_MB_CMD_STOP_QP, 0, qp->qp_id, 0);
 }
 
 static int qm_set_msi(struct hisi_qm *qm, bool set)
@@ -3164,11 +3165,11 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	if (ret)
 		return ret;
 
-	ret = hisi_qm_mb(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
+	ret = hisi_qm_mb_write(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
 	if (ret)
 		return ret;
 
-	ret = hisi_qm_mb(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
+	ret = hisi_qm_mb_write(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
 	if (ret)
 		return ret;
 
