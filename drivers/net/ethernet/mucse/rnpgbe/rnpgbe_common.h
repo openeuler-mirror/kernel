@@ -29,13 +29,11 @@ struct rnpgbe_adapter;
 #define desc_hex_dump(msg, buf, len)                                           \
 	print_hex_dump(KERN_WARNING, msg, DUMP_PREFIX_OFFSET, 16, 1, (buf),    \
 		       (len), false)
-#define rnpgbe_skb_dump _rnpgbe_skb_dump
 
 #define tx_dbg(fmt, args...)                                                   \
 	printk(KERN_DEBUG "[ %s:%d ] " fmt, __func__, __LINE__, ##args)
 #else
 #define desc_hex_dump(msg, buf, len)
-#define rnpgbe_skb_dump(skb, full_pkt)
 #define tx_dbg(fmt, args...)
 #endif /* CONFIG_RNP_TX_DEBUG */
 
@@ -261,85 +259,6 @@ static inline void buf_dump(const char *msg, void *buf, int len)
 	offset += snprintf(msg_buf + offset, msg_len, "\n=== done ==\n");
 	printk(KERN_DEBUG "%s\n", msg_buf);
 }
-
-#ifndef NO_SKB_DUMP
-static inline void _rnpgbe_skb_dump(const struct sk_buff *skb, bool full_pkt)
-{
-	static atomic_t can_dump_full = ATOMIC_INIT(5);
-#ifdef DEBUG
-	struct skb_shared_info *sh = skb_shinfo(skb);
-#endif
-	struct net_device *dev = skb->dev;
-	//struct sock *sk = skb->sk;
-	struct sk_buff *list_skb;
-	bool has_mac, has_trans;
-	int headroom, tailroom;
-	int i, len, seg_len;
-	const char *level = KERN_WARNING;
-
-	if (full_pkt)
-		full_pkt = atomic_dec_if_positive(&can_dump_full) >= 0;
-
-	if (full_pkt)
-		len = skb->len;
-	else
-		len = min_t(int, skb->len, MAX_HEADER + 128);
-
-	headroom = skb_headroom(skb);
-	tailroom = skb_tailroom(skb);
-
-	has_mac = skb_mac_header_was_set(skb);
-	has_trans = skb_transport_header_was_set(skb);
-
-	dbg("%sskb len=%u headroom=%u headlen=%u tailroom=%u\n"
-	    "mac=(%d,%d) net=(%d,%d) trans=%d\n"
-	    "shinfo(txflags=%u nr_frags=%u gso(size=%hu type=%u segs=%hu))\n"
-	    "csum(0x%x ip_summed=%u complete_sw=%u valid=%u level=%u)\n"
-	    "hash(0x%x sw=%u l4=%u) proto=0x%04x pkttype=%u iif=%d\n",
-	    level, skb->len, headroom, skb_headlen(skb), tailroom,
-	    has_mac ? skb->mac_header : -1,
-	    has_mac ? (skb->network_header - skb->mac_header) : -1,
-	    skb->network_header, has_trans ? skb_network_header_len(skb) : -1,
-	    has_trans ? skb->transport_header : -1, sh->tx_flags, sh->nr_frags,
-	    sh->gso_size, sh->gso_type, sh->gso_segs, skb->csum, skb->ip_summed,
-	    skb->csum_complete_sw, skb->csum_valid, skb->csum_level, skb->hash,
-	    skb->sw_hash, skb->l4_hash, ntohs(skb->protocol), skb->pkt_type,
-	    skb->skb_iif);
-
-	if (dev)
-		dbg("%sdev name=%s feat=0x%pNF\n", level, dev->name,
-		    &dev->features);
-
-	seg_len = min_t(int, skb_headlen(skb), len);
-	if (seg_len)
-		print_hex_dump(level, "skb linear:   ", DUMP_PREFIX_OFFSET, 16,
-			       1, skb->data, seg_len, false);
-	len -= seg_len;
-
-	for (i = 0; len && i < skb_shinfo(skb)->nr_frags; i++) {
-		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
-		u32 p_len;
-		struct page *p;
-		u8 *vaddr;
-
-		p = skb_frag_address(frag);
-		p_len = skb_frag_size(frag);
-		seg_len = min_t(int, p_len, len);
-		vaddr = kmap_atomic(p);
-		print_hex_dump(level, "skb frag:     ", DUMP_PREFIX_OFFSET, 16,
-			       1, vaddr, seg_len, false);
-		kunmap_atomic(vaddr);
-		len -= seg_len;
-		if (!len)
-			break;
-	}
-
-	if (full_pkt && skb_has_frag_list(skb)) {
-		dbg("skb fraglist:\n");
-		skb_walk_frags(skb, list_skb) _rnpgbe_skb_dump(list_skb, true);
-	}
-}
-#endif
 
 enum RNP_LOG_EVT {
 	LOG_MBX_IN,

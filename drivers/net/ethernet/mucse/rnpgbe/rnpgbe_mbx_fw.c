@@ -12,7 +12,7 @@
 
 #define RNP_FW_MAILBOX_SIZE RNP_VFMAILBOX_SIZE
 
-struct mbx_req_cookie *mbx_cookie_zalloc(int priv_len)
+static struct mbx_req_cookie *mbx_cookie_zalloc(int priv_len)
 {
 	struct mbx_req_cookie *cookie =
 		kzalloc(struct_size(cookie, priv, priv_len), GFP_KERNEL);
@@ -26,8 +26,8 @@ struct mbx_req_cookie *mbx_cookie_zalloc(int priv_len)
 	return cookie;
 }
 
-int rnpgbe_mbx_write_posted_locked(struct rnpgbe_hw *hw,
-				   struct mbx_fw_cmd_req *req)
+static int rnpgbe_mbx_write_posted_locked(struct rnpgbe_hw *hw,
+					  struct mbx_fw_cmd_req *req)
 {
 	int err = 0;
 	int retry = 3;
@@ -60,21 +60,18 @@ try_again:
 	return err;
 }
 
-/**
- * force firmware report link event to driver
- **/
-void rnpgbe_link_stat_mark_reset(struct rnpgbe_hw *hw)
+static void rnpgbe_link_stat_mark_reset(struct rnpgbe_hw *hw)
 {
 	wr32(hw, RNP_DMA_DUMY, 0xa0000000);
 }
 
-void rnpgbe_link_stat_mark_disable(struct rnpgbe_hw *hw)
+static void rnpgbe_link_stat_mark_disable(struct rnpgbe_hw *hw)
 {
 	wr32(hw, RNP_DMA_DUMY, 0);
 }
 
-int rnpgbe_mbx_fw_post_req(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *req,
-			   struct mbx_req_cookie *cookie)
+static int rnpgbe_mbx_fw_post_req(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *req,
+				  struct mbx_req_cookie *cookie)
 {
 	int err = 0;
 	struct rnpgbe_adapter *adpt = hw->back;
@@ -128,8 +125,8 @@ retry:
 	return err;
 }
 
-int rnpgbe_fw_send_cmd_wait(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *req,
-			    struct mbx_fw_cmd_reply *reply)
+static int rnpgbe_fw_send_cmd_wait(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *req,
+				   struct mbx_fw_cmd_reply *reply)
 {
 	int err;
 	int retry_cnt = 3;
@@ -180,20 +177,6 @@ retry:
 		return -reply->error_code;
 	}
 	return 0;
-}
-
-int rnpgbe_mbx_get_link(struct rnpgbe_hw *hw)
-{
-	struct rnpgbe_adapter *adpt = hw->back;
-	int v = rd32(hw, RNP_TOP_NIC_DUMMY);
-
-	if ((v & 0xff000000) == 0xa5000000) {
-		hw->link = (v & BIT(hw->nr_lane)) ? 1 : 0;
-		adpt->flags |= RNP_FLAG_NEED_LINK_UPDATE;
-
-		return 0;
-	}
-	return -1;
 }
 
 int rnpgbe_mbx_get_lane_stat(struct rnpgbe_hw *hw)
@@ -295,18 +278,6 @@ quit:
 	kfree(cookie);
 
 	return err;
-}
-
-int rnpgbe_mbx_get_link_stat(struct rnpgbe_hw *hw)
-{
-	struct mbx_fw_cmd_req req;
-	struct mbx_fw_cmd_reply reply;
-
-	memset(&req, 0, sizeof(req));
-	memset(&reply, 0, sizeof(reply));
-
-	build_get_link_status_req(&req, hw->nr_lane, &req);
-	return rnpgbe_fw_send_cmd_wait(hw, &req, &reply);
 }
 
 int rnpgbe_mbx_fw_reset_phy(struct rnpgbe_hw *hw)
@@ -556,12 +527,15 @@ int rnpgbe_mbx_reg_write(struct rnpgbe_hw *hw, int fw_reg, int value)
 {
 	struct mbx_fw_cmd_req req;
 	int err;
+	int temp[4];
+
 
 	memset(&req, 0, sizeof(req));
+	temp[0] = value;
 	if (hw->fw_version < 0x00050200)
 		return -EOPNOTSUPP;
 
-	build_writereg_req(&req, NULL, fw_reg, 4, &value);
+	build_writereg_req(&req, NULL, fw_reg, 4, temp);
 
 	err = rnpgbe_mbx_write_posted_locked(hw, &req);
 	return err;
@@ -672,10 +646,12 @@ int rnpgbe_mbx_set_dump(struct rnpgbe_hw *hw, int flag)
 }
 
 /**
- * @speed :
- * 0 : disable force speed
- * 1000 : force 1000Mbps
- * 10000 : force 10000Mbps
+ * rnpgbe_mbx_force_speed - force setup speed
+ * @hw: hardware struct
+ * @speed: speed
+ * 0 - disable force speed
+ * 1000 - force 1000Mbps
+ * 10000 - force 10000Mbps
  **/
 int rnpgbe_mbx_force_speed(struct rnpgbe_hw *hw, int speed)
 {
@@ -927,7 +903,7 @@ int rnpgbe_fw_get_capablity(struct rnpgbe_hw *hw, struct phy_abilities *abil)
 	return err;
 }
 
-int to_mac_type(struct phy_abilities *ability)
+static int to_mac_type(struct phy_abilities *ability)
 {
 	int lanes = hweight_long(ability->lane_mask);
 
@@ -1136,7 +1112,7 @@ int rnpgbe_mbx_get_eee_capability(struct rnpgbe_hw *hw,
 		return 0;
 	}
 
-	return -EIO;
+	return err;
 }
 
 int rnpgbe_mbx_phy_eee_set(struct rnpgbe_hw *hw, u32 tx_lpi_timer,
@@ -1157,7 +1133,7 @@ int rnpgbe_mbx_phy_eee_set(struct rnpgbe_hw *hw, u32 tx_lpi_timer,
 
 	mutex_unlock(&hw->mbx.lock);
 
-	return -EIO;
+	return err;
 }
 
 int rnpgbe_mbx_get_capability(struct rnpgbe_hw *hw, struct rnpgbe_info *info)
@@ -1226,7 +1202,6 @@ int rnpgbe_mbx_get_capability(struct rnpgbe_hw *hw, struct rnpgbe_info *info)
 
 int rnpgbe_mbx_get_temp(struct rnpgbe_hw *hw, int *voltage)
 {
-	int err;
 	struct mbx_req_cookie *cookie = NULL;
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
@@ -1243,10 +1218,10 @@ int rnpgbe_mbx_get_temp(struct rnpgbe_hw *hw, int *voltage)
 	build_get_temp(&req, cookie);
 
 	if (hw->mbx.other_irq_enabled) {
-		err = rnpgbe_mbx_fw_post_req(hw, &req, cookie);
+		rnpgbe_mbx_fw_post_req(hw, &req, cookie);
 	} else {
 		memset(&reply, 0, sizeof(reply));
-		err = rnpgbe_fw_send_cmd_wait(hw, &req, &reply);
+		rnpgbe_fw_send_cmd_wait(hw, &req, &reply);
 		temp = &reply.get_temp;
 	}
 
@@ -1257,27 +1232,6 @@ int rnpgbe_mbx_get_temp(struct rnpgbe_hw *hw, int *voltage)
 	kfree(cookie);
 
 	return temp_v;
-}
-
-int rnpgbe_fw_reg_read(struct rnpgbe_hw *hw, int addr, int sz)
-{
-	struct mbx_req_cookie *cookie;
-	struct mbx_fw_cmd_req req;
-	int value;
-
-	cookie = mbx_cookie_zalloc(sizeof(int));
-	if (!cookie)
-		return -ENOMEM;
-
-	build_readreg_req(&req, addr, cookie);
-
-	rnpgbe_mbx_fw_post_req(hw, &req, cookie);
-
-	value = *((int *)cookie->priv);
-
-	kfree(cookie);
-
-	return 0;
 }
 
 enum speed_enum {

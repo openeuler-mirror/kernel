@@ -210,7 +210,7 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 	return rbytes;
 }
 
-void n500_exchange_share_ram(struct rnpgbe_hw *hw, u32 *buf, int flag, int len)
+static void n500_exchange_share_ram(struct rnpgbe_hw *hw, u32 *buf, int flag, int len)
 {
 	int i;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;

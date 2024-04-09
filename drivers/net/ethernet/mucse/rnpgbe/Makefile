@@ -5,7 +5,7 @@
 #
 #
 
-obj-$(CONFIG_MXGBE) += rnpgbe.o
+obj-$(CONFIG_MGBE) += rnpgbe.o
 rnpgbe-objs :=   \
 		rnpgbe_main.o \
 		rnpgbe_common.o \
