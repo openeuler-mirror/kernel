@@ -62,7 +62,8 @@ try_again:
 }
 
 /**
- * force firmware report link event to driver
+ * rnp_link_stat_mark_reset -force firmware report link event to driver
+ * @hw: hw struct
  */
 static void rnp_link_stat_mark_reset(struct rnp_hw *hw)
 {
@@ -597,13 +598,15 @@ int rnp_mbx_reg_write(struct rnp_hw *hw, int fw_reg, int value)
 {
 	struct mbx_fw_cmd_req req;
 	int err;
+	int temp[4];
 
 	memset(&req, 0, sizeof(req));
+	temp[0] = value;
 
 	if (hw->fw_version < 0x00050200)
 		return -EOPNOTSUPP;
 
-	build_writereg_req(&req, NULL, fw_reg, 4, &value);
+	build_writereg_req(&req, NULL, fw_reg, 4, temp);
 	err = rnp_mbx_write_posted_locked(hw, &req);
 
 	return err;
