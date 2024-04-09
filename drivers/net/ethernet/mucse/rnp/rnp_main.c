@@ -52,7 +52,6 @@ const char rnp_driver_version[] = DRV_VERSION GIT_COMMIT;
 static const char rnp_copyright[] =
 	"Copyright (c) 2020-2023 mucse Corporation.";
 
-
 static struct rnp_info *rnp_info_tbl[] = {
 	[board_n10] = &rnp_n10_info,
 	[board_n400] = &rnp_n400_info,
@@ -120,8 +119,7 @@ module_param(mpe_pkt_version, uint, 0000);
 MODULE_PARM_DESC(mpe_pkt_version, "ipv4 or ipv6 src port");
 
 MODULE_AUTHOR("Mucse Corporation, <mucse@mucse.com>");
-MODULE_DESCRIPTION(
-	"Mucse(R) 1/10/25/40 Gigabit PCI Express Network Driver");
+MODULE_DESCRIPTION("Mucse(R) 1/10/25/40 Gigabit PCI Express Network Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 
@@ -149,8 +147,8 @@ static void rnp_service_event_complete(struct rnp_adapter *adapter)
  * causes to vectors
  *
  * @adapter: pointer to adapter struct
- * @queue: queue to map the corresponding interrupt to
- * @msix_vector: the vector to map to the corresponding queue
+ * @rnp_queue: queue to map the corresponding interrupt to
+ * @rnp_msix_vector: the vector to map to the corresponding queue
  *
  */
 static void rnp_set_ring_vector(struct rnp_adapter *adapter, u8 rnp_queue,
@@ -171,9 +169,8 @@ static void rnp_set_ring_vector(struct rnp_adapter *adapter, u8 rnp_queue,
 	rnp_wr_reg(hw->ring_msix_base + RING_VECTOR(rnp_queue), data);
 }
 
-
-void rnp_unmap_and_free_tx_resource(struct rnp_ring *ring,
-				    struct rnp_tx_buffer *tx_buffer)
+static void rnp_unmap_and_free_tx_resource(struct rnp_ring *ring,
+					   struct rnp_tx_buffer *tx_buffer)
 {
 	if (tx_buffer->skb) {
 		dev_kfree_skb_any(tx_buffer->skb);
@@ -218,8 +215,7 @@ static inline bool rnp_check_tx_hang(struct rnp_ring *tx_ring)
 
 	clear_check_for_tx_hang(tx_ring);
 
-	/*
-	 * Check for a hung queue, but be thorough. This verifies
+	/* Check for a hung queue, but be thorough. This verifies
 	 * that a transmit has been completed since the previous
 	 * check AND there is at least one packet pending. The
 	 * ARMED bit is set to indicate a potential hang. The
@@ -230,7 +226,7 @@ static inline bool rnp_check_tx_hang(struct rnp_ring *tx_ring)
 	 * run the check_tx_hang logic with a transmit completion
 	 * pending but without time to complete it yet.
 	 */
-	if ((tx_done_old == tx_done) && tx_pending) {
+	if (tx_done_old == tx_done && tx_pending) {
 		/* make sure it is true for two checks in a row */
 		ret = test_and_set_bit(__RNP_HANG_CHECK_ARMED,
 				       &tx_ring->state);
@@ -282,6 +278,7 @@ static void rnp_check_restart_tx(struct rnp_q_vector *q_vector,
  * rnp_clean_tx_irq - Reclaim resources after transmit completes
  * @q_vector: structure containing interrupt and ring information
  * @tx_ring: tx ring to clean
+ * @napi_budget: budget count
  **/
 static bool rnp_clean_tx_irq(struct rnp_q_vector *q_vector,
 			     struct rnp_ring *tx_ring, int napi_budget)
@@ -346,11 +343,10 @@ static bool rnp_clean_tx_irq(struct rnp_q_vector *q_vector,
 
 			/* unmap any remaining paged data */
 			if (dma_unmap_len(tx_buffer, len)) {
-				dma_unmap_page(
-					tx_ring->dev,
-					dma_unmap_addr(tx_buffer, dma),
-					dma_unmap_len(tx_buffer, len),
-					DMA_TO_DEVICE);
+				dma_unmap_page(tx_ring->dev,
+					       dma_unmap_addr(tx_buffer, dma),
+					       dma_unmap_len(tx_buffer, len),
+					       DMA_TO_DEVICE);
 				dma_unmap_len_set(tx_buffer, len, 0);
 			}
 		}
@@ -460,8 +456,7 @@ static inline void rnp_update_rx_tail(struct rnp_ring *rx_ring, u32 val)
 	rx_ring->next_to_use = val;
 	/* update next to alloc since we have filled the ring */
 	rx_ring->next_to_alloc = val;
-	/*
-	 * Force memory writes to complete before letting h/w
+	/* Force memory writes to complete before letting h/w
 	 * know there are new descriptors to fetch.  (Only
 	 * applicable for weak-ordered memory model archs,
 	 * such as IA-64).
@@ -469,7 +464,6 @@ static inline void rnp_update_rx_tail(struct rnp_ring *rx_ring, u32 val)
 	wmb();
 	rnp_wr_reg(rx_ring->tail, val);
 }
-
 
 #if (PAGE_SIZE < 8192)
 #define RNP_MAX_2K_FRAME_BUILD_SKB (RNP_RXBUFFER_1536 - NET_IP_ALIGN)
@@ -542,15 +536,17 @@ static void rnp_process_skb_fields(struct rnp_ring *rx_ring,
 		/* check vlan type */
 		if (adapter->flags2 & RNP_FLAG2_VLAN_STAGS_ENABLED) {
 			if (vid != adapter->stags_vid) {
-				__vlan_hwaccel_put_tag(
-						skb, htons(ETH_P_8021Q), vid);
+				__vlan_hwaccel_put_tag(skb,
+						       htons(ETH_P_8021Q),
+						       vid);
 			}
 		} else {
-			__vlan_hwaccel_put_tag(
-					skb, htons(ETH_P_8021Q), vid);
+			__vlan_hwaccel_put_tag(skb,
+					       htons(ETH_P_8021Q),
+					       vid);
 		}
+		rx_ring->rx_stats.vlan_remove++;
 	}
-	rx_ring->rx_stats.vlan_remove++;
 
 	skb_record_rx_queue(skb, rx_ring->queue_index);
 
@@ -580,7 +576,6 @@ static bool rnp_check_csum_error(struct rnp_ring *rx_ring,
 	/* if rxcsum off nothing todo */
 	if (!(netdev->features & NETIF_F_RXCSUM))
 		return err;
-
 	if (unlikely(rnp_test_staterr(rx_desc, RNP_RXD_STAT_ERR_MASK))) {
 		rx_debug_printk("rx error: VEB:%s mark:0x%x cmd:0x%x\n",
 				(rx_ring->q_vector->adapter->flags &
@@ -592,7 +587,7 @@ static bool rnp_check_csum_error(struct rnp_ring *rx_ring,
 		rx_ring->rx_stats.csum_err++;
 
 		if ((!(netdev->flags & IFF_PROMISC) &&
-				(!(netdev->features & NETIF_F_RXALL)))) {
+		     (!(netdev->features & NETIF_F_RXALL)))) {
 			if (rx_ring->ring_flags & RNP_RING_CHKSM_FIX) {
 				err = true;
 				goto skip_fix;
@@ -609,9 +604,9 @@ static bool rnp_check_csum_error(struct rnp_ring *rx_ring,
 			/* we ignore sctp csum erro small than 60 */
 			if (unlikely(rnp_test_staterr(rx_desc,
 					RNP_RXD_STAT_SCTP_MASK))) {
-				// sctp mask only valid if size > 60 and with ipv4
-				if ((size > 60) && (rx_desc->wb.rev1 &
-						 RNP_RX_L3_TYPE_MASK)) {
+				/* sctp mask only valid if size > 60 and with ipv4 */
+				if (size > 60 && (rx_desc->wb.rev1 &
+						  RNP_RX_L3_TYPE_MASK)) {
 					err = true;
 				} else {
 					/* sctp less than 60 hw report err by mistake */
@@ -644,8 +639,8 @@ skip_fix:
 		rx_buffer =
 			&rx_ring->rx_buffer_info[rx_ring->next_to_clean];
 		dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma,
-				rx_buffer->page_offset, size,
-				DMA_FROM_DEVICE);
+					      rx_buffer->page_offset, size,
+					      DMA_FROM_DEVICE);
 #if (PAGE_SIZE < 8192)
 		rx_buffer->page_offset ^= truesize;
 #else
@@ -665,10 +660,11 @@ skip_fix:
 
 /**
  * rnp_rx_ring_reinit - just reinit rx_ring with new count in ->reset_count
+ * @adapter: pointer to adapter struct
  * @rx_ring: rx descriptor ring to transact packets on
  */
-int rnp_rx_ring_reinit(struct rnp_adapter *adapter,
-		struct rnp_ring *rx_ring)
+static int rnp_rx_ring_reinit(struct rnp_adapter *adapter,
+			      struct rnp_ring *rx_ring)
 {
 	struct rnp_ring *temp_ring;
 	int err = 0;
@@ -808,8 +804,7 @@ static unsigned int rnp_get_headlen(unsigned char *data,
 		hdr.network += sizeof(struct udphdr);
 	}
 
-	/*
-	 * If everything has gone correctly hdr.network should be the
+	/* If everything has gone correctly hdr.network should be the
 	 * data section of the packet and will be the end of the header.
 	 * If not then it probably represents the end of the last recognized
 	 * header.
@@ -819,7 +814,6 @@ static unsigned int rnp_get_headlen(unsigned char *data,
 	else
 		return max_len;
 }
-
 
 static inline bool rnp_page_is_reserved(struct page *page)
 {
@@ -845,8 +839,7 @@ static bool rnp_can_reuse_rx_page(struct rnp_rx_buffer *rx_buffer)
 		return false;
 #else
 
-	/*
-	 * The last offset is a bit aggressive in that we assume the
+	/* The last offset is a bit aggressive in that we assume the
 	 * worst case of FCoE being enabled and using a 3K buffer.
 	 * However this should have minimal impact as the 1K extra is
 	 * still less than one buffer in size.
@@ -887,8 +880,7 @@ static void rnp_reuse_rx_page(struct rnp_ring *rx_ring,
 	nta++;
 	rx_ring->next_to_alloc = (nta < rx_ring->count) ? nta : 0;
 
-	/*
-	 * Transfer page from old buffer to new buffer.
+	/* Transfer page from old buffer to new buffer.
 	 * Move each member individually to avoid possible store
 	 * forwarding stalls and unnecessary copy of skb.
 	 */
@@ -945,14 +937,14 @@ static bool rnp_check_src_mac(struct sk_buff *skb,
 
 	if (is_multicast_ether_addr(data)) {
 		if (memcmp(data + netdev->addr_len, netdev->dev_addr,
-				netdev->addr_len) == 0) {
+			   netdev->addr_len) == 0) {
 			dev_kfree_skb_any(skb);
 			ret = true;
 		}
 		/* if src mac equal own mac */
 		netdev_for_each_uc_addr(ha, netdev) {
 			if (memcmp(data + netdev->addr_len, ha->addr,
-					netdev->addr_len) == 0) {
+				   netdev->addr_len) == 0) {
 				dev_kfree_skb_any(skb);
 				ret = true;
 			}
@@ -1028,11 +1020,11 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
 
 	rx_desc = RNP_RX_DESC(rx_ring, i);
 
-	BUG_ON(rx_desc == NULL);
+	BUG_ON(!rx_desc);
 
 	bi = &rx_ring->rx_buffer_info[i];
 
-	BUG_ON(bi == NULL);
+	BUG_ON(!bi);
 
 	i -= rx_ring->count;
 	bufsz = rnp_rx_bufsz(rx_ring);
@@ -1043,7 +1035,7 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
 
 		/* alloc page and init first rx_desc */
 		if (!rnp_alloc_mapped_page(rx_ring, bi, rx_desc, bufsz,
-					fun_id))
+					   fun_id))
 			break;
 		page = bi->page;
 		rx_desc->resv_cmd = 0;
@@ -1069,9 +1061,9 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
 					rnp_rx_offset(rx_ring);
 			/* map page for use */
 			dma = dma_map_page_attrs(rx_ring->dev, page,
-					bi->page_offset, bufsz,
-					DMA_FROM_DEVICE,
-					RNP_RX_DMA_ATTR);
+						 bi->page_offset, bufsz,
+						 DMA_FROM_DEVICE,
+						 RNP_RX_DMA_ATTR);
 
 			if (dma_mapping_error(rx_ring->dev, dma)) {
 				rx_ring->rx_stats.alloc_rx_page_failed++;
@@ -1083,11 +1075,10 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
 			bi->pagecnt_bias = USHRT_MAX;
 			/* sync the buffer for use by the device */
 			dma_sync_single_range_for_device(rx_ring->dev,
-					bi->dma, 0, bufsz,
-					DMA_FROM_DEVICE);
+							 bi->dma, 0, bufsz,
+							 DMA_FROM_DEVICE);
 
-			/*
-			 * Refresh the desc even if buffer_addrs didn't change
+			/* Refresh the desc even if buffer_addrs didn't change
 			 * because each write-back erases this info.
 			 */
 			rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
@@ -1118,7 +1109,6 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
  * rnp_is_non_eop - process handling of non-EOP buffers
  * @rx_ring: Rx ring being processed
  * @rx_desc: Rx descriptor for current buffer
- * @skb: Current socket buffer containing buffer in progress
  *
  * This function updates next to clean.  If the buffer is an EOP buffer
  * this function exits returning false, otherwise it will place the
@@ -1168,8 +1158,7 @@ static bool rnp_alloc_mapped_page(struct rnp_ring *rx_ring,
 				 bufsz, DMA_FROM_DEVICE,
 				 RNP_RX_DMA_ATTR);
 
-	/*
-	 * if mapping failed free memory back to system since
+	/* if mapping failed free memory back to system since
 	 * there isn't much point in holding memory we can't use
 	 */
 	if (dma_mapping_error(rx_ring->dev, dma)) {
@@ -1189,8 +1178,7 @@ static bool rnp_alloc_mapped_page(struct rnp_ring *rx_ring,
 	dma_sync_single_range_for_device(rx_ring->dev, bi->dma, 0, bufsz,
 					 DMA_FROM_DEVICE);
 
-	/*
-	 * Refresh the desc even if buffer_addrs didn't change
+	/* Refresh the desc even if buffer_addrs didn't change
 	 * because each write-back erases this info.
 	 */
 	rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
@@ -1229,11 +1217,11 @@ static void rnp_put_rx_buffer(struct rnp_ring *rx_ring,
 	} else {
 		/* we are not reusing the buffer so unmap it */
 		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				rnp_rx_bufsz(rx_ring),
-				DMA_FROM_DEVICE,
-				RNP_RX_DMA_ATTR);
+				     rnp_rx_bufsz(rx_ring),
+				     DMA_FROM_DEVICE,
+				     RNP_RX_DMA_ATTR);
 		__page_frag_cache_drain(rx_buffer->page,
-				rx_buffer->pagecnt_bias);
+					rx_buffer->pagecnt_bias);
 	}
 
 	/* clear contents of rx_buffer */
@@ -1272,7 +1260,6 @@ static struct sk_buff *rnp_construct_skb(struct rnp_ring *rx_ring,
 	size -= headlen;
 
 	if (size) {
-
 		skb_add_rx_frag(skb, 0, rx_buffer->page, (va + headlen) -
 				page_address(rx_buffer->page),
 				size, truesize);
@@ -1361,17 +1348,16 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 		 */
 		dma_rmb();
 
-		rx_debug_printk(
-			"queue:%d  rx-desc:%d has-data len:%d next_to_clean %d\n",
-			rx_ring->rnp_queue_idx, rx_ring->next_to_clean,
-			rx_desc->wb.len, rx_ring->next_to_clean);
+		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d ntc %d\n",
+				rx_ring->rnp_queue_idx, rx_ring->next_to_clean,
+				rx_desc->wb.len, rx_ring->next_to_clean);
 
 		/* handle padding */
 		if ((adapter->priv_flags & RNP_PRIV_FLAG_FT_PADDING) &&
 		    (!(adapter->priv_flags &
 		       RNP_PRIV_FLAG_PADDING_DEBUG))) {
 			if (likely(rnp_test_staterr(rx_desc,
-					RNP_RXD_STAT_EOP))) {
+						    RNP_RXD_STAT_EOP))) {
 				size = le16_to_cpu(rx_desc->wb.len) -
 				       le16_to_cpu(rx_desc->wb.padding_len);
 			} else {
@@ -1385,8 +1371,7 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 		if (!size)
 			break;
 
-		/*
-		 * should check csum err
+		/* should check csum err
 		 * maybe one packet use multiple descs
 		 * no problems hw set all csum_err in multiple descs
 		 * maybe BUG if the last sctp desc less than 60
@@ -1441,7 +1426,6 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 		/* populate checksum, timestamp, VLAN, and protocol */
 		rnp_process_skb_fields(rx_ring, rx_desc, skb);
 
-
 		rnp_rx_skb(q_vector, skb);
 		skb = NULL;
 
@@ -1489,11 +1473,11 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
 
 	rx_desc = RNP_RX_DESC(rx_ring, i);
 
-	BUG_ON(rx_desc == NULL);
+	BUG_ON(!rx_desc);
 
 	bi = &rx_ring->rx_buffer_info[i];
 
-	BUG_ON(bi == NULL);
+	BUG_ON(!bi);
 
 	i -= rx_ring->count;
 	bufsz = rnp_rx_bufsz(rx_ring);
@@ -1503,11 +1487,10 @@ void rnp_alloc_rx_buffers(struct rnp_ring *rx_ring, u16 cleaned_count)
 			break;
 
 		dma_sync_single_range_for_device(rx_ring->dev, bi->dma,
-				bi->page_offset, bufsz,
-				DMA_FROM_DEVICE);
+						 bi->page_offset, bufsz,
+						 DMA_FROM_DEVICE);
 
-		/*
-		 * Refresh the desc even if buffer_addrs didn't change
+		/* Refresh the desc even if buffer_addrs didn't change
 		 * because each write-back erases this info.
 		 */
 		rx_desc->pkt_addr =
@@ -1556,8 +1539,7 @@ static bool rnp_alloc_mapped_page(struct rnp_ring *rx_ring,
 				 rnp_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
 				 RNP_RX_DMA_ATTR);
 
-	/*
-	 * if mapping failed free memory back to system since
+	/* if mapping failed free memory back to system since
 	 * there isn't much point in holding memory we can't use
 	 */
 	if (dma_mapping_error(rx_ring->dev, dma)) {
@@ -1774,7 +1756,6 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 	unsigned int driver_drop_packets = 0;
 	struct rnp_adapter *adapter = q_vector->adapter;
 	u16 cleaned_count = rnp_desc_unused_rx(rx_ring);
-	bool xdp_xmit = false;
 	struct xdp_buff xdp;
 
 	xdp.data = NULL;
@@ -1808,20 +1789,18 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 		 */
 		dma_rmb();
 
-		rx_debug_printk(
-			"queue:%d  rx-desc:%d has-data len:%d next_to_clean %d\n",
-			rx_ring->rnp_queue_idx, rx_ring->next_to_clean,
-			rx_desc->wb.len, rx_ring->next_to_clean);
+		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d ntc %d\n",
+				rx_ring->rnp_queue_idx, rx_ring->next_to_clean,
+				rx_desc->wb.len, rx_ring->next_to_clean);
 
 		/* handle padding */
 		if ((adapter->priv_flags & RNP_PRIV_FLAG_FT_PADDING) &&
 		    (!(adapter->priv_flags &
 		       RNP_PRIV_FLAG_PADDING_DEBUG))) {
 			if (likely(rnp_test_staterr(rx_desc,
-					RNP_RXD_STAT_EOP))) {
+						    RNP_RXD_STAT_EOP))) {
 				size = le16_to_cpu(rx_desc->wb.len) -
-				       le16_to_cpu(
-					       rx_desc->wb.padding_len);
+				       le16_to_cpu(rx_desc->wb.padding_len);
 			} else {
 				size = le16_to_cpu(rx_desc->wb.len);
 			}
@@ -1833,8 +1812,7 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 		if (!size)
 			break;
 
-		/*
-		 * should check csum err
+		/* should check csum err
 		 * maybe one packet use multiple descs
 		 * no problems hw set all csum_err in multiple descs
 		 * maybe BUG if the last sctp desc less than 60
@@ -1862,7 +1840,6 @@ static int rnp_clean_rx_irq(struct rnp_q_vector *q_vector,
 
 		if (IS_ERR(skb)) {
 			if (PTR_ERR(skb) == -RNP_XDP_TX) {
-				xdp_xmit = true;
 				rnp_rx_buffer_flip(rx_ring, rx_buffer,
 						   size);
 			} else {
@@ -1950,15 +1927,13 @@ static void rnp_pull_tail(struct sk_buff *skb)
 	unsigned char *va;
 	unsigned int pull_len;
 
-	/*
-	 * it is valid to use page_address instead of kmap since we are
+	/* it is valid to use page_address instead of kmap since we are
 	 * working with pages allocated out of the lomem pool per
 	 * alloc_page(GFP_ATOMIC)
 	 */
 	va = skb_frag_address(frag);
 
-	/*
-	 * we need the header to contain the greater of either ETH_HLEN or
+	/* we need the header to contain the greater of either ETH_HLEN or
 	 * 60 bytes if the skb->len is less than 60 for skb_pad.
 	 */
 	pull_len = rnp_get_headlen(va, RNP_RX_HDR_SIZE);
@@ -1973,7 +1948,6 @@ static void rnp_pull_tail(struct sk_buff *skb)
 	skb->tail += pull_len;
 }
 
-
 /**
  * rnp_configure_msix - Configure MSI-X hardware
  * @adapter: board private structure
@@ -1986,9 +1960,7 @@ static void rnp_configure_msix(struct rnp_adapter *adapter)
 	struct rnp_q_vector *q_vector;
 	int i;
 
-	/*
-	 * configure ring-msix Registers table
-	 */
+	/* configure ring-msix Registers table */
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct rnp_ring *ring;
 
@@ -2000,36 +1972,12 @@ static void rnp_configure_msix(struct rnp_adapter *adapter)
 	}
 }
 
-
-/**
- * rnp_write_eitr - write EITR register in hardware specific way
- * @q_vector: structure containing interrupt and ring information
- *
- * This function is made to be called by ethtool and by the driver
- * when it needs to update EITR registers at runtime.  Hardware
- * specific quirks/differences are taken care of here.
- */
-void rnp_write_eitr_rx(struct rnp_q_vector *q_vector)
-{
-	struct rnp_adapter *adapter = q_vector->adapter;
-	struct rnp_hw *hw = &adapter->hw;
-	u32 itr_reg = q_vector->itr_rx >> 2;
-	struct rnp_ring *ring;
-
-	itr_reg = itr_reg * hw->usecstocount;
-	rnp_for_each_ring(ring, q_vector->rx) {
-		ring_wr32(ring, RNP_DMA_REG_RX_INT_DELAY_TIMER, itr_reg);
-	}
-}
-
-
 enum latency_range {
 	lowest_latency = 0,
 	low_latency = 1,
 	bulk_latency = 2,
 	latency_invalid = 255
 };
-
 
 static inline void rnp_irq_enable_queues(struct rnp_adapter *adapter,
 					 struct rnp_q_vector *q_vector)
@@ -2110,12 +2058,11 @@ static irqreturn_t rnp_msix_clean_rings(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-
 static void update_rx_count(int cleaned, struct rnp_q_vector *q_vector)
 {
 	struct rnp_adapter *adapter = q_vector->adapter;
 
-	if ((!cleaned) || (cleaned == q_vector->new_rx_count))
+	if (!cleaned || cleaned == q_vector->new_rx_count)
 		return;
 
 	if (cleaned < 5) {
@@ -2270,7 +2217,7 @@ int rnp_poll(struct napi_struct *napi, int budget)
 					if (q_vector->new_rx_count !=
 							q_vector->old_rx_count) {
 						ring_wr32(ring, RNP_DMA_REG_RX_INT_DELAY_PKTCNT,
-								q_vector->new_rx_count);
+							  q_vector->new_rx_count);
 						q_vector->old_rx_count =
 							q_vector->new_rx_count;
 					}
@@ -2291,13 +2238,12 @@ int rnp_poll(struct napi_struct *napi, int budget)
 			/* update rx count if need */
 			if (q_vector->new_rx_count != q_vector->old_rx_count) {
 				ring_wr32(ring, RNP_DMA_REG_RX_INT_DELAY_PKTCNT,
-						q_vector->new_rx_count);
+					  q_vector->new_rx_count);
 				q_vector->old_rx_count = q_vector->new_rx_count;
 			}
 		}
 		return budget;
 	}
-
 
 	if (likely(napi_complete_done(napi, work_done))) {
 		if (!test_bit(__RNP_DOWN, &adapter->state)) {
@@ -2309,7 +2255,7 @@ int rnp_poll(struct napi_struct *napi, int budget)
 				if (q_vector->new_rx_count !=
 						q_vector->old_rx_count) {
 					ring_wr32(ring, RNP_DMA_REG_RX_INT_DELAY_PKTCNT,
-							q_vector->new_rx_count);
+						  q_vector->new_rx_count);
 					q_vector->old_rx_count =
 						q_vector->new_rx_count;
 				}
@@ -2387,7 +2333,7 @@ static int rnp_request_msix_irqs(struct rnp_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
 	int err;
-	int i = 0;
+	int i = 0, m;
 
 	DPRINTK(IFUP, INFO, "[%s] num_q_vectors:%d\n", __func__,
 		adapter->num_q_vectors);
@@ -2435,17 +2381,15 @@ static int rnp_request_msix_irqs(struct rnp_adapter *adapter)
 free_queue_irqs:
 	while (i) {
 		i--;
-		irq_set_affinity_hint(
-			adapter->msix_entries[i + adapter->q_vector_off].vector,
-			NULL);
-		free_irq(adapter->msix_entries[i + adapter->q_vector_off].vector,
+		m = i + adapter->q_vector_off;
+		irq_set_affinity_hint(adapter->msix_entries[m].vector,
+				      NULL);
+		free_irq(adapter->msix_entries[m].vector,
 			 adapter->q_vector[i]);
-		irq_set_affinity_notifier(
-			adapter->msix_entries[i + adapter->q_vector_off].vector,
-			NULL);
-		irq_set_affinity_hint(
-			adapter->msix_entries[i + adapter->q_vector_off].vector,
-			NULL);
+		irq_set_affinity_notifier(adapter->msix_entries[m].vector,
+					  NULL);
+		irq_set_affinity_hint(adapter->msix_entries[m].vector,
+				      NULL);
 	}
 	return err;
 }
@@ -2472,7 +2416,6 @@ static int rnp_free_msix_irqs(struct rnp_adapter *adapter)
 
 	return 0;
 }
-
 
 /**
  * rnp_request_irq - initialize interrupts
@@ -2511,7 +2454,6 @@ static int rnp_request_irq(struct rnp_adapter *adapter)
 
 static void rnp_free_irq(struct rnp_adapter *adapter)
 {
-
 	if (adapter->flags & RNP_FLAG_MSIX_ENABLED) {
 		rnp_free_msix_irqs(adapter);
 	} else if (adapter->flags & RNP_FLAG_MSI_ENABLED) {
@@ -2555,9 +2497,8 @@ int rnp_setup_tx_maxrate(struct rnp_ring *tx_ring, u64 max_rate,
 
 /**
  * rnp_tx_maxrate_own - callback to set the maximum per-queue bitrate
- * @netdev: network interface device structure
+ * @adapter: board private structure
  * @queue_index: Tx queue to set
- * @maxrate: desired maximum transmit bitrate Mbps
  **/
 static int rnp_tx_maxrate_own(struct rnp_adapter *adapter, int queue_index)
 {
@@ -2566,8 +2507,8 @@ static int rnp_tx_maxrate_own(struct rnp_adapter *adapter, int queue_index)
 	u32 maxrate = adapter->max_rate[queue_index];
 
 	if (!maxrate)
-		return rnp_setup_tx_maxrate(
-			tx_ring, 0, adapter->hw.usecstocount * 1000000);
+		return rnp_setup_tx_maxrate(tx_ring, 0,
+					    adapter->hw.usecstocount * 1000000);
 	/* we need turn it to bytes/s */
 	real_rate = ((u64)maxrate * 1024 * 1024) / 8;
 	rnp_setup_tx_maxrate(tx_ring, real_rate,
@@ -2640,7 +2581,6 @@ void rnp_configure_tx_ring(struct rnp_adapter *adapter,
 	}
 
 	clear_bit(__RNP_HANG_CHECK_ARMED, &ring->state);
-
 }
 
 /**
@@ -2731,7 +2671,6 @@ void rnp_configure_rx_ring(struct rnp_adapter *adapter,
 		  adapter->rx_frames);
 
 	rnp_alloc_rx_buffers(ring, rnp_desc_unused_rx(ring));
-
 }
 
 static void rnp_configure_virtualization(struct rnp_adapter *adapter)
@@ -2773,7 +2712,6 @@ static void rnp_configure_virtualization(struct rnp_adapter *adapter)
 		vf_ring = rnp_get_vf_ringnum(hw, i, 1);
 		rnp_setup_ring_maxrate(adapter, vf_ring, real_rate);
 	}
-
 }
 
 static void rnp_set_rx_buffer_len(struct rnp_adapter *adapter)
@@ -2795,11 +2733,11 @@ static void rnp_set_rx_buffer_len(struct rnp_adapter *adapter)
 
 #ifdef OPTM_WITH_LARGE
 		rx_ring->rx_page_buf_nums = RNP_PAGE_BUFFER_NUMS(rx_ring);
-		rx_ring->rx_per_buf_mem = ALIGN(
-				(rnp_rx_offset(rx_ring) + rnp_rx_bufsz(rx_ring) +
-				 SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
-				 RNP_RX_HWTS_OFFSET),
-				1024);
+		rx_ring->rx_per_buf_mem = ALIGN((rnp_rx_offset(rx_ring) +
+						rnp_rx_bufsz(rx_ring) +
+						SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
+						RNP_RX_HWTS_OFFSET),
+						1024);
 #endif /* OPTM_WITH_LARGE */
 	}
 }
@@ -2815,15 +2753,14 @@ static void rnp_configure_rx(struct rnp_adapter *adapter)
 	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_dma_info *dma = &hw->dma;
 	int i;
-	u32 rxctrl = 0, dma_axi_ctl;
+	u32 dma_axi_ctl;
 
 	/* disable receives while setting up the descriptors */
 
 	/* set_rx_buffer_len must be called before ring initialization */
 	rnp_set_rx_buffer_len(adapter);
 
-	/*
-	 * Setup the HW Rx Head and Tail Descriptor Pointers and
+	/* Setup the HW Rx Head and Tail Descriptor Pointers and
 	 * the Base and Length of the Rx Descriptor Ring
 	 */
 	for (i = 0; i < adapter->num_rx_queues; i++)
@@ -2831,17 +2768,14 @@ static void rnp_configure_rx(struct rnp_adapter *adapter)
 
 	if (adapter->num_rx_queues > 0) {
 		wr32(hw, RNP_ETH_DEFAULT_RX_RING,
-				adapter->rx_ring[0]->rnp_queue_idx);
+		     adapter->rx_ring[0]->rnp_queue_idx);
 	}
 
 	/* enable all receives */
-	rxctrl |= 0;
-
 	dma_axi_ctl = dma_rd32(dma, RNP_DMA_AXI_EN);
 	dma_axi_ctl |= RX_AXI_RW_EN;
 	dma_wr32(dma, RNP_DMA_AXI_EN, dma_axi_ctl);
 }
-
 
 static int rnp_vlan_rx_add_vid(struct net_device *netdev,
 			       __always_unused __be16 proto, u16 vid)
@@ -2851,13 +2785,12 @@ static int rnp_vlan_rx_add_vid(struct net_device *netdev,
 	bool veb_setup = true;
 	bool sriov_flag = !!(adapter->flags & RNP_FLAG_SRIOV_ENABLED);
 
-
 	if (sriov_flag) {
 		/* in sriov mode */
-		if ((vid) && (adapter->vf_vlan) &&
-				(vid != adapter->vf_vlan)) {
+		if ((vid) && adapter->vf_vlan &&
+		    vid != adapter->vf_vlan) {
 			dev_err(&adapter->pdev->dev,
-					"only 1 vlan in sriov mode\n");
+				"only 1 vlan in sriov mode\n");
 			return -EACCES;
 		}
 
@@ -2865,14 +2798,14 @@ static int rnp_vlan_rx_add_vid(struct net_device *netdev,
 		if (vid) {
 			adapter->vf_vlan = vid;
 			if (hw->ops.set_vf_vlan_mode) {
-				if (hw->feature_flags &
-						RNP_NET_FEATURE_VF_FIXED)
-					hw->ops.set_vf_vlan_mode(
-							hw, vid, 0, true);
-				else
-					hw->ops.set_vf_vlan_mode(
-							hw, vid, hw->vfnum,
-							true);
+				if (hw->feature_flags & RNP_NET_FEATURE_VF_FIXED) {
+					hw->ops.set_vf_vlan_mode(hw, vid,
+								 0, true);
+				} else {
+					hw->ops.set_vf_vlan_mode(hw, vid,
+								 hw->vfnum,
+								 true);
+				}
 			}
 		}
 	}
@@ -2912,7 +2845,6 @@ static int rnp_vlan_rx_kill_vid(struct net_device *netdev,
 	if (!vid)
 		return 0;
 
-
 	if (sriov_flag) {
 		int true_remove = 1;
 
@@ -2935,7 +2867,7 @@ static int rnp_vlan_rx_kill_vid(struct net_device *netdev,
 			}
 			if (true_remove) {
 				if ((adapter->flags2 & RNP_FLAG2_VLAN_STAGS_ENABLED) &&
-						(vid != adapter->stags_vid))
+				    vid != adapter->stags_vid)
 					hw->ops.set_vlan_filter(hw, vid, false,
 							veb_setup);
 			}
@@ -2947,8 +2879,8 @@ static int rnp_vlan_rx_kill_vid(struct net_device *netdev,
 			if (hw->feature_flags & RNP_NET_FEATURE_VF_FIXED)
 				hw->ops.set_vf_vlan_mode(hw, vid, 0, false);
 			else
-				hw->ops.set_vf_vlan_mode(
-						hw, vid, hw->vfnum, false);
+				hw->ops.set_vf_vlan_mode(hw, vid,
+							 hw->vfnum, false);
 		}
 	} else {
 		int true_remove = 0;
@@ -2959,9 +2891,8 @@ static int rnp_vlan_rx_kill_vid(struct net_device *netdev,
 				true_remove = 1;
 		}
 		if (true_remove) {
-			if ((adapter->flags2 &
-			     RNP_FLAG2_VLAN_STAGS_ENABLED) &&
-			    (vid != adapter->stags_vid))
+			if ((adapter->flags2 & RNP_FLAG2_VLAN_STAGS_ENABLED) &&
+			    vid != adapter->stags_vid)
 				hw->ops.set_vlan_filter(hw, vid, false, false);
 		}
 	}
@@ -2979,8 +2910,6 @@ skip_setup:
 
 	return 0;
 }
-
-
 
 /**
  * rnp_vlan_strip_disable - helper to disable hw vlan stripping
@@ -3055,7 +2984,6 @@ static void rnp_restore_vlan(struct rnp_adapter *adapter)
 		}
 	}
 }
-
 
 /**
  * rnp_set_rx_mode - Unicast, Multicast and Promiscuous mode set
@@ -3165,7 +3093,6 @@ static void rnp_fdir_filter_restore(struct rnp_adapter *adapter)
 	spin_unlock(&adapter->fdir_perfect_lock);
 }
 
-
 static void rnp_configure_pause(struct rnp_adapter *adapter)
 {
 	struct rnp_hw *hw = &adapter->hw;
@@ -3173,7 +3100,7 @@ static void rnp_configure_pause(struct rnp_adapter *adapter)
 	hw->ops.set_pause_mode(hw);
 }
 
-void rnp_vlan_stags_flag(struct rnp_adapter *adapter)
+static void rnp_vlan_stags_flag(struct rnp_adapter *adapter)
 {
 	struct rnp_hw *hw = &adapter->hw;
 
@@ -3184,7 +3111,6 @@ void rnp_vlan_stags_flag(struct rnp_adapter *adapter)
 		hw->ops.set_txvlan_mode(hw, true);
 }
 
-
 static void rnp_configure(struct rnp_adapter *adapter)
 {
 	struct rnp_hw *hw = &adapter->hw;
@@ -3193,8 +3119,7 @@ static void rnp_configure(struct rnp_adapter *adapter)
 	struct rnp_ring *rx_ring = adapter->rx_ring[0];
 #endif
 
-	/*
-	 * We must restore virtualization before VLANs or else
+	/* We must restore virtualization before VLANs or else
 	 * the VLVF registers will not be populated
 	 */
 	rnp_configure_virtualization(adapter);
@@ -3246,15 +3171,13 @@ static inline bool rnp_is_sfp(struct rnp_hw *hw)
  **/
 static void rnp_sfp_link_config(struct rnp_adapter *adapter)
 {
-	/*
-	 * We are assuming the worst case scenario here, and that
+	/* We are assuming the worst case scenario here, and that
 	 * is that an SFP was inserted/removed after the reset
 	 * but before SFP detection was enabled.  As such the best
 	 * solution is to just start searching as soon as we start
 	 */
 	adapter->flags2 |= RNP_FLAG2_SFP_NEEDS_RESET;
 }
-
 
 static void rnp_up_complete(struct rnp_adapter *adapter)
 {
@@ -3302,8 +3225,7 @@ void rnp_reinit_locked(struct rnp_adapter *adapter)
 	while (test_and_set_bit(__RNP_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
 	rnp_down(adapter);
-	/*
-	 * If SR-IOV enabled then wait a bit before bringing the adapter
+	/* If SR-IOV enabled then wait a bit before bringing the adapter
 	 * back up to give the VFs time to respond to the reset.  The
 	 * two second wait is based upon the watchdog timer cycle in
 	 * the VF driver.
@@ -3471,7 +3393,7 @@ static void rnp_clean_tx_ring(struct rnp_ring *tx_ring)
 	u16 i = tx_ring->next_to_clean;
 	struct rnp_tx_buffer *tx_buffer = &tx_ring->tx_buffer_info[i];
 
-	BUG_ON(tx_ring == NULL);
+	BUG_ON(!tx_ring);
 
 	/* ring already cleared, nothing to do */
 	if (!tx_ring->tx_buffer_info)
@@ -3503,9 +3425,9 @@ static void rnp_clean_tx_ring(struct rnp_ring *tx_ring)
 			/* unmap any remaining paged data */
 			if (dma_unmap_len(tx_buffer, len))
 				dma_unmap_page(tx_ring->dev,
-					dma_unmap_addr(tx_buffer, dma),
-					dma_unmap_len(tx_buffer, len),
-					DMA_TO_DEVICE);
+					       dma_unmap_addr(tx_buffer, dma),
+					       dma_unmap_len(tx_buffer, len),
+					       DMA_TO_DEVICE);
 		}
 		/* move us one more past the eop_desc for start of next pkt */
 		tx_buffer++;
@@ -3577,8 +3499,8 @@ static void rnp_fdir_filter_exit(struct rnp_adapter *adapter)
 	spin_unlock(&adapter->fdir_perfect_lock);
 }
 
-int rnp_xmit_nop_frame_ring(struct rnp_adapter *adapter,
-			    struct rnp_ring *tx_ring)
+static int rnp_xmit_nop_frame_ring(struct rnp_adapter *adapter,
+				   struct rnp_ring *tx_ring)
 {
 	u16 i = tx_ring->next_to_use;
 	struct rnp_tx_desc *tx_desc;
@@ -3588,8 +3510,7 @@ int rnp_xmit_nop_frame_ring(struct rnp_adapter *adapter,
 	/* set length to 0 */
 	tx_desc->blen_mac_ip_len = 0;
 	tx_desc->vlan_cmd = cpu_to_le32(RNP_TXD_CMD_EOP | RNP_TXD_CMD_RS);
-	/*
-	 * Force memory writes to complete before letting h/w know there
+	/* Force memory writes to complete before letting h/w know there
 	 * are new descriptors to fetch.  (Only applicable for weak-ordered
 	 * memory model archs, such as IA-64).
 	 *
@@ -3602,7 +3523,6 @@ int rnp_xmit_nop_frame_ring(struct rnp_adapter *adapter,
 	return 0;
 }
 
-
 void rnp_down(struct rnp_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
@@ -3613,7 +3533,7 @@ void rnp_down(struct rnp_adapter *adapter)
 	/* signal that we are down to the interrupt handler */
 	set_bit(__RNP_DOWN, &adapter->state);
 
-	if ((!hw->ncsi_en) && (!(adapter->flags & RNP_FLAG_SRIOV_ENABLED)))
+	if (!hw->ncsi_en && (!(adapter->flags & RNP_FLAG_SRIOV_ENABLED)))
 		hw->ops.set_mac_rx(hw, false);
 
 	hw->ops.set_mbx_link_event(hw, 0);
@@ -3726,8 +3646,8 @@ void rnp_down(struct rnp_adapter *adapter)
 				if (head != (count - 1)) {
 					/* 3 set len head + 1 */
 					ring_wr32(tx_ring,
-						RNP_DMA_REG_TX_DESC_BUF_LEN,
-						head + 1);
+						  RNP_DMA_REG_TX_DESC_BUF_LEN,
+						  head + 1);
 				}
 				/* set to use head */
 				tx_ring->next_to_use = head;
@@ -3735,15 +3655,14 @@ void rnp_down(struct rnp_adapter *adapter)
 				rnp_xmit_nop_frame_ring(adapter, tx_ring);
 				/* 5 wait head to zero */
 				while ((head != 0) && (timeout < 1000)) {
-					head = ring_rd32(tx_ring,
-						RNP_DMA_REG_TX_DESC_BUF_HEAD);
+					head = ring_rd32(tx_ring, RNP_DMA_REG_TX_DESC_BUF_HEAD);
 					usleep_range(10000, 20000);
 					timeout++;
 				}
 				if (timeout >= 1000) {
 					e_err(drv, "[%s] Wait Tx-ring %d head to zero time out\n",
-					       netdev->name,
-					       tx_ring->rnp_queue_idx);
+					      netdev->name,
+					      tx_ring->rnp_queue_idx);
 				}
 				/* 6 stop queue again skip */
 				/* 7 write back next_to_use maybe hw hang */
@@ -3774,6 +3693,7 @@ void rnp_down(struct rnp_adapter *adapter)
 /**
  * rnp_tx_timeout - Respond to a Tx Hang
  * @netdev: network interface device structure
+ * @txqueue: queue idx
  **/
 static void rnp_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
@@ -3797,7 +3717,7 @@ static void rnp_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 		rnp_tx_timeout_reset(adapter);
 	} else {
 		e_err(drv, "Fake Tx hang detected with timeout of %d seconds\n",
-		       netdev->watchdog_timeo / HZ);
+		      netdev->watchdog_timeo / HZ);
 
 		/* fake Tx hang - increase the kernel timeout */
 		if (netdev->watchdog_timeo < TX_TIMEO_LIMIT)
@@ -3822,7 +3742,6 @@ static int rnp_sw_init(struct rnp_adapter *adapter)
 #ifdef RNP_MAX_RINGS
 	rss_limit = RNP_MAX_RINGS;
 #endif /* RNP_MAX_RINGS */
-
 
 	hw->vendor_id = pdev->vendor;
 	hw->device_id = pdev->device;
@@ -3878,11 +3797,11 @@ static int rnp_sw_init(struct rnp_adapter *adapter)
 
 /**
  * rnp_setup_tx_resources - allocate Tx resources (Descriptors)
- * @tx_ring:    tx descriptor ring (for a specific queue) to setup
+ * @tx_ring: tx descriptor ring (for a specific queue) to setup
+ * @adapter: adapter
  *
  * Return 0 on success, negative on failure
  **/
-
 int rnp_setup_tx_resources(struct rnp_ring *tx_ring,
 			   struct rnp_adapter *adapter)
 {
@@ -3909,8 +3828,9 @@ int rnp_setup_tx_resources(struct rnp_ring *tx_ring,
 					   &tx_ring->dma, GFP_KERNEL);
 	set_dev_node(dev, orig_node);
 	if (!tx_ring->desc)
-		tx_ring->desc = dma_alloc_coherent(
-			dev, tx_ring->size, &tx_ring->dma, GFP_KERNEL);
+		tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size,
+						   &tx_ring->dma,
+						   GFP_KERNEL);
 	if (!tx_ring->desc)
 		goto err;
 	memset(tx_ring->desc, 0, tx_ring->size);
@@ -3953,7 +3873,7 @@ static int rnp_setup_all_tx_resources(struct rnp_adapter *adapter)
 	       adapter->num_tx_queues, adapter->tx_ring[0]);
 
 	for (i = 0; i < (adapter->num_tx_queues); i++) {
-		BUG_ON(adapter->tx_ring[i] == NULL);
+		BUG_ON(!adapter->tx_ring[i]);
 		err = rnp_setup_tx_resources(adapter->tx_ring[i], adapter);
 		if (!err)
 			continue;
@@ -3972,7 +3892,8 @@ err_setup_tx:
 
 /**
  * rnp_setup_rx_resources - allocate Rx resources (Descriptors)
- * @rx_ring:    rx descriptor ring (for a specific queue) to setup
+ * @rx_ring: rx descriptor ring (for a specific queue) to setup
+ * @adapter: board private structure
  *
  * Returns 0 on success, negative on failure
  **/
@@ -3984,7 +3905,7 @@ int rnp_setup_rx_resources(struct rnp_ring *rx_ring,
 	int numa_node = NUMA_NO_NODE;
 	int size;
 
-	BUG_ON(rx_ring == NULL);
+	BUG_ON(!rx_ring);
 
 	size = sizeof(struct rnp_rx_buffer) * rx_ring->count;
 
@@ -4005,8 +3926,9 @@ int rnp_setup_rx_resources(struct rnp_ring *rx_ring,
 					   &rx_ring->dma, GFP_KERNEL);
 	set_dev_node(dev, orig_node);
 	if (!rx_ring->desc)
-		rx_ring->desc = dma_alloc_coherent(
-			dev, rx_ring->size, &rx_ring->dma, GFP_KERNEL);
+		rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size,
+						   &rx_ring->dma,
+						   GFP_KERNEL);
 	if (!rx_ring->desc)
 		goto err;
 	memset(rx_ring->desc, 0, rx_ring->size);
@@ -4015,10 +3937,10 @@ int rnp_setup_rx_resources(struct rnp_ring *rx_ring,
 	rx_ring->next_to_use = 0;
 
 	DPRINTK(IFUP, INFO, "RxRing:%d, vector:%d ItemCounts:%d",
-			rx_ring->rnp_queue_idx, rx_ring->q_vector->v_idx,
-			rx_ring->count);
+		rx_ring->rnp_queue_idx, rx_ring->q_vector->v_idx,
+		rx_ring->count);
 	DPRINTK(IFUP, INFO, "desc:%p(0x%llx) node:%d\n",
-			rx_ring->desc, (u64)rx_ring->dma, numa_node);
+		rx_ring->desc, (u64)rx_ring->dma, numa_node);
 	return 0;
 err:
 
@@ -4045,7 +3967,7 @@ static int rnp_setup_all_rx_resources(struct rnp_adapter *adapter)
 	u32 head;
 
 	for (i = 0; i < adapter->num_rx_queues; i++) {
-		BUG_ON(adapter->rx_ring[i] == NULL);
+		BUG_ON(!adapter->rx_ring[i]);
 
 		/* should check count and head */
 		/* in sriov condition may head large than count */
@@ -4085,7 +4007,7 @@ err_setup_rx:
  **/
 void rnp_free_tx_resources(struct rnp_ring *tx_ring)
 {
-	BUG_ON(tx_ring == NULL);
+	BUG_ON(!tx_ring);
 
 	rnp_clean_tx_ring(tx_ring);
 	vfree(tx_ring->tx_buffer_info);
@@ -4123,7 +4045,7 @@ static void rnp_free_all_tx_resources(struct rnp_adapter *adapter)
  **/
 void rnp_free_rx_resources(struct rnp_ring *rx_ring)
 {
-	BUG_ON(rx_ring == NULL);
+	BUG_ON(!rx_ring);
 
 	rnp_clean_rx_ring(rx_ring);
 
@@ -4169,7 +4091,7 @@ static int rnp_change_mtu(struct net_device *netdev, int new_mtu)
 	int max_frame = new_mtu + ETH_HLEN + ETH_FCS_LEN * 2;
 
 	/* MTU < 68 is an error and causes problems on some kernels */
-	if ((new_mtu < hw->min_length) || (max_frame > hw->max_length))
+	if (new_mtu < hw->min_length || max_frame > hw->max_length)
 		return -EINVAL;
 
 	e_info(probe, "changing MTU from %d to %d\n", netdev->mtu,
@@ -4196,7 +4118,7 @@ static int rnp_change_mtu(struct net_device *netdev, int new_mtu)
  * @maxrate: desired maximum transmit bitrate Mbps
  **/
 static int rnp_tx_maxrate(struct net_device *netdev,
-					 int queue_index, u32 maxrate)
+			  int queue_index, u32 maxrate)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 	struct rnp_ring *tx_ring = adapter->tx_ring[queue_index];
@@ -4206,8 +4128,8 @@ static int rnp_tx_maxrate(struct net_device *netdev,
 	rnp_dbg("%s: queue:%d maxrate:%d\n", __func__, queue_index,
 		maxrate);
 	if (!maxrate)
-		return rnp_setup_tx_maxrate(
-			tx_ring, 0, adapter->hw.usecstocount * 1000000);
+		return rnp_setup_tx_maxrate(tx_ring, 0,
+					    adapter->hw.usecstocount * 1000000);
 	/* we need turn it to bytes/s */
 	real_rate = ((u64)maxrate * 1024 * 1024) / 8;
 	rnp_setup_tx_maxrate(tx_ring, real_rate,
@@ -4333,8 +4255,7 @@ static int __maybe_unused rnp_resume(struct device *dev_d)
 
 	pci_set_power_state(pdev, PCI_D0);
 	pci_restore_state(pdev);
-	/*
-	 * pci_restore_state clears dev->state_saved so call
+	/* pci_restore_state clears dev->state_saved so call
 	 * pci_save_state to restore it.
 	 */
 	pci_save_state(pdev);
@@ -4427,7 +4348,6 @@ static int __rnp_shutdown(struct pci_dev *pdev, bool *enable_wake)
 			hw->ops.enable_tx_laser(hw);
 
 		/* turn on all-multi mode if wake on multicast is enabled */
-
 	}
 
 	if (hw->ops.setup_wol)
@@ -4446,7 +4366,6 @@ static int __maybe_unused rnp_suspend(struct device *dev_d)
 	struct pci_dev *pdev = to_pci_dev(dev_d);
 	int retval;
 	bool wake;
-
 
 	retval = __rnp_shutdown(pdev, &wake);
 	if (retval)
@@ -4473,6 +4392,7 @@ static void rnp_shutdown(struct pci_dev *pdev)
 		pci_set_power_state(pdev, PCI_D3hot);
 	}
 }
+
 /**
  * rnp_update_stats - Update the board statistics counters.
  * @adapter: board private structure
@@ -4519,9 +4439,9 @@ void rnp_update_stats(struct rnp_adapter *adapter)
 
 	hw->ops.update_hw_status(hw, hw_stats, net_stats);
 
-	adapter->hw_csum_rx_error = hw_csum_rx_error;
+	adapter->hw_csum_rx_error = hw_csum_rx_error + hw_stats->mac_rx_csum_err;
 	adapter->hw_csum_rx_good = hw_csum_rx_good;
-	net_stats->rx_errors = hw_csum_rx_error;
+	net_stats->rx_errors = adapter->hw_csum_rx_error;
 }
 
 /**
@@ -4602,8 +4522,8 @@ static void rnp_check_hang_subtask(struct rnp_adapter *adapter)
 		if (rx_next_to_clean == rx_next_to_clean_old) {
 			rx_ring->rx_stats.rx_equal_count++;
 
-			if ((rx_ring->rx_stats.rx_equal_count > 2) &&
-			    (rx_ring->rx_stats.rx_equal_count < 5)) {
+			if (rx_ring->rx_stats.rx_equal_count > 2 &&
+			    rx_ring->rx_stats.rx_equal_count < 5) {
 				int size;
 				struct rnp_q_vector *q_vector;
 				/* check if dd in the clean rx desc */
@@ -4637,7 +4557,6 @@ skip_check:
 /**
  * rnp_watchdog_update_link - update the link status
  * @adapter: pointer to the device adapter structure
- * @link_speed: pointer to a u32 to store the link_speed
  **/
 static void rnp_watchdog_update_link(struct rnp_adapter *adapter)
 {
@@ -4715,7 +4634,6 @@ static void rnp_watchdog_update_link(struct rnp_adapter *adapter)
 	default:
 		speed_str = "unknown speed";
 	break;
-
 	}
 	/* if we detect changed link setup new */
 	if (adapter->link_up) {
@@ -4737,7 +4655,6 @@ static void rnp_watchdog_update_link(struct rnp_adapter *adapter)
 			hw->ops.set_mac_speed(hw, false, 0, false);
 	}
 }
-
 
 /**
  * rnp_watchdog_link_is_up - update netif_carrier status and
@@ -4797,8 +4714,8 @@ static void rnp_update_link_to_vf(struct rnp_adapter *adapter)
 	if (!(adapter->flags & RNP_FLAG_VF_INIT_DONE))
 		return;
 
-	if ((adapter->link_up_old != adapter->link_up) ||
-	    (adapter->link_speed_old != adapter->link_speed)) {
+	if (adapter->link_up_old != adapter->link_up ||
+	    adapter->link_speed_old != adapter->link_speed) {
 		/* if change send mbx to all vf */
 		if (!test_bit(__RNP_IN_IRQ, &adapter->state)) {
 			if (rnp_msg_post_status(adapter,
@@ -4810,6 +4727,7 @@ static void rnp_update_link_to_vf(struct rnp_adapter *adapter)
 		}
 	}
 }
+
 /**
  * rnp_watchdog_subtask - check and bring link up
  * @adapter: pointer to the device adapter structure
@@ -4831,15 +4749,13 @@ static void rnp_watchdog_subtask(struct rnp_adapter *adapter)
 
 	rnp_update_link_to_vf(adapter);
 	rnp_update_stats(adapter);
-
 }
-
 
 /**
  * rnp_service_timer - Timer Call-back
- * @data: pointer to adapter cast into an unsigned long
+ * @t: pointer to adapter cast into an unsigned long
  **/
-void rnp_service_timer(struct timer_list *t)
+static void rnp_service_timer(struct timer_list *t)
 {
 	struct rnp_adapter *adapter =
 		from_timer(adapter, t, service_timer);
@@ -4947,7 +4863,7 @@ static void rnp_rx_len_reset_subtask(struct rnp_adapter *adapter)
  * rnp_service_task - manages and runs subtasks
  * @work: pointer to work_struct containing our data
  **/
-void rnp_service_task(struct work_struct *work)
+static void rnp_service_task(struct work_struct *work)
 {
 	struct rnp_adapter *adapter =
 		container_of(work, struct rnp_adapter, service_task);
@@ -5032,7 +4948,6 @@ static int rnp_tso(struct rnp_ring *tx_ring, struct rnp_tx_buffer *first,
 		ip.hdr = skb_inner_network_header(skb);
 		l4.hdr = skb_inner_transport_header(skb);
 	}
-
 
 	if (ip.v4->version == 4) {
 		/* IP header will have to cancel out any data that
@@ -5219,7 +5134,7 @@ static int rnp_tx_csum(struct rnp_ring *tx_ring,
 	}
 
 	if ((tx_ring->ring_flags & RNP_RING_NO_TUNNEL_SUPPORT) &&
-			(first->ctx_flag)) {
+	    first->ctx_flag) {
 		*tx_flags &= (~RNP_TXD_TUNNEL_MASK);
 		if (!(first->priv_tags)) {
 			first->ctx_flag = false;
@@ -5349,8 +5264,7 @@ static int rnp_tx_map(struct rnp_ring *tx_ring,
 	netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount);
 #endif /* NO_BQL_TEST */
 
-	/*
-	 * Force memory writes to complete before letting h/w know there
+	/* Force memory writes to complete before letting h/w know there
 	 * are new descriptors to fetch.  (Only applicable for weak-ordered
 	 * memory model archs, such as IA-64).
 	 *
@@ -5407,7 +5321,6 @@ dma_error:
 	return -1;
 }
 
-
 static void rnp_force_src_mac(struct sk_buff *skb,
 			      struct net_device *netdev)
 {
@@ -5417,13 +5330,13 @@ static void rnp_force_src_mac(struct sk_buff *skb,
 	/* force all multicast / broadcast src mac to myself */
 	if (is_multicast_ether_addr(data)) {
 		if (memcmp(data + netdev->addr_len, netdev->dev_addr,
-				netdev->addr_len) == 0) {
+			   netdev->addr_len) == 0) {
 			ret = true;
 			goto DONE;
 		}
 		netdev_for_each_uc_addr(ha, netdev) {
 			if (memcmp(data + netdev->addr_len, ha->addr,
-					netdev->addr_len) == 0) {
+				   netdev->addr_len) == 0) {
 				ret = true;
 				/* if it is src mac, nothing todo */
 				goto DONE;
@@ -5458,8 +5371,7 @@ netdev_tx_t rnp_xmit_frame_ring(struct sk_buff *skb,
 	       skb->len, skb_headlen(skb), skb->data_len);
 	tx_dbg("next_to_clean %d, next_to_use %d\n",
 	       tx_ring->next_to_clean, tx_ring->next_to_use);
-	/*
-	 * need: 1 descriptor per page * PAGE_SIZE/RNP_MAX_DATA_PER_TXD,
+	/* need: 1 descriptor per page * PAGE_SIZE/RNP_MAX_DATA_PER_TXD,
 	 *       + 1 desc for skb_headlen/RNP_MAX_DATA_PER_TXD,
 	 *       + 2 desc gap to keep tail from touching head,
 	 *       + 1 desc for context descriptor,
@@ -5696,8 +5608,7 @@ static netdev_tx_t rnp_xmit_frame(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	/*
-	 * The minimum packet size for olinfo paylen is 17 so pad the skb
+	/* The minimum packet size for olinfo paylen is 17 so pad the skb
 	 * in order to meet this minimum size requirement.
 	 */
 	if (adapter->priv_flags & RNP_PRIV_FLAG_TX_PADDING) {
@@ -5783,7 +5694,7 @@ static int rnp_mii_ioctl(struct net_device *netdev, struct ifreq *ifr,
 
 	if (cmd == SIOCGMIIREG) {
 		ret = rnp_mdio_read(netdev, prtad, devad, mii->reg_num,
-				&phy_value);
+				    &phy_value);
 		if (ret < 0)
 			return ret;
 		mii->val_out = phy_value;
@@ -5811,7 +5722,7 @@ static int rnp_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 	case SIOCGMIIPHY:
 		return 0;
 	case SIOCGMIIREG:
-	/*fall through */
+	fallthrough;
 	case SIOCSMIIREG:
 		return rnp_mii_ioctl(netdev, req, cmd);
 	}
@@ -5819,7 +5730,7 @@ static int rnp_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
-/*
+/**
  * Polling 'interrupt' - used by things like netconsole to send skbs
  * without having to re-enable interrupts. It's not called while
  * the interrupt routine is executing.
@@ -5855,8 +5766,7 @@ static void rnp_get_stats64(struct net_device *netdev,
 
 		if (ring) {
 			do {
-				start = u64_stats_fetch_begin(
-					&ring->syncp);
+				start = u64_stats_fetch_begin(&ring->syncp);
 				packets = ring->stats.packets;
 				bytes = ring->stats.bytes;
 			} while (u64_stats_fetch_retry(&ring->syncp,
@@ -5873,8 +5783,7 @@ static void rnp_get_stats64(struct net_device *netdev,
 
 		if (ring) {
 			do {
-				start = u64_stats_fetch_begin(
-					&ring->syncp);
+				start = u64_stats_fetch_begin(&ring->syncp);
 				packets = ring->stats.packets;
 				bytes = ring->stats.bytes;
 			} while (u64_stats_fetch_retry(&ring->syncp,
@@ -5890,13 +5799,12 @@ static void rnp_get_stats64(struct net_device *netdev,
 	stats->rx_length_errors = netdev->stats.rx_length_errors;
 	stats->rx_crc_errors = netdev->stats.rx_crc_errors;
 	stats->rx_missed_errors = netdev->stats.rx_missed_errors;
-
 }
 
 /**
  * rnp_setup_tc - configure net_device for multiple traffic classes
  *
- * @netdev: net device to configure
+ * @dev: net device to configure
  * @tc: number of traffic classes to enable
  */
 int rnp_setup_tc(struct net_device *dev, u8 tc)
@@ -5909,9 +5817,9 @@ int rnp_setup_tc(struct net_device *dev, u8 tc)
 		return -EINVAL;
 
 	/* Hardware supports up to 8 traffic classes */
-	if ((tc > RNP_MAX_TCS_NUM) || (tc == 1))
+	if (tc > RNP_MAX_TCS_NUM || tc == 1)
 		return -EINVAL;
-	/* we canot support tc with sriov mode */
+	/* we cannot support tc with sriov mode */
 	if ((tc) && (adapter->flags & RNP_FLAG_SRIOV_ENABLED))
 		return -EINVAL;
 
@@ -5969,8 +5877,8 @@ void rnp_sriov_reinit(struct rnp_adapter *adapter)
 }
 #endif /* CONFIG_PCI_IOV */
 
-int rnp_delete_knode(struct net_device *dev,
-		     struct tc_cls_u32_offload *cls)
+static int rnp_delete_knode(struct net_device *dev,
+			    struct tc_cls_u32_offload *cls)
 {
 	/* 1. check weather filter rule is ingress root */
 	struct rnp_adapter *adapter = netdev_priv(dev);
@@ -5978,7 +5886,7 @@ int rnp_delete_knode(struct net_device *dev,
 	u32 uhtid = TC_U32_USERHTID(cls->knode.handle);
 	int ret;
 
-	if ((uhtid != 0x800))
+	if (uhtid != 0x800)
 		return -EINVAL;
 
 	spin_lock(&adapter->fdir_perfect_lock);
@@ -5987,6 +5895,7 @@ int rnp_delete_knode(struct net_device *dev,
 
 	return ret;
 }
+
 #ifdef CONFIG_NET_CLS_ACT
 static int rnp_action_parse(struct tcf_exts *exts, u64 *action, u8 *queue)
 {
@@ -6058,8 +5967,8 @@ static int rnp_clsu32_build_input(struct tc_cls_u32_offload *cls,
 	return 0;
 }
 
-int rnp_config_knode(struct net_device *dev, __be16 protocol,
-		     struct tc_cls_u32_offload *cls)
+static int rnp_config_knode(struct net_device *dev, __be16 protocol,
+			    struct tc_cls_u32_offload *cls)
 {
 	/*1. check ethernet hw-feature U32 can offload */
 	/*2. check U32 protocol We just support IPV4 offloading For now*/
@@ -6117,8 +6026,8 @@ out:
 	return -EOPNOTSUPP;
 }
 
-int rnp_setup_tc_cls_u32(struct net_device *dev,
-			 struct tc_cls_u32_offload *cls_u32)
+static int rnp_setup_tc_cls_u32(struct net_device *dev,
+				struct tc_cls_u32_offload *cls_u32)
 {
 	__be16 proto = cls_u32->common.protocol;
 
@@ -6141,10 +6050,9 @@ static int rnp_setup_tc_block_ingress_cb(enum tc_setup_type type,
 	struct rnp_adapter *adapter = netdev_priv(dev);
 
 	if (test_bit(__RNP_DOWN, &adapter->state)) {
-		netdev_err(
-			adapter->netdev,
-			"Failed to setup tc on port %d. Link Down? 0x%.2lx\n",
-			adapter->port, adapter->state);
+		netdev_err(adapter->netdev,
+			   "Failed to setup tc on port %d. Link Down? 0x%.2lx\n",
+			   adapter->port, adapter->state);
 		return -EINVAL;
 	}
 	if (!tc_cls_can_offload_and_chain0(dev, type_data))
@@ -6168,7 +6076,7 @@ static int rnp_setup_mqprio(struct net_device *dev,
 }
 
 static int __rnp_setup_tc(struct net_device *netdev,
-		enum tc_setup_type type, void *type_data)
+			  enum tc_setup_type type, void *type_data)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 
@@ -6176,14 +6084,15 @@ static int __rnp_setup_tc(struct net_device *netdev,
 	case TC_SETUP_BLOCK: {
 		struct flow_block_offload *f =
 			(struct flow_block_offload *)type_data;
-		if (f->binder_type ==
-		    FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
-			return flow_block_cb_setup_simple(
-				type_data, &rnp_block_cb_list,
-				rnp_setup_tc_block_ingress_cb, adapter,
-				adapter, true);
-		else
+		if (f->binder_type == FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS) {
+			return flow_block_cb_setup_simple(type_data,
+							  &rnp_block_cb_list,
+							  rnp_setup_tc_block_ingress_cb,
+							  adapter,
+							  adapter, true);
+		} else {
 			return -EOPNOTSUPP;
+		}
 	}
 	case TC_SETUP_QDISC_MQPRIO:
 		return rnp_setup_mqprio(netdev, type_data);
@@ -6194,7 +6103,7 @@ static int __rnp_setup_tc(struct net_device *netdev,
 	return 0;
 }
 
-void rnp_do_reset(struct net_device *netdev)
+static void rnp_do_reset(struct net_device *netdev)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 
@@ -6287,7 +6196,6 @@ static int rnp_set_features(struct net_device *netdev,
 	/* rx fcs changed */
 	/* in this mode rx l4/sctp checksum will get error */
 	if (changed & NETIF_F_RXFCS) {
-
 		if (features & NETIF_F_RXFCS) {
 			adapter->priv_flags |= RNP_PRIV_FLAG_RX_FCS;
 			hw->ops.set_fcs_mode(hw, true);
@@ -6351,9 +6259,9 @@ rnp_ndo_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
 			adapter->flags2 |= RNP_FLAG2_BRIDGE_MODE_VEB;
 			wr32(hw, RNP_DMA_CONFIG,
 			     rd32(hw, RNP_DMA_CONFIG) & (~DMA_VEB_BYPASS));
-
-		} else
+		} else {
 			return -EINVAL;
+		}
 
 		e_info(drv, "enabling bridge mode: %s\n",
 		       mode == BRIDGE_MODE_VEPA ? "VEPA" : "VEB");
@@ -6381,7 +6289,6 @@ static int rnp_ndo_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 	return ndo_dflt_bridge_getlink(skb, pid, seq, dev, mode, 0, 0,
 			nlflags, filter_mask, NULL);
 }
-
 
 #define RNP_MAX_TUNNEL_HDR_LEN 80
 #define RNP_MAX_MAC_HDR_LEN 127
@@ -6449,7 +6356,7 @@ const struct net_device_ops rnp10_netdev_ops = {
 	.ndo_fix_features = rnp_fix_features,
 };
 
-void rnp_assign_netdev_ops(struct net_device *dev)
+static void rnp_assign_netdev_ops(struct net_device *dev)
 {
 	/* different hw can assign difference fun */
 	dev->netdev_ops = &rnp10_netdev_ops;
@@ -6458,9 +6365,9 @@ void rnp_assign_netdev_ops(struct net_device *dev)
 
 /**
  * rnp_wol_supported - Check whether device supports WoL
- * @hw: hw specific details
+ * @adapter: adapter specific details
  * @device_id: the device ID
- * @subdev_id: the subsystem device ID
+ * @subdevice_id: the subsystem device ID
  *
  * This function is used by probe and ethtool to determine
  * which devices have WoL support
@@ -6478,29 +6385,14 @@ int rnp_wol_supported(struct rnp_adapter *adapter, u16 device_id,
 	return is_wol_supported;
 }
 
-static inline unsigned long rnp_tso_features(struct rnp_hw *hw)
-{
-	unsigned long features = 0;
-
-	if (hw->feature_flags & RNP_NET_FEATURE_TSO)
-		features |= NETIF_F_TSO;
-	if (hw->feature_flags & RNP_NET_FEATURE_TSO)
-		features |= NETIF_F_TSO6;
-	features |= NETIF_F_GSO_PARTIAL;
-	if (hw->feature_flags & RNP_NET_FEATURE_TX_UDP_TUNNEL)
-		features |= RNP_GSO_PARTIAL_FEATURES;
-
-	return features;
-}
-
 static void remove_mbx_irq(struct rnp_adapter *adapter)
 {
 	/* mbx */
 	if (adapter->num_other_vectors) {
 		if (adapter->flags & RNP_FLAG_MSIX_ENABLED) {
-			adapter->hw.mbx.ops.configure(
-				&adapter->hw,
-				adapter->msix_entries[0].entry, false);
+			adapter->hw.mbx.ops.configure(&adapter->hw,
+						      adapter->msix_entries[0].entry,
+						      false);
 			free_irq(adapter->msix_entries[0].vector, adapter);
 
 			adapter->hw.mbx.other_irq_enabled = false;
@@ -6526,8 +6418,9 @@ static int register_mbx_irq(struct rnp_adapter *adapter)
 				      err);
 				goto err_mbx;
 			}
-			hw->mbx.ops.configure(
-				hw, adapter->msix_entries[0].entry, true);
+			hw->mbx.ops.configure(hw,
+					      adapter->msix_entries[0].entry,
+					      true);
 			adapter->hw.mbx.other_irq_enabled = true;
 		}
 	}
@@ -6604,10 +6497,9 @@ static void rnp_fix_dma_tx_status(struct rnp_adapter *adapter)
 	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_dma_info *dma = &hw->dma;
 
-	if ((hw->hw_type == rnp_hw_n10) || (hw->hw_type == rnp_hw_n400)) {
+	if (hw->hw_type == rnp_hw_n10 || hw->hw_type == rnp_hw_n400) {
 		for (i = 0; i < dma->max_tx_queues; i++)
-			dma_ring_wr32(
-				dma, RING_OFFSET(i) + RNP_DMA_TX_START, 1);
+			dma_ring_wr32(dma, RING_OFFSET(i) + RNP_DMA_TX_START, 1);
 	}
 }
 
@@ -6625,9 +6517,9 @@ static u8 rnp10_pfnum(u8 __iomem *hw_addr_bar0, struct pci_dev *pdev)
 	return ((vf_num & VF_NUM_MASK_TEMP) >> VF_NUM_OFF);
 }
 
-int rnp_can_rpu_start(struct rnp_adapter *adapter)
+static int rnp_can_rpu_start(struct rnp_adapter *adapter)
 {
-	if (adapter->hw.rpu_addr == NULL)
+	if (!adapter->hw.rpu_addr)
 		return 0;
 	if ((adapter->pdev->device & 0xff00) == 0x1c00)
 		return 1;
@@ -6697,7 +6589,7 @@ static int rnp_add_adpater(struct pci_dev *pdev, struct rnp_info *ii,
 		/* n10 use bar4 */
 #define RNP_NIC_BAR_N10 4
 		hw_addr = ioremap(pci_resource_start(pdev, RNP_NIC_BAR_N10),
-				pci_resource_len(pdev, RNP_NIC_BAR_N10));
+				  pci_resource_len(pdev, RNP_NIC_BAR_N10));
 		if (!hw_addr) {
 			dev_err(&pdev->dev, "pcim_iomap bar%d failed!\n",
 				RNP_NIC_BAR_N10);
@@ -6705,8 +6597,8 @@ static int rnp_add_adpater(struct pci_dev *pdev, struct rnp_info *ii,
 		}
 		pr_info("[bar%d]:%p %llx len=%d MB\n", RNP_NIC_BAR_N10,
 			hw_addr,
-			(unsigned long long)pci_resource_start(
-				pdev, RNP_NIC_BAR_N10),
+			(unsigned long long)pci_resource_start(pdev,
+			RNP_NIC_BAR_N10),
 			(int)pci_resource_len(pdev, RNP_NIC_BAR_N10) /
 				1024 / 1024);
 		/* get dma version */
@@ -6785,8 +6677,8 @@ static int rnp_add_adpater(struct pci_dev *pdev, struct rnp_info *ii,
 		memcpy(&hw->mbx.ops, ii->mbx_ops, sizeof(hw->mbx.ops));
 		if (dma_version >= 0x20210111) {
 			rnp_mbx_link_event_enable(hw, 0);
-			if ((hw->hw_type == rnp_hw_n10) ||
-			    (hw->hw_type == rnp_hw_n400))
+			if (hw->hw_type == rnp_hw_n10 ||
+			    hw->hw_type == rnp_hw_n400)
 				rnp_mbx_force_speed(hw, 0);
 			if (rnp_mbx_get_capability(hw, ii)) {
 				dev_err(&pdev->dev,
@@ -7005,7 +6897,6 @@ static int rnp_add_adpater(struct pci_dev *pdev, struct rnp_info *ii,
 	/* carrier off reporting is important to ethtool even BEFORE open */
 	netif_carrier_off(netdev);
 
-
 	if (adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 		DPRINTK(PROBE, INFO, "IOV is enabled with %d VFs\n",
 			adapter->num_vfs);
@@ -7044,7 +6935,7 @@ err_free_net:
 /**
  * rnp_probe - Device Initialization Routine
  * @pdev: PCI device information struct
- * @ent: entry in rnp_pci_tbl
+ * @id: pci_device_id
  *
  * Returns 0 on success, negative on failure
  *
@@ -7076,41 +6967,38 @@ static int rnp_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	if (enable_hi_dma) {
 		if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(56)) &&
-				!dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(56))) {
+		    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(56))) {
 			enable_hi_dma = 1;
 		} else {
 			err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 			if (err) {
 				err = dma_set_coherent_mask(&pdev->dev,
-						DMA_BIT_MASK(32));
+							    DMA_BIT_MASK(32));
 				if (err) {
 					dev_err(&pdev->dev,
-							"No usable DMA configuration, aborting\n");
+						"No usable DMA configuration, aborting\n");
 					goto err_dma;
 				}
 			}
 			enable_hi_dma = 0;
 		}
 	} else {
-		err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
-		if (err) {
-			err = dma_set_coherent_mask(&pdev->dev,
-					DMA_BIT_MASK(32));
-			if (err) {
-				dev_err(&pdev->dev,
-						"No usable DMA configuration, aborting\n");
-				goto err_dma;
-			}
+		if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32)) &&
+		    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32))) {
+			enable_hi_dma = 0;
+		} else {
+			dev_err(&pdev->dev,
+				"No usable DMA configuration, aborting\n");
+			goto err_dma;
 		}
 	}
 
 	err = pci_request_mem_regions(pdev, rnp_driver_name);
 	if (err) {
 		dev_err(&pdev->dev,
-				"pci_request_selected_regions failed 0x%x\n", err);
+			"pci_request_selected_regions failed 0x%x\n", err);
 		goto err_pci_reg;
 	}
-
 
 	pci_set_master(pdev);
 	pci_save_state(pdev);
@@ -7160,7 +7048,7 @@ static void rnp_remove(struct pci_dev *pdev)
  * this device has been detected.
  */
 static pci_ers_result_t rnp_io_error_detected(struct pci_dev *pdev,
-		pci_channel_state_t state)
+					      pci_channel_state_t state)
 {
 	struct rnp_adapter *adapter = pci_get_drvdata(pdev);
 	struct net_device *netdev = adapter->netdev;
@@ -7203,7 +7091,7 @@ static pci_ers_result_t rnp_io_error_detected(struct pci_dev *pdev,
 		vf = (req_id & 0x7F) >> 1;
 		e_dev_err("VF %d has caused a PCIe error\n", vf);
 		e_dev_err("TLP: dw0: %8.8x\tdw1: %8.8x\tdw2:",
-				dw0, dw1);
+			  dw0, dw1);
 		e_dev_err("%8.8x\tdw3: %8.8x\n", dw2, dw3);
 		switch (hw->hw_type) {
 		case rnp_hw_n10:
@@ -7221,10 +7109,9 @@ static pci_ers_result_t rnp_io_error_detected(struct pci_dev *pdev,
 			if (vfdev->devfn == (req_id & 0xFF))
 				break;
 			vfdev = pci_get_device(PCI_VENDOR_ID_MUCSE, device_id,
-					vfdev);
+					       vfdev);
 		}
-		/*
-		 * There's a slim chance the VF could have been hot plugged,
+		/* There's a slim chance the VF could have been hot plugged,
 		 * so if it is no longer present we don't need to issue the
 		 * VFLR.  Just clean up the AER in that case.
 		 */
@@ -7238,8 +7125,7 @@ static pci_ers_result_t rnp_io_error_detected(struct pci_dev *pdev,
 		pci_aer_clear_nonfatal_status(pdev);
 	}
 
-	/*
-	 * Even though the error may have occurred on the other port
+	/* Even though the error may have occurred on the other port
 	 * we still need to increment the vf error reference count for
 	 * both ports because the I/O resume function will be called
 	 * for both of them.
@@ -7270,7 +7156,6 @@ skip_bad_vf_detection:
  */
 static pci_ers_result_t rnp_io_slot_reset(struct pci_dev *pdev)
 {
-
 	pci_ers_result_t result = PCI_ERS_RESULT_NONE;
 
 	struct rnp_adapter *adapter = pci_get_drvdata(pdev);

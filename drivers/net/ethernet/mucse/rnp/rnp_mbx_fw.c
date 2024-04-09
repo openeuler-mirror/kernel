@@ -15,7 +15,7 @@
 static struct mbx_req_cookie *mbx_cookie_zalloc(int priv_len)
 {
 	struct mbx_req_cookie *cookie =
-		kzalloc(sizeof(*cookie) + priv_len, GFP_KERNEL);
+		kzalloc(struct_size(cookie, priv, priv_len), GFP_KERNEL);
 
 	if (cookie) {
 		cookie->timeout_jiffes = 30 * HZ;
@@ -27,7 +27,7 @@ static struct mbx_req_cookie *mbx_cookie_zalloc(int priv_len)
 }
 
 static int rnp_mbx_write_posted_locked(struct rnp_hw *hw,
-				struct mbx_fw_cmd_req *req)
+				       struct mbx_fw_cmd_req *req)
 {
 	int err = 0;
 	int retry = 3;
@@ -50,16 +50,18 @@ try_again:
 		return -EIO;
 	}
 
-	err = hw->mbx.ops.write_posted(
-		hw, (u32 *)req, (req->datalen + MBX_REQ_HDR_LEN) / 4,
-		MBX_FW);
+	err = hw->mbx.ops.write_posted(hw,
+				       (u32 *)req,
+				       (req->datalen + MBX_REQ_HDR_LEN) / 4,
+				       MBX_FW);
 	if (err)
 		goto try_again;
 	mutex_unlock(&hw->mbx.lock);
 
 	return err;
 }
-/*
+
+/**
  * force firmware report link event to driver
  */
 static void rnp_link_stat_mark_reset(struct rnp_hw *hw)
@@ -73,7 +75,7 @@ static void rnp_link_stat_mark_disable(struct rnp_hw *hw)
 }
 
 static int rnp_mbx_fw_post_req(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
-			struct mbx_req_cookie *cookie)
+			       struct mbx_req_cookie *cookie)
 {
 	int err = 0;
 	struct rnp_adapter *adpt = hw->back;
@@ -102,9 +104,9 @@ static int rnp_mbx_fw_post_req(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 
 	if (cookie->timeout_jiffes != 0) {
 retry:
-		err = wait_event_interruptible_timeout(
-			cookie->wait, cookie->done == 1,
-			cookie->timeout_jiffes);
+		err = wait_event_interruptible_timeout(cookie->wait,
+						       cookie->done == 1,
+						       cookie->timeout_jiffes);
 
 		if (err == -ERESTARTSYS)
 			goto retry;
@@ -130,7 +132,7 @@ retry:
 }
 
 static int rnp_fw_send_cmd_wait(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
-			 struct mbx_fw_cmd_reply *reply)
+				struct mbx_fw_cmd_reply *reply)
 {
 	int err;
 	int retry_cnt = 3;
@@ -148,9 +150,10 @@ static int rnp_fw_send_cmd_wait(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 
 	rnp_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n",
 		 __func__, hw->pfvfnum, &hw->mbx.lock, hw, req->opcode);
-	err = hw->mbx.ops.write_posted(
-		hw, (u32 *)req, (req->datalen + MBX_REQ_HDR_LEN) / 4,
-		MBX_FW);
+	err = hw->mbx.ops.write_posted(hw,
+				       (u32 *)req,
+				       (req->datalen + MBX_REQ_HDR_LEN) / 4,
+				       MBX_FW);
 	if (err) {
 		rnp_err("%s: write_posted failed! err:0x%x opcode:0x%x\n",
 			__func__, err, req->opcode);
@@ -239,11 +242,12 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 			rnp_err("%s: 1 error:%d\n", __func__, err);
 			goto quit;
 		}
-		st = (struct lane_stat_data *)&(reply.data);
+		st = (struct lane_stat_data *)&reply.data;
 	}
 
 	hw->phy_type = st->phy_type;
-	hw->speed = adpt->speed = st->speed;
+	adpt->speed = st->speed;
+	hw->speed = adpt->speed;
 	if (st->is_sgmii) {
 		adpt->phy_addr = st->phy_addr;
 	} else {
@@ -268,7 +272,7 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 	hw->advertised_link = st->advertised_link;
 	hw->tp_mdx = st->tp_mdx;
 
-	if ((hw->hw_type == rnp_hw_n10) || (hw->hw_type == rnp_hw_n400)) {
+	if (hw->hw_type == rnp_hw_n10 || hw->hw_type == rnp_hw_n400) {
 		if (hw->fw_version >= 0x00050000) {
 			hw->sfp_connector = st->sfp_connector;
 			hw->duplex = st->duplex;
@@ -285,15 +289,15 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 	}
 
 	rnp_logd(LOG_MBX_LINK_STAT,
-		"%s:pma_type:0x%x phy_type:0x%x,linkup:%d duplex:%d auton:%d ",
-		adpt->name, st->pma_type, st->phy_type, st->linkup,
-		st->duplex, st->autoneg);
+		 "%s:pma_type:0x%x phy_type:0x%x,linkup:%d duplex:%d auton:%d ",
+		 adpt->name, st->pma_type, st->phy_type, st->linkup,
+		 st->duplex, st->autoneg);
 	rnp_logd(LOG_MBX_LINK_STAT,
-		"fec:%d an:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d ",
-		st->fec, st->an, st->link_traing,
-		st->is_sgmii, hw->supported_link, hw->is_backplane);
+		 "fec:%d an:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d ",
+		 st->fec, st->an, st->link_traing,
+		 st->is_sgmii, hw->supported_link, hw->is_backplane);
 	rnp_logd(LOG_MBX_LINK_STAT, "speed:%d sfp_connector:0x%x\n",
-		st->speed, st->sfp_connector);
+		 st->speed, st->sfp_connector);
 quit:
 	kfree(cookie);
 	return err;
@@ -366,8 +370,8 @@ int rnp_maintain_req(struct rnp_hw *hw, int cmd, int arg0,
 	memset(&reply, 0, sizeof(reply));
 	cookie->timeout_jiffes = 60 * HZ;
 	build_maintain_req(&req, cookie, cmd, arg0, req_data_bytes,
-			reply_bytes, address & 0xffffffff,
-			(address >> 32) & 0xffffffff);
+			   reply_bytes, address & 0xffffffff,
+			   (address >> 32) & 0xffffffff);
 
 	if (hw->mbx.other_irq_enabled) {
 		cookie->timeout_jiffes = 400 * HZ;
@@ -432,7 +436,7 @@ int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr,
 	}
 
 	build_get_macaddress_req(&req, 1 << nr_lane, pfvfnum,
-			&req);
+				 &req);
 	err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 	if (err) {
 		rnp_err("%s: failed. err:%d\n", __func__, err);
@@ -448,13 +452,13 @@ int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr,
 }
 
 static int rnp_mbx_sfp_read(struct rnp_hw *hw, int sfp_i2c_addr, int reg,
-		int cnt, u8 *out_buf)
+			    int cnt, u8 *out_buf)
 {
 	struct mbx_fw_cmd_req req;
 	int err = -EIO;
 	int nr_lane = hw->nr_lane;
 
-	if ((cnt > MBX_SFP_READ_MAX_CNT) || !out_buf) {
+	if (cnt > MBX_SFP_READ_MAX_CNT || !out_buf) {
 		rnp_err("%s: cnt:%d should <= %d out_buf:%p\n", __func__,
 			cnt, MBX_SFP_READ_MAX_CNT, out_buf);
 		return -EINVAL;
@@ -466,7 +470,7 @@ static int rnp_mbx_sfp_read(struct rnp_hw *hw, int sfp_i2c_addr, int reg,
 		if (!cookie)
 			return -ENOMEM;
 		build_mbx_sfp_read(&req, nr_lane, sfp_i2c_addr, reg, cnt,
-				cookie);
+				   cookie);
 		err = rnp_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
 			kfree(cookie);
@@ -480,7 +484,7 @@ static int rnp_mbx_sfp_read(struct rnp_hw *hw, int sfp_i2c_addr, int reg,
 
 		memset(&reply, 0, sizeof(reply));
 		build_mbx_sfp_read(&req, nr_lane, sfp_i2c_addr, reg, cnt,
-				&reply);
+				   &reply);
 		err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 		if (err == 0)
 			memcpy(out_buf, reply.sfp_read.value, cnt);
@@ -718,7 +722,7 @@ int rnp_mbx_get_dump(struct rnp_hw *hw, int flags, u8 *data_out, int bytes)
 	memset(&reply, 0, sizeof(reply));
 	if (bytes > sizeof(get_dump->data)) {
 		dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes,
-				&dma_phy, GFP_ATOMIC);
+					     &dma_phy, GFP_ATOMIC);
 		if (!dma_buf) {
 			err = -ENOMEM;
 			goto quit;
@@ -727,7 +731,7 @@ int rnp_mbx_get_dump(struct rnp_hw *hw, int flags, u8 *data_out, int bytes)
 
 	address = dma_phy;
 	build_get_dump_req(&req, cookie, hw->nr_lane, address & 0xffffffff,
-			(address >> 32) & 0xffffffff, bytes);
+			   (address >> 32) & 0xffffffff, bytes);
 
 	if (hw->mbx.other_irq_enabled) {
 		err = rnp_mbx_fw_post_req(hw, &req, cookie);
@@ -783,7 +787,7 @@ int rnp_fw_update(struct rnp_hw *hw, int partition, const u8 *fw_bin,
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 	dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes, &dma_phy,
-			GFP_ATOMIC);
+				     GFP_ATOMIC);
 	if (!dma_buf) {
 		err = -ENOMEM;
 		goto quit;
@@ -791,7 +795,7 @@ int rnp_fw_update(struct rnp_hw *hw, int partition, const u8 *fw_bin,
 	memcpy(dma_buf, fw_bin, bytes);
 	address = dma_phy;
 	build_fw_update_req(&req, cookie, partition, address & 0xffffffff,
-			(address >> 32) & 0xffffffff, bytes);
+			    (address >> 32) & 0xffffffff, bytes);
 	if (hw->mbx.other_irq_enabled) {
 		cookie->timeout_jiffes = 400 * HZ;
 		err = rnp_mbx_fw_post_req(hw, &req, cookie);
@@ -813,7 +817,7 @@ quit:
 }
 
 /**
- * rnp_mbx_link_event_eanble - set link event status to firmware
+ * rnp_mbx_link_event_enable - set link event status to firmware
  * @hw: hw private structure
  * @enable: status
  *
@@ -837,7 +841,7 @@ int rnp_mbx_link_event_enable(struct rnp_hw *hw, int enable)
 		wr32(hw, RNP_DMA_DUMY, 0);
 	}
 	build_link_set_event_mask(&req, BIT(EVT_LINK_UP),
-			(enable & 1) << EVT_LINK_UP, &req);
+				  (enable & 1) << EVT_LINK_UP, &req);
 	err = rnp_mbx_write_posted_locked(hw, &req);
 
 	return err;
@@ -863,18 +867,18 @@ static int to_mac_type(struct phy_abilities *ability)
 {
 	int lanes = hweight_long(ability->lane_mask);
 
-	if ((ability->phy_type == PHY_TYPE_40G_BASE_KR4) ||
-	    (ability->phy_type == PHY_TYPE_40G_BASE_LR4) ||
-	    (ability->phy_type == PHY_TYPE_40G_BASE_CR4) ||
-	    (ability->phy_type == PHY_TYPE_40G_BASE_SR4)) {
+	if (ability->phy_type == PHY_TYPE_40G_BASE_KR4 ||
+	    ability->phy_type == PHY_TYPE_40G_BASE_LR4 ||
+	    ability->phy_type == PHY_TYPE_40G_BASE_CR4 ||
+	    ability->phy_type == PHY_TYPE_40G_BASE_SR4) {
 		if (lanes == 1)
 			return rnp_mac_n10g_x8_40G;
 		else
 			return rnp_mac_n10g_x8_10G;
-	} else if ((ability->phy_type == PHY_TYPE_10G_BASE_KR) ||
-		   (ability->phy_type == PHY_TYPE_10G_BASE_LR) ||
-		   (ability->phy_type == PHY_TYPE_10G_BASE_ER) ||
-		   (ability->phy_type == PHY_TYPE_10G_BASE_SR)) {
+	} else if (ability->phy_type == PHY_TYPE_10G_BASE_KR ||
+		   ability->phy_type == PHY_TYPE_10G_BASE_LR ||
+		   ability->phy_type == PHY_TYPE_10G_BASE_ER ||
+		   ability->phy_type == PHY_TYPE_10G_BASE_SR) {
 		if (lanes == 1)
 			return rnp_mac_n10g_x2_10G;
 		else if (lanes == 2)
@@ -894,7 +898,10 @@ static int to_mac_type(struct phy_abilities *ability)
  * rnp_set_lane_fun - set lane value
  * @hw: hw private structure
  * @fun: fun id
- * @vlaue0, vlaue1, value2, vlaue3: values
+ * @value0: values
+ * @value1: values
+ * @value2: values
+ * @value3: values
  *
  **/
 int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
@@ -906,7 +913,7 @@ int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 	build_set_lane_fun(&req, hw->nr_lane, fun, value0, value1, value2,
-			value3);
+			   value3);
 
 	return rnp_mbx_write_posted_locked(hw, &req);
 }
@@ -1017,7 +1024,7 @@ int rnp_mbx_led_set(struct rnp_hw *hw, int value)
 /**
  * rnp_mbx_get_capability - get hw capability
  * @hw: hw private structure
- * @rnp_info: rnp_info structure
+ * @info: rnp_info structure
  *
  **/
 int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
@@ -1049,8 +1056,8 @@ int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
 			hw->wol = ablity.wol_status;
 			hw->eco = ablity.e.v2;
 
-			if ((hw->fw_version >= 0x00050201) &&
-			    (ablity.speed == SPEED_10000)) {
+			if (hw->fw_version >= 0x00050201 &&
+			    ablity.speed == SPEED_10000) {
 				hw->force_speed_stat =
 					FORCE_SPEED_STAT_DISABLED;
 				hw->force_10g_1g_speed_ablity = 1;
@@ -1070,20 +1077,20 @@ int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
 			}
 
 			pr_info("%s: nic-mode:%d mac:%d adpt_cnt:%d lane_mask:0x%x",
-					__func__, hw->mode, info->mac,
-					info->adapter_cnt, hw->lane_mask);
+				__func__, hw->mode, info->mac,
+				info->adapter_cnt, hw->lane_mask);
 			pr_info("phy_type 0x%x, pfvfnum:0x%x, fw-version:0x%08x\n, axi:%d Mhz,",
-					hw->phy_type, hw->pfvfnum,
-					ablity.fw_version, ablity.axi_mhz);
+				hw->phy_type, hw->pfvfnum,
+				ablity.fw_version, ablity.axi_mhz);
 			pr_info("port_id:%d bd_uid:0x%08x 0x%x ex-ablity:0x%x fs:%d speed:%d ",
-					ablity.port_id[0], hw->bd_uid,
-					ablity.phy_id, ablity.ext_ablity,
-					hw->force_10g_1g_speed_ablity,
-					ablity.speed);
+				ablity.port_id[0], hw->bd_uid,
+				ablity.phy_id, ablity.ext_ablity,
+				hw->force_10g_1g_speed_ablity,
+				ablity.speed);
 			pr_info("ncsi_en:%u %d wol=0x%x  rpu:%d-%d eco %d\n",
-					hw->ncsi_en,
-					hw->ncsi_rar_entries, hw->wol, hw->rpu_en,
-					hw->rpu_availble, hw->eco);
+				hw->ncsi_en,
+				hw->ncsi_rar_entries, hw->wol, hw->rpu_en,
+				hw->rpu_availble, hw->eco);
 
 			if (info->adapter_cnt != 0)
 				return 0;
@@ -1102,7 +1109,6 @@ int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
  **/
 int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage)
 {
-	int err;
 	struct mbx_req_cookie *cookie = NULL;
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
@@ -1116,10 +1122,10 @@ int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage)
 	memset(&req, 0, sizeof(req));
 	build_get_temp(&req, cookie);
 	if (hw->mbx.other_irq_enabled) {
-		err = rnp_mbx_fw_post_req(hw, &req, cookie);
+		rnp_mbx_fw_post_req(hw, &req, cookie);
 	} else {
 		memset(&reply, 0, sizeof(reply));
-		err = rnp_fw_send_cmd_wait(hw, &req, &reply);
+		rnp_fw_send_cmd_wait(hw, &req, &reply);
 		temp = &reply.get_temp;
 	}
 	if (voltage)
@@ -1129,30 +1135,6 @@ int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage)
 	kfree(cookie);
 
 	return temp_v;
-}
-
-/**
- * rnp_fw_reg_read - read a fw register
- * @hw: hw private structure
- * @addr: register start offset
- * @sz: register number
- *
- **/
-int rnp_fw_reg_read(struct rnp_hw *hw, int addr, int sz)
-{
-	struct mbx_req_cookie *cookie;
-	struct mbx_fw_cmd_req req;
-	int value;
-
-	cookie = mbx_cookie_zalloc(sizeof(int));
-	if (!cookie)
-		return -ENOMEM;
-	build_readreg_req(&req, addr, cookie);
-	rnp_mbx_fw_post_req(hw, &req, cookie);
-	value = *((int *)cookie->priv);
-	kfree(cookie);
-
-	return 0;
 }
 
 enum speed_enum {
@@ -1166,7 +1148,7 @@ enum speed_enum {
 };
 
 /**
- * rnp_mbx_stat_mark - write back link stat to firmware
+ * rnp_link_stat_mark - write back link stat to firmware
  * @hw: hw private structure
  * @up: link status
  *
@@ -1176,7 +1158,7 @@ void rnp_link_stat_mark(struct rnp_hw *hw, int up)
 	u32 v;
 
 	v = rd32(hw, RNP_DMA_DUMY);
-	if ((hw->hw_type == rnp_hw_n10) || (hw->hw_type == rnp_hw_n400)) {
+	if (hw->hw_type == rnp_hw_n10 || hw->hw_type == rnp_hw_n400) {
 		v &= ~(0xffff0000);
 		v |= 0xa5a40000;
 		if (up)
@@ -1199,7 +1181,7 @@ void rnp_mbx_probe_stat_set(struct rnp_hw *hw, int stat)
 	u32 v;
 
 	v = rd32(hw, RNP_DMA_DUMY);
-	if ((hw->hw_type == rnp_hw_n10) || (hw->hw_type == rnp_hw_n400)) {
+	if (hw->hw_type == rnp_hw_n10 || hw->hw_type == rnp_hw_n400) {
 		v &= ~(0xffff0000);
 		v |= 0xa5a40000;
 		if (stat == MBX_PROBE)
@@ -1220,14 +1202,14 @@ static inline int rnp_mbx_fw_req_handler(struct rnp_adapter *adapter,
 	switch (req->opcode) {
 	case LINK_STATUS_EVENT:
 		rnp_logd(LOG_LINK_EVENT,
-			"[LINK_STATUS_EVENT:0x%x] %s:link changed: changed_lane:0x%x\n",
-			req->opcode, adapter->name,
-			req->link_stat.changed_lanes);
+			 "[LINK_STATUS_EVENT:0x%x] %s:link changed: changed_lane:0x%x\n",
+			 req->opcode, adapter->name,
+			 req->link_stat.changed_lanes);
 		rnp_logd(LOG_LINK_EVENT,
-			"status:0x%x, speed:%d, duplex:%d\n",
-			req->link_stat.lane_status,
-			req->link_stat.st[0].speed,
-			req->link_stat.st[0].duplex);
+			 "status:0x%x, speed:%d, duplex:%d\n",
+			 req->link_stat.lane_status,
+			 req->link_stat.st[0].speed,
+			 req->link_stat.st[0].duplex);
 
 		if (req->link_stat.lane_status)
 			adapter->hw.link = 1;
@@ -1302,15 +1284,15 @@ static inline int rnp_rcv_msg_from_fw(struct rnp_adapter *adapter)
 	if (retval)
 		return retval;
 	rnp_logd(LOG_MBX_MSG_IN,
-			"msg from fw: msg[0]=0x%08x_0x%08x_0x%08x_0x%08x\n",
-			msgbuf[0], msgbuf[1], msgbuf[2], msgbuf[3]);
+		 "msg from fw: msg[0]=0x%08x_0x%08x_0x%08x_0x%08x\n",
+		 msgbuf[0], msgbuf[1], msgbuf[2], msgbuf[3]);
 
 	if (((unsigned short *)msgbuf)[0] & FLAGS_DD) {
-		return rnp_mbx_fw_reply_handler(
-			adapter, (struct mbx_fw_cmd_reply *)msgbuf);
+		return rnp_mbx_fw_reply_handler(adapter,
+						(struct mbx_fw_cmd_reply *)msgbuf);
 	} else {
-		return rnp_mbx_fw_req_handler(
-			adapter, (struct mbx_fw_cmd_req *)msgbuf);
+		return rnp_mbx_fw_req_handler(adapter,
+					      (struct mbx_fw_cmd_req *)msgbuf);
 	}
 }
 
@@ -1376,7 +1358,7 @@ int rnp_mbx_phy_read(struct rnp_hw *hw, u32 reg, u32 *val)
 		if (!cookie)
 			return -ENOMEM;
 		build_get_phy_reg(&req, cookie, PHY_EXTERNAL_PHY_MDIO,
-				nr_lane, reg);
+				  nr_lane, reg);
 
 		err = rnp_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
@@ -1391,7 +1373,7 @@ int rnp_mbx_phy_read(struct rnp_hw *hw, u32 reg, u32 *val)
 
 		memset(&reply, 0, sizeof(reply));
 		build_get_phy_reg(&req, &reply, PHY_EXTERNAL_PHY_MDIO,
-				nr_lane, reg);
+				  nr_lane, reg);
 
 		err = rnp_fw_send_cmd_wait(hw, &req, &reply);
 		if (err == 0)
@@ -1403,6 +1385,7 @@ int rnp_mbx_phy_read(struct rnp_hw *hw, u32 reg, u32 *val)
 /**
  * rnp_mbx_phy_link_set - set phy link statues
  * @hw: hw private structure
+ * @adv: advertised_link
  * @autoneg: neg status
  * @speed: speed
  * @duplex: duplex status
@@ -1417,7 +1400,7 @@ int rnp_mbx_phy_link_set(struct rnp_hw *hw, int adv, int autoneg,
 
 	memset(&req, 0, sizeof(req));
 	build_phy_link_set(&req, adv, hw->nr_lane, autoneg, speed, duplex,
-			mdix_ctrl);
+			   mdix_ctrl);
 
 	if (mutex_lock_interruptible(&hw->mbx.lock))
 		return -EAGAIN;
@@ -1450,22 +1433,6 @@ int rnp_mbx_phy_pause_set(struct rnp_hw *hw, int pause_mode)
 			MBX_FW);
 	mutex_unlock(&hw->mbx.lock);
 
-	return err;
-}
-
-int rnp_mbx_lldp_all_ports_enable(struct rnp_hw *hw, bool enable)
-{
-	struct mbx_fw_cmd_req req;
-	int err;
-
-	if (!hw->fw_lldp_ablity)
-		return -EOPNOTSUPP;
-
-	memset(&req, 0, sizeof(req));
-
-	build_lldp_ctrl_set(&req, LLDP_TX_ALL_LANES, enable);
-
-	err = rnp_mbx_write_posted_locked(hw, &req);
 	return err;
 }
 

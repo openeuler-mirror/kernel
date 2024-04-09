@@ -56,8 +56,7 @@ static bool rnp_cache_ring_dcb(struct rnp_adapter *adapter)
 
 	step = 4;
 	for (tc = 0, offset = 0; tc < num_tcs; tc++, offset += rss_i) {
-		/*
-		 * we from tc start
+		/* we from tc start
 		 * tc0 0 4 8 c
 		 * tc1 1 5 9 d
 		 * tc2 2 6 a e
@@ -242,8 +241,7 @@ static bool rnp_set_dcb_sriov_queues(struct rnp_adapter *adapter)
 	adapter->ring_feature[RING_F_VMDQ].indices = vmdq_i;
 	adapter->ring_feature[RING_F_VMDQ].mask = vmdq_m;
 
-	/*
-	 * We do not support DCB, VMDq, and RSS all simultaneously
+	/* We do not support DCB, VMDq, and RSS all simultaneously
 	 * so we will disable RSS since it is the lowest priority
 	 */
 	adapter->ring_feature[RING_F_RSS].indices = 2;
@@ -412,8 +410,7 @@ static bool rnp_set_rss_queues(struct rnp_adapter *adapter)
  * This is the top level queue allocation routine.  The order here is very
  * important, starting with the "most" number of features turned on at once,
  * and ending with the smallest set of features.  This way large combinations
- * can be allocated if they're turned on, and smaller combinations are the
- * fallthrough conditions.
+ * can be allocated if they're turned on.
  *
  **/
 static void rnp_set_num_queues(struct rnp_adapter *adapter)
@@ -436,7 +433,7 @@ static void rnp_set_num_queues(struct rnp_adapter *adapter)
 	rnp_set_rss_queues(adapter);
 }
 
-int rnp_acquire_msix_vectors(struct rnp_adapter *adapter, int vectors)
+static int rnp_acquire_msix_vectors(struct rnp_adapter *adapter, int vectors)
 {
 	int err;
 #define MIN_VECTORS (2)
@@ -449,10 +446,9 @@ int rnp_acquire_msix_vectors(struct rnp_adapter *adapter, int vectors)
 		adapter->msix_entries = NULL;
 		return -EINVAL;
 	}
-	/* use ture msix count */
+	/* use true msix count */
 	vectors = err;
-	/*
-	 * Adjust for only the vectors we'll use, which is minimum
+	/* Adjust for only the vectors we'll use, which is minimum
 	 * of max_msix_q_vectors + NON_Q_VECTORS, or the number of
 	 * vectors we were allocated.
 	 */
@@ -529,7 +525,7 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 		if ((eop_desc->vlan_cmd & cpu_to_le32(RNP_TXD_STAT_DD))) {
 			if (q_vector->new_rx_count != q_vector->old_rx_count) {
 				ring_wr32(ring, RNP_DMA_REG_RX_INT_DELAY_PKTCNT,
-						q_vector->new_rx_count);
+					  q_vector->new_rx_count);
 				q_vector->old_rx_count = q_vector->new_rx_count;
 			}
 			napi_schedule_irqoff(&q_vector->napi);
@@ -548,7 +544,7 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 		if (size) {
 			if (q_vector->new_rx_count != q_vector->old_rx_count) {
 				ring_wr32(ring, RNP_DMA_REG_RX_INT_DELAY_PKTCNT,
-						q_vector->new_rx_count);
+					  q_vector->new_rx_count);
 				q_vector->old_rx_count = q_vector->new_rx_count;
 			}
 			napi_schedule_irqoff(&q_vector->napi);
@@ -569,12 +565,11 @@ do_self_napi:
 /**
  * rnp_alloc_q_vector - Allocate memory for a single interrupt vector
  * @adapter: board private structure to initialize
- * @v_count: q_vectors allocated on adapter, used for ring interleaving
+ * @eth_queue_idx: q_vectors allocated on adapter, used for ring interleaving
  * @v_idx: index of vector in adapter struct
- * @txr_count: total number of Tx rings to allocate
- * @txr_idx: index of first Tx ring to allocate
- * @rxr_count: total number of Rx rings to allocate
- * @rxr_idx: index of first Rx ring to allocate
+ * @r_idx: ring idx
+ * @r_count: total number of rings to allocate
+ * @step: ring steps
  *
  * We allocate one q_vector.  If allocation fails we return -ENOMEM.
  **/
@@ -593,13 +588,8 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter,
 	int rxr_idx = r_idx, txr_idx = r_idx;
 	int cpu_offset = 0;
 
-	DPRINTK(PROBE, INFO,
-		"eth_queue_idx:%d v_idx:%d(off:%d) ring:%d ring_cnt:%d,",
-		eth_queue_idx, v_idx, adapter->q_vector_off, r_idx,
-		r_count);
-	DPRINTK(PROBE, INFO, "step:%d\n", step);
-
-	txr_count = rxr_count = r_count;
+	rxr_count = r_count;
+	txr_count = rxr_count;
 
 	ring_count = txr_count + rxr_count;
 	size = sizeof(struct rnp_q_vector) +
@@ -730,7 +720,7 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter,
 		/* push pointer to next ring */
 		ring++;
 	}
-	if ((hw->hw_type == rnp_hw_n10) || (hw->hw_type == rnp_hw_n400)) {
+	if (hw->hw_type == rnp_hw_n10 || hw->hw_type == rnp_hw_n400) {
 		q_vector->vector_flags |= RNP_QVECTOR_FLAG_IRQ_MISS_CHECK;
 		/* initialize timer */
 		q_vector->irq_check_usecs = 1000;
@@ -773,8 +763,7 @@ static void rnp_free_q_vector(struct rnp_adapter *adapter, int v_idx)
 	if (q_vector->vector_flags & RNP_QVECTOR_FLAG_IRQ_MISS_CHECK)
 		hrtimer_cancel(&q_vector->irq_miss_check_timer);
 
-	/*
-	 * rnp_get_stats64() might access the rings on this vector,
+	/* rnp_get_stats64() might access the rings on this vector,
 	 * we must wait a grace period before freeing it.
 	 */
 	kfree_rcu(q_vector, rcu);
@@ -833,8 +822,8 @@ static int rnp_alloc_q_vectors(struct rnp_adapter *adapter)
 			BUG_ON(ring_cnt != adapter->num_tc);
 
 		err = rnp_alloc_q_vector(adapter, adapter->eth_queue_idx,
-				v_idx, ring_idx, ring_cnt,
-				ring_step);
+					 v_idx, ring_idx, ring_cnt,
+					 ring_step);
 		if (err)
 			goto err_out;
 		ring_idx += ring_step * ring_cnt;
@@ -925,8 +914,9 @@ static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 	v_budget = min_t(int, v_budget, hw->mac.max_msix_vectors);
 
 	if (adapter->irq_mode == irq_mode_msix) {
-		adapter->msix_entries = kcalloc(
-			v_budget, sizeof(struct msix_entry), GFP_KERNEL);
+		adapter->msix_entries = kcalloc(v_budget,
+						sizeof(struct msix_entry),
+						GFP_KERNEL);
 
 		if (!adapter->msix_entries) {
 			rnp_err("alloc msix_entries failed!\n");
@@ -974,14 +964,12 @@ static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 	adapter->irq_mode = irq_mode_back;
 	/* legacy and msi only 1 vectors */
 	adapter->num_q_vectors = 1;
-	//if (adapter->num_other_vectors) // vector0 reversed for mbx
-	//	adapter->q_vector_off = 1;
 
 out:
 	return err;
 }
 
-void rnp_print_ring_info(struct rnp_adapter *adapter)
+static void rnp_print_ring_info(struct rnp_adapter *adapter)
 {
 	int i;
 	struct rnp_ring *ring;
@@ -1045,7 +1033,6 @@ int rnp_init_interrupt_scheme(struct rnp_adapter *adapter)
 	}
 	rnp_cache_ring_register(adapter);
 
-	// printk now qvctor ring setup
 	DPRINTK(PROBE, INFO,
 		"Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n\n",
 		(adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
@@ -1081,11 +1068,10 @@ void rnp_clear_interrupt_scheme(struct rnp_adapter *adapter)
 /**
  * rnp_tx_ctxtdesc - Send a control desc to hw
  * @tx_ring: target ring of this control desc
- * @mss_seg_len: mss length
- * @l4_hdr_len:  l4 length
- * @tunnel_hdr_len: tunnel_hdr_len
- * @inner_vlan_tag: inner_vlan_tag
- * @type_tucmd: cmd
+ * @mss_len_vf_num: mss_len_vf_num
+ * @inner_vlan_tunnel_len: inner_vlan_tunnel_len
+ * @ignore_vlan: ignore_vlan flag
+ * @crc_pad: crc_pad flag
  *
  **/
 
@@ -1138,6 +1124,7 @@ void rnp_tx_ctxtdesc(struct rnp_ring *tx_ring, u32 mss_len_vf_num,
 	buf_dump_line("ctx  ", __LINE__, context_desc,
 		      sizeof(*context_desc));
 }
+
 void rnp_maybe_tx_ctxtdesc(struct rnp_ring *tx_ring,
 			   struct rnp_tx_buffer *first, u32 ignore_vlan)
 {
@@ -1159,9 +1146,9 @@ void rnp_store_reta(struct rnp_adapter *adapter)
 
 	/* Write redirection table to HW */
 	for (i = 0; i < reta_entries; i++) {
-		if (adapter->flags & RNP_FLAG_SRIOV_ENABLED)
+		if (adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 			reta = adapter->rss_indir_tbl[i];
-		else {
+		} else {
 			rx_ring =
 				adapter->rx_ring[adapter->rss_indir_tbl[i]];
 			reta = rx_ring->rnp_queue_idx;

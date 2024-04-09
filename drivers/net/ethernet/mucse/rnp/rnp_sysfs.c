@@ -187,7 +187,7 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 	int rbytes = count;
 
-	if (adapter->maintain_buf == NULL)
+	if (!adapter->maintain_buf)
 		return 0;
 
 	if (off + count > adapter->maintain_buf_len)
@@ -266,8 +266,8 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 		/* req can't be acces, a copy data for read */
 		if (reply_bytes > 0) {
 			adapter->maintain_buf_len = reply_bytes;
-			adapter->maintain_buf = kmalloc(
-				adapter->maintain_buf_len, GFP_KERNEL);
+			adapter->maintain_buf = kmalloc(adapter->maintain_buf_len,
+							GFP_KERNEL);
 			if (!adapter->maintain_buf) {
 				err = -ENOMEM;
 				goto err_quit;
@@ -380,13 +380,15 @@ static ssize_t tcp_sync_info_store(struct device *dev,
 		adapter->tcp_sync_queue = tcp_sync_queue;
 		adapter->priv_flags |= RNP_PRIV_FLAG_TCP_SYNC;
 
-		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO)
-			hw->ops.set_tcp_sync_remapping(
-				hw, adapter->tcp_sync_queue, true, true);
-		else
-			hw->ops.set_tcp_sync_remapping(
-				hw, adapter->tcp_sync_queue, true, false);
-
+		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO) {
+			hw->ops.set_tcp_sync_remapping(hw,
+						       adapter->tcp_sync_queue,
+						       true, true);
+		} else {
+			hw->ops.set_tcp_sync_remapping(hw,
+						       adapter->tcp_sync_queue,
+						       true, false);
+		}
 	} else {
 		adapter->priv_flags &= ~RNP_PRIV_FLAG_TCP_SYNC;
 
@@ -426,7 +428,7 @@ static ssize_t rx_skip_info_store(struct device *dev,
 	if (kstrtou32(buf, 0, &rx_skip_count) != 0)
 		return -EINVAL;
 
-	if ((rx_skip_count > 0) && (rx_skip_count < 17)) {
+	if (rx_skip_count > 0 && rx_skip_count < 17) {
 		adapter->priv_skip_count = rx_skip_count - 1;
 		adapter->priv_flags |= RNP_PRIV_FLAG_RX_SKIP_EN;
 		hw->ops.set_rx_skip(hw, adapter->priv_skip_count, true);
@@ -614,7 +616,7 @@ static ssize_t tx_desc_info_store(struct device *dev,
 }
 
 static ssize_t para_info_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+			      struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
@@ -929,9 +931,9 @@ static ssize_t rx_counter_show(struct device *dev,
 			       val);
 
 		val = rd32(hw, RNP_RXTRANS_CODE_ERR_PKTS(port));
-		ret += sprintf(
-			buf + ret, "\t %16s 0x%08x: %d\n",
-			"code_err:", RNP_RXTRANS_CODE_ERR_PKTS(port), val);
+		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
+			       "code_err:", RNP_RXTRANS_CODE_ERR_PKTS(port),
+			       val);
 
 		val = rd32(hw, RNP_RXTRANS_CRC_ERR_PKTS(port));
 		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
@@ -939,14 +941,14 @@ static ssize_t rx_counter_show(struct device *dev,
 			       val);
 
 		val = rd32(hw, RNP_RXTRANS_SLEN_ERR_PKTS(port));
-		ret += sprintf(
-			buf + ret, "\t %16s 0x%08x: %d\n",
-			"slen_err:", RNP_RXTRANS_SLEN_ERR_PKTS(port), val);
+		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
+			       "slen_err:", RNP_RXTRANS_SLEN_ERR_PKTS(port),
+			       val);
 
 		val = rd32(hw, RNP_RXTRANS_GLEN_ERR_PKTS(port));
-		ret += sprintf(
-			buf + ret, "\t %16s 0x%08x: %d\n",
-			"glen_err:", RNP_RXTRANS_GLEN_ERR_PKTS(port), val);
+		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
+			       "glen_err:", RNP_RXTRANS_GLEN_ERR_PKTS(port),
+			       val);
 
 		val = rd32(hw, RNP_RXTRANS_IPH_ERR_PKTS(port));
 		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
@@ -954,9 +956,9 @@ static ssize_t rx_counter_show(struct device *dev,
 			       val);
 
 		val = rd32(hw, RNP_RXTRANS_CSUM_ERR_PKTS(port));
-		ret += sprintf(
-			buf + ret, "\t %16s 0x%08x: %d\n",
-			"csum_err:", RNP_RXTRANS_CSUM_ERR_PKTS(port), val);
+		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
+			       "csum_err:", RNP_RXTRANS_CSUM_ERR_PKTS(port),
+			       val);
 
 		val = rd32(hw, RNP_RXTRANS_LEN_ERR_PKTS(port));
 		ret += sprintf(buf + ret, "\t %16s 0x%08x: %d\n",
@@ -1148,11 +1150,12 @@ static ssize_t active_vid_show(struct device *dev,
 	struct net_device *netdev = to_net_device(dev);
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 	struct rnp_hw *hw = &adapter->hw;
-	u8 vfnum = hw->max_vfs - 1; //use last-vf's table entry. the las
+	u8 vfnum = hw->max_vfs - 1;
 
 	if ((adapter->flags & RNP_FLAG_SRIOV_ENABLED)) {
-		current_vid = rd32(hw, RNP_DMA_PORT_VEB_VID_TBL(
-					       adapter->port, vfnum));
+		current_vid = rd32(hw,
+				   RNP_DMA_PORT_VEB_VID_TBL(adapter->port,
+							    vfnum));
 	}
 
 	for_each_set_bit(vid, adapter->active_vlans, VLAN_N_VID) {
@@ -1182,7 +1185,7 @@ static ssize_t active_vid_store(struct device *dev,
 	if (kstrtou16(buf, 0, &vid) != 0)
 		return -EINVAL;
 
-	if ((vid < 4096) && test_bit(vid, adapter->active_vlans)) {
+	if (vid < 4096 && test_bit(vid, adapter->active_vlans)) {
 		if (rd32(hw, RNP_DMA_VERSION) >= 0x20201231) {
 			for (port = 0; port < 4; port++)
 				wr32(hw,
@@ -1190,7 +1193,7 @@ static ssize_t active_vid_store(struct device *dev,
 				     vid);
 		} else {
 			wr32(hw, RNP_DMA_PORT_VEB_VID_TBL(adapter->port,
-				     vfnum), vid);
+							  vfnum), vid);
 		}
 		err = 0;
 	}
@@ -1211,7 +1214,7 @@ static inline int pn_sn_dlen(char *v, int v_len)
 	return len;
 }
 
-int rnp_mbx_get_pn_sn(struct rnp_hw *hw, char pn[33], char sn[33])
+static int rnp_mbx_get_pn_sn(struct rnp_hw *hw, char pn[33], char sn[33])
 {
 	struct maintain_req *req;
 	void *dma_buf = NULL;
@@ -1266,7 +1269,7 @@ err_quit:
 }
 
 static ssize_t own_vpd_show(struct device *dev, struct device_attribute *attr,
-			char *buf)
+			    char *buf)
 {
 	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
@@ -1276,9 +1279,8 @@ static ssize_t own_vpd_show(struct device *dev, struct device_attribute *attr,
 
 	rnp_mbx_get_pn_sn(hw, pn, sn);
 
-	ret += sprintf(
-		buf + ret, "Product Name: %s\n",
-		"Ethernet Controller N10 Series for 10GbE or 40GbE (Dual-port)");
+	ret += sprintf(buf + ret, "Product Name: %s\n",
+		       "N10 Series for 10GbE or 40GbE (Dual-port)");
 	ret += sprintf(buf + ret, "[PN] Part number: %s\n", pn);
 	ret += sprintf(buf + ret, "[SN] Serial number: %s\n", sn);
 
@@ -1328,11 +1330,10 @@ static ssize_t sfp_show(struct device *dev, struct device_attribute *attr,
 	if (rnp_mbx_get_lane_stat(hw) != 0) {
 		ret += sprintf(buf, " IO Error\n");
 	} else {
-		ret += sprintf(
-			buf,
-			"mod-abs:%d\ntx-fault:%d\ntx-dis:%d\nrx-los:%d\n",
-			adapter->sfp.mod_abs, adapter->sfp.fault,
-			adapter->sfp.tx_dis, adapter->sfp.los);
+		ret += sprintf(buf,
+			       "mod-abs:%d\ntx-fault:%d\ntx-dis:%d\nrx-los:%d\n",
+			       adapter->sfp.mod_abs, adapter->sfp.fault,
+			       adapter->sfp.tx_dis, adapter->sfp.los);
 	}
 
 	return ret;
@@ -1490,7 +1491,7 @@ static DEVICE_ATTR_RW(fec);
 /* write pcs reg: echo "<lane> <pcs_reg> <val>" > pcs_reg */
 /* read pcs reg: echo "<lane> <pcs_reg>" > pcs_reg */
 static ssize_t pcs_reg_store(struct device *dev, struct device_attribute *attr,
-			 const char *buf, size_t count)
+			     const char *buf, size_t count)
 {
 	u32 reg_hi = 0, reg_lo = 0, pcs_base_regs = 0;
 	struct net_device *netdev = to_net_device(dev);
@@ -1542,7 +1543,7 @@ static ssize_t pcs_reg_store(struct device *dev, struct device_attribute *attr,
 		break;
 	default:
 		e_err(drv, "Error: Invalid value. input_arg_cnt=%d\n",
-		       input_arg_cnt);
+		      input_arg_cnt);
 		break;
 	}
 	adapter->sysfs_input_arg_cnt = input_arg_cnt;
@@ -1551,7 +1552,7 @@ static ssize_t pcs_reg_store(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t pcs_reg_show(struct device *dev, struct device_attribute *attr,
-			char *buf)
+			    char *buf)
 {
 	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
@@ -1572,7 +1573,7 @@ static ssize_t pcs_reg_show(struct device *dev, struct device_attribute *attr,
 		break;
 	default:
 		e_err(drv, "Error: Invalid input_arg_cnt value =%d\n",
-		       adapter->sysfs_input_arg_cnt);
+		      adapter->sysfs_input_arg_cnt);
 		break;
 	}
 
@@ -1592,8 +1593,10 @@ static ssize_t phy_reg_show(struct device *dev,
 
 	if (hw) {
 		if (adapter->sysfs_is_phy_ext_reg) {
-			err = rnp_mbx_phy_read(
-				hw, phy_reg | PHY_EXT_REG_FLAG, &val);
+			err = rnp_mbx_phy_read(hw,
+					       phy_reg |
+					       PHY_EXT_REG_FLAG,
+					       &val);
 		} else {
 			err = rnp_mbx_phy_read(hw, phy_reg, &val);
 		}
@@ -1665,8 +1668,10 @@ static ssize_t phy_reg_store(struct device *dev,
 		if (adapter->sysfs_is_phy_ext_reg) {
 			/* write ext phy reg */
 			phy_reg = val[1];
-			err = rnp_mbx_phy_write(
-				hw, phy_reg | PHY_EXT_REG_FLAG, val[2]);
+			err = rnp_mbx_phy_write(hw,
+						phy_reg |
+						PHY_EXT_REG_FLAG,
+						val[2]);
 		} else {
 			return -EINVAL;
 		}
@@ -1731,8 +1736,8 @@ static ssize_t autoneg_show(struct device *dev,
 static DEVICE_ATTR_RW(autoneg);
 
 static ssize_t si_store(struct device *dev,
-			     struct device_attribute *attr,
-			     const char *buf, size_t count)
+			struct device_attribute *attr,
+			const char *buf, size_t count)
 {
 	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
@@ -1757,14 +1762,13 @@ static ssize_t si_store(struct device *dev,
 		u32 lane2_main, lane2_pre, lane2_post, lane2_boost;
 		u32 lane3_main, lane3_pre, lane3_post, lane3_boost;
 
-		cnt = sscanf(
-			buf,
-			"%u %u %u %u,%u %u %u %u,%u %u %u %u,%u %u %u %u",
-			&lane0_main, &lane0_pre, &lane0_post, &lane0_boost,
-			&lane1_main, &lane1_pre, &lane1_post, &lane1_boost,
-			&lane2_main, &lane2_pre, &lane2_post, &lane2_boost,
-			&lane3_main, &lane3_pre, &lane3_post,
-			&lane3_boost);
+		cnt = sscanf(buf,
+			     "%u %u %u %u,%u %u %u %u,%u %u %u %u,%u %u %u %u",
+			     &lane0_main, &lane0_pre, &lane0_post, &lane0_boost,
+			     &lane1_main, &lane1_pre, &lane1_post, &lane1_boost,
+			     &lane2_main, &lane2_pre, &lane2_post, &lane2_boost,
+			     &lane3_main, &lane3_pre, &lane3_post,
+			     &lane3_boost);
 		if (cnt != 16) {
 			e_err(drv, "Error: Invalid Input.\n");
 			e_err(drv, "  <lane0_si>,<lane1_si>,<lane2_si>,<lane3_si>\n");
@@ -1791,8 +1795,8 @@ static ssize_t si_store(struct device *dev,
 			     ((lane2_boost & 0xf) << 8) |
 			     ((lane3_boost & 0xf) << 12);
 		pr_info("%s: main:0x%x pre:0x%x post:0x%x boost:0x%x\n",
-		       adapter->name, si_main, si_pre, si_post,
-		       si_txboost);
+			adapter->name, si_main, si_pre, si_post,
+			si_txboost);
 	} else {
 		cnt = sscanf(buf, "%u %u %u %u", &si_main, &si_pre,
 			     &si_post, &si_txboost);
@@ -1816,7 +1820,7 @@ static ssize_t si_store(struct device *dev,
 }
 
 static ssize_t si_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+		       struct device_attribute *attr, char *buf)
 {
 	int ret = 0, i;
 	struct net_device *netdev = to_net_device(dev);
@@ -1828,32 +1832,29 @@ static ssize_t si_show(struct device *dev,
 	} else {
 		if (hw->supported_link & (RNP_LINK_SPEED_40GB_FULL |
 					  RNP_LINK_SPEED_25GB_FULL)) {
-			ret += sprintf(
-				buf + ret,
-				"main:0x%08x pre:0x%08x post:0x%08x tx_boost:0x%04x\n\n",
-				adapter->si.main, adapter->si.pre,
-				adapter->si.post, adapter->si.tx_boost);
+			ret += sprintf(buf + ret,
+				       "main:0x%08x pre:0x%08x post:0x%08x tx_boost:0x%04x\n\n",
+				       adapter->si.main, adapter->si.pre,
+				       adapter->si.post, adapter->si.tx_boost);
 			for (i = 0; i < 4; i++) {
-				ret += sprintf(
-					buf + ret,
-					" lane%d main:%u pre:%u post:%u tx_boost:%u\n",
-					i,
-					(adapter->si.main >> (i * 8)) &
-						0xff,
-					(adapter->si.pre >> (i * 8)) &
-						0xff,
-					(adapter->si.post >> (i * 8)) &
-						0xff,
-					(adapter->si.tx_boost >> (i * 4)) &
-						0xf);
+				ret += sprintf(buf + ret,
+					       "lane%d main:%u pre:%u post:%u tx_boost:%u\n",
+					       i,
+					       (adapter->si.main >> (i * 8)) &
+					       0xff,
+					       (adapter->si.pre >> (i * 8)) &
+					       0xff,
+					       (adapter->si.post >> (i * 8)) &
+					       0xff,
+					       (adapter->si.tx_boost >> (i * 4)) &
+					       0xf);
 			}
 		} else {
-			ret += sprintf(
-				buf + ret,
-				"lane:%d main:%u pre:%u post:%u tx_boost:%u\n",
-				hw->nr_lane, adapter->si.main,
-				adapter->si.pre, adapter->si.post,
-				adapter->si.tx_boost & 0xf);
+			ret += sprintf(buf + ret,
+				       "lane:%d main:%u pre:%u post:%u tx_boost:%u\n",
+				       hw->nr_lane, adapter->si.main,
+				       adapter->si.pre, adapter->si.post,
+				       adapter->si.tx_boost & 0xf);
 		}
 	}
 
@@ -1915,7 +1916,7 @@ static int do_switch_loopback_set(struct rnp_adapter *adapter, int en,
 	struct rnp_hw *hw = &adapter->hw;
 
 	pr_info("%s: %s %d -> %d en:%d\n", __func__,
-	       netdev_name(adapter->netdev), sport_lane, dport_lane, en);
+		netdev_name(adapter->netdev), sport_lane, dport_lane, en);
 
 	if (en)
 		adapter->flags |= RNP_FLAG_SWITCH_LOOPBACK_EN;
@@ -1959,7 +1960,7 @@ static ssize_t _switch_loopback(struct rnp_adapter *adapter,
 	strim(name);
 
 	pr_info("%s: nr_lane:%d peer_lane:%s en:%d\n", __func__, 0,
-	       peer_eth, en);
+		peer_eth, en);
 
 	peer_netdev = dev_get_by_name(&init_net, name);
 	if (!peer_netdev) {
@@ -1971,12 +1972,11 @@ static ssize_t _switch_loopback(struct rnp_adapter *adapter,
 	if (PCI_SLOT(peer_adapter->pdev->devfn) !=
 	    PCI_SLOT(adapter->pdev->devfn)) {
 		e_err(drv, "%s %s not in same slot\n",
-		       netdev_name(adapter->netdev),
-		       netdev_name(peer_adapter->netdev));
+		      netdev_name(adapter->netdev),
+		      netdev_name(peer_adapter->netdev));
 		dev_put(peer_netdev);
 		return -EINVAL;
 	}
-
 
 	do_switch_loopback_set(adapter, en, 0,
 			       rnp_is_pf1(&peer_adapter->hw) ? 4 : 0);
@@ -1988,6 +1988,7 @@ static ssize_t _switch_loopback(struct rnp_adapter *adapter,
 
 	return 0;
 }
+
 static ssize_t switch_loopback_on_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t count)
@@ -2057,10 +2058,12 @@ static struct attribute *dev_attrs[] = {
 	&dev_attr_switch_loopback_on.attr,
 	NULL,
 };
+
 static struct bin_attribute *dev_bin_attrs[] = {
 	&bin_attr_maintain,
 	NULL,
 };
+
 static struct attribute_group dev_attr_grp = {
 	.attrs = dev_attrs,
 	.bin_attrs = dev_bin_attrs,
@@ -2069,7 +2072,6 @@ static struct attribute_group dev_attr_grp = {
 static void
 rnp_sysfs_del_adapter(struct rnp_adapter __maybe_unused *adapter)
 {
-
 }
 
 /* called from rnp_main.c */
@@ -2096,7 +2098,7 @@ int rnp_sysfs_init(struct rnp_adapter *adapter)
 		return flag;
 	}
 	/* If this method isn't defined we don't support thermals */
-	if (adapter->hw.ops.init_thermal_sensor_thresh == NULL)
+	if (!adapter->hw.ops.init_thermal_sensor_thresh)
 		goto no_thermal;
 
 	/* Don't create thermal hwmon interface if no sensors present */
@@ -2114,8 +2116,7 @@ int rnp_sysfs_init(struct rnp_adapter *adapter)
 	adapter->rnp_hwmon_buff = rnp_hwmon;
 
 	for (i = 0; i < RNP_MAX_SENSORS; i++) {
-		/*
-		 * Only create hwmon sysfs entries for sensors that have
+		/* Only create hwmon sysfs entries for sensors that have
 		 * meaningful data for.
 		 */
 		if (adapter->hw.thermal_sensor_data.sensor[i].location ==
@@ -2141,8 +2142,10 @@ int rnp_sysfs_init(struct rnp_adapter *adapter)
 	rnp_hwmon->groups[0] = &rnp_hwmon->group;
 	rnp_hwmon->group.attrs = rnp_hwmon->attrs;
 
-	hwmon_dev = devm_hwmon_device_register_with_groups(
-		&adapter->pdev->dev, "rnp", rnp_hwmon, rnp_hwmon->groups);
+	hwmon_dev = devm_hwmon_device_register_with_groups(&adapter->pdev->dev,
+							   "rnp",
+							   rnp_hwmon,
+							   rnp_hwmon->groups);
 
 	if (IS_ERR(hwmon_dev)) {
 		rc = PTR_ERR(hwmon_dev);

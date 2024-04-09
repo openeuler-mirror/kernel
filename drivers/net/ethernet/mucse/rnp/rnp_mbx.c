@@ -10,8 +10,6 @@
 #include "rnp_mbx.h"
 #include "rnp_mbx_fw.h"
 
-
-
 /**
  *  rnp_read_mbx - Reads a message from the mailbox
  *  @hw: pointer to the HW structure
@@ -268,7 +266,7 @@ out:
 /**
  *  rnp_check_for_msg_pf - checks to see if the VF has sent mail
  *  @hw: pointer to the HW structure
- *  @vf_number: the VF index
+ *  @mbx_id: the VF index
  *
  *  returns SUCCESS if the VF has set the Status bit or else ERR_MBX
  **/
@@ -281,8 +279,8 @@ static s32 rnp_check_for_msg_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 	if (mbx_id == MBX_CM3CPU) {
 		hw_req_count = rnp_mbx_get_req(hw, CPU2PF_COUNTER(mbx));
 		if (mbx->mbx_feature & MBX_FEATURE_NO_ZERO) {
-			if ((hw_req_count != 0) &&
-			    (hw_req_count != hw->mbx.cpu_req)) {
+			if (hw_req_count != 0 &&
+			    hw_req_count != hw->mbx.cpu_req) {
 				ret_val = 0;
 				hw->mbx.stats.reqs++;
 			}
@@ -306,7 +304,7 @@ static s32 rnp_check_for_msg_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 /**
  *  rnp_check_for_ack_pf - checks to see if the VF has ACKed
  *  @hw: pointer to the HW structure
- *  @vf_number: the VF index
+ *  @mbx_id: the VF index
  *
  *  returns SUCCESS if the VF has set the Status bit or else ERR_MBX
  **/
@@ -350,7 +348,7 @@ static s32 rnp_obtain_mbx_lock_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 	while (try_cnt-- > 0) {
 		/* Take ownership of the buffer */
 		mbx_wr32(hw, CTRL_REG, MBOX_CTRL_PF_HOLD_SHM);
-		/* we need this sync memroy */
+		/* we need this sync memory */
 		wmb();
 		/* reserve mailbox for cm3 use */
 		if (mbx_rd32(hw, CTRL_REG) & MBOX_CTRL_PF_HOLD_SHM)
@@ -386,7 +384,7 @@ static s32 rnp_write_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 
 	if (size > RNP_VFMAILBOX_SIZE) {
 		rnp_err("%s: size:%d should <%d\n", __func__, size,
-		       RNP_VFMAILBOX_SIZE);
+			RNP_VFMAILBOX_SIZE);
 		return -EINVAL;
 	}
 
@@ -394,7 +392,7 @@ static s32 rnp_write_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 	ret_val = rnp_obtain_mbx_lock_pf(hw, mbx_id);
 	if (ret_val) {
 		rnp_err("%s: get mbx:%d wlock failed. ret:%d. req:0x%08x-0x%08x\n",
-		       __func__, mbx_id, ret_val, msg[0], msg[1]);
+			__func__, mbx_id, ret_val, msg[0], msg[1]);
 		goto out_no_write;
 	}
 
@@ -430,7 +428,7 @@ out_no_write:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @vf_number: the VF index
+ *  @mbx_id: the VF index
  *
  *  This function copies a message from the mailbox buffer to the caller's
  *  memory buffer.  The presumption is that the caller knows that there was
@@ -449,7 +447,7 @@ static s32 rnp_read_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 			PF2VF_MBOX_CTRL(mbx, mbx_id);
 	if (size > RNP_VFMAILBOX_SIZE) {
 		rnp_err("%s: size:%d should <%d\n", __func__, size,
-				RNP_VFMAILBOX_SIZE);
+			RNP_VFMAILBOX_SIZE);
 		return -EINVAL;
 	}
 	/* lock the mailbox to prevent pf/vf race condition */
@@ -457,7 +455,7 @@ static s32 rnp_read_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 	if (ret_val)
 		goto out_no_read;
 
-	/* force memory sync befor read from mbx */
+	/* force memory sync before read from mbx */
 	mb();
 	/* copy the message from the mailbox memory buffer */
 	for (i = 0; i < size; i++) {

@@ -199,8 +199,8 @@ static ssize_t rnp_dbg_netdev_ops_write(struct file *filp,
 			 adapter->tx_timeout_count);
 	} else if (strncmp(rnp_dbg_netdev_ops_buf, "tx_timeout", 10) ==
 		   0) {
-		adapter->netdev->netdev_ops->ndo_tx_timeout(
-			adapter->netdev, UINT_MAX);
+		adapter->netdev->netdev_ops->ndo_tx_timeout(adapter->netdev,
+							    UINT_MAX);
 		e_dev_info("tx_timeout called\n");
 	} else {
 		e_dev_info("Unknown command: %s\n",
@@ -250,6 +250,7 @@ static ssize_t rnp_dbg_netdev_temp_read(struct file *filp,
 	kfree(buf);
 	return len;
 }
+
 static const struct file_operations rnp_dbg_netdev_temp = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
@@ -294,7 +295,7 @@ void rnp_dbg_adapter_init(struct rnp_adapter *adapter)
 
 /**
  * rnp_dbg_adapter_exit - clear out the adapter's debugfs entries
- * @pf: the pf that is stopping
+ * @adapter: the pf that is stopping
  **/
 void rnp_dbg_adapter_exit(struct rnp_adapter *adapter)
 {
@@ -308,7 +309,7 @@ void rnp_dbg_adapter_exit(struct rnp_adapter *adapter)
 void rnp_dbg_init(void)
 {
 	rnp_dbg_root = debugfs_create_dir(rnp_driver_name, NULL);
-	if (rnp_dbg_root == NULL)
+	if (!rnp_dbg_root)
 		pr_err("init of debugfs failed\n");
 }
 
