@@ -2267,8 +2267,10 @@ static int edma_probe(struct platform_device *pdev)
 
 	ecc->slot_inuse = devm_kcalloc(dev, BITS_TO_LONGS(ecc->num_slots),
 				       sizeof(unsigned long), GFP_KERNEL);
-	if (!ecc->slave_chans || !ecc->slot_inuse)
+	if (!ecc->slave_chans || !ecc->slot_inuse) {
+		ret = -ENOMEM;
 		goto err_disable_pm;
+	}
 
 	ecc->default_queue = info->default_queue;
 
