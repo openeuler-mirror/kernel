@@ -642,6 +642,9 @@ static struct vgic_irq *vgic_its_check_cache(struct kvm *kvm, phys_addr_t db,
 
 	raw_spin_lock_irqsave(&dist->lpi_translation_cache[cacheid].lpi_cache_lock, flags);
 	irq = __vgic_its_check_cache(dist, db, devid, eventid, cacheid);
+	if (irq)
+		vgic_get_irq_kref(irq);
+
 	raw_spin_unlock_irqrestore(&dist->lpi_translation_cache[cacheid].lpi_cache_lock, flags);
 #else
 	raw_spin_lock_irqsave(&dist->lpi_list_lock, flags);
