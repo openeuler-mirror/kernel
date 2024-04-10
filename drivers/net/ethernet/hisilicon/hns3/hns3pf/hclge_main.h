@@ -1194,4 +1194,5 @@ void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle);
 void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 			  u8 *module_type);
 int hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable);
+int hclge_query_scc_version(struct hclge_dev *hdev, u32 *scc_version);
 #endif
