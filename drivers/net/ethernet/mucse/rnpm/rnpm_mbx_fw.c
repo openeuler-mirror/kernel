@@ -1020,7 +1020,7 @@ int rnpm_mbx_ifup_down(struct rnpm_hw *hw, int up)
 
 	err = hw->mbx.ops.write(hw, (u32 *)&req,
 				(req.datalen + MBX_REQ_HDR_LEN) / 4, MBX_FW);
-
+	mdelay(1);
 	mutex_unlock(hw->mbx.lock);
 
 	// force firmware report link-status
