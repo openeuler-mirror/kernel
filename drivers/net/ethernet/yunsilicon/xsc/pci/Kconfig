@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
+# All rights reserved.
+# Yunsilicon PCI configuration
+#
+
+config YUNSILICON_XSC_PCI
+	tristate "Yunsilicon XSC PCI driver"
+	default n
+	select NET_DEVLINK
+	select PAGE_POOL
+	help
+	  This driver is common for Yunsilicon XSC
+	  ethernet and RDMA drivers.
