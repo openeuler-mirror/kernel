@@ -358,7 +358,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->dev_cap.feature.bs.oor = udma_dev->caps.oor_en;
 	attr->dev_cap.ceq_cnt = udma_dev->caps.num_comp_vectors;
 	attr->dev_cap.feature.bs.jfc_inline = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_CQE_INLINE);
-	attr->dev_cap.feature.bs.spray_en = 1;
+	attr->dev_cap.feature.bs.spray_en = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_AR);
 	attr->dev_cap.max_jfs_rsge = udma_dev->caps.max_sq_sg;
 	attr->dev_cap.congestion_ctrl_alg = query_congest_alg(udma_dev->caps.cong_type);
 	attr->dev_cap.max_fe_cnt = udma_dev->func_num - 1;

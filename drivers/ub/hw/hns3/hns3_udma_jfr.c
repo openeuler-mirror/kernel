@@ -510,6 +510,11 @@ static int alloc_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 		dev_err(dev->dev, "failed to create qpc.\n");
 		goto failed_create_qpc;
 	}
+
+	ret = udma_init_qpc(dev, qp);
+	if (ret)
+		goto failed_modify_qpc;
+
 	jfr->um_qp = qp;
 
 	qp->state = QPS_RESET;

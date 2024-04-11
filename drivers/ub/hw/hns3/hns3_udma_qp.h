@@ -369,6 +369,7 @@ int udma_flush_cqe(struct udma_dev *udma_dev, struct udma_qp *udma_qp,
 void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);
 void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp);
 int udma_set_dca_buf(struct udma_dev *dev, struct udma_qp *qp);
+int udma_init_qpc(struct udma_dev *udma_dev, struct udma_qp *qp);
 
 static inline uint8_t get_affinity_cq_bank(uint8_t qp_bank)
 {

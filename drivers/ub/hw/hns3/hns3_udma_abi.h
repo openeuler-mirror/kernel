@@ -23,9 +23,9 @@
 #define MAP_INDEX_SHIFT			8
 #define UDMA_DWQE_PAGE_SIZE		65536
 #define UDMA_JETTY_X_PREFIX_BIT_NUM	2
-#define UDMA_JFS_QPN_PREFIX		0x0
+#define UDMA_JFS_QPN_PREFIX		0x2
 #define UDMA_JFR_QPN_PREFIX		0x1
-#define UDMA_JETTY_QPN_PREFIX		0x2
+#define UDMA_JETTY_QPN_PREFIX		0x3
 #define UDMA_ADDR_4K_MASK		0xfffUL
 #define URMA_SEG_ACCESS_GUARD		(1UL << 5)
 #define UDMA_DCA_ATTACH_FLAGS_NEW_BUFFER BIT(0)
@@ -72,8 +72,8 @@ struct udma_create_jfr_resp {
 struct udma_jfc_attr_ex {
 	uint64_t	jfc_ex_mask; /* Use enum udma_jfc_init_attr_mask */
 	uint64_t	create_flags; /* Use enum udma_jfc_create_flags */
-	uint8_t		poe_channel; /* poe channel to use */
 	uint64_t	notify_addr;
+	uint8_t		poe_channel; /* poe channel to use */
 	uint8_t		notify_mode; /* Use enum udma_jfc_notify_mode */
 };
 
@@ -123,8 +123,8 @@ enum udma_qp_cap_flags {
 };
 
 struct udp_srcport {
-	bool		um_spray_en;
 	uint16_t	um_data_udp_start;
+	bool		um_spray_en;
 	uint8_t		um_udp_range;
 };
 

@@ -118,10 +118,11 @@ static int del_eid_entry(struct udma_dev *udma_dev, uint32_t eid_index)
 static int udma_check_ueid_cfg(struct udma_dev *dev, uint16_t fe_idx,
 			       uint32_t eid_index)
 {
-	if (fe_idx != UDMA_NON_VIRTUALIZATION_FE_ID) {
+	if (fe_idx != dev->func_id) {
 		dev_err(dev->dev, "Check FE ID failed.\n");
 		return -EINVAL;
 	}
+
 	if (eid_index >= dev->caps.max_eid_cnt) {
 		dev_err(dev->dev, "Invalid EID index(%u), max value is %u.\n",
 			eid_index, dev->caps.max_eid_cnt);
