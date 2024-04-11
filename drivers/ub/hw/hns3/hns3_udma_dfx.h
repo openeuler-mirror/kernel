@@ -133,6 +133,7 @@ struct udma_dfx_info {
 struct udma_dfx_dev {
 	struct udma_dfx_info	*dfx;
 	struct udma_dev		*dev;
+	rwlock_t		rwlock;
 };
 
 extern struct udma_dfx_dev g_udma_dfx_list[MAX_UDMA_DEV];

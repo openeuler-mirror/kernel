@@ -378,8 +378,10 @@ static void store_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 		return;
 
 	jfr_new = kzalloc(sizeof(struct jfr_list), GFP_KERNEL);
-	if (jfr_new == NULL)
+	if (jfr_new == NULL) {
+		read_unlock(&g_udma_dfx_list[i].rwlock);
 		return;
+	}
 
 	lock = &g_udma_dfx_list[i].dfx->jfr_list->node_lock;
 	spin_lock_irqsave(lock, flags);
@@ -397,11 +399,13 @@ static void store_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 	list_add(&jfr_new->node, &g_udma_dfx_list[i].dfx->jfr_list->node);
 	++g_udma_dfx_list[i].dfx->jfr_cnt;
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	return;
 
 found:
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 	kfree(jfr_new);
 }
 
@@ -426,11 +430,11 @@ static void delete_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 			list_del(&jfr_now->node);
 			--g_udma_dfx_list[i].dfx->jfr_cnt;
 			kfree(jfr_now);
-			spin_unlock_irqrestore(lock, flags);
-			return;
+			break;
 		}
 	}
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
 static void free_jfrc(struct udma_dev *dev, uint32_t jfrn)

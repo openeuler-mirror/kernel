@@ -233,6 +233,7 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 			goto err_copy;
 		}
 	}
+
 	refcount_set(&udma_jfc->refcount, 1);
 	init_completion(&udma_jfc->free);
 	return ret;
@@ -428,8 +429,10 @@ static void store_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 		return;
 
 	jfc_new = kzalloc(sizeof(struct jfc_list), GFP_KERNEL);
-	if (jfc_new == NULL)
+	if (!jfc_new) {
+		read_unlock(&g_udma_dfx_list[i].rwlock);
 		return;
+	}
 
 	lock = &g_udma_dfx_list[i].dfx->jfc_list->node_lock;
 	spin_lock_irqsave(lock, flags);
@@ -443,11 +446,13 @@ static void store_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 	list_add(&jfc_new->node, &g_udma_dfx_list[i].dfx->jfc_list->node);
 	++g_udma_dfx_list[i].dfx->jfc_cnt;
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 
 	return;
 
 found:
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 	kfree(jfc_new);
 }
 
@@ -472,11 +477,11 @@ static void delete_jfc_id(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 			list_del(&jfc_now->node);
 			--g_udma_dfx_list[i].dfx->jfc_cnt;
 			kfree(jfc_now);
-			spin_unlock_irqrestore(lock, flags);
-			return;
+			break;
 		}
 	}
 	spin_unlock_irqrestore(lock, flags);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
 static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
