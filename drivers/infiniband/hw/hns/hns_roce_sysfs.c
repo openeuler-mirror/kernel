@@ -171,6 +171,9 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	struct ib_device *ibdev = ib_port_sysfs_get_ibdev_kobj(kobj, &port_num);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibdev);
 
+	if (!hr_dev->scc_param)
+		return 0;
+
 	if (hr_dev->is_vf ||
 	    !(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL))
 		return 0;
