@@ -1397,6 +1397,19 @@ void tcf_block_put(struct tcf_block *block)
 
 EXPORT_SYMBOL(tcf_block_put);
 
+void (* const tmplt_reoffload)(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv);
+EXPORT_SYMBOL(tmplt_reoffload);
+
+static void cls_tmplt_reoffload(struct tcf_chain *chain, bool add,
+				flow_setup_cb_t *cb, void *cb_priv)
+{
+	if (!tmplt_reoffload)
+		return;
+
+	tmplt_reoffload(chain, add, cb, cb_priv);
+}
+
 static int
 tcf_block_playback_offloads(struct tcf_block *block, flow_setup_cb_t *cb,
 			    void *cb_priv, bool add, bool offload_in_use,
@@ -1414,8 +1427,9 @@ tcf_block_playback_offloads(struct tcf_block *block, flow_setup_cb_t *cb,
 		     chain = __tcf_get_next_chain(block, chain),
 		     tcf_chain_put(chain_prev)) {
 		if (chain->tmplt_ops && add)
-			chain->tmplt_ops->tmplt_reoffload(chain, true, cb,
-							  cb_priv);
+			if (!strcmp(chain->tmplt_ops->kind, "flower"))
+				cls_tmplt_reoffload(chain, true, cb, cb_priv);
+
 		for (tp = __tcf_get_next_proto(chain, NULL); tp;
 		     tp_prev = tp,
 			     tp = __tcf_get_next_proto(chain, tp),
@@ -1432,8 +1446,8 @@ tcf_block_playback_offloads(struct tcf_block *block, flow_setup_cb_t *cb,
 			}
 		}
 		if (chain->tmplt_ops && !add)
-			chain->tmplt_ops->tmplt_reoffload(chain, false, cb,
-							  cb_priv);
+			if (!strcmp(chain->tmplt_ops->kind, "flower"))
+				cls_tmplt_reoffload(chain, false, cb, cb_priv);
 	}
 
 	return 0;
@@ -2776,8 +2790,7 @@ static int tc_chain_tmplt_add(struct tcf_chain *chain, struct net *net,
 	ops = tcf_proto_lookup_ops(name, true, extack);
 	if (IS_ERR(ops))
 		return PTR_ERR(ops);
-	if (!ops->tmplt_create || !ops->tmplt_destroy || !ops->tmplt_dump ||
-	    !ops->tmplt_reoffload) {
+	if (!ops->tmplt_create || !ops->tmplt_destroy || !ops->tmplt_dump) {
 		NL_SET_ERR_MSG(extack, "Chain templates are not supported with specified classifier");
 		return -EOPNOTSUPP;
 	}
