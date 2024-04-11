@@ -1453,8 +1453,6 @@ struct hns_user_mmap_entry *
 hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 				size_t length,
 				enum hns_roce_mmap_type mmap_type);
-void hns_roce_register_sysfs(struct hns_roce_dev *hr_dev);
-void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
 void hns_roce_add_unfree_umem(struct hns_roce_user_db_page *user_page,
 			      struct hns_roce_dev *hr_dev);
 void hns_roce_free_unfree_umem(struct hns_roce_dev *hr_dev);
@@ -1462,4 +1460,6 @@ void hns_roce_add_unfree_mtr(struct hns_roce_mtr_node *pos,
 			     struct hns_roce_dev *hr_dev,
 			     struct hns_roce_mtr *mtr);
 void hns_roce_free_unfree_mtr(struct hns_roce_dev *hr_dev);
+int hns_roce_alloc_scc_param(struct hns_roce_dev *hr_dev);
+void hns_roce_dealloc_scc_param(struct hns_roce_dev *hr_dev);
 #endif /* _HNS_ROCE_DEVICE_H */

@@ -33,7 +33,7 @@ static void get_default_scc_param(struct hns_roce_dev *hr_dev)
 	}
 }
 
-static int alloc_scc_param(struct hns_roce_dev *hr_dev)
+int hns_roce_alloc_scc_param(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_scc_param *scc_param;
 	int i;
@@ -55,6 +55,19 @@ static int alloc_scc_param(struct hns_roce_dev *hr_dev)
 	get_default_scc_param(hr_dev);
 
 	return 0;
+}
+void hns_roce_dealloc_scc_param(struct hns_roce_dev *hr_dev)
+{
+	int i;
+
+	if (!hr_dev->scc_param)
+		return;
+
+	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++)
+		cancel_delayed_work_sync(&hr_dev->scc_param[i].scc_cfg_dwork);
+
+	kvfree(hr_dev->scc_param);
+	hr_dev->scc_param = NULL;
 }
 
 struct hns_port_cc_attr {
@@ -328,19 +341,3 @@ const struct attribute_group *hns_attr_port_groups[] = {
 	&dip_cc_param_group,
 	NULL,
 };
-
-void hns_roce_register_sysfs(struct hns_roce_dev *hr_dev)
-{
-	int ret;
-
-	ret = alloc_scc_param(hr_dev);
-	if (ret)
-		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
-			ret);
-}
-
-void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev)
-{
-	if (hr_dev->scc_param)
-		kvfree(hr_dev->scc_param);
-}

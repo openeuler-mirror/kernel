@@ -1449,16 +1449,21 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		}
 	}
 
+	ret = hns_roce_alloc_scc_param(hr_dev);
+	if (ret)
+		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
+			ret);
+
 	ret = hns_roce_register_device(hr_dev);
 	if (ret)
 		goto error_failed_register_device;
 
-	hns_roce_register_sysfs(hr_dev);
 	hns_roce_register_debugfs(hr_dev);
 
 	return 0;
 
 error_failed_register_device:
+	hns_roce_dealloc_scc_param(hr_dev);
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
 
@@ -1488,8 +1493,8 @@ error_failed_alloc_dfx_cnt:
 
 void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 {
-	hns_roce_unregister_sysfs(hr_dev);
 	hns_roce_unregister_device(hr_dev, bond_cleanup);
+	hns_roce_dealloc_scc_param(hr_dev);
 	hns_roce_unregister_debugfs(hr_dev);
 
 	if (hr_dev->hw->hw_exit)
