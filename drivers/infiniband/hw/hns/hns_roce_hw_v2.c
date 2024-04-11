@@ -48,6 +48,7 @@
 #include "hns_roce_device.h"
 #include "hns_roce_cmd.h"
 #include "hns_roce_hem.h"
+#include "hns_roce_dca.h"
 #include "hns_roce_hw_v2.h"
 
 enum {
@@ -370,10 +371,73 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 	return 0;
 }
 
+static bool check_dca_attach_enable(struct hns_roce_qp *hr_qp)
+{
+	return hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH;
+}
+
+static int dca_attach_qp_buf(struct hns_roce_dev *hr_dev,
+			     struct hns_roce_qp *hr_qp)
+{
+	struct hns_dca_attach_attr attr = {};
+	unsigned long flags_sq, flags_rq;
+	u32 idx;
+
+	spin_lock_irqsave(&hr_qp->sq.lock, flags_sq);
+	spin_lock_irqsave(&hr_qp->rq.lock, flags_rq);
+
+	if (hr_qp->sq.wqe_cnt > 0) {
+		idx = hr_qp->sq.head & (hr_qp->sq.wqe_cnt - 1);
+		attr.sq_offset = idx << hr_qp->sq.wqe_shift;
+	}
+
+	if (hr_qp->sge.sge_cnt > 0) {
+		idx = hr_qp->next_sge & (hr_qp->sge.sge_cnt - 1);
+		attr.sge_offset = idx << hr_qp->sge.sge_shift;
+	}
+
+	if (hr_qp->rq.wqe_cnt > 0) {
+		idx = hr_qp->rq.head & (hr_qp->rq.wqe_cnt - 1);
+		attr.rq_offset = idx << hr_qp->rq.wqe_shift;
+	}
+
+	spin_unlock_irqrestore(&hr_qp->rq.lock, flags_rq);
+	spin_unlock_irqrestore(&hr_qp->sq.lock, flags_sq);
+
+	return hns_roce_dca_attach(hr_dev, hr_qp, &attr);
+}
+
+static bool check_dca_detach_enable(struct hns_roce_qp *hr_qp)
+{
+	return hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_DETACH;
+}
+
+static void dca_detach_qp_buf(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_qp *hr_qp)
+{
+	struct hns_dca_detach_attr attr = {};
+	unsigned long flags_sq, flags_rq;
+	bool is_empty;
+
+	spin_lock_irqsave(&hr_qp->sq.lock, flags_sq);
+	spin_lock_irqsave(&hr_qp->rq.lock, flags_rq);
+	is_empty = hr_qp->sq.head == hr_qp->sq.tail &&
+		   hr_qp->rq.head == hr_qp->rq.tail;
+	if (is_empty && hr_qp->sq.wqe_cnt > 0)
+		attr.sq_idx = hr_qp->sq.head & (hr_qp->sq.wqe_cnt - 1);
+
+	spin_unlock_irqrestore(&hr_qp->rq.lock, flags_rq);
+	spin_unlock_irqrestore(&hr_qp->sq.lock, flags_sq);
+
+	if (is_empty)
+		hns_roce_dca_detach(hr_dev, hr_qp, &attr);
+}
+
 static int check_send_valid(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	int ret;
 
 	if (unlikely(hr_qp->state == IB_QPS_RESET ||
 		     hr_qp->state == IB_QPS_INIT ||
@@ -385,6 +449,16 @@ static int check_send_valid(struct hns_roce_dev *hr_dev,
 		ibdev_err(ibdev, "failed to post WQE, dev state %d!\n",
 			  hr_dev->state);
 		return -EIO;
+	}
+
+	if (check_dca_attach_enable(hr_qp)) {
+		ret = dca_attach_qp_buf(hr_dev, hr_qp);
+		if (unlikely(ret)) {
+			ibdev_err(ibdev,
+				  "failed to attach DCA for QP-%lu send!\n",
+				  hr_qp->qpn);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -566,6 +640,14 @@ static int set_rc_opcode(struct hns_roce_dev *hr_dev,
 	return ret;
 }
 
+static inline void fill_dca_fields(struct hns_roce_qp *hr_qp,
+				   struct hns_roce_v2_rc_send_wqe *wqe)
+{
+	hr_reg_write(wqe, RC_SEND_WQE_SQPN_L, hr_qp->qpn);
+	hr_reg_write(wqe, RC_SEND_WQE_SQPN_H,
+		     hr_qp->qpn >> V2_RC_SEND_WQE_BYTE_4_SQPN_L_W);
+}
+
 static inline int set_rc_wqe(struct hns_roce_qp *qp,
 			     const struct ib_send_wr *wr,
 			     void *wqe, unsigned int *sge_idx,
@@ -601,6 +683,9 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 	else if (wr->opcode != IB_WR_REG_MR)
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
+
+	if (qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
+		fill_dca_fields(qp, rc_sq_wqe);
 
 	/*
 	 * The pipeline can sequentially post all valid WQEs into WQ buffer,
@@ -686,12 +771,26 @@ static void write_dwqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 	hns_roce_write512(hr_dev, wqe, qp->sq.db_reg);
 }
 
+static int check_sq_enabled(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
+			    const struct ib_send_wr *wr, int nreq)
+{
+	if (hns_roce_wq_overflow(&qp->sq, nreq, qp->ibqp.send_cq))
+		return -ENOMEM;
+
+	if (unlikely(wr->num_sge > qp->sq.max_gs)) {
+		ibdev_err(&hr_dev->ib_dev, "num_sge=%d > qp->sq.max_gs=%u\n",
+			  wr->num_sge, qp->sq.max_gs);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int hns_roce_v2_post_send(struct ib_qp *ibqp,
 				 const struct ib_send_wr *wr,
 				 const struct ib_send_wr **bad_wr)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_qp *qp = to_hr_qp(ibqp);
 	unsigned long flags = 0;
 	unsigned int owner_bit;
@@ -701,33 +800,24 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp,
 	u32 nreq;
 	int ret;
 
-	spin_lock_irqsave(&qp->sq.lock, flags);
 
 	ret = check_send_valid(hr_dev, qp);
 	if (unlikely(ret)) {
 		*bad_wr = wr;
-		nreq = 0;
-		goto out;
+		return ret;
 	}
 
+	spin_lock_irqsave(&qp->sq.lock, flags);
 	sge_idx = qp->next_sge;
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		if (hns_roce_wq_overflow(&qp->sq, nreq, qp->ibqp.send_cq)) {
-			ret = -ENOMEM;
+		ret = check_sq_enabled(hr_dev, qp, wr, nreq);
+		if (unlikely(ret)) {
 			*bad_wr = wr;
 			goto out;
 		}
 
 		wqe_idx = (qp->sq.head + nreq) & (qp->sq.wqe_cnt - 1);
-
-		if (unlikely(wr->num_sge > qp->sq.max_gs)) {
-			ibdev_err(ibdev, "num_sge = %d > qp->sq.max_gs = %u.\n",
-				  wr->num_sge, qp->sq.max_gs);
-			ret = -EINVAL;
-			*bad_wr = wr;
-			goto out;
-		}
 
 		wqe = hns_roce_get_send_wqe(qp, wqe_idx);
 		qp->sq.wrid[wqe_idx] = wr->wr_id;
@@ -766,11 +856,22 @@ out:
 static int check_recv_valid(struct hns_roce_dev *hr_dev,
 			    struct hns_roce_qp *hr_qp)
 {
+	int ret;
 	if (unlikely(hr_dev->state >= HNS_ROCE_DEVICE_STATE_RST_DOWN))
 		return -EIO;
 
 	if (hr_qp->state == IB_QPS_RESET)
 		return -EINVAL;
+
+	if (check_dca_attach_enable(hr_qp)) {
+		ret = dca_attach_qp_buf(hr_dev, hr_qp);
+		if (unlikely(ret)) {
+			ibdev_err(&hr_dev->ib_dev,
+				  "failed to attach DCA for QP-%lu recv!\n",
+				  hr_qp->qpn);
+			return ret;
+		}
+	}
 
 	return 0;
 }
@@ -822,14 +923,14 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp,
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&hr_qp->rq.lock, flags);
 
 	ret = check_recv_valid(hr_dev, hr_qp);
 	if (unlikely(ret)) {
 		*bad_wr = wr;
-		nreq = 0;
-		goto out;
+		return ret;
 	}
+
+	spin_lock_irqsave(&hr_qp->rq.lock, flags);
 
 	max_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
@@ -1029,7 +1130,7 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 					unsigned long reset_stage)
 {
 #define HW_RESET_TIMEOUT_US 1000000
-#define HW_RESET_SLEEP_US 1000
+#define HW_RESET_DELAY_US 1
 
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hnae3_handle *handle = priv->handle;
@@ -1048,8 +1149,8 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 	 */
 	hr_dev->dis_db = true;
 
-	ret = read_poll_timeout(ops->ae_dev_reset_cnt, val,
-				val > hr_dev->reset_cnt, HW_RESET_SLEEP_US,
+	ret = read_poll_timeout_atomic(ops->ae_dev_reset_cnt, val,
+				val > hr_dev->reset_cnt, HW_RESET_DELAY_US,
 				HW_RESET_TIMEOUT_US, false, handle);
 	if (!ret)
 		hr_dev->is_reset = true;
@@ -3049,6 +3150,16 @@ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 		free_dip_list(hr_dev);
 }
 
+static inline void mbox_desc_init(struct hns_roce_post_mbox *mb,
+				  struct hns_roce_mbox_msg *mbox_msg)
+{
+	mb->in_param_l = cpu_to_le32(mbox_msg->in_param);
+	mb->in_param_h = cpu_to_le32(mbox_msg->in_param >> 32);
+	mb->out_param_l = cpu_to_le32(mbox_msg->out_param);
+	mb->out_param_h = cpu_to_le32(mbox_msg->out_param >> 32);
+	mb->cmd_tag = cpu_to_le32(mbox_msg->tag << 8 | mbox_msg->cmd);
+}
+
 static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_mbox_msg *mbox_msg)
 {
@@ -3057,14 +3168,31 @@ static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev,
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_POST_MB, false);
 
-	mb->in_param_l = cpu_to_le32(mbox_msg->in_param);
-	mb->in_param_h = cpu_to_le32(mbox_msg->in_param >> 32);
-	mb->out_param_l = cpu_to_le32(mbox_msg->out_param);
-	mb->out_param_h = cpu_to_le32(mbox_msg->out_param >> 32);
-	mb->cmd_tag = cpu_to_le32(mbox_msg->tag << 8 | mbox_msg->cmd);
+	mbox_desc_init(mb, mbox_msg);
 	mb->token_event_en = cpu_to_le32(mbox_msg->event_en << 16 |
 					 mbox_msg->token);
 
+	return hns_roce_cmq_send(hr_dev, &desc, 1);
+}
+
+static int hns_roce_mbox_send(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_mbox_msg *mbox_msg)
+{
+	struct hns_roce_cmq_desc desc;
+	struct hns_roce_post_mbox *mb = (struct hns_roce_post_mbox *)desc.data;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_SYNC_MB, false);
+
+	mbox_desc_init(mb, mbox_msg);
+
+	/* The hardware doesn't care about the token fields when working in
+	 * sync mode.
+	 */
+	mb->token_event_en = 0;
+
+	/* The cmdq send returns 0 indicates that the hardware has already
+	 * finished the operation defined in this mbox.
+	 */
 	return hns_roce_cmq_send(hr_dev, &desc, 1);
 }
 
@@ -4050,6 +4178,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 	struct hns_roce_qp *cur_qp = NULL;
 	unsigned long flags;
 	int npolled;
+	int ret;
 
 	spin_lock_irqsave(&hr_cq->lock, flags);
 
@@ -4066,7 +4195,10 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 	}
 
 	for (npolled = 0; npolled < num_entries; ++npolled) {
-		if (hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled))
+		ret = hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled);
+		if (cur_qp && check_dca_detach_enable(cur_qp))
+			dca_detach_qp_buf(hr_dev, cur_qp);
+		if (ret)
 			break;
 	}
 
@@ -4437,8 +4569,8 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* Search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->rq.offset, mtts,
-				MTT_MIN_COUNT);
+	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->rq.wqe_offset, mtts,
+				ARRAY_SIZE(mtts));
 	if (hr_qp->rq.wqe_cnt && ret) {
 		ibdev_err(&hr_dev->ib_dev,
 			  "failed to find QP(0x%lx) RQ WQE buf, ret = %d.\n",
@@ -4491,12 +4623,15 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 		     upper_32_bits(to_hr_hw_page_addr(mtts[0])));
 	hr_reg_clear(qpc_mask, QPC_RQ_CUR_BLK_ADDR_H);
 
-	context->rq_nxt_blk_addr = cpu_to_le32(to_hr_hw_page_addr(mtts[1]));
-	qpc_mask->rq_nxt_blk_addr = 0;
-
-	hr_reg_write(context, QPC_RQ_NXT_BLK_ADDR_H,
-		     upper_32_bits(to_hr_hw_page_addr(mtts[1])));
-	hr_reg_clear(qpc_mask, QPC_RQ_NXT_BLK_ADDR_H);
+	/* The rq next block address is only valid for HIP08 QPC. */
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08) {
+		context->rq_nxt_blk_addr =
+				cpu_to_le32(to_hr_hw_page_addr(mtts[1]));
+		qpc_mask->rq_nxt_blk_addr = 0;
+		hr_reg_write(context, QPC_RQ_NXT_BLK_ADDR_H,
+			     upper_32_bits(to_hr_hw_page_addr(mtts[1])));
+		hr_reg_clear(qpc_mask, QPC_RQ_NXT_BLK_ADDR_H);
+	}
 
 	return 0;
 }
@@ -4512,7 +4647,7 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->sq.offset,
+	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->sq.wqe_offset,
 				&sq_cur_blk, 1);
 	if (ret) {
 		ibdev_err(ibdev, "failed to find QP(0x%lx) SQ WQE buf, ret = %d.\n",
@@ -4521,7 +4656,7 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	}
 	if (hr_qp->sge.sge_cnt > 0) {
 		ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
-					hr_qp->sge.offset, &sge_cur_blk, 1);
+					hr_qp->sge.wqe_offset, &sge_cur_blk, 1);
 		if (ret) {
 			ibdev_err(ibdev, "failed to find QP(0x%lx) SGE buf, ret = %d.\n",
 				  hr_qp->qpn, ret);
@@ -4590,6 +4725,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	int mtu;
 	int ret;
 
+	hr_qp->rq.wqe_offset = hr_qp->rq.offset;
 	ret = config_qp_rq_buf(hr_dev, hr_qp, context, qpc_mask);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config rq buf, ret = %d.\n", ret);
@@ -4624,6 +4760,16 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	qpc_mask->trrl_ba = 0;
 	hr_reg_write(context, QPC_TRRL_BA_H, trrl_ba >> (32 + 16 + 4));
 	hr_reg_clear(qpc_mask, QPC_TRRL_BA_H);
+
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09) {
+		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH) {
+			hr_reg_enable(context, QPC_DCA_MODE);
+			hr_reg_clear(qpc_mask, QPC_DCA_MODE);
+		}
+	} else {
+		/* reset IRRL_HEAD */
+		hr_reg_clear(qpc_mask, QPC_V2_IRRL_HEAD);
+	}
 
 	context->irrl_ba = cpu_to_le32(irrl_ba >> 6);
 	qpc_mask->irrl_ba = 0;
@@ -4732,6 +4878,8 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 		return -EINVAL;
 	}
 
+	hr_qp->sq.wqe_offset = hr_qp->sq.offset;
+	hr_qp->sge.wqe_offset = hr_qp->sge.offset;
 	ret = config_qp_sq_buf(hr_dev, hr_qp, context, qpc_mask);
 	if (ret) {
 		ibdev_err(ibdev, "failed to config sq buf, ret = %d.\n", ret);
@@ -4758,8 +4906,6 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	hr_reg_clear(qpc_mask, QPC_RNR_RETRY_FLAG);
 
 	hr_reg_clear(qpc_mask, QPC_CHECK_FLG);
-
-	hr_reg_clear(qpc_mask, QPC_V2_IRRL_HEAD);
 
 	return 0;
 }
@@ -5388,7 +5534,54 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	if (new_state == IB_QPS_RESET && !ibqp->uobject)
 		clear_qp(hr_qp);
 
+	if (check_dca_attach_enable(hr_qp))
+		hns_roce_modify_dca(hr_dev, hr_qp, udata);
+
 out:
+	return ret;
+}
+
+static int hns_roce_v2_set_dca_buf(struct hns_roce_dev *hr_dev,
+				   struct hns_roce_qp *hr_qp)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_v2_qp_context *qpc, *msk;
+	struct hns_roce_mbox_msg mbox_msg = {};
+	dma_addr_t dma_handle;
+	int qpc_sz;
+	int ret;
+
+	qpc_sz = hr_dev->caps.qpc_sz;
+	WARN_ON(2 * qpc_sz > HNS_ROCE_MAILBOX_SIZE);
+	qpc = dma_pool_alloc(hr_dev->cmd.pool, GFP_ATOMIC, &dma_handle);
+	if (!qpc)
+		return -ENOMEM;
+
+	msk = (struct hns_roce_v2_qp_context *)((void *)qpc + qpc_sz);
+	memset(msk, 0xff, qpc_sz);
+
+	ret = config_qp_rq_buf(hr_dev, hr_qp, qpc, msk);
+	if (ret) {
+		ibdev_err(ibdev, "failed to config rq qpc, ret = %d.\n", ret);
+		goto done;
+	}
+
+	ret = config_qp_sq_buf(hr_dev, hr_qp, qpc, msk);
+	if (ret) {
+		ibdev_err(ibdev, "failed to config sq qpc, ret = %d.\n", ret);
+		goto done;
+	}
+
+	mbox_msg.in_param = dma_handle;
+	mbox_msg.tag = hr_qp->qpn;
+	mbox_msg.cmd = HNS_ROCE_CMD_MODIFY_QPC;
+	ret = hns_roce_mbox_send(hr_dev, &mbox_msg);
+	if (ret)
+		ibdev_err(ibdev, "failed to modify DCA buf, ret = %d.\n", ret);
+
+done:
+	dma_pool_free(hr_dev->cmd.pool, qpc, dma_handle);
+
 	return ret;
 }
 
@@ -5591,6 +5784,39 @@ done:
 out:
 	mutex_unlock(&hr_qp->mutex);
 	return ret;
+}
+
+static bool hns_roce_v2_chk_dca_buf_inactive(struct hns_roce_dev *hr_dev,
+					     struct hns_roce_qp *hr_qp)
+{
+	struct hns_roce_dca_cfg *cfg = &hr_qp->dca_cfg;
+	struct hns_roce_v2_qp_context context = {};
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	u32 tmp, sq_idx;
+	int state;
+	int ret;
+
+	ret = hns_roce_v2_query_qpc(hr_dev, hr_qp->qpn, &context);
+	if (ret) {
+		ibdev_err(ibdev, "failed to query DCA QPC, ret = %d.\n", ret);
+		return false;
+	}
+
+	state = hr_reg_read(&context, QPC_QP_ST);
+	if (state == HNS_ROCE_QP_ST_ERR || state == HNS_ROCE_QP_ST_RST)
+		return true;
+
+	if (hr_qp->sq.wqe_cnt > 0) {
+		tmp = (u32)hr_reg_read(&context, QPC_RETRY_MSG_MSN);
+		sq_idx = tmp & (hr_qp->sq.wqe_cnt - 1);
+		/* If SQ-PI equals to retry_msg_msn in QPC, the QP is
+		 * inactive.
+		 */
+		if (sq_idx != cfg->sq_idx)
+			return false;
+	}
+
+	return true;
 }
 
 static inline int modify_qp_is_ok(struct hns_roce_qp *hr_qp)
@@ -6921,6 +7147,8 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.write_cqc = hns_roce_v2_write_cqc,
 	.set_hem = hns_roce_v2_set_hem,
 	.clear_hem = hns_roce_v2_clear_hem,
+	.set_dca_buf = hns_roce_v2_set_dca_buf,
+	.chk_dca_buf_inactive = hns_roce_v2_chk_dca_buf_inactive,
 	.modify_qp = hns_roce_v2_modify_qp,
 	.dereg_mr = hns_roce_v2_dereg_mr,
 	.qp_flow_control_init = hns_roce_v2_qp_flow_control_init,

@@ -37,6 +37,7 @@
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hem.h"
+#include "hns_roce_dca.h"
 
 static void flush_work_handle(struct work_struct *work)
 {
@@ -640,9 +641,30 @@ static int set_user_sq_size(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+static bool check_dca_is_enable(struct hns_roce_dev *hr_dev,
+				struct hns_roce_qp *hr_qp,
+				struct ib_qp_init_attr *init_attr, bool is_user,
+				unsigned long addr)
+{
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE))
+		return false;
+
+	/* If the user QP's buffer addr is 0, the DCA mode should be enabled */
+	if (is_user)
+		return !addr;
+
+	/* Only RC and XRC support DCA for kernel QP */
+	if (hr_dev->dca_ctx.max_size > 0 &&
+	    (init_attr->qp_type == IB_QPT_RC ||
+	     init_attr->qp_type == IB_QPT_XRC_INI))
+		return !!(init_attr->create_flags & HNS_ROCE_QP_CREATE_DCA_EN);
+
+	return false;
+}
+
 static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
-			    struct hns_roce_qp *hr_qp, u8 page_shift,
-			    struct hns_roce_buf_attr *buf_attr)
+			    struct hns_roce_qp *hr_qp, bool dca_en,
+			    u8 page_shift, struct hns_roce_buf_attr *buf_attr)
 {
 	unsigned int page_size = BIT(page_shift);
 	int buf_size;
@@ -651,6 +673,13 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 	hr_qp->buff_size = 0;
 
 	if (page_shift > PAGE_SHIFT || page_shift < HNS_HW_PAGE_SHIFT)
+		return -EOPNOTSUPP;
+
+	/*
+	 * When enable DCA, there's no need to alloc buffer now, and
+	 * the page shift should be fixed to 4K.
+	 */
+	if (dca_en && page_shift != HNS_HW_PAGE_SHIFT)
 		return -EOPNOTSUPP;
 
 	/* SQ WQE */
@@ -686,6 +715,7 @@ static int set_wqe_buf_attr(struct hns_roce_dev *hr_dev,
 	if (hr_qp->buff_size < 1)
 		return -EINVAL;
 
+	buf_attr->mtt_only = dca_en;
 	buf_attr->region_count = idx;
 	buf_attr->page_shift = page_shift;
 
@@ -741,7 +771,54 @@ static int hns_roce_qp_has_rq(struct ib_qp_init_attr *attr)
 	return 1;
 }
 
-static int alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 bool dca_en, struct hns_roce_buf_attr *buf_attr,
+			 struct ib_udata *udata, unsigned long addr)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	int ret;
+
+	if (dca_en) {
+		/* DCA must be enabled after the buffer attr is configured. */
+		ret = hns_roce_enable_dca(hr_dev, hr_qp, udata);
+		if (ret) {
+			ibdev_err(ibdev, "failed to enable DCA, ret = %d.\n",
+				  ret);
+			return ret;
+		}
+
+		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH;
+	} else {
+		/*
+		 * Because DCA and DWQE share the same fileds in RCWQE buffer,
+		 * so DWQE only supported when DCA is disable.
+		 */
+		if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DIRECT_WQE)
+			hr_qp->en_flags |= HNS_ROCE_QP_CAP_DIRECT_WQE;
+	}
+
+	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, buf_attr,
+				  PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
+				  udata, addr);
+	if (ret) {
+		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
+		if (dca_en)
+			hns_roce_disable_dca(hr_dev, hr_qp, udata);
+	}
+
+	return ret;
+}
+
+static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			 struct ib_udata *udata)
+{
+	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
+
+	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
+		hns_roce_disable_dca(hr_dev, hr_qp, udata);
+}
+
+static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
 			struct ib_udata *udata,
 			struct hns_roce_ib_create_qp *ucmd)
@@ -751,37 +828,32 @@ static int alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
 	u8 page_shift = HNS_HW_PAGE_SHIFT;
+	bool dca_en;
 	int ret;
 
 	if (uctx && (uctx->config & HNS_ROCE_UCTX_DYN_QP_PGSZ))
 		page_shift = ucmd->pageshift;
 
-	ret = set_wqe_buf_attr(hr_dev, hr_qp, page_shift, &buf_attr);
+	dca_en = check_dca_is_enable(hr_dev, hr_qp, init_attr, !!udata,
+				     ucmd->buf_addr);
+	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, page_shift, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
-		goto err_inline;
-	}
-	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, &buf_attr,
-				  PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
-				  udata, ucmd->buf_addr);
-	if (ret) {
-		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
-		goto err_inline;
+		return ret;
 	}
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DIRECT_WQE)
-		hr_qp->en_flags |= HNS_ROCE_QP_CAP_DIRECT_WQE;
-
-	return 0;
-
-err_inline:
+	ret = alloc_wqe_buf(hr_dev, hr_qp, dca_en,
+			    &buf_attr, udata, ucmd->buf_addr);
+	if (ret)
+		ibdev_err(ibdev, "failed to alloc WQE buf, ret = %d.\n", ret);
 
 	return ret;
 }
 
-static void free_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
+static void free_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct ib_udata *udata)
 {
-	hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
+	free_wqe_buf(hr_dev, hr_qp, udata);
 }
 
 static inline bool user_qp_has_sdb(struct hns_roce_dev *hr_dev,
@@ -1141,9 +1213,6 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 	hr_qp->state = IB_QPS_RESET;
 	hr_qp->flush_flag = 0;
 
-	if (init_attr->create_flags)
-		return -EOPNOTSUPP;
-
 	ret = set_qp_param(hr_dev, hr_qp, init_attr, udata, &ucmd);
 	if (ret) {
 		ibdev_err(ibdev, "failed to set QP param, ret = %d.\n", ret);
@@ -1159,16 +1228,16 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		}
 	}
 
-	ret = alloc_qp_buf(hr_dev, hr_qp, init_attr, udata, &ucmd);
-	if (ret) {
-		ibdev_err(ibdev, "failed to alloc QP buffer, ret = %d.\n", ret);
-		goto err_buf;
-	}
-
 	ret = alloc_qpn(hr_dev, hr_qp, init_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to alloc QPN, ret = %d.\n", ret);
 		goto err_qpn;
+	}
+
+	ret = alloc_qp_wqe(hr_dev, hr_qp, init_attr, udata, &ucmd);
+	if (ret) {
+		ibdev_err(ibdev, "failed to alloc QP buffer, ret = %d.\n", ret);
+		goto err_buf;
 	}
 
 	ret = alloc_qp_db(hr_dev, hr_qp, init_attr, udata, &ucmd, &resp);
@@ -1221,10 +1290,10 @@ err_store:
 err_qpc:
 	free_qp_db(hr_dev, hr_qp, udata);
 err_db:
+	free_qp_wqe(hr_dev, hr_qp, udata);
+err_buf:
 	free_qpn(hr_dev, hr_qp);
 err_qpn:
-	free_qp_buf(hr_dev, hr_qp);
-err_buf:
 	free_kernel_wrid(hr_qp);
 	return ret;
 }
@@ -1238,7 +1307,7 @@ void hns_roce_qp_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 	free_qpc(hr_dev, hr_qp);
 	free_qpn(hr_dev, hr_qp);
-	free_qp_buf(hr_dev, hr_qp);
+	free_qp_wqe(hr_dev, hr_qp, udata);
 	free_kernel_wrid(hr_qp);
 	free_qp_db(hr_dev, hr_qp, udata);
 }
@@ -1391,22 +1460,17 @@ static int hns_roce_check_qp_attr(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	return 0;
 }
 
-int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
-		       int attr_mask, struct ib_udata *udata)
+static int check_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
+			   int attr_mask, enum ib_qp_state cur_state,
+			   enum ib_qp_state new_state)
 {
-	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	struct hns_roce_ib_modify_qp_resp resp = {};
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
-	enum ib_qp_state cur_state, new_state;
-	int ret = -EINVAL;
+	int ret;
 
-	mutex_lock(&hr_qp->mutex);
-
-	if (attr_mask & IB_QP_CUR_STATE && attr->cur_qp_state != hr_qp->state)
-		goto out;
-
-	cur_state = hr_qp->state;
-	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
+	if (attr_mask & IB_QP_CUR_STATE && attr->cur_qp_state != hr_qp->state) {
+		ibdev_err(ibqp->device, "failed to check modify curr state\n");
+		return -EINVAL;
+	}
 
 	if (ibqp->uobject &&
 	    (attr_mask & IB_QP_STATE) && new_state == IB_QPS_ERR) {
@@ -1416,19 +1480,42 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 			if (hr_qp->en_flags & HNS_ROCE_QP_CAP_RQ_RECORD_DB)
 				hr_qp->rq.head = *(int *)(hr_qp->rdb.virt_addr);
 		} else {
-			ibdev_warn(&hr_dev->ib_dev,
+			ibdev_warn(ibqp->device,
 				  "flush cqe is not supported in userspace!\n");
-			goto out;
+			return -EINVAL;
 		}
 	}
 
 	if (!ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type,
 				attr_mask)) {
-		ibdev_err(&hr_dev->ib_dev, "ib_modify_qp_is_ok failed\n");
-		goto out;
+		ibdev_err(ibqp->device, "failed to check modify qp state\n");
+		return -EINVAL;
 	}
 
 	ret = hns_roce_check_qp_attr(ibqp, attr, attr_mask);
+	if (ret) {
+		ibdev_err(ibqp->device, "failed to check modify qp attr\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
+		       int attr_mask, struct ib_udata *udata)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
+	struct hns_roce_ib_modify_qp_resp resp = {};
+	enum ib_qp_state cur_state, new_state;
+	int ret;
+
+	mutex_lock(&hr_qp->mutex);
+
+	cur_state = hr_qp->state;
+	new_state = attr_mask & IB_QP_STATE ? attr->qp_state : cur_state;
+
+	ret = check_modify_qp(ibqp, attr, attr_mask, cur_state, new_state);
 	if (ret)
 		goto out;
 
@@ -1443,6 +1530,7 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	if (udata && udata->outlen) {
 		resp.tc_mode = hr_qp->tc_mode;
 		resp.priority = hr_qp->sl;
+		resp.dcan = hr_qp->dca_cfg.dcan;
 		ret = ib_copy_to_udata(udata, &resp,
 				       min(udata->outlen, sizeof(resp)));
 		if (ret)
@@ -1507,9 +1595,18 @@ void hns_roce_unlock_cqs(struct hns_roce_cq *send_cq,
 	}
 }
 
+static inline void *dca_buf_offset(struct hns_roce_dca_cfg *dca_cfg, u32 offset)
+{
+	return (char *)(dca_cfg->buf_list[offset >> HNS_HW_PAGE_SHIFT]) +
+			(offset & ((1 << HNS_HW_PAGE_SHIFT) - 1));
+}
+
 static inline void *get_wqe(struct hns_roce_qp *hr_qp, u32 offset)
 {
-	return hns_roce_buf_offset(hr_qp->mtr.kmem, offset);
+	if (unlikely(hr_qp->dca_cfg.buf_list))
+		return dca_buf_offset(&hr_qp->dca_cfg, offset);
+	else
+		return hns_roce_buf_offset(hr_qp->mtr.kmem, offset);
 }
 
 void *hns_roce_get_recv_wqe(struct hns_roce_qp *hr_qp, unsigned int n)

@@ -134,6 +134,15 @@ enum hns_roce_event {
 	HNS_ROCE_EVENT_TYPE_INVALID_XRCETH	      = 0x17,
 };
 
+/* Private QP creation flags to be passed in ib_qp_init_attr.create_flags.
+ *
+ * These flags are intended for internal use by the hns driver, and they
+ * rely on the range reserved for that use in the ib_qp_create_flags enum.
+ */
+enum hns_roce_qp_create_flags {
+	HNS_ROCE_QP_CREATE_DCA_EN = IB_QP_CREATE_RESERVED_START,
+};
+
 enum {
 	HNS_ROCE_CAP_FLAG_REREG_MR		= BIT(0),
 	HNS_ROCE_CAP_FLAG_ROCE_V1_V2		= BIT(1),
@@ -148,6 +157,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_ATOMIC		= BIT(10),
 	HNS_ROCE_CAP_FLAG_DIRECT_WQE		= BIT(12),
 	HNS_ROCE_CAP_FLAG_SDI_MODE		= BIT(14),
+	HNS_ROCE_CAP_FLAG_DCA_MODE		= BIT(15),
 	HNS_ROCE_CAP_FLAG_STASH			= BIT(17),
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
@@ -198,13 +208,40 @@ struct hns_roce_uar {
 enum hns_roce_mmap_type {
 	HNS_ROCE_MMAP_TYPE_DB = 1,
 	HNS_ROCE_MMAP_TYPE_DWQE,
-	HNS_ROCE_MMAP_TYPE_RESET = 4,
+	HNS_ROCE_MMAP_TYPE_DCA,
+	HNS_ROCE_MMAP_TYPE_RESET,
 };
 
 struct hns_user_mmap_entry {
 	struct rdma_user_mmap_entry rdma_entry;
 	enum hns_roce_mmap_type mmap_type;
 	u64 address;
+};
+
+struct hns_roce_dca_ctx {
+	struct list_head pool; /* all DCA mems link to @pool */
+	spinlock_t pool_lock; /* protect @pool */
+	unsigned int free_mems; /* free mem num in pool */
+	size_t free_size; /* free mem size in pool */
+	size_t total_size; /* total size in pool */
+	size_t max_size; /* max size the pool can expand to */
+	size_t min_size; /* shrink if @free_size > @min_size */
+	unsigned int unit_size; /* unit size per DCA mem */
+
+	unsigned int max_qps;
+	unsigned int status_npage;
+	struct ida ida;
+
+#define HNS_DCA_BITS_PER_STATUS 1
+	unsigned long *buf_status;
+	unsigned long *sync_status;
+
+	bool exit_aging;
+	struct list_head aging_proc_list;
+	struct list_head aging_new_list;
+	spinlock_t aging_lock;
+	struct delayed_work aging_dwork;
+	struct hns_user_mmap_entry *dca_mmap_entry;
 };
 
 struct hns_roce_ucontext {
@@ -215,6 +252,10 @@ struct hns_roce_ucontext {
 	struct hns_user_mmap_entry *db_mmap_entry;
 	struct hns_user_mmap_entry *reset_mmap_entry;
 	u32			config;
+	struct hns_roce_dca_ctx	dca_ctx;
+	struct list_head list; /* link all uctx to uctx_list on hr_dev */
+	pid_t pid; /* process id to which the uctx belongs */
+	struct hns_dca_ctx_debugfs dca_dbgfs;
 };
 
 struct hns_roce_pd {
@@ -314,6 +355,19 @@ struct hns_roce_mtr {
 	struct hns_roce_hem_cfg  hem_cfg; /* config for hardware addressing */
 };
 
+/* DCA config */
+struct hns_roce_dca_cfg {
+	spinlock_t		lock;
+	u16			attach_count;
+	u32			buf_id;
+	u32			dcan;
+	void			**buf_list;
+	u32			npages;
+	u32			sq_idx;
+	bool			aging_enable;
+	struct list_head	aging_node;
+};
+
 struct hns_roce_mw {
 	struct ib_mw		ibmw;
 	u32			pdn;
@@ -351,6 +405,7 @@ struct hns_roce_wq {
 	u32		max_gs;
 	u32		rsv_sge;
 	u32		offset;
+	int		wqe_offset;
 	u32		wqe_shift; /* WQE size */
 	u32		head;
 	u32		tail;
@@ -362,6 +417,7 @@ struct hns_roce_sge {
 	unsigned int	sge_cnt; /* SGE num */
 	u32		offset;
 	u32		sge_shift; /* SGE size */
+	int		wqe_offset;
 };
 
 struct hns_roce_buf_list {
@@ -618,6 +674,7 @@ struct hns_roce_qp {
 	struct hns_roce_wq	sq;
 
 	struct hns_roce_mtr	mtr;
+	struct hns_roce_dca_cfg	dca_cfg;
 
 	u32			buff_size;
 	struct mutex		mutex;
@@ -952,6 +1009,10 @@ struct hns_roce_hw {
 	int (*clear_hem)(struct hns_roce_dev *hr_dev,
 			 struct hns_roce_hem_table *table, int obj,
 			 u32 step_idx);
+	int (*set_dca_buf)(struct hns_roce_dev *hr_dev,
+			   struct hns_roce_qp *hr_qp);
+	bool (*chk_dca_buf_inactive)(struct hns_roce_dev *hr_dev,
+				     struct hns_roce_qp *hr_qp);
 	int (*modify_qp)(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 			 int attr_mask, enum ib_qp_state cur_state,
 			 enum ib_qp_state new_state, struct ib_udata *udata);
@@ -995,6 +1056,10 @@ struct hns_roce_dev {
 	struct ib_device	ib_dev;
 	struct pci_dev		*pci_dev;
 	struct device		*dev;
+
+	struct list_head	uctx_list; /* list of all uctx on this dev */
+	struct mutex		uctx_list_mutex; /* protect @uctx_list */
+
 	struct hns_roce_uar     priv_uar;
 	const char		*irq_names[HNS_ROCE_MAX_IRQ_NUM];
 	spinlock_t		sm_lock;
@@ -1016,6 +1081,8 @@ struct hns_roce_dev {
 	void __iomem		*mem_base;
 	struct hns_roce_caps	caps;
 	struct xarray		qp_table_xa;
+
+	struct hns_roce_dca_ctx	dca_ctx;
 
 	unsigned char	dev_addr[HNS_ROCE_MAX_PORTS][ETH_ALEN];
 	u64			sys_image_guid;

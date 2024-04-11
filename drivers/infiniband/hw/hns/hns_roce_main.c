@@ -36,12 +36,14 @@
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_cache.h>
+#include <rdma/uverbs_ioctl.h>
 
 #include "hnae3.h"
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hem.h"
 #include "hns_roce_hw_v2.h"
+#include "hns_roce_dca.h"
 
 static struct net_device *hns_roce_get_netdev(struct ib_device *ib_dev,
 					      u32 port_num)
@@ -393,6 +395,7 @@ hns_roce_user_mmap_entry_insert(struct ib_ucontext *ucontext, u64 address,
 		break;
 	case HNS_ROCE_MMAP_TYPE_DWQE:
 	case HNS_ROCE_MMAP_TYPE_RESET:
+	case HNS_ROCE_MMAP_TYPE_DCA:
 		ret = rdma_user_mmap_entry_insert_range(
 				ucontext, &entry->rdma_entry, length, 1,
 				U32_MAX);
@@ -415,6 +418,9 @@ static void hns_roce_dealloc_uar_entry(struct hns_roce_ucontext *context)
 	if (context->db_mmap_entry)
 		rdma_user_mmap_entry_remove(
 			&context->db_mmap_entry->rdma_entry);
+	if (context->dca_ctx.dca_mmap_entry)
+		rdma_user_mmap_entry_remove(
+			&context->dca_ctx.dca_mmap_entry->rdma_entry);
 }
 
 static int hns_roce_alloc_uar_entry(struct ib_ucontext *uctx)
@@ -451,35 +457,84 @@ static int hns_roce_alloc_reset_entry(struct ib_ucontext *uctx)
 	return 0;
 }
 
-static void hns_roce_get_uctx_config(struct hns_roce_dev *hr_dev,
-				struct hns_roce_ucontext *context,
-				struct hns_roce_ib_alloc_ucontext *ucmd,
-				struct hns_roce_ib_alloc_ucontext_resp *resp)
+static void ucontext_set_resp(struct ib_ucontext *uctx,
+			      struct hns_roce_ib_alloc_ucontext_resp *resp)
 {
+	struct hns_roce_ucontext *context = to_hr_ucontext(uctx);
+	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
+	struct rdma_user_mmap_entry *rdma_entry;
+
+	resp->qp_tab_size = hr_dev->caps.num_qps;
+	resp->srq_tab_size = hr_dev->caps.num_srqs;
+	resp->cqe_size = hr_dev->caps.cqe_sz;
+
 	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
-		context->config = ucmd->config & HNS_ROCE_EXSGE_FLAGS;
+		resp->congest_type = hr_dev->caps.cong_cap;
+
+	if (context->reset_mmap_entry) {
+		rdma_entry = &context->reset_mmap_entry->rdma_entry;
+		resp->reset_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
+	}
 
 	if (context->config & HNS_ROCE_EXSGE_FLAGS) {
 		resp->config |= HNS_ROCE_RSP_EXSGE_FLAGS;
 		resp->max_inline_data = hr_dev->caps.max_sq_inline;
 	}
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) {
-		context->config |= ucmd->config & HNS_ROCE_RQ_INLINE_FLAGS;
-		if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
-			resp->config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
-	}
+	if (context->config & HNS_ROCE_RQ_INLINE_FLAGS)
+		resp->config |= HNS_ROCE_RSP_RQ_INLINE_FLAGS;
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE) {
-		context->config |= ucmd->config & HNS_ROCE_CQE_INLINE_FLAGS;
-		if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
-			resp->config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
-	}
+	if (context->config & HNS_ROCE_CQE_INLINE_FLAGS)
+		resp->config |= HNS_ROCE_RSP_CQE_INLINE_FLAGS;
 
-	if (ucmd->config & HNS_ROCE_UCTX_DYN_QP_PGSZ) {
-		context->config |= HNS_ROCE_UCTX_DYN_QP_PGSZ;
+	if (context->config & HNS_ROCE_UCTX_DYN_QP_PGSZ)
 		resp->config |=  HNS_ROCE_UCTX_RSP_DYN_QP_PGSZ;
+
+	if (context->config & HNS_ROCE_UCTX_CONFIG_DCA)
+		resp->config |= HNS_ROCE_UCTX_RSP_DCA_FLAGS;
+
+	if (context->dca_ctx.dca_mmap_entry) {
+		resp->dca_qps = context->dca_ctx.max_qps;
+		resp->dca_mmap_size = PAGE_SIZE * context->dca_ctx.status_npage;
+		rdma_entry = &context->dca_ctx.dca_mmap_entry->rdma_entry;
+		resp->dca_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
 	}
+}
+
+static u32 get_udca_max_qps(struct hns_roce_dev *hr_dev,
+			    struct hns_roce_ib_alloc_ucontext *ucmd)
+{
+	u32 qp_num;
+
+	if (ucmd->comp & HNS_ROCE_ALLOC_UCTX_COMP_DCA_MAX_QPS) {
+		qp_num = ucmd->dca_max_qps;
+		if (!qp_num)
+			qp_num = hr_dev->caps.num_qps;
+	} else {
+		qp_num = 0;
+	}
+
+	return qp_num;
+}
+
+static void hns_roce_get_uctx_config(struct hns_roce_dev *hr_dev,
+				struct hns_roce_ucontext *context,
+				struct hns_roce_ib_alloc_ucontext *ucmd)
+{
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
+		context->config = ucmd->config & HNS_ROCE_EXSGE_FLAGS;
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE)
+		context->config |= ucmd->config & HNS_ROCE_RQ_INLINE_FLAGS;
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQE_INLINE)
+		context->config |= ucmd->config & HNS_ROCE_CQE_INLINE_FLAGS;
+
+	if (ucmd->config & HNS_ROCE_UCTX_DYN_QP_PGSZ)
+		context->config |= HNS_ROCE_UCTX_DYN_QP_PGSZ;
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
+		context->config |= ucmd->config & HNS_ROCE_UCTX_CONFIG_DCA;
 }
 
 static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
@@ -489,24 +544,20 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
 	struct hns_roce_ib_alloc_ucontext_resp resp = {};
 	struct hns_roce_ib_alloc_ucontext ucmd = {};
-	struct rdma_user_mmap_entry *rdma_entry;
 	int ret = -EAGAIN;
 
 	if (!hr_dev->active)
 		goto error_out;
 
-	resp.qp_tab_size = hr_dev->caps.num_qps;
-	resp.srq_tab_size = hr_dev->caps.num_srqs;
+	context->pid = current->pid;
+	INIT_LIST_HEAD(&context->list);
 
 	ret = ib_copy_from_udata(&ucmd, udata,
 				 min(udata->inlen, sizeof(ucmd)));
 	if (ret)
 		goto error_out;
 
-	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
-		resp.congest_type = hr_dev->caps.cong_cap;
-
-	hns_roce_get_uctx_config(hr_dev, context, &ucmd, &resp);
+	hns_roce_get_uctx_config(hr_dev, context, &ucmd);
 
 	ret = hns_roce_uar_alloc(hr_dev, &context->uar);
 	if (ret)
@@ -526,21 +577,25 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	if (ret)
 		goto error_fail_reset_entry;
 
-	if (context->reset_mmap_entry) {
-		rdma_entry = &context->reset_mmap_entry->rdma_entry;
-		resp.reset_mmap_key = rdma_user_mmap_get_offset(rdma_entry);
-	}
+	hns_roce_register_udca(hr_dev, get_udca_max_qps(hr_dev, &ucmd),
+			       context);
 
-	resp.cqe_size = hr_dev->caps.cqe_sz;
-
+	ucontext_set_resp(uctx, &resp);
 	ret = ib_copy_to_udata(udata, &resp,
 			       min(udata->outlen, sizeof(resp)));
 	if (ret)
 		goto error_fail_copy_to_udata;
 
+	mutex_lock(&hr_dev->uctx_list_mutex);
+	list_add(&context->list, &hr_dev->uctx_list);
+	mutex_unlock(&hr_dev->uctx_list_mutex);
+
+	hns_roce_register_uctx_debugfs(hr_dev, context);
+
 	return 0;
 
 error_fail_copy_to_udata:
+	hns_roce_unregister_udca(hr_dev, context);
 	hns_roce_dealloc_reset_entry(context);
 
 error_fail_reset_entry:
@@ -560,10 +615,48 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct hns_roce_ucontext *context = to_hr_ucontext(ibcontext);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
 
+	mutex_lock(&hr_dev->uctx_list_mutex);
+	list_del(&context->list);
+	mutex_unlock(&hr_dev->uctx_list_mutex);
+
+	hns_roce_unregister_uctx_debugfs(context);
+
+	hns_roce_unregister_udca(hr_dev, context);
+
 	hns_roce_dealloc_uar_entry(context);
 	hns_roce_dealloc_reset_entry(context);
 
 	ida_free(&hr_dev->uar_ida.ida, (int)context->uar.logic_idx);
+}
+
+static int mmap_dca(struct ib_ucontext *context, struct vm_area_struct *vma)
+{
+	struct hns_roce_ucontext *uctx = to_hr_ucontext(context);
+	struct hns_roce_dca_ctx *ctx = &uctx->dca_ctx;
+	struct page **pages;
+	unsigned long num;
+	int ret;
+
+	if ((vma->vm_end - vma->vm_start != (ctx->status_npage * PAGE_SIZE) ||
+	     !(vma->vm_flags & VM_SHARED)))
+		return -EINVAL;
+
+	if (!(vma->vm_flags & VM_WRITE) || (vma->vm_flags & VM_EXEC))
+		return -EPERM;
+
+	if (!ctx->buf_status)
+		return -EOPNOTSUPP;
+
+	pages = kcalloc(ctx->status_npage, sizeof(struct page *), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	for (num = 0; num < ctx->status_npage; num++)
+		pages[num] = virt_to_page(ctx->buf_status + num * PAGE_SIZE);
+
+	ret = vm_insert_pages(vma, vma->vm_start, pages, &num);
+	kfree(pages);
+	return ret;
 }
 
 static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
@@ -589,6 +682,9 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 	case HNS_ROCE_MMAP_TYPE_DWQE:
 		prot = pgprot_device(vma->vm_page_prot);
 		break;
+	case HNS_ROCE_MMAP_TYPE_DCA:
+		ret = mmap_dca(uctx, vma);
+		goto out;
 	case HNS_ROCE_MMAP_TYPE_RESET:
 		if (vma->vm_flags & (VM_WRITE | VM_EXEC)) {
 			ret = -EINVAL;
@@ -768,6 +864,11 @@ normal_unregister:
 	ib_unregister_device(&hr_dev->ib_dev);
 }
 
+const struct uapi_definition hns_roce_uapi_defs[] = {
+	UAPI_DEF_CHAIN(hns_roce_dca_uapi_defs),
+	{}
+};
+
 static const struct ib_device_ops hns_roce_dev_ops = {
 	.owner = THIS_MODULE,
 	.driver_id = RDMA_DRIVER_HNS,
@@ -902,6 +1003,10 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ib_set_device_ops(ib_dev, hr_dev->hw->hns_roce_dev_ops);
 	ib_set_device_ops(ib_dev, &hns_roce_dev_ops);
 	ib_set_device_ops(ib_dev, &hns_roce_dev_restrack_ops);
+
+	if (IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS))
+		ib_dev->driver_def = hns_roce_uapi_defs;
+
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
 		net_dev = get_hr_netdev(hr_dev, i);
 		if (!net_dev)
@@ -1115,6 +1220,15 @@ err_unmap_dmpt:
 	return ret;
 }
 
+static void hns_roce_teardown_hca(struct hns_roce_dev *hr_dev)
+{
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
+		hns_roce_cleanup_dca(hr_dev);
+
+	hns_roce_cleanup_bitmap(hr_dev);
+	mutex_destroy(&hr_dev->uctx_list_mutex);
+}
+
 /**
  * hns_roce_setup_hca - setup host channel adapter
  * @hr_dev: pointer to hns roce device
@@ -1126,6 +1240,14 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	int ret;
 
 	spin_lock_init(&hr_dev->sm_lock);
+
+	INIT_LIST_HEAD(&hr_dev->qp_list);
+	spin_lock_init(&hr_dev->qp_list_lock);
+	INIT_LIST_HEAD(&hr_dev->dip_list);
+	spin_lock_init(&hr_dev->dip_list_lock);
+
+	INIT_LIST_HEAD(&hr_dev->uctx_list);
+	mutex_init(&hr_dev->uctx_list_mutex);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB) {
@@ -1159,6 +1281,9 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SRQ)
 		hns_roce_init_srq_table(hr_dev);
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_DCA_MODE)
+		hns_roce_init_dca(hr_dev);
+
 	return 0;
 
 err_uar_table_free:
@@ -1183,7 +1308,7 @@ static void check_and_get_armed_cq(struct list_head *cq_list, struct ib_cq *cq)
 
 void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_qp *hr_qp;
+	struct hns_roce_qp *hr_qp, *hr_qp_next;
 	struct hns_roce_cq *hr_cq;
 	struct list_head cq_list;
 	unsigned long flags_qp;
@@ -1192,7 +1317,7 @@ void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 	INIT_LIST_HEAD(&cq_list);
 
 	spin_lock_irqsave(&hr_dev->qp_list_lock, flags);
-	list_for_each_entry(hr_qp, &hr_dev->qp_list, node) {
+	list_for_each_entry_safe(hr_qp, hr_qp_next, &hr_dev->qp_list, node) {
 		spin_lock_irqsave(&hr_qp->sq.lock, flags_qp);
 		if (hr_qp->sq.tail != hr_qp->sq.head)
 			check_and_get_armed_cq(&cq_list, hr_qp->ibqp.send_cq);
@@ -1290,11 +1415,6 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		}
 	}
 
-	INIT_LIST_HEAD(&hr_dev->qp_list);
-	spin_lock_init(&hr_dev->qp_list_lock);
-	INIT_LIST_HEAD(&hr_dev->dip_list);
-	spin_lock_init(&hr_dev->dip_list_lock);
-
 	ret = hns_roce_register_device(hr_dev);
 	if (ret)
 		goto error_failed_register_device;
@@ -1309,7 +1429,7 @@ error_failed_register_device:
 		hr_dev->hw->hw_exit(hr_dev);
 
 error_failed_engine_init:
-	hns_roce_cleanup_bitmap(hr_dev);
+	hns_roce_teardown_hca(hr_dev);
 
 error_failed_setup_hca:
 	hns_roce_cleanup_hem(hr_dev);
@@ -1340,7 +1460,7 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
-	hns_roce_cleanup_bitmap(hr_dev);
+	hns_roce_teardown_hca(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
 	if (hr_dev->cmd_mod)
