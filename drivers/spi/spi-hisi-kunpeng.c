@@ -481,6 +481,12 @@ static int hisi_spi_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	if (host->max_speed_hz == 0) {
+		dev_err(dev, "invalid max SPI clocking speed, max-freq=%u\n",
+				host->max_speed_hz);
+		return -EINVAL;
+	}
+
 	ret = device_property_read_u16(dev, "num-cs",
 					&host->num_chipselect);
 	if (ret)
