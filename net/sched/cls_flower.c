@@ -336,6 +336,12 @@ static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	return -1;
 }
 
+extern void (*tmplt_reoffload)(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv);
+
+static void fl_tmplt_reoffload(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv);
+
 static int fl_init(struct tcf_proto *tp)
 {
 	struct cls_fl_head *head;
@@ -349,6 +355,8 @@ static int fl_init(struct tcf_proto *tp)
 	INIT_LIST_HEAD(&head->hw_filters);
 	rcu_assign_pointer(tp->root, head);
 	idr_init(&head->handle_idr);
+
+	tmplt_reoffload = &fl_tmplt_reoffload;
 
 	return rhashtable_init(&head->ht, &mask_ht_params);
 }
@@ -588,6 +596,8 @@ static void fl_destroy(struct tcf_proto *tp, bool rtnl_held,
 
 	__module_get(THIS_MODULE);
 	tcf_queue_work(&head->rwork, fl_destroy_sleepable);
+
+	tmplt_reoffload = NULL;
 }
 
 static void fl_put(struct tcf_proto *tp, void *arg)
@@ -3233,7 +3243,6 @@ static struct tcf_proto_ops cls_fl_ops __read_mostly = {
 	.bind_class	= fl_bind_class,
 	.tmplt_create	= fl_tmplt_create,
 	.tmplt_destroy	= fl_tmplt_destroy,
-	.tmplt_reoffload = fl_tmplt_reoffload,
 	.tmplt_dump	= fl_tmplt_dump,
 	.owner		= THIS_MODULE,
 	.flags		= TCF_PROTO_OPS_DOIT_UNLOCKED,
