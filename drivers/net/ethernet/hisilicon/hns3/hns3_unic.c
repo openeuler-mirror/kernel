@@ -63,7 +63,7 @@ int hns3_unic_init(struct net_device *netdev)
  * to actively inform the chip of the message type, which is unrelated
  * to checksum offloading.
  */
-void hns3_unic_set_l3_type(struct sk_buff *skb, u32 *type_cs_vlan_tso)
+static void hns3_unic_set_l3_type(struct sk_buff *skb, u32 *type_cs_vlan_tso)
 {
 	if (skb->protocol == htons(ETH_P_IP))
 		hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3T_M,
@@ -356,6 +356,22 @@ int hns3_unic_init_guid(struct net_device *netdev)
 	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
 
 	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
+
+	return 0;
+}
+
+int hns3_unic_fill_skb_desc(struct hns3_nic_priv *priv,
+			    struct hns3_enet_ring *ring,
+			    struct sk_buff *skb, struct hns3_desc *desc,
+			    struct hns3_desc_cb *desc_cb)
+{
+	struct hns3_desc_param param;
+
+	desc_cb->send_bytes = skb->len;
+
+	hns3_init_desc_data(skb, &param);
+	hns3_unic_set_l3_type(skb, &param.type_cs_vlan_tso);
+	desc->tx.type_cs_vlan_tso_len = cpu_to_le32(param.type_cs_vlan_tso);
 
 	return 0;
 }
