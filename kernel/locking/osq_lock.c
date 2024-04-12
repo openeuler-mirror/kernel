@@ -96,7 +96,13 @@ bool osq_lock(struct optimistic_spin_queue *lock)
 
 	node->locked = 0;
 	node->next = NULL;
-	node->cpu = curr;
+	/*
+	 * After this cpu member is initialized for the first time, it
+	 * would no longer change in fact. That could avoid cache misses
+	 * when spin and access the cpu member by other CPUs.
+	 */
+	if (node->cpu != curr)
+		node->cpu = curr;
 
 	/*
 	 * We need both ACQUIRE (pairs with corresponding RELEASE in
