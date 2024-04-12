@@ -26,6 +26,7 @@
 #include "sss_pci_remove.h"
 #include "sss_pci_shutdown.h"
 #include "sss_pci_error.h"
+#include "sss_hwdev.h"
 
 #define SSS_DRV_DESC "Intelligent Network Interface Card Driver"
 
@@ -67,7 +68,7 @@ static struct pci_driver g_pci_driver = {
 	.err_handler	 = &g_pci_err_handler
 };
 
-static __init int sss_init_pci(void)
+int sss_init_pci(void)
 {
 	int ret;
 
@@ -81,10 +82,7 @@ static __init int sss_init_pci(void)
 	return 0;
 }
 
-static __exit void sss_exit_pci(void)
+void sss_exit_pci(void)
 {
 	pci_unregister_driver(&g_pci_driver);
 }
-
-module_init(sss_init_pci);
-module_exit(sss_exit_pci);

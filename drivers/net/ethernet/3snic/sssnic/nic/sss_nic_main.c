@@ -21,6 +21,7 @@
 
 #include "sss_kernel.h"
 #include "sss_hw.h"
+#include "sss_hwdev.h"
 #include "sss_nic_cfg.h"
 #include "sss_nic_vf_cfg.h"
 #include "sss_nic_mag_cfg.h"
@@ -1043,9 +1044,16 @@ static __init int sss_nic_init(void)
 	pr_info("%s - version %s\n", SSSNIC_DRV_DESC,
 		SSSNIC_DRV_VERSION);
 
+	ret = sss_init_pci();
+	if (ret) {
+		pr_err("SDK init failed.\n");
+		return ret;
+	}
+
 	ret = sss_register_uld(SSS_SERVICE_TYPE_NIC, &g_nic_uld_info);
 	if (ret != 0) {
 		pr_err("Fail to register sss_nic uld\n");
+		sss_exit_pci();
 		return ret;
 	}
 
@@ -1055,6 +1063,7 @@ static __init int sss_nic_init(void)
 static __exit void sss_nic_exit(void)
 {
 	sss_unregister_uld(SSS_SERVICE_TYPE_NIC);
+	sss_exit_pci();
 }
 
 #ifndef _LLT_TEST_

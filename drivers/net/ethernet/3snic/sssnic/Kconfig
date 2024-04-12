@@ -7,7 +7,6 @@ config SSSNIC
 	tristate "3SNIC Ethernet Controller SSSNIC Support"
 	depends on PCI
 	depends on ARM64 || X86_64
-	select SSSNIC_HW
 	help
 	  This driver supports 3SNIC Ethernet Controller SSSNIC device.
 	  For more information about this product, go to the product
@@ -17,7 +16,3 @@ config SSSNIC
 
 	  To compile this driver as a module, choose M here. The module
 	  will be called sssnic.
-
-config SSSNIC_HW
-	tristate
-	depends on PCI
