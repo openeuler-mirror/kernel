@@ -7,6 +7,7 @@
  */
 #include <asm/page.h>
 #include <asm/cache.h>
+#include <asm/extable.h>
 
 #include <linux/bug.h>
 #include <linux/string.h>
@@ -31,37 +32,6 @@
 #define LDD_USER(sr, val, ptr)	__get_user_asm(sr, val, "ldd", ptr)
 #define STD_USER(sr, x, ptr)	__put_user_asm(sr, "std", x, ptr)
 #endif
-
-/*
- * The exception table contains two values: the first is the relative offset to
- * the address of the instruction that is allowed to fault, and the second is
- * the relative offset to the address of the fixup routine. Since relative
- * addresses are used, 32bit values are sufficient even on 64bit kernel.
- */
-
-#define ARCH_HAS_RELATIVE_EXTABLE
-struct exception_table_entry {
-	int insn;	/* relative address of insn that is allowed to fault. */
-	int fixup;	/* relative address of fixup routine */
-};
-
-#define ASM_EXCEPTIONTABLE_ENTRY( fault_addr, except_addr )\
-	".section __ex_table,\"aw\"\n"			   \
-	".align 4\n"					   \
-	".word (" #fault_addr " - .), (" #except_addr " - .)\n\t" \
-	".previous\n"
-
-/*
- * ASM_EXCEPTIONTABLE_ENTRY_EFAULT() creates a special exception table entry
- * (with lowest bit set) for which the fault handler in fixup_exception() will
- * load -EFAULT into %r29 for a read or write fault, and zeroes the target
- * register in case of a read fault in get_user().
- */
-#define ASM_EXCEPTIONTABLE_REG	29
-#define ASM_EXCEPTIONTABLE_VAR(__variable)		\
-	register long __variable __asm__ ("r29") = 0
-#define ASM_EXCEPTIONTABLE_ENTRY_EFAULT( fault_addr, except_addr )\
-	ASM_EXCEPTIONTABLE_ENTRY( fault_addr, except_addr + 1)
 
 #define __get_user_internal(sr, val, ptr)		\
 ({							\
@@ -89,7 +59,7 @@ struct exception_table_entry {
 							\
 	__asm__("1: " ldx " 0(" sr "%2),%0\n"		\
 		"9:\n"					\
-		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b)	\
+		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b, "%1")	\
 		: "=r"(__gu_val), "+r"(__gu_err)        \
 		: "r"(ptr));				\
 							\
@@ -122,8 +92,8 @@ struct exception_table_entry {
 		"1: ldw 0(" sr "%2),%0\n"		\
 		"2: ldw 4(" sr "%2),%R0\n"		\
 		"9:\n"					\
-		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b)	\
-		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(2b, 9b)	\
+		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b, "%1")	\
+		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(2b, 9b, "%1")	\
 		: "=&r"(__gu_tmp.l), "+r"(__gu_err)	\
 		: "r"(ptr));				\
 							\
@@ -181,7 +151,7 @@ struct exception_table_entry {
 	__asm__ __volatile__ (					\
 		"1: " stx " %2,0(" sr "%1)\n"			\
 		"9:\n"						\
-		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b)		\
+		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b, "%0")	\
 		: "+r"(__pu_err)				\
 		: "r"(ptr), "r"(x))
 
@@ -193,14 +163,13 @@ struct exception_table_entry {
 		"1: stw %2,0(" sr "%1)\n"			\
 		"2: stw %R2,4(" sr "%1)\n"			\
 		"9:\n"						\
-		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b)		\
-		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(2b, 9b)		\
+		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(1b, 9b, "%0")	\
+		ASM_EXCEPTIONTABLE_ENTRY_EFAULT(2b, 9b, "%0")	\
 		: "+r"(__pu_err)				\
 		: "r"(ptr), "r"(__val));			\
 } while (0)
 
 #endif /* !defined(CONFIG_64BIT) */
-
 
 /*
  * Complex access routines -- external declarations
@@ -224,8 +193,5 @@ unsigned long __must_check raw_copy_in_user(void __user *dst, const void __user 
 					    unsigned long len);
 #define INLINE_COPY_TO_USER
 #define INLINE_COPY_FROM_USER
-
-struct pt_regs;
-int fixup_exception(struct pt_regs *regs);
 
 #endif /* __PARISC_UACCESS_H */
