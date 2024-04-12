@@ -478,6 +478,7 @@ extern void __delete_from_swap_cache(struct page *page,
 extern void delete_from_swap_cache(struct page *);
 extern void clear_shadow_from_swap_cache(int type, unsigned long begin,
 				unsigned long end);
+void swapcache_clear(struct swap_info_struct *si, swp_entry_t entry);
 extern void free_page_and_swap_cache(struct page *);
 extern void free_pages_and_swap_cache(struct page **, int);
 extern struct page *lookup_swap_cache(swp_entry_t entry,
@@ -636,6 +637,10 @@ static inline struct page *swapin_readahead(swp_entry_t swp, gfp_t gfp_mask,
 static inline int swap_writepage(struct page *p, struct writeback_control *wbc)
 {
 	return 0;
+}
+
+static inline void swapcache_clear(struct swap_info_struct *si, swp_entry_t entry)
+{
 }
 
 static inline struct page *lookup_swap_cache(swp_entry_t swp,
