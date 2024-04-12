@@ -1237,7 +1237,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 	ret = set_qp_param(hr_dev, hr_qp, init_attr, udata, &ucmd);
 	if (ret) {
 		ibdev_err(ibdev, "failed to set QP param, ret = %d.\n", ret);
-		return ret;
+		goto err_out;
 	}
 
 	if (!udata) {
@@ -1245,7 +1245,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		if (ret) {
 			ibdev_err(ibdev, "failed to alloc wrid, ret = %d.\n",
 				  ret);
-			return ret;
+			goto err_out;
 		}
 	}
 
@@ -1316,6 +1316,8 @@ err_buf:
 	free_qpn(hr_dev, hr_qp);
 err_qpn:
 	free_kernel_wrid(hr_qp);
+err_out:
+	mutex_destroy(&hr_qp->mutex);
 	return ret;
 }
 
@@ -1331,6 +1333,7 @@ void hns_roce_qp_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	free_qp_wqe(hr_dev, hr_qp, udata);
 	free_kernel_wrid(hr_qp);
 	free_qp_db(hr_dev, hr_qp, udata);
+	mutex_destroy(&hr_qp->mutex);
 }
 
 static int check_qp_type(struct hns_roce_dev *hr_dev, enum ib_qp_type type,
@@ -1700,5 +1703,7 @@ void hns_roce_cleanup_qp_table(struct hns_roce_dev *hr_dev)
 
 	for (i = 0; i < HNS_ROCE_QP_BANK_NUM; i++)
 		ida_destroy(&hr_dev->qp_table.bank[i].ida);
+	mutex_destroy(&hr_dev->qp_table.bank_mutex);
+	mutex_destroy(&hr_dev->qp_table.scc_mutex);
 	kfree(hr_dev->qp_table.idx_table.spare_idx);
 }
