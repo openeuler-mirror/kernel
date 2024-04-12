@@ -197,18 +197,14 @@ static int tcf_mirred_init(struct net *net, struct nlattr *nla,
 	return ret;
 }
 
-static bool is_mirred_nested(void)
-{
-	return unlikely(__this_cpu_read(mirred_rec_level) > 1);
-}
-
-static int tcf_mirred_forward(bool want_ingress, struct sk_buff *skb)
+static int
+tcf_mirred_forward(bool at_ingress, bool want_ingress, struct sk_buff *skb)
 {
 	int err;
 
 	if (!want_ingress)
 		err = dev_queue_xmit(skb);
-	else if (is_mirred_nested())
+	else if (!at_ingress)
 		err = netif_rx(skb);
 	else
 		err = netif_receive_skb(skb);
@@ -300,14 +296,15 @@ static int tcf_mirred_act(struct sk_buff *skb, const struct tc_action *a,
 		if (use_reinsert) {
 			res->ingress = want_ingress;
 			res->qstats = this_cpu_ptr(m->common.cpu_qstats);
-			if (tcf_mirred_forward(want_ingress, skb) && res->qstats)
+			if (tcf_mirred_forward(skb_at_tc_ingress(skb), want_ingress, skb)
+			    && res->qstats)
 				qstats_overlimit_inc(res->qstats);
 			__this_cpu_dec(mirred_rec_level);
 			return TC_ACT_CONSUMED;
 		}
 	}
 
-	err = tcf_mirred_forward(want_ingress, skb2);
+	err = tcf_mirred_forward(skb_at_tc_ingress(skb), want_ingress, skb2);
 	if (err) {
 out:
 		qstats_overlimit_inc(this_cpu_ptr(m->common.cpu_qstats));
