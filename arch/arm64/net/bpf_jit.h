@@ -240,4 +240,8 @@
 #define A64_BTI_JC A64_HINT(AARCH64_INSN_HINT_BTIJC)
 #define A64_NOP    A64_HINT(AARCH64_INSN_HINT_NOP)
 
+/* ADR */
+#define A64_ADR(Rd, offset) \
+	aarch64_insn_gen_adr(0, offset, Rd, AARCH64_INSN_ADR_TYPE_ADR)
+
 #endif /* _BPF_JIT_H */
