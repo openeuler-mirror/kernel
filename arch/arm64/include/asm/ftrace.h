@@ -56,6 +56,18 @@ extern void return_to_handler(void);
 
 unsigned long ftrace_call_adjust(unsigned long addr);
 
+#ifdef CONFIG_HAVE_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
+static inline void arch_ftrace_set_direct_caller(struct pt_regs *regs,
+						 unsigned long addr)
+{
+	/*
+	 * Place custom trampoline address in regs->custom_tramp to let ftrace
+	 * trampoline jump to it.
+	 */
+	regs->orig_x0 = addr;
+}
+#endif /* CONFIG_HAVE_DYNAMIC_FTRACE_WITH_DIRECT_CALLS */
+
 #ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
 struct dyn_ftrace;
 int ftrace_init_nop(struct module *mod, struct dyn_ftrace *rec);
