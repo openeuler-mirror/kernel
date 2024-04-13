@@ -422,6 +422,9 @@ static int emit_bpf_tail_call(struct jit_ctx *ctx)
 #undef jmp_offset
 }
 
+#ifdef ftrace_dummy_tramp
+#define dummy_tramp ftrace_dummy_tramp
+#else
 void dummy_tramp(void);
 
 asm (
@@ -438,6 +441,7 @@ asm (
 "	.size dummy_tramp, .-dummy_tramp\n"
 "	.popsection\n"
 );
+#endif
 
 /* build a plt initialized like this:
  *
