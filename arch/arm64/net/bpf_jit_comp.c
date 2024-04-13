@@ -1562,7 +1562,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 	struct bpf_tramp_progs *fexit = &tprogs[BPF_TRAMP_FEXIT];
 	struct bpf_tramp_progs *fmod_ret = &tprogs[BPF_TRAMP_MODIFY_RETURN];
 	bool save_ret;
-	u32 **branches = NULL;
+	__le32 **branches = NULL;
 
 	/* trampoline stack layout:
 	 *                  [ parent ip         ]
@@ -1639,7 +1639,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 				retval_off, flags & BPF_TRAMP_F_RET_FENTRY_RET);
 
 	if (fmod_ret->nr_progs) {
-		branches = kcalloc(fmod_ret->nr_progs, sizeof(u32 *),
+		branches = kcalloc(fmod_ret->nr_progs, sizeof(__le32 *),
 				   GFP_KERNEL);
 		if (!branches)
 			return -ENOMEM;
@@ -1662,7 +1662,7 @@ static int prepare_trampoline(struct jit_ctx *ctx, struct bpf_tramp_image *im,
 	/* update the branches saved in invoke_bpf_mod_ret with cbnz */
 	for (i = 0; i < fmod_ret->nr_progs && ctx->image != NULL; i++) {
 		int offset = &ctx->image[ctx->idx] - branches[i];
-		*branches[i] = A64_CBNZ(1, A64_R(10), offset);
+		*branches[i] = cpu_to_le32(A64_CBNZ(1, A64_R(10), offset));
 	}
 
 	for (i = 0; i < fexit->nr_progs; i++)
