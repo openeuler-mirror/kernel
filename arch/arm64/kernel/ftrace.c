@@ -117,6 +117,9 @@ enum ftrace_callsite_action {
 
 static unsigned long ftrace_literal_call_addr(struct dyn_ftrace *rec)
 {
+	if (rec->arch.func == 0UL)
+		return 0UL;
+
 	return rec->arch.func - 2 * AARCH64_INSN_SIZE;
 }
 
@@ -125,6 +128,9 @@ static unsigned long ftrace_literal_addr(struct dyn_ftrace *rec)
 	unsigned long addr = 0;
 
 	addr = ftrace_literal_call_addr(rec);
+	if (addr == 0UL)
+		return 0UL;
+
 	if (addr % sizeof(long))
 		addr -= 3 * AARCH64_INSN_SIZE;
 	else
@@ -154,6 +160,9 @@ static int ftrace_init_literal(struct module *mod, struct dyn_ftrace *rec)
 	old = aarch64_insn_gen_nop();
 
 	addr = ftrace_literal_addr(rec);
+	if (addr == 0UL)
+		return 0UL;
+
 	ftrace_update_literal(addr, 0, FC_INIT);
 
 	pc = ftrace_literal_call_addr(rec);
@@ -222,9 +231,11 @@ static bool ftrace_find_callable_addr(struct dyn_ftrace *rec,
 		unsigned long literal_addr;
 
 		literal_addr = ftrace_literal_addr(rec);
-		ftrace_update_literal(literal_addr, *addr, action);
-		*addr = ftrace_literal_call_addr(rec);
-		return true;
+		if (literal_addr != 0UL) {
+			ftrace_update_literal(literal_addr, *addr, action);
+			*addr = ftrace_literal_call_addr(rec);
+			return true;
+		}
 	}
 
 	/*
@@ -343,27 +354,51 @@ int ftrace_init_nop(struct module *mod, struct dyn_ftrace *rec)
 }
 #endif
 
+static int ftrace_nop_count(unsigned long addr)
+{
+	u32 insn;
+	u32 nop = aarch64_insn_gen_nop();
+	int count = 0;
+
+	for (;;) {
+		if (aarch64_insn_read((void *)addr, &insn))
+			return -1;
+
+		if (insn != nop)
+			break;
+
+		count++;
+		addr += AARCH64_INSN_SIZE;
+	}
+
+	return count;
+}
+
 unsigned long ftrace_call_adjust(unsigned long addr)
 {
 	if (IS_ENABLED(CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS)) {
 		u32 insn;
 		u32 nop = aarch64_insn_gen_nop();
+		int count = ftrace_nop_count(addr);
 
-		/* Skip the first 5 NOPS */
-		addr += 5 * AARCH64_INSN_SIZE;
-
-		if (aarch64_insn_read((void *)addr, &insn))
+		if (count != 5 && count != 7 && count != 2)
 			return 0;
 
-		if (IS_ENABLED(CONFIG_ARM64_BTI_KERNEL)) {
-			if (insn != nop) {
-				addr += AARCH64_INSN_SIZE;
+		if (count == 5 || count == 7) {
+			/* Skip the first 5 NOPS */
+			addr += 5 * AARCH64_INSN_SIZE;
+
+			/* Skip bti c */
+			if (IS_ENABLED(CONFIG_ARM64_BTI_KERNEL)) {
 				if (aarch64_insn_read((void *)addr, &insn))
 					return 0;
+
+				if (insn != nop)
+					addr += AARCH64_INSN_SIZE;
 			}
 		}
 
-		if (WARN_ON_ONCE(insn != nop))
+		if (ftrace_nop_count(addr) != 2)
 			return 0;
 
 		return addr + AARCH64_INSN_SIZE;
@@ -421,10 +456,25 @@ void arch_ftrace_update_code(int command)
 	ftrace_modify_all_code(command);
 }
 
+bool ftrace_directable(struct dyn_ftrace *rec)
+{
+#ifdef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
+	return rec->arch.func != 0UL;
+#else
+	return false;
+#endif
+}
+
 void ftrace_rec_arch_init(struct dyn_ftrace *rec, unsigned long func)
 {
 #ifdef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
-	rec->arch.func = func + 5 * AARCH64_INSN_SIZE;
+	int count;
+
+	count = ftrace_nop_count(func);
+	if (count == 5 || count == 7)
+		rec->arch.func = func + 5 * AARCH64_INSN_SIZE;
+	else
+		rec->arch.func = 0UL;
 #endif
 }
 

@@ -5092,6 +5092,11 @@ static struct ftrace_direct_func *ftrace_alloc_direct_func(unsigned long addr)
 	return direct;
 }
 
+bool __weak ftrace_directable(struct dyn_ftrace *rec)
+{
+	return true;
+}
+
 /**
  * register_ftrace_direct - Call a custom trampoline directly
  * @ip: The address of the nop at the beginning of a function
@@ -5131,6 +5136,9 @@ int register_ftrace_direct(unsigned long ip, unsigned long addr)
 	ret = -ENODEV;
 	rec = lookup_rec(ip, ip);
 	if (!rec)
+		goto out_unlock;
+
+	if (!ftrace_directable(rec))
 		goto out_unlock;
 
 	/*

@@ -280,6 +280,8 @@ struct ftrace_func_entry {
 
 struct dyn_ftrace;
 
+bool ftrace_directable(struct dyn_ftrace *rec);
+
 #ifdef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
 extern int ftrace_direct_func_count;
 int register_ftrace_direct(unsigned long ip, unsigned long addr);
