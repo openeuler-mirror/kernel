@@ -804,7 +804,7 @@ static int __collapse_huge_page_copy(pte_t *pte,
 			continue;
 		}
 		src_page = pte_page(pteval);
-		if (copy_mc_user_highpage(page, src_page, _address, vma)) {
+		if (copy_mc_user_highpage(page, src_page, _address, vma) > 0) {
 			result = SCAN_COPY_MC;
 			break;
 		}
@@ -2071,7 +2071,7 @@ xa_unlocked:
 			clear_highpage(hpage + (index % HPAGE_PMD_NR));
 			index++;
 		}
-		if (copy_mc_highpage(hpage + (page->index % HPAGE_PMD_NR), page)) {
+		if (copy_mc_highpage(hpage + (page->index % HPAGE_PMD_NR), page) > 0) {
 			result = SCAN_COPY_MC;
 			goto rollback;
 		}
