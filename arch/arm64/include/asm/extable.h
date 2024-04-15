@@ -46,5 +46,4 @@ bool ex_handler_bpf(const struct exception_table_entry *ex,
 #endif /* !CONFIG_BPF_JIT */
 
 bool fixup_exception(struct pt_regs *regs);
-bool fixup_exception_mc(struct pt_regs *regs);
 #endif
