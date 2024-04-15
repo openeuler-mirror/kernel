@@ -59,6 +59,11 @@ struct udma_create_jfr_ucmd {
 	uint64_t buf_addr;
 	uint64_t idx_addr;
 	uint64_t db_addr;
+	uint64_t wqe_buf_addr;
+	uint32_t sqe_cnt;
+	uint32_t sqe_shift;
+	uint32_t sge_cnt;
+	uint32_t sge_shift;
 };
 
 enum udma_jfr_cap_flags {

@@ -32,6 +32,7 @@ struct udma_jfr {
 	uint32_t		wqe_cnt;
 	uint32_t		max_sge;
 	uint32_t		wqe_shift;
+	uint32_t		offset;
 	struct udma_jfr_idx_que	idx_que;
 	struct udma_mtr		buf_mtr;
 	struct udma_db		db;
