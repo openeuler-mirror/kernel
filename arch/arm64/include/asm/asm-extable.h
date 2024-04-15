@@ -5,11 +5,13 @@
 #include <linux/bits.h>
 #include <asm/gpr-num.h>
 
-#define EX_TYPE_NONE			0
-#define EX_TYPE_BPF			1
-#define EX_TYPE_UACCESS_ERR_ZERO	2
-#define EX_TYPE_KACCESS_ERR_ZERO	3
-#define EX_TYPE_LOAD_UNALIGNED_ZEROPAD	4
+#define EX_TYPE_NONE				0
+#define EX_TYPE_BPF				1
+#define EX_TYPE_UACCESS_ERR_ZERO		2
+#define EX_TYPE_KACCESS_ERR_ZERO		3
+#define EX_TYPE_LOAD_UNALIGNED_ZEROPAD		4
+/* kernel access memory error safe */
+#define EX_TYPE_KACCESS_ERR_ZERO_ME_SAFE	5
 
 /* Data fields for EX_TYPE_UACCESS_ERR_ZERO */
 #define EX_DATA_REG_ERR_SHIFT	0
@@ -51,6 +53,17 @@
 #define _ASM_EXTABLE_UACCESS(insn, fixup)				\
 	_ASM_EXTABLE_UACCESS_ERR_ZERO(insn, fixup, wzr, wzr)
 
+#define _ASM_EXTABLE_KACCESS_ERR_ZERO_ME_SAFE(insn, fixup, err, zero)	\
+	__ASM_EXTABLE_RAW(insn, fixup, 					\
+			  EX_TYPE_KACCESS_ERR_ZERO_ME_SAFE,		\
+			  (						\
+			    EX_DATA_REG(ERR, err) |			\
+			    EX_DATA_REG(ZERO, zero)			\
+			  ))
+
+#define _ASM_EXTABLE_KACCESS_ME_SAFE(insn, fixup)			\
+	_ASM_EXTABLE_KACCESS_ERR_ZERO_ME_SAFE(insn, fixup, wzr, wzr)
+
 /*
  * Create an exception table entry for uaccess `insn`, which will branch to `fixup`
  * when an unhandled fault is taken.
@@ -67,6 +80,14 @@
 	.ifnc			\fixup,
 	_asm_extable_uaccess	\insn, \fixup
 	.endif
+	.endm
+
+/*
+ * Create an exception table entry for kaccess me(memory error) safe `insn`, which
+ * will branch to `fixup` when an unhandled fault is taken.
+ */
+	.macro          _asm_extable_kaccess_me_safe, insn, fixup
+	_ASM_EXTABLE_KACCESS_ME_SAFE(\insn, \fixup)
 	.endm
 
 #else /* __ASSEMBLY__ */
