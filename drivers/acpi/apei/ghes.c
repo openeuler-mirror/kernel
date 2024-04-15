@@ -726,6 +726,15 @@ static bool ghes_do_proc(struct ghes *ghes,
 #endif
 	}
 
+	/*
+	 * If no memory failure work is queued for abnormal synchronous
+	 * errors, do a force kill.
+	 */
+	if (sync && !queued) {
+		pr_err("Sending SIGBUS to current task due to memory error not recovered");
+		force_sig(SIGBUS);
+	}
+
 	return queued;
 }
 
