@@ -540,6 +540,20 @@ if leaking kernel pointer values to unprivileged users is a concern.
 When ``kptr_restrict`` is set to 2, kernel pointers printed using
 %pK will be replaced with 0s regardless of privileges.
 
+machine_check_safe (arm64 only)
+================================
+
+This indicates whether the Machine Check safe memory copy feature enabled
+or not，which only exists on arm64 when ARCH_HAS_COPY_MC enabled.
+
+The value in this file determines the behaviour of the kernel when
+synchronous exception from memory copy.
+
+= ===================================================================
+0 the kernel will panic immediately.
+1 the kernel will recover since a memcpy-variant provided which can
+  safely fail when accessing to hwpoison.
+= ===================================================================
 
 modprobe
 ========
