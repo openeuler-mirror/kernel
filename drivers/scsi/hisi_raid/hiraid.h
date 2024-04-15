@@ -72,7 +72,10 @@
 
 #define PCI_VENDOR_ID_HUAWEI_LOGIC 0x19E5
 #define HIRAID_SERVER_DEVICE_HBA_DID	0x3858
+#define HIRAID_SERVER_DEVICE_HBAS_DID	0x3918
 #define HIRAID_SERVER_DEVICE_RAID_DID	0x3758
+#define HIRAID_SERVER_DEVICE_RAIDS_DID	0x38D8
+
 
 enum {
 	HIRAID_SC_SUCCESS = 0x0,
@@ -694,6 +697,7 @@ struct hiraid_mapmange {
 	u32 sge_cnt;
 	u32 len;
 	bool use_sgl;
+	u32 cdb_data_len;
 	dma_addr_t first_dma;
 	void *sense_buffer_virt;
 	dma_addr_t sense_buffer_phy;
