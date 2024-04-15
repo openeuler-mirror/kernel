@@ -92,6 +92,11 @@ static inline bool try_page_mte_tagging(struct page *page)
 void mte_zero_clear_page_tags(void *addr);
 void mte_sync_tags(pte_t pte, unsigned int nr_pages);
 void mte_copy_page_tags(void *kto, const void *kfrom);
+
+#ifdef CONFIG_ARCH_HAS_COPY_MC
+int mte_copy_mc_page_tags(void *kto, const void *kfrom);
+#endif
+
 void mte_thread_init_user(void);
 void mte_thread_switch(struct task_struct *next);
 void mte_cpu_setup(void);
@@ -127,6 +132,10 @@ static inline void mte_sync_tags(pte_t pte, unsigned int nr_pages)
 }
 static inline void mte_copy_page_tags(void *kto, const void *kfrom)
 {
+}
+static inline int mte_copy_mc_page_tags(void *kto, const void *kfrom)
+{
+	return 0;
 }
 static inline void mte_thread_init_user(void)
 {
