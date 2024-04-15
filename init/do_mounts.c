@@ -527,9 +527,14 @@ void __init init_rootfs(void)
 #ifdef CONFIG_IMA_DIGEST_LIST
 	if (IS_ENABLED(CONFIG_TMPFS) &&
 		(!saved_root_name[0] || initramtmpfs) &&
-#else
-	if (IS_ENABLED(CONFIG_TMPFS) && !saved_root_name[0] &&
-#endif
 		(!root_fs_names || strstr(root_fs_names, "tmpfs")))
 		is_tmpfs = true;
+#else
+	if (IS_ENABLED(CONFIG_TMPFS)) {
+		if (!saved_root_name[0] && !root_fs_names)
+			is_tmpfs = true;
+		else if (root_fs_names && !!strstr(root_fs_names, "tmpfs"))
+			is_tmpfs = true;
+	}
+#endif
 }
