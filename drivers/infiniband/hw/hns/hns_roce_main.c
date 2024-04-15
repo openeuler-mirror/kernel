@@ -250,6 +250,12 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 			    IB_ATOMIC_HCA : IB_ATOMIC_NONE;
 	props->max_pkeys = 1;
 	props->local_ca_ack_delay = hr_dev->caps.local_ca_ack_delay;
+	props->max_ah = INT_MAX;
+	props->cq_caps.max_cq_moderation_period = HNS_ROCE_MAX_CQ_PERIOD;
+	props->cq_caps.max_cq_moderation_count = HNS_ROCE_MAX_CQ_COUNT;
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
+		props->cq_caps.max_cq_moderation_period = HNS_ROCE_MAX_CQ_PERIOD_HIP08;
+
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SRQ) {
 		props->max_srq = hr_dev->caps.num_srqs;
 		props->max_srq_wr = hr_dev->caps.max_srq_wrs;
@@ -1021,7 +1027,7 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		if (ret)
 			return ret;
 	}
-	dma_set_max_seg_size(dev, UINT_MAX);
+	dma_set_max_seg_size(dev, SZ_2G);
 
 	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND) &&
 	    (hr_dev->hw->bond_is_active(hr_dev)))
@@ -1254,6 +1260,12 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	INIT_LIST_HEAD(&hr_dev->uctx_list);
 	mutex_init(&hr_dev->uctx_list_mutex);
 
+	INIT_LIST_HEAD(&hr_dev->mtr_unfree_list);
+	spin_lock_init(&hr_dev->mtr_unfree_list_lock);
+
+	INIT_LIST_HEAD(&hr_dev->umem_unfree_list);
+	spin_lock_init(&hr_dev->umem_unfree_list_lock);
+
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB) {
 		INIT_LIST_HEAD(&hr_dev->pgdir_list);
@@ -1466,6 +1478,8 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
 	hns_roce_teardown_hca(hr_dev);
+	hns_roce_free_unfree_umem(hr_dev);
+	hns_roce_free_unfree_mtr(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
 	if (hr_dev->cmd_mod)
