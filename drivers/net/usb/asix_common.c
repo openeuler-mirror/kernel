@@ -9,6 +9,8 @@
 
 #include "asix.h"
 
+#define AX_HOST_EN_RETRIES	30
+
 int asix_read_cmd(struct usbnet *dev, u8 cmd, u16 value, u16 index,
 		  u16 size, void *data, int in_pm)
 {
@@ -61,6 +63,29 @@ void asix_write_cmd_async(struct usbnet *dev, u8 cmd, u16 value, u16 index,
 	usbnet_write_cmd_async(dev, cmd,
 			       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
 			       value, index, data, size);
+}
+
+static int asix_check_host_enable(struct usbnet *dev, int in_pm)
+{
+	int i, ret;
+	u8 smsr;
+
+	for (i = 0; i < AX_HOST_EN_RETRIES; ++i) {
+		ret = asix_set_sw_mii(dev, in_pm);
+		if (ret == -ENODEV || ret == -ETIMEDOUT)
+			break;
+		usleep_range(1000, 1100);
+		ret = asix_read_cmd(dev, AX_CMD_STATMNGSTS_REG,
+				    0, 0, 1, &smsr, in_pm);
+		if (ret == -ENODEV)
+			break;
+		else if (ret < sizeof(smsr))
+			continue;
+		else if (smsr & AX_HOST_EN)
+			break;
+	}
+
+	return i >= AX_HOST_EN_RETRIES ? -ETIMEDOUT : ret;
 }
 
 static void reset_asix_rx_fixup_info(struct asix_rx_fixup_info *rx)
@@ -445,19 +470,11 @@ int asix_mdio_read(struct net_device *netdev, int phy_id, int loc)
 {
 	struct usbnet *dev = netdev_priv(netdev);
 	__le16 res;
-	u8 smsr;
-	int i = 0;
 	int ret;
 
 	mutex_lock(&dev->phy_mutex);
-	do {
-		ret = asix_set_sw_mii(dev, 0);
-		if (ret == -ENODEV || ret == -ETIMEDOUT)
-			break;
-		usleep_range(1000, 1100);
-		ret = asix_read_cmd(dev, AX_CMD_STATMNGSTS_REG,
-				    0, 0, 1, &smsr, 0);
-	} while (!(smsr & AX_HOST_EN) && (i++ < 30) && (ret != -ENODEV));
+
+	ret = asix_check_host_enable(dev, 0);
 	if (ret == -ENODEV || ret == -ETIMEDOUT) {
 		mutex_unlock(&dev->phy_mutex);
 		return ret;
@@ -478,22 +495,14 @@ void asix_mdio_write(struct net_device *netdev, int phy_id, int loc, int val)
 {
 	struct usbnet *dev = netdev_priv(netdev);
 	__le16 res = cpu_to_le16(val);
-	u8 smsr;
-	int i = 0;
 	int ret;
 
 	netdev_dbg(dev->net, "asix_mdio_write() phy_id=0x%02x, loc=0x%02x, val=0x%04x\n",
 			phy_id, loc, val);
 
 	mutex_lock(&dev->phy_mutex);
-	do {
-		ret = asix_set_sw_mii(dev, 0);
-		if (ret == -ENODEV)
-			break;
-		usleep_range(1000, 1100);
-		ret = asix_read_cmd(dev, AX_CMD_STATMNGSTS_REG,
-				    0, 0, 1, &smsr, 0);
-	} while (!(smsr & AX_HOST_EN) && (i++ < 30) && (ret != -ENODEV));
+
+	ret = asix_check_host_enable(dev, 0);
 	if (ret == -ENODEV) {
 		mutex_unlock(&dev->phy_mutex);
 		return;
@@ -509,19 +518,11 @@ int asix_mdio_read_nopm(struct net_device *netdev, int phy_id, int loc)
 {
 	struct usbnet *dev = netdev_priv(netdev);
 	__le16 res;
-	u8 smsr;
-	int i = 0;
 	int ret;
 
 	mutex_lock(&dev->phy_mutex);
-	do {
-		ret = asix_set_sw_mii(dev, 1);
-		if (ret == -ENODEV || ret == -ETIMEDOUT)
-			break;
-		usleep_range(1000, 1100);
-		ret = asix_read_cmd(dev, AX_CMD_STATMNGSTS_REG,
-				    0, 0, 1, &smsr, 1);
-	} while (!(smsr & AX_HOST_EN) && (i++ < 30) && (ret != -ENODEV));
+
+	ret = asix_check_host_enable(dev, 1);
 	if (ret == -ENODEV || ret == -ETIMEDOUT) {
 		mutex_unlock(&dev->phy_mutex);
 		return ret;
@@ -543,22 +544,14 @@ asix_mdio_write_nopm(struct net_device *netdev, int phy_id, int loc, int val)
 {
 	struct usbnet *dev = netdev_priv(netdev);
 	__le16 res = cpu_to_le16(val);
-	u8 smsr;
-	int i = 0;
 	int ret;
 
 	netdev_dbg(dev->net, "asix_mdio_write() phy_id=0x%02x, loc=0x%02x, val=0x%04x\n",
 			phy_id, loc, val);
 
 	mutex_lock(&dev->phy_mutex);
-	do {
-		ret = asix_set_sw_mii(dev, 1);
-		if (ret == -ENODEV)
-			break;
-		usleep_range(1000, 1100);
-		ret = asix_read_cmd(dev, AX_CMD_STATMNGSTS_REG,
-				    0, 0, 1, &smsr, 1);
-	} while (!(smsr & AX_HOST_EN) && (i++ < 30) && (ret != -ENODEV));
+
+	ret = asix_check_host_enable(dev, 1);
 	if (ret == -ENODEV) {
 		mutex_unlock(&dev->phy_mutex);
 		return;
