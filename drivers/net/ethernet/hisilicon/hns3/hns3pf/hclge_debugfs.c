@@ -2725,6 +2725,37 @@ static int hclge_dbg_dump_guid_list(struct hclge_dev *hdev, char *buf, int len)
 	return 0;
 }
 
+static int hclge_dbg_dump_fastpath_info(struct hclge_dev *hdev, char *buf,
+					int len)
+{
+	struct hclge_config_fastpath_cmd *fp_info;
+	struct hclge_desc desc;
+	int pos = 0;
+	int ret;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_COMM_CFG_FASTPATH, true);
+
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to dump fastpath_info, ret = %d\n", ret);
+		return ret;
+	}
+
+	fp_info = (struct hclge_config_fastpath_cmd *)desc.data;
+
+	pos += scnprintf(buf + pos, len - pos, "fastpath_en: %u\n",
+			 fp_info->fastpath_en);
+	pos += scnprintf(buf + pos, len - pos, "ssu_cfg_status: 0x%x\n",
+			 le32_to_cpu(fp_info->ssu_cfg_status));
+	pos += scnprintf(buf + pos, len - pos, "igu_cfg_status: 0x%x\n",
+			 le32_to_cpu(fp_info->igu_cfg_status));
+	pos += scnprintf(buf + pos, len - pos, "ppp_cfg_status: 0x%x\n",
+			 le32_to_cpu(fp_info->ppp_cfg_status));
+
+	return 0;
+}
+
 static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_TM_NODES,
@@ -2893,6 +2924,10 @@ static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_GUID_LIST,
 		.dbg_dump = hclge_dbg_dump_guid_list,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_FASTPATH_INFO,
+		.dbg_dump = hclge_dbg_dump_fastpath_info,
 	},
 };
 
