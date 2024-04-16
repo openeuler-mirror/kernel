@@ -270,4 +270,7 @@ enum {
 	SSS_CFG_BUSY = 1
 };
 
+int sss_init_pci(void);
+void sss_exit_pci(void);
+
 #endif
