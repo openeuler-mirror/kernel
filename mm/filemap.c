@@ -45,6 +45,7 @@
 #include <linux/migrate.h>
 #include <linux/pipe_fs_i.h>
 #include <linux/splice.h>
+#include <linux/huge_mm.h>
 #include <asm/pgalloc.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
@@ -3113,6 +3114,29 @@ static int lock_folio_maybe_drop_mmap(struct vm_fault *vmf, struct folio *folio,
 	return 1;
 }
 
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#define file_exec_thp_enabled()				\
+	(transparent_hugepage_flags &			\
+	 (1<<TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG))
+
+static inline void try_enable_file_exec_thp(struct vm_area_struct *vma,
+					    unsigned long *vm_flags,
+					    struct file *file)
+{
+	if (!IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS))
+		return;
+
+	if (!is_exec_mapping(*vm_flags))
+		return;
+
+	if (file->f_op->get_unmapped_area != thp_get_unmapped_area)
+		return;
+
+	if (file_exec_thp_enabled())
+		hugepage_madvise(vma, vm_flags, MADV_HUGEPAGE);
+}
+#endif
+
 /*
  * Synchronous readahead happens when we don't even find a page in the page
  * cache at all.  We don't want to perform IO under the mmap sem, so if we have
@@ -3131,6 +3155,9 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 	unsigned int mmap_miss;
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	/* Try enable thp for exec mapping by default */
+	try_enable_file_exec_thp(vmf->vma, &vm_flags, file);
+
 	/* Use the readahead code, even if readahead is disabled */
 	if (vm_flags & VM_HUGEPAGE) {
 		fpin = maybe_unlock_mmap_for_io(vmf, fpin);
