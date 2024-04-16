@@ -1797,8 +1797,8 @@ static void i40evf_disable_vf(struct i40evf_adapter *adapter)
 
 	i40evf_free_misc_irq(adapter);
 	i40evf_reset_interrupt_capability(adapter);
-	i40evf_free_queues(adapter);
 	i40evf_free_q_vectors(adapter);
+	i40evf_free_queues(adapter);
 	kfree(adapter->vf_res);
 	i40evf_shutdown_adminq(&adapter->hw);
 	adapter->netdev->flags &= ~IFF_UP;
