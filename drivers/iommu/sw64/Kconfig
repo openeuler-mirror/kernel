@@ -8,7 +8,7 @@ config SUNWAY_IOMMU
 	depends on SW64 && PCI && SUBARCH_C3B
 	help
 	  Support for IOMMU on SW64 platform. It can enable or bypass specific device by
-	  adding boot param "iommu_enable" and "iommu.passthrough".
+	  adding boot param "sunway_iommu" and "iommu.passthrough".
 
 # SW64 IOMMU V2 SUPPORT
 config SUNWAY_IOMMU_V2
@@ -19,4 +19,4 @@ config SUNWAY_IOMMU_V2
 	depends on SW64 && PCI && SUBARCH_C4
 	help
 	  Support for IOMMU V2 on SW64 platform. It can enable or bypass specific device by
-	  adding boot param "iommu_enable" and "iommu.passthrough".
+	  adding boot param "sunway_iommu" and "iommu.passthrough".
