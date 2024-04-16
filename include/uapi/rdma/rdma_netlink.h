@@ -556,6 +556,12 @@ enum rdma_nldev_attr {
 	RDMA_NLDEV_ATTR_STAT_HWCOUNTER_INDEX,	/* u32 */
 	RDMA_NLDEV_ATTR_STAT_HWCOUNTER_DYNAMIC, /* u8 */
 
+	RDMA_NLDEV_ATTR_DRIVER_DETAILS,		/* u8 */
+	/*
+	 * QP subtype string, used for driver QPs
+	 */
+	RDMA_NLDEV_ATTR_RES_SUBTYPE,		/* string */
+
 	/*
 	 * Always the end
 	 */
