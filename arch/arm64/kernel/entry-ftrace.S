@@ -14,14 +14,16 @@
 
 #ifdef CONFIG_DYNAMIC_FTRACE_WITH_REGS
 /*
- * Due to -fpatchable-function-entry=2, the compiler has placed two NOPs before
- * the regular function prologue. For an enabled callsite, ftrace_init_nop() and
- * ftrace_make_call() have patched those NOPs to:
+ * Due to -fpatchable-function-entry=2 or -fpatchable-function-entry=7,5, the
+ * compiler has placed two NOPs before the regular function prologue. For an
+ * enabled callsite, ftrace_init_nop() and ftrace_make_call() have patched those
+ * NOPs to:
  *
  * 	MOV	X9, LR
  * 	BL	<entry>
  *
- * ... where <entry> is either ftrace_caller or ftrace_regs_caller.
+ * ... where <entry> is ftrace_caller or ftrace_regs_caller or custom
+ * trampoline.
  *
  * Each instrumented function follows the AAPCS, so here x0-x8 and x18-x30 are
  * live (x18 holds the Shadow Call Stack pointer), and x9-x17 are safe to
@@ -59,6 +61,9 @@
 	.else
 	str	x29, [sp, #S_FP]
 	.endif
+
+	/* Set custom_tramp to zero  */
+	str     xzr, [sp, #S_ORIG_X0]
 
 	/* Save the callsite's SP and LR */
 	add	x10, sp, #(S_FRAME_SIZE + 16)
@@ -123,12 +128,21 @@ ftrace_common_return:
 	/* Restore the callsite's FP, LR, PC */
 	ldr	x29, [sp, #S_FP]
 	ldr	x30, [sp, #S_LR]
-	ldr	x9, [sp, #S_PC]
+	ldr	x10, [sp, #S_PC]
 
+	ldr	x11, [sp, #S_ORIG_X0]
+	cbz	x11, 1f
+	/* Set x9 to parent ip before jump to custom trampoline */
+	mov	x9,  x30
+	/* Set lr to self ip */
+	ldr	x30, [sp, #S_PC]
+	/* Set x10 (used for return address) to custom trampoline */
+	mov	x10, x11
+1:
 	/* Restore the callsite's SP */
 	add	sp, sp, #S_FRAME_SIZE + 16
 
-	ret	x9
+	ret	x10
 SYM_CODE_END(ftrace_common)
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
@@ -349,3 +363,14 @@ SYM_CODE_START(return_to_handler)
 	ret
 SYM_CODE_END(return_to_handler)
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+
+#ifdef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
+SYM_FUNC_START(ftrace_dummy_tramp)
+#if IS_ENABLED(CONFIG_ARM64_BTI_KERNEL)
+	bti j /* ftrace_dummy_tramp is called via "br x10" */
+#endif
+	mov x10, x30
+	mov x30, x9
+	ret x10
+SYM_FUNC_END(ftrace_dummy_tramp)
+#endif /* CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS */

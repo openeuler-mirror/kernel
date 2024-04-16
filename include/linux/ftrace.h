@@ -280,6 +280,8 @@ struct ftrace_func_entry {
 
 struct dyn_ftrace;
 
+bool ftrace_directable(struct dyn_ftrace *rec);
+
 #ifdef CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS
 extern int ftrace_direct_func_count;
 int register_ftrace_direct(unsigned long ip, unsigned long addr);
@@ -461,6 +463,7 @@ struct dyn_ftrace {
 };
 
 int ftrace_force_update(void);
+void ftrace_rec_arch_init(struct dyn_ftrace *rec, unsigned long addr);
 int ftrace_set_filter_ip(struct ftrace_ops *ops, unsigned long ip,
 			 int remove, int reset);
 int ftrace_set_filter(struct ftrace_ops *ops, unsigned char *buf,

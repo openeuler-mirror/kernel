@@ -1576,17 +1576,34 @@ unsigned long ftrace_location_range(unsigned long start, unsigned long end)
 }
 
 /**
- * ftrace_location - return true if the ip giving is a traced location
+ * ftrace_location - return the ftrace location
  * @ip: the instruction pointer to check
  *
- * Returns rec->ip if @ip given is a pointer to a ftrace location.
- * That is, the instruction that is either a NOP or call to
- * the function tracer. It checks the ftrace internal tables to
- * determine if the address belongs or not.
+ * If @ip matches the ftrace location, return @ip.
+ * If @ip matches sym+0, return sym's ftrace location.
+ * Otherwise, return 0.
  */
 unsigned long ftrace_location(unsigned long ip)
 {
-	return ftrace_location_range(ip, ip);
+	struct dyn_ftrace *rec;
+	unsigned long offset;
+	unsigned long size;
+
+	rec = lookup_rec(ip, ip);
+	if (!rec) {
+		if (!kallsyms_lookup_size_offset(ip, &size, &offset))
+			goto out;
+
+		/* map sym+0 to __fentry__ */
+		if (!offset)
+			rec = lookup_rec(ip, ip + size - 1);
+	}
+
+	if (rec)
+		return rec->ip;
+
+out:
+	return 0;
 }
 
 /**
@@ -4949,7 +4966,8 @@ ftrace_match_addr(struct ftrace_hash *hash, unsigned long ip, int remove)
 {
 	struct ftrace_func_entry *entry;
 
-	if (!ftrace_location(ip))
+	ip = ftrace_location(ip);
+	if (!ip)
 		return -EINVAL;
 
 	if (remove) {
@@ -5074,6 +5092,11 @@ static struct ftrace_direct_func *ftrace_alloc_direct_func(unsigned long addr)
 	return direct;
 }
 
+bool __weak ftrace_directable(struct dyn_ftrace *rec)
+{
+	return true;
+}
+
 /**
  * register_ftrace_direct - Call a custom trampoline directly
  * @ip: The address of the nop at the beginning of a function
@@ -5097,17 +5120,25 @@ int register_ftrace_direct(unsigned long ip, unsigned long addr)
 	struct ftrace_func_entry *entry;
 	struct ftrace_hash *free_hash = NULL;
 	struct dyn_ftrace *rec;
-	int ret = -EBUSY;
+	int ret = -ENODEV;
 
 	mutex_lock(&direct_mutex);
 
+	ip = ftrace_location(ip);
+	if (!ip)
+		goto out_unlock;
+
 	/* See if there's a direct function at @ip already */
+	ret = -EBUSY;
 	if (ftrace_find_rec_direct(ip))
 		goto out_unlock;
 
 	ret = -ENODEV;
 	rec = lookup_rec(ip, ip);
 	if (!rec)
+		goto out_unlock;
+
+	if (!ftrace_directable(rec))
 		goto out_unlock;
 
 	/*
@@ -5229,6 +5260,10 @@ int unregister_ftrace_direct(unsigned long ip, unsigned long addr)
 	int ret = -ENODEV;
 
 	mutex_lock(&direct_mutex);
+
+	ip = ftrace_location(ip);
+	if (!ip)
+		goto out_unlock;
 
 	entry = find_direct_entry(&ip, NULL);
 	if (!entry)
@@ -5361,6 +5396,11 @@ int modify_ftrace_direct(unsigned long ip,
 	mutex_lock(&direct_mutex);
 
 	mutex_lock(&ftrace_lock);
+
+	ip = ftrace_location(ip);
+	if (!ip)
+		goto out_unlock;
+
 	entry = find_direct_entry(&ip, &rec);
 	if (!entry)
 		goto out_unlock;
@@ -6193,6 +6233,10 @@ static int ftrace_cmp_ips(const void *a, const void *b)
 	return 0;
 }
 
+void __weak ftrace_rec_arch_init(struct dyn_ftrace *rec, unsigned long addr)
+{
+}
+
 static int ftrace_process_locs(struct module *mod,
 			       unsigned long *start,
 			       unsigned long *end)
@@ -6248,7 +6292,9 @@ static int ftrace_process_locs(struct module *mod,
 	pg = start_pg;
 	while (p < end) {
 		unsigned long end_offset;
-		addr = ftrace_call_adjust(*p++);
+		unsigned long nop_addr = *p++;
+
+		addr = ftrace_call_adjust(nop_addr);
 		/*
 		 * Some architecture linkers will pad between
 		 * the different mcount_loc sections of different
@@ -6270,6 +6316,7 @@ static int ftrace_process_locs(struct module *mod,
 
 		rec = &pg->records[pg->index++];
 		rec->ip = addr;
+		ftrace_rec_arch_init(rec, nop_addr);
 	}
 
 	if (pg->next) {
