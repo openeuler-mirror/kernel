@@ -255,76 +255,14 @@ static inline void buf_dump(const char *msg, void *buf, int len)
 	printk(KERN_DEBUG "%s\n", msg_buf);
 }
 
-#ifndef NO_SKB_DUMP
-static inline void _rnp_skb_dump(const struct sk_buff *skb, bool full_pkt)
-{
-	static atomic_t can_dump_full = ATOMIC_INIT(5);
-	struct net_device *dev = skb->dev;
-	struct sk_buff *list_skb;
-	bool has_mac, has_trans;
-	int headroom, tailroom;
-	int i, len, seg_len;
-	const char *level = KERN_WARNING;
-
-	if (full_pkt)
-		full_pkt = atomic_dec_if_positive(&can_dump_full) >= 0;
-
-	if (full_pkt)
-		len = skb->len;
-	else
-		len = min_t(int, skb->len, MAX_HEADER + 128);
-
-	headroom = skb_headroom(skb);
-	tailroom = skb_tailroom(skb);
-
-	has_mac = skb_mac_header_was_set(skb);
-	has_trans = skb_transport_header_was_set(skb);
-
-	if (dev)
-		printk(KERN_DEBUG "%sdev name=%s feat=0x%pNF\n", level,
-		       dev->name, &dev->features);
-
-	seg_len = min_t(int, skb_headlen(skb), len);
-	if (seg_len)
-		print_hex_dump(level, "skb linear:   ", DUMP_PREFIX_OFFSET, 16,
-			       1, skb->data, seg_len, false);
-	len -= seg_len;
-
-	for (i = 0; len && i < skb_shinfo(skb)->nr_frags; i++) {
-		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
-		u32 p_len;
-		struct page *p;
-		u8 *vaddr;
-
-		p = skb_frag_address(frag);
-		p_len = skb_frag_size(frag);
-		seg_len = min_t(int, p_len, len);
-		vaddr = kmap_atomic(p);
-		print_hex_dump(level, "skb frag:     ", DUMP_PREFIX_OFFSET, 16,
-			       1, vaddr, seg_len, false);
-		kunmap_atomic(vaddr);
-		len -= seg_len;
-		if (!len)
-			break;
-	}
-
-	if (full_pkt && skb_has_frag_list(skb)) {
-		printk(KERN_DEBUG "skb fraglist:\n");
-		skb_walk_frags(skb, list_skb) _rnp_skb_dump(list_skb, true);
-	}
-}
-#endif
-
 #define TRACE() printk(KERN_DEBUG "=[%s] %d == \n", __func__, __LINE__)
 
 #ifdef CONFIG_RNPGBE_TX_DEBUG
 #define desc_hex_dump(msg, buf, len)                                           \
 	print_hex_dump(KERN_WARNING, msg, DUMP_PREFIX_OFFSET, 16, 1, (buf),    \
 		       (len), false)
-#define rnpgbevf_skb_dump _rnp_skb_dump
 #else
 #define desc_hex_dump(msg, buf, len)
-#define rnpgbevf_skb_dump(skb, full_pkt)
 #endif
 
 #ifdef CONFIG_RNPGBE_RX_DEBUG

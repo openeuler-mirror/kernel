@@ -255,7 +255,6 @@ static s32 rnpgbevf_reset_hw_vf(struct rnpgbevf_hw *hw)
  **/
 static s32 rnpgbevf_stop_hw_vf(struct rnpgbevf_hw *hw)
 {
-	u32 number_of_queues;
 	u16 i;
 	struct rnpgbevf_adapter *adapter = hw->back;
 	struct rnpgbevf_ring *ring;
@@ -270,9 +269,6 @@ static s32 rnpgbevf_stop_hw_vf(struct rnpgbevf_hw *hw)
 		ring = adapter->rx_ring[i];
 		ring_wr32(ring, RNPGBE_DMA_RX_START, 0);
 	}
-
-	/* Disable the transmit unit.  Each queue must be disabled. */
-	number_of_queues = hw->mac.max_tx_queues;
 
 	return 0;
 }
@@ -370,7 +366,6 @@ static s32 rnpgbevf_get_mac_addr_vf(struct rnpgbevf_hw *hw, u8 *mac_addr)
 /**
  *  rnpgbevf_get_queues_vf - Read device MAC address
  *  @hw: pointer to the HW structure
- *  @mac_addr: pointer to storage for retrieved MAC address
  **/
 static s32 rnpgbevf_get_queues_vf(struct rnpgbevf_hw *hw)
 {
@@ -485,8 +480,8 @@ static void rnpgbevf_write_msg_read_ack(struct rnpgbevf_hw *hw, u32 *msg,
 		mbx->ops.read_posted(hw, retmsg, size, false);
 }
 
-u8 *rnpgbevf_addr_list_itr(struct rnpgbevf_hw __maybe_unused *hw,
-			   u8 **mc_addr_ptr)
+static u8 *rnpgbevf_addr_list_itr(struct rnpgbevf_hw __maybe_unused *hw,
+				  u8 **mc_addr_ptr)
 {
 	struct netdev_hw_addr *mc_ptr;
 	u8 *addr = *mc_addr_ptr;
@@ -677,24 +672,9 @@ void rnpgbevf_rlpml_set_vf(struct rnpgbevf_hw *hw, u16 max_size)
 	rnpgbevf_write_msg_read_ack(hw, msgbuf, 2);
 }
 
-/**
- *  rnpgbevf_negotiate_api_version - Negotiate supported API version
- *  @hw: pointer to the HW structure
- *  @api: integer containing requested API version
- **/
-int rnpgbevf_negotiate_api_version(struct rnpgbevf_hw *hw, int api)
-{
-	return 0;
-}
-
-int rnpgbevf_get_queues(struct rnpgbevf_hw *hw, unsigned int *num_tcs,
-			unsigned int *default_tc)
-{
-	return -1;
-}
-
-void rnpgbevf_set_veb_mac_n500(struct rnpgbevf_hw *hw, u8 *mac, u32 vf_num,
-			       u32 ring)
+static void rnpgbevf_set_veb_mac_n500(struct rnpgbevf_hw *hw,
+				      u8 *mac, u32 vf_num,
+				      u32 ring)
 {
 	u32 maclow, machi;
 
@@ -706,7 +686,8 @@ void rnpgbevf_set_veb_mac_n500(struct rnpgbevf_hw *hw, u8 *mac, u32 vf_num,
 	wr32(hw, RNPGBE_DMA_PORT_VEB_VF_RING_TBL_N500, ring);
 }
 
-void rnpgbevf_set_vlan_n500(struct rnpgbevf_hw *hw, u16 vid, u32 vf_num)
+static void rnpgbevf_set_vlan_n500(struct rnpgbevf_hw *hw,
+				   u16 vid, u32 vf_num)
 {
 	wr32(hw, RNPGBE_DMA_PORT_VEB_VID_TBL_N500, vid);
 }
