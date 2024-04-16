@@ -100,12 +100,6 @@ struct rnpvf_rx_queue_ring_stat {
 	(RNPVF_GLOBAL_STATS_LEN + RNP_QUEUE_STATS_LEN + \
 	 RNPVF_HWSTRINGS_STATS_LEN)
 
-static const char rnp_gstrings_test[][ETH_GSTRING_LEN] = {
-	"Register test  (offline)", "Link test   (on/offline)"
-};
-
-#define RNPVF_TEST_LEN (sizeof(rnp_gstrings_test) / ETH_GSTRING_LEN)
-
 enum priv_bits {
 	padding_enable = 0,
 };
@@ -128,7 +122,8 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 	struct rnpvf_hw *hw = &adapter->hw;
 	bool autoneg = false;
 	bool link_up;
-	u32 supported, advertising;
+	u32 supported = 0;
+	u32 advertising = 0;
 	u32 link_speed = 0;
 
 	ethtool_convert_link_mode_to_legacy_u32(&supported,
@@ -220,7 +215,7 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
 						supported);
 	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
-						supported);
+						advertising);
 	return 0;
 }
 
@@ -246,10 +241,10 @@ static void rnpvf_get_drvinfo(struct net_device *netdev,
 	drvinfo->n_priv_flags = RNPVF_PRIV_FLAGS_STR_LEN;
 }
 
-void rnpvf_get_ringparam(struct net_device *netdev,
-			 struct ethtool_ringparam *ring,
-			 struct kernel_ethtool_ringparam __always_unused *ker,
-			 struct netlink_ext_ack __always_unused *extack)
+static void rnpvf_get_ringparam(struct net_device *netdev,
+				struct ethtool_ringparam *ring,
+				struct kernel_ethtool_ringparam __always_unused *ker,
+				struct netlink_ext_ack __always_unused *extack)
 {
 	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 
@@ -262,11 +257,8 @@ void rnpvf_get_ringparam(struct net_device *netdev,
 static void rnpvf_get_strings(struct net_device *netdev, u32 stringset,
 			      u8 *data)
 {
-	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 	char *p = (char *)data;
 	int i;
-	struct rnpvf_ring *ring;
-	u16 queue_idx;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
@@ -286,8 +278,6 @@ static void rnpvf_get_strings(struct net_device *netdev, u32 stringset,
 
 		for (i = 0; i < RNPVF_NUM_TX_QUEUES; i++) {
 			/* ====  tx ======== */
-			ring = adapter->tx_ring[i];
-			queue_idx = ring->rnpvf_queue_idx;
 			sprintf(p, "\n     queue%u_tx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_tx_bytes", i);
@@ -322,8 +312,6 @@ static void rnpvf_get_strings(struct net_device *netdev, u32 stringset,
 			p += ETH_GSTRING_LEN;
 
 			/* ====  rx ======== */
-			ring = adapter->rx_ring[i];
-			queue_idx = ring->rnpvf_queue_idx;
 			sprintf(p, "\n     queue%u_rx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_rx_bytes", i);

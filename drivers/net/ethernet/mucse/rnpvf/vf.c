@@ -253,7 +253,6 @@ static s32 rnpvf_reset_hw_vf(struct rnpvf_hw *hw)
  **/
 static s32 rnpvf_stop_hw_vf(struct rnpvf_hw *hw)
 {
-	u32 number_of_queues;
 	u16 i;
 	struct rnpvf_adapter *adapter = hw->back;
 	struct rnpvf_ring *ring;
@@ -268,9 +267,6 @@ static s32 rnpvf_stop_hw_vf(struct rnpvf_hw *hw)
 		ring = adapter->rx_ring[i];
 		ring_wr32(ring, RNP_DMA_RX_START, 0);
 	}
-
-	/* Disable the transmit unit.  Each queue must be disabled. */
-	number_of_queues = hw->mac.max_tx_queues;
 
 	return 0;
 }
@@ -368,7 +364,7 @@ static s32 rnpvf_get_mac_addr_vf(struct rnpvf_hw *hw, u8 *mac_addr)
 /**
  *  rnpvf_get_queues_vf - Read device MAC address
  *  @hw: pointer to the HW structure
- *  @mac_addr: pointer to storage for retrieved MAC address
+ *
  **/
 static s32 rnpvf_get_queues_vf(struct rnpvf_hw *hw)
 {
@@ -483,8 +479,8 @@ static void rnpvf_write_msg_read_ack(struct rnpvf_hw *hw, u32 *msg,
 		mbx->ops.read_posted(hw, retmsg, size, false);
 }
 
-u8 *rnpvf_addr_list_itr(struct rnpvf_hw __maybe_unused *hw,
-			u8 **mc_addr_ptr)
+static u8 *rnpvf_addr_list_itr(struct rnpvf_hw __maybe_unused *hw,
+			       u8 **mc_addr_ptr)
 {
 	struct netdev_hw_addr *mc_ptr;
 	u8 *addr = *mc_addr_ptr;
@@ -677,24 +673,10 @@ void rnpvf_rlpml_set_vf(struct rnpvf_hw *hw, u16 max_size)
 	rnpvf_write_msg_read_ack(hw, msgbuf, 2);
 }
 
-/**
- *  rnpvf_negotiate_api_version - Negotiate supported API version
- *  @hw: pointer to the HW structure
- *  @api: integer containing requested API version
- **/
-int rnpvf_negotiate_api_version(struct rnpvf_hw *hw, int api)
-{
-	return 0;
-}
-
-int rnpvf_get_queues(struct rnpvf_hw *hw, unsigned int *num_tcs,
-		     unsigned int *default_tc)
-{
-	return -1;
-}
-
-void rnpvf_set_veb_mac_n10(struct rnpvf_hw *hw, u8 *mac, u32 vfnum,
-			   u32 ring)
+static void rnpvf_set_veb_mac_n10(struct rnpvf_hw *hw,
+				  u8 *mac,
+				  u32 vfnum,
+				  u32 ring)
 {
 	int port;
 	u32 maclow, machi;
@@ -715,7 +697,7 @@ void rnpvf_set_veb_mac_n10(struct rnpvf_hw *hw, u8 *mac, u32 vfnum,
 	}
 }
 
-void rnpvf_set_vlan_n10(struct rnpvf_hw *hw, u16 vid, u32 vf_num)
+static void rnpvf_set_vlan_n10(struct rnpvf_hw *hw, u16 vid, u32 vf_num)
 {
 	int port;
 

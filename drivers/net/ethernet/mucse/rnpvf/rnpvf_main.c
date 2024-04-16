@@ -101,11 +101,10 @@ static void rnpvf_put_rx_buffer(struct rnpvf_ring *rx_ring,
 #endif /* OPTM_WITH_LARGE */
 
 /**
- * rnpvf_set_ivar - set IVAR registers - maps interrupt causes to vectors
+ * rnpvf_set_ring_vector - set maps interrupt causes to vectors
  * @adapter: pointer to adapter struct
- * @direction: 0 for Rx, 1 for Tx, -1 for other causes
- * @queue: queue to map the corresponding interrupt to
- * @msix_vector: the vector to map to the corresponding queue
+ * @rnpvf_queue: queue to map the corresponding interrupt to
+ * @rnpvf_msix_vector: the vector to map to the corresponding queue
  */
 static void rnpvf_set_ring_vector(struct rnpvf_adapter *adapter,
 				  u8 rnpvf_queue, u8 rnpvf_msix_vector)
@@ -124,8 +123,8 @@ static void rnpvf_set_ring_vector(struct rnpvf_adapter *adapter,
 	rnpvf_wr_reg(hw->ring_msix_base + RING_VECTOR(rnpvf_queue), data);
 }
 
-void rnpvf_unmap_and_free_tx_resource(struct rnpvf_ring *ring,
-				      struct rnpvf_tx_buffer *tx_buffer)
+static void rnpvf_unmap_and_free_tx_resource(struct rnpvf_ring *ring,
+					     struct rnpvf_tx_buffer *tx_buffer)
 {
 	if (tx_buffer->skb) {
 		dev_kfree_skb_any(tx_buffer->skb);
@@ -462,7 +461,7 @@ static inline int rnpvf_skb_pad(void)
 #endif
 
 /**
- * rnp_clean_rx_ring - Free Rx Buffers per Queue
+ * rnpvf_clean_rx_ring - Free Rx Buffers per Queue
  * @rx_ring: ring to free buffers from
  **/
 static void rnpvf_clean_rx_ring(struct rnpvf_ring *rx_ring)
@@ -793,7 +792,6 @@ static unsigned int rnpvf_get_headlen(unsigned char *data,
 
 /**
  * rnpvf_pull_tail - rnp specific version of skb_pull_tail
- * @rx_ring: rx descriptor ring packet is being transacted on
  * @skb: pointer to current skb being adjusted
  *
  * This function is an rnp specific version of __pskb_pull_tail.  The
@@ -1018,7 +1016,6 @@ void rnpvf_alloc_rx_buffers(struct rnpvf_ring *rx_ring, u16 cleaned_count)
  * rnpvf_is_non_eop - process handling of non-EOP buffers
  * @rx_ring: Rx ring being processed
  * @rx_desc: Rx descriptor for current buffer
- * @skb: Current socket buffer containing buffer in progress
  *
  * This function updates next to clean.  If the buffer is an EOP buffer
  * this function exits returning false, otherwise it will place the
@@ -1208,7 +1205,7 @@ static struct sk_buff *rnpvf_build_skb(struct rnpvf_ring *rx_ring,
 }
 
 /**
- * rnp_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
+ * rnpvf_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @q_vector: structure containing interrupt and ring information
  * @rx_ring: rx descriptor ring to transact packets on
  * @budget: Total limit on number of packets to process
@@ -1362,7 +1359,8 @@ static int rnpvf_clean_rx_irq(struct rnpvf_q_vector *q_vector,
  * @rx_ring: ring to place buffers on
  * @cleaned_count: number of buffers to replace
  **/
-void rnpvf_alloc_rx_buffers(struct rnpvf_ring *rx_ring, u16 cleaned_count)
+static void rnpvf_alloc_rx_buffers(struct rnpvf_ring *rx_ring,
+				   u16 cleaned_count)
 {
 	union rnp_rx_desc *rx_desc;
 	struct rnpvf_rx_buffer *bi;
@@ -1636,7 +1634,7 @@ static void rnpvf_rx_buffer_flip(struct rnpvf_ring *rx_ring,
 }
 
 /**
- * rnp_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
+ * rnpvf_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @q_vector: structure containing interrupt and ring information
  * @rx_ring: rx descriptor ring to transact packets on
  * @budget: Total limit on number of packets to process
@@ -1656,7 +1654,6 @@ static int rnpvf_clean_rx_irq(struct rnpvf_q_vector *q_vector,
 	unsigned int driver_drop_packets = 0;
 	struct rnpvf_adapter *adapter = q_vector->adapter;
 	u16 cleaned_count = rnpvf_desc_unused(rx_ring);
-	bool xdp_xmit = false;
 	struct xdp_buff xdp;
 
 	xdp.data = NULL;
@@ -1740,7 +1737,6 @@ static int rnpvf_clean_rx_irq(struct rnpvf_q_vector *q_vector,
 
 		if (IS_ERR(skb)) {
 			if (PTR_ERR(skb) == -RNPVF_XDP_TX) {
-				xdp_xmit = true;
 				rnpvf_rx_buffer_flip(rx_ring, rx_buffer,
 						     size);
 			} else {
@@ -1942,7 +1938,7 @@ static irqreturn_t rnpvf_msix_clean_rings(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-void update_rx_count(int cleaned, struct rnpvf_q_vector *q_vector)
+static void update_rx_count(int cleaned, struct rnpvf_q_vector *q_vector)
 {
 	struct rnpvf_adapter *adapter = q_vector->adapter;
 
@@ -2188,6 +2184,7 @@ static int rnpvf_free_msix_irqs(struct rnpvf_adapter *adapter)
  * rnpvf_update_itr - update the dynamic ITR value based on statistics
  * @q_vector: structure containing interrupt and ring information
  * @ring_container: structure containing ring performance data
+ * @type: tx or rx
  *
  *      Stores a new ITR value based on packets and byte
  *      counts during the last interrupt.  The advantage of per interrupt
@@ -2410,23 +2407,20 @@ clear_counts:
 }
 
 /**
- * rnpvf_write_eitr - write EITR register in hardware specific way
+ * rnpvf_write_eitr_rx - write EITR register in hardware specific way
  * @q_vector: structure containing interrupt and ring information
  *
  * This function is made to be called by ethtool and by the driver
  * when it needs to update EITR registers at runtime.  Hardware
  * specific quirks/differences are taken care of here.
  */
-void rnpvf_write_eitr_rx(struct rnpvf_q_vector *q_vector)
+static void rnpvf_write_eitr_rx(struct rnpvf_q_vector *q_vector)
 {
 	struct rnpvf_adapter *adapter = q_vector->adapter;
 	struct rnpvf_hw *hw = &adapter->hw;
-	// int v_idx = q_vector->v_idx;
-	//  u32 itr_reg = q_vector->itr & RNP_MAX_EITR;
 	u32 itr_reg = q_vector->itr_rx >> 2;
 	struct rnpvf_ring *ring;
 
-	// printk("update %d itr %d\n", q_vector->v_idx, itr_reg);
 	itr_reg = itr_reg * hw->usecstocount; // 150M
 
 	rnpvf_for_each_ring(ring, q_vector->rx) {
@@ -2520,8 +2514,8 @@ static inline void rnpvf_irq_disable(struct rnpvf_adapter *adapter)
  *
  * Configure the Tx descriptor ring after a reset.
  **/
-void rnpvf_configure_tx_ring(struct rnpvf_adapter *adapter,
-			     struct rnpvf_ring *ring)
+static void rnpvf_configure_tx_ring(struct rnpvf_adapter *adapter,
+				    struct rnpvf_ring *ring)
 {
 	struct rnpvf_hw *hw = &adapter->hw;
 
@@ -2586,20 +2580,20 @@ static void rnpvf_configure_tx(struct rnpvf_adapter *adapter)
 
 #define RNP_SRRCTL_BSIZEHDRSIZE_SHIFT 2
 
-void rnpvf_disable_rx_queue(struct rnpvf_adapter *adapter,
-			    struct rnpvf_ring *ring)
+static void rnpvf_disable_rx_queue(struct rnpvf_adapter *adapter,
+				   struct rnpvf_ring *ring)
 {
 	ring_wr32(ring, RNP_DMA_RX_START, 0);
 }
 
-void rnpvf_enable_rx_queue(struct rnpvf_adapter *adapter,
-			   struct rnpvf_ring *ring)
+static void rnpvf_enable_rx_queue(struct rnpvf_adapter *adapter,
+				  struct rnpvf_ring *ring)
 {
 	ring_wr32(ring, RNP_DMA_RX_START, 1);
 }
 
-void rnpvf_configure_rx_ring(struct rnpvf_adapter *adapter,
-			     struct rnpvf_ring *ring)
+static void rnpvf_configure_rx_ring(struct rnpvf_adapter *adapter,
+				    struct rnpvf_ring *ring)
 {
 	struct rnpvf_hw *hw = &adapter->hw;
 	u64 desc_phy = ring->dma;
@@ -2733,13 +2727,12 @@ static int rnpvf_vlan_rx_kill_vid(struct net_device *netdev,
 	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 	struct rnpvf_hw *hw = &adapter->hw;
 	struct rnp_mbx_info *mbx = &hw->mbx;
-	int err = -EOPNOTSUPP;
 
 	if (vid) {
 		spin_lock_bh(&adapter->mbx_lock);
 		set_bit(__RNPVF_MBX_POLLING, &adapter->state);
 		/* remove VID from filter table */
-		err = hw->mac.ops.set_vfta(hw, vid, 0, false);
+		hw->mac.ops.set_vfta(hw, vid, 0, false);
 		clear_bit(__RNPVF_MBX_POLLING, &adapter->state);
 		spin_unlock_bh(&adapter->mbx_lock);
 		hw->ops.set_veb_vlan(hw, 0, VFNUM(mbx, hw->vfnum));
@@ -3304,13 +3297,6 @@ static int rnpvf_acquire_msix_vectors(struct rnpvf_adapter *adapter,
 				      int vectors)
 {
 	int err = 0;
-	int vector_threshold;
-
-	/* We'll want at least 2 (vector_threshold):
-	 * 1) TxQ[0] + RxQ[0] handler
-	 * 2) Other (Link Status Change, etc.)
-	 */
-	vector_threshold = MIN_MSIX_COUNT;
 
 	/* The more we get, the more we will assign to Tx/Rx Cleanup
 	 * for the separate queues...where Rx Cleanup >= Tx Cleanup.
@@ -3453,7 +3439,6 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 	struct rnpvf_ring *ring;
 	struct rnp_tx_desc *eop_desc;
 	struct rnpvf_adapter *adapter;
-	struct rnpvf_hw *hw;
 
 	int tx_next_to_clean;
 	int tx_next_to_use;
@@ -3464,7 +3449,6 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 	q_vector = container_of(hrtimer, struct rnpvf_q_vector,
 				irq_miss_check_timer);
 	adapter = q_vector->adapter;
-	hw = &adapter->hw;
 
 	/* If we're already down or resetting, just bail */
 	if (test_bit(__RNPVF_DOWN, &adapter->state) ||
@@ -3916,7 +3900,7 @@ static int rnpvf_reset_subtask(struct rnpvf_adapter *adapter)
 
 /**
  * rnpvf_watchdog - Timer Call-back
- * @data: pointer to adapter cast into an unsigned long
+ * @t: timer_list pointer
  **/
 static void rnpvf_watchdog(struct timer_list *t)
 {
@@ -4587,9 +4571,12 @@ int rnpvf_close(struct net_device *netdev)
 	return 0;
 }
 
-void rnpvf_tx_ctxtdesc(struct rnpvf_ring *tx_ring, u16 mss_seg_len,
-		       u8 l4_hdr_len, u8 tunnel_hdr_len, int ignore_vlan,
-		       u16 type_tucmd, bool crc_pad)
+static void rnpvf_tx_ctxtdesc(struct rnpvf_ring *tx_ring,
+			      u16 mss_seg_len,
+			      u8 l4_hdr_len,
+			      u8 tunnel_hdr_len,
+			      int ignore_vlan,
+			      u16 type_tucmd, bool crc_pad)
 {
 	struct rnp_tx_ctx_desc *context_desc;
 	u16 i = tx_ring->next_to_use;
@@ -5036,9 +5023,9 @@ static int __rnpvf_maybe_stop_tx(struct rnpvf_ring *tx_ring, int size)
 	return 0;
 }
 
-void rnpvf_maybe_tx_ctxtdesc(struct rnpvf_ring *tx_ring,
-			     struct rnpvf_tx_buffer *first,
-			     int ignore_vlan, u16 type_tucmd)
+static void rnpvf_maybe_tx_ctxtdesc(struct rnpvf_ring *tx_ring,
+				    struct rnpvf_tx_buffer *first,
+				    int ignore_vlan, u16 type_tucmd)
 {
 	if (first->ctx_flag) {
 		rnpvf_tx_ctxtdesc(tx_ring, first->mss_len,
@@ -5086,10 +5073,10 @@ DONE:
 	return;
 }
 
-netdev_tx_t rnpvf_xmit_frame_ring(struct sk_buff *skb,
-				  struct rnpvf_adapter *adapter,
-				  struct rnpvf_ring *tx_ring,
-				  bool tx_padding)
+static netdev_tx_t rnpvf_xmit_frame_ring(struct sk_buff *skb,
+					 struct rnpvf_adapter *adapter,
+					 struct rnpvf_ring *tx_ring,
+					 bool tx_padding)
 {
 	struct rnpvf_tx_buffer *first;
 	int tso;
@@ -5481,8 +5468,6 @@ static void rnpvf_get_stats64(struct net_device *netdev,
 {
 	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 	int i;
-	u64 ring_csum_err = 0;
-	u64 ring_csum_good = 0;
 
 	rcu_read_lock();
 	for (i = 0; i < adapter->num_rx_queues; i++) {
@@ -5495,8 +5480,6 @@ static void rnpvf_get_stats64(struct net_device *netdev,
 				start = u64_stats_fetch_begin(&ring->syncp);
 				packets = ring->stats.packets;
 				bytes = ring->stats.bytes;
-				ring_csum_err += ring->rx_stats.csum_err;
-				ring_csum_good += ring->rx_stats.csum_good;
 			} while (u64_stats_fetch_retry(&ring->syncp,
 						       start));
 			stats->rx_packets += packets;
@@ -5577,7 +5560,7 @@ static const struct net_device_ops rnpvf_netdev_ops = {
 	.ndo_fix_features = rnpvf_fix_features,
 };
 
-void rnpvf_assign_netdev_ops(struct net_device *dev)
+static void rnpvf_assign_netdev_ops(struct net_device *dev)
 {
 	/* different hw can assign difference fun */
 	dev->netdev_ops = &rnpvf_netdev_ops;
@@ -5614,21 +5597,6 @@ static u8 rnpvf_vfnum(struct rnpvf_hw *hw)
 #define VF_NUM_OFF (4)
 	return ((vf_num & VF_NUM_MASK_TEMP) >> VF_NUM_OFF);
 #endif
-}
-
-static inline unsigned long rnpvf_tso_features(struct rnpvf_hw *hw)
-{
-	unsigned long features = 0;
-
-	if (hw->feature_flags & RNPVF_NET_FEATURE_TSO)
-		features |= NETIF_F_TSO;
-	if (hw->feature_flags & RNPVF_NET_FEATURE_TSO)
-		features |= NETIF_F_TSO6;
-	features |= NETIF_F_GSO_PARTIAL;
-	if (hw->feature_flags & RNPVF_NET_FEATURE_TX_UDP_TUNNEL)
-		features |= RNPVF_GSO_PARTIAL_FEATURES;
-
-	return features;
 }
 
 static int rnpvf_add_adpater(struct pci_dev *pdev,
