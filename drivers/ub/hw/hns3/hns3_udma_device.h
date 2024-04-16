@@ -28,6 +28,10 @@
 
 #define BA_BYTE_LEN				8
 
+#ifndef ETH_ALEN
+#define ETH_ALEN				6
+#endif
+
 #define UDMA_INVALID_ID				0xffff
 
 /* Configure to HW for PAGE_SIZE larger than 4KB */
@@ -60,6 +64,7 @@
 #define UDMA_HW_PAGE_ALIGN(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
 
 #define UDMA_DWQE_SIZE				65536
+#define UDMA_DWQE_MMAP_QP_NUM			1024
 
 #define UDMA_HOP_NUM_0				0xff
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
@@ -397,8 +402,6 @@ struct udma_work {
 	uint32_t		eq_ci;
 	int			eqn;
 };
-
-struct udma_dev;
 
 struct udma_db {
 	uint32_t	*db_record;

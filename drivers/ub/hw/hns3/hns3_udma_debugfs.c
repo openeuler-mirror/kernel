@@ -147,13 +147,8 @@ static uint64_t calc_loading_percent(size_t total, size_t free,
 static void dca_setup_qp_stats(struct udma_qp *qp,
 			       struct dca_qp_stats *stats)
 {
-	struct udma_ucontext *uctx = NULL;
-
 	if (!(qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH))
 		return;
-
-	if (qp->dca_ctx)
-		uctx = container_of(qp->dca_ctx, struct udma_ucontext, dca_ctx);
 
 	stats->qpn = (uint32_t)qp->qpn;
 	stats->total_size = qp->buff_size;
@@ -180,8 +175,10 @@ static void dca_stats_ctx_qp_in_seqfile(struct udma_dev *udma_dev,
 		return;
 
 	bitmap = bitmap_zalloc(nbits, GFP_ATOMIC);
-	if (!bitmap)
+	if (!bitmap) {
+		dev_err(udma_dev->dev, "failed to alloc bitmap.\n");
 		return;
+	}
 
 	seq_printf(file, "%-10s %-10s %-10s %-10s %-10s\n", "TPN", "Total(kB)",
 		   "SQ(kB)", "SGE(kB)", "RQ(kB)");
@@ -198,8 +195,9 @@ static void dca_stats_ctx_qp_in_seqfile(struct udma_dev *udma_dev,
 			continue;
 
 		seq_printf(file, "%-10u %-10u %-10u %-10u %-10u\n",
-			   stats.qpn, stats.total_size / KB, stats.sq_size / KB,
-			   stats.sge_size / KB, stats.rq_size / KB);
+			   stats.qpn, stats.total_size >> KB_SHIFT,
+			   stats.sq_size >> KB_SHIFT, stats.sge_size >> KB_SHIFT,
+			   stats.rq_size >> KB_SHIFT);
 	}
 	bitmap_free(bitmap);
 }
@@ -229,7 +227,7 @@ static int dca_debugfs_uctx_qp_stats_show(struct seq_file *file, void *offset)
 	struct udma_ucontext *ucontext = file->private;
 	struct udma_dev *udma_dev;
 
-	udma_dev = container_of(ucontext->uctx.ub_dev, struct udma_dev, ub_dev);
+	udma_dev = to_udma_dev(ucontext->uctx.ub_dev);
 	dca_stats_ctx_qp_in_seqfile(udma_dev, &ucontext->dca_ctx, file);
 
 	return 0;
@@ -277,8 +275,10 @@ static struct udma_dca_debugfs *create_dca_debugfs(struct udma_dev *udma_dev,
 {
 	struct udma_dca_debugfs *dbgfs;
 
-	if (IS_ERR(parent))
+	if (IS_ERR(parent)) {
+		dev_err(udma_dev->dev, "invalid parameter.\n");
 		return NULL;
+	}
 
 	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
@@ -286,6 +286,7 @@ static struct udma_dca_debugfs *create_dca_debugfs(struct udma_dev *udma_dev,
 
 	dbgfs->root = debugfs_create_dir("dca", parent);
 	if (IS_ERR_OR_NULL(dbgfs->root)) {
+		dev_err(udma_dev->dev, "failed to create dca debugfs dir.\n");
 		kfree(dbgfs);
 		return NULL;
 	}
@@ -346,6 +347,7 @@ void udma_register_debugfs(struct udma_dev *udma_dev)
 	dbgfs->root = debugfs_create_dir(dev_name(&udma_dev->ub_dev.dev),
 					 udma_dbgfs_root);
 	if (IS_ERR(dbgfs->root)) {
+		dev_err(udma_dev->dev, "failed to create debugfs dir.\n");
 		kfree(dbgfs);
 		return;
 	}

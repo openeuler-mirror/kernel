@@ -242,7 +242,7 @@ static int udma_write_jfr_index_queue(struct udma_dev *dev,
 #define DMA_IDX_SHIFT 3
 	struct udma_jfr_idx_que *idx_que = &jfr->idx_que;
 	uint64_t mtts_idx[MTT_MIN_COUNT] = {};
-	uint64_t dma_handle_idx = 0;
+	uint64_t dma_handle_idx;
 	uint64_t dma_idx_shift;
 	int ret;
 
@@ -352,12 +352,10 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	struct udma_cmd_mailbox *mailbox;
 	int ret, id;
 
-	if (jfr->tp_mode == UBCORE_TP_UM && jfr->share_jfr) {
-		ret = alloc_common_qpn(dev, jfr->jfc, &jfr->jfrn);
-		if (ret) {
-			dev_err(dev->dev, "failed to alloc um qpn for jfr(%d).\n", ret);
-			return ret;
-		}
+	ret = alloc_common_qpn(dev, jfr->jfc, &jfr->jfrn);
+	if (ret) {
+		dev_err(dev->dev, "failed to alloc qpn for jfr(%d).\n", ret);
+		return ret;
 	}
 
 	id = ida_alloc_range(&jfr_ida->ida, jfr_ida->min, jfr_ida->max,
@@ -369,8 +367,6 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	}
 
 	jfr->srqn = (uint32_t)id;
-	if (!jfr->jfrn)
-		jfr->jfrn = (uint32_t)id;
 	jfr->ubcore_jfr.id = jfr->jfrn;
 
 	ret = udma_table_get(dev, &jfr_table->table, jfr->srqn);
@@ -417,8 +413,7 @@ err_put:
 err_ida:
 	ida_free(&jfr_ida->ida, id);
 free_qpn:
-	if (jfr->tp_mode == UBCORE_TP_UM && jfr->share_jfr)
-		free_common_qpn(dev, jfr->jfrn);
+	free_common_qpn(dev, jfr->jfrn);
 
 	return ret;
 }
@@ -526,8 +521,7 @@ static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	udma_table_put(dev, &jfr_table->table, jfr->srqn);
 
 	ida_free(&jfr_table->jfr_ida.ida, (int)jfr->srqn);
-	if (jfr->tp_mode == UBCORE_TP_UM && jfr->share_jfr)
-		free_common_qpn(dev, jfrn);
+	free_common_qpn(dev, jfrn);
 }
 
 static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
@@ -709,14 +703,14 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 	return 0;
 }
 
-struct udma_jfr *get_udma_jfr(struct ubcore_device *dev, uint32_t jfr_id)
+struct udma_jfr *get_udma_jfr(struct ubcore_device *dev, uint32_t srqn)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_jfr *udma_jfr;
 
-	udma_jfr = (struct udma_jfr *)xa_load(&udma_dev->jfr_table.xa, jfr_id);
+	udma_jfr = (struct udma_jfr *)xa_load(&udma_dev->jfr_table.xa, srqn);
 	if (IS_ERR_OR_NULL(udma_jfr)) {
-		dev_err(&dev->dev, "failed to find jfr, jfr_id:%u.", jfr_id);
+		dev_err(&dev->dev, "failed to find jfr, srqn:%u.\n", srqn);
 		return NULL;
 	}
 

@@ -358,6 +358,22 @@ int udma_find_dfx_dev(struct udma_dev *udma_dev, int *num)
 	return -EINVAL;
 }
 
+static enum ubcore_tp_state to_ubcore_tp_state(enum udma_qp_state state)
+{
+	switch (state) {
+	case QPS_RESET:
+		return UBCORE_TP_STATE_RESET;
+	case QPS_RTR:
+		return UBCORE_TP_STATE_RTR;
+	case QPS_RTS:
+		return UBCORE_TP_STATE_RTS;
+	case QPS_ERR:
+		return UBCORE_TP_STATE_ERR;
+	default:
+		return UBCORE_TP_STATE_SUSPENDED;
+	}
+}
+
 static int udma_query_res_tp(struct udma_dev *udma_dev,
 			     struct ubcore_res_key *key,
 			     struct ubcore_res_val *val)
@@ -366,17 +382,10 @@ static int udma_query_res_tp(struct udma_dev *udma_dev,
 	struct udma_qp_context qp_context;
 	int ret;
 
-	if (val->len < sizeof(struct ubcore_res_tp_val)) {
-		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
-			(uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_tp_val);
-		return -EINVAL;
-	}
-
 	ret = udma_dfx_query_context(udma_dev, key->key, &qp_context,
 				     sizeof(qp_context), UDMA_CMD_QUERY_QPC);
 	if (ret) {
-		dev_err(udma_dev->dev, "query qp context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query qp context failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -384,7 +393,7 @@ static int udma_query_res_tp(struct udma_dev *udma_dev,
 	tp->tx_psn = udma_reg_read(&qp_context, QPC_SQ_CUR_PSN);
 	tp->dscp = udma_reg_read(&qp_context, QPC_DSCP);
 	tp->oor_en = udma_reg_read(&qp_context.ext, QPCEX_OOR_EN);
-	tp->state = udma_reg_read(&qp_context, QPC_QP_ST);
+	tp->state = to_ubcore_tp_state((enum udma_qp_state)udma_reg_read(&qp_context, QPC_QP_ST));
 	tp->data_udp_start = udma_reg_read(&qp_context.ext, QPCEX_DATA_UDP_SRCPORT_L) |
 			     udma_reg_read(&qp_context.ext, QPCEX_DATA_UDP_SRCPORT_H) <<
 			     QPCEX_DATA_UDP_SRCPORT_H_SHIFT;
@@ -405,13 +414,6 @@ static int udma_query_res_jfs(struct udma_dev *udma_dev,
 	struct jfs_list *jfs_now;
 	int ret;
 	int i;
-
-	if (val->len < sizeof(struct ubcore_res_jfs_val)) {
-		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
-			(uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_jfs_val);
-		return -EINVAL;
-	}
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
@@ -447,13 +449,6 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 	uint32_t srqn;
 	int ret;
 	int i;
-
-	if (val->len < sizeof(struct ubcore_res_jfr_val)) {
-		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
-			(uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_jfr_val);
-		return -EINVAL;
-	}
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
@@ -499,14 +494,6 @@ static int udma_query_res_jetty(struct udma_dev *udma_dev,
 	int ret;
 	int i;
 
-	if (val->len < sizeof(struct ubcore_res_jetty_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_jetty_val);
-		return -EINVAL;
-	}
-
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
 		return ret;
@@ -540,17 +527,10 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 	struct udma_jfc_context jfc_context;
 	int ret;
 
-	if (val->len < sizeof(struct ubcore_res_jfc_val)) {
-		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
-			(uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_jfc_val);
-		return -EINVAL;
-	}
-
 	ret = udma_dfx_query_context(udma_dev, key->key, &jfc_context,
 				     sizeof(jfc_context), UDMA_CMD_QUERY_CQC);
 	if (ret) {
-		dev_err(udma_dev->dev, "query jfc context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query jfc context failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -573,18 +553,11 @@ static int udma_query_res_seg(struct udma_dev *udma_dev, struct ubcore_res_key *
 	union ubcore_eid eid;
 	int ret, i;
 
-	if (val->len < sizeof(struct ubcore_res_seg_val)) {
-		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
-			(uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_seg_val);
-		return -EINVAL;
-	}
-
 	mpt_index = key_to_hw_index(key->key) & (udma_dev->caps.num_mtpts - 1);
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
 				     sizeof(mpt_entry), UDMA_CMD_QUERY_MPT);
 	if (ret) {
-		dev_err(udma_dev->dev, "query seg context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query seg context failed, ret = %d.\n", ret);
 		return ret;
 	}
 

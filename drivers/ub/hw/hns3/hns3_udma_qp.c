@@ -16,17 +16,16 @@
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
 #include <linux/module.h>
-#include "hns3_udma_abi.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_jfr.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_abi.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_tp.h"
 #include "hns3_udma_db.h"
-#include "hns3_udma_qp.h"
 #include "hns3_udma_eid.h"
 
 static bool um_spray_en;
@@ -698,7 +697,7 @@ static int udma_set_cong_fields(struct udma_qp_context *context,
 	ret = get_dip_ctx_idx(qp, &dip_idx);
 	if (ret) {
 		dev_err(qp->udma_device->dev,
-				"failed to fill congest, ret = %d.\n", ret);
+			"failed to fill congest, ret = %d.\n", ret);
 		goto out;
 	}
 	qp->dip_idx = (int64_t)dip_idx;
@@ -805,22 +804,6 @@ static void udma_set_oor_field(struct udma_qp *qp,
 		udma_reg_write(&context->ext, QPCEX_REORDER_CQ_SHIFT,
 			       udma_dev->caps.reorder_cq_shift);
 		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_SHIFT);
-	}
-}
-
-static int udma_mtu_enum_to_int(enum ubcore_mtu mtu)
-{
-	switch (mtu) {
-	case UBCORE_MTU_256:
-		return UDMA_MTU_VAL_256;
-	case UBCORE_MTU_512:
-		return UDMA_MTU_VAL_512;
-	case UBCORE_MTU_1024:
-		return UDMA_MTU_VAL_1024;
-	case UBCORE_MTU_2048:
-		return UDMA_MTU_VAL_2048;
-	default:
-		return UDMA_MTU_VAL_4096;
 	}
 }
 
@@ -1149,15 +1132,19 @@ int fill_jetty_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	qp_attr->jfr = udma_jetty->udma_jfr;
 	qp_attr->uctx = udma_jetty->udma_jfr->ubcore_jfr.uctx;
 	qp_attr->qpn_map = &udma_jetty->qpn_map;
-	qp_attr->recv_jfc =
-		to_udma_jfc(udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.jfc);
+	qp_attr->recv_jfc = to_udma_jfc(udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.jfc);
 
 	qp_attr->qp_type = QPT_RC;
-	qp_attr->cap.min_rnr_timer =
-		udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
+	qp_attr->cap.min_rnr_timer = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
 
 	qp_attr->cap.ack_timeout = jetty->jetty_cfg.err_timeout;
 	qp_attr->cap.rnr_retry = jetty->jetty_cfg.rnr_retry;
+
+	if (is_rc_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
+	    !qp_attr->jetty->dca_en) {
+		qp_attr->cap.max_recv_wr = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.depth;
+		qp_attr->cap.max_recv_sge = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.max_sge;
+	}
 
 	return 0;
 }
@@ -1240,6 +1227,9 @@ static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
 
 	/* Select the max data set by the user */
 	qp->sq.max_gs = max(ext_sge_cnt, cap->max_send_sge);
+
+	if (is_rc_jetty(&qp->qp_attr))
+		qp->sge.offset = qp->qp_attr.jetty->rc_node.sge_offset;
 
 	wqe_sge_cnt = get_wqe_ext_sge_cnt(qp);
 	/* If the number of extended sge is not zero, they MUST use the

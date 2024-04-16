@@ -42,7 +42,6 @@
 #define UDMA_DCA_TAG_MASK GENMASK(28, 22)
 #define UDMA_DCA_OWN_MASK GENMASK(21, 0)
 
-#define UDMA_DCA_BUF_ID_TO_TAG(buf_id) (((buf_id) & UDMA_DCA_TAG_MASK) >> 22)
 #define UDMA_DCA_BUF_ID_TO_QPN(buf_id) ((buf_id) & UDMA_DCA_OWN_MASK)
 #define UDMA_DCA_TO_BUF_ID(qpn, tag) (((qpn) & UDMA_DCA_OWN_MASK) | \
 				      (((tag) << 22) & UDMA_DCA_TAG_MASK))
@@ -56,13 +55,13 @@ struct dca_page_state {
 };
 
 struct dca_mem {
-	uint32_t		flags;
+	uint32_t		flags; /* dca mem usages status */
 	struct list_head	list; /* link to mem list in dca context */
 	spinlock_t		lock; /* protect the @flags and @list */
 	uint32_t		page_count; /* page count in this mem obj */
 	uint64_t		key; /* register by caller */
 	uint32_t		size; /* bytes in this mem object */
-	struct			dca_page_state *states; /* record each page's state */
+	struct dca_page_state	*states; /* record each page's state */
 	void			*pages; /* memory handle for getting dma address */
 };
 
@@ -214,4 +213,4 @@ void udma_unregister_udca(struct udma_dev *udma_dev,
 
 void udma_enum_dca_pool(struct udma_dca_ctx *dca_ctx, void *param,
 			udma_dca_enum_callback cb);
-#endif
+#endif /* _UDMA_DCA_H */

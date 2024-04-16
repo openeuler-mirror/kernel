@@ -57,7 +57,7 @@ static int config_gmv_table(struct udma_dev *udma_dev, struct udma_eid *udma_eid
 	return udma_cmq_send(udma_dev, desc, CFG_GMV_TBL_CMD_NUM);
 }
 
-static int clear_gmv_table(struct udma_dev *udma_dev, uint32_t eid_index)
+static inline int clear_gmv_table(struct udma_dev *udma_dev, uint32_t eid_index)
 {
 	struct udma_eid eid = {};
 
@@ -104,7 +104,7 @@ static int del_eid_entry(struct udma_dev *udma_dev, uint32_t eid_index)
 
 	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table, eid_index);
 	if (IS_ERR_OR_NULL(udma_eid)) {
-		dev_err(udma_dev->dev, "Failed to find eid, index = %d\n.",
+		dev_err(udma_dev->dev, "Failed to find eid, index = %u.\n",
 			eid_index);
 		return -EINVAL;
 	}

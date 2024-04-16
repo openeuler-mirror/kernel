@@ -19,14 +19,8 @@
 #include <linux/fs.h>
 #include "hns3_udma_device.h"
 
-#define DFX_DEVICE_NAME "udma_dfx"
+#define DFX_DEVICE_NAME	"udma_dfx"
 #define MAX_UDMA_DEV	16
-#define MAX_TP_CNT	256
-#define MAX_JFS_CNT	256
-#define MAX_JFR_CNT	256
-#define MAX_JETTY_CNT	256
-#define MAX_JFC_CNT	256
-#define MAX_SEG_CNT	256
 #define UDMA_DFX_FILE_ATTR_DEF(file_name, func_show, func_store) \
 static struct udma_dfx_sys_attr g_sysfs_udma_##file_name##_attr = {\
 	{\
@@ -38,6 +32,7 @@ static struct udma_dfx_sys_attr g_sysfs_udma_##file_name##_attr = {\
 }
 
 #define HW_ATTRS_LIST_MEMBER(file_name) (&g_sysfs_udma_##file_name##_attr.attr)
+#define UDMA_DFX_FUNC_MAX	37
 #define MAX_CHAR_NUM_DEV_NAME	12
 #define UDMA_DFX_STR_LEN_MAX	20
 
@@ -50,6 +45,7 @@ struct udma_dfx_sys_attr {
 };
 
 struct udma_dfx_dev_info {
+	atomic_t fc[UDMA_DFX_FUNC_MAX];
 	char dev_name[MAX_CHAR_NUM_DEV_NAME];
 };
 

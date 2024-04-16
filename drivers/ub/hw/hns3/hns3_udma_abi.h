@@ -34,7 +34,6 @@
 enum {
 	UDMA_MMAP_UAR_PAGE,
 	UDMA_MMAP_DWQE_PAGE,
-	UDMA_MMAP_DCA_PAGE,
 	UDMA_MMAP_RESET_PAGE,
 	UDMA_MMAP_TYPE_DCA
 };
@@ -117,6 +116,7 @@ struct udma_create_tp_ucmd {
 struct udma_create_jetty_ucmd {
 	struct udma_create_tp_ucmd	create_tp_ucmd;
 	uint32_t			jfr_id;
+	uint32_t			srqn;
 	uint64_t			buf_addr;
 	uint64_t			sdb_addr;
 };
@@ -139,8 +139,8 @@ struct udma_create_tp_resp {
 	uint64_t		cap_flags;
 	uint32_t		qpn;
 	uint32_t		path_mtu;
-	uint8_t			priority;
 	struct udp_srcport	um_srcport;
+	uint8_t			priority;
 };
 
 struct udma_create_jetty_resp {

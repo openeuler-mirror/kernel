@@ -122,49 +122,49 @@ static int get_hem_table_config(struct udma_dev *udma_dev,
 		mhop->hop_num = udma_dev->caps.mpt_hop_num;
 		break;
 	case HEM_TYPE_CQC:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.cqc_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.cqc_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.cqc_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.cqc_ba_pg_sz
 					    + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.cqc_bt_num;
 		mhop->hop_num = udma_dev->caps.cqc_hop_num;
 		break;
 	case HEM_TYPE_SCCC:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.sccc_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.sccc_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.sccc_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.sccc_ba_pg_sz
 					    + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.sccc_bt_num;
 		mhop->hop_num = udma_dev->caps.sccc_hop_num;
 		break;
 	case HEM_TYPE_QPC_TIMER:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.qpc_timer_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.qpc_timer_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.qpc_timer_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.qpc_timer_ba_pg_sz
 					    + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.qpc_timer_bt_num;
 		mhop->hop_num = udma_dev->caps.qpc_timer_hop_num;
 		break;
 	case HEM_TYPE_CQC_TIMER:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.cqc_timer_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.cqc_timer_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.cqc_timer_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.cqc_timer_ba_pg_sz
 					    + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.cqc_timer_bt_num;
 		mhop->hop_num = udma_dev->caps.cqc_timer_hop_num;
 		break;
 	case HEM_TYPE_SRQC:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.srqc_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.srqc_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.srqc_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.srqc_ba_pg_sz
 					     + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.srqc_bt_num;
 		mhop->hop_num = udma_dev->caps.srqc_hop_num;
 		break;
 	case HEM_TYPE_GMV:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.gmv_buf_pg_sz +
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.gmv_buf_pg_sz +
 					     PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.gmv_ba_pg_sz +
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.gmv_ba_pg_sz +
 					    PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.gmv_bt_num;
 		mhop->hop_num = udma_dev->caps.gmv_hop_num;
@@ -278,7 +278,7 @@ static struct udma_hem *udma_alloc_hem(struct udma_dev *udma_dev, int npages,
 	memset(chunk->buf, 0, sizeof(chunk->buf));
 	list_add_tail(&chunk->list, &hem->chunk_list);
 	while (pages > 0) {
-		while (1 << order > pages)
+		while (1U << order > pages)
 			--order;
 		mem = &chunk->mem[chunk->npages];
 		buf = dma_alloc_coherent(udma_dev->dev, PAGE_SIZE << order,
@@ -291,7 +291,7 @@ static struct udma_hem *udma_alloc_hem(struct udma_dev *udma_dev, int npages,
 
 		++chunk->npages;
 		++chunk->nsg;
-		pages -= 1 << order;
+		pages -= 1U << order;
 	}
 
 	return hem;
@@ -1351,7 +1351,7 @@ static int udma_hem_list_request(struct udma_dev *udma_dev,
 		return -EINVAL;
 	}
 
-	unit = (1 << bt_pg_shift) / BA_BYTE_LEN;
+	unit = (1U << bt_pg_shift) / BA_BYTE_LEN;
 	for (i = 0; i < region_cnt; i++) {
 		r = &regions[i];
 		if (!r->count)
@@ -1495,7 +1495,7 @@ static int mtr_init_buf_cfg(struct udma_dev *udma_dev,
 	} else {
 		page_shift = attr->page_shift;
 		cfg->buf_pg_count = DIV_ROUND_UP(buf_size + unalinged_size,
-						 1 << page_shift);
+						 1U << page_shift);
 		cfg->buf_pg_shift = page_shift;
 		first_region_pad = unalinged_size;
 	}
@@ -1509,7 +1509,7 @@ static int mtr_init_buf_cfg(struct udma_dev *udma_dev,
 		r->offset = page_count;
 		buf_size = UDMA_HW_PAGE_ALIGN(attr->region[region_count].size +
 					    first_region_pad);
-		r->count = DIV_ROUND_UP(buf_size, 1 << page_shift);
+		r->count = DIV_ROUND_UP(buf_size, 1U << page_shift);
 		first_region_pad = 0;
 		page_count += r->count;
 		r->hopnum = to_udma_hem_hopnum(attr->region[region_count].hopnum,
@@ -1563,7 +1563,7 @@ struct udma_buf *udma_buf_alloc(struct udma_dev *udma_dev, uint32_t size,
 		return ERR_PTR(-ENOMEM);
 
 	buf->page_shift = page_shift;
-	page_size = 1 << buf->page_shift;
+	page_size = 1U << buf->page_shift;
 
 	/* Calc the trunk size and num by required size and page_shift */
 	if (flags & UDMA_BUF_DIRECT) {
@@ -1571,7 +1571,7 @@ struct udma_buf *udma_buf_alloc(struct udma_dev *udma_dev, uint32_t size,
 		ntrunk = 1;
 	} else {
 		buf->trunk_shift = order_base_2(ALIGN(page_size, PAGE_SIZE));
-		ntrunk = DIV_ROUND_UP(size, 1 << buf->trunk_shift);
+		ntrunk = DIV_ROUND_UP(size, 1U << buf->trunk_shift);
 	}
 
 	trunks = kcalloc(ntrunk, sizeof(*trunks), gfp_flags);
@@ -1580,7 +1580,7 @@ struct udma_buf *udma_buf_alloc(struct udma_dev *udma_dev, uint32_t size,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	trunk_size = 1 << buf->trunk_shift;
+	trunk_size = 1U << buf->trunk_shift;
 	alloced_size = 0;
 	for (i = 0; i < ntrunk; i++) {
 		trunks[i].buf = dma_alloc_coherent(udma_dev->dev, trunk_size,
@@ -1665,7 +1665,7 @@ int udma_get_umem_bufs(struct udma_dev *udma_dev, dma_addr_t *bufs,
 		npage_per_sg = sg_dma_len(sg) >> page_shift;
 		for (i = 0; i < npage_per_sg; i++) {
 			addr = sg_dma_address(sg) + (i << page_shift);
-			if (addr & ((1 << page_shift) - 1)) {
+			if (addr & ((1U << page_shift) - 1)) {
 				dev_err(udma_dev->dev,
 					"Umem addr not align to page_shift %d!\n",
 					page_shift);
@@ -1686,7 +1686,7 @@ done:
 static inline int mtr_check_direct_pages(dma_addr_t *pages, int page_cnt,
 					 uint32_t page_shift)
 {
-	size_t page_sz = 1 << page_shift;
+	size_t page_sz = 1U << page_shift;
 	int i;
 
 	for (i = 1; i < page_cnt; i++)
@@ -1748,7 +1748,7 @@ int udma_mtr_map(struct udma_dev *udma_dev, struct udma_mtr *mtr,
 	for (i = 0, mapped_count = 0; i < mtr->hem_cfg.region_count &&
 	     mapped_count < page_count; i++) {
 		r = &mtr->hem_cfg.region[i];
-		/* no need to map pages in this region when hopnum is 0 */
+		/* no need to map pages in this region when hopnum is 0*/
 		if (!r->hopnum) {
 			mapped_count += r->count;
 			continue;
@@ -1793,7 +1793,7 @@ int udma_get_kmem_bufs(struct udma_dev *udma_dev, dma_addr_t *bufs,
 
 	if (page_shift > buf->trunk_shift) {
 		dev_err(udma_dev->dev,
-			"failed to check kmem buf shift %u > %u\n",
+			"failed to check kmem buf shift %u > %u.\n",
 			page_shift, buf->trunk_shift);
 		return -EINVAL;
 	}
@@ -1802,7 +1802,7 @@ int udma_get_kmem_bufs(struct udma_dev *udma_dev, dma_addr_t *bufs,
 	max_size = buf->ntrunks << buf->trunk_shift;
 	for (i = 0; i < buf_cnt && offset < max_size; i++) {
 		bufs[total++] = udma_buf_dma_addr(buf, offset);
-		offset += (1 << page_shift);
+		offset += (1U << page_shift);
 	}
 
 	return total;
@@ -1869,7 +1869,7 @@ void udma_buf_free(struct udma_dev *udma_dev, struct udma_buf *buf)
 	if (trunks) {
 		buf->trunk_list = NULL;
 		for (i = 0; i < buf->ntrunks; i++)
-			dma_free_coherent(udma_dev->dev, 1 << buf->trunk_shift,
+			dma_free_coherent(udma_dev->dev, 1U << buf->trunk_shift,
 					  trunks[i].buf, trunks[i].map);
 
 		kfree(trunks);

@@ -16,12 +16,14 @@
 #include <linux/acpi.h>
 #include <linux/iommu.h>
 #include "hns3_udma_jfr.h"
+#include "hns3_udma_jfc.h"
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_dfx.h"
 #include "hns3_udma_tp.h"
+
 struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn)
 {
 	return (struct udma_qp *)xa_load(&udma_device->qp_table.xa, qpn);
@@ -50,7 +52,7 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 	struct udma_modify_tp_attr *m_attr;
 
 	m_attr = kzalloc(sizeof(*m_attr), GFP_KERNEL);
-	if (m_attr == NULL)
+	if (!m_attr)
 		return NULL;
 
 	memcpy(m_attr->dmac, tp->peer_net_addr.mac, sizeof(m_attr->dmac));

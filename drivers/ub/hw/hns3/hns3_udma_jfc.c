@@ -17,8 +17,8 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_db.h"
-#include "hns3_udma_dfx.h"
 #include "hns3_udma_jfc.h"
+#include "hns3_udma_dfx.h"
 
 static int udma_hw_create_cq(struct udma_dev *dev,
 			     struct udma_cmd_mailbox *mailbox, uint32_t cqn)
@@ -150,6 +150,7 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	    UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS) {
 		if (udma_dev->notify_addr)
 			ucmd->jfc_attr_ex.notify_addr = udma_dev->notify_addr;
+
 		ret = check_jfc_attr_ex(udma_dev, &ucmd->jfc_attr_ex);
 		if (ret) {
 			dev_err(udma_dev->dev,
@@ -490,7 +491,7 @@ static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 
 	ret = udma_hw_destroy_cq(udma_dev, udma_jfc->cqn);
 	if (ret)
-		dev_err(udma_dev->dev, "destroy failed (%d) for JFC %06llx\n",
+		dev_err(udma_dev->dev, "destroy failed (%d) for JFC %llu.\n",
 			ret, udma_jfc->cqn);
 
 	xa_erase(&jfc_table->xa, udma_jfc->cqn);
@@ -711,8 +712,8 @@ void udma_jfc_completion(struct udma_dev *udma_dev, uint32_t cqn)
 void udma_jfc_event(struct udma_dev *udma_dev, uint32_t cqn, int event_type)
 {
 	struct device *dev = udma_dev->dev;
-	struct udma_jfc *udma_jfc;
 	struct ubcore_jfc *ubcore_jfc;
+	struct udma_jfc *udma_jfc;
 	struct ubcore_event event;
 
 	udma_jfc = (struct udma_jfc *)xa_load(&udma_dev->jfc_table.xa, cqn);

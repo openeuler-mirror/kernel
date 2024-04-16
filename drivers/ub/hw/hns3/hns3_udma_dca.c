@@ -321,6 +321,7 @@ static uint32_t alloc_dca_num(struct udma_dca_ctx *ctx)
 
 	stop_free_dca_buf(ctx, ret);
 	update_dca_buf_status(ctx, ret, false);
+
 	return ret;
 }
 
@@ -548,8 +549,7 @@ static void udca_mem_aging_work(struct work_struct *work)
 						aging_dwork.work);
 	struct udma_ucontext *ucontext = container_of(ctx, struct udma_ucontext,
 						      dca_ctx);
-	struct udma_dev *udma_dev = container_of(ucontext->uctx.ub_dev,
-						 struct udma_dev, ub_dev);
+	struct udma_dev *udma_dev = to_udma_dev(ucontext->uctx.ub_dev);
 
 	cancel_delayed_work(&ctx->aging_dwork);
 	process_aging_dca_mem(udma_dev, ctx);
@@ -863,6 +863,7 @@ static uint32_t assign_dca_pages(struct udma_dca_ctx *ctx, uint32_t buf_id,
 	attr.unit = unit;
 	attr.max = count;
 	travel_dca_pages(ctx, &attr, assign_dca_pages_proc);
+
 	return attr.total;
 }
 

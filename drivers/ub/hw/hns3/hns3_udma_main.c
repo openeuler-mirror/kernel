@@ -372,6 +372,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->port_cnt = udma_dev->caps.num_ports;
 	attr->tp_maintainer = true;
 	attr->dev_cap.max_tp_in_tpg = UDMA_MAX_TP_IN_TPG;
+	attr->fe_idx = udma_dev->func_id;
 
 	for (i = 0; i < udma_dev->caps.num_ports; i++) {
 		net_dev = udma_dev->uboe.netdevs[i];
@@ -979,7 +980,6 @@ static void udma_cleanup_hem(struct udma_dev *udma_dev)
 void udma_set_poe_ch_num(struct udma_dev *dev)
 {
 #define UDMA_POE_CH_NUM 4
-
 	dev->caps.poe_ch_num = UDMA_POE_CH_NUM;
 }
 

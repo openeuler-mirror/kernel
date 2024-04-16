@@ -51,9 +51,8 @@ static int udma_cmq_query_hw_info(struct udma_dev *udma_dev)
 
 	resp = (struct udma_query_version *)desc.data;
 
-	return ret;
+	return 0;
 }
-
 
 static int udma_query_fw_ver(struct udma_dev *udma_dev)
 {
@@ -67,7 +66,7 @@ static int udma_query_fw_ver(struct udma_dev *udma_dev)
 		return ret;
 
 	resp = (struct udma_query_fw_info *)desc.data;
-	udma_dev->caps.fw_ver = (uint64_t)(le32_to_cpu(resp->fw_ver));
+	udma_dev->caps.fw_ver = le32_to_cpu(resp->fw_ver);
 
 	return 0;
 }
@@ -121,14 +120,11 @@ static int udma_config_global_param(struct udma_dev *udma_dev)
 {
 	struct udma_cmq_desc desc;
 	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
-	uint32_t clock_cycles_of_1us;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_GLOBAL_PARAM,
 				  false);
 
-	clock_cycles_of_1us = UDMA_1US_CFG;
-
-	udma_reg_write(req, CFG_GLOBAL_PARAM_1US_CYCLES, clock_cycles_of_1us);
+	udma_reg_write(req, CFG_GLOBAL_PARAM_1US_CYCLES, UDMA_1US_CFG);
 	udma_reg_write(req, CFG_GLOBAL_PARAM_UDP_PORT, UDMA_UDP_DPORT);
 
 	return udma_cmq_send(udma_dev, &desc, 1);
@@ -442,7 +438,7 @@ static int load_ext_cfg_caps(struct udma_dev *udma_dev)
 	caps->num_qps_shift = ilog2(caps->num_qps);
 
 	/* The extend doorbell memory on the PF is shared by all its VFs. */
-	caps->llm_ba_idx = udma_reg_read(req, EXT_CFG_LLM_IDX);
+	caps->llm_ba_idx = udma_reg_read(req, EXT_CFG_LLM_INDEX);
 	caps->llm_ba_num = udma_reg_read(req, EXT_CFG_LLM_NUM);
 
 	return 0;
@@ -492,7 +488,7 @@ static int query_func_oor_caps(struct udma_dev *udma_dev)
 	struct udma_caps *caps = &udma_dev->caps;
 	struct udma_query_oor_cmq *resp;
 	struct udma_cmq_desc desc;
-	int ret = 0;
+	int ret;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_QUERY_OOR_CAPS, true);
 
@@ -1825,7 +1821,6 @@ static void __udma_uninit_instance(struct hnae3_handle *handle,
 		return;
 
 	udma_unregister_cc_sysfs(udma_dev);
-
 	if (dfx_switch)
 		udma_dfx_uninit(handle->priv);
 
@@ -2056,5 +2051,4 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("UBUS UDMA Driver");
 
 module_param(dfx_switch, bool, 0444);
-MODULE_PARM_DESC(dfx_switch,
-		 "Set whether to enable the udma_dfx, default: 0(0:off, 1:on)");
+MODULE_PARM_DESC(dfx_switch, "Set whether to enable the udma_dfx function, default: 0(0:off, 1:on)");

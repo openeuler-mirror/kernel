@@ -20,7 +20,7 @@
 #include "hns3_udma_abi.h"
 
 struct udma_jfc {
-	struct ubcore_jfc		ubcore_jfc;
+	struct ubcore_jfc	ubcore_jfc;
 	struct udma_mtr		mtr;
 	uint32_t		jfc_caps;
 	uint32_t		jfc_depth;
