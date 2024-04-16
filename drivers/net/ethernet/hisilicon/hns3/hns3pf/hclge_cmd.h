@@ -933,6 +933,15 @@ struct hclge_query_wol_supported_cmd {
 	u8 rsv[20];
 };
 
+struct hclge_config_fastpath_cmd {
+	u8 fastpath_en;
+	u8 rsv0[3];
+	__le32 ssu_cfg_status;
+	__le32 igu_cfg_status;
+	__le32 ppp_cfg_status;
+	u8 rsv1[8];
+};
+
 struct hclge_hw;
 int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num);
 enum hclge_comm_cmd_status hclge_cmd_mdio_write(struct hclge_hw *hw,

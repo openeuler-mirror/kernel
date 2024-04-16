@@ -3454,6 +3454,23 @@ static void hns3_remove(struct pci_dev *pdev)
 	pci_set_drvdata(pdev, NULL);
 }
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+static int hns3_fastpath_configure(struct pci_dev *pdev, bool fastpath_en)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
+	int ret;
+
+	if (!hnae3_dev_udma_supported(ae_dev) || !ae_dev->ops->set_fastpath)
+		return 0;
+
+	rtnl_lock();
+	ret = ae_dev->ops->set_fastpath(ae_dev, fastpath_en);
+	rtnl_unlock();
+
+	return ret;
+}
+#endif
+
 /**
  * hns3_pci_sriov_configure
  * @pdev: pointer to a pci_dev structure
@@ -3464,6 +3481,7 @@ static void hns3_remove(struct pci_dev *pdev)
  **/
 static int hns3_pci_sriov_configure(struct pci_dev *pdev, int num_vfs)
 {
+	int num_vfs_pre;
 	int ret;
 
 	if (!(hns3_is_phys_func(pdev) && IS_ENABLED(CONFIG_PCI_IOV))) {
@@ -3473,12 +3491,26 @@ static int hns3_pci_sriov_configure(struct pci_dev *pdev, int num_vfs)
 
 	if (num_vfs) {
 		ret = pci_enable_sriov(pdev, num_vfs);
-		if (ret)
+		if (ret) {
 			dev_err(&pdev->dev, "SRIOV enable failed %d\n", ret);
-		else
-			return num_vfs;
+			return 0;
+		}
+
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+		ret = hns3_fastpath_configure(pdev, false);
+		if (ret) {
+			pci_disable_sriov(pdev);
+			return 0;
+		}
+#endif
+
+		return num_vfs;
 	} else if (!pci_vfs_assigned(pdev)) {
-		int num_vfs_pre = pci_num_vf(pdev);
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+		(void)hns3_fastpath_configure(pdev, true);
+#endif
+
+		num_vfs_pre = pci_num_vf(pdev);
 
 		pci_disable_sriov(pdev);
 		hns3_clean_vf_config(pdev, num_vfs_pre);

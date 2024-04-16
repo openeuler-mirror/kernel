@@ -12422,6 +12422,56 @@ static int hclge_set_wol(struct hnae3_handle *handle,
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+static int hclge_set_fastpath_cmd(struct hnae3_ae_dev *ae_dev, bool fastpath_en)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	struct hclge_config_fastpath_cmd *req;
+	struct hclge_desc desc;
+
+	if (!hnae3_dev_udma_supported(ae_dev))
+		return 0;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_COMM_CFG_FASTPATH, false);
+	req = (struct hclge_config_fastpath_cmd *)desc.data;
+	req->fastpath_en = fastpath_en;
+
+	return hclge_cmd_send(&hdev->hw, &desc, 1);
+}
+
+static int hclge_set_fastpath(struct hnae3_ae_dev *ae_dev, bool fastpath_en)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	int last_bad_ret = 0;
+	int ret;
+
+	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
+	ret = hclge_tm_flush_cfg(hdev, true);
+	if (ret)
+		return ret;
+
+	ret = hclge_set_fastpath_cmd(ae_dev, fastpath_en);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to set fastpath, ret = %d\n", ret);
+		last_bad_ret = ret;
+	}
+
+	ret = hclge_tm_flush_cfg(hdev, false);
+	if (ret)
+		last_bad_ret = ret;
+
+	ret = hclge_notify_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		last_bad_ret = ret;
+
+	return last_bad_ret;
+}
+#endif
+
 static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 {
 	struct pci_dev *pdev = ae_dev->pdev;
@@ -12604,6 +12654,14 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 	ret = hclge_update_port_info(hdev);
 	if (ret)
 		goto err_sysfs_unregister;
+
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	ret = hclge_set_fastpath_cmd(ae_dev, true);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to init fastpath, ret = %d\n", ret);
+		goto err_sysfs_unregister;
+	}
+#endif
 
 	INIT_KFIFO(hdev->mac_tnl_log);
 
@@ -13036,6 +13094,15 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 		dev_warn(&pdev->dev,
 			 "failed to update wol config, ret = %d\n", ret);
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	ret = hclge_set_fastpath_cmd(ae_dev, pci_num_vf(pdev) ? false : true);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to reset fastpath, ret = %d\n",
+			ret);
+		return ret;
+	}
+#endif
+
 	dev_info(&pdev->dev, "Reset done, %s driver initialization finished.\n",
 		 HCLGE_DRIVER_NAME);
 
@@ -13046,6 +13113,10 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 {
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_mac *mac = &hdev->hw.mac;
+
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	(void)hclge_set_fastpath_cmd(ae_dev, false);
+#endif
 
 	hclge_unregister_sysfs(hdev);
 	hclge_reset_vf_rate(hdev);
@@ -13641,6 +13712,9 @@ struct hnae3_ae_ops hclge_ops = {
 	.rm_addr = hclge_unic_rm_addr,
 	.get_func_guid = hclge_unic_get_func_guid,
 	.set_func_guid = hclge_unic_set_func_guid,
+#endif
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+	.set_fastpath = hclge_set_fastpath,
 #endif
 };
 

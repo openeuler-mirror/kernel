@@ -867,6 +867,7 @@ struct hnae3_ae_ops {
 		       enum hnae3_unic_addr_type addr_type);
 	int (*get_func_guid)(struct hnae3_handle *handle, u8 *guid);
 	void (*set_func_guid)(struct hnae3_handle *handle, u8 *guid);
+	int (*set_fastpath)(struct hnae3_ae_dev *ae_dev, bool fastpath_en);
 };
 
 struct hnae3_dcb_ops {
