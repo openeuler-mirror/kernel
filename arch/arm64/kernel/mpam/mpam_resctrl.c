@@ -320,6 +320,11 @@ parse_cache(char *buf, struct resctrl_resource *r,
 		return -EINVAL;
 	}
 
+	if (type == SCHEMA_COMM && data == 0) {
+		rdt_last_cmd_puts("No allowed CPBM to be set to 0\n");
+		return -EINVAL;
+	}
+
 	cfg->new_ctrl[type] = data;
 	cfg->ctrl_updated[type] = true;
 	cfg->have_new_ctrl = true;
