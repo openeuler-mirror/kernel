@@ -181,7 +181,11 @@ void vgic_v3_populate_lr(struct kvm_vcpu *vcpu, struct vgic_irq *irq, int lr)
 	if (irq->group)
 		val |= ICH_LR_GROUP;
 
-	val |= (u64)irq->priority << ICH_LR_PRIORITY_SHIFT;
+	if (vcpu->kvm->arch.pfr1_nmi == ID_AA64PFR1_EL1_NMI_IMP &&
+	    irq->nmi)
+		val |= ICH_LR_NMI;
+	else
+		val |= (u64)irq->priority << ICH_LR_PRIORITY_SHIFT;
 
 	vcpu->arch.vgic_cpu.vgic_v3.vgic_lr[lr] = val;
 }
@@ -718,6 +722,12 @@ int vgic_v3_probe(const struct gic_kvm_info *info)
 			 common_trap ? "C"  : "",
 			 dir_trap    ? "D"  : "");
 		static_branch_enable(&vgic_v3_cpuif_trap);
+	}
+
+	if (info->has_nmi) {
+		kvm_vgic_global_state.has_nmi = !static_branch_unlikely(&vgic_v3_cpuif_trap);
+		kvm_info("GICv3 NMI support %s\n",
+			 kvm_vgic_global_state.has_nmi ? "enabled" : "disabled due to trapping");
 	}
 
 	kvm_vgic_global_state.vctrl_base = NULL;

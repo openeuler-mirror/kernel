@@ -108,6 +108,9 @@ struct vgic_global {
 	bool			has_gicv4;
 	bool			has_gicv4_1;
 
+	/* NMI */
+	bool			has_nmi;
+
 	/* Pseudo GICv3 from outer space */
 	bool			no_hw_deactivation;
 
@@ -180,6 +183,7 @@ struct vgic_irq {
 	bool active;			/* not used for LPIs */
 	bool enabled;
 	bool hw;			/* Tied to HW IRQ */
+	bool nmi;			/* Configured as NMI */
 	struct kref refcount;		/* Used for LPIs */
 	u32 hwintid;			/* HW INTID number */
 	unsigned int host_irq;		/* linux irq corresponding to hwintid */
@@ -287,7 +291,8 @@ struct vgic_dist {
 	u32			implementation_rev;
 #define KVM_VGIC_IMP_REV_2	2 /* GICv2 restorable groups */
 #define KVM_VGIC_IMP_REV_3	3 /* GICv3 GICR_CTLR.{IW,CES,RWP} */
-#define KVM_VGIC_IMP_REV_LATEST	KVM_VGIC_IMP_REV_3
+#define KVM_VGIC_IMP_REV_4	4 /* GICv3 NMI */
+#define KVM_VGIC_IMP_REV_LATEST	KVM_VGIC_IMP_REV_4
 
 	/* Userspace can write to GICv2 IGROUPR */
 	bool			v2_groups_user_writable;
@@ -320,6 +325,7 @@ struct vgic_dist {
 
 	struct vgic_io_device	dist_iodev;
 
+	bool                    has_nmi;
 	bool			has_its;
 	bool			table_write_in_progress;
 
@@ -375,7 +381,7 @@ struct vgic_v3_cpu_if {
 	u32		vgic_vmcr;
 	u32		vgic_sre;	/* Restored only, change ignored */
 	u32		vgic_ap0r[4];
-	u32		vgic_ap1r[4];
+	u64		vgic_ap1r[4];
 	u64		vgic_lr[VGIC_V3_MAX_LRS];
 
 	/*

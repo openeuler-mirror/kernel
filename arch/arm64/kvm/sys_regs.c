@@ -1342,6 +1342,7 @@ static u64 __kvm_read_sanitised_id_reg(const struct kvm_vcpu *vcpu,
 
 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_SME);
 		val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI);
+		val |= FIELD_PREP(ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI), vcpu->kvm->arch.pfr1_nmi);
 		break;
 	case SYS_ID_AA64ISAR1_EL1:
 		if (!vcpu_has_ptrauth(vcpu))
@@ -1570,6 +1571,28 @@ static int set_id_dfr0_el1(struct kvm_vcpu *vcpu,
 		return -EINVAL;
 
 	return set_id_reg(vcpu, rd, val);
+}
+
+static int set_id_aa64pfr1_el1(struct kvm_vcpu *vcpu,
+			       const struct sys_reg_desc *rd,
+			       u64 val)
+{
+	u8 nmi;
+
+	nmi = cpuid_feature_extract_unsigned_field(val, ID_AA64PFR1_EL1_NMI_SHIFT);
+	if (nmi > ID_AA64PFR1_EL1_NMI_IMP ||
+	    (nmi && (!cpus_have_const_cap(ARM64_HAS_NMI) || static_branch_unlikely(&vgic_v3_cpuif_trap))))
+		return -EINVAL;
+
+	/* We can only differ with NMI, and anything else is an error */
+	val ^= read_id_reg(vcpu, rd);
+	val &= ~ARM64_FEATURE_MASK(ID_AA64PFR1_EL1_NMI);
+	if (val)
+		return -EINVAL;
+
+	vcpu->kvm->arch.pfr1_nmi = nmi;
+
+	return 0;
 }
 
 /*
@@ -1935,6 +1958,9 @@ static bool access_spsr(struct kvm_vcpu *vcpu,
  * guest...
  */
 static const struct sys_reg_desc sys_reg_descs[] = {
+	{ SYS_DESC(SYS_ALLINT_CLR), undef_access },
+	{ SYS_DESC(SYS_ALLINT_SET), undef_access },
+
 	{ SYS_DESC(SYS_DC_ISW), access_dcsw },
 	{ SYS_DESC(SYS_DC_IGSW), access_dcgsw },
 	{ SYS_DESC(SYS_DC_IGDSW), access_dcgsw },
@@ -2033,7 +2059,9 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .set_user = set_id_reg,
 	  .reset = read_sanitised_id_aa64pfr0_el1,
 	  .val = ID_AA64PFR0_EL1_CSV2_MASK | ID_AA64PFR0_EL1_CSV3_MASK, },
-	ID_SANITISED(ID_AA64PFR1_EL1),
+	{ SYS_DESC(SYS_ID_AA64PFR1_EL1), .access = access_id_reg,
+	  .get_user = get_id_reg, .set_user = set_id_aa64pfr1_el1,
+	  .reset = kvm_read_sanitised_id_reg, },
 	ID_UNALLOCATED(4,2),
 	ID_UNALLOCATED(4,3),
 	ID_SANITISED(ID_AA64ZFR0_EL1),
@@ -2101,6 +2129,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_SPSR_EL1), access_spsr},
 	{ SYS_DESC(SYS_ELR_EL1), access_elr},
 
+	{ SYS_DESC(SYS_ALLINT), undef_access },
+
 	{ SYS_DESC(SYS_AFSR0_EL1), access_vm_reg, reset_unknown, AFSR0_EL1 },
 	{ SYS_DESC(SYS_AFSR1_EL1), access_vm_reg, reset_unknown, AFSR1_EL1 },
 	{ SYS_DESC(SYS_ESR_EL1), access_vm_reg, reset_unknown, ESR_EL1 },
@@ -2159,6 +2189,7 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_ICC_IAR0_EL1), write_to_read_only },
 	{ SYS_DESC(SYS_ICC_EOIR0_EL1), read_from_write_only },
 	{ SYS_DESC(SYS_ICC_HPPIR0_EL1), write_to_read_only },
+	{ SYS_DESC(SYS_ICC_NMIAR1_EL1), undef_access },
 	{ SYS_DESC(SYS_ICC_DIR_EL1), read_from_write_only },
 	{ SYS_DESC(SYS_ICC_RPR_EL1), write_to_read_only },
 	{ SYS_DESC(SYS_ICC_SGI1R_EL1), access_gic_sgi },

@@ -300,6 +300,8 @@
 #define SYS_SPSR_EL1			sys_reg(3, 0, 4, 0, 0)
 #define SYS_ELR_EL1			sys_reg(3, 0, 4, 0, 1)
 
+#define SYS_ALLINT			sys_reg(3, 0, 4, 3, 0)
+
 #define SYS_ICC_PMR_EL1			sys_reg(3, 0, 4, 6, 0)
 
 #define SYS_AFSR0_EL1			sys_reg(3, 0, 5, 1, 0)
@@ -932,6 +934,7 @@
 #define ICH_LR_VIRTUAL_ID_MASK	((1ULL << 32) - 1)
 
 #define ICH_LR_EOI		(1ULL << 41)
+#define ICH_LR_NMI		(1ULL << 59)
 #define ICH_LR_GROUP		(1ULL << 60)
 #define ICH_LR_HW		(1ULL << 61)
 #define ICH_LR_STATE		(3ULL << 62)
