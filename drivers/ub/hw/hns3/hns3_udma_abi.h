@@ -188,7 +188,6 @@ struct udma_create_ctx_resp {
 	uint8_t chip_id;
 	uint8_t die_id;
 	uint8_t func_id;
-	bool rm_support;
 };
 
 struct flush_cqe_param {

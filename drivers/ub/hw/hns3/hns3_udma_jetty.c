@@ -243,9 +243,7 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 		ret = alloc_jetty_um_qp(dev, jetty, cfg, udata);
 		if (ret)
 			return ret;
-	} else if (cfg->trans_mode == UBCORE_TP_RM) {
-		xa_init(&jetty->srm_node_table);
-	} else if (cfg->trans_mode == UBCORE_TP_RC) {
+	} else {
 		ret = udma_db_map_user(dev, ucmd.sdb_addr, &jetty->rc_node.sdb);
 		if (ret) {
 			dev_err(dev->dev,
@@ -287,33 +285,6 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 	}
 
 	return 0;
-}
-
-static int alloc_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
-{
-	struct udma_jetty_table *jetty_table = &udma_dev->jetty_table;
-	struct udma_ida *jetty_ida = &jetty_table->jetty_ida;
-	int ret;
-	int id;
-
-	id = ida_alloc_range(&jetty_ida->ida, jetty_ida->min, jetty_ida->max,
-			     GFP_KERNEL);
-	if (id < 0) {
-		dev_err(udma_dev->dev, "failed to alloc jetty_id(%d).\n", id);
-		return id;
-	}
-	jetty->jetty_id = (uint32_t)id;
-	jetty->ubcore_jetty.id = jetty->jetty_id;
-
-	ret = xa_err(xa_store(&jetty_table->xa, jetty->jetty_id, jetty,
-			      GFP_KERNEL));
-	if (ret) {
-		dev_err(udma_dev->dev, "failed to store Jetty, ret = %d.\n",
-			ret);
-		ida_free(&jetty_ida->ida, id);
-	}
-
-	return ret;
 }
 
 static int alloc_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
@@ -429,15 +400,6 @@ static void delete_jetty_id(struct udma_dev *udma_dev,
 	read_unlock(&g_udma_dfx_list[i].rwlock);
 }
 
-static void free_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
-{
-	struct udma_jetty_table *jetty_table = &udma_dev->jetty_table;
-	struct udma_ida *jetty_ida = &jetty_table->jetty_ida;
-
-	xa_erase(&jetty_table->xa, jetty->jetty_id);
-	ida_free(&jetty_ida->ida, (int)jetty->jetty_id);
-}
-
 struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 				       struct ubcore_jetty_cfg *cfg,
 				       struct ubcore_udata *udata)
@@ -446,27 +408,14 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 	struct udma_jetty *jetty;
 	int ret;
 
-	if (!udma_dev->rm_support && cfg->trans_mode == UBCORE_TP_RM) {
-		dev_err(udma_dev->dev, "RM mode jetty is not supported.\n");
-		return NULL;
-	}
-
 	jetty = kzalloc(sizeof(struct udma_jetty), GFP_KERNEL);
 	if (!jetty)
 		return NULL;
 
 	init_jetty_cfg(jetty, cfg);
-	if (cfg->trans_mode == UBCORE_TP_RM)
-		ret = alloc_jetty_id(udma_dev, jetty);
-	else
-		ret = alloc_common_jetty_id(udma_dev, jetty);
+	ret = alloc_common_jetty_id(udma_dev, jetty);
 	if (ret)
 		goto err_alloc_jetty_id;
-
-	if (cfg->trans_mode == UBCORE_TP_RM)
-		init_jetty_x_qpn_bitmap(udma_dev, &jetty->qpn_map,
-					udma_dev->caps.num_jetty_shift,
-					UDMA_JETTY_QPN_PREFIX, jetty->jetty_id);
 
 	ret = alloc_jetty_buf(udma_dev, jetty, cfg, udata);
 	if (ret) {
@@ -482,12 +431,7 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 	return &jetty->ubcore_jetty;
 
 err_alloc_jetty_buf:
-	if (cfg->trans_mode == UBCORE_TP_RM)
-		clean_jetty_x_qpn_bitmap(&jetty->qpn_map);
-	if (cfg->trans_mode == UBCORE_TP_RM)
-		free_jetty_id(udma_dev, jetty);
-	else
-		free_common_jetty_id(udma_dev, jetty);
+	free_common_jetty_id(udma_dev, jetty);
 err_alloc_jetty_id:
 	kfree(jetty);
 
@@ -525,16 +469,12 @@ int udma_destroy_jetty(struct ubcore_jetty *jetty)
 	udma_dev = to_udma_dev(jetty->ub_dev);
 
 	ret = free_jetty_buf(udma_dev, udma_jetty);
-	if (udma_jetty->tp_mode == UBCORE_TP_RM)
-		clean_jetty_x_qpn_bitmap(&udma_jetty->qpn_map);
 
 	if (dfx_switch)
 		delete_jetty_id(udma_dev, udma_jetty);
 
-	if (udma_jetty->tp_mode == UBCORE_TP_RM)
-		free_jetty_id(udma_dev, udma_jetty);
-	else
-		free_common_jetty_id(udma_dev, udma_jetty);
+	free_common_jetty_id(udma_dev, udma_jetty);
+
 	kfree(udma_jetty);
 
 	return ret;

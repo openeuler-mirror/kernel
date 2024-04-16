@@ -178,15 +178,9 @@ static void set_default_jetty_caps(struct udma_dev *dev)
 	struct udma_caps *caps = &dev->caps;
 
 	caps->num_jfc_shift = ilog2(caps->num_cqs);
-	if (dev->rm_support) {
-		caps->num_jfs_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-		caps->num_jfr_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-		caps->num_jetty_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-	} else {
-		caps->num_jfs_shift = caps->num_qps_shift;
-		caps->num_jfr_shift = caps->num_qps_shift;
-		caps->num_jetty_shift = caps->num_qps_shift;
-	}
+	caps->num_jfs_shift = caps->num_qps_shift;
+	caps->num_jfr_shift = caps->num_qps_shift;
+	caps->num_jetty_shift = caps->num_qps_shift;
 }
 
 static void query_hw_speed(struct udma_dev *udma_dev)

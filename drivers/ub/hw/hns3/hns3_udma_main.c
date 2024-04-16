@@ -34,7 +34,6 @@
 #include "hns3_udma_user_ctl.h"
 
 static int is_active = 1;
-static bool rm_support = 1;
 
 static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 {
@@ -89,7 +88,6 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.chip_id = dev->chip_id;
 	resp.die_id = dev->die_id;
 	resp.func_id = dev->func_id;
-	resp.rm_support = rm_support;
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE) {
 		resp.dca_qps = dca_ctx->max_qps;
@@ -363,7 +361,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->dev_cap.max_jfs_sge = udma_dev->caps.max_sq_sg;
 	attr->dev_cap.max_jfr_sge = udma_dev->caps.max_srq_sges;
 	attr->dev_cap.max_msg_size = UDMA_MAX_MSG_LEN;
-	attr->dev_cap.trans_mode = UBCORE_TP_RM | UBCORE_TP_UM;
+	attr->dev_cap.trans_mode = UBCORE_TP_UM;
 	attr->dev_cap.feature.bs.oor = udma_dev->caps.oor_en;
 	attr->dev_cap.ceq_cnt = udma_dev->caps.num_comp_vectors;
 	attr->dev_cap.feature.bs.jfc_inline = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_CQE_INLINE);
@@ -1031,7 +1029,6 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 	int ret;
 
 	udma_dev->is_reset = false;
-	udma_dev->rm_support = rm_support;
 
 	ret = udma_dev->hw->cmq_init(udma_dev);
 	if (ret) {
@@ -1077,6 +1074,7 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		dev_err(dev, "setup hca failed!\n");
 		goto error_failed_setup;
 	}
+
 	ret = udma_dev->hw->hw_init(udma_dev);
 	if (ret) {
 		dev_err(dev, "hw_init failed!\n");
@@ -1144,6 +1142,3 @@ void udma_hnae_client_exit(struct udma_dev *udma_dev)
 
 module_param(is_active, int, 0644);
 MODULE_PARM_DESC(is_active, "Set the link status to ON, default: 1");
-
-module_param(rm_support, bool, 0444);
-MODULE_PARM_DESC(rm_support, "Whether the RM mode is supported, default: 1(support)");

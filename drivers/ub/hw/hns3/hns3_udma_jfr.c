@@ -352,7 +352,7 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	struct udma_cmd_mailbox *mailbox;
 	int ret, id;
 
-	if (jfr->tp_mode != UBCORE_TP_RM && jfr->share_jfr) {
+	if (jfr->tp_mode == UBCORE_TP_UM && jfr->share_jfr) {
 		ret = alloc_common_qpn(dev, jfr->jfc, &jfr->jfrn);
 		if (ret) {
 			dev_err(dev->dev, "failed to alloc um qpn for jfr(%d).\n", ret);
@@ -417,7 +417,7 @@ err_put:
 err_ida:
 	ida_free(&jfr_ida->ida, id);
 free_qpn:
-	if (jfr->tp_mode != UBCORE_TP_RM && jfr->share_jfr)
+	if (jfr->tp_mode == UBCORE_TP_UM && jfr->share_jfr)
 		free_common_qpn(dev, jfr->jfrn);
 
 	return ret;
@@ -526,7 +526,7 @@ static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	udma_table_put(dev, &jfr_table->table, jfr->srqn);
 
 	ida_free(&jfr_table->jfr_ida.ida, (int)jfr->srqn);
-	if (jfr->tp_mode != UBCORE_TP_RM && jfr->share_jfr)
+	if (jfr->tp_mode == UBCORE_TP_UM && jfr->share_jfr)
 		free_common_qpn(dev, jfrn);
 }
 
@@ -634,11 +634,6 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 	struct udma_jfr *jfr;
 	int ret;
 
-	if (!udma_dev->rm_support && cfg->trans_mode == UBCORE_TP_RM) {
-		dev_err(udma_dev->dev, "RM mode jfr is not supported.\n");
-		return NULL;
-	}
-
 	jfr = kcalloc(1, sizeof(*jfr), GFP_KERNEL);
 	if (!jfr)
 		return NULL;
@@ -656,10 +651,6 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 		goto err_alloc_buf;
 
 	xa_init(&jfr->tp_table_xa);
-	if (cfg->trans_mode == UBCORE_TP_RM)
-		init_jetty_x_qpn_bitmap(udma_dev, &jfr->qpn_map,
-					udma_dev->caps.num_jfr_shift,
-					UDMA_JFR_QPN_PREFIX, jfr->jfrn);
 	if (cfg->trans_mode == UBCORE_TP_UM) {
 		jfr->ubcore_jfr.uctx = udata->uctx;
 		ret = alloc_jfr_um_qp(udma_dev, jfr);
@@ -691,8 +682,6 @@ err_copy:
 	if (jfr->um_qp)
 		destroy_jfr_um_qp(udma_dev, jfr);
 err_alloc_jfrc:
-	if (cfg->trans_mode == UBCORE_TP_RM)
-		clean_jetty_x_qpn_bitmap(&jfr->qpn_map);
 	free_jfrc(udma_dev, jfr);
 err_alloc_buf:
 	free_jfr_buf(udma_dev, jfr);
@@ -709,9 +698,6 @@ int udma_destroy_jfr(struct ubcore_jfr *jfr)
 
 	if (udma_jfr->um_qp)
 		destroy_jfr_um_qp(dev, udma_jfr);
-
-	if (udma_jfr->tp_mode == UBCORE_TP_RM)
-		clean_jetty_x_qpn_bitmap(&udma_jfr->qpn_map);
 
 	if (dfx_switch)
 		delete_jfr_id(dev, udma_jfr);

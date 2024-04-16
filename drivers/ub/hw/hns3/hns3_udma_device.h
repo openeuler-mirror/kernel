@@ -53,6 +53,7 @@
 #define UDMA_SGE_SHIFT				4
 #define UDMA_SGE_SIZE				16
 #define UDMA_IDX_QUE_ENTRY_SZ			4
+
 /* The minimum page size is 4K for hardware */
 #define UDMA_HW_PAGE_SHIFT			12
 #define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
@@ -854,6 +855,7 @@ struct udma_dev {
 	struct xarray			eid_table;
 	uint64_t			dwqe_page;
 	uint64_t			dfx_cnt[UDMA_DFX_EQ_TOTAL];
+	/* record the stored qp under this device */
 	struct list_head		qp_list;
 	spinlock_t			qp_list_lock;
 	struct list_head		dip_list;
@@ -861,7 +863,6 @@ struct udma_dev {
 	struct udma_port		port_data[UDMA_MAX_PORTS];
 	struct udma_dev_debugfs		*dbgfs;
 	uint64_t			notify_addr;
-	bool				rm_support;
 	struct udma_bank		bank[UDMA_QP_BANK_NUM];
 };
 
