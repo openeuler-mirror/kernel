@@ -101,3 +101,4 @@ obj-$(CONFIG_NET_VENDOR_NETSWIFT) += netswift/
 obj-$(CONFIG_NET_VENDOR_NEBULA_MATRIX) += nebula-matrix/
 obj-$(CONFIG_NET_VENDOR_YUNSILICON) += yunsilicon/
 obj-$(CONFIG_NET_VENDOR_YUSUR) += yusur/
+obj-$(CONFIG_NET_VENDOR_BZWX) += bzwx/
