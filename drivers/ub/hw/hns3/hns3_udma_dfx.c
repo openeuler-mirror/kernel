@@ -243,12 +243,16 @@ static int udma_dfx_jfr_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	struct udma_dev *udma_dev = (struct udma_dev *)udma_dfx->priv;
 	struct udma_jfr_context jfr_context;
 	char str[UDMA_DFX_STR_LEN_MAX];
+	struct jfr_list *jfr_now;
+	bool flag = false;
 	uint32_t jfrn;
+	uint32_t srqn;
 	int ret;
+	int i;
 
 	ret = udma_dfx_read_buf(str, p_buf);
 	if (ret) {
-		dev_info(udma_dev->dev, "the inputing is invalid\n");
+		dev_info(udma_dev->dev, "the inputing is invalid.\n");
 		return ret;
 	}
 
@@ -257,10 +261,29 @@ static int udma_dfx_jfr_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 		return -EINVAL;
 	}
 
-	ret = udma_dfx_query_context(udma_dev, jfrn, &jfr_context,
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	list_for_each_entry(jfr_now,
+			    &g_udma_dfx_list[i].dfx->jfr_list->node, node) {
+		if (jfr_now->jfr_id == jfrn) {
+			srqn = jfr_now->srqn;
+			flag = true;
+			break;
+		}
+	}
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	if (!flag) {
+		dev_err(udma_dev->dev, "failed to find jfr, jfrn = %u.\n", jfrn);
+		return -EINVAL;
+	}
+
+	ret = udma_dfx_query_context(udma_dev, srqn, &jfr_context,
 				     sizeof(jfr_context), UDMA_CMD_QUERY_SRQC);
 	if (ret) {
-		dev_err(udma_dev->dev, "query jfr context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query jfr context failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -420,23 +443,16 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 	struct ubcore_res_jfr_val *jfr = (struct ubcore_res_jfr_val *)val->addr;
 	struct udma_jfr_context jfr_context;
 	struct jfr_list *jfr_now;
+	bool flag = false;
+	uint32_t srqn;
 	int ret;
 	int i;
 
 	if (val->len < sizeof(struct ubcore_res_jfr_val)) {
-		dev_err(udma_dev->dev,
-			 "Failed to check len, type: %u, val->len: %u.\n",
-			 (uint32_t)key->type, val->len);
+		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
+			(uint32_t)key->type, val->len);
 		val->len = sizeof(struct ubcore_res_jfr_val);
 		return -EINVAL;
-	}
-
-	ret = udma_dfx_query_context(udma_dev, key->key, &jfr_context,
-				     sizeof(jfr_context), UDMA_CMD_QUERY_SRQC);
-	if (ret) {
-		dev_err(udma_dev->dev,
-			"query jfr context failed, ret = %d\n", ret);
-		return ret;
 	}
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
@@ -447,18 +463,31 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 			    &g_udma_dfx_list[i].dfx->jfr_list->node, node) {
 		if (jfr_now->jfr_id == key->key) {
 			jfr->jfc_id = jfr_now->jfc_id;
-			read_unlock(&g_udma_dfx_list[i].rwlock);
-			jfr->jfr_id = key->key;
-			jfr->state = udma_reg_read(&jfr_context, SRQC_SRQ_ST);
-			jfr->depth = 1U << udma_reg_read(&jfr_context, SRQC_SHIFT);
-			val->len = sizeof(struct ubcore_res_jfr_val);
-			return 0;
+			srqn = jfr_now->srqn;
+			flag = true;
+			break;
 		}
 	}
 	read_unlock(&g_udma_dfx_list[i].rwlock);
 
-	dev_err(udma_dev->dev, "failed to find jfr!\n");
-	return -EINVAL;
+	if (!flag) {
+		dev_err(udma_dev->dev, "failed to find jfr, jfrn = %u.\n", key->key);
+		return -EINVAL;
+	}
+
+	ret = udma_dfx_query_context(udma_dev, srqn, &jfr_context,
+				     sizeof(jfr_context), UDMA_CMD_QUERY_SRQC);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"query jfr context failed, ret = %d\n", ret);
+		return ret;
+	}
+
+	jfr->jfr_id = key->key;
+	jfr->state = udma_reg_read(&jfr_context, SRQC_SRQ_ST);
+	jfr->depth = 1U << udma_reg_read(&jfr_context, SRQC_SHIFT);
+
+	return 0;
 }
 
 static int udma_query_res_jetty(struct udma_dev *udma_dev,

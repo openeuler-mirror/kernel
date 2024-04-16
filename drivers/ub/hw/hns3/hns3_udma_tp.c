@@ -272,7 +272,7 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 		}
 	}
 
-	udma_destroy_qp_common(udma_device, qp);
+	udma_destroy_qp_common(udma_device, qp, NULL);
 
 	kfree(udma_tp);
 
@@ -395,7 +395,7 @@ static int udma_store_tp(struct udma_dev *udma_device, struct udma_tp *tp,
 		ret = udma_store_jetty_tp(udma_device, jetty, tp, fail_ret_tp);
 		if (ret) {
 			dev_err(udma_device->dev,
-				"failed store jetty tp, ret = %d\n", ret);
+				"failed store jetty tp, ret = %d.\n", ret);
 			return ret;
 		}
 	} else {
@@ -405,7 +405,7 @@ static int udma_store_tp(struct udma_dev *udma_device, struct udma_tp *tp,
 					      GFP_KERNEL));
 			if (ret) {
 				dev_err(udma_device->dev,
-					"failed store jfr tp, ret = %d\n", ret);
+					"failed store jfr tp, ret = %d.\n", ret);
 				return ret;
 			}
 		} else if (jfs) {
@@ -414,7 +414,7 @@ static int udma_store_tp(struct udma_dev *udma_device, struct udma_tp *tp,
 					      GFP_KERNEL));
 			if (ret) {
 				dev_err(udma_device->dev,
-					"failed store jfs tp, ret = %d\n", ret);
+					"failed store jfs tp, ret = %d.\n", ret);
 				return ret;
 			}
 		}
@@ -489,7 +489,7 @@ failed_init_qpc:
 	udma_erase_tp(tp);
 failed_create_qp:
 	unlock_jetty(&tp->qp.qp_attr);
-	udma_destroy_qp_common(udma_dev, &tp->qp);
+	udma_destroy_qp_common(udma_dev, &tp->qp, fail_ret_tp);
 failed_alloc_tp:
 	kfree(tp);
 

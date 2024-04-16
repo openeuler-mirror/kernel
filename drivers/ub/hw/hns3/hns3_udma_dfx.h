@@ -77,6 +77,7 @@ struct jfs_list {
 struct jfr_list {
 	uint32_t		jfr_id;
 	uint32_t		jfc_id;
+	uint32_t		srqn;
 	struct list_head	node;
 	spinlock_t		node_lock;
 };

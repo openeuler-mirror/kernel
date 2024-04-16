@@ -56,7 +56,7 @@ static int alloc_jfr_idx(struct udma_dev *dev, struct udma_jfr *jfr,
 
 	jfr->idx_que.entry_shift = ilog2(UDMA_IDX_QUE_ENTRY_SZ);
 
-	buf_attr.page_shift = dev->caps.idx_buf_pg_sz + PAGE_SHIFT;
+	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size =
 		to_udma_hem_entries_size(jfr->wqe_cnt,
 					 jfr->idx_que.entry_shift);
@@ -95,7 +95,7 @@ static int alloc_jfr_wqe_buf(struct udma_dev *dev,
 	jfr->wqe_shift = ilog2(roundup_pow_of_two(UDMA_SGE_SIZE *
 						  jfr->max_sge));
 
-	buf_attr.page_shift = dev->caps.srqwqe_buf_pg_sz + PAGE_SHIFT;
+	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size = to_udma_hem_entries_size(jfr->wqe_cnt,
 							   jfr->wqe_shift);
 	buf_attr.region[0].hopnum = dev->caps.srqwqe_hop_num;
@@ -161,7 +161,7 @@ static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
 
 	buf_attr.region_count = idx;
 	buf_attr.mtt_only = false;
-	buf_attr.page_shift = PAGE_SHIFT + dev->caps.mtt_buf_pg_sz;
+	buf_attr.page_shift = UDMA_HW_PAGE_SHIFT;
 
 	ret = udma_mtr_create(dev, &jfr->buf_mtr, &buf_attr,
 			      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz,
@@ -196,6 +196,7 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 		}
 	}
 
+	jfr->share_jfr = ucmd.share_jfr;
 	ret = alloc_jfr_idx(dev, jfr, udata, ucmd.idx_addr);
 	if (ret)
 		return ret;
@@ -351,7 +352,7 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	struct udma_cmd_mailbox *mailbox;
 	int ret, id;
 
-	if (jfr->tp_mode != UBCORE_TP_RM) {
+	if (jfr->tp_mode != UBCORE_TP_RM && jfr->share_jfr) {
 		ret = alloc_common_qpn(dev, jfr->jfc, &jfr->jfrn);
 		if (ret) {
 			dev_err(dev->dev, "failed to alloc um qpn for jfr(%d).\n", ret);
@@ -363,6 +364,7 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 			     GFP_KERNEL);
 	if (id < 0) {
 		dev_err(dev->dev, "failed to alloc jfr_id(%d).\n", id);
+		ret = id;
 		goto free_qpn;
 	}
 
@@ -377,14 +379,14 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 		goto err_ida;
 	}
 
-	ret = xa_err(xa_store(&jfr_table->xa, jfr->jfrn, jfr, GFP_KERNEL));
+	ret = xa_err(xa_store(&jfr_table->xa, jfr->srqn, jfr, GFP_KERNEL));
 	if (ret) {
 		dev_err(dev->dev, "failed to store JFRC, ret = %d.\n", ret);
 		goto err_put;
 	}
 
 	mailbox = udma_alloc_cmd_mailbox(dev);
-	if (IS_ERR_OR_NULL(mailbox)) {
+	if (IS_ERR(mailbox)) {
 		dev_err(dev->dev, "failed to alloc mailbox for JFRC.\n");
 		ret = -ENOMEM;
 		goto err_xa;
@@ -409,13 +411,13 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 err_mbox:
 	udma_free_cmd_mailbox(dev, mailbox);
 err_xa:
-	xa_erase(&jfr_table->xa, jfr->jfrn);
+	xa_erase(&jfr_table->xa, jfr->srqn);
 err_put:
 	udma_table_put(dev, &jfr_table->table, jfr->srqn);
 err_ida:
 	ida_free(&jfr_ida->ida, id);
 free_qpn:
-	if (jfr->tp_mode != UBCORE_TP_RM)
+	if (jfr->tp_mode != UBCORE_TP_RM && jfr->share_jfr)
 		free_common_qpn(dev, jfr->jfrn);
 
 	return ret;
@@ -459,12 +461,14 @@ static void store_jfr_id(struct udma_dev *dev, struct udma_jfr *jfr)
 			    node) {
 		if (jfr_now->jfr_id == jfr->jfrn) {
 			jfr_now->jfc_id = jfr->ubcore_jfr.jfr_cfg.jfc->id;
+			jfr_now->srqn = jfr->srqn;
 			goto found;
 		}
 	}
 
 	jfr_new->jfr_id = jfr->jfrn;
 	jfr_new->jfc_id = jfr->ubcore_jfr.jfr_cfg.jfc->id;
+	jfr_new->srqn = jfr->srqn;
 	list_add(&jfr_new->node, &g_udma_dfx_list[i].dfx->jfr_list->node);
 	++g_udma_dfx_list[i].dfx->jfr_cnt;
 	spin_unlock_irqrestore(lock, flags);
@@ -517,12 +521,12 @@ static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 		dev_err(dev->dev, "destroy failed (%d) for JFRN 0x%06x\n",
 			ret, jfr->srqn);
 
-	xa_erase(&jfr_table->xa, jfrn);
+	xa_erase(&jfr_table->xa, jfr->srqn);
 
 	udma_table_put(dev, &jfr_table->table, jfr->srqn);
 
 	ida_free(&jfr_table->jfr_ida.ida, (int)jfr->srqn);
-	if (jfr->tp_mode != UBCORE_TP_RM)
+	if (jfr->tp_mode != UBCORE_TP_RM && jfr->share_jfr)
 		free_common_qpn(dev, jfrn);
 }
 
@@ -608,17 +612,17 @@ static int alloc_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 	return 0;
 
 failed_modify_qpc:
-	udma_destroy_qp_common(dev, qp);
+	udma_destroy_qp_common(dev, qp, NULL);
 failed_create_qpc:
 	kfree(qp);
 
 	return ret;
 }
 
-void destroy_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
+static void destroy_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 {
 	udma_modify_jfr_um_qpc(dev, jfr, QPS_RESET);
-	udma_destroy_qp_common(dev, jfr->um_qp);
+	udma_destroy_qp_common(dev, jfr->um_qp, NULL);
 	kfree(jfr->um_qp);
 }
 

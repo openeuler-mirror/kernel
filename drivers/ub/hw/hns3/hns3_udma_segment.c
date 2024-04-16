@@ -45,7 +45,7 @@ static int udma_hw_create_mpt(struct udma_dev *udma_dev,
 	return udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
 }
 
-int udma_hw_destroy_mpt(struct udma_dev *udma_dev,
+static int udma_hw_destroy_mpt(struct udma_dev *udma_dev,
 			struct udma_cmd_mailbox *mailbox,
 			uint64_t mpt_index)
 {
@@ -378,7 +378,7 @@ err_alloc_key:
 	return NULL;
 }
 
-void udma_seg_free(struct udma_dev *udma_dev, struct udma_seg *seg)
+static void udma_seg_free(struct udma_dev *udma_dev, struct udma_seg *seg)
 {
 	int ret;
 

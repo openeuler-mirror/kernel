@@ -161,7 +161,7 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	return 0;
 }
 
-void set_jfc_param(struct udma_jfc *udma_jfc, struct ubcore_jfc_cfg *cfg)
+static void set_jfc_param(struct udma_jfc *udma_jfc, struct ubcore_jfc_cfg *cfg)
 {
 	udma_jfc->jfc_depth = roundup_pow_of_two(cfg->depth);
 	memcpy(&udma_jfc->ubcore_jfc.jfc_cfg, cfg, sizeof(struct ubcore_jfc_cfg));
@@ -182,7 +182,7 @@ static int alloc_jfc_cqe_buf(struct udma_dev *dev, struct udma_jfc *jfc,
 	struct udma_buf_attr buf_attr = {};
 	int ret;
 
-	buf_attr.page_shift = dev->caps.cqe_buf_pg_sz + PAGE_SHIFT;
+	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size = jfc->jfc_depth * dev->caps.cqe_sz;
 	buf_attr.region[0].hopnum = dev->caps.cqe_hop_num;
 	buf_attr.region_count = 1;

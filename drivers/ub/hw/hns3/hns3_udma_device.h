@@ -56,7 +56,7 @@
 /* The minimum page size is 4K for hardware */
 #define UDMA_HW_PAGE_SHIFT			12
 #define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
-#define udma_hw_page_align(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
+#define UDMA_HW_PAGE_ALIGN(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
 
 #define UDMA_DWQE_SIZE				65536
 
@@ -862,6 +862,7 @@ struct udma_dev {
 	struct udma_dev_debugfs		*dbgfs;
 	uint64_t			notify_addr;
 	bool				rm_support;
+	struct udma_bank		bank[UDMA_QP_BANK_NUM];
 };
 
 struct udma_seg {
@@ -922,7 +923,7 @@ static inline struct udma_seg *to_udma_seg(struct ubcore_target_seg *seg)
 static inline uint32_t to_udma_hem_entries_size(uint32_t count,
 						uint32_t buf_shift)
 {
-	return udma_hw_page_align(count << buf_shift);
+	return UDMA_HW_PAGE_ALIGN(count << buf_shift);
 }
 
 static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
@@ -933,7 +934,7 @@ static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
 static inline uint32_t to_udma_hem_entries_count(uint32_t count,
 						 uint32_t buf_shift)
 {
-	return udma_hw_page_align(count << buf_shift) >> buf_shift;
+	return UDMA_HW_PAGE_ALIGN(count << buf_shift) >> buf_shift;
 }
 
 static inline uint32_t to_udma_hem_entries_shift(uint32_t count,

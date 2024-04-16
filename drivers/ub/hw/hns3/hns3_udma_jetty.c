@@ -51,7 +51,6 @@ static void udma_fill_jetty_um_qp_attr(struct udma_dev *dev,
 	qp_attr->cap.rnr_retry = cfg->rnr_retry;
 	qp_attr->cap.ack_timeout = cfg->err_timeout;
 	qp_attr->qp_type = QPT_UD;
-
 	qp_attr->jfr = jetty->udma_jfr;
 	qp_attr->qpn_map = &jetty->qpn_map;
 	qp_attr->recv_jfc = to_udma_jfc(cfg->recv_jfc);
@@ -93,17 +92,17 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 }
 
 static int set_jetty_jfr(struct udma_dev *dev, struct udma_jetty *jetty,
-			 struct ubcore_jetty_cfg *cfg, uint32_t jfr_id)
+			 struct ubcore_jetty_cfg *cfg, uint32_t srqn)
 {
 	if (cfg->jfr) {
 		jetty->shared_jfr = true;
 		jetty->udma_jfr = to_udma_jfr(cfg->jfr);
 	} else {
 		jetty->shared_jfr = false;
-		jetty->udma_jfr = get_udma_jfr(&dev->ub_dev, jfr_id);
+		jetty->udma_jfr = get_udma_jfr(&dev->ub_dev, srqn);
 		if (!jetty->udma_jfr) {
 			dev_err(dev->dev,
-				"failed to find jfr, jfr_id:%u.\n", jfr_id);
+				"failed to find jfr, srqn:%u.\n", srqn);
 			return -EINVAL;
 		}
 	}
@@ -127,14 +126,14 @@ static int alloc_jetty_um_qp(struct udma_dev *dev, struct udma_jetty *jetty,
 
 	ret = udma_init_qpc(dev, &jetty->qp);
 	if (ret) {
-		udma_destroy_qp_common(dev, &jetty->qp);
+		udma_destroy_qp_common(dev, &jetty->qp, NULL);
 		return ret;
 	}
 
 	jetty->qp.state = QPS_RESET;
 	ret = udma_modify_qp_jetty(dev, jetty, QPS_RTS);
 	if (ret)
-		udma_destroy_qp_common(dev, &jetty->qp);
+		udma_destroy_qp_common(dev, &jetty->qp, NULL);
 
 	return ret;
 }
@@ -211,7 +210,7 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 
 	buf_attr->region_count = idx;
 	buf_attr->mtt_only = false;
-	buf_attr->page_shift = PAGE_SHIFT + udma_dev->caps.mtt_buf_pg_sz;
+	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
 
 	return 0;
 }
@@ -506,7 +505,7 @@ static int free_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty)
 				"modify qp(0x%llx) to RESET failed for um jetty.\n",
 				jetty->qp.qpn);
 
-		udma_destroy_qp_common(dev, &jetty->qp);
+		udma_destroy_qp_common(dev, &jetty->qp, NULL);
 	} else if (jetty->tp_mode == UBCORE_TP_RC && !jetty->dca_en) {
 		udma_db_unmap_user(dev, &jetty->rc_node.sdb);
 		if (jetty->shared_jfr)

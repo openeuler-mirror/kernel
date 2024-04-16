@@ -111,7 +111,7 @@ static int create_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 
 	ret = udma_init_qpc(dev, &jfs->um_qp);
 	if (ret)
-		udma_destroy_qp_common(dev, &jfs->um_qp);
+		udma_destroy_qp_common(dev, &jfs->um_qp, NULL);
 
 	return ret;
 }
@@ -127,7 +127,7 @@ static int destroy_jfs_qp(struct udma_dev *dev, struct udma_jfs *jfs)
 				"failed to modify qp(0x%llx) to RESET for um jfs.\n",
 				jfs->um_qp.qpn);
 
-		udma_destroy_qp_common(dev, &jfs->um_qp);
+	udma_destroy_qp_common(dev, &jfs->um_qp, NULL);
 	}
 
 	return ret;
@@ -161,7 +161,7 @@ static int alloc_jfs_buf(struct udma_dev *udma_dev, struct udma_jfs *jfs,
 		jfs->um_qp.state = QPS_RESET;
 		ret = udma_modify_jfs_um_qp(udma_dev, jfs, QPS_RTS);
 		if (ret)
-			udma_destroy_qp_common(udma_dev, &jfs->um_qp);
+			udma_destroy_qp_common(udma_dev, &jfs->um_qp, NULL);
 	}
 
 	return ret;
@@ -350,22 +350,17 @@ err_init_cfg:
 
 int udma_destroy_jfs(struct ubcore_jfs *jfs)
 {
-	struct udma_jfs *udma_jfs;
-	struct udma_dev *udma_dev;
-	int ret;
+	struct udma_dev *udma_dev = to_udma_dev(jfs->ub_dev);
+	struct udma_jfs *udma_jfs = to_udma_jfs(jfs);
 
-	udma_jfs = to_udma_jfs(jfs);
-	udma_dev = to_udma_dev(jfs->ub_dev);
-
-	ret = destroy_jfs_qp(udma_dev, udma_jfs);
-	if (udma_jfs->tp_mode == UBCORE_TP_RM)
-		clean_jetty_x_qpn_bitmap(&udma_jfs->qpn_map);
+	destroy_jfs_qp(udma_dev, udma_jfs);
 
 	if (dfx_switch)
 		delete_jfs_id(udma_dev, udma_jfs);
 
 	free_jfs_id(udma_dev, udma_jfs);
+
 	kfree(udma_jfs);
 
-	return ret;
+	return 0;
 }

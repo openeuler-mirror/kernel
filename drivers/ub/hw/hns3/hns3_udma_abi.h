@@ -64,6 +64,7 @@ struct udma_create_jfr_ucmd {
 	uint32_t sqe_shift;
 	uint32_t sge_cnt;
 	uint32_t sge_shift;
+	bool     share_jfr;
 };
 
 enum udma_jfr_cap_flags {

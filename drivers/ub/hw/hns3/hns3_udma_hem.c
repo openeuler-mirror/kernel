@@ -1507,7 +1507,7 @@ static int mtr_init_buf_cfg(struct udma_dev *udma_dev,
 	     region_count < ARRAY_SIZE(cfg->region); region_count++) {
 		r = &cfg->region[region_count];
 		r->offset = page_count;
-		buf_size = udma_hw_page_align(attr->region[region_count].size +
+		buf_size = UDMA_HW_PAGE_ALIGN(attr->region[region_count].size +
 					    first_region_pad);
 		r->count = DIV_ROUND_UP(buf_size, 1 << page_shift);
 		first_region_pad = 0;
@@ -1766,7 +1766,7 @@ int udma_mtr_map(struct udma_dev *udma_dev, struct udma_mtr *mtr,
 				     page_count - mapped_count);
 		if (ret < 0) {
 			dev_err(dev,
-				"failed to map mtr%u offset %u, ret = %d.\n",
+				"failed to map mtr %u offset 0x%x, ret = %d.\n",
 				i, r->offset, ret);
 			return ret;
 		}

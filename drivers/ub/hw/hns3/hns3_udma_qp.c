@@ -957,21 +957,16 @@ static void udma_set_um_attr(struct udma_qp *qp,
 			     struct udma_qp_context *context,
 			     struct udma_qp_context *context_mask)
 {
-	uint8_t lp_pktn_ini;
-
 	qp->ubcore_path_mtu = get_mtu(qp, NULL);
 	qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
 	udma_reg_write(context, QPC_MTU, qp->path_mtu);
 	udma_reg_clear(context_mask, QPC_MTU);
 
-	/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 16KB */
-	lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / udma_mtu_enum_to_int(qp->path_mtu));
-
-	udma_reg_write(context, QPC_LP_PKTN_INI, lp_pktn_ini);
+	udma_reg_write(context, QPC_LP_PKTN_INI, 0);
 	udma_reg_clear(context_mask, QPC_LP_PKTN_INI);
 
 	/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
-	udma_reg_write(context, QPC_ACK_REQ_FREQ, lp_pktn_ini);
+	udma_reg_write(context, QPC_ACK_REQ_FREQ, 0);
 	udma_reg_clear(context_mask, QPC_ACK_REQ_FREQ);
 }
 
@@ -1447,17 +1442,17 @@ static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp, bool is_targ
 					  qpn_map->jid << qpn_map->qpn_shift, 0);
 		} else {
 			mutex_lock(&qpn_map->bank_mutex);
-			bankid = get_least_load_bankid_for_qp(qpn_map->bank,
+			bankid = get_least_load_bankid_for_qp(udma_dev->bank,
 							      is_target ? attr->recv_jfc
 									: attr->send_jfc);
-			ret = alloc_qpn_with_bankid(&qpn_map->bank[bankid], bankid,
+			ret = alloc_qpn_with_bankid(&udma_dev->bank[bankid], bankid,
 						    &num);
 			if (ret) {
 				dev_err(dev, "failed to alloc QPN, ret = %d\n", ret);
 				mutex_unlock(&qpn_map->bank_mutex);
 				return ret;
 			}
-			qpn_map->bank[bankid].inuse++;
+			udma_dev->bank[bankid].inuse++;
 			mutex_unlock(&qpn_map->bank_mutex);
 			qp->qpn = gen_qpn(qpn_map->qpn_prefix,
 					  qpn_map->jid << qpn_map->qpn_shift, num);
@@ -1574,18 +1569,8 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
-
-	if (dca_en) {
-		/* When enable DCA, there's no need to alloc buffer now, and
-		 * the page shift should be fixed to 4K.
-		 */
-		buf_attr->mtt_only = true;
-		buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
-	} else {
-		buf_attr->mtt_only = false;
-		buf_attr->page_shift = UDMA_HW_PAGE_SHIFT +
-				       udma_dev->caps.mtt_buf_pg_sz;
-	}
+	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
+	buf_attr->mtt_only = dca_en;
 
 	return 0;
 }
@@ -1829,9 +1814,15 @@ static int udma_qp_store(struct udma_dev *udma_dev,
 {
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct xarray *xa = &udma_dev->qp_table.xa;
-	int ret;
+	struct udma_qp *temp_qp;
+	unsigned long flags;
+	int ret = 0;
 
-	ret = xa_err(xa_store_irq(xa, qp->qpn, qp, GFP_KERNEL));
+	xa_lock_irqsave(xa, flags);
+	temp_qp = (struct udma_qp *)xa_load(xa, qp->qpn);
+	if (!temp_qp)
+		ret = xa_err(__xa_store(xa, qp->qpn, qp, GFP_KERNEL));
+	xa_unlock_irqrestore(xa, flags);
 	if (ret)
 		dev_err(udma_dev->dev, "Failed to xa store for QPC\n");
 	else
@@ -1842,7 +1833,8 @@ static int udma_qp_store(struct udma_dev *udma_dev,
 	return ret;
 }
 
-static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp)
+static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp,
+			   struct ubcore_tp *fail_ret_tp)
 {
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct xarray *xa = &udma_dev->qp_table.xa;
@@ -1854,7 +1846,8 @@ static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp)
 	recv_jfc = qp_attr->recv_jfc;
 
 	xa_lock_irqsave(xa, flags);
-	__xa_erase(xa, qp->qpn);
+	if (!fail_ret_tp)
+		__xa_erase(xa, qp->qpn);
 	xa_unlock_irqrestore(xa, flags);
 
 	spin_lock_irqsave(&udma_dev->qp_list_lock, flags);
@@ -2123,7 +2116,7 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 	return 0;
 
 err_copy:
-	udma_qp_remove(udma_dev, qp);
+	udma_qp_remove(udma_dev, qp, NULL);
 err_store:
 	free_qpc(udma_dev, qp);
 err_qpc:
@@ -2137,9 +2130,10 @@ err_qpn:
 	return ret;
 }
 
-void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp)
+void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
+			    struct ubcore_tp *fail_ret_tp)
 {
-	udma_qp_remove(udma_dev, qp);
+	udma_qp_remove(udma_dev, qp, fail_ret_tp);
 
 	if (refcount_dec_and_test(&qp->refcount))
 		complete(&qp->free);

@@ -367,7 +367,8 @@ int udma_fill_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 		      struct ubcore_tp_cfg *cfg, struct ubcore_udata *udata);
 int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata);
-void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp);
+void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
+			    struct ubcore_tp *fail_ret_tp);
 void init_jetty_x_qpn_bitmap(struct udma_dev *dev,
 			     struct udma_qpn_bitmap *qpn_map,
 			     uint32_t jetty_x_shift, uint32_t prefix,

@@ -32,7 +32,7 @@ static int alloc_eq_buf(struct udma_dev *udma_dev, struct udma_eq *eq)
 	else
 		eq->hop_num = udma_dev->caps.eqe_hop_num;
 
-	buf_attr.page_shift = udma_dev->caps.eqe_buf_pg_sz + PAGE_SHIFT;
+	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size = eq->entries * eq->eqe_size;
 	buf_attr.region[0].hopnum = eq->hop_num;
 	buf_attr.region_count = 1;
@@ -42,7 +42,7 @@ static int alloc_eq_buf(struct udma_dev *udma_dev, struct udma_eq *eq)
 			      0);
 	if (err)
 		dev_err(udma_dev->dev,
-			"Failed to alloc EQE mtr, err %d\n", err);
+			"Failed to alloc EQE mtr, err %d.\n", err);
 
 	return err;
 }
@@ -72,7 +72,7 @@ static int config_eqc(struct udma_dev *udma_dev, struct udma_eq *eq,
 	count = udma_mtr_find(udma_dev, &eq->mtr, 0, eqe_ba, MTT_MIN_COUNT,
 			      &bt_ba);
 	if (count < 1) {
-		dev_err(udma_dev->dev, "failed to find EQE mtr\n");
+		dev_err(udma_dev->dev, "failed to find EQE mtr.\n");
 		return -ENOBUFS;
 	}
 
@@ -127,7 +127,7 @@ static int udma_create_eq(struct udma_dev *udma_dev, struct udma_eq *eq,
 
 	/* Allocate mailbox memory */
 	mailbox = udma_alloc_cmd_mailbox(udma_dev);
-	if (IS_ERR_OR_NULL(mailbox))
+	if (IS_ERR(mailbox))
 		return -ENOMEM;
 
 	ret = config_eqc(udma_dev, eq, mailbox->buf);
@@ -165,7 +165,7 @@ static void aeq_event_dump(struct device *dev, struct udma_work *irq_work)
 	case UDMA_EVENT_TYPE_COMM_EST:
 		break;
 	case UDMA_EVENT_TYPE_WQ_CATAS_ERROR:
-		dev_err(dev, "Local work queue 0x%x catast error, sub_event type is: 0x%x\n",
+		dev_err(dev, "Local work queue 0x%x catast error, sub_event type is: 0x%x.\n",
 			irq_work->queue_num, irq_work->sub_type);
 		break;
 	case UDMA_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR:
@@ -175,7 +175,7 @@ static void aeq_event_dump(struct device *dev, struct udma_work *irq_work)
 		break;
 	case UDMA_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR:
 		dev_err(dev,
-			"Local access violation work queue 0x%x error, sub_event type is: 0x%x\n",
+			"Local access violation work queue 0x%x error, sub_event type is: 0x%x.\n",
 			irq_work->queue_num, irq_work->sub_type);
 		break;
 	case UDMA_EVENT_TYPE_JFR_LIMIT_REACH:
@@ -189,7 +189,7 @@ static void aeq_event_dump(struct device *dev, struct udma_work *irq_work)
 			irq_work->queue_num);
 		break;
 	case UDMA_EVENT_TYPE_JFC_OVERFLOW:
-		dev_warn(dev, "JFC 0x%x overflow\n",
+		dev_warn(dev, "JFC 0x%x overflow.\n",
 			 irq_work->queue_num);
 		break;
 	default:
@@ -468,7 +468,7 @@ static int fmea_recover_others(struct udma_dev *udma_dev, uint32_t res_type,
 	uint64_t addr;
 	int ret;
 
-	if (IS_ERR_OR_NULL(mailbox))
+	if (IS_ERR(mailbox))
 		return PTR_ERR(mailbox);
 
 	mb = (struct udma_mbox *)desc.data;

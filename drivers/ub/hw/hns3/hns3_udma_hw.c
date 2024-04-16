@@ -18,6 +18,7 @@
 #include <linux/inetdevice.h>
 #include "urma/ubcore_api.h"
 #include "hnae3.h"
+#include "hns3_udma_abi.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_eq.h"
@@ -1747,6 +1748,23 @@ static void udma_get_cfg(struct udma_dev *udma_dev,
 	priv->handle = handle;
 }
 
+static void udma_init_bank(struct udma_dev *dev)
+{
+	uint32_t qpn_shift;
+	int i;
+
+	dev->bank[0].min = 1;
+	dev->bank[0].inuse = 1;
+	dev->bank[0].next = dev->bank[0].min;
+
+	qpn_shift = dev->caps.num_qps_shift - UDMA_DEFAULT_MAX_JETTY_X_SHIFT -
+		    UDMA_JETTY_X_PREFIX_BIT_NUM;
+	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
+		ida_init(&dev->bank[i].ida);
+		dev->bank[i].max = (1U << qpn_shift) / UDMA_QP_BANK_NUM - 1;
+	}
+}
+
 static int __udma_init_instance(struct hnae3_handle *handle)
 {
 	struct udma_dev *udma_dev;
@@ -1784,13 +1802,16 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 	if (ret) {
 		dev_err(udma_dev->dev,
 			"UDMA congest control init failed(%d)!\n", ret);
-		goto error_failed_cc_sysfs;
+		if (dfx_switch)
+			goto error_failed_scc_init;
+		goto error_failed_dfx_init;
 	}
 
+	udma_init_bank(udma_dev);
 	return 0;
-error_failed_cc_sysfs:
-	if (dfx_switch)
-		udma_dfx_uninit(udma_dev);
+
+error_failed_scc_init:
+	udma_dfx_uninit(udma_dev);
 error_failed_dfx_init:
 	udma_hnae_client_exit(udma_dev);
 error_failed_get_cfg:
@@ -1802,7 +1823,7 @@ error_failed_kzalloc:
 }
 
 static void __udma_uninit_instance(struct hnae3_handle *handle,
-					   bool reset)
+				   bool reset)
 {
 	struct udma_dev *udma_dev = handle->priv;
 

@@ -254,7 +254,7 @@ static void init_dca_ctx_debugfs(struct udma_dca_ctx_debugfs *dbgfs,
 	if (IS_ERR_OR_NULL(parent))
 		return;
 
-	snprintf(name, DCA_CTX_PID_LEN, "%d", current->pid);
+	snprintf(name, DCA_CTX_PID_LEN, "%u", current->pid);
 	dbgfs->root = debugfs_create_dir(name, parent);
 	if (IS_ERR_OR_NULL(dbgfs->root))
 		return;
