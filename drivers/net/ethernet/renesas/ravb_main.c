@@ -1387,12 +1387,12 @@ static int ravb_open(struct net_device *ndev)
 	if (priv->chip_id == RCAR_GEN2)
 		ravb_ptp_init(ndev, priv->pdev);
 
-	netif_tx_start_all_queues(ndev);
-
 	/* PHY control start */
 	error = ravb_phy_start(ndev);
 	if (error)
 		goto out_ptp_stop;
+
+	netif_tx_start_all_queues(ndev);
 
 	return 0;
 
@@ -2076,7 +2076,9 @@ static int ravb_probe(struct platform_device *pdev)
 	ndev->hw_features = NETIF_F_RXCSUM;
 
 	pm_runtime_enable(&pdev->dev);
-	pm_runtime_get_sync(&pdev->dev);
+	error = pm_runtime_resume_and_get(&pdev->dev);
+	if (error < 0)
+		goto out_rpm_disable;
 
 	/* The Ether-specific entries in the device structure. */
 	ndev->base_addr = res->start;
@@ -2251,6 +2253,7 @@ out_release:
 	free_netdev(ndev);
 
 	pm_runtime_put(&pdev->dev);
+out_rpm_disable:
 	pm_runtime_disable(&pdev->dev);
 	return error;
 }
