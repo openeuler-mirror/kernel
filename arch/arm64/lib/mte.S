@@ -80,6 +80,7 @@ SYM_FUNC_START(mte_copy_page_tags)
 	ret
 SYM_FUNC_END(mte_copy_page_tags)
 
+#ifdef CONFIG_ARCH_HAS_COPY_MC
 /*
  * Copy the tags from the source page to the destination one wiht machine check safe
  *   x0 - address of the destination page
@@ -93,8 +94,8 @@ SYM_FUNC_START(mte_copy_mc_page_tags)
 	mov	x3, x1
 	multitag_transfer_size x5, x6
 1:
-CPY_MC(2f, ldgm	x4, [x3])
-CPY_MC(2f, stgm	x4, [x2])
+KERNEL_ME_SAFE(2f, ldgm	x4, [x3])
+	stgm	x4, [x2]
 	add	x2, x2, x5
 	add	x3, x3, x5
 	tst	x2, #(PAGE_SIZE - 1)
@@ -106,6 +107,7 @@ CPY_MC(2f, stgm	x4, [x2])
 2:	mov x0, #-EFAULT
 	ret
 SYM_FUNC_END(mte_copy_mc_page_tags)
+#endif
 
 /*
  * Read tags from a user buffer (one tag per byte) and set the corresponding

@@ -758,32 +758,23 @@ static int do_bad(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	return 1; /* "fault" */
 }
 
-static bool arm64_do_kernel_sea(unsigned long addr, unsigned int esr,
-				     struct pt_regs *regs, int sig, int code)
+/*
+ * APEI claimed this as a firmware-first notification.
+ * Some processing deferred to task_work before ret_to_user().
+ */
+static bool do_apei_claim_sea(struct pt_regs *regs)
 {
-	if (!IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC))
-		return false;
+	if (user_mode(regs)) {
+		if (!apei_claim_sea(regs))
+			return true;
+	} else if (IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC)) {
+		if (sysctl_machine_check_safe &&
+		    fixup_exception_me(regs) &&
+		    !apei_claim_sea(regs))
+			return true;
+	}
 
-	if (!sysctl_machine_check_safe)
-		return false;
-
-	if (user_mode(regs))
-		return false;
-
-	if (apei_claim_sea(regs) < 0)
-		return false;
-
-	if (!fixup_exception_mc(regs))
-		return false;
-
-	if (current->flags & PF_KTHREAD)
-		return true;
-
-	set_thread_esr(0, esr);
-	arm64_force_sig_fault(sig, code, addr,
-		"Uncorrected memory error on access to user memory\n");
-
-	return true;
+	return false;
 }
 
 static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
@@ -791,16 +782,10 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 	const struct fault_info *inf;
 	unsigned long siaddr;
 
-	inf = esr_to_fault_info(esr);
-
-	if (user_mode(regs) && apei_claim_sea(regs) == 0) {
-		/*
-		 * APEI claimed this as a firmware-first notification.
-		 * Some processing deferred to task_work before ret_to_user().
-		 */
+	if (do_apei_claim_sea(regs))
 		return 0;
-	}
 
+	inf = esr_to_fault_info(esr);
 	if (esr & ESR_ELx_FnV) {
 		siaddr = 0;
 	} else {
@@ -811,9 +796,7 @@ static int do_sea(unsigned long far, unsigned long esr, struct pt_regs *regs)
 		 */
 		siaddr  = untagged_addr(far);
 	}
-
-	if (!arm64_do_kernel_sea(siaddr, esr, regs, inf->sig, inf->code))
-		arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
+	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
 
 	return 0;
 }

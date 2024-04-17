@@ -429,19 +429,16 @@ static inline size_t probe_subpage_writeable(const char __user *uaddr,
 /**
  * copy_mc_to_kernel - memory copy that handles source exceptions
  *
- * @dst:	destination address
- * @src:	source address
- * @len:	number of bytes to copy
+ * @to:		destination address
+ * @from:	source address
+ * @size:	number of bytes to copy
  *
- * Return 0 for success, or #size if there was an exception.
+ * Return 0 for success, or bytes not copied.
  */
 static inline unsigned long __must_check
 copy_mc_to_kernel(void *to, const void *from, unsigned long size)
 {
-	int ret;
-
-	ret = memcpy_mcs(to, from, size);
-	return (ret == -EFAULT) ? size : 0;
+	return memcpy_mc(to, from, size);
 }
 #define copy_mc_to_kernel copy_mc_to_kernel
 #endif
