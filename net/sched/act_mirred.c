@@ -305,14 +305,17 @@ static int tcf_mirred_act(struct sk_buff *skb, const struct tc_action *a,
 	}
 
 	err = tcf_mirred_forward(skb_at_tc_ingress(skb), want_ingress, skb2);
-	if (err) {
-out:
+	if (err)
 		qstats_overlimit_inc(this_cpu_ptr(m->common.cpu_qstats));
-		if (tcf_mirred_is_act_redirect(m_eaction))
-			retval = TC_ACT_SHOT;
-	}
 	__this_cpu_dec(mirred_rec_level);
 
+	return retval;
+
+out:
+	qstats_overlimit_inc(this_cpu_ptr(m->common.cpu_qstats));
+	if (tcf_mirred_is_act_redirect(m_eaction))
+		retval = TC_ACT_SHOT;
+	__this_cpu_dec(mirred_rec_level);
 	return retval;
 }
 
