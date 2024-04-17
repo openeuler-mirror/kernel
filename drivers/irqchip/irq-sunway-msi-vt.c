@@ -4,7 +4,6 @@
 #include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/smp.h>
-#include <linux/module.h>
 
 #include <asm/irq_impl.h>
 #include <asm/kvm_emulate.h>
