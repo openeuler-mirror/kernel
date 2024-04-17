@@ -527,7 +527,7 @@ CONFIG_ARM64_PTR_AUTH_KERNEL=y
 # ARMv8.4 architectural features
 #
 CONFIG_ARM64_AMU_EXTN=y
-# CONFIG_ARM64_MPAM is not set
+CONFIG_ARM64_MPAM=y
 CONFIG_ARM64_TLB_RANGE=y
 # end of ARMv8.4 architectural features
 
