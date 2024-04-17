@@ -5862,11 +5862,10 @@ static int wb_blkio_show(struct seq_file *m, void *v)
 		return -ENOMEM;
 
 	rcu_read_lock();
-	blkcg_css = memcg->wb_blk_css;
-	if (!css_tryget_online(blkcg_css)) {
+	blkcg_css = READ_ONCE(memcg->wb_blk_css);
+	if (!blkcg_css || !css_tryget_online(blkcg_css)) {
 		kfree(path);
 		rcu_read_unlock();
-
 		return -EINVAL;
 	}
 	blkcg_cgroup = blkcg_css->cgroup;
