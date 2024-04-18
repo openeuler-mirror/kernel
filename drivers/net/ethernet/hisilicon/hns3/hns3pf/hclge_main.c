@@ -3046,9 +3046,7 @@ static void hclge_push_link_status(struct hclge_dev *hdev)
 
 static void hclge_update_link_status(struct hclge_dev *hdev)
 {
-	struct hnae3_handle *rhandle = &hdev->vport[0].roce;
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
-	struct hnae3_client *rclient = hdev->roce_client;
 	struct hnae3_client *client = hdev->nic_client;
 #if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	struct hnae3_handle *uhandle = &hdev->vport[0].udma;
@@ -3076,12 +3074,18 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 
 		client->ops->link_status_change(handle, state);
 		hclge_config_mac_tnl_int(hdev, state);
-		if (rclient && rclient->ops->link_status_change)
-			rclient->ops->link_status_change(rhandle, state);
-#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
-		if (uclient && uclient->ops->link_status_change)
-			uclient->ops->link_status_change(uhandle, state);
-#endif
+		if (test_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state)) {
+			struct hnae3_handle *rhandle = &hdev->vport[0].roce;
+			struct hnae3_client *rclient = hdev->roce_client;
+
+			if (rclient && rclient->ops->link_status_change)
+				rclient->ops->link_status_change(rhandle,
+								 state);
+			#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+			if (uclient && uclient->ops->link_status_change)
+				uclient->ops->link_status_change(uhandle, state);
+			#endif
+		}
 
 		hclge_push_link_status(hdev);
 	}
@@ -12013,6 +12017,12 @@ clear_udma:
 #endif
 }
 
+static bool hclge_uninit_need_wait(struct hclge_dev *hdev)
+{
+	return test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
+	       test_bit(HCLGE_STATE_LINK_UPDATING, &hdev->state);
+}
+
 static void hclge_uninit_client_instance(struct hnae3_client *client,
 					 struct hnae3_ae_dev *ae_dev)
 {
@@ -12037,7 +12047,7 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 	if (hdev->roh_client && (client->type == HNAE3_CLIENT_ROH ||
 				 client->type == HNAE3_CLIENT_KNIC)) {
 		clear_bit(HCLGE_STATE_ROH_REGISTERED, &hdev->state);
-		while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		while (hclge_uninit_need_wait(hdev))
 			msleep(HCLGE_WAIT_RESET_DONE);
 
 		hdev->roh_client->ops->uninit_instance(&vport->roh, 0);
@@ -12049,7 +12059,7 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 
 	if (hdev->roce_client) {
 		clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
-		while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		while (hclge_uninit_need_wait(hdev))
 			msleep(HCLGE_WAIT_RESET_DONE);
 
 		hdev->roce_client->ops->uninit_instance(&vport->roce, 0);
