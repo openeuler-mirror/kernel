@@ -50,6 +50,7 @@ enum transparent_hugepage_flag {
 	TRANSPARENT_HUGEPAGE_DEFRAG_REQ_MADV_FLAG,
 	TRANSPARENT_HUGEPAGE_DEFRAG_KHUGEPAGED_FLAG,
 	TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG,
+	TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG,
 };
 
 struct kobject;
@@ -206,7 +207,6 @@ static inline bool file_thp_enabled(struct vm_area_struct *vma)
 	inode = vma->vm_file->f_inode;
 
 	return (IS_ENABLED(CONFIG_READ_ONLY_THP_FOR_FS)) &&
-	       (vma->vm_flags & VM_EXEC) &&
 	       !inode_is_open_for_write(inode) && S_ISREG(inode->i_mode);
 }
 

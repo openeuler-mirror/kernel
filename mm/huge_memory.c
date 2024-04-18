@@ -37,6 +37,7 @@
 #include <linux/page_owner.h>
 #include <linux/sched/sysctl.h>
 #include <linux/memory-tiers.h>
+#include <linux/compat.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -424,6 +425,32 @@ static ssize_t hpage_pmd_size_show(struct kobject *kobj,
 static struct kobj_attribute hpage_pmd_size_attr =
 	__ATTR_RO(hpage_pmd_size);
 
+#ifdef CONFIG_READ_ONLY_THP_FOR_FS
+static ssize_t thp_exec_enabled_show(struct kobject *kobj,
+				     struct kobj_attribute *attr, char *buf)
+{
+	return single_hugepage_flag_show(kobj, attr, buf,
+				 TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG);
+}
+static ssize_t thp_exec_enabled_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	size_t ret = single_hugepage_flag_store(kobj, attr, buf, count,
+				 TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG);
+	if (ret > 0) {
+		int err = start_stop_khugepaged();
+
+		if (err)
+			ret = err;
+	}
+
+	return ret;
+}
+static struct kobj_attribute thp_exec_enabled_attr =
+	__ATTR_RW(thp_exec_enabled);
+
+#endif
+
 static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
 	&defrag_attr.attr,
@@ -431,6 +458,9 @@ static struct attribute *hugepage_attr[] = {
 	&hpage_pmd_size_attr.attr,
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
+#endif
+#ifdef CONFIG_READ_ONLY_THP_FOR_FS
+	&thp_exec_enabled_attr.attr,
 #endif
 	NULL,
 };
@@ -782,7 +812,10 @@ static unsigned long __thp_get_unmapped_area(struct file *filp,
 {
 	loff_t off_end = off + len;
 	loff_t off_align = round_up(off, size);
-	unsigned long len_pad, ret;
+	unsigned long len_pad, ret, off_sub;
+
+	if (IS_ENABLED(CONFIG_32BIT) || in_compat_syscall())
+		return 0;
 
 	if (off_end <= off_align || (off_end - off_align) < size)
 		return 0;
@@ -808,7 +841,13 @@ static unsigned long __thp_get_unmapped_area(struct file *filp,
 	if (ret == addr)
 		return addr;
 
-	ret += (off - ret) & (size - 1);
+	off_sub = (off - ret) & (size - 1);
+
+	if (current->mm->get_unmapped_area == arch_get_unmapped_area_topdown &&
+	    !off_sub)
+		return ret + size;
+
+	ret += off_sub;
 	return ret;
 }
 
@@ -2556,7 +2595,7 @@ void vma_adjust_trans_huge(struct vm_area_struct *vma,
 static void unmap_folio(struct folio *folio)
 {
 	enum ttu_flags ttu_flags = TTU_RMAP_LOCKED | TTU_SPLIT_HUGE_PMD |
-		TTU_SYNC;
+		TTU_SYNC | TTU_BATCH_FLUSH;
 
 	VM_BUG_ON_FOLIO(!folio_test_large(folio), folio);
 
@@ -2569,6 +2608,8 @@ static void unmap_folio(struct folio *folio)
 		try_to_migrate(folio, ttu_flags);
 	else
 		try_to_unmap(folio, ttu_flags | TTU_IGNORE_MLOCK);
+
+	try_to_unmap_flush();
 }
 
 static void remap_page(struct folio *folio, unsigned long nr)
