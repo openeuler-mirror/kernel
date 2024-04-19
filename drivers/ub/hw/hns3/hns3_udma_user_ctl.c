@@ -270,13 +270,11 @@ int udma_user_ctl_dca_reg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_i
 	}
 
 	ret = udma_register_dca_mem(udma_device, context, &attr);
-	if (ret) {
+	if (ret)
 		dev_err(udma_device->dev,
 			"register dca mem failed, ret:%d.\n", ret);
-		return ret;
-	}
 
-	return 0;
+	return ret;
 }
 
 int udma_user_ctl_dca_dereg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_in *in,
@@ -297,7 +295,7 @@ int udma_user_ctl_dca_dereg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	}
 
 	attr.mem = NULL;
-	ret = udma_deregister_dca_mem(udma_device, context, &attr, true);
+	ret = udma_unregister_dca_mem(udma_device, context, &attr, true);
 	if (ret) {
 		dev_err(udma_device->dev, "deregister dca mem failed, ret:%d.\n", ret);
 		return -EFAULT;
@@ -329,7 +327,7 @@ int udma_user_ctl_dca_shrink(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 
 	if (shrink_resp.free_mems >= 1) {
 		dereg_attr.mem = shrink_resp.mem;
-		udma_deregister_dca_mem(udma_device, context, &dereg_attr, false);
+		udma_unregister_dca_mem(udma_device, context, &dereg_attr, false);
 		shrink_resp.mem = NULL;
 	}
 
@@ -481,7 +479,7 @@ static int udma_k_user_ctl_config_poe_chl(struct udma_dev *dev,
 	struct udma_user_ctl_cfg_poe_channel_in cfg_in;
 	int ret;
 
-	memcpy(&cfg_in, (void *)in->addr, in->len);
+	memcpy(&cfg_in, (void *)in->addr, min_t(uint32_t, in->len, sizeof(cfg_in)));
 	ret = check_poe_channel(dev, cfg_in.poe_channel);
 	if (ret) {
 		dev_err(dev->dev, "check poe channel failed, ret = %d.\n", ret);
@@ -507,7 +505,7 @@ static int udma_k_user_ctl_notify_attr(struct udma_dev *dev,
 {
 	struct udma_user_ctl_config_notify_attr attr_in;
 
-	memcpy(&attr_in, (void *)in->addr, in->len);
+	memcpy(&attr_in, (void *)in->addr, min_t(uint32_t, in->len, sizeof(attr_in)));
 	dev->notify_addr = attr_in.notify_addr;
 
 	return 0;
@@ -522,7 +520,7 @@ static int udma_k_user_ctl_query_hw_id(struct udma_dev *dev,
 	info_out.chip_id = dev->chip_id;
 	info_out.die_id = dev->die_id;
 	info_out.func_id = dev->func_id;
-	memcpy((void *)out->addr, &info_out, out->len);
+	memcpy((void *)out->addr, &info_out, min_t(uint32_t, out->len, sizeof(info_out)));
 
 	return 0;
 }

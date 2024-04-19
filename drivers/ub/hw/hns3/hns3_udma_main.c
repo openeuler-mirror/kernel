@@ -337,6 +337,7 @@ static uint16_t query_congest_alg(uint8_t udma_cc_caps)
 static int udma_query_device_attr(struct ubcore_device *dev,
 				  struct ubcore_device_attr *attr)
 {
+#define UDMA_MAX_TP_IN_TPG 10
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct device *dev_of_udma = udma_dev->dev;
 	struct net_device *net_dev;
@@ -364,6 +365,7 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->dev_cap.max_fe_cnt = udma_dev->func_num - 1;
 	attr->port_cnt = udma_dev->caps.num_ports;
 	attr->tp_maintainer = true;
+	attr->dev_cap.max_tp_in_tpg = UDMA_MAX_TP_IN_TPG;
 
 	for (i = 0; i < udma_dev->caps.num_ports; i++) {
 		net_dev = udma_dev->uboe.netdevs[i];
@@ -449,7 +451,7 @@ int udma_send_req(struct ubcore_device *dev, struct ubcore_req *msg)
 		return -ENOMEM;
 
 	req_host_msg->src_fe_idx = 0;
-	memcpy(&req_host_msg->req, msg, sizeof(struct ubcore_req_host) + msg->len);
+	memcpy(&req_host_msg->req, msg, sizeof(struct ubcore_req) + msg->len);
 	ret = ubcore_recv_req(dev, req_host_msg);
 	if (ret)
 		dev_err(udma_dev->dev, "Fail to recv req msg, ret = %d.\n", ret);

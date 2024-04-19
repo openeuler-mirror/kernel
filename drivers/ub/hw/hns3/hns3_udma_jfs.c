@@ -87,7 +87,7 @@ static void udma_fill_jfs_um_qp_attr(struct udma_dev *dev, struct udma_jfs *jfs,
 		qp_attr->priority = dev->caps.sl_num > 0 ?
 				    dev->caps.sl_num - 1 : 0;
 		dev_err(dev->dev,
-			"The setted priority (%d) should smaller than the max priority (%d), priority (%d) is used\n",
+			"set priority (%u) should smaller than the MAC (%u), (%u) is used\n",
 			jfs->ubcore_jfs.jfs_cfg.priority, dev->caps.sl_num,
 			qp_attr->priority);
 	} else {
@@ -115,7 +115,7 @@ static int create_jfs_um_qp(struct udma_dev *dev, struct udma_jfs *jfs,
 	return ret;
 }
 
-int destroy_jfs_qp(struct udma_dev *dev, struct udma_jfs *jfs)
+static int destroy_jfs_qp(struct udma_dev *dev, struct udma_jfs *jfs)
 {
 	int ret = 0;
 

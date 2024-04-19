@@ -397,8 +397,10 @@ static int fmea_ram_ecc_query(struct udma_dev *udma_dev,
 			      struct fmea_ram_ecc *ecc_info)
 {
 	struct udma_cmq_desc desc;
-	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	struct udma_cmq_req *req;
 	int ret;
+
+	req = (struct udma_cmq_req *)desc.data;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_QUERY_RAM_ECC, true);
 	ret = udma_cmq_send(udma_dev, &desc, 1);
@@ -415,10 +417,12 @@ static int fmea_ram_ecc_query(struct udma_dev *udma_dev,
 static int fmea_recover_gmv(struct udma_dev *udma_dev, uint32_t idx)
 {
 	struct udma_cmq_desc desc;
-	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
+	struct udma_cmq_req *req;
 	uint32_t addr_upper;
 	uint32_t addr_low;
 	int ret;
+
+	req = (struct udma_cmq_req *)desc.data;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_GMV_BT, true);
 	udma_reg_write(req, CFG_GMV_BT_IDX, idx);
@@ -484,11 +488,10 @@ static int fmea_recover_others(struct udma_dev *udma_dev, uint32_t res_type,
 	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
 	mbox_desc_init(mb, addr, 0, index, write_bt0_op);
 	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
-	if (ret) {
+	if (ret)
 		dev_err(udma_dev->dev,
 			"failed to execute cmd to write fmea ram, ret = %d.\n",
 			ret);
-	}
 
 out:
 	udma_free_cmd_mailbox(udma_dev, mailbox);
@@ -732,9 +735,9 @@ static int udma_create_hw_eq(struct udma_dev *udma_dev, int ceq_num,
 	struct udma_eq_table *eq_table = &udma_dev->eq_table;
 	struct udma_eq *eq;
 	uint32_t eq_cmd;
+	int ret = 0;
 	int eq_num;
 	int i;
-	int ret;
 
 	eq_num = ceq_num + aeq_num;
 
@@ -765,6 +768,7 @@ static int udma_create_hw_eq(struct udma_dev *udma_dev, int ceq_num,
 			goto err_out;
 		}
 	}
+
 	return ret;
 
 err_out:

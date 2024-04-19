@@ -49,9 +49,8 @@ int udma_cmd_use_events(struct udma_dev *udma_dev)
 	struct udma_cmdq *udma_cmd = &udma_dev->cmd;
 	int i;
 
-	udma_cmd->context = (struct udma_cmd_context *)
-		kcalloc(udma_cmd->max_cmds, sizeof(*udma_cmd->context),
-			GFP_KERNEL);
+	udma_cmd->context = kcalloc(udma_cmd->max_cmds, sizeof(*udma_cmd->context),
+				    GFP_KERNEL);
 	if (!udma_cmd->context)
 		return -ENOMEM;
 
@@ -266,8 +265,8 @@ void udma_cmq_setup_basic_desc(struct udma_cmq_desc *desc,
 		desc->flag &= cpu_to_le16(~UDMA_CMD_FLAG_WR);
 }
 
-void dump_desc(struct udma_dev *dev,
-	       struct udma_cmq_desc *desc)
+static void dump_desc(struct udma_dev *dev,
+		      struct udma_cmq_desc *desc)
 {
 	if (desc->opcode == UDMA_OPC_QUERY_MB_ST)
 		return;
@@ -282,7 +281,7 @@ void dump_desc(struct udma_dev *dev,
 			desc->data[1], desc->data[2],
 			desc->data[3], desc->data[4], desc->data[5]);
 	else
-		dev_info(dev->dev,
+		dev_info_ratelimited(dev->dev,
 			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x\n",
 			desc->opcode, desc->data[0],
 			desc->data[1], desc->data[2],
@@ -429,8 +428,7 @@ static int __udma_post_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
 {
 	struct udma_mbox *mb = (struct udma_mbox *)desc->data;
 
-	mb->token_event_en = cpu_to_le32(vfid_event
-					 << UDMA_MB_EVENT_EN_SHIFT | token);
+	mb->token_event_en = cpu_to_le32(vfid_event << UDMA_MB_EVENT_EN_SHIFT | token);
 
 	return udma_cmq_send(dev, desc, 1);
 }

@@ -139,7 +139,6 @@ struct udma_mbox_status {
 #define MB_ST_COMPLETE_SUCC 1
 #define UDMA_MB_EVENT_EN_SHIFT 16
 
-void dump_desc(struct udma_dev *dev, struct udma_cmq_desc *desc);
 struct udma_cmd_mailbox *udma_alloc_cmd_mailbox(struct udma_dev *dev);
 void udma_free_cmd_mailbox(struct udma_dev *dev,
 			   struct udma_cmd_mailbox *mailbox);

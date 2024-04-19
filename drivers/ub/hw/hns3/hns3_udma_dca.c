@@ -389,8 +389,8 @@ err_alloc_dca_pages:
 	return -ENOMEM;
 }
 
-void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
-			struct dca_mem *mem)
+static void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
+			       struct dca_mem *mem)
 {
 	void *states, *pages;
 	unsigned long flags;
@@ -419,14 +419,12 @@ void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
 static uint32_t get_udca_max_qps(struct udma_dev *udma_dev,
 				 struct udma_create_ctx_ucmd *ucmd)
 {
-	uint32_t qp_num;
+	uint32_t qp_num = 0;
 
 	if (ucmd->comp & UDMA_CONTEXT_MASK_DCA_PRIME_QPS) {
 		qp_num = ucmd->dca_max_qps;
 		if (!qp_num)
 			qp_num = udma_dev->caps.num_qps;
-	} else {
-		qp_num = 0;
 	}
 
 	return qp_num;
@@ -685,7 +683,7 @@ static int dereg_dca_page_proc(struct dca_mem *mem, uint32_t index,
 	}
 }
 
-int udma_deregister_dca_mem(struct udma_dev *dev,
+int udma_unregister_dca_mem(struct udma_dev *dev,
 			    struct udma_ucontext *context,
 			    struct udma_dca_dereg_attr *attr, bool from_user)
 {
