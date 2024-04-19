@@ -266,7 +266,7 @@ static struct ima_rule_entry *ima_lsm_copy_rule(struct ima_rule_entry *entry)
 	struct ima_rule_entry *nentry;
 	int i;
 
-	nentry = kmalloc(sizeof(*nentry), GFP_KERNEL);
+	nentry = kmalloc(sizeof(*nentry), GFP_ATOMIC);
 	if (!nentry)
 		return NULL;
 
@@ -283,7 +283,7 @@ static struct ima_rule_entry *ima_lsm_copy_rule(struct ima_rule_entry *entry)
 
 		nentry->lsm[i].type = entry->lsm[i].type;
 		nentry->lsm[i].args_p = kstrdup(entry->lsm[i].args_p,
-						GFP_KERNEL);
+						GFP_ATOMIC);
 		if (!nentry->lsm[i].args_p)
 			goto out_err;
 
