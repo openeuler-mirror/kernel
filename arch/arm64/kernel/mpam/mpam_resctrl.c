@@ -1948,7 +1948,7 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 
 	if (rdtgrp->type != RDTCTRL_GROUP ||
 			!list_empty(&rdtgrp->mon.crdtgrp_list)) {
-		ret = -EINVAL;
+		ret = -EOPNOTSUPP;
 		rdt_last_cmd_puts("unsupported operation\n");
 		goto unlock;
 	}
