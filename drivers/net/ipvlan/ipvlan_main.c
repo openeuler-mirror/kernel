@@ -63,6 +63,11 @@ static int ipvlan_set_port_mode(struct ipvl_port *port, u16 nval,
 	int err;
 
 	ASSERT_RTNL();
+
+#if !IS_ENABLED(CONFIG_IPVLAN_L2E)
+	if (nval == IPVLAN_MODE_L2E)
+		return -ENOTSUPP;
+#endif
 	if (port->mode != nval) {
 		list_for_each_entry(ipvlan, &port->ipvlans, pnode) {
 			flags = ipvlan->dev->flags;
