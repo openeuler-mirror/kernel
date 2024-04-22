@@ -359,6 +359,10 @@ static inline void unlocked_inode_to_wb_end(struct inode *inode,
 	rcu_read_unlock();
 }
 
+
+void bind_memcg_blkcg_link(struct cgroup_subsys *ss,
+			     struct css_set *cset);
+
 #else	/* CONFIG_CGROUP_WRITEBACK */
 
 static inline bool inode_cgwb_enabled(struct inode *inode)
@@ -409,6 +413,11 @@ static inline void wb_blkcg_offline(struct blkcg *blkcg)
 static inline int inode_congested(struct inode *inode, int cong_bits)
 {
 	return wb_congested(&inode_to_bdi(inode)->wb, cong_bits);
+}
+
+static inline void bind_memcg_blkcg_link(struct cgroup_subsys *ss,
+					   struct css_set *cset)
+{
 }
 
 #endif	/* CONFIG_CGROUP_WRITEBACK */

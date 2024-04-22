@@ -993,6 +993,11 @@ config CGROUP_V1_WRITEBACK
 	depends on CGROUP_WRITEBACK
 	default n
 
+config CGROUP_V1_BIND_BLKCG_MEMCG
+        bool "Add switches to bind memcg and blkcg"
+        depends on CGROUP_V1_WRITEBACK
+        default n
+
 menuconfig CGROUP_SCHED
 	bool "CPU controller"
 	default n

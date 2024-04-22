@@ -1752,6 +1752,9 @@ int proc_do_static_key(struct ctl_table *table, int write,
 	return ret;
 }
 
+#ifdef CONFIG_CGROUP_V1_BIND_BLKCG_MEMCG
+extern int sysctl_bind_memcg_blkcg_enable;
+#endif
 static struct ctl_table kern_table[] = {
 	{
 		.procname	= "sched_child_runs_first",
@@ -1932,6 +1935,17 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
+	},
+#endif
+#ifdef CONFIG_CGROUP_V1_BIND_BLKCG_MEMCG
+	{
+		.procname       = "bind_memcg_blkcg_enable",
+		.data           = &sysctl_bind_memcg_blkcg_enable,
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
 	},
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH

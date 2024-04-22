@@ -16,7 +16,6 @@
 
 struct backing_dev_info noop_backing_dev_info;
 EXPORT_SYMBOL_GPL(noop_backing_dev_info);
-
 static struct class *bdi_class;
 static const char *bdi_unknown_name = "(unknown)";
 
@@ -370,6 +369,27 @@ static void wb_exit(struct bdi_writeback *wb)
 #ifdef CONFIG_CGROUP_WRITEBACK
 
 #include <linux/memcontrol.h>
+void bind_memcg_blkcg_link(struct cgroup_subsys *ss,
+			     struct css_set *cset)
+{
+	struct cgroup_subsys_state *blkcg_css;
+	struct cgroup_subsys_state *memcg_css;
+
+	if (!cgroup1_writeback_enabled())
+		return;
+	if (ss->id != io_cgrp_id && ss->id != memory_cgrp_id)
+		return;
+	memcg_css = cset->subsys[memory_cgrp_id];
+	blkcg_css = cset->subsys[io_cgrp_id];
+	if (!memcg_css || !blkcg_css)
+		return;
+	if ((memcg_css == &root_mem_cgroup->css) ||
+	    (blkcg_css == blkcg_root_css))
+		return;
+	if (IS_ERR(blkcg_css->cgroup))
+		return;
+	wb_attach_memcg_to_blkcg(memcg_css, blkcg_css);
+}
 
 /*
  * cgwb_lock protects bdi->cgwb_tree, blkcg->cgwb_list, and memcg->cgwb_list.
