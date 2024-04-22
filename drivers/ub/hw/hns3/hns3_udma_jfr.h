@@ -29,6 +29,7 @@ struct udma_jfr_idx_que {
 struct udma_jfr {
 	struct ubcore_jfr		ubcore_jfr;
 	uint32_t		jfrn;
+	uint32_t		srqn;
 	uint32_t		wqe_cnt;
 	uint32_t		max_sge;
 	uint32_t		wqe_shift;
@@ -45,6 +46,9 @@ struct udma_jfr {
 	struct udma_qpn_bitmap	qpn_map;
 	void (*event)(struct udma_jfr *jfr, enum udma_event event_type);
 	uint32_t		jfr_caps;
+	struct udma_jfc		*jfc;
+	uint32_t		qpn;
+	enum ubcore_transport_mode tp_mode;
 };
 
 struct udma_jfr_context {

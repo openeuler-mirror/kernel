@@ -72,6 +72,7 @@ enum udma_jfr_cap_flags {
 
 struct udma_create_jfr_resp {
 	uint32_t jfr_caps;
+	uint32_t srqn;
 };
 
 struct udma_jfc_attr_ex {
@@ -183,6 +184,10 @@ struct udma_create_ctx_resp {
 	uint32_t dca_qps;
 	uint32_t dca_mmap_size;
 	uint32_t dca_mode;
+	uint8_t chip_id;
+	uint8_t die_id;
+	uint8_t func_id;
+	bool rm_support;
 };
 
 struct flush_cqe_param {

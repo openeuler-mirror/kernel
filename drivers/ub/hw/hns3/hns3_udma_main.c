@@ -33,6 +33,9 @@
 #include "hns3_udma_eid.h"
 #include "hns3_udma_user_ctl.h"
 
+static int is_active = 1;
+static bool rm_support = 1;
+
 static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 {
 	struct udma_ida *uar_ida = &udma_dev->uar_ida;
@@ -83,6 +86,10 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.poe_ch_num = dev->caps.poe_ch_num;
 	resp.db_addr = pci_resource_start(dev->pci_dev, UDMA_DEV_START_OFFSET) +
 		       UDMA_DB_ADDR_OFFSET;
+	resp.chip_id = dev->chip_id;
+	resp.die_id = dev->die_id;
+	resp.func_id = dev->func_id;
+	resp.rm_support = rm_support;
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE) {
 		resp.dca_qps = dca_ctx->max_qps;
@@ -146,6 +153,7 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 	ret = udma_init_ctx_resp(udma_dev, udrv_data, &context->dca_ctx);
 	if (ret) {
 		dev_err(udma_dev->dev, "Init ctx resp failed.\n");
+		udma_unregister_udca(udma_dev, context);
 		goto err_alloc_uar;
 	}
 
@@ -415,10 +423,15 @@ static int udma_query_device_status(struct ubcore_device *dev,
 			return -EINVAL;
 		}
 
-		dev_status->port_status[i].state =
-			(netif_running(net_dev) &&
-			netif_carrier_ok(net_dev)) ?
-			UBCORE_PORT_ACTIVE : UBCORE_PORT_DOWN;
+		if (is_active) {
+			dev_status->port_status[i].state =
+				(netif_running(net_dev) &&
+				netif_carrier_ok(net_dev)) ?
+				UBCORE_PORT_ACTIVE : UBCORE_PORT_DOWN;
+		} else {
+			dev_status->port_status[i].state = UBCORE_PORT_ACTIVE;
+		}
+
 		net_dev_mtu = ubcore_get_mtu(net_dev->max_mtu);
 		mtu = ubcore_get_mtu(net_dev->mtu);
 
@@ -1018,6 +1031,7 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 	int ret;
 
 	udma_dev->is_reset = false;
+	udma_dev->rm_support = rm_support;
 
 	ret = udma_dev->hw->cmq_init(udma_dev);
 	if (ret) {
@@ -1127,3 +1141,9 @@ void udma_hnae_client_exit(struct udma_dev *udma_dev)
 	if (udma_dev->hw->cmq_exit)
 		udma_dev->hw->cmq_exit(udma_dev);
 }
+
+module_param(is_active, int, 0644);
+MODULE_PARM_DESC(is_active, "Set the link status to ON, default: 1");
+
+module_param(rm_support, bool, 0444);
+MODULE_PARM_DESC(rm_support, "Whether the RM mode is supported, default: 1(support)");

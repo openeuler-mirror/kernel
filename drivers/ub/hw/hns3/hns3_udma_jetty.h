@@ -47,6 +47,7 @@ struct udma_jetty {
 	uint32_t		jetty_id;
 	struct mutex		tp_mutex;
 	bool			dca_en;
+	struct udma_jfc		*send_jfc;
 };
 
 static inline struct udma_jetty *to_udma_jetty(struct ubcore_jetty *ubcore_jetty)

@@ -19,13 +19,14 @@
 #include "hns3_udma_qp.h"
 struct udma_jfs {
 	struct ubcore_jfs		ubcore_jfs;
-	uint32_t		jfs_id;
+	uint32_t			jfs_id;
 	enum ubcore_transport_mode	tp_mode;
 	union {
-		struct xarray	node_table;
-		struct udma_qp	um_qp;
+		struct xarray		node_table;
+		struct udma_qp		um_qp;
 	};
-	struct udma_qpn_bitmap qpn_map;
+	struct udma_qpn_bitmap		qpn_map;
+	struct udma_jfc			*jfc;
 };
 
 static inline struct udma_jfs *to_udma_jfs(struct ubcore_jfs *jfs)
