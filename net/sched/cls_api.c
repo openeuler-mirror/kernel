@@ -1397,8 +1397,8 @@ void tcf_block_put(struct tcf_block *block)
 
 EXPORT_SYMBOL(tcf_block_put);
 
-void (* const tmplt_reoffload)(struct tcf_chain *chain, bool add,
-			       flow_setup_cb_t *cb, void *cb_priv);
+void (*tmplt_reoffload)(struct tcf_chain *chain, bool add,
+			flow_setup_cb_t *cb, void *cb_priv);
 EXPORT_SYMBOL(tmplt_reoffload);
 
 static void cls_tmplt_reoffload(struct tcf_chain *chain, bool add,
