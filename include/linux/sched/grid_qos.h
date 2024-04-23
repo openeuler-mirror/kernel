@@ -76,7 +76,7 @@ struct sched_grid_qos {
 
 static inline int sched_qos_affinity_set(struct task_struct *p)
 {
-	return p->grid_qos->affinity_set(p);
+	return p->_resvd->grid_qos->affinity_set(p);
 }
 
 int sched_grid_qos_fork(struct task_struct *p, struct task_struct *orig);

@@ -26,7 +26,7 @@
 static inline int qos_affinity_set(struct task_struct *p)
 {
 	int n;
-	struct sched_grid_qos_affinity *affinity = &p->grid_qos->affinity;
+	struct sched_grid_qos_affinity *affinity = &p->_resvd->grid_qos->affinity;
 
 	if (likely(affinity->prefer_cpus == p->select_cpus))
 		return 0;
@@ -58,18 +58,18 @@ int sched_grid_qos_fork(struct task_struct *p, struct task_struct *orig)
 	qos_stat_init(&qos->stat);
 
 	nodes_clear(qos->affinity.mem_preferred_node_mask);
-	if (likely(orig->grid_qos))
-		qos->affinity = orig->grid_qos->affinity;
+	if (likely(orig->_resvd->grid_qos))
+		qos->affinity = orig->_resvd->grid_qos->affinity;
 	qos->affinity_set = qos_affinity_set;
-	p->grid_qos = qos;
+	p->_resvd->grid_qos = qos;
 
 	return 0;
 }
 
 void sched_grid_qos_free(struct task_struct *p)
 {
-	kfree(p->grid_qos);
-	p->grid_qos = NULL;
+	kfree(p->_resvd->grid_qos);
+	p->_resvd->grid_qos = NULL;
 }
 
 /* dynamic select a more appropriate preferred interleave nid for process */
@@ -80,9 +80,9 @@ int sched_grid_preferred_interleave_nid(struct mempolicy *policy)
 	struct task_struct *me = current;
 	nodemask_t *preferred_nmask = NULL;
 
-	if (likely(me->grid_qos))
+	if (likely(me->_resvd->grid_qos))
 		preferred_nmask =
-			&me->grid_qos->affinity.mem_preferred_node_mask;
+			&me->_resvd->grid_qos->affinity.mem_preferred_node_mask;
 
 	if (!preferred_nmask || !policy)
 		return NUMA_NO_NODE;
@@ -111,9 +111,9 @@ int sched_grid_preferred_nid(int preferred_nid, nodemask_t *nodemask)
 	nodemask_t nmask, ndmask;
 	nodemask_t *preferred_nmask = NULL;
 
-	if (likely(current->grid_qos))
+	if (likely(current->_resvd->grid_qos))
 		preferred_nmask =
-			&current->grid_qos->affinity.mem_preferred_node_mask;
+			&current->_resvd->grid_qos->affinity.mem_preferred_node_mask;
 
 	if (!preferred_nmask)
 		return preferred_nid;
