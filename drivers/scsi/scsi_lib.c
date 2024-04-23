@@ -2067,7 +2067,7 @@ EXPORT_SYMBOL_GPL(scsi_mode_select);
 /**
  *	scsi_mode_sense - issue a mode sense, falling back from 10 to six bytes if necessary.
  *	@sdev:	SCSI device to be queried
- *	@dbd:	set if mode sense will allow block descriptors to be returned
+ *	@dbd:	set to prevent mode sense from returning block descriptors
  *	@modepage: mode page being requested
  *	@buffer: request buffer (may not be smaller than eight bytes)
  *	@len:	length of request buffer.
@@ -2102,18 +2102,18 @@ scsi_mode_sense(struct scsi_device *sdev, int dbd, int modepage,
 		sshdr = &my_sshdr;
 
  retry:
-	use_10_for_ms = sdev->use_10_for_ms;
+	use_10_for_ms = sdev->use_10_for_ms || len > 255;
 
 	if (use_10_for_ms) {
-		if (len < 8)
-			len = 8;
+		if (len < 8 || len > 65535)
+			return -EINVAL;
 
 		cmd[0] = MODE_SENSE_10;
-		cmd[8] = len;
+		put_unaligned_be16(len, &cmd[7]);
 		header_length = 8;
 	} else {
 		if (len < 4)
-			len = 4;
+			return -EINVAL;
 
 		cmd[0] = MODE_SENSE;
 		cmd[4] = len;
@@ -2132,54 +2132,58 @@ scsi_mode_sense(struct scsi_device *sdev, int dbd, int modepage,
 	 * byte as the problem.  MODE_SENSE commands can return
 	 * ILLEGAL REQUEST if the code page isn't supported */
 
-	if (use_10_for_ms && !scsi_status_is_good(result) &&
-	    driver_byte(result) == DRIVER_SENSE) {
-		if (scsi_sense_valid(sshdr)) {
+	if (!scsi_status_is_good(result)) {
+		if (driver_byte(result) == DRIVER_SENSE &&
+		    scsi_sense_valid(sshdr)) {
 			if ((sshdr->sense_key == ILLEGAL_REQUEST) &&
 			    (sshdr->asc == 0x20) && (sshdr->ascq == 0)) {
 				/*
-				 * Invalid command operation code
+				 * Invalid command operation code: retry using
+				 * MODE SENSE(6) if this was a MODE SENSE(10)
+				 * request, except if the request mode page is
+				 * too large for MODE SENSE single byte
+				 * allocation length field.
 				 */
-				sdev->use_10_for_ms = 0;
+				if (use_10_for_ms) {
+					if (len > 255)
+						return -EIO;
+					sdev->use_10_for_ms = 0;
+					goto retry;
+				}
+			}
+			if ((status_byte(result) == CHECK_CONDITION) &&
+			    sshdr->sense_key == UNIT_ATTENTION &&
+			    retry_count) {
+				retry_count--;
 				goto retry;
 			}
 		}
+		return -EIO;
 	}
+	if (unlikely(buffer[0] == 0x86 && buffer[1] == 0x0b &&
+		     (modepage == 6 || modepage == 8))) {
+		/* Initio breakage? */
+		header_length = 0;
+		data->length = 13;
+		data->medium_type = 0;
+		data->device_specific = 0;
+		data->longlba = 0;
+		data->block_descriptor_length = 0;
+	} else if (use_10_for_ms) {
+		data->length = get_unaligned_be16(&buffer[0]) + 2;
+		data->medium_type = buffer[2];
+		data->device_specific = buffer[3];
+		data->longlba = buffer[4] & 0x01;
+		data->block_descriptor_length = get_unaligned_be16(&buffer[6]);
+	} else {
+		data->length = buffer[0] + 1;
+		data->medium_type = buffer[1];
+		data->device_specific = buffer[2];
+		data->block_descriptor_length = buffer[3];
+	}
+	data->header_length = header_length;
 
-	if (scsi_status_is_good(result)) {
-		if (unlikely(buffer[0] == 0x86 && buffer[1] == 0x0b &&
-			     (modepage == 6 || modepage == 8))) {
-			/* Initio breakage? */
-			header_length = 0;
-			data->length = 13;
-			data->medium_type = 0;
-			data->device_specific = 0;
-			data->longlba = 0;
-			data->block_descriptor_length = 0;
-		} else if (use_10_for_ms) {
-			data->length = buffer[0]*256 + buffer[1] + 2;
-			data->medium_type = buffer[2];
-			data->device_specific = buffer[3];
-			data->longlba = buffer[4] & 0x01;
-			data->block_descriptor_length = buffer[6]*256
-				+ buffer[7];
-		} else {
-			data->length = buffer[0] + 1;
-			data->medium_type = buffer[1];
-			data->device_specific = buffer[2];
-			data->block_descriptor_length = buffer[3];
-		}
-		data->header_length = header_length;
-		result = 0;
-	} else if ((status_byte(result) == CHECK_CONDITION) &&
-		   scsi_sense_valid(sshdr) &&
-		   sshdr->sense_key == UNIT_ATTENTION && retry_count) {
-		retry_count--;
-		goto retry;
-	}
-	if (result > 0)
-		result = -EIO;
-	return result;
+	return 0;
 }
 EXPORT_SYMBOL(scsi_mode_sense);
 
