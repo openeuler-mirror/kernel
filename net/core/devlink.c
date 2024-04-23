@@ -10337,10 +10337,14 @@ static int __init devlink_init(void)
 {
 	int err;
 
-	err = genl_register_family(&devlink_nl_family);
+	err = register_pernet_subsys(&devlink_pernet_ops);
 	if (err)
 		goto out;
-	err = register_pernet_subsys(&devlink_pernet_ops);
+	err = genl_register_family(&devlink_nl_family);
+	if (!err)
+		return 0;
+
+	unregister_pernet_subsys(&devlink_pernet_ops);
 
 out:
 	WARN_ON(err);
