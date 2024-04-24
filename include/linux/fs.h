@@ -43,7 +43,9 @@
 #include <linux/cred.h>
 #include <linux/mnt_idmapping.h>
 #include <linux/slab.h>
+#ifdef CONFIG_BPF_READAHEAD
 #include <linux/tracepoint-defs.h>
+#endif
 #include <linux/kabi.h>
 
 #include <asm/byteorder.h>
@@ -190,11 +192,16 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* File supports async nowait buffered writes */
 #define FMODE_BUF_WASYNC	((__force fmode_t)0x80000000)
 
+#ifdef CONFIG_BPF_READAHEAD
 /* File mode control flag, expect random access pattern */
 #define FMODE_CTL_RANDOM	((__force fmode_t)0x1000)
 
 /* File mode control flag, will try to read head of the file into pagecache */
 #define FMODE_CTL_WILLNEED		((__force fmode_t)0x400000)
+#else
+#define FMODE_CTL_RANDOM	0
+#define FMODE_CTL_WILLNEED	0
+#endif
 
 /*
  * Attribute flags.  These should be or-ed together to figure out what
@@ -3524,16 +3531,17 @@ struct fs_file_read_ctx {
 	long long index;
 };
 
-#ifdef CONFIG_TRACEPOINTS
+#ifdef CONFIG_BPF_READAHEAD
 DECLARE_TRACEPOINT(fs_file_read);
 extern void fs_file_read_update_args_by_trace(struct kiocb *iocb);
-#else
-static inline void fs_file_read_update_args_by_trace(struct kiocb *iocb) {}
-#endif
-
 static inline void fs_file_read_do_trace(struct kiocb *iocb)
 {
 	if (tracepoint_enabled(fs_file_read))
 		fs_file_read_update_args_by_trace(iocb);
 }
+#else
+static inline void fs_file_read_update_args_by_trace(struct kiocb *iocb) {}
+static inline void fs_file_read_do_trace(struct kiocb *iocb) {}
+#endif
+
 #endif /* _LINUX_FS_H */

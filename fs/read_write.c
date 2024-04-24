@@ -1721,7 +1721,7 @@ int generic_file_rw_checks(struct file *file_in, struct file *file_out)
 	return 0;
 }
 
-#ifdef CONFIG_TRACEPOINTS
+#ifdef CONFIG_BPF_READAHEAD
 static void fs_file_read_ctx_init(struct fs_file_read_ctx *ctx,
 				  struct file *filp, loff_t pos)
 {
@@ -1752,7 +1752,7 @@ void fs_file_read_update_args_by_trace(struct kiocb *iocb)
 	filp->f_ctl_mode &= ~(ctx.clr_f_mode & FS_FILE_READ_MODE_MASK);
 }
 EXPORT_SYMBOL_GPL(fs_file_read_update_args_by_trace);
-#endif
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_read);
 EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_release);
+#endif

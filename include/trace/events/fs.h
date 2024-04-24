@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+#ifdef CONFIG_BPF_READAHEAD
+
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM fs
 
@@ -31,3 +33,7 @@ DECLARE_TRACE(fs_file_release,
 
 /* This part must be outside protection */
 #include <trace/define_trace.h>
+#else
+#define trace_fs_file_release(...)
+#define trace_fs_file_read(...)
+#endif /* CONFIG_BPF_READAHEAD */
