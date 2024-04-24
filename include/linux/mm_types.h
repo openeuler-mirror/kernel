@@ -898,4 +898,6 @@ typedef struct {
 	unsigned long val;
 } swp_entry_t;
 
+typedef unsigned int __bitwise zap_flags_t;
+
 #endif /* _LINUX_MM_TYPES_H */
