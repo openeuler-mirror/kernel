@@ -5358,15 +5358,21 @@ static int wb_blkio_show(struct seq_file *m, void *v)
 	if (!path)
 		return -ENOMEM;
 
-	mutex_lock(&cgroup_mutex);
-	blkcg_css = memcg->wb_blk_css;
+	rcu_read_lock();
+	blkcg_css = READ_ONCE(memcg->wb_blk_css);
+	if (!blkcg_css || !css_tryget_online(blkcg_css)) {
+		kfree(path);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
 	blkcg_cgroup = blkcg_css->cgroup;
 	blkcg_id = cgroup_ino(blkcg_cgroup);
 	cgroup_path(blkcg_cgroup, path, PATH_MAX);
-	mutex_unlock(&cgroup_mutex);
 	seq_printf(m, "wb_blkio_path:%s\n", path);
 	seq_printf(m, "wb_blkio_ino:%lu\n", blkcg_id);
 	kfree(path);
+	css_put(blkcg_css);
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -5389,22 +5395,24 @@ static ssize_t wb_blkio_write(struct kernfs_open_file *of, char *buf,
 	if (ret)
 		return ret;
 
-	mutex_lock(&cgroup_mutex);
+	rcu_read_lock();
 	root = blkcg_root_css->cgroup->root;
 	blk_cgroup = cgroup1_get_from_id(root, cgrp_id);
 	if (IS_ERR(blk_cgroup)) {
-		mutex_unlock(&cgroup_mutex);
+		rcu_read_unlock();
 		return -EINVAL;
 	}
 	blkcg_css = cgroup_tryget_css(blk_cgroup, &io_cgrp_subsys);
-	if (!blkcg_css)
+	if (!blkcg_css) {
+		ret = -EINVAL;
 		goto out_unlock;
+	}
 	wb_attach_memcg_to_blkcg(memcg_css, blkcg_css);
 	css_put(blkcg_css);
 
 out_unlock:
 	cgroup_put(blk_cgroup);
-	mutex_unlock(&cgroup_mutex);
+	rcu_read_unlock();
 
 	return ret < 0 ? ret : nbytes;
 }

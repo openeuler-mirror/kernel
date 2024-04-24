@@ -438,8 +438,8 @@ static struct cgroup_subsys_state *cgwbv1_get_blkcss(struct mem_cgroup *memcg)
 	struct cgroup_subsys_state *blkcg_css;
 
 	rcu_read_lock();
-	blkcg_css = memcg->wb_blk_css;
-	if (!css_tryget_online(blkcg_css)) {
+	blkcg_css = READ_ONCE(memcg->wb_blk_css);
+	if (!blkcg_css || !css_tryget_online(blkcg_css)) {
 		blkcg_css = blkcg_root_css;
 		css_get(blkcg_css);
 	}
@@ -1067,6 +1067,7 @@ EXPORT_SYMBOL(wait_iff_congested);
 #include "../kernel/cgroup/cgroup-internal.h"
 
 static bool cgroup1_writeback __read_mostly;
+DEFINE_SPINLOCK(wb_blk_memlist_lock);
 
 bool cgroup1_writeback_enabled(void)
 {
@@ -1080,6 +1081,7 @@ static void wb_kill_memcg(struct cgroup_subsys_state *memcg_css)
 
 	list_del_init(&memcg->memcg_node);
 	css_put(memcg->wb_blk_css);
+	memcg->wb_blk_css = NULL;
 }
 
 static void wb_kill_blkcg(struct cgroup_subsys_state *blkcg_css)
@@ -1103,26 +1105,26 @@ void wb_kill_memcg_blkcg(struct cgroup_subsys_state *css)
 	if (!cgroup1_writeback)
 		return;
 
-	lockdep_assert_held(&cgroup_mutex);
-
+	spin_lock(&wb_blk_memlist_lock);
 	if (ss->id == io_cgrp_id)
 		wb_kill_blkcg(css);
 	else if (ss->id == memory_cgrp_id)
 		wb_kill_memcg(css);
+	spin_unlock(&wb_blk_memlist_lock);
 }
 
 void wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
 			      struct cgroup_subsys_state *blkcg_css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(memcg_css);
-	struct cgroup_subsys_state *pre_blkcss = memcg->wb_blk_css;
+	struct cgroup_subsys_state *pre_blkcss = NULL;
 	struct blkcg *blkcg = css_to_blkcg(blkcg_css);
 
 	if (!cgroup1_writeback)
 		return;
 
-	lockdep_assert_held(&cgroup_mutex);
-
+	spin_lock(&wb_blk_memlist_lock);
+	pre_blkcss = memcg->wb_blk_css;
 	css_get(blkcg_css);
 	memcg->wb_blk_css = blkcg_css;
 	if (pre_blkcss == NULL)
@@ -1131,6 +1133,7 @@ void wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
 		list_move(&memcg->memcg_node, &blkcg->memcg_list);
 		css_put(pre_blkcss);
 	}
+	spin_unlock(&wb_blk_memlist_lock);
 }
 
 static int __init enable_cgroup1_writeback(char *s)
