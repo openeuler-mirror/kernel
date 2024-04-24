@@ -316,9 +316,10 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u32 port_num,
 	if (ret)
 		ibdev_warn(ib_dev, "failed to get speed, ret = %d.\n", ret);
 
+	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
+
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
-	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
 	if (!net_dev)
 		net_dev = get_hr_netdev(hr_dev, port);
 	if (!net_dev) {
@@ -1319,6 +1320,7 @@ err_uar_table_free:
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&hr_dev->pgdir_mutex);
+	mutex_destroy(&hr_dev->uctx_list_mutex);
 
 	return ret;
 }
@@ -1447,16 +1449,21 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		}
 	}
 
+	ret = hns_roce_alloc_scc_param(hr_dev);
+	if (ret)
+		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
+			ret);
+
 	ret = hns_roce_register_device(hr_dev);
 	if (ret)
 		goto error_failed_register_device;
 
-	hns_roce_register_sysfs(hr_dev);
 	hns_roce_register_debugfs(hr_dev);
 
 	return 0;
 
 error_failed_register_device:
+	hns_roce_dealloc_scc_param(hr_dev);
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
 
@@ -1486,8 +1493,8 @@ error_failed_alloc_dfx_cnt:
 
 void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 {
-	hns_roce_unregister_sysfs(hr_dev);
 	hns_roce_unregister_device(hr_dev, bond_cleanup);
+	hns_roce_dealloc_scc_param(hr_dev);
 	hns_roce_unregister_debugfs(hr_dev);
 
 	if (hr_dev->hw->hw_exit)

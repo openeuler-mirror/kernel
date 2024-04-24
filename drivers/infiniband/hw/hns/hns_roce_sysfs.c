@@ -33,7 +33,7 @@ static void get_default_scc_param(struct hns_roce_dev *hr_dev)
 	}
 }
 
-static int alloc_scc_param(struct hns_roce_dev *hr_dev)
+int hns_roce_alloc_scc_param(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_scc_param *scc_param;
 	int i;
@@ -55,6 +55,19 @@ static int alloc_scc_param(struct hns_roce_dev *hr_dev)
 	get_default_scc_param(hr_dev);
 
 	return 0;
+}
+void hns_roce_dealloc_scc_param(struct hns_roce_dev *hr_dev)
+{
+	int i;
+
+	if (!hr_dev->scc_param)
+		return;
+
+	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++)
+		cancel_delayed_work_sync(&hr_dev->scc_param[i].scc_cfg_dwork);
+
+	kvfree(hr_dev->scc_param);
+	hr_dev->scc_param = NULL;
 }
 
 struct hns_port_cc_attr {
@@ -158,11 +171,14 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	struct ib_device *ibdev = ib_port_sysfs_get_ibdev_kobj(kobj, &port_num);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibdev);
 
+	if (!hr_dev->scc_param)
+		return 0;
+
 	if (hr_dev->is_vf ||
 	    !(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL))
 		return 0;
 
-	if (!(hr_dev->caps.default_cong_type & (1 << scc_attr->algo_type)))
+	if (!(hr_dev->caps.cong_cap & (1 << scc_attr->algo_type)))
 		return 0;
 
 	return 0644;
@@ -328,19 +344,3 @@ const struct attribute_group *hns_attr_port_groups[] = {
 	&dip_cc_param_group,
 	NULL,
 };
-
-void hns_roce_register_sysfs(struct hns_roce_dev *hr_dev)
-{
-	int ret;
-
-	ret = alloc_scc_param(hr_dev);
-	if (ret)
-		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
-			ret);
-}
-
-void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev)
-{
-	if (hr_dev->scc_param)
-		kvfree(hr_dev->scc_param);
-}

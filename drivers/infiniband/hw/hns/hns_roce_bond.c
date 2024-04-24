@@ -629,6 +629,7 @@ int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 
 	completion_no_waiter = completion_done(&bond_grp->bond_work_done);
 	complete(&bond_grp->bond_work_done);
+	mutex_destroy(&bond_grp->bond_mutex);
 	if (completion_no_waiter)
 		kfree(bond_grp);
 
@@ -780,6 +781,7 @@ static struct hns_roce_bond_group *hns_roce_alloc_bond_grp(struct hns_roce_dev *
 	if (ret) {
 		ibdev_err(&main_hr_dev->ib_dev,
 			  "failed to alloc bond ID, ret = %d.\n", ret);
+		mutex_destroy(&bond_grp->bond_mutex);
 		kfree(bond_grp);
 		return NULL;
 	}
