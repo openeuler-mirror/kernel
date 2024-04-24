@@ -1152,9 +1152,9 @@ struct hns_roce_dev {
 	struct notifier_block bond_nb;
 
 	struct list_head mtr_unfree_list; /* list of unfree mtr on this dev */
-	spinlock_t mtr_unfree_list_lock; /* protect mtr_unfree_list */
+	struct mutex mtr_unfree_list_mutex; /* protect mtr_unfree_list */
 	struct list_head umem_unfree_list; /* list of unfree umem on this dev */
-	spinlock_t umem_unfree_list_lock; /* protect umem_unfree_list */
+	struct mutex umem_unfree_list_mutex; /* protect umem_unfree_list */
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
