@@ -1751,7 +1751,7 @@ unlock:
 EXPORT_SYMBOL(xa_store_range);
 
 /**
- * xas_get_order() - Get the order of an loaded entry after xas_load.
+ * xas_get_order() - Get the order of an entry.
  * @xas: XArray operation state.
  *
  * Called after xas_load, the xas should not be in an error state.
@@ -1770,7 +1770,7 @@ int xas_get_order(struct xa_state *xas)
 
 		if (slot >= XA_CHUNK_SIZE)
 			break;
-		if (!xa_is_sibling(xas->xa_node->slots[slot]))
+		if (!xa_is_sibling(xa_entry(xas->xa, xas->xa_node, slot)))
 			break;
 		order++;
 	}
