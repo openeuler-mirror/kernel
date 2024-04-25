@@ -76,6 +76,9 @@ static const char * const vf_dev_state[] = {
 	"Running",
 	"Stop & Copying",
 	"Resuming",
+	"Running_P2P",
+	"Pre_Copy",
+	"Pre_Copy_P2P",
 };
 
 struct acc_vf_data {
