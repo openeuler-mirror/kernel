@@ -58,7 +58,8 @@ static void udma_fill_jetty_um_qp_attr(struct udma_dev *dev,
 	if (jetty->ubcore_jetty.jetty_cfg.priority >= dev->caps.sl_num) {
 		qp_attr->priority =
 			dev->caps.sl_num > 0 ? dev->caps.sl_num - 1 : 0;
-		dev_err(dev->dev, "The setted priority (%d) should smaller than the max priority (%d), priority (%d) is used\n",
+		dev_err(dev->dev,
+			"set priority (%u) should smaller than the MAX (%u), (%u) is used\n",
 			jetty->ubcore_jetty.jetty_cfg.priority,
 			dev->caps.sl_num, qp_attr->priority);
 	} else {
@@ -217,7 +218,7 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 
 static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 			   struct ubcore_jetty_cfg *cfg,
-			   struct udma_create_jetty_ucmd *ucmd,
+			   struct hns3_udma_create_jetty_ucmd *ucmd,
 			   struct ubcore_udata *udata)
 {
 	struct udma_buf_attr buf_attr = {};
@@ -276,7 +277,7 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 }
 
 static int alloc_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty,
-				 struct udma_create_jetty_ucmd *ucmd)
+				 struct hns3_udma_create_jetty_ucmd *ucmd)
 {
 	struct udma_jetty_table *jetty_table = &udma_dev->jetty_table;
 	int ret;
@@ -400,7 +401,7 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 				       struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct udma_create_jetty_ucmd ucmd = {};
+	struct hns3_udma_create_jetty_ucmd ucmd = {};
 	struct udma_jetty *jetty;
 	int ret;
 

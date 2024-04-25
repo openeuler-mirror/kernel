@@ -31,7 +31,7 @@ int udma_user_ctl_flush_cqe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 
 	ret = (int)copy_from_user(&fcp, (void *)in->addr,
 				  sizeof(struct flush_cqe_param));
-	if (ret != 0) {
+	if (ret) {
 		dev_err(udma_device->dev,
 			"copy_from_user failed in flush_cqe, ret:%d.\n", ret);
 		return -EFAULT;
@@ -203,8 +203,8 @@ int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 			    struct ubcore_user_ctl_out *out,
 			    struct ubcore_udrv_priv *udrv_data)
 {
-	struct udma_poe_info poe_info_out;
-	struct udma_poe_info poe_info_in;
+	struct udma_poe_info poe_info_out = {};
+	struct udma_poe_info poe_info_in = {};
 	struct udma_dev *udma_device;
 	uint64_t poe_addr;
 	bool poe_en;
@@ -245,7 +245,7 @@ int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	ret = (int)copy_to_user((void *)out->addr, &poe_info_out,
 			   min(out->len,
 			       (uint32_t)sizeof(struct udma_poe_info)));
-	if (ret != 0) {
+	if (ret) {
 		dev_err(udma_device->dev, "cp to user failed in query poe, ret:%d.\n",
 			ret);
 		return -EFAULT;
@@ -335,7 +335,7 @@ int udma_user_ctl_dca_shrink(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 				min(out->len,
 				    (uint32_t)sizeof(struct udma_dca_shrink_resp)));
 	if (ret) {
-		dev_err(udma_device->dev, "cp to user failed in  dca_shrink, ret:%d.\n",
+		dev_err(udma_device->dev, "cp to user failed in dca shrink, ret:%d.\n",
 			ret);
 		return -EFAULT;
 	}
@@ -476,7 +476,7 @@ static int udma_k_user_ctl_config_poe_chl(struct udma_dev *dev,
 					  struct ubcore_user_ctl_in *in,
 					  struct ubcore_user_ctl_out *out)
 {
-	struct udma_user_ctl_cfg_poe_channel_in cfg_in;
+	struct hns3_udma_user_ctl_cfg_poe_channel_in cfg_in;
 	int ret;
 
 	memcpy(&cfg_in, (void *)in->addr, min_t(uint32_t, in->len, sizeof(cfg_in)));
@@ -503,7 +503,7 @@ static int udma_k_user_ctl_notify_attr(struct udma_dev *dev,
 				       struct ubcore_user_ctl_in *in,
 				       struct ubcore_user_ctl_out *out)
 {
-	struct udma_user_ctl_config_notify_attr attr_in;
+	struct hns3_udma_user_ctl_config_notify_attr attr_in;
 
 	memcpy(&attr_in, (void *)in->addr, min_t(uint32_t, in->len, sizeof(attr_in)));
 	dev->notify_addr = attr_in.notify_addr;
@@ -515,7 +515,7 @@ static int udma_k_user_ctl_query_hw_id(struct udma_dev *dev,
 				       struct ubcore_user_ctl_in *in,
 				       struct ubcore_user_ctl_out *out)
 {
-	struct udma_user_ctl_query_hw_id_out info_out;
+	struct hns3_udma_user_ctl_query_hw_id_out info_out;
 
 	info_out.chip_id = dev->chip_id;
 	info_out.die_id = dev->die_id;
@@ -530,9 +530,9 @@ typedef int (*udma_k_user_ctl_ops)(struct udma_dev *dev,
 				   struct ubcore_user_ctl_out *out);
 
 static udma_k_user_ctl_ops g_udma_user_ctl_ops[] = {
-	[UDMA_K_USER_CTL_CONFIG_POE_CHANNEL] = udma_k_user_ctl_config_poe_chl,
-	[UDMA_K_USER_CTL_CONFIG_NOTIFY_ATTR] = udma_k_user_ctl_notify_attr,
-	[UDMA_K_USER_CTL_QUERY_HW_ID] = udma_k_user_ctl_query_hw_id,
+	[HNS3_UDMA_K_USER_CTL_CONFIG_POE_CHANNEL] = udma_k_user_ctl_config_poe_chl,
+	[HNS3_UDMA_K_USER_CTL_CONFIG_NOTIFY_ATTR] = udma_k_user_ctl_notify_attr,
+	[HNS3_UDMA_K_USER_CTL_QUERY_HW_ID] = udma_k_user_ctl_query_hw_id,
 };
 
 int udma_k_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *k_user_ctl)
@@ -541,7 +541,7 @@ int udma_k_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *k_user_ct
 	struct ubcore_user_ctl_in in = k_user_ctl->in;
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 
-	if (in.opcode >= UDMA_K_USER_CTL_OPCODE_NUM ||
+	if (in.opcode >= HNS3_UDMA_K_USER_CTL_OPCODE_NUM ||
 	    !g_udma_user_ctl_ops[in.opcode]) {
 		dev_err(udma_dev->dev, "bad kernel user ctl opcode: 0x%x.\n",
 			in.opcode);

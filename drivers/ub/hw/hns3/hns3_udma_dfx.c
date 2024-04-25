@@ -63,7 +63,7 @@ static int udma_dfx_query_context(struct udma_dev *udma_dev, uint32_t id,
 
 	mailbox = udma_alloc_cmd_mailbox(udma_dev);
 	if (IS_ERR(mailbox)) {
-		dev_err(udma_dev->dev, "alloc mailbox failed\n");
+		dev_err(udma_dev->dev, "alloc mailbox failed.\n");
 		ret = PTR_ERR(mailbox);
 		goto alloc_mailbox_fail;
 	}
@@ -114,12 +114,12 @@ static int udma_dfx_seg_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 
 	ret = udma_dfx_read_buf(str, p_buf);
 	if (ret) {
-		dev_info(udma_dev->dev, "the inputing is invalid\n");
+		dev_info(udma_dev->dev, "the inputing is invalid.\n");
 		return ret;
 	}
 
 	if (kstrtouint(str, 0, &seg_key)) {
-		dev_err(udma_dev->dev, "convert str failed\n");
+		dev_err(udma_dev->dev, "convert str failed.\n");
 		return -EINVAL;
 	}
 
@@ -127,7 +127,7 @@ static int udma_dfx_seg_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
 				     sizeof(mpt_entry), UDMA_CMD_QUERY_MPT);
 	if (ret) {
-		dev_err(udma_dev->dev, "query seg context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query seg context failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -166,7 +166,7 @@ static void udma_dfx_query_sccc(struct udma_dev *udma_dev, uint32_t sccc_id)
 				     udma_dev->caps.scc_ctx_sz,
 				     UDMA_CMD_QUERY_SCCC);
 	if (ret) {
-		dev_err(udma_dev->dev, "query sccc failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query sccc failed, ret = %d.\n", ret);
 		kfree(sccc);
 		return;
 	}
@@ -192,19 +192,19 @@ static int udma_dfx_tp_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 
 	ret = udma_dfx_read_buf(str, p_buf);
 	if (ret) {
-		dev_info(udma_dev->dev, "the inputing is invalid\n");
+		dev_info(udma_dev->dev, "the inputing is invalid.\n");
 		return ret;
 	}
 
 	if (kstrtouint(str, 0, &tpn)) {
-		dev_err(udma_dev->dev, "convert str failed\n");
+		dev_err(udma_dev->dev, "convert str failed.\n");
 		return -EINVAL;
 	}
 
 	ret = udma_dfx_query_context(udma_dev, tpn, &qp_context,
 				     sizeof(qp_context), UDMA_CMD_QUERY_QPC);
 	if (ret) {
-		dev_err(udma_dev->dev, "query qp context failed, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "query qp context failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -319,19 +319,19 @@ static int udma_dfx_jfc_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 
 	ret = udma_dfx_read_buf(str, p_buf);
 	if (ret) {
-		dev_info(udma_dev->dev, "the inputing is invalid\n");
+		dev_info(udma_dev->dev, "the inputing is invalid.\n");
 		return ret;
 	}
 
 	if (kstrtouint(str, 0, &jfcn)) {
-		dev_err(udma_dev->dev, "convert str failed\n");
+		dev_err(udma_dev->dev, "convert str failed.\n");
 		return -EINVAL;
 	}
 
 	ret = udma_dfx_query_context(udma_dev, jfcn, &jfc_context,
 				     sizeof(jfc_context), UDMA_CMD_QUERY_CQC);
 	if (ret) {
-		dev_info(udma_dev->dev, "query jfc context fail, ret = %d, jfcn = %u\n",
+		dev_info(udma_dev->dev, "query jfc context fail, ret = %d, jfcn = %u.\n",
 			 ret, jfcn);
 		return ret;
 	}
@@ -1024,7 +1024,7 @@ static int udma_dfx_add_sysfs(struct udma_dfx_info *udma_dfx)
 				   &dev->kobj,
 				   "%s", udma_dfx->dev.dev_name);
 	if (ret)
-		dev_err(drv_device, "kobject_init_and_add failed!\r\n");
+		dev_err(drv_device, "kobject_init_and_add failed.\r\n");
 
 	return ret;
 }
@@ -1102,7 +1102,7 @@ jfs_id_list_alloc_failed:
 	kfree(dfx->jfs_list);
 tpn_list_alloc_failed:
 	kfree(dfx->tpn_list);
-	dev_err(drv_device, "dfx alloc list failed\n");
+	dev_err(drv_device, "dfx alloc list failed.\n");
 
 	return ret;
 }
@@ -1146,7 +1146,7 @@ static int udma_dfx_add_udma_device(struct udma_dev *udma_dev)
 
 	if (udma_dev_count == MAX_UDMA_DEV) {
 		dev_err(drv_device,
-			"udma dfx add device failed, g_udma_dfx_list is full\n.");
+			"udma dfx add device failed, g_udma_dfx_list is full.\n.");
 		ret = -EINVAL;
 		goto g_udma_dfx_list_full;
 	}
@@ -1168,17 +1168,17 @@ static int udma_dfx_add_udma_device(struct udma_dev *udma_dev)
 		UBCORE_MAX_DEV_NAME);
 	ret = udma_dfx_list_init(i);
 	if (ret) {
-		dev_err(drv_device, "dfx add dev list failed\n");
+		dev_err(drv_device, "dfx add dev list failed.\n");
 		goto dfx_list_init_failed;
 	}
 
 	ret = g_udma_dfx_list[i].dfx->ops->add_sysfs(g_udma_dfx_list[i].dfx);
 	if (ret) {
-		dev_err(drv_device, "dfx add sysfs failed\n");
+		dev_err(drv_device, "dfx add sysfs failed.\n");
 		goto add_sysfs_failed;
 	}
 
-	dev_info(drv_device, "add udma device (%s) in udma dfx\n",
+	dev_info(drv_device, "add udma device (%s) in udma dfx.\n",
 		 g_udma_dfx_list[i].dfx->dev.dev_name);
 
 	udma_dev_count++;
@@ -1202,14 +1202,14 @@ static int udma_dfx_chrdev_create(struct udma_dev *udma_dev)
 
 	major = register_chrdev(0, DFX_DEVICE_NAME, &chr_ops);
 	if (major < 0) {
-		dev_err(udma_dev->dev, "udma dfx register the character device failed\n");
+		dev_err(udma_dev->dev, "udma dfx register the character device failed.\n");
 		ret = major;
 		goto device_register_failed;
 	}
 
 	drv_class = class_create(THIS_MODULE, DFX_DEVICE_NAME);
 	if (IS_ERR(drv_class)) {
-		dev_err(udma_dev->dev, "udma dfx class create failed\n");
+		dev_err(udma_dev->dev, "udma dfx class create failed.\n");
 		ret = (int)PTR_ERR(drv_class);
 		goto class_create_failed;
 	}
@@ -1217,7 +1217,7 @@ static int udma_dfx_chrdev_create(struct udma_dev *udma_dev)
 	drv_device = device_create(drv_class, NULL, MKDEV(major, 0),
 				   NULL, DFX_DEVICE_NAME);
 	if (IS_ERR(drv_device)) {
-		dev_err(udma_dev->dev, "udma dfx create device failed\n");
+		dev_err(udma_dev->dev, "udma dfx create device failed.\n");
 		ret = (int)PTR_ERR(drv_device);
 		goto device_create_failed;
 	}
@@ -1268,7 +1268,7 @@ int udma_dfx_init(struct udma_dev *udma_dev)
 
 add_device_failed:
 	if (!udma_dev_count) {
-		dev_info(drv_device, "udma dfx remove chr device\n");
+		dev_info(drv_device, "udma dfx remove chr device.\n");
 		udma_dfx_chrdev_destroy();
 	}
 chrdev_create_failed:
@@ -1282,7 +1282,7 @@ static void udma_dfx_remove_udma_device(struct udma_dev *udma_dev)
 	for (i = 0; i < MAX_UDMA_DEV; i++) {
 		write_lock(&g_udma_dfx_list[i].rwlock);
 		if (g_udma_dfx_list[i].dev && g_udma_dfx_list[i].dev == udma_dev) {
-			dev_info(drv_device, "remove udma device (%s) from udma dfx\n",
+			dev_info(drv_device, "remove udma device (%s) from udma dfx.\n",
 				 g_udma_dfx_list[i].dfx->dev.dev_name);
 			g_udma_dfx_list[i].dfx->ops->del_sysfs(g_udma_dfx_list[i].dfx);
 			udma_dfx_list_free(i);
@@ -1301,13 +1301,13 @@ static void udma_dfx_remove_udma_device(struct udma_dev *udma_dev)
 void udma_dfx_uninit(struct udma_dev *udma_dev)
 {
 	if (!udma_dev_count) {
-		dev_err(udma_dev->dev, "no udma dfx device\n");
+		dev_err(udma_dev->dev, "no udma dfx device.\n");
 		return;
 	}
 
 	udma_dfx_remove_udma_device(udma_dev);
 	if (!udma_dev_count) {
-		dev_info(drv_device, "udma dfx remove chr device\n");
+		dev_info(drv_device, "udma dfx remove chr device.\n");
 		udma_dfx_chrdev_destroy();
 	}
 }

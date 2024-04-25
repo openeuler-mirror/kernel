@@ -299,7 +299,7 @@ static void copy_attr_to_pre_tp(struct udma_dev *udma_device,
 	to_qp->dca_ctx = from_qp->dca_ctx;
 	to_qp->en_flags = from_qp->en_flags;
 	to_qp->buff_size = from_qp->buff_size;
-	if (to_qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)
+	if (to_qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)
 		udma_enable_dca(udma_device, to_qp);
 
 	udma_mtr_move(&from_qp->mtr, &to_qp->mtr);
@@ -333,7 +333,7 @@ static int udma_store_jetty_tp(struct udma_dev *udma_device,
 		tjetty_hash =
 			udma_get_jetty_hash(&jetty->rc_node.tjetty_id);
 		if (tjetty_hash == hash &&
-		    (tp->qp.en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) {
+			(tp->qp.en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) {
 			copy_attr_to_pre_tp(udma_device, &tp->qp,
 					    &jetty->rc_node.tp->qp);
 			*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;

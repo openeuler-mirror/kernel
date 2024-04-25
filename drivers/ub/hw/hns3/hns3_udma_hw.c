@@ -1748,7 +1748,7 @@ static void udma_init_bank(struct udma_dev *dev)
 	dev->bank[0].next = dev->bank[0].min;
 
 	qpn_shift = dev->caps.num_qps_shift - UDMA_DEFAULT_MAX_JETTY_X_SHIFT -
-		    UDMA_JETTY_X_PREFIX_BIT_NUM;
+		    HNS3_UDMA_JETTY_X_PREFIX_BIT_NUM;
 	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
 		ida_init(&dev->bank[i].ida);
 		dev->bank[i].max = (1U << qpn_shift) / UDMA_QP_BANK_NUM - 1;

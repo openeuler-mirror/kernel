@@ -68,7 +68,7 @@ static int alloc_seg_key(struct udma_dev *udma_dev, struct udma_seg *seg)
 	id = ida_alloc_range(&seg_ida->ida, seg_ida->min, seg_ida->max,
 			     GFP_KERNEL);
 	if (id < 0) {
-		dev_err(udma_dev->dev, "failed to alloc id for MR key, id(%d)\n",
+		dev_err(udma_dev->dev, "failed to alloc id for MR key, id(%d).\n",
 			id);
 		return -ENOMEM;
 	}
@@ -249,7 +249,7 @@ static void store_seg_id(struct udma_dev *udma_dev, struct udma_seg *seg)
 
 	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table, seg->ctx->eid_index);
 	if (IS_ERR_OR_NULL(udma_eid)) {
-		dev_err(udma_dev->dev, "failed to find eid, index = %d\n.",
+		dev_err(udma_dev->dev, "failed to find eid, index = %d.\n",
 			seg->ctx->eid_index);
 		return;
 	}
@@ -332,7 +332,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
 	struct udma_seg *seg;
 	int ret;
 
-	if (cfg->flag.bs.access >= URMA_SEG_ACCESS_GUARD) {
+	if (cfg->flag.bs.access >= HNS3_URMA_SEG_ACCESS_GUARD) {
 		dev_err(udma_dev->dev, "invalid segment access 0x%x.\n",
 			cfg->flag.bs.access);
 		return NULL;

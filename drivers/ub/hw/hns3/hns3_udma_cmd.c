@@ -284,13 +284,13 @@ static void dump_desc(struct udma_dev *dev,
 	    ((desc->data[SUB_OPCODE_IDX] & 0xFF) ==
 	     UDMA_CMD_WRITE_CQC_TIMER_BT0))
 		dev_err_ratelimited(dev->dev,
-			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x, mlbox: %08x\n",
+			"send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x, mlbox: %08x\n",
 			desc->opcode, desc->data[0], desc->data[1],
 			desc->data[2], desc->data[3], desc->data[4],
 			desc->data[5], num_mailbox);
 	else
 		dev_info_ratelimited(dev->dev,
-			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x, mlbox: %08x\n",
+			"send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x, mlbox: %08x\n",
 			desc->opcode, desc->data[0], desc->data[1],
 			desc->data[2], desc->data[3], desc->data[4],
 			desc->data[5], num_mailbox);

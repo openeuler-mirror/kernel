@@ -13,36 +13,36 @@
  *
  */
 
-#ifndef _UDMA_USER_CTL_API_H
-#define _UDMA_USER_CTL_API_H
+#ifndef _HNS3_UDMA_USER_CTL_API_H
+#define _HNS3_UDMA_USER_CTL_API_H
 
-struct udma_user_ctl_poe_init_attr {
+struct hns3_udma_user_ctl_poe_init_attr {
 	uint64_t rsv; /* reserved for extension, now must be 0 */
 	uint64_t poe_addr; /* 0 for disable */
 };
 
-struct udma_user_ctl_cfg_poe_channel_in {
-	struct udma_user_ctl_poe_init_attr *init_attr;
+struct hns3_udma_user_ctl_cfg_poe_channel_in {
+	struct hns3_udma_user_ctl_poe_init_attr *init_attr;
 	uint8_t poe_channel;
 };
 
-struct udma_user_ctl_config_notify_attr {
+struct hns3_udma_user_ctl_config_notify_attr {
 	uint64_t notify_addr;
 	uint64_t reserved;
 };
 
-struct udma_user_ctl_query_hw_id_out {
+struct hns3_udma_user_ctl_query_hw_id_out {
 	uint32_t chip_id;
 	uint32_t die_id;
 	uint32_t func_id;
 	uint32_t reserved;
 };
 
-enum udma_k_user_ctl_opcode {
-	UDMA_K_USER_CTL_CONFIG_POE_CHANNEL,
-	UDMA_K_USER_CTL_CONFIG_NOTIFY_ATTR,
-	UDMA_K_USER_CTL_QUERY_HW_ID,
-	UDMA_K_USER_CTL_OPCODE_NUM,
+enum hns3_udma_k_user_ctl_opcode {
+	HNS3_UDMA_K_USER_CTL_CONFIG_POE_CHANNEL,
+	HNS3_UDMA_K_USER_CTL_CONFIG_NOTIFY_ATTR,
+	HNS3_UDMA_K_USER_CTL_QUERY_HW_ID,
+	HNS3_UDMA_K_USER_CTL_OPCODE_NUM,
 };
 
-#endif /* _UDMA_USER_CTL_API_H */
+#endif /* _HNS3_UDMA_USER_CTL_API_H */
