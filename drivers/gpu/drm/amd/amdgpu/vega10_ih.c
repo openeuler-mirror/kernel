@@ -215,6 +215,12 @@ static u32 vega10_ih_get_wptr(struct amdgpu_device *adev)
 		tmp = RREG32_NO_KIQ(SOC15_REG_OFFSET(OSSSYS, 0, mmIH_RB_CNTL));
 		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 1);
 		WREG32_NO_KIQ(SOC15_REG_OFFSET(OSSSYS, 0, mmIH_RB_CNTL), tmp);
+
+		/* Unset the CLEAR_OVERFLOW bit immediately so new overflows
+		 * can be detected.
+		 */
+		tmp = REG_SET_FIELD(tmp, IH_RB_CNTL, WPTR_OVERFLOW_CLEAR, 0);
+		WREG32_NO_KIQ(SOC15_REG_OFFSET(OSSSYS, 0, mmIH_RB_CNTL), tmp);
 	}
 	return (wptr & adev->irq.ih.ptr_mask);
 }
