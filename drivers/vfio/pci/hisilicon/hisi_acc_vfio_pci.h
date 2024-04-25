@@ -4,7 +4,17 @@
 #ifndef HISI_ACC_VFIO_PCI_H
 #define HISI_ACC_VFIO_PCI_H
 
+#include <linux/debugfs.h>
+#include <linux/file.h>
 #include <linux/hisi_acc_qm.h>
+#include <linux/pci.h>
+#include <linux/vfio.h>
+#include <linux/vfio_pci_core.h>
+
+#define VFIO_DEV_DBG_LEN		256
+#define VFIO_DBG_LOG_LEN		16
+#define S_GRDO		0444
+#define S_GWRO		0644
 
 #define MB_POLL_PERIOD_US		10
 #define MB_POLL_TIMEOUT_US		1000
@@ -51,6 +61,22 @@
 
 #define QM_EQC_DW0		0X8000
 #define QM_AEQC_DW0		0X8020
+
+enum mig_debug_cmd {
+	STATE_SAVE,
+	STATE_RESUME,
+	MB_TEST,
+	MIG_DATA_DUMP,
+	MIG_DEV_SHOW,
+};
+
+static const char * const vf_dev_state[] = {
+	"Error",
+	"Stop",
+	"Running",
+	"Stop & Copying",
+	"Resuming",
+};
 
 struct acc_vf_data {
 #define QM_MATCH_SIZE offsetofend(struct acc_vf_data, qm_rsv_state)
@@ -116,5 +142,8 @@ struct hisi_acc_vf_core_device {
 	spinlock_t reset_lock;
 	struct hisi_acc_vf_migration_file *resuming_migf;
 	struct hisi_acc_vf_migration_file *saving_migf;
+	/* for debugfs */
+	struct dentry *debug_root;
+	struct hisi_acc_vf_migration_file *debug_migf;
 };
 #endif /* HISI_ACC_VFIO_PCI_H */
