@@ -21,6 +21,8 @@
 #include "hns3_udma_cmd.h"
 
 static int debug_switch = 1;
+static int cnt_mailbox = 1;
+
 int udma_cmd_init(struct udma_dev *udma_dev)
 {
 	sema_init(&udma_dev->cmd.poll_sem, 1);
@@ -268,24 +270,30 @@ void udma_cmq_setup_basic_desc(struct udma_cmq_desc *desc,
 static void dump_desc(struct udma_dev *dev,
 		      struct udma_cmq_desc *desc)
 {
-	if (desc->opcode == UDMA_OPC_QUERY_MB_ST)
+	static int num_mailbox;
+
+	if (desc->opcode == UDMA_OPC_QUERY_MB_ST ||
+	    desc->opcode == UDMA_OPC_CFG_GMV_BT)
 		return;
+
+	if (desc->opcode == UDMA_OPC_POST_MB && cnt_mailbox)
+		++num_mailbox;
 
 	if (((desc->data[SUB_OPCODE_IDX] & 0xFF) ==
 	     UDMA_CMD_WRITE_QPC_TIMER_BT0) ||
 	    ((desc->data[SUB_OPCODE_IDX] & 0xFF) ==
 	     UDMA_CMD_WRITE_CQC_TIMER_BT0))
 		dev_err_ratelimited(dev->dev,
-			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x\n",
-			desc->opcode, desc->data[0],
-			desc->data[1], desc->data[2],
-			desc->data[3], desc->data[4], desc->data[5]);
+			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x, mlbox: %08x\n",
+			desc->opcode, desc->data[0], desc->data[1],
+			desc->data[2], desc->data[3], desc->data[4],
+			desc->data[5], num_mailbox);
 	else
 		dev_info_ratelimited(dev->dev,
-			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x\n",
-			desc->opcode, desc->data[0],
-			desc->data[1], desc->data[2],
-			desc->data[3], desc->data[4], desc->data[5]);
+			"Send cmd opcode:0x%4x, data: %08x %08x %08x %08x %08x %08x, mlbox: %08x\n",
+			desc->opcode, desc->data[0], desc->data[1],
+			desc->data[2], desc->data[3], desc->data[4],
+			desc->data[5], num_mailbox);
 }
 
 static int __udma_cmq_send(struct udma_dev *dev, struct udma_cmq_desc *desc,
@@ -609,3 +617,6 @@ int udma_cmd_mbox(struct udma_dev *dev, struct udma_cmq_desc *desc,
 
 module_param(debug_switch, int, 0444);
 MODULE_PARM_DESC(debug_switch, "set debug print ON, default: 1");
+
+module_param(cnt_mailbox, int, 0444);
+MODULE_PARM_DESC(cnt_mailbox, "Count the number of mailbox, default: 1");

@@ -43,6 +43,7 @@ enum {
 	HEM_TYPE_SCCC,
 	HEM_TYPE_QPC_TIMER,
 	HEM_TYPE_CQC_TIMER,
+	/* GID MAC VLAN */
 	HEM_TYPE_GMV,
 
 	/* UDMA UNMAP HEM */
@@ -147,7 +148,7 @@ int udma_mtr_find(struct udma_dev *udma_device, struct udma_mtr *mtr,
 void udma_mtr_move(struct udma_mtr *from_mtr, struct udma_mtr *to_mtr);
 
 int udma_mtr_map(struct udma_dev *dev, struct udma_mtr *mtr,
-		 dma_addr_t *pages, uint32_t page_count);
+		 dma_addr_t *pages, uint32_t page_cnt);
 
 static inline void udma_hem_first(struct udma_hem *hem,
 				  struct udma_hem_iter *iter)

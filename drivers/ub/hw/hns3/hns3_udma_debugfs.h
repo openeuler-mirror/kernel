@@ -17,6 +17,7 @@
 #define __UDMA_DEBUGFS_H
 
 #define KB 1024
+#define KB_SHIFT 10
 #define DCA_CTX_PID_LEN 10
 #define DCA_CTX_STATE_LEN 22
 

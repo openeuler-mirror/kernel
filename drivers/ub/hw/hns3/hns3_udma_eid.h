@@ -29,7 +29,6 @@
 #define CFG_GMV_TB_VF_SGID_TYPE_M GENMASK(1, 0)
 #define CFG_GMV_TB_VF_SMAC_L_M GENMASK(31, 16)
 
-#define UDMA_NON_VIRTUALIZATION_FE_ID 0xffff
 #define UDMA_IPV4_MAP_IPV6_PREFIX 0x0000ffff
 
 enum udma_sgid_type {

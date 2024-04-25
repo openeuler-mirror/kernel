@@ -16,17 +16,16 @@
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
 #include <linux/module.h>
-#include "hns3_udma_abi.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_jfr.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_hem.h"
+#include "hns3_udma_abi.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_tp.h"
 #include "hns3_udma_db.h"
-#include "hns3_udma_qp.h"
 #include "hns3_udma_eid.h"
 
 static bool um_spray_en;
@@ -698,7 +697,7 @@ static int udma_set_cong_fields(struct udma_qp_context *context,
 	ret = get_dip_ctx_idx(qp, &dip_idx);
 	if (ret) {
 		dev_err(qp->udma_device->dev,
-				"failed to fill congest, ret = %d.\n", ret);
+			"failed to fill congest, ret = %d.\n", ret);
 		goto out;
 	}
 	qp->dip_idx = (int64_t)dip_idx;
@@ -805,22 +804,6 @@ static void udma_set_oor_field(struct udma_qp *qp,
 		udma_reg_write(&context->ext, QPCEX_REORDER_CQ_SHIFT,
 			       udma_dev->caps.reorder_cq_shift);
 		udma_reg_clear(&context_mask->ext, QPCEX_REORDER_CQ_SHIFT);
-	}
-}
-
-static int udma_mtu_enum_to_int(enum ubcore_mtu mtu)
-{
-	switch (mtu) {
-	case UBCORE_MTU_256:
-		return UDMA_MTU_VAL_256;
-	case UBCORE_MTU_512:
-		return UDMA_MTU_VAL_512;
-	case UBCORE_MTU_1024:
-		return UDMA_MTU_VAL_1024;
-	case UBCORE_MTU_2048:
-		return UDMA_MTU_VAL_2048;
-	default:
-		return UDMA_MTU_VAL_4096;
 	}
 }
 
@@ -957,21 +940,16 @@ static void udma_set_um_attr(struct udma_qp *qp,
 			     struct udma_qp_context *context,
 			     struct udma_qp_context *context_mask)
 {
-	uint8_t lp_pktn_ini;
-
 	qp->ubcore_path_mtu = get_mtu(qp, NULL);
 	qp->path_mtu = to_udma_mtu(qp->ubcore_path_mtu);
 	udma_reg_write(context, QPC_MTU, qp->path_mtu);
 	udma_reg_clear(context_mask, QPC_MTU);
 
-	/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 16KB */
-	lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / udma_mtu_enum_to_int(qp->path_mtu));
-
-	udma_reg_write(context, QPC_LP_PKTN_INI, lp_pktn_ini);
+	udma_reg_write(context, QPC_LP_PKTN_INI, 0);
 	udma_reg_clear(context_mask, QPC_LP_PKTN_INI);
 
 	/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
-	udma_reg_write(context, QPC_ACK_REQ_FREQ, lp_pktn_ini);
+	udma_reg_write(context, QPC_ACK_REQ_FREQ, 0);
 	udma_reg_clear(context_mask, QPC_ACK_REQ_FREQ);
 }
 
@@ -1154,15 +1132,19 @@ int fill_jetty_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	qp_attr->jfr = udma_jetty->udma_jfr;
 	qp_attr->uctx = udma_jetty->udma_jfr->ubcore_jfr.uctx;
 	qp_attr->qpn_map = &udma_jetty->qpn_map;
-	qp_attr->recv_jfc =
-		to_udma_jfc(udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.jfc);
+	qp_attr->recv_jfc = to_udma_jfc(udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.jfc);
 
 	qp_attr->qp_type = QPT_RC;
-	qp_attr->cap.min_rnr_timer =
-		udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
+	qp_attr->cap.min_rnr_timer = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
 
 	qp_attr->cap.ack_timeout = jetty->jetty_cfg.err_timeout;
 	qp_attr->cap.rnr_retry = jetty->jetty_cfg.rnr_retry;
+
+	if (is_rc_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
+	    !qp_attr->jetty->dca_en) {
+		qp_attr->cap.max_recv_wr = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.depth;
+		qp_attr->cap.max_recv_sge = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.max_sge;
+	}
 
 	return 0;
 }
@@ -1245,6 +1227,9 @@ static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
 
 	/* Select the max data set by the user */
 	qp->sq.max_gs = max(ext_sge_cnt, cap->max_send_sge);
+
+	if (is_rc_jetty(&qp->qp_attr))
+		qp->sge.offset = qp->qp_attr.jetty->rc_node.sge_offset;
 
 	wqe_sge_cnt = get_wqe_ext_sge_cnt(qp);
 	/* If the number of extended sge is not zero, they MUST use the
@@ -1434,42 +1419,14 @@ void free_common_qpn(struct udma_dev *udma_dev, uint32_t qpn)
 
 static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp, bool is_target)
 {
-	struct udma_qpn_bitmap *qpn_map = qp->qp_attr.qpn_map;
 	struct udma_qp_attr *attr = &qp->qp_attr;
-	struct device *dev = udma_dev->dev;
-	uint32_t num = 0;
-	uint8_t bankid;
-	int ret;
 
-	if (attr->tp_mode == UBCORE_TP_RM) {
-		if (qpn_map->qpn_shift == 0 || qp->qp_type == QPT_UD) {
-			qp->qpn = gen_qpn(qpn_map->qpn_prefix,
-					  qpn_map->jid << qpn_map->qpn_shift, 0);
-		} else {
-			mutex_lock(&qpn_map->bank_mutex);
-			bankid = get_least_load_bankid_for_qp(qpn_map->bank,
-							      is_target ? attr->recv_jfc
-									: attr->send_jfc);
-			ret = alloc_qpn_with_bankid(&qpn_map->bank[bankid], bankid,
-						    &num);
-			if (ret) {
-				dev_err(dev, "failed to alloc QPN, ret = %d\n", ret);
-				mutex_unlock(&qpn_map->bank_mutex);
-				return ret;
-			}
-			qpn_map->bank[bankid].inuse++;
-			mutex_unlock(&qpn_map->bank_mutex);
-			qp->qpn = gen_qpn(qpn_map->qpn_prefix,
-					  qpn_map->jid << qpn_map->qpn_shift, num);
-		}
-	} else {
-		if (attr->is_jetty)
-			qp->qpn = attr->jetty->jetty_id;
-		else if (attr->jfs)
-			qp->qpn = attr->jfs->jfs_id;
-		else
-			qp->qpn = attr->jfr->jfrn;
-	}
+	if (attr->is_jetty)
+		qp->qpn = attr->jetty->jetty_id;
+	else if (attr->jfs)
+		qp->qpn = attr->jfs->jfs_id;
+	else
+		qp->qpn = attr->jfr->jfrn;
 
 	return 0;
 }
@@ -1574,18 +1531,8 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
-
-	if (dca_en) {
-		/* When enable DCA, there's no need to alloc buffer now, and
-		 * the page shift should be fixed to 4K.
-		 */
-		buf_attr->mtt_only = true;
-		buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
-	} else {
-		buf_attr->mtt_only = false;
-		buf_attr->page_shift = UDMA_HW_PAGE_SHIFT +
-				       udma_dev->caps.mtt_buf_pg_sz;
-	}
+	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
+	buf_attr->mtt_only = dca_en;
 
 	return 0;
 }
@@ -1829,9 +1776,15 @@ static int udma_qp_store(struct udma_dev *udma_dev,
 {
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct xarray *xa = &udma_dev->qp_table.xa;
-	int ret;
+	struct udma_qp *temp_qp;
+	unsigned long flags;
+	int ret = 0;
 
-	ret = xa_err(xa_store_irq(xa, qp->qpn, qp, GFP_KERNEL));
+	xa_lock_irqsave(xa, flags);
+	temp_qp = (struct udma_qp *)xa_load(xa, qp->qpn);
+	if (!temp_qp)
+		ret = xa_err(__xa_store(xa, qp->qpn, qp, GFP_KERNEL));
+	xa_unlock_irqrestore(xa, flags);
 	if (ret)
 		dev_err(udma_dev->dev, "Failed to xa store for QPC\n");
 	else
@@ -1842,7 +1795,8 @@ static int udma_qp_store(struct udma_dev *udma_dev,
 	return ret;
 }
 
-static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp)
+static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp,
+			   struct ubcore_tp *fail_ret_tp)
 {
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct xarray *xa = &udma_dev->qp_table.xa;
@@ -1854,7 +1808,8 @@ static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp)
 	recv_jfc = qp_attr->recv_jfc;
 
 	xa_lock_irqsave(xa, flags);
-	__xa_erase(xa, qp->qpn);
+	if (!fail_ret_tp)
+		__xa_erase(xa, qp->qpn);
 	xa_unlock_irqrestore(xa, flags);
 
 	spin_lock_irqsave(&udma_dev->qp_list_lock, flags);
@@ -1919,29 +1874,6 @@ static void free_qp_wqe(struct udma_dev *udma_dev, struct udma_qp *qp)
 	free_wqe_buf(udma_dev, qp);
 }
 
-static void free_qpn(struct udma_qp *qp)
-{
-	struct udma_qpn_bitmap *qpn_map = qp->qp_attr.qpn_map;
-	uint8_t bankid;
-
-	if (qp->qp_attr.tp_mode != UBCORE_TP_RM)
-		return;
-
-	if (qpn_map->qpn_shift == 0 || qp->qp_type == QPT_UD)
-		return;
-
-	bankid = get_qp_bankid(qp->qpn);
-
-	mutex_lock(&qpn_map->bank_mutex);
-	if (!ida_is_empty(&qpn_map->bank[bankid].ida)) {
-		ida_free(&qpn_map->bank[bankid].ida,
-			 (qp->qpn & GENMASK(qpn_map->qpn_shift - 1, 0)) >>
-			 QP_BANKID_SHIFT);
-	}
-	qpn_map->bank[bankid].inuse--;
-	mutex_unlock(&qpn_map->bank_mutex);
-}
-
 bool udma_qp_need_alloc_sq(struct udma_qp_attr *qp_attr)
 {
 	if (qp_attr->is_jetty) {
@@ -1965,22 +1897,11 @@ bool udma_qp_need_alloc_sq(struct udma_qp_attr *qp_attr)
 
 static uint32_t udma_get_jetty_qpn(struct udma_qp *qp)
 {
-	struct udma_tp *tp = container_of(qp, struct udma_tp, qp);
 	struct udma_jetty *jetty = qp->qp_attr.jetty;
 	uint32_t qpn = qp->qpn;
-	struct udma_tp *pre_tp;
-	uint32_t hash;
 
 	if (jetty->tp_mode == UBCORE_TP_RC && jetty->rc_node.tp != NULL)
 		qpn = jetty->rc_node.tpn;
-
-	if (jetty->tp_mode == UBCORE_TP_RM) {
-		hash = udma_get_jetty_hash(&tp->tjetty_id);
-		pre_tp =
-			(struct udma_tp *)xa_load(&jetty->srm_node_table, hash);
-		if (pre_tp)
-			qpn = pre_tp->qp.qpn;
-	}
 
 	return qpn;
 }
@@ -2123,7 +2044,7 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 	return 0;
 
 err_copy:
-	udma_qp_remove(udma_dev, qp);
+	udma_qp_remove(udma_dev, qp, NULL);
 err_store:
 	free_qpc(udma_dev, qp);
 err_qpc:
@@ -2132,14 +2053,14 @@ err_qpc:
 		free_qp_wqe(udma_dev, qp);
 	}
 err_sq:
-	free_qpn(qp);
 err_qpn:
 	return ret;
 }
 
-void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp)
+void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
+			    struct ubcore_tp *fail_ret_tp)
 {
-	udma_qp_remove(udma_dev, qp);
+	udma_qp_remove(udma_dev, qp, fail_ret_tp);
 
 	if (refcount_dec_and_test(&qp->refcount))
 		complete(&qp->free);
@@ -2150,7 +2071,6 @@ void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp)
 		free_qp_db(udma_dev, qp);
 		free_qp_wqe(udma_dev, qp);
 	}
-	free_qpn(qp);
 }
 
 int udma_init_qp_table(struct udma_dev *dev)

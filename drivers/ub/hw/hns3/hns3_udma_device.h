@@ -28,6 +28,10 @@
 
 #define BA_BYTE_LEN				8
 
+#ifndef ETH_ALEN
+#define ETH_ALEN				6
+#endif
+
 #define UDMA_INVALID_ID				0xffff
 
 /* Configure to HW for PAGE_SIZE larger than 4KB */
@@ -53,12 +57,14 @@
 #define UDMA_SGE_SHIFT				4
 #define UDMA_SGE_SIZE				16
 #define UDMA_IDX_QUE_ENTRY_SZ			4
+
 /* The minimum page size is 4K for hardware */
 #define UDMA_HW_PAGE_SHIFT			12
 #define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
-#define udma_hw_page_align(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
+#define UDMA_HW_PAGE_ALIGN(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
 
 #define UDMA_DWQE_SIZE				65536
+#define UDMA_DWQE_MMAP_QP_NUM			1024
 
 #define UDMA_HOP_NUM_0				0xff
 #define UDMA_CAP_FLAGS_EX_SHIFT			12
@@ -396,8 +402,6 @@ struct udma_work {
 	uint32_t		eq_ci;
 	int			eqn;
 };
-
-struct udma_dev;
 
 struct udma_db {
 	uint32_t	*db_record;
@@ -854,6 +858,7 @@ struct udma_dev {
 	struct xarray			eid_table;
 	uint64_t			dwqe_page;
 	uint64_t			dfx_cnt[UDMA_DFX_EQ_TOTAL];
+	/* record the stored qp under this device */
 	struct list_head		qp_list;
 	spinlock_t			qp_list_lock;
 	struct list_head		dip_list;
@@ -861,7 +866,7 @@ struct udma_dev {
 	struct udma_port		port_data[UDMA_MAX_PORTS];
 	struct udma_dev_debugfs		*dbgfs;
 	uint64_t			notify_addr;
-	bool				rm_support;
+	struct udma_bank		bank[UDMA_QP_BANK_NUM];
 };
 
 struct udma_seg {
@@ -922,7 +927,7 @@ static inline struct udma_seg *to_udma_seg(struct ubcore_target_seg *seg)
 static inline uint32_t to_udma_hem_entries_size(uint32_t count,
 						uint32_t buf_shift)
 {
-	return udma_hw_page_align(count << buf_shift);
+	return UDMA_HW_PAGE_ALIGN(count << buf_shift);
 }
 
 static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
@@ -933,7 +938,7 @@ static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)
 static inline uint32_t to_udma_hem_entries_count(uint32_t count,
 						 uint32_t buf_shift)
 {
-	return udma_hw_page_align(count << buf_shift) >> buf_shift;
+	return UDMA_HW_PAGE_ALIGN(count << buf_shift) >> buf_shift;
 }
 
 static inline uint32_t to_udma_hem_entries_shift(uint32_t count,

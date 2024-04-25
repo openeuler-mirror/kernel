@@ -16,12 +16,14 @@
 #include <linux/acpi.h>
 #include <linux/iommu.h>
 #include "hns3_udma_jfr.h"
+#include "hns3_udma_jfc.h"
 #include "hns3_udma_jfs.h"
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_dfx.h"
 #include "hns3_udma_tp.h"
+
 struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn)
 {
 	return (struct udma_qp *)xa_load(&udma_device->qp_table.xa, qpn);
@@ -50,7 +52,7 @@ struct udma_modify_tp_attr *udma_get_m_attr(struct ubcore_tp *tp, struct udma_qp
 	struct udma_modify_tp_attr *m_attr;
 
 	m_attr = kzalloc(sizeof(*m_attr), GFP_KERNEL);
-	if (m_attr == NULL)
+	if (!m_attr)
 		return NULL;
 
 	memcpy(m_attr->dmac, tp->peer_net_addr.mac, sizeof(m_attr->dmac));
@@ -128,34 +130,21 @@ void *udma_erase_tp(struct udma_tp *udma_tp)
 {
 	struct udma_qp_attr *qp_attr;
 	struct udma_jetty *jetty;
-	struct udma_tp *pre_tp;
 	struct udma_jfr *jfr;
 	struct udma_jfs *jfs;
-	uint32_t hash;
 
 	qp_attr = &udma_tp->qp.qp_attr;
 	jetty = qp_attr->jetty;
 	jfr = qp_attr->jfr;
 	jfs = qp_attr->jfs;
 
-	if (qp_attr->is_jetty) {
-		if (jetty->tp_mode == UBCORE_TP_RM) {
-			hash = udma_get_jetty_hash(&udma_tp->tjetty_id);
-			pre_tp = (struct udma_tp *)xa_load(&jetty->srm_node_table,
-							  hash);
-			if (!pre_tp)
-				return NULL;
+	if (qp_attr->is_jetty && jetty->tp_mode == UBCORE_TP_RC) {
+		if (jetty->rc_node.tp == NULL)
+			return NULL;
 
-			if (pre_tp->qp.qpn == udma_tp->qp.qpn)
-				xa_erase(&jetty->srm_node_table, hash);
-		} else if (jetty->tp_mode == UBCORE_TP_RC) {
-			if (jetty->rc_node.tp == NULL)
-				return NULL;
-
-			if (jetty->rc_node.tpn == udma_tp->ubcore_tp.tpn) {
-				jetty->rc_node.tp = NULL;
-				jetty->rc_node.tpn = 0;
-			}
+		if (jetty->rc_node.tpn == udma_tp->ubcore_tp.tpn) {
+			jetty->rc_node.tp = NULL;
+			jetty->rc_node.tpn = 0;
 		}
 	} else {
 		if (jfr)
@@ -272,7 +261,7 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 		}
 	}
 
-	udma_destroy_qp_common(udma_device, qp);
+	udma_destroy_qp_common(udma_device, qp, NULL);
 
 	kfree(udma_tp);
 
@@ -297,7 +286,7 @@ static void udma_set_tp(struct ubcore_device *dev, const struct ubcore_tp_cfg *c
 	tp->ubcore_tp.state = UBCORE_TP_STATE_RESET;
 }
 
-static void copy_attr_to_pre_tp(struct udma_dev *udma_device, bool is_rm,
+static void copy_attr_to_pre_tp(struct udma_dev *udma_device,
 				struct udma_qp *from_qp, struct udma_qp *to_qp)
 {
 	if (from_qp->qp_attr.is_tgt)
@@ -314,8 +303,6 @@ static void copy_attr_to_pre_tp(struct udma_dev *udma_device, bool is_rm,
 		udma_enable_dca(udma_device, to_qp);
 
 	udma_mtr_move(&from_qp->mtr, &to_qp->mtr);
-	if (is_rm)
-		copy_send_jfc(from_qp, to_qp);
 
 	to_qp->qp_attr.cap.max_send_wr = from_qp->qp_attr.cap.max_send_wr;
 	to_qp->qp_attr.cap.max_send_sge = from_qp->qp_attr.cap.max_send_sge;
@@ -330,47 +317,33 @@ static int udma_store_jetty_tp(struct udma_dev *udma_device,
 			       struct udma_jetty *jetty, struct udma_tp *tp,
 			       struct ubcore_tp **fail_ret_tp)
 {
-	struct udma_tp *pre_tp;
 	uint32_t tjetty_hash;
 	uint32_t hash;
 	int ret = 0;
 
 	hash = udma_get_jetty_hash(&tp->tjetty_id);
-	if (jetty->tp_mode == UBCORE_TP_RM) {
-		pre_tp = (struct udma_tp *)xa_load(&jetty->srm_node_table, hash);
-		if (pre_tp) {
-			copy_attr_to_pre_tp(udma_device, true, &tp->qp,
-					    &pre_tp->qp);
-			*fail_ret_tp = &pre_tp->ubcore_tp;
-			return 0;
-		}
+	if (jetty->tp_mode != UBCORE_TP_RC)
+		return 0;
 
-		ret = xa_err(xa_store(&jetty->srm_node_table,
-				      hash, tp, GFP_KERNEL));
-		if (ret)
-			dev_err(udma_device->dev,
-				"failed store jetty tp xarray, ret = %d\n", ret);
-	} else if (jetty->tp_mode == UBCORE_TP_RC) {
-		if (jetty->rc_node.tp == NULL) {
-			jetty->rc_node.tp = tp;
-			jetty->rc_node.tpn = tp->ubcore_tp.tpn;
-			jetty->rc_node.tjetty_id = tp->tjetty_id;
+	if (jetty->rc_node.tp == NULL) {
+		jetty->rc_node.tp = tp;
+		jetty->rc_node.tpn = tp->ubcore_tp.tpn;
+		jetty->rc_node.tjetty_id = tp->tjetty_id;
+	} else {
+		tjetty_hash =
+			udma_get_jetty_hash(&jetty->rc_node.tjetty_id);
+		if (tjetty_hash == hash &&
+		    (tp->qp.en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) {
+			copy_attr_to_pre_tp(udma_device, &tp->qp,
+					    &jetty->rc_node.tp->qp);
+			*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
+		} else if (tjetty_hash == hash) {
+			*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
 		} else {
-			tjetty_hash =
-				udma_get_jetty_hash(&jetty->rc_node.tjetty_id);
-			if (tjetty_hash == hash &&
-			    (tp->qp.en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) {
-				copy_attr_to_pre_tp(udma_device, false, &tp->qp,
-						    &jetty->rc_node.tp->qp);
-				*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
-			} else if (tjetty_hash == hash) {
-				*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
-			} else {
-				dev_err(udma_device->dev,
-					"jetty has bind a target jetty, jetty_id = %d.\n",
-					jetty->rc_node.tjetty_id.id);
-				return -EEXIST;
-			}
+			dev_err(udma_device->dev,
+				"jetty has bind a target jetty, jetty_id = %d.\n",
+				jetty->rc_node.tjetty_id.id);
+			return -EEXIST;
 		}
 	}
 
@@ -395,7 +368,7 @@ static int udma_store_tp(struct udma_dev *udma_device, struct udma_tp *tp,
 		ret = udma_store_jetty_tp(udma_device, jetty, tp, fail_ret_tp);
 		if (ret) {
 			dev_err(udma_device->dev,
-				"failed store jetty tp, ret = %d\n", ret);
+				"failed store jetty tp, ret = %d.\n", ret);
 			return ret;
 		}
 	} else {
@@ -405,7 +378,7 @@ static int udma_store_tp(struct udma_dev *udma_device, struct udma_tp *tp,
 					      GFP_KERNEL));
 			if (ret) {
 				dev_err(udma_device->dev,
-					"failed store jfr tp, ret = %d\n", ret);
+					"failed store jfr tp, ret = %d.\n", ret);
 				return ret;
 			}
 		} else if (jfs) {
@@ -414,7 +387,7 @@ static int udma_store_tp(struct udma_dev *udma_device, struct udma_tp *tp,
 					      GFP_KERNEL));
 			if (ret) {
 				dev_err(udma_device->dev,
-					"failed store jfs tp, ret = %d\n", ret);
+					"failed store jfs tp, ret = %d.\n", ret);
 				return ret;
 			}
 		}
@@ -489,7 +462,7 @@ failed_init_qpc:
 	udma_erase_tp(tp);
 failed_create_qp:
 	unlock_jetty(&tp->qp.qp_attr);
-	udma_destroy_qp_common(udma_dev, &tp->qp);
+	udma_destroy_qp_common(udma_dev, &tp->qp, fail_ret_tp);
 failed_alloc_tp:
 	kfree(tp);
 

@@ -18,6 +18,7 @@
 #include <linux/inetdevice.h>
 #include "urma/ubcore_api.h"
 #include "hnae3.h"
+#include "hns3_udma_abi.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_hem.h"
 #include "hns3_udma_eq.h"
@@ -50,9 +51,8 @@ static int udma_cmq_query_hw_info(struct udma_dev *udma_dev)
 
 	resp = (struct udma_query_version *)desc.data;
 
-	return ret;
+	return 0;
 }
-
 
 static int udma_query_fw_ver(struct udma_dev *udma_dev)
 {
@@ -66,7 +66,7 @@ static int udma_query_fw_ver(struct udma_dev *udma_dev)
 		return ret;
 
 	resp = (struct udma_query_fw_info *)desc.data;
-	udma_dev->caps.fw_ver = (uint64_t)(le32_to_cpu(resp->fw_ver));
+	udma_dev->caps.fw_ver = le32_to_cpu(resp->fw_ver);
 
 	return 0;
 }
@@ -120,14 +120,11 @@ static int udma_config_global_param(struct udma_dev *udma_dev)
 {
 	struct udma_cmq_desc desc;
 	struct udma_cmq_req *req = (struct udma_cmq_req *)desc.data;
-	uint32_t clock_cycles_of_1us;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_GLOBAL_PARAM,
 				  false);
 
-	clock_cycles_of_1us = UDMA_1US_CFG;
-
-	udma_reg_write(req, CFG_GLOBAL_PARAM_1US_CYCLES, clock_cycles_of_1us);
+	udma_reg_write(req, CFG_GLOBAL_PARAM_1US_CYCLES, UDMA_1US_CFG);
 	udma_reg_write(req, CFG_GLOBAL_PARAM_UDP_PORT, UDMA_UDP_DPORT);
 
 	return udma_cmq_send(udma_dev, &desc, 1);
@@ -177,15 +174,9 @@ static void set_default_jetty_caps(struct udma_dev *dev)
 	struct udma_caps *caps = &dev->caps;
 
 	caps->num_jfc_shift = ilog2(caps->num_cqs);
-	if (dev->rm_support) {
-		caps->num_jfs_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-		caps->num_jfr_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-		caps->num_jetty_shift = UDMA_DEFAULT_MAX_JETTY_X_SHIFT;
-	} else {
-		caps->num_jfs_shift = caps->num_qps_shift;
-		caps->num_jfr_shift = caps->num_qps_shift;
-		caps->num_jetty_shift = caps->num_qps_shift;
-	}
+	caps->num_jfs_shift = caps->num_qps_shift;
+	caps->num_jfr_shift = caps->num_qps_shift;
+	caps->num_jetty_shift = caps->num_qps_shift;
 }
 
 static void query_hw_speed(struct udma_dev *udma_dev)
@@ -447,7 +438,7 @@ static int load_ext_cfg_caps(struct udma_dev *udma_dev)
 	caps->num_qps_shift = ilog2(caps->num_qps);
 
 	/* The extend doorbell memory on the PF is shared by all its VFs. */
-	caps->llm_ba_idx = udma_reg_read(req, EXT_CFG_LLM_IDX);
+	caps->llm_ba_idx = udma_reg_read(req, EXT_CFG_LLM_INDEX);
 	caps->llm_ba_num = udma_reg_read(req, EXT_CFG_LLM_NUM);
 
 	return 0;
@@ -497,7 +488,7 @@ static int query_func_oor_caps(struct udma_dev *udma_dev)
 	struct udma_caps *caps = &udma_dev->caps;
 	struct udma_query_oor_cmq *resp;
 	struct udma_cmq_desc desc;
-	int ret = 0;
+	int ret;
 
 	udma_cmq_setup_basic_desc(&desc, UDMA_QUERY_OOR_CAPS, true);
 
@@ -1747,6 +1738,23 @@ static void udma_get_cfg(struct udma_dev *udma_dev,
 	priv->handle = handle;
 }
 
+static void udma_init_bank(struct udma_dev *dev)
+{
+	uint32_t qpn_shift;
+	int i;
+
+	dev->bank[0].min = 1;
+	dev->bank[0].inuse = 1;
+	dev->bank[0].next = dev->bank[0].min;
+
+	qpn_shift = dev->caps.num_qps_shift - UDMA_DEFAULT_MAX_JETTY_X_SHIFT -
+		    UDMA_JETTY_X_PREFIX_BIT_NUM;
+	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
+		ida_init(&dev->bank[i].ida);
+		dev->bank[i].max = (1U << qpn_shift) / UDMA_QP_BANK_NUM - 1;
+	}
+}
+
 static int __udma_init_instance(struct hnae3_handle *handle)
 {
 	struct udma_dev *udma_dev;
@@ -1784,13 +1792,16 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 	if (ret) {
 		dev_err(udma_dev->dev,
 			"UDMA congest control init failed(%d)!\n", ret);
-		goto error_failed_cc_sysfs;
+		if (dfx_switch)
+			goto error_failed_scc_init;
+		goto error_failed_dfx_init;
 	}
 
+	udma_init_bank(udma_dev);
 	return 0;
-error_failed_cc_sysfs:
-	if (dfx_switch)
-		udma_dfx_uninit(udma_dev);
+
+error_failed_scc_init:
+	udma_dfx_uninit(udma_dev);
 error_failed_dfx_init:
 	udma_hnae_client_exit(udma_dev);
 error_failed_get_cfg:
@@ -1802,7 +1813,7 @@ error_failed_kzalloc:
 }
 
 static void __udma_uninit_instance(struct hnae3_handle *handle,
-					   bool reset)
+				   bool reset)
 {
 	struct udma_dev *udma_dev = handle->priv;
 
@@ -1810,7 +1821,6 @@ static void __udma_uninit_instance(struct hnae3_handle *handle,
 		return;
 
 	udma_unregister_cc_sysfs(udma_dev);
-
 	if (dfx_switch)
 		udma_dfx_uninit(handle->priv);
 
@@ -2041,5 +2051,4 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("UBUS UDMA Driver");
 
 module_param(dfx_switch, bool, 0444);
-MODULE_PARM_DESC(dfx_switch,
-		 "Set whether to enable the udma_dfx, default: 0(0:off, 1:on)");
+MODULE_PARM_DESC(dfx_switch, "Set whether to enable the udma_dfx function, default: 0(0:off, 1:on)");

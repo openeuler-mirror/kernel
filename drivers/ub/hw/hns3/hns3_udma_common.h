@@ -16,6 +16,7 @@
 #ifndef _UDMA_COMMON_H
 #define _UDMA_COMMON_H
 #include <linux/bitfield.h>
+#include <linux/types.h>
 
 #define ub_write(dev, reg, val)	writel((val), (dev)->reg_base + (reg))
 #define ub_read(dev, reg)	readl((dev)->reg_base + (reg))

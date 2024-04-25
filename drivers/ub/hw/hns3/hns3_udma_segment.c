@@ -45,7 +45,7 @@ static int udma_hw_create_mpt(struct udma_dev *udma_dev,
 	return udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
 }
 
-int udma_hw_destroy_mpt(struct udma_dev *udma_dev,
+static int udma_hw_destroy_mpt(struct udma_dev *udma_dev,
 			struct udma_cmd_mailbox *mailbox,
 			uint64_t mpt_index)
 {
@@ -98,7 +98,7 @@ static int alloc_seg_pbl(struct udma_dev *udma_dev, struct udma_seg *seg,
 	int err;
 
 	seg->pbl_hop_num = udma_dev->caps.pbl_hop_num;
-	buf_attr.page_shift = udma_dev->caps.pbl_buf_pg_sz + PAGE_SHIFT;
+	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size = seg->size;
 	buf_attr.region[0].hopnum = seg->pbl_hop_num;
 	buf_attr.region_count = 1;
@@ -333,7 +333,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
 	int ret;
 
 	if (cfg->flag.bs.access >= URMA_SEG_ACCESS_GUARD) {
-		dev_err(udma_dev->dev, "Invalid segment access 0x%x.\n",
+		dev_err(udma_dev->dev, "invalid segment access 0x%x.\n",
 			cfg->flag.bs.access);
 		return NULL;
 	}
@@ -378,7 +378,7 @@ err_alloc_key:
 	return NULL;
 }
 
-void udma_seg_free(struct udma_dev *udma_dev, struct udma_seg *seg)
+static void udma_seg_free(struct udma_dev *udma_dev, struct udma_seg *seg)
 {
 	int ret;
 
