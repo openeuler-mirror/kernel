@@ -603,38 +603,6 @@ struct dca_page_query_active_attr {
 	u64 mem_key;
 };
 
-static int query_dca_active_pages_proc(struct dca_mem *mem, int index,
-				       void *param)
-{
-	struct hns_dca_page_state *state = &mem->states[index];
-	struct dca_page_query_active_attr *attr = param;
-
-	if (!dca_page_is_active(state, attr->buf_id))
-		return 0;
-
-	if (attr->curr_index < attr->start_index) {
-		attr->curr_index++;
-		return 0;
-	} else if (attr->curr_index > attr->start_index) {
-		return DCA_MEM_STOP_ITERATE;
-	}
-
-	/* Search first page in DCA mem */
-	attr->page_index = index;
-	attr->mem_key = mem->key;
-	/* Search active pages in continuous addresses */
-	while (index < mem->page_count) {
-		state = &mem->states[index];
-		if (!dca_page_is_active(state, attr->buf_id))
-			break;
-
-		index++;
-		attr->page_count++;
-	}
-
-	return DCA_MEM_STOP_ITERATE;
-}
-
 static int sync_dca_buf_offset(struct hns_roce_dev *hr_dev,
 			       struct hns_roce_qp *hr_qp,
 			       struct hns_dca_attach_attr *attr)
@@ -1540,6 +1508,7 @@ uverbs_attr_to_hr_uctx(struct uverbs_attr_bundle *attrs)
 					 struct hns_roce_ucontext, ibucontext);
 }
 
+#if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_REG)(
 	struct uverbs_attr_bundle *attrs)
 {
@@ -1746,6 +1715,38 @@ DECLARE_UVERBS_NAMED_METHOD(
 	UVERBS_ATTR_PTR_IN(HNS_IB_ATTR_DCA_MEM_DETACH_SQ_INDEX,
 			   UVERBS_ATTR_TYPE(u32), UA_MANDATORY));
 
+static int query_dca_active_pages_proc(struct dca_mem *mem, int index,
+				       void *param)
+{
+	struct hns_dca_page_state *state = &mem->states[index];
+	struct dca_page_query_active_attr *attr = param;
+
+	if (!dca_page_is_active(state, attr->buf_id))
+		return 0;
+
+	if (attr->curr_index < attr->start_index) {
+		attr->curr_index++;
+		return 0;
+	} else if (attr->curr_index > attr->start_index) {
+		return DCA_MEM_STOP_ITERATE;
+	}
+
+	/* Search first page in DCA mem */
+	attr->page_index = index;
+	attr->mem_key = mem->key;
+	/* Search active pages in continuous addresses */
+	while (index < mem->page_count) {
+		state = &mem->states[index];
+		if (!dca_page_is_active(state, attr->buf_id))
+			break;
+
+		index++;
+		attr->page_count++;
+	}
+
+	return DCA_MEM_STOP_ITERATE;
+}
+
 static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_QUERY)(
 	struct uverbs_attr_bundle *attrs)
 {
@@ -1828,6 +1829,13 @@ const struct uapi_definition hns_roce_dca_uapi_defs[] = {
 		UAPI_DEF_IS_OBJ_SUPPORTED(dca_is_supported)),
 	{}
 };
+
+#else
+
+const struct uapi_definition hns_roce_dca_uapi_defs[] = {
+};
+
+#endif
 
 /* enum DCA pool */
 struct dca_mem_enum_attr {
