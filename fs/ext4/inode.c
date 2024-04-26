@@ -6514,6 +6514,26 @@ static int ext4_bh_unmapped(handle_t *handle, struct inode *inode,
 	return !buffer_mapped(bh);
 }
 
+static vm_fault_t ext4_iomap_page_mkwrite(struct vm_fault *vmf)
+{
+	struct inode *inode = file_inode(vmf->vma->vm_file);
+	const struct iomap_ops *iomap_ops;
+
+	/*
+	 * ext4_nonda_switch() could writeback this folio, so have to
+	 * call it before lock folio.
+	 *
+	 * TODO: drop ext4_nonda_switch() after reserving enough sapce
+	 * for metadata and merge delalloc and nodelalloc operations.
+	 */
+	if (test_opt(inode->i_sb, DELALLOC) && !ext4_nonda_switch(inode->i_sb))
+		iomap_ops = &ext4_iomap_buffered_da_write_ops;
+	else
+		iomap_ops = &ext4_iomap_buffered_write_ops;
+
+	return iomap_page_mkwrite(vmf, iomap_ops);
+}
+
 vm_fault_t ext4_page_mkwrite(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
@@ -6536,6 +6556,11 @@ vm_fault_t ext4_page_mkwrite(struct vm_fault *vmf)
 	file_update_time(vma->vm_file);
 
 	filemap_invalidate_lock_shared(mapping);
+
+	if (ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP)) {
+		ret = ext4_iomap_page_mkwrite(vmf);
+		goto out;
+	}
 
 	err = ext4_convert_inline_data(inode);
 	if (err)
