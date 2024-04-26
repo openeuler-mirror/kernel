@@ -41,12 +41,11 @@ static int hclgevf_init_udma_base_info(struct hclgevf_dev *hdev)
 	struct hnae3_handle *udma = &hdev->udma;
 	struct hnae3_handle *nic = &hdev->nic;
 
-	udma->udmainfo.num_vectors = hdev->num_udma_msix;
-
 	if (hdev->num_msi_left < udma->udmainfo.num_vectors ||
 	    hdev->num_msi_left == 0)
 		return -EINVAL;
 
+	udma->udmainfo.num_vectors = hdev->num_udma_msix;
 	udma->udmainfo.base_vector = hdev->roce_base_msix_offset;
 
 	udma->udmainfo.netdev = nic->kinfo.netdev;

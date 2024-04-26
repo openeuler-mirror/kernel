@@ -693,6 +693,15 @@ struct hns3_reset_type_map {
 	enum hnae3_reset_type rst_type;
 };
 
+struct hns3_desc_param {
+	u32 paylen_fdop_ol4cs;
+	u32 ol_type_vlan_len_msec;
+	u32 type_cs_vlan_tso;
+	u16 mss_hw_csum;
+	u16 inner_vtag;
+	u16 out_vtag;
+};
+
 static inline int ring_space(struct hns3_enet_ring *ring)
 {
 	/* This smp_load_acquire() pairs with smp_store_release() in
@@ -834,4 +843,5 @@ void hns3_cq_period_mode_init(struct hns3_nic_priv *priv,
 void hns3_external_lb_prepare(struct net_device *ndev, bool if_running);
 void hns3_external_lb_restore(struct net_device *ndev, bool if_running);
 bool hns3_is_page_pool_enabled(void);
+void hns3_init_desc_data(struct sk_buff *skb, struct hns3_desc_param *pa);
 #endif

@@ -35,7 +35,6 @@ int hclgevf_unic_update_ip_list(struct hnae3_handle *handle,
 					       &hdev->ip_table.ip_list_lock,
 					       state,
 					       (const unsigned char *)&ip_addr);
-
 	if (ret == -ENOENT)
 		dev_err(&hdev->pdev->dev,
 			"failed to delete ip %pI6c from ip list\n",

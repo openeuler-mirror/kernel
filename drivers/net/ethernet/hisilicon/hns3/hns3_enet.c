@@ -1782,16 +1782,7 @@ static bool hns3_check_hw_tx_csum(struct sk_buff *skb)
 	return true;
 }
 
-struct hns3_desc_param {
-	u32 paylen_fdop_ol4cs;
-	u32 ol_type_vlan_len_msec;
-	u32 type_cs_vlan_tso;
-	u16 mss_hw_csum;
-	u16 inner_vtag;
-	u16 out_vtag;
-};
-
-static void hns3_init_desc_data(struct sk_buff *skb, struct hns3_desc_param *pa)
+void hns3_init_desc_data(struct sk_buff *skb, struct hns3_desc_param *pa)
 {
 	pa->paylen_fdop_ol4cs = skb->len;
 	pa->ol_type_vlan_len_msec = 0;
@@ -1918,10 +1909,6 @@ static int hns3_fill_skb_desc(struct hns3_nic_priv *priv,
 	}
 
 	/* Set txbd */
-#ifdef CONFIG_HNS3_UBL
-	if (hns3_ubl_supported(priv->ae_handle))
-		hns3_unic_set_l3_type(skb, &param.type_cs_vlan_tso);
-#endif
 	desc->tx.ol_type_vlan_len_msec =
 		cpu_to_le32(param.ol_type_vlan_len_msec);
 	desc->tx.type_cs_vlan_tso_len = cpu_to_le32(param.type_cs_vlan_tso);
@@ -2534,8 +2521,19 @@ static int hns3_handle_skb_desc(struct hns3_nic_priv *priv,
 {
 	int ret;
 
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(priv->ae_handle))
+		ret = hns3_unic_fill_skb_desc(priv, ring, skb,
+					      &ring->desc[ring->next_to_use],
+					      desc_cb);
+	else
+		ret = hns3_fill_skb_desc(priv, ring, skb,
+					 &ring->desc[ring->next_to_use],
+					 desc_cb);
+#else
 	ret = hns3_fill_skb_desc(priv, ring, skb,
 				 &ring->desc[ring->next_to_use], desc_cb);
+#endif
 	if (unlikely(ret < 0))
 		goto fill_err;
 
@@ -2585,7 +2583,7 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 	}
 #ifdef CONFIG_HNS3_UBL
 	if (hns3_ubl_supported(hns3_get_handle(netdev))) {
-		if (!ubl_rmv_sw_ctype(skb))
+		if (unlikely(!ubl_rmv_sw_ctype(skb)))
 			goto out_err_tx_ok;
 
 		hns3_unic_set_default_cc(skb);
@@ -3456,6 +3454,23 @@ static void hns3_remove(struct pci_dev *pdev)
 	pci_set_drvdata(pdev, NULL);
 }
 
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+static int hns3_fastpath_configure(struct pci_dev *pdev, bool fastpath_en)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
+	int ret;
+
+	if (!hnae3_dev_udma_supported(ae_dev) || !ae_dev->ops->set_fastpath)
+		return 0;
+
+	rtnl_lock();
+	ret = ae_dev->ops->set_fastpath(ae_dev, fastpath_en);
+	rtnl_unlock();
+
+	return ret;
+}
+#endif
+
 /**
  * hns3_pci_sriov_configure
  * @pdev: pointer to a pci_dev structure
@@ -3466,6 +3481,7 @@ static void hns3_remove(struct pci_dev *pdev)
  **/
 static int hns3_pci_sriov_configure(struct pci_dev *pdev, int num_vfs)
 {
+	int num_vfs_pre;
 	int ret;
 
 	if (!(hns3_is_phys_func(pdev) && IS_ENABLED(CONFIG_PCI_IOV))) {
@@ -3475,12 +3491,26 @@ static int hns3_pci_sriov_configure(struct pci_dev *pdev, int num_vfs)
 
 	if (num_vfs) {
 		ret = pci_enable_sriov(pdev, num_vfs);
-		if (ret)
+		if (ret) {
 			dev_err(&pdev->dev, "SRIOV enable failed %d\n", ret);
-		else
-			return num_vfs;
+			return 0;
+		}
+
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+		ret = hns3_fastpath_configure(pdev, false);
+		if (ret) {
+			pci_disable_sriov(pdev);
+			return 0;
+		}
+#endif
+
+		return num_vfs;
 	} else if (!pci_vfs_assigned(pdev)) {
-		int num_vfs_pre = pci_num_vf(pdev);
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
+		(void)hns3_fastpath_configure(pdev, true);
+#endif
+
+		num_vfs_pre = pci_num_vf(pdev);
 
 		pci_disable_sriov(pdev);
 		hns3_clean_vf_config(pdev, num_vfs_pre);
@@ -4387,7 +4417,7 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 	hns3_ring_stats_update(ring, seg_pkt_cnt);
 #ifdef CONFIG_HNS3_UBL
 	if (hns3_ubl_supported(hns3_get_handle(netdev)))
-		ring->pull_len = HNS3_RX_HEAD_SIZE;
+		ring->pull_len = HNS3_UNIC_RX_HEAD_SIZE;
 	else
 		ring->pull_len = eth_get_headlen(netdev, va, HNS3_RX_HEAD_SIZE);
 #else
@@ -5660,7 +5690,7 @@ static int hns3_client_init(struct hnae3_handle *handle)
 						    &max_rss_size);
 #ifdef CONFIG_HNS3_UBL
 	if (hns3_ubl_supported(handle))
-		netdev = alloc_ubndev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
+		netdev = alloc_ubldev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
 	else
 		netdev = alloc_etherdev_mq(sizeof(struct hns3_nic_priv), alloc_tqps);
 #else

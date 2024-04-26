@@ -30,6 +30,9 @@ static struct hns3_dbg_dentry_info ub_dbg_dentry[] = {
 	{
 		.name = "guid_tbl"
 	},
+	{
+		.name = "fastpath_info"
+	},
 };
 
 static int hns3_unic_dbg_file_init(struct hnae3_handle *handle, u32 cmd);
@@ -60,6 +63,13 @@ static const struct hns3_dbg_cmd_info ub_dbg_cmd[] = {
 		.name = "guid_tbl_list",
 		.cmd = HNAE3_DBG_CMD_GUID_LIST,
 		.dentry = UB_DBG_DENTRY_GUID,
+		.buf_len = HNS3_DBG_READ_LEN,
+		.init = hns3_unic_dbg_file_init,
+	},
+	{
+		.name = "fastpath_info",
+		.cmd = HNAE3_DBG_CMD_FASTPATH_INFO,
+		.dentry = UB_DBG_DENTRY_FASTPATH,
 		.buf_len = HNS3_DBG_READ_LEN,
 		.init = hns3_unic_dbg_file_init,
 	},

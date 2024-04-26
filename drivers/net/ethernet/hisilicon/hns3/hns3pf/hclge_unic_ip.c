@@ -41,7 +41,7 @@ static int hclge_unic_get_ip_tbl_cmd_status(struct hclge_vport *vport,
 	}
 
 	if (op == HCLGE_IP_TBL_ADD) {
-		if (!resp_code || resp_code == 1)
+		if (!resp_code || resp_code == HCLGE_UNIC_IP_TBL_MISS)
 			return 0;
 		else if (resp_code == HCLGE_ADD_IP_TBL_OVERFLOW)
 			return -ENOSPC;
@@ -53,7 +53,7 @@ static int hclge_unic_get_ip_tbl_cmd_status(struct hclge_vport *vport,
 	} else if (op == HCLGE_IP_TBL_REMOVE) {
 		if (!resp_code) {
 			return 0;
-		} else if (resp_code == 1) {
+		} else if (resp_code == HCLGE_UNIC_IP_TBL_MISS) {
 			dev_dbg(&hdev->pdev->dev,
 				"remove ip addr failed for miss.\n");
 			return -ENOENT;
@@ -66,7 +66,7 @@ static int hclge_unic_get_ip_tbl_cmd_status(struct hclge_vport *vport,
 	} else if (op == HCLGE_IP_TBL_LKUP) {
 		if (!resp_code) {
 			return 0;
-		} else if (resp_code == 1) {
+		} else if (resp_code == HCLGE_UNIC_IP_TBL_MISS) {
 			dev_dbg(&hdev->pdev->dev,
 				"lookup ip addr failed for miss.\n");
 			return -ENOENT;
@@ -251,7 +251,6 @@ int hclge_unic_update_ip_list(struct hclge_vport *vport,
 					       &vport->ip_list_lock,
 					       state,
 					       (const unsigned char *)&ip_addr);
-
 	if (ret == -ENOENT)
 		dev_err(&hdev->pdev->dev,
 			"failed to delete ip %pI6c from ip list\n",
@@ -383,7 +382,6 @@ static void hclge_unic_sync_vport_ip_table(struct hclge_vport *vport)
 						    &vport->ip_list,
 						    &vport->ip_list_lock,
 						    sync, unsync);
-
 	if (all_added)
 		vport->overflow_promisc_flags &= ~HNAE3_OVERFLOW_MPE;
 	else

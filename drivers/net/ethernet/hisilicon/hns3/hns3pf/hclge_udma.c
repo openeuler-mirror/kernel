@@ -28,11 +28,10 @@ static int hclge_init_udma_base_info(struct hclge_vport *vport)
 	struct hnae3_handle *nic = &vport->nic;
 	struct hclge_dev *hdev = vport->back;
 
-	udma->udmainfo.num_vectors = vport->back->num_udma_msi;
-
 	if (hdev->num_msi < hdev->num_nic_msi + hdev->num_udma_msi)
 		return -EINVAL;
 
+	udma->udmainfo.num_vectors = hdev->num_udma_msi;
 	udma->udmainfo.base_vector = hdev->num_nic_msi;
 
 	udma->udmainfo.netdev = nic->kinfo.netdev;
@@ -72,7 +71,7 @@ int hclge_init_udma_client_instance(struct hnae3_ae_dev *ae_dev,
 {
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hnae3_client *client;
-	int rst_cnt;
+	u32 rst_cnt;
 	int ret;
 
 	if (!hnae3_dev_udma_supported(ae_dev) || !hdev->udma_client ||

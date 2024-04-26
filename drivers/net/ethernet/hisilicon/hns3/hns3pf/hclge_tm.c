@@ -1697,7 +1697,7 @@ int hclge_tm_set_tc_rate_limit(struct hclge_dev *hdev,
 	int ret;
 	int i;
 
-	for (i = 0; i < tc_info->num_tc; i++) {
+	for (i = 0; i < hdev->tc_max; i++) {
 		/* mac speed unit is Mbps, tc max_rate is Bps */
 		speed = hclge_tm_rate_2_port_rate(tc_info->max_rate[i]);
 		if (!speed)

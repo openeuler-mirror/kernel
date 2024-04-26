@@ -21,7 +21,6 @@ int hclgevf_unic_update_guid_list(struct hnae3_handle *handle,
 	ret = hclge_comm_unic_update_addr_list(&hdev->mc_guid_list,
 					       &hdev->mguid_list_lock,
 					       state, addr);
-
 	if (ret == -ENOENT) {
 		hclge_comm_format_guid_addr(format_guid_addr, addr);
 		dev_err(&hdev->pdev->dev,

@@ -48,7 +48,6 @@ int hclge_unic_update_guid_list(struct hclge_vport *vport,
 	ret = hclge_comm_unic_update_addr_list(&vport->mc_guid_list,
 					       &vport->mguid_list_lock,
 					       state, addr);
-
 	if (ret == -ENOENT) {
 		hclge_comm_format_guid_addr(format_guid_addr, addr);
 		dev_err(&hdev->pdev->dev,

@@ -76,10 +76,10 @@ int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
 		      const void *saddr, unsigned int len);
 void ubl_setup(struct net_device *dev);
 __be16 ubl_type_trans(struct sk_buff *skb, struct net_device *dev, u8 type);
-struct net_device *alloc_ubndev_mqs(int sizeof_priv, unsigned int txqs,
+struct net_device *alloc_ubldev_mqs(int sizeof_priv, unsigned int txqs,
 				    unsigned int rxqs);
 int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype);
-#define alloc_ubndev_mq(sizeof_priv, count) \
-	alloc_ubndev_mqs((sizeof_priv), (count), (count))
+#define alloc_ubldev_mq(sizeof_priv, count) \
+	alloc_ubldev_mqs((sizeof_priv), (count), (count))
 
 #endif

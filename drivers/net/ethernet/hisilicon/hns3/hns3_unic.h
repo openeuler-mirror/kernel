@@ -19,6 +19,7 @@
 #include "ubl.h"
 
 #define UNIC_CC_DEFAULT_FECN_MODE 0x4000
+#define HNS3_UNIC_RX_HEAD_SIZE 128
 
 struct ub_nip_ctrl_fld {
 	__be16 proto;
@@ -52,7 +53,6 @@ static inline void hns3_unic_format_sim_guid_addr(char *format_simple_guid_addr,
 
 void hns3_unic_set_default_cc(struct sk_buff *skb);
 int hns3_unic_init(struct net_device *netdev);
-void hns3_unic_set_l3_type(struct sk_buff *skb, u32 *type_cs_vlan_tso);
 u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info);
 void hns3_unic_lp_setup_skb(struct sk_buff *skb);
 void hns3_unic_lb_check_skb_data(struct hns3_enet_ring *ring,
@@ -61,5 +61,9 @@ void register_ipaddr_notifier(void);
 void unregister_ipaddr_notifier(void);
 void hns3_unic_set_rx_mode(struct net_device *netdev);
 int hns3_unic_init_guid(struct net_device *netdev);
+int hns3_unic_fill_skb_desc(struct hns3_nic_priv *priv,
+			    struct hns3_enet_ring *ring,
+			    struct sk_buff *skb, struct hns3_desc *desc,
+			    struct hns3_desc_cb *desc_cb);
 
 #endif
