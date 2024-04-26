@@ -561,6 +561,7 @@ static int ext4_disable_buffered_iomap_aops(struct inode *inode)
 	truncate_inode_pages(inode->i_mapping, 0);
 
 	ext4_clear_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP);
+	mapping_clear_large_folios(inode->i_mapping);
 	ext4_set_aops(inode);
 	filemap_invalidate_unlock(inode->i_mapping);
 
