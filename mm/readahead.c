@@ -510,6 +510,12 @@ void page_cache_ra_order(struct readahead_control *ractl,
 	}
 
 	filemap_invalidate_lock_shared(mapping);
+
+	if (unlikely(!mapping_large_folio_support(mapping))) {
+		filemap_invalidate_unlock_shared(mapping);
+		goto fallback;
+	}
+
 	while (index <= limit) {
 		unsigned int order = new_order;
 
