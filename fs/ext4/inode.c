@@ -5151,6 +5151,8 @@ bool ext4_should_use_buffered_iomap(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 
+	if (!test_opt2(sb, BUFFERED_IOMAP))
+		return false;
 	if (ext4_has_feature_inline_data(sb))
 		return false;
 	if (ext4_has_feature_verity(sb))
