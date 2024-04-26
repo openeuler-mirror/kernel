@@ -95,6 +95,13 @@ static int smc_chan_free(int id, void *p, void *data)
 	cinfo->transport_info = NULL;
 	scmi_info->cinfo = NULL;
 
+	/*
+	* Different protocols might share the same chan info, so a previous
+	* smc_chan_free call might have already freed the structure.
+	*/
+	if (!scmi_info)
+		return 0;
+
 	scmi_free_channel(cinfo, data, id);
 
 	return 0;
