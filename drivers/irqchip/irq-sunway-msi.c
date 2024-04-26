@@ -48,13 +48,8 @@ bool find_free_cpu_vector(const struct cpumask *search_mask,
 
 	cpu = cpumask_first(search_mask);
 try_again:
-	if (is_guest_or_emul()) {
-		vector = IRQ_PENDING_MSI_VECTORS_SHIFT;
-		max_vector = SWVM_IRQS;
-	} else {
-		vector = 0;
-		max_vector = 256;
-	}
+	vector = 0;
+	max_vector = 256;
 	for (; vector < max_vector; vector++) {
 		while (per_cpu(vector_irq, cpu)[vector]) {
 			cpu = cpumask_next(cpu, search_mask);
@@ -289,11 +284,6 @@ static void sw64_vector_free_irqs(struct irq_domain *domain,
 
 static void sw64_irq_free_descs(unsigned int virq, unsigned int nr_irqs)
 {
-	if (is_guest_or_emul()) {
-		vt_sw64_vector_free_irqs(virq, nr_irqs);
-		return irq_free_descs(virq, nr_irqs);
-	}
-
 	return irq_domain_free_irqs(virq, nr_irqs);
 }
 
@@ -392,7 +382,7 @@ void arch_init_msi_domain(struct irq_domain *parent)
 	struct irq_domain *sw64_irq_domain;
 
 	if (is_guest_or_emul())
-		return;
+		return sw64_init_vt_msi_domain(parent);
 
 	sw64_irq_domain = irq_domain_add_tree(NULL, &sw64_msi_domain_ops, NULL);
 	BUG_ON(sw64_irq_domain == NULL);
@@ -424,13 +414,6 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 	unsigned long *ptr;
 	struct irq_data *irq_data;
 	struct sw64_msi_chip_data *cdata;
-
-	if (is_guest_or_emul()) {
-		cpu = smp_processor_id();
-		irq = per_cpu(vector_irq, cpu)[vector];
-		handle_irq(irq);
-		return;
-	}
 
 	ptr = (unsigned long *)pci_msi1_addr;
 	int_pci_msi[0] = *ptr;
