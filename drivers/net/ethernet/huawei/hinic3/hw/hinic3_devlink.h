@@ -143,6 +143,30 @@ struct host_image {
 	u32 device_id;
 };
 
+struct hinic3_cmd_update_firmware {
+	struct mgmt_msg_head msg_head;
+
+	struct {
+		u32 sl : 1;
+		u32 sf : 1;
+		u32 flag : 1;
+		u32 bit_signed : 1;
+		u32 reserved : 12;
+		u32 fragment_len : 16;
+	} ctl_info;
+
+	struct {
+		u32 section_crc;
+		u32 section_type;
+	} section_info;
+
+	u32 total_len;
+	u32 section_len;
+	u32 section_version;
+	u32 section_offset;
+	u32 data[384];
+};
+
 int hinic3_init_devlink(struct hinic3_hwdev *hwdev);
 void hinic3_uninit_devlink(struct hinic3_hwdev *hwdev);
 

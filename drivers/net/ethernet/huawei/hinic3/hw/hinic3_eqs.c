@@ -1002,6 +1002,41 @@ req_irq_err:
 	return err;
 }
 
+int hinic3_init_single_ceq_status(void *hwdev, u16 q_id)
+{
+	int err = 0;
+	struct hinic3_hwdev *dev = hwdev;
+	struct hinic3_eq *eq = NULL;
+
+	if (!hwdev) {
+		sdk_err(dev->dev_hdl, "hwdev is null\n");
+		return -EINVAL;
+	}
+
+	if (q_id >= dev->ceqs->num_ceqs) {
+		sdk_err(dev->dev_hdl, "q_id=%u is larger than num_ceqs %u.\n",
+			q_id, dev->ceqs->num_ceqs);
+		return -EINVAL;
+	}
+
+	eq = &dev->ceqs->ceq[q_id];
+	/* Indirect access should set q_id first */
+	hinic3_hwif_write_reg(dev->hwif, HINIC3_EQ_INDIR_IDX_ADDR(eq->type), eq->q_id);
+	wmb(); /* write index before config */
+
+	reset_eq(eq);
+
+	err = set_eq_ctrls(eq);
+	if (err) {
+		sdk_err(dev->dev_hdl, "Failed to set ctrls for eq\n");
+		return err;
+	}
+	set_eq_cons_idx(eq, HINIC3_EQ_ARMED);
+
+	return 0;
+}
+EXPORT_SYMBOL(hinic3_init_single_ceq_status);
+
 /**
  * remove_eq - remove eq
  * @eq:	the event queue

@@ -20,7 +20,7 @@
 #include "hinic3_mgmt.h"
 #include "hinic3_hw_cfg.h"
 #include "hinic3_cmdq.h"
-#include "comm_msg_intf.h"
+#include "mpu_inband_cmd_defs.h"
 #include "hinic3_hw_comm.h"
 
 #define	HINIC3_MSIX_CNT_LLI_TIMER_SHIFT			0
@@ -174,7 +174,7 @@ int hinic3_set_interrupt_cfg(void *dev, struct interrupt_info info, u16 channel)
 	temp_info.msix_index = info.msix_index;
 
 	err = hinic3_get_interrupt_cfg(hwdev, &temp_info, channel);
-	if (err)
+	if (err != 0)
 		return -EINVAL;
 
 	if (!info.lli_set) {
@@ -228,7 +228,7 @@ int hinic3_set_wq_page_size(void *hwdev, u16 func_idx, u32 page_size,
 				       &page_size_info, &out_size, channel);
 	if (err || !out_size || page_size_info.head.status) {
 		sdk_err(((struct hinic3_hwdev *)hwdev)->dev_hdl,
-			"Failed to set wq page size, err: %d, status: 0x%x, out_size: 0x%0x, channel: 0x%x\n",
+			"Failed to set wq page size, err: %d, status: 0x%x, out_size: 0x%x, channel: 0x%x\n",
 			err, page_size_info.head.status, out_size, channel);
 		return -EFAULT;
 	}
@@ -378,7 +378,7 @@ int hinic3_set_cmdq_ctxt(struct hinic3_hwdev *hwdev, u8 cmdq_id,
 	int err;
 
 	memset(&cmdq_ctxt, 0, sizeof(cmdq_ctxt));
-	memcpy(&cmdq_ctxt.ctxt, ctxt, sizeof(*ctxt));
+	memcpy(&cmdq_ctxt.ctxt, ctxt, sizeof(struct cmdq_ctxt_info));
 	cmdq_ctxt.func_id = hinic3_global_func_id(hwdev);
 	cmdq_ctxt.cmdq_id = cmdq_id;
 
@@ -521,6 +521,31 @@ int hinic3_set_ppf_flr_type(void *hwdev, enum hinic3_ppf_flr_type flr_type)
 }
 EXPORT_SYMBOL(hinic3_set_ppf_flr_type);
 
+int hinic3_set_ppf_tbl_hotreplace_flag(void *hwdev, u8 flag)
+{
+	struct comm_cmd_ppf_tbl_htrp_config htr_info = {0};
+	u16 out_size = sizeof(struct comm_cmd_ppf_tbl_htrp_config);
+	struct hinic3_hwdev *dev = hwdev;
+	int ret;
+
+	if (!hwdev) {
+		sdk_err(dev->dev_hdl, "Sdk set ppf table hotreplace flag para is null");
+		return -EINVAL;
+	}
+
+	htr_info.hotreplace_flag = flag;
+	ret = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_PPF_TBL_HTR_FLG,
+				    &htr_info, sizeof(htr_info), &htr_info, &out_size);
+	if (ret != 0 || htr_info.head.status != 0) {
+		sdk_err(dev->dev_hdl, "Send mbox to mpu failed in sdk, ret:%d, status:%u",
+			ret, htr_info.head.status);
+		return -EIO;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(hinic3_set_ppf_tbl_hotreplace_flag);
+
 static int hinic3_get_fw_ver(struct hinic3_hwdev *hwdev, enum hinic3_fw_ver_type type,
 			     u8 *mgmt_ver, u8 version_size, u16 channel)
 {
@@ -543,9 +568,7 @@ static int hinic3_get_fw_ver(struct hinic3_hwdev *hwdev, enum hinic3_fw_ver_type
 		return -EIO;
 	}
 
-	err = snprintf(mgmt_ver, version_size, "%s", fw_ver.ver);
-	if (err < 0)
-		return -EINVAL;
+	memcpy(mgmt_ver, fw_ver.ver, version_size);
 
 	return 0;
 }
@@ -569,13 +592,13 @@ int hinic3_get_fw_version(void *hwdev, struct hinic3_fw_version *fw_ver,
 	err = hinic3_get_fw_ver(hwdev, HINIC3_FW_VER_TYPE_MPU,
 				fw_ver->mgmt_ver, sizeof(fw_ver->mgmt_ver),
 				channel);
-	if (err)
+	if (err != 0)
 		return err;
 
 	err = hinic3_get_fw_ver(hwdev, HINIC3_FW_VER_TYPE_NPU,
 				fw_ver->microcode_ver,
 				sizeof(fw_ver->microcode_ver), channel);
-	if (err)
+	if (err != 0)
 		return err;
 
 	return hinic3_get_fw_ver(hwdev, HINIC3_FW_VER_TYPE_BOOT,
@@ -598,8 +621,9 @@ static int hinic3_comm_features_nego(void *hwdev, u8 opcode, u64 *s_feature,
 	memset(&feature_nego, 0, sizeof(feature_nego));
 	feature_nego.func_id = hinic3_global_func_id(hwdev);
 	feature_nego.opcode = opcode;
-	if (opcode == MGMT_MSG_CMD_OP_SET)
+	if (opcode == MGMT_MSG_CMD_OP_SET) {
 		memcpy(feature_nego.s_feature, s_feature, (size * sizeof(u64)));
+	}
 
 	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_FEATURE_NEGO,
 				    &feature_nego, sizeof(feature_nego),
@@ -611,7 +635,7 @@ static int hinic3_comm_features_nego(void *hwdev, u8 opcode, u64 *s_feature,
 	}
 
 	if (opcode == MGMT_MSG_CMD_OP_GET)
-		memcpy(s_feature, feature_nego.s_feature, (size * sizeof(u64)));
+		memcpy(s_feature, feature_nego.s_feature, (COMM_MAX_FEATURE_QWORD * sizeof(u64)));
 
 	return 0;
 }
@@ -679,14 +703,9 @@ int hinic3_func_tmr_bitmap_set(void *hwdev, u16 func_id, bool en)
 	return 0;
 }
 
-static int ppf_ht_gpa_set(struct hinic3_hwdev *hwdev, struct hinic3_page_addr *pg0,
-			  struct hinic3_page_addr *pg1)
+static int ppf_ht_gpa_malloc(struct hinic3_hwdev *hwdev, struct hinic3_page_addr *pg0,
+			     struct hinic3_page_addr *pg1)
 {
-	struct comm_cmd_ht_gpa ht_gpa_set;
-	u16 out_size = sizeof(ht_gpa_set);
-	int ret;
-
-	memset(&ht_gpa_set, 0, sizeof(ht_gpa_set));
 	pg0->virt_addr = dma_zalloc_coherent(hwdev->dev_hdl,
 					     HINIC3_HT_GPA_PAGE_SIZE,
 					     &pg0->phys_addr, GFP_KERNEL);
@@ -702,6 +721,37 @@ static int ppf_ht_gpa_set(struct hinic3_hwdev *hwdev, struct hinic3_page_addr *p
 		sdk_err(hwdev->dev_hdl, "Alloc pg1 page addr failed\n");
 		return -EFAULT;
 	}
+
+	return 0;
+}
+
+static void ppf_ht_gpa_free(struct hinic3_hwdev *hwdev, struct hinic3_page_addr *pg0,
+			    struct hinic3_page_addr *pg1)
+{
+	if (pg0->virt_addr) {
+		dma_free_coherent(hwdev->dev_hdl, HINIC3_HT_GPA_PAGE_SIZE, pg0->virt_addr,
+				  (dma_addr_t)(pg0->phys_addr));
+		pg0->virt_addr = NULL;
+	}
+	if (pg1->virt_addr) {
+		dma_free_coherent(hwdev->dev_hdl, HINIC3_HT_GPA_PAGE_SIZE, pg1->virt_addr,
+				  (dma_addr_t)(pg1->phys_addr));
+		pg1->virt_addr = NULL;
+	}
+}
+
+static int ppf_ht_gpa_set(struct hinic3_hwdev *hwdev, struct hinic3_page_addr *pg0,
+			  struct hinic3_page_addr *pg1)
+{
+	struct comm_cmd_ht_gpa ht_gpa_set;
+	u16 out_size = sizeof(ht_gpa_set);
+	int ret;
+
+	memset(&ht_gpa_set, 0, sizeof(ht_gpa_set));
+
+	ret = ppf_ht_gpa_malloc(hwdev, pg0, pg1);
+	if (ret)
+		return ret;
 
 	ht_gpa_set.host_id = hinic3_host_id(hwdev);
 	ht_gpa_set.page_pa0 = pg0->phys_addr;
@@ -751,22 +801,8 @@ int hinic3_ppf_ht_gpa_init(void *dev)
 			break;
 	}
 
-	for (j = 0; j < i; j++) {
-		if (page_addr0[j].virt_addr) {
-			dma_free_coherent(hwdev->dev_hdl,
-					  HINIC3_HT_GPA_PAGE_SIZE,
-					  page_addr0[j].virt_addr,
-					  (dma_addr_t)page_addr0[j].phys_addr);
-			page_addr0[j].virt_addr = NULL;
-		}
-		if (page_addr1[j].virt_addr) {
-			dma_free_coherent(hwdev->dev_hdl,
-					  HINIC3_HT_GPA_PAGE_SIZE,
-					  page_addr1[j].virt_addr,
-					  (dma_addr_t)page_addr1[j].phys_addr);
-			page_addr1[j].virt_addr = NULL;
-		}
-	}
+	for (j = 0; j < i; j++)
+		ppf_ht_gpa_free(hwdev, &page_addr0[j], &page_addr1[j]);
 
 	if (i >= HINIC3_PPF_HT_GPA_SET_RETRY_TIMES) {
 		sdk_err(hwdev->dev_hdl, "PPF ht gpa init failed, retry times: %d\n",
@@ -855,16 +891,16 @@ EXPORT_SYMBOL(hinic3_ppf_tmr_stop);
 static int mqm_eqm_try_alloc_mem(struct hinic3_hwdev *hwdev, u32 page_size,
 				 u32 page_num)
 {
-	struct hinic3_page_addr *page_addr = hwdev->mqm_att.brm_srch_page_addr;
+	struct hinic3_dma_addr_align *page_addr = hwdev->mqm_att.brm_srch_page_addr;
 	u32 valid_num = 0;
 	u32 flag = 1;
 	u32 i = 0;
+	int err;
 
 	for (i = 0; i < page_num; i++) {
-		page_addr->virt_addr =
-			dma_zalloc_coherent(hwdev->dev_hdl, page_size,
-					    &page_addr->phys_addr, GFP_KERNEL);
-		if (!page_addr->virt_addr) {
+		err = hinic3_dma_zalloc_coherent_align(hwdev->dev_hdl, page_size,
+						       page_size, GFP_KERNEL, page_addr);
+		if (err) {
 			flag = 0;
 			break;
 		}
@@ -878,9 +914,7 @@ static int mqm_eqm_try_alloc_mem(struct hinic3_hwdev *hwdev, u32 page_size,
 	} else {
 		page_addr = hwdev->mqm_att.brm_srch_page_addr;
 		for (i = 0; i < valid_num; i++) {
-			dma_free_coherent(hwdev->dev_hdl, page_size,
-					  page_addr->virt_addr,
-					  (dma_addr_t)page_addr->phys_addr);
+			hinic3_dma_free_coherent_align(hwdev->dev_hdl, page_addr);
 			page_addr++;
 		}
 		return -EFAULT;
@@ -924,15 +958,12 @@ static int mqm_eqm_alloc_page_mem(struct hinic3_hwdev *hwdev)
 static void mqm_eqm_free_page_mem(struct hinic3_hwdev *hwdev)
 {
 	u32 i;
-	struct hinic3_page_addr *page_addr;
-	u32 page_size;
+	struct hinic3_dma_addr_align *page_addr;
 
-	page_size = hwdev->mqm_att.page_size;
 	page_addr = hwdev->mqm_att.brm_srch_page_addr;
 
 	for (i = 0; i < hwdev->mqm_att.page_num; i++) {
-		dma_free_coherent(hwdev->dev_hdl, page_size,
-				  page_addr->virt_addr, (dma_addr_t)(page_addr->phys_addr));
+		hinic3_dma_free_coherent_align(hwdev->dev_hdl, page_addr);
 		page_addr++;
 	}
 }
@@ -961,12 +992,11 @@ static int mqm_eqm_set_cfg_2_hw(struct hinic3_hwdev *hwdev, u8 valid)
 }
 
 #define EQM_DATA_BUF_SIZE	1024
-#define MQM_ATT_PAGE_NUM	128
 
 static int mqm_eqm_set_page_2_hw(struct hinic3_hwdev *hwdev)
 {
 	struct comm_cmd_eqm_search_gpa *info = NULL;
-	struct hinic3_page_addr *page_addr = NULL;
+	struct hinic3_dma_addr_align *page_addr = NULL;
 	void *send_buf = NULL;
 	u16 send_buf_size;
 	u32 i;
@@ -995,7 +1025,7 @@ static int mqm_eqm_set_page_2_hw(struct hinic3_hwdev *hwdev)
 	cmd = COMM_MGMT_CMD_SET_MQM_SRCH_GPA;
 	for (i = 0; i < hwdev->mqm_att.page_num; i++) {
 		/* gpa align to 4K, save gpa[31:12] */
-		gpa = page_addr->phys_addr >> 12;
+		gpa = page_addr->align_paddr >> 12;
 		gpa_hi52[num] = gpa;
 		num++;
 		if (num == MQM_ATT_PAGE_NUM) {
@@ -1085,7 +1115,7 @@ static int mqm_eqm_init(struct hinic3_hwdev *hwdev)
 	hwdev->mqm_att.page_num  = 0;
 
 	hwdev->mqm_att.brm_srch_page_addr =
-		kcalloc(hwdev->mqm_att.chunk_num, sizeof(struct hinic3_page_addr), GFP_KERNEL);
+		kcalloc(hwdev->mqm_att.chunk_num, sizeof(struct hinic3_dma_addr_align), GFP_KERNEL);
 	if (!(hwdev->mqm_att.brm_srch_page_addr)) {
 		sdk_err(hwdev->dev_hdl, "Alloc virtual mem failed\r\n");
 		return -EFAULT;
@@ -1245,7 +1275,7 @@ static int wait_cmdq_stop(struct hinic3_hwdev *hwdev)
 	return err;
 }
 
-static int hinic3_rx_tx_flush(struct hinic3_hwdev *hwdev, u16 channel)
+static int hinic3_rx_tx_flush(struct hinic3_hwdev *hwdev, u16 channel, bool wait_io)
 {
 	struct hinic3_hwif *hwif = hwdev->hwif;
 	struct comm_cmd_clear_doorbell clear_db;
@@ -1254,7 +1284,7 @@ static int hinic3_rx_tx_flush(struct hinic3_hwdev *hwdev, u16 channel)
 	int err;
 	int ret = 0;
 
-	if (HINIC3_FUNC_TYPE(hwdev) != TYPE_VF)
+	if ((HINIC3_FUNC_TYPE(hwdev) != TYPE_VF) && wait_io)
 		msleep(100); /* wait ucode 100 ms stop I/O */
 
 	err = wait_cmdq_stop(hwdev);
@@ -1317,7 +1347,7 @@ static int hinic3_rx_tx_flush(struct hinic3_hwdev *hwdev, u16 channel)
 	return ret;
 }
 
-int hinic3_func_rx_tx_flush(void *hwdev, u16 channel)
+int hinic3_func_rx_tx_flush(void *hwdev, u16 channel, bool wait_io)
 {
 	struct hinic3_hwdev *dev = hwdev;
 
@@ -1327,7 +1357,7 @@ int hinic3_func_rx_tx_flush(void *hwdev, u16 channel)
 	if (dev->chip_present_flag == 0)
 		return 0;
 
-	return hinic3_rx_tx_flush(dev, channel);
+	return hinic3_rx_tx_flush(dev, channel, wait_io);
 }
 EXPORT_SYMBOL(hinic3_func_rx_tx_flush);
 
@@ -1383,7 +1413,7 @@ int hinic3_get_hw_pf_infos(void *hwdev, struct hinic3_hw_pf_infos *infos,
 		goto free_buf;
 	}
 
-	memcpy(infos, &pf_infos->infos, sizeof(*infos));
+	memcpy(infos, &pf_infos->infos, sizeof(struct hinic3_hw_pf_infos));
 
 free_buf:
 	kfree(pf_infos);
@@ -1407,7 +1437,7 @@ int hinic3_get_global_attr(void *hwdev, struct comm_global_attr *attr)
 		return -EIO;
 	}
 
-	memcpy(attr, &get_attr.attr, sizeof(*attr));
+	memcpy(attr, &get_attr.attr, sizeof(struct comm_global_attr));
 
 	return 0;
 }
@@ -1477,7 +1507,7 @@ int hinic3_get_sml_table_info(void *hwdev, u32 tbl_id, u8 *node_id, u8 *instance
 
 int hinic3_activate_firmware(void *hwdev, u8 cfg_index)
 {
-	struct hinic3_cmd_activate_firmware activate_msg;
+	struct cmd_active_firmware activate_msg;
 	u16 out_size = sizeof(activate_msg);
 	int err;
 
@@ -1509,7 +1539,7 @@ int hinic3_activate_firmware(void *hwdev, u8 cfg_index)
 
 int hinic3_switch_config(void *hwdev, u8 cfg_index)
 {
-	struct hinic3_cmd_switch_config switch_cfg;
+	struct cmd_switch_cfg switch_cfg;
 	u16 out_size = sizeof(switch_cfg);
 	int err;
 

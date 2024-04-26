@@ -1,5 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-only
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/hw/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/cqm/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/cqm/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/public/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/cfg_mgmt/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/mpu/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/bond/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/vmsec/
 
 obj-$(CONFIG_HINIC3) += hinic3.o
 hinic3-objs := hw/hinic3_hwdev.o \
@@ -23,6 +32,8 @@ hinic3-objs := hw/hinic3_hwdev.o \
 			hw/hinic3_nictool.o \
 			hw/hinic3_devlink.o \
 			hw/ossl_knl_linux.o \
+			hw/hinic3_multi_host_mgmt.o \
+			bond/hinic3_bond.o \
 			hinic3_main.o \
 			hinic3_tx.o \
 			hinic3_rx.o \
@@ -42,4 +53,13 @@ hinic3-objs := hw/hinic3_hwdev.o \
 			hinic3_rss_cfg.o \
 			hinic3_nic_event.o \
 			hinic3_nic_io.o \
-			hinic3_nic_dbg.o
+			hinic3_nic_dbg.o \
+			cqm/cqm_bat_cla.o \
+			cqm/cqm_bitmap_table.o \
+			cqm/cqm_object_intern.o \
+			cqm/cqm_bloomfilter.o \
+			cqm/cqm_cmd.o \
+			cqm/cqm_db.o \
+			cqm/cqm_object.o \
+			cqm/cqm_main.o \
+			cqm/cqm_memsec.o

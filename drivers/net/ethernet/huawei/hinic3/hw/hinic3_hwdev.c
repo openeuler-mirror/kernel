@@ -28,7 +28,9 @@
 #include "hinic3_mbox.h"
 #include "hinic3_cmdq.h"
 #include "hinic3_hw_cfg.h"
+#include "hinic3_multi_host_mgmt.h"
 #include "hinic3_hw_comm.h"
+#include "hinic3_cqm.h"
 #include "hinic3_prof_adap.h"
 #include "hinic3_devlink.h"
 #include "hinic3_hwdev.h"
@@ -138,7 +140,12 @@ EXPORT_SYMBOL(hinic3_get_slave_host_enable);
 int hinic3_get_slave_bitmap(void *hwdev, u8 *slave_host_bitmap)
 {
 	struct hinic3_hwdev *dev = hwdev;
-	struct service_cap *cap = &dev->cfg_mgmt->svc_cap;
+	struct service_cap *cap = NULL;
+
+	if (!dev || !slave_host_bitmap)
+		return -EINVAL;
+
+	cap = &dev->cfg_mgmt->svc_cap;
 
 	if (HINIC3_FUNC_TYPE(dev) != TYPE_PPF) {
 		sdk_warn(dev->dev_hdl, "hwdev should be ppf\n");
@@ -151,7 +158,7 @@ int hinic3_get_slave_bitmap(void *hwdev, u8 *slave_host_bitmap)
 }
 EXPORT_SYMBOL(hinic3_get_slave_bitmap);
 
-static void set_func_host_mode(struct hinic3_hwdev *hwdev, enum hinic3_func_mode mode)
+void set_func_host_mode(struct hinic3_hwdev *hwdev, enum hinic3_func_mode mode)
 {
 	switch (mode) {
 	case FUNC_MOD_MULTI_BM_MASTER:
@@ -181,11 +188,6 @@ static void hinic3_init_host_mode_pre(struct hinic3_hwdev *hwdev)
 	struct service_cap *cap = &hwdev->cfg_mgmt->svc_cap;
 	u8 host_id = hwdev->hwif->attr.pci_intf_idx;
 
-	if (HINIC3_FUNC_TYPE(hwdev) == TYPE_VF) {
-		set_func_host_mode(hwdev, FUNC_MOD_NORMAL_HOST);
-		return;
-	}
-
 	switch (cap->srv_multi_host_mode) {
 	case HINIC3_SDI_MODE_BM:
 		if (host_id == cap->master_host_id)
@@ -203,28 +205,6 @@ static void hinic3_init_host_mode_pre(struct hinic3_hwdev *hwdev)
 		set_func_host_mode(hwdev, FUNC_MOD_NORMAL_HOST);
 		break;
 	}
-}
-
-static int hinic3_multi_host_init(struct hinic3_hwdev *hwdev)
-{
-	if (!IS_MULTI_HOST(hwdev) || !HINIC3_IS_PPF(hwdev))
-		return 0;
-
-	if (IS_SLAVE_HOST(hwdev))
-		set_slave_host_enable(hwdev, hinic3_pcie_itf_id(hwdev), true);
-
-	return 0;
-}
-
-static int hinic3_multi_host_free(struct hinic3_hwdev *hwdev)
-{
-	if (!IS_MULTI_HOST(hwdev) || !HINIC3_IS_PPF(hwdev))
-		return 0;
-
-	if (IS_SLAVE_HOST(hwdev))
-		set_slave_host_enable(hwdev, hinic3_pcie_itf_id(hwdev), false);
-
-	return 0;
 }
 
 static u8 hinic3_nic_sw_aeqe_handler(void *hwdev, u8 event, u8 *data)
@@ -524,13 +504,13 @@ static void sw_watchdog_timeout_info_show(struct hinic3_hwdev *hwdev,
 
 	sdk_err(hwdev->dev_hdl, "Mgmt pc: 0x%llx, elr: 0x%llx, spsr: 0x%llx, far: 0x%llx, esr: 0x%llx, xzr: 0x%llx\n",
 		watchdog_info->pc, watchdog_info->elr, watchdog_info->spsr, watchdog_info->far,
-		watchdog_info->esr, watchdog_info->xzr); /*lint !e10 !e26 */
+		watchdog_info->esr, watchdog_info->xzr);
 
 	sdk_err(hwdev->dev_hdl, "Mgmt register info\n");
 	reg = &watchdog_info->x30;
 	for (i = 0; i <= X_CSR_INDEX; i++)
 		sdk_err(hwdev->dev_hdl, "x%02u:0x%llx\n",
-			X_CSR_INDEX - i, reg[i]); /*lint !e661 !e662 */
+			X_CSR_INDEX - i, reg[i]);
 
 	if (watchdog_info->stack_actlen <= DATA_LEN_1K) {
 		stack_len = watchdog_info->stack_actlen;
@@ -816,7 +796,7 @@ static int init_aeqs_msix_attr(struct hinic3_hwdev *hwdev)
 		info.msix_index = eq->eq_irq.msix_entry_idx;
 		err = hinic3_set_interrupt_cfg_direct(hwdev, &info,
 						      HINIC3_CHANNEL_COMM);
-		if (err) {
+		if (err != 0) {
 			sdk_err(hwdev->dev_hdl, "Set msix attr for aeq %d failed\n",
 				q_id);
 			return -EFAULT;
@@ -845,7 +825,7 @@ static int init_ceqs_msix_attr(struct hinic3_hwdev *hwdev)
 		info.msix_index = eq->eq_irq.msix_entry_idx;
 		err = hinic3_set_interrupt_cfg(hwdev, info,
 					       HINIC3_CHANNEL_COMM);
-		if (err) {
+		if (err != 0) {
 			sdk_err(hwdev->dev_hdl, "Set msix attr for ceq %u failed\n",
 				q_id);
 			return -EFAULT;
@@ -863,7 +843,7 @@ static int hinic3_comm_clp_to_mgmt_init(struct hinic3_hwdev *hwdev)
 		return 0;
 
 	err = hinic3_clp_pf_to_mgmt_init(hwdev);
-	if (err)
+	if (err != 0)
 		return err;
 
 	return 0;
@@ -891,7 +871,7 @@ static int hinic3_comm_aeqs_init(struct hinic3_hwdev *hwdev)
 	}
 	err = hinic3_alloc_irqs(hwdev, SERVICE_T_INTF, num_aeqs, aeq_irqs,
 				&resp_num_irq);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to alloc aeq irqs, num_aeqs: %u\n",
 			num_aeqs);
 		return err;
@@ -904,7 +884,7 @@ static int hinic3_comm_aeqs_init(struct hinic3_hwdev *hwdev)
 	}
 
 	err = hinic3_aeqs_init(hwdev, num_aeqs, aeq_irqs);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init aeqs\n");
 		goto aeqs_init_err;
 	}
@@ -923,7 +903,7 @@ static void hinic3_comm_aeqs_free(struct hinic3_hwdev *hwdev)
 	struct irq_info aeq_irqs[HINIC3_MAX_AEQS] = {{0} };
 	u16 num_irqs, i;
 
-	hinic3_get_aeq_irqs(hwdev, aeq_irqs, &num_irqs);
+	hinic3_get_aeq_irqs(hwdev, (struct irq_info *)aeq_irqs, &num_irqs);
 
 	hinic3_aeqs_free(hwdev);
 
@@ -946,7 +926,7 @@ static int hinic3_comm_ceqs_init(struct hinic3_hwdev *hwdev)
 
 	err = hinic3_alloc_irqs(hwdev, SERVICE_T_INTF, num_ceqs, ceq_irqs,
 				&resp_num_irq);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to alloc ceq irqs, num_ceqs: %u\n",
 			num_ceqs);
 		return err;
@@ -959,7 +939,7 @@ static int hinic3_comm_ceqs_init(struct hinic3_hwdev *hwdev)
 	}
 
 	err = hinic3_ceqs_init(hwdev, num_ceqs, ceq_irqs);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to init ceqs, err:%d\n", err);
 		goto ceqs_init_err;
@@ -980,7 +960,7 @@ static void hinic3_comm_ceqs_free(struct hinic3_hwdev *hwdev)
 	u16 num_irqs;
 	int i;
 
-	hinic3_get_ceq_irqs(hwdev, ceq_irqs, &num_irqs);
+	hinic3_get_ceq_irqs(hwdev, (struct irq_info *)ceq_irqs, &num_irqs);
 
 	hinic3_ceqs_free(hwdev);
 
@@ -993,7 +973,7 @@ static int hinic3_comm_func_to_func_init(struct hinic3_hwdev *hwdev)
 	int err;
 
 	err = hinic3_func_to_func_init(hwdev);
-	if (err)
+	if (err != 0)
 		return err;
 
 	hinic3_aeq_register_hw_cb(hwdev, hwdev, HINIC3_MBX_FROM_FUNC,
@@ -1001,14 +981,13 @@ static int hinic3_comm_func_to_func_init(struct hinic3_hwdev *hwdev)
 	hinic3_aeq_register_hw_cb(hwdev, hwdev, HINIC3_MSG_FROM_MGMT_CPU,
 				  hinic3_mgmt_msg_aeqe_handler);
 
-	if (!HINIC3_IS_VF(hwdev))
-		hinic3_register_pf_mbox_cb(hwdev, HINIC3_MOD_COMM,
-					   hwdev,
-					   pf_handle_vf_comm_mbox);
-	else
-		hinic3_register_vf_mbox_cb(hwdev, HINIC3_MOD_COMM,
-					   hwdev,
-					   vf_handle_pf_comm_mbox);
+	if (!HINIC3_IS_VF(hwdev)) {
+		hinic3_register_pf_mbox_cb(hwdev, HINIC3_MOD_COMM, hwdev, pf_handle_vf_comm_mbox);
+		hinic3_register_pf_mbox_cb(hwdev, HINIC3_MOD_SW_FUNC,
+					   hwdev, sw_func_pf_mbox_handler);
+	} else {
+		hinic3_register_vf_mbox_cb(hwdev, HINIC3_MOD_COMM, hwdev, vf_handle_pf_comm_mbox);
+	}
 
 	set_bit(HINIC3_HWDEV_MBOX_INITED, &hwdev->func_state);
 
@@ -1042,7 +1021,7 @@ static int hinic3_comm_pf_to_mgmt_init(struct hinic3_hwdev *hwdev)
 		return 0;
 
 	err = hinic3_pf_to_mgmt_init(hwdev);
-	if (err)
+	if (err != 0)
 		return err;
 
 	hinic3_register_mgmt_msg_cb(hwdev, HINIC3_MOD_COMM, hwdev,
@@ -1074,7 +1053,7 @@ static int hinic3_comm_cmdqs_init(struct hinic3_hwdev *hwdev)
 	int err;
 
 	err = hinic3_cmdqs_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init cmd queues\n");
 		return err;
 	}
@@ -1082,7 +1061,7 @@ static int hinic3_comm_cmdqs_init(struct hinic3_hwdev *hwdev)
 	hinic3_ceq_register_cb(hwdev, hwdev, HINIC3_CMDQ, hinic3_cmdq_ceq_handler);
 
 	err = hinic3_set_cmdq_depth(hwdev, HINIC3_CMDQ_DEPTH);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to set cmdq depth\n");
 		goto set_cmdq_depth_err;
 	}
@@ -1109,7 +1088,7 @@ static void hinic3_comm_cmdqs_free(struct hinic3_hwdev *hwdev)
 
 static void hinic3_sync_mgmt_func_state(struct hinic3_hwdev *hwdev)
 {
-		hinic3_set_pf_status(hwdev->hwif, HINIC3_PF_STATUS_ACTIVE_FLAG);
+	hinic3_set_pf_status(hwdev->hwif, HINIC3_PF_STATUS_ACTIVE_FLAG);
 }
 
 static void hinic3_unsync_mgmt_func_state(struct hinic3_hwdev *hwdev)
@@ -1127,12 +1106,12 @@ static int init_basic_attributes(struct hinic3_hwdev *hwdev)
 
 	err = hinic3_get_board_info(hwdev, &hwdev->board_info,
 				    HINIC3_CHANNEL_COMM);
-	if (err)
+	if (err != 0)
 		return err;
 
 	err = hinic3_get_comm_features(hwdev, hwdev->features,
 				       COMM_MAX_FEATURE_QWORD);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Get comm features failed\n");
 		return err;
 	}
@@ -1144,7 +1123,7 @@ static int init_basic_attributes(struct hinic3_hwdev *hwdev)
 		hwdev->features[i] &= drv_features[i];
 
 	err = hinic3_get_global_attr(hwdev, &hwdev->glb_attr);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to get global attribute\n");
 		return err;
 	}
@@ -1164,19 +1143,19 @@ static int init_basic_mgmt_channel(struct hinic3_hwdev *hwdev)
 	int err;
 
 	err = hinic3_comm_aeqs_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init async event queues\n");
 		return err;
 	}
 
 	err = hinic3_comm_func_to_func_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init mailbox\n");
 		goto func_to_func_init_err;
 	}
 
 	err = init_aeqs_msix_attr(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init aeqs msix attr\n");
 		goto aeqs_msix_attr_init_err;
 	}
@@ -1203,13 +1182,13 @@ static int init_pf_mgmt_channel(struct hinic3_hwdev *hwdev)
 	int err;
 
 	err = hinic3_comm_clp_to_mgmt_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init clp\n");
 		return err;
 	}
 
 	err = hinic3_comm_pf_to_mgmt_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		hinic3_comm_clp_to_mgmt_free(hwdev);
 		sdk_err(hwdev->dev_hdl, "Failed to init pf to mgmt\n");
 		return err;
@@ -1233,14 +1212,14 @@ static int init_mgmt_channel_post(struct hinic3_hwdev *hwdev)
 	 */
 	if (HINIC3_IS_PPF(hwdev)) {
 		err = hinic3_mbox_init_host_msg_channel(hwdev);
-		if (err) {
+		if (err != 0) {
 			sdk_err(hwdev->dev_hdl, "Failed to init mbox host channel\n");
 			return err;
 		}
 	}
 
 	err = init_pf_mgmt_channel(hwdev);
-	if (err)
+	if (err != 0)
 		return err;
 
 	return 0;
@@ -1256,19 +1235,19 @@ static int init_cmdqs_channel(struct hinic3_hwdev *hwdev)
 	int err;
 
 	err = dma_attr_table_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init dma attr table\n");
 		goto dma_attr_init_err;
 	}
 
 	err = hinic3_comm_ceqs_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init completion event queues\n");
 		goto ceqs_init_err;
 	}
 
 	err = init_ceqs_msix_attr(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init ceqs msix attr\n");
 		goto init_ceq_msix_err;
 	}
@@ -1284,13 +1263,13 @@ static int init_cmdqs_channel(struct hinic3_hwdev *hwdev)
 	sdk_info(hwdev->dev_hdl, "WQ page size: 0x%x\n", hwdev->wq_page_size);
 	err = hinic3_set_wq_page_size(hwdev, hinic3_global_func_id(hwdev),
 				      hwdev->wq_page_size, HINIC3_CHANNEL_COMM);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to set wq page size\n");
 		goto init_wq_pg_size_err;
 	}
 
 	err = hinic3_comm_cmdqs_init(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init cmd queues\n");
 		goto cmdq_init_err;
 	}
@@ -1328,28 +1307,28 @@ static int hinic3_init_comm_ch(struct hinic3_hwdev *hwdev)
 	int err;
 
 	err = init_basic_mgmt_channel(hwdev);
-	if (err)
+	if (err != 0)
 		return err;
 
 	err = hinic3_func_reset(hwdev, hinic3_global_func_id(hwdev),
 				HINIC3_COMM_RES, HINIC3_CHANNEL_COMM);
-	if (err)
+	if (err != 0)
 		goto func_reset_err;
 
 	err = init_basic_attributes(hwdev);
-	if (err)
+	if (err != 0)
 		goto init_basic_attr_err;
 
 	err = init_mgmt_channel_post(hwdev);
-	if (err)
+	if (err != 0)
 		goto init_mgmt_channel_post_err;
 
 	err = hinic3_set_func_svc_used_state(hwdev, SVC_T_COMM, 1, HINIC3_CHANNEL_COMM);
-	if (err)
+	if (err != 0)
 		goto set_used_state_err;
 
 	err = init_cmdqs_channel(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init cmdq channel\n");
 		goto init_cmdqs_channel_err;
 	}
@@ -1363,7 +1342,7 @@ static int hinic3_init_comm_ch(struct hinic3_hwdev *hwdev)
 
 	err = hinic3_aeq_register_swe_cb(hwdev, hwdev, HINIC3_STATELESS_EVENT,
 					 hinic3_nic_sw_aeqe_handler);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl,
 			"Failed to register sw aeqe handler\n");
 		goto register_ucode_aeqe_err;
@@ -1408,7 +1387,7 @@ static void hinic3_auto_sync_time_work(struct work_struct *work)
 	int err;
 
 	err = hinic3_sync_time(hwdev, ossl_get_real_time());
-	if (err)
+	if (err != 0)
 		sdk_err(hwdev->dev_hdl, "Synchronize UTC time to firmware failed, errno:%d.\n",
 			err);
 
@@ -1478,6 +1457,7 @@ static int init_hwdew(struct hinic3_init_para *para)
 	hwdev->poll = para->poll;
 	hwdev->probe_fault_level = para->probe_fault_level;
 	hwdev->func_state = 0;
+	sema_init(&hwdev->ppf_sem, 1);
 
 	hwdev->chip_fault_stats = vzalloc(HINIC3_CHIP_FAULT_SIZE);
 	if (!hwdev->chip_fault_stats)
@@ -1492,6 +1472,7 @@ static int init_hwdew(struct hinic3_init_para *para)
 	return 0;
 
 alloc_chip_fault_stats_err:
+	sema_deinit(&hwdev->ppf_sem);
 	para->probe_fault_level = hwdev->probe_fault_level;
 	kfree(hwdev);
 	*para->hwdev = NULL;
@@ -1500,18 +1481,17 @@ alloc_chip_fault_stats_err:
 
 int hinic3_init_hwdev(struct hinic3_init_para *para)
 {
-	struct hinic3_hwdev *hwdev;
+	struct hinic3_hwdev *hwdev = NULL;
 	int err;
 
 	err = init_hwdew(para);
-	if (err)
+	if (err != 0)
 		return err;
 
 	hwdev = *para->hwdev;
-
 	err = hinic3_init_hwif(hwdev, para->cfg_reg_base, para->intr_reg_base, para->mgmt_reg_base,
 			       para->db_base_phy, para->db_base, para->db_dwqe_len);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init hwif\n");
 		goto init_hwif_err;
 	}
@@ -1529,45 +1509,45 @@ int hinic3_init_hwdev(struct hinic3_init_para *para)
 	hinic3_init_heartbeat_detect(hwdev);
 
 	err = init_cfg_mgmt(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init config mgmt\n");
 		goto init_cfg_mgmt_err;
 	}
 
 	err = hinic3_init_comm_ch(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init communication channel\n");
 		goto init_comm_ch_err;
 	}
 
 #ifdef HAVE_DEVLINK_FLASH_UPDATE_PARAMS
 	err = hinic3_init_devlink(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init devlink\n");
 		goto init_devlink_err;
 	}
 #endif
 
 	err = init_capability(hwdev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init capability\n");
 		goto init_cap_err;
 	}
 
 	hinic3_init_host_mode_pre(hwdev);
 
-	err = hinic3_multi_host_init(hwdev);
-	if (err) {
+	err = hinic3_multi_host_mgmt_init(hwdev);
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init function mode\n");
 		goto init_multi_host_fail;
 	}
 
 	err = hinic3_init_ppf_work(hwdev);
-	if (err)
+	if (err != 0)
 		goto init_ppf_work_fail;
 
 	err = hinic3_set_comm_features(hwdev, hwdev->features, COMM_MAX_FEATURE_QWORD);
-	if (err) {
+	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to set comm features\n");
 		goto set_feature_err;
 	}
@@ -1578,7 +1558,7 @@ set_feature_err:
 	hinic3_free_ppf_work(hwdev);
 
 init_ppf_work_fail:
-	hinic3_multi_host_free(hwdev);
+	hinic3_multi_host_mgmt_free(hwdev);
 
 init_multi_host_fail:
 	free_capability(hwdev);
@@ -1623,9 +1603,9 @@ void hinic3_free_hwdev(void *hwdev)
 
 	hinic3_free_ppf_work(dev);
 
-	hinic3_multi_host_free(dev);
+	hinic3_multi_host_mgmt_free(dev);
 
-	hinic3_func_rx_tx_flush(hwdev, HINIC3_CHANNEL_COMM);
+	hinic3_func_rx_tx_flush(hwdev, HINIC3_CHANNEL_COMM, true);
 
 	free_capability(dev);
 
@@ -1698,7 +1678,7 @@ void *hinic3_get_service_adapter(void *hwdev, enum hinic3_service_type type)
 }
 EXPORT_SYMBOL(hinic3_get_service_adapter);
 
-int hinic3_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u16 *out_size)
+int hinic3_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u32 *out_size)
 {
 	struct hinic3_hw_stats *tmp_hw_stats = (struct hinic3_hw_stats *)hw_stats;
 	struct card_node *chip_node = NULL;
@@ -1712,8 +1692,8 @@ int hinic3_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u16 *out_size
 		return -EFAULT;
 	}
 
-	memcpy(hw_stats, &((struct hinic3_hwdev *)hwdev)->hw_stats,
-	       sizeof(struct hinic3_hw_stats));
+	memcpy(hw_stats,
+	       &((struct hinic3_hwdev *)hwdev)->hw_stats, sizeof(struct hinic3_hw_stats));
 
 	chip_node = ((struct hinic3_hwdev *)hwdev)->chip_node;
 
@@ -1835,6 +1815,16 @@ bool hinic3_need_init_stateful_default(void *hwdev)
 	if (hinic3_func_type(hwdev) == TYPE_PPF && (chip_svc_type & CFG_SERVICE_MASK_VIRTIO) != 0)
 		return true;
 
+	/* vroce have to init cqm */
+	if (IS_MASTER_HOST(dev) &&
+	    (hinic3_func_type(hwdev) != TYPE_PPF) &&
+	    ((chip_svc_type & CFG_SERVICE_MASK_ROCE) != 0))
+		return true;
+
+	/* SDI5.1 vm mode nano os PF0 as ppf needs to do stateful init else mailbox will fail */
+	if (hinic3_func_type(hwdev) == TYPE_PPF && hinic3_is_vm_slave_host(hwdev))
+		return true;
+
 	/* Other service type will init cqm when uld call. */
 	return false;
 }
@@ -1842,6 +1832,8 @@ bool hinic3_need_init_stateful_default(void *hwdev)
 static inline void stateful_uninit(struct hinic3_hwdev *hwdev)
 {
 	u32 stateful_en;
+
+	cqm_uninit(hwdev);
 
 	stateful_en = IS_FT_TYPE(hwdev) | IS_RDMA_TYPE(hwdev);
 	if (stateful_en)
@@ -1869,14 +1861,24 @@ int hinic3_stateful_init(void *hwdev)
 	stateful_en = (int)(IS_FT_TYPE(dev) | IS_RDMA_TYPE(dev));
 	if (stateful_en != 0 && HINIC3_IS_PPF(dev)) {
 		err = hinic3_ppf_ext_db_init(dev);
-		if (err)
+		if (err != 0)
 			goto out;
+	}
+
+	err = cqm_init(dev);
+	if (err != 0) {
+		sdk_err(dev->dev_hdl, "Failed to init cqm, err: %d\n", err);
+		goto init_cqm_err;
 	}
 
 	mutex_unlock(&dev->stateful_mutex);
 	sdk_info(dev->dev_hdl, "Initialize stateful resource success\n");
 
 	return 0;
+
+init_cqm_err:
+	if (stateful_en != 0)
+		hinic3_ppf_ext_db_deinit(dev);
 
 out:
 	dev->stateful_ref_cnt--;
@@ -1966,6 +1968,26 @@ void hinic3_fault_event_report(void *hwdev, u16 src, u16 level)
 	hisdk3_fault_post_process(hwdev, src, level);
 }
 EXPORT_SYMBOL(hinic3_fault_event_report);
+
+int hinic3_is_slave_func(const void *hwdev, bool *is_slave_func)
+{
+	if (!hwdev)
+		return -EINVAL;
+
+	*is_slave_func = IS_SLAVE_HOST((struct hinic3_hwdev *)hwdev);
+	return 0;
+}
+EXPORT_SYMBOL(hinic3_is_slave_func);
+
+int hinic3_is_master_func(const void *hwdev, bool *is_master_func)
+{
+	if (!hwdev)
+		return -EINVAL;
+
+	*is_master_func = IS_MASTER_HOST((struct hinic3_hwdev *)hwdev);
+	return 0;
+}
+EXPORT_SYMBOL(hinic3_is_master_func);
 
 void hinic3_probe_success(void *hwdev)
 {

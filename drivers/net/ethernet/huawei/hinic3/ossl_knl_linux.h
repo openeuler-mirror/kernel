@@ -31,6 +31,17 @@
 #define __GFP_COMP 0
 #endif
 
+#define ossl_get_free_pages __get_free_pages
+
+#ifndef high_16_bits
+#define low_16_bits(x) ((x) & 0xFFFF)
+#define high_16_bits(x) (((x) & 0xFFFF0000) >> 16)
+#endif
+
+#ifndef U8_MAX
+#define U8_MAX 0xFF
+#endif
+
 #define ETH_TYPE_TRANS_SETS_DEV
 #define HAVE_NETDEV_STATS_IN_NETDEV
 
@@ -162,10 +173,12 @@ static inline void *_hinic3_dma_zalloc_coherent(struct device *dev,
 }
 #endif
 
+#ifndef DT_KNL_EMU
 struct timeval {
 	__kernel_old_time_t     tv_sec;         /* seconds */
 	__kernel_suseconds_t    tv_usec;        /* microseconds */
 };
+#endif
 
 #ifndef do_gettimeofday
 #define do_gettimeofday(time) _kc_do_gettimeofday(time)
@@ -199,11 +212,61 @@ static inline void _kc_do_gettimeofday(struct timeval *tv)
 
 #define HAVE_XDP_FRAME_SZ
 
+/* This defines the direction arg to the DMA mapping routines. */
+#define PCI_DMA_BIDIRECTIONAL	0
+#define PCI_DMA_TODEVICE	1
+#define PCI_DMA_FROMDEVICE	2
+#define PCI_DMA_NONE		3
+
+static inline dma_addr_t pci_map_single(struct pci_dev *hwdev, void *ptr,
+					size_t size, int direction)
+{
+	return dma_map_single(!hwdev ? NULL : &hwdev->dev,
+			      ptr, size, (enum dma_data_direction)direction
+);
+}
+
+static inline void pci_unmap_single(struct pci_dev *hwdev, dma_addr_t dma_addr,
+				    size_t size, int direction)
+{
+	dma_unmap_single(!hwdev ? NULL : &hwdev->dev, dma_addr,
+			 size, (enum dma_data_direction)direction
+);
+}
+
+static inline int pci_dma_mapping_error(struct pci_dev *hwdev, dma_addr_t dma_addr)
+{
+	return dma_mapping_error(&hwdev->dev, dma_addr);
+}
+
+static inline void *pci_alloc_consistent(struct pci_dev *hwdev,
+					 size_t size, dma_addr_t *dma_handle)
+{
+	return dma_alloc_coherent(!hwdev ? NULL : &hwdev->dev,
+				  size, dma_handle, GFP_ATOMIC);
+}
+
+static inline void pci_free_consistent(struct pci_dev *hwdev, size_t size,
+				       void *vaddr, dma_addr_t dma_handle)
+{
+	dma_free_coherent(!hwdev ? NULL : &hwdev->dev,
+			  size, vaddr, dma_handle);
+}
+
 #define HAVE_DEVLINK_FW_FILE_NAME_MEMBER
 
 #define HAVE_ENCAPSULATION_TSO
 
 #define HAVE_ENCAPSULATION_CSUM
+
+#ifndef eth_zero_addr
+static inline void hinic3_eth_zero_addr(u8 *addr)
+{
+	memset(addr, 0x00, ETH_ALEN);
+}
+
+#define eth_zero_addr(_addr) hinic3_eth_zero_addr(_addr)
+#endif
 
 #ifndef netdev_hw_addr_list_for_each
 #define netdev_hw_addr_list_for_each(ha, l) \
@@ -221,6 +284,11 @@ void file_close(struct file *file_handle);
 u32 get_file_size(struct file *file_handle);
 
 void set_file_position(struct file *file_handle, u32 position);
+
+int file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
+	      u32 *file_pos);
+
+u32 file_write(struct file *file_handle, const char *log_buffer, u32 wr_length);
 
 struct sdk_thread_info {
 	struct task_struct *thread_obj;
@@ -242,7 +310,7 @@ void utctime_to_localtime(u64 utctime, u64 *localtime);
 void initialize_timer(const void *adapter_hdl, struct timer_list *timer);
 #endif
 
-void add_to_timer(struct timer_list *timer, long period);
+void add_to_timer(struct timer_list *timer, u64 period);
 void stop_timer(struct timer_list *timer);
 void delete_timer(struct timer_list *timer);
 u64 ossl_get_real_time(void);

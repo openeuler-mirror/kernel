@@ -10,7 +10,6 @@
 #include "hinic3_common.h"
 #include "hinic3_nic_io.h"
 #include "hinic3_nic_cfg.h"
-#include "mag_cmd.h"
 
 /* ************************ array index define ********************* */
 #define ARRAY_INDEX_0 0

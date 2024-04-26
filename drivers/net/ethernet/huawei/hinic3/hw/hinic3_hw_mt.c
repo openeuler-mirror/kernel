@@ -5,7 +5,7 @@
 #include "hinic3_mt.h"
 #include "hinic3_crm.h"
 #include "hinic3_hw.h"
-#include "hinic3_comm_cmd.h"
+#include "mpu_inband_cmd.h"
 #include "hinic3_hw_mt.h"
 
 #define	HINIC3_CMDQ_BUF_MAX_SIZE		2048U
@@ -14,8 +14,10 @@
 #define MSG_MAX_IN_SIZE		(2048 * 1024)
 #define MSG_MAX_OUT_SIZE	(2048 * 1024)
 
+#define API_CSR_MAX_RD_LEN (4 * 1024 * 1024)
+
 /* completion timeout interval, unit is millisecond */
-#define MGMT_MSG_UPDATE_TIMEOUT		50000U
+#define MGMT_MSG_UPDATE_TIMEOUT		200000U
 
 void free_buff_in(void *hwdev, const struct msg_module *nt_msg, void *buf_in)
 {
@@ -127,6 +129,9 @@ int copy_buf_out_to_user(struct msg_module *nt_msg,
 	int ret = 0;
 	void *msg_out = NULL;
 
+	if (out_size == 0 || !buf_out)
+		return 0;
+
 	if (nt_msg->module == SEND_TO_NPU &&
 	    !nt_msg->npu_cmd.direct_resp)
 		msg_out = ((struct hinic3_cmd_buf *)buf_out)->buf;
@@ -177,7 +182,7 @@ int get_hw_driver_stats(struct hinic3_lld_dev *lld_dev, const void *buf_in, u32 
 			void *buf_out, u32 *out_size)
 {
 	return hinic3_dbg_get_hw_stats(hinic3_get_sdk_hwdev_by_lld(lld_dev),
-		buf_out, (u16 *)out_size);
+		buf_out, out_size);
 }
 
 int clear_hw_driver_stats(struct hinic3_lld_dev *lld_dev, const void *buf_in, u32 in_size,
@@ -220,7 +225,7 @@ int get_chip_faults_stats(struct hinic3_lld_dev *lld_dev, const void *buf_in, u3
 
 	if (!buf_in || !buf_out || *out_size != sizeof(*fault_info) ||
 	    in_size != sizeof(*fault_info)) {
-		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %u, expect: %lu\n",
 		       *out_size, sizeof(*fault_info));
 		return -EFAULT;
 	}
@@ -251,6 +256,7 @@ static int api_csr_read(void *hwdev, struct msg_module *nt_msg,
 			void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct up_log_msg_st *up_log_msg = (struct up_log_msg_st *)buf_in;
+	u8 *buf_out_tmp = (u8 *)buf_out;
 	int ret = 0;
 	u32 rd_len;
 	u32 rd_addr;
@@ -272,7 +278,7 @@ static int api_csr_read(void *hwdev, struct msg_module *nt_msg,
 	for (i = 0; i < rd_cnt; i++) {
 		ret = hinic3_api_csr_rd32(hwdev, node_id,
 					  rd_addr + offset,
-					  (u32 *)(((u8 *)buf_out) + offset));
+					  (u32 *)(buf_out_tmp + offset));
 		if (ret) {
 			pr_err("Csr rd fail, err: %d, node_id: %u, csr addr: 0x%08x\n",
 			       ret, node_id, rd_addr + offset);
@@ -299,7 +305,8 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 	u32 i;
 	u8 *data = NULL;
 
-	if (!buf_in || in_size != sizeof(*csr_write_msg) || csr_write_msg->rd_len % DW_WIDTH != 0)
+	if (!buf_in || in_size != sizeof(*csr_write_msg) || csr_write_msg->rd_len == 0 ||
+	    csr_write_msg->rd_len > API_CSR_MAX_RD_LEN || csr_write_msg->rd_len % DW_WIDTH != 0)
 		return -EINVAL;
 
 	rd_len = csr_write_msg->rd_len;
@@ -352,7 +359,7 @@ int send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 
 		if (nt_msg->mpu_cmd.api_type == API_TYPE_MBOX)
 			ret = hinic3_msg_to_mgmt_sync(hwdev, mod, cmd, buf_in, (u16)in_size,
-						      buf_out, (u16 *)out_size, timeout,
+						      buf_out, (u16 *)(u8 *)out_size, timeout,
 						      HINIC3_CHANNEL_DEFAULT);
 		else
 			ret = hinic3_clp_to_mgmt(hwdev, mod, cmd, buf_in, (u16)in_size,
@@ -371,10 +378,10 @@ int send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 		if (hinic3_pcie_itf_id(hwdev) != SPU_HOST_ID)
 			ret = hinic3_msg_to_mgmt_api_chain_sync(hwdev, mod, cmd, buf_in,
 								(u16)in_size, buf_out,
-								(u16 *)out_size, timeout);
+								(u16 *)(u8 *)out_size, timeout);
 		else
 			ret = hinic3_msg_to_mgmt_sync(hwdev, mod, cmd, buf_in, (u16)in_size,
-						      buf_out, (u16 *)out_size, timeout,
+						      buf_out, (u16 *)(u8 *)out_size, timeout,
 						      HINIC3_CHANNEL_DEFAULT);
 		if (ret) {
 			pr_err("Message to mgmt api chain cpu return fail, mod: %d, cmd: %u\n",
@@ -382,7 +389,7 @@ int send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 			return ret;
 		}
 	} else {
-		pr_err("Unsupported api_type %d\n", nt_msg->mpu_cmd.api_type);
+		pr_err("Unsupported api_type %u\n", nt_msg->mpu_cmd.api_type);
 		return -EINVAL;
 	}
 
@@ -561,16 +568,17 @@ int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 {
 	struct sm_in_st *sm_in = buf_in;
 	struct sm_out_st *sm_out = buf_out;
-	u32 msg_formate = nt_msg->msg_formate;
-	int index, num_cmds = sizeof(sm_module_cmd_handle) /
-		sizeof(sm_module_cmd_handle[0]);
+	u32 msg_formate;
+	int index, num_cmds = ARRAY_LEN(sm_module_cmd_handle);
 	int ret = 0;
 
-	if (!buf_in || !buf_out || in_size != sizeof(*sm_in) || *out_size != sizeof(*sm_out)) {
+	if (!nt_msg || !buf_in || !buf_out ||
+	    in_size != sizeof(*sm_in) || *out_size != sizeof(*sm_out)) {
 		pr_err("Unexpect out buf size :%u, in buf size: %u\n",
 		       *out_size, in_size);
 		return -EINVAL;
 	}
+	msg_formate = nt_msg->msg_formate;
 
 	for (index = 0; index < num_cmds; index++) {
 		if (msg_formate != sm_module_cmd_handle[index].sm_cmd_name)
@@ -586,9 +594,8 @@ int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 		pr_err("Can't find callback for %d\n", msg_formate);
 		return -EINVAL;
 	}
-
 	if (ret != 0)
-		pr_err("Get sm information fail, id:%u, instance:%u, node:%u\n",
+		pr_err("Get sm information fail, id:%d, instance:%d, node:%d\n",
 		       sm_in->id, sm_in->instance, sm_in->node);
 
 	*out_size = sizeof(struct sm_out_st);
