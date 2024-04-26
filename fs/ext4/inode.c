@@ -3312,9 +3312,13 @@ static void ext4_set_iomap(struct inode *inode, struct iomap *iomap,
 	 * there is no other metadata changes being made or are pending.
 	 */
 	iomap->flags = 0;
-	if (ext4_inode_datasync_dirty(inode) ||
-	    offset + length > i_size_read(inode))
-		iomap->flags |= IOMAP_F_DIRTY;
+	if ((flags & (IOMAP_DAX | IOMAP_REPORT)) ||
+	    ((flags & (IOMAP_WRITE | IOMAP_DIRECT)) ==
+	     (IOMAP_WRITE | IOMAP_DIRECT))) {
+		if (offset + length > i_size_read(inode) ||
+		    ext4_inode_datasync_dirty(inode))
+			iomap->flags |= IOMAP_F_DIRTY;
+	}
 
 	if (map->m_flags & EXT4_MAP_NEW)
 		iomap->flags |= IOMAP_F_NEW;
