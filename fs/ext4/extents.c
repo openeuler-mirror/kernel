@@ -3733,7 +3733,8 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
 			     (unsigned long long)map->m_lblk, map->m_len);
 #endif
 		err = ext4_split_convert_extents(handle, inode, map, ppath,
-						 EXT4_GET_BLOCKS_CONVERT);
+					EXT4_GET_BLOCKS_CONVERT |
+					EXT4_GET_BLOCKS_METADATA_NOFAIL);
 		if (err < 0)
 			return err;
 		path = ext4_find_extent(inode, map->m_lblk, ppath, 0);
