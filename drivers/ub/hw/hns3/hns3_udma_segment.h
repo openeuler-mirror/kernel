@@ -28,6 +28,8 @@
 #define PA_PAGE_SHIFT		6
 #define MPT_VA_H_SHIFT		32
 #define MPT_LEN_H_SHIFT		32
+#define HNS3_UDMA_KB		0x400
+#define SEG_MEM_SIZE_1G		0X40000000 // 1GB
 
 enum {
 	MPT_ST_VALID = 0x1,

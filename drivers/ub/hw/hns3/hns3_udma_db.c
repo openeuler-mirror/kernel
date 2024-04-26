@@ -19,18 +19,19 @@
 #include "hns3_udma_device.h"
 #include "hns3_udma_db.h"
 
-int udma_db_map_user(struct udma_dev *udma_dev, uint64_t virt,
+int udma_db_map_user(struct udma_ucontext *udma_ctx, uint64_t virt,
 		     struct udma_db *db)
 {
+	struct udma_dev *udma_dev = to_udma_dev(udma_ctx->uctx.ub_dev);
 	uint64_t page_addr = virt & PAGE_MASK;
 	union ubcore_umem_flag access = {};
 	struct udma_user_db_page *db_page;
 	uint32_t offset;
 	int ret = 0;
 
-	mutex_lock(&udma_dev->pgdir_mutex);
+	mutex_lock(&udma_ctx->pgdir_mutex);
 
-	list_for_each_entry(db_page, &udma_dev->pgdir_list, list) {
+	list_for_each_entry(db_page, &udma_ctx->pgdir_list, list) {
 		if (db_page->user_virt == page_addr)
 			goto found;
 	}
@@ -53,7 +54,7 @@ int udma_db_map_user(struct udma_dev *udma_dev, uint64_t virt,
 		goto out;
 	}
 
-	list_add(&db_page->list, &udma_dev->pgdir_list);
+	list_add(&db_page->list, &udma_ctx->pgdir_list);
 
 found:
 	offset = virt - page_addr;
@@ -63,14 +64,14 @@ found:
 	refcount_inc(&db_page->refcount);
 
 out:
-	mutex_unlock(&udma_dev->pgdir_mutex);
+	mutex_unlock(&udma_ctx->pgdir_mutex);
 
 	return ret;
 }
 
-void udma_db_unmap_user(struct udma_dev *udma_dev, struct udma_db *db)
+void udma_db_unmap_user(struct udma_ucontext *udma_ctx, struct udma_db *db)
 {
-	mutex_lock(&udma_dev->pgdir_mutex);
+	mutex_lock(&udma_ctx->pgdir_mutex);
 
 	refcount_dec(&db->user_page->refcount);
 	if (refcount_dec_if_one(&db->user_page->refcount)) {
@@ -79,5 +80,5 @@ void udma_db_unmap_user(struct udma_dev *udma_dev, struct udma_db *db)
 		kfree(db->user_page);
 	}
 
-	mutex_unlock(&udma_dev->pgdir_mutex);
+	mutex_unlock(&udma_ctx->pgdir_mutex);
 }

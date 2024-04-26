@@ -131,8 +131,8 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	if (udata) {
 		ret = copy_from_user((void *)ucmd,
 				     (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(struct hns3_udma_create_jfc_ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(struct hns3_udma_create_jfc_ucmd)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy JFC udata, ret = %d.\n", ret);
@@ -206,6 +206,7 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 			 struct ubcore_udata *udata,
 			 struct hns3_udma_create_jfc_ucmd *ucmd)
 {
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(udata->uctx);
 	struct hns3_udma_create_jfc_resp resp = {};
 	int ret;
 
@@ -214,7 +215,7 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 		return ret;
 
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB) {
-		ret = udma_db_map_user(udma_dev, ucmd->db_addr, &udma_jfc->db);
+		ret = udma_db_map_user(udma_uctx, ucmd->db_addr, &udma_jfc->db);
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to map JFC db, ret = %d.\n", ret);
@@ -226,8 +227,8 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 	if (udata) {
 		resp.jfc_caps = udma_jfc->jfc_caps;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min(udata->udrv_data->out_len,
-				       (uint32_t)sizeof(resp)));
+				   min_t(uint32_t, udata->udrv_data->out_len,
+					 (uint32_t)sizeof(resp)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy jfc resp, ret = %d.\n", ret);
@@ -241,7 +242,7 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 
 err_copy:
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB) {
-		udma_db_unmap_user(udma_dev, &udma_jfc->db);
+		udma_db_unmap_user(udma_uctx, &udma_jfc->db);
 		udma_jfc->jfc_caps &= ~HNS3_UDMA_JFC_CAP_RECORD_DB;
 	}
 db_err:
@@ -500,13 +501,15 @@ static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 
 static void free_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 {
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(udma_jfc->ubcore_jfc.uctx);
+
 	/* wait for all interrupt processed */
 	if (refcount_dec_and_test(&udma_jfc->refcount))
 		complete(&udma_jfc->free);
 	wait_for_completion(&udma_jfc->free);
 
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB)
-		udma_db_unmap_user(udma_dev, &udma_jfc->db);
+		udma_db_unmap_user(udma_uctx, &udma_jfc->db);
 	udma_mtr_destroy(udma_dev, &udma_jfc->mtr);
 }
 

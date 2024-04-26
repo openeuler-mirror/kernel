@@ -140,8 +140,8 @@ static int alloc_jfs_buf(struct udma_dev *udma_dev, struct udma_jfs *jfs,
 
 	if (udata) {
 		ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(ucmd)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy jfs udata, ret = %d.\n", ret);

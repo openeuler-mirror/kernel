@@ -1096,8 +1096,7 @@ int fill_jetty_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	qp_attr->tgt_id = qp_attr->is_tgt ? ucmd->ini_id.jetty_id :
 			  ucmd->tgt_id.jetty_id;
 
-	udma_jetty = (struct udma_jetty *)xa_load(&udma_dev->jetty_table.xa,
-						  jetty_id);
+	udma_jetty = (struct udma_jetty *)xa_load(&udma_dev->jetty_table.xa, jetty_id);
 	if (IS_ERR_OR_NULL(udma_jetty)) {
 		dev_err(udma_dev->dev, "failed to find jetty, id = %u.\n", jetty_id);
 		return -EINVAL;
@@ -1161,8 +1160,8 @@ int udma_fill_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 		return 0;
 
 	status = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				min(udata->udrv_data->in_len,
-				    (uint32_t)sizeof(ucmd)));
+				min_t(uint32_t, udata->udrv_data->in_len,
+				      (uint32_t)sizeof(ucmd)));
 	if (status) {
 		dev_err(udma_dev->dev,
 			"failed to copy create tp ucmd, status = %d.\n", status);
@@ -1226,7 +1225,7 @@ static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
 	ext_sge_cnt = max_inline_data / UDMA_SGE_SIZE;
 
 	/* Select the max data set by the user */
-	qp->sq.max_gs = max(ext_sge_cnt, cap->max_send_sge);
+	qp->sq.max_gs = max_t(uint32_t, ext_sge_cnt, cap->max_send_sge);
 
 	if (is_rc_jetty(&qp->qp_attr))
 		qp->sge.offset = qp->qp_attr.jetty->rc_node.sge_offset;
@@ -1237,12 +1236,12 @@ static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
 	 */
 	if (wqe_sge_cnt) {
 		total_sge_cnt = roundup_pow_of_two(sq_wqe_cnt * wqe_sge_cnt);
-		qp->sge.sge_cnt = max(total_sge_cnt,
-				      (uint32_t)UDMA_PAGE_SIZE / UDMA_SGE_SIZE);
+		qp->sge.sge_cnt = max_t(uint32_t, total_sge_cnt,
+					(uint32_t)(UDMA_PAGE_SIZE / UDMA_SGE_SIZE));
 	}
 
 	/* Ensure that the max_gs size does not exceed */
-	qp->sq.max_gs = min(qp->sq.max_gs, udma_dev->caps.max_sq_sg);
+	qp->sq.max_gs = min_t(uint32_t, qp->sq.max_gs, udma_dev->caps.max_sq_sg);
 }
 
 static void set_rq_size(struct udma_dev *udma_dev, struct udma_qp *qp, struct udma_qp_cap *cap)
@@ -1315,8 +1314,8 @@ static int set_qp_param(struct udma_dev *udma_dev, struct udma_qp *qp,
 
 	if (!qp_attr->is_tgt) {
 		ret = copy_from_user(ucmd, (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(struct hns3_udma_create_tp_ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(struct hns3_udma_create_tp_ucmd)));
 		if (ret) {
 			dev_err(dev, "failed to copy create tp ucmd\n");
 			return ret;
@@ -1606,7 +1605,7 @@ static int alloc_user_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp,
 	if (!ucmd->sdb_addr)
 		return 0;
 
-	ret = udma_db_map_user(udma_dev, ucmd->sdb_addr, &qp->sdb);
+	ret = udma_db_map_user(qp->udma_uctx, ucmd->sdb_addr, &qp->sdb);
 	if (ret) {
 		dev_err(udma_dev->dev,
 			"failed to map user sdb_addr, ret = %d.\n", ret);
@@ -1627,8 +1626,10 @@ static int alloc_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp,
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_SDI_MODE)
 		qp->en_flags |= HNS3_UDMA_QP_CAP_OWNER_DB;
 
-	if (udata)
+	if (udata) {
+		qp->udma_uctx = to_udma_ucontext(udata->uctx);
 		ret = alloc_user_qp_db(udma_dev, qp, ucmd);
+	}
 
 	return ret;
 }
@@ -1854,7 +1855,7 @@ static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 		return;
 
 	if (qp->en_flags & HNS3_UDMA_QP_CAP_SQ_RECORD_DB)
-		udma_db_unmap_user(udma_dev, &qp->sdb);
+		udma_db_unmap_user(qp->udma_uctx, &qp->sdb);
 }
 
 static void free_wqe_buf(struct udma_dev *dev, struct udma_qp *qp)
@@ -2030,8 +2031,8 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 		resp.um_srcport.um_udp_range = (uint8_t)um_udp_range +
 					       UDP_RANGE_BASE;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min(udata->udrv_data->out_len,
-				       (uint32_t)sizeof(resp)));
+				   min_t(uint32_t, udata->udrv_data->out_len,
+					 (uint32_t)sizeof(resp)));
 		if (ret) {
 			dev_err(dev, "copy qp resp failed!\n");
 			goto err_copy;

@@ -243,8 +243,8 @@ int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	poe_info_out.en = poe_en ? 1 : 0;
 	poe_info_out.poe_addr = poe_addr;
 	ret = (int)copy_to_user((void *)out->addr, &poe_info_out,
-			   min(out->len,
-			       (uint32_t)sizeof(struct udma_poe_info)));
+				min_t(uint32_t, out->len,
+				      (uint32_t)sizeof(struct udma_poe_info)));
 	if (ret) {
 		dev_err(udma_device->dev, "cp to user failed in query poe, ret:%d.\n",
 			ret);
@@ -332,8 +332,8 @@ int udma_user_ctl_dca_shrink(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 	}
 
 	ret = (int)copy_to_user((void *)out->addr, &shrink_resp,
-				min(out->len,
-				    (uint32_t)sizeof(struct udma_dca_shrink_resp)));
+				min_t(uint32_t, out->len,
+				      (uint32_t)sizeof(struct udma_dca_shrink_resp)));
 	if (ret) {
 		dev_err(udma_device->dev, "cp to user failed in dca shrink, ret:%d.\n",
 			ret);
@@ -368,8 +368,8 @@ int udma_user_ctl_dca_attach(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 	}
 
 	ret = (int)copy_to_user((void *)out->addr, &resp,
-				min(out->len,
-				    (uint32_t)sizeof(struct udma_dca_attach_resp)));
+				min_t(uint32_t, out->len,
+				      (uint32_t)sizeof(struct udma_dca_attach_resp)));
 	if (ret) {
 		udma_dca_disattach(udma_device, &attr);
 		dev_err(udma_device->dev, "cp to user failed in dca_attach, ret:%d.\n",
@@ -426,8 +426,8 @@ int udma_user_ctl_dca_query(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	}
 
 	ret = (int)copy_to_user((void *)out->addr, &resp,
-				min(out->len,
-				    (uint32_t)sizeof(struct udma_dca_query_resp)));
+				min_t(uint32_t, out->len,
+				      (uint32_t)sizeof(struct udma_dca_query_resp)));
 	if (ret) {
 		dev_err(udma_device->dev, "cp to user failed in dca_query, ret:%d.\n",
 			ret);

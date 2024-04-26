@@ -181,13 +181,14 @@ static void free_jfr_wqe_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 			 struct ubcore_udata *udata)
 {
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(udata->uctx);
 	struct hns3_udma_create_jfr_ucmd ucmd = {};
 	int ret;
 
 	if (udata) {
 		ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(ucmd)));
 		if (ret) {
 			dev_err(dev->dev,
 				"failed to copy JFR udata, ret = %d.\n",
@@ -214,7 +215,7 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
 	    jfr->jfr_caps & HNS3_UDMA_JFR_CAP_RECORD_DB) {
-		ret = udma_db_map_user(dev, ucmd.db_addr, &jfr->db);
+		ret = udma_db_map_user(udma_uctx, ucmd.db_addr, &jfr->db);
 		if (ret) {
 			dev_err(dev->dev,
 				"map jfr db failed, ret = %d.\n", ret);
@@ -526,6 +527,8 @@ static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 
 static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 {
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(jfr->ubcore_jfr.uctx);
+
 	if (refcount_dec_and_test(&jfr->refcount))
 		complete(&jfr->free);
 
@@ -533,7 +536,7 @@ static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
 	    jfr->jfr_caps & HNS3_UDMA_JFR_CAP_RECORD_DB)
-		udma_db_unmap_user(dev, &jfr->db);
+		udma_db_unmap_user(udma_uctx, &jfr->db);
 
 	free_jfr_wqe_buf(dev, jfr);
 	free_jfr_idx(dev, jfr);
@@ -659,8 +662,8 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 		resp.jfr_caps = jfr->jfr_caps;
 		resp.srqn = jfr->srqn;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min(udata->udrv_data->out_len,
-				   (uint32_t)sizeof(resp)));
+				   min_t(uint32_t, udata->udrv_data->out_len,
+					 (uint32_t)sizeof(resp)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy jfr resp, ret = %d.\n", ret);

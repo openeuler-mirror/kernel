@@ -96,7 +96,8 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	}
 
 	ret = copy_to_user((void *)udrv_data->out_addr, &resp,
-			   min(udrv_data->out_len, (uint32_t)sizeof(resp)));
+			   min_t(uint32_t, udrv_data->out_len,
+				 (uint32_t)sizeof(resp)));
 	if (ret)
 		dev_err(dev->dev,
 			"copy ctx resp to user failed, ret = %d.\n", ret);
@@ -108,6 +109,16 @@ static void udma_uar_free(struct udma_dev *udma_dev,
 			  struct udma_ucontext *context)
 {
 	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
+}
+
+static void init_ucontext_list(struct udma_dev *udma_dev,
+			       struct udma_ucontext *uctx)
+{
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB ||
+	    udma_dev->caps.flags & UDMA_CAP_FLAG_QP_RECORD_DB) {
+		INIT_LIST_HEAD(&uctx->pgdir_list);
+		mutex_init(&uctx->pgdir_mutex);
+	}
 }
 
 static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
@@ -158,6 +169,8 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 	if (context->dca_ctx.unit_size > 0 && udma_dev->caps.flags &
 	    UDMA_CAP_FLAG_DCA_MODE)
 		udma_register_uctx_debugfs(udma_dev, context);
+
+	init_ucontext_list(udma_dev, context);
 
 	return &context->uctx;
 
@@ -734,12 +747,6 @@ int udma_setup_hca(struct udma_dev *udma_dev)
 	spin_lock_init(&udma_dev->qp_list_lock);
 	INIT_LIST_HEAD(&udma_dev->dip_list);
 	spin_lock_init(&udma_dev->dip_list_lock);
-
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB ||
-	    udma_dev->caps.flags & UDMA_CAP_FLAG_QP_RECORD_DB) {
-		INIT_LIST_HEAD(&udma_dev->pgdir_list);
-		mutex_init(&udma_dev->pgdir_mutex);
-	}
 
 	udma_init_uar_table(udma_dev);
 

@@ -604,7 +604,7 @@ int udma_register_udca(struct udma_dev *udma_dev,
 	int ret;
 
 	ret = copy_from_user(&ucmd, (void *)udrv_data->in_addr,
-			     min(udrv_data->in_len, (uint32_t)sizeof(ucmd)));
+			     min_t(uint32_t, udrv_data->in_len, (uint32_t)sizeof(ucmd)));
 	if (ret) {
 		dev_err(udma_dev->dev, "Failed to copy udata, ret = %d.\n",
 			ret);

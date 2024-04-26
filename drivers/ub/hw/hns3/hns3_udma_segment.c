@@ -91,13 +91,39 @@ err_free_bitmap:
 	return err;
 }
 
+static uint64_t get_continuos_mem_size(uint64_t seg_addr)
+{
+#define HNS3_DOUBLE 2
+	return seg_addr / HNS3_UDMA_KB * HNS3_DOUBLE;
+}
+
+static void get_pbl_addr_level(struct udma_seg *seg, struct udma_dev *udma_dev)
+{
+	uint64_t cont_mem_size;
+	uint64_t seg_size;
+	uint64_t page_num;
+
+	if (seg->size <= SEG_MEM_SIZE_1G) {
+		seg->pbl_hop_num = UDMA_PBL_HOP_NUM - 1U;
+		seg_size = roundup_pow_of_two(seg->size);
+		cont_mem_size = get_continuos_mem_size(seg_size);
+		page_num = cont_mem_size / PAGE_SIZE;
+		udma_dev->caps.pbl_ba_pg_sz = ilog2(roundup_pow_of_two(page_num));
+	} else {
+		seg->pbl_hop_num = udma_dev->caps.pbl_hop_num;
+		udma_dev->caps.pbl_ba_pg_sz = UDMA_BA_PG_SZ_SUPPORTED_16K;
+	}
+}
+
+
 static int alloc_seg_pbl(struct udma_dev *udma_dev, struct udma_seg *seg,
 			 bool is_user)
 {
 	struct udma_buf_attr buf_attr = {};
 	int err;
 
-	seg->pbl_hop_num = udma_dev->caps.pbl_hop_num;
+	get_pbl_addr_level(seg, udma_dev);
+
 	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size = seg->size;
 	buf_attr.region[0].hopnum = seg->pbl_hop_num;

@@ -2001,7 +2001,7 @@ int udma_mtr_find(struct udma_dev *udma_device, struct udma_mtr *mtr,
 		if (!mtts || !mtt_count)
 			goto out;
 
-		npage = min(mtt_count, left);
+		npage = min_t(int, mtt_count, left);
 		left -= npage;
 		for (mtt_count = 0; (uint32_t)mtt_count < npage; mtt_count++)
 			mtt_buf[total++] = le64_to_cpu(mtts[mtt_count]);
