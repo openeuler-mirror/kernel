@@ -4627,6 +4627,15 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 		if (ret)
 			goto out_mutex;
 
+		ret = filemap_write_and_wait_range(mapping,
+				round_down(offset, 1 << blkbits), offset);
+		if (ret)
+			goto out_mutex;
+
+		ret = filemap_write_and_wait_range(mapping, offset + len,
+				round_up((offset + len), 1 << blkbits));
+		if (ret)
+			goto out_mutex;
 	}
 
 	/* Zero range excluding the unaligned edges */
