@@ -4175,6 +4175,13 @@ unlock:
 	return err;
 }
 
+static int ext4_iomap_zero_range(struct inode *inode,
+				 loff_t from, loff_t length)
+{
+	return iomap_zero_range(inode, from, length, NULL,
+				&ext4_iomap_buffered_read_ops);
+}
+
 /*
  * ext4_block_zero_page_range() zeros out a mapping of length 'length'
  * starting from file offset 'from'.  The range to be zero'd must
@@ -4200,6 +4207,8 @@ static int ext4_block_zero_page_range(handle_t *handle,
 	if (IS_DAX(inode)) {
 		return dax_zero_range(inode, from, length, NULL,
 				      &ext4_iomap_ops);
+	} else if (ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP)) {
+		return ext4_iomap_zero_range(inode, from, length);
 	}
 	return __ext4_block_zero_page_range(handle, mapping, from, length);
 }
