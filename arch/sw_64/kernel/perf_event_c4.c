@@ -544,13 +544,6 @@ static int sw64_pmu_event_init(struct perf_event *event)
 		return -EOPNOTSUPP;
 
 	/*
-	 * SW64 does not have per-counter usr/os/guest/host bits
-	 */
-	if (attr->exclude_hv || attr->exclude_idle ||
-			attr->exclude_host || attr->exclude_guest)
-		return -EINVAL;
-
-	/*
 	 * SW64 does not support precise ip feature, and system hang when
 	 * detecting precise_ip by perf_event_attr__set_max_precise_ip
 	 * in userspace
@@ -580,6 +573,13 @@ static int sw64_pmu_event_init(struct perf_event *event)
 
 	if (config < 0)
 		return config;
+
+	/*
+	 * SW64 does not have per-counter usr/os/guest/host bits
+	 */
+	if (attr->exclude_hv || attr->exclude_idle ||
+			attr->exclude_host || attr->exclude_guest)
+		return -EINVAL;
 
 	hwc->config = config;
 	/* Do the real initialisation work. */
