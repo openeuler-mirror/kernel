@@ -848,4 +848,19 @@ bool swiotlb_free(struct device *dev, struct page *page, size_t size)
 	return true;
 }
 
+#ifdef CONFIG_CVM_GUEST
+void __init swiotlb_cvm_update_mem_attributes(void)
+{
+	void *vaddr;
+	unsigned long bytes;
+
+	if (!is_cvm_world() || !io_tlb_start)
+		return;
+	vaddr = phys_to_virt(io_tlb_start);
+	bytes = PAGE_ALIGN(io_tlb_nslabs << IO_TLB_SHIFT);
+	set_cvm_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
+	memset(vaddr, 0, bytes);
+}
+#endif
+
 #endif /* CONFIG_DMA_RESTRICTED_POOL */

@@ -2283,6 +2283,14 @@ config ARCH_ENABLE_THP_MIGRATION
 	def_bool y
 	depends on TRANSPARENT_HUGEPAGE
 
+config CVM_GUEST
+	bool "Enable cvm guest run"
+	depends on DMA_RESTRICTED_POOL
+	help
+	  Support CVM guest based on S-EL2
+
+	  If unsure, say N.
+
 menu "Power management options"
 
 source "kernel/power/Kconfig"
