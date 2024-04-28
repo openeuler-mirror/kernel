@@ -3719,21 +3719,27 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
 	ext_debug(inode, "logical block %llu, max_blocks %u\n",
 		  (unsigned long long)ee_block, ee_len);
 
-	/* If extent is larger than requested it is a clear sign that we still
-	 * have some extent state machine issues left. So extent_split is still
-	 * required.
-	 * TODO: Once all related issues will be fixed this situation should be
-	 * illegal.
+	/*
+	 * For the inodes that use the buffered iomap path need to split
+	 * extents in endio, other inodes not.
+	 *
+	 * TODO: Reserve enough sapce for splitting extents, always split
+	 * extents here, and totally remove this warning.
 	 */
 	if (ee_block != map->m_lblk || ee_len > map->m_len) {
 #ifdef CONFIG_EXT4_DEBUG
-		ext4_warning(inode->i_sb, "Inode (%ld) finished: extent logical block %llu,"
-			     " len %u; IO logical block %llu, len %u",
-			     inode->i_ino, (unsigned long long)ee_block, ee_len,
-			     (unsigned long long)map->m_lblk, map->m_len);
+		if (!ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP)) {
+			ext4_warning(inode->i_sb,
+				     "Inode (%ld) finished: extent logical block %llu, "
+				     "len %u; IO logical block %llu, len %u",
+				     inode->i_ino, (unsigned long long)ee_block,
+				     ee_len, (unsigned long long)map->m_lblk,
+				     map->m_len);
+		}
 #endif
 		err = ext4_split_convert_extents(handle, inode, map, ppath,
-						 EXT4_GET_BLOCKS_CONVERT);
+					EXT4_GET_BLOCKS_CONVERT |
+					EXT4_GET_BLOCKS_METADATA_NOFAIL);
 		if (err < 0)
 			return err;
 		path = ext4_find_extent(inode, map->m_lblk, ppath, 0);
@@ -4087,8 +4093,11 @@ again:
 		/*
 		 * The delalloc extent containing lblk, it must have been
 		 * added after ext4_map_blocks() checked the extent status
-		 * tree, adjust the length to the delalloc extent's after
-		 * lblk.
+		 * tree so we are not holding i_rwsem and delalloc info is
+		 * only stabilized by i_data_sem we are going to release
+		 * soon. Don't modify the extent status tree and report
+		 * extent as a hole, just adjust the length to the delalloc
+		 * extent's after lblk.
 		 */
 		len = es.es_lblk + es.es_len - lblk;
 		return len;
@@ -4618,6 +4627,15 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 		if (ret)
 			goto out_mutex;
 
+		ret = filemap_write_and_wait_range(mapping,
+				round_down(offset, 1 << blkbits), offset);
+		if (ret)
+			goto out_mutex;
+
+		ret = filemap_write_and_wait_range(mapping, offset + len,
+				round_up((offset + len), 1 << blkbits));
+		if (ret)
+			goto out_mutex;
 	}
 
 	/* Zero range excluding the unaligned edges */
