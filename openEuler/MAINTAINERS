@@ -112,6 +112,13 @@ F:	drivers/net/ethernet/huawei/hinic3/cqm/
 F:	drivers/net/ethernet/huawei/hinic3/hw/
 F:	drivers/net/ethernet/huawei/hinic3/include/
 
+HUAWEI PVRDMA DRIVER
+M:	Chengbo Gu <guchengbo@huawei.com>
+R:	Xiaoping zheng <zhengxiaoping5@huawei.com>
+L:	linux-rdma@vger.kernel.org
+S:	Supported
+F:	drivers/infiniband/hw/hiroce3/
+
 NEBULA-MATRIX Ethernet Controller DRIVERS
 M:      Yi Chen <open@nebula-matrix.com>
 S:      Maintained
