@@ -101,6 +101,17 @@ F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
 F:	include/uapi/rdma/hns-abi.h
 F:	drivers/infiniband/hw/hns/
 
+HUAWEI ETHERNET DRIVER
+M:	Wulike(Collin) <wulike1@huawei.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+F:	Documentation/networking/hinic3.rst
+F:	drivers/net/ethernet/huawei/hinic3/
+F:	drivers/net/ethernet/huawei/hinic3/bond/
+F:	drivers/net/ethernet/huawei/hinic3/cqm/
+F:	drivers/net/ethernet/huawei/hinic3/hw/
+F:	drivers/net/ethernet/huawei/hinic3/include/
+
 NEBULA-MATRIX Ethernet Controller DRIVERS
 M:      Yi Chen <open@nebula-matrix.com>
 S:      Maintained

@@ -6,7 +6,7 @@
 
 #include <linux/types.h>
 
-#include "comm_msg_intf.h"
+#include "mpu_inband_cmd_defs.h"
 #include "hinic3_hwdev.h"
 
 #define MSG_TO_MGMT_SYNC_RETURN_ERR(err, out_size, status)	\

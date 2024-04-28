@@ -45,6 +45,10 @@
 #define HINIC3_MSG_HEADER_LAST_MASK			0x1
 #define HINIC3_MSG_HEADER_DIRECTION_MASK		0x1
 
+#define MBOX_MAX_BUF_SZ				2048U
+#define MBOX_HEADER_SZ				8
+#define HINIC3_MBOX_DATA_SIZE		(MBOX_MAX_BUF_SZ - MBOX_HEADER_SZ)
+
 #define HINIC3_MSG_HEADER_GET(val, field)	\
 		(((val) >> HINIC3_MSG_HEADER_##field##_SHIFT) & \
 		 HINIC3_MSG_HEADER_##field##_MASK)
@@ -95,12 +99,12 @@ struct mbox_msg_info {
 };
 
 struct hinic3_msg_desc {
-	void			*msg;
-	u16			msg_len;
-	u8			seq_id;
-	u8			mod;
-	u16			cmd;
-	struct mbox_msg_info	msg_info;
+	void *msg;
+	u16 msg_len;
+	u8 seq_id;
+	u8 mod;
+	u16 cmd;
+	struct mbox_msg_info msg_info;
 };
 
 struct hinic3_msg_channel {
@@ -112,25 +116,25 @@ struct hinic3_msg_channel {
 
 /* Receive other functions mbox message */
 struct hinic3_recv_mbox {
-	void			*msg;
-	u16			msg_len;
-	u8			msg_id;
-	u8			mod;
-	u16			cmd;
-	u16			src_func_idx;
+	void *msg;
+	u16 msg_len;
+	u8 msg_id;
+	u8 mod;
+	u16 cmd;
+	u16 src_func_idx;
 
 	enum hinic3_msg_ack_type ack_type;
-	u32			rsvd1;
+	u32 rsvd1;
 
-	void			*resp_buff;
+	void *resp_buff;
 };
 
 struct hinic3_send_mbox {
-	u8			*data;
+	u8 *data;
 
-	u64			*wb_status; /* write back status */
-	void			*wb_vaddr;
-	dma_addr_t		wb_paddr;
+	u64 *wb_status; /* write back status */
+	void *wb_vaddr;
+	dma_addr_t wb_paddr;
 };
 
 enum mbox_event_state {
@@ -152,6 +156,11 @@ enum hinic3_mbox_cb_state {
 	HINIC3_PPF_TO_PF_MBOX_CB_RUNNIG,
 };
 
+enum hinic3_mbox_ack_type {
+	MBOX_ACK,
+	MBOX_NO_ACK,
+};
+
 struct mbox_dma_msg {
 	u32		xor;
 	u32		dma_addr_high;
@@ -161,16 +170,16 @@ struct mbox_dma_msg {
 };
 
 struct mbox_dma_queue {
-	void			*dma_buff_vaddr;
-	dma_addr_t		dma_buff_paddr;
+	void *dma_buff_vaddr;
+	dma_addr_t dma_buff_paddr;
 
-	u16			depth;
-	u16			prod_idx;
-	u16			cons_idx;
+	u16 depth;
+	u16 prod_idx;
+	u16 cons_idx;
 };
 
 struct hinic3_mbox {
-	struct hinic3_hwdev	*hwdev;
+	struct hinic3_hwdev *hwdev;
 
 	bool			lock_channel_en;
 	unsigned long		channel_stop;
@@ -186,7 +195,7 @@ struct hinic3_mbox {
 	struct mbox_dma_queue	sync_msg_queue;
 	struct mbox_dma_queue	async_msg_queue;
 
-	struct workqueue_struct	*workq;
+	struct workqueue_struct *workq;
 
 	struct hinic3_msg_channel mgmt_msg; /* driver and MGMT CPU */
 	struct hinic3_msg_channel *host_msg; /* PPF message between hosts */
@@ -196,16 +205,16 @@ struct hinic3_mbox {
 
 	/* vf receive pf/ppf callback */
 	hinic3_vf_mbox_cb	vf_mbox_cb[HINIC3_MOD_MAX];
-	void			*vf_mbox_data[HINIC3_MOD_MAX];
+	void *vf_mbox_data[HINIC3_MOD_MAX];
 	/* pf/ppf receive vf callback */
 	hinic3_pf_mbox_cb	pf_mbox_cb[HINIC3_MOD_MAX];
-	void			*pf_mbox_data[HINIC3_MOD_MAX];
+	void *pf_mbox_data[HINIC3_MOD_MAX];
 	/* ppf receive pf/ppf callback */
 	hinic3_ppf_mbox_cb	ppf_mbox_cb[HINIC3_MOD_MAX];
-	void			*ppf_mbox_data[HINIC3_MOD_MAX];
+	void *ppf_mbox_data[HINIC3_MOD_MAX];
 	/* pf receive ppf callback */
 	hinic3_pf_recv_from_ppf_mbox_cb	pf_recv_ppf_mbox_cb[HINIC3_MOD_MAX];
-	void			*pf_recv_ppf_mbox_data[HINIC3_MOD_MAX];
+	void *pf_recv_ppf_mbox_data[HINIC3_MOD_MAX];
 	unsigned long		ppf_to_pf_mbox_cb_state[HINIC3_MOD_MAX];
 	unsigned long		ppf_mbox_cb_state[HINIC3_MOD_MAX];
 	unsigned long		pf_mbox_cb_state[HINIC3_MOD_MAX];
@@ -221,8 +230,8 @@ struct hinic3_mbox {
 
 struct hinic3_mbox_work {
 	struct work_struct	work;
-	struct hinic3_mbox	*func_to_func;
-	struct hinic3_recv_mbox	*recv_mbox;
+	struct hinic3_mbox *func_to_func;
+	struct hinic3_recv_mbox *recv_mbox;
 	struct hinic3_msg_channel *msg_ch;
 };
 
@@ -243,6 +252,14 @@ int hinic3_func_to_func_init(struct hinic3_hwdev *hwdev);
 
 void hinic3_func_to_func_free(struct hinic3_hwdev *hwdev);
 
+int hinic3_mbox_to_host(struct hinic3_hwdev *hwdev, u16 dest_host_ppf_id,
+			enum hinic3_mod_type mod, u8 cmd, void *buf_in,
+			u16 in_size, void *buf_out, u16 *out_size, u32 timeout, u16 channel);
+
+int hinic3_mbox_to_func_no_ack(struct hinic3_hwdev *hwdev, u16 func_idx,
+			       u8 mod, u16 cmd, void *buf_in, u16 in_size,
+			       u16 channel);
+
 int hinic3_send_mbox_to_mgmt(struct hinic3_hwdev *hwdev, u8 mod, u16 cmd,
 			     void *buf_in, u16 in_size, void *buf_out,
 			     u16 *out_size, u32 timeout, u16 channel);
@@ -257,9 +274,6 @@ int hinic3_mbox_to_func(struct hinic3_mbox *func_to_func, u8 mod, u16 cmd,
 			void *buf_out, u16 *out_size, u32 timeout, u16 channel);
 
 int hinic3_mbox_init_host_msg_channel(struct hinic3_hwdev *hwdev);
-
-int hinic3_mbox_set_channel_status(struct hinic3_hwdev *hwdev, u16 channel,
-				   bool enable);
 
 void hinic3_mbox_enable_channel_lock(struct hinic3_hwdev *hwdev, bool enable);
 

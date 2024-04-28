@@ -35,6 +35,17 @@
 #undef __always_unused
 #define __always_unused __attribute__((__unused__))
 
+#define ossl_get_free_pages __get_free_pages
+
+#ifndef high_16_bits
+#define low_16_bits(x) ((x) & 0xFFFF)
+#define high_16_bits(x) (((x) & 0xFFFF0000) >> 16)
+#endif
+
+#ifndef U8_MAX
+#define U8_MAX 0xFF
+#endif
+
 #define ETH_TYPE_TRANS_SETS_DEV
 #define HAVE_NETDEV_STATS_IN_NETDEV
 
@@ -169,10 +180,12 @@ static inline void *_hinic3_dma_zalloc_coherent(struct device *dev,
 }
 #endif
 
+#ifndef DT_KNL_EMU
 struct timeval {
 	__kernel_old_time_t     tv_sec;         /* seconds */
 	__kernel_suseconds_t    tv_usec;        /* microseconds */
 };
+#endif
 
 #ifndef do_gettimeofday
 #define do_gettimeofday(time) _kc_do_gettimeofday(time)
@@ -216,6 +229,15 @@ static inline void _kc_do_gettimeofday(struct timeval *tv)
 
 #define HAVE_ENCAPSULATION_CSUM
 
+#ifndef eth_zero_addr
+static inline void hinic3_eth_zero_addr(u8 *addr)
+{
+	memset(addr, 0x00, ETH_ALEN);
+}
+
+#define eth_zero_addr(_addr) hinic3_eth_zero_addr(_addr)
+#endif
+
 #ifndef netdev_hw_addr_list_for_each
 #define netdev_hw_addr_list_for_each(ha, l) \
 	list_for_each_entry(ha, &(l)->list, list)
@@ -232,6 +254,11 @@ void file_close(struct file *file_handle);
 u32 get_file_size(struct file *file_handle);
 
 void set_file_position(struct file *file_handle, u32 position);
+
+int file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
+	      u32 *file_pos);
+
+u32 file_write(struct file *file_handle, const char *log_buffer, u32 wr_length);
 
 struct sdk_thread_info {
 	struct task_struct *thread_obj;
@@ -253,7 +280,7 @@ void utctime_to_localtime(u64 utctime, u64 *localtime);
 void initialize_timer(const void *adapter_hdl, struct timer_list *timer);
 #endif
 
-void add_to_timer(struct timer_list *timer, long period);
+void add_to_timer(struct timer_list *timer, u64 period);
 void stop_timer(struct timer_list *timer);
 void delete_timer(struct timer_list *timer);
 u64 ossl_get_real_time(void);

@@ -5,6 +5,7 @@
 #define OSSL_KNL_H
 
 #include "ossl_knl_linux.h"
+#include <linux/types.h>
 
 #define sdk_err(dev, format, ...) dev_err(dev, "[COMM]" format, ##__VA_ARGS__)
 #define sdk_warn(dev, format, ...) dev_warn(dev, "[COMM]" format, ##__VA_ARGS__)
@@ -31,5 +32,8 @@
 #define BYTE_ORDER    LITTLE_ENDIAN
 #define USEC_PER_MSEC	1000L
 #define MSEC_PER_SEC	1000L
+
+/* Waiting for 50 us */
+#define WAIT_USEC_50    50L
 
 #endif /* OSSL_KNL_H */

@@ -12,6 +12,7 @@
 #define HINIC3_SRV_NIC_H
 
 #include "hinic3_mgmt_interface.h"
+#include "mag_mpu_cmd.h"
 #include "mag_cmd.h"
 #include "hinic3_lld.h"
 
@@ -61,6 +62,8 @@ enum hinic3_nic_event_type {
 	EVENT_NIC_LINK_UP,
 	EVENT_NIC_PORT_MODULE_EVENT,
 	EVENT_NIC_DCB_STATE_CHANGE,
+	EVENT_NIC_BOND_DOWN,
+	EVENT_NIC_BOND_UP,
 };
 
 /* *
@@ -207,6 +210,8 @@ void hinic3_free_qp_ctxts(void *hwdev);
  * @param hwdev: device pointer to hwdev
  * @param vf_link_forced: set link forced
  * @param link_state: Set link state, This parameter is valid only when vf_link_forced is true
+ * @retval zero: success
+ * @retval non-zero: failure
  */
 int hinic3_pf_set_vf_link_state(void *hwdev, bool vf_link_forced, bool link_state);
 

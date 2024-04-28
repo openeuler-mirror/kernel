@@ -5,7 +5,7 @@
 #define HINIC3_HW_CFG_H
 
 #include <linux/types.h>
-#include "cfg_mgt_comm_pub.h"
+#include "cfg_mgmt_mpu_cmd_defs.h"
 #include "hinic3_hwdev.h"
 
 #define CFG_MAX_CMD_TIMEOUT     30000 /* ms */
@@ -16,12 +16,9 @@ enum {
 };
 
 /* start position for CEQs allocation, Max number of CEQs is 32 */
-/*lint -save -e849*/
 enum {
 	CFG_RDMA_CEQ_BASE       = 0
 };
-
-/*lint -restore*/
 
 /* RDMA resource */
 #define K_UNIT              BIT(10)
@@ -73,7 +70,7 @@ enum {
 #define RDMA_RSVD_MRWS      128
 #define RDMA_MPT_ENTRY_SZ   64
 #define RDMA_NUM_MTTS       (1 * G_UNIT)
-#define LOG_MTT_SEG         5
+#define LOG_MTT_SEG         9
 #define MTT_ENTRY_SZ        8
 #define LOG_RDMARC_SEG      3
 
@@ -150,7 +147,7 @@ enum intr_type {
 struct service_cap {
 	struct dev_sf_svc_attr sf_svc_attr;
 	u16 svc_type;      /* user input service type */
-	u16 chip_svc_type; /* HW supported service type, reference to servic_bit_define_e */
+	u16 chip_svc_type; /* HW supported service type, reference to servic_bit_define */
 
 	u8 host_id;
 	u8 ep_id;
@@ -231,6 +228,12 @@ struct service_cap {
 	 * The maximum number of hash bucket is 4M
 	 */
 	u16 hash_bucket_num;
+
+	u8 map_host_id;
+	u8 fake_vf_en;
+	u8 fake_vf_start_bit;
+	u8 fake_vf_end_bit;
+	u8 fake_vf_page_bit;
 
 	struct nic_service_cap      nic_cap;            /* NIC capability */
 	struct rdma_service_cap     rdma_cap;           /* RDMA capability */
@@ -327,6 +330,8 @@ void free_cfg_mgmt(struct hinic3_hwdev *dev);
 int init_capability(struct hinic3_hwdev *dev);
 
 void free_capability(struct hinic3_hwdev *dev);
+
+int hinic3_init_vf_dev_cap(void *hwdev);
 
 #endif
 
