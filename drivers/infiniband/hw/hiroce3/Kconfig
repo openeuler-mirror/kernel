@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Huawei driver configuration
+#
+
+config HIROCE3
+	tristate "Huawei Intelligent Network Interface Card RDMA Driver"
+	depends on HINIC3 && PCI_MSI && NUMA && PCI_IOV && DCB && (X86 || ARM64)
+	help
+	  This driver supports HiROCE PCIE Ethernet cards.
+	  To compile this driver as part of the kernel, choose Y here.
+	  If unsure, choose N.
+	  The default is N.
+

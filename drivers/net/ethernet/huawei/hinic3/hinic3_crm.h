@@ -4,7 +4,9 @@
 #ifndef HINIC3_CRM_H
 #define HINIC3_CRM_H
 
-#define HINIC3_DBG
+#include <linux/pci.h>
+
+#include "mpu_cmd_base_defs.h"
 
 #define HINIC3_DRV_VERSION ""
 #define HINIC3_DRV_DESC "Intelligent Network Interface Card Driver"
@@ -42,6 +44,7 @@ enum hinic3_service_type {
 	SERVICE_T_PPA,
 	SERVICE_T_CUSTOM,
 	SERVICE_T_VROCE,
+	SERVICE_T_CRYPT,
 	SERVICE_T_MAX,
 
 	/* Only used for interruption resource management,
@@ -75,7 +78,9 @@ struct ppa_service_cap {
 
 struct vbs_service_cap {
 	u16 vbs_max_volq;
-	u16 rsvd1;
+	u8  vbs_main_pf_enable;
+	u8  vbs_vsock_pf_enable;
+	u8  vbs_fushion_queue_pf_enable;
 };
 
 struct migr_service_cap {
@@ -297,8 +302,8 @@ struct ovs_service_cap {
 
 /* PF IPsec service resource structure defined */
 struct dev_ipsec_svc_cap {
-	u32 max_sactxs; /* max IPsec SA context num */
-	u16 max_cqs;    /* max IPsec SCQC num */
+	u32 max_sactxs;	/* max IPsec SA context num */
+	u16 max_cqs;	/* max IPsec SCQC num */
 	u16 rsvd0;
 };
 
@@ -310,8 +315,8 @@ struct ipsec_service_cap {
 
 /* Defines the IRQ information structure */
 struct irq_info {
-	u16 msix_entry_idx; /* IRQ corresponding index number */
-	u32 irq_id;	    /* the IRQ number from OS */
+	u16 msix_entry_idx;	/* IRQ corresponding index number */
+	u32 irq_id;		/* the IRQ number from OS */
 };
 
 struct interrupt_info {
@@ -342,6 +347,11 @@ enum func_type {
 	TYPE_UNKNOWN,
 };
 
+enum func_nic_state {
+	HINIC3_FUNC_NIC_DEL,
+	HINIC3_FUNC_NIC_ADD,
+};
+
 struct hinic3_init_para {
 	/* Record hinic_pcidev or NDIS_Adapter pointer address */
 	void *adapter_hdl;
@@ -356,7 +366,7 @@ struct hinic3_init_para {
 
 	/* Configure virtual address, PF is bar1, VF is bar0/1 */
 	void *cfg_reg_base;
-	/* interrupt configuration register address,  PF is bar2, VF is bar2/3
+	/* interrupt configuration register address, PF is bar2, VF is bar2/3
 	 */
 	void *intr_reg_base;
 	/* for PF bar3 virtual address, if function is VF should set to NULL */
@@ -394,6 +404,7 @@ struct card_node {
 	struct list_head node;
 	struct list_head func_list;
 	char chip_name[IFNAMSIZ];
+	int chip_id;
 	void *log_info;
 	void *dbgtool_info;
 	void *func_handle_array[MAX_FUNCTION_NUM];
@@ -522,6 +533,7 @@ enum hinic3_comm_event_type {
 	EVENT_COMM_SRIOV_STATE_CHANGE,
 	EVENT_COMM_CARD_REMOVE,
 	EVENT_COMM_MGMT_WATCHDOG,
+	EVENT_COMM_MULTI_HOST_MGMT,
 };
 
 enum hinic3_event_service_type {
@@ -532,13 +544,25 @@ enum hinic3_event_service_type {
 };
 
 #define HINIC3_SRV_EVENT_TYPE(svc, type)	((((u32)(svc)) << 16) | (type))
+#ifndef HINIC3_EVENT_DATA_SIZE
+#define HINIC3_EVENT_DATA_SIZE 104
+#endif
 struct hinic3_event_info {
-	u16 service;	/* enum hinic3_event_service_type */
+	u16 service; /* enum hinic3_event_service_type */
 	u16 type;
-	u8 event_data[104];
+	u8 event_data[HINIC3_EVENT_DATA_SIZE];
 };
 
 typedef void (*hinic3_event_handler)(void *handle, struct hinic3_event_info *event);
+
+struct hinic3_func_nic_state {
+	u8 state;
+	u8 rsvd0;
+	u16 func_idx;
+
+	u8 vroce_flag;
+	u8 rsvd1[15];
+};
 
 /* *
  * @brief hinic3_event_register - register hardware event
@@ -841,6 +865,15 @@ void hinic3_shutdown_hwdev(void *hwdev);
 int hinic3_set_ppf_flr_type(void *hwdev, enum hinic3_ppf_flr_type flr_type);
 
 /* *
+ * @brief hinic3_set_ppf_tbl_hotreplace_flag - set os hotreplace flag in ppf function table
+ * @param hwdev: device pointer to hwdev
+ * @param flag : os hotreplace flag : 0-not in os hotreplace 1-in os hotreplace
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_set_ppf_tbl_hotreplace_flag(void *hwdev, u8 flag);
+
+/* *
  * @brief hinic3_get_mgmt_version - get management cpu version
  * @param hwdev: device pointer to hwdev
  * @param mgmt_ver: output management version
@@ -906,6 +939,13 @@ enum func_type hinic3_func_type(void *hwdev);
  * @retval stateful enabel status
  */
 bool hinic3_get_stateful_enable(void *hwdev);
+
+/* *
+ * @brief hinic3_get_timer_enable - get timer status
+ * @param hwdev: device pointer to hwdev
+ * @retval timer enabel status
+ */
+bool hinic3_get_timer_enable(void *hwdev);
 
 /* *
  * @brief hinic3_host_oq_id_mask - get oq id
@@ -1059,7 +1099,7 @@ int hinic3_get_card_present_state(void *hwdev, bool *card_present_state);
  * @retval zero: success
  * @retval non-zero: failure
  */
-int hinic3_func_rx_tx_flush(void *hwdev, u16 channel);
+int hinic3_func_rx_tx_flush(void *hwdev, u16 channel, bool wait_io);
 
 /* *
  * @brief hinic3_flush_mgmt_workq - when remove function should flush work queue
@@ -1081,6 +1121,12 @@ u16 hinic3_intr_num(void *hwdev);
  * @brief hinic3_flexq_en get flexq en
  */
 u8 hinic3_flexq_en(void *hwdev);
+
+/* *
+ * @brief hinic3_get_fake_vf_info get fake_vf info
+ */
+int hinic3_get_fake_vf_info(void *hwdev, u8 *fake_vf_vld,
+			    u8 *page_bit, u8 *pf_start_bit, u8 *map_host_id);
 
 /* *
  * @brief hinic3_fault_event_report - report fault event
@@ -1158,5 +1204,49 @@ int hinic3_set_host_migrate_enable(void *hwdev, u8 host_id, bool enable);
  * @retval zero: failure
  */
 int hinic3_get_host_migrate_enable(void *hwdev, u8 host_id, u8 *migrate_en);
+
+/* *
+ * @brief hinic3_is_slave_func - hwdev is slave func
+ * @param dev: device pointer to hwdev
+ * @param is_slave_func: slave func
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_is_slave_func(const void *hwdev, bool *is_slave_func);
+
+/* *
+ * @brief hinic3_is_master_func - hwdev is master func
+ * @param dev: device pointer to hwdev
+ * @param is_master_func: master func
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_is_master_func(const void *hwdev, bool *is_master_func);
+
+bool hinic3_is_multi_bm(void *hwdev);
+
+bool hinic3_is_slave_host(void *hwdev);
+
+bool hinic3_is_vm_slave_host(void *hwdev);
+
+bool hinic3_is_bm_slave_host(void *hwdev);
+
+bool hinic3_is_guest_vmsec_enable(void *hwdev);
+
+int hinic3_get_vfid_by_vfpci(void *hwdev, struct pci_dev *pdev, u16 *global_func_id);
+
+int hinic3_set_func_nic_state(void *hwdev, struct hinic3_func_nic_state *state);
+
+int hinic3_get_netdev_state(void *hwdev, u16 func_idx, int *opened);
+
+int hinic3_get_mhost_func_nic_enable(void *hwdev, u16 func_id, bool *en);
+
+int hinic3_get_dev_cap(void *hwdev);
+
+int hinic3_mbox_to_host_sync(void *hwdev, enum hinic3_mod_type mod,
+			     u8 cmd, void *buf_in, u16 in_size,
+			     void *buf_out, u16 *out_size, u32 timeout, u16 channel);
+
+int hinic3_get_func_vroce_enable(void *hwdev, u16 glb_func_idx, u8 *en);
 
 #endif

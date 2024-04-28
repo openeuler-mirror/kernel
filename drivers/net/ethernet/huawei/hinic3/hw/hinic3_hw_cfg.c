@@ -16,7 +16,8 @@
 #include "hinic3_hw.h"
 #include "hinic3_hwdev.h"
 #include "hinic3_hwif.h"
-#include "cfg_mgt_comm_pub.h"
+#include "cfg_mgmt_mpu_cmd.h"
+#include "cfg_mgmt_mpu_cmd_defs.h"
 #include "hinic3_hw_cfg.h"
 
 static void parse_pub_res_cap_dfx(struct hinic3_hwdev *hwdev,
@@ -108,6 +109,11 @@ static void parse_pub_res_cap(struct hinic3_hwdev *hwdev,
 	cap->host_valid_bitmap = dev_cap->host_valid_bitmap;
 	cap->master_host_id = dev_cap->master_host_id;
 	cap->srv_multi_host_mode = dev_cap->srv_multi_host_mode;
+	cap->fake_vf_en = dev_cap->fake_vf_en;
+	cap->fake_vf_start_bit = dev_cap->fake_vf_start_bit;
+	cap->fake_vf_end_bit = dev_cap->fake_vf_end_bit;
+	cap->fake_vf_page_bit = dev_cap->fake_vf_page_bit;
+	cap->map_host_id = dev_cap->map_host_id;
 
 	if (type != TYPE_VF) {
 		cap->max_vf = dev_cap->max_vf;
@@ -327,19 +333,6 @@ static void parse_ipsec_res_cap(struct hinic3_hwdev *hwdev,
 		 dev_cap->ipsec_max_sactx, dev_cap->ipsec_max_cq);
 }
 
-static void parse_vbs_res_cap(struct hinic3_hwdev *hwdev,
-			      struct service_cap *cap,
-			      struct cfg_cmd_dev_cap *dev_cap,
-			      enum func_type type)
-{
-	struct vbs_service_cap *vbs_cap = &cap->vbs_cap;
-
-	vbs_cap->vbs_max_volq = dev_cap->vbs_max_volq;
-
-	sdk_info(hwdev->dev_hdl, "Get VBS resource capbility, vbs_max_volq: 0x%x\n",
-		 dev_cap->vbs_max_volq);
-}
-
 static void parse_dev_cap(struct hinic3_hwdev *dev,
 			  struct cfg_cmd_dev_cap *dev_cap, enum func_type type)
 {
@@ -382,9 +375,6 @@ static void parse_dev_cap(struct hinic3_hwdev *dev,
 
 	if (IS_PPA_TYPE(dev))
 		parse_ppa_res_cap(dev, cap, dev_cap, type);
-
-	if (IS_VBS_TYPE(dev))
-		parse_vbs_res_cap(dev, cap, dev_cap, type);
 }
 
 static int get_cap_from_fw(struct hinic3_hwdev *dev, enum func_type type)
@@ -414,29 +404,39 @@ static int get_cap_from_fw(struct hinic3_hwdev *dev, enum func_type type)
 	return 0;
 }
 
-static int hinic3_get_dev_cap(struct hinic3_hwdev *dev)
+int hinic3_get_dev_cap(void *dev)
 {
-	enum func_type type = HINIC3_FUNC_TYPE(dev);
+	enum func_type type;
 	int err;
+	struct hinic3_hwdev *hwdev = NULL;
+
+	if (!dev) {
+		pr_err("pointer dev is NULL\n");
+		return -EINVAL;
+	}
+	hwdev = (struct hinic3_hwdev *)dev;
+	type = HINIC3_FUNC_TYPE(hwdev);
 
 	switch (type) {
 	case TYPE_PF:
 	case TYPE_PPF:
 	case TYPE_VF:
-		err = get_cap_from_fw(dev, type);
-		if (err) {
-			sdk_err(dev->dev_hdl, "Failed to get PF/PPF capability\n");
+		err = get_cap_from_fw(hwdev, type);
+		if (err != 0) {
+			sdk_err(hwdev->dev_hdl,
+				"Failed to get PF/PPF capability\n");
 			return err;
 		}
 		break;
 	default:
-		sdk_err(dev->dev_hdl, "Unsupported PCI Function type: %d\n",
-			type);
+		sdk_err(hwdev->dev_hdl,
+			"Unsupported PCI Function type: %d\n", type);
 		return -EINVAL;
 	}
 
 	return 0;
 }
+EXPORT_SYMBOL(hinic3_get_dev_cap);
 
 int hinic3_get_ppf_timer_cfg(void *hwdev)
 {
@@ -1017,21 +1017,21 @@ int init_cfg_mgmt(struct hinic3_hwdev *dev)
 	cfg_mgmt->hwdev = dev;
 
 	err = cfg_init_eq(dev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(dev->dev_hdl, "Failed to init cfg event queue, err: %d\n",
 			err);
 		goto free_mgmt_mem;
 	}
 
 	err = cfg_init_interrupt(dev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(dev->dev_hdl, "Failed to init cfg interrupt, err: %d\n",
 			err);
 		goto free_eq_mem;
 	}
 
 	err = cfg_enable_interrupt(dev);
-	if (err) {
+	if (err != 0) {
 		sdk_err(dev->dev_hdl, "Failed to enable cfg interrupt, err: %d\n",
 			err);
 		goto free_interrupt_mem;
@@ -1089,6 +1089,33 @@ void free_cfg_mgmt(struct hinic3_hwdev *dev)
 	kfree(cfg_mgmt);
 }
 
+/**
+ * hinic_set_vf_dev_cap - Set max queue num for VF
+ * @hwdev: the HW device for VF
+ */
+int hinic3_init_vf_dev_cap(void *hwdev)
+{
+	struct hinic3_hwdev *dev = NULL;
+	enum func_type type;
+	int err;
+
+	if (!hwdev)
+		return -EFAULT;
+
+	dev = (struct hinic3_hwdev *)hwdev;
+	type = HINIC3_FUNC_TYPE(dev);
+	if (type != TYPE_VF)
+		return -EPERM;
+
+	err = hinic3_get_dev_cap(dev);
+	if (err != 0)
+		return err;
+
+	nic_param_fix(dev);
+
+	return 0;
+}
+
 int init_capability(struct hinic3_hwdev *dev)
 {
 	int err;
@@ -1123,7 +1150,7 @@ bool hinic3_support_nic(void *hwdev, struct nic_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.nic_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.nic_cap, sizeof(struct nic_service_cap));
 
 	return true;
 }
@@ -1140,7 +1167,7 @@ bool hinic3_support_ppa(void *hwdev, struct ppa_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ppa_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.ppa_cap, sizeof(struct ppa_service_cap));
 
 	return true;
 }
@@ -1174,7 +1201,7 @@ bool hinic3_support_ipsec(void *hwdev, struct ipsec_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ipsec_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.ipsec_cap, sizeof(struct ipsec_service_cap));
 
 	return true;
 }
@@ -1191,7 +1218,7 @@ bool hinic3_support_roce(void *hwdev, struct rdma_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap, sizeof(struct rdma_service_cap));
 
 	return true;
 }
@@ -1208,7 +1235,7 @@ bool hinic3_support_fc(void *hwdev, struct fc_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.fc_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.fc_cap, sizeof(struct fc_service_cap));
 
 	return true;
 }
@@ -1221,11 +1248,11 @@ bool hinic3_support_rdma(void *hwdev, struct rdma_service_cap *cap)
 	if (!hwdev)
 		return false;
 
-	if (!IS_RDMA_TYPE(dev))
+	if (!IS_RDMA_TYPE(dev) && !(IS_RDMA_ENABLE(dev)))
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.rdma_cap, sizeof(struct rdma_service_cap));
 
 	return true;
 }
@@ -1242,7 +1269,7 @@ bool hinic3_support_ovs(void *hwdev, struct ovs_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.ovs_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.ovs_cap, sizeof(struct ovs_service_cap));
 
 	return true;
 }
@@ -1259,11 +1286,30 @@ bool hinic3_support_vbs(void *hwdev, struct vbs_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.vbs_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.vbs_cap, sizeof(struct vbs_service_cap));
 
 	return true;
 }
 EXPORT_SYMBOL(hinic3_support_vbs);
+
+bool hinic3_is_guest_vmsec_enable(void *hwdev)
+{
+	struct hinic3_hwdev *hw_dev = hwdev;
+
+	if (!hwdev) {
+		pr_err("hwdev is null\n");
+		return false;
+	}
+
+    /* vf used in vm */
+	if (IS_VM_SLAVE_HOST(hw_dev) && (hinic3_func_type(hwdev) == TYPE_VF) &&
+	    IS_RDMA_TYPE(hw_dev)) {
+		return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(hinic3_is_guest_vmsec_enable);
 
 /* Only PPF support it, PF is not */
 bool hinic3_support_toe(void *hwdev, struct toe_service_cap *cap)
@@ -1277,7 +1323,7 @@ bool hinic3_support_toe(void *hwdev, struct toe_service_cap *cap)
 		return false;
 
 	if (cap)
-		memcpy(cap, &dev->cfg_mgmt->svc_cap.toe_cap, sizeof(*cap));
+		memcpy(cap, &dev->cfg_mgmt->svc_cap.toe_cap, sizeof(struct toe_service_cap));
 
 	return true;
 }
@@ -1306,6 +1352,17 @@ bool hinic3_get_stateful_enable(void *hwdev)
 	return dev->cfg_mgmt->svc_cap.sf_en;
 }
 EXPORT_SYMBOL(hinic3_get_stateful_enable);
+
+bool hinic3_get_timer_enable(void *hwdev)
+{
+	struct hinic3_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	return dev->cfg_mgmt->svc_cap.timer_en;
+}
+EXPORT_SYMBOL(hinic3_get_timer_enable);
 
 u8 hinic3_host_oq_id_mask(void *hwdev)
 {
@@ -1477,4 +1534,28 @@ u8 hinic3_flexq_en(void *hwdev)
 	return dev->cfg_mgmt->svc_cap.flexq_en;
 }
 EXPORT_SYMBOL(hinic3_flexq_en);
+
+int hinic3_get_fake_vf_info(void *hwdev, u8 *fake_vf_vld,
+			    u8 *page_bit, u8 *pf_start_bit, u8 *map_host_id)
+{
+	struct hinic3_hwdev *dev = hwdev;
+
+	if (!dev) {
+		pr_err("Hwdev pointer is NULL for getting pf id start capability\n");
+		return -EINVAL;
+	}
+
+	if (!fake_vf_vld || !page_bit || !pf_start_bit || !map_host_id) {
+		pr_err("Fake vf member pointer is NULL for getting pf id start capability\n");
+		return -EINVAL;
+	}
+
+	*fake_vf_vld = dev->cfg_mgmt->svc_cap.fake_vf_en;
+	*page_bit = dev->cfg_mgmt->svc_cap.fake_vf_page_bit;
+	*pf_start_bit = dev->cfg_mgmt->svc_cap.fake_vf_start_bit;
+	*map_host_id = dev->cfg_mgmt->svc_cap.map_host_id;
+
+	return 0;
+}
+EXPORT_SYMBOL(hinic3_get_fake_vf_info);
 

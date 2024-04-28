@@ -18,7 +18,7 @@
 #include "hinic3_crm.h"
 #include "hinic3_hw.h"
 #include "hinic3_common.h"
-#include "hinic3_comm_cmd.h"
+#include "mpu_inband_cmd.h"
 #include "hinic3_hwdev.h"
 #include "hinic3_eqs.h"
 #include "hinic3_mbox.h"
@@ -213,8 +213,7 @@ static void clp_prepare_header(struct hinic3_hwdev *hwdev, u64 *header,
  * @msg: the data of the message
  * @msg_len: the length of the message
  **/
-static void prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg,
-			     int msg_len)
+static int prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg, int msg_len)
 {
 	u8 *mgmt_cmd_new = mgmt_cmd;
 
@@ -225,6 +224,8 @@ static void prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg,
 
 	mgmt_cmd_new += sizeof(*header);
 	memcpy(mgmt_cmd_new, msg, (size_t)(u32)msg_len);
+
+	return 0;
 }
 
 /**
@@ -249,6 +250,7 @@ static int send_msg_to_mgmt_sync(struct hinic3_msg_pf_to_mgmt *pf_to_mgmt,
 	u8 node_id = HINIC3_MGMT_CPU_NODE_ID(pf_to_mgmt->hwdev);
 	u64 header;
 	u16 cmd_size = mgmt_msg_len(msg_len);
+	int ret;
 
 	if (hinic3_get_chip_present_flag(pf_to_mgmt->hwdev) == 0)
 		return -EFAULT;
@@ -267,7 +269,9 @@ static int send_msg_to_mgmt_sync(struct hinic3_msg_pf_to_mgmt *pf_to_mgmt,
 	if (ack_type == HINIC3_MSG_ACK)
 		pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_START);
 
-	prepare_mgmt_cmd((u8 *)mgmt_cmd, &header, msg, msg_len);
+	ret = prepare_mgmt_cmd((u8 *)mgmt_cmd, &header, msg, msg_len);
+	if (ret != 0)
+		return ret;
 
 	return hinic3_api_cmd_write(chain, node_id, mgmt_cmd, cmd_size);
 }
@@ -291,6 +295,7 @@ static int send_msg_to_mgmt_async(struct hinic3_msg_pf_to_mgmt *pf_to_mgmt,
 	u8 node_id = HINIC3_MGMT_CPU_NODE_ID(pf_to_mgmt->hwdev);
 	u64 header;
 	u16 cmd_size = mgmt_msg_len(msg_len);
+	int ret;
 
 	if (hinic3_get_chip_present_flag(pf_to_mgmt->hwdev) == 0)
 		return -EFAULT;
@@ -301,24 +306,31 @@ static int send_msg_to_mgmt_async(struct hinic3_msg_pf_to_mgmt *pf_to_mgmt,
 	prepare_header(pf_to_mgmt, &header, msg_len, mod, HINIC3_MSG_NO_ACK,
 		       direction, cmd, ASYNC_MSG_ID(pf_to_mgmt));
 
-	prepare_mgmt_cmd((u8 *)mgmt_cmd, &header, msg, msg_len);
+	ret = prepare_mgmt_cmd((u8 *)mgmt_cmd, &header, msg, msg_len);
+	if (ret != 0)
+		return ret;
 
 	chain = pf_to_mgmt->cmd_chain[HINIC3_API_CMD_WRITE_ASYNC_TO_MGMT_CPU];
 
 	return hinic3_api_cmd_write(chain, node_id, mgmt_cmd, cmd_size);
 }
 
-static inline void msg_to_mgmt_pre(u8 mod, void *buf_in)
+static inline int msg_to_mgmt_pre(u8 mod, void *buf_in, u16 in_size)
 {
 	struct hinic3_msg_head *msg_head = NULL;
 
 	/* set aeq fix num to 3, need to ensure response aeq id < 3 */
 	if (mod == HINIC3_MOD_COMM || mod == HINIC3_MOD_L2NIC) {
+		if (in_size < sizeof(struct hinic3_msg_head))
+			return -EINVAL;
+
 		msg_head = buf_in;
 
 		if (msg_head->resp_aeq_num >= HINIC3_MAX_AEQS)
 			msg_head->resp_aeq_num = 0;
 	}
+
+	return 0;
 }
 
 int hinic3_pf_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
@@ -336,7 +348,12 @@ int hinic3_pf_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic3_hwdev *)hwdev))
 		return -EPERM;
 
-	msg_to_mgmt_pre(mod, buf_in);
+	if (!buf_in || in_size == 0)
+		return -EINVAL;
+
+	ret = msg_to_mgmt_pre(mod, buf_in, in_size);
+	if (ret != 0)
+		return -EINVAL;
 
 	pf_to_mgmt = ((struct hinic3_hwdev *)hwdev)->pf_to_mgmt;
 
@@ -395,7 +412,6 @@ int hinic3_pf_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 
 		if (recv_msg->msg_len)
 			memcpy(buf_out, recv_msg->msg, recv_msg->msg_len);
-
 		*out_size = recv_msg->msg_len;
 	}
 
@@ -409,7 +425,7 @@ unlock_sync_msg:
 int hinic3_pf_to_mgmt_async(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 			    u16 in_size)
 {
-	struct hinic3_msg_pf_to_mgmt *pf_to_mgmt;
+	struct hinic3_msg_pf_to_mgmt *pf_to_mgmt = NULL;
 	void *dev = ((struct hinic3_hwdev *)hwdev)->dev_hdl;
 	int err;
 
@@ -432,6 +448,41 @@ int hinic3_pf_to_mgmt_async(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 	}
 
 	return 0;
+}
+
+/* This function is only used by tx/rx flush */
+int hinic3_pf_to_mgmt_no_ack(void *hwdev, enum hinic3_mod_type mod, u8 cmd, void *buf_in,
+			     u16 in_size)
+{
+	struct hinic3_msg_pf_to_mgmt *pf_to_mgmt = NULL;
+	void *dev = NULL;
+	int err = -EINVAL;
+	struct hinic3_hwdev *tmp_hwdev = NULL;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	tmp_hwdev = (struct hinic3_hwdev *)hwdev;
+	dev = tmp_hwdev->dev_hdl;
+	pf_to_mgmt = tmp_hwdev->pf_to_mgmt;
+
+	if (in_size > HINIC3_MBOX_DATA_SIZE) {
+		sdk_err(dev, "Mgmt msg buffer size: %u is invalid\n", in_size);
+		return -EINVAL;
+	}
+
+	if (!(tmp_hwdev->chip_present_flag))
+		return -EPERM;
+
+	/* lock the sync_msg_buf */
+	down(&pf_to_mgmt->sync_msg_lock);
+
+	err = send_msg_to_mgmt_sync(pf_to_mgmt, mod, cmd, buf_in, in_size, HINIC3_MSG_NO_ACK,
+				    HINIC3_MSG_DIRECT_SEND, MSG_NO_RESP);
+
+	up(&pf_to_mgmt->sync_msg_lock);
+
+	return err;
 }
 
 int hinic3_pf_msg_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
@@ -1358,11 +1409,11 @@ static void hinic3_clear_clp_data(struct hinic3_hwdev *hwdev,
 int hinic3_pf_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 			  u16 in_size, void *buf_out, u16 *out_size)
 {
-	struct hinic3_clp_pf_to_mgmt *clp_pf_to_mgmt;
+	struct hinic3_clp_pf_to_mgmt *clp_pf_to_mgmt = NULL;
 	struct hinic3_hwdev *dev = hwdev;
 	u64 header;
 	u16 real_size;
-	u8 *clp_msg_buf;
+	u8 *clp_msg_buf = NULL;
 	int err;
 
 	if (!COMM_SUPPORT_CLP(dev))
@@ -1405,6 +1456,7 @@ int hinic3_pf_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 	clp_prepare_header(dev, &header, in_size, mod, 0, 0, cmd, 0);
 
 	memcpy(clp_msg_buf, &header, sizeof(header));
+
 	clp_msg_buf += sizeof(header);
 	memcpy(clp_msg_buf, buf_in, in_size);
 
@@ -1477,7 +1529,7 @@ int hinic3_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 
 int hinic3_clp_pf_to_mgmt_init(struct hinic3_hwdev *hwdev)
 {
-	struct hinic3_clp_pf_to_mgmt *clp_pf_to_mgmt;
+	struct hinic3_clp_pf_to_mgmt *clp_pf_to_mgmt = NULL;
 
 	if (!COMM_SUPPORT_CLP(hwdev))
 		return 0;

@@ -84,6 +84,21 @@ Data. (hinic3_hw_qp.c, hinic3_hw_qp.h, hinic3_hw_qp_ctxt.h)
 
 IO - de/constructs all the IO components. (hinic3_hw_io.c, hinic3_hw_io.h)
 
+CQM components:
+==========
+
+The CQM module organizes the memory in the large system in a format (CLA table)
+and allocates the memory to the chip (BAT table). The chip can use the memory in
+the large system to save context information and queue information (SCQ\SRQ).
+(cqm_bat_cla.c, cqm_bat_cla.h, cqm_bitmap_table.c, cqm_bitmap_table.h)
+
+When a packet is transmitted from the PCIe link, the chip parses the 5-tuple
+such as sid, did, and hostid. Fill the parsed data in the queue
+(in the form of scqe). In this way, the driver can directly obtain data from the
+queue (through MPDK polling) and then process the data. In this way, the
+uninstallation is implemented.
+(cqm_main.c, cqm_main.h, cqm_db.c, cqm_db.h)
+
 HW device:
 ==========
 

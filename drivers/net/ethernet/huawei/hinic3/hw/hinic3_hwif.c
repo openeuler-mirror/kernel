@@ -230,6 +230,9 @@ int hinic3_set_host_migrate_enable(void *hwdev, u8 host_id, bool enable)
 
 	u32 reg_val;
 
+	if (!dev || host_id > SPU_HOST_ID)
+		return -EINVAL;
+
 	if (HINIC3_FUNC_TYPE(dev) != TYPE_PPF) {
 		sdk_warn(dev->dev_hdl, "hwdev should be ppf\n");
 		return -EINVAL;
@@ -253,6 +256,9 @@ int hinic3_get_host_migrate_enable(void *hwdev, u8 host_id, u8 *migrate_en)
 	struct hinic3_hwdev *dev = hwdev;
 
 	u32 reg_val;
+
+	if (!dev || !migrate_en || host_id > SPU_HOST_ID)
+		return -EINVAL;
 
 	if (HINIC3_FUNC_TYPE(dev) != TYPE_PPF) {
 		sdk_warn(dev->dev_hdl, "hwdev should be ppf\n");
@@ -712,6 +718,15 @@ static void disable_all_msix(struct hinic3_hwdev *hwdev)
 		hinic3_set_msix_state(hwdev, i, HINIC3_MSIX_DISABLE);
 }
 
+static void enable_all_msix(struct hinic3_hwdev *hwdev)
+{
+	u16 num_irqs = hwdev->hwif->attr.num_irqs;
+	u16 i;
+
+	for (i = 0; i < num_irqs; i++)
+		hinic3_set_msix_state(hwdev, i, HINIC3_MSIX_ENABLE);
+}
+
 static enum hinic3_wait_return check_db_outbound_enable_handler(void *priv_data)
 {
 	struct hinic3_hwif *hwif = priv_data;
@@ -824,6 +839,7 @@ void hinic3_free_hwif(struct hinic3_hwdev *hwdev)
 {
 	spin_lock_deinit(&hwdev->hwif->free_db_area.idx_lock);
 	free_db_area(&hwdev->hwif->free_db_area);
+	enable_all_msix(hwdev);
 	kfree(hwdev->hwif);
 }
 
@@ -839,6 +855,44 @@ u16 hinic3_global_func_id(void *hwdev)
 	return hwif->attr.func_global_idx;
 }
 EXPORT_SYMBOL(hinic3_global_func_id);
+
+/**
+ * get function id from register,used by sriov hot migration process
+ * @hwdev: the pointer to hw device
+ */
+u16 hinic3_global_func_id_hw(void *hwdev)
+{
+	u32 addr, attr0;
+	struct hinic3_hwdev *dev;
+
+	dev = (struct hinic3_hwdev *)hwdev;
+	addr = HINIC3_CSR_FUNC_ATTR0_ADDR;
+	attr0 = hinic3_hwif_read_reg(dev->hwif, addr);
+
+	return HINIC3_AF0_GET(attr0, FUNC_GLOBAL_IDX);
+}
+
+/**
+ * get function id, used by sriov hot migratition process.
+ * @hwdev: the pointer to hw device
+ * @func_id: function id
+ */
+int hinic3_global_func_id_get(void *hwdev, u16 *func_id)
+{
+	struct hinic3_hwdev *dev = (struct hinic3_hwdev *)hwdev;
+
+	if (!hwdev || !func_id)
+		return -EINVAL;
+
+	/* only vf get func_id from chip reg for sriov migrate */
+	if (!HINIC3_IS_VF(dev)) {
+		*func_id = hinic3_global_func_id(hwdev);
+		return 0;
+	}
+
+	*func_id = hinic3_global_func_id_hw(dev);
+	return 0;
+}
 
 u16 hinic3_intr_num(void *hwdev)
 {

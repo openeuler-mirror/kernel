@@ -9667,6 +9667,17 @@ L:	netdev@vger.kernel.org
 S:	Supported
 F:	Documentation/networking/hinic3.rst
 F:	drivers/net/ethernet/huawei/hinic3/
+F:	drivers/net/ethernet/huawei/hinic3/bond/
+F:	drivers/net/ethernet/huawei/hinic3/cqm/
+F:	drivers/net/ethernet/huawei/hinic3/hw/
+F:	drivers/net/ethernet/huawei/hinic3/include/
+
+HUAWEI PVRDMA DRIVER
+M:	Chengbo Gu <guchengbo@huawei.com>
+R:	Xiaoping zheng <zhengxiaoping5@huawei.com>
+L:	linux-rdma@vger.kernel.org
+S:	Supported
+F:	drivers/infiniband/hw/hiroce3/
 
 HUGETLB SUBSYSTEM
 M:	Mike Kravetz <mike.kravetz@oracle.com>

@@ -17,7 +17,6 @@
 #include "ossl_knl.h"
 #include "hinic3_crm.h"
 #include "hinic3_hw.h"
-#include "mag_cmd.h"
 #include "hinic3_nic_io.h"
 #include "hinic3_nic_cfg.h"
 #include "hinic3_srv_nic.h"
@@ -552,8 +551,7 @@ static void port_sfp_abs_event(void *hwdev, void *buf_in, u16 in_size,
 
 	rt_cmd = &nic_io->nic_cfg.rt_cmd;
 	mutex_lock(&nic_io->nic_cfg.sfp_mutex);
-	memcpy(&rt_cmd->abs, sfp_abs,
-	       sizeof(struct mag_cmd_get_xsfp_present));
+	memcpy(&rt_cmd->abs, sfp_abs, sizeof(struct mag_cmd_get_xsfp_present));
 	rt_cmd->mpu_send_sfp_abs = true;
 	mutex_unlock(&nic_io->nic_cfg.sfp_mutex);
 }

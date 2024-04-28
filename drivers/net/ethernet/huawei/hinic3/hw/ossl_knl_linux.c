@@ -23,7 +23,7 @@ void file_close(struct file *file_handle)
 
 u32 get_file_size(struct file *file_handle)
 {
-	struct inode *file_inode;
+	struct inode *file_inode = NULL;
 
 	file_inode = file_handle->f_inode;
 
@@ -33,6 +33,19 @@ u32 get_file_size(struct file *file_handle)
 void set_file_position(struct file *file_handle, u32 position)
 {
 	file_handle->f_pos = position;
+}
+
+int file_read(struct file *file_handle, char *log_buffer, u32 rd_length,
+	      u32 *file_pos)
+{
+	return (int)kernel_read(file_handle, log_buffer, rd_length,
+				&file_handle->f_pos);
+}
+
+u32 file_write(struct file *file_handle, const char *log_buffer, u32 wr_length)
+{
+	return (u32)kernel_write(file_handle, log_buffer, wr_length,
+				 &file_handle->f_pos);
 }
 
 static int _linux_thread_func(void *thread)
@@ -63,8 +76,7 @@ void stop_thread(struct sdk_thread_info *thread_info)
 
 void utctime_to_localtime(u64 utctime, u64 *localtime)
 {
-	*localtime = utctime - sys_tz.tz_minuteswest *
-		OSSL_MINUTE_BASE; /*lint !e647*/
+	*localtime = utctime - (u64)(sys_tz.tz_minuteswest * OSSL_MINUTE_BASE); /*lint !e647 !e571*/
 }
 
 #ifndef HAVE_TIMER_SETUP
@@ -77,7 +89,7 @@ void initialize_timer(const void *adapter_hdl, struct timer_list *timer)
 }
 #endif
 
-void add_to_timer(struct timer_list *timer, long period)
+void add_to_timer(struct timer_list *timer, u64 period)
 {
 	if (!timer)
 		return;
