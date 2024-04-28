@@ -2125,7 +2125,9 @@ void pci_disable_sriov(struct pci_dev *dev);
 
 int pci_iov_sysfs_link(struct pci_dev *dev, struct pci_dev *virtfn, int id);
 int pci_iov_add_virtfn(struct pci_dev *dev, int id);
+int pci_iov_add_virtfn_locked(struct pci_dev *dev, int id);
 void pci_iov_remove_virtfn(struct pci_dev *dev, int id);
+void pci_iov_remove_virtfn_locked(struct pci_dev *dev, int id);
 int pci_num_vf(struct pci_dev *dev);
 int pci_vfs_assigned(struct pci_dev *dev);
 int pci_sriov_set_totalvfs(struct pci_dev *dev, u16 numvfs);
@@ -2165,8 +2167,14 @@ static inline int pci_iov_add_virtfn(struct pci_dev *dev, int id)
 {
 	return -ENOSYS;
 }
+static inline int pci_iov_add_virtfn_locked(struct pci_dev *dev, int id)
+{
+	return -ENOSYS;
+}
 static inline void pci_iov_remove_virtfn(struct pci_dev *dev,
 					 int id) { }
+static inline void pci_iov_remove_virtfn_locked(struct pci_dev *dev,
+						int id) { }
 static inline void pci_disable_sriov(struct pci_dev *dev) { }
 static inline int pci_num_vf(struct pci_dev *dev) { return 0; }
 static inline int pci_vfs_assigned(struct pci_dev *dev)
