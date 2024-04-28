@@ -772,3 +772,44 @@ static int __init swiotlb_create_debugfs(void)
 late_initcall(swiotlb_create_debugfs);
 
 #endif
+
+#ifdef CONFIG_DMA_RESTRICTED_POOL
+
+static int swiotlb_find_slots(struct device *dev, phys_addr_t orig_addr,
+		size_t size)
+{
+	return find_slots(dev, orig_addr, size);
+}
+
+struct page *swiotlb_alloc(struct device *dev, size_t size)
+{
+	phys_addr_t tlb_addr;
+	int index;
+
+	index = swiotlb_find_slots(dev, 0, size);
+	if (index == -1)
+		return NULL;
+
+	tlb_addr = slot_addr(io_tlb_start, index);
+
+	return pfn_to_page(PFN_DOWN(tlb_addr));
+}
+
+static void swiotlb_release_slots(struct device *dev, phys_addr_t tlb_addr,
+		size_t alloc_size)
+{
+}
+
+bool swiotlb_free(struct device *dev, struct page *page, size_t size)
+{
+	phys_addr_t tlb_addr = page_to_phys(page);
+
+	if (!is_swiotlb_buffer(tlb_addr))
+		return false;
+
+	swiotlb_release_slots(dev, tlb_addr, size);
+
+	return true;
+}
+
+#endif /* CONFIG_DMA_RESTRICTED_POOL */
