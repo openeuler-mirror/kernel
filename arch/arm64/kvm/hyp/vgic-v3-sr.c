@@ -229,6 +229,25 @@ void __vgic_v3_save_state(struct vgic_v3_cpu_if *cpu_if)
 	}
 }
 
+#ifdef CONFIG_CVM_HOST
+void __vgic_v3_restore_tec_state(struct vgic_v3_cpu_if *cpu_if,
+				 u64 *entry_hcr,
+				 u64 *entry_lrs)
+{
+	u64 used_lrs = cpu_if->used_lrs;
+	int i;
+
+	*entry_hcr = cpu_if->vgic_hcr;
+	for (i = 0; i < kvm_vgic_global_state.nr_lr; ++i) {
+		if (i < used_lrs) {
+			entry_lrs[i] = cpu_if->vgic_lr[i];
+		} else {
+			entry_lrs[i] = 0;
+		}
+	}
+}
+#endif
+
 void __vgic_v3_restore_state(struct vgic_v3_cpu_if *cpu_if)
 {
 	u64 used_lrs = cpu_if->used_lrs;

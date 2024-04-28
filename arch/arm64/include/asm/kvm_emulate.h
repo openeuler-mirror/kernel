@@ -556,4 +556,17 @@ static inline bool vcpu_has_feature(struct kvm_vcpu *vcpu, int feature)
 	return test_bit(feature, vcpu->arch.features);
 }
 
+#ifdef CONFIG_CVM_HOST
+static inline bool kvm_is_cvm(struct kvm *kvm)
+{
+	if (static_branch_unlikely(&kvm_cvm_is_available))
+		return kvm->arch.is_cvm;
+	return false;
+}
+
+static inline enum cvm_state kvm_cvm_state(struct kvm *kvm)
+{
+	return READ_ONCE(kvm->arch.cvm.state);
+}
+#endif
 #endif /* __ARM64_KVM_EMULATE_H__ */

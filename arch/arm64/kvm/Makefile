@@ -24,5 +24,9 @@ kvm-y := $(KVM)/kvm_main.o $(KVM)/coalesced_mmio.o $(KVM)/eventfd.o \
 	 vgic/vgic-mmio-v3.o vgic/vgic-kvm-device.o \
 	 vgic/vgic-its.o vgic/shadow_dev.o vgic/vgic-debug.o
 
+kvm-$(CONFIG_CVM_HOST)	+= tmi.o
+kvm-$(CONFIG_CVM_HOST)	+= cvm.o
+kvm-$(CONFIG_CVM_HOST)	+= cvm_exit.o
+
 kvm-$(CONFIG_KVM_ARM_PMU)  += pmu-emul.o
 obj-$(CONFIG_KVM_HISI_VIRT) += hisilicon/

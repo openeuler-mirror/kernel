@@ -117,4 +117,8 @@ void kvm_arm_timer_write_sysreg(struct kvm_vcpu *vcpu,
 u32 timer_get_ctl(struct arch_timer_context *ctxt);
 u64 timer_get_cval(struct arch_timer_context *ctxt);
 
+#ifdef CONFIG_CVM_HOST
+/* Needed for S-EL2 */
+void kvm_cvm_timers_update(struct kvm_vcpu *vcpu);
+#endif
 #endif
