@@ -26,6 +26,9 @@
 #include <asm/kvm.h>
 #include <asm/kvm_asm.h>
 #include <asm/thread_info.h>
+#ifdef CONFIG_CVM_HOST
+#include <asm/kvm_tmm.h>
+#endif
 
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
 
@@ -124,7 +127,20 @@ struct kvm_arch {
 
 #ifdef CONFIG_KVM_HISI_VIRT
 	spinlock_t dvm_lock;
-	cpumask_t *dvm_cpumask;	/* Union of all vcpu's cpus_ptr */
+#endif
+
+#if defined(CONFIG_KVM_HISI_VIRT) || defined(CONFIG_CVM_HOST)
+#ifndef __GENKSYMS__
+	union {
+		cpumask_t *dvm_cpumask; /* Union of all vcpu's cpus_ptr */
+		void *cvm;
+	};
+#else
+	cpumask_t *dvm_cpumask; /* Union of all vcpu's cpus_ptr */
+#endif
+#endif
+
+#ifdef CONFIG_KVM_HISI_VIRT
 	u64 lsudvmbm_el2;
 #endif
 };
@@ -403,7 +419,17 @@ struct kvm_vcpu_arch {
 #ifdef CONFIG_KVM_HISI_VIRT
 	/* Copy of current->cpus_ptr */
 	cpumask_t *cpus_ptr;
+#endif
+
+#if defined(CONFIG_KVM_HISI_VIRT) || defined(CONFIG_CVM_HOST)
+#ifndef __GENKSYMS__
+	union {
+		cpumask_t *pre_cpus_ptr;
+		void *tec;
+	};
+#else
 	cpumask_t *pre_cpus_ptr;
+#endif
 #endif
 };
 

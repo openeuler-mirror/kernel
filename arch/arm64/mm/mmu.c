@@ -38,6 +38,7 @@
 #include <asm/ptdump.h>
 #include <asm/tlbflush.h>
 #include <asm/pgalloc.h>
+#include <asm/set_memory.h>
 
 #define NO_BLOCK_MAPPINGS	BIT(0)
 #define NO_CONT_MAPPINGS	BIT(1)
@@ -494,7 +495,7 @@ static void __init map_mem(pgd_t *pgdp)
 	int flags = 0, eflags = 0;
 	u64 i;
 
-	if (rodata_full || debug_pagealloc_enabled())
+	if (rodata_full || debug_pagealloc_enabled() || is_cvm_world())
 		flags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
 
 #ifdef CONFIG_KFENCE
@@ -1513,8 +1514,7 @@ int arch_add_memory(int nid, u64 start, u64 size,
 		return -EINVAL;
 	}
 
-
-	if (rodata_full || debug_pagealloc_enabled())
+	if (rodata_full || debug_pagealloc_enabled() || is_cvm_world())
 		flags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
 
 	__create_pgd_mapping(swapper_pg_dir, start, __phys_to_virt(start),

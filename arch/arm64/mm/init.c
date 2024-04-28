@@ -47,6 +47,7 @@
 #include <asm/tlb.h>
 #include <asm/alternative.h>
 #include <asm/cpu_park.h>
+#include <asm/set_memory.h>
 
 #include "internal.h"
 
@@ -673,6 +674,8 @@ void __init mem_init(void)
 		swiotlb_init(1);
 	else
 		swiotlb_force = SWIOTLB_NO_FORCE;
+
+	swiotlb_cvm_update_mem_attributes();
 
 	set_max_mapnr(max_pfn - PHYS_PFN_OFFSET);
 

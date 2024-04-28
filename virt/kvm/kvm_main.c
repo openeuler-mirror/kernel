@@ -1089,7 +1089,12 @@ static struct kvm *kvm_create_vm(unsigned long type)
 			goto out_err_no_arch_destroy_vm;
 	}
 
-	kvm->max_halt_poll_ns = halt_poll_ns;
+#ifdef CONFIG_CVM_HOST
+	if (kvm_arm_cvm_type(type))
+		kvm->max_halt_poll_ns = CVM_MAX_HALT_POLL_NS;
+	else
+#endif
+		kvm->max_halt_poll_ns = halt_poll_ns;
 
 	r = kvm_arch_init_vm(kvm, type);
 	if (r)

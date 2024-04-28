@@ -59,6 +59,13 @@ config KVM_ARM_PMU
 	  Adds support for a virtual Performance Monitoring Unit (PMU) in
 	  virtual machines.
 
+config CVM_HOST
+	bool "Enable cvm host feature"
+	help
+	  Support CVM based on S-EL2
+
+	  If unsure, say N.
+
 endif # KVM
 
 endif # VIRTUALIZATION

@@ -12,6 +12,10 @@
 
 #include <asm/kvm_hyp.h>
 
+#ifdef CONFIG_CVM_HOST
+#include <asm/kvm_tmi.h>
+#endif
+
 #include "vgic.h"
 
 #define CREATE_TRACE_POINTS
@@ -872,12 +876,48 @@ static inline bool can_access_vgic_from_kernel(void)
 	return !static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif) || has_vhe();
 }
 
+#ifdef CONFIG_CVM_HOST
+static inline void vgic_tmm_save_state(struct kvm_vcpu *vcpu)
+{
+	int i;
+	struct tmi_tec_run *tec_run;
+	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+
+	tec_run = tec->tec_run;
+	for (i = 0; i < kvm_vgic_global_state.nr_lr; ++i) {
+		cpu_if->vgic_lr[i] = tec_run->tec_exit.gicv3_lrs[i];
+		tec_run->tec_entry.gicv3_lrs[i] = 0;
+	}
+}
+
+static inline void vgic_tmm_restore_state(struct kvm_vcpu *vcpu)
+{
+	int i;
+	struct tmi_tec_run *tec_run;
+	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+
+	tec_run = tec->tec_run;
+	for (i = 0; i < kvm_vgic_global_state.nr_lr; ++i) {
+		tec_run->tec_entry.gicv3_lrs[i] = cpu_if->vgic_lr[i];
+		tec_run->tec_exit.gicv3_lrs[i] = cpu_if->vgic_lr[i];
+	}
+}
+#endif
+
 static inline void vgic_save_state(struct kvm_vcpu *vcpu)
 {
 	if (!static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
 		vgic_v2_save_state(vcpu);
 	else
-		__vgic_v3_save_state(&vcpu->arch.vgic_cpu.vgic_v3);
+#ifdef CONFIG_CVM_HOST
+		if (vcpu_is_tec(vcpu))
+			vgic_tmm_save_state(vcpu);
+		else
+#endif
+			__vgic_v3_save_state(&vcpu->arch.vgic_cpu.vgic_v3);
+
 }
 
 /* Sync back the hardware VGIC state into our emulation after a guest's run. */
@@ -907,7 +947,12 @@ static inline void vgic_restore_state(struct kvm_vcpu *vcpu)
 	if (!static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif))
 		vgic_v2_restore_state(vcpu);
 	else
-		__vgic_v3_restore_state(&vcpu->arch.vgic_cpu.vgic_v3);
+#ifdef CONFIG_CVM_HOST
+		if (vcpu_is_tec(vcpu))
+			vgic_tmm_restore_state(vcpu);
+		else
+#endif
+			__vgic_v3_restore_state(&vcpu->arch.vgic_cpu.vgic_v3);
 }
 
 /* Flush our emulation state into the GIC hardware before entering the guest. */
@@ -948,7 +993,10 @@ void kvm_vgic_load(struct kvm_vcpu *vcpu)
 {
 	if (unlikely(!vgic_initialized(vcpu->kvm)))
 		return;
-
+#ifdef CONFIG_CVM_HOST
+	if (vcpu_is_tec(vcpu))
+		return;
+#endif
 	if (kvm_vgic_global_state.type == VGIC_V2)
 		vgic_v2_load(vcpu);
 	else
@@ -959,7 +1007,10 @@ void kvm_vgic_put(struct kvm_vcpu *vcpu)
 {
 	if (unlikely(!vgic_initialized(vcpu->kvm)))
 		return;
-
+#ifdef CONFIG_CVM_HOST
+	if (vcpu_is_tec(vcpu))
+		return;
+#endif
 	if (kvm_vgic_global_state.type == VGIC_V2)
 		vgic_v2_put(vcpu);
 	else
