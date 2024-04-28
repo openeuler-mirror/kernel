@@ -1366,6 +1366,7 @@ static struct genl_family genl_ctrl __ro_after_init = {
 
 static int genl_bind(struct net *net, int group)
 {
+	bool check_sys_admin, check_net_admin;
 	const struct genl_family *family;
 	unsigned int id;
 	int ret = 0;
@@ -1382,12 +1383,21 @@ static int genl_bind(struct net *net, int group)
 		i = group - family->mcgrp_offset;
 		if (i < 0 || i >= family->n_mcgrps)
 			continue;
-
+		check_sys_admin = false;
+		check_net_admin = false;
 		grp = &family->mcgrps[i];
-		if ((grp->flags & GENL_MCAST_CAP_NET_ADMIN) &&
+		if (!strcmp(family->name, "NET_DM")) {
+			if (!strcmp(grp->name, "events"))
+				check_sys_admin = true;
+		} else if (!strcmp(family->name, "psample")) {
+			if (!strcmp(grp->name, "packets"))
+				check_net_admin = true;
+		}
+
+		if (check_net_admin &&
 		    !ns_capable(net->user_ns, CAP_NET_ADMIN))
 			ret = -EPERM;
-		if ((grp->flags & GENL_MCAST_CAP_SYS_ADMIN) &&
+		if (check_sys_admin &&
 		    !ns_capable(net->user_ns, CAP_SYS_ADMIN))
 			ret = -EPERM;
 

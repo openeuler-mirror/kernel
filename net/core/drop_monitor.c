@@ -183,7 +183,7 @@ out:
 }
 
 static const struct genl_multicast_group dropmon_mcgrps[] = {
-	{ .name = "events", .flags = GENL_MCAST_CAP_SYS_ADMIN, },
+	{ .name = "events" },
 };
 
 static void send_dm_alert(struct work_struct *work)
