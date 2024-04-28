@@ -40,6 +40,7 @@
 #include <asm/sections.h>
 #ifdef CONFIG_CVM_HOST
 #include <asm/kvm_tmi.h>
+#include <linux/perf/arm_pmu.h>
 #endif
 
 #include <kvm/arm_hypercalls.h>
@@ -890,6 +891,18 @@ static bool kvm_vcpu_exit_request(struct kvm_vcpu *vcpu, int *ret)
 			xfer_to_guest_mode_work_pending();
 }
 
+#ifdef CONFIG_CVM_HOST
+static inline void update_pmu_phys_irq(struct kvm_vcpu *vcpu, bool *pmu_stopped)
+{
+	struct kvm_pmu *pmu = &vcpu->arch.pmu;
+
+	if (pmu->irq_level) {
+		*pmu_stopped = true;
+		arm_pmu_set_phys_irq(false);
+	}
+}
+#endif
+
 /**
  * kvm_arch_vcpu_ioctl_run - the main VCPU run function to execute guest code
  * @vcpu:	The VCPU pointer
@@ -934,6 +947,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	ret = 1;
 	run->exit_reason = KVM_EXIT_UNKNOWN;
 	while (ret > 0) {
+#ifdef CONFIG_CVM_HOST
+		bool pmu_stopped = false;
+#endif
 		/*
 		 * Check conditions before entering the guest
 		 */
@@ -953,6 +969,10 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		preempt_disable();
 
 		kvm_pmu_flush_hwstate(vcpu);
+#ifdef CONFIG_CVM_HOST
+		if (vcpu_is_tec(vcpu))
+			update_pmu_phys_irq(vcpu, &pmu_stopped);
+#endif
 
 		local_irq_disable();
 
@@ -1063,6 +1083,10 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		}
 #endif
 		preempt_enable();
+#ifdef CONFIG_CVM_HOST
+		if (pmu_stopped)
+			arm_pmu_set_phys_irq(true);
+#endif
 
 		/*
 		 * The ARMv8 architecture doesn't give the hypervisor

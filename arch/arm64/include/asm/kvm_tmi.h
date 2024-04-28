@@ -4,6 +4,7 @@
  */
 #ifndef __TMM_TMI_H
 #define __TMM_TMI_H
+#ifdef CONFIG_CVM_HOST
 #include <linux/kvm_host.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_pgtable.h>
@@ -144,6 +145,7 @@ struct tmi_tec_exit {
 	uint64_t cntp_ctl;
 	uint64_t cntp_cval;
 	uint64_t imm;
+	uint64_t pmu_ovf_status;
 };
 
 struct tmi_tec_run {
@@ -371,4 +373,5 @@ unsigned long cvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu,
 int kvm_cvm_vcpu_set_events(struct kvm_vcpu *vcpu,
 	bool serror_pending, bool ext_dabt_pending);
 
+#endif
 #endif

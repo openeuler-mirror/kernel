@@ -13,6 +13,7 @@
 #include <asm/kvm_emulate.h>
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_vgic.h>
+#include <asm/kvm_tmi.h>
 
 static void kvm_pmu_create_perf_event(struct kvm_vcpu *vcpu, u64 select_idx);
 static void kvm_pmu_update_pmc_chained(struct kvm_vcpu *vcpu, u64 select_idx);
@@ -369,6 +370,15 @@ void kvm_pmu_disable_counter_mask(struct kvm_vcpu *vcpu, u64 val)
 static u64 kvm_pmu_overflow_status(struct kvm_vcpu *vcpu)
 {
 	u64 reg = 0;
+
+#ifdef CONFIG_CVM_HOST
+	if (vcpu_is_tec(vcpu)) {
+		struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+
+		reg = run->tec_exit.pmu_ovf_status;
+		return reg;
+	}
+#endif
 
 	if ((__vcpu_sys_reg(vcpu, PMCR_EL0) & ARMV8_PMU_PMCR_E)) {
 		reg = __vcpu_sys_reg(vcpu, PMOVSSET_EL0);
