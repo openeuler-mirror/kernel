@@ -1424,6 +1424,15 @@ config ETMEM
 	  high-performance storage media to release memory space and reduce
 	  memory costs.
 
+config BPF_READAHEAD
+	bool "Enable bpf readahead optimization"
+	select TRACEPOINTS
+	default n
+	help
+	  EBPF is used to implement a programmable kernel. The readahead behavior
+	  of the kernel is adjusted based on the application read mode to optimize
+	  the read performance in the Spark SQL scenario,
+
 source "mm/damon/Kconfig"
 
 endmenu
