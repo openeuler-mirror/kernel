@@ -4,6 +4,7 @@
  */
 
 #include <linux/device.h>
+#include <linux/debugfs.h>
 #include <linux/eventfd.h>
 #include <linux/file.h>
 #include <linux/hisi_acc_qm.h>
@@ -15,6 +16,11 @@
 #include <linux/anon_inodes.h>
 
 #include "hisi_acc_vfio_pci.h"
+
+static struct dentry *mig_debugfs_root;
+static atomic_t mig_root_ref;
+static void acc_vf_debug_migf_save(struct hisi_acc_vf_migration_file *src_migf,
+	struct hisi_acc_vf_migration_file *dst_migf);
 
 /* Return 0 on VM acc device ready, -ETIMEDOUT hardware timeout */
 static int qm_wait_dev_not_ready(struct hisi_qm *qm)
@@ -330,8 +336,9 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	if (hisi_acc_vdev->match_done)
 		return 0;
 
+	/* Transmission not completed yet */
 	if (migf->total_length < QM_MATCH_SIZE)
-		return -EINVAL;
+		return 0;
 
 	if (vf_data->acc_magic != ACC_DEV_MAGIC) {
 		dev_err(dev, "failed to match ACC_DEV_MAGIC\n");
@@ -446,6 +453,12 @@ static int vf_qm_load_data(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 
 	qm->qp_base = vf_data->qp_base;
 	qm->qp_num = vf_data->qp_num;
+
+	if (!vf_data->eqe_dma || !vf_data->aeqe_dma ||
+		!vf_data->sqc_dma || !vf_data->cqc_dma) {
+		dev_err(dev, "resume dma addr is NULL!\n");
+		return -EINVAL;
+	}
 
 	ret = qm_set_regs(qm, vf_data);
 	if (ret) {
@@ -599,12 +612,16 @@ static void hisi_acc_vf_disable_fd(struct hisi_acc_vf_migration_file *migf)
 static void hisi_acc_vf_disable_fds(struct hisi_acc_vf_core_device *hisi_acc_vdev)
 {
 	if (hisi_acc_vdev->resuming_migf) {
+		acc_vf_debug_migf_save(hisi_acc_vdev->resuming_migf,
+						hisi_acc_vdev->debug_migf);
 		hisi_acc_vf_disable_fd(hisi_acc_vdev->resuming_migf);
 		fput(hisi_acc_vdev->resuming_migf->filp);
 		hisi_acc_vdev->resuming_migf = NULL;
 	}
 
 	if (hisi_acc_vdev->saving_migf) {
+		acc_vf_debug_migf_save(hisi_acc_vdev->saving_migf,
+						hisi_acc_vdev->debug_migf);
 		hisi_acc_vf_disable_fd(hisi_acc_vdev->saving_migf);
 		fput(hisi_acc_vdev->saving_migf->filp);
 		hisi_acc_vdev->saving_migf = NULL;
@@ -943,8 +960,12 @@ static struct file *
 hisi_acc_vf_set_device_state(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 			     u32 new)
 {
+	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
 	u32 cur = hisi_acc_vdev->mig_state;
 	int ret;
+
+	dev_info(dev, "migration state: %s ----------> %s!\n",
+		       vf_dev_state[cur], vf_dev_state[new]);
 
 	if (cur == VFIO_DEVICE_STATE_RUNNING && new == VFIO_DEVICE_STATE_PRE_COPY) {
 		struct hisi_acc_vf_migration_file *migf;
@@ -1305,6 +1326,324 @@ static long hisi_acc_vfio_pci_ioctl(struct vfio_device *core_vdev, unsigned int 
 	return vfio_pci_core_ioctl(core_vdev, cmd, arg);
 }
 
+static int acc_vf_debug_create(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	struct hisi_acc_vf_migration_file *migf;
+
+	migf = kzalloc(sizeof(*migf), GFP_KERNEL);
+	if (!migf)
+		return -ENOMEM;
+
+	migf->disabled = true;
+	hisi_acc_vdev->debug_migf = migf;
+	mutex_init(&migf->lock);
+
+	return 0;
+}
+
+static void acc_vf_debug_release(struct hisi_acc_vf_migration_file *migf)
+{
+	migf->disabled = true;
+	migf->total_length = 0;
+	mutex_destroy(&migf->lock);
+	kfree(migf);
+}
+
+static void acc_vf_debug_migf_save(struct hisi_acc_vf_migration_file *src_migf,
+	struct hisi_acc_vf_migration_file *dst_migf)
+{
+	if (!dst_migf) {
+		pr_err("failed to alloc debug migration file\n");
+		return;
+	}
+
+	dst_migf->disabled = false;
+	dst_migf->total_length = src_migf->total_length;
+	memcpy(&dst_migf->vf_data, &src_migf->vf_data,
+		    sizeof(struct acc_vf_data));
+}
+
+static int acc_vf_debug_test(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
+	struct hisi_qm *vf_qm = &hisi_acc_vdev->vf_qm;
+	u64 data;
+	int ret;
+
+	data = readl(vf_qm->io_base + QM_MB_CMD_SEND_BASE);
+	dev_info(dev, "debug mailbox val: 0x%llx\n", data);
+
+	ret = qm_wait_dev_not_ready(vf_qm);
+	if (ret)
+		dev_err(dev, "VF device not ready!\n");
+
+	return ret;
+}
+
+static ssize_t acc_vf_debug_read(struct file *filp, char __user *buffer,
+			   size_t count, loff_t *pos)
+{
+	char buf[VFIO_DEV_DBG_LEN];
+	int len;
+
+	len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"echo 0: test vf config save\n"
+			"echo 1: test vf config resume\n"
+			"echo 2: test vf send mailbox\n"
+			"echo 3: dump vf config data\n"
+			"echo 4: dump vf migration state\n");
+
+	return simple_read_from_buffer(buffer, count, pos, buf, len);
+}
+
+static void acc_vf_dev_data_dump(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	size_t vf_data_sz = offsetofend(struct acc_vf_data, padding);
+	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
+
+	if (hisi_acc_vdev->debug_migf &&
+	    !hisi_acc_vdev->debug_migf->disabled) {
+		print_hex_dump(KERN_INFO, "dev mig data:",
+				DUMP_PREFIX_OFFSET,
+				VFIO_DBG_LOG_LEN, 1,
+				(u8 *)&hisi_acc_vdev->debug_migf->vf_data,
+				vf_data_sz, false);
+	} else {
+		dev_info(dev, "device not migrated!\n");
+	}
+}
+
+static void acc_vf_dev_attr_show(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
+
+	if (hisi_acc_vdev->debug_migf &&
+	    !hisi_acc_vdev->debug_migf->disabled) {
+		dev_info(dev, "acc device:\n"
+			 "device  state: %d\n"
+			 "device  ready: %u\n"
+			 "data   enable: %d\n"
+			 "data     size: %lu\n",
+			 hisi_acc_vdev->mig_state,
+			 hisi_acc_vdev->vf_qm_state,
+			 hisi_acc_vdev->debug_migf->disabled,
+			 hisi_acc_vdev->debug_migf->total_length);
+	}  else {
+		dev_info(dev, "device not migrated!\n");
+	}
+}
+
+static int acc_vf_debug_resume(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	struct hisi_acc_vf_migration_file *migf = hisi_acc_vdev->debug_migf;
+	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
+	int ret;
+
+	ret = vf_qm_get_match_data(hisi_acc_vdev, &migf->vf_data);
+	if (ret) {
+		dev_err(dev, "failed to save match data!\n");
+		return -EINVAL;
+	}
+
+	ret = vf_qm_state_save(hisi_acc_vdev, migf);
+	if (ret) {
+		dev_err(dev, "failed to save device data!\n");
+		return -EINVAL;
+	}
+	migf->disabled = false;
+
+	ret = vf_qm_check_match(hisi_acc_vdev, migf);
+	if (ret) {
+		dev_err(dev, "failed to match the VF!\n");
+		return -EINVAL;
+	}
+
+	ret = vf_qm_load_data(hisi_acc_vdev, migf);
+	if (ret) {
+		dev_err(dev, "failed to recover the VF!\n");
+		return -EINVAL;
+	}
+
+	vf_qm_fun_reset(&hisi_acc_vdev->vf_qm);
+	dev_info(dev, "successful to resume device data!\n");
+
+	return 0;
+}
+
+static int acc_vf_debug_save(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	struct hisi_acc_vf_migration_file *migf = hisi_acc_vdev->debug_migf;
+	struct device *dev = &hisi_acc_vdev->vf_dev->dev;
+	int ret;
+
+	ret = vf_qm_state_save(hisi_acc_vdev, migf);
+	if (ret) {
+		dev_err(dev, "failed to save device data!\n");
+		return -EINVAL;
+	}
+	migf->disabled = false;
+	dev_info(dev, "successful to save device data!\n");
+
+	return 0;
+}
+
+static ssize_t acc_vf_debug_write(struct file *filp, const char __user *buffer,
+			    size_t count, loff_t *pos)
+{
+	struct hisi_acc_vf_core_device *hisi_acc_vdev = filp->private_data;
+	char tbuf[VFIO_DEV_DBG_LEN];
+	unsigned long val;
+	int len, ret;
+
+	if (*pos)
+		return 0;
+
+	if (count >= VFIO_DEV_DBG_LEN)
+		return -ENOSPC;
+
+	len = simple_write_to_buffer(tbuf, VFIO_DEV_DBG_LEN - 1,
+					pos, buffer, count);
+	if (len < 0 || len > VFIO_DEV_DBG_LEN - 1)
+		return -EINVAL;
+	tbuf[len] = '\0';
+	if (kstrtoul(tbuf, 0, &val))
+		return -EFAULT;
+
+	switch (val) {
+	case STATE_SAVE:
+		ret = acc_vf_debug_save(hisi_acc_vdev);
+		if (ret)
+			return ret;
+		break;
+	case STATE_RESUME:
+		ret = acc_vf_debug_resume(hisi_acc_vdev);
+		if (ret)
+			return ret;
+		break;
+	case MB_TEST:
+		ret = acc_vf_debug_test(hisi_acc_vdev);
+		if (ret)
+			return -EINVAL;
+		break;
+	case MIG_DATA_DUMP:
+		acc_vf_dev_data_dump(hisi_acc_vdev);
+		break;
+	case MIG_DEV_SHOW:
+		acc_vf_dev_attr_show(hisi_acc_vdev);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static const struct file_operations acc_vf_debug_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = acc_vf_debug_read,
+	.write = acc_vf_debug_write,
+};
+
+static ssize_t acc_vf_state_read(struct file *filp, char __user *buffer,
+			   size_t count, loff_t *pos)
+{
+	struct hisi_acc_vf_core_device *hisi_acc_vdev = filp->private_data;
+	char buf[VFIO_DEV_DBG_LEN];
+	u32 state;
+	int len;
+
+	state = hisi_acc_vdev->mig_state;
+	switch (state) {
+	case VFIO_DEVICE_STATE_RUNNING:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"RUNNING\n");
+		break;
+	case VFIO_DEVICE_STATE_STOP_COPY:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"STOP and COPYING\n");
+		break;
+	case VFIO_DEVICE_STATE_PRE_COPY:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"Prepare COPYING\n");
+		break;
+	case VFIO_DEVICE_STATE_PRE_COPY_P2P:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"Prepare P2P COPYING\n");
+		break;
+	case VFIO_DEVICE_STATE_STOP:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"STOP\n");
+		break;
+	case VFIO_DEVICE_STATE_RESUMING:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"RESUMING\n");
+		break;
+	default:
+		len = scnprintf(buf, VFIO_DEV_DBG_LEN, "%s\n",
+			"Error\n");
+	}
+
+	return simple_read_from_buffer(buffer, count, pos, buf, len);
+}
+
+static const struct file_operations acc_vf_state_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = acc_vf_state_read,
+};
+
+static void vf_debugfs_init(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	struct pci_dev *vf_pdev = hisi_acc_vdev->vf_dev;
+	struct device *dev = &vf_pdev->dev;
+	char name[VFIO_DEV_DBG_LEN];
+	int node_id, ret;
+
+	if (!atomic_read(&mig_root_ref))
+		mig_debugfs_root = debugfs_create_dir("vfio_acc", NULL);
+	atomic_inc(&mig_root_ref);
+
+	node_id = dev_to_node(&vf_pdev->dev);
+	if (node_id < 0)
+		node_id = 0;
+
+	if (vf_pdev->device == PCI_DEVICE_ID_HUAWEI_SEC_VF)
+		scnprintf(name, VFIO_DEV_DBG_LEN, "sec_vf%d-%d",
+			  node_id, hisi_acc_vdev->vf_id);
+	else if (vf_pdev->device == PCI_DEVICE_ID_HUAWEI_HPRE_VF)
+		scnprintf(name, VFIO_DEV_DBG_LEN, "hpre_vf%d-%d",
+			  node_id, hisi_acc_vdev->vf_id);
+	else
+		scnprintf(name, VFIO_DEV_DBG_LEN, "zip_vf%d-%d",
+			  node_id, hisi_acc_vdev->vf_id);
+
+	hisi_acc_vdev->debug_root = debugfs_create_dir(name, mig_debugfs_root);
+	debugfs_create_file("state", S_GRDO, hisi_acc_vdev->debug_root,
+			    hisi_acc_vdev, &acc_vf_state_fops);
+
+	ret = acc_vf_debug_create(hisi_acc_vdev);
+	if (ret) {
+		dev_err(dev, "failed to alloc migration debug node\n");
+		hisi_acc_vdev->debug_migf = NULL;
+		return;
+	}
+	debugfs_create_file("debug", S_GWRO, hisi_acc_vdev->debug_root,
+			    hisi_acc_vdev, &acc_vf_debug_fops);
+}
+
+static void vf_debugfs_exit(struct hisi_acc_vf_core_device *hisi_acc_vdev)
+{
+	if (hisi_acc_vdev->debug_migf)
+		acc_vf_debug_release(hisi_acc_vdev->debug_migf);
+
+	debugfs_remove_recursive(hisi_acc_vdev->debug_root);
+
+	atomic_dec(&mig_root_ref);
+	if (!atomic_read(&mig_root_ref))
+		debugfs_remove_recursive(mig_debugfs_root);
+}
+
 static int hisi_acc_vfio_pci_open_device(struct vfio_device *core_vdev)
 {
 	struct hisi_acc_vf_core_device *hisi_acc_vdev = container_of(core_vdev,
@@ -1323,6 +1662,8 @@ static int hisi_acc_vfio_pci_open_device(struct vfio_device *core_vdev)
 			return ret;
 		}
 		hisi_acc_vdev->mig_state = VFIO_DEVICE_STATE_RUNNING;
+
+		vf_debugfs_init(hisi_acc_vdev);
 	}
 
 	vfio_pci_core_finish_enable(vdev);
@@ -1334,6 +1675,9 @@ static void hisi_acc_vfio_pci_close_device(struct vfio_device *core_vdev)
 	struct hisi_acc_vf_core_device *hisi_acc_vdev = container_of(core_vdev,
 			struct hisi_acc_vf_core_device, core_device.vdev);
 	struct hisi_qm *vf_qm = &hisi_acc_vdev->vf_qm;
+
+	if (core_vdev->mig_ops)
+		vf_debugfs_exit(hisi_acc_vdev);
 
 	iounmap(vf_qm->io_base);
 	vfio_pci_core_close_device(core_vdev);
