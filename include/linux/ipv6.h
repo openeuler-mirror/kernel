@@ -33,7 +33,6 @@ struct ipv6_devconf {
 	__s32		max_addresses;
 	__s32		accept_ra_defrtr;
 	__s32		accept_ra_min_hop_limit;
-	__s32		accept_ra_min_lft;
 	__s32		accept_ra_pinfo;
 	__s32		ignore_routes_with_linkdown;
 #ifdef CONFIG_IPV6_ROUTER_PREF
@@ -80,7 +79,7 @@ struct ipv6_devconf {
 
 	struct ctl_table_header *sysctl_header;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, __s32 accept_ra_min_lft)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
