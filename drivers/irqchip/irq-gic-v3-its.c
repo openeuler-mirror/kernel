@@ -29,6 +29,10 @@
 #include <linux/percpu.h>
 #include <linux/slab.h>
 #include <linux/syscore_ops.h>
+#ifdef CONFIG_CVM_GUEST
+#include <linux/swiotlb.h>
+#include <asm/cvm_guest.h>
+#endif
 
 #include <linux/irqchip.h>
 #include <linux/irqchip/arm-gic-v3.h>
@@ -312,6 +316,91 @@ static u16 vmovp_seq_num;
 static DEFINE_RAW_SPINLOCK(vmovp_lock);
 
 static DEFINE_IDA(its_vpeid_ida);
+
+#ifdef CONFIG_CVM_GUEST
+static struct device cvm_alloc_device;
+static LIST_HEAD(cvm_its_nodes);
+static raw_spinlock_t cvm_its_lock;
+
+struct its_device_order {
+	struct its_device *dev;
+	struct list_head entry;
+	int itt_order;
+};
+
+static inline struct page *its_alloc_shared_pages_node(int node, gfp_t gfp,
+			unsigned int order)
+{
+	return swiotlb_alloc(&cvm_alloc_device, (1 << order) * PAGE_SIZE);
+}
+
+static inline struct page *its_alloc_shared_pages(gfp_t gfp, unsigned int order)
+{
+	return its_alloc_shared_pages_node(NUMA_NO_NODE, gfp, order);
+}
+
+static void its_free_shared_pages(void *addr, int order)
+{
+	if (order < 0)
+		return;
+
+	swiotlb_free(&cvm_alloc_device, (struct page *)addr, (1 << order) * PAGE_SIZE);
+}
+
+static int add_its_device_order(struct its_device *dev, int itt_order)
+{
+	struct its_device_order *new;
+	unsigned long flags;
+
+	new = kmalloc(sizeof(struct its_device_order), GFP_KERNEL);
+	if (!new)
+		return -ENOMEM;
+	new->dev = dev;
+	new->itt_order = itt_order;
+	raw_spin_lock_irqsave(&cvm_its_lock, flags);
+	list_add_tail(&new->entry, &cvm_its_nodes);
+	raw_spin_unlock_irqrestore(&cvm_its_lock, flags);
+	return 0;
+}
+
+/* get its device order and then free its device order */
+static int get_its_device_order(struct its_device *dev)
+{
+	struct its_device_order *pos, *tmp;
+	unsigned long flags;
+	int itt_order = -1;
+
+	raw_spin_lock_irqsave(&cvm_its_lock, flags);
+	list_for_each_entry_safe(pos, tmp, &cvm_its_nodes, entry) {
+		if (pos->dev == dev) {
+			itt_order = pos->itt_order;
+			list_del(&pos->entry);
+			kfree(pos);
+			goto found;
+		}
+	}
+found:
+	raw_spin_unlock_irqrestore(&cvm_its_lock, flags);
+	return itt_order;
+}
+
+static void *its_alloc_shared_page_address(struct its_device *dev,
+			struct its_node *its, int sz)
+{
+	struct page *page;
+	int itt_order;
+
+	itt_order = get_order(sz);
+	if (add_its_device_order(dev, itt_order))
+		return NULL;
+
+	page = its_alloc_shared_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO,
+			   itt_order);
+	if (!page)
+		return NULL;
+	return (void *)page_address(page);
+}
+#endif
 
 static void free_devid_to_rsv_pools(struct its_device *its_dev)
 {
@@ -2447,7 +2536,13 @@ static struct page *its_allocate_prop_table(gfp_t gfp_flags)
 {
 	struct page *prop_page;
 
-	prop_page = alloc_pages(gfp_flags, get_order(LPI_PROPBASE_SZ));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		prop_page = its_alloc_shared_pages(gfp_flags,
+			get_order(LPI_PROPBASE_SZ));
+	else
+#endif
+		prop_page = alloc_pages(gfp_flags, get_order(LPI_PROPBASE_SZ));
 	if (!prop_page)
 		return NULL;
 
@@ -2458,8 +2553,14 @@ static struct page *its_allocate_prop_table(gfp_t gfp_flags)
 
 static void its_free_prop_table(struct page *prop_page)
 {
-	free_pages((unsigned long)page_address(prop_page),
-		   get_order(LPI_PROPBASE_SZ));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		its_free_shared_pages(page_address(prop_page),
+			get_order(LPI_PROPBASE_SZ));
+	else
+#endif
+		free_pages((unsigned long)page_address(prop_page),
+			get_order(LPI_PROPBASE_SZ));
 }
 
 static bool gic_check_reserved_range(phys_addr_t addr, unsigned long size)
@@ -2581,7 +2682,13 @@ static int its_setup_baser(struct its_node *its, struct its_baser *baser,
 		order = get_order(GITS_BASER_PAGES_MAX * psz);
 	}
 
-	page = alloc_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO, order);
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		page = its_alloc_shared_pages_node(its->numa_node,
+			GFP_KERNEL | __GFP_ZERO, order);
+	else
+#endif
+		page = alloc_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO, order);
 	if (!page)
 		return -ENOMEM;
 
@@ -2594,7 +2701,12 @@ static int its_setup_baser(struct its_node *its, struct its_baser *baser,
 		/* 52bit PA is supported only when PageSize=64K */
 		if (psz != SZ_64K) {
 			pr_err("ITS: no 52bit PA support when psz=%d\n", psz);
-			free_pages((unsigned long)base, order);
+#ifdef CONFIG_CVM_GUEST
+			if (is_cvm_world())
+				its_free_shared_pages(base, order);
+			else
+#endif
+				free_pages((unsigned long)base, order);
 			return -ENXIO;
 		}
 
@@ -2648,7 +2760,12 @@ retry_baser:
 		pr_err("ITS@%pa: %s doesn't stick: %llx %llx\n",
 		       &its->phys_base, its_base_type_string[type],
 		       val, tmp);
-		free_pages((unsigned long)base, order);
+#ifdef CONFIG_CVM_GUEST
+		if (is_cvm_world())
+			its_free_shared_pages(base, order);
+		else
+#endif
+			free_pages((unsigned long)base, order);
 		return -ENXIO;
 	}
 
@@ -2787,8 +2904,14 @@ static void its_free_tables(struct its_node *its)
 
 	for (i = 0; i < GITS_BASER_NR_REGS; i++) {
 		if (its->tables[i].base) {
-			free_pages((unsigned long)its->tables[i].base,
-				   its->tables[i].order);
+#ifdef CONFIG_CVM_GUEST
+			if (!is_cvm_world())
+				its_free_shared_pages(its->tables[i].base,
+					its->tables[i].order);
+			else
+#endif
+				free_pages((unsigned long)its->tables[i].base,
+					   its->tables[i].order);
 			its->tables[i].base = NULL;
 		}
 	}
@@ -3051,7 +3174,13 @@ static bool allocate_vpe_l2_table(int cpu, u32 id)
 
 	/* Allocate memory for 2nd level table */
 	if (!table[idx]) {
-		page = alloc_pages(GFP_KERNEL | __GFP_ZERO, get_order(psz));
+#ifdef CONFIG_CVM_GUEST
+		if (is_cvm_world())
+			page = its_alloc_shared_pages(GFP_KERNEL | __GFP_ZERO,
+				get_order(psz));
+		else
+#endif
+			page = alloc_pages(GFP_KERNEL | __GFP_ZERO, get_order(psz));
 		if (!page)
 			return false;
 
@@ -3170,7 +3299,13 @@ static int allocate_vpe_l1_table(void)
 
 	pr_debug("np = %d, npg = %lld, psz = %d, epp = %d, esz = %d\n",
 		 np, npg, psz, epp, esz);
-	page = alloc_pages(GFP_ATOMIC | __GFP_ZERO, get_order(np * PAGE_SIZE));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		page = its_alloc_shared_pages(GFP_ATOMIC | __GFP_ZERO,
+			get_order(np * PAGE_SIZE));
+	else
+#endif
+		page = alloc_pages(GFP_ATOMIC | __GFP_ZERO, get_order(np * PAGE_SIZE));
 	if (!page)
 		return -ENOMEM;
 
@@ -3218,8 +3353,14 @@ static struct page *its_allocate_pending_table(gfp_t gfp_flags)
 {
 	struct page *pend_page;
 
-	pend_page = alloc_pages(gfp_flags | __GFP_ZERO,
-				get_order(LPI_PENDBASE_SZ));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		pend_page = its_alloc_shared_pages(gfp_flags | __GFP_ZERO,
+			get_order(LPI_PENDBASE_SZ));
+	else
+#endif
+		pend_page = alloc_pages(gfp_flags | __GFP_ZERO,
+					get_order(LPI_PENDBASE_SZ));
 	if (!pend_page)
 		return NULL;
 
@@ -3231,7 +3372,13 @@ static struct page *its_allocate_pending_table(gfp_t gfp_flags)
 
 static void its_free_pending_table(struct page *pt)
 {
-	free_pages((unsigned long)page_address(pt), get_order(LPI_PENDBASE_SZ));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		its_free_shared_pages(page_address(pt),
+			get_order(LPI_PENDBASE_SZ));
+	else
+#endif
+		free_pages((unsigned long)page_address(pt), get_order(LPI_PENDBASE_SZ));
 }
 
 /*
@@ -3768,8 +3915,15 @@ static bool its_alloc_table_entry(struct its_node *its,
 
 	/* Allocate memory for 2nd level table */
 	if (!table[idx]) {
-		page = alloc_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO,
-					get_order(baser->psz));
+#ifdef CONFIG_CVM_GUEST
+		if (is_cvm_world())
+			page = its_alloc_shared_pages_node(its->numa_node,
+						GFP_KERNEL | __GFP_ZERO,
+						get_order(baser->psz));
+		else
+#endif
+			page = alloc_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO,
+						get_order(baser->psz));
 		if (!page)
 			return false;
 
@@ -3872,7 +4026,12 @@ static struct its_device *its_create_device(struct its_node *its, u32 dev_id,
 	nr_ites = max(2, nvecs);
 	sz = nr_ites * (FIELD_GET(GITS_TYPER_ITT_ENTRY_SIZE, its->typer) + 1);
 	sz = max(sz, ITS_ITT_ALIGN) + ITS_ITT_ALIGN - 1;
-	itt = kzalloc_node(sz, GFP_KERNEL, its->numa_node);
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		itt = its_alloc_shared_page_address(dev, its, sz);
+	else
+#endif
+		itt = kzalloc_node(sz, GFP_KERNEL, its->numa_node);
 	if (alloc_lpis) {
 		lpi_map = its_lpi_alloc(nvecs, &lpi_base, &nr_lpis);
 		if (lpi_map)
@@ -3886,7 +4045,12 @@ static struct its_device *its_create_device(struct its_node *its, u32 dev_id,
 
 	if (!dev || !itt ||  !col_map || (!lpi_map && alloc_lpis)) {
 		kfree(dev);
-		kfree(itt);
+#ifdef CONFIG_CVM_GUEST
+		if (is_cvm_world())
+			its_free_shared_pages(itt, get_order(sz));
+		else
+#endif
+			kfree(itt);
 		kfree(lpi_map);
 		kfree(col_map);
 		return NULL;
@@ -3923,7 +4087,12 @@ static void its_free_device(struct its_device *its_dev)
 	list_del(&its_dev->entry);
 	raw_spin_unlock_irqrestore(&its_dev->its->lock, flags);
 	kfree(its_dev->event_map.col_map);
-	kfree(its_dev->itt);
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		its_free_shared_pages(its_dev->itt, get_its_device_order(its_dev));
+	else
+#endif
+		kfree(its_dev->itt);
 
 	if (its_dev->is_vdev) {
 		WARN_ON(!rsv_devid_pool_cap);
@@ -5594,8 +5763,15 @@ static int __init its_probe_one(struct resource *res,
 
 	its->numa_node = numa_node;
 
-	page = alloc_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO,
-				get_order(ITS_CMD_QUEUE_SZ));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		page = its_alloc_shared_pages_node(its->numa_node,
+					GFP_KERNEL | __GFP_ZERO,
+					get_order(ITS_CMD_QUEUE_SZ));
+	else
+#endif
+		page = alloc_pages_node(its->numa_node, GFP_KERNEL | __GFP_ZERO,
+					get_order(ITS_CMD_QUEUE_SZ));
 	if (!page) {
 		err = -ENOMEM;
 		goto out_unmap_sgir;
@@ -5661,7 +5837,12 @@ static int __init its_probe_one(struct resource *res,
 out_free_tables:
 	its_free_tables(its);
 out_free_cmd:
-	free_pages((unsigned long)its->cmd_base, get_order(ITS_CMD_QUEUE_SZ));
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world())
+		its_free_shared_pages(its->cmd_base, get_order(ITS_CMD_QUEUE_SZ));
+	else
+#endif
+		free_pages((unsigned long)its->cmd_base, get_order(ITS_CMD_QUEUE_SZ));
 out_unmap_sgir:
 	if (its->sgir_base)
 		iounmap(its->sgir_base);
@@ -5957,6 +6138,12 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
 	bool has_vtimer_irqbypass = false;
 	int err;
 
+#ifdef CONFIG_CVM_GUEST
+	if (is_cvm_world()) {
+		device_initialize(&cvm_alloc_device);
+		raw_spin_lock_init(&cvm_its_lock);
+	}
+#endif
 	gic_rdists = rdists;
 
 	its_parent = parent_domain;
