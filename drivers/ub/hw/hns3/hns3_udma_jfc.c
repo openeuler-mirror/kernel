@@ -58,7 +58,7 @@ static int check_jfc_cfg(struct udma_dev *udma_dev, struct ubcore_jfc_cfg *cfg)
 }
 
 static int check_poe_attr(struct udma_dev *udma_dev,
-			  struct udma_jfc_attr_ex *jfc_attr_ex)
+			  struct hns3_udma_jfc_attr_ex *jfc_attr_ex)
 {
 	if (!(udma_dev->caps.flags & UDMA_CAP_FLAG_POE)) {
 		dev_err(udma_dev->dev, "Unsupport POE JFC.\n");
@@ -69,7 +69,7 @@ static int check_poe_attr(struct udma_dev *udma_dev,
 }
 
 static int check_notify_attr(struct udma_dev *udma_dev,
-			     struct udma_jfc_attr_ex *jfc_attr_ex)
+			     struct hns3_udma_jfc_attr_ex *jfc_attr_ex)
 {
 	if (!(udma_dev->caps.flags & UDMA_CAP_FLAG_WRITE_NOTIFY)) {
 		dev_err(udma_dev->dev, "Unsupport NOTIFY JFC.\n");
@@ -77,21 +77,21 @@ static int check_notify_attr(struct udma_dev *udma_dev,
 	}
 
 	switch (jfc_attr_ex->notify_mode) {
-	case UDMA_JFC_NOTIFY_MODE_4B_ALIGN:
-	case UDMA_JFC_NOTIFY_MODE_DDR_4B_ALIGN:
+	case HNS3_UDMA_JFC_NOTIFY_MODE_4B_ALIGN:
+	case HNS3_UDMA_JFC_NOTIFY_MODE_DDR_4B_ALIGN:
 		break;
-	case UDMA_JFC_NOTIFY_MODE_64B_ALIGN:
-	case UDMA_JFC_NOTIFY_MODE_DDR_64B_ALIGN:
-		dev_err(udma_dev->dev, "Doesn't support notify mode %u\n",
+	case HNS3_UDMA_JFC_NOTIFY_MODE_64B_ALIGN:
+	case HNS3_UDMA_JFC_NOTIFY_MODE_DDR_64B_ALIGN:
+		dev_err(udma_dev->dev, "Doesn't support notify mode %u.\n",
 			jfc_attr_ex->notify_mode);
 		return -EINVAL;
 	default:
-		dev_err(udma_dev->dev, "Invalid notify mode %u\n",
+		dev_err(udma_dev->dev, "Invalid notify mode %u.\n",
 			jfc_attr_ex->notify_mode);
 		return -EINVAL;
 	}
 
-	if (jfc_attr_ex->notify_addr & UDMA_ADDR_4K_MASK) {
+	if (jfc_attr_ex->notify_addr & HNS3_UDMA_ADDR_4K_MASK) {
 		dev_err(udma_dev->dev,
 			"Notify addr should be aligned to 4k.\n");
 		return -EINVAL;
@@ -101,19 +101,19 @@ static int check_notify_attr(struct udma_dev *udma_dev,
 }
 
 static int check_jfc_attr_ex(struct udma_dev *udma_dev,
-			     struct udma_jfc_attr_ex *jfc_attr_ex)
+			     struct hns3_udma_jfc_attr_ex *jfc_attr_ex)
 {
 	int ret;
 
 	switch (jfc_attr_ex->create_flags) {
-	case UDMA_JFC_CREATE_ENABLE_POE_MODE:
+	case HNS3_UDMA_JFC_CREATE_ENABLE_POE_MODE:
 		ret = check_poe_attr(udma_dev, jfc_attr_ex);
 		break;
-	case UDMA_JFC_CREATE_ENABLE_NOTIFY:
+	case HNS3_UDMA_JFC_CREATE_ENABLE_NOTIFY:
 		ret = check_notify_attr(udma_dev, jfc_attr_ex);
 		break;
 	default:
-		dev_err(udma_dev->dev, "Invalid create flags %llu\n",
+		dev_err(udma_dev->dev, "Invalid create flags %llu.\n",
 			jfc_attr_ex->create_flags);
 		return -EINVAL;
 	}
@@ -123,7 +123,7 @@ static int check_jfc_attr_ex(struct udma_dev *udma_dev,
 
 static int check_create_jfc(struct udma_dev *udma_dev,
 			    struct ubcore_jfc_cfg *cfg,
-			    struct udma_create_jfc_ucmd *ucmd,
+			    struct hns3_udma_create_jfc_ucmd *ucmd,
 			    struct ubcore_udata *udata)
 {
 	int ret;
@@ -131,8 +131,8 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	if (udata) {
 		ret = copy_from_user((void *)ucmd,
 				     (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(struct udma_create_jfc_ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(struct hns3_udma_create_jfc_ucmd)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy JFC udata, ret = %d.\n", ret);
@@ -147,7 +147,7 @@ static int check_create_jfc(struct udma_dev *udma_dev,
 	}
 
 	if (ucmd->jfc_attr_ex.jfc_ex_mask &
-	    UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS) {
+	    HNS3_UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS) {
 		if (udma_dev->notify_addr)
 			ucmd->jfc_attr_ex.notify_addr = udma_dev->notify_addr;
 
@@ -168,12 +168,12 @@ static void set_jfc_param(struct udma_jfc *udma_jfc, struct ubcore_jfc_cfg *cfg)
 	memcpy(&udma_jfc->ubcore_jfc.jfc_cfg, cfg, sizeof(struct ubcore_jfc_cfg));
 }
 
-static void init_jfc(struct udma_jfc *udma_jfc, struct udma_create_jfc_ucmd *ucmd)
+static void init_jfc(struct udma_jfc *udma_jfc, struct hns3_udma_create_jfc_ucmd *ucmd)
 {
 	spin_lock_init(&udma_jfc->lock);
 	INIT_LIST_HEAD(&udma_jfc->sq_list);
 	INIT_LIST_HEAD(&udma_jfc->rq_list);
-	if (ucmd->jfc_attr_ex.jfc_ex_mask & UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS)
+	if (ucmd->jfc_attr_ex.jfc_ex_mask & HNS3_UDMA_JFC_NOTIFY_OR_POE_CREATE_FLAGS)
 		udma_jfc->jfc_attr_ex = ucmd->jfc_attr_ex;
 }
 
@@ -204,9 +204,10 @@ static void free_jfc_cqe_buf(struct udma_dev *dev, struct udma_jfc *jfc)
 
 static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 			 struct ubcore_udata *udata,
-			 struct udma_create_jfc_ucmd *ucmd)
+			 struct hns3_udma_create_jfc_ucmd *ucmd)
 {
-	struct udma_create_jfc_resp resp = {};
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(udata->uctx);
+	struct hns3_udma_create_jfc_resp resp = {};
 	int ret;
 
 	ret = alloc_jfc_cqe_buf(udma_dev, udma_jfc, udata, ucmd->buf_addr);
@@ -214,23 +215,23 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 		return ret;
 
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB) {
-		ret = udma_db_map_user(udma_dev, ucmd->db_addr, &udma_jfc->db);
+		ret = udma_db_map_user(udma_uctx, ucmd->db_addr, &udma_jfc->db);
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to map JFC db, ret = %d.\n", ret);
 			goto db_err;
 		}
-		udma_jfc->jfc_caps |= UDMA_JFC_CAP_RECORD_DB;
+		udma_jfc->jfc_caps |= HNS3_UDMA_JFC_CAP_RECORD_DB;
 	}
 
 	if (udata) {
 		resp.jfc_caps = udma_jfc->jfc_caps;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min(udata->udrv_data->out_len,
-				       (uint32_t)sizeof(resp)));
+				   min_t(uint32_t, udata->udrv_data->out_len,
+					 (uint32_t)sizeof(resp)));
 		if (ret) {
 			dev_err(udma_dev->dev,
-				"failed to copy jfc resp, ret = %d\n", ret);
+				"failed to copy jfc resp, ret = %d.\n", ret);
 			goto err_copy;
 		}
 	}
@@ -241,8 +242,8 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 
 err_copy:
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB) {
-		udma_db_unmap_user(udma_dev, &udma_jfc->db);
-		udma_jfc->jfc_caps &= ~UDMA_JFC_CAP_RECORD_DB;
+		udma_db_unmap_user(udma_uctx, &udma_jfc->db);
+		udma_jfc->jfc_caps &= ~HNS3_UDMA_JFC_CAP_RECORD_DB;
 	}
 db_err:
 	free_jfc_cqe_buf(udma_dev, udma_jfc);
@@ -255,7 +256,7 @@ static void set_write_notify_param(struct udma_jfc *udma_jfc,
 {
 	uint8_t device_mode;
 
-	if (udma_jfc->jfc_attr_ex.notify_mode == UDMA_JFC_NOTIFY_MODE_4B_ALIGN)
+	if (udma_jfc->jfc_attr_ex.notify_mode == HNS3_UDMA_JFC_NOTIFY_MODE_4B_ALIGN)
 		device_mode = UDMA_NOTIFY_DEV;
 	else
 		device_mode = UDMA_NOTIFY_DDR;
@@ -324,7 +325,7 @@ static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_
 		       dma_handle >> CQC_CQE_BA_H_OFFSET);
 	udma_reg_write(jfc_context, CQC_CQ_MAX_CNT, UDMA_CQ_DEFAULT_BURST_NUM);
 	udma_reg_write(jfc_context, CQC_CQ_PERIOD, UDMA_CQ_DEFAULT_INTERVAL);
-	if (udma_jfc->jfc_caps & UDMA_JFC_CAP_RECORD_DB) {
+	if (udma_jfc->jfc_caps & HNS3_UDMA_JFC_CAP_RECORD_DB) {
 		udma_reg_enable(jfc_context, CQC_DB_RECORD_EN);
 		udma_reg_write(jfc_context, CQC_CQE_DB_RECORD_ADDR_L,
 			       lower_32_bits(udma_jfc->db.dma) >>
@@ -334,13 +335,13 @@ static void udma_write_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_
 	}
 
 	if (udma_jfc->jfc_attr_ex.create_flags ==
-	    UDMA_JFC_CREATE_ENABLE_POE_MODE) {
+	    HNS3_UDMA_JFC_CREATE_ENABLE_POE_MODE) {
 		udma_reg_enable(jfc_context, CQC_POE_EN);
 		udma_reg_write(jfc_context, CQC_POE_NUM,
 			       udma_jfc->jfc_attr_ex.poe_channel);
 	}
 
-	if (udma_jfc->jfc_attr_ex.create_flags == UDMA_JFC_CREATE_ENABLE_NOTIFY)
+	if (udma_jfc->jfc_attr_ex.create_flags == HNS3_UDMA_JFC_CREATE_ENABLE_NOTIFY)
 		set_write_notify_param(udma_jfc, jfc_context);
 }
 
@@ -500,13 +501,15 @@ static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 
 static void free_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 {
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(udma_jfc->ubcore_jfc.uctx);
+
 	/* wait for all interrupt processed */
 	if (refcount_dec_and_test(&udma_jfc->refcount))
 		complete(&udma_jfc->free);
 	wait_for_completion(&udma_jfc->free);
 
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB)
-		udma_db_unmap_user(udma_dev, &udma_jfc->db);
+		udma_db_unmap_user(udma_uctx, &udma_jfc->db);
 	udma_mtr_destroy(udma_dev, &udma_jfc->mtr);
 }
 
@@ -571,7 +574,7 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *dev, struct ubcore_jfc_
 				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct udma_create_jfc_ucmd ucmd = {};
+	struct hns3_udma_create_jfc_ucmd ucmd = {};
 	struct udma_jfc *udma_jfc;
 	int ret;
 
@@ -700,7 +703,7 @@ void udma_jfc_completion(struct udma_dev *udma_dev, uint32_t cqn)
 	udma_jfc = (struct udma_jfc *)xa_load(&udma_dev->jfc_table.xa, cqn);
 	if (!udma_jfc) {
 		dev_warn(udma_dev->dev,
-			 "Completion event for bogus CQ 0x%06x\n", cqn);
+			 "Completion event for bogus CQ 0x%06x.\n", cqn);
 		return;
 	}
 
@@ -718,13 +721,13 @@ void udma_jfc_event(struct udma_dev *udma_dev, uint32_t cqn, int event_type)
 
 	udma_jfc = (struct udma_jfc *)xa_load(&udma_dev->jfc_table.xa, cqn);
 	if (!udma_jfc) {
-		dev_warn(dev, "Async event for bogus CQ 0x%06x\n", cqn);
+		dev_warn(dev, "Async event for bogus CQ 0x%06x.\n", cqn);
 		return;
 	}
 
 	if (event_type != UDMA_EVENT_TYPE_JFC_ACCESS_ERROR &&
 	    event_type != UDMA_EVENT_TYPE_JFC_OVERFLOW) {
-		dev_err(dev, "Unexpected event type 0x%x on CQ 0x%06x\n",
+		dev_err(dev, "Unexpected event type 0x%x on CQ 0x%06x.\n",
 			event_type, cqn);
 		return;
 	}

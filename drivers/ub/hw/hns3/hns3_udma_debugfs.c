@@ -147,7 +147,7 @@ static uint64_t calc_loading_percent(size_t total, size_t free,
 static void dca_setup_qp_stats(struct udma_qp *qp,
 			       struct dca_qp_stats *stats)
 {
-	if (!(qp->en_flags & UDMA_QP_CAP_DYNAMIC_CTX_ATTACH))
+	if (!(qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH))
 		return;
 
 	stats->qpn = (uint32_t)qp->qpn;

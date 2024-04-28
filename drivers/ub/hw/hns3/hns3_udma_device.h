@@ -441,6 +441,8 @@ struct udma_ucontext {
 	struct udma_dca_ctx		dca_ctx;
 	void				*dca_dbgfs;
 	uint32_t			eid_index;
+	struct list_head		pgdir_list;
+	struct mutex			pgdir_mutex;
 };
 
 struct udma_cmd_context {
@@ -822,8 +824,6 @@ struct udma_dev {
 	uint64_t			reset_cnt;
 	struct udma_netdev		uboe;
 
-	struct list_head		pgdir_list;
-	struct mutex			pgdir_mutex;
 	uint8_t __iomem			*reg_base;
 	struct udma_caps		caps;
 
@@ -844,6 +844,7 @@ struct udma_dev {
 	uint16_t			func_id;
 	uint32_t			func_num;
 	uint32_t			cong_algo_tmpl_id;
+
 	struct udma_ida			uar_ida;
 	struct udma_jfs_table		jfs_table;
 	struct udma_jfr_table		jfr_table;

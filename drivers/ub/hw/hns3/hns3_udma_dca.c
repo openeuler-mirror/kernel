@@ -60,7 +60,7 @@ void udma_enable_dca(struct udma_dev *dev, struct udma_qp *qp)
 	INIT_LIST_HEAD(&cfg->aging_node);
 	cfg->buf_id = UDMA_DCA_INVALID_BUF_ID;
 	cfg->npages = qp->buff_size >> UDMA_HW_PAGE_SHIFT;
-	cfg->dcan = UDMA_DCA_INVALID_DCA_NUM;
+	cfg->dcan = HNS3_UDMA_DCA_INVALID_DCA_NUM;
 }
 
 static void stop_aging_dca_mem(struct udma_dca_ctx *ctx,
@@ -181,11 +181,11 @@ static void kick_dca_buf(struct udma_dev *dev, struct udma_dca_cfg *cfg,
 
 static void free_dca_num(struct udma_dca_cfg *cfg, struct udma_dca_ctx *ctx)
 {
-	if (cfg->dcan == UDMA_DCA_INVALID_DCA_NUM)
+	if (cfg->dcan == HNS3_UDMA_DCA_INVALID_DCA_NUM)
 		return;
 
 	ida_free(&ctx->ida, cfg->dcan);
-	cfg->dcan = UDMA_DCA_INVALID_DCA_NUM;
+	cfg->dcan = HNS3_UDMA_DCA_INVALID_DCA_NUM;
 }
 
 void udma_disable_dca(struct udma_dev *dev, struct udma_qp *qp)
@@ -317,7 +317,7 @@ static uint32_t alloc_dca_num(struct udma_dca_ctx *ctx)
 
 	ret = ida_alloc_range(&ctx->ida, 0, ctx->max_qps - 1, GFP_KERNEL);
 	if (ret < 0)
-		return UDMA_DCA_INVALID_DCA_NUM;
+		return HNS3_UDMA_DCA_INVALID_DCA_NUM;
 
 	stop_free_dca_buf(ctx, ret);
 	update_dca_buf_status(ctx, ret, false);
@@ -418,7 +418,7 @@ static void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
 }
 
 static uint32_t get_udca_max_qps(struct udma_dev *udma_dev,
-				 struct udma_create_ctx_ucmd *ucmd)
+				 struct hns3_udma_create_ctx_ucmd *ucmd)
 {
 	uint32_t qp_num = 0;
 
@@ -450,7 +450,7 @@ static int udma_query_qpc(struct udma_dev *udma_dev, uint32_t qpn,
 	int ret;
 
 	mailbox = udma_alloc_cmd_mailbox(udma_dev);
-	if (IS_ERR_OR_NULL(mailbox)) {
+	if (IS_ERR(mailbox)) {
 		dev_err(udma_dev->dev, "alloc mailbox failed\n");
 		ret = PTR_ERR(mailbox);
 		goto alloc_mailbox_fail;
@@ -599,12 +599,12 @@ int udma_register_udca(struct udma_dev *udma_dev,
 		       struct udma_ucontext *context, struct ubcore_udrv_priv *udrv_data)
 {
 	struct udma_dca_ctx *dca_ctx = &context->dca_ctx;
-	struct udma_create_ctx_ucmd ucmd = {};
+	struct hns3_udma_create_ctx_ucmd ucmd = {};
 	int max_qps;
 	int ret;
 
 	ret = copy_from_user(&ucmd, (void *)udrv_data->in_addr,
-			     min(udrv_data->in_len, (uint32_t)sizeof(ucmd)));
+			     min_t(uint32_t, udrv_data->in_len, (uint32_t)sizeof(ucmd)));
 	if (ret) {
 		dev_err(udma_dev->dev, "Failed to copy udata, ret = %d.\n",
 			ret);
@@ -1157,7 +1157,7 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	cfg->attach_count++;
 	spin_unlock(&cfg->lock);
 
-	resp->alloc_flags |= UDMA_DCA_ATTACH_FLAGS_NEW_BUFFER;
+	resp->alloc_flags |= HNS3_UDMA_DCA_ATTACH_FLAGS_NEW_BUFFER;
 	resp->alloc_pages = cfg->npages;
 	resp->dcan = cfg->dcan;
 	update_dca_buf_status(ctx, cfg->dcan, true);

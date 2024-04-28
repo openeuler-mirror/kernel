@@ -686,7 +686,7 @@ static void apply_func_caps(struct udma_dev *udma_dev)
 	/* The following caps are not in ncl config */
 	caps->gmv_entry_sz = UDMA_GMV_ENTRY_SZ;
 	caps->gmv_hop_num = UDMA_HOP_NUM_0;
-	caps->gmv_entry_num = caps->gmv_bt_num * (PAGE_SIZE /
+	caps->gmv_entry_num = caps->gmv_bt_num * (UDMA_PAGE_SIZE /
 						  caps->gmv_entry_sz);
 	caps->max_eid_cnt = (caps->gmv_entry_num > UDMA_MAX_EID_NUM) ?
 			    UDMA_MAX_EID_NUM : caps->gmv_entry_num;
@@ -1256,7 +1256,7 @@ alloc_link_table_buf(struct udma_dev *udma_dev)
 	min_size = UDMA_EXT_LLM_MIN_PAGES(udma_dev->caps.sl_num) << pg_shift;
 
 	/* Alloc data table */
-	size = max(size, min_size);
+	size = max_t(uint32_t, size, min_size);
 	link_tbl->buf = udma_buf_alloc(udma_dev, size, pg_shift, 0);
 	if (IS_ERR(link_tbl->buf))
 		return ERR_PTR(-ENOMEM);
@@ -1748,7 +1748,7 @@ static void udma_init_bank(struct udma_dev *dev)
 	dev->bank[0].next = dev->bank[0].min;
 
 	qpn_shift = dev->caps.num_qps_shift - UDMA_DEFAULT_MAX_JETTY_X_SHIFT -
-		    UDMA_JETTY_X_PREFIX_BIT_NUM;
+		    HNS3_UDMA_JETTY_X_PREFIX_BIT_NUM;
 	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
 		ida_init(&dev->bank[i].ida);
 		dev->bank[i].max = (1U << qpn_shift) / UDMA_QP_BANK_NUM - 1;

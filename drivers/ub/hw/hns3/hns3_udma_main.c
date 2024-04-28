@@ -68,7 +68,7 @@ static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data,
 			      struct udma_dca_ctx *dca_ctx)
 {
-	struct udma_create_ctx_resp resp = {};
+	struct hns3_udma_create_ctx_resp resp = {};
 	int ret;
 
 	resp.num_comp_vectors = dev->caps.num_comp_vectors;
@@ -96,7 +96,8 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	}
 
 	ret = copy_to_user((void *)udrv_data->out_addr, &resp,
-			   min(udrv_data->out_len, (uint32_t)sizeof(resp)));
+			   min_t(uint32_t, udrv_data->out_len,
+				 (uint32_t)sizeof(resp)));
 	if (ret)
 		dev_err(dev->dev,
 			"copy ctx resp to user failed, ret = %d.\n", ret);
@@ -108,6 +109,16 @@ static void udma_uar_free(struct udma_dev *udma_dev,
 			  struct udma_ucontext *context)
 {
 	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
+}
+
+static void init_ucontext_list(struct udma_dev *udma_dev,
+			       struct udma_ucontext *uctx)
+{
+	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB ||
+	    udma_dev->caps.flags & UDMA_CAP_FLAG_QP_RECORD_DB) {
+		INIT_LIST_HEAD(&uctx->pgdir_list);
+		mutex_init(&uctx->pgdir_mutex);
+	}
 }
 
 static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
@@ -159,6 +170,8 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 	    UDMA_CAP_FLAG_DCA_MODE)
 		udma_register_uctx_debugfs(udma_dev, context);
 
+	init_ucontext_list(udma_dev, context);
+
 	return &context->uctx;
 
 err_alloc_uar:
@@ -183,12 +196,12 @@ static int udma_free_ucontext(struct ubcore_ucontext *uctx)
 
 static int get_mmap_cmd(struct vm_area_struct *vma)
 {
-	return (vma->vm_pgoff & MAP_COMMAND_MASK);
+	return (vma->vm_pgoff & HNS3_UDMA_MAP_COMMAND_MASK);
 }
 
 static uint64_t get_mmap_idx(struct vm_area_struct *vma)
 {
-	return ((vma->vm_pgoff >> MAP_INDEX_SHIFT) & MAP_INDEX_MASK);
+	return ((vma->vm_pgoff >> HNS3_UDMA_MAP_INDEX_SHIFT) & HNS3_UDMA_MAP_INDEX_MASK);
 }
 
 static int mmap_dca(struct ubcore_ucontext *context, struct vm_area_struct *vma)
@@ -238,23 +251,23 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 
 	cmd = get_mmap_cmd(vma);
 	switch (cmd) {
-	case UDMA_MMAP_UAR_PAGE:
+	case HNS3_UDMA_MMAP_UAR_PAGE:
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 		if (io_remap_pfn_range(vma, vma->vm_start,
 				       to_udma_ucontext(uctx)->uar.pfn,
 				       PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
-	case UDMA_MMAP_DWQE_PAGE:
+	case HNS3_UDMA_MMAP_DWQE_PAGE:
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 		qpn = get_mmap_idx(vma);
-		address = udma_dev->dwqe_page + qpn * UDMA_DWQE_PAGE_SIZE;
+		address = udma_dev->dwqe_page + qpn * HNS3_UDMA_DWQE_PAGE_SIZE;
 		if (io_remap_pfn_range(vma, vma->vm_start,
 				       address >> PAGE_SHIFT,
-				       UDMA_DWQE_PAGE_SIZE, vma->vm_page_prot))
+				       HNS3_UDMA_DWQE_PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
-	case UDMA_MMAP_RESET_PAGE:
+	case HNS3_UDMA_MMAP_RESET_PAGE:
 		if (vma->vm_flags & (VM_WRITE | VM_EXEC))
 			return -EINVAL;
 
@@ -263,7 +276,7 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 				    PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
-	case UDMA_MMAP_TYPE_DCA:
+	case HNS3_UDMA_MMAP_TYPE_DCA:
 		if (mmap_dca(uctx, vma))
 			return -EAGAIN;
 		break;
@@ -735,12 +748,6 @@ int udma_setup_hca(struct udma_dev *udma_dev)
 	INIT_LIST_HEAD(&udma_dev->dip_list);
 	spin_lock_init(&udma_dev->dip_list_lock);
 
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB ||
-	    udma_dev->caps.flags & UDMA_CAP_FLAG_QP_RECORD_DB) {
-		INIT_LIST_HEAD(&udma_dev->pgdir_list);
-		mutex_init(&udma_dev->pgdir_mutex);
-	}
-
 	udma_init_uar_table(udma_dev);
 
 	ret = udma_init_qp_table(udma_dev);
@@ -987,10 +994,10 @@ static void udma_set_devname(struct udma_dev *udma_dev,
 			     struct ubcore_device *ub_dev)
 {
 	if (strncasecmp(ub_dev->netdev->name, UB_DEV_BASE_NAME, UB_DEV_NAME_SHIFT))
-		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma_c%ud%uf%u",
+		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "hns3_udma_c%ud%uf%u",
 			  udma_dev->chip_id, udma_dev->die_id, udma_dev->func_id);
 	else
-		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma%s",
+		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "hns3_udma%s",
 			  ub_dev->netdev->name + UB_DEV_NAME_SHIFT);
 
 	dev_info(udma_dev->dev, "Set dev_name %s\n", udma_dev->dev_name);

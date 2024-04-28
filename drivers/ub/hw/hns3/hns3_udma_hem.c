@@ -106,17 +106,17 @@ static int get_hem_table_config(struct udma_dev *udma_dev,
 
 	switch (type) {
 	case HEM_TYPE_QPC:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.qpc_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.qpc_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.qpc_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.qpc_ba_pg_sz
 					     + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.qpc_bt_num;
 		mhop->hop_num = udma_dev->caps.qpc_hop_num;
 		break;
 	case HEM_TYPE_MTPT:
-		mhop->buf_chunk_size = 1 << (udma_dev->caps.mpt_buf_pg_sz
+		mhop->buf_chunk_size = 1U << (udma_dev->caps.mpt_buf_pg_sz
 					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1 << (udma_dev->caps.mpt_ba_pg_sz
+		mhop->bt_chunk_size = 1U << (udma_dev->caps.mpt_ba_pg_sz
 					     + PAGE_SHIFT);
 		mhop->ba_l0_num = udma_dev->caps.mpt_bt_num;
 		mhop->hop_num = udma_dev->caps.mpt_hop_num;
@@ -2001,7 +2001,7 @@ int udma_mtr_find(struct udma_dev *udma_device, struct udma_mtr *mtr,
 		if (!mtts || !mtt_count)
 			goto out;
 
-		npage = min(mtt_count, left);
+		npage = min_t(int, mtt_count, left);
 		left -= npage;
 		for (mtt_count = 0; (uint32_t)mtt_count < npage; mtt_count++)
 			mtt_buf[total++] = le64_to_cpu(mtts[mtt_count]);

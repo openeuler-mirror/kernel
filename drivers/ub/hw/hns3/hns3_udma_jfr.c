@@ -114,7 +114,7 @@ static int alloc_jfr_wqe_buf(struct udma_dev *dev,
 static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
 			     struct udma_jfr *jfr,
 			     struct ubcore_udata *udata,
-			     struct udma_create_jfr_ucmd *ucmd)
+			     struct hns3_udma_create_jfr_ucmd *ucmd)
 {
 	struct udma_buf_attr buf_attr = {};
 	uint32_t total_buff_size = 0;
@@ -181,13 +181,14 @@ static void free_jfr_wqe_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 			 struct ubcore_udata *udata)
 {
-	struct udma_create_jfr_ucmd ucmd = {};
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(udata->uctx);
+	struct hns3_udma_create_jfr_ucmd ucmd = {};
 	int ret;
 
 	if (udata) {
 		ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(ucmd)));
 		if (ret) {
 			dev_err(dev->dev,
 				"failed to copy JFR udata, ret = %d.\n",
@@ -202,7 +203,7 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 		return ret;
 
 	if (ucmd.wqe_buf_addr) {
-		jfr->jfr_caps |= UDMA_JFR_CAP_RECORD_DB;
+		jfr->jfr_caps |= HNS3_UDMA_JFR_CAP_RECORD_DB;
 		ret = alloc_jfr_wqe_buf_rq(dev, jfr, udata, &ucmd);
 		if (ret)
 			goto err_idx;
@@ -213,14 +214,14 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 	}
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
-	    jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB) {
-		ret = udma_db_map_user(dev, ucmd.db_addr, &jfr->db);
+	    jfr->jfr_caps & HNS3_UDMA_JFR_CAP_RECORD_DB) {
+		ret = udma_db_map_user(udma_uctx, ucmd.db_addr, &jfr->db);
 		if (ret) {
 			dev_err(dev->dev,
 				"map jfr db failed, ret = %d.\n", ret);
 			goto err_db;
 		}
-		jfr->jfr_caps |= UDMA_JFR_CAP_RECORD_DB;
+		jfr->jfr_caps |= HNS3_UDMA_JFR_CAP_RECORD_DB;
 	}
 
 	refcount_set(&jfr->refcount, 1);
@@ -319,7 +320,7 @@ static int write_jfrc(struct udma_dev *dev, struct udma_jfr *jfr, void *mb_buf)
 		       to_udma_hw_page_shift(jfr->buf_mtr.hem_cfg.ba_pg_shift));
 	udma_reg_write(ctx, SRQC_WQE_BUF_PG_SZ,
 		       to_udma_hw_page_shift(jfr->buf_mtr.hem_cfg.buf_pg_shift));
-	if (jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB) {
+	if (jfr->jfr_caps & HNS3_UDMA_JFR_CAP_RECORD_DB) {
 		udma_reg_enable(ctx, SRQC_RECORD_DB_EN);
 		udma_reg_write(ctx, SRQC_RECORD_DB_ADDR_L,
 			       lower_32_bits(jfr->db.dma) >>
@@ -526,14 +527,16 @@ static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 
 static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 {
+	struct udma_ucontext *udma_uctx = to_udma_ucontext(jfr->ubcore_jfr.uctx);
+
 	if (refcount_dec_and_test(&jfr->refcount))
 		complete(&jfr->free);
 
 	wait_for_completion(&jfr->free);
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
-	    jfr->jfr_caps & UDMA_JFR_CAP_RECORD_DB)
-		udma_db_unmap_user(dev, &jfr->db);
+	    jfr->jfr_caps & HNS3_UDMA_JFR_CAP_RECORD_DB)
+		udma_db_unmap_user(udma_uctx, &jfr->db);
 
 	free_jfr_wqe_buf(dev, jfr);
 	free_jfr_idx(dev, jfr);
@@ -624,7 +627,7 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct udma_create_jfr_resp resp = {};
+	struct hns3_udma_create_jfr_resp resp = {};
 	struct udma_jfr *jfr;
 	int ret;
 
@@ -659,8 +662,8 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 		resp.jfr_caps = jfr->jfr_caps;
 		resp.srqn = jfr->srqn;
 		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min(udata->udrv_data->out_len,
-				   (uint32_t)sizeof(resp)));
+				   min_t(uint32_t, udata->udrv_data->out_len,
+					 (uint32_t)sizeof(resp)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy jfr resp, ret = %d.\n", ret);

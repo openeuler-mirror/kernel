@@ -261,6 +261,7 @@ struct udma_dca_cfg {
 
 struct udma_qp {
 	struct udma_dev		*udma_device;
+	struct udma_ucontext	*udma_uctx;
 	enum udma_qp_type	qp_type;
 	struct udma_qp_attr	qp_attr;
 	struct udma_wq		sq;

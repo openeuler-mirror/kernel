@@ -88,7 +88,7 @@ static void udma_fill_jfs_um_qp_attr(struct udma_dev *dev, struct udma_jfs *jfs,
 		qp_attr->priority = dev->caps.sl_num > 0 ?
 				    dev->caps.sl_num - 1 : 0;
 		dev_err(dev->dev,
-			"set priority (%u) should smaller than the MAC (%u), (%u) is used\n",
+			"set priority (%u) should smaller than the MAX (%u), (%u) is used\n",
 			jfs->ubcore_jfs.jfs_cfg.priority, dev->caps.sl_num,
 			qp_attr->priority);
 	} else {
@@ -135,13 +135,13 @@ static int alloc_jfs_buf(struct udma_dev *udma_dev, struct udma_jfs *jfs,
 			 struct ubcore_jfs_cfg *cfg,
 			 struct ubcore_udata *udata)
 {
-	struct udma_create_jfs_ucmd ucmd = {};
+	struct hns3_udma_create_jfs_ucmd ucmd = {};
 	int ret = 0;
 
 	if (udata) {
 		ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				     min(udata->udrv_data->in_len,
-					 (uint32_t)sizeof(ucmd)));
+				     min_t(uint32_t, udata->udrv_data->in_len,
+					   (uint32_t)sizeof(ucmd)));
 		if (ret) {
 			dev_err(udma_dev->dev,
 				"failed to copy jfs udata, ret = %d.\n", ret);
