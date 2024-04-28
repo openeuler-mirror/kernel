@@ -798,6 +798,42 @@ struct page *swiotlb_alloc(struct device *dev, size_t size)
 static void swiotlb_release_slots(struct device *dev, phys_addr_t tlb_addr,
 		size_t alloc_size)
 {
+	unsigned long flags;
+	unsigned int offset = swiotlb_align_offset(dev, tlb_addr);
+	int i, count, nslots = nr_slots(alloc_size + offset);
+	int index = (tlb_addr - offset - io_tlb_start) >> IO_TLB_SHIFT;
+
+	/*
+	 * Return the buffer to the free list by setting the corresponding
+	 * entries to indicate the number of contiguous entries available.
+	 * While returning the entries to the free list, we merge the entries
+	 * with slots below and above the pool being returned.
+	 */
+	spin_lock_irqsave(&io_tlb_lock, flags);
+	if (index + nslots < ALIGN(index + 1, IO_TLB_SEGSIZE))
+		count = io_tlb_list[index + nslots];
+	else
+		count = 0;
+
+	/*
+	 * Step 1: return the slots to the free list, merging the slots with
+	 * superceeding slots
+	 */
+	for (i = index + nslots - 1; i >= index; i--) {
+		io_tlb_list[i] = ++count;
+		io_tlb_orig_addr[i] = INVALID_PHYS_ADDR;
+	}
+
+	/*
+	 * Step 2: merge the returned slots with the preceding slots, if
+	 * available (non zero)
+	 */
+	for (i = index - 1;
+		 io_tlb_offset(i) != IO_TLB_SEGSIZE - 1 && io_tlb_list[i];
+		 i--)
+		io_tlb_list[i] = ++count;
+	io_tlb_used -= nslots;
+	spin_unlock_irqrestore(&io_tlb_lock, flags);
 }
 
 bool swiotlb_free(struct device *dev, struct page *page, size_t size)
