@@ -70,6 +70,7 @@
 #include <net/mpls.h>
 #include <net/mptcp.h>
 #include <net/page_pool.h>
+#include <net/tcp_ext.h>
 
 #include <linux/uaccess.h>
 #include <trace/events/skb.h>
@@ -79,7 +80,6 @@
 #include <linux/indirect_call_wrapper.h>
 
 #include "datagram.h"
-#include "sock_destructor.h"
 
 struct kmem_cache *skbuff_head_cache __ro_after_init;
 static struct kmem_cache *skbuff_fclone_cache __ro_after_init;
