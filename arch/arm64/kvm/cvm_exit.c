@@ -15,8 +15,10 @@ typedef int (*exit_handler_fn)(struct kvm_vcpu *vcpu);
 
 static void update_arch_timer_irq_lines(struct kvm_vcpu *vcpu, bool unmask_ctl)
 {
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	run = tec->tec_run;
 	__vcpu_sys_reg(vcpu, CNTV_CTL_EL0) = run->tec_exit.cntv_ctl;
 	__vcpu_sys_reg(vcpu, CNTV_CVAL_EL0) = run->tec_exit.cntv_cval;
 	__vcpu_sys_reg(vcpu, CNTP_CTL_EL0) = run->tec_exit.cntp_ctl;
@@ -36,8 +38,10 @@ static void update_arch_timer_irq_lines(struct kvm_vcpu *vcpu, bool unmask_ctl)
 
 static int tec_exit_reason_notimpl(struct kvm_vcpu *vcpu)
 {
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	run = tec->tec_run;
 	pr_err("[vcpu %d] Unhandled exit reason from cvm (ESR: %#llx)\n",
 		vcpu->vcpu_id, run->tec_exit.esr);
 	return -ENXIO;
@@ -90,11 +94,13 @@ out:
 static int tec_exit_sys_reg(struct kvm_vcpu *vcpu)
 {
 	int ret;
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 	unsigned long esr = kvm_vcpu_get_esr(vcpu);
 	int rt = kvm_vcpu_sys_get_rt(vcpu);
 	bool is_write = !(esr & 1);
 
+	run = tec->tec_run;
 	if (is_write)
 		vcpu_set_reg(vcpu, rt, run->tec_exit.gprs[0]);
 
@@ -108,8 +114,10 @@ static int tec_exit_sys_reg(struct kvm_vcpu *vcpu)
 
 static int tec_exit_sync_dabt(struct kvm_vcpu *vcpu)
 {
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	run = tec->tec_run;
 	if (kvm_vcpu_dabt_iswrite(vcpu) && kvm_vcpu_dabt_isvalid(vcpu)) {
 		vcpu_set_reg(vcpu, kvm_vcpu_dabt_get_rd(vcpu),
 			run->tec_exit.gprs[0]);
@@ -119,8 +127,10 @@ static int tec_exit_sync_dabt(struct kvm_vcpu *vcpu)
 
 static int tec_exit_sync_iabt(struct kvm_vcpu *vcpu)
 {
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	run = tec->tec_run;
 	pr_err("[vcpu %d] Unhandled instruction abort (ESR: %#llx).\n",
 		vcpu->vcpu_id, run->tec_exit.esr);
 
@@ -138,8 +148,10 @@ static exit_handler_fn tec_exit_handlers[] = {
 static int tec_exit_psci(struct kvm_vcpu *vcpu)
 {
 	int i;
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	run = tec->tec_run;
 	for (i = 0; i < TEC_EXIT_NR_GPRS; ++i)
 		vcpu_set_reg(vcpu, i, run->tec_exit.gprs[i]);
 
@@ -149,8 +161,10 @@ static int tec_exit_psci(struct kvm_vcpu *vcpu)
 static int tec_exit_host_call(struct kvm_vcpu *vcpu)
 {
 	int ret, i;
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	run = tec->tec_run;
 	vcpu->stat.hvc_exit_stat++;
 
 	for (i = 0; i < TEC_EXIT_NR_GPRS; ++i)
@@ -176,10 +190,13 @@ static int tec_exit_host_call(struct kvm_vcpu *vcpu)
 int handle_cvm_exit(struct kvm_vcpu *vcpu, int tec_run_ret)
 {
 	unsigned long status;
-	struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
-	u8 esr_ec = ESR_ELx_EC(run->tec_exit.esr);
+	struct tmi_tec_run *run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+	u8 esr_ec;
 	bool is_wfx;
 
+	run = tec->tec_run;
+	esr_ec = ESR_ELx_EC(run->tec_exit.esr);
 	status = TMI_RETURN_STATUS(tec_run_ret);
 
 	if (status == TMI_ERROR_CVM_POWEROFF) {

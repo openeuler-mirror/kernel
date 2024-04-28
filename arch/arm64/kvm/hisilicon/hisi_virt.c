@@ -7,6 +7,9 @@
 #include <linux/of.h>
 #include <linux/init.h>
 #include <linux/kvm_host.h>
+#ifdef CONFIG_CVM_HOST
+#include <asm/kvm_tmi.h>
+#endif
 #include "hisi_virt.h"
 
 static enum hisi_cpu_type cpu_type = UNKNOWN_HI_TYPE;
@@ -153,6 +156,10 @@ static void hardware_disable_dvmbm(void *data)
 
 bool hisi_dvmbm_supported(void)
 {
+#ifdef CONFIG_CVM_HOST
+	if (static_branch_unlikely(&kvm_cvm_is_enable))
+		return false;
+#endif
 	if (cpu_type != HI_IP09)
 		return false;
 

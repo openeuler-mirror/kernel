@@ -24,6 +24,7 @@ struct cvm {
 	u64 ram_size;
 	struct kvm_numa_info numa_info;
 	struct tmi_cvm_params *params;
+	bool is_cvm;
 };
 
 /*

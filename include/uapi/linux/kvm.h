@@ -1383,7 +1383,7 @@ struct kvm_numa_node {
 	__u64 numa_id;
 	__u64 ipa_start;
 	__u64 ipa_size;
-	int64_t host_numa_node;
+	__u64 host_numa_node;
 	__u64 cpu_id[MAX_CPU_BIT_MAP];
 };
 

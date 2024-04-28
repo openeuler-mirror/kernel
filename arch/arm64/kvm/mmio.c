@@ -115,7 +115,9 @@ int kvm_handle_mmio_return(struct kvm_vcpu *vcpu)
 		vcpu_set_reg(vcpu, kvm_vcpu_dabt_get_rd(vcpu), data);
 #ifdef CONFIG_CVM_HOST
 		if (vcpu_is_tec(vcpu)) {
-			((struct tmi_tec_run *)vcpu->arch.tec.tec_run)->
+			struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+
+			((struct tmi_tec_run *)tec->tec_run)->
 				tec_entry.gprs[0] = data;
 		}
 #endif
@@ -189,7 +191,9 @@ int io_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 	vcpu->mmio_needed	= 1;
 #ifdef CONFIG_CVM_HOST
 	if (vcpu_is_tec(vcpu)) {
-		((struct tmi_tec_run *)vcpu->arch.tec.tec_run)->tec_entry.flags |=
+		struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+
+		((struct tmi_tec_run *)tec->tec_run)->tec_entry.flags |=
 			TEC_ENTRY_FLAG_EMUL_MMIO;
 	}
 #endif

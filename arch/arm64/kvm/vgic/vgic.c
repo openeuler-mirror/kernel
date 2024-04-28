@@ -880,9 +880,11 @@ static inline bool can_access_vgic_from_kernel(void)
 static inline void vgic_tmm_save_state(struct kvm_vcpu *vcpu)
 {
 	int i;
+	struct tmi_tec_run *tec_run;
 	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
-	struct tmi_tec_run *tec_run = vcpu->arch.tec.tec_run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	tec_run = tec->tec_run;
 	for (i = 0; i < kvm_vgic_global_state.nr_lr; ++i) {
 		cpu_if->vgic_lr[i] = tec_run->tec_exit.gicv3_lrs[i];
 		tec_run->tec_entry.gicv3_lrs[i] = 0;
@@ -892,9 +894,11 @@ static inline void vgic_tmm_save_state(struct kvm_vcpu *vcpu)
 static inline void vgic_tmm_restore_state(struct kvm_vcpu *vcpu)
 {
 	int i;
+	struct tmi_tec_run *tec_run;
 	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
-	struct tmi_tec_run *tec_run = vcpu->arch.tec.tec_run;
+	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+	tec_run = tec->tec_run;
 	for (i = 0; i < kvm_vgic_global_state.nr_lr; ++i) {
 		tec_run->tec_entry.gicv3_lrs[i] = cpu_if->vgic_lr[i];
 		tec_run->tec_exit.gicv3_lrs[i] = cpu_if->vgic_lr[i];

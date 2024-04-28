@@ -127,13 +127,21 @@ struct kvm_arch {
 
 #ifdef CONFIG_KVM_HISI_VIRT
 	spinlock_t dvm_lock;
-	cpumask_t *dvm_cpumask;	/* Union of all vcpu's cpus_ptr */
-	u64 lsudvmbm_el2;
 #endif
 
-#ifdef CONFIG_CVM_HOST
-	struct cvm cvm;
-	bool is_cvm;
+#if defined(CONFIG_KVM_HISI_VIRT) || defined(CONFIG_CVM_HOST)
+#ifndef __GENKSYMS__
+	union {
+		cpumask_t *dvm_cpumask; /* Union of all vcpu's cpus_ptr */
+		void *cvm;
+	};
+#else
+	cpumask_t *dvm_cpumask; /* Union of all vcpu's cpus_ptr */
+#endif
+#endif
+
+#ifdef CONFIG_KVM_HISI_VIRT
+	u64 lsudvmbm_el2;
 #endif
 };
 
@@ -411,11 +419,17 @@ struct kvm_vcpu_arch {
 #ifdef CONFIG_KVM_HISI_VIRT
 	/* Copy of current->cpus_ptr */
 	cpumask_t *cpus_ptr;
-	cpumask_t *pre_cpus_ptr;
 #endif
 
-#ifdef CONFIG_CVM_HOST
-	struct cvm_tec tec;
+#if defined(CONFIG_KVM_HISI_VIRT) || defined(CONFIG_CVM_HOST)
+#ifndef __GENKSYMS__
+	union {
+		cpumask_t *pre_cpus_ptr;
+		void *tec;
+	};
+#else
+	cpumask_t *pre_cpus_ptr;
+#endif
 #endif
 };
 

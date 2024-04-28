@@ -373,8 +373,10 @@ static u64 kvm_pmu_overflow_status(struct kvm_vcpu *vcpu)
 
 #ifdef CONFIG_CVM_HOST
 	if (vcpu_is_tec(vcpu)) {
-		struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+		struct tmi_tec_run *run;
+		struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+		run = tec->tec_run;
 		reg = run->tec_exit.pmu_ovf_status;
 		return reg;
 	}

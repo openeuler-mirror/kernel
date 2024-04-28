@@ -353,9 +353,11 @@ DECLARE_STATIC_KEY_FALSE(kvm_cvm_is_available);
 
 static __always_inline bool vcpu_is_tec(struct kvm_vcpu *vcpu)
 {
-	if (static_branch_unlikely(&kvm_cvm_is_available))
-		return vcpu->arch.tec.tec_run;
+	if (static_branch_unlikely(&kvm_cvm_is_available)) {
+		struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
+		return tec && tec->tec_run;
+	}
 	return false;
 }
 

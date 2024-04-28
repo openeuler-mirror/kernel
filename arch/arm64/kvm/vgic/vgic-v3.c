@@ -742,10 +742,13 @@ void vgic_v3_load(struct kvm_vcpu *vcpu)
 void vgic_v3_vmcr_sync(struct kvm_vcpu *vcpu)
 {
 	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
+
 #ifdef CONFIG_CVM_HOST
 	if (vcpu_is_tec(vcpu)) {
+		struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+
 		cpu_if->vgic_vmcr =
-			((struct tmi_tec_run *)vcpu->arch.tec.tec_run)->tec_exit.gicv3_vmcr;
+			((struct tmi_tec_run *)tec->tec_run)->tec_exit.gicv3_vmcr;
 		return;
 	}
 #endif
