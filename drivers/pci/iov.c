@@ -18,6 +18,8 @@
 
 #define VIRTFN_ID_LEN	16
 
+static DEFINE_MUTEX(pci_sriov_numvfs_lock);
+
 int pci_iov_virtfn_bus(struct pci_dev *dev, int vf_id)
 {
 	if (!dev->is_physfn)
@@ -212,6 +214,16 @@ failed:
 	return rc;
 }
 
+int pci_iov_add_virtfn_locked(struct pci_dev *dev, int id)
+{
+	int rc;
+
+	mutex_lock(&pci_sriov_numvfs_lock);
+	rc = pci_iov_add_virtfn(dev, id);
+	mutex_unlock(&pci_sriov_numvfs_lock);
+	return rc;
+}
+
 void pci_iov_remove_virtfn(struct pci_dev *dev, int id)
 {
 	char buf[VIRTFN_ID_LEN];
@@ -239,6 +251,13 @@ void pci_iov_remove_virtfn(struct pci_dev *dev, int id)
 	/* balance pci_get_domain_bus_and_slot() */
 	pci_dev_put(virtfn);
 	pci_dev_put(dev);
+}
+
+void pci_iov_remove_virtfn_locked(struct pci_dev *dev, int id)
+{
+	mutex_lock(&pci_sriov_numvfs_lock);
+	pci_iov_remove_virtfn(dev, id);
+	mutex_unlock(&pci_sriov_numvfs_lock);
 }
 
 int __weak pcibios_sriov_enable(struct pci_dev *pdev, u16 num_vfs)
@@ -337,7 +356,10 @@ static int sriov_enable(struct pci_dev *dev, int nr_virtfn)
 	pci_cfg_access_unlock(dev);
 
 	for (i = 0; i < initial; i++) {
-		rc = pci_iov_add_virtfn(dev, i);
+		if (dev->bus->number != pci_iov_virtfn_bus(dev, i))
+			rc = pci_iov_add_virtfn_locked(dev, i);
+		else
+			rc = pci_iov_add_virtfn(dev, i);
 		if (rc)
 			goto failed;
 	}
@@ -348,8 +370,12 @@ static int sriov_enable(struct pci_dev *dev, int nr_virtfn)
 	return 0;
 
 failed:
-	while (i--)
-		pci_iov_remove_virtfn(dev, i);
+	while (i--) {
+		if (dev->bus->number != pci_iov_virtfn_bus(dev, i))
+			pci_iov_remove_virtfn_locked(dev, i);
+		else
+			pci_iov_remove_virtfn(dev, i);
+	}
 
 err_pcibios:
 	iov->ctrl &= ~(PCI_SRIOV_CTRL_VFE | PCI_SRIOV_CTRL_MSE);
@@ -375,8 +401,12 @@ static void sriov_disable(struct pci_dev *dev)
 	if (!iov->num_VFs)
 		return;
 
-	for (i = 0; i < iov->num_VFs; i++)
-		pci_iov_remove_virtfn(dev, i);
+	for (i = 0; i < iov->num_VFs; i++) {
+		if (dev->bus->number != pci_iov_virtfn_bus(dev, i))
+			pci_iov_remove_virtfn_locked(dev, i);
+		else
+			pci_iov_remove_virtfn(dev, i);
+	}
 
 	iov->ctrl &= ~(PCI_SRIOV_CTRL_VFE | PCI_SRIOV_CTRL_MSE);
 	pci_cfg_access_lock(dev);
