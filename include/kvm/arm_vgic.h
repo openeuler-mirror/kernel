@@ -126,6 +126,7 @@ struct vgic_global {
 	struct static_key_false gicv3_cpuif;
 
 	u32			ich_vtr_el2;
+	u64			flags;
 };
 
 extern struct vgic_global kvm_vgic_global_state;
