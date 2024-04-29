@@ -313,6 +313,7 @@ static unsigned long vgic_mmio_read_v3_idregs(struct kvm_vcpu *vcpu,
 	return 0;
 }
 
+#define VIRTUAL_SGI_PENDING_OFFSET      0x3F0
 static unsigned long vgic_v3_uaccess_read_pending(struct kvm_vcpu *vcpu,
 						  gpa_t addr, unsigned int len)
 {
@@ -332,12 +333,27 @@ static unsigned long vgic_v3_uaccess_read_pending(struct kvm_vcpu *vcpu,
 		bool state = irq->pending_latch;
 
 		if (vgic_direct_sgi_or_ppi(irq)) {
-			int err;
+			if (vgic_irq_is_sgi(irq->intid) &&
+			    (kvm_vgic_global_state.flags &
+			     FLAGS_WORKAROUND_HIP09_ERRATUM_162200806))  {
+				struct its_vpe *vpe;
+				void *va;
+				u8 *ptr;
+				int mask;
 
-			err = irq_get_irqchip_state(irq->host_irq,
+				vpe = &vcpu->arch.vgic_cpu.vgic_v3.its_vpe;
+				mask = BIT(irq->intid % BITS_PER_BYTE);
+				va = page_address(vpe->vpt_page);
+				ptr = va + VIRTUAL_SGI_PENDING_OFFSET +
+				      irq->intid / BITS_PER_BYTE;
+				state = *ptr & mask;
+			} else {
+				int err;
+				err = irq_get_irqchip_state(irq->host_irq,
 						    IRQCHIP_STATE_PENDING,
 						    &state);
-			WARN_ON(err);
+				WARN_ON(err);
+			}
 		}
 
 		if (state)

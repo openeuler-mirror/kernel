@@ -6,6 +6,7 @@
 #define __KVM_ARM_VGIC_MMIO_H__
 
 #define FLAGS_WORKAROUND_HIP09_ERRATUM_162200803    (1ULL << 4)
+#define FLAGS_WORKAROUND_HIP09_ERRATUM_162200806    (1ULL << 5)
 
 struct vgic_register_region {
 	unsigned int reg_offset;
