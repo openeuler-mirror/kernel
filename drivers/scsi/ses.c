@@ -728,6 +728,11 @@ static int ses_intf_add(struct device *cdev,
 			components += type_ptr[1];
 	}
 
+	if (components == 0) {
+		sdev_printk(KERN_WARNING, sdev, "enclosure has no enumerated components\n");
+		goto err_free;
+	}
+
 	ses_dev->page1 = buf;
 	ses_dev->page1_len = len;
 	buf = NULL;
