@@ -9,6 +9,7 @@
 #include <linux/cpu.h>
 #include <linux/acpi.h>
 #include <linux/of.h>
+#include <linux/numa.h>
 
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
@@ -312,6 +313,9 @@ static int __init fdt_setup_smp(void)
 		rcid_information_init(version);
 
 		smp_rcb_init(__va(boot_flag_address));
+
+		/* Set core affinity */
+		early_map_cpu_to_node(logical_core_id, of_node_to_nid(dn));
 
 		logical_core_id++;
 	}
