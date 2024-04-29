@@ -569,15 +569,19 @@ static void ses_enclosure_data_process(struct enclosure_device *edev,
 			int max_desc_len;
 
 			if (desc_ptr) {
-				len = (desc_ptr[2] << 8) + desc_ptr[3];
-				desc_ptr += 4;
-				if (desc_ptr + len > buf + page7_len) {
+				if (desc_ptr + 3 >= buf + page7_len) {
 					desc_ptr = NULL;
 				} else {
-					/* Add trailing zero - pushes into
-					 * reserved space */
-					desc_ptr[len] = '\0';
-					name = desc_ptr;
+					len = (desc_ptr[2] << 8) + desc_ptr[3];
+					desc_ptr += 4;
+					if (desc_ptr + len > buf + page7_len)
+						desc_ptr = NULL;
+					else {
+						/* Add trailing zero - pushes into
+						 * reserved space */
+						desc_ptr[len] = '\0';
+						name = desc_ptr;
+					}
 				}
 			}
 			if (type_ptr[0] == ENCLOSURE_COMPONENT_DEVICE ||
@@ -848,8 +852,7 @@ static void ses_intf_remove_enclosure(struct scsi_device *sdev)
 	kfree(ses_dev->page2);
 	kfree(ses_dev);
 
-	if (edev->components > 0)
-		kfree(edev->component[0].scratch);
+	kfree(edev->component[0].scratch);
 
 	put_device(&edev->edev);
 	enclosure_unregister(edev);
