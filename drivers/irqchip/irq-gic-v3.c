@@ -36,6 +36,7 @@
 #define FLAGS_WORKAROUND_GICR_WAKER_MSM8996	(1ULL << 0)
 #define FLAGS_WORKAROUND_CAVIUM_ERRATUM_38539	(1ULL << 1)
 #define FLAGS_WORKAROUND_MTK_GICR_SAVE		(1ULL << 2)
+#define FLAGS_WORKAROUND_HIP09_ERRATUM_162200803	(1ULL << 4)
 
 #define GIC_IRQ_TYPE_PARTITION	(GIC_IRQ_TYPE_LPI + 1)
 
@@ -1700,6 +1701,15 @@ static bool gic_enable_quirk_hip06_07(void *data)
 	return false;
 }
 
+static bool gic_enable_quirk_hip09_162200803(void *data)
+{
+	struct gic_chip_data *d = data;
+
+	d->flags |= FLAGS_WORKAROUND_HIP09_ERRATUM_162200803;
+
+	return true;
+}
+
 static const struct gic_quirk gic_quirks[] = {
 	{
 		.desc	= "GICv3: Qualcomm MSM8996 broken firmware",
@@ -1735,6 +1745,12 @@ static const struct gic_quirk gic_quirks[] = {
 		.iidr	= 0xa000034c,
 		.mask	= 0xe8f00fff,
 		.init	= gic_enable_quirk_cavium_38539,
+	},
+	{
+		.desc	= "GICv3: HIP09 erratum 162200803",
+		.iidr	= 0x01050736,
+		.mask	= 0xffffffff,
+		.init	= gic_enable_quirk_hip09_162200803,
 	},
 	{
 	}
@@ -2036,6 +2052,8 @@ static void __init gic_of_setup_kvm_info(struct device_node *node)
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
 	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
+	if (gic_v3_kvm_info.has_v4 && !gic_v3_kvm_info.has_v4_1)
+		gic_v3_kvm_info.flags = gic_data.flags;
 	gic_set_kvm_info(&gic_v3_kvm_info);
 }
 
@@ -2353,6 +2371,8 @@ static void __init gic_acpi_setup_kvm_info(void)
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
 	gic_v3_kvm_info.has_vtimer = gic_data.rdists.has_vtimer;
+	if (gic_v3_kvm_info.has_v4 && !gic_v3_kvm_info.has_v4_1)
+		gic_v3_kvm_info.flags = gic_data.flags;
 	gic_set_kvm_info(&gic_v3_kvm_info);
 }
 

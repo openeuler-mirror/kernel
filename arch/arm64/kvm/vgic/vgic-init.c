@@ -522,6 +522,7 @@ int kvm_vgic_hyp_init(void)
 		return -ENXIO;
 	}
 
+	kvm_vgic_global_state.flags = gic_kvm_info->flags;
 	switch (gic_kvm_info->type) {
 	case GIC_V2:
 		ret = vgic_v2_probe(gic_kvm_info);

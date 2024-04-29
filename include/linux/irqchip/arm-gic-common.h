@@ -37,6 +37,7 @@ struct gic_kvm_info {
 	/* vtimer irqbypass support */
 	bool		has_vtimer;
 
+	u64		flags;
 };
 
 const struct gic_kvm_info *gic_get_kvm_info(void);
