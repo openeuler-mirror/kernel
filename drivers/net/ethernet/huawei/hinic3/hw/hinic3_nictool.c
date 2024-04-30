@@ -40,6 +40,7 @@ int card_id;
 
 typedef int (*hw_driv_module)(struct hinic3_lld_dev *lld_dev, const void *buf_in,
 			      u32 in_size, void *buf_out, u32 *out_size);
+
 struct hw_drv_module_handle {
 	enum driver_cmd_type	driv_cmd_name;
 	hw_driv_module		driv_func;

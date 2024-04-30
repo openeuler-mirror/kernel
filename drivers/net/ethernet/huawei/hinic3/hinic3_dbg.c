@@ -19,6 +19,8 @@
 #include "hinic3_dcb.h"
 #include "hinic3_nic.h"
 #include "hinic3_mgmt_interface.h"
+#include "mag_mpu_cmd.h"
+#include "mag_cmd.h"
 
 typedef int (*nic_driv_module)(struct hinic3_nic_dev *nic_dev,
 			       const void *buf_in, u32 in_size,

@@ -10,7 +10,7 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 
-#include "comm_defs.h"
+#include "mpu_cmd_base_defs.h"
 #include "hinic3_hw.h"
 #include "hinic3_api_cmd.h"
 #include "hinic3_hwdev.h"
@@ -163,6 +163,9 @@ int hinic3_pf_to_mgmt_async(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 int hinic3_pf_msg_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 			       u16 in_size, void *buf_out, u16 *out_size,
 			       u32 timeout);
+
+int hinic3_pf_to_mgmt_no_ack(void *hwdev, enum hinic3_mod_type mod, u8 cmd, void *buf_in,
+			     u16 in_size);
 
 int hinic3_api_cmd_read_ack(void *hwdev, u8 dest, const void *cmd, u16 size,
 			    void *ack, u16 ack_size);

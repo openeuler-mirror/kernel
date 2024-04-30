@@ -4,9 +4,11 @@
 #ifndef HINIC3_HWDEV_H
 #define HINIC3_HWDEV_H
 
+#include <linux/workqueue.h>
 #include "hinic3_mt.h"
 #include "hinic3_crm.h"
 #include "hinic3_hw.h"
+#include "mpu_inband_cmd_defs.h"
 #include "hinic3_profile.h"
 
 struct cfg_mgmt_info;
@@ -30,7 +32,7 @@ struct mqm_addr_trans_tbl_info {
 	u32 search_gpa_num;
 	u32 page_size;
 	u32 page_num;
-	struct hinic3_page_addr *brm_srch_page_addr;
+	struct hinic3_dma_addr_align *brm_srch_page_addr;
 };
 
 struct hinic3_devlink {
@@ -80,6 +82,24 @@ enum hinic3_host_mode_e {
 	HINIC3_SDI_MODE_MAX,
 };
 
+#define MULTI_HOST_CHIP_MODE_SHIFT		0
+#define MULTI_HOST_MASTER_MBX_STS_SHIFT		17
+#define MULTI_HOST_PRIV_DATA_SHIFT		0x8
+
+#define MULTI_HOST_CHIP_MODE_MASK		0xF
+#define MULTI_HOST_MASTER_MBX_STS_MASK		0x1
+#define MULTI_HOST_PRIV_DATA_MASK		0xFFFF
+
+#define MULTI_HOST_REG_SET(val, member)			\
+				(((val) & MULTI_HOST_##member##_MASK) \
+					<< MULTI_HOST_##member##_SHIFT)
+#define MULTI_HOST_REG_GET(val, member)			\
+				(((val) >> MULTI_HOST_##member##_SHIFT) \
+					& MULTI_HOST_##member##_MASK)
+#define MULTI_HOST_REG_CLEAR(val, member)	\
+				((val) & (~(MULTI_HOST_##member##_MASK \
+					<< MULTI_HOST_##member##_SHIFT)))
+
 struct hinic3_hwdev {
 	void *adapter_hdl;  /* pointer to hinic3_pcidev or NDIS_Adapter */
 	void *pcidev_hdl;   /* pointer to pcidev or Handler */
@@ -89,6 +109,7 @@ struct hinic3_hwdev {
 
 	void *service_adapter[SERVICE_T_MAX];
 	void *chip_node;
+	struct semaphore ppf_sem;
 	void *ppf_hwdev;
 
 	u32 wq_page_size;
@@ -116,6 +137,8 @@ struct hinic3_hwdev {
 	u32 stateful_ref_cnt;
 	u32 rsvd2;
 
+	struct hinic3_multi_host_mgmt *mhost_mgmt;
+
 	struct mutex stateful_mutex; /* protect cqm init and deinit */
 
 	struct hinic3_hw_stats hw_stats;
@@ -128,7 +151,7 @@ struct hinic3_hwdev {
 
 	struct delayed_work	sync_time_task;
 	struct delayed_work	channel_detect_task;
-	struct hisdk3_prof_attr	*prof_attr;
+	struct hisdk3_prof_attr *prof_attr;
 	struct hinic3_prof_adapter *prof_adap;
 
 	struct workqueue_struct *workq;
@@ -149,9 +172,13 @@ struct hinic3_hwdev {
 	enum hinic3_func_mode	func_mode;
 	u32 rsvd3;
 
+	DECLARE_BITMAP(func_probe_in_host, MAX_FUNCTION_NUM);
+	DECLARE_BITMAP(netdev_setup_state, MAX_FUNCTION_NUM);
+
 	u64 cur_recv_aeq_cnt;
 	u64 last_recv_aeq_cnt;
 	u16 aeq_busy_cnt;
+
 	u64 rsvd4[8];
 };
 
@@ -171,5 +198,7 @@ struct hinic3_hwdev {
 #define COMM_SUPPORT_MBOX_SEGMENT(hwdev) (hinic3_pcie_itf_id(hwdev) == SPU_HOST_ID)
 #define COMM_SUPPORT_CMDQ_NUM(hwdev) COMM_FEATURE_QW0(hwdev, CMDQ_NUM)
 #define COMM_SUPPORT_VIRTIO_VQ_SIZE(hwdev) COMM_FEATURE_QW0(hwdev, VIRTIO_VQ_SIZE)
+
+void set_func_host_mode(struct hinic3_hwdev *hwdev, enum hinic3_func_mode mode);
 
 #endif

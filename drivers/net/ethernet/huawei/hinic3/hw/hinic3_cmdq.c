@@ -16,6 +16,7 @@
 #include <linux/module.h>
 
 #include "ossl_knl.h"
+#include "npu_cmdq_base_defs.h"
 #include "hinic3_crm.h"
 #include "hinic3_hw.h"
 #include "hinic3_hwdev.h"
@@ -826,8 +827,7 @@ static int cmdq_async_cmd(struct hinic3_cmdq *cmdq, u8 mod, u8 cmd,
 	 */
 	cmd_info->buf_in = buf_in;
 
-	/* LB mode 1 compatible, cmdq 0 also for async, which is sync_no_wait */
-	cmdq_set_db(cmdq, HINIC3_CMDQ_SYNC, next_prod_idx);
+	cmdq_set_db(cmdq, cmdq->cmdq_type, next_prod_idx);
 
 	cmdq_msg_unlock(cmdq);
 
@@ -993,6 +993,35 @@ int hinic3_cmdq_async(void *hwdev, u8 mod, u8 cmd, struct hinic3_cmd_buf *buf_in
 	/* LB mode 1 compatible, cmdq 0 also for async, which is sync_no_wait */
 	return cmdq_async_cmd(&cmdqs->cmdq[HINIC3_CMDQ_SYNC], mod,
 			      cmd, buf_in, channel);
+}
+
+int hinic3_cmdq_async_cos(void *hwdev, u8 mod, u8 cmd,
+			  u8 cos_id, struct hinic3_cmd_buf *buf_in, u16 channel)
+{
+	struct hinic3_cmdqs *cmdqs = NULL;
+	int err;
+
+	err = cmdq_params_valid(hwdev, buf_in);
+	if (err)
+		return err;
+
+	cmdqs = ((struct hinic3_hwdev *)hwdev)->cmdqs;
+
+	if (!get_card_present_state((struct hinic3_hwdev *)hwdev))
+		return -EPERM;
+
+	err = wait_cmdqs_enable(cmdqs);
+	if (err) {
+		sdk_err(cmdqs->hwdev->dev_hdl, "Cmdq is disable\n");
+		return err;
+	}
+
+	if (cos_id >= cmdqs->cmdq_num) {
+		sdk_err(cmdqs->hwdev->dev_hdl, "Cmdq id is invalid\n");
+		return -EINVAL;
+	}
+
+	return cmdq_async_cmd(&cmdqs->cmdq[cos_id], mod, cmd, buf_in, channel);
 }
 
 static void clear_wqe_complete_bit(struct hinic3_cmdq *cmdq,

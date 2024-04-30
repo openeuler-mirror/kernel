@@ -4,25 +4,24 @@
 #ifndef HINIC3_HW_H
 #define HINIC3_HW_H
 
-#include "hinic3_comm_cmd.h"
-#include "comm_msg_intf.h"
-#include "comm_cmdq_intf.h"
+#include "mpu_inband_cmd.h"
+#include "mpu_inband_cmd_defs.h"
 
 #include "hinic3_crm.h"
 
 #ifndef BIG_ENDIAN
-#define BIG_ENDIAN    0x4321
+#define BIG_ENDIAN	0x4321
 #endif
 
 #ifndef LITTLE_ENDIAN
-#define LITTLE_ENDIAN    0x1234
+#define LITTLE_ENDIAN	0x1234
 #endif
 
 #ifdef BYTE_ORDER
 #undef BYTE_ORDER
 #endif
 /* X86 */
-#define BYTE_ORDER    LITTLE_ENDIAN
+#define BYTE_ORDER	LITTLE_ENDIAN
 
 /* to use 0-level CLA, page size must be: SQ 16B(wqe) * 64k(max_q_depth) */
 #define HINIC3_DEFAULT_WQ_PAGE_SIZE		0x100000
@@ -127,7 +126,7 @@ typedef int (*hinic3_pf_recv_from_ppf_mbox_cb)(void *pri_handle,
 	u16 cmd, void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
 
 /**
- * @brief hinic3_aeq_register_hw_cb -  register aeq hardware callback
+ * @brief hinic3_aeq_register_hw_cb - register aeq hardware callback
  * @param hwdev: device pointer to hwdev
  * @param event: event type
  * @param hwe_cb: callback function
@@ -145,7 +144,7 @@ int hinic3_aeq_register_hw_cb(void *hwdev, void *pri_handle,
 void hinic3_aeq_unregister_hw_cb(void *hwdev, enum hinic3_aeq_type event);
 
 /**
- * @brief hinic3_aeq_register_swe_cb -  register aeq soft event callback
+ * @brief hinic3_aeq_register_swe_cb - register aeq soft event callback
  * @param hwdev: device pointer to hwdev
  * @pri_handle: the pointer to private invoker device
  * @param event: event type
@@ -164,7 +163,7 @@ int hinic3_aeq_register_swe_cb(void *hwdev, void *pri_handle, enum hinic3_aeq_sw
 void hinic3_aeq_unregister_swe_cb(void *hwdev, enum hinic3_aeq_sw_type event);
 
 /**
- * @brief hinic3_ceq_register_cb -  register ceq callback
+ * @brief hinic3_ceq_register_cb - register ceq callback
  * @param hwdev: device pointer to hwdev
  * @param event: event type
  * @param callback: callback function
@@ -514,7 +513,7 @@ int hinic3_api_csr_rd64(void *hwdev, u8 dest, u32 addr, u64 *val);
  * @retval zero: success
  * @retval non-zero: failure
  */
-int hinic3_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u16 *out_size);
+int hinic3_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, const u32 *out_size);
 
 /**
  * @brief hinic3_dbg_clear_hw_stats - clear hardware stats
@@ -627,6 +626,23 @@ int hinic3_mbox_to_vf(void *hwdev, u16 vf_id, u8 mod, u16 cmd, void *buf_in,
 		      u16 in_size, void *buf_out, u16 *out_size, u32 timeout,
 		      u16 channel);
 
+/**
+ * @brief hinic3_mbox_to_vf_no_ack - mbox message to vf no ack
+ * @param hwdev: device pointer to hwdev
+ * @param vf_id: vf index
+ * @param mod: mod type
+ * @param cmd: cmd
+ * @param buf_in: message buffer in
+ * @param in_size: in buffer size
+ * @param buf_out: message buffer out
+ * @param out_size: out buffer size
+ * @param channel: channel id
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_mbox_to_vf_no_ack(void *hwdev, u16 vf_id, u8 mod, u16 cmd, void *buf_in,
+			     u16 in_size, void *buf_out, u16 *out_size, u16 channel);
+
 int hinic3_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
 		       u16 in_size, void *buf_out, u16 *out_size);
 /**
@@ -640,6 +656,20 @@ int hinic3_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
  * @retval non-zero: failure
  */
 int hinic3_cmdq_async(void *hwdev, u8 mod, u8 cmd, struct hinic3_cmd_buf *buf_in, u16 channel);
+
+/**
+ * @brief hinic3_cmdq_async_cos - cmdq asynchronous message by cos
+ * @param hwdev: device pointer to hwdev
+ * @param mod: mod type
+ * @param cmd: cmd
+ * @param cos_id: cos id
+ * @param buf_in: message buffer in
+ * @param channel: channel id
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_cmdq_async_cos(void *hwdev, u8 mod, u8 cmd, u8 cos_id,
+			  struct hinic3_cmd_buf *buf_in, u16 channel);
 
 /**
  * @brief hinic3_cmdq_detail_resp - cmdq direct message response
@@ -820,6 +850,7 @@ int hinic3_get_ceq_page_phy_addr(void *hwdev, u16 q_id,
 int hinic3_set_ceq_irq_disable(void *hwdev, u16 q_id);
 int hinic3_get_ceq_info(void *hwdev, u16 q_id, struct hinic3_ceq_info *ceq_info);
 
+int hinic3_init_single_ceq_status(void *hwdev, u16 q_id);
 void hinic3_set_api_stop(void *hwdev);
 
 int hinic3_activate_firmware(void *hwdev, u8 cfg_index);

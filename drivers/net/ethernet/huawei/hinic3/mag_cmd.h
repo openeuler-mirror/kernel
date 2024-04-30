@@ -1,73 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (c) Huawei Technologies Co., Ltd. 2021-2021. All rights reserved.
- * Description: serdes/mag cmd definition between driver and mpu
- * Author: ETH group
- * Create: 2021-07-30
- */
+/* Copyright(c) 2024 Huawei Technologies Co., Ltd */
 
-#ifndef MAG_CMD_H
-#define MAG_CMD_H
+#ifndef MAG_MPU_CMD_DEFS_H
+#define MAG_MPU_CMD_DEFS_H
 
-#include "mgmt_msg_base.h"
-
-/* serdes/mag消息命令字定义 */
-enum mag_cmd {
-	/* serdes命令字，统一封装所有serdes命令 */
-	SERDES_CMD_PROCESS = 0,
-
-	/* mag命令字，按功能划分 */
-	/* 端口配置相关 0-29 */
-	MAG_CMD_SET_PORT_CFG = 1,
-	MAG_CMD_SET_PORT_ADAPT = 2,
-	MAG_CMD_CFG_LOOPBACK_MODE = 3,
-
-	MAG_CMD_GET_PORT_ENABLE = 5,
-	MAG_CMD_SET_PORT_ENABLE = 6,
-	MAG_CMD_GET_LINK_STATUS = 7,
-	MAG_CMD_SET_LINK_FOLLOW = 8,
-	MAG_CMD_SET_PMA_ENABLE = 9,
-	MAG_CMD_CFG_FEC_MODE = 10,
-
-	MAG_CMD_CFG_AN_TYPE = 12, /* reserved for future use */
-	MAG_CMD_CFG_LINK_TIME = 13,
-
-	MAG_CMD_SET_PANGEA_ADAPT = 15,
-
-	/* bios link配置相关 30-49 */
-	MAG_CMD_CFG_BIOS_LINK_CFG = 31,
-	MAG_CMD_RESTORE_LINK_CFG = 32,
-	MAG_CMD_ACTIVATE_BIOS_LINK_CFG = 33,
-
-	/* 光模块、LED、PHY等外设配置管理 50-99 */
-	/* LED */
-	MAG_CMD_SET_LED_CFG = 50,
-
-	/* PHY */
-	MAG_CMD_GET_PHY_INIT_STATUS = 55, /* reserved for future use */
-
-	/* 光模块 */
-	MAG_CMD_GET_XSFP_INFO = 60,
-	MAG_CMD_SET_XSFP_ENABLE = 61,
-	MAG_CMD_GET_XSFP_PRESENT = 62,
-	MAG_CMD_SET_XSFP_RW = 63, /* sfp/qsfp single byte read/write, for equipment test */
-	MAG_CMD_CFG_XSFP_TEMPERATURE = 64,
-
-	/* 事件上报 100-149 */
-	MAG_CMD_WIRE_EVENT = 100,
-	MAG_CMD_LINK_ERR_EVENT = 101,
-
-	/* DFX、Counter相关 */
-	MAG_CMD_EVENT_PORT_INFO = 150,
-	MAG_CMD_GET_PORT_STAT = 151,
-	MAG_CMD_CLR_PORT_STAT = 152,
-	MAG_CMD_GET_PORT_INFO = 153,
-	MAG_CMD_GET_PCS_ERR_CNT = 154,
-	MAG_CMD_GET_MAG_CNT = 155,
-	MAG_CMD_DUMP_ANTRAIN_INFO = 156,
-
-	MAG_CMD_MAX = 0xFF
-};
+#include "mpu_cmd_base_defs.h"
 
 /* serdes cmd struct define */
 #define CMD_ARRAY_BUF_SIZE 64
@@ -352,6 +289,14 @@ struct mag_cmd_get_link_status {
 	u8 rsvd0[2];
 };
 
+/* firmware also use this cmd report bond event to driver */
+struct mag_cmd_get_bond_status {
+	struct mgmt_msg_head head;
+
+	u8 status; /* 0:bond down  1:bond up */
+	u8 rsvd0[3];
+};
+
 struct mag_cmd_set_pma_enable {
 	struct mgmt_msg_head head;
 
@@ -387,6 +332,75 @@ struct mag_cmd_cfg_fec_mode {
 	u8 opcode; /* 0:get fec mode  1:set fec mode */
 	u8 fec;
 	u8 rsvd0;
+};
+
+/* speed */
+#define PANGEA_ADAPT_10G_BITMAP 0xd
+#define PANGEA_ADAPT_25G_BITMAP 0x72
+#define PANGEA_ADAPT_40G_BITMAP 0x680
+#define PANGEA_ADAPT_100G_BITMAP 0x1900
+
+/* speed and fec */
+#define PANGEA_10G_NO_BITMAP 0x8
+#define PANGEA_10G_BASE_BITMAP 0x4
+#define PANGEA_25G_NO_BITMAP 0x10
+#define PANGEA_25G_BASE_BITMAP 0x20
+#define PANGEA_25G_RS_BITMAP 0x40
+#define PANGEA_40G_NO_BITMAP 0x400
+#define PANGEA_40G_BASE_BITMAP 0x200
+#define PANGEA_100G_NO_BITMAP 0x800
+#define PANGEA_100G_RS_BITMAP 0x1000
+
+/* adapt or fec */
+#define PANGEA_ADAPT_ADAPT_BITMAP 0x183
+#define PANGEA_ADAPT_NO_BITMAP 0xc18
+#define PANGEA_ADAPT_BASE_BITMAP 0x224
+#define PANGEA_ADAPT_RS_BITMAP 0x1040
+
+/* default cfg */
+#define PANGEA_ADAPT_CFG_10G_CR 0x200d
+#define PANGEA_ADAPT_CFG_10G_SRLR 0xd
+#define PANGEA_ADAPT_CFG_25G_CR 0x207f
+#define PANGEA_ADAPT_CFG_25G_SRLR 0x72
+#define PANGEA_ADAPT_CFG_40G_CR4 0x2680
+#define PANGEA_ADAPT_CFG_40G_SRLR4 0x680
+#define PANGEA_ADAPT_CFG_100G_CR4 0x3f80
+#define PANGEA_ADAPT_CFG_100G_SRLR4 0x1900
+
+union pangea_adapt_bitmap_u {
+	struct {
+		u32 adapt_10g : 1;  /* [0]   adapt_10g  */
+		u32 adapt_25g : 1;  /* [1]   adapt_25g  */
+		u32 base_10g : 1;   /* [2]   base_10g   */
+		u32 no_10g : 1;	 /* [3]   no_10g	 */
+		u32 no_25g : 1;	 /* [4]   no_25g	 */
+		u32 base_25g : 1;   /* [5]   base_25g   */
+		u32 rs_25g : 1;	 /* [6]   rs_25g	 */
+		u32 adapt_40g : 1;  /* [7]   adapt_40g  */
+		u32 adapt_100g : 1; /* [8]   adapt_100g */
+		u32 base_40g : 1;   /* [9]   base_40g   */
+		u32 no_40g : 1;	 /* [10]  no_40g	 */
+		u32 no_100g : 1;	/* [11]  no_100g	*/
+		u32 rs_100g : 1;	/* [12]  rs_100g	*/
+		u32 auto_neg : 1;   /* [13]  auto_neg   */
+		u32 rsvd0 : 18;	 /* [31:14] reserved */
+	} bits;
+
+	u32 value;
+};
+
+#define PANGEA_ADAPT_GET 0x0
+#define PANGEA_ADAPT_SET 0x1
+struct mag_cmd_set_pangea_adapt {
+	struct mgmt_msg_head head;
+
+	u16 port_id;
+	u8 opcode; /* 0:get adapt info  1:cfg adapt info */
+	u8 wire_type;
+
+	union pangea_adapt_bitmap_u cfg_bitmap;
+	union pangea_adapt_bitmap_u cur_bitmap;
+	u32 rsvd1[3];
 };
 
 struct mag_cmd_cfg_bios_link_cfg {
@@ -621,22 +635,21 @@ struct mag_cmd_event_port_info {
 	u8 event_type;
 	u8 rsvd0[2];
 
-	// 光模块相关
 	u8 vendor_name[XSFP_VENDOR_NAME_LEN];
-	u32 port_type;     /* fiber / copper */
-	u32 port_sub_type; /* sr / lr */
-	u32 cable_length;  /* 1/3/5m */
-	u8 cable_temp;     /* 温度 */
-	u8 max_speed;      /* 光模块最大速率 */
-	u8 sfp_type;       /* sfp/qsfp */
+	u32 port_type;		/* fiber / copper */
+	u32 port_sub_type;	/* sr / lr */
+	u32 cable_length;	/* 1/3/5m */
+	u8 cable_temp;		/* temp */
+	u8 max_speed;		/* Maximum rate of an optical module */
+	u8 sfp_type;		/* sfp/qsfp */
 	u8 rsvd1;
-	u32 power[4]; /* 光功率 */
+	u32 power[4];		/* Optical Power */
 
 	u8 an_state;
 	u8 fec;
 	u16 speed;
 
-	u8 gpio_insert; /* 0:present  1:absent */
+	u8 gpio_insert;		/* 0:present  1:absent */
 	u8 alos;
 	u8 rx_los;
 	u8 pma_ctrl;
@@ -755,6 +768,98 @@ struct mag_cmd_port_stats {
 	u64 mac_rx_unfilter_pkt_num;
 };
 
+struct mag_port_stats {
+	u64 tx_frag_pkts_port;
+	u64 tx_under_frame_pkts_port;
+	u64 tx_under_min_pkts_port;
+	u64 tx_64_oct_pkts_port;
+	u64 tx_127_oct_pkts_port;
+	u64 tx_255_oct_pkts_port;
+	u64 tx_511_oct_pkts_port;
+	u64 tx_1023_oct_pkts_port;
+	u64 tx_1518_oct_pkts_port;
+	u64 tx_2047_oct_pkts_port;
+	u64 tx_4095_oct_pkts_port;
+	u64 tx_8191_oct_pkts_port;
+	u64 tx_9216_oct_pkts_port;
+	u64 tx_12287_oct_pkts_port;
+	u64 tx_16383_oct_pkts_port;
+	u64 tx_1519_to_max_bad_pkts_port;
+	u64 tx_1519_to_max_good_pkts_port;
+	u64 tx_oversize_pkts_port;
+	u64 tx_jabber_pkts_port;
+	u64 tx_bad_pkts_port;
+	u64 tx_bad_octs_port;
+	u64 tx_good_pkts_port;
+	u64 tx_good_octs_port;
+	u64 tx_total_pkts_port;
+	u64 tx_total_octs_port;
+	u64 tx_unicast_pkts_port;
+	u64 tx_multicast_pkts_port;
+	u64 tx_broadcast_pkts_port;
+	u64 tx_pause_pkts_port;
+	u64 tx_pfc_pkts_port;
+	u64 tx_pri_0_pkts_port;
+	u64 tx_pri_1_pkts_port;
+	u64 tx_pri_2_pkts_port;
+	u64 tx_pri_3_pkts_port;
+	u64 tx_pri_4_pkts_port;
+	u64 tx_pri_5_pkts_port;
+	u64 tx_pri_6_pkts_port;
+	u64 tx_pri_7_pkts_port;
+	u64 tx_mac_control_pkts_port;
+	u64 tx_y1731_pkts_port;
+	u64 tx_1588_pkts_port;
+	u64 tx_error_pkts_port;
+	u64 tx_app_good_pkts_port;
+	u64 tx_app_bad_pkts_port;
+	u64 rx_frag_pkts_port;
+	u64 rx_under_frame_pkts_port;
+	u64 rx_under_min_pkts_port;
+	u64 rx_64_oct_pkts_port;
+	u64 rx_127_oct_pkts_port;
+	u64 rx_255_oct_pkts_port;
+	u64 rx_511_oct_pkts_port;
+	u64 rx_1023_oct_pkts_port;
+	u64 rx_1518_oct_pkts_port;
+	u64 rx_2047_oct_pkts_port;
+	u64 rx_4095_oct_pkts_port;
+	u64 rx_8191_oct_pkts_port;
+	u64 rx_9216_oct_pkts_port;
+	u64 rx_12287_oct_pkts_port;
+	u64 rx_16383_oct_pkts_port;
+	u64 rx_1519_to_max_bad_pkts_port;
+	u64 rx_1519_to_max_good_pkts_port;
+	u64 rx_oversize_pkts_port;
+	u64 rx_jabber_pkts_port;
+	u64 rx_bad_pkts_port;
+	u64 rx_bad_octs_port;
+	u64 rx_good_pkts_port;
+	u64 rx_good_octs_port;
+	u64 rx_total_pkts_port;
+	u64 rx_total_octs_port;
+	u64 rx_unicast_pkts_port;
+	u64 rx_multicast_pkts_port;
+	u64 rx_broadcast_pkts_port;
+	u64 rx_pause_pkts_port;
+	u64 rx_pfc_pkts_port;
+	u64 rx_pri_0_pkts_port;
+	u64 rx_pri_1_pkts_port;
+	u64 rx_pri_2_pkts_port;
+	u64 rx_pri_3_pkts_port;
+	u64 rx_pri_4_pkts_port;
+	u64 rx_pri_5_pkts_port;
+	u64 rx_pri_6_pkts_port;
+	u64 rx_pri_7_pkts_port;
+	u64 rx_mac_control_pkts_port;
+	u64 rx_y1731_pkts_port;
+	u64 rx_sym_err_pkts_port;
+	u64 rx_fcs_err_pkts_port;
+	u64 rx_app_good_pkts_port;
+	u64 rx_app_bad_pkts_port;
+	u64 rx_unfilter_pkts_port;
+};
+
 struct mag_cmd_port_stats_info {
 	struct mgmt_msg_head head;
 
@@ -799,20 +904,19 @@ struct mag_cmd_dump_antrain_info {
 };
 
 #define MAG_SFP_PORT_NUM 24
-/* 芯片光模块温度结构体定义 */
 struct mag_cmd_sfp_temp_in_info {
 	struct mgmt_msg_head head; /* 8B */
-	u8 opt_type;               /* 0:read operation 1:cfg operation */
+	u8 opt_type;	/* 0:read operation 1:cfg operation */
 	u8 rsv[3];
-	s32 max_temp; /* 芯片光模块阈值 */
-	s32 min_temp; /* 芯片光模块阈值 */
+	s32 max_temp;	/* Chip optical module threshold */
+	s32 min_temp;	/* Chip optical module threshold */
 };
 
 struct mag_cmd_sfp_temp_out_info {
-	struct mgmt_msg_head head;           /* 8B */
-	s16 sfp_temp_data[MAG_SFP_PORT_NUM]; /* 读出的温度 */
-	s32 max_temp;                        /* 芯片光模块阈值 */
-	s32 min_temp;                        /* 芯片光模块阈值 */
+	struct mgmt_msg_head head;		/* 8B */
+	s16 sfp_temp_data[MAG_SFP_PORT_NUM];	/* Temperature read */
+	s32 max_temp;				/* Chip optical module threshold */
+	s32 min_temp;				/* Chip optical module threshold */
 };
 
 #endif

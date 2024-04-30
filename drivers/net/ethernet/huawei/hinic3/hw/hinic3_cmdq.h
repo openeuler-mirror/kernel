@@ -8,11 +8,16 @@
 #include <linux/completion.h>
 #include <linux/spinlock.h>
 
-#include "comm_msg_intf.h"
+#include "mpu_inband_cmd_defs.h"
 #include "hinic3_hw.h"
 #include "hinic3_wq.h"
 #include "hinic3_common.h"
 #include "hinic3_hwdev.h"
+
+struct dma_pool {
+	unsigned int size;
+	void *dev_hdl;
+};
 
 #define HINIC3_SCMD_DATA_LEN		16
 
