@@ -351,7 +351,7 @@ parse_server_interfaces(struct network_interface_info_ioctl_rsp *buf,
 
 	bytes_left = buf_len;
 	p = buf;
-	while (bytes_left >= sizeof(*p)) {
+	while (bytes_left >= (ssize_t)sizeof(*p)) {
 		nb_iface++;
 		next = le32_to_cpu(p->Next);
 		if (!next) {
@@ -385,7 +385,7 @@ parse_server_interfaces(struct network_interface_info_ioctl_rsp *buf,
 	info = *iface_list;
 	bytes_left = buf_len;
 	p = buf;
-	while (bytes_left >= sizeof(*p)) {
+	while (bytes_left >= (ssize_t)sizeof(*p)) {
 		info->speed = le64_to_cpu(p->LinkSpeed);
 		info->rdma_capable = le32_to_cpu(p->Capability & RDMA_CAPABLE);
 		info->rss_capable = le32_to_cpu(p->Capability & RSS_CAPABLE);
