@@ -161,6 +161,7 @@ static inline struct task_struct *alloc_task_struct_node(int node)
 
 static inline void free_task_struct(struct task_struct *tsk)
 {
+	kfree(tsk->_resvd);
 	kmem_cache_free(task_struct_cachep, tsk);
 }
 #endif
@@ -845,6 +846,18 @@ void set_task_stack_end_magic(struct task_struct *tsk)
 	*stackend = STACK_END_MAGIC;	/* for overflow detection */
 }
 
+static bool dup_resvd_task_struct(struct task_struct *dst,
+				  struct task_struct *orig, int node)
+{
+	dst->_resvd = kzalloc_node(sizeof(struct task_struct_resvd),
+					  GFP_KERNEL, node);
+	if (!dst->_resvd)
+		return false;
+
+	dst->_resvd->task = dst;
+	return true;
+}
+
 static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 {
 	struct task_struct *tsk;
@@ -857,6 +870,12 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	tsk = alloc_task_struct_node(node);
 	if (!tsk)
 		return NULL;
+	/*
+	 * before proceeding, we need to make tsk->_resvd = NULL,
+	 * otherwise the error paths below, if taken, might end up causing
+	 * a double-free for task_struct_resvd extension object.
+	 */
+	WRITE_ONCE(tsk->_resvd, NULL);
 
 	stack = alloc_thread_stack_node(tsk, node);
 	if (!stack)
@@ -882,7 +901,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	atomic_set(&tsk->stack_refcount, 1);
 #endif
 
-	if (err)
+	if (err || !dup_resvd_task_struct(tsk, orig, node))
 		goto free_stack;
 
 #ifdef CONFIG_SECCOMP

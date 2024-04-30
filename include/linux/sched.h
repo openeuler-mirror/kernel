@@ -620,6 +620,23 @@ typedef union {
 } fork_pid_t;
 #endif
 
+/*
+ * struct task_struct_resvd - KABI extension struct
+ */
+struct task_struct_resvd {
+	/*
+	 * pointer back to the main task_struct
+	 */
+	struct task_struct	*task;
+
+#ifdef CONFIG_MMU
+	struct timer_list	oom_reaper_timer;
+#endif
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+	struct sched_grid_qos	*grid_qos;
+#endif
+};
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -1279,11 +1296,7 @@ struct task_struct {
 #endif
 
 #if !defined(__GENKSYMS__)
-#if defined(CONFIG_QOS_SCHED_SMART_GRID)
-	struct sched_grid_qos *grid_qos;
-#else
-	KABI_RESERVE(8)
-#endif
+	struct task_struct_resvd  *_resvd;
 #else
 	KABI_RESERVE(8)
 #endif
