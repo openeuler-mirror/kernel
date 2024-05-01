@@ -14128,6 +14128,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_csv3_sp_insert_dup);
 EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_csv3_sp_insert);
 EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_csv3_sp_hit);
 EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_csv3_sp_remove);
+EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_rmp_fault);
 
 static int __init kvm_x86_init(void)
 {
