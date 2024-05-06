@@ -175,8 +175,7 @@ static void init_dca_umem_states(struct hns_dca_page_state *states, int count,
 	int i = 0;
 
 	pre_addr = 0;
-	rdma_for_each_block(umem->sg_head.sgl, &biter,
-			    umem->sg_head.nents, HNS_HW_PAGE_SIZE) {
+	rdma_umem_for_each_dma_block(umem, &biter, HNS_HW_PAGE_SIZE) {
 		cur_addr = rdma_block_iter_dma_address(&biter);
 		if (i < count) {
 			if (cur_addr - pre_addr != HNS_HW_PAGE_SIZE)
@@ -276,8 +275,7 @@ static int get_alloced_umem_proc(struct dca_mem *mem, int index, void *param)
 	struct ib_block_iter biter;
 	u32 i = 0;
 
-	rdma_for_each_block(umem->sg_head.sgl, &biter,
-			    umem->sg_head.nents, HNS_HW_PAGE_SIZE) {
+	rdma_umem_for_each_dma_block(umem, &biter, HNS_HW_PAGE_SIZE) {
 		if (dca_page_is_allocated(&states[i], attr->buf_id)) {
 			attr->pages[attr->total++] =
 					rdma_block_iter_dma_address(&biter);
