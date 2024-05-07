@@ -2678,7 +2678,7 @@ static int update_exclusive_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 		update_partition_sd_lb(cs, old_prs);
 
 	free_cpumasks(NULL, &tmp);
-	return 0;
+	return retval;
 }
 
 /*
