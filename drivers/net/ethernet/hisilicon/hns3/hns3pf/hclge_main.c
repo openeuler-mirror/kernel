@@ -12668,13 +12668,13 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	ret = hclge_update_port_info(hdev);
 	if (ret)
-		goto err_sysfs_unregister;
+		goto err_ptp_uninit;
 
 #if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	ret = hclge_set_fastpath_cmd(ae_dev, true);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to init fastpath, ret = %d\n", ret);
-		goto err_sysfs_unregister;
+		goto err_ptp_uninit;
 	}
 #endif
 
@@ -12728,6 +12728,8 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 err_sysfs_unregister:
 	hclge_unregister_sysfs(hdev);
+err_ptp_uninit:
+	hclge_ptp_uninit(hdev);
 err_mdiobus_unreg:
 	if (hdev->hw.mac.phydev)
 		mdiobus_unregister(hdev->hw.mac.mdio_bus);
