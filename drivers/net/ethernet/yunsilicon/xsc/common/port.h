@@ -11,7 +11,9 @@ enum xsc_module_id {
 	XSC_MODULE_ID_QSFP             = 0xC,
 	XSC_MODULE_ID_QSFP_PLUS        = 0xD,
 	XSC_MODULE_ID_QSFP28           = 0x11,
-	XSC_MODULE_ID_DSFP		= 0x1B,
+	XSC_MODULE_ID_QSFP_DD          = 0x18,
+	XSC_MODULE_ID_DSFP		       = 0x1B,
+	XSC_MODULE_ID_QSFP_PLUS_CMIS   = 0x1E,
 };
 
 #define XSC_EEPROM_MAX_BYTES			32

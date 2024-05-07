@@ -110,9 +110,9 @@ struct xsc_page_cache {
 };
 
 struct xsc_rq;
-struct xsc_cqe64;
+struct xsc_cqe;
 typedef void (*xsc_fp_handle_rx_cqe)(struct xsc_cqwq *cqwq, struct xsc_rq *rq,
-				     struct xsc_cqe64 *cqe64);
+				     struct xsc_cqe *cqe);
 typedef bool (*xsc_fp_post_rx_wqes)(struct xsc_rq *rq);
 typedef void (*xsc_fp_dealloc_wqe)(struct xsc_rq *rq, u16 ix);
 typedef struct sk_buff * (*xsc_fp_skb_from_cqe)(struct xsc_rq *rq,
@@ -241,13 +241,13 @@ struct xsc_wqe_ctrl_seg {
 	u32                      rsv : 30;
 };
 
-static inline u8 get_cqe_opcode(struct xsc_cqe64 *cqe)
+static inline u8 get_cqe_opcode(struct xsc_cqe *cqe)
 {
 	return cqe->msg_opcode;
 }
 
 static inline void xsc_dump_err_cqe(struct xsc_core_device *dev,
-				    struct xsc_cqe64 *cqe)
+				    struct xsc_cqe *cqe)
 {
 	print_hex_dump(KERN_WARNING, "", DUMP_PREFIX_OFFSET, 16, 1, cqe,
 		       sizeof(*cqe), false);

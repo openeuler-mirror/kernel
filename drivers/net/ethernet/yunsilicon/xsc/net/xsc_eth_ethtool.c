@@ -10,8 +10,8 @@
 #include "xsc_eth_ethtool.h"
 #include "xsc_eth.h"
 #include "common/xsc_cmd.h"
+#include "common/xsc_pp.h"
 #include "common/port.h"
-#include "../pci/fw/xsc_tbm.h"
 
 typedef int (*xsc_pflag_handler)(struct net_device *dev, bool enable);
 
@@ -78,7 +78,7 @@ static int xsc_test_link_state(struct xsc_adapter *adapter)
 
 static int xsc_test_link_speed(struct xsc_adapter *adapter)
 {
-	struct xsc_event_linkinfo_resp linkinfo;
+	struct xsc_event_linkinfo linkinfo;
 
 	if (xsc_eth_get_link_info(adapter, &linkinfo))
 		return 1;
@@ -182,8 +182,8 @@ static int xsc_get_module_info(struct net_device *netdev,
 	int size_read = 0;
 	u8 data[4] = {0};
 
-	size_read = xsc_query_module_eeprom(xdev, 0, 2, data);
-	if (size_read < 2)
+	size_read = xsc_query_module_eeprom(xdev, 0, 3, data);
+	if (size_read < 3)
 		return -EIO;
 
 	/* data[0] = identifier byte */
@@ -206,6 +206,19 @@ static int xsc_get_module_info(struct net_device *netdev,
 	case XSC_MODULE_ID_SFP:
 		modinfo->type       = ETH_MODULE_SFF_8472;
 		modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
+		break;
+	case XSC_MODULE_ID_QSFP_DD:
+	case XSC_MODULE_ID_QSFP_PLUS_CMIS:
+		modinfo->type       = ETH_MODULE_SFF_8636;
+		/* Verify if module EEPROM is a flat memory. In case of flat
+		 * memory only page 00h (0-255 bytes) can be read. Otherwise
+		 * upper pages 01h and 02h can also be read. Upper pages 10h
+		 * and 11h are currently not supported by the driver.
+		 */
+		if (data[2] & 0x80)
+			modinfo->eeprom_len = ETH_MODULE_SFF_8636_LEN;
+		else
+			modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
 		break;
 	default:
 		netdev_err(priv->netdev, "%s: cable type not recognized:0x%x\n",
@@ -258,6 +271,33 @@ u32 xsc_get_priv_flags(struct net_device *dev)
 	return priv->nic_param.pflags;
 }
 
+static void xsc_set_drv_fw_version(struct ethtool_drvinfo *info, struct xsc_core_device *xdev)
+{
+	u8 fw_ver_major = xdev->fw_version_major;
+	u8 fw_ver_minor = xdev->fw_version_minor;
+	u16 fw_ver_patch = xdev->fw_version_patch;
+	u32 fw_ver_tweak = xdev->fw_version_tweak;
+	u8 fw_ver_extra_flag = xdev->fw_version_extra_flag;
+
+	if (fw_ver_tweak == 0) {
+		if (fw_ver_extra_flag == 0) {
+			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u",
+				 fw_ver_major, fw_ver_minor, fw_ver_patch);
+		} else {
+			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u-dirty",
+				 fw_ver_major, fw_ver_minor, fw_ver_patch);
+		}
+	} else {
+		if (fw_ver_extra_flag == 0) {
+			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u+%u",
+				 fw_ver_major, fw_ver_minor, fw_ver_patch, fw_ver_tweak);
+		} else {
+			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u+%u-dirty",
+				 fw_ver_major, fw_ver_minor, fw_ver_patch, fw_ver_tweak);
+		}
+	}
+}
+
 static void xsc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	struct xsc_adapter *adapter = netdev_priv(dev);
@@ -273,34 +313,39 @@ static void xsc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info
 		snprintf(info->version, sizeof(info->version), "%d.%d.%d.%d.H%d",
 			 BRANCH_VERSION, MAJOR_VERSION, MINOR_VERSION, BUILD_VERSION, HOTFIX_NUM);
 
-	if (adapter->xdev->hotfix_num >= 0x27)
-		snprintf(info->fw_version,
-			 sizeof(info->fw_version),
-			 "%x.%x.%x.%s%s%s%s%s%s%s%s",
-			 adapter->xdev->chip_ver_h,
-			 adapter->xdev->hotfix_num,
-			 adapter->xdev->chip_ver_l,
-			 fpga_type_name[ff->fpga_type],
-			 hps_ddr_name[ff->hps_ddr],
-			 onchip_ft_name[ff->onchip_ft],
-			 rdma_icrc_name[ff->rdma_icrc],
-			 ma_xbar_name[ff->ma_xbar],
-			 anlt_fec_name[ff->anlt_fec],
-			 pp_tbl_dma_name[ff->pp_tbl_dma],
-			 pct_exp_name[ff->pct_exp]);
-	else
-		snprintf(info->fw_version,
-			 sizeof(info->fw_version),
-			 "%x.%x.%x.%s%s%s%s%s%s",
-			 adapter->xdev->chip_ver_h,
-			 adapter->xdev->hotfix_num,
-			 adapter->xdev->chip_ver_l,
-			 fpga_type_name[ff->fpga_type],
-			 hps_ddr_name[ff->hps_ddr],
-			 onchip_ft_name[ff->onchip_ft],
-			 rdma_icrc_name[ff->rdma_icrc],
-			 ma_xbar_name[ff->ma_xbar],
-			 anlt_fec_name[ff->anlt_fec]);
+	if (xsc_chip_type(adapter->xdev) == XSC_CHIP_MS ||
+	    xsc_chip_type(adapter->xdev) == XSC_CHIP_MV) {
+		xsc_set_drv_fw_version(info, adapter->xdev);
+	} else {
+		if (adapter->xdev->hotfix_num >= 0x27)
+			snprintf(info->fw_version,
+				 sizeof(info->fw_version),
+				 "%x.%x.%x.%s%s%s%s%s%s%s%s",
+				 adapter->xdev->chip_ver_h,
+				 adapter->xdev->hotfix_num,
+				 adapter->xdev->chip_ver_l,
+				 fpga_type_name[ff->fpga_type],
+				 hps_ddr_name[ff->hps_ddr],
+				 onchip_ft_name[ff->onchip_ft],
+				 rdma_icrc_name[ff->rdma_icrc],
+				 ma_xbar_name[ff->ma_xbar],
+				 anlt_fec_name[ff->anlt_fec],
+				 pp_tbl_dma_name[ff->pp_tbl_dma],
+				 pct_exp_name[ff->pct_exp]);
+		else
+			snprintf(info->fw_version,
+				 sizeof(info->fw_version),
+				 "%x.%x.%x.%s%s%s%s%s%s",
+				 adapter->xdev->chip_ver_h,
+				 adapter->xdev->hotfix_num,
+				 adapter->xdev->chip_ver_l,
+				 fpga_type_name[ff->fpga_type],
+				 hps_ddr_name[ff->hps_ddr],
+				 onchip_ft_name[ff->onchip_ft],
+				 rdma_icrc_name[ff->rdma_icrc],
+				 ma_xbar_name[ff->ma_xbar],
+				 anlt_fec_name[ff->anlt_fec]);
+	}
 	strlcpy(info->bus_info, pci_name(adapter->pdev), sizeof(info->bus_info));
 }
 
@@ -720,8 +765,8 @@ static int xsc_set_rss_hash_opt(struct xsc_adapter *priv,
 		priv->rss_params.rx_hash_fields[tt] = rx_hash_field;
 	}
 
-	xsc_core_info(priv->xdev, "%s: flow_type=%d, change=0x%x, hash_tmpl=0x%x\n",
-		      __func__, nfc->flow_type, change, rx_hash_field);
+	xsc_core_info(priv->xdev, "flow_type=%d, change=0x%x, hash_tmpl=0x%x\n",
+		      nfc->flow_type, change, rx_hash_field);
 	if (change)
 		ret = xsc_eth_modify_nic_hca(priv, change);
 
@@ -837,7 +882,7 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 				  struct ethtool_link_ksettings *cmd)
 {
 	struct xsc_adapter *adapter = netdev_priv(netdev);
-	struct xsc_event_linkinfo_resp linkinfo;
+	struct xsc_event_linkinfo linkinfo;
 
 	if (xsc_eth_get_link_info(adapter, &linkinfo))
 		return -EINVAL;
@@ -845,7 +890,38 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 	cmd->base.port = linkinfo.port;
 	cmd->base.duplex = linkinfo.duplex;
 	cmd->base.autoneg = linkinfo.autoneg;
-	cmd->base.speed = linkinfo.linkspeed;
+	switch (linkinfo.linkspeed) {
+	case MODULE_SPEED_UNKNOWN:
+		cmd->base.speed = LINKSPEED_MODE_UNKNOWN;
+		break;
+	case MODULE_SPEED_10G:
+		cmd->base.speed = LINKSPEED_MODE_10G;
+		break;
+	case MODULE_SPEED_25G:
+		cmd->base.speed = LINKSPEED_MODE_25G;
+		break;
+	case MODULE_SPEED_40G_R4:
+		cmd->base.speed = LINKSPEED_MODE_40G;
+		break;
+	case MODULE_SPEED_50G_R:
+	case MODULE_SPEED_50G_R2:
+		cmd->base.speed = LINKSPEED_MODE_50G;
+		break;
+	case MODULE_SPEED_100G_R2:
+	case MODULE_SPEED_100G_R4:
+		cmd->base.speed = LINKSPEED_MODE_100G;
+		break;
+	case MODULE_SPEED_200G_R4:
+	case MODULE_SPEED_200G_R8:
+		cmd->base.speed = LINKSPEED_MODE_200G;
+		break;
+	case MODULE_SPEED_400G_R8:
+		cmd->base.speed = LINKSPEED_MODE_400G;
+		break;
+	default:
+		cmd->base.speed = LINKSPEED_MODE_25G;
+		break;
+	}
 
 	ethtool_link_ksettings_zero_link_mode(cmd, supported);
 	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
@@ -861,6 +937,42 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 		  (unsigned long *)&linkinfo.advertising, __ETHTOOL_LINK_MODE_MASK_NBITS);
 
 	return 0;
+}
+
+static int xsc_set_link_ksettings(struct net_device *netdev,
+				  const struct ethtool_link_ksettings *cmd)
+{
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	struct xsc_event_linkinfo linkinfo;
+	int err = 0, i;
+
+	if (!adapter) {
+		pr_err("%s fail to find adapter\n", __func__);
+		return -EINVAL;
+	}
+
+	memset(&linkinfo, 0, sizeof(struct xsc_event_linkinfo));
+
+	linkinfo.port = cmd->base.port;
+	linkinfo.duplex = cmd->base.duplex;
+	linkinfo.autoneg = cmd->base.autoneg;
+	linkinfo.linkspeed = cpu_to_be32(cmd->base.speed);
+
+	bitmap_copy((unsigned long *)linkinfo.supported_speed,
+		    cmd->link_modes.supported, __ETHTOOL_LINK_MODE_MASK_NBITS);
+	bitmap_copy((unsigned long *)linkinfo.advertising_speed,
+		    cmd->link_modes.advertising, __ETHTOOL_LINK_MODE_MASK_NBITS);
+
+	for (i = 0; i < ARRAY_SIZE(linkinfo.supported_speed); i++) {
+		linkinfo.supported_speed[i] = be64_to_cpu(linkinfo.supported_speed[i]);
+		linkinfo.advertising_speed[i] = be64_to_cpu(linkinfo.advertising_speed[i]);
+	}
+
+	err = xsc_eth_set_link_info(adapter, &linkinfo);
+	if (err)
+		xsc_core_err(adapter->xdev, "fail to set link info err %d\n", err);
+
+	return err;
 }
 
 static int xsc_set_phys_id(struct net_device *dev, enum ethtool_phys_id_state state)
@@ -883,6 +995,51 @@ static int xsc_set_phys_id(struct net_device *dev, enum ethtool_phys_id_state st
 	return ret;
 }
 
+static int xsc_set_fecparam(struct net_device *netdev,
+			    struct ethtool_fecparam *fec)
+{
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	struct xsc_event_modify_fecparam_mbox_in in;
+	struct xsc_event_modify_fecparam_mbox_out out;
+	u32 new_fec = fec->fec;
+	int err = 0;
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_FEC_PARAM);
+	in.fec = cpu_to_be32(new_fec);
+
+	err = xsc_cmd_exec(adapter->xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(adapter->xdev, "failed to set fec param, err=%d, status=%d\n",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	return err;
+}
+
+static int xsc_get_fecparam(struct net_device *netdev,
+			    struct ethtool_fecparam *fec)
+{
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	struct xsc_event_query_fecparam_mbox_in in;
+	struct xsc_event_query_fecparam_mbox_out out;
+	int err = 0;
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_FEC_PARAM);
+
+	err = xsc_cmd_exec(adapter->xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(adapter->xdev, "failed to get fec param, err=%d, status=%d\n",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	fec->active_fec = be32_to_cpu(out.active_fec);
+	fec->fec = be32_to_cpu(out.fec_cfg);
+
+	return err;
+}
+
 static const struct ethtool_ops xsc_ethtool_ops = {
 	.get_drvinfo = xsc_get_drvinfo,
 	.get_link = ethtool_op_get_link,
@@ -895,7 +1052,7 @@ static const struct ethtool_ops xsc_ethtool_ops = {
 	.get_channels = xsc_get_channels,
 	.get_ts_info = NULL,
 	.get_link_ksettings = xsc_get_link_ksettings,
-	.set_link_ksettings = NULL,
+	.set_link_ksettings = xsc_set_link_ksettings,
 	.get_rxfh_key_size = xsc_get_rxfh_key_size,
 	.get_rxfh_indir_size = xsc_get_rxfh_indir_size,
 	.get_rxfh = xsc_get_rxfh,
@@ -910,6 +1067,8 @@ static const struct ethtool_ops xsc_ethtool_ops = {
 	.set_msglevel = xsc_set_msglevel,
 	.self_test    = xsc_self_test,
 	.set_phys_id  = xsc_set_phys_id,
+	.get_fecparam = xsc_get_fecparam,
+	.set_fecparam  = xsc_set_fecparam,
 };
 
 void eth_set_ethtool_ops(struct net_device *dev)

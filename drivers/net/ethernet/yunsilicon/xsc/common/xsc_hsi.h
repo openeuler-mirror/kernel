@@ -17,10 +17,6 @@
 #define NEED_CREATE_RX_THREAD
 #endif
 
-#ifndef RUN_WITH_PSV
-#define XSC_MSIX_BAR_EMUL
-#endif
-
 #define PAGE_SHIFT_4K          12
 #define PAGE_SIZE_4K           (_AC(1, UL) << PAGE_SHIFT_4K)
 #define PAGE_MASK_4K           (~(PAGE_SIZE_4K - 1))
@@ -223,31 +219,6 @@ struct xsc_cqe {
 	u8		owner:1;
 };
 
-struct xsc_cqe64 {
-	union {
-		u8		msg_opcode;
-		struct {
-			u8		error_code:7;
-			u8		is_error:1;
-		};
-	};
-	__le32		qp_id:15;
-	u8		rsv1:1;
-	u8		se:1;
-	u8		has_pph:1;
-	u8		type:1;
-	u8		with_immdt:1;
-	u8		csum_err:4;
-	__le32		imm_data;
-	__le32		msg_len;
-	__le32		vni;	//rx hash
-	__le64		ts:48;
-	__le16		wqe_id;
-	__le16		rsv[3];
-	__le16		rsv2:15;
-	u8		owner:1;
-};
-
 /* CQ doorbell */
 union xsc_cq_doorbell {
 	struct{
@@ -377,20 +348,8 @@ union xsc_db_data {
 
 #define XSC_BROADCASTID_MAX		2
 #define XSC_TBM_BOMT_DESTINFO_SHIFT	(XSC_BROADCASTID_MAX / 2)
-#define XSC_TBM_BOMT_BROADCASTID_MASK	(XSC_BROADCASTID_MAX - 1)
 
 /* Doorbell registers */
-//
-//#define SQM_DB_NEXT_PID_OFFSET 0
-//#define RQM_DB_NEXT_PID_OFFSET 0
-//#define CQM_DB_NEXT_CID_OFFSET 0
-//
-//#define XSC_SEND_WQE_RING_DEPTH_MIN	16
-//#define XSC_RECV_WQE_RING_DEPTH_MIN	2
-//#define XSC_CQE_RING_DEPTH_MIN		2
-//#define XSC_SEND_WQE_RING_DEPTH_MAX	128
-//#define XSC_RECV_WQE_RING_DEPTH_MAX	128
-//#define XSC_CQE_RING_DEPTH_MAX		128
 
 enum {
 	XSC_EQ_VEC_ASYNC		= 0,
@@ -411,12 +370,6 @@ struct rxe_bth {
 struct rxe_deth {
 	__be32			qkey;
 	__be32			sqp;
-};
-
-struct xsc_broadcast_attr {
-	u16 broadcast_id;
-	u16 bc_membernum;
-	u16 vf_num;
 };
 
 #endif /* XSC_HSI_H */

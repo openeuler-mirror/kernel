@@ -189,7 +189,7 @@ static int __xsc_modify_nic_vport_mac_address(struct xsc_core_device *dev,
 		in.vport_number = cpu_to_be16(vport);
 	}
 
-	if (xsc_get_pp_bypass_res(dev))
+	if (xsc_get_pp_bypass_res(dev, false))
 		caps |= BIT(XSC_TBM_CAP_PP_BYPASS);
 	caps_mask |= BIT(XSC_TBM_CAP_PP_BYPASS);
 	in.caps = cpu_to_be16(caps);

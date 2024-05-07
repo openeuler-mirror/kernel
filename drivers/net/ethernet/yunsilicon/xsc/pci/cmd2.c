@@ -397,6 +397,15 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_QUERY_LINK_INFO:
 		return "QUERY_LINK_INFO";
 
+	case XSC_CMD_OP_MODIFY_LINK_INFO:
+		return "MODIFY_LINK_INFO";
+
+	case XSC_CMD_OP_MODIFY_FEC_PARAM:
+		return "MODIFY_FEC_PARAM";
+
+	case XSC_CMD_OP_QUERY_FEC_PARAM:
+		return "QUERY_FEC_PARAM";
+
 	case XSC_CMD_OP_LAG_CREATE:
 		return "LAG_CREATE";
 
@@ -595,6 +604,9 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_USER_EMU_CMD:
 		return "USER_EMU_CMD";
 
+	case XSC_CMD_OP_QUERY_PFC_PRIO_STATS:
+		return "QUERY_PFC_PRIO_STATS";
+
 	default: return "unknown command opcode";
 	}
 }
@@ -724,6 +736,7 @@ static int wait_func(struct xsc_core_device *xdev, struct xsc_cmd_work_ent *ent)
 {
 	unsigned long timeout = msecs_to_jiffies(XSC_CMD_TIMEOUT_MSEC);
 	int err;
+	struct xsc_cmd *cmd = &xdev->cmd;
 
 	if (!wait_for_completion_timeout(&ent->done, timeout))
 		err = -ETIMEDOUT;
@@ -731,6 +744,7 @@ static int wait_func(struct xsc_core_device *xdev, struct xsc_cmd_work_ent *ent)
 		err = ent->ret;
 
 	if (err == -ETIMEDOUT) {
+		cmd->cmd_status = XSC_CMD_STATUS_TIMEDOUT;
 		xsc_core_warn(xdev, "wait for %s(0x%x) response timeout!\n",
 			      xsc_command_str(msg_to_opcode(ent->in)),
 			      msg_to_opcode(ent->in));
@@ -1538,6 +1552,10 @@ int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out
 	struct xsc_rsp_msg *outb;
 	int err;
 	u8 status = 0;
+	struct xsc_cmd *cmd = &xdev->cmd;
+
+	if (cmd->cmd_status == XSC_CMD_STATUS_TIMEDOUT)
+		return -ETIMEDOUT;
 
 	inb = alloc_msg(xdev, in_size);
 	if (IS_ERR(inb)) {
@@ -1946,6 +1964,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		     (unsigned long long)(cmd->dma), (unsigned long long)(cmd->cq_dma));
 
 	cmd->mode = CMD_MODE_POLLING;
+	cmd->cmd_status = XSC_CMD_STATUS_NORMAL;
 
 	err = create_msg_cache(xdev);
 	if (err) {

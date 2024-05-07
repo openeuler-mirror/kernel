@@ -6,7 +6,7 @@
 #ifndef XSC_CMD_H
 #define XSC_CMD_H
 
-#define CMDQ_VERSION 0x19
+#define CMDQ_VERSION 0x20
 
 #define QOS_PRIO_MAX		7
 #define	QOS_DSCP_MAX		63
@@ -19,13 +19,10 @@
 #define MAX_PKT_LEN		9800
 #define XSC_RTT_CFG_QPN_MAX 32
 
-#define XSC_PCIE_LAT_INIT_INTERVAL_MIN	200
 #define XSC_PCIE_LAT_CFG_INTERVAL_MAX	8
 #define XSC_PCIE_LAT_CFG_HISTOGRAM_MAX	9
 #define XSC_PCIE_LAT_EN_DISABLE		0
 #define XSC_PCIE_LAT_EN_ENABLE		1
-#define XSC_PCIE_LAT_INTERVAL_MIN	100
-#define XSC_PCIE_LAT_INTERVAL_MAX	30000
 #define XSC_PCIE_LAT_PERIOD_MIN		1
 #define XSC_PCIE_LAT_PERIOD_MAX		20
 #define DPU_PORT_WGHT_CFG_MAX		1
@@ -154,6 +151,10 @@ enum {
 	XSC_CMD_OP_QUERY_PHYPORT_STATE		= 0x830,
 	XSC_CMD_OP_QUERY_EVENT_TYPE		= 0x831,
 	XSC_CMD_OP_QUERY_LINK_INFO		= 0x832,
+	XSC_CMD_OP_QUERY_PFC_PRIO_STATS		= 0x833,
+	XSC_CMD_OP_MODIFY_LINK_INFO		= 0x834,
+	XSC_CMD_OP_QUERY_FEC_PARAM		= 0x835,
+	XSC_CMD_OP_MODIFY_FEC_PARAM		= 0x836,
 
 	XSC_CMD_OP_LAG_CREATE			= 0x840,
 	XSC_CMD_OP_LAG_MODIFY			= 0x841,
@@ -228,7 +229,7 @@ enum {
 
 	XSC_CMD_OP_SET_LED_STATUS = 0X1228,
 
-	XSC_CMD_OP_AP_FEAT                      = 0x1400,
+	XSC_CMD_OP_AP_FEAT			= 0x1400,
 	XSC_CMD_OP_PCIE_LAT_FEAT		= 0x1401,
 
 	XSC_CMD_OP_USER_EMU_CMD = 0x8000,
@@ -241,8 +242,7 @@ enum {
 };
 
 enum xsc_eth_qp_num_sel {
-	XSC_ETH_QP_NUM_1K_SEL = 0,
-	XSC_ETH_QP_NUM_8K_SEL,
+	XSC_ETH_QP_NUM_8K_SEL = 0,
 	XSC_ETH_QP_NUM_8K_8TC_SEL,
 	XSC_ETH_QP_NUM_SEL_MAX,
 };
@@ -255,12 +255,33 @@ enum xsc_eth_vf_num_sel {
 	XSC_ETH_VF_NUM_SEL_128,
 	XSC_ETH_VF_NUM_SEL_256,
 	XSC_ETH_VF_NUM_SEL_512,
+	XSC_ETH_VF_NUM_SEL_1024,
 	XSC_ETH_VF_NUM_SEL_MAX
 };
 
 enum {
-	XSC_CMD_RESP_LINKSPEED_MODE_25G = 25000,
-	XSC_CMD_RESP_LINKSPEED_MODE_100G = 100000
+	LINKSPEED_MODE_UNKNOWN = -1,
+	LINKSPEED_MODE_10G = 10000,
+	LINKSPEED_MODE_25G = 25000,
+	LINKSPEED_MODE_40G = 40000,
+	LINKSPEED_MODE_50G = 50000,
+	LINKSPEED_MODE_100G = 100000,
+	LINKSPEED_MODE_200G = 200000,
+	LINKSPEED_MODE_400G = 400000,
+};
+
+enum {
+	MODULE_SPEED_UNKNOWN,
+	MODULE_SPEED_10G,
+	MODULE_SPEED_25G,
+	MODULE_SPEED_40G_R4,
+	MODULE_SPEED_50G_R,
+	MODULE_SPEED_50G_R2,
+	MODULE_SPEED_100G_R2,
+	MODULE_SPEED_100G_R4,
+	MODULE_SPEED_200G_R4,
+	MODULE_SPEED_200G_R8,
+	MODULE_SPEED_400G_R8,
 };
 
 enum xsc_dma_direct {
@@ -274,7 +295,7 @@ enum xsc_dma_direct {
 /* hw feature bitmap, 32bit */
 enum xsc_hw_feature_flag {
 	XSC_HW_RDMA_SUPPORT = 0x1,
-	XSC_HW_SECOND_FEATURE = 0x2,
+	XSC_HW_PFC_PRIO_STATISTIC_SUPPORT = 0x2,
 	XSC_HW_THIRD_FEATURE = 0x4,
 
 	XSC_HW_LAST_FEATURE = 0x80000000,
@@ -351,7 +372,7 @@ struct xsc_create_qp_request {
 	__be16		cqn_recv;
 	__be16		glb_funcid;
 	/*rsvd,rename logic_port used to transfer logical_port to fw*/
-	__be16		logic_port;
+	u8		rsvd[2];
 	__be64		pas[0];
 };
 
@@ -734,6 +755,15 @@ struct xsc_cmd_dummy_mbox_out {
 	u8			rsvd[8];
 };
 
+struct xsc_fw_version {
+	u8		fw_version_major;
+	u8		fw_version_minor;
+	__be16	fw_version_patch;
+	__be32	fw_version_tweak;
+	u8		fw_version_extra_flag;
+	u8		rsvd[7];
+};
+
 struct xsc_hca_cap {
 	u8		rsvd1[12];
 	u8		send_seg_num;
@@ -806,13 +836,23 @@ struct xsc_hca_cap {
 	__be32		uar_page_sz;
 	u8		rsvd27[8];
 	__be32		hw_feature_flag;/*enum xsc_hw_feature_flag*/
-	__be16		funcid[8];
+	__be16		pf0_vf_funcid_base;
+	__be16		pf0_vf_funcid_top;
+	__be16		pf1_vf_funcid_base;
+	__be16		pf1_vf_funcid_top;
+	__be16		pcie0_pf_funcid_base;
+	__be16		pcie0_pf_funcid_top;
+	__be16		pcie1_pf_funcid_base;
+	__be16		pcie1_pf_funcid_top;
 	u8		log_msx_atomic_size_qp;
-	u8		rsvd28[2];
+	u8		pcie_host;
+	u8		rsvd28;
 	u8		log_msx_atomic_size_dc;
 	u8		board_sn[XSC_BOARD_SN_LEN];
 	u8		max_tc;
-	u8		rsvd29[10];
+	u8		mac_num;
+	__be16		funcid_to_logic_port;
+	u8		rsvd29[7];
 	u8		nif_port_num;
 	__be32		hca_core_clock;
 	__be32		max_rwq_indirection_tables;/*rss_caps*/
@@ -831,6 +871,7 @@ struct xsc_hca_cap {
 	__be64		event_db;
 	__be32		qp_rate_limit_min;
 	__be32		qp_rate_limit_max;
+	struct xsc_fw_version  fw_ver;
 };
 
 struct xsc_cmd_query_hca_cap_mbox_in {
@@ -847,10 +888,6 @@ struct xsc_cmd_query_hca_cap_mbox_out {
 
 struct xsc_cmd_enable_hca_mbox_in {
 	struct xsc_inbox_hdr	hdr;
-	u8	pf;
-	u8	pcie;
-	u8	pf_id;
-	u8	rsvd0;
 	__be16	vf_num;
 	__be16  max_msix_vec;
 	__be16	cpu_num;
@@ -866,10 +903,6 @@ struct xsc_cmd_enable_hca_mbox_out {
 
 struct xsc_cmd_disable_hca_mbox_in {
 	struct xsc_inbox_hdr	hdr;
-	u8	pf;
-	u8	pcie;
-	u8	pf_id;
-	u8	rsvd0;
 	__be16	vf_num;
 	u8	pp_bypass;
 	u8	esw_mode;
@@ -883,12 +916,9 @@ struct xsc_cmd_disable_hca_mbox_out {
 
 struct xsc_cmd_modify_hca_mbox_in {
 	struct xsc_inbox_hdr	hdr;
-	u8	pf;
-	u8	pcie;
-	u8	pf_id;
 	u8	pp_bypass;
 	u8	esw_mode;
-	u8	rsvd0[3];
+	u8	rsvd0[6];
 };
 
 struct xsc_cmd_modify_hca_mbox_out {
@@ -1003,11 +1033,11 @@ struct xsc_modify_nic_vport_field_select {
 
 struct xsc_modify_nic_vport_context_in {
 	struct xsc_inbox_hdr	hdr;
-	__be32			other_vport:1;
-	__be32			vport_number:16;
-	__be32			rsvd:15;
-	__be16			caps;
-	__be16			caps_mask;
+	__be32		other_vport:1;
+	__be32		vport_number:16;
+	__be32		rsvd:15;
+	__be16		caps;
+	__be16		caps_mask;
 
 	struct xsc_modify_nic_vport_field_select field_select;
 	struct xsc_nic_vport_context nic_vport_ctx;
@@ -1173,24 +1203,10 @@ struct xsc_modify_raw_qp_mbox_out {
 
 #define ETH_ALEN	6
 
-struct xsc_logic_port_info {
-	u8	pf;
-	u8	pcie;
-	u8	mac_port;	/* mac physic port */
-	u8	pcie_port;	/* pcie physic port */
-	u8	pf_id;
-	__be16	vf_id;
-	__be16	glb_func_id;	/* function id */
-	__be16	logic_port;	/* logic port for pp */
-	__be16	pf_logic_port;	/* pf logic port */
-	__be16	mac_logic_port;	/* mac logic port */
-	__be16  gsi_qpn;	/* logic qpn for gsi*/
-};
-
 struct xsc_lag_port_info {
-	struct xsc_logic_port_info	info_mac;
 	u8	netdev_addr[ETH_ALEN];
 	u8	gw_dmac[ETH_ALEN];
+	__be16	glb_func_id;
 };
 
 struct xsc_create_lag_request {
@@ -1306,6 +1322,23 @@ struct xsc_prio_stats_mbox_out {
 	struct xsc_prio_stats	prio_stats[QOS_PRIO_MAX + 1];
 };
 
+struct xsc_pfc_prio_stats {
+	u64 tx_pause;
+	u64 tx_pause_duration;
+	u64 rx_pause;
+	u64 rx_pause_duration;
+};
+
+struct xsc_pfc_prio_stats_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			pport;
+};
+
+struct xsc_pfc_prio_stats_mbox_out {
+	struct xsc_outbox_hdr		hdr;
+	struct xsc_pfc_prio_stats	prio_stats[QOS_PRIO_MAX + 1];
+};
+
 struct xsc_hw_stats {
 	/*by mac port*/
 	u64 rdma_tx_pkts;
@@ -1403,7 +1436,7 @@ struct xsc_event_linkstatus_resp {
 	u8 linkstatus; /*0:down, 1:up*/
 };
 
-struct xsc_event_linkinfo_resp {
+struct xsc_event_linkinfo {
 	u8 linkstatus; /*0:down, 1:up*/
 	u8 port;
 	u8 duplex;
@@ -1443,7 +1476,17 @@ struct xsc_event_query_linkinfo_mbox_in {
 
 struct xsc_event_query_linkinfo_mbox_out {
 	struct xsc_outbox_hdr		hdr;
-	struct xsc_event_linkinfo_resp	ctx;
+	struct xsc_event_linkinfo	ctx;
+};
+
+struct xsc_event_modify_linkinfo_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_event_linkinfo	ctx;
+};
+
+struct xsc_event_modify_linkinfo_mbox_out {
+	struct xsc_outbox_hdr		hdr;
+	u32	status;
 };
 
 struct xsc_event_set_led_status_mbox_in {
@@ -1453,6 +1496,28 @@ struct xsc_event_set_led_status_mbox_in {
 
 struct xsc_event_set_led_status_mbox_out {
 	struct xsc_outbox_hdr		hdr;
+	u32	status;
+};
+
+struct xsc_event_modify_fecparam_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u32	fec;
+};
+
+struct xsc_event_modify_fecparam_mbox_out {
+	struct xsc_outbox_hdr		hdr;
+	u32	status;
+};
+
+struct xsc_event_query_fecparam_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			rsvd[2];
+};
+
+struct xsc_event_query_fecparam_mbox_out {
+	struct xsc_outbox_hdr		hdr;
+	u32	active_fec;
+	u32	fec_cfg;
 	u32	status;
 };
 
@@ -1749,10 +1814,11 @@ struct hwc_set_t {
 	u8 retry_cnt_th;
 	u8 adapt_to_other;
 	u8 alloc_qp_id_mode;
-	u16 max_vf_nums;
+	u16 max_vf_num;
 	u8 eth_pkt_offset;
 	u8 rdma_pkt_offset;
 	u8 tso_eth_pkt_offset;
+	u8 tx_dedi_pref;
 };
 
 struct hwc_get_t {
@@ -1771,8 +1837,8 @@ struct hwc_get_t {
 	u8 next_retry_cnt_th;
 	u8 cur_adapt_to_other;
 	u8 next_adapt_to_other;
-	u16 cur_max_vf_nums;
-	u16 next_max_vf_nums;
+	u16 cur_max_vf_num;
+	u16 next_max_vf_num;
 	u8 cur_eth_pkt_offset;
 	u8 next_eth_pkt_offset;
 	u8 cur_rdma_pkt_offset;
@@ -1781,6 +1847,8 @@ struct hwc_get_t {
 	u8 next_tso_eth_pkt_offset;
 	u8 cur_alloc_qp_id_mode;
 	u8 next_alloc_qp_id_mode;
+	u8 cur_tx_dedi_pref;
+	u8 next_tx_dedi_pref;
 };
 
 struct xsc_set_mtu_mbox_out {
@@ -1813,10 +1881,10 @@ enum {
 	XSC_TBM_CAP_HASH_PPH = 0,
 	XSC_TBM_CAP_RSS,
 	XSC_TBM_CAP_PP_BYPASS,
+	XSC_TBM_CAP_PCT_DROP_CONFIG,
 };
 
 struct xsc_nic_attr {
-	struct xsc_logic_port_info info;
 	__be16	caps;
 	__be16	caps_mask;
 	u8	mac_addr[6];
@@ -1843,7 +1911,6 @@ struct xsc_cmd_enable_nic_hca_mbox_out {
 };
 
 struct xsc_nic_dis_attr {
-	struct xsc_logic_port_info	info;
 	__be16	caps;
 };
 

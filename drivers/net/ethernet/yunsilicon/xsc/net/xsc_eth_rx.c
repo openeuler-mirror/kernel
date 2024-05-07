@@ -9,7 +9,8 @@
 #include "xsc_eth_common.h"
 #include "xsc_eth_stats.h"
 #include <linux/device.h>
-#include "../pci/fw/xsc_tbm.h"
+#include "common/xsc_pp.h"
+
 
 #define PAGE_REF_ELEV  (U16_MAX)
 /* Upper bound on number of packets that share a single page */
@@ -37,7 +38,7 @@ static inline void xsc_rq_notify_hw(struct xsc_rq *rq)
 }
 
 static inline void xsc_skb_set_hash(struct xsc_adapter *adapter,
-				    struct xsc_cqe64 *cqe,
+				    struct xsc_cqe *cqe,
 				    struct sk_buff *skb)
 {
 	struct xsc_rss_params *rss = &adapter->rss_params;
@@ -173,7 +174,7 @@ static inline bool handle_udp_frag_csum(struct sk_buff *skb, struct epp_pph *pph
 	return false;
 }
 
-static inline void xsc_handle_csum(struct xsc_cqe64 *cqe, struct xsc_rq *rq,
+static inline void xsc_handle_csum(struct xsc_cqe *cqe, struct xsc_rq *rq,
 				   struct sk_buff *skb, struct xsc_wqe_frag_info *wi)
 {
 	struct xsc_rq_stats *stats = rq->stats;
@@ -227,7 +228,7 @@ out:
 	return;
 }
 
-static inline void xsc_build_rx_skb(struct xsc_cqe64 *cqe,
+static inline void xsc_build_rx_skb(struct xsc_cqe *cqe,
 				    u32 cqe_bcnt,
 				    struct xsc_rq *rq,
 				    struct sk_buff *skb,
@@ -247,7 +248,7 @@ static inline void xsc_build_rx_skb(struct xsc_cqe64 *cqe,
 }
 
 static inline void xsc_complete_rx_cqe(struct xsc_rq *rq,
-				       struct xsc_cqe64 *cqe,
+				       struct xsc_cqe *cqe,
 				       u32 cqe_bcnt,
 				       struct sk_buff *skb,
 				       struct xsc_wqe_frag_info *wi)
@@ -528,7 +529,7 @@ static inline void xsc_free_rx_wqe(struct xsc_rq *rq,
 }
 
 void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
-			   struct xsc_rq *rq, struct xsc_cqe64 *cqe)
+			   struct xsc_rq *rq, struct xsc_cqe *cqe)
 {
 	struct xsc_wq_cyc *wq = &rq->wqe.wq;
 	struct xsc_channel *c = rq->cq.channel;
@@ -576,7 +577,7 @@ free_wqe:
 }
 
 static void xsc_dump_error_rqcqe(struct xsc_rq *rq,
-				 struct xsc_cqe64 *cqe)
+				 struct xsc_cqe *cqe)
 {
 	struct xsc_channel *c = rq->cq.channel;
 	struct net_device *netdev  = c->adapter->netdev;
@@ -595,7 +596,7 @@ int xsc_poll_rx_cq(struct xsc_cq *cq, int budget)
 {
 	struct xsc_rq *rq = container_of(cq, struct xsc_rq, cq);
 	struct xsc_cqwq *cqwq = &cq->wq;
-	struct xsc_cqe64 *cqe;
+	struct xsc_cqe *cqe;
 	int work_done = 0;
 	struct xsc_ch_stats *ch_stats = cq->channel->stats;
 

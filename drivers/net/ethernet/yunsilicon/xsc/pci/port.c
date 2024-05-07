@@ -211,6 +211,8 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	case XSC_MODULE_ID_QSFP:
 	case XSC_MODULE_ID_QSFP_PLUS:
 	case XSC_MODULE_ID_QSFP28:
+	case XSC_MODULE_ID_QSFP_DD:
+	case XSC_MODULE_ID_QSFP_PLUS_CMIS:
 		xsc_qsfp_eeprom_params_set(&query.i2c_address, &query.page, &offset);
 		break;
 	default:
@@ -228,3 +230,4 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	return xsc_query_mcia(dev, &query, data);
 }
 EXPORT_SYMBOL_GPL(xsc_query_module_eeprom);
+

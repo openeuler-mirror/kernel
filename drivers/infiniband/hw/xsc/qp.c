@@ -160,9 +160,6 @@ static void xsc_ib_qp_event(struct xsc_core_qp *qp, int type)
 		event.device     = ibqp->device;
 		event.element.qp = ibqp;
 		switch (type) {
-//		case XSC_EVENT_TYPE_COMM_EST:
-//			event.event = IB_EVENT_COMM_EST;
-//			break;
 		case XSC_EVENT_TYPE_WQ_CATAS_ERROR:
 			event.event = IB_EVENT_QP_FATAL;
 			break;
@@ -337,7 +334,6 @@ err_umem:
 	ib_umem_release(qp->umem);
 
 err_uuar:
-//	free_uuar(&context->uuari, uuarn);
 	return err;
 }
 
@@ -347,8 +343,6 @@ static void destroy_qp_user(struct ib_pd *pd, struct xsc_ib_qp *qp)
 
 	context = to_xucontext(pd->uobject->context);
 	ib_umem_release(qp->umem);
-
-//	free_uuar(&context->uuari, qp->uuarn);
 }
 
 #define MAX_QP1_SQ_HDR_SIZE_V2	512
@@ -581,7 +575,6 @@ static int create_qp_common(struct xsc_ib_dev *dev, struct ib_pd *pd,
 	if (in->req.qp_type == XSC_QUEUE_TYPE_INVALID)
 		goto err_create;
 	in->req.glb_funcid = cpu_to_be16(dev->xdev->glb_func_id);
-	in->req.logic_port = cpu_to_be16(dev->xdev->logic_port);
 
 	qp->xqp.qp_type_internal = in->req.qp_type;
 
@@ -895,8 +888,6 @@ static int xsc_set_path(struct xsc_ib_dev *dev, const struct rdma_ah_attr *ah,
 		    qp->ibqp.qp_type == IB_QPT_XRC_TGT)
 			xsc_path_set_udp_sport(path, ah, qp->ibqp.qp_num, attr->dest_qp_num);
 
-//		if (ah->ddgrh.sgid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
-//			path->ecn_dscp = (grh->traffic_class >> 2) & 0x3f;
 		if (sgid_attr->gid_type != IB_GID_TYPE_ROCE_UDP_ENCAP) {
 			xsc_ib_err(dev, "gid type not ROCEv2\n");
 			return -EINVAL;
@@ -1015,7 +1006,7 @@ static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
 							LAG_PORT_NUM_OFFSET) %
 							lag_port_num;
 			else
-				context->lag_sel = qp->xqp.qpn % XSC_MAX_PORTS;
+				context->lag_sel = (ldev->lag_cnt++) % XSC_MAX_PORTS;
 		}
 	}
 
@@ -1098,21 +1089,12 @@ int xsc_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 
 	xsc_ib_dbg(dev, "cur_state:%u, new_state:%u attr_mask:0x%x\n",
 		   cur_state, new_state, attr_mask);
-
-	//if (!ib_modify_qp_is_ok(cur_state, new_state, ibqp->qp_type, attr_mask))
-	//	goto out;
-
 	if ((attr_mask & IB_QP_PORT) &&
 	    (attr->port_num == 0 || attr->port_num > dev->xdev->caps.num_ports)) {
 		xsc_ib_dbg(dev, "erro port num\n");
 		goto out;
 	}
 
-	//if (attr_mask & IB_QP_PKEY_INDEX) {
-	//	port = attr_mask & IB_QP_PORT ? attr->port_num : qp->port;
-	//	if (attr->pkey_index >= dev->xdev.caps.port[port - 1].pkey_table_len)
-	//		goto out;
-	//}
 	if (attr_mask & IB_QP_MAX_QP_RD_ATOMIC &&
 	    attr->max_rd_atomic > dev->xdev->caps.max_ra_res_qp) {
 		xsc_ib_err(dev, "rd atomic:%u exeeded", attr->max_rd_atomic);
@@ -1370,19 +1352,25 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 		qp->qp1_hdr.vlan.tag = cpu_to_be16(vlan_id | cm_pcp);
 	}
 
-//	if (is_grh || (ip_version == 6)) {
-//		memcpy(qp->qp1_hdr.grh.source_gid.raw, sgid_attr->gid.raw,
-//		       sizeof(sgid_attr->gid));
-//		memcpy(qp->qp1_hdr.grh.destination_gid.raw, qplib_ah->dgid.data,
-//		       sizeof(sgid_attr->gid));
-//		qp->qp1_hdr.grh.hop_limit     = qplib_ah->hop_limit;
-//	}
+#define ECN_CAPABLE_TRANSPORT 0x2
+	if (is_grh || ip_version == 6) {
+		memcpy(qp->qp1_hdr.grh.source_gid.raw, sgid_attr->gid.raw,
+		       sizeof(sgid_attr->gid));
+		memcpy(qp->qp1_hdr.grh.destination_gid.raw, ah->av.rgid,
+		       sizeof(ah->av.rgid));
+		qp->qp1_hdr.grh.hop_limit     = ah->av.hop_limit;
+
+		if (dev->cm_dscp != DSCP_PCP_UNSET)
+			qp->qp1_hdr.grh.traffic_class = (dev->cm_dscp << 2) | ECN_CAPABLE_TRANSPORT;
+		else
+			qp->qp1_hdr.grh.traffic_class = ECN_CAPABLE_TRANSPORT;
+	}
 
 	if (ip_version == 4) {
 		if (dev->cm_dscp != DSCP_PCP_UNSET)
-			qp->qp1_hdr.ip4.tos = dev->cm_dscp << 2;
+			qp->qp1_hdr.ip4.tos = (dev->cm_dscp << 2) | ECN_CAPABLE_TRANSPORT;
 		else
-			qp->qp1_hdr.ip4.tos = 0;
+			qp->qp1_hdr.ip4.tos = ECN_CAPABLE_TRANSPORT;
 		qp->qp1_hdr.ip4.id = 0;
 		qp->qp1_hdr.ip4.frag_off = htons(IP_DF);
 		qp->qp1_hdr.ip4.ttl = ah->av.hop_limit;
@@ -1824,38 +1812,12 @@ int xsc_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_
 	qp->state		     = to_ib_qp_state(xsc_state);
 	qp_attr->qp_state	     = qp->state;
 	qp_attr->path_mtu	     = context->mtu_mode ? IB_MTU_4096 : IB_MTU_1024;
-//	qp_attr->path_mig_state	     =
-//		to_ib_mig_state((be32_to_cpu(context->flags) >> 11) & 0x3);
-//	qp_attr->qkey		     = be32_to_cpu(context->qkey);
 	qp_attr->rq_psn		     = be32_to_cpu(context->next_recv_psn) & 0xffffff;
 	qp_attr->sq_psn		     = be32_to_cpu(context->next_send_psn) & 0xffffff;
 	qp_attr->dest_qp_num	     = be32_to_cpu(context->remote_qpn) & 0xffffff;
-//	qp_attr->qp_access_flags     =
-//		to_ib_qp_access_flags(be32_to_cpu(context->params2));
-
-//	if (qp->ibqp.qp_type == IB_QPT_RC || qp->ibqp.qp_type == IB_QPT_UC) {
-//		to_ib_ah_attr(dev, &qp_attr->ah_attr, &context->pri_path);
-//		to_ib_ah_attr(dev, &qp_attr->alt_ah_attr, &context->alt_path);
-//		qp_attr->alt_pkey_index = context->alt_path.pkey_index & 0x7f;
-//		qp_attr->alt_port_num	= qp_attr->alt_ah_attr.port_num;
-//	}
-
-//	qp_attr->pkey_index = context->pri_path.pkey_index & 0x7f;
-//	qp_attr->port_num = context->pri_path.port;
-
-	/* qp_attr->en_sqd_async_notify is only applicable in modify qp */
 	qp_attr->sq_draining = xsc_state == XSC_QP_STATE_SQ_DRAINING;
-//
-//	qp_attr->max_rd_atomic = 1 << ((be32_to_cpu(context->params1) >> 21) & 0x7);
-//
-//	qp_attr->max_dest_rd_atomic =
-//		1 << ((be32_to_cpu(context->params2) >> 21) & 0x7);
-//	qp_attr->min_rnr_timer	    =
-//		(be32_to_cpu(context->rnr_nextrecvpsn) >> 24) & 0x1f;
-//	qp_attr->timeout	    = context->pri_path.ackto_lt >> 3;
 	qp_attr->retry_cnt	    = context->retry_cnt;
 	qp_attr->rnr_retry	    = context->rnr_retry;
-//	qp_attr->alt_timeout	    = context->alt_path.ackto_lt >> 3;
 	qp_attr->cur_qp_state	     = qp_attr->qp_state;
 	qp_attr->cap.max_recv_wr     = qp->rq.wqe_cnt;
 	qp_attr->cap.max_recv_sge    = qp->rq.max_gs;

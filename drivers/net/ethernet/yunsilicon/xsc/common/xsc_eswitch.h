@@ -6,8 +6,6 @@
 #ifndef XSC_ESWITCH_H
 #define XSC_ESWITCH_H
 
-//#define XSC_ESWITCH_QOS_ENABLE		1
-
 enum {
 	XSC_ESWITCH_NONE,
 	XSC_ESWITCH_LEGACY,

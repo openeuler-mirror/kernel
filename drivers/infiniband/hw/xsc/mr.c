@@ -188,6 +188,7 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		if (err)
 			goto error;
 		using_peer_mem = 1;
+
 	} else {
 		umem_ex = ib_umem_ex(umem);
 		if (IS_ERR(umem_ex)) {
@@ -266,7 +267,6 @@ xsc_ib_dereg_mr_def()
 		kfree(mr);
 		return 0;
 	}
-	//printk("%s %d\n", __func__, __LINE__);
 	if (mr->npages) {
 		err = xsc_core_dereg_mr(dev->xdev, &mr->mmr);
 		if (err) {
@@ -275,7 +275,6 @@ xsc_ib_dereg_mr_def()
 			return err;
 		}
 	}
-	//printk("%s %d\n", __func__, __LINE__);
 	err = xsc_core_destroy_mkey(dev->xdev, &mr->mmr);
 	if (err) {
 		xsc_ib_warn(dev, "failed to destroy mkey 0x%x (%d)\n",
@@ -410,7 +409,6 @@ int xsc_wr_invalidate_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 	if (!wr)
 		return -1;
 	mr.key = wr->ex.invalidate_rkey;
-	//printk("%s %d key:0x%x\n", __func__, __LINE__, mr.key);
 	err = xsc_core_dereg_mr(dev->xdev, &mr);
 	return err;
 }
