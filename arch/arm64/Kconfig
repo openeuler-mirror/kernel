@@ -1582,6 +1582,19 @@ config NUMA_AWARE_SPINLOCKS
 
 	  Say N if you want absolute first come first serve fairness.
 
+config ARCH_CUSTOM_NUMA_DISTANCE
+	bool "Support custom node relaim distance"
+	depends on ARCH_HISI && NUMA
+	default n
+	help
+	  Allow arch to adjust node_reclaim_distance.
+
+	  Some machines may have a specific node distance to achieve optimal
+	  system performance. You can set a specific node_reclaim_distance based
+	  on the system topology.
+
+	  If unsure, say N.
+
 source "kernel/Kconfig.hz"
 
 config ARCH_SPARSEMEM_ENABLE
