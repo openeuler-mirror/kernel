@@ -1797,6 +1797,7 @@ struct kvm_x86_ops {
 	int (*get_hygon_coco_extension)(struct kvm *kvm);
 	int (*enable_hygon_coco_extension)(struct kvm *kvm, u32 arg);
 	void *(*alloc_apic_backing_page)(struct kvm_vcpu *vcpu);
+	int (*gmem_prepare)(struct kvm *kvm, kvm_pfn_t pfn, gfn_t gfn, int max_order);
 };
 
 struct kvm_x86_nested_ops {
