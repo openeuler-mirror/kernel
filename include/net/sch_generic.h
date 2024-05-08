@@ -104,7 +104,6 @@ struct Qdisc {
 	struct gnet_stats_basic_packed bstats;
 	seqcount_t		running;
 	struct gnet_stats_queue	qstats;
-	int			owner;
 	unsigned long		state;
 	struct Qdisc            *next_sched;
 	struct sk_buff_head	skb_bad_txq;
@@ -116,7 +115,7 @@ struct Qdisc {
 	bool			empty;
 	struct rcu_head		rcu;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, int owner)
 	KABI_RESERVE(2)
 
 	/* private data */
