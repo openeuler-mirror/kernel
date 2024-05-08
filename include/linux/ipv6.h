@@ -79,7 +79,7 @@ struct ipv6_devconf {
 
 	struct ctl_table_header *sysctl_header;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, __s32 accept_ra_min_lft)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
