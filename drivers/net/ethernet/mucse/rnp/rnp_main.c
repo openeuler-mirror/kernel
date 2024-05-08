@@ -2345,8 +2345,8 @@ static int rnp_request_msix_irqs(struct rnp_adapter *adapter)
 
 		if (q_vector->tx.ring && q_vector->rx.ring) {
 			snprintf(q_vector->name,
-				 sizeof(q_vector->name) - 1, "%s-%s-%d-%d",
-				 netdev->name, "TxRx", i, q_vector->v_idx);
+				 sizeof(q_vector->name), "%s-%s-%u",
+				 netdev->name, "TxRx", i);
 		} else {
 			WARN(!(q_vector->tx.ring && q_vector->rx.ring),
 			     "%s vector%d tx rx is null, v_idx:%d\n",
@@ -5731,7 +5731,8 @@ static int rnp_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 /**
- * Polling 'interrupt' - used by things like netconsole to send skbs
+ * rnp_netpoll - used by things like netconsole to send skbs
+ * @netdev: netdev
  * without having to re-enable interrupts. It's not called while
  * the interrupt routine is executing.
  */
