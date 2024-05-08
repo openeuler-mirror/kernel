@@ -8442,7 +8442,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
  *
  * Return: (Boosted) (estimated) utilization for the specified CPU.
  */
-static unsigned long
+static __always_inline unsigned long
 cpu_util(int cpu, struct task_struct *p, int dst_cpu, int boost)
 {
 	struct cfs_rq *cfs_rq = &cpu_rq(cpu)->cfs;
@@ -8530,7 +8530,7 @@ unsigned long cpu_util_cfs_boost(int cpu)
  * utilization of the specified task, whenever the task is currently
  * contributing to the CPU utilization.
  */
-static unsigned long cpu_util_without(int cpu, struct task_struct *p)
+static __always_inline unsigned long cpu_util_without(int cpu, struct task_struct *p)
 {
 	/* Task has no contribution or is new */
 	if (cpu != task_cpu(p) || !READ_ONCE(p->se.avg.last_update_time))
