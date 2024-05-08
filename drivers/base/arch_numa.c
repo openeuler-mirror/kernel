@@ -189,6 +189,89 @@ void __init setup_per_cpu_areas(void)
 }
 #endif
 
+#ifdef CONFIG_ARCH_CUSTOM_NUMA_DISTANCE
+#define DISTANCE_MAX		(1 << DISTANCE_BITS)
+static void get_numa_distance_info(int *numa_levels, int *max_distance)
+{
+	DECLARE_BITMAP(distance_map, DISTANCE_MAX);
+	int max = 0;
+	int i, j;
+
+	bitmap_zero(distance_map, DISTANCE_MAX);
+	for (i = 0; i < nr_node_ids; i++) {
+		for (j = 0; j < nr_node_ids; j++) {
+			int distance = node_distance(i, j);
+
+			if (distance < LOCAL_DISTANCE ||
+			    distance >= DISTANCE_MAX) {
+				return;
+			}
+
+			if (distance > max)
+				max = distance;
+
+			bitmap_set(distance_map, distance, 1);
+		}
+	}
+
+	if (numa_levels)
+		*numa_levels = bitmap_weight(distance_map, DISTANCE_MAX);
+
+	if (max_distance)
+		*max_distance = max;
+}
+
+static int __init node_reclaim_distance_setup(char *str)
+{
+	int val;
+
+	if (kstrtoint(str, 0, &val))
+		return -EINVAL;
+
+	if (val < LOCAL_DISTANCE || val >= DISTANCE_MAX)
+		return -EINVAL;
+
+	if (val != RECLAIM_DISTANCE) {
+		node_reclaim_distance = val;
+		pr_info("Force set node_reclaim_distance to %d\n", val);
+	}
+
+	return 0;
+}
+early_param("node_reclaim_distance", node_reclaim_distance_setup);
+
+static void __init node_reclaim_distance_adjust(void)
+{
+	unsigned int model = read_cpuid_id() & MIDR_CPU_MODEL_MASK;
+	int max_distance = 0;
+	int numa_levels = 0;
+
+	switch (model) {
+	case MIDR_HISI_LINXICORE9100:
+		get_numa_distance_info(&numa_levels, &max_distance);
+
+		/*
+		 * When numa_level more than three, sched domain may be
+		 * asymmetrical, the number of CPUs of sched group is different
+		 * from the brother in sched domain.
+		 */
+		if (nr_node_ids < 4 || numa_levels <= 3 ||
+		    node_reclaim_distance != RECLAIM_DISTANCE ||
+		    max_distance <= RECLAIM_DISTANCE)
+			break;
+
+		node_reclaim_distance = max_distance;
+		pr_info("Force adjust node_reclaim_distance to %d\n",
+			node_reclaim_distance);
+		break;
+	default:
+		break;
+	}
+}
+#else
+static inline void __init node_reclaim_distance_adjust(void) {}
+#endif
+
 /**
  * numa_add_memblk() - Set node id to memblk
  * @nid: NUMA node ID of the new memblk
@@ -400,6 +483,8 @@ static int __init numa_init(int (*init_func)(void))
 		goto out_free_distance;
 
 	setup_node_to_cpumask_map();
+
+	node_reclaim_distance_adjust();
 
 	return 0;
 out_free_distance:
