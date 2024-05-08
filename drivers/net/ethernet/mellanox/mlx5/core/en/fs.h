@@ -149,6 +149,7 @@ struct mlx5e_arfs_tables {
 	struct list_head               rules;
 	int                            last_filter_id;
 	struct workqueue_struct        *wq;
+	unsigned long                  state;
 };
 
 int mlx5e_arfs_create_tables(struct mlx5e_priv *priv);
