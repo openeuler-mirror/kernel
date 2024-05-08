@@ -997,6 +997,7 @@ static void rebuild_sched_domains_locked(void)
 	cpumask_var_t *doms;
 	struct cpuset *cs;
 	int ndoms;
+	int i;
 
 	lockdep_assert_cpus_held();
 	percpu_rwsem_assert_held(&cpuset_rwsem);
@@ -1037,6 +1038,12 @@ static void rebuild_sched_domains_locked(void)
 
 	/* Generate domain masks and attrs */
 	ndoms = generate_sched_domains(&doms, &attr);
+
+	/* guarantee no CPU offlining in doms */
+	for (i = 0; i < ndoms; ++i) {
+		if (doms && !cpumask_subset(doms[i], cpu_active_mask))
+			return;
+	}
 
 	/* Have scheduler rebuild the domains */
 	partition_and_rebuild_sched_domains(ndoms, doms, attr);
