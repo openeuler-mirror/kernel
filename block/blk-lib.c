@@ -38,7 +38,7 @@ static sector_t bio_discard_limit(struct block_device *bdev, sector_t sector)
 int __blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 		sector_t nr_sects, gfp_t gfp_mask, struct bio **biop)
 {
-	struct bio *bio = *biop;
+	struct bio *bio = NULL;
 	sector_t bs_mask;
 
 	if (bdev_read_only(bdev))
@@ -63,6 +63,17 @@ int __blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 	while (nr_sects) {
 		sector_t req_sects =
 			min(nr_sects, bio_discard_limit(bdev, sector));
+
+		if (!req_sects) {
+			/* just put the bio allocated in this function */
+			if (bio) {
+				bio_io_error(bio);
+				bio_put(bio);
+			}
+			return -EOPNOTSUPP;
+		}
+		if (!bio)
+			bio = *biop;
 
 		bio = blk_next_bio(bio, bdev, 0, REQ_OP_DISCARD, gfp_mask);
 		bio->bi_iter.bi_sector = sector;
