@@ -50,6 +50,8 @@ struct kernfs_root {
 	struct rw_semaphore	kernfs_iattr_rwsem;
 	struct rw_semaphore	kernfs_supers_rwsem;
 
+	struct rcu_head 	rcu;
+
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
