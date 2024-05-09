@@ -99,6 +99,8 @@ struct Qdisc {
 	 * for 32-bit kernel.
 	 */
 	struct rcu_head         rcu;
+	/* onwer will use 4 Bytes, and the space is enough.*/
+	int			owner;
 #endif
 	/*
 	 * For performance sake on SMP, we put highly modified fields at the end
