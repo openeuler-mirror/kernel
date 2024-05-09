@@ -4155,6 +4155,12 @@ static inline void f2fs_truncate_meta_inode_pages(struct f2fs_sb_info *sbi,
 			F2FS_BLK_END_BYTES((loff_t)(blkaddr + cnt - 1)));
 }
 
+static inline void f2fs_io_schedule_timeout(long timeout)
+{
+	set_current_state(TASK_UNINTERRUPTIBLE);
+	io_schedule_timeout(timeout);
+}
+
 #define EFSBADCRC	EBADMSG		/* Bad CRC detected */
 #define EFSCORRUPTED	EUCLEAN		/* Filesystem is corrupted */
 
