@@ -92,7 +92,7 @@ static int config_qp_rq_buf(struct udma_dev *udma_device,
 
 	/* search RQ buf's mtts */
 	count = udma_mtr_find(udma_device, &qp->qp_attr.jfr->buf_mtr, qp->qp_attr.jfr->offset,
-			    mtts_wqe, ARRAY_SIZE(mtts_wqe), NULL);
+			      mtts_wqe, ARRAY_SIZE(mtts_wqe), NULL);
 	if (count < 1) {
 		dev_err(udma_device->dev, "failed to find QP(0x%llx) RQ buf.\n",
 			qp->qpn);
@@ -100,21 +100,21 @@ static int config_qp_rq_buf(struct udma_dev *udma_device,
 	}
 
 	udma_reg_write(context, QPC_RQ_HOP_NUM,
-			to_udma_hem_hopnum(udma_device->caps.wqe_rq_hop_num,
-					qp->rq.wqe_cnt));
+		       to_udma_hem_hopnum(udma_device->caps.wqe_rq_hop_num,
+					  qp->rq.wqe_cnt));
 	udma_reg_clear(context_mask, QPC_RQ_HOP_NUM);
 
 	udma_reg_write(context, QPC_RQ_CUR_BLK_ADDR_L,
-		to_udma_hw_page_addr(mtts_wqe[0]));
+		       to_udma_hw_page_addr(mtts_wqe[0]));
 	udma_reg_write(context, QPC_RQ_CUR_BLK_ADDR_H,
-		upper_32_bits(to_udma_hw_page_addr(mtts_wqe[0])));
+		       upper_32_bits(to_udma_hw_page_addr(mtts_wqe[0])));
 	udma_reg_clear(context_mask, QPC_RQ_CUR_BLK_ADDR_L);
 	udma_reg_clear(context_mask, QPC_RQ_CUR_BLK_ADDR_H);
 
 	udma_reg_write(context, QPC_RQ_NXT_BLK_ADDR_L,
-		to_udma_hw_page_addr(mtts_wqe[1]));
+		       to_udma_hw_page_addr(mtts_wqe[1]));
 	udma_reg_write(context, QPC_RQ_NXT_BLK_ADDR_H,
-		upper_32_bits(to_udma_hw_page_addr(mtts_wqe[1])));
+		       upper_32_bits(to_udma_hw_page_addr(mtts_wqe[1])));
 	udma_reg_clear(context_mask, QPC_RQ_NXT_BLK_ADDR_L);
 	udma_reg_clear(context_mask, QPC_RQ_NXT_BLK_ADDR_H);
 
@@ -1629,6 +1629,8 @@ static int alloc_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp,
 	if (udata) {
 		qp->udma_uctx = to_udma_ucontext(udata->uctx);
 		ret = alloc_user_qp_db(udma_dev, qp, ucmd);
+	} else {
+		qp->udma_uctx = NULL;
 	}
 
 	return ret;
@@ -1855,7 +1857,8 @@ static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 		return;
 
 	if (qp->en_flags & HNS3_UDMA_QP_CAP_SQ_RECORD_DB)
-		udma_db_unmap_user(qp->udma_uctx, &qp->sdb);
+		if (qp->udma_uctx)
+			udma_db_unmap_user(qp->udma_uctx, &qp->sdb);
 }
 
 static void free_wqe_buf(struct udma_dev *dev, struct udma_qp *qp)

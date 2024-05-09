@@ -604,7 +604,8 @@ int udma_register_udca(struct udma_dev *udma_dev,
 	int ret;
 
 	ret = copy_from_user(&ucmd, (void *)udrv_data->in_addr,
-			     min_t(uint32_t, udrv_data->in_len, (uint32_t)sizeof(ucmd)));
+			     min_t(uint32_t, udrv_data->in_len,
+				   (uint32_t)sizeof(ucmd)));
 	if (ret) {
 		dev_err(udma_dev->dev, "Failed to copy udata, ret = %d.\n",
 			ret);
@@ -781,6 +782,24 @@ static int query_dca_active_pages_proc(struct dca_mem *mem, uint32_t index,
 	return DCA_MEM_STOP_ITERATE;
 }
 
+static struct udma_qp *udma_dca_get_qp(struct udma_dev *dev, uint32_t qpn)
+{
+	struct udma_qp *qp;
+
+	xa_lock(&dev->qp_table.xa);
+	qp = get_qp(dev, qpn);
+	if (!qp) {
+		dev_err(dev->dev, "failed to find qp, qpn = 0x%x\n", qpn);
+		xa_unlock(&dev->qp_table.xa);
+		return NULL;
+	}
+	refcount_inc(&qp->refcount);
+
+	xa_unlock(&dev->qp_table.xa);
+
+	return qp;
+}
+
 int udma_query_dca_mem(struct udma_dev *dev, struct udma_dca_query_attr *attr,
 		       struct udma_dca_query_resp *resp)
 {
@@ -789,11 +808,10 @@ int udma_query_dca_mem(struct udma_dev *dev, struct udma_dca_query_attr *attr,
 	struct udma_dca_cfg *cfg;
 	struct udma_qp *qp;
 
-	qp = get_qp(dev, attr->qpn);
-	if (qp == NULL) {
-		dev_err(dev->dev, "failed to find qp, qpn = 0x%llx\n", attr->qpn);
+	qp = udma_dca_get_qp(dev, attr->qpn);
+	if (qp == NULL)
 		return -EINVAL;
-	}
+
 	cfg = &qp->dca_cfg;
 	ctx = qp->dca_ctx;
 
@@ -804,6 +822,9 @@ int udma_query_dca_mem(struct udma_dev *dev, struct udma_dca_query_attr *attr,
 	resp->mem_key = a_attr.mem_key;
 	resp->mem_ofs = a_attr.page_index << UDMA_HW_PAGE_SHIFT;
 	resp->page_count = a_attr.page_count;
+
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
 
 	return a_attr.page_count ? 0 : -ENOMEM;
 }
@@ -1111,14 +1132,12 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	struct udma_dca_cfg *cfg;
 	struct udma_qp *qp;
 	uint32_t buf_id;
-	int ret;
+	int ret = 0;
 
-	qp = get_qp(dev, attr->qpn);
-	if (qp == NULL) {
-		dev_err(dev->dev, "failed to find attach qp, qpn = 0x%llx\n",
-			attr->qpn);
+	qp = udma_dca_get_qp(dev, attr->qpn);
+	if (qp == NULL)
 		return -EINVAL;
-	}
+
 	cfg = &qp->dca_cfg;
 	ctx = qp->dca_ctx;
 
@@ -1131,7 +1150,7 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	if (buf_id != UDMA_DCA_INVALID_BUF_ID) {
 		resp->alloc_pages = cfg->npages;
 		spin_unlock(&cfg->lock);
-		return 0;
+		goto refcount_dec;
 	}
 
 	/* Start to new attach */
@@ -1140,7 +1159,7 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	if (buf_id == UDMA_DCA_INVALID_BUF_ID) {
 		spin_unlock(&cfg->lock);
 		/* No report fail, need try again after the pool increased */
-		return 0;
+		goto refcount_dec;
 	}
 
 	ret = active_alloced_buf(dev, ctx, qp, buf_id, attr);
@@ -1149,7 +1168,7 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 		dev_err(dev->dev,
 			"failed to active DCA buf for QP-%llu, ret = %d.\n",
 			qp->qpn, ret);
-		return ret;
+		goto refcount_dec;
 	}
 
 	/* Attach ok */
@@ -1162,7 +1181,15 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	resp->dcan = cfg->dcan;
 	update_dca_buf_status(ctx, cfg->dcan, true);
 
-	return 0;
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
+
+	return ret;
+
+refcount_dec:
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
+	return ret;
 }
 
 void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
@@ -1171,12 +1198,10 @@ void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
 	struct udma_dca_cfg *cfg;
 	struct udma_qp *qp;
 
-	qp = get_qp(dev, attr->qpn);
-	if (qp == NULL) {
-		dev_err(dev->dev, "failed to find disattach qp, qpn = 0x%llx\n",
-			attr->qpn);
+	qp = udma_dca_get_qp(dev, attr->qpn);
+	if (qp == NULL)
 		return;
-	}
+
 	cfg = &qp->dca_cfg;
 	ctx = qp->dca_ctx;
 
@@ -1185,6 +1210,9 @@ void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
 	cfg->buf_id = UDMA_DCA_INVALID_BUF_ID;
 
 	update_dca_buf_status(ctx, cfg->dcan, false);
+
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
 }
 
 void udma_dca_detach(struct udma_dev *dev, struct udma_dca_detach_attr *attr)
@@ -1193,12 +1221,10 @@ void udma_dca_detach(struct udma_dev *dev, struct udma_dca_detach_attr *attr)
 	struct udma_dca_cfg *cfg;
 	struct udma_qp *qp;
 
-	qp = get_qp(dev, attr->qpn);
-	if (qp == NULL) {
-		dev_err(dev->dev, "failed to find detach qp, qpn = 0x%llx\n",
-			attr->qpn);
+	qp = udma_dca_get_qp(dev, attr->qpn);
+	if (qp == NULL)
 		return;
-	}
+
 	cfg = &qp->dca_cfg;
 	ctx = qp->dca_ctx;
 
@@ -1212,6 +1238,9 @@ void udma_dca_detach(struct udma_dev *dev, struct udma_dca_detach_attr *attr)
 	spin_unlock(&ctx->aging_lock);
 
 	restart_aging_dca_mem(dev, ctx);
+
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
 }
 
 static int enum_dca_pool_proc(struct dca_mem *mem, uint32_t index, void *param)
