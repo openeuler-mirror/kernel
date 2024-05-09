@@ -1856,7 +1856,8 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 		 * so use shmem's get_unmapped_area in case it can be huge.
 		 */
 		get_area = shmem_get_unmapped_area;
-	} else if (IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE)) {
+	} else if (IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) &&
+		   !IS_ENABLED(CONFIG_ARCH_WANT_DEFAULT_TOPDOWN_MMAP_LAYOUT)) {
 		/* Ensures that larger anonymous mappings are THP aligned. */
 		get_area = thp_get_unmapped_area;
 	}
