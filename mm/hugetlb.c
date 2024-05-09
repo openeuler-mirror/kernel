@@ -3255,9 +3255,12 @@ out:
 
 		rsv_adjust = hugepage_subpool_put_pages(spool, 1, info);
 		hugetlb_acct_memory(h, -rsv_adjust, info);
-		if (deferred_reserve)
+		if (deferred_reserve) {
+			spin_lock_irq(&hugetlb_lock);
 			hugetlb_cgroup_uncharge_folio_rsvd(hstate_index(h),
 					pages_per_huge_page(h), folio);
+			spin_unlock_irq(&hugetlb_lock);
+		}
 	}
 
 	if (!memcg_charge_ret)
