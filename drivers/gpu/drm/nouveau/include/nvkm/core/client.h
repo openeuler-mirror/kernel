@@ -12,6 +12,7 @@ struct nvkm_client {
 
 	struct nvkm_client_notify *notify[32];
 	struct rb_root objroot;
+	spinlock_t obj_lock;
 
 	bool super;
 	void *data;
