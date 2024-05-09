@@ -675,7 +675,8 @@ static inline int alloc_cpumasks(struct cpuset *cs, struct tmpmasks *tmp)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 free_four:
-	free_cpumask_var(*pmask4);
+	if (pmask4)
+		free_cpumask_var(*pmask4);
 #endif
 free_three:
 	free_cpumask_var(*pmask3);
