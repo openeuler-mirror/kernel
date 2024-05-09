@@ -436,7 +436,7 @@ static int __init add_legacy_isa_io(struct fwnode_handle *fwnode, unsigned long 
 	}
 
 	vaddr = (unsigned long)(PCI_IOBASE + range->io_start);
-	ret = ioremap_page_range(vaddr, vaddr + range->size, range->hw_start,
+	ret = vmap_page_range(vaddr, vaddr + range->size, range->hw_start,
 					pgprot_device(PAGE_KERNEL));
 	return ret;
 }
