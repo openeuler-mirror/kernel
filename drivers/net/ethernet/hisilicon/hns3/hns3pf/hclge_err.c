@@ -1543,7 +1543,6 @@ hclge_print_mod_reg_info(struct device *dev, struct hclge_desc *desc,
 					 " %08x",
 					 le32_to_cpu(desc[bd_idx].data[index]));
 		}
-		buf[pos] = '\0';
 		dev_info(dev, "%s\n", buf);
 	}
 

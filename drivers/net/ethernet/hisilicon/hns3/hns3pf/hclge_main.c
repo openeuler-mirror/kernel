@@ -28,6 +28,7 @@
 #include "hnae3.h"
 #include "hclge_devlink.h"
 #include "hclge_comm_cmd.h"
+
 #include "hclge_trace.h"
 
 #define HCLGE_NAME			"hclge"
@@ -411,7 +412,7 @@ static void hclge_trace_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *de
 			trace_hclge_pf_cmd_send(hw, &desc[i], i, num);
 	} else {
 		for (i = 1; i < num; i++)
-			trace_hclge_pf_special_cmd_send(hw, (u32 *)&desc[i],
+			trace_hclge_pf_special_cmd_send(hw, (__le32 *)&desc[i],
 							i, num);
 	}
 }
@@ -431,7 +432,7 @@ static void hclge_trace_cmd_get(struct hclge_comm_hw *hw, struct hclge_desc *des
 			trace_hclge_pf_cmd_get(hw, &desc[i], i, num);
 	} else {
 		for (i = 1; i < num; i++)
-			trace_hclge_pf_special_cmd_get(hw, (u32 *)&desc[i],
+			trace_hclge_pf_special_cmd_get(hw, (__le32 *)&desc[i],
 						       i, num);
 	}
 }
