@@ -3953,7 +3953,6 @@ EXPORT_SYMBOL_GPL(hisi_qm_sriov_enable);
 int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen)
 {
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
-	int ret;
 
 	if (pci_vfs_assigned(pdev)) {
 		pci_err(pdev, "Failed to disable VFs as VFs are assigned!\n");
@@ -3968,13 +3967,9 @@ int hisi_qm_sriov_disable(struct pci_dev *pdev, bool is_frozen)
 
 	pci_disable_sriov(pdev);
 
-	ret = qm_clear_vft_config(qm);
-	if (ret)
-		return ret;
-
 	qm_pm_put_sync(qm);
 
-	return 0;
+	return qm_clear_vft_config(qm);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_sriov_disable);
 
