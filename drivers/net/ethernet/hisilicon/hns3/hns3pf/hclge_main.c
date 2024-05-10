@@ -3003,8 +3003,8 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 	struct hclge_mac *mac = &hdev->hw.mac;
 	int ret;
 
-	hclge_roh_convert_mac_addr(hdev);
 	hclge_mac_type_init(hdev);
+	hclge_roh_convert_mac_addr(hdev);
 	hdev->support_sfp_query = true;
 
 	if (!test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
