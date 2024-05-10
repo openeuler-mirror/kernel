@@ -212,6 +212,13 @@ static int klp_find_object_symbol(const char *objname, const char *name,
 	return -EINVAL;
 }
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+bool __weak arch_klp_skip_resolve(unsigned int type)
+{
+	return false;
+}
+#endif
+
 static int klp_resolve_symbols(Elf_Shdr *sechdrs, const char *strtab,
 			       unsigned int symndx, Elf_Shdr *relasec,
 			       const char *sec_objname)
@@ -248,6 +255,10 @@ static int klp_resolve_symbols(Elf_Shdr *sechdrs, const char *strtab,
 #endif
 	/* For each rela in this klp relocation section */
 	for (i = 0; i < relasec->sh_size / sizeof(*relas); i++) {
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+		if (arch_klp_skip_resolve(ELF_R_TYPE(relas[i].r_info)))
+			continue;
+#endif
 		sym = (Elf_Sym *)sechdrs[symndx].sh_addr + ELF_R_SYM(relas[i].r_info);
 		if (sym->st_shndx != SHN_LIVEPATCH) {
 			pr_err("symbol %s is not marked as a livepatch symbol\n",
