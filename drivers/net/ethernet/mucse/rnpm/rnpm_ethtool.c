@@ -39,25 +39,8 @@ struct rnpm_stats {
  * used because we do not have a good way to get the max number of
  * rx queues with CONFIG_RPS disabled.
  */
-#ifdef HAVE_TX_MQ
-#ifdef HAVE_NETDEV_SELECT_QUEUE
-#ifdef NO_REAL_QUEUE_NUM
-#define RNPM_NUM_RX_QUEUES adapter->num_tx_queues
-#define RNPM_NUM_TX_QUEUES adapter->num_tx_queues
-#else
 #define RNPM_NUM_RX_QUEUES netdev->real_num_rx_queues
 #define RNPM_NUM_TX_QUEUES netdev->real_num_tx_queues
-
-#endif /* NO_REAL_QUEUE_NUM */
-#else
-#define RNPM_NUM_RX_QUEUES adapter->indices
-#define RNPM_NUM_TX_QUEUES adapter->indices
-#endif /* HAVE_NETDEV_SELECT_QUEUE */
-#else /* HAVE_TX_MQ */
-#define RNPM_NUM_TX_QUEUES 1
-#define RNPM_NUM_RX_QUEUES                                                     \
-	(((struct rnpm_adapter *)netdev_priv(netdev))->num_rx_queues)
-#endif /* HAVE_TX_MQ */
 
 #define RNPM_NETDEV_STAT(_net_stat)                                            \
 	{                                                                      \
@@ -2839,6 +2822,150 @@ rnpm_set_coalesce(struct net_device *netdev, struct ethtool_coalesce *ec,
 }
 
 /**
+ * rnpm_get_rss_hash_opts - Get RSS hash Input Set for each flow type
+ * @pf: pointer to the physical function struct
+ * @cmd: ethtool rxnfc command
+ *
+ * Returns Success if the flow is supported, else Invalid Input.
+ **/
+static int rnpm_get_rss_hash_opts(struct rnpm_adapter *adapter,
+				  struct ethtool_rxnfc *cmd)
+{
+	cmd->data = 0;
+
+	/* Report default options for RSS on rnpm */
+	switch (cmd->flow_type) {
+	case TCP_V4_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		fallthrough;
+	case UDP_V4_FLOW:
+	case SCTP_V4_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		fallthrough;
+	case AH_ESP_V4_FLOW:
+	case AH_V4_FLOW:
+	case ESP_V4_FLOW:
+	case IPV4_FLOW:
+		cmd->data |= RXH_IP_SRC | RXH_IP_DST;
+		break;
+	case TCP_V6_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		fallthrough;
+	case UDP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		fallthrough;
+	case AH_ESP_V6_FLOW:
+	case AH_V6_FLOW:
+	case ESP_V6_FLOW:
+	case IPV6_FLOW:
+		cmd->data |= RXH_IP_SRC | RXH_IP_DST;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int rnpm_set_rss_hash_opt(struct rnpm_adapter *adapter,
+				 struct ethtool_rxnfc *nfc)
+{
+	if (nfc->data &
+	    ~(RXH_IP_SRC | RXH_IP_DST | RXH_L4_B_0_1 | RXH_L4_B_2_3))
+		return -EINVAL;
+
+	switch (nfc->flow_type) {
+	case TCP_V4_FLOW:
+	case TCP_V6_FLOW:
+	case UDP_V4_FLOW:
+	case UDP_V6_FLOW:
+		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST) ||
+		    !(nfc->data & RXH_L4_B_0_1) || !(nfc->data & RXH_L4_B_2_3))
+			return -EINVAL;
+		break;
+	case AH_ESP_V4_FLOW:
+	case AH_V4_FLOW:
+	case ESP_V4_FLOW:
+	case SCTP_V4_FLOW:
+	case AH_ESP_V6_FLOW:
+	case AH_V6_FLOW:
+	case ESP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST) ||
+		    (nfc->data & RXH_L4_B_0_1) || (nfc->data & RXH_L4_B_2_3))
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * rnpm_get_rxnfc - command to get RX flow classification rules
+ * @netdev: network interface device structure
+ * @cmd: ethtool rxnfc command
+ * @rule_locs: pointer to store rule data
+ *
+ * Returns Success if the command is supported.
+ **/
+static int rnpm_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
+			  u32 *rule_locs)
+{
+	struct rnpm_adapter *adapter = netdev_priv(dev);
+	int ret = -EOPNOTSUPP;
+
+	switch (cmd->cmd) {
+	case ETHTOOL_GRXRINGS:
+		cmd->data = adapter->num_rx_queues;
+		ret = 0;
+		break;
+	case ETHTOOL_GRXCLSRLCNT:
+		cmd->rule_cnt = adapter->fdir_filter_count;
+		ret = 0;
+		break;
+	case ETHTOOL_GRXCLSRULE:
+		break;
+	case ETHTOOL_GRXCLSRLALL:
+		break;
+	case ETHTOOL_GRXFH:
+		ret = rnpm_get_rss_hash_opts(adapter, cmd);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * rnpm_set_rxnfc - command to set RX flow classification rules
+ * @dev: network interface device structure
+ * @cmd: ethtool rxnfc command
+ * Returns Success if the command is supported.
+ **/
+static int rnpm_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
+{
+	struct rnpm_adapter *adapter = netdev_priv(dev);
+	int ret = -EOPNOTSUPP;
+
+	switch (cmd->cmd) {
+	case ETHTOOL_SRXCLSRLINS:
+		break;
+	case ETHTOOL_SRXCLSRLDEL:
+		break;
+	case ETHTOOL_SRXFH:
+		ret = rnpm_set_rss_hash_opt(adapter, cmd);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+/**
  * rnpm_get_ethtool_stats - copy stat values into supplied buffer
  * @netdev: the netdev to collect stats for
  * @stats: ethtool stats command structure
@@ -3312,6 +3439,8 @@ static const struct ethtool_ops rnpm_ethtool_ops = {
 	.get_ethtool_stats = rnpm_get_ethtool_stats,
 	.get_coalesce = rnpm_get_coalesce,
 	.set_coalesce = rnpm_set_coalesce,
+	.get_rxnfc = rnpm_get_rxnfc,
+	.set_rxnfc = rnpm_set_rxnfc,
 	.get_channels = rnpm_get_channels,
 	.set_channels = rnpm_set_channels,
 	.get_module_info = rnpm_get_module_info,
