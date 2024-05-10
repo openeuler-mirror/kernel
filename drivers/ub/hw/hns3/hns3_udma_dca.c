@@ -1181,11 +1181,6 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	resp->dcan = cfg->dcan;
 	update_dca_buf_status(ctx, cfg->dcan, true);
 
-	if (refcount_dec_and_test(&qp->refcount))
-		complete(&qp->free);
-
-	return ret;
-
 refcount_dec:
 	if (refcount_dec_and_test(&qp->refcount))
 		complete(&qp->free);

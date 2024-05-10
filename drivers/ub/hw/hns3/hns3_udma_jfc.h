@@ -32,6 +32,7 @@ struct udma_jfc {
 	struct completion	free;
 	struct list_head	sq_list;
 	struct list_head	rq_list;
+	struct udma_ucontext	*udma_uctx;
 	struct hns3_udma_jfc_attr_ex	jfc_attr_ex;
 };
 

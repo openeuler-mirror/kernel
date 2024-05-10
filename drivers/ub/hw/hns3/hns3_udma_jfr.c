@@ -226,6 +226,7 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 
 	refcount_set(&jfr->refcount, 1);
 	init_completion(&jfr->free);
+	jfr->udma_uctx = udma_uctx;
 	return 0;
 
 err_db:
@@ -527,8 +528,6 @@ static void free_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 
 static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 {
-	struct udma_ucontext *udma_uctx = to_udma_ucontext(jfr->ubcore_jfr.uctx);
-
 	if (refcount_dec_and_test(&jfr->refcount))
 		complete(&jfr->free);
 
@@ -536,7 +535,7 @@ static void free_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 
 	if (dev->caps.flags & UDMA_CAP_FLAG_SRQ_RECORD_DB ||
 	    jfr->jfr_caps & HNS3_UDMA_JFR_CAP_RECORD_DB)
-		udma_db_unmap_user(udma_uctx, &jfr->db);
+		udma_db_unmap_user(jfr->udma_uctx, &jfr->db);
 
 	free_jfr_wqe_buf(dev, jfr);
 	free_jfr_idx(dev, jfr);
