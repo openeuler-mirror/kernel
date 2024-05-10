@@ -2612,6 +2612,13 @@ sd_do_mode_sense(struct scsi_device *sdp, int dbd, int modepage,
 		 unsigned char *buffer, int len, struct scsi_mode_data *data,
 		 struct scsi_sense_hdr *sshdr)
 {
+	/*
+	 * If we must use MODE SENSE(10), make sure that the buffer length
+	 * is at least 8 bytes so that the mode sense header fits.
+	 */
+	if (sdp->use_10_for_ms && len < 8)
+		len = 8;
+
 	return scsi_mode_sense(sdp, dbd, modepage, buffer, len,
 			       SD_TIMEOUT, SD_MAX_RETRIES, data,
 			       sshdr);
