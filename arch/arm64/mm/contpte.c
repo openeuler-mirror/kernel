@@ -135,7 +135,7 @@ void __contpte_try_fold(struct mm_struct *mm, unsigned long addr,
 	pte = pte_mkcont(pte);
 	contpte_convert(mm, addr, orig_ptep, pte);
 }
-EXPORT_SYMBOL(__contpte_try_fold);
+EXPORT_SYMBOL_GPL(__contpte_try_fold);
 
 void __contpte_try_unfold(struct mm_struct *mm, unsigned long addr,
 			pte_t *ptep, pte_t pte)
@@ -150,7 +150,7 @@ void __contpte_try_unfold(struct mm_struct *mm, unsigned long addr,
 	pte = pte_mknoncont(pte);
 	contpte_convert(mm, addr, ptep, pte);
 }
-EXPORT_SYMBOL(__contpte_try_unfold);
+EXPORT_SYMBOL_GPL(__contpte_try_unfold);
 
 pte_t contpte_ptep_get(pte_t *ptep, pte_t orig_pte)
 {
@@ -178,21 +178,25 @@ pte_t contpte_ptep_get(pte_t *ptep, pte_t orig_pte)
 
 	return orig_pte;
 }
-EXPORT_SYMBOL(contpte_ptep_get);
+EXPORT_SYMBOL_GPL(contpte_ptep_get);
 
 pte_t contpte_ptep_get_lockless(pte_t *orig_ptep)
 {
 	/*
-	 * Gather access/dirty bits, which may be populated in any of the ptes
-	 * of the contig range. We may not be holding the PTL, so any contiguous
-	 * range may be unfolded/modified/refolded under our feet. Therefore we
-	 * ensure we read a _consistent_ contpte range by checking that all ptes
-	 * in the range are valid and have CONT_PTE set, that all pfns are
-	 * contiguous and that all pgprots are the same (ignoring access/dirty).
-	 * If we find a pte that is not consistent, then we must be racing with
-	 * an update so start again. If the target pte does not have CONT_PTE
-	 * set then that is considered consistent on its own because it is not
-	 * part of a contpte range.
+	 * The ptep_get_lockless() API requires us to read and return *orig_ptep
+	 * so that it is self-consistent, without the PTL held, so we may be
+	 * racing with other threads modifying the pte. Usually a READ_ONCE()
+	 * would suffice, but for the contpte case, we also need to gather the
+	 * access and dirty bits from across all ptes in the contiguous block,
+	 * and we can't read all of those neighbouring ptes atomically, so any
+	 * contiguous range may be unfolded/modified/refolded under our feet.
+	 * Therefore we ensure we read a _consistent_ contpte range by checking
+	 * that all ptes in the range are valid and have CONT_PTE set, that all
+	 * pfns are contiguous and that all pgprots are the same (ignoring
+	 * access/dirty). If we find a pte that is not consistent, then we must
+	 * be racing with an update so start again. If the target pte does not
+	 * have CONT_PTE set then that is considered consistent on its own
+	 * because it is not part of a contpte range.
 	 */
 
 	pgprot_t orig_prot;
@@ -231,7 +235,7 @@ retry:
 
 	return orig_pte;
 }
-EXPORT_SYMBOL(contpte_ptep_get_lockless);
+EXPORT_SYMBOL_GPL(contpte_ptep_get_lockless);
 
 void contpte_set_ptes(struct mm_struct *mm, unsigned long addr,
 					pte_t *ptep, pte_t pte, unsigned int nr)
@@ -274,7 +278,7 @@ void contpte_set_ptes(struct mm_struct *mm, unsigned long addr,
 
 	} while (addr != end);
 }
-EXPORT_SYMBOL(contpte_set_ptes);
+EXPORT_SYMBOL_GPL(contpte_set_ptes);
 
 void contpte_clear_full_ptes(struct mm_struct *mm, unsigned long addr,
 				pte_t *ptep, unsigned int nr, int full)
@@ -282,7 +286,7 @@ void contpte_clear_full_ptes(struct mm_struct *mm, unsigned long addr,
 	contpte_try_unfold_partial(mm, addr, ptep, nr);
 	__clear_full_ptes(mm, addr, ptep, nr, full);
 }
-EXPORT_SYMBOL(contpte_clear_full_ptes);
+EXPORT_SYMBOL_GPL(contpte_clear_full_ptes);
 
 pte_t contpte_get_and_clear_full_ptes(struct mm_struct *mm,
 				unsigned long addr, pte_t *ptep,
@@ -291,7 +295,7 @@ pte_t contpte_get_and_clear_full_ptes(struct mm_struct *mm,
 	contpte_try_unfold_partial(mm, addr, ptep, nr);
 	return __get_and_clear_full_ptes(mm, addr, ptep, nr, full);
 }
-EXPORT_SYMBOL(contpte_get_and_clear_full_ptes);
+EXPORT_SYMBOL_GPL(contpte_get_and_clear_full_ptes);
 
 int contpte_ptep_test_and_clear_young(struct vm_area_struct *vma,
 					unsigned long addr, pte_t *ptep)
@@ -316,7 +320,7 @@ int contpte_ptep_test_and_clear_young(struct vm_area_struct *vma,
 
 	return young;
 }
-EXPORT_SYMBOL(contpte_ptep_test_and_clear_young);
+EXPORT_SYMBOL_GPL(contpte_ptep_test_and_clear_young);
 
 int contpte_ptep_clear_flush_young(struct vm_area_struct *vma,
 					unsigned long addr, pte_t *ptep)
@@ -337,7 +341,7 @@ int contpte_ptep_clear_flush_young(struct vm_area_struct *vma,
 
 	return young;
 }
-EXPORT_SYMBOL(contpte_ptep_clear_flush_young);
+EXPORT_SYMBOL_GPL(contpte_ptep_clear_flush_young);
 
 void contpte_wrprotect_ptes(struct mm_struct *mm, unsigned long addr,
 					pte_t *ptep, unsigned int nr)
@@ -355,7 +359,7 @@ void contpte_wrprotect_ptes(struct mm_struct *mm, unsigned long addr,
 	contpte_try_unfold_partial(mm, addr, ptep, nr);
 	__wrprotect_ptes(mm, addr, ptep, nr);
 }
-EXPORT_SYMBOL(contpte_wrprotect_ptes);
+EXPORT_SYMBOL_GPL(contpte_wrprotect_ptes);
 
 int contpte_ptep_set_access_flags(struct vm_area_struct *vma,
 					unsigned long addr, pte_t *ptep,
@@ -401,4 +405,4 @@ int contpte_ptep_set_access_flags(struct vm_area_struct *vma,
 
 	return 1;
 }
-EXPORT_SYMBOL(contpte_ptep_set_access_flags);
+EXPORT_SYMBOL_GPL(contpte_ptep_set_access_flags);
