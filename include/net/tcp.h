@@ -43,6 +43,7 @@
 #include <net/tcp_states.h>
 #include <net/inet_ecn.h>
 #include <net/dst.h>
+#include <net/tcp_ext.h>
 
 #include <linux/seq_file.h>
 #include <linux/memcontrol.h>
@@ -338,7 +339,6 @@ int tcp_sendpage_locked(struct sock *sk, struct page *page, int offset,
 ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 		 size_t size, int flags);
 void tcp_release_cb(struct sock *sk);
-void tcp_wfree(struct sk_buff *skb);
 void tcp_write_timer_handler(struct sock *sk);
 void tcp_delack_timer_handler(struct sock *sk);
 int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);

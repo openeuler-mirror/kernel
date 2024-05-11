@@ -70,14 +70,13 @@
 #include <net/checksum.h>
 #include <net/ip6_checksum.h>
 #include <net/xfrm.h>
+#include <net/tcp_ext.h>
 
 #include <linux/uaccess.h>
 #include <trace/events/skb.h>
 #include <linux/highmem.h>
 #include <linux/capability.h>
 #include <linux/user_namespace.h>
-
-#include "sock_destructor.h"
 
 struct kmem_cache *skbuff_head_cache __ro_after_init;
 static struct kmem_cache *skbuff_fclone_cache __ro_after_init;
