@@ -684,10 +684,12 @@ enum zone_watermarks {
  */
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 #define NR_PCP_THP 1
+#define NR_PCP_ORDERS (PAGE_ALLOC_COSTLY_ORDER + 2)
 #else
 #define NR_PCP_THP 0
+#define NR_PCP_ORDERS (PAGE_ALLOC_COSTLY_ORDER + 1)
 #endif
-#define NR_LOWORDER_PCP_LISTS (MIGRATE_PCPTYPES * (PAGE_ALLOC_COSTLY_ORDER + 1))
+#define NR_LOWORDER_PCP_LISTS (MIGRATE_PCPTYPES * NR_PCP_ORDERS)
 #define NR_PCP_LISTS (NR_LOWORDER_PCP_LISTS + NR_PCP_THP)
 
 #define min_wmark_pages(z) (z->_watermark[WMARK_MIN] + z->watermark_boost)
