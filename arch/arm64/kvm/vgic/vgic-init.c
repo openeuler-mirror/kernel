@@ -615,6 +615,7 @@ int kvm_vgic_hyp_init(void)
 		kvm_vgic_global_state.no_hw_deactivation = true;
 	}
 
+	kvm_vgic_global_state.flags = gic_kvm_info->flags;
 	switch (gic_kvm_info->type) {
 	case GIC_V2:
 		ret = vgic_v2_probe(gic_kvm_info);
