@@ -12,7 +12,7 @@
 
 #define SSS_DRV_VERSION SSS_VERSION_STR
 
-#define SSS_DRV_NAME	"sssdk"
+#define SSS_DRV_NAME	"sssnic"
 #define SSS_CHIP_NAME	"sssnic"
 
 #define SSS_VF_PCI_CFG_REG_BAR	0
