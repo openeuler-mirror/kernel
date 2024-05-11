@@ -42,6 +42,19 @@ static int bc_shutdown(struct clock_event_device *evt)
  */
 static int bc_set_next(ktime_t expires, struct clock_event_device *bc)
 {
+	struct clock_event_device *dev = __this_cpu_read(tick_cpu_device.evtdev);
+
+	/*
+	 * This can be called from CPU offline operation to move broadcast
+	 * assignment. If tick_broadcast_force_mask is set, the CPU local
+	 * timer device may be disabled. And hrtimer_reprogram() will not
+	 * called if the timer is not the first expiring timer. Reprogram
+	 * the cpu local timer device to ensure we can take over the
+	 * broadcast duty.
+	 */
+	if (tick_check_broadcast_expired() && expires >= dev->next_event)
+		clockevents_program_event(dev, dev->next_event, 1);
+
 	/*
 	 * This is called either from enter/exit idle code or from the
 	 * broadcast handler. In all cases tick_broadcast_lock is held.
