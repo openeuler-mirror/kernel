@@ -420,8 +420,9 @@ extern unsigned long zone_reclaimable_pages(struct zone *zone);
 extern unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 					gfp_t gfp_mask, nodemask_t *mask);
 extern unsigned int reclaim_folio_list(struct list_head *folio_list,
-						struct pglist_data *pgdat);
-extern unsigned long reclaim_pages(struct list_head *folio_list);
+						struct pglist_data *pgdat,
+						bool ignore_references);
+extern unsigned long reclaim_pages(struct list_head *folio_list, bool ignore_references);
 
 #define MEMCG_RECLAIM_MAY_SWAP (1 << 1)
 #define MEMCG_RECLAIM_PROACTIVE (1 << 2)

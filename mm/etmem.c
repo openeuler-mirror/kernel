@@ -248,7 +248,7 @@ int do_swapcache_reclaim(unsigned long *swapcache_watermark,
 	/* Reclaim all the swapcache we have scanned */
 	for_each_node_state(nid, N_MEMORY) {
 		cond_resched();
-		reclaim_folio_list(&swapcache_list[nid], NODE_DATA(nid));
+		reclaim_folio_list(&swapcache_list[nid], NODE_DATA(nid), false);
 	}
 
 	/* Put pack all the pages that are not reclaimed by shrink_folio_list */
