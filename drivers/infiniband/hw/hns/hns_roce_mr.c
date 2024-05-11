@@ -1250,22 +1250,22 @@ void hns_roce_add_unfree_mtr(struct hns_roce_mtr_node *pos,
 {
 	hns_roce_copy_mtr(&pos->mtr, mtr);
 
-	spin_lock(&hr_dev->mtr_unfree_list_lock);
+	mutex_lock(&hr_dev->mtr_unfree_list_mutex);
 	list_add_tail(&pos->list, &hr_dev->mtr_unfree_list);
-	spin_unlock(&hr_dev->mtr_unfree_list_lock);
+	mutex_unlock(&hr_dev->mtr_unfree_list_mutex);
 }
 
 void hns_roce_free_unfree_mtr(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_mtr_node *pos, *next;
 
-	spin_lock(&hr_dev->mtr_unfree_list_lock);
+	mutex_lock(&hr_dev->mtr_unfree_list_mutex);
 	list_for_each_entry_safe(pos, next, &hr_dev->mtr_unfree_list, list) {
 		list_del(&pos->list);
 		hns_roce_mtr_destroy(hr_dev, &pos->mtr);
 		kvfree(pos);
 	}
-	spin_unlock(&hr_dev->mtr_unfree_list_lock);
+	mutex_unlock(&hr_dev->mtr_unfree_list_mutex);
 }
 
 void hns_roce_add_unfree_umem(struct hns_roce_user_db_page *user_page,
@@ -1275,20 +1275,20 @@ void hns_roce_add_unfree_umem(struct hns_roce_user_db_page *user_page,
 
 	pos->umem = user_page->umem;
 
-	spin_lock(&hr_dev->umem_unfree_list_lock);
+	mutex_lock(&hr_dev->umem_unfree_list_mutex);
 	list_add_tail(&pos->list, &hr_dev->umem_unfree_list);
-	spin_unlock(&hr_dev->umem_unfree_list_lock);
+	mutex_unlock(&hr_dev->umem_unfree_list_mutex);
 }
 
 void hns_roce_free_unfree_umem(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_umem_node *pos, *next;
 
-	spin_lock(&hr_dev->umem_unfree_list_lock);
+	mutex_lock(&hr_dev->umem_unfree_list_mutex);
 	list_for_each_entry_safe(pos, next, &hr_dev->umem_unfree_list, list) {
 		list_del(&pos->list);
 		ib_umem_release(pos->umem);
 		kvfree(pos);
 	}
-	spin_unlock(&hr_dev->umem_unfree_list_lock);
+	mutex_unlock(&hr_dev->umem_unfree_list_mutex);
 }

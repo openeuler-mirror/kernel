@@ -94,6 +94,8 @@
 /* Configure to HW for PAGE_SIZE larger than 4KB */
 #define PG_SHIFT_OFFSET				(PAGE_SHIFT - 12)
 
+#define ATOMIC_WR_LEN				8
+
 #define HNS_ROCE_IDX_QUE_ENTRY_SZ		4
 #define SRQ_DB_REG				0x230
 
@@ -800,6 +802,7 @@ struct hns_roce_eq {
 	int				shift;
 	int				event_type;
 	int				sub_type;
+	struct tasklet_struct		tasklet;
 };
 
 struct hns_roce_eq_table {
@@ -1150,9 +1153,9 @@ struct hns_roce_dev {
 	struct notifier_block bond_nb;
 
 	struct list_head mtr_unfree_list; /* list of unfree mtr on this dev */
-	spinlock_t mtr_unfree_list_lock; /* protect mtr_unfree_list */
+	struct mutex mtr_unfree_list_mutex; /* protect mtr_unfree_list */
 	struct list_head umem_unfree_list; /* list of unfree umem on this dev */
-	spinlock_t umem_unfree_list_lock; /* protect umem_unfree_list */
+	struct mutex umem_unfree_list_mutex; /* protect umem_unfree_list */
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
