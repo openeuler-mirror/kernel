@@ -434,7 +434,7 @@ swp_entry_t folio_alloc_swap(struct folio *folio)
 
 
 	if (folio_test_large(folio)) {
-		if (IS_ENABLED(CONFIG_THP_SWAP) && arch_thp_swp_supported())
+		if (IS_ENABLED(CONFIG_THP_SWAP))
 			get_swap_pages(1, &entry, folio_nr_pages(folio), type);
 		goto out;
 	}
