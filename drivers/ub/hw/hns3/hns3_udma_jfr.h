@@ -50,6 +50,7 @@ struct udma_jfr {
 	uint32_t		qpn;
 	enum ubcore_transport_mode tp_mode;
 	bool			share_jfr;
+	struct udma_ucontext	*udma_uctx;
 };
 
 struct udma_jfr_context {

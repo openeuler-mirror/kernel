@@ -238,6 +238,7 @@ static int alloc_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc,
 
 	refcount_set(&udma_jfc->refcount, 1);
 	init_completion(&udma_jfc->free);
+	udma_jfc->udma_uctx = udma_uctx;
 	return ret;
 
 err_copy:
@@ -501,15 +502,13 @@ static void free_jfc_cqc(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 
 static void free_jfc_buf(struct udma_dev *udma_dev, struct udma_jfc *udma_jfc)
 {
-	struct udma_ucontext *udma_uctx = to_udma_ucontext(udma_jfc->ubcore_jfc.uctx);
-
 	/* wait for all interrupt processed */
 	if (refcount_dec_and_test(&udma_jfc->refcount))
 		complete(&udma_jfc->free);
 	wait_for_completion(&udma_jfc->free);
 
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB)
-		udma_db_unmap_user(udma_uctx, &udma_jfc->db);
+		udma_db_unmap_user(udma_jfc->udma_uctx, &udma_jfc->db);
 	udma_mtr_destroy(udma_dev, &udma_jfc->mtr);
 }
 
