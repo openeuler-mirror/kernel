@@ -846,7 +846,8 @@ int amd_uncore_l3_ctx_init(struct amd_uncore *uncore, unsigned int cpu)
 	pmu->rdpmc_base = RDPMC_BASE_LLC;
 	pmu->group = amd_uncore_ctx_gid(uncore, cpu);
 
-	if (boot_cpu_data.x86 >= 0x17) {
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD &&
+	    boot_cpu_data.x86 >= 0x17) {
 		*l3_attr++ = &format_attr_event8.attr;
 		*l3_attr++ = &format_attr_umask8.attr;
 		*l3_attr++ = boot_cpu_data.x86 >= 0x19 ?
