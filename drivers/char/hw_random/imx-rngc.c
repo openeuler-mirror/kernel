@@ -287,7 +287,7 @@ static int imx_rngc_probe(struct platform_device *pdev)
 			irq, imx_rngc_irq, 0, pdev->name, (void *)rngc);
 	if (ret) {
 		dev_err(rngc->dev, "Can't get interrupt working.\n");
-		return ret;
+		goto err;
 	}
 
 	if (self_test) {
