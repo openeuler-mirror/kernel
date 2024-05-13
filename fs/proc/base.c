@@ -3773,11 +3773,6 @@ static ssize_t pid_tag_write(struct file *file, const char __user *buf,
 	if (!tsk)
 		return -ESRCH;
 
-	if (unlikely(tsk->pid == 1)) {
-		err = -EPERM;
-		goto out;
-	}
-
 	err = kstrtol_from_user(buf, count, 0, &tag);
 	if (err)
 		goto out;
