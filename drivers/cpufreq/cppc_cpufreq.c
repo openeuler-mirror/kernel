@@ -98,7 +98,7 @@ static u64 cppc_get_dmi_max_khz(void)
  * use them to convert perf to freq and vice versa. The conversion is
  * extrapolated as an affine function passing by the 2 points:
  *  - (Low perf, Low freq)
- *  - (Nominal perf, Nominal perf)
+ *  - (Nominal perf, Nominal freq)
  */
 static unsigned int cppc_cpufreq_perf_to_khz(struct cppc_cpudata *cpu_data,
 					unsigned int perf)
@@ -109,8 +109,14 @@ static unsigned int cppc_cpufreq_perf_to_khz(struct cppc_cpudata *cpu_data,
 	u64 mul, div;
 
 	if (caps->lowest_freq && caps->nominal_freq) {
-		mul = caps->nominal_freq - caps->lowest_freq;
-		div = caps->nominal_perf - caps->lowest_perf;
+		/* Avoid the special case when nominal_freq is equal to lowest_freq */
+		if (caps->nominal_freq == caps->lowest_freq) {
+			mul = caps->nominal_freq;
+			div = caps->nominal_perf;
+		} else {
+			mul = caps->nominal_freq - caps->lowest_freq;
+			div = caps->nominal_perf - caps->lowest_perf;
+		}
 		offset = caps->nominal_freq - div64_u64(caps->nominal_perf * mul, div);
 	} else {
 		if (!max_khz)
@@ -134,8 +140,14 @@ static unsigned int cppc_cpufreq_khz_to_perf(struct cppc_cpudata *cpu_data,
 	u64  mul, div;
 
 	if (caps->lowest_freq && caps->nominal_freq) {
-		mul = caps->nominal_perf - caps->lowest_perf;
-		div = caps->nominal_freq - caps->lowest_freq;
+		/* Avoid special case when nominal_freq is equal to lowest_freq */
+		if (caps->nominal_freq == caps->lowest_freq) {
+			mul = caps->nominal_perf;
+			div = caps->nominal_freq;
+		} else {
+			mul = caps->nominal_perf - caps->lowest_perf;
+			div = caps->nominal_freq - caps->lowest_freq;
+		}
 		offset = caps->nominal_perf - div64_u64(caps->nominal_freq * mul, div);
 	} else {
 		if (!max_khz)
