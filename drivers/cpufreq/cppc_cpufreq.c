@@ -307,15 +307,15 @@ static int cppc_cpufreq_cpu_init(struct cpufreq_policy *policy)
 	if (cpu_data->perf_caps.highest_perf > cpu_data->perf_caps.nominal_perf)
 		boost_supported = true;
 
-	/* Set policy->cur to max now. The governors will adjust later. */
+	/* Set policy->cur to norm now. */
 	policy->cur = cppc_cpufreq_perf_to_khz(cpu_data,
-					cpu_data->perf_caps.highest_perf);
-	cpu_data->perf_ctrls.desired_perf = cpu_data->perf_caps.highest_perf;
+					cpu_data->perf_caps.nominal_perf);
+	cpu_data->perf_ctrls.desired_perf = cpu_data->perf_caps.nominal_perf;
 
 	ret = cppc_set_perf(cpu, &cpu_data->perf_ctrls);
 	if (ret)
 		pr_debug("Err setting perf value:%d on CPU:%d. ret:%d\n",
-				cpu_data->perf_caps.highest_perf, cpu, ret);
+				cpu_data->perf_caps.nominal_perf, cpu, ret);
 
 	return ret;
 }
