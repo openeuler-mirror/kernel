@@ -2674,6 +2674,7 @@ static int try_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
 	bool passed_oom = false;
 	unsigned int reclaim_options = MEMCG_RECLAIM_MAY_SWAP;
 	bool drained = false;
+	bool raised_max_event = false;
 	unsigned long pflags;
 
 	if (mem_cgroup_is_root(memcg))
@@ -2724,6 +2725,7 @@ retry:
 		goto nomem;
 
 	memcg_memory_event(mem_over_limit, MEMCG_MAX);
+	raised_max_event = true;
 #ifdef CONFIG_PSI_FINE_GRAINED
 	pflags = PSI_MEMCG_RECLAIM;
 #endif
@@ -2787,6 +2789,13 @@ nomem:
 	if (!(gfp_mask & __GFP_NOFAIL))
 		return -ENOMEM;
 force:
+	/*
+	 * If the allocation has to be enforced, don't forget to raise
+	 * a MEMCG_MAX event.
+	 */
+	if (!raised_max_event)
+		memcg_memory_event(mem_over_limit, MEMCG_MAX);
+
 	/*
 	 * The allocation either can't fail or will lead to more memory
 	 * being freed very soon.  Allow memory usage go over the limit
