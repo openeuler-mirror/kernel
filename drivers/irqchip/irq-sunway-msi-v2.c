@@ -60,10 +60,11 @@ try_again:
 			if (cpu >= nr_cpu_ids) {
 				if (vector == 255) {
 					if (find_once_global) {
-						printk("No global free vector\n");
+						pr_info("No global free vector\n");
 						return false;
 					}
-					printk("No local free vector\n");
+					pr_info("No local free vector, search_mask:%*pbl\n",
+							cpumask_pr_args(search_mask));
 					search_mask = cpu_online_mask;
 					cpu = cpumask_first(search_mask);
 					find_once_global = true;
@@ -107,10 +108,11 @@ try_again:
 		goto try_again;
 	else {
 		if (find_once_global) {
-			printk("No global free vectors\n");
+			pr_info("No global free vectors\n");
 			return found;
 		}
-		printk("No local free vectors\n");
+		pr_info("No local free vectors, search_mask:%*pbl\n",
+				cpumask_pr_args(search_mask));
 		search_mask = cpu_online_mask;
 		cpu = cpumask_first(search_mask);
 		find_once_global = true;
@@ -142,6 +144,9 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 	if (!cdata)
 		return -ENOMEM;
 
+	if (cdata->move_in_progress)
+		return -EBUSY;
+
 	/*
 	 * If existing target cpu is already in the new mask and is online
 	 * then do nothing.
@@ -168,13 +173,20 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 	/* update new setting */
 	entry = irq_get_msi_desc(irqd->irq);
 	spin_lock(&cdata->cdata_lock);
+	if (cpu_online(cdata->dst_cpu)) {
+		cdata->move_in_progress = true;
+		cdata->prev_vector = cdata->vector;
+		cdata->prev_cpu = cdata->dst_cpu;
+	} else {
+		for (i = 0; i < cdata->multi_msi; i++)
+			per_cpu(vector_irq, cdata->dst_cpu)[cdata->vector] = 0;
+	}
+
+	cdata->vector = vector;
+	cdata->dst_cpu = cpu;
 	for (i = 0; i < cdata->multi_msi; i++)
 		per_cpu(vector_irq, cpu)[vector + i] = entry->irq + i;
-	cdata->prev_vector = cdata->vector;
-	cdata->prev_cpu = cdata->dst_cpu;
-	cdata->dst_cpu = cpu;
-	cdata->vector = vector;
-	cdata->move_in_progress = true;
+
 	irq_msi_compose_msg(d, &msg);
 	__pci_write_msi_msg(entry, &msg);
 	spin_unlock(&cdata->cdata_lock);
@@ -234,7 +246,7 @@ static int __assign_irq_vector(int virq, unsigned int nr_irqs,
 
 		cdata = alloc_sw_msi_chip_data(irq_data);
 		if (!cdata) {
-			printk("error alloc irq chip data\n");
+			pr_info("error alloc irq chip data\n");
 			return -ENOMEM;
 		}
 
@@ -270,7 +282,7 @@ static int __assign_irq_vector(int virq, unsigned int nr_irqs,
 
 			cdata = alloc_sw_msi_chip_data(irq_data);
 			if (!cdata) {
-				printk("error alloc irq chip data\n");
+				pr_info("error alloc irq chip data\n");
 				return -ENOMEM;
 			}
 
