@@ -20,8 +20,6 @@
 #include "txgbe_phy.h"
 #include "txgbe_hw.h"
 
-#define TXGBE_I2C_CLK_DEV_NAME "i2c_dw"
-
 static int txgbe_swnodes_register(struct txgbe *txgbe)
 {
 	struct txgbe_nodes *nodes = &txgbe->nodes;
@@ -489,7 +487,7 @@ static void txgbe_irq_handler(struct irq_desc *desc)
 	}
 
 	/* unmask interrupt */
-	wx_intr_enable(wx, TXGBE_INTR_MISC(wx));
+	wx_intr_enable(wx, TXGBE_INTR_MISC);
 }
 
 static int txgbe_gpio_init(struct txgbe *txgbe)
@@ -533,7 +531,12 @@ static int txgbe_gpio_init(struct txgbe *txgbe)
 				     sizeof(*girq->parents), GFP_KERNEL);
 	if (!girq->parents)
 		return -ENOMEM;
-	girq->parents[0] = wx->msix_entries[wx->num_q_vectors].vector;
+
+	/* now only suuported on MSI-X interrupt */
+	if (!wx->msix_entry)
+		return -EPERM;
+
+	girq->parents[0] = wx->msix_entry->vector;
 	girq->default_type = IRQ_TYPE_NONE;
 	girq->handler = handle_bad_irq;
 
@@ -553,8 +556,8 @@ static int txgbe_clock_register(struct txgbe *txgbe)
 	char clk_name[32];
 	struct clk *clk;
 
-	snprintf(clk_name, sizeof(clk_name), "%s.%d",
-		 TXGBE_I2C_CLK_DEV_NAME, pci_dev_id(pdev));
+	snprintf(clk_name, sizeof(clk_name), "i2c_designware.%d",
+		 pci_dev_id(pdev));
 
 	clk = clk_register_fixed_rate(NULL, clk_name, NULL, 0, 156250000);
 	if (IS_ERR(clk))
@@ -616,7 +619,7 @@ static int txgbe_i2c_register(struct txgbe *txgbe)
 
 	info.parent = &pdev->dev;
 	info.fwnode = software_node_fwnode(txgbe->nodes.group[SWNODE_I2C]);
-	info.name = TXGBE_I2C_CLK_DEV_NAME;
+	info.name = "i2c_designware";
 	info.id = pci_dev_id(pdev);
 
 	info.res = &DEFINE_RES_IRQ(pdev->irq);
@@ -751,6 +754,8 @@ int txgbe_init_phy(struct txgbe *txgbe)
 		goto err_unregister_i2c;
 	}
 
+	wx->msix_in_use = true;
+
 	return 0;
 
 err_unregister_i2c:
@@ -783,4 +788,5 @@ void txgbe_remove_phy(struct txgbe *txgbe)
 	phylink_destroy(txgbe->wx->phylink);
 	xpcs_destroy(txgbe->xpcs);
 	software_node_unregister_node_group(txgbe->nodes.group);
+	txgbe->wx->msix_in_use = false;
 }
