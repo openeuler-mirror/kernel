@@ -1397,6 +1397,19 @@ void tcf_block_put(struct tcf_block *block)
 
 EXPORT_SYMBOL(tcf_block_put);
 
+void (* const tmplt_reoffload)(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv);
+EXPORT_SYMBOL(tmplt_reoffload);
+
+static void cls_tmplt_reoffload(struct tcf_chain *chain, bool add,
+				flow_setup_cb_t *cb, void *cb_priv)
+{
+	if (!tmplt_reoffload)
+		return;
+
+	tmplt_reoffload(chain, add, cb, cb_priv);
+}
+
 static int
 tcf_block_playback_offloads(struct tcf_block *block, flow_setup_cb_t *cb,
 			    void *cb_priv, bool add, bool offload_in_use,
@@ -1413,6 +1426,10 @@ tcf_block_playback_offloads(struct tcf_block *block, flow_setup_cb_t *cb,
 	     chain_prev = chain,
 		     chain = __tcf_get_next_chain(block, chain),
 		     tcf_chain_put(chain_prev)) {
+		if (chain->tmplt_ops && add)
+			if (!strcmp(chain->tmplt_ops->kind, "flower"))
+				cls_tmplt_reoffload(chain, true, cb, cb_priv);
+
 		for (tp = __tcf_get_next_proto(chain, NULL); tp;
 		     tp_prev = tp,
 			     tp = __tcf_get_next_proto(chain, tp),
@@ -1428,6 +1445,9 @@ tcf_block_playback_offloads(struct tcf_block *block, flow_setup_cb_t *cb,
 				goto err_playback_remove;
 			}
 		}
+		if (chain->tmplt_ops && !add)
+			if (!strcmp(chain->tmplt_ops->kind, "flower"))
+				cls_tmplt_reoffload(chain, false, cb, cb_priv);
 	}
 
 	return 0;
