@@ -2352,7 +2352,7 @@ static int shmem_set_policy(struct vm_area_struct *vma, struct mempolicy *mpol)
 }
 
 static struct mempolicy *shmem_get_policy(struct vm_area_struct *vma,
-					  unsigned long addr)
+					  unsigned long addr, pgoff_t *ilx)
 {
 	struct inode *inode = file_inode(vma->vm_file);
 	pgoff_t index;

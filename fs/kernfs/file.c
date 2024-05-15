@@ -456,7 +456,7 @@ static int kernfs_vma_set_policy(struct vm_area_struct *vma,
 }
 
 static struct mempolicy *kernfs_vma_get_policy(struct vm_area_struct *vma,
-					       unsigned long addr)
+					       unsigned long addr, pgoff_t *ilx)
 {
 	struct file *file = vma->vm_file;
 	struct kernfs_open_file *of = kernfs_of(file);
@@ -470,7 +470,7 @@ static struct mempolicy *kernfs_vma_get_policy(struct vm_area_struct *vma,
 
 	pol = vma->vm_policy;
 	if (of->vm_ops->get_policy)
-		pol = of->vm_ops->get_policy(vma, addr);
+		pol = of->vm_ops->get_policy(vma, addr, NULL);
 
 	kernfs_put_active(of->kn);
 	return pol;
