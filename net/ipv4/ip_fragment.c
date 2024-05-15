@@ -380,6 +380,7 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 	}
 
 	skb_dst_drop(skb);
+	skb_orphan(skb);
 	return -EINPROGRESS;
 
 insert_error:
@@ -395,6 +396,11 @@ discard_qp:
 err:
 	kfree_skb(skb);
 	return err;
+}
+
+static bool ip_frag_coalesce_ok(const struct ipq *qp)
+{
+	return qp->q.key.v4.user == IP_DEFRAG_LOCAL_DELIVER;
 }
 
 /* Build a new IP datagram from all its fragments. */
@@ -425,7 +431,8 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *skb,
 	if (len > 65535)
 		goto out_oversize;
 
-	inet_frag_reasm_finish(&qp->q, skb, reasm_data);
+	inet_frag_reasm_finish(&qp->q, skb, reasm_data,
+			       ip_frag_coalesce_ok(qp));
 
 	skb->dev = dev;
 	IPCB(skb)->frag_max_size = max(qp->max_df_size, qp->q.max_size);
@@ -477,7 +484,6 @@ int ip_defrag(struct net *net, struct sk_buff *skb, u32 user)
 	struct ipq *qp;
 
 	__IP_INC_STATS(net, IPSTATS_MIB_REASMREQDS);
-	skb_orphan(skb);
 
 	/* Lookup (or create) queue header */
 	qp = ip_find(net, ip_hdr(skb), user, vif);
