@@ -336,6 +336,12 @@ static int fl_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	return -1;
 }
 
+extern void (*tmplt_reoffload)(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv);
+
+static void fl_tmplt_reoffload(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv);
+
 static int fl_init(struct tcf_proto *tp)
 {
 	struct cls_fl_head *head;
@@ -349,6 +355,8 @@ static int fl_init(struct tcf_proto *tp)
 	INIT_LIST_HEAD(&head->hw_filters);
 	rcu_assign_pointer(tp->root, head);
 	idr_init(&head->handle_idr);
+
+	tmplt_reoffload = &fl_tmplt_reoffload;
 
 	return rhashtable_init(&head->ht, &mask_ht_params);
 }
@@ -588,6 +596,8 @@ static void fl_destroy(struct tcf_proto *tp, bool rtnl_held,
 
 	__module_get(THIS_MODULE);
 	tcf_queue_work(&head->rwork, fl_destroy_sleepable);
+
+	tmplt_reoffload = NULL;
 }
 
 static void fl_put(struct tcf_proto *tp, void *arg)
@@ -2394,6 +2404,28 @@ static void fl_tmplt_destroy(void *tmplt_priv)
 
 	fl_hw_destroy_tmplt(tmplt->chain, tmplt);
 	kfree(tmplt);
+}
+
+static void fl_tmplt_reoffload(struct tcf_chain *chain, bool add,
+			       flow_setup_cb_t *cb, void *cb_priv)
+{
+	struct fl_flow_tmplt *tmplt = chain->tmplt_priv;
+	struct flow_cls_offload cls_flower = {};
+
+	cls_flower.rule = flow_rule_alloc(0);
+	if (!cls_flower.rule)
+		return;
+
+	cls_flower.common.chain_index = chain->index;
+	cls_flower.command = add ? FLOW_CLS_TMPLT_CREATE :
+				   FLOW_CLS_TMPLT_DESTROY;
+	cls_flower.cookie = (unsigned long) tmplt;
+	cls_flower.rule->match.dissector = &tmplt->dissector;
+	cls_flower.rule->match.mask = &tmplt->mask;
+	cls_flower.rule->match.key = &tmplt->dummy_key;
+
+	cb(TC_SETUP_CLSFLOWER, &cls_flower, cb_priv);
+	kfree(cls_flower.rule);
 }
 
 static int fl_dump_key_val(struct sk_buff *skb,
