@@ -6242,6 +6242,49 @@ static void destroy_auto_affinity(struct task_group *tg)
 	kfree(tg->auto_affinity);
 	tg->auto_affinity = NULL;
 }
+
+int tg_rebuild_affinity_domains(int cpu, struct auto_affinity *auto_affi)
+{
+	int ret = 0;
+	int level = 0;
+	struct sched_domain *tmp;
+
+	if (unlikely(!auto_affi))
+		return -EPERM;
+
+	mutex_lock(&smart_grid_used_mutex);
+	raw_spin_lock_irq(&auto_affi->lock);
+	/* Only build domain while auto mode disabled */
+	if (auto_affi->mode) {
+		ret = -EPERM;
+		goto unlock_all;
+	}
+
+	/* Only build on active and housekeeping cpu */
+	if (!cpu_active(cpu) || !housekeeping_cpu(cpu, HK_FLAG_DOMAIN)) {
+		ret = -EINVAL;
+		goto unlock_all;
+	}
+
+	for_each_domain(cpu, tmp) {
+		if (!auto_affi->ad.domains[level] || !auto_affi->ad.domains_orig[level])
+			continue;
+
+		/* rebuild domain[,_orig] and reset schedstat counter */
+		cpumask_copy(auto_affi->ad.domains[level], sched_domain_span(tmp));
+		cpumask_copy(auto_affi->ad.domains_orig[level], auto_affi->ad.domains[level]);
+		__schedstat_set(auto_affi->ad.stay_cnt[level], 0);
+		level++;
+	}
+
+	/* trigger to update smart grid zone */
+	sched_grid_zone_update(false);
+
+unlock_all:
+	raw_spin_unlock_irq(&auto_affi->lock);
+	mutex_unlock(&smart_grid_used_mutex);
+	return ret;
+}
 #else
 static void destroy_auto_affinity(struct task_group *tg) {}
 

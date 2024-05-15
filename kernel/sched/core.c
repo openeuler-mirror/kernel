@@ -9690,6 +9690,15 @@ static int cpu_affinity_stat_show(struct seq_file *sf, void *v)
 
 	return 0;
 }
+
+static int cpu_rebuild_affinity_domain_u64(struct cgroup_subsys_state *css,
+					   struct cftype *cftype,
+					   u64 cpu)
+{
+	struct task_group *tg = css_tg(css);
+
+	return tg_rebuild_affinity_domains(cpu, tg->auto_affinity);
+}
 #endif /* CONFIG_QOS_SCHED_SMART_GRID */
 
 #ifdef CONFIG_QOS_SCHED
@@ -9872,6 +9881,10 @@ static struct cftype cpu_legacy_files[] = {
 	{
 		.name = "affinity_stat",
 		.seq_show = cpu_affinity_stat_show,
+	},
+	{
+		.name = "rebuild_affinity_domain",
+		.write_u64 = cpu_rebuild_affinity_domain_u64,
 	},
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH
