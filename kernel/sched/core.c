@@ -9733,7 +9733,9 @@ int sched_cpu_activate(unsigned int cpu)
 		static_branch_inc_cpuslocked(&sched_smt_present);
 #endif
 	set_cpu_active(cpu, true);
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
 	tg_update_affinity_domains(cpu, 1);
+#endif
 
 	if (sched_smp_initialized) {
 		sched_update_numa(cpu, true);
@@ -9823,7 +9825,9 @@ int sched_cpu_deactivate(unsigned int cpu)
 		return ret;
 	}
 	sched_domains_numa_masks_clear(cpu);
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
 	tg_update_affinity_domains(cpu, 0);
+#endif
 	return 0;
 }
 
@@ -9947,7 +9951,10 @@ void __init sched_init_smp(void)
 	sched_smp_initialized = true;
 
 	sched_grid_zone_init();
+
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
 	init_auto_affinity(&root_task_group);
+#endif
 }
 
 static int __init migration_init(void)
