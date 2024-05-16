@@ -970,7 +970,7 @@ static long do_get_mempolicy(int *policy, nodemask_t *nmask,
 			return -EFAULT;
 		}
 		if (vma->vm_ops && vma->vm_ops->get_policy)
-			pol = vma->vm_ops->get_policy(vma, addr);
+			pol = vma->vm_ops->get_policy(vma, addr, NULL);
 		else
 			pol = vma->vm_policy;
 	} else if (addr)
@@ -1778,7 +1778,7 @@ struct mempolicy *__get_vma_policy(struct vm_area_struct *vma,
 
 	if (vma) {
 		if (vma->vm_ops && vma->vm_ops->get_policy) {
-			pol = vma->vm_ops->get_policy(vma, addr);
+			pol = vma->vm_ops->get_policy(vma, addr, NULL);
 		} else if (vma->vm_policy) {
 			pol = vma->vm_policy;
 
@@ -1826,7 +1826,7 @@ bool vma_policy_mof(struct vm_area_struct *vma)
 	if (vma->vm_ops && vma->vm_ops->get_policy) {
 		bool ret = false;
 
-		pol = vma->vm_ops->get_policy(vma, vma->vm_start);
+		pol = vma->vm_ops->get_policy(vma, vma->vm_start, NULL);
 		if (pol && (pol->flags & MPOL_F_MOF))
 			ret = true;
 		mpol_cond_put(pol);

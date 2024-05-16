@@ -574,14 +574,14 @@ static int shm_set_policy(struct vm_area_struct *vma, struct mempolicy *new)
 }
 
 static struct mempolicy *shm_get_policy(struct vm_area_struct *vma,
-					unsigned long addr)
+					unsigned long addr, pgoff_t *ilx)
 {
 	struct file *file = vma->vm_file;
 	struct shm_file_data *sfd = shm_file_data(file);
 	struct mempolicy *pol = NULL;
 
 	if (sfd->vm_ops->get_policy)
-		pol = sfd->vm_ops->get_policy(vma, addr);
+		pol = sfd->vm_ops->get_policy(vma, addr, NULL);
 	else if (vma->vm_policy)
 		pol = vma->vm_policy;
 
