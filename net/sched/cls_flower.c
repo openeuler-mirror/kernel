@@ -356,8 +356,6 @@ static int fl_init(struct tcf_proto *tp)
 	rcu_assign_pointer(tp->root, head);
 	idr_init(&head->handle_idr);
 
-	tmplt_reoffload = &fl_tmplt_reoffload;
-
 	return rhashtable_init(&head->ht, &mask_ht_params);
 }
 
@@ -596,8 +594,6 @@ static void fl_destroy(struct tcf_proto *tp, bool rtnl_held,
 
 	__module_get(THIS_MODULE);
 	tcf_queue_work(&head->rwork, fl_destroy_sleepable);
-
-	tmplt_reoffload = NULL;
 }
 
 static void fl_put(struct tcf_proto *tp, void *arg)
@@ -3240,6 +3236,7 @@ static struct tcf_proto_ops cls_fl_ops __read_mostly = {
 
 static int __init cls_fl_init(void)
 {
+	tmplt_reoffload = &fl_tmplt_reoffload;
 	return register_tcf_proto_ops(&cls_fl_ops);
 }
 
