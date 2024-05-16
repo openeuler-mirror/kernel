@@ -402,6 +402,10 @@ static inline bool cpu_smt_allowed(unsigned int cpu)
 	if (cpu_smt_control == CPU_SMT_ENABLED)
 		return true;
 
+	/* All CPUs are bootable if CPU is not SMT capable */
+	if (cpu_smt_control == CPU_SMT_NOT_SUPPORTED)
+		return true;
+
 	if (topology_is_primary_thread(cpu))
 		return true;
 
