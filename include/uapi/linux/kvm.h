@@ -1477,6 +1477,23 @@ struct kvm_master_dev_info {
 	struct kvm_msi msi[];
 };
 
+#define MAX_NUMA_NODE 8
+#define MAX_CPU_BIT_MAP 4
+#define MAX_NUMA_BIT_MAP 2
+
+struct kvm_numa_node {
+	__u64 numa_id;
+	__u64 ipa_start;
+	__u64 ipa_size;
+	__u64 host_numa_nodes[MAX_NUMA_BIT_MAP];
+	__u64 cpu_id[MAX_CPU_BIT_MAP];
+};
+
+struct kvm_numa_info {
+	__u64 numa_cnt;
+	struct kvm_numa_node numa_nodes[MAX_NUMA_NODE];
+};
+
 /*
  * KVM_CREATE_VCPU receives as a parameter the vcpu slot, and returns
  * a vcpu fd.

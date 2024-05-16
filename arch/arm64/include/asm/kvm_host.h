@@ -27,6 +27,9 @@
 #include <asm/fpsimd.h>
 #include <asm/kvm.h>
 #include <asm/kvm_asm.h>
+#ifdef CONFIG_CVM_HOST
+#include <asm/kvm_tmm.h>
+#endif
 
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
 
@@ -287,6 +290,11 @@ struct kvm_arch {
 	spinlock_t sched_lock;
 	cpumask_var_t sched_cpus;	/* Union of all vcpu's cpus_ptr */
 	u64 tlbi_dvmbm;
+#endif
+
+#ifdef CONFIG_CVM_HOST
+	struct cvm cvm;
+	bool is_cvm;
 #endif
 };
 
@@ -612,6 +620,10 @@ struct kvm_vcpu_arch {
 	/* pCPUs this vCPU can be scheduled on. Pure copy of current->cpus_ptr */
 	cpumask_var_t sched_cpus;
 	cpumask_var_t pre_sched_cpus;
+#endif
+
+#ifdef CONFIG_CVM_HOST
+	struct cvm_tec tec;
 #endif
 };
 

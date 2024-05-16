@@ -49,6 +49,14 @@ menuconfig KVM
 
 	  If unsure, say N.
 
+config CVM_HOST
+	bool "Enable cvm host feature"
+	depends on KVM
+	help
+	  Support CVM based on S-EL2
+
+	  If unsure, say N.
+
 config NVHE_EL2_DEBUG
 	bool "Debug mode for non-VHE EL2 object"
 	depends on KVM
