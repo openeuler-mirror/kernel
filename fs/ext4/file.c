@@ -314,7 +314,8 @@ static ssize_t ext4_buffered_write_iter(struct kiocb *iocb,
 	if (ret <= 0)
 		goto out;
 
-	if (ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP))
+	if (ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP) &&
+	    iov_iter_count(from) > PAGE_SIZE)
 		ret = ext4_iomap_buffered_write(iocb, from);
 	else
 		ret = generic_perform_write(iocb, from);

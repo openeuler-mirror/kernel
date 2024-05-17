@@ -3955,6 +3955,128 @@ static int ext4_iomap_writepages(struct address_space *mapping,
 	return ret;
 }
 
+static int ext4_iomap_write_begin(struct file *file,
+				  struct address_space *mapping, loff_t pos,
+				  unsigned len, struct page **pagep,
+				  void **fsdata)
+{
+	struct inode *inode = mapping->host;
+	struct iomap_iter iter = {
+		.inode	= inode,
+		.flags	= IOMAP_WRITE,
+	};
+	int ret = 0, retries = 0;
+	struct folio *folio;
+	bool delalloc;
+
+	if (unlikely(ext4_forced_shutdown(inode->i_sb)))
+		return -EIO;
+
+	trace_ext4_iomap_write_begin(inode, pos, len);
+
+	delalloc = test_opt(inode->i_sb, DELALLOC) &&
+		   !ext4_nonda_switch(inode->i_sb);
+	*fsdata = delalloc ? (void *)0 : (void *)FALL_BACK_TO_NONDELALLOC;
+
+retry:
+	iter.pos = pos;
+	iter.len = len;
+
+	folio = iomap_get_folio(&iter, pos, len);
+	if (IS_ERR(folio))
+		return PTR_ERR(folio);
+
+	WARN_ON_ONCE(pos + len > folio_pos(folio) + folio_size(folio));
+
+	if (folio_test_dirty(folio) && (i_blocks_per_folio(inode, folio) == 1))
+		goto out;
+
+	do {
+		int length;
+
+		ret = __ext4_iomap_buffered_io_begin(inode, iter.pos, iter.len,
+				iter.flags, &iter.iomap, NULL, delalloc);
+		if (ret)
+			goto out;
+
+		WARN_ON_ONCE(iter.iomap.offset > iter.pos);
+		WARN_ON_ONCE(iter.iomap.length == 0);
+		WARN_ON_ONCE(iter.iomap.offset + iter.iomap.length <= iter.pos);
+
+		length = iomap_length(&iter);
+		ret = __iomap_write_begin(&iter, iter.pos, length, folio);
+		if (ret)
+			goto out;
+
+		iter.pos += length;
+		iter.len -= length;
+	} while (iter.len);
+
+out:
+	if (ret < 0) {
+		folio_unlock(folio);
+		folio_put(folio);
+
+		/*
+		 * __ext4_iomap_buffered_io_begin() may have instantiated
+		 * a few blocks outside i_size. Trim these off again. Don't
+		 * need i_size_read because we hold inode lock.
+		 */
+		if (pos + len > inode->i_size)
+			ext4_truncate_failed_write(inode);
+
+		if (ret == -ENOSPC &&
+		    ext4_should_retry_alloc(inode->i_sb, &retries))
+			goto retry;
+	}
+
+	*pagep = folio_file_page(folio, pos >> PAGE_SHIFT);
+	return ret;
+}
+
+static int ext4_iomap_write_end(struct file *file,
+				struct address_space *mapping,
+				loff_t pos, unsigned len, unsigned copied,
+				struct page *page, void *fsdata)
+{
+	struct inode *inode = mapping->host;
+	int write_mode = (int)(unsigned long)fsdata;
+	struct folio *folio = page_folio(page);
+	loff_t old_size = inode->i_size;
+	size_t written;
+
+	trace_ext4_iomap_write_end(inode, pos, len, copied);
+
+	written = __iomap_write_end(inode, pos, len, copied, folio) ?
+		  copied : 0;
+
+	/*
+	 * Update the in-memory inode size after copying the data into
+	 * the page cache. It's important to update i_size while still
+	 * holding folio lock, because folio writeout could otherwise
+	 * come in and zero beyond i_size.
+	 */
+	if (pos + written > old_size)
+		i_size_write(inode, pos + written);
+
+	folio_unlock(folio);
+	folio_put(folio);
+
+	if (old_size < pos)
+		pagecache_isize_extended(inode, old_size, pos);
+
+	/*
+	 * For delalloc, if we have pre-allocated more blocks and copied
+	 * less, we will have delalloc extents allocated outside i_size,
+	 * drop pre-allocated blocks that were not used, prevent the
+	 * write back path from allocating blocks for them.
+	 */
+	if (unlikely(!written) && write_mode != FALL_BACK_TO_NONDELALLOC)
+		ext4_truncate_failed_write(inode);
+
+	return written;
+}
+
 /*
  * For data=journal mode, folio should be marked dirty only when it was
  * writeably mapped. When that happens, it was already attached to the
@@ -4048,6 +4170,8 @@ static const struct address_space_operations ext4_iomap_aops = {
 	.read_folio		= ext4_iomap_read_folio,
 	.readahead		= ext4_iomap_readahead,
 	.writepages		= ext4_iomap_writepages,
+	.write_begin		= ext4_iomap_write_begin,
+	.write_end		= ext4_iomap_write_end,
 	.dirty_folio		= iomap_dirty_folio,
 	.bmap			= ext4_bmap,
 	.invalidate_folio	= iomap_invalidate_folio,
