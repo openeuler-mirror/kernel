@@ -435,6 +435,18 @@ static inline bool arch_has_hw_pte_young(void)
 }
 #endif
 
+#ifndef arch_wants_exec_folio_order
+/*
+ * Returns preferred minimum folio order for executable file-backed memory. Must
+ * be in range [0, PMD_ORDER]. Negative value implies that the HW has no
+ * preference and mm will not special-case executable memory in the pagecache.
+ */
+static inline int arch_wants_exec_folio_order(void)
+{
+	return -1;
+}
+#endif
+
 #ifndef arch_check_zapped_pte
 static inline void arch_check_zapped_pte(struct vm_area_struct *vma,
 					 pte_t pte)

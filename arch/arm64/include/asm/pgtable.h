@@ -1147,6 +1147,18 @@ static inline void update_mmu_cache_range(struct vm_fault *vmf,
  */
 #define arch_wants_old_prefaulted_pte	cpu_has_hw_af
 
+/*
+ * Request exec memory is read into pagecache in at least 64K folios. The
+ * trade-off here is performance improvement due to storing translations more
+ * effciently in the iTLB vs the potential for read amplification due to reading
+ * data from disk that won't be used. The latter is independent of base page
+ * size, so we set a page-size independent block size of 64K. This size can be
+ * contpte-mapped when 4K base pages are in use (16 pages into 1 iTLB entry),
+ * and HPA can coalesce it (4 pages into 1 TLB entry) when 16K base pages are in
+ * use.
+ */
+#define arch_wants_exec_folio_order() ilog2(SZ_64K >> PAGE_SHIFT)
+
 static inline bool pud_sect_supported(void)
 {
 	return PAGE_SIZE == SZ_4K;

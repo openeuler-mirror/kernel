@@ -3197,6 +3197,25 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 	}
 #endif
 
+	/*
+	 * Allow arch to request a preferred minimum folio order for executable
+	 * memory. This can often be beneficial to performance if (e.g.) arm64
+	 * can contpte-map the folio. Executable memory rarely benefits from
+	 * read-ahead anyway, due to its random access nature.
+	 */
+	if (vm_flags & VM_EXEC) {
+		int order = arch_wants_exec_folio_order();
+
+		if (order >= 0) {
+			fpin = maybe_unlock_mmap_for_io(vmf, fpin);
+			ra->size = 1UL << order;
+			ra->async_size = 0;
+			ractl._index &= ~((unsigned long)ra->size - 1);
+			page_cache_ra_order(&ractl, ra, order);
+			return fpin;
+		}
+	}
+
 	/* If we don't want any read-ahead, don't bother */
 	if (vm_flags & VM_RAND_READ)
 		return fpin;
