@@ -68,6 +68,9 @@ int ubcore_cgroup_try_charge(struct ubcore_cg_object *cg_obj, struct ubcore_devi
 {
 	enum rdmacg_resource_type rdma_cg_type;
 
+	if (cg_obj == NULL || cg_obj->cg == NULL)
+		return 0;
+
 	if (!ubcore_is_use_cg(dev))
 		return 0;
 
@@ -83,6 +86,9 @@ void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj, struct ubcore_devic
 							enum ubcore_resource_type type)
 {
 	enum rdmacg_resource_type rdma_cg_type;
+
+	if (cg_obj == NULL || cg_obj->cg == NULL)
+		return;
 
 	if (!ubcore_is_use_cg(dev))
 		return;

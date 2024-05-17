@@ -59,6 +59,8 @@ static int ubcore_send_create_vtp_req(struct ubcore_device *dev,
 	int ret;
 
 	req = kzalloc(sizeof(struct ubcore_req) + data_len, GFP_KERNEL);
+	if (req == NULL)
+		return -ENOMEM;
 	req->opcode = UBCORE_MSG_CREATE_VTP;
 	req->len = data_len;
 
@@ -106,6 +108,8 @@ static int ubcore_send_del_vtp_req(struct ubcore_vtpn *vtpn)
 	int ret;
 
 	req = kzalloc(sizeof(struct ubcore_req) + data_len, GFP_KERNEL);
+	if (req == NULL)
+		return -ENOMEM;
 	req->opcode = UBCORE_MSG_DESTROY_VTP;
 	req->len = data_len;
 
@@ -167,7 +171,7 @@ static int ubcore_free_vtpn(struct ubcore_vtpn *vtpn)
 			vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
-	atomic_set(&vtpn->state, (int)UBCORE_VTPS_DELETING);
+	atomic_set(&vtpn->state, (int)UBCORE_VTPS_DELETED);
 
 	return dev->ops->free_vtpn(vtpn);
 }
@@ -184,17 +188,17 @@ static int ubcore_find_add_vtpn(struct ubcore_device *dev,
 	}
 
 	*exist_vtpn = ubcore_hash_table_lookup_nolock(ht,
-		ubcore_get_vtpn_hash(&new_vtpn->local_eid), &new_vtpn->local_eid);
+		ubcore_get_vtpn_hash(&new_vtpn->trans_mode), &new_vtpn->trans_mode);
 	if (*exist_vtpn != NULL)
 		return -EEXIST;
 
 	ubcore_hash_table_add_nolock(ht, &new_vtpn->hnode,
-		ubcore_get_vtpn_hash(&new_vtpn->local_eid));
+		ubcore_get_vtpn_hash(&new_vtpn->trans_mode));
 
 	return 0;
 }
 
-static struct ubcore_vtpn *ubcore_connect_rm_vtp(struct ubcore_device *dev,
+static struct ubcore_vtpn *ubcore_connect_rm_um_vtp(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param)
 {
 	struct ubcore_vtpn *exist_vtpn;
@@ -207,8 +211,8 @@ static struct ubcore_vtpn *ubcore_connect_rm_vtp(struct ubcore_device *dev,
 	/* reuse */
 
 	spin_lock(&ht->lock);
-	old_vtpn = ubcore_hash_table_lookup_nolock(ht, ubcore_get_vtpn_hash(&param->local_eid),
-		&param->local_eid);
+	old_vtpn = ubcore_hash_table_lookup_nolock(ht, ubcore_get_vtpn_hash(&param->trans_mode),
+		&param->trans_mode);
 	if (old_vtpn != NULL && atomic_read(&old_vtpn->state) == (int)UBCORE_VTPS_READY) {
 		atomic_inc(&old_vtpn->use_cnt);
 		ubcore_log_info("reuse vtpn, with vtpn id = %u, use cnt = %d",
@@ -220,6 +224,11 @@ static struct ubcore_vtpn *ubcore_connect_rm_vtp(struct ubcore_device *dev,
 		spin_unlock(&ht->lock);
 		return NULL;
 	}
+
+	if (old_vtpn != NULL)
+		ubcore_log_warn("found existed vtpn state = %u and use_cnt = %u",
+			(uint32_t)atomic_read(&old_vtpn->state),
+			(uint32_t)atomic_read(&old_vtpn->use_cnt));
 
 	new_vtpn = ubcore_alloc_vtpn(dev, param);
 	if (new_vtpn == NULL) {
@@ -241,7 +250,8 @@ static struct ubcore_vtpn *ubcore_connect_rm_vtp(struct ubcore_device *dev,
 
 		if (atomic_read(&exist_vtpn->state) == (int)UBCORE_VTPS_READY) {
 			atomic_inc(&exist_vtpn->use_cnt);
-			ubcore_log_info("success to reuse the vtpn, it is ready");
+			ubcore_log_info("success to reuse the vtpn %u, it is ready, reuse cnt %d",
+				exist_vtpn->vtpn, atomic_read(&exist_vtpn->use_cnt));
 		} else {
 			exist_vtpn = NULL;
 			ubcore_log_err("failed to reuse the vtpn, it is not ready");
@@ -250,6 +260,7 @@ static struct ubcore_vtpn *ubcore_connect_rm_vtp(struct ubcore_device *dev,
 		spin_unlock(&ht->lock);
 		return exist_vtpn;
 	}
+
 	/* TODO: port_idx use 0, for now tp_cnt = 1 */
 	if (ubcore_check_port_state(dev, 0) != 0 ||
 		ubcore_send_create_vtp_req(dev, param, new_vtpn) != 0) {
@@ -259,8 +270,8 @@ static struct ubcore_vtpn *ubcore_connect_rm_vtp(struct ubcore_device *dev,
 		spin_unlock(&ht->lock);
 		return NULL;
 	}
-
 	spin_unlock(&ht->lock);
+
 	return new_vtpn;
 }
 
@@ -274,8 +285,8 @@ struct ubcore_vtpn *ubcore_connect_vtp(struct ubcore_device *dev,
 		return NULL;
 	}
 
-	if (param->trans_mode == UBCORE_TP_RM)
-		return ubcore_connect_rm_vtp(dev, param);
+	if (param->trans_mode == UBCORE_TP_RM || param->trans_mode == UBCORE_TP_UM)
+		return ubcore_connect_rm_um_vtp(dev, param);
 
 	vtpn = ubcore_alloc_vtpn(dev, param);
 	if (vtpn == NULL)
@@ -289,7 +300,7 @@ struct ubcore_vtpn *ubcore_connect_vtp(struct ubcore_device *dev,
 	return vtpn;
 }
 
-static int ubcore_disconnect_rm_vtp(struct ubcore_vtpn *vtpn)
+static int ubcore_disconnect_rm_um_vtp(struct ubcore_vtpn *vtpn)
 {
 	struct ubcore_device *dev = vtpn->ub_dev;
 	int ret;
@@ -303,10 +314,17 @@ static int ubcore_disconnect_rm_vtp(struct ubcore_vtpn *vtpn)
 		return 0;
 	}
 
+	if (atomic_read(&vtpn->state) != UBCORE_VTPS_READY) {
+		ubcore_log_err("vtpn state is not in ready state, it is in %d state",
+			atomic_read(&vtpn->state));
+		return -1;
+	}
+	atomic_set(&vtpn->state, (int)UBCORE_VTPS_DELETING);
+
 	ret = ubcore_send_del_vtp_req(vtpn);
 	if (ret != 0) {
-		atomic_inc(&vtpn->use_cnt);
 		ubcore_log_err("failed to send del vtp req");
+		atomic_set(&vtpn->state, (int)UBCORE_VTPS_READY);
 		return ret;
 	}
 
@@ -315,7 +333,7 @@ static int ubcore_disconnect_rm_vtp(struct ubcore_vtpn *vtpn)
 	ret = ubcore_free_vtpn(vtpn);
 	if (ret != 0) {
 		ubcore_hash_table_add(&vtpn->ub_dev->ht[UBCORE_HT_VTPN], &vtpn->hnode,
-			ubcore_get_vtpn_hash(&vtpn->local_eid));
+			ubcore_get_vtpn_hash(&vtpn->trans_mode));
 		ubcore_log_err("failed to free vtp");
 		/* TODO roll back, start connect_vtp process again */
 		return ret;
@@ -333,8 +351,8 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 		return -1;
 	}
 
-	if (vtpn->trans_mode == UBCORE_TP_RM)
-		return ubcore_disconnect_rm_vtp(vtpn);
+	if (vtpn->trans_mode == UBCORE_TP_RM || vtpn->trans_mode == UBCORE_TP_UM)
+		return ubcore_disconnect_rm_um_vtp(vtpn);
 
 	ret = ubcore_send_del_vtp_req(vtpn);
 	if (ret != 0) {
@@ -446,7 +464,10 @@ int ubcore_unmap_vtp(struct ubcore_vtp *vtp)
 
 	ubcore_remove_vtp(dev, cfg.trans_mode, vtp);
 
-	ret = dev->ops->destroy_vtp(vtp);
+	if (vtp->cfg.vtpn == UINT_MAX)
+		kfree(vtp);
+	else
+		ret = dev->ops->destroy_vtp(vtp);
 	if (ret != 0) {
 		(void)ubcore_find_add_vtp(dev, cfg.trans_mode, vtp);
 		ubcore_log_err("Failed to destroy vtp");
@@ -460,6 +481,64 @@ int ubcore_unmap_vtp(struct ubcore_vtp *vtp)
 			atomic_dec(&cfg.tpg->use_cnt);
 		else
 			atomic_dec(&cfg.utp->use_cnt);
+	}
+
+	return ret;
+}
+
+int ubcore_check_and_unmap_vtp(struct ubcore_vtp *vtp, uint32_t role)
+{
+	struct ubcore_device *dev = NULL;
+	struct ubcore_vtp *new_vtp = NULL;
+	struct ubcore_vtp_cfg cfg;
+	int ret = 0;
+
+	if (vtp == NULL || vtp->ub_dev == NULL || vtp->ub_dev->ops == NULL ||
+		vtp->ub_dev->ops->destroy_vtp == NULL)
+		return -EINVAL;
+
+	dev = vtp->ub_dev;
+
+	if (vtp->role != UBCORE_VTP_DUPLEX)
+		return ubcore_unmap_vtp(vtp);
+
+	cfg = vtp->cfg;
+
+	if (role == UBCORE_VTP_INITIATOR) {
+		// delete original vtp, create pseudo vtp
+		new_vtp = kcalloc(1, sizeof(struct ubcore_vtp), GFP_KERNEL);
+		if (new_vtp == NULL)
+			return -ENOMEM;
+
+		new_vtp->ub_dev = dev;
+		new_vtp->role = UBCORE_VTP_TARGET;
+		(void)memcpy(&new_vtp->cfg, &vtp->cfg, sizeof(struct ubcore_vtp_cfg));
+
+		ubcore_remove_vtp(dev, cfg.trans_mode, vtp);
+		ret = dev->ops->destroy_vtp(vtp);
+		if (ret != 0) {
+			(void)ubcore_find_add_vtp(dev, cfg.trans_mode, vtp);
+			kfree(new_vtp);
+			ubcore_log_err("Failed to destroy vtp");
+			return ret;
+		}
+
+		ret = ubcore_find_add_vtp(dev, new_vtp->cfg.trans_mode, new_vtp);
+		if (ret != 0) {
+			kfree(new_vtp);
+			if (cfg.flag.bs.clan_tp) {
+				atomic_dec(&cfg.ctp->use_cnt);
+			} else {
+				if (cfg.trans_mode != UBCORE_TP_UM)
+					atomic_dec(&cfg.tpg->use_cnt);
+				else
+					atomic_dec(&cfg.utp->use_cnt);
+			}
+			ubcore_log_err("Failed to add new vtp to the vtp table");
+			return -1;
+		}
+	} else {
+		vtp->role = UBCORE_VTP_INITIATOR;
 	}
 
 	return ret;
@@ -493,6 +572,12 @@ struct ubcore_vtp *ubcore_find_vtp(struct ubcore_device *dev,
 void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 	struct ubcore_tjetty_cfg *cfg, struct ubcore_vtp_param *vtp_param)
 {
+	if (cfg->eid_index >= dev->eid_table.eid_cnt) {
+		ubcore_log_err("invalid param, eid_index[%u] >= eid_cnt[%u]",
+			cfg->eid_index, dev->eid_table.eid_cnt);
+		return;
+	}
+
 	vtp_param->trans_mode = cfg->trans_mode;
 	/*
 	 * RM/UM VTP for userspace app: get local eid from ucontext
@@ -521,6 +606,12 @@ int ubcore_config_function_migrate_state(struct ubcore_device *dev, uint16_t fe_
 		return ret;
 	}
 
+	if (dev == NULL || dev->ops == NULL || dev->ops->config_function_migrate_state == NULL) {
+		ret = -EINVAL;
+		ubcore_log_err("invalid param");
+		return ret;
+	}
+
 	ret = dev->ops->config_function_migrate_state(dev, fe_idx, cnt, cfg, state);
 	if (ret < 0)
 		ubcore_log_err("Fail to config function migrate state");
@@ -533,6 +624,12 @@ int ubcore_modify_vtp(struct ubcore_device *dev, struct ubcore_vtp_param *vtp_pa
 {
 	struct ubcore_vtp *vtp;
 	int ret;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->modify_vtp == NULL) {
+		ret = -EINVAL;
+		ubcore_log_err("invalid param");
+		return ret;
+	}
 
 	vtp = ubcore_find_vtp(dev, vtp_param->trans_mode,
 		&vtp_param->local_eid, &vtp_param->peer_eid);
@@ -548,4 +645,149 @@ int ubcore_modify_vtp(struct ubcore_device *dev, struct ubcore_vtp_param *vtp_pa
 	}
 
 	return 0;
+}
+
+struct ubcore_vtp *ubcore_check_and_map_vtp(struct ubcore_device *dev, struct ubcore_vtp_cfg *cfg,
+	uint32_t role)
+{
+	uint32_t vtp_role = role;
+	struct ubcore_vtp *vtp;
+	int ret;
+
+	if (dev->ops == NULL || dev->ops->create_vtp == NULL)
+		return NULL;
+
+	vtp = ubcore_find_vtp(dev, cfg->trans_mode, &cfg->local_eid, &cfg->peer_eid);
+	if (vtp != NULL) {
+		ubcore_log_info("vtp already exists");
+		if (vtp->cfg.vtpn == UINT_MAX) { // only this may happen
+			vtp_role = (role == vtp->role) ? role : UBCORE_VTP_DUPLEX;
+			// delete original vtp
+			ubcore_log_info("vtpn is UINT_MAX, delete old one");
+			ubcore_remove_vtp(dev, cfg->trans_mode, vtp);
+			kfree(vtp);
+		} else { // this should never happen
+			if (cfg->vtpn != UINT_MAX) {
+				ubcore_log_warn("origin vtpn is not UINT_MAX, input vtpn is not UINT_MAX");
+				return vtp;
+			}
+			ubcore_log_warn("origin vtpn is not UINT_MAX, input vtpn is UINT_MAX");
+			return NULL;
+		}
+	}
+
+	vtp = dev->ops->create_vtp(dev, cfg, NULL);
+	if (vtp == NULL) {
+		ubcore_log_err("Failed to create vtp");
+		return NULL;
+	}
+
+	vtp->ub_dev = dev;
+	vtp->role = vtp_role;
+
+	ret = ubcore_find_add_vtp(dev, cfg->trans_mode, vtp);
+	if (ret != 0) {
+		(void)dev->ops->destroy_vtp(vtp);
+		vtp = NULL;
+		ubcore_log_err("Failed to add vtp to the vtp table");
+		return vtp;
+	}
+
+	if (cfg->flag.bs.clan_tp) {
+		atomic_inc(&cfg->ctp->use_cnt);
+	} else {
+		if (cfg->trans_mode != UBCORE_TP_UM)
+			atomic_inc(&cfg->tpg->use_cnt);
+		else
+			atomic_inc(&cfg->utp->use_cnt);
+	}
+
+	return vtp;
+}
+
+struct ubcore_vtp *ubcore_check_and_map_target_vtp(struct ubcore_device *dev,
+	struct ubcore_vtp_cfg *cfg)
+{
+	struct ubcore_vtp *vtp = NULL;
+	int ret;
+
+	vtp = ubcore_find_vtp(dev, cfg->trans_mode, &cfg->local_eid, &cfg->peer_eid);
+	if (vtp != NULL)
+		return vtp;
+
+	vtp = kcalloc(1, sizeof(struct ubcore_vtp), GFP_KERNEL);
+	if (vtp == NULL)
+		return NULL;
+
+	vtp->ub_dev = dev;
+	(void)memcpy(&vtp->cfg, cfg, sizeof(struct ubcore_vtp_cfg));
+
+	ret = ubcore_find_add_vtp(dev, cfg->trans_mode, vtp);
+	if (ret != 0) {
+		kfree(vtp);
+		vtp = NULL;
+		ubcore_log_err("Failed to add vtp to the vtp table");
+		return vtp;
+	}
+
+	if (cfg->flag.bs.clan_tp) {
+		atomic_inc(&cfg->ctp->use_cnt);
+	} else {
+		if (cfg->trans_mode != UBCORE_TP_UM)
+			atomic_inc(&cfg->tpg->use_cnt);
+		else
+			atomic_inc(&cfg->utp->use_cnt);
+	}
+
+	return vtp;
+}
+
+uint32_t ubcore_get_all_vtp_cnt(struct ubcore_hash_table *ht)
+{
+	struct ubcore_vtp *vtp;
+	uint32_t cnt = 0;
+	uint32_t i = 0;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return cnt;
+	}
+
+	for (; i < ht->p.size; i++) {
+		hlist_for_each_entry(vtp, &ht->head[i], hnode) {
+			++cnt;
+		}
+	}
+
+	spin_unlock(&ht->lock);
+	return cnt;
+}
+
+struct ubcore_vtp **ubcore_get_all_vtp(struct ubcore_hash_table *ht,
+	uint32_t *dev_vtp_cnt)
+{
+	struct ubcore_vtp **vtp_entry;
+	struct ubcore_vtp *vtp;
+	uint32_t i = 0, j = 0;
+
+	*dev_vtp_cnt = ubcore_get_all_vtp_cnt(ht);
+	vtp_entry = kcalloc(1, (*dev_vtp_cnt) * (uint32_t)sizeof(struct ubcore_vtp *), GFP_KERNEL);
+	if (vtp_entry == NULL)
+		return NULL;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return NULL;
+	}
+
+	for (; i < ht->p.size; i++) {
+		hlist_for_each_entry(vtp, &ht->head[i], hnode) {
+			vtp_entry[j++] = vtp;
+		}
+	}
+
+	spin_unlock(&ht->lock);
+	return vtp_entry;
 }

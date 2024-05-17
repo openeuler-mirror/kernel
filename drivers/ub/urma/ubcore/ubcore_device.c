@@ -18,6 +18,8 @@
  * History: 2021-08-03: create file
  */
 
+#include <net/net_namespace.h>
+#include <net/netns/generic.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
@@ -28,7 +30,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/uaccess.h>
 #include <linux/netdevice.h>
+#include <linux/version.h>
 
+#include "urma/ubcore_types.h"
 #include "ubcore_log.h"
 #include <urma/ubcore_uapi.h>
 #include <urma/ubcore_api.h>
@@ -40,22 +44,66 @@
 #include "ubcore_netdev.h"
 #include "ubcore_vtp.h"
 #include "ubcore_netlink.h"
+#include "ubcore_workqueue.h"
+#include "ubcore_cdev_file.h"
+#include "ubcore_device.h"
 
 static LIST_HEAD(g_client_list);
 static LIST_HEAD(g_device_list);
 
 /*
- * g_device_mutex and g_lists_rwsem protect both g_device_list and g_client_list.
- * g_device_mutex protects writer access by device and client
- * g_lists_rwsem protects reader access to these lists.
- * Iterators of these lists must lock it for read, while updates
- * to the lists must be done with a write lock.
+ * g_device_mutex protects writer access by device
  */
 static DEFINE_MUTEX(g_device_mutex);
-static DECLARE_RWSEM(g_lists_rwsem);
+
+/*
+ * g_clients_rwsem protect g_client_list.
+ */
+static DECLARE_RWSEM(g_clients_rwsem);
 static struct ubcore_device *g_tpf;
 static DEFINE_MUTEX(g_upi_lock);
 static LIST_HEAD(g_upi_list);
+
+static unsigned int g_ubcore_net_id;
+static LIST_HEAD(g_ubcore_net_list);
+static DEFINE_SPINLOCK(g_ubcore_net_lock);
+static DECLARE_RWSEM(g_ubcore_net_rwsem);
+
+static bool g_shared_ns = true;
+
+static const void *ubcore_net_namespace(struct device *dev)
+{
+	struct ubcore_logic_device *ldev = dev_get_drvdata(dev);
+	struct ubcore_device *ubc_dev;
+
+	if (ldev == NULL || ldev->ub_dev == NULL) {
+		ubcore_log_info("init net %p", ldev);
+		return &init_net;
+	}
+
+	ubc_dev = ldev->ub_dev;
+	if (ubc_dev->transport_type == UBCORE_TRANSPORT_UB) {
+		return read_pnet(&ldev->net);
+	} else if (ubc_dev->transport_type == UBCORE_TRANSPORT_IP) {
+		if (ubc_dev->netdev)
+			return dev_net(ubc_dev->netdev);
+		else
+			return &init_net;
+	} else { /* URMA IB device not support namespace yet */
+		return &init_net;
+	}
+}
+
+static struct class g_ubcore_class = {
+	.name    = "ubcore",
+	.ns_type = &net_ns_type_operations,
+	.namespace = ubcore_net_namespace
+};
+
+struct ubcore_net {
+	possible_net_t net;
+	struct list_head node;
+};
 
 struct ubcore_upi_entry {
 	struct ubcore_device *dev;
@@ -63,13 +111,22 @@ struct ubcore_upi_entry {
 	struct list_head node;
 };
 
+struct ubcore_event_work {
+	struct work_struct work;
+	struct ubcore_event event;
+};
+
 void ubcore_set_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client,
 				void *data)
 {
 	struct ubcore_client_ctx *ctx;
-	unsigned long flags;
 
-	spin_lock_irqsave(&dev->client_ctx_lock, flags);
+	if (dev == NULL || client == NULL) {
+		ubcore_log_err("dev or client is null");
+		return;
+	}
+
+	down_read(&dev->client_ctx_rwsem);
 	list_for_each_entry(ctx, &dev->client_ctx_list, list_node) {
 		if (ctx->client == client) {
 			ctx->data = data;
@@ -80,94 +137,96 @@ void ubcore_set_client_ctx_data(struct ubcore_device *dev, struct ubcore_client 
 		       client->client_name);
 
 out:
-	spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
+	up_read(&dev->client_ctx_rwsem);
 }
 EXPORT_SYMBOL(ubcore_set_client_ctx_data);
 
-void *ubcore_get_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client)
+static struct ubcore_client_ctx *ubcore_lookup_client_context(struct ubcore_device *dev,
+	struct ubcore_client *client)
 {
 	struct ubcore_client_ctx *found_ctx = NULL;
 	struct ubcore_client_ctx *ctx, *tmp;
-	unsigned long flags;
 
-	spin_lock_irqsave(&dev->client_ctx_lock, flags);
+	down_read(&dev->client_ctx_rwsem);
 	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
 		if (ctx->client == client) {
 			found_ctx = ctx;
 			break;
 		}
 	}
+	up_read(&dev->client_ctx_rwsem);
+	return found_ctx;
+}
 
+void *ubcore_get_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client)
+{
+	struct ubcore_client_ctx *found_ctx = NULL;
+
+	if (dev == NULL || client == NULL) {
+		ubcore_log_err("dev or client is null");
+		return NULL;
+	}
+
+	found_ctx = ubcore_lookup_client_context(dev, client);
 	if (found_ctx == NULL) {
-		spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
 		ubcore_log_warn("no client ctx found, dev_name: %s, client_name: %s.\n",
 				dev->dev_name, client->client_name);
 		return NULL;
+	} else {
+		return found_ctx->data;
 	}
-	spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
-
-	return found_ctx->data;
 }
 EXPORT_SYMBOL(ubcore_get_client_ctx_data);
 
-static struct ubcore_client_ctx *create_client_ctx(struct ubcore_device *dev,
-						   struct ubcore_client *client)
+static int create_client_ctx(struct ubcore_device *dev, struct ubcore_client *client)
 {
 	struct ubcore_client_ctx *ctx;
-	unsigned long flags;
 
 	ctx = kmalloc(sizeof(struct ubcore_client_ctx), GFP_KERNEL);
 	if (!ctx)
-		return NULL;
+		return -ENOMEM;
 
 	ctx->data = NULL;
 	ctx->client = client;
 
-	down_write(&g_lists_rwsem);
-	spin_lock_irqsave(&dev->client_ctx_lock, flags);
+	down_write(&dev->client_ctx_rwsem);
 	list_add(&ctx->list_node, &dev->client_ctx_list);
-	spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
-	up_write(&g_lists_rwsem);
-
-	return ctx;
+	downgrade_write(&dev->client_ctx_rwsem);
+	if (client->add && client->add(dev) != 0) {
+		list_del(&ctx->list_node);
+		kfree(ctx);
+		up_read(&dev->client_ctx_rwsem);
+		return -EPERM;
+	}
+	up_read(&dev->client_ctx_rwsem);
+	return 0;
 }
 
 static void destroy_client_ctx(struct ubcore_device *dev, struct ubcore_client_ctx *ctx)
 {
-	unsigned long flags;
-
 	if (dev == NULL || ctx == NULL)
 		return;
 
-	down_write(&g_lists_rwsem);
-	spin_lock_irqsave(&dev->client_ctx_lock, flags);
+	down_write(&dev->client_ctx_rwsem);
 	list_del(&ctx->list_node);
-	spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
-	up_write(&g_lists_rwsem);
 	kfree(ctx);
+	up_write(&dev->client_ctx_rwsem);
 }
 
 int ubcore_register_client(struct ubcore_client *new_client)
 {
 	struct ubcore_device *dev;
-	struct ubcore_client_ctx *ctx = NULL;
 
 	mutex_lock(&g_device_mutex);
 
 	list_for_each_entry(dev, &g_device_list, list_node) {
-		ctx = create_client_ctx(dev, new_client);
-		if (ctx == NULL)
-			continue;
-
-		if (new_client->add && new_client->add(dev) != 0) {
-			destroy_client_ctx(dev, ctx);
-			ubcore_log_err("ubcore client: %s register dev:%s failed.\n",
-				       new_client->client_name, dev->dev_name);
-		}
+		if (create_client_ctx(dev, new_client) != 0)
+			ubcore_log_warn("ubcore device: %s add client:%s context failed.\n",
+				dev->dev_name, new_client->client_name);
 	}
-	down_write(&g_lists_rwsem);
+	down_write(&g_clients_rwsem);
 	list_add_tail(&new_client->list_node, &g_client_list);
-	up_write(&g_lists_rwsem);
+	up_write(&g_clients_rwsem);
 
 	mutex_unlock(&g_device_mutex);
 
@@ -178,30 +237,17 @@ EXPORT_SYMBOL(ubcore_register_client);
 
 void ubcore_unregister_client(struct ubcore_client *rm_client)
 {
-	struct ubcore_client_ctx *ctx, *tmp;
+	struct ubcore_client_ctx *found_ctx = NULL;
 	struct ubcore_device *dev;
-	unsigned long flags;
 
 	mutex_lock(&g_device_mutex);
 
-	down_write(&g_lists_rwsem);
+	down_write(&g_clients_rwsem);
 	list_del(&rm_client->list_node);
-	up_write(&g_lists_rwsem);
+	up_write(&g_clients_rwsem);
 
 	list_for_each_entry(dev, &g_device_list, list_node) {
-		struct ubcore_client_ctx *found_ctx = NULL;
-
-		down_write(&g_lists_rwsem);
-		spin_lock_irqsave(&dev->client_ctx_lock, flags);
-		list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
-			if (ctx->client == rm_client) {
-				found_ctx = ctx;
-				break;
-			}
-		}
-		spin_unlock_irqrestore(&dev->client_ctx_lock, flags);
-		up_write(&g_lists_rwsem);
-
+		found_ctx = ubcore_lookup_client_context(dev, rm_client);
 		if (found_ctx == NULL) {
 			ubcore_log_warn("no client ctx found, dev_name: %s, client_name: %s.\n",
 					dev->dev_name, rm_client->client_name);
@@ -277,7 +323,7 @@ struct ubcore_device *ubcore_find_upi_with_dev_name(const char *dev_name, uint32
 
 int ubcore_add_upi_list(struct ubcore_device *dev, uint32_t upi)
 {
-	struct ubcore_upi_entry *entry, *new_entry;
+	struct ubcore_upi_entry *entry = NULL, *new_entry = NULL;
 
 	mutex_lock(&g_upi_lock);
 	list_for_each_entry(entry, &g_upi_list, node) {
@@ -429,6 +475,42 @@ struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name,
 	return ubcore_find_tpf_device_legacy();
 }
 
+static uint32_t ubcore_get_all_tpf_device_cnt(enum ubcore_transport_type type)
+{
+	struct ubcore_device *dev;
+	uint32_t cnt = 0;
+
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		if (dev->attr.tp_maintainer && dev->transport_type == type)
+			++cnt;
+	}
+	mutex_unlock(&g_device_mutex);
+	return cnt;
+}
+
+struct ubcore_device **ubcore_get_all_tpf_device(enum ubcore_transport_type type, uint32_t *dev_cnt)
+{
+	struct ubcore_device **dev_list;
+	struct ubcore_device *dev;
+	int i = 0;
+
+	*dev_cnt = ubcore_get_all_tpf_device_cnt(type);
+	dev_list = kcalloc(1, (*dev_cnt) * (uint32_t)sizeof(struct ubcore_device *), GFP_KERNEL);
+	if (dev_list == NULL)
+		return NULL;
+
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		if (dev->attr.tp_maintainer && dev->transport_type == type) {
+			dev_list[i++] = dev;
+			ubcore_get_device(dev);
+		}
+	}
+	mutex_unlock(&g_device_mutex);
+	return dev_list;
+}
+
 struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
 	enum ubcore_transport_type type)
 {
@@ -486,7 +568,6 @@ static struct ubcore_ht_param g_ht_params[] = {
 
 	[UBCORE_HT_JFR] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfr, hnode),
 			    offsetof(struct ubcore_jfr, id), sizeof(uint32_t), NULL, NULL },
-
 	[UBCORE_HT_JFC] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfc, hnode),
 			    offsetof(struct ubcore_jfc, id), sizeof(uint32_t), NULL, NULL },
 
@@ -516,7 +597,7 @@ static struct ubcore_ht_param g_ht_params[] = {
 
 	/* key: src_eid + des_eid */
 	[UBCORE_HT_VTPN] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtpn, hnode),
-		offsetof(struct ubcore_vtpn, local_eid), sizeof(union ubcore_eid) * 2, NULL, NULL},
+		offsetof(struct ubcore_vtpn, trans_mode), VTPN_KEY_SIZE, NULL, NULL},
 
 	/* key: utp idx */
 	[UBCORE_HT_UTP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_utp, hnode),
@@ -717,11 +798,48 @@ int ubcore_query_all_device_tpf_dev_info(void)
 					dev->dev_name);
 				ret = -1;
 			}
-			ubcore_log_info("query tpf_dev %s to notify uvs", dev->dev_name);
 		}
 	}
 	mutex_unlock(&g_device_mutex);
 	return ret;
+}
+
+static int ubcore_create_main_device(struct ubcore_device *dev, struct net *net)
+{
+	struct ubcore_logic_device *ldev = &dev->ldev;
+	int ret;
+
+	/* create /sys/class/ubcore/<dev->dev_name> */
+	write_pnet(&ldev->net, net);
+	ldev->ub_dev = dev;
+	ldev->dev = &dev->dev;
+
+	device_initialize(&dev->dev);
+	dev->dev.class = &g_ubcore_class;
+	dev->dev.release = ubcore_device_release;
+	dev_set_name(&dev->dev, "%s", dev->dev_name);
+	dev_set_drvdata(&dev->dev, ldev);
+	ret = device_add(&dev->dev);
+	if (ret)
+		return ret;
+
+	if (ubcore_fill_logic_device_attr(ldev, dev) != 0) {
+		device_del(&dev->dev);
+		ldev->dev = NULL;
+		ubcore_log_err("failed to fill attributes, device:%s.\n", dev->dev_name);
+		return -EPERM;
+	}
+
+	return 0;
+}
+
+static void ubcore_destroy_main_device(struct ubcore_device *dev)
+{
+	struct ubcore_logic_device *ldev = &dev->ldev;
+
+	ubcore_unfill_logic_device_attr(ldev, dev);
+	device_del(ldev->dev);
+	ldev->dev = NULL;
 }
 
 static int init_ubcore_device(struct ubcore_device *dev)
@@ -739,16 +857,11 @@ static int init_ubcore_device(struct ubcore_device *dev)
 	if (dev->transport_type == UBCORE_TRANSPORT_UB && dev->attr.tp_maintainer)
 		ubcore_sip_table_init(&dev->sip_table);
 
-	device_initialize(&dev->dev);
-	dev_set_drvdata(&dev->dev, dev);
-	dev_set_name(&dev->dev, "%s", dev->dev_name);
-	dev->dev.release = ubcore_device_release;
-
 	INIT_LIST_HEAD(&dev->list_node);
-	spin_lock_init(&dev->client_ctx_lock);
+	init_rwsem(&dev->client_ctx_rwsem);
 	INIT_LIST_HEAD(&dev->client_ctx_list);
 	INIT_LIST_HEAD(&dev->port_list);
-	spin_lock_init(&dev->event_handler_lock);
+	init_rwsem(&dev->event_handler_rwsem);
 	INIT_LIST_HEAD(&dev->event_handler_list);
 
 	if (!dev->attr.virtualization)
@@ -776,6 +889,9 @@ static int init_ubcore_device(struct ubcore_device *dev)
 		return -1;
 	}
 	ubcore_update_default_eid(dev, true);
+
+	mutex_init(&dev->ldev_mutex);
+	INIT_LIST_HEAD(&dev->ldev_list);
 	return 0;
 }
 
@@ -799,6 +915,8 @@ static void ubcore_remove_uvs_sip_info(struct ubcore_device *dev)
 
 static void uninit_ubcore_device(struct ubcore_device *dev)
 {
+	mutex_destroy(&dev->ldev_mutex);
+
 	ubcore_put_port_netdev(dev);
 	ubcore_update_default_eid(dev, false);
 	ubcore_free_hash_tables(dev);
@@ -816,8 +934,6 @@ static void uninit_ubcore_device(struct ubcore_device *dev)
 		if (ubcore_get_netlink_valid() && ubcore_send_remove_tpf_dev_info(dev) != 0)
 			ubcore_log_warn("failed to remove tpf dev info %s", dev->dev_name);
 	}
-
-	put_device(&dev->dev);
 }
 
 static int ubcore_config_device_rsp_msg_cb(struct ubcore_device *dev,
@@ -893,7 +1009,7 @@ static int ubcore_config_device_in_register(struct ubcore_device *dev)
 	if (dev->transport_type != UBCORE_TRANSPORT_UB)
 		return 0;
 
-	if (ubcore_get_netlink_valid() == false) {
+	if (ubcore_get_netlink_valid() == false && !dev->attr.virtualization) {
 		ubcore_log_info("UVS is not connected, and use default config. dev: %s.\n",
 			dev->dev_name);
 		return ubcore_config_device_default(dev);
@@ -904,6 +1020,9 @@ static int ubcore_config_device_in_register(struct ubcore_device *dev)
 	if (req_msg == NULL)
 		return -ENOMEM;
 
+	/* Should not send UBCORE_MSG_CONFIG_DEVICE after register dev
+	 * It will clear fe resource in uvs
+	 */
 	req_msg->opcode = UBCORE_MSG_CONFIG_DEVICE;
 	req_msg->len = (uint32_t)sizeof(struct ubcore_msg_config_device_req);
 
@@ -913,6 +1032,7 @@ static int ubcore_config_device_in_register(struct ubcore_device *dev)
 	data->max_rc_depth = dev->attr.dev_cap.max_rc_depth;
 	data->min_slice = dev->attr.dev_cap.min_slice;
 	data->max_slice = dev->attr.dev_cap.max_slice;
+	data->virtualization = dev->attr.virtualization;
 
 	/* New TPF devices need to be query suspend info. */
 	data->is_tpf_dev = dev->attr.tp_maintainer;
@@ -926,13 +1046,165 @@ static int ubcore_config_device_in_register(struct ubcore_device *dev)
 	return ret;
 }
 
-int ubcore_register_device(struct ubcore_device *dev)
+static void ubcore_clients_add(struct ubcore_device *dev)
 {
 	struct ubcore_client *client = NULL;
-	struct ubcore_client_ctx *ctx = NULL;
-	struct ubcore_device *find_dev = NULL;
 
-	if (dev == NULL || dev->ops == NULL || strlen(dev->dev_name) == 0) {
+	down_read(&g_clients_rwsem);
+	list_for_each_entry(client, &g_client_list, list_node) {
+		if (create_client_ctx(dev, client) != 0)
+			ubcore_log_warn("ubcore device: %s add client:%s context failed.\n",
+				dev->dev_name, client->client_name);
+	}
+	up_read(&g_clients_rwsem);
+}
+
+static void ubcore_clients_remove(struct ubcore_device *dev)
+{
+	struct ubcore_client_ctx *ctx, *tmp;
+
+	down_read(&dev->client_ctx_rwsem);
+	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
+		if (ctx->client && ctx->client->remove)
+			ctx->client->remove(dev, ctx->data);
+	}
+	up_read(&dev->client_ctx_rwsem);
+
+	down_write(&dev->client_ctx_rwsem);
+	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
+		list_del(&ctx->list_node);
+		kfree(ctx);
+	}
+	up_write(&dev->client_ctx_rwsem);
+}
+
+static int ubcore_create_logic_device(struct ubcore_logic_device *ldev,
+	struct ubcore_device *dev, struct net *net)
+{
+	/* create /sys/class/ubcore/<dev->dev_name> */
+	write_pnet(&ldev->net, net);
+	ldev->ub_dev = dev;
+
+	ldev->dev = device_create(&g_ubcore_class, dev->dev.parent,
+		MKDEV(0, 0), ldev, "%s", dev->dev_name);
+	if (IS_ERR(ldev->dev)) {
+		ubcore_log_err("device create failed, device:%s.\n", dev->dev_name);
+		return -ENOMEM;
+	}
+
+	if (ubcore_fill_logic_device_attr(ldev, dev) != 0) {
+		device_unregister(ldev->dev);
+		ldev->dev = NULL;
+		ubcore_log_err("failed to fill attributes, device:%s.\n", dev->dev_name);
+		return -EPERM;
+	}
+
+	return 0;
+}
+
+static void ubcore_destroy_logic_device(struct ubcore_logic_device *ldev, struct ubcore_device *dev)
+{
+	ubcore_unfill_logic_device_attr(ldev, dev);
+	device_unregister(ldev->dev);
+	ldev->dev = NULL;
+}
+
+static void ubcore_remove_one_logic_device(struct ubcore_device *dev, struct net *net)
+{
+	struct ubcore_logic_device *ldev, *tmp;
+
+	mutex_lock(&dev->ldev_mutex);
+	list_for_each_entry_safe(ldev, tmp, &dev->ldev_list, node) {
+		if (net_eq(read_pnet(&ldev->net), net)) {
+			ubcore_destroy_logic_device(ldev, dev);
+			list_del(&ldev->node);
+			kfree(ldev);
+			break;
+		}
+	}
+	mutex_unlock(&dev->ldev_mutex);
+}
+
+static void ubcore_remove_logic_devices(struct ubcore_device *dev)
+{
+	struct ubcore_logic_device *ldev, *tmp;
+
+	if (dev->transport_type != UBCORE_TRANSPORT_UB)
+		return;
+
+	mutex_lock(&dev->ldev_mutex);
+	list_for_each_entry_safe(ldev, tmp, &dev->ldev_list, node) {
+		ubcore_destroy_logic_device(ldev, dev);
+		list_del(&ldev->node);
+		kfree(ldev);
+	}
+	mutex_unlock(&dev->ldev_mutex);
+}
+
+static int ubcore_add_one_logic_device(struct ubcore_device *dev, struct net *net)
+{
+	struct ubcore_logic_device *ldev;
+	int ret;
+
+	mutex_lock(&dev->ldev_mutex);
+	list_for_each_entry(ldev, &dev->ldev_list, node) {
+		if (net_eq(read_pnet(&dev->ldev.net), net)) {
+			mutex_unlock(&dev->ldev_mutex);
+			return 0;
+		}
+	}
+
+	ldev = kzalloc(sizeof(struct ubcore_logic_device), GFP_KERNEL);
+	if (ldev == NULL) {
+		mutex_unlock(&dev->ldev_mutex);
+		return -ENOMEM;
+	}
+
+	ret = ubcore_create_logic_device(ldev, dev, net);
+	if (ret) {
+		kfree(ldev);
+		mutex_unlock(&dev->ldev_mutex);
+		ubcore_log_err("add device failed %s in net %u", dev->dev_name, net->ns.inum);
+		return ret;
+	}
+
+	list_add_tail(&ldev->node, &dev->ldev_list);
+	mutex_unlock(&dev->ldev_mutex);
+	ubcore_log_info("add device %s in net %u", dev->dev_name, net->ns.inum);
+	return 0;
+}
+
+static int ubcore_copy_logic_devices(struct ubcore_device *dev)
+{
+	struct ubcore_net *unet;
+	int ret = 0;
+
+	if (dev->transport_type != UBCORE_TRANSPORT_UB)
+		return 0;
+
+	down_read(&g_ubcore_net_rwsem);
+	list_for_each_entry(unet, &g_ubcore_net_list, node) {
+		if (net_eq(read_pnet(&unet->net), read_pnet(&dev->ldev.net)))
+			continue;
+		ret = ubcore_add_one_logic_device(dev, read_pnet(&unet->net));
+		if (ret != 0)
+			break;
+	}
+	up_read(&g_ubcore_net_rwsem);
+
+	if (ret)
+		ubcore_remove_logic_devices(dev);
+
+	return ret;
+}
+
+int ubcore_register_device(struct ubcore_device *dev)
+{
+	struct ubcore_device *find_dev = NULL;
+	int ret;
+
+	if (dev == NULL || dev->ops == NULL || strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) == 0 ||
+		strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) > UBCORE_MAX_DEV_NAME - 1) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
@@ -949,64 +1221,68 @@ int ubcore_register_device(struct ubcore_device *dev)
 		return -EINVAL;
 	}
 
+	ret = ubcore_create_main_device(dev, &init_net);
+	if (ret) {
+		uninit_ubcore_device(dev);
+		ubcore_log_err("create main device failed.\n");
+		return ret;
+	}
+
 	if (ubcore_config_device_in_register(dev) != 0) {
 		ubcore_log_err("failed to config ubcore device.\n");
-		uninit_ubcore_device(dev);
-		return -EPERM;
+		ret = -EPERM;
+		goto destroy_mdev;
 	}
 	ubcore_cgroup_reg_dev(dev);
-	mutex_lock(&g_device_mutex);
 
-	list_for_each_entry(client, &g_client_list, list_node) {
-		ctx = create_client_ctx(dev, client);
-		if (ctx == NULL)
-			continue;
-		if (client->add && client->add(dev) != 0) {
-			destroy_client_ctx(dev, ctx);
-			ubcore_log_err("ubcore device: %s register client:%s failed.\n",
-				       dev->dev_name, client->client_name);
-		}
+	mutex_lock(&g_device_mutex);
+	ubcore_clients_add(dev);
+	ret = ubcore_copy_logic_devices(dev);
+	if (ret) {
+		ubcore_clients_remove(dev);
+		mutex_unlock(&g_device_mutex);
+
+		ubcore_log_err("copy logic device failed, device:%s.\n", dev->dev_name);
+		goto err;
 	}
 
-	down_write(&g_lists_rwsem);
 	list_add_tail(&dev->list_node, &g_device_list);
-	up_write(&g_lists_rwsem);
-
 	mutex_unlock(&g_device_mutex);
 
 	ubcore_log_info("ubcore device: %s register success.\n", dev->dev_name);
 	return 0;
+
+err:
+	ubcore_cgroup_unreg_dev(dev);
+destroy_mdev:
+	ubcore_destroy_main_device(dev);
+	uninit_ubcore_device(dev);
+	return ret;
 }
 EXPORT_SYMBOL(ubcore_register_device);
 
 void ubcore_unregister_device(struct ubcore_device *dev)
 {
-	struct ubcore_client_ctx *ctx, *tmp;
-
 	mutex_lock(&g_device_mutex);
 
 	/* Remove device from g_device_list */
-	down_write(&g_lists_rwsem);
 	list_del(&dev->list_node);
 
 	/* Destroy uburma device, may be scheduled.
 	 * This should not be done within a spin_lock_irqsave
 	 */
-	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
-		if (ctx->client != NULL && ctx->client->remove != NULL)
-			ctx->client->remove(dev, ctx->data);
-	}
-	up_write(&g_lists_rwsem);
+	ubcore_clients_remove(dev);
+
+	ubcore_flush_workqueue((int)UBCORE_DISPATCH_EVENT_WQ);
+	ubcore_flush_workqueue((int)UBCORE_SIP_NOTIFY_WQ);
 
 	ubcore_cgroup_unreg_dev(dev);
 
+	ubcore_remove_logic_devices(dev);
+	ubcore_destroy_main_device(dev);
 	uninit_ubcore_device(dev);
 
 	mutex_unlock(&g_device_mutex);
-
-	/* Finally, free client ctx */
-	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node)
-		destroy_client_ctx(dev, ctx);
 
 	/* Pair with set use_cnt = 1 when init device */
 	ubcore_put_device(dev);
@@ -1019,46 +1295,72 @@ EXPORT_SYMBOL(ubcore_unregister_device);
 
 void ubcore_register_event_handler(struct ubcore_device *dev, struct ubcore_event_handler *handler)
 {
-	unsigned long flags;
-
 	if (dev == NULL || handler == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
 
-	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	down_write(&dev->event_handler_rwsem);
 	list_add_tail(&handler->node, &dev->event_handler_list);
-	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+	up_write(&dev->event_handler_rwsem);
 }
 EXPORT_SYMBOL(ubcore_register_event_handler);
+
+static void ubcore_dispatch_event_clients(struct ubcore_event *event)
+{
+	struct ubcore_event_handler *handler;
+	struct ubcore_device *dev = event->ub_dev;
+
+	down_read(&dev->event_handler_rwsem);
+	list_for_each_entry(handler, &dev->event_handler_list, node)
+		handler->event_callback(event, handler);
+	up_read(&dev->event_handler_rwsem);
+}
+
+static void ubcore_dispatch_event_task(struct work_struct *work)
+{
+	struct ubcore_event_work *l_ubcore_event =
+		container_of(work, struct ubcore_event_work, work);
+
+	ubcore_dispatch_event_clients(&l_ubcore_event->event);
+	kfree(l_ubcore_event);
+}
+
+int ubcore_dispatch_event(struct ubcore_event *event)
+{
+	struct ubcore_event_work *l_ubcore_event;
+
+	l_ubcore_event = kzalloc(sizeof(*l_ubcore_event), GFP_ATOMIC);
+	if (!l_ubcore_event)
+		return -ENOMEM;
+
+	INIT_WORK(&l_ubcore_event->work, ubcore_dispatch_event_task);
+	l_ubcore_event->event = *event;
+
+	if (ubcore_queue_work((int)UBCORE_DISPATCH_EVENT_WQ, &l_ubcore_event->work) != 0) {
+		kfree(l_ubcore_event);
+		ubcore_log_err("Queue work failed");
+	}
+
+	return 0;
+}
 
 void ubcore_unregister_event_handler(struct ubcore_device *dev,
 				     struct ubcore_event_handler *handler)
 {
-	unsigned long flags;
-
 	if (dev == NULL || handler == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
 
-	spin_lock_irqsave(&dev->event_handler_lock, flags);
+	down_write(&dev->event_handler_rwsem);
 	list_del(&handler->node);
-	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+	up_write(&dev->event_handler_rwsem);
 }
 EXPORT_SYMBOL(ubcore_unregister_event_handler);
 
-void ubcore_dispatch_async_event(struct ubcore_event *event)
+static bool ubcore_preprocess_event(struct ubcore_event *event)
 {
-	struct ubcore_event_handler *handler;
-	struct ubcore_device *dev;
-	unsigned long flags;
-
-	if (event == NULL || event->ub_dev == NULL) {
-		ubcore_log_err("Invalid argument.\n");
-		return;
-	}
-
 	if (event->event_type == UBCORE_EVENT_TP_ERR && event->element.tp != NULL) {
 		ubcore_log_info("ubcore detect tp error event");
 		if (event->ub_dev->transport_type == UBCORE_TRANSPORT_IB) {
@@ -1068,49 +1370,59 @@ void ubcore_dispatch_async_event(struct ubcore_event *event)
 				event->element.tp->state == UBCORE_TP_STATE_RESET) {
 				ubcore_log_warn("Tp already in state %d, ignore err event",
 					(int32_t)event->element.tp->state);
-				return;
+				return true;
 			}
 
 			if (ubcore_change_tp_to_err(event->ub_dev, event->element.tp) != 0)
 				ubcore_log_info("ubcore change tp to error failed");
 		}
-		return;
+		return true;
 	} else if (event->event_type == UBCORE_EVENT_TP_SUSPEND && event->element.tp != NULL) {
 		ubcore_log_info("ubcore detect tp suspend event");
 		ubcore_report_tp_suspend(event->ub_dev, event->element.tp);
-		return;
+		return true;
 	} else if (event->event_type == UBCORE_EVENT_MIGRATE_VTP_SWITCH &&
 		event->element.vtp != NULL) {
 		ubcore_log_info("ubcore detect migrate vtp switch event");
 		ubcore_report_migrate_vtp(event->ub_dev, event->element.vtp,
 			UBCORE_EVENT_MIGRATE_VTP_SWITCH);
-		return;
+		return true;
 	} else if (event->event_type == UBCORE_EVENT_MIGRATE_VTP_ROLLBACK &&
 		event->element.vtp != NULL) {
 		ubcore_log_info("ubcore detect migrate vtp rollback event");
 		ubcore_report_migrate_vtp(event->ub_dev, event->element.vtp,
 			UBCORE_EVENT_MIGRATE_VTP_ROLLBACK);
-		return;
-	} else if (event->event_type == UBCORE_EVENT_TP_FLUSH_DONE) {
+		return true;
+	} else if (event->event_type == UBCORE_EVENT_TP_FLUSH_DONE &&
+		event->element.tp != NULL) {
 		ubcore_log_info("ubcore detect tp flush done event");
 		if (event->element.tp->state == UBCORE_TP_STATE_RESET) {
 			ubcore_log_warn("Tp already in state %d, ignore flush done event",
 				(int32_t)event->element.tp->state);
-			return;
+			return true;
 		}
 		/* flush done means tp already in error,
 		 * and all pkt have been send need uvs to restore
 		 */
 		if (event->ub_dev->transport_type == UBCORE_TRANSPORT_UB)
 			ubcore_report_tp_error(event->ub_dev, event->element.tp);
+		return true;
+	}
+	return false;
+}
+
+void ubcore_dispatch_async_event(struct ubcore_event *event)
+{
+	if (event == NULL || event->ub_dev == NULL) {
+		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
 
-	dev = event->ub_dev;
-	spin_lock_irqsave(&dev->event_handler_lock, flags);
-	list_for_each_entry(handler, &dev->event_handler_list, node)
-		handler->event_callback(event, handler);
-	spin_unlock_irqrestore(&dev->event_handler_lock, flags);
+	if (ubcore_preprocess_event(event))
+		return;
+
+	if (ubcore_dispatch_event(event) != 0)
+		ubcore_log_err("ubcore_dispatch_event failed");
 }
 EXPORT_SYMBOL(ubcore_dispatch_async_event);
 
@@ -1118,10 +1430,18 @@ static bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index)
 {
 	struct net *net;
 
-	if (IS_ERR_OR_NULL(dev->eid_table.eid_entries))
+	if (eid_index >= dev->eid_table.eid_cnt) {
+		ubcore_log_err("eid_indx: %u is over the up limit: %u",
+			eid_index, dev->eid_table.eid_cnt);
 		return false;
+	}
 
 	spin_lock(&dev->eid_table.lock);
+	if (IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
+		spin_unlock(&dev->eid_table.lock);
+		return false;
+	}
+
 	if (!dev->eid_table.eid_entries[eid_index].valid) {
 		spin_unlock(&dev->eid_table.lock);
 		return false;
@@ -1131,6 +1451,11 @@ static bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index)
 	return net_eq(net, current->nsproxy->net_ns);
 }
 
+bool ubcore_dev_accessible(struct ubcore_device *dev)
+{
+	return (g_shared_ns || net_eq(current->nsproxy->net_ns, read_pnet(&dev->ldev.net)));
+}
+
 struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	struct ubcore_udrv_priv *udrv_data)
 {
@@ -1138,12 +1463,13 @@ struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_
 	struct ubcore_cg_object cg_obj;
 	int ret;
 
-	if (dev == NULL || dev->ops == NULL || dev->ops->alloc_ucontext == NULL) {
-		ubcore_log_err("alloc_ucontext not registered.\n");
+	if (dev == NULL || dev->ops == NULL || dev->ops->alloc_ucontext == NULL ||
+		eid_index >= UBCORE_MAX_EID_CNT) {
+		ubcore_log_err("Invalid argument.\n");
 		return NULL;
 	}
 
-	if (!ubcore_eid_accessible(dev, eid_index)) {
+	if (!ubcore_dev_accessible(dev) || !ubcore_eid_accessible(dev, eid_index)) {
 		ubcore_log_err("eid is not accessible by current ns.\n");
 		return NULL;
 	}
@@ -1175,7 +1501,7 @@ void ubcore_free_ucontext(struct ubcore_device *dev, struct ubcore_ucontext *uco
 	struct ubcore_cg_object cg_obj;
 
 	if (dev == NULL || ucontext == NULL || dev->ops == NULL ||
-	    dev->ops->free_ucontext == NULL) {
+		dev->ops->free_ucontext == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
@@ -1189,60 +1515,73 @@ void ubcore_free_ucontext(struct ubcore_device *dev, struct ubcore_ucontext *uco
 }
 EXPORT_SYMBOL(ubcore_free_ucontext);
 
-int ubcore_set_upi(struct ubcore_device *dev, uint16_t fe_idx, uint16_t idx, uint32_t upi)
+static struct ubcore_device *ubcore_get_ueid_op_dev(struct ubcore_device *dev)
 {
-	int ret;
+	if (dev == NULL)
+		return NULL;
 
-	if (dev == NULL || dev->ops == NULL || dev->ops->set_upi == NULL) {
-		ubcore_log_err("Invalid argument.\n");
-		return -EINVAL;
+	if (dev->transport_type != UBCORE_TRANSPORT_UB) {
+		ubcore_get_device(dev);
+		return dev;
 	}
 
-	ret = dev->ops->set_upi(dev, fe_idx, idx, upi);
-	if (ret != 0) {
-		ubcore_log_err("failed to set fe%hu upi%hu, ret: %d.\n", fe_idx, idx, ret);
-		return -EPERM;
-	}
-	return 0;
+	/* For UB dev, add_ueid and delete_ueid ops should operate on tpf */
+	return ubcore_find_tpf_by_dev(dev, UBCORE_TRANSPORT_UB);
 }
-EXPORT_SYMBOL(ubcore_set_upi);
 
 int ubcore_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg)
 {
+	struct ubcore_device *op_dev = NULL;
 	int ret;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->add_ueid == NULL) {
+	op_dev = ubcore_get_ueid_op_dev(dev);
+	if (op_dev == NULL || cfg == NULL || op_dev->ops == NULL || op_dev->ops->add_ueid == NULL
+		|| fe_idx >= UBCORE_MAX_FE_CNT) {
 		ubcore_log_err("Invalid argument.\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto put_dev;
 	}
 
-	ret = dev->ops->add_ueid(dev, fe_idx, cfg);
+	ret = op_dev->ops->add_ueid(op_dev, fe_idx, cfg);
 	if (ret != 0) {
-		ubcore_log_err("failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u",
-		fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index);
-		ubcore_log_err("failed to add ueid, ret: %d", ret);
-		return -EPERM;
+		ubcore_log_err(
+			"failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u, ret:%d",
+			fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index, ret);
+		goto put_dev;
 	}
+
+put_dev:
+	if (op_dev)
+		ubcore_put_device(op_dev);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_add_ueid);
 
 int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg)
 {
+	struct ubcore_device *op_dev = NULL;
 	int ret;
 
-	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->delete_ueid == NULL) {
+	op_dev = ubcore_get_ueid_op_dev(dev);
+	if (op_dev == NULL || cfg == NULL || op_dev->ops == NULL ||
+		op_dev->ops->delete_ueid == NULL ||
+		fe_idx >= UBCORE_MAX_FE_CNT) {
 		ubcore_log_err("Invalid argument.\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto put_dev;
 	}
 
-	ret = dev->ops->delete_ueid(dev, fe_idx, cfg);
+	ret = op_dev->ops->delete_ueid(op_dev, fe_idx, cfg);
 	if (ret != 0) {
-		ubcore_log_err("failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u",
-		fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index);
-		ubcore_log_err("failed to add ueid, ret: %d", ret);
-		return -EPERM;
+		ubcore_log_err(
+			"failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u, ret:%d",
+			fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index, ret);
+		goto put_dev;
 	}
+
+put_dev:
+	if (op_dev)
+		ubcore_put_device(op_dev);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_ueid);
@@ -1402,8 +1741,10 @@ static int ubcore_del_device_sip(struct ubcore_device *dev, struct ubcore_sip_in
 {
 	uint32_t index;
 
-	if (ubcore_lookup_sip_idx(&dev->sip_table, sip, &index) != 0)
+	if (ubcore_lookup_sip_idx(&dev->sip_table, sip, &index) != 0) {
+		ubcore_log_err("sip not exists\n");
 		return -1;
+	}
 
 	(void)ubcore_del_sip_entry(&dev->sip_table, index);
 
@@ -1469,10 +1810,16 @@ EXPORT_SYMBOL(ubcore_delete_sip);
 
 struct ubcore_eid_info *ubcore_get_eid_list(struct ubcore_device *dev, uint32_t *cnt)
 {
-	struct ubcore_eid_info *tmp;
 	struct ubcore_eid_info *eid_list;
+	struct ubcore_eid_info *tmp;
 	uint32_t count;
 	uint32_t i;
+
+	if (dev == NULL || dev->attr.dev_cap.max_eid_cnt == 0 ||
+		dev->attr.dev_cap.max_eid_cnt > UBCORE_MAX_EID_CNT || cnt == NULL) {
+		ubcore_log_err("invalid input parameter.\n");
+		return NULL;
+	}
 
 	tmp = vmalloc(dev->attr.dev_cap.max_eid_cnt * sizeof(struct ubcore_eid_info));
 	if (tmp == NULL)
@@ -1569,4 +1916,214 @@ struct ubcore_device *ubcore_lookup_tpf_by_sip_addr(struct ubcore_net_addr *addr
 	mutex_unlock(&g_device_mutex);
 
 	return target;
+}
+
+static int ubcore_modify_dev_ns(struct ubcore_device *dev, struct net *net)
+{
+	struct net *cur;
+	int ret;
+
+	cur = read_pnet(&dev->ldev.net);
+	if (net_eq(net, cur))
+		return 0;
+
+	kobject_uevent(&dev->ldev.dev->kobj, KOBJ_REMOVE);
+	ubcore_clients_remove(dev);
+	write_pnet(&dev->ldev.net, net);
+	ret = device_rename(dev->ldev.dev, dev_name(dev->ldev.dev));
+	if (ret) {
+		write_pnet(&dev->ldev.net, cur);
+		ubcore_log_err("Failed to rename device in the new ns.\n");
+	}
+	ubcore_clients_add(dev);
+	kobject_uevent(&dev->ldev.dev->kobj, KOBJ_ADD);
+	return ret;
+}
+
+int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd)
+{
+	struct ubcore_device *dev = NULL, *tmp;
+	struct net *net;
+	int ret = 0;
+
+	if (!ns_capable(current->nsproxy->net_ns->user_ns, CAP_NET_ADMIN)) {
+		ubcore_log_err("current user does not have net admin capability");
+		return -EPERM;
+	}
+
+	if (g_shared_ns) {
+		ubcore_log_err("Can not set device to ns under shared ns mode.\n");
+		return -EPERM;
+	}
+
+	net = get_net_ns_by_fd(ns_fd);
+	if (IS_ERR(net)) {
+		ubcore_log_err("Failed to get ns by fd.\n");
+		return PTR_ERR(net);
+	}
+
+	/* Find device by name */
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(tmp, &g_device_list, list_node) {
+		if (strcmp(dev_name(tmp->ldev.dev), device_name) == 0) {
+			dev = tmp;
+			break;
+		}
+	}
+	if (dev == NULL) {
+		ret = -EINVAL;
+		ubcore_log_err("Failed to find device.\n");
+		goto out;
+	}
+
+	/* Put device in the new ns */
+	ret = ubcore_modify_dev_ns(dev, net);
+
+out:
+	mutex_unlock(&g_device_mutex);
+	put_net(net);
+	return ret;
+}
+
+int ubcore_set_ns_mode(bool shared)
+{
+	unsigned long flags;
+
+	if (!ns_capable(current->nsproxy->net_ns->user_ns, CAP_NET_ADMIN)) {
+		ubcore_log_err("current user does not have net admin capability");
+		return -EPERM;
+	}
+
+	down_write(&g_ubcore_net_rwsem);
+	if (g_shared_ns == shared) {
+		up_write(&g_ubcore_net_rwsem);
+		return 0;
+	}
+	spin_lock_irqsave(&g_ubcore_net_lock, flags);
+	if (!list_empty(&g_ubcore_net_list)) {
+		spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+		up_write(&g_ubcore_net_rwsem);
+		ubcore_log_err("Failed to modify ns mode with existing ns");
+		return -EPERM;
+	}
+	g_shared_ns = shared;
+	spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+	up_write(&g_ubcore_net_rwsem);
+	return 0;
+}
+
+void ubcore_net_exit(struct net *net)
+{
+	struct ubcore_net *unet = net_generic(net, g_ubcore_net_id);
+	struct ubcore_device *dev;
+	unsigned long flags;
+
+	if (unet == NULL)
+		return;
+
+	ubcore_log_info("net exit %u", net->ns.inum);
+	down_write(&g_ubcore_net_rwsem);
+	spin_lock_irqsave(&g_ubcore_net_lock, flags);
+	if (list_empty(&unet->node)) {
+		spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+		up_write(&g_ubcore_net_rwsem);
+		return;
+	}
+	list_del_init(&unet->node);
+	spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+	up_write(&g_ubcore_net_rwsem);
+
+	if (!g_shared_ns) {
+		mutex_lock(&g_device_mutex);
+		list_for_each_entry(dev, &g_device_list, list_node) {
+			(void)ubcore_modify_dev_ns(dev, &init_net);
+		}
+		mutex_unlock(&g_device_mutex);
+	} else {
+		mutex_lock(&g_device_mutex);
+		list_for_each_entry(dev, &g_device_list, list_node) {
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				continue;
+			ubcore_remove_one_logic_device(dev, net);
+		}
+		mutex_unlock(&g_device_mutex);
+	}
+}
+
+static int ubcore_net_init(struct net *net)
+{
+	struct ubcore_net *unet = net_generic(net, g_ubcore_net_id);
+	struct ubcore_device *dev;
+	unsigned long flags;
+	int ret = 0;
+
+	if (unet == NULL)
+		return 0;
+
+	ubcore_log_info("net init %u", net->ns.inum);
+	write_pnet(&unet->net, net);
+	if (net_eq(net, &init_net)) {
+		INIT_LIST_HEAD(&unet->node);
+		return 0;
+	}
+
+	spin_lock_irqsave(&g_ubcore_net_lock, flags);
+	list_add_tail(&unet->node, &g_ubcore_net_list);
+	spin_unlock_irqrestore(&g_ubcore_net_lock, flags);
+
+	if (!g_shared_ns)
+		return 0;
+
+	mutex_lock(&g_device_mutex);
+	list_for_each_entry(dev, &g_device_list, list_node) {
+		if (dev->transport_type != UBCORE_TRANSPORT_UB)
+			continue;
+
+		down_read(&g_ubcore_net_rwsem);
+		ret = ubcore_add_one_logic_device(dev, net);
+		up_read(&g_ubcore_net_rwsem);
+		if (ret)
+			break;
+	}
+	mutex_unlock(&g_device_mutex);
+	if (ret)
+		ubcore_net_exit(net);
+
+	/* return ret will cause error starting a container */
+	return 0;
+}
+
+static struct pernet_operations g_ubcore_net_ops = {
+	.init = ubcore_net_init,
+	.exit = ubcore_net_exit,
+	.id = &g_ubcore_net_id,
+	.size = sizeof(struct ubcore_net)
+};
+
+int ubcore_register_pnet_ops(void)
+{
+	return register_pernet_device(&g_ubcore_net_ops);
+}
+void ubcore_unregister_pnet_ops(void)
+{
+	unregister_pernet_device(&g_ubcore_net_ops);
+}
+
+int ubcore_class_register(struct class **ubcore_class)
+{
+	int ret;
+
+	ret = class_register(&g_ubcore_class);
+	if (!ret)
+		*ubcore_class = &g_ubcore_class;
+
+	return ret;
+}
+
+void ubcore_class_unregister(struct class *ubcore_class)
+{
+	if (ubcore_class != &g_ubcore_class)
+		return;
+
+	class_unregister(&g_ubcore_class);
 }

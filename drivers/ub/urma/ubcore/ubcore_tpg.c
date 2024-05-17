@@ -135,6 +135,10 @@ int ubcore_create_multi_tp(struct ubcore_device *dev, struct ubcore_tpg *tpg,
 
 	/* add tp to tpg */
 	for (i = 0; i < tp_cnt; i++) {
+		if (tp[i] == NULL) {
+			ubcore_log_warn("create multi tp, buf tp is null_ptr");
+			continue;
+		}
 		ubcore_store_tp_init_cfg(tpg, tp[i], dev, &cfg[i]);
 		tpg->tp_list[i] = tp[i];
 	}
@@ -160,7 +164,7 @@ uint32_t ubcore_destroy_multi_tp(struct ubcore_device *dev, struct ubcore_tpg *t
 	if (ret != (int)tp_cnt)
 		ubcore_log_err("Failed to destroy multi tp %d", ret);
 
-	for (i = 0; i < ret; i++)
+	for (i = 0; (i < ret) && (i < UBCORE_MAX_TP_CNT_IN_GRP); i++)
 		tpg->tp_list[i] = NULL;
 
 	return (ret > 0 ? (uint32_t)ret : 0);
@@ -177,9 +181,9 @@ uint32_t ubcore_modify_tp_in_tpg(struct ubcore_device *dev, struct ubcore_tpg *t
 
 	ret = dev->ops->modify_multi_tp(tpg->tpg_cfg.tp_cnt, tpg->tp_list, attr, mask, failed_tp);
 	if (ret != (int)tpg->tpg_cfg.tp_cnt)
-		ubcore_log_err("Failed to modify multi tp %d", ret);
+		ubcore_log_err("Failed to modify multi tp %d and tpgn %u ", ret, tpg->tpgn);
 
-	for (i = 0; i < ret; i++)
+	for (i = 0; (i < ret && i < UBCORE_MAX_TP_CNT_IN_GRP); i++)
 		ubcore_modify_tp_attr(tpg->tp_list[i], &attr[i], mask[i]);
 
 	return (ret > 0 ? (uint32_t)ret : 0);

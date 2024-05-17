@@ -96,6 +96,8 @@ int ubcore_notify_uvs_del_sip(struct ubcore_device *dev,
 
 	sip_req = (struct ubcore_del_sip_req *)(void *)req_msg->payload;
 	sip_req->index = index;
+	(void)memcpy(sip_req->dev_name, dev->dev_name,
+		UBCORE_MAX_DEV_NAME);
 
 	resp_msg = ubcore_nl_send_wait(dev, req_msg);
 	if (resp_msg == NULL) {
@@ -104,7 +106,8 @@ int ubcore_notify_uvs_del_sip(struct ubcore_device *dev,
 		return -1;
 	}
 	resp = (struct ubcore_del_sip_resp *)(void *)resp_msg->payload;
-	if (resp_msg->msg_type != UBCORE_NL_DEL_SIP_RESP || resp == NULL ||
+	if (resp_msg->msg_type != UBCORE_NL_DEL_SIP_RESP ||
+		resp_msg->payload_len != sizeof(struct ubcore_del_sip_resp) ||
 		resp->ret != UBCORE_NL_RESP_SUCCESS) {
 		ubcore_log_err("del sip request is rejected with type %d ret %d",
 			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
@@ -140,6 +143,8 @@ int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
 		UBCORE_MAX_PORT_CNT);
 	sip_req->prefix_len = sip_info->prefix_len;
 	sip_req->mtu = sip_info->mtu;
+	(void)memcpy(sip_req->netdev_name,
+		sip_info->netdev_name, UBCORE_MAX_DEV_NAME);
 
 	resp_msg = ubcore_nl_send_wait(dev, req_msg);
 	if (resp_msg == NULL) {
@@ -149,7 +154,8 @@ int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
 	}
 
 	resp = (struct ubcore_add_sip_resp *)(void *)resp_msg->payload;
-	if (resp_msg->msg_type != UBCORE_NL_ADD_SIP_RESP || resp == NULL ||
+	if (resp_msg->msg_type != UBCORE_NL_ADD_SIP_RESP ||
+		resp_msg->payload_len != sizeof(struct ubcore_add_sip_resp) ||
 		resp->ret != UBCORE_NL_RESP_SUCCESS) {
 		ubcore_log_err("add sip request is rejected with type %d ret %d",
 			resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
@@ -275,8 +281,8 @@ static void ubcore_sync_sip_port_list(struct ubcore_device *dev,
 		ubcore_log_info("dev_name: %s, old port_cnt: %hhu, new port_cnt: %hhu\n",
 			dev->dev_name, old_sip.port_cnt, new_sip->port_cnt);
 	}
-	ubcore_put_device(tpf_dev);
 	mutex_unlock(&tpf_dev->sip_table.lock);
+	ubcore_put_device(tpf_dev);
 }
 
 int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
@@ -323,8 +329,7 @@ int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 	down_write(&g_port_list_lock);
 	list_add_tail(&new_node->node, &dev->port_list);
 	up_write(&g_port_list_lock);
-	ubcore_log_info("ndev:%s dev_name: %s bound port[0]: %hhu\n", netdev_name(ndev),
-		dev->dev_name, new_node->port_list[0]);
+	ubcore_log_info("ndev:%s bound port[0]: %hhu\n", netdev_name(ndev), new_node->port_list[0]);
 	ubcore_sync_sip_port_list(dev, new_node->port_list, new_node->port_cnt);
 	return 0;
 }
@@ -397,6 +402,11 @@ void ubcore_put_port_netdev(struct ubcore_device *dev)
 {
 	struct ubcore_ndev_port *port_info, *next;
 
+	if (dev == NULL) {
+		ubcore_log_warn("invalid input dev is null_ptr.\n");
+		return;
+	}
+
 	down_write(&g_port_list_lock);
 	list_for_each_entry_safe(port_info, next, &dev->port_list, node) {
 		if (port_info != NULL) {
@@ -439,6 +449,7 @@ void ubcore_sip_table_uninit(struct ubcore_sip_table *sip_table)
 		}
 	}
 	mutex_unlock(&sip_table->lock);
+	mutex_destroy(&sip_table->lock);
 }
 
 int ubcore_sip_idx_alloc(struct ubcore_sip_table *sip_table)
@@ -462,7 +473,7 @@ int ubcore_sip_idx_free(struct ubcore_sip_table *sip_table, uint32_t idx)
 	mutex_lock(&sip_table->lock);
 	if (test_bit(idx, sip_table->index_bitmap) == false) {
 		mutex_unlock(&sip_table->lock);
-		ubcore_log_err("idx is used.\n");
+		ubcore_log_err("idx:%u is not used.\n", idx);
 		return -EINVAL;
 	}
 	clear_bit(idx, sip_table->index_bitmap);

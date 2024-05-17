@@ -44,7 +44,7 @@ static inline uint32_t get_udrv_in_len(struct ubcore_udata *udata)
 
 static inline int get_udrv_in_data(uint8_t *dst, uint32_t dst_len, struct ubcore_udata *udata)
 {
-	if (udata == NULL || udata->udrv_data == NULL || udata->udrv_data->in_len == 0)
+	if (get_udrv_in_len(udata) == 0)
 		return 0;
 
 	if (udata->uctx != NULL) {
@@ -66,6 +66,9 @@ static inline int ubcore_mtu_enum_to_int(enum ubcore_mtu mtu)
 enum ubcore_mtu ubcore_get_mtu(int mtu)
 {
 	int tmp_mtu = mtu - UB_PROTOCOL_HEAD_BYTES;
+
+	if (mtu < 0)
+		return 0;
 
 	if (tmp_mtu >= ubcore_mtu_enum_to_int(UBCORE_MTU_8192))
 		return UBCORE_MTU_8192;
@@ -115,6 +118,7 @@ static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, uint64_t ext_addr
 	void *peer_ext = NULL;
 	int ret;
 
+	/* ext is unused */
 	if (ext_len == 0 || ext_addr == 0)
 		return 0;
 
@@ -145,6 +149,8 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 	switch (ta->type) {
 	case UBCORE_TA_JFS_TJFR:
 		jfs = ta->jfs;
+		if (jfs->jfs_cfg.eid_index >= jfs->ub_dev->eid_table.eid_cnt)
+			return;
 		ta_data->jetty_id.eid =
 			jfs->ub_dev->eid_table.eid_entries[jfs->jfs_cfg.eid_index].eid;
 		ta_data->jetty_id.id = jfs->id;
@@ -152,6 +158,8 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
 		jetty = ta->jetty;
+		if (jetty->jetty_cfg.eid_index >= jetty->ub_dev->eid_table.eid_cnt)
+			return;
 		ta_data->jetty_id.eid =
 			jetty->ub_dev->eid_table.eid_entries[jetty->jetty_cfg.eid_index].eid;
 		ta_data->jetty_id.id = jetty->id;
@@ -186,9 +194,11 @@ static int ubcore_nl_handle_create_tp_resp_cb(struct ubcore_device *dev,
 
 int ubcore_destroy_tp(struct ubcore_tp *tp)
 {
+	if (tp == NULL)
+		return -EINVAL;
 	if (!ubcore_have_tp_ops(tp->ub_dev)) {
 		ubcore_log_err("TP ops is NULL");
-		return -1;
+		return -EINVAL;
 	}
 	if (tp->peer_ext.len > 0 && tp->peer_ext.addr != 0)
 		kfree((void *)tp->peer_ext.addr);
@@ -240,12 +250,17 @@ struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev,
 		ubcore_log_err("Failed to create tp towards remote eid %pI6c", &cfg->peer_eid);
 		return NULL;
 	}
+	/* The driver may return the old tp pointer */
+	if (tp->state != UBCORE_TP_STATE_RESET)
+		return tp;
+
 	tp->ub_dev = dev;
 	ubcore_set_tp_init_cfg(tp, cfg);
 	tp->state = UBCORE_TP_STATE_RESET;
 	ubcore_log_info("tp state:(set to RESET) with tpn %u", tp->tpn);
 	tp->priv = NULL;
 	atomic_set(&tp->use_cnt, 0);
+
 	return tp;
 }
 
@@ -401,7 +416,7 @@ int ubcore_modify_tp_state(struct ubcore_device *dev, struct ubcore_tp *tp,
 		return 0;
 	}
 
-	if (dev->ops->modify_tp(tp, attr, mask) != 0) {
+	if (dev == NULL || dev->ops == NULL || dev->ops->modify_tp(tp, attr, mask) != 0) {
 		/* tp->peer_ext.addr will be freed when called ubcore_destroy_tp */
 		ubcore_log_err("Failed to modify tp to %u from state %u and tpn = %u",
 			(uint32_t)new_state, (uint32_t)tp->state, tp->tpn);
@@ -515,6 +530,12 @@ static struct ubcore_nlmsg *ubcore_get_create_tp_response(struct ubcore_tp *tp,
 	struct ubcore_nl_create_tp_resp *create_resp;
 	struct ubcore_nlmsg *resp = NULL;
 
+	if (payload_len < (uint32_t)sizeof(struct ubcore_nl_create_tp_resp)) {
+		/* If the value overflows, tp must exist */
+		ubcore_log_err("tp_ext len %u is err", tp->tp_ext.len);
+		return NULL;
+	}
+
 	resp = ubcore_alloc_nlmsg(payload_len, &req->dst_eid, &req->src_eid);
 	if (resp == NULL) {
 		ubcore_log_err("Failed to alloc create tp response");
@@ -549,12 +570,15 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 	struct ubcore_jetty *jetty;
 	struct ubcore_jfs *jfs;
 
+	(void)memset(vtp_param, 0, sizeof(struct ubcore_vtp_param));
 	if (ta == NULL)
 		return;
 
 	switch (ta->type) {
 	case UBCORE_TA_JFS_TJFR:
 		jfs = ta->jfs;
+		if (jfs->jfs_cfg.eid_index >= jfs->ub_dev->eid_table.eid_cnt)
+			return;
 		vtp_param->local_eid =
 			jfs->ub_dev->eid_table.eid_entries[jfs->jfs_cfg.eid_index].eid;
 		vtp_param->local_jetty = jfs->id;
@@ -562,6 +586,8 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
 		jetty = ta->jetty;
+		if (jetty->jetty_cfg.eid_index >= jetty->ub_dev->eid_table.eid_cnt)
+			return;
 		vtp_param->local_eid =
 			jetty->ub_dev->eid_table.eid_entries[jetty->jetty_cfg.eid_index].eid;
 		vtp_param->local_jetty = jetty->id;
@@ -796,11 +822,13 @@ static struct ubcore_tp *ubcore_bind_target_tp(struct ubcore_device *dev,
 
 struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req)
 {
-	struct ubcore_nl_create_tp_req *create =
-		(struct ubcore_nl_create_tp_req *)(void *)req->payload;
+	struct ubcore_nl_create_tp_req *create;
 	struct ubcore_tp *tp = NULL;
 	struct ubcore_device *dev;
 
+	if (req == NULL)
+		return NULL;
+	create = (struct ubcore_nl_create_tp_req *)(void *)req->payload;
 	if (req->payload_len < sizeof(struct ubcore_nl_create_tp_req)) {
 		ubcore_log_err("Invalid create req");
 		return NULL;
@@ -861,10 +889,14 @@ static int ubcore_unbind_target_tp(struct ubcore_device *dev,
 
 struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req)
 {
-	struct ubcore_nl_destroy_tp_req *destroy =
-		(struct ubcore_nl_destroy_tp_req *)(void *)req->payload;
+	struct ubcore_nl_destroy_tp_req *destroy;
 	struct ubcore_device *dev;
 	int ret = -1;
+
+	if (req == NULL) {
+		ubcore_log_err("Failed to destroy tp req, req is NULL");
+		return NULL;
+	}
 
 	if (req->payload_len != sizeof(struct ubcore_nl_destroy_tp_req)) {
 		ubcore_log_err("Invalid destroy req");
@@ -879,6 +911,7 @@ struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req)
 		return ubcore_get_destroy_tp_response(UBCORE_NL_RESP_FAIL, req);
 	}
 
+	destroy = (struct ubcore_nl_destroy_tp_req *)(void *)req->payload;
 	if (destroy->ta.ta_type == UBCORE_TA_VIRT) {
 	} else if (destroy->trans_mode == UBCORE_TP_RC) {
 		ret = ubcore_unbind_target_tp(dev, destroy);
@@ -895,8 +928,7 @@ struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev, union ubcore_eid 
 				    enum ubcore_transport_mode trans_mode,
 				    struct ubcore_udata *udata)
 {
-	if (dev == NULL || dev->attr.virtualization || remote_eid == NULL ||
-	    !ubcore_have_tp_ops(dev)) {
+	if (!ubcore_have_tp_ops(dev) || dev->attr.virtualization || remote_eid == NULL) {
 		ubcore_log_err("Invalid parameter");
 		return NULL;
 	}
@@ -979,10 +1011,17 @@ static int ubcore_send_create_tp_req(struct ubcore_device *dev, struct ubcore_vt
 	struct ubcore_req *req_msg;
 	struct ubcore_resp_cb cb;
 	uint32_t payload_len;
+	uint32_t udata_len;
+	uint32_t tp_len;
 	int ret;
 
+	tp_len = tp->tp_ext.len;
+	udata_len = get_udrv_in_len(udata);
+	if ((uint32_t)sizeof(struct ubcore_create_vtp_req) + tp_len > ULONG_MAX - udata_len)
+		return -ERANGE;
+
 	payload_len = (uint32_t)sizeof(struct ubcore_create_vtp_req) +
-		tp->tp_ext.len + get_udrv_in_len(udata);
+		tp_len + udata_len;
 	req_msg = kcalloc(1, sizeof(struct ubcore_req) + payload_len, GFP_KERNEL);
 	if (req_msg == NULL)
 		return -ENOMEM;
@@ -990,8 +1029,10 @@ static int ubcore_send_create_tp_req(struct ubcore_device *dev, struct ubcore_vt
 	req_msg->opcode = UBCORE_MSG_CREATE_VTP;
 	req_msg->len = payload_len;
 	data = (struct ubcore_create_vtp_req *)req_msg->data;
-	if (ubcore_init_create_tp_req(dev, tp_param, tp, udata, data) != 0)
-		return -1;
+	if (ubcore_init_create_tp_req(dev, tp_param, tp, udata, data) != 0) {
+		kfree(req_msg);
+		return -ENOEXEC;
+	}
 	/* for alpha end */
 	cb.callback = ubcore_nl_handle_create_tp_resp_cb;
 	cb.user_arg = NULL;
@@ -1069,7 +1110,7 @@ static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
 	query = (struct ubcore_nl_query_tp_req *)req->payload;
 	query->trans_mode = trans_mode;
 	(void)memcpy(query->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME);
-	query->fe_idx = 0; /* Alpha version specific */
+	query->fe_idx = dev->attr.fe_idx;
 	return req;
 }
 
@@ -1146,6 +1187,11 @@ int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	struct ubcore_tp *new_tp = NULL;
 	struct ubcore_tp_cfg tp_cfg = { 0 };
 
+	if (jetty == NULL || tjetty == NULL || advice == NULL || udata == NULL) {
+		ubcore_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
 	mutex_lock(&tjetty->lock);
 	if (tjetty->tp != NULL) {
 		mutex_unlock(&tjetty->lock);
@@ -1191,10 +1237,19 @@ int ubcore_unbind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 {
 	struct ubcore_vtp_param tp_param;
 
+	if (jetty == NULL || tjetty == NULL || advice == NULL) {
+		ubcore_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&tjetty->lock);
 	if (tjetty->tp == NULL) {
+		mutex_unlock(&tjetty->lock);
 		ubcore_log_warn("TP is not found, already removed or under use\n");
 		return 0;
 	}
+	mutex_unlock(&tjetty->lock);
+
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RC, &tp_param);
 	if (ubcore_send_del_tp_req(jetty->ub_dev, &tp_param) != 0) {
 		ubcore_log_warn("failed to unbind tp\n");
@@ -1215,9 +1270,14 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 	struct ubcore_tp_node *tp_node;
 	struct ubcore_tp *new_tp;
 
+	if (dev == NULL || remote_eid == NULL || advice == NULL || udata == NULL) {
+		ubcore_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
 	/* Must call driver->create_tp with udata if we are advising jetty */
 	tp_node = ubcore_hash_table_lookup(advice->meta.ht, advice->meta.hash, &advice->meta.key);
-	if (tp_node != NULL && !tp_node->tp->flag.bs.target)
+	if (tp_node != NULL && tp_node->tp != NULL && !tp_node->tp->flag.bs.target)
 		return 0;
 
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RM, &tp_param);
@@ -1257,6 +1317,11 @@ EXPORT_SYMBOL(ubcore_advise_tp);
 int ubcore_unadvise_tp(struct ubcore_device *dev, struct ubcore_tp_advice *advice)
 {
 	struct ubcore_vtp_param tp_param;
+
+	if (dev == NULL || advice == NULL) {
+		ubcore_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
 
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RM, &tp_param);
 	return ubcore_send_del_tp_req(dev, &tp_param);
@@ -1461,9 +1526,10 @@ void ubcore_restore_tp(struct ubcore_device *dev, struct ubcore_tp *tp)
 	 * Do not send retore tp req from target to inititor,
 	 * Do not restore UM TP, as it is only visable by the driver
 	 */
-	if (dev->transport_type != UBCORE_TRANSPORT_IB || tp->flag.bs.target ||
+	if (!ubcore_have_tp_ops(dev) || tp == NULL ||
+		dev->transport_type != UBCORE_TRANSPORT_IB || tp->flag.bs.target ||
 		tp->priv == NULL || tp->trans_mode == UBCORE_TP_UM ||
-		tp->state != UBCORE_TP_STATE_ERR || !ubcore_have_tp_ops(dev))
+		tp->state != UBCORE_TP_STATE_ERR)
 		return;
 
 	req_msg = ubcore_get_restore_tp_req(tp);
@@ -1499,7 +1565,7 @@ void ubcore_restore_tp(struct ubcore_device *dev, struct ubcore_tp *tp)
 }
 EXPORT_SYMBOL(ubcore_restore_tp);
 
-static struct ubcore_nlmsg *ubcore_get_tp_error_req(struct ubcore_tp *tp)
+static struct ubcore_nlmsg *ubcore_get_tp_error_req(struct ubcore_device *dev, struct ubcore_tp *tp)
 {
 	uint32_t payload_len = (uint32_t)sizeof(struct ubcore_tp_error_req);
 	struct ubcore_tp_error_req *error_req;
@@ -1528,6 +1594,8 @@ static struct ubcore_nlmsg *ubcore_get_tp_error_req(struct ubcore_tp *tp)
 		error_req->local_jetty_id = tp->local_jetty.id;
 		error_req->peer_jetty_id = tp->peer_jetty.id;
 	}
+	(void)memcpy(error_req->tpf_dev_name, dev->dev_name,
+		UBCORE_MAX_DEV_NAME);
 
 	return req;
 }
@@ -1549,7 +1617,7 @@ void ubcore_report_tp_error(struct ubcore_device *dev, struct ubcore_tp *tp)
 		}
 	}
 
-	req_msg = ubcore_get_tp_error_req(tp);
+	req_msg = ubcore_get_tp_error_req(dev, tp);
 	if (req_msg == NULL) {
 		ubcore_log_err("Failed to get tp error req");
 		return;
@@ -1564,7 +1632,8 @@ void ubcore_report_tp_error(struct ubcore_device *dev, struct ubcore_tp *tp)
 	kfree(req_msg);
 }
 
-static struct ubcore_nlmsg *ubcore_get_tp_suspend_req(struct ubcore_tp *tp)
+static struct ubcore_nlmsg *ubcore_get_tp_suspend_req(struct ubcore_device *dev,
+	struct ubcore_tp *tp)
 {
 	uint32_t payload_len = (uint32_t)sizeof(struct ubcore_tp_suspend_req);
 	struct ubcore_tp_suspend_req *suspend_req;
@@ -1584,6 +1653,8 @@ static struct ubcore_nlmsg *ubcore_get_tp_suspend_req(struct ubcore_tp *tp)
 	suspend_req->sip_idx = tp->local_net_addr_idx;
 	ubcore_log_info("report tp suspend: data_udp_start: %hu, ack_udp_start: %hu",
 		tp->data_udp_start, tp->ack_udp_start);
+	(void)memcpy(suspend_req->tpf_dev_name, dev->dev_name,
+		UBCORE_MAX_DEV_NAME);
 
 	return req;
 }
@@ -1593,7 +1664,7 @@ void ubcore_report_tp_suspend(struct ubcore_device *dev, struct ubcore_tp *tp)
 	struct ubcore_nlmsg *req_msg;
 	int ret;
 
-	req_msg = ubcore_get_tp_suspend_req(tp);
+	req_msg = ubcore_get_tp_suspend_req(dev, tp);
 	if (req_msg == NULL) {
 		ubcore_log_err("Failed to get tp suspend req");
 		return;
@@ -1651,7 +1722,8 @@ static struct ubcore_tp *ubcore_restore_bound_target_tp(struct ubcore_device *de
 static struct ubcore_tp *ubcore_handle_restore_tp(struct ubcore_device *dev,
 						  struct ubcore_nl_restore_tp_req *restore)
 {
-	if (dev->transport_type != UBCORE_TRANSPORT_IB || restore->trans_mode == UBCORE_TP_UM ||
+	if (dev->transport_type != UBCORE_TRANSPORT_IB ||
+	    restore == NULL || restore->trans_mode == UBCORE_TP_UM ||
 	    restore->ta.ta_type == UBCORE_TA_NONE || restore->ta.ta_type >= UBCORE_TA_VIRT)
 		return NULL;
 
@@ -1663,18 +1735,18 @@ static struct ubcore_tp *ubcore_handle_restore_tp(struct ubcore_device *dev,
 
 struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req)
 {
-	struct ubcore_nl_restore_tp_req *restore =
-		(struct ubcore_nl_restore_tp_req *)(void *)req->payload;
+	struct ubcore_nl_restore_tp_req *restore;
 	struct ubcore_device *dev;
 	struct ubcore_tp *tp;
 
-	if (req->payload_len != sizeof(struct ubcore_nl_restore_tp_req)) {
+	if (req == NULL || req->payload_len != sizeof(struct ubcore_nl_restore_tp_req)) {
 		ubcore_log_err("Invalid restore req");
 		return NULL;
 	}
 
+	restore = (struct ubcore_nl_restore_tp_req *)(void *)req->payload;
 	dev = ubcore_find_device(&req->dst_eid, req->transport_type);
-	if (dev == NULL || !ubcore_have_tp_ops(dev)) {
+	if (!ubcore_have_tp_ops(dev)) {
 		if (dev != NULL)
 			ubcore_put_device(dev);
 		ubcore_log_err("Failed to find device or device ops invalid");

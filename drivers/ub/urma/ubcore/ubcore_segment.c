@@ -30,7 +30,8 @@ struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
 {
 	struct ubcore_token_id *token_id;
 
-	if (dev == NULL || dev->ops->alloc_token_id == NULL || dev->ops->free_token_id == NULL) {
+	if (dev == NULL || dev->ops == NULL || dev->ops->alloc_token_id == NULL ||
+		dev->ops->free_token_id == NULL) {
 		ubcore_log_err("invalid parameter.\n");
 		return NULL;
 	}
@@ -51,10 +52,10 @@ int ubcore_free_token_id(struct ubcore_token_id *token_id)
 {
 	struct ubcore_device *dev;
 
-	if (token_id == NULL || token_id->ub_dev == NULL ||
+	if (token_id == NULL || token_id->ub_dev == NULL || token_id->ub_dev->ops == NULL ||
 		token_id->ub_dev->ops->free_token_id == NULL) {
 		ubcore_log_err("invalid parameter.\n");
-		return -1;
+		return -EINVAL;
 	}
 	dev = token_id->ub_dev;
 
@@ -66,6 +67,16 @@ int ubcore_free_token_id(struct ubcore_token_id *token_id)
 }
 EXPORT_SYMBOL(ubcore_free_token_id);
 
+static int ubcore_check_ops_register_seg(struct ubcore_device *dev, struct ubcore_seg_cfg *cfg)
+{
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->register_seg == NULL ||
+	    dev->ops->unregister_seg == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	return 0;
+}
+
 struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 					      struct ubcore_seg_cfg *cfg,
 					      struct ubcore_udata *udata)
@@ -74,11 +85,8 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 	struct ubcore_seg_cfg tmp_cfg;
 	struct ubcore_target_seg *tseg;
 
-	if (dev == NULL || cfg == NULL || dev->ops->register_seg == NULL ||
-	    dev->ops->unregister_seg == NULL) {
-		ubcore_log_err("invalid parameter.\n");
+	if (ubcore_check_ops_register_seg(dev, cfg) != 0)
 		return NULL;
-	}
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
 		((cfg->flag.bs.token_id_valid == UBCORE_TOKEN_ID_VALID && cfg->token_id == NULL) ||
@@ -92,6 +100,11 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 	    !(cfg->flag.bs.access & UBCORE_ACCESS_LOCAL_WRITE)) {
 		ubcore_log_err(
 			"Local write must be set when either remote write or remote atomic is declared.\n");
+		return NULL;
+	}
+	if (cfg->eid_index >= dev->eid_table.eid_cnt) {
+		ubcore_log_warn("eid_index:%u >= eid_table cnt:%u.\n",
+			cfg->eid_index, dev->eid_table.eid_cnt);
 		return NULL;
 	}
 
@@ -110,7 +123,7 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 
 	tseg = dev->ops->register_seg(dev, &tmp_cfg, udata);
 	if (tseg == NULL) {
-		ubcore_log_err("UBEP failed to register segment with va:%llu\n", tmp_cfg.va);
+		ubcore_log_err("UBEP failed to register segment.\n");
 		if (alloc_token_id == true)
 			(void)ubcore_free_token_id(tmp_cfg.token_id);
 		return NULL;
@@ -141,9 +154,10 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg)
 	struct ubcore_device *dev;
 	int ret;
 
-	if (tseg == NULL || tseg->ub_dev == NULL || tseg->ub_dev->ops->unregister_seg == NULL) {
+	if (tseg == NULL || tseg->ub_dev == NULL || tseg->ub_dev->ops == NULL ||
+		tseg->ub_dev->ops->unregister_seg == NULL) {
 		ubcore_log_err("invalid parameter.\n");
-		return -1;
+		return -EINVAL;
 	}
 	dev = tseg->ub_dev;
 
@@ -172,7 +186,7 @@ struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
 {
 	struct ubcore_target_seg *tseg;
 
-	if (dev == NULL || cfg == NULL || dev->ops->import_seg == NULL ||
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->import_seg == NULL ||
 	    dev->ops->unimport_seg == NULL) {
 		ubcore_log_err("invalid parameter.\n");
 		return NULL;
@@ -180,7 +194,7 @@ struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
 
 	tseg = dev->ops->import_seg(dev, cfg, udata);
 	if (tseg == NULL) {
-		ubcore_log_err("UBEP failed to import segment with va:%llu\n", cfg->seg.ubva.va);
+		ubcore_log_err("UBEP failed to import segment with va\n");
 		return NULL;
 	}
 	tseg->ub_dev = dev;
@@ -196,9 +210,10 @@ int ubcore_unimport_seg(struct ubcore_target_seg *tseg)
 {
 	struct ubcore_device *dev;
 
-	if (tseg == NULL || tseg->ub_dev == NULL || tseg->ub_dev->ops->unimport_seg == NULL) {
+	if (tseg == NULL || tseg->ub_dev == NULL || tseg->ub_dev->ops == NULL ||
+		tseg->ub_dev->ops->unimport_seg == NULL) {
 		ubcore_log_err("invalid parameter.\n");
-		return -1;
+		return -EINVAL;
 	}
 	dev = tseg->ub_dev;
 

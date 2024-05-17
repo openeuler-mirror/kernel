@@ -50,7 +50,6 @@ enum ubcore_nlmsg_type {
 	UBCORE_NL_TP_SUSPEND_REQ,
 	UBCORE_NL_MIGRATE_VTP_SWITCH,
 	UBCORE_NL_MIGRATE_VTP_ROLLBACK,
-	UBCORE_NL_QUERY_TPF_DEV_INFO,
 	UBCORE_NL_UPDATE_TPF_DEV_INFO_REQ,
 	UBCORE_NL_UPDATE_TPF_DEV_INFO_RESP,
 };
@@ -169,6 +168,7 @@ struct ubcore_add_sip_req {
 	uint8_t port_id[UBCORE_MAX_PORT_CNT];
 	uint32_t index;
 	uint32_t mtu;
+	char netdev_name[UBCORE_MAX_DEV_NAME]; /* for change mtu */
 };
 
 struct ubcore_add_sip_resp {
@@ -176,6 +176,7 @@ struct ubcore_add_sip_resp {
 };
 
 struct ubcore_del_sip_req {
+	char dev_name[UBCORE_MAX_DEV_NAME];
 	uint32_t index;
 };
 
@@ -189,6 +190,7 @@ struct ubcore_tp_suspend_req {
 	uint16_t data_udp_start;
 	uint16_t ack_udp_start;
 	uint32_t sip_idx;
+	char tpf_dev_name[UBCORE_MAX_DEV_NAME];
 };
 
 struct ubcore_tp_error_req {
@@ -204,6 +206,7 @@ struct ubcore_tp_error_req {
 	uint32_t local_jetty_id;
 	union ubcore_eid peer_eid;
 	uint32_t peer_jetty_id;
+	char tpf_dev_name[UBCORE_MAX_DEV_NAME];
 };
 
 struct ubcore_nl_function_mig_req {

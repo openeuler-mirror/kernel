@@ -30,8 +30,8 @@
  * On the Internet Assigned Numbers Authority, add Hardware Types: Unified Bus (UB)
  */
 #define UBCORE_NETDEV_UB_TYPE (38) /* Unified Bus(UB) */
-#define UBCORE_NON_VIRTUALIZATION_FE_IDX 0xffff
 #define UCBORE_INVALID_UPI 0xffffffff
+#define UBCORE_TIMEOUT 30000 /* 30s */
 
 union ubcore_set_global_cfg_mask {
 	struct {
@@ -82,11 +82,6 @@ static inline struct ubcore_ucontext *ubcore_get_uctx(struct ubcore_udata *udata
 	return udata == NULL ? NULL : udata->uctx;
 }
 
-static inline bool ubcore_check_dev_name_invalid(struct ubcore_device *dev, char *dev_name)
-{
-	return (strcmp(dev->dev_name, dev_name) != 0);
-}
-
 static inline bool ubcore_check_trans_mode_valid(enum ubcore_transport_mode trans_mode)
 {
 	return trans_mode == UBCORE_TP_RM ||
@@ -104,6 +99,9 @@ struct ubcore_device *ubcore_find_tpf_by_dev(struct ubcore_device *dev,
 	enum ubcore_transport_type type);
 struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name,
 	enum ubcore_transport_type type);
+/* returned list should be freed by caller */
+struct ubcore_device **ubcore_get_all_tpf_device(enum ubcore_transport_type type,
+	uint32_t *dev_cnt);
 
 int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg);
 int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev, union ubcore_eid *eid,
@@ -156,9 +154,12 @@ static inline uint32_t ubcore_get_rc_vtp_hash(union ubcore_eid *peer_eid)
 	return jhash(peer_eid, sizeof(union ubcore_eid) + sizeof(uint32_t), 0);
 }
 
-static inline uint32_t ubcore_get_vtpn_hash(union ubcore_eid *key_addr)
+#define VTPN_KEY_SIZE (offsetof(struct ubcore_vtpn, eid_index) - \
+					   offsetof(struct ubcore_vtpn, trans_mode))
+
+static inline uint32_t ubcore_get_vtpn_hash(enum ubcore_transport_mode *key_addr)
 {
-	return jhash(key_addr, sizeof(union ubcore_eid) + sizeof(union ubcore_eid), 0);
+	return jhash(key_addr, VTPN_KEY_SIZE, 0);
 }
 
 static inline bool ubcore_jfs_need_advise(struct ubcore_jfs *jfs)

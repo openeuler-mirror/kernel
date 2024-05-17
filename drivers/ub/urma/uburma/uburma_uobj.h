@@ -154,7 +154,7 @@ extern const struct uobj_type_class uobj_fd_type_class;
 
 /* uobj base ops */
 struct uburma_uobj *uobj_alloc_begin(const struct uobj_type *type, struct uburma_file *ufile);
-int uobj_alloc_commit(struct uburma_uobj *uobj);
+void uobj_alloc_commit(struct uburma_uobj *uobj);
 void uobj_alloc_abort(struct uburma_uobj *uobj);
 struct uburma_uobj *uobj_lookup_get(const struct uobj_type *type,
 	struct uburma_file *ufile, int id, enum uobj_access flag);

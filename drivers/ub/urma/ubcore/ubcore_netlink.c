@@ -29,13 +29,12 @@
 #include "ubcore_netlink.h"
 
 #define UBCORE_NL_TYPE 24 /* same with agent netlink type */
-#define UBCORE_NL_TIMEOUT 30000 /* 30s */
 #define UBCORE_NL_INVALID_PORT 0
 
 static struct sock *nl_sock;
 static LIST_HEAD(g_nl_session_list);
 static DEFINE_SPINLOCK(g_nl_session_lock);
-atomic_t g_nlmsg_seq;
+static atomic_t g_nlmsg_seq;
 static uint32_t g_agent_port = UBCORE_NL_INVALID_PORT; /* get agent pid */
 
 static int ubcore_nl_unicast(struct ubcore_nlmsg *pbuf, uint32_t len);
@@ -233,19 +232,20 @@ static void ubcore_nl_handle_update_tpf_dev_info_resp(struct nlmsghdr *nlh)
 	complete(&s->comp);
 }
 
-static void ubcore_nl_sync_table(void)
-{
-	ubcore_sync_sip_table();
-}
-
-static void ubcore_nl_update_tpf_dev_info(void)
+static void ubcore_sync_tpf_dev_info(void)
 {
 	if (ubcore_query_all_device_tpf_dev_info() != 0)
 		ubcore_log_warn("Failed update tpf dev info after tpsa ready");
 }
 
+static void ubcore_nl_sync_table(void)
+{
+	ubcore_sync_tpf_dev_info();
+	ubcore_sync_sip_table();
+}
+
 static struct ubcore_nlmsg *ubcore_get_migrate_vtp_req(struct ubcore_vtp *vtp,
-	enum ubcore_event_type event_type, char *dev_name)
+	enum ubcore_event_type event_type, struct ubcore_device *dev)
 {
 	uint32_t payload_len = (uint32_t)sizeof(struct ubcore_migrate_vtp_req);
 	struct ubcore_migrate_vtp_req *mig_req;
@@ -261,11 +261,12 @@ static struct ubcore_nlmsg *ubcore_get_migrate_vtp_req(struct ubcore_vtp *vtp,
 	} else if (event_type == UBCORE_EVENT_MIGRATE_VTP_ROLLBACK) {
 		req->msg_type = UBCORE_NL_MIGRATE_VTP_ROLLBACK;
 	} else {
+		kfree(req);
 		ubcore_log_err("wrong event msg type");
 		return NULL;
 	}
 	mig_req = (struct ubcore_migrate_vtp_req *)(void *)req->payload;
-	(void)strncpy(mig_req->dev_name, dev_name, strlen(dev_name));
+	(void)memcpy(mig_req->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME);
 
 	mig_req->vtp_cfg.fe_idx = vtp->cfg.fe_idx;
 	mig_req->vtp_cfg.vtpn = vtp->cfg.vtpn;
@@ -285,7 +286,7 @@ void ubcore_report_migrate_vtp(struct ubcore_device *dev, struct ubcore_vtp *vtp
 	struct ubcore_nlmsg *req_msg;
 	int ret;
 
-	req_msg = ubcore_get_migrate_vtp_req(vtp, event_type, dev->dev_name);
+	req_msg = ubcore_get_migrate_vtp_req(vtp, event_type, dev);
 	if (req_msg == NULL) {
 		ubcore_log_err("Failed to get migrate vtp switch req");
 		return;
@@ -328,9 +329,6 @@ static void ubcore_nl_cb_func(struct sk_buff *skb)
 		g_agent_port = nlh->nlmsg_pid;
 		ubcore_nl_sync_table();
 		break;
-	case UBCORE_NL_QUERY_TPF_DEV_INFO:
-		ubcore_nl_update_tpf_dev_info();
-		break;
 	case UBCORE_NL_UPDATE_TPF_DEV_INFO_RESP:
 		ubcore_nl_handle_update_tpf_dev_info_resp(nlh);
 		break;
@@ -339,6 +337,9 @@ static void ubcore_nl_cb_func(struct sk_buff *skb)
 		break;
 	case UBCORE_NL_FE2TPF_REQ:
 	case UBCORE_NL_QUERY_TP_REQ:
+	case UBCORE_NL_ADD_SIP_REQ:
+	case UBCORE_NL_DEL_SIP_REQ:
+	case UBCORE_NL_UPDATE_TPF_DEV_INFO_REQ:
 	default:
 		ubcore_log_err("Unexpected nl msg type: %d received\n", nlh->nlmsg_type);
 		break;
@@ -396,7 +397,7 @@ struct ubcore_nlmsg *ubcore_nl_send_wait(struct ubcore_device *dev, struct ubcor
 		return NULL;
 	}
 
-	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_NL_TIMEOUT));
+	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_TIMEOUT));
 	if (leavetime == 0) {
 		ubcore_log_err("Failed to wait reply, ret: %d, leavetime: %lu\n", ret, leavetime);
 		ubcore_destroy_nl_session(s);

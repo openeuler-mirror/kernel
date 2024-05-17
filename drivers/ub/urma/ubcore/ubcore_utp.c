@@ -28,7 +28,8 @@ static int utp_get_active_mtu(struct ubcore_device *dev, uint8_t port_num,
 {
 	struct ubcore_device_status st = { 0 };
 
-	if (port_num >= dev->attr.port_cnt || dev->ops->query_device_status == NULL) {
+	if (port_num >= dev->attr.port_cnt || dev->ops == NULL ||
+		dev->ops->query_device_status == NULL || port_num >= UBCORE_MAX_PORT_CNT) {
 		ubcore_log_err("Invalid parameter");
 		return -1;
 	}

@@ -36,18 +36,30 @@
 
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id)
 {
+	if (dev == NULL) {
+		ubcore_log_err("dev is NULL\n");
+		return NULL;
+	}
 	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JFC], jfc_id, &jfc_id);
 }
 EXPORT_SYMBOL(ubcore_find_jfc);
 
 struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id)
 {
+	if (dev == NULL) {
+		ubcore_log_err("dev is NULL\n");
+		return NULL;
+	}
 	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JFS], jfs_id, &jfs_id);
 }
 EXPORT_SYMBOL(ubcore_find_jfs);
 
 struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id)
 {
+	if (dev == NULL) {
+		ubcore_log_err("dev is NULL\n");
+		return NULL;
+	}
 	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JFR], jfr_id, &jfr_id);
 }
 EXPORT_SYMBOL(ubcore_find_jfr);
@@ -69,7 +81,7 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev, struct ubcore_jf
 {
 	struct ubcore_jfc *jfc;
 
-	if (dev == NULL || cfg == NULL || dev->ops->create_jfc == NULL ||
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->create_jfc == NULL ||
 		dev->ops->destroy_jfc == NULL)
 		return NULL;
 
@@ -106,14 +118,15 @@ int ubcore_modify_jfc(struct ubcore_jfc *jfc, struct ubcore_jfc_attr *attr,
 	uint32_t jfc_id;
 	int ret;
 
-	if (jfc == NULL || jfc->ub_dev == NULL || jfc->ub_dev->ops->modify_jfc == NULL)
+	if (jfc == NULL || jfc->ub_dev == NULL || jfc->ub_dev->ops == NULL ||
+		jfc->ub_dev->ops->modify_jfc == NULL)
 		return -EINVAL;
 
 	jfc_id = jfc->id;
 	dev = jfc->ub_dev;
 
 	ret = dev->ops->modify_jfc(jfc, attr, udata);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to modify jfc, jfc_id:%u.\n", jfc_id);
 
 	return ret;
@@ -126,7 +139,8 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 	uint32_t jfc_id;
 	int ret;
 
-	if (jfc == NULL || jfc->ub_dev == NULL || jfc->ub_dev->ops->destroy_jfc == NULL)
+	if (jfc == NULL || jfc->ub_dev == NULL || jfc->ub_dev->ops == NULL ||
+		jfc->ub_dev->ops->destroy_jfc == NULL)
 		return -1;
 
 	if (atomic_read(&jfc->use_cnt)) {
@@ -138,7 +152,7 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 	dev = jfc->ub_dev;
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFC], &jfc->hnode);
 	ret = dev->ops->destroy_jfc(jfc);
-	if (ret < 0) {
+	if (ret != 0) {
 		ubcore_log_err("UBEP failed to destroy jfc, jfc_id:%u.\n", jfc_id);
 		goto rollback;
 	}
@@ -202,7 +216,7 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev, struct ubcore_jf
 {
 	struct ubcore_jfs *jfs;
 
-	if (dev == NULL || cfg == NULL || dev->ops->create_jfs == NULL ||
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->create_jfs == NULL ||
 		dev->ops->destroy_jfs == NULL)
 		return NULL;
 
@@ -257,13 +271,14 @@ int ubcore_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 	uint32_t jfs_id;
 	int ret;
 
-	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops->modify_jfs == NULL)
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL ||
+		jfs->ub_dev->ops->modify_jfs == NULL)
 		return -EINVAL;
 
 	jfs_id = jfs->id;
 	dev = jfs->ub_dev;
 	ret = dev->ops->modify_jfs(jfs, attr, udata);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to modify jfs, jfs_id:%u.\n", jfs_id);
 
 	return ret;
@@ -277,13 +292,14 @@ int ubcore_query_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_cfg *cfg,
 	uint32_t jfs_id;
 	int ret;
 
-	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops->query_jfs == NULL)
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL
+		|| jfs->ub_dev->ops->query_jfs == NULL)
 		return -EINVAL;
 
 	jfs_id = jfs->id;
 	dev = jfs->ub_dev;
 	ret = dev->ops->query_jfs(jfs, cfg, attr);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to query jfs, jfs_id:%u.\n", jfs_id);
 
 	return ret;
@@ -297,7 +313,8 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	uint32_t jfs_id;
 	int ret;
 
-	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops->destroy_jfs == NULL)
+	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL ||
+		jfs->ub_dev->ops->destroy_jfs == NULL)
 		return -EINVAL;
 
 	jfc = jfs->jfs_cfg.jfc;
@@ -306,7 +323,7 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFS], &jfs->hnode);
 	ubcore_destroy_tptable(&jfs->tptable);
 	ret = dev->ops->destroy_jfs(jfs);
-	if (ret < 0) {
+	if (ret != 0) {
 		ubcore_log_err("UBEP failed to destroy jfs, jfs_id:%u.\n", jfs_id);
 		goto rollback;
 	} else {
@@ -359,7 +376,7 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev, struct ubcore_jf
 {
 	struct ubcore_jfr *jfr;
 
-	if (dev == NULL || cfg == NULL || dev->ops->create_jfr == NULL ||
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->create_jfr == NULL ||
 	    dev->ops->destroy_jfr == NULL)
 		return NULL;
 
@@ -406,13 +423,14 @@ int ubcore_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 	uint32_t jfr_id;
 	int ret;
 
-	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops->modify_jfr == NULL)
+	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops == NULL ||
+		jfr->ub_dev->ops->modify_jfr == NULL)
 		return -EINVAL;
 
 	jfr_id = jfr->id;
 	dev = jfr->ub_dev;
 	ret = dev->ops->modify_jfr(jfr, attr, udata);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to modify jfr, jfr_id:%u.\n", jfr_id);
 
 	return ret;
@@ -426,13 +444,14 @@ int ubcore_query_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_cfg *cfg,
 	uint32_t jfr_id;
 	int ret;
 
-	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops->query_jfr == NULL)
+	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops == NULL ||
+		jfr->ub_dev->ops->query_jfr == NULL)
 		return -EINVAL;
 
 	jfr_id = jfr->id;
 	dev = jfr->ub_dev;
 	ret = dev->ops->query_jfr(jfr, cfg, attr);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to query jfr, jfr_id:%u.\n", jfr_id);
 
 	return ret;
@@ -446,7 +465,8 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 	uint32_t jfr_id;
 	int ret;
 
-	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops->destroy_jfr == NULL)
+	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops == NULL ||
+		jfr->ub_dev->ops->destroy_jfr == NULL)
 		return -EINVAL;
 
 	if (atomic_read(&jfr->use_cnt)) {
@@ -460,7 +480,7 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFR], &jfr->hnode);
 	ubcore_destroy_tptable(&jfr->tptable);
 	ret = dev->ops->destroy_jfr(jfr);
-	if (ret < 0) {
+	if (ret != 0) {
 		ubcore_log_err("UBEP failed to destroy jfr, jfr_id:%u.\n", jfr_id);
 		goto rollback;
 	} else {
@@ -483,8 +503,9 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	struct ubcore_vtp_param vtp_param;
 	struct ubcore_tjetty *tjfr;
 
-	if (dev == NULL || cfg == NULL || dev->ops->import_jfr == NULL ||
-		dev->ops->unimport_jfr == NULL || !ubcore_have_tp_ops(dev))
+	if (!ubcore_have_tp_ops(dev) || dev->ops->import_jetty == NULL ||
+		dev->ops->unimport_jfr == NULL || cfg == NULL ||
+		dev->attr.dev_cap.max_eid_cnt < cfg->eid_index)
 		return NULL;
 
 	tjfr = dev->ops->import_jfr(dev, cfg, udata);
@@ -525,7 +546,8 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	struct ubcore_device *dev;
 	int ret;
 
-	if (tjfr == NULL || tjfr->ub_dev == NULL || tjfr->ub_dev->ops->unimport_jfr == NULL ||
+	if (tjfr == NULL || tjfr->ub_dev == NULL || tjfr->ub_dev->ops == NULL ||
+		tjfr->ub_dev->ops->unimport_jfr == NULL ||
 		!ubcore_have_tp_ops(tjfr->ub_dev))
 		return -EINVAL;
 
@@ -542,8 +564,8 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 		}
 		tjfr->vtpn = NULL;
 		mutex_unlock(&tjfr->lock);
-		mutex_destroy(&tjfr->lock);
 	}
+	mutex_destroy(&tjfr->lock);
 	return dev->ops->unimport_jfr(tjfr);
 }
 EXPORT_SYMBOL(ubcore_unimport_jfr);
@@ -722,7 +744,7 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev, struct ubcor
 {
 	struct ubcore_jetty *jetty;
 
-	if (dev == NULL || cfg == NULL || dev->ops->create_jetty == NULL ||
+	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->create_jetty == NULL ||
 		dev->ops->destroy_jetty == NULL)
 		return NULL;
 
@@ -799,19 +821,18 @@ EXPORT_SYMBOL(ubcore_create_jetty);
 int ubcore_modify_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_attr *attr,
 	struct ubcore_udata *udata)
 {
-	struct ubcore_device *dev;
 	uint32_t jetty_id;
 	int ret;
 
-	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->modify_jetty == NULL ||
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
+		jetty->ub_dev->ops->modify_jetty == NULL ||
 		attr == NULL)
 		return -EINVAL;
 
 	jetty_id = jetty->id;
-	dev = jetty->ub_dev;
 
-	ret = dev->ops->modify_jetty(jetty, attr, udata);
-	if (ret < 0)
+	ret = jetty->ub_dev->ops->modify_jetty(jetty, attr, udata);
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to modify jetty, jetty_id:%u.\n", jetty_id);
 
 	return ret;
@@ -825,13 +846,14 @@ int ubcore_query_jetty(struct ubcore_jetty *jetty, struct ubcore_jetty_cfg *cfg,
 	uint32_t jetty_id;
 	int ret;
 
-	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->query_jetty == NULL)
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
+		jetty->ub_dev->ops->query_jetty == NULL)
 		return -EINVAL;
 
 	jetty_id = jetty->id;
 	dev = jetty->ub_dev;
 	ret = dev->ops->query_jetty(jetty, cfg, attr);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err("UBEP failed to query jetty, jetty_id:%u.\n", jetty_id);
 
 	return ret;
@@ -848,7 +870,8 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	uint32_t jetty_id;
 	int ret;
 
-	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops->destroy_jetty == NULL)
+	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
+		jetty->ub_dev->ops->destroy_jetty == NULL)
 		return -1;
 
 	if ((jetty->ub_dev->transport_type == UBCORE_TRANSPORT_UB &&
@@ -872,7 +895,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 		(void)ubcore_disconnect_vtp(jetty->remote_jetty->vtpn);
 		jetty->remote_jetty->vtpn = NULL;
 		mutex_unlock(&jetty->remote_jetty->lock);
-		atomic_set(&jetty->remote_jetty->use_cnt, 0);
+		atomic_dec(&jetty->remote_jetty->use_cnt);
 		/* The tjetty object will release remote jetty resources */
 		jetty->remote_jetty = NULL;
 		ubcore_log_warn("jetty->remote_jetty != NULL and it has been handled");
@@ -906,16 +929,13 @@ EXPORT_SYMBOL(ubcore_delete_jetty);
 
 int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt, struct ubcore_cr *cr)
 {
-	struct ubcore_ops *dev_ops;
-
 	if (jetty == NULL || jetty->ub_dev == NULL || jetty->ub_dev->ops == NULL ||
 		jetty->ub_dev->ops->flush_jetty == NULL || cr == NULL) {
 		ubcore_log_err("Invalid parameter");
 		return -EINVAL;
 	}
 
-	dev_ops = jetty->ub_dev->ops;
-	return dev_ops->flush_jetty(jetty, cr_cnt, cr);
+	return jetty->ub_dev->ops->flush_jetty(jetty, cr_cnt, cr);
 }
 EXPORT_SYMBOL(ubcore_flush_jetty);
 
@@ -925,8 +945,9 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	struct ubcore_vtp_param vtp_param;
 	struct ubcore_tjetty *tjetty;
 
-	if (dev == NULL || cfg == NULL || dev->ops->import_jetty == NULL ||
-		dev->ops->unimport_jetty == NULL || !ubcore_have_tp_ops(dev))
+	if (!ubcore_have_tp_ops(dev) || dev->ops->import_jetty == NULL ||
+		dev->ops->unimport_jfr == NULL || cfg == NULL ||
+		dev->attr.dev_cap.max_eid_cnt < cfg->eid_index)
 		return NULL;
 
 	tjetty = dev->ops->import_jetty(dev, cfg, udata);
@@ -968,7 +989,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	struct ubcore_device *dev;
 	int ret;
 
-	if (tjetty == NULL || tjetty->ub_dev == NULL ||
+	if (tjetty == NULL || tjetty->ub_dev == NULL || tjetty->ub_dev->ops == NULL ||
 		tjetty->ub_dev->ops->unimport_jetty == NULL || !ubcore_have_tp_ops(tjetty->ub_dev))
 		return -EINVAL;
 
@@ -987,11 +1008,12 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 		}
 		tjetty->vtpn = NULL;
 		mutex_unlock(&tjetty->lock);
-		mutex_destroy(&tjetty->lock);
 	}
 
 	if (tjetty->cfg.trans_mode == UBCORE_TP_RC && atomic_read(&tjetty->use_cnt))
 		return -EBUSY;
+
+	mutex_destroy(&tjetty->lock);
 
 	return dev->ops->unimport_jetty(tjetty);
 }
@@ -1155,37 +1177,24 @@ int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjet
 }
 EXPORT_SYMBOL(ubcore_unadvise_jetty);
 
-int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
-		      struct ubcore_udata *udata)
+static int ubcore_inner_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+								struct ubcore_udata *udata)
 {
 	struct ubcore_vtp_param vtp_param;
 	struct ubcore_tp_advice advice;
 	struct ubcore_device *dev;
 	int ret;
 
-	if (jetty == NULL || tjetty == NULL || !ubcore_have_tp_ops(jetty->ub_dev)) {
-		ubcore_log_err("invalid parameter.\n");
-		return -1;
-	}
-	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
-		(tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
-		ubcore_log_err("trans mode is not rc type.\n");
-		return -1;
-	}
-	if (jetty->remote_jetty != NULL) {
-		ubcore_log_err("The same jetty, different tjetty, prevent duplicate bind.\n");
-		return -1;
-	}
-
-	if (tjetty->vtpn != NULL) {
-		ubcore_log_err("The tjetty, has already connect vtpn, prevent duplicate bind.\n");
-		return -1;
-	}
-
 	dev = jetty->ub_dev;
 	if (dev == NULL) {
 		ubcore_log_err("Invalid parameter with dev null_ptr.\n");
 		return -1;
+	}
+
+	if (dev->attr.dev_cap.max_eid_cnt < tjetty->cfg.eid_index) {
+		ubcore_log_err("eid_index:%u is beyond the max_eid_cnt:%u.\n",
+			tjetty->cfg.eid_index, dev->attr.dev_cap.max_eid_cnt);
+		return -EINVAL;
 	}
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
@@ -1224,7 +1233,7 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		ubcore_put_advice(&advice);
 		if (ret != 0) {
 			ubcore_log_err("Failed to setup tp connection.\n");
-			goto unbind;
+			return ret;
 		}
 	}
 	ubcore_log_info("jetty: %u bind tjetty: %u\n", jetty->id, tjetty->cfg.id.id);
@@ -1239,6 +1248,36 @@ unbind:
 	}
 
 	return ret;
+}
+
+int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+		      struct ubcore_udata *udata)
+{
+	if (jetty == NULL || tjetty == NULL || !ubcore_have_tp_ops(jetty->ub_dev)) {
+		ubcore_log_err("invalid parameter.\n");
+		return -1;
+	}
+	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
+		(tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
+		ubcore_log_err("trans mode is not rc type.\n");
+		return -1;
+	}
+	if (jetty->remote_jetty == tjetty) {
+		ubcore_log_info("bind reentry, jetty: %u bind tjetty: %u\n",
+			jetty->id, tjetty->cfg.id.id);
+		return 0;
+	}
+	if (jetty->remote_jetty != NULL) {
+		ubcore_log_err("The same jetty, different tjetty, prevent duplicate bind.\n");
+		return -1;
+	}
+
+	if (tjetty->vtpn != NULL) {
+		ubcore_log_err("The tjetty, has already connect vtpn, prevent duplicate bind.\n");
+		return -1;
+	}
+
+	return ubcore_inner_bind_jetty(jetty, tjetty, udata);
 }
 EXPORT_SYMBOL(ubcore_bind_jetty);
 
@@ -1261,10 +1300,6 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 	}
 
 	dev = jetty->ub_dev;
-	if (dev == NULL) {
-		ubcore_log_err("invalid parameter.\n");
-		return -1;
-	}
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
 		if (tjetty->vtpn != NULL) {
@@ -1315,6 +1350,11 @@ EXPORT_SYMBOL(ubcore_unbind_jetty);
 
 struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id)
 {
+	if (dev == NULL) {
+		ubcore_log_err("invalid parameter.\n");
+		return NULL;
+	}
+
 	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_JETTY], jetty_id, &jetty_id);
 }
 EXPORT_SYMBOL(ubcore_find_jetty);
@@ -1324,12 +1364,19 @@ struct ubcore_jetty_group *ubcore_create_jetty_grp(struct ubcore_device *dev,
 	struct ubcore_udata *udata)
 {
 	struct ubcore_jetty_group *jetty_grp;
-	uint32_t max_jetty_in_jetty_grp = dev->attr.dev_cap.max_jetty_in_jetty_grp;
+	uint32_t max_jetty_in_jetty_grp;
 	uint32_t i;
 
-	if (dev == NULL || cfg == NULL ||
+	if (dev == NULL || cfg == NULL || udata == NULL || dev->ops == NULL ||
 		dev->ops->create_jetty_grp == NULL || dev->ops->delete_jetty_grp == NULL)
 		return NULL;
+
+	max_jetty_in_jetty_grp = dev->attr.dev_cap.max_jetty_in_jetty_grp;
+	if (max_jetty_in_jetty_grp == 0 || max_jetty_in_jetty_grp > UBCORE_MAX_JETTY_IN_JETTY_GRP) {
+		ubcore_log_err("max_jetty_in_jetty_grp %u is err, range is 1 to %u.\n",
+			max_jetty_in_jetty_grp, UBCORE_MAX_JETTY_IN_JETTY_GRP);
+		return NULL;
+	}
 
 	jetty_grp = dev->ops->create_jetty_grp(dev, (struct ubcore_jetty_grp_cfg *)cfg, udata);
 	if (jetty_grp == NULL) {
@@ -1364,7 +1411,7 @@ int ubcore_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp)
 	uint32_t jetty_grp_id;
 	int ret;
 
-	if (jetty_grp == NULL || jetty_grp->ub_dev == NULL ||
+	if (jetty_grp == NULL || jetty_grp->ub_dev == NULL || jetty_grp->ub_dev->ops == NULL ||
 		jetty_grp->ub_dev->ops->delete_jetty_grp == NULL)
 		return -EINVAL;
 
@@ -1385,7 +1432,7 @@ int ubcore_delete_jetty_grp(struct ubcore_jetty_group *jetty_grp)
 	mutex_destroy(&jetty_grp->lock);
 
 	ret = dev->ops->delete_jetty_grp(jetty_grp);
-	if (ret < 0)
+	if (ret != 0)
 		ubcore_log_err(
 			"UBEP failed to destroy jetty_grp, jetty_grp_id:%u.\n", jetty_grp_id);
 

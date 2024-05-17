@@ -133,7 +133,7 @@ static int umem_verify_input(struct ubcore_device *ub_dev, uint64_t va, uint64_t
 {
 	if (ub_dev == NULL || ((va + len) < va) ||
 		PAGE_ALIGN(va + len) < (va + len)) {
-		ubcore_log_err("Invalid parameter, va: %llx, len: %llx.\n", va, len);
+		ubcore_log_err("Invalid parameter, va or len is invalid.\n");
 		return -EINVAL;
 	}
 	if (flag.bs.non_pin == 1) {
@@ -182,7 +182,7 @@ static struct ubcore_umem *ubcore_get_target_umem(struct ubcore_device *dev, uin
 	int ret = 0;
 
 	umem = kzalloc(sizeof(*umem), GFP_KERNEL);
-	if (umem == 0) {
+	if (umem == NULL) {
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -237,7 +237,7 @@ struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va,
 		return ERR_PTR(ret);
 
 	page_list = (struct page **)__get_free_page(GFP_KERNEL);
-	if (page_list == 0)
+	if (page_list == NULL)
 		return ERR_PTR(-ENOMEM);
 
 	return ubcore_get_target_umem(dev, va, len, flag, page_list);
@@ -248,8 +248,16 @@ void ubcore_umem_release(struct ubcore_umem *umem)
 {
 	uint64_t npages;
 
-	if (IS_ERR_OR_NULL(umem))
+	if (IS_ERR_OR_NULL(umem) || umem->ub_dev == NULL || umem->owning_mm == NULL) {
+		ubcore_log_err("Invalid parameter.\n");
 		return;
+	}
+
+	if (((umem->va + umem->length) < umem->va) ||
+		PAGE_ALIGN(umem->va + umem->length) < (umem->va + umem->length)) {
+		ubcore_log_err("Invalid parameter, va or len is invalid.\n");
+		return;
+	}
 
 	npages = umem_cal_npages(umem->va, umem->length);
 	dma_unmap_sg(umem->ub_dev->dma_dev, umem->sg_head.sgl, (int)umem->nmap, DMA_BIDIRECTIONAL);

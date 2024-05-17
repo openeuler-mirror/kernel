@@ -28,7 +28,7 @@ struct ubcore_ctp *ubcore_create_ctp(struct ubcore_device *dev, struct ubcore_ct
 	struct ubcore_ctp *ctp;
 	int ret;
 
-	if (dev->ops == NULL || dev->ops->create_ctp == NULL)
+	if (dev == NULL || dev->ops == NULL || dev->ops->create_ctp == NULL)
 		return NULL;
 
 	ctp = dev->ops->create_ctp(dev, cfg, NULL);
@@ -58,7 +58,7 @@ int ubcore_destroy_ctp(struct ubcore_ctp *ctp)
 	uint32_t ctp_idx = ctp->ctpn;
 	int ret;
 
-	if (dev->ops == NULL || dev->ops->destroy_ctp == NULL)
+	if (dev == NULL || dev->ops == NULL || dev->ops->destroy_ctp == NULL)
 		return -EINVAL;
 
 	if (atomic_dec_return(&ctp->use_cnt) > 0) {

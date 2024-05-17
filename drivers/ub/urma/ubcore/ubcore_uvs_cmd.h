@@ -74,6 +74,9 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_DEALLOC_EID,
 	UBCORE_CMD_QUERY_FE_IDX,
 	UBCORE_CMD_CONFIG_DSCP_VL,
+	UBCORE_CMD_GET_VTP_TABLE_CNT,
+	UBCORE_CMD_RESTORE_TABLE,
+	UBCORE_CMD_MAP_TARGET_VTP,
 	UBCORE_CMD_LAST
 };
 
@@ -238,11 +241,20 @@ struct ubcore_cmd_modify_target_tpg {
 	struct ubcore_ta_data ta_data;
 };
 
+struct ubcore_cmd_map_target_vtp {
+	struct {
+		struct ubcore_cmd_tpf tpf;
+		struct ubcore_cmd_vtp_cfg vtp;
+		uint32_t role;
+	} in;
+};
+
 struct ubcore_cmd_destroy_vtp {
 	struct {
 		struct ubcore_cmd_tpf tpf;
 		enum ubcore_transport_mode mode;
 		uint32_t local_jetty;
+		uint32_t role;
 		/* key start */
 		union ubcore_eid local_eid;
 		union ubcore_eid peer_eid;
@@ -275,6 +287,7 @@ struct ubcore_cmd_map_vtp {
 		struct ubcore_cmd_tpf tpf;
 		/* create vtp */
 		struct ubcore_cmd_vtp_cfg vtp;
+		uint32_t role;
 	} in;
 	struct {
 		uint32_t vtpn;
@@ -437,6 +450,47 @@ struct ubcore_cmd_change_tpg_to_error {
 		uint32_t tpgn;
 		struct ubcore_cmd_tpf tpf;
 	} in;
+
+	struct {
+		uint32_t tp_error_cnt;
+	} out;
+};
+
+struct ubcore_cmd_get_vtp_table_cnt {
+	struct {
+		uint32_t vtp_cnt;
+	} out;
+};
+
+struct ubcore_restored_vtp_entry {
+	uint16_t fe_idx;
+	uint32_t vtpn;
+	uint32_t local_jetty;
+	uint32_t peer_jetty;
+	uint32_t local_net_addr_idx;
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	enum ubcore_transport_mode trans_mode;
+	union {
+		uint32_t tpgn;
+		uint32_t utp_idx;
+		uint32_t ctp_idx;
+	};
+	char dev_name[UBCORE_MAX_DEV_NAME];
+	bool target;
+	uint32_t tp_cnt;
+	uint32_t tpn[UBCORE_MAX_TP_CNT_IN_GRP];
+	uint32_t role;
+};
+
+struct ubcore_cmd_restored_vtp_entry {
+	struct {
+		uint32_t vtp_cnt;
+	} in;
+	struct {
+		uint32_t vtp_cnt;
+		struct ubcore_restored_vtp_entry entry[0];
+	} out;
 };
 
 int ubcore_uvs_cmd_parse(struct ubcore_cmd_hdr *hdr);

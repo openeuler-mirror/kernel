@@ -27,6 +27,10 @@
 #include "ubcore_netlink.h"
 #include "ubcore_tp.h"
 
+#define UBCORE_VTP_TARGET 1
+#define UBCORE_VTP_INITIATOR 0
+#define UBCORE_VTP_DUPLEX 2
+
 struct ubcore_vtp_param {
 	enum ubcore_transport_mode trans_mode;
 	/* RM vtpn key start */
@@ -99,7 +103,12 @@ struct ubcore_vtpn *ubcore_connect_vtp(struct ubcore_device *dev,
 int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn);
 /* map vtp to tpg, utp .... */
 struct ubcore_vtp *ubcore_map_vtp(struct ubcore_device *dev, struct ubcore_vtp_cfg *cfg);
+struct ubcore_vtp *ubcore_check_and_map_vtp(struct ubcore_device *dev, struct ubcore_vtp_cfg *cfg,
+	uint32_t role);
+struct ubcore_vtp *ubcore_check_and_map_target_vtp(struct ubcore_device *dev,
+	struct ubcore_vtp_cfg *cfg);
 int ubcore_unmap_vtp(struct ubcore_vtp *vtp);
+int ubcore_check_and_unmap_vtp(struct ubcore_vtp *vtp, uint32_t role);
 /* find mapped vtp */
 struct ubcore_vtp *ubcore_find_vtp(struct ubcore_device *dev, enum ubcore_transport_mode mode,
 	union ubcore_eid *local_eid, union ubcore_eid *peer_eid);
@@ -111,4 +120,10 @@ int ubcore_config_function_migrate_state(struct ubcore_device *dev, uint16_t fe_
 	uint32_t cnt, struct ubcore_ueid_cfg *cfg, enum ubcore_mig_state state);
 int ubcore_modify_vtp(struct ubcore_device *dev, struct ubcore_vtp_param *vtp_param,
 	struct ubcore_vtp_attr *vattr, union ubcore_vtp_attr_mask *vattr_mask);
+
+uint32_t ubcore_get_all_vtp_cnt(struct ubcore_hash_table *ht);
+/* returned list should be freed by caller */
+struct ubcore_vtp **ubcore_get_all_vtp(struct ubcore_hash_table *ht,
+	uint32_t *dev_vtp_cnt);
+
 #endif

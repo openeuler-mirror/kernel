@@ -54,7 +54,7 @@ struct uburma_uobj *uobj_alloc_begin(const struct uobj_type *type, struct uburma
 	return uobj;
 }
 
-int uobj_alloc_commit(struct uburma_uobj *uobj)
+void uobj_alloc_commit(struct uburma_uobj *uobj)
 {
 	/* relase write lock */
 	atomic_set(&uobj->rcnt, 0);
@@ -67,7 +67,6 @@ int uobj_alloc_commit(struct uburma_uobj *uobj)
 	uobj->type->type_class->alloc_commit(uobj);
 
 	up_read(&uobj->ufile->cleanup_rwsem);
-	return 0;
 }
 
 void uobj_alloc_abort(struct uburma_uobj *uobj)

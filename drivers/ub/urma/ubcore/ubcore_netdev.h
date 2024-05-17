@@ -23,11 +23,6 @@
 
 #include <urma/ubcore_types.h>
 
-struct ubcore_port_list_info {
-	uint8_t *port_list;
-	uint8_t port_cnt;
-};
-
 int ubcore_check_port_state(struct ubcore_device *dev, uint8_t port_idx);
 void ubcore_find_port_netdev(struct ubcore_device *dev,
 	struct net_device *ndev, uint8_t **port_list, uint8_t *port_cnt);

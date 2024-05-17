@@ -41,6 +41,7 @@
 #define UBCORE_GET_VERSION(a, b) (((a) << 16) + ((b) > 65535 ? 65535 : (b)))
 #define UBCORE_API_VERSION ((0 << 16) + 9)        // Current Version: 0.9
 
+#define UBCORE_MAX_JETTY_IN_JETTY_GRP 16U
 #define UBCORE_MAX_PORT_CNT 16
 #define UBCORE_MAX_FE_CNT 1024
 #define UBCORE_MAX_DEV_NAME 64
@@ -53,6 +54,8 @@
 #define UBCORE_EID_STR_LEN (39)
 #define UBCORE_DEVID_SIZE (16)
 #define UBCORE_GUID_SIZE (16)
+#define UBCORE_MAX_MSG 4096
+#define UBCORE_MAX_EID_CNT 1024
 
 #define EID_FMT                           \
 	"%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x"
@@ -937,12 +940,12 @@ struct ubcore_vtpn {
 	uint32_t vtpn; /* driver fills */
 	struct ubcore_device *ub_dev;
 	/* ubcore private, inaccessible to driver */
-	enum ubcore_transport_mode trans_mode;
 	/* vtpn key start */
+	enum ubcore_transport_mode trans_mode;
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
 	/* vtpn key end */
-	uint32_t eid_index;
+	uint32_t eid_index;  /* next of vtpn key. if modifed, should update VTPN_KEY_SIZE */
 	uint32_t local_jetty;
 	uint32_t peer_jetty;
 	atomic_t state;
@@ -982,6 +985,7 @@ struct ubcore_vtp {
 	struct ubcore_device *ub_dev;
 	struct ubcore_vtp_cfg cfg; /* driver fills */
 	struct hlist_node hnode; /* driver inaccessible */
+	uint32_t role; /* current side is initiator, target or duplex */
 };
 
 struct ubcore_vtp_attr {
@@ -1624,16 +1628,6 @@ struct ubcore_ops {
 	struct module *owner; /* kernel driver module */
 	char driver_name[UBCORE_MAX_DRIVER_NAME]; /* user space driver name */
 	uint32_t abi_version; /* abi version of kernel driver */
-
-	/**
-	 * set upi
-	 * @param[in] dev: the ub device handle;
-	 * @param[in] fe_idx: fe_idx;
-	 * @param[in] idx: idx of upi in fe;
-	 * @param[in] upi: upi of fe to set
-	 * @return: 0 on success, other value on error
-	 */
-	int (*set_upi)(struct ubcore_device *dev, uint16_t fe_idx, uint16_t idx, uint32_t upi);
 
 	/**
 	 * add a function entity id (eid) to ub device (for uvs)
@@ -2338,6 +2332,27 @@ struct ubcore_sip_table {
 	DECLARE_BITMAP(index_bitmap, UBCORE_MAX_SIP);
 };
 
+struct ubcore_port_kobj {
+	struct kobject kobj;
+	struct ubcore_device *dev;
+	uint8_t port_id;
+};
+
+struct ubcore_eid_kobj {
+	struct kobject kobj;
+	struct ubcore_logic_device *ldev;
+	uint32_t eid_idx;
+};
+
+struct ubcore_logic_device {
+	struct device *dev;
+	struct ubcore_port_kobj port[UBCORE_MAX_PORT_CNT];
+	struct ubcore_eid_kobj *eid;
+	struct list_head node; /* add to ldev list */
+	possible_net_t net;
+	struct ubcore_device *ub_dev;
+};
+
 struct ubcore_device {
 	struct list_head list_node; /* add to device list */
 
@@ -2356,14 +2371,13 @@ struct ubcore_device {
 	struct ubcore_device_cfg cfg;
 
 	/* port management */
-	struct kobject *ports_parent; /* kobject parent of the ports in the port list */
-	struct list_head port_list; /* add to port list */
+	struct list_head port_list;
 
 	/* For ubcore client */
-	spinlock_t client_ctx_lock;
+	struct rw_semaphore client_ctx_rwsem;
 	struct list_head client_ctx_list;
 	struct list_head event_handler_list;
-	spinlock_t event_handler_lock;
+	struct rw_semaphore event_handler_rwsem;
 	struct ubcore_hash_table ht[UBCORE_HT_NUM]; /* to be replaced with uobj */
 
 	/* protect from unregister device */
@@ -2373,13 +2387,11 @@ struct ubcore_device {
 	struct ubcore_eid_table eid_table;
 	struct ubcore_cg_device cg_device;
 	struct ubcore_sip_table sip_table;
-};
 
-struct ubcore_port {
-	struct kobject kobj; /* add to port list */
-	struct ubcore_device *ub_dev;
-	uint32_t port_id;
-	struct ubcore_net_addr net_addr;
+	/* logic device list and mutex */
+	struct ubcore_logic_device ldev;
+	struct mutex ldev_mutex;
+	struct list_head ldev_list;
 };
 
 struct ubcore_client {

@@ -52,7 +52,7 @@ struct uburma_jfce_uobj *uburma_get_jfce_uobj(int fd, struct uburma_file *ufile)
 		return ERR_PTR(-ENOENT);
 
 	uobj = uobj_get_read(UOBJ_CLASS_JFCE, fd, ufile);
-	if (IS_ERR(uobj)) {
+	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("get jfce uobj fail with fd %d\n", fd);
 		return (void *)uobj;
 	}

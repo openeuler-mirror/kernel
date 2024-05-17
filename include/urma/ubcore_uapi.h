@@ -43,15 +43,7 @@ struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_
  * not by other kernel modules
  */
 void ubcore_free_ucontext(struct ubcore_device *dev, struct ubcore_ucontext *ucontext);
-/**
- * set upi
- * @param[in] dev: the ubcore_device handle;
- * @param[in] fe_idx: fe_idx;
- * @param[in] idx: idx of upi in fe;
- * @param[in] upi: upi of fe to set
- * @return: 0 on success, other value on error
- */
-int ubcore_set_upi(struct ubcore_device *dev, uint16_t fe_idx, uint16_t idx, uint32_t upi);
+
 /**
  * add a function entity id (eid) to ub device (for uvs)
  * @param[in] dev: the ubcore_device handle;

@@ -173,7 +173,8 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev, struct uburm
 	if (ret != 0)
 		goto err_free_token_id;
 
-	return uobj_alloc_commit(uobj);
+	uobj_alloc_commit(uobj);
+	return 0;
 
 err_free_token_id:
 	(void)ubcore_free_token_id(token_id);
@@ -229,7 +230,7 @@ static int uburma_cmd_register_seg(struct ubcore_device *ubc_dev, struct uburma_
 		return ret;
 
 	token_id_uobj = uobj_get_read(UOBJ_CLASS_TOKEN, (int)arg.in.token_id_handle, file);
-	if (!IS_ERR(token_id_uobj))
+	if (!IS_ERR_OR_NULL(token_id_uobj))
 		cfg.token_id = (struct ubcore_token_id *)token_id_uobj->object;
 
 	uburma_fill_attr(&cfg, &arg);
@@ -410,7 +411,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	cfg.jfs_context = jfs_uobj;
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
-	if (IS_ERR(jfc_uobj)) {
+	if (IS_ERR_OR_NULL(jfc_uobj)) {
 		uburma_log_err("failed to find jfc, jfc_handle:%llu.\n", arg.in.jfc_handle);
 		ret = -EINVAL;
 		goto err_alloc_abort;
@@ -689,7 +690,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	cfg.jfr_context = jfr_uobj;
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
-	if (IS_ERR(jfc_uobj)) {
+	if (IS_ERR_OR_NULL(jfc_uobj)) {
 		uburma_log_err("failed to find jfc, jfc_handle:%llu.\n", arg.in.jfc_handle);
 		ret = -EINVAL;
 		goto err_alloc_abort;
@@ -1080,7 +1081,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	cfg.eid_index = file->ucontext->eid_index;
 	send_jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.send_jfc_handle, file);
 	recv_jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.recv_jfc_handle, file);
-	if (IS_ERR(send_jfc_uobj) || IS_ERR(recv_jfc_uobj)) {
+	if (IS_ERR_OR_NULL(send_jfc_uobj) || IS_ERR_OR_NULL(recv_jfc_uobj)) {
 		uburma_log_err("failed to find send %llu or recv jfc %llu.\n",
 			       arg.in.send_jfc_handle, arg.in.recv_jfc_handle);
 		ret = -EINVAL;
@@ -1090,7 +1091,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	cfg.recv_jfc = recv_jfc_uobj->object;
 	if (arg.in.jfr_handle != 0) {
 		jfr_uobj = uobj_get_read(UOBJ_CLASS_JFR, arg.in.jfr_handle, file);
-		if (IS_ERR(jfr_uobj)) {
+		if (IS_ERR_OR_NULL(jfr_uobj)) {
 			uburma_log_err("failed to find jfr, jfr_handle:%llu.\n", arg.in.jfr_handle);
 			ret = -EINVAL;
 			goto err_put;
@@ -1100,7 +1101,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	}
 	if (arg.in.is_jetty_grp != 0) {
 		jetty_grp_uobj = uobj_get_read(UOBJ_CLASS_JETTY_GRP, arg.in.jetty_grp_handle, file);
-		if (IS_ERR(jetty_grp_uobj)) {
+		if (IS_ERR_OR_NULL(jetty_grp_uobj)) {
 			uburma_log_err("failed to find jetty_grp, jetty_grp_handle:%llu.\n",
 				arg.in.jetty_grp_handle);
 			ret = -EINVAL;
@@ -1488,13 +1489,13 @@ static int uburma_get_jetty_tjetty_objs(struct uburma_file *file, uint64_t jetty
 	uint64_t tjetty_handle, struct uburma_uobj **jetty_uobj, struct uburma_uobj **tjetty_uobj)
 {
 	*jetty_uobj = uobj_get_read(UOBJ_CLASS_JETTY, jetty_handle, file);
-	if (IS_ERR(*jetty_uobj)) {
+	if (IS_ERR_OR_NULL(*jetty_uobj)) {
 		uburma_log_err("failed to find jetty with handle %llu", jetty_handle);
 		return -EINVAL;
 	}
 
 	*tjetty_uobj = uobj_get_read(UOBJ_CLASS_TARGET_JETTY, tjetty_handle, file);
-	if (IS_ERR(*tjetty_uobj)) {
+	if (IS_ERR_OR_NULL(*tjetty_uobj)) {
 		uobj_put_read(*jetty_uobj);
 		uburma_log_err("failed to find target jetty with handle %llu", tjetty_handle);
 		return -EINVAL;
@@ -1514,13 +1515,13 @@ static int uburma_get_jfs_tjfr_objs(struct uburma_file *file, uint64_t jetty_han
 	struct uburma_uobj **tjetty_uobj)
 {
 	*jetty_uobj = uobj_get_read(UOBJ_CLASS_JFS, jetty_handle, file);
-	if (IS_ERR(*jetty_uobj)) {
+	if (IS_ERR_OR_NULL(*jetty_uobj)) {
 		uburma_log_err("failed to find jfs with handle %llu", jetty_handle);
 		return -EINVAL;
 	}
 
 	*tjetty_uobj = uobj_get_read(UOBJ_CLASS_TARGET_JFR, tjetty_handle, file);
-	if (IS_ERR(*tjetty_uobj)) {
+	if (IS_ERR_OR_NULL(*tjetty_uobj)) {
 		uobj_put_read(*jetty_uobj);
 		uburma_log_err("failed to find target jfr with handle %llu", tjetty_handle);
 		return -EINVAL;
@@ -1770,7 +1771,7 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		goto err_put_jfae;
 
-	(void)uobj_alloc_commit(&jetty_grp_uobj->uobj);
+	uobj_alloc_commit(&jetty_grp_uobj->uobj);
 	return ret;
 
 err_put_jfae:
@@ -1928,6 +1929,11 @@ long uburma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct uburma_cmd_hdr hdr;
 	int srcu_idx;
 	long ret;
+
+	if (ubu_dev == NULL || file == NULL) {
+		uburma_log_err("invalid param");
+		return -EINVAL;
+	}
 
 	uburma_cmd_inc(ubu_dev);
 	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);

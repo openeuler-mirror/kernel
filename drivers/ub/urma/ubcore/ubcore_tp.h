@@ -38,8 +38,8 @@ struct ubcore_tp_advice {
 
 static inline bool ubcore_have_tp_ops(struct ubcore_device *dev)
 {
-	return (dev != NULL && dev->ops->create_tp != NULL && dev->ops->modify_tp != NULL &&
-		dev->ops->destroy_tp != NULL);
+	return (dev != NULL && dev->ops != NULL && dev->ops->create_tp != NULL &&
+		dev->ops->modify_tp != NULL && dev->ops->destroy_tp != NULL);
 }
 
 /* alpha */

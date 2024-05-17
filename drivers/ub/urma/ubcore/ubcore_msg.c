@@ -28,8 +28,6 @@
 #include "ubcore_priv.h"
 #include "ubcore_msg.h"
 
-#define UBCORE_MSG_TIMEOUT 10000 /* 10s */
-
 static LIST_HEAD(g_msg_session_list);
 static DEFINE_SPINLOCK(g_msg_session_lock);
 static atomic_t g_msg_seq = ATOMIC_INIT(0);
@@ -164,39 +162,34 @@ static int ubcore_tpf2fe_msg(struct ubcore_device *dev, struct ubcore_resp *resp
 
 	return 0;
 }
+
 static void ubcore_fill_tpf_dev_name(struct ubcore_device *tpf_dev,
 	struct ubcore_req_host *req_host)
 {
-	struct ubcore_create_vtp_req *create;
-	struct ubcore_create_vtp_req *destroy;
-	struct ubcore_msg_discover_eid_req *eid_req;
-	struct ubcore_msg_config_device_req *config_dev;
+	char *p = NULL;
 
-	/* for alpha dev */
-	if (!tpf_dev->attr.tp_maintainer)
+	/* dev should report as tpf */
+	if (!tpf_dev->attr.tp_maintainer) {
+		ubcore_log_err("dev:%s, Not tpf!", tpf_dev->dev_name);
 		return;
+	}
 
 	switch (req_host->req.opcode) {
 	case UBCORE_MSG_CREATE_VTP:
-		create = (struct ubcore_create_vtp_req *)req_host->req.data;
-		(void)memcpy(create->tpfdev_name, tpf_dev->dev_name,
-			UBCORE_MAX_DEV_NAME);
-		break;
 	case UBCORE_MSG_DESTROY_VTP:
-		destroy = (struct ubcore_create_vtp_req *)req_host->req.data;
-		(void)memcpy(destroy->tpfdev_name, tpf_dev->dev_name,
-			UBCORE_MAX_DEV_NAME);
+		if (req_host->req.len >= sizeof(struct ubcore_create_vtp_req))
+			p = ((struct ubcore_create_vtp_req *)req_host->req.data)->tpfdev_name;
 		break;
 	case UBCORE_MSG_ALLOC_EID:
 	case UBCORE_MSG_DEALLOC_EID:
-		eid_req = (struct ubcore_msg_discover_eid_req *)req_host->req.data;
-		(void)memcpy(eid_req->tpfdev_name, tpf_dev->dev_name,
-			UBCORE_MAX_DEV_NAME);
+		if (req_host->req.len >= sizeof(struct ubcore_msg_discover_eid_req))
+			p = ((struct ubcore_msg_discover_eid_req *)
+				req_host->req.data)->tpfdev_name;
 		break;
 	case UBCORE_MSG_CONFIG_DEVICE:
-		config_dev = (struct ubcore_msg_config_device_req *)req_host->req.data;
-		(void)memcpy(config_dev->tpfdev_name, tpf_dev->dev_name,
-			UBCORE_MAX_DEV_NAME);
+		if (req_host->req.len >= sizeof(struct ubcore_msg_config_device_req))
+			p = ((struct ubcore_msg_config_device_req *)
+				req_host->req.data)->tpfdev_name;
 		break;
 	case UBCORE_MSG_STOP_PROC_VTP_MSG:
 	case UBCORE_MSG_QUERY_VTP_MIG_STATUS:
@@ -208,6 +201,9 @@ static void ubcore_fill_tpf_dev_name(struct ubcore_device *tpf_dev,
 	default:
 		ubcore_log_err("Unrecognized type of opcode %d\n", (int)req_host->req.opcode);
 	}
+
+	if (p != NULL)
+		memcpy(p, tpf_dev->dev_name, UBCORE_MAX_DEV_NAME);
 }
 
 static struct ubcore_req_host *ubcore_copy_req_host(struct ubcore_req_host *req_host)
@@ -270,7 +266,7 @@ int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req)
 	struct ubcore_req_host *handle_req;
 	int ret;
 
-	if (dev == NULL || req == NULL) {
+	if (dev == NULL || req == NULL || req->req.len > UBCORE_MAX_MSG) {
 		ubcore_log_err("Invalid parameter.\n!");
 		return -EINVAL;
 	}
@@ -288,7 +284,6 @@ int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req)
 			return -ENOMEM;
 		}
 
-		/* fill tpf_dev name */
 		ubcore_fill_tpf_dev_name(dev, handle_req);
 	}
 
@@ -303,7 +298,7 @@ int ubcore_recv_resp(struct ubcore_device *dev, struct ubcore_resp *resp)
 	struct ubcore_resp *handle_resp;
 	int ret;
 
-	if (dev == NULL || resp == NULL) {
+	if (dev == NULL || resp == NULL || resp->len > UBCORE_MAX_MSG) {
 		ubcore_log_err("Invalid parameter.\n!");
 		return -EINVAL;
 	}
@@ -325,7 +320,8 @@ int ubcore_send_req(struct ubcore_device *dev, struct ubcore_req *req)
 {
 	int ret;
 
-	if (dev == NULL || dev->ops->send_req == NULL) {
+	if (dev == NULL || dev->ops == NULL || dev->ops->send_req == NULL ||
+		req->len > UBCORE_MAX_MSG) {
 		ubcore_log_err("Invalid parameter!\n");
 		return -EINVAL;
 	}
@@ -342,7 +338,8 @@ int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp_ho
 {
 	int ret;
 
-	if (dev == NULL || dev->ops->send_resp == NULL) {
+	if (dev == NULL || dev->ops == NULL || dev->ops->send_resp == NULL || resp_host == NULL ||
+		resp_host->resp.len > UBCORE_MAX_MSG) {
 		ubcore_log_err("Invalid parameter!\n");
 		return -EINVAL;
 	}
@@ -378,7 +375,7 @@ int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
 		return -EIO;
 	}
 
-	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_MSG_TIMEOUT));
+	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_TIMEOUT));
 	if (leavetime == 0) {
 		ubcore_log_err("Failed to wait req reply, msg_id = %u, opcode = %hu, leavetime =  %lu.\n",
 			req->msg_id, (uint16_t)req->opcode, leavetime);
@@ -400,37 +397,24 @@ static int ubcore_msg_discover_eid_cb(struct ubcore_device *dev,
 {
 	struct ubcore_msg_discover_eid_resp *data;
 	struct net *net = (struct net *)msg_ctx;
-	struct ubcore_ueid_cfg cfg;
+	bool is_alloc_eid;
 
-	if (dev == NULL) {
+	if (dev == NULL || resp == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
 	data = (struct ubcore_msg_discover_eid_resp *)(void *)resp->data;
-	if (resp == NULL || data == NULL || data->ret != 0 ||
+	if (data == NULL || data->ret != 0 ||
 		(resp->opcode != UBCORE_MSG_ALLOC_EID &&
 			resp->opcode != UBCORE_MSG_DEALLOC_EID)) {
 		ubcore_log_err("Failed to query data from the UVS. Use the default value.\n");
 		return -EINVAL;
 	}
 
-	cfg.eid = data->eid;
-	cfg.eid_index = data->eid_index;
-	cfg.upi = data->upi;
-	if (resp->opcode == UBCORE_MSG_ALLOC_EID) {
-		if (ubcore_update_eidtbl_by_idx(dev, &data->eid, data->eid_index, true, net) != 0)
-			return -1;
-		if (!dev->attr.virtualization && ubcore_add_ueid(dev, data->fe_idx, &cfg) != 0) {
-			(void)ubcore_update_eidtbl_by_idx(
-				dev, &data->eid, data->eid_index, false, net);
-			return -1;
-		}
-	} else {
-		if (!dev->attr.virtualization && ubcore_delete_ueid(dev, data->fe_idx, &cfg) != 0)
-			return -1;
-		if (ubcore_update_eidtbl_by_idx(dev, &data->eid, data->eid_index, false, net) != 0)
-			return -1;
-	}
+	is_alloc_eid = (resp->opcode == UBCORE_MSG_ALLOC_EID);
+	if (ubcore_update_eidtbl_by_idx(dev, &data->eid, data->eid_index, is_alloc_eid, net) != 0)
+		return -1;
+
 	return 0;
 }
 
