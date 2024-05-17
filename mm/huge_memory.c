@@ -887,6 +887,52 @@ static unsigned long __thp_get_unmapped_area(struct file *filp,
 	return ret;
 }
 
+static bool file_mapping_align_enabled(struct file *filp)
+{
+	struct address_space *mapping;
+
+	if (!filp)
+		return false;
+
+	mapping = filp->f_mapping;
+	if (!mapping || !mapping_large_folio_support(mapping))
+		return false;
+
+	return true;
+}
+
+static bool anon_mapping_align_enabled(int order)
+{
+	unsigned long mask;
+
+	mask = READ_ONCE(huge_anon_orders_always) |
+	       READ_ONCE(huge_anon_orders_madvise);
+
+	if (hugepage_global_enabled())
+		mask |= READ_ONCE(huge_anon_orders_inherit);
+
+	mask = BIT(order) & mask;
+	if (!mask)
+		return false;
+
+	return true;
+}
+
+static unsigned long folio_get_unmapped_area(struct file *filp, unsigned long addr,
+		unsigned long len, unsigned long pgoff, unsigned long flags)
+{
+	int order = arch_wants_exec_folio_order();
+
+	if (order < 0)
+		return 0;
+
+	if (file_mapping_align_enabled(filp) ||
+		(!filp && anon_mapping_align_enabled(order)))
+		return __thp_get_unmapped_area(filp, addr, len, pgoff, flags,
+					       PAGE_SIZE << order);
+	return 0;
+}
+
 unsigned long thp_get_unmapped_area(struct file *filp, unsigned long addr,
 		unsigned long len, unsigned long pgoff, unsigned long flags)
 {
@@ -894,6 +940,10 @@ unsigned long thp_get_unmapped_area(struct file *filp, unsigned long addr,
 	loff_t off = (loff_t)pgoff << PAGE_SHIFT;
 
 	ret = __thp_get_unmapped_area(filp, addr, len, off, flags, PMD_SIZE);
+	if (ret)
+		return ret;
+
+	ret = folio_get_unmapped_area(filp, addr, len, off, flags);
 	if (ret)
 		return ret;
 
