@@ -1259,7 +1259,8 @@ define filechk_version.h
 	echo \#define OPENEULER_MINOR $(OPENEULER_MINOR);                \
 	echo '#define OPENEULER_VERSION(a,b) (((a) << 8) + (b))';        \
 	echo \#define OPENEULER_VERSION_CODE $(shell                     \
-	expr $(OPENEULER_MAJOR) \* 256 + $(OPENEULER_MINOR))
+	expr $(OPENEULER_MAJOR) \* 256 + $(OPENEULER_MINOR));            \
+	echo \#define OPENEULER_RELEASE \"$(OPENEULER_RELEASE)\"
 endef
 
 $(version_h): PATCHLEVEL := $(or $(PATCHLEVEL), 0)
