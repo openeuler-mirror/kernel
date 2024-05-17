@@ -147,6 +147,11 @@ static struct ubcore_client_ctx *ubcore_lookup_client_context(struct ubcore_devi
 	struct ubcore_client_ctx *found_ctx = NULL;
 	struct ubcore_client_ctx *ctx, *tmp;
 
+	if (dev == NULL || client == NULL) {
+		ubcore_log_err("dev is null");
+		return NULL;
+	}
+
 	down_read(&dev->client_ctx_rwsem);
 	list_for_each_entry_safe(ctx, tmp, &dev->client_ctx_list, list_node) {
 		if (ctx->client == client) {
@@ -217,6 +222,11 @@ int ubcore_register_client(struct ubcore_client *new_client)
 {
 	struct ubcore_device *dev;
 
+	if (new_client == NULL) {
+		ubcore_log_err("new_client is null");
+		return -1;
+	}
+
 	mutex_lock(&g_device_mutex);
 
 	list_for_each_entry(dev, &g_device_list, list_node) {
@@ -239,6 +249,11 @@ void ubcore_unregister_client(struct ubcore_client *rm_client)
 {
 	struct ubcore_client_ctx *found_ctx = NULL;
 	struct ubcore_device *dev;
+
+	if (rm_client == NULL) {
+		ubcore_log_err("rm_client is null");
+		return;
+	}
 
 	mutex_lock(&g_device_mutex);
 
@@ -419,7 +434,7 @@ void ubcore_put_devices(struct ubcore_device **devices, uint32_t cnt)
 void ubcore_get_device(struct ubcore_device *dev)
 {
 	if (IS_ERR_OR_NULL(dev)) {
-		ubcore_log_err("Invalid parameter");
+		ubcore_log_err("Invalid parameter\n");
 		return;
 	}
 
@@ -429,7 +444,7 @@ void ubcore_get_device(struct ubcore_device *dev)
 void ubcore_put_device(struct ubcore_device *dev)
 {
 	if (IS_ERR_OR_NULL(dev)) {
-		ubcore_log_err("Invalid parameter");
+		ubcore_log_err("Invalid parameter\n");
 		return;
 	}
 
@@ -440,7 +455,7 @@ void ubcore_put_device(struct ubcore_device *dev)
 struct ubcore_device *ubcore_find_tpf_device_legacy(void)
 {
 	if (g_tpf == NULL)
-		ubcore_log_err("tpf is not registered yet");
+		ubcore_log_err("tpf is not registered yet\n");
 
 	ubcore_get_device(g_tpf);
 	return g_tpf;
@@ -564,48 +579,61 @@ int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg)
 
 static struct ubcore_ht_param g_ht_params[] = {
 	[UBCORE_HT_JFS] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfs, hnode),
-		offsetof(struct ubcore_jfs, id), sizeof(uint32_t), NULL, NULL},
+		offsetof(struct ubcore_jfs, id), sizeof(uint32_t), NULL, NULL, NULL},
 
 	[UBCORE_HT_JFR] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfr, hnode),
-			    offsetof(struct ubcore_jfr, id), sizeof(uint32_t), NULL, NULL },
+			    offsetof(struct ubcore_jfr, id), sizeof(uint32_t), NULL, NULL, NULL},
 	[UBCORE_HT_JFC] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jfc, hnode),
-			    offsetof(struct ubcore_jfc, id), sizeof(uint32_t), NULL, NULL },
+			    offsetof(struct ubcore_jfc, id), sizeof(uint32_t), NULL, NULL, NULL},
 
 	[UBCORE_HT_JETTY] = { UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_jetty, hnode),
-			      offsetof(struct ubcore_jetty, id), sizeof(uint32_t), NULL, NULL },
+		offsetof(struct ubcore_jetty, id),
+		sizeof(uint32_t), NULL, NULL, NULL},
 
 	[UBCORE_HT_TP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_tp_node, hnode),
-		offsetof(struct ubcore_tp_node, key), sizeof(struct ubcore_tp_key), NULL, NULL},
+		offsetof(struct ubcore_tp_node, key),
+		sizeof(struct ubcore_tp_key), NULL, NULL, NULL},
 
 	[UBCORE_HT_TPG] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_tpg, hnode),
-		offsetof(struct ubcore_tpg, tpgn), sizeof(uint32_t), NULL, NULL},
+		offsetof(struct ubcore_tpg, tpgn), sizeof(uint32_t), NULL, NULL, NULL},
 
 	/* key: seid + deid */
 	[UBCORE_HT_RM_VTP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtp, hnode),
 		offsetof(struct ubcore_vtp, cfg) + offsetof(struct ubcore_vtp_cfg, local_eid),
-		sizeof(union ubcore_eid) * 2, NULL, NULL},
+		sizeof(union ubcore_eid) * 2, NULL, NULL, NULL},
 
 	/* key: deid + djetty */
 	[UBCORE_HT_RC_VTP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtp, hnode),
 		offsetof(struct ubcore_vtp, cfg) + offsetof(struct ubcore_vtp_cfg, peer_eid),
-		sizeof(union ubcore_eid) + sizeof(uint32_t), NULL, NULL},
+		sizeof(union ubcore_eid) + sizeof(uint32_t), NULL, NULL, NULL},
 
 	/* key: seid + deid */
 	[UBCORE_HT_UM_VTP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtp, hnode),
 		offsetof(struct ubcore_vtp, cfg) + offsetof(struct ubcore_vtp_cfg, local_eid),
-		sizeof(union ubcore_eid) * 2, NULL, NULL},
+		sizeof(union ubcore_eid) * 2, NULL, NULL, NULL},
 
 	/* key: src_eid + des_eid */
-	[UBCORE_HT_VTPN] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtpn, hnode),
-		offsetof(struct ubcore_vtpn, trans_mode), VTPN_KEY_SIZE, NULL, NULL},
+	[UBCORE_HT_RM_VTPN] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtpn, hnode),
+		offsetof(struct ubcore_vtpn, local_eid), 2 * sizeof(union ubcore_eid), NULL, NULL,
+		ubcore_vtpn_get},
+
+	/* key: src_eid + des_eid + src_jetty + des_jetty */
+	[UBCORE_HT_RC_VTPN] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtpn, hnode),
+		offsetof(struct ubcore_vtpn, local_eid),
+		2 * sizeof(union ubcore_eid) + 2 * sizeof(uint32_t), NULL, NULL, ubcore_vtpn_get},
+
+	/* key: src_eid + des_eid */
+	[UBCORE_HT_UM_VTPN] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_vtpn, hnode),
+		offsetof(struct ubcore_vtpn, local_eid), 2 * sizeof(union ubcore_eid), NULL, NULL,
+		ubcore_vtpn_get},
 
 	/* key: utp idx */
 	[UBCORE_HT_UTP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_utp, hnode),
-		offsetof(struct ubcore_utp, utpn), sizeof(uint32_t), NULL, NULL},
+		offsetof(struct ubcore_utp, utpn), sizeof(uint32_t), NULL, NULL, NULL},
 
 	/* key: ctp idx */
 	[UBCORE_HT_CTP] = {UBCORE_HASH_TABLE_SIZE, offsetof(struct ubcore_ctp, hnode),
-		offsetof(struct ubcore_ctp, ctpn), sizeof(uint32_t), NULL, NULL},
+		offsetof(struct ubcore_ctp, ctpn), sizeof(uint32_t), NULL, NULL, NULL},
 };
 
 static int ubcore_alloc_hash_tables(struct ubcore_device *dev)
@@ -1451,9 +1479,9 @@ static bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index)
 	return net_eq(net, current->nsproxy->net_ns);
 }
 
-bool ubcore_dev_accessible(struct ubcore_device *dev)
+bool ubcore_dev_accessible(struct ubcore_device *dev, struct net *net)
 {
-	return (g_shared_ns || net_eq(current->nsproxy->net_ns, read_pnet(&dev->ldev.net)));
+	return (g_shared_ns || net_eq(net, read_pnet(&dev->ldev.net)));
 }
 
 struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
@@ -1469,7 +1497,8 @@ struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_
 		return NULL;
 	}
 
-	if (!ubcore_dev_accessible(dev) || !ubcore_eid_accessible(dev, eid_index)) {
+	if (!ubcore_dev_accessible(dev, current->nsproxy->net_ns) ||
+		!ubcore_eid_accessible(dev, eid_index)) {
 		ubcore_log_err("eid is not accessible by current ns.\n");
 		return NULL;
 	}
@@ -1544,8 +1573,7 @@ int ubcore_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ue
 
 	ret = op_dev->ops->add_ueid(op_dev, fe_idx, cfg);
 	if (ret != 0) {
-		ubcore_log_err(
-			"failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u, ret:%d",
+		ubcore_log_err("failed to add ueid, ret:%d\n",
 			fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index, ret);
 		goto put_dev;
 	}
@@ -1573,8 +1601,7 @@ int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore
 
 	ret = op_dev->ops->delete_ueid(op_dev, fe_idx, cfg);
 	if (ret != 0) {
-		ubcore_log_err(
-			"failed to add ueid, fe_idx:%hu, eid:"EID_FMT", upi:%u, eid_idx:%u, ret:%d",
+		ubcore_log_err("failed to add ueid, ret:%d\n",
 			fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index, ret);
 		goto put_dev;
 	}
@@ -1918,7 +1945,43 @@ struct ubcore_device *ubcore_lookup_tpf_by_sip_addr(struct ubcore_net_addr *addr
 	return target;
 }
 
-static int ubcore_modify_dev_ns(struct ubcore_device *dev, struct net *net)
+static void ubcore_modify_eid_ns(struct ubcore_device *dev, struct net *net)
+{
+	struct ubcore_eid_entry *e;
+	uint32_t i;
+
+	if (dev->eid_table.eid_entries == NULL)
+		return;
+
+	spin_lock(&dev->eid_table.lock);
+	for (i = 0; i < dev->eid_table.eid_cnt; i++) {
+		e = &dev->eid_table.eid_entries[i];
+		if (e->valid && !net_eq(e->net, net))
+			e->net = net;
+	}
+	spin_unlock(&dev->eid_table.lock);
+}
+
+static void ubcore_invalidate_eid_ns(struct ubcore_device *dev, struct net *net)
+{
+	struct ubcore_eid_entry *e;
+	uint32_t i;
+
+	if (dev->eid_table.eid_entries == NULL)
+		return;
+
+	spin_lock(&dev->eid_table.lock);
+	for (i = 0; i < dev->eid_table.eid_cnt; i++) {
+		e = &dev->eid_table.eid_entries[i];
+		if (e->valid && net_eq(e->net, net)) {
+			e->net = &init_net;
+			e->valid = false;
+		}
+	}
+	spin_unlock(&dev->eid_table.lock);
+}
+
+static int ubcore_modify_dev_ns(struct ubcore_device *dev, struct net *net, bool exit)
 {
 	struct net *cur;
 	int ret;
@@ -1934,7 +1997,15 @@ static int ubcore_modify_dev_ns(struct ubcore_device *dev, struct net *net)
 	if (ret) {
 		write_pnet(&dev->ldev.net, cur);
 		ubcore_log_err("Failed to rename device in the new ns.\n");
+		goto out;
 	}
+
+	if (exit)
+		ubcore_invalidate_eid_ns(dev, cur);
+	else
+		ubcore_modify_eid_ns(dev, net);
+
+out:
 	ubcore_clients_add(dev);
 	kobject_uevent(&dev->ldev.dev->kobj, KOBJ_ADD);
 	return ret;
@@ -1970,14 +2041,14 @@ int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd)
 			break;
 		}
 	}
-	if (dev == NULL) {
+	if (dev == NULL || dev->transport_type != UBCORE_TRANSPORT_UB) {
 		ret = -EINVAL;
 		ubcore_log_err("Failed to find device.\n");
 		goto out;
 	}
 
 	/* Put device in the new ns */
-	ret = ubcore_modify_dev_ns(dev, net);
+	ret = ubcore_modify_dev_ns(dev, net, false);
 
 out:
 	mutex_unlock(&g_device_mutex);
@@ -2036,7 +2107,9 @@ void ubcore_net_exit(struct net *net)
 	if (!g_shared_ns) {
 		mutex_lock(&g_device_mutex);
 		list_for_each_entry(dev, &g_device_list, list_node) {
-			(void)ubcore_modify_dev_ns(dev, &init_net);
+			if (dev->transport_type != UBCORE_TRANSPORT_UB)
+				continue;
+			(void)ubcore_modify_dev_ns(dev, &init_net, true);
 		}
 		mutex_unlock(&g_device_mutex);
 	} else {
@@ -2045,6 +2118,7 @@ void ubcore_net_exit(struct net *net)
 			if (dev->transport_type != UBCORE_TRANSPORT_UB)
 				continue;
 			ubcore_remove_one_logic_device(dev, net);
+			ubcore_invalidate_eid_ns(dev, net);
 		}
 		mutex_unlock(&g_device_mutex);
 	}

@@ -271,6 +271,11 @@ int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req)
 		return -EINVAL;
 	}
 
+	if (strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) == UBCORE_MAX_DEV_NAME) {
+		ubcore_log_err("Invalid dev_name.\n!");
+		return -EINVAL;
+	}
+
 	if (req->req.opcode >= UBCORE_MSG_STOP_PROC_VTP_MSG) {
 		handle_req = ubcore_migrate_req(dev, req);
 		if (handle_req == NULL) {

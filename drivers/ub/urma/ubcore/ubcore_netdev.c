@@ -143,8 +143,14 @@ int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
 		UBCORE_MAX_PORT_CNT);
 	sip_req->prefix_len = sip_info->prefix_len;
 	sip_req->mtu = sip_info->mtu;
-	(void)memcpy(sip_req->netdev_name,
-		sip_info->netdev_name, UBCORE_MAX_DEV_NAME);
+
+	if (strnlen(sip_info->netdev_name, UBCORE_MAX_DEV_NAME) == UBCORE_MAX_DEV_NAME) {
+		ubcore_log_err("sip_info->netdev_name len is invalid");
+		kfree(req_msg);
+		return -1;
+	}
+
+	(void)memcpy(sip_req->netdev_name, sip_info->netdev_name, UBCORE_MAX_DEV_NAME);
 
 	resp_msg = ubcore_nl_send_wait(dev, req_msg);
 	if (resp_msg == NULL) {
@@ -325,7 +331,7 @@ int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 	new_node->port_list[0] = (uint8_t)port_id;
 	new_node->valid_list[0] = true;
 	new_node->port_cnt = 1;
-	(void)strcpy(new_node->dev_name, dev->dev_name);
+	(void)memcpy(new_node->dev_name, dev->dev_name, sizeof(char) * UBCORE_MAX_DEV_NAME);
 	down_write(&g_port_list_lock);
 	list_add_tail(&new_node->node, &dev->port_list);
 	up_write(&g_port_list_lock);

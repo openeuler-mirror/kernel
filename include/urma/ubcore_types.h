@@ -22,6 +22,7 @@
 #ifndef UBCORE_TYPES_H
 #define UBCORE_TYPES_H
 
+#include <net/net_namespace.h>
 #include <linux/list.h>
 #include <linux/device.h>
 #include <linux/types.h>
@@ -153,6 +154,7 @@ struct ubcore_ht_param {
 	uint32_t key_size;
 	int (*cmp_f)(void *obj, const void *key);
 	void (*free_f)(void *obj);
+	void (*get_f)(void *obj);
 };
 
 struct ubcore_hash_table {
@@ -274,13 +276,13 @@ union ubcore_import_seg_flag {
 
 union ubcore_reg_seg_flag {
 	struct {
-		uint32_t token_policy     : 3;
+		uint32_t token_policy   : 3;
 		uint32_t cacheable      : 1;
 		uint32_t dsva           : 1;
 		uint32_t access         : 6;
 		uint32_t non_pin        : 1;
 		uint32_t user_iova      : 1;
-		uint32_t token_id_valid   : 1;
+		uint32_t token_id_valid : 1;
 		uint32_t reserved       : 18;
 	} bs;
 	uint32_t value;
@@ -817,6 +819,7 @@ struct ubcore_tp {
 	union ubcore_tp_flag flag;   /* indicate initiator or target, etc */
 	uint32_t local_net_addr_idx;
 	struct ubcore_net_addr peer_net_addr;
+	/* only for RC START */
 	union {
 		union ubcore_eid local_eid;
 		struct ubcore_jetty_id local_jetty;
@@ -825,6 +828,7 @@ struct ubcore_tp {
 		union ubcore_eid peer_eid;
 		struct ubcore_jetty_id peer_jetty;
 	};
+	/* only for RC END */
 	enum ubcore_transport_mode trans_mode;
 	enum ubcore_tp_state state;
 	uint32_t rx_psn;
@@ -930,27 +934,28 @@ struct ubcore_ctp {
 };
 
 enum ubcore_vtp_state {
-	UBCORE_VTPS_CREATING = 0,
-	UBCORE_VTPS_READY,
-	UBCORE_VTPS_DELETING,
-	UBCORE_VTPS_DELETED
+	UBCORE_VTPS_RESET = 0,
+	UBCORE_VTPS_READY = 1
 };
 
 struct ubcore_vtpn {
 	uint32_t vtpn; /* driver fills */
 	struct ubcore_device *ub_dev;
 	/* ubcore private, inaccessible to driver */
-	/* vtpn key start */
 	enum ubcore_transport_mode trans_mode;
+	/* vtpn key start */
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
-	/* vtpn key end */
-	uint32_t eid_index;  /* next of vtpn key. if modifed, should update VTPN_KEY_SIZE */
 	uint32_t local_jetty;
 	uint32_t peer_jetty;
-	atomic_t state;
+	/* vtpn key end */
+	uint32_t eid_index;
+	struct mutex state_lock;
+	enum ubcore_vtp_state state; /* protect by state_lock */
 	struct hlist_node hnode;
 	atomic_t use_cnt;
+	struct kref ref_cnt;
+	struct completion comp;
 };
 
 union ubcore_vtp_cfg_flag {
@@ -2307,7 +2312,9 @@ enum ubcore_hash_table_type {
 	UBCORE_HT_RM_VTP,   /* rm vtp table */
 	UBCORE_HT_RC_VTP,   /* rc vtp table */
 	UBCORE_HT_UM_VTP,   /* um vtp table */
-	UBCORE_HT_VTPN,   /* vtpn table */
+	UBCORE_HT_RM_VTPN,   /* rm vtpn table */
+	UBCORE_HT_RC_VTPN,   /* rc vtpn table */
+	UBCORE_HT_UM_VTPN,   /* um vtpn table */
 	UBCORE_HT_UTP,   /* utp table */
 	UBCORE_HT_CTP,   /* ctp table */
 	UBCORE_HT_NUM

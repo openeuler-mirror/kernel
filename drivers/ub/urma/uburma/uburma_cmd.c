@@ -1737,6 +1737,7 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 	cfg.token_value.token = arg.in.token;
 	cfg.id = arg.in.id;
 	cfg.policy = (enum ubcore_jetty_grp_policy)arg.in.policy;
+	cfg.flag.value = arg.in.flag;
 	cfg.eid_index = file->ucontext->eid_index;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 

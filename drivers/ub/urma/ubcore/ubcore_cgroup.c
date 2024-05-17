@@ -31,6 +31,11 @@ static inline bool ubcore_is_use_cg(struct ubcore_device *dev)
 
 void ubcore_cgroup_reg_dev(struct ubcore_device *dev)
 {
+	if (dev == NULL) {
+		ubcore_log_err("dev is null");
+		return;
+	}
+
 	dev->cg_device.dev.name = dev->dev_name;
 	if (!ubcore_is_use_cg(dev))
 		return;

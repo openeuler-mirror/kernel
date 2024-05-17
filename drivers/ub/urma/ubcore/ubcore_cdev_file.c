@@ -707,7 +707,7 @@ static ssize_t ubcore_show_eid_attr(struct ubcore_eid_kobj *eid, struct ubcore_e
 	struct ubcore_device *dev = get_ubcore_device(ldev);
 
 	if (!ldev || !dev) {
-		ubcore_log_err("Invalid argument in show_fe_attr.\n");
+		ubcore_log_err("Invalid argument in show_eid_attr.\n");
 		return -EINVAL;
 	}
 
@@ -716,11 +716,13 @@ static ssize_t ubcore_show_eid_attr(struct ubcore_eid_kobj *eid, struct ubcore_e
 
 static ssize_t show_eid_cb(struct ubcore_device *dev, char *buf, uint16_t idx, struct net *net)
 {
+	struct ubcore_eid_entry *e;
 	union ubcore_eid eid;
 
-	if (net_eq(dev->eid_table.eid_entries[idx].net, net)) {
+	e = &dev->eid_table.eid_entries[idx];
+	if (e->valid && net_eq(e->net, net)) {
 		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
-			EID_ARGS(dev->eid_table.eid_entries[idx].eid));
+			EID_ARGS(e->eid));
 	} else {
 		memset(&eid, 0, sizeof(union ubcore_eid));
 		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",

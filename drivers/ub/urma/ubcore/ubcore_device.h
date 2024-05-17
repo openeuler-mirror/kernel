@@ -27,5 +27,5 @@ int ubcore_class_register(struct class **ubcore_class);
 void ubcore_class_unregister(struct class *ubcore_class);
 int ubcore_set_ns_mode(bool shared);
 int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd);
-
+bool ubcore_dev_accessible(struct ubcore_device *dev, struct net *net);
 #endif // UBCORE_DEVICE_H

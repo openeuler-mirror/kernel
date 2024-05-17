@@ -33,12 +33,12 @@
 
 struct ubcore_vtp_param {
 	enum ubcore_transport_mode trans_mode;
-	/* RM vtpn key start */
+	/* vtpn key start */
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
-	/* RM vtpn key end */
 	uint32_t local_jetty;
 	uint32_t peer_jetty;
+	/* vtpn key end */
 	uint32_t eid_index;
 	/* for alpha */
 	struct ubcore_ta ta;
@@ -106,7 +106,7 @@ struct ubcore_vtp *ubcore_map_vtp(struct ubcore_device *dev, struct ubcore_vtp_c
 struct ubcore_vtp *ubcore_check_and_map_vtp(struct ubcore_device *dev, struct ubcore_vtp_cfg *cfg,
 	uint32_t role);
 struct ubcore_vtp *ubcore_check_and_map_target_vtp(struct ubcore_device *dev,
-	struct ubcore_vtp_cfg *cfg);
+	struct ubcore_vtp_cfg *cfg, uint32_t role);
 int ubcore_unmap_vtp(struct ubcore_vtp *vtp);
 int ubcore_check_and_unmap_vtp(struct ubcore_vtp *vtp, uint32_t role);
 /* find mapped vtp */
@@ -126,4 +126,5 @@ uint32_t ubcore_get_all_vtp_cnt(struct ubcore_hash_table *ht);
 struct ubcore_vtp **ubcore_get_all_vtp(struct ubcore_hash_table *ht,
 	uint32_t *dev_vtp_cnt);
 
+void ubcore_vtpn_get(void *obj);
 #endif

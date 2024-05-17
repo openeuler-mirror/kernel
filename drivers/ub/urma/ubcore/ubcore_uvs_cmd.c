@@ -60,8 +60,14 @@ static int ubcore_uvs_cmd_channel_init(struct ubcore_cmd_hdr *hdr)
 static void ubcore_set_tp_cfg_with_cmd(struct ubcore_tp_cfg *cfg, struct ubcore_cmd_tp_cfg *cmd)
 {
 	cfg->flag = cmd->flag;
-	cfg->local_jetty = cmd->local_jetty;
-	cfg->peer_jetty = cmd->peer_jetty;
+	if (cmd->trans_mode == UBCORE_TP_RM) {
+		cfg->local_eid = cmd->local_eid;
+		cfg->peer_eid = cmd->peer_eid;
+	} else {
+		cfg->local_jetty = cmd->local_jetty;
+		cfg->peer_jetty = cmd->peer_jetty;
+	}
+
 	cfg->trans_mode = cmd->trans_mode;
 	cfg->retry_num = cmd->retry_num;
 	cfg->retry_factor = cmd->retry_factor;
@@ -609,9 +615,10 @@ static int ubcore_cmd_modify_tpg(struct ubcore_cmd_hdr *hdr)
 		goto to_user;
 	}
 
-to_user:
 	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, arg,
 		sizeof(struct ubcore_cmd_modify_tpg));
+
+to_user:
 	if (ret)
 		ubcore_log_warn("ubcore cmd modify tpg to user failed");
 	if (rts_attr != NULL)
@@ -1051,8 +1058,10 @@ static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *
 	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (memcmp(dev->eid_table.eid_entries[i].eid.raw, eid->raw, UBCORE_EID_SIZE) == 0) {
 			ubcore_log_warn("eid already exists\n");
-			break;
+			return 0;
 		}
+	}
+	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (dev->eid_table.eid_entries[i].valid == false) {
 			dev->eid_table.eid_entries[i].eid = *eid;
 			dev->eid_table.eid_entries[i].valid = true;
@@ -1064,7 +1073,7 @@ static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *
 		}
 	}
 	if (i == dev->attr.dev_cap.max_eid_cnt) {
-		ubcore_log_err("eid table is full");
+		ubcore_log_err("eid table is full\n");
 		return -1;
 	}
 	return 0;
@@ -1566,8 +1575,10 @@ static int ubcore_cmd_create_utp(struct ubcore_cmd_hdr *hdr)
 	}
 
 	utp = ubcore_create_utp(dev, &arg->in.utp_cfg);
-	if (utp == NULL)
+	if (utp == NULL) {
+		ret = -EPERM;
 		goto put_device;
+	}
 
 	ubcore_set_vtp2utp_cfg(&vtp_cfg, &arg->in.vtp, utp);
 	vtp = ubcore_map_vtp(dev, &vtp_cfg);
@@ -1621,8 +1632,10 @@ static int ubcore_cmd_only_create_utp(struct ubcore_cmd_hdr *hdr)
 	}
 
 	utp = ubcore_create_utp(dev, &arg->in.utp_cfg);
-	if (utp == NULL)
+	if (utp == NULL) {
+		ret = -EPERM;
 		goto put_device;
+	}
 
 	/* fill output */
 	arg->out.idx = utp->utpn;
@@ -2493,7 +2506,7 @@ static int ubcore_cmd_map_target_vtp(struct ubcore_cmd_hdr *hdr)
 		ubcore_set_vtp2ctp_cfg(&vtp_cfg, &arg->in.vtp, ctp);
 	}
 
-	vtp = ubcore_check_and_map_target_vtp(dev, &vtp_cfg);
+	vtp = ubcore_check_and_map_target_vtp(dev, &vtp_cfg, arg->in.role);
 	if (vtp == NULL) {
 		ret = -EPERM;
 		goto put_device;

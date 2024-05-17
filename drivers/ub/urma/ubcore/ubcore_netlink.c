@@ -136,7 +136,7 @@ static void ubcore_nl_handle_tp_resp(struct nlmsghdr *nlh)
 
 	resp = ubcore_get_nlmsg_data(nlh);
 	if (resp == NULL) {
-		ubcore_log_err("Failed to calloc and copy response");
+		ubcore_log_err("Failed to calloc and copy response.\n");
 		return;
 	}
 	s = ubcore_find_nl_session(resp->nlmsg_seq);

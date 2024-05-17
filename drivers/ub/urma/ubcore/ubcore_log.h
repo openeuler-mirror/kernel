@@ -38,24 +38,28 @@ enum ubcore_log_level {
 
 /* add log head info, "LogTag_UBCORE|function|[line]| */
 #define UBCORE_LOG_TAG "LogTag_UBCORE"
+/* only use debug log */
 #define ubcore_log(l, format, args...)	\
 	pr_##l("%s|%s:[%d]|" format, UBCORE_LOG_TAG, __func__, __LINE__, ##args)
+/* use default log, info/warn/err */
+#define ubcore_default_log(l, format, args...)	\
+	((void)pr_##l("%s|%s:[%d]|" format, UBCORE_LOG_TAG, __func__, __LINE__, ##args))
 
 extern uint32_t g_ubcore_log_level;
 
 #define ubcore_log_info(...) do {   \
 	if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO) \
-		ubcore_log(info, __VA_ARGS__);   \
+		ubcore_default_log(info, __VA_ARGS__);   \
 } while (0)
 
 #define ubcore_log_err(...) do {   \
 	if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR) \
-		ubcore_log(err, __VA_ARGS__);   \
+		ubcore_default_log(err, __VA_ARGS__);   \
 } while (0)
 
 #define ubcore_log_warn(...) do {   \
 	if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING) \
-		ubcore_log(warn, __VA_ARGS__);   \
+		ubcore_default_log(warn, __VA_ARGS__);   \
 } while (0)
 
 #define ubcore_log_debug(...) do {   \

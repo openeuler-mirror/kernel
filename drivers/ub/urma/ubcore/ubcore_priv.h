@@ -154,12 +154,9 @@ static inline uint32_t ubcore_get_rc_vtp_hash(union ubcore_eid *peer_eid)
 	return jhash(peer_eid, sizeof(union ubcore_eid) + sizeof(uint32_t), 0);
 }
 
-#define VTPN_KEY_SIZE (offsetof(struct ubcore_vtpn, eid_index) - \
-					   offsetof(struct ubcore_vtpn, trans_mode))
-
-static inline uint32_t ubcore_get_vtpn_hash(enum ubcore_transport_mode *key_addr)
+static inline uint32_t ubcore_get_vtpn_hash(struct ubcore_hash_table *ht, void *key_addr)
 {
-	return jhash(key_addr, VTPN_KEY_SIZE, 0);
+	return jhash(key_addr, ht->p.key_size, 0);
 }
 
 static inline bool ubcore_jfs_need_advise(struct ubcore_jfs *jfs)

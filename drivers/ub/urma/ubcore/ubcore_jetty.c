@@ -946,7 +946,7 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	struct ubcore_tjetty *tjetty;
 
 	if (!ubcore_have_tp_ops(dev) || dev->ops->import_jetty == NULL ||
-		dev->ops->unimport_jfr == NULL || cfg == NULL ||
+		dev->ops->unimport_jetty == NULL || cfg == NULL ||
 		dev->attr.dev_cap.max_eid_cnt < cfg->eid_index)
 		return NULL;
 

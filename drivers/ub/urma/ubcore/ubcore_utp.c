@@ -34,7 +34,7 @@ static int utp_get_active_mtu(struct ubcore_device *dev, uint8_t port_num,
 		return -1;
 	}
 	if (dev->ops->query_device_status(dev, &st) != 0) {
-		ubcore_log_err("Failed to query query_device_status for port %d", port_num);
+		ubcore_log_err("Failed to query query_device_status for port %hhu", port_num);
 		return -1;
 	}
 	if (st.port_status[port_num].state != UBCORE_PORT_ACTIVE) {
@@ -64,7 +64,7 @@ struct ubcore_utp *ubcore_create_utp(struct ubcore_device *dev, struct ubcore_ut
 		ubcore_log_info("Global cfg not config, device mtu is %d", (int32_t)cfg->mtu);
 	}
 
-	ubcore_log_info("Utp mtu config to %u", (int32_t)cfg->mtu);
+	ubcore_log_info("Utp mtu config to %u", (uint32_t)cfg->mtu);
 
 	utp = dev->ops->create_utp(dev, cfg, NULL);
 	if (utp == NULL) {

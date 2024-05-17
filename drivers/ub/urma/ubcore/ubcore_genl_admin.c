@@ -246,11 +246,13 @@ static int ubcore_update_ueid(struct genl_info *info, enum ubcore_msg_opcode op)
 
 	if (arg.in.ns_fd >= 0) {
 		net = get_net_ns_by_fd(arg.in.ns_fd);
-		if (IS_ERR(net)) {
+		if (IS_ERR(net) || !ubcore_dev_accessible(dev, net)) {
 			ubcore_put_device(dev);
-			ubcore_log_err("Failed to get ns by fd.\n");
+			ubcore_log_err("invalid net ns.\n");
 			return (int)PTR_ERR(net);
 		}
+	} else if (op == UBCORE_MSG_ALLOC_EID) {
+		net = read_pnet(&dev->ldev.net);
 	}
 
 	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, op, net) != 0)

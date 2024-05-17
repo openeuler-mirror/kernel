@@ -114,13 +114,9 @@ int ubcore_open(struct inode *i_node, struct file *filp)
 }
 
 static void ubcore_update_pattern1_eid(struct ubcore_device *dev,
-	union ubcore_eid *eid, bool is_add)
+	union ubcore_eid *eid, uint32_t eid_idx, bool is_add)
 {
 	struct ubcore_ueid_cfg cfg;
-	uint32_t eid_idx = 0;
-
-	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
-		return;
 
 	cfg.eid = *eid;
 	cfg.eid_index = eid_idx;
@@ -132,14 +128,10 @@ static void ubcore_update_pattern1_eid(struct ubcore_device *dev,
 }
 
 static void ubcore_update_pattern3_eid(struct ubcore_device *dev,
-	union ubcore_eid *eid, bool is_add)
+	union ubcore_eid *eid, uint32_t eid_idx, bool is_add)
 {
 	uint32_t pattern3_upi = 0;
 	struct ubcore_ueid_cfg cfg;
-	uint32_t eid_idx = 0;
-
-	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
-		return;
 
 	if (dev->attr.virtualization ||
 		ubcore_find_upi_with_dev_name(dev->dev_name, &pattern3_upi) == NULL)
@@ -447,20 +439,23 @@ static void ubcore_update_eid(struct ubcore_device *dev,
 	struct ubcore_net_addr *netaddr, bool is_add)
 {
 	union ubcore_eid *eid;
+	uint32_t eid_idx = 0;
 
 	if (dev->transport_type <= UBCORE_TRANSPORT_INVALID ||
 		dev->transport_type >= UBCORE_TRANSPORT_MAX)
 		return;
 
 	if (!dev->dynamic_eid) {
-		ubcore_log_err("static mode does not allow modify of eid");
+		ubcore_log_err("static mode does not allow modify of eid\n");
 		return;
 	}
 	eid = (union ubcore_eid *)(void *)&netaddr->net_addr;
+	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
+		return;
 	if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1)
-		ubcore_update_pattern1_eid(dev, eid, is_add);
+		ubcore_update_pattern1_eid(dev, eid, eid_idx, is_add);
 	else
-		ubcore_update_pattern3_eid(dev, eid, is_add);
+		ubcore_update_pattern3_eid(dev, eid, eid_idx, is_add);
 }
 
 static int ubcore_handle_inetaddr_event(struct net_device *netdev, unsigned long event,
@@ -530,7 +525,7 @@ static int ubcore_ipv6_notifier_call(struct notifier_block *nb,
 		return NOTIFY_DONE;
 
 	netdev = ifa->idev->dev;
-	ubcore_log_info("Get a ipv6 event %s from netdev %s%s ip %pI6c prefixlen %u",
+	ubcore_log_info("Get a ipv6 event %s from netdev %s%s ip %pI6c prefixlen %u\n",
 		netdev_cmd_to_name(event), netdev_name(netdev), netdev_reg_state(netdev),
 		&ifa->addr, ifa->prefix_len);
 

@@ -110,6 +110,44 @@ void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *h
 	spin_unlock(&ht->lock);
 }
 
+void *ubcore_hash_table_lookup_nolock_get(struct ubcore_hash_table *ht, uint32_t hash,
+										const void *key)
+{
+	struct hlist_node *pos = NULL;
+	void *obj = NULL;
+
+	hlist_for_each(pos, &ht->head[hash % ht->p.size]) {
+		obj = ubcore_ht_obj(ht, pos);
+		if (ht->p.cmp_f != NULL && ht->p.cmp_f(obj, key) == 0) {
+			break;
+		} else if (ht->p.key_size > 0 &&
+			   memcmp(ubcore_ht_key(ht, pos), key, ht->p.key_size) == 0) {
+			break;
+		}
+		obj = NULL;
+	}
+	if (ht->p.get_f != NULL && obj != NULL)
+		ht->p.get_f(obj);
+
+	return obj;
+}
+
+void *ubcore_hash_table_lookup_get(struct ubcore_hash_table *ht, uint32_t hash, const void *key)
+{
+	void *obj = NULL;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return NULL;
+	}
+	obj = ubcore_hash_table_lookup_nolock_get(ht, hash, key);
+
+	spin_unlock(&ht->lock);
+	return obj;
+}
+
+
 void *ubcore_hash_table_lookup_nolock(struct ubcore_hash_table *ht, uint32_t hash, const void *key)
 {
 	struct hlist_node *pos = NULL;

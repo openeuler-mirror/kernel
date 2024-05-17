@@ -1187,7 +1187,7 @@ int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	struct ubcore_tp *new_tp = NULL;
 	struct ubcore_tp_cfg tp_cfg = { 0 };
 
-	if (jetty == NULL || tjetty == NULL || advice == NULL || udata == NULL) {
+	if (jetty == NULL || tjetty == NULL || advice == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
@@ -1262,6 +1262,7 @@ int ubcore_unbind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 }
 EXPORT_SYMBOL(ubcore_unbind_tp);
 
+/* udata may be empty because the data may come from the user space or kernel space. */
 int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 	struct ubcore_tp_advice *advice, struct ubcore_udata *udata)
 {
@@ -1270,7 +1271,7 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 	struct ubcore_tp_node *tp_node;
 	struct ubcore_tp *new_tp;
 
-	if (dev == NULL || remote_eid == NULL || advice == NULL || udata == NULL) {
+	if (dev == NULL || remote_eid == NULL || advice == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}

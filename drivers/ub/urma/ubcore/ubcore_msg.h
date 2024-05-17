@@ -24,6 +24,7 @@
 #include <urma/ubcore_types.h>
 
 enum ubcore_msg_resp_status {
+	UBCORE_MSG_RESP_LIMIT_RATE = -4,
 	UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND = -3,
 	UBCORE_MSG_RESP_IN_PROGRESS = -2,
 	UBCORE_MSG_RESP_FAIL = -1,

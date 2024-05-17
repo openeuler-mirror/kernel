@@ -501,6 +501,7 @@ struct uburma_cmd_create_jetty_grp {
 		uint32_t token;
 		uint32_t id;
 		uint32_t policy;
+		uint32_t flag;
 		uint64_t urma_jetty_grp; /* urma jetty group pointer */
 	} in;
 	struct {

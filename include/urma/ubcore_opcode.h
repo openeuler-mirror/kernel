@@ -102,7 +102,9 @@ enum ubcore_cr_status { // completion record status
 	UBCORE_CR_FLUSH_ERR,
 	UBCORE_CR_WR_SUSPEND_DONE,
 	UBCORE_CR_WR_FLUSH_ERR_DONE,
-	UBCORE_CR_WR_UNHANDLED
+	UBCORE_CR_WR_UNHANDLED,
+	UBCORE_CR_LOC_DATA_POISON,
+	UBCORE_CR_REM_DATA_POISON
 };
 
 /* Must be consistent with urma_cr_opcode_t */
