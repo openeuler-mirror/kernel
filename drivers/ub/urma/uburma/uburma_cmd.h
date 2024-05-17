@@ -22,7 +22,7 @@
 #define UBURMA_CMD_H
 #include <linux/types.h>
 #include <linux/uaccess.h>
-
+#include "urma/ubcore_types.h"
 #include "uburma_types.h"
 
 struct uburma_cmd_hdr {
@@ -31,7 +31,7 @@ struct uburma_cmd_hdr {
 	uint64_t args_addr;
 };
 
-#define UBURMA_CMD_MAX_ARGS_SIZE 4096
+#define UBURMA_CMD_MAX_ARGS_SIZE 25600
 
 /* only for uburma device ioctl */
 #define UBURMA_CMD_MAGIC 'U'
@@ -73,7 +73,11 @@ enum uburma_cmd {
 	UBURMA_CMD_UNBIND_JETTY,
 	UBURMA_CMD_CREATE_JETTY_GRP,
 	UBURMA_CMD_DESTROY_JETTY_GRP,
-	UBURMA_CMD_USER_CTL
+	UBURMA_CMD_USER_CTL,
+	UBURMA_CMD_GET_EID_LIST,
+	UBURMA_CMD_GET_NETADDR_LIST,
+	UBURMA_CMD_MODIFY_TP,
+	UBURMA_CMD_MAX
 };
 
 struct uburma_cmd_udrv_priv {
@@ -520,6 +524,16 @@ struct uburma_cmd_delete_jetty_grp {
 	} out;
 };
 
+struct uburma_cmd_get_eid_list {
+	struct {
+		uint32_t max_eid_cnt;
+	} in;
+	struct {
+		uint32_t eid_cnt;
+		struct ubcore_eid_info eid_list[UBCORE_MAX_EID_CNT];
+	} out;
+};
+
 struct uburma_cmd_user_ctl {
 	struct {
 		uint64_t addr;
@@ -538,6 +552,102 @@ struct uburma_cmd_user_ctl {
 		uint32_t out_len;
 	} udrv; /* struct [udrv] should be consistent with [urma_udrv_t] */
 };
+
+union uburma_cmd_tp_cfg_flag {
+	struct {
+		uint32_t target : 1;          /* 0: initiator, 1: target */
+		uint32_t loopback : 1;
+		uint32_t dca_enable : 1;
+		/* for the bonding case, the hardware selects the port
+		 * ignoring the port of the tp context and
+		 * selects the port based on the hash value
+		 * along with the information in the bonding group table.
+		 */
+		uint32_t bonding : 1;
+		uint32_t reserved : 28;
+	} bs;
+	uint32_t value;
+};
+
+struct uburma_cmd_user_tp_cfg {
+	union uburma_cmd_tp_cfg_flag flag;          /* flag of initial tp */
+	enum ubcore_transport_mode trans_mode;      /* tranport layer attributes */
+	uint8_t retry_num;
+	uint8_t retry_factor;                       /* for calculate the time slot to retry */
+	uint8_t ack_timeout;
+	uint8_t dscp;                               /* priority */
+	uint32_t oor_cnt;                           /* OOR window size: by packet */
+};
+
+struct uburma_cmd_tp_attr {
+	union ubcore_tp_mod_flag flag;  /* consistend with urma_tp_mod_flag */
+	uint32_t peer_tpn;
+	enum ubcore_tp_state state;
+	uint32_t tx_psn;
+	uint32_t rx_psn;
+	enum ubcore_mtu mtu;
+	uint8_t cc_pattern_idx;
+	uint32_t oos_cnt;               /* out of standing packet cnt */
+	uint32_t local_net_addr_idx;
+	struct ubcore_net_addr peer_net_addr;
+	uint16_t data_udp_start;
+	uint16_t ack_udp_start;
+	uint8_t udp_range;
+	uint8_t hop_limit;
+	uint32_t flow_label;
+	uint8_t port_id;
+	uint8_t mn;                     /* 0~15, a packet contains only one msg if mn is set as 0 */
+	enum ubcore_transport_type peer_trans_type;
+};
+
+union uburma_cmd_tp_attr_mask {
+	struct {
+		uint32_t flag : 1;
+		uint32_t peer_tpn : 1;
+		uint32_t state : 1;
+		uint32_t tx_psn : 1;
+		uint32_t rx_psn : 1; /* modify both rx psn and tx psn when restore tp */
+		uint32_t mtu : 1;
+		uint32_t cc_pattern_idx : 1;
+		uint32_t oos_cnt : 1;
+		uint32_t local_net_addr_idx : 1;
+		uint32_t peer_net_addr : 1;
+		uint32_t data_udp_start : 1;
+		uint32_t ack_udp_start : 1;
+		uint32_t udp_range : 1;
+		uint32_t hop_limit : 1;
+		uint32_t flow_label : 1;
+		uint32_t port_id : 1;
+		uint32_t mn : 1;
+		uint32_t peer_trans_type : 1; /* Only for user tp connection */
+		uint32_t reserved : 13;
+	} bs;
+	uint32_t value;
+};
+
+struct uburma_cmd_net_addr_info {
+	struct ubcore_net_addr netaddr;
+	uint32_t index;
+};
+
+struct uburma_cmd_get_net_addr_list {
+	struct {
+		uint32_t max_netaddr_cnt;
+	} in;
+	struct {
+		uint32_t netaddr_cnt;
+		struct uburma_cmd_net_addr_info netaddr_info[UBCORE_MAX_SIP];
+	} out;
+};
+
+struct uburma_cmd_modify_tp {
+	struct {
+		uint32_t tpn;
+		struct uburma_cmd_user_tp_cfg tp_cfg;
+		struct uburma_cmd_tp_attr attr;
+		union uburma_cmd_tp_attr_mask mask;
+	} in;
+}; /* this struct should be consistent [urma_cmd_modify_tp_t] */
 
 /* only for event ioctl */
 #define MAX_JFCE_EVENT_CNT 16

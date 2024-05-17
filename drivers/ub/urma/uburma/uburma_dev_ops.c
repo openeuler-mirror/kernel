@@ -29,12 +29,14 @@
 #include "uburma_types.h"
 #include "uburma_uobj.h"
 #include "uburma_cmd.h"
+#include "uburma_mmap.h"
 
 int uburma_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	struct uburma_file *file = filp->private_data;
 	struct uburma_device *ubu_dev;
 	struct ubcore_device *ubc_dev;
+	struct uburma_umap_priv *priv;
 	int srcu_idx;
 	int ret;
 
@@ -54,8 +56,17 @@ int uburma_mmap(struct file *filp, struct vm_area_struct *vma)
 		goto out;
 	}
 
+	vma->vm_ops = uburma_get_umap_ops();
 	ret = ubc_dev->ops->mmap(file->ucontext, vma);
+	if (!down_read_trylock(&file->cleanup_rwsem))
+		goto out;
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		goto unlock_read;
+	uburma_umap_priv_init(priv, vma);
 
+unlock_read:
+	up_read(&file->cleanup_rwsem);
 out:
 	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
 	uburma_cmd_dec(ubu_dev);
@@ -76,6 +87,9 @@ void uburma_release_file(struct kref *ref)
 		complete(&file->ubu_dev->comp);
 
 	kobject_put(&file->ubu_dev->kobj);
+	if (file->fault_page)
+		__free_pages(file->fault_page, 0);
+	mutex_destroy(&file->umap_mutex);
 	kfree(file);
 }
 
@@ -114,6 +128,8 @@ int uburma_open(struct inode *inode, struct file *filp)
 	kref_init(&file->ref);
 	mutex_init(&file->mutex);
 	uburma_init_uobj_context(file);
+	mutex_init(&file->umap_mutex);
+	INIT_LIST_HEAD(&file->umaps_list);
 	filp->private_data = file;
 
 	list_add_tail(&file->list, &ubu_dev->uburma_file_list);

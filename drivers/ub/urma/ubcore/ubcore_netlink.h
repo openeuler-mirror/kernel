@@ -35,12 +35,12 @@ enum ubcore_nl_resp_status {
 struct ubcore_nlmsg {
 	uint32_t nlmsg_seq;
 	enum ubcore_cmd msg_type;
-	enum ubcore_transport_type transport_type;
 	union ubcore_eid src_eid; /* todo: delete */
 	union ubcore_eid dst_eid; /* todo: delete */
+	enum ubcore_transport_type transport_type;
 	uint32_t payload_len;
 	uint8_t payload[0]; // limited by tpsa_nl_msg_t's payload len
-} __packed;
+};
 
 struct ubcore_ta_data {
 	enum ubcore_transport_type trans_type;

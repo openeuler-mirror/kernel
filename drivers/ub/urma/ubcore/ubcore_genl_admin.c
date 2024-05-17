@@ -30,6 +30,7 @@
 #include "ubcore_priv.h"
 #include "ubcore_cmd.h"
 #include "ubcore_device.h"
+#include "ubcore_main.h"
 #include "ubcore_genl_admin.h"
 
 #define CB_ARGS_DEV_BUF  0
@@ -93,94 +94,6 @@ static int ubcore_parse_admin_res_cmd(struct netlink_callback *cb, void *dst, ui
 
 	return ubcore_copy_from_user(dst, (void __user *)(uintptr_t)args_addr,
 				    copy_len);
-}
-
-static void ubcore_update_pattern1_eid(struct ubcore_device *dev,
-	union ubcore_eid *eid, bool is_add)
-{
-	struct ubcore_ueid_cfg cfg;
-	uint32_t eid_idx = 0;
-
-	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
-		return;
-
-	cfg.eid = *eid;
-	cfg.eid_index = eid_idx;
-	cfg.upi = 0;
-	if (is_add)
-		(void)ubcore_add_ueid(dev, dev->attr.fe_idx, &cfg);
-	else
-		(void)ubcore_delete_ueid(dev, dev->attr.fe_idx, &cfg);
-}
-
-static void ubcore_update_pattern3_eid(struct ubcore_device *dev,
-	union ubcore_eid *eid, bool is_add)
-{
-	struct ubcore_ueid_cfg cfg;
-	uint32_t pattern3_upi = 0;
-	uint32_t eid_idx = 0;
-
-	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, is_add) != 0)
-		return;
-
-	if (dev->attr.virtualization ||
-		ubcore_find_upi_with_dev_name(dev->dev_name, &pattern3_upi) == NULL)
-		return;
-
-	if (pattern3_upi != (uint32_t)UCBORE_INVALID_UPI) {
-		cfg.eid = *eid;
-		cfg.eid_index = eid_idx;
-		cfg.upi = pattern3_upi;
-		if (is_add)
-			(void)ubcore_add_ueid(dev, dev->attr.fe_idx, &cfg);
-		else
-			(void)ubcore_delete_ueid(dev, dev->attr.fe_idx, &cfg);
-	} else {
-		ubcore_log_err("upi not configured\n");
-	}
-}
-
-int ubcore_show_utp_ops(struct sk_buff *skb, struct genl_info *info)
-{
-	struct ubcore_res_utp_val utp_info = {0};
-	struct ubcore_res_key key = {0};
-	struct ubcore_res_val val = {0};
-	struct ubcore_cmd_show_utp arg;
-	struct ubcore_device *dev;
-	uint64_t args_addr;
-	int ret = -EINVAL;
-
-	if (!info->attrs[UBCORE_HDR_ARGS_LEN] || !info->attrs[UBCORE_HDR_ARGS_ADDR])
-		return ret;
-	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)args_addr,
-				    sizeof(struct ubcore_cmd_show_utp));
-	if (ret != 0)
-		return -EPERM;
-
-	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
-	dev = ubcore_find_device_with_name(arg.in.dev_name);
-	if (dev == NULL) {
-		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
-			       dev == NULL ? "NULL" : dev->dev_name, arg.in.dev_name);
-		return -EINVAL;
-	}
-
-	key.type = UBCORE_RES_KEY_UTP;
-	key.key = arg.in.utpn;
-	val.addr = (uint64_t)&utp_info;
-	val.len = (uint32_t)sizeof(struct ubcore_res_utp_val);
-	if (dev->ops != NULL && dev->ops->query_res != NULL &&
-		dev->ops->query_res(dev, &key, &val) != 0) {
-		ubcore_put_device(dev);
-		ubcore_log_err("failed to query res.\n");
-		return -1;
-	}
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)(uint64_t)arg.out.addr, &utp_info,
-		sizeof(struct ubcore_res_utp_val));
-
-	ubcore_put_device(dev);
-	return ret;
 }
 
 int ubcore_query_stats_ops(struct sk_buff *skb, struct genl_info *info)
@@ -292,6 +205,16 @@ static int ubcore_update_ueid(struct netlink_callback *cb, enum ubcore_msg_opcod
 	return 0;
 }
 
+static int ubcore_clear_eid(struct ubcore_device *dev, union ubcore_eid *eid)
+{
+	uint32_t eid_idx = 0;
+
+	if (ubcore_update_eidtbl_by_eid(dev, eid, &eid_idx, false, NULL) != 0)
+		return -1;
+
+	return ubcore_send_eid_update_req(dev, UBCORE_DEL_NET_ADDR, eid, eid_idx, NULL);
+}
+
 int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
 {
 	struct ubcore_cmd_set_eid_mode arg;
@@ -316,9 +239,21 @@ int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
 		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
 		return -EPERM;
 	}
+	if ((dev->transport_type == UBCORE_TRANSPORT_IB ||
+		dev->transport_type == UBCORE_TRANSPORT_IP) &&
+		arg.in.eid_mode == 0) {
+		ubcore_log_err(
+		"only dynamic mode is supported for IB/IP dev_name: %s.\n", arg.in.dev_name);
+		ubcore_put_device(dev);
+		return -EINVAL;
+	}
 	if (dev->dynamic_eid == arg.in.eid_mode) {
 		ubcore_put_device(dev);
 		return 0;
+	}
+	if (IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
+		ubcore_put_device(dev);
+		return -EINVAL;
 	}
 
 	/* change eid mode, need to flush eids */
@@ -327,10 +262,7 @@ int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
 	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (dev->eid_table.eid_entries[i].valid == true) {
 			eid = dev->eid_table.eid_entries[i].eid;
-			if (dev->attr.pattern == (uint8_t)UBCORE_PATTERN_1)
-				ubcore_update_pattern1_eid(dev, &eid, false);
-			else
-				ubcore_update_pattern3_eid(dev, &eid, false);
+			(void)ubcore_clear_eid(dev, &eid);
 			event.element.eid_idx = i;
 			ubcore_dispatch_async_event(&event);
 		}
@@ -728,12 +660,6 @@ static uint32_t ubcore_get_list_res_len(uint32_t type, struct netlink_callback *
 	case UBCORE_RES_KEY_SEG:
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_SEGVAL_SEG_CNT;
 		return (uint32_t)sizeof(struct ubcore_res_seg_val);
-	case UBCORE_RES_KEY_DEV_TA:
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_SEG_CNT;
-		return (uint32_t)sizeof(struct ubcore_res_dev_ta_val);
-	case UBCORE_RES_KEY_DEV_TP:
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_VTP_CNT;
-		return (uint32_t)sizeof(struct ubcore_res_dev_tp_val);
 	default:
 		break;
 	}
@@ -826,8 +752,6 @@ static int ubcore_list_res_done(struct netlink_callback *cb)
 	uint32_t type = (uint32_t)(unsigned long)cb->args[CB_ARGS_CMD_TYPE];
 	void *res_buf = (void *)cb->args[CB_ARGS_DEV_BUF];
 	struct ubcore_res_seg_val *seg_val;
-	struct ubcore_res_dev_ta_val *ta_val;
-	struct ubcore_res_dev_tp_val *tp_val;
 	struct ubcore_res_list_val *list_val;
 
 	switch (type) {
@@ -847,14 +771,6 @@ static int ubcore_list_res_done(struct netlink_callback *cb)
 	case UBCORE_RES_KEY_SEG:
 		seg_val = res_buf;
 		vfree(seg_val->seg_list);
-		break;
-	case UBCORE_RES_KEY_DEV_TA:
-		ta_val = res_buf;
-		vfree(ta_val);
-		break;
-	case UBCORE_RES_KEY_DEV_TP:
-		tp_val = res_buf;
-		vfree(tp_val);
 		break;
 	default:
 		break;

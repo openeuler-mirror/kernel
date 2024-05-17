@@ -31,6 +31,7 @@
 #include <urma/ubcore_uapi.h>
 #include "ubcore_device.h"
 #include "urma/ubcore_jetty.h"
+#include "ubcore_main.h"
 #include "ubcore_uvs_cmd.h"
 
 static int ubcore_uvs_cmd_channel_init(struct ubcore_cmd_hdr *hdr)
@@ -132,11 +133,11 @@ static struct ubcore_tpg *ubcore_create_tpg_and_multi_tp(struct ubcore_device *d
 free_tp_cfg:
 	kfree(tp_cfgs);
 destroy_tpg:
-	(void)ubcore_destroy_tpg(tpg);
+	ubcore_tpg_kref_put(tpg);
 	return ERR_PTR(ret);
 }
 
-static int ubcore_para_ta(struct ubcore_device *dev, struct ubcore_tp_advice *advice,
+static int ubcore_parse_ta_get_jetty(struct ubcore_device *dev, struct ubcore_tp_advice *advice,
 	struct ubcore_ta_data *ta_data)
 {
 	struct ubcore_tp_meta *meta;
@@ -148,7 +149,7 @@ static int ubcore_para_ta(struct ubcore_device *dev, struct ubcore_tp_advice *ad
 
 	switch (ta_data->ta_type) {
 	case UBCORE_TA_JFS_TJFR:
-		jfs = ubcore_find_jfs(dev, ta_data->jetty_id.id);
+		jfs = ubcore_find_get_jfs(dev, ta_data->jetty_id.id);
 		if (jfs == NULL) {
 			ubcore_log_err("Failed to find jfs by jetty id %u", ta_data->jetty_id.id);
 			return -1;
@@ -158,7 +159,7 @@ static int ubcore_para_ta(struct ubcore_device *dev, struct ubcore_tp_advice *ad
 		advice->ta.tjetty_id = ta_data->tjetty_id;
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
-		jetty = ubcore_find_jetty(dev, ta_data->jetty_id.id);
+		jetty = ubcore_find_get_jetty(dev, ta_data->jetty_id.id);
 		if (jetty == NULL) {
 			ubcore_log_err("Failed to find jetty by jetty id %u", ta_data->jetty_id.id);
 			return -1;
@@ -182,8 +183,9 @@ static int ubcore_get_active_mtu(struct ubcore_device *dev, uint8_t port_num,
 {
 	struct ubcore_device_status st = { 0 };
 
-	if (port_num >= dev->attr.port_cnt || dev->ops == NULL ||
-		dev->ops->query_device_status == NULL) {
+	if (dev == NULL || dev->ops == NULL ||
+		dev->ops->query_device_status == NULL ||
+		port_num >= UBCORE_MAX_PORT_CNT) {
 		ubcore_log_err("Invalid parameter");
 		return -1;
 	}
@@ -230,7 +232,7 @@ static struct ubcore_tp_node *ubcore_get_tp_node(struct ubcore_device *dev,
 	struct ubcore_tp_node *tp_node = NULL;
 	struct ubcore_tp *new_tp = NULL;
 
-	tp_node = ubcore_hash_table_lookup(advice->meta.ht, advice->meta.hash, &advice->meta.key);
+	tp_node = ubcore_lookup_tpnode(advice->meta.ht, advice->meta.hash, &advice->meta.key);
 	if (tp_node == NULL) {
 		new_tp = ubcore_create_tp(dev, tp_cfg, udata);
 		if (IS_ERR_OR_NULL(new_tp)) {
@@ -247,8 +249,6 @@ static struct ubcore_tp_node *ubcore_get_tp_node(struct ubcore_device *dev,
 			(void)ubcore_destroy_tp(new_tp);
 			new_tp = NULL;
 		}
-	} else {
-		atomic_inc(&tp_node->tp->use_cnt);
 	}
 	return tp_node;
 }
@@ -264,32 +264,32 @@ static int ubcore_cmd_create_tp(struct ubcore_cmd_hdr *hdr, struct ubcore_cmd_cr
 	if (dev == NULL)
 		return -ENODEV;
 
-	if (ubcore_para_ta(dev, &advice, &arg->ta_data) != 0) {
+	if (ubcore_parse_ta_get_jetty(dev, &advice, &arg->ta_data) != 0) {
 		ubcore_log_err("Failed to parse ta with type %u", advice.ta.type);
 		goto put_device;
 	} else if (advice.meta.ht == NULL) {
-		ubcore_log_err("tp table is already released");
-		goto put_device;
-	}
-	spin_lock(&advice.meta.ht->lock);
-	tp_node = ubcore_hash_table_lookup_nolock(advice.meta.ht,
-		advice.meta.hash, &advice.meta.key);
-	if (!tp_node) {
-		spin_unlock(&advice.meta.ht->lock);
-		goto put_tptable;
+		ubcore_log_info("tp table is already released");
+		goto put_jetty;
 	}
 
+	tp_node = ubcore_lookup_tpnode(advice.meta.ht, advice.meta.hash, &advice.meta.key);
+	if (!tp_node)
+		goto put_tptable;
+
 	ret = ubcore_copy_tpg_udrv_data(hdr, arg, tp_node);
-	spin_unlock(&advice.meta.ht->lock);
+	ubcore_tpnode_kref_put(tp_node);
 	if (ret)
 		goto put_tptable;
 
 	ubcore_put_tptable(advice.meta.ht);
+	ubcore_put_ta_jetty(&advice.ta);
 	ubcore_put_device(dev);
 	return ret;
 
 put_tptable:
 	ubcore_put_tptable(advice.meta.ht);
+put_jetty:
+	ubcore_put_ta_jetty(&advice.ta);
 put_device:
 	ubcore_put_device(dev);
 	return -1;
@@ -312,7 +312,8 @@ static int ubcore_cmd_create_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		goto free_arg;
 
-	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
+	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_HNS_UB ||
+		arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
 		ret = ubcore_cmd_create_tp(hdr, arg);
 		goto free_arg;
 	}
@@ -326,7 +327,7 @@ static int ubcore_cmd_create_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ubcore_get_active_mtu(dev, 0, &arg->local_mtu) != 0)
 		goto put_device;
 
-	if (ubcore_get_max_mtu(dev, 0, &arg->out.max_mtu) != 0)
+	if (ubcore_get_max_mtu(dev, &arg->out.max_mtu) != 0)
 		goto put_device;
 
 	tpg = ubcore_create_tpg_and_multi_tp(dev, &arg->in.tpg_cfg, arg->in.tp_cfg);
@@ -335,7 +336,7 @@ static int ubcore_cmd_create_tpg(struct ubcore_cmd_hdr *hdr)
 		goto put_device;
 	}
 
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_TPG], &tpg->hnode, tpg->tpgn);
+	ret = ubcore_find_add_tpg(dev, tpg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to add tpg to the tpg table");
 		goto destroy_tpg;
@@ -351,15 +352,14 @@ static int ubcore_cmd_create_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		goto remove_tpg;
 	else
-		goto put_device;
+		goto put_tpg;
 
 remove_tpg:
-	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_TPG], &tpg->hnode);
-	if (atomic_read(&tpg->use_cnt) > 0)
-		ubcore_log_warn("tpg use_cnt still greater than 0 after remove");
+	ubcore_find_remove_tpg(dev, tpg->tpgn);
 destroy_tpg:
 	(void)ubcore_destroy_multi_tp(dev, tpg);
-	(void)ubcore_destroy_tpg(tpg);
+put_tpg:
+	ubcore_tpg_kref_put(tpg);
 put_device:
 	ubcore_put_device(dev);
 free_arg:
@@ -490,6 +490,9 @@ static int ubcore_cmd_create_vtp(struct ubcore_cmd_hdr *hdr)
 		ret = PTR_ERR(vtp);
 		goto to_user;
 	}
+	vtp->eid_idx = arg->in.eid_idx;
+	vtp->upi = arg->in.upi;
+	vtp->share_mode = arg->in.share_mode;
 
 	arg->out.vtpn = vtp->cfg.vtpn;
 	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, arg,
@@ -497,7 +500,9 @@ static int ubcore_cmd_create_vtp(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		(void)ubcore_unmap_vtp(vtp);
 
-	/* Pair with kref_init, then vtp ownership is transferred to vtp hash table */
+	/* Pair with kref_init, then vtp ownership is
+	 * transferred to vtp hash table
+	 */
 	ubcore_vtp_kref_put(vtp);
 	goto free_attr;
 
@@ -547,15 +552,15 @@ static int ubcore_cmd_modify_tp(struct ubcore_cmd_hdr *hdr, struct ubcore_cmd_mo
 	if (dev == NULL)
 		return -ENODEV;
 
-	if (ubcore_para_ta(dev, &advice, &arg->ta_data) != 0) {
+	if (ubcore_parse_ta_get_jetty(dev, &advice, &arg->ta_data) != 0) {
 		ubcore_log_err("Failed to parse ta with type %u", advice.ta.type);
 		goto put_device;
 	} else if (advice.meta.ht == NULL) {
-		ubcore_log_err("tp table is already released");
-		goto put_device;
+		ubcore_log_info("tp table is already released");
+		goto put_jetty;
 	}
 
-	tp_node = ubcore_hash_table_lookup(advice.meta.ht, advice.meta.hash, &advice.meta.key);
+	tp_node = ubcore_lookup_tpnode(advice.meta.ht, advice.meta.hash, &advice.meta.key);
 	if (tp_node == NULL) {
 		ubcore_log_err("tp node is already released");
 		goto put_tptable;
@@ -563,15 +568,19 @@ static int ubcore_cmd_modify_tp(struct ubcore_cmd_hdr *hdr, struct ubcore_cmd_mo
 
 	ubcore_set_udata(&udata, &advice, (struct ubcore_udrv_priv *)&arg->udrv_ext);
 	ret = ubcore_modify_tp_node(tp_node, &arg->in.rtr_attr[0], &udata);
+	ubcore_tpnode_kref_put(tp_node);
 	if (ret)
 		goto put_tptable;
 
 	ubcore_put_tptable(advice.meta.ht);
+	ubcore_put_ta_jetty(&advice.ta);
 	ubcore_put_device(dev);
 	return ret;
 
 put_tptable:
 	ubcore_put_tptable(advice.meta.ht);
+put_jetty:
+	ubcore_put_ta_jetty(&advice.ta);
 put_device:
 	ubcore_put_device(dev);
 	return -1;
@@ -602,7 +611,8 @@ static int ubcore_cmd_modify_tpg(struct ubcore_cmd_hdr *hdr)
 		goto free_arg;
 	}
 
-	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
+	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_HNS_UB ||
+		arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
 		ret = ubcore_cmd_modify_tp(hdr, arg);
 		goto free_arg;
 	}
@@ -672,6 +682,113 @@ free_arg:
 	return ret;
 }
 
+static int ubcore_cmd_modify_tpg_map_vtp(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_tp *failed_tp[UBCORE_MAX_TP_CNT_IN_GRP];
+	union ubcore_tp_attr_mask *rts_mask = NULL;
+	struct ubcore_cmd_modify_tpg_map_vtp *arg;
+	struct ubcore_tp_attr *rts_attr = NULL;
+	struct ubcore_vtp_cfg vtp_cfg;
+	struct ubcore_vtp *vtp = NULL;
+	struct ubcore_device *dev;
+	struct ubcore_tpg *tpg;
+	int ret;
+
+	arg = kzalloc(sizeof(struct ubcore_cmd_modify_tpg_map_vtp), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = ubcore_copy_from_user(arg, (void __user *)(uintptr_t)hdr->args_addr,
+			sizeof(struct ubcore_cmd_modify_tpg_map_vtp));
+	if (ret != 0)
+		goto free_arg;
+
+	if (arg->in.peer_tp_cnt > UBCORE_MAX_TP_CNT_IN_GRP) {
+		ret = -EINVAL;
+		ubcore_log_err("arg->in.peer_tp_cnt %d too big", arg->in.peer_tp_cnt);
+		goto free_arg;
+	}
+
+	dev = ubcore_find_tpf_device(&arg->in.tpf.netaddr, arg->in.tpf.trans_type);
+	if (dev == NULL) {
+		ret = -ENODEV;
+		goto free_arg;
+	}
+
+	/* deal with RM first */
+	tpg = ubcore_find_get_tpg(dev, arg->in.tpgn);
+	if (tpg == NULL) {
+		ret = -EINVAL;
+		ubcore_log_err("Failed to find tpg");
+		goto put_device;
+	}
+
+	if (tpg->tpg_cfg.tp_cnt > arg->in.peer_tp_cnt) {
+		ret = ubcore_destroy_multi_tp_from_index(dev, tpg, arg->in.peer_tp_cnt);
+		if (ret == (tpg->tpg_cfg.tp_cnt - arg->in.peer_tp_cnt)) {
+			tpg->tpg_cfg.tp_cnt = arg->in.peer_tp_cnt;
+		} else {
+			ubcore_log_err("ubcore_destroy_multi_tp_from_index failed %d", ret);
+			ret = -EPERM;
+			goto to_user;
+		}
+	}
+
+	/* modify to RTR */
+	arg->out.rtr_tp_cnt = ubcore_modify_tp_in_tpg(dev, tpg, arg->in.rtr_attr,
+		arg->in.rtr_mask, failed_tp);
+	if (arg->out.rtr_tp_cnt != tpg->tpg_cfg.tp_cnt) {
+		ret = -EPERM;
+		goto to_user;
+	}
+
+	/* modify to RTS */
+	ret = ubcore_get_tp_state_attr_and_mask(UBCORE_TP_STATE_RTS, tpg->tpg_cfg.tp_cnt,
+		&rts_attr, &rts_mask);
+	if (ret != 0)
+		goto to_user;
+
+	arg->out.rts_tp_cnt = ubcore_modify_tp_in_tpg(dev, tpg, rts_attr, rts_mask, failed_tp);
+	if (arg->out.rts_tp_cnt != tpg->tpg_cfg.tp_cnt) {
+		ret = -EPERM;
+		goto to_user;
+	}
+
+	ubcore_set_vtp2tpg_cfg(&vtp_cfg, &arg->in.vtp, tpg);
+	vtp = ubcore_check_and_map_vtp(dev, &vtp_cfg, arg->in.role);
+	if (vtp == NULL) {
+		ret = -EPERM;
+		goto to_user;
+	}
+
+	vtp->eid_idx = arg->in.eid_idx;
+	vtp->upi = arg->in.upi;
+	vtp->share_mode = arg->in.share_mode;
+
+	arg->out.vtpn = vtp->cfg.vtpn;
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, arg,
+		sizeof(struct ubcore_cmd_modify_tpg_map_vtp));
+	if (ret != 0)
+		(void)ubcore_check_and_unmap_vtp(vtp, arg->in.role);
+
+	ubcore_vtp_kref_put(vtp);
+
+to_user:
+	if (ret)
+		ubcore_log_warn("ubcore cmd modify tpg map vtp to user failed");
+	if (rts_attr != NULL)
+		kfree(rts_attr);
+	if (rts_mask != NULL)
+		kfree(rts_mask);
+	ubcore_tpg_kref_put(tpg);
+put_device:
+	ubcore_put_device(dev);
+free_arg:
+	kfree(arg);
+	return ret;
+}
+
 static int ubcore_mark_bind_tjetty(struct ubcore_jetty *jetty, struct ubcore_tp_meta *meta,
 	struct ubcore_jetty_id *default_tjetty_id, struct ubcore_ta_data *ta_data)
 {
@@ -692,8 +809,8 @@ static int ubcore_mark_bind_tjetty(struct ubcore_jetty *jetty, struct ubcore_tp_
 	return 0;
 }
 
-static int ubcore_para_target_ta(struct ubcore_device *dev, struct ubcore_tp_advice *advice,
-	struct ubcore_ta_data *ta_data)
+static int ubcore_para_target_ta_get_jetty(struct ubcore_device *dev,
+	struct ubcore_tp_advice *advice, struct ubcore_ta_data *ta_data)
 {
 	struct ubcore_jetty_id default_tjetty_id;
 	struct ubcore_tp_meta *meta;
@@ -709,7 +826,7 @@ static int ubcore_para_target_ta(struct ubcore_device *dev, struct ubcore_tp_adv
 
 	switch (ta_data->ta_type) {
 	case UBCORE_TA_JFS_TJFR:
-		jfr = ubcore_find_jfr(dev, ta_data->tjetty_id.id);
+		jfr = ubcore_find_get_jfr(dev, ta_data->tjetty_id.id);
 		if (jfr != NULL) {
 			meta->ht = ubcore_get_tptable(jfr->tptable);
 			advice->ta.jfr = jfr;
@@ -717,12 +834,16 @@ static int ubcore_para_target_ta(struct ubcore_device *dev, struct ubcore_tp_adv
 		}
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
-		jetty = ubcore_find_jetty(dev, ta_data->tjetty_id.id);
+		jetty = ubcore_find_get_jetty(dev, ta_data->tjetty_id.id);
 		if (jetty != NULL) {
 			meta->ht = ubcore_get_tptable(jetty->tptable);
 			advice->ta.jetty = jetty;
 			advice->ta.tjetty_id = ta_data->jetty_id;
 			ret = ubcore_mark_bind_tjetty(jetty, meta, &default_tjetty_id, ta_data);
+			if (ret != 0) {
+				ubcore_put_jetty(jetty);
+				advice->ta.jetty = NULL;
+			}
 		}
 		break;
 	case UBCORE_TA_NONE:
@@ -799,12 +920,12 @@ static int ubcore_cmd_create_target_tp(struct ubcore_cmd_hdr *hdr,
 	if (dev == NULL)
 		return -ENODEV;
 
-	if (ubcore_para_target_ta(dev, &advice, &arg->ta_data) != 0) {
+	if (ubcore_para_target_ta_get_jetty(dev, &advice, &arg->ta_data) != 0) {
 		ubcore_log_err("Failed to parse ta with type %u", advice.ta.type);
 		goto put_device;
 	} else if (advice.meta.ht == NULL) {
-		ubcore_log_err("tp table is already released");
-		goto put_device;
+		ubcore_log_info("tp table is already released");
+		goto put_jetty;
 	}
 
 	ubcore_set_udata(&udata, &advice, (struct ubcore_udrv_priv *)&arg->udata);
@@ -823,24 +944,32 @@ static int ubcore_cmd_create_target_tp(struct ubcore_cmd_hdr *hdr,
 
 	/* The receiving side rm mode cannot switch the rts state */
 	if (tp_node->tp->trans_mode == UBCORE_TP_RM && tp_node->tp->state == UBCORE_TP_STATE_RTR) {
+		ubcore_tpnode_kref_put(tp_node);
 		ubcore_put_tptable(advice.meta.ht);
+		ubcore_put_target_ta_jetty(&advice.ta);
 		ubcore_put_device(dev);
 		return 0;
 	}
 	if (tp_node->tp->state == UBCORE_TP_STATE_RTR &&
 		ubcore_modify_tp(dev, tp_node, tp_attr, udata) != 0) {
 		ubcore_log_err("Failed to modify tp");
+		ubcore_tpnode_kref_put(tp_node);
 		goto put_tptable;
 	}
 
+	ubcore_tpnode_kref_put(tp_node);
 	ubcore_put_tptable(advice.meta.ht);
+	ubcore_put_target_ta_jetty(&advice.ta);
 	ubcore_put_device(dev);
 	return ret;
 
 remove_tp_node:
+	ubcore_tpnode_kref_put(tp_node);
 	ubcore_find_remove_tp(advice.meta.ht, advice.meta.hash, &advice.meta.key);
 put_tptable:
 	ubcore_put_tptable(advice.meta.ht);
+put_jetty:
+	ubcore_put_target_ta_jetty(&advice.ta);
 put_device:
 	ubcore_put_device(dev);
 	if (IS_ERR(tp_node))
@@ -871,8 +1000,8 @@ static int ubcore_cmd_modify_tpg_tp_cnt(struct ubcore_cmd_hdr *hdr)
 	}
 
 	ubcore_log_info("tpgn_for_modify %d", arg->in.tpgn_for_modify);
-	/* deal with RM first */
-	tpg = ubcore_find_tpg(dev, arg->in.tpgn_for_modify);
+
+	tpg = ubcore_find_get_tpg(dev, arg->in.tpgn_for_modify);
 	if (tpg == NULL) {
 		ret = -EINVAL;
 		ubcore_log_err("Failed to find tpg");
@@ -888,7 +1017,7 @@ static int ubcore_cmd_modify_tpg_tp_cnt(struct ubcore_cmd_hdr *hdr)
 			goto copy_to_user;
 		} else {
 			ret = -1;
-			goto put_device;
+			goto put_tpg;
 		}
 	}
 
@@ -898,7 +1027,8 @@ copy_to_user:
 
 	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, arg,
 		sizeof(struct ubcore_cmd_modify_tpg_tp_cnt));
-
+put_tpg:
+	ubcore_tpg_kref_put(tpg);
 put_device:
 	ubcore_put_device(dev);
 free_arg:
@@ -926,7 +1056,8 @@ static int ubcore_cmd_create_target_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		goto free_arg;
 
-	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
+	if (arg->ta_data.trans_type == UBCORE_TRANSPORT_HNS_UB ||
+		arg->ta_data.trans_type == UBCORE_TRANSPORT_IB) {
 		ret = ubcore_cmd_create_target_tp(hdr, arg);
 		goto free_arg;
 	}
@@ -945,7 +1076,7 @@ static int ubcore_cmd_create_target_tpg(struct ubcore_cmd_hdr *hdr)
 
 	ubcore_log_info("create target tpg and mtu is %u", (uint32_t)arg->in.rtr_attr[0].mtu);
 
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_TPG], &tpg->hnode, tpg->tpgn);
+	ret = ubcore_find_add_tpg(dev, tpg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to add tpg to the tpg table");
 		goto destroy_tpg;
@@ -987,15 +1118,14 @@ static int ubcore_cmd_create_target_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret)
 		goto remove_tpg;
 	else
-		goto put_device;
+		goto put_tpg;
 
 remove_tpg:
-	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_TPG], &tpg->hnode);
-	if (atomic_read(&tpg->use_cnt) > 0)
-		ubcore_log_warn("tpg use_cnt still greater than 0 after remove");
+	ubcore_find_remove_tpg(dev, tpg->tpgn);
 destroy_tpg:
 	(void)ubcore_destroy_multi_tp(dev, tpg);
-	(void)ubcore_destroy_tpg(tpg);
+put_tpg:
+	ubcore_tpg_kref_put(tpg);
 put_device:
 	ubcore_put_device(dev);
 free_arg:
@@ -1034,7 +1164,6 @@ static int ubcore_cmd_modify_target_tpg(struct ubcore_cmd_hdr *hdr)
 		goto free_arg;
 	}
 
-	/* deal with RM first */
 	tpg = ubcore_find_get_tpg(dev, arg->in.tpgn);
 	if (tpg == NULL) {
 		ret = -EINVAL;
@@ -1179,9 +1308,12 @@ static int ubcore_cmd_opt_sip(struct ubcore_cmd_hdr *hdr)
 }
 
 static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *eid,
-	uint32_t *eid_idx)
+	uint32_t *eid_idx, struct net *net)
 {
 	uint32_t i;
+
+	if (dev->eid_table.eid_entries == NULL)
+		return -EINVAL;
 
 	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (memcmp(dev->eid_table.eid_entries[i].eid.raw, eid->raw, UBCORE_EID_SIZE) == 0) {
@@ -1194,9 +1326,10 @@ static int ubcore_eidtbl_add_entry(struct ubcore_device *dev, union ubcore_eid *
 			dev->eid_table.eid_entries[i].eid = *eid;
 			dev->eid_table.eid_entries[i].valid = true;
 			dev->eid_table.eid_entries[i].eid_index = i;
-			dev->eid_table.eid_entries[i].net = &init_net;
+			dev->eid_table.eid_entries[i].net = (net == NULL) ? &init_net : net;
 			*eid_idx = i;
-			ubcore_log_info("add eid: %pI6c, idx: %u\n", eid, i);
+			ubcore_log_info("dev:%s, add eid: %pI6c, idx: %u, net:0x%p\n",
+				dev->dev_name, eid, i, net);
 			break;
 		}
 	}
@@ -1212,12 +1345,15 @@ static int ubcore_eidtbl_del_entry(struct ubcore_device *dev, union ubcore_eid *
 {
 	uint32_t i;
 
+	if (dev->eid_table.eid_entries == NULL)
+		return -EINVAL;
+
 	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (memcmp(dev->eid_table.eid_entries[i].eid.raw, eid->raw, UBCORE_EID_SIZE) == 0) {
 			(void)memset(&dev->eid_table.eid_entries[i],
 				0, sizeof(struct ubcore_eid_entry));
 			*eid_idx = i;
-			ubcore_log_info("del eid: %pI6c, idx: %u\n", eid, i);
+			ubcore_log_info("dev:%s, del eid: %pI6c, idx: %u\n", dev->dev_name, eid, i);
 			break;
 		}
 	}
@@ -1242,6 +1378,9 @@ static inline void ubcore_dispatch_eid_change(struct ubcore_device *dev, uint32_
 static int ubcore_eidtbl_update_entry(struct ubcore_device *dev, union ubcore_eid *eid,
 	uint32_t eid_idx, bool is_add, struct net *net)
 {
+	if (dev->eid_table.eid_entries == NULL)
+		return -EINVAL;
+
 	if (eid_idx >= dev->attr.dev_cap.max_eid_cnt) {
 		ubcore_log_err("eid table is full\n");
 		return -1;
@@ -1261,13 +1400,13 @@ static int ubcore_eidtbl_update_entry(struct ubcore_device *dev, union ubcore_ei
 }
 
 int ubcore_update_eidtbl_by_eid(struct ubcore_device *dev, union ubcore_eid *eid,
-	uint32_t *eid_idx, bool is_alloc_eid)
+	uint32_t *eid_idx, bool is_alloc_eid, struct net *net)
 {
 	int ret;
 
 	spin_lock(&dev->eid_table.lock);
 	if (is_alloc_eid)
-		ret = ubcore_eidtbl_add_entry(dev, eid, eid_idx);
+		ret = ubcore_eidtbl_add_entry(dev, eid, eid_idx, net);
 	else
 		ret = ubcore_eidtbl_del_entry(dev, eid, eid_idx);
 
@@ -1289,9 +1428,9 @@ int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev, union ubcore_eid *eid
 static int ubcore_cmd_set_upi(struct ubcore_cmd_hdr *hdr)
 {
 	struct ubcore_cmd_set_upi arg;
-	struct ubcore_ueid_cfg cfg;
 	struct ubcore_device *dev;
 	uint32_t pattern3_upi;
+	union ubcore_eid *eid;
 	uint32_t i;
 	int ret;
 
@@ -1310,20 +1449,20 @@ static int ubcore_cmd_set_upi(struct ubcore_cmd_hdr *hdr)
 		ubcore_log_err("This mode does not support setting upi\n");
 		return -1;
 	}
+	if (dev->eid_table.eid_entries == NULL)
+		return -EINVAL;
+
 	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
-		cfg.eid = dev->eid_table.eid_entries[i].eid;
-		cfg.eid_index = i;
+		eid = &dev->eid_table.eid_entries[i].eid;
 		if (dev->eid_table.eid_entries[i].valid == false)
 			continue;
-		if (pattern3_upi == UCBORE_INVALID_UPI) {
-			cfg.upi = arg.in.upi;
-			(void)ubcore_add_ueid(dev, dev->attr.fe_idx, &cfg);
-		} else {
-			cfg.upi = pattern3_upi;
-			(void)ubcore_delete_ueid(dev, dev->attr.fe_idx, &cfg);
-			cfg.upi = arg.in.upi;
-			(void)ubcore_add_ueid(dev, dev->attr.fe_idx, &cfg);
-		}
+
+		if (pattern3_upi != UCBORE_INVALID_UPI)
+			(void)ubcore_send_eid_update_req(
+				dev, UBCORE_DEL_NET_ADDR, eid, i, &pattern3_upi);
+
+		(void)ubcore_send_eid_update_req(
+			dev, UBCORE_ADD_NET_ADDR, eid, i, &arg.in.upi);
 	}
 	(void)ubcore_add_upi_list(dev, arg.in.upi);
 	return 0;
@@ -1441,7 +1580,8 @@ static int ubcore_cmd_set_vport_cfg(struct ubcore_cmd_hdr *hdr)
 		return -EINVAL;
 	}
 
-	if (dev->transport_type == UBCORE_TRANSPORT_IB) {
+	if (dev->transport_type == UBCORE_TRANSPORT_HNS_UB ||
+		dev->transport_type == UBCORE_TRANSPORT_IB) {
 		ubcore_log_info("ib devices don't need to call ops->config_device");
 		ubcore_put_device(dev);
 		return 0;
@@ -1468,10 +1608,9 @@ static int ubcore_cmd_set_vport_cfg(struct ubcore_cmd_hdr *hdr)
 
 static int ubcore_cmd_get_dev_info(struct ubcore_cmd_hdr *hdr)
 {
-	struct ubcore_cmd_get_dev_info arg;
+	enum ubcore_mtu max_mtu = UBCORE_MTU_1024;
+	struct ubcore_cmd_get_dev_info arg = {0};
 	struct ubcore_device *tpf_dev;
-	struct ubcore_device *pf_dev;
-	enum ubcore_mtu max_mtu;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
@@ -1479,31 +1618,14 @@ static int ubcore_cmd_get_dev_info(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		return ret;
 
-	arg.in.target_pf_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
-	pf_dev = ubcore_find_device_with_name(arg.in.target_pf_name);
-	if (pf_dev == NULL) {
-		ubcore_log_err("failed to find pf_dev device with %s", arg.in.target_pf_name);
-		return -1;
-	}
-
-	arg.out.port_is_active = true;
-	if (ubcore_check_port_state(pf_dev, 0) != 0) {
-		arg.out.port_is_active = false;
-		ubcore_log_warn("port status unactive on target side, pf_dev: %s",
-			pf_dev->dev_name);
-	}
-	ubcore_put_device(pf_dev);
-
-	tpf_dev = ubcore_find_tpf_device(&arg.in.tpf.netaddr, arg.in.tpf.trans_type);
+	arg.in.target_tpf_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	tpf_dev = ubcore_find_device_with_name(arg.in.target_tpf_name);
 	if (tpf_dev == NULL) {
-		ubcore_log_err("failed to find tpf device");
+		ubcore_log_err("failed to find tpf_dev device with %s", arg.in.target_tpf_name);
 		return -1;
 	}
-	ubcore_log_info("get tpf device name %s", tpf_dev->dev_name);
 
-	(void)memcpy(arg.out.target_tpf_name, tpf_dev->dev_name, UBCORE_MAX_DEV_NAME);
-
-	ret = ubcore_get_max_mtu(tpf_dev, 0, &max_mtu);
+	ret = ubcore_get_max_mtu(tpf_dev, &max_mtu);
 	if (ret != 0) {
 		ubcore_log_err("failed to get max mtu");
 		ubcore_put_device(tpf_dev);
@@ -1558,13 +1680,13 @@ static int ubcore_cmd_destroy_tp(struct ubcore_cmd_hdr *hdr, struct ubcore_cmd_d
 	if (dev == NULL)
 		return -ENODEV;
 
-	if (ubcore_para_target_ta(dev, &advice, &arg->ta_data) != 0) {
+	if (ubcore_para_target_ta_get_jetty(dev, &advice, &arg->ta_data) != 0) {
 		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)advice.ta.type);
 		ret = -1;
 		goto put_device;
 	} else if (advice.meta.ht == NULL) {
-		ubcore_log_err("tp table is already released");
-		goto put_device;
+		ubcore_log_info("tp table is already released");
+		goto put_jetty;
 	}
 
 	ret = ubcore_unmark_bind_tjetty(&advice, &arg->ta_data);
@@ -1575,6 +1697,8 @@ static int ubcore_cmd_destroy_tp(struct ubcore_cmd_hdr *hdr, struct ubcore_cmd_d
 
 put_tptable:
 	ubcore_put_tptable(advice.meta.ht);
+put_jetty:
+	ubcore_put_target_ta_jetty(&advice.ta);
 put_device:
 	ubcore_put_device(dev);
 	return ret;
@@ -1592,7 +1716,8 @@ static int ubcore_cmd_destroy_tpg(struct ubcore_cmd_hdr *hdr)
 	if (ret != 0)
 		return ret;
 
-	if (arg.ta_data.trans_type == UBCORE_TRANSPORT_IB)
+	if (arg.ta_data.trans_type == UBCORE_TRANSPORT_HNS_UB ||
+		arg.ta_data.trans_type == UBCORE_TRANSPORT_IB)
 		return ubcore_cmd_destroy_tp(hdr, &arg);
 
 	dev = ubcore_find_tpf_device(&arg.in.tpf.netaddr, arg.in.tpf.trans_type);
@@ -1600,30 +1725,24 @@ static int ubcore_cmd_destroy_tpg(struct ubcore_cmd_hdr *hdr)
 		return -ENODEV;
 
 	/* deal with RM first */
-	tpg = ubcore_find_remove_tpg(dev, arg.in.tpgn);
+	tpg = ubcore_find_get_tpg(dev, arg.in.tpgn);
 	if (tpg == NULL) {
 		ret = -EINVAL;
 		ubcore_log_err("Failed to find tpg");
 		goto put_device;
 	}
+	ret = ubcore_find_remove_tpg(dev, arg.in.tpgn);
+	if (ret == 0)
+		arg.out.destroyed_tp_cnt = ubcore_destroy_multi_tp(dev, tpg);
 
-	arg.out.destroyed_tp_cnt = ubcore_destroy_multi_tp(dev, tpg);
-	if (arg.out.destroyed_tp_cnt != tpg->tpg_cfg.tp_cnt) {
+	if (arg.out.destroyed_tp_cnt != tpg->tpg_cfg.tp_cnt)
 		ret = -EPERM;
-		goto to_user;
-	}
 
-	/* todonext: rollback ? */
-	ret = ubcore_destroy_tpg(tpg);
-	if (ret)
-		ubcore_log_err("Failed to destroy tpg");
-
-to_user:
 	/* do not modify ret if copy success */
 	if (ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct ubcore_cmd_destroy_tpg)) != 0)
 		ret = -EPERM;
-	/* todonext: rollback ? */
+	ubcore_tpg_kref_put(tpg);
 put_device:
 	ubcore_put_device(dev);
 	return ret;
@@ -1734,24 +1853,13 @@ static void ubcore_get_utp_mtu(struct ubcore_device *dev, struct ubcore_utp_cfg 
 	enum ubcore_mtu mtu;
 	int ret;
 
-	if (((int32_t)cfg->mtu) == 0) {
-		ret = utp_get_active_mtu(dev, (uint8_t)cfg->port_id, &mtu);
-		if (ret < 0) {
-			ubcore_log_warn("dev:%s, port_id:%u Failed to get active mtu",
-				dev->dev_name, cfg->port_id);
-			mtu = UBCORE_MTU_1024;
-		}
-		cfg->mtu = mtu;
-		ubcore_log_info("cfg not config, device mtu is %d", (int32_t)cfg->mtu);
-	} else {
-		ret = ubcore_get_max_mtu(dev, (uint8_t)cfg->port_id, &mtu);
-		if (ret < 0) {
-			mtu = UBCORE_MTU_1024;
-			ubcore_log_warn("dev:%s, port_id:%u Failed to get max mtu",
-				dev->dev_name, cfg->port_id);
-		}
-		cfg->mtu = min(cfg->mtu, mtu);
+	ret = ubcore_get_max_mtu(dev, &mtu);
+	if (ret < 0) {
+		mtu = UBCORE_MTU_1024;
+		ubcore_log_warn("dev:%s, port_id:%u Failed to get max mtu",
+			dev->dev_name, cfg->port_id);
 	}
+	cfg->mtu = min(cfg->mtu, mtu);
 }
 
 static int ubcore_cmd_create_utp(struct ubcore_cmd_hdr *hdr)
@@ -1792,6 +1900,9 @@ static int ubcore_cmd_create_utp(struct ubcore_cmd_hdr *hdr)
 		ret = PTR_ERR(vtp);
 		goto destroy_utp;
 	}
+	vtp->eid_idx = arg->in.eid_idx;
+	vtp->upi = arg->in.upi;
+	vtp->share_mode = arg->in.share_mode;
 
 	/* fill output */
 	arg->out.idx = utp->utpn;
@@ -1803,16 +1914,15 @@ static int ubcore_cmd_create_utp(struct ubcore_cmd_hdr *hdr)
 		goto unmap_vtp;
 	} else {
 		ubcore_vtp_kref_put(vtp);
-		goto put_device;
+		goto put_utp;
 	}
 unmap_vtp:
 	(void)ubcore_unmap_vtp(vtp);
 	ubcore_vtp_kref_put(vtp);
 destroy_utp:
-	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_UTP], &utp->hnode);
-	if (atomic_read(&utp->use_cnt) > 0)
-		ubcore_log_warn("utp use_cnt still greater than 0 after remove");
-	(void)ubcore_destroy_utp(utp);
+	ubcore_find_remove_utp(dev, utp->utpn);
+put_utp:
+	ubcore_utp_kref_put(utp);
 put_device:
 	ubcore_put_device(dev);
 free_arg:
@@ -1858,13 +1968,12 @@ static int ubcore_cmd_only_create_utp(struct ubcore_cmd_hdr *hdr)
 	if (ret)
 		goto destroy_utp;
 	else
-		goto put_device;
+		goto put_utp;
 
 destroy_utp:
-	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_UTP], &utp->hnode);
-	if (atomic_read(&utp->use_cnt) > 0)
-		ubcore_log_warn("utp use_cnt still greater than 0 after remove");
-	(void)ubcore_destroy_utp(utp);
+	ubcore_find_remove_utp(dev, utp->utpn);
+put_utp:
+	ubcore_utp_kref_put(utp);
 put_device:
 	ubcore_put_device(dev);
 free_arg:
@@ -1876,7 +1985,6 @@ static int ubcore_cmd_destroy_utp(struct ubcore_cmd_hdr *hdr)
 {
 	struct ubcore_cmd_destroy_utp arg = {0};
 	struct ubcore_device *dev;
-	struct ubcore_utp *utp;
 	int ret;
 
 	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
@@ -1888,20 +1996,10 @@ static int ubcore_cmd_destroy_utp(struct ubcore_cmd_hdr *hdr)
 	if (dev == NULL)
 		return -ENODEV;
 
-	utp = ubcore_find_remove_utp(dev, arg.in.utp_idx);
-	if (utp == NULL) {
-		ret = -EINVAL;
-		ubcore_log_err("Failed to find utp");
-		goto put_device;
-	}
+	ubcore_find_remove_utp(dev, arg.in.utp_idx);
 
-	ret = ubcore_destroy_utp(utp);
-	if (ret)
-		ubcore_log_err("Failed to destroy utp");
-
-put_device:
 	ubcore_put_device(dev);
-	return ret;
+	return 0;
 }
 
 static int ubcore_cmd_create_ctp(struct ubcore_cmd_hdr *hdr)
@@ -2276,8 +2374,8 @@ static int ubcore_cmd_change_tpg_to_error(struct ubcore_cmd_hdr *hdr)
 		}
 		ubcore_tp_get(tp);
 
-		if (tp->state == UBCORE_TP_STATE_RESET) {
-			ubcore_log_info("TP:%u already in RESET", tp->tpn);
+		if (tp->state == UBCORE_TP_STATE_RESET || tp->state == UBCORE_TP_STATE_ERR) {
+			ubcore_log_info("TP:%u already in %u", tp->tpn, (uint32_t)tp->state);
 			ubcore_tp_kref_put(tp);
 			continue;
 		}
@@ -2318,10 +2416,15 @@ static int ubcore_cmd_config_function_migrate_state(struct ubcore_cmd_hdr *hdr)
 		return ret;
 
 	dev = ubcore_find_tpf_device(&arg.in.tpf.netaddr, arg.in.tpf.trans_type);
-	if (dev == NULL || dev->ops == NULL || dev->ops->config_function_migrate_state == NULL) {
+	if (dev == NULL) {
 		ret = -ENODEV;
 		ubcore_log_err("fail to find tpf device");
 		return ret;
+	}
+
+	if (dev->ops == NULL || dev->ops->config_function_migrate_state == NULL) {
+		ret = -EINVAL;
+		goto put_dev;
 	}
 
 	arg.out.cnt = (uint32_t)ubcore_config_function_migrate_state(dev, arg.in.fe_idx,
@@ -2335,6 +2438,7 @@ static int ubcore_cmd_config_function_migrate_state(struct ubcore_cmd_hdr *hdr)
 		sizeof(struct ubcore_cmd_config_function_migrate_state)) != 0)
 		ret = -EPERM;
 
+put_dev:
 	ubcore_put_device(dev);
 	return ret;
 }
@@ -2428,7 +2532,6 @@ static int ubcore_cmd_modify_vtp(struct ubcore_cmd_hdr *hdr)
 			ubcore_log_err("fail to modify vtp");
 			goto put_device;
 		}
-		ubcore_uninit_modify_vtp(&vattr, &vtp_param);
 	}
 
 put_device:
@@ -2460,12 +2563,57 @@ static int ubcore_cmd_opt_config_dscp_vl(struct ubcore_cmd_hdr *hdr)
 		ret = -ENODEV;
 		goto put_device;
 	}
-
+	if (arg.in.num > UBCORE_MAX_DSCP_VL_NUM) {
+		ret = -EINVAL;
+		goto put_device;
+	}
 	ret = dev->ops->config_dscp_vl(dev, arg.in.dscp, arg.in.vl, arg.in.num);
 	if (ret != 0) {
 		ubcore_log_err("fail to config dscp vl, dev:%s\n", arg.in.dev_name);
 		goto put_device;
 	}
+
+put_device:
+	ubcore_put_device(dev);
+	return ret;
+}
+
+static int ubcore_cmd_opt_query_dscp_vl(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_opt_query_dscp_vl arg;
+	struct ubcore_device *dev;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct ubcore_cmd_opt_query_dscp_vl));
+	if (ret != 0)
+		return ret;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_warn("fail to find dev:%s\n", arg.in.dev_name);
+		return -ENODEV;
+	}
+
+	if (dev->ops->query_dscp_vl == NULL) {
+		ret = -ENODEV;
+		goto put_device;
+	}
+
+	if (arg.in.num > UBCORE_MAX_DSCP_VL_NUM) {
+		ret = -EINVAL;
+		goto put_device;
+	}
+
+	ret = dev->ops->query_dscp_vl(dev, arg.in.dscp, arg.in.num, arg.out.vl);
+	if (ret != 0) {
+		ubcore_log_err("fail to query dscp vl, dev:%s\n", arg.in.dev_name);
+		goto put_device;
+	}
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+		sizeof(struct ubcore_cmd_opt_query_dscp_vl));
 
 put_device:
 	ubcore_put_device(dev);
@@ -2485,13 +2633,14 @@ static int ubcore_cmd_opt_update_eid(struct ubcore_cmd_hdr *hdr)
 		return ret;
 
 	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
-	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	dev = ubcore_find_tpf_device_by_name(arg.in.dev_name);
 	if (dev == NULL)
-		return -1;
+		return -EINVAL;
 
 	cfg.eid = arg.in.eid;
 	cfg.eid_index = arg.in.eid_index;
 	cfg.upi = arg.in.upi;
+	cfg.uuid = arg.in.uuid;
 
 	if (hdr->command == UBCORE_CMD_ALLOC_EID)
 		ret = ubcore_add_ueid(dev, arg.in.fe_idx, &cfg);
@@ -2601,6 +2750,7 @@ static int ubcore_assign_single_out_vtp_table(struct ubcore_device *dev, struct 
 	out_entry->eid_idx = vtp->eid_idx;
 	out_entry->upi = vtp->upi;
 	out_entry->share_mode = vtp->share_mode;
+	out_entry->restore_succeed = false;
 
 	if (vtp->cfg.trans_mode == UBCORE_TP_RM || vtp->cfg.trans_mode == UBCORE_TP_RC) {
 		if (vtp->cfg.tpg == NULL) {
@@ -2629,8 +2779,8 @@ static int ubcore_assign_single_out_vtp_table(struct ubcore_device *dev, struct 
 		out_entry->dip = vtp->cfg.utp->utp_cfg.peer_net_addr;
 	}
 
-	sip_entry =
-		ubcore_lookup_sip_info_without_lock(&dev->sip_table, out_entry->local_net_addr_idx);
+	sip_entry = ubcore_lookup_sip_info_without_lock(
+		&dev->sip_table, out_entry->local_net_addr_idx);
 	if (sip_entry == NULL) {
 		ubcore_log_err("sip does not exist\n");
 		return -1;
@@ -2759,7 +2909,7 @@ static int ubcore_cmd_map_target_vtp(struct ubcore_cmd_hdr *hdr)
 			tpg = ubcore_find_get_tpg(dev, arg->in.vtp.tpgn);
 			if (tpg == NULL) {
 				ret = -EINVAL;
-				ubcore_log_err("Failed to find tpg");
+				ubcore_log_err("Failed to find tpg, tpgn: %u.\n", arg->in.vtp.tpgn);
 				goto put_device;
 			}
 			ubcore_set_vtp2tpg_cfg(&vtp_cfg, &arg->in.vtp, tpg);
@@ -2768,7 +2918,7 @@ static int ubcore_cmd_map_target_vtp(struct ubcore_cmd_hdr *hdr)
 			utp = ubcore_find_get_utp(dev, arg->in.vtp.utpn);
 			if (utp == NULL) {
 				ret = -EINVAL;
-				ubcore_log_err("Failed to find utp");
+				ubcore_log_err("Failed to find utp, utpn: %u.\n", arg->in.vtp.utpn);
 				goto put_device;
 			}
 			ubcore_set_vtp2utp_cfg(&vtp_cfg, &arg->in.vtp, utp);
@@ -2778,7 +2928,7 @@ static int ubcore_cmd_map_target_vtp(struct ubcore_cmd_hdr *hdr)
 		ctp = ubcore_find_get_ctp(dev, arg->in.vtp.ctpn);
 		if (ctp == NULL) {
 			ret = -EINVAL;
-			ubcore_log_err("Failed to find ctp");
+			ubcore_log_err("Failed to find ctp, ctpn: %u.\n", arg->in.vtp.ctpn);
 			goto put_device;
 		}
 		ubcore_set_vtp2ctp_cfg(&vtp_cfg, &arg->in.vtp, ctp);
@@ -2790,10 +2940,113 @@ static int ubcore_cmd_map_target_vtp(struct ubcore_cmd_hdr *hdr)
 		goto put_tpg_and_utp;
 	}
 	vtp->role = (vtp->role != arg->in.role ? UBCORE_VTP_DUPLEX : vtp->role);
+	vtp->eid_idx = arg->in.eid_idx;
+	vtp->upi = arg->in.upi;
+	vtp->share_mode = arg->in.share_mode;
 	ubcore_vtp_kref_put(vtp);
 
 put_tpg_and_utp:
 	ubcore_put_tpg_utp_ctp_in_vtp(&arg->in.vtp, tpg, utp, ctp);
+put_device:
+	ubcore_put_device(dev);
+free_arg:
+	kfree(arg);
+	return ret;
+}
+
+static int ubcore_query_fe_stats(struct ubcore_device *dev,
+	struct ubcore_list_migrate_entry_param *param, uint32_t cnt)
+{
+	int ret;
+	uint32_t i;
+	struct ubcore_fe_stats *stats = NULL;
+	uint16_t *fe_idx = NULL;
+
+	if (dev->ops == NULL || dev->ops->query_fe_stats == NULL) {
+		ubcore_log_err("Device without query_fe_stats, dev_name: %s", dev->dev_name);
+		return -ENODEV;
+	}
+
+	if (cnt > UBCORE_MAX_MIG_ENTRY_CNT) {
+		ubcore_log_warn("count too long to alloc, cnt = %u\n", cnt);
+		return -ENOMEM;
+	}
+
+	fe_idx = kcalloc(1, cnt * sizeof(uint16_t), GFP_KERNEL);
+	if (fe_idx == NULL)
+		return -ENOMEM;
+
+	stats = kcalloc(1, cnt * sizeof(struct ubcore_fe_stats), GFP_KERNEL);
+	if (fe_idx == NULL) {
+		ret = -ENOMEM;
+		goto free_idx;
+	}
+
+	for (i = 0; i < cnt; i++)
+		fe_idx[i] = param[i].fe_idx;
+
+	ret = dev->ops->query_fe_stats(dev, cnt, fe_idx, stats);
+	if (ret != 0) {
+		ubcore_log_err("Fail to query_fe_stats, ret: %d, dev_name: %s", ret, dev->dev_name);
+		goto free_stats;
+	}
+
+	for (i = 0; i < cnt; i++)
+		param[i].stats = stats[i];
+
+free_stats:
+	kfree(stats);
+free_idx:
+	kfree(fe_idx);
+	return ret;
+}
+
+static int ubcore_cmd_list_migrate_entry(struct ubcore_cmd_hdr *hdr)
+{
+	int ret = 0;
+	struct ubcore_cmd_list_migrate_entry *arg = NULL;
+	struct ubcore_device *dev = NULL;
+	uint32_t cnt = 0;
+
+	if (hdr->args_len > sizeof(struct ubcore_cmd_list_migrate_entry) +
+		UBCORE_MAX_MIG_ENTRY_CNT * sizeof(struct ubcore_list_migrate_entry_param)) {
+		ubcore_log_warn("hdr->args_len too long to alloc, len = %u\n", hdr->args_len);
+		return -ENOMEM;
+	}
+
+	arg = kcalloc(1, hdr->args_len, GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = ubcore_copy_from_user(arg, (void __user *)(uintptr_t)hdr->args_addr, hdr->args_len);
+	if (ret != 0)
+		goto free_arg;
+
+	cnt = arg->in.cnt;
+	if (cnt * sizeof(struct ubcore_list_migrate_entry_param) +
+		sizeof(ubcore_cmd_list_migrate_entry) != hdr->args_len) {
+		ret = -EINVAL;
+		ubcore_log_err("Invalid argument, args_len = %u, cnt = %u", hdr->args_len, cnt);
+		goto free_arg;
+	}
+
+	dev = ubcore_find_tpf_device(&arg->in.tpf.netaddr, arg->in.tpf.trans_type);
+	if (dev == NULL) {
+		ret = -ENODEV;
+		ubcore_log_err("fail to find tpf device");
+		goto free_arg;
+	}
+
+	ret = ubcore_query_fe_stats(dev, arg->param, cnt);
+	if (ret != 0)
+		goto put_device;
+
+	if (ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr,
+		arg, hdr->args_len) != 0) {
+		ret = -EPERM;
+		goto put_device;
+	}
+
 put_device:
 	ubcore_put_device(dev);
 free_arg:
@@ -2813,6 +3066,7 @@ static struct ubcore_uvs_cmd_func g_ubcore_uvs_cmd_funcs[] = {
 	[UBCORE_CMD_CREATE_TPG] = {ubcore_cmd_create_tpg, false},
 	[UBCORE_CMD_CREATE_VTP] = {ubcore_cmd_create_vtp, false},
 	[UBCORE_CMD_MODIFY_TPG] = {ubcore_cmd_modify_tpg, false},
+	[UBCORE_CMD_MODIFY_TPG_MAP_VTP] = {ubcore_cmd_modify_tpg_map_vtp, false},
 	[UBCORE_CMD_MODIFY_TPG_TP_CNT] = {ubcore_cmd_modify_tpg_tp_cnt, false},
 	[UBCORE_CMD_CREATE_TARGET_TPG] = {ubcore_cmd_create_target_tpg, false},
 	[UBCORE_CMD_MODIFY_TARGET_TPG] = {ubcore_cmd_modify_target_tpg, false},
@@ -2850,6 +3104,8 @@ static struct ubcore_uvs_cmd_func g_ubcore_uvs_cmd_funcs[] = {
 	[UBCORE_CMD_GET_VTP_TABLE_CNT] = {ubcore_cmd_get_vtp_table_cnt, false},
 	[UBCORE_CMD_RESTORE_TABLE] = {ubcore_cmd_restore_vtp_table, false},
 	[UBCORE_CMD_MAP_TARGET_VTP] = {ubcore_cmd_map_target_vtp, false},
+	[UBCORE_CMD_LIST_MIGRATE_ENTRY] = {ubcore_cmd_list_migrate_entry, false},
+	[UBCORE_CMD_QUERY_DSCP_VL] = {ubcore_cmd_opt_query_dscp_vl, false},
 };
 
 int ubcore_uvs_cmd_parse(struct ubcore_cmd_hdr *hdr)

@@ -132,11 +132,12 @@ void ubcore_unregister_client(struct ubcore_client *rm_client);
 /**
  * alloc token to ubcore device
  * @param[in] dev: the ubcore device handle;
+ * @param[in] flag: token_id_flag;
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: token id pointer on success, NULL on error
  */
 struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
-	struct ubcore_udata *udata);
+	union ubcore_token_id_flag flag, struct ubcore_udata *udata);
 /**
  * free token id from ubcore device
  * @param[in] token_id: the token_id id alloced before;

@@ -50,6 +50,19 @@ void ubcore_dispatch_async_event(struct ubcore_event *event);
  */
 struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va, uint64_t len,
 				    union ubcore_umem_flag flag);
+
+/**
+ * Find best HW page size to use for this segment
+ * @param[in] umem: umem struct, return of ubcore_umem_get;
+ * @param[in] page_size_bitmap: bitmap of HW supported page sizes, must include PAGE_SIZE;
+ * @param[in] va: Initial address of this segment.
+ * Return: before kernel 5.3: return 4K;
+ * kernel 5.3 and later: Returns 0 if the umem requires page sizes not supported by the
+ * driver to be mapped; returns non-zero on the best page size.
+ */
+uint64_t ubcore_umem_find_best_page_size(struct ubcore_umem *umem, uint64_t page_size_bitmap,
+	uint64_t va);
+
 /**
  * Release umem allocated
  * @param[in] umem: the ubcore umem created before

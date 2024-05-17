@@ -38,6 +38,8 @@
 #define CB_ARGS_SIP_IDX 3
 #define CB_ARGS_INFO_TYPE 4
 
+#define UBCORE_MAX_NL_MSG_BUF_LEN 2048
+
 static LIST_HEAD(g_nl_session_list);
 static DEFINE_SPINLOCK(g_nl_session_lock);
 static atomic_t g_nlmsg_seq;
@@ -84,7 +86,7 @@ static struct ubcore_nl_session *ubcore_create_nl_session(struct ubcore_device *
 	spin_unlock_irqrestore(&g_nl_session_lock, flags);
 	kref_init(&s->kref);
 	init_completion(&s->comp);
-	(void)strncpy(s->dev_name, dev->dev_name, strlen(dev->dev_name));
+	(void)strncpy(s->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME - 1);
 
 	return s;
 }
@@ -131,6 +133,11 @@ static struct ubcore_nlmsg *ubcore_get_genlmsg_data(struct genl_info *info)
 		return NULL;
 
 	payload_len = nla_get_u32(info->attrs[UBCORE_PAYLOAD_LEN]);
+	if (payload_len > UBCORE_MAX_NL_MSG_BUF_LEN) {
+		ubcore_log_err("Invalid payload len: %d", payload_len);
+		return NULL;
+	}
+
 	msg = kzalloc((size_t)(sizeof(struct ubcore_nlmsg) + payload_len), GFP_KERNEL);
 	if (msg == NULL)
 		return NULL;
@@ -282,7 +289,7 @@ int ubcore_tpf2fe_resp_ops(struct sk_buff *skb, struct genl_info *info)
 
 int ubcore_update_tpf_dev_info_resp_ops(struct sk_buff *skb, struct genl_info *info)
 {
-	struct ubcore_nl_session *s;
+	struct ubcore_update_tpf_dev_info_resp *nl_resp;
 	struct ubcore_nlmsg *resp;
 
 	resp = ubcore_get_genlmsg_data(info);
@@ -290,15 +297,15 @@ int ubcore_update_tpf_dev_info_resp_ops(struct sk_buff *skb, struct genl_info *i
 		ubcore_log_err("Failed to calloc and copy response");
 		return -1;
 	}
-	s = ubcore_find_nl_session(resp->nlmsg_seq);
-	if (s == NULL) {
-		ubcore_log_err("Failed to find nl session with seq %u", resp->nlmsg_seq);
+
+	nl_resp = (struct ubcore_update_tpf_dev_info_resp *)(void *)resp->payload;
+	if (nl_resp->ret != UBCORE_NL_RESP_SUCCESS) {
+		ubcore_log_err("Failed to get tpf dev info resp");
 		kfree(resp);
 		return -1;
 	}
-	s->resp = resp;
-	(void)kref_put(&s->kref, ubcore_free_nl_session);
-	complete(&s->comp);
+
+	kfree(resp);
 	return 0;
 }
 

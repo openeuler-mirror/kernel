@@ -31,6 +31,7 @@
 #include "uburma_cmd.h"
 
 #define UBURMA_INVALID_TPN UINT_MAX
+#define UBURMA_CREATE_JETTY_ARG_IN_RC_SHARE_TP_SHIFT 11
 
 void uburma_cmd_inc(struct uburma_device *ubu_dev)
 {
@@ -124,6 +125,7 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev, struct uburm
 				   struct uburma_cmd_hdr *hdr)
 {
 	struct uburma_cmd_alloc_token_id arg;
+	union ubcore_token_id_flag flag = {0};
 	struct ubcore_udata udata = { 0 };
 	struct ubcore_token_id *token_id;
 	struct uburma_uobj *uobj;
@@ -142,7 +144,7 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev, struct uburm
 		return -ENOMEM;
 	}
 
-	token_id = ubcore_alloc_token_id(ubc_dev, &udata);
+	token_id = ubcore_alloc_token_id(ubc_dev, flag, &udata);
 	if (IS_ERR_OR_NULL(token_id)) {
 		uburma_log_err("ubcore alloc token_id id failed.\n");
 		ret = PTR_ERR(token_id);
@@ -1020,6 +1022,10 @@ static void fill_create_jetty_attr(struct ubcore_jetty_cfg *cfg,
 	cfg->flag.bs.lock_free = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.lock_free;
 	cfg->flag.bs.error_suspend = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.error_suspend;
 	cfg->flag.bs.outorder_comp = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.outorder_comp;
+	cfg->flag.bs.sub_trans_mode = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.sub_trans_mode;
+	// see urma_jfs_flag
+	cfg->flag.bs.rc_share_tp = (arg->in.jfs_flag &
+		(0x1 << UBURMA_CREATE_JETTY_ARG_IN_RC_SHARE_TP_SHIFT)) > 0 ? 1 : 0;
 
 	cfg->max_send_sge = arg->in.max_send_sge;
 	cfg->max_send_rsge = arg->in.max_send_rsge;
@@ -1850,6 +1856,61 @@ static int uburma_fill_user_ctl_info(struct ubcore_ucontext *ctx,
 	return 0;
 }
 
+static int uburma_fill_eid_list(struct ubcore_device *dev,
+	struct uburma_cmd_get_eid_list *eid_list)
+{
+	struct ubcore_eid_entry *e;
+	uint32_t max_eid_cnt = 0;
+	uint32_t eid_cnt = 0;
+	int i;
+
+	spin_lock(&dev->eid_table.lock);
+	if (dev->eid_table.eid_entries == NULL) {
+		spin_unlock(&dev->eid_table.lock);
+		return -EINVAL;
+	}
+
+	max_eid_cnt = min(dev->eid_table.eid_cnt, eid_list->in.max_eid_cnt);
+	for (i = 0; i < max_eid_cnt; i++) {
+		e = &dev->eid_table.eid_entries[i];
+		if (!e->valid || !net_eq(e->net, current->nsproxy->net_ns))
+			continue;
+
+		eid_list->out.eid_list[eid_cnt].eid_index = e->eid_index;
+		eid_list->out.eid_list[eid_cnt].eid = e->eid;
+		eid_cnt++;
+	}
+	eid_list->out.eid_cnt = eid_cnt;
+	spin_unlock(&dev->eid_table.lock);
+	return 0;
+}
+
+static int uburma_cmd_get_eid_list(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_get_eid_list *args;
+	int ret;
+
+	args = kcalloc(1, sizeof(struct uburma_cmd_get_eid_list), GFP_KERNEL);
+	if (args == NULL)
+		return -ENOMEM;
+
+	ret = uburma_copy_from_user(args, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_get_eid_list));
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_fill_eid_list(ubc_dev, args);
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, args,
+		sizeof(struct uburma_cmd_get_eid_list));
+out:
+	kfree(args);
+	return ret;
+}
+
 static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev,
 	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
 {
@@ -1870,6 +1931,67 @@ static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		return ret;
 
+	return 0;
+}
+
+static int uburma_fill_net_addr_list(struct ubcore_device *dev,
+	struct uburma_cmd_get_net_addr_list *netaddr_list)
+{
+	struct ubcore_sip_info *entry;
+	uint32_t max_netaddr_cnt;
+	uint32_t netaddr_cnt = 0;
+	int i;
+
+	mutex_lock(&dev->sip_table.lock);
+	if (dev->sip_table.entry == NULL) {
+		mutex_unlock(&dev->sip_table.lock);
+		return -EINVAL;
+	}
+
+	max_netaddr_cnt = min(dev->sip_table.max_sip_cnt, netaddr_list->in.max_netaddr_cnt);
+	for (i = 0; i < max_netaddr_cnt; i++) {
+		entry = &dev->sip_table.entry[i];
+		if (entry->is_active) {
+			netaddr_list->out.netaddr_info[netaddr_cnt].netaddr = entry->addr;
+			netaddr_list->out.netaddr_info[netaddr_cnt].index = i;
+			netaddr_cnt++;
+		}
+	}
+	netaddr_list->out.netaddr_cnt = netaddr_cnt;
+	mutex_unlock(&dev->sip_table.lock);
+
+	return 0;
+}
+
+static int uburma_cmd_get_net_addr_list(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_get_net_addr_list *args;
+	int ret;
+
+	args = kcalloc(1, sizeof(struct uburma_cmd_get_net_addr_list), GFP_KERNEL);
+	if (args == NULL)
+		return -ENOMEM;
+
+	ret = uburma_copy_from_user(args, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct uburma_cmd_get_net_addr_list));
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_fill_net_addr_list(ubc_dev, args);
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, args,
+		sizeof(uburma_cmd_get_net_addr_list));
+out:
+	kfree(args);
+	return ret;
+}
+
+static int uburma_cmd_modify_tp(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
 	return 0;
 }
 
@@ -1913,13 +2035,16 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_UNBIND_JETTY] = uburma_cmd_unbind_jetty,
 	[UBURMA_CMD_CREATE_JETTY_GRP] = uburma_cmd_create_jetty_grp,
 	[UBURMA_CMD_DESTROY_JETTY_GRP] = uburma_cmd_delete_jetty_grp,
-	[UBURMA_CMD_USER_CTL] = uburma_cmd_user_ctl
+	[UBURMA_CMD_USER_CTL] = uburma_cmd_user_ctl,
+	[UBURMA_CMD_GET_EID_LIST] = uburma_cmd_get_eid_list,
+	[UBURMA_CMD_GET_NETADDR_LIST] = uburma_cmd_get_net_addr_list,
+	[UBURMA_CMD_MODIFY_TP] = uburma_cmd_modify_tp,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
 			    struct uburma_cmd_hdr *hdr)
 {
-	if (hdr->command < UBURMA_CMD_CREATE_CTX || hdr->command > UBURMA_CMD_USER_CTL ||
+	if (hdr->command < UBURMA_CMD_CREATE_CTX || hdr->command >= UBURMA_CMD_MAX ||
 	    g_uburma_cmd_handlers[hdr->command] == NULL) {
 		uburma_log_err("bad uburma command: %d.\n", (int)hdr->command);
 		return -EINVAL;
@@ -1959,7 +2084,8 @@ long uburma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	if (cmd == UBURMA_CMD) {
 		ret = (long)copy_from_user(&hdr, user_hdr, sizeof(struct uburma_cmd_hdr));
 		if ((ret != 0) || (hdr.args_len > UBURMA_CMD_MAX_ARGS_SIZE) ||
-		    (hdr.command > UBURMA_CMD_CREATE_CTX && file->ucontext == NULL)) {
+		    (hdr.command != UBURMA_CMD_CREATE_CTX &&
+			hdr.command != UBURMA_CMD_GET_EID_LIST && file->ucontext == NULL)) {
 			uburma_log_err(
 				"invalid input, hdr.command: %d, ret:%ld, hdr.args_len: %d\n",
 				hdr.command, ret, hdr.args_len);

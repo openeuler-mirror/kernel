@@ -31,8 +31,8 @@ static inline bool ubcore_is_use_cg(struct ubcore_device *dev)
 
 void ubcore_cgroup_reg_dev(struct ubcore_device *dev)
 {
-	if (dev == NULL) {
-		ubcore_log_err("dev is null");
+	if (dev == NULL || strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) >= UBCORE_MAX_DEV_NAME) {
+		ubcore_log_err("Invalid parameter");
 		return;
 	}
 

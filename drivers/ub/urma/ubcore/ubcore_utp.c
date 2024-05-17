@@ -24,33 +24,27 @@
 #include "ubcore_device.h"
 #include "ubcore_utp.h"
 
-int utp_get_active_mtu(struct ubcore_device *dev, uint8_t port_num,
-	enum ubcore_mtu *mtu)
+static void ubcore_destroy_utp(struct ubcore_utp *utp)
 {
-	struct ubcore_device_status st = { 0 };
+	struct ubcore_device *dev = utp->ub_dev;
+	uint32_t utp_idx = utp->utpn;
+	int ret;
 
-	if (port_num >= dev->attr.port_cnt || dev->ops == NULL ||
-		dev->ops->query_device_status == NULL || port_num >= UBCORE_MAX_PORT_CNT) {
-		ubcore_log_err("Invalid parameter");
-		return -1;
+	if (dev->ops == NULL || dev->ops->destroy_utp == NULL)
+		return;
+
+	ret = dev->ops->destroy_utp(utp);
+	if (ret != 0) {
+		ubcore_log_err("Failed to destroy utp:%u", utp_idx);
+		return;
 	}
-	if (dev->ops->query_device_status(dev, &st) != 0) {
-		ubcore_log_err("Failed to query query_device_status for port %hhu", port_num);
-		return -1;
-	}
-	if (st.port_status[port_num].state != UBCORE_PORT_ACTIVE) {
-		ubcore_log_err("Port %d is not active", port_num);
-		return -1;
-	}
-	*mtu = st.port_status[port_num].active_mtu;
-	return 0;
 }
 
 static void ubcore_utp_kref_release(struct kref *ref_cnt)
 {
 	struct ubcore_utp *utp = container_of(ref_cnt, struct ubcore_utp, ref_cnt);
 
-	complete(&utp->comp);
+	ubcore_destroy_utp(utp);
 }
 
 void ubcore_utp_kref_put(struct ubcore_utp *utp)
@@ -63,6 +57,31 @@ void ubcore_utp_get(void *obj)
 	struct ubcore_utp *utp = obj;
 
 	kref_get(&utp->ref_cnt);
+}
+
+static void ubcore_utp_kref_get(struct ubcore_utp *utp)
+{
+	kref_get(&utp->ref_cnt);
+}
+
+static int ubcore_find_add_utp(struct ubcore_hash_table *ht, struct ubcore_utp *utp)
+{
+	struct hlist_node *hnode = &utp->hnode;
+	uint32_t hash = utp->utpn;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return -EINVAL;
+	}
+	if (ubcore_hash_table_lookup_nolock(ht, hash, ubcore_ht_key(ht, hnode)) != NULL) {
+		spin_unlock(&ht->lock);
+		return -EEXIST;
+	}
+	ubcore_hash_table_add_nolock(ht, hnode, hash);
+	ubcore_utp_kref_get(utp);
+	spin_unlock(&ht->lock);
+	return 0;
 }
 
 struct ubcore_utp *ubcore_create_utp(struct ubcore_device *dev, struct ubcore_utp_cfg *cfg)
@@ -82,43 +101,15 @@ struct ubcore_utp *ubcore_create_utp(struct ubcore_device *dev, struct ubcore_ut
 	}
 	utp->ub_dev = dev;
 	utp->utp_cfg = *cfg;
-	atomic_set(&utp->use_cnt, 0);
 	kref_init(&utp->ref_cnt);
-	init_completion(&utp->comp);
 
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_UTP], &utp->hnode, utp->utpn);
+	ret = ubcore_find_add_utp(&dev->ht[UBCORE_HT_UTP], utp);
 	if (ret != 0) {
-		(void)dev->ops->destroy_utp(utp);
-		utp = NULL;
+		ubcore_utp_kref_put(utp);
 		ubcore_log_err("Failed to add utp to the utp table");
-		return utp;
+		return NULL;
 	}
-
-	ubcore_log_info("Success to create utp, utp_idx %u", utp->utpn);
 	return utp;
-}
-
-int ubcore_destroy_utp(struct ubcore_utp *utp)
-{
-	struct ubcore_device *dev = utp->ub_dev;
-	uint32_t utp_idx = utp->utpn;
-	int ret;
-
-	if (dev->ops == NULL || dev->ops->destroy_utp == NULL)
-		return -EINVAL;
-
-	ubcore_utp_kref_put(utp);
-	wait_for_completion(&utp->comp);
-	ret = dev->ops->destroy_utp(utp);
-	if (ret != 0) {
-		(void)ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_UTP], &utp->hnode, utp->utpn);
-		/* inc utp use cnt? */
-		ubcore_log_err("Failed to destroy utp");
-		return ret;
-	}
-
-	ubcore_log_info("Success to destroy utp, utp_idx %u", utp_idx);
-	return ret;
 }
 
 struct ubcore_utp *ubcore_find_utp(struct ubcore_device *dev, uint32_t idx)
@@ -131,27 +122,21 @@ struct ubcore_utp *ubcore_find_get_utp(struct ubcore_device *dev, uint32_t idx)
 	return ubcore_hash_table_lookup_get(&dev->ht[UBCORE_HT_UTP], idx, &idx);
 }
 
-struct ubcore_utp *ubcore_find_remove_utp(struct ubcore_device *dev, uint32_t idx)
+void ubcore_find_remove_utp(struct ubcore_device *dev, uint32_t idx)
 {
 	struct ubcore_utp *utp;
 
 	spin_lock(&dev->ht[UBCORE_HT_UTP].lock);
 	if (&dev->ht[UBCORE_HT_UTP].head == NULL) {
 		spin_unlock(&dev->ht[UBCORE_HT_UTP].lock);
-		return NULL;
+		return;
 	}
 	utp = ubcore_hash_table_lookup_nolock(&dev->ht[UBCORE_HT_UTP], idx, &idx);
 	if (utp == NULL) {
 		spin_unlock(&dev->ht[UBCORE_HT_UTP].lock);
-		return NULL;
-	}
-	if (atomic_read(&utp->use_cnt) > 0) {
-		spin_unlock(&dev->ht[UBCORE_HT_UTP].lock);
-		ubcore_log_err("Failed to remove utp");
-		return NULL;
+		return;
 	}
 	ubcore_hash_table_remove_nolock(&dev->ht[UBCORE_HT_UTP], &utp->hnode);
+	ubcore_utp_kref_put(utp);
 	spin_unlock(&dev->ht[UBCORE_HT_UTP].lock);
-
-	return utp;
 }

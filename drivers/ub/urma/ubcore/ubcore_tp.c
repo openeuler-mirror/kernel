@@ -36,7 +36,10 @@
 
 #define UB_PROTOCOL_HEAD_BYTES 313
 #define UB_MTU_BITS_BASE_SHIFT 7
-#define UBCORE_TP_ATTR_MASK 0x7FFFF
+/* to guarantee all bitmaps filled as 1 */
+#define UBCORE_TP_ATTR_MASK 0xFFFFFFFF
+/* chip 1636 max extension address length */
+#define UBCORE_MAX_TP_EXT_LEN 2048
 
 static inline uint32_t get_udrv_in_len(struct ubcore_udata *udata)
 {
@@ -98,6 +101,9 @@ static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, uint64_t ext_addr
 	if (ext_len == 0 || ext_addr == 0)
 		return 0;
 
+	if (ext_len > UBCORE_MAX_TP_EXT_LEN)
+		return -EINVAL;
+
 	/* copy resp ext from req or response */
 	peer_ext = kzalloc(ext_len, GFP_KERNEL);
 	if (peer_ext == NULL)
@@ -125,7 +131,8 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 	switch (ta->type) {
 	case UBCORE_TA_JFS_TJFR:
 		jfs = ta->jfs;
-		if (jfs->jfs_cfg.eid_index >= jfs->ub_dev->eid_table.eid_cnt)
+		if (jfs->jfs_cfg.eid_index >= jfs->ub_dev->eid_table.eid_cnt ||
+			IS_ERR_OR_NULL(jfs->ub_dev->eid_table.eid_entries))
 			return;
 		ta_data->jetty_id.eid =
 			jfs->ub_dev->eid_table.eid_entries[jfs->jfs_cfg.eid_index].eid;
@@ -134,7 +141,8 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
 		jetty = ta->jetty;
-		if (jetty->jetty_cfg.eid_index >= jetty->ub_dev->eid_table.eid_cnt)
+		if (jetty->jetty_cfg.eid_index >= jetty->ub_dev->eid_table.eid_cnt ||
+			IS_ERR_OR_NULL(jetty->ub_dev->eid_table.eid_entries))
 			return;
 		ta_data->jetty_id.eid =
 			jetty->ub_dev->eid_table.eid_entries[jetty->jetty_cfg.eid_index].eid;
@@ -215,7 +223,8 @@ static void ubcore_set_tp_flag(union ubcore_tp_flag *flag, struct ubcore_tp_cfg 
 void ubcore_set_tp_init_cfg(struct ubcore_tp *tp, struct ubcore_tp_cfg *cfg)
 {
 	ubcore_set_tp_flag(&tp->flag, cfg, tp->ub_dev);
-	if (tp->ub_dev->transport_type == UBCORE_TRANSPORT_IB ||
+	if (tp->ub_dev->transport_type == UBCORE_TRANSPORT_HNS_UB ||
+		tp->ub_dev->transport_type == UBCORE_TRANSPORT_IB ||
 		(tp->ub_dev->transport_type == UBCORE_TRANSPORT_UB &&
 		tp->trans_mode == UBCORE_TP_RC)) {
 		tp->local_jetty = cfg->local_jetty;
@@ -332,6 +341,8 @@ int ubcore_modify_tp_state_check(struct ubcore_tp *tp, enum ubcore_tp_state new_
 int ubcore_modify_tp_state(struct ubcore_device *dev, struct ubcore_tp *tp,
 	enum ubcore_tp_state new_state, struct ubcore_tp_attr *attr, union ubcore_tp_attr_mask mask)
 {
+	enum ubcore_tp_state old_state = tp->state;
+
 	if (ubcore_modify_tp_state_check(tp, new_state) != 0)
 		return -1;
 
@@ -349,7 +360,7 @@ int ubcore_modify_tp_state(struct ubcore_device *dev, struct ubcore_tp *tp,
 	}
 	tp->state = new_state;
 	ubcore_log_info("tp state:(%u to %u) with tpn %u, peer_tpn %u",
-		(uint32_t)tp->state, (uint32_t)new_state, tp->tpn, tp->peer_tpn);
+		(uint32_t)old_state, (uint32_t)new_state, tp->tpn, tp->peer_tpn);
 	return 0;
 }
 
@@ -395,15 +406,19 @@ void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	ubcore_mod_tp_attr_with_mask(tp, attr, mtu, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, cc_pattern_idx, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, peer_ext, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, oos_cnt, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, local_net_addr_idx, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, peer_net_addr, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, data_udp_start, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, ack_udp_start, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, udp_range, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, hop_limit, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, port_id, mask);
 }
 
 static int ubcore_set_target_peer(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	union ubcore_tp_attr_mask *mask, struct ubcore_tp_attr *tp_attr, struct ubcore_udata udata)
 {
-	mask->value = 0;
 	mask->value = UBCORE_TP_ATTR_MASK;
 
 	memset(attr, 0, sizeof(*attr));
@@ -430,7 +445,8 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 	switch (ta->type) {
 	case UBCORE_TA_JFS_TJFR:
 		jfs = ta->jfs;
-		if (jfs->jfs_cfg.eid_index >= jfs->ub_dev->eid_table.eid_cnt)
+		if (jfs->jfs_cfg.eid_index >= jfs->ub_dev->eid_table.eid_cnt ||
+			IS_ERR_OR_NULL(jfs->ub_dev->eid_table.eid_entries))
 			return;
 		vtp_param->local_eid =
 			jfs->ub_dev->eid_table.eid_entries[jfs->jfs_cfg.eid_index].eid;
@@ -439,7 +455,8 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
 		jetty = ta->jetty;
-		if (jetty->jetty_cfg.eid_index >= jetty->ub_dev->eid_table.eid_cnt)
+		if (jetty->jetty_cfg.eid_index >= jetty->ub_dev->eid_table.eid_cnt ||
+			IS_ERR_OR_NULL(jetty->ub_dev->eid_table.eid_entries))
 			return;
 		vtp_param->local_eid =
 			jetty->ub_dev->eid_table.eid_entries[jetty->jetty_cfg.eid_index].eid;
@@ -454,7 +471,6 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 	vtp_param->trans_mode = trans_mode;
 	vtp_param->peer_eid = ta->tjetty_id.eid;
 	vtp_param->peer_jetty = ta->tjetty_id.id;
-	vtp_param->eid_index = 0;
 	vtp_param->ta = *ta;
 }
 
@@ -511,28 +527,22 @@ int ubcore_modify_tp(struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
 }
 
 static int ubcore_parse_ta(struct ubcore_device *dev, struct ubcore_ta_data *ta_data,
-			   struct ubcore_tp_advice *advice)
+	struct ubcore_tp_meta *meta)
 {
-	struct ubcore_tp_meta *meta;
 	struct ubcore_jetty *jetty;
 	struct ubcore_jfs *jfs;
 
-	(void)memset(advice, 0, sizeof(struct ubcore_tp_advice));
-	meta = &advice->meta;
-	advice->ta.type = ta_data->ta_type;
-
 	switch (ta_data->ta_type) {
 	case UBCORE_TA_JFS_TJFR:
-		jfs = ubcore_find_jfs(dev, ta_data->tjetty_id.id);
+		jfs = ubcore_find_get_jfs(dev, ta_data->tjetty_id.id);
 		if (jfs != NULL) {
 			meta->ht = ubcore_get_tptable(jfs->tptable);
-			advice->ta.jfs = jfs;
-			advice->ta.tjetty_id = ta_data->jetty_id;
+			ubcore_put_jfs(jfs);
 		}
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
 		/* todonext: add kref to jetty, as it may be destroyed any time */
-		jetty = ubcore_find_jetty(dev, ta_data->tjetty_id.id);
+		jetty = ubcore_find_get_jetty(dev, ta_data->tjetty_id.id);
 		if (jetty != NULL) {
 			if (jetty->jetty_cfg.trans_mode == UBCORE_TP_RC &&
 			    jetty->remote_jetty != NULL &&
@@ -540,11 +550,11 @@ static int ubcore_parse_ta(struct ubcore_device *dev, struct ubcore_ta_data *ta_
 				   sizeof(struct ubcore_jetty_id))) {
 				ubcore_log_err(
 					"the same jetty is binded with another remote jetty.\n");
+				ubcore_put_jetty(jetty);
 				return -1;
 			}
 			meta->ht = ubcore_get_tptable(jetty->tptable);
-			advice->ta.jetty = jetty;
-			advice->ta.tjetty_id = ta_data->jetty_id;
+			ubcore_put_jetty(jetty);
 		}
 		break;
 	case UBCORE_TA_NONE:
@@ -568,7 +578,7 @@ static int ubcore_init_create_tp_req(struct ubcore_device *dev, struct ubcore_vt
 	data->eid_index = tp_param->eid_index;
 	data->local_jetty = tp_param->local_jetty;
 	data->peer_jetty = tp_param->peer_jetty;
-	(void)strcpy(data->dev_name, dev->dev_name);
+	(void)strncpy(data->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME - 1);
 	data->virtualization = dev->attr.virtualization;
 
 	ubcore_get_ta_data_from_ta(&tp_param->ta, dev->transport_type, &data->ta_data);
@@ -674,7 +684,7 @@ static int ubcore_send_del_tp_req(struct ubcore_device *dev, struct ubcore_vtp_p
 	data->eid_index = tp_param->eid_index;
 	data->local_jetty = tp_param->local_jetty;
 	data->peer_jetty = tp_param->peer_jetty;
-	(void)strcpy(data->dev_name, dev->dev_name);
+	(void)strncpy(data->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME - 1);
 	data->virtualization = dev->attr.virtualization;
 	/* for alpha start */
 	ubcore_get_ta_data_from_ta(&tp_param->ta, dev->transport_type, &data->ta_data);
@@ -788,13 +798,6 @@ int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		return -EINVAL;
 	}
 	dev = jetty->ub_dev;
-	mutex_lock(&tjetty->lock);
-	if (tjetty->tp != NULL) {
-		mutex_unlock(&tjetty->lock);
-		ubcore_log_err("The same tjetty, different jetty, prevent duplicate bind.\n");
-		return -1;
-	}
-	mutex_unlock(&tjetty->lock);
 
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RC, &tp_param);
 	if (ubcore_query_initiator_tp_cfg(&tp_cfg, dev, &tp_param) != 0) {
@@ -817,13 +820,25 @@ int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		(void)ubcore_destroy_tp(new_tp);
 		new_tp = NULL;
 	}
+
+	mutex_lock(&tjetty->lock);
+	if (tjetty->tp != NULL) {
+		mutex_unlock(&tjetty->lock);
+		ubcore_tpnode_kref_put(tp_node);
+		ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
+		ubcore_log_err("The same tjetty, different jetty, prevent duplicate bind.\n");
+		return -1;
+	}
+
 	if (ubcore_send_create_tp_req(dev, &tp_param, tp_node->tp, udata) != 0) {
 		ubcore_log_err("Failed to send tp req");
+		mutex_unlock(&tjetty->lock);
+		ubcore_tpnode_kref_put(tp_node);
 		ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
 		return -1;
 	}
-	mutex_lock(&tjetty->lock);
 	tjetty->tp = tp_node->tp;
+	ubcore_tpnode_kref_put(tp_node);
 	mutex_unlock(&tjetty->lock);
 	return 0;
 }
@@ -850,7 +865,10 @@ int ubcore_unbind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RC, &tp_param);
 	if (ubcore_send_del_tp_req(jetty->ub_dev, &tp_param) != 0) {
 		ubcore_log_warn("failed to unbind tp\n");
-		return -1;
+		/* It does not depend on the success of the peer TP,
+		 * but depends on the success of the local cleanup,
+		 * otherwise the TP remains.
+		 */
 	}
 	ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
 
@@ -876,9 +894,11 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 	}
 
 	/* Must call driver->create_tp with udata if we are advising jetty */
-	tp_node = ubcore_hash_table_lookup(advice->meta.ht, advice->meta.hash, &advice->meta.key);
-	if (tp_node != NULL && tp_node->tp != NULL && !tp_node->tp->flag.bs.target)
+	tp_node = ubcore_lookup_tpnode(advice->meta.ht, advice->meta.hash, &advice->meta.key);
+	if (tp_node != NULL && tp_node->tp != NULL && !tp_node->tp->flag.bs.target) {
+		ubcore_tpnode_kref_put(tp_node);
 		return 0;
+	}
 
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RM, &tp_param);
 	if (ubcore_query_initiator_tp_cfg(&tp_cfg, dev, &tp_param) != 0) {
@@ -905,11 +925,12 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 	}
 
 	if (ubcore_send_create_tp_req(dev, &tp_param, tp_node->tp, udata) != 0) {
+		ubcore_tpnode_kref_put(tp_node);
 		ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
 		ubcore_log_err("Failed to send tp req");
 		return -1;
 	}
-
+	ubcore_tpnode_kref_put(tp_node);
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_advise_tp);
@@ -926,9 +947,13 @@ int ubcore_unadvise_tp(struct ubcore_device *dev, struct ubcore_tp_advice *advic
 
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RM, &tp_param);
 	ret = ubcore_send_del_tp_req(dev, &tp_param);
-	if (ret != 0)
-		return ret;
-
+	if (ret != 0) {
+		ubcore_log_warn("failed to unadvise tp\n");
+		/* It does not depend on the success of the peer TP,
+		 * but depends on the success of the local cleanup,
+		 * otherwise the TP remains.
+		 */
+	}
 	ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
 	return 0;
 }
@@ -1128,12 +1153,12 @@ void ubcore_restore_tp(struct ubcore_device *dev, struct ubcore_tp *tp)
 	struct ubcore_nl_restore_tp_resp *resp;
 	struct ubcore_nl_restore_tp_req *req;
 
-	/* Currently, only try to restore tp in the UBCORE_TRANSPORT_IB device,
+	/* Currently, only try to restore tp in the UBCORE_TRANSPORT_HNS_UB device,
 	 * Do not send retore tp req from target to inititor,
 	 * Do not restore UM TP, as it is only visable by the driver
 	 */
 	if (!ubcore_have_tp_ops(dev) || tp == NULL ||
-		dev->transport_type != UBCORE_TRANSPORT_IB || tp->flag.bs.target ||
+		dev->transport_type != UBCORE_TRANSPORT_HNS_UB || tp->flag.bs.target ||
 		tp->priv == NULL || tp->trans_mode == UBCORE_TP_UM ||
 		tp->state != UBCORE_TP_STATE_ERR)
 		return;
@@ -1285,42 +1310,56 @@ void ubcore_report_tp_suspend(struct ubcore_device *dev, struct ubcore_tp *tp)
 	kfree(req_msg);
 }
 
+void ubcore_put_ta_jetty(struct ubcore_ta *ta)
+{
+	if (ta->type == UBCORE_TA_JFS_TJFR)
+		ubcore_put_jfs(ta->jfs);
+	else if (ta->type == UBCORE_TA_JETTY_TJETTY)
+		ubcore_put_jetty(ta->jetty);
+}
+
+void ubcore_put_target_ta_jetty(struct ubcore_ta *ta)
+{
+	if (ta->type == UBCORE_TA_JFS_TJFR)
+		ubcore_put_jfr(ta->jfr);
+	else if (ta->type == UBCORE_TA_JETTY_TJETTY)
+		ubcore_put_jetty(ta->jetty);
+}
+
 /* restore target RM tp created by ubcore_advise_target_tp */
 static int ubcore_restore_advised_target_tp(struct ubcore_device *dev,
 	struct ubcore_nl_restore_tp_req *restore, uint32_t *rx_psn)
 {
-	struct ubcore_tp_advice advice;
+	struct ubcore_tp_meta meta = {0};
 	struct ubcore_tp_node *tp_node;
-	struct ubcore_tp_meta *meta;
 	struct ubcore_tp *tp;
 
-	meta = &advice.meta;
-	if (ubcore_parse_ta(dev, &restore->ta, &advice) != 0) {
+	if (ubcore_parse_ta(dev, &restore->ta, &meta) != 0) {
 		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)restore->ta.ta_type);
 		return -1;
-	} else if (meta->ht == NULL) {
-		ubcore_log_err("tp table is already released");
+	} else if (meta.ht == NULL) {
+		ubcore_log_info("tp table is already released");
 		return -1;
 	}
 
-	spin_lock(&meta->ht->lock);
-	tp_node = ubcore_hash_table_lookup_nolock(meta->ht, meta->hash, &meta->key);
+	spin_lock(&meta.ht->lock);
+	tp_node = ubcore_hash_table_lookup_nolock(meta.ht, meta.hash, &meta.key);
 	/* pair with get_tptable in parse_ta */
-	ubcore_put_tptable(meta->ht);
+	ubcore_put_tptable(meta.ht);
 	if (tp_node == NULL) {
-		spin_unlock(&meta->ht->lock);
+		spin_unlock(&meta.ht->lock);
 		ubcore_log_err("tp is not found%u", restore->peer_tpn);
 		return -1;
 	}
 
 	tp = tp_node->tp;
 	if (ubcore_restore_tp_to_rts(dev, tp, get_random_u32(), restore->rx_psn) != 0) {
-		spin_unlock(&meta->ht->lock);
+		spin_unlock(&meta.ht->lock);
 		ubcore_log_err("Failed to modify tp to rts %u", restore->rx_psn);
 		return -1;
 	}
 	*rx_psn = tp->rx_psn;
-	spin_unlock(&meta->ht->lock);
+	spin_unlock(&meta.ht->lock);
 	return 0;
 }
 
@@ -1333,7 +1372,7 @@ static int ubcore_restore_bound_target_tp(struct ubcore_device *dev,
 static int ubcore_handle_restore_tp(struct ubcore_device *dev,
 	struct ubcore_nl_restore_tp_req *restore, uint32_t *rx_psn)
 {
-	if (dev->transport_type != UBCORE_TRANSPORT_IB ||
+	if (dev->transport_type != UBCORE_TRANSPORT_HNS_UB ||
 	    restore == NULL || restore->trans_mode == UBCORE_TP_UM ||
 	    restore->ta.ta_type == UBCORE_TA_NONE || restore->ta.ta_type >= UBCORE_TA_VIRT)
 		return -1;

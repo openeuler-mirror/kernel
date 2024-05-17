@@ -57,6 +57,9 @@ struct uburma_file {
 
 	struct list_head list;
 	int is_closed;
+	struct mutex umap_mutex;
+	struct list_head umaps_list;
+	struct page *fault_page;
 };
 
 struct uburma_device {
@@ -72,6 +75,11 @@ struct uburma_device {
 	struct kobject kobj;                /* when equal to 0 , free uburma_device. */
 	struct mutex lists_mutex;           /* protect lists */
 	struct list_head uburma_file_list;
+};
+
+struct uburma_umap_priv {
+	struct vm_area_struct *vma;
+	struct list_head node;
 };
 
 #endif /* UBURMA_TYPES_H */

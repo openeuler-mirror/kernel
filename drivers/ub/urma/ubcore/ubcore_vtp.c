@@ -25,6 +25,8 @@
 #include "ubcore_priv.h"
 #include <urma/ubcore_uapi.h>
 #include "ubcore_netdev.h"
+#include "ubcore_tpg.h"
+#include "ubcore_utp.h"
 #include "ubcore_vtp.h"
 
 static int ubcore_handle_create_vtp_resp(struct ubcore_device *dev,
@@ -88,7 +90,7 @@ static int ubcore_send_create_vtp_req(struct ubcore_device *dev,
 	create->eid_index = p->eid_index;
 	create->local_jetty = p->local_jetty;
 	create->peer_jetty = p->peer_jetty;
-	(void)strcpy(create->dev_name, dev->dev_name);
+	(void)strncpy(create->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME - 1);
 	create->virtualization = dev->attr.virtualization;
 
 	cb.callback = ubcore_handle_create_vtp_resp;
@@ -175,7 +177,7 @@ static struct ubcore_vtpn *ubcore_alloc_vtpn(struct ubcore_device *dev,
 	vtpn = dev->ops->alloc_vtpn(dev);
 	if (IS_ERR_OR_NULL(vtpn)) {
 		ubcore_log_err("failed to alloc vtpn!, dev_name:%s", dev->dev_name);
-		return vtpn == NULL ? ERR_PTR(-ENOEXEC) : vtpn;
+		return UBCORE_CHECK_RETURN_ERR_PTR(vtpn, ENOEXEC);
 	}
 
 	vtpn->ub_dev = dev;
@@ -212,10 +214,26 @@ void ubcore_vtpn_get(void *obj)
 	kref_get(&vtpn->ref_cnt);
 }
 
+static void ubcore_vtp_unmap_attr(struct ubcore_vtp_cfg *cfg)
+{
+	if (cfg->vtpn == UINT_MAX)
+		return;
+
+	if (cfg->flag.bs.clan_tp) {
+		atomic_dec(&cfg->ctp->use_cnt);
+		return;
+	}
+	if (cfg->trans_mode != UBCORE_TP_UM)
+		ubcore_tpg_kref_put(cfg->tpg);
+	else
+		ubcore_utp_kref_put(cfg->utp);
+}
+
 static void ubcore_vtp_kref_release(struct kref *ref_cnt)
 {
 	struct ubcore_vtp *vtp = container_of(ref_cnt, struct ubcore_vtp, ref_cnt);
 	struct ubcore_device *ub_dev = vtp->ub_dev;
+	struct ubcore_vtp_cfg cfg = vtp->cfg;
 
 	/* pseudo vtp */
 	if (vtp->cfg.vtpn == UINT_MAX) {
@@ -225,6 +243,7 @@ static void ubcore_vtp_kref_release(struct kref *ref_cnt)
 	if (ub_dev == NULL || ub_dev->ops == NULL || ub_dev->ops->destroy_vtp == NULL)
 		return;
 	ub_dev->ops->destroy_vtp(vtp);
+	ubcore_vtp_unmap_attr(&cfg);
 }
 
 void ubcore_vtp_kref_put(struct ubcore_vtp *vtp)
@@ -367,7 +386,7 @@ struct ubcore_vtpn *ubcore_connect_vtp(struct ubcore_device *dev,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (ubcore_check_port_state(dev, 0) != 0) {
+	if (ubcore_check_port_state(dev) != 0) {
 		ubcore_log_err("Check port status Failed");
 		return NULL;
 	}
@@ -493,6 +512,30 @@ static int ubcore_find_add_vtp(struct ubcore_device *dev,
 	return 0;
 }
 
+static void ubcore_vtp_map_attr(struct ubcore_vtp *vtp, struct ubcore_vtp_cfg *cfg)
+{
+	vtp->cfg.fe_idx = cfg->fe_idx;
+	vtp->cfg.local_jetty = cfg->local_jetty;
+	vtp->cfg.local_eid = cfg->local_eid;
+	vtp->cfg.peer_eid = cfg->peer_eid;
+	vtp->cfg.peer_jetty = cfg->peer_jetty;
+	vtp->cfg.flag = cfg->flag;
+	vtp->cfg.trans_mode = cfg->trans_mode;
+
+	if (cfg->flag.bs.clan_tp) {
+		vtp->cfg.ctp = cfg->ctp;
+		atomic_inc(&cfg->ctp->use_cnt);
+		return;
+	}
+	if (cfg->trans_mode != UBCORE_TP_UM) {
+		vtp->cfg.tpg = cfg->tpg;
+		ubcore_tpg_get(cfg->tpg);
+	} else {
+		vtp->cfg.utp = cfg->utp;
+		ubcore_utp_get(cfg->utp);
+	}
+}
+
 struct ubcore_vtp *ubcore_create_and_map_vtp(struct ubcore_device *dev, struct ubcore_vtp_cfg *cfg)
 {
 	struct ubcore_vtp *vtp;
@@ -519,15 +562,7 @@ struct ubcore_vtp *ubcore_create_and_map_vtp(struct ubcore_device *dev, struct u
 		ubcore_log_err("Failed to add vtp to the vtp table");
 		return ERR_PTR(-ENOEXEC);
 	}
-
-	if (cfg->flag.bs.clan_tp) {
-		atomic_inc(&cfg->ctp->use_cnt);
-	} else {
-		if (cfg->trans_mode != UBCORE_TP_UM)
-			atomic_inc(&cfg->tpg->use_cnt);
-		else
-			atomic_inc(&cfg->utp->use_cnt);
-	}
+	ubcore_vtp_map_attr(vtp, cfg);
 
 	return vtp;
 }
@@ -586,17 +621,6 @@ int ubcore_unmap_vtp(struct ubcore_vtp *vtp)
 	cfg = vtp->cfg;
 
 	ubcore_remove_vtp(dev, cfg.trans_mode, vtp);
-	 /* target vtp */
-	if (vtp->cfg.vtpn != UINT_MAX) {
-		if (cfg.flag.bs.clan_tp) {
-			atomic_dec(&cfg.ctp->use_cnt);
-		} else {
-			if (cfg.trans_mode != UBCORE_TP_UM)
-				atomic_dec(&cfg.tpg->use_cnt);
-			else
-				atomic_dec(&cfg.utp->use_cnt);
-		}
-	}
 
 	return ret;
 }
@@ -627,20 +651,14 @@ int ubcore_check_and_unmap_vtp(struct ubcore_vtp *vtp, uint32_t role)
 
 		new_vtp->ub_dev = dev;
 		new_vtp->role = UBCORE_VTP_TARGET;
+		new_vtp->eid_idx = vtp->eid_idx;
+		new_vtp->upi = vtp->upi;
+		new_vtp->share_mode = vtp->share_mode;
 		(void)memcpy(&new_vtp->cfg, &vtp->cfg, sizeof(struct ubcore_vtp_cfg));
 		new_vtp->cfg.vtpn = UINT_MAX;
 		kref_init(&new_vtp->ref_cnt);
 
 		ubcore_remove_vtp(dev, cfg.trans_mode, vtp);
-
-		if (cfg.flag.bs.clan_tp) {
-			atomic_dec(&cfg.ctp->use_cnt);
-		} else {
-			if (cfg.trans_mode != UBCORE_TP_UM)
-				atomic_dec(&cfg.tpg->use_cnt);
-			else
-				atomic_dec(&cfg.utp->use_cnt);
-		}
 
 		ret = ubcore_find_add_vtp(dev, new_vtp->cfg.trans_mode, new_vtp);
 		ubcore_vtp_kref_put(new_vtp);
@@ -674,7 +692,7 @@ struct ubcore_vtp *ubcore_find_vtp(struct ubcore_device *dev,
 			ubcore_get_vtp_hash(local_eid), local_eid);
 		break;
 	default:
-		ubcore_log_err("unknown mode");
+		ubcore_log_err("unknown mode %u", mode);
 		vtp_entry = NULL;
 	}
 	return vtp_entry;
@@ -708,7 +726,8 @@ struct ubcore_vtp *ubcore_find_get_vtp(struct ubcore_device *dev,
 void ubcore_set_vtp_param(struct ubcore_device *dev, struct ubcore_jetty *jetty,
 	struct ubcore_tjetty_cfg *cfg, struct ubcore_vtp_param *vtp_param)
 {
-	if (cfg->eid_index >= dev->eid_table.eid_cnt) {
+	if (cfg->eid_index >= dev->eid_table.eid_cnt ||
+		IS_ERR_OR_NULL(dev->eid_table.eid_entries)) {
 		ubcore_log_err("invalid param, eid_index[%u] >= eid_cnt[%u]",
 			cfg->eid_index, dev->eid_table.eid_cnt);
 		return;
@@ -776,6 +795,13 @@ int ubcore_modify_vtp(struct ubcore_device *dev, struct ubcore_vtp_param *vtp_pa
 		return -EINVAL;
 	}
 
+	if (vtp->role != UBCORE_VTP_TARGET) { // switch to mig dest
+		if (vtp_param->trans_mode == UBCORE_TP_UM)
+			ubcore_utp_kref_put(vtp->cfg.utp);
+		else
+			ubcore_tpg_kref_put(vtp->cfg.tpg);
+	}
+
 	ret = dev->ops->modify_vtp(vtp, vattr, vattr_mask);
 	ubcore_vtp_kref_put(vtp);
 	if (ret != 0) {
@@ -830,15 +856,7 @@ struct ubcore_vtp *ubcore_check_and_map_vtp(struct ubcore_device *dev, struct ub
 		ubcore_log_err("Failed to add vtp to the vtp table");
 		return NULL;
 	}
-
-	if (cfg->flag.bs.clan_tp) {
-		atomic_inc(&cfg->ctp->use_cnt);
-	} else {
-		if (cfg->trans_mode != UBCORE_TP_UM)
-			atomic_inc(&cfg->tpg->use_cnt);
-		else
-			atomic_inc(&cfg->utp->use_cnt);
-	}
+	ubcore_vtp_map_attr(vtp, cfg);
 
 	return vtp;
 }

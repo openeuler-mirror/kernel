@@ -24,6 +24,9 @@
 #include <linux/sched/signal.h>
 #include <linux/dma-mapping.h>
 #include <linux/version.h>
+#include <linux/scatterlist.h>
+#include <linux/count_zeros.h>
+#include <linux/log2.h>
 
 #include "ubcore_log.h"
 #include <urma/ubcore_types.h>
@@ -277,3 +280,37 @@ void ubcore_umem_release(struct ubcore_umem *umem)
 	kfree(umem);
 }
 EXPORT_SYMBOL(ubcore_umem_release);
+
+uint64_t ubcore_umem_find_best_page_size(struct ubcore_umem *umem, uint64_t page_size_bitmap,
+	uint64_t va)
+{
+	uint64_t tmp_ps_bitmap;
+	struct scatterlist *sg;
+	uint64_t tmp_va, page_off;
+	dma_addr_t mask;
+	int i;
+
+	if (IS_ERR_OR_NULL(umem)) {
+		ubcore_log_err("Invalid parameter.\n");
+		return 0;
+	}
+	tmp_ps_bitmap = page_size_bitmap & GENMASK(BITS_PER_LONG - 1, PAGE_SHIFT);
+
+	tmp_va = va;
+	mask = tmp_ps_bitmap & GENMASK(BITS_PER_LONG - 1, bits_per((umem->length - 1 + va) ^ va));
+	page_off = umem->va & ~PAGE_MASK;
+
+	for_each_sg(umem->sg_head.sgl, sg, umem->sg_head.nents, i) {
+		mask |= (sg_dma_address(sg) + page_off) ^ tmp_va;
+		tmp_va += sg_dma_len(sg) - page_off;
+		if (i != (umem->sg_head.nents - 1))
+			mask |= tmp_va;
+		page_off = 0;
+	}
+
+	if (mask)
+		tmp_ps_bitmap &= GENMASK(count_trailing_zeros(mask), 0);
+
+	return tmp_ps_bitmap ? rounddown_pow_of_two(tmp_ps_bitmap) : 0;
+}
+EXPORT_SYMBOL(ubcore_umem_find_best_page_size);

@@ -32,6 +32,7 @@
 #include <linux/libfdt_env.h>
 #include <linux/mm.h>
 #include <linux/netdevice.h>
+#include <linux/uuid.h>
 
 #ifdef CONFIG_CGROUP_RDMA
 #include <linux/cgroup_rdma.h>
@@ -58,6 +59,8 @@
 #define UBCORE_MAX_MSG 4096
 #define UBCORE_MAX_EID_CNT 1024
 #define UBCORE_MAX_VTP_CNT_PER_TPF (128 * 1024) // Temporarily specify the upper limit
+#define UBCORE_EID_GROUP_NAME_LEN 10
+#define UBCORE_MAX_MIG_ENTRY_CNT 64
 
 #define EID_FMT                           \
 	"%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x"
@@ -74,12 +77,17 @@
 #define UBCORE_CC_IDX_TABLE_SIZE 64
 #define UBCORE_SIP_TABLE_SIZE (1024) /* 1823: 16; 1650: 1024; 1636: N/A */
 #define UBCORE_MAX_SIP UBCORE_SIP_TABLE_SIZE
+#define UBCORE_CHECK_RETURN_ERR_PTR(ptr, err) \
+	((ptr) == NULL ? ERR_PTR(-(err)) : (ptr))
+
+#define UBCORE_MAX_DSCP_NUM (64)
 
 enum ubcore_transport_type {
 	UBCORE_TRANSPORT_INVALID = -1,
-	UBCORE_TRANSPORT_UB,
-	UBCORE_TRANSPORT_IB,
-	UBCORE_TRANSPORT_IP,
+	UBCORE_TRANSPORT_UB      = 0,
+	UBCORE_TRANSPORT_IB      = 1,
+	UBCORE_TRANSPORT_IP      = 2,
+	UBCORE_TRANSPORT_HNS_UB  = 5,
 	UBCORE_TRANSPORT_MAX
 };
 
@@ -87,6 +95,13 @@ enum ubcore_resource_type {
 	UBCORE_RESOURCE_HCA_HANDLE = 0,
 	UBCORE_RESOURCE_HCA_OBJECT,
 	UBCORE_RESOURCE_HCA_MAX
+};
+
+enum ubcore_ldev_attr_group {
+	UBCORE_ATTR_GROUP_DEV_DEFAULT = 0,
+	UBCORE_ATTR_GROUP_EIDS = 1,
+	UBCORE_ATTR_GROUP_NULL = 2,
+	UBCORE_ATTR_GROUP_MAX = 3
 };
 
 #define UBCORE_ACCESS_LOCAL_WRITE   0x1
@@ -131,6 +146,7 @@ struct ubcore_ueid_cfg {
 	union ubcore_eid eid;
 	uint32_t upi;
 	uint32_t eid_index;
+	uuid_t uuid;
 };
 
 struct ubcore_devid {
@@ -178,6 +194,7 @@ union ubcore_jfc_flag {
 };
 
 #define UBCORE_SUB_TRANS_MODE_TA_DST_ORDERING_ENABLE (0x1)
+#define UBCORE_SUB_TRANS_MODE_USER_TP (0x2)
 
 union ubcore_jfs_flag {
 	struct {
@@ -289,7 +306,8 @@ union ubcore_reg_seg_flag {
 		uint32_t non_pin        : 1;
 		uint32_t user_iova      : 1;
 		uint32_t token_id_valid : 1;
-		uint32_t reserved       : 18;
+		uint32_t pa             : 1;
+		uint32_t reserved       : 17;
 	} bs;
 	uint32_t value;
 };
@@ -358,10 +376,19 @@ enum ubcore_target_type {
 	UBCORE_JETTY_GROUP
 };
 
+union ubcore_token_id_flag {
+	struct {
+		uint32_t pa             : 1;
+		uint32_t reserved       : 31;
+	} bs;
+	uint32_t value;
+};
+
 struct ubcore_token_id {
 	struct ubcore_device *ub_dev;
 	struct ubcore_ucontext *uctx;
-	uint32_t token_id;
+	uint32_t token_id;    // driver fill
+	union ubcore_token_id_flag flag;
 	atomic_t use_cnt;
 };
 
@@ -384,8 +411,9 @@ union ubcore_seg_attr {
 		uint32_t access         : 6;
 		uint32_t non_pin        : 1;
 		uint32_t user_iova      : 1;
-		uint32_t user_token_id    : 1;
-		uint32_t reserved       : 18;
+		uint32_t user_token_id  : 1;
+		uint32_t pa             : 1;
+		uint32_t reserved       : 17;
 	} bs;
 	uint32_t value;
 };
@@ -540,6 +568,7 @@ enum ubcore_pattern {
 enum ubcore_sub_trans_mode_cap {
 	UBCORE_RC_TP_DST_ORDERING = 0x1,      /* rc mode with tp dst ordering */
 	UBCORE_RC_TA_DST_ORDERING = 0x1 << 1, /* rc mode with ta dst ordering  */
+	UBCORE_RC_USER_TP		  = 0x1 << 2, /* rc mode with user connection  */
 };
 
 struct ubcore_device_cap {
@@ -585,6 +614,7 @@ struct ubcore_device_cap {
 	uint32_t max_upi_cnt;
 	uint32_t max_netaddr_cnt;
 	uint16_t max_fe_cnt;          /* PF: greater than or equal to 0; FE: must be 0 */
+	uint64_t page_size_cap;
 };
 
 struct ubcore_guid {
@@ -778,12 +808,12 @@ struct ubcore_tp_cfg {
 		union ubcore_eid peer_eid;
 		struct ubcore_jetty_id peer_jetty;
 	};
-	/* tranport layer attributes */
+	/* transport layer attributes */
 	enum ubcore_transport_mode trans_mode;
 	uint8_t retry_num;
 	uint8_t retry_factor;      /* for calculate the time slot to retry */
 	uint8_t ack_timeout;
-	uint8_t dscp;              /* priority */
+	uint8_t dscp;
 	uint32_t oor_cnt;          /* OOR window size: by packet */
 	struct ubcore_tpg *tpg;         /* NULL if no tpg, eg.UM mode */
 };
@@ -813,7 +843,8 @@ union ubcore_tp_attr_mask {
 		uint32_t flow_label : 1;
 		uint32_t port_id : 1;
 		uint32_t mn : 1;
-		uint32_t reserved : 14;
+		uint32_t peer_trans_type : 1; /* user tp only */
+		uint32_t reserved : 13;
 	} bs;
 	uint32_t value;
 };
@@ -837,6 +868,7 @@ struct ubcore_tp_attr {
 	uint32_t flow_label;
 	uint8_t port_id;
 	uint8_t mn;       /* 0~15, a packet contains only one msg if mn is set as 0 */
+	enum ubcore_transport_type peer_trans_type; /* Only for user tp connection */
 };
 
 struct ubcore_tp {
@@ -908,10 +940,8 @@ struct ubcore_tpg {
 	struct ubcore_tpg_ext tpg_ext;             /* filled by ubn driver when creating tp */
 	struct ubcore_tpg_ext peer_ext;            /* filled by ubcore before modifying tp */
 	struct ubcore_tp *tp_list[UBCORE_MAX_TP_CNT_IN_GRP]; // UBCORE_MAX_TP_CNT_IN_GRP=32
-	atomic_t use_cnt;
 	struct hlist_node hnode;                   /* driver inaccessible */
 	struct kref ref_cnt;
-	struct completion comp;
 	struct mutex mutex;
 };
 
@@ -949,10 +979,8 @@ struct ubcore_utp {
 	uint32_t utpn; /* driver fills */
 	struct ubcore_device *ub_dev;
 	struct ubcore_utp_cfg utp_cfg;     /* filled by ubcore when createing utp. */
-	atomic_t use_cnt;
 	struct hlist_node hnode;
 	struct kref ref_cnt;
-	struct completion comp;
 };
 
 struct ubcore_ctp_cfg {
@@ -980,8 +1008,6 @@ struct ubcore_vtpn {
 	struct ubcore_device *ub_dev;
 	/* ubcore private, inaccessible to driver */
 	enum ubcore_transport_mode trans_mode;
-	uint32_t sub_trans_mode;
-	uint32_t rc_share_tp;
 	/* vtpn key start */
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
@@ -1054,16 +1080,22 @@ union ubcore_vtp_attr_mask {
 };
 
 enum ubcore_msg_opcode {
+	/* Processed by UVS. */
 	UBCORE_MSG_CREATE_VTP = 0,
 	UBCORE_MSG_DESTROY_VTP,
 	UBCORE_MSG_ALLOC_EID,
 	UBCORE_MSG_DEALLOC_EID,
 	UBCORE_MSG_CONFIG_DEVICE,
-	UBCORE_MSG_STOP_PROC_VTP_MSG = 0x10, /* should be all migrate op after this opcode */
+	/* Live migration, processed by UVS */
+	UBCORE_MSG_STOP_PROC_VTP_MSG = 0x10,
 	UBCORE_MSG_QUERY_VTP_MIG_STATUS,
 	UBCORE_MSG_FLOW_STOPPED,
 	UBCORE_MSG_MIG_ROLLBACK,
-	UBCORE_MSG_MIG_VM_START
+	UBCORE_MSG_MIG_VM_START,
+	/* Processed by backend ubcore. */
+	UBCORE_MSG_NEGO_VER,
+	UBCORE_MSG_UPDATE_NET_ADDR,
+	UBCORE_MSP_UPDATE_EID
 };
 
 struct ubcore_req {
@@ -1158,6 +1190,8 @@ struct ubcore_jfs {
 	uint64_t urma_jfs; /* user space jfs pointer */
 	struct hlist_node hnode;
 	atomic_t use_cnt;
+	struct kref ref_cnt;
+	struct completion comp;
 	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
 };
 
@@ -1183,8 +1217,9 @@ struct ubcore_jfr {
 	uint64_t urma_jfr; /* user space jfr pointer */
 	struct hlist_node hnode;
 	atomic_t use_cnt;
-	/* Only for devices not natively supporting RM mode */
-	struct ubcore_hash_table *tptable;
+	struct kref ref_cnt;
+	struct completion comp;
+	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
 };
 
 union ubcore_jetty_flag {
@@ -1268,6 +1303,8 @@ struct ubcore_jetty {
 	uint64_t urma_jetty; /* user space jetty pointer */
 	struct hlist_node hnode;
 	atomic_t use_cnt;
+	struct kref ref_cnt;
+	struct completion comp;
 	struct ubcore_hash_table *tptable; /* Only for devices not natively supporting RM mode */
 };
 
@@ -1519,11 +1556,11 @@ struct ubcore_send_wr {
 };
 
 struct ubcore_cas_wr {
-	struct ubcore_sge *dst;  /* len is the data length of CAS operation, 8/16/32/64B */
+	struct ubcore_sge *dst;  /* len is the data length of CAS operation */
 	struct ubcore_sge *src;  /* Local address for destination original value written back */
 	union {
-		uint64_t cmp_data;  /* When the len is 8B, it indicates the CMP value. */
-		uint64_t cmp_addr;  /* When the len is 16/32/64B, it indicates the data address. */
+		uint64_t cmp_data;  /* When the len <= 8B, it indicates the CMP value. */
+		uint64_t cmp_addr;  /* When the len > 8B, it indicates the data address. */
 	};
 	union {
 		/* If destination value is the same as cmp_data,
@@ -1674,6 +1711,17 @@ enum ubcore_mig_resp_status {
 	UBCORE_VTP_MIG_UNCOMPLETE
 };
 
+struct ubcore_fe_stats {
+	uint64_t tx_pkt;
+	uint64_t rx_pkt;
+	uint64_t tx_bytes;
+	uint64_t rx_bytes;
+	uint64_t tx_pkt_err;
+	uint64_t rx_pkt_err;
+	uint64_t tx_timeout_cnt;
+	uint64_t rx_ce_pkt;
+};
+
 struct ubcore_ops {
 	struct module *owner; /* kernel driver module */
 	char driver_name[UBCORE_MAX_DRIVER_NAME]; /* user space driver name */
@@ -1777,11 +1825,12 @@ struct ubcore_ops {
 	/* segment part */
 	/** alloc token id to ubep
 	 * @param[in] dev: the ub device handle;
+	 * @param[in] flag: token_id_flag;
 	 * @param[in] udata: ucontext and user space driver data
 	 * @return: token id pointer on success, NULL on error
 	 */
 	struct ubcore_token_id *(*alloc_token_id)(struct ubcore_device *dev,
-		struct ubcore_udata *udata);
+		union ubcore_token_id_flag flag, struct ubcore_udata *udata);
 
 	/** free key id from ubep
 	 * @param[in] token_id: the token id alloced before;
@@ -2087,6 +2136,17 @@ struct ubcore_ops {
 	int (*modify_tp)(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 		union ubcore_tp_attr_mask mask);
 	/**
+	 * modify user tp.
+	 * @param[in] dev: the ub device handle
+	 * @param[in] tpn: tp number of the tp created before
+	 * @param[in] cfg: user configuration of the tp
+	 * @param[in] attr: tp attributes
+	 * @param[in] mask: attr mask indicating the attributes to be modified
+	 * @return: 0 on success, other value on error
+	 */
+	int (*modify_user_tp)(struct ubcore_device *dev, uint32_t tpn, struct ubcore_tp_cfg *cfg,
+		struct ubcore_tp_attr *attr, union ubcore_tp_attr_mask mask);
+	/**
 	 * destroy tp.
 	 * @param[in] tp: tp pointer created before
 	 * @return: 0 on success, other value on error
@@ -2339,6 +2399,26 @@ struct ubcore_ops {
 	 */
 	int (*config_dscp_vl)(struct ubcore_device *dev, uint8_t *dscp, uint8_t *vl,
 		uint8_t num);
+    /**
+     * query fe stats, for migration currently.
+     * @param[in] dev: the ub device handle;
+     * @param[in] cnt: array count;
+     * @param[in] fe_idx: fe id array;
+     * @param[out] stats: fe counters
+     * @return: 0 on success, other value on error
+     */
+	int (*query_fe_stats)(struct ubcore_device *dev, uint32_t cnt, uint16_t *fe_idx,
+		struct ubcore_fe_stats *stats);
+
+	/**
+	 * query dscp-vl mapping
+	 * @param[in] dev:the ub dev handle;
+	 * @param[in] dscp: the dscp value array
+	 * @param[in] num: array num
+	 * @param[out] vl: the vl value array
+	 * @return: 0 on success, other value on error
+	 */
+	int (*query_dscp_vl)(struct ubcore_device *dev, uint8_t *dscp, uint8_t num, uint8_t *vl);
 };
 
 struct ubcore_bitmap {
@@ -2352,7 +2432,7 @@ enum ubcore_hash_table_type {
 	UBCORE_HT_JFR, /* jfr hash table */
 	UBCORE_HT_JFC, /* jfc hash table */
 	UBCORE_HT_JETTY, /* jetty hash table */
-	UBCORE_HT_TP,    /* tp table for IB */
+	UBCORE_HT_TP,    /* tp table */
 	UBCORE_HT_TPG,   /* tpg table */
 	UBCORE_HT_RM_VTP,   /* rm vtp table */
 	UBCORE_HT_RC_VTP,   /* rc vtp table */
@@ -2362,7 +2442,6 @@ enum ubcore_hash_table_type {
 	UBCORE_HT_UM_VTPN,   /* um vtpn table */
 	UBCORE_HT_UTP,   /* utp table */
 	UBCORE_HT_CTP,   /* ctp table */
-	UBCORE_HT_UB_TP,    /* tp table for UB */
 	UBCORE_HT_NUM
 };
 
@@ -2392,12 +2471,19 @@ struct ubcore_port_kobj {
 	uint8_t port_id;
 };
 
+struct ubcore_eid_attr {
+	char name[UBCORE_EID_GROUP_NAME_LEN];
+	uint32_t eid_idx;
+	struct device_attribute attr;
+};
+
 struct ubcore_logic_device {
 	struct device *dev;
 	struct ubcore_port_kobj port[UBCORE_MAX_PORT_CNT];
 	struct list_head node; /* add to ldev list */
 	possible_net_t net;
 	struct ubcore_device *ub_dev;
+	const struct attribute_group *dev_group[UBCORE_ATTR_GROUP_MAX];
 };
 
 struct ubcore_device {
@@ -2471,6 +2557,12 @@ struct ubcore_umem {
 	union ubcore_umem_flag flag;
 	struct sg_table sg_head;
 	uint32_t nmap;
+};
+
+enum ubcore_net_addr_op {
+	UBCORE_ADD_NET_ADDR = 0,
+	UBCORE_DEL_NET_ADDR = 1,
+	UBCORE_UPDATE_NET_ADDR = 2
 };
 
 struct ubcore_sip_info {

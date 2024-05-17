@@ -23,13 +23,10 @@
 
 #include <urma/ubcore_types.h>
 
-int utp_get_active_mtu(struct ubcore_device *dev, uint8_t port_num,
-	enum ubcore_mtu *mtu);
 struct ubcore_utp *ubcore_create_utp(struct ubcore_device *dev, struct ubcore_utp_cfg *cfg);
-int ubcore_destroy_utp(struct ubcore_utp *utp);
 struct ubcore_utp *ubcore_find_utp(struct ubcore_device *dev, uint32_t idx);
 struct ubcore_utp *ubcore_find_get_utp(struct ubcore_device *dev, uint32_t idx);
-struct ubcore_utp *ubcore_find_remove_utp(struct ubcore_device *dev, uint32_t idx);
+void ubcore_find_remove_utp(struct ubcore_device *dev, uint32_t idx);
 void ubcore_utp_get(void *obj);
 void ubcore_utp_kref_put(struct ubcore_utp *utp);
 #endif

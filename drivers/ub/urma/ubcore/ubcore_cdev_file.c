@@ -26,9 +26,11 @@
 #include "urma/ubcore_uapi.h"
 
 #include "ubcore_log.h"
+#include "ubcore_device.h"
 #include "ubcore_cdev_file.h"
 
 #define UBCORE_MAX_VALUE_LEN 24
+#define UBCORE_READ_ONLY_MODE 0444
 
 /* callback information */
 typedef ssize_t (*ubcore_show_attr_cb)(struct ubcore_device *dev,
@@ -404,6 +406,42 @@ static ssize_t max_tp_in_tpg_show(struct device *dev, struct device_attribute *a
 
 static DEVICE_ATTR_RO(max_tp_in_tpg);
 
+static ssize_t max_oor_cnt_show_cb(struct ubcore_device *dev, char *buf)
+{
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n", dev->attr.dev_cap.max_oor_cnt);
+}
+
+static ssize_t max_oor_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return ubcore_show_dev_attr(dev, attr, buf, max_oor_cnt_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_oor_cnt);
+
+static ssize_t mn_show_cb(struct ubcore_device *dev, char *buf)
+{
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n", dev->attr.dev_cap.mn);
+}
+
+static ssize_t mn_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return ubcore_show_dev_attr(dev, attr, buf, mn_show_cb);
+}
+
+static DEVICE_ATTR_RO(mn);
+
+static ssize_t max_netaddr_cnt_show_cb(struct ubcore_device *dev, char *buf)
+{
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n", dev->attr.dev_cap.max_netaddr_cnt);
+}
+
+static ssize_t max_netaddr_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return ubcore_show_dev_attr(dev, attr, buf, max_netaddr_cnt_show_cb);
+}
+
+static DEVICE_ATTR_RO(max_netaddr_cnt);
+
 static ssize_t port_count_show_cb(struct ubcore_device *dev, char *buf)
 {
 	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n", dev->attr.port_cnt);
@@ -436,6 +474,17 @@ static ssize_t fe_cnt_show(struct device *dev, struct device_attribute *attr, ch
 	return ubcore_show_dev_attr(dev, attr, buf, show_fe_cnt_cb);
 }
 static DEVICE_ATTR_RO(fe_cnt);
+
+static ssize_t show_page_size_cap_cb(struct ubcore_device *dev, char *buf)
+{
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "0x%llx\n", dev->attr.dev_cap.page_size_cap);
+}
+
+static ssize_t page_size_cap_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return ubcore_show_dev_attr(dev, attr, buf, show_page_size_cap_cb);
+}
+static DEVICE_ATTR_RO(page_size_cap);
 
 static ssize_t show_dynamic_eid_cb(struct ubcore_device *dev, char *buf)
 {
@@ -492,31 +541,31 @@ static DEVICE_ATTR_RO(driver_name);
  */
 #define UBCORE_MAX_EID_LINE 51
 
-static ssize_t eid_show_cb(struct ubcore_device *dev, char *buf, struct net *net)
+static ssize_t eid_show_cb(struct ubcore_device *dev, char *buf, struct net *net, uint32_t eid_idx)
 {
+	union ubcore_eid invalid_eid = {0};
 	struct ubcore_eid_entry *e;
 	ssize_t len = 0;
-	uint32_t i;
-
-	if (dev->eid_table.eid_entries == NULL)
-		return -EINVAL;
 
 	spin_lock(&dev->eid_table.lock);
-	for (i = 0; i < dev->eid_table.eid_cnt; i++) {
-		e = &dev->eid_table.eid_entries[i];
-		if (!e->valid || !net_eq(e->net, net))
-			continue;
-		len += snprintf(buf + len, UBCORE_MAX_EID_LINE,
-			"%u "EID_FMT"\n", i, EID_ARGS(e->eid));
-		if (len >= (ssize_t)(PAGE_SIZE - UBCORE_MAX_EID_LINE))
-			break;
+	if (dev->eid_table.eid_entries == NULL || eid_idx > dev->eid_table.eid_cnt) {
+		spin_unlock(&dev->eid_table.lock);
+		return -EINVAL;
 	}
+
+	e = &dev->eid_table.eid_entries[eid_idx];
+	if (!e->valid || !net_eq(e->net, net))
+		len = snprintf(buf, UBCORE_MAX_EID_LINE, ""EID_FMT"\n", EID_ARGS(invalid_eid));
+	else
+		len = snprintf(buf, UBCORE_MAX_EID_LINE, ""EID_FMT"\n", EID_ARGS(e->eid));
+
 	spin_unlock(&dev->eid_table.lock);
 	return len;
 }
 
 static ssize_t eid_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct ubcore_eid_attr *eid_attr = container_of(attr, struct ubcore_eid_attr, attr);
 	struct ubcore_logic_device *ldev = dev_get_drvdata(dev);
 	struct ubcore_device *ub_dev = get_ubcore_device(ldev);
 
@@ -525,10 +574,8 @@ static ssize_t eid_show(struct device *dev, struct device_attribute *attr, char 
 		return -EINVAL;
 	}
 
-	return eid_show_cb(ub_dev, buf, read_pnet(&ldev->net));
+	return eid_show_cb(ub_dev, buf, read_pnet(&ldev->net), eid_attr->eid_idx);
 }
-static DEVICE_ATTR_RO(eid);
-
 
 static struct attribute *ubcore_dev_attrs[] = {
 	&dev_attr_ubdev.attr,
@@ -557,14 +604,17 @@ static struct attribute *ubcore_dev_attrs[] = {
 	&dev_attr_ceq_cnt.attr,
 	&dev_attr_utp_cnt.attr,
 	&dev_attr_max_tp_in_tpg.attr,
+	&dev_attr_max_oor_cnt.attr,
+	&dev_attr_mn.attr,
+	&dev_attr_max_netaddr_cnt.attr,
 	&dev_attr_port_count.attr,
 	&dev_attr_fe_cnt.attr,
+	&dev_attr_page_size_cap.attr,
 	&dev_attr_max_eid_cnt.attr,
 	&dev_attr_dynamic_eid.attr,
 	&dev_attr_virtualization.attr,
 	&dev_attr_transport_type.attr,
 	&dev_attr_driver_name.attr,
-	&dev_attr_eid.attr,
 	NULL,
 };
 
@@ -744,14 +794,93 @@ int ubcore_create_port_attr_files(struct ubcore_logic_device *ldev,
 		"port%hhu", port_id);
 }
 
+static struct attribute_group *ubcore_alloc_eids_group(struct ubcore_logic_device *ldev)
+{
+	struct ubcore_eid_attr *eid_attr_list = NULL;
+	struct attribute_group *attr_grp = NULL;
+	struct attribute **attr_list = NULL;
+	uint32_t eid_cnt = 0;
+	uint32_t i;
+
+	eid_cnt = ldev->ub_dev->eid_table.eid_cnt;
+	if (eid_cnt == 0 || eid_cnt > UBCORE_MAX_EID_CNT)
+		return NULL;
+
+	attr_grp = kcalloc(1, sizeof(*attr_grp), GFP_KERNEL);
+	if (!attr_grp)
+		return NULL;
+
+	attr_list = kcalloc(eid_cnt + 1, sizeof(*attr_list), GFP_KERNEL);
+	if (!attr_list)
+		goto free_grp;
+
+	eid_attr_list = kcalloc(eid_cnt, sizeof(struct ubcore_eid_attr), GFP_KERNEL);
+	if (!eid_attr_list)
+		goto free_attr_list;
+
+	// create /sys/class/dev_name/eids/eid_x
+	for (i = 0; i < eid_cnt; i++) {
+		struct ubcore_eid_attr *eid_attr = &eid_attr_list[i];
+
+		if (snprintf(eid_attr->name, UBCORE_EID_GROUP_NAME_LEN - 1, "eid%d", i) < 0)
+			goto free_eid_attr;
+
+		sysfs_attr_init(&eid_attr->attr.attr);
+		eid_attr->attr.attr.name = eid_attr->name;
+		eid_attr->attr.attr.mode = UBCORE_READ_ONLY_MODE;
+		eid_attr->attr.show = eid_show;
+		eid_attr->eid_idx = i;
+		attr_list[i] = &eid_attr->attr.attr;
+	}
+
+	attr_grp->name = "eids";
+	attr_grp->attrs = attr_list;
+	return attr_grp;
+
+free_eid_attr:
+	kfree(eid_attr_list);
+free_attr_list:
+	kfree(attr_list);
+free_grp:
+	kfree(attr_grp);
+	return NULL;
+}
+
+static void ubcore_free_eids_group(struct ubcore_logic_device *ldev)
+{
+	const struct attribute_group *eid_grp;
+	struct ubcore_eid_attr *eid_attr_list;
+	struct device_attribute *dev_attr;
+
+	eid_grp = ldev->dev_group[UBCORE_ATTR_GROUP_EIDS];
+	if (eid_grp) {
+		if (eid_grp->attrs && eid_grp->attrs[0]) {
+			dev_attr = container_of(eid_grp->attrs[0], struct device_attribute, attr);
+			eid_attr_list = container_of(dev_attr, struct ubcore_eid_attr, attr);
+			kfree(eid_attr_list);
+		}
+
+		kfree(eid_grp->attrs);
+		kfree(eid_grp);
+
+		ldev->dev_group[UBCORE_ATTR_GROUP_EIDS] = NULL;
+	}
+}
 
 int ubcore_create_dev_attr_files(struct ubcore_logic_device *ldev)
 {
 	int ret;
+	const struct attribute_group *eid_grp;
 
-	ret = sysfs_create_group(&ldev->dev->kobj, &ubcore_dev_attr_group);
+	eid_grp = ubcore_alloc_eids_group(ldev);
+	ldev->dev_group[UBCORE_ATTR_GROUP_DEV_DEFAULT] = &ubcore_dev_attr_group;
+	ldev->dev_group[UBCORE_ATTR_GROUP_EIDS] = eid_grp;
+	ldev->dev_group[UBCORE_ATTR_GROUP_NULL] = NULL;
+
+	ret = sysfs_create_groups(&ldev->dev->kobj, ldev->dev_group);
 	if (ret != 0) {
 		ubcore_log_err("sysfs create group failed, ret:%d.\n", ret);
+		ubcore_free_eids_group(ldev);
 		return -1;
 	}
 
@@ -765,7 +894,8 @@ void ubcore_remove_port_attr_files(struct ubcore_logic_device *ldev, uint8_t por
 
 void ubcore_remove_dev_attr_files(struct ubcore_logic_device *ldev)
 {
-	sysfs_remove_group(&ldev->dev->kobj, &ubcore_dev_attr_group);
+	sysfs_remove_groups(&ldev->dev->kobj, ldev->dev_group);
+	ubcore_free_eids_group(ldev);
 }
 
 int ubcore_fill_logic_device_attr(struct ubcore_logic_device *ldev,

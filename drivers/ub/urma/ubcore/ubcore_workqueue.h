@@ -24,21 +24,30 @@
 #include <linux/types.h>
 #include <linux/mm.h>
 
+#include "urma/ubcore_types.h"
+
 #define UBCORE_QUEUE_NAME_LEN 20
 
 enum ubcore_queue_type {
 	UBCORE_DISPATCH_EVENT_WQ = 0,
 	UBCORE_SIP_NOTIFY_WQ,
 	UBCORE_BOND_EVENT_WQ,
+	UBCORE_FRONT_BACK_WQ, /* For frontend and backend ubcore communication. */
 	UBCORE_QUEUE_TYPE_NUM
+};
+
+struct ubcore_front_back_work {
+	struct work_struct work;
+	struct ubcore_device *dev;
+	struct ubcore_req_host *req;
 };
 
 void ubcore_flush_workqueue(int queue_type);
 
-int ubcore_alloc_workqueue(int queue_type);
-
 int ubcore_queue_work(int queue_type, struct work_struct *work);
 
-int ubcore_destroy_workqueue(int queue_type);
+int ubcore_create_workqueues(void);
+
+void ubcore_destroy_workqueues(void);
 
 #endif

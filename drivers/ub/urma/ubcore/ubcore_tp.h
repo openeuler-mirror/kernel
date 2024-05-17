@@ -73,4 +73,6 @@ void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 int ubcore_modify_tp_state_check(struct ubcore_tp *tp, enum ubcore_tp_state new_state);
 void ubcore_tp_get(void *obj);
 void ubcore_tp_kref_put(struct ubcore_tp *tp);
+void ubcore_put_ta_jetty(struct ubcore_ta *ta);
+void ubcore_put_target_ta_jetty(struct ubcore_ta *ta);
 #endif

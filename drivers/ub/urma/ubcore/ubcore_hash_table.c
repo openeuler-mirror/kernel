@@ -57,12 +57,14 @@ void ubcore_hash_table_free_with_cb(struct ubcore_hash_table *ht, void (*free_cb
 		hlist_for_each_safe(pos, next, &ht->head[i]) {
 			obj = ubcore_ht_obj(ht, pos);
 			hlist_del(pos);
+			spin_unlock(&ht->lock);
 			if (free_cb != NULL)
 				free_cb(obj);
 			else if (ht->p.free_f != NULL)
 				ht->p.free_f(obj);
 			else
 				kfree(obj);
+			spin_lock(&ht->lock);
 		}
 	}
 	head = ht->head;
@@ -100,7 +102,7 @@ void ubcore_hash_table_remove_nolock(struct ubcore_hash_table *ht, struct hlist_
 	if (ht->head == NULL)
 		return;
 
-	hlist_del(hnode);
+	hlist_del_init(hnode);
 }
 
 void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *hnode)
@@ -108,6 +110,18 @@ void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *h
 	spin_lock(&ht->lock);
 	ubcore_hash_table_remove_nolock(ht, hnode);
 	spin_unlock(&ht->lock);
+}
+
+int ubcore_hash_table_check_remove(struct ubcore_hash_table *ht, struct hlist_node *hnode)
+{
+	spin_lock(&ht->lock);
+	if (hlist_unhashed(hnode)) {
+		spin_unlock(&ht->lock);
+		return -EINVAL;
+	}
+	ubcore_hash_table_remove_nolock(ht, hnode);
+	spin_unlock(&ht->lock);
+	return 0;
 }
 
 void *ubcore_hash_table_lookup_nolock_get(struct ubcore_hash_table *ht, uint32_t hash,

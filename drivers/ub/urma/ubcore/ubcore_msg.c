@@ -27,6 +27,8 @@
 #include "ubcore_vtp.h"
 #include "urma/ubcore_uapi.h"
 #include "ubcore_priv.h"
+#include "ubcore_workqueue.h"
+#include "ubcore_main.h"
 #include "ubcore_msg.h"
 
 #define MS_PER_SEC                  1000
@@ -198,7 +200,8 @@ static void ubcore_fill_tpf_dev_name(struct ubcore_device *tpf_dev,
 	case UBCORE_MSG_FLOW_STOPPED:
 	case UBCORE_MSG_MIG_ROLLBACK:
 	case UBCORE_MSG_MIG_VM_START:
-		ubcore_log_err("Wrong type when try to full tpf dev name\n");
+	case UBCORE_MSG_NEGO_VER:
+		ubcore_log_err("Wrong type when try to fill tpf dev name\n");
 		break;
 	default:
 		ubcore_log_err("Unrecognized type of opcode %d\n", (int)req_host->req.opcode);
@@ -213,7 +216,7 @@ static struct ubcore_req_host *ubcore_copy_req_host(struct ubcore_req_host *req_
 	uint32_t len = (uint32_t)sizeof(struct ubcore_req_host) + req_host->req.len;
 	struct ubcore_req_host *resp;
 
-	resp = kzalloc(len, GFP_KERNEL);
+	resp = kzalloc(len, GFP_ATOMIC);
 	if (resp == NULL)
 		return NULL;
 
@@ -258,9 +261,90 @@ static struct ubcore_req_host *ubcore_migrate_req(struct ubcore_device *dev,
 
 	mig_resp = (struct ubcore_nl_function_mig_req *)req_copy->req.data;
 	mig_resp->mig_fe_idx = mig_msg->mig_fe_idx;
-	(void)strncpy(mig_resp->dev_name, dev->dev_name, strlen(dev->dev_name));
+	(void)strncpy(mig_resp->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME - 1);
 
 	return req_copy;
+}
+
+static void ubcore_handle_nego_ver(struct ubcore_device *dev, struct ubcore_req_host *req)
+{
+	struct ubcore_msg_nego_ver_resp *data;
+	struct ubcore_resp_host *rsp;
+	int rc;
+
+	rsp = kzalloc(sizeof(struct ubcore_resp_host) + sizeof(struct ubcore_msg_nego_ver_resp),
+		GFP_KERNEL);
+	if (rsp == NULL)
+		return;
+
+	rsp->dst_fe_idx = req->src_fe_idx;
+	rsp->resp.msg_id = req->req.msg_id;
+	rsp->resp.opcode = UBCORE_MSG_NEGO_VER;
+	rsp->resp.len = sizeof(struct ubcore_msg_nego_ver_resp);
+
+	data = (struct ubcore_msg_nego_ver_resp *)rsp->resp.data;
+	rc = ubcore_negotiate_version((struct ubcore_msg_nego_ver_req *)req->req.data,
+		&data->version, &data->cap);
+	data->ret = rc == 0 ? UBCORE_MSG_RESP_SUCCESS : UBCORE_MSG_RESP_FAIL;
+
+	(void)ubcore_send_resp(dev, rsp);
+
+	/* Backend response is freed after "ubcore_send_resp" returns. */
+	kfree(rsp);
+}
+
+static void ubcore_handle_frontend_message(struct work_struct *work)
+{
+	struct ubcore_front_back_work *fb_work =
+		container_of(work, struct ubcore_front_back_work, work);
+
+	switch (fb_work->req->req.opcode) {
+	case UBCORE_MSG_NEGO_VER:
+		ubcore_handle_nego_ver(fb_work->dev, fb_work->req);
+		break;
+	case UBCORE_MSG_UPDATE_NET_ADDR:
+		ubcore_recv_net_addr_update(fb_work->dev, fb_work->req);
+		break;
+	case UBCORE_MSP_UPDATE_EID:
+		ubcore_recv_eid_update_req(fb_work->dev, fb_work->req);
+		break;
+	default:
+		ubcore_log_err("Unsupported opcode: %d\n", (int)fb_work->req->req.opcode);
+	}
+
+	/* Backend request is freed after it is handled. */
+	kfree(fb_work->req);
+	kfree(fb_work);
+}
+
+static int ubcore_queue_frontend_message(struct ubcore_device *dev, struct ubcore_req_host *req)
+{
+	struct ubcore_front_back_work *work;
+	struct ubcore_req_host *inner_req;
+
+	inner_req = ubcore_copy_req_host(req);
+	if (inner_req == NULL) {
+		ubcore_log_err("Fail to copy frontend ubcore message.\n");
+		return -ENOMEM;
+	}
+
+	work = kzalloc(sizeof(struct ubcore_front_back_work), GFP_ATOMIC);
+	if (work == NULL) {
+		kfree(inner_req);
+		return -ENOMEM;
+	}
+
+	work->dev = dev;
+	work->req = inner_req;
+	INIT_WORK(&work->work, ubcore_handle_frontend_message);
+	if (ubcore_queue_work((int)UBCORE_FRONT_BACK_WQ, &work->work) != 0) {
+		ubcore_log_err("Fail to queue work for frontend ubcore message.\n");
+		kfree(inner_req);
+		kfree(work);
+		return -1;
+	}
+
+	return 0;
 }
 
 int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req)
@@ -278,7 +362,9 @@ int ubcore_recv_req(struct ubcore_device *dev, struct ubcore_req_host *req)
 		return -EINVAL;
 	}
 
-	if (req->req.opcode >= UBCORE_MSG_STOP_PROC_VTP_MSG) {
+	if (req->req.opcode >= UBCORE_MSG_NEGO_VER) {
+		return ubcore_queue_frontend_message(dev, req);
+	} else if (req->req.opcode >= UBCORE_MSG_STOP_PROC_VTP_MSG) {
 		handle_req = ubcore_migrate_req(dev, req);
 		if (handle_req == NULL) {
 			ubcore_log_err("null msg when handle migrate\n!");
@@ -507,10 +593,14 @@ int ubcore_update_uvs_eid_ret(struct ubcore_update_eid_ctx *ctx)
 
 		ubcore_log_err("waiting req reply timeout, msg_id = %u, opcode = %hu, leavetime =  %ld.\n",
 			ctx->req_msg->msg_id, (uint16_t)ctx->req_msg->opcode, leave_time);
-		return 0;
+		return -EAGAIN;
 	}
+
 	ubcore_log_info("waiting req reply success, msg_id = %u, opcode = %hu\n",
 			ctx->req_msg->msg_id, (uint16_t)ctx->req_msg->opcode);
-	(void)ctx->cb.callback(ctx->dev, ctx->s->resp, ctx->cb.user_arg);
+
+	if (ctx->cb.callback(ctx->dev, ctx->s->resp, ctx->cb.user_arg) != 0)
+		return -EINVAL;
+
 	return 0;
 }

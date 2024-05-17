@@ -19,6 +19,7 @@
  */
 #include <linux/device.h>
 #include <linux/netdevice.h>
+#include <linux/if_vlan.h>
 
 #include <urma/ubcore_types.h>
 #include "ubcore_log.h"
@@ -173,11 +174,12 @@ int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
 	return 0;
 }
 
-int ubcore_check_port_state(struct ubcore_device *dev, uint8_t port_idx)
+int ubcore_check_port_state(struct ubcore_device *dev)
 {
-	struct ubcore_device_status status;
+	struct ubcore_device_status status = {0};
+	uint32_t i;
 
-	if (dev == NULL || port_idx >= UBCORE_MAX_PORT_CNT) {
+	if (dev == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
@@ -188,24 +190,32 @@ int ubcore_check_port_state(struct ubcore_device *dev, uint8_t port_idx)
 		return -EPERM;
 	}
 
-	if (status.port_status[port_idx].state != UBCORE_PORT_ACTIVE) {
-		ubcore_log_err("port state is not active with dev name: %s and port_idx: %hhu\n",
-			dev->dev_name, port_idx);
-		return -EPERM;
+	for (i = 0; i < UBCORE_MAX_PORT_CNT; i++) {
+		if (status.port_status[i].state == UBCORE_PORT_ACTIVE) {
+			ubcore_log_debug("Success to query dev %s - port %u state and it's active.\n",
+				dev->dev_name, i);
+			return 0;
+		}
 	}
-	ubcore_log_info("Success to query dev %s port state and it's active.\n", dev->dev_name);
-	return 0;
+	ubcore_log_err("port state is not active with dev name: %s\n", dev->dev_name);
+	return -EPERM;
 }
 
-void ubcore_find_port_netdev(struct ubcore_device *dev,
-	struct net_device *ndev, uint8_t **port_list, uint8_t *port_cnt)
+void ubcore_fill_port_netdev(struct ubcore_device *dev,
+	struct net_device *ndev, uint8_t *port_list, uint8_t *port_cnt)
 {
+	struct net_device *real_netdev = NULL;
 	struct ubcore_ndev_port *port_info;
+
+	if (is_vlan_dev(ndev))
+		real_netdev = vlan_dev_real_dev(ndev);
+	else
+		real_netdev = ndev;
 
 	down_write(&g_port_list_lock);
 	list_for_each_entry(port_info, &dev->port_list, node) {
-		if (port_info->ndev == ndev) {
-			*port_list = port_info->port_list;
+		if (port_info->ndev == real_netdev) {
+			(void)memcpy(port_list, port_info->port_list, UBCORE_MAX_PORT_CNT);
 			*port_cnt = port_info->port_cnt;
 			up_write(&g_port_list_lock);
 			ubcore_log_info("Success to fill in port_list with port cnt: %hhu and dev_name %s",
@@ -255,39 +265,6 @@ static int ubcore_port_duplicate_check(struct ubcore_ndev_port *port_info,
 	return 0;
 }
 
-static void ubcore_sync_sip_port_list(struct ubcore_device *dev,
-	uint8_t *port_list, uint8_t port_cnt)
-{
-	struct ubcore_sip_info *new_sip;
-	struct ubcore_sip_info old_sip;
-	struct ubcore_device *tpf_dev;
-	uint32_t i;
-
-	tpf_dev = ubcore_find_tpf_device(NULL, UBCORE_TRANSPORT_UB);
-	if (tpf_dev == NULL)
-		return;
-
-	mutex_lock(&tpf_dev->sip_table.lock);
-	for (i = 0; i < tpf_dev->sip_table.max_sip_cnt; i++) {
-		new_sip = &tpf_dev->sip_table.entry[i];
-		if (!new_sip->is_active)
-			continue;
-		old_sip = *new_sip;
-		(void)memcpy(new_sip->port_id, port_list,
-			UBCORE_MAX_PORT_CNT);
-		new_sip->port_cnt = port_cnt;
-
-		if (ubcore_get_netlink_valid() == true) {
-			(void)ubcore_notify_uvs_del_sip(tpf_dev, &old_sip, i);
-			(void)ubcore_notify_uvs_add_sip(tpf_dev, new_sip, i);
-		}
-		ubcore_log_info("dev_name: %s, old port_cnt: %hhu, new port_cnt: %hhu\n",
-			dev->dev_name, old_sip.port_cnt, new_sip->port_cnt);
-	}
-	mutex_unlock(&tpf_dev->sip_table.lock);
-	ubcore_put_device(tpf_dev);
-}
-
 int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 	unsigned int port_id)
 {
@@ -313,9 +290,9 @@ int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 				ubcore_log_err("Failed to ubcore_add_new_port");
 				return -1;
 			}
-			/* sync to sip table */
-			ubcore_sync_sip_port_list(dev, port_info->port_list, port_info->port_cnt);
 			up_write(&g_port_list_lock);
+			/* sync to sip table */
+			ubcore_update_netdev_addr(dev, dev->netdev, UBCORE_UPDATE_NET_ADDR, false);
 			return 0;
 		}
 	}
@@ -335,7 +312,7 @@ int ubcore_set_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 	list_add_tail(&new_node->node, &dev->port_list);
 	up_write(&g_port_list_lock);
 	ubcore_log_info("ndev:%s bound port[0]: %hhu\n", netdev_name(ndev), new_node->port_list[0]);
-	ubcore_sync_sip_port_list(dev, new_node->port_list, new_node->port_cnt);
+	ubcore_update_netdev_addr(dev, dev->netdev, UBCORE_UPDATE_NET_ADDR, false);
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_set_port_netdev);
@@ -363,7 +340,6 @@ static int ubcore_del_port(struct ubcore_ndev_port *port_info,
 			netdev_name(ndev), dev->dev_name, port_id);
 		return -1;
 	}
-	ubcore_sync_sip_port_list(dev, port_info->port_list, port_info->port_cnt);
 
 	if (port_info->port_cnt == 0) {
 		list_del(&port_info->node);
@@ -394,6 +370,7 @@ int ubcore_unset_port_netdev(struct ubcore_device *dev, struct net_device *ndev,
 				return -1;
 			}
 			up_write(&g_port_list_lock);
+			ubcore_update_netdev_addr(dev, dev->netdev, UBCORE_UPDATE_NET_ADDR, false);
 			return 0;
 		}
 	}
@@ -421,14 +398,14 @@ void ubcore_put_port_netdev(struct ubcore_device *dev)
 				port_info->port_cnt = 0;
 				(void)memset(port_info->port_list,
 					0, sizeof(uint8_t) * UBCORE_MAX_PORT_CNT);
-				ubcore_sync_sip_port_list(dev, port_info->port_list,
-					port_info->port_cnt);
 			}
 			list_del(&port_info->node);
 			kfree(port_info);
 		}
 	}
 	up_write(&g_port_list_lock);
+
+	ubcore_update_netdev_addr(dev, dev->netdev, UBCORE_UPDATE_NET_ADDR, false);
 }
 EXPORT_SYMBOL(ubcore_put_port_netdev);
 
@@ -504,8 +481,8 @@ int ubcore_add_sip_entry(struct ubcore_sip_table *sip_table, const struct ubcore
 	(void)memcpy(&sip_table->entry[idx], sip, sizeof(struct ubcore_sip_info));
 	sip_table->entry[idx].is_active = true;
 	mutex_unlock(&sip_table->lock);
-	ubcore_log_info("tpf_dev_name: %s sip table add entry idx: %d.\n",
-		sip->dev_name, idx);
+	ubcore_log_info("tpf_dev_name: %s sip table add entry idx: %d. addr: %pI6c\n",
+		sip->dev_name, idx, &sip->addr.net_addr);
 	return 0;
 }
 
@@ -518,8 +495,8 @@ int ubcore_del_sip_entry(struct ubcore_sip_table *sip_table, uint32_t idx)
 		return -EINVAL;
 	}
 
-	ubcore_log_info("tpf_name: %s del sip entry idx: %d.\n",
-		sip_table->entry[idx].dev_name, idx);
+	ubcore_log_info("tpf_name: %s del sip entry idx: %d, addr: %pI6c.\n",
+		sip_table->entry[idx].dev_name, idx, &sip_table->entry[idx].addr.net_addr);
 	sip_table->entry[idx].is_active = false;
 	mutex_unlock(&sip_table->lock);
 	return 0;
@@ -530,13 +507,42 @@ static bool ubcore_sip_compare(struct ubcore_sip_info *sip_entry,
 {
 	if ((memcmp(sip_entry->dev_name, del_sip->dev_name,
 		sizeof(char) * UBCORE_MAX_DEV_NAME) == 0) &&
-		(memcmp(&sip_entry->addr, &del_sip->addr,
-			sizeof(struct ubcore_net_addr)) == 0) &&
+		(memcmp(&sip_entry->addr.net_addr, &del_sip->addr.net_addr,
+			sizeof(union ubcore_net_addr_union)) == 0) &&
 		(memcmp(sip_entry->netdev_name, del_sip->netdev_name,
 		sizeof(struct ubcore_net_addr)) == 0))
 		return true;
 
 	return false;
+}
+
+int ubcore_update_sip_entry(struct ubcore_sip_table *sip_table, struct ubcore_sip_info *new_sip,
+	uint32_t *sip_idx, struct ubcore_sip_info *old_sip)
+{
+	uint32_t i;
+	int ret = -ENOENT;
+
+	if (!sip_table || !new_sip || !sip_idx || !old_sip)
+		return -EINVAL;
+
+	mutex_lock(&sip_table->lock);
+	for (i = 0; i < sip_table->max_sip_cnt; i++) {
+		if (!sip_table->entry[i].is_active ||
+			!ubcore_sip_compare(&sip_table->entry[i], new_sip))
+			continue;
+
+		*sip_idx = i;
+		*old_sip = sip_table->entry[i];
+
+		sip_table->entry[i] = *new_sip;
+		sip_table->entry[i].is_active = true;
+		ret = 0;
+		ubcore_log_info("tpf_name: %s update sip entry idx: %d, addr: %pI6c.",
+			sip_table->entry[i].dev_name, i, &sip_table->entry[i].addr.net_addr);
+		break;
+	}
+	mutex_unlock(&sip_table->lock);
+	return ret;
 }
 
 int ubcore_lookup_sip_idx(struct ubcore_sip_table *sip_table, struct ubcore_sip_info *sip,

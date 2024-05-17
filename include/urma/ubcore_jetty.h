@@ -26,10 +26,22 @@
 /* The APIs below are deprecated, should not be called by driver or ubcore client */
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
 
+// Deprecated, use ubcore_find_get_jfs
 struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id);
+struct ubcore_jfs *ubcore_find_get_jfs(struct ubcore_device *dev, uint32_t jfs_id);
+void ubcore_put_jfs(struct ubcore_jfs *jfs);
+void ubcore_jfs_get(void *obj);
 
+// Deprecated, use ubcore_find_get_jfr
 struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id);
+struct ubcore_jfr *ubcore_find_get_jfr(struct ubcore_device *dev, uint32_t jfr_id);
+void ubcore_put_jfr(struct ubcore_jfr *jfr);
+void ubcore_jfr_get(void *obj);
 
+// Deprecated, use ubcore_find_get_jetty
 struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id);
+struct ubcore_jetty *ubcore_find_get_jetty(struct ubcore_device *dev, uint32_t jetty_id);
+void ubcore_put_jetty(struct ubcore_jetty *jetty);
+void ubcore_jetty_get(void *obj);
 
 #endif

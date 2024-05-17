@@ -30,6 +30,7 @@
 #include "uburma_file_ops.h"
 #include "uburma_log.h"
 #include "uburma_event.h"
+#include "uburma_mmap.h"
 #include "uburma_uobj.h"
 
 static bool g_is_zero_fd;
@@ -534,6 +535,9 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason w
 		put_unused_fd(0);
 		g_is_zero_fd = false;
 	}
+	if (why == UBURMA_REMOVE_DRIVER_REMOVE)
+		uburma_unmap_vma_pages(ufile);
+
 	up_write(&ufile->cleanup_rwsem);
 }
 

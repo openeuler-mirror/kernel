@@ -23,7 +23,7 @@
 
 static struct workqueue_struct *g_ubcore_workqueues[(int)UBCORE_QUEUE_TYPE_NUM];
 const char UBCORE_QUEUE_NAMES[(int)UBCORE_QUEUE_TYPE_NUM][UBCORE_QUEUE_NAME_LEN] = {
-	{"ubcore-device-wq"}, {"ubcore-sip-wq"}, {"ubcore-bond-wq"}};
+	{"ubcore-device-wq"}, {"ubcore-sip-wq"}, {"ubcore-bond-wq"}, {"ubcore-fb-wq"}};
 
 static bool check_queue_type_valid(int queue_type)
 {
@@ -41,21 +41,6 @@ void ubcore_flush_workqueue(int queue_type)
 	flush_workqueue(g_ubcore_workqueues[queue_type]);
 }
 
-int ubcore_alloc_workqueue(int queue_type)
-{
-	if (!check_queue_type_valid(queue_type) || g_ubcore_workqueues[queue_type] != NULL) {
-		ubcore_log_err("queue_type %d out of range or already exist\n", queue_type);
-		return -EINVAL;
-	}
-	g_ubcore_workqueues[queue_type] =
-		alloc_workqueue("%s", 0, 0, UBCORE_QUEUE_NAMES[queue_type]);
-	if (g_ubcore_workqueues[queue_type] == NULL) {
-		ubcore_log_err("Failed to alloc workqueue, queue type %d\n", queue_type);
-		return -ENOMEM;
-	}
-	return 0;
-}
-
 int ubcore_queue_work(int queue_type, struct work_struct *work)
 {
 	if (!check_queue_type_valid(queue_type) || g_ubcore_workqueues[queue_type] == NULL) {
@@ -65,13 +50,33 @@ int ubcore_queue_work(int queue_type, struct work_struct *work)
 	return queue_work(g_ubcore_workqueues[queue_type], work) ? 0 : -1;
 }
 
-int ubcore_destroy_workqueue(int queue_type)
+int ubcore_create_workqueues(void)
 {
-	if (!check_queue_type_valid(queue_type) || g_ubcore_workqueues[queue_type] == NULL) {
-		ubcore_log_err("queue_type %d out of range or workqueue is NULL\n", queue_type);
-		return -EINVAL;
+	uint32_t i, j;
+
+	for (i = 0; i < UBCORE_QUEUE_TYPE_NUM; i++) {
+		g_ubcore_workqueues[i] = alloc_workqueue("%s", 0, 0, UBCORE_QUEUE_NAMES[i]);
+		if (g_ubcore_workqueues[i] == NULL) {
+			ubcore_log_err("Fail to alloc workqueue, queue type %u.\n", i);
+			break;
+		}
 	}
-	destroy_workqueue(g_ubcore_workqueues[queue_type]);
-	g_ubcore_workqueues[queue_type] = NULL;
-	return 0;
+
+	if (i == UBCORE_QUEUE_TYPE_NUM)
+		return 0;
+
+	for (j = 0; j < i; j++)
+		destroy_workqueue(g_ubcore_workqueues[j]);
+
+	return -1;
+}
+
+void ubcore_destroy_workqueues(void)
+{
+	uint32_t i;
+
+	for (i = 0; i < UBCORE_QUEUE_TYPE_NUM; i++) {
+		flush_workqueue(g_ubcore_workqueues[i]);
+		destroy_workqueue(g_ubcore_workqueues[i]);
+	}
 }

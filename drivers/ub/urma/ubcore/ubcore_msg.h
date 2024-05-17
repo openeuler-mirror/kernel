@@ -86,6 +86,18 @@ struct ubcore_msg_discover_eid_resp {
 	uint16_t fe_idx;
 };
 
+struct ubcore_msg_nego_ver_req {
+	uint32_t cap;
+	uint32_t version_num;
+	uint32_t versions[0];
+};
+
+struct ubcore_msg_nego_ver_resp {
+	int ret;
+	uint32_t cap;
+	uint32_t version;
+};
+
 struct ubcore_function_mig_req {
 	uint16_t mig_fe_idx;
 };
@@ -93,6 +105,28 @@ struct ubcore_function_mig_req {
 struct ubcore_function_mig_resp {
 	uint16_t mig_fe_idx;
 	enum ubcore_mig_resp_status status;
+};
+
+struct ubcore_eid_update_info {
+	uint32_t pattern;
+	uint32_t eid_idx;
+	union ubcore_eid eid;
+	char dev_name[UBCORE_MAX_DEV_NAME];
+	bool upi_present;
+	uint32_t upi;
+};
+
+struct ubcore_update_net_addr_req {
+	enum ubcore_net_addr_op op;
+	bool sip_present;
+	struct ubcore_sip_info sip_info;
+	bool eid_present;
+	struct ubcore_eid_update_info eid_info;
+};
+
+struct ubcore_update_eid_req {
+	enum ubcore_net_addr_op op;
+	struct ubcore_eid_update_info eid_info;
 };
 
 struct ubcore_update_eid_ctx {

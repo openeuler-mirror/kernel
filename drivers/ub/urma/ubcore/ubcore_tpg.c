@@ -24,13 +24,6 @@
 #include "ubcore_tp.h"
 #include "ubcore_tpg.h"
 
-static int ubcore_free_wait_tpg(struct ubcore_device *dev, struct ubcore_tpg *tpg)
-{
-	ubcore_tpg_kref_put(tpg);
-	wait_for_completion(&tpg->comp);
-	return dev->ops->destroy_tpg(tpg);
-}
-
 struct ubcore_tpg *ubcore_create_tpg(struct ubcore_device *dev, struct ubcore_tpg_cfg *cfg)
 {
 	struct ubcore_tpg *tpg;
@@ -50,24 +43,11 @@ struct ubcore_tpg *ubcore_create_tpg(struct ubcore_device *dev, struct ubcore_tp
 	tpg->tpg_cfg = *cfg;
 	for (i = 0; i < cfg->tp_cnt; i++)
 		tpg->tp_list[i] = NULL;
-	atomic_set(&tpg->use_cnt, 0);
+
 	kref_init(&tpg->ref_cnt);
-	init_completion(&tpg->comp);
 	mutex_init(&tpg->mutex);
 
 	return tpg;
-}
-
-static void ubcore_tpg_kref_release(struct kref *ref_cnt)
-{
-	struct ubcore_tpg *tpg = container_of(ref_cnt, struct ubcore_tpg, ref_cnt);
-
-	complete(&tpg->comp);
-}
-
-void ubcore_tpg_kref_put(struct ubcore_tpg *tpg)
-{
-	(void)kref_put(&tpg->ref_cnt, ubcore_tpg_kref_release);
 }
 
 void ubcore_tpg_get(void *obj)
@@ -77,27 +57,34 @@ void ubcore_tpg_get(void *obj)
 	kref_get(&tpg->ref_cnt);
 }
 
-int ubcore_destroy_tpg(struct ubcore_tpg *tpg)
+static void ubcore_destroy_tpg(struct ubcore_tpg *tpg)
 {
 	struct ubcore_device *dev = tpg->ub_dev;
 	int ret;
 
 	if (dev->ops == NULL || dev->ops->destroy_tpg == NULL)
-		return -EINVAL;
+		return;
 
-	ret = ubcore_free_wait_tpg(dev, tpg);
-	if (ret != 0) {
-		(void)ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_TPG], &tpg->hnode, tpg->tpgn);
-		/* inc tpg use cnt? */
-		ubcore_log_err("Failed to destroy tpg");
-	}
-
-	return ret;
+	ret = dev->ops->destroy_tpg(tpg);
+	if (ret != 0)
+		ubcore_log_err("destrory tpg err:%d", ret);
 }
 
-struct ubcore_tpg *ubcore_find_tpg(struct ubcore_device *dev, uint32_t tpgn)
+static void ubcore_tpg_kref_release(struct kref *ref_cnt)
 {
-	return ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_TPG], tpgn, &tpgn);
+	struct ubcore_tpg *tpg = container_of(ref_cnt, struct ubcore_tpg, ref_cnt);
+
+	ubcore_destroy_tpg(tpg);
+}
+
+void ubcore_tpg_kref_put(struct ubcore_tpg *tpg)
+{
+	(void)kref_put(&tpg->ref_cnt, ubcore_tpg_kref_release);
+}
+
+void ubcore_tpg_kref_get(struct ubcore_tpg *tpg)
+{
+	kref_get(&tpg->ref_cnt);
 }
 
 struct ubcore_tpg *ubcore_find_get_tpg(struct ubcore_device *dev, uint32_t tpgn)
@@ -105,65 +92,60 @@ struct ubcore_tpg *ubcore_find_get_tpg(struct ubcore_device *dev, uint32_t tpgn)
 	return ubcore_hash_table_lookup_get(&dev->ht[UBCORE_HT_TPG], tpgn, &tpgn);
 }
 
-struct ubcore_tpg *ubcore_find_remove_tpg(struct ubcore_device *dev, uint32_t tpgn)
+int ubcore_find_remove_tpg(struct ubcore_device *dev, uint32_t tpgn)
 {
 	struct ubcore_tpg *tpg;
 
 	spin_lock(&dev->ht[UBCORE_HT_TPG].lock);
 	if (&dev->ht[UBCORE_HT_TPG].head == NULL) {
 		spin_unlock(&dev->ht[UBCORE_HT_TPG].lock);
-		return NULL;
+		return -1;
 	}
 	tpg = ubcore_hash_table_lookup_nolock(&dev->ht[UBCORE_HT_TPG], tpgn, &tpgn);
 	if (tpg == NULL) {
 		spin_unlock(&dev->ht[UBCORE_HT_TPG].lock);
-		return NULL;
-	}
-	if (atomic_read(&tpg->use_cnt) > 0) {
-		spin_unlock(&dev->ht[UBCORE_HT_TPG].lock);
-		ubcore_log_err("Failed to remove tpg");
-		return NULL;
+		return -1;
 	}
 	ubcore_hash_table_remove_nolock(&dev->ht[UBCORE_HT_TPG], &tpg->hnode);
+	ubcore_tpg_kref_put(tpg);
 	spin_unlock(&dev->ht[UBCORE_HT_TPG].lock);
-
-	return tpg;
+	return 0;
 }
 
 int ubcore_add_tp(struct ubcore_device *dev, struct ubcore_tp *tp)
 {
-	return ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_UB_TP],
+	return ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_TP],
 		&tp->hnode, tp->tpn);
 }
 
 struct ubcore_tp *ubcore_find_get_tp(struct ubcore_device *dev, uint32_t tpn)
 {
-	return ubcore_hash_table_lookup_get(&dev->ht[UBCORE_HT_UB_TP], tpn, &tpn);
+	return ubcore_hash_table_lookup_get(&dev->ht[UBCORE_HT_TP], tpn, &tpn);
 }
 
 struct ubcore_tp *ubcore_find_remove_tp_node(struct ubcore_device *dev, uint32_t tpn)
 {
 	struct ubcore_tp *tp;
 
-	spin_lock(&dev->ht[UBCORE_HT_UB_TP].lock);
-	if (&dev->ht[UBCORE_HT_UB_TP].head == NULL) {
-		spin_unlock(&dev->ht[UBCORE_HT_UB_TP].lock);
+	spin_lock(&dev->ht[UBCORE_HT_TP].lock);
+	if (&dev->ht[UBCORE_HT_TP].head == NULL) {
+		spin_unlock(&dev->ht[UBCORE_HT_TP].lock);
 		return NULL;
 	}
-	tp = ubcore_hash_table_lookup_nolock(&dev->ht[UBCORE_HT_UB_TP], tpn, &tpn);
+	tp = ubcore_hash_table_lookup_nolock(&dev->ht[UBCORE_HT_TP], tpn, &tpn);
 	if (tp == NULL) {
-		spin_unlock(&dev->ht[UBCORE_HT_UB_TP].lock);
+		spin_unlock(&dev->ht[UBCORE_HT_TP].lock);
 		return NULL;
 	}
 
 	if (atomic_dec_return(&tp->use_cnt) > 0) {
-		spin_unlock(&dev->ht[UBCORE_HT_UB_TP].lock);
+		spin_unlock(&dev->ht[UBCORE_HT_TP].lock);
 		ubcore_log_warn("Failed to remove tp:%u and use cnt:%u",
 			tp->tpn, (uint32_t)atomic_read(&tp->use_cnt));
 		return NULL;
 	}
-	ubcore_hash_table_remove_nolock(&dev->ht[UBCORE_HT_UB_TP], &tp->hnode);
-	spin_unlock(&dev->ht[UBCORE_HT_UB_TP].lock);
+	ubcore_hash_table_remove_nolock(&dev->ht[UBCORE_HT_TP], &tp->hnode);
+	spin_unlock(&dev->ht[UBCORE_HT_TP].lock);
 
 	return tp;
 }
@@ -351,4 +333,24 @@ struct ubcore_tp *ubcore_find_get_tp_in_tpg(struct ubcore_tpg *tpg, uint32_t tpn
 	mutex_unlock(&tpg->mutex);
 
 	return NULL;
+}
+
+int ubcore_find_add_tpg(struct ubcore_device *dev, struct ubcore_tpg *tpg)
+{
+	struct ubcore_hash_table *ht = &dev->ht[UBCORE_HT_TPG];
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return -EINVAL;
+	}
+
+	if (ubcore_hash_table_lookup_nolock(ht, tpg->tpgn, &tpg->tpgn) != NULL) {
+		spin_unlock(&ht->lock);
+		return -EEXIST;
+	}
+	ubcore_hash_table_add_nolock(ht, &tpg->hnode, tpg->tpgn);
+	ubcore_tpg_kref_get(tpg);
+	spin_unlock(&ht->lock);
+	return 0;
 }

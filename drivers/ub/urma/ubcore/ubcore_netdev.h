@@ -23,9 +23,9 @@
 
 #include <urma/ubcore_types.h>
 
-int ubcore_check_port_state(struct ubcore_device *dev, uint8_t port_idx);
-void ubcore_find_port_netdev(struct ubcore_device *dev,
-	struct net_device *ndev, uint8_t **port_list, uint8_t *port_cnt);
+int ubcore_check_port_state(struct ubcore_device *dev);
+void ubcore_fill_port_netdev(struct ubcore_device *dev,
+	struct net_device *ndev, uint8_t *port_list, uint8_t *port_cnt);
 
 int ubcore_sip_table_init(struct ubcore_sip_table *sip_table, uint32_t size);
 void ubcore_sip_table_uninit(struct ubcore_sip_table *sip_table);
@@ -38,6 +38,8 @@ int ubcore_add_sip_entry(struct ubcore_sip_table *sip_table, struct ubcore_sip_i
 int ubcore_del_sip_entry(struct ubcore_sip_table *sip_table, uint32_t idx);
 int ubcore_lookup_sip_idx(struct ubcore_sip_table *sip_table, struct ubcore_sip_info *sip,
 	uint32_t *idx);
+int ubcore_update_sip_entry(struct ubcore_sip_table *sip_table, struct ubcore_sip_info *new_sip,
+	uint32_t *sip_idx, struct ubcore_sip_info *old_sip);
 struct ubcore_device *ubcore_lookup_tpf_by_sip_addr(union ubcore_net_addr_union *addr);
 int ubcore_notify_uvs_add_sip(struct ubcore_device *dev,
 	const struct ubcore_sip_info *sip, uint32_t index);

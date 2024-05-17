@@ -38,8 +38,7 @@ struct ubcore_cmd_hdr {
 
 /* only for ubcore device ioctl */
 enum ubcore_cmd {
-	UBCORE_CMD_SHOW_UTP = 1,
-	UBCORE_CMD_QUERY_STATS,
+	UBCORE_CMD_QUERY_STATS = 1,
 	UBCORE_CMD_QUERY_RES,
 	UBCORE_CMD_ADD_EID,
 	UBCORE_CMD_DEL_EID,

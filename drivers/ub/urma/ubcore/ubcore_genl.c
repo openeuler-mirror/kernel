@@ -54,12 +54,6 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 
 static const struct genl_ops ubcore_genl_ops[] = {
 	{
-		.cmd = UBCORE_CMD_SHOW_UTP,
-		.policy = ubcore_policy,
-		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_show_utp_ops
-	},
-	{
 		.cmd = UBCORE_CMD_QUERY_STATS,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,

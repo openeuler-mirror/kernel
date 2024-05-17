@@ -43,6 +43,7 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_CREATE_TPG, /* initiator */
 	UBCORE_CMD_CREATE_VTP, /* initiator */
 	UBCORE_CMD_MODIFY_TPG,
+	UBCORE_CMD_MODIFY_TPG_MAP_VTP,
 	UBCORE_CMD_MODIFY_TPG_TP_CNT,
 	UBCORE_CMD_CREATE_TARGET_TPG, /* target */
 	UBCORE_CMD_MODIFY_TARGET_TPG,
@@ -77,6 +78,8 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_GET_VTP_TABLE_CNT,
 	UBCORE_CMD_RESTORE_TABLE,
 	UBCORE_CMD_MAP_TARGET_VTP,
+	UBCORE_CMD_LIST_MIGRATE_ENTRY,
+	UBCORE_CMD_QUERY_DSCP_VL,
 	UBCORE_CMD_LAST
 };
 
@@ -86,6 +89,7 @@ struct ubcore_cmd_opt_eid {
 		uint32_t upi;
 		uint16_t fe_idx;
 		union ubcore_eid eid;
+		uuid_t uuid;
 		uint32_t eid_index;
 	} in;
 };
@@ -107,6 +111,18 @@ struct ubcore_cmd_opt_config_dscp_vl {
 		uint8_t vl[UBCORE_MAX_DSCP_VL_NUM];
 		uint8_t num;
 	} in;
+};
+
+struct ubcore_cmd_opt_query_dscp_vl {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t dscp[UBCORE_MAX_DSCP_VL_NUM];
+		uint8_t num;
+	} in;
+
+	struct {
+		uint8_t vl[UBCORE_MAX_DSCP_VL_NUM];
+	} out;
 };
 
 struct ubcore_cmd_channel_init {
@@ -168,7 +184,9 @@ struct ubcore_cmd_create_tpg {
 	enum ubcore_mtu local_mtu;
 };
 
-/* modify tps in the tp list of tpg to RTR, RTS, and then map vtpn to tpg */
+/* modify tps in the tp list of tpg to RTR, RTS,
+ *  and then map vtpn to tpg only use in loopback
+ */
 struct ubcore_cmd_create_vtp {
 	struct {
 		struct ubcore_cmd_tpf tpf;
@@ -179,6 +197,9 @@ struct ubcore_cmd_create_vtp {
 		/* modify tp to RTS */
 		/* create vtp */
 		struct ubcore_cmd_vtp_cfg vtp;
+		uint32_t eid_idx;
+		uint32_t upi;
+		bool share_mode;
 	} in;
 	struct {
 		uint32_t rtr_tp_cnt;
@@ -205,6 +226,30 @@ struct ubcore_cmd_modify_tpg {
 	/* for alpha */
 	struct ubcore_ta_data ta_data;
 	struct ubcore_udrv_ext udrv_ext;
+};
+
+/* modify tps in the tp list of tpg to RTR, RTS and map vtp, ub only */
+struct ubcore_cmd_modify_tpg_map_vtp {
+	struct {
+		struct ubcore_cmd_tpf tpf;
+		uint32_t peer_tp_cnt;
+		/* modify tp to RTR */
+		uint32_t tpgn;
+		struct ubcore_tp_attr rtr_attr[UBCORE_MAX_TP_CNT_IN_GRP];
+		union ubcore_tp_attr_mask rtr_mask[UBCORE_MAX_TP_CNT_IN_GRP];
+		/* modify tp to RTS */
+		/* map vtp */
+		struct ubcore_cmd_vtp_cfg vtp;
+		uint32_t role;
+		uint32_t eid_idx;
+		uint32_t upi;
+		bool share_mode;
+	} in;
+	struct {
+		uint32_t rtr_tp_cnt;
+		uint32_t rts_tp_cnt;
+		uint32_t vtpn;
+	} out;
 };
 
 /* modify tps in the tpg to RTS at target */
@@ -263,7 +308,23 @@ struct ubcore_cmd_map_target_vtp {
 		struct ubcore_cmd_tpf tpf;
 		struct ubcore_cmd_vtp_cfg vtp;
 		uint32_t role;
+		uint32_t eid_idx;
+		uint32_t upi;
+		bool share_mode;
 	} in;
+};
+
+struct ubcore_list_migrate_entry_param {
+	uint16_t fe_idx;
+	struct ubcore_fe_stats stats;
+};
+
+struct ubcore_cmd_list_migrate_entry {
+	struct {
+		struct ubcore_cmd_tpf tpf;
+		uint32_t cnt;
+	} in;
+	struct ubcore_list_migrate_entry_param param[0];
 };
 
 struct ubcore_cmd_destroy_vtp {
@@ -324,6 +385,9 @@ struct ubcore_cmd_create_utp {
 		struct ubcore_cmd_tpf tpf;
 		struct ubcore_utp_cfg utp_cfg;
 		struct ubcore_cmd_vtp_cfg vtp;
+		uint32_t eid_idx;
+		uint32_t upi;
+		bool share_mode;
 	} in;
 	struct {
 		uint32_t idx;
@@ -429,12 +493,9 @@ struct ubcore_cmd_show_upi {
 
 struct ubcore_cmd_get_dev_info {
 	struct {
-		char target_pf_name[UBCORE_MAX_DEV_NAME];
-		struct ubcore_cmd_tpf tpf;
+		char target_tpf_name[UBCORE_MAX_DEV_NAME];
 	} in;
 	struct {
-		bool port_is_active;
-		char target_tpf_name[UBCORE_MAX_DEV_NAME];
 		enum ubcore_mtu max_mtu;
 	} out;
 };
@@ -505,6 +566,7 @@ struct ubcore_restored_vtp_entry {
 	uint32_t eid_idx;
 	uint32_t upi;
 	bool share_mode;
+	bool restore_succeed;
 };
 
 struct ubcore_cmd_restored_vtp_entry {
