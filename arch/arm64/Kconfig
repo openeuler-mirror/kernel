@@ -1608,8 +1608,8 @@ config HW_PERF_EVENTS
 
 config ARCH_LLC_128_LINE_SIZE
 	bool "Force 128 bytes alignment for fitting LLC cacheline"
-	depends on ARM64
-	default y
+	depends on ARCH_HISI
+	default n
 	help
 	  As specific machine's LLC cacheline size may be up to
 	  128 bytes, gaining performance improvement from fitting
