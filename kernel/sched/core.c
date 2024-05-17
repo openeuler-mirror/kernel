@@ -12060,8 +12060,11 @@ static ssize_t cpu_max_write(struct kernfs_open_file *of,
 	int ret;
 
 	ret = cpu_period_quota_parse(buf, &period, &quota);
-	if (!ret)
+	if (!ret) {
+		if (quota == RUNTIME_INF)
+			burst = 0;
 		ret = tg_set_cfs_bandwidth(tg, period, quota, burst);
+	}
 	return ret ?: nbytes;
 }
 #endif
