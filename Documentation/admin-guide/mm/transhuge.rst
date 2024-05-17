@@ -211,6 +211,15 @@ possible to enable/disable it by configurate the corresponding bit::
 	echo 0x2 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
 	echo 0x3 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
 
+The kernel could try to enable other larger size mappings align other
+than THP size, eg, 64K on arm64, BIT0 for file mapping, BIT1 for anon
+mapping, it is disabled by default, and could enable this feature by
+writing the corresponding bit to 1::
+
+	echo 0x1 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
+	echo 0x2 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
+	echo 0x3 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
+
 khugepaged will be automatically started when one or more hugepage
 sizes are enabled (either by directly setting "always" or "madvise",
 or by setting "inherit" while the top-level enabled is set to "always"
