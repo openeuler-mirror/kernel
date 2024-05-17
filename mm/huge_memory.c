@@ -426,30 +426,66 @@ static struct kobj_attribute hpage_pmd_size_attr =
 	__ATTR_RO(hpage_pmd_size);
 
 #ifdef CONFIG_READ_ONLY_THP_FOR_FS
+#define FILE_EXEC_THP_ENABLE	BIT(0)
+#else
+#define FILE_EXEC_THP_ENABLE	0
+#endif
+
+#define FILE_EXEC_MTHP_ENABLE	BIT(1)
+#define FILE_EXEC_THP_ALL	(FILE_EXEC_THP_ENABLE | FILE_EXEC_MTHP_ENABLE)
+
+static void thp_exec_enabled_set(enum transparent_hugepage_flag flag,
+				 bool enable)
+{
+	if (enable)
+		set_bit(flag, &transparent_hugepage_flags);
+	else
+		clear_bit(flag, &transparent_hugepage_flags);
+}
+
 static ssize_t thp_exec_enabled_show(struct kobject *kobj,
 				     struct kobj_attribute *attr, char *buf)
 {
-	return single_hugepage_flag_show(kobj, attr, buf,
-				 TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG);
+	unsigned long val = 0;
+
+#ifdef CONFIG_READ_ONLY_THP_FOR_FS
+	if (test_bit(TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG,
+		     &transparent_hugepage_flags))
+		val |= FILE_EXEC_THP_ENABLE;
+#endif
+
+	if (test_bit(TRANSPARENT_HUGEPAGE_FILE_EXEC_MTHP_FLAG,
+		     &transparent_hugepage_flags))
+		val |= FILE_EXEC_MTHP_ENABLE;
+
+	return sysfs_emit(buf, "0x%lx\n", val);
 }
 static ssize_t thp_exec_enabled_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	size_t ret = single_hugepage_flag_store(kobj, attr, buf, count,
-				 TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG);
-	if (ret > 0) {
-		int err = start_stop_khugepaged();
+	unsigned long val;
+	int ret;
 
-		if (err)
-			ret = err;
-	}
+	ret = kstrtoul(buf, 16, &val);
+	if (ret < 0)
+		return ret;
+	if (val & ~FILE_EXEC_THP_ALL)
+		return -EINVAL;
 
-	return ret;
+#ifdef CONFIG_READ_ONLY_THP_FOR_FS
+	thp_exec_enabled_set(TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG,
+			     val & FILE_EXEC_THP_ENABLE);
+	ret = start_stop_khugepaged();
+	if (ret)
+		return ret;
+#endif
+	thp_exec_enabled_set(TRANSPARENT_HUGEPAGE_FILE_EXEC_MTHP_FLAG,
+			     val & FILE_EXEC_MTHP_ENABLE);
+
+	return count;
 }
 static struct kobj_attribute thp_exec_enabled_attr =
 	__ATTR_RW(thp_exec_enabled);
-
-#endif
 
 static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
@@ -459,9 +495,7 @@ static struct attribute *hugepage_attr[] = {
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
 #endif
-#ifdef CONFIG_READ_ONLY_THP_FOR_FS
 	&thp_exec_enabled_attr.attr,
-#endif
 	NULL,
 };
 
