@@ -17,6 +17,8 @@
 #include "platform-access.h"
 #include "dbc.h"
 
+#include "hygon/psp-dev.h"
+
 struct psp_device *psp_master;
 
 static struct psp_device *psp_alloc_struct(struct sp_device *sp)
@@ -56,13 +58,6 @@ static irqreturn_t psp_irq_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static void hygon_fixup_psp_caps(struct psp_device *psp)
-{
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
-		psp->capability &= ~(PSP_CAPABILITY_TEE |
-				     PSP_CAPABILITY_PSP_SECURITY_REPORTING);
-}
-
 static unsigned int psp_get_capability(struct psp_device *psp)
 {
 	unsigned int val = ioread32(psp->io_regs + psp->vdata->feature_reg);
@@ -83,8 +78,13 @@ static unsigned int psp_get_capability(struct psp_device *psp)
 	/*
 	 * Fix capability of Hygon psp, the meaning of Hygon psp feature
 	 * register is not exactly the same as AMD.
+	 * Return -ENODEV directly if hygon psp not configured with CSV
+	 * capability.
 	 */
-	hygon_fixup_psp_caps(psp);
+	if (is_vendor_hygon()) {
+		if (fixup_hygon_psp_caps(psp))
+			return -ENODEV;
+	}
 
 	/* Detect if TSME and SME are both enabled */
 	if (psp->capability & PSP_CAPABILITY_PSP_SECURITY_REPORTING &&
