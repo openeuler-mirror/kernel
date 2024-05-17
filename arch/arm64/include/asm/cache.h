@@ -8,6 +8,12 @@
 #define L1_CACHE_SHIFT		(6)
 #define L1_CACHE_BYTES		(1 << L1_CACHE_SHIFT)
 
+#ifdef CONFIG_ARCH_LLC_128_LINE_SIZE
+#ifndef ____cacheline_aligned_128
+#define ____cacheline_aligned_128  __attribute__((__aligned__(128)))
+#endif
+#endif
+
 #define CLIDR_LOUU_SHIFT	27
 #define CLIDR_LOC_SHIFT		24
 #define CLIDR_LOUIS_SHIFT	21
