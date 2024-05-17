@@ -104,6 +104,7 @@ extern unsigned long transparent_hugepage_flags;
 extern unsigned long huge_anon_orders_always;
 extern unsigned long huge_anon_orders_madvise;
 extern unsigned long huge_anon_orders_inherit;
+extern unsigned long huge_pcp_allow_orders;
 
 static inline bool hugepage_global_enabled(void)
 {

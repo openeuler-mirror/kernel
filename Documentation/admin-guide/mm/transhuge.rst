@@ -220,6 +220,15 @@ writing the corresponding bit to 1::
 	echo 0x2 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
 	echo 0x3 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
 
+The kernel could enable high-orders(greated than PAGE_ALLOC_COSTLY_ORDER, only
+support order 4 for now) be stored on PCP lists(except PMD order), which could
+reduce the zone lock contention when allocate hige-order pages frequently. It
+is possible to enable order 4 pages stored on PCP lists by writing 4 or disable
+it back by writing 0::
+
+        echo 0 >/sys/kernel/mm/transparent_hugepage/pcp_allow_high_order
+        echo 4 >/sys/kernel/mm/transparent_hugepage/pcp_allow_high_order
+
 khugepaged will be automatically started when one or more hugepage
 sizes are enabled (either by directly setting "always" or "madvise",
 or by setting "inherit" while the top-level enabled is set to "always"

@@ -74,6 +74,7 @@ unsigned long huge_zero_pfn __read_mostly = ~0UL;
 unsigned long huge_anon_orders_always __read_mostly;
 unsigned long huge_anon_orders_madvise __read_mostly;
 unsigned long huge_anon_orders_inherit __read_mostly;
+unsigned long huge_pcp_allow_orders __read_mostly;
 
 unsigned long __thp_vma_allowable_orders(struct vm_area_struct *vma,
 					 unsigned long vm_flags, bool smaps,
@@ -417,6 +418,35 @@ static ssize_t use_zero_page_store(struct kobject *kobj,
 }
 static struct kobj_attribute use_zero_page_attr = __ATTR_RW(use_zero_page);
 
+static ssize_t pcp_allow_high_order_show(struct kobject *kobj,
+					 struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%lu\n", READ_ONCE(huge_pcp_allow_orders));
+}
+static ssize_t pcp_allow_high_order_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long value;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &value);
+	if (ret < 0)
+		return ret;
+
+	/* Only enable order 4 now, 0 is to disable it */
+	if (value != 0 && value != (PAGE_ALLOC_COSTLY_ORDER + 1))
+		return -EINVAL;
+
+	if (value == 0)
+		drain_all_zone_pages();
+
+	WRITE_ONCE(huge_pcp_allow_orders, value);
+
+	return count;
+}
+static struct kobj_attribute pcp_allow_high_order_attr =
+	__ATTR_RW(pcp_allow_high_order);
+
 static ssize_t hpage_pmd_size_show(struct kobject *kobj,
 				   struct kobj_attribute *attr, char *buf)
 {
@@ -531,6 +561,7 @@ static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
 	&defrag_attr.attr,
 	&use_zero_page_attr.attr,
+	&pcp_allow_high_order_attr.attr,
 	&hpage_pmd_size_attr.attr,
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
