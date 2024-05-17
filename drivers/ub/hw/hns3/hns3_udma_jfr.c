@@ -369,7 +369,7 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 	}
 
 	jfr->srqn = (uint32_t)id;
-	jfr->ubcore_jfr.id = jfr->jfrn;
+	jfr->ubcore_jfr.jfr_id.id = jfr->jfrn;
 
 	ret = udma_table_get(dev, &jfr_table->table, jfr->srqn);
 	if (ret) {

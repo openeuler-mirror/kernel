@@ -105,7 +105,7 @@ int ubcore_config_device(struct ubcore_device *dev, struct ubcore_device_cfg *cf
  * set ctx data of a client
  * @param[in] dev: the ubcore_device handle;
  * @param[in] client: ubcore client pointer
- * @param[in] data: client private data to be set
+ * @param[in] data (optional): client private data to be set
  * @return: 0 on success, other value on error
  */
 void ubcore_set_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client,
@@ -544,14 +544,5 @@ int ubcore_cgroup_try_charge(struct ubcore_cg_object *cg_obj, struct ubcore_devi
 void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj, struct ubcore_device *dev,
 	enum ubcore_resource_type type);
 #endif // CONFIG_CGROUP_RDMA
-
-/* The APIs below are deprecated, should not be called by driver or ubcore client */
-struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
-
-struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id);
-
-struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id);
-
-struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id);
 
 #endif

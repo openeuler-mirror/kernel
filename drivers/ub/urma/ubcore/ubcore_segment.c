@@ -33,13 +33,13 @@ struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
 	if (dev == NULL || dev->ops == NULL || dev->ops->alloc_token_id == NULL ||
 		dev->ops->free_token_id == NULL) {
 		ubcore_log_err("invalid parameter.\n");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	token_id = dev->ops->alloc_token_id(dev, udata);
-	if (token_id == NULL) {
+	if (IS_ERR_OR_NULL(token_id)) {
 		ubcore_log_err("failed to alloc token_id id.\n");
-		return NULL;
+		return token_id == NULL ? ERR_PTR(-ENOEXEC) : token_id;
 	}
 	token_id->ub_dev = dev;
 	token_id->uctx = ubcore_get_uctx(udata);
@@ -86,26 +86,27 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 	struct ubcore_target_seg *tseg;
 
 	if (ubcore_check_ops_register_seg(dev, cfg) != 0)
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
 		((cfg->flag.bs.token_id_valid == UBCORE_TOKEN_ID_VALID && cfg->token_id == NULL) ||
 		(cfg->flag.bs.token_id_valid == UBCORE_TOKEN_ID_INVALID &&
 			cfg->token_id != NULL))) {
 		ubcore_log_err("invalid parameter of token_id.\n");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	if ((cfg->flag.bs.access & (UBCORE_ACCESS_REMOTE_WRITE | UBCORE_ACCESS_REMOTE_ATOMIC)) &&
 	    !(cfg->flag.bs.access & UBCORE_ACCESS_LOCAL_WRITE)) {
 		ubcore_log_err(
 			"Local write must be set when either remote write or remote atomic is declared.\n");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 	if (cfg->eid_index >= dev->eid_table.eid_cnt) {
-		ubcore_log_warn("eid_index:%u >= eid_table cnt:%u.\n",
+		ubcore_log_warn(
+			"eid_index:%u >= eid_table cnt:%u.\n",
 			cfg->eid_index, dev->eid_table.eid_cnt);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	if (udata == NULL && cfg->flag.bs.token_id_valid == UBCORE_TOKEN_ID_INVALID &&
@@ -115,18 +116,18 @@ struct ubcore_target_seg *ubcore_register_seg(struct ubcore_device *dev,
 	tmp_cfg = *cfg;
 	if (alloc_token_id == true) {
 		tmp_cfg.token_id = ubcore_alloc_token_id(dev, NULL);
-		if (tmp_cfg.token_id == NULL) {
+		if (IS_ERR_OR_NULL(tmp_cfg.token_id)) {
 			ubcore_log_err("alloc token id failed.\n");
-			return NULL;
+			return (void *)tmp_cfg.token_id;
 		}
 	}
 
 	tseg = dev->ops->register_seg(dev, &tmp_cfg, udata);
-	if (tseg == NULL) {
+	if (IS_ERR_OR_NULL(tseg)) {
 		ubcore_log_err("UBEP failed to register segment.\n");
 		if (alloc_token_id == true)
 			(void)ubcore_free_token_id(tmp_cfg.token_id);
-		return NULL;
+		return tseg == NULL ? ERR_PTR(-ENOEXEC) : tseg;
 	}
 
 	tseg->ub_dev = dev;
@@ -189,13 +190,13 @@ struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
 	if (dev == NULL || cfg == NULL || dev->ops == NULL || dev->ops->import_seg == NULL ||
 	    dev->ops->unimport_seg == NULL) {
 		ubcore_log_err("invalid parameter.\n");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	tseg = dev->ops->import_seg(dev, cfg, udata);
-	if (tseg == NULL) {
+	if (IS_ERR_OR_NULL(tseg)) {
 		ubcore_log_err("UBEP failed to import segment with va\n");
-		return NULL;
+		return tseg == NULL ? ERR_PTR(-ENOEXEC) : tseg;
 	}
 	tseg->ub_dev = dev;
 	tseg->uctx = ubcore_get_uctx(udata);

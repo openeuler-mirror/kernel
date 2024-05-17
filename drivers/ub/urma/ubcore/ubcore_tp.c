@@ -31,6 +31,7 @@
 #include "ubcore_tp_table.h"
 #include "ubcore_msg.h"
 #include "ubcore_vtp.h"
+#include "urma/ubcore_jetty.h"
 #include "ubcore_tp.h"
 
 #define UB_PROTOCOL_HEAD_BYTES 313
@@ -87,31 +88,6 @@ enum ubcore_mtu ubcore_get_mtu(int mtu)
 }
 EXPORT_SYMBOL(ubcore_get_mtu);
 
-static struct ubcore_nlmsg *ubcore_get_destroy_tp_req(struct ubcore_tp *tp,
-	const struct ubcore_ta_data *ta)
-{
-	struct ubcore_nl_destroy_tp_req *destroy;
-	struct ubcore_nlmsg *req;
-
-	req = ubcore_alloc_nlmsg(sizeof(struct ubcore_nl_destroy_tp_req), &tp->local_eid,
-				 &tp->peer_eid);
-	if (req == NULL)
-		return NULL;
-
-	req->msg_type = UBCORE_NL_DESTROY_TP_REQ;
-	req->transport_type = tp->ub_dev->transport_type;
-	destroy = (struct ubcore_nl_destroy_tp_req *)req->payload;
-	destroy->trans_mode = tp->trans_mode;
-	destroy->tpn = tp->tpn;
-	destroy->peer_tpn = tp->peer_tpn;
-	if (ta != NULL)
-		destroy->ta = *ta;
-	else
-		destroy->ta.ta_type = UBCORE_TA_NONE;
-
-	return req;
-}
-
 static int ubcore_set_tp_peer_ext(struct ubcore_tp_attr *attr, uint64_t ext_addr,
 				  uint32_t ext_len)
 {
@@ -153,7 +129,7 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 			return;
 		ta_data->jetty_id.eid =
 			jfs->ub_dev->eid_table.eid_entries[jfs->jfs_cfg.eid_index].eid;
-		ta_data->jetty_id.id = jfs->id;
+		ta_data->jetty_id.id = jfs->jfs_id.id;
 		ta_data->tjetty_id = ta->tjetty_id;
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
@@ -162,7 +138,7 @@ static void ubcore_get_ta_data_from_ta(const struct ubcore_ta *ta,
 			return;
 		ta_data->jetty_id.eid =
 			jetty->ub_dev->eid_table.eid_entries[jetty->jetty_cfg.eid_index].eid;
-		ta_data->jetty_id.id = jetty->id;
+		ta_data->jetty_id.id = jetty->jetty_id.id;
 		ta_data->tjetty_id = ta->tjetty_id;
 		break;
 	case UBCORE_TA_NONE:
@@ -178,6 +154,10 @@ static int ubcore_nl_handle_create_tp_resp_cb(struct ubcore_device *dev,
 {
 	struct ubcore_create_vtp_resp *vtp_resp;
 
+	if (resp == NULL || resp->len < sizeof(struct ubcore_create_vtp_resp)) {
+		ubcore_log_err("invalid ubcore_create_vtp_resp len");
+		return -1;
+	}
 	vtp_resp = (struct ubcore_create_vtp_resp *)resp->data;
 	if (vtp_resp->ret == UBCORE_MSG_RESP_FAIL) {
 		ubcore_log_err("failed to create vtp: response error");
@@ -190,6 +170,25 @@ static int ubcore_nl_handle_create_tp_resp_cb(struct ubcore_device *dev,
 		return -1;
 	}
 	return 0;
+}
+
+static void ubcore_tp_kref_release(struct kref *ref_cnt)
+{
+	struct ubcore_tp *tp = container_of(ref_cnt, struct ubcore_tp, ref_cnt);
+
+	complete(&tp->comp);
+}
+
+void ubcore_tp_kref_put(struct ubcore_tp *tp)
+{
+	(void)kref_put(&tp->ref_cnt, ubcore_tp_kref_release);
+}
+
+void ubcore_tp_get(void *obj)
+{
+	struct ubcore_tp *tp = obj;
+
+	kref_get(&tp->ref_cnt);
 }
 
 int ubcore_destroy_tp(struct ubcore_tp *tp)
@@ -242,13 +241,15 @@ struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev,
 
 	if (!ubcore_have_tp_ops(dev)) {
 		ubcore_log_err("Invalid parameter");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	tp = dev->ops->create_tp(dev, cfg, udata);
-	if (tp == NULL) {
+	if (IS_ERR_OR_NULL(tp)) {
 		ubcore_log_err("Failed to create tp towards remote eid %pI6c", &cfg->peer_eid);
-		return NULL;
+		if (tp == NULL)
+			return ERR_PTR(-ENOEXEC);
+		return tp;
 	}
 	/* The driver may return the old tp pointer */
 	if (tp->state != UBCORE_TP_STATE_RESET)
@@ -262,82 +263,6 @@ struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev,
 	atomic_set(&tp->use_cnt, 0);
 
 	return tp;
-}
-
-/* send request to destroy remote peer tp */
-static int ubcore_destroy_peer_tp(struct ubcore_tp *tp, struct ubcore_ta *ta)
-{
-	struct ubcore_nlmsg *req_msg, *resp_msg;
-	struct ubcore_nl_destroy_tp_resp *resp;
-	struct ubcore_ta_data ta_data = { 0 };
-	int ret = 0;
-
-	if (tp == NULL) {
-		ubcore_log_err("Invalid parameter");
-		return -1;
-	}
-
-	if (ta != NULL)
-		ubcore_get_ta_data_from_ta(ta, tp->ub_dev->transport_type, &ta_data);
-
-	req_msg = ubcore_get_destroy_tp_req(tp, &ta_data);
-	if (req_msg == NULL) {
-		ubcore_log_err("Failed to get destroy tp req");
-		return -1;
-	}
-
-	resp_msg = ubcore_nl_send_wait(tp->ub_dev, req_msg);
-	if (resp_msg == NULL) {
-		ubcore_log_err("Failed to get destroy tp response");
-		kfree(req_msg);
-		return -1;
-	}
-
-	resp = (struct ubcore_nl_destroy_tp_resp *)(void *)resp_msg->payload;
-	if (resp_msg->msg_type != UBCORE_NL_DESTROY_TP_RESP || resp == NULL ||
-	    resp->ret != UBCORE_NL_RESP_SUCCESS) {
-		ubcore_log_err("Destroy tp request is rejected with type %d ret %d",
-			       resp_msg->msg_type, (resp == NULL ? 1 : resp->ret));
-		ret = -1;
-	}
-
-	kfree(resp_msg);
-	kfree(req_msg);
-	return ret;
-}
-
-/* Destroy both local tp and remote peer tp */
-static int ubcore_destroy_local_peer_tp(struct ubcore_tp *tp, struct ubcore_ta *ta)
-{
-	struct ubcore_device *dev = tp->ub_dev;
-	int ret;
-
-	/* Do not send destroy request to the remote if we are in the VM */
-	if (!dev->attr.virtualization) {
-		ret = ubcore_destroy_peer_tp(tp, ta);
-		if (ret != 0) {
-			ubcore_log_err("Failed to destroy peer tp");
-			return ret;
-		}
-	}
-	return ubcore_destroy_tp(tp);
-}
-
-/* destroy initiator and peer tp created by ubcore_connect_fe_tp, called by ubcore_destroy_vtp */
-static int ubcore_disconnect_fe_tp(struct ubcore_tp *tp)
-{
-	struct ubcore_tp_node *tp_node = tp->priv;
-	struct ubcore_device *dev = tp->ub_dev;
-
-	if (atomic_dec_return(&tp->use_cnt) == 0) {
-		struct ubcore_ta ta;
-
-		ta.type = UBCORE_TA_VIRT;
-
-		ubcore_remove_tp_node(&dev->ht[UBCORE_HT_TP], tp_node);
-		return ubcore_destroy_local_peer_tp(tp, &ta);
-	}
-	return 0;
 }
 
 int ubcore_fill_netaddr_macvlan(struct ubcore_net_addr *netaddr, struct net_device *netdev,
@@ -460,6 +385,7 @@ void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 		tp->flag.bs.cc_en = attr->flag.bs.cc_en;
 		tp->flag.bs.cc_alg = attr->flag.bs.cc_alg;
 		tp->flag.bs.spray_en = attr->flag.bs.spray_en;
+		tp->flag.bs.clan = attr->flag.bs.clan;
 	}
 
 	ubcore_mod_tp_attr_with_mask(tp, attr, peer_tpn, mask);
@@ -470,17 +396,8 @@ void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	ubcore_mod_tp_attr_with_mask(tp, attr, cc_pattern_idx, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, peer_ext, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, local_net_addr_idx, mask);
+	ubcore_mod_tp_attr_with_mask(tp, attr, peer_net_addr, mask);
 	ubcore_mod_tp_attr_with_mask(tp, attr, port_id, mask);
-}
-
-/* create vtp and connect to a remote vtp peer, called by ubcore_create_vtp */
-static struct ubcore_tp *ubcore_connect_fe_tp(struct ubcore_device *dev,
-	union ubcore_eid *remote_eid, enum ubcore_transport_mode trans_mode,
-	struct ubcore_udata *udata)
-{
-	struct ubcore_tp *tp = NULL;
-
-	return tp;
 }
 
 static int ubcore_set_target_peer(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
@@ -500,70 +417,6 @@ static int ubcore_set_target_peer(struct ubcore_tp *tp, struct ubcore_tp_attr *a
 	return ubcore_set_tp_peer_ext(attr, udata.udrv_data->in_addr, udata.udrv_data->in_len);
 }
 
-static struct ubcore_nlmsg *ubcore_get_destroy_tp_response(enum ubcore_nl_resp_status ret,
-	struct ubcore_nlmsg *req)
-{
-	struct ubcore_nl_destroy_tp_resp *destroy_resp;
-	struct ubcore_nlmsg *resp = NULL;
-
-	resp = ubcore_alloc_nlmsg(sizeof(struct ubcore_nl_destroy_tp_resp), &req->dst_eid,
-				  &req->src_eid);
-	if (resp == NULL) {
-		ubcore_log_err("Failed to alloc destroy tp response");
-		return NULL;
-	}
-
-	resp->msg_type = UBCORE_NL_DESTROY_TP_RESP;
-	resp->nlmsg_seq = req->nlmsg_seq;
-	resp->transport_type = req->transport_type;
-	destroy_resp = (struct ubcore_nl_destroy_tp_resp *)resp->payload;
-	destroy_resp->ret = ret;
-
-	return resp;
-}
-
-static struct ubcore_nlmsg *ubcore_get_create_tp_response(struct ubcore_tp *tp,
-							  struct ubcore_nlmsg *req)
-{
-	uint32_t payload_len = (uint32_t)sizeof(struct ubcore_nl_create_tp_resp) +
-		(tp == NULL ? 0 : tp->tp_ext.len);
-	struct ubcore_nl_create_tp_resp *create_resp;
-	struct ubcore_nlmsg *resp = NULL;
-
-	if (payload_len < (uint32_t)sizeof(struct ubcore_nl_create_tp_resp)) {
-		/* If the value overflows, tp must exist */
-		ubcore_log_err("tp_ext len %u is err", tp->tp_ext.len);
-		return NULL;
-	}
-
-	resp = ubcore_alloc_nlmsg(payload_len, &req->dst_eid, &req->src_eid);
-	if (resp == NULL) {
-		ubcore_log_err("Failed to alloc create tp response");
-		return NULL;
-	}
-
-	resp->msg_type = req->msg_type + 1;
-	resp->nlmsg_seq = req->nlmsg_seq;
-	resp->transport_type = req->transport_type;
-	create_resp = (struct ubcore_nl_create_tp_resp *)resp->payload;
-	if (tp == NULL) {
-		create_resp->ret = UBCORE_NL_RESP_FAIL;
-		return resp;
-	}
-
-	create_resp->ret = UBCORE_NL_RESP_SUCCESS;
-	create_resp->flag = tp->flag;
-	create_resp->peer_tpn = tp->tpn;
-	create_resp->peer_mtu = tp->mtu;
-	create_resp->peer_rx_psn = tp->rx_psn;
-	create_resp->peer_ext_len = tp->tp_ext.len;
-	if (tp->tp_ext.len > 0)
-		(void)memcpy(create_resp->peer_ext, (void *)tp->tp_ext.addr,
-		tp->tp_ext.len);
-
-	return resp;
-}
-
 static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 	enum ubcore_transport_mode trans_mode, struct ubcore_vtp_param *vtp_param)
 {
@@ -581,7 +434,7 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 			return;
 		vtp_param->local_eid =
 			jfs->ub_dev->eid_table.eid_entries[jfs->jfs_cfg.eid_index].eid;
-		vtp_param->local_jetty = jfs->id;
+		vtp_param->local_jetty = jfs->jfs_id.id;
 		vtp_param->eid_index = jfs->jfs_cfg.eid_index;
 		break;
 	case UBCORE_TA_JETTY_TJETTY:
@@ -590,7 +443,7 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 			return;
 		vtp_param->local_eid =
 			jetty->ub_dev->eid_table.eid_entries[jetty->jetty_cfg.eid_index].eid;
-		vtp_param->local_jetty = jetty->id;
+		vtp_param->local_jetty = jetty->jetty_id.id;
 		vtp_param->eid_index = jetty->jetty_cfg.eid_index;
 		break;
 	case UBCORE_TA_NONE:
@@ -603,34 +456,6 @@ static void ubcore_set_jetty_for_tp_param(struct ubcore_ta *ta,
 	vtp_param->peer_jetty = ta->tjetty_id.id;
 	vtp_param->eid_index = 0;
 	vtp_param->ta = *ta;
-}
-
-static struct ubcore_tp *ubcore_create_target_tp(struct ubcore_device *dev,
-						 struct ubcore_nlmsg *req, struct ubcore_ta *ta)
-{
-	struct ubcore_nl_create_tp_req *create =
-		(struct ubcore_nl_create_tp_req *)(void *)req->payload;
-	/* create tp parameters */
-	struct ubcore_udrv_priv udrv_data  = {
-		.in_addr = (uint64_t)(create->ext_udrv + create->ext_len),
-		.in_len = create->udrv_in_len,
-		.out_addr = 0,
-		.out_len = 0
-	};
-	struct ubcore_udata udata = {
-		.uctx = NULL,
-		.udrv_data = &udrv_data
-	};
-	struct ubcore_tp_cfg cfg = {0};
-	struct ubcore_tp *tp = NULL;
-
-	tp = ubcore_create_tp(dev, &cfg, &udata);
-	if (tp == NULL) {
-		ubcore_log_err("Failed to create tp in create target tp.\n");
-		return NULL;
-	}
-
-	return tp;
 }
 
 int ubcore_modify_tp(struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
@@ -685,38 +510,6 @@ int ubcore_modify_tp(struct ubcore_device *dev, struct ubcore_tp_node *tp_node,
 	return ret;
 }
 
-static struct ubcore_tp *ubcore_accept_target_tp(struct ubcore_device *dev,
-						 struct ubcore_nlmsg *req,
-						 struct ubcore_tp_advice *advice)
-{
-	struct ubcore_tp_meta *meta = &advice->meta;
-	struct ubcore_tp *new_tp = NULL; /* new created target tp */
-	struct ubcore_tp_node *tp_node;
-
-	tp_node = ubcore_hash_table_lookup(meta->ht, meta->hash, &meta->key);
-	if (tp_node == NULL) {
-		new_tp = ubcore_create_target_tp(dev, req, &advice->ta);
-		if (new_tp == NULL) {
-			ubcore_log_err("Failed to create target tp towards remote eid %pI6c",
-				       &req->src_eid);
-			return NULL;
-		}
-		tp_node = ubcore_add_tp_node(meta->ht, meta->hash, &meta->key, new_tp, &advice->ta);
-		if (tp_node == NULL) {
-			(void)ubcore_destroy_tp(new_tp);
-			ubcore_log_err(
-				"Failed to add target tp towards remote eid %pI6c to the tp table",
-				&req->src_eid);
-			return NULL;
-		}
-		if (tp_node->tp != new_tp) {
-			(void)ubcore_destroy_tp(new_tp);
-			new_tp = NULL;
-		}
-	}
-	return tp_node->tp;
-}
-
 static int ubcore_parse_ta(struct ubcore_device *dev, struct ubcore_ta_data *ta_data,
 			   struct ubcore_tp_advice *advice)
 {
@@ -766,217 +559,6 @@ static int ubcore_parse_ta(struct ubcore_device *dev, struct ubcore_ta_data *ta_
 	return 0;
 }
 
-static struct ubcore_tp *ubcore_advise_target_tp(struct ubcore_device *dev,
-						 struct ubcore_nlmsg *req)
-{
-	struct ubcore_nl_create_tp_req *create =
-		(struct ubcore_nl_create_tp_req *)(void *)req->payload;
-	struct ubcore_tp_advice advice;
-	struct ubcore_tp_meta *meta;
-	struct ubcore_tp *tp;
-
-	meta = &advice.meta;
-	if (ubcore_parse_ta(dev, &create->ta, &advice) != 0) {
-		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)create->ta.ta_type);
-		return NULL;
-	} else if (meta->ht == NULL) {
-		ubcore_log_err("tp table is already released");
-		return NULL;
-	}
-
-	tp = ubcore_accept_target_tp(dev, req, &advice);
-	/* pair with get_tptable in parse_ta */
-	ubcore_put_tptable(meta->ht);
-	return tp;
-}
-
-static struct ubcore_tp *ubcore_accept_target_vtp(struct ubcore_device *dev,
-						  struct ubcore_nlmsg *req)
-{
-	struct ubcore_tp_node *tp_node;
-	struct ubcore_tp *tp = NULL;
-
-	tp = ubcore_create_target_tp(dev, req, NULL);
-	if (tp == NULL) {
-		ubcore_log_err("Failed to create tp");
-		return NULL;
-	}
-
-	tp_node = ubcore_add_tp_with_tpn(dev, tp);
-	if (tp_node == NULL) {
-		ubcore_log_err("Failed to add tp to the tp table in the device");
-		goto destroy_tp;
-	}
-	return tp;
-
-destroy_tp:
-	(void)ubcore_destroy_tp(tp);
-	return NULL;
-}
-
-static struct ubcore_tp *ubcore_bind_target_tp(struct ubcore_device *dev,
-	struct ubcore_nlmsg *req)
-{
-	return ubcore_advise_target_tp(dev, req);
-}
-
-struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req)
-{
-	struct ubcore_nl_create_tp_req *create;
-	struct ubcore_tp *tp = NULL;
-	struct ubcore_device *dev;
-
-	if (req == NULL)
-		return NULL;
-	create = (struct ubcore_nl_create_tp_req *)(void *)req->payload;
-	if (req->payload_len < sizeof(struct ubcore_nl_create_tp_req)) {
-		ubcore_log_err("Invalid create req");
-		return NULL;
-	}
-
-	dev = ubcore_find_device(&req->dst_eid, req->transport_type);
-	if (dev == NULL || !ubcore_have_tp_ops(dev)) {
-		if (dev != NULL)
-			ubcore_put_device(dev);
-		ubcore_log_err("Failed to find device or device ops invalid");
-		return ubcore_get_create_tp_response(NULL, req);
-	}
-
-	if (create->ta.ta_type == UBCORE_TA_VIRT) {
-		tp = ubcore_accept_target_vtp(dev, req);
-	} else if (create->trans_mode == UBCORE_TP_RC) {
-		tp = ubcore_bind_target_tp(dev, req);
-	} else if (create->trans_mode == UBCORE_TP_RM &&
-		   dev->transport_type == UBCORE_TRANSPORT_IB) {
-		tp = ubcore_advise_target_tp(dev, req);
-	}
-
-	if (tp == NULL)
-		ubcore_log_err("Failed to create target tp towards remote eid %pI6c",
-			       &req->src_eid);
-
-	ubcore_put_device(dev);
-	return ubcore_get_create_tp_response(tp, req);
-}
-EXPORT_SYMBOL(ubcore_handle_create_tp_req);
-
-/* destroy target RM tp created by ubcore_advise_target_tp */
-static int ubcore_unadvise_target_tp(struct ubcore_device *dev,
-				     struct ubcore_nl_destroy_tp_req *destroy)
-{
-	struct ubcore_tp_advice advice;
-	struct ubcore_tp_meta *meta;
-	struct ubcore_tp *tp = NULL;
-
-	meta = &advice.meta;
-	if (ubcore_parse_ta(dev, &destroy->ta, &advice) != 0) {
-		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)destroy->ta.ta_type);
-		return -1;
-	} else if (meta->ht == NULL) {
-		ubcore_log_warn("tp table is already released");
-		return 0;
-	}
-
-	return ubcore_destroy_tp(tp);
-}
-
-/* destroy target RC tp created by ubcore_bind_target_tp */
-static int ubcore_unbind_target_tp(struct ubcore_device *dev,
-				   struct ubcore_nl_destroy_tp_req *destroy)
-{
-	return ubcore_unadvise_target_tp(dev, destroy);
-}
-
-struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req)
-{
-	struct ubcore_nl_destroy_tp_req *destroy;
-	struct ubcore_device *dev;
-	int ret = -1;
-
-	if (req == NULL) {
-		ubcore_log_err("Failed to destroy tp req, req is NULL");
-		return NULL;
-	}
-
-	if (req->payload_len != sizeof(struct ubcore_nl_destroy_tp_req)) {
-		ubcore_log_err("Invalid destroy req");
-		return NULL;
-	}
-
-	dev = ubcore_find_device(&req->dst_eid, req->transport_type);
-	if (dev == NULL || !ubcore_have_tp_ops(dev)) {
-		if (dev != NULL)
-			ubcore_put_device(dev);
-		ubcore_log_err("Failed to find device or device ops invalid");
-		return ubcore_get_destroy_tp_response(UBCORE_NL_RESP_FAIL, req);
-	}
-
-	destroy = (struct ubcore_nl_destroy_tp_req *)(void *)req->payload;
-	if (destroy->ta.ta_type == UBCORE_TA_VIRT) {
-	} else if (destroy->trans_mode == UBCORE_TP_RC) {
-		ret = ubcore_unbind_target_tp(dev, destroy);
-	} else if (destroy->trans_mode == UBCORE_TP_RM &&
-		   dev->transport_type == UBCORE_TRANSPORT_IB) {
-		ret = ubcore_unadvise_target_tp(dev, destroy);
-	}
-	ubcore_put_device(dev);
-	return ubcore_get_destroy_tp_response((enum ubcore_nl_resp_status)ret, req);
-}
-EXPORT_SYMBOL(ubcore_handle_destroy_tp_req);
-
-struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
-				    enum ubcore_transport_mode trans_mode,
-				    struct ubcore_udata *udata)
-{
-	if (!ubcore_have_tp_ops(dev) || dev->attr.virtualization || remote_eid == NULL) {
-		ubcore_log_err("Invalid parameter");
-		return NULL;
-	}
-
-	switch (dev->transport_type) {
-	case UBCORE_TRANSPORT_IB: /* alpha */
-		if (trans_mode == UBCORE_TP_RM || trans_mode ==  UBCORE_TP_RC)
-			return ubcore_connect_fe_tp(dev, remote_eid, trans_mode, udata);
-		break;
-	case UBCORE_TRANSPORT_UB: /* beta */
-	case UBCORE_TRANSPORT_IP:
-	case UBCORE_TRANSPORT_INVALID:
-	case UBCORE_TRANSPORT_MAX:
-	default:
-		break;
-	}
-	return NULL;
-}
-EXPORT_SYMBOL(ubcore_create_vtp);
-
-int ubcore_destroy_vtp(struct ubcore_tp *vtp)
-{
-	enum ubcore_transport_mode trans_mode;
-	struct ubcore_device *dev;
-
-	if (vtp == NULL || vtp->ub_dev == NULL || vtp->priv == NULL ||
-	    vtp->ub_dev->attr.virtualization) {
-		ubcore_log_err("Invalid para");
-		return -1;
-	}
-	dev = vtp->ub_dev;
-	trans_mode = vtp->trans_mode;
-	switch (dev->transport_type) {
-	case UBCORE_TRANSPORT_IB: /* alpha */
-		if (trans_mode == UBCORE_TP_RM || trans_mode == UBCORE_TP_RC)
-			return ubcore_disconnect_fe_tp(vtp);
-		break;
-	case UBCORE_TRANSPORT_UB: /* beta */
-	case UBCORE_TRANSPORT_IP:
-	case UBCORE_TRANSPORT_INVALID:
-	case UBCORE_TRANSPORT_MAX:
-	default:
-		break;
-	}
-	return -1;
-}
-EXPORT_SYMBOL(ubcore_destroy_vtp);
-
 static int ubcore_init_create_tp_req(struct ubcore_device *dev, struct ubcore_vtp_param *tp_param,
 	struct ubcore_tp *tp, struct ubcore_udata *udata, struct ubcore_create_vtp_req *data)
 {
@@ -1015,6 +597,10 @@ static int ubcore_send_create_tp_req(struct ubcore_device *dev, struct ubcore_vt
 	uint32_t tp_len;
 	int ret;
 
+	/* dev has been unregistered and the message channel has been down */
+	if (ubcore_check_dev_is_exist(dev->dev_name) == false)
+		return -ENONET;
+
 	tp_len = tp->tp_ext.len;
 	udata_len = get_udrv_in_len(udata);
 	if ((uint32_t)sizeof(struct ubcore_create_vtp_req) + tp_len > ULONG_MAX - udata_len)
@@ -1048,6 +634,11 @@ static int ubcore_handle_del_tp_resp(struct ubcore_device *dev, struct ubcore_re
 {
 	struct ubcore_destroy_vtp_resp *vtp_resp = (struct ubcore_destroy_vtp_resp *)resp->data;
 
+	if (resp == NULL || resp->len < sizeof(struct ubcore_destroy_vtp_resp)) {
+		ubcore_log_err("invalid ubcore_destroy_vpt_resp len");
+		return -1;
+	}
+
 	if (vtp_resp->ret == UBCORE_MSG_RESP_FAIL) {
 		ubcore_log_err("failed to destroy vtp: response error");
 		return -1;
@@ -1064,6 +655,10 @@ static int ubcore_send_del_tp_req(struct ubcore_device *dev, struct ubcore_vtp_p
 	struct ubcore_req *req_msg;
 	struct ubcore_resp_cb cb;
 	int ret;
+
+	/* dev has been unregistered and the message channel has been down */
+	if (ubcore_check_dev_is_exist(dev->dev_name) == false)
+		return -ENONET;
 
 	req_msg = kcalloc(1, sizeof(struct ubcore_req) +
 		sizeof(struct ubcore_create_vtp_req), GFP_KERNEL);
@@ -1105,7 +700,7 @@ static struct ubcore_nlmsg *ubcore_get_query_tp_req(struct ubcore_device *dev,
 		return NULL;
 
 	req->transport_type = dev->transport_type;
-	req->msg_type = UBCORE_NL_QUERY_TP_REQ;
+	req->msg_type = UBCORE_CMD_QUERY_TP_REQ;
 	req->payload_len = payload_len;
 	query = (struct ubcore_nl_query_tp_req *)req->payload;
 	query->trans_mode = trans_mode;
@@ -1136,7 +731,7 @@ static int ubcore_query_tp(struct ubcore_device *dev,
 	}
 
 	resp = (struct ubcore_nl_query_tp_resp *)(void *)resp_msg->payload;
-	if (resp_msg->msg_type != UBCORE_NL_QUERY_TP_RESP || resp == NULL ||
+	if (resp_msg->msg_type != UBCORE_CMD_QUERY_TP_RESP || resp == NULL ||
 	    resp->ret != UBCORE_NL_RESP_SUCCESS) {
 		ret = -1;
 		ubcore_log_err("Query tp request is rejected with type %d ret %d",
@@ -1178,20 +773,21 @@ static int ubcore_query_initiator_tp_cfg(struct ubcore_tp_cfg *cfg, struct ubcor
 	return 0;
 }
 
+/* udata may be empty because the data may come from the user space or kernel space. */
 int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	struct ubcore_tp_advice *advice, struct ubcore_udata *udata)
 {
-	struct ubcore_device *dev = jetty->ub_dev;
 	struct ubcore_vtp_param tp_param = { 0 };
-	struct ubcore_tp_node *tp_node;
-	struct ubcore_tp *new_tp = NULL;
 	struct ubcore_tp_cfg tp_cfg = { 0 };
+	struct ubcore_tp *new_tp = NULL;
+	struct ubcore_tp_node *tp_node;
+	struct ubcore_device *dev;
 
 	if (jetty == NULL || tjetty == NULL || advice == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
-
+	dev = jetty->ub_dev;
 	mutex_lock(&tjetty->lock);
 	if (tjetty->tp != NULL) {
 		mutex_unlock(&tjetty->lock);
@@ -1207,9 +803,9 @@ int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	}
 	/* driver gurantee to return the same tp if we have created it as a target */
 	new_tp = ubcore_create_tp(dev, &tp_cfg, udata);
-	if (new_tp == NULL) {
+	if (IS_ERR_OR_NULL(new_tp)) {
 		ubcore_log_err("Failed to create tp");
-		return -1;
+		return PTR_ERR(new_tp);
 	}
 	tp_node = ubcore_add_tp_node(advice->meta.ht, advice->meta.hash, &advice->meta.key,
 		new_tp, &advice->ta);
@@ -1223,6 +819,7 @@ int ubcore_bind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	}
 	if (ubcore_send_create_tp_req(dev, &tp_param, tp_node->tp, udata) != 0) {
 		ubcore_log_err("Failed to send tp req");
+		ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
 		return -1;
 	}
 	mutex_lock(&tjetty->lock);
@@ -1255,6 +852,8 @@ int ubcore_unbind_tp(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		ubcore_log_warn("failed to unbind tp\n");
 		return -1;
 	}
+	ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
+
 	mutex_lock(&tjetty->lock);
 	tjetty->tp = NULL;
 	mutex_unlock(&tjetty->lock);
@@ -1290,9 +889,9 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 	 * and cannot be used in the uvs context ioctl to create tp
 	 */
 	new_tp = ubcore_create_tp(dev, &tp_cfg, udata);
-	if (new_tp == NULL) {
+	if (IS_ERR_OR_NULL(new_tp)) {
 		ubcore_log_err("Failed to create tp");
-		return -1;
+		return PTR_ERR(new_tp);
 	}
 	tp_node = ubcore_add_tp_node(advice->meta.ht, advice->meta.hash, &advice->meta.key, new_tp,
 				&advice->ta);
@@ -1318,6 +917,7 @@ EXPORT_SYMBOL(ubcore_advise_tp);
 int ubcore_unadvise_tp(struct ubcore_device *dev, struct ubcore_tp_advice *advice)
 {
 	struct ubcore_vtp_param tp_param;
+	int ret;
 
 	if (dev == NULL || advice == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
@@ -1325,7 +925,12 @@ int ubcore_unadvise_tp(struct ubcore_device *dev, struct ubcore_tp_advice *advic
 	}
 
 	ubcore_set_jetty_for_tp_param(&advice->ta, UBCORE_TP_RM, &tp_param);
-	return ubcore_send_del_tp_req(dev, &tp_param);
+	ret = ubcore_send_del_tp_req(dev, &tp_param);
+	if (ret != 0)
+		return ret;
+
+	ubcore_find_remove_tp(advice->meta.ht, advice->meta.hash, &advice->meta.key);
+	return 0;
 }
 EXPORT_SYMBOL(ubcore_unadvise_tp);
 
@@ -1359,7 +964,7 @@ static struct ubcore_nlmsg *ubcore_get_restore_tp_req(struct ubcore_tp *tp)
 		return NULL;
 
 	req->transport_type = tp->ub_dev->transport_type;
-	req->msg_type = UBCORE_NL_RESTORE_TP_REQ;
+	req->msg_type = UBCORE_CMD_RESTORE_TP_REQ;
 	restore = (struct ubcore_nl_restore_tp_req *)(void *)req->payload;
 	restore->trans_mode = tp->trans_mode;
 	restore->tpn = tp->tpn;
@@ -1373,7 +978,7 @@ static struct ubcore_nlmsg *ubcore_get_restore_tp_req(struct ubcore_tp *tp)
 }
 
 static struct ubcore_nlmsg *ubcore_get_restore_tp_response(struct ubcore_nlmsg *req,
-							   struct ubcore_tp *tp)
+	uint32_t rx_psn, enum ubcore_nl_resp_status status)
 {
 	struct ubcore_nl_restore_tp_resp *restore_resp;
 	struct ubcore_nlmsg *resp = NULL;
@@ -1385,17 +990,17 @@ static struct ubcore_nlmsg *ubcore_get_restore_tp_response(struct ubcore_nlmsg *
 		return NULL;
 	}
 
-	resp->msg_type = UBCORE_NL_RESTORE_TP_RESP;
+	resp->msg_type = UBCORE_CMD_RESTORE_TP_RESP;
 	resp->nlmsg_seq = req->nlmsg_seq;
 	resp->transport_type = req->transport_type;
 	restore_resp = (struct ubcore_nl_restore_tp_resp *)resp->payload;
 
-	if (tp == NULL) {
+	if (status == UBCORE_NL_RESP_FAIL) {
 		restore_resp->ret = UBCORE_NL_RESP_FAIL;
 		return resp;
 	}
 
-	restore_resp->peer_rx_psn = tp->rx_psn;
+	restore_resp->peer_rx_psn = rx_psn;
 	return resp;
 }
 
@@ -1577,7 +1182,7 @@ static struct ubcore_nlmsg *ubcore_get_tp_error_req(struct ubcore_device *dev, s
 		return NULL;
 
 	req->transport_type = tp->ub_dev->transport_type;
-	req->msg_type = UBCORE_NL_TP_ERROR_REQ;
+	req->msg_type = UBCORE_CMD_TP_ERROR_REQ;
 	error_req = (struct ubcore_tp_error_req *)(void *)req->payload;
 	error_req->tpgn = tp->tpg->tpgn;
 	error_req->tpn = tp->tpn;
@@ -1645,7 +1250,7 @@ static struct ubcore_nlmsg *ubcore_get_tp_suspend_req(struct ubcore_device *dev,
 		return NULL;
 
 	req->transport_type = tp->ub_dev->transport_type;
-	req->msg_type = UBCORE_NL_TP_SUSPEND_REQ;
+	req->msg_type = UBCORE_CMD_TP_SUSPEND_REQ;
 	suspend_req = (struct ubcore_tp_suspend_req *)(void *)req->payload;
 	suspend_req->tpgn = tp->tpg->tpgn;
 	suspend_req->tpn = tp->tpn;
@@ -1681,8 +1286,8 @@ void ubcore_report_tp_suspend(struct ubcore_device *dev, struct ubcore_tp *tp)
 }
 
 /* restore target RM tp created by ubcore_advise_target_tp */
-static struct ubcore_tp *ubcore_restore_advised_target_tp(struct ubcore_device *dev,
-							  struct ubcore_nl_restore_tp_req *restore)
+static int ubcore_restore_advised_target_tp(struct ubcore_device *dev,
+	struct ubcore_nl_restore_tp_req *restore, uint32_t *rx_psn)
 {
 	struct ubcore_tp_advice advice;
 	struct ubcore_tp_node *tp_node;
@@ -1692,53 +1297,60 @@ static struct ubcore_tp *ubcore_restore_advised_target_tp(struct ubcore_device *
 	meta = &advice.meta;
 	if (ubcore_parse_ta(dev, &restore->ta, &advice) != 0) {
 		ubcore_log_err("Failed to parse ta with type %u", (uint32_t)restore->ta.ta_type);
-		return NULL;
+		return -1;
 	} else if (meta->ht == NULL) {
 		ubcore_log_err("tp table is already released");
-		return NULL;
+		return -1;
 	}
 
-	tp_node = ubcore_hash_table_lookup(meta->ht, meta->hash, &meta->key);
+	spin_lock(&meta->ht->lock);
+	tp_node = ubcore_hash_table_lookup_nolock(meta->ht, meta->hash, &meta->key);
 	/* pair with get_tptable in parse_ta */
 	ubcore_put_tptable(meta->ht);
 	if (tp_node == NULL) {
+		spin_unlock(&meta->ht->lock);
 		ubcore_log_err("tp is not found%u", restore->peer_tpn);
-		return NULL;
+		return -1;
 	}
 
 	tp = tp_node->tp;
 	if (ubcore_restore_tp_to_rts(dev, tp, get_random_u32(), restore->rx_psn) != 0) {
+		spin_unlock(&meta->ht->lock);
 		ubcore_log_err("Failed to modify tp to rts %u", restore->rx_psn);
-		return NULL;
+		return -1;
 	}
-	return tp;
+	*rx_psn = tp->rx_psn;
+	spin_unlock(&meta->ht->lock);
+	return 0;
 }
 
-static struct ubcore_tp *ubcore_restore_bound_target_tp(struct ubcore_device *dev,
-							struct ubcore_nl_restore_tp_req *restore)
+static int ubcore_restore_bound_target_tp(struct ubcore_device *dev,
+	struct ubcore_nl_restore_tp_req *restore, uint32_t *rx_psn)
 {
-	return ubcore_restore_advised_target_tp(dev, restore);
+	return ubcore_restore_advised_target_tp(dev, restore, rx_psn);
 }
 
-static struct ubcore_tp *ubcore_handle_restore_tp(struct ubcore_device *dev,
-						  struct ubcore_nl_restore_tp_req *restore)
+static int ubcore_handle_restore_tp(struct ubcore_device *dev,
+	struct ubcore_nl_restore_tp_req *restore, uint32_t *rx_psn)
 {
 	if (dev->transport_type != UBCORE_TRANSPORT_IB ||
 	    restore == NULL || restore->trans_mode == UBCORE_TP_UM ||
 	    restore->ta.ta_type == UBCORE_TA_NONE || restore->ta.ta_type >= UBCORE_TA_VIRT)
-		return NULL;
+		return -1;
 
 	if (restore->trans_mode == UBCORE_TP_RM)
-		return ubcore_restore_advised_target_tp(dev, restore);
+		return ubcore_restore_advised_target_tp(dev, restore, rx_psn);
 	else
-		return ubcore_restore_bound_target_tp(dev, restore);
+		return ubcore_restore_bound_target_tp(dev, restore, rx_psn);
 }
 
 struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req)
 {
+	enum ubcore_nl_resp_status status = UBCORE_NL_RESP_SUCCESS;
 	struct ubcore_nl_restore_tp_req *restore;
 	struct ubcore_device *dev;
-	struct ubcore_tp *tp;
+	uint32_t rx_psn = 0;
+	int ret = 0;
 
 	if (req == NULL || req->payload_len != sizeof(struct ubcore_nl_restore_tp_req)) {
 		ubcore_log_err("Invalid restore req");
@@ -1751,15 +1363,17 @@ struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req)
 		if (dev != NULL)
 			ubcore_put_device(dev);
 		ubcore_log_err("Failed to find device or device ops invalid");
-		return ubcore_get_restore_tp_response(req, NULL);
+		return ubcore_get_restore_tp_response(req, rx_psn, UBCORE_NL_RESP_FAIL);
 	}
 
-	tp = ubcore_handle_restore_tp(dev, restore);
-	if (tp == NULL)
+	ret = ubcore_handle_restore_tp(dev, restore, &rx_psn);
+	if (ret != 0) {
 		ubcore_log_err("Failed to restore target tp towards remote eid %pI6c",
 			       &req->src_eid);
+		status = UBCORE_NL_RESP_FAIL;
+	}
 
 	ubcore_put_device(dev);
-	return ubcore_get_restore_tp_response(req, tp);
+	return ubcore_get_restore_tp_response(req, rx_psn, status);
 }
 EXPORT_SYMBOL(ubcore_handle_restore_tp_req);

@@ -88,12 +88,26 @@ static inline bool ubcore_check_trans_mode_valid(enum ubcore_transport_mode tran
 		trans_mode == UBCORE_TP_RC || trans_mode == UBCORE_TP_UM;
 }
 
+/* combine sub_trans_mode and rc_share_tp -> uint16_t? */
+static inline bool is_create_rc_shared_tp(enum ubcore_transport_mode trans_mode,
+									uint32_t sub_trans_mode,
+									uint32_t rc_share_tp)
+{
+	if (trans_mode == UBCORE_TP_RC &&
+		(sub_trans_mode & UBCORE_SUB_TRANS_MODE_TA_DST_ORDERING_ENABLE) &&
+		rc_share_tp == 1)
+		return true;
+
+	return false;
+}
+
 /* Caller must put device */
 struct ubcore_device *ubcore_find_device(union ubcore_eid *eid, enum ubcore_transport_type type);
 struct ubcore_device *ubcore_find_device_with_name(const char *dev_name);
+bool ubcore_check_dev_is_exist(const char *dev_name);
 void ubcore_get_device(struct ubcore_device *dev);
 void ubcore_put_device(struct ubcore_device *dev);
-struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
+struct ubcore_device *ubcore_find_tpf_device(union ubcore_net_addr_union *netaddr,
 	enum ubcore_transport_type type);
 struct ubcore_device *ubcore_find_tpf_by_dev(struct ubcore_device *dev,
 	enum ubcore_transport_type type);
@@ -113,7 +127,10 @@ struct ubcore_device *ubcore_find_upi_with_dev_name(const char *dev_name, uint32
 int ubcore_add_upi_list(struct ubcore_device *dev, uint32_t upi);
 
 /* Must call ubcore_put_devices to put and release the returned devices */
-struct ubcore_device **ubcore_get_devices_from_netdev(struct net_device *netdev, uint32_t *cnt);
+void ubcore_device_list_lock(void);
+void ubcore_device_list_unlock(void);
+struct ubcore_device **ubcore_get_devices_from_netdev_nolock(struct net_device *netdev,
+	uint32_t *cnt);
 void ubcore_put_devices(struct ubcore_device **devices, uint32_t cnt);
 void ubcore_update_default_eid(struct ubcore_device *dev, bool is_add);
 void ubcore_update_netaddr(struct ubcore_device *dev, struct net_device *netdev, bool add);

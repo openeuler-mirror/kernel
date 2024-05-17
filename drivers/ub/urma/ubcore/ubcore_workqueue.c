@@ -44,8 +44,7 @@ void ubcore_flush_workqueue(int queue_type)
 int ubcore_alloc_workqueue(int queue_type)
 {
 	if (!check_queue_type_valid(queue_type) || g_ubcore_workqueues[queue_type] != NULL) {
-		ubcore_log_err("queue_type %d out of range or workqueue already exist\n",
-			queue_type);
+		ubcore_log_err("queue_type %d out of range or already exist\n", queue_type);
 		return -EINVAL;
 	}
 	g_ubcore_workqueues[queue_type] =

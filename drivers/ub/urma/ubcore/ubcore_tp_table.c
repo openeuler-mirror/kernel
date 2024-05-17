@@ -162,44 +162,17 @@ struct ubcore_tp_node *ubcore_add_tp_node(struct ubcore_hash_table *ht, uint32_t
 	}
 	tp_node = ubcore_hash_table_lookup_nolock(ht, hash, key);
 	if (tp_node != NULL) {
+		atomic_inc(&tp_node->tp->use_cnt);
 		spin_unlock(&ht->lock);
 		mutex_destroy(&new_tp_node->lock);
 		kfree(new_tp_node);
-		atomic_inc(&tp_node->tp->use_cnt);
 		return tp_node;
 	}
 
 	ubcore_hash_table_add_nolock(ht, &new_tp_node->hnode, hash);
 	/* set private data for tp restore */
 	tp->priv = new_tp_node;
-	spin_unlock(&ht->lock);
 	atomic_inc(&new_tp_node->tp->use_cnt);
+	spin_unlock(&ht->lock);
 	return new_tp_node;
 }
-
-struct ubcore_tp_node *ubcore_add_tp_with_tpn(struct ubcore_device *dev, struct ubcore_tp *tp)
-{
-	struct ubcore_tp_node *tp_node;
-	int ret;
-
-	tp_node = kzalloc(sizeof(struct ubcore_tp_node), GFP_KERNEL);
-	if (tp_node == NULL)
-		return NULL;
-
-	tp_node->key.key_type = UBCORE_TP_KEY_TPN;
-	tp_node->key.tpn = tp->tpn;
-	tp_node->tp = tp;
-	mutex_init(&tp_node->lock);
-
-	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_TP], &tp_node->hnode, tp->tpn);
-	if (ret != 0) {
-		ubcore_log_err("Failed to add tp with tpn %u to tp table", tp->tpn);
-		mutex_destroy(&tp_node->lock);
-		kfree(tp_node);
-		return NULL;
-	}
-	/* set private data to find tp node fast */
-	tp->priv = tp_node;
-	return tp_node;
-}
-

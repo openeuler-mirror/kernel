@@ -159,7 +159,7 @@ static int umem_dma_map(struct ubcore_umem *umem, uint64_t npages, unsigned long
 	return 0;
 }
 
-static void ubcore_fill_umem(struct ubcore_umem *umem, struct ubcore_device *dev, uint64_t va,
+static int ubcore_fill_umem(struct ubcore_umem *umem, struct ubcore_device *dev, uint64_t va,
 			     uint64_t len, union ubcore_umem_flag flag)
 {
 	umem->ub_dev = dev;
@@ -167,7 +167,12 @@ static void ubcore_fill_umem(struct ubcore_umem *umem, struct ubcore_device *dev
 	umem->length = len;
 	umem->flag = flag;
 	umem->owning_mm = current->mm;
+	if (!umem->owning_mm) {
+		ubcore_log_err("mm is null.\n");
+		return -EINVAL;
+	}
 	mmgrab(umem->owning_mm);
+	return 0;
 }
 
 static struct ubcore_umem *ubcore_get_target_umem(struct ubcore_device *dev, uint64_t va,
@@ -187,7 +192,12 @@ static struct ubcore_umem *ubcore_get_target_umem(struct ubcore_device *dev, uin
 		goto out;
 	}
 
-	ubcore_fill_umem(umem, dev, va, len, flag);
+	ret = ubcore_fill_umem(umem, dev, va, len, flag);
+	if (ret != 0) {
+		kfree(umem);
+		goto out;
+	}
+
 	npages = umem_cal_npages(umem->va, umem->length);
 	if (npages == 0 || npages > UINT_MAX) {
 		ret = -EINVAL;

@@ -187,12 +187,12 @@ int ubcore_hash_table_find_add(struct ubcore_hash_table *ht, struct hlist_node *
 	spin_lock(&ht->lock);
 	if (ht->head == NULL) {
 		spin_unlock(&ht->lock);
-		return -1;
+		return -EINVAL;
 	}
 	/* Old entry with the same key exists */
 	if (ubcore_hash_table_lookup_nolock(ht, hash, ubcore_ht_key(ht, hnode)) != NULL) {
 		spin_unlock(&ht->lock);
-		return -1;
+		return -EEXIST;
 	}
 	ubcore_hash_table_add_nolock(ht, hnode, hash);
 	spin_unlock(&ht->lock);

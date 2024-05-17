@@ -97,6 +97,7 @@ struct uburma_jfe {
 	struct list_head event_list;
 	wait_queue_head_t poll_wait;
 	bool deleting;
+	struct fasync_struct *async_queue;
 };
 
 struct uburma_jfce_uobj {
@@ -225,6 +226,8 @@ static inline bool uobj_type_is_fd(const struct uburma_uobj *uobj)
 /* Do not lock uobj without cleanup_rwsem locked */
 #define uobj_get_del(class_id, _id, ufile)                                \
 	uobj_lookup_get(uobj_get_type(class_id), ufile, _id, UOBJ_ACCESS_NOLOCK)
+
+#define uobj_put_del(uobj)  uobj_put(uobj)
 
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TOKEN;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_SEG;

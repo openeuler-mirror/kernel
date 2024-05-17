@@ -35,19 +35,6 @@ struct ubcore_port_attribute {
 
 #define PORT_ATTR_RO(_name) struct ubcore_port_attribute port_attr_##_name = __ATTR_RO(_name)
 
-struct ubcore_eid_attribute {
-	struct attribute attr;
-	ssize_t (*show)(struct ubcore_eid_kobj *eid, struct ubcore_eid_attribute *attr, char *buf);
-	ssize_t (*store)(struct ubcore_eid_kobj *eid, struct ubcore_eid_attribute *attr,
-		const char *buf, size_t count);
-};
-
-#define EID_ATTR(_name, _mode, _show, _store) \
-struct ubcore_eid_attribute eid_attr_##_name = __ATTR(_name, _mode, _show, _store)
-
-#define EID_ATTR_RO(_name) \
-struct ubcore_eid_attribute eid_attr_##_name = __ATTR_RO(_name)
-
 int ubcore_fill_logic_device_attr(struct ubcore_logic_device *ldev,
 	struct ubcore_device *dev);
 void ubcore_unfill_logic_device_attr(struct ubcore_logic_device *ldev,

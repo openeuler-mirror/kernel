@@ -57,26 +57,6 @@ struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va, uint
 void ubcore_umem_release(struct ubcore_umem *umem);
 
 /**
- * Invoke create virtual tp on a PF device, called only by driver
- * @param[in] dev: the ubcore device;
- * @param[in] remote_eid: destination remote eid address of the tp to be created
- * @param[in] trans_mode: transport mode of the tp to be created
- * @param[in] udata: driver defined data
- * @return: tp pointer on success, NULL on error
- */
-struct ubcore_tp *ubcore_create_vtp(struct ubcore_device *dev,
-				    union ubcore_eid *remote_eid,
-				    enum ubcore_transport_mode trans_mode,
-				    struct ubcore_udata *udata);
-
-/**
- * Invoke destroy virtual tp from a PF device, called only by driver
- * @param[in] tp: the tp to be destroyed
- * @return: 0 on success, other value on error
- */
-int ubcore_destroy_vtp(struct ubcore_tp *vtp);
-
-/**
  * Invoke get mtu value, called only by driver
  * @param[in] mtu: specifies the MTU value of the NIC interface.
  * @return: The MTU of the UB protocol, this value removes the length of the network layer,
@@ -136,7 +116,7 @@ void ubcore_put_port_netdev(struct ubcore_device *dev);
  * sip, mac, vlan, physical port list.
  * @return: 0 on success, other value on error
  */
-int ubcore_add_sip(struct ubcore_sip_info *sip);
+int ubcore_add_sip(struct ubcore_sip_info *sip, uint32_t *sip_idx);
 
 /**
  * Invoke The management system calls ubcore interface through UVS to delete the sip information.

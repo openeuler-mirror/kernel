@@ -300,7 +300,7 @@ static int alloc_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *j
 			free_common_qpn(udma_dev, jetty->jetty_id);
 		return ret;
 	}
-	jetty->ubcore_jetty.id = jetty->jetty_id;
+	jetty->ubcore_jetty.jetty_id.id = jetty->jetty_id;
 
 	return ret;
 }

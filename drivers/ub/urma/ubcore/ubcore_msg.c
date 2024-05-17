@@ -20,14 +20,16 @@
 
 #include <linux/slab.h>
 #include <urma/ubcore_types.h>
+#include <linux/timekeeping.h>
 #include "ubcore_log.h"
-#include <urma/ubcore_api.h>
+#include "urma/ubcore_api.h"
 #include "ubcore_netlink.h"
 #include "ubcore_vtp.h"
-#include <urma/ubcore_uapi.h>
+#include "urma/ubcore_uapi.h"
 #include "ubcore_priv.h"
 #include "ubcore_msg.h"
 
+#define MS_PER_SEC                  1000
 static LIST_HEAD(g_msg_session_list);
 static DEFINE_SPINLOCK(g_msg_session_lock);
 static atomic_t g_msg_seq = ATOMIC_INIT(0);
@@ -65,7 +67,7 @@ static struct ubcore_msg_session *ubcore_find_msg_session(uint32_t seq)
 	return target;
 }
 
-static void ubcore_destroy_msg_session(struct ubcore_msg_session *s)
+void ubcore_destroy_msg_session(struct ubcore_msg_session *s)
 {
 	(void)kref_put(&s->kref, ubcore_free_msg_session);
 }
@@ -99,7 +101,7 @@ static struct ubcore_nlmsg *ubcore_get_fe2uvs_nlmsg(struct ubcore_device *dev,
 		return NULL;
 
 	nlmsg->transport_type = dev->transport_type;
-	nlmsg->msg_type = UBCORE_NL_FE2TPF_REQ;
+	nlmsg->msg_type = UBCORE_CMD_FE2TPF_REQ;
 	(void)memcpy(nlmsg->payload, req_host, payload_len);
 	return nlmsg;
 }
@@ -343,8 +345,8 @@ int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp_ho
 {
 	int ret;
 
-	if (dev == NULL || dev->ops == NULL || dev->ops->send_resp == NULL || resp_host == NULL ||
-		resp_host->resp.len > UBCORE_MAX_MSG) {
+	if (dev == NULL || dev->ops == NULL || dev->ops->send_resp == NULL ||
+		resp_host == NULL || resp_host->resp.len > UBCORE_MAX_MSG) {
 		ubcore_log_err("Invalid parameter!\n");
 		return -EINVAL;
 	}
@@ -377,7 +379,7 @@ int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
 		ubcore_log_err("Failed to send req, msg_id = %u, opcode = %hu.\n",
 			req->msg_id, (uint16_t)req->opcode);
 		ubcore_destroy_msg_session(s);
-		return -EIO;
+		return ret;
 	}
 
 	leavetime = wait_for_completion_timeout(&s->comp, msecs_to_jiffies(UBCORE_TIMEOUT));
@@ -404,7 +406,8 @@ static int ubcore_msg_discover_eid_cb(struct ubcore_device *dev,
 	struct net *net = (struct net *)msg_ctx;
 	bool is_alloc_eid;
 
-	if (dev == NULL || resp == NULL) {
+	if (dev == NULL || resp == NULL ||
+		resp->len < sizeof(struct ubcore_msg_discover_eid_resp)) {
 		ubcore_log_err("Invalid parameter.\n");
 		return -EINVAL;
 	}
@@ -423,17 +426,43 @@ static int ubcore_msg_discover_eid_cb(struct ubcore_device *dev,
 	return 0;
 }
 
-int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
-	enum ubcore_msg_opcode op, struct net *net)
+/**
+ *	If you do not need to wait for the response of a message, use ubcore_asyn_send_fe2tpf_msg.
+ *	If you need to wait for a response to a message, use ubcore_send_fe2tpf_msg
+ */
+struct ubcore_msg_session *ubcore_asyn_send_fe2tpf_msg(struct ubcore_device *dev,
+	struct ubcore_req *req)
 {
-	struct ubcore_msg_discover_eid_req *data;
-	struct ubcore_req *req_msg;
-	uint32_t data_len;
-	struct ubcore_resp_cb cb;
+	struct ubcore_msg_session *s;
 	int ret;
 
-	cb.callback = ubcore_msg_discover_eid_cb;
-	cb.user_arg = net;
+	req->msg_id = ubcore_get_msg_seq();
+	s = ubcore_create_msg_session(req);
+	if (s == NULL) {
+		ubcore_log_err("Failed to create req session!\n");
+		return NULL;
+	}
+
+	ret = ubcore_send_req(dev, req);
+	if (ret != 0) {
+		ubcore_log_err("Failed to send req, msg_id = %u, opcode = %hu.\n",
+			req->msg_id, (uint16_t)req->opcode);
+		ubcore_destroy_msg_session(s);
+		return NULL;
+	}
+	return s;
+}
+
+int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
+	enum ubcore_msg_opcode op, struct net *net, struct ubcore_update_eid_ctx *ctx)
+{
+	struct ubcore_msg_discover_eid_req *data;
+	struct ubcore_msg_session *s;
+	struct ubcore_req *req_msg;
+	uint32_t data_len;
+
+	ctx->cb.callback = ubcore_msg_discover_eid_cb;
+	ctx->cb.user_arg = net;
 	data_len = sizeof(struct ubcore_msg_discover_eid_req);
 	req_msg = kcalloc(1, sizeof(struct ubcore_req) + data_len, GFP_KERNEL);
 	if (req_msg == NULL)
@@ -443,13 +472,45 @@ int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
 	req_msg->opcode = op;
 	data = (struct ubcore_msg_discover_eid_req *)req_msg->data;
 	data->eid_index = eid_index;
-	data->eid_type = dev->cfg.pattern;
+	data->eid_type = dev->attr.pattern;
 	data->virtualization = dev->attr.virtualization;
 	(void)memcpy(data->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME);
 
-	ret = ubcore_send_fe2tpf_msg(dev, req_msg, &cb);
-	if (ret != 0)
+	s = ubcore_asyn_send_fe2tpf_msg(dev, req_msg);
+	if (s == NULL) {
 		ubcore_log_err("send fe2tpf failed.\n");
-	kfree(req_msg);
-	return ret;
+		kfree(req_msg);
+		return -1;
+	}
+	ctx->req_msg = req_msg;
+	ctx->s = s;
+	return 0;
+}
+
+/**
+ *	if the operation times out or is successful, 0 is returned and reply done  to urma_admin.
+ *	if the operation is waiting for the result, 1 is returned  and reply dump to urma_admin.
+ */
+int ubcore_update_uvs_eid_ret(struct ubcore_update_eid_ctx *ctx)
+{
+	long start_ts = ctx->start_ts;
+	long leave_time = 0;
+	struct timespec64 tv;
+	bool is_done;
+
+	is_done = try_wait_for_completion(&ctx->s->comp);
+	if (is_done == false) {
+		ktime_get_ts64(&tv);
+		leave_time = tv.tv_sec - start_ts;
+		if (leave_time * MS_PER_SEC < UBCORE_TIMEOUT)
+			return 1;
+
+		ubcore_log_err("waiting req reply timeout, msg_id = %u, opcode = %hu, leavetime =  %ld.\n",
+			ctx->req_msg->msg_id, (uint16_t)ctx->req_msg->opcode, leave_time);
+		return 0;
+	}
+	ubcore_log_info("waiting req reply success, msg_id = %u, opcode = %hu\n",
+			ctx->req_msg->msg_id, (uint16_t)ctx->req_msg->opcode);
+	(void)ctx->cb.callback(ctx->dev, ctx->s->resp, ctx->cb.user_arg);
+	return 0;
 }

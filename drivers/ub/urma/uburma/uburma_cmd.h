@@ -39,7 +39,6 @@ struct uburma_cmd_hdr {
 
 enum uburma_cmd {
 	UBURMA_CMD_CREATE_CTX = 1,
-	UBURMA_CMD_DESTROY_CTX,
 	UBURMA_CMD_ALLOC_TOKEN_ID,
 	UBURMA_CMD_FREE_TOKEN_ID,
 	UBURMA_CMD_REGISTER_SEG,
@@ -325,6 +324,7 @@ struct uburma_cmd_import_jfr {
 		/* correspond to urma_jfr_id */
 		uint8_t eid[UBCORE_EID_SIZE];
 		uint32_t id;
+		uint32_t flag;
 		/* correspond to urma_token_t */
 		uint32_t token;
 		uint32_t trans_mode;

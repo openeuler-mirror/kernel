@@ -333,12 +333,12 @@ static void uobj_fd_alloc_commit(struct uburma_uobj *uobj)
 {
 	struct file *filp = (struct file *)uobj->object;
 
-	fd_install(uobj->id, filp);
-
 	/* Do not set uobj->id = 0 as it may be read when remove uobj */
 
 	/* Get another reference as we export this to the fops */
 	uobj_get(uobj);
+
+	fd_install(uobj->id, filp);
 }
 
 static void uobj_fd_alloc_abort(struct uburma_uobj *uobj)
@@ -461,21 +461,16 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
 	struct uburma_file *ufile = uobj->ufile;
 	int ret;
 
-	/* put the ref count we took at lookup_get */
-	uobj_put(uobj);
-
 	down_read(&ufile->cleanup_rwsem);
 	/* try Lock uobj for write with cleanup_rwsem locked */
 	ret = uobj_try_lock(uobj, true);
 	if (ret) {
-		/* Do not rollback uobj_put here */
 		up_read(&ufile->cleanup_rwsem);
 		uburma_log_warn("Failed to lock uobj\n");
 		return ret;
 	}
 
 	ret = uobj_remove_commit_internal(uobj, UBURMA_REMOVE_DESTROY);
-
 	up_read(&ufile->cleanup_rwsem);
 	return ret;
 }

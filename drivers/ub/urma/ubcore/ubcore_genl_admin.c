@@ -21,6 +21,8 @@
 #include <linux/module.h>
 #include <linux/list.h>
 #include <linux/ctype.h>
+#include <linux/time64.h>
+#include <linux/timekeeping.h>
 #include "ubcore_genl_define.h"
 #include "urma/ubcore_api.h"
 #include "ubcore_msg.h"
@@ -35,6 +37,7 @@
 #define CB_ARGS_SART_IDX 2
 #define CB_ARGS_NEXT_TYPE 3
 #define CB_ARGS_BUF_LEN 4
+#define CB_ARGS_KEY_CNT 5
 
 enum {
 	UBCORE_RES_TPG_TP_CNT,
@@ -77,6 +80,20 @@ enum {
 	UBCORE_RES_RC_VAL,
 	UBCORE_ATTR_RES_LAST
 };
+
+static int ubcore_parse_admin_res_cmd(struct netlink_callback *cb, void *dst, uint32_t copy_len)
+{
+	struct nlattr **attrs = genl_dumpit_info(cb)->attrs;
+	uint64_t args_addr;
+
+	if (!attrs[UBCORE_HDR_ARGS_LEN] || !attrs[UBCORE_HDR_ARGS_ADDR])
+		return -EINVAL;
+
+	args_addr = nla_get_u64(attrs[UBCORE_HDR_ARGS_ADDR]);
+
+	return ubcore_copy_from_user(dst, (void __user *)(uintptr_t)args_addr,
+				    copy_len);
+}
 
 static void ubcore_update_pattern1_eid(struct ubcore_device *dev,
 	union ubcore_eid *eid, bool is_add)
@@ -141,6 +158,7 @@ int ubcore_show_utp_ops(struct sk_buff *skb, struct genl_info *info)
 	if (ret != 0)
 		return -EPERM;
 
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
 	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL) {
 		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
@@ -183,6 +201,7 @@ int ubcore_query_stats_ops(struct sk_buff *skb, struct genl_info *info)
 	if (ret != 0)
 		return ret;
 
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
 	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL) {
 		ubcore_log_err("find dev failed, dev:%s, arg_in: %s.\n",
@@ -207,27 +226,20 @@ int ubcore_query_stats_ops(struct sk_buff *skb, struct genl_info *info)
 				   sizeof(struct ubcore_cmd_query_stats));
 }
 
-static int ubcore_update_ueid(struct genl_info *info, enum ubcore_msg_opcode op)
+static int ubcore_update_ueid(struct netlink_callback *cb, enum ubcore_msg_opcode op)
 {
 	struct ubcore_cmd_update_ueid arg;
+	struct ubcore_update_eid_ctx *ctx;
 	struct net *net = &init_net;
 	struct ubcore_device *dev;
-	uint64_t args_addr;
 	int ret = -EINVAL;
+	struct timespec64 tv;
 
-	if (!info->attrs[UBCORE_HDR_ARGS_LEN] || !info->attrs[UBCORE_HDR_ARGS_ADDR])
+	ret = ubcore_parse_admin_res_cmd(cb, &arg, sizeof(struct ubcore_cmd_update_ueid));
+	if (ret)
 		return ret;
-	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
-	if (!ns_capable(current->nsproxy->net_ns->user_ns, CAP_NET_ADMIN)) {
-		ubcore_log_err("current user does not have net admin capability");
-		return -EPERM;
-	}
 
-	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)args_addr,
-		sizeof(struct ubcore_cmd_update_ueid));
-	if (ret != 0)
-		return -EPERM;
-
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
 	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL) {
 		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
@@ -255,23 +267,29 @@ static int ubcore_update_ueid(struct genl_info *info, enum ubcore_msg_opcode op)
 		net = read_pnet(&dev->ldev.net);
 	}
 
-	if (ubcore_msg_discover_eid(dev, arg.in.eid_index, op, net) != 0)
-		ret = -EPERM;
+	ctx = kcalloc(1, sizeof(struct ubcore_update_eid_ctx), GFP_KERNEL);
+	if (ctx == NULL) {
+		ubcore_put_device(dev);
+		if (arg.in.ns_fd >= 0)
+			put_net(net);
+		return -ENOMEM;
+	}
+	ret = ubcore_msg_discover_eid(dev, arg.in.eid_index, op, net, ctx);
+	if (ret != 0) {
+		ubcore_put_device(dev);
+		if (arg.in.ns_fd >= 0)
+			put_net(net);
+		kfree(ctx);
+		return -EPERM;
+	}
 
 	if (arg.in.ns_fd >= 0)
-		put_net(net);
-	ubcore_put_device(dev);
-	return ret;
-}
-
-int ubcore_delete_eid_ops(struct sk_buff *skb, struct genl_info *info)
-{
-	return ubcore_update_ueid(info, UBCORE_MSG_DEALLOC_EID);
-}
-
-int ubcore_add_eid_ops(struct sk_buff *skb, struct genl_info *info)
-{
-	return ubcore_update_ueid(info, UBCORE_MSG_ALLOC_EID);
+		ctx->net = net;
+	ctx->dev = dev;
+	ktime_get_ts64(&tv);
+	ctx->start_ts = tv.tv_sec;
+	cb->args[0] = (long)ctx;
+	return 0;
 }
 
 int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
@@ -291,6 +309,8 @@ int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
 		sizeof(struct ubcore_cmd_set_eid_mode));
 	if (ret != 0)
 		return -EPERM;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
 	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL) {
 		ubcore_log_err("find dev_name: %s failed.\n", arg.in.dev_name);
@@ -307,7 +327,7 @@ int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
 	for (i = 0; i < dev->attr.dev_cap.max_eid_cnt; i++) {
 		if (dev->eid_table.eid_entries[i].valid == true) {
 			eid = dev->eid_table.eid_entries[i].eid;
-			if (dev->cfg.pattern == (uint8_t)UBCORE_PATTERN_1)
+			if (dev->attr.pattern == (uint8_t)UBCORE_PATTERN_1)
 				ubcore_update_pattern1_eid(dev, &eid, false);
 			else
 				ubcore_update_pattern3_eid(dev, &eid, false);
@@ -421,370 +441,97 @@ static void ubcore_fill_res_seg(void *res_buf, struct sk_buff *msg,
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_ATTR_RES_LAST;
 }
 
-static int ubcore_fill_dev_seg(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
+static int ubcore_fill_res_dev_ta_cnt(void *res_buf, struct sk_buff *msg,
+						struct netlink_callback *cb)
 {
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
+	struct ubcore_res_dev_ta_val *dev_val = res_buf;
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_SEG_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_SEG_CNT, dev_val->seg_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_SEG_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_SEG_VAL)
-		return 0;
-
-	for (; idx < dev_val->seg_cnt; ++idx) {
-		if (nla_put(msg, UBCORE_RES_DEV_SEG_VAL, sizeof(struct ubcore_seg_info),
-		    dev_val->seg_list + idx))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->seg_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JFS_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_jfs(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_JFS_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_JFS_CNT, dev_val->jfs_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JFS_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_JFS_VAL)
-		return 0;
-
-	for (; idx < dev_val->jfs_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_JFS_VAL, dev_val->jfs_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->jfs_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JFR_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_jfr(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_JFR_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_JFR_CNT, dev_val->jfr_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JFR_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_JFR_VAL)
-		return 0;
-
-	for (; idx < dev_val->jfr_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_JFR_VAL, dev_val->jfr_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->jfr_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JFC_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_jfc(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_JFC_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_JFC_CNT, dev_val->jfc_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JFC_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_JFC_VAL)
-		return 0;
-
-	for (; idx < dev_val->jfc_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_JFC_VAL, dev_val->jfc_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->jfc_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JETTY_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_jetty(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_JETTY_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_JETTY_CNT, dev_val->jetty_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JETTY_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_JETTY_VAL)
-		return 0;
-
-	for (; idx < dev_val->jetty_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_JETTY_VAL, dev_val->jetty_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-	if (idx == dev_val->jetty_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JTGRP_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_jettygrp(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_JTGRP_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_JTGRP_CNT, dev_val->jetty_group_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_JTGRP_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_JTGRP_VAL)
-		return 0;
-
-	for (; idx < dev_val->jetty_group_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_JTGRP_VAL, dev_val->jetty_group_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->jetty_group_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_RC_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_rc(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_RC_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_RC_CNT, dev_val->rc_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_RC_VAL;
+		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_ATTR_RES_LAST;
 	}
 
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_RC_VAL)
-		return 0;
-
-	for (; idx < dev_val->rc_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_RC_VAL, dev_val->rc_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-	if (idx == dev_val->rc_cnt) {
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_VTP_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
-	}
 	return 0;
 }
 
-static int ubcore_fill_dev_vtp(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
+static int ubcore_fill_res_dev_tp_cnt(void *res_buf, struct sk_buff *msg,
+						struct netlink_callback *cb)
 {
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
+	struct ubcore_res_dev_tp_val *dev_val = res_buf;
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_VTP_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_VTP_CNT, dev_val->vtp_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_VTP_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_VTP_VAL)
-		return 0;
-
-	for (; idx < dev_val->vtp_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_VTP_VAL, dev_val->vtp_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->vtp_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_TP_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_tp(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_TP_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_TP_CNT, dev_val->tp_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_TP_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_TP_VAL)
-		return 0;
-
-	for (; idx < dev_val->tp_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_TP_VAL, dev_val->tp_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->tp_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_TPG_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_tpg(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_TPG_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_TPG_CNT, dev_val->tpg_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_TPG_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_TPG_VAL)
-		return 0;
-
-	for (; idx < dev_val->tpg_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_TPG_VAL, dev_val->tpg_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->tpg_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_UTP_CNT;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
-	return 0;
-}
-
-static int ubcore_fill_dev_utp(struct sk_buff *msg, struct ubcore_res_dev_val *dev_val,
-	struct netlink_callback *cb)
-{
-	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
 
 	if (cb->args[CB_ARGS_NEXT_TYPE] == UBCORE_RES_DEV_UTP_CNT) {
 		if (nla_put_u32(msg, UBCORE_RES_DEV_UTP_CNT, dev_val->utp_cnt))
 			return -1;
 
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_UTP_VAL;
-	}
-
-	if (cb->args[CB_ARGS_NEXT_TYPE] != UBCORE_RES_DEV_UTP_VAL)
-		return 0;
-
-	for (; idx < dev_val->utp_cnt; ++idx) {
-		if (nla_put_u32(msg, UBCORE_RES_DEV_UTP_VAL, dev_val->utp_list[idx]))
-			return -1;
-
-		cb->args[CB_ARGS_SART_IDX] = idx;
-	}
-
-	if (idx == dev_val->utp_cnt) {
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_ATTR_RES_LAST;
-		cb->args[CB_ARGS_SART_IDX] = 0;
 	}
+
 	return 0;
-}
-
-static void ubcore_fill_res_dev(void *res_buf, struct sk_buff *msg, struct netlink_callback *cb)
-{
-	struct ubcore_res_dev_val *dev_val = res_buf;
-	int ret;
-
-	ret = ubcore_fill_dev_seg(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_jfs(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_jfr(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_jfc(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_jetty(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_jettygrp(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_rc(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_vtp(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_tp(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	ret = ubcore_fill_dev_tpg(msg, dev_val, cb);
-	if (ret != 0)
-		return;
-
-	(void)ubcore_fill_dev_utp(msg, dev_val, cb);
 }
 
 static int ubcore_fill_res(uint32_t type, void *res_buf, struct sk_buff *skb,
@@ -800,11 +547,11 @@ static int ubcore_fill_res(uint32_t type, void *res_buf, struct sk_buff *skb,
 	case UBCORE_RES_KEY_SEG:
 		ubcore_fill_res_seg(res_buf, skb, cb);
 		break;
-	case UBCORE_RES_KEY_URMA_DEV:
-		ubcore_fill_res_dev(res_buf, skb, cb);
+	case UBCORE_RES_KEY_DEV_TA:
+		ubcore_fill_res_dev_ta_cnt(res_buf, skb, cb);
 		break;
-	case UBCORE_RES_KEY_UPI:
-		ubcore_fill_res_binary(res_buf, skb, cb, UBCORE_RES_UPI_VAL);
+	case UBCORE_RES_KEY_DEV_TP:
+		ubcore_fill_res_dev_tp_cnt(res_buf, skb, cb);
 		break;
 	case UBCORE_RES_KEY_VTP:
 		ubcore_fill_res_binary(res_buf, skb, cb, UBCORE_RES_VTP_VAL);
@@ -837,12 +584,88 @@ static int ubcore_fill_res(uint32_t type, void *res_buf, struct sk_buff *skb,
 	return 0;
 }
 
+static void ubcore_put_list_res(void *res_buf, struct sk_buff *msg, struct netlink_callback *cb,
+				int cnt_type, int val_type)
+{
+	struct ubcore_res_list_val *reslist = res_buf;
+	uint32_t idx = (uint32_t)cb->args[CB_ARGS_SART_IDX];
+
+	if (nla_put_u32(msg, cnt_type, reslist->cnt))
+		return;
+
+	for (; idx < reslist->cnt; ++idx) {
+		if (nla_put_u32(msg, val_type, reslist->list[idx]))
+			return;
+
+		cb->args[CB_ARGS_SART_IDX] = idx;
+	}
+	if (idx == reslist->cnt)
+		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_ATTR_RES_LAST;
+}
+
+static int ubcore_fill_list_res(uint32_t type, void *res_buf, struct sk_buff *skb,
+	struct netlink_callback *cb)
+{
+	switch (type) {
+	case UBCORE_RES_KEY_JETTY_GROUP:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_JTGRP_JETTY_CNT, UBCORE_RES_JTGRP_JETTY_VAL);
+		break;
+	case UBCORE_RES_KEY_SEG:
+		ubcore_fill_res_seg(res_buf, skb, cb);
+		break;
+	case UBCORE_RES_KEY_JFS:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_JFS_CNT, UBCORE_RES_DEV_JFS_VAL);
+		break;
+	case UBCORE_RES_KEY_JFR:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_JFR_CNT, UBCORE_RES_DEV_JFR_VAL);
+		break;
+	case UBCORE_RES_KEY_JETTY:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_JETTY_CNT, UBCORE_RES_DEV_JETTY_VAL);
+		break;
+	case UBCORE_RES_KEY_JFC:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_JFC_CNT, UBCORE_RES_DEV_JFC_VAL);
+		break;
+	case UBCORE_RES_KEY_RC:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_RC_CNT, UBCORE_RES_DEV_RC_VAL);
+		break;
+	case UBCORE_RES_KEY_TPG:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_TPG_CNT, UBCORE_RES_DEV_TPG_VAL);
+		break;
+	case UBCORE_RES_KEY_VTP:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_VTP_CNT, UBCORE_RES_DEV_VTP_VAL);
+		break;
+	case UBCORE_RES_KEY_TP:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_TP_CNT, UBCORE_RES_DEV_TP_VAL);
+		break;
+	case UBCORE_RES_KEY_UTP:
+		ubcore_put_list_res(res_buf, skb, cb,
+			UBCORE_RES_DEV_UTP_CNT, UBCORE_RES_DEV_UTP_VAL);
+		break;
+	case UBCORE_RES_KEY_DEV_TA:
+		ubcore_fill_res_dev_ta_cnt(res_buf, skb, cb);
+		break;
+	case UBCORE_RES_KEY_DEV_TP:
+		ubcore_fill_res_dev_tp_cnt(res_buf, skb, cb);
+		break;
+	default:
+		ubcore_log_err("key type :%u no support.\n", type);
+		return -1;
+	}
+	return 0;
+}
+
 static uint32_t ubcore_get_query_res_len(uint32_t type, struct netlink_callback *cb)
 {
 	switch (type) {
-	case UBCORE_RES_KEY_UPI:
-		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_UPI_VAL;
-		return (uint32_t)sizeof(struct ubcore_res_upi_val);
 	case UBCORE_RES_KEY_VTP:
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_VTP_VAL;
 		return (uint32_t)sizeof(struct ubcore_res_vtp_val);
@@ -876,9 +699,41 @@ static uint32_t ubcore_get_query_res_len(uint32_t type, struct netlink_callback 
 	case UBCORE_RES_KEY_SEG:
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_SEGVAL_SEG_CNT;
 		return (uint32_t)sizeof(struct ubcore_res_seg_val);
-	case UBCORE_RES_KEY_URMA_DEV:
+	case UBCORE_RES_KEY_DEV_TA:
 		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_SEG_CNT;
-		return (uint32_t)sizeof(struct ubcore_res_dev_val);
+		return (uint32_t)sizeof(struct ubcore_res_dev_ta_val);
+	case UBCORE_RES_KEY_DEV_TP:
+		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_VTP_CNT;
+		return (uint32_t)sizeof(struct ubcore_res_dev_tp_val);
+	default:
+		break;
+	}
+	return 0;
+}
+
+static uint32_t ubcore_get_list_res_len(uint32_t type, struct netlink_callback *cb)
+{
+	switch (type) {
+	case UBCORE_RES_KEY_VTP:
+	case UBCORE_RES_KEY_TP:
+	case UBCORE_RES_KEY_TPG:
+	case UBCORE_RES_KEY_UTP:
+	case UBCORE_RES_KEY_JFS:
+	case UBCORE_RES_KEY_JFR:
+	case UBCORE_RES_KEY_JETTY:
+	case UBCORE_RES_KEY_JETTY_GROUP:
+	case UBCORE_RES_KEY_JFC:
+	case UBCORE_RES_KEY_RC:
+		return (uint32_t)sizeof(struct ubcore_res_list_val);
+	case UBCORE_RES_KEY_SEG:
+		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_SEGVAL_SEG_CNT;
+		return (uint32_t)sizeof(struct ubcore_res_seg_val);
+	case UBCORE_RES_KEY_DEV_TA:
+		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_SEG_CNT;
+		return (uint32_t)sizeof(struct ubcore_res_dev_ta_val);
+	case UBCORE_RES_KEY_DEV_TP:
+		cb->args[CB_ARGS_NEXT_TYPE] = UBCORE_RES_DEV_VTP_CNT;
+		return (uint32_t)sizeof(struct ubcore_res_dev_tp_val);
 	default:
 		break;
 	}
@@ -916,20 +771,6 @@ static void *ubcore_query_dev_info(struct ubcore_device *dev, struct ubcore_cmd_
 	return res_buf;
 }
 
-static int parse_query_res_cmd(struct netlink_callback *cb, struct ubcore_cmd_query_res *arg)
-{
-	struct nlattr **attrs = genl_dumpit_info(cb)->attrs;
-	uint64_t args_addr;
-
-	if (!attrs[UBCORE_HDR_ARGS_LEN] || !attrs[UBCORE_HDR_ARGS_ADDR])
-		return -EINVAL;
-
-	args_addr = nla_get_u64(attrs[UBCORE_HDR_ARGS_ADDR]);
-
-	return ubcore_copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
-				    sizeof(struct ubcore_cmd_query_res));
-}
-
 int ubcore_query_res_start(struct netlink_callback *cb)
 {
 	struct ubcore_cmd_query_res arg = {0};
@@ -938,16 +779,20 @@ int ubcore_query_res_start(struct netlink_callback *cb)
 	uint32_t res_len;
 	void *res_buf;
 
-	ret = parse_query_res_cmd(cb, &arg);
+	ret = ubcore_parse_admin_res_cmd(cb, &arg, sizeof(struct ubcore_cmd_query_res));
 	if (ret)
 		return ret;
 
-	res_len = ubcore_get_query_res_len((uint32_t)arg.in.type, cb);
+	if (arg.in.key_cnt == 0)
+		res_len = ubcore_get_list_res_len((uint32_t)arg.in.type, cb);
+	else
+		res_len = ubcore_get_query_res_len((uint32_t)arg.in.type, cb);
 	if (res_len == 0) {
 		ubcore_log_err("Failed to check res len, type: %u, res_len: %u.\n",
 			(uint32_t)arg.in.type, res_len);
 		return -EINVAL;
 	}
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
 	dev = ubcore_find_device_with_name(arg.in.dev_name);
 	if (dev == NULL) {
 		ubcore_log_err("find dev failed, arg_in: %s.\n", arg.in.dev_name);
@@ -972,22 +817,51 @@ int ubcore_query_res_start(struct netlink_callback *cb)
 	cb->args[CB_ARGS_CMD_TYPE] = (long)arg.in.type;
 	cb->args[CB_ARGS_SART_IDX] = 0;
 	cb->args[CB_ARGS_BUF_LEN] = res_len;
+	cb->args[CB_ARGS_KEY_CNT] = arg.in.key_cnt;
 	return 0;
 }
 
-static void ubcore_free_res_dev_list(struct ubcore_res_dev_val *kernal_addr)
+static int ubcore_list_res_done(struct netlink_callback *cb)
 {
-	vfree(kernal_addr->seg_list);
-	vfree(kernal_addr->jfs_list);
-	vfree(kernal_addr->jfr_list);
-	vfree(kernal_addr->jfc_list);
-	vfree(kernal_addr->jetty_list);
-	vfree(kernal_addr->jetty_group_list);
-	vfree(kernal_addr->rc_list);
-	vfree(kernal_addr->vtp_list);
-	vfree(kernal_addr->tp_list);
-	vfree(kernal_addr->tpg_list);
-	vfree(kernal_addr->utp_list);
+	uint32_t type = (uint32_t)(unsigned long)cb->args[CB_ARGS_CMD_TYPE];
+	void *res_buf = (void *)cb->args[CB_ARGS_DEV_BUF];
+	struct ubcore_res_seg_val *seg_val;
+	struct ubcore_res_dev_ta_val *ta_val;
+	struct ubcore_res_dev_tp_val *tp_val;
+	struct ubcore_res_list_val *list_val;
+
+	switch (type) {
+	case UBCORE_RES_KEY_JFS:
+	case UBCORE_RES_KEY_JFR:
+	case UBCORE_RES_KEY_JETTY:
+	case UBCORE_RES_KEY_JFC:
+	case UBCORE_RES_KEY_RC:
+	case UBCORE_RES_KEY_JETTY_GROUP:
+	case UBCORE_RES_KEY_VTP:
+	case UBCORE_RES_KEY_TP:
+	case UBCORE_RES_KEY_TPG:
+	case UBCORE_RES_KEY_UTP:
+		list_val = res_buf;
+		vfree(list_val->list);
+		break;
+	case UBCORE_RES_KEY_SEG:
+		seg_val = res_buf;
+		vfree(seg_val->seg_list);
+		break;
+	case UBCORE_RES_KEY_DEV_TA:
+		ta_val = res_buf;
+		vfree(ta_val);
+		break;
+	case UBCORE_RES_KEY_DEV_TP:
+		tp_val = res_buf;
+		vfree(tp_val);
+		break;
+	default:
+		break;
+	}
+	kfree(res_buf);
+
+	return 0;
 }
 
 int ubcore_query_res_done(struct netlink_callback *cb)
@@ -996,8 +870,10 @@ int ubcore_query_res_done(struct netlink_callback *cb)
 	void *res_buf = (void *)cb->args[CB_ARGS_DEV_BUF];
 	struct ubcore_res_jetty_group_val *jtgrp_val;
 	struct ubcore_res_seg_val *seg_val;
-	struct ubcore_res_dev_val *dev_val;
 	struct ubcore_res_tpg_val *tpg_val;
+
+	if (cb->args[CB_ARGS_KEY_CNT] == 0)
+		return ubcore_list_res_done(cb);
 
 	switch (type) {
 	case UBCORE_RES_KEY_TPG:
@@ -1011,10 +887,6 @@ int ubcore_query_res_done(struct netlink_callback *cb)
 	case UBCORE_RES_KEY_SEG:
 		seg_val = res_buf;
 		vfree(seg_val->seg_list);
-		break;
-	case UBCORE_RES_KEY_URMA_DEV:
-		dev_val = res_buf;
-		ubcore_free_res_dev_list(dev_val);
 		break;
 	default:
 		break;
@@ -1039,11 +911,85 @@ int ubcore_query_res_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	if (!hdr)
 		return 0;
 
-	ret = ubcore_fill_res(type, res_buf, skb, cb);
+	if (cb->args[CB_ARGS_KEY_CNT] == 0)
+		ret = ubcore_fill_list_res(type, res_buf, skb, cb);
+	else
+		ret = ubcore_fill_res(type, res_buf, skb, cb);
 	if (ret < 0)
 		genlmsg_cancel(skb, hdr);
 	else
 		genlmsg_end(skb, hdr);
 
 	return (int)skb->len;
+}
+
+static void ubcore_free_eid_ctx(struct ubcore_update_eid_ctx *ctx)
+{
+	if (ctx->net)
+		put_net(ctx->net);
+	if (ctx->dev)
+		ubcore_put_device(ctx->dev);
+	kfree(ctx->req_msg);
+	if (ctx->s) {
+		kfree(ctx->s->resp);
+		ubcore_destroy_msg_session(ctx->s);
+	}
+	kfree(ctx);
+	ubcore_log_info("updata eid done");
+}
+
+static int ubcore_dump_eid_ret(struct sk_buff *skb, struct netlink_callback *cb,
+	enum ubcore_cmd cmd_type)
+{
+	struct ubcore_update_eid_ctx *ctx = (struct ubcore_update_eid_ctx *)cb->args[0];
+	void *hdr;
+	int ret;
+
+	hdr = genlmsg_put(skb, NETLINK_CB(cb->skb).portid, cb->nlh->nlmsg_seq, &ubcore_genl_family,
+			NLM_F_MULTI, (uint8_t)cmd_type);
+	if (!hdr)
+		return -ENOMEM;
+	ret = ubcore_update_uvs_eid_ret(ctx);
+	if (nla_put_s32(skb, UBCORE_UPDATE_EID_RET, ret))
+		genlmsg_cancel(skb, hdr);
+	else
+		genlmsg_end(skb, hdr);
+
+	return ret;
+}
+
+int ubcore_add_eid_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	return ubcore_dump_eid_ret(skb, cb, UBCORE_CMD_ADD_EID);
+}
+
+int ubcore_delete_eid_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	return ubcore_dump_eid_ret(skb, cb, UBCORE_CMD_DEL_EID);
+}
+
+int ubcore_delete_eid_done(struct netlink_callback *cb)
+{
+	struct ubcore_update_eid_ctx *ctx = (struct ubcore_update_eid_ctx *)cb->args[0];
+
+	ubcore_free_eid_ctx(ctx);
+	return 0;
+}
+
+int ubcore_add_eid_done(struct netlink_callback *cb)
+{
+	struct ubcore_update_eid_ctx *ctx = (struct ubcore_update_eid_ctx *)cb->args[0];
+
+	ubcore_free_eid_ctx(ctx);
+	return 0;
+}
+
+int ubcore_delete_eid_start(struct netlink_callback *cb)
+{
+	return ubcore_update_ueid(cb, UBCORE_MSG_DEALLOC_EID);
+}
+
+int ubcore_add_eid_start(struct netlink_callback *cb)
+{
+	return ubcore_update_ueid(cb, UBCORE_MSG_ALLOC_EID);
 }

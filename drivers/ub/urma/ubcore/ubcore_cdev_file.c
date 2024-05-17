@@ -37,8 +37,6 @@ typedef ssize_t (*ubcore_store_attr_cb)(struct ubcore_device *dev,
 	const char *buf, size_t len);
 typedef ssize_t (*ubcore_show_port_attr_cb)(struct ubcore_device *dev,
 	char *buf, uint8_t port_id);
-typedef ssize_t (*ubcore_show_eid_attr_cb)(struct ubcore_device *dev,
-	char *buf, uint16_t idx, struct net *net);
 
 static inline struct ubcore_device *get_ubcore_device(struct ubcore_logic_device *ldev)
 {
@@ -383,7 +381,8 @@ static DEVICE_ATTR_RO(ceq_cnt);
 
 static ssize_t utp_cnt_show_cb(struct ubcore_device *dev, char *buf)
 {
-	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n", dev->attr.dev_cap.utp_cnt);
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n",
+		dev->attr.dev_cap.max_utp_cnt);
 }
 
 static ssize_t utp_cnt_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -487,6 +486,50 @@ static ssize_t driver_name_show(struct device *dev, struct device_attribute *att
 
 static DEVICE_ATTR_RO(driver_name);
 
+/* One eid line has upto 51 bytes with the format:
+ * "4294967295 0000:0000:0000:0000:0000:ffff:7f00:0001\n"
+ * sysfs buf size is PAGESIZE, upto 80 eid lines are supported in the sysfs
+ */
+#define UBCORE_MAX_EID_LINE 51
+
+static ssize_t eid_show_cb(struct ubcore_device *dev, char *buf, struct net *net)
+{
+	struct ubcore_eid_entry *e;
+	ssize_t len = 0;
+	uint32_t i;
+
+	if (dev->eid_table.eid_entries == NULL)
+		return -EINVAL;
+
+	spin_lock(&dev->eid_table.lock);
+	for (i = 0; i < dev->eid_table.eid_cnt; i++) {
+		e = &dev->eid_table.eid_entries[i];
+		if (!e->valid || !net_eq(e->net, net))
+			continue;
+		len += snprintf(buf + len, UBCORE_MAX_EID_LINE,
+			"%u "EID_FMT"\n", i, EID_ARGS(e->eid));
+		if (len >= (ssize_t)(PAGE_SIZE - UBCORE_MAX_EID_LINE))
+			break;
+	}
+	spin_unlock(&dev->eid_table.lock);
+	return len;
+}
+
+static ssize_t eid_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct ubcore_logic_device *ldev = dev_get_drvdata(dev);
+	struct ubcore_device *ub_dev = get_ubcore_device(ldev);
+
+	if (!ldev || !ub_dev || !buf) {
+		ubcore_log_err("Invalid argument.\n");
+		return -EINVAL;
+	}
+
+	return eid_show_cb(ub_dev, buf, read_pnet(&ldev->net));
+}
+static DEVICE_ATTR_RO(eid);
+
+
 static struct attribute *ubcore_dev_attrs[] = {
 	&dev_attr_ubdev.attr,
 	&dev_attr_guid.attr,
@@ -521,6 +564,7 @@ static struct attribute *ubcore_dev_attrs[] = {
 	&dev_attr_virtualization.attr,
 	&dev_attr_transport_type.attr,
 	&dev_attr_driver_name.attr,
+	&dev_attr_eid.attr,
 	NULL,
 };
 
@@ -700,101 +744,6 @@ int ubcore_create_port_attr_files(struct ubcore_logic_device *ldev,
 		"port%hhu", port_id);
 }
 
-static ssize_t ubcore_show_eid_attr(struct ubcore_eid_kobj *eid, struct ubcore_eid_attribute *attr,
-	char *buf, ubcore_show_eid_attr_cb show_cb)
-{
-	struct ubcore_logic_device *ldev = eid->ldev;
-	struct ubcore_device *dev = get_ubcore_device(ldev);
-
-	if (!ldev || !dev) {
-		ubcore_log_err("Invalid argument in show_eid_attr.\n");
-		return -EINVAL;
-	}
-
-	return show_cb(dev, buf, eid->eid_idx, read_pnet(&ldev->net));
-}
-
-static ssize_t show_eid_cb(struct ubcore_device *dev, char *buf, uint16_t idx, struct net *net)
-{
-	struct ubcore_eid_entry *e;
-	union ubcore_eid eid;
-
-	e = &dev->eid_table.eid_entries[idx];
-	if (e->valid && net_eq(e->net, net)) {
-		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
-			EID_ARGS(e->eid));
-	} else {
-		memset(&eid, 0, sizeof(union ubcore_eid));
-		return snprintf(buf, (UBCORE_EID_STR_LEN + 1) + 1, EID_FMT"\n",
-			EID_ARGS(eid));
-	}
-}
-
-static ssize_t eid_show(struct ubcore_eid_kobj *eid, struct ubcore_eid_attribute *attr, char *buf)
-{
-	return ubcore_show_eid_attr(eid, attr, buf, show_eid_cb);
-}
-
-static EID_ATTR_RO(eid);
-
-static struct attribute *ubcore_eid_attrs[] = {
-	&eid_attr_eid.attr,
-	NULL,
-};
-
-static ssize_t ubcore_eid_attr_show(struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	struct ubcore_eid_attribute *eid_attr =
-		container_of(attr, struct ubcore_eid_attribute, attr);
-	struct ubcore_eid_kobj *eid = container_of(kobj, struct ubcore_eid_kobj, kobj);
-
-	if (!eid_attr->show)
-		return -EIO;
-
-	return eid_attr->show(eid, eid_attr, buf);
-}
-
-static ssize_t ubcore_eid_attr_store(struct kobject *kobj, struct attribute *attr,
-	const char *buf, size_t count)
-{
-	struct ubcore_eid_attribute *eid_attr =
-		container_of(attr, struct ubcore_eid_attribute, attr);
-	struct ubcore_eid_kobj *eid = container_of(kobj, struct ubcore_eid_kobj, kobj);
-
-	if (!eid_attr->store)
-		return -EIO;
-	return eid_attr->store(eid, eid_attr, buf, count);
-}
-
-static const struct sysfs_ops ubcore_eid_sysfs_ops = {
-	.show	= ubcore_eid_attr_show,
-	.store	= ubcore_eid_attr_store
-};
-
-static void ubcore_eid_release(struct kobject *kobj)
-{
-}
-
-// ATTRIBUTE_GROUPS defined in 3.11, but must be consistent with kobj_type->default_groups
-ATTRIBUTE_GROUPS(ubcore_eid);
-
-static struct kobj_type ubcore_eid_type = {
-	.release       = ubcore_eid_release,
-	.sysfs_ops     = &ubcore_eid_sysfs_ops,
-	.default_groups = ubcore_eid_groups
-};
-
-int ubcore_create_eid_attr_files(struct ubcore_logic_device *ldev, uint32_t eid_num)
-{
-	struct ubcore_eid_kobj *eid;
-
-	eid = &ldev->eid[eid_num];
-	eid->ldev = ldev;
-	eid->eid_idx = eid_num;
-
-	return kobject_init_and_add(&eid->kobj, &ubcore_eid_type, &ldev->dev->kobj,
-		"eid%u", eid_num);
-}
 
 int ubcore_create_dev_attr_files(struct ubcore_logic_device *ldev)
 {
@@ -814,41 +763,14 @@ void ubcore_remove_port_attr_files(struct ubcore_logic_device *ldev, uint8_t por
 	kobject_put(&ldev->port[port_id].kobj);
 }
 
-void ubcore_remove_eid_attr_files(struct ubcore_logic_device *ldev, uint32_t eid_num)
-{
-	kobject_put(&ldev->eid[eid_num].kobj);
-}
-
 void ubcore_remove_dev_attr_files(struct ubcore_logic_device *ldev)
 {
 	sysfs_remove_group(&ldev->dev->kobj, &ubcore_dev_attr_group);
 }
 
-static int ubcore_create_eid_table(struct ubcore_logic_device *ldev, struct ubcore_device *dev)
-{
-	struct ubcore_eid_kobj *eid_list;
-
-	eid_list = kcalloc(
-		1, dev->attr.dev_cap.max_eid_cnt * sizeof(struct ubcore_eid_kobj), GFP_ATOMIC);
-	if (eid_list == NULL)
-		return -ENOMEM;
-
-	ldev->eid = eid_list;
-	return 0;
-}
-
-static void ubcore_destroy_eid_table(struct ubcore_logic_device *ldev)
-{
-	if (ldev->eid != NULL) {
-		kfree(ldev->eid);
-		ldev->eid = NULL;
-	}
-}
-
 int ubcore_fill_logic_device_attr(struct ubcore_logic_device *ldev,
 	struct ubcore_device *dev)
 {
-	uint32_t e1, e2; /* eid */
 	uint8_t p1, p2; /* port */
 
 	if (ubcore_create_dev_attr_files(ldev) != 0) {
@@ -862,21 +784,7 @@ int ubcore_fill_logic_device_attr(struct ubcore_logic_device *ldev,
 			goto err_port_attr;
 	}
 
-	/* create /sys/class/ubcore/<dev->dev_name>/eid* */
-	if (ubcore_create_eid_table(ldev, dev) != 0)
-		goto err_port_attr;
-
-	for (e1 = 0; e1 < dev->attr.dev_cap.max_eid_cnt; e1++) {
-		if (ubcore_create_eid_attr_files(ldev, e1) != 0)
-			goto err_eid_attr;
-	}
 	return 0;
-
-err_eid_attr:
-	for (e2 = 0; e2 < e1; e2++)
-		ubcore_remove_eid_attr_files(ldev, e2);
-
-	ubcore_destroy_eid_table(ldev);
 
 err_port_attr:
 	for (p2 = 0; p2 < p1; p2++)
@@ -889,13 +797,7 @@ err_port_attr:
 void ubcore_unfill_logic_device_attr(struct ubcore_logic_device *ldev,
 	struct ubcore_device *dev)
 {
-	uint32_t e;
 	uint8_t p;
-
-	for (e = 0; e < dev->attr.dev_cap.max_eid_cnt; e++)
-		ubcore_remove_eid_attr_files(ldev, e);
-
-	ubcore_destroy_eid_table(ldev);
 
 	for (p = 0; p < dev->attr.port_cnt; p++)
 		ubcore_remove_port_attr_files(ldev, p);

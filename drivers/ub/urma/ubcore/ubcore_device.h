@@ -23,9 +23,12 @@
 
 int ubcore_register_pnet_ops(void);
 void ubcore_unregister_pnet_ops(void);
-int ubcore_class_register(struct class **ubcore_class);
-void ubcore_class_unregister(struct class *ubcore_class);
+int ubcore_class_register(void);
+void ubcore_class_unregister(void);
 int ubcore_set_ns_mode(bool shared);
 int ubcore_set_dev_ns(char *device_name, uint32_t ns_fd);
 bool ubcore_dev_accessible(struct ubcore_device *dev, struct net *net);
+int ubcore_get_max_mtu(struct ubcore_device *dev, uint8_t port_num, enum ubcore_mtu *mtu);
+struct ubcore_nlmsg *ubcore_new_tpf_dev_msg(struct ubcore_device *dev);
+bool ubcore_eid_accessible(struct ubcore_device *dev, uint32_t eid_index);
 #endif // UBCORE_DEVICE_H

@@ -59,6 +59,4 @@ struct ubcore_hash_table *ubcore_create_tptable(void);
 void ubcore_destroy_tptable(struct ubcore_hash_table **pp_ht);
 struct ubcore_hash_table *ubcore_get_tptable(struct ubcore_hash_table *ht);
 void ubcore_put_tptable(struct ubcore_hash_table *ht);
-
-struct ubcore_tp_node *ubcore_add_tp_with_tpn(struct ubcore_device *dev, struct ubcore_tp *tp);
 #endif
