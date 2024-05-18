@@ -51,6 +51,9 @@ enum transparent_hugepage_flag {
 	TRANSPARENT_HUGEPAGE_DEFRAG_KHUGEPAGED_FLAG,
 	TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG,
 	TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG,
+	TRANSPARENT_HUGEPAGE_FILE_EXEC_MTHP_FLAG,
+	TRANSPARENT_HUGEPAGE_FILE_MAPPING_ALIGN_FLAG,
+	TRANSPARENT_HUGEPAGE_ANON_MAPPING_ALIGN_FLAG,
 };
 
 struct kobject;
@@ -101,6 +104,7 @@ extern unsigned long transparent_hugepage_flags;
 extern unsigned long huge_anon_orders_always;
 extern unsigned long huge_anon_orders_madvise;
 extern unsigned long huge_anon_orders_inherit;
+extern unsigned long huge_pcp_allow_orders;
 
 static inline bool hugepage_global_enabled(void)
 {
@@ -255,6 +259,29 @@ unsigned long thp_vma_allowable_orders(struct vm_area_struct *vma,
 
 	return __thp_vma_allowable_orders(vma, vm_flags, smaps, in_pf,
 					  enforce_sysfs, orders);
+}
+
+enum mthp_stat_item {
+	MTHP_STAT_ANON_FAULT_ALLOC,
+	MTHP_STAT_ANON_FAULT_FALLBACK,
+	MTHP_STAT_ANON_FAULT_FALLBACK_CHARGE,
+	MTHP_STAT_ANON_SWPOUT,
+	MTHP_STAT_ANON_SWPOUT_FALLBACK,
+	__MTHP_STAT_COUNT
+};
+
+struct mthp_stat {
+	unsigned long stats[ilog2(MAX_PTRS_PER_PTE) + 1][__MTHP_STAT_COUNT];
+};
+
+DECLARE_PER_CPU(struct mthp_stat, mthp_stats);
+
+static inline void count_mthp_stat(int order, enum mthp_stat_item item)
+{
+	if (order <= 0 || order > PMD_ORDER)
+		return;
+
+	this_cpu_inc(mthp_stats.stats[order][item]);
 }
 
 #define transparent_hugepage_use_zero_page()				\

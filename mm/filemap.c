@@ -46,6 +46,7 @@
 #include <linux/pipe_fs_i.h>
 #include <linux/splice.h>
 #include <linux/huge_mm.h>
+#include <linux/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
@@ -3141,6 +3142,10 @@ static int lock_folio_maybe_drop_mmap(struct vm_fault *vmf, struct folio *folio,
 	(transparent_hugepage_flags &			\
 	 (1<<TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG))
 
+#define file_exec_mthp_enabled()			\
+	(transparent_hugepage_flags &			\
+	 (1<<TRANSPARENT_HUGEPAGE_FILE_EXEC_MTHP_FLAG))
+
 static inline void try_enable_file_exec_thp(struct vm_area_struct *vma,
 					    unsigned long *vm_flags,
 					    struct file *file)
@@ -3156,6 +3161,24 @@ static inline void try_enable_file_exec_thp(struct vm_area_struct *vma,
 
 	if (file_exec_thp_enabled())
 		hugepage_madvise(vma, vm_flags, MADV_HUGEPAGE);
+}
+
+static inline bool file_exec_can_enable_mthp(struct address_space *mapping,
+					     unsigned long vm_flags)
+{
+#ifndef arch_wants_exec_folio_order
+	return false;
+#endif
+	if (!is_exec_mapping(vm_flags))
+		return false;
+
+	if (!mapping_large_folio_support(mapping))
+		return false;
+
+	if (!file_exec_mthp_enabled())
+		return false;
+
+	return true;
 }
 #endif
 
@@ -3194,6 +3217,25 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 		ra->async_size = HPAGE_PMD_NR;
 		page_cache_ra_order(&ractl, ra, HPAGE_PMD_ORDER);
 		return fpin;
+	}
+
+	/*
+	 * Allow arch to request a preferred minimum folio order for executable
+	 * memory. This can often be beneficial to performance if (e.g.) arm64
+	 * can contpte-map the folio. Executable memory rarely benefits from
+	 * read-ahead anyway, due to its random access nature.
+	 */
+	if (file_exec_can_enable_mthp(mapping, vm_flags)) {
+		int order = arch_wants_exec_folio_order();
+
+		if (order >= 0) {
+			fpin = maybe_unlock_mmap_for_io(vmf, fpin);
+			ra->size = 1UL << order;
+			ra->async_size = 0;
+			ractl._index &= ~((unsigned long)ra->size - 1);
+			page_cache_ra_order(&ractl, ra, order);
+			return fpin;
+		}
 	}
 #endif
 

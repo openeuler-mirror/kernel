@@ -203,11 +203,31 @@ PMD-mappable transparent hugepage::
 	cat /sys/kernel/mm/transparent_hugepage/hpage_pmd_size
 
 The kernel tries to use huge, PMD-mappable page on read page fault for
-file exec mapping if CONFIG_READ_ONLY_THP_FOR_FS enabled. It's possible
-to enabled the feature by writing 1 or disablt by writing 0::
+if CONFIG_READ_ONLY_THP_FOR_FS enabled, or try non-PMD size page(eg,
+64K arm64) for file exec mapping, BIT0 for PMD THP, BIT1 for mTHP. It's
+possible to enable/disable it by configurate the corresponding bit::
 
-	echo 0x0 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
 	echo 0x1 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
+	echo 0x2 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
+	echo 0x3 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
+
+The kernel could try to enable other larger size mappings align other
+than THP size, eg, 64K on arm64, BIT0 for file mapping, BIT1 for anon
+mapping, it is disabled by default, and could enable this feature by
+writing the corresponding bit to 1::
+
+	echo 0x1 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
+	echo 0x2 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
+	echo 0x3 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
+
+The kernel could enable high-orders(greated than PAGE_ALLOC_COSTLY_ORDER, only
+support order 4 for now) be stored on PCP lists(except PMD order), which could
+reduce the zone lock contention when allocate hige-order pages frequently. It
+is possible to enable order 4 pages stored on PCP lists by writing 4 or disable
+it back by writing 0::
+
+        echo 0 >/sys/kernel/mm/transparent_hugepage/pcp_allow_high_order
+        echo 4 >/sys/kernel/mm/transparent_hugepage/pcp_allow_high_order
 
 khugepaged will be automatically started when one or more hugepage
 sizes are enabled (either by directly setting "always" or "madvise",
@@ -376,7 +396,7 @@ monitor how successfully the system is providing huge pages for use.
 
 thp_fault_alloc
 	is incremented every time a huge page is successfully
-	allocated to handle a page fault.
+	allocated and charged to handle a page fault.
 
 thp_collapse_alloc
 	is incremented by khugepaged when it has found
@@ -384,7 +404,7 @@ thp_collapse_alloc
 	successfully allocated a new huge page to store the data.
 
 thp_fault_fallback
-	is incremented if a page fault fails to allocate
+	is incremented if a page fault fails to allocate or charge
 	a huge page and instead falls back to using small pages.
 
 thp_fault_fallback_charge
@@ -450,6 +470,34 @@ thp_swpout
 	piece without splitting.
 
 thp_swpout_fallback
+	is incremented if a huge page has to be split before swapout.
+	Usually because failed to allocate some continuous swap space
+	for the huge page.
+
+In /sys/kernel/mm/transparent_hugepage/hugepages-<size>kB/stats, There are
+also individual counters for each huge page size, which can be utilized to
+monitor the system's effectiveness in providing huge pages for usage. Each
+counter has its own corresponding file.
+
+anon_fault_alloc
+	is incremented every time a huge page is successfully
+	allocated and charged to handle a page fault.
+
+anon_fault_fallback
+	is incremented if a page fault fails to allocate or charge
+	a huge page and instead falls back to using huge pages with
+	lower orders or small pages.
+
+anon_fault_fallback_charge
+	is incremented if a page fault fails to charge a huge page and
+	instead falls back to using huge pages with lower orders or
+	small pages even though the allocation was successful.
+
+anon_swpout
+	is incremented every time a huge page is swapped out in one
+	piece without splitting.
+
+anon_swpout_fallback
 	is incremented if a huge page has to be split before swapout.
 	Usually because failed to allocate some continuous swap space
 	for the huge page.

@@ -528,7 +528,7 @@ out:
 static inline unsigned int order_to_pindex(int migratetype, int order)
 {
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-	if (order > PAGE_ALLOC_COSTLY_ORDER) {
+	if (order > PAGE_ALLOC_COSTLY_ORDER + 1) {
 		VM_BUG_ON(order != HPAGE_PMD_ORDER);
 		return NR_LOWORDER_PCP_LISTS;
 	}
@@ -559,6 +559,8 @@ static inline bool pcp_allowed_order(unsigned int order)
 		return true;
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	if (order == HPAGE_PMD_ORDER)
+		return true;
+	if (order == READ_ONCE(huge_pcp_allow_orders))
 		return true;
 #endif
 	return false;
@@ -6827,6 +6829,20 @@ void zone_pcp_reset(struct zone *zone)
 			zone->per_cpu_zonestats = &boot_zonestats;
 		}
 	}
+}
+
+void drain_all_zone_pages(void)
+{
+	struct zone *zone;
+
+	mutex_lock(&pcp_batch_high_lock);
+	for_each_populated_zone(zone)
+		__zone_set_pageset_high_and_batch(zone, 0, 0, 1);
+	__drain_all_pages(NULL, true);
+	for_each_populated_zone(zone)
+		__zone_set_pageset_high_and_batch(zone, zone->pageset_high_min,
+				zone->pageset_high_max, zone->pageset_batch);
+	mutex_unlock(&pcp_batch_high_lock);
 }
 
 #ifdef CONFIG_MEMORY_HOTREMOVE
