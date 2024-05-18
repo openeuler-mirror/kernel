@@ -665,7 +665,7 @@ static int iomap_read_folio_sync(loff_t block_start, struct folio *folio,
 	return submit_bio_wait(&bio);
 }
 
-static int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
+int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 		size_t len, struct folio *folio)
 {
 	const struct iomap *srcmap = iomap_iter_srcmap(iter);
@@ -727,6 +727,7 @@ static int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(__iomap_write_begin);
 
 static struct folio *__iomap_get_folio(struct iomap_iter *iter, loff_t pos,
 		size_t len)
@@ -825,7 +826,7 @@ out_unlock:
 	return status;
 }
 
-static bool __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
+bool __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 		size_t copied, struct folio *folio)
 {
 	flush_dcache_folio(folio);
@@ -848,6 +849,7 @@ static bool __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 	filemap_dirty_folio(inode->i_mapping, folio);
 	return true;
 }
+EXPORT_SYMBOL_GPL(__iomap_write_end);
 
 static void iomap_write_end_inline(const struct iomap_iter *iter,
 		struct folio *folio, loff_t pos, size_t copied)
