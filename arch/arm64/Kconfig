@@ -1606,6 +1606,15 @@ config HW_PERF_EVENTS
 	def_bool y
 	depends on ARM_PMU
 
+config ARCH_LLC_128_LINE_SIZE
+	bool "Force 128 bytes alignment for fitting LLC cacheline"
+	depends on ARCH_HISI
+	default n
+	help
+	  As specific machine's LLC cacheline size may be up to
+	  128 bytes, gaining performance improvement from fitting
+	  128 Bytes LLC cache aligned.
+
 # Supported by clang >= 7.0 or GCC >= 12.0.0
 config CC_HAVE_SHADOW_CALL_STACK
 	def_bool $(cc-option, -fsanitize=shadow-call-stack -ffixed-x18)
