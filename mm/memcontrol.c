@@ -4415,21 +4415,21 @@ static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos)
 {
 	int ret;
-	int qos_stat_old = sysctl_memcg_swap_qos_stat;
+	int qos_stat_old;
 	int swap_type;
+	static DEFINE_MUTEX(sysctl_mutex);
 
+	mutex_lock(&sysctl_mutex);
+	qos_stat_old = sysctl_memcg_swap_qos_stat;
 	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
-	if (ret)
-		return ret;
-
-	if (write) {
+	if (write && !ret) {
 		if (qos_stat_old == sysctl_memcg_swap_qos_stat)
-			return 0;
+			goto unlock;
 
 		switch (sysctl_memcg_swap_qos_stat) {
 		case MEMCG_SWAP_STAT_DISABLE:
 			static_branch_disable(&memcg_swap_qos_key);
-			return 0;
+			goto unlock;
 		case MEMCG_SWAP_STAT_ALL:
 			swap_type = SWAP_TYPE_ALL;
 			break;
@@ -4438,16 +4438,26 @@ static int sysctl_memcg_swap_qos_handler(struct ctl_table *table, int write,
 			break;
 		}
 
+		/*
+		 * Enable the feature when it is in disabled state.
+		 * If it is already in enabled state, don't allowed
+		 * to switch it to other state directly since it is
+		 * dangerous that will impact all memory cgroups.
+		 */
 		if (qos_stat_old == MEMCG_SWAP_STAT_DISABLE) {
 			memcg_swap_qos_reset(swap_type);
 			static_branch_enable(&memcg_swap_qos_key);
 			enable_swap_slots_cache_max();
 		} else {
-			return -EINVAL;
+			sysctl_memcg_swap_qos_stat = qos_stat_old;
+			ret = -EINVAL;
 		}
 	}
 
-	return 0;
+unlock:
+	mutex_unlock(&sysctl_mutex);
+
+	return ret;
 }
 #endif
 
