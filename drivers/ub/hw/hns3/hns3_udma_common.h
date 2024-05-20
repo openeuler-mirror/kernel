@@ -25,6 +25,17 @@
 #define DMA_WQE_SHIFT		3
 #define DMA_DB_RECORD_SHIFT	1
 
+/* The minimum page size is 4K for hardware */
+#define UDMA_HW_PAGE_SHIFT			12
+#define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
+#define UDMA_HW_PAGE_ALIGN(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
+
+static inline uint64_t umem_cal_npages(uint64_t va, uint64_t len)
+{
+	return (ALIGN(va + len, UDMA_PAGE_SIZE) - ALIGN_DOWN(va, UDMA_PAGE_SIZE)) /
+	       UDMA_PAGE_SIZE;
+}
+
 #define udma_get_field(origin, mask, shift)                                    \
 	((le32_to_cpu(origin) & (mask)) >> (uint32_t)(shift))
 #define udma_get_field64(origin, mask, shift)                                  \

@@ -22,6 +22,7 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_dca.h"
 #include "hns3_udma_dfx.h"
+#include "hns3_udma_eid.h"
 #include "hns3_udma_tp.h"
 
 struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn)
@@ -467,4 +468,76 @@ failed_alloc_tp:
 	kfree(tp);
 
 	return fail_ret_tp;
+}
+
+struct udma_tp *udma_create_user_tp(struct udma_dev *udma_dev,
+				    struct udma_jetty *jetty,
+				    struct ubcore_jetty_cfg *cfg,
+				    struct ubcore_udata *udata)
+{
+	struct udma_tp *tp;
+	int ret;
+
+	tp = kzalloc(sizeof(*tp), GFP_KERNEL);
+	if (!tp)
+		return ERR_PTR(-ENOMEM);
+
+	udma_fill_jetty_qp_attr(udma_dev, &tp->qp.qp_attr, jetty, udata->uctx, cfg);
+	ret = udma_create_qp_common(udma_dev, &tp->qp, udata);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"Failed to create qp common, ret is %d.\n", ret);
+		goto failed_create_qp;
+	}
+
+	tp->ubcore_tp.tpn = tp->qp.qpn;
+	tp->ubcore_tp.ub_dev = &udma_dev->ub_dev;
+	ret = udma_init_qpc(udma_dev, &tp->qp);
+	if (ret)
+		goto failed_init_qpc;
+
+	if (dfx_switch)
+		store_tpn(udma_dev, tp);
+
+	return tp;
+
+failed_init_qpc:
+	udma_destroy_qp_common(udma_dev, &tp->qp, NULL);
+failed_create_qp:
+	kfree(tp);
+
+	return NULL;
+}
+
+int udma_modify_user_tp(struct ubcore_device *dev, uint32_t tpn,
+			struct ubcore_tp_cfg *cfg,
+			struct ubcore_tp_attr *attr,
+			union ubcore_tp_attr_mask mask)
+{
+	struct udma_dev *udma_dev = to_udma_dev(dev);
+	unsigned long flags;
+	struct udma_tp *tp;
+	struct udma_qp *qp;
+	int ret;
+
+	xa_lock_irqsave(&udma_dev->qp_table.xa, flags);
+	qp = (struct udma_qp *)xa_load(&udma_dev->qp_table.xa, tpn);
+	if (qp)
+		refcount_inc(&qp->refcount);
+	xa_unlock_irqrestore(&udma_dev->qp_table.xa, flags);
+
+	if (!qp)
+		return -EINVAL;
+	tp = container_of(qp, struct udma_tp, qp);
+	udma_set_tp(dev, cfg, tp);
+	udma_ipv4_map_to_eid(attr->peer_net_addr.net_addr.in4.addr,
+			     &tp->ubcore_tp.peer_eid);
+	ret = udma_modify_tp(&tp->ubcore_tp, attr, mask);
+	if (ret)
+		dev_err(&dev->dev, "modify user tp failed, ret = %d.\n", ret);
+
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
+
+	return ret;
 }

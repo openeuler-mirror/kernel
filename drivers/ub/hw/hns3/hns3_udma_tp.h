@@ -42,5 +42,13 @@ int udma_destroy_tp(struct ubcore_tp *tp);
 int udma_modify_tp(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 		   union ubcore_tp_attr_mask mask);
 struct udma_qp *get_qp(struct udma_dev *udma_device, uint32_t qpn);
+struct udma_tp *udma_create_user_tp(struct udma_dev *udma_dev,
+				    struct udma_jetty *jetty,
+				    struct ubcore_jetty_cfg *cfg,
+				    struct ubcore_udata *udata);
+int udma_modify_user_tp(struct ubcore_device *dev, uint32_t tpn,
+			struct ubcore_tp_cfg *cfg,
+			struct ubcore_tp_attr *attr,
+			union ubcore_tp_attr_mask mask);
 
 #endif /* _UDMA_TP_H */

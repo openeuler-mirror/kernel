@@ -359,6 +359,7 @@ enum {
 
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))
 
+bool is_rc_jetty(struct udma_qp_attr *qp_attr);
 int udma_modify_qp_common(struct udma_qp *qp,
 			  struct ubcore_tp_attr *attr,
 			  union ubcore_tp_attr_mask ubcore_mask,

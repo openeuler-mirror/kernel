@@ -1884,8 +1884,7 @@ int ubcore_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ue
 
 	ret = dev->ops->add_ueid(dev, fe_idx, cfg);
 	if (ret != 0)
-		ubcore_log_err("failed to add ueid, ret:%d\n",
-		fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index, ret);
+		ubcore_log_err("failed to add ueid, ret:%d\n", ret);
 
 	return ret;
 }
@@ -1906,8 +1905,7 @@ int ubcore_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore
 
 	ret = dev->ops->delete_ueid(dev, fe_idx, cfg);
 	if (ret != 0)
-		ubcore_log_err("failed to add ueid, ret:%d\n",
-			fe_idx, EID_ARGS(cfg->eid), cfg->upi, cfg->eid_index, ret);
+		ubcore_log_err("failed to add ueid, ret:%d\n", ret);
 
 	return ret;
 }

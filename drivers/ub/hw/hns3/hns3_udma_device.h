@@ -58,11 +58,6 @@
 #define UDMA_SGE_SIZE				16
 #define UDMA_IDX_QUE_ENTRY_SZ			4
 
-/* The minimum page size is 4K for hardware */
-#define UDMA_HW_PAGE_SHIFT			12
-#define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
-#define UDMA_HW_PAGE_ALIGN(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
-
 #define UDMA_DWQE_SIZE				65536
 #define UDMA_DWQE_MMAP_QP_NUM			1024
 
