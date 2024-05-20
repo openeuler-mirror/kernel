@@ -11944,6 +11944,11 @@ F:	drivers/regulator/mpq7920.c
 F:	drivers/regulator/mpq7920.h
 F:	include/linux/mfd/mp2629.h
 
+Mont-TSSE(TM) DRIVER
+M:	Zhongfei Cai<carrie.cai@montage-tech.com>
+S:	Maintained
+F:	drivers/crypto/montage
+
 MOTION EYE VAIO PICTUREBOOK CAMERA DRIVER
 S:	Orphan
 W:	http://popies.net/meye/

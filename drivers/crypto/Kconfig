@@ -928,6 +928,8 @@ source "drivers/crypto/hisilicon/Kconfig"
 
 source "drivers/crypto/amlogic/Kconfig"
 
+source "drivers/crypto/montage/Kconfig"
+
 config CRYPTO_DEV_SA2UL
 	tristate "Support for TI security accelerator"
 	depends on ARCH_K3 || COMPILE_TEST
