@@ -1171,15 +1171,13 @@ int get_swap_pages(int n_goal, swp_entry_t swp_entries[], int entry_order,
 start_over:
 	node = numa_node_id();
 	plist_for_each_entry_safe(si, next, &swap_avail_heads[node], avail_lists[node]) {
+		if (should_skip_swap_type(si->type, type))
+			goto nextsi;
+
 		/* requeue si to after same-priority siblings */
 		plist_requeue(&si->avail_lists[node], &swap_avail_heads[node]);
 		spin_unlock(&swap_avail_lock);
 		spin_lock(&si->lock);
-		if (should_skip_swap_type(si->type, type)) {
-			spin_unlock(&si->lock);
-			spin_lock(&swap_avail_lock);
-			goto nextsi;
-		}
 		if (!si->highest_bit || !(si->flags & SWP_WRITEOK)) {
 			spin_lock(&swap_avail_lock);
 			if (plist_node_empty(&si->avail_lists[node])) {
