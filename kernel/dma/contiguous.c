@@ -224,6 +224,10 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
 
 	dma_numa_cma_reserve();
 
+#if defined(CONFIG_X86_64) && defined(CONFIG_PCI)
+	if (is_zhaoxin_kh40000)
+		return;
+#endif
 	pr_debug("%s(limit %08lx)\n", __func__, (unsigned long)limit);
 
 	if (size_cmdline != -1) {

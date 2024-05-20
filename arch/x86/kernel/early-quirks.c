@@ -28,6 +28,7 @@
 #include <asm/gart.h>
 #include <asm/irq_remapping.h>
 #include <asm/early_ioremap.h>
+#include <asm/dma-mapping.h>
 
 static void __init early_pci_clear_msi(int bus, int slot, int func)
 {
@@ -716,6 +717,18 @@ static void __init apple_airport_reset(int bus, int slot, int func)
 	early_iounmap(mmio, BCM4331_MMIO_SIZE);
 }
 
+static void quirk_zhaoxin_dma_patch(int num, int slot, int func)
+{
+	u8 revision;
+
+	revision = read_pci_config_byte(num, slot, func, PCI_REVISION_ID);
+	if (revision == 0x10) {
+		is_zhaoxin_kh40000 = true;
+		dma_ops = &kh40000_dma_direct_ops;
+		pr_info("zhaoxin direct dma patch enabled\n");
+	}
+}
+
 #define QFLAG_APPLY_ONCE 	0x1
 #define QFLAG_APPLIED		0x2
 #define QFLAG_DONE		(QFLAG_APPLY_ONCE|QFLAG_APPLIED)
@@ -759,6 +772,10 @@ static struct chipset early_qrk[] __initdata = {
 		PCI_CLASS_BRIDGE_HOST, PCI_ANY_ID, 0, force_disable_hpet},
 	{ PCI_VENDOR_ID_BROADCOM, 0x4331,
 	  PCI_CLASS_NETWORK_OTHER, PCI_ANY_ID, 0, apple_airport_reset},
+	{ PCI_VENDOR_ID_ZHAOXIN, 0x1001, PCI_CLASS_BRIDGE_HOST,
+	  PCI_BASE_CLASS_BRIDGE, QFLAG_APPLY_ONCE, quirk_zhaoxin_dma_patch },
+	{ PCI_VENDOR_ID_ZHAOXIN, 0x345B, PCI_CLASS_BRIDGE_HOST,
+	  PCI_BASE_CLASS_BRIDGE, QFLAG_APPLY_ONCE, quirk_zhaoxin_dma_patch },
 	{ PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0, early_pci_clear_msi},
 	{}
 };
