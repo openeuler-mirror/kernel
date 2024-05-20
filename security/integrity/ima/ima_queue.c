@@ -18,6 +18,7 @@
 #include <linux/rculist.h>
 #include <linux/slab.h>
 #include "ima.h"
+#include "ima_cvm.h"
 
 #define AUDIT_CAUSE_LEN_MAX 32
 
@@ -185,6 +186,16 @@ int ima_add_template_entry(struct ima_template_entry *entry, int violation,
 
 	if (violation)		/* invalidate pcr */
 		digests_arg = digests;
+
+#ifdef CONFIG_CVM_GUEST
+	tpmresult = ima_cvm_extend(digests_arg);
+	if (tpmresult != 0) {
+		snprintf(tpm_audit_cause, AUDIT_CAUSE_LEN_MAX, "TSI_error(%d)",
+			 tpmresult);
+		audit_cause = tpm_audit_cause;
+		audit_info = 0;
+	}
+#endif
 
 	tpmresult = ima_pcr_extend(digests_arg, entry->pcr);
 	if (tpmresult != 0) {

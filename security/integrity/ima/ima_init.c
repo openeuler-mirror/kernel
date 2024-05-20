@@ -17,6 +17,7 @@
 #include <linux/err.h>
 
 #include "ima.h"
+#include "ima_cvm.h"
 
 /* name for boot aggregate entry */
 const char boot_aggregate_name[] = "boot_aggregate";
@@ -57,6 +58,16 @@ static int __init ima_add_boot_aggregate(void)
 	iint->ima_hash = &hash.hdr;
 	iint->ima_hash->algo = ima_hash_algo;
 	iint->ima_hash->length = hash_digest_size[ima_hash_algo];
+
+#ifdef CONFIG_CVM_GUEST
+	if (ima_cvm_available()) {
+		result = ima_calc_cvm_boot_aggregate(&hash.hdr);
+		if (result < 0) {
+			audit_cause = "hashing_error";
+			goto err_out;
+		}
+	}
+#endif
 
 	/*
 	 * With TPM 2.0 hash agility, TPM chips could support multiple TPM
@@ -124,7 +135,15 @@ int __init ima_init(void)
 {
 	int rc;
 
+#ifdef CONFIG_CVM_GUEST
+	rc = ima_cvm_init();
+	if (rc) {
+		pr_info("No CVM found, activating CVM-bypass!\n");
+		ima_tpm_chip = tpm_default_chip();
+	}
+#else
 	ima_tpm_chip = tpm_default_chip();
+#endif
 	if (!ima_tpm_chip)
 		pr_info("No TPM chip found, activating TPM-bypass!\n");
 
