@@ -760,12 +760,7 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 
 	/* Remove HiAddrOffset from normalized address, if enabled: */
 	if (tmp & BIT(0)) {
-		u64 hi_addr_offset;
-
-		if (hygon_f18h_m4h())
-			hi_addr_offset = (tmp & GENMASK_ULL(31, 18)) << 8;
-		else
-			hi_addr_offset = (tmp & GENMASK_ULL(31, 20)) << 8;
+		u64 hi_addr_offset = (tmp & GENMASK_ULL(31, 20)) << 8;
 
 		if (norm_addr >= hi_addr_offset) {
 			ret_addr -= hi_addr_offset;
@@ -814,10 +809,6 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 	switch (intlv_num_chan) {
 	case 0:	intlv_num_chan = 0; break;
 	case 1: intlv_num_chan = 1; break;
-	case 2:
-		if (hygon_f18h_m4h())
-			intlv_num_chan = 2;
-		break;
 	case 3: intlv_num_chan = 2; break;
 	case 5:	intlv_num_chan = 3; break;
 	case 7:	intlv_num_chan = 4; break;
@@ -826,6 +817,9 @@ static int umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr
 		hash_enabled = true;
 		break;
 	default:
+		if (hygon_f18h_m4h() && boot_cpu_data.x86_model == 0x4 &&
+		    intlv_num_chan == 2)
+			break;
 		pr_err("%s: Invalid number of interleaved channels %d.\n",
 			__func__, intlv_num_chan);
 		goto out_err;
@@ -2977,6 +2971,7 @@ static void decode_umc_error(int node_id, struct mce *m)
 	struct amd64_pvt *pvt;
 	struct err_info err;
 	u64 sys_addr;
+	u8 umc;
 
 	mci = edac_mc_find(node_id);
 	if (!mci)
@@ -3007,7 +3002,12 @@ static void decode_umc_error(int node_id, struct mce *m)
 
 	err.csrow = m->synd & 0x7;
 
-	if (umc_normaddr_to_sysaddr(m->addr, pvt->mc_node_id, err.channel, &sys_addr)) {
+	if (hygon_f18h_m4h() && boot_cpu_data.x86_model == 0x6)
+		umc = err.channel << 1;
+	else
+		umc = err.channel;
+
+	if (umc_normaddr_to_sysaddr(m->addr, pvt->mc_node_id, umc, &sys_addr)) {
 		err.err_code = ERR_NORM_ADDR;
 		goto log_error;
 	}
