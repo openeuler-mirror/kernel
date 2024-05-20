@@ -275,6 +275,7 @@ enum {
 	AZX_DRIVER_CMEDIA,
 	AZX_DRIVER_ZHAOXIN,
 	AZX_DRIVER_ZXHDMI,
+	AZX_DRIVER_HYGON,
 	AZX_DRIVER_GENERIC,
 	AZX_NUM_DRIVERS, /* keep this as last entry */
 };
@@ -398,6 +399,7 @@ static const char * const driver_short_names[] = {
 	[AZX_DRIVER_CMEDIA] = "HDA C-Media",
 	[AZX_DRIVER_ZHAOXIN] = "HDA Zhaoxin",
 	[AZX_DRIVER_ZXHDMI] = "HDA Zhaoxin GFX",
+	[AZX_DRIVER_HYGON] = "HDA Hygon",
 	[AZX_DRIVER_GENERIC] = "HD-Audio Generic",
 };
 
@@ -1948,6 +1950,10 @@ static int azx_first_init(struct azx *chip)
 	if (chip->driver_type == AZX_DRIVER_ZXHDMI)
 		azx_init_chip_zx(chip);
 
+	if (chip->driver_type == AZX_DRIVER_HYGON &&
+	    chip->pci->device == PCI_DEVICE_ID_HYGON_18H_M05H_HDA)
+		bus->hygon_dword_access = 1;
+
 	err = pci_request_regions(pci, "ICH HD audio");
 	if (err < 0)
 		return err;
@@ -2880,6 +2886,9 @@ static const struct pci_device_id azx_ids[] = {
 	{ PCI_DEVICE(0x1d17, 0x9144),
 	  .driver_data = AZX_DRIVER_ZXHDMI | AZX_DCAPS_POSFIX_LPIB |
 	  AZX_DCAPS_NO_MSI | AZX_DCAPS_RIRB_PRE_DELAY },
+	/* Hygon HDAudio */
+	{ PCI_DEVICE(0x1d94, 0x14a9),
+	  .driver_data = AZX_DRIVER_HYGON | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, azx_ids);
