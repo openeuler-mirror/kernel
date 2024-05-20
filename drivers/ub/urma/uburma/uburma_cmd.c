@@ -1937,29 +1937,47 @@ static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev,
 static int uburma_fill_net_addr_list(struct ubcore_device *dev,
 	struct uburma_cmd_get_net_addr_list *netaddr_list)
 {
+	struct uburma_cmd_net_addr_info *netaddr_info;
 	struct ubcore_sip_info *entry;
 	uint32_t max_netaddr_cnt;
 	uint32_t netaddr_cnt = 0;
+	uint64_t len;
 	int i;
+
+	max_netaddr_cnt = min(dev->sip_table.max_sip_cnt,
+		netaddr_list->in.max_netaddr_cnt);
+	len = max_netaddr_cnt * sizeof(struct uburma_cmd_net_addr_info);
+	netaddr_info = kcalloc(1, len, GFP_KERNEL);
+	if (netaddr_info == NULL)
+		return -ENOMEM;
 
 	mutex_lock(&dev->sip_table.lock);
 	if (dev->sip_table.entry == NULL) {
 		mutex_unlock(&dev->sip_table.lock);
+		kfree(netaddr_info);
 		return -EINVAL;
 	}
 
-	max_netaddr_cnt = min(dev->sip_table.max_sip_cnt, netaddr_list->in.max_netaddr_cnt);
 	for (i = 0; i < max_netaddr_cnt; i++) {
 		entry = &dev->sip_table.entry[i];
 		if (entry->is_active) {
-			netaddr_list->out.netaddr_info[netaddr_cnt].netaddr = entry->addr;
-			netaddr_list->out.netaddr_info[netaddr_cnt].index = i;
+			netaddr_info[netaddr_cnt].netaddr = entry->addr;
+			netaddr_info[netaddr_cnt].index = i;
 			netaddr_cnt++;
 		}
 	}
-	netaddr_list->out.netaddr_cnt = netaddr_cnt;
 	mutex_unlock(&dev->sip_table.lock);
 
+	netaddr_list->out.netaddr_cnt = netaddr_cnt;
+	netaddr_list->out.len = len;
+	if (uburma_copy_to_user((void __user *)
+		(uintptr_t)netaddr_list->out.addr, netaddr_info,
+		(unsigned long)len) != 0) {
+		kfree(netaddr_info);
+		return -1;
+	}
+
+	kfree(netaddr_info);
 	return 0;
 }
 
@@ -1983,16 +2001,138 @@ static int uburma_cmd_get_net_addr_list(struct ubcore_device *ubc_dev,
 		goto out;
 
 	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, args,
-		sizeof(uburma_cmd_get_net_addr_list));
+		sizeof(struct uburma_cmd_get_net_addr_list));
 out:
 	kfree(args);
+	return ret;
+}
+
+static void uburma_fill_tp_cfg(struct uburma_cmd_user_tp_cfg *cmd_tp_cfg,
+	struct ubcore_tp_cfg *tp_cfg)
+{
+	/* Attention: ubcore_tp_cfg_flag is different with uburma_cmd_tp_cfg_flag */
+	/* so we cannot fill by value */
+	tp_cfg->flag.bs.target = cmd_tp_cfg->flag.bs.target;
+	tp_cfg->flag.bs.loopback = cmd_tp_cfg->flag.bs.loopback;
+	tp_cfg->flag.bs.dca_enable = cmd_tp_cfg->flag.bs.dca_enable;
+	tp_cfg->flag.bs.bonding = cmd_tp_cfg->flag.bs.bonding;
+
+	tp_cfg->trans_mode = cmd_tp_cfg->trans_mode;
+	tp_cfg->retry_num = cmd_tp_cfg->retry_num;
+	tp_cfg->retry_factor = cmd_tp_cfg->retry_factor;
+	tp_cfg->ack_timeout = cmd_tp_cfg->ack_timeout;
+	tp_cfg->dscp = cmd_tp_cfg->dscp;
+	tp_cfg->oor_cnt = cmd_tp_cfg->oor_cnt;
+}
+
+static void uburma_fill_peer_net_addr(struct uburma_cmd_net_addr *cmd_net_addr,
+	struct ubcore_net_addr *net_addr)
+{
+	if (cmd_net_addr->sin_family == AF_INET) {
+		net_addr->type = UBCORE_NET_ADDR_TYPE_IPV4;
+		net_addr->net_addr.in4.addr = cmd_net_addr->in4.s_addr;
+	} else if (cmd_net_addr->sin_family == AF_INET6) {
+		net_addr->type = UBCORE_NET_ADDR_TYPE_IPV6;
+		(void)memcpy(net_addr->net_addr.raw, &cmd_net_addr->in6, sizeof(struct in6_addr));
+	}
+
+	net_addr->vlan = cmd_net_addr->vlan;
+	(void)memcpy(net_addr->mac, cmd_net_addr->mac, UBCORE_MAC_BYTES);
+	net_addr->prefix_len = cmd_net_addr->prefix_len;
+}
+
+static void uburma_fill_tp_attr(struct uburma_cmd_tp_attr *cmd_attr,
+	struct ubcore_tp_attr *attr)
+{
+	attr->flag.value = cmd_attr->flag.value;
+	attr->peer_tpn = cmd_attr->peer_tpn;
+	attr->state = cmd_attr->state;
+	attr->tx_psn = cmd_attr->tx_psn;
+	attr->rx_psn = cmd_attr->rx_psn;
+	attr->mtu = cmd_attr->mtu;
+	attr->cc_pattern_idx = cmd_attr->cc_pattern_idx;
+	attr->oos_cnt = cmd_attr->oos_cnt;
+	attr->local_net_addr_idx = cmd_attr->local_net_addr_idx;
+	uburma_fill_peer_net_addr(&cmd_attr->peer_net_addr, &attr->peer_net_addr);
+	attr->data_udp_start = cmd_attr->data_udp_start;
+	attr->ack_udp_start = cmd_attr->ack_udp_start;
+	attr->udp_range = cmd_attr->udp_range;
+	attr->hop_limit = cmd_attr->hop_limit;
+	attr->flow_label = cmd_attr->flow_label;
+	attr->port_id = cmd_attr->port_id;
+	attr->mn = cmd_attr->mn;
+	attr->peer_trans_type = cmd_attr->peer_trans_type;
+}
+
+/* Attention: cmd_mask is different with mask, so we cannot fill by value */
+static void uburma_fill_tp_attr_mask(union uburma_cmd_tp_attr_mask *cmd_mask,
+	union ubcore_tp_attr_mask *mask)
+{
+	mask->bs.flag = cmd_mask->bs.flag;
+	mask->bs.peer_tpn = cmd_mask->bs.peer_tpn;
+	mask->bs.state = cmd_mask->bs.state;
+	mask->bs.tx_psn = cmd_mask->bs.tx_psn;
+	mask->bs.rx_psn = cmd_mask->bs.rx_psn;
+	mask->bs.mtu = cmd_mask->bs.mtu;
+	mask->bs.cc_pattern_idx = cmd_mask->bs.cc_pattern_idx;
+	mask->bs.oos_cnt = cmd_mask->bs.oos_cnt;
+	mask->bs.local_net_addr_idx = cmd_mask->bs.local_net_addr_idx;
+	mask->bs.peer_net_addr = cmd_mask->bs.peer_net_addr;
+	mask->bs.data_udp_start = cmd_mask->bs.data_udp_start;
+	mask->bs.ack_udp_start = cmd_mask->bs.ack_udp_start;
+	mask->bs.udp_range = cmd_mask->bs.udp_range;
+	mask->bs.hop_limit = cmd_mask->bs.hop_limit;
+	mask->bs.flow_label = cmd_mask->bs.flow_label;
+	mask->bs.port_id = cmd_mask->bs.port_id;
+	mask->bs.mn = cmd_mask->bs.mn;
+	mask->bs.peer_trans_type = cmd_mask->bs.peer_trans_type;
+}
+
+static int uburma_modify_user_tp(struct ubcore_device *ubc_dev,
+	struct uburma_cmd_modify_tp *args)
+{
+	union ubcore_tp_attr_mask mask = {0};
+	struct ubcore_tp_cfg tp_cfg = {0};
+	struct ubcore_tp_attr attr = {0};
+	int ret;
+
+	if (ubc_dev == NULL || ubc_dev->ops == NULL || ubc_dev->ops->modify_user_tp == NULL) {
+		uburma_log_err("Invalid parameter.\n");
+		return -1;
+	}
+
+	uburma_fill_tp_cfg(&args->in.tp_cfg, &tp_cfg);
+	uburma_fill_tp_attr(&args->in.attr, &attr);
+	uburma_fill_tp_attr_mask(&args->in.mask, &mask);
+
+	ret = ubc_dev->ops->modify_user_tp(ubc_dev, args->in.tpn, &tp_cfg, &attr, mask);
+	if (ret != 0)
+		uburma_log_err("Failed to modify user tp, ret: %d.\n", ret);
+
 	return ret;
 }
 
 static int uburma_cmd_modify_tp(struct ubcore_device *ubc_dev,
 	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
 {
-	return 0;
+	struct uburma_cmd_modify_tp *args;
+	int ret;
+
+	args = kcalloc(1, sizeof(struct uburma_cmd_modify_tp), GFP_KERNEL);
+	if (args == NULL)
+		return -ENOMEM;
+
+	ret = uburma_copy_from_user(args, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct uburma_cmd_modify_tp));
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_modify_user_tp(ubc_dev, args);
+	if (ret != 0)
+		uburma_log_err("Failed to modify user tp, tpn: %u.\n", args->in.tpn);
+out:
+	kfree(args);
+	return ret;
 }
 
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev,

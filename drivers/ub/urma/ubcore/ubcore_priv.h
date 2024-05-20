@@ -202,4 +202,10 @@ static inline bool ubcore_jfr_need_advise(struct ubcore_jfr *jfr)
 	       jfr->jfr_cfg.trans_mode == UBCORE_TP_RM;
 }
 
+static inline bool ubcore_is_ub_device(struct ubcore_device *dev)
+{
+	return (dev->transport_type == UBCORE_TRANSPORT_UB ||
+			dev->transport_type == UBCORE_TRANSPORT_HNS_UB);
+}
+
 #endif

@@ -3054,6 +3054,232 @@ free_arg:
 	return ret;
 }
 
+static void ubcore_fill_stats_val(struct ubcore_stats_com_val com_val,
+	struct ubcore_cmd_opt_dfx_query_stats *arg)
+{
+	arg->out.tx_pkt = com_val.tx_pkt;
+	arg->out.rx_pkt = com_val.rx_pkt;
+	arg->out.tx_bytes = com_val.tx_bytes;
+	arg->out.rx_bytes = com_val.rx_bytes;
+	arg->out.tx_pkt_err = com_val.tx_pkt_err;
+	arg->out.rx_pkt_err = com_val.rx_pkt_err;
+}
+
+static void ubcore_fill_fe_stats_val(struct ubcore_fe_stats stats,
+	struct ubcore_cmd_opt_dfx_query_stats *arg)
+{
+	arg->out.tx_pkt = stats.tx_pkt;
+	arg->out.rx_pkt = stats.rx_pkt;
+	arg->out.tx_bytes = stats.tx_bytes;
+	arg->out.rx_bytes = stats.rx_bytes;
+	arg->out.tx_pkt_err = stats.tx_pkt_err;
+	arg->out.rx_pkt_err = stats.rx_pkt_err;
+
+	arg->out.tx_timeout_cnt = stats.tx_timeout_cnt;
+	arg->out.rx_ce_pkt = stats.rx_ce_pkt;
+}
+
+static int ubcore_dfx_query_stats(struct ubcore_device *dev,
+	struct ubcore_cmd_opt_dfx_query_stats *arg)
+{
+	struct ubcore_stats_com_val com_val;
+	struct ubcore_stats_key key;
+	struct ubcore_stats_val val;
+	int ret;
+
+	if (dev->ops == NULL || dev->ops->query_stats == NULL) {
+		ubcore_log_warn("dev ops does not contain query_stats");
+		return 0;
+	}
+	key.type = arg->in.type;
+	key.key = arg->in.id;
+	val.addr = (uint64_t)&com_val;
+	val.len = (uint32_t)sizeof(struct ubcore_stats_com_val);
+
+	ret = ubcore_query_stats(dev, &key, &val);
+	if (ret != 0) {
+		ubcore_log_err("fail to query stats");
+		return ret;
+	}
+
+	ubcore_fill_stats_val(com_val, arg);
+	return ret;
+}
+
+static int ubcore_dfx_query_fe_stats(struct ubcore_device *dev,
+	struct ubcore_cmd_opt_dfx_query_stats *arg)
+{
+	struct ubcore_fe_stats stats;
+	int ret;
+
+	uint16_t fe_idx = (uint16_t)arg->in.id;
+
+	if (dev == NULL || dev->ops == NULL || dev->ops->query_fe_stats == NULL) {
+		ubcore_log_err("Invalid dev.\n");
+		return -1;
+	}
+
+	ret = dev->ops->query_fe_stats(dev, 1, &fe_idx, &stats);
+	if (ret != 0) {
+		ubcore_log_err("Fail to query_fe_stats, ret: %d, dev_name: %s", ret, dev->dev_name);
+		return -1;
+	}
+
+	ubcore_fill_fe_stats_val(stats, arg);
+	return ret;
+}
+
+static int ubcore_cmd_opt_dfx_query_stats(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_opt_dfx_query_stats arg;
+	struct ubcore_device *dev;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct ubcore_cmd_opt_dfx_query_stats));
+	if (ret != 0)
+		return ret;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_warn("fail to find dev:%s\n", arg.in.dev_name);
+		return -ENODEV;
+	}
+
+	switch (arg.in.type) {
+	case UBCORE_STATS_KEY_VTP:
+	case UBCORE_STATS_KEY_TP:
+	case UBCORE_STATS_KEY_TPG:
+		ret = ubcore_dfx_query_stats(dev, &arg);
+		break;
+	case UBCORE_STATS_KEY_URMA_DEV:
+		ret = ubcore_dfx_query_fe_stats(dev, &arg);
+		break;
+	default:
+		ret = -1;
+		break;
+	}
+
+	if (ret != 0) {
+		ubcore_log_err("fail to query stats, dev: %s, type: %u\n",
+			arg.in.dev_name, arg.in.type);
+		goto put_device;
+	}
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+		sizeof(struct ubcore_cmd_opt_dfx_query_stats));
+
+put_device:
+	ubcore_put_device(dev);
+	return ret;
+}
+
+static int ubcore_fill_tpg_info(struct ubcore_device *dev, struct ubcore_res_tpg_val tpg,
+	struct ubcore_cmd_opt_dfx_query_res *arg)
+{
+	enum ubcore_tp_state tp_state[UBCORE_MAX_TP_CNT_IN_GRP] = {0};
+	struct ubcore_tp *tp_infos = NULL;
+	int i = 0;
+
+	for (i = 0; i < tpg.tp_cnt; i++) {
+		tp_infos = ubcore_find_get_tp(dev, tpg.tp_list[i]);
+		if (tp_infos == NULL) {
+			ubcore_log_err("Unknown tpn: %d", tpg.tp_list[i]);
+			return -1;
+		}
+		tp_state[i] = tp_infos->state;
+		ubcore_tp_kref_put(tp_infos);
+	}
+	(void)memcpy(arg->out.tpg.tp_state,
+		tp_state, sizeof(arg->out.tpg.tp_state));
+	(void)memcpy(arg->out.tpg.tpn, tpg.tp_list,
+		tpg.tp_cnt * sizeof(*(tpg.tp_list)));
+	arg->out.tpg.dscp = tpg.dscp;
+	arg->out.tpg.tp_cnt = tpg.tp_cnt;
+	return 0;
+}
+
+static int ubcore_cmd_opt_dfx_query_res_with_type(struct ubcore_device *dev,
+	struct ubcore_cmd_opt_dfx_query_res *arg)
+{
+	struct ubcore_res_tpg_val tpg = {0};
+	struct ubcore_res_key key = {0};
+	struct ubcore_res_val val = {0};
+	int ret = -1;
+
+	key.type = (uint8_t)arg->in.type;
+	key.key = arg->in.key;
+	key.key_ext = arg->in.key_ext;
+	key.key_cnt = arg->in.key_cnt;
+
+	switch (arg->in.type) {
+	case UBCORE_RES_KEY_VTP:
+		val.addr = (uint64_t)&arg->out.vtp;
+		val.len = (uint32_t)sizeof(struct ubcore_res_vtp_val);
+		break;
+	case UBCORE_RES_KEY_TP:
+		val.addr = (uint64_t)&arg->out.tp;
+		val.len = (uint32_t)sizeof(struct ubcore_res_tp_val);
+		break;
+	case UBCORE_RES_KEY_TPG:
+		val.addr = (uint64_t)&tpg;
+		val.len = (uint32_t)sizeof(struct ubcore_res_tpg_val);
+		break;
+	case UBCORE_RES_KEY_UTP:
+		val.addr = (uint64_t)&arg->out.utp;
+		val.len = (uint32_t)sizeof(struct ubcore_res_utp_val);
+		break;
+	case UBCORE_RES_KEY_DEV_TP:
+		val.addr = (uint64_t)&arg->out.tpf;
+		val.len = (uint32_t)sizeof(struct ubcore_res_dev_tp_val);
+		break;
+	default:
+		ubcore_log_err("Unsupported type: %d", arg->in.type);
+		return -1;
+	}
+
+	ret = ubcore_query_resource(dev, &key, &val);
+	if (ret == 0 && arg->in.type == UBCORE_RES_KEY_TPG) {
+		ret = ubcore_fill_tpg_info(dev, tpg, arg);
+		vfree(tpg.tp_list);
+	}
+	return ret;
+}
+
+static int ubcore_cmd_opt_dfx_query_res(struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_opt_dfx_query_res arg;
+	struct ubcore_device *dev;
+	int ret;
+
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct ubcore_cmd_opt_dfx_query_res));
+	if (ret != 0)
+		return ret;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_warn("fail to find dev:%s\n", arg.in.dev_name);
+		return -ENODEV;
+	}
+
+	ret = ubcore_cmd_opt_dfx_query_res_with_type(dev, &arg);
+	if (ret != 0) {
+		ubcore_log_err("fail to query res, dev: %s, type: %u\n",
+			arg.in.dev_name, arg.in.type);
+		goto put_device;
+	}
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
+		sizeof(struct ubcore_cmd_opt_dfx_query_res));
+
+put_device:
+	ubcore_put_device(dev);
+	return ret;
+}
+
 typedef int (*ubcore_uvs_cmd_handler)(struct ubcore_cmd_hdr *hdr);
 struct ubcore_uvs_cmd_func {
 	ubcore_uvs_cmd_handler func;
@@ -3106,6 +3332,8 @@ static struct ubcore_uvs_cmd_func g_ubcore_uvs_cmd_funcs[] = {
 	[UBCORE_CMD_MAP_TARGET_VTP] = {ubcore_cmd_map_target_vtp, false},
 	[UBCORE_CMD_LIST_MIGRATE_ENTRY] = {ubcore_cmd_list_migrate_entry, false},
 	[UBCORE_CMD_QUERY_DSCP_VL] = {ubcore_cmd_opt_query_dscp_vl, false},
+	[UBCORE_CMD_DFX_QUERY_STATS] = {ubcore_cmd_opt_dfx_query_stats, false},
+	[UBCORE_CMD_DFX_QUERY_RES] = {ubcore_cmd_opt_dfx_query_res, false},
 };
 
 int ubcore_uvs_cmd_parse(struct ubcore_cmd_hdr *hdr)

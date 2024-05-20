@@ -80,6 +80,8 @@ enum ubcore_uvs_cmd {
 	UBCORE_CMD_MAP_TARGET_VTP,
 	UBCORE_CMD_LIST_MIGRATE_ENTRY,
 	UBCORE_CMD_QUERY_DSCP_VL,
+	UBCORE_CMD_DFX_QUERY_STATS,
+	UBCORE_CMD_DFX_QUERY_RES,
 	UBCORE_CMD_LAST
 };
 
@@ -122,6 +124,54 @@ struct ubcore_cmd_opt_query_dscp_vl {
 
 	struct {
 		uint8_t vl[UBCORE_MAX_DSCP_VL_NUM];
+	} out;
+};
+
+
+struct ubcore_cmd_opt_dfx_query_stats {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t type;
+		uint32_t id;
+		uint32_t ext;
+	} in;
+
+	struct {
+		uint64_t tx_pkt;
+		uint64_t rx_pkt;
+		uint64_t tx_bytes;
+		uint64_t rx_bytes;
+		uint64_t tx_pkt_err;
+		uint64_t rx_pkt_err;
+		uint64_t tx_timeout_cnt;
+		uint64_t rx_ce_pkt;
+	} out;
+};
+
+struct ubcore_res_dfx_tpg_info {
+	uint32_t tp_cnt;
+	uint8_t dscp;
+	enum ubcore_tp_state tp_state[UBCORE_MAX_TP_CNT_IN_GRP];
+	uint32_t tpn[UBCORE_MAX_TP_CNT_IN_GRP];
+};
+
+struct ubcore_cmd_opt_dfx_query_res {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t type; /* refer to ubcore_res_key_type_t */
+		uint32_t key; /* as UPI, key is fe_idx */
+		uint32_t key_ext; /* only for vtp */
+		uint32_t key_cnt; /* only for rc */
+	} in;
+
+	struct {
+		union {
+			struct ubcore_res_vtp_val vtp;
+			struct ubcore_res_dfx_tpg_info tpg;
+			struct ubcore_res_tp_val tp;
+			struct ubcore_res_utp_val utp;
+			struct ubcore_res_dev_tp_val tpf;
+		};
 	} out;
 };
 

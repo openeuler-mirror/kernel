@@ -466,8 +466,7 @@ static void ubcore_handle_update_sip(struct ubcore_device *tpf_dev,
 static int ubcore_handle_update_net_addr(struct ubcore_device *tpf_dev, uint32_t fe_idx,
 	struct ubcore_update_net_addr_req *req, bool async)
 {
-	/* only UB dev need sip */
-	if (tpf_dev->transport_type == UBCORE_TRANSPORT_UB && req->sip_present) {
+	if (ubcore_is_ub_device(tpf_dev) && req->sip_present) {
 		if (req->op == UBCORE_ADD_NET_ADDR)
 			ubcore_handle_add_sip(tpf_dev, &req->sip_info, async);
 		else if (req->op == UBCORE_DEL_NET_ADDR)
@@ -689,8 +688,7 @@ int ubcore_update_net_addr(struct ubcore_device *dev, struct net_device *netdev,
 	int ret = 0;
 
 	req.op = op;
-	// Only UB DEV need save net_addr as sip
-	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
+	if (ubcore_is_ub_device(dev) && dev->dynamic_eid) {
 		ubcore_sip_init(&req.sip_info, dev, netaddr, netdev);
 		req.sip_present = true;
 	}

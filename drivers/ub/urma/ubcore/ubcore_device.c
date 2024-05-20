@@ -977,7 +977,7 @@ static int init_ubcore_device(struct ubcore_device *dev)
 		return -1;
 	}
 
-	if (dev->transport_type == UBCORE_TRANSPORT_UB && dev->attr.tp_maintainer) {
+	if (ubcore_is_ub_device(dev) && dev->attr.tp_maintainer) {
 		if (ubcore_sip_table_init(&dev->sip_table,
 			dev->attr.dev_cap.max_netaddr_cnt) != 0) {
 			ubcore_log_err("Failed init sip table.\n");
@@ -1057,6 +1057,9 @@ static void uninit_ubcore_device(struct ubcore_device *dev)
 		if (ubcore_get_netlink_valid() && ubcore_send_remove_tpf_dev_info(dev) != 0)
 			ubcore_log_warn("failed to remove tpf dev info %s", dev->dev_name);
 	}
+
+	if (dev->transport_type == UBCORE_TRANSPORT_HNS_UB && dev->attr.tp_maintainer)
+		ubcore_sip_table_uninit(&dev->sip_table);
 }
 
 static int ubcore_nego_ver_rsp_msg_cb(struct ubcore_device *dev,
@@ -1153,6 +1156,11 @@ static int ubcore_config_device_rsp_msg_cb(struct ubcore_device *dev,
 	cfg.rc_cfg.rc_cnt = data->rc_cnt;
 	cfg.rc_cfg.depth = data->rc_depth;
 
+	cfg.mask.bs.reserved_jetty_id_min = 1;
+	cfg.mask.bs.reserved_jetty_id_max = 1;
+	cfg.reserved_jetty_id_min = UBCORE_RESERVED_JETTY_ID_MIN;
+	cfg.reserved_jetty_id_max = UBCORE_RESERVED_JETTY_ID_MAX;
+
 	cfg.mask.bs.slice = data->set_slice;
 	cfg.slice = data->slice;
 
@@ -1182,6 +1190,11 @@ static int ubcore_config_device_default(struct ubcore_device *dev)
 	cfg.mask.bs.rc_depth = 1;
 	cfg.rc_cfg.rc_cnt = dev->attr.dev_cap.max_rc;
 	cfg.rc_cfg.depth = dev->attr.dev_cap.max_rc_depth;
+
+	cfg.mask.bs.reserved_jetty_id_min = 1;
+	cfg.mask.bs.reserved_jetty_id_max = 1;
+	cfg.reserved_jetty_id_min = UBCORE_RESERVED_JETTY_ID_MIN;
+	cfg.reserved_jetty_id_max = UBCORE_RESERVED_JETTY_ID_MAX;
 
 	/* slice and mask.slice are set to 0 by default */
 

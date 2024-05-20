@@ -61,6 +61,8 @@
 #define UBCORE_MAX_VTP_CNT_PER_TPF (128 * 1024) // Temporarily specify the upper limit
 #define UBCORE_EID_GROUP_NAME_LEN 10
 #define UBCORE_MAX_MIG_ENTRY_CNT 64
+#define UBCORE_RESERVED_JETTY_ID_MIN  0
+#define UBCORE_RESERVED_JETTY_ID_MAX  1023
 
 #define EID_FMT                           \
 	"%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x:%2.2x%2.2x"
@@ -625,6 +627,8 @@ struct ubcore_device_attr {
 	struct ubcore_guid guid;
 	uint16_t fe_idx;
 	struct ubcore_device_cap dev_cap;
+	uint32_t reserved_jetty_id_min;
+	uint32_t reserved_jetty_id_max;
 	struct ubcore_port_attr port_attr[UBCORE_MAX_PORT_CNT];
 	uint8_t port_cnt;
 	bool virtualization; /* In VM or not, must set by driver when register device */
@@ -645,7 +649,9 @@ union ubcore_device_cfg_mask {
 		uint32_t max_jetty_cnt  : 1;
 		uint32_t min_jfr_cnt    : 1;
 		uint32_t max_jfr_cnt    : 1;
-		uint32_t reserved       : 21;
+		uint32_t reserved_jetty_id_min : 1;
+		uint32_t reserved_jetty_id_max : 1;
+		uint32_t reserved       : 19;
 	} bs;
 	uint32_t value;
 };
@@ -672,6 +678,8 @@ struct ubcore_device_cfg {
 	uint32_t max_jetty_cnt;
 	uint32_t min_jfr_cnt;
 	uint32_t max_jfr_cnt;
+	uint32_t reserved_jetty_id_min;
+	uint32_t reserved_jetty_id_max;
 };
 
 /* struct [struct ubcore_user_ctl_in] should be consistent with [urma_user_ctl_in_t] */

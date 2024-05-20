@@ -535,6 +535,112 @@ static ssize_t driver_name_show(struct device *dev, struct device_attribute *att
 
 static DEVICE_ATTR_RO(driver_name);
 
+static ssize_t reserved_jetty_id_min_show_cb(struct ubcore_device *dev, char *buf)
+{
+	int ret = 0;
+
+	ret = ubcore_query_device_attr(dev, &dev->attr);
+	if (ret != 0) {
+		ubcore_log_err("failed query device attr.\n");
+		return ret;
+	}
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n",
+		dev->attr.reserved_jetty_id_min);
+}
+
+static ssize_t reserved_jetty_id_min_show(struct device *dev, struct device_attribute *attr,
+	char *buf)
+{
+	return ubcore_show_dev_attr(dev, attr, buf, reserved_jetty_id_min_show_cb);
+}
+
+static ssize_t reserved_jetty_id_min_store_cb(struct ubcore_device *dev, const char *buf,
+	size_t len)
+{
+	uint32_t value;
+	int ret;
+	struct ubcore_device_cfg cfg = {0};
+
+	ret = kstrtou32(buf, 0, &value);
+	if (ret != 0)
+		return -EINVAL;
+
+	cfg.mask.bs.reserved_jetty_id_min = 1;
+	cfg.reserved_jetty_id_min = value;
+
+	ret = ubcore_config_device(dev, &cfg);
+	if (ret != 0)
+		return -EINVAL;
+
+	ret = ubcore_query_device_attr(dev, &dev->attr);
+	if (ret != 0) {
+		ubcore_log_err("failed query device attr.\n");
+		return ret;
+	}
+	return (ssize_t)len;
+}
+
+static ssize_t reserved_jetty_id_min_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t len)
+{
+	return ubcore_store_dev_attr(dev, attr, buf, len, reserved_jetty_id_min_store_cb);
+}
+
+static DEVICE_ATTR_RW(reserved_jetty_id_min); // 0644
+
+static ssize_t reserved_jetty_id_max_show_cb(struct ubcore_device *dev, char *buf)
+{
+	int ret = 0;
+
+	ret = ubcore_query_device_attr(dev, &dev->attr);
+	if (ret != 0) {
+		ubcore_log_err("failed query device attr.\n");
+		return ret;
+	}
+	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n",
+		dev->attr.reserved_jetty_id_max);
+}
+
+static ssize_t reserved_jetty_id_max_show(struct device *dev, struct device_attribute *attr,
+	char *buf)
+{
+	return ubcore_show_dev_attr(dev, attr, buf, reserved_jetty_id_max_show_cb);
+}
+
+static ssize_t reserved_jetty_id_max_store_cb(struct ubcore_device *dev, const char *buf,
+	size_t len)
+{
+	uint32_t value;
+	int ret;
+	struct ubcore_device_cfg cfg = {0};
+
+	ret = kstrtou32(buf, 0, &value);
+	if (ret != 0)
+		return -EINVAL;
+
+	cfg.mask.bs.reserved_jetty_id_max = 1;
+	cfg.reserved_jetty_id_max = value;
+
+	ret = ubcore_config_device(dev, &cfg);
+	if (ret != 0)
+		return -EINVAL;
+
+	ret = ubcore_query_device_attr(dev, &dev->attr);
+	if (ret != 0) {
+		ubcore_log_err("failed query device attr.\n");
+		return ret;
+	}
+	return (ssize_t)len;
+}
+
+static ssize_t reserved_jetty_id_max_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t len)
+{
+	return ubcore_store_dev_attr(dev, attr, buf, len, reserved_jetty_id_max_store_cb);
+}
+
+static DEVICE_ATTR_RW(reserved_jetty_id_max); // 0644
+
 /* One eid line has upto 51 bytes with the format:
  * "4294967295 0000:0000:0000:0000:0000:ffff:7f00:0001\n"
  * sysfs buf size is PAGESIZE, upto 80 eid lines are supported in the sysfs
@@ -615,6 +721,8 @@ static struct attribute *ubcore_dev_attrs[] = {
 	&dev_attr_virtualization.attr,
 	&dev_attr_transport_type.attr,
 	&dev_attr_driver_name.attr,
+	&dev_attr_reserved_jetty_id_min.attr,
+	&dev_attr_reserved_jetty_id_max.attr,
 	NULL,
 };
 

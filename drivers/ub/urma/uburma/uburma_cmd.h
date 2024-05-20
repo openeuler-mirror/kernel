@@ -20,8 +20,12 @@
 
 #ifndef UBURMA_CMD_H
 #define UBURMA_CMD_H
+
+#include <uapi/linux/in.h>
+#include <uapi/linux/in6.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/socket.h>
 #include "urma/ubcore_types.h"
 #include "uburma_types.h"
 
@@ -579,6 +583,17 @@ struct uburma_cmd_user_tp_cfg {
 	uint32_t oor_cnt;                           /* OOR window size: by packet */
 };
 
+struct uburma_cmd_net_addr {
+	sa_family_t sin_family;     /* AF_INET/AF_INET6 */
+	union {
+		struct in_addr in4;
+		struct in6_addr in6;
+	};
+	uint64_t vlan;
+	uint8_t mac[UBCORE_MAC_BYTES];
+	uint32_t prefix_len;
+};
+
 struct uburma_cmd_tp_attr {
 	union ubcore_tp_mod_flag flag;  /* consistend with urma_tp_mod_flag */
 	uint32_t peer_tpn;
@@ -589,7 +604,7 @@ struct uburma_cmd_tp_attr {
 	uint8_t cc_pattern_idx;
 	uint32_t oos_cnt;               /* out of standing packet cnt */
 	uint32_t local_net_addr_idx;
-	struct ubcore_net_addr peer_net_addr;
+	struct uburma_cmd_net_addr peer_net_addr;
 	uint16_t data_udp_start;
 	uint16_t ack_udp_start;
 	uint8_t udp_range;
@@ -620,7 +635,7 @@ union uburma_cmd_tp_attr_mask {
 		uint32_t port_id : 1;
 		uint32_t mn : 1;
 		uint32_t peer_trans_type : 1; /* Only for user tp connection */
-		uint32_t reserved : 13;
+		uint32_t reserved : 14;
 	} bs;
 	uint32_t value;
 };
@@ -636,7 +651,8 @@ struct uburma_cmd_get_net_addr_list {
 	} in;
 	struct {
 		uint32_t netaddr_cnt;
-		struct uburma_cmd_net_addr_info netaddr_info[UBCORE_MAX_SIP];
+		uint64_t addr;    /* containing array of struct uburma_cmd_net_addr_info */
+		uint64_t len;
 	} out;
 };
 
