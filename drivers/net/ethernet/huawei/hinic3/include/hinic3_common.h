@@ -149,8 +149,6 @@ int hinic3_wait_for_timeout(void *priv_data, wait_cpl_handler handler,
 /* func_attr.glb_func_idx, global function index */
 u16 hinic3_global_func_id(void *hwdev);
 
-int hinic3_global_func_id_get(void *hwdev, u16 *func_id);
-
 /* func_attr.p2p_idx, belongs to which pf */
 u8 hinic3_pf_id_of_vf(void *hwdev);
 

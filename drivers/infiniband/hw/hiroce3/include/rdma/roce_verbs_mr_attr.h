@@ -9,7 +9,7 @@
 #define BIG_ENDIAN	0x4321
 #endif
 
-#pragma pack(4)
+#pragma pack(push, 4)
 struct tag_roce_verbs_mr_sge {
 	u32 rsvd;
 	u32 new_key;
@@ -325,6 +325,6 @@ struct tag_roce_verbs_mr_attr {
 	/* DW17 */
 	u32 rsvd;
 };
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_MR_ATTR_H */

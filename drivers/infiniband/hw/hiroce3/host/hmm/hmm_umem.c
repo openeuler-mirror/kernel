@@ -8,7 +8,6 @@
 #include <linux/sched/signal.h>
 #include <linux/hugetlb.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 #include "hinic3_rdma.h"
 #include "hmm_umem.h"
 
@@ -42,10 +41,9 @@ static void hmm_umemsg_release(struct device *device, struct hmm_umem *hmm_umem,
  * @addr: userspace virtual address to start at
  * @size: length of region to pin
  * @access: RDMA_IB_ACCESS_xxx flags for memory being pinned
- * @dmasync: flush in-flight DMA when the memory region is written
  */
 struct hmm_umem *hmm_umem_get(struct device *device, unsigned long addr,
-	size_t size, int access, int dmasync)
+	size_t size, int access)
 {
 	int ret;
 	int i;

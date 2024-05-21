@@ -11,12 +11,10 @@
 #define cqm_bloomfilter_dec                cqm3_bloomfilter_dec
 #define cqm_bloomfilter_inc                cqm3_bloomfilter_inc
 #define cqm_cmd_alloc                      cqm3_cmd_alloc
-#define cqm_get_hardware_db_addr           cqm3_get_hardware_db_addr
 #define cqm_cmd_free                       cqm3_cmd_free
 #define cqm_send_cmd_box                   cqm3_send_cmd_box
 #define cqm_lb_send_cmd_box                cqm3_lb_send_cmd_box
 #define cqm_lb_send_cmd_box_async          cqm3_lb_send_cmd_box_async
-#define cqm_send_cmd_imm                   cqm3_send_cmd_imm
 #define cqm_db_addr_alloc                  cqm3_db_addr_alloc
 #define cqm_db_addr_free                   cqm3_db_addr_free
 #define cqm_ring_hardware_db               cqm3_ring_hardware_db
@@ -43,8 +41,6 @@
 #define cqm_function_hash_buf_clear        cqm3_function_hash_buf_clear
 #define cqm_srq_used_rq_container_delete   cqm3_srq_used_rq_container_delete
 #define cqm_timer_base                     cqm3_timer_base
-#define cqm_dtoe_free_srq_bitmap_index     cqm3_dtoe_free_srq_bitmap_index
-#define cqm_dtoe_share_recv_queue_create   cqm3_dtoe_share_recv_queue_create
 #define cqm_get_db_addr                    cqm3_get_db_addr
 #define cqm_ring_direct_wqe_db             cqm3_ring_direct_wqe_db
 #define cqm_fake_vf_num_set                cqm3_fake_vf_num_set

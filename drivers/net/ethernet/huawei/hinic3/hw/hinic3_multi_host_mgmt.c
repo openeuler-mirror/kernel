@@ -20,7 +20,6 @@
 #include "hinic3_api_cmd.h"
 #include "hinic3_mgmt.h"
 #include "hinic3_mbox.h"
-#include "hinic3_hwif.h"
 #include "hinic3_multi_host_mgmt.h"
 #include "hinic3_hw_cfg.h"
 
@@ -43,7 +42,7 @@ void set_master_host_mbox_enable(struct hinic3_hwdev *hwdev, bool enable)
 		 enable, reg_val);
 }
 
-bool hinic3_get_master_host_mbox_enable(void *hwdev)
+static bool hinic3_get_master_host_mbox_enable(void *hwdev)
 {
 	u32 reg_val;
 	struct hinic3_hwdev *dev = hwdev;
@@ -145,10 +144,10 @@ static int __send_mbox_to_host(struct hinic3_hwdev *mbox_hwdev,
 						 mod, cmd, buf_in, in_size, channel);
 }
 
-int __mbox_to_host(struct hinic3_hwdev *hwdev, enum hinic3_mod_type mod,
-		   u8 cmd, void *buf_in, u16 in_size, void *buf_out,
-		   u16 *out_size, u32 timeout,
-		   enum hinic3_mbox_ack_type ack_type, u16 channel)
+static int __mbox_to_host(struct hinic3_hwdev *hwdev, enum hinic3_mod_type mod,
+			  u8 cmd, void *buf_in, u16 in_size, void *buf_out,
+			  u16 *out_size, u32 timeout,
+			  enum hinic3_mbox_ack_type ack_type, u16 channel)
 {
 	struct hinic3_hwdev *mbox_hwdev = hwdev;
 	int err;
@@ -544,9 +543,9 @@ static int __slave_host_sw_func_handler(struct hinic3_hwdev *hwdev, u16 pf_idx,
 	return err;
 }
 
-int sw_func_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
-			     void *buf_in, u16 in_size, void *buf_out,
-			     u16 *out_size)
+static int sw_func_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
+				    void *buf_in, u16 in_size, void *buf_out,
+				    u16 *out_size)
 {
 	struct hinic3_hwdev *hwdev = handle;
 	int err;
@@ -567,9 +566,9 @@ int sw_func_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
 	return err;
 }
 
-int __ppf_process_mbox_msg(struct hinic3_hwdev *hwdev, u16 pf_idx, u16 vf_id,
-			   enum hinic3_mod_type mod, u8 cmd, void *buf_in,
-			   u16 in_size, void *buf_out, u16 *out_size)
+static int __ppf_process_mbox_msg(struct hinic3_hwdev *hwdev, u16 pf_idx, u16 vf_id,
+				  enum hinic3_mod_type mod, u8 cmd, void *buf_in,
+				  u16 in_size, void *buf_out, u16 *out_size)
 {
 	/* when not support return err */
 	int err = -EFAULT;
@@ -596,9 +595,9 @@ int __ppf_process_mbox_msg(struct hinic3_hwdev *hwdev, u16 pf_idx, u16 vf_id,
 	return err;
 }
 
-int hinic3_ppf_process_mbox_msg(struct hinic3_hwdev *hwdev, u16 pf_idx, u16 vf_id,
-				enum hinic3_mod_type mod, u8 cmd, void *buf_in,
-				u16 in_size, void *buf_out, u16 *out_size)
+static int hinic3_ppf_process_mbox_msg(struct hinic3_hwdev *hwdev, u16 pf_idx, u16 vf_id,
+				       enum hinic3_mod_type mod, u8 cmd, void *buf_in,
+				       u16 in_size, void *buf_out, u16 *out_size)
 {
 	bool same_host = false;
 	int err = -EFAULT;
@@ -640,34 +639,34 @@ int hinic3_ppf_process_mbox_msg(struct hinic3_hwdev *hwdev, u16 pf_idx, u16 vf_i
 	return err;
 }
 
-int comm_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
-			  void *buf_in, u16 in_size, void *buf_out,
-			  u16 *out_size)
+static int comm_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
+				 void *buf_in, u16 in_size, void *buf_out,
+				 u16 *out_size)
 {
 	return hinic3_ppf_process_mbox_msg(handle, pf_idx, vf_id, HINIC3_MOD_COMM,
 					  (u8)cmd, buf_in, in_size, buf_out,
 					  out_size);
 }
 
-int hilink_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size)
+static int hilink_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
+				   void *buf_in, u16 in_size,
+				   void *buf_out, u16 *out_size)
 {
 	return hinic3_ppf_process_mbox_msg(handle, pf_idx, vf_id,
 					  HINIC3_MOD_HILINK, (u8)cmd, buf_in,
 					  in_size, buf_out, out_size);
 }
 
-int hinic3_nic_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
-				void *buf_in, u16 in_size,
-				void *buf_out, u16 *out_size)
+static int hinic3_nic_ppf_mbox_handler(void *handle, u16 pf_idx, u16 vf_id, u16 cmd,
+				       void *buf_in, u16 in_size,
+				       void *buf_out, u16 *out_size)
 {
 	return hinic3_ppf_process_mbox_msg(handle, pf_idx, vf_id,
 					  HINIC3_MOD_L2NIC, (u8)cmd, buf_in, in_size,
 					  buf_out, out_size);
 }
 
-int hinic3_register_slave_ppf(struct hinic3_hwdev *hwdev, bool registered)
+static int hinic3_register_slave_ppf(struct hinic3_hwdev *hwdev, bool registered)
 {
 	struct register_slave_host *host_info = NULL;
 	u16 out_size = sizeof(struct register_slave_host);
@@ -740,8 +739,8 @@ static int get_host_id_by_func_id(struct hinic3_hwdev *hwdev, u16 func_idx,
 	return -EFAULT;
 }
 
-int set_slave_func_nic_state(struct hinic3_hwdev *hwdev,
-			     struct hinic3_func_nic_state *state)
+static int set_slave_func_nic_state(struct hinic3_hwdev *hwdev,
+				    struct hinic3_func_nic_state *state)
 {
 	struct hinic3_slave_func_nic_state nic_state = {0};
 	u16 out_size = sizeof(nic_state);
@@ -773,8 +772,7 @@ int set_slave_func_nic_state(struct hinic3_hwdev *hwdev,
 	return 0;
 }
 
-int get_slave_func_netdev_state(struct hinic3_hwdev *hwdev, u16 func_idx,
-				int *opened)
+static int get_slave_func_netdev_state(struct hinic3_hwdev *hwdev, u16 func_idx, int *opened)
 {
 	struct hinic3_slave_func_nic_state nic_state = {0};
 	u16 out_size = sizeof(nic_state);

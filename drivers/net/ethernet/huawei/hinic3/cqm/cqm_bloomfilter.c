@@ -23,13 +23,8 @@
 #include "cqm_npu_cmd_defs.h"
 
 /**
- * Prototype    : bloomfilter_init_cmd
- * Description  : host send cmd to ucode to init bloomfilter mem
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/8/13
- *   Modification : Created function
+ * bloomfilter_init_cmd - host send cmd to ucode to init bloomfilter mem
+ * @cqm_handle: CQM handle
  */
 static s32 bloomfilter_init_cmd(struct tag_cqm_handle *cqm_handle)
 {
@@ -195,13 +190,8 @@ bloomfilter_init_err:
 }
 
 /**
- * Prototype    : cqm_bloomfilter_init
- * Description  : initialize the bloomfilter of cqm
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/7/6
- *   Modification : Created function
+ * cqm_bloomfilter_init - initialize the bloomfilter of cqm
+ * @ex_handle: device pointer that represents the PF
  */
 s32 cqm_bloomfilter_init(void *ex_handle)
 {
@@ -230,13 +220,8 @@ bloomfilter_init_err:
 }
 
 /**
- * Prototype    : cqm_bloomfilter_uninit
- * Description  : uninitialize the bloomfilter of cqm
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2016/7/6
- *   Modification : Created function
+ * cqm_bloomfilter_uninit - uninitialize the bloomfilter of cqm
+ * @ex_handle: device pointer that represents the PF
  */
 void cqm_bloomfilter_uninit(void *ex_handle)
 {
@@ -250,16 +235,12 @@ void cqm_bloomfilter_uninit(void *ex_handle)
 }
 
 /**
- * Prototype    : cqm_bloomfilter_cmd
- * Description  : host send bloomfilter api cmd to ucode
- * Input        : void *ex_handle
- *		  u32 op,
- *		  u32 k_flag
- *		  u64 id,
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/7/7
- *   Modification : Created function
+ * cqm_bloomfilter_cmd - host send bloomfilter api cmd to ucode
+ * @ex_handle: device pointer that represents the PF
+ * @func_id: function id
+ * @op: operation code
+ * @k_flag: kernel enable flag
+ * @id: the ID of the bloomfilter
  */
 s32 cqm_bloomfilter_cmd(void *ex_handle, u16 func_id, u32 op, u32 k_flag, u64 id)
 {
@@ -349,15 +330,10 @@ static struct tag_cqm_handle *cqm_get_func_cqm_handle(struct hinic3_hwdev *ex_ha
 }
 
 /**
- * Prototype    : cqm_bloomfilter_inc
- * Description  : The reference counting field is added to the ID of the
- *		  bloomfilter.
- * Input        : void *ex_handle
- *		  u64 id--hash value
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/7/7
- *   Modification : Created function
+ * cqm_bloomfilter_inc - The reference counting field is added to the ID of the bloomfilter
+ * @ex_handle: device pointer that represents the PF
+ * @func_id: function id
+ * @id: the ID of the bloomfilter
  */
 s32 cqm_bloomfilter_inc(void *ex_handle, u16 func_id, u64 id)
 {
@@ -446,15 +422,10 @@ s32 cqm_bloomfilter_inc(void *ex_handle, u16 func_id, u64 id)
 EXPORT_SYMBOL(cqm_bloomfilter_inc);
 
 /**
- * Prototype    : cqm_bloomfilter_dec
- * Description  : The reference counting field is decreased to the ID of the
- *		  bloomfilter.
- * Input        : void *ex_handle
- *		  u64 id--hash value
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/7/7
- *   Modification : Created function
+ * cqm_bloomfilter_dec - The reference counting field is decreased to the ID of the bloomfilter
+ * @ex_handle: device pointer that represents the PF
+ * @func_id: function id
+ * @id: the ID of the bloomfilter
  */
 s32 cqm_bloomfilter_dec(void *ex_handle, u16 func_id, u64 id)
 {

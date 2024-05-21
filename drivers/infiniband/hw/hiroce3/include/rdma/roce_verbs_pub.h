@@ -181,7 +181,7 @@ enum QP_OPTPAR_E {
 #define ROCE_MODIFY_QP_RTS2SQD_SQD_EVENT_OPT (0x80000000)
 /* ************************************************* */
 
-#pragma pack(4)
+#pragma pack(push, 4)
 struct tag_roce_verbs_cmd_header {
 	union {
 		u32 value;
@@ -220,6 +220,6 @@ union tag_roce_verbs_seg_hdr {
 	} bs;
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_PUB_H */

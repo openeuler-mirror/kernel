@@ -201,21 +201,16 @@ err1:
 }
 
 /**
- * Prototype    : cqm_init
- * Description  : Complete CQM initialization.
- *		  If the function is a parent fake function, copy the fake.
- *		  If it is a child fake function (in the fake copy function,
- *		  not in this function), set fake_en in the BAT/CLA table.
- *		  cqm_init->cqm_mem_init->cqm_fake_init(copy)
- *		  If the child fake conflict occurs, resources are not
- *		  initialized, but the timer must be enabled.
- *		  If the function is of the normal type,
- *		  follow the normal process.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/4/15
- * Modification   : Created function
+ * cqm_init - Complete CQM initialization.
+ *            If the function is a parent fake function, copy the fake.
+ *            If it is a child fake function (in the fake copy function,
+ *            not in this function), set fake_en in the BAT/CLA table.
+ *            cqm_init->cqm_mem_init->cqm_fake_init(copy)
+ *            If the child fake conflict occurs, resources are not
+ *            initialized, but the timer must be enabled.
+ *            If the function is of the normal type,
+ *            follow the normal process.
+ * @ex_handle: device pointer that represents the PF
  */
 s32 cqm_init(void *ex_handle)
 {
@@ -280,14 +275,9 @@ err:
 }
 
 /**
- * Prototype    : cqm_uninit
- * Description  : Deinitializes the CQM module. This function is called once
- *		  each time a function is removed.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_uninit - Deinitializes the CQM module. This function is called once each time
+ *              a function is removed.
+ * @ex_handle: device pointer that represents the PF
  */
 void cqm_uninit(void *ex_handle)
 {
@@ -954,15 +944,9 @@ static void cqm_capability_init_cap_print(struct hinic3_hwdev *handle)
 }
 
 /**
- * Prototype    : cqm_capability_init
- * Description  : Initializes the function and service capabilities of the CQM.
- *		  Information needs to be read from the configuration management
- *		  module.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/12/9
- *   Modification : Created function
+ * cqm_capability_init - Initializes the function and service capabilities of the CQM.
+ *                       Information needs to be read from the configuration management module.
+ * @ex_handle: device pointer that represents the PF
  */
 s32 cqm_capability_init(void *ex_handle)
 {
@@ -1045,14 +1029,9 @@ static void set_fake_cqm_attr(struct hinic3_hwdev *handle, struct tag_cqm_handle
 }
 
 /**
- * Prototype    : cqm_fake_init
- * Description  : When the fake VF mode is supported, the CQM handles of
- *		  the fake VFs need to be copied.
- * Input        : struct tag_cqm_handle *cqm_handle: Parent CQM handle of the current PF
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2020/4/15
- *   Modification : Created function
+ * cqm_fake_init - When the fake VF mode is supported, the CQM handles of the fake VFs
+ *                 need to be copied.
+ * @cqm_handle: Parent CQM handle of the current PF
  */
 static s32 cqm_fake_init(struct tag_cqm_handle *cqm_handle)
 {
@@ -1128,13 +1107,8 @@ static void cqm_fake_mem_uninit(struct tag_cqm_handle *cqm_handle)
 }
 
 /**
- * Prototype    : cqm_fake_mem_init
- * Description  : Initialize resources of the extended fake function.
- * Input        : struct tag_cqm_handle *cqm_handle: Parent CQM handle of the current PF
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2020/4/15
- *   Modification : Created function
+ * cqm_fake_mem_init - Initialize resources of the extended fake function
+ * @cqm_handle: Parent CQM handle of the current PF
  */
 static s32 cqm_fake_mem_init(struct tag_cqm_handle *cqm_handle)
 {
@@ -1191,13 +1165,8 @@ err:
 }
 
 /**
- * Prototype    : cqm_mem_init
- * Description  : Initialize CQM memory, including tables at different levels.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_mem_init - Initialize CQM memory, including tables at different levels.
+ * @ex_handle: device pointer that represents the PF
  */
 s32 cqm_mem_init(void *ex_handle)
 {
@@ -1255,13 +1224,8 @@ err1:
 }
 
 /**
- * Prototype    : cqm_mem_uninit
- * Description  : Deinitialize CQM memory, including tables at different levels.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_mem_uninit - Deinitialize CQM memory, including tables at different levels
+ * @ex_handle: device pointer that represents the PF
  */
 void cqm_mem_uninit(void *ex_handle)
 {
@@ -1279,13 +1243,8 @@ void cqm_mem_uninit(void *ex_handle)
 }
 
 /**
- * Prototype    : cqm_event_init
- * Description  : Initialize CQM event callback.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_event_init - Initialize CQM event callback
+ * @ex_handle: device pointer that represents the PF
  */
 s32 cqm_event_init(void *ex_handle)
 {
@@ -1328,13 +1287,8 @@ err1:
 }
 
 /**
- * Prototype    : cqm_event_uninit
- * Description  : Deinitialize CQM event callback.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_event_uninit - Deinitialize CQM event callback
+ * @ex_handle: device pointer that represents the PF
  */
 void cqm_event_uninit(void *ex_handle)
 {
@@ -1345,15 +1299,9 @@ void cqm_event_uninit(void *ex_handle)
 }
 
 /**
- * Prototype    : cqm_scq_callback
- * Description  : CQM module callback processing for the ceq,
- *		  which processes NON_L2NIC_SCQ.
- * Input        : void *ex_handle
- *		  u32 ceqe_data
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_scq_callback - CQM module callback processing for the ceq, which processes NON_L2NIC_SCQ
+ * @ex_handle: device pointer that represents the PF
+ * @ceqe_data: CEQE data
  */
 void cqm_scq_callback(void *ex_handle, u32 ceqe_data)
 {
@@ -1406,15 +1354,9 @@ void cqm_scq_callback(void *ex_handle, u32 ceqe_data)
 }
 
 /**
- * Prototype    : cqm_ecq_callback
- * Description  : CQM module callback processing for the ceq,
- *		  which processes NON_L2NIC_ECQ.
- * Input        : void *ex_handle
- *		  u32 ceqe_data
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_ecq_callback - CQM module callback processing for the ceq, which processes NON_L2NIC_ECQ.
+ * @ex_handle: device pointer that represents the PF
+ * @ceqe_data: CEQE data
  */
 void cqm_ecq_callback(void *ex_handle, u32 ceqe_data)
 {
@@ -1467,15 +1409,10 @@ void cqm_ecq_callback(void *ex_handle, u32 ceqe_data)
 }
 
 /**
- * Prototype    : cqm_nocq_callback
- * Description  : CQM module callback processing for the ceq,
- *		  which processes NON_L2NIC_NO_CQ_EQ.
- * Input        : void *ex_handle
- *		  u32 ceqe_data
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_nocq_callback - CQM module callback processing for the ceq,
+ *                     which processes NON_L2NIC_NO_CQ_EQ
+ * @ex_handle: device pointer that represents the PF
+ * @ceqe_data: CEQE data
  */
 void cqm_nocq_callback(void *ex_handle, u32 ceqe_data)
 {
@@ -1555,15 +1492,10 @@ static u32 cqm_aeq_event2type(u8 event)
 }
 
 /**
- * Prototype    : cqm_aeq_callback
- * Description  : CQM module callback processing for the aeq.
- * Input        : void *ex_handle
- *		  u8 event
- *		  u64 data
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_aeq_callback - CQM module callback processing for the aeq
+ * @ex_handle: device pointer that represents the PF
+ * @event: QEQ event
+ * @data: callback private data
  */
 u8 cqm_aeq_callback(void *ex_handle, u8 event, u8 *data)
 {
@@ -1619,15 +1551,9 @@ u8 cqm_aeq_callback(void *ex_handle, u8 event, u8 *data)
 }
 
 /**
- * Prototype    : cqm_service_register
- * Description  : Callback template for the service driver
- *		  to register with the CQM.
- * Input        : void *ex_handle
- *		  struct tag_service_register_template *service_template
- * Output       : None
- * Return Value : s32
- * 1.Date	  : 2015/4/5
- * Modification	  : Created function
+ * cqm_service_register - Callback template for the service driver to register with the CQM
+ * @ex_handle: device pointer that represents the PF
+ * @service_template: CQM service template
  */
 s32 cqm_service_register(void *ex_handle, struct tag_service_register_template *service_template)
 {
@@ -1677,15 +1603,9 @@ s32 cqm_service_register(void *ex_handle, struct tag_service_register_template *
 EXPORT_SYMBOL(cqm_service_register);
 
 /**
- * Prototype    : cqm_service_unregister
- * Description  : The service driver deregisters the callback function
- *		  from the CQM.
- * Input        : void *ex_handle
- *		  u32 service_type
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/5
- * Modification	  : Created function
+ * cqm_service_unregister - The service driver deregisters the callback function from the CQM
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
  */
 void cqm_service_unregister(void *ex_handle, u32 service_type)
 {

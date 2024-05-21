@@ -27,8 +27,6 @@ s32 cqm_lb_send_cmd_box(void *ex_handle, u8 mod, u8 cmd, u8 cos_id,
 s32 cqm_lb_send_cmd_box_async(void *ex_handle, u8 mod, u8 cmd,
 			      u8 cos_id, struct tag_cqm_cmd_buf *buf_in,
 			      u16 channel);
-s32 cqm_send_cmd_imm(void *ex_handle, u8 mod, u8 cmd, struct tag_cqm_cmd_buf *buf_in,
-		     u64 *out_param, u32 timeout, u16 channel);
 
 #ifdef __cplusplus
 #if __cplusplus

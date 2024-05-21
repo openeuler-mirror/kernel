@@ -5,7 +5,7 @@
 #define ROCE_CCF_FORMAT_H
 
 /* Align each field with 4bytes. */
-#pragma pack(4)
+#pragma pack(push, 4)
 
 #ifndef BIG_ENDIAN
 #define BIG_ENDIAN	0x4321
@@ -717,6 +717,6 @@ struct tag_ipqcn_hash_value {
 	u32 rsvd[2];
 };
 
-#pragma pack(0)
+#pragma pack(pop)
 
 #endif // ROCE_CCF_FORMAT_H

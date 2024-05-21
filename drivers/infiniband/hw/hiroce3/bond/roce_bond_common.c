@@ -418,7 +418,7 @@ int roce3_bond_is_eth_port_of_netdev(struct roce3_device *rdev, struct net_devic
 	return 0;
 }
 
-struct roce3_bond_device *roce3_get_bond_dev(const char *bond_name)
+static struct roce3_bond_device *roce3_get_bond_dev(const char *bond_name)
 {
 	struct roce3_bond_device *bdev = NULL;
 
@@ -430,7 +430,7 @@ struct roce3_bond_device *roce3_get_bond_dev(const char *bond_name)
 	return NULL;
 }
 
-struct roce3_bond_device *roce3_get_bond_dev_by_name(const char *bond_name)
+static struct roce3_bond_device *roce3_get_bond_dev_by_name(const char *bond_name)
 {
 	struct roce3_bond_device *bdev = NULL;
 
@@ -440,8 +440,8 @@ struct roce3_bond_device *roce3_get_bond_dev_by_name(const char *bond_name)
 	return bdev;
 }
 
-void roce3_bond_init_slave(struct roce3_bond_slave *slave, struct bond_tracker *tracker, int index,
-	struct bond_attr *attr)
+static void roce3_bond_init_slave(struct roce3_bond_slave *slave,
+				  struct bond_tracker *tracker, int index, struct bond_attr *attr)
 {
 	void *hwdev;
 
@@ -465,7 +465,7 @@ void roce3_bond_init_slave(struct roce3_bond_slave *slave, struct bond_tracker *
 		hinic3_detach_service(slave->lld_dev, SERVICE_T_ROCE);
 }
 
-bool roce3_bond_before_active_check(struct bond_tracker *tracker, struct bond_attr *attr)
+static bool roce3_bond_before_active_check(struct bond_tracker *tracker, struct bond_attr *attr)
 {
 	int i;
 	struct hinic3_lld_dev *lld_dev = NULL;
@@ -501,7 +501,7 @@ bool roce3_bond_before_active_check(struct bond_tracker *tracker, struct bond_at
 	return true;
 }
 
-void roce3_detach_nic_bond_work(struct work_struct *work)
+static void roce3_detach_nic_bond_work(struct work_struct *work)
 {
 	struct roce3_detach_work *detach_work = container_of(work, struct roce3_detach_work, work);
 
@@ -520,7 +520,8 @@ static void roce3_attach_bond_work(struct work_struct *_work)
 
 	kfree(work);
 }
-void roce3_deatch_bond(u16 bond_id)
+
+static void roce3_deatch_bond(u16 bond_id)
 {
 	struct roce3_detach_work *detach_work = NULL;
 
@@ -533,7 +534,7 @@ void roce3_deatch_bond(u16 bond_id)
 	queue_work(g_bond_wq, &detach_work->work);
 }
 
-bool roce3_bond_tracker_get(const char *bond_name, struct bond_tracker *tracker)
+static bool roce3_bond_tracker_get(const char *bond_name, struct bond_tracker *tracker)
 {
 	int ret = 0;
 
@@ -555,7 +556,7 @@ bool roce3_bond_tracker_get(const char *bond_name, struct bond_tracker *tracker)
 	return false;
 }
 
-void roce3_before_bond_active(const char *bond_name, struct bond_attr *attr)
+static void roce3_before_bond_active(const char *bond_name, struct bond_attr *attr)
 {
 	struct roce3_bond_device *bond_dev = NULL;
 	struct roce3_bond_slave *slave = NULL;
@@ -602,7 +603,7 @@ err:
 	roce3_deatch_bond(attr->bond_id);
 }
 
-void roce3_after_bond_active(const char *bond_name, struct bond_attr *attr)
+static void roce3_after_bond_active(const char *bond_name, struct bond_attr *attr)
 {
 	int ret;
 	struct roce3_bond_device *bond_dev = NULL;
@@ -620,7 +621,7 @@ void roce3_after_bond_active(const char *bond_name, struct bond_attr *attr)
 	}
 }
 
-void roce3_after_bond_modify(const char *bond_name, struct bond_attr *attr)
+static void roce3_after_bond_modify(const char *bond_name, struct bond_attr *attr)
 {
 	struct roce3_bond_device *bond_dev = NULL;
 	struct bond_tracker tracker;
@@ -654,15 +655,15 @@ void roce3_after_bond_modify(const char *bond_name, struct bond_attr *attr)
 	mutex_unlock(&bond_dev->slave_lock);
 }
 
-void roce3_before_bond_deactive(const char *bond_name, struct bond_attr *attr)
+static void roce3_before_bond_deactive(const char *bond_name, struct bond_attr *attr)
 {
 }
 
-void roce3_after_bond_deactive(const char *bond_name, struct bond_attr *attr)
+static void roce3_after_bond_deactive(const char *bond_name, struct bond_attr *attr)
 {
 }
 
-void roce3_bond_destroy(const char *bond_name)
+static void roce3_bond_destroy(const char *bond_name)
 {
 	int ret;
 	int i;
@@ -702,7 +703,7 @@ void roce3_bond_destroy(const char *bond_name)
 	kfree(bond_dev);
 }
 
-void roce3_before_bond_modify(const char *bond_name, struct bond_attr *attr)
+static void roce3_before_bond_modify(const char *bond_name, struct bond_attr *attr)
 {
 	struct roce3_bond_device *bond_dev = NULL;
 	struct bond_tracker tracker;
@@ -751,7 +752,8 @@ static roce3_bond_service_func g_roce3_bond_proc[] = {
 	roce3_after_bond_deactive,
 };
 
-void roce3_bond_service_proc(const char *bond_name, void *bond_attr, enum bond_service_proc_pos pos)
+static void roce3_bond_service_proc(const char *bond_name,
+				    void *bond_attr, enum bond_service_proc_pos pos)
 {
 	struct bond_attr *attr = (struct bond_attr *)bond_attr;
 
@@ -807,7 +809,7 @@ static void roce3_detach_bond_work(struct work_struct *_work)
 	kfree(work);
 }
 
-void roce3_queue_bond_work(struct net_device *upper_netdev, work_func_t func)
+static void roce3_queue_bond_work(struct net_device *upper_netdev, work_func_t func)
 {
 	struct roce3_bond_work *work;
 	struct bonding *bond = netdev_priv(upper_netdev);
@@ -826,7 +828,7 @@ void roce3_queue_bond_work(struct net_device *upper_netdev, work_func_t func)
 	queue_work(g_bond_wq, &work->work);
 }
 
-int roce3_bond_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
+static int roce3_bond_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
 {
 	struct net_device *net_dev = NULL;
 	struct netdev_notifier_changeupper_info *info = NULL;

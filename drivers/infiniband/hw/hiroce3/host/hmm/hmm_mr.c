@@ -66,15 +66,7 @@ err_alloc_mtt:
 	return ret;
 }
 
-/*
- ****************************************************************************
- Prototype	: hmm_free_tpt
- Description  : free mpt and mtt
- Input		: struct hinic3_hwdev *hwdev
-				struct rdma_mr *mr
-****************************************************************************
-*/
-void hmm_free_tpt(void *hwdev, struct rdma_mr *mr, u32 service_type)
+static void hmm_free_tpt(void *hwdev, struct rdma_mr *mr, u32 service_type)
 {
 	hmm_rdma_mtt_free(hwdev, &mr->mtt, service_type);
 	hmm_rdma_mpt_free(hwdev, &mr->mpt);
@@ -103,78 +95,6 @@ static void hmm_set_rdma_mr(struct rdma_mr *mr, enum rdma_mr_type mr_type, u32 p
 	mr->access = access;
 	mr->key = get_key_from_index(mr->mpt.mpt_index); /* 由mpt index转换为key */
 	mr->mr_type = mr_type;
-}
-
-/*
- ****************************************************************************
- Prototype	: hmm_alloc_mr
- Description  : register DMA_MR
- Input		: struct hinic3_hwdev *hwdev
-				enum rdma_mr_type mr_type
-				u32 max_num_sg
-				u32 service_type
- Output	   : None
-****************************************************************************
-*/
-struct hmm_mr *hmm_alloc_mr(struct hinic3_hwdev *hwdev, u32 pdn, enum rdma_mr_type mr_type,
-	u32 max_num_sg, u32 service_type, u16 channel)
-{
-	u32 access_flag;
-	int ret = 0;
-	struct hmm_mr *mr = NULL;
-
-	if (hwdev == NULL) {
-		ret = -EINVAL;
-		pr_err("[HMM, ERR] %s(%d): dev is null\n", __func__, __LINE__);
-		goto err_out;
-	}
-#ifndef PANGEA_V6
-	if (mr_type != RDMA_DMA_MR && mr_type != RDMA_INDIRECT_MR) {
-#else
-	if (mr_type != RDMA_DMA_MR) {
-#endif
-		ret = -EINVAL;
-		pr_err("[HMM, ERR] %s(%d): mr_type is invalid\n", __func__, __LINE__);
-		goto err_out;
-	}
-
-	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
-	if (mr == NULL) {
-		ret = -ENOMEM;
-		goto err_out;
-	}
-
-	ret = hmm_alloc_tpt(hwdev->dev_hdl, &mr->rdmamr, 0, 0, service_type);
-	if (ret != 0) {
-		dev_err(hwdev->dev_hdl,
-			"[HMM, ERR] %s(%d): Failed to alloc mpt and mtt, func_id(%d)\n",
-			__func__, __LINE__, hinic3_global_func_id(hwdev));
-		goto err_alloc_tpt;
-	}
-
-	access_flag = (RDMA_IB_ACCESS_REMOTE_READ | RDMA_IB_ACCESS_REMOTE_WRITE |
-		RDMA_IB_ACCESS_LOCAL_WRITE | RDMA_IB_ACCESS_REMOTE_ATOMIC);
-
-	hmm_set_rdma_mr(&mr->rdmamr, mr_type, pdn, 0ULL, ROCE_DMA_MR_SIZE, access_flag);
-
-	ret = hmm_rdma_enable_mr_mpt(hwdev->dev_hdl, &(mr->rdmamr), channel);
-	if (ret != 0) {
-		dev_err(hwdev->dev_hdl,
-			"[HMM, ERR] %s(%d): Failed to enable mpt of DMA mr, func_id(%d)\n",
-			__func__, __LINE__, hinic3_global_func_id(hwdev));
-		goto err_enable_mpt;
-	}
-
-	return mr;
-
-err_enable_mpt:
-	hmm_free_tpt(hwdev->dev_hdl, &mr->rdmamr, service_type);
-
-err_alloc_tpt:
-	kfree(mr);
-
-err_out:
-	return (struct hmm_mr *)ERR_PTR((long)ret);
 }
 
 static int hmm_umem_write_mtt_check(const void *hwdev, const struct rdma_mtt *mtt,
@@ -238,18 +158,8 @@ out:
 	return ret;
 }
 
-/*
- ****************************************************************************
- Prototype	: hmm_umem_write_mtt
- Description  : write mtt for umem(get from memory alloced by user)
- Input		: struct hinic3_hwdev *hwdev
-				struct rdma_mtt *mtt
-				struct hmm_umem *umem
- Output	   : None
-****************************************************************************
-*/
-int hmm_umem_write_mtt(struct hinic3_hwdev *hwdev, struct rdma_mtt *mtt,
-	struct hmm_umem *umem, u32 service_type)
+static int hmm_umem_write_mtt(struct hinic3_hwdev *hwdev, struct rdma_mtt *mtt,
+			      struct hmm_umem *umem, u32 service_type)
 {
 	int ret;
 	u64 *page_list = NULL; /* 要写入mtt的page_list */
@@ -363,7 +273,7 @@ struct hmm_mr *hmm_reg_user_mr(struct hinic3_hwdev *hwdev, u64 start, u32 pd,
 
 	mr->hwdev = hwdev;
 	mr->rdmamr.iova = virt_addr;
-	mr->umem = hmm_umem_get(hwdev->dev_hdl, start, (size_t)length, hmm_access, 0);
+	mr->umem = hmm_umem_get(hwdev->dev_hdl, start, (size_t)length, hmm_access);
 	if (IS_ERR(mr->umem)) {
 		ret = (int)PTR_ERR(mr->umem);
 		dev_err(hwdev->dev_hdl,

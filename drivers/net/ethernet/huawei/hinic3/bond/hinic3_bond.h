@@ -44,14 +44,14 @@ struct hinic3_bond_info_s {
 	char slaves_name[HINIC3_MAX_PORT][HINIC3_IFNAMSIZ];
 };
 
-#pragma pack(1)
+#pragma pack(push, 1)
 struct netdev_lower_state_info {
 	u8 link_up : 1;
 	u8 tx_enabled : 1;
 	u8 rsvd : 6;
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 struct bond_tracker {
 	struct netdev_lower_state_info netdev_state[BOND_PORT_MAX_NUM];

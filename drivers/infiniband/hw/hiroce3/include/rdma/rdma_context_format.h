@@ -9,7 +9,7 @@
 
 
 /* Align each field with 4bytes. */
-#pragma pack(4)
+#pragma pack(push, 4)
 
 /* **************** Macro Definition ****************** */
 #define ROCE_BASE_GID_IDX 1
@@ -5176,6 +5176,6 @@ struct racl_value {
 		u32 value;
 	} dw4;
 };
-#pragma pack(0)
+#pragma pack(pop)
 
 #endif // RDMA_CONTEXT_FORMAT_H

@@ -7,6 +7,7 @@
 #include "hinic3_hw.h"
 #include "hinic3_rdma.h"
 #include "hmm_comp.h"
+#include "hinic3_hmm.h"
 #include "hmm_mr.h"
 
 static int hmm_set_mtt_layer(const struct hmm_comp_priv *comp_priv,
