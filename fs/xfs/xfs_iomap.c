@@ -1269,7 +1269,7 @@ xfs_iomap_write_delalloc_release(
 			error = data_end;
 			goto out_unlock;
 		}
-		WARN_ON_ONCE(data_end <= start_byte);
+		WARN_ON_ONCE(data_end < start_byte);
 		WARN_ON_ONCE(data_end > scan_end_byte);
 
 		error = xfs_iomap_write_delalloc_scan(inode, &punch_start_byte,
