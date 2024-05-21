@@ -1253,7 +1253,7 @@ static void roce3_remove(struct hinic3_lld_dev *lld_dev, void *uld_dev)
 		__func__, glb_func_id, dev_name);
 }
 
-bool roce3_need_proc_link_event(void *hwdev)
+static bool roce3_need_proc_link_event(void *hwdev)
 {
 	int ret = 0;
 	u16 func_id;
@@ -1293,7 +1293,7 @@ bool roce3_need_proc_link_event(void *hwdev)
 	return false;
 }
 
-bool roce3_need_proc_bond_event(void *hwdev)
+static bool roce3_need_proc_bond_event(void *hwdev)
 {
 	return !roce3_need_proc_link_event(hwdev);
 }
@@ -1398,7 +1398,8 @@ static int roce3_set_ib_event(struct roce3_device *rdev, const struct hinic3_eve
 	}
 }
 
-void roce3_event(struct hinic3_lld_dev *lld_dev, void *uld_dev, struct hinic3_event_info *event)
+static void roce3_event(struct hinic3_lld_dev *lld_dev,
+	void *uld_dev, struct hinic3_event_info *event)
 {
 	struct ib_event ibevent;
 	struct roce3_device *rdev = NULL;

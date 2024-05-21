@@ -367,19 +367,21 @@ static s32 cqm_buf_unused_node_alloc_page(struct hinic3_hwdev *handle, struct ta
 	return CQM_SUCCESS;
 }
 
-static const struct malloc_memory g_malloc_funcs[] = {
+#define MALLOC_FUNCS_COUNT 2
+#define FREE_FUNCS_COUNT 1
+static const struct malloc_memory g_malloc_funcs[MALLOC_FUNCS_COUNT] = {
 	{check_for_use_node_alloc, cqm_buf_use_node_alloc_page},
 	{check_for_nouse_node_alloc, cqm_buf_unused_node_alloc_page}
 };
 
-static const struct free_memory g_free_funcs[] = {
+static const struct free_memory g_free_funcs[FREE_FUNCS_COUNT] = {
 	{check_use_non_vram, cqm_buf_free_page_common}
 };
 
 static s32 cqm_buf_alloc_page(struct tag_cqm_handle *cqm_handle, struct tag_cqm_buf *buf)
 {
 	struct hinic3_hwdev *handle = cqm_handle->ex_handle;
-	u32 malloc_funcs_num = ARRAY_SIZE(g_malloc_funcs);
+	u32 malloc_funcs_num = MALLOC_FUNCS_COUNT;
 	u32 i;
 
 	for (i = 0; i < malloc_funcs_num; i++) {
@@ -396,7 +398,7 @@ static s32 cqm_buf_alloc_page(struct tag_cqm_handle *cqm_handle, struct tag_cqm_
 
 static void cqm_buf_free_page(struct tag_cqm_buf *buf)
 {
-	u32 free_funcs_num = ARRAY_SIZE(g_free_funcs);
+	u32 free_funcs_num = FREE_FUNCS_COUNT;
 	u32 i;
 
 	for (i = 0; i < free_funcs_num; i++) {

@@ -856,44 +856,6 @@ u16 hinic3_global_func_id(void *hwdev)
 }
 EXPORT_SYMBOL(hinic3_global_func_id);
 
-/**
- * get function id from register,used by sriov hot migration process
- * @hwdev: the pointer to hw device
- */
-u16 hinic3_global_func_id_hw(void *hwdev)
-{
-	u32 addr, attr0;
-	struct hinic3_hwdev *dev;
-
-	dev = (struct hinic3_hwdev *)hwdev;
-	addr = HINIC3_CSR_FUNC_ATTR0_ADDR;
-	attr0 = hinic3_hwif_read_reg(dev->hwif, addr);
-
-	return HINIC3_AF0_GET(attr0, FUNC_GLOBAL_IDX);
-}
-
-/**
- * get function id, used by sriov hot migratition process.
- * @hwdev: the pointer to hw device
- * @func_id: function id
- */
-int hinic3_global_func_id_get(void *hwdev, u16 *func_id)
-{
-	struct hinic3_hwdev *dev = (struct hinic3_hwdev *)hwdev;
-
-	if (!hwdev || !func_id)
-		return -EINVAL;
-
-	/* only vf get func_id from chip reg for sriov migrate */
-	if (!HINIC3_IS_VF(dev)) {
-		*func_id = hinic3_global_func_id(hwdev);
-		return 0;
-	}
-
-	*func_id = hinic3_global_func_id_hw(dev);
-	return 0;
-}
-
 u16 hinic3_intr_num(void *hwdev)
 {
 	struct hinic3_hwif *hwif = NULL;

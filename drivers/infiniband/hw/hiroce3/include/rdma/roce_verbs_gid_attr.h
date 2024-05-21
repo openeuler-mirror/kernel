@@ -8,7 +8,7 @@
 #define BIG_ENDIAN	0x4321
 #endif
 
-#pragma pack(4)
+#pragma pack(push, 4)
 struct tag_roce_verbs_gid_ipv4_attr {
 	/* DW0 */
 	union {
@@ -106,6 +106,6 @@ struct tag_roce_verbs_gid_attr {
 struct tag_roce_verbs_clear_gid_info {
 	u32 gid_num;
 };
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_GID_ATTR_H */

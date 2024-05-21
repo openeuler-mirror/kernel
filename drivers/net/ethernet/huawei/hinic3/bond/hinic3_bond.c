@@ -9,7 +9,6 @@
 #include <linux/net.h>
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
-#include <linux/version.h>
 
 #include "hinic3_lld.h"
 #include "hinic3_srv_nic.h"

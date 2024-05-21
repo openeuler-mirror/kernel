@@ -14,8 +14,7 @@
 
 #include "roce_dif_format.h"
 /* Align each field with 4bytes. */
-#pragma pack(4)
-
+#pragma pack(push, 4)
 
 #ifndef BIG_ENDIAN
 #define BIG_ENDIAN	0x4321
@@ -374,6 +373,6 @@ struct ucode_nofaa_ctx {
 	u32 rsvd[2];
 };
 
-#pragma pack(0)
+#pragma pack(pop)
 
 #endif // RDMA_EXT_CTX_FORMAT_H

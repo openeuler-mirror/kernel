@@ -237,13 +237,8 @@ static void cqm_bat_fill_cla_invalid(struct tag_cqm_handle *cqm_handle,
 }
 
 /**
- * Prototype    : cqm_bat_fill_cla
- * Description  : Fill the base address of the CLA table into the BAT table.
- * Input        : struct tag_cqm_handle *cqm_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_bat_fill_cla - Fill the base address of the CLA table into the BAT table
+ * @cqm_handle: CQM handle
  */
 static void cqm_bat_fill_cla(struct tag_cqm_handle *cqm_handle)
 {
@@ -415,13 +410,8 @@ static s32 cqm_bat_update_cmd(struct tag_cqm_handle *cqm_handle, struct tag_cqm_
 }
 
 /**
- * Prototype    : cqm_bat_update
- * Description  : Send a command to tile to update the BAT table through cmdq.
- * Input        : struct tag_cqm_handle *cqm_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_bat_update - Send a command to tile to update the BAT table through cmdq
+ * @cqm_handle: CQM handle
  */
 static s32 cqm_bat_update(struct tag_cqm_handle *cqm_handle)
 {
@@ -600,15 +590,10 @@ static s32 cqm_bat_init_ft_rdma(struct tag_cqm_handle *cqm_handle,
 }
 
 /**
- * Prototype    : cqm_bat_init
- * Description  : Initialize the BAT table. Only the items to be initialized and
- *		  the entry sequence are selected. The content of the BAT entry
- *		  is filled after the CLA is allocated.
- * Input        : struct tag_cqm_handle *cqm_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_bat_init - Initialize the BAT table. Only the items to be initialized and
+ *                the entry sequence are selected. The content of the BAT entry
+ *                is filled after the CLA is allocated.
+ * @cqm_handle: CQM handle
  */
 s32 cqm_bat_init(struct tag_cqm_handle *cqm_handle)
 {
@@ -637,13 +622,8 @@ s32 cqm_bat_init(struct tag_cqm_handle *cqm_handle)
 }
 
 /**
- * Prototype    : cqm_bat_uninit
- * Description  : Deinitialize the BAT table.
- * Input        : struct tag_cqm_handle *cqm_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_bat_uninit - Deinitialize the BAT table
+ * @cqm_handle: CQM handle
  */
 void cqm_bat_uninit(struct tag_cqm_handle *cqm_handle)
 {
@@ -1036,15 +1016,10 @@ static s32 cqm_cla_xyz_lvl0(struct tag_cqm_handle *cqm_handle,
 }
 
 /**
- * Prototype    : cqm_cla_xyz
- * Description  : Calculate the number of levels of CLA tables and allocate
- *		  space for each level of CLA table.
- * Input        : struct tag_cqm_handle *cqm_handle
- *		  struct tag_cqm_cla_table *cla_table
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_cla_xyz - Calculate the number of levels of CLA tables and allocate
+ *               space for each level of CLA table.
+ * @cqm_handle: CQM handle
+ * @cla_table: CLA table
  */
 static s32 cqm_cla_xyz(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_table *cla_table)
 {
@@ -1329,13 +1304,8 @@ static s32 cqm_cla_init_entry(struct tag_cqm_handle *cqm_handle,
 }
 
 /**
- * Prototype    : cqm_cla_init
- * Description  : Initialize the CLA table.
- * Input        : struct tag_cqm_handle *cqm_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_cla_init - Initialize the CLA table
+ * @cqm_handle: CQM handle
  */
 s32 cqm_cla_init(struct tag_cqm_handle *cqm_handle)
 {
@@ -1394,13 +1364,9 @@ err:
 }
 
 /**
- * Prototype    : cqm_cla_uninit
- * Description  : Deinitialize the CLA table.
- * Input        : struct tag_cqm_handle *cqm_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/15
- *   Modification : Created function
+ * cqm_cla_uninit - Deinitialize the CLA table
+ * @cqm_handle: CQM handle
+ * @entry_numb: entry number
  */
 void cqm_cla_uninit(struct tag_cqm_handle *cqm_handle, u32 entry_numb)
 {
@@ -1484,18 +1450,12 @@ static s32 cqm_cla_update_cmd(struct tag_cqm_handle *cqm_handle,
 }
 
 /**
- * Prototype    : cqm_cla_update
- * Description  : Send a command to update the CLA table.
- * Input        : struct tag_cqm_handle *cqm_handle,
- *		  struct tag_cqm_buf_list *buf_node_parent parent node of the content to
- *							   be updated
- *		  struct tag_cqm_buf_list *buf_node_child  Subnode for which the buffer
- *							   is to be applied
- *		  u32 child_index		  Index of a child node.
- * Output       : None
- * Return Value : s32
- * 1.Date   : 2015/5/15
- *   Modification : Created function
+ * cqm_cla_update - Send a command to update the CLA table
+ * @cqm_handle: CQM handle
+ * @buf_node_parent: parent node of the content to be updated
+ * @buf_node_child: Subnode for which the buffer is to be applied
+ * @child_index: Index of a child node
+ * @cla_update_mode: CLA update mod
  */
 static s32 cqm_cla_update(struct tag_cqm_handle *cqm_handle,
 			  const struct tag_cqm_buf_list *buf_node_parent,
@@ -1608,19 +1568,12 @@ out:
 }
 
 /**
- * Prototype    : cqm_cla_alloc
- * Description  : Trunk page for applying for a CLA.
- * Input        : struct tag_cqm_handle *cqm_handle,
- *		  struct tag_cqm_cla_table *cla_table,
- *		  struct tag_cqm_buf_list *buf_node_parent parent node of the content to
- *							   be updated
- *		  struct tag_cqm_buf_list *buf_node_child  subnode for which the buffer
- *							   is to be applied
- *		  u32 child_index		  index of a child node
- * Output	: None
- * Return Value : s32
- * 1.Date : 2015/5/15
- *   Modification : Created function
+ * cqm_cla_alloc - Trunk page for applying for a CLA.
+ * @cqm_handle: CQM handle
+ * @cla_table: BAT table entry
+ * @buf_node_parent: parent node of the content to be updated
+ * @buf_node_child: subnode for which the buffer is to be applied
+ * @child_index: index of a child node
  */
 static s32 cqm_cla_alloc(struct tag_cqm_handle *cqm_handle,
 			 struct tag_cqm_cla_table *cla_table,
@@ -1666,15 +1619,13 @@ err1:
 }
 
 /**
- * Prototype    : cqm_cla_free
- * Description  : Release trunk page of a CLA
- * Input        : struct tag_cqm_handle *cqm_handle
- *		  struct tag_cqm_cla_table *cla_table
- *		  struct tag_cqm_buf_list *buf_node
- * Output	: None
- * Return Value : void
- * 1.Date : 2015/5/15
- *   Modification : Created function
+ * cqm_cla_free - Release trunk page of a CLA
+ * @cqm_handle: CQM handle
+ * @cla_table: BAT table entry
+ * @buf_node_parent: parent node of the content to be updated
+ * @buf_node_child: subnode for which the buffer is to be applied
+ * @child_index: index of a child node
+ * @cla_update_mode: the update mode of CLA
  */
 static void cqm_cla_free(struct tag_cqm_handle *cqm_handle,
 			 struct tag_cqm_cla_table *cla_table,
@@ -1858,19 +1809,14 @@ static u8 *cqm_cla_get_unlock_lvl2(struct tag_cqm_handle *cqm_handle,
 }
 
 /**
- * Prototype    : cqm_cla_get_unlock
- * Description  : Apply for block buffer in number of count from the index
- *		  position in the cla table, The unlocked process is used for
- *		  static buffer application.
- * Input        : struct tag_cqm_handle *cqm_handle,
- *		  struct tag_cqm_cla_table *cla_table,
- *		  u32 index,
- *		  u32 count,
- *		  dma_addr_t *pa
- * Output	: None
- * Return Value : u8 *
- * 1.Date : 2019/7/11
- *   Modification : Created function
+ * cqm_cla_get_unlock - Apply for block buffer in number of count from the index
+ *                      position in the cla table, The unlocked process is used for
+ *                      static buffer application.
+ * @cqm_handle: CQM handle
+ * @cla_table: BAT table entry
+ * @index: the index position in the cla table
+ * @count: number of block buffer
+ * @pa: dma physical address
  */
 u8 *cqm_cla_get_unlock(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_table *cla_table,
 		       u32 index, u32 count, dma_addr_t *pa)
@@ -1891,19 +1837,13 @@ u8 *cqm_cla_get_unlock(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_tab
 }
 
 /**
- * Prototype	: cqm_cla_get_lock
- * Description	: Apply for block buffer in number of count from the index
- *		  position in the cla table. The lock process is used during
- *		  dynamic buffer application.
- * Input        : struct tag_cqm_handle *cqm_handle,
- *		  struct tag_cqm_cla_table *cla_table,
- *		  u32 index,
- *		  u32 count,
- *		  dma_addr_t *pa
- * Output	: None
- * Return Value : u8 *
- * 1.Date : 2019/7/11
- *   Modification : Created function
+ * cqm_cla_get_lock - Apply for block buffer in number of count from the index position
+ *                    in the cla table. The lock process is used during dynamic buffer application.
+ * @cqm_handle: CQM handle
+ * @cla_table: BAT table entry
+ * @index: the index position in the cla table
+ * @count: number of block buffer
+ * @pa: dma physical address
  */
 u8 *cqm_cla_get_lock(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_table *cla_table,
 		     u32 index, u32 count, dma_addr_t *pa)
@@ -1920,17 +1860,12 @@ u8 *cqm_cla_get_lock(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_table
 }
 
 /**
- * Prototype    : cqm_cla_put
- * Description  : Decrease the value of reference counting on the trunk page.
- *		  If the value is 0, the trunk page is released.
- * Input        : struct tag_cqm_handle *cqm_handle,
- *		  struct tag_cqm_cla_table *cla_table,
- *		  u32 index,
- *		  u32 count
- * Output       : None
- * Return Value : void
- * 1.Date : 2015/4/15
- *   Modification : Created function
+ * cqm_cla_put - Decrease the value of reference counting on the trunk page. If the value is 0,
+ *               the trunk page is released.
+ * @cqm_handle: CQM handle
+ * @cla_table: BAT table entry
+ * @index: the index position in the cla table
+ * @count: number of block buffer
  */
 void cqm_cla_put(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_table *cla_table,
 		 u32 index, u32 count)
@@ -2030,15 +1965,12 @@ void cqm_cla_put(struct tag_cqm_handle *cqm_handle, struct tag_cqm_cla_table *cl
 }
 
 /**
- * Prototype    : cqm_cla_table_get
- * Description  : Searches for the CLA table data structure corresponding to a
- *		  BAT entry.
- * Input        : struct tag_cqm_bat_table *bat_table,
- *		  u32 entry_type
- * Output       : None
- * Return Value : struct tag_cqm_cla_table *
- * 1.Date : 2015/4/15
- *   Modification : Created function
+ * cqm_cla_table_get - Searches for the CLA table data structure corresponding to a BAT entry
+ * @bat_table: bat entry
+ * @entry_type: cla table type
+ *
+ * RETURNS:
+ * Queried cla table
  */
 struct tag_cqm_cla_table *cqm_cla_table_get(struct tag_cqm_bat_table *bat_table,
 					    u32 entry_type)
