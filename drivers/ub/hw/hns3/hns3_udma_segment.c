@@ -19,6 +19,7 @@
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_dfx.h"
 #include "hns3_udma_eid.h"
+#include "hns3_udma_dca.h"
 #include "hns3_udma_segment.h"
 
 static uint32_t hw_index_to_key(int ind)
@@ -91,30 +92,19 @@ err_free_bitmap:
 	return err;
 }
 
-static uint64_t get_continuos_mem_size(uint64_t seg_addr)
-{
-#define HNS3_DOUBLE 2
-	return seg_addr / HNS3_UDMA_KB * HNS3_DOUBLE;
-}
-
 static void get_pbl_addr_level(struct udma_seg *seg, struct udma_dev *udma_dev)
 {
-	uint64_t cont_mem_size;
-	uint64_t seg_size;
 	uint64_t page_num;
 
-	if (seg->size <= SEG_MEM_SIZE_1G) {
+	page_num = umem_cal_npages(seg->iova, seg->size);
+	if (page_num <= UDMA_PAGE_SIZE_1G) {
 		seg->pbl_hop_num = UDMA_PBL_HOP_NUM - 1U;
-		seg_size = roundup_pow_of_two(seg->size);
-		cont_mem_size = get_continuos_mem_size(seg_size);
-		page_num = cont_mem_size / PAGE_SIZE;
 		udma_dev->caps.pbl_ba_pg_sz = ilog2(roundup_pow_of_two(page_num));
 	} else {
 		seg->pbl_hop_num = udma_dev->caps.pbl_hop_num;
 		udma_dev->caps.pbl_ba_pg_sz = UDMA_BA_PG_SZ_SUPPORTED_16K;
 	}
 }
-
 
 static int alloc_seg_pbl(struct udma_dev *udma_dev, struct udma_seg *seg,
 			 bool is_user)
