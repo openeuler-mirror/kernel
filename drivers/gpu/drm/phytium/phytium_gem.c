@@ -87,7 +87,8 @@ phytium_gem_prime_get_sg_table(struct drm_gem_object *obj)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	if ((phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM) ||
+	if ((phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM_WC) ||
+	    (phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM_DEVICE) ||
 	    (phytium_gem_obj->memory_type == MEMORY_TYPE_SYSTEM_CARVEOUT)) {
 		ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
 		if (ret) {
@@ -272,7 +273,8 @@ int phytium_gem_suspend(struct drm_device *drm_dev)
 	int ret = 0;
 
 	list_for_each_entry(phytium_gem_obj, &priv->gem_list_head, list) {
-		if (phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM)
+		if ((phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM_WC) &&
+			(phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM_DEVICE))
 			continue;
 
 		phytium_gem_obj->vaddr_save = vmalloc(phytium_gem_obj->size);
@@ -291,7 +293,8 @@ int phytium_gem_suspend(struct drm_device *drm_dev)
 	return 0;
 malloc_failed:
 	list_for_each_entry(phytium_gem_obj, &priv->gem_list_head, list) {
-		if (phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM)
+		if ((phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM_WC) &&
+			(phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM_DEVICE))
 			continue;
 
 		if (phytium_gem_obj->vaddr_save) {
@@ -308,7 +311,8 @@ void phytium_gem_resume(struct drm_device *drm_dev)
 	struct phytium_gem_object *phytium_gem_obj = NULL;
 
 	list_for_each_entry(phytium_gem_obj, &priv->gem_list_head, list) {
-		if (phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM)
+		if ((phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM_WC) &&
+			(phytium_gem_obj->memory_type != MEMORY_TYPE_VRAM_DEVICE))
 			continue;
 
 		memcpy(phytium_gem_obj->vaddr, phytium_gem_obj->vaddr_save, phytium_gem_obj->size);
@@ -327,7 +331,8 @@ void phytium_gem_free_object(struct drm_gem_object *obj)
 	DRM_DEBUG_KMS("free phytium_gem_obj iova:0x%pa size:0x%lx\n",
 		      &phytium_gem_obj->iova, phytium_gem_obj->size);
 	if (phytium_gem_obj->vaddr) {
-		if (phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM) {
+		if ((phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM_WC) ||
+			(phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM_DEVICE)) {
 			phytium_memory_pool_free(priv, phytium_gem_obj->vaddr, size);
 			priv->mem_state[PHYTIUM_MEM_VRAM_ALLOC] -= size;
 		} else if (phytium_gem_obj->memory_type == MEMORY_TYPE_SYSTEM_CARVEOUT) {
@@ -360,8 +365,12 @@ int phytium_gem_mmap_obj(struct drm_gem_object *obj, struct vm_area_struct *vma)
 	vma->vm_pgoff = 0;
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 
-	if (phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM) {
+	if (phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM_WC) {
 		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+		ret = remap_pfn_range(vma, vma->vm_start, pfn,
+			       vma->vm_end - vma->vm_start, vma->vm_page_prot);
+	} else if (phytium_gem_obj->memory_type == MEMORY_TYPE_VRAM_DEVICE) {
+		vma->vm_page_prot = pgprot_device(vma->vm_page_prot);
 		ret = remap_pfn_range(vma, vma->vm_start, pfn,
 			       vma->vm_end - vma->vm_start, vma->vm_page_prot);
 	} else if (phytium_gem_obj->memory_type == MEMORY_TYPE_SYSTEM_CARVEOUT) {
@@ -421,7 +430,7 @@ struct phytium_gem_object *phytium_gem_create_object(struct drm_device *dev, uns
 		goto failed_object_init;
 	}
 
-	if (priv->support_memory_type & MEMORY_TYPE_VRAM) {
+	if (priv->support_memory_type & (MEMORY_TYPE_VRAM_WC | MEMORY_TYPE_VRAM_DEVICE)) {
 		ret = phytium_memory_pool_alloc(priv, &phytium_gem_obj->vaddr,
 						&phytium_gem_obj->phys_addr, size);
 		if (ret) {
@@ -429,7 +438,7 @@ struct phytium_gem_object *phytium_gem_create_object(struct drm_device *dev, uns
 			goto failed_dma_alloc;
 		}
 		phytium_gem_obj->iova = phytium_gem_obj->phys_addr;
-		phytium_gem_obj->memory_type = MEMORY_TYPE_VRAM;
+		phytium_gem_obj->memory_type = priv->support_memory_type;
 		priv->mem_state[PHYTIUM_MEM_VRAM_ALLOC] += size;
 	} else if (priv->support_memory_type & MEMORY_TYPE_SYSTEM_CARVEOUT) {
 		ret = phytium_memory_pool_alloc(priv, &phytium_gem_obj->vaddr,
