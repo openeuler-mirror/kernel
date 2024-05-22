@@ -70,9 +70,8 @@ static bool check_jump_insn(unsigned long func_addr)
 	u32 *insn = (u32*)func_addr;
 
 	for (i = 0; i < CHECK_JUMP_RANGE; i++) {
-		if (is_jump_insn(*insn)) {
+		if (is_jump_insn(*insn))
 			return true;
-		}
 		insn++;
 	}
 	return false;
