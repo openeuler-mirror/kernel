@@ -1359,7 +1359,7 @@ int __weak arch_klp_check_activeness_func(struct klp_func *func, int enable,
 	struct klp_func_node *func_node = NULL;
 	unsigned long old_func = (unsigned long)func->old_func;
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = func->func_node;
 	/* Check func address in stack */
 	if (enable) {
 		if (func->patched || func->force == KLP_ENFORCEMENT)
@@ -1551,7 +1551,7 @@ static LIST_HEAD(klp_func_list);
  * The caller must ensure that the klp_mutex lock is held or is in the rcu read
  * critical area.
  */
-struct klp_func_node *klp_find_func_node(const void *old_func)
+static struct klp_func_node *klp_find_func_node(const void *old_func)
 {
 	struct klp_func_node *func_node;
 

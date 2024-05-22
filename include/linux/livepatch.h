@@ -239,7 +239,6 @@ struct klp_func_node {
 	void *brk_func;
 };
 
-struct klp_func_node *klp_find_func_node(const void *old_func);
 void klp_add_func_node(struct klp_func_node *func_node);
 void klp_del_func_node(struct klp_func_node *func_node);
 void *klp_get_brk_func(void *addr);

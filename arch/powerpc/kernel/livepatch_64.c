@@ -85,7 +85,7 @@ int arch_klp_check_activeness_func(struct klp_func *func, int enable,
 	unsigned long func_addr, func_size;
 	struct klp_func_node *func_node = NULL;
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = func->func_node;
 	/* Check func address in stack */
 	if (enable) {
 		if (func->patched || func->force == KLP_ENFORCEMENT)
@@ -94,7 +94,7 @@ int arch_klp_check_activeness_func(struct klp_func *func, int enable,
 		 * When enable, checking the currently
 		 * active functions.
 		 */
-		if (!func_node || list_empty(&func_node->func_stack)) {
+		if (list_empty(&func_node->func_stack)) {
 			/*
 			 * No patched on this function
 			 * [ the origin one ]
@@ -169,8 +169,7 @@ int arch_klp_check_activeness_func(struct klp_func *func, int enable,
 			return ret;
 #endif
 
-		if (func_node == NULL ||
-		    func_node->arch_data.trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
+		if (func_node->arch_data.trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
 			return 0;
 
 		func_addr = (unsigned long)&func_node->arch_data.trampoline;
