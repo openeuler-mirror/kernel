@@ -1738,7 +1738,8 @@ enum {
 	Opt_dioread_nolock, Opt_dioread_lock,
 	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
 	Opt_max_dir_size_kb, Opt_nojournal_checksum, Opt_nombcache,
-	Opt_no_prefetch_block_bitmaps, Opt_mb_optimize_scan, Opt_buffered_iomap,
+	Opt_no_prefetch_block_bitmaps, Opt_mb_optimize_scan,
+	Opt_buffered_iomap, Opt_nobuffered_iomap,
 	Opt_errors, Opt_data, Opt_data_err, Opt_jqfmt, Opt_dax_type,
 #ifdef CONFIG_EXT4_DEBUG
 	Opt_fc_debug_max_replay, Opt_fc_debug_force
@@ -1882,6 +1883,7 @@ static const struct fs_parameter_spec ext4_param_specs[] = {
 						Opt_no_prefetch_block_bitmaps),
 	fsparam_s32	("mb_optimize_scan",	Opt_mb_optimize_scan),
 	fsparam_flag	("buffered_iomap",	Opt_buffered_iomap),
+	fsparam_flag	("nobuffered_iomap",	Opt_nobuffered_iomap),
 	fsparam_string	("check",		Opt_removed),	/* mount option from ext2/3 */
 	fsparam_flag	("nocheck",		Opt_removed),	/* mount option from ext2/3 */
 	fsparam_flag	("reservation",		Opt_removed),	/* mount option from ext2/3 */
@@ -1978,6 +1980,8 @@ static const struct mount_opts {
 	 MOPT_SET},
 	{Opt_buffered_iomap, EXT4_MOUNT2_BUFFERED_IOMAP,
 	 MOPT_SET | MOPT_2 | MOPT_EXT4_ONLY},
+	{Opt_nobuffered_iomap, EXT4_MOUNT2_BUFFERED_IOMAP,
+	 MOPT_CLEAR | MOPT_2 | MOPT_EXT4_ONLY},
 #ifdef CONFIG_EXT4_DEBUG
 	{Opt_fc_debug_force, EXT4_MOUNT2_JOURNAL_FAST_COMMIT,
 	 MOPT_SET | MOPT_2 | MOPT_EXT4_ONLY},
@@ -2464,11 +2468,6 @@ static int ext4_parse_param(struct fs_context *fc, struct fs_parameter *param)
 			return -EINVAL;
 		}
 		return 0;
-	case Opt_buffered_iomap:
-		ext4_msg(NULL, KERN_WARNING,
-			 "iomap for buffered enabled. Warning: EXPERIMENTAL, use at your own risk");
-		ctx_set_mount_opt2(ctx, EXT4_MOUNT2_BUFFERED_IOMAP);
-		return 0;
 	}
 
 	/*
@@ -2907,12 +2906,6 @@ fail_dax_change_remount:
 			    (sbi->s_mount_opt2 & EXT4_MOUNT2_DAX_NEVER) ||
 			    !(sbi->s_mount_opt2 & EXT4_MOUNT2_DAX_INODE))) {
 			goto fail_dax_change_remount;
-		}
-
-		if (ctx_test_mount_opt2(ctx, EXT4_MOUNT2_BUFFERED_IOMAP) &&
-		    !test_opt2(sb, BUFFERED_IOMAP)) {
-			ext4_msg(NULL, KERN_ERR, "can't enable iomap for buffered IO on remount");
-			return -EINVAL;
 		}
 	}
 
@@ -4481,6 +4474,10 @@ static void ext4_set_def_opts(struct super_block *sb,
 
 	if (sb->s_blocksize == PAGE_SIZE)
 		set_opt(sb, DIOREAD_NOLOCK);
+
+	/* Use iomap for buffered IO path on 4k pagesize */
+	if (PAGE_SIZE == SZ_4K)
+		set_opt2(sb, BUFFERED_IOMAP);
 }
 
 static int ext4_handle_clustersize(struct super_block *sb)
