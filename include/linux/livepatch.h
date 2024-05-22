@@ -321,7 +321,11 @@ static inline int klp_module_coming(struct module *mod) { return 0; }
 static inline void klp_module_going(struct module *mod) {}
 static inline bool klp_patch_pending(struct task_struct *task) { return false; }
 static inline void klp_update_patch_state(struct task_struct *task) {}
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+void klp_copy_process(struct task_struct *child);
+#else
 static inline void klp_copy_process(struct task_struct *child) {}
+#endif
 static inline bool klp_have_reliable_stack(void) { return true; }
 
 #ifndef klp_smp_isb

@@ -2051,17 +2051,184 @@ static bool klp_use_breakpoint(struct klp_patch *patch)
 	return true;
 }
 
-static int klp_breakpoint_optimize(struct klp_patch *patch)
-{
-	int ret;
-	int i;
-	int cnt = 0;
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+#include <linux/sched/task.h>
+#include "../sched/sched.h"
 
-	ret = klp_add_breakpoint(patch);
-	if (ret) {
-		pr_err("failed to add breakpoints, ret=%d\n", ret);
-		return ret;
+int __weak arch_klp_check_task_calltrace(struct task_struct *t,
+					 bool (*fn)(void *, int *, unsigned long),
+					 void *data)
+{
+	return -EINVAL;
+}
+
+/* Called from copy_process() during fork */
+void klp_copy_process(struct task_struct *child)
+{
+	child->patch_state = current->patch_state;
+}
+
+static void set_tasks_patch_state(int patch_state)
+{
+	unsigned int cpu;
+	struct task_struct *g, *task;
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, task) {
+		task->patch_state = patch_state;
 	}
+	read_unlock(&tasklist_lock);
+
+	get_online_cpus();
+	for_each_possible_cpu(cpu) {
+		task = idle_task(cpu);
+		task->patch_state = patch_state;
+	}
+	put_online_cpus();
+}
+
+static void update_patch_state(struct task_struct *task, struct klp_func_list *func_list)
+{
+	struct rq *rq;
+	struct rq_flags flags;
+
+	if (task->patch_state == KLP_PATCHED)
+		return;
+	WARN_ON_ONCE(task->patch_state != KLP_UNPATCHED);
+	rq = task_rq_lock(task, &flags);
+	if (task_running(rq, task) && task != current)
+		goto done;
+	if (arch_klp_check_task_calltrace(task, check_func_list, (void *)func_list))
+		goto done;
+	task->patch_state = KLP_PATCHED;
+done:
+	task_rq_unlock(rq, task, &flags);
+}
+
+#ifdef CONFIG_SMP
+static void check_task_calltrace_ipi(void *func_list)
+{
+	if (current->patch_state == KLP_PATCHED)
+		return;
+	if (arch_klp_check_task_calltrace(current, check_func_list, func_list))
+		return;
+	current->patch_state = KLP_PATCHED;
+}
+
+static void update_patch_state_ipi(struct klp_func_list *func_list)
+{
+	unsigned int cpu;
+	unsigned int curr_cpu;
+
+	preempt_disable();
+	curr_cpu = smp_processor_id();
+	for_each_online_cpu(cpu) {
+		if (cpu == curr_cpu)
+			continue;
+		smp_call_function_single(cpu, check_task_calltrace_ipi, func_list, 1);
+	}
+	preempt_enable();
+}
+#endif
+
+static void update_tasks_patch_state(struct klp_func_list *func_list)
+{
+	unsigned int cpu;
+	struct task_struct *g, *task;
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, task)
+		update_patch_state(task, func_list);
+	read_unlock(&tasklist_lock);
+
+	get_online_cpus();
+	for_each_possible_cpu(cpu) {
+		task = idle_task(cpu);
+		if (cpu_online(cpu)) {
+			update_patch_state(task, func_list);
+		} else if (task->patch_state != KLP_PATCHED) {
+			/* offline idle tasks can be directly updated */
+			task->patch_state = KLP_PATCHED;
+		}
+	}
+	put_online_cpus();
+#ifdef CONFIG_SMP
+	update_patch_state_ipi(func_list);
+#endif
+}
+
+static bool is_patchable(void)
+{
+	unsigned int cpu;
+	struct task_struct *g, *task;
+	int patchable = true;
+
+	get_online_cpus();
+	for_each_possible_cpu(cpu) {
+		task = idle_task(cpu);
+		WARN_ON_ONCE(task->patch_state == KLP_UNDEFINED);
+		if (task->patch_state != KLP_PATCHED) {
+			put_online_cpus();
+			return false;
+		}
+	}
+	put_online_cpus();
+	read_lock(&tasklist_lock);
+	for_each_process_thread(g, task) {
+		WARN_ON_ONCE(task->patch_state == KLP_UNDEFINED);
+		if (task->patch_state != KLP_PATCHED) {
+			patchable = false;
+			goto out_unlock;
+		}
+	}
+out_unlock:
+	read_unlock(&tasklist_lock);
+	return patchable;
+}
+
+static int klp_breakpoint_enable_patch(struct klp_patch *patch, int *cnt)
+{
+	struct klp_func_list *func_list = NULL;
+	int ret = -EINVAL;
+	int i;
+	int retry_cnt = 0;
+
+	ret = arch_klp_check_activeness_func(patch, true, add_func_to_list, &func_list);
+	if (ret) {
+		pr_err("break optimize collecting active functions failed, ret=%d\n", ret);
+		goto out;
+	}
+
+	set_tasks_patch_state(KLP_UNPATCHED);
+
+	for (i = 0; i < KLP_RETRY_COUNT; i++) {
+		retry_cnt++;
+
+		update_tasks_patch_state(func_list);
+		if (is_patchable()) {
+			arch_klp_code_modify_prepare();
+			ret = enable_patch(patch, true);
+			arch_klp_code_modify_post_process();
+			break;
+		}
+		ret = -EAGAIN;
+		pr_notice("try again in %d ms\n", KLP_RETRY_INTERVAL);
+		msleep(KLP_RETRY_INTERVAL);
+	}
+	set_tasks_patch_state(KLP_UNDEFINED);
+out:
+	free_func_list(&func_list);
+	*cnt = retry_cnt;
+	return ret;
+}
+
+#else  /* !CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE */
+
+static int klp_breakpoint_enable_patch(struct klp_patch *patch, int *cnt)
+{
+	int ret = -EINVAL;
+	int i;
+	int retry_cnt = 0;
 
 	for (i = 0; i < KLP_RETRY_COUNT; i++) {
 		struct patch_data patch_data = {
@@ -2073,20 +2240,37 @@ static int klp_breakpoint_optimize(struct klp_patch *patch)
 		if (i == KLP_RETRY_COUNT - 1)
 			patch_data.rollback = true;
 
-		cnt++;
+		retry_cnt++;
 
 		ret = klp_stop_machine(klp_try_enable_patch, &patch_data,
 				       cpu_online_mask);
 		if (!ret || ret != -EAGAIN)
 			break;
 
-		pr_notice("try again in %d ms.\n", KLP_RETRY_INTERVAL);
+		pr_notice("try again in %d ms\n", KLP_RETRY_INTERVAL);
 
 		msleep(KLP_RETRY_INTERVAL);
 	}
+	*cnt = retry_cnt;
+	return ret;
+}
+#endif  /* CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE */
+
+static int klp_breakpoint_optimize(struct klp_patch *patch)
+{
+	int ret;
+	int cnt = 0;
+
+	ret = klp_add_breakpoint(patch);
+	if (ret) {
+		pr_err("failed to add breakpoints, ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = klp_breakpoint_enable_patch(patch, &cnt);
+
 	pr_notice("patching %s, tried %d times, ret=%d.\n",
 		  ret ? "failed" : "success", cnt, ret);
-
 	/*
 	 * If the patch is enabled successfully, the breakpoint instruction
 	 * has been replaced with the jump instruction.  However, if the patch

@@ -98,5 +98,16 @@ config LIVEPATCH_RESTRICT_KPROBE
 	  We should not patch for the functions where registered with kprobe,
 	  and vice versa.
 	  Say Y here if you want to check those.
+
+config LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+	bool "No stop_machine in breakpoint optimization mode"
+	depends on LIVEPATCH_WO_FTRACE
+	default n
+	help
+	  In breakpoint optimization mode, check tasks calltrace
+	  in batches without using stop machine so that reduce the
+	  service downtime.
+	  Say N if you are unsure.
+
 endmenu
 endif
