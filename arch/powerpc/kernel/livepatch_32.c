@@ -379,7 +379,6 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 static int do_patch(unsigned long pc, unsigned long new_addr)
 {
 	int ret;
-	int i;
 	u32 insns[LJMP_INSN_SIZE];
 
 	if (offset_in_range(pc, new_addr, SZ_32M)) {
@@ -403,14 +402,10 @@ static int do_patch(unsigned long pc, unsigned long new_addr)
 		insns[2] = 0x7d8903a6;
 		insns[3] = 0x4e800420;
 
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
-						ppc_inst(insns[i]));
-			if (ret) {
-				pr_err("patch instruction %d large range failed, ret=%d\n",
-				       i, ret);
-				return -EPERM;
-			}
+		ret = klp_patch_text((u32 *)pc, insns, LJMP_INSN_SIZE);
+		if (ret) {
+			pr_err("patch instruction large range failed, ret=%d\n", ret);
+			return -EPERM;
 		}
 	}
 	return 0;
@@ -434,20 +429,17 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
 	unsigned long pc;
-	int i;
 	int ret;
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	list_del_rcu(&func->stack_node);
 	if (list_empty(&func_node->func_stack)) {
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
-						ppc_inst(func_node->arch_data.old_insns[i]));
-			if (ret) {
-				pr_err("restore instruction %d failed, ret=%d\n", i, ret);
-				return;
-			}
+		ret = klp_patch_text((u32 *)pc, func_node->arch_data.old_insns,
+				     LJMP_INSN_SIZE);
+		if (ret) {
+			pr_err("restore instruction failed, ret=%d\n", ret);
+			return;
 		}
 	} else {
 		next_func = list_first_or_null_rcu(&func_node->func_stack,

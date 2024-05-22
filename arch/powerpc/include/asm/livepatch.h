@@ -147,6 +147,7 @@ void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 int arch_klp_module_check_calltrace(void *data);
 int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame);
+int klp_patch_text(u32 *dst, const u32 *src, int len);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
