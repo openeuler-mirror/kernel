@@ -567,14 +567,6 @@ static inline bool pcp_allowed_order(unsigned int order)
 	return false;
 }
 
-static inline void free_the_page(struct page *page, unsigned int order)
-{
-	if (pcp_allowed_order(order))		/* Via pcp? */
-		free_unref_page(page, order);
-	else
-		__free_pages_ok(page, order, FPI_NONE);
-}
-
 /*
  * Higher-order pages are called "compound pages".  They are structured thusly:
  *
@@ -610,7 +602,7 @@ void destroy_large_folio(struct folio *folio)
 		folio_undo_large_rmappable(folio);
 
 	mem_cgroup_uncharge(folio);
-	free_the_page(&folio->page, folio_order(folio));
+	free_unref_page(&folio->page, folio_order(folio));
 }
 
 static inline void set_buddy_order(struct page *page, unsigned int order)
@@ -2520,6 +2512,11 @@ void free_unref_page(struct page *page, unsigned int order)
 
 	if (page_from_dynamic_pool(page)) {
 		dynamic_pool_free_page(page);
+		return;
+	}
+
+	if (!pcp_allowed_order(order)) {
+		__free_pages_ok(page, order, FPI_NONE);
 		return;
 	}
 
@@ -4909,10 +4906,10 @@ void __free_pages(struct page *page, unsigned int order)
 	int head = PageHead(page);
 
 	if (put_page_testzero(page))
-		free_the_page(page, order);
+		free_unref_page(page, order);
 	else if (!head)
 		while (order-- > 0)
-			free_the_page(page + (1 << order), order);
+			free_unref_page(page + (1 << order), order);
 }
 EXPORT_SYMBOL(__free_pages);
 
@@ -4963,7 +4960,7 @@ void __page_frag_cache_drain(struct page *page, unsigned int count)
 	VM_BUG_ON_PAGE(page_ref_count(page) == 0, page);
 
 	if (page_ref_sub_and_test(page, count))
-		free_the_page(page, compound_order(page));
+		free_unref_page(page, compound_order(page));
 }
 EXPORT_SYMBOL(__page_frag_cache_drain);
 
@@ -5004,7 +5001,7 @@ refill:
 			goto refill;
 
 		if (unlikely(nc->pfmemalloc)) {
-			free_the_page(page, compound_order(page));
+			free_unref_page(page, compound_order(page));
 			goto refill;
 		}
 
@@ -5048,7 +5045,7 @@ void page_frag_free(void *addr)
 	struct page *page = virt_to_head_page(addr);
 
 	if (unlikely(put_page_testzero(page)))
-		free_the_page(page, compound_order(page));
+		free_unref_page(page, compound_order(page));
 }
 EXPORT_SYMBOL(page_frag_free);
 
