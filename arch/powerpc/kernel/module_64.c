@@ -817,17 +817,18 @@ int module_finalize_ftrace(struct module *mod, const Elf_Shdr *sechdrs)
  * Patch jump stub to reference trampoline
  * without saved the old R2 and load the new R2.
  */
-static int livepatch_create_bstub(struct ppc64_klp_bstub_entry *entry,
+static int livepatch_create_bstub(void *pc,
 				  unsigned long addr,
 				  struct module *me)
 {
 	long reladdr;
 	unsigned long my_r2;
 	unsigned long stub_start, stub_end, stub_size;
+	struct ppc64_klp_bstub_entry entry;
 
 	/* Stub uses address relative to r2. */
 	my_r2 = me ? me->arch.toc : kernel_toc_addr();
-	reladdr = (unsigned long)entry - my_r2;
+	reladdr = (unsigned long)pc - my_r2;
 	if (reladdr > 0x7FFFFFFF || reladdr < -(0x80000000L)) {
 		pr_err("%s: Address %p of jump stub out of range of %p.\n",
 		       me ? me->name : "kernel",
@@ -839,15 +840,25 @@ static int livepatch_create_bstub(struct ppc64_klp_bstub_entry *entry,
 	stub_start = ppc_function_entry((void *)livepatch_branch_stub);
 	stub_end = ppc_function_entry((void *)livepatch_branch_stub_end);
 	stub_size = stub_end - stub_start;
-	memcpy(entry->jump, (u32 *)stub_start, stub_size);
+	memcpy(entry.jump, (u32 *)stub_start, stub_size);
 
-	entry->jump[0] |= PPC_HA(reladdr);
-	entry->jump[1] |= PPC_LO(reladdr);
-	entry->magic = BRANCH_STUB_MAGIC;
-	entry->trampoline = addr;
+	entry.jump[0] |= PPC_HA(reladdr);
+	entry.jump[1] |= PPC_LO(reladdr);
+	entry.magic = BRANCH_STUB_MAGIC;
+	entry.trampoline = addr;
 
+
+	/* skip breakpoint at first */
+	memcpy(pc + PPC64_INSN_SIZE, (void *)&entry + PPC64_INSN_SIZE,
+	       sizeof(entry) - PPC64_INSN_SIZE);
+	/*
+	 * Avoid compile optimization, make sure that instructions
+	 * except first breakpoint has been patched.
+	 */
+	barrier();
+	memcpy(pc, (void *)&entry, PPC64_INSN_SIZE);
 	pr_debug("Create livepatch branch stub 0x%px with reladdr 0x%lx r2 0x%lx to trampoline 0x%lx\n",
-		(void *)entry, reladdr, my_r2, addr);
+		pc, reladdr, my_r2, addr);
 
 	return 1;
 }
@@ -898,7 +909,7 @@ int livepatch_create_branch(unsigned long pc,
 #endif
 
 	/* Create stub to trampoline */
-	if (!livepatch_create_bstub((struct ppc64_klp_bstub_entry *)pc, trampoline, me))
+	if (!livepatch_create_bstub((void *)pc, trampoline, me))
 		return -EINVAL;
 
 	return 0;

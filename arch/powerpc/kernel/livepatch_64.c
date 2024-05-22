@@ -412,20 +412,17 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
 	unsigned long pc;
-	int i;
 	int ret;
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	list_del_rcu(&func->stack_node);
 	if (list_empty(&func_node->func_stack)) {
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = patch_instruction((struct ppc_inst *)((u32 *)pc + i),
-						ppc_inst(func_node->arch_data.old_insns[i]));
-			if (ret) {
-				pr_err("restore instruction %d failed, ret=%d\n", i, ret);
-				break;
-			}
+		ret = klp_patch_text((u32 *)pc, func_node->arch_data.old_insns,
+				     LJMP_INSN_SIZE);
+		if (ret) {
+			pr_err("restore instruction failed, ret=%d\n", ret);
+			return;
 		}
 
 		pr_debug("[%s %d] restore insns at 0x%lx\n", __func__, __LINE__, pc);
