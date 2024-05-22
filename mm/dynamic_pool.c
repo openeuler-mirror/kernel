@@ -269,6 +269,7 @@ static int dpool_demote_huge_page(struct pages_pool *src_pool,
 	__ClearPageDpool(page);
 	src_pool->free_pages--;
 
+	__folio_clear_hugetlb(page_folio(page));
 	clear_compound_page(page_folio(page), PMD_ORDER);
 	for (i = 0; i < nr_pages; i++) {
 		subpage = folio_page(folio, i);
