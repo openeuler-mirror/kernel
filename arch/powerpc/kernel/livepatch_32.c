@@ -31,7 +31,6 @@
 
 #if defined (CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined (CONFIG_LIVEPATCH_WO_FTRACE)
-#define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * sizeof(u32))
 #define CHECK_JUMP_RANGE LJMP_INSN_SIZE
 #endif
 
@@ -55,21 +54,10 @@ static bool is_jump_insn(u32 insn)
 }
 
 struct walk_stackframe_args {
-	int enable;
-	struct klp_func_list *check_funcs;
-	struct module *mod;
+	void *data;
 	int ret;
+	bool (*check_func)(void *data, int *ret, unsigned long pc);
 };
-
-static inline unsigned long klp_size_to_check(unsigned long func_size,
-		int force)
-{
-	unsigned long size = func_size;
-
-	if (force == KLP_STACK_OPTIMIZE && size > MAX_SIZE_TO_CHECK)
-		size = MAX_SIZE_TO_CHECK;
-	return size;
-}
 
 static bool check_jump_insn(unsigned long func_addr)
 {
@@ -85,32 +73,8 @@ static bool check_jump_insn(unsigned long func_addr)
 	return false;
 }
 
-static int add_func_to_list(struct klp_func_list **funcs, struct klp_func_list **func,
-		unsigned long func_addr, unsigned long func_size, const char *func_name,
-		int force)
-{
-	if (*func == NULL) {
-		*funcs = (struct klp_func_list*)kzalloc(sizeof(**funcs), GFP_ATOMIC);
-		if (!(*funcs))
-			return -ENOMEM;
-		*func = *funcs;
-	} else {
-		(*func)->next = (struct klp_func_list*)kzalloc(sizeof(**funcs),
-				GFP_ATOMIC);
-		if (!(*func)->next)
-			return -ENOMEM;
-		*func = (*func)->next;
-	}
-	(*func)->func_addr = func_addr;
-	(*func)->func_size = func_size;
-	(*func)->func_name = func_name;
-	(*func)->force = force;
-	(*func)->next = NULL;
-	return 0;
-}
-
-static int klp_check_activeness_func(struct klp_patch *patch, int enable,
-		struct klp_func_list **check_funcs)
+int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
+				   klp_add_func_t add_func, struct klp_func_list **func_list)
 {
 	int ret;
 	struct klp_object *obj;
@@ -166,7 +130,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 				if (IS_ENABLED(CONFIG_PREEMPTION) ||
 				    (func->force == KLP_NORMAL_FORCE) ||
 				    check_jump_insn(func_addr)) {
-					ret = add_func_to_list(check_funcs, &pcheck,
+					ret = add_func(func_list, &pcheck,
 							func_addr, func_size,
 							func->old_name, func->force);
 					if (ret)
@@ -208,7 +172,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 					func_addr = (unsigned long)prev->new_func;
 					func_size = prev->new_size;
 				}
-				ret = add_func_to_list(check_funcs, &pcheck, func_addr,
+				ret = add_func(func_list, &pcheck, func_addr,
 						func_size, func->old_name, 0);
 				if (ret)
 					return ret;
@@ -221,7 +185,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 #endif
 				func_addr = (unsigned long)func->new_func;
 				func_size = func->new_size;
-				ret = add_func_to_list(check_funcs, &pcheck, func_addr,
+				ret = add_func(func_list, &pcheck, func_addr,
 						func_size, func->old_name, 0);
 				if (ret)
 					return ret;
@@ -246,29 +210,15 @@ void notrace klp_walk_stackframe(struct stackframe *frame,
 	}
 }
 
-static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long pc)
+static int klp_check_jump_func(struct stackframe *frame, void *ws_args)
 {
-	while (funcs != NULL) {
-		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
-					klp_size_to_check(funcs->func_size, funcs->force));
-		if (*ret) {
-			return false;
-		}
-		funcs = funcs->next;
-	}
-	return true;
-}
-
-static int klp_check_jump_func(struct stackframe *frame, void *data)
-{
-	struct walk_stackframe_args *args = data;
-	struct klp_func_list *check_funcs = args->check_funcs;
+	struct walk_stackframe_args *args = ws_args;
 
 	/* check NIP when the exception stack switching */
-	if (frame->nip && !check_func_list(check_funcs, &args->ret, frame->nip))
+	if (frame->nip && !args->check_func(args->data, &args->ret, frame->nip))
 		return args->ret;
 	if (frame->link && !frame->nip_link_in_same_func &&
-	    !check_func_list(check_funcs, &args->ret, frame->link))
+	    !args->check_func(args->data, &args->ret, frame->link))
 		return args->ret;
 	/*
 	 * There are two cases that frame->pc is reliable:
@@ -276,22 +226,11 @@ static int klp_check_jump_func(struct stackframe *frame, void *data)
 	 *   2. nip and link are in same function;
 	 */
 	if (!frame->is_top_frame || frame->nip_link_in_same_func) {
-		if (!check_func_list(check_funcs, &args->ret, frame->pc))
+		if (!args->check_func(args->data, &args->ret, frame->pc))
 			return args->ret;
 	}
 
 	return 0;
-}
-
-static void free_list(struct klp_func_list **funcs)
-{
-	struct klp_func_list *p;
-
-	while (*funcs != NULL) {
-		p = *funcs;
-		*funcs = (*funcs)->next;
-		kfree(p);
-	}
 }
 
 static int do_check_calltrace(struct walk_stackframe_args *args,
@@ -340,56 +279,44 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 	return 0;
 }
 
-int klp_check_calltrace(struct klp_patch *patch, int enable)
+int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data)
 {
-	int ret = 0;
-	struct klp_func_list *check_funcs = NULL;
 	struct walk_stackframe_args args = {
-		.ret = 0
+		.data = data,
+		.ret = 0,
+		.check_func = check_func,
 	};
 
-	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret) {
-		pr_err("collect active functions failed, ret=%d\n", ret);
-		goto out;
-	}
-	if (!check_funcs)
-		goto out;
-
-	args.check_funcs = check_funcs;
-	ret = do_check_calltrace(&args, klp_check_jump_func);
-
-out:
-	free_list(&check_funcs);
-	return ret;
+	return do_check_calltrace(&args, klp_check_jump_func);
 }
 
-static int check_module_calltrace(struct stackframe *frame, void *data)
+static int check_module_calltrace(struct stackframe *frame, void *ws_args)
 {
-	struct walk_stackframe_args *args = data;
+	struct walk_stackframe_args *args = ws_args;
+	struct module *mod = args->data;
 
 	/* check NIP when the exception stack switching */
-	if (frame->nip && within_module_core(frame->nip, args->mod))
+	if (frame->nip && within_module_core(frame->nip, mod))
 		goto err_out;
 	if (frame->link && !frame->nip_link_in_same_func &&
-	    within_module_core(frame->link, args->mod))
+	    within_module_core(frame->link, mod))
 		goto err_out;
 	if (!frame->is_top_frame || frame->nip_link_in_same_func) {
-		if (within_module_core(frame->pc, args->mod))
+		if (within_module_core(frame->pc, mod))
 			goto err_out;
 	}
 
 	return 0;
 
 err_out:
-	pr_err("module %s is in use!\n", args->mod->name);
+	pr_err("module %s is in use!\n", mod->name);
 	return (args->ret = -EBUSY);
 }
 
 int arch_klp_module_check_calltrace(void *data)
 {
 	struct walk_stackframe_args args = {
-		.mod = (struct module *)data,
+		.data = data,
 		.ret = 0
 	};
 

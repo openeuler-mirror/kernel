@@ -150,11 +150,6 @@ int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-struct klp_patch;
-int klp_check_calltrace(struct klp_patch *patch, int enable);
-#endif
-
 static inline void klp_init_thread_info(struct task_struct *p)
 {
 	/* + 1 to account for STACK_END_MAGIC */
