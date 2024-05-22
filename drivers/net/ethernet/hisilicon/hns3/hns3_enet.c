@@ -3463,9 +3463,7 @@ static int hns3_fastpath_configure(struct pci_dev *pdev, bool fastpath_en)
 	if (!hnae3_dev_udma_supported(ae_dev) || !ae_dev->ops->set_fastpath)
 		return 0;
 
-	rtnl_lock();
 	ret = ae_dev->ops->set_fastpath(ae_dev, fastpath_en);
-	rtnl_unlock();
 
 	return ret;
 }

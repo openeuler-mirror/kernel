@@ -12445,13 +12445,21 @@ static int hclge_set_fastpath(struct hnae3_ae_dev *ae_dev, bool fastpath_en)
 	int last_bad_ret = 0;
 	int ret;
 
+	while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		msleep(HCLGE_WAIT_RESET_DONE);
+
+	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
-	if (ret)
+	if (ret) {
+		rtnl_unlock();
 		return ret;
+	}
 
 	ret = hclge_tm_flush_cfg(hdev, true);
-	if (ret)
+	if (ret) {
+		rtnl_unlock();
 		return ret;
+	}
 
 	ret = hclge_set_fastpath_cmd(ae_dev, fastpath_en);
 	if (ret) {
@@ -12468,6 +12476,7 @@ static int hclge_set_fastpath(struct hnae3_ae_dev *ae_dev, bool fastpath_en)
 	if (ret)
 		last_bad_ret = ret;
 
+	rtnl_unlock();
 	return last_bad_ret;
 }
 #endif
