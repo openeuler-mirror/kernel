@@ -41,9 +41,6 @@ static inline int klp_check_compiler_support(void)
 
 int arch_klp_patch_func(struct klp_func *func);
 void arch_klp_unpatch_func(struct klp_func *func);
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-int klp_check_calltrace(struct klp_patch *patch, int enable);
-#endif
 #else
 #error Live patching support is disabled; check CONFIG_LIVEPATCH
 #endif
@@ -72,7 +69,6 @@ int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 int arch_klp_module_check_calltrace(void *data);
-
 #endif
 
 #endif /* _ASM_ARM64_LIVEPATCH_H */
