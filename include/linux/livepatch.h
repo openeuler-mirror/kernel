@@ -259,6 +259,13 @@ int klp_compare_address(unsigned long pc, unsigned long func_addr,
 void arch_klp_init(void);
 int klp_module_delete_safety_check(struct module *mod);
 
+struct klp_func_list {
+	struct klp_func_list *next;
+	unsigned long func_addr;
+	unsigned long func_size;
+	const char *func_name;
+	int force;
+};
 #endif
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,

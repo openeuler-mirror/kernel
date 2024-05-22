@@ -59,14 +59,6 @@ static bool is_jump_insn(u32 insn)
 	return false;
 }
 
-struct klp_func_list {
-	struct klp_func_list *next;
-	unsigned long func_addr;
-	unsigned long func_size;
-	const char *func_name;
-	int force;
-};
-
 struct walk_stackframe_args {
 	int enable;
 	struct klp_func_list *check_funcs;

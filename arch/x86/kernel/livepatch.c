@@ -52,14 +52,6 @@ static bool is_jump_insn(u8 *insn)
 	return false;
 }
 
-struct klp_func_list {
-	struct klp_func_list *next;
-	unsigned long func_addr;
-	unsigned long func_size;
-	const char *func_name;
-	int force;
-};
-
 static inline unsigned long klp_size_to_check(unsigned long func_size,
 		int force)
 {

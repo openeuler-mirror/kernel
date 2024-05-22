@@ -57,14 +57,6 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 		((le32_to_cpu(insn) & 0xfc000000) == 0x94000000) || \
 		((le32_to_cpu(insn) & 0xfefff800) == 0xd63f0800))
 
-struct klp_func_list {
-	struct klp_func_list *next;
-	unsigned long func_addr;
-	unsigned long func_size;
-	const char *func_name;
-	int force;
-};
-
 struct walk_stackframe_args {
 	int enable;
 	struct klp_func_list *check_funcs;
