@@ -496,6 +496,14 @@ static inline bool is_kprobe_optinsn_slot(unsigned long addr)
 }
 #endif
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void kprobes_lock(void);
+void kprobes_unlock(void);
+#else /* !CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+static inline void kprobes_lock(void) { }
+static inline void kprobes_unlock(void) { }
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+
 /* Returns true if kprobes handled the fault */
 static nokprobe_inline bool kprobe_page_fault(struct pt_regs *regs,
 					      unsigned int trap)

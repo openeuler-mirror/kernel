@@ -42,7 +42,9 @@
 #include <asm/cacheflush.h>
 #include <asm/errno.h>
 #include <linux/uaccess.h>
-
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+#include <linux/livepatch.h>
+#endif
 #define KPROBE_HASH_BITS 6
 #define KPROBE_TABLE_SIZE (1 << KPROBE_HASH_BITS)
 
@@ -1695,6 +1697,18 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void kprobes_lock(void)
+{
+	mutex_lock(&kprobe_mutex);
+}
+
+void kprobes_unlock(void)
+{
+	mutex_unlock(&kprobe_mutex);
+}
+#endif
+
 int register_kprobe(struct kprobe *p)
 {
 	int ret;
@@ -1722,6 +1736,12 @@ int register_kprobe(struct kprobe *p)
 		return ret;
 
 	mutex_lock(&kprobe_mutex);
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	klp_lock();
+	ret = klp_check_patched((unsigned long)p->addr);
+	if (ret)
+		goto out;
+#endif
 
 	old_p = get_kprobe(p->addr);
 	if (old_p) {
@@ -1755,6 +1775,9 @@ int register_kprobe(struct kprobe *p)
 	/* Try to optimize kprobe */
 	try_to_optimize_kprobe(p);
 out:
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	klp_unlock();
+#endif
 	mutex_unlock(&kprobe_mutex);
 
 	if (probed_mod)

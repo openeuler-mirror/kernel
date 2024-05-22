@@ -364,4 +364,17 @@ int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 
 #endif /* CONFIG_LIVEPATCH */
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void klp_lock(void);
+void klp_unlock(void);
+int klp_check_patched(unsigned long addr);
+#else /* !CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+static inline void klp_lock(void) { }
+static inline void klp_unlock(void) { }
+static inline int klp_check_patched(unsigned long addr)
+{
+	return 0;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+
 #endif /* _LINUX_LIVEPATCH_H_ */

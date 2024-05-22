@@ -97,6 +97,42 @@ static inline struct kprobe *klp_check_patch_kprobed(struct klp_patch *patch)
 }
 #endif /* CONFIG_LIVEPATCH_RESTRICT_KPROBE */
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void klp_lock(void)
+{
+	mutex_lock(&klp_mutex);
+}
+
+void klp_unlock(void)
+{
+	mutex_unlock(&klp_mutex);
+}
+
+int klp_check_patched(unsigned long addr)
+{
+	struct klp_patch *patch;
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	lockdep_assert_held(&klp_mutex);
+	list_for_each_entry(patch, &klp_patches, list) {
+		if (!patch->enabled)
+			continue;
+		klp_for_each_object(patch, obj) {
+			klp_for_each_func(obj, func) {
+				unsigned long old_func = (unsigned long)func->old_func;
+
+				if (addr >= old_func && addr < old_func + func->old_size) {
+					pr_err("func %pS has been livepatched\n", (void *)addr);
+					return -EINVAL;
+				}
+			}
+		}
+	}
+	return 0;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+
 static bool klp_is_module(struct klp_object *obj)
 {
 	return obj->name;
@@ -483,6 +519,9 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	patch = container_of(kobj, struct klp_patch, kobj);
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	kprobes_lock();
+#endif
 	mutex_lock(&klp_mutex);
 
 	if (!klp_is_patch_registered(patch)) {
@@ -507,7 +546,9 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 out:
 	mutex_unlock(&klp_mutex);
-
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	kprobes_unlock();
+#endif
 	if (ret)
 		return ret;
 	return count;
@@ -1028,6 +1069,11 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	module_enable_ro(patch->mod, true);
 
 	klp_for_each_func(obj, func) {
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+		unsigned long old_func;
+		unsigned long ftrace_loc;
+#endif
+
 		ret = klp_find_object_symbol(obj->name, func->old_name,
 					     func->old_sympos,
 					     (unsigned long *)&func->old_func);
@@ -1041,6 +1087,20 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 			       func->old_name);
 			return -ENOENT;
 		}
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+		old_func = (unsigned long)func->old_func;
+		ftrace_loc = ftrace_location_range(old_func, old_func + func->old_size - 1);
+		if (ftrace_loc) {
+			if (WARN_ON(ftrace_loc < old_func ||
+			    ftrace_loc >= old_func + func->old_size - MCOUNT_INSN_SIZE)) {
+				pr_err("ftrace location for '%s' invalid", func->old_name);
+				return -EINVAL;
+			}
+			func->old_func = (void *)(ftrace_loc + MCOUNT_INSN_SIZE);
+			func->old_size -= ((unsigned long)func->old_func - old_func);
+		}
+#endif
+
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 		if (func->old_size < KLP_MAX_REPLACE_SIZE) {
 			pr_err("%s size less than limit (%lu < %zu)\n", func->old_name,
