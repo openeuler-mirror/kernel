@@ -252,9 +252,10 @@ static int klp_check_stack(void *trace_ptr, int trace_len,
 	return 0;
 }
 
-static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *data)
+static int check_task_calltrace(struct task_struct *t,
+				bool (*fn)(void *, int *, unsigned long),
+				void *data)
 {
-	struct task_struct *g, *t;
 	int ret = 0;
 	static unsigned long trace_entries[MAX_STACK_ENTRIES];
 #ifdef CONFIG_ARCH_STACKWALK
@@ -263,38 +264,48 @@ static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *da
 	struct stack_trace trace;
 #endif
 
+#ifdef CONFIG_ARCH_STACKWALK
+	ret = stack_trace_save_tsk_reliable(t, trace_entries, MAX_STACK_ENTRIES);
+	if (ret < 0) {
+		pr_err("%s:%d has an unreliable stack, ret=%d\n",
+		       t->comm, t->pid, ret);
+		return ret;
+	}
+	trace_len = ret;
+	ret = klp_check_stack(trace_entries, trace_len, fn, data);
+#else
+	trace.skip = 0;
+	trace.nr_entries = 0;
+	trace.max_entries = MAX_STACK_ENTRIES;
+	trace.entries = trace_entries;
+	ret = save_stack_trace_tsk_reliable(t, &trace);
+	if (ret) {
+		pr_err("%s: %s:%d has an unreliable stack, ret=%d\n",
+		       __func__, t->comm, t->pid, ret);
+		return ret;
+	}
+	ret = klp_check_stack(&trace, 0, fn, data);
+#endif
+	if (ret) {
+		pr_err("%s:%d check stack failed, ret=%d\n",
+		       t->comm, t->pid, ret);
+		return ret;
+	}
+	return 0;
+}
+
+static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *data)
+{
+	int ret = 0;
+	struct task_struct *g, *t;
+
 	for_each_process_thread(g, t) {
 		if (klp_is_migration_thread(t->comm))
 			continue;
 
-#ifdef CONFIG_ARCH_STACKWALK
-		ret = stack_trace_save_tsk_reliable(t, trace_entries, MAX_STACK_ENTRIES);
-		if (ret < 0) {
-			pr_err("%s:%d has an unreliable stack, ret=%d\n",
-			       t->comm, t->pid, ret);
+		ret = check_task_calltrace(t, fn, data);
+		if (ret)
 			return ret;
-		}
-		trace_len = ret;
-		ret = klp_check_stack(trace_entries, trace_len, fn, data);
-#else
-		trace.skip = 0;
-		trace.nr_entries = 0;
-		trace.max_entries = MAX_STACK_ENTRIES;
-		trace.entries = trace_entries;
-		ret = save_stack_trace_tsk_reliable(t, &trace);
-		WARN_ON_ONCE(ret == -ENOSYS);
-		if (ret) {
-			pr_err("%s: %s:%d has an unreliable stack, ret=%d\n",
-			       __func__, t->comm, t->pid, ret);
-			return ret;
-		}
-		ret = klp_check_stack(&trace, 0, fn, data);
-#endif
-		if (ret) {
-			pr_err("%s:%d check stack failed, ret=%d\n",
-			       t->comm, t->pid, ret);
-			return ret;
-		}
 	}
 
 	return 0;
@@ -311,6 +322,17 @@ static bool check_module_calltrace(void *data, int *ret, unsigned long pc)
 	}
 	return true;
 }
+
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+int arch_klp_check_task_calltrace(struct task_struct *t,
+				  bool (*fn)(void *, int *, unsigned long),
+				  void *data)
+{
+	if (t == NULL)
+		return -EINVAL;
+	return check_task_calltrace(t, fn, data);
+}
+#endif
 
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data)
 {
