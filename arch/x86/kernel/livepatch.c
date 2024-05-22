@@ -299,6 +299,7 @@ static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *da
 {
 	int ret = 0;
 	struct task_struct *g, *t;
+	unsigned int cpu;
 
 	for_each_process_thread(g, t) {
 		if (klp_is_migration_thread(t->comm))
@@ -308,7 +309,11 @@ static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *da
 		if (ret)
 			return ret;
 	}
-
+	for_each_online_cpu(cpu) {
+		ret = check_task_calltrace(idle_task(cpu), fn, data);
+		if (ret)
+			return ret;
+	}
 	return 0;
 }
 

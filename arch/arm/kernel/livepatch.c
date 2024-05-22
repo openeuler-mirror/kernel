@@ -246,11 +246,17 @@ static int do_check_calltrace(struct walk_stackframe_args *args,
 {
 	int ret;
 	struct task_struct *g, *t;
+	unsigned int cpu;
 
 	for_each_process_thread(g, t) {
 		if (klp_is_migration_thread(t->comm))
 			continue;
 		ret = check_task_calltrace(t, args, fn);
+		if (ret)
+			return ret;
+	}
+	for_each_online_cpu(cpu) {
+		ret = check_task_calltrace(idle_task(cpu), args, fn);
 		if (ret)
 			return ret;
 	}
