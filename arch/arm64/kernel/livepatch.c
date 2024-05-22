@@ -205,40 +205,69 @@ static bool klp_check_jump_func(void *ws_args, unsigned long pc)
 	return args->check_func(args->data, &args->ret, pc);
 }
 
-static int do_check_calltrace(struct walk_stackframe_args *args,
-			      bool (*fn)(void *, unsigned long))
+static int check_task_calltrace(struct task_struct *t,
+				struct walk_stackframe_args *args,
+				bool (*fn)(void *, unsigned long))
 {
-	struct task_struct *g, *t;
 	struct stackframe frame;
 
-	for_each_process_thread(g, t) {
-		/*
-		 * Handle the current carefully on each CPUs, we shouldn't
-		 * use saved FP and PC when backtrace current. It's difficult
-		 * to backtrack other CPU currents here. But fortunately,
-		 * all CPUs will stay in this function, so the current's
-		 * backtrace is so similar
-		 */
-		if (t == current) {
-			/* current on this CPU */
-			frame.fp = (unsigned long)__builtin_frame_address(0);
-			frame.pc = (unsigned long)do_check_calltrace;
-		} else if (klp_is_migration_thread(t->comm)) {
-			continue;
-		} else {
-			frame.fp = thread_saved_fp(t);
-			frame.pc = thread_saved_pc(t);
-		}
-		start_backtrace(&frame, frame.fp, frame.pc);
-		walk_stackframe(t, &frame, fn, args);
-		if (args->ret) {
-			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
-			show_stack(t, NULL, KERN_INFO);
-			return args->ret;
-		}
+	/*
+	 * Handle the current carefully on each CPUs, we shouldn't
+	 * use saved FP and PC when backtrace current. It's difficult
+	 * to backtrack other CPU currents here. But fortunately,
+	 * all CPUs will stay in this function, so the current's
+	 * backtrace is so similar
+	 */
+	if (t == current) {
+		/* current on this CPU */
+		frame.fp = (unsigned long)__builtin_frame_address(0);
+		frame.pc = (unsigned long)check_task_calltrace;
+	} else {
+		frame.fp = thread_saved_fp(t);
+		frame.pc = thread_saved_pc(t);
+	}
+	start_backtrace(&frame, frame.fp, frame.pc);
+	walk_stackframe(t, &frame, fn, args);
+	if (args->ret) {
+		pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
+		show_stack(t, NULL, KERN_INFO);
+		return args->ret;
 	}
 	return 0;
 }
+
+static int do_check_calltrace(struct walk_stackframe_args *args,
+			      bool (*fn)(void *, unsigned long))
+{
+	int ret;
+	struct task_struct *g, *t;
+
+	for_each_process_thread(g, t) {
+		if (klp_is_migration_thread(t->comm))
+			continue;
+		ret = check_task_calltrace(t, args, fn);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+int arch_klp_check_task_calltrace(struct task_struct *t,
+				  bool (*check_func)(void *, int *, unsigned long),
+				  void *data)
+{
+	struct walk_stackframe_args args = {
+		.data = data,
+		.ret = 0,
+		.check_func = check_func,
+	};
+
+	if (t == NULL)
+		return -EINVAL;
+	return check_task_calltrace(t, &args, klp_check_jump_func);
+}
+#endif
 
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data)
 {
