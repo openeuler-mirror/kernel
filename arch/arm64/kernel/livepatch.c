@@ -127,6 +127,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 				 * complete.
 				 */
 				if (IS_ENABLED(CONFIG_PREEMPTION) ||
+				    IS_ENABLED(CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE) ||
 				    (func->force == KLP_NORMAL_FORCE) ||
 				    check_jump_insn(func_addr)) {
 					ret = add_func(func_list, &pcheck,
