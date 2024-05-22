@@ -445,6 +445,21 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
+static void klp_patch_text(void *dst, const void *src, int len)
+{
+	if (len <= 1)
+		return;
+	/* skip breakpoint at first */
+	text_poke(dst + 1, src + 1, len - 1);
+	/*
+	 * Avoid compile optimization, make sure that instructions
+	 * except first breakpoint has been patched.
+	 */
+	barrier();
+	/* update jmp opcode */
+	text_poke(dst, src, 1);
+}
+
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
@@ -457,15 +472,7 @@ int arch_klp_patch_func(struct klp_func *func)
 	new_addr = (unsigned long)func->new_func;
 	/* replace the text with the new text */
 	new = (unsigned char *)klp_jmp_code(ip, new_addr);
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	/* update jmp offset */
-	text_poke((void *)(ip + 1), new + 1, JMP_E9_INSN_SIZE - 1);
-	/* update jmp opcode */
-	text_poke((void *)ip, new, 1);
-#else
-	text_poke((void *)ip, new, JMP_E9_INSN_SIZE);
-#endif
-
+	klp_patch_text((void *)ip, (const void *)new, JMP_E9_INSN_SIZE);
 	return 0;
 }
 
@@ -490,6 +497,6 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	}
 
 	/* replace the text with the new text */
-	text_poke((void *)ip, new, JMP_E9_INSN_SIZE);
+	klp_patch_text((void *)ip, (const void *)new, JMP_E9_INSN_SIZE);
 }
 #endif
