@@ -56,12 +56,6 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 		((le32_to_cpu(insn) & 0xfc000000) == 0x94000000) || \
 		((le32_to_cpu(insn) & 0xfefff800) == 0xd63f0800))
 
-struct walk_stackframe_args {
-	void *data;
-	int ret;
-	bool (*check_func)(void *data, int *ret, unsigned long pc);
-};
-
 bool arch_check_jump_insn(unsigned long func_addr)
 {
 	unsigned long i;

@@ -63,12 +63,6 @@ static bool is_jump_insn(u32 insn)
 	return false;
 }
 
-struct walk_stackframe_args {
-	void *data;
-	int ret;
-	bool (*check_func)(void *data, int *ret, unsigned long pc);
-};
-
 bool arch_check_jump_insn(unsigned long func_addr)
 {
 	unsigned long i;

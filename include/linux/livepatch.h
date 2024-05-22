@@ -260,6 +260,12 @@ typedef int (*klp_add_func_t)(struct list_head *func_list,
 			       unsigned long func_addr, unsigned long func_size,
 			       const char *func_name, int force);
 
+struct walk_stackframe_args {
+	void *data;
+	int ret;
+	bool (*check_func)(void *data, int *ret, unsigned long pc);
+};
+
 #endif
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
