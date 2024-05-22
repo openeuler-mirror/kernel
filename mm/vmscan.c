@@ -2504,7 +2504,6 @@ static int too_many_isolated(struct pglist_data *pgdat, int file,
 
 /*
  * move_folios_to_lru() moves folios from private @list to appropriate LRU list.
- * On return, @list is reused as a list of folios to be freed by the caller.
  *
  * Returns the number of pages moved to the given lruvec.
  */
@@ -2512,8 +2511,9 @@ static unsigned int move_folios_to_lru(struct lruvec *lruvec,
 		struct list_head *list)
 {
 	int nr_pages, nr_moved = 0;
-	LIST_HEAD(folios_to_free);
+	struct folio_batch free_folios;
 
+	folio_batch_init(&free_folios);
 	while (!list_empty(list)) {
 		struct folio *folio = lru_to_folio(list);
 
@@ -2542,12 +2542,12 @@ static unsigned int move_folios_to_lru(struct lruvec *lruvec,
 		if (unlikely(folio_put_testzero(folio))) {
 			__folio_clear_lru_flags(folio);
 
-			if (unlikely(folio_test_large(folio))) {
+			if (folio_batch_add(&free_folios, folio) == 0) {
 				spin_unlock_irq(&lruvec->lru_lock);
-				destroy_large_folio(folio);
+				mem_cgroup_uncharge_folios(&free_folios);
+				free_unref_folios(&free_folios);
 				spin_lock_irq(&lruvec->lru_lock);
-			} else
-				list_add(&folio->lru, &folios_to_free);
+			}
 
 			continue;
 		}
@@ -2564,10 +2564,12 @@ static unsigned int move_folios_to_lru(struct lruvec *lruvec,
 			workingset_age_nonresident(lruvec, nr_pages);
 	}
 
-	/*
-	 * To save our caller's stack, now use input list for pages to free.
-	 */
-	list_splice(&folios_to_free, list);
+	if (free_folios.nr) {
+		spin_unlock_irq(&lruvec->lru_lock);
+		mem_cgroup_uncharge_folios(&free_folios);
+		free_unref_folios(&free_folios);
+		spin_lock_irq(&lruvec->lru_lock);
+	}
 
 	return nr_moved;
 }
@@ -2646,8 +2648,6 @@ static unsigned long shrink_inactive_list(unsigned long nr_to_scan,
 	spin_unlock_irq(&lruvec->lru_lock);
 
 	lru_note_cost(lruvec, file, stat.nr_pageout, nr_scanned - nr_reclaimed);
-	mem_cgroup_uncharge_list(&folio_list);
-	free_unref_page_list(&folio_list);
 
 	/*
 	 * If dirty folios are scanned that are not queued for IO, it
@@ -2788,8 +2788,6 @@ static void shrink_active_list(unsigned long nr_to_scan,
 
 	nr_activate = move_folios_to_lru(lruvec, &l_active);
 	nr_deactivate = move_folios_to_lru(lruvec, &l_inactive);
-	/* Keep all free folios in l_active list */
-	list_splice(&l_inactive, &l_active);
 
 	__count_vm_events(PGDEACTIVATE, nr_deactivate);
 	__count_memcg_events(lruvec_memcg(lruvec), PGDEACTIVATE, nr_deactivate);
@@ -2799,8 +2797,6 @@ static void shrink_active_list(unsigned long nr_to_scan,
 
 	if (nr_rotated)
 		lru_note_cost(lruvec, file, 0, nr_rotated);
-	mem_cgroup_uncharge_list(&l_active);
-	free_unref_page_list(&l_active);
 	trace_mm_vmscan_lru_shrink_active(pgdat->node_id, nr_taken, nr_activate,
 			nr_deactivate, nr_rotated, sc->priority, file);
 }
@@ -5289,10 +5285,6 @@ retry:
 
 	spin_unlock_irq(&lruvec->lru_lock);
 
-	mem_cgroup_uncharge_list(&list);
-	free_unref_page_list(&list);
-
-	INIT_LIST_HEAD(&list);
 	list_splice_init(&clean, &list);
 
 	if (!list_empty(&list)) {
