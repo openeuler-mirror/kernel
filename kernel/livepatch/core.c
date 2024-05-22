@@ -1409,7 +1409,7 @@ static void free_func_list(struct klp_func_list **funcs)
 	}
 }
 
-int __weak klp_check_calltrace(struct klp_patch *patch, int enable)
+static int klp_check_calltrace(struct klp_patch *patch, int enable)
 {
 	int ret = 0;
 	struct klp_func_list *func_list = NULL;
