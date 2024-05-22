@@ -1181,7 +1181,7 @@ void __vunmap_range_noflush(unsigned long start, unsigned long end);
 int numa_migrate_prep(struct folio *folio, struct vm_area_struct *vma,
 		      unsigned long addr, int page_nid, int *flags);
 
-void free_zone_device_page(struct page *page);
+void free_zone_device_folio(struct folio *folio);
 int migrate_device_coherent_page(struct page *page);
 
 /*
