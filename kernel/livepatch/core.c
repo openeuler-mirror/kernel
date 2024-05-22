@@ -1339,9 +1339,95 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	return 0;
 }
 #elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
+int __weak arch_klp_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *data)
+{
+	return -EINVAL;
+}
+
+int __weak arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
+					  klp_add_func_t add_func,
+					  struct klp_func_list **func_list)
+{
+	return -EINVAL;
+}
+
+static inline unsigned long klp_size_to_check(unsigned long func_size,
+					      int force)
+{
+	unsigned long size = func_size;
+
+	if (force == KLP_STACK_OPTIMIZE && size > KLP_MAX_REPLACE_SIZE)
+		size = KLP_MAX_REPLACE_SIZE;
+	return size;
+}
+
+static bool check_func_list(void *data, int *ret, unsigned long pc)
+{
+	struct klp_func_list *funcs = (struct klp_func_list *)data;
+
+	while (funcs != NULL) {
+		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
+				klp_size_to_check(funcs->func_size, funcs->force));
+		if (*ret)
+			return false;
+		funcs = funcs->next;
+	}
+	return true;
+}
+
+static int add_func_to_list(struct klp_func_list **funcs, struct klp_func_list **func,
+		unsigned long func_addr, unsigned long func_size, const char *func_name,
+		int force)
+{
+	if (*func == NULL) {
+		*funcs = kzalloc(sizeof(**funcs), GFP_ATOMIC);
+		if (!(*funcs))
+			return -ENOMEM;
+		*func = *funcs;
+	} else {
+		(*func)->next = kzalloc(sizeof(**funcs), GFP_ATOMIC);
+		if (!(*func)->next)
+			return -ENOMEM;
+		*func = (*func)->next;
+	}
+	(*func)->func_addr = func_addr;
+	(*func)->func_size = func_size;
+	(*func)->func_name = func_name;
+	(*func)->force = force;
+	(*func)->next = NULL;
+	return 0;
+}
+
+static void free_func_list(struct klp_func_list **funcs)
+{
+	struct klp_func_list *p;
+
+	while (*funcs != NULL) {
+		p = *funcs;
+		*funcs = (*funcs)->next;
+		kfree(p);
+	}
+}
+
 int __weak klp_check_calltrace(struct klp_patch *patch, int enable)
 {
-	return 0;
+	int ret = 0;
+	struct klp_func_list *func_list = NULL;
+
+	ret = arch_klp_check_activeness_func(patch, enable, add_func_to_list, &func_list);
+	if (ret) {
+		pr_err("collect active functions failed, ret=%d\n", ret);
+		goto out;
+	}
+
+	if (!func_list)
+		goto out;
+
+	ret = arch_klp_check_calltrace(check_func_list, (void *)func_list);
+
+out:
+	free_func_list(&func_list);
+	return ret;
 }
 
 static LIST_HEAD(klp_func_list);
