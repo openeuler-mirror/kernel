@@ -214,35 +214,64 @@ static int klp_check_jump_func(struct stackframe *frame, void *ws_args)
 	return !args->check_func(args->data, &args->ret, frame->pc);
 }
 
-static int do_check_calltrace(struct walk_stackframe_args *args,
-			      int (*fn)(struct stackframe *, void *))
+static int check_task_calltrace(struct task_struct *t,
+				struct walk_stackframe_args *args,
+				int (*fn)(struct stackframe *, void *))
 {
-	struct task_struct *g, *t;
 	struct stackframe frame;
 
-	for_each_process_thread(g, t) {
-		if (t == current) {
-			frame.fp = (unsigned long)__builtin_frame_address(0);
-			frame.sp = current_stack_pointer;
-			frame.lr = (unsigned long)__builtin_return_address(0);
-			frame.pc = (unsigned long)do_check_calltrace;
-		} else if (klp_is_migration_thread(t->comm)) {
-			continue;
-		} else {
-			frame.fp = thread_saved_fp(t);
-			frame.sp = thread_saved_sp(t);
-			frame.lr = 0;           /* recovered from the stack */
-			frame.pc = thread_saved_pc(t);
-		}
-		walk_stackframe(&frame, fn, args);
-		if (args->ret) {
-			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
-			show_stack(t, NULL, KERN_INFO);
-			return args->ret;
-		}
+	if (t == current) {
+		frame.fp = (unsigned long)__builtin_frame_address(0);
+		frame.sp = current_stack_pointer;
+		frame.lr = (unsigned long)__builtin_return_address(0);
+		frame.pc = (unsigned long)check_task_calltrace;
+	} else {
+		frame.fp = thread_saved_fp(t);
+		frame.sp = thread_saved_sp(t);
+		frame.lr = 0;           /* recovered from the stack */
+		frame.pc = thread_saved_pc(t);
+	}
+	walk_stackframe(&frame, fn, args);
+	if (args->ret) {
+		pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
+		show_stack(t, NULL, KERN_INFO);
+		return args->ret;
 	}
 	return 0;
 }
+
+static int do_check_calltrace(struct walk_stackframe_args *args,
+			      int (*fn)(struct stackframe *, void *))
+{
+	int ret;
+	struct task_struct *g, *t;
+
+	for_each_process_thread(g, t) {
+		if (klp_is_migration_thread(t->comm))
+			continue;
+		ret = check_task_calltrace(t, args, fn);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+int arch_klp_check_task_calltrace(struct task_struct *t,
+				  bool (*check_func)(void *, int *, unsigned long),
+				  void *data)
+{
+	struct walk_stackframe_args args = {
+		.data = data,
+		.ret = 0,
+		.check_func = check_func,
+	};
+
+	if (t == NULL)
+		return -EINVAL;
+	return check_task_calltrace(t, &args, klp_check_jump_func);
+}
+#endif
 
 int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data)
 {
