@@ -78,120 +78,109 @@ static bool check_jump_insn(unsigned long func_addr)
 	return false;
 }
 
-int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
+int arch_klp_check_activeness_func(struct klp_func *func, int enable,
 				   klp_add_func_t add_func, struct list_head *func_list)
 {
 	int ret;
-	struct klp_object *obj;
-	struct klp_func *func;
 	unsigned long func_addr, func_size;
 	struct klp_func_node *func_node = NULL;
 
-	for (obj = patch->objs; obj->funcs; obj++) {
-		for (func = obj->funcs; func->old_name; func++) {
-			func_node = klp_find_func_node(func->old_func);
+	func_node = klp_find_func_node(func->old_func);
+	/* Check func address in stack */
+	if (enable) {
+		if (func->patched || func->force == KLP_ENFORCEMENT)
+			return 0;
+		/*
+		 * When enable, checking the currently
+		 * active functions.
+		 */
+		if (!func_node || list_empty(&func_node->func_stack)) {
+			/*
+			 * No patched on this function
+			 * [ the origin one ]
+			 */
+			func_addr = (unsigned long)func->old_func;
+			func_size = func->old_size;
+		} else {
+			/*
+			 * Previously patched function
+			 * [ the active one ]
+			 */
+			struct klp_func *prev;
 
-			/* Check func address in stack */
-			if (enable) {
-				if (func->patched || func->force == KLP_ENFORCEMENT)
-					continue;
-				/*
-				 * When enable, checking the currently
-				 * active functions.
-				 */
-				if (!func_node ||
-				    list_empty(&func_node->func_stack)) {
-					/*
-					 * No patched on this function
-					 * [ the origin one ]
-					 */
-					func_addr = (unsigned long)func->old_func;
-					func_size = func->old_size;
-				} else {
-					/*
-					 * Previously patched function
-					 * [ the active one ]
-					 */
-					struct klp_func *prev;
-
-					prev = list_first_or_null_rcu(
-						&func_node->func_stack,
-						struct klp_func, stack_node);
-					func_addr = ppc_function_entry(
-						(void *)prev->new_func);
-					func_size = prev->new_size;
-				}
-				/*
-				 * When preemption is disabled and the
-				 * replacement area does not contain a jump
-				 * instruction, the migration thread is
-				 * scheduled to run stop machine only after the
-				 * excution of instructions to be repalced is
-				 * complete.
-				 */
-				if (IS_ENABLED(CONFIG_PREEMPTION) ||
-				    IS_ENABLED(CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE) ||
-				    (func->force == KLP_NORMAL_FORCE) ||
-				    check_jump_insn(func_addr)) {
-					ret = add_func(func_list, func_addr, func_size,
-							func->old_name, func->force);
-					if (ret)
-						return ret;
-				}
-			} else {
-				/*
-				 * When disable, check for the function itself
-				 * which to be unpatched.
-				 */
-				func_addr = ppc_function_entry(
-						(void *)func->new_func);
-				func_size = func->new_size;
-				ret = add_func(func_list, func_addr,
-						func_size, func->old_name, 0);
-				if (ret)
-					return ret;
-			}
+			prev = list_first_or_null_rcu(&func_node->func_stack,
+						      struct klp_func, stack_node);
+			func_addr = ppc_function_entry((void *)prev->new_func);
+			func_size = prev->new_size;
+		}
+		/*
+		 * When preemption is disabled and the
+		 * replacement area does not contain a jump
+		 * instruction, the migration thread is
+		 * scheduled to run stop machine only after the
+		 * excution of instructions to be repalced is
+		 * complete.
+		 */
+		if (IS_ENABLED(CONFIG_PREEMPTION) ||
+		    IS_ENABLED(CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE) ||
+		    (func->force == KLP_NORMAL_FORCE) ||
+		    check_jump_insn(func_addr)) {
+			ret = add_func(func_list, func_addr, func_size,
+				       func->old_name, func->force);
+			if (ret)
+				return ret;
+		}
+	} else {
+		/*
+		 * When disable, check for the function itself
+		 * which to be unpatched.
+		 */
+		func_addr = ppc_function_entry((void *)func->new_func);
+		func_size = func->new_size;
+		ret = add_func(func_list, func_addr,
+			       func_size, func->old_name, 0);
+		if (ret)
+			return ret;
+	}
 
 #ifdef PPC64_ELF_ABI_v1
-			/*
-			 * Check trampoline in stack
-			 * new_func callchain:
-			 *	old_func
-			 *	-=> trampoline
-			 *	    -=> new_func
-			 * so, we should check all the func in the callchain
-			 */
-			if (func_addr != (unsigned long)func->old_func) {
+	/*
+	 * Check trampoline in stack
+	 * new_func callchain:
+	 *	old_func
+	 *	-=> trampoline
+	 *	    -=> new_func
+	 * so, we should check all the func in the callchain
+	 */
+	if (func_addr != (unsigned long)func->old_func) {
 #ifdef CONFIG_PREEMPTION
-				/*
-				 * No scheduling point in the replacement
-				 * instructions. Therefore, when preemption is
-				 * not enabled, atomic execution is performed
-				 * and these instructions will not appear on
-				 * the stack.
-				 */
-				func_addr = (unsigned long)func->old_func;
-				func_size = func->old_size;
-				ret = add_func(func_list, func_addr,
-						func_size, "OLD_FUNC", 0);
-				if (ret)
-					return ret;
+		/*
+		 * No scheduling point in the replacement
+		 * instructions. Therefore, when preemption is
+		 * not enabled, atomic execution is performed
+		 * and these instructions will not appear on
+		 * the stack.
+		 */
+		func_addr = (unsigned long)func->old_func;
+		func_size = func->old_size;
+		ret = add_func(func_list, func_addr,
+			       func_size, "OLD_FUNC", 0);
+		if (ret)
+			return ret;
 #endif
 
-				if (func_node == NULL ||
-				    func_node->arch_data.trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
-					continue;
+		if (func_node == NULL ||
+		    func_node->arch_data.trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
+			return 0;
 
-				func_addr = (unsigned long)&func_node->arch_data.trampoline;
-				func_size = sizeof(struct ppc64_klp_btramp_entry);
-				ret = add_func(func_list, func_addr,
-						func_size, "trampoline", 0);
-				if (ret)
-					return ret;
-			}
-#endif
-		}
+		func_addr = (unsigned long)&func_node->arch_data.trampoline;
+		func_size = sizeof(struct ppc64_klp_btramp_entry);
+		ret = add_func(func_list, func_addr,
+				func_size, "trampoline", 0);
+		if (ret)
+			return ret;
 	}
+#endif
 	return 0;
 }
 

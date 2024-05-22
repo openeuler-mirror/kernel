@@ -1344,11 +1344,106 @@ int __weak arch_klp_check_calltrace(bool (*fn)(void *, int *, unsigned long), vo
 	return -EINVAL;
 }
 
-int __weak arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
+bool __weak arch_check_jump_insn(unsigned long func_addr)
+{
+	return true;
+}
+
+int __weak arch_klp_check_activeness_func(struct klp_func *func, int enable,
 					  klp_add_func_t add_func,
 					  struct list_head *func_list)
 {
-	return -EINVAL;
+	int ret;
+	unsigned long func_addr = 0;
+	unsigned long func_size;
+	struct klp_func_node *func_node = NULL;
+	unsigned long old_func = (unsigned long)func->old_func;
+
+	func_node = klp_find_func_node(func->old_func);
+	/* Check func address in stack */
+	if (enable) {
+		if (func->patched || func->force == KLP_ENFORCEMENT)
+			return 0;
+		/*
+		 * When enable, checking the currently active functions.
+		 */
+		if (list_empty(&func_node->func_stack)) {
+			/*
+			 * Not patched on this function [the origin one]
+			 */
+			func_addr = old_func;
+			func_size = func->old_size;
+		} else {
+			/*
+			 * Previously patched function [the active one]
+			 */
+			struct klp_func *prev;
+
+			prev = list_first_or_null_rcu(&func_node->func_stack,
+						      struct klp_func, stack_node);
+			func_addr = (unsigned long)prev->new_func;
+			func_size = prev->new_size;
+		}
+		/*
+		 * When preemption is disabled and the replacement area
+		 * does not contain a jump instruction, the migration
+		 * thread is scheduled to run stop machine only after the
+		 * execution of instructions to be replaced is complete.
+		 */
+		if (IS_ENABLED(CONFIG_PREEMPTION) ||
+		    IS_ENABLED(CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE) ||
+		    (func->force == KLP_NORMAL_FORCE) ||
+		    arch_check_jump_insn(func_addr)) {
+			ret = add_func(func_list, func_addr, func_size,
+				       func->old_name, func->force);
+			if (ret)
+				return ret;
+			if (func_addr != old_func) {
+				ret = add_func(func_list, old_func, KLP_MAX_REPLACE_SIZE,
+						func->old_name, func->force);
+				if (ret)
+					return ret;
+			}
+		}
+	} else {
+#ifdef CONFIG_PREEMPTION
+		/*
+		 * No scheduling point in the replacement instructions. Therefore,
+		 * when preemption is not enabled, atomic execution is performed
+		 * and these instructions will not appear on the stack.
+		 */
+		if (list_is_singular(&func_node->func_stack)) {
+			func_addr = old_func;
+			func_size = func->old_size;
+		} else {
+			struct klp_func *prev;
+
+			prev = list_first_or_null_rcu(
+					&func_node->func_stack,
+					struct klp_func, stack_node);
+			func_addr = (unsigned long)prev->new_func;
+			func_size = prev->new_size;
+		}
+		ret = add_func(func_list, func_addr,
+				func_size, func->old_name, 0);
+		if (ret)
+			return ret;
+		if (func_addr != old_func) {
+			ret = add_func(func_list, old_func, KLP_MAX_REPLACE_SIZE,
+					func->old_name, 0);
+			if (ret)
+				return ret;
+		}
+#endif
+
+		func_addr = (unsigned long)func->new_func;
+		func_size = func->new_size;
+		ret = add_func(func_list, func_addr,
+				func_size, func->old_name, 0);
+		if (ret)
+			return ret;
+	}
+	return 0;
 }
 
 static inline unsigned long klp_size_to_check(unsigned long func_size,
@@ -1410,12 +1505,31 @@ static void free_func_list(struct list_head *func_list)
 	}
 }
 
+static int klp_check_activeness_func(struct klp_patch *patch, int enable,
+				     struct list_head *func_list)
+{
+	int ret;
+	struct klp_object *obj = NULL;
+	struct klp_func *func = NULL;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			ret = arch_klp_check_activeness_func(func, enable,
+							     add_func_to_list,
+							     func_list);
+			if (ret)
+				return ret;
+		}
+	}
+	return 0;
+}
+
 static int klp_check_calltrace(struct klp_patch *patch, int enable)
 {
 	int ret = 0;
 	LIST_HEAD(func_list);
 
-	ret = arch_klp_check_activeness_func(patch, enable, add_func_to_list, &func_list);
+	ret = klp_check_activeness_func(patch, enable, &func_list);
 	if (ret) {
 		pr_err("collect active functions failed, ret=%d\n", ret);
 		goto out;
@@ -2194,7 +2308,7 @@ static int klp_breakpoint_enable_patch(struct klp_patch *patch, int *cnt)
 	int i;
 	int retry_cnt = 0;
 
-	ret = arch_klp_check_activeness_func(patch, true, add_func_to_list, &func_list);
+	ret = klp_check_activeness_func(patch, true, &func_list);
 	if (ret) {
 		pr_err("break optimize collecting active functions failed, ret=%d\n", ret);
 		goto out;
