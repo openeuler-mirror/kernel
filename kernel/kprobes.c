@@ -1984,6 +1984,29 @@ unsigned long __weak arch_deref_entry_point(void *entry)
 
 #ifdef CONFIG_KRETPROBES
 
+unsigned long kretprobe_find_ret_addr(struct task_struct *tsk, void *fp)
+{
+	struct kretprobe_instance *ri = NULL;
+	struct hlist_head *head;
+	unsigned long flags;
+	kprobe_opcode_t *correct_ret_addr = NULL;
+
+	kretprobe_hash_lock(tsk, &head, &flags);
+	hlist_for_each_entry(ri, head, hlist) {
+		if (ri->task != tsk)
+			continue;
+		if (ri->fp != fp)
+			continue;
+		if (!is_kretprobe_trampoline((unsigned long)ri->ret_addr)) {
+			correct_ret_addr = ri->ret_addr;
+			break;
+		}
+	}
+	kretprobe_hash_unlock(tsk, &flags);
+	return (unsigned long)correct_ret_addr;
+}
+NOKPROBE_SYMBOL(kretprobe_find_ret_addr);
+
 unsigned long __kretprobe_trampoline_handler(struct pt_regs *regs,
 					     void *trampoline_address,
 					     void *frame_pointer)

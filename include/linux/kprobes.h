@@ -200,6 +200,12 @@ extern void arch_prepare_kretprobe(struct kretprobe_instance *ri,
 				   struct pt_regs *regs);
 extern int arch_trampoline_kprobe(struct kprobe *p);
 
+void kretprobe_trampoline(void);
+static nokprobe_inline bool is_kretprobe_trampoline(unsigned long addr)
+{
+	return !in_nmi() && (void *)addr == &kretprobe_trampoline;
+}
+
 /* If the trampoline handler called from a kprobe, use this version */
 unsigned long __kretprobe_trampoline_handler(struct pt_regs *regs,
 				void *trampoline_address,
@@ -223,12 +229,22 @@ unsigned long kretprobe_trampoline_handler(struct pt_regs *regs,
 	return ret;
 }
 
+unsigned long kretprobe_find_ret_addr(struct task_struct *tsk, void *fp);
 #else /* CONFIG_KRETPROBES */
 static inline void arch_prepare_kretprobe(struct kretprobe *rp,
 					struct pt_regs *regs)
 {
 }
 static inline int arch_trampoline_kprobe(struct kprobe *p)
+{
+	return 0;
+}
+static nokprobe_inline bool is_kretprobe_trampoline(unsigned long addr)
+{
+	return false;
+}
+static nokprobe_inline
+unsigned long kretprobe_find_ret_addr(struct task_struct *tsk, void *fp)
 {
 	return 0;
 }
