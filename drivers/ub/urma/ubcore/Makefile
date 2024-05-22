@@ -20,6 +20,10 @@ ubcore-objs := ubcore_main.o \
 			ubcore_utp.o \
 			ubcore_uvs_cmd.o \
 			ubcore_vtp.o \
-			ubcore_cgroup.o
-
+			ubcore_cgroup.o \
+			ubcore_cdev_file.o \
+			ubcore_genl_admin.o \
+			ubcore_genl.o \
+			ubcore_log.o \
+			ubcore_workqueue.o
 obj-$(CONFIG_UB) += ubcore.o

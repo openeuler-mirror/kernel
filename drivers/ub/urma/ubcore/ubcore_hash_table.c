@@ -57,12 +57,14 @@ void ubcore_hash_table_free_with_cb(struct ubcore_hash_table *ht, void (*free_cb
 		hlist_for_each_safe(pos, next, &ht->head[i]) {
 			obj = ubcore_ht_obj(ht, pos);
 			hlist_del(pos);
+			spin_unlock(&ht->lock);
 			if (free_cb != NULL)
 				free_cb(obj);
 			else if (ht->p.free_f != NULL)
 				ht->p.free_f(obj);
 			else
 				kfree(obj);
+			spin_lock(&ht->lock);
 		}
 	}
 	head = ht->head;
@@ -100,7 +102,7 @@ void ubcore_hash_table_remove_nolock(struct ubcore_hash_table *ht, struct hlist_
 	if (ht->head == NULL)
 		return;
 
-	hlist_del(hnode);
+	hlist_del_init(hnode);
 }
 
 void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *hnode)
@@ -109,6 +111,56 @@ void ubcore_hash_table_remove(struct ubcore_hash_table *ht, struct hlist_node *h
 	ubcore_hash_table_remove_nolock(ht, hnode);
 	spin_unlock(&ht->lock);
 }
+
+int ubcore_hash_table_check_remove(struct ubcore_hash_table *ht, struct hlist_node *hnode)
+{
+	spin_lock(&ht->lock);
+	if (hlist_unhashed(hnode)) {
+		spin_unlock(&ht->lock);
+		return -EINVAL;
+	}
+	ubcore_hash_table_remove_nolock(ht, hnode);
+	spin_unlock(&ht->lock);
+	return 0;
+}
+
+void *ubcore_hash_table_lookup_nolock_get(struct ubcore_hash_table *ht, uint32_t hash,
+										const void *key)
+{
+	struct hlist_node *pos = NULL;
+	void *obj = NULL;
+
+	hlist_for_each(pos, &ht->head[hash % ht->p.size]) {
+		obj = ubcore_ht_obj(ht, pos);
+		if (ht->p.cmp_f != NULL && ht->p.cmp_f(obj, key) == 0) {
+			break;
+		} else if (ht->p.key_size > 0 &&
+			   memcmp(ubcore_ht_key(ht, pos), key, ht->p.key_size) == 0) {
+			break;
+		}
+		obj = NULL;
+	}
+	if (ht->p.get_f != NULL && obj != NULL)
+		ht->p.get_f(obj);
+
+	return obj;
+}
+
+void *ubcore_hash_table_lookup_get(struct ubcore_hash_table *ht, uint32_t hash, const void *key)
+{
+	void *obj = NULL;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return NULL;
+	}
+	obj = ubcore_hash_table_lookup_nolock_get(ht, hash, key);
+
+	spin_unlock(&ht->lock);
+	return obj;
+}
+
 
 void *ubcore_hash_table_lookup_nolock(struct ubcore_hash_table *ht, uint32_t hash, const void *key)
 {
@@ -149,12 +201,12 @@ int ubcore_hash_table_find_add(struct ubcore_hash_table *ht, struct hlist_node *
 	spin_lock(&ht->lock);
 	if (ht->head == NULL) {
 		spin_unlock(&ht->lock);
-		return -1;
+		return -EINVAL;
 	}
 	/* Old entry with the same key exists */
 	if (ubcore_hash_table_lookup_nolock(ht, hash, ubcore_ht_key(ht, hnode)) != NULL) {
 		spin_unlock(&ht->lock);
-		return -1;
+		return -EEXIST;
 	}
 	ubcore_hash_table_add_nolock(ht, hnode, hash);
 	spin_unlock(&ht->lock);

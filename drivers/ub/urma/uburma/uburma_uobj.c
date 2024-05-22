@@ -30,6 +30,7 @@
 #include "uburma_file_ops.h"
 #include "uburma_log.h"
 #include "uburma_event.h"
+#include "uburma_mmap.h"
 #include "uburma_uobj.h"
 
 static bool g_is_zero_fd;
@@ -54,7 +55,7 @@ struct uburma_uobj *uobj_alloc_begin(const struct uobj_type *type, struct uburma
 	return uobj;
 }
 
-int uobj_alloc_commit(struct uburma_uobj *uobj)
+void uobj_alloc_commit(struct uburma_uobj *uobj)
 {
 	/* relase write lock */
 	atomic_set(&uobj->rcnt, 0);
@@ -67,7 +68,6 @@ int uobj_alloc_commit(struct uburma_uobj *uobj)
 	uobj->type->type_class->alloc_commit(uobj);
 
 	up_read(&uobj->ufile->cleanup_rwsem);
-	return 0;
 }
 
 void uobj_alloc_abort(struct uburma_uobj *uobj)
@@ -334,12 +334,12 @@ static void uobj_fd_alloc_commit(struct uburma_uobj *uobj)
 {
 	struct file *filp = (struct file *)uobj->object;
 
-	fd_install(uobj->id, filp);
-
 	/* Do not set uobj->id = 0 as it may be read when remove uobj */
 
 	/* Get another reference as we export this to the fops */
 	uobj_get(uobj);
+
+	fd_install(uobj->id, filp);
 }
 
 static void uobj_fd_alloc_abort(struct uburma_uobj *uobj)
@@ -462,21 +462,16 @@ int __must_check uobj_remove_commit(struct uburma_uobj *uobj)
 	struct uburma_file *ufile = uobj->ufile;
 	int ret;
 
-	/* put the ref count we took at lookup_get */
-	uobj_put(uobj);
-
 	down_read(&ufile->cleanup_rwsem);
 	/* try Lock uobj for write with cleanup_rwsem locked */
 	ret = uobj_try_lock(uobj, true);
 	if (ret) {
-		/* Do not rollback uobj_put here */
 		up_read(&ufile->cleanup_rwsem);
 		uburma_log_warn("Failed to lock uobj\n");
 		return ret;
 	}
 
 	ret = uobj_remove_commit_internal(uobj, UBURMA_REMOVE_DESTROY);
-
 	up_read(&ufile->cleanup_rwsem);
 	return ret;
 }
@@ -540,6 +535,9 @@ void uburma_cleanup_uobjs(struct uburma_file *ufile, enum uburma_remove_reason w
 		put_unused_fd(0);
 		g_is_zero_fd = false;
 	}
+	if (why == UBURMA_REMOVE_DRIVER_REMOVE)
+		uburma_unmap_vma_pages(ufile);
+
 	up_write(&ufile->cleanup_rwsem);
 }
 

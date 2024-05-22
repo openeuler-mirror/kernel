@@ -178,8 +178,7 @@ static int alloc_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *jfs)
 		dev_err(udma_dev->dev, "failed to store JFS, ret = %d.\n", ret);
 		goto store_err;
 	}
-
-	jfs->ubcore_jfs.id = jfs->jfs_id;
+	jfs->ubcore_jfs.jfs_id.id = jfs->jfs_id;
 
 	return ret;
 store_err:

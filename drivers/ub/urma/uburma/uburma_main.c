@@ -34,10 +34,13 @@
 #include "uburma_log.h"
 #include "uburma_types.h"
 #include "uburma_file_ops.h"
-#include "uburma_cdev_file.h"
 #include "uburma_uobj.h"
 #include "uburma_cmd.h"
-#include "uburma_netlink.h"
+
+#define UBURMA_LOG_FILE_PERMISSION (0644)
+
+module_param(g_uburma_log_level, uint, UBURMA_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(g_uburma_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
 
 #define UBURMA_MAX_DEVICE 1024
 #define UBURMA_DYNAMIC_MINOR_NUM UBURMA_MAX_DEVICE
@@ -47,33 +50,6 @@
 static DECLARE_BITMAP(g_dev_bitmap, UBURMA_MAX_DEVICE);
 
 static dev_t g_dynamic_uburma_dev;
-static bool g_shared_ns = true;
-
-static const void *uburma_net_namespace(struct device *dev)
-{
-	struct uburma_logic_device *ldev = dev_get_drvdata(dev);
-	struct uburma_device *ubu_dev;
-	struct ubcore_device *ubc_dev;
-
-	if (ldev == NULL || ldev->ubu_dev == NULL || ldev->ubu_dev->ubc_dev == NULL) {
-		uburma_log_info("init net %p", ldev);
-		return &init_net;
-	}
-
-	ubu_dev = ldev->ubu_dev;
-	ubc_dev = ubu_dev->ubc_dev;
-
-	if (ubc_dev->transport_type == UBCORE_TRANSPORT_UB) {
-		return read_pnet(&ldev->net);
-	} else if (ubc_dev->transport_type == UBCORE_TRANSPORT_IP) {
-		if (ubc_dev->netdev)
-			return dev_net(ubc_dev->netdev);
-		else
-			return &init_net;
-	} else { /* URMA IB device not support namespace yet */
-		return &init_net;
-	}
-}
 
 static char *uburma_devnode(struct device *dev, umode_t *mode)
 {
@@ -86,8 +62,6 @@ static char *uburma_devnode(struct device *dev, umode_t *mode)
 static struct class g_uburma_class = {
 	.name    = UBURMA_MODULE_NAME,
 	.devnode = uburma_devnode,
-	.ns_type = &net_ns_type_operations,
-	.namespace = uburma_net_namespace
 };
 
 static const struct file_operations g_uburma_fops = {
@@ -101,18 +75,6 @@ static const struct file_operations g_uburma_fops = {
 	.compat_ioctl = uburma_ioctl,
 };
 
-static LIST_HEAD(g_uburma_device_list);
-static DECLARE_RWSEM(g_uburma_device_rwsem);
-
-static unsigned int g_uburma_net_id;
-static LIST_HEAD(g_uburma_net_list);
-static DEFINE_SPINLOCK(g_uburma_net_lock);
-static DECLARE_RWSEM(g_uburma_net_rwsem);
-
-struct uburma_net {
-	possible_net_t net;
-	struct list_head node;
-};
 
 static int uburma_add_device(struct ubcore_device *ubc_dev);
 static void uburma_remove_device(struct ubcore_device *ubc_dev, void *client_ctx);
@@ -149,264 +111,23 @@ static int uburma_get_devt(dev_t *devt)
 	return 0;
 }
 
-static int uburma_create_eid_table(struct uburma_logic_device *ldev, struct ubcore_device *ubc_dev)
-{
-	struct uburma_eid *eid_list;
-
-	eid_list = kcalloc(
-		1, ubc_dev->attr.dev_cap.max_eid_cnt * sizeof(struct uburma_eid), GFP_ATOMIC);
-	if (eid_list == NULL)
-		return -ENOMEM;
-
-	ldev->eid = eid_list;
-	return 0;
-}
-
-static void uburma_destroy_eid_table(struct uburma_logic_device *ldev)
-{
-	if (ldev->eid != NULL) {
-		kfree(ldev->eid);
-		ldev->eid = NULL;
-	}
-}
-
-static int uburma_fill_logic_device_attr(struct uburma_logic_device *ldev,
-	struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
-{
-	uint32_t e1, e2; /* eid */
-	uint16_t f1, f2; /* fe */
-	uint8_t p1, p2; /* port */
-
-	if (uburma_create_dev_attr_files(ldev) != 0) {
-		uburma_log_err("failed to fill attributes, device:%s.\n", ubc_dev->dev_name);
-		return -EPERM;
-	}
-
-	/* create /sys/class/uburma/<ubc_dev->dev_name>/port* */
-	for (p1 = 0; p1 < ubc_dev->attr.port_cnt; p1++) {
-		if (uburma_create_port_attr_files(ldev, ubu_dev, p1) != 0)
-			goto err_port_attr;
-	}
-
-	/* create /sys/class/uburma/<ubc_dev->dev_name>/fe* */
-	for (f1 = 0; f1 < ubc_dev->attr.dev_cap.max_fe_cnt; f1++) {
-		if (uburma_create_fe_attr_files(ldev, ubu_dev, f1) != 0)
-			goto err_fe_attr;
-	}
-
-	/* create /sys/class/uburma/<ubc_dev->dev_name>/eid* */
-	if (uburma_create_eid_table(ldev, ubc_dev) != 0)
-		goto err_fe_attr;
-
-	for (e1 = 0; e1 < ubc_dev->attr.dev_cap.max_eid_cnt; e1++) {
-		if (uburma_create_eid_attr_files(ldev, e1) != 0)
-			goto err_eid_attr;
-	}
-	return 0;
-
-err_eid_attr:
-	for (e2 = 0; e2 < e1; e2++)
-		uburma_remove_eid_attr_files(ldev, e2);
-
-	uburma_destroy_eid_table(ldev);
-err_fe_attr:
-	for (f2 = 0; f2 < f1; f2++)
-		uburma_remove_fe_attr_files(ldev, f2);
-err_port_attr:
-	for (p2 = 0; p2 < p1; p2++)
-		uburma_remove_port_attr_files(ldev, p2);
-
-	uburma_remove_dev_attr_files(ldev);
-	return -EPERM;
-}
-
-
-static void uburma_unfill_logic_device_attr(struct uburma_logic_device *ldev,
-	struct ubcore_device *ubc_dev)
-{
-	uint32_t e;
-	uint16_t f;
-	uint8_t p;
-
-	for (e = 0; e < ubc_dev->attr.dev_cap.max_eid_cnt; e++)
-		uburma_remove_eid_attr_files(ldev, e);
-
-	uburma_destroy_eid_table(ldev);
-
-	for (f = 0; f < ubc_dev->attr.dev_cap.max_fe_cnt; f++)
-		uburma_remove_fe_attr_files(ldev, f);
-
-	for (p = 0; p < ubc_dev->attr.port_cnt; p++)
-		uburma_remove_port_attr_files(ldev, p);
-
-	uburma_remove_dev_attr_files(ldev);
-}
-
-static int uburma_device_create(struct uburma_logic_device *ldev,
-	struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev, struct net *net)
+static int uburma_device_create(struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
 {
 	/* create /sys/class/uburma/<ubc_dev->dev_name> */
-	write_pnet(&ldev->net, net);
-	ldev->ubu_dev = ubu_dev;
-
-	/* Two devices have same char device devt will cause duplicate file name
-	 * error in sysfs_create_link, although they are in different namespaces
-	 */
-	if (net_eq(net, &init_net))
-		ldev->dev = device_create(&g_uburma_class, ubc_dev->dev.parent,
-			ubu_dev->cdev.dev, ldev, "%s", ubc_dev->dev_name);
-	else
-		ldev->dev = device_create(&g_uburma_class, ubc_dev->dev.parent,
-			MKDEV(0, 0), ldev, "%s", ubc_dev->dev_name);
-	if (IS_ERR(ldev->dev)) {
+	ubu_dev->dev = device_create(&g_uburma_class, ubc_dev->dev.parent,
+			ubu_dev->cdev.dev, ubu_dev, "%s", ubc_dev->dev_name);
+	if (IS_ERR(ubu_dev->dev)) {
 		uburma_log_err("device create failed, device:%s.\n", ubc_dev->dev_name);
 		return -ENOMEM;
 	}
 
-	if (uburma_fill_logic_device_attr(ldev, ubu_dev, ubc_dev) != 0) {
-		device_unregister(ldev->dev);
-		ldev->dev = NULL;
-		uburma_log_err("failed to fill attributes, device:%s.\n", ubc_dev->dev_name);
-		return -EPERM;
-	}
-
 	return 0;
 }
 
-static void uburma_device_destroy(struct uburma_logic_device *ldev, struct ubcore_device *ubc_dev)
+static void uburma_device_destroy(struct uburma_device *ubu_dev)
 {
-	uburma_unfill_logic_device_attr(ldev, ubc_dev);
-	device_unregister(ldev->dev);
-	ldev->dev = NULL;
-}
-
-static void uburma_remove_one_logic_device(struct uburma_device *ubu_dev, struct net *net)
-{
-	struct uburma_logic_device *ldev, *tmp;
-	struct ubcore_device *ubc_dev;
-	int srcu_idx;
-
-	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
-	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
-	if (!ubc_dev) {
-		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-		return;
-	}
-
-	if (ubc_dev->transport_type != UBCORE_TRANSPORT_UB) {
-		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-		return;
-	}
-
-	mutex_lock(&ubu_dev->ldev_mutex);
-	list_for_each_entry_safe(ldev, tmp, &ubu_dev->ldev_list, node) {
-		if (net_eq(read_pnet(&ldev->net), net)) {
-			uburma_device_destroy(ldev, ubc_dev);
-			list_del(&ldev->node);
-			kfree(ldev);
-			break;
-		}
-	}
-	mutex_unlock(&ubu_dev->ldev_mutex);
-	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-}
-
-static void uburma_remove_logic_devices(struct uburma_device *ubu_dev,
-	struct ubcore_device *ubc_dev)
-{
-	struct uburma_logic_device *ldev, *tmp;
-
-	if (ubc_dev->transport_type != UBCORE_TRANSPORT_UB)
-		return;
-
-	mutex_lock(&ubu_dev->ldev_mutex);
-	list_for_each_entry_safe(ldev, tmp, &ubu_dev->ldev_list, node) {
-		uburma_device_destroy(ldev, ubc_dev);
-		list_del(&ldev->node);
-		kfree(ldev);
-	}
-	mutex_unlock(&ubu_dev->ldev_mutex);
-}
-
-static int uburma_create_one_logic_device(struct uburma_device *ubu_dev,
-	struct ubcore_device *ubc_dev, struct net *net)
-{
-	struct uburma_logic_device *ldev;
-	int ret;
-
-	mutex_lock(&ubu_dev->ldev_mutex);
-	list_for_each_entry(ldev, &ubu_dev->ldev_list, node) {
-		if (net_eq(read_pnet(&ubu_dev->ldev.net), net)) {
-			mutex_unlock(&ubu_dev->ldev_mutex);
-			return 0;
-		}
-	}
-
-	ldev = kzalloc(sizeof(struct uburma_logic_device), GFP_KERNEL);
-	if (ldev == NULL) {
-		mutex_unlock(&ubu_dev->ldev_mutex);
-		return -ENOMEM;
-	}
-
-	ret = uburma_device_create(ldev, ubu_dev, ubc_dev, net);
-	if (ret) {
-		kfree(ldev);
-		mutex_unlock(&ubu_dev->ldev_mutex);
-		uburma_log_err("add device failed %s in net %u", ubc_dev->dev_name, net->ns.inum);
-		return ret;
-	}
-
-	list_add_tail(&ldev->node, &ubu_dev->ldev_list);
-	mutex_unlock(&ubu_dev->ldev_mutex);
-	uburma_log_info("add device %s in net %u", ubc_dev->dev_name, net->ns.inum);
-	return 0;
-}
-
-static int uburma_add_one_logic_device(struct uburma_device *ubu_dev, struct net *net)
-{
-	struct ubcore_device *ubc_dev;
-	int srcu_idx;
-	int ret;
-
-	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
-	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
-	if (!ubc_dev) {
-		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-		return 0;
-	}
-
-	if (ubc_dev->transport_type != UBCORE_TRANSPORT_UB) {
-		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-		return 0;
-	}
-
-	ret = uburma_create_one_logic_device(ubu_dev, ubc_dev, net);
-	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-	return ret;
-}
-
-static int uburma_copy_logic_devices(struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
-{
-	struct uburma_net *unet;
-	int ret = 0;
-
-	if (ubc_dev->transport_type != UBCORE_TRANSPORT_UB)
-		return 0;
-
-	down_read(&g_uburma_net_rwsem);
-	list_for_each_entry(unet, &g_uburma_net_list, node) {
-		if (net_eq(read_pnet(&unet->net), read_pnet(&ubu_dev->ldev.net)))
-			continue;
-		ret = uburma_create_one_logic_device(ubu_dev, ubc_dev, read_pnet(&unet->net));
-		if (ret != 0)
-			break;
-	}
-	up_read(&g_uburma_net_rwsem);
-
-	if (ret)
-		uburma_remove_logic_devices(ubu_dev, ubc_dev);
-
-	return ret;
+	device_destroy(&g_uburma_class, ubu_dev->cdev.dev);
+	ubu_dev->dev = NULL;
 }
 
 static int uburma_cdev_create(struct uburma_device *ubu_dev, struct ubcore_device *ubc_dev)
@@ -429,19 +150,13 @@ static int uburma_cdev_create(struct uburma_device *ubu_dev, struct ubcore_devic
 	if (cdev_add(&ubu_dev->cdev, base, 1))
 		goto free_bit;
 
-	if (uburma_device_create(&ubu_dev->ldev, ubu_dev, ubc_dev, &init_net) != 0) {
+	if (uburma_device_create(ubu_dev, ubc_dev) != 0) {
 		uburma_log_err("device create failed, device:%s.\n", ubc_dev->dev_name);
 		goto del_cdev;
 	}
 
-	if (uburma_copy_logic_devices(ubu_dev, ubc_dev) != 0) {
-		uburma_log_err("copy logic device failed, device:%s.\n", ubc_dev->dev_name);
-		goto destroy_device;
-	}
 	return 0;
 
-destroy_device:
-	uburma_device_destroy(&ubu_dev->ldev, ubc_dev);
 del_cdev:
 	cdev_del(&ubu_dev->cdev);
 free_bit:
@@ -449,19 +164,6 @@ free_bit:
 	return -EPERM;
 }
 
-static void uburma_list_add_device(struct uburma_device *ubu_dev)
-{
-	down_write(&g_uburma_device_rwsem);
-	list_add_tail(&ubu_dev->node, &g_uburma_device_list);
-	up_write(&g_uburma_device_rwsem);
-}
-
-static void uburma_list_remove_device(struct uburma_device *ubu_dev)
-{
-	down_write(&g_uburma_device_rwsem);
-	list_del_init(&ubu_dev->node);
-	up_write(&g_uburma_device_rwsem);
-}
 
 static int uburma_add_device(struct ubcore_device *ubc_dev)
 {
@@ -489,9 +191,6 @@ static int uburma_add_device(struct ubcore_device *ubc_dev)
 	mutex_init(&ubu_dev->lists_mutex);
 	INIT_LIST_HEAD(&ubu_dev->uburma_file_list);
 
-	mutex_init(&ubu_dev->ldev_mutex);
-	INIT_LIST_HEAD(&ubu_dev->ldev_list);
-
 	rcu_assign_pointer(ubu_dev->ubc_dev, ubc_dev);
 
 	if (uburma_cdev_create(ubu_dev, ubc_dev) != 0) {
@@ -500,7 +199,6 @@ static int uburma_add_device(struct ubcore_device *ubc_dev)
 	}
 
 	ubcore_set_client_ctx_data(ubc_dev, &g_urma_client, ubu_dev);
-	uburma_list_add_device(ubu_dev);
 	return 0;
 
 err:
@@ -508,7 +206,6 @@ err:
 		complete(&ubu_dev->comp);
 
 	wait_for_completion(&ubu_dev->comp);
-	mutex_destroy(&ubu_dev->ldev_mutex);
 	mutex_destroy(&ubu_dev->lists_mutex);
 	kfree(ubu_dev);
 	return -EPERM;
@@ -553,9 +250,7 @@ static void uburma_remove_device(struct ubcore_device *ubc_dev, void *client_ctx
 	if (ubu_dev == NULL)
 		return;
 
-	uburma_list_remove_device(ubu_dev);
-	uburma_remove_logic_devices(ubu_dev, ubc_dev);
-	uburma_device_destroy(&ubu_dev->ldev, ubc_dev);
+	uburma_device_destroy(ubu_dev);
 	cdev_del(&ubu_dev->cdev);
 	clear_bit(ubu_dev->devnum, g_dev_bitmap);
 
@@ -604,10 +299,6 @@ static int uburma_class_create(void)
 		goto out_chrdev;
 	}
 
-	/*
-	 * to do class_create_file
-	 */
-
 	return 0;
 out_chrdev:
 	unregister_chrdev_region(g_dynamic_uburma_dev, UBURMA_DYNAMIC_MINOR_NUM);
@@ -621,217 +312,6 @@ static void uburma_class_destroy(void)
 	unregister_chrdev_region(g_dynamic_uburma_dev, UBURMA_DYNAMIC_MINOR_NUM);
 }
 
-static int remove_logic_devices(struct uburma_device *ubu_dev)
-{
-	struct ubcore_device *ubc_dev;
-	int srcu_idx;
-
-	/* Get ubcore device and remove copied logic device */
-	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
-	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
-	if (!ubc_dev) {
-		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-		return -EIO;
-	}
-	uburma_remove_logic_devices(ubu_dev, ubc_dev);
-	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
-	return 0;
-}
-
-bool uburma_dev_accessible_by_ns(struct uburma_device *ubu_dev, struct net *net)
-{
-	return (g_shared_ns || net_eq(net, read_pnet(&ubu_dev->ldev.net)));
-}
-
-static int uburma_modify_dev_ns(struct uburma_device *ubu_dev, struct net *net)
-{
-	struct net *cur;
-	int ret;
-
-	cur = read_pnet(&ubu_dev->ldev.net);
-	if (net_eq(net, cur))
-		return 0;
-
-	write_pnet(&ubu_dev->ldev.net, net);
-	kobject_uevent(&ubu_dev->ldev.dev->kobj, KOBJ_REMOVE);
-	ret = device_rename(ubu_dev->ldev.dev, dev_name(ubu_dev->ldev.dev));
-	if (ret) {
-		write_pnet(&ubu_dev->ldev.net, cur);
-		uburma_log_err("Failed to rename device in the new ns.\n");
-	}
-	kobject_uevent(&ubu_dev->ldev.dev->kobj, KOBJ_ADD);
-	return ret;
-}
-
-int uburma_set_dev_ns(char *device_name, int ns_fd)
-{
-	struct uburma_device *ubu_dev = NULL, *tmp;
-	struct net *net;
-	int ret = 0;
-
-	if (!ns_capable(current->nsproxy->net_ns->user_ns, CAP_NET_ADMIN)) {
-		uburma_log_err("current user does not have net admin capability");
-		return -EPERM;
-	}
-
-	if (g_shared_ns) {
-		uburma_log_err("Can not set device to ns under shared ns mode.\n");
-		return -EPERM;
-	}
-
-	net = get_net_ns_by_fd(ns_fd);
-	if (IS_ERR(net)) {
-		uburma_log_err("Failed to get ns by fd.\n");
-		return PTR_ERR(net);
-	}
-
-	/* Find uburma device by name */
-	down_read(&g_uburma_device_rwsem);
-	list_for_each_entry(tmp, &g_uburma_device_list, node) {
-		if (strcmp(dev_name(tmp->ldev.dev), device_name) == 0) {
-			ubu_dev = tmp;
-			break;
-		}
-	}
-	if (ubu_dev == NULL) {
-		ret = -EINVAL;
-		uburma_log_err("Failed to find device.\n");
-		goto out;
-	}
-
-	/* Do not modify ns if some user process opened the device */
-	if (atomic_read(&ubu_dev->refcnt) > 1) {
-		ret = -EBUSY;
-		uburma_log_err("Can not set device ns if it is in use.\n");
-		goto out;
-	}
-
-	ret = remove_logic_devices(ubu_dev);
-	if (ret) {
-		uburma_log_err("Failed to remove logic devices.\n");
-		goto out;
-	}
-
-	/* Put device in the new ns */
-	ret = uburma_modify_dev_ns(ubu_dev, net);
-
-out:
-	up_read(&g_uburma_device_rwsem);
-	put_net(net);
-	return ret;
-}
-
-int uburma_set_ns_mode(bool shared)
-{
-	unsigned long flags;
-
-	if (!ns_capable(current->nsproxy->net_ns->user_ns, CAP_NET_ADMIN)) {
-		uburma_log_err("current user does not have net admin capability");
-		return -EPERM;
-	}
-
-	down_write(&g_uburma_net_rwsem);
-	if (g_shared_ns == shared) {
-		up_write(&g_uburma_net_rwsem);
-		return 0;
-	}
-	spin_lock_irqsave(&g_uburma_net_lock, flags);
-	if (!list_empty(&g_uburma_net_list)) {
-		spin_unlock_irqrestore(&g_uburma_net_lock, flags);
-		up_write(&g_uburma_net_rwsem);
-		uburma_log_err("Failed to modify ns mode with existing ns");
-		return -EPERM;
-	}
-	g_shared_ns = shared;
-	spin_unlock_irqrestore(&g_uburma_net_lock, flags);
-	up_write(&g_uburma_net_rwsem);
-	return 0;
-}
-
-static void uburma_net_exit(struct net *net)
-{
-	struct uburma_net *unet = net_generic(net, g_uburma_net_id);
-	struct uburma_device *ubu_dev;
-	unsigned long flags;
-
-	if (unet == NULL)
-		return;
-
-	uburma_log_info("net exit %u", net->ns.inum);
-	down_write(&g_uburma_net_rwsem);
-	spin_lock_irqsave(&g_uburma_net_lock, flags);
-	if (list_empty(&unet->node)) {
-		spin_unlock_irqrestore(&g_uburma_net_lock, flags);
-		up_write(&g_uburma_net_rwsem);
-		return;
-	}
-	list_del_init(&unet->node);
-	spin_unlock_irqrestore(&g_uburma_net_lock, flags);
-	up_write(&g_uburma_net_rwsem);
-
-	if (!g_shared_ns) {
-		down_read(&g_uburma_device_rwsem);
-		list_for_each_entry(ubu_dev, &g_uburma_device_list, node) {
-			(void)uburma_modify_dev_ns(ubu_dev, &init_net);
-		}
-		up_read(&g_uburma_device_rwsem);
-		return;
-	}
-
-	down_read(&g_uburma_device_rwsem);
-	list_for_each_entry(ubu_dev, &g_uburma_device_list, node) {
-		uburma_remove_one_logic_device(ubu_dev, net);
-	}
-	up_read(&g_uburma_device_rwsem);
-}
-
-static int uburma_net_init(struct net *net)
-{
-	struct uburma_net *unet = net_generic(net, g_uburma_net_id);
-	struct uburma_device *ubu_dev;
-	unsigned long flags;
-	int ret = 0;
-
-	if (unet == NULL)
-		return 0;
-
-	uburma_log_info("net init %u", net->ns.inum);
-	write_pnet(&unet->net, net);
-	if (net_eq(net, &init_net)) {
-		INIT_LIST_HEAD(&unet->node);
-		return 0;
-	}
-
-	spin_lock_irqsave(&g_uburma_net_lock, flags);
-	list_add_tail(&unet->node, &g_uburma_net_list);
-	spin_unlock_irqrestore(&g_uburma_net_lock, flags);
-
-	if (!g_shared_ns)
-		return 0;
-
-	down_read(&g_uburma_device_rwsem);
-	list_for_each_entry(ubu_dev, &g_uburma_device_list, node) {
-		down_read(&g_uburma_net_rwsem);
-		ret = uburma_add_one_logic_device(ubu_dev, net);
-		up_read(&g_uburma_net_rwsem);
-		if (ret)
-			break;
-	}
-	up_read(&g_uburma_device_rwsem);
-	if (ret)
-		uburma_net_exit(net);
-
-	/* return ret will cause error starting a container */
-	return 0;
-}
-
-static struct pernet_operations g_uburma_net_ops = {
-	.init = uburma_net_init,
-	.exit = uburma_net_exit,
-	.id = &g_uburma_net_id,
-	.size = sizeof(struct uburma_net)
-};
-
 static int __init uburma_init(void)
 {
 	int ret;
@@ -843,23 +323,13 @@ static int __init uburma_init(void)
 	}
 
 	uburma_register_client();
-	uburma_netlink_init();
 
-	ret = register_pernet_device(&g_uburma_net_ops);
-	if (ret != 0) {
-		uburma_unregister_client();
-		uburma_class_destroy();
-		uburma_log_err("register_pernet_device failed");
-		return ret;
-	}
 	uburma_log_info("uburma module init success.\n");
 	return 0;
 }
 
 static void __exit uburma_exit(void)
 {
-	unregister_pernet_device(&g_uburma_net_ops);
-	uburma_netlink_exit();
 	uburma_unregister_client();
 	uburma_class_destroy();
 	uburma_log_info("uburma module exits.\n");

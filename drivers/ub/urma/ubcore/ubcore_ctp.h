@@ -25,4 +25,8 @@
 struct ubcore_ctp *ubcore_create_ctp(struct ubcore_device *dev, struct ubcore_ctp_cfg *cfg);
 int ubcore_destroy_ctp(struct ubcore_ctp *ctp);
 struct ubcore_ctp *ubcore_find_ctp(struct ubcore_device *dev, uint32_t idx);
+struct ubcore_ctp *ubcore_find_get_ctp(struct ubcore_device *dev, uint32_t idx);
+struct ubcore_ctp *ubcore_find_remove_ctp(struct ubcore_device *dev, uint32_t idx);
+void ubcore_ctp_get(void *obj);
+void ubcore_ctp_kref_put(struct ubcore_ctp *ctp);
 #endif

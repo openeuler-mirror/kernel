@@ -55,6 +55,10 @@ static inline struct udma_jetty *to_udma_jetty(struct ubcore_jetty *ubcore_jetty
 	return container_of(ubcore_jetty, struct udma_jetty, ubcore_jetty);
 }
 
+void udma_fill_jetty_qp_attr(struct udma_dev *dev, struct udma_qp_attr *qp_attr,
+			     struct udma_jetty *jetty,
+			     struct ubcore_ucontext *uctx,
+			     struct ubcore_jetty_cfg *cfg);
 struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 				       struct ubcore_jetty_cfg *cfg,
 				       struct ubcore_udata *udata);

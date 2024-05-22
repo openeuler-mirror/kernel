@@ -38,7 +38,7 @@ static inline uint8_t get_qp_bankid(uint64_t qpn)
 	return (uint8_t)(qpn & QP_BANKID_MASK);
 }
 
-static bool is_rc_jetty(struct udma_qp_attr *qp_attr)
+bool is_rc_jetty(struct udma_qp_attr *qp_attr)
 {
 	if (qp_attr->is_jetty && qp_attr->jetty &&
 	    qp_attr->tp_mode == UBCORE_TP_RC)
@@ -1755,29 +1755,9 @@ void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp)
 	udma_unlock_cqs(to_qp->qp_attr.send_jfc, NULL);
 }
 
-static void add_qp_to_list(struct udma_dev *udma_dev, struct udma_qp *qp,
-			   struct udma_jfc *send_jfc, struct udma_jfc *recv_jfc)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&udma_dev->qp_list_lock, flags);
-	udma_lock_cqs(send_jfc, recv_jfc);
-
-	list_add_tail(&qp->node, &udma_dev->qp_list);
-
-	if (send_jfc)
-		list_add_tail(&qp->sq_node, &send_jfc->sq_list);
-	if (recv_jfc)
-		list_add_tail(&qp->rq_node, &recv_jfc->rq_list);
-
-	udma_unlock_cqs(send_jfc, recv_jfc);
-	spin_unlock_irqrestore(&udma_dev->qp_list_lock, flags);
-}
-
 static int udma_qp_store(struct udma_dev *udma_dev,
 			 struct udma_qp *qp)
 {
-	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct xarray *xa = &udma_dev->qp_table.xa;
 	struct udma_qp *temp_qp;
 	unsigned long flags;
@@ -1790,10 +1770,6 @@ static int udma_qp_store(struct udma_dev *udma_dev,
 	xa_unlock_irqrestore(xa, flags);
 	if (ret)
 		dev_err(udma_dev->dev, "Failed to xa store for QPC\n");
-	else
-		/* add QP to device's QP list for softwc */
-		add_qp_to_list(udma_dev, qp, qp_attr->send_jfc,
-			       qp_attr->recv_jfc);
 
 	return ret;
 }
@@ -1801,32 +1777,13 @@ static int udma_qp_store(struct udma_dev *udma_dev,
 static void udma_qp_remove(struct udma_dev *udma_dev, struct udma_qp *qp,
 			   struct ubcore_tp *fail_ret_tp)
 {
-	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	struct xarray *xa = &udma_dev->qp_table.xa;
-	struct udma_jfc *send_jfc;
-	struct udma_jfc *recv_jfc;
 	unsigned long flags;
-
-	send_jfc = qp_attr->send_jfc;
-	recv_jfc = qp_attr->recv_jfc;
 
 	xa_lock_irqsave(xa, flags);
 	if (!fail_ret_tp)
 		__xa_erase(xa, qp->qpn);
 	xa_unlock_irqrestore(xa, flags);
-
-	spin_lock_irqsave(&udma_dev->qp_list_lock, flags);
-	udma_lock_cqs(send_jfc, recv_jfc);
-
-	list_del(&qp->node);
-
-	if (send_jfc)
-		list_del(&qp->sq_node);
-	if (recv_jfc)
-		list_del(&qp->rq_node);
-
-	udma_unlock_cqs(send_jfc, recv_jfc);
-	spin_unlock_irqrestore(&udma_dev->qp_list_lock, flags);
 }
 
 static void free_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)

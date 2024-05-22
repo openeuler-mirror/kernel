@@ -540,6 +540,7 @@ static struct ubcore_ops g_udma_dev_ops = {
 	.unimport_jetty = udma_unimport_jetty,
 	.create_tp = udma_create_tp,
 	.modify_tp = udma_modify_tp,
+	.modify_user_tp = udma_modify_user_tp,
 	.destroy_tp = udma_destroy_tp,
 	.send_req = udma_send_req,
 	.send_resp = udma_send_resp,
@@ -1012,7 +1013,7 @@ static int udma_register_device(struct udma_dev *udma_dev)
 	ub_dev = &udma_dev->ub_dev;
 	uboe = &udma_dev->uboe;
 	spin_lock_init(&uboe->lock);
-	ub_dev->transport_type = UBCORE_TRANSPORT_IB;
+	ub_dev->transport_type = UBCORE_TRANSPORT_HNS_UB;
 	ub_dev->ops = &g_udma_dev_ops;
 	ub_dev->dev.parent = udma_dev->dev;
 	ub_dev->dma_dev = ub_dev->dev.parent;

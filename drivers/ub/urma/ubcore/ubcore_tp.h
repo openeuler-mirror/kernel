@@ -38,8 +38,8 @@ struct ubcore_tp_advice {
 
 static inline bool ubcore_have_tp_ops(struct ubcore_device *dev)
 {
-	return (dev != NULL && dev->ops->create_tp != NULL && dev->ops->modify_tp != NULL &&
-		dev->ops->destroy_tp != NULL);
+	return (dev != NULL && dev->ops != NULL && dev->ops->create_tp != NULL &&
+		dev->ops->modify_tp != NULL && dev->ops->destroy_tp != NULL);
 }
 
 /* alpha */
@@ -47,8 +47,6 @@ int ubcore_advise_tp(struct ubcore_device *dev, union ubcore_eid *remote_eid,
 		     struct ubcore_tp_advice *advice, struct ubcore_udata *udata);
 int ubcore_unadvise_tp(struct ubcore_device *dev, struct ubcore_tp_advice *advice);
 
-struct ubcore_nlmsg *ubcore_handle_create_tp_req(struct ubcore_nlmsg *req);
-struct ubcore_nlmsg *ubcore_handle_destroy_tp_req(struct ubcore_nlmsg *req);
 struct ubcore_nlmsg *ubcore_handle_restore_tp_req(struct ubcore_nlmsg *req);
 
 /* bind tp APIs */
@@ -73,4 +71,8 @@ void ubcore_report_tp_error(struct ubcore_device *dev, struct ubcore_tp *tp);
 void ubcore_modify_tp_attr(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	union ubcore_tp_attr_mask mask);
 int ubcore_modify_tp_state_check(struct ubcore_tp *tp, enum ubcore_tp_state new_state);
+void ubcore_tp_get(void *obj);
+void ubcore_tp_kref_put(struct ubcore_tp *tp);
+void ubcore_put_ta_jetty(struct ubcore_ta *ta);
+void ubcore_put_target_ta_jetty(struct ubcore_ta *ta);
 #endif

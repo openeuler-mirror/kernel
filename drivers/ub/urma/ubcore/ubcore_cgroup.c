@@ -31,6 +31,11 @@ static inline bool ubcore_is_use_cg(struct ubcore_device *dev)
 
 void ubcore_cgroup_reg_dev(struct ubcore_device *dev)
 {
+	if (dev == NULL || strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) >= UBCORE_MAX_DEV_NAME) {
+		ubcore_log_err("Invalid parameter");
+		return;
+	}
+
 	dev->cg_device.dev.name = dev->dev_name;
 	if (!ubcore_is_use_cg(dev))
 		return;
@@ -68,6 +73,9 @@ int ubcore_cgroup_try_charge(struct ubcore_cg_object *cg_obj, struct ubcore_devi
 {
 	enum rdmacg_resource_type rdma_cg_type;
 
+	if (cg_obj == NULL || cg_obj->cg == NULL)
+		return 0;
+
 	if (!ubcore_is_use_cg(dev))
 		return 0;
 
@@ -83,6 +91,9 @@ void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj, struct ubcore_devic
 							enum ubcore_resource_type type)
 {
 	enum rdmacg_resource_type rdma_cg_type;
+
+	if (cg_obj == NULL || cg_obj->cg == NULL)
+		return;
 
 	if (!ubcore_is_use_cg(dev))
 		return;

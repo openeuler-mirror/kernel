@@ -70,4 +70,11 @@ static inline enum udma_sgid_type get_sgid_type_from_eid(union ubcore_eid eid)
 	return SGID_TYPE_IPV6;
 }
 
+static inline void udma_ipv4_map_to_eid(uint32_t ipv4, union ubcore_eid *eid)
+{
+	eid->in4.reserved = 0;
+	eid->in4.prefix = cpu_to_be32(UDMA_IPV4_MAP_IPV6_PREFIX);
+	eid->in4.addr = ipv4;
+}
+
 #endif /* _UDMA_EID_H */

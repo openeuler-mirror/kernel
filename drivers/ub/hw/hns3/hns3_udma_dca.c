@@ -15,6 +15,7 @@
 
 #include <linux/slab.h>
 #include "urma/ubcore_api.h"
+#include "hns3_udma_common.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_debugfs.h"
 #include "hns3_udma_dca.h"

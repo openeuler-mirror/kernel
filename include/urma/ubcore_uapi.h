@@ -43,15 +43,7 @@ struct ubcore_ucontext *ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_
  * not by other kernel modules
  */
 void ubcore_free_ucontext(struct ubcore_device *dev, struct ubcore_ucontext *ucontext);
-/**
- * set upi
- * @param[in] dev: the ubcore_device handle;
- * @param[in] fe_idx: fe_idx;
- * @param[in] idx: idx of upi in fe;
- * @param[in] upi: upi of fe to set
- * @return: 0 on success, other value on error
- */
-int ubcore_set_upi(struct ubcore_device *dev, uint16_t fe_idx, uint16_t idx, uint32_t upi);
+
 /**
  * add a function entity id (eid) to ub device (for uvs)
  * @param[in] dev: the ubcore_device handle;
@@ -113,7 +105,7 @@ int ubcore_config_device(struct ubcore_device *dev, struct ubcore_device_cfg *cf
  * set ctx data of a client
  * @param[in] dev: the ubcore_device handle;
  * @param[in] client: ubcore client pointer
- * @param[in] data: client private data to be set
+ * @param[in] data (optional): client private data to be set
  * @return: 0 on success, other value on error
  */
 void ubcore_set_client_ctx_data(struct ubcore_device *dev, struct ubcore_client *client,
@@ -140,11 +132,12 @@ void ubcore_unregister_client(struct ubcore_client *rm_client);
 /**
  * alloc token to ubcore device
  * @param[in] dev: the ubcore device handle;
+ * @param[in] flag: token_id_flag;
  * @param[in] udata (optional): ucontext and user space driver data
  * @return: token id pointer on success, NULL on error
  */
 struct ubcore_token_id *ubcore_alloc_token_id(struct ubcore_device *dev,
-	struct ubcore_udata *udata);
+	union ubcore_token_id_flag flag, struct ubcore_udata *udata);
 /**
  * free token id from ubcore device
  * @param[in] token_id: the token_id id alloced before;
@@ -552,14 +545,5 @@ int ubcore_cgroup_try_charge(struct ubcore_cg_object *cg_obj, struct ubcore_devi
 void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj, struct ubcore_device *dev,
 	enum ubcore_resource_type type);
 #endif // CONFIG_CGROUP_RDMA
-
-/* The APIs below are deprecated, should not be called by driver or ubcore client */
-struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
-
-struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id);
-
-struct ubcore_jfr *ubcore_find_jfr(struct ubcore_device *dev, uint32_t jfr_id);
-
-struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev, uint32_t jetty_id);
 
 #endif

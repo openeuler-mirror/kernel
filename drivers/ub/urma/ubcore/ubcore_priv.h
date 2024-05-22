@@ -30,8 +30,8 @@
  * On the Internet Assigned Numbers Authority, add Hardware Types: Unified Bus (UB)
  */
 #define UBCORE_NETDEV_UB_TYPE (38) /* Unified Bus(UB) */
-#define UBCORE_NON_VIRTUALIZATION_FE_IDX 0xffff
 #define UCBORE_INVALID_UPI 0xffffffff
+#define UBCORE_TIMEOUT 30000 /* 30s */
 
 union ubcore_set_global_cfg_mask {
 	struct {
@@ -82,48 +82,56 @@ static inline struct ubcore_ucontext *ubcore_get_uctx(struct ubcore_udata *udata
 	return udata == NULL ? NULL : udata->uctx;
 }
 
-static inline bool ubcore_check_dev_name_invalid(struct ubcore_device *dev, char *dev_name)
-{
-	return (strcmp(dev->dev_name, dev_name) != 0);
-}
-
 static inline bool ubcore_check_trans_mode_valid(enum ubcore_transport_mode trans_mode)
 {
 	return trans_mode == UBCORE_TP_RM ||
 		trans_mode == UBCORE_TP_RC || trans_mode == UBCORE_TP_UM;
 }
 
+/* combine sub_trans_mode and rc_share_tp -> uint16_t? */
+static inline bool is_create_rc_shared_tp(enum ubcore_transport_mode trans_mode,
+									uint32_t sub_trans_mode,
+									uint32_t rc_share_tp)
+{
+	if (trans_mode == UBCORE_TP_RC &&
+		(sub_trans_mode & UBCORE_SUB_TRANS_MODE_TA_DST_ORDERING_ENABLE) &&
+		rc_share_tp == 1)
+		return true;
+
+	return false;
+}
+
 /* Caller must put device */
 struct ubcore_device *ubcore_find_device(union ubcore_eid *eid, enum ubcore_transport_type type);
 struct ubcore_device *ubcore_find_device_with_name(const char *dev_name);
+bool ubcore_check_dev_is_exist(const char *dev_name);
 void ubcore_get_device(struct ubcore_device *dev);
 void ubcore_put_device(struct ubcore_device *dev);
-struct ubcore_device *ubcore_find_tpf_device(struct ubcore_net_addr *netaddr,
+struct ubcore_device *ubcore_find_tpf_device(union ubcore_net_addr_union *netaddr,
 	enum ubcore_transport_type type);
-struct ubcore_device *ubcore_find_tpf_by_dev(struct ubcore_device *dev,
-	enum ubcore_transport_type type);
-struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name,
-	enum ubcore_transport_type type);
+struct ubcore_device *ubcore_find_tpf_device_by_name(char *dev_name);
+/* returned list should be freed by caller */
+struct ubcore_device **ubcore_get_all_tpf_device(enum ubcore_transport_type type,
+	uint32_t *dev_cnt);
 
 int ubcore_tpf_device_set_global_cfg(struct ubcore_set_global_cfg *cfg);
 int ubcore_update_eidtbl_by_idx(struct ubcore_device *dev, union ubcore_eid *eid,
 	uint32_t eid_idx, bool is_alloc_eid, struct net *net);
 int ubcore_update_eidtbl_by_eid(struct ubcore_device *dev, union ubcore_eid *eid,
-	uint32_t *eid_idx, bool is_alloc_eid);
+	uint32_t *eid_idx, bool is_alloc_eid, struct net *net);
 
 struct ubcore_device *ubcore_find_upi_with_dev_name(const char *dev_name, uint32_t *upi);
 int ubcore_add_upi_list(struct ubcore_device *dev, uint32_t upi);
 
 /* Must call ubcore_put_devices to put and release the returned devices */
-struct ubcore_device **ubcore_get_devices_from_netdev(struct net_device *netdev, uint32_t *cnt);
+struct ubcore_device **ubcore_get_devices_from_netdev(struct net_device *netdev,
+	uint32_t *cnt);
 void ubcore_put_devices(struct ubcore_device **devices, uint32_t cnt);
-void ubcore_update_default_eid(struct ubcore_device *dev, bool is_add);
+void ubcore_update_netdev_addr(struct ubcore_device *dev, struct net_device *netdev,
+	enum ubcore_net_addr_op op, bool async);
 void ubcore_update_netaddr(struct ubcore_device *dev, struct net_device *netdev, bool add);
 int ubcore_fill_netaddr_macvlan(struct ubcore_net_addr *netaddr, struct net_device *netdev,
 	enum ubcore_net_addr_type type);
-
-void ubcore_sync_sip_table(void);
-int ubcore_query_all_device_tpf_dev_info(void);
 
 void ubcore_set_tp_init_cfg(struct ubcore_tp *tp, struct ubcore_tp_cfg *cfg);
 struct ubcore_tp *ubcore_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg *cfg,
@@ -156,42 +164,48 @@ static inline uint32_t ubcore_get_rc_vtp_hash(union ubcore_eid *peer_eid)
 	return jhash(peer_eid, sizeof(union ubcore_eid) + sizeof(uint32_t), 0);
 }
 
-static inline uint32_t ubcore_get_vtpn_hash(union ubcore_eid *key_addr)
+static inline uint32_t ubcore_get_vtpn_hash(struct ubcore_hash_table *ht, void *key_addr)
 {
-	return jhash(key_addr, sizeof(union ubcore_eid) + sizeof(union ubcore_eid), 0);
+	return jhash(key_addr, ht->p.key_size, 0);
 }
 
 static inline bool ubcore_jfs_need_advise(struct ubcore_jfs *jfs)
 {
-	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_HNS_UB &&
 	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM;
 }
 
 static inline bool ubcore_jfs_tjfr_need_advise(struct ubcore_jfs *jfs,
 					       struct ubcore_tjetty *tjfr)
 {
-	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	return jfs->ub_dev->transport_type == UBCORE_TRANSPORT_HNS_UB &&
 	       jfs->jfs_cfg.trans_mode == UBCORE_TP_RM && tjfr->cfg.trans_mode == UBCORE_TP_RM;
 }
 
 static inline bool ubcore_jetty_need_advise(struct ubcore_jetty *jetty)
 {
-	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_HNS_UB &&
 	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM;
 }
 
 static inline bool ubcore_jetty_tjetty_need_advise(struct ubcore_jetty *jetty,
 						   struct ubcore_tjetty *tjetty)
 {
-	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	return jetty->ub_dev->transport_type == UBCORE_TRANSPORT_HNS_UB &&
 	       jetty->jetty_cfg.trans_mode == UBCORE_TP_RM &&
 	       tjetty->cfg.trans_mode == UBCORE_TP_RM;
 }
 
 static inline bool ubcore_jfr_need_advise(struct ubcore_jfr *jfr)
 {
-	return jfr->ub_dev->transport_type == UBCORE_TRANSPORT_IB &&
+	return jfr->ub_dev->transport_type == UBCORE_TRANSPORT_HNS_UB &&
 	       jfr->jfr_cfg.trans_mode == UBCORE_TP_RM;
+}
+
+static inline bool ubcore_is_ub_device(struct ubcore_device *dev)
+{
+	return (dev->transport_type == UBCORE_TRANSPORT_UB ||
+			dev->transport_type == UBCORE_TRANSPORT_HNS_UB);
 }
 
 #endif

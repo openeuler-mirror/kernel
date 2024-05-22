@@ -31,6 +31,7 @@
 #include "uburma_cmd.h"
 
 #define UBURMA_INVALID_TPN UINT_MAX
+#define UBURMA_CREATE_JETTY_ARG_IN_RC_SHARE_TP_SHIFT 11
 
 void uburma_cmd_inc(struct uburma_device *ubu_dev)
 {
@@ -78,7 +79,7 @@ static int uburma_cmd_create_ctx(struct ubcore_device *ubc_dev, struct uburma_fi
 		(struct ubcore_udrv_priv *)(void *)&arg.udata);
 	if (IS_ERR_OR_NULL(ucontext)) {
 		mutex_unlock(&file->mutex);
-		return -EPERM;
+		return PTR_ERR(ucontext);
 	}
 	ucontext->eid = eid;
 	uobj = uobj_alloc(UOBJ_CLASS_JFAE, file);
@@ -111,22 +112,6 @@ free_ctx:
 	return ret;
 }
 
-static int uburma_cmd_destroy_ctx(struct ubcore_device *ubc_dev, struct uburma_file *file,
-				  struct uburma_cmd_hdr *hdr)
-{
-	mutex_lock(&file->mutex);
-	if (file->ucontext == NULL) {
-		mutex_unlock(&file->mutex);
-		return -EINVAL;
-	}
-	uburma_cleanup_uobjs(file, UBURMA_REMOVE_CLOSE);
-	ubcore_free_ucontext(ubc_dev, file->ucontext);
-	file->ucontext = NULL;
-	uburma_log_info("uburma destroy context success.\n");
-	mutex_unlock(&file->mutex);
-	return 0;
-}
-
 static void uburma_fill_attr(struct ubcore_seg_cfg *cfg, struct uburma_cmd_register_seg *arg)
 {
 	cfg->va = arg->in.va;
@@ -140,6 +125,7 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev, struct uburm
 				   struct uburma_cmd_hdr *hdr)
 {
 	struct uburma_cmd_alloc_token_id arg;
+	union ubcore_token_id_flag flag = {0};
 	struct ubcore_udata udata = { 0 };
 	struct ubcore_token_id *token_id;
 	struct uburma_uobj *uobj;
@@ -158,10 +144,10 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev, struct uburm
 		return -ENOMEM;
 	}
 
-	token_id = ubcore_alloc_token_id(ubc_dev, &udata);
+	token_id = ubcore_alloc_token_id(ubc_dev, flag, &udata);
 	if (IS_ERR_OR_NULL(token_id)) {
 		uburma_log_err("ubcore alloc token_id id failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(token_id);
 		goto err_free_uobj;
 	}
 	uobj->object = token_id;
@@ -173,7 +159,8 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev, struct uburm
 	if (ret != 0)
 		goto err_free_token_id;
 
-	return uobj_alloc_commit(uobj);
+	uobj_alloc_commit(uobj);
+	return 0;
 
 err_free_token_id:
 	(void)ubcore_free_token_id(token_id);
@@ -209,6 +196,8 @@ static int uburma_cmd_free_token_id(struct ubcore_device *ubc_dev, struct uburma
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0)
 		uburma_log_err("ubcore remove commit token_id failed.\n");
+
+	uobj_put_del(uobj);
 	return ret;
 }
 
@@ -229,7 +218,7 @@ static int uburma_cmd_register_seg(struct ubcore_device *ubc_dev, struct uburma_
 		return ret;
 
 	token_id_uobj = uobj_get_read(UOBJ_CLASS_TOKEN, (int)arg.in.token_id_handle, file);
-	if (!IS_ERR(token_id_uobj))
+	if (!IS_ERR_OR_NULL(token_id_uobj))
 		cfg.token_id = (struct ubcore_token_id *)token_id_uobj->object;
 
 	uburma_fill_attr(&cfg, &arg);
@@ -246,7 +235,7 @@ static int uburma_cmd_register_seg(struct ubcore_device *ubc_dev, struct uburma_
 	seg = ubcore_register_seg(ubc_dev, &cfg, &udata);
 	if (IS_ERR_OR_NULL(seg)) {
 		uburma_log_err("ubcore_register_seg failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(seg);
 		goto err_free_uobj;
 	}
 	uobj->object = seg;
@@ -293,6 +282,8 @@ static int uburma_cmd_unregister_seg(struct ubcore_device *ubc_dev, struct uburm
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0)
 		uburma_log_err("ubcore_unregister_seg failed.\n");
+
+	uobj_put_del(uobj);
 	return ret;
 }
 
@@ -410,7 +401,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	cfg.jfs_context = jfs_uobj;
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
-	if (IS_ERR(jfc_uobj)) {
+	if (IS_ERR_OR_NULL(jfc_uobj)) {
 		uburma_log_err("failed to find jfc, jfc_handle:%llu.\n", arg.in.jfc_handle);
 		ret = -EINVAL;
 		goto err_alloc_abort;
@@ -421,7 +412,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	jfs = ubcore_create_jfs(ubc_dev, &cfg, uburma_jfs_event_cb, &udata);
 	if (IS_ERR_OR_NULL(jfs)) {
 		uburma_log_err("create jfs or get jfs_id failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(jfs);
 		goto err_put_jfc;
 	}
 	jfs_uobj->uobj.object = jfs;
@@ -432,7 +423,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		goto err_delete_jfs;
 
-	arg.out.id = jfs->id;
+	arg.out.id = jfs->jfs_id.id;
 	arg.out.depth = jfs->jfs_cfg.depth;
 	arg.out.max_sge = jfs->jfs_cfg.max_sge;
 	arg.out.max_rsge = jfs->jfs_cfg.max_rsge;
@@ -513,8 +504,8 @@ static int uburma_cmd_query_jfs(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		return ret;
 
-	uobj = uobj_get_write(UOBJ_CLASS_JFS, arg.in.handle, file);
-	if (IS_ERR(uobj)) {
+	uobj = uobj_get_read(UOBJ_CLASS_JFS, arg.in.handle, file);
+	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jfs.\n");
 		return -EINVAL;
 	}
@@ -522,7 +513,7 @@ static int uburma_cmd_query_jfs(struct ubcore_device *ubc_dev,
 	jfs = (struct ubcore_jfs *)uobj->object;
 	ret = ubcore_query_jfs(jfs, &cfg, &attr);
 	if (ret != 0) {
-		uobj_put_write(uobj);
+		uobj_put_read(uobj);
 		uburma_log_err("query jfs failed, ret:%d.\n", ret);
 		return ret;
 	}
@@ -540,7 +531,7 @@ static int uburma_cmd_query_jfs(struct ubcore_device *ubc_dev,
 
 	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct uburma_cmd_query_jfs));
-	uobj_put_write(uobj);
+	uobj_put_read(uobj);
 	return ret;
 }
 
@@ -571,11 +562,13 @@ static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err("delete jfs failed, ret:%d.\n", ret);
 		uobj_put(uobj);
+		uobj_put_del(uobj);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jfs_uobj->async_events_reported;
 	uobj_put(uobj);
+	uobj_put_del(uobj);
 	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 				   sizeof(struct uburma_cmd_delete_jfs));
 }
@@ -612,7 +605,7 @@ static int uburma_cmd_import_seg(struct ubcore_device *ubc_dev,
 	if (IS_ERR_OR_NULL(tseg)) {
 		uburma_log_err("import seg failed.\n");
 		uobj_alloc_abort(uobj);
-		return -EPERM;
+		return PTR_ERR(tseg);
 	}
 
 	uobj->object = tseg;
@@ -650,6 +643,7 @@ static int uburma_cmd_unimport_seg(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		uburma_log_err("unimport seg failed.\n");
 
+	uobj_put_del(uobj);
 	return ret;
 }
 
@@ -689,7 +683,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	cfg.jfr_context = jfr_uobj;
 
 	jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.jfc_handle, file);
-	if (IS_ERR(jfc_uobj)) {
+	if (IS_ERR_OR_NULL(jfc_uobj)) {
 		uburma_log_err("failed to find jfc, jfc_handle:%llu.\n", arg.in.jfc_handle);
 		ret = -EINVAL;
 		goto err_alloc_abort;
@@ -699,7 +693,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	jfr = ubcore_create_jfr(ubc_dev, &cfg, uburma_jfr_event_cb, &udata);
 	if (IS_ERR_OR_NULL(jfr)) {
 		uburma_log_err("create jfr or get jfr_id failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(jfr);
 		goto err_put_jfc;
 	}
 	jfr_uobj->uobj.object = jfr;
@@ -710,7 +704,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		goto err_delete_jfr;
 
-	arg.out.id = jfr->id;
+	arg.out.id = jfr->jfr_id.id;
 	arg.out.depth = jfr->jfr_cfg.depth;
 	arg.out.max_sge = jfr->jfr_cfg.max_sge;
 	arg.out.handle = jfr_uobj->uobj.id;
@@ -790,8 +784,8 @@ static int uburma_cmd_query_jfr(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		return ret;
 
-	uobj = uobj_get_write(UOBJ_CLASS_JFR, arg.in.handle, file);
-	if (IS_ERR(uobj)) {
+	uobj = uobj_get_read(UOBJ_CLASS_JFR, arg.in.handle, file);
+	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jfr.\n");
 		return -EINVAL;
 	}
@@ -799,7 +793,7 @@ static int uburma_cmd_query_jfr(struct ubcore_device *ubc_dev,
 	jfr = (struct ubcore_jfr *)uobj->object;
 	ret = ubcore_query_jfr(jfr, &cfg, &attr);
 	if (ret != 0) {
-		uobj_put_write(uobj);
+		uobj_put_read(uobj);
 		uburma_log_err("query jfr failed, ret:%d.\n", ret);
 		return ret;
 	}
@@ -817,7 +811,7 @@ static int uburma_cmd_query_jfr(struct ubcore_device *ubc_dev,
 
 	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct unurma_cmd_query_jfr));
-	uobj_put_write(uobj);
+	uobj_put_read(uobj);
 	return ret;
 }
 
@@ -848,11 +842,13 @@ static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
 		uobj_put(uobj);
+		uobj_put_del(uobj);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jfr_uobj->async_events_reported;
 	uobj_put(uobj);
+	uobj_put_del(uobj);
 	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 				   sizeof(struct uburma_cmd_delete_jfr));
 }
@@ -901,7 +897,7 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 	jfc = ubcore_create_jfc(ubc_dev, &cfg, uburma_jfce_handler, uburma_jfc_event_cb, &udata);
 	if (IS_ERR_OR_NULL(jfc)) {
 		uburma_log_err("create jfc or get jfc_id failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(jfc);
 		goto err_alloc_abort;
 	}
 
@@ -1004,12 +1000,14 @@ static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err("delete jfc failed, ret:%d.\n", ret);
 		uobj_put(uobj);
+		uobj_put_del(uobj);
 		return ret;
 	}
 
 	arg.out.comp_events_reported = jfc_uobj->comp_events_reported;
 	arg.out.async_events_reported = jfc_uobj->async_events_reported;
 	uobj_put(uobj);
+	uobj_put_del(uobj);
 	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 				   sizeof(struct uburma_cmd_delete_jfc));
 }
@@ -1024,6 +1022,10 @@ static void fill_create_jetty_attr(struct ubcore_jetty_cfg *cfg,
 	cfg->flag.bs.lock_free = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.lock_free;
 	cfg->flag.bs.error_suspend = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.error_suspend;
 	cfg->flag.bs.outorder_comp = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.outorder_comp;
+	cfg->flag.bs.sub_trans_mode = ((union ubcore_jfs_flag)arg->in.jfs_flag).bs.sub_trans_mode;
+	// see urma_jfs_flag
+	cfg->flag.bs.rc_share_tp = (arg->in.jfs_flag &
+		(0x1 << UBURMA_CREATE_JETTY_ARG_IN_RC_SHARE_TP_SHIFT)) > 0 ? 1 : 0;
 
 	cfg->max_send_sge = arg->in.max_send_sge;
 	cfg->max_send_rsge = arg->in.max_send_rsge;
@@ -1039,7 +1041,7 @@ static void fill_create_jetty_attr(struct ubcore_jetty_cfg *cfg,
 static void fill_create_jetty_out(struct uburma_cmd_create_jetty *arg,
 	struct ubcore_jetty *jetty)
 {
-	arg->out.id = jetty->id;
+	arg->out.id = jetty->jetty_id.id;
 	arg->out.jfs_depth = jetty->jetty_cfg.jfs_depth;
 	arg->out.jfr_depth = jetty->jetty_cfg.jfr_depth;
 	arg->out.max_send_sge = jetty->jetty_cfg.max_send_sge;
@@ -1080,7 +1082,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	cfg.eid_index = file->ucontext->eid_index;
 	send_jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.send_jfc_handle, file);
 	recv_jfc_uobj = uobj_get_read(UOBJ_CLASS_JFC, arg.in.recv_jfc_handle, file);
-	if (IS_ERR(send_jfc_uobj) || IS_ERR(recv_jfc_uobj)) {
+	if (IS_ERR_OR_NULL(send_jfc_uobj) || IS_ERR_OR_NULL(recv_jfc_uobj)) {
 		uburma_log_err("failed to find send %llu or recv jfc %llu.\n",
 			       arg.in.send_jfc_handle, arg.in.recv_jfc_handle);
 		ret = -EINVAL;
@@ -1090,7 +1092,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	cfg.recv_jfc = recv_jfc_uobj->object;
 	if (arg.in.jfr_handle != 0) {
 		jfr_uobj = uobj_get_read(UOBJ_CLASS_JFR, arg.in.jfr_handle, file);
-		if (IS_ERR(jfr_uobj)) {
+		if (IS_ERR_OR_NULL(jfr_uobj)) {
 			uburma_log_err("failed to find jfr, jfr_handle:%llu.\n", arg.in.jfr_handle);
 			ret = -EINVAL;
 			goto err_put;
@@ -1100,7 +1102,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	}
 	if (arg.in.is_jetty_grp != 0) {
 		jetty_grp_uobj = uobj_get_read(UOBJ_CLASS_JETTY_GRP, arg.in.jetty_grp_handle, file);
-		if (IS_ERR(jetty_grp_uobj)) {
+		if (IS_ERR_OR_NULL(jetty_grp_uobj)) {
 			uburma_log_err("failed to find jetty_grp, jetty_grp_handle:%llu.\n",
 				arg.in.jetty_grp_handle);
 			ret = -EINVAL;
@@ -1114,7 +1116,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	jetty = ubcore_create_jetty(ubc_dev, &cfg, uburma_jetty_event_cb, &udata);
 	if (IS_ERR_OR_NULL(jetty)) {
 		uburma_log_err("create jetty or get jetty_id failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(jetty);
 		goto err_put;
 	}
 
@@ -1214,8 +1216,8 @@ static int uburma_cmd_query_jetty(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		return ret;
 
-	uobj = uobj_get_write(UOBJ_CLASS_JETTY, arg.in.handle, file);
-	if (IS_ERR(uobj)) {
+	uobj = uobj_get_read(UOBJ_CLASS_JETTY, arg.in.handle, file);
+	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jetty.\n");
 		return -EINVAL;
 	}
@@ -1223,7 +1225,7 @@ static int uburma_cmd_query_jetty(struct ubcore_device *ubc_dev,
 	jetty = (struct ubcore_jetty *)uobj->object;
 	ret = ubcore_query_jetty(jetty, &cfg, &attr);
 	if (ret != 0) {
-		uobj_put_write(uobj);
+		uobj_put_read(uobj);
 		uburma_log_err("query jetty failed, ret:%d.\n", ret);
 		return ret;
 	}
@@ -1254,7 +1256,7 @@ static int uburma_cmd_query_jetty(struct ubcore_device *ubc_dev,
 	arg.out.state = (uint32_t)attr.state;
 	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct uburma_cmd_query_jetty));
-	uobj_put_write(uobj);
+	uobj_put_read(uobj);
 	return ret;
 }
 
@@ -1285,11 +1287,13 @@ static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err("delete jetty failed, ret:%d.\n", ret);
 		uobj_put(uobj);
+		uobj_put_del(uobj);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jetty_uobj->async_events_reported;
 	uobj_put(uobj);
+	uobj_put_del(uobj);
 	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 				   sizeof(struct uburma_cmd_delete_jetty));
 }
@@ -1349,6 +1353,7 @@ static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev,
 
 	(void)memcpy(cfg.id.eid.raw, arg.in.eid, UBCORE_EID_SIZE);
 	cfg.id.id = arg.in.id;
+	cfg.flag.value = arg.in.flag;
 	cfg.token_value.token = arg.in.token;
 	cfg.trans_mode = arg.in.trans_mode;
 	cfg.eid_index = file->ucontext->eid_index;
@@ -1358,7 +1363,7 @@ static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev,
 	if (IS_ERR_OR_NULL(tjfr)) {
 		uburma_log_err("ubcore_import_jfr failed.\n");
 		uobj_alloc_abort(uobj);
-		return -EPERM;
+		return PTR_ERR(tjfr);
 	}
 
 	uobj->object = tjfr;
@@ -1401,6 +1406,8 @@ static int uburma_cmd_unimport_jfr(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0)
 		uburma_log_err("ubcore_unimport_jfr failed.\n");
+
+	uobj_put_del(uobj);
 	return ret;
 }
 
@@ -1429,6 +1436,7 @@ static int uburma_cmd_import_jetty(struct ubcore_device *ubc_dev,
 	cfg.id.id = arg.in.id;
 	cfg.token_value.token = arg.in.token;
 	cfg.trans_mode = (enum ubcore_transport_mode)arg.in.trans_mode;
+	cfg.flag.value = arg.in.flag;
 	cfg.policy = (enum ubcore_jetty_grp_policy)arg.in.policy;
 	cfg.type = (enum ubcore_target_type)arg.in.type;
 	cfg.eid_index = file->ucontext->eid_index;
@@ -1438,7 +1446,7 @@ static int uburma_cmd_import_jetty(struct ubcore_device *ubc_dev,
 	if (IS_ERR_OR_NULL(tjetty)) {
 		uburma_log_err("ubcore_import_jetty failed.\n");
 		uobj_alloc_abort(uobj);
-		return -EPERM;
+		return PTR_ERR(tjetty);
 	}
 
 	uobj->object = tjetty;
@@ -1481,6 +1489,8 @@ static int uburma_cmd_unimport_jetty(struct ubcore_device *ubc_dev,
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0)
 		uburma_log_err("ubcore_unimport_jetty failed.\n");
+
+	uobj_put_del(uobj);
 	return ret;
 }
 
@@ -1488,13 +1498,13 @@ static int uburma_get_jetty_tjetty_objs(struct uburma_file *file, uint64_t jetty
 	uint64_t tjetty_handle, struct uburma_uobj **jetty_uobj, struct uburma_uobj **tjetty_uobj)
 {
 	*jetty_uobj = uobj_get_read(UOBJ_CLASS_JETTY, jetty_handle, file);
-	if (IS_ERR(*jetty_uobj)) {
+	if (IS_ERR_OR_NULL(*jetty_uobj)) {
 		uburma_log_err("failed to find jetty with handle %llu", jetty_handle);
 		return -EINVAL;
 	}
 
 	*tjetty_uobj = uobj_get_read(UOBJ_CLASS_TARGET_JETTY, tjetty_handle, file);
-	if (IS_ERR(*tjetty_uobj)) {
+	if (IS_ERR_OR_NULL(*tjetty_uobj)) {
 		uobj_put_read(*jetty_uobj);
 		uburma_log_err("failed to find target jetty with handle %llu", tjetty_handle);
 		return -EINVAL;
@@ -1514,13 +1524,13 @@ static int uburma_get_jfs_tjfr_objs(struct uburma_file *file, uint64_t jetty_han
 	struct uburma_uobj **tjetty_uobj)
 {
 	*jetty_uobj = uobj_get_read(UOBJ_CLASS_JFS, jetty_handle, file);
-	if (IS_ERR(*jetty_uobj)) {
+	if (IS_ERR_OR_NULL(*jetty_uobj)) {
 		uburma_log_err("failed to find jfs with handle %llu", jetty_handle);
 		return -EINVAL;
 	}
 
 	*tjetty_uobj = uobj_get_read(UOBJ_CLASS_TARGET_JFR, tjetty_handle, file);
-	if (IS_ERR(*tjetty_uobj)) {
+	if (IS_ERR_OR_NULL(*tjetty_uobj)) {
 		uobj_put_read(*jetty_uobj);
 		uburma_log_err("failed to find target jfr with handle %llu", tjetty_handle);
 		return -EINVAL;
@@ -1733,9 +1743,12 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 		return ret;
 
 	(void)memcpy(cfg.name, arg.in.name, UBCORE_JETTY_GRP_MAX_NAME);
+	cfg.name[UBCORE_JETTY_GRP_MAX_NAME - 1] = '\0';
+
 	cfg.token_value.token = arg.in.token;
 	cfg.id = arg.in.id;
 	cfg.policy = (enum ubcore_jetty_grp_policy)arg.in.policy;
+	cfg.flag.value = arg.in.flag;
 	cfg.eid_index = file->ucontext->eid_index;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
@@ -1751,7 +1764,7 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 	jetty_grp = ubcore_create_jetty_grp(ubc_dev, &cfg, uburma_jetty_grp_event_cb, &udata);
 	if (IS_ERR_OR_NULL(jetty_grp)) {
 		uburma_log_err("create jetty_grp failed.\n");
-		ret = -EPERM;
+		ret = PTR_ERR(jetty_grp);
 		goto err_alloc_abort;
 	}
 	jetty_grp_uobj->uobj.object = jetty_grp;
@@ -1762,7 +1775,7 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		goto err_delete_jetty_grp;
 
-	arg.out.id = jetty_grp->id;
+	arg.out.id = jetty_grp->jetty_grp_id.id;
 	arg.out.handle = jetty_grp_uobj->uobj.id;
 
 	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
@@ -1770,7 +1783,7 @@ static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
 	if (ret != 0)
 		goto err_put_jfae;
 
-	(void)uobj_alloc_commit(&jetty_grp_uobj->uobj);
+	uobj_alloc_commit(&jetty_grp_uobj->uobj);
 	return ret;
 
 err_put_jfae:
@@ -1808,11 +1821,13 @@ static int uburma_cmd_delete_jetty_grp(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
 		uobj_put(uobj);
+		uobj_put_del(uobj);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jetty_grp_uobj->async_events_reported;
 	uobj_put(uobj);
+	uobj_put_del(uobj);
 	return uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg,
 		sizeof(struct uburma_cmd_delete_jetty_grp));
 }
@@ -1841,6 +1856,61 @@ static int uburma_fill_user_ctl_info(struct ubcore_ucontext *ctx,
 	return 0;
 }
 
+static int uburma_fill_eid_list(struct ubcore_device *dev,
+	struct uburma_cmd_get_eid_list *eid_list)
+{
+	struct ubcore_eid_entry *e;
+	uint32_t max_eid_cnt = 0;
+	uint32_t eid_cnt = 0;
+	int i;
+
+	spin_lock(&dev->eid_table.lock);
+	if (dev->eid_table.eid_entries == NULL) {
+		spin_unlock(&dev->eid_table.lock);
+		return -EINVAL;
+	}
+
+	max_eid_cnt = min(dev->eid_table.eid_cnt, eid_list->in.max_eid_cnt);
+	for (i = 0; i < max_eid_cnt; i++) {
+		e = &dev->eid_table.eid_entries[i];
+		if (!e->valid || !net_eq(e->net, current->nsproxy->net_ns))
+			continue;
+
+		eid_list->out.eid_list[eid_cnt].eid_index = e->eid_index;
+		eid_list->out.eid_list[eid_cnt].eid = e->eid;
+		eid_cnt++;
+	}
+	eid_list->out.eid_cnt = eid_cnt;
+	spin_unlock(&dev->eid_table.lock);
+	return 0;
+}
+
+static int uburma_cmd_get_eid_list(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_get_eid_list *args;
+	int ret;
+
+	args = kcalloc(1, sizeof(struct uburma_cmd_get_eid_list), GFP_KERNEL);
+	if (args == NULL)
+		return -ENOMEM;
+
+	ret = uburma_copy_from_user(args, (void __user *)(uintptr_t)hdr->args_addr,
+				    sizeof(struct uburma_cmd_get_eid_list));
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_fill_eid_list(ubc_dev, args);
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, args,
+		sizeof(struct uburma_cmd_get_eid_list));
+out:
+	kfree(args);
+	return ret;
+}
+
 static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev,
 	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
 {
@@ -1864,13 +1934,213 @@ static int uburma_cmd_user_ctl(struct ubcore_device *ubc_dev,
 	return 0;
 }
 
+static int uburma_fill_net_addr_list(struct ubcore_device *dev,
+	struct uburma_cmd_get_net_addr_list *netaddr_list)
+{
+	struct uburma_cmd_net_addr_info *netaddr_info;
+	struct ubcore_sip_info *entry;
+	uint32_t max_netaddr_cnt;
+	uint32_t netaddr_cnt = 0;
+	uint64_t len;
+	int i;
+
+	max_netaddr_cnt = min(dev->sip_table.max_sip_cnt,
+		netaddr_list->in.max_netaddr_cnt);
+	len = max_netaddr_cnt * sizeof(struct uburma_cmd_net_addr_info);
+	netaddr_info = kcalloc(1, len, GFP_KERNEL);
+	if (netaddr_info == NULL)
+		return -ENOMEM;
+
+	mutex_lock(&dev->sip_table.lock);
+	if (dev->sip_table.entry == NULL) {
+		mutex_unlock(&dev->sip_table.lock);
+		kfree(netaddr_info);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < max_netaddr_cnt; i++) {
+		entry = &dev->sip_table.entry[i];
+		if (entry->is_active) {
+			netaddr_info[netaddr_cnt].netaddr = entry->addr;
+			netaddr_info[netaddr_cnt].index = i;
+			netaddr_cnt++;
+		}
+	}
+	mutex_unlock(&dev->sip_table.lock);
+
+	netaddr_list->out.netaddr_cnt = netaddr_cnt;
+	netaddr_list->out.len = len;
+	if (uburma_copy_to_user((void __user *)
+		(uintptr_t)netaddr_list->out.addr, netaddr_info,
+		(unsigned long)len) != 0) {
+		kfree(netaddr_info);
+		return -1;
+	}
+
+	kfree(netaddr_info);
+	return 0;
+}
+
+static int uburma_cmd_get_net_addr_list(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_get_net_addr_list *args;
+	int ret;
+
+	args = kcalloc(1, sizeof(struct uburma_cmd_get_net_addr_list), GFP_KERNEL);
+	if (args == NULL)
+		return -ENOMEM;
+
+	ret = uburma_copy_from_user(args, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct uburma_cmd_get_net_addr_list));
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_fill_net_addr_list(ubc_dev, args);
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_copy_to_user((void __user *)(uintptr_t)hdr->args_addr, args,
+		sizeof(struct uburma_cmd_get_net_addr_list));
+out:
+	kfree(args);
+	return ret;
+}
+
+static void uburma_fill_tp_cfg(struct uburma_cmd_user_tp_cfg *cmd_tp_cfg,
+	struct ubcore_tp_cfg *tp_cfg)
+{
+	/* Attention: ubcore_tp_cfg_flag is different with uburma_cmd_tp_cfg_flag */
+	/* so we cannot fill by value */
+	tp_cfg->flag.bs.target = cmd_tp_cfg->flag.bs.target;
+	tp_cfg->flag.bs.loopback = cmd_tp_cfg->flag.bs.loopback;
+	tp_cfg->flag.bs.dca_enable = cmd_tp_cfg->flag.bs.dca_enable;
+	tp_cfg->flag.bs.bonding = cmd_tp_cfg->flag.bs.bonding;
+
+	tp_cfg->trans_mode = cmd_tp_cfg->trans_mode;
+	tp_cfg->retry_num = cmd_tp_cfg->retry_num;
+	tp_cfg->retry_factor = cmd_tp_cfg->retry_factor;
+	tp_cfg->ack_timeout = cmd_tp_cfg->ack_timeout;
+	tp_cfg->dscp = cmd_tp_cfg->dscp;
+	tp_cfg->oor_cnt = cmd_tp_cfg->oor_cnt;
+}
+
+static void uburma_fill_peer_net_addr(struct uburma_cmd_net_addr *cmd_net_addr,
+	struct ubcore_net_addr *net_addr)
+{
+	if (cmd_net_addr->sin_family == AF_INET) {
+		net_addr->type = UBCORE_NET_ADDR_TYPE_IPV4;
+		net_addr->net_addr.in4.addr = cmd_net_addr->in4.s_addr;
+	} else if (cmd_net_addr->sin_family == AF_INET6) {
+		net_addr->type = UBCORE_NET_ADDR_TYPE_IPV6;
+		(void)memcpy(net_addr->net_addr.raw, &cmd_net_addr->in6, sizeof(struct in6_addr));
+	}
+
+	net_addr->vlan = cmd_net_addr->vlan;
+	(void)memcpy(net_addr->mac, cmd_net_addr->mac, UBCORE_MAC_BYTES);
+	net_addr->prefix_len = cmd_net_addr->prefix_len;
+}
+
+static void uburma_fill_tp_attr(struct uburma_cmd_tp_attr *cmd_attr,
+	struct ubcore_tp_attr *attr)
+{
+	attr->flag.value = cmd_attr->flag.value;
+	attr->peer_tpn = cmd_attr->peer_tpn;
+	attr->state = cmd_attr->state;
+	attr->tx_psn = cmd_attr->tx_psn;
+	attr->rx_psn = cmd_attr->rx_psn;
+	attr->mtu = cmd_attr->mtu;
+	attr->cc_pattern_idx = cmd_attr->cc_pattern_idx;
+	attr->oos_cnt = cmd_attr->oos_cnt;
+	attr->local_net_addr_idx = cmd_attr->local_net_addr_idx;
+	uburma_fill_peer_net_addr(&cmd_attr->peer_net_addr, &attr->peer_net_addr);
+	attr->data_udp_start = cmd_attr->data_udp_start;
+	attr->ack_udp_start = cmd_attr->ack_udp_start;
+	attr->udp_range = cmd_attr->udp_range;
+	attr->hop_limit = cmd_attr->hop_limit;
+	attr->flow_label = cmd_attr->flow_label;
+	attr->port_id = cmd_attr->port_id;
+	attr->mn = cmd_attr->mn;
+	attr->peer_trans_type = cmd_attr->peer_trans_type;
+}
+
+/* Attention: cmd_mask is different with mask, so we cannot fill by value */
+static void uburma_fill_tp_attr_mask(union uburma_cmd_tp_attr_mask *cmd_mask,
+	union ubcore_tp_attr_mask *mask)
+{
+	mask->bs.flag = cmd_mask->bs.flag;
+	mask->bs.peer_tpn = cmd_mask->bs.peer_tpn;
+	mask->bs.state = cmd_mask->bs.state;
+	mask->bs.tx_psn = cmd_mask->bs.tx_psn;
+	mask->bs.rx_psn = cmd_mask->bs.rx_psn;
+	mask->bs.mtu = cmd_mask->bs.mtu;
+	mask->bs.cc_pattern_idx = cmd_mask->bs.cc_pattern_idx;
+	mask->bs.oos_cnt = cmd_mask->bs.oos_cnt;
+	mask->bs.local_net_addr_idx = cmd_mask->bs.local_net_addr_idx;
+	mask->bs.peer_net_addr = cmd_mask->bs.peer_net_addr;
+	mask->bs.data_udp_start = cmd_mask->bs.data_udp_start;
+	mask->bs.ack_udp_start = cmd_mask->bs.ack_udp_start;
+	mask->bs.udp_range = cmd_mask->bs.udp_range;
+	mask->bs.hop_limit = cmd_mask->bs.hop_limit;
+	mask->bs.flow_label = cmd_mask->bs.flow_label;
+	mask->bs.port_id = cmd_mask->bs.port_id;
+	mask->bs.mn = cmd_mask->bs.mn;
+	mask->bs.peer_trans_type = cmd_mask->bs.peer_trans_type;
+}
+
+static int uburma_modify_user_tp(struct ubcore_device *ubc_dev,
+	struct uburma_cmd_modify_tp *args)
+{
+	union ubcore_tp_attr_mask mask = {0};
+	struct ubcore_tp_cfg tp_cfg = {0};
+	struct ubcore_tp_attr attr = {0};
+	int ret;
+
+	if (ubc_dev == NULL || ubc_dev->ops == NULL || ubc_dev->ops->modify_user_tp == NULL) {
+		uburma_log_err("Invalid parameter.\n");
+		return -1;
+	}
+
+	uburma_fill_tp_cfg(&args->in.tp_cfg, &tp_cfg);
+	uburma_fill_tp_attr(&args->in.attr, &attr);
+	uburma_fill_tp_attr_mask(&args->in.mask, &mask);
+
+	ret = ubc_dev->ops->modify_user_tp(ubc_dev, args->in.tpn, &tp_cfg, &attr, mask);
+	if (ret != 0)
+		uburma_log_err("Failed to modify user tp, ret: %d.\n", ret);
+
+	return ret;
+}
+
+static int uburma_cmd_modify_tp(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_modify_tp *args;
+	int ret;
+
+	args = kcalloc(1, sizeof(struct uburma_cmd_modify_tp), GFP_KERNEL);
+	if (args == NULL)
+		return -ENOMEM;
+
+	ret = uburma_copy_from_user(args, (void __user *)(uintptr_t)hdr->args_addr,
+		sizeof(struct uburma_cmd_modify_tp));
+	if (ret != 0)
+		goto out;
+
+	ret = uburma_modify_user_tp(ubc_dev, args);
+	if (ret != 0)
+		uburma_log_err("Failed to modify user tp, tpn: %u.\n", args->in.tpn);
+out:
+	kfree(args);
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev,
 	struct uburma_file *file, struct uburma_cmd_hdr *hdr);
 
 static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[0] = NULL,
 	[UBURMA_CMD_CREATE_CTX] = uburma_cmd_create_ctx,
-	[UBURMA_CMD_DESTROY_CTX] = uburma_cmd_destroy_ctx,
 	[UBURMA_CMD_ALLOC_TOKEN_ID] = uburma_cmd_alloc_token_id,
 	[UBURMA_CMD_FREE_TOKEN_ID] = uburma_cmd_free_token_id,
 	[UBURMA_CMD_REGISTER_SEG] = uburma_cmd_register_seg,
@@ -1905,13 +2175,16 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_UNBIND_JETTY] = uburma_cmd_unbind_jetty,
 	[UBURMA_CMD_CREATE_JETTY_GRP] = uburma_cmd_create_jetty_grp,
 	[UBURMA_CMD_DESTROY_JETTY_GRP] = uburma_cmd_delete_jetty_grp,
-	[UBURMA_CMD_USER_CTL] = uburma_cmd_user_ctl
+	[UBURMA_CMD_USER_CTL] = uburma_cmd_user_ctl,
+	[UBURMA_CMD_GET_EID_LIST] = uburma_cmd_get_eid_list,
+	[UBURMA_CMD_GET_NETADDR_LIST] = uburma_cmd_get_net_addr_list,
+	[UBURMA_CMD_MODIFY_TP] = uburma_cmd_modify_tp,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *file,
 			    struct uburma_cmd_hdr *hdr)
 {
-	if (hdr->command < UBURMA_CMD_CREATE_CTX || hdr->command > UBURMA_CMD_USER_CTL ||
+	if (hdr->command < UBURMA_CMD_CREATE_CTX || hdr->command >= UBURMA_CMD_MAX ||
 	    g_uburma_cmd_handlers[hdr->command] == NULL) {
 		uburma_log_err("bad uburma command: %d.\n", (int)hdr->command);
 		return -EINVAL;
@@ -1922,13 +2195,23 @@ static int uburma_cmd_parse(struct ubcore_device *ubc_dev, struct uburma_file *f
 long uburma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct uburma_cmd_hdr *user_hdr = (struct uburma_cmd_hdr *)arg;
-	struct uburma_file *file = filp->private_data;
-	struct uburma_device *ubu_dev = file->ubu_dev;
+	struct uburma_device *ubu_dev;
 	struct ubcore_device *ubc_dev;
 	struct uburma_cmd_hdr hdr;
+	struct uburma_file *file;
 	int srcu_idx;
 	long ret;
 
+	if (filp == NULL || filp->private_data == NULL) {
+		uburma_log_err("invalid param");
+		return -EINVAL;
+	}
+	file = filp->private_data;
+	ubu_dev = file->ubu_dev;
+	if (ubu_dev == NULL) {
+		uburma_log_err("invalid param");
+		return -EINVAL;
+	}
 	uburma_cmd_inc(ubu_dev);
 	srcu_idx = srcu_read_lock(&ubu_dev->ubc_dev_srcu);
 	ubc_dev = srcu_dereference(ubu_dev->ubc_dev, &ubu_dev->ubc_dev_srcu);
@@ -1941,7 +2224,8 @@ long uburma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	if (cmd == UBURMA_CMD) {
 		ret = (long)copy_from_user(&hdr, user_hdr, sizeof(struct uburma_cmd_hdr));
 		if ((ret != 0) || (hdr.args_len > UBURMA_CMD_MAX_ARGS_SIZE) ||
-		    (hdr.command > UBURMA_CMD_CREATE_CTX && file->ucontext == NULL)) {
+		    (hdr.command != UBURMA_CMD_CREATE_CTX &&
+			hdr.command != UBURMA_CMD_GET_EID_LIST && file->ucontext == NULL)) {
 			uburma_log_err(
 				"invalid input, hdr.command: %d, ret:%ld, hdr.args_len: %d\n",
 				hdr.command, ret, hdr.args_len);

@@ -116,12 +116,6 @@ struct dca_mem_enum_attr {
 	udma_dca_enum_callback enum_fn;
 };
 
-static inline uint64_t umem_cal_npages(uint64_t va, uint64_t len)
-{
-	return (ALIGN(va + len, UDMA_PAGE_SIZE) - ALIGN_DOWN(va, UDMA_PAGE_SIZE)) /
-	       UDMA_PAGE_SIZE;
-}
-
 static inline bool dca_page_is_attached(struct dca_page_state *state,
 					uint32_t buf_id)
 {

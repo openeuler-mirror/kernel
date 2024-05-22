@@ -23,12 +23,12 @@
 
 #include <urma/ubcore_types.h>
 
-enum ubcore_msg_resp_status {
-	UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND = -3,
-	UBCORE_MSG_RESP_IN_PROGRESS = -2,
-	UBCORE_MSG_RESP_FAIL = -1,
-	UBCORE_MSG_RESP_SUCCESS = 0
-};
+// Must be the same as TPSA_NL_RESP_XXX
+#define UBCORE_MSG_RESP_LIMIT_RATE (-EBUSY)
+#define UBCORE_MSG_RESP_RC_JETTY_ALREADY_BIND (-EEXIST)
+#define UBCORE_MSG_RESP_IN_PROGRESS (-EINPROGRESS)
+#define UBCORE_MSG_RESP_FAIL (-EPERM)
+#define UBCORE_MSG_RESP_SUCCESS 0
 
 typedef int (*ubcore_req_handler)(struct ubcore_device *dev, struct ubcore_req_host *req);
 typedef int (*ubcore_resp_handler)(struct ubcore_device *dev,
@@ -60,7 +60,7 @@ struct ubcore_msg_config_device_req {
 };
 
 struct ubcore_msg_config_device_resp {
-	enum ubcore_msg_resp_status ret;
+	int ret;
 	uint32_t rc_cnt;
 	uint32_t rc_depth;
 	uint32_t slice;                 /* TA slice size byte */
@@ -86,6 +86,18 @@ struct ubcore_msg_discover_eid_resp {
 	uint16_t fe_idx;
 };
 
+struct ubcore_msg_nego_ver_req {
+	uint32_t cap;
+	uint32_t version_num;
+	uint32_t versions[0];
+};
+
+struct ubcore_msg_nego_ver_resp {
+	int ret;
+	uint32_t cap;
+	uint32_t version;
+};
+
 struct ubcore_function_mig_req {
 	uint16_t mig_fe_idx;
 };
@@ -95,11 +107,44 @@ struct ubcore_function_mig_resp {
 	enum ubcore_mig_resp_status status;
 };
 
+struct ubcore_eid_update_info {
+	uint32_t pattern;
+	uint32_t eid_idx;
+	union ubcore_eid eid;
+	char dev_name[UBCORE_MAX_DEV_NAME];
+	bool upi_present;
+	uint32_t upi;
+};
+
+struct ubcore_update_net_addr_req {
+	enum ubcore_net_addr_op op;
+	bool sip_present;
+	struct ubcore_sip_info sip_info;
+	bool eid_present;
+	struct ubcore_eid_update_info eid_info;
+};
+
+struct ubcore_update_eid_req {
+	enum ubcore_net_addr_op op;
+	struct ubcore_eid_update_info eid_info;
+};
+
+struct ubcore_update_eid_ctx {
+	struct ubcore_device *dev;
+	struct ubcore_req *req_msg;
+	struct ubcore_msg_session *s;
+	struct net *net;
+	struct ubcore_resp_cb cb;
+	long start_ts;
+};
+
 int ubcore_send_req(struct ubcore_device *dev, struct ubcore_req *req);
 int ubcore_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *resp_host);
 /* caller should free memory of req after return */
 int ubcore_send_fe2tpf_msg(struct ubcore_device *dev, struct ubcore_req *req,
 	struct ubcore_resp_cb *cb);
 int ubcore_msg_discover_eid(struct ubcore_device *dev, uint32_t eid_index,
-	enum ubcore_msg_opcode op, struct net *net);
+	enum ubcore_msg_opcode op, struct net *net, struct ubcore_update_eid_ctx *ctx);
+void ubcore_destroy_msg_session(struct ubcore_msg_session *s);
+int ubcore_update_uvs_eid_ret(struct ubcore_update_eid_ctx *ctx);
 #endif

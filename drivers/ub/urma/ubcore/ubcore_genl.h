@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -11,19 +11,18 @@
  * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
  * for more details.
  *
- * Description: uburma main header
- * Author: Yan Fangfang
- * Create: 2023-12-12
+ * Description: define hash table ops
+ * Author: Zhao Yanchao
+ * Create: 2024-01-18
  * Note:
- * History: 2023-12-12: Create file
+ * History: 2024-01-18  Zhao Yanchao  Add base code
  */
 
-#ifndef UBURMA_MAIN_H
-#define UBURMA_MAIN_H
+#ifndef UBCORE_GENL_H
+#define UBCORE_GENL_H
 
-#include "uburma_types.h"
+#include "urma/ubcore_types.h"
+int ubcore_genl_init(void) __init;
+void ubcore_genl_exit(void);
 
-int uburma_set_ns_mode(bool shared);
-int uburma_set_dev_ns(char *device_name, int ns_fd);
-bool uburma_dev_accessible_by_ns(struct uburma_device *ubu_dev, struct net *net);
 #endif

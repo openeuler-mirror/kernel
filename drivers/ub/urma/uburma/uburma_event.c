@@ -52,7 +52,7 @@ struct uburma_jfce_uobj *uburma_get_jfce_uobj(int fd, struct uburma_file *ufile)
 		return ERR_PTR(-ENOENT);
 
 	uobj = uobj_get_read(UOBJ_CLASS_JFCE, fd, ufile);
-	if (IS_ERR(uobj)) {
+	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("get jfce uobj fail with fd %d\n", fd);
 		return (void *)uobj;
 	}
@@ -86,6 +86,8 @@ void uburma_write_event(struct uburma_jfe *jfe, uint64_t event_data, uint32_t ev
 	list_add_tail(&event->node, &jfe->event_list);
 	if (obj_event_list)
 		list_add_tail(&event->obj_node, obj_event_list);
+	if (jfe->async_queue)
+		kill_fasync(&jfe->async_queue, SIGIO, POLL_IN);
 	spin_unlock_irqrestore(&jfe->lock, flags);
 	wake_up_interruptible(&jfe->poll_wait);
 }
@@ -133,7 +135,10 @@ static int uburma_delete_jfce(struct inode *inode, struct file *filp)
 		return 0;
 
 	ufile = uobj->ufile;
-	mutex_lock(&ufile->mutex);
+	/* If the deletion fails, the user process exits and cleans up the jfce uobj. */
+	if (mutex_trylock(&ufile->mutex) == 0)
+		return -ENOLCK;
+
 	uobj_get(uobj);
 	/* will call uburma_hot_unplug_jfce if clean up is not going on */
 	uburma_close_uobj_fd(filp);
@@ -326,11 +331,26 @@ static long uburma_jfce_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	return (long)ret;
 }
 
+static int uburma_jfce_fasync(int fd, struct file *filp, int on)
+{
+	int ret;
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfce_uobj *jfce = container_of(uobj, struct uburma_jfce_uobj, uobj);
+
+	if (uobj == NULL)
+		return -EINVAL;
+	spin_lock_irq(&jfce->jfe.lock);
+	ret = fasync_helper(fd, filp, on, &jfce->jfe.async_queue);
+	spin_unlock_irq(&jfce->jfe.lock);
+	return ret;
+}
+
 const struct file_operations uburma_jfce_fops = {
 	.owner = THIS_MODULE,
 	.poll = uburma_jfce_poll,
 	.release = uburma_delete_jfce,
 	.unlocked_ioctl = uburma_jfce_ioctl,
+	.fasync = uburma_jfce_fasync,
 };
 
 void uburma_init_jfe(struct uburma_jfe *jfe)
@@ -338,6 +358,7 @@ void uburma_init_jfe(struct uburma_jfe *jfe)
 	spin_lock_init(&jfe->lock);
 	INIT_LIST_HEAD(&jfe->event_list);
 	init_waitqueue_head(&jfe->poll_wait);
+	jfe->async_queue = NULL;
 }
 
 static int uburma_delete_jfae(struct inode *inode, struct file *filp)
@@ -350,7 +371,10 @@ static int uburma_delete_jfae(struct inode *inode, struct file *filp)
 		return 0;
 
 	ufile = uobj->ufile;
-	mutex_lock(&ufile->mutex);
+	/* If the deletion fails, the user process exits and cleans up the jfae uobj. */
+	if (mutex_trylock(&ufile->mutex) == 0)
+		return -ENOLCK;
+
 	uobj_get(uobj);
 	/* call uburma_hot_unplug_jfae when cleanup is not going on */
 	uburma_close_uobj_fd(filp);
@@ -429,11 +453,26 @@ static long uburma_jfae_ioctl(struct file *filp, unsigned int cmd, unsigned long
 	return (long)ret;
 }
 
+static int uburma_jfae_fasync(int fd, struct file *filp, int on)
+{
+	int ret;
+	struct uburma_uobj *uobj = filp->private_data;
+	struct uburma_jfae_uobj *jfae = container_of(uobj, struct uburma_jfae_uobj, uobj);
+
+	if (uobj == NULL)
+		return -EINVAL;
+	spin_lock_irq(&jfae->jfe.lock);
+	ret = fasync_helper(fd, filp, on, &jfae->jfe.async_queue);
+	spin_unlock_irq(&jfae->jfe.lock);
+	return ret;
+}
+
 const struct file_operations uburma_jfae_fops = {
 	.owner = THIS_MODULE,
 	.poll = uburma_jfae_poll,
 	.release = uburma_delete_jfae,
 	.unlocked_ioctl = uburma_jfae_ioctl,
+	.fasync = uburma_jfae_fasync,
 };
 
 static void uburma_async_event_callback(struct ubcore_event *event,

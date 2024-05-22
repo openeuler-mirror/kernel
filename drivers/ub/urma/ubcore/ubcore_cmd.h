@@ -35,17 +35,37 @@ struct ubcore_cmd_hdr {
 #define UBCORE_CMD_MAGIC 'C'
 #define UBCORE_CMD _IOWR(UBCORE_CMD_MAGIC, 1, struct ubcore_cmd_hdr)
 #define UBCORE_MAX_CMD_SIZE 8192
-#define UBCORE_CMD_EID_SIZE 16
-#define UBCORE_CMD_DEV_MAX 64
 
 /* only for ubcore device ioctl */
 enum ubcore_cmd {
-	UBCORE_CMD_SHOW_UTP = 1,
-	UBCORE_CMD_QUERY_STATS,
+	UBCORE_CMD_QUERY_STATS = 1,
 	UBCORE_CMD_QUERY_RES,
 	UBCORE_CMD_ADD_EID,
 	UBCORE_CMD_DEL_EID,
-	UBCORE_CMD_SET_EID_MODE
+	UBCORE_CMD_SET_EID_MODE,
+	UBCORE_CMD_SET_NS_MODE,
+	UBCORE_CMD_SET_DEV_NS,
+	UBCORE_CMD_SET_GENL_PID,
+	UBCORE_CMD_UVS_INIT_RES,
+	/* alpha netlink ops begin: */
+	UBCORE_CMD_QUERY_TP_REQ,
+	UBCORE_CMD_QUERY_TP_RESP,
+	UBCORE_CMD_RESTORE_TP_REQ,
+	UBCORE_CMD_RESTORE_TP_RESP,
+	/* alpha netlink ops end: */
+	UBCORE_CMD_FE2TPF_REQ,
+	UBCORE_CMD_TPF2FE_RESP,
+	UBCORE_CMD_ADD_SIP_REQ,
+	UBCORE_CMD_ADD_SIP_RESP,
+	UBCORE_CMD_DEL_SIP_REQ,
+	UBCORE_CMD_DEL_SIP_RESP,
+	UBCORE_CMD_TP_ERROR_REQ,
+	UBCORE_CMD_TP_SUSPEND_REQ,
+	UBCORE_CMD_MIGRATE_VTP_SWITCH,
+	UBCORE_CMD_MIGRATE_VTP_ROLLBACK,
+	UBCORE_CMD_UPDATE_TPF_DEV_INFO_REQ,
+	UBCORE_CMD_UPDATE_TPF_DEV_INFO_RESP,
+	UBCORE_CMD_MAX
 };
 
 struct ubcore_cmd_query_stats {
@@ -93,7 +113,7 @@ struct ubcore_cmd_show_utp {
 
 struct ubcore_cmd_update_ueid {
 	struct {
-		char dev_name[UBCORE_CMD_DEV_MAX];
+		char dev_name[UBCORE_MAX_DEV_NAME];
 		uint32_t eid_index;
 		int ns_fd;
 	} in;
@@ -101,7 +121,7 @@ struct ubcore_cmd_update_ueid {
 
 struct ubcore_cmd_set_eid_mode {
 	struct {
-		char dev_name[UBCORE_CMD_DEV_MAX];
+		char dev_name[UBCORE_MAX_DEV_NAME];
 		bool eid_mode;
 	} in;
 };

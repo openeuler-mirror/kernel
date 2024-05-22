@@ -21,8 +21,6 @@
 #ifndef UBURMA_TYPES_H
 #define UBURMA_TYPES_H
 
-#include <net/net_namespace.h>
-#include <net/netns/generic.h>
 #include <linux/types.h>
 #include <linux/srcu.h>
 #include <linux/kref.h>
@@ -59,34 +57,9 @@ struct uburma_file {
 
 	struct list_head list;
 	int is_closed;
-};
-
-struct uburma_port {
-	struct kobject kobj;
-	struct uburma_device *ubu_dev;
-	uint8_t port_num;
-};
-
-struct uburma_fe {
-	struct kobject kobj;
-	struct uburma_device *ubu_dev;
-	uint16_t fe_idx;
-};
-
-struct uburma_eid {
-	struct kobject kobj;
-	struct uburma_logic_device *ldev;
-	uint32_t eid_idx;
-};
-
-struct uburma_logic_device {
-	struct device *dev;
-	struct uburma_port port[UBCORE_MAX_PORT_CNT];
-	struct uburma_fe fe[UBCORE_MAX_FE_CNT];
-	struct uburma_eid *eid;
-	struct list_head node; /* add to ldev list */
-	possible_net_t net;
-	struct uburma_device *ubu_dev;
+	struct mutex umap_mutex;
+	struct list_head umaps_list;
+	struct page *fault_page;
 };
 
 struct uburma_device {
@@ -96,15 +69,17 @@ struct uburma_device {
 	struct completion cmddone; /* When cmdcnt becomes 0, cmddone will wake up */
 	unsigned int devnum;
 	struct cdev cdev;
-	struct uburma_logic_device ldev;
+	struct device *dev;
 	struct ubcore_device *__rcu ubc_dev;
 	struct srcu_struct ubc_dev_srcu;    /* protect ubc_dev */
 	struct kobject kobj;                /* when equal to 0 , free uburma_device. */
 	struct mutex lists_mutex;           /* protect lists */
 	struct list_head uburma_file_list;
-	struct list_head node; /* add to uburma_device_list */
-	struct mutex ldev_mutex;
-	struct list_head ldev_list;
+};
+
+struct uburma_umap_priv {
+	struct vm_area_struct *vma;
+	struct list_head node;
 };
 
 #endif /* UBURMA_TYPES_H */

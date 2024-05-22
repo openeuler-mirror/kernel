@@ -358,6 +358,280 @@ int udma_find_dfx_dev(struct udma_dev *udma_dev, int *num)
 	return -EINVAL;
 }
 
+static int udma_query_res_tp_list(struct udma_dev *udma_dev,
+				  struct ubcore_res_key *key,
+				  struct ubcore_res_val *val)
+{
+	struct ubcore_res_list_val *res_list = (struct ubcore_res_list_val *)val->addr;
+	struct tpn_list *tpn_now;
+	uint32_t *tp_list;
+	uint32_t tpn_cnt;
+	int ret;
+	int i;
+
+	res_list->cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+	tpn_cnt = g_udma_dfx_list[i].dfx->tpn_cnt;
+	if (tpn_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return 0;
+	}
+
+	tp_list = vmalloc(sizeof(*tp_list) * tpn_cnt);
+	if (!tp_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(tpn_now,
+			    &g_udma_dfx_list[i].dfx->tpn_list->node, node) {
+		tp_list[res_list->cnt] = tpn_now->tpn;
+		res_list->cnt++;
+	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_list->list = tp_list;
+
+	return 0;
+}
+
+static int udma_query_res_jfs_list(struct udma_dev *udma_dev,
+				   struct ubcore_res_key *key,
+				   struct ubcore_res_val *val)
+{
+	struct ubcore_res_list_val *res_list = (struct ubcore_res_list_val *)val->addr;
+	struct jfs_list *jfs_now;
+	uint32_t *jfs_list;
+	uint32_t jfs_cnt;
+	int ret;
+	int i;
+
+	res_list->cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+	jfs_cnt = g_udma_dfx_list[i].dfx->jfs_cnt;
+	if (jfs_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return 0;
+	}
+
+	jfs_list = vmalloc(sizeof(*jfs_list) * jfs_cnt);
+	if (!jfs_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(jfs_now,
+			    &g_udma_dfx_list[i].dfx->jfs_list->node, node) {
+		jfs_list[res_list->cnt] = jfs_now->jfs_id;
+		res_list->cnt++;
+	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_list->list = jfs_list;
+
+	return 0;
+}
+
+static int udma_query_res_jfr_list(struct udma_dev *udma_dev,
+				   struct ubcore_res_key *key,
+				   struct ubcore_res_val *val)
+{
+	struct ubcore_res_list_val *res_list = (struct ubcore_res_list_val *)val->addr;
+	struct jfr_list *jfr_now;
+	uint32_t *jfr_list;
+	uint32_t jfr_cnt;
+	int ret;
+	int i;
+
+	res_list->cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+	jfr_cnt = g_udma_dfx_list[i].dfx->jfr_cnt;
+	if (jfr_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return 0;
+	}
+
+	jfr_list = vmalloc(sizeof(*jfr_list) * jfr_cnt);
+	if (!jfr_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(jfr_now,
+			    &g_udma_dfx_list[i].dfx->jfr_list->node, node) {
+		jfr_list[res_list->cnt] = jfr_now->jfr_id;
+		res_list->cnt++;
+	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_list->list = jfr_list;
+
+	return 0;
+}
+
+static int udma_query_res_jetty_list(struct udma_dev *udma_dev,
+				     struct ubcore_res_key *key,
+				     struct ubcore_res_val *val)
+{
+	struct ubcore_res_list_val *res_list = (struct ubcore_res_list_val *)val->addr;
+	struct jetty_list *jetty_now;
+	uint32_t *jetty_list;
+	uint32_t jetty_cnt;
+	int ret;
+	int i;
+
+	res_list->cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+	jetty_cnt = g_udma_dfx_list[i].dfx->jetty_cnt;
+	if (jetty_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return 0;
+	}
+
+	jetty_list = vmalloc(sizeof(*jetty_list) * jetty_cnt);
+	if (!jetty_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(jetty_now,
+			    &g_udma_dfx_list[i].dfx->jetty_list->node, node) {
+		jetty_list[res_list->cnt] = jetty_now->jetty_id;
+		res_list->cnt++;
+	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_list->list = jetty_list;
+
+	return 0;
+}
+
+static int udma_query_res_jfc_list(struct udma_dev *udma_dev,
+				   struct ubcore_res_key *key,
+				   struct ubcore_res_val *val)
+{
+	struct ubcore_res_list_val *res_list = (struct ubcore_res_list_val *)val->addr;
+	struct jfc_list *jfc_now;
+	uint32_t *jfc_list;
+	uint32_t jfc_cnt;
+	int ret;
+	int i;
+
+	res_list->cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+	jfc_cnt = g_udma_dfx_list[i].dfx->jfc_cnt;
+	if (jfc_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return 0;
+	}
+
+	jfc_list = vmalloc(sizeof(*jfc_list) * jfc_cnt);
+	if (!jfc_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(jfc_now,
+			    &g_udma_dfx_list[i].dfx->jfc_list->node, node) {
+		jfc_list[res_list->cnt] = jfc_now->jfc_id;
+		res_list->cnt++;
+	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_list->list = jfc_list;
+
+	return 0;
+}
+
+static int udma_query_res_seg_list(struct udma_dev *udma_dev,
+				  struct ubcore_res_key *key,
+				  struct ubcore_res_val *val)
+{
+	struct ubcore_res_seg_val *res_list = (struct ubcore_res_seg_val *)val->addr;
+	struct ubcore_seg_info *seg_list;
+	struct seg_list *seg_now;
+	uint32_t seg_cnt;
+	int ret;
+	int i;
+
+	res_list->seg_cnt = 0;
+
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+	seg_cnt = g_udma_dfx_list[i].dfx->seg_cnt;
+	if (seg_cnt == 0) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return 0;
+	}
+
+	seg_list = vmalloc(sizeof(*seg_list) * seg_cnt);
+	if (!seg_list) {
+		spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+		read_unlock(&g_udma_dfx_list[i].rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(seg_now,
+			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
+		memcpy(&seg_list[res_list->seg_cnt].ubva.eid, &seg_now->eid,
+		       sizeof(union ubcore_eid));
+		seg_list[res_list->seg_cnt].ubva.va = seg_now->iova;
+		seg_list[res_list->seg_cnt].len = seg_now->len;
+		seg_list[res_list->seg_cnt].token_id = seg_now->key_id;
+		res_list->seg_cnt++;
+	}
+	spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_list->seg_list = seg_list;
+
+	return 0;
+}
+
 static enum ubcore_tp_state to_ubcore_tp_state(enum udma_qp_state state)
 {
 	switch (state) {
@@ -381,6 +655,9 @@ static int udma_query_res_tp(struct udma_dev *udma_dev,
 	struct ubcore_res_tp_val *tp = (struct ubcore_res_tp_val *)val->addr;
 	struct udma_qp_context qp_context;
 	int ret;
+
+	if (key->key_cnt == 0)
+		return udma_query_res_tp_list(udma_dev, key, val);
 
 	ret = udma_dfx_query_context(udma_dev, key->key, &qp_context,
 				     sizeof(qp_context), UDMA_CMD_QUERY_QPC);
@@ -414,6 +691,9 @@ static int udma_query_res_jfs(struct udma_dev *udma_dev,
 	struct jfs_list *jfs_now;
 	int ret;
 	int i;
+
+	if (key->key_cnt == 0)
+		return udma_query_res_jfs_list(udma_dev, key, val);
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
@@ -449,6 +729,9 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 	uint32_t srqn;
 	int ret;
 	int i;
+
+	if (key->key_cnt == 0)
+		return udma_query_res_jfr_list(udma_dev, key, val);
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
@@ -494,6 +777,9 @@ static int udma_query_res_jetty(struct udma_dev *udma_dev,
 	int ret;
 	int i;
 
+	if (key->key_cnt == 0)
+		return udma_query_res_jetty_list(udma_dev, key, val);
+
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
 		return ret;
@@ -527,6 +813,9 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 	struct udma_jfc_context jfc_context;
 	int ret;
 
+	if (key->key_cnt == 0)
+		return udma_query_res_jfc_list(udma_dev, key, val);
+
 	ret = udma_dfx_query_context(udma_dev, key->key, &jfc_context,
 				     sizeof(jfc_context), UDMA_CMD_QUERY_CQC);
 	if (ret) {
@@ -552,6 +841,9 @@ static int udma_query_res_seg(struct udma_dev *udma_dev, struct ubcore_res_key *
 	struct seg_list *seg_now;
 	union ubcore_eid eid;
 	int ret, i;
+
+	if (key->key_cnt == 0)
+		return udma_query_res_seg_list(udma_dev, key, val);
 
 	mpt_index = key_to_hw_index(key->key) & (udma_dev->caps.num_mtpts - 1);
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
@@ -598,319 +890,67 @@ static int udma_query_res_seg(struct udma_dev *udma_dev, struct ubcore_res_key *
 	return 0;
 }
 
-static int udma_query_res_dev_tp(struct udma_dev *udma_dev,
+static int udma_query_res_dev_ta(struct udma_dev *udma_dev,
 				 struct ubcore_res_key *key,
-				 struct ubcore_res_val *val, int i)
+				 struct ubcore_res_val *val)
 {
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct tpn_list *tpn_now;
-	uint32_t *tp_list;
-	uint32_t tpn_cnt;
-
-	dev->tp_cnt = 0;
-	if (!g_udma_dfx_list[i].dfx) {
-		dev_err(udma_dev->dev, "query res_dev_tp failed!\n");
-		return -EINVAL;
-	}
-
-	spin_lock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
-	tpn_cnt = g_udma_dfx_list[i].dfx->tpn_cnt;
-	if (tpn_cnt == 0) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
-		return 0;
-	}
-
-	tp_list = vmalloc(sizeof(*tp_list) * tpn_cnt);
-	if (!tp_list) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
-		return -ENOMEM;
-	}
-
-	list_for_each_entry(tpn_now,
-			    &g_udma_dfx_list[i].dfx->tpn_list->node, node) {
-		tp_list[dev->tp_cnt] = tpn_now->tpn;
-		dev->tp_cnt++;
-	}
-	spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
-
-	dev->tp_list = tp_list;
-
-	return 0;
-}
-
-static int udma_query_res_dev_jfs(struct udma_dev *udma_dev,
-				  struct ubcore_res_key *key,
-				  struct ubcore_res_val *val, int i)
-{
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct jfs_list *jfs_now;
-	uint32_t *jfs_list;
-	uint32_t jfs_cnt;
-
-	dev->jfs_cnt = 0;
-	if (!g_udma_dfx_list[i].dfx) {
-		dev_err(udma_dev->dev, "query res_dev_jfs failed!\n");
-		return -EINVAL;
-	}
-
-	spin_lock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
-	jfs_cnt = g_udma_dfx_list[i].dfx->jfs_cnt;
-	if (jfs_cnt == 0) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
-		return 0;
-	}
-
-	jfs_list = vmalloc(sizeof(*jfs_list) * jfs_cnt);
-	if (!jfs_list) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
-		return -ENOMEM;
-	}
-
-	list_for_each_entry(jfs_now,
-			    &g_udma_dfx_list[i].dfx->jfs_list->node, node) {
-		jfs_list[dev->jfs_cnt] = jfs_now->jfs_id;
-		dev->jfs_cnt++;
-	}
-	spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
-
-	dev->jfs_list = jfs_list;
-
-	return 0;
-}
-
-static int udma_query_res_dev_jfr(struct udma_dev *udma_dev,
-				  struct ubcore_res_key *key,
-				  struct ubcore_res_val *val, int i)
-{
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct jfr_list *jfr_now;
-	uint32_t *jfr_list;
-	uint32_t jfr_cnt;
-
-	dev->jfr_cnt = 0;
-	if (!g_udma_dfx_list[i].dfx) {
-		dev_err(udma_dev->dev, "query res_dev_jfr failed!\n");
-		return -EINVAL;
-	}
-
-	spin_lock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
-	jfr_cnt = g_udma_dfx_list[i].dfx->jfr_cnt;
-	if (jfr_cnt == 0) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
-		return 0;
-	}
-
-	jfr_list = vmalloc(sizeof(*jfr_list) * jfr_cnt);
-	if (!jfr_list) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
-		return -ENOMEM;
-	}
-
-	list_for_each_entry(jfr_now,
-			    &g_udma_dfx_list[i].dfx->jfr_list->node, node) {
-		jfr_list[dev->jfr_cnt] = jfr_now->jfr_id;
-		dev->jfr_cnt++;
-	}
-	spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
-
-	dev->jfr_list = jfr_list;
-
-	return 0;
-}
-
-static int udma_query_res_dev_jetty(struct udma_dev *udma_dev,
-				    struct ubcore_res_key *key,
-				    struct ubcore_res_val *val, int i)
-{
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct jetty_list *jetty_now;
-	uint32_t *jetty_list;
-	uint32_t jetty_cnt;
-
-	dev->jetty_cnt = 0;
-	if (!g_udma_dfx_list[i].dfx) {
-		dev_err(udma_dev->dev, "query res_dev_jetty failed!\n");
-		return -EINVAL;
-	}
-
-	spin_lock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
-	jetty_cnt = g_udma_dfx_list[i].dfx->jetty_cnt;
-	if (jetty_cnt == 0) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
-		return 0;
-	}
-
-	jetty_list = vmalloc(sizeof(*jetty_list) * jetty_cnt);
-	if (!jetty_list) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
-		return -ENOMEM;
-	}
-
-	list_for_each_entry(jetty_now,
-			    &g_udma_dfx_list[i].dfx->jetty_list->node, node) {
-		jetty_list[dev->jetty_cnt] = jetty_now->jetty_id;
-		dev->jetty_cnt++;
-	}
-	spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
-
-	dev->jetty_list = jetty_list;
-
-	return 0;
-}
-
-static int udma_query_res_dev_jfc(struct udma_dev *udma_dev,
-				  struct ubcore_res_key *key,
-				  struct ubcore_res_val *val, int i)
-{
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct jfc_list *jfc_now;
-	uint32_t *jfc_list;
-	uint32_t jfc_cnt;
-
-	dev->jfc_cnt = 0;
-	if (!g_udma_dfx_list[i].dfx) {
-		dev_err(udma_dev->dev, "query res_dev_jfc failed!\n");
-		return -EINVAL;
-	}
-
-	spin_lock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
-	jfc_cnt = g_udma_dfx_list[i].dfx->jfc_cnt;
-	if (jfc_cnt == 0) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
-		return 0;
-	}
-
-	jfc_list = vmalloc(sizeof(*jfc_list) * jfc_cnt);
-	if (!jfc_list) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
-		return -ENOMEM;
-	}
-
-	list_for_each_entry(jfc_now,
-			    &g_udma_dfx_list[i].dfx->jfc_list->node, node) {
-		jfc_list[dev->jfc_cnt] = jfc_now->jfc_id;
-		dev->jfc_cnt++;
-	}
-	spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
-
-	dev->jfc_list = jfc_list;
-
-	return 0;
-}
-
-static int udma_query_res_dev_seg(struct udma_dev *udma_dev,
-				  struct ubcore_res_key *key,
-				  struct ubcore_res_val *val, int i)
-{
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	struct ubcore_seg_info *seg_list;
-	struct seg_list *seg_now;
-	uint32_t seg_cnt;
-
-	dev->seg_cnt = 0;
-	if (!g_udma_dfx_list[i].dfx) {
-		dev_err(udma_dev->dev, "query res_dev_seg failed!\n");
-		return -EINVAL;
-	}
-
-	spin_lock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
-	seg_cnt = g_udma_dfx_list[i].dfx->seg_cnt;
-	if (seg_cnt == 0) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
-		return 0;
-	}
-
-	seg_list = vmalloc(sizeof(*seg_list) * seg_cnt);
-	if (!seg_list) {
-		spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
-		return -ENOMEM;
-	}
-
-	list_for_each_entry(seg_now,
-			    &g_udma_dfx_list[i].dfx->seg_list->node, node) {
-		memcpy(&seg_list[dev->seg_cnt].ubva.eid, &seg_now->eid,
-		       sizeof(union ubcore_eid));
-		seg_list[dev->seg_cnt].ubva.va = seg_now->iova;
-		seg_list[dev->seg_cnt].len = seg_now->len;
-		seg_list[dev->seg_cnt].token_id = seg_now->key_id;
-		dev->seg_cnt++;
-	}
-	spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
-
-	dev->seg_list = seg_list;
-
-	return 0;
-}
-
-static int udma_query_res_dev(struct udma_dev *udma_dev,
-			      struct ubcore_res_key *key,
-			      struct ubcore_res_val *val)
-{
-	struct ubcore_res_dev_val *dev = (struct ubcore_res_dev_val *)val->addr;
-	int ret, i;
-
-	if (val->len < sizeof(struct ubcore_res_dev_val)) {
-		dev_err(udma_dev->dev, "failed to check len, type: %u, val->len: %u.\n",
-			(uint32_t)key->type, val->len);
-		val->len = sizeof(struct ubcore_res_dev_val);
-		return -EINVAL;
-	}
+	struct ubcore_res_dev_ta_val *res_ta = (struct ubcore_res_dev_ta_val *)val->addr;
+	int ret;
+	int i;
 
 	ret = udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
 		return ret;
 
-	ret = udma_query_res_dev_tp(udma_dev, key, val, i);
-	if (ret)
-		goto err_query_res;
+	spin_lock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
+	res_ta->seg_cnt = g_udma_dfx_list[i].dfx->seg_cnt;
+	spin_unlock(&g_udma_dfx_list[i].dfx->seg_list->node_lock);
 
-	ret = udma_query_res_dev_jfs(udma_dev, key, val, i);
-	if (ret)
-		goto err_query_res;
+	spin_lock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
+	res_ta->jfs_cnt = g_udma_dfx_list[i].dfx->jfs_cnt;
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfs_list->node_lock);
 
-	ret = udma_query_res_dev_jfr(udma_dev, key, val, i);
-	if (ret)
-		goto err_query_res;
+	spin_lock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
+	res_ta->jfr_cnt = g_udma_dfx_list[i].dfx->jfr_cnt;
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfr_list->node_lock);
 
-	ret = udma_query_res_dev_jetty(udma_dev, key, val, i);
-	if (ret)
-		goto err_query_res;
+	spin_lock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
+	res_ta->jfc_cnt = g_udma_dfx_list[i].dfx->jfc_cnt;
+	spin_unlock(&g_udma_dfx_list[i].dfx->jfc_list->node_lock);
 
-	ret = udma_query_res_dev_jfc(udma_dev, key, val, i);
-	if (ret)
-		goto err_query_res;
+	spin_lock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
+	res_ta->jetty_cnt = g_udma_dfx_list[i].dfx->jetty_cnt;
+	spin_unlock(&g_udma_dfx_list[i].dfx->jetty_list->node_lock);
 
-	ret = udma_query_res_dev_seg(udma_dev, key, val, i);
-	if (ret)
-		goto err_query_res;
-
-	dev->tpg_cnt = 0;
-	dev->utp_cnt = 0;
-	dev->vtp_cnt = 0;
-	dev->jetty_group_cnt = 0;
-	dev->rc_cnt = 0;
-
-err_query_res:
 	read_unlock(&g_udma_dfx_list[i].rwlock);
 
-	return ret;
+	res_ta->jetty_group_cnt = 0;
+	res_ta->rc_cnt = 0;
+
+	return 0;
 }
 
-static int udma_check_key_type(struct udma_dev *udma_dev,
-			       struct ubcore_res_key *key)
+static int udma_query_res_dev_tp(struct udma_dev *udma_dev,
+				 struct ubcore_res_key *key,
+				 struct ubcore_res_val *val)
 {
-	bool ret;
+	struct ubcore_res_dev_tp_val *res_tp = (struct ubcore_res_dev_tp_val *)val->addr;
+	int ret;
+	int i;
 
-	ret = key->type < UBCORE_RES_KEY_UPI ||
-	      key->type > UBCORE_RES_KEY_URMA_DEV ||
-	      key->type == UBCORE_RES_KEY_UPI ||
-	      key->type == UBCORE_RES_KEY_TPG ||
-	      key->type == UBCORE_RES_KEY_UTP ||
-	      key->type == UBCORE_RES_KEY_JETTY_GROUP;
-	if (ret) {
-		dev_err(udma_dev->dev, "key type: %u invalid.\n", (uint32_t)key->type);
-		return -EINVAL;
-	}
+	ret = udma_find_dfx_dev(udma_dev, &i);
+	if (ret)
+		return ret;
+
+	spin_lock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+	res_tp->tp_cnt = g_udma_dfx_list[i].dfx->tpn_cnt;
+	spin_unlock(&g_udma_dfx_list[i].dfx->tpn_list->node_lock);
+
+	read_unlock(&g_udma_dfx_list[i].rwlock);
+
+	res_tp->vtp_cnt = 0;
+	res_tp->tpg_cnt = 0;
+	res_tp->utp_cnt = 0;
 
 	return 0;
 }
@@ -919,11 +959,6 @@ int udma_query_res(struct ubcore_device *dev,
 		   struct ubcore_res_key *key, struct ubcore_res_val *val)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
-	int ret;
-
-	ret = udma_check_key_type(udma_dev, key);
-	if (ret)
-		return ret;
 
 	switch (key->type) {
 	case UBCORE_RES_KEY_TP:
@@ -938,9 +973,12 @@ int udma_query_res(struct ubcore_device *dev,
 		return udma_query_res_jfc(udma_dev, key, val);
 	case UBCORE_RES_KEY_SEG:
 		return udma_query_res_seg(udma_dev, key, val);
-	case UBCORE_RES_KEY_URMA_DEV:
-		return udma_query_res_dev(udma_dev, key, val);
+	case UBCORE_RES_KEY_DEV_TA:
+		return udma_query_res_dev_ta(udma_dev, key, val);
+	case UBCORE_RES_KEY_DEV_TP:
+		return udma_query_res_dev_tp(udma_dev, key, val);
 	default:
+		dev_err(udma_dev->dev, "key type: %u invalid.\n", (uint32_t)key->type);
 		return -EINVAL;
 	}
 

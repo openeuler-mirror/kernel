@@ -24,6 +24,9 @@
 #include <linux/sched/signal.h>
 #include <linux/dma-mapping.h>
 #include <linux/version.h>
+#include <linux/scatterlist.h>
+#include <linux/count_zeros.h>
+#include <linux/log2.h>
 
 #include "ubcore_log.h"
 #include <urma/ubcore_types.h>
@@ -133,7 +136,7 @@ static int umem_verify_input(struct ubcore_device *ub_dev, uint64_t va, uint64_t
 {
 	if (ub_dev == NULL || ((va + len) < va) ||
 		PAGE_ALIGN(va + len) < (va + len)) {
-		ubcore_log_err("Invalid parameter, va: %llx, len: %llx.\n", va, len);
+		ubcore_log_err("Invalid parameter, va or len is invalid.\n");
 		return -EINVAL;
 	}
 	if (flag.bs.non_pin == 1) {
@@ -159,7 +162,7 @@ static int umem_dma_map(struct ubcore_umem *umem, uint64_t npages, unsigned long
 	return 0;
 }
 
-static void ubcore_fill_umem(struct ubcore_umem *umem, struct ubcore_device *dev, uint64_t va,
+static int ubcore_fill_umem(struct ubcore_umem *umem, struct ubcore_device *dev, uint64_t va,
 			     uint64_t len, union ubcore_umem_flag flag)
 {
 	umem->ub_dev = dev;
@@ -167,7 +170,12 @@ static void ubcore_fill_umem(struct ubcore_umem *umem, struct ubcore_device *dev
 	umem->length = len;
 	umem->flag = flag;
 	umem->owning_mm = current->mm;
+	if (!umem->owning_mm) {
+		ubcore_log_err("mm is null.\n");
+		return -EINVAL;
+	}
 	mmgrab(umem->owning_mm);
+	return 0;
 }
 
 static struct ubcore_umem *ubcore_get_target_umem(struct ubcore_device *dev, uint64_t va,
@@ -182,12 +190,17 @@ static struct ubcore_umem *ubcore_get_target_umem(struct ubcore_device *dev, uin
 	int ret = 0;
 
 	umem = kzalloc(sizeof(*umem), GFP_KERNEL);
-	if (umem == 0) {
+	if (umem == NULL) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	ubcore_fill_umem(umem, dev, va, len, flag);
+	ret = ubcore_fill_umem(umem, dev, va, len, flag);
+	if (ret != 0) {
+		kfree(umem);
+		goto out;
+	}
+
 	npages = umem_cal_npages(umem->va, umem->length);
 	if (npages == 0 || npages > UINT_MAX) {
 		ret = -EINVAL;
@@ -237,7 +250,7 @@ struct ubcore_umem *ubcore_umem_get(struct ubcore_device *dev, uint64_t va,
 		return ERR_PTR(ret);
 
 	page_list = (struct page **)__get_free_page(GFP_KERNEL);
-	if (page_list == 0)
+	if (page_list == NULL)
 		return ERR_PTR(-ENOMEM);
 
 	return ubcore_get_target_umem(dev, va, len, flag, page_list);
@@ -248,8 +261,16 @@ void ubcore_umem_release(struct ubcore_umem *umem)
 {
 	uint64_t npages;
 
-	if (IS_ERR_OR_NULL(umem))
+	if (IS_ERR_OR_NULL(umem) || umem->ub_dev == NULL || umem->owning_mm == NULL) {
+		ubcore_log_err("Invalid parameter.\n");
 		return;
+	}
+
+	if (((umem->va + umem->length) < umem->va) ||
+		PAGE_ALIGN(umem->va + umem->length) < (umem->va + umem->length)) {
+		ubcore_log_err("Invalid parameter, va or len is invalid.\n");
+		return;
+	}
 
 	npages = umem_cal_npages(umem->va, umem->length);
 	dma_unmap_sg(umem->ub_dev->dma_dev, umem->sg_head.sgl, (int)umem->nmap, DMA_BIDIRECTIONAL);
@@ -259,3 +280,37 @@ void ubcore_umem_release(struct ubcore_umem *umem)
 	kfree(umem);
 }
 EXPORT_SYMBOL(ubcore_umem_release);
+
+uint64_t ubcore_umem_find_best_page_size(struct ubcore_umem *umem, uint64_t page_size_bitmap,
+	uint64_t va)
+{
+	uint64_t tmp_ps_bitmap;
+	struct scatterlist *sg;
+	uint64_t tmp_va, page_off;
+	dma_addr_t mask;
+	int i;
+
+	if (IS_ERR_OR_NULL(umem)) {
+		ubcore_log_err("Invalid parameter.\n");
+		return 0;
+	}
+	tmp_ps_bitmap = page_size_bitmap & GENMASK(BITS_PER_LONG - 1, PAGE_SHIFT);
+
+	tmp_va = va;
+	mask = tmp_ps_bitmap & GENMASK(BITS_PER_LONG - 1, bits_per((umem->length - 1 + va) ^ va));
+	page_off = umem->va & ~PAGE_MASK;
+
+	for_each_sg(umem->sg_head.sgl, sg, umem->sg_head.nents, i) {
+		mask |= (sg_dma_address(sg) + page_off) ^ tmp_va;
+		tmp_va += sg_dma_len(sg) - page_off;
+		if (i != (umem->sg_head.nents - 1))
+			mask |= tmp_va;
+		page_off = 0;
+	}
+
+	if (mask)
+		tmp_ps_bitmap &= GENMASK(count_trailing_zeros(mask), 0);
+
+	return tmp_ps_bitmap ? rounddown_pow_of_two(tmp_ps_bitmap) : 0;
+}
+EXPORT_SYMBOL(ubcore_umem_find_best_page_size);
