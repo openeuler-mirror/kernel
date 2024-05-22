@@ -928,18 +928,10 @@ static struct kmem_cache *req_cachep;
 
 static const struct file_operations io_uring_fops;
 
-struct sock *io_uring_get_socket(struct file *file)
+bool io_is_uring_fops(struct file *file)
 {
-#if defined(CONFIG_UNIX)
-	if (file->f_op == &io_uring_fops) {
-		struct io_ring_ctx *ctx = file->private_data;
-
-		return ctx->ring_sock->sk;
-	}
-#endif
-	return NULL;
+	return file->f_op == &io_uring_fops;
 }
-EXPORT_SYMBOL(io_uring_get_socket);
 
 static void io_get_req_task(struct io_kiocb *req)
 {
