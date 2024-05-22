@@ -914,7 +914,8 @@ static void rnpvf_add_rx_frag(struct rnpvf_ring *rx_ring,
  * @rx_ring: ring to place buffers on
  * @cleaned_count: number of buffers to replace
  **/
-void rnpvf_alloc_rx_buffers(struct rnpvf_ring *rx_ring, u16 cleaned_count)
+static void rnpvf_alloc_rx_buffers(struct rnpvf_ring *rx_ring,
+				   u16 cleaned_count)
 {
 	union rnp_rx_desc *rx_desc;
 	struct rnpvf_rx_buffer *bi;
@@ -2122,8 +2123,8 @@ static int rnpvf_request_msix_irqs(struct rnpvf_adapter *adapter)
 
 		if (q_vector->tx.ring && q_vector->rx.ring) {
 			snprintf(q_vector->name,
-				 sizeof(q_vector->name) - 1, "%s-%s-%d-%d",
-				 netdev->name, "TxRx", i, q_vector->v_idx);
+				 sizeof(q_vector->name), "%s-%s-%u",
+				 netdev->name, "TxRx", i);
 		} else {
 			WARN(!(q_vector->tx.ring && q_vector->rx.ring),
 			     "%s vector%d tx rx is null, v_idx:%d\n",
