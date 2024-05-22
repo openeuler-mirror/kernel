@@ -259,15 +259,7 @@ int klp_compare_address(unsigned long pc, unsigned long func_addr,
 void arch_klp_init(void);
 int klp_module_delete_safety_check(struct module *mod);
 
-struct klp_func_list {
-	struct klp_func_list *next;
-	unsigned long func_addr;
-	unsigned long func_size;
-	const char *func_name;
-	int force;
-};
-
-typedef int (*klp_add_func_t)(struct klp_func_list **funcs, struct klp_func_list **func,
+typedef int (*klp_add_func_t)(struct list_head *func_list,
 			       unsigned long func_addr, unsigned long func_size,
 			       const char *func_name, int force);
 

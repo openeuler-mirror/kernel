@@ -1346,7 +1346,7 @@ int __weak arch_klp_check_calltrace(bool (*fn)(void *, int *, unsigned long), vo
 
 int __weak arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 					  klp_add_func_t add_func,
-					  struct klp_func_list **func_list)
+					  struct list_head *func_list)
 {
 	return -EINVAL;
 }
@@ -1361,58 +1361,59 @@ static inline unsigned long klp_size_to_check(unsigned long func_size,
 	return size;
 }
 
+struct actv_func {
+	struct list_head list;
+	unsigned long func_addr;
+	unsigned long func_size;
+	const char *func_name;
+	int force;
+};
+
 static bool check_func_list(void *data, int *ret, unsigned long pc)
 {
-	struct klp_func_list *funcs = (struct klp_func_list *)data;
+	struct list_head *func_list = (struct list_head *)data;
+	struct actv_func *func = NULL;
 
-	while (funcs != NULL) {
-		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
-				klp_size_to_check(funcs->func_size, funcs->force));
+	list_for_each_entry(func, func_list, list) {
+		*ret = klp_compare_address(pc, func->func_addr, func->func_name,
+				klp_size_to_check(func->func_size, func->force));
 		if (*ret)
 			return false;
-		funcs = funcs->next;
 	}
 	return true;
 }
 
-static int add_func_to_list(struct klp_func_list **funcs, struct klp_func_list **func,
-		unsigned long func_addr, unsigned long func_size, const char *func_name,
-		int force)
+static int add_func_to_list(struct list_head *func_list, unsigned long func_addr,
+			    unsigned long func_size, const char *func_name,
+			    int force)
 {
-	if (*func == NULL) {
-		*funcs = kzalloc(sizeof(**funcs), GFP_ATOMIC);
-		if (!(*funcs))
-			return -ENOMEM;
-		*func = *funcs;
-	} else {
-		(*func)->next = kzalloc(sizeof(**funcs), GFP_ATOMIC);
-		if (!(*func)->next)
-			return -ENOMEM;
-		*func = (*func)->next;
-	}
-	(*func)->func_addr = func_addr;
-	(*func)->func_size = func_size;
-	(*func)->func_name = func_name;
-	(*func)->force = force;
-	(*func)->next = NULL;
+	struct actv_func *func = kzalloc(sizeof(struct actv_func), GFP_ATOMIC);
+
+	if (!func)
+		return -ENOMEM;
+	func->func_addr = func_addr;
+	func->func_size = func_size;
+	func->func_name = func_name;
+	func->force = force;
+	list_add_tail(&func->list, func_list);
 	return 0;
 }
 
-static void free_func_list(struct klp_func_list **funcs)
+static void free_func_list(struct list_head *func_list)
 {
-	struct klp_func_list *p;
+	struct actv_func *func = NULL;
+	struct actv_func *tmp = NULL;
 
-	while (*funcs != NULL) {
-		p = *funcs;
-		*funcs = (*funcs)->next;
-		kfree(p);
+	list_for_each_entry_safe(func, tmp, func_list, list) {
+		list_del(&func->list);
+		kfree(func);
 	}
 }
 
 static int klp_check_calltrace(struct klp_patch *patch, int enable)
 {
 	int ret = 0;
-	struct klp_func_list *func_list = NULL;
+	LIST_HEAD(func_list);
 
 	ret = arch_klp_check_activeness_func(patch, enable, add_func_to_list, &func_list);
 	if (ret) {
@@ -1420,10 +1421,10 @@ static int klp_check_calltrace(struct klp_patch *patch, int enable)
 		goto out;
 	}
 
-	if (!func_list)
+	if (list_empty(&func_list))
 		goto out;
 
-	ret = arch_klp_check_calltrace(check_func_list, (void *)func_list);
+	ret = arch_klp_check_calltrace(check_func_list, (void *)&func_list);
 
 out:
 	free_func_list(&func_list);
@@ -2087,7 +2088,7 @@ static void set_tasks_patch_state(int patch_state)
 	put_online_cpus();
 }
 
-static void update_patch_state(struct task_struct *task, struct klp_func_list *func_list)
+static void update_patch_state(struct task_struct *task, struct list_head *func_list)
 {
 	struct rq *rq;
 	struct rq_flags flags;
@@ -2115,7 +2116,7 @@ static void check_task_calltrace_ipi(void *func_list)
 	current->patch_state = KLP_PATCHED;
 }
 
-static void update_patch_state_ipi(struct klp_func_list *func_list)
+static void update_patch_state_ipi(struct list_head *func_list)
 {
 	unsigned int cpu;
 	unsigned int curr_cpu;
@@ -2131,7 +2132,7 @@ static void update_patch_state_ipi(struct klp_func_list *func_list)
 }
 #endif
 
-static void update_tasks_patch_state(struct klp_func_list *func_list)
+static void update_tasks_patch_state(struct list_head *func_list)
 {
 	unsigned int cpu;
 	struct task_struct *g, *task;
@@ -2188,7 +2189,7 @@ out_unlock:
 
 static int klp_breakpoint_enable_patch(struct klp_patch *patch, int *cnt)
 {
-	struct klp_func_list *func_list = NULL;
+	LIST_HEAD(func_list);
 	int ret = -EINVAL;
 	int i;
 	int retry_cnt = 0;
@@ -2204,7 +2205,7 @@ static int klp_breakpoint_enable_patch(struct klp_patch *patch, int *cnt)
 	for (i = 0; i < KLP_RETRY_COUNT; i++) {
 		retry_cnt++;
 
-		update_tasks_patch_state(func_list);
+		update_tasks_patch_state(&func_list);
 		if (is_patchable()) {
 			arch_klp_code_modify_prepare();
 			ret = enable_patch(patch, true);

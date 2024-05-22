@@ -79,14 +79,13 @@ static bool check_jump_insn(unsigned long func_addr)
 }
 
 int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
-				   klp_add_func_t add_func, struct klp_func_list **func_list)
+				   klp_add_func_t add_func, struct list_head *func_list)
 {
 	int ret;
 	struct klp_object *obj;
 	struct klp_func *func;
 	unsigned long func_addr, func_size;
 	struct klp_func_node *func_node = NULL;
-	struct klp_func_list *pcheck = NULL;
 
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
@@ -134,8 +133,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 				    IS_ENABLED(CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE) ||
 				    (func->force == KLP_NORMAL_FORCE) ||
 				    check_jump_insn(func_addr)) {
-					ret = add_func(func_list, &pcheck,
-							func_addr, func_size,
+					ret = add_func(func_list, func_addr, func_size,
 							func->old_name, func->force);
 					if (ret)
 						return ret;
@@ -148,7 +146,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 				func_addr = ppc_function_entry(
 						(void *)func->new_func);
 				func_size = func->new_size;
-				ret = add_func(func_list, &pcheck, func_addr,
+				ret = add_func(func_list, func_addr,
 						func_size, func->old_name, 0);
 				if (ret)
 					return ret;
@@ -174,7 +172,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 				 */
 				func_addr = (unsigned long)func->old_func;
 				func_size = func->old_size;
-				ret = add_func(func_list, &pcheck, func_addr,
+				ret = add_func(func_list, func_addr,
 						func_size, "OLD_FUNC", 0);
 				if (ret)
 					return ret;
@@ -186,7 +184,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 
 				func_addr = (unsigned long)&func_node->arch_data.trampoline;
 				func_size = sizeof(struct ppc64_klp_btramp_entry);
-				ret = add_func(func_list, &pcheck, func_addr,
+				ret = add_func(func_list, func_addr,
 						func_size, "trampoline", 0);
 				if (ret)
 					return ret;

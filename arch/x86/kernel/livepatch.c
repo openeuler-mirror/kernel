@@ -73,7 +73,7 @@ static bool check_jump_insn(unsigned long func_addr)
 }
 
 int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
-				   klp_add_func_t add_func, struct klp_func_list **func_list)
+				   klp_add_func_t add_func, struct list_head *func_list)
 {
 	int ret;
 	struct klp_object *obj;
@@ -81,7 +81,6 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 	unsigned long func_addr = 0;
 	unsigned long func_size;
 	struct klp_func_node *func_node = NULL;
-	struct klp_func_list *pcheck = NULL;
 
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
@@ -127,8 +126,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 				    IS_ENABLED(CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE) ||
 				    (func->force == KLP_NORMAL_FORCE) ||
 				    check_jump_insn(func_addr)) {
-					ret = add_func(func_list, &pcheck,
-							func_addr, func_size,
+					ret = add_func(func_list, func_addr, func_size,
 							func->old_name, func->force);
 					if (ret)
 						return ret;
@@ -167,7 +165,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 					func_addr = (unsigned long)prev->new_func;
 					func_size = prev->new_size;
 				}
-				ret = add_func(func_list, &pcheck, func_addr,
+				ret = add_func(func_list, func_addr,
 						func_size, func->old_name, 0);
 				if (ret)
 					return ret;
@@ -181,7 +179,7 @@ int arch_klp_check_activeness_func(struct klp_patch *patch, int enable,
 
 				func_addr = (unsigned long)func->new_func;
 				func_size = func->new_size;
-				ret = add_func(func_list, &pcheck, func_addr,
+				ret = add_func(func_list, func_addr,
 						func_size, func->old_name, 0);
 				if (ret)
 					return ret;
