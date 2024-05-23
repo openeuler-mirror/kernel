@@ -563,7 +563,6 @@ static int xsc_dcbnl_ieee_getmaxrate(struct net_device *netdev,
 			break;
 		}
 	}
-
 	return 0;
 }
 
@@ -920,7 +919,7 @@ static int xsc_dcbnl_getbuffer(struct net_device *dev,
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_core_device *xdev = priv->xdev;
 	struct xsc_port_buffer port_buffer = {0};
-	u8 buffer[XSC_MAX_PRIORITY] = {0};
+	u8 buffer[XSC_MAX_PRIORITY];
 	int i;
 #ifndef XSC_DCBX_STUB
 	int err = 0;

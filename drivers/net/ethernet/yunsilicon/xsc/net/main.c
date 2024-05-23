@@ -23,7 +23,7 @@
 #include "common/xsc_cmd.h"
 #include "common/qp.h"
 #include "common/xsc_lag.h"
-#include "../pci/fw/xsc_tbm.h"
+#include "common/xsc_pp.h"
 
 #include "xsc_eth.h"
 #include "xsc_eth_txrx.h"
@@ -36,6 +36,7 @@
 
 #include "common/xsc_fs.h"
 #include "common/vport.h"
+#include "common/qp.h"
 
 MODULE_LICENSE("GPL");
 
@@ -419,8 +420,7 @@ int xsc_eth_destroy_qp_rq(struct xsc_core_device *xdev, struct xsc_rq *prq)
 	struct xsc_destroy_qp_mbox_out out;
 	int err;
 
-	err = xsc_eth_modify_qp_status(xdev, prq->rqn,
-				       XSC_CMD_OP_2RST_QP);
+	err = xsc_eth_modify_qp_status(xdev, prq->rqn, XSC_CMD_OP_2RST_QP);
 	if (err) {
 		xsc_core_warn(xdev, "failed to set rq%d status=rst, err=%d\n", prq->rqn, err);
 		return err;
@@ -460,8 +460,10 @@ static void xsc_free_qp_rq(struct xsc_rq *rq)
 	kvfree(rq->wqe.frags);
 	kvfree(rq->wqe.di);
 
+#ifdef HAVE_PAGE_POOL_HEADER
 	if (rq->page_pool)
 		page_pool_destroy(rq->page_pool);
+#endif
 
 	xsc_eth_wq_destroy(&rq->wq_ctrl);
 }
@@ -587,7 +589,7 @@ static int xsc_eth_alloc_cq(struct xsc_channel *c, struct xsc_cq *pcq,
 	core_cq->vector = c->chl_idx;
 
 	for (i = 0; i < xsc_cqwq_get_size(&pcq->wq); i++) {
-		struct xsc_cqe64 *cqe = xsc_cqwq_get_wqe(&pcq->wq, i);
+		struct xsc_cqe *cqe = xsc_cqwq_get_wqe(&pcq->wq, i);
 
 		cqe->owner = 1;
 	}
@@ -626,8 +628,8 @@ static int xsc_eth_set_cq(struct xsc_channel *c,
 	ret = xsc_eth_create_cq(c->adapter->xdev, &pcq->xcq, in, inlen);
 
 	kfree(in);
-	xsc_core_info(c->adapter->xdev, "%s: create cqn%d, func_id=%d, ret=%d\n",
-		      __func__, pcq->xcq.cqn, c->adapter->xdev->glb_func_id, ret);
+	xsc_core_info(c->adapter->xdev, "create cqn%d, func_id=%d, ret=%d\n",
+		      pcq->xcq.cqn, c->adapter->xdev->glb_func_id, ret);
 	return ret;
 }
 #else
@@ -668,8 +670,8 @@ static int xsc_eth_set_cq(struct xsc_channel *c,
 
 err:
 	kvfree(in);
-	xsc_core_info(c->adapter->xdev, "%s: create ch%d cqn%d, eqn=%d, func_id=%d, ret=%d\n",
-		      __func__, c->chl_idx, pcq->xcq.cqn, eqn, xdev->glb_func_id, ret);
+	xsc_core_info(c->adapter->xdev, "create ch%d cqn%d, eqn=%d, func_id=%d, ret=%d\n",
+		      c->chl_idx, pcq->xcq.cqn, eqn, xdev->glb_func_id, ret);
 	return ret;
 }
 #endif
@@ -721,30 +723,10 @@ static int xsc_eth_close_cq(struct xsc_channel *c, struct xsc_cq *pcq)
 static int xsc_eth_modify_qp_status(struct xsc_core_device *xdev,
 				    u32 qpn, u16 status)
 {
-	int ret = 0;
-	int insize;
-	struct xsc_modify_qp_mbox_in *in;
+	struct xsc_modify_qp_mbox_in in;
 	struct xsc_modify_qp_mbox_out out;
 
-	insize = sizeof(struct xsc_modify_qp_mbox_in);
-
-	in = kvzalloc(insize, GFP_KERNEL);
-	if (!in)
-		return -ENOMEM;
-
-	/*eth: only set status according to cmd,ignore other fields*/
-	in->hdr.opcode = cpu_to_be16(status);
-	in->qpn = cpu_to_be32(qpn);
-
-	ret = xsc_cmd_exec(xdev, in, insize, &out, sizeof(out));
-	if (ret || out.hdr.status) {
-		xsc_core_err(xdev, "failed to modify qp%d status=%d, err=%d out.status %u\n",
-			     qpn, status, ret, out.hdr.status);
-		ret = -ENOEXEC;
-	}
-
-	kvfree(in);
-	return ret;
+	return xsc_modify_qp(xdev, &in, &out, qpn, status);
 }
 
 int xsc_eth_set_hw_mtu(struct xsc_core_device *dev, u16 mtu, u16 rx_buf_sz)
@@ -862,8 +844,10 @@ static int xsc_eth_alloc_rq(struct xsc_channel *c,
 {
 	struct xsc_adapter *adapter = c->adapter;
 	u8 q_log_size = prq_param->rq_attr.q_log_size;
+#ifdef HAVE_PAGE_POOL_HEADER
 	struct page_pool_params pagepool_params = { 0 };
 	u32 pool_size = 1 << q_log_size;
+#endif
 	u8 ele_log_size = prq_param->rq_attr.ele_log_size;
 	struct xsc_stats *stats = c->adapter->stats;
 	struct xsc_channel_stats *channel_stats =
@@ -906,6 +890,7 @@ static int xsc_eth_alloc_rq(struct xsc_channel *c,
 		goto err_create_pool;
 #endif
 
+#ifdef HAVE_PAGE_POOL_HEADER
 	/* Create a page_pool and register it with rxq */
 	pool_size =  wq_sz << prq->wqe.info.log_num_frags;
 	pagepool_params.order		= XSC_RX_FRAG_SZ_ORDER;
@@ -928,6 +913,7 @@ static int xsc_eth_alloc_rq(struct xsc_channel *c,
 			     pool_size, c->cpu, pagepool_params.nid,
 			     cache_init_sz, adapter->nic_param.mtu,
 			     prq_param->wq.buf_numa_node);
+#endif
 
 	for (i = 0; i < wq_sz; i++) {
 		struct xsc_eth_rx_wqe_cyc *wqe =
@@ -1068,8 +1054,7 @@ static int xsc_eth_open_rss_qp_rqs(struct xsc_adapter *adapter,
 		return err;
 
 	adapter->channels.rqn_base = rqn_base;
-	xsc_core_info(adapter->xdev, "%s: rqn_base=%d, ch_num=%d\n",
-		      __func__, rqn_base, num_chl);
+	xsc_core_info(adapter->xdev, "rqn_base=%d, rq_num=%d\n", rqn_base, num_chl);
 	return 0;
 
 err_create_rss_rqs:
@@ -1133,13 +1118,13 @@ static int xsc_eth_open_qp_rq(struct xsc_channel *c,
 
 	ret = create_resource_common(xdev, &prq->cqp);
 	if (ret) {
-		xsc_core_err(xdev, "%s:failed to init rqn%d, err=%d\n",
-			     __func__, prq->rqn, ret);
+		xsc_core_err(xdev, "failed to init rqn%d, err=%d\n",
+			     prq->rqn, ret);
 		goto err_destroy_rq;
 	}
 
-	xsc_core_info(c->adapter->xdev, "%s: rqn=%d ch_num=%d\n",
-		      __func__, prq->rqn, c->chl_idx);
+	xsc_core_info(c->adapter->xdev, "rqn=%d ch_num=%d\n",
+		      prq->rqn, c->chl_idx);
 
 	kvfree(in);
 
@@ -1190,7 +1175,6 @@ static int xsc_eth_open_qp_sq(struct xsc_channel *c,
 	int hw_npages;
 	int inlen;
 	int ret;
-	u8 pf_id;
 
 	psq->stats = &channel_stats->sq[sq_idx];
 	psq_param->wq.db_numa_node = cpu_to_node(c->cpu);
@@ -1255,13 +1239,8 @@ static int xsc_eth_open_qp_sq(struct xsc_channel *c,
 		goto err_sq_common_destroy;
 	}
 
-	if (funcid_to_pf_index(&xdev->caps, xdev->glb_func_id, &pf_id)) {
-		modify_in->req.qp_out_port = pf_id;
-	} else {
-		ret = -EINVAL;
-		goto err_sq_modify_in_destroy;
-	}
-	modify_in->pcie_no = g_xsc_pcie_no;
+	modify_in->req.qp_out_port = xdev->pf_id;
+	modify_in->pcie_no = xdev->pcie_no;
 	modify_in->req.qpn = cpu_to_be16((u16)(psq->sqn));
 	modify_in->req.func_id = cpu_to_be16(xdev->glb_func_id);
 	modify_in->req.dma_direct = DMA_DIR_TO_MAC;
@@ -1273,8 +1252,8 @@ static int xsc_eth_open_qp_sq(struct xsc_channel *c,
 	kvfree(modify_in);
 	kvfree(in);
 
-	xsc_core_info(c->adapter->xdev, "%s ok, ch%d_sq%d=%d, db_numa=%d, buf_numa=%d\n",
-		      __func__, c->chl_idx, sq_idx, psq->sqn,
+	xsc_core_info(c->adapter->xdev, "open sq ok, ch%d_sq%d_qpn=%d, db_numa=%d, buf_numa=%d\n",
+		      c->chl_idx, sq_idx, psq->sqn,
 		      psq_param->wq.db_numa_node, psq_param->wq.buf_numa_node);
 
 	return 0;
@@ -1383,9 +1362,9 @@ int xsc_eth_open_channel(struct xsc_adapter *adapter,
 		}
 	}
 
-	netif_napi_add_weight(netdev, &c->napi, xsc_eth_napi_poll, XSC_CQ_POLL_BUDGET);
+	netif_napi_add(netdev, &c->napi, xsc_eth_napi_poll);
 
-	xsc_core_dbg(adapter->xdev, "%s ch%d ok\n", __func__, idx);
+	xsc_core_dbg(adapter->xdev, "open channel%d ok\n", idx);
 	return 0;
 
 err_open_sq:
@@ -1577,7 +1556,7 @@ int xsc_eth_open_channels(struct xsc_adapter *adapter)
 		goto err_modify_qps;
 
 	kvfree(chl_param);
-	xsc_core_info(adapter->xdev, "%s ok, ch_num=%d\n", __func__, chls->num_chl);
+	xsc_core_info(adapter->xdev, "open %d channels ok\n", chls->num_chl);
 	return 0;
 
 err_modify_qps:
@@ -1747,14 +1726,22 @@ static void xsc_eth_close_channels(struct xsc_adapter *adapter)
 	int i;
 	struct xsc_channel *c = NULL;
 
-	xsc_core_dbg(adapter->xdev, "start to close channel\n");
 	for (i = 0; i < adapter->channels.num_chl; i++) {
 		c = &adapter->channels.c[i];
+		xsc_core_dbg(adapter->xdev, "start to close channel%d\n", c->chl_idx);
+
 		xsc_eth_close_channel(c, true);
 	}
 
 	kfree(adapter->channels.c);
 	adapter->channels.num_chl = 0;
+}
+
+static void xsc_eth_sw_deinit(struct xsc_adapter *adapter)
+{
+	xsc_eth_deactivate_priv_channels(adapter);
+
+	return xsc_eth_close_channels(adapter);
 }
 
 static void xsc_eth_set_port_status(struct xsc_core_device *xdev,
@@ -1804,7 +1791,7 @@ bool xsc_eth_get_link_status(struct xsc_adapter *adapter)
 }
 
 int xsc_eth_get_link_info(struct xsc_adapter *adapter,
-			  struct xsc_event_linkinfo_resp *plinkinfo)
+			  struct xsc_event_linkinfo *plinkinfo)
 {
 	struct xsc_event_query_linkinfo_mbox_in in;
 	struct xsc_event_query_linkinfo_mbox_out out;
@@ -1832,14 +1819,34 @@ int xsc_eth_get_link_info(struct xsc_adapter *adapter,
 	return 0;
 }
 
+int xsc_eth_set_link_info(struct xsc_adapter *adapter,
+			  struct xsc_event_linkinfo *plinkinfo)
+{
+	struct xsc_event_modify_linkinfo_mbox_in in;
+	struct xsc_event_modify_linkinfo_mbox_out out;
+	int err = 0;
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_LINK_INFO);
+	memcpy(&in.ctx, plinkinfo, sizeof(*plinkinfo));
+
+	err = xsc_cmd_exec(adapter->xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(adapter->xdev, "failed to set link info, err=%d, status=%d\n",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	return err;
+}
+
 int xsc_get_link_speed(struct xsc_core_device *dev)
 {
 	struct xsc_adapter *adapter = netdev_priv(dev->netdev);
-	struct xsc_event_linkinfo_resp linkinfo;
+	struct xsc_event_linkinfo linkinfo;
 
 	if (xsc_eth_get_link_info(adapter, &linkinfo)) {
 		xsc_core_err(adapter->xdev, "fail to get linkspeed, return 25G\n");
-		return XSC_CMD_RESP_LINKSPEED_MODE_25G;
+		return MODULE_SPEED_25G;
 	}
 
 	return linkinfo.linkspeed;
@@ -1923,17 +1930,6 @@ int xsc_eth_enable_nic_hca(struct xsc_adapter *adapter)
 	int err;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ENABLE_NIC_HCA);
-	in.nic.info.pf = xdev->pf;
-	in.nic.info.pcie = g_xsc_pcie_no;
-	in.nic.info.mac_port = xdev->mac_port;
-	in.nic.info.pcie_port = xdev->pcie_port;
-	in.nic.info.pf_id = xdev->pf_id;
-	in.nic.info.vf_id = cpu_to_be16(xdev->vf_id);
-	in.nic.info.glb_func_id = cpu_to_be16(xdev->glb_func_id);
-	in.nic.info.logic_port = cpu_to_be16(xdev->logic_port);
-	in.nic.info.pf_logic_port = cpu_to_be16(xdev->pf_logic_port);
-	in.nic.info.mac_logic_port = cpu_to_be16(xdev->mac_logic_port);
-	in.nic.info.gsi_qpn = cpu_to_be16(xdev->gsi_qpn);
 
 #ifdef XSC_RSS_SUPPORT
 	in.rss.rss_en = 1;
@@ -1954,9 +1950,13 @@ int xsc_eth_enable_nic_hca(struct xsc_adapter *adapter)
 		caps |= BIT(XSC_TBM_CAP_HASH_PPH);
 	caps_mask |= BIT(XSC_TBM_CAP_HASH_PPH);
 
-	if (xsc_get_pp_bypass_res(adapter->xdev))
+	if (xsc_get_pp_bypass_res(adapter->xdev, false))
 		caps |= BIT(XSC_TBM_CAP_PP_BYPASS);
 	caps_mask |= BIT(XSC_TBM_CAP_PP_BYPASS);
+
+	if (xsc_get_pct_drop_config(xdev) && !(netdev->flags & IFF_SLAVE))
+		caps |= BIT(XSC_TBM_CAP_PCT_DROP_CONFIG);
+	caps_mask |= BIT(XSC_TBM_CAP_PCT_DROP_CONFIG);
 
 	memcpy(in.nic.mac_addr, netdev->dev_addr, ETH_ALEN);
 
@@ -1969,7 +1969,7 @@ int xsc_eth_enable_nic_hca(struct xsc_adapter *adapter)
 		return -ENOEXEC;
 	}
 
-	xsc_core_info(xdev, "rss_qp_base=%d\n", in.rss.rqn_base);
+	xsc_core_info(xdev, "caps=0x%x, caps_mask=0x%x\n", caps, caps_mask);
 
 	return 0;
 }
@@ -1977,25 +1977,19 @@ int xsc_eth_enable_nic_hca(struct xsc_adapter *adapter)
 int xsc_eth_disable_nic_hca(struct xsc_adapter *adapter)
 {
 	struct xsc_core_device *xdev = adapter->xdev;
+	struct net_device *netdev = adapter->netdev;
 	struct xsc_cmd_disable_nic_hca_mbox_in in = {};
 	struct xsc_cmd_disable_nic_hca_mbox_out out = {};
 	int err;
 	u16 caps = 0;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DISABLE_NIC_HCA);
-	in.nic.info.pf = xdev->pf;
-	in.nic.info.pcie = g_xsc_pcie_no;
-	in.nic.info.mac_port = xdev->mac_port;
-	in.nic.info.pcie_port = xdev->pcie_port;
-	in.nic.info.pf_id = xdev->pf_id;
-	in.nic.info.vf_id = cpu_to_be16(xdev->vf_id);
-	in.nic.info.glb_func_id = cpu_to_be16(xdev->glb_func_id);
-	in.nic.info.logic_port = cpu_to_be16(xdev->logic_port);
-	in.nic.info.pf_logic_port = cpu_to_be16(xdev->pf_logic_port);
-	in.nic.info.mac_logic_port = cpu_to_be16(xdev->mac_logic_port);
 
-	if (xsc_get_pp_bypass_res(adapter->xdev))
+	if (xsc_get_pp_bypass_res(adapter->xdev, false))
 		caps |= BIT(XSC_TBM_CAP_PP_BYPASS);
+
+	if (xsc_get_pct_drop_config(xdev) && !(netdev->priv_flags & IFF_BONDING))
+		caps |= BIT(XSC_TBM_CAP_PCT_DROP_CONFIG);
 
 	in.nic.caps = cpu_to_be16(caps);
 	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
@@ -2068,16 +2062,6 @@ int xsc_eth_modify_nic_hca(struct xsc_adapter *adapter, u32 flags)
 	int err = 0;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_NIC_HCA);
-	in.nic.info.pf = xdev->pf;
-	in.nic.info.pcie = g_xsc_pcie_no;
-	in.nic.info.mac_port = xdev->mac_port;
-	in.nic.info.pcie_port = xdev->pcie_port;
-	in.nic.info.pf_id = xdev->pf_id;
-	in.nic.info.vf_id = cpu_to_be16(xdev->vf_id);
-	in.nic.info.glb_func_id = cpu_to_be16(xdev->glb_func_id);
-	in.nic.info.logic_port = cpu_to_be16(xdev->logic_port);
-	in.nic.info.pf_logic_port = cpu_to_be16(xdev->pf_logic_port);
-	in.nic.info.mac_logic_port = cpu_to_be16(xdev->mac_logic_port);
 
 	xsc_eth_rss_params_change(adapter, flags, &in);
 
@@ -2127,17 +2111,17 @@ int xsc_eth_open(struct net_device *netdev)
 
 	ret = xsc_eth_reset(adapter->xdev);
 	if (ret)
-		goto ret;
+		goto sw_deinit;
 
 	ret = xsc_eth_enable_nic_hca(adapter);
 	if (ret)
-		goto ret;
+		goto sw_deinit;
 
 #ifdef NEED_CREATE_RX_THREAD
 	ret = xsc_eth_rx_thread_create(adapter);
 	if (ret) {
 		xsc_core_warn(adapter->xdev, "xsc_eth_rx_thread_create failed, err=%d\n", ret);
-		goto ret;
+		goto sw_deinit;
 	}
 #endif
 
@@ -2166,10 +2150,15 @@ int xsc_eth_open(struct net_device *netdev)
 	xsc_set_default_xps_cpumasks(adapter, &adapter->nic_param);
 #endif
 
+	goto ret;
+
+sw_deinit:
+	xsc_eth_sw_deinit(adapter);
+
 ret:
 	mutex_unlock(&adapter->state_lock);
-	xsc_core_info(adapter->xdev, "%s: return %s, ret=%d\n", __func__,
-		      ret ? "fail" : "ok", ret);
+	xsc_core_info(adapter->xdev, "open %s %s, ret=%d\n",
+		      netdev->name, ret ? "failed" : "ok", ret);
 	if (ret)
 		return XSCALE_RET_ERROR;
 	else
@@ -2200,9 +2189,8 @@ int xsc_eth_close(struct net_device *netdev)
 
 	xsc_eth_set_port_status(adapter->xdev, XSC_PORT_DOWN);
 	netif_carrier_off(adapter->netdev);
-	xsc_eth_deactivate_priv_channels(adapter);
 
-	xsc_eth_close_channels(adapter);
+	xsc_eth_sw_deinit(adapter);
 
 	ret = xsc_eth_disable_nic_hca(adapter);
 	if (ret)
@@ -2210,8 +2198,8 @@ int xsc_eth_close(struct net_device *netdev)
 
 ret:
 	mutex_unlock(&adapter->state_lock);
-	xsc_core_info(adapter->xdev, "%s: return %s, ret=%d\n", __func__,
-		      ret ? "fail" : "ok", ret);
+	xsc_core_info(adapter->xdev, "close device %s %s, ret=%d\n",
+		      adapter->netdev->name, ret ? "failed" : "ok", ret);
 
 	return ret;
 }
@@ -2222,7 +2210,7 @@ static int xsc_eth_set_mac(struct net_device *netdev, void *addr)
 	struct sockaddr *saddr = addr;
 	struct xsc_core_device *xdev = adapter->xdev;
 	int ret;
-	u16 vport = xdev->pf ? 0 : (xdev->vf_id + 1);
+	u16 vport = xsc_core_is_pf(xdev) ? 0 : (xdev->vf_id + 1);
 
 	if (!is_valid_ether_addr(saddr->sa_data))
 		return -EADDRNOTAVAIL;
@@ -2431,11 +2419,19 @@ static int xsc_eth_change_mtu(struct net_device *netdev, int new_mtu)
 	int ret = 0;
 	int max_buf_len = 0;
 
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	if (new_mtu > netdev->extended->max_mtu || new_mtu < netdev->extended->min_mtu) {
+		netdev_err(netdev, "%s: Bad MTU (%d), valid range is: [%d..%d]\n",
+			   __func__, new_mtu, netdev->extended->min_mtu, netdev->extended->max_mtu);
+		return -EINVAL;
+	}
+#else
 	if (new_mtu > netdev->max_mtu || new_mtu < netdev->min_mtu) {
 		netdev_err(netdev, "%s: Bad MTU (%d), valid range is: [%d..%d]\n",
 			   __func__, new_mtu, netdev->min_mtu, netdev->max_mtu);
 		return -EINVAL;
 	}
+#endif
 
 	if (!xsc_rx_is_linear_skb(new_mtu)) {
 		max_buf_len = adapter->xdev->caps.recv_ds_num * PAGE_SIZE;
@@ -2464,8 +2460,8 @@ static int xsc_eth_change_mtu(struct net_device *netdev, int new_mtu)
 
 out:
 	mutex_unlock(&adapter->state_lock);
-	xsc_core_info(adapter->xdev, "%s: mtu: %d->%d, expected_mtu=%d, err=%d\n",
-		      __func__, old_mtu, netdev->mtu, new_mtu, ret);
+	xsc_core_info(adapter->xdev, "mtu change from %d to %d, new_mtu=%d, err=%d\n",
+		      old_mtu, netdev->mtu, new_mtu, ret);
 	return ret;
 }
 
@@ -2483,12 +2479,12 @@ int xsc_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 	struct xsc_core_device *xdev = adapter->xdev;
 	int ret;
 
-	if (g_xsc_pcie_no != XSC_PCIE_NO_HOST || vf >= sriov->num_vfs)
+	if (vf >= sriov->num_vfs)
 		return -EINVAL;
 
 	ret = xsc_eswitch_set_vport_mac(xdev->priv.eswitch, vf + 1, mac);
 	if (ret)
-		xsc_core_err(xdev, "%s: xsc set mac addr failed\n", __func__);
+		xsc_core_err(xdev, "xsc set mac addr failed\n");
 
 	return ret;
 }
@@ -2518,11 +2514,6 @@ int set_feature_rxcsum(struct net_device *netdev, bool enable)
 	int err;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_NIC_HCA);
-	in.nic.info.pcie = g_xsc_pcie_no;
-	in.nic.info.pf = xsc_core_is_pf(xdev) ? 1 : 0;
-	in.nic.info.pf_id = xdev->pf_id;
-	in.nic.info.vf_id = cpu_to_be16(xdev->vf_id);
-	in.nic.info.logic_port = cpu_to_be16(xdev->logic_port);
 	in.nic.caps_mask = cpu_to_be16(BIT(XSC_TBM_CAP_HASH_PPH));
 	in.nic.caps = cpu_to_be16(enable << XSC_TBM_CAP_HASH_PPH);
 
@@ -2578,6 +2569,52 @@ int xsc_eth_set_features(struct net_device *netdev, netdev_features_t features)
 	return 0;
 }
 
+#ifdef HAVE_NETDEVICE_OPS_SELECT_QUEUE_FALLBACK
+#ifdef HAVE_NETDEV_OPS_EXTEND
+u16 xsc_select_queue(struct net_device *dev, struct sk_buff *skb,
+		     void *accel_priv,
+		     select_queue_fallback_t fallback)
+#else
+u16 xsc_select_queue(struct net_device *dev, struct sk_buff *skb,
+		     struct net_device *sb_dev,
+		     select_queue_fallback_t fallback)
+#endif
+{
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	int txq_ix = fallback(dev, skb);
+#else
+	int txq_ix = fallback(dev, skb, NULL);
+#endif
+	u16 num_channels;
+	int up = 0;
+	struct xsc_adapter *adapter = netdev_priv(dev);
+
+	if (!adapter) {
+		pr_err("%s adapter is null\n", __func__);
+		return txq_ix;
+	}
+
+	if (!netdev_get_num_tc(dev))
+		return txq_ix;
+
+	if (skb_vlan_tag_present(skb)) {
+		up = skb->vlan_tci >> VLAN_PRIO_SHIFT;
+		if (adapter->nic_param.num_tc > 1)
+			up = up % (adapter->nic_param.num_tc - 1) + 1;
+		else
+			up = 0;
+	}
+
+	/* channel_ix can be larger than num_channels since
+	 * dev->num_real_tx_queues = num_channels * num_tc
+	 */
+	num_channels = adapter->channels.num_chl;
+	if (txq_ix >= num_channels)
+		txq_ix = adapter->txq2sq[txq_ix]->ch_ix;
+
+	return adapter->channel_tc2realtxq[txq_ix][up];
+}
+#else
 u16 xsc_select_queue(struct net_device *dev, struct sk_buff *skb,
 		     struct net_device *sb_dev)
 {
@@ -2611,6 +2648,7 @@ u16 xsc_select_queue(struct net_device *dev, struct sk_buff *skb,
 
 	return adapter->channel_tc2realtxq[txq_ix][up];
 }
+#endif
 
 static int xsc_get_phys_port_name(struct net_device *dev,
 				  char *buf, size_t len)
@@ -2650,36 +2688,72 @@ static const struct net_device_ops xsc_netdev_ops = {
 	.ndo_set_rx_mode	= NULL,
 	.ndo_validate_addr	= NULL,
 	.ndo_set_mac_address	= xsc_eth_set_mac,
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_change_mtu = xsc_eth_change_mtu,
+#else
 	.ndo_change_mtu = xsc_eth_change_mtu,
+#endif
 
 	.ndo_tx_timeout		= NULL,
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_set_tx_maxrate	= NULL,
+#else
 	.ndo_set_tx_maxrate		= NULL,
+#endif
 	.ndo_vlan_rx_add_vid	= xsc_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= xsc_vlan_rx_kill_vid,
 	.ndo_do_ioctl		= NULL,
 	.ndo_set_vf_mac		= xsc_set_vf_mac,
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_set_vf_vlan	= NULL,
+#else
 	.ndo_set_vf_vlan		= NULL,
+#endif
 	.ndo_set_vf_rate	= NULL,
 	.ndo_set_vf_spoofchk	= NULL,
 	.ndo_set_vf_rss_query_en = NULL,
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_set_vf_trust = NULL,
+#else
 	.ndo_set_vf_trust	= NULL,
+#endif
 #ifdef NETLINK_MIN_DUMP_ALLOC_U32
 	.ndo_get_vf_config	= xsc_get_vf_config,
 #endif
 	.ndo_get_stats64	= xsc_get_stats,
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_setup_tc_rh	= NULL,
+#else
 	.ndo_setup_tc			= NULL,
+#endif
 	.ndo_set_features = xsc_eth_set_features,
 	.ndo_fix_features = NULL,
 	.ndo_fdb_add		= NULL,
 	.ndo_bridge_setlink	= NULL,
 	.ndo_bridge_getlink	= NULL,
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_dfwd_add_station	= NULL,
+	.extended.ndo_dfwd_del_station	= NULL,
+	.extended.ndo_bpf	= NULL,
+	.extended.ndo_xdp_xmit	= NULL,
+	.extended.ndo_get_phys_port_name  = xsc_get_phys_port_name,
+#else
 	.ndo_dfwd_add_station	= NULL,
 	.ndo_dfwd_del_station	= NULL,
 	.ndo_bpf                = NULL,
 	.ndo_xdp_xmit           = NULL,
 	.ndo_get_phys_port_name  = xsc_get_phys_port_name,
+#endif
 
-	.ndo_tunnel_ctl		= NULL,
+#ifdef HAVE_NETDEVICE_OPS_UDP_TUNNEL
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	.extended.ndo_udp_tunnel_add = NULL,
+	.extended.ndo_udp_tunnel_del = NULL,
+#else
+	.ndo_udp_tunnel_add	= NULL,
+	.ndo_udp_tunnel_del	= NULL,
+#endif
+#endif
 	.ndo_features_check	= NULL,
 	.ndo_select_queue	= xsc_select_queue,
 };
@@ -2804,8 +2878,8 @@ void xsc_eth_build_nic_params(struct xsc_adapter *adapter, u32 ch_num, u32 tc_nu
 	adapter->nic_param.sq_max_size = BIT(xdev->caps.log_max_qp_depth);
 
 	xsc_build_rss_params(&adapter->rss_params, adapter->nic_param.num_channels);
-	xsc_core_info(xdev, "%s: mtu=%d, num_ch=%d(max=%d), num_tc=%d\n",
-		      __func__, adapter->nic_param.mtu,
+	xsc_core_info(xdev, "mtu=%d, num_ch=%d(max=%d), num_tc=%d\n",
+		      adapter->nic_param.mtu,
 		      adapter->nic_param.num_channels,
 		      adapter->nic_param.max_num_ch,
 		      adapter->nic_param.num_tc);
@@ -2825,8 +2899,13 @@ void xsc_eth_build_nic_netdev(struct xsc_adapter *adapter)
 #endif
 	eth_set_ethtool_ops(netdev);
 
+#ifdef HAVE_NETDEV_OPS_EXTEND
+	netdev->extended->min_mtu = SW_MIN_MTU;
+	netdev->extended->max_mtu = SW_MAX_MTU;
+#else
 	netdev->min_mtu = SW_MIN_MTU;
 	netdev->max_mtu = SW_MAX_MTU;
+#endif
 	/*mtu - macheaderlen - ipheaderlen should be aligned in 8B*/
 	netdev->mtu = SW_DEFAULT_MTU;
 
@@ -2835,7 +2914,6 @@ void xsc_eth_build_nic_netdev(struct xsc_adapter *adapter)
 	netdev->vlan_features |= NETIF_F_GRO;
 	netdev->vlan_features |= NETIF_F_TSO;//NETIF_F_TSO_ECN
 	netdev->vlan_features |= NETIF_F_TSO6;
-	//todo: enable rx csum
 	netdev->vlan_features |= NETIF_F_RXCSUM;
 	netdev->vlan_features |= NETIF_F_RXHASH;
 	netdev->vlan_features |= NETIF_F_GSO_PARTIAL;
@@ -2987,7 +3065,7 @@ static int xsc_attach_netdev(struct xsc_adapter *adapter)
 	if (err)
 		return err;
 
-	xsc_core_info(adapter->xdev, "%s:ok\n", __func__);
+	xsc_core_info(adapter->xdev, "%s ok\n", __func__);
 	return 0;
 }
 
@@ -3017,7 +3095,7 @@ static int xsc_eth_attach(struct xsc_core_device *xdev, struct xsc_adapter *adap
 	if (err)
 		return err;
 
-	xsc_core_info(adapter->xdev, "%s:ok\n", __func__);
+	xsc_core_info(adapter->xdev, "%s ok\n", __func__);
 	return 0;
 }
 
@@ -3117,9 +3195,11 @@ static void xsc_eth_remove(struct xsc_core_device *xdev, void *context)
 
 	adapter = xdev->eth_priv;
 	if (!adapter) {
-		xsc_core_warn(xdev, "%s: adapter is null\n", __func__);
+		xsc_core_warn(xdev, "failed! adapter is null\n");
 		return;
 	}
+
+	xsc_core_info(adapter->xdev, "remove netdev %s entry\n", adapter->netdev->name);
 
 	xsc_eth_sysfs_remove(adapter->netdev, xdev);
 

@@ -13,7 +13,7 @@
 #include "common/driver.h"
 #include "common/xsc_port_ctrl.h"
 #include "common/res_obj.h"
-#include "fw/xsc_tbm.h"
+
 
 #define XSC_PORT_CTRL_MAX		256
 #define XSC_PORT_CTRL_NAME_PRE		"yunsilicon"
@@ -208,8 +208,11 @@ static inline struct xsc_bdf_file *get_bdf_file(struct xsc_port_ctrl_file *file,
 	}
 
 	rl_xdev = xsc_pci_get_xdev_by_bus_and_slot(hdr->domain, hdr->bus, hdr->devfn);
-	if (!rl_xdev)
+	if (!rl_xdev) {
+		xsc_core_err(bdf_file->xdev, "fail to get xdev:domain=%x, bus=%x, devfn=%x\n",
+			     hdr->domain, hdr->bus, hdr->devfn);
 		return NULL;
+	}
 
 	bdf_file = kzalloc(sizeof(*bdf_file), GFP_KERNEL);
 	if (!bdf_file)
@@ -241,12 +244,16 @@ static long _port_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 	file = filp->private_data;
 	user_hdr = (struct xsc_ioctl_hdr __user *)arg;
 	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
-	if (err)
+	if (err) {
+		pr_err("%s: fail to copy from user hdr\n", __func__);
 		return err;
+	}
 
 	bdf_file = get_bdf_file(file, &hdr);
-	if (!bdf_file)
+	if (!bdf_file) {
+		pr_err("%s: fail to find bdf file\n", __func__);
 		return -EFAULT;
+	}
 
 	list_for_each_entry(p, &g_port_ctrl_cbs, node) {
 		if (p->cb) {
@@ -363,8 +370,9 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 
 	ctrl->device = device_create(g_port_ctrl_class, NULL, ctrl->devid, NULL,
 				     "%s!%s_%02x:%02x.%x", XSC_PORT_CTRL_NAME_PRE,
-				     XSC_PORT_CTRL_NAME, dev->bus_num,
-				     dev->dev_num, dev->func_id);
+				     XSC_PORT_CTRL_NAME, dev->pdev->bus->number,
+				     PCI_SLOT(dev->pdev->devfn),
+				     PCI_FUNC(dev->pdev->devfn));
 	if (IS_ERR(ctrl->device)) {
 		xsc_core_err(dev, "failed to create port control device\n");
 		cdev_del(&ctrl->cdev);

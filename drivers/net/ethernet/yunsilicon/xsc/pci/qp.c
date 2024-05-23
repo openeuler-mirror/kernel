@@ -22,12 +22,6 @@ enum {
 	GROUP_MODE_PER_DEST_IP,
 };
 
-struct xsc_qp_rsc {
-	struct list_head	node;
-	struct xsc_core_qp	*qp;
-	struct xsc_core_device	*xdev;
-};
-
 struct {
 	struct list_head	head;
 	spinlock_t		lock;	/* protect delayed_release_list */
@@ -53,12 +47,11 @@ static bool xsc_qp_flush_finished(struct xsc_core_device *xdev, u32 qpn)
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_QP_FLUSH_STATUS);
 	in.qpn = cpu_to_be32(qpn);
 	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
-	if (err || out.hdr.status != 0) {
-		xsc_core_dbg(xdev, "qp[%d] flush incomplete.\n", qpn);
-		return false;
-	}
+	if ((!err && !out.hdr.status) || err == -ETIMEDOUT)
+		return true;
 
-	return true;
+	xsc_core_dbg(xdev, "qp[%d] flush incomplete.\n", qpn);
+	return false;
 }
 
 static int xsc_qp_flush_check(void *arg)
@@ -84,13 +77,12 @@ static int xsc_qp_flush_check(void *arg)
 		list_del(&entry->node);
 		spin_unlock(&delayed_release_list.lock);
 
-		if (!xsc_qp_flush_finished(entry->xdev, entry->qp->qpn)) {
+		if (!xsc_qp_flush_finished(entry->xdev, entry->qpn)) {
 			spin_lock(&delayed_release_list.lock);
 			list_add_tail(&entry->node, &delayed_release_list.head);
 			spin_unlock(&delayed_release_list.lock);
 		} else {
-			complete(&entry->qp->delayed_release);
-			kfree(entry);
+			complete(&entry->delayed_release);
 		}
 	}
 
@@ -116,20 +108,24 @@ void xsc_stop_delayed_release(void)
 		kthread_stop(delayed_release_list.poll_task);
 }
 
-void xsc_add_to_delayed_release_list(struct xsc_core_device *xdev, struct xsc_core_qp *qp)
+static void xsc_wait_qp_flush_complete(struct xsc_core_device *xdev, u32 qpn)
 {
-	struct xsc_qp_rsc *qp_rsc;
+	struct xsc_qp_rsc qp_rsc;
+	int err = 0;
 
-	qp_rsc = kzalloc(sizeof(*qp_rsc), GFP_KERNEL);
-	if (!qp_rsc)
-		return;
-	qp_rsc->qp = qp;
-	qp_rsc->xdev = xdev;
+	init_completion(&qp_rsc.delayed_release);
+	qp_rsc.qpn = qpn;
+	qp_rsc.xdev = xdev;
 	spin_lock(&delayed_release_list.lock);
-	list_add_tail(&qp_rsc->node, &delayed_release_list.head);
+	list_add_tail(&qp_rsc.node, &delayed_release_list.head);
 	spin_unlock(&delayed_release_list.lock);
 	delayed_release_list.wait_flag = WAKEUP;
 	wake_up(&delayed_release_list.wq);
+
+	while ((err = wait_for_completion_interruptible(&qp_rsc.delayed_release))
+		== -ERESTARTSYS)
+		xsc_core_dbg(xdev, "qp %d wait for completion is interrupted, err = %d\n",
+			     qpn, err);
 }
 
 int create_resource_common(struct xsc_core_device *xdev,
@@ -205,6 +201,7 @@ int xsc_core_create_qp(struct xsc_core_device *xdev,
 	int exec = 1;
 
 	ktime_get_boottime_ts64(&ts);
+
 	memset(&dout, 0, sizeof(dout));
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_CREATE_QP);
 
@@ -305,6 +302,33 @@ int xsc_core_destroy_qp(struct xsc_core_device *xdev,
 }
 EXPORT_SYMBOL_GPL(xsc_core_destroy_qp);
 
+int xsc_modify_qp(struct xsc_core_device *xdev,
+		  struct xsc_modify_qp_mbox_in *in,
+		  struct xsc_modify_qp_mbox_out *out,
+		  u32 qpn, u16 status)
+{
+	int ret = 0;
+
+	in->hdr.opcode = cpu_to_be16(status);
+	in->qpn = cpu_to_be32(qpn);
+	in->no_need_wait = 1;
+
+	ret = xsc_cmd_exec(xdev, in, sizeof(*in), out, sizeof(*out));
+	if ((status == XSC_CMD_OP_2RST_QP || status == XSC_CMD_OP_2ERR_QP) &&
+	    out->hdr.status) {
+		xsc_wait_qp_flush_complete(xdev, qpn);
+		out->hdr.status = 0;
+	}
+	if (ret || out->hdr.status != 0) {
+		xsc_core_err(xdev, "failed to modify qp %u status=%u, err=%d out.status %u\n",
+			     qpn, status, ret, out->hdr.status);
+		ret = -ENOEXEC;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(xsc_modify_qp);
+
 int xsc_core_qp_modify(struct xsc_core_device *xdev, enum xsc_qp_state cur_state,
 		       enum xsc_qp_state new_state,
 		       struct xsc_modify_qp_mbox_in *in, int sqd_event,
@@ -353,7 +377,6 @@ int xsc_core_qp_modify(struct xsc_core_device *xdev, enum xsc_qp_state cur_state
 	struct xsc_modify_qp_mbox_out out;
 	int err = 0;
 	u16 op;
-	u8 pf_id;
 
 	if (cur_state >= XSC_QP_NUM_STATE || new_state >= XSC_QP_NUM_STATE ||
 	    !optab[cur_state][new_state])
@@ -361,43 +384,25 @@ int xsc_core_qp_modify(struct xsc_core_device *xdev, enum xsc_qp_state cur_state
 
 	memset(&out, 0, sizeof(out));
 	op = optab[cur_state][new_state];
-	in->hdr.opcode = cpu_to_be16(op);
-	in->qpn = cpu_to_be32(qp->qpn);
-	in->no_need_wait = 1;
 
 	if (new_state == XSC_QP_STATE_RTR) {
 		if (qp->qp_type_internal == XSC_QUEUE_TYPE_RDMA_RC &&
 		    ((in->ctx.ip_type == 0 && in->ctx.dip[0] == in->ctx.sip[0]) ||
 		    (in->ctx.ip_type != 0 &&
-		    memcmp(in->ctx.dip, in->ctx.sip, sizeof(in->ctx.sip)) == 0))) {
-			in->ctx.qp_out_port = xdev->caps.nif_port_num + g_xsc_pcie_no;
-		} else if (in->ctx.lag_sel_en == 0) {
-			if (funcid_to_pf_index(&xdev->caps, xdev->glb_func_id, &pf_id))
-				in->ctx.qp_out_port = pf_id;
-			else
-				return -EINVAL;
-		} else {
+		    memcmp(in->ctx.dip, in->ctx.sip, sizeof(in->ctx.sip)) == 0)))
+			in->ctx.qp_out_port = xdev->caps.nif_port_num + xdev->pcie_no;
+		else if (in->ctx.lag_sel_en == 0)
+			in->ctx.qp_out_port = xdev->pf_id;
+		else
 			in->ctx.qp_out_port = in->ctx.lag_sel;
-		}
 
-		in->ctx.pcie_no = g_xsc_pcie_no;
+		in->ctx.pcie_no = xdev->pcie_no;
 		in->ctx.func_id = cpu_to_be16(xdev->glb_func_id);
 	}
 
-	err = xsc_cmd_exec(xdev, in, sizeof(*in), &out, sizeof(out));
+	err = xsc_modify_qp(xdev, in, &out, qp->qpn, op);
 	if (err)
 		return err;
-
-	if ((op == XSC_CMD_OP_2RST_QP || op == XSC_CMD_OP_2ERR_QP) && out.hdr.status) {
-		xsc_core_dbg(xdev, "qp %d flush incomplete in fw.\n", qp->qpn);
-		init_completion(&qp->delayed_release);
-		xsc_add_to_delayed_release_list(xdev, qp);
-		out.hdr.status = 0;
-		while ((err = wait_for_completion_interruptible(&qp->delayed_release))
-			== -ERESTARTSYS)
-			xsc_core_dbg(xdev, "qp %d wait for completion is interrupted, err = %d\n",
-				     qp->qpn, err);
-	}
 
 	if (new_state == XSC_QP_STATE_RTR) {
 		qp->trace_info->main_ver = YS_QPTRACE_VER_MAJOR;

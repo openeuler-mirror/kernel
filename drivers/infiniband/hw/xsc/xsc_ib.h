@@ -389,6 +389,7 @@ int xsc_ib_query_port(struct ib_device *ibdev, u32 port,
 int xsc_ib_create_qp(struct ib_qp *ibqp,
 		     struct ib_qp_init_attr *init_attr,
 		     struct ib_udata *udata);
+
 void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 qpn);
 void xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 qpn);
 

@@ -7,7 +7,6 @@
 #include <linux/mutex.h>
 #include <linux/idr.h>
 #include "common/vport.h"
-#include "fw/xsc_tbm.h"
 #include "eswitch.h"
 #include "common/xsc_lag.h"
 
@@ -101,7 +100,8 @@ int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode, struct netli
 	if (cur_xsc_mode == xsc_mode)
 		goto done;
 
-	if ((cur_xsc_mode != XSC_ESWITCH_LEGACY && xsc_mode == XSC_ESWITCH_OFFLOADS) ||
+	if (xsc_host_is_dpu_mode(dev) ||
+	    (cur_xsc_mode != XSC_ESWITCH_LEGACY && xsc_mode == XSC_ESWITCH_OFFLOADS) ||
 	    (cur_xsc_mode == XSC_ESWITCH_OFFLOADS && xsc_mode == XSC_ESWITCH_LEGACY)) {
 		xsc_core_err(dev, "%s failed: do not set mode %d to mode %d\n",
 			     __func__, cur_xsc_mode, xsc_mode);
@@ -132,7 +132,10 @@ int xsc_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode)
 		return err;
 
 	mutex_lock(&esw->mode_lock);
-	err = esw_mode_to_devlink(esw->mode, mode);
+	if (xsc_host_is_dpu_mode(dev))
+		err = -EOPNOTSUPP;
+	else
+		err = esw_mode_to_devlink(esw->mode, mode);
 	mutex_unlock(&esw->mode_lock);
 
 	return err;
@@ -191,10 +194,13 @@ void xsc_eswitch_disable_vport(struct xsc_eswitch *esw,
 	/* Mark this vport as disabled to discard new events */
 	vport->enabled = false;
 
+	/* Disable events from this vport */
+//	arm_vport_context_events_cmd(esw->dev, vport->vport, 0);
 	/* We don't assume VFs will cleanup after themselves.
 	 * Calling vport change handler while vport is disabled will cleanup
 	 * the vport resources.
 	 */
+//	esw_vport_change_handle_locked(vport);
 	vport->enabled_events = 0;
 	esw->enabled_vports--;
 done:
@@ -223,6 +229,7 @@ int esw_legacy_enable(struct xsc_eswitch *esw)
 {
 	struct xsc_vport *vport;
 	unsigned long i;
+	//int ret;
 
 	xsc_esw_for_each_vf_vport(esw, i, vport, esw->num_vfs) {
 		vport->info.link_state = XSC_VPORT_ADMIN_STATE_AUTO;
@@ -239,10 +246,12 @@ int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int mode, int num_vfs)
 
 	esw->num_vfs = num_vfs;
 
-	if (esw->mode == XSC_ESWITCH_NONE)
+	if (esw->mode == XSC_ESWITCH_NONE) {
 		err = esw_legacy_enable(esw);
-	else
+	} else {
+		//err = esw_offloads_enable(esw);
 		err = -EOPNOTSUPP;
+	}
 
 	if (err)
 		goto ret;

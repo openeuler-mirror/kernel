@@ -3,6 +3,9 @@
  * All rights reserved.
  */
 
+#ifdef HAVE_GENERIC_KMAP_TYPE
+#include <asm-generic/kmap_types.h>
+#endif
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/errno.h>
@@ -397,6 +400,15 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_QUERY_LINK_INFO:
 		return "QUERY_LINK_INFO";
 
+	case XSC_CMD_OP_MODIFY_LINK_INFO:
+		return "MODIFY_LINK_INFO";
+
+	case XSC_CMD_OP_MODIFY_FEC_PARAM:
+		return "MODIFY_FEC_PARAM";
+
+	case XSC_CMD_OP_QUERY_FEC_PARAM:
+		return "QUERY_FEC_PARAM";
+
 	case XSC_CMD_OP_LAG_CREATE:
 		return "LAG_CREATE";
 
@@ -595,6 +607,9 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_USER_EMU_CMD:
 		return "USER_EMU_CMD";
 
+	case XSC_CMD_OP_QUERY_PFC_PRIO_STATS:
+		return "QUERY_PFC_PRIO_STATS";
+
 	default: return "unknown command opcode";
 	}
 }
@@ -724,6 +739,7 @@ static int wait_func(struct xsc_core_device *xdev, struct xsc_cmd_work_ent *ent)
 {
 	unsigned long timeout = msecs_to_jiffies(XSC_CMD_TIMEOUT_MSEC);
 	int err;
+	struct xsc_cmd *cmd = &xdev->cmd;
 
 	if (!wait_for_completion_timeout(&ent->done, timeout))
 		err = -ETIMEDOUT;
@@ -731,6 +747,7 @@ static int wait_func(struct xsc_core_device *xdev, struct xsc_cmd_work_ent *ent)
 		err = ent->ret;
 
 	if (err == -ETIMEDOUT) {
+		cmd->cmd_status = XSC_CMD_STATUS_TIMEDOUT;
 		xsc_core_warn(xdev, "wait for %s(0x%x) response timeout!\n",
 			      xsc_command_str(msg_to_opcode(ent->in)),
 			      msg_to_opcode(ent->in));
@@ -1231,7 +1248,6 @@ static int create_debugfs_files(struct xsc_core_device *xdev)
 		goto err_dbg;
 
 	debugfs_create_u8("status", 0600, dbg->dbg_root, &dbg->status);
-
 	dbg->dbg_run = debugfs_create_file("run", 0200, dbg->dbg_root, xdev, &fops);
 	if (!dbg->dbg_run)
 		goto err_dbg;
@@ -1538,6 +1554,10 @@ int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out
 	struct xsc_rsp_msg *outb;
 	int err;
 	u8 status = 0;
+	struct xsc_cmd *cmd = &xdev->cmd;
+
+	if (cmd->cmd_status == XSC_CMD_STATUS_TIMEDOUT)
+		return -ETIMEDOUT;
 
 	inb = alloc_msg(xdev, in_size);
 	if (IS_ERR(inb)) {
@@ -1685,12 +1705,14 @@ static int cmd_cq_polling(void *data)
 			continue;
 		}
 
+		//get cqe
 		rsp = get_cq_inst(cmd, cmd->cq_cid);
 		if (!cmd->ownerbit_learned) {
 			cmd->ownerbit_learned = 1;
 			cmd->owner_bit = rsp->owner_bit;
 		}
 		if (cmd->owner_bit != rsp->owner_bit) {
+			//hw update cq doorbell but buf may not ready
 			xsc_core_err(xdev, "hw update cq doorbell but buf not ready %u %u\n",
 				     cmd->cq_cid, cq_pid);
 			continue;
@@ -1944,6 +1966,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		     (unsigned long long)(cmd->dma), (unsigned long long)(cmd->cq_dma));
 
 	cmd->mode = CMD_MODE_POLLING;
+	cmd->cmd_status = XSC_CMD_STATUS_NORMAL;
 
 	err = create_msg_cache(xdev);
 	if (err) {
@@ -1979,7 +2002,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		goto err_req_restore;
 	}
 
-	/* clear abnormal state to avoid the impact of previous error */
+	// clear abnormal state to avoid the impact of previous error
 	err_stat = readl(REG_ADDR(xdev, xdev->cmd.reg.interrupt_stat_addr));
 	if (err_stat) {
 		xsc_core_warn(xdev, "err_stat 0x%x when initializing, clear it\n", err_stat);

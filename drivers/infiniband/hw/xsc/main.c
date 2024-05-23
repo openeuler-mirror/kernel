@@ -12,10 +12,13 @@
 #include <linux/slab.h>
 #include <linux/io-mapping.h>
 #include <linux/sched.h>
+#include <linux/netdevice.h>
+#include <net/bonding.h>
 #include "common/xsc_core.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_cmd.h"
 #include "common/driver.h"
+#include "common/xsc_lag.h"
 
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_smi.h>
@@ -98,6 +101,7 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 		IB_DEVICE_SYS_IMAGE_GUID		|
 		IB_DEVICE_RC_RNR_NAK_GEN;
 	props->kernel_cap_flags =  IBK_BLOCK_MULTICAST_LOOPBACK;
+	props->kernel_cap_flags |= IBK_LOCAL_DMA_LKEY;
 	flags = dev->xdev->caps.flags;
 	if (flags & XSC_DEV_CAP_FLAG_BAD_PKEY_CNTR)
 		props->device_cap_flags |= IB_DEVICE_BAD_PKEY_CNTR;
@@ -105,7 +109,6 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 		props->device_cap_flags |= IB_DEVICE_BAD_QKEY_CNTR;
 	if (flags & XSC_DEV_CAP_FLAG_APM)
 		props->device_cap_flags |= IB_DEVICE_AUTO_PATH_MIG;
-	props->kernel_cap_flags |= IBK_LOCAL_DMA_LKEY;
 	if (flags & XSC_DEV_CAP_FLAG_XRC)
 		props->device_cap_flags |= IB_DEVICE_XRC;
 	props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
@@ -113,7 +116,7 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->page_size_cap	   = dev->xdev->caps.min_page_sz;
 	props->max_mr_size	   = (1 << dev->xdev->caps.log_max_mtt) * PAGE_SIZE;
 	props->max_qp		   = 1 << dev->xdev->caps.log_max_qp;
-	props->max_qp_wr	   = dev->xdev->caps.max_wqes;
+	props->max_qp_wr	   = (32 * 1024); /* hack for GPFS */
 	max_rq_sg = dev->xdev->caps.max_rq_desc_sz / sizeof(struct xsc_wqe_data_seg);
 	max_sq_sg = (dev->xdev->caps.max_sq_desc_sz - sizeof(struct xsc_wqe_ctrl_seg_2)) /
 		sizeof(struct xsc_wqe_data_seg_2);
@@ -207,6 +210,57 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	return 0;
 }
 
+void xsc_calc_link_info(struct xsc_core_device *xdev,
+			struct ib_port_attr *props)
+{
+	switch (xsc_get_link_speed(xdev)) {
+	case MODULE_SPEED_10G:
+		props->active_speed = XSC_RDMA_LINK_SPEED_10GB;
+		props->active_width = 1;
+		break;
+	case MODULE_SPEED_25G:
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+		props->active_width = 1;
+		break;
+	case MODULE_SPEED_40G_R4:
+		props->active_speed = XSC_RDMA_LINK_SPEED_10GB;
+		props->active_width = 2;
+		break;
+	case MODULE_SPEED_50G_R:
+		props->active_speed = XSC_RDMA_LINK_SPEED_50GB;
+		props->active_width = 1;
+		break;
+	case MODULE_SPEED_50G_R2:
+		props->active_speed = XSC_RDMA_LINK_SPEED_50GB;
+		props->active_width = 1;
+		break;
+	case MODULE_SPEED_100G_R2:
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+		props->active_width = 2;
+		break;
+	case MODULE_SPEED_100G_R4:
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+		props->active_width = 2;
+		break;
+	case MODULE_SPEED_200G_R4:
+		props->active_speed = XSC_RDMA_LINK_SPEED_50GB;
+		props->active_width = 2;
+		break;
+	case MODULE_SPEED_200G_R8:
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+		props->active_width = 4;
+		break;
+	case MODULE_SPEED_400G_R8:
+		props->active_speed = XSC_RDMA_LINK_SPEED_50GB;
+		props->active_width = 4;
+		break;
+	default:
+		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+		props->active_width = 1;
+		break;
+	}
+}
+
 static enum rdma_link_layer xsc_ib_port_link_layer(struct ib_device *ibdev, u32 port)
 {
 	return IB_LINK_LAYER_ETHERNET;
@@ -246,11 +300,7 @@ int xsc_ib_query_port(struct ib_device *ibdev, u32 port,
 		props->active_width = 1;
 		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
 	} else {
-		if (xsc_get_link_speed(xdev) == XSC_CMD_RESP_LINKSPEED_MODE_100G)
-			props->active_width = 2;
-		else
-			props->active_width = 1;
-		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
+		xsc_calc_link_info(xdev, props);
 	}
 
 	props->phys_state = netif_carrier_ok(ndev) ? XSC_RDMA_PHY_STATE_LINK_UP :
@@ -455,6 +505,7 @@ out_ctx:
 
 xsc_ib_dealloc_ucontext_def()
 {
+	return;
 }
 
 static int xsc_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vma)
@@ -559,14 +610,27 @@ static void _xsc_get_netdev(struct xsc_ib_dev *dev)
 
 static struct net_device *xsc_get_netdev(struct ib_device *ibdev, u32 port_num)
 {
-	struct xsc_ib_dev *dev = to_mdev(ibdev);
-	struct net_device *netdev = dev->netdev;
+	struct xsc_ib_dev *xsc_ib_dev = to_mdev(ibdev);
+	struct net_device *dev = xsc_ib_dev->netdev;
 
 	rcu_read_lock();
-	if (netdev)
-		dev_hold(netdev);
+	if (dev) {
+		if (xsc_ib_dev->xdev->priv.lag && __xsc_lag_is_active(xsc_ib_dev->xdev->priv.lag)) {
+			struct net_device *upper = NULL;
+
+			upper = netdev_master_upper_dev_get_rcu(dev);
+			if (upper) {
+				struct net_device *active;
+
+				active = bond_option_active_slave_get_rcu(netdev_priv(upper));
+				if (active)
+					dev = active;
+			}
+		}
+		dev_hold(dev);
+	}
 	rcu_read_unlock();
-	return netdev;
+	return dev;
 }
 
 void xsc_get_guid(const u8 *dev_addr, u8 *guid)
@@ -741,7 +805,6 @@ static int populate_specs_root(struct xsc_ib_dev *dev)
 	const struct uverbs_object_tree_def **trees =
 		(const struct uverbs_object_tree_def **)dev->driver_trees;
 	size_t num_trees = 0;
-
 	trees[num_trees++] = xsc_ib_get_devx_tree();
 
 	WARN_ON(num_trees >= ARRAY_SIZE(dev->driver_trees));
@@ -809,7 +872,6 @@ static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 	dev->ib_dev.ops.dereg_mr		= xsc_ib_dereg_mr;
 	dev->ib_dev.ops.alloc_mr		= xsc_ib_alloc_mr;
 	dev->ib_dev.ops.map_mr_sg		= xsc_ib_map_mr_sg;
-
 	dev->ib_dev.ops.get_port_immutable		= xsc_port_immutable;
 
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_ah, xsc_ib_ah, ibah);
@@ -826,7 +888,6 @@ static int init_one(struct xsc_core_device *xdev,
 	int err;
 
 	pr_info_once("%s", xsc_version);
-
 	dev = (struct xsc_ib_dev *)ib_alloc_device(xsc_ib_dev, ib_dev);
 	if (!dev)
 		return -ENOMEM;
@@ -899,6 +960,7 @@ static int init_one(struct xsc_core_device *xdev,
 	if (ib_register_device(&dev->ib_dev, dev->ib_dev.name, dev->xdev->device))
 		goto err_rsrc;
 
+	rdma_roce_rescan_device(&dev->ib_dev);
 	dev->ib_active = true;
 	*m_ibdev = dev;
 
@@ -949,7 +1011,6 @@ static void *xsc_add(struct xsc_core_device *xpdev)
 		return NULL;
 	}
 
-	xpdev->rdma_ready = 1;
 	return m_ibdev;
 }
 
@@ -957,7 +1018,6 @@ static void xsc_remove(struct xsc_core_device *xpdev, void *context)
 {
 	pr_err("remove rdma driver\n");
 	remove_one(xpdev, context);
-	xpdev->rdma_ready = 0;
 }
 
 static struct xsc_interface xsc_interface = {

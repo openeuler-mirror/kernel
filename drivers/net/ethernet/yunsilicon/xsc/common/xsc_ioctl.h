@@ -191,15 +191,22 @@ struct xsc_ioctl_get_phy_info_res {
 	u32 domain;
 	u32 bus;
 	u32 devfn;
-	u32 phy_port; //local pf pcie funcid xdev->pcie_port
-	u32 func_id; //local pf port funcid  xdev->glb_func_id ?
-	u32 logic_in_port; //local pf port logical_in_port xdev->logic_port
-	u32 mac_phy_port; // xdev->mac_port
-	u32 mac_logic_in_port;// xdev->logic_port
+	u32 pcie_no; //pcie number
+	u32 func_id; //pf glb func id
+	u32 pcie_host; //host pcie number
+	u32 mac_phy_port; //mac port
+	u32 funcid_to_logic_port_off;
 	u16 lag_id;
 	u16 raw_qp_id_base;
 	u16 raw_rss_qp_id_base;
-	u16 funcid[8];
+	u16 pf0_vf_funcid_base;
+	u16 pf0_vf_funcid_top;
+	u16 pf1_vf_funcid_base;
+	u16 pf1_vf_funcid_top;
+	u16 pcie0_pf_funcid_base;
+	u16 pcie0_pf_funcid_top;
+	u16 pcie1_pf_funcid_base;
+	u16 pcie1_pf_funcid_top;
 	u16 lag_port_start;
 	u16 raw_tpe_qp_num;
 	int send_seg_num;
@@ -209,6 +216,7 @@ struct xsc_ioctl_get_phy_info_res {
 	u8 pct_compress_vld;
 	u32 chip_version;
 	u32 hca_core_clock;
+	u8 mac_bit;
 };
 
 struct xsc_ioctl_get_vf_info_res {

@@ -120,12 +120,12 @@ static void *get_cqe(struct xsc_ib_cq *cq, int n)
 
 static void *get_sw_cqe(struct xsc_ib_cq *cq, int n)
 {
-	struct xsc_cqe64 *cqe64;
+	struct xsc_cqe *cqe;
 
-	cqe64 = (struct xsc_cqe64 *)get_cqe(cq, n & cq->ibcq.cqe);
+	cqe = (struct xsc_cqe *)get_cqe(cq, n & (cq->ibcq.cqe - 1));
 
-	return ((cqe64->owner & XSC_CQE_OWNER_MASK) ^
-		!!(n & (cq->ibcq.cqe + 1))) ? NULL : cqe64;
+	return ((cqe->owner & XSC_CQE_OWNER_MASK) ^
+		!!(n & cq->ibcq.cqe)) ? NULL : cqe;
 }
 
 static inline void handle_good_req(struct ib_wc *wc,
@@ -198,6 +198,7 @@ static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
 	void *recv;
 	struct xsc_wqe_data_seg *data_seg;
 	struct iphdr *ip4h = NULL;
+	struct ipv6hdr *ip6h;
 	struct udphdr *udph;
 	struct ib_unpacked_eth *eth;
 	struct ib_unpacked_vlan *vlan;
@@ -208,6 +209,8 @@ static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
 	unsigned int pading_sz = 0;
 	struct xsc_ib_wq *wq;
 	int idx;
+	u16 eth_type;
+	void *l3_start;
 
 	wq = &(*cur_qp)->rq;
 	idx = wq->tail & (wq->wqe_cnt - 1);
@@ -221,23 +224,36 @@ static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
 	grh = (struct ib_grh *)recv;
 	if (eth->type == htons(ETH_P_8021Q)) {
 		vlan = (struct ib_unpacked_vlan *)(eth + 1);
-		ip4h = (struct iphdr *)(vlan + 1);
+		eth_type = ntohs(vlan->type);
+		l3_start = vlan + 1;
 
 		wc->vlan_id = ntohs(vlan->tag) & 0x0fff;
 		wc->sl = (ntohs(vlan->tag) >> 13) & 0x7;
 		wc->wc_flags |= IB_WC_WITH_VLAN;
 	} else {
-		ip4h = (struct iphdr *)(eth + 1);
+		eth_type = ntohs(eth->type);
+		l3_start = eth + 1;
 	}
-	udph = (struct udphdr *)(ip4h + 1);
+
+	if (eth_type == ETH_P_IP) {
+		ip4h = (struct iphdr *)l3_start;
+		udph = (struct udphdr *)(ip4h + 1);
+	} else {
+		ip6h = (struct ipv6hdr *)l3_start;
+		udph = (struct udphdr *)(ip6h + 1);
+	}
 	bth = (struct rxe_bth *)(udph + 1);
 	deth = (struct rxe_deth *)(bth + 1);
 	mad = (struct ib_mad *)(deth + 1);
 
-	memcpy(grh + 1, mad, sizeof(*mad));
-	pading_sz = sizeof(*grh) - sizeof(*ip4h);
-	memmove((u8 *)(grh + 1) - sizeof(*ip4h), ip4h, sizeof(*ip4h));
-	memset(grh, 0, pading_sz);
+	if (eth_type == ETH_P_IP) {
+		pading_sz = sizeof(*grh) - sizeof(*ip4h);
+		memmove((u8 *)(grh + 1) - sizeof(*ip4h), ip4h, sizeof(*ip4h));
+		memset(grh, 0, pading_sz);
+	} else {
+		memmove(grh, ip6h, sizeof(*ip6h));
+	}
+	memmove(grh + 1, mad, sizeof(*mad));
 
 	wc->wc_flags |= IB_WC_GRH;
 
@@ -543,7 +559,7 @@ xsc_ib_create_cq_def()
 	int err;
 	unsigned int eqn;
 
-	entries = roundup_pow_of_two(entries + 1);
+	entries = roundup_pow_of_two(entries);
 
 	xsc_ib_dbg(dev, "entries:%d, vector:%d, max_cqes:%d\n", entries, vector,
 		   dev->xdev->caps.max_cqes);
@@ -551,7 +567,7 @@ xsc_ib_create_cq_def()
 	if (entries > dev->xdev->caps.max_cqes)
 		entries = dev->xdev->caps.max_cqes;
 	cq = to_xcq(ibcq);
-	cq->ibcq.cqe = entries - 1;
+	cq->ibcq.cqe = entries;
 	mutex_init(&cq->resize_mutex);
 	spin_lock_init(&cq->lock);
 	cq->resize_buf = NULL;
@@ -628,7 +644,7 @@ xsc_ib_destroy_cq_def()
 	return 0;
 }
 
-static int is_equal_rsn(struct xsc_cqe64 *cqe, u32 rsn)
+static int is_equal_rsn(struct xsc_cqe *cqe, u32 rsn)
 {
 	u32 qpn = le32_to_cpu(cqe->qp_id);
 	return rsn == qpn;
@@ -636,7 +652,7 @@ static int is_equal_rsn(struct xsc_cqe64 *cqe, u32 rsn)
 
 void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 rsn)
 {
-	struct xsc_cqe64 *cqe, *dest;
+	struct xsc_cqe *cqe, *dest;
 	u32 prod_index;
 	int nfreed = 0;
 	u8 owner_bit;
@@ -658,11 +674,12 @@ void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 rsn)
 	 * that match our QP by copying older entries on top of them.
 	 */
 	while ((int)(--prod_index) - (int)cq->xcq.cons_index >= 0) {
-		cqe = get_cqe(cq, prod_index & cq->ibcq.cqe);
+		cqe = (struct xsc_cqe *)get_cqe(cq, prod_index & (cq->ibcq.cqe - 1));
 		if (is_equal_rsn(cqe, rsn)) {
 			++nfreed;
 		} else if (nfreed) {
-			dest = get_cqe(cq, (prod_index + nfreed) & cq->ibcq.cqe);
+			dest = (struct xsc_cqe *)get_cqe(cq, (prod_index + nfreed) &
+							 (cq->ibcq.cqe - 1));
 			owner_bit = dest->owner & XSC_CQE_OWNER_MASK;
 			memcpy(dest, cqe, cq->xcq.cqe_sz);
 			dest->owner = owner_bit |

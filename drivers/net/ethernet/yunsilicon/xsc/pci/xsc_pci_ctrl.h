@@ -10,6 +10,7 @@
 #include <linux/percpu.h>
 #include <linux/cpu.h>
 
+//for x86
 #ifndef NR_VECTORS
 #define NR_VECTORS				256
 #endif

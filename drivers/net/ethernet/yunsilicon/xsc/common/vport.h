@@ -113,5 +113,6 @@ int xsc_modify_hca_vport_context(struct xsc_core_device *dev,
 				 u8 other_vport, u8 port_num,
 				 int vf,
 				 struct xsc_hca_vport_context *req);
+
 u16 xsc_eswitch_get_total_vports(const struct xsc_core_device *dev);
 #endif /* XSC_VPORT_H */

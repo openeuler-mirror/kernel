@@ -8,6 +8,9 @@
 
 #include <net/ip_fib.h>
 
+#define XSC_LAG_PORT_START	15
+#define XSC_LAG_NUM_MAX		0x30
+
 struct lag_func {
 	struct xsc_core_device	*xdev;
 	struct net_device		*netdev;
@@ -22,7 +25,6 @@ struct lag_tracker {
 	struct net_device *ndev[XSC_MAX_PORTS];
 	unsigned int is_hw_bonded:1;
 	unsigned int is_kernel_bonded:1;
-	unsigned int is_kernel_bonded_change:1;
 	unsigned int lag_disable:1;
 	u8 gw_dmac0[6];
 	u8 gw_dmac1[6];
@@ -31,21 +33,22 @@ struct lag_tracker {
 /* used in tracking fib events */
 struct lag_mp {
 	struct notifier_block		fib_nb;
-	struct fib_info				*mfi;
+	struct fib_info			*mfi;
 	struct workqueue_struct		*wq;
 };
 
 struct xsc_lag {
-	u8							flags;
-	struct kref					ref;
-	u8							v2p_map[XSC_MAX_PORTS];
-	struct lag_func				pf[XSC_MAX_PORTS];
-	struct lag_tracker			tracker;
+	u8				flags;
+	struct kref			ref;
+	u8				v2p_map[XSC_MAX_PORTS];
+	struct lag_func			pf[XSC_MAX_PORTS];
+	struct lag_tracker		tracker;
 	struct workqueue_struct		*wq;
-	struct delayed_work			bond_work;
+	struct delayed_work		bond_work;
 	struct notifier_block		nb;
-	struct lag_mp				lag_mp;
-	u16							lag_id;
+	struct lag_mp			lag_mp;
+	u16				lag_id;
+	u16				lag_cnt;
 };
 
 struct xsc_fib_event_work {
@@ -66,7 +69,6 @@ enum {
 
 enum {
 	XSC_BOND_FLAG_KERNEL	= 1 << 3,
-	XSC_BOND_FLAG_LAG	= 1 << 4,
 };
 
 enum xsc_lag_hash {
@@ -78,8 +80,8 @@ enum xsc_lag_hash {
 
 #define MAC_SHIFT			1
 #define MAC_0_1_LOGIC		0
-#define MAC_0_LOGIC			(XSC_PHY_PORT_MAC_0 + MAC_SHIFT)
-#define MAC_1_LOGIC			(XSC_PHY_PORT_MAC_1 + MAC_SHIFT)
+#define MAC_0_LOGIC			(0 + MAC_SHIFT)
+#define MAC_1_LOGIC			(1 + MAC_SHIFT)
 #define MAC_INVALID			0xff
 
 #define XSC_LAG_MODE_FLAGS (XSC_LAG_FLAG_ROCE | XSC_LAG_FLAG_SRIOV |\

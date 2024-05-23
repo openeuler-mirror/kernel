@@ -515,7 +515,6 @@ xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int vector)
 }
 EXPORT_SYMBOL(xsc_comp_irq_get_affinity_mask);
 
-#ifdef XSC_MSIX_BAR_EMUL
 static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
@@ -547,67 +546,20 @@ static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 
 	table->eq_vec_comp_base = nvec_base;
 	table->num_comp_vectors = nvec - nvec_base;
+#ifdef XSC_MSIX_BAR_EMUL
 	dev->msix_vec_base = dev->caps.msix_base;
-	xsc_core_info(dev,
-		      "alloc msix_vec_num=%d, vec_base_num=%d, max_msix_num=%d, msix_vec_base=%d\n",
-		      nvec, nvec_base, dev->caps.msix_num, dev->msix_vec_base);
-
-	return 0;
-
-err_free_irq_info:
-	pci_free_irq_vectors(dev->pdev);
-	kfree(dev_res->irq_info);
-	return err;
-}
-
-#else
-
-static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
-{
-	struct xsc_dev_resource *dev_res = dev->dev_res;
-	struct xsc_eq_table *table = &dev_res->eq_table;
-	int num_eqs =  (dev->caps.max_num_eqs ?
-			dev->caps.max_num_eqs : 1 << dev->caps.log_max_eq);
-	int nvec, nvec_base;
-	int err;
-
-	if (xsc_core_is_pf(dev))
-		nvec_base = XSC_EQ_VEC_COMP_BASE;
-	else
-		/*VF device not need dma read done vector.*/
-		nvec_base = (XSC_EQ_VEC_COMP_BASE - 1);
-	nvec = XSC_MAX_PORTS * num_online_cpus() + nvec_base;
-
-	nvec = min_t(int, nvec, (num_eqs + nvec_base));
-	if (nvec <= nvec_base) {
-		xsc_core_warn(dev, "failed to alloc irq vector(%d)\n", nvec);
-		return -ENOMEM;
-	}
-
-	dev_res->irq_info = kcalloc(nvec, sizeof(*dev_res->irq_info), GFP_KERNEL);
-	if (!dev_res->irq_info)
-		return -ENOMEM;
-
-	nvec = pci_alloc_irq_vectors(dev->pdev, nvec_base + 1, nvec, PCI_IRQ_MSIX);
-	if (nvec < 0) {
-		err = nvec;
-		goto err_free_irq_info;
-	}
-
-	table->eq_vec_comp_base = nvec_base;
-	table->num_comp_vectors = nvec - nvec_base;
-	xsc_core_info(dev, "alloc irq vector=%d, vec_base=%d, max_eq_nums=%d, log_max_eq=%d\n",
-		      nvec, nvec_base, dev->caps.max_num_eqs, dev->caps.log_max_eq);
-
-	return 0;
-
-err_free_irq_info:
-	pci_free_irq_vectors(dev->pdev);
-	kfree(dev_res->irq_info);
-	return err;
-}
-
 #endif
+	xsc_core_info(dev,
+		      "alloc msix_vec_num=%d, comp_num=%d, max_msix_num=%d, msix_vec_base=%d\n",
+		      nvec, table->num_comp_vectors, dev->caps.msix_num, dev->msix_vec_base);
+
+	return 0;
+
+err_free_irq_info:
+	pci_free_irq_vectors(dev->pdev);
+	kfree(dev_res->irq_info);
+	return err;
+}
 
 static void xsc_free_irq_vectors(struct xsc_core_device *dev)
 {
