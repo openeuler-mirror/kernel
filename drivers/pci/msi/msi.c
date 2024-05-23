@@ -424,8 +424,10 @@ int __pci_enable_msi_range(struct pci_dev *dev, int minvec, int maxvec,
 	int rc;
 
 #ifdef CONFIG_LOONGARCH
-	if (maxvec > 32)
+	if (maxvec > 32) {
 		maxvec = pci_irq_numbers;
+		minvec = min_t(int, pci_irq_numbers, minvec);
+	}
 #endif
 
 	if (!pci_msi_supported(dev, minvec) || dev->current_state != PCI_D0)
@@ -810,8 +812,10 @@ int __pci_enable_msix_range(struct pci_dev *dev, struct msix_entry *entries, int
 	int hwsize, rc, nvec = maxvec;
 
 #ifdef CONFIG_LOONGARCH
-	if (maxvec > 32)
+	if (maxvec > 32) {
 		nvec = pci_irq_numbers;
+		minvec = min_t(int, pci_irq_numbers, minvec);
+	}
 #endif
 
 	if (maxvec < minvec)
