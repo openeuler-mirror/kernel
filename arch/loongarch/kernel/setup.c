@@ -395,6 +395,10 @@ static void reserve_oldmem_region(void)
 
 void __init platform_init(void)
 {
+	arch_reserve_vmcore();
+	arch_parse_crashkernel();
+	reserve_oldmem_region();
+
 #ifdef CONFIG_ACPI_TABLE_UPGRADE
 	acpi_table_upgrade();
 #endif
@@ -432,10 +436,6 @@ static void __init check_kernel_sections_mem(void)
  */
 static void __init arch_mem_init(char **cmdline_p)
 {
-	arch_reserve_vmcore();
-	arch_parse_crashkernel();
-	reserve_oldmem_region();
-
 	if (usermem)
 		pr_info("User-defined physical RAM map overwrite\n");
 
