@@ -1072,7 +1072,7 @@ static int hclge_check_phy_opt_param(struct hclge_dev *hdev, void *data,
 		return -EINVAL;
 
 	if (mac->media_type != HNAE3_MEDIA_TYPE_COPPER) {
-		dev_err(&hdev->pdev->dev, "this is not a copper port");
+		dev_err(&hdev->pdev->dev, "this is not a copper port\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1080,12 +1080,12 @@ static int hclge_check_phy_opt_param(struct hclge_dev *hdev, void *data,
 		return 0;
 
 	if (!mac->phydev) {
-		dev_err(&hdev->pdev->dev, "this net device has no phy");
+		dev_err(&hdev->pdev->dev, "this net device has no phy\n");
 		return -EINVAL;
 	}
 
 	if (!mac->mdio_bus) {
-		dev_err(&hdev->pdev->dev, "this net device has no mdio bus");
+		dev_err(&hdev->pdev->dev, "this net device has no mdio bus\n");
 		return -EINVAL;
 	}
 

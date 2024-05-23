@@ -38,7 +38,7 @@ static int nic_invoke_pri_ops(struct net_device *ndev, int opcode,
 		return -ENODEV;
 
 	if ((!data && length) || (data && !length)) {
-		netdev_err(ndev, "failed to check data and length");
+		netdev_err(ndev, "failed to check data and length\n");
 		return -EINVAL;
 	}
 
@@ -90,7 +90,7 @@ static int nic_check_pfc_storm_para(int dir, int enable, int period_ms,
 	    period_ms > HNS3_PFC_STORM_PARA_PERIOD_MAX ||
 	    recovery_period_ms < HNS3_PFC_STORM_PARA_PERIOD_MIN ||
 	    recovery_period_ms > HNS3_PFC_STORM_PARA_PERIOD_MAX ||
-	    times <= 0)
+	    !times)
 		return -EINVAL;
 
 	return 0;
@@ -255,14 +255,7 @@ int nic_set_cpu_affinity(struct net_device *ndev, cpumask_t *affinity_mask)
 		if (tqp_vector->irq_init_flag != HNS3_VECTOR_INITED)
 			continue;
 
-		tqp_vector->affinity_mask = *affinity_mask;
-
-		ret = irq_set_affinity_hint(tqp_vector->vector_irq, NULL);
-		if (ret) {
-			netdev_err(ndev,
-				   "failed to reset affinity hint, ret = %d\n", ret);
-			goto err_unlock;
-		}
+		cpumask_copy(&tqp_vector->affinity_mask, affinity_mask);
 
 		ret = irq_set_affinity_hint(tqp_vector->vector_irq,
 					    &tqp_vector->affinity_mask);

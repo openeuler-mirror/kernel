@@ -1007,7 +1007,7 @@ struct hnae3_handle {
 		struct hnae3_udma_private_info udmainfo;
 	};
 
-	u32 numa_node_mask;	/* for multi-chip support */
+	nodemask_t numa_node_mask; /* for multi-chip support */
 
 	enum hnae3_port_base_vlan_state port_base_vlan_state;
 
