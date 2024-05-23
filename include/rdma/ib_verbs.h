@@ -2854,6 +2854,7 @@ int rdma_user_mmap_entry_insert_range(struct ib_ucontext *ucontext,
 				      struct rdma_user_mmap_entry *entry,
 				      size_t length, u32 min_pgoff,
 				      u32 max_pgoff);
+void rdma_user_mmap_disassociate(struct ib_ucontext *ucontext);
 
 static inline int
 rdma_user_mmap_entry_insert_exact(struct ib_ucontext *ucontext,
@@ -4601,6 +4602,7 @@ void rdma_roce_rescan_device(struct ib_device *ibdev);
 struct ib_ucontext *ib_uverbs_get_ucontext_file(struct ib_uverbs_file *ufile);
 
 int uverbs_destroy_def_handler(struct uverbs_attr_bundle *attrs);
+void uverbs_user_mmap_disassociate(struct ib_uverbs_file *ufile);
 
 struct net_device *rdma_alloc_netdev(struct ib_device *device, u8 port_num,
 				     enum rdma_netdev_t type, const char *name,
