@@ -383,49 +383,13 @@ out:
  * memory area used by the previous production kernel should be reserved to
  * avoid destroy to the captured data.
  */
-static void reserve_oldmem_region(int node, unsigned long s0, unsigned long e0)
+static void reserve_oldmem_region(void)
 {
 #ifdef CONFIG_CRASH_DUMP
-	unsigned long s1, e1;
-
 	if (!is_kdump_kernel())
 		return;
 
-	if ((e0 - s0) > (SZ_1G >> PAGE_SHIFT))
-		e0 = e0 - (SZ_512M >> PAGE_SHIFT);
-
-	/* crashmem_start is crashk_res reserved by primary production kernel */
-	s1 = PFN_UP(crashmem_start);
-	e1 = PFN_DOWN(crashmem_start + crashmem_size);
-
-	if (s1 == 0)
-		return;
-
-	if (node == 0) {
-		memblock_reserve(PFN_PHYS(s0), (s1 - s0) << PAGE_SHIFT);
-		memblock_reserve(PFN_PHYS(e1), (e0 - e1) << PAGE_SHIFT);
-	} else {
-		memblock_reserve(PFN_PHYS(s0), (e0 - s0) << PAGE_SHIFT);
-	}
-#endif
-}
-
-/* Traditionally, LoongArch's contiguous low memory is 256M, so crashkernel=X@Y is
- * unable to be large enough in some cases. Thus, if the total memory of a node
- * is more than 1GB, we reserve the top 512MB for the capture kernel
- */
-static void reserve_crashm_region(int node, unsigned long s0, unsigned long e0)
-{
-#ifdef CONFIG_KEXEC
-	if (crashk_res.start == crashk_res.end)
-		return;
-
-	if ((e0 - s0) <= (SZ_1G >> PAGE_SHIFT))
-		return;
-
-	s0 = e0 - (SZ_512M >> PAGE_SHIFT);
-
-	memblock_reserve(PFN_PHYS(s0), (e0 - s0) << PAGE_SHIFT);
+	memblock_cap_memory_range(crashmem_start, crashmem_size);
 #endif
 }
 
@@ -468,16 +432,9 @@ static void __init check_kernel_sections_mem(void)
  */
 static void __init arch_mem_init(char **cmdline_p)
 {
-	unsigned int node;
-	unsigned long start_pfn, end_pfn;
-
 	arch_reserve_vmcore();
 	arch_parse_crashkernel();
-	for_each_online_node(node) {
-		get_pfn_range_for_nid(node, &start_pfn, &end_pfn);
-		reserve_crashm_region(node, start_pfn, end_pfn);
-		reserve_oldmem_region(node, start_pfn, end_pfn);
-	}
+	reserve_oldmem_region();
 
 	if (usermem)
 		pr_info("User-defined physical RAM map overwrite\n");
