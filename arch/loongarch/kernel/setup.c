@@ -69,8 +69,6 @@ EXPORT_SYMBOL(cpu_data);
 struct loongson_board_info b_info;
 static const char dmi_empty_string[] = "        ";
 
-static phys_addr_t crashmem_start, crashmem_size;
-
 /*
  * Setup information
  *
@@ -208,15 +206,6 @@ static int __init early_parse_mem(char *p)
 		return -EINVAL;
 	}
 
-	start = 0;
-	size = memparse(p, &p);
-	if (*p == '@')
-		start = memparse(p + 1, &p);
-	else {
-		pr_err("Invalid format!\n");
-		return -EINVAL;
-	}
-
 	/*
 	 * If a user specifies memory size, we
 	 * blow away any automatically generated
@@ -224,14 +213,16 @@ static int __init early_parse_mem(char *p)
 	 */
 	if (usermem == 0) {
 		usermem = 1;
-		if (!strstr(boot_command_line, "elfcorehdr")) {
-			memblock_remove(memblock_start_of_DRAM(),
-				memblock_end_of_DRAM() - memblock_start_of_DRAM());
-		} else {
-			crashmem_start = start;
-			crashmem_size = size;
-			return 0;
-		}
+		memblock_remove(memblock_start_of_DRAM(),
+			memblock_end_of_DRAM() - memblock_start_of_DRAM());
+	}
+	start = 0;
+	size = memparse(p, &p);
+	if (*p == '@')
+		start = memparse(p + 1, &p);
+	else {
+		pr_err("Invalid format!\n");
+		return -EINVAL;
 	}
 
 	if (!IS_ENABLED(CONFIG_NUMA))
@@ -378,26 +369,10 @@ out:
 	*cmdline_p = boot_command_line;
 }
 
-/*
- * After the kdump operation is performed to enter the capture kernel, the
- * memory area used by the previous production kernel should be reserved to
- * avoid destroy to the captured data.
- */
-static void reserve_oldmem_region(void)
-{
-#ifdef CONFIG_CRASH_DUMP
-	if (!is_kdump_kernel())
-		return;
-
-	memblock_cap_memory_range(crashmem_start, crashmem_size);
-#endif
-}
-
 void __init platform_init(void)
 {
 	arch_reserve_vmcore();
 	arch_parse_crashkernel();
-	reserve_oldmem_region();
 
 #ifdef CONFIG_ACPI_TABLE_UPGRADE
 	acpi_table_upgrade();
