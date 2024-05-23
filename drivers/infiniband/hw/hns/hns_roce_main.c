@@ -1528,11 +1528,11 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		}
 	}
 
+	hns_roce_register_poe_ch(hr_dev);
 	ret = hns_roce_register_device(hr_dev);
 	if (ret)
 		goto error_failed_register_device;
 
-	hns_roce_register_poe_ch(hr_dev);
 	hns_roce_register_debugfs(hr_dev);
 
 	return 0;
