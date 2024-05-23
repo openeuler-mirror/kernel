@@ -138,10 +138,31 @@ static inline u8 xsc_get_eswitch_mode(struct xsc_core_device *dev)
 	return ESW_ALLOWED(esw) ? esw->mode : XSC_ESWITCH_NONE;
 }
 
-static inline bool xsc_get_pp_bypass_res(struct xsc_core_device *dev)
+static inline bool xsc_host_is_dpu_mode(struct xsc_core_device *dev)
 {
-	return (xsc_get_eswitch_mode(dev) == XSC_ESWITCH_OFFLOADS) ||
-			(dev->device_id == XSC_MF_HOST_PF_DEV_ID);
+	return (dev->pdev->device == XSC_MF_HOST_PF_DEV_ID ||
+		dev->pdev->device == XSC_MV_HOST_PF_DEV_ID);
+}
+
+static inline bool xsc_is_host_mode(struct xsc_core_device *dev)
+{
+	return (dev->pdev->device == XSC_MF_HOST_PF_DEV_ID ||
+		dev->pdev->device == XSC_MF_HOST_VF_DEV_ID ||
+		dev->pdev->device == XSC_MV_HOST_PF_DEV_ID ||
+		dev->pdev->device == XSC_MV_HOST_VF_DEV_ID);
+}
+
+static inline bool xsc_get_pp_bypass_res(struct xsc_core_device *dev, bool esw_set)
+{
+	return esw_set || xsc_is_host_mode(dev);
+}
+
+static inline bool xsc_get_pct_drop_config(struct xsc_core_device *dev)
+{
+	return (dev->pdev->device == XSC_MC_PF_DEV_ID) ||
+		(dev->pdev->device == XSC_MF_SOC_PF_DEV_ID) ||
+		(dev->pdev->device == XSC_MS_PF_DEV_ID) ||
+		(dev->pdev->device == XSC_MV_SOC_PF_DEV_ID);
 }
 
 #endif /* ESWITCH_H */

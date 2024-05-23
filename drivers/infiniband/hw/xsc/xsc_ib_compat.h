@@ -26,7 +26,6 @@ int xsc_ib_create_cq(struct ib_cq *ibcq,
 		     struct ib_udata *udata);
 int xsc_ib_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata);
 
-// from main.c static functions
 int xsc_ib_alloc_ucontext(struct ib_ucontext *uctx, struct ib_udata *udata);
 void xsc_ib_dealloc_ucontext(struct ib_ucontext *ibcontext);
 int xsc_ib_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);

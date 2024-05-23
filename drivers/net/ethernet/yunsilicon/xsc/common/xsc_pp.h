@@ -3,31 +3,8 @@
  * All rights reserved.
  */
 
-#ifndef XSC_TBM_H
-#define XSC_TBM_H
-
-#include "common/xsc_core.h"
-
-#define XSC_LAG_NUM_MAX		0x30
-
-enum {
-	XSC_VLAN_MODE_NONE = 0,
-	XSC_VLAN_MODE_TRUNK,
-	XSC_VLAN_MODE_ACCESS,
-	XSC_VLAN_MODE_TUNNEL,
-	XSC_VLAN_MODE_NATIVE_TAGGED,
-	XSC_VLAN_MODE_NATIVE_UNTAGGED,
-};
-
-struct xsc_vlan_config {
-	u32	mode;
-	u32	pvid;
-	u32	proto;
-	u32	prio;
-	u32	vid_allow_base;
-	u32	vid_allow_num;
-	u32	smac_filter_en;
-};
+#ifndef XSC_PP_H
+#define XSC_PP_H
 
 enum {
 	XSC_HASH_FIELD_SEL_SRC_IP	= 1 << 0,
@@ -58,9 +35,14 @@ enum {
 				XSC_HASH_FIELD_SEL_DPORT_V6	|\
 				XSC_HASH_FIELD_SEL_PROTO)
 
-int xsc_tbm_vlan_config(struct xsc_core_device *dev,
-			struct xsc_logic_port_info *info,
-			struct xsc_vlan_config *config);
+enum {
+	XSC_HASH_TMPL_IDX_IP_PORTS_IP6_PORTS = 0,
+	XSC_HASH_TMPL_IDX_IP_IP6,
+	XSC_HASH_TMPL_IDX_IP_PORTS_IP6,
+	XSC_HASH_TMPL_IDX_IP_IP6_PORTS,
+	XSC_HASH_TMPL_IDX_MAX,
+};
 
-#endif /* XSC_TBM_H */
+
+#endif /* XSC_PP_H */
 

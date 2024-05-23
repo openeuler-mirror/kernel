@@ -16,9 +16,6 @@
 #include <linux/if_bonding.h>
 #include <net/neighbour.h>
 #include <net/arp.h>
-#include "fw/xsc_tbm.h"
-
-//#define XSC_LAG_DEBUG
 
 #ifdef fib_nh_dev
 #define HAVE_FIB_NH_DEV
@@ -109,12 +106,8 @@ int xsc_cmd_create_lag(struct xsc_lag *ldev, u8 flags)
 	memcpy(info_mac1->netdev_addr, netdev1->dev_addr, ETH_ALEN);
 	memcpy(info_mac0->gw_dmac, tracker->gw_dmac0, ETH_ALEN);
 	memcpy(info_mac1->gw_dmac, tracker->gw_dmac1, ETH_ALEN);
-	info_mac0->info_mac.mac_logic_port = cpu_to_be16(xdev0->mac_logic_port);
-	info_mac0->info_mac.logic_port	= cpu_to_be16(xdev0->logic_port);
-	info_mac0->info_mac.glb_func_id	= cpu_to_be16(xdev0->glb_func_id);
-	info_mac1->info_mac.mac_logic_port = cpu_to_be16(xdev1->mac_logic_port);
-	info_mac1->info_mac.logic_port = cpu_to_be16(xdev1->logic_port);
-	info_mac1->info_mac.glb_func_id	= cpu_to_be16(xdev1->glb_func_id);
+	info_mac0->glb_func_id	= cpu_to_be16(xdev0->glb_func_id);
+	info_mac1->glb_func_id	= cpu_to_be16(xdev1->glb_func_id);
 
 	ret = xsc_cmd_exec(xdev0, &in, sizeof(in), &out, sizeof(out));
 	if (ret || out.hdr.status) {
@@ -138,11 +131,9 @@ int xsc_cmd_modify_lag(struct xsc_lag *ldev)
 	bool sriov_lag = ldev->flags & XSC_LAG_FLAG_SRIOV;
 	u8 remap_port1 = ldev->v2p_map[0];
 	u8 remap_port2 = ldev->v2p_map[1];
-
-	int ret = -1;
-
 	struct xsc_modify_lag_mbox_in in = {};
 	struct xsc_modify_lag_mbox_out out = {};
+	int ret = -1;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_MODIFY);
 
@@ -171,17 +162,16 @@ int xsc_cmd_destroy_lag(struct xsc_lag *ldev, u8 bond_flags)
 	struct xsc_core_device *xdev0 = ldev->pf[0].xdev;
 	u8 flags = ldev->flags;
 	int ret = -1;
-	bool kernel_bond = bond_flags & XSC_BOND_FLAG_KERNEL;
 
 	struct xsc_destroy_lag_mbox_in in = {};
 	struct xsc_destroy_lag_mbox_out out = {};
 
-	if (!(flags & XSC_LAG_MODE_FLAGS) && !kernel_bond)
+	if (!(flags & XSC_LAG_MODE_FLAGS) && !(flags & XSC_BOND_FLAG_KERNEL))
 		return -EINVAL;
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_DESTROY);
 
-	if (!kernel_bond) {
+	if (bond_flags & XSC_LAG_MODE_FLAGS) {
 		in.req.lag_id = ldev->lag_id;
 		xsc_core_info(xdev0, "destroy lag: lag_id = %d\n", ldev->lag_id);
 	} else {
@@ -196,8 +186,7 @@ int xsc_cmd_destroy_lag(struct xsc_lag *ldev, u8 bond_flags)
 		return -ENOEXEC;
 	}
 
-	if (!kernel_bond)
-		ldev->lag_id = 0xff;
+	ldev->lag_id = U16_MAX;
 
 	return ret;
 }
@@ -224,7 +213,7 @@ static int xsc_lag_set_qos(struct xsc_core_device *xdev, u16 lag_id, u8 member_b
 	req->lag_id = cpu_to_be16(lag_id);
 	req->member_bitmap = member_bitmap;
 	req->lag_del = lag_del;
-	req->pcie_no = g_xsc_pcie_no;
+	req->pcie_no = xdev->pcie_no;
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_SET_QOS);
 
 	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
@@ -243,7 +232,13 @@ static bool xsc_lag_check_prereq(struct xsc_lag *ldev)
 		return true;
 
 #ifdef CONFIG_XSC_ESWITCH
-		return (xdev0->priv.eswitch->mode  == XSC_ESWITCH_OFFLOADS) &&
+	if ((xdev0->priv.eswitch->mode == XSC_ESWITCH_OFFLOADS &&
+	     xdev1->priv.eswitch->mode != XSC_ESWITCH_OFFLOADS) ||
+	    (xdev0->priv.eswitch->mode != XSC_ESWITCH_OFFLOADS &&
+	     xdev1->priv.eswitch->mode == XSC_ESWITCH_OFFLOADS))
+		xsc_core_info(xdev0, "lag is permitted by both pf is in switchdev mode\n");
+
+	return (xdev0->priv.eswitch->mode  == XSC_ESWITCH_OFFLOADS) &&
 			(xdev1->priv.eswitch->mode == XSC_ESWITCH_OFFLOADS);
 #else
 #ifdef XSC_VF_ECMP_TEST
@@ -341,17 +336,17 @@ void xsc_modify_lag(struct xsc_lag *ldev)
 		xsc_core_err(xdev0, "failed to set QoS for LAG %u\n", ldev->lag_id);
 }
 
-static void xsc_deactivate_lag(struct xsc_lag *ldev)
+static void xsc_deactivate_lag(struct xsc_lag *ldev,  u8 flags)
 {
 	struct xsc_core_device *xdev0 = ldev->pf[0].xdev;
 
 	if (xsc_lag_set_qos(xdev0, ldev->lag_id, 0, true))
 		xsc_core_err(xdev0, "failed to set QoS for LAG %u\n", ldev->lag_id);
 
-	if (xsc_cmd_destroy_lag(ldev, XSC_BOND_FLAG_LAG))
+	if (xsc_cmd_destroy_lag(ldev, flags))
 		xsc_core_err(xdev0, "Failed to deactivate LAG; driver restart required, Make sure all VFs are unbound prior to LAG activation or deactivation\n");
 
-	ldev->flags &= ~XSC_LAG_MODE_FLAGS;
+	ldev->flags &= ~flags;
 }
 
 static void xsc_lag_remove_ib_devices(struct xsc_lag *ldev)
@@ -377,9 +372,8 @@ static void xsc_do_bond(struct xsc_lag *ldev)
 	struct xsc_core_device *xdev0 = ldev->pf[0].xdev;
 	struct xsc_core_device *xdev1 = ldev->pf[1].xdev;
 	struct lag_tracker tracker;
-	bool do_lag;
+	bool do_lag, do_bond;
 	bool roce_lag;
-	int ret = 0;
 
 	if (!xdev0 || !xdev1)
 		return;
@@ -388,22 +382,7 @@ static void xsc_do_bond(struct xsc_lag *ldev)
 	tracker = ldev->tracker;
 	mutex_unlock(&lag_mutex);
 
-	if (tracker.is_kernel_bonded_change) {
-		if (tracker.is_kernel_bonded && !__xsc_bond_is_active(ldev)) {
-			ret = xsc_cmd_create_lag(ldev, XSC_BOND_FLAG_KERNEL);
-			ldev->flags |= XSC_BOND_FLAG_KERNEL;
-
-			xsc_core_info(xdev0, "Create kernel bond, ret = %d\n", ret);
-		} else if (!tracker.is_kernel_bonded && __xsc_bond_is_active(ldev)) {
-			ret = xsc_cmd_destroy_lag(ldev, XSC_BOND_FLAG_KERNEL);
-			ldev->flags &= ~XSC_BOND_FLAG_KERNEL;
-
-			xsc_core_info(xdev0, "Destroy kernel bond, ret = %d\n", ret);
-		}
-		tracker.is_kernel_bonded_change = false;
-
-		return;
-	}
+	do_bond = tracker.is_kernel_bonded;
 
 	do_lag = tracker.is_hw_bonded &&
 		!tracker.lag_disable &&
@@ -422,17 +401,19 @@ static void xsc_do_bond(struct xsc_lag *ldev)
 		return;
 	}
 
-	xsc_core_info(xdev0, "do_lag = %d, is_hw_bonded = %d, lag_disable = %d, lag_check = %d\n",
-		      do_lag, tracker.is_hw_bonded, tracker.lag_disable,
+	xsc_core_info(xdev0, "do_bond = %d, do_lag = %d, is_hw_bonded = %d, lag_disable = %d, lag_check = %d\n",
+		      do_bond, do_lag, tracker.is_hw_bonded, tracker.lag_disable,
 		      xsc_lag_check_prereq(ldev));
 
-	if (do_lag && !__xsc_lag_is_active(ldev)) {
-		if (roce_lag) {
+	if ((do_bond && !__xsc_bond_is_active(ldev)) ||
+	    (do_lag && !__xsc_lag_is_active(ldev))) {
+		if (do_lag && roce_lag) {
 			xsc_lag_remove_ib_devices(ldev);
-			xsc_activate_lag(ldev, (XSC_LAG_FLAG_ROCE));
+			xsc_activate_lag(ldev, XSC_LAG_FLAG_ROCE);
 			xsc_add_dev_by_protocol(xdev0, XSC_INTERFACE_PROTOCOL_IB);
 		} else {
-			xsc_activate_lag(ldev, XSC_LAG_FLAG_SRIOV);
+			xsc_activate_lag(ldev, (do_lag ?
+				XSC_LAG_FLAG_SRIOV : XSC_BOND_FLAG_KERNEL));
 		}
 	} else if (do_lag && __xsc_lag_is_active(ldev)) {
 		xsc_modify_lag(ldev);
@@ -440,10 +421,12 @@ static void xsc_do_bond(struct xsc_lag *ldev)
 		if (roce_lag)
 			xsc_remove_dev_by_protocol(xdev0, XSC_INTERFACE_PROTOCOL_IB);
 
-		xsc_deactivate_lag(ldev);
+		xsc_deactivate_lag(ldev, XSC_LAG_MODE_FLAGS);
 
 		if (roce_lag)
 			xsc_lag_add_ib_devices(ldev);
+	} else if (!do_bond && __xsc_bond_is_active(ldev)) {
+		xsc_deactivate_lag(ldev, XSC_BOND_FLAG_KERNEL);
 	}
 }
 
@@ -587,7 +570,6 @@ static bool xsc_lag_eval_bonding_conds(struct xsc_lag *ldev,
 
 	if (tracker->is_kernel_bonded != is_kernel_bonded) {
 		tracker->is_kernel_bonded = is_kernel_bonded;
-		tracker->is_kernel_bonded_change = true;
 		return true;
 	}
 
@@ -800,13 +782,11 @@ static void xsc_lag_fib_route_event(struct xsc_lag *ldev,
 		/* stop track */
 		if (mp->mfi == fi)
 			mp->mfi = NULL;
-		xsc_deactivate_lag(ldev);
+		xsc_deactivate_lag(ldev, XSC_LAG_MODE_FLAGS);
 		return;
 	}
 
-#ifdef XSC_LAG_DEBUG
 	xsc_core_info(ldev->pf[0].xdev, "nhs=%d\n", nhs);
-#endif
 
 	if (nhs == 1 && event != FIB_EVENT_ENTRY_DEL) {
 		if (__xsc_lag_is_active(ldev)) {
@@ -1008,9 +988,7 @@ int xsc_lag_fib_event(struct notifier_block *nb,
 	if (!xsc_lag_multipath_check_prereq(ldev))
 		return NOTIFY_DONE;
 
-#ifdef XSC_LAG_DEBUG
-	xsc_core_info(ldev->pf[0].xdev, "lag fib event=%ld\n", event);
-#endif
+	xsc_core_dbg(ldev->pf[0].xdev, "lag fib event=%ld\n", event);
 
 	switch (event) {
 	case FIB_EVENT_ENTRY_REPLACE:
@@ -1112,7 +1090,7 @@ int __xsc_lag_add_xdev(struct xsc_core_device *xdev)
 	}
 
 	xsc_lag_dev_add_xdev(ldev, xdev);
-	ldev->lag_id = 0xff;
+	ldev->lag_id = U16_MAX;
 
 	if (!ldev->nb.notifier_call) {
 		ldev->nb.notifier_call = xsc_lag_netdev_event;
@@ -1277,7 +1255,10 @@ void xsc_lag_remove(struct xsc_core_device *xdev)
 		return;
 
 	if (__xsc_lag_is_active(ldev))
-		xsc_deactivate_lag(ldev);
+		xsc_deactivate_lag(ldev, XSC_LAG_MODE_FLAGS);
+
+	if (__xsc_bond_is_active(ldev))
+		xsc_deactivate_lag(ldev, XSC_BOND_FLAG_KERNEL);
 
 	xsc_lag_dev_remove_pf(ldev, xdev);
 	xsc_lag_dev_put(ldev);

@@ -303,7 +303,7 @@ static int xsc_priv_dev_ioctl_get_cma_pcp(struct xsc_core_device *xdev, void *in
 	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
 	struct xsc_ioctl_cma_pcp *resp = (struct xsc_ioctl_cma_pcp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id))
+	if (!xsc_core_is_pf(xdev))
 		return -EOPNOTSUPP;
 
 	resp->pcp = ib_dev->cm_pcp;
@@ -315,7 +315,7 @@ static int xsc_priv_dev_ioctl_get_cma_dscp(struct xsc_core_device *xdev, void *i
 	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
 	struct xsc_ioctl_cma_dscp *resp = (struct xsc_ioctl_cma_dscp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id))
+	if (!xsc_core_is_pf(xdev))
 		return -EOPNOTSUPP;
 
 	resp->dscp = ib_dev->cm_dscp;
@@ -327,7 +327,7 @@ static int xsc_priv_dev_ioctl_set_cma_pcp(struct xsc_core_device *xdev, void *in
 	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
 	struct xsc_ioctl_cma_pcp *req = (struct xsc_ioctl_cma_pcp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id))
+	if (!xsc_core_is_pf(xdev))
 		return -EOPNOTSUPP;
 
 	if (req->pcp < 0 || (req->pcp > QOS_PCP_MAX && req->pcp != DSCP_PCP_UNSET))
@@ -342,7 +342,7 @@ static int xsc_priv_dev_ioctl_set_cma_dscp(struct xsc_core_device *xdev, void *i
 	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
 	struct xsc_ioctl_cma_dscp *req = (struct xsc_ioctl_cma_dscp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id))
+	if (!xsc_core_is_pf(xdev))
 		return -EOPNOTSUPP;
 
 	if (req->dscp < 0 || (req->dscp > QOS_DSCP_MAX && req->dscp != DSCP_PCP_UNSET))

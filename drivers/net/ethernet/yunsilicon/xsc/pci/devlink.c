@@ -29,11 +29,7 @@ void xsc_devlink_free(struct devlink *devlink)
 int xsc_devlink_register(struct devlink *devlink, struct device *dev)
 {
 	int err = 0;
-#ifdef HAVE_DEVLINK_ALLOC_DEV_PARM
-	err = devlink_register(devlink);
-#else
 	err = devlink_register(devlink, dev);
-#endif
 	return err;
 }
 

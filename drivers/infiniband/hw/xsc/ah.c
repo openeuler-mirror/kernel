@@ -7,7 +7,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/random.h>
-#include <rdma/ib_cache.h>
 
 #include "xsc_ib.h"
 #include "user.h"
@@ -119,26 +118,6 @@ xsc_ib_create_ah_def()
 
 int xsc_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 {
-//	struct xsc_ib_ah *ah = to_mah(ibah);
-//	u32 tmp;
-
-//	pr_err("[%s:%d]", __func__, __LINE__);
-
-//	memset(ah_attr, 0, sizeof(*ah_attr));
-
-//	tmp = be32_to_cpu(ah->av.grh_gid_fl);
-//	if (tmp & (1 << 30)) {
-//		ah_attr->ah_flags = IB_AH_GRH;
-//		ah_attr->grh.sgid_index = (tmp >> 20) & 0xff;
-//		ah_attr->grh.flow_label = tmp & 0xfffff;
-//		memcpy(&ah_attr->grh.dgid, ah->av.rgid, 16);
-//		ah_attr->grh.hop_limit = ah->av.hop_limit;
-//		ah_attr->grh.traffic_class = ah->av.tclass;
-//	}
-//	ah_attr->dlid = be16_to_cpu(ah->av.rlid);
-//	ah_attr->static_rate = ah->av.stat_rate_sl >> 4;
-//	ah_attr->sl = ah->av.stat_rate_sl & 0xf;
-
 	return 0;
 }
 

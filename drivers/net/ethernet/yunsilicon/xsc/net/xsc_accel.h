@@ -16,6 +16,7 @@ static inline void xsc_udp_gso_handle_tx_skb(struct sk_buff *skb)
 
 	udp_hdr(skb)->len = htons(payload_len);
 }
+
 static inline struct sk_buff *xsc_accel_handle_tx(struct sk_buff *skb)
 {
 	/*no not consider tls and ipsec*/

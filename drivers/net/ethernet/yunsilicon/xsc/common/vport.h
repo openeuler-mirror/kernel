@@ -113,8 +113,5 @@ int xsc_modify_hca_vport_context(struct xsc_core_device *dev,
 				 u8 other_vport, u8 port_num,
 				 int vf,
 				 struct xsc_hca_vport_context *req);
-//int xsc_nic_vport_enable_roce(struct xsc_core_device *dev);
-//int xsc_nic_vport_disable_roce(struct xsc_core_device *dev);
-
 u16 xsc_eswitch_get_total_vports(const struct xsc_core_device *dev);
 #endif /* XSC_VPORT_H */

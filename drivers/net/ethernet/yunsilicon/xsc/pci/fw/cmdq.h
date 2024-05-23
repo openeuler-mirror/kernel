@@ -31,8 +31,6 @@ struct xsc_cmd_layout {
 	u8      owner_bit: 1; //rsv for hw, arm will check this bit to make sure mem written
 };
 
-//static_assert(sizeof(struct xsc_cmd_layout) == CMDQ_ENTRY_SIZE, "xsc_cmd_layout wrong size");
-
 struct xsc_rsp_layout {
 	struct cmdq_rsv    rsv0;
 	__be32		out[RSP_FIRST_SIZE];
@@ -42,8 +40,6 @@ struct xsc_rsp_layout {
 	u8		type: 7;
 	u8      owner_bit: 1; //rsv for hw, driver will check this bit to make sure mem written
 };
-
-//static_assert(sizeof(struct xsc_rsp_layout) == CMDQ_ENTRY_SIZE, "xsc_rsp_layout wrong size");
 
 struct xsc_cmd_prot_block {
 	u8		data[512];

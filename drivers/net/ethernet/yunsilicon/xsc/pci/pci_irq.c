@@ -83,323 +83,13 @@ static void xsc_dma_read_msix_fini(struct xsc_core_device *xdev)
 		free_irq(pci_irq_vector(xdev->pdev, XSC_DMA_READ_DONE_VEC), xdev);
 }
 
-#if defined(MSIX_SUPPORT) && !defined(XSC_MSIX_BAR_EMUL)
-static void xsc_write_msix_ctrl_tbl(struct xsc_core_device *xdev, u32 func_idx, u32 func_mask)
-{
-	struct xsc_core_device *pf_xdev;
-
-	if (!xsc_core_is_pf(xdev))
-		pf_xdev = pci_get_drvdata(xdev->pdev->physfn);
-	else
-		pf_xdev = xdev;
-
-	REG_WR32(pf_xdev, HIF_IRQ_CONTROL_TBL_MEM_ADDR + func_idx * 4, func_mask);
-}
-
-static void xsc_msix_ctrl_tbl_func_fini(struct xsc_core_device *xdev, u32 func_id)
-{
-	return xsc_write_msix_ctrl_tbl(xdev, func_id, 1);
-}
-
-static void xsc_msix_ctrl_tbl_func_init(struct xsc_core_device *xdev, u32 func_id)
-{
-	xsc_write_msix_ctrl_tbl(xdev, func_id, 0);
-}
-
-static int xsc_msix_mask_tbl_bit_write(struct xsc_core_device *xdev,
-				       u32 vector_id,
-				       u32 mask_or_unmask)
-{
-	u32 v;
-	struct xsc_core_device *pf_xdev;
-
-	if (!xsc_core_is_pf(xdev))
-		pf_xdev = pci_get_drvdata(xdev->pdev->physfn);
-	else
-		pf_xdev = xdev;
-
-	if (vector_id >= BIT(xdev->caps.log_max_msix))
-		return -1;
-	if (!(mask_or_unmask == 0 || mask_or_unmask == 1))
-		return -1;
-
-	v = (((mask_or_unmask == 1) ? 0x3 : 0x2) << 12) | vector_id;
-
-	REG_WR32(pf_xdev, HIF_IRQ_INT_DB_REG_ADDR, v);
-
-	return 0;
-}
-
-static void xsc_msix_check_vtr_tbl_idle(struct xsc_core_device *xdev, u32 *idle)
-{
-	u32 is_busy;
-	struct xsc_core_device *pf_xdev;
-
-	if (!xsc_core_is_pf(xdev))
-		pf_xdev = pci_get_drvdata(xdev->pdev->physfn);
-	else
-		pf_xdev = xdev;
-
-	*idle = 0;
-	do {
-		is_busy = REG_RD32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_BUSY_REG_ADDR);
-		if (is_busy == 0)
-			break;
-
-		usleep_range(2000, 3000);
-	} while (is_busy);
-
-	*idle = 1;
-}
-
-int xsc_msix_vector_tbl_write(struct xsc_core_device *xdev, u32 vector_id,
-			      u32 laddr, u32 uaddr, u32 data,
-			      u32 func_id, u32 vector_en)
-{
-	int ret = 0;
-	u32 idle = 0;
-	u32 tmp;
-	struct xsc_core_device *pf_xdev;
-
-	if (!xsc_core_is_pf(xdev))
-		pf_xdev = pci_get_drvdata(xdev->pdev->physfn);
-	else
-		pf_xdev = xdev;
-
-	if (vector_id >= BIT(xdev->caps.log_max_msix) ||
-	    !check_caps_funcid_valid(&xdev->caps) ||
-	    func_id >= get_xsc_funcid_end(&xdev->caps) ||
-	    vector_en > 1) {
-		xsc_core_err(xdev, "%s: invalid input params: func_id=%d\n",
-			     __func__, func_id);
-		return -EINVAL;
-	}
-
-	REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_ADDR_REG_ADDR, vector_id);
-	xsc_msix_check_vtr_tbl_idle(pf_xdev, &idle);
-	if (idle) {
-		REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_CMD_REG_ADDR, 0);
-		REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_MSG_LADDR_REG_ADDR, laddr);
-		REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_MSG_UADDR_REG_ADDR, uaddr);
-		REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_MSG_DATA_REG_ADDR, data);
-
-		tmp = ((vector_en & 0x1) << 11) | (func_id & 0x7FF);
-		REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_CTRL_REG_ADDR, tmp);
-		REG_WR32(pf_xdev, HIF_IRQ_CFG_VECTOR_TABLE_START_REG_ADDR, 1);
-	} else {
-		xsc_core_err(xdev, "VTR tbl is busy.\n");
-		ret = -1;
-	}
-
-	return ret;
-}
-
-int xsc_read_msix_tbl_info(struct xsc_core_device *xdev, u16 index, struct msi_msg *msg)
-{
-	struct xsc_msix_table_info_mbox_in in;
-	struct xsc_msix_table_info_mbox_out out;
-	int err;
-
-	memset(&in, 0, sizeof(in));
-	memset(&out, 0, sizeof(out));
-	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_MSIX_TBL_INFO);
-	in.index = cpu_to_be16(index);
-
-	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
-	if (err) {
-		xsc_core_err(xdev, "xsc cmd ops get msix tbl failed %d\n", err);
-		return err;
-	}
-	msg->address_lo = be32_to_cpu(out.addr_lo);
-	msg->address_hi = be32_to_cpu(out.addr_hi);
-	msg->data = be32_to_cpu(out.data);
-	return 0;
-}
-
-static int xsc_msix_ctrl_tbl_init(struct xsc_core_device *xdev)
-{
-	if (!check_caps_funcid_valid(&xdev->caps) ||
-	    xdev->glb_func_id >= get_xsc_funcid_end(&xdev->caps))
-		return -1;
-
-	xsc_msix_ctrl_tbl_func_init(xdev, xdev->glb_func_id);
-
-	xsc_core_dbg(xdev, "glb_funcid=%d\n", xdev->glb_func_id);
-	return 0;
-}
-
-static int xsc_msix_ctrl_tbl_fini(struct xsc_core_device *xdev)
-{
-	if (!check_caps_funcid_valid(&xdev->caps) ||
-	    xdev->glb_func_id >= get_xsc_funcid_end(&xdev->caps))
-		return -1;
-
-	xsc_msix_ctrl_tbl_func_fini(xdev, xdev->glb_func_id);
-
-	xsc_core_dbg(xdev, "glb_funcid=%d\n", xdev->glb_func_id);
-	return 0;
-}
-
-static int xsc_msix_mask_tbl_ops(struct xsc_core_device *xdev, u32 value)
-{
-	int err;
-	int i;
-	int vec_offset;
-	struct xsc_eq_table *table = &xdev->dev_res->eq_table;
-
-	if (table->num_comp_vectors == 0)
-		return -1;
-
-	xsc_core_dbg(xdev, "num_comp_vectors=%d\n", table->num_comp_vectors);
-
-	for (i = 0; i < table->num_comp_vectors + table->eq_vec_comp_base; i++) {
-		vec_offset = xdev->msix_vec_base + i;
-		err = xsc_msix_mask_tbl_bit_write(xdev, vec_offset, value);
-		if (err != 0)
-			return err;
-	}
-
-	return 0;
-}
-
-static int xsc_msix_mask_tbl_init(struct xsc_core_device *xdev)
-{
-	return xsc_msix_mask_tbl_ops(xdev, 0);
-}
-
-static int xsc_msix_mask_tbl_fini(struct xsc_core_device *xdev)
-{
-	return xsc_msix_mask_tbl_ops(xdev, 1);
-}
-
-static int xsc_msix_vector_tbl_ops(struct xsc_core_device *xdev, u32 vector_en)
-{
-	int err;
-	int i;
-	int vec_size;
-	u16 index;
-	struct pci_dev *pdev = xdev->pdev;
-	struct msi_desc *entry;
-	struct msi_msg *msgs;
-
-	struct xsc_eq_table *table = &xdev->dev_res->eq_table;
-
-	if (table->num_comp_vectors == 0)
-		return -1;
-
-	xsc_core_dbg(xdev, "num_comp_vectors=%d\n", table->num_comp_vectors);
-	vec_size = table->num_comp_vectors + table->eq_vec_comp_base;
-	msgs = kcalloc(vec_size, sizeof(struct msi_msg), GFP_KERNEL);
-	err = 0;
-
-	i = xdev->msix_vec_base;
-	index = 0;
-	for_each_pci_msi_entry(entry, pdev) {
-		if (vector_en == 1) {
-			err = xsc_read_msix_tbl_info(xdev, index, &msgs[index]);
-			if (err) {
-				xsc_core_err(xdev, "failed to get msix tbl %d\n", err);
-				goto out;
-			}
-		}
-		i++;
-		index++;
-	}
-
-	i = xdev->msix_vec_base;
-	index = 0;
-	for_each_pci_msi_entry(entry, pdev) {
-		err = xsc_msix_vector_tbl_write(xdev, i,
-						msgs[index].address_lo,
-						msgs[index].address_hi,
-						msgs[index].data,
-						xdev->glb_func_id,
-						vector_en);
-		i++;
-		index++;
-	}
-
-out:
-	kfree(msgs);
-	return err;
-}
-
-static int xsc_msix_vector_tbl_init(struct xsc_core_device *xdev)
-{
-	return xsc_msix_vector_tbl_ops(xdev, 1);
-}
-
-static int xsc_msix_vector_tbl_fini(struct xsc_core_device *xdev)
-{
-	return xsc_msix_vector_tbl_ops(xdev, 0);
-}
-
-int xsc_msix_mask_set_vec(struct xsc_core_device *xdev, u32 vec, u32 value)
-{
-	int err = 0;
-
-	int max_msix = 1 << xdev->caps.log_max_msix;
-
-	if (vec >= max_msix) {
-		xsc_core_err(xdev, "failed to set msix mask.vec=%d\n", vec);
-		return -1;
-	}
-
-	err = xsc_msix_mask_tbl_bit_write(xdev, vec, value);
-
-	return err;
-}
-#endif
-
 static int xsc_msix_tbl_init(struct xsc_core_device *xdev)
 {
-#if defined(MSIX_SUPPORT) && !defined(XSC_MSIX_BAR_EMUL)
-	int err;
-
-	err = xsc_msix_vector_tbl_init(xdev);
-	if (err) {
-		xsc_core_err(xdev, "xsc_msix_vector_tbl_init failed: err=%d\n", err);
-		return -1;
-	}
-
-	err = xsc_msix_ctrl_tbl_init(xdev);
-	if (err) {
-		xsc_core_err(xdev, "xsc_msix_ctrl_tbl_init failed: err=%d\n", err);
-		return -1;
-	}
-
-	err = xsc_msix_mask_tbl_init(xdev);
-	if (err) {
-		xsc_core_err(xdev, "xsc_msix_mask_tbl_init failed: err=%d\n", err);
-		return -1;
-	}
-#endif
 	return 0;
 }
 
 static int xsc_msix_tbl_fini(struct xsc_core_device *xdev)
 {
-#if defined(MSIX_SUPPORT) && !defined(XSC_MSIX_BAR_EMUL)
-	int err;
-
-	err = xsc_msix_vector_tbl_fini(xdev);
-	if (err) {
-		xsc_core_err(xdev, "xsc_msix_vector_tbl_fini failed: err=%d\n", err);
-		return -1;
-	}
-
-	err = xsc_msix_mask_tbl_fini(xdev);
-	if (err) {
-		xsc_core_err(xdev, "xsc_msix_mask_tbl_fini failed: err=%d\n", err);
-		return -1;
-	}
-
-	err = xsc_msix_ctrl_tbl_fini(xdev);
-	if (err) {
-		xsc_core_err(xdev, "xsc_msix_ctrl_tbl_fini failed: err=%d\n", err);
-		return -1;
-	}
-#endif
 	return 0;
 }
 
@@ -515,7 +205,6 @@ xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int vector)
 }
 EXPORT_SYMBOL(xsc_comp_irq_get_affinity_mask);
 
-#ifdef XSC_MSIX_BAR_EMUL
 static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
@@ -549,8 +238,8 @@ static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 	table->num_comp_vectors = nvec - nvec_base;
 	dev->msix_vec_base = dev->caps.msix_base;
 	xsc_core_info(dev,
-		      "alloc msix_vec_num=%d, vec_base_num=%d, max_msix_num=%d, msix_vec_base=%d\n",
-		      nvec, nvec_base, dev->caps.msix_num, dev->msix_vec_base);
+		      "alloc msix_vec_num=%d, comp_num=%d, max_msix_num=%d, msix_vec_base=%d\n",
+		      nvec, table->num_comp_vectors, dev->caps.msix_num, dev->msix_vec_base);
 
 	return 0;
 
@@ -559,55 +248,6 @@ err_free_irq_info:
 	kfree(dev_res->irq_info);
 	return err;
 }
-
-#else
-
-static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
-{
-	struct xsc_dev_resource *dev_res = dev->dev_res;
-	struct xsc_eq_table *table = &dev_res->eq_table;
-	int num_eqs =  (dev->caps.max_num_eqs ?
-			dev->caps.max_num_eqs : 1 << dev->caps.log_max_eq);
-	int nvec, nvec_base;
-	int err;
-
-	if (xsc_core_is_pf(dev))
-		nvec_base = XSC_EQ_VEC_COMP_BASE;
-	else
-		/*VF device not need dma read done vector.*/
-		nvec_base = (XSC_EQ_VEC_COMP_BASE - 1);
-	nvec = XSC_MAX_PORTS * num_online_cpus() + nvec_base;
-
-	nvec = min_t(int, nvec, (num_eqs + nvec_base));
-	if (nvec <= nvec_base) {
-		xsc_core_warn(dev, "failed to alloc irq vector(%d)\n", nvec);
-		return -ENOMEM;
-	}
-
-	dev_res->irq_info = kcalloc(nvec, sizeof(*dev_res->irq_info), GFP_KERNEL);
-	if (!dev_res->irq_info)
-		return -ENOMEM;
-
-	nvec = pci_alloc_irq_vectors(dev->pdev, nvec_base + 1, nvec, PCI_IRQ_MSIX);
-	if (nvec < 0) {
-		err = nvec;
-		goto err_free_irq_info;
-	}
-
-	table->eq_vec_comp_base = nvec_base;
-	table->num_comp_vectors = nvec - nvec_base;
-	xsc_core_info(dev, "alloc irq vector=%d, vec_base=%d, max_eq_nums=%d, log_max_eq=%d\n",
-		      nvec, nvec_base, dev->caps.max_num_eqs, dev->caps.log_max_eq);
-
-	return 0;
-
-err_free_irq_info:
-	pci_free_irq_vectors(dev->pdev);
-	kfree(dev_res->irq_info);
-	return err;
-}
-
-#endif
 
 static void xsc_free_irq_vectors(struct xsc_core_device *dev)
 {
@@ -769,7 +409,6 @@ void xsc_free_irq_for_event(struct xsc_core_device *dev)
 	free_irq(pci_irq_vector(dev->pdev, XSC_VEC_CMD_EVENT), dev);
 }
 
-#ifdef XSC_MSIX_BAR_EMUL
 int xsc_cmd_enable_msix(struct xsc_core_device *xdev)
 {
 	struct xsc_msix_table_info_mbox_in in;
@@ -788,14 +427,10 @@ int xsc_cmd_enable_msix(struct xsc_core_device *xdev)
 
 	return 0;
 }
-#endif
 
 int xsc_irq_eq_create(struct xsc_core_device *dev)
 {
 	int err;
-#if !defined XSC_MSIX_BAR_EMUL
-	struct xsc_eq_table *table = &dev->dev_res->eq_table;
-#endif
 
 	if (dev->caps.msix_enable == 0)
 		return 0;
@@ -805,15 +440,6 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 		xsc_core_err(dev, "enable msix failed, err=%d\n", err);
 		goto err_alloc_irq;
 	}
-
-#if !defined XSC_MSIX_BAR_EMUL
-	/*MUST place afer xsc_alloc_irq_vectors, and MUST place before xsc_start_eqs*/
-	err = xsc_alloc_continuous_msix_vec(dev, table->num_comp_vectors + table->eq_vec_comp_base);
-	if (err) {
-		xsc_core_err(dev, "alloc msix vec res failed, err=%d\n", err);
-		goto err_alloc_msix_vec;
-	}
-#endif
 
 	err = xsc_start_eqs(dev);
 	if (err) {
@@ -860,14 +486,12 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 	}
 
 	xsc_cmd_use_events(dev);
-#ifdef XSC_MSIX_BAR_EMUL
 	err = xsc_cmd_enable_msix(dev);
 	if (err) {
 		xsc_core_err(dev, "xsc_cmd_enable_msix failed %d.\n", err);
 		xsc_cmd_use_polling(dev);
 		goto err_set_affinity;
 	}
-#endif
 	return 0;
 
 err_set_affinity:
@@ -883,10 +507,6 @@ err_request_cmd_irq:
 err_alloc_comp_eqs:
 	xsc_stop_eqs(dev);
 err_start_eqs:
-#if !defined XSC_MSIX_BAR_EMUL
-	xsc_free_continuous_msix_vec(dev);
-err_alloc_msix_vec:
-#endif
 	xsc_free_irq_vectors(dev);
 err_alloc_irq:
 	return err;

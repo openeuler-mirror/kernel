@@ -24,18 +24,18 @@ static inline u32 xsc_cqwq_get_size(struct xsc_cqwq *wq)
 	return wq->fbc.sz_m1 + 1;
 }
 
-static inline struct xsc_cqe64 *xsc_cqwq_get_wqe(struct xsc_cqwq *wq, u32 ix)
+static inline struct xsc_cqe *xsc_cqwq_get_wqe(struct xsc_cqwq *wq, u32 ix)
 {
-	struct xsc_cqe64 *cqe = xsc_frag_buf_get_wqe(&wq->fbc, ix);
+	struct xsc_cqe *cqe = xsc_frag_buf_get_wqe(&wq->fbc, ix);
 
 	ETH_DEBUG_LOG("cqe = %p\n", cqe);
 
 	return cqe;
 }
 
-static inline struct xsc_cqe64 *xsc_cqwq_get_cqe(struct xsc_cqwq *wq)
+static inline struct xsc_cqe *xsc_cqwq_get_cqe(struct xsc_cqwq *wq)
 {
-	struct xsc_cqe64 *cqe;
+	struct xsc_cqe *cqe;
 	u8 cqe_ownership_bit;
 	u8 sw_ownership_val;
 	u32 ci = xsc_cqwq_get_ci(wq);
@@ -61,7 +61,7 @@ int xsc_eth_napi_poll(struct napi_struct *napi, int budget);
 bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget);
 int xsc_poll_rx_cq(struct xsc_cq *cq, int budget);
 void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
-			   struct xsc_rq *rq, struct xsc_cqe64 *cqe);
+			   struct xsc_rq *rq, struct xsc_cqe *cqe);
 struct sk_buff *xsc_skb_from_cqe_linear(struct xsc_rq *rq,
 					struct xsc_wqe_frag_info *wi, u32 cqe_bcnt, u8 has_pph);
 struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,

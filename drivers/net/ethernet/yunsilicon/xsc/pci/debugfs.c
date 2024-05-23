@@ -10,7 +10,6 @@
 #include "common/driver.h"
 #include "common/qp.h"
 #include "common/cq.h"
-#include "fw/xsc_tbm.h"
 
 enum {
 	QP_PID,
@@ -188,136 +187,6 @@ static const struct file_operations xsc_debugfs_reg_fops = {
 	.write = xsc_debugfs_reg_write,
 };
 
-static ssize_t xsc_debugfs_vlan_read(struct file *filp, char __user *buffer,
-				     size_t count, loff_t *ppos)
-{
-	char *buf;
-	int len;
-	char xsc_debugfs_vlan_buf[256] = "";
-
-	 /* don't allow partial reads */
-	if (*ppos != 0)
-		return 0;
-
-	buf = kasprintf(GFP_KERNEL, "%s: %s\n",
-			"vlan debugfs", xsc_debugfs_vlan_buf);
-	if (!buf)
-		return -ENOMEM;
-
-	if (count < strlen(buf)) {
-		kfree(buf);
-		return -ENOSPC;
-	}
-
-	len = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
-
-	kfree(buf);
-	return len;
-}
-
-static ssize_t xsc_debugfs_vlan_write(struct file *filp,
-				      const char __user *buffer,
-				      size_t count, loff_t *ppos)
-{
-	struct xsc_core_device *xdev = filp->private_data;
-	struct xsc_vlan_config config;
-	char proto[16];
-	int off = 0;
-	int len, cnt;
-	char xsc_debugfs_vlan_buf[256] = "";
-
-	/* don't allow partial writes */
-	if (*ppos != 0)
-		return 0;
-
-	if (count >= sizeof(xsc_debugfs_vlan_buf))
-		return -ENOSPC;
-
-	len = simple_write_to_buffer(xsc_debugfs_vlan_buf,
-				     sizeof(xsc_debugfs_vlan_buf) - 1,
-				     ppos, buffer, count);
-	if (len < 0)
-		return len;
-
-	xsc_debugfs_vlan_buf[len] = '\0';
-	memset(&config, 0, sizeof(config));
-	// <mode> <pvlan> <vlan_start> <vlan_num> <proto> <prio> <smac_en>
-	// trunk 100 0 4096 802.1q 0 0
-	// tunnel 100 0 4096 802.1ad 1 0
-	if (strncmp(xsc_debugfs_vlan_buf, "trunk", 5) == 0) {
-		off = 5;
-		config.mode = XSC_VLAN_MODE_TRUNK;
-	} else if (strncmp(xsc_debugfs_vlan_buf, "tunnel", 6) == 0) {
-		off = 6;
-		config.mode = XSC_VLAN_MODE_TUNNEL;
-	} else if (strncmp(xsc_debugfs_vlan_buf, "access", 6) == 0) {
-		off = 6;
-		config.mode = XSC_VLAN_MODE_ACCESS;
-	} else if (strncmp(xsc_debugfs_vlan_buf, "tagged", 6) == 0) {
-		off = 6;
-		config.mode = XSC_VLAN_MODE_NATIVE_TAGGED;
-	} else if (strncmp(xsc_debugfs_vlan_buf, "untagged", 8) == 0) {
-		off = 8;
-		config.mode = XSC_VLAN_MODE_NATIVE_UNTAGGED;
-	} else if (strncmp(xsc_debugfs_vlan_buf, "none", 4) == 0) {
-		off = 4;
-		config.mode = 0;
-	} else {
-		xsc_core_err(xdev, "invalid vlan mode: %s\n", xsc_debugfs_vlan_buf);
-		return 0;
-	}
-
-	cnt = sscanf(&xsc_debugfs_vlan_buf[off], "%u %u %u %s %u %u",
-		     &config.pvid, &config.vid_allow_base,
-		     &config.vid_allow_num, proto,
-		     &config.prio, &config.smac_filter_en);
-	if (cnt < 3) {
-		xsc_core_err(xdev, "error arguments: <mode> <vid> <vlan_start> <vlan_num> <proto> <prio> <smac_en>\n");
-		return 0;
-	}
-
-	if (strncmp(proto, "802.1q", 6) == 0)
-		config.proto = ETH_P_8021Q;
-	else if (strncmp(proto, "802.1ad", 7) == 0)
-		config.proto = ETH_P_8021AD;
-	else
-		config.proto = ETH_P_8021Q;
-
-	if (config.prio > 7) {
-		xsc_core_err(xdev, "invalid vlan prio: %s\n", xsc_debugfs_vlan_buf);
-		return 0;
-	}
-
-	xsc_core_info(xdev, "%s: vlan_mode=%d vid=%d vlan_allow=%d/%d proto=0x%x prio=%d smac_en=%d",
-		      __func__, config.mode, config.pvid, config.vid_allow_base,
-		      config.vid_allow_num, config.proto, config.prio,
-		      config.smac_filter_en);
-
-	return count;
-}
-
-static const struct file_operations xsc_debugfs_vlan_fops = {
-	.owner = THIS_MODULE,
-	.open = simple_open,
-	.read =  xsc_debugfs_vlan_read,
-	.write = xsc_debugfs_vlan_write,
-};
-
-int xsc_vlan_debugfs_init(struct xsc_core_device *dev)
-{
-	struct dentry *pfile;
-
-	if (dev->dev_res->dbg_root) {
-		pfile = debugfs_create_file("vlan", 0644,
-					    dev->dev_res->dbg_root, dev,
-					    &xsc_debugfs_vlan_fops);
-		if (!pfile)
-			xsc_core_err(dev, "failed to create vlan debugfs\n");
-	}
-
-	return 0;
-}
-
 int xsc_debugfs_init(struct xsc_core_device *dev)
 {
 	const char *name = pci_name(dev->pdev);
@@ -337,8 +206,6 @@ int xsc_debugfs_init(struct xsc_core_device *dev)
 		xsc_core_err(dev, "failed to create debugfs dir for %s\n", name);
 		return -ENOMEM;
 	}
-
-	xsc_vlan_debugfs_init(dev);
 
 	return 0;
 }
@@ -574,32 +441,9 @@ static u64 qp_read_field(struct xsc_core_device *dev, struct xsc_core_qp *qp,
 	case QP_PID:
 		param = qp->pid;
 		break;
-//	case QP_STATE:
-//		param = be32_to_cpu(ctx->flags) >> 28;
-//		break;
-//	case QP_XPORT:
-//		param = (be32_to_cpu(ctx->flags) >> 16) & 0xff;
-//		break;
 	case QP_MTU:
 		param = ctx->mtu_mode ? IB_MTU_1024 : IB_MTU_4096;
 		break;
-//	case QP_N_RECV:
-//		param = 1 << ((ctx->rq_size_stride >> 3) & 0xf);
-//		break;
-//	case QP_RECV_SZ:
-//		param = 1 << ((ctx->rq_size_stride & 7) + 4);
-//		break;
-//	case QP_N_SEND:
-//		no_sq = be16_to_cpu(ctx->sq_crq_size) >> 15;
-//		if (!no_sq)
-//			param = 1 << (be16_to_cpu(ctx->sq_crq_size) >> 11);
-//		else
-//			param = 0;
-//		break;
-//	case QP_LOG_PG_SZ:
-//		param = ((cpu_to_be32(ctx->log_pg_sz_remote_qpn) >> 24) & 0x1f);
-//		param += 12;
-//		break;
 	case QP_RQPN:
 		param = cpu_to_be32(ctx->remote_qpn) & 0xffffff;
 		break;
@@ -632,13 +476,10 @@ static u64 eq_read_field(struct xsc_core_device *dev, struct xsc_eq *eq,
 
 	switch (index) {
 	case EQ_NUM_EQES:
-//		param = 1 << ((be32_to_cpu(ctx->log_sz_usr_page) >> 24) & 0x1f);
 		break;
 	case EQ_INTR:
-//		param = ctx->intr;
 		break;
 	case EQ_LOG_PG_SZ:
-//		param = (ctx->log_page_size & 0x1f) + 12;
 		break;
 	}
 
@@ -669,13 +510,10 @@ static u64 cq_read_field(struct xsc_core_device *dev, struct xsc_core_cq *cq,
 
 	switch (index) {
 	case CQ_PID:
-//		param = cq->pid;
 		break;
 	case CQ_NUM_CQES:
-//		param = 1 << ((be32_to_cpu(ctx->log_sz_usr_page) >> 24) & 0x1f);
 		break;
 	case CQ_LOG_PG_SZ:
-//		param = (ctx->log_pg_sz & 0x1f) + 12;
 		break;
 	}
 
@@ -840,9 +678,9 @@ static int set_udp_sport(u32 qpn, u32 sport, struct xsc_core_device *xdev, struc
 	msg.data.timestamp = (u64)(u32)ts.tv_sec * MSEC_PER_SEC +
 		ts.tv_nsec / NSEC_PER_MSEC;
 	msg.data.qpn = qpn;
-	msg.data.bus = xdev->bus_num;
-	msg.data.dev = xdev->dev_num;
-	msg.data.fun = xdev->func_id;
+	msg.data.bus = xdev->pdev->bus->number;
+	msg.data.dev = PCI_SLOT(xdev->pdev->devfn);
+	msg.data.fun = PCI_FUNC(xdev->pdev->devfn);
 	msg.data.update.sport.port_old = t->s_port;
 	msg.data.update.sport.port_new = __cpu_to_be16(sport);
 	t->s_port = msg.data.update.sport.port_new;
@@ -919,8 +757,6 @@ static ssize_t trace_write(struct file *filp, const char __user *buf, size_t cou
 
 	tmp_buf[len] = '\0';
 
-	// <sport>
-	// sport 10000
 	if (strncmp(tmp_buf, "sport", 5) == 0) {
 		ret = kstrtouint(&tmp_buf[6], 0, &sport);
 		if (ret != 0) {

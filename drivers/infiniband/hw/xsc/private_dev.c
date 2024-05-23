@@ -305,8 +305,6 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 	int ret = 0;
 	struct xsc_ioctl_data_tl *tl = (struct xsc_ioctl_data_tl *)out;
 	struct xsc_ioctl_get_phy_info_res *resp;
-	struct xsc_ioctl_get_vf_info_res *vf_res;
-	struct xsc_vf_info vf_info;
 	struct xsc_lag *ldev = xsc_lag_dev_get(xdev);
 	u16 lag_id = U16_MAX;
 
@@ -317,11 +315,11 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 	case XSC_IOCTL_OP_GET_LOCAL:
 		resp = (struct xsc_ioctl_get_phy_info_res *)(tl + 1);
 
-		resp->phy_port = xdev->pcie_port;
+		resp->pcie_no = xdev->pcie_no;
 		resp->func_id = xdev->glb_func_id;
-		resp->logic_in_port = xdev->logic_port;
+		resp->pcie_host = xdev->caps.pcie_host;
 		resp->mac_phy_port = xdev->mac_port;
-		resp->mac_logic_in_port = xdev->mac_logic_port;
+		resp->funcid_to_logic_port_off = xdev->caps.funcid_to_logic_port;
 		resp->lag_id = lag_id;
 		resp->raw_qp_id_base = xdev->caps.raweth_qp_id_base;
 		resp->raw_rss_qp_id_base = xdev->caps.raweth_rss_qp_id_base;
@@ -337,29 +335,20 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 		resp->pct_compress_vld =
 				(xdev->feature_flag & FEATURE_PCT_EXP_MASK) ? 1 : 0;
 
-		xsc_core_dbg(xdev, "%d,%d,%d,%d,%d,%d\n", resp->phy_port,
-			     resp->func_id, resp->logic_in_port,
-			     resp->mac_phy_port, resp->mac_logic_in_port,
-			     resp->lag_id);
-		resp->funcid[0] = xdev->caps.funcid[0];
-		resp->funcid[1] = xdev->caps.funcid[1];
-		resp->funcid[2] = xdev->caps.funcid[2];
-		resp->funcid[3] = xdev->caps.funcid[3];
-		resp->funcid[4] = xdev->caps.funcid[4];
-		resp->funcid[5] = xdev->caps.funcid[5];
-		resp->funcid[6] = xdev->caps.funcid[6];
-		resp->funcid[7] = xdev->caps.funcid[7];
+		xsc_core_dbg(xdev, "%d,%d,%d,%d,%d,%d\n",
+			     resp->pcie_no, resp->func_id, resp->pcie_host,
+			     resp->mac_phy_port, resp->lag_id,
+			     resp->funcid_to_logic_port_off);
+		resp->pf0_vf_funcid_base = xdev->caps.pf0_vf_funcid_base;
+		resp->pf0_vf_funcid_top  = xdev->caps.pf0_vf_funcid_top;
+		resp->pf1_vf_funcid_base = xdev->caps.pf1_vf_funcid_base;
+		resp->pf1_vf_funcid_top  = xdev->caps.pf1_vf_funcid_top;
+		resp->pcie0_pf_funcid_base     = xdev->caps.pcie0_pf_funcid_base;
+		resp->pcie0_pf_funcid_top      = xdev->caps.pcie0_pf_funcid_top;
+		resp->pcie1_pf_funcid_base     = xdev->caps.pcie1_pf_funcid_base;
+		resp->pcie1_pf_funcid_top      = xdev->caps.pcie1_pf_funcid_top;
 		resp->hca_core_clock = xdev->caps.hca_core_clock;
-		break;
-
-	case XSC_IOCTL_OP_GET_VF_INFO:
-		vf_res = (struct xsc_ioctl_get_vf_info_res *)(tl + 1);
-		memcpy(&vf_info, vf_res, sizeof(struct xsc_vf_info));
-
-		xsc_pci_get_vf_info(xdev, &vf_info);
-
-		vf_res->func_id = vf_info.func_id;
-		vf_res->logic_port = vf_info.logic_port;
+		resp->mac_num = xdev->caps.mac_num;
 		break;
 
 	default:
@@ -375,7 +364,7 @@ static int xsc_priv_dev_ioctl_get_global_pcp(struct xsc_core_device *xdev, void 
 	int ret = 0;
 	struct xsc_ioctl_global_pcp *resp = (struct xsc_ioctl_global_pcp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id)) {
+	if (!xsc_core_is_pf(xdev)) {
 		ret = -EOPNOTSUPP;
 		return ret;
 	}
@@ -389,7 +378,7 @@ static int xsc_priv_dev_ioctl_get_global_dscp(struct xsc_core_device *xdev, void
 	int ret = 0;
 	struct xsc_ioctl_global_dscp *resp = (struct xsc_ioctl_global_dscp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id)) {
+	if (!xsc_core_is_pf(xdev)) {
 		ret = -EOPNOTSUPP;
 		return ret;
 	}
@@ -403,7 +392,7 @@ static int xsc_priv_dev_ioctl_set_global_pcp(struct xsc_core_device *xdev, void 
 	int ret = 0;
 	struct xsc_ioctl_global_pcp *req = (struct xsc_ioctl_global_pcp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id)) {
+	if (!xsc_core_is_pf(xdev)) {
 		ret = -EOPNOTSUPP;
 		return ret;
 	}
@@ -417,7 +406,7 @@ static int xsc_priv_dev_ioctl_set_global_dscp(struct xsc_core_device *xdev, void
 	int ret = 0;
 	struct xsc_ioctl_global_dscp *req = (struct xsc_ioctl_global_dscp *)out;
 
-	if (!check_is_pf(&xdev->caps, xdev->glb_func_id)) {
+	if (!xsc_core_is_pf(xdev)) {
 		ret = -EOPNOTSUPP;
 		return ret;
 	}
@@ -660,7 +649,7 @@ static int xsc_ioctl_modify_raw_qp(struct xsc_priv_device *priv_dev,
 		goto err;
 
 	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
-	in->pcie_no = g_xsc_pcie_no;
+	in->pcie_no = xdev->pcie_no;
 
 	err = xsc_cmd_exec(xdev, in, sizeof(struct xsc_modify_raw_qp_mbox_in),
 			   out, sizeof(struct xsc_modify_raw_qp_mbox_out));

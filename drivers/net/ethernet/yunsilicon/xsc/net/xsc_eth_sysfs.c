@@ -177,42 +177,7 @@ static ssize_t pcie_lat_interval_show(struct device *device,
 	return count;
 }
 
-#define PCIE_LAT_CFG_INTERVAL_FORMAT "%u,%u,%u,%u,%u,%u,%u,%u"
-static ssize_t pcie_lat_interval_store(struct device *device,
-				       struct device_attribute *attr,
-				       const char *buf, size_t count)
-{
-	struct xsc_adapter *adapter = netdev_priv(to_net_dev(device));
-	int err, i;
-	struct xsc_pcie_lat_feat_mbox_in in;
-	struct xsc_pcie_lat_feat_mbox_out out;
-	u32 *ptr = in.pcie_lat.pcie_lat_interval;
-
-	memset(&in, 0, sizeof(in));
-	memset(&out, 0, sizeof(out));
-
-	err = sscanf(buf, PCIE_LAT_CFG_INTERVAL_FORMAT, &ptr[0], &ptr[1], &ptr[2], &ptr[3], &ptr[4],
-		     &ptr[5], &ptr[6], &ptr[7]);
-	if (err != XSC_PCIE_LAT_CFG_INTERVAL_MAX)
-		return -EINVAL;
-
-	in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_PCIE_LAT_FEAT);
-	in.xsc_pcie_lat_feature_opcode = __cpu_to_be16(XSC_PCIE_LAT_FEAT_SET_INTERVAL);
-	for (i = 0 ; i < XSC_PCIE_LAT_CFG_INTERVAL_MAX; i++)
-		in.pcie_lat.pcie_lat_interval[i] = __cpu_to_be32(ptr[i]);
-
-	err = xsc_cmd_exec(adapter->xdev, (void *)&in, sizeof(struct xsc_pcie_lat_feat_mbox_in),
-			   (void *)&out, sizeof(struct xsc_pcie_lat_feat_mbox_out));
-	if (err || out.hdr.status) {
-		xsc_core_err(adapter->xdev, "Failed to set pcie_lat interval, err(%u), status(%u)\n",
-			     err, out.hdr.status);
-		return -EINVAL;
-	}
-
-	return count;
-}
-
-static DEVICE_ATTR_RW(pcie_lat_interval);
+static DEVICE_ATTR_RO(pcie_lat_interval);
 
 static ssize_t pcie_lat_period_show(struct device *device,
 				    struct device_attribute *attr,
@@ -286,14 +251,7 @@ static ssize_t pcie_lat_histogram_show(struct device *device,
 	return count;
 }
 
-static ssize_t pcie_lat_histogram_store(struct device *device,
-					struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	return -EOPNOTSUPP;
-}
-
-static DEVICE_ATTR_RW(pcie_lat_histogram);
+static DEVICE_ATTR_RO(pcie_lat_histogram);
 
 static ssize_t pcie_lat_peak_show(struct device *device,
 				  struct device_attribute *attr,
@@ -321,14 +279,7 @@ static ssize_t pcie_lat_peak_show(struct device *device,
 	return sprintf(buf, "%u\n", __be32_to_cpu(out.pcie_lat.pcie_lat_peak));
 }
 
-static ssize_t pcie_lat_peak_store(struct device *device,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count)
-{
-	return -EOPNOTSUPP;
-}
-
-static DEVICE_ATTR_RW(pcie_lat_peak);
+static DEVICE_ATTR_RO(pcie_lat_peak);
 
 static struct attribute *pcie_lat_attrs[] = {
 	&dev_attr_pcie_lat_enable.attr,

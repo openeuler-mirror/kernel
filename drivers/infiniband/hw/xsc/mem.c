@@ -102,7 +102,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 
 		if (pa == chunk->pa + chunk->length) {
 			chunk->length += sg_dma_len(sg);
-			va += chunk->length;
+			va += sg_dma_len(sg);
 		} else {
 			chunk = kzalloc(sizeof(*chunk), GFP_KERNEL);
 			if (!chunk) {
@@ -135,7 +135,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 
 	if (chunk_cnt == 1) {
 		list_for_each_entry(chunk, &chunk_list, list) {
-			mask = GENMASK(*shift - 1, min_t(int, page_shift, *shift - 1));
+			mask = GENMASK(*shift - 1, min_t(int, page_shift, *shift));
 			*npages += DIV_ROUND_UP(chunk->length + (virt & mask), pgsz);
 			*pas = vmalloc(*npages * sizeof(u64));
 			if (!*pas) {
@@ -165,7 +165,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 			for (i = 0; i < chunk_npages; i++) {
 				if (pa_index == 0) {
 					mask = GENMASK(*shift - 1,
-						       min_t(int, page_shift, *shift - 1));
+						       min_t(int, page_shift, *shift));
 					chunk_pa -= (virt & mask);
 				}
 				(*pas)[pa_index] = chunk_pa + i * pgsz;
@@ -202,7 +202,6 @@ void __xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
 	int i = 0;
 	struct scatterlist *sg;
 	int entry;
-	// TODO: need peer mem support
 	unsigned long page_shift = PAGE_SHIFT;
 
 	addr = addr >> page_shift;

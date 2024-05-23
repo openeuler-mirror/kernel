@@ -10,40 +10,7 @@
 #ifdef CONFIG_XSC_ESWITCH
 #include "eswitch.h"
 #endif
-#include "fw/xsc_tbm.h"
 #include "xsc_pci_ctrl.h"
-
-//static int sriov_restore_guids(struct xsc_core_device *dev, int vf)
-//{
-//	struct xsc_core_sriov *sriov = &dev->priv.sriov;
-//	struct xsc_hca_vport_context *in;
-//	int err = 0;
-//
-//	/* Restore sriov guid and policy settings */
-//	if (sriov->vfs_ctx[vf].node_guid ||
-//	    sriov->vfs_ctx[vf].port_guid ||
-//	    sriov->vfs_ctx[vf].policy != XSC_POLICY_INVALID) {
-//		in = kzalloc(sizeof(*in), GFP_KERNEL);
-//		if (!in)
-//			return -ENOMEM;
-//
-//		in->node_guid = sriov->vfs_ctx[vf].node_guid;
-//		in->port_guid = sriov->vfs_ctx[vf].port_guid;
-//		in->vport_state_policy = sriov->vfs_ctx[vf].policy;
-//		in->field_select =
-//			!!(in->port_guid) * XSC_HCA_VPORT_SEL_PORT_GUID |
-//			!!(in->node_guid) * XSC_HCA_VPORT_SEL_NODE_GUID |
-//			!!(in->vport_state_policy) * XSC_HCA_VPORT_SEL_STATE_POLICY;
-//
-//		err = xsc_modify_hca_vport_context(dev, 1, 1, vf + 1, in);
-//		if (err)
-//			xsc_core_warn(dev, "modify VF%d vport context failed\n", vf);
-//
-//		kfree(in);
-//	}
-//
-//	return err;
-//}
 
 static int xsc_device_enable_sriov(struct xsc_core_device *dev, int num_vfs)
 {
@@ -141,17 +108,17 @@ static int xsc_sriov_enable(struct pci_dev *pdev, int num_vfs)
 		return -EBUSY;
 	}
 
-	xsc_core_info(dev, "%s: num_vfs=%d\n", __func__, num_vfs);
+	xsc_core_info(dev, "enable %d VFs\n", num_vfs);
 
 	err = xsc_device_enable_sriov(dev, num_vfs);
 	if (err) {
-		xsc_core_warn(dev, "xsc_device_enable_sriov failed : %d\n", err);
+		xsc_core_warn(dev, "xsc_device_enable_sriov failed, err=%d\n", err);
 		return err;
 	}
 
 	err = pci_enable_sriov(pdev, num_vfs);
 	if (err) {
-		xsc_core_warn(dev, "pci_enable_sriov failed : %d\n", err);
+		xsc_core_warn(dev, "pci_enable_sriov failed, err=%d\n", err);
 		xsc_device_disable_sriov(dev, num_vfs, true);
 	}
 
@@ -163,7 +130,7 @@ static void xsc_sriov_disable(struct pci_dev *pdev)
 	struct xsc_core_device *dev  = pci_get_drvdata(pdev);
 	int num_vfs = pci_num_vf(dev->pdev);
 
-	xsc_core_info(dev, "%s: num_vfs=%d\n", __func__, num_vfs);
+	xsc_core_info(dev, "disable %d VFs\n", num_vfs);
 	pci_disable_sriov(pdev);
 
 	xsc_device_disable_sriov(dev, num_vfs, true);
@@ -174,9 +141,6 @@ int xsc_core_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	struct xsc_core_device *dev  = pci_get_drvdata(pdev);
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
 	int err = 0;
-
-	xsc_core_info(dev, "%s: requested num_vfs %d\n",
-		      __func__, num_vfs);
 
 	if (num_vfs)
 		err = xsc_sriov_enable(pdev, num_vfs);
@@ -223,30 +187,6 @@ void xsc_sriov_detach(struct xsc_core_device *dev)
 
 static u16 xsc_get_max_vfs(struct xsc_core_device *dev)
 {
-//	u16 host_total_vfs;
-//	const u32 *out;
-
-//	if (xsc_core_is_ecpf_esw_manager(dev)) {
-//		out = xsc_esw_query_functions(dev);
-
-//		// Old FW doesn't support getting total_vfs from host params
-//		// but supports getting from pci_sriov.
-//
-//		if (IS_ERR(out))
-//			goto done;
-
-//		host_total_vfs = XSC_GET(query_esw_functions_out, out,
-//					 host_params_context.host_total_vfs);
-
-//		kvfree(out);
-//		if (host_total_vfs)
-//			return host_total_vfs;
-//	}
-
-//done:
-	/* In RH6.8 and lower pci_sriov_get_totalvfs might return -EINVAL
-	 * return in that case 1
-	 */
 	return (pci_sriov_get_totalvfs(dev->pdev) < 0) ? 0 :
 		pci_sriov_get_totalvfs(dev->pdev);
 }
@@ -315,13 +255,13 @@ int xsc_sriov_init(struct xsc_core_device *dev)
 	if (!sriov->vfs_ctx)
 		return -ENOMEM;
 
-	xsc_core_info(dev, "%s: total_vfs=%d, cur_vfs=%d, vf_bdf_base=0x%02x\n",
-		      __func__, total_vfs, sriov->num_vfs, sriov->vf_bdf_base);
-	xsc_core_info(dev, "%s: vf_offset=%d, stride=%d, vf_device_id=0x%x\n",
-		      __func__, iov->offset, iov->stride, iov->vf_device);
+	xsc_core_info(dev, "total_vfs=%d, cur_vfs=%d, vf_bdf_base=0x%02x\n",
+		      total_vfs, sriov->num_vfs, sriov->vf_bdf_base);
+	xsc_core_info(dev, "vf_offset=%d, stride=%d, vf_device_id=0x%x\n",
+		      iov->offset, iov->stride, iov->vf_device);
 	err = xsc_sriov_sysfs_init(dev);
 	if (err) {
-		xsc_core_warn(dev, "failed to init SRIOV sysfs (%d)\n", err);
+		xsc_core_warn(dev, "failed to init SRIOV sysfs, err=%d\n", err);
 		kfree(sriov->vfs_ctx);
 		return err;
 	}
