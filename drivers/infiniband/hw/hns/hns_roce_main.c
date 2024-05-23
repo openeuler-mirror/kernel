@@ -611,9 +611,9 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	if (ret)
 		goto error_fail_copy_to_udata;
 
-	spin_lock(&hr_dev->uctx_list_lock);
+	mutex_lock(&hr_dev->uctx_list_mutex);
 	list_add(&context->list, &hr_dev->uctx_list);
-	spin_unlock(&hr_dev->uctx_list_lock);
+	mutex_unlock(&hr_dev->uctx_list_mutex);
 
 	hns_roce_register_uctx_debugfs(hr_dev, context);
 
@@ -640,9 +640,9 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct hns_roce_ucontext *context = to_hr_ucontext(ibcontext);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
 
-	spin_lock(&hr_dev->uctx_list_lock);
+	mutex_lock(&hr_dev->uctx_list_mutex);
 	list_del(&context->list);
-	spin_unlock(&hr_dev->uctx_list_lock);
+	mutex_unlock(&hr_dev->uctx_list_mutex);
 
 	hns_roce_unregister_uctx_debugfs(context);
 
@@ -1299,6 +1299,7 @@ static void hns_roce_teardown_hca(struct hns_roce_dev *hr_dev)
 		hns_roce_cleanup_dca(hr_dev);
 
 	hns_roce_cleanup_bitmap(hr_dev);
+	mutex_destroy(&hr_dev->uctx_list_mutex);
 }
 
 /**
@@ -1319,7 +1320,7 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	spin_lock_init(&hr_dev->dip_list_lock);
 
 	INIT_LIST_HEAD(&hr_dev->uctx_list);
-	spin_lock_init(&hr_dev->uctx_list_lock);
+	mutex_init(&hr_dev->uctx_list_mutex);
 
 	INIT_LIST_HEAD(&hr_dev->mtr_unfree_list);
 	spin_lock_init(&hr_dev->mtr_unfree_list_lock);
@@ -1367,6 +1368,7 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 
 err_uar_table_free:
 	ida_destroy(&hr_dev->uar_ida.ida);
+	mutex_destroy(&hr_dev->uctx_list_mutex);
 	return ret;
 }
 
