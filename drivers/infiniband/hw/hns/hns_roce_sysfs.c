@@ -429,10 +429,15 @@ fail_kobj:
 static void hns_roce_unregister_port_sysfs(struct hns_roce_dev *hr_dev,
 					   u8 port_num)
 {
+	struct hns_roce_scc_param *scc_param;
 	struct hns_roce_port *pdata;
+	int i;
 
 	pdata = &hr_dev->port_data[port_num];
 	sysfs_remove_groups(&pdata->kobj, hns_attr_port_groups);
+	scc_param = pdata->scc_param;
+	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++)
+		cancel_delayed_work_sync(&scc_param[i].scc_cfg_dwork);
 	kobject_put(&pdata->kobj);
 }
 
