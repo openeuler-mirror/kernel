@@ -518,7 +518,9 @@ static struct kobj_attribute thp_exec_enabled_attr =
 
 #define FILE_MAPPING_ALIGN	BIT(0)
 #define ANON_MAPPING_ALIGN	BIT(1)
-#define THP_MAPPING_ALIGN_ALL	(FILE_MAPPING_ALIGN | ANON_MAPPING_ALIGN)
+#define ANON_MAPPING_PMD_ALIGN	BIT(2)
+#define THP_MAPPING_ALIGN_ALL		\
+	(FILE_MAPPING_ALIGN | ANON_MAPPING_ALIGN | ANON_MAPPING_PMD_ALIGN)
 
 static ssize_t thp_mapping_align_show(struct kobject *kobj,
 				      struct kobj_attribute *attr, char *buf)
@@ -533,6 +535,10 @@ static ssize_t thp_mapping_align_show(struct kobject *kobj,
 		     &transparent_hugepage_flags))
 		val |= ANON_MAPPING_ALIGN;
 
+	if (test_bit(TRANSPARENT_HUGEPAGE_ANON_MAPPING_PMD_ALIGN_FLAG,
+		     &transparent_hugepage_flags))
+		val |= ANON_MAPPING_PMD_ALIGN;
+
 	return sysfs_emit(buf, "0x%lx\n", val);
 }
 static ssize_t thp_mapping_align_store(struct kobject *kobj,
@@ -544,13 +550,16 @@ static ssize_t thp_mapping_align_store(struct kobject *kobj,
 	ret = kstrtoul(buf, 16, &val);
 	if (ret < 0)
 		return ret;
-	if (val & ~THP_MAPPING_ALIGN_ALL)
+	if ((val & ~THP_MAPPING_ALIGN_ALL) || (!(val & ANON_MAPPING_PMD_ALIGN) &&
+	    (val & ANON_MAPPING_ALIGN)))
 		return -EINVAL;
 
 	thp_flag_set(TRANSPARENT_HUGEPAGE_FILE_MAPPING_ALIGN_FLAG,
 		     val & FILE_MAPPING_ALIGN);
 	thp_flag_set(TRANSPARENT_HUGEPAGE_ANON_MAPPING_ALIGN_FLAG,
 		     val & ANON_MAPPING_ALIGN);
+	thp_flag_set(TRANSPARENT_HUGEPAGE_ANON_MAPPING_PMD_ALIGN_FLAG,
+		     val & ANON_MAPPING_PMD_ALIGN);
 
 	return count;
 }
