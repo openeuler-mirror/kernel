@@ -291,7 +291,7 @@ void __init arch_reserve_mem_area(acpi_physical_address addr, size_t size)
 	memblock_reserve(addr, size);
 }
 
-#ifdef CONFIG_ACPI_HOTPLUG_PRESENT_CPU
+#ifdef CONFIG_ACPI_HOTPLUG_CPU
 
 #include <acpi/processor.h>
 
@@ -343,4 +343,4 @@ int acpi_unmap_cpu(int cpu)
 }
 EXPORT_SYMBOL(acpi_unmap_cpu);
 
-#endif /* CONFIG_ACPI_HOTPLUG_PRESENT_CPU */
+#endif /* CONFIG_ACPI_HOTPLUG_CPU */
