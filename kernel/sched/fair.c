@@ -6578,6 +6578,9 @@ dequeue_throttle:
 /* Working cpumask for: load_balance, load_balance_newidle. */
 DEFINE_PER_CPU(cpumask_var_t, load_balance_mask);
 DEFINE_PER_CPU(cpumask_var_t, select_idle_mask);
+#ifdef CONFIG_BPF_SCHED
+DEFINE_PER_CPU(cpumask_var_t, select_cpu_mask);
+#endif
 
 #ifdef CONFIG_NO_HZ_COMMON
 
@@ -7897,7 +7900,6 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
 #ifdef CONFIG_BPF_SCHED
 	struct sched_migrate_ctx ctx;
-	cpumask_t *cpus_prev = NULL;
 	cpumask_t *cpus;
 	int ret;
 #endif
@@ -7912,8 +7914,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	 */
 	lockdep_assert_held(&p->pi_lock);
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	p->select_cpus = p->cpus_ptr;
+#endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	if (dynamic_affinity_used() || smart_grid_used())
 		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
@@ -7945,18 +7950,18 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		ctx.wake_flags = wake_flags;
 		ctx.want_affine = want_affine;
 		ctx.sd_flag = sd_flag;
-		ctx.select_idle_mask = this_cpu_cpumask_var_ptr(select_idle_mask);
+		ctx.select_idle_mask =
+			this_cpu_cpumask_var_ptr(select_cpu_mask);
 
 		ret = bpf_sched_cfs_select_rq(&ctx);
 		if (ret >= 0) {
 			rcu_read_unlock();
 			return ret;
 		} else if (ret != -1) {
-			cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
-			if (cpumask_subset(cpus, p->cpus_ptr) &&
+			cpus = this_cpu_cpumask_var_ptr(select_cpu_mask);
+			if (cpumask_subset(cpus, p->select_cpus) &&
 			    !cpumask_empty(cpus)) {
-				cpus_prev = (void *)p->cpus_ptr;
-				p->cpus_ptr = cpus;
+				p->select_cpus = cpus;
 			}
 		}
 	}
@@ -8004,11 +8009,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	if (bpf_sched_enabled()) {
 		ctx.new_cpu = new_cpu;
 		ret = bpf_sched_cfs_select_rq_exit(&ctx);
-		if (ret >= 0)
-			new_cpu = ret;
-
-		if (cpus_prev)
-			p->cpus_ptr = cpus_prev;
+		if (ret > 0 && ret <= nr_cpu_ids)
+			new_cpu = ret - 1;
 	}
 #endif
 
