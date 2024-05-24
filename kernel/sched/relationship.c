@@ -422,6 +422,10 @@ int sched_relationship_fork(struct task_struct *p)
 
 	spin_lock_init(&p->rship->net_lock);
 	init_task_work(&p->rship->cb.twork, task_net_relationship_work);
+#ifdef CONFIG_NUMA_BALANCING
+	p->rship->node_work.next		= &p->rship->node_work;
+	init_task_work(&p->rship->node_work, task_preferred_node_work);
+#endif
 	return 0;
 }
 

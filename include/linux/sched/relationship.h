@@ -113,7 +113,25 @@ struct task_relationship {
 
 	/* extras numa fault data */
 	struct numa_fault_ext faults;
+
+#ifdef CONFIG_NUMA_BALANCING
+	/* preferred nodes adjust */
+	u64 node_stamp;
+	struct callback_head node_work;
+#endif
 };
+
+#ifdef CONFIG_BPF_SCHED
+struct sched_preferred_node_ctx {
+	struct task_struct *tsk;
+	nodemask_t preferred_node;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
+#endif
 
 extern void task_relationship_enable(void);
 extern void task_relationship_disable(void);
@@ -140,6 +158,9 @@ extern void sched_get_relationship(struct task_struct *tsk,
 				   struct bpf_relationship_get_args *args);
 extern void numa_faults_update_and_sort(int nid, int new,
 					  struct fault_array_info *stats);
+extern void task_tick_relationship(struct rq *rq, struct task_struct *curr);
+
+extern void task_preferred_node_work(struct callback_head *work);
 
 DECLARE_STATIC_KEY_FALSE(__relationship_switch);
 static inline bool task_relationship_used(void)
@@ -167,6 +188,9 @@ sched_net_relationship_submit(struct net_relationship_req *req)
 {
 	return 0;
 }
+
+static inline void
+task_tick_relationship(struct rq *rq, struct task_struct *curr) {}
 #endif
 
 #endif

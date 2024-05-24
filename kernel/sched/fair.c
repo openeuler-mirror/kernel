@@ -1090,6 +1090,8 @@ struct numa_group {
 	struct fault_array_info score_ordered[FAULT_NODES_MAX];
 	struct fault_array_info faults_ordered[FAULT_NODES_MAX];
 	nodemask_t preferred_nid;
+	u64 node_stamp;
+	u64 nodes_switch_cnt;
 #endif
 	/*
 	 * Faults_cpu is used to decide whether memory should move
@@ -2547,6 +2549,7 @@ static void task_numa_group(struct task_struct *p, int cpupid, int flags,
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
 		if (task_relationship_used()) {
 			grp->preferred_nid = NODE_MASK_NONE;
+			grp->node_stamp = jiffies;
 			for (i = 0; i < FAULT_NODES_MAX; i++) {
 				grp->faults_ordered[i].nid = -1;
 				grp->score_ordered[i].nid = -1;
@@ -13271,6 +13274,8 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 	update_overutilized_status(task_rq(curr));
 
 	task_tick_core(rq, curr);
+
+	task_tick_relationship(rq, curr);
 }
 
 /*
@@ -13861,8 +13866,9 @@ void sched_show_relationship(struct task_struct *p, struct seq_file *m)
 
 	ng = rcu_dereference(p->numa_group);
 	if (ng) {
-		seq_printf(m, "numa group preferred nid %*pbl\n",
-			nodemask_pr_args(&ng->preferred_nid));
+		seq_printf(m, "numa group preferred nid %*pbl switch_cnt %llu\n",
+			nodemask_pr_args(&ng->preferred_nid),
+			ng->nodes_switch_cnt);
 	}
 
 	net_grp = rcu_dereference(p->rship->net_group);
@@ -13876,6 +13882,63 @@ void sched_show_relationship(struct task_struct *p, struct seq_file *m)
 #endif
 }
 #endif /* CONFIG_SCHED_DEBUG */
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+void task_preferred_node_work(struct callback_head *work)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct task_struct *curr = current;
+	struct numa_group *numa_grp;
+#ifdef CONFIG_BPF_SCHED
+	struct sched_preferred_node_ctx ctx = {0};
+#endif
+
+	work->next = work;
+
+#ifdef CONFIG_BPF_SCHED
+	numa_grp = deref_curr_numa_group(curr);
+	if (numa_grp) {
+
+		spin_lock_irq(&numa_grp->lock);
+		ctx.tsk = curr;
+		ctx.preferred_node = numa_grp->preferred_nid;
+		bpf_sched_cfs_change_preferred_node(&ctx);
+		spin_unlock_irq(&numa_grp->lock);
+	}
+#endif
+#endif
+}
+
+void task_tick_relationship(struct rq *rq, struct task_struct *curr)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct callback_head *work = &curr->rship->node_work;
+	struct numa_group *numa_grp;
+
+	if (!task_relationship_supported(curr))
+		return;
+
+	if (work->next != work)
+		return;
+
+	numa_grp = deref_curr_numa_group(curr);
+	if (!numa_grp || numa_grp->nr_tasks <= 1)
+		return;
+
+	spin_lock(&numa_grp->lock);
+
+	if (time_after(jiffies,
+	    (unsigned long)(numa_grp->node_stamp + msecs_to_jiffies(100)))) {
+		numa_grp->node_stamp = jiffies;
+		spin_unlock(&numa_grp->lock);
+		task_work_add(curr, &curr->rship->node_work, TWA_RESUME);
+		return;
+	}
+
+	spin_unlock(&numa_grp->lock);
+#endif
+}
+#endif
 
 __init void init_sched_fair_class(void)
 {
